@@ -131,7 +131,7 @@ func (s *Service) AssistWith(ctx context.Context, draftID int64, input string, q
 	}
 	var w *witStream
 	if err == nil {
-		w, err = s.launch(ctx, end, conv, input, slices.Concat(s.registered(assistTools...), s.pluginTools(false), s.mcpTools(ctx, false)), quoted, -1)
+		w, err = s.launch(ctx, end, conv, input, slices.Concat(s.registered(assistTools...), s.pluginTools(false), s.mcpTools(ctx, false)), quoted, 0)
 	}
 	if err != nil {
 		end()
@@ -149,6 +149,34 @@ func (s *Service) assistDraft(ctx context.Context, draftID int64) (Draft, error)
 	return d, s.bind(ctx, d.AccountID)
 }
 
+// AssistConversation is the ID of the draft's assist conversation, the one
+// Assist and AssistSkill run in; with create, one is made if it has none,
+// else it is 0.
+func (s *Service) AssistConversation(ctx context.Context, draftID int64, create bool) (int64, error) {
+	ctx, end, err := s.begin(ctx, 0)
+	if err != nil {
+		return 0, err
+	}
+	defer end()
+	if !create {
+		id, err := s.findAssistConversation(ctx, draftID)
+		return id, err
+	}
+	c, err := s.assistConversation(ctx, draftID)
+	return c.ID, err
+}
+
+// findAssistConversation is the draft's assist conversation, 0 for none.
+// Conversations RewriteSelection made (their runs offer update_selection) are not it.
+func (s *Service) findAssistConversation(ctx context.Context, draftID int64) (int64, error) {
+	rows, err := s.db.Query(ctx, `SELECT c.id FROM conversations c WHERE c.kind = 'assist' AND c.draft_id = ? AND NOT EXISTS
+		(SELECT 1 FROM runs r WHERE r.conversation_id = c.id AND r.tools LIKE '%"update_selection"%') ORDER BY c.id LIMIT 1`, draftID)
+	if err != nil || len(rows.Values) == 0 {
+		return 0, err
+	}
+	return store.Int(rows.Values[0][0]), nil
+}
+
 // assistConversation returns the draft's assist conversation, creating it.
 // Conversations RewriteSelection made (their runs offer update_selection) are not it.
 func (s *Service) assistConversation(ctx context.Context, draftID int64) (Conversation, error) {
@@ -158,14 +186,12 @@ func (s *Service) assistConversation(ctx context.Context, draftID int64) (Conver
 	// ponytail: one lock for every draft's find-or-create; per draft if it ever contends
 	s.assistMu.Lock()
 	defer s.assistMu.Unlock()
-	rows, err := s.db.Query(ctx, `SELECT c.id FROM conversations c WHERE c.kind = 'assist' AND c.draft_id = ? AND NOT EXISTS
-		(SELECT 1 FROM runs r WHERE r.conversation_id = c.id AND r.tools LIKE '%"update_selection"%') ORDER BY c.id LIMIT 1`, draftID)
+	id, err := s.findAssistConversation(ctx, draftID)
 	if err != nil {
 		return Conversation{}, err
 	}
-	if len(rows.Values) > 0 {
-		c, _, err := s.conversation(ctx, store.Int(rows.Values[0][0]))
-		return c, err
+	if id != 0 {
+		return s.conversation(ctx, id)
 	}
 	return s.newAssistConversation(ctx, draftID, "")
 }
@@ -177,8 +203,7 @@ func (s *Service) newAssistConversation(ctx context.Context, draftID int64, titl
 	if err != nil {
 		return Conversation{}, err
 	}
-	c, _, err := s.conversation(ctx, r.LastInsertID)
-	return c, err
+	return s.conversation(ctx, r.LastInsertID)
 }
 
 // assistSystemPrompt is an assist conversation's system prompt, built for
@@ -569,11 +594,7 @@ func (s *Service) rewriteSelection(ctx context.Context, end func(), draftID int6
 	if err := checkSelection(editable, sel); err != nil {
 		return nil, err
 	}
-	title := instruction
-	if r := []rune(title); len(r) > titleRunes {
-		title = string(r[:titleRunes])
-	}
-	conv, err := s.newAssistConversation(ctx, draftID, title)
+	conv, err := s.newAssistConversation(ctx, draftID, titleOf(instruction))
 	if err != nil {
 		return nil, err
 	}
@@ -596,7 +617,7 @@ func (s *Service) rewriteSelection(ctx context.Context, end func(), draftID int6
 		"\n\nRead-only context before the selection:\n<before>\n" + string(before) + "\n</before>" +
 		"\n\nThe selection to replace, as HTML:\n<selection>\n" + editable[sel.Start:sel.End] + "\n</selection>" +
 		"\n\nRead-only context after the selection:\n<after>\n" + string(after) + "\n</after>"
-	return s.launch(ctx, end, conv, prompt, []toolDesc{tool}, nil, -1)
+	return s.launch(ctx, end, conv, prompt, []toolDesc{tool}, nil, 0)
 }
 
 // AssistSkill runs a replace-draft skill (tone, length, proofreading,
@@ -713,9 +734,13 @@ func (s *Service) assistSkill(ctx context.Context, end func(), draftID int64, na
 
 	s.runMu.Lock()
 	defer s.runMu.Unlock()
-	job, state, err := s.claimRun(ctx, conv, ref, []string{})
+	job, h, err := s.claimRun(ctx, conv, ref, []string{})
 	if err != nil {
 		return nil, err
+	}
+	job.base, job.command = h, ai.Command{Skill: name}
+	if name == "translate-draft" {
+		job.command.Lang = target
 	}
 	// A skill reads only its target (ADR 0009): no mail, not even the one replied to.
 	prompt := "The editable part of the draft, as HTML:\n<draft>\n" + editable + "\n</draft>"
@@ -763,7 +788,7 @@ func (s *Service) assistSkill(ctx context.Context, end func(), draftID int64, na
 			return ai.Result{Err: &ai.Error{Code: ai.CodeInternal, Msg: err.Error()}}
 		}
 		job.prepared.Store("skill", p)
-		return ai.Result{State: state, Interrupts: []ai.ToolCall{{ID: "skill", Name: "update_draft"}}}
+		return ai.Result{Interrupts: []ai.ToolCall{{ID: "skill", Name: "update_draft"}}}
 	}
 	out := s.newStream()
 	req.Prompt = prompt

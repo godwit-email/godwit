@@ -8,6 +8,8 @@ vi.mock("@/mygo", () => ({ events: { wit: { on: () => () => {} } } }));
 const ev = (e: Partial<WitEvent>): WitEvent => ({
   conversation: 1,
   run: 7,
+  turn: "1",
+  ends: false,
   kind: "text",
   text: "",
   call: null,
@@ -23,7 +25,7 @@ async function setup() {
   let listener: ((e: WitEvent) => void) | undefined;
   const api = {
     ask: vi.fn(),
-    follow: vi.fn().mockResolvedValue({ conversation: 1, running: 0, messages: [], approvals: [] }),
+    follow: vi.fn().mockResolvedValue({ conversation: 1, running: 0, turns: [] }),
     stop: vi.fn(),
   };
   const tr = new WitTransport(api, (f) => {

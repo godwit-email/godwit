@@ -2,6 +2,7 @@ package store_test
 
 import (
 	"context"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -354,4 +355,92 @@ func TestMigrationSignatures(t *testing.T) {
 	require.NoError(t, err)
 	rows, _ = db.Query(ctx, "SELECT max(id) FROM signatures")
 	assert.Equal(t, int64(7), store.Int(rows.Values[0][0]), "new ids follow the migrated ones")
+}
+
+// Migrating to message rows backs the database up first; the backup goes a
+// schema version later. The context citations a version-31 database has
+// become quoted mail (ask) or, once each, unknown (assist: quote or context).
+func TestMigrationHistoryRows(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "godwit.db")
+	all := store.Migrations
+	store.Migrations = all[:store.HistoryRowsVersion-1]
+	db, err := store.Open(ctx, path)
+	store.Migrations = all
+	require.NoError(t, err)
+	for _, q := range []string{
+		"INSERT INTO accounts(id, email) VALUES (1, 'a@b.c')",
+		"INSERT INTO drafts(id, account_id, mode) VALUES (1, 1, 'new')",
+		"INSERT INTO conversations(id, kind, title, model) VALUES (1, 'ask', '', '')",
+		"INSERT INTO conversations(id, kind, draft_id, title, model) VALUES (2, 'assist', 1, '', '')",
+		"INSERT INTO runs(id, conversation_id, state, model, tools) VALUES (1, 1, 'done', '', '[]'), (2, 2, 'done', '', '[]')",
+		`INSERT INTO run_citations(run_id, call_id, message_id, subject, from_addr) VALUES
+			(1, '', 7, '', ''), (1, 'c1', 8, '', ''), (2, '', 9, '', ''), (2, '', 9, '', '')`,
+	} {
+		_, err = db.Execute(ctx, q)
+		require.NoError(t, err, q)
+	}
+	db.Close()
+
+	db, err = store.Open(ctx, path)
+	require.NoError(t, err)
+	rows, err := db.Query(ctx, "SELECT run_id, call_id, message_id, source FROM run_citations ORDER BY id")
+	require.NoError(t, err)
+	assert.Equal(t, [][]any{{int64(1), "", int64(7), "quote"}, {int64(1), "c1", int64(8), ""}, {int64(2), "", int64(9), "unknown"}}, rows.Values)
+	db.Close()
+	backup := fmt.Sprintf("%s.bak-v%d", path, store.HistoryRowsVersion-1)
+	assert.FileExists(t, backup)
+
+	store.Migrations = append(all, []string{"CREATE TABLE later (x)"})
+	db, err = store.Open(ctx, path)
+	store.Migrations = all
+	require.NoError(t, err)
+	db.Close()
+	assert.NoFileExists(t, backup, "a version after the migration it was for")
+}
+
+// A database made before incremental vacuum converts on open, and gives free
+// pages back once enough of it is free.
+func TestAutoVacuumAndReclaim(t *testing.T) {
+	db := open(t)
+	rows, err := db.Query(ctx, "PRAGMA auto_vacuum")
+	require.NoError(t, err)
+	assert.EqualValues(t, 2, rows.Values[0][0], "incremental")
+
+	_, err = db.Execute(ctx, "CREATE TABLE junk (b BLOB)")
+	require.NoError(t, err)
+	for range 100 {
+		_, err = db.Execute(ctx, "INSERT INTO junk VALUES (randomblob(1048576))")
+		require.NoError(t, err)
+	}
+	_, err = db.Execute(ctx, "DELETE FROM junk")
+	require.NoError(t, err)
+	pages := func(p string) int64 {
+		rows, err := db.Query(ctx, "PRAGMA "+p)
+		require.NoError(t, err)
+		return store.Int(rows.Values[0][0])
+	}
+	before := pages("page_count")
+	require.NoError(t, db.Reclaim(ctx))
+	assert.Less(t, pages("page_count"), before/2, "most of the free pages go")
+	assert.Positive(t, pages("freelist_count"), "some stay free for reuse")
+}
+
+// A backup an earlier attempt made stays as it is.
+func TestMigrationKeepsEarlierBackup(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "godwit.db")
+	all := store.Migrations
+	store.Migrations = all[:store.HistoryRowsVersion-1]
+	db, err := store.Open(ctx, path)
+	store.Migrations = all
+	require.NoError(t, err)
+	db.Close()
+	backup := fmt.Sprintf("%s.bak-v%d", path, store.HistoryRowsVersion-1)
+	require.NoError(t, os.WriteFile(backup, []byte("earlier"), 0o600))
+	db, err = store.Open(ctx, path)
+	require.NoError(t, err)
+	db.Close()
+	b, err := os.ReadFile(backup)
+	require.NoError(t, err)
+	assert.Equal(t, "earlier", string(b))
 }

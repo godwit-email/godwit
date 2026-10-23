@@ -1,15 +1,8 @@
 import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import type { ReactNode } from "react";
-import type {
-  Approval,
-  BodyChange,
-  ComposeState,
-  Review,
-  RunStart,
-  WitEvent,
-  WitHistory,
-} from "@/mygo";
+import type { Approval, BodyChange, ComposeState, Review, RunStart, WitEvent } from "@/mygo";
+import { type Legacy, legacy } from "@/wit/fixtures";
 import { ComposePage } from "./ComposePage";
 
 const h = vi.hoisted(() => ({ wit: new Set<(e: WitEvent) => void>() }));
@@ -122,7 +115,7 @@ const state: ComposeState = {
   locale: "zh-Hans",
   wit: { enabled: true, translateOnly: false, skills: [], languages: [], chips: [], model: "" },
 } as unknown as ComposeState;
-const empty: WitHistory = {
+const empty: Legacy = {
   conversation: 1,
   model: "",
   effort: "",
@@ -143,8 +136,9 @@ const pending: Approval = {
   sessionAllow: false,
   draft: 0,
   args: "",
+  draftEdit: true,
 };
-const withPending: WitHistory = {
+const withPending = {
   conversation: 1,
   model: "",
   effort: "",
@@ -177,7 +171,7 @@ const withPending: WitHistory = {
     },
   ],
   approvals: [pending],
-};
+} satisfies Legacy;
 const op = (kind: string, change: number, s: string) => ({
   kind,
   change,
@@ -224,6 +218,7 @@ const change = (body: string, revision: number): BodyChange => ({
 const ev = (e: Partial<WitEvent>): WitEvent => ({
   conversation: 1,
   run: 7,
+  turn: "1",
   kind: "text",
   text: "",
   call: null,
@@ -233,6 +228,7 @@ const ev = (e: Partial<WitEvent>): WitEvent => ({
   approvals: [],
   error: "",
   ...e,
+  ends: e.ends ?? (e.kind === "done" || e.kind === "error"),
 });
 const emit = (e: Partial<WitEvent>) =>
   act(() => {
@@ -245,14 +241,22 @@ beforeEach(() => {
   h.wit.clear();
   vi.mocked(api.load).mockResolvedValue(state);
   vi.mocked(api.save).mockResolvedValue({ revision: 8, conflict: false });
-  vi.mocked(api.follow).mockResolvedValue(empty);
+  vi.mocked(api.follow).mockResolvedValue(legacy(empty));
   vi.mocked(api.review).mockResolvedValue(inline);
   vi.mocked(api.stop).mockResolvedValue();
 });
 
 const body = () => screen.findByRole("textbox", { name: "正文" });
-const setup = async (history = empty) => {
-  vi.mocked(api.follow).mockResolvedValue(history);
+/** A run started, as Ask and Skill resolve to it. */
+const rs = (run: number): RunStart => ({
+  run,
+  conversation: 1,
+  turn: String(run),
+  revision: 0,
+  conflict: false,
+});
+const setup = async (history: Legacy = empty) => {
+  vi.mocked(api.follow).mockResolvedValue(legacy(history));
   render(<ComposePage />);
   // The file's first mount is cold (fresh jsdom, unwarmed React and jsdom CSS): over 1 s on CI.
   await screen.findByRole("textbox", { name: "告诉 Wit 你想怎么回" }, { timeout: 3000 });
@@ -361,7 +365,7 @@ test("reject all: the body is kept, and there is nothing to undo", async () => {
 });
 
 test("a subject edited and saved during a run does not keep Wit's body from reloading", async () => {
-  vi.mocked(api.ask).mockResolvedValue(7);
+  vi.mocked(api.ask).mockResolvedValue(rs(7));
   await setup();
   await userEvent.type(screen.getByRole("textbox", { name: "告诉 Wit 你想怎么回" }), "写{Enter}");
   await waitFor(async () => expect(await body()).toHaveAttribute("readonly"));
@@ -412,7 +416,7 @@ test("rewrite: the new version, compare toggles to 原文 | 新版本", async ()
 });
 
 test("locked while running: typing in the body toasts once", async () => {
-  vi.mocked(api.ask).mockResolvedValue(7);
+  vi.mocked(api.ask).mockResolvedValue(rs(7));
   await setup();
   await userEvent.type(screen.getByRole("textbox", { name: "告诉 Wit 你想怎么回" }), "改短{Enter}");
   await waitFor(() => expect(api.ask).toHaveBeenCalledWith("改短", [], "", ""));
@@ -431,7 +435,7 @@ test("locked while running: typing in the body toasts once", async () => {
 
 test("a run on a blank body shows update_draft's text in the read-only body as it comes", async () => {
   vi.mocked(api.load).mockResolvedValue({ ...state, body: "<p><br></p>" });
-  vi.mocked(api.ask).mockResolvedValue(7);
+  vi.mocked(api.ask).mockResolvedValue(rs(7));
   await setup();
   await userEvent.type(screen.getByRole("textbox", { name: "告诉 Wit 你想怎么回" }), "写{Enter}");
   expect(await screen.findByText("助手正在写入正文，暂时不能编辑")).toBeInTheDocument();
@@ -451,7 +455,7 @@ test("a run ending without applying clears its streamed text: a resumed run show
   const blank = { ...state, body: "<p><br></p>" };
   vi.mocked(api.load).mockResolvedValue(blank);
   vi.mocked(api.latest).mockResolvedValue(blank);
-  vi.mocked(api.ask).mockResolvedValue(7);
+  vi.mocked(api.ask).mockResolvedValue(rs(7));
   vi.mocked(api.decide).mockResolvedValue(change("<p><br></p>", 7));
   await setup();
   await userEvent.type(screen.getByRole("textbox", { name: "告诉 Wit 你想怎么回" }), "写{Enter}");
@@ -461,7 +465,14 @@ test("a run ending without applying clears its streamed text: a resumed run show
     call: { id: "c1", name: "update_draft", args: JSON.stringify({ html }) },
   });
   expect(await screen.findByRole("region", { name: "正文" })).toHaveTextContent("Hi Lena");
-  const ping = { ...pending, id: 5, callId: "p1", tool: "plugin_netty_ping", args: "{}" };
+  const ping = {
+    ...pending,
+    id: 5,
+    callId: "p1",
+    tool: "plugin_netty_ping",
+    args: "{}",
+    draftEdit: false,
+  };
   emit({
     kind: "tool_call",
     call: { id: "p1", name: "plugin_netty_ping", args: "{}" },
@@ -470,6 +481,7 @@ test("a run ending without applying clears its streamed text: a resumed run show
     kind: "interrupted",
     interrupts: [{ id: "p1", name: "plugin_netty_ping", args: "{}" }],
     approvals: [ping],
+    ends: true,
   });
   await waitFor(() => expect(api.latest).toHaveBeenCalled());
   fireEvent.click(await screen.findByRole("button", { name: "允许" }));
@@ -535,6 +547,7 @@ test("⌘K saves first, then rewrites the selection of the text saved", async ()
     revision: 8,
     conflict: false,
     conversation: 0,
+    turn: "9",
   });
   await setup();
   const b = (await body()) as HTMLTextAreaElement;
@@ -565,8 +578,9 @@ test("after a ⌘K run, free input in the panel runs Ask", async () => {
     revision: 8,
     conflict: false,
     conversation: 0,
+    turn: "9",
   });
-  vi.mocked(api.ask).mockResolvedValue(10);
+  vi.mocked(api.ask).mockResolvedValue(rs(10));
   await setup();
   const b = (await body()) as HTMLTextAreaElement;
   await userEvent.clear(b);
@@ -589,7 +603,7 @@ test("after a ⌘K run, free input in the panel runs Ask", async () => {
 test("⌘K goes to Wit only with a model and unlocked; else the link popover", async () => {
   await setup();
   expect(await body()).toHaveAttribute("data-cmdk", "true");
-  vi.mocked(api.ask).mockResolvedValue(7);
+  vi.mocked(api.ask).mockResolvedValue(rs(7));
   await userEvent.type(screen.getByRole("textbox", { name: "告诉 Wit 你想怎么回" }), "x{Enter}");
   await waitFor(async () => expect(await body()).toHaveAttribute("data-cmdk", "false"));
 });
@@ -614,6 +628,7 @@ test("a tool's approval is decided in the panel; the run it resumes streams ther
     callId,
     tool: "plugin_netty_ping",
     args: "{}",
+    draftEdit: false,
   });
   vi.mocked(api.decide).mockResolvedValue(change("正文", 7));
   vi.mocked(api.decideAll).mockResolvedValue(change("正文", 7));
@@ -647,7 +662,7 @@ test("a tool's approval is decided in the panel; the run it resumes streams ther
   emit({ kind: "done" });
   expect(await screen.findByText("都发出去了。")).toBeInTheDocument();
   // the next question can start: nothing waits
-  vi.mocked(api.ask).mockResolvedValue(9);
+  vi.mocked(api.ask).mockResolvedValue(rs(9));
   await userEvent.type(screen.getByRole("textbox", { name: "告诉 Wit 你想怎么回" }), "再来{Enter}");
   await waitFor(() => expect(api.ask).toHaveBeenCalledWith("再来", [], "", ""));
 });
@@ -664,7 +679,9 @@ test("Stop while ⌘K starts stops its run once Rewrite returns it, never anothe
   fireEvent.click(await screen.findByRole("button", { name: "停止" }));
   await act(async () => {});
   expect(api.stop).not.toHaveBeenCalled();
-  await act(async () => started({ run: 9, revision: 7, conflict: false, conversation: 0 }));
+  await act(async () =>
+    started({ run: 9, revision: 7, conflict: false, conversation: 0, turn: "9" }),
+  );
   await waitFor(() => expect(api.stop).toHaveBeenCalledWith(9));
   expect(api.stop).toHaveBeenCalledTimes(1);
   vi.mocked(api.latest).mockResolvedValue(latest("正文", 7));
@@ -676,6 +693,7 @@ test("Stop while ⌘K starts stops its run once Rewrite returns it, never anothe
     revision: 7,
     conflict: false,
     conversation: 0,
+    turn: "9",
   });
   const b2 = (await body()) as HTMLTextAreaElement;
   b2.setSelectionRange(0, 2);
@@ -687,7 +705,7 @@ test("Stop while ⌘K starts stops its run once Rewrite returns it, never anothe
 });
 
 test("a run ending while its start's save is in flight reloads the body once the saver is idle", async () => {
-  let started!: (run: number) => void;
+  let started!: (r: RunStart) => void;
   vi.mocked(api.ask).mockReturnValue(new Promise((r) => (started = r)));
   vi.mocked(api.latest).mockResolvedValue(latest("Wit 写的", 9));
   await setup();
@@ -697,13 +715,20 @@ test("a run ending while its start's save is in flight reloads the body once the
   await waitFor(() => expect(api.latest).toHaveBeenCalled());
   await act(async () => {});
   expect(await body()).toHaveValue("正文"); // skipped: the saver is busy
-  await act(async () => started(7));
+  await act(async () => started(rs(7)));
   await waitFor(async () => expect(await body()).toHaveValue("Wit 写的"));
   expect(await screen.findByText("已应用到正文")).toBeInTheDocument();
 });
 
 test("全部允许 on a run with a tool's call and a body edit settles both: the edit applies, Wit unlocks", async () => {
-  const ping: Approval = { ...pending, id: 5, callId: "p1", tool: "plugin_netty_ping", args: "{}" };
+  const ping: Approval = {
+    ...pending,
+    id: 5,
+    callId: "p1",
+    tool: "plugin_netty_ping",
+    args: "{}",
+    draftEdit: false,
+  };
   vi.mocked(api.decideAll).mockResolvedValue(change("<p>Hi Ann and more</p>", 9));
   vi.mocked(api.latest).mockResolvedValue(latest("<p>Hi Ann and more</p>", 9));
   await setup({
@@ -733,7 +758,7 @@ test("全部允许 on a run with a tool's call and a body edit settles both: the
   expect(b).toHaveValue("<p>Hi Ann and more</p>");
   await waitFor(() => expect(b).not.toHaveAttribute("readonly"));
   expect(await screen.findByText("已应用到正文")).toBeInTheDocument();
-  vi.mocked(api.ask).mockResolvedValue(9);
+  vi.mocked(api.ask).mockResolvedValue(rs(9));
   await userEvent.type(screen.getByRole("textbox", { name: "告诉 Wit 你想怎么回" }), "再来{Enter}");
   await waitFor(() => expect(api.ask).toHaveBeenCalledWith("再来", [], "", ""));
 });
@@ -811,7 +836,7 @@ test("the panel picks the conversation's model as the Wit page does: the next As
     { ref: "a/sonnet", service: "A", name: "sonnet", default: true },
     { ref: "b/gpt", service: "B", name: "gpt", default: false },
   ]);
-  vi.mocked(api.ask).mockResolvedValue(10);
+  vi.mocked(api.ask).mockResolvedValue(rs(10));
   vi.mocked(api.load).mockResolvedValue({ ...state, wit: { ...state.wit, model: "sonnet" } });
   await setup();
   const user = userEvent.setup();

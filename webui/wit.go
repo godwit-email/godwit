@@ -146,6 +146,27 @@ func (c *Compose) follow(win int, s *session, svc *core.Service, conv int64, emi
 	return f, nil
 }
 
+// followWith makes window win follow conversation conv on ch, a
+// subscription stop ends (core FollowConversation), in place of what it
+// followed.
+func (c *Compose) followWith(win int, s *session, conv int64, ch <-chan core.WitEvent, stop func(), emit func(Target, WitEvent)) error {
+	c.mu.Lock()
+	if c.sessions[win] != s {
+		c.mu.Unlock()
+		stop()
+		return ErrNoDraft
+	}
+	old := c.follows[win]
+	f := &follow{conv: conv, stop: stop}
+	c.follows[win] = f
+	c.mu.Unlock()
+	if old != nil {
+		old.end()
+	}
+	go f.pump(Target{Window: win}, ch, emit)
+	return nil
+}
+
 // followRun makes window win follow run's own events ch, of conversation
 // conv, in place of what it followed: RewriteSelection makes its
 // conversation, so nothing could subscribe to it before the run. A
@@ -245,9 +266,11 @@ func witInfo(ctx context.Context, svc *core.Service, d core.Draft) (WitInfo, err
 		return WitInfo{}, err
 	}
 	var seen []int64
-	for _, ct := range c.Citations {
-		if ct.CallID == "" && ct.MessageID != d.SourceMessageID && !slices.Contains(seen, ct.MessageID) {
-			seen = append(seen, ct.MessageID)
+	for _, t := range c.Turns {
+		for _, ct := range t.Cited {
+			if ct.InContext && ct.MessageID != d.SourceMessageID && !slices.Contains(seen, ct.MessageID) {
+				seen = append(seen, ct.MessageID)
+			}
 		}
 	}
 	if len(seen) > 0 {
@@ -271,7 +294,7 @@ func draftConversations(ctx context.Context, svc *core.Service, draftID int64) (
 
 // openConversation is the draft's conversation to show: the newest with a
 // run going on (a ⌘K run outlives its window), else the newest with an edit
-// waiting, else its Assist conversation, else 0.
+// waiting, else its Assist conversation (core AssistConversation), else 0.
 func openConversation(ctx context.Context, svc *core.Service, draftID int64) (int64, error) {
 	cs, err := draftConversations(ctx, svc, draftID)
 	if err != nil {
@@ -291,22 +314,17 @@ func openConversation(ctx context.Context, svc *core.Service, draftID int64) (in
 		if err != nil {
 			return 0, err
 		}
-		if slices.ContainsFunc(as, func(a core.Approval) bool { return isDraftEdit(a.Tool) && a.State == "pending" }) {
+		if slices.ContainsFunc(as, func(a core.Approval) bool { return a.DraftEdit && a.State == "pending" }) {
 			return c.ID, nil
 		}
 	}
-	if i := slices.IndexFunc(cs, func(c core.Conversation) bool { return c.Title == "" }); i >= 0 {
-		return cs[i].ID, nil
-	}
-	return 0, nil
+	return svc.AssistConversation(ctx, draftID, false)
 }
 
-func isDraftEdit(tool string) bool { return tool == "update_draft" || tool == "update_selection" }
-
 // Ask asks Wit about the calling window's draft, with the mail the user
-// quoted (message IDs; core AssistWith), and returns the run's ID; its
+// quoted (message IDs; core AssistWith), and returns the run it started; its
 // events go to the window on WitStream.
-func (p *ComposePage) Ask(ctx context.Context, input string, quoted []int64, model, effort string) (int64, error) {
+func (p *ComposePage) Ask(ctx context.Context, input string, quoted []int64, model, effort string) (RunStart, error) {
 	return p.start(ctx, func(ctx context.Context, svc *core.Service, conv int64) error {
 		return svc.SetConversationModel(ctx, conv, model, effort)
 	}, func(ctx context.Context, svc *core.Service, id int64) (<-chan core.WitEvent, error) {
@@ -381,63 +399,49 @@ func searchMail(ctx context.Context, svc *core.Service, query string) ([]MailHit
 
 // Skill runs skill id on the calling window's draft (core AssistSkill);
 // translate-draft writes in language ("" for the reading language). It
-// returns the run's ID; its events go to the window on WitStream.
-func (p *ComposePage) Skill(ctx context.Context, id, language string) (int64, error) {
+// returns the run it started; its events go to the window on WitStream.
+func (p *ComposePage) Skill(ctx context.Context, id, language string) (RunStart, error) {
 	return p.start(ctx, nil, func(ctx context.Context, svc *core.Service, draftID int64) (<-chan core.WitEvent, error) {
 		return svc.AssistSkill(ctx, draftID, id, core.SkillOptions{TargetLanguage: language})
 	})
 }
 
-// start runs run in the draft's Assist conversation, which the window
-// follows from before the run starts: a first generation is applied at
-// once and the run resumes. Only Stop cancels the run.
-// start runs run in the draft's conversation, after setup (nil: none) on it.
+// start runs run in the draft's Assist conversation (core
+// AssistConversation), after setup (nil: none) on it, which the window
+// follows from before the run starts: a first generation is applied at once
+// and the run resumes. Only Stop cancels the run.
 func (p *ComposePage) start(ctx context.Context, setup func(context.Context, *core.Service, int64) error,
-	run func(context.Context, *core.Service, int64) (<-chan core.WitEvent, error)) (int64, error) {
+	run func(context.Context, *core.Service, int64) (<-chan core.WitEvent, error)) (RunStart, error) {
 	win, svc, s, err := p.open(ctx)
 	if err != nil {
-		return 0, keyed(err)
+		return RunStart{}, keyed(err)
 	}
 	defer s.mu.Unlock()
-	cs, err := draftConversations(ctx, svc, s.draftID)
+	conv, err := svc.AssistConversation(ctx, s.draftID, true)
 	if err != nil {
-		return 0, keyed(err)
-	}
-	var conv int64
-	if i := slices.IndexFunc(cs, func(c core.Conversation) bool { return c.Title == "" }); i >= 0 {
-		conv = cs[i].ID
-	} else {
-		c, err := svc.NewConversation(ctx, "assist", s.draftID)
-		if err != nil {
-			return 0, keyed(err)
-		}
-		conv = c.ID
+		return RunStart{}, keyed(err)
 	}
 	if setup != nil {
 		if err := setup(ctx, svc, conv); err != nil {
-			return 0, keyed(err)
+			return RunStart{}, keyed(err)
 		}
 	}
 	if startHook != nil {
 		startHook()
 	}
 	if _, err := p.c.follow(win, s, svc, conv, p.d.Emit); err != nil {
-		return 0, keyed(err)
+		return RunStart{}, keyed(err)
 	}
 	ch, err := run(context.WithoutCancel(ctx), svc, s.draftID)
 	if err != nil { // ErrRunActive: the active run goes on being followed
-		return 0, keyed(err)
+		return RunStart{}, keyed(err)
 	}
-	c, err := svc.GetConversation(ctx, conv)
-	id := c.ActiveRunID // claimed before Assist returned
-	if err != nil || id == 0 {
-		id = (<-ch).RunID // over already: its events are queued
-	}
+	ev, _ := started(ch)
 	go func() { // the subscription shows the same events
 		for range ch {
 		}
 	}()
-	return id, nil
+	return RunStart{Run: ev.RunID, Conversation: conv, Turn: ev.Turn}, nil
 }
 
 // Stop cancels run, which must be one of the calling window's draft.
@@ -448,28 +452,24 @@ func (p *ComposePage) Stop(ctx context.Context, run int64) error {
 	}
 	draftID := s.draftID
 	s.mu.Unlock() // CancelRun waits for the run to end
-	cs, err := draftConversations(ctx, svc, draftID)
+	conv, err := svc.RunConversation(ctx, run)
+	var cs []core.Conversation
+	if err == nil {
+		cs, err = draftConversations(ctx, svc, draftID)
+	}
 	if err != nil {
 		return keyed(err)
 	}
-	for _, c := range cs {
-		c, err := svc.GetConversation(ctx, c.ID)
-		if err != nil {
-			return keyed(err)
-		}
-		if c.ActiveRunID == run || slices.ContainsFunc(c.Runs, func(r core.RunSpan) bool { return r.ID == run }) {
-			return keyed(svc.CancelRun(context.WithoutCancel(ctx), run))
-		}
+	if !slices.ContainsFunc(cs, func(c core.Conversation) bool { return c.ID == conv }) {
+		return keyed(ErrNoDraft)
 	}
-	return keyed(ErrNoDraft)
+	return keyed(svc.CancelRun(context.WithoutCancel(ctx), run))
 }
 
 // Follow makes the calling window follow its draft's conversation (a run
 // going on, else an edit waiting, else the Assist one) and returns its
-// history as read after subscribing. Events that come during the reads are held back and sent
-// after: a run seen ending meanwhile shows as ended, read again. A run that
-// ends later shows as Running: its end reaches the window after the reply,
-// on the subscription, which goes on.
+// history (core FollowConversation): the events after it go to the window,
+// none of them in it already.
 func (p *ComposePage) Follow(ctx context.Context) (WitHistory, error) {
 	win, svc, s, err := p.open(ctx)
 	if err != nil {
@@ -479,14 +479,19 @@ func (p *ComposePage) Follow(ctx context.Context) (WitHistory, error) {
 	conv, err := openConversation(ctx, svc, s.draftID)
 	if err != nil || conv == 0 {
 		p.c.unfollow(win)
-		return WitHistory{Messages: []WitMessage{}, Approvals: []Approval{}}, keyed(err)
+		return noHistory(), keyed(err)
 	}
-	f, err := p.c.follow(win, s, svc, conv, p.d.Emit)
+	c, ch, stop, err := svc.FollowConversation(ctx, conv)
 	if err != nil {
 		return WitHistory{}, keyed(err)
 	}
-	h, err := f.read(ctx, svc, Target{Window: win}, p.d.Emit)
-	return h, keyed(err)
+	if err := p.c.followWith(win, s, conv, ch, stop, p.d.Emit); err != nil {
+		return WitHistory{}, keyed(err)
+	}
+	if followHook != nil {
+		followHook()
+	}
+	return history(c), nil
 }
 
 // BodyChange is the draft after a Wit action, read again: Body is its
@@ -499,15 +504,16 @@ type BodyChange struct {
 	Body string `json:"body"`
 }
 
-// RunStart is a ⌘K run started, or Conflict: the draft is not at the
-// revision, or its text is not the text the page sent. Revision is the
-// draft's stored revision. For WitPage.Ask, Conversation is the run's
-// conversation (made for a new one).
+// RunStart is a run started: its conversation (made for a new one) and the
+// turn it answers. For a ⌘K run, Conflict: the draft is not at the
+// revision, or its text is not the text the page sent; Revision is the
+// draft's stored revision.
 type RunStart struct {
-	Run          int64 `json:"run"`
-	Conversation int64 `json:"conversation"`
-	Revision     int64 `json:"revision"`
-	Conflict     bool  `json:"conflict"`
+	Run          int64  `json:"run"`
+	Conversation int64  `json:"conversation"`
+	Turn         string `json:"turn"`
+	Revision     int64  `json:"revision"`
+	Conflict     bool   `json:"conflict"`
 }
 
 var (
@@ -550,7 +556,7 @@ func pendingWhere(ctx context.Context, svc *core.Service, draftID int64, is func
 // pendingEdit is pendingApproval for a draft edit only.
 func pendingEdit(ctx context.Context, svc *core.Service, draftID, id int64) (core.Approval, error) {
 	a, err := pendingApproval(ctx, svc, draftID, id)
-	if err == nil && !isDraftEdit(a.Tool) {
+	if err == nil && !a.DraftEdit {
 		err = core.ErrInvalidState
 	}
 	return a, err
@@ -688,26 +694,15 @@ func (p *ComposePage) Rewrite(ctx context.Context, revision int64, text string, 
 	if err != nil {
 		return RunStart{}, keyed(err)
 	}
-	cs, err := draftConversations(ctx, svc, s.draftID)
-	var c core.Conversation
-	if err == nil && len(cs) > 0 { // the newest: the run's, made before it returned
-		c, err = svc.GetConversation(ctx, cs[len(cs)-1].ID)
-	}
-	if err == nil {
-		err = p.c.followRun(win, s, c.ID, ch, p.d.Emit)
-	}
-	if err != nil {
+	ev, _ := started(ch) // it names the conversation RewriteSelection made
+	if err := p.c.followRun(win, s, ev.ConversationID, ch, p.d.Emit); err != nil {
 		go func() {
 			for range ch {
 			}
 		}()
 		return RunStart{}, keyed(err)
 	}
-	run := c.ActiveRunID
-	if run == 0 && len(c.Runs) > 0 { // over already
-		run = c.Runs[len(c.Runs)-1].ID
-	}
-	return RunStart{Run: run, Revision: d.Revision}, nil
+	return RunStart{Run: ev.RunID, Conversation: ev.ConversationID, Turn: ev.Turn, Revision: d.Revision}, nil
 }
 
 // OpenModels opens the model settings (the input's model chip).

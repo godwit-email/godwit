@@ -131,7 +131,8 @@ func TestWitExpandsLinksLiveAndOnReload(t *testing.T) {
 	require.Equal(t, "Here: "+longLink+" done", live.String())
 	c, err := e.s.GetConversation(t.Context(), conv.ID)
 	require.NoError(t, err)
-	require.Equal(t, "Here: "+longLink+" done", c.Messages[len(c.Messages)-1].Text)
+	require.Len(t, c.Turns, 1)
+	require.Equal(t, "Here: "+longLink+" done", c.Turns[0].Text, "the turn shows the link as the user saw it")
 }
 
 func TestDropCutRef(t *testing.T) {

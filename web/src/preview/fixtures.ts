@@ -10,9 +10,10 @@ import type {
   Theme,
   WitEvent,
   WitHistory,
-  WitMessage,
   WitPageState,
   WitResult,
+  WitTurn,
+  WitTurnCall,
 } from "@/mygo";
 import themeJson from "./theme.json";
 
@@ -153,43 +154,34 @@ const approval = (p: Partial<Approval> & Pick<Approval, "id" | "run" | "callId" 
   sessionAllow: false,
   draft: 0,
   args: "",
+  draftEdit: p.tool === "update_draft" || p.tool === "update_selection",
   ...p,
 });
-const msg = (m: Partial<WitMessage> & Pick<WitMessage, "id" | "role" | "runs">): WitMessage => ({
+const turn = (t: Partial<WitTurn> & Pick<WitTurn, "id" | "question" | "runs">): WitTurn => ({
+  command: null,
+  quoted: [],
   text: "",
   reasoning: "",
-  quoted: [],
   calls: [],
-  results: [],
+  approvals: [],
   citations: [],
   elapsed: 0,
-  ...m,
+  canAskAgain: false,
+  ...t,
+});
+const on = (
+  c: WitTurnCall["call"],
+  result: WitResult | null = null,
+  a: Approval | null = null,
+): WitTurnCall => ({
+  call: c,
+  result,
+  approval: a,
 });
 
 const read = call("c1", "read_message", { id: 41 });
 const upd1 = call("c2", "update_draft", { html: html(formal) });
 const upd2 = call("c3", "update_draft", { html: html(formal) });
-/** The first reply, applied to the body. */
-const turn1: WitMessage[] = [
-  msg({
-    id: "m1",
-    role: "user",
-    text: "答应 11 月的时间，但研讨会想推迟一周，正式一点",
-    runs: [1],
-    elapsed: 0,
-  }),
-  msg({
-    id: "m2",
-    role: "assistant",
-    runs: [1],
-    elapsed: 0,
-    reasoning: "",
-    quoted: [],
-    calls: [read, upd1],
-    results: [ok(read)],
-    text: "已写好并放进正文。正文写了附上团队日历，但我没有权限添加附件，发送前请你手动附上。",
-  }),
-];
 const done1 = approval({
   id: 1,
   run: 1,
@@ -198,20 +190,27 @@ const done1 = approval({
   state: "done",
   summary: "更新了正文",
 });
-const history = (p: Partial<WitHistory> & Pick<WitHistory, "messages">): WitHistory => ({
+/** The first reply, applied to the body. */
+const turn1 = turn({
+  id: "1",
+  question: "答应 11 月的时间，但研讨会想推迟一周，正式一点",
+  runs: [1],
+  calls: [on(read, ok(read)), on(upd1, null, done1)],
+  text: "已写好并放进正文。正文写了附上团队日历，但我没有权限添加附件，发送前请你手动附上。",
+});
+const history = (p: Partial<WitHistory> & Pick<WitHistory, "turns">): WitHistory => ({
   conversation: 1,
   model: "",
   effort: "",
   usage: { input: 0, output: 0, context: 0, history: 0, compactable: false },
   running: 0,
-  approvals: [],
   ...p,
 });
 
-export const noWit = (): WitHistory => history({ conversation: 0, messages: [] });
-export const applied = (): WitHistory => history({ messages: turn1, approvals: [done1] });
-/** Run 1 still going: its question is the whole history. */
-export const streaming = (): WitHistory => history({ messages: [turn1[0]], running: 1 });
+export const noWit = (): WitHistory => history({ conversation: 0, turns: [] });
+export const applied = (): WitHistory => history({ turns: [turn1] });
+/** Run 1 still going: its question is not saved yet, the history is empty. */
+export const streaming = (): WitHistory => history({ turns: [], running: 1 });
 /** Events a streaming run emits once the page follows it: its body text is the mockup's, cut short. */
 export const streamEvents: WitEvent[] = [
   { kind: "tool_call", call: read },
@@ -225,6 +224,8 @@ export const streamEvents: WitEvent[] = [
 ].map((e) => ({
   conversation: 1,
   run: 1,
+  turn: "1",
+  ends: false,
   text: "",
   call: null,
   result: null,
@@ -234,7 +235,13 @@ export const streamEvents: WitEvent[] = [
   error: "",
   ...e,
 }));
-export const doneEvent: WitEvent = { ...streamEvents[0], kind: "done", call: null, result: null };
+export const doneEvent: WitEvent = {
+  ...streamEvents[0],
+  kind: "done",
+  ends: true,
+  call: null,
+  result: null,
+};
 
 /** The second question's edit, waiting for a decision. */
 export const pending = (inline: boolean): WitHistory => {
@@ -249,31 +256,20 @@ export const pending = (inline: boolean): WitHistory => {
     args: JSON.stringify({ html: html(inline ? formal : friendly) }),
   });
   return history({
-    messages: [
-      ...turn1,
-      msg({
-        id: "m3",
-        role: "user",
-        text: inline
+    turns: [
+      turn1,
+      turn({
+        id: "5",
+        question: inline
           ? "第二段语气再委婉一点，再提一句我们很期待合作"
           : "整封改成轻松友好一点的语气",
         runs: [2],
-        elapsed: 0,
-      }),
-      msg({
-        id: "m4",
-        role: "assistant",
-        runs: [2],
-        elapsed: 0,
-        reasoning: "",
-        quoted: [],
-        calls: [upd2],
+        calls: [on(upd2, null, a)],
         text: inline
           ? "改了 2 处，正文里用删除线和高亮标出来了。"
           : "整封重写了，改动比较大，所以没有逐词标出。可以点正文上方的「对比原文」。",
       }),
     ],
-    approvals: [done1, a],
   });
 };
 
@@ -328,54 +324,39 @@ const createDraft = call("s9", "create_draft", {
 export const witConversation = (): WitHistory =>
   history({
     usage: { input: 18400, output: 1260, context: 9800, history: 0.36, compactable: true },
-    messages: [
-      msg({
-        id: "q0",
-        role: "user",
-        text: "这个月我订阅了哪些服务，分别花了多少钱？",
+    turns: [
+      turn({
+        id: "1",
+        question: "这个月我订阅了哪些服务，分别花了多少钱？",
         runs: [1],
-        elapsed: 0,
-      }),
-      msg({
-        id: "a2",
-        role: "assistant",
-        runs: [1],
-        elapsed: 0,
+        canAskAgain: true,
         reasoning:
           "用户问的是本月的订阅支出。先搜索本月的账单和收据邮件，再逐封确认金额，排除促销邮件。",
-        calls: [search, ...reads],
-        results: [ok(search, { count: 7 }), ...reads.map((c) => ok(c))],
+        calls: [on(search, ok(search, { count: 7 })), ...reads.map((c) => on(c, ok(c)))],
         citations,
         text: table,
       }),
-      msg({
-        id: "a3",
-        role: "user",
-        text: "帮我回复 Lena，时间可以，但研讨会想推迟一周",
+      turn({
+        id: "12",
+        question: "帮我回复 Lena，时间可以，但研讨会想推迟一周",
         runs: [2],
-        elapsed: 0,
-      }),
-      msg({
-        id: "a4",
-        role: "assistant",
-        runs: [2],
-        elapsed: 0,
-        reasoning: "",
-        quoted: [],
-        calls: [createDraft],
+        calls: [
+          on(
+            createDraft,
+            null,
+            approval({
+              id: 3,
+              run: 2,
+              callId: "s9",
+              tool: "create_draft",
+              summary: "创建草稿",
+              args: createDraft.args,
+              sessionAllow: true,
+              draft: 0,
+            }),
+          ),
+        ],
         text: "我起草了一封回复。创建草稿需要你确认：",
-      }),
-    ],
-    approvals: [
-      approval({
-        id: 3,
-        run: 2,
-        callId: "s9",
-        tool: "create_draft",
-        summary: "创建草稿",
-        args: createDraft.args,
-        sessionAllow: true,
-        draft: 0,
       }),
     ],
   });
@@ -389,7 +370,7 @@ export const mailHits: MailHit[] = [
   },
   { id: 42, subject: "Re: Q4 webinar dates", from: "Lena Fischer <lena@partner.example>", date: 0 },
 ];
-export const witEmpty = (): WitHistory => history({ conversation: 0, messages: [] });
+export const witEmpty = (): WitHistory => history({ conversation: 0, turns: [] });
 
 export const witPage = (mode: "light" | "dark", conversation: number): WitPageState => ({
   conversation,

@@ -371,7 +371,7 @@ func TestIncompleteReplyNotUsed(t *testing.T) {
 		require.Equal(t, "error", evs[len(evs)-1].Kind)
 		c, err := e.s.GetConversation(t.Context(), conv.ID)
 		require.NoError(t, err)
-		assert.Empty(t, c.Messages, "no turn saved")
+		assert.Empty(t, savedMessages(t, e.s, c.ID), "no turn saved")
 	})
 	t.Run("AssistSkill", func(t *testing.T) {
 		e := newAssistEnv(t)

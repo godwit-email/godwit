@@ -3,8 +3,6 @@ package core
 import (
 	"strings"
 	"time"
-
-	"github.com/godwit-email/godwit/core/ai"
 )
 
 // timeSystem tells the model how to read the time note and mail dates.
@@ -20,15 +18,11 @@ const (
 )
 
 // timeNote is now (the user's local time), for the model before a run's
-// prompt, or "" when state (the history the run sends) has a note that still
-// holds: with now's UTC offset, from now's local day and under timeNoteGap
-// old. A note only when the time moved keeps the turns short and leaves the
-// cached history as it is.
-func timeNote(state []byte, now time.Time) (string, error) {
-	cs, err := ai.Contexts(state)
-	if err != nil {
-		return "", err
-	}
+// prompt, or "" when cs (the contexts of the history the run sends) has a note
+// that still holds: with now's UTC offset, from now's local day and under
+// timeNoteGap old. A note only when the time moved keeps the turns short and
+// leaves the cached history as it is.
+func timeNote(cs []string, now time.Time) string {
 	for i := len(cs) - 1; i >= 0; i-- {
 		rest, ok := strings.CutPrefix(cs[i], timeNotePrefix)
 		if !ok || len(rest) < len(timeNoteLayout) {
@@ -42,10 +36,10 @@ func timeNote(state []byte, now time.Time) (string, error) {
 		_, is := now.Zone()
 		last = last.In(now.Location())
 		if was == is && last.Format(time.DateOnly) == now.Format(time.DateOnly) && now.Sub(last) >= 0 && now.Sub(last) < timeNoteGap {
-			return "", nil
+			return ""
 		}
 		break
 	}
 	zone, _ := now.Zone()
-	return timeNotePrefix + now.Format(timeNoteLayout) + " (" + now.Weekday().String() + ", " + zone + "), the user's local time.", nil
+	return timeNotePrefix + now.Format(timeNoteLayout) + " (" + now.Weekday().String() + ", " + zone + "), the user's local time."
 }

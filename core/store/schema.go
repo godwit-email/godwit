@@ -383,4 +383,31 @@ var Migrations = [][]string{{
 	// How long a run worked, in milliseconds: each of its drives adds its
 	// time (core.drive), not the time waiting on the user's decisions.
 	`ALTER TABLE runs ADD COLUMN active_ms INTEGER NOT NULL DEFAULT 0`,
+}, {
+	// A conversation's messages one row each (ADR 0021), by seq: a seq is
+	// never reused, next_seq is the next one. core.backfillHistories moves
+	// conversations.state, the old one-array history, into it; a state it
+	// cannot read stays for the next start to try again.
+	`CREATE TABLE conversation_messages (conversation_id INTEGER NOT NULL REFERENCES conversations(id) ON DELETE CASCADE,
+		seq INTEGER NOT NULL, data BLOB NOT NULL, PRIMARY KEY (conversation_id, seq))`,
+	`ALTER TABLE conversations ADD COLUMN next_seq INTEGER NOT NULL DEFAULT 1`,
+	// A question asked again (core.AskAgain) hides the messages [rewind_from,
+	// rewind_to) while its run is active and drops them once it is done; a
+	// run that ends otherwise drops what it added instead. rewind_summary: the
+	// summary goes with them.
+	`ALTER TABLE runs ADD COLUMN rewind_from INTEGER`,
+	`ALTER TABLE runs ADD COLUMN rewind_to INTEGER`,
+	`ALTER TABLE runs ADD COLUMN rewind_summary INTEGER NOT NULL DEFAULT 0`,
+	// What a citation with no call is: mail the user quoted, or an assist
+	// run's context ('' for a tool call's). An ask run had no context; an
+	// assist run's saved before could be either: 'unknown' counts as both.
+	`ALTER TABLE run_citations ADD COLUMN source TEXT NOT NULL DEFAULT ''`,
+	`UPDATE run_citations SET source = CASE WHEN (SELECT c.kind FROM runs r JOIN conversations c ON c.id = r.conversation_id
+		WHERE r.id = run_citations.run_id) = 'assist' THEN 'unknown' ELSE 'quote' END WHERE call_id = ''`,
+	// A resumed assist run saved its context's citations again.
+	`DELETE FROM run_citations WHERE call_id = '' AND id NOT IN (SELECT MIN(id) FROM run_citations WHERE call_id = '' GROUP BY run_id, message_id)`,
 }}
+
+// HistoryRowsVersion is the schema version that keeps a conversation's
+// messages one row each; Open backs the database up before migrating to it.
+const HistoryRowsVersion = 32

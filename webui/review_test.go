@@ -150,9 +150,10 @@ func TestComposeFinishPartialStale(t *testing.T) {
 	assert.True(t, bc.Conflict)
 	h, err := f.page.Follow(f.ctx(1))
 	require.NoError(t, err)
-	i := slices.IndexFunc(h.Approvals, func(x Approval) bool { return x.ID == a.ID })
+	as := approvalsOf(h)
+	i := slices.IndexFunc(as, func(x Approval) bool { return x.ID == a.ID })
 	require.GreaterOrEqual(t, i, 0)
-	assert.Equal(t, "stale", h.Approvals[i].State)
+	assert.Equal(t, "stale", as[i].State)
 	assert.Equal(t, "<p>Changed elsewhere</p>", f.editable(t, d.ID))
 }
 

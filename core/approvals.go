@@ -57,6 +57,9 @@ type Approval struct {
 	// DraftID is the draft it made (an allowed create_draft), while that
 	// draft exists: 0 once it is sent or deleted.
 	DraftID int64
+	// DraftEdit: it edits the draft of its conversation (update_draft,
+	// update_selection), which the compose window shows in place.
+	DraftEdit bool
 }
 
 // ErrNotGrantable: the approval's tool cannot be allowed for the whole conversation.
@@ -109,6 +112,25 @@ func (s *Service) dropGrants(conv int64) []grantKey {
 	})
 	return out
 }
+
+// setGrantsAside drops conversation conv's grants for runID, a question
+// asked again (asked again, a write waits for the user), till putGrantsBack
+// or forgetGrants settles them.
+func (s *Service) setGrantsAside(conv, runID int64) {
+	s.setAside.Store(runID, s.dropGrants(conv))
+}
+
+// putGrantsBack restores what runID set aside: it replaced nothing.
+func (s *Service) putGrantsBack(runID int64) {
+	if v, ok := s.setAside.LoadAndDelete(runID); ok {
+		for _, g := range v.([]grantKey) {
+			s.sessionGrants.Store(g, true)
+		}
+	}
+}
+
+// forgetGrants drops what runID set aside: it replaced what they were for.
+func (s *Service) forgetGrants(runID int64) { s.setAside.Delete(runID) }
 
 // ResolveApprovalForConversation accepts pending approval id and allows its
 // tool for the rest of its conversation (本次对话都允许): the run's other
@@ -180,10 +202,12 @@ var afterApprovalClaim, beforeResumeClaim func() bool
 
 // More test hooks, nil in production: beforeRunClaim runs in startRun right
 // before it claims the run row, with the call's context, beforeUntrack when a finished run is about to
-// stop being tracked.
+// stop being tracked, beforeFollowRead in FollowConversation once it
+// subscribed and before it reads the conversation.
 var (
-	beforeRunClaim func(ctx context.Context)
-	beforeUntrack  func(runID int64)
+	beforeRunClaim   func(ctx context.Context)
+	beforeUntrack    func(runID int64)
+	beforeFollowRead func()
 )
 
 // approvalRow is an approval with the columns only the Service uses.
@@ -257,7 +281,7 @@ func (s *Service) approvalRows(ctx context.Context, where string, args ...any) (
 		if a.State != "done" {
 			a.Error = a.result
 		}
-		a.SessionAllow = sessionGrantable(a)
+		a.SessionAllow, a.DraftEdit = sessionGrantable(a), isDraftEdit(a.Tool)
 		out = append(out, a)
 	}
 	return out, nil
@@ -552,7 +576,7 @@ func (s *Service) CancelRun(ctx context.Context, runID int64) error {
 // in flight (CancelRun waits for them), or none is left open. One left
 // executing anyway is an external run whose outcome could not be recorded.
 func (s *Service) closeRun(ctx context.Context, runID int64, final, pendingMsg string) (int64, error) {
-	rows, err := s.db.Query(ctx, "SELECT r.conversation_id, r.snapshot, c.state FROM runs r JOIN conversations c ON c.id = r.conversation_id WHERE r.id = ?", runID)
+	rows, err := s.db.Query(ctx, "SELECT conversation_id, snapshot FROM runs WHERE id = ?", runID)
 	if err != nil {
 		return 0, err
 	}
@@ -564,7 +588,6 @@ func (s *Service) closeRun(ctx context.Context, runID int64, final, pendingMsg s
 	if err := json.Unmarshal([]byte(store.Str(rows.Values[0][1])), &snap); err != nil {
 		return convID, err
 	}
-	state, _ := rows.Values[0][2].([]byte)
 	as, err := s.approvalRows(ctx, "a.run_id = ? AND a.seq >= ?", runID, snap.Round)
 	if err != nil {
 		return convID, err
@@ -586,16 +609,29 @@ func (s *Service) closeRun(ctx context.Context, runID int64, final, pendingMsg s
 	if snap.ReadMail {
 		stmts = append(stmts, markConvReadMail(convID))
 	}
-	if !snap.Host { // a host proposal left no call in the conversation
-		closed, err := ai.CloseState(state, results)
+	rw, err := s.runRewind(ctx, runID)
+	if err != nil {
+		return convID, err
+	}
+	switch {
+	case rw != nil: // a question asked again that ends this way replaces nothing
+		stmts = append(stmts, discardRewind(convID, runID, *rw)...)
+	case !snap.Host: // a host proposal left no call in the conversation
+		h, err := s.history(ctx, convID)
 		if err != nil {
 			return convID, err
 		}
-		stmts = append(stmts, saveState(convID, closed),
-			sqlite.Statement{SQL: "UPDATE runs SET hist_to = ? WHERE id = ? AND hist_from IS NOT NULL", Args: []any{countMessages(closed), runID}})
+		closed, ch, err := h.Close(results)
+		if err != nil {
+			return convID, err
+		}
+		stmts = append(stmts, historyStmts(convID, ch)...)
+		stmts = append(stmts, sqlite.Statement{SQL: "UPDATE runs SET hist_to = ? WHERE id = ? AND hist_from IS NOT NULL", Args: []any{closed.Next(), runID}})
 	}
 	stmts = append(stmts, runState(runID, final))
-	_, err = s.db.Transaction(ctx, stmts)
+	if _, err = s.db.Transaction(ctx, stmts); err == nil && rw != nil {
+		s.putGrantsBack(runID) // it replaced nothing
+	}
 	return convID, err
 }
 

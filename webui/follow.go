@@ -1,10 +1,10 @@
 package webui
 
 import (
+	"cmp"
 	"context"
 	"errors"
 	"log"
-	"slices"
 	"sync"
 
 	"github.com/egoist/mygo"
@@ -20,12 +20,16 @@ var WitStream = mygo.NewEvent[WitEvent]("wit")
 
 // WitEvent is one event of a Wit run, as core.WitEvent.
 type WitEvent struct {
-	// Conversation and Run are the conversation and the run it belongs to.
-	Conversation int64 `json:"conversation"`
-	Run          int64 `json:"run"`
-	// Kind is context, text, reasoning, tool_call, tool_result, interrupted,
-	// done or error.
+	// Conversation and Run are the conversation and the run it belongs to;
+	// Turn the turn it answers (WitTurn.ID).
+	Conversation int64  `json:"conversation"`
+	Run          int64  `json:"run"`
+	Turn         string `json:"turn"`
+	// Kind is start (a run's first event), context, text, reasoning,
+	// tool_call, tool_result, interrupted, done or error.
 	Kind string `json:"kind"`
+	// Ends: the run is over for now (done, failed, or waiting on the user).
+	Ends bool `json:"ends"`
 	// Text is a text or reasoning delta.
 	Text string `json:"text"`
 	// Call is a tool_call's call; Result a tool_result's result.
@@ -96,6 +100,8 @@ type Approval struct {
 	SessionAllow bool `json:"sessionAllow"`
 	// Draft is the draft an allowed create_draft made, while it exists (0: none).
 	Draft int64 `json:"draft"`
+	// DraftEdit: it edits the conversation's draft (shown in the compose window).
+	DraftEdit bool `json:"draftEdit"`
 }
 
 // follow is a target's subscription to a conversation. It lasts until the
@@ -108,9 +114,6 @@ type follow struct {
 	stop    func()
 	mu      sync.Mutex // held while emitting, so nothing is emitted once ended
 	stopped bool
-	held    bool           // events wait in buf (Follow reading)
-	buf     []WitEvent     // while held
-	ended   map[int64]bool // runs seen ending while held
 }
 
 func (f *follow) end() {
@@ -120,111 +123,40 @@ func (f *follow) end() {
 	f.stop()
 }
 
-// hold keeps events back until release, noting the runs that end meanwhile.
-func (f *follow) hold() {
-	f.mu.Lock()
-	f.held, f.ended = true, map[int64]bool{}
-	f.mu.Unlock()
-}
-
-// endedWhileHeld reports whether run ended since hold.
-func (f *follow) endedWhileHeld(run int64) bool {
-	f.mu.Lock()
-	defer f.mu.Unlock()
-	return f.ended[run]
-}
-
-// release sends what was held back, then lets events through again.
-func (f *follow) release(t Target, emit func(Target, WitEvent)) {
-	f.mu.Lock()
-	defer f.mu.Unlock()
-	for _, ev := range f.buf {
-		if !f.stopped && emit != nil {
-			emit(t, ev)
-		}
-	}
-	f.buf, f.held, f.ended = nil, false, nil
-}
-
 // pump sends ch's events to t until ch closes.
 func (f *follow) pump(t Target, ch <-chan core.WitEvent, emit func(Target, WitEvent)) {
 	for ev := range ch {
 		we := witEvent(f.conv, ev)
 		f.mu.Lock()
-		switch {
-		case f.stopped:
-		case f.held:
-			f.buf = append(f.buf, we)
-			if ends(ev) {
-				f.ended[ev.RunID] = true
-			}
-		case emit != nil:
+		if !f.stopped && emit != nil {
 			emit(t, we)
 		}
 		f.mu.Unlock()
 	}
 }
 
-// read is f's conversation as read now, events held back meanwhile and
-// sent to t after: a run seen ending meanwhile shows as ended, read again. A
-// run that ends later shows as Running: its end reaches t after the reply,
-// on the subscription, which goes on.
-func (f *follow) read(ctx context.Context, svc *core.Service, t Target, emit func(Target, WitEvent)) (WitHistory, error) {
-	f.hold()
-	defer f.release(t, emit)
-	h, err := history(ctx, svc, f.conv)
-	if followHook != nil {
-		followHook()
-	}
-	if ended := h.Running; err == nil && ended != 0 && f.endedWhileHeld(ended) {
-		h, err = history(ctx, svc, f.conv)
-		if h.Running == ended { // its end is in what is held back; a run started since stays
-			h.Running = 0
-		}
-	}
-	if err != nil {
-		return WitHistory{}, err
-	}
-	return h, nil
-}
-
-// ends reports whether ev ends the run followed: an interrupt whose
-// approvals were all decided at once (a first generation) resumes it.
-func ends(ev core.WitEvent) bool {
-	switch ev.Kind {
-	case "done", "error":
-		return true
-	case "interrupted":
-		return len(ev.Approvals) == 0 || slices.ContainsFunc(ev.Approvals, func(a core.Approval) bool { return a.State == "pending" })
-	}
-	return false
-}
-
-// history is conversation conv as read now.
-func history(ctx context.Context, svc *core.Service, conv int64) (WitHistory, error) {
-	c, err := svc.GetConversation(ctx, conv)
-	var as []core.Approval
-	if err == nil {
-		as, err = svc.ListApprovals(ctx, conv)
-	}
-	if err != nil {
-		return WitHistory{}, err
-	}
-	h := WitHistory{Conversation: conv, Messages: witMessages(c), Approvals: []Approval{}, Model: c.Model, Effort: c.Effort,
+// history is c for the panel.
+func history(c core.Conversation) WitHistory {
+	h := WitHistory{Conversation: c.ID, Turns: witTurns(c), Model: c.Model, Effort: c.Effort,
 		Usage: WitUsage{Input: c.Usage.Input, Output: c.Usage.Output, Context: c.Usage.Last, History: c.HistoryUse, Compactable: c.Compactable}}
-	for _, a := range as {
-		h.Approvals = append(h.Approvals, approvalOf(a))
-	}
-	waits := slices.ContainsFunc(as, func(a core.Approval) bool { return a.RunID == c.ActiveRunID && a.State == "pending" })
-	if c.ActiveRunID != 0 && !waits {
+	if !c.Awaiting {
 		h.Running = c.ActiveRunID
 	}
-	return h, nil
+	return h
+}
+
+// noHistory is the history of no conversation.
+func noHistory() WitHistory { return WitHistory{Turns: []WitTurn{}} }
+
+// started is the run a start event (a run's first, core.WitEvent) names.
+func started(ch <-chan core.WitEvent) (core.WitEvent, bool) {
+	ev, ok := <-ch
+	return ev, ok && ev.Kind == "start"
 }
 
 // witEvent is ev of conversation conv for the page.
 func witEvent(conv int64, ev core.WitEvent) WitEvent {
-	out := WitEvent{Conversation: conv, Run: ev.RunID, Kind: ev.Kind, Text: ev.Text,
+	out := WitEvent{Conversation: cmp.Or(ev.ConversationID, conv), Run: ev.RunID, Turn: ev.Turn, Kind: ev.Kind, Ends: ev.Ends, Text: ev.Text,
 		Interrupts: []WitCall{}, Citations: []Citation{}, Approvals: []Approval{}}
 	if ev.Call != nil {
 		c := callOf(*ev.Call)
@@ -268,7 +200,7 @@ func citationOf(c core.Citation) Citation {
 
 func approvalOf(a core.Approval) Approval {
 	return Approval{ID: a.ID, Run: a.RunID, CallID: a.CallID, Tool: a.Tool, Summary: a.Summary, State: a.State,
-		Error: a.Error, Destinations: nz(a.Destinations), Args: string(a.Args), SessionAllow: a.SessionAllow, Draft: a.DraftID}
+		Error: a.Error, Destinations: nz(a.Destinations), Args: string(a.Args), SessionAllow: a.SessionAllow, Draft: a.DraftID, DraftEdit: a.DraftEdit}
 }
 
 // witErrorKeys are the core errors with a message of their own (app/errors.go).

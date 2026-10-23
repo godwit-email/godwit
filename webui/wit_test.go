@@ -190,7 +190,8 @@ func TestComposeAskStreams(t *testing.T) {
 	f, _, llm := witFixture(t, "<p>Hello</p>")
 	f.c.Attach(2, f.draft(t, "new", 0).ID)
 	llm.Script(coretest.Turn{Text: []string{"Hel", "lo"}})
-	run, err := f.page.Ask(f.ctx(1), "hi", nil, "", "")
+	runStart, err := f.page.Ask(f.ctx(1), "hi", nil, "", "")
+	run := runStart.Run
 	require.NoError(t, err)
 	done := f.waitKind(t, 1, "done")
 	assert.Equal(t, run, done.Run)
@@ -225,7 +226,8 @@ func TestComposeAskRunActive(t *testing.T) {
 func TestComposeStop(t *testing.T) {
 	f, _, llm := witFixture(t, "<p>Hello</p>")
 	llm.Script(coretest.Turn{Text: []string{"thinking"}, Hang: true})
-	run, err := f.page.Ask(f.ctx(1), "hi", nil, "", "")
+	runStart, err := f.page.Ask(f.ctx(1), "hi", nil, "", "")
+	run := runStart.Run
 	require.NoError(t, err)
 	f.waitKind(t, 1, "text")
 	require.NoError(t, f.page.Stop(f.ctx(1), run))
@@ -242,7 +244,8 @@ func TestComposeStopOtherDraftRefused(t *testing.T) {
 	f, _, llm := witFixture(t, "<p>Hello</p>")
 	f.c.Attach(2, f.draft(t, "new", 0).ID)
 	llm.Script(coretest.Turn{Text: []string{"thinking"}, Hang: true})
-	run, err := f.page.Ask(f.ctx(1), "hi", nil, "", "")
+	runStart, err := f.page.Ask(f.ctx(1), "hi", nil, "", "")
+	run := runStart.Run
 	require.NoError(t, err)
 	ev := f.waitKind(t, 1, "text")
 	assert.ErrorIs(t, f.page.Stop(f.ctx(2), run), ErrNoDraft)
@@ -268,52 +271,28 @@ func TestComposeHistoryPendingEdit(t *testing.T) {
 	require.NoError(t, err)
 	assert.NotZero(t, h.Conversation)
 	assert.Zero(t, h.Running, "waiting for a decision is not running")
-	require.Len(t, h.Messages, 2)
-	assert.Equal(t, "user", h.Messages[0].Role)
-	assert.Equal(t, "改一下", h.Messages[0].Text)
-	ans := h.Messages[1]
-	assert.Equal(t, "assistant", ans.Role)
+	require.Len(t, h.Turns, 1)
+	ans := h.Turns[0]
+	assert.Equal(t, "改一下", ans.Question)
 	require.Len(t, ans.Calls, 2)
-	assert.Equal(t, WitCall{ID: "c1", Name: "search_mail", Args: `{"query":"plan"}`}, ans.Calls[0])
-	assert.Equal(t, "c2", ans.Calls[1].ID)
-	require.Len(t, ans.Results, 1)
-	assert.Equal(t, "c1", ans.Results[0].CallID)
-	require.Len(t, h.Approvals, 1)
-	a := h.Approvals[0]
+	assert.Equal(t, WitCall{ID: "c1", Name: "search_mail", Args: `{"query":"plan"}`}, ans.Calls[0].Call)
+	require.NotNil(t, ans.Calls[0].Result)
+	assert.Nil(t, ans.Calls[0].Approval)
+	assert.Equal(t, "c2", ans.Calls[1].Call.ID)
+	assert.Nil(t, ans.Calls[1].Result)
+	require.NotNil(t, ans.Calls[1].Approval, "the approval is on its call")
+	a := *ans.Calls[1].Approval
 	assert.Equal(t, "pending", a.State)
-	assert.Equal(t, "c2", a.CallID)
 	assert.Equal(t, "update_draft", a.Tool)
-}
-
-func TestComposeFollowRaceEnded(t *testing.T) {
-	f, _, llm := witFixture(t, "<p>Hello</p>")
-	llm.Script(coretest.Turn{Text: []string{"thinking"}, Hang: true})
-	run, err := f.page.Ask(f.ctx(1), "hi", nil, "", "")
-	require.NoError(t, err)
-	f.waitKind(t, 1, "text")
-	followHook = func() { // the run ends after Follow read it running
-		llm.Release()
-		require.Eventually(t, func() bool {
-			f.c.mu.Lock()
-			fl := f.c.follows[1]
-			f.c.mu.Unlock()
-			return fl.endedWhileHeld(run)
-		}, 10*time.Second, 5*time.Millisecond)
-		assert.NotContains(t, kinds(f.events(1)), "done", "held back during the reads")
-	}
-	t.Cleanup(func() { followHook = nil })
-	h, err := f.page.Follow(f.ctx(1))
-	require.NoError(t, err)
-	assert.Zero(t, h.Running, "the run ended")
-	require.Len(t, h.Messages, 2)
-	assert.Equal(t, "thinking", h.Messages[1].Text, "read again")
-	assert.Contains(t, kinds(f.events(1)), "done", "sent once Follow returns")
+	assert.True(t, a.DraftEdit)
+	assert.Empty(t, ans.Approvals)
 }
 
 func TestComposeFollowRunningThenEnds(t *testing.T) {
 	f, _, llm := witFixture(t, "<p>Hello</p>")
 	llm.Script(coretest.Turn{Text: []string{"thinking"}, Hang: true})
-	run, err := f.page.Ask(f.ctx(1), "hi", nil, "", "")
+	runStart, err := f.page.Ask(f.ctx(1), "hi", nil, "", "")
+	run := runStart.Run
 	require.NoError(t, err)
 	f.waitKind(t, 1, "text")
 	h, err := f.page.Follow(f.ctx(1))
@@ -321,40 +300,6 @@ func TestComposeFollowRunningThenEnds(t *testing.T) {
 	assert.Equal(t, run, h.Running)
 	llm.Release()
 	assert.Equal(t, run, f.waitKind(t, 1, "done").Run, "the end comes after Follow's reply")
-}
-
-func TestComposeFollowKeepsRunStartedDuringReads(t *testing.T) {
-	f, d, llm := witFixture(t, "<p>Hello</p>")
-	llm.Script(coretest.Turn{Text: []string{"thinking"}, Hang: true}, coretest.Turn{Status: 503}) // the second run retries: still running
-	run, err := f.page.Ask(f.ctx(1), "hi", nil, "", "")
-	require.NoError(t, err)
-	f.waitKind(t, 1, "text")
-	var next int64
-	followHook = func() { // the run ends, and another starts, after Follow read it
-		llm.Release()
-		require.Eventually(t, func() bool {
-			f.c.mu.Lock()
-			fl := f.c.follows[1]
-			f.c.mu.Unlock()
-			return fl.endedWhileHeld(run)
-		}, 10*time.Second, 5*time.Millisecond)
-		ch, err := f.e.Svc.Assist(t.Context(), d.ID, "again")
-		require.NoError(t, err)
-		go func() {
-			for range ch {
-			}
-		}()
-		c, err := f.e.Svc.GetConversation(t.Context(), f.events(1)[0].Conversation)
-		require.NoError(t, err)
-		next = c.ActiveRunID
-		require.NotZero(t, next)
-		require.NotEqual(t, run, next)
-	}
-	t.Cleanup(func() { followHook = nil })
-	h, err := f.page.Follow(f.ctx(1))
-	require.NoError(t, err)
-	assert.Equal(t, next, h.Running, "the new run is not wiped")
-	require.NoError(t, f.page.Stop(f.ctx(1), next))
 }
 
 func TestComposeReleaseDuringAskLeavesNoSubscription(t *testing.T) {
@@ -380,14 +325,16 @@ func TestComposeReleaseDuringAskLeavesNoSubscription(t *testing.T) {
 func TestComposeSameConversationNoDuplicates(t *testing.T) {
 	f, _, llm := witFixture(t, "<p>Hello</p>")
 	llm.Script(coretest.Turn{Text: []string{"one"}, Hang: true}, coretest.Turn{Text: []string{"two"}})
-	r1, err := f.page.Ask(f.ctx(1), "hi", nil, "", "")
+	r1Start, err := f.page.Ask(f.ctx(1), "hi", nil, "", "")
+	r1 := r1Start.Run
 	require.NoError(t, err)
 	f.waitKind(t, 1, "text")
 	_, err = f.page.Ask(f.ctx(1), "again", nil, "", "")
 	require.ErrorIs(t, err, core.ErrRunActive)
 	llm.Release()
 	f.waitKind(t, 1, "done")
-	r2, err := f.page.Ask(f.ctx(1), "and again", nil, "", "") // right after: the first run's subscription stays
+	r2Start, err := f.page.Ask(f.ctx(1), "and again", nil, "", "") // right after: the first run's subscription stays
+	r2 := r2Start.Run
 	require.NoError(t, err)
 	require.Eventually(t, func() bool {
 		return slices.ContainsFunc(f.events(1), func(ev WitEvent) bool { return ev.Kind == "done" && ev.Run == r2 })
@@ -411,12 +358,11 @@ func TestComposeWitJSONLists(t *testing.T) {
 	assert.NotZero(t, h.Conversation)
 	b, err := json.Marshal(h)
 	require.NoError(t, err)
-	assert.Contains(t, string(b), `"messages":[]`)
-	assert.Contains(t, string(b), `"approvals":[]`)
+	assert.Contains(t, string(b), `"turns":[]`)
 	assert.NotContains(t, string(b), "null")
-	b, err = json.Marshal(witMessages(core.Conversation{Messages: []ai.Message{{Role: "user", Text: "q"}, {Role: "model", Text: "a"}}}))
+	b, err = json.Marshal(witTurns(core.Conversation{Turns: []core.Turn{{ID: "1", Question: "q", Text: "a"}}}))
 	require.NoError(t, err)
-	assert.NotContains(t, string(b), "null")
+	assert.NotContains(t, strings.ReplaceAll(string(b), `"command":null`, ""), "null")
 	b, err = json.Marshal(witEvent(1, core.WitEvent{Event: ai.Event{Kind: "done"}}))
 	require.NoError(t, err)
 	assert.NotContains(t, strings.ReplaceAll(strings.ReplaceAll(string(b), `"call":null`, ""), `"result":null`, ""), "null")
@@ -464,36 +410,33 @@ func TestComposeCloseEmptyReplyMidRun(t *testing.T) {
 	assert.False(t, f.gone(t, reply.ID), "a draft with a running Wit run is kept")
 }
 
-func TestComposeWitHistoryGrouping(t *testing.T) {
-	c := core.Conversation{ID: 9,
-		Messages: []ai.Message{
-			{Role: "user", Text: "q"},
-			{Role: "model", Text: "a", Calls: []ai.ToolCall{{ID: "c1", Name: "search_mail", Args: json.RawMessage(`{}`)}}},
-			{Role: "tool", Results: []ai.ToolResult{{CallID: "c1", Name: "search_mail", Output: json.RawMessage(`[1]`)}}},
-			{Role: "model", Text: "b"},
-		},
-		Runs: []core.RunSpan{{ID: 1, From: 0, To: 4, Active: 6400 * time.Millisecond}},
-		Citations: []core.Citation{{N: 1, MessageID: 7, Subject: "s7", RunID: 1}, {N: 2, MessageID: 5, RunID: 1, CallID: "c1"},
-			{N: 1, MessageID: 7, RunID: 1, CallID: "c1", Suspect: true, Quote: "q"}},
-	}
-	got := witMessages(c)
+func TestComposeWitTurns(t *testing.T) {
+	pending := core.Approval{ID: 4, RunID: 1, CallID: "c2", Tool: "update_draft", State: "pending", DraftEdit: true}
+	c := core.Conversation{ID: 9, Turns: []core.Turn{{
+		ID: "1", Question: "q", Quoted: []core.Citation{{MessageID: 7, Subject: "s7"}}, Text: "a\n\nb", Reasoning: "r",
+		Calls: []core.TurnCall{
+			{ToolCall: ai.ToolCall{ID: "c1", Name: "search_mail", Args: json.RawMessage(`{}`)}, Result: &ai.ToolResult{CallID: "c1", Name: "search_mail", Output: json.RawMessage(`[1]`)}},
+			{ToolCall: ai.ToolCall{ID: "c2", Name: "update_draft", Args: json.RawMessage(`{}`)}, Approval: &pending}},
+		Cited: []core.Cited{{Citation: core.Citation{N: 1, MessageID: 7, Subject: "s7", Suspect: true}, CallIDs: []string{"c1"}}},
+		Runs:  []int64{1}, Elapsed: 6400 * time.Millisecond, CanAskAgain: true,
+	}, {ID: "5", Command: &ai.Command{Skill: "translate-draft", Lang: "fr"}, Approvals: []core.Approval{{ID: 6, CallID: "skill", Tool: "update_draft"}}, Runs: []int64{2}}}}
+	got := witTurns(c)
 	require.Len(t, got, 2)
-	assert.Equal(t, WitMessage{ID: "q0", Role: "user", Text: "q", Calls: []WitCall{}, Results: []WitResult{}, Citations: []Citation{}, Runs: []int64{1},
-		Quoted: []MailHit{{ID: 7, Subject: "s7"}}}, got[0], "the question quoted the mail its context cites")
-	a := got[1]
-	assert.Equal(t, "a1", a.ID)
-	assert.Equal(t, "assistant", a.Role)
-	assert.Equal(t, "a\n\nb", a.Text)
-	assert.Equal(t, []int64{1}, a.Runs)
-	assert.Equal(t, int64(6400), a.Elapsed, "the answer's runs' time at work")
-	assert.Zero(t, got[0].Elapsed, "a question has none")
-	assert.Empty(t, a.Quoted)
-	assert.Equal(t, []WitCall{{ID: "c1", Name: "search_mail", Args: "{}"}}, a.Calls)
-	assert.Equal(t, []WitResult{{CallID: "c1", Name: "search_mail", Output: "[1]"}}, a.Results)
-	assert.Equal(t, []Citation{{N: 1, MessageID: 7, Subject: "s7", Suspect: true, Quote: "q", CallIDs: []string{"c1"}},
-		{N: 2, MessageID: 5, CallIDs: []string{"c1"}}}, a.Citations, "message 7: its context first, then c1 showed it too")
+	q := got[0]
+	assert.Equal(t, "1", q.ID)
+	assert.Equal(t, []MailHit{{ID: 7, Subject: "s7"}}, q.Quoted)
+	assert.Equal(t, "a\n\nb", q.Text)
+	assert.Equal(t, int64(6400), q.Elapsed)
+	assert.True(t, q.CanAskAgain)
+	require.Len(t, q.Calls, 2)
+	assert.Equal(t, WitTurnCall{Call: WitCall{ID: "c1", Name: "search_mail", Args: "{}"}, Result: &WitResult{CallID: "c1", Name: "search_mail", Output: "[1]"}}, q.Calls[0])
+	require.NotNil(t, q.Calls[1].Approval)
+	assert.Equal(t, int64(4), q.Calls[1].Approval.ID)
+	assert.True(t, q.Calls[1].Approval.DraftEdit)
+	assert.Equal(t, []Citation{{N: 1, MessageID: 7, Subject: "s7", Suspect: true, CallIDs: []string{"c1"}}}, q.Citations)
+	assert.Equal(t, &WitCommand{Skill: "translate-draft", Lang: "fr"}, got[1].Command)
+	require.Len(t, got[1].Approvals, 1, "a skill's edit is the turn's own")
 }
-
 func TestComposeWitErrorKeys(t *testing.T) {
 	assert.Equal(t, "", errorKey(&ai.Error{Code: ai.CodeCanceled}))
 	assert.Equal(t, "error.ai.rate_limited", errorKey(&ai.Error{Code: ai.CodeRateLimited}))
@@ -539,7 +482,8 @@ func TestComposeDecideToolApprovals(t *testing.T) {
 	f.c.Attach(2, f.draft(t, "new", 0).ID)
 	llm.Script(coretest.Turn{Calls: []coretest.Call{{ID: "p1", Name: "plugin_netty_ping", Args: `{"to":["a@x.com"]}`},
 		{ID: "p2", Name: "plugin_netty_ping", Args: `{}`}}}, coretest.Turn{Text: []string{"pinged"}})
-	run, err := f.page.Ask(f.ctx(1), "ping twice", nil, "", "")
+	runStart, err := f.page.Ask(f.ctx(1), "ping twice", nil, "", "")
+	run := runStart.Run
 	require.NoError(t, err)
 	in := f.waitKind(t, 1, "interrupted")
 	require.Len(t, in.Approvals, 2)
@@ -612,8 +556,9 @@ func TestComposeAskQuotes(t *testing.T) {
 	require.NoError(t, err)
 	f.waitKind(t, 1, "done")
 	evs := f.events(1)
-	require.Equal(t, "context", evs[0].Kind)
-	assert.Equal(t, hits[0].ID, evs[0].Citations[0].MessageID)
+	require.Equal(t, "start", evs[0].Kind)
+	require.Equal(t, "context", evs[1].Kind)
+	assert.Equal(t, hits[0].ID, evs[1].Citations[0].MessageID)
 }
 
 // No model but a translation plugin: the panel shows, for translating alone.

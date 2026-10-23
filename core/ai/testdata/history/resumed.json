@@ -1,0 +1,72 @@
+[
+  {
+    "content": [
+      {
+        "text": "go"
+      }
+    ],
+    "role": "user"
+  },
+  {
+    "content": [
+      {
+        "toolRequest": {
+          "input": {},
+          "name": "read",
+          "ref": "r1"
+        }
+      },
+      {
+        "metadata": {
+          "resolvedInterrupt": true
+        },
+        "toolRequest": {
+          "input": {
+            "n": 1
+          },
+          "name": "write",
+          "ref": "a1"
+        }
+      }
+    ],
+    "role": "model"
+  },
+  {
+    "content": [
+      {
+        "metadata": {
+          "source": "pending"
+        },
+        "toolResponse": {
+          "name": "read",
+          "output": "read-result",
+          "ref": "r1"
+        }
+      },
+      {
+        "metadata": {
+          "interruptResponse": true
+        },
+        "toolResponse": {
+          "name": "write",
+          "output": {
+            "draft": 7
+          },
+          "ref": "a1"
+        }
+      }
+    ],
+    "metadata": {
+      "resumed": true
+    },
+    "role": "tool"
+  },
+  {
+    "content": [
+      {
+        "text": "all done"
+      }
+    ],
+    "role": "model"
+  }
+]

@@ -311,7 +311,7 @@ func (r *runner) redact(s string) string { return Redact(s, append(r.e.allSecret
 
 func (r *runner) run(req Request) Result {
 	fail := func(err error) Result {
-		return Result{State: req.State, Err: &Error{Code: CodeInternal, Msg: r.redact(err.Error())}}
+		return Result{Err: &Error{Code: CodeInternal, Msg: r.redact(err.Error())}}
 	}
 	seen := map[string]bool{}
 	for _, s := range req.Tools {
@@ -323,16 +323,20 @@ func (r *runner) run(req Request) Result {
 		}
 		seen[s.Name] = true
 	}
-	if len(req.Responses) > 0 && req.Prompt != "" {
-		return fail(errors.New("ai: a resumed run takes no prompt"))
-	}
-	history, err := decodeState(req.State)
-	if err != nil {
-		return fail(err)
+	var history []*gai.Message
+	switch h := req.History; {
+	case h != nil && req.Prompt != "":
+		return fail(errors.New("ai: a run of a history asks its question with Sent.Ask"))
+	case h != nil && len(req.Responses) > 0 && h.asked():
+		return fail(errors.New("ai: a resumed run takes no question"))
+	case h != nil:
+		history = h.msgs
+	case len(req.Responses) > 0:
+		return fail(errors.New("ai: a resumed run needs its history"))
 	}
 	in, err := r.e.instance(r.ctx, req.Model)
 	if errors.Is(err, errStale) {
-		return Result{State: req.State, Err: &Error{Code: CodeStale, Msg: "the model service changed; try again"}}
+		return Result{Err: &Error{Code: CodeStale, Msg: "the model service changed; try again"}}
 	}
 	if err != nil {
 		return fail(err)
@@ -368,15 +372,14 @@ func (r *runner) run(req Request) Result {
 	if len(history) > 0 {
 		opts = append(opts, gai.WithMessages(history...))
 	}
-	switch {
-	case req.Context != "" && req.Prompt != "":
-		ctxPart := gai.NewTextPart(req.Context)
-		ctxPart.Metadata = map[string]any{contextKey: true}
-		opts = append(opts, gai.WithPromptParts(ctxPart, gai.NewTextPart(req.Prompt)))
-	case req.Prompt != "":
+	if req.Prompt != "" {
 		opts = append(opts, gai.WithPrompt(req.Prompt))
 	}
-	if len(req.Responses) == 0 && openCalls(history) {
+	prior := history // before the question asked, if any
+	if req.History != nil && req.History.asked() {
+		prior = history[:len(history)-1]
+	}
+	if len(req.Responses) == 0 && openCalls(prior) {
 		return fail(errors.New("ai: the conversation has unanswered tool calls; pass Responses or close the state"))
 	}
 	if len(req.Responses) > 0 {
@@ -398,15 +401,15 @@ func (r *runner) run(req Request) Result {
 		err = context.Cause(ctx) // ended as Generate returned: events may have been dropped
 	}
 	if err != nil {
-		// The state stays as it was: a failed run leaves no half turn behind.
-		return Result{State: req.State, Err: classify(ctx, err)}
+		// The history stays as it was: a failed run leaves no half turn behind.
+		return Result{Err: classify(ctx, err)}
 	}
 	switch resp.FinishReason {
 	case gai.FinishReasonStop, gai.FinishReasonInterrupted,
 		gai.FinishReasonUnknown, "": // a reason Genkit does not map: a normal end, as Genkit treats it
 	default:
 		// Cut off, filtered or failed part-way: nothing of it is kept.
-		return Result{State: req.State, Err: incomplete(resp.FinishReason)}
+		return Result{Err: incomplete(resp.FinishReason)}
 	}
 	var msgs []*gai.Message
 	for _, m := range resp.History() {
@@ -415,11 +418,7 @@ func (r *runner) run(req Request) Result {
 			msgs = append(msgs, m)
 		}
 	}
-	state, err := json.Marshal(msgs)
-	if err != nil {
-		return fail(err)
-	}
-	res := Result{State: state, Messages: display(msgs)}
+	res := Result{out: msgs, Messages: display(msgs)}
 	if resp.FinishReason == gai.FinishReasonInterrupted {
 		for _, p := range resp.Interrupts() {
 			res.Interrupts = append(res.Interrupts, toolCall(p.ToolRequest))
@@ -692,61 +691,6 @@ func resultOutput(res ToolResult) (any, error) {
 	return out, nil
 }
 
-// CloseState answers every open call of state's last message, without asking
-// the model: calls that already ran keep their result, the others take theirs
-// from responses, which must match them one to one by ID and name. A cancelled
-// run uses it so the conversation can go on.
-func CloseState(state []byte, responses []ToolResult) ([]byte, error) {
-	history, err := decodeState(state)
-	if err != nil {
-		return nil, err
-	}
-	calls, byID, err := matchResults(history, responses)
-	if err != nil {
-		return nil, err
-	}
-	toolMsg := &gai.Message{Role: gai.RoleTool}
-	for _, p := range calls {
-		out, ran := p.Metadata["pendingOutput"]
-		if !ran {
-			if out, err = resultOutput(byID[p.ToolRequest.Ref]); err != nil {
-				return nil, err
-			}
-		}
-		for _, k := range []string{"pendingOutput", "pendingMetadata", "pendingContent", "interrupt"} {
-			delete(p.Metadata, k)
-		}
-		toolMsg.Content = append(toolMsg.Content, gai.NewResponseForToolRequest(p, out))
-	}
-	return json.Marshal(append(history, toolMsg))
-}
-
-// Messages decodes state for display.
-func Messages(state []byte) ([]Message, error) {
-	history, err := decodeState(state)
-	if err != nil {
-		return nil, err
-	}
-	return display(history), nil
-}
-
-// Contexts are the Request.Context texts state holds, oldest first.
-func Contexts(state []byte) ([]string, error) {
-	history, err := decodeState(state)
-	if err != nil {
-		return nil, err
-	}
-	var out []string
-	for _, m := range history {
-		for _, p := range m.Content {
-			if p.IsText() && p.Metadata[contextKey] != nil {
-				out = append(out, p.Text)
-			}
-		}
-	}
-	return out, nil
-}
-
 func decodeState(state []byte) ([]*gai.Message, error) {
 	if len(state) == 0 {
 		return nil, nil
@@ -784,15 +728,13 @@ func toolCall(r *gai.ToolRequest) ToolCall {
 	return ToolCall{ID: r.Ref, Name: r.Name, Args: rawJSON(r.Input)}
 }
 
-// contextKey marks a Request.Context part in the state.
-const contextKey = "godwit_context"
-
 func display(msgs []*gai.Message) []Message {
 	out := make([]Message, 0, len(msgs))
 	for _, m := range msgs {
-		d := Message{Role: string(m.Role)}
+		d := Message{Role: string(m.Role), Command: commandOf(m)}
 		for _, p := range m.Content {
 			switch {
+			case d.Command != nil:
 			case p.IsText() && p.Metadata[contextKey] == nil:
 				d.Text += p.Text
 			case p.IsReasoning():

@@ -9,7 +9,7 @@ const page = q.get("page") ?? "compose";
 const state = q.get("state") ?? "";
 const mode = q.get("theme") === "dark" ? "dark" : "light";
 const nothing = async () => {};
-const runStart = { run: 2, conversation: 1, revision: 1, conflict: false };
+const runStart = { run: 2, conversation: 1, turn: "2", revision: 1, conflict: false };
 
 const pages: Record<string, { states: string[]; entry: () => Promise<unknown>; setup(): void }> = {
   compose: {
@@ -93,8 +93,8 @@ const pages: Record<string, { states: string[]; entry: () => Promise<unknown>; s
         "ComposePage.Models": async () => fx.witModels,
         "ComposePage.OpenCited": nothing,
         "ComposePage.CheckCited": nothing,
-        "ComposePage.Ask": async () => 2,
-        "ComposePage.Skill": async () => 2,
+        "ComposePage.Ask": async () => runStart,
+        "ComposePage.Skill": async () => runStart,
         "ComposePage.Rewrite": async () => runStart,
         "ComposePage.Decide": async () => changed(),
         "ComposePage.DecideAll": async () => changed(),

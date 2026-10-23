@@ -1,7 +1,6 @@
 package core
 
 import (
-	"encoding/json"
 	"strings"
 	"testing"
 	"time"
@@ -11,19 +10,12 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// noteState is a history whose one user turn carries context before its question.
-func noteState(t *testing.T, context string) []byte {
-	t.Helper()
-	b, err := json.Marshal([]map[string]any{{"role": "user", "content": []map[string]any{
-		{"text": context, "metadata": map[string]any{"godwit_context": true}}, {"text": "q"}}}})
-	require.NoError(t, err)
-	return b
-}
+func ctxs(c string) []string { return []string{c} }
 
 func TestTimeNote(t *testing.T) {
 	zone := time.FixedZone("CST", 8*3600)
 	now := time.Date(2026, 10, 21, 22, 20, 0, 0, zone)
-	note := func(at time.Time) string { s, err := timeNote(nil, at); require.NoError(t, err); return s }
+	note := func(at time.Time) string { return timeNote(nil, at) }
 
 	first := note(now)
 	assert.True(t, strings.HasPrefix(first, timeNotePrefix), first)
@@ -31,22 +23,20 @@ func TestTimeNote(t *testing.T) {
 
 	cases := []struct {
 		name  string
-		state []byte
+		state []string
 		at    time.Time
 		fresh bool
 	}{
-		{"recent note holds", noteState(t, note(now)), now.Add(10 * time.Minute), false},
-		{"old note", noteState(t, note(now)), now.Add(timeNoteGap), true},
-		{"next day", noteState(t, note(now.Add(90*time.Minute))), now.Add(105 * time.Minute), true},
-		{"after quoted mail", noteState(t, note(now)+"\n\nThe user quoted these emails"), now.Add(time.Minute), false},
-		{"offset changed", noteState(t, note(now)), now.Add(10 * time.Minute).In(time.FixedZone("JST", 9*3600)), true},
-		{"clock set back", noteState(t, note(now)), now.Add(-time.Hour), true},
-		{"quote only", noteState(t, "The user quoted these emails"), now, true},
+		{"recent note holds", ctxs(note(now)), now.Add(10 * time.Minute), false},
+		{"old note", ctxs(note(now)), now.Add(timeNoteGap), true},
+		{"next day", ctxs(note(now.Add(90 * time.Minute))), now.Add(105 * time.Minute), true},
+		{"after quoted mail", ctxs(note(now) + "\n\nThe user quoted these emails"), now.Add(time.Minute), false},
+		{"offset changed", ctxs(note(now)), now.Add(10 * time.Minute).In(time.FixedZone("JST", 9*3600)), true},
+		{"clock set back", ctxs(note(now)), now.Add(-time.Hour), true},
+		{"quote only", ctxs("The user quoted these emails"), now, true},
 	}
 	for _, c := range cases {
-		got, err := timeNote(c.state, c.at)
-		require.NoError(t, err, c.name)
-		assert.Equal(t, c.fresh, got != "", c.name)
+		assert.Equal(t, c.fresh, timeNote(c.state, c.at) != "", c.name)
 	}
 }
 
@@ -67,5 +57,5 @@ func TestAskTimeNote(t *testing.T) {
 
 	c, err := e.s.GetConversation(t.Context(), conv.ID)
 	require.NoError(t, err)
-	assert.Equal(t, "first", c.Messages[0].Text, "the note never shows")
+	assert.Equal(t, "first", c.Turns[0].Question, "the note never shows")
 }

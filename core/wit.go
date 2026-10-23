@@ -8,6 +8,7 @@ import (
 	"maps"
 	netmail "net/mail"
 	"slices"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -49,22 +50,23 @@ func (s *Service) Ask(ctx context.Context, conversationID int64, input string) (
 // and the model gets it before the question, cited like the tools' mail (a
 // "context" event first). An ID that does not exist fails AskWith.
 func (s *Service) AskWith(ctx context.Context, conversationID int64, input string, quoted []int64) (<-chan WitEvent, error) {
-	return s.askAt(ctx, conversationID, input, quoted, -1)
+	return s.askAt(ctx, conversationID, input, quoted, 0)
 }
 
-// AskAgain is AskWith asked in place of the question at Messages[at]: the
-// conversation is rewound to before it (RewindConversation) only once
-// everything else that can refuse the question checked out (launch), so a
-// refused question leaves the conversation as it was.
-func (s *Service) AskAgain(ctx context.Context, conversationID int64, at int, input string, quoted []int64) (<-chan WitEvent, error) {
-	if at < 0 {
-		return nil, fmt.Errorf("no question at %d", at)
+// AskAgain is AskWith asked in place of the question of turn (Turn.ID) and
+// what followed it: they are replaced once the run is done (launch), so a
+// refused question, or a run that fails or is stopped, leaves the
+// conversation as it was.
+func (s *Service) AskAgain(ctx context.Context, conversationID int64, turn string, input string, quoted []int64) (<-chan WitEvent, error) {
+	at, err := strconv.ParseInt(turn, 10, 64)
+	if err != nil || at <= 0 {
+		return nil, fmt.Errorf("no turn %q", turn)
 	}
 	return s.askAt(ctx, conversationID, input, quoted, at)
 }
 
-// askAt is AskWith, rewinding to at first unless it is -1.
-func (s *Service) askAt(ctx context.Context, conversationID int64, input string, quoted []int64, at int) (<-chan WitEvent, error) {
+// askAt is AskWith, in place of the question with seq at unless it is 0.
+func (s *Service) askAt(ctx context.Context, conversationID int64, input string, quoted []int64, at int64) (<-chan WitEvent, error) {
 	if strings.TrimSpace(input) == "" {
 		return nil, errors.New("the question is empty")
 	}
@@ -75,15 +77,12 @@ func (s *Service) askAt(ctx context.Context, conversationID int64, input string,
 	quoted, err = s.quotedIDs(ctx, quoted)
 	var conv Conversation
 	if err == nil {
-		conv, _, err = s.conversation(ctx, conversationID)
+		conv, err = s.conversation(ctx, conversationID)
 	}
 	if err == nil && conv.Kind != "ask" {
 		err = fmt.Errorf("conversation %d is not an ask conversation", conversationID)
 	}
-	title := input
-	if r := []rune(title); len(r) > titleRunes {
-		title = string(r[:titleRunes])
-	}
+	title := titleOf(input)
 	// The title is saved once the run is claimed and before the run takes
 	// over end (with the rewind, if any), so Close waits for both and a
 	// failure fails Ask.
@@ -132,7 +131,7 @@ func (s *Service) quote(ctx context.Context, job *runJob, ids []int64) (string, 
 	if err != nil {
 		return "", err
 	}
-	job.quoted = s.number(ctx, job, "", citations(items))
+	job.quoted = s.number(ctx, job, "", citeQuote, citations(items))
 	b, err := json.Marshal(blocks(items, job.quoted))
 	if err != nil {
 		return "", err
@@ -167,7 +166,7 @@ func (s *Service) witSystem(ctx context.Context, job *runJob, tools []toolDesc) 
 // tool_result event; the citations line up with items.
 func (s *Service) cite(ctx context.Context, items []mailItem) []Citation {
 	job, call := runOf(ctx), ai.CallID(ctx)
-	cs := s.number(ctx, job, call, citations(items))
+	cs := s.number(ctx, job, call, "", citations(items))
 	job.cites.Store(call, cs)
 	return cs
 }

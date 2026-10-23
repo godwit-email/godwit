@@ -1,0 +1,37 @@
+[
+  {
+    "content": [
+      {
+        "text": "go"
+      }
+    ],
+    "role": "user"
+  },
+  {
+    "content": [
+      {
+        "metadata": {
+          "pendingOutput": "read-result"
+        },
+        "toolRequest": {
+          "input": {},
+          "name": "read",
+          "ref": "r1"
+        }
+      },
+      {
+        "metadata": {
+          "interrupt": true
+        },
+        "toolRequest": {
+          "input": {
+            "n": 1
+          },
+          "name": "write",
+          "ref": "a1"
+        }
+      }
+    ],
+    "role": "model"
+  }
+]

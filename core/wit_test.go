@@ -94,17 +94,18 @@ func TestAskSearchesAndCites(t *testing.T) {
 	c, err := e.s.GetConversation(t.Context(), conv.ID)
 	require.NoError(t, err)
 	assert.Equal(t, "When do we meet?", c.Title)
-	require.Len(t, c.Citations, 3, "saved, one per tool call that showed it")
+	require.Len(t, cites(t, e.s, c.ID), 3, "saved, one per tool call that showed it")
 	for i, tool := range []string{"search_mail", "get_thread", "get_message"} {
-		got := c.Citations[i]
+		got := cites(t, e.s, c.ID)[i]
 		assert.Equal(t, witResults(evs, tool)[0].Result.CallID, got.CallID, tool)
 		assert.Equal(t, evs[0].RunID, got.RunID, tool)
 		got.RunID, got.CallID = 0, ""
 		assert.Equal(t, want[0], got, tool)
 	}
 	assert.Zero(t, c.ActiveRunID)
-	require.Len(t, c.Runs, 1)
-	assert.Positive(t, c.Runs[0].Active, "the run's time at work is kept")
+	require.Len(t, spans(t, e.s, c.ID), 1)
+	require.Len(t, c.Turns, 1)
+	assert.Positive(t, c.Turns[0].Elapsed, "the run's time at work is kept")
 
 	// a cited message deleted since stays cited, marked gone
 	ok, err := e.s.MessageExists(t.Context(), e.msg)
@@ -117,9 +118,9 @@ func TestAskSearchesAndCites(t *testing.T) {
 	require.NoError(t, err)
 	c, err = e.s.GetConversation(t.Context(), conv.ID)
 	require.NoError(t, err)
-	require.Len(t, c.Citations, 3)
-	assert.True(t, c.Citations[0].Gone)
-	assert.Empty(t, c.Citations[0].Snippet)
+	require.Len(t, cites(t, e.s, c.ID), 3)
+	assert.True(t, cites(t, e.s, c.ID)[0].Gone)
+	assert.Empty(t, cites(t, e.s, c.ID)[0].Snippet)
 
 	other, err := e.s.NewConversation(t.Context(), "assist", e.draft(t))
 	require.NoError(t, err)
@@ -163,7 +164,7 @@ func TestAskCitationRefs(t *testing.T) {
 	c, err := e.s.GetConversation(t.Context(), conv.ID)
 	require.NoError(t, err)
 	var got []int
-	for _, ct := range c.Citations {
+	for _, ct := range cites(t, e.s, c.ID) {
 		got = append(got, ct.N)
 	}
 	assert.Equal(t, []int{1, 2, 2, 3}, got, "the saved numbering agrees")
@@ -289,8 +290,8 @@ func TestAskInjectionInSubject(t *testing.T) {
 	assert.Equal(t, quote, rs[0].Citations[0].Quote, "the banner's quote: from the match to its line's end")
 	saved, err := e.s.GetConversation(t.Context(), conv.ID)
 	require.NoError(t, err)
-	require.Len(t, saved.Citations, 1)
-	assert.Equal(t, quote, saved.Citations[0].Quote, "kept with the conversation")
+	require.Len(t, cites(t, e.s, saved.ID), 1)
+	assert.Equal(t, quote, cites(t, e.s, saved.ID)[0].Quote, "kept with the conversation")
 	assert.Contains(t, promptOf(t, e.srv.Requests()[1]), `suspect=\"true\"`, "the model sees the flag")
 }
 
@@ -364,7 +365,7 @@ func TestAskHistoryPersisted(t *testing.T) {
 	c, err := e.s.GetConversation(t.Context(), conv.ID)
 	require.NoError(t, err)
 	var got []string
-	for _, m := range c.Messages {
+	for _, m := range savedMessages(t, e.s, c.ID) {
 		got = append(got, m.Role+":"+m.Text)
 	}
 	assert.Equal(t, []string{"user:" + first, "model:A1", "user:second", "model:A2"}, got)
@@ -421,16 +422,18 @@ func TestAskHistoryBudget(t *testing.T) {
 
 	c, err = e.s.GetConversation(t.Context(), conv.ID)
 	require.NoError(t, err)
-	require.NotEmpty(t, c.Messages)
+	require.NotEmpty(t, savedMessages(t, e.s, c.ID))
 	var all strings.Builder
-	for _, m := range c.Messages {
+	for _, m := range savedMessages(t, e.s, c.ID) {
 		all.WriteString(m.Text)
 	}
 	assert.Contains(t, all.String(), "T1-", "the saved conversation keeps every turn")
 	assert.NotContains(t, all.String(), ai.SummaryNote)
 
-	err = e.s.RewindConversation(t.Context(), conv.ID, 0)
+	e.srv.Script(testllm.Turn{Text: []string{"anew"}})
+	ch, err := e.s.AskAgain(t.Context(), conv.ID, c.Turns[0].ID, "q1 again", nil)
 	require.NoError(t, err)
+	drainWit(t, ch)
 	sum, _, err := e.s.convSummary(t.Context(), conv.ID)
 	require.NoError(t, err)
 	assert.Zero(t, sum, "a rewind past the summary drops it")
@@ -472,8 +475,14 @@ func TestAskCancel(t *testing.T) {
 	ctx, cancel := context.WithCancel(t.Context())
 	ch, err := e.s.Ask(ctx, conv.ID, "q1")
 	require.NoError(t, err)
+	start := <-ch
+	require.Equal(t, "start", start.Kind, "a run starts with its IDs")
+	assert.Equal(t, conv.ID, start.ConversationID)
+	assert.NotZero(t, start.RunID)
+	assert.NotEmpty(t, start.Turn)
 	first := <-ch
 	require.Equal(t, "text", first.Kind)
+	assert.Equal(t, start.Turn, first.Turn, "every event names the turn")
 	cancel()
 	evs := drainWit(t, ch)
 	last := evs[len(evs)-1]
@@ -483,16 +492,16 @@ func TestAskCancel(t *testing.T) {
 
 	c, err := e.s.GetConversation(t.Context(), conv.ID)
 	require.NoError(t, err)
-	assert.Empty(t, c.Messages, "no half answer is saved")
+	assert.Empty(t, savedMessages(t, e.s, c.ID), "no half answer is saved")
 
 	evs = e.ask(t, conv.ID, "q2")
 	require.Equal(t, "done", evs[len(evs)-1].Kind)
 	c, err = e.s.GetConversation(t.Context(), conv.ID)
 	require.NoError(t, err)
-	for _, m := range c.Messages {
+	for _, m := range savedMessages(t, e.s, c.ID) {
 		assert.NotContains(t, m.Text, "half an ans")
 	}
-	assert.Len(t, c.Messages, 2)
+	assert.Len(t, savedMessages(t, e.s, c.ID), 2)
 }
 
 func (e skillEnv) waitRunOf(t *testing.T, runID int64, state string) {
@@ -704,7 +713,7 @@ func TestLanguageCluesCited(t *testing.T) {
 	c, err := e.s.GetConversation(t.Context(), conv.ID)
 	require.NoError(t, err)
 	saved := map[int64]bool{}
-	for _, ct := range c.Citations {
+	for _, ct := range cites(t, e.s, c.ID) {
 		assert.Equal(t, rs[0].Result.CallID, ct.CallID)
 		assert.Equal(t, rs[0].RunID, ct.RunID)
 		saved[ct.MessageID] = ct.Suspect
@@ -739,9 +748,9 @@ func TestConversationActiveRunAndCitations(t *testing.T) {
 	c, err := e.s.GetConversation(t.Context(), conv.ID)
 	require.NoError(t, err)
 	assert.Equal(t, runID, c.ActiveRunID, "the run in flight")
-	require.Len(t, c.Citations, 2, "saved as the events came, before the run ends")
+	require.Len(t, cites(t, e.s, c.ID), 2, "saved as the events came, before the run ends")
 	byID := map[int64]Citation{}
-	for _, ct := range c.Citations {
+	for _, ct := range cites(t, e.s, c.ID) {
 		byID[ct.MessageID] = ct
 		assert.Equal(t, runID, ct.RunID)
 		assert.NotEmpty(t, ct.CallID)
@@ -756,7 +765,7 @@ func TestConversationActiveRunAndCitations(t *testing.T) {
 	c, err = e.s.GetConversation(t.Context(), conv.ID)
 	require.NoError(t, err)
 	assert.Zero(t, c.ActiveRunID)
-	assert.Len(t, c.Citations, 2, "a cancelled run's citations stay")
+	assert.Len(t, cites(t, e.s, c.ID), 2, "a cancelled run's citations stay")
 
 	require.NoError(t, e.s.DeleteConversation(t.Context(), conv.ID))
 	assert.Zero(t, e.count(t, "SELECT COUNT(*) FROM run_citations"), "deleted with the conversation")
@@ -774,17 +783,16 @@ func TestConversationRunSpans(t *testing.T) {
 	r2 := e.ask(t, conv.ID, "q2")
 	c, err := e.s.GetConversation(t.Context(), conv.ID)
 	require.NoError(t, err)
-	require.Len(t, c.Messages, 6, "q1 a1 | q2 call result a2")
-	// each run's time at work is kept; the spans are compared without it
+	require.Len(t, savedMessages(t, e.s, c.ID), 6, "q1 a1 | q2 call result a2")
+	// each run's time at work is kept, as its turn's
 	worked := func(i int) time.Duration {
-		r := c.Runs[i]
-		assert.Positive(t, r.Active, "run %d's time at work", i)
-		c.Runs[i].Active = 0
-		return r.Active
+		d := c.Turns[i].Elapsed
+		assert.Positive(t, d, "run %d's time at work", i)
+		return d
 	}
 	worked(0)
 	worked(1)
-	assert.Equal(t, []RunSpan{{ID: r1[0].RunID, From: 0, To: 2}, {ID: r2[0].RunID, From: 2, To: 6}}, c.Runs)
+	assert.Equal(t, []span{{ID: r1[0].RunID, From: 1, To: 3}, {ID: r2[0].RunID, From: 3, To: 7}}, spans(t, e.s, c.ID))
 
 	// Interrupted, then resumed: one run, one span.
 	e.srv.Script(testllm.Turn{Calls: []testllm.Call{{Name: "create_draft", Args: `{"to":["x@y.example"],"subject":"S","html":"<p>b</p>"}`}}},
@@ -794,7 +802,7 @@ func TestConversationRunSpans(t *testing.T) {
 	c, err = e.s.GetConversation(t.Context(), conv.ID)
 	require.NoError(t, err)
 	before := worked(2)
-	assert.Equal(t, RunSpan{ID: r3[0].RunID, From: 6, To: 8}, c.Runs[2], "the question and the call")
+	assert.Equal(t, span{r3[0].RunID, 7, 9}, spans(t, e.s, c.ID)[2], "the question and the call")
 	sub, stop := e.s.SubscribeConversation(conv.ID)
 	defer stop()
 	require.NoError(t, e.s.ResolveApproval(t.Context(), r3[len(r3)-1].Approvals[0].ID, true))
@@ -805,10 +813,10 @@ func TestConversationRunSpans(t *testing.T) {
 	}
 	c, err = e.s.GetConversation(t.Context(), conv.ID)
 	require.NoError(t, err)
-	require.Len(t, c.Runs, 3)
+	require.Len(t, spans(t, e.s, c.ID), 3)
 	assert.Greater(t, worked(2), before, "the resume adds its time")
-	assert.Equal(t, RunSpan{ID: r3[0].RunID, From: 6, To: len(c.Messages)}, c.Runs[2], "the resume extends it")
-	assert.Equal(t, "a3", c.Messages[len(c.Messages)-1].Text)
+	assert.Equal(t, span{r3[0].RunID, 7, savedMessages(t, e.s, c.ID)[len(savedMessages(t, e.s, c.ID))-1].Seq + 1}, spans(t, e.s, c.ID)[2], "the resume extends it")
+	assert.Equal(t, "a3", savedMessages(t, e.s, c.ID)[len(savedMessages(t, e.s, c.ID))-1].Text)
 }
 
 // TestAskWithQuoted: quoted mail goes to the model in the user's turn, read
@@ -825,8 +833,8 @@ func TestAskWithQuoted(t *testing.T) {
 	evs := drainWit(t, ch)
 	require.Equal(t, "done", evs[len(evs)-1].Kind, "%+v", evs[len(evs)-1].Err)
 
-	require.Equal(t, "context", evs[0].Kind, "the quoted mail's citations come first")
-	cs := evs[0].Citations
+	require.Equal(t, "context", evs[1].Kind, "the quoted mail's citations come first, after start")
+	cs := evs[1].Citations
 	require.Len(t, cs, 2, "deduped")
 	assert.Equal(t, []int64{other, e.msg}, []int64{cs[0].MessageID, cs[1].MessageID})
 	assert.Equal(t, []int{1, 2}, []int{cs[0].N, cs[1].N})
@@ -843,8 +851,8 @@ func TestAskWithQuoted(t *testing.T) {
 
 	c, err := e.s.GetConversation(t.Context(), conv.ID)
 	require.NoError(t, err)
-	assert.Equal(t, "Compare these", c.Messages[0].Text, "the question shows without the quoted mail")
-	require.Len(t, c.Citations, 3)
+	assert.Equal(t, "Compare these", savedMessages(t, e.s, c.ID)[0].Text, "the question shows without the quoted mail")
+	require.Len(t, cites(t, e.s, c.ID), 3)
 	assert.Equal(t, 1, e.count(t, "SELECT read_mail FROM conversations WHERE id = ?", conv.ID), "quoting reads mail")
 }
 
@@ -871,8 +879,8 @@ func TestAssistWithQuoted(t *testing.T) {
 	require.NoError(t, err)
 	evs := drainWit(t, ch)
 	require.Equal(t, "done", evs[len(evs)-1].Kind, "%+v", evs[len(evs)-1].Err)
-	require.Equal(t, "context", evs[0].Kind)
-	assert.Equal(t, other, evs[0].Citations[0].MessageID)
+	require.Equal(t, "context", evs[1].Kind)
+	assert.Equal(t, other, evs[1].Citations[0].MessageID)
 	assert.Contains(t, promptOf(t, e.srv.Requests()[0]), "train at nine")
 }
 
@@ -891,13 +899,15 @@ func TestAskAgainQuoteGone(t *testing.T) {
 		require.NoError(t, err)
 	}
 	t.Cleanup(func() { beforeRunClaim = nil })
-	_, err = e.s.AskAgain(t.Context(), conv.ID, 0, "first, edited", []int64{other})
+	first, err := e.s.GetConversation(t.Context(), conv.ID)
+	require.NoError(t, err)
+	_, err = e.s.AskAgain(t.Context(), conv.ID, first.Turns[0].ID, "first, edited", []int64{other})
 	require.Error(t, err)
 	c, err := e.s.GetConversation(t.Context(), conv.ID)
 	require.NoError(t, err)
-	require.Len(t, c.Messages, 2)
-	assert.Equal(t, "first", c.Messages[0].Text)
-	assert.Len(t, c.Runs, 1)
+	require.Len(t, savedMessages(t, e.s, c.ID), 2)
+	assert.Equal(t, "first", savedMessages(t, e.s, c.ID)[0].Text)
+	assert.Len(t, spans(t, e.s, c.ID), 1)
 }
 
 // A question asked in place numbers its quotes as the conversation will
@@ -916,16 +926,18 @@ func TestAskAgainNumbersQuotes(t *testing.T) {
 		require.NoError(t, err)
 		drainWit(t, ch)
 	}
-	ch, err := e.s.AskAgain(t.Context(), conv.ID, 2, "second, edited", []int64{c})
-	require.NoError(t, err)
-	evs := drainWit(t, ch)
-	require.Equal(t, "context", evs[0].Kind)
-	require.Len(t, evs[0].Citations, 1)
-	assert.Equal(t, 2, evs[0].Citations[0].N, "the replaced quote's number is free again")
 	got, err := e.s.GetConversation(t.Context(), conv.ID)
 	require.NoError(t, err)
+	ch, err := e.s.AskAgain(t.Context(), conv.ID, got.Turns[1].ID, "second, edited", []int64{c})
+	require.NoError(t, err)
+	evs := drainWit(t, ch)
+	require.Equal(t, "context", evs[1].Kind)
+	require.Len(t, evs[1].Citations, 1)
+	assert.Equal(t, 2, evs[1].Citations[0].N, "the replaced quote's number is free again")
+	got, err = e.s.GetConversation(t.Context(), conv.ID)
+	require.NoError(t, err)
 	ns := map[int64]int{}
-	for _, ct := range got.Citations {
+	for _, ct := range cites(t, e.s, got.ID) {
 		ns[ct.MessageID] = ct.N
 	}
 	assert.Equal(t, map[int64]int{e.msg: 1, c: 2}, ns)

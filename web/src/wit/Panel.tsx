@@ -76,13 +76,27 @@ import {
   TraceLine,
   TraceTitle,
 } from "@/components/ui/trace";
-import type { Approval, Citation, MailHit, ModelChoice, WitHistory, WitInfo } from "@/mygo";
+import type {
+  Approval,
+  Citation,
+  MailHit,
+  ModelChoice,
+  WitCommand,
+  WitHistory,
+  WitInfo,
+} from "@/mygo";
 import { currentLocale, type T } from "@/shared/i18n";
 import { Citations, type Nums } from "./Citations";
 import { MailCard, senderName } from "./MailCard";
 import { type PickerKeys, QuoteChips, QuotePicker } from "./Quote";
 import { Response } from "./Response";
-import { historyToMessages, type WitMeta, type WitTransport, type WitUIMessage } from "./transport";
+import {
+  historyToMessages,
+  questionId,
+  type WitMeta,
+  type WitTransport,
+  type WitUIMessage,
+} from "./transport";
 
 /** The emails a question quotes at most (core maxQuoted). */
 const MAX_QUOTED = 10;
@@ -172,8 +186,6 @@ export const elapsed = (ms: number | undefined, t: T) => {
 };
 
 const clip = (s: string, n = ARGS) => (s.length > n ? `${s.slice(0, n)}…` : s);
-
-const isDraftEdit = (tool: string) => tool === "update_draft" || tool === "update_selection";
 
 const toolLabel = (tool: string, t: T) =>
   t(`wit.tool.${tool}`) !== `wit.tool.${tool}` ? t(`wit.tool.${tool}`) : tool;
@@ -524,7 +536,7 @@ function Answer({
       (a, i, all) =>
         all.findIndex((x) => x.id === a.id) === i &&
         ["done", "failed", "rejected", "stale"].includes(a.state) &&
-        !isDraftEdit(a.tool),
+        !a.draftEdit,
     );
   // [n] in the answer shows citation n's mail in a popover, [[n]] as a card in the text: either
   // opens it (when the host opens cited mail) or quotes it in the input.
@@ -703,7 +715,7 @@ function Answer({
           </div>
         </div>
       ))}
-      {tools(requested.filter((a) => !isDraftEdit(a.tool)))}
+      {tools(requested.filter((a) => !a.draftEdit))}
       {settled.map((a) => (
         <Settled key={a.id} a={a} onDraft={onDraft} t={t} />
       ))}
@@ -810,10 +822,20 @@ export function Panel({
   /** Decides a with 本次对话都允许 (the Wit page only); true once decided. */
   onSession?(a: Approval): Promise<boolean>;
 }) {
+  // A command's question: the skill as its menu names it (翻译成…, or the adjustment).
+  const commandLabel = (c: WitCommand) => {
+    if (c.skill === "translate-draft") {
+      const l = translateMenu(info?.languages ?? [], currentLocale()).find((x) => x.tag === c.lang);
+      return t("wit.compose.translate_to", l?.label ?? c.lang);
+    }
+    return info?.skills.find((x) => x.id === c.skill)?.label ?? t("wit.compose.adjust");
+  };
+  const labelRef = useRef(commandLabel);
+  labelRef.current = commandLabel;
   // The answer a live run goes on with (its own, the last) is taken out: the resumed stream
   // rebuilds it, then appends.
   const [start] = useState(() => {
-    const messages = historyToMessages(history);
+    const messages = historyToMessages(history, commandLabel);
     const open =
       history.running && transport.owns(messages.at(-1), history.running)
         ? messages.pop()
@@ -835,8 +857,8 @@ export function Panel({
   // cited messages found deleted since this conversation was read
   const [gone, setGone] = useState<number[]>([]);
   const [choices, setChoices] = useState<ModelChoice[]>();
-  // The question being edited: sending asks it in place of the one at index at.
-  const [editing, setEditing] = useState<{ at: number }>();
+  // The question being edited: sending asks it in place of the one of turn at.
+  const [editing, setEditing] = useState<{ at: string }>();
   // what the input holds now, for a submit whose checks answer later
   const latest = useRef({ draft, quoted, editing });
   latest.current = { draft, quoted, editing };
@@ -880,10 +902,7 @@ export function Panel({
       (h) => {
         if (!live || !h) return;
         setUsage(h.usage); // a run that saved nothing may still have taken tokens
-        if (
-          !h.messages.some((m) => m.runs.includes(run)) &&
-          !h.approvals.some((a) => a.run === run)
-        ) {
+        if (!h.turns.some((x) => x.runs.includes(run))) {
           // A question asked in place, stopped or failed: it replaced nothing. The conversation
           // shows as it is, the question back in the input, a failure as a toast (no 重试: what it
           // would retry is no longer shown).
@@ -894,11 +913,11 @@ export function Panel({
             toast.error(witError(c.error.message, t));
             c.clearError();
           }
-          setMessages(historyToMessages(h));
+          setMessages(historyToMessages(h, labelRef.current));
           putBackRef.current(q);
           return;
         }
-        setMessages(historyToMessages(h));
+        setMessages(historyToMessages(h, labelRef.current));
       },
       () => {}, // the stream stays as it is
     );
@@ -951,19 +970,14 @@ export function Panel({
     setMessages([...chat.messages.slice(0, -1), ...shelved.current]);
     chat.clearError();
   }, [refused]);
-  // A question's index in the saved history ("q<i>"); none for one not read back yet, or while a
-  // call waits on the user (core rewinds no active run).
-  const at = (m: WitUIMessage) => {
-    const k = /^q(\d+)$/.exec(m.id);
-    const waits = chat.messages.some((x) =>
-      x.parts.some((p) => p.type === "data-approvals" && p.data.some((a) => a.state === "pending")),
-    );
-    return transport.rewinds && k && !waits ? Number(k[1]) : undefined;
-  };
-  // Asks again in place of the question at index i: what came from it on goes, here and in the host.
-  const again = (i: number, text: string, hits: MailHit[]) => {
+  // A question's turn, when the host takes it again now (core's say, as last read); none for one not
+  // read back yet.
+  const at = (m: WitUIMessage) =>
+    transport.rewinds && m.metadata?.canAskAgain ? m.metadata.turn : undefined;
+  // Asks again in place of the question of turn i: what came from it on goes, here and in the host.
+  const again = (i: string, text: string, hits: MailHit[]) => {
     if (locked || running) return;
-    const k = chat.messages.findIndex((m) => m.id === `q${i}`);
+    const k = chat.messages.findIndex((m) => m.id === questionId(i));
     shelved.current = k < 0 ? [] : chat.messages.slice(k);
     if (k >= 0) chat.setMessages(chat.messages.slice(0, k));
     ask(text, { quoted: hits.map((h) => h.id), hits, rewind: i });
@@ -1022,7 +1036,7 @@ export function Panel({
     setTimeout(() => textarea.current?.focus());
   };
   // The edited question's index in the messages (-1: none).
-  const editingAt = editing ? chat.messages.findIndex((m) => m.id === `q${editing.at}`) : -1;
+  const editingAt = editing ? chat.messages.findIndex((m) => m.id === questionId(editing.at)) : -1;
   const cancelEdit = () => {
     setEditing(undefined);
     setDraft("");
@@ -1219,7 +1233,7 @@ export function Panel({
     last.parts.some(
       (p) =>
         p.type === "dynamic-tool" &&
-        isDraftEdit(p.toolName) &&
+        (p.toolName === "update_draft" || p.toolName === "update_selection") && // a streamed call: no approval says it yet
         (p.state === "input-streaming" || p.state === "input-available"),
     );
   const working = page ? (

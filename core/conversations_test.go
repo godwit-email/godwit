@@ -1,6 +1,9 @@
 package core
 
 import (
+	"encoding/json"
+	"strconv"
+	"strings"
 	"testing"
 
 	"github.com/godwit-email/godwit/core/internal/testllm"
@@ -88,38 +91,23 @@ func TestSetConversationModel(t *testing.T) {
 	assert.Equal(t, [2]string{ms.Slug + "/m2", "high"}, [2]string{c.Model, c.Effort})
 }
 
-// Rewinding to a question drops it, what came after and its runs; only a
-// question can be rewound to, and not while a run is active.
-func TestRewindConversation(t *testing.T) {
+// Only a question can be asked again, and not while a run is active.
+func TestAskAgainRefuses(t *testing.T) {
 	e := newApprovalEnv(t)
 	conv := e.newConv(t, "ask", 0)
-	e.srv.Script(testllm.Turn{Text: []string{"One."}}, testllm.Turn{Text: []string{"Two."}})
+	e.srv.Script(testllm.Turn{Text: []string{"One."}})
 	e.start(t, conv, "first")
-	e.start(t, conv, "second")
 	c, err := e.s.GetConversation(t.Context(), conv.ID)
 	require.NoError(t, err)
-	require.Len(t, c.Messages, 4)
-	require.Len(t, c.Runs, 2)
-
-	require.Error(t, e.s.RewindConversation(t.Context(), conv.ID, 1), "an answer is no question")
-	require.Error(t, e.s.RewindConversation(t.Context(), conv.ID, 4))
-	e.s.sessionGrants.Store(grantKey{conv: conv.ID, tool: "fake_draft"}, true)
-	require.NoError(t, e.s.RewindConversation(t.Context(), conv.ID, 2))
-	_, granted := e.s.sessionGrants.Load(grantKey{conv: conv.ID, tool: "fake_draft"})
-	assert.False(t, granted, "asked again, a write waits for the user")
-	c, err = e.s.GetConversation(t.Context(), conv.ID)
-	require.NoError(t, err)
-	require.Len(t, c.Messages, 2)
-	assert.Equal(t, "first", c.Messages[0].Text)
-	require.Len(t, c.Runs, 1)
-
-	_, err = e.s.db.Execute(t.Context(), "UPDATE conversations SET title = 'first' WHERE id = ?", conv.ID)
-	require.NoError(t, err)
-	require.NoError(t, e.s.RewindConversation(t.Context(), conv.ID, 0))
-	assert.Equal(t, "", queryStr(t, e.s, "SELECT title FROM conversations WHERE id = ?", conv.ID), "the first question's goes")
+	require.Len(t, savedMessages(t, e.s, c.ID), 2)
+	_, err = e.s.AskAgain(t.Context(), conv.ID, strconv.FormatInt(savedMessages(t, e.s, c.ID)[1].Seq, 10), "x", nil)
+	require.Error(t, err, "an answer is no question")
+	_, err = e.s.AskAgain(t.Context(), conv.ID, "99", "x", nil)
+	require.Error(t, err)
 
 	e.interrupt(t, conv, testllm.Call{Name: "fake_draft", Args: `{"subject":"Hi"}`})
-	assert.ErrorIs(t, e.s.RewindConversation(t.Context(), conv.ID, 0), ErrRunActive)
+	_, err = e.s.AskAgain(t.Context(), conv.ID, c.Turns[0].ID, "x", nil)
+	assert.ErrorIs(t, err, ErrRunActive)
 }
 
 // A run cut off still counts the tokens its model call took.
@@ -145,19 +133,22 @@ func TestAskAgain(t *testing.T) {
 		c, err := e.s.GetConversation(t.Context(), conv.ID)
 		require.NoError(t, err)
 		var out []string
-		for _, m := range c.Messages {
+		for _, m := range savedMessages(t, e.s, c.ID) {
 			out = append(out, m.Text)
 		}
 		return out
 	}
 	before := messages()
+	c, err := e.s.GetConversation(t.Context(), conv.ID)
+	require.NoError(t, err)
+	first, second := c.Turns[0].ID, c.Turns[1].ID
 
-	_, err := e.s.AskAgain(t.Context(), conv.ID, 2, "second, edited", []int64{999999})
+	_, err = e.s.AskAgain(t.Context(), conv.ID, second, "second, edited", []int64{999999})
 	require.Error(t, err)
 	assert.Equal(t, before, messages(), "a missing quote")
 	_, err = e.s.db.Execute(t.Context(), "UPDATE conversations SET model = 'gone/m9' WHERE id = ?", conv.ID)
 	require.NoError(t, err)
-	_, err = e.s.AskAgain(t.Context(), conv.ID, 2, "second, edited", nil)
+	_, err = e.s.AskAgain(t.Context(), conv.ID, second, "second, edited", nil)
 	require.Error(t, err)
 	assert.Equal(t, before, messages(), "a model that does not resolve")
 
@@ -166,7 +157,7 @@ func TestAskAgain(t *testing.T) {
 	grant := grantKey{conv: conv.ID, tool: "fake_draft"}
 	e.s.sessionGrants.Store(grant, true)
 	e.srv.Script(testllm.Turn{Text: []string{"cut"}, Finish: "length"})
-	ch, err := e.s.AskAgain(t.Context(), conv.ID, 2, "second, edited", nil)
+	ch, err := e.s.AskAgain(t.Context(), conv.ID, second, "second, edited", nil)
 	require.NoError(t, err)
 	evs := drainWit(t, ch)
 	require.Equal(t, "error", evs[len(evs)-1].Kind)
@@ -175,31 +166,140 @@ func TestAskAgain(t *testing.T) {
 	assert.True(t, granted, "nor are the conversation's grants gone")
 
 	e.srv.Script(testllm.Turn{Text: []string{"Edited."}})
-	ch, err = e.s.AskAgain(t.Context(), conv.ID, 2, "second, edited", nil)
+	ch, err = e.s.AskAgain(t.Context(), conv.ID, second, "second, edited", nil)
 	require.NoError(t, err)
 	drainWit(t, ch)
 	assert.Equal(t, []string{"first", "One.", "second, edited", "Edited."}, messages())
 
 	// in place of the first question: the question asked titles it, in the rewind's transaction
 	e.srv.Script(testllm.Turn{Text: []string{"Anew."}})
-	ch, err = e.s.AskAgain(t.Context(), conv.ID, 0, "first, edited", nil)
+	ch, err = e.s.AskAgain(t.Context(), conv.ID, first, "first, edited", nil)
 	require.NoError(t, err)
 	drainWit(t, ch)
 	assert.Equal(t, "first, edited", queryStr(t, e.s, "SELECT title FROM conversations WHERE id = ?", conv.ID))
 }
 
-// A rewind drops runs, not what they took: the conversation's totals keep
-// their tokens.
+// A question asked again drops the runs it replaces, not what they took:
+// the conversation's totals keep their tokens.
 func TestRewindKeepsUsage(t *testing.T) {
 	e := newApprovalEnv(t)
 	conv := e.newConv(t, "ask", 0)
 	e.srv.Script(testllm.Turn{Text: []string{"One."}, Usage: [2]int{10, 2}}, testllm.Turn{Text: []string{"Two."}, Usage: [2]int{30, 4}})
 	e.start(t, conv, "first")
 	e.start(t, conv, "second")
-	require.NoError(t, e.s.RewindConversation(t.Context(), conv.ID, 2))
 	c, err := e.s.GetConversation(t.Context(), conv.ID)
 	require.NoError(t, err)
-	assert.Equal(t, 40, c.Usage.Input)
-	assert.Equal(t, 6, c.Usage.Output)
-	assert.Equal(t, 10, c.Usage.Last, "the history the model was last shown is the kept run's")
+	e.srv.Script(testllm.Turn{Text: []string{"Again."}, Usage: [2]int{5, 1}})
+	ch, err := e.s.AskAgain(t.Context(), conv.ID, c.Turns[1].ID, "second, again", nil)
+	require.NoError(t, err)
+	drainWit(t, ch)
+	c, err = e.s.GetConversation(t.Context(), conv.ID)
+	require.NoError(t, err)
+	require.Len(t, spans(t, e.s, c.ID), 2, "the replaced run goes")
+	assert.Equal(t, 45, c.Usage.Input)
+	assert.Equal(t, 7, c.Usage.Output)
+	assert.Equal(t, 5, c.Usage.Last, "the history the model was last shown is the new run's")
+}
+
+// A question asked again hides what it replaces while its run waits for
+// approval; stopped, the conversation is as it was, and done, it replaces it.
+func TestAskAgainInterrupted(t *testing.T) {
+	e := newSkillEnv(t)
+	conv := e.askConv(t)
+	e.srv.Script(testllm.Turn{Text: []string{"One."}}, testllm.Turn{Text: []string{"Two."}})
+	e.ask(t, conv.ID, "first")
+	e.ask(t, conv.ID, "second")
+	texts := func() []string {
+		c, err := e.s.GetConversation(t.Context(), conv.ID)
+		require.NoError(t, err)
+		var out []string
+		for _, m := range savedMessages(t, e.s, c.ID) {
+			if m.Text != "" {
+				out = append(out, m.Text)
+			}
+		}
+		return out
+	}
+	c, err := e.s.GetConversation(t.Context(), conv.ID)
+	require.NoError(t, err)
+	second := c.Turns[1].ID
+	before := texts()
+
+	ask := func() WitEvent {
+		e.srv.Script(testllm.Turn{Calls: []testllm.Call{{Name: "create_draft", Args: `{"to":["a@b.c"],"subject":"Re","html":"<p>x</p>"}`}}})
+		ch, err := e.s.AskAgain(t.Context(), conv.ID, second, "second, edited", nil)
+		require.NoError(t, err)
+		evs := drainWit(t, ch)
+		require.Equal(t, "interrupted", evs[len(evs)-1].Kind)
+		assert.Equal(t, []string{"first", "One.", "second, edited"}, texts(), "what it replaces is hidden")
+		return evs[len(evs)-1]
+	}
+	grant := grantKey{conv: conv.ID, tool: "create_draft"}
+	e.s.sessionGrants.Store(grant, true)
+	require.NoError(t, e.s.CancelRun(t.Context(), ask().RunID))
+	assert.Equal(t, before, texts(), "stopped: nothing is replaced")
+	_, granted := e.s.sessionGrants.Load(grant)
+	assert.True(t, granted, "nor are the grants it set aside gone")
+	e.s.sessionGrants.Delete(grant)
+
+	ev := ask()
+	e.srv.Script(testllm.Turn{Text: []string{"Edited."}})
+	sub, stop := e.s.SubscribeConversation(conv.ID)
+	defer stop()
+	require.NoError(t, e.s.ResolveApproval(t.Context(), ev.Approvals[0].ID, true))
+	for ev := range sub {
+		if ev.Kind == "done" {
+			break
+		}
+	}
+	assert.Equal(t, []string{"first", "One.", "second, edited", "Edited."}, texts())
+}
+
+// A conversation saved as one array moves into message rows: spans and the
+// summary's reach become seqs, and a skill run's command goes where it ran.
+// One that cannot be read stays, failing to load until a later start reads it.
+func TestBackfillHistories(t *testing.T) {
+	e := newSkillEnv(t)
+	d := e.newDraft(t, "Hi", "<p>x</p>")
+	conv, err := e.s.newAssistConversation(t.Context(), d.ID, "")
+	require.NoError(t, err)
+	msg := func(role, text string) string { return `{"role":"` + role + `","content":[{"text":"` + text + `"}]}` }
+	state := "[" + strings.Join([]string{msg("user", "q1"), msg("model", "a1"), msg("user", "q2"), msg("model", "a2")}, ",") + "]"
+	snap := func(host bool) string { b, _ := json.Marshal(snapshot{Host: host}); return string(b) }
+	for _, q := range []struct {
+		sql  string
+		args []any
+	}{
+		{"UPDATE conversations SET state = ?, summary = 's', summary_upto = 1 WHERE id = ?", []any{[]byte(state), conv.ID}},
+		{"INSERT INTO runs(id, conversation_id, state, model, tools, snapshot, hist_from, hist_to) VALUES (101, ?, 'done', '', '[]', ?, 0, 2)", []any{conv.ID, snap(false)}},
+		{"INSERT INTO runs(id, conversation_id, state, model, tools, snapshot, hist_from, hist_to) VALUES (102, ?, 'done', '', '[]', ?, 0, 2)", []any{conv.ID, snap(true)}},
+		{"INSERT INTO runs(id, conversation_id, state, model, tools, snapshot, hist_from, hist_to) VALUES (103, ?, 'done', '', '[]', ?, 2, 4)", []any{conv.ID, snap(false)}},
+		{"INSERT INTO approvals(run_id, seq, call_id, tool, args, summary, state) VALUES (102, 0, 'skill', 'update_draft', '{}', ?, 'done')", []any{kindTranslate}},
+		{"INSERT INTO conversations(id, kind, title, model, state) VALUES (900, 'ask', '', '', ?)", []any{[]byte("not json")}},
+	} {
+		_, err := e.s.db.Execute(t.Context(), q.sql, q.args...)
+		require.NoError(t, err, q.sql)
+	}
+	require.NoError(t, e.s.backfillHistories(t.Context()))
+
+	c, err := e.s.GetConversation(t.Context(), conv.ID)
+	require.NoError(t, err)
+	var shown []string
+	for _, m := range savedMessages(t, e.s, c.ID) {
+		if m.Command != nil {
+			shown = append(shown, "/"+m.Command.Skill)
+		} else {
+			shown = append(shown, m.Text)
+		}
+	}
+	assert.Equal(t, []string{"q1", "a1", "/translate-draft", "q2", "a2"}, shown)
+	assert.Equal(t, []span{{ID: 101, From: 1, To: 3}, {ID: 102, From: 3, To: 4}, {ID: 103, From: 4, To: 6}}, spans(t, e.s, c.ID))
+	sum, _, err := e.s.convSummary(t.Context(), conv.ID)
+	require.NoError(t, err)
+	assert.EqualValues(t, 2, sum.Upto, "a1's seq")
+	assert.Equal(t, "6", queryStr(t, e.s, "SELECT next_seq FROM conversations WHERE id = ?", conv.ID))
+
+	_, err = e.s.GetConversation(t.Context(), 900)
+	assert.ErrorIs(t, err, errUnreadableHistory)
+	assert.Equal(t, "not json", queryStr(t, e.s, "SELECT state FROM conversations WHERE id = 900"), "kept for the next start")
 }
