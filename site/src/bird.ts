@@ -1,6 +1,7 @@
 // The hero's bird: the logo's godwit folded from paper (public/godwit.glb: made
 // with Tripo from origami views of the 3D model and the logo, generated as separate
-// body and wing parts), drawn live with three.js on a canvas over the whole window.
+// body and wing parts; its sources and build are in godwit-email/brand), drawn live
+// with three.js on a canvas over the whole window.
 // It flies in from the bottom left, close to the reader and away into the page, settles beside
 // the headline, circling there in a rhythm of beats and glides, always facing the
 // way it flies, and as the page scrolls it dives down to the app window. Each wing is a
@@ -44,7 +45,7 @@ const intro = 2; // the flight in: four quick beats, ending wings up where the g
 const pitch = 0.1; // nose up a little, as in the logo
 const bottom = (45 * Math.PI) / 180; // the downstroke: 45° below the logo's raised wings
 const fov = 24;
-// Each wing's hinge, from Blender: a point on the line where its root meets the back, and the
+// Each wing's hinge, as godwit-email/brand's origami/build.sh prints it: a point on the line where its root meets the back, and the
 // direction of that line, signed so a positive turn lowers the wing. Turning about the root's own
 // line keeps the root on the body; a level axis would lift its ends off and show the cut.
 const hinges = {
