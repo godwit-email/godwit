@@ -358,8 +358,8 @@ func TestMigrationSignatures(t *testing.T) {
 }
 
 // Migrating to message rows backs the database up first; the backup goes a
-// schema version later. The context citations a version-31 database has split
-// into quoted mail (ask) and an assist run's context, once each.
+// schema version later. The context citations a version-31 database has
+// become quoted mail (ask) or, once each, unknown (assist: quote or context).
 func TestMigrationHistoryRows(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "godwit.db")
@@ -386,7 +386,7 @@ func TestMigrationHistoryRows(t *testing.T) {
 	require.NoError(t, err)
 	rows, err := db.Query(ctx, "SELECT run_id, call_id, message_id, source FROM run_citations ORDER BY id")
 	require.NoError(t, err)
-	assert.Equal(t, [][]any{{int64(1), "", int64(7), "quote"}, {int64(1), "c1", int64(8), ""}, {int64(2), "", int64(9), "context"}}, rows.Values)
+	assert.Equal(t, [][]any{{int64(1), "", int64(7), "quote"}, {int64(1), "c1", int64(8), ""}, {int64(2), "", int64(9), "unknown"}}, rows.Values)
 	db.Close()
 	backup := fmt.Sprintf("%s.bak-v%d", path, store.HistoryRowsVersion-1)
 	assert.FileExists(t, backup)

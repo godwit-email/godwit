@@ -290,3 +290,15 @@ func TestFollowConversationRunWithinRead(t *testing.T) {
 		}
 	}
 }
+
+// An assist citation saved before sources were kept shows as quoted and as
+// context, as it did then.
+func TestTurnsOfUnknownSource(t *testing.T) {
+	h, _, _, err := ai.LegacyHistory([]byte(`[{"role":"user","content":[{"text":"q"}]}]`), nil)
+	require.NoError(t, err)
+	got := turnsOf(h, []runInfo{{id: 1, from: 1, to: 2}}, nil, []Citation{{N: 1, MessageID: 7, RunID: 1, Source: citeUnknown}}, false,
+		func(m ai.Message) ai.Message { return m })
+	require.Len(t, got[0].Quoted, 1)
+	require.Len(t, got[0].Cited, 1)
+	assert.True(t, got[0].Cited[0].InContext)
+}

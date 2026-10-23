@@ -399,10 +399,11 @@ var Migrations = [][]string{{
 	`ALTER TABLE runs ADD COLUMN rewind_to INTEGER`,
 	`ALTER TABLE runs ADD COLUMN rewind_summary INTEGER NOT NULL DEFAULT 0`,
 	// What a citation with no call is: mail the user quoted, or an assist
-	// run's context ('' for a tool call's).
+	// run's context ('' for a tool call's). An ask run had no context; an
+	// assist run's saved before could be either: 'unknown' counts as both.
 	`ALTER TABLE run_citations ADD COLUMN source TEXT NOT NULL DEFAULT ''`,
 	`UPDATE run_citations SET source = CASE WHEN (SELECT c.kind FROM runs r JOIN conversations c ON c.id = r.conversation_id
-		WHERE r.id = run_citations.run_id) = 'assist' THEN 'context' ELSE 'quote' END WHERE call_id = ''`,
+		WHERE r.id = run_citations.run_id) = 'assist' THEN 'unknown' ELSE 'quote' END WHERE call_id = ''`,
 	// A resumed assist run saved its context's citations again.
 	`DELETE FROM run_citations WHERE call_id = '' AND id NOT IN (SELECT MIN(id) FROM run_citations WHERE call_id = '' GROUP BY run_id, message_id)`,
 }}

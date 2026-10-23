@@ -122,7 +122,7 @@ func turnsOf(h *ai.History, runs []runInfo, as []Approval, cs []Citation, canAsk
 			if !slices.Contains(t.Runs, c.RunID) {
 				continue
 			}
-			if c.CallID == "" && c.Source == citeQuote {
+			if c.CallID == "" && (c.Source == citeQuote || c.Source == citeUnknown) {
 				t.Quoted = append(t.Quoted, c)
 			}
 			i := slices.IndexFunc(t.Cited, func(x Cited) bool { return x.MessageID == c.MessageID })
@@ -133,7 +133,7 @@ func turnsOf(h *ai.History, runs []runInfo, as []Approval, cs []Citation, canAsk
 			if c.CallID != "" && !slices.Contains(t.Cited[i].CallIDs, c.CallID) {
 				t.Cited[i].CallIDs = append(t.Cited[i].CallIDs, c.CallID)
 			}
-			t.Cited[i].InContext = t.Cited[i].InContext || c.CallID == "" && c.Source == citeContext
+			t.Cited[i].InContext = t.Cited[i].InContext || c.CallID == "" && (c.Source == citeContext || c.Source == citeUnknown)
 		}
 		out = append(out, t)
 	}

@@ -83,10 +83,12 @@ type Citation struct {
 	Source        string
 }
 
-// Citation sources with no call.
+// Citation sources with no call. citeUnknown is an assist run's saved before
+// sources were: either, so it counts as both.
 const (
 	citeQuote   = "quote"
 	citeContext = "context"
+	citeUnknown = "unknown"
 )
 
 // ErrRunActive: the conversation has a run that is running, waiting for
@@ -463,11 +465,12 @@ type witStream struct {
 	end     <-chan struct{} // the Service's close; nil for none
 	mu      sync.Mutex
 	q       []WitEvent
-	waiting int           // events in q that do not end a run
-	closing bool          // no more pushes; ch closes once q is delivered
-	held    bool          // q waits for release (FollowConversation)
-	wake    chan struct{} // 1 slot: q, closing or held changed
-	quit    chan struct{} // closed by stop
+	waiting int                  // events in q that do not end a run
+	closing bool                 // no more pushes; ch closes once q is delivered
+	held    bool                 // q waits for release (FollowConversation)
+	skip    func(run int64) bool // runs whose events are not pushed (nil: none)
+	wake    chan struct{}        // 1 slot: q, closing or held changed
+	quit    chan struct{}        // closed by stop
 	stopped sync.Once
 }
 
@@ -499,7 +502,7 @@ func terminal(ev WitEvent) bool {
 
 func (w *witStream) push(ev WitEvent) {
 	w.mu.Lock()
-	if w.closing {
+	if w.closing || w.skip != nil && w.skip(ev.RunID) {
 		w.mu.Unlock()
 		return
 	}
@@ -533,10 +536,11 @@ func (w *witStream) close() {
 // stop drops what is queued and closes ch now.
 func (w *witStream) stop() { w.stopped.Do(func() { close(w.quit) }) }
 
-// release delivers what keep keeps of what was held back, then the rest.
-func (w *witStream) release(keep func([]WitEvent) []WitEvent) {
+// release delivers what keep keeps of what was held back, then the rest but
+// the events of runs skip drops.
+func (w *witStream) release(keep func([]WitEvent) []WitEvent, skip func(run int64) bool) {
 	w.mu.Lock()
-	w.q = keep(w.q)
+	w.q, w.skip = keep(w.q), skip
 	w.waiting = 0
 	for _, ev := range w.q {
 		if !terminal(ev) {
@@ -620,9 +624,10 @@ func (s *Service) subscribe(id int64, held bool) (*witStream, func()) {
 }
 
 // FollowConversation is the conversation as it is now (GetConversation) and
-// its runs' events from then on, none missed and none twice: a run that had
-// ended when it was read sends nothing more, its end being in what was read.
-// stop ends the events, as SubscribeConversation's.
+// its runs' events from then on, none missed and none twice: a run whose
+// saved history is in what was read sends nothing more, and one waiting on
+// the user sends what comes after its interrupt. stop ends the events, as
+// SubscribeConversation's.
 func (s *Service) FollowConversation(ctx context.Context, id int64) (Conversation, <-chan WitEvent, func(), error) {
 	ctx, end, err := s.begin(ctx, 0)
 	if err != nil {
@@ -630,19 +635,35 @@ func (s *Service) FollowConversation(ctx context.Context, id int64) (Conversatio
 	}
 	defer end()
 	w, stop := s.subscribe(id, true)
-	rows, err := s.db.Query(ctx, "SELECT COALESCE(MAX(id), 0) FROM runs WHERE conversation_id = ?", id)
-	if beforeFollowRead != nil {
-		beforeFollowRead()
-	}
+	// A read is kept only if no run of the conversation moved meanwhile:
+	// otherwise what it saved may be half in it.
 	var c Conversation
-	if err == nil {
-		c, err = s.GetConversation(ctx, id)
+	for try := 0; ; try++ {
+		before, err := s.runStates(ctx, id)
+		if err == nil && try == 0 && beforeFollowRead != nil {
+			beforeFollowRead()
+		}
+		if err == nil {
+			c, err = s.GetConversation(ctx, id)
+		}
+		var after string
+		if err == nil {
+			after, err = s.runStates(ctx, id)
+		}
+		if err != nil {
+			stop()
+			return Conversation{}, nil, nil, err
+		}
+		if after == before || try == followTries-1 {
+			break
+		}
 	}
-	if err != nil {
-		stop()
-		return Conversation{}, nil, nil, err
+	read := map[int64]bool{} // runs whose saved history is in c
+	for _, t := range c.Turns {
+		for _, r := range t.Runs {
+			read[r] = true
+		}
 	}
-	known := store.Int(rows.Values[0][0]) // runs started before the read; any not active then had ended
 	w.release(func(q []WitEvent) []WitEvent {
 		// a run waiting on the user was read with its interrupt: what it sent up to that is in c
 		last := -1
@@ -651,22 +672,28 @@ func (s *Service) FollowConversation(ctx context.Context, id int64) (Conversatio
 				last = i
 			}
 		}
-		read := map[int64]bool{} // runs whose saved history is in c
-		for _, t := range c.Turns {
-			for _, r := range t.Runs {
-				read[r] = true
-			}
-		}
 		out := q[:0]
 		for i, ev := range q {
-			// another run is new only if it started after known and saved nothing c holds
-			if ev.RunID == c.ActiveRunID && i > last || ev.RunID != c.ActiveRunID && ev.RunID > known && !read[ev.RunID] {
+			if ev.RunID == c.ActiveRunID && i > last || ev.RunID != c.ActiveRunID && !read[ev.RunID] {
 				out = append(out, ev)
 			}
 		}
 		return out
-	})
+	}, func(run int64) bool { return run != c.ActiveRunID && read[run] })
 	return c, w.ch, stop, nil
+}
+
+// followTries caps FollowConversation's reads while runs keep moving.
+const followTries = 5
+
+// runStates is where conversation id's runs stand, to tell whether one
+// moved between two reads.
+func (s *Service) runStates(ctx context.Context, id int64) (string, error) {
+	rows, err := s.db.Query(ctx, "SELECT id, state, COALESCE(hist_to, 0), updated_at FROM runs WHERE conversation_id = ? ORDER BY id", id)
+	if err != nil {
+		return "", err
+	}
+	return fmt.Sprint(rows.Values), nil
 }
 
 // endStreams ends every stream, subscriptions and startRun channels alike,
