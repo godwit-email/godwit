@@ -999,6 +999,7 @@
   "wit_loading": "Wit đang trả lời…",
   "wit_model": "Cài đặt dịch vụ mô hình",
   "wit_placeholder": "Hỏi điều gì đó, ví dụ: ai vẫn đang chờ tôi trả lời từ tuần trước?",
+  "wit_mail_gone": "Email này không còn nữa.",
   "wit_mail_open": "Xem email",
   "wit_citations_count": "Đã trích dẫn {arg1} email",
   "wit_approval_count": "{arg1} thao tác đang chờ bạn xác nhận",

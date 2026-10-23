@@ -1006,6 +1006,7 @@
   "wit_loading": "Wit antwortet…",
   "wit_model": "Modelldienst-Einstellungen",
   "wit_placeholder": "Frage etwas, z. B.: Wer wartet noch auf meine Antwort von letzter Woche?",
+  "wit_mail_gone": "Diese E-Mail ist nicht mehr da.",
   "wit_mail_open": "E-Mail anzeigen",
   "wit_citations_count": "{arg1} E-Mails zitiert",
   "wit_approval_count": "{arg1} Aktionen warten auf dich",

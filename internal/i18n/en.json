@@ -1984,6 +1984,7 @@
   "wit_effort_medium": "Medium",
   "wit_effort_high": "High",
   "wit_placeholder": "Ask something, like: who is still waiting for my reply from last week?",
+  "wit_mail_gone": "This email is no longer here.",
   "wit_mail_open": "View email",
   "wit_citations_count": "Cited {arg1} emails",
   "wit_approval_count": "{arg1} actions await you",

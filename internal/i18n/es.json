@@ -999,6 +999,7 @@
   "wit_loading": "Wit está respondiendo…",
   "wit_model": "Ajustes de servicios de modelos",
   "wit_placeholder": "Pregunta algo, por ejemplo: ¿quién sigue esperando mi respuesta de la semana pasada?",
+  "wit_mail_gone": "Este correo ya no está.",
   "wit_mail_open": "Ver correo",
   "wit_citations_count": "{arg1} correos citados",
   "wit_approval_count": "{arg1} acciones esperan tu confirmación",

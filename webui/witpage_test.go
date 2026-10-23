@@ -258,8 +258,14 @@ func TestWitPageCallbacks(t *testing.T) {
 // Review Focus 5.
 func TestWitPageOpenCited(t *testing.T) {
 	f := newWitPageFixture(t)
-	require.NoError(t, f.p.OpenCited(f.ctx(), 42))
-	assert.Equal(t, []int64{42}, f.messages)
+	m := f.deliverOne(t, coretest.Msg("Bob <bob@x.org>", f.acc.Email, "Hi", "hi"))
+	require.NoError(t, f.p.OpenCited(f.ctx(), m.ID))
+	assert.Equal(t, []int64{m.ID}, f.messages)
+	// one deleted since: nothing opens, and the page hears it is gone
+	err := f.p.OpenCited(f.ctx(), m.ID+999)
+	assert.ErrorIs(t, err, ErrMailGone)
+	assert.EqualError(t, err, "wit.mail.gone")
+	assert.Equal(t, []int64{m.ID}, f.messages)
 }
 
 // Review Focus 2.

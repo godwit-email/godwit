@@ -1012,6 +1012,7 @@
   "wit_effort_medium": "中",
   "wit_effort_high": "高",
   "wit_placeholder": "问点什么，比如：上周谁还在等我回复？",
+  "wit_mail_gone": "这封邮件已经不在了。",
   "wit_mail_open": "查看邮件",
   "wit_citations_count": "引用了 {arg1} 封邮件",
   "wit_approval_count": "{arg1} 个操作等你确认",

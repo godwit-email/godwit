@@ -60,7 +60,7 @@ async function setup(
     review?: PanelReview;
     onRunning?(on: boolean): void;
     onDecide?(a: Approval, accept: boolean, all: boolean): Promise<boolean>;
-    onCite?(id: number): void;
+    onCite?(id: number): Promise<void> | void;
     onDraft?(approval: number): Promise<void>;
     onSearch?(q: string): Promise<MailHit[]>;
     onSession?(a: Approval): Promise<boolean>;
@@ -1609,6 +1609,62 @@ describe("Panel", () => {
     );
     await user.click(within(inline).getByRole("button", { name: "查看邮件" }));
     expect(onCite).toHaveBeenCalledWith(50);
+  });
+
+  it("a cited mail found deleted when opened loses its actions everywhere", async () => {
+    const user = userEvent.setup();
+    const onCite = vi.fn().mockRejectedValue(new Error("wit.mail.gone"));
+    await setup({
+      page: true,
+      onCite,
+      history: {
+        ...empty,
+        messages: [
+          {
+            id: "q0",
+            role: "user",
+            text: "Q",
+            reasoning: "",
+            quoted: [],
+            calls: [],
+            results: [],
+            citations: [],
+            runs: [7],
+          },
+          {
+            id: "a1",
+            role: "assistant",
+            text: "See [1].",
+            reasoning: "",
+            quoted: [],
+            calls: [],
+            results: [],
+            citations: [
+              {
+                n: 1,
+                messageId: 50,
+                subject: "Old mail",
+                from: "Bob",
+                date: 0,
+                suspect: false,
+                quote: "",
+                snippet: "",
+                gone: false,
+                callIds: [],
+              },
+            ],
+            runs: [7],
+          },
+        ],
+      },
+    });
+    await user.click(await screen.findByRole("button", { name: "[1]" }));
+    await user.click(await screen.findByRole("button", { name: "查看邮件" }));
+    expect(onCite).toHaveBeenCalledWith(50);
+    await user.click(await screen.findByRole("button", { name: "[1]" }));
+    expect(await screen.findByText("Old mail")).toBeInTheDocument();
+    await waitFor(() => expect(screen.queryByRole("button", { name: "查看邮件" })).toBeNull());
+    expect(screen.queryByRole("button", { name: "引用邮件" })).toBeNull();
   });
 
   it("a cited mail deleted since shows its card with nothing to open or quote", async () => {

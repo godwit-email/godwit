@@ -475,12 +475,20 @@ func (p *WitPage) decide(ctx context.Context, is func(core.Approval) bool, act f
 
 // OpenCited opens cited message id in the reader.
 func (p *WitPage) OpenCited(ctx context.Context, message int64) error {
-	if _, _, err := p.w.caller(ctx); err != nil {
+	_, svc, err := p.w.caller(ctx)
+	if err != nil {
 		return keyed(err)
+	}
+	// deleted since it was cited (a sync removed it): the page drops its actions
+	if _, err := svc.GetMessage(ctx, message, false); err != nil {
+		return keyed(ErrMailGone)
 	}
 	p.w.d.OpenMessage(message)
 	return nil
 }
+
+// ErrMailGone: a cited message was deleted since (wit.mail.gone).
+var ErrMailGone = errors.New("the cited mail is gone")
 
 // OpenDraft opens the draft an allowed create_draft (approval) made, in a
 // compose window.

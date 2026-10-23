@@ -999,6 +999,7 @@
   "wit_loading": "Wit이 답변하는 중…",
   "wit_model": "모델 서비스 설정",
   "wit_placeholder": "무엇이든 물어보세요. 예: 지난주부터 내 답장을 기다리는 사람이 누구야?",
+  "wit_mail_gone": "이 메일은 더 이상 없습니다.",
   "wit_mail_open": "메일 보기",
   "wit_citations_count": "메일 {arg1}개 인용",
   "wit_approval_count": "확인을 기다리는 작업 {arg1}개",

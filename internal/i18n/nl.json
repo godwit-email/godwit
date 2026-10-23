@@ -999,6 +999,7 @@
   "wit_loading": "Wit antwoordt…",
   "wit_model": "Instellingen modeldiensten",
   "wit_placeholder": "Vraag iets, zoals: wie wacht er nog op mijn antwoord van vorige week?",
+  "wit_mail_gone": "Deze e-mail is er niet meer.",
   "wit_mail_open": "E-mail bekijken",
   "wit_citations_count": "{arg1} e-mails geciteerd",
   "wit_approval_count": "{arg1} acties wachten op je",

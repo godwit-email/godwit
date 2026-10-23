@@ -222,7 +222,12 @@ function Conversation({
       onSession={onSession}
       onSearch={(q) => api.searchMail(q)}
       onLink={(url) => api.openLink(url)}
-      onCite={(id) => void api.openCited(id).catch(fail)}
+      onCite={(id) =>
+        api.openCited(id).catch((e) => {
+          fail(e);
+          throw e;
+        })
+      }
       onDraft={(id) =>
         api.openDraft(id).catch((e) => {
           fail(e);

@@ -490,7 +490,8 @@ function Answer({
   const going = live ? calls.filter((c) => c.state === "input-available") : [];
   const thought = m.parts.filter((p): p is ReasoningUIPart => p.type === "reasoning" && !!p.text);
   const thinking = live && thought.some((p) => p.state === "streaming");
-  const cites = citesOf(m);
+  // a message found gone since (opening it failed) is gone in every answer that cites it
+  const cites = citesOf(m).map((c) => (nums.get(c.messageId)?.c.gone ? { ...c, gone: true } : c));
   const [sources, setSources] = useState(false);
   const text = m.parts
     .flatMap((p) => (p.type === "text" && p.text.trim() ? [p.text] : []))
@@ -763,7 +764,8 @@ export function Panel({
   onRunning?(on: boolean): void;
   onDecide?: Decide;
   onLink(url: string): Promise<void>;
-  onCite?(id: number): void;
+  /** Opens cited message id; a rejection (the message gone since) drops its actions. */
+  onCite?(id: number): Promise<void> | void;
   /** Opens the draft an allowed create_draft made (its approval), where the host can. */
   onDraft?(approval: number): Promise<void>;
   transport: WitTransport;
@@ -807,6 +809,8 @@ export function Panel({
   const draftRef = useRef(draft);
   draftRef.current = draft;
   const [quoted, setQuoted] = useState<MailHit[]>([]);
+  // cited messages found deleted since this conversation was read
+  const [gone, setGone] = useState<number[]>([]);
   const [choices, setChoices] = useState<ModelChoice[]>();
   // The question being edited: sending asks it in place of the one at index at.
   const [editing, setEditing] = useState<{ at: number }>();
@@ -1039,6 +1043,13 @@ export function Panel({
 
   // Citations with core's numbers (the refs the model cites by); a message is suspect once any
   // citation of it is.
+  // Opens a cited message; one deleted since (the host says so) loses its actions here.
+  const openCited =
+    onCite &&
+    ((id: number) =>
+      void Promise.resolve(onCite(id)).catch(() =>
+        setGone((g) => (g.includes(id) ? g : [...g, id])),
+      ));
   const nums: Nums = new Map();
   const approvals = new Map<string, Approval>();
   for (const m of chat.messages) {
@@ -1047,7 +1058,13 @@ export function Panel({
       if (k) {
         k.suspect ||= c.suspect;
         k.quote ||= c.quote;
-      } else nums.set(c.messageId, { n: c.n, suspect: c.suspect, quote: c.quote, c });
+      } else
+        nums.set(c.messageId, {
+          n: c.n,
+          suspect: c.suspect,
+          quote: c.quote,
+          c: gone.includes(c.messageId) ? { ...c, gone: true } : c,
+        });
     }
     for (const p of m.parts)
       if (p.type === "data-approvals") for (const a of p.data) approvals.set(String(a.id), a);
@@ -1217,7 +1234,7 @@ export function Panel({
                     tools={tools}
                     onDraft={onDraft}
                     onLink={link}
-                    onCite={onCite}
+                    onCite={openCited}
                     onQuote={quote}
                     onAgain={(() => {
                       const q = chat.messages[i - 1];
