@@ -610,12 +610,24 @@ describe("Panel", () => {
       page: true,
       history: { ...turn, usage: { input: 1200, output: 80, context: 900, history: 0.42 } },
     });
+    // a ring alone: no percentage beside it; a click shows the details
     const meter = screen.getByRole("button", { name: "上下文" });
-    expect(meter).toHaveTextContent("42%");
-    await user.hover(meter);
+    expect(meter).toHaveTextContent(/^$/);
+    expect(meter.querySelector("svg")).not.toHaveClass("text-amber-500");
+    await user.click(meter);
     expect(await screen.findByText("历史已用 42%")).toBeInTheDocument();
     expect(screen.getByText("上次请求：900 tokens")).toBeInTheDocument();
     expect(screen.getByText("本对话共：输入 1,200 · 输出 80 tokens")).toBeInTheDocument();
+  });
+
+  it("the ring turns to the attention colour from 80%", async () => {
+    await setup({
+      page: true,
+      history: { ...turn, usage: { input: 1200, output: 80, context: 900, history: 0.8 } },
+    });
+    expect(screen.getByRole("button", { name: "上下文" }).querySelector("svg")).toHaveClass(
+      "text-amber-500",
+    );
   });
 
   it("no meter before the conversation took anything", async () => {

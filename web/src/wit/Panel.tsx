@@ -12,7 +12,6 @@ import {
   RiFileCopyLine,
   RiLoaderLine,
   RiMailLine,
-  RiPieChart2Line,
   RiRefreshLine,
   RiSettings3Line,
   RiStopFill,
@@ -57,6 +56,7 @@ import {
   MessageScrollerProvider,
   MessageScrollerViewport,
 } from "@/components/ui/message-scroller";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Progress } from "@/components/ui/progress";
 import {
   Trace,
@@ -78,6 +78,32 @@ import { historyToMessages, type WitMeta, type WitTransport, type WitUIMessage }
 const MAX_QUOTED = 10;
 
 // ponytail: shadcn's spinner.tsx fails the typecheck (children on a Remix icon); its markup here.
+/** How full the history is (0–1), as a ring: the attention colour from 80%. */
+const UsageRing = ({ value }: { value: number }) => {
+  const r = 6;
+  const c = 2 * Math.PI * r;
+  return (
+    <svg
+      viewBox="0 0 16 16"
+      className={cn("size-4", value >= 0.8 ? "text-amber-500" : "text-muted-foreground")}
+      aria-hidden="true"
+    >
+      <circle cx="8" cy="8" r={r} fill="none" strokeWidth="2" className="stroke-border" />
+      <circle
+        cx="8"
+        cy="8"
+        r={r}
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="2"
+        strokeLinecap="round"
+        strokeDasharray={`${c * Math.min(1, value)} ${c}`}
+        transform="rotate(-90 8 8)"
+      />
+    </svg>
+  );
+};
+
 const Busy = ({ t }: { t: T }) => (
   <RiLoaderLine
     role="status"
@@ -1034,21 +1060,21 @@ export function Panel({
           </DropdownMenu>
         )}
         {meter && (
-          <HoverCard>
-            <HoverCardTrigger
+          <Popover>
+            <PopoverTrigger
+              openOnHover
               render={
                 <InputGroupButton
                   variant="ghost"
-                  size="sm"
-                  className="ml-auto h-8 gap-1 px-2 font-normal text-muted-foreground text-sm tabular-nums"
+                  size="icon-sm"
+                  className="ml-auto"
                   aria-label={t("wit.usage")}
                 />
               }
             >
-              <RiPieChart2Line className="size-3.5" />
-              {Math.min(100, Math.round(usage.history * 100))}%
-            </HoverCardTrigger>
-            <HoverCardContent side="top" className="flex w-72 flex-col gap-2 text-sm">
+              <UsageRing value={usage.history} />
+            </PopoverTrigger>
+            <PopoverContent side="top" className="flex w-72 flex-col gap-2 text-sm">
               <span className="font-medium">
                 {t("wit.usage.history", Math.min(100, Math.round(usage.history * 100)))}
               </span>
@@ -1068,8 +1094,8 @@ export function Panel({
                   )}
                 </span>
               )}
-            </HoverCardContent>
-          </HoverCard>
+            </PopoverContent>
+          </Popover>
         )}
         {model && models ? (
           <DropdownMenu
