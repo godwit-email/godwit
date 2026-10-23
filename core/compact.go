@@ -40,10 +40,6 @@ func (s *Service) CompactConversation(ctx context.Context, id int64) error {
 	if err != nil {
 		return err
 	}
-	h, err := s.history(ctx, id)
-	if err != nil {
-		return err
-	}
 	model, _, err := s.resolveRef(ctx, c.Model)
 	if err != nil {
 		return err
@@ -52,7 +48,7 @@ func (s *Service) CompactConversation(ctx context.Context, id int64) error {
 		return ErrCompacting
 	}
 	defer s.compacting.Delete(id)
-	return s.compact(ctx, id, model, h, true)
+	return s.compact(ctx, id, model, true)
 }
 
 // convSummary is conversation id's summary and its epoch (bumped by a rewind).
@@ -89,16 +85,21 @@ func (s *Service) compactLater(id int64, model ai.ResolvedModel, h *ai.History) 
 	go func() {
 		defer end()
 		defer s.compacting.Delete(id)
-		if err := s.compact(ctx, id, model, h, false); err != nil {
+		if err := s.compact(ctx, id, model, false); err != nil {
 			slog.Default().Warn("could not compact a conversation", "conversation", id, "err", err)
 		}
 	}()
 }
 
-// compact summarizes h's turns before its last two, the summary so far
-// included, when it is past the history budget, or, forced, whatever its size.
-func (s *Service) compact(ctx context.Context, id int64, model ai.ResolvedModel, h *ai.History, force bool) error {
+// compact summarizes conversation id's turns before its last two, the summary
+// so far included, when it is past the history budget, or, forced, whatever its size.
+func (s *Service) compact(ctx context.Context, id int64, model ai.ResolvedModel, force bool) error {
 	sum, epoch, err := s.convSummary(ctx, id)
+	if err != nil {
+		return err
+	}
+	// The history is read after the epoch: a rewind committed in between bumps it, and the summary is not saved.
+	h, err := s.history(ctx, id)
 	if err != nil {
 		return err
 	}
