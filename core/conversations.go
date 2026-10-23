@@ -831,19 +831,23 @@ type runJob struct {
 	// rewind, for a question asked in place, is what the run replaces once it
 	// is done (commitRewind); one that ends otherwise replaces nothing.
 	rewind *pendingRewind
-	cited  []Citation // the mail the run's context shows the model, sent first
-	quoted []Citation // the mail the user quoted, numbered (quote): sent first too
-	ctx    context.Context
-	cancel context.CancelFunc
-	done   chan struct{}
+	// summary is what its first request sent in place of the earlier turns:
+	// a resume sends it again, whatever a compaction stored since.
+	summary *ai.Summary
+	cited   []Citation // the mail the run's context shows the model, sent first
+	quoted  []Citation // the mail the user quoted, numbered (quote): sent first too
+	ctx     context.Context
+	cancel  context.CancelFunc
+	done    chan struct{}
 }
 
 // snapshot is runs.snapshot: what a resume needs besides the conversation state.
 type snapshot struct {
-	ReadMail bool   `json:"read_mail"`
-	Round    int    `json:"round"`            // seq of the current interrupt's first approval
-	Host     bool   `json:"host,omitempty"`   // a host-made proposal: nothing to resume
-	Effort   string `json:"effort,omitempty"` // the run's reasoning effort
+	ReadMail bool        `json:"read_mail"`
+	Round    int         `json:"round"`             // seq of the current interrupt's first approval
+	Host     bool        `json:"host,omitempty"`    // a host-made proposal: nothing to resume
+	Effort   string      `json:"effort,omitempty"`  // the run's reasoning effort
+	Summary  *ai.Summary `json:"summary,omitempty"` // runJob.summary; none from before it was kept
 }
 
 type runKey struct{}
@@ -851,22 +855,26 @@ type runKey struct{}
 // runOf is the run whose tool is given ctx.
 func runOf(ctx context.Context) *runJob { return ctx.Value(runKey{}).(*runJob) }
 
-// request builds the run's request on h, its summary standing in and the
-// whole fitted to historyBudget (ai.History.Send); the job keeps h, which the
-// request's view restores into once the run is done.
+// request builds the run's request on h, its summary (for a resume, the one
+// its first request sent) standing in and the whole fitted to historyBudget
+// (ai.History.Send); the job keeps h, which the request's view restores into
+// once the run is done.
 func (s *Service) request(ctx context.Context, job *runJob, model ai.ResolvedModel, h *ai.History, tools []toolDesc) (ai.Request, error) {
 	system, err := s.witSystem(ctx, job, tools)
 	if err != nil {
 		return ai.Request{}, err
 	}
-	sum, _, err := s.convSummary(ctx, job.conv.ID)
-	if err != nil {
-		return ai.Request{}, err
+	if job.summary == nil {
+		sum, _, err := s.convSummary(ctx, job.conv.ID)
+		if err != nil {
+			return ai.Request{}, err
+		}
+		if job.rewind != nil && sum.Upto >= job.rewind.from { // it condenses what the question asked again replaces
+			sum = ai.Summary{}
+		}
+		job.summary = &sum
 	}
-	if job.rewind != nil && sum.Upto >= job.rewind.from { // it condenses what the question asked again replaces
-		sum = ai.Summary{}
-	}
-	sent, err := h.Send(s.historyBudget(model.BaseURL, model.Model), sum)
+	sent, err := h.Send(s.historyBudget(model.BaseURL, model.Model), *job.summary)
 	if err != nil {
 		return ai.Request{}, err
 	}
@@ -1263,7 +1271,7 @@ func (s *Service) settleRun(ctx context.Context, job *runJob, req ai.Request, re
 		return WitEvent{Event: ai.Event{Kind: "done"}}, err
 	}
 	now := time.Now().Unix()
-	snap, _ := json.Marshal(snapshot{ReadMail: job.scope.ReadMail(), Round: job.round, Host: job.host != nil, Effort: req.Effort})
+	snap, _ := json.Marshal(snapshot{ReadMail: job.scope.ReadMail(), Round: job.round, Host: job.host != nil, Effort: req.Effort, Summary: job.summary})
 	stmts := append(historyStmts(job.conv.ID, job.changes), runSpan(job.id, job.base.Next(), job.after.Next()), runUsage(job.id, res.Usage),
 		sqlite.Statement{SQL: "UPDATE runs SET state = 'interrupted', snapshot = ?, updated_at = ? WHERE id = ?", Args: []any{snap, now, job.id}})
 	for i, c := range res.Interrupts {
@@ -1367,7 +1375,7 @@ func (s *Service) startResume(ctx context.Context, end func(), runID int64) erro
 		return err
 	}
 	job := s.track(ctx, runID, conv, scope, snap.Round+len(as))
-	job.resumed, job.rewind, job.turn = true, rw, s.runTurn(ctx, runID)
+	job.resumed, job.rewind, job.turn, job.summary = true, rw, s.runTurn(ctx, runID), snap.Summary
 	req, err := s.request(ctx, job, model, h, offered(conv.Kind, s.registered(names...)))
 	if err != nil {
 		s.untrack(job)
