@@ -2012,6 +2012,8 @@
     }
   },
   "wit_quote_search": "Search mail",
+  "wit_elapsed_seconds": "{arg1}s",
+  "wit_elapsed_minutes": "{arg1}m {arg2}s",
   "wit_reasoning": "Thought process",
   "wit_regenerate": "Regenerate",
   "wit_scroll_end": "Jump to latest",

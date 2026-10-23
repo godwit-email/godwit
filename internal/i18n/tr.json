@@ -1097,6 +1097,8 @@
   "wit_effort_low": "Düşük",
   "wit_effort_medium": "Orta",
   "wit_effort_high": "Yüksek",
+  "wit_elapsed_seconds": "{arg1} sn",
+  "wit_elapsed_minutes": "{arg1} dk {arg2} sn",
   "wit_reasoning": "Düşünme süreci",
   "wit_regenerate": "Yeniden oluştur",
   "wit_suggest": "Wit’e sormayı deneyin",

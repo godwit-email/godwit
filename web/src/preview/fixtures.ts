@@ -162,6 +162,7 @@ const msg = (m: Partial<WitMessage> & Pick<WitMessage, "id" | "role" | "runs">):
   calls: [],
   results: [],
   citations: [],
+  elapsed: 0,
   ...m,
 });
 
@@ -175,11 +176,13 @@ const turn1: WitMessage[] = [
     role: "user",
     text: "答应 11 月的时间，但研讨会想推迟一周，正式一点",
     runs: [1],
+    elapsed: 0,
   }),
   msg({
     id: "m2",
     role: "assistant",
     runs: [1],
+    elapsed: 0,
     reasoning: "",
     quoted: [],
     calls: [read, upd1],
@@ -255,11 +258,13 @@ export const pending = (inline: boolean): WitHistory => {
           ? "第二段语气再委婉一点，再提一句我们很期待合作"
           : "整封改成轻松友好一点的语气",
         runs: [2],
+        elapsed: 0,
       }),
       msg({
         id: "m4",
         role: "assistant",
         runs: [2],
+        elapsed: 0,
         reasoning: "",
         quoted: [],
         calls: [upd2],
@@ -324,11 +329,18 @@ export const witConversation = (): WitHistory =>
   history({
     usage: { input: 18400, output: 1260, context: 9800, history: 0.36, compactable: true },
     messages: [
-      msg({ id: "q0", role: "user", text: "这个月我订阅了哪些服务，分别花了多少钱？", runs: [1] }),
+      msg({
+        id: "q0",
+        role: "user",
+        text: "这个月我订阅了哪些服务，分别花了多少钱？",
+        runs: [1],
+        elapsed: 0,
+      }),
       msg({
         id: "a2",
         role: "assistant",
         runs: [1],
+        elapsed: 0,
         reasoning:
           "用户问的是本月的订阅支出。先搜索本月的账单和收据邮件，再逐封确认金额，排除促销邮件。",
         calls: [search, ...reads],
@@ -341,11 +353,13 @@ export const witConversation = (): WitHistory =>
         role: "user",
         text: "帮我回复 Lena，时间可以，但研讨会想推迟一周",
         runs: [2],
+        elapsed: 0,
       }),
       msg({
         id: "a4",
         role: "assistant",
         runs: [2],
+        elapsed: 0,
         reasoning: "",
         quoted: [],
         calls: [createDraft],

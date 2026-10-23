@@ -472,7 +472,7 @@ func TestComposeWitHistoryGrouping(t *testing.T) {
 			{Role: "tool", Results: []ai.ToolResult{{CallID: "c1", Name: "search_mail", Output: json.RawMessage(`[1]`)}}},
 			{Role: "model", Text: "b"},
 		},
-		Runs: []core.RunSpan{{ID: 1, From: 0, To: 4}},
+		Runs: []core.RunSpan{{ID: 1, From: 0, To: 4, Active: 6400 * time.Millisecond}},
 		Citations: []core.Citation{{N: 1, MessageID: 7, Subject: "s7", RunID: 1}, {N: 2, MessageID: 5, RunID: 1, CallID: "c1"},
 			{N: 1, MessageID: 7, RunID: 1, CallID: "c1", Suspect: true, Quote: "q"}},
 	}
@@ -485,6 +485,8 @@ func TestComposeWitHistoryGrouping(t *testing.T) {
 	assert.Equal(t, "assistant", a.Role)
 	assert.Equal(t, "a\n\nb", a.Text)
 	assert.Equal(t, []int64{1}, a.Runs)
+	assert.Equal(t, int64(6400), a.Elapsed, "the answer's runs' time at work")
+	assert.Zero(t, got[0].Elapsed, "a question has none")
 	assert.Empty(t, a.Quoted)
 	assert.Equal(t, []WitCall{{ID: "c1", Name: "search_mail", Args: "{}"}}, a.Calls)
 	assert.Equal(t, []WitResult{{CallID: "c1", Name: "search_mail", Output: "[1]"}}, a.Results)

@@ -103,6 +103,8 @@ func TestAskSearchesAndCites(t *testing.T) {
 		assert.Equal(t, want[0], got, tool)
 	}
 	assert.Zero(t, c.ActiveRunID)
+	require.Len(t, c.Runs, 1)
+	assert.Positive(t, c.Runs[0].Active, "the run's time at work is kept")
 
 	// a cited message deleted since stays cited, marked gone
 	ok, err := e.s.MessageExists(t.Context(), e.msg)
@@ -773,6 +775,15 @@ func TestConversationRunSpans(t *testing.T) {
 	c, err := e.s.GetConversation(t.Context(), conv.ID)
 	require.NoError(t, err)
 	require.Len(t, c.Messages, 6, "q1 a1 | q2 call result a2")
+	// each run's time at work is kept; the spans are compared without it
+	worked := func(i int) time.Duration {
+		r := c.Runs[i]
+		assert.Positive(t, r.Active, "run %d's time at work", i)
+		c.Runs[i].Active = 0
+		return r.Active
+	}
+	worked(0)
+	worked(1)
 	assert.Equal(t, []RunSpan{{ID: r1[0].RunID, From: 0, To: 2}, {ID: r2[0].RunID, From: 2, To: 6}}, c.Runs)
 
 	// Interrupted, then resumed: one run, one span.
@@ -782,6 +793,7 @@ func TestConversationRunSpans(t *testing.T) {
 	require.Equal(t, "interrupted", r3[len(r3)-1].Kind)
 	c, err = e.s.GetConversation(t.Context(), conv.ID)
 	require.NoError(t, err)
+	before := worked(2)
 	assert.Equal(t, RunSpan{ID: r3[0].RunID, From: 6, To: 8}, c.Runs[2], "the question and the call")
 	sub, stop := e.s.SubscribeConversation(conv.ID)
 	defer stop()
@@ -793,7 +805,8 @@ func TestConversationRunSpans(t *testing.T) {
 	}
 	c, err = e.s.GetConversation(t.Context(), conv.ID)
 	require.NoError(t, err)
-	assert.Len(t, c.Runs, 3)
+	require.Len(t, c.Runs, 3)
+	assert.Greater(t, worked(2), before, "the resume adds its time")
 	assert.Equal(t, RunSpan{ID: r3[0].RunID, From: 6, To: len(c.Messages)}, c.Runs[2], "the resume extends it")
 	assert.Equal(t, "a3", c.Messages[len(c.Messages)-1].Text)
 }

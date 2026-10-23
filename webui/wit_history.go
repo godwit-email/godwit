@@ -54,6 +54,9 @@ type WitMessage struct {
 	Runs []int64 `json:"runs"`
 	// Quoted is the mail a question quoted (an answer: none).
 	Quoted []MailHit `json:"quoted"`
+	// Elapsed is how long an answer's runs worked, in milliseconds (0: not
+	// known, as for a run before this was kept; a question: 0).
+	Elapsed int64 `json:"elapsed"`
 }
 
 // witMessages groups c's messages into questions and answers, as
@@ -101,6 +104,9 @@ func witMessages(c core.Conversation) []WitMessage {
 		for _, r := range c.Runs {
 			if r.From < spans[i][1] && r.To > spans[i][0] {
 				out[i].Runs = append(out[i].Runs, r.ID)
+				if out[i].Role == "assistant" {
+					out[i].Elapsed += r.Active.Milliseconds()
+				}
 			}
 		}
 	}

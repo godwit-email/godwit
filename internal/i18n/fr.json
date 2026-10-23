@@ -1097,6 +1097,8 @@
   "wit_effort_low": "Faible",
   "wit_effort_medium": "Moyen",
   "wit_effort_high": "Élevé",
+  "wit_elapsed_seconds": "{arg1} s",
+  "wit_elapsed_minutes": "{arg1} min {arg2} s",
   "wit_reasoning": "Raisonnement",
   "wit_regenerate": "Régénérer",
   "wit_suggest": "Essayez de demander à Wit",
