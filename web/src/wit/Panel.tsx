@@ -19,6 +19,7 @@ import {
   RiLoaderLine,
   RiMailLine,
   RiRefreshLine,
+  RiSearchLine,
   RiSettings3Line,
   RiShieldLine,
   RiStopFill,
@@ -77,7 +78,7 @@ import {
 import type { Approval, Citation, MailHit, ModelChoice, WitHistory, WitInfo } from "@/mygo";
 import { currentLocale, type T } from "@/shared/i18n";
 import { Citations, type Nums } from "./Citations";
-import { MailCard } from "./MailCard";
+import { MailCard, senderName } from "./MailCard";
 import { type PickerKeys, QuoteChips, QuotePicker } from "./Quote";
 import { Response } from "./Response";
 import { historyToMessages, type WitMeta, type WitTransport, type WitUIMessage } from "./transport";
@@ -167,6 +168,102 @@ const toolLabel = (tool: string, t: T) =>
 
 const strList = (v: unknown): string[] =>
   typeof v === "string" ? [v] : Array.isArray(v) ? v.filter((x) => typeof x === "string") : [];
+
+/** A step's icon: what the tool does with mail, or a tool. */
+const stepIcon = (tool: string) =>
+  tool === "search_mail"
+    ? RiSearchLine
+    : /message|thread|attachment/.test(tool)
+      ? RiMailLine
+      : RiToolsLine;
+
+/**
+ * An answer's steps in order, as a timeline: what it thought, each call (a search with its query
+ * and the senders it found), the one under way spinning.
+ */
+function Steps({
+  m,
+  live,
+  cites,
+  t,
+}: {
+  m: WitUIMessage;
+  /** The calls under way. */
+  live: DynamicToolUIPart[];
+  cites: Citation[];
+  t: T;
+}) {
+  const steps = m.parts.filter(
+    (p): p is ReasoningUIPart | DynamicToolUIPart =>
+      (p.type === "reasoning" && !!p.text) || p.type === "dynamic-tool",
+  );
+  return (
+    <ol aria-label={t("wit.reasoning")} className="flex flex-col pt-1">
+      {steps.map((p, i) => {
+        const going = p.type === "dynamic-tool" && live.includes(p);
+        const Icon =
+          p.type === "reasoning" ? RiBrainLine : going ? RiLoaderLine : stepIcon(p.toolName);
+        const query =
+          p.type === "dynamic-tool" && typeof (p.input as { query?: unknown })?.query === "string"
+            ? (p.input as { query: string }).query
+            : "";
+        const senders =
+          p.type === "dynamic-tool"
+            ? [
+                ...new Set(
+                  cites.filter((c) => c.callId === p.toolCallId).map((c) => senderName(c.from)),
+                ),
+              ]
+            : [];
+        return (
+          <li key={p.type === "reasoning" ? `r${i}` : p.toolCallId} className="flex gap-2.5">
+            <span aria-hidden="true" className="flex flex-col items-center">
+              <span className="flex size-5 items-center justify-center text-muted-foreground">
+                <Icon className={cn("size-3.5", going && "animate-spin")} />
+              </span>
+              {i < steps.length - 1 && <span className="w-px flex-1 bg-border" />}
+            </span>
+            {p.type === "reasoning" ? (
+              <span className="whitespace-pre-wrap pb-3 text-muted-foreground text-sm leading-relaxed">
+                {p.text}
+              </span>
+            ) : (
+              <span className="flex min-w-0 flex-col gap-1.5 pb-3 text-sm">
+                <span className="flex flex-wrap items-center gap-1.5">
+                  <code className={cn("text-xs", p.state === "output-error" && "text-destructive")}>
+                    {p.toolName}
+                  </code>
+                  {query && (
+                    <span className="rounded-sm bg-muted px-1.5 font-mono text-xs">
+                      {clip(query)}
+                    </span>
+                  )}
+                </span>
+                {senders.length > 0 && (
+                  <span className="flex flex-wrap gap-1">
+                    {senders.slice(0, 5).map((n) => (
+                      <span
+                        key={n}
+                        className="rounded-full border-[0.5px] px-2 text-muted-foreground text-xs leading-5"
+                      >
+                        {n}
+                      </span>
+                    ))}
+                    {senders.length > 5 && (
+                      <span className="text-muted-foreground text-xs leading-5">
+                        +{senders.length - 5}
+                      </span>
+                    )}
+                  </span>
+                )}
+              </span>
+            )}
+          </li>
+        );
+      })}
+    </ol>
+  );
+}
 
 /** Decides approval a, or with all every pending one of its run; true once decided. */
 export type Decide = (a: Approval, accept: boolean, all: boolean) => Promise<boolean>;
@@ -422,43 +519,27 @@ function Answer({
       {(thought.length > 0 || done.length > 0 || going.length > 0) && (
         // the answer's steps: what it thought, the tools it called, the calls under way
         <Trace className={page ? "[&_[data-slot=trace-line]]:text-base" : undefined}>
-          {thought.length > 0 && (
+          {(thought.length > 0 || done.length > 0) && (
             <TraceCollapsible>
               <TraceCollapsibleTrigger>
                 <TraceLine status={thinking ? "running" : undefined}>
                   <TraceIcon>
                     <RiBrainLine />
                   </TraceIcon>
-                  <TraceTitle>{t(thinking ? "wit.thinking" : "wit.reasoning")}</TraceTitle>
+                  <TraceTitle>
+                    {thinking
+                      ? t("wit.thinking")
+                      : [
+                          thought.length > 0 && t("wit.reasoning"),
+                          done.length > 0 && toolsLabel(done, page, t),
+                        ]
+                          .filter(Boolean)
+                          .join(" · ")}
+                  </TraceTitle>
                 </TraceLine>
               </TraceCollapsibleTrigger>
-              <TraceCollapsibleContent className="whitespace-pre-wrap text-sm">
-                {thought.map((p) => p.text).join("\n\n")}
-              </TraceCollapsibleContent>
-            </TraceCollapsible>
-          )}
-          {done.length > 0 && (
-            <TraceCollapsible>
-              <TraceCollapsibleTrigger>
-                <TraceLine>
-                  <TraceIcon>
-                    <RiToolsLine />
-                  </TraceIcon>
-                  <TraceTitle>{toolsLabel(done, page, t)}</TraceTitle>
-                </TraceLine>
-              </TraceCollapsibleTrigger>
-              <TraceCollapsibleContent className="flex flex-col gap-1">
-                {done.map((c) => (
-                  <code
-                    key={c.toolCallId}
-                    className={cn(
-                      "break-all text-xs",
-                      c.state === "output-error" && "text-destructive",
-                    )}
-                  >
-                    {c.toolName} {clip(JSON.stringify(c.input ?? {}))}
-                  </code>
-                ))}
+              <TraceCollapsibleContent>
+                <Steps m={m} live={going} cites={cites} t={t} />
               </TraceCollapsibleContent>
             </TraceCollapsible>
           )}

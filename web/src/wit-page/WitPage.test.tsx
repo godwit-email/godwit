@@ -271,6 +271,7 @@ test("cited click opens", async () => {
             suspect: false,
             quote: "",
             snippet: "",
+            callId: "",
           },
         ],
       },

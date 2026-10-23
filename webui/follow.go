@@ -71,6 +71,8 @@ type Citation struct {
 	Quote string `json:"quote"`
 	// Snippet is the message's snippet, for its card; "" once the message is gone.
 	Snippet string `json:"snippet"`
+	// CallID is the tool call that showed the mail ("" for the run's context).
+	CallID string `json:"callId"`
 }
 
 // Approval is a call waiting for the user, or decided.
@@ -249,7 +251,7 @@ func resultOf(r ai.ToolResult) WitResult {
 }
 
 func citationOf(c core.Citation) Citation {
-	out := Citation{N: c.N, MessageID: c.MessageID, Subject: c.Subject, From: c.From, Suspect: c.Suspect, Quote: c.Quote, Snippet: c.Snippet}
+	out := Citation{N: c.N, MessageID: c.MessageID, Subject: c.Subject, From: c.From, Suspect: c.Suspect, Quote: c.Quote, Snippet: c.Snippet, CallID: c.CallID}
 	if !c.Date.IsZero() {
 		out.Date = c.Date.UnixMilli()
 	}

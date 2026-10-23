@@ -422,6 +422,74 @@ describe("Panel", () => {
     expect(await screen.findByText("先查账单")).toBeInTheDocument();
   });
 
+  it("the steps fold into one 思考过程 line that unfolds as a timeline", async () => {
+    const user = userEvent.setup();
+    const cite = (n: number, id: number, from: string, callId: string) => ({
+      n,
+      messageId: id,
+      subject: `S${id}`,
+      from,
+      date: 0,
+      suspect: false,
+      quote: "",
+      snippet: "",
+      callId,
+    });
+    await setup({
+      page: true,
+      history: {
+        ...empty,
+        messages: [
+          {
+            id: "q0",
+            role: "user",
+            text: "Q",
+            reasoning: "",
+            quoted: [],
+            calls: [],
+            results: [],
+            citations: [],
+            runs: [7],
+          },
+          {
+            id: "a1",
+            role: "assistant",
+            text: "Two receipts.",
+            reasoning: "先按收据搜",
+            quoted: [],
+            calls: [
+              { id: "c1", name: "search_mail", args: '{"query":"receipt OR 账单"}' },
+              { id: "c2", name: "read_message", args: '{"id":51}' },
+            ],
+            results: [
+              { callId: "c1", name: "search_mail", output: "{}", error: "" },
+              { callId: "c2", name: "read_message", output: "{}", error: "" },
+            ],
+            citations: [
+              cite(1, 50, "Acme Cloud <billing@acme.example>", "c1"),
+              cite(2, 51, "Bob <bob@x.org>", "c1"),
+            ],
+            runs: [7],
+          },
+        ],
+      },
+    });
+    // one line, folded: what it did
+    const folded = screen.getByRole("button", { name: /思考过程/ });
+    expect(folded).toHaveTextContent("思考过程 · 调用了 2 个工具 · search_mail、read_message");
+    expect(folded).toHaveAttribute("aria-expanded", "false");
+    expect(screen.queryByRole("button", { name: /调用了/ })).toBe(folded); // no line of its own
+    await user.click(folded);
+    const steps = within(await screen.findByRole("list", { name: "思考过程" })).getAllByRole(
+      "listitem",
+    );
+    expect(steps.map((s) => s.textContent)).toEqual([
+      "先按收据搜",
+      "search_mailreceipt OR 账单Acme CloudBob",
+      "read_message",
+    ]);
+  });
+
   const turn: WitHistory = {
     ...empty,
     messages: [
@@ -776,6 +844,7 @@ describe("Panel", () => {
       suspect,
       quote: "",
       snippet: "",
+      callId: "",
     });
     const { emit } = await setup({
       history: {
@@ -877,6 +946,7 @@ describe("Panel", () => {
                 suspect: true,
                 quote,
                 snippet: "",
+                callId: "",
               },
             ],
             runs: [7],
@@ -1354,6 +1424,7 @@ describe("Panel", () => {
       suspect: false,
       quote: "",
       snippet: "Amount charged this month",
+      callId: "",
     };
     await setup({
       page: true,
@@ -1417,6 +1488,7 @@ describe("Panel", () => {
       suspect,
       quote: "",
       snippet: "",
+      callId: "",
     });
     await setup({
       page: true,
