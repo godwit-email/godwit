@@ -17,6 +17,7 @@ import {
   type ComposeState,
   events,
   type Review as ReviewT,
+  type RunStart,
   type SendWarning,
   type WitEvent,
   type WitHistory,
@@ -25,7 +26,7 @@ import { type T, useT } from "@/shared/i18n";
 import { applyTheme, type Theme } from "@/shared/theme";
 import { Panel as WitPanel, witError } from "@/wit/Panel";
 import { useResume } from "@/wit/resume";
-import { ends, WitTransport } from "@/wit/transport";
+import { approvalsOf, WitTransport } from "@/wit/transport";
 import { Attachments } from "./Attachments";
 import { type CmdKSelection, Editor } from "./editor/Editor";
 import { IdleToolbar } from "./editor/Toolbar";
@@ -375,7 +376,7 @@ function Compose({
     tr.follow().then(
       (history) => {
         if (!history) return; // a newer follow's
-        setPendings(history.approvals.filter(pendingEdit));
+        setPendings(approvalsOf(history).filter(pendingEdit));
         witResume.reset(); // the remounted panel must not resume an old run
         setWit((w) => w && { tr, history, n: w.n + 1 });
       },
@@ -388,7 +389,7 @@ function Compose({
     if (ev.kind === "tool_call" && ev.call?.name === "update_draft")
       setStreamed(draftHTML(ev.call.args));
     if (ev.kind === "interrupted") setPendings(ev.approvals.filter(pendingEdit));
-    if (!ends(ev)) return;
+    if (!ev.ends) return;
     // Over: none of its body edits waits any more (an interrupt's are set above).
     if (ev.kind !== "interrupted") setPendings((p) => p.filter((x) => x.run !== ev.run));
     ended.current.add(ev.run);
@@ -401,16 +402,17 @@ function Compose({
   };
 
   // A run starts only once the edit is saved (the saver's queue); nothing runs if that fails.
-  const startRun = useRef(async (start: () => Promise<number>) => {
+  const startRun = useRef(async (start: () => Promise<RunStart>) => {
     const s = saver.current;
     setApplied(false);
     setStreamed("");
     const r = await s?.run(async (rev) => {
       runEdits.current = edits.current;
-      return { revision: rev, conflict: false, run: await start() };
+      const rs = await start();
+      return { revision: rev, conflict: false, run: rs.run, turn: rs.turn };
     });
     if (!r) throw new Error(""); // not saved: the status says why; the panel shows no error
-    return r.run;
+    return { run: r.run, turn: r.turn };
   });
 
   // The page listens, then the transport, before follow reads.
@@ -429,7 +431,7 @@ function Compose({
     tr.follow().then(
       (history) => {
         if (!live || !history) return;
-        setPendings(history.approvals.filter(pendingEdit));
+        setPendings(approvalsOf(history).filter(pendingEdit));
         setWit({ tr, history, n: 0 });
       },
       (e) => live && toast.error(witError(message(e), currentT.current)),

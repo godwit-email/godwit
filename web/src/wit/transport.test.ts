@@ -1,6 +1,14 @@
 import { Chat } from "@ai-sdk/react";
 import type { UIMessageChunk } from "ai";
-import type { Approval, WitEvent, WitHistory } from "@/mygo";
+import type {
+  Approval,
+  WitCall,
+  WitEvent,
+  WitHistory,
+  WitResult,
+  WitTurn,
+  WitTurnCall,
+} from "@/mygo";
 import { historyToMessages, toChunks, WitTransport, type WitUIMessage } from "./transport";
 
 vi.mock("@/mygo", () => ({ ComposePage: {}, events: { wit: { on: () => () => {} } } }));
@@ -8,6 +16,8 @@ vi.mock("@/mygo", () => ({ ComposePage: {}, events: { wit: { on: () => () => {} 
 const ev = (e: Partial<WitEvent>): WitEvent => ({
   conversation: 1,
   run: 7,
+  turn: "1",
+  ends: false,
   kind: "text",
   text: "",
   call: null,
@@ -31,8 +41,47 @@ const approval = (a: Partial<Approval>): Approval => ({
   sessionAllow: false,
   draft: 0,
   args: "",
+  draftEdit: false,
   ...a,
 });
+
+const turn = (t: Partial<WitTurn> & Pick<WitTurn, "id">): WitTurn => ({
+  question: "Q",
+  command: null,
+  quoted: [],
+  text: "",
+  reasoning: "",
+  calls: [],
+  approvals: [],
+  citations: [],
+  runs: [1],
+  elapsed: 0,
+  canAskAgain: false,
+  ...t,
+});
+
+const on = (
+  call: WitCall,
+  result: WitResult | null = null,
+  a: Approval | null = null,
+): WitTurnCall => ({
+  call,
+  result,
+  approval: a,
+});
+
+const hist = (turns: WitTurn[], p: Partial<WitHistory> = {}): WitHistory => ({
+  conversation: 1,
+  model: "",
+  effort: "",
+  usage: { input: 0, output: 0, context: 0, history: 0, compactable: false },
+  running: 0,
+  turns,
+  ...p,
+});
+
+/** A run started, as the host's ask and skill resolve to it. */
+const started = (run: number, turn = String(run)) => ({ run, turn });
 
 /** A fake bound API and WitStream: emit sends an event to the transport's listener. */
 function fake() {
@@ -86,34 +135,34 @@ describe("rewind", () => {
   it("a question sent with rewind is asked in place, and so is its retry", async () => {
     const { api, tr } = fake();
     const t2 = new WitTransport({ ...api, rewinds: true }, () => () => {});
-    api.ask.mockResolvedValue(7);
+    api.ask.mockResolvedValue(started(7));
     expect(tr.rewinds).toBe(false);
     expect(t2.rewinds).toBe(true);
-    const m = userMsg("again", { quoted: [3], rewind: 2 });
+    const m = userMsg("again", { quoted: [3], rewind: "2" });
     void send(t2, m, "submit-message");
-    await vi.waitFor(() => expect(api.ask).toHaveBeenCalledWith("again", [3], 2));
+    await vi.waitFor(() => expect(api.ask).toHaveBeenCalledWith("again", [3], "2"));
     // a retry follows a run that saved nothing: core replaced nothing yet
     void send(t2, m, "regenerate-message");
     await vi.waitFor(() => expect(api.ask).toHaveBeenCalledTimes(2));
-    expect(api.ask).toHaveBeenLastCalledWith("again", [3], 2);
+    expect(api.ask).toHaveBeenLastCalledWith("again", [3], "2");
   });
 
   it("a retry after the ask in place was refused asks in place again", async () => {
     const { api } = fake();
-    api.ask.mockRejectedValueOnce(new Error("boom")).mockResolvedValue(7);
+    api.ask.mockRejectedValueOnce(new Error("boom")).mockResolvedValue(started(7));
     const tr = new WitTransport({ ...api, rewinds: true }, () => () => {});
-    const m = userMsg("again", { rewind: 0 });
+    const m = userMsg("again", { rewind: "1" });
     const failed = await readAll(await send(tr, m, "submit-message"));
     expect(failed.at(-1)).toMatchObject({ type: "error", errorText: "boom" });
     void send(tr, m, "regenerate-message");
     await vi.waitFor(() => expect(api.ask).toHaveBeenCalledTimes(2));
-    expect(api.ask).toHaveBeenLastCalledWith("again", [], 0);
+    expect(api.ask).toHaveBeenLastCalledWith("again", [], "1");
   });
 
   it("a host that does not rewind just asks", async () => {
     const { api, tr } = fake();
-    api.ask.mockResolvedValue(7);
-    void send(tr, userMsg("again", { rewind: 1 }), "submit-message");
+    api.ask.mockResolvedValue(started(7));
+    void send(tr, userMsg("again", { rewind: "1" }), "submit-message");
     await vi.waitFor(() => expect(api.ask).toHaveBeenCalledWith("again"));
   });
 });
@@ -130,28 +179,7 @@ describe("toChunks", () => {
   });
 
   it("an answer's saved reasoning leads its parts", () => {
-    const [m] = historyToMessages({
-      conversation: 1,
-      model: "",
-      effort: "",
-      usage: { input: 0, output: 0, context: 0, history: 0, compactable: false },
-      running: 0,
-      approvals: [],
-      messages: [
-        {
-          id: "a0",
-          role: "assistant",
-          text: "三笔",
-          reasoning: "先查账单",
-          quoted: [],
-          calls: [],
-          results: [],
-          citations: [],
-          runs: [1],
-          elapsed: 0,
-        },
-      ],
-    });
+    const [, m] = historyToMessages(hist([turn({ id: "1", text: "三笔", reasoning: "先查账单" })]));
     expect(m.parts.map((p) => p.type)).toEqual(["reasoning", "text"]);
     expect(m.parts[0]).toMatchObject({ text: "先查账单", state: "done" });
   });
@@ -207,6 +235,7 @@ describe("toChunks", () => {
         kind: "interrupted",
         interrupts: [{ id: "skill", name: "update_draft", args: "" }],
         approvals: [a],
+        ends: true,
       }),
       new Set(),
     );
@@ -263,7 +292,7 @@ describe("toChunks", () => {
 });
 
 describe("historyToMessages", () => {
-  it("groups questions and answers with results, approvals and citations", () => {
+  it("each turn is its question, then its answer: calls with their results or approvals, the turn's own approvals, citations", () => {
     const cite = {
       n: 1,
       messageId: 5,
@@ -276,69 +305,45 @@ describe("historyToMessages", () => {
       callIds: [],
       gone: false,
     };
-    const h: WitHistory = {
-      conversation: 1,
-      model: "",
-      effort: "",
-      usage: { input: 0, output: 0, context: 0, history: 0, compactable: false },
-      running: 0,
-      messages: [
-        {
-          id: "q0",
-          role: "user",
-          text: "Q",
-          reasoning: "",
-          quoted: [],
-          calls: [],
-          results: [],
-          citations: [],
-          runs: [1],
-          elapsed: 0,
-        },
-        {
-          id: "a1",
-          role: "assistant",
-          text: "A",
-          reasoning: "",
-          quoted: [],
-          calls: [
+    const rejected = approval({ id: 1, run: 1, callId: "c2", state: "rejected" });
+    const failed = approval({ id: 2, run: 1, callId: "c3", state: "failed", error: "nope" });
+    const skill = approval({ id: 5, run: 1, callId: "skill", state: "done" });
+    const waiting = approval({ id: 4, run: 2, callId: "skill", state: "pending" });
+    const h = hist([
+      turn({
+        id: "1",
+        text: "A",
+        calls: [
+          on(
             { id: "c1", name: "search", args: '{"q":1}' },
-            { id: "c2", name: "update_draft", args: "{}" },
-            { id: "c3", name: "update_draft", args: "{}" },
-          ],
-          results: [{ callId: "c1", name: "search", output: '"ok"', error: "" }],
-          citations: [cite],
-          runs: [1],
-          elapsed: 0,
-        },
-        {
-          id: "q2",
-          role: "user",
-          text: "更正式",
-          reasoning: "",
-          quoted: [],
-          calls: [],
-          results: [],
-          citations: [],
-          runs: [2],
-          elapsed: 0,
-        },
-      ],
-      approvals: [
-        approval({ id: 1, run: 1, callId: "c2", state: "rejected" }),
-        approval({ id: 2, run: 1, callId: "c3", state: "failed", error: "nope" }),
-        approval({ id: 4, run: 2, callId: "skill", state: "pending" }), // its run has no answer yet
-        approval({ id: 5, run: 1, callId: "skill", state: "done" }), // an older skill's, decided
-      ],
-    };
-    const m = historyToMessages(h);
-    expect(m.map((x) => [x.id, x.role])).toEqual([
-      ["q0", "user"],
-      ["a1", "assistant"],
-      ["q2", "user"],
-      [expect.any(String), "assistant"],
+            { callId: "c1", name: "search", output: '"ok"', error: "" },
+          ),
+          on({ id: "c2", name: "update_draft", args: "{}" }, null, rejected),
+          on({ id: "c3", name: "update_draft", args: "{}" }, null, failed),
+        ],
+        approvals: [skill],
+        citations: [cite],
+        canAskAgain: true,
+      }),
+      turn({
+        id: "9",
+        command: { skill: "tone-formal", lang: "" },
+        approvals: [waiting],
+        runs: [2],
+      }),
     ]);
-    expect(m[0].parts).toEqual([{ type: "text", text: "Q" }]);
+    const m = historyToMessages(h, (c) => `/${c.skill}`);
+    expect(m.map((x) => [x.id, x.role])).toEqual([
+      ["q1", "user"],
+      ["a1", "assistant"],
+      ["q9", "user"],
+      ["a9", "assistant"],
+    ]);
+    expect(m[0]).toMatchObject({
+      parts: [{ type: "text", text: "Q" }],
+      metadata: { turn: "1", canAskAgain: true },
+    });
+    expect(m[2].parts).toEqual([{ type: "text", text: "/tone-formal" }]);
     const tools = m[1].parts.filter((p) => p.type === "dynamic-tool");
     expect(tools.map((p) => [p.toolCallId, p.state])).toEqual([
       ["c1", "output-available"],
@@ -348,127 +353,43 @@ describe("historyToMessages", () => {
     ]);
     expect(m[1].parts).toContainEqual({ type: "text", text: "A", state: "done" });
     expect(m[1].parts).toContainEqual({ type: "data-citations", data: [cite] });
-    const pending = m[3].parts.find((p) => p.type === "dynamic-tool");
-    expect(pending).toMatchObject({
+    expect(m[1].parts).toContainEqual({ type: "data-approvals", data: [rejected, failed, skill] });
+    expect(m[3].parts.find((p) => p.type === "dynamic-tool")).toMatchObject({
       toolCallId: "skill-4",
       state: "approval-requested",
       approval: { id: "4" },
     });
-    expect(m[3].parts).toContainEqual({ type: "data-approvals", data: [h.approvals[2]] });
-    expect(m[1].parts).toContainEqual({
-      type: "data-approvals",
-      data: [h.approvals[0], h.approvals[1], h.approvals[3]],
-    });
   });
-});
 
-describe("historyToMessages call IDs", () => {
-  it("a call ID two runs reuse gets each run's own approval", () => {
-    const ap = (id: number, run: number, state: string): Approval => ({
-      id,
-      run,
-      callId: "call_0",
-      tool: "create_draft",
-      summary: "",
-      state,
-      error: "",
-      destinations: [],
-      args: "{}",
-      sessionAllow: false,
-      draft: 0,
-    });
-    const turn = (n: number, run: number) => [
-      {
-        id: `q${n}`,
-        role: "user",
-        text: "Q",
-        reasoning: "",
-        quoted: [],
-        calls: [],
-        results: [],
-        citations: [],
-        runs: [run],
-        elapsed: 0,
-      },
-      {
-        id: `a${n + 1}`,
-        role: "assistant",
-        text: "",
-        reasoning: "",
-        quoted: [],
-        calls: [{ id: "call_0", name: "create_draft", args: "{}" }],
-        results: [],
-        citations: [],
-        runs: [run],
-        elapsed: 0,
-      },
-    ];
-    const h: WitHistory = {
-      conversation: 1,
-      model: "",
-      effort: "",
-      usage: { input: 0, output: 0, context: 0, history: 0, compactable: false },
-      running: 0,
-      messages: [...turn(0, 1), ...turn(2, 3)],
-      approvals: [ap(5, 1, "done"), ap(6, 3, "pending")],
-    };
-    const [, first, , second] = historyToMessages(h);
-    const approvals = (m: WitUIMessage) =>
-      m.parts.flatMap((p) => (p.type === "data-approvals" ? p.data.map((a) => a.id) : []));
-    expect(approvals(first)).toEqual([5]);
-    expect(approvals(second)).toEqual([6]);
-    expect(first.parts.find((p) => p.type === "dynamic-tool")).toMatchObject({
-      state: "output-available",
-    });
-    expect(second.parts.find((p) => p.type === "dynamic-tool")).toMatchObject({
-      state: "approval-requested",
-    });
-  });
-});
-
-describe("historyToMessages elapsed", () => {
-  it("an answer carries how long its runs worked; none when not known", () => {
-    const m = (id: string, role: string, elapsed: number) => ({
-      id,
-      role,
-      text: id,
-      reasoning: "",
-      quoted: [],
-      calls: [],
-      results: [],
-      citations: [],
-      runs: [1],
-      elapsed,
-    });
-    const h: WitHistory = {
-      conversation: 1,
-      model: "",
-      effort: "",
-      usage: { input: 0, output: 0, context: 0, history: 0, compactable: false },
-      running: 0,
-      messages: [
-        m("q0", "user", 0),
-        m("a1", "assistant", 6400),
-        m("q2", "user", 0),
-        m("a3", "assistant", 0),
-      ],
-      approvals: [],
-    };
-    const ms = historyToMessages(h);
+  it("an answer carries how long its runs worked; none when not known; a turn with no answer has none", () => {
+    const ms = historyToMessages(
+      hist([
+        turn({ id: "1", text: "a", elapsed: 6400 }),
+        turn({ id: "3", text: "b" }),
+        turn({ id: "5" }),
+      ]),
+    );
+    expect(ms.map((m) => m.id)).toEqual(["q1", "a1", "q3", "a3", "q5"]);
     expect(ms[1].metadata).toEqual({ elapsed: 6400 });
     expect(ms[3].metadata).toBeUndefined();
+  });
+
+  it("a question keeps the mail it quoted", () => {
+    const hit = { id: 7, subject: "s", from: "f", date: 0 };
+    const [q] = historyToMessages(hist([turn({ id: "1", quoted: [hit] })]));
+    expect(q.metadata).toMatchObject({ quoted: [7], hits: [hit] });
   });
 });
 
 describe("WitTransport", () => {
   it("listener before start: events before ask resolves are not lost", async () => {
     const { api, tr, emit } = fake();
-    let resolve!: (n: number) => void;
+    let resolve!: (r: { run: number; turn: string }) => void;
     api.ask.mockReturnValue(new Promise((r) => (resolve = r)));
     const s = await send(tr, userMsg("hi"));
     expect(api.ask).toHaveBeenCalledWith("hi");
     emit({ kind: "text", text: "early" });
-    resolve(7);
+    resolve(started(7));
     await Promise.resolve();
     emit({ kind: "done" });
     const out = await readAll(s);
@@ -478,7 +399,7 @@ describe("WitTransport", () => {
 
   it("runs a skill from the message's metadata", async () => {
     const { api, tr, emit } = fake();
-    api.skill.mockResolvedValue(8);
+    api.skill.mockResolvedValue(started(8));
     const s = await send(tr, userMsg("翻译为English", { skill: "translate-draft", lang: "en" }));
     await vi.waitFor(() => expect(tr.run).toBe(8));
     emit({ kind: "done", run: 8 });
@@ -501,40 +422,7 @@ describe("WitTransport", () => {
 
   it("reconnects to a live run: deltas, even ones before follow resolved, append to the open answer", async () => {
     const { api, tr, emit } = fake();
-    const h: WitHistory = {
-      conversation: 1,
-      model: "",
-      effort: "",
-      usage: { input: 0, output: 0, context: 0, history: 0, compactable: false },
-      running: 7,
-      approvals: [],
-      messages: [
-        {
-          id: "q0",
-          role: "user",
-          text: "Q",
-          reasoning: "",
-          quoted: [],
-          calls: [],
-          results: [],
-          citations: [],
-          runs: [1],
-          elapsed: 0,
-        },
-        {
-          id: "a1",
-          role: "assistant",
-          text: "Hel",
-          reasoning: "",
-          quoted: [],
-          calls: [],
-          results: [],
-          citations: [],
-          runs: [1],
-          elapsed: 0,
-        },
-      ],
-    };
+    const h = hist([turn({ id: "1", text: "Hel", runs: [7] })], { running: 7 });
     api.follow.mockImplementation(async () => {
       emit({ kind: "text", text: "lo" }); // emitted before follow resolves
       return h;
@@ -549,7 +437,7 @@ describe("WitTransport", () => {
     emit({ kind: "text", text: " world" });
     emit({ kind: "done" });
     await done;
-    expect(chat.messages.map((m) => m.id)).toEqual(["q0", "a1"]);
+    expect(chat.messages.map((m) => m.id)).toEqual(["q1", "a1"]);
     const texts = chat.messages[1].parts.flatMap((p) => (p.type === "text" ? [p.text] : []));
     expect(texts).toEqual(["Hello world"]); // one part: no paragraph break across the reconnect
     expect(tr.run).toBe(7);
@@ -560,7 +448,7 @@ describe("WitTransport", () => {
     api.follow.mockImplementation(async () => {
       emit({ conversation: 2, kind: "text", text: "old" }); // in flight from a switch
       emit({ conversation: 1, kind: "text", text: "a" });
-      return { conversation: 1, running: 7, approvals: [], messages: [] };
+      return hist([], { running: 7 });
     });
     await tr.follow();
     emit({ conversation: 2, kind: "text", text: "old2" });
@@ -576,12 +464,12 @@ describe("WitTransport", () => {
 
   it("a started run names the conversation: its first event; earlier ones of others are dropped", async () => {
     const { api, tr, emit } = fake();
-    let resolve!: (n: number) => void;
+    let resolve!: (r: { run: number; turn: string }) => void;
     api.ask.mockReturnValue(new Promise((r) => (resolve = r)));
     const s = await send(tr, userMsg("hi"));
     emit({ conversation: 3, run: 2, kind: "text", text: "stale" }); // a ⌘K run's, in flight
     emit({ conversation: 5, run: 9, kind: "text", text: "mine" });
-    resolve(9);
+    resolve(started(9));
     await vi.waitFor(() => expect(tr.run).toBe(9));
     emit({ conversation: 3, run: 2, kind: "done" });
     emit({ conversation: 5, run: 9, kind: "text", text: "!" });
@@ -593,13 +481,13 @@ describe("WitTransport", () => {
   it("Stop while the run is starting stops it once its ID is known", async () => {
     const { api, tr } = fake();
     tr.run = 4; // an older run's
-    let resolve!: (n: number) => void;
+    let resolve!: (r: { run: number; turn: string }) => void;
     api.ask.mockReturnValue(new Promise((r) => (resolve = r)));
     api.stop.mockResolvedValue(undefined);
     await send(tr, userMsg("hi"));
     await tr.stop();
     expect(api.stop).not.toHaveBeenCalled();
-    resolve(9);
+    resolve(started(9));
     await vi.waitFor(() => expect(api.stop).toHaveBeenCalledWith(9));
     expect(api.stop).toHaveBeenCalledTimes(1);
     await tr.stop(); // started now: at once
@@ -612,43 +500,33 @@ describe("WitTransport", () => {
     expect(api.stop).not.toHaveBeenCalled();
   });
 
-  it("decided skill runs with no message each get their own answer, in run order, kept across a reconnect", async () => {
-    const msg = (id: string, role: string, runs: number[], text = id) => ({
-      id,
-      role,
-      text,
-      reasoning: "",
-      quoted: [],
-      calls: [],
-      results: [],
-      citations: [],
-      runs,
-      elapsed: 0,
-    });
-    const h: WitHistory = {
-      conversation: 1,
-      model: "",
-      effort: "",
-      usage: { input: 0, output: 0, context: 0, history: 0, compactable: false },
-      running: 5,
-      messages: [
-        msg("q0", "user", [1]),
-        msg("a1", "assistant", [1]),
-        msg("q5", "user", [5]),
-        msg("a6", "assistant", [5], "Go"),
+  it("a skill is a turn of its own, its edit on its answer, kept across a reconnect", async () => {
+    const h = hist(
+      [
+        turn({ id: "1", text: "a1" }),
+        turn({
+          id: "3",
+          command: { skill: "a", lang: "" },
+          runs: [2],
+          approvals: [approval({ id: 10, run: 2, callId: "skill", state: "done" })],
+        }),
+        turn({
+          id: "4",
+          command: { skill: "b", lang: "" },
+          runs: [3],
+          approvals: [approval({ id: 11, run: 3, callId: "skill", state: "rejected" })],
+        }),
+        turn({ id: "5", question: "Go?", text: "Go", runs: [5] }),
       ],
-      approvals: [
-        approval({ id: 11, run: 3, callId: "skill", state: "rejected" }),
-        approval({ id: 10, run: 2, callId: "skill", state: "done" }),
-      ],
-    };
+      { running: 5 },
+    );
     const all = historyToMessages(h);
-    expect(all.map((m) => m.id)).toEqual(["q0", "a1", "w2", "w3", "q5", "a6"]);
+    expect(all.map((m) => m.id)).toEqual(["q1", "a1", "q3", "a3", "q4", "a4", "q5", "a5"]);
     const tool = (m: WitUIMessage) => m.parts.filter((p) => p.type === "dynamic-tool");
-    expect(tool(all[2]).map((p) => [p.toolCallId, p.state])).toEqual([
+    expect(tool(all[3]).map((p) => [p.toolCallId, p.state])).toEqual([
       ["skill-10", "output-available"],
     ]);
-    expect(tool(all[3]).map((p) => [p.toolCallId, p.state])).toEqual([
+    expect(tool(all[5]).map((p) => [p.toolCallId, p.state])).toEqual([
       ["skill-11", "output-denied"],
     ]);
 
@@ -660,27 +538,29 @@ describe("WitTransport", () => {
     tr.resume(open, 5);
     const done = chat.resumeStream();
     await vi.waitFor(() => expect(chat.status).toBe("streaming"));
-    emit({ run: 5, kind: "text", text: "!" });
-    emit({ run: 5, kind: "done" });
+    emit({ run: 5, turn: "5", kind: "text", text: "!" });
+    emit({ run: 5, turn: "5", kind: "done", ends: true });
     await done;
-    expect(chat.messages.map((m) => m.id)).toEqual(["q0", "a1", "w2", "w3", "q5", "a6"]);
-    expect(tool(chat.messages[2]).map((p) => p.state)).toEqual(["output-available"]);
-    expect(tool(chat.messages[3]).map((p) => p.state)).toEqual(["output-denied"]);
+    expect(chat.messages.map((m) => m.id)).toEqual([
+      "q1",
+      "a1",
+      "q3",
+      "a3",
+      "q4",
+      "a4",
+      "q5",
+      "a5",
+    ]);
+    expect(tool(chat.messages[3]).map((p) => p.state)).toEqual(["output-available"]);
   });
 
   it("a live skill's part has the history's ID: a resumed run updates it", async () => {
     const pending = approval({ id: 12, run: 2, callId: "skill", state: "pending" });
-    const h: WitHistory = {
-      conversation: 1,
-      model: "",
-      effort: "",
-      usage: { input: 0, output: 0, context: 0, history: 0, compactable: false },
-      running: 0,
-      messages: [],
-      approvals: [pending],
-    };
+    const h = hist([
+      turn({ id: "2", command: { skill: "a", lang: "" }, runs: [2], approvals: [pending] }),
+    ]);
     const all = historyToMessages(h);
-    expect(all.map((m) => m.id)).toEqual(["w2"]);
+    expect(all.map((m) => m.id)).toEqual(["q2", "a2"]);
     const { api, tr, emit } = fake();
     api.follow.mockResolvedValue(h);
     await tr.follow();
@@ -691,14 +571,28 @@ describe("WitTransport", () => {
     await vi.waitFor(() => expect(chat.status).toBe("streaming"));
     emit({
       run: 2,
+      turn: "2",
       kind: "interrupted",
       interrupts: [{ id: "skill", name: "update_draft", args: "" }],
       approvals: [{ ...pending, state: "done" }],
     });
-    emit({ run: 2, kind: "done" });
+    emit({ run: 2, turn: "2", kind: "done", ends: true });
     await done;
-    const tools = chat.messages[0].parts.filter((p) => p.type === "dynamic-tool");
+    const tools = chat.messages[1].parts.filter((p) => p.type === "dynamic-tool");
     expect(tools.map((p) => [p.toolCallId, p.state])).toEqual([["skill-12", "output-available"]]);
+  });
+
+  it("a started run's answer takes its turn's ID: the history read after it is the same message", async () => {
+    const { api, tr, emit } = fake();
+    api.ask.mockResolvedValue(started(7, "5"));
+    const chat = new Chat<WitUIMessage>({ transport: tr });
+    const sent = chat.sendMessage({ text: "hi" });
+    await vi.waitFor(() => expect(tr.run).toBe(7));
+    emit({ run: 7, turn: "5", kind: "text", text: "yo" });
+    emit({ run: 7, turn: "5", kind: "done", ends: true });
+    await sent;
+    expect(chat.messages.at(-1)?.id).toBe("a5");
+    expect(tr.owns(chat.messages.at(-1), 7)).toBe(true);
   });
 
   it("a refused start drops what waited", async () => {
@@ -714,38 +608,16 @@ describe("WitTransport", () => {
 });
 
 describe("WitTransport selections", () => {
-  const hist = (conversation: number, runs: number[] = []): WitHistory => ({
-    conversation,
-    model: "",
-    effort: "",
-    usage: { input: 0, output: 0, context: 0, history: 0, compactable: false },
-    running: 0,
-    approvals: [],
-    messages: runs.length
-      ? [
-          {
-            id: "q",
-            role: "user",
-            text: "Q",
-            reasoning: "",
-            quoted: [],
-            calls: [],
-            results: [],
-            citations: [],
-            runs,
-            elapsed: 0,
-          },
-        ]
-      : [],
-  });
+  const histOf = (conversation: number, runs: number[] = []): WitHistory =>
+    hist(runs.length ? [turn({ id: "1", runs })] : [], { conversation });
 
   it("switching conversations drops the old stream", async () => {
     const { api, tr, emit } = fake();
-    api.ask.mockResolvedValue(7);
+    api.ask.mockResolvedValue(started(7));
     const s = await send(tr, userMsg("hi"));
     await vi.waitFor(() => expect(tr.run).toBe(7));
     emit({ run: 7, kind: "text", text: "a" });
-    api.follow.mockResolvedValue(hist(2));
+    api.follow.mockResolvedValue(histOf(2));
     await tr.follow(); // a switch: the old stream ends
     emit({ run: 7, kind: "text", text: "late" }); // conversation 1's, still in flight
     const deltas = (await readAll(s)).flatMap((c) => (c.type === "text-delta" ? [c.delta] : []));
@@ -757,22 +629,22 @@ describe("WitTransport selections", () => {
     const { api, tr } = fake();
     let resolveA!: (h: WitHistory) => void;
     api.follow.mockReturnValueOnce(new Promise((r) => (resolveA = r)));
-    api.follow.mockResolvedValueOnce(hist(2));
+    api.follow.mockResolvedValueOnce(histOf(2));
     const a = tr.follow();
-    expect(await tr.follow()).toEqual(hist(2));
-    resolveA(hist(1));
+    expect(await tr.follow()).toEqual(histOf(2));
+    resolveA(histOf(1));
     expect(await a).toBeUndefined();
     expect(tr.conversation).toBe(2);
   });
 
   it("ask returning after a switch is ignored", async () => {
     const { api, tr, emit } = fake();
-    let resolve!: (n: number) => void;
+    let resolve!: (r: { run: number; turn: string }) => void;
     api.ask.mockReturnValue(new Promise((r) => (resolve = r)));
     await send(tr, userMsg("hi"));
-    api.follow.mockResolvedValue(hist(2));
+    api.follow.mockResolvedValue(histOf(2));
     await tr.follow();
-    resolve(9);
+    resolve(started(9));
     await Promise.resolve();
     emit({ conversation: 5, run: 9, kind: "text", text: "x" });
     expect(tr.run).toBe(0);
@@ -781,18 +653,18 @@ describe("WitTransport selections", () => {
 
   it("history reads the conversation again without a reset; another conversation's is none", async () => {
     const { api, tr } = fake();
-    api.follow.mockResolvedValue(hist(1));
+    api.follow.mockResolvedValue(histOf(1));
     await tr.follow();
-    api.follow.mockResolvedValue(hist(1, [7]));
-    expect(await tr.history()).toEqual(hist(1, [7]));
+    api.follow.mockResolvedValue(histOf(1, [7]));
+    expect(await tr.history()).toEqual(histOf(1, [7]));
     expect(tr.conversation).toBe(1);
-    api.follow.mockResolvedValue(hist(3, [7]));
+    api.follow.mockResolvedValue(histOf(3, [7]));
     expect(await tr.history()).toBeUndefined();
   });
 
   it("watch hears the followed conversation's events only", async () => {
     const { api, tr, emit } = fake();
-    api.follow.mockResolvedValue(hist(1));
+    api.follow.mockResolvedValue(histOf(1));
     await tr.follow();
     const heard: number[] = [];
     const off = tr.watch((e) => heard.push(e.run));
@@ -805,14 +677,14 @@ describe("WitTransport selections", () => {
 
   it("Stop while starting, then a switch: the run is still stopped once its ID is known", async () => {
     const { api, tr } = fake();
-    let resolve!: (n: number) => void;
+    let resolve!: (r: { run: number; turn: string }) => void;
     api.ask.mockReturnValue(new Promise((r) => (resolve = r)));
     api.stop.mockResolvedValue(undefined);
     await send(tr, userMsg("hi"));
     await tr.stop();
-    api.follow.mockResolvedValue(hist(2));
+    api.follow.mockResolvedValue(histOf(2));
     await tr.follow(); // a switch: the start's result is no longer shown
-    resolve(9);
+    resolve(started(9));
     await vi.waitFor(() => expect(api.stop).toHaveBeenCalledWith(9));
     expect(tr.run).toBe(0);
   });

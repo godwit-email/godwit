@@ -149,6 +149,34 @@ func (s *Service) assistDraft(ctx context.Context, draftID int64) (Draft, error)
 	return d, s.bind(ctx, d.AccountID)
 }
 
+// AssistConversation is the ID of the draft's assist conversation, the one
+// Assist and AssistSkill run in; with create, one is made if it has none,
+// else it is 0.
+func (s *Service) AssistConversation(ctx context.Context, draftID int64, create bool) (int64, error) {
+	ctx, end, err := s.begin(ctx, 0)
+	if err != nil {
+		return 0, err
+	}
+	defer end()
+	if !create {
+		id, err := s.findAssistConversation(ctx, draftID)
+		return id, err
+	}
+	c, err := s.assistConversation(ctx, draftID)
+	return c.ID, err
+}
+
+// findAssistConversation is the draft's assist conversation, 0 for none.
+// Conversations RewriteSelection made (their runs offer update_selection) are not it.
+func (s *Service) findAssistConversation(ctx context.Context, draftID int64) (int64, error) {
+	rows, err := s.db.Query(ctx, `SELECT c.id FROM conversations c WHERE c.kind = 'assist' AND c.draft_id = ? AND NOT EXISTS
+		(SELECT 1 FROM runs r WHERE r.conversation_id = c.id AND r.tools LIKE '%"update_selection"%') ORDER BY c.id LIMIT 1`, draftID)
+	if err != nil || len(rows.Values) == 0 {
+		return 0, err
+	}
+	return store.Int(rows.Values[0][0]), nil
+}
+
 // assistConversation returns the draft's assist conversation, creating it.
 // Conversations RewriteSelection made (their runs offer update_selection) are not it.
 func (s *Service) assistConversation(ctx context.Context, draftID int64) (Conversation, error) {
@@ -158,13 +186,12 @@ func (s *Service) assistConversation(ctx context.Context, draftID int64) (Conver
 	// ponytail: one lock for every draft's find-or-create; per draft if it ever contends
 	s.assistMu.Lock()
 	defer s.assistMu.Unlock()
-	rows, err := s.db.Query(ctx, `SELECT c.id FROM conversations c WHERE c.kind = 'assist' AND c.draft_id = ? AND NOT EXISTS
-		(SELECT 1 FROM runs r WHERE r.conversation_id = c.id AND r.tools LIKE '%"update_selection"%') ORDER BY c.id LIMIT 1`, draftID)
+	id, err := s.findAssistConversation(ctx, draftID)
 	if err != nil {
 		return Conversation{}, err
 	}
-	if len(rows.Values) > 0 {
-		return s.conversation(ctx, store.Int(rows.Values[0][0]))
+	if id != 0 {
+		return s.conversation(ctx, id)
 	}
 	return s.newAssistConversation(ctx, draftID, "")
 }

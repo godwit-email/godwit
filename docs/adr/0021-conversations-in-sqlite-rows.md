@@ -1,5 +1,5 @@
 ---
-status: proposed
+status: accepted
 ---
 
 # 对话存在 SQLite，每条消息一行，不用 JSONL

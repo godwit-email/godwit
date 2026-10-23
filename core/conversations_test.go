@@ -2,6 +2,7 @@ package core
 
 import (
 	"encoding/json"
+	"strconv"
 	"strings"
 	"testing"
 
@@ -98,14 +99,14 @@ func TestAskAgainRefuses(t *testing.T) {
 	e.start(t, conv, "first")
 	c, err := e.s.GetConversation(t.Context(), conv.ID)
 	require.NoError(t, err)
-	require.Len(t, c.Messages, 2)
-	_, err = e.s.AskAgain(t.Context(), conv.ID, c.Messages[1].Seq, "x", nil)
+	require.Len(t, savedMessages(t, e.s, c.ID), 2)
+	_, err = e.s.AskAgain(t.Context(), conv.ID, strconv.FormatInt(savedMessages(t, e.s, c.ID)[1].Seq, 10), "x", nil)
 	require.Error(t, err, "an answer is no question")
-	_, err = e.s.AskAgain(t.Context(), conv.ID, 99, "x", nil)
+	_, err = e.s.AskAgain(t.Context(), conv.ID, "99", "x", nil)
 	require.Error(t, err)
 
 	e.interrupt(t, conv, testllm.Call{Name: "fake_draft", Args: `{"subject":"Hi"}`})
-	_, err = e.s.AskAgain(t.Context(), conv.ID, c.Messages[0].Seq, "x", nil)
+	_, err = e.s.AskAgain(t.Context(), conv.ID, c.Turns[0].ID, "x", nil)
 	assert.ErrorIs(t, err, ErrRunActive)
 }
 
@@ -132,7 +133,7 @@ func TestAskAgain(t *testing.T) {
 		c, err := e.s.GetConversation(t.Context(), conv.ID)
 		require.NoError(t, err)
 		var out []string
-		for _, m := range c.Messages {
+		for _, m := range savedMessages(t, e.s, c.ID) {
 			out = append(out, m.Text)
 		}
 		return out
@@ -140,7 +141,7 @@ func TestAskAgain(t *testing.T) {
 	before := messages()
 	c, err := e.s.GetConversation(t.Context(), conv.ID)
 	require.NoError(t, err)
-	first, second := c.Messages[0].Seq, c.Messages[2].Seq
+	first, second := c.Turns[0].ID, c.Turns[1].ID
 
 	_, err = e.s.AskAgain(t.Context(), conv.ID, second, "second, edited", []int64{999999})
 	require.Error(t, err)
@@ -189,12 +190,12 @@ func TestRewindKeepsUsage(t *testing.T) {
 	c, err := e.s.GetConversation(t.Context(), conv.ID)
 	require.NoError(t, err)
 	e.srv.Script(testllm.Turn{Text: []string{"Again."}, Usage: [2]int{5, 1}})
-	ch, err := e.s.AskAgain(t.Context(), conv.ID, c.Messages[2].Seq, "second, again", nil)
+	ch, err := e.s.AskAgain(t.Context(), conv.ID, c.Turns[1].ID, "second, again", nil)
 	require.NoError(t, err)
 	drainWit(t, ch)
 	c, err = e.s.GetConversation(t.Context(), conv.ID)
 	require.NoError(t, err)
-	require.Len(t, c.Runs, 2, "the replaced run goes")
+	require.Len(t, spans(t, e.s, c.ID), 2, "the replaced run goes")
 	assert.Equal(t, 45, c.Usage.Input)
 	assert.Equal(t, 7, c.Usage.Output)
 	assert.Equal(t, 5, c.Usage.Last, "the history the model was last shown is the new run's")
@@ -212,7 +213,7 @@ func TestAskAgainInterrupted(t *testing.T) {
 		c, err := e.s.GetConversation(t.Context(), conv.ID)
 		require.NoError(t, err)
 		var out []string
-		for _, m := range c.Messages {
+		for _, m := range savedMessages(t, e.s, c.ID) {
 			if m.Text != "" {
 				out = append(out, m.Text)
 			}
@@ -221,7 +222,7 @@ func TestAskAgainInterrupted(t *testing.T) {
 	}
 	c, err := e.s.GetConversation(t.Context(), conv.ID)
 	require.NoError(t, err)
-	second := c.Messages[2].Seq
+	second := c.Turns[1].ID
 	before := texts()
 
 	ask := func() WitEvent {
@@ -279,7 +280,7 @@ func TestBackfillHistories(t *testing.T) {
 	c, err := e.s.GetConversation(t.Context(), conv.ID)
 	require.NoError(t, err)
 	var shown []string
-	for _, m := range c.Messages {
+	for _, m := range savedMessages(t, e.s, c.ID) {
 		if m.Command != nil {
 			shown = append(shown, "/"+m.Command.Skill)
 		} else {
@@ -287,7 +288,7 @@ func TestBackfillHistories(t *testing.T) {
 		}
 	}
 	assert.Equal(t, []string{"q1", "a1", "/translate-draft", "q2", "a2"}, shown)
-	assert.Equal(t, []RunSpan{{ID: 101, From: 1, To: 3}, {ID: 102, From: 3, To: 4}, {ID: 103, From: 4, To: 6}}, c.Runs)
+	assert.Equal(t, []span{{ID: 101, From: 1, To: 3}, {ID: 102, From: 3, To: 4}, {ID: 103, From: 4, To: 6}}, spans(t, e.s, c.ID))
 	sum, _, err := e.s.convSummary(t.Context(), conv.ID)
 	require.NoError(t, err)
 	assert.EqualValues(t, 2, sum.Upto, "a1's seq")

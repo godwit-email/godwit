@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"log/slog"
 	"slices"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -21,20 +22,15 @@ import (
 )
 
 // Conversation is a Wit chat: kind "ask" (the mailbox panel) or "assist" (one
-// draft's compose panel, DraftID set). Messages are its history, for display
-// (each with its Seq); Citations are the mail its runs showed the model, in
-// the order they came, each with the run and tool call that showed it (a
-// message shown twice is there twice); Runs are the parts of Messages each run
-// added, in run order; ActiveRunID is its run that is running, resuming or
-// waiting for approvals (0: none). ListConversations leaves those four empty.
+// draft's compose panel, DraftID set). Turns are its questions and answers;
+// ActiveRunID is its run that is running, resuming or waiting for approvals
+// (0: none). ListConversations leaves both empty.
 type Conversation struct {
 	ID                 int64
 	Kind, Title, Model string
 	Effort             string // the reasoning effort its runs ask for; "" sends none
 	DraftID            int64
-	Messages           []ai.Message
-	Citations          []Citation
-	Runs               []RunSpan
+	Turns              []Turn
 	ActiveRunID        int64
 	UpdatedAt          time.Time
 	// Usage sums its runs' tokens; Last is the latest run's that reported any.
@@ -45,31 +41,27 @@ type Conversation struct {
 	Usage       ai.Usage
 	HistoryUse  float64
 	Compactable bool
-	// Answering means a run of it is running or resuming; Awaiting that one
-	// waits for the user to decide its calls. Only ListConversations sets them.
+	// Answering means a run of it is running or resuming (or an allowed
+	// call of it executes); Awaiting that one waits for the user to decide
+	// its calls.
 	Answering, Awaiting bool
 }
 
-// WitEvent is one event of a Wit run. An interrupted event carries the
-// approvals it recorded, in call order. An Assist run starts with a "context"
-// event whose Citations are the mail its context shows the model.
+// WitEvent is one event of a Wit run of conversation ConversationID, for
+// its turn Turn (Turn.ID). A run that starts (not a resume) sends "start"
+// first; an Assist run then a "context" event whose Citations are the mail
+// its context shows the model. An interrupted event carries the approvals
+// it recorded, in call order. Ends: the run is over for now, done, failed,
+// or waiting on the user (an interrupt whose calls were all decided at
+// once goes on in a resume instead).
 type WitEvent struct {
 	ai.Event
-	RunID     int64
-	Citations []Citation
-	Approvals []Approval
-}
-
-// RunSpan is the part of a conversation's Messages that run ID added, its
-// question included: the messages with seqs from From up to To. A resume
-// extends its run's span; a run that saved nothing (failed, cancelled while
-// running) has none.
-type RunSpan struct {
-	ID       int64
-	From, To int64
-	// Active is how long the run worked: thinking, calling tools, writing;
-	// not the time it waited for the user to decide its calls.
-	Active time.Duration
+	ConversationID int64
+	RunID          int64
+	Turn           string
+	Ends           bool
+	Citations      []Citation
+	Approvals      []Approval
 }
 
 // Citation is a message a run's tools showed the model: RunID's call CallID
@@ -155,23 +147,42 @@ func (s *Service) ListConversations(ctx context.Context, kind string) ([]Convers
 	for _, r := range rows.Values {
 		out = append(out, scanConversation(r))
 	}
-	// Each conversation's active run, if any: under way, waiting on pending calls, or
-	// interrupted while an allowed call executes (an external one, up to its timeout).
-	runs, err := s.db.Query(ctx, `SELECT r.conversation_id, r.state, EXISTS(SELECT 1 FROM approvals a WHERE a.run_id = r.id AND a.state = 'pending'),
-		EXISTS(SELECT 1 FROM approvals a WHERE a.run_id = r.id AND a.state = 'executing')
-		FROM runs r JOIN conversations c ON c.id = r.conversation_id WHERE c.kind = ? AND r.state IN ('running', 'resuming', 'interrupted')`, kind)
+	acts, err := s.activity(ctx, "c.kind = ?", kind)
 	if err != nil {
 		return nil, err
 	}
-	for _, r := range runs.Values {
-		if i := slices.IndexFunc(out, func(c Conversation) bool { return c.ID == store.Int(r[0]) }); i >= 0 {
-			if store.Str(r[1]) == "interrupted" {
-				out[i].Awaiting = store.Int(r[2]) != 0
-				out[i].Answering = !out[i].Awaiting && store.Int(r[3]) != 0
-			} else {
-				out[i].Answering = true
-			}
+	for _, a := range acts {
+		if i := slices.IndexFunc(out, func(c Conversation) bool { return c.ID == a.conv }); i >= 0 {
+			out[i].ActiveRunID, out[i].Answering, out[i].Awaiting = a.run, a.answering, a.awaiting
 		}
+	}
+	return out, nil
+}
+
+// active is a conversation's active run and what it does.
+type active struct {
+	conv, run           int64
+	answering, awaiting bool
+}
+
+// activity is the active runs of the conversations where holds (on c):
+// under way, waiting on pending calls, or interrupted while an allowed call
+// executes (an external one, up to its timeout).
+func (s *Service) activity(ctx context.Context, where string, args ...any) ([]active, error) {
+	rows, err := s.db.Query(ctx, `SELECT r.conversation_id, r.id, r.state, EXISTS(SELECT 1 FROM approvals a WHERE a.run_id = r.id AND a.state = 'pending'),
+		EXISTS(SELECT 1 FROM approvals a WHERE a.run_id = r.id AND a.state = 'executing')
+		FROM runs r JOIN conversations c ON c.id = r.conversation_id WHERE `+where+` AND r.state IN ('running', 'resuming', 'interrupted')`, args...)
+	if err != nil {
+		return nil, err
+	}
+	out := make([]active, 0, len(rows.Values))
+	for _, r := range rows.Values {
+		a := active{conv: store.Int(r[0]), run: store.Int(r[1]), answering: true}
+		if store.Str(r[2]) == "interrupted" {
+			a.awaiting = store.Int(r[3]) != 0
+			a.answering = !a.awaiting && store.Int(r[4]) != 0
+		}
+		out = append(out, a)
 	}
 	return out, nil
 }
@@ -217,30 +228,36 @@ func (s *Service) GetConversation(ctx context.Context, id int64) (Conversation, 
 	if err != nil {
 		return Conversation{}, err
 	}
-	c.Messages = h.Messages()
-	for i, m := range c.Messages { // the saved history keeps the references the model wrote
+	acts, err := s.activity(ctx, "c.id = ?", id)
+	if err != nil {
+		return Conversation{}, err
+	}
+	if len(acts) > 0 {
+		c.ActiveRunID, c.Answering, c.Awaiting = acts[0].run, acts[0].answering, acts[0].awaiting
+	}
+	runs, err := s.conversationRuns(ctx, id)
+	if err != nil {
+		return Conversation{}, err
+	}
+	as, err := s.approvals(ctx, "r.conversation_id = ?", id)
+	if err != nil {
+		return Conversation{}, err
+	}
+	cs, err := s.citationsOf(ctx, id)
+	if err != nil {
+		return Conversation{}, err
+	}
+	expand := func(m ai.Message) ai.Message { // the saved history keeps the references the model wrote
 		x := s.linkExpander() // per message, as each was expanded live: history grows past maxExpandMessages
-		c.Messages[i].Text, c.Messages[i].Reasoning = x.text(ctx, m.Text), x.text(ctx, m.Reasoning)
+		m.Text, m.Reasoning = x.text(ctx, m.Text), x.text(ctx, m.Reasoning)
+		m.Calls = slices.Clone(m.Calls)
 		for j, call := range m.Calls {
 			m.Calls[j].Args, _ = x.args(ctx, call.Args)
 		}
+		return m
 	}
-	rows, err := s.db.Query(ctx, "SELECT id FROM runs WHERE conversation_id = ? AND state IN ('running', 'interrupted', 'resuming')", id)
-	if err != nil {
-		return Conversation{}, err
-	}
-	if len(rows.Values) > 0 {
-		c.ActiveRunID = store.Int(rows.Values[0][0])
-	}
-	rows, err = s.db.Query(ctx, "SELECT id, hist_from, hist_to, active_ms FROM runs WHERE conversation_id = ? AND hist_from IS NOT NULL ORDER BY id", id)
-	if err != nil {
-		return Conversation{}, err
-	}
-	for _, r := range rows.Values {
-		c.Runs = append(c.Runs, RunSpan{ID: store.Int(r[0]), From: store.Int(r[1]), To: store.Int(r[2]),
-			Active: time.Duration(store.Int(r[3])) * time.Millisecond})
-	}
-	rows, err = s.db.Query(ctx, `SELECT COALESCE(SUM(input_tokens), 0) + (SELECT spent_input FROM conversations WHERE id = ?),
+	c.Turns = turnsOf(h, runs, as, cs, c.Kind == "ask" && c.ActiveRunID == 0, expand)
+	rows, err := s.db.Query(ctx, `SELECT COALESCE(SUM(input_tokens), 0) + (SELECT spent_input FROM conversations WHERE id = ?),
 		COALESCE(SUM(output_tokens), 0) + (SELECT spent_output FROM conversations WHERE id = ?),
 		COALESCE((SELECT context_tokens FROM runs WHERE conversation_id = ? AND context_tokens > 0 ORDER BY id DESC LIMIT 1), 0)
 		FROM runs WHERE conversation_id = ?`, id, id, id, id)
@@ -261,8 +278,7 @@ func (s *Service) GetConversation(ctx context.Context, id int64) (Conversation, 
 	}
 	c.Compactable = h.Compactable(sum)
 	c.HistoryUse = float64(size) / float64(s.refHistoryBudget(ctx, c.Model))
-	c.Citations, err = s.citationsOf(ctx, id)
-	return c, err
+	return c, nil
 }
 
 // runUsage adds res's tokens to runID's.
@@ -395,6 +411,23 @@ func (s *Service) saveCitations(ctx context.Context, runID int64, cs []Citation)
 	}
 }
 
+// RunConversation is the conversation runID is a run of.
+func (s *Service) RunConversation(ctx context.Context, runID int64) (int64, error) {
+	ctx, end, err := s.begin(ctx, 0)
+	if err != nil {
+		return 0, err
+	}
+	defer end()
+	rows, err := s.db.Query(ctx, "SELECT conversation_id FROM runs WHERE id = ?", runID)
+	if err != nil {
+		return 0, err
+	}
+	if len(rows.Values) == 0 {
+		return 0, fmt.Errorf("run %d not found", runID)
+	}
+	return store.Int(rows.Values[0][0]), nil
+}
+
 // DeleteConversation deletes the conversation with its runs and approvals. A
 // run in flight or an approval executing makes it ErrRunActive; cancel first.
 func (s *Service) DeleteConversation(ctx context.Context, id int64) error {
@@ -432,7 +465,8 @@ type witStream struct {
 	q       []WitEvent
 	waiting int           // events in q that do not end a run
 	closing bool          // no more pushes; ch closes once q is delivered
-	wake    chan struct{} // 1 slot: q or closing changed
+	held    bool          // q waits for release (FollowConversation)
+	wake    chan struct{} // 1 slot: q, closing or held changed
 	quit    chan struct{} // closed by stop
 	stopped sync.Once
 }
@@ -499,12 +533,27 @@ func (w *witStream) close() {
 // stop drops what is queued and closes ch now.
 func (w *witStream) stop() { w.stopped.Do(func() { close(w.quit) }) }
 
+// release delivers what was held back that keep keeps, then the rest.
+func (w *witStream) release(keep func(WitEvent) bool) {
+	w.mu.Lock()
+	w.q = slices.DeleteFunc(w.q, func(ev WitEvent) bool { return !keep(ev) })
+	w.waiting = 0
+	for _, ev := range w.q {
+		if !terminal(ev) {
+			w.waiting++
+		}
+	}
+	w.held = false
+	w.mu.Unlock()
+	w.signal()
+}
+
 func (w *witStream) pump() {
 	defer close(w.ch)
 	for {
 		w.mu.Lock()
-		if len(w.q) == 0 {
-			closing := w.closing
+		if len(w.q) == 0 || w.held {
+			closing := w.closing && !w.held
 			w.mu.Unlock()
 			if closing {
 				return
@@ -540,14 +589,21 @@ func (w *witStream) pump() {
 // A slow reader loses the oldest text but never an event that ends a run.
 // After Close the channel is closed.
 func (s *Service) SubscribeConversation(id int64) (<-chan WitEvent, func()) {
+	w, stop := s.subscribe(id, false)
+	return w.ch, stop
+}
+
+// subscribe is SubscribeConversation's stream, held back if held.
+func (s *Service) subscribe(id int64, held bool) (*witStream, func()) {
 	s.subsMu.Lock()
 	defer s.subsMu.Unlock()
 	if s.subsClosed {
-		ch := make(chan WitEvent)
-		close(ch)
-		return ch, func() {}
+		w := &witStream{ch: make(chan WitEvent)}
+		close(w.ch)
+		return w, func() {}
 	}
 	w := s.newStream()
+	w.held = held
 	if s.subs == nil {
 		s.subs = map[int64]map[*witStream]bool{}
 	}
@@ -555,12 +611,40 @@ func (s *Service) SubscribeConversation(id int64) (<-chan WitEvent, func()) {
 		s.subs[id] = map[*witStream]bool{}
 	}
 	s.subs[id][w] = true
-	return w.ch, func() {
+	return w, func() {
 		s.subsMu.Lock()
 		delete(s.subs[id], w)
 		s.subsMu.Unlock()
 		w.stop()
 	}
+}
+
+// FollowConversation is the conversation as it is now (GetConversation) and
+// its runs' events from then on, none missed and none twice: a run that had
+// ended when it was read sends nothing more, its end being in what was read.
+// stop ends the events, as SubscribeConversation's.
+func (s *Service) FollowConversation(ctx context.Context, id int64) (Conversation, <-chan WitEvent, func(), error) {
+	ctx, end, err := s.begin(ctx, 0)
+	if err != nil {
+		return Conversation{}, nil, nil, err
+	}
+	defer end()
+	w, stop := s.subscribe(id, true)
+	rows, err := s.db.Query(ctx, "SELECT COALESCE(MAX(id), 0) FROM runs WHERE conversation_id = ?", id)
+	if beforeFollowRead != nil {
+		beforeFollowRead()
+	}
+	var c Conversation
+	if err == nil {
+		c, err = s.GetConversation(ctx, id)
+	}
+	if err != nil {
+		stop()
+		return Conversation{}, nil, nil, err
+	}
+	known := store.Int(rows.Values[0][0]) // runs started before the read; any not active then had ended
+	w.release(func(ev WitEvent) bool { return ev.RunID > known || ev.RunID == c.ActiveRunID })
+	return c, w.ch, stop, nil
 }
 
 // endStreams ends every stream, subscriptions and startRun channels alike,
@@ -686,7 +770,8 @@ type runJob struct {
 	base     *ai.History   // the history the run started from (its question asked again: before it)
 	after    *ai.History   // what the run ended with (drive), and the changes that save it
 	changes  ai.HistoryChanges
-	resumed  bool // a resume: the run's context was shown and cited already
+	resumed  bool   // a resume: the run's context was shown and cited already
+	turn     string // the turn its question starts (Turn.ID)
 	// host, set for a host-made proposal (AssistSkill), turns the finished
 	// tool-less run into an interrupt on the proposal; it is not resumed. Its
 	// command is the question the history keeps for it.
@@ -991,12 +1076,19 @@ func (s *Service) drive(job *runJob, end func(), run runFunc, req ai.Request, ou
 		s.untrack(job)
 		s.runMu.Unlock()
 	}()
+	if job.turn == "" { // the question the run asks takes the next seq
+		job.turn = strconv.FormatInt(job.base.Next(), 10)
+	}
 	emit := func(ev WitEvent) {
-		ev.RunID = job.id // its Citations are numbered and saved (number): a reader that re-reads after it finds them
+		// its Citations are numbered and saved (number): a reader that re-reads after it finds them
+		ev.ConversationID, ev.RunID, ev.Turn = job.conv.ID, job.id, job.turn
 		if out != nil {
 			out.push(ev)
 		}
 		s.publishWit(job.conv.ID, ev)
+	}
+	if !job.resumed {
+		emit(WitEvent{Event: ai.Event{Kind: "start"}})
 	}
 	cs := job.quoted
 	if len(job.cited) > 0 && !job.resumed {
@@ -1048,6 +1140,7 @@ func (s *Service) drive(job *runJob, end func(), run runFunc, req ai.Request, ou
 		}
 		fin = WitEvent{Event: ai.Event{Kind: "error", Err: &ai.Error{Code: ai.CodeInternal, Msg: "could not save the run: " + err.Error()}}}
 	}
+	fin.Ends = !applied
 	emit(fin)
 	if out != nil {
 		out.close()
@@ -1159,9 +1252,11 @@ func (s *Service) resume(runID int64) error {
 		return err
 	}
 	if err := s.startResume(ctx, end, runID); err != nil {
+		turn := s.runTurn(ctx, runID)
 		convID, ferr := s.failRun(ctx, runID, err)
 		end()
-		s.publishWit(convID, WitEvent{RunID: runID, Event: ai.Event{Kind: "error", Err: &ai.Error{Code: ai.CodeInternal, Msg: err.Error()}}})
+		s.publishWit(convID, WitEvent{ConversationID: convID, RunID: runID, Turn: turn, Ends: true,
+			Event: ai.Event{Kind: "error", Err: &ai.Error{Code: ai.CodeInternal, Msg: err.Error()}}})
 		return ferr
 	}
 	return nil
@@ -1186,7 +1281,7 @@ func (s *Service) startResume(ctx context.Context, end func(), runID int64) erro
 			return err
 		}
 		end()
-		s.publishWit(store.Int(r[0]), WitEvent{RunID: runID, Event: ai.Event{Kind: "done"}})
+		s.publishWit(store.Int(r[0]), WitEvent{ConversationID: store.Int(r[0]), RunID: runID, Turn: s.runTurn(ctx, runID), Ends: true, Event: ai.Event{Kind: "done"}})
 		return nil
 	}
 	conv, err := s.conversation(ctx, store.Int(r[0]))
@@ -1222,7 +1317,7 @@ func (s *Service) startResume(ctx context.Context, end func(), runID int64) erro
 		return err
 	}
 	job := s.track(ctx, runID, conv, scope, snap.Round+len(as))
-	job.resumed, job.rewind = true, rw
+	job.resumed, job.rewind, job.turn = true, rw, s.runTurn(ctx, runID)
 	req, err := s.request(ctx, job, model, h, offered(conv.Kind, s.registered(names...)))
 	if err != nil {
 		s.untrack(job)
@@ -1242,4 +1337,14 @@ func questionOf(h *ai.History, seq int64) string {
 		}
 	}
 	return ""
+}
+
+// runTurn is the turn runID's question starts: its span's start ("" for a
+// run that saved none).
+func (s *Service) runTurn(ctx context.Context, runID int64) string {
+	rows, err := s.db.Query(ctx, "SELECT hist_from FROM runs WHERE id = ? AND hist_from IS NOT NULL", runID)
+	if err != nil || len(rows.Values) == 0 {
+		return ""
+	}
+	return strconv.FormatInt(store.Int(rows.Values[0][0]), 10)
 }

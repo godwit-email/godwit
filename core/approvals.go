@@ -57,6 +57,9 @@ type Approval struct {
 	// DraftID is the draft it made (an allowed create_draft), while that
 	// draft exists: 0 once it is sent or deleted.
 	DraftID int64
+	// DraftEdit: it edits the draft of its conversation (update_draft,
+	// update_selection), which the compose window shows in place.
+	DraftEdit bool
 }
 
 // ErrNotGrantable: the approval's tool cannot be allowed for the whole conversation.
@@ -180,10 +183,12 @@ var afterApprovalClaim, beforeResumeClaim func() bool
 
 // More test hooks, nil in production: beforeRunClaim runs in startRun right
 // before it claims the run row, with the call's context, beforeUntrack when a finished run is about to
-// stop being tracked.
+// stop being tracked, beforeFollowRead in FollowConversation once it
+// subscribed and before it reads the conversation.
 var (
-	beforeRunClaim func(ctx context.Context)
-	beforeUntrack  func(runID int64)
+	beforeRunClaim   func(ctx context.Context)
+	beforeUntrack    func(runID int64)
+	beforeFollowRead func()
 )
 
 // approvalRow is an approval with the columns only the Service uses.
@@ -257,7 +262,7 @@ func (s *Service) approvalRows(ctx context.Context, where string, args ...any) (
 		if a.State != "done" {
 			a.Error = a.result
 		}
-		a.SessionAllow = sessionGrantable(a)
+		a.SessionAllow, a.DraftEdit = sessionGrantable(a), isDraftEdit(a.Tool)
 		out = append(out, a)
 	}
 	return out, nil

@@ -8,6 +8,7 @@ import (
 	"maps"
 	netmail "net/mail"
 	"slices"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -52,13 +53,14 @@ func (s *Service) AskWith(ctx context.Context, conversationID int64, input strin
 	return s.askAt(ctx, conversationID, input, quoted, 0)
 }
 
-// AskAgain is AskWith asked in place of the question with seq at and what
-// followed it: they are replaced once the run is done (launch), so a refused
-// question, or a run that fails or is stopped, leaves the conversation as it
-// was.
-func (s *Service) AskAgain(ctx context.Context, conversationID int64, at int64, input string, quoted []int64) (<-chan WitEvent, error) {
-	if at <= 0 {
-		return nil, fmt.Errorf("no question at %d", at)
+// AskAgain is AskWith asked in place of the question of turn (Turn.ID) and
+// what followed it: they are replaced once the run is done (launch), so a
+// refused question, or a run that fails or is stopped, leaves the
+// conversation as it was.
+func (s *Service) AskAgain(ctx context.Context, conversationID int64, turn string, input string, quoted []int64) (<-chan WitEvent, error) {
+	at, err := strconv.ParseInt(turn, 10, 64)
+	if err != nil || at <= 0 {
+		return nil, fmt.Errorf("no turn %q", turn)
 	}
 	return s.askAt(ctx, conversationID, input, quoted, at)
 }

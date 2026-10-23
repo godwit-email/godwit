@@ -5,6 +5,7 @@ import {
   events,
   type MailHit,
   type WitCall,
+  type WitCommand,
   type WitEvent,
   type WitHistory,
   type WitResult,
@@ -12,15 +13,18 @@ import {
 
 /**
  * A question's request: free text (with the mail it quotes, `hits` as its chips), or a skill (with
- * its language) when set. `rewind` asks it in place of the question at that index (and what
- * followed it), on a host that rewinds.
+ * its language) when set. `rewind` asks it in place of the question of that turn (and what
+ * followed it), on a host that rewinds. A question read from the history has its `turn`, and
+ * `canAskAgain` when the host takes it now.
  */
 export type WitMeta = {
   skill?: string;
   lang?: string;
   quoted?: number[];
   hits?: MailHit[];
-  rewind?: number;
+  rewind?: string;
+  turn?: string;
+  canAskAgain?: boolean;
   /** An answer's runs' time at work, in milliseconds (core's; none while it streams). */
   elapsed?: number;
 };
@@ -80,15 +84,6 @@ function decided(a: Approval, id: string): Chunk[] {
   return [];
 }
 
-/** Whether ev ends the run: an interrupt whose approvals were all decided at once (a first generation) resumes it (webui ends). */
-export function ends(ev: WitEvent): boolean {
-  if (ev.kind === "done" || ev.kind === "error") return true;
-  return (
-    ev.kind === "interrupted" &&
-    (ev.approvals.length === 0 || ev.approvals.some((a) => a.state === "pending"))
-  );
-}
-
 /**
  * One event of a run as chunks of its answer. `seen` is the stream's: the tool calls already shown
  * and whether a text part is open. An error's text is its i18n key ("" for a stop: no failure).
@@ -140,7 +135,7 @@ export function toChunks(ev: WitEvent, seen: Set<string>): Chunk[] {
         const id = partId(a, seen);
         if (seen.has(id)) out.push(...decided(a, id));
       }
-      if (ends(ev)) out.push({ type: "finish" });
+      if (ev.ends) out.push({ type: "finish" });
       break;
     case "done":
       out.push({ type: "finish" });
@@ -177,79 +172,47 @@ function toolPart(c: WitCall, r: WitResult | undefined, a: Approval | undefined)
   return { ...base, state: "input-available" };
 }
 
+/** A question's message ID, and its answer's: by their turn (live answers take it too). */
+export const questionId = (turn: string) => `q${turn}`;
+export const answerId = (turn: string) => `a${turn}`;
+
 /**
- * The history as messages: each answer's calls with their results, or their approval's state by
- * CallID. An approval with no call in the history (a skill's: core writes no message for it) gets
- * a tool part of its own (partId), in any state: on its run's answer, else a new answer after its
- * run's question, else a message of its own (one per run) placed in run order among the others.
+ * The history as messages: each turn's question, then its answer with its calls (their results,
+ * or the approval each waits on, as core placed it) and the approvals that answer no call of it (a
+ * skill's: core writes no call for it), each a tool part of its own (partId). label names a
+ * command's question (a skill run on the draft).
  */
-export function historyToMessages(h: WitHistory): WitUIMessage[] {
-  const calls = new Set(h.messages.flatMap((m) => m.calls.map((c) => c.id)));
-  const ms = h.messages;
-  const on = new Map<number, Approval[]>(); // on answer i
-  const after = new Map<number, Approval[]>(); // after question i
-  const alone = new Map<number, Approval[]>(); // by run: a run with no message
-  const put = (m: Map<number, Approval[]>, i: number, a: Approval) =>
-    m.set(i, [...(m.get(i) ?? []), a]);
-  for (const a of h.approvals) {
-    if (calls.has(a.callId)) continue;
-    const i = ms.findIndex((m) => m.role === "assistant" && m.runs.includes(a.run));
-    const q = ms.findLastIndex((m) => m.runs.includes(a.run));
-    if (i >= 0) put(on, i, a);
-    else if (q >= 0) put(after, q, a);
-    else put(alone, a.run, a);
-  }
-  const synth = (as: Approval[]) =>
-    as.map((a) => toolPart({ id: partId(a), name: a.tool, args: "" }, undefined, a));
-  const answer = (as: Approval[]): WitUIMessage => ({
-    id: `w${as[0].run}`,
-    role: "assistant",
-    parts: [...synth(as), { type: "data-approvals", data: as }],
-  });
-  const out: { m: WitUIMessage; runs: number[] }[] = [];
-  ms.forEach((m, i) => {
-    if (m.role === "user") {
-      const metadata = m.quoted.length
-        ? { quoted: m.quoted.map((h) => h.id), hits: m.quoted }
-        : undefined;
-      out.push({
-        m: { id: m.id, role: "user", metadata, parts: [{ type: "text", text: m.text }] },
-        runs: m.runs,
-      });
-    } else {
-      const parts: Part[] = m.reasoning
-        ? [{ type: "reasoning", text: m.reasoning, state: "done" }]
-        : [];
-      const as: Approval[] = [];
-      for (const c of m.calls) {
-        // a call's approval is its run's: a provider may reuse a call ID in another run
-        const a = h.approvals.find((x) => x.callId === c.id && m.runs.includes(x.run));
-        if (a) as.push(a);
-        parts.push(
-          toolPart(
-            c,
-            m.results.find((r) => r.callId === c.id),
-            a,
-          ),
-        );
-      }
-      const own = on.get(i) ?? [];
-      parts.push(...synth(own));
-      as.push(...own);
-      if (as.length > 0) parts.push({ type: "data-approvals", data: as });
-      if (m.text) parts.push({ type: "text", text: m.text, state: "done" });
-      if (m.citations.length > 0) parts.push({ type: "data-citations", data: m.citations });
-      const metadata = m.elapsed > 0 ? { elapsed: m.elapsed } : undefined;
-      out.push({ m: { id: m.id, role: "assistant", metadata, parts }, runs: m.runs });
+export function historyToMessages(
+  h: WitHistory,
+  label: (c: WitCommand) => string = (c) => c.skill,
+): WitUIMessage[] {
+  const out: WitUIMessage[] = [];
+  for (const t of h.turns) {
+    const metadata: WitMeta = { turn: t.id, canAskAgain: t.canAskAgain };
+    if (t.quoted.length)
+      Object.assign(metadata, { quoted: t.quoted.map((h) => h.id), hits: t.quoted });
+    const text = t.command ? label(t.command) : t.question;
+    out.push({ id: questionId(t.id), role: "user", metadata, parts: [{ type: "text", text }] });
+    const parts: Part[] = t.reasoning
+      ? [{ type: "reasoning", text: t.reasoning, state: "done" }]
+      : [];
+    const as: Approval[] = [];
+    for (const c of t.calls) {
+      if (c.approval) as.push(c.approval);
+      parts.push(toolPart(c.call, c.result ?? undefined, c.approval ?? undefined));
     }
-    const as = after.get(i);
-    if (as) out.push({ m: answer(as), runs: [as[0].run] });
-  });
-  for (const [run, as] of [...alone].sort((x, y) => x[0] - y[0])) {
-    const k = out.findIndex((o) => o.runs.length > 0 && Math.min(...o.runs) > run);
-    out.splice(k < 0 ? out.length : k, 0, { m: answer(as), runs: [run] });
+    for (const a of t.approvals) {
+      as.push(a);
+      parts.push(toolPart({ id: partId(a), name: a.tool, args: "" }, undefined, a));
+    }
+    if (as.length > 0) parts.push({ type: "data-approvals", data: as });
+    if (t.text) parts.push({ type: "text", text: t.text, state: "done" });
+    if (t.citations.length > 0) parts.push({ type: "data-citations", data: t.citations });
+    if (parts.length === 0) continue;
+    const elapsed = t.elapsed > 0 ? { elapsed: t.elapsed } : undefined;
+    out.push({ id: answerId(t.id), role: "assistant", metadata: elapsed, parts });
   }
-  return out.map((o) => o.m);
+  return out;
 }
 
 /**
@@ -307,15 +270,18 @@ function replay(m: WitUIMessage, seen: Set<string>): Chunk[] {
   });
 }
 
+/** A run started: its ID and the turn it answers. */
+export type Started = { run: number; turn: string };
+
 /**
- * The host's runs: ask (or a skill, where the host has them) starts one and resolves to its ID,
- * in place of the question at index rewind and what followed when given (a host that `rewinds`;
+ * The host's runs: ask (or a skill, where the host has them) starts one and resolves to it, in
+ * place of the question of turn rewind and what followed when given (a host that `rewinds`;
  * refused, nothing changes); follow reads the conversation the host shows (subscribing to it);
  * stop cancels a run; compact (where the host has it) summarizes the conversation's older turns.
  */
 export type WitApi = {
-  ask(text: string, quoted?: number[], rewind?: number): Promise<number>;
-  skill?(id: string, lang: string): Promise<number>;
+  ask(text: string, quoted?: number[], rewind?: string): Promise<Started>;
+  skill?(id: string, lang: string): Promise<Started>;
   follow(): Promise<WitHistory>;
   stop(run: number): Promise<void>;
   compact?(): Promise<void>;
@@ -344,6 +310,7 @@ export class WitTransport implements ChatTransport<WitUIMessage> {
   private sink?: (ev: WitEvent) => void;
   private resuming?: { open?: WitUIMessage; id: string };
   private runsOf = new Map<string, number[]>(); // the history's answers' runs, by message ID
+  private turnOf = new Map<number, string>(); // the turn each run answers, as its events name it
   private gen = 0; // the selection: bumped by each follow and send
   private endOpen?: () => void; // ends the stream open
   private watchers = new Set<(ev: WitEvent) => void>();
@@ -364,6 +331,7 @@ export class WitTransport implements ChatTransport<WitUIMessage> {
     }
     if (ev.conversation !== this.conv) return;
     if (ev.run) this.run = ev.run;
+    if (ev.run && ev.turn) this.turnOf.set(ev.run, ev.turn);
     this.log.push(ev);
     this.sink?.(ev);
     for (const f of this.watchers) f(ev);
@@ -408,7 +376,7 @@ export class WitTransport implements ChatTransport<WitUIMessage> {
     this.reset();
     const h = await this.api.follow();
     if (g !== this.gen) return undefined;
-    this.runsOf = new Map(h.messages.map((m) => [m.id, m.runs]));
+    this.runsOf = runsOf(h);
     this.adopt(h.conversation);
     return h;
   }
@@ -423,25 +391,28 @@ export class WitTransport implements ChatTransport<WitUIMessage> {
     if (conv === undefined) return undefined; // a switch under way: no read to race its follow
     const h = await this.api.follow();
     if (g !== this.gen || h.conversation !== conv) return undefined;
-    this.runsOf = new Map(h.messages.map((m) => [m.id, m.runs]));
+    this.runsOf = runsOf(h);
     return h;
   }
 
-  /**
-   * Whether m is run's answer: by the history's runs, or the ID a live run's answer takes
-   * (`live<run>`; `w<run>` for a run's synthetic answer).
-   */
+  /** Whether m is run's answer: by the history's runs, or by the turn the run's events name. */
   owns(m: WitUIMessage | undefined, run: number): boolean {
     if (m?.role !== "assistant") return false;
+    const turn = this.turnOf.get(run);
     return (
-      m.id === `live${run}` || m.id === `w${run}` || (this.runsOf.get(m.id)?.includes(run) ?? false)
+      (turn !== undefined && m.id === answerId(turn)) ||
+      (this.runsOf.get(m.id)?.includes(run) ?? false)
     );
   }
 
-  /** The next reconnect streams the live run, going on with open (its own answer, the chat's last) or else in an answer of its own. */
-  resume(open: WitUIMessage | undefined, run: number) {
+  /**
+   * The next reconnect streams the live run, going on with open (its own answer, the chat's last) or
+   * else in an answer of its own, its turn's (turn: the run's, when the history names it).
+   */
+  resume(open: WitUIMessage | undefined, run: number, turn?: string) {
     this.run = run;
-    this.resuming = { open, id: open?.id ?? `live${run}` };
+    const t = turn ?? this.turnOf.get(run);
+    this.resuming = { open, id: open?.id ?? (t ? answerId(t) : `live${run}`) };
   }
 
   /** Stops the run: one still starting is stopped as soon as its ID is known; none, nothing. */
@@ -549,9 +520,10 @@ export class WitTransport implements ChatTransport<WitUIMessage> {
           : this.api.ask(text)
     )
       .then(
-        (run) => {
+        ({ run, turn }) => {
           if (g !== this.gen) return req.stop ? this.api.stop(run) : undefined; // a switch came: not shown
-          named(`live${run}`); // before its events: none goes through until the conversation is adopted
+          this.turnOf.set(run, turn);
+          named(answerId(turn)); // before its events: none goes through until the conversation is adopted
           this.run = this.want = run;
           const ev = this.early.find((e) => e.run === run);
           if (ev) this.adopt(ev.conversation);
@@ -588,4 +560,17 @@ export class WitTransport implements ChatTransport<WitUIMessage> {
     for (const ev of [...this.log]) push(ev); // what came since follow, then the live events
     return s;
   }
+}
+
+/** The history's answers' runs, by message ID. */
+function runsOf(h: WitHistory): Map<string, number[]> {
+  return new Map(h.turns.map((t) => [answerId(t.id), t.runs]));
+}
+
+/** h's approvals: on their calls, then each turn's own, in turn order. */
+export function approvalsOf(h: WitHistory): Approval[] {
+  return h.turns.flatMap((t) => [
+    ...t.calls.flatMap((c) => (c.approval ? [c.approval] : [])),
+    ...t.approvals,
+  ]);
 }

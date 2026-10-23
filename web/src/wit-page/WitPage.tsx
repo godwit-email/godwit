@@ -50,13 +50,13 @@ export function WitPage() {
     let gen = 0; // the selection
     let creating: Promise<unknown> | undefined; // a first question's ask in flight
     const tr = new WitTransport({
-      ask: (text, quoted = [], rewind = -1) => {
+      ask: (text, quoted = [], rewind = "") => {
         const g = gen;
         const p = api
           .ask(conv.current, text, quoted, pick.current.model, pick.current.effort, rewind)
           .then((rs) => {
             if (g === gen) conv.current = rs.conversation;
-            return rs.run;
+            return { run: rs.run, turn: rs.turn };
           });
         if (conv.current === 0) {
           const c: Promise<unknown> = p

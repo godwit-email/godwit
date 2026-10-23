@@ -57,5 +57,5 @@ func TestAskTimeNote(t *testing.T) {
 
 	c, err := e.s.GetConversation(t.Context(), conv.ID)
 	require.NoError(t, err)
-	assert.Equal(t, "first", c.Messages[0].Text, "the note never shows")
+	assert.Equal(t, "first", c.Turns[0].Question, "the note never shows")
 }

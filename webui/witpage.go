@@ -241,6 +241,27 @@ func (w *Wit) followConv(t Target, svc *core.Service, conv int64, sel uint64) (*
 	return f, nil
 }
 
+// followWith makes the page follow conv on ch, a subscription stop ends
+// (core FollowConversation), for selection sel, in place of what it
+// followed. A newer selection since gets errSuperseded.
+func (w *Wit) followWith(t Target, conv int64, ch <-chan core.WitEvent, stop func(), sel uint64) error {
+	w.mu.Lock()
+	if sel != w.sel {
+		w.mu.Unlock()
+		stop()
+		return errSuperseded
+	}
+	old := w.f
+	f := &follow{conv: conv, stop: stop}
+	w.f = f
+	w.mu.Unlock()
+	if old != nil {
+		old.end()
+	}
+	go f.pump(t, ch, w.d.Emit)
+	return nil
+}
+
 // followed is the conversation the page follows; 0 for none.
 func (w *Wit) followed() int64 {
 	w.mu.Lock()
@@ -261,37 +282,45 @@ func askConv(ctx context.Context, svc *core.Service, conv int64) error {
 }
 
 // Follow makes the page follow conv, an ask conversation (0: none), and
-// returns its history as read after subscribing (follow.read). The newest
-// selection wins: an older Follow or Ask no longer subscribes.
+// returns its history (core FollowConversation): the events after it go to
+// the page, none of them in it already. The newest selection wins: an older
+// Follow or Ask no longer subscribes.
 func (p *WitPage) Follow(ctx context.Context, conv int64) (WitHistory, error) {
 	t, svc, err := p.w.caller(ctx)
 	if err != nil {
 		return WitHistory{}, keyed(err)
 	}
 	sel := p.w.selection()
-	if conv != 0 {
-		if err := askConv(ctx, svc, conv); err != nil {
-			return WitHistory{}, keyed(err)
-		}
+	if conv == 0 {
+		_, err := p.w.followConv(t, svc, 0, sel)
+		return noHistory(), keyed(err)
 	}
-	f, err := p.w.followConv(t, svc, conv, sel)
-	if err != nil || f == nil {
-		return WitHistory{Messages: []WitMessage{}, Approvals: []Approval{}}, keyed(err)
+	if err := askConv(ctx, svc, conv); err != nil {
+		return WitHistory{}, keyed(err)
 	}
-	h, err := f.read(ctx, svc, t, p.w.d.Emit)
-	return h, keyed(err)
+	c, ch, stop, err := svc.FollowConversation(ctx, conv)
+	if err != nil {
+		return WitHistory{}, keyed(err)
+	}
+	if err := p.w.followWith(t, conv, ch, stop, sel); err != nil {
+		return noHistory(), keyed(err)
+	}
+	if followHook != nil {
+		followHook()
+	}
+	return history(c), nil
 }
 
 // Ask asks input in conv, an ask conversation, with the mail the user quoted
 // (message IDs; core AskWith), on model (a ModelChoice's Ref; "": the
 // default) with reasoning effort ("low", "medium", "high"; "": none), which
 // the conversation keeps; conv 0 makes one first, which
-// ConversationCreated hears of. rewind, unless -1, asks it in place of the
-// question at that index (a question's ID is "q<rewind>") and what followed
-// (core AskAgain): a refused question leaves the conversation as it was. The page follows conv from before the run
-// starts, unless a newer selection came meanwhile. Only Stop cancels the
-// run: a page reload does not.
-func (p *WitPage) Ask(ctx context.Context, conv int64, input string, quoted []int64, model, effort string, rewind int) (RunStart, error) {
+// ConversationCreated hears of. rewind, unless "", asks it in place of the
+// question of that turn (WitTurn.ID) and what followed (core AskAgain): a
+// refused question leaves the conversation as it was. The page follows conv
+// from before the run starts, unless a newer selection came meanwhile. Only
+// Stop cancels the run: a page reload does not.
+func (p *WitPage) Ask(ctx context.Context, conv int64, input string, quoted []int64, model, effort string, rewind string) (RunStart, error) {
 	t, svc, err := p.w.caller(ctx)
 	if err != nil {
 		return RunStart{}, keyed(err)
@@ -336,8 +365,8 @@ func (p *WitPage) Ask(ctx context.Context, conv int64, input string, quoted []in
 		return RunStart{}, keyed(err)
 	}
 	var ch <-chan core.WitEvent
-	if rewind > 0 && !made {
-		ch, err = svc.AskAgain(context.WithoutCancel(ctx), conv, int64(rewind), input, quoted)
+	if rewind != "" && !made {
+		ch, err = svc.AskAgain(context.WithoutCancel(ctx), conv, rewind, input, quoted)
 	} else {
 		ch, err = svc.AskWith(context.WithoutCancel(ctx), conv, input, quoted)
 	}
@@ -348,11 +377,8 @@ func (p *WitPage) Ask(ctx context.Context, conv int64, input string, quoted []in
 	if err != nil { // ErrRunActive: the active run goes on being followed
 		return RunStart{Conversation: conv}, keyed(err)
 	}
-	c, err := svc.GetConversation(ctx, conv)
-	id := c.ActiveRunID // claimed before Ask returned
-	if err != nil || id == 0 {
-		id = (<-ch).RunID // over already: its events are queued
-	}
+	ev, _ := started(ch)
+	id := ev.RunID
 	go func() { // the subscription shows the same events
 		for range ch {
 		}
@@ -363,7 +389,7 @@ func (p *WitPage) Ask(ctx context.Context, conv int64, input string, quoted []in
 	}
 	p.w.own[id] = true // ponytail: kept for the session; a few IDs per question
 	p.w.mu.Unlock()
-	return RunStart{Run: id, Conversation: conv}, nil
+	return RunStart{Run: id, Conversation: conv, Turn: ev.Turn}, nil
 }
 
 // created notes that Ask made conv under snapshot version: the snapshot
@@ -407,12 +433,8 @@ func (p *WitPage) Stop(ctx context.Context, run int64) error {
 	if conv == 0 {
 		return keyed(ErrNotAsk)
 	}
-	c, err := svc.GetConversation(ctx, conv)
-	if err != nil {
-		return keyed(err)
-	}
-	if c.ActiveRunID != run && !slices.ContainsFunc(c.Runs, func(r core.RunSpan) bool { return r.ID == run }) {
-		return keyed(ErrNotAsk)
+	if c, err := svc.RunConversation(ctx, run); err != nil || c != conv {
+		return keyed(cmp.Or(err, ErrNotAsk))
 	}
 	return keyed(svc.CancelRun(context.WithoutCancel(ctx), run))
 }

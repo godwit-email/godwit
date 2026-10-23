@@ -235,8 +235,8 @@ func TestApproveExecutesOnce(t *testing.T) {
 
 	c, err := e.s.GetConversation(t.Context(), conv.ID)
 	require.NoError(t, err)
-	require.NotEmpty(t, c.Messages)
-	assert.Equal(t, "Finished.", c.Messages[len(c.Messages)-1].Text)
+	require.NotEmpty(t, savedMessages(t, e.s, c.ID))
+	assert.Equal(t, "Finished.", savedMessages(t, e.s, c.ID)[len(savedMessages(t, e.s, c.ID))-1].Text)
 }
 
 func TestConcurrentApproveSameCard(t *testing.T) {
@@ -643,6 +643,7 @@ func TestCancelStillDeliversTerminal(t *testing.T) {
 	ctx, cancel := context.WithCancel(t.Context())
 	ch, err := e.s.startRun(ctx, conv, "hello", nil)
 	require.NoError(t, err)
+	require.Equal(t, "start", (<-ch).Kind)
 	assert.Equal(t, "text", (<-ch).Kind)
 	cancel()
 	time.Sleep(50 * time.Millisecond) // a slow reader
