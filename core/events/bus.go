@@ -13,7 +13,7 @@ const (
 	OutboxChanged     = "outbox.changed"
 	SettingsChanged   = "settings.changed"
 	ApprovalsChanged  = "approvals.changed"
-	RunsChanged       = "runs.changed" // a Wit run started or ended
+	RunsChanged       = "runs.changed" // a run of an ask conversation started or ended
 	PluginsChanged    = "plugins.changed"
 	MCPChanged        = "mcp.changed"
 	LabelsChanged     = "labels.changed"

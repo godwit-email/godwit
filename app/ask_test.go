@@ -7,6 +7,7 @@ import (
 
 	"github.com/egoist/mygo/ui"
 	"github.com/godwit-email/godwit/core"
+	"github.com/godwit-email/godwit/core/events"
 )
 
 // fakeWitView stands for the Wit page's *mygo.WebView.
@@ -166,6 +167,20 @@ func TestAskConversationAwaiting(t *testing.T) {
 	h.see("待确认")
 	h.ask().convs[0].Awaiting = false
 	h.until("the badge gone once decided", func() bool { return !h.tt.HasText("待确认") })
+}
+
+// A run starting or ending re-reads the Wit sidebar alone, not the whole window.
+func TestAskRunsChangedReloadsTheList(t *testing.T) {
+	h, _, _ := askHarness(t, true)
+	h.app.refresh(nil)
+	before, gen := h.app.refreshes, h.ask().listGen
+	h.app.onEvent(events.Event{Type: events.RunsChanged, ConversationID: 1})
+	if h.ask().listGen == gen {
+		t.Fatal("the list was not read again")
+	}
+	if len(h.app.dirty) != 0 || h.app.refreshes != before {
+		t.Fatalf("a window refresh was queued: %d dirty, %d refreshes", len(h.app.dirty), h.app.refreshes-before)
+	}
 }
 
 // Deleting the conversation shown opens a new one and drops it from the history.

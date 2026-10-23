@@ -1005,9 +1005,12 @@ type runFunc func(ctx context.Context, req ai.Request) (<-chan ai.Event, func() 
 
 func (s *Service) drive(job *runJob, end func(), run runFunc, req ai.Request, out *witStream) {
 	defer end()
-	// Lists that show which conversations are answering re-read as the run starts and ends.
-	s.bus.Publish(events.Event{Type: events.RunsChanged, ConversationID: job.conv.ID})
-	defer s.bus.Publish(events.Event{Type: events.RunsChanged, ConversationID: job.conv.ID})
+	// The Wit sidebar shows which ask conversations are answering: it re-reads as their runs
+	// start and end (a compose window's runs change nothing it shows).
+	if job.conv.Kind == "ask" {
+		s.bus.Publish(events.Event{Type: events.RunsChanged, ConversationID: job.conv.ID})
+		defer s.bus.Publish(events.Event{Type: events.RunsChanged, ConversationID: job.conv.ID})
+	}
 	defer func() {
 		if beforeUntrack != nil {
 			beforeUntrack(job.id)
