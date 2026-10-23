@@ -323,13 +323,14 @@ function Answer({
     return a ? [a] : [];
   });
   const waiting = requested.filter((a) => a.id === review?.approval);
-  // [n] in the answer shows citation n's mail as a card: open it (when the host opens cited
-  // mail) or quote it in the input.
-  const cite = (n: number) => {
+  // [n] in the answer shows citation n's mail in a popover, [[n]] as a card in the text: either
+  // opens it (when the host opens cited mail) or quotes it in the input.
+  const mail = (n: number, card: boolean) => {
     const c = [...nums.values()].find((x) => x.n === n)?.c;
     if (!c) return undefined;
     return (
       <MailCard
+        card={card}
         from={c.from}
         date={c.date}
         subject={c.subject}
@@ -421,7 +422,8 @@ function Answer({
           size={page ? "page" : "panel"}
           t={t}
           onLink={onLink}
-          cite={cite}
+          cite={(n) => mail(n, false)}
+          card={(n) => mail(n, true)}
         />
       )}
       {text && !live && (

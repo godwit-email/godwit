@@ -33,6 +33,19 @@ const htmlAsText = () => (tree: Node) => {
   walk(tree);
 };
 const CITE = "#cite-";
+const CARD = "#card-";
+/** A paragraph of "[[n]]" alone becomes a link to CARD+n: a mail card, before citeLinks sees it. */
+const cardLinks = () => (tree: Node) => {
+  for (const p of tree.children ?? []) {
+    const only = p.type === "paragraph" && p.children?.length === 1 ? p.children[0] : undefined;
+    const n =
+      only?.type === "text" ? /^\[\[(\d+)\]\]$/.exec(only.value?.trim() ?? "")?.[1] : undefined;
+    if (p.children && n)
+      p.children = [
+        { type: "link", url: CARD + n, children: [{ type: "text", value: `[[${n}]]` }] },
+      ];
+  }
+};
 /** Each "[n]" in the text (not in a link or code) becomes a link to CITE+n: a source marker. */
 const citeLinks = () => (tree: Node) => {
   const walk = (n: Node) => {
@@ -58,7 +71,7 @@ const citeLinks = () => (tree: Node) => {
 // Model output is untrusted. Set explicitly, never Streamdown's defaults (rehype-raw and a harden
 // that allows every protocol): raw HTML as text (and skipHtml, no rehype-raw), sanitized, no
 // images, and links only for http, https and mailto, each through the confirmation below.
-const remarkPlugins = [...Object.values(defaultRemarkPlugins), htmlAsText, citeLinks];
+const remarkPlugins = [...Object.values(defaultRemarkPlugins), htmlAsText, cardLinks, citeLinks];
 type Pluggable = NonNullable<StreamdownProps["rehypePlugins"]>[number];
 type Schema = { protocols?: Record<string, string[]>; tagNames?: string[] };
 type Plugin = Extract<Pluggable, (...args: never[]) => unknown>;
@@ -133,7 +146,8 @@ function Cite({ n, card }: { n: number; card: ReactNode }) {
 
 /**
  * An answer: Markdown, hardened. A link opens only after its confirmation (link.open → onLink); a
- * source marker [n] opens a popover with what cite(n) gives, if anything (else it is text).
+ * source marker [n] opens a popover with what cite(n) gives, if anything (else it is text); a
+ * paragraph of [[n]] alone shows what card(n) gives in its place, if anything (else its text).
  */
 export function Response({
   text,
@@ -142,6 +156,7 @@ export function Response({
   streaming = false,
   size = "panel",
   cite,
+  card,
 }: {
   text: string;
   onLink(url: string): void;
@@ -150,10 +165,13 @@ export function Response({
   /** "page": the Wit page's reading leading (1.75). */
   size?: "panel" | "page";
   cite?(n: number): ReactNode | undefined;
+  card?(n: number): ReactNode | undefined;
 }) {
   const [link, setLink] = useState<string>();
   const citeRef = useRef(cite);
   citeRef.current = cite;
+  const cardRef = useRef(card);
+  cardRef.current = card;
   const components = useMemo<Components>(
     () => ({
       img: () => null,
@@ -170,15 +188,25 @@ export function Response({
       tr: ({ children }: { children?: ReactNode }) => (
         <tr className="border-muted not-first:border-t-[0.5px]">{children}</tr>
       ),
+      // A card's paragraph is the card itself (a block, so not inside a <p>).
+      p: ({ node, children }: { node?: unknown; children?: ReactNode }) => {
+        const kids = (node as { children?: { properties?: { href?: unknown } }[] } | undefined)
+          ?.children;
+        const href = kids?.length === 1 ? kids[0].properties?.href : undefined;
+        const shown =
+          typeof href === "string" && href.startsWith(CARD)
+            ? cardRef.current?.(Number(href.slice(CARD.length)))
+            : undefined;
+        return shown ? <div className="my-2">{shown}</div> : <p>{children}</p>;
+      },
       a: ({ href, children }: { href?: string; children?: ReactNode }) => {
+        if (href?.startsWith(CARD)) return <span>{children}</span>;
         if (href?.startsWith(CITE)) {
           const n = Number(href.slice(CITE.length));
           const card = citeRef.current?.(n);
           if (!card) return <span>{children}</span>;
           // Always "[n]": a model-written [text](#cite-n) cannot dress the cited mail up as anything else.
-          return (
-            <Cite n={n} card={card} />
-          );
+          return <Cite n={n} card={card} />;
         }
         const url = safeLink(href);
         if (!url) return <span>{children}</span>;

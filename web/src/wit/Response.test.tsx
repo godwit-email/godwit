@@ -52,6 +52,26 @@ describe("answer layout", () => {
   });
 });
 
+describe("mail cards", () => {
+  it("[[n]] alone on a line shows what card(n) gives; otherwise it stays text", async () => {
+    const card = vi.fn((n: number) => (n === 1 ? <div>the card</div> : undefined));
+    const text = "Waiting on you:\n\n[[1]]\n\n[[9]]\n\nsee [[1]] inline";
+    const { container } = render(
+      <Response text={text} onLink={() => {}} t={t} cite={() => <span />} card={card} />,
+    );
+    expect(await screen.findByText("the card")).toBeInTheDocument();
+    expect(screen.getAllByText("the card")).toHaveLength(1);
+    expect(screen.getByText("[[9]]")).toBeInTheDocument(); // a ref it has no card for
+    expect(container.querySelector("p div")).toBeNull(); // the card is a block, not in a <p>
+    expect(screen.getByText(/inline/)).toBeInTheDocument();
+  });
+
+  it("without card, [[n]] stays text", async () => {
+    render(<Response text="[[1]]" onLink={() => {}} t={t} />);
+    expect(await screen.findByText("[[1]]")).toBeInTheDocument();
+  });
+});
+
 describe("answer hardening", () => {
   it("renders no image, script or raw element; only http(s)/mailto links", async () => {
     const { container } = render(<Response text={md} onLink={() => {}} t={t} />);

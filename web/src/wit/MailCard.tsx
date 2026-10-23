@@ -35,7 +35,8 @@ export function avatarTone(name: string): string {
 
 /**
  * A mail as a card: a small avatar on the sender line with the date, the subject and a snippet,
- * then 查看邮件 / 引用邮件 for the actions it is given.
+ * then 查看邮件 / 引用邮件 for the actions it is given: along its foot (in a popover), or, as a
+ * card in an answer (card), framed with the actions floating over its top edge on hover or focus.
  */
 export function MailCard({
   from,
@@ -44,6 +45,7 @@ export function MailCard({
   snippet,
   onOpen,
   onQuote,
+  card = false,
   t,
   className,
 }: {
@@ -54,12 +56,19 @@ export function MailCard({
   snippet: string;
   onOpen?(): void;
   onQuote?(): void;
+  card?: boolean;
   t: T;
   className?: string;
 }) {
   const name = senderName(from);
   return (
-    <div className={cn("flex min-w-0 flex-col text-sm", className)}>
+    <div
+      className={cn(
+        "flex min-w-0 flex-col text-sm",
+        card && "group relative rounded-[10px] border-[0.5px] bg-background px-2.5 py-2",
+        className,
+      )}
+    >
       <div className="flex items-center gap-2">
         <span
           aria-hidden="true"
@@ -79,7 +88,12 @@ export function MailCard({
         <div
           role="toolbar"
           aria-label={subject}
-          className="-mx-1.5 mt-2 flex gap-0.5 border-t-[0.5px] pt-1.5"
+          className={cn(
+            "flex gap-0.5",
+            card
+              ? "absolute -top-3.5 right-2 rounded-lg border-[0.5px] bg-background p-0.5 opacity-0 shadow-sm transition-opacity group-focus-within:opacity-100 group-hover:opacity-100"
+              : "-mx-1.5 mt-2 border-t-[0.5px] pt-1.5",
+          )}
         >
           {onOpen && (
             <Button variant="ghost" size="xs" className="font-normal" onClick={onOpen}>

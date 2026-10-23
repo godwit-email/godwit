@@ -53,4 +53,26 @@ describe("MailCard", () => {
     expect(screen.queryByRole("button")).toBeNull();
     expect(screen.queryByRole("toolbar")).toBeNull();
   });
+
+  it("as a card in an answer: framed, its actions on a toolbar that shows on hover or focus", () => {
+    render(
+      <MailCard
+        card
+        from="Bob"
+        date={0}
+        subject="Hi"
+        snippet="s"
+        onOpen={() => {}}
+        onQuote={() => {}}
+        t={t}
+      />,
+    );
+    const bar = screen.getByRole("toolbar", { name: "Hi" });
+    expect(bar).toHaveClass(
+      "opacity-0",
+      "group-hover:opacity-100",
+      "group-focus-within:opacity-100",
+    );
+    expect(bar.parentElement).toHaveClass("group", "border-[0.5px]");
+  });
 });

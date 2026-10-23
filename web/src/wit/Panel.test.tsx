@@ -1,4 +1,4 @@
-import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { toast } from "sonner";
 import type { Approval, MailHit, WitEvent, WitHistory, WitInfo } from "@/mygo";
@@ -1255,7 +1255,7 @@ describe("Panel", () => {
     expect(onLink).toHaveBeenCalledWith("https://ok.org/p");
   });
 
-  it("[n] shows the cited mail as a card that opens it or quotes it in the input", async () => {
+  it("[n] and [[n]] show the cited mail as a card that opens it or quotes it in the input", async () => {
     const user = userEvent.setup();
     const onCite = vi.fn();
     const c = {
@@ -1288,7 +1288,7 @@ describe("Panel", () => {
           {
             id: "a1",
             role: "assistant",
-            text: "Acme charged you [1].",
+            text: "Acme charged you [1].\n\n[[1]]",
             reasoning: "",
             quoted: [],
             calls: [],
@@ -1299,15 +1299,22 @@ describe("Panel", () => {
         ],
       },
     });
-    await user.click(await screen.findByRole("button", { name: "[1]" }));
-    const card = await screen.findByRole("toolbar", { name: "Your receipt" });
+    // [[1]] shows the mail as a card in the answer, its actions on a hover toolbar
+    const inline = await screen.findByRole("toolbar", { name: "Your receipt" });
+    expect(inline).toHaveClass("group-hover:opacity-100");
+    expect(inline.parentElement).toHaveTextContent("Amount charged this month");
+    await user.click(screen.getByRole("button", { name: "[1]" }));
+    const card = (await screen.findAllByRole("toolbar", { name: "Your receipt" })).find(
+      (e) => e !== inline,
+    ) as HTMLElement;
     expect(card.parentElement).toHaveTextContent("Acme Cloud");
     expect(card.parentElement).toHaveTextContent("Amount charged this month");
-    await user.click(screen.getByRole("button", { name: "引用邮件" }));
+    await user.click(within(card).getByRole("button", { name: "引用邮件" }));
     expect(await screen.findByRole("button", { name: "移除 Your receipt" })).toBeInTheDocument();
-    await waitFor(() => expect(screen.queryByRole("toolbar", { name: "Your receipt" })).toBeNull());
-    await user.click(screen.getByRole("button", { name: "[1]" }));
-    await user.click(await screen.findByRole("button", { name: "查看邮件" }));
+    await waitFor(() =>
+      expect(screen.getAllByRole("toolbar", { name: "Your receipt" })).toHaveLength(1),
+    );
+    await user.click(within(inline).getByRole("button", { name: "查看邮件" }));
     expect(onCite).toHaveBeenCalledWith(50);
   });
 
