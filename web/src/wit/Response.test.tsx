@@ -28,26 +28,26 @@ describe("answer layout", () => {
     expect(screen.getByText("a")).toHaveClass("bg-sidebar", "font-medium");
   });
 
-  it("[n] opens what cite(n) gives; one it has none for, code and no cite stay text", async () => {
+  it("[n] opens a popover with what cite(n) gives; one it has none for, code and no cite stay text", async () => {
     const user = userEvent.setup();
-    const open = vi.fn();
-    const cite = vi.fn((n: number) => (n === 1 ? open : undefined));
+    const cite = vi.fn((n: number) => (n === 1 ? <span>the cited mail</span> : undefined));
     const text = "see [1] and [9], `[1]`";
     const { unmount } = render(<Response text={text} onLink={() => {}} t={t} cite={cite} />);
-    await user.click(await screen.findByRole("link", { name: "[1]" }));
-    expect(open).toHaveBeenCalledOnce();
-    expect(screen.getAllByRole("link")).toHaveLength(1); // not [9], not the code's
+    expect(screen.queryByText("the cited mail")).toBeNull();
+    await user.click(await screen.findByRole("button", { name: "[1]" }));
+    expect(await screen.findByText("the cited mail")).toBeInTheDocument();
+    expect(screen.getAllByRole("button", { name: /^\[\d\]$/ })).toHaveLength(1); // not [9], not the code's
     expect(screen.getByText("[1]", { selector: "code" })).toBeInTheDocument();
     unmount();
     render(<Response text={text} onLink={() => {}} t={t} />);
     await screen.findByText(/see/);
-    expect(screen.queryByRole("link")).toBeNull();
+    expect(screen.queryByRole("button")).toBeNull();
   });
 
   it("a model-written #cite- link shows as [n], whatever its text", async () => {
-    const cite = (n: number) => (n === 1 ? () => {} : undefined);
+    const cite = (n: number) => (n === 1 ? <span>mail</span> : undefined);
     render(<Response text="[open your bank](#cite-1)" onLink={() => {}} t={t} cite={cite} />);
-    expect(await screen.findByRole("link", { name: "[1]" })).toBeInTheDocument();
+    expect(await screen.findByRole("button", { name: "[1]" })).toBeInTheDocument();
     expect(screen.queryByText("open your bank")).toBeNull();
   });
 });

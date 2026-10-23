@@ -70,6 +70,7 @@ import {
 import type { Approval, Citation, MailHit, ModelChoice, WitHistory, WitInfo } from "@/mygo";
 import { currentLocale, type T } from "@/shared/i18n";
 import { Citations, type Nums } from "./Citations";
+import { MailCard } from "./MailCard";
 import { type PickerKeys, QuoteChips, QuotePicker } from "./Quote";
 import { Response } from "./Response";
 import { historyToMessages, type WitMeta, type WitTransport, type WitUIMessage } from "./transport";
@@ -280,6 +281,7 @@ function Answer({
   tools,
   onLink,
   onCite,
+  onQuote,
   onAgain,
   working,
   page,
@@ -293,6 +295,8 @@ function Answer({
   tools: (a: Approval) => ReactNode;
   onLink(url: string): void;
   onCite?(id: number): void;
+  /** Adds a mail to the input's quoted mail (引用邮件). */
+  onQuote(h: MailHit): void;
   /** Asks the answer's question again in its place (重新生成), where it can be. */
   onAgain?(): void;
   /** What shows while the answer is live: the panel's working row, or the page's spinner. */
@@ -319,10 +323,22 @@ function Answer({
     return a ? [a] : [];
   });
   const waiting = requested.filter((a) => a.id === review?.approval);
-  // [n] in the answer opens citation n (its message), when the host opens cited mail.
+  // [n] in the answer shows citation n's mail as a card: open it (when the host opens cited
+  // mail) or quote it in the input.
   const cite = (n: number) => {
-    const id = [...nums].find(([, x]) => x.n === n)?.[0];
-    return id !== undefined && onCite ? () => onCite(id) : undefined;
+    const c = [...nums.values()].find((x) => x.n === n)?.c;
+    if (!c) return undefined;
+    return (
+      <MailCard
+        from={c.from}
+        date={c.date}
+        subject={c.subject}
+        snippet={c.snippet}
+        onOpen={onCite && (() => onCite(c.messageId))}
+        onQuote={() => onQuote({ id: c.messageId, subject: c.subject, from: c.from, date: c.date })}
+        t={t}
+      />
+    );
   };
   return (
     <div data-role="assistant" className="flex flex-col gap-2.5">
@@ -751,8 +767,11 @@ export function Panel({
       if (el && caret !== undefined) el.setSelectionRange(caret, caret);
     });
   };
-  const pick = (h: MailHit) => {
+  // A mail joins the quoted ones once, up to MAX_QUOTED.
+  const quote = (h: MailHit) =>
     setQuoted((q) => (q.some((x) => x.id === h.id) || q.length >= MAX_QUOTED ? q : [...q, h]));
+  const pick = (h: MailHit) => {
+    quote(h);
     const at = picking?.at ?? -1;
     if (at < 0) return closePicker();
     // the @query becomes the chip
@@ -803,7 +822,7 @@ export function Panel({
       if (k) {
         k.suspect ||= c.suspect;
         k.quote ||= c.quote;
-      } else nums.set(c.messageId, { n: c.n, suspect: c.suspect, quote: c.quote });
+      } else nums.set(c.messageId, { n: c.n, suspect: c.suspect, quote: c.quote, c });
     }
     for (const p of m.parts)
       if (p.type === "data-approvals") for (const a of p.data) approvals.set(String(a.id), a);
@@ -931,6 +950,7 @@ export function Panel({
                     tools={tools}
                     onLink={link}
                     onCite={onCite}
+                    onQuote={quote}
                     onAgain={(() => {
                       const q = chat.messages[i - 1];
                       const k = q?.role === "user" ? at(q) : undefined;

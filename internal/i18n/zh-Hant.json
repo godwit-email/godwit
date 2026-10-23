@@ -997,6 +997,7 @@
   "wit_loading": "Wit 正在回覆…",
   "wit_model": "模型服務設定",
   "wit_placeholder": "問點什麼，比如：上週誰還在等我回覆？",
+  "wit_mail_open": "查看郵件",
   "wit_quote": "引用郵件",
   "wit_quote_none": "沒有找到郵件",
   "wit_quote_remove": "移除 {arg1}",

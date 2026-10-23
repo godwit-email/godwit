@@ -997,6 +997,7 @@
   "wit_loading": "Wit đang trả lời…",
   "wit_model": "Cài đặt dịch vụ mô hình",
   "wit_placeholder": "Hỏi điều gì đó, ví dụ: ai vẫn đang chờ tôi trả lời từ tuần trước?",
+  "wit_mail_open": "Xem email",
   "wit_quote": "Trích dẫn email",
   "wit_quote_none": "Không tìm thấy thư nào",
   "wit_quote_remove": "Xóa {arg1}",

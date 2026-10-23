@@ -1004,6 +1004,7 @@
   "wit_loading": "Wit antwortet…",
   "wit_model": "Modelldienst-Einstellungen",
   "wit_placeholder": "Frage etwas, z. B.: Wer wartet noch auf meine Antwort von letzter Woche?",
+  "wit_mail_open": "E-Mail anzeigen",
   "wit_quote": "E-Mail zitieren",
   "wit_quote_none": "Keine E-Mail gefunden",
   "wit_quote_remove": "{arg1} entfernen",

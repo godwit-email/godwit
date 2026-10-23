@@ -17,6 +17,7 @@ import (
 	"github.com/godwit-email/godwit/core/ai"
 	"github.com/godwit-email/godwit/core/events"
 	"github.com/godwit-email/godwit/core/gateway"
+	gomail "github.com/godwit-email/godwit/core/mail"
 	"github.com/godwit-email/godwit/core/store"
 )
 
@@ -75,6 +76,7 @@ type Citation struct {
 	Date          time.Time
 	Suspect       bool
 	Quote         string // the suspect text, from where it starts (ai.InjectionQuote): show as plain text
+	Snippet       string // the message's snippet, for the card that shows it; "" once it is gone
 	RunID         int64
 	CallID        string
 }
@@ -310,15 +312,16 @@ func runUsage(runID int64, u ai.Usage) sqlite.Statement {
 
 // citationsOf is conversation id's saved citations, numbered.
 func (s *Service) citationsOf(ctx context.Context, id int64) ([]Citation, error) {
-	rows, err := s.db.Query(ctx, `SELECT rc.message_id, rc.subject, rc.from_addr, rc.date, rc.suspect, rc.run_id, rc.call_id, rc.quote
-		FROM run_citations rc JOIN runs r ON r.id = rc.run_id WHERE r.conversation_id = ? ORDER BY rc.id`, id)
+	rows, err := s.db.Query(ctx, `SELECT rc.message_id, rc.subject, rc.from_addr, rc.date, rc.suspect, rc.run_id, rc.call_id, rc.quote, m.snippet
+		FROM run_citations rc JOIN runs r ON r.id = rc.run_id LEFT JOIN messages m ON m.id = rc.message_id
+		WHERE r.conversation_id = ? ORDER BY rc.id`, id)
 	if err != nil {
 		return nil, err
 	}
 	var out []Citation
 	for _, r := range rows.Values {
 		ct := Citation{MessageID: store.Int(r[0]), Subject: store.Str(r[1]), From: store.Str(r[2]), Suspect: store.Int(r[4]) != 0,
-			RunID: store.Int(r[5]), CallID: store.Str(r[6]), Quote: store.Str(r[7])}
+			RunID: store.Int(r[5]), CallID: store.Str(r[6]), Quote: store.Str(r[7]), Snippet: gomail.Snippet(store.Str(r[8]))}
 		if d := store.Int(r[3]); d != 0 {
 			ct.Date = time.Unix(d, 0)
 		}
@@ -383,8 +386,29 @@ func (s *Service) number(ctx context.Context, job *runJob, call string, cs []Cit
 	numberCitations(cs, job.refs)
 	if len(cs) > 0 {
 		s.saveCitations(ctx, job.id, cs)
+		s.snippets(ctx, cs)
 	}
 	return cs
+}
+
+// snippets fills in cs's messages' snippets (citationsOf reads them the same way).
+func (s *Service) snippets(ctx context.Context, cs []Citation) {
+	ids := make([]any, len(cs))
+	for i, c := range cs {
+		ids[i] = c.MessageID
+	}
+	rows, err := s.db.Query(ctx, `SELECT id, snippet FROM messages WHERE id IN (?`+strings.Repeat(",?", len(ids)-1)+`)`, ids...)
+	if err != nil {
+		slog.Default().Warn("could not read cited messages' snippets", "err", err)
+		return
+	}
+	by := map[int64]string{}
+	for _, r := range rows.Values {
+		by[store.Int(r[0])] = gomail.Snippet(store.Str(r[1]))
+	}
+	for i := range cs {
+		cs[i].Snippet = by[cs[i].MessageID]
+	}
 }
 
 // saveCitations records what a run's event cites, for GetConversation.

@@ -280,6 +280,7 @@ const cite = (n: number, from: string, subject: string, date: string, quote = ""
   date: new Date(`2026-${date}T09:00:00`).getTime(),
   suspect: quote !== "",
   quote,
+  snippet: "",
 });
 const citations = [
   cite(1, "Acme Cloud", "Your receipt for October", "10-02"),

@@ -997,6 +997,7 @@
   "wit_loading": "Wit が回答中…",
   "wit_model": "モデルサービス設定",
   "wit_placeholder": "質問を入力（例：先週から私の返信を待っている人は誰？）",
+  "wit_mail_open": "メールを表示",
   "wit_quote": "メールを引用",
   "wit_quote_none": "メールが見つかりません",
   "wit_quote_remove": "{arg1} を外す",

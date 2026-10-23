@@ -69,6 +69,8 @@ type Citation struct {
 	Suspect bool `json:"suspect"`
 	// Quote is the suspect text from where it starts, at most 40 runes; mail text, shown as plain text.
 	Quote string `json:"quote"`
+	// Snippet is the message's snippet, for its card; "" once the message is gone.
+	Snippet string `json:"snippet"`
 }
 
 // Approval is a call waiting for the user, or decided.
@@ -247,7 +249,7 @@ func resultOf(r ai.ToolResult) WitResult {
 }
 
 func citationOf(c core.Citation) Citation {
-	out := Citation{N: c.N, MessageID: c.MessageID, Subject: c.Subject, From: c.From, Suspect: c.Suspect, Quote: c.Quote}
+	out := Citation{N: c.N, MessageID: c.MessageID, Subject: c.Subject, From: c.From, Suspect: c.Suspect, Quote: c.Quote, Snippet: c.Snippet}
 	if !c.Date.IsZero() {
 		out.Date = c.Date.UnixMilli()
 	}

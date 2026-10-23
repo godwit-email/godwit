@@ -67,7 +67,7 @@ func TestAskSearchesAndCites(t *testing.T) {
 	require.Equal(t, "done", evs[len(evs)-1].Kind, "%+v", evs[len(evs)-1].Err)
 
 	date := e.msgDate(t)
-	want := []Citation{{N: 1, MessageID: e.msg, Subject: "Plans", From: "Bob <bob@x>", Date: date}}
+	want := []Citation{{N: 1, MessageID: e.msg, Subject: "Plans", From: "Bob <bob@x>", Date: date, Snippet: "snip"}}
 	for _, tool := range []string{"search_mail", "get_thread", "get_message"} {
 		rs := witResults(evs, tool)
 		require.Len(t, rs, 1, tool)

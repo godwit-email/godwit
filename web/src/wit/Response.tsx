@@ -20,6 +20,7 @@ import {
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 import { Button } from "@/components/ui/button";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import type { T } from "@/shared/i18n";
 
 type Node = { type: string; value?: string; url?: string; children?: Node[] };
@@ -101,9 +102,38 @@ function Address({ url }: { url: string }) {
   );
 }
 
+/** A source marker [n]: a popover with its card, closed again by any action the card takes. */
+function Cite({ n, card }: { n: number; card: ReactNode }) {
+  const [open, setOpen] = useState(false);
+  return (
+    <Popover open={open} onOpenChange={setOpen}>
+      <PopoverTrigger
+        render={
+          <button
+            type="button"
+            className="cursor-pointer rounded-sm bg-muted px-1 align-baseline text-muted-foreground text-xs tabular-nums hover:text-foreground data-popup-open:bg-border data-popup-open:text-foreground"
+          />
+        }
+      >
+        [{n}]
+      </PopoverTrigger>
+      <PopoverContent
+        side="bottom"
+        align="start"
+        className="w-80 p-3"
+        onClick={(e) => {
+          if ((e.target as Element).closest("button, a")) setOpen(false);
+        }}
+      >
+        {card}
+      </PopoverContent>
+    </Popover>
+  );
+}
+
 /**
  * An answer: Markdown, hardened. A link opens only after its confirmation (link.open → onLink); a
- * source marker [n] opens what cite(n) gives, if anything (else it is text).
+ * source marker [n] opens a popover with what cite(n) gives, if anything (else it is text).
  */
 export function Response({
   text,
@@ -119,7 +149,7 @@ export function Response({
   streaming?: boolean;
   /** "page": the Wit page's reading leading (1.75). */
   size?: "panel" | "page";
-  cite?(n: number): (() => void) | undefined;
+  cite?(n: number): ReactNode | undefined;
 }) {
   const [link, setLink] = useState<string>();
   const citeRef = useRef(cite);
@@ -143,24 +173,11 @@ export function Response({
       a: ({ href, children }: { href?: string; children?: ReactNode }) => {
         if (href?.startsWith(CITE)) {
           const n = Number(href.slice(CITE.length));
-          const open = citeRef.current?.(n);
-          if (!open) return <span>{children}</span>;
+          const card = citeRef.current?.(n);
+          if (!card) return <span>{children}</span>;
           // Always "[n]": a model-written [text](#cite-n) cannot dress the cited mail up as anything else.
           return (
-            // biome-ignore lint/a11y/useSemanticElements: no href; it opens the cited mail in the app
-            <span
-              role="link"
-              tabIndex={0}
-              className="cursor-pointer underline"
-              onClick={open}
-              onKeyDown={(e: KeyboardEvent) => {
-                if (e.key !== "Enter" && e.key !== " ") return;
-                e.preventDefault();
-                open();
-              }}
-            >
-              [{n}]
-            </span>
+            <Cite n={n} card={card} />
           );
         }
         const url = safeLink(href);

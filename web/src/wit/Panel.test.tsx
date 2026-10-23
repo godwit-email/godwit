@@ -773,6 +773,7 @@ describe("Panel", () => {
       date: 0,
       suspect,
       quote: "",
+      snippet: "",
     });
     const { emit } = await setup({
       history: {
@@ -865,7 +866,16 @@ describe("Panel", () => {
             calls: [],
             results: [],
             citations: [
-              { n: 5, messageId: 9, subject: "S", from: "f", date: 0, suspect: true, quote },
+              {
+                n: 5,
+                messageId: 9,
+                subject: "S",
+                from: "f",
+                date: 0,
+                suspect: true,
+                quote,
+                snippet: "",
+              },
             ],
             runs: [7],
           },
@@ -1245,6 +1255,62 @@ describe("Panel", () => {
     expect(onLink).toHaveBeenCalledWith("https://ok.org/p");
   });
 
+  it("[n] shows the cited mail as a card that opens it or quotes it in the input", async () => {
+    const user = userEvent.setup();
+    const onCite = vi.fn();
+    const c = {
+      n: 1,
+      messageId: 50,
+      subject: "Your receipt",
+      from: "Acme Cloud <billing@acme.example>",
+      date: 0,
+      suspect: false,
+      quote: "",
+      snippet: "Amount charged this month",
+    };
+    await setup({
+      page: true,
+      onCite,
+      history: {
+        ...empty,
+        messages: [
+          {
+            id: "q0",
+            role: "user",
+            text: "Q",
+            reasoning: "",
+            quoted: [],
+            calls: [],
+            results: [],
+            citations: [],
+            runs: [7],
+          },
+          {
+            id: "a1",
+            role: "assistant",
+            text: "Acme charged you [1].",
+            reasoning: "",
+            quoted: [],
+            calls: [],
+            results: [],
+            citations: [c],
+            runs: [7],
+          },
+        ],
+      },
+    });
+    await user.click(await screen.findByRole("button", { name: "[1]" }));
+    const card = await screen.findByRole("toolbar", { name: "Your receipt" });
+    expect(card.parentElement).toHaveTextContent("Acme Cloud");
+    expect(card.parentElement).toHaveTextContent("Amount charged this month");
+    await user.click(screen.getByRole("button", { name: "引用邮件" }));
+    expect(await screen.findByRole("button", { name: "移除 Your receipt" })).toBeInTheDocument();
+    await waitFor(() => expect(screen.queryByRole("toolbar", { name: "Your receipt" })).toBeNull());
+    await user.click(screen.getByRole("button", { name: "[1]" }));
+    await user.click(await screen.findByRole("button", { name: "查看邮件" }));
+    expect(onCite).toHaveBeenCalledWith(50);
+  });
+
   it("citations: both layouts render; cited click opens", async () => {
     const user = userEvent.setup();
     const onCite = vi.fn();
@@ -1256,6 +1322,7 @@ describe("Panel", () => {
       date: 0,
       suspect,
       quote: "",
+      snippet: "",
     });
     await setup({
       page: true,

@@ -997,6 +997,7 @@
   "wit_loading": "Wit sta rispondendo…",
   "wit_model": "Impostazioni dei servizi di modelli",
   "wit_placeholder": "Chiedi qualcosa, ad es.: chi sta ancora aspettando una mia risposta dalla settimana scorsa?",
+  "wit_mail_open": "Visualizza email",
   "wit_quote": "Cita un’email",
   "wit_quote_none": "Nessuna email trovata",
   "wit_quote_remove": "Rimuovi {arg1}",

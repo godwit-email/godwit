@@ -242,6 +242,7 @@ describe("toChunks", () => {
       date: 0,
       suspect: false,
       quote: "",
+      snippet: "",
     };
     expect(toChunks(ev({ kind: "context", citations: [cite] }), new Set())).toEqual([
       { type: "data-citations", data: [cite] },
@@ -267,6 +268,7 @@ describe("historyToMessages", () => {
       date: 0,
       suspect: true,
       quote: "q",
+      snippet: "",
     };
     const h: WitHistory = {
       conversation: 1,

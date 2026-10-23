@@ -1982,6 +1982,7 @@
   "wit_effort_medium": "Medium",
   "wit_effort_high": "High",
   "wit_placeholder": "Ask something, like: who is still waiting for my reply from last week?",
+  "wit_mail_open": "View email",
   "wit_quote": "Quote an email",
   "wit_quote_none": "No mail found",
   "wit_quote_remove": "Remove {arg1}",
