@@ -972,8 +972,9 @@ func (s *Service) launch(ctx context.Context, end func(), conv Conversation, pro
 		quote, err = s.quote(ctx, job, quoted)
 	}
 	if err == nil && job.rewind != nil {
-		err = s.exec(ctx, claimRewind(job.id, *job.rewind))
-		s.setGrantsAside(conv.ID, job.id)
+		if err = s.exec(ctx, claimRewind(job.id, *job.rewind)); err == nil { // claimed: only then are they set aside
+			s.setGrantsAside(conv.ID, job.id)
+		}
 	} else if err == nil && len(claimed) > 0 {
 		_, err = s.db.Transaction(ctx, claimed)
 	}
