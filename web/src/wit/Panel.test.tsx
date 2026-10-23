@@ -425,7 +425,7 @@ describe("Panel", () => {
 
   it("the steps fold into one 思考过程 line that unfolds as a timeline", async () => {
     const user = userEvent.setup();
-    const cite = (n: number, id: number, from: string, callId: string) => ({
+    const cite = (n: number, id: number, from: string, callIds: string[]) => ({
       n,
       messageId: id,
       subject: `S${id}`,
@@ -434,7 +434,8 @@ describe("Panel", () => {
       suspect: false,
       quote: "",
       snippet: "",
-      callId,
+      gone: false,
+      callIds,
     });
     await setup({
       page: true,
@@ -461,14 +462,17 @@ describe("Panel", () => {
             calls: [
               { id: "c1", name: "search_mail", args: '{"query":"receipt OR 账单"}' },
               { id: "c2", name: "read_message", args: '{"id":51}' },
+              { id: "c3", name: "search_mail", args: '{"query":"invoice"}' },
             ],
             results: [
               { callId: "c1", name: "search_mail", output: "{}", error: "" },
               { callId: "c2", name: "read_message", output: "{}", error: "" },
+              { callId: "c3", name: "search_mail", output: "{}", error: "" },
             ],
             citations: [
-              cite(1, 50, "Acme Cloud <billing@acme.example>", "c1"),
-              cite(2, 51, "Bob <bob@x.org>", "c1"),
+              // Acme's mail: found by both searches, not only the first
+              cite(1, 50, "Acme Cloud <billing@acme.example>", ["c1", "c3"]),
+              cite(2, 51, "Bob <bob@x.org>", ["c1"]),
             ],
             runs: [7],
           },
@@ -477,7 +481,7 @@ describe("Panel", () => {
     });
     // one line, folded: what it did
     const folded = screen.getByRole("button", { name: /思考过程/ });
-    expect(folded).toHaveTextContent("思考过程 · 调用了 2 个工具 · search_mail、read_message");
+    expect(folded).toHaveTextContent("思考过程 · 调用了 2 个工具 · search_mail ×2、read_message");
     expect(folded).toHaveAttribute("aria-expanded", "false");
     expect(screen.queryByRole("button", { name: /调用了/ })).toBe(folded); // no line of its own
     await user.click(folded);
@@ -488,6 +492,7 @@ describe("Panel", () => {
       "先按收据搜",
       "search_mailreceipt OR 账单Acme CloudBob",
       "read_message",
+      "search_mailinvoiceAcme Cloud",
     ]);
   });
 
@@ -906,7 +911,8 @@ describe("Panel", () => {
       suspect,
       quote: "",
       snippet: "",
-      callId: "",
+      callIds: [],
+      gone: false,
     });
     const { emit } = await setup({
       history: {
@@ -1008,7 +1014,8 @@ describe("Panel", () => {
                 suspect: true,
                 quote,
                 snippet: "",
-                callId: "",
+                callIds: [],
+                gone: false,
               },
             ],
             runs: [7],
@@ -1486,7 +1493,8 @@ describe("Panel", () => {
       suspect: false,
       quote: "",
       snippet: "Amount charged this month",
-      callId: "",
+      callIds: [],
+      gone: false,
     };
     await setup({
       page: true,
@@ -1538,6 +1546,58 @@ describe("Panel", () => {
     expect(onCite).toHaveBeenCalledWith(50);
   });
 
+  it("a cited mail deleted since shows its card with nothing to open or quote", async () => {
+    const user = userEvent.setup();
+    await setup({
+      page: true,
+      onCite: vi.fn(),
+      history: {
+        ...empty,
+        messages: [
+          {
+            id: "q0",
+            role: "user",
+            text: "Q",
+            reasoning: "",
+            quoted: [],
+            calls: [],
+            results: [],
+            citations: [],
+            runs: [7],
+          },
+          {
+            id: "a1",
+            role: "assistant",
+            text: "See [1].",
+            reasoning: "",
+            quoted: [],
+            calls: [],
+            results: [],
+            citations: [
+              {
+                n: 1,
+                messageId: 50,
+                subject: "Gone mail",
+                from: "Bob",
+                date: 0,
+                suspect: false,
+                quote: "",
+                snippet: "",
+                gone: true,
+                callIds: [],
+              },
+            ],
+            runs: [7],
+          },
+        ],
+      },
+    });
+    await user.click(await screen.findByRole("button", { name: "[1]" }));
+    expect(await screen.findByText("Gone mail")).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "查看邮件" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "引用邮件" })).toBeNull();
+  });
+
   it("citations fold under the answer as 引用了 N 封邮件; a cited click opens", async () => {
     const user = userEvent.setup();
     const onCite = vi.fn();
@@ -1550,7 +1610,8 @@ describe("Panel", () => {
       suspect,
       quote: "",
       snippet: "",
-      callId: "",
+      callIds: [],
+      gone: false,
     });
     await setup({
       page: true,

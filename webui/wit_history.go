@@ -117,9 +117,17 @@ func witMessages(c core.Conversation) []WitMessage {
 		}
 		ids := citedBy(c, spans[i][0], spans[i][1])
 		for _, ct := range all {
-			if slices.Contains(ids, ct.MessageID) {
-				out[i].Citations = append(out[i].Citations, ct)
+			if !slices.Contains(ids, ct.MessageID) {
+				continue
 			}
+			// every call of this answer's runs that showed it, not just its first citation's
+			ct.CallIDs = []string{}
+			for _, x := range c.Citations {
+				if x.MessageID == ct.MessageID && x.CallID != "" && slices.Contains(out[i].Runs, x.RunID) && !slices.Contains(ct.CallIDs, x.CallID) {
+					ct.CallIDs = append(ct.CallIDs, x.CallID)
+				}
+			}
+			out[i].Citations = append(out[i].Citations, ct)
 		}
 	}
 	return out

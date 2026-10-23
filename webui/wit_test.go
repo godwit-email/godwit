@@ -453,7 +453,8 @@ func TestComposeWitHistoryGrouping(t *testing.T) {
 	assert.Empty(t, a.Quoted)
 	assert.Equal(t, []WitCall{{ID: "c1", Name: "search_mail", Args: "{}"}}, a.Calls)
 	assert.Equal(t, []WitResult{{CallID: "c1", Name: "search_mail", Output: "[1]"}}, a.Results)
-	assert.Equal(t, []Citation{{N: 1, MessageID: 7, Subject: "s7", Suspect: true, Quote: "q"}, {N: 2, MessageID: 5, CallID: "c1"}}, a.Citations)
+	assert.Equal(t, []Citation{{N: 1, MessageID: 7, Subject: "s7", Suspect: true, Quote: "q", CallIDs: []string{"c1"}},
+		{N: 2, MessageID: 5, CallIDs: []string{"c1"}}}, a.Citations, "message 7: its context first, then c1 showed it too")
 }
 
 func TestComposeWitErrorKeys(t *testing.T) {

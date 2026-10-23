@@ -69,10 +69,13 @@ type Citation struct {
 	Suspect bool `json:"suspect"`
 	// Quote is the suspect text from where it starts, at most 40 runes; mail text, shown as plain text.
 	Quote string `json:"quote"`
-	// Snippet is the message's snippet, for its card; "" once the message is gone.
+	// Snippet is the message's snippet, for its card; Gone means the message
+	// was deleted since (nothing to open or quote).
 	Snippet string `json:"snippet"`
-	// CallID is the tool call that showed the mail ("" for the run's context).
-	CallID string `json:"callId"`
+	Gone    bool   `json:"gone"`
+	// CallIDs are the tool calls of its answer that showed the mail (none:
+	// only the run's context did).
+	CallIDs []string `json:"callIds"`
 }
 
 // Approval is a call waiting for the user, or decided.
@@ -251,7 +254,10 @@ func resultOf(r ai.ToolResult) WitResult {
 }
 
 func citationOf(c core.Citation) Citation {
-	out := Citation{N: c.N, MessageID: c.MessageID, Subject: c.Subject, From: c.From, Suspect: c.Suspect, Quote: c.Quote, Snippet: c.Snippet, CallID: c.CallID}
+	out := Citation{N: c.N, MessageID: c.MessageID, Subject: c.Subject, From: c.From, Suspect: c.Suspect, Quote: c.Quote, Snippet: c.Snippet, Gone: c.Gone, CallIDs: []string{}}
+	if c.CallID != "" {
+		out.CallIDs = append(out.CallIDs, c.CallID)
+	}
 	if !c.Date.IsZero() {
 		out.Date = c.Date.UnixMilli()
 	}

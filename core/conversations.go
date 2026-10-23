@@ -80,7 +80,8 @@ type Citation struct {
 	Date          time.Time
 	Suspect       bool
 	Quote         string // the suspect text, from where it starts (ai.InjectionQuote): show as plain text
-	Snippet       string // the message's snippet, for the card that shows it; "" once it is gone
+	Snippet       string // the message's snippet, for the card that shows it
+	Gone          bool   // the message was deleted since: nothing to open or quote
 	RunID         int64
 	CallID        string
 }
@@ -348,7 +349,7 @@ func runUsage(runID int64, u ai.Usage) sqlite.Statement {
 
 // citationsOf is conversation id's saved citations, numbered.
 func (s *Service) citationsOf(ctx context.Context, id int64) ([]Citation, error) {
-	rows, err := s.db.Query(ctx, `SELECT rc.message_id, rc.subject, rc.from_addr, rc.date, rc.suspect, rc.run_id, rc.call_id, rc.quote, m.snippet
+	rows, err := s.db.Query(ctx, `SELECT rc.message_id, rc.subject, rc.from_addr, rc.date, rc.suspect, rc.run_id, rc.call_id, rc.quote, m.snippet, m.id IS NULL
 		FROM run_citations rc JOIN runs r ON r.id = rc.run_id LEFT JOIN messages m ON m.id = rc.message_id
 		WHERE r.conversation_id = ? ORDER BY rc.id`, id)
 	if err != nil {
@@ -357,7 +358,7 @@ func (s *Service) citationsOf(ctx context.Context, id int64) ([]Citation, error)
 	var out []Citation
 	for _, r := range rows.Values {
 		ct := Citation{MessageID: store.Int(r[0]), Subject: store.Str(r[1]), From: store.Str(r[2]), Suspect: store.Int(r[4]) != 0,
-			RunID: store.Int(r[5]), CallID: store.Str(r[6]), Quote: store.Str(r[7]), Snippet: gomail.Snippet(store.Str(r[8]))}
+			RunID: store.Int(r[5]), CallID: store.Str(r[6]), Quote: store.Str(r[7]), Snippet: gomail.Snippet(store.Str(r[8])), Gone: store.Int(r[9]) != 0}
 		if d := store.Int(r[3]); d != 0 {
 			ct.Date = time.Unix(d, 0)
 		}
@@ -443,7 +444,8 @@ func (s *Service) snippets(ctx context.Context, cs []Citation) {
 		by[store.Int(r[0])] = gomail.Snippet(store.Str(r[1]))
 	}
 	for i := range cs {
-		cs[i].Snippet = by[cs[i].MessageID]
+		snip, ok := by[cs[i].MessageID]
+		cs[i].Snippet, cs[i].Gone = snip, !ok
 	}
 }
 

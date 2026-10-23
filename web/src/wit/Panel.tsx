@@ -137,10 +137,12 @@ function citesOf(...ms: WitUIMessage[]): Citation[] {
     if (p.type !== "data-citations") continue;
     for (const c of p.data) {
       const i = out.findIndex((x) => x.messageId === c.messageId);
-      if (i < 0) out.push({ ...c });
+      if (i < 0) out.push({ ...c, callIds: [...c.callIds] });
       else {
         out[i].suspect ||= c.suspect;
         out[i].quote ||= c.quote;
+        // the calls that showed it: each step credits every one
+        for (const id of c.callIds) if (!out[i].callIds.includes(id)) out[i].callIds.push(id);
       }
     }
   }
@@ -211,7 +213,9 @@ function Steps({
           p.type === "dynamic-tool"
             ? [
                 ...new Set(
-                  cites.filter((c) => c.callId === p.toolCallId).map((c) => senderName(c.from)),
+                  cites
+                    .filter((c) => c.callIds.includes(p.toolCallId))
+                    .map((c) => senderName(c.from)),
                 ),
               ]
             : [];
@@ -512,8 +516,13 @@ function Answer({
         date={c.date}
         subject={c.subject}
         snippet={c.snippet}
-        onOpen={onCite && (() => onCite(c.messageId))}
-        onQuote={() => onQuote({ id: c.messageId, subject: c.subject, from: c.from, date: c.date })}
+        // a message deleted since: nothing to open or quote
+        onOpen={onCite && !c.gone ? () => onCite(c.messageId) : undefined}
+        onQuote={
+          c.gone
+            ? undefined
+            : () => onQuote({ id: c.messageId, subject: c.subject, from: c.from, date: c.date })
+        }
         t={t}
       />
     );

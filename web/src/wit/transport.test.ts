@@ -243,7 +243,8 @@ describe("toChunks", () => {
       suspect: false,
       quote: "",
       snippet: "",
-      callId: "",
+      callIds: [],
+      gone: false,
     };
     expect(toChunks(ev({ kind: "context", citations: [cite] }), new Set())).toEqual([
       { type: "data-citations", data: [cite] },
@@ -270,7 +271,8 @@ describe("historyToMessages", () => {
       suspect: true,
       quote: "q",
       snippet: "",
-      callId: "",
+      callIds: [],
+      gone: false,
     };
     const h: WitHistory = {
       conversation: 1,

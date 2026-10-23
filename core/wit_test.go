@@ -104,6 +104,15 @@ func TestAskSearchesAndCites(t *testing.T) {
 	}
 	assert.Zero(t, c.ActiveRunID)
 
+	// a cited message deleted since stays cited, marked gone
+	_, err = e.s.db.Execute(t.Context(), "DELETE FROM messages WHERE id = ?", e.msg)
+	require.NoError(t, err)
+	c, err = e.s.GetConversation(t.Context(), conv.ID)
+	require.NoError(t, err)
+	require.Len(t, c.Citations, 3)
+	assert.True(t, c.Citations[0].Gone)
+	assert.Empty(t, c.Citations[0].Snippet)
+
 	other, err := e.s.NewConversation(t.Context(), "assist", e.draft(t))
 	require.NoError(t, err)
 	_, err = e.s.Ask(t.Context(), other.ID, "hi")
