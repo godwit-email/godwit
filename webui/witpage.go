@@ -490,6 +490,11 @@ func (p *WitPage) CheckCited(ctx context.Context, message int64) error {
 	if err != nil {
 		return keyed(err)
 	}
+	return checkCited(ctx, svc, message)
+}
+
+// checkCited is ErrMailGone for message deleted since it was cited.
+func checkCited(ctx context.Context, svc *core.Service, message int64) error {
 	// a row lookup: loading the message could fetch its inline images over IMAP
 	ok, err := svc.MessageExists(ctx, message)
 	if err != nil {
@@ -549,13 +554,19 @@ type ModelChoice struct {
 	Default bool `json:"default"`
 }
 
-// Models are the models a conversation can use: every generating service's,
-// then the running plugins' (judges aside), as the settings' default model offers.
+// Models are the models a conversation can use (modelChoices).
 func (p *WitPage) Models(ctx context.Context) ([]ModelChoice, error) {
 	_, svc, err := p.w.caller(ctx)
 	if err != nil {
 		return nil, keyed(err)
 	}
+	return modelChoices(ctx, svc)
+}
+
+// modelChoices are the models a conversation can use: every generating
+// service's, then the running plugins' (judges aside), as the settings'
+// default model offers; the default one says so.
+func modelChoices(ctx context.Context, svc *core.Service) ([]ModelChoice, error) {
 	services, err := svc.ListModelServices(ctx)
 	if err != nil {
 		return nil, keyed(err)

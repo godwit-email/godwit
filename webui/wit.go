@@ -306,10 +306,42 @@ func isDraftEdit(tool string) bool { return tool == "update_draft" || tool == "u
 // Ask asks Wit about the calling window's draft, with the mail the user
 // quoted (message IDs; core AssistWith), and returns the run's ID; its
 // events go to the window on WitStream.
-func (p *ComposePage) Ask(ctx context.Context, input string, quoted []int64) (int64, error) {
-	return p.start(ctx, func(ctx context.Context, svc *core.Service, id int64) (<-chan core.WitEvent, error) {
+func (p *ComposePage) Ask(ctx context.Context, input string, quoted []int64, model, effort string) (int64, error) {
+	return p.start(ctx, func(ctx context.Context, svc *core.Service, conv int64) error {
+		return svc.SetConversationModel(ctx, conv, model, effort)
+	}, func(ctx context.Context, svc *core.Service, id int64) (<-chan core.WitEvent, error) {
 		return svc.AssistWith(ctx, id, input, quoted)
 	})
+}
+
+// Models are the models the draft's conversation can use, as the Wit page's.
+func (p *ComposePage) Models(ctx context.Context) ([]ModelChoice, error) {
+	_, svc, s, err := p.open(ctx)
+	if err != nil {
+		return nil, keyed(err)
+	}
+	s.mu.Unlock()
+	return modelChoices(ctx, svc)
+}
+
+// CheckCited is ErrMailGone for a cited message deleted since, as the Wit
+// page's.
+func (p *ComposePage) CheckCited(ctx context.Context, message int64) error {
+	_, svc, s, err := p.open(ctx)
+	if err != nil {
+		return keyed(err)
+	}
+	s.mu.Unlock()
+	return checkCited(ctx, svc, message)
+}
+
+// OpenCited opens a cited message in the main window's reader.
+func (p *ComposePage) OpenCited(ctx context.Context, message int64) error {
+	if err := p.CheckCited(ctx, message); err != nil {
+		return err
+	}
+	p.d.OpenMessage(message)
+	return nil
 }
 
 // SearchMail is the quote picker's search (core Search, every account).
@@ -351,7 +383,7 @@ func searchMail(ctx context.Context, svc *core.Service, query string) ([]MailHit
 // translate-draft writes in language ("" for the reading language). It
 // returns the run's ID; its events go to the window on WitStream.
 func (p *ComposePage) Skill(ctx context.Context, id, language string) (int64, error) {
-	return p.start(ctx, func(ctx context.Context, svc *core.Service, draftID int64) (<-chan core.WitEvent, error) {
+	return p.start(ctx, nil, func(ctx context.Context, svc *core.Service, draftID int64) (<-chan core.WitEvent, error) {
 		return svc.AssistSkill(ctx, draftID, id, core.SkillOptions{TargetLanguage: language})
 	})
 }
@@ -359,7 +391,9 @@ func (p *ComposePage) Skill(ctx context.Context, id, language string) (int64, er
 // start runs run in the draft's Assist conversation, which the window
 // follows from before the run starts: a first generation is applied at
 // once and the run resumes. Only Stop cancels the run.
-func (p *ComposePage) start(ctx context.Context, run func(context.Context, *core.Service, int64) (<-chan core.WitEvent, error)) (int64, error) {
+// start runs run in the draft's conversation, after setup (nil: none) on it.
+func (p *ComposePage) start(ctx context.Context, setup func(context.Context, *core.Service, int64) error,
+	run func(context.Context, *core.Service, int64) (<-chan core.WitEvent, error)) (int64, error) {
 	win, svc, s, err := p.open(ctx)
 	if err != nil {
 		return 0, keyed(err)
@@ -378,6 +412,11 @@ func (p *ComposePage) start(ctx context.Context, run func(context.Context, *core
 			return 0, keyed(err)
 		}
 		conv = c.ID
+	}
+	if setup != nil {
+		if err := setup(ctx, svc, conv); err != nil {
+			return 0, keyed(err)
+		}
 	}
 	if startHook != nil {
 		startHook()

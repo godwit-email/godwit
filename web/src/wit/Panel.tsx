@@ -1350,8 +1350,8 @@ export function Panel({
       </AlertAction>
     </Alert>
   );
-  // The context meter (the page's, once there is usage) leads the input's right-hand controls.
-  const meter = page && (usage.input > 0 || usage.history > 0);
+  // The context meter (once there is usage) leads the input's right-hand controls.
+  const meter = usage.input > 0 || usage.history > 0;
   // Send keeps the Primary look while nothing can be sent (an empty or locked input): only a
   // disabled control would grey the whole group.
   const idle = locked || !draft.trim() || running;

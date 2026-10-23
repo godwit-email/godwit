@@ -119,6 +119,7 @@ func gui(ctx context.Context, dataDir string) int {
 		OpenURL:     mygo.Shell.OpenExternal,
 		OpenCompose: openCompose,
 		OpenModels:  func() { onApp((*app.App).OpenModels) },
+		OpenMessage: func(id int64) { onApp(func(a *app.App) { a.OpenMessage(id) }) },
 	}))
 	// The Wit page, embedded in the main window: its callbacks run on the
 	// App's UI thread; its events go to its page only.

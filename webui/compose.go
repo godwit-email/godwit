@@ -178,8 +178,10 @@ type PageDeps struct {
 	// id in a compose window.
 	OpenURL     func(url string) error
 	OpenCompose func(draftID int64)
-	// OpenModels opens the model settings in the main window.
-	OpenModels func()
+	// OpenModels opens the model settings in the main window; OpenMessage
+	// message id in its reader.
+	OpenModels  func()
+	OpenMessage func(id int64)
 }
 
 // ComposePage is what compose pages call (mygo.Bind); every method acts on

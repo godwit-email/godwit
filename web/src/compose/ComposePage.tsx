@@ -276,6 +276,18 @@ function Compose({
   // Wit, when a model is configured. The page tracks what locks the body: a run streaming in the
   // panel or a ⌘K run, an edit waiting (reviewed in place of the body), a reload in flight.
   const [wit, setWit] = useState<{ tr: WitTransport; history: WitHistory; n: number }>();
+  // The conversation's model and reasoning effort, as the next question asks on them (the Wit
+  // page's chip): the history's, until one is picked.
+  const pick = useRef({ model: "", effort: "" });
+  const [modelRef, setModelRef] = useState("");
+  const [effort, setEffort] = useState("");
+  const history = wit?.history;
+  useEffect(() => {
+    if (!history) return;
+    pick.current = { model: history.model, effort: history.effort };
+    setModelRef(history.model);
+    setEffort(history.effort);
+  }, [history]);
   const [panelRunning, setPanelRunning] = useState(false);
   const [cmdkRun, setCmdkRun] = useState(0); // -1 while it starts
   const [pendings, setPendings] = useState<Approval[]>([]);
@@ -406,7 +418,8 @@ function Compose({
     if (!state.wit.enabled) return;
     const off = events.wit.on((ev) => onWit.current(ev));
     const tr = new WitTransport({
-      ask: (text, quoted = []) => startRun.current(() => api.ask(text, quoted)),
+      ask: (text, quoted = []) =>
+        startRun.current(() => api.ask(text, quoted, pick.current.model, pick.current.effort)),
       skill: (id, lang) => startRun.current(() => api.skill(id, lang)),
       follow: () => api.follow(),
       stop: (run) => api.stop(run),
@@ -930,6 +943,33 @@ function Compose({
               }
               resume={witResume.resume}
               onLink={(url) => api.openLink(url)}
+              onCite={(id) =>
+                api.openCited(id).catch((e) => {
+                  toast.error(witError(message(e), t));
+                  throw e;
+                })
+              }
+              onCheckCited={(id) =>
+                api.checkCited(id).catch((e) => {
+                  toast.error(witError(message(e), t));
+                  throw e;
+                })
+              }
+              models={{
+                ref: modelRef,
+                list: () => api.models(),
+                pick: (r) => {
+                  pick.current.model = r;
+                  setModelRef(r);
+                },
+              }}
+              effort={{
+                value: effort,
+                pick: (e) => {
+                  pick.current.effort = e;
+                  setEffort(e);
+                },
+              }}
               onRunning={setPanelRunning}
               onDecide={decideTool}
               onSearch={(q) => api.searchMail(q)}
