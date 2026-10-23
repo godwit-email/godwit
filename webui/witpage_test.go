@@ -40,6 +40,7 @@ type witPageFixture struct {
 	asks     []string
 	navs     []int
 	urls     []string
+	composed []int64
 }
 
 func newWitPageFixture(t *testing.T, setup ...func(*coretest.Env)) *witPageFixture {
@@ -72,6 +73,7 @@ func newWitPageFixture(t *testing.T, setup ...func(*coretest.Env)) *witPageFixtu
 		OpenModels:          func() { f.record(func() { f.models++ }) },
 		Navigate:            func(dir int) { f.record(func() { f.navs = append(f.navs, dir) }) },
 		OnLink:              func(u string) { f.record(func() { f.urls = append(f.urls, u) }) },
+		OpenCompose:         func(id int64) { f.record(func() { f.composed = append(f.composed, id) }) },
 	})
 	f.w.SetService(f.e.Svc)
 	f.p = NewWitPage(f.w)
@@ -210,6 +212,7 @@ func TestWitPageRoleRefused(t *testing.T) {
 		_, err = f.p.SearchMail(ctx, "x")
 		assert.ErrorIs(t, err, ErrWrongPage, name)
 		assert.ErrorIs(t, f.p.OpenCited(ctx, 1), ErrWrongPage, name)
+		assert.ErrorIs(t, f.p.OpenDraft(ctx, 1), ErrWrongPage, name)
 		assert.ErrorIs(t, f.p.OpenLink(ctx, "https://example.com"), ErrWrongPage, name)
 		assert.ErrorIs(t, f.p.OpenModels(ctx), ErrWrongPage, name)
 		assert.ErrorIs(t, f.p.Navigate(ctx, -1), ErrWrongPage, name)
@@ -555,6 +558,12 @@ func TestAskApproveDraft(t *testing.T) {
 		assert.Equal(t, before+1, f.drafts(t))
 		h, _ := f.answer(t, conv)
 		assert.Equal(t, "done", h.Approvals[0].State)
+		// the draft it made opens from its approval
+		require.NoError(t, f.p.OpenDraft(f.ctx(), ap.ID))
+		require.Len(t, f.composed, 1)
+		d, err := f.e.Svc.GetDraft(t.Context(), f.composed[0])
+		require.NoError(t, err)
+		assert.Contains(t, d.To[0], "lena@partner.example")
 	})
 	t.Run("reject", func(t *testing.T) {
 		f := newWitPageFixture(t)
@@ -566,6 +575,7 @@ func TestAskApproveDraft(t *testing.T) {
 		f.waitKind(t, conv, "done")
 		assert.Contains(t, streamed(f.events(), conv), "好的，不创建。")
 		assert.Equal(t, before, f.drafts(t))
+		assert.Error(t, f.p.OpenDraft(f.ctx(), ev.Approvals[0].ID), "no draft from a rejected approval")
 	})
 	t.Run("all", func(t *testing.T) {
 		f := newWitPageFixture(t)

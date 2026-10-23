@@ -26,6 +26,7 @@ vi.mock("@/mygo", () => ({
     decide: vi.fn(),
     decideAll: vi.fn(),
     openCited: vi.fn(),
+    openDraft: vi.fn(),
     openLink: vi.fn(),
     openModels: vi.fn(),
     models: vi.fn(),

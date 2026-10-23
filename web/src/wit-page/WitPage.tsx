@@ -222,6 +222,7 @@ function Conversation({
       onSearch={(q) => api.searchMail(q)}
       onLink={(url) => api.openLink(url)}
       onCite={(id) => void api.openCited(id).catch(fail)}
+      onDraft={(id) => void api.openDraft(id).catch(fail)}
       ask={handed}
       onAsked={onAsked}
       t={t}

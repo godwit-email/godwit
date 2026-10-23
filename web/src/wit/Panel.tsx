@@ -6,14 +6,21 @@ import {
   RiArrowDownSLine,
   RiArrowUpLine,
   RiBrainLine,
+  RiCheckboxCircleLine,
+  RiCloseCircleLine,
   RiCloseLine,
+  RiDraftLine,
   RiEditLine,
   RiEqualizerLine,
+  RiErrorWarningLine,
+  RiExternalLinkLine,
   RiFileCopyLine,
+  RiGlobalLine,
   RiLoaderLine,
   RiMailLine,
   RiRefreshLine,
   RiSettings3Line,
+  RiShieldLine,
   RiStopFill,
   RiToolsLine,
   RiTranslate2,
@@ -165,21 +172,20 @@ const strList = (v: unknown): string[] =>
 export type Decide = (a: Approval, accept: boolean, all: boolean) => Promise<boolean>;
 
 /**
- * A tool call waiting for the user (app/wit.go card): what Wit wants, the call's recipients,
- * subject and body, where it sends data; Allow, Allow all (others of its run pending) and Reject.
+ * A tool call waiting for the user (app/wit.go card): what Wit wants, the tool, its plugin and that
+ * it waits; the call's recipients, subject and body; the hosts it sends data to; Reject, 本次对话
+ * 都允许 (where offered) and Allow. A run's several calls get one header over them (Approvals).
  */
 function ToolCard({
   a,
-  many,
   busy,
   decide,
   session,
   t,
 }: {
   a: Approval;
-  many: boolean;
   busy: boolean;
-  decide(accept: boolean, all: boolean): void;
+  decide(accept: boolean): void;
   /** 本次对话都允许, where the host offers it and the call may take it. */
   session?(): void;
   t: T;
@@ -207,10 +213,21 @@ function ToolCard({
   }
   const label = toolLabel(a.tool, t);
   return (
-    <div className="overflow-hidden rounded-xl border-[0.5px] border-primary">
-      <div className="flex flex-wrap items-center gap-2 bg-muted px-3.5 py-3 leading-5">
+    <div className="overflow-hidden rounded-xl border-[0.5px] bg-background shadow-sm">
+      <div className="flex flex-wrap items-center gap-2 border-b-[0.5px] bg-sidebar px-3.5 py-2.5 leading-5">
         <span className="font-semibold">{t("wit.approval.wants", label)}</span>
-        <span className="font-mono text-sm">{a.tool}</span>
+        <span className="font-mono text-muted-foreground text-sm">{a.tool}</span>
+        <span className="ml-auto flex gap-1.5">
+          {a.tool.startsWith("plugin_") && (
+            <Badge variant="secondary">{t("wit.approval.plugin")}</Badge>
+          )}
+          <Badge
+            variant="outline"
+            className="border-(--warning-border) bg-(--warning-bg) text-(--warning-text)"
+          >
+            {t("wit.approval.pending")}
+          </Badge>
+        </span>
       </div>
       <div className="flex flex-col gap-1.5 px-3.5 py-3 text-md">
         {a.summary && a.summary !== label && <p className="text-muted-foreground">{a.summary}</p>}
@@ -223,52 +240,100 @@ function ToolCard({
               </div>
             ),
         )}
-        {body && <p className="text-muted-foreground">{body}</p>}
+        {body && <p className="line-clamp-3 text-muted-foreground">{body}</p>}
         {a.destinations.length > 0 && (
-          <p className="text-destructive">
-            {t("wit.approval.destinations", a.destinations.join(t("mail.list_sep")))}
-          </p>
+          <div className="flex items-start gap-3.5">
+            <span className="shrink-0 text-muted-foreground">{t("wit.approval.sends_to")}</span>
+            <span className="flex flex-wrap gap-1.5">
+              {a.destinations.map((d) => (
+                <span
+                  key={d}
+                  className="flex h-5.5 items-center gap-1 rounded-full border-[0.5px] px-2 text-sm"
+                >
+                  <RiGlobalLine className="size-3 text-muted-foreground" />
+                  {d}
+                </span>
+              ))}
+            </span>
+          </div>
         )}
       </div>
       <div className="flex flex-wrap items-center gap-2 border-muted border-t-[0.5px] px-3.5 py-2.5">
-        <Button className="px-3.5 text-md" disabled={busy} onClick={() => decide(true, false)}>
-          {t("wit.approval.allow")}
-        </Button>
-        {session && (
-          <Button
-            variant="outline"
-            className="px-3 font-normal text-md"
-            disabled={busy}
-            onClick={session}
-          >
-            {t("wit.approval.allow_session")}
-          </Button>
-        )}
-        {many && (
-          <Button
-            variant="outline"
-            className="px-3 font-normal text-md"
-            disabled={busy}
-            onClick={() => decide(true, true)}
-          >
-            {t("wit.approval.allow_all")}
-          </Button>
-        )}
-        <Button
-          variant="outline"
-          className="px-3 font-normal text-md"
-          disabled={busy}
-          onClick={() => decide(false, false)}
-        >
-          {t("wit.approval.reject")}
-        </Button>
         {a.tool === "create_draft" && (
-          <span className="ml-auto text-muted-foreground text-sm">
+          <span className="flex items-center gap-1.5 text-muted-foreground text-sm">
+            <RiShieldLine className="size-3.5" />
             {t("wit.approval.send_note")}
           </span>
         )}
+        <span className="ml-auto flex flex-wrap gap-2">
+          <Button
+            variant="outline"
+            className="px-3 font-normal text-md"
+            disabled={busy}
+            onClick={() => decide(false)}
+          >
+            {t("wit.approval.reject")}
+          </Button>
+          {session && (
+            <Button
+              variant="outline"
+              className="px-3 font-normal text-md"
+              disabled={busy}
+              onClick={session}
+            >
+              {t("wit.approval.allow_session")}
+            </Button>
+          )}
+          <Button className="px-3.5 text-md" disabled={busy} onClick={() => decide(true)}>
+            {t("wit.approval.allow")}
+          </Button>
+        </span>
       </div>
     </div>
+  );
+}
+
+/** A decided approval as one line (已允许 / 已拒绝 / 没有完成 · what), a draft Wit made as its card. */
+function Settled({ a, onDraft, t }: { a: Approval; onDraft?(id: number): void; t: T }) {
+  const label = toolLabel(a.tool, t);
+  const [Icon, key, tone] =
+    a.state === "done"
+      ? [RiCheckboxCircleLine, "wit.approval.allowed", "text-green-600"]
+      : a.state === "failed"
+        ? [RiErrorWarningLine, "wit.approval.failed", "text-destructive"]
+        : [RiCloseCircleLine, "wit.approval.rejected", "text-muted-foreground"];
+  let subject = "";
+  try {
+    const v = JSON.parse(a.args || "{}");
+    if (typeof v?.subject === "string") subject = v.subject;
+  } catch {
+    // not JSON: no subject to show
+  }
+  return (
+    <>
+      <span className="flex items-center gap-2 text-muted-foreground text-sm">
+        <Icon className={cn("size-3.5 shrink-0", tone)} />
+        <span>{t(key, label)}</span>
+        {label !== a.tool && <span className="font-mono text-muted-foreground/70">{a.tool}</span>}
+      </span>
+      {a.tool === "create_draft" && a.state === "done" && (
+        <div className="flex items-center gap-3 rounded-xl border-[0.5px] bg-background px-3 py-2.5">
+          <span className="flex size-8 shrink-0 items-center justify-center rounded-lg border-[0.5px] bg-sidebar text-muted-foreground">
+            <RiDraftLine className="size-4" />
+          </span>
+          <span className="flex min-w-0 flex-1 flex-col">
+            <span className="truncate font-medium">{subject || t("mail.no_subject")}</span>
+            <span className="text-muted-foreground text-sm">{t("wit.draft.saved")}</span>
+          </span>
+          {onDraft && (
+            <Button variant="ghost" size="sm" className="font-normal" onClick={() => onDraft(a.id)}>
+              {t("wit.draft.open")}
+              <RiExternalLinkLine className="text-muted-foreground" />
+            </Button>
+          )}
+        </div>
+      )}
+    </>
   );
 }
 
@@ -282,6 +347,7 @@ function Answer({
   onLink,
   onCite,
   onQuote,
+  onDraft,
   onAgain,
   working,
   page,
@@ -292,7 +358,9 @@ function Answer({
   nums: Nums;
   approvals: Map<string, Approval>;
   review?: PanelReview;
-  tools: (a: Approval) => ReactNode;
+  /** The answer's calls waiting for the user, as cards (with a header over a run's several). */
+  tools: (as: Approval[]) => ReactNode;
+  onDraft?(approval: number): void;
   onLink(url: string): void;
   onCite?(id: number): void;
   /** Adds a mail to the input's quoted mail (引用邮件). */
@@ -324,6 +392,13 @@ function Answer({
     return a ? [a] : [];
   });
   const waiting = requested.filter((a) => a.id === review?.approval);
+  // Its calls the user decided (draft edits have their own rows).
+  const settled = [...approvals.values()].filter(
+    (a) =>
+      ["done", "failed", "rejected", "stale"].includes(a.state) &&
+      !isDraftEdit(a.tool) &&
+      calls.some((c) => c.toolCallId === a.callId),
+  );
   // [n] in the answer shows citation n's mail in a popover, [[n]] as a card in the text: either
   // opens it (when the host opens cited mail) or quotes it in the input.
   const mail = (n: number, card: boolean) => {
@@ -511,7 +586,10 @@ function Answer({
           </div>
         </div>
       ))}
-      {requested.filter((a) => !isDraftEdit(a.tool)).map(tools)}
+      {tools(requested.filter((a) => !isDraftEdit(a.tool)))}
+      {settled.map((a) => (
+        <Settled key={a.id} a={a} onDraft={onDraft} t={t} />
+      ))}
     </div>
   );
 }
@@ -563,6 +641,7 @@ export function Panel({
   onDecide,
   onLink,
   onCite,
+  onDraft,
   transport,
   t,
   layout = "panel",
@@ -584,6 +663,8 @@ export function Panel({
   onDecide?: Decide;
   onLink(url: string): Promise<void>;
   onCite?(id: number): void;
+  /** Opens the draft an allowed create_draft made (its approval), where the host can. */
+  onDraft?(approval: number): void;
   transport: WitTransport;
   t: T;
   layout?: "panel" | "page";
@@ -853,43 +934,78 @@ export function Panel({
   const open = [...approvals.values()].filter(
     (a) => a.state === "pending" && !decided.includes(a.id),
   );
-  const tools = (a: Approval) =>
-    decided.includes(a.id) ? null : (
-      <ToolCard
-        key={a.id}
-        a={a}
-        many={open.filter((x) => x.run === a.run).length > 1}
-        busy={!onDecide || deciding.length > 0}
-        decide={async (accept, all) => {
-          if (!onDecide || deciding.length > 0) return;
-          const ids = all ? open.filter((x) => x.run === a.run).map((x) => x.id) : [a.id];
-          setDeciding(ids);
-          try {
-            if (await onDecide(a, accept, all)) setDecided((d) => [...d, ...ids]);
-          } finally {
-            setDeciding([]);
-          }
-        }}
-        session={
-          onSession && a.sessionAllow
-            ? async () => {
-                if (deciding.length > 0) return;
-                // the run's other pending calls of the tool are approved with it
-                const ids = open
-                  .filter((x) => x.run === a.run && x.tool === a.tool)
-                  .map((x) => x.id);
-                setDeciding(ids);
-                try {
-                  if (await onSession(a)) setDecided((d) => [...d, ...ids]);
-                } finally {
-                  setDeciding([]);
-                }
-              }
-            : undefined
-        }
-        t={t}
-      />
+  // Decides a, or with all its run's pending calls; its cards go once decided.
+  const decideAs = async (a: Approval, accept: boolean, all: boolean) => {
+    if (!onDecide || deciding.length > 0) return;
+    const ids = all ? open.filter((x) => x.run === a.run).map((x) => x.id) : [a.id];
+    setDeciding(ids);
+    try {
+      if (await onDecide(a, accept, all)) setDecided((d) => [...d, ...ids]);
+    } finally {
+      setDeciding([]);
+    }
+  };
+  const tools = (as: Approval[]) => {
+    const shown = as.filter((a) => !decided.includes(a.id));
+    const busy = !onDecide || deciding.length > 0;
+    return (
+      <>
+        {shown.length > 1 && (
+          <div className="flex items-center gap-2 px-0.5">
+            <span className="text-muted-foreground text-sm">
+              {t("wit.approval.count", shown.length)}
+            </span>
+            <span className="ml-auto flex gap-1.5">
+              <Button
+                variant="ghost"
+                size="sm"
+                className="font-normal text-muted-foreground"
+                disabled={busy}
+                onClick={() => decideAs(shown[0], false, true)}
+              >
+                {t("wit.approval.reject_all")}
+              </Button>
+              <Button
+                variant="outline"
+                size="sm"
+                className="font-normal"
+                disabled={busy}
+                onClick={() => decideAs(shown[0], true, true)}
+              >
+                {t("wit.approval.allow_all")}
+              </Button>
+            </span>
+          </div>
+        )}
+        {shown.map((a) => (
+          <ToolCard
+            key={a.id}
+            a={a}
+            busy={busy}
+            decide={(accept) => decideAs(a, accept, false)}
+            session={
+              onSession && a.sessionAllow
+                ? async () => {
+                    if (deciding.length > 0) return;
+                    // the run's other pending calls of the tool are approved with it
+                    const ids = open
+                      .filter((x) => x.run === a.run && x.tool === a.tool)
+                      .map((x) => x.id);
+                    setDeciding(ids);
+                    try {
+                      if (await onSession(a)) setDecided((d) => [...d, ...ids]);
+                    } finally {
+                      setDeciding([]);
+                    }
+                  }
+                : undefined
+            }
+            t={t}
+          />
+        ))}
+      </>
     );
+  };
   const page = layout === "page";
   // The page's column (max-w-202): 760 of text inside its 24 padding, as the design's.
   // A run going: the page's spinner; the panel's row, with Stop, says Wit writes the body while a
@@ -970,6 +1086,7 @@ export function Panel({
                     approvals={approvals}
                     review={review}
                     tools={tools}
+                    onDraft={onDraft}
                     onLink={link}
                     onCite={onCite}
                     onQuote={quote}

@@ -74,8 +74,10 @@ type WitPageDeps struct {
 	// snapshot version.
 	ConversationCreated func(id, version int64)
 	// OnLink opens a link of an answer as mail's own: http(s) after the
-	// native confirmation, mailto as a draft.
-	OnLink func(url string)
+	// native confirmation, mailto as a draft. OpenCompose opens draft id in
+	// a compose window.
+	OnLink      func(url string)
+	OpenCompose func(draftID int64)
 }
 
 // Wit keeps the Wit page's state: the route's conversation as a versioned
@@ -457,6 +459,21 @@ func (p *WitPage) OpenCited(ctx context.Context, message int64) error {
 		return keyed(err)
 	}
 	p.w.d.OpenMessage(message)
+	return nil
+}
+
+// OpenDraft opens the draft an allowed create_draft (approval) made, in a
+// compose window.
+func (p *WitPage) OpenDraft(ctx context.Context, approval int64) error {
+	_, svc, err := p.w.caller(ctx)
+	if err != nil {
+		return keyed(err)
+	}
+	id, err := svc.DraftForApproval(ctx, approval)
+	if err != nil {
+		return keyed(err)
+	}
+	p.w.d.OpenCompose(id)
 	return nil
 }
 

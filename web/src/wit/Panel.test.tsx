@@ -61,6 +61,7 @@ async function setup(
     onRunning?(on: boolean): void;
     onDecide?(a: Approval, accept: boolean, all: boolean): Promise<boolean>;
     onCite?(id: number): void;
+    onDraft?(approval: number): void;
     onSearch?(q: string): Promise<MailHit[]>;
     onSession?(a: Approval): Promise<boolean>;
     page?: boolean;
@@ -93,6 +94,7 @@ async function setup(
       onDecide={o.onDecide}
       onLink={onLink}
       onCite={o.onCite}
+      onDraft={o.onDraft}
       onSearch={o.onSearch}
       onSession={o.onSession}
       layout={o.page ? "page" : "panel"}
@@ -995,7 +997,7 @@ describe("Panel", () => {
     expect(api.stop).toHaveBeenCalledWith(7);
   });
 
-  it("a tool's approval shows its card: what, arguments, destinations; Allow / Allow all / Reject", async () => {
+  it("a tool's approval shows its card: what, arguments, destinations; a header decides them all", async () => {
     const user = userEvent.setup();
     const tool = (id: number, callId: string, tool: string, args: string): Approval => ({
       id,
@@ -1058,10 +1060,17 @@ describe("Panel", () => {
     expect(screen.getByText("b@x.com")).toBeInTheDocument();
     expect(screen.getByText("Hi")).toBeInTheDocument();
     expect(screen.getByText("Body text")).toBeInTheDocument();
-    expect(screen.getAllByText("会把数据发送到：api.x.com、cdn.x.com")).toHaveLength(2);
+    expect(screen.getAllByText("发送到")).toHaveLength(2);
+    expect(screen.getAllByText("api.x.com")).toHaveLength(2);
+    expect(screen.getAllByText("cdn.x.com")).toHaveLength(2);
+    expect(screen.getByText("插件")).toBeInTheDocument(); // the plugin's tool only
+    expect(screen.getAllByText("待确认")).toHaveLength(2);
     expect(screen.getByText("发送仍需你在撰写页亲自点击")).toBeInTheDocument(); // create_draft's only
-    expect(screen.getAllByRole("button", { name: "全部允许" })).toHaveLength(2); // two of run 7
-    for (const n of ["允许", "全部允许", "拒绝"])
+    // two of run 7: one header over them
+    expect(screen.getByText("2 个操作等你确认")).toBeInTheDocument();
+    expect(screen.getAllByRole("button", { name: "全部允许" })).toHaveLength(1);
+    expect(screen.getAllByRole("button", { name: "全部拒绝" })).toHaveLength(1);
+    for (const n of ["允许", "拒绝"])
       for (const b of screen.getAllByRole("button", { name: n })) {
         expect(b).toHaveClass("h-8", "text-md"); // default size, not sm
       }
@@ -1073,6 +1082,7 @@ describe("Panel", () => {
     expect(onDecide).toHaveBeenCalledWith(a, true, false);
     await waitFor(() => expect(screen.queryByText("Wit 想要：plugin_netty_ping")).toBeNull());
     expect(screen.queryByRole("button", { name: "全部允许" })).toBeNull(); // one left
+    expect(screen.queryByText(/个操作等你确认/)).toBeNull();
     await user.click(screen.getByRole("button", { name: "拒绝" }));
     expect(onDecide).toHaveBeenLastCalledWith(b, false, false);
   });
@@ -1102,12 +1112,78 @@ describe("Panel", () => {
       interrupts: [call("p1"), call("p2")],
       approvals: [ap(5, "p1"), ap(6, "p2")],
     });
-    const all = await screen.findAllByRole("button", { name: "全部允许" });
-    await user.click(all[0]);
+    await user.click(await screen.findByRole("button", { name: "全部允许" }));
     expect(onDecide).toHaveBeenCalledWith(ap(5, "p1"), true, true);
     expect(screen.getAllByText("Wit 想要：plugin_netty_ping")).toHaveLength(2); // refused: kept
-    await user.click(screen.getAllByRole("button", { name: "全部允许" })[1]);
+    await user.click(screen.getByRole("button", { name: "全部拒绝" }));
+    expect(onDecide).toHaveBeenLastCalledWith(ap(5, "p1"), false, true);
     await waitFor(() => expect(screen.queryByText("Wit 想要：plugin_netty_ping")).toBeNull());
+  });
+
+  it("decided approvals fold into one line each; a draft Wit made opens in compose", async () => {
+    const user = userEvent.setup();
+    const onDraft = vi.fn();
+    const ap = (
+      id: number,
+      callId: string,
+      tool: string,
+      state: string,
+      args = "{}",
+    ): Approval => ({
+      id,
+      run: 7,
+      callId,
+      tool,
+      summary: "",
+      state,
+      error: "",
+      destinations: [],
+      args,
+      sessionAllow: false,
+    });
+    const draft = ap(6, "p2", "create_draft", "done", '{"to":["Lena <l@x>"],"subject":"Re: Q4"}');
+    await setup({
+      page: true,
+      onDraft,
+      history: {
+        ...empty,
+        messages: [
+          {
+            id: "q0",
+            role: "user",
+            text: "Q",
+            reasoning: "",
+            quoted: [],
+            calls: [],
+            results: [],
+            citations: [],
+            runs: [7],
+          },
+          {
+            id: "a1",
+            role: "assistant",
+            text: "Drafted.",
+            reasoning: "",
+            quoted: [],
+            calls: [
+              { id: "p1", name: "plugin_cal_free", args: "{}" },
+              { id: "p2", name: "create_draft", args: draft.args },
+            ],
+            results: [],
+            citations: [],
+            runs: [7],
+          },
+        ],
+        approvals: [ap(5, "p1", "plugin_cal_free", "rejected"), draft],
+      },
+    });
+    expect(screen.getByText("已拒绝 · plugin_cal_free")).toBeInTheDocument();
+    expect(screen.getByText("已允许 · 创建草稿")).toBeInTheDocument();
+    expect(screen.queryByText(/Wit 想要/)).toBeNull();
+    expect(screen.getByText("Re: Q4")).toBeInTheDocument();
+    expect(screen.getByText("草稿 · 还没发送")).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: /在撰写窗口打开/ }));
+    expect(onDraft).toHaveBeenCalledWith(6);
   });
 
   it("a resumed run that is not the last answer's streams into an answer of its own", async () => {
@@ -1538,10 +1614,11 @@ describe("Panel", () => {
     const onDecide = vi.fn().mockResolvedValue(true);
     const r = await setup({ history, onDecide, onSession, page: true });
     const buttons = screen.getAllByRole("button").map((b) => b.textContent);
-    expect(buttons.slice(buttons.indexOf("允许"), buttons.indexOf("允许") + 3)).toEqual([
-      "允许",
-      "本次对话都允许",
+    // the primary last, as the design's: 拒绝 / 本次对话都允许 / 允许
+    expect(buttons.slice(buttons.indexOf("拒绝"), buttons.indexOf("拒绝") + 3)).toEqual([
       "拒绝",
+      "本次对话都允许",
+      "允许",
     ]);
     expect(screen.getByText("发送仍需你在撰写页亲自点击")).toBeInTheDocument();
     await user.click(screen.getByRole("button", { name: "本次对话都允许" }));
