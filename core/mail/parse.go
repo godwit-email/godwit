@@ -19,7 +19,6 @@ import (
 	"github.com/emersion/go-message"
 	"github.com/emersion/go-message/charset"
 	gomail "github.com/emersion/go-message/mail"
-	"golang.org/x/text/encoding/simplifiedchinese"
 )
 
 const (
@@ -258,8 +257,9 @@ func DecodePart(data []byte, encoding, cs string) ([]byte, error) {
 var metaCharset = regexp.MustCompile(`(?i)<meta[^>]+charset\s*=\s*["']?([\w.:-]+)`)
 
 // ValidText makes a decoded text part valid UTF-8 when its declared charset cs
-// did not: an HTML part's <meta charset> when MIME names none, then GB18030
-// when its bytes look like GB2312, else U+FFFD for the bad bytes.
+// did not: an HTML part's <meta charset> when MIME names none, else U+FFFD for
+// the bad bytes. No guessing beyond that: byte ranges cannot tell GBK from
+// EUC-KR or Shift_JIS, and mojibake stored as text is worse than U+FFFD.
 func ValidText(b []byte, cs string, html bool) []byte {
 	if utf8.Valid(b) {
 		return b
@@ -269,30 +269,7 @@ func ValidText(b []byte, cs string, html bool) []byte {
 			return d
 		}
 	}
-	if gb2312ish(b) {
-		if d, err := simplifiedchinese.GB18030.NewDecoder().Bytes(b); err == nil {
-			return d
-		}
-	}
 	return bytes.ToValidUTF8(b, []byte("\uFFFD"))
-}
-
-// gb2312ish reports whether b's high bytes nearly all pair up as GB2312
-// (EUC-CN), where Chinese text lives. Output script alone cannot tell: GB18030
-// also turns Shift_JIS kana into rare Han, but those bytes fall outside GB2312.
-func gb2312ish(b []byte) bool {
-	var ok, bad int
-	for i := 0; i < len(b); i++ {
-		switch {
-		case b[i] < 0x80:
-		case i+1 < len(b) && b[i] >= 0xa1 && b[i] <= 0xf7 && b[i+1] >= 0xa1 && b[i+1] <= 0xfe:
-			ok++
-			i++
-		default:
-			bad++
-		}
-	}
-	return ok > 0 && bad*20 <= ok
 }
 
 // ParseStructure walks an IMAP BODYSTRUCTURE and reports the displayable body
