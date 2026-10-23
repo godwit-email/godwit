@@ -30,10 +30,15 @@ import { Button } from "@/components/ui/button";
 import {
   DropdownMenu,
   DropdownMenuContent,
+  DropdownMenuGroup,
   DropdownMenuItem,
+  DropdownMenuLabel,
   DropdownMenuRadioGroup,
   DropdownMenuRadioItem,
   DropdownMenuSeparator,
+  DropdownMenuSub,
+  DropdownMenuSubContent,
+  DropdownMenuSubTrigger,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { HoverCard, HoverCardContent, HoverCardTrigger } from "@/components/ui/hover-card";
@@ -753,11 +758,14 @@ export function Panel({
     toast.error(witError(String((e as Error | undefined)?.message ?? e), t));
   const stop = () => void transport.stop().catch(fail);
   const link = (url: string) => void onLink(url).catch(fail);
-  // The chip names the conversation's model: its choice's label once listed, else the ref's model.
+  // The chip names the conversation's model: its choice's name once listed, else the ref's model.
   const chosen = models?.ref
-    ? (choices?.find((c) => c.ref === models.ref)?.label ??
+    ? (choices?.find((c) => c.ref === models.ref)?.name ??
       models.ref.slice(models.ref.indexOf("/") + 1))
     : model;
+  // The menu groups the choices by their service, in the order they come.
+  const services = new Map<string, ModelChoice[]>();
+  for (const c of choices ?? []) services.set(c.service, [...(services.get(c.service) ?? []), c]);
 
   // Citations with core's numbers (the refs the model cites by); a message is suspect once any
   // citation of it is.
@@ -1076,12 +1084,15 @@ export function Panel({
                   size="sm"
                   className={cn(
                     !meter && "ml-auto",
-                    "h-8 min-w-0 gap-1 px-2 font-normal text-muted-foreground text-sm",
+                    "h-8 min-w-0 gap-1.5 px-2 font-normal text-sm",
                   )}
                   title={t("wit.model.pick")}
                 >
                   <span className="truncate">{chosen}</span>
-                  <RiArrowDownSLine className="size-3" />
+                  {effort?.value && (
+                    <span className="text-muted-foreground">{t(`wit.effort.${effort.value}`)}</span>
+                  )}
+                  <RiArrowDownSLine className="size-3 text-muted-foreground" />
                 </InputGroupButton>
               }
             />
@@ -1090,15 +1101,51 @@ export function Panel({
                 value={models.ref}
                 onValueChange={(v: string) => models.pick(v)}
               >
-                <DropdownMenuRadioItem value="">
+                <DropdownMenuRadioItem closeOnClick value="">
                   {t("wit.model.default", model)}
                 </DropdownMenuRadioItem>
-                {choices?.map((c) => (
-                  <DropdownMenuRadioItem key={c.ref} value={c.ref}>
-                    {c.label}
-                  </DropdownMenuRadioItem>
-                ))}
               </DropdownMenuRadioGroup>
+              {[...services].map(([service, list]) => (
+                <DropdownMenuGroup key={service}>
+                  <DropdownMenuSeparator />
+                  <DropdownMenuLabel>{service}</DropdownMenuLabel>
+                  <DropdownMenuRadioGroup
+                    value={models.ref}
+                    onValueChange={(v: string) => models.pick(v)}
+                  >
+                    {list.map((c) => (
+                      <DropdownMenuRadioItem closeOnClick key={c.ref} value={c.ref}>
+                        {c.name}
+                      </DropdownMenuRadioItem>
+                    ))}
+                  </DropdownMenuRadioGroup>
+                </DropdownMenuGroup>
+              ))}
+              {effort && (
+                <>
+                  <DropdownMenuSeparator />
+                  <DropdownMenuSub>
+                    <DropdownMenuSubTrigger>
+                      {t("wit.effort")}
+                      <span className="ml-auto text-muted-foreground">
+                        {t(`wit.effort.${effort.value || "default"}`)}
+                      </span>
+                    </DropdownMenuSubTrigger>
+                    <DropdownMenuSubContent>
+                      <DropdownMenuRadioGroup
+                        value={effort.value}
+                        onValueChange={(v: string) => effort.pick(v)}
+                      >
+                        {(["", "low", "medium", "high"] as const).map((v) => (
+                          <DropdownMenuRadioItem closeOnClick key={v} value={v}>
+                            {t(`wit.effort.${v || "default"}`)}
+                          </DropdownMenuRadioItem>
+                        ))}
+                      </DropdownMenuRadioGroup>
+                    </DropdownMenuSubContent>
+                  </DropdownMenuSub>
+                </>
+              )}
               {onModels && (
                 <>
                   <DropdownMenuSeparator />
@@ -1126,36 +1173,6 @@ export function Panel({
               <RiArrowDownSLine className="size-3" />
             </InputGroupButton>
           )
-        )}
-        {model && models && effort && (
-          <DropdownMenu>
-            <DropdownMenuTrigger
-              render={
-                <InputGroupButton
-                  variant="ghost"
-                  size="sm"
-                  className="h-8 gap-1 px-2 font-normal text-muted-foreground text-sm"
-                  title={t("wit.effort")}
-                >
-                  <RiBrainLine className="size-3.5" />
-                  {t(`wit.effort.${effort.value || "default"}`)}
-                  <RiArrowDownSLine className="size-3" />
-                </InputGroupButton>
-              }
-            />
-            <DropdownMenuContent side="top" align="end">
-              <DropdownMenuRadioGroup
-                value={effort.value}
-                onValueChange={(v: string) => effort.pick(v)}
-              >
-                {(["", "low", "medium", "high"] as const).map((v) => (
-                  <DropdownMenuRadioItem key={v} value={v}>
-                    {t(`wit.effort.${v || "default"}`)}
-                  </DropdownMenuRadioItem>
-                ))}
-              </DropdownMenuRadioGroup>
-            </DropdownMenuContent>
-          </DropdownMenu>
         )}
         {running && page ? (
           <InputGroupButton

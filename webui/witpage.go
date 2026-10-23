@@ -480,11 +480,13 @@ func (p *WitPage) OpenLink(ctx context.Context, link string) error {
 	}, p.w.d.OpenURL, p.w.d.OpenCompose))
 }
 
-// ModelChoice is a model Wit can answer with: Ref is what Ask takes, Label
-// "service / model" as the settings show it.
+// ModelChoice is a model Wit can answer with: Ref is what Ask takes; Service
+// the model service (or plugin) it comes from, which the menu groups by, and
+// Name the model as the settings show it.
 type ModelChoice struct {
-	Ref   string `json:"ref"`
-	Label string `json:"label"`
+	Ref     string `json:"ref"`
+	Service string `json:"service"`
+	Name    string `json:"name"`
 }
 
 // Models are the models a conversation can use: every generating service's,
@@ -508,13 +510,13 @@ func (p *WitPage) Models(ctx context.Context) ([]ModelChoice, error) {
 			continue
 		}
 		for _, m := range s.Models {
-			out = append(out, ModelChoice{Ref: s.Slug + "/" + m, Label: s.Name + " / " + m})
+			out = append(out, ModelChoice{Ref: s.Slug + "/" + m, Service: s.Name, Name: m})
 		}
 	}
 	for _, pm := range plugins {
 		for _, m := range pm.Models {
 			if !m.Judges() && m.Operation != "small" {
-				out = append(out, ModelChoice{Ref: "plugin/" + pm.Plugin + "/" + m.ID, Label: pm.Plugin + " / " + m.Name})
+				out = append(out, ModelChoice{Ref: "plugin/" + pm.Plugin + "/" + m.ID, Service: pm.Plugin, Name: m.Name})
 			}
 		}
 	}

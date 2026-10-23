@@ -942,7 +942,7 @@ func TestWitPageModel(t *testing.T) {
 	f := newWitPageFixture(t)
 	ms, err := f.p.Models(f.ctx())
 	require.NoError(t, err)
-	require.Equal(t, []ModelChoice{{Ref: "test/m1", Label: "test / m1"}}, ms)
+	require.Equal(t, []ModelChoice{{Ref: "test/m1", Service: "test", Name: "m1"}}, ms)
 
 	_, err = f.p.Ask(f.ctx(), 0, "hi", nil, "test/nope", "", -1)
 	require.Error(t, err, "a model that does not resolve")

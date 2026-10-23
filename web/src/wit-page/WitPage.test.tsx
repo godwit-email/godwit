@@ -222,26 +222,31 @@ test("witState updates the model label and copy without a new follow", async () 
 test("the model chip picks the next question's model; its last item opens settings", async () => {
   const user = userEvent.setup();
   vi.mocked(api.openModels).mockResolvedValue(undefined);
-  vi.mocked(api.models).mockResolvedValue([{ ref: "s/m2", label: "S / m2" }]);
+  vi.mocked(api.models).mockResolvedValue([{ ref: "s/m2", service: "S", name: "m2" }]);
   vi.mocked(api.ask).mockResolvedValue({ run: 7, conversation: 3, revision: 0, conflict: false });
   await start(3);
   await user.click(screen.getByRole("button", { name: /m1/ }));
-  await user.click(await screen.findByRole("menuitemradio", { name: "S / m2" }));
-  expect(screen.getByRole("button", { name: /S \/ m2/ })).toBeInTheDocument();
+  await user.click(await screen.findByRole("menuitemradio", { name: "m2" }));
+  expect(screen.getByRole("button", { name: /m2/ })).toBeInTheDocument();
   await user.type(input(), "hi{Enter}");
   await waitFor(() => expect(api.ask).toHaveBeenCalledWith(3, "hi", [], "s/m2", "", -1));
-  await user.click(screen.getByRole("button", { name: /S \/ m2/ }));
+  await user.click(screen.getByRole("button", { name: /m2/ }));
   await user.click(await screen.findByRole("menuitem", { name: "模型服务设置" }));
   expect(api.openModels).toHaveBeenCalled();
 });
 
-test("the effort chip picks the next question's reasoning effort", async () => {
+test("the model menu's effort submenu picks the next question's reasoning effort", async () => {
   const user = userEvent.setup();
+  vi.mocked(api.models).mockResolvedValue([]);
   vi.mocked(api.ask).mockResolvedValue({ run: 7, conversation: 3, revision: 0, conflict: false });
   await start(3);
-  await user.click(screen.getByRole("button", { name: "默认" }));
-  await user.click(await screen.findByRole("menuitemradio", { name: "高" }));
-  expect(screen.getByRole("button", { name: "高" })).toBeInTheDocument();
+  await user.click(screen.getByRole("button", { name: /m1/ }));
+  await user.click(await screen.findByRole("menuitem", { name: /思考强度/ }));
+  // jsdom leaves the submenu inert to the pointer while it opens: pick from the keyboard
+  (await screen.findByRole("menuitemradio", { name: "高" })).focus();
+  await user.keyboard("{Enter}");
+  await waitFor(() => expect(screen.getByRole("button", { name: /m1/ })).toHaveTextContent("高"));
+  await waitFor(() => expect(screen.queryByRole("menu")).toBeNull());
   await user.type(input(), "hi{Enter}");
   await waitFor(() => expect(api.ask).toHaveBeenCalledWith(3, "hi", [], "", "high", -1));
 });

@@ -174,13 +174,14 @@ describe("Panel", () => {
     expect(onModels).toHaveBeenCalledOnce();
   });
 
-  it("with models, the chip picks the conversation's model; the settings come last", async () => {
+  it("with models, one chip picks the model, grouped by service, and the effort in a submenu", async () => {
     const user = userEvent.setup();
     const onModels = vi.fn();
     const pick = vi.fn();
     const list = vi.fn().mockResolvedValue([
-      { ref: "a/sonnet", label: "A / sonnet" },
-      { ref: "a/haiku", label: "A / haiku" },
+      { ref: "a/sonnet", service: "A", name: "sonnet" },
+      { ref: "a/haiku", service: "A", name: "haiku" },
+      { ref: "b/gpt", service: "B", name: "gpt" },
     ]);
     render(
       <Panel
@@ -194,20 +195,27 @@ describe("Panel", () => {
         model="sonnet"
         onModels={onModels}
         models={{ ref: "a/haiku", list, pick }}
+        effort={{ value: "medium", pick: vi.fn() }}
       />,
     );
-    await user.click(screen.getByRole("button", { name: /haiku/ }));
+    // one chip: the model and the effort; no chip of its own for the effort
+    const chip = screen.getByRole("button", { name: /haiku/ });
+    expect(chip).toHaveTextContent("haiku中");
+    expect(screen.queryByRole("button", { name: "中" })).toBeNull();
+    await user.click(chip);
     await waitFor(() => expect(list).toHaveBeenCalledOnce());
-    expect(await screen.findByRole("menuitemradio", { name: "A / haiku" })).toHaveAttribute(
+    expect(await screen.findByRole("menuitemradio", { name: "haiku" })).toHaveAttribute(
       "aria-checked",
       "true",
     );
+    expect(screen.getByRole("group", { name: "A" })).toHaveTextContent("Asonnethaiku");
+    expect(screen.getByRole("group", { name: "B" })).toHaveTextContent("Bgpt");
     await user.click(screen.getByRole("menuitemradio", { name: "默认（sonnet）" }));
     expect(pick).toHaveBeenCalledWith("");
     expect(onModels).not.toHaveBeenCalled();
   });
 
-  it("beside the model, the effort chip picks the conversation's reasoning effort", async () => {
+  it("the effort is a submenu of the model menu", async () => {
     const user = userEvent.setup();
     const pick = vi.fn();
     render(
@@ -224,19 +232,40 @@ describe("Panel", () => {
         effort={{ value: "medium", pick }}
       />,
     );
-    await user.click(screen.getByRole("button", { name: "中" }));
+    await user.click(screen.getByRole("button", { name: /sonnet/ }));
+    await user.click(await screen.findByRole("menuitem", { name: /思考强度/ }));
     expect(await screen.findByRole("menuitemradio", { name: "中" })).toHaveAttribute(
       "aria-checked",
       "true",
     );
-    expect(screen.getAllByRole("menuitemradio").map((e) => e.textContent)).toEqual([
-      "默认",
-      "低",
-      "中",
-      "高",
-    ]);
-    await user.click(screen.getByRole("menuitemradio", { name: "默认" }));
-    expect(pick).toHaveBeenCalledWith("");
+    expect(
+      screen
+        .getAllByRole("menuitemradio")
+        .filter((e) => ["默认", "低", "中", "高"].includes(e.textContent ?? ""))
+        .map((e) => e.textContent),
+    ).toEqual(["默认", "低", "中", "高"]);
+    // jsdom leaves the submenu inert to the pointer while it opens: pick from the keyboard
+    screen.getByRole("menuitemradio", { name: "高" }).focus();
+    await user.keyboard("{Enter}");
+    expect(pick).toHaveBeenCalledWith("high");
+  });
+
+  it("the default effort shows the model alone on the chip", () => {
+    render(
+      <Panel
+        history={empty}
+        locked={false}
+        onLink={vi.fn()}
+        transport={
+          new WitTransport({ ask: vi.fn(), follow: vi.fn(), stop: vi.fn() }, () => () => {})
+        }
+        t={t}
+        model="sonnet"
+        models={{ ref: "", list: vi.fn().mockResolvedValue([]), pick: vi.fn() }}
+        effort={{ value: "", pick: vi.fn() }}
+      />,
+    );
+    expect(screen.getByRole("button", { name: /sonnet/ })).toHaveTextContent(/^sonnet$/);
   });
 
   it("a finished answer copies its text", async () => {
