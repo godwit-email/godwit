@@ -510,17 +510,26 @@ func (h *History) CompactedSize(sum Summary) (int, error) {
 // before its second-to-last turn, which stays with the last; 0 when that
 // leaves nothing to condense.
 func (h *History) CompactPoint() int64 {
+	if ps := h.CompactPoints(); len(ps) > 0 {
+		return ps[len(ps)-1]
+	}
+	return 0
+}
+
+// CompactPoints are the Uptos a summary of h may have, ascending: the message
+// before each turn after the first, through CompactPoint.
+func (h *History) CompactPoints() []int64 {
 	vis := h.visible()
-	var starts []int
+	var out []int64
 	for k, i := range vis {
 		if k > 0 && h.msgs[i].Role == gai.RoleUser {
-			starts = append(starts, k)
+			out = append(out, h.seqs[vis[k-1]])
 		}
 	}
-	if len(starts) < 2 {
-		return 0
+	if len(out) < 2 {
+		return nil
 	}
-	return h.seqs[vis[starts[len(starts)-2]-1]]
+	return out[:len(out)-1]
 }
 
 // Compactable reports whether a compaction of h has turns to condense that sum
