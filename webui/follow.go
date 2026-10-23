@@ -289,6 +289,7 @@ var witErrorKeys = []struct {
 	{core.ErrCompacting, "error.compacting"},
 	{core.ErrNothingToCompact, "error.nothing_to_compact"},
 	{ErrMailGone, "wit.mail.gone"},
+	{core.ErrDraftGone, "wit.draft.gone"},
 }
 
 // errorKey is the i18n key of what err means to the user, as app's

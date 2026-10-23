@@ -1011,6 +1011,7 @@
   "wit_approval_rejected": "Recusado · {arg1}",
   "wit_approval_failed": "Não concluído · {arg1}",
   "wit_draft_saved": "Rascunho · ainda não enviado",
+  "wit_draft_gone": "Este rascunho não está mais aqui; pode ter sido enviado ou excluído.",
   "wit_draft_open": "Abrir na janela de escrita",
   "wit_empty_title": "Como o Wit pode ajudar hoje?",
   "wit_empty_note": "O Wit pode ler o e-mail de todas as suas contas. Ele pergunta antes de escrever um rascunho ou usar um plugin, e enviar é sempre com você.",

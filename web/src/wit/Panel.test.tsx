@@ -1335,7 +1335,12 @@ describe("Panel", () => {
     await user.click(screen.getByRole("button", { name: /在撰写窗口打开/ }));
     expect(onDraft).toHaveBeenCalledWith(6);
     // sent or deleted meanwhile: opening it fails, and the card goes
-    onDraft.mockRejectedValueOnce(new Error("no draft from approval 6"));
+    // a passing failure keeps it: Open can be tried again
+    onDraft.mockRejectedValueOnce(new Error("error.unknown"));
+    await user.click(screen.getByRole("button", { name: /在撰写窗口打开/ }));
+    await waitFor(() => expect(onDraft).toHaveBeenCalledTimes(2));
+    expect(screen.getByText("草稿 · 还没发送")).toBeInTheDocument();
+    onDraft.mockRejectedValueOnce(new Error("wit.draft.gone"));
     await user.click(screen.getByRole("button", { name: /在撰写窗口打开/ }));
     await waitFor(() => expect(screen.queryByText("草稿 · 还没发送")).toBeNull());
     expect(screen.getByText("已允许 · 创建草稿")).toBeInTheDocument();

@@ -1011,6 +1011,7 @@
   "wit_approval_rejected": "Reddedildi · {arg1}",
   "wit_approval_failed": "Tamamlanmadı · {arg1}",
   "wit_draft_saved": "Taslak · henüz gönderilmedi",
+  "wit_draft_gone": "Bu taslak artık yok; gönderilmiş veya silinmiş olabilir.",
   "wit_draft_open": "Oluşturma penceresinde aç",
   "wit_empty_title": "Wit bugün sana nasıl yardımcı olsun?",
   "wit_empty_note": "Wit tüm hesaplarının e-postalarını okuyabilir. Taslak yazmadan veya eklenti kullanmadan önce sorar; göndermek her zaman sana kalır.",

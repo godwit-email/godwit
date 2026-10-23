@@ -278,6 +278,9 @@ func (s *Service) ListDrafts(ctx context.Context, accountID int64) ([]Draft, err
 }
 
 // GetDraft returns the draft with its attachments. HTML is sanitized again on
+// ErrDraftGone: an approval made no draft, or it was sent or deleted since.
+var ErrDraftGone = errors.New("the draft is gone")
+
 // DraftForApproval is the draft approval approvalID made (a create_draft the
 // user allowed), to open from where it was asked for.
 func (s *Service) DraftForApproval(ctx context.Context, approvalID int64) (int64, error) {
@@ -286,7 +289,7 @@ func (s *Service) DraftForApproval(ctx context.Context, approvalID int64) (int64
 		return 0, err
 	}
 	if len(rows.Values) == 0 {
-		return 0, fmt.Errorf("no draft from approval %d", approvalID)
+		return 0, fmt.Errorf("approval %d: %w", approvalID, ErrDraftGone)
 	}
 	return store.Int(rows.Values[0][0]), nil
 }

@@ -433,7 +433,11 @@ function Settled({ a, onDraft, t }: { a: Approval; onDraft?(id: number): Promise
               variant="ghost"
               size="sm"
               className="font-normal"
-              onClick={() => onDraft(a.id).catch(() => setGone(true))}
+              onClick={() =>
+                onDraft(a.id).catch(
+                  (e) => (e as Error | undefined)?.message === "wit.draft.gone" && setGone(true),
+                )
+              }
             >
               {t("wit.draft.open")}
               <RiExternalLinkLine className="text-muted-foreground" />

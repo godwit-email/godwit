@@ -584,7 +584,7 @@ func TestAskApproveDraft(t *testing.T) {
 		f.waitKind(t, conv, "done")
 		assert.Contains(t, streamed(f.events(), conv), "好的，不创建。")
 		assert.Equal(t, before, f.drafts(t))
-		assert.Error(t, f.p.OpenDraft(f.ctx(), ev.Approvals[0].ID), "no draft from a rejected approval")
+		assert.EqualError(t, f.p.OpenDraft(f.ctx(), ev.Approvals[0].ID), "wit.draft.gone", "no draft from a rejected approval")
 	})
 	t.Run("all", func(t *testing.T) {
 		f := newWitPageFixture(t)
