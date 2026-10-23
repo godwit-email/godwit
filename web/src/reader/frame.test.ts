@@ -99,7 +99,10 @@ test("the body sits in #godwit-body; html mail is transparent, in the theme's te
   expect(css).not.toContain("#fff");
   expect(css).toContain("oklch(0.145 0 0)");
   expect(css).toMatch(/img\{[^}]*max-width:100%/);
-  expect(css).toContain("break-word");
+  expect(css).toContain("overflow-wrap:break-word");
+  // word-break:break-word counts every letter as a break when sizing a table, so a column of
+  // "Status" over an icon would be one letter wide
+  expect(css).not.toContain("word-break");
   expect(css).toContain("px/normal "); // not the reading height: a mail's buttons and footers have none of their own
   // an image with only a height attribute keeps it (height:auto would show it at its natural
   // size); one with a width too shrinks in ratio
