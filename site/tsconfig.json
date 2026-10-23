@@ -10,5 +10,5 @@
 		"skipLibCheck": true
 	},
 	"include": ["src/*.ts"],
-	"exclude": ["src/motion.ts"]
+	"exclude": ["src/motion.ts", "src/bird.ts"]
 }

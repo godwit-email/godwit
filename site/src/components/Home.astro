@@ -126,7 +126,9 @@ const mark = logo.replace("<svg ", '<svg aria-hidden="true" class="size-full" ')
 					<span class="text-border">|</span>
 					<span class="inline-flex items-center gap-1">{s.release.whatsNew}<Icon name="arrow-right" class="size-3.5" /></span>
 				</a>
-				<h1 class="text-4xl font-semibold tracking-tight sm:text-6xl">{s.headline.map((p) => <span class="inline-block">{p}</span>)}</h1>
+				<!-- Where the bird (src/bird.ts) settles after flying in. -->
+				<div data-bird-perch aria-hidden="true" class="h-6 sm:h-10"></div>
+				<h1 data-headline class="text-4xl font-semibold tracking-tight sm:text-6xl">{s.headline.map((p) => <span class="inline-block">{p}</span>)}</h1>
 				<p class="mx-auto mt-6 max-w-2xl text-lg leading-relaxed text-pretty text-muted-foreground">{s.sub}</p>
 				<div class="mt-9 flex flex-wrap items-center justify-center gap-3">
 					<a
@@ -268,6 +270,8 @@ const mark = logo.replace("<svg ", '<svg aria-hidden="true" class="size-full" ')
 				</div>
 			</section>
 		</main>
+		<!-- The logo's bird in flight, drawn live over the whole window by src/bird.ts. -->
+		<canvas data-bird aria-hidden="true" class="pointer-events-none fixed inset-0 z-30 size-full"></canvas>
 
 		<footer class="border-t">
 			<div class="mx-auto flex max-w-6xl flex-wrap items-center gap-x-6 gap-y-2 px-6 py-8 text-sm text-muted-foreground">
@@ -331,6 +335,12 @@ const mark = logo.replace("<svg ", '<svg aria-hidden="true" class="size-full" ')
 		</script>
 		<script>
 			import "../motion";
+
+			// three.js and the model load after the page, in their own chunk.
+			const bird = document.querySelector<HTMLCanvasElement>("[data-bird]");
+			const perch = document.querySelector<HTMLElement>("[data-bird-perch]");
+			const headline = document.querySelector<HTMLElement>("[data-headline]");
+			if (bird && perch && headline) import("../bird").then((m) => m.mount(bird, perch, headline, document.querySelector<HTMLElement>("[data-demo]")));
 		</script>
 	</body>
 </html>
