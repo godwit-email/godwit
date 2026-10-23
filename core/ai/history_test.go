@@ -183,6 +183,15 @@ func TestHistorySummaryStandsIn(t *testing.T) {
 	assert.Equal(t, SummaryNote+"\n\nthey asked q1 and q2\n\n"+SummaryGapNote, shown[1].Text, "over budget, q3's turn goes after it")
 	assert.Equal(t, "q4", shown[2].Text)
 
+	rewound, _, err := h.Rewind(9, sum) // asked again: the question right after the summary
+	require.NoError(t, err)
+	s, err = rewound.Send(100000, sum)
+	require.NoError(t, err)
+	shown = display(s.Ask("q3 again", "").msgs)
+	require.Len(t, shown, 3)
+	assert.Equal(t, SummaryNote+"\n\nthey asked q1 and q2", shown[1].Text, "a summary ending the history stands in for it")
+	assert.Equal(t, "q3 again", shown[2].Text)
+
 	stale := Summary{Text: "x", Upto: 6} // inside a turn
 	s, err = h.Send(100000, stale)
 	require.NoError(t, err)

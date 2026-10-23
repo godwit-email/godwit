@@ -31,7 +31,8 @@ const (
 
 // Summary is what compacting a conversation left: Text stands in for its
 // messages after the first through the one with seq Upto. The zero Summary is
-// none; one that does not end before a question of the history is none too.
+// none; one that does not end before a question of the history, or at its
+// end, is none too.
 type Summary struct {
 	Text string
 	Upto int64
@@ -313,13 +314,14 @@ func (h *History) visible() []int {
 }
 
 // cut is where the visible messages vis go on after sum: 0 when it stands
-// for none.
+// for none. sum ending at the last of vis stands for it too: the question a
+// run asks next follows it (a rewind to the question after it).
 func (h *History) cut(vis []int, sum Summary) int {
 	if sum.Text == "" {
 		return 0
 	}
 	i := slices.IndexFunc(vis, func(j int) bool { return h.seqs[j] == sum.Upto })
-	if i < 1 || i+1 >= len(vis) || h.msgs[vis[i+1]].Role != gai.RoleUser {
+	if i < 1 || i+1 < len(vis) && h.msgs[vis[i+1]].Role != gai.RoleUser {
 		return 0
 	}
 	return i + 1
