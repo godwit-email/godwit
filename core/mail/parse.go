@@ -7,8 +7,8 @@ import (
 	"encoding/base64"
 	"fmt"
 	"io"
+	"mime"
 	"mime/quotedprintable"
-	"regexp"
 	"strconv"
 	"strings"
 	"time"
@@ -19,6 +19,7 @@ import (
 	"github.com/emersion/go-message"
 	"github.com/emersion/go-message/charset"
 	gomail "github.com/emersion/go-message/mail"
+	"golang.org/x/net/html"
 )
 
 const (
@@ -254,19 +255,48 @@ func DecodePart(data []byte, encoding, cs string) ([]byte, error) {
 	return io.ReadAll(r)
 }
 
-var metaCharset = regexp.MustCompile(`(?i)<meta[^>]+charset\s*=\s*["']?([\w.:-]+)`)
+// metaCharset returns the charset an HTML part declares in a <meta> tag within
+// its first 1024 bytes, found by tokenizing so commented-out tags do not count.
+func metaCharset(b []byte) string {
+	z := html.NewTokenizer(bytes.NewReader(b[:min(len(b), 1024)]))
+	for {
+		switch z.Next() {
+		case html.ErrorToken:
+			return ""
+		case html.StartTagToken, html.SelfClosingTagToken:
+			name, more := z.TagName()
+			if string(name) != "meta" {
+				continue
+			}
+			for more {
+				var k, v []byte
+				k, v, more = z.TagAttr()
+				switch string(k) {
+				case "charset":
+					return string(v)
+				case "content":
+					if _, params, err := mime.ParseMediaType(string(v)); err == nil && params["charset"] != "" {
+						return params["charset"]
+					}
+				}
+			}
+		}
+	}
+}
 
 // ValidText makes a decoded text part valid UTF-8 when its declared charset cs
 // did not: an HTML part's <meta charset> when MIME names none, else U+FFFD for
 // the bad bytes. No guessing beyond that: byte ranges cannot tell GBK from
 // EUC-KR or Shift_JIS, and mojibake stored as text is worse than U+FFFD.
-func ValidText(b []byte, cs string, html bool) []byte {
+func ValidText(b []byte, cs string, isHTML bool) []byte {
 	if utf8.Valid(b) {
 		return b
 	}
-	if m := metaCharset.FindSubmatch(b[:min(len(b), 1024)]); html && cs == "" && m != nil {
-		if d, err := DecodePart(b, "", string(m[1])); err == nil && utf8.Valid(d) {
-			return d
+	if isHTML && cs == "" {
+		if m := metaCharset(b); m != "" {
+			if d, err := DecodePart(b, "", m); err == nil && utf8.Valid(d) {
+				return d
+			}
 		}
 	}
 	return bytes.ToValidUTF8(b, []byte("\uFFFD"))

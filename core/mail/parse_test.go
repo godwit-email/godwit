@@ -234,6 +234,7 @@ func TestValidText(t *testing.T) {
 		{"valid kept", "café 你好", "utf-8", false, "café 你好"},
 		{"meta charset", `<meta charset="gbk"><p>` + gbk, "", true, `<meta charset="gbk"><p>请查收发票`},
 		{"http-equiv", `<meta http-equiv="Content-Type" content="text/html; charset=GB2312">` + gbk, "", true, `<meta http-equiv="Content-Type" content="text/html; charset=GB2312">请查收发票`},
+		{"commented-out meta", "<!-- <meta charset=windows-1252> -->你好\xff", "", true, "<!-- <meta charset=windows-1252> -->你好\uFFFD"},
 		{"latin-1 labelled utf-8", "caf\xe9 cr\xe8me", "utf-8", false, "caf\uFFFD cr\uFFFDme"},
 	} {
 		got := mail.ValidText([]byte(tc.in), tc.cs, tc.html)
