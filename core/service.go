@@ -132,6 +132,7 @@ type Service struct {
 	labelsMu    sync.Mutex                 // label writes: a name is checked and saved under it
 	sigMu       sync.Mutex                 // signature writes (read, images stored, HTML saved, unused images cleaned), and a draft taking a signature; before editMu
 	labelWake   chan struct{}              // wakes the label classifier
+	reclaimWake chan struct{}              // wakes the free-space reclaimer (reclaimSoon)
 	labelJudge  func(context.Context) (ai.Judge, error)
 	hookClock   plugins.Clock      // hook backoff and polling; nil is the real clock
 	pluginNet   plugins.NetOptions // ctx.net.fetch's network; tests inject a resolver and dialer
@@ -176,7 +177,7 @@ func New(ctx context.Context, opts Options) (*Service, error) {
 		return nil, err
 	}
 	s := &Service{db: db, bus: events.New(), dataDir: opts.DataDir, opts: opts, installID: install, streamsEnd: make(chan struct{}),
-		hookClock: testHookClock, pluginClock: testPluginClock, labelWake: make(chan struct{}, 1)}
+		hookClock: testHookClock, pluginClock: testPluginClock, labelWake: make(chan struct{}, 1), reclaimWake: make(chan struct{}, 1)}
 	s.labelJudge = s.defaultLabelJudge
 	s.assets = newModelAssets(s)
 	if exe, err := os.Executable(); err == nil {
@@ -199,6 +200,10 @@ func New(ctx context.Context, opts Options) (*Service, error) {
 	}
 	s.registerAskTools()
 	s.registerAssistTools()
+	if err := s.backfillHistories(ctx); err != nil {
+		db.Close()
+		return nil, fmt.Errorf("conversation histories: %w", err)
+	}
 	if err := s.backfillSlugs(ctx); err != nil {
 		db.Close()
 		return nil, fmt.Errorf("model service slugs: %w", err)
@@ -239,6 +244,7 @@ func New(ctx context.Context, opts Options) (*Service, error) {
 		return nil, err
 	}
 	s.startJanitor()
+	s.startReclaim()
 	if opts.LabelMail {
 		s.startLabeler()
 	}

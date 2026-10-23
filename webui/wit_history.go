@@ -64,21 +64,21 @@ type WitMessage struct {
 // it read, with their numbers in the conversation (cited).
 func witMessages(c core.Conversation) []WitMessage {
 	out := []WitMessage{}
-	var spans [][2]int // out[i] is c.Messages[from:to]
-	for i, m := range c.Messages {
+	var spans [][2]int64 // out[i] is the messages with seqs from..to
+	for _, m := range c.Messages {
 		if m.Role == "user" {
-			out = append(out, WitMessage{ID: fmt.Sprintf("q%d", i), Role: "user", Text: m.Text,
+			out = append(out, WitMessage{ID: fmt.Sprintf("q%d", m.Seq), Role: "user", Text: m.Text,
 				Calls: []WitCall{}, Results: []WitResult{}, Citations: []Citation{}})
-			spans = append(spans, [2]int{i, i + 1})
+			spans = append(spans, [2]int64{m.Seq, m.Seq + 1})
 			continue
 		}
 		if n := len(out); n == 0 || out[n-1].Role == "user" {
-			out = append(out, WitMessage{ID: fmt.Sprintf("a%d", i), Role: "assistant",
+			out = append(out, WitMessage{ID: fmt.Sprintf("a%d", m.Seq), Role: "assistant",
 				Calls: []WitCall{}, Results: []WitResult{}, Citations: []Citation{}})
-			spans = append(spans, [2]int{i, i})
+			spans = append(spans, [2]int64{m.Seq, m.Seq})
 		}
 		ans := &out[len(out)-1]
-		spans[len(spans)-1][1] = i + 1
+		spans[len(spans)-1][1] = m.Seq + 1
 		if m.Role != "tool" && strings.TrimSpace(m.Text) != "" {
 			if ans.Text != "" {
 				ans.Text += "\n\n"
@@ -156,7 +156,7 @@ func cited(cs []core.Citation) []Citation {
 
 // citedBy is the messages cited by the runs that added any of
 // c.Messages[from:to], by their calls or their context.
-func citedBy(c core.Conversation, from, to int) []int64 {
+func citedBy(c core.Conversation, from, to int64) []int64 {
 	var ids []int64
 	for _, r := range c.Runs {
 		if r.From >= to || r.To <= from {

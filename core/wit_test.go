@@ -429,8 +429,10 @@ func TestAskHistoryBudget(t *testing.T) {
 	assert.Contains(t, all.String(), "T1-", "the saved conversation keeps every turn")
 	assert.NotContains(t, all.String(), ai.SummaryNote)
 
-	err = e.s.RewindConversation(t.Context(), conv.ID, 0)
+	e.srv.Script(testllm.Turn{Text: []string{"anew"}})
+	ch, err := e.s.AskAgain(t.Context(), conv.ID, c.Messages[0].Seq, "q1 again", nil)
 	require.NoError(t, err)
+	drainWit(t, ch)
 	sum, _, err := e.s.convSummary(t.Context(), conv.ID)
 	require.NoError(t, err)
 	assert.Zero(t, sum, "a rewind past the summary drops it")
@@ -784,7 +786,7 @@ func TestConversationRunSpans(t *testing.T) {
 	}
 	worked(0)
 	worked(1)
-	assert.Equal(t, []RunSpan{{ID: r1[0].RunID, From: 0, To: 2}, {ID: r2[0].RunID, From: 2, To: 6}}, c.Runs)
+	assert.Equal(t, []RunSpan{{ID: r1[0].RunID, From: 1, To: 3}, {ID: r2[0].RunID, From: 3, To: 7}}, c.Runs)
 
 	// Interrupted, then resumed: one run, one span.
 	e.srv.Script(testllm.Turn{Calls: []testllm.Call{{Name: "create_draft", Args: `{"to":["x@y.example"],"subject":"S","html":"<p>b</p>"}`}}},
@@ -794,7 +796,7 @@ func TestConversationRunSpans(t *testing.T) {
 	c, err = e.s.GetConversation(t.Context(), conv.ID)
 	require.NoError(t, err)
 	before := worked(2)
-	assert.Equal(t, RunSpan{ID: r3[0].RunID, From: 6, To: 8}, c.Runs[2], "the question and the call")
+	assert.Equal(t, RunSpan{ID: r3[0].RunID, From: 7, To: 9}, c.Runs[2], "the question and the call")
 	sub, stop := e.s.SubscribeConversation(conv.ID)
 	defer stop()
 	require.NoError(t, e.s.ResolveApproval(t.Context(), r3[len(r3)-1].Approvals[0].ID, true))
@@ -807,7 +809,7 @@ func TestConversationRunSpans(t *testing.T) {
 	require.NoError(t, err)
 	require.Len(t, c.Runs, 3)
 	assert.Greater(t, worked(2), before, "the resume adds its time")
-	assert.Equal(t, RunSpan{ID: r3[0].RunID, From: 6, To: len(c.Messages)}, c.Runs[2], "the resume extends it")
+	assert.Equal(t, RunSpan{ID: r3[0].RunID, From: 7, To: c.Messages[len(c.Messages)-1].Seq + 1}, c.Runs[2], "the resume extends it")
 	assert.Equal(t, "a3", c.Messages[len(c.Messages)-1].Text)
 }
 
@@ -916,13 +918,15 @@ func TestAskAgainNumbersQuotes(t *testing.T) {
 		require.NoError(t, err)
 		drainWit(t, ch)
 	}
-	ch, err := e.s.AskAgain(t.Context(), conv.ID, 2, "second, edited", []int64{c})
+	got, err := e.s.GetConversation(t.Context(), conv.ID)
+	require.NoError(t, err)
+	ch, err := e.s.AskAgain(t.Context(), conv.ID, got.Messages[2].Seq, "second, edited", []int64{c})
 	require.NoError(t, err)
 	evs := drainWit(t, ch)
 	require.Equal(t, "context", evs[0].Kind)
 	require.Len(t, evs[0].Citations, 1)
 	assert.Equal(t, 2, evs[0].Citations[0].N, "the replaced quote's number is free again")
-	got, err := e.s.GetConversation(t.Context(), conv.ID)
+	got, err = e.s.GetConversation(t.Context(), conv.ID)
 	require.NoError(t, err)
 	ns := map[int64]int{}
 	for _, ct := range got.Citations {

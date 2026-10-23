@@ -331,7 +331,10 @@ func TestAssistSkillTranslateDraft(t *testing.T) {
 	assert.Equal(t, sig, sig2)
 	c, err := e.s.GetConversation(t.Context(), a.ConversationID)
 	require.NoError(t, err)
-	assert.Empty(t, c.Messages, "the skill run does not enter the chat history")
+	require.Len(t, c.Messages, 1, "the skill run's history is its command")
+	require.NotNil(t, c.Messages[0].Command)
+	assert.Equal(t, "translate-draft", c.Messages[0].Command.Skill)
+	assert.Empty(t, c.Messages[0].Text)
 }
 
 // newDraft is a new draft (no mail it answers) with subject and editable.

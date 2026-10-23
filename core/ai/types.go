@@ -7,6 +7,8 @@ import (
 	"fmt"
 	"net/http"
 	"strings"
+
+	gai "github.com/firebase/genkit/go/ai"
 )
 
 // ModelRef names a model as "service/model"; the first "/" ends the service name.
@@ -30,9 +32,13 @@ type ResolvedModel struct {
 }
 
 // Message is a conversation message for display; it is never used to resume.
+// Seq is its place in its History; Command is set for a command (its Text
+// is then empty).
 type Message struct {
+	Seq       int64
 	Role      string // user, model or tool
 	Text      string
+	Command   *Command
 	Reasoning string // the model's readable reasoning, if it showed any
 	Calls     []ToolCall
 	Results   []ToolResult
@@ -120,16 +126,14 @@ type Event struct {
 	Translations map[string]string `json:",omitempty"`
 }
 
-// Request is one run. State is the previous run's opaque state (empty = new
-// conversation); Responses answer the calls that interrupted it.
+// Request is one run. History is what it sends of a conversation (nil: a
+// one-off on Prompt alone), with its question asked (Sent.Ask) unless the
+// run resumes it: then Responses answer the calls that interrupted it.
 type Request struct {
-	Model  ResolvedModel
-	System string
-	State  []byte
-	Prompt string
-	// Context goes to the model before Prompt, in the same user turn, and
-	// stays in the state; Messages never show it (quoted mail, for example).
-	Context   string
+	Model     ResolvedModel
+	System    string
+	History   *Sent
+	Prompt    string // a one-off run's question; a History asks its own
 	Tools     []ToolSpec
 	Responses []ToolResult
 	MaxTurns  int
@@ -144,8 +148,10 @@ type Request struct {
 	Effort string
 }
 
+// Result is how a run ended. A successful run of a History is saved through
+// its Sent's Restore; Messages are what it ended with, for display.
 type Result struct {
-	State      []byte
+	out        []*gai.Message // the run's whole view as it ended
 	Messages   []Message
 	Interrupts []ToolCall
 	Err        *Error

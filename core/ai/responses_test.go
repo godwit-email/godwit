@@ -152,11 +152,12 @@ func TestResponsesReasoningCarried(t *testing.T) {
 		testllm.Turn{Reasoning: "ENC-SECRET-2", Text: []string{"answer"}},
 		testllm.Turn{Text: []string{"more"}})
 	var readRuns atomic.Int64
-	evs, res := run(e, Request{Model: respModel(srv.URL, "m1"), Prompt: "x", Tools: mixedTools(&readRuns)})
+	sent := asking(nil, "x")
+	evs, res := run(e, Request{Model: respModel(srv.URL, "m1"), History: sent, Tools: mixedTools(&readRuns)})
 	require.Nil(t, res.Err)
 	assert.Equal(t, "done", last(t, evs).Kind)
-	// the state goes through a fresh engine
-	evs2, res2 := run(newEngine(t), Request{Model: respModel(srv.URL, "m1"), State: res.State, Prompt: "again", Tools: mixedTools(&readRuns)})
+	// the history goes through a fresh engine
+	evs2, res2 := run(newEngine(t), Request{Model: respModel(srv.URL, "m1"), History: asking(after(t, sent, res), "again"), Tools: mixedTools(&readRuns)})
 	require.Nil(t, res2.Err)
 	reqs := srv.Requests()
 	require.Len(t, reqs, 3)
@@ -176,12 +177,13 @@ func TestResponsesInterruptResume(t *testing.T) {
 	srv.Script(testllm.Turn{Reasoning: "ENC-R", Calls: []testllm.Call{{ID: "call_r", Name: "read"}, {ID: "call_w", Name: "write", Args: `{"n":1}`}}},
 		testllm.Turn{Text: []string{"all ", "done"}})
 	var readRuns atomic.Int64
-	_, res := run(newEngine(t), Request{Model: respModel(srv.URL, "m1"), Prompt: "go", Tools: mixedTools(&readRuns)})
+	sent := asking(nil, "go")
+	_, res := run(newEngine(t), Request{Model: respModel(srv.URL, "m1"), History: sent, Tools: mixedTools(&readRuns)})
 	require.Nil(t, res.Err)
 	require.Len(t, res.Interrupts, 1)
 	assert.Equal(t, "call_w", res.Interrupts[0].ID)
 
-	evs, res := run(newEngine(t), Request{Model: respModel(srv.URL, "m1"), State: res.State, Tools: mixedTools(&readRuns),
+	evs, res := run(newEngine(t), Request{Model: respModel(srv.URL, "m1"), History: resuming(after(t, sent, res)), Tools: mixedTools(&readRuns),
 		Responses: []ToolResult{{CallID: "call_w", Name: "write", Output: json.RawMessage(`{"draft":7}`)}}})
 	require.Nil(t, res.Err)
 	assert.Equal(t, "done", last(t, evs).Kind)
@@ -215,7 +217,7 @@ func TestResponsesTerminalStates(t *testing.T) {
 			require.NotNil(t, res.Err)
 			assert.Equal(t, c.code, res.Err.Code)
 			assert.NotContains(t, res.Err.Msg, "UPSTREAM-BODY")
-			assert.Nil(t, res.State, "nothing is kept")
+			assert.Nil(t, res.out, "nothing is kept")
 			assert.Zero(t, readRuns.Load())
 			assert.Empty(t, kindsOf(evs, "tool_call"))
 			assert.Empty(t, kindsOf(evs, "done"))
@@ -350,7 +352,7 @@ func TestResponsesRefusal(t *testing.T) {
 			require.NotNil(t, res.Err)
 			assert.Equal(t, CodeIncomplete, res.Err.Code)
 			assert.Equal(t, "the model service withheld the reply", res.Err.Msg)
-			assert.Nil(t, res.State, "nothing is kept")
+			assert.Nil(t, res.out, "nothing is kept")
 			assert.Empty(t, kindsOf(evs, "done"))
 		})
 	}

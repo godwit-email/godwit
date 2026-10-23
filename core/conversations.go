@@ -21,13 +21,12 @@ import (
 )
 
 // Conversation is a Wit chat: kind "ask" (the mailbox panel) or "assist" (one
-// draft's compose panel, DraftID set). Messages is decoded from the saved
-// model state, for display; Citations are the mail its runs showed the
-// model, in the order they came, each with the run and tool call that showed
-// it (a message shown twice is there twice); Runs are the parts of Messages
-// each run added, in run order; ActiveRunID is its run that is
-// running, resuming or waiting for approvals (0: none). ListConversations
-// leaves those four empty.
+// draft's compose panel, DraftID set). Messages are its history, for display
+// (each with its Seq); Citations are the mail its runs showed the model, in
+// the order they came, each with the run and tool call that showed it (a
+// message shown twice is there twice); Runs are the parts of Messages each run
+// added, in run order; ActiveRunID is its run that is running, resuming or
+// waiting for approvals (0: none). ListConversations leaves those four empty.
 type Conversation struct {
 	ID                 int64
 	Kind, Title, Model string
@@ -62,18 +61,20 @@ type WitEvent struct {
 }
 
 // RunSpan is the part of a conversation's Messages that run ID added, its
-// question included: Messages[From:To]. A resume extends its run's span; a
-// run that saved nothing (failed, cancelled while running) has none.
+// question included: the messages with seqs from From up to To. A resume
+// extends its run's span; a run that saved nothing (failed, cancelled while
+// running) has none.
 type RunSpan struct {
 	ID       int64
-	From, To int
+	From, To int64
 	// Active is how long the run worked: thinking, calling tools, writing;
 	// not the time it waited for the user to decide its calls.
 	Active time.Duration
 }
 
 // Citation is a message a run's tools showed the model: RunID's call CallID
-// (its tool_result), or its context when CallID is "". N is the message's
+// (its tool_result), or when CallID is "" what Source says: mail the user
+// quoted (citeQuote) or an assist run's context (citeContext). N is the message's
 // citation number in the conversation (from 1, by first citation): the
 // model sees it as the mail's "ref" and cites it as [N].
 type Citation struct {
@@ -87,7 +88,14 @@ type Citation struct {
 	Gone          bool   // the message was deleted since: nothing to open or quote
 	RunID         int64
 	CallID        string
+	Source        string
 }
+
+// Citation sources with no call.
+const (
+	citeQuote   = "quote"
+	citeContext = "context"
+)
 
 // ErrRunActive: the conversation has a run that is running, waiting for
 // approvals or resuming.
@@ -110,28 +118,26 @@ func (s *Service) NewConversation(ctx context.Context, kind string, draftID int6
 	if err != nil {
 		return Conversation{}, err
 	}
-	c, _, err := s.conversation(ctx, r.LastInsertID)
-	return c, err
+	return s.conversation(ctx, r.LastInsertID)
 }
 
-const convCols = "id, kind, title, model, draft_id, updated_at, state, effort FROM conversations"
+const convCols = "id, kind, title, model, draft_id, updated_at, effort FROM conversations"
 
 func scanConversation(r []any) Conversation {
 	return Conversation{ID: store.Int(r[0]), Kind: store.Str(r[1]), Title: store.Str(r[2]), Model: store.Str(r[3]),
-		DraftID: store.Int(r[4]), UpdatedAt: time.Unix(store.Int(r[5]), 0), Effort: store.Str(r[7])}
+		DraftID: store.Int(r[4]), UpdatedAt: time.Unix(store.Int(r[5]), 0), Effort: store.Str(r[6])}
 }
 
-// conversation returns the conversation (without Messages) and its model state.
-func (s *Service) conversation(ctx context.Context, id int64) (Conversation, []byte, error) {
+// conversation returns the conversation without its history (history).
+func (s *Service) conversation(ctx context.Context, id int64) (Conversation, error) {
 	rows, err := s.db.Query(ctx, "SELECT "+convCols+" WHERE id = ?", id)
 	if err != nil {
-		return Conversation{}, nil, err
+		return Conversation{}, err
 	}
 	if len(rows.Values) == 0 {
-		return Conversation{}, nil, fmt.Errorf("conversation %d not found", id)
+		return Conversation{}, fmt.Errorf("conversation %d not found", id)
 	}
-	state, _ := rows.Values[0][6].([]byte)
-	return scanConversation(rows.Values[0]), state, nil
+	return scanConversation(rows.Values[0]), nil
 }
 
 // ListConversations returns the conversations of kind, most recent first.
@@ -196,93 +202,6 @@ func (s *Service) SetConversationModel(ctx context.Context, id int64, ref, effor
 	return err
 }
 
-// RewindConversation takes the conversation back to before its question at
-// Messages[at]: that question, everything after it and the runs that added
-// them (their approvals and citations with them) are gone, so the question
-// can be asked again, as it was or edited. What its tools did stays done, so
-// the conversation's grants (本次对话都允许) go too: asked again, a write
-// waits for the user rather than running a second time unseen. An active run
-// makes it ErrRunActive.
-func (s *Service) RewindConversation(ctx context.Context, id int64, at int) error {
-	ctx, end, err := s.begin(ctx, 0)
-	if err != nil {
-		return err
-	}
-	defer end()
-	s.runMu.Lock() // no run starts meanwhile
-	defer s.runMu.Unlock()
-	return s.rewind(ctx, id, at)
-}
-
-// rewind is RewindConversation; the caller holds runMu.
-func (s *Service) rewind(ctx context.Context, id int64, at int) error {
-	_, state, err := s.conversation(ctx, id)
-	if err != nil {
-		return err
-	}
-	rows, err := s.db.Query(ctx, "SELECT 1 FROM runs WHERE conversation_id = ? AND state IN ('running', 'interrupted', 'resuming')", id)
-	if err != nil {
-		return err
-	}
-	if len(rows.Values) > 0 {
-		return ErrRunActive
-	}
-	kept, err := rewoundState(state, at)
-	if err != nil {
-		return fmt.Errorf("conversation %d: %w", id, err)
-	}
-	return s.saveRewind(ctx, id, at, kept)
-}
-
-// rewoundState is state before its question at Messages[at].
-func rewoundState(state []byte, at int) ([]byte, error) {
-	var msgs []json.RawMessage // the state's messages, as Messages has them
-	if len(state) > 0 {
-		if err := json.Unmarshal(state, &msgs); err != nil {
-			return nil, err
-		}
-	}
-	shown, err := ai.Messages(state)
-	if err != nil {
-		return nil, err
-	}
-	if at < 0 || at >= len(msgs) || len(shown) != len(msgs) || shown[at].Role != "user" {
-		return nil, fmt.Errorf("no question at %d", at)
-	}
-	return json.Marshal(msgs[:at])
-}
-
-// saveRewind saves conversation id rewound to kept (rewoundState of at),
-// and drops its grants.
-func (s *Service) saveRewind(ctx context.Context, id int64, at int, kept []byte) error {
-	_, err := s.db.Transaction(ctx, append([]sqlite.Statement{saveState(id, kept)}, rewindStmts(id, at)...))
-	if err == nil {
-		s.dropGrants(id)
-	}
-	return err
-}
-
-// rewindStmts drop what conversation id's runs added from its question at
-// Messages[at] on (runs with no span stay); the conversation's state is
-// saved apart.
-func rewindStmts(id int64, at int) []sqlite.Statement {
-	const dropped = "FROM runs WHERE conversation_id = ? AND hist_from >= ?"
-	stmts := []sqlite.Statement{
-		// what they took stays counted
-		{SQL: `UPDATE conversations SET spent_input = spent_input + (SELECT COALESCE(SUM(input_tokens), 0) ` + dropped + `),
-			spent_output = spent_output + (SELECT COALESCE(SUM(output_tokens), 0) ` + dropped + `) WHERE id = ?`, Args: []any{id, at, id, at, id}},
-		{SQL: "DELETE " + dropped, Args: []any{id, at}},
-		// a summary reaching what goes goes too; one being written is not saved
-		{SQL: `UPDATE conversations SET summary = CASE WHEN summary_upto >= ? THEN '' ELSE summary END,
-			summary_upto = CASE WHEN summary_upto >= ? THEN 0 ELSE summary_upto END, summary_epoch = summary_epoch + 1 WHERE id = ?`,
-			Args: []any{at, at, id}},
-	}
-	if at == 0 { // the first question titled it: the one asked in its place does
-		stmts = append(stmts, sqlite.Statement{SQL: "UPDATE conversations SET title = '' WHERE id = ?", Args: []any{id}})
-	}
-	return stmts
-}
-
 // GetConversation returns the conversation with its messages.
 func (s *Service) GetConversation(ctx context.Context, id int64) (Conversation, error) {
 	ctx, end, err := s.begin(ctx, 0)
@@ -290,13 +209,15 @@ func (s *Service) GetConversation(ctx context.Context, id int64) (Conversation, 
 		return Conversation{}, err
 	}
 	defer end()
-	c, state, err := s.conversation(ctx, id)
+	c, err := s.conversation(ctx, id)
 	if err != nil {
 		return Conversation{}, err
 	}
-	if c.Messages, err = ai.Messages(state); err != nil {
+	h, err := s.history(ctx, id)
+	if err != nil {
 		return Conversation{}, err
 	}
+	c.Messages = h.Messages()
 	for i, m := range c.Messages { // the saved history keeps the references the model wrote
 		x := s.linkExpander() // per message, as each was expanded live: history grows past maxExpandMessages
 		c.Messages[i].Text, c.Messages[i].Reasoning = x.text(ctx, m.Text), x.text(ctx, m.Reasoning)
@@ -316,7 +237,7 @@ func (s *Service) GetConversation(ctx context.Context, id int64) (Conversation, 
 		return Conversation{}, err
 	}
 	for _, r := range rows.Values {
-		c.Runs = append(c.Runs, RunSpan{ID: store.Int(r[0]), From: int(store.Int(r[1])), To: int(store.Int(r[2])),
+		c.Runs = append(c.Runs, RunSpan{ID: store.Int(r[0]), From: store.Int(r[1]), To: store.Int(r[2]),
 			Active: time.Duration(store.Int(r[3])) * time.Millisecond})
 	}
 	rows, err = s.db.Query(ctx, `SELECT COALESCE(SUM(input_tokens), 0) + (SELECT spent_input FROM conversations WHERE id = ?),
@@ -334,15 +255,11 @@ func (s *Service) GetConversation(ctx context.Context, id int64) (Conversation, 
 	if err != nil {
 		return Conversation{}, err
 	}
-	size, err := ai.CompactedSize(state, sum)
+	size, err := h.CompactedSize(sum)
 	if err != nil {
 		return Conversation{}, err
 	}
-	point, err := ai.CompactPoint(state)
-	if err != nil {
-		return Conversation{}, err
-	}
-	c.Compactable = point > sum.Upto
+	c.Compactable = h.Compactable(sum)
 	c.HistoryUse = float64(size) / float64(s.refHistoryBudget(ctx, c.Model))
 	c.Citations, err = s.citationsOf(ctx, id)
 	return c, err
@@ -356,7 +273,7 @@ func runUsage(runID int64, u ai.Usage) sqlite.Statement {
 
 // citationsOf is conversation id's saved citations, numbered.
 func (s *Service) citationsOf(ctx context.Context, id int64) ([]Citation, error) {
-	rows, err := s.db.Query(ctx, `SELECT rc.message_id, rc.subject, rc.from_addr, rc.date, rc.suspect, rc.run_id, rc.call_id, rc.quote, m.snippet, m.id IS NULL
+	rows, err := s.db.Query(ctx, `SELECT rc.message_id, rc.subject, rc.from_addr, rc.date, rc.suspect, rc.run_id, rc.call_id, rc.quote, m.snippet, m.id IS NULL, rc.source
 		FROM run_citations rc JOIN runs r ON r.id = rc.run_id LEFT JOIN messages m ON m.id = rc.message_id
 		WHERE r.conversation_id = ? ORDER BY rc.id`, id)
 	if err != nil {
@@ -365,7 +282,8 @@ func (s *Service) citationsOf(ctx context.Context, id int64) ([]Citation, error)
 	var out []Citation
 	for _, r := range rows.Values {
 		ct := Citation{MessageID: store.Int(r[0]), Subject: store.Str(r[1]), From: store.Str(r[2]), Suspect: store.Int(r[4]) != 0,
-			RunID: store.Int(r[5]), CallID: store.Str(r[6]), Quote: store.Str(r[7]), Snippet: gomail.Snippet(store.Str(r[8])), Gone: store.Int(r[9]) != 0}
+			RunID: store.Int(r[5]), CallID: store.Str(r[6]), Quote: store.Str(r[7]), Snippet: gomail.Snippet(store.Str(r[8])), Gone: store.Int(r[9]) != 0,
+			Source: store.Str(r[10])}
 		if d := store.Int(r[3]); d != 0 {
 			ct.Date = time.Unix(d, 0)
 		}
@@ -390,8 +308,9 @@ func numberCitations(cs []Citation, refs map[int64]int) {
 }
 
 // keptRefs numbers job's citations as the conversation will have them once
-// rewound to at (saveRewind): only the runs it keeps count.
-func (s *Service) keptRefs(ctx context.Context, job *runJob, at int) error {
+// asked again in place of the question with seq at (commitRewind): only the
+// runs it keeps count.
+func (s *Service) keptRefs(ctx context.Context, job *runJob, at int64) error {
 	rows, err := s.db.Query(ctx, "SELECT id FROM runs WHERE conversation_id = ? AND (hist_from IS NULL OR hist_from < ?)", job.conv.ID, at)
 	if err != nil {
 		return err
@@ -410,9 +329,9 @@ func (s *Service) keptRefs(ctx context.Context, job *runJob, at int) error {
 	return nil
 }
 
-// number numbers cs, which job's call (or its context, call "") shows the
-// model, and saves them.
-func (s *Service) number(ctx context.Context, job *runJob, call string, cs []Citation) []Citation {
+// number numbers cs, which job's call shows the model (call "": source
+// does, citeQuote or citeContext), and saves them.
+func (s *Service) number(ctx context.Context, job *runJob, call, source string, cs []Citation) []Citation {
 	ctx = context.WithoutCancel(ctx)
 	job.refsMu.Lock()
 	defer job.refsMu.Unlock()
@@ -425,7 +344,7 @@ func (s *Service) number(ctx context.Context, job *runJob, call string, cs []Cit
 		numberCitations(saved, job.refs)
 	}
 	for i := range cs {
-		cs[i].RunID, cs[i].CallID = job.id, call
+		cs[i].RunID, cs[i].CallID, cs[i].Source = job.id, call, source
 	}
 	numberCitations(cs, job.refs)
 	if len(cs) > 0 {
@@ -468,8 +387,8 @@ func (s *Service) saveCitations(ctx context.Context, runID int64, cs []Citation)
 		if c.Suspect {
 			suspect = 1
 		}
-		stmts = append(stmts, sqlite.Statement{SQL: `INSERT INTO run_citations(run_id, call_id, message_id, subject, from_addr, date, suspect, quote)
-			VALUES (?, ?, ?, ?, ?, ?, ?, ?)`, Args: []any{runID, c.CallID, c.MessageID, c.Subject, c.From, date, suspect, c.Quote}})
+		stmts = append(stmts, sqlite.Statement{SQL: `INSERT INTO run_citations(run_id, call_id, message_id, subject, from_addr, date, suspect, quote, source)
+			VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`, Args: []any{runID, c.CallID, c.MessageID, c.Subject, c.From, date, suspect, c.Quote, c.Source}})
 	}
 	if _, err := s.db.Transaction(ctx, stmts); err != nil {
 		slog.Default().Warn("could not save a run's citations", "run", runID, "err", err)
@@ -491,9 +410,10 @@ func (s *Service) DeleteConversation(ctx context.Context, id int64) error {
 	}
 	if r.Changes > 0 {
 		s.dropGrants(id)
+		s.reclaimSoon()
 		return nil
 	}
-	if _, _, err := s.conversation(ctx, id); err != nil {
+	if _, err := s.conversation(ctx, id); err != nil {
 		return err
 	}
 	return ErrRunActive
@@ -763,14 +683,18 @@ type runJob struct {
 	refsMu   sync.Mutex
 	refs     map[int64]int // message ID -> citation number, read on first use (number)
 	clued    sync.Map      // recipients create_draft has shown language clues for
-	full     []byte        // the conversation state before TrimState
-	dropped  int           // messages TrimState left out of the request
+	base     *ai.History   // the history the run started from (its question asked again: before it)
+	after    *ai.History   // what the run ended with (drive), and the changes that save it
+	changes  ai.HistoryChanges
+	resumed  bool // a resume: the run's context was shown and cited already
 	// host, set for a host-made proposal (AssistSkill), turns the finished
-	// tool-less run into an interrupt on the proposal; it is not resumed.
-	host func(ctx context.Context, res ai.Result) ai.Result
-	// rewind, for a question asked in place, go with the run's first save
-	// (settleRun): a run that saves nothing (failed, stopped) replaces nothing.
-	rewind []sqlite.Statement
+	// tool-less run into an interrupt on the proposal; it is not resumed. Its
+	// command is the question the history keeps for it.
+	host    func(ctx context.Context, res ai.Result) ai.Result
+	command ai.Command
+	// rewind, for a question asked in place, is what the run replaces once it
+	// is done (commitRewind); one that ends otherwise replaces nothing.
+	rewind *pendingRewind
 	grants []grantKey // the grants asking in place set aside: back if nothing is replaced
 	cited  []Citation // the mail the run's context shows the model, sent first
 	quoted []Citation // the mail the user quoted, numbered (quote): sent first too
@@ -792,10 +716,10 @@ type runKey struct{}
 // runOf is the run whose tool is given ctx.
 func runOf(ctx context.Context) *runJob { return ctx.Value(runKey{}).(*runJob) }
 
-// request builds the run's request on state, its summary standing in and
-// trimmed to historyBudget; the job keeps what drive needs to save the whole
-// history.
-func (s *Service) request(ctx context.Context, job *runJob, model ai.ResolvedModel, state []byte, tools []toolDesc) (ai.Request, error) {
+// request builds the run's request on h, its summary standing in and the
+// whole fitted to historyBudget (ai.History.Send); the job keeps h, which the
+// request's view restores into once the run is done.
+func (s *Service) request(ctx context.Context, job *runJob, model ai.ResolvedModel, h *ai.History, tools []toolDesc) (ai.Request, error) {
 	system, err := s.witSystem(ctx, job, tools)
 	if err != nil {
 		return ai.Request{}, err
@@ -804,12 +728,15 @@ func (s *Service) request(ctx context.Context, job *runJob, model ai.ResolvedMod
 	if err != nil {
 		return ai.Request{}, err
 	}
-	sent, dropped, err := ai.TrimState(state, s.historyBudget(model.BaseURL, model.Model), sum)
+	if job.rewind != nil && sum.Upto >= job.rewind.from { // it condenses what the question asked again replaces
+		sum = ai.Summary{}
+	}
+	sent, err := h.Send(s.historyBudget(model.BaseURL, model.Model), sum)
 	if err != nil {
 		return ai.Request{}, err
 	}
-	job.full, job.dropped = state, dropped
-	return ai.Request{Model: model, System: system, State: sent, Tools: s.specs(job, tools), Reasoning: true, Effort: job.conv.Effort,
+	job.base = h
+	return ai.Request{Model: model, System: system, History: sent, Tools: s.specs(job, tools), Reasoning: true, Effort: job.conv.Effort,
 		Args: s.linkExpander().toolArgs}, nil // link references expanded before a call is validated, gated, prepared or run
 }
 
@@ -851,15 +778,15 @@ func (s *Service) startRun(ctx context.Context, conv Conversation, prompt string
 
 // launch claims a run and hands end to it. The time note of an ask or assist
 // run (timeNote) and the quoted mail (checked IDs, quote) go before the
-// prompt. at, unless -1, asks the prompt in place of the
-// question at Messages[at] (RewindConversation): the run starts on the
-// history before it, and the rewind is saved with what the run saves, if it
-// does. claimed, if set, are saved once the run is claimed and before the
-// hand-off (asking in place: with the rewind); their error fails the run
-// and launch.
+// prompt. at, unless 0, asks the prompt in place of the question with that
+// seq: the run starts on the history before it, which it replaces once it is
+// done (commitRewind); till then the conversation shows it without what it
+// replaces. claimed, if set, are saved once the run is claimed and before
+// the hand-off, not when asking in place; their error fails the run and
+// launch.
 func (s *Service) launch(ctx context.Context, end func(), conv Conversation, prompt string, tools []toolDesc,
-	quoted []int64, at int, claimed ...sqlite.Statement) (*witStream, error) {
-	conv, _, err := s.conversation(ctx, conv.ID)
+	quoted []int64, at int64, claimed ...sqlite.Statement) (*witStream, error) {
+	conv, err := s.conversation(ctx, conv.ID)
 	if err != nil {
 		return nil, err
 	}
@@ -881,30 +808,36 @@ func (s *Service) launch(ctx context.Context, end func(), conv Conversation, pro
 	}
 	s.runMu.Lock()
 	defer s.runMu.Unlock()
-	job, state, err := s.claimRun(ctx, conv, ref, names)
+	job, h, err := s.claimRun(ctx, conv, ref, names)
 	if err != nil {
 		return nil, err
 	}
-	if at >= 0 {
-		state, err = rewoundState(state, at)
-	}
-	if err == nil && at >= 0 {
-		err = s.keptRefs(ctx, job, at)
+	if at > 0 {
+		var sum ai.Summary
+		var ch ai.HistoryChanges
+		var kept *ai.History
+		if sum, _, err = s.convSummary(ctx, conv.ID); err == nil {
+			kept, ch, err = h.Rewind(at, sum)
+		}
+		if err == nil {
+			job.rewind = &pendingRewind{from: at, to: h.Next(), dropSummary: ch.DropSummary, first: kept.Len() == 0}
+			h = kept
+			err = s.keptRefs(ctx, job, at)
+		}
 	}
 	var req ai.Request
 	if err == nil {
-		req, err = s.request(ctx, job, model, state, tools)
+		req, err = s.request(ctx, job, model, h, tools)
 	}
 	var note, quote string
 	if err == nil && (conv.Kind == "ask" || conv.Kind == "assist") {
-		note, err = timeNote(req.State, time.Now())
+		note = timeNote(req.History.Contexts(), time.Now())
 	}
 	if err == nil && len(quoted) > 0 {
 		quote, err = s.quote(ctx, job, quoted)
 	}
-	req.Context = strings.Join(slices.DeleteFunc([]string{note, quote}, func(c string) bool { return c == "" }), "\n\n")
-	if err == nil && at >= 0 {
-		job.rewind = append(rewindStmts(conv.ID, at), claimed...)
+	if err == nil && job.rewind != nil {
+		err = s.exec(ctx, claimRewind(job.id, *job.rewind))
 		job.grants = s.dropGrants(conv.ID) // asked again, a write waits for the user
 	} else if err == nil && len(claimed) > 0 {
 		_, err = s.db.Transaction(ctx, claimed)
@@ -913,16 +846,16 @@ func (s *Service) launch(ctx context.Context, end func(), conv Conversation, pro
 		s.untrack(job)
 		return nil, errors.Join(err, s.exec(context.WithoutCancel(ctx), runState(job.id, "failed")))
 	}
-	req.Prompt = prompt
+	req.History = req.History.Ask(prompt, strings.Join(slices.DeleteFunc([]string{note, quote}, func(c string) bool { return c == "" }), "\n\n"))
 	out := s.newStream()
 	go s.drive(job, end, e.Run, req, out)
 	return out, nil
 }
 
 // claimRun records a running run of conv unless the conversation has an
-// active one (ErrRunActive) and tracks it; state is the conversation's history
+// active one (ErrRunActive) and tracks it; h is the conversation's history
 // as of the claim. The caller holds runMu.
-func (s *Service) claimRun(ctx context.Context, conv Conversation, ref string, tools []string) (*runJob, []byte, error) {
+func (s *Service) claimRun(ctx context.Context, conv Conversation, ref string, tools []string) (*runJob, *ai.History, error) {
 	toolsJSON, _ := json.Marshal(tools)
 	snap, _ := json.Marshal(snapshot{})
 	now := time.Now().Unix()
@@ -936,7 +869,7 @@ func (s *Service) claimRun(ctx context.Context, conv Conversation, ref string, t
 		return nil, nil, ErrRunActive
 	}
 	// Read the history only now: a previous run may have ended after the caller's read.
-	_, state, err := s.conversation(ctx, conv.ID)
+	h, err := s.history(ctx, conv.ID)
 	var scope *gateway.Scope
 	if err == nil {
 		scope, err = s.convScope(ctx, conv.ID, false)
@@ -944,7 +877,7 @@ func (s *Service) claimRun(ctx context.Context, conv Conversation, ref string, t
 	if err != nil {
 		return nil, nil, errors.Join(err, s.exec(context.WithoutCancel(ctx), runState(r.LastInsertID, "failed")))
 	}
-	return s.track(ctx, r.LastInsertID, conv, scope, 0), state, nil
+	return s.track(ctx, r.LastInsertID, conv, scope, 0), h, nil
 }
 
 // convScope is a new scope for a run of conversation id: it has read mail if
@@ -1066,8 +999,8 @@ func (s *Service) drive(job *runJob, end func(), run runFunc, req ai.Request, ou
 		s.publishWit(job.conv.ID, ev)
 	}
 	cs := job.quoted
-	if len(job.cited) > 0 {
-		cs = append(cs, s.number(job.ctx, job, "", job.cited)...)
+	if len(job.cited) > 0 && !job.resumed {
+		cs = append(cs, s.number(job.ctx, job, "", citeContext, job.cited)...)
 	}
 	if len(cs) > 0 {
 		emit(WitEvent{Event: ai.Event{Kind: "context"}, Citations: cs})
@@ -1090,14 +1023,16 @@ func (s *Service) drive(job *runJob, end func(), run runFunc, req ai.Request, ou
 	s.runRejected(req.Model, res.Err)
 	if res.Err == nil {
 		used := res.Usage // whatever res becomes, the model calls took these
-		// Save the whole history, not just what this run was sent.
-		if st, err := ai.RestoreState(job.full, res.State, job.dropped); err != nil {
-			res = ai.Result{Err: &ai.Error{Code: ai.CodeInternal, Msg: err.Error()}}
-		} else {
-			res.State = st
+		var err error
+		if job.host != nil { // the history keeps the command, the proposal is the answer
+			if res = job.host(ctx, res); res.Err == nil {
+				job.after, job.changes, err = job.base.AddCommand(job.command)
+			}
+		} else { // the whole history, not just what this run was sent
+			job.after, job.changes, err = req.History.Restore(res)
 		}
-		if job.host != nil {
-			res = job.host(ctx, res)
+		if err != nil {
+			res = ai.Result{Err: &ai.Error{Code: ai.CodeInternal, Msg: err.Error()}}
 		}
 		res.Usage = used
 	}
@@ -1126,25 +1061,16 @@ func (s *Service) drive(job *runJob, end func(), run runFunc, req ai.Request, ou
 	}
 }
 
-func saveState(convID int64, state []byte) sqlite.Statement {
-	return sqlite.Statement{SQL: "UPDATE conversations SET state = ?, updated_at = ? WHERE id = ?", Args: []any{state, time.Now().Unix(), convID}}
-}
-
 func (s *Service) exec(ctx context.Context, st sqlite.Statement) error {
 	_, err := s.db.Execute(ctx, st.SQL, st.Args...)
 	return err
 }
 
-// runSpan records that runID's history runs from before (its first save
-// keeps its start) to after.
-func runSpan(runID int64, before, after []byte) sqlite.Statement {
+// runSpan records that runID added the history's messages from seq from
+// (its first save keeps its start) up to to.
+func runSpan(runID, from, to int64) sqlite.Statement {
 	return sqlite.Statement{SQL: "UPDATE runs SET hist_from = COALESCE(hist_from, ?), hist_to = ? WHERE id = ?",
-		Args: []any{countMessages(before), countMessages(after), runID}}
-}
-
-func countMessages(state []byte) int {
-	ms, _ := ai.Messages(state) // the state was just decoded or encoded
-	return len(ms)
+		Args: []any{from, to, runID}}
 }
 
 func runState(runID int64, state string) sqlite.Statement {
@@ -1163,7 +1089,7 @@ func (s *Service) settleRun(ctx context.Context, job *runJob, req ai.Request, re
 	}
 	switch {
 	case res.Err != nil:
-		if job.rewind != nil { // it replaced nothing: the grants set aside come back
+		if job.rewind != nil && len(req.Responses) == 0 { // it replaced nothing: the grants set aside come back
 			for _, g := range job.grants {
 				s.sessionGrants.Store(g, true)
 			}
@@ -1182,18 +1108,20 @@ func (s *Service) settleRun(ctx context.Context, job *runJob, req ai.Request, re
 		err = errors.Join(err, s.exec(ctx, runUsage(job.id, res.Usage)))
 		return WitEvent{Event: ai.Event{Kind: "error", Err: res.Err}}, err
 	case len(res.Interrupts) == 0:
-		// the rewind first: its run's span starts where what it drops did
-		_, err := s.db.Transaction(ctx, append(slices.Clone(job.rewind), saveState(job.conv.ID, res.State), runState(job.id, "done"),
-			runSpan(job.id, job.full, res.State), runUsage(job.id, res.Usage)))
+		stmts := append(historyStmts(job.conv.ID, job.changes), runState(job.id, "done"),
+			runSpan(job.id, job.base.Next(), job.after.Next()), runUsage(job.id, res.Usage))
+		if job.rewind != nil {
+			stmts = append(stmts, commitRewind(job.conv.ID, job.id, *job.rewind, questionOf(job.after, job.rewind.to))...)
+		}
+		_, err := s.db.Transaction(ctx, stmts)
 		if err == nil {
-			job.rewind = nil
-			s.compactLater(job.conv.ID, req.Model, res.State)
+			s.compactLater(job.conv.ID, req.Model, job.after)
 		}
 		return WitEvent{Event: ai.Event{Kind: "done"}}, err
 	}
 	now := time.Now().Unix()
 	snap, _ := json.Marshal(snapshot{ReadMail: job.scope.ReadMail(), Round: job.round, Host: job.host != nil, Effort: req.Effort})
-	stmts := append(slices.Clone(job.rewind), saveState(job.conv.ID, res.State), runSpan(job.id, job.full, res.State), runUsage(job.id, res.Usage),
+	stmts := append(historyStmts(job.conv.ID, job.changes), runSpan(job.id, job.base.Next(), job.after.Next()), runUsage(job.id, res.Usage),
 		sqlite.Statement{SQL: "UPDATE runs SET state = 'interrupted', snapshot = ?, updated_at = ? WHERE id = ?", Args: []any{snap, now, job.id}})
 	for i, c := range res.Interrupts {
 		v, ok := job.prepared.Load(c.ID)
@@ -1214,7 +1142,6 @@ func (s *Service) settleRun(ctx context.Context, job *runJob, req ai.Request, re
 	if _, err := s.db.Transaction(ctx, stmts); err != nil {
 		return WitEvent{}, err
 	}
-	job.rewind = nil
 	s.bus.Publish(events.Event{Type: events.ApprovalsChanged, ConversationID: job.conv.ID})
 	as, err := s.approvals(ctx, "a.run_id = ? AND a.seq >= ?", job.id, job.round)
 	return WitEvent{Event: ai.Event{Kind: "interrupted", Interrupts: res.Interrupts}, Approvals: as}, err
@@ -1262,7 +1189,15 @@ func (s *Service) startResume(ctx context.Context, end func(), runID int64) erro
 		s.publishWit(store.Int(r[0]), WitEvent{RunID: runID, Event: ai.Event{Kind: "done"}})
 		return nil
 	}
-	conv, state, err := s.conversation(ctx, store.Int(r[0]))
+	conv, err := s.conversation(ctx, store.Int(r[0]))
+	if err != nil {
+		return err
+	}
+	h, err := s.history(ctx, conv.ID)
+	if err != nil {
+		return err
+	}
+	rw, err := s.runRewind(ctx, runID)
 	if err != nil {
 		return err
 	}
@@ -1287,7 +1222,8 @@ func (s *Service) startResume(ctx context.Context, end func(), runID int64) erro
 		return err
 	}
 	job := s.track(ctx, runID, conv, scope, snap.Round+len(as))
-	req, err := s.request(ctx, job, model, state, offered(conv.Kind, s.registered(names...)))
+	job.resumed, job.rewind = true, rw
+	req, err := s.request(ctx, job, model, h, offered(conv.Kind, s.registered(names...)))
 	if err != nil {
 		s.untrack(job)
 		return err
@@ -1296,4 +1232,14 @@ func (s *Service) startResume(ctx context.Context, end func(), runID int64) erro
 	req.Effort = snap.Effort // as the run began: Anthropic refuses thinking switched on mid-turn
 	go s.drive(job, end, e.Run, req, nil)
 	return nil
+}
+
+// questionOf is the text of h's question with seq seq ("" for none).
+func questionOf(h *ai.History, seq int64) string {
+	for _, t := range h.Turns() {
+		if t.Seq == seq {
+			return t.Question.Text
+		}
+	}
+	return ""
 }

@@ -1062,7 +1062,7 @@ func TestWitPageRewind(t *testing.T) {
 	assert.Equal(t, "发票", h.Messages[0].Quoted[0].Subject)
 	assert.Empty(t, h.Messages[1].Quoted)
 
-	rs2, err := f.p.Ask(f.ctx(), rs.Conversation, "列出金额", []int64{m.ID}, "", "", 0)
+	rs2, err := f.p.Ask(f.ctx(), rs.Conversation, "列出金额", []int64{m.ID}, "", "", 1)
 	require.NoError(t, err)
 	f.waitEvent(t, "again done", func(ev WitEvent) bool { return ev.Run == rs2.Run && ev.Kind == "done" })
 	h, err = f.p.Follow(f.ctx(), rs.Conversation)

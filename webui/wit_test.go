@@ -467,21 +467,21 @@ func TestComposeCloseEmptyReplyMidRun(t *testing.T) {
 func TestComposeWitHistoryGrouping(t *testing.T) {
 	c := core.Conversation{ID: 9,
 		Messages: []ai.Message{
-			{Role: "user", Text: "q"},
-			{Role: "model", Text: "a", Calls: []ai.ToolCall{{ID: "c1", Name: "search_mail", Args: json.RawMessage(`{}`)}}},
-			{Role: "tool", Results: []ai.ToolResult{{CallID: "c1", Name: "search_mail", Output: json.RawMessage(`[1]`)}}},
-			{Role: "model", Text: "b"},
+			{Seq: 1, Role: "user", Text: "q"},
+			{Seq: 2, Role: "model", Text: "a", Calls: []ai.ToolCall{{ID: "c1", Name: "search_mail", Args: json.RawMessage(`{}`)}}},
+			{Seq: 3, Role: "tool", Results: []ai.ToolResult{{CallID: "c1", Name: "search_mail", Output: json.RawMessage(`[1]`)}}},
+			{Seq: 4, Role: "model", Text: "b"},
 		},
-		Runs: []core.RunSpan{{ID: 1, From: 0, To: 4, Active: 6400 * time.Millisecond}},
+		Runs: []core.RunSpan{{ID: 1, From: 1, To: 5, Active: 6400 * time.Millisecond}},
 		Citations: []core.Citation{{N: 1, MessageID: 7, Subject: "s7", RunID: 1}, {N: 2, MessageID: 5, RunID: 1, CallID: "c1"},
 			{N: 1, MessageID: 7, RunID: 1, CallID: "c1", Suspect: true, Quote: "q"}},
 	}
 	got := witMessages(c)
 	require.Len(t, got, 2)
-	assert.Equal(t, WitMessage{ID: "q0", Role: "user", Text: "q", Calls: []WitCall{}, Results: []WitResult{}, Citations: []Citation{}, Runs: []int64{1},
+	assert.Equal(t, WitMessage{ID: "q1", Role: "user", Text: "q", Calls: []WitCall{}, Results: []WitResult{}, Citations: []Citation{}, Runs: []int64{1},
 		Quoted: []MailHit{{ID: 7, Subject: "s7"}}}, got[0], "the question quoted the mail its context cites")
 	a := got[1]
-	assert.Equal(t, "a1", a.ID)
+	assert.Equal(t, "a2", a.ID)
 	assert.Equal(t, "assistant", a.Role)
 	assert.Equal(t, "a\n\nb", a.Text)
 	assert.Equal(t, []int64{1}, a.Runs)

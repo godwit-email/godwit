@@ -164,8 +164,7 @@ func (s *Service) assistConversation(ctx context.Context, draftID int64) (Conver
 		return Conversation{}, err
 	}
 	if len(rows.Values) > 0 {
-		c, _, err := s.conversation(ctx, store.Int(rows.Values[0][0]))
-		return c, err
+		return s.conversation(ctx, store.Int(rows.Values[0][0]))
 	}
 	return s.newAssistConversation(ctx, draftID, "")
 }
@@ -177,8 +176,7 @@ func (s *Service) newAssistConversation(ctx context.Context, draftID int64, titl
 	if err != nil {
 		return Conversation{}, err
 	}
-	c, _, err := s.conversation(ctx, r.LastInsertID)
-	return c, err
+	return s.conversation(ctx, r.LastInsertID)
 }
 
 // assistSystemPrompt is an assist conversation's system prompt, built for
@@ -713,9 +711,13 @@ func (s *Service) assistSkill(ctx context.Context, end func(), draftID int64, na
 
 	s.runMu.Lock()
 	defer s.runMu.Unlock()
-	job, state, err := s.claimRun(ctx, conv, ref, []string{})
+	job, h, err := s.claimRun(ctx, conv, ref, []string{})
 	if err != nil {
 		return nil, err
+	}
+	job.base, job.command = h, ai.Command{Skill: name}
+	if name == "translate-draft" {
+		job.command.Lang = target
 	}
 	// A skill reads only its target (ADR 0009): no mail, not even the one replied to.
 	prompt := "The editable part of the draft, as HTML:\n<draft>\n" + editable + "\n</draft>"
@@ -763,7 +765,7 @@ func (s *Service) assistSkill(ctx context.Context, end func(), draftID int64, na
 			return ai.Result{Err: &ai.Error{Code: ai.CodeInternal, Msg: err.Error()}}
 		}
 		job.prepared.Store("skill", p)
-		return ai.Result{State: state, Interrupts: []ai.ToolCall{{ID: "skill", Name: "update_draft"}}}
+		return ai.Result{Interrupts: []ai.ToolCall{{ID: "skill", Name: "update_draft"}}}
 	}
 	out := s.newStream()
 	req.Prompt = prompt

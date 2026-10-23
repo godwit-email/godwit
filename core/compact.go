@@ -36,7 +36,11 @@ func (s *Service) CompactConversation(ctx context.Context, id int64) error {
 		return err
 	}
 	defer end()
-	c, state, err := s.conversation(ctx, id)
+	c, err := s.conversation(ctx, id)
+	if err != nil {
+		return err
+	}
+	h, err := s.history(ctx, id)
 	if err != nil {
 		return err
 	}
@@ -48,7 +52,7 @@ func (s *Service) CompactConversation(ctx context.Context, id int64) error {
 		return ErrCompacting
 	}
 	defer s.compacting.Delete(id)
-	return s.compact(ctx, id, model, state, true)
+	return s.compact(ctx, id, model, h, true)
 }
 
 // convSummary is conversation id's summary and its epoch (bumped by a rewind).
@@ -58,13 +62,13 @@ func (s *Service) convSummary(ctx context.Context, id int64) (ai.Summary, int64,
 		return ai.Summary{}, 0, err
 	}
 	r := rows.Values[0]
-	return ai.Summary{Text: store.Str(r[0]), Upto: int(store.Int(r[1]))}, store.Int(r[2]), nil
+	return ai.Summary{Text: store.Str(r[0]), Upto: store.Int(r[1])}, store.Int(r[2]), nil
 }
 
-// compactLater compacts conversation id in the background when state, all of
+// compactLater compacts conversation id in the background when h, all of
 // its history, is past model's history budget with its summary standing in;
 // one compaction a conversation at a time.
-func (s *Service) compactLater(id int64, model ai.ResolvedModel, state []byte) {
+func (s *Service) compactLater(id int64, model ai.ResolvedModel, h *ai.History) {
 	if _, busy := s.compacting.LoadOrStore(id, true); busy {
 		return
 	}
@@ -76,36 +80,33 @@ func (s *Service) compactLater(id int64, model ai.ResolvedModel, state []byte) {
 	go func() {
 		defer end()
 		defer s.compacting.Delete(id)
-		if err := s.compact(ctx, id, model, state, false); err != nil {
+		if err := s.compact(ctx, id, model, h, false); err != nil {
 			slog.Default().Warn("could not compact a conversation", "conversation", id, "err", err)
 		}
 	}()
 }
 
-// compact summarizes state's turns before its last two, the summary so far
+// compact summarizes h's turns before its last two, the summary so far
 // included, when it is past the history budget, or, forced, whatever its size.
-func (s *Service) compact(ctx context.Context, id int64, model ai.ResolvedModel, state []byte, force bool) error {
+func (s *Service) compact(ctx context.Context, id int64, model ai.ResolvedModel, h *ai.History, force bool) error {
 	sum, epoch, err := s.convSummary(ctx, id)
 	if err != nil {
 		return err
 	}
 	if !force {
-		size, err := ai.CompactedSize(state, sum)
+		size, err := h.CompactedSize(sum)
 		if err != nil || size <= s.historyBudget(model.BaseURL, model.Model) {
 			return err
 		}
 	}
-	upto, err := ai.CompactPoint(state)
-	if err != nil {
-		return err
-	}
+	upto := h.CompactPoint()
 	if upto <= sum.Upto {
 		if force {
 			return ErrNothingToCompact
 		}
 		return nil
 	}
-	prompt, err := ai.Transcript(state, sum.Upto+1, upto)
+	prompt, err := h.Transcript(max(sum.Upto, h.Messages()[0].Seq), upto) // the first message is always sent
 	if err != nil {
 		return err
 	}

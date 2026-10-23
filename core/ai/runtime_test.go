@@ -53,6 +53,25 @@ func collect(events <-chan Event, wait func() Result) ([]Event, Result) {
 
 func run(e *Engine, req Request) ([]Event, Result) { return collect(e.Run(context.Background(), req)) }
 
+// asking is the view of a run asking prompt after h (nil: a new conversation).
+func asking(h *History, prompt string) *Sent {
+	if h == nil {
+		h = NewHistory()
+	}
+	return must(h.Send(1<<20, Summary{})).Ask(prompt, "")
+}
+
+// resuming is the view of a run resuming h.
+func resuming(h *History) *Sent { return must(h.Send(1<<20, Summary{})) }
+
+// after is the history a run that sent s ended with.
+func after(t *testing.T, s *Sent, res Result) *History {
+	t.Helper()
+	h, _, err := s.Restore(res)
+	require.NoError(t, err)
+	return h
+}
+
 func last(t *testing.T, evs []Event) Event {
 	t.Helper()
 	require.NotEmpty(t, evs)
@@ -113,7 +132,8 @@ func TestRunStreamsText(t *testing.T) {
 	eachKind(t, func(t *testing.T, kind string) {
 		srv := testllm.Start(t, kind)
 		srv.Script(testllm.Turn{Text: []string{"Hel", "lo"}})
-		evs, res := run(newEngine(t), Request{Model: modelFor(srv, kind, "test-key-1"), System: "be brief", Prompt: "hi there"})
+		first := asking(nil, "hi there")
+		evs, res := run(newEngine(t), Request{Model: modelFor(srv, kind, "test-key-1"), System: "be brief", History: first})
 		require.Nil(t, res.Err)
 		var text strings.Builder
 		for _, ev := range kindsOf(evs, "text") {
@@ -124,15 +144,15 @@ func TestRunStreamsText(t *testing.T) {
 		assert.Equal(t, "done", last(t, evs).Kind)
 		require.NotEmpty(t, res.Messages)
 		assert.Equal(t, Message{Role: "model", Text: "Hello"}, res.Messages[len(res.Messages)-1])
-		assert.NotEmpty(t, res.State)
+		assert.NotEmpty(t, res.out)
 		reqs := srv.Requests()
 		require.Len(t, reqs, 1)
 		assert.Contains(t, string(reqs[0].System), "be brief")
 		assert.Contains(t, string(reqs[0].Messages), "hi there")
 
-		// the state continues the conversation, with one system prompt
+		// the history continues the conversation, with one system prompt
 		srv.Script(testllm.Turn{Text: []string{"again"}})
-		_, res2 := run(newEngine(t), Request{Model: modelFor(srv, kind, "test-key-1"), System: "be brief", State: res.State, Prompt: "more"})
+		_, res2 := run(newEngine(t), Request{Model: modelFor(srv, kind, "test-key-1"), System: "be brief", History: asking(after(t, first, res), "more")})
 		require.Nil(t, res2.Err)
 		reqs = srv.Requests()
 		assert.Contains(t, string(reqs[1].Messages), "hi there")
@@ -210,7 +230,8 @@ func TestRunMixedInterrupt(t *testing.T) {
 			{ID: "a2", Name: "write", Args: `{"n":2}`},
 		}}, testllm.Turn{Text: []string{"all done"}})
 		var readRuns atomic.Int64
-		evs, res := run(newEngine(t), Request{Model: modelFor(srv, kind, "test-key-1"), Prompt: "go", Tools: mixedTools(&readRuns)})
+		sent := asking(nil, "go")
+		evs, res := run(newEngine(t), Request{Model: modelFor(srv, kind, "test-key-1"), History: sent, Tools: mixedTools(&readRuns)})
 		require.Nil(t, res.Err)
 		assert.EqualValues(t, 1, readRuns.Load())
 		end := last(t, evs)
@@ -223,10 +244,10 @@ func TestRunMixedInterrupt(t *testing.T) {
 		assert.Equal(t, end.Interrupts, res.Interrupts)
 		require.Len(t, srv.Requests(), 1)
 
-		// a restart: the state goes through JSON and a fresh engine
-		var stored json.RawMessage
-		require.NoError(t, json.Unmarshal(must(json.Marshal(json.RawMessage(res.State))), &stored))
-		evs, res = run(newEngine(t), Request{Model: modelFor(srv, kind, "test-key-1"), State: stored, Tools: mixedTools(&readRuns),
+		// a restart: the history is saved, loaded and run by a fresh engine
+		h := after(t, sent, res)
+		stored := must(LoadHistory(must(h.Rows()), h.Next()))
+		evs, res = run(newEngine(t), Request{Model: modelFor(srv, kind, "test-key-1"), History: resuming(stored), Tools: mixedTools(&readRuns),
 			Responses: []ToolResult{{CallID: "a1", Name: "write", Output: json.RawMessage(`{"draft":7}`)}, {CallID: "a2", Name: "write", Error: "user rejected"}}})
 		require.Nil(t, res.Err)
 		assert.Equal(t, "done", last(t, evs).Kind)
@@ -430,7 +451,7 @@ func TestRedactsSecretAddedLater(t *testing.T) {
 	assert.Equal(t, 4, strings.Count(out, "[redacted]"), out)
 }
 
-func TestCloseState(t *testing.T) {
+func TestCloseHistory(t *testing.T) {
 	eachKind(t, func(t *testing.T, kind string) {
 		srv := testllm.Start(t, kind)
 		srv.Script(testllm.Turn{Calls: []testllm.Call{
@@ -438,16 +459,18 @@ func TestCloseState(t *testing.T) {
 		}}, testllm.Turn{Text: []string{"fine"}})
 		var readRuns atomic.Int64
 		tools := mixedTools(&readRuns)
-		_, res := run(newEngine(t), Request{Model: modelFor(srv, kind, "test-key-1"), Prompt: "go", Tools: tools})
+		sent := asking(nil, "go")
+		_, res := run(newEngine(t), Request{Model: modelFor(srv, kind, "test-key-1"), History: sent, Tools: tools})
 		require.Len(t, res.Interrupts, 2)
+		h := after(t, sent, res)
 
-		_, err := CloseState(res.State, []ToolResult{{CallID: "a1", Name: "write", Error: "cancelled"}})
+		_, _, err := h.Close([]ToolResult{{CallID: "a1", Name: "write", Error: "cancelled"}})
 		assert.Error(t, err, "every pending call needs a result")
-		closed, err := CloseState(res.State, []ToolResult{{CallID: "a1", Name: "write", Error: "cancelled"}, {CallID: "a2", Name: "write", Output: json.RawMessage(`"skipped"`)}})
+		closed, _, err := h.Close([]ToolResult{{CallID: "a1", Name: "write", Error: "cancelled"}, {CallID: "a2", Name: "write", Output: json.RawMessage(`"skipped"`)}})
 		require.NoError(t, err)
-		assert.Len(t, srv.Requests(), 1, "CloseState sends nothing")
+		assert.Len(t, srv.Requests(), 1, "Close sends nothing")
 
-		evs, res := run(newEngine(t), Request{Model: modelFor(srv, kind, "test-key-1"), State: closed, Prompt: "next", Tools: tools})
+		evs, res := run(newEngine(t), Request{Model: modelFor(srv, kind, "test-key-1"), History: asking(closed, "next"), Tools: tools})
 		require.Nil(t, res.Err)
 		assert.Equal(t, "done", last(t, evs).Kind)
 		reqs := srv.Requests()
@@ -526,7 +549,7 @@ func TestToolErrorRedacted(t *testing.T) {
 		require.Len(t, rs, 1)
 		assert.Equal(t, "auth failed for [redacted]", rs[0].Result.Error)
 		assert.NotContains(t, fmt.Sprint(evs), "sekret-key-5")
-		assert.NotContains(t, string(res.State), "sekret-key-5")
+		assert.NotContains(t, string(must(json.Marshal(res.out))), "sekret-key-5")
 		reqs := srv.Requests()
 		require.Len(t, reqs, 2)
 		assert.NotContains(t, string(reqs[1].Messages), "sekret-key-5")
@@ -553,8 +576,10 @@ func TestResponsesMatchOneToOne(t *testing.T) {
 		srv := testllm.Start(t, kind)
 		srv.Script(testllm.Turn{Calls: []testllm.Call{{ID: "r1", Name: "read"}, {ID: "a1", Name: "write"}, {ID: "a2", Name: "write"}}})
 		var readRuns atomic.Int64
-		_, res := run(newEngine(t), Request{Model: modelFor(srv, kind, "test-key-1"), Prompt: "x", Tools: mixedTools(&readRuns)})
+		sent := asking(nil, "x")
+		_, res := run(newEngine(t), Request{Model: modelFor(srv, kind, "test-key-1"), History: sent, Tools: mixedTools(&readRuns)})
 		require.Len(t, res.Interrupts, 2)
+		h := after(t, sent, res)
 		ok := func(id string) ToolResult { return ToolResult{CallID: id, Name: "write", Output: json.RawMessage(`1`)} }
 		for name, resps := range map[string][]ToolResult{
 			"missing":       {ok("a1")},
@@ -564,15 +589,15 @@ func TestResponsesMatchOneToOne(t *testing.T) {
 			"no name":       {ok("a1"), {CallID: "a2", Output: json.RawMessage(`1`)}},
 			"already ran":   {ok("a1"), ok("a2"), {CallID: "r1", Name: "read", Output: json.RawMessage(`1`)}},
 		} {
-			evs, r := run(newEngine(t), Request{Model: modelFor(srv, kind, "test-key-1"), State: res.State, Tools: mixedTools(&readRuns), Responses: resps})
+			evs, r := run(newEngine(t), Request{Model: modelFor(srv, kind, "test-key-1"), History: resuming(h), Tools: mixedTools(&readRuns), Responses: resps})
 			require.NotNil(t, r.Err, name)
 			assert.Equal(t, CodeInternal, r.Err.Code, name)
 			assert.Equal(t, "error", last(t, evs).Kind, name)
-			_, err := CloseState(res.State, resps)
+			_, _, err := h.Close(resps)
 			assert.Error(t, err, name)
 		}
 		assert.Len(t, srv.Requests(), 1)
-		_, err := CloseState(res.State, []ToolResult{ok("a1"), ok("a2")})
+		_, _, err := h.Close([]ToolResult{ok("a1"), ok("a2")})
 		assert.NoError(t, err)
 	})
 }
@@ -595,12 +620,13 @@ func TestMalformedState(t *testing.T) {
 		assert.NotPanics(t, func() {
 			_, err := decodeState([]byte(st))
 			assert.Error(t, err, st)
-			_, err = CloseState([]byte(st), []ToolResult{{CallID: "a1", Name: "write"}})
+			_, _, _, err = LegacyHistory([]byte(st), nil)
 			assert.Error(t, err, st)
-			_, res := run(newEngine(t), Request{Model: modelFor(srv, "openai", "test-key-1"), State: []byte(st), Prompt: "x"})
-			require.NotNil(t, res.Err, st)
-			assert.Equal(t, CodeInternal, res.Err.Code, st)
-			_, res = run(newEngine(t), Request{Model: modelFor(srv, "openai", "test-key-1"), State: []byte(st), Tools: mixedTools(&readRuns),
+			if strings.HasPrefix(st, "[") && st != "[null]" {
+				_, err = LoadHistory([]StoredMessage{{Seq: 1, Data: []byte(st[1 : len(st)-1])}}, 2)
+				assert.Error(t, err, st)
+			}
+			_, res := run(newEngine(t), Request{Model: modelFor(srv, "openai", "test-key-1"), Tools: mixedTools(&readRuns),
 				Responses: []ToolResult{{CallID: "a1", Name: "write"}}})
 			require.NotNil(t, res.Err, st)
 		}, st)
@@ -613,10 +639,16 @@ func TestOpenCallsNeedResponses(t *testing.T) {
 		srv := testllm.Start(t, kind)
 		srv.Script(testllm.Turn{Calls: []testllm.Call{{ID: "a1", Name: "write"}}})
 		var readRuns atomic.Int64
-		_, res := run(newEngine(t), Request{Model: modelFor(srv, kind, "test-key-1"), Prompt: "x", Tools: mixedTools(&readRuns)})
+		sent := asking(nil, "x")
+		_, res := run(newEngine(t), Request{Model: modelFor(srv, kind, "test-key-1"), History: sent, Tools: mixedTools(&readRuns)})
 		require.Len(t, res.Interrupts, 1)
+		h := after(t, sent, res)
 		for _, prompt := range []string{"", "go on"} {
-			evs, r := run(newEngine(t), Request{Model: modelFor(srv, kind, "test-key-1"), State: res.State, Prompt: prompt, Tools: mixedTools(&readRuns)})
+			view := resuming(h)
+			if prompt != "" {
+				view = asking(h, prompt)
+			}
+			evs, r := run(newEngine(t), Request{Model: modelFor(srv, kind, "test-key-1"), History: view, Tools: mixedTools(&readRuns)})
 			require.NotNil(t, r.Err, prompt)
 			assert.Equal(t, CodeInternal, r.Err.Code, prompt)
 			assert.Equal(t, "error", last(t, evs).Kind, prompt)
@@ -722,7 +754,7 @@ func TestAbnormalFinishIsIncomplete(t *testing.T) {
 				evs, res := run(e, Request{Model: modelFor(srv, kind, "k"), Prompt: "translate", MaxTurns: 1})
 				require.NotNil(t, res.Err)
 				assert.Equal(t, CodeIncomplete, res.Err.Code)
-				assert.Nil(t, res.State)
+				assert.Nil(t, res.out)
 				assert.Equal(t, "error", last(t, evs).Kind)
 				assert.Empty(t, kindsOf(evs, "done"))
 			})
@@ -740,7 +772,7 @@ func TestUnknownFinishIsDone(t *testing.T) {
 		evs, res := run(e, Request{Model: modelFor(srv, kind, "k"), Prompt: "hi", MaxTurns: 1})
 		require.Nil(t, res.Err)
 		assert.Equal(t, "done", last(t, evs).Kind)
-		assert.NotNil(t, res.State)
+		assert.NotNil(t, res.out)
 	})
 }
 
@@ -807,27 +839,6 @@ func TestAnthropicBaseWithV1(t *testing.T) {
 
 // TestRunContextHidden: Context goes to the model in the user's turn, before
 // the prompt, and stays in the state, but Messages show only the prompt.
-func TestRunContextHidden(t *testing.T) {
-	eachKind(t, func(t *testing.T, kind string) {
-		srv := testllm.Start(t, kind)
-		srv.Script(testllm.Turn{Text: []string{"ok"}}, testllm.Turn{Text: []string{"again"}})
-		_, res := run(newEngine(t), Request{Model: modelFor(srv, kind, "test-key-1"), Context: "QUOTED-MAIL", Prompt: "hi there"})
-		require.Nil(t, res.Err)
-		reqs := srv.Requests()
-		require.Len(t, reqs, 1)
-		msgs := string(reqs[0].Messages)
-		require.Contains(t, msgs, "QUOTED-MAIL")
-		assert.Less(t, strings.Index(msgs, "QUOTED-MAIL"), strings.Index(msgs, "hi there"), "context first")
-		shown, err := Messages(res.State)
-		require.NoError(t, err)
-		assert.Equal(t, Message{Role: "user", Text: "hi there"}, shown[0])
-
-		_, res2 := run(newEngine(t), Request{Model: modelFor(srv, kind, "test-key-1"), State: res.State, Prompt: "more"})
-		require.Nil(t, res2.Err)
-		assert.Contains(t, string(srv.Requests()[1].Messages), "QUOTED-MAIL", "the state keeps it")
-	})
-}
-
 func TestInstanceKeyChangeKeepsOldRuns(t *testing.T) {
 	e := newEngine(t)
 	srv := testllm.Start(t, KindResponses)

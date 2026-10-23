@@ -336,8 +336,8 @@ func (p *WitPage) Ask(ctx context.Context, conv int64, input string, quoted []in
 		return RunStart{}, keyed(err)
 	}
 	var ch <-chan core.WitEvent
-	if rewind >= 0 && !made {
-		ch, err = svc.AskAgain(context.WithoutCancel(ctx), conv, rewind, input, quoted)
+	if rewind > 0 && !made {
+		ch, err = svc.AskAgain(context.WithoutCancel(ctx), conv, int64(rewind), input, quoted)
 	} else {
 		ch, err = svc.AskWith(context.WithoutCancel(ctx), conv, input, quoted)
 	}

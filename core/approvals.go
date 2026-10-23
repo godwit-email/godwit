@@ -552,7 +552,7 @@ func (s *Service) CancelRun(ctx context.Context, runID int64) error {
 // in flight (CancelRun waits for them), or none is left open. One left
 // executing anyway is an external run whose outcome could not be recorded.
 func (s *Service) closeRun(ctx context.Context, runID int64, final, pendingMsg string) (int64, error) {
-	rows, err := s.db.Query(ctx, "SELECT r.conversation_id, r.snapshot, c.state FROM runs r JOIN conversations c ON c.id = r.conversation_id WHERE r.id = ?", runID)
+	rows, err := s.db.Query(ctx, "SELECT conversation_id, snapshot FROM runs WHERE id = ?", runID)
 	if err != nil {
 		return 0, err
 	}
@@ -564,7 +564,6 @@ func (s *Service) closeRun(ctx context.Context, runID int64, final, pendingMsg s
 	if err := json.Unmarshal([]byte(store.Str(rows.Values[0][1])), &snap); err != nil {
 		return convID, err
 	}
-	state, _ := rows.Values[0][2].([]byte)
 	as, err := s.approvalRows(ctx, "a.run_id = ? AND a.seq >= ?", runID, snap.Round)
 	if err != nil {
 		return convID, err
@@ -586,13 +585,24 @@ func (s *Service) closeRun(ctx context.Context, runID int64, final, pendingMsg s
 	if snap.ReadMail {
 		stmts = append(stmts, markConvReadMail(convID))
 	}
-	if !snap.Host { // a host proposal left no call in the conversation
-		closed, err := ai.CloseState(state, results)
+	rw, err := s.runRewind(ctx, runID)
+	if err != nil {
+		return convID, err
+	}
+	switch {
+	case rw != nil: // a question asked again that ends this way replaces nothing
+		stmts = append(stmts, discardRewind(convID, runID, *rw)...)
+	case !snap.Host: // a host proposal left no call in the conversation
+		h, err := s.history(ctx, convID)
 		if err != nil {
 			return convID, err
 		}
-		stmts = append(stmts, saveState(convID, closed),
-			sqlite.Statement{SQL: "UPDATE runs SET hist_to = ? WHERE id = ? AND hist_from IS NOT NULL", Args: []any{countMessages(closed), runID}})
+		closed, ch, err := h.Close(results)
+		if err != nil {
+			return convID, err
+		}
+		stmts = append(stmts, historyStmts(convID, ch)...)
+		stmts = append(stmts, sqlite.Statement{SQL: "UPDATE runs SET hist_to = ? WHERE id = ? AND hist_from IS NOT NULL", Args: []any{closed.Next(), runID}})
 	}
 	stmts = append(stmts, runState(runID, final))
 	_, err = s.db.Transaction(ctx, stmts)
