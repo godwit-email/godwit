@@ -17,7 +17,7 @@ jobs:
           (Get-CimInstance Win32_Processor).Name
       - uses: actions/checkout@v7
         with:
-          fetch-depth: 2
+          fetch-depth: 0
       - uses: jdx/mise-action@v5
       - name: loop
         shell: bash {0}
@@ -25,14 +25,14 @@ jobs:
           CGO_ENABLED: "0"
           CODE: ${{ matrix.code }}
         run: |
-          if [ "$CODE" = base ]; then git show HEAD~1 -- core/ai/types.go | git apply -R || exit 1; fi
+          if [ "$CODE" = base ]; then git show 45fa8c2 -- core/ai/types.go | git apply -R || exit 1; fi
           git diff --stat
           go test -c -o ai.test.exe ./core/ai || exit 1
           cd core/ai
           fails=0
           cpu=$(powershell -c "(Get-CimInstance Win32_Processor).Name")
           echo "cpu=$cpu"
-          n=40; case "$cpu" in *Intel*) n=300;; esac
+          n=40; case "$cpu" in *Intel*|*INTEL*) n=300;; esac
           for i in $(seq 1 $n); do
             ../../ai.test.exe -test.count=1 -test.v > out.txt 2>&1
             rc=$?
