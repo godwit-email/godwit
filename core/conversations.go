@@ -1323,10 +1323,10 @@ func (s *Service) settleRun(ctx context.Context, job *runJob, req ai.Request, re
 			dests, _ = json.Marshal(p.Destinations)
 		}
 		stmts = append(stmts, sqlite.Statement{SQL: `INSERT INTO approvals(run_id, seq, call_id, tool, args, summary, target_kind,
-			target_id, target_version, state, destinations, binding, source, extension, created_at, updated_at)
-			VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending', ?, ?, ?, ?, ?, ?)`,
+			target_id, target_version, state, destinations, binding, source, extension, input, created_at, updated_at)
+			VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending', ?, ?, ?, ?, ?, ?, ?)`,
 			Args: []any{job.id, job.round + i, c.ID, c.Name, string(p.Args), p.Summary, p.TargetKind, nullID(p.TargetID), p.TargetVersion,
-				string(dests), p.Binding, cmp.Or(p.source, gateway.SourceWit), p.extension, now, now}})
+				string(dests), p.Binding, cmp.Or(p.source, gateway.SourceWit), p.extension, nullText(p.Input), now, now}})
 	}
 	if _, err := s.db.Transaction(ctx, stmts); err != nil {
 		return WitEvent{}, err

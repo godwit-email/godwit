@@ -19,6 +19,15 @@ import (
 
 // MCP connections: connecting (grant first), the stdio and http transports, closing.
 
+// mcpClientOptions take forms (elicitation) only as input_required results,
+// which callMCP turns into approvals (mcp_question.go): with no handler, a
+// form sent in the middle of a call (protocol before 2026-07-28) is refused.
+// No roots: Godwit has none to offer.
+var mcpClientOptions = &mcp.ClientOptions{
+	Capabilities:   &mcp.ClientCapabilities{Elicitation: &mcp.ElicitationCapabilities{Form: &mcp.FormElicitationCapabilities{}}},
+	MultiRoundTrip: &mcp.MultiRoundTripOptions{Disabled: true},
+}
+
 // mcpTestTransport, set in tests, connects to an in-memory server instead.
 var mcpTestTransport func(MCPServer) mcp.Transport
 
@@ -160,7 +169,7 @@ func (s *Service) dialMCP(ctx context.Context, srv MCPServer) (*mcpConn, error) 
 		}
 		return nil, c.withStderr(err)
 	}
-	c.session, err = mcp.NewClient(&mcp.Implementation{Name: "godwit", Version: "1"}, nil).Connect(cctx, t, nil)
+	c.session, err = mcp.NewClient(&mcp.Implementation{Name: "godwit", Version: "1"}, mcpClientOptions).Connect(cctx, t, nil)
 	if err != nil {
 		return fail(err)
 	}

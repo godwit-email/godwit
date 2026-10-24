@@ -130,6 +130,9 @@ func (s *Service) AnswerQuestion(ctx context.Context, id int64, answers [][]stri
 	if err != nil {
 		return err
 	}
+	if a.input != "" {
+		return s.cleanError(s.answerForm(ctx, a, answers))
+	}
 	if a.Tool != askQuestionTool {
 		return fmt.Errorf("approval %d is not a question", id)
 	}

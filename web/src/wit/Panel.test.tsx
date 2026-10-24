@@ -2345,3 +2345,119 @@ describe("ask_user_question", () => {
     expect(screen.queryByText("Price, Date")).toBeNull();
   });
 });
+
+describe("an MCP server's form", () => {
+  const form = (state = "pending", answers?: string[][]): Approval => ({
+    id: 11,
+    run: 7,
+    callId: "b1",
+    tool: "mcp_1_book",
+    summary: "Run book of MCP server fake",
+    state,
+    error: "",
+    destinations: ["mcp:fake"],
+    args: "{}",
+    draftEdit: false,
+    sessionAllow: false,
+    draft: 0,
+    form: JSON.stringify({
+      server: "fake",
+      round: 1,
+      message: "Which room? <b>now</b>",
+      questions: [
+        {
+          question: "Room",
+          header: "",
+          multiSelect: false,
+          kind: "choice",
+          required: true,
+          options: [
+            { label: "Small", description: "" },
+            { label: "Large", description: "" },
+          ],
+        },
+        { question: "breakfast", header: "", multiSelect: false, kind: "boolean", options: null },
+        { question: "nights", header: "", multiSelect: false, kind: "integer", options: null },
+      ],
+      answers,
+    }),
+  });
+
+  it("shows who asks and where the answers go, and takes only what each field takes", async () => {
+    const onAnswer = vi.fn().mockResolvedValue(true);
+    const onDecide = vi.fn().mockResolvedValue(true);
+    const user = userEvent.setup();
+    const r = await setup({ onAnswer, onDecide });
+    await user.type(input(), "book it{Enter}");
+    const call = { id: "b1", name: "mcp_1_book", args: "{}" };
+    r.emit({ kind: "tool_call", call });
+    r.emit({ kind: "interrupted", interrupts: [call], approvals: [form()], ends: true });
+    expect(await screen.findByText("MCP 服务器 fake 想问你")).toBeInTheDocument();
+    expect(screen.getByText("Which room? <b>now</b>")).toBeInTheDocument(); // plain text
+    expect(screen.getByText(/你的回答会发给 MCP 服务器 fake/)).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "允许" })).toBeNull();
+    expect(screen.queryByRole("textbox", { name: "其他回答" })).toBeNull(); // a choice takes its choices
+    await user.click(screen.getByRole("radio", { name: /Large/ }));
+    await user.click(screen.getByRole("button", { name: "下一题" }));
+    await user.click(screen.getByRole("radio", { name: "否" }));
+    await user.click(screen.getByRole("button", { name: "下一题" }));
+    await user.type(screen.getByRole("textbox", { name: "nights" }), "2");
+    await user.click(screen.getByRole("button", { name: "提交" }));
+    expect(onAnswer).toHaveBeenCalledWith(form(), [["Large"], ["false"], ["2"]]);
+    expect(onDecide).not.toHaveBeenCalled();
+  });
+
+  it("a call allowed that then asks shows its form, and a form answered that asks again shows the next round", async () => {
+    const onDecide = vi.fn().mockResolvedValue(true);
+    const onAnswer = vi.fn().mockResolvedValue(true);
+    const user = userEvent.setup();
+    const r = await setup({ onAnswer, onDecide });
+    await user.type(input(), "book it{Enter}");
+    const call = { id: "b1", name: "mcp_1_book", args: "{}" };
+    const { form: _, ...plain } = form();
+    r.emit({ run: 7, kind: "tool_call", call });
+    r.emit({ run: 7, kind: "interrupted", interrupts: [call], approvals: [plain], ends: true });
+    await user.click(await screen.findByRole("button", { name: "允许" }));
+    expect(onDecide).toHaveBeenCalled();
+    await waitFor(() => expect(screen.queryByRole("button", { name: "允许" })).toBeNull());
+    // the same approval, pending again with the server's form (core askAgain)
+    r.emit({ run: 7, kind: "interrupted", interrupts: [call], approvals: [form()], ends: true });
+    r.resume(7);
+    expect(await screen.findByText("MCP 服务器 fake 想问你")).toBeInTheDocument();
+    await user.click(screen.getByRole("radio", { name: /Large/ }));
+    await user.click(screen.getByRole("button", { name: "下一题" }));
+    await user.click(screen.getByRole("button", { name: "跳过" }));
+    await user.click(screen.getByRole("button", { name: "跳过" })); // the last: submits
+    await waitFor(() => expect(onAnswer).toHaveBeenCalledWith(form(), [["Large"], [], []]));
+    await waitFor(() => expect(screen.queryByText("MCP 服务器 fake 想问你")).toBeNull());
+    const next = { ...form(), form: form().form?.replace('"round":1', '"round":2') };
+    r.emit({ run: 7, kind: "interrupted", interrupts: [call], approvals: [next], ends: true });
+    r.resume(7);
+    expect(await screen.findByText("MCP 服务器 fake 想问你")).toBeInTheDocument();
+  });
+
+  it("an answered form shows its answers", async () => {
+    await setup({
+      history: hist({
+        messages: [
+          {
+            id: "a1",
+            role: "assistant",
+            text: "Booked.",
+            reasoning: "",
+            quoted: [],
+            calls: [{ id: "b1", name: "mcp_1_book", args: "{}" }],
+            results: [],
+            citations: [],
+            runs: [7],
+            elapsed: 0,
+          },
+        ],
+        approvals: [form("done", [["Large"], ["true"], []])],
+      }),
+    });
+    expect(screen.getByText("Large")).toBeInTheDocument();
+    expect(screen.getByText("breakfast").nextElementSibling).toHaveTextContent("是");
+    expect(screen.getByText("nights").nextElementSibling).toHaveTextContent("未回答");
+  });
+});

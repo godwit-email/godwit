@@ -102,6 +102,10 @@ type Approval struct {
 	Draft int64 `json:"draft"`
 	// DraftEdit: it edits the conversation's draft (shown in the compose window).
 	DraftEdit bool `json:"draftEdit"`
+	// Form is the form an MCP server asks the user to fill, JSON text (absent
+	// for none): its server, message, questions and, once answered, answers.
+	// Answered as a question (WitPage.Answer).
+	Form string `json:"form,omitempty"`
 }
 
 // follow is a target's subscription to a conversation. It lasts until the
@@ -200,7 +204,8 @@ func citationOf(c core.Citation) Citation {
 
 func approvalOf(a core.Approval) Approval {
 	return Approval{ID: a.ID, Run: a.RunID, CallID: a.CallID, Tool: a.Tool, Summary: a.Summary, State: a.State,
-		Error: a.Error, Destinations: nz(a.Destinations), Args: string(a.Args), SessionAllow: a.SessionAllow, Draft: a.DraftID, DraftEdit: a.DraftEdit}
+		Error: a.Error, Destinations: nz(a.Destinations), Args: string(a.Args), SessionAllow: a.SessionAllow, Draft: a.DraftID, DraftEdit: a.DraftEdit,
+		Form: string(a.Form)}
 }
 
 // witErrorKeys are the core errors with a message of their own (app/errors.go).
