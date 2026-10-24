@@ -700,15 +700,43 @@ func decodeState(state []byte) ([]*gai.Message, error) {
 	if err := json.Unmarshal(state, &msgs); err != nil {
 		return nil, bad
 	}
-	for _, m := range msgs {
+	// Genkit's Part.UnmarshalJSON decodes tool inputs and outputs as float64,
+	// rounding integers above 2^53, so they are decoded again exactly.
+	var raw []struct {
+		Content []struct {
+			ToolRequest *struct {
+				Input json.RawMessage `json:"input"`
+			} `json:"toolRequest"`
+			ToolResponse *struct {
+				Output json.RawMessage `json:"output"`
+			} `json:"toolResponse"`
+		} `json:"content"`
+	}
+	if err := json.Unmarshal(state, &raw); err != nil {
+		return nil, bad
+	}
+	exact := func(b json.RawMessage, v *any) error {
+		if len(b) == 0 {
+			return nil
+		}
+		dec := json.NewDecoder(bytes.NewReader(b))
+		dec.UseNumber()
+		return dec.Decode(v)
+	}
+	for i, m := range msgs {
 		if m == nil || len(m.Content) == 0 || (m.Role != gai.RoleUser && m.Role != gai.RoleModel && m.Role != gai.RoleTool) {
 			return nil, bad
 		}
-		for _, p := range m.Content {
+		for j, p := range m.Content {
 			switch {
 			case p == nil,
 				p.IsToolRequest() && (p.ToolRequest == nil || p.ToolRequest.Name == "" || p.ToolRequest.Ref == ""),
 				p.IsToolResponse() && (p.ToolResponse == nil || p.ToolResponse.Name == "" || p.ToolResponse.Ref == ""):
+				return nil, bad
+			}
+			rp := raw[i].Content[j]
+			if p.IsToolRequest() && exact(rp.ToolRequest.Input, &p.ToolRequest.Input) != nil ||
+				p.IsToolResponse() && exact(rp.ToolResponse.Output, &p.ToolResponse.Output) != nil {
 				return nil, bad
 			}
 		}
