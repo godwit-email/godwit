@@ -44,6 +44,8 @@ var tools = []tool{
 var shows = []show{
 	{tool{"show_draft", "Show the user a draft as a card they can review, where the host can display one; elsewhere it returns what get_draft does. Call it only when the user wants to see a draft, not to read one yourself (use get_draft).", true,
 		draftArgs, getDraft}, "draft"},
+	{tool{"show_mail", "Show the user a message (message_id) or a conversation (thread_id) as a card they can read, where the host can display one; give exactly one. Elsewhere it returns what get_message or get_thread does. Call it only when the user wants to see mail, not to read it yourself (use get_message or get_thread).", true,
+		`{"type":"object","properties":{"message_id":{"type":"integer","minimum":1},"thread_id":{"type":"integer","minimum":1}},"additionalProperties":false}`, showMail}, "mail"},
 }
 
 const draftArgs = `{"type":"object","properties":{"draft_id":{"type":"integer","minimum":1}},"required":["draft_id"],"additionalProperties":false}`
@@ -177,6 +179,24 @@ func getMessage(ctx context.Context, c *rpc.Client, args json.RawMessage) (strin
 		b.WriteString("(body truncated)\n")
 	}
 	return b.String(), nil
+}
+
+// showMail is get_message or get_thread, whichever ID is given.
+func showMail(ctx context.Context, c *rpc.Client, args json.RawMessage) (string, error) {
+	var a struct {
+		MessageID int64 `json:"message_id"`
+		ThreadID  int64 `json:"thread_id"`
+	}
+	if err := decode(args, &a); err != nil {
+		return "", err
+	}
+	if (a.MessageID == 0) == (a.ThreadID == 0) {
+		return "", errors.New("give exactly one of message_id and thread_id")
+	}
+	if a.MessageID != 0 {
+		return getMessage(ctx, c, args)
+	}
+	return getThread(ctx, c, args)
 }
 
 func search(ctx context.Context, c *rpc.Client, args json.RawMessage) (string, error) {

@@ -38,6 +38,49 @@ dd {
   border-left: 2px solid GrayText;
   padding-left: 8px;
 }
+.truncated {
+  margin-top: 12px;
+  font-style: italic;
+}
+.subject {
+  margin: 0 0 8px;
+  font-size: 1.1em;
+}
+section {
+  border-top: 1px solid GrayText;
+  padding: 8px 0;
+}
+section button {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 0 12px;
+  width: 100%;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+section button:disabled {
+  cursor: default;
+}
+section article {
+  margin-top: 8px;
+}
+.from {
+  font-weight: 600;
+  overflow-wrap: anywhere;
+}
+.date,
+.snippet {
+  color: GrayText;
+}
+.snippet {
+  grid-column: 1 / -1;
+  overflow-wrap: anywhere;
+}
 .error {
   color: #c62828;
 }

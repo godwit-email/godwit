@@ -3,7 +3,7 @@
 // this and fails on any diff, so the embedded copy is always the built one.
 export {};
 
-const views = ["draft"];
+const views = ["draft", "mail"];
 
 const dir = `${import.meta.dir}/..`;
 const css = await Bun.file(`${dir}/src/mcp/view.css`).text();

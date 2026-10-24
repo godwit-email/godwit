@@ -9,7 +9,7 @@ const headers = [
   ["subject", "Subject"],
 ] as const;
 
-const el = (tag: string, cls: string, value: string) => {
+export const el = (tag: string, cls: string, value: string) => {
   const e = document.createElement(tag);
   e.className = cls;
   e.textContent = value; // a text node only: no HTML, Markdown, images or links (ADR 0022)
