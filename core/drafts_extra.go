@@ -8,14 +8,54 @@ import (
 	"time"
 
 	"github.com/godwit-email/godwit/core/mail"
+	"github.com/godwit-email/godwit/core/store"
 )
 
-// DeleteDraft deletes the draft and its attachment files. A draft already
-// queued is in the outbox, not here, and stays.
+// DeleteDraft deletes the draft and its attachment files, cancelling the
+// Wit runs of its conversations first. A draft already queued is in the
+// outbox, not here, and stays.
 func (s *Service) DeleteDraft(ctx context.Context, id int64) error {
+	if err := s.stopDraftRuns(ctx, id); err != nil {
+		return err
+	}
+	defer s.runMu.Unlock()
 	s.editMu.Lock() // never while Send queues it
 	defer s.editMu.Unlock()
 	return s.deleteDraft(ctx, id)
+}
+
+// stopDraftRuns cancels the runs in flight of draftID's conversations and
+// waits for them, and for their approvals executing outside runMu, to end, so
+// none settles into a deleted draft. It returns holding runMu (unless it
+// fails), so none starts until the caller has deleted the draft and unlocks.
+// runMu is taken before editMu, as decide.
+func (s *Service) stopDraftRuns(ctx context.Context, draftID int64) error {
+	for {
+		s.runMu.Lock()
+		rows, err := s.db.Query(ctx, "SELECT r.id FROM runs r JOIN conversations c ON c.id = r.conversation_id WHERE c.draft_id = ?", draftID)
+		if err != nil {
+			s.runMu.Unlock()
+			return err
+		}
+		var wait <-chan struct{}
+		for _, r := range rows.Values {
+			if job := s.active[store.Int(r[0])]; job != nil {
+				job.cancel()
+				wait = job.done
+			} else if x := s.externalOf(store.Int(r[0])); x != nil {
+				wait = x
+			}
+		}
+		if wait == nil {
+			return nil
+		}
+		s.runMu.Unlock()
+		select {
+		case <-wait: // look again: a run may resume
+		case <-ctx.Done():
+			return ctx.Err()
+		}
+	}
 }
 
 // SetDraftAccount moves the draft to accountID: the body's signature becomes

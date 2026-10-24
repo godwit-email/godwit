@@ -6,6 +6,7 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+	"time"
 
 	"github.com/godwit-email/godwit/core"
 	"github.com/godwit-email/godwit/core/coretest"
@@ -176,6 +177,44 @@ func TestDeleteDraftIfEmptyKeepsActiveRun(t *testing.T) {
 	_, err = e.Svc.SaveDraft(ctx, pending)
 	require.NoError(t, err)
 	assert.False(t, emptyIfDeleted(pending), "a pending approval keeps the draft")
+}
+
+func TestDeleteOrSendDraftCancelsRun(t *testing.T) {
+	e := coretest.New(t, coretest.WithoutAutoSync())
+	acc := e.AddAccount(t, "alice@example.com")
+	llm := e.LLM(t)
+	t.Cleanup(llm.Release)
+	for _, name := range []string{"delete", "send"} {
+		t.Run(name, func(t *testing.T) {
+			d, err := e.Svc.NewDraft(ctx, acc.ID, "new", 0)
+			require.NoError(t, err)
+			d.To = []string{"bob@example.com"}
+			_, err = e.Svc.SaveDraft(ctx, d)
+			require.NoError(t, err)
+			llm.Script(coretest.Turn{Text: []string{"thinking"}, Hang: true})
+			ch, err := e.Svc.Assist(ctx, d.ID, "hi")
+			require.NoError(t, err)
+			<-ch // the run has started
+			if name == "delete" {
+				require.NoError(t, e.Svc.DeleteDraft(ctx, d.ID))
+			} else {
+				require.NoError(t, e.Svc.Send(ctx, d.ID))
+			}
+			ended := make(chan struct{})
+			go func() {
+				for range ch {
+				}
+				close(ended)
+			}()
+			select {
+			case <-ended: // cancelled and settled before the draft went
+			case <-time.After(5 * time.Second):
+				t.Fatal("the run still goes on after its draft is gone")
+			}
+			_, err = e.Svc.GetDraft(ctx, d.ID)
+			require.Error(t, err)
+		})
+	}
 }
 
 func TestAttachmentAtRevision(t *testing.T) {
