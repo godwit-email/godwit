@@ -320,10 +320,13 @@ func (s *Service) askAgain(ctx context.Context, a approvalRow, in mcpInput) (ok 
 
 // answerForm answers a's form: every answer empty rejects the call (the
 // server is not called again); else it is called again with the answer.
-func (s *Service) answerForm(ctx context.Context, a approvalRow, answers [][]string) error {
+func (s *Service) answerForm(ctx context.Context, a approvalRow, round int, answers [][]string) error {
 	var in mcpInput
 	if err := json.Unmarshal([]byte(a.input), &in); err != nil {
 		return err
+	}
+	if in.Round != round { // the user saw an earlier form: its answer is not this one's
+		return ErrInvalidState
 	}
 	qs, sch, err := formQuestions(in.Form)
 	if err != nil {

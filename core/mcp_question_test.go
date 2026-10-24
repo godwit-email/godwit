@@ -73,12 +73,12 @@ func TestMCPQuestionOfApprovedCall(t *testing.T) {
 	assert.ErrorIs(t, e.s.ResolveApproval(t.Context(), id, true), ErrNeedsAnswer)
 	require.NoError(t, e.s.ResolveAll(t.Context(), in.RunID, true))
 	assert.Equal(t, "pending", e.approval(t, id).State)
-	assert.Error(t, e.s.AnswerQuestion(t.Context(), id, [][]string{{}, {"true"}, {"2"}}), "the room is required")
-	assert.Error(t, e.s.AnswerQuestion(t.Context(), id, [][]string{{"Large"}, {}, {"9"}}), "at most 7 nights")
-	assert.Error(t, e.s.AnswerQuestion(t.Context(), id, [][]string{{"Huge"}, {}, {}}), "only its choices")
-	assert.ErrorContains(t, e.s.AnswerQuestion(t.Context(), id, [][]string{{"Large"}, {}, {"9007199254740993"}}), "needs a integer", "not exact as a float64")
+	assert.Error(t, e.s.AnswerQuestion(t.Context(), id, 1, [][]string{{}, {"true"}, {"2"}}), "the room is required")
+	assert.Error(t, e.s.AnswerQuestion(t.Context(), id, 1, [][]string{{"Large"}, {}, {"9"}}), "at most 7 nights")
+	assert.Error(t, e.s.AnswerQuestion(t.Context(), id, 1, [][]string{{"Huge"}, {}, {}}), "only its choices")
+	assert.ErrorContains(t, e.s.AnswerQuestion(t.Context(), id, 1, [][]string{{"Large"}, {}, {"9007199254740993"}}), "needs a integer", "not exact as a float64")
 
-	require.NoError(t, e.s.AnswerQuestion(t.Context(), id, [][]string{{"Large"}, {}, {"2"}}))
+	require.NoError(t, e.s.AnswerQuestion(t.Context(), id, 1, [][]string{{"Large"}, {}, {"2"}}))
 	e.waitRun(t, in.RunID, "done")
 	res := got.Load().(*mcp.ElicitResult)
 	assert.Equal(t, "accept", res.Action)
@@ -105,7 +105,7 @@ func TestMCPQuestionOfTrustedCall(t *testing.T) {
 	assert.NotNil(t, in.Approvals[0].Form)
 	assert.Equal(t, []string{"mcp:fake"}, in.Approvals[0].Destinations)
 
-	require.NoError(t, e.s.AnswerQuestion(t.Context(), in.Approvals[0].ID, [][]string{{"Small"}, {"false"}, {}}))
+	require.NoError(t, e.s.AnswerQuestion(t.Context(), in.Approvals[0].ID, 1, [][]string{{"Small"}, {"false"}, {}}))
 	e.waitRun(t, in.RunID, "done")
 	assert.Equal(t, "done", e.approval(t, in.Approvals[0].ID).State)
 	assert.Equal(t, int32(2), f.calls.Load())
@@ -121,7 +121,7 @@ func TestMCPQuestionSkipped(t *testing.T) {
 	in := evs[len(evs)-1]
 	id := in.Approvals[0].ID
 	require.NoError(t, e.s.ResolveApproval(t.Context(), id, true))
-	require.NoError(t, e.s.AnswerQuestion(t.Context(), id, [][]string{{}, {}, {}}))
+	require.NoError(t, e.s.AnswerQuestion(t.Context(), id, 1, [][]string{{}, {}, {}}))
 	e.waitRun(t, in.RunID, "done")
 	a := e.approval(t, id)
 	assert.Equal(t, "rejected", a.State)
@@ -168,9 +168,26 @@ func TestMCPQuestionStaleAnswer(t *testing.T) {
 	// another round (or another answer) came in since the form was read
 	_, err = e.s.db.Execute(t.Context(), "UPDATE approvals SET input = json_set(input, '$.round', 2) WHERE id = ?", id)
 	require.NoError(t, err)
-	assert.ErrorIs(t, e.s.answerForm(t.Context(), read, [][]string{{"Small"}, {}, {}}), ErrInvalidState)
+	assert.ErrorIs(t, e.s.answerForm(t.Context(), read, 1, [][]string{{"Small"}, {}, {}}), ErrInvalidState)
 	assert.Equal(t, "pending", e.approval(t, id).State)
 	assert.Equal(t, int32(1), f.calls.Load(), "the stale answer is not sent")
+}
+
+func TestMCPAnswerToAnotherRoundRefused(t *testing.T) {
+	e := newApprovalEnv(t)
+	f := newFakeMCP(t)
+	addBooking(f)
+	srv := fakeServer(t, e.s)
+	require.NoError(t, e.s.SetMCPToolTrusted(t.Context(), srv.ID, "book", true))
+	srv = mcpServer(t, e.s, srv.ID)
+	evs := e.ask(t, e.newConv(t, "ask", 0), callArgs(witName(t, srv, "book"), `{}`), finished)
+	id := evs[len(evs)-1].Approvals[0].ID
+	// the call asked its second form since the card showed the first
+	_, err := e.s.db.Execute(t.Context(), "UPDATE approvals SET input = json_set(input, '$.round', 2) WHERE id = ?", id)
+	require.NoError(t, err)
+	assert.ErrorIs(t, e.s.AnswerQuestion(t.Context(), id, 1, [][]string{{"Small"}, {}, {}}), ErrInvalidState)
+	assert.Equal(t, "pending", e.approval(t, id).State)
+	assert.Equal(t, int32(1), f.calls.Load(), "the first round's answer is not sent to the second")
 }
 
 func TestMCPQuestionNotInCompose(t *testing.T) {

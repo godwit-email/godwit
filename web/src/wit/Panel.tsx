@@ -462,6 +462,9 @@ type Questions = {
  * What a decision here settles: the approval, and for an MCP form its round, since the server may
  * ask again on the same approval once answered (or once its call is allowed).
  */
+/** The round of a's form the user answers (0: ask_user_question's, which has no rounds). */
+export const formRound = (a: Approval) => questionArgs(a).round ?? 0;
+
 const decisionKey = (a: Approval) => (a.form ? `${a.id}:${questionArgs(a).round}` : String(a.id));
 
 /** Whether a is a question: Wit's (ask_user_question) or an MCP server's form. */

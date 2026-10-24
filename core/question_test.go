@@ -26,7 +26,7 @@ func (e *approvalEnv) askQuestion(t *testing.T, args string) WitEvent {
 func TestAnsweredQuestionGoesBackToTheModel(t *testing.T) {
 	e := newApprovalEnv(t)
 	in := e.askQuestion(t, toneQuestion)
-	require.NoError(t, e.s.AnswerQuestion(t.Context(), in.Approvals[0].ID, [][]string{{"Formal"}}))
+	require.NoError(t, e.s.AnswerQuestion(t.Context(), in.Approvals[0].ID, 0, [][]string{{"Formal"}}))
 	e.waitRun(t, in.RunID, "done")
 	assert.Equal(t, "The user answered your questions:\n\"Which tone?\"=\"Formal\"", e.toolMessage(t))
 	a := e.approval(t, in.Approvals[0].ID)
@@ -37,7 +37,7 @@ func TestAnsweredQuestionGoesBackToTheModel(t *testing.T) {
 func TestASkippedQuestionGoesBackAsSkipped(t *testing.T) {
 	e := newApprovalEnv(t)
 	in := e.askQuestion(t, `{"questions":[`+q("Which tone?")+`,`+q("Which day?")+`]}`)
-	require.NoError(t, e.s.AnswerQuestion(t.Context(), in.Approvals[0].ID, [][]string{{}, {"B"}}))
+	require.NoError(t, e.s.AnswerQuestion(t.Context(), in.Approvals[0].ID, 0, [][]string{{}, {"B"}}))
 	e.waitRun(t, in.RunID, "done")
 	assert.Equal(t, "The user answered your questions:\n\"Which tone?\"=\"(skipped)\"\n\"Which day?\"=\"B\"", e.toolMessage(t))
 }
@@ -45,7 +45,7 @@ func TestASkippedQuestionGoesBackAsSkipped(t *testing.T) {
 func TestSkippingEveryQuestionSkipsTheCall(t *testing.T) {
 	e := newApprovalEnv(t)
 	in := e.askQuestion(t, toneQuestion)
-	require.NoError(t, e.s.AnswerQuestion(t.Context(), in.Approvals[0].ID, [][]string{{}}))
+	require.NoError(t, e.s.AnswerQuestion(t.Context(), in.Approvals[0].ID, 0, [][]string{{}}))
 	e.waitRun(t, in.RunID, "done")
 	assert.Equal(t, "rejected", e.approval(t, in.Approvals[0].ID).State)
 	assert.Equal(t, msgUnanswered, e.toolMessage(t))
@@ -76,7 +76,7 @@ func TestAllowDoesNotAnswerAQuestion(t *testing.T) {
 	assert.Equal(t, "pending", e.approval(t, q).State)
 	assert.Len(t, e.srv.Requests(), 1, "the run waits for the answer")
 
-	require.NoError(t, e.s.AnswerQuestion(t.Context(), q, [][]string{{"My own words"}}))
+	require.NoError(t, e.s.AnswerQuestion(t.Context(), q, 0, [][]string{{"My own words"}}))
 	e.waitRun(t, in.RunID, "done")
 	assert.Len(t, e.srv.Requests(), 2)
 }
@@ -85,7 +85,7 @@ func TestQuestionSurvivesRestart(t *testing.T) {
 	e := newApprovalEnv(t)
 	in := e.askQuestion(t, toneQuestion)
 	e.restart(t)
-	require.NoError(t, e.s.AnswerQuestion(t.Context(), in.Approvals[0].ID, [][]string{{"Casual"}}))
+	require.NoError(t, e.s.AnswerQuestion(t.Context(), in.Approvals[0].ID, 0, [][]string{{"Casual"}}))
 	e.waitRun(t, in.RunID, "done")
 	assert.Contains(t, e.toolMessage(t), `"Which tone?"="Casual"`)
 }
@@ -95,7 +95,7 @@ func TestAnswersMustFitTheQuestions(t *testing.T) {
 	in := e.askQuestion(t, toneQuestion)
 	id := in.Approvals[0].ID
 	for _, bad := range [][][]string{nil, {{" "}}, {{"Formal", "Casual"}}, {{"Formal"}, {"Extra"}}} {
-		assert.Error(t, e.s.AnswerQuestion(t.Context(), id, bad), "%q", bad)
+		assert.Error(t, e.s.AnswerQuestion(t.Context(), id, 0, bad), "%q", bad)
 	}
 	assert.Equal(t, "pending", e.approval(t, id).State)
 }
@@ -159,7 +159,7 @@ func TestAssistAsksBeforeItWrites(t *testing.T) {
 	assert.Equal(t, "pending", last.Approvals[0].State, "an empty draft's question still waits for the user")
 	assert.Equal(t, d.HTML, e.getDraft(t, d.ID).HTML)
 
-	require.NoError(t, e.s.AnswerQuestion(t.Context(), last.Approvals[0].ID, [][]string{{"Formal"}}))
+	require.NoError(t, e.s.AnswerQuestion(t.Context(), last.Approvals[0].ID, 0, [][]string{{"Formal"}}))
 	e.waitRunOf(t, last.RunID, "done")
 	assert.Equal(t, "<p>Dear Bob,</p>"+d.HTML, e.getDraft(t, d.ID).HTML, "the first text after the answer is written at once")
 	assert.Len(t, e.srv.Requests(), 3)

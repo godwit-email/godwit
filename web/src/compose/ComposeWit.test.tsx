@@ -881,7 +881,7 @@ test("a question in the panel is answered there; the resumed run streams on its 
   expect(screen.queryByRole("region", { name: "正文修订" })).toBeNull();
   await user.click(screen.getByRole("radio", { name: /Formal/ }));
   await user.click(screen.getByRole("button", { name: "提交" }));
-  await waitFor(() => expect(api.answer).toHaveBeenCalledWith(4, [["Formal"]]));
+  await waitFor(() => expect(api.answer).toHaveBeenCalledWith(4, 0, [["Formal"]]));
   expect(api.decide).not.toHaveBeenCalled();
   emit({ kind: "text", text: "按正式的语气写好了。" });
   emit({ kind: "done" });

@@ -464,10 +464,11 @@ func (p *WitPage) DecideSession(ctx context.Context, approval int64) error {
 }
 
 // Answer answers question approval, one of the conversation the page follows,
-// with one list of answers per question (core AnswerQuestion). As Decide.
-func (p *WitPage) Answer(ctx context.Context, approval int64, answers [][]string) error {
+// with one list of answers per question, for the round of its form the user
+// saw (core AnswerQuestion). As Decide.
+func (p *WitPage) Answer(ctx context.Context, approval int64, round int, answers [][]string) error {
 	return p.decide(ctx, func(a core.Approval) bool { return a.ID == approval }, func(svc *core.Service) error {
-		return svc.AnswerQuestion(context.WithoutCancel(ctx), approval, answers)
+		return svc.AnswerQuestion(context.WithoutCancel(ctx), approval, round, answers)
 	})
 }
 

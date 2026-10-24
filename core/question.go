@@ -119,8 +119,10 @@ func applyQuestion(_ context.Context, a Approval) ([]sqlite.Statement, any, any,
 // AnswerQuestion accepts pending question id with answers, one list per
 // question: one answer each, several where it is multiSelect, none where the
 // user skipped it. An answer is an option's label or the user's own words.
-// Every question skipped skips the call (rejects it).
-func (s *Service) AnswerQuestion(ctx context.Context, id int64, answers [][]string) error {
+// Every question skipped skips the call (rejects it). round is the round of
+// the MCP form the user answered (Form's); an answer to another round, which
+// the call asked since, is ErrInvalidState. ask_user_question has no rounds.
+func (s *Service) AnswerQuestion(ctx context.Context, id int64, round int, answers [][]string) error {
 	ctx, end, err := s.begin(ctx, 0)
 	if err != nil {
 		return err
@@ -131,7 +133,7 @@ func (s *Service) AnswerQuestion(ctx context.Context, id int64, answers [][]stri
 		return err
 	}
 	if a.input != "" {
-		return s.cleanError(s.answerForm(ctx, a, answers))
+		return s.cleanError(s.answerForm(ctx, a, round, answers))
 	}
 	if a.Tool != askQuestionTool {
 		return fmt.Errorf("approval %d is not a question", id)

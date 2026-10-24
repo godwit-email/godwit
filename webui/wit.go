@@ -596,10 +596,11 @@ func (p *ComposePage) DecideAll(ctx context.Context, run int64, accept bool) (Bo
 }
 
 // Answer answers question approval, one of the calling window's draft, with
-// one list of answers per question (core AnswerQuestion). As Decide.
-func (p *ComposePage) Answer(ctx context.Context, approval int64, answers [][]string) (BodyChange, error) {
+// one list of answers per question, for the round of its form the user saw
+// (core AnswerQuestion). As Decide.
+func (p *ComposePage) Answer(ctx context.Context, approval int64, round int, answers [][]string) (BodyChange, error) {
 	return p.decide(ctx, func(a core.Approval) bool { return a.ID == approval }, func(svc *core.Service, a core.Approval) error {
-		return svc.AnswerQuestion(context.WithoutCancel(ctx), a.ID, answers)
+		return svc.AnswerQuestion(context.WithoutCancel(ctx), a.ID, round, answers)
 	})
 }
 

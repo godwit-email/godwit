@@ -4,7 +4,7 @@ import { toast } from "sonner";
 import type { Approval, MailHit, WitEvent, WitHistory, WitInfo } from "@/mygo";
 import { makeT } from "@/shared/i18n";
 import { legacy as hist } from "./fixtures";
-import { elapsed, Panel, type PanelReview } from "./Panel";
+import { elapsed, formRound, Panel, type PanelReview } from "./Panel";
 import { WitTransport } from "./transport";
 
 vi.mock("@/mygo", () => ({ events: { wit: { on: () => () => {} } } }));
@@ -2381,6 +2381,13 @@ describe("an MCP server's form", () => {
       ],
       answers,
     }),
+  });
+
+  it("an answer names the round of the form it answers", () => {
+    expect(formRound(form())).toBe(1);
+    const first = form();
+    expect(formRound({ ...first, form: first.form?.replace('"round":1', '"round":2') })).toBe(2);
+    expect(formRound({ ...form(), form: "", tool: "ask_user_question" })).toBe(0);
   });
 
   it("shows who asks and where the answers go, and takes only what each field takes", async () => {

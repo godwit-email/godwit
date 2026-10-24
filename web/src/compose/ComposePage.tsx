@@ -24,7 +24,7 @@ import {
 } from "@/mygo";
 import { type T, useT } from "@/shared/i18n";
 import { applyTheme, type Theme } from "@/shared/theme";
-import { Panel as WitPanel, witError } from "@/wit/Panel";
+import { formRound, Panel as WitPanel, witError } from "@/wit/Panel";
 import { useResume } from "@/wit/resume";
 import { approvalsOf, WitTransport } from "@/wit/transport";
 import { Attachments } from "./Attachments";
@@ -589,7 +589,9 @@ function Compose({
   const answerTool = async (a: Approval, answers: string[][]) => {
     if (deciding) return false;
     runEdits.current = edits.current;
-    return !!(await bodyOp(() => witResume.decide(a.run, () => api.answer(a.id, answers))));
+    return !!(await bodyOp(() =>
+      witResume.decide(a.run, () => api.answer(a.id, formRound(a), answers)),
+    ));
   };
   const undo = async () => {
     setApplied(false);
