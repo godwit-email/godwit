@@ -6,6 +6,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/godwit-email/godwit/core/ai"
 	"github.com/godwit-email/godwit/core/internal/testllm"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -302,4 +303,76 @@ func TestBackfillHistories(t *testing.T) {
 	_, err = e.s.GetConversation(t.Context(), 900)
 	assert.ErrorIs(t, err, errUnreadableHistory)
 	assert.Equal(t, "not json", queryStr(t, e.s, "SELECT state FROM conversations WHERE id = 900"), "kept for the next start")
+}
+
+// #219: an Ask run that keeps calling tools stops at witMaxTurns: the call
+// past it never runs, one more request asks for an answer with tools off,
+// and the conversation keeps that answer and counts its tokens.
+func TestAskAnswersAtToolLimit(t *testing.T) {
+	e := newApprovalEnv(t)
+	conv := e.newConv(t, "ask", 0)
+	var turns []testllm.Turn
+	for range 21 {
+		turns = append(turns, testllm.Turn{Calls: []testllm.Call{{Name: "get_message", Args: `{"id":999}`}}, Usage: [2]int{10, 1}})
+	}
+	evs := e.ask(t, conv, append(turns, testllm.Turn{Text: []string{"Here is what I found."}, Usage: [2]int{10, 1}})...)
+	require.Equal(t, "done", evs[len(evs)-1].Kind, "%+v", evs[len(evs)-1].Err)
+	results := 0
+	for _, ev := range evs {
+		if ev.Kind == "tool_result" {
+			results++
+		}
+	}
+	assert.Equal(t, 20, results)
+	reqs := e.srv.Requests()
+	require.Len(t, reqs, 22)
+	assert.Contains(t, string(reqs[21].Body), `"tool_choice":"none"`)
+	msgs := savedMessages(t, e.s, conv.ID)
+	assert.Equal(t, "Here is what I found.", msgs[len(msgs)-1].Text)
+	assert.Equal(t, "220", queryStr(t, e.s, "SELECT input_tokens FROM runs WHERE conversation_id = ?", conv.ID))
+}
+
+// #219: a compacted conversation's summary goes to the model as the user's
+// context, marked as data, once the conversation has read mail; before that,
+// as the model's own words.
+func TestSummaryRoleFollowsReadMail(t *testing.T) {
+	for _, readMail := range []bool{false, true} {
+		t.Run(strconv.FormatBool(readMail), func(t *testing.T) {
+			e := newApprovalEnv(t)
+			conv := e.newConv(t, "ask", 0)
+			for range 3 {
+				e.ask(t, conv, testllm.Turn{Text: []string{"Answer."}})
+			}
+			_, err := e.s.db.Execute(t.Context(), "UPDATE conversations SET summary = 'SUMMARY-TEXT', summary_upto = 2, read_mail = ? WHERE id = ?", readMail, conv.ID)
+			require.NoError(t, err)
+			e.ask(t, conv, testllm.Turn{Text: []string{"Answer."}})
+			reqs := e.srv.Requests()
+			var msgs []struct {
+				Role    string
+				Content json.RawMessage
+			}
+			require.NoError(t, json.Unmarshal(reqs[len(reqs)-1].Messages, &msgs))
+			var role, text string
+			for _, m := range msgs {
+				var s string
+				if json.Unmarshal(m.Content, &s) != nil { // an array of text parts
+					var parts []struct{ Text string }
+					json.Unmarshal(m.Content, &parts)
+					for _, p := range parts {
+						s += p.Text
+					}
+				}
+				if strings.Contains(s, "SUMMARY-TEXT") {
+					role, text = m.Role, s
+				}
+			}
+			if readMail {
+				assert.Equal(t, "user", role)
+				assert.Equal(t, ai.SummaryMailNote+"\n\nSUMMARY-TEXT", text)
+			} else {
+				assert.Equal(t, "assistant", role)
+				assert.Equal(t, ai.SummaryNote+"\n\nSUMMARY-TEXT", text)
+			}
+		})
+	}
 }

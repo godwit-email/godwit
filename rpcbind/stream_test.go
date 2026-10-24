@@ -58,6 +58,9 @@ func TestWitStreamCancelledOverSocket(t *testing.T) {
 				events, cancel, err := c.Stream(ctx, method, target, "hello")
 				require.NoError(t, err)
 				<-events // the run is going; the rest backs up unread
+				// Its first event comes before its request: cancelled before the
+				// request arrives, the run would leave the hanging turn to the next.
+				require.Eventually(t, func() bool { return l.Requests() > 0 }, 10*time.Second, 5*time.Millisecond)
 				time.Sleep(200 * time.Millisecond)
 				switch how {
 				case "cancel":

@@ -855,6 +855,11 @@ type runKey struct{}
 // runOf is the run whose tool is given ctx.
 func runOf(ctx context.Context) *runJob { return ctx.Value(runKey{}).(*runJob) }
 
+// witMaxTurns is the tool-call rounds of one drive of a Wit run (its start,
+// or a resume after an approval or a question); at it the model answers from
+// what it found.
+const witMaxTurns = 20
+
 // request builds the run's request on h, its summary (for a resume, the one
 // its first request sent) standing in and the whole fitted to historyBudget
 // (ai.History.Send); the job keeps h, which the request's view restores into
@@ -874,12 +879,12 @@ func (s *Service) request(ctx context.Context, job *runJob, model ai.ResolvedMod
 		}
 		job.summary = &sum
 	}
-	sent, err := h.Send(s.historyBudget(model.BaseURL, model.Model), *job.summary)
+	sent, err := h.Send(s.historyBudget(model.BaseURL, model.Model), *job.summary, job.scope.ReadMail())
 	if err != nil {
 		return ai.Request{}, err
 	}
 	job.base = h
-	return ai.Request{Model: model, System: system, History: sent, Tools: s.specs(job, tools), Reasoning: true, Effort: job.conv.Effort,
+	return ai.Request{Model: model, System: system, History: sent, Tools: s.specs(job, tools), MaxTurns: witMaxTurns, Reasoning: true, Effort: job.conv.Effort,
 		Args: s.linkExpander().toolArgs}, nil // link references expanded before a call is validated, gated, prepared or run
 }
 
