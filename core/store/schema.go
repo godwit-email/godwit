@@ -406,6 +406,10 @@ var Migrations = [][]string{{
 		WHERE r.id = run_citations.run_id) = 'assist' THEN 'unknown' ELSE 'quote' END WHERE call_id = ''`,
 	// A resumed assist run saved its context's citations again.
 	`DELETE FROM run_citations WHERE call_id = '' AND id NOT IN (SELECT MIN(id) FROM run_citations WHERE call_id = '' GROUP BY run_id, message_id)`,
+}, {
+	// An MCP call's question for the user (core.mcpInput, JSON): the server's
+	// form and state, and once answered the answer it is called again with.
+	`ALTER TABLE approvals ADD COLUMN input TEXT`,
 }}
 
 // HistoryRowsVersion is the schema version that keeps a conversation's

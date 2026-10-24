@@ -13,7 +13,7 @@ import {
 import { type T, useT } from "@/shared/i18n";
 import { forwardShortcuts } from "@/shared/shortcuts";
 import { applyTheme, type Theme } from "@/shared/theme";
-import { type Decide, Panel, witError } from "@/wit/Panel";
+import { type Decide, formRound, Panel, witError } from "@/wit/Panel";
 import { useResume } from "@/wit/resume";
 import { WitTransport } from "@/wit/transport";
 
@@ -211,6 +211,15 @@ function Conversation({
       return false;
     }
   };
+  const onAnswer = async (a: Approval, answers: string[][]) => {
+    try {
+      await decide(a.run, () => api.answer(a.id, formRound(a), answers));
+      return true;
+    } catch (e) {
+      fail(e);
+      return false;
+    }
+  };
   return (
     <Panel
       layout="page"
@@ -219,6 +228,7 @@ function Conversation({
       locked={false}
       resume={resume}
       onDecide={onDecide}
+      onAnswer={onAnswer}
       onSession={onSession}
       onSearch={(q) => api.searchMail(q)}
       onLink={(url) => api.openLink(url)}

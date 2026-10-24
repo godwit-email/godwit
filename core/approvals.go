@@ -23,8 +23,9 @@ type prepared struct {
 	Args                    json.RawMessage
 	Summary, TargetKind     string
 	TargetID, TargetVersion int64
-	Destinations            []string // host[:port] the call sends to
-	Binding                 string   // toolDesc.Binding when proposed
+	Destinations            []string        // host[:port] the call sends to
+	Binding                 string          // toolDesc.Binding when proposed
+	Input                   json.RawMessage // an MCP call's form (mcpInput), if it asked one
 	source, extension       string
 }
 
@@ -60,6 +61,9 @@ type Approval struct {
 	// DraftEdit: it edits the draft of its conversation (update_draft,
 	// update_selection), which the compose window shows in place.
 	DraftEdit bool
+	// Form is the form an MCP server asks the user to fill (formView JSON),
+	// nil for none: AnswerQuestion answers it.
+	Form json.RawMessage
 }
 
 // ErrNotGrantable: the approval's tool cannot be allowed for the whole conversation.
@@ -217,6 +221,7 @@ type approvalRow struct {
 	targetID, targetVersion    int64
 	binding, source, extension string
 	label                      string // the extension's name, for an MCP server too (else extension)
+	input                      string // mcpInput JSON, "" for none
 }
 
 // auditRow is the audit_log row of the approval's decision.
@@ -261,7 +266,7 @@ func (s *Service) approvalRows(ctx context.Context, where string, args ...any) (
 	rows, err := s.db.Query(ctx, `SELECT a.id, a.run_id, r.conversation_id, a.seq, a.tool, a.args, a.summary, a.state, a.result,
 		a.call_id, a.target_kind, a.target_id, a.target_version, a.destinations, a.binding, a.source, a.extension,
 		CASE a.source WHEN 'mcp' THEN (SELECT name FROM mcp_servers WHERE id = CAST(a.extension AS INTEGER)) END,
-		(SELECT MAX(id) FROM drafts WHERE ai_approval_id = a.id)
+		(SELECT MAX(id) FROM drafts WHERE ai_approval_id = a.id), a.input
 		FROM approvals a JOIN runs r ON r.id = a.run_id
 		WHERE `+where+" ORDER BY a.run_id, a.seq", args...)
 	if err != nil {
@@ -273,8 +278,8 @@ func (s *Service) approvalRows(ctx context.Context, where string, args ...any) (
 			Seq: int(store.Int(r[3])), CallID: store.Str(r[9]), Tool: store.Str(r[4]), Args: json.RawMessage(store.Str(r[5])), Summary: store.Str(r[6]),
 			State: store.Str(r[7])}, result: store.Str(r[8]), targetKind: store.Str(r[10]),
 			targetID: store.Int(r[11]), targetVersion: store.Int(r[12]), binding: store.Str(r[14]), source: store.Str(r[15]),
-			extension: store.Str(r[16]), label: store.Str(r[17])}
-		a.DraftID = store.Int(r[18])
+			extension: store.Str(r[16]), label: store.Str(r[17]), input: store.Str(r[19])}
+		a.DraftID, a.Form = store.Int(r[18]), a.form()
 		if err := json.Unmarshal([]byte(store.Str(r[13])), &a.Destinations); err != nil {
 			return nil, err
 		}
@@ -357,6 +362,9 @@ func (s *Service) decideAs(ctx context.Context, id int64, accept bool, args json
 	if err != nil {
 		return err
 	}
+	if accept && args == nil && (a.Tool == askQuestionTool || a.unanswered()) {
+		return ErrNeedsAnswer
+	}
 	var ex *executor
 	if accept {
 		d, ok := s.desc(a.Tool)
@@ -422,6 +430,9 @@ func (s *Service) execute(ctx context.Context, a approvalRow, ex *executor, args
 		return err
 	}
 	if ex == nil {
+		if a.Tool == askQuestionTool || a.input != "" {
+			return finish("rejected", msgUnanswered, nil, "rejected")
+		}
 		return finish("rejected", msgRejected, nil, "rejected")
 	}
 	if args != nil {
@@ -498,7 +509,8 @@ func (s *Service) failRun(ctx context.Context, runID int64, cause error) (int64,
 	return convID, err
 }
 
-// ResolveAll resolves the run's pending approvals one by one in seq order.
+// ResolveAll resolves the run's pending approvals one by one in seq order;
+// accepting leaves its questions pending: only AnswerQuestion accepts them.
 func (s *Service) ResolveAll(ctx context.Context, runID int64, accept bool) error {
 	ctx, end, err := s.begin(ctx, 0)
 	if err != nil {
@@ -515,6 +527,9 @@ func (s *Service) resolveAll(ctx context.Context, runID int64, accept bool) erro
 	}
 	var errs []error
 	for _, a := range as {
+		if accept && (a.Tool == askQuestionTool || a.input != "") { // only the user's answers accept it
+			continue
+		}
 		if err := s.resolveApproval(ctx, a.ID, accept); !errors.Is(err, ErrInvalidState) {
 			errs = append(errs, err)
 		}

@@ -28,7 +28,7 @@ import {
 } from "@remixicon/react";
 import type { DynamicToolUIPart, ReasoningUIPart } from "ai";
 import { cn } from "cn";
-import { type ReactNode, useEffect, useMemo, useRef, useState } from "react";
+import { type FormEvent, type ReactNode, useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
 import { Alert, AlertAction, AlertDescription } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
@@ -67,6 +67,22 @@ import {
 } from "@/components/ui/message-scroller";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Progress } from "@/components/ui/progress";
+import {
+  Questionnaire,
+  QuestionnaireActions,
+  QuestionnaireChoice,
+  QuestionnaireChoiceDescription,
+  QuestionnaireChoices,
+  QuestionnaireDescription,
+  QuestionnaireInput,
+  QuestionnaireItem,
+  QuestionnaireNext,
+  QuestionnairePrevious,
+  QuestionnaireProgress,
+  QuestionnaireSkip,
+  QuestionnaireSubmit,
+  QuestionnaireTitle,
+} from "@/components/ui/questionnaire";
 import {
   Trace,
   TraceCollapsible,
@@ -336,7 +352,7 @@ function ToolCard({
   }
   const label = toolLabel(a.tool, t);
   return (
-    <div className="overflow-hidden rounded-xl border-[0.5px] bg-background shadow-sm">
+    <div className="overflow-hidden rounded-xl border-[0.5px] bg-background shadow-(--shadow-xs)">
       <div className="flex flex-wrap items-center gap-2 border-b-[0.5px] bg-sidebar px-3.5 py-2.5 leading-5">
         <span className="font-semibold">{t("wit.approval.wants", label)}</span>
         <span className="font-mono text-muted-foreground text-sm">{a.tool}</span>
@@ -416,11 +432,220 @@ function ToolCard({
   );
 }
 
+const ASK_QUESTION_TOOL = "ask_user_question";
+
+type Question = {
+  question: string;
+  header: string;
+  /** Shown under the question, when the model gives one. */
+  description?: string;
+  multiSelect: boolean;
+  options: { label: string; description: string }[];
+  /**
+   * An MCP form's field: choice (options only), text, number, integer or boolean (yes or no);
+   * none for Wit's questions (options and the user's own words).
+   */
+  kind?: string;
+  required?: boolean;
+};
+
+type Questions = {
+  questions: Question[];
+  answers?: string[][];
+  /** For an MCP server's form: the server that asks, the round (from 1), and what it says. */
+  server?: string;
+  round?: number;
+  message?: string;
+};
+
+/**
+ * What a decision here settles: the approval, and for an MCP form its round, since the server may
+ * ask again on the same approval once answered (or once its call is allowed).
+ */
+/** The round of a's form the user answers (0: ask_user_question's, which has no rounds). */
+export const formRound = (a: Approval) => questionArgs(a).round ?? 0;
+
+const decisionKey = (a: Approval) => (a.form ? `${a.id}:${questionArgs(a).round}` : String(a.id));
+
+/** Whether a is a question: Wit's (ask_user_question) or an MCP server's form. */
+const isQuestion = (a: Approval) => a.tool === ASK_QUESTION_TOOL || !!a.form;
+
+/** A question's arguments (an MCP form's, else the call's), with its answers once answered; no questions when they do not parse. */
+function questionArgs(a: Approval): Questions {
+  try {
+    const v = JSON.parse(a.form || a.args || "{}");
+    if (Array.isArray(v?.questions)) return v;
+  } catch {
+    // not JSON: no questions to show
+  }
+  return { questions: [] };
+}
+
+/** A question's choices as values and labels: yes and no for a boolean field. */
+function choicesOf(q: Question, t: T): { value: string; label: string; description?: string }[] {
+  if (q.kind === "boolean")
+    return [
+      { value: "true", label: t("wit.question.yes") },
+      { value: "false", label: t("wit.question.no") },
+    ];
+  return (q.options ?? []).map((o) => ({
+    value: o.label,
+    label: o.label,
+    description: o.description,
+  }));
+}
+
+/**
+ * Questions Wit asks (ask_user_question) waiting, one at a time (the Questionnaire): each with its
+ * options, one picked or several where multiSelect, or the user's own words, or 跳过 to skip it
+ * (the last one's submits); 提交 sends them all, a skipped one with no answer.
+ */
+function QuestionCard({
+  a,
+  busy,
+  answer,
+  t,
+}: {
+  a: Approval;
+  busy: boolean;
+  /** Without it, a host that takes no answers: nothing is sent. */
+  answer?(answers: string[][]): void;
+  t: T;
+}) {
+  const { questions, server, message } = questionArgs(a);
+  // the picked options and the own words are the form's values, under each question's name: an
+  // option goes as written (an MCP form's must match exactly), own words trimmed
+  const submit = (e: FormEvent<HTMLFormElement>) => {
+    e.preventDefault();
+    const form = new FormData(e.currentTarget);
+    answer?.(
+      questions.map((q, i) =>
+        form
+          .getAll(`q${i}`)
+          .map(String)
+          .flatMap((v) =>
+            q.options?.some((o) => o.label === v) ? [v] : v.trim() ? [v.trim()] : [],
+          ),
+      ),
+    );
+  };
+  return (
+    <div className="overflow-hidden rounded-xl border-[0.5px] bg-background shadow-(--shadow-xs)">
+      <div className="flex items-center gap-2 border-b-[0.5px] bg-sidebar px-3.5 py-2.5 leading-5">
+        <span className="font-semibold">
+          {server ? t("wit.question.asks_mcp", server) : t("wit.question.asks")}
+        </span>
+        <Badge
+          variant="outline"
+          className="ml-auto border-(--warning-border) bg-(--warning-bg) text-(--warning-text)"
+        >
+          {t("wit.approval.pending")}
+        </Badge>
+      </div>
+      {server && (
+        // the server's words: plain text, never markup
+        <div className="flex flex-col gap-1 border-b-[0.5px] px-3.5 py-2.5 text-md">
+          {message && <p className="whitespace-pre-wrap">{message}</p>}
+          <p className="text-muted-foreground text-sm">{t("wit.question.mcp_notice", server)}</p>
+        </div>
+      )}
+      <Questionnaire onSubmit={submit} className="px-3.5 py-3 text-md">
+        {questions.length > 1 && (
+          <QuestionnaireProgress
+            render={(props, s) => {
+              const text = t("wit.question.progress", s.current, s.total);
+              return (
+                <div
+                  {...props}
+                  role="progressbar"
+                  aria-label={t("wit.question.asks")}
+                  aria-valuetext={text}
+                >
+                  {text}
+                </div>
+              );
+            }}
+          />
+        )}
+        {questions.map((q, i) => (
+          <QuestionnaireItem key={q.question} name={`q${i}`} multiple={q.multiSelect}>
+            <QuestionnaireTitle className="flex flex-wrap items-center gap-2">
+              {q.header && <Badge variant="secondary">{q.header}</Badge>}
+              {q.question}
+              {q.multiSelect && (
+                <span className="font-normal text-muted-foreground text-sm">
+                  {t("wit.question.multi")}
+                </span>
+              )}
+            </QuestionnaireTitle>
+            {q.description && <QuestionnaireDescription>{q.description}</QuestionnaireDescription>}
+            {choicesOf(q, t).length > 0 && (
+              <QuestionnaireChoices>
+                {choicesOf(q, t).map((o) => (
+                  <QuestionnaireChoice key={o.value} value={o.value}>
+                    {o.label}
+                    {o.description && (
+                      <QuestionnaireChoiceDescription>
+                        {o.description}
+                      </QuestionnaireChoiceDescription>
+                    )}
+                  </QuestionnaireChoice>
+                ))}
+              </QuestionnaireChoices>
+            )}
+            {/* a form's choice takes only its choices */}
+            {q.kind !== "choice" && q.kind !== "boolean" && (
+              <QuestionnaireInput
+                aria-label={q.kind ? q.question : t("wit.question.other")}
+                placeholder={q.kind ? undefined : t("wit.question.other_placeholder")}
+                inputMode={q.kind === "number" || q.kind === "integer" ? "decimal" : undefined}
+              />
+            )}
+          </QuestionnaireItem>
+        ))}
+        <QuestionnaireActions>
+          <QuestionnairePrevious>{t("wit.question.previous")}</QuestionnairePrevious>
+          <QuestionnaireSkip disabled={busy}>{t("wit.question.skip")}</QuestionnaireSkip>
+          <QuestionnaireNext>{t("wit.question.next")}</QuestionnaireNext>
+          <QuestionnaireSubmit disabled={busy || !answer}>
+            {t("wit.question.submit")}
+          </QuestionnaireSubmit>
+        </QuestionnaireActions>
+      </Questionnaire>
+    </div>
+  );
+}
+
 /** A decided approval as one line (已允许 / 已拒绝 / 没有完成 · what), a draft Wit made as its card. */
 function Settled({ a, onDraft, t }: { a: Approval; onDraft?(id: number): Promise<void>; t: T }) {
   const label = toolLabel(a.tool, t);
   // the draft sent or deleted since this history was read: opening it fails, and its card goes
   const [gone, setGone] = useState(false);
+  // a question: each one with its answer, or 未回答 (skipped, or the lot skipped)
+  if (isQuestion(a) && a.state !== "failed") {
+    const { questions, answers } = questionArgs(a);
+    const done = a.state === "done";
+    return (
+      questions.length > 0 && (
+        <dl className="flex flex-col gap-1.5 rounded-xl border-[0.5px] bg-background px-3 py-2.5 text-md">
+          {questions.map((q, i) => (
+            <div key={q.question}>
+              <dt className="text-muted-foreground text-sm">{q.question}</dt>
+              <dd>
+                {done && answers?.[i]?.length ? (
+                  answers[i]
+                    .map((v) => choicesOf(q, t).find((o) => o.value === v)?.label ?? v)
+                    .join(", ")
+                ) : (
+                  <span className="text-muted-foreground">{t("wit.question.unanswered")}</span>
+                )}
+              </dd>
+            </div>
+          ))}
+        </dl>
+      )
+    );
+  }
   const [Icon, key, tone] =
     a.state === "done"
       ? [RiCheckboxCircleLine, "wit.approval.allowed", "text-green-600"]
@@ -619,6 +844,10 @@ function Answer({
             </AlertDescription>
           </Alert>
         ))}
+      {/* the questions it asked and their answers come before what it wrote with them */}
+      {settled.filter(isQuestion).map((a) => (
+        <Settled key={a.id} a={a} t={t} />
+      ))}
       {live && (!page || !text) && working}
       {text && (
         <Response
@@ -716,9 +945,11 @@ function Answer({
         </div>
       ))}
       {tools(requested.filter((a) => !a.draftEdit))}
-      {settled.map((a) => (
-        <Settled key={a.id} a={a} onDraft={onDraft} t={t} />
-      ))}
+      {settled
+        .filter((a) => !isQuestion(a))
+        .map((a) => (
+          <Settled key={a.id} a={a} onDraft={onDraft} t={t} />
+        ))}
     </div>
   );
 }
@@ -786,6 +1017,7 @@ export function Panel({
   onAsked,
   onSearch,
   onSession,
+  onAnswer,
 }: {
   info?: WitInfo;
   history: WitHistory;
@@ -821,6 +1053,8 @@ export function Panel({
   onSearch?(q: string): Promise<MailHit[]>;
   /** Decides a with 本次对话都允许 (the Wit page only); true once decided. */
   onSession?(a: Approval): Promise<boolean>;
+  /** Answers question a (ask_user_question), one list per question; true once answered. */
+  onAnswer?(a: Approval, answers: string[][]): Promise<boolean>;
 }) {
   // A command's question: the skill as its menu names it (翻译成…, or the adjustment).
   const commandLabel = (c: WitCommand) => {
@@ -843,7 +1077,8 @@ export function Panel({
     return { messages, open };
   });
   const [deciding, setDeciding] = useState<number[]>([]);
-  const [decided, setDecided] = useState<number[]>([]);
+  // decisionKey's of the approvals decided here
+  const [decided, setDecided] = useState<string[]>([]);
   const chat = useChat<WitUIMessage>({ transport, messages: start.messages });
   const [draft, setDraft] = useState("");
   // as they are now, for what a run's end decides after reading the history
@@ -1148,24 +1383,39 @@ export function Panel({
   }
   // A tool's call waiting: decided here (once decided, its card goes until the run resumes).
   const open = [...approvals.values()].filter(
-    (a) => a.state === "pending" && !decided.includes(a.id),
+    (a) => a.state === "pending" && !decided.includes(decisionKey(a)),
   );
   // Decides a, or with all its run's pending calls; its cards go once decided.
   const decideAs = async (a: Approval, accept: boolean, all: boolean) => {
     if (!onDecide || deciding.length > 0) return;
-    const ids = all ? open.filter((x) => x.run === a.run).map((x) => x.id) : [a.id];
+    // 全部允许 answers no question: those stay
+    const ids = all
+      ? open.filter((x) => x.run === a.run && !(accept && isQuestion(x))).map((x) => x.id)
+      : [a.id];
     setDeciding(ids);
     try {
-      if (await onDecide(a, accept, all)) setDecided((d) => [...d, ...ids]);
+      if (await onDecide(a, accept, all))
+        setDecided((d) => [...d, ...open.filter((x) => ids.includes(x.id)).map(decisionKey)]);
+    } finally {
+      setDeciding([]);
+    }
+  };
+  const answerAs = async (a: Approval, answers: string[][]) => {
+    if (!onAnswer || deciding.length > 0) return;
+    setDeciding([a.id]);
+    try {
+      if (await onAnswer(a, answers)) setDecided((d) => [...d, decisionKey(a)]);
     } finally {
       setDeciding([]);
     }
   };
   const tools = (as: Approval[]) => {
-    const shown = as.filter((a) => !decided.includes(a.id));
+    const shown = as.filter((a) => !decided.includes(decisionKey(a)));
     const busy = !onDecide || deciding.length > 0;
     // all of the run's calls waiting, a body edit's among them
-    const pending = shown.length > 0 ? open.filter((x) => x.run === shown[0].run).length : 0;
+    // 全部允许 answers no question: questions are not counted
+    const pending =
+      shown.length > 0 ? open.filter((x) => x.run === shown[0].run && !isQuestion(x)).length : 0;
     return (
       <>
         {pending > 1 && (
@@ -1195,32 +1445,47 @@ export function Panel({
             </span>
           </div>
         )}
-        {shown.map((a) => (
-          <ToolCard
-            key={a.id}
-            a={a}
-            busy={busy}
-            decide={(accept) => decideAs(a, accept, false)}
-            session={
-              onSession && a.sessionAllow
-                ? async () => {
-                    if (deciding.length > 0) return;
-                    // the run's other pending calls of the tool are approved with it
-                    const ids = open
-                      .filter((x) => x.run === a.run && x.tool === a.tool)
-                      .map((x) => x.id);
-                    setDeciding(ids);
-                    try {
-                      if (await onSession(a)) setDecided((d) => [...d, ...ids]);
-                    } finally {
-                      setDeciding([]);
+        {shown.map((a) =>
+          isQuestion(a) ? (
+            <QuestionCard
+              // by round: a form asked again on the approval starts with no answers, at its first
+              key={decisionKey(a)}
+              a={a}
+              busy={busy}
+              answer={onAnswer && ((answers) => answerAs(a, answers))}
+              t={t}
+            />
+          ) : (
+            <ToolCard
+              key={a.id}
+              a={a}
+              busy={busy}
+              decide={(accept) => decideAs(a, accept, false)}
+              session={
+                onSession && a.sessionAllow
+                  ? async () => {
+                      if (deciding.length > 0) return;
+                      // the run's other pending calls of the tool are approved with it
+                      const ids = open
+                        .filter((x) => x.run === a.run && x.tool === a.tool)
+                        .map((x) => x.id);
+                      setDeciding(ids);
+                      try {
+                        if (await onSession(a))
+                          setDecided((d) => [
+                            ...d,
+                            ...open.filter((x) => ids.includes(x.id)).map(decisionKey),
+                          ]);
+                      } finally {
+                        setDeciding([]);
+                      }
                     }
-                  }
-                : undefined
-            }
-            t={t}
-          />
-        ))}
+                  : undefined
+              }
+              t={t}
+            />
+          ),
+        )}
       </>
     );
   };
@@ -1257,7 +1522,8 @@ export function Panel({
       <MessageScroller className="min-h-0 flex-1">
         <MessageScrollerViewport>
           <MessageScrollerContent
-            className={page ? "mx-auto w-full max-w-202 gap-5 p-6" : "gap-2.5 p-4"}
+            // pb-10 clears the input area's fade (h-8): the last card ends above it, corners and all
+            className={page ? "mx-auto w-full max-w-202 gap-5 p-6 pb-10" : "gap-2.5 p-4 pb-10"}
           >
             {chat.messages.map((m, i) => (
               <MessageScrollerItem

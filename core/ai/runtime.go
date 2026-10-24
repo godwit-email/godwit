@@ -85,6 +85,10 @@ var noPrompts = fstest.MapFS{"prompts": {Mode: fs.ModeDir}}
 
 var errDenied = errors.New("tool call denied")
 
+// ErrInterrupt, from a tool's Run, interrupts the call as if its gate had
+// asked for approval: the caller records what the approval needs first.
+var ErrInterrupt = errors.New("ai: the call waits for the user")
+
 var toolName = regexp.MustCompile(`^[a-zA-Z0-9_-]{1,64}$`)
 
 // NewEngine refuses GENKIT_ENV=dev, which would start Genkit's reflection
@@ -580,7 +584,9 @@ func (r *runner) tool(s ToolSpec) *gai.ToolAction[any, any] {
 		case s.Run == nil: // a gate allowed a tool that can only be approved
 			err = errDenied
 		default:
-			out, err = s.Run(tc, args)
+			if out, err = s.Run(tc, args); errors.Is(err, ErrInterrupt) {
+				return nil, tc.Interrupt(nil)
+			}
 		}
 		res := ToolResult{CallID: id, Name: s.Name}
 		if err != nil {

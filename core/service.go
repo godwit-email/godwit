@@ -211,6 +211,7 @@ func New(ctx context.Context, opts Options) (*Service, error) {
 	}
 	s.registerAskTools()
 	s.registerAssistTools()
+	s.registerQuestionTool()
 	if err := s.backfillHistories(ctx); err != nil {
 		db.Close()
 		return nil, fmt.Errorf("conversation histories: %w", err)
