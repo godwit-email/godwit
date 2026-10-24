@@ -2167,6 +2167,7 @@ describe("ask_user_question", () => {
       {
         question: "Which tone?",
         header: "Tone",
+        description: "Bob is a new client.",
         multiSelect: false,
         options: [
           { label: "Formal", description: "Polite" },
@@ -2215,6 +2216,9 @@ describe("ask_user_question", () => {
     expect(await screen.findByText("Wit 想问你")).toBeInTheDocument();
     expect(screen.getByText("第 1/2 题")).toBeInTheDocument();
     expect(screen.getByText("Which tone?")).toBeInTheDocument();
+    expect(screen.getByRole("group", { name: /Which tone/ })).toHaveAccessibleDescription(
+      "Bob is a new client.",
+    );
     expect(screen.getByText("Which topics?")).not.toBeVisible(); // the next one waits
     expect(screen.queryByRole("button", { name: "允许" })).toBeNull();
     await user.click(screen.getByRole("radio", { name: /Formal/ }));

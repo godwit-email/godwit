@@ -436,6 +436,8 @@ const ASK_QUESTION_TOOL = "ask_user_question";
 type Question = {
   question: string;
   header: string;
+  /** Shown under the question, when the model gives one. */
+  description?: string;
   multiSelect: boolean;
   options: { label: string; description: string }[];
 };
@@ -518,10 +520,13 @@ function QuestionCard({
             <QuestionnaireTitle className="flex flex-wrap items-center gap-2">
               {q.header && <Badge variant="secondary">{q.header}</Badge>}
               {q.question}
+              {q.multiSelect && (
+                <span className="font-normal text-muted-foreground text-sm">
+                  {t("wit.question.multi")}
+                </span>
+              )}
             </QuestionnaireTitle>
-            {q.multiSelect && (
-              <QuestionnaireDescription>{t("wit.question.multi")}</QuestionnaireDescription>
-            )}
+            {q.description && <QuestionnaireDescription>{q.description}</QuestionnaireDescription>}
             <QuestionnaireChoices>
               {q.options.map((o) => (
                 <QuestionnaireChoice key={o.label} value={o.label}>

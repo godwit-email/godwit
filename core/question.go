@@ -28,10 +28,12 @@ type questionOption struct {
 	Description string `json:"description"`
 }
 
-// question is one question with its choices; MultiSelect takes several answers.
+// question is one question, with an optional description shown under it, and
+// its choices; MultiSelect takes several answers.
 type question struct {
 	Question    string           `json:"question"`
 	Header      string           `json:"header"`
+	Description string           `json:"description,omitempty"`
 	Options     []questionOption `json:"options"`
 	MultiSelect bool             `json:"multiSelect"`
 }
@@ -50,8 +52,9 @@ func (s *Service) registerQuestionTool() {
 		"description": map[string]any{"type": "string", "description": "What choosing it means."},
 	}, "label", "description")
 	q := object(map[string]any{
-		"question": map[string]any{"type": "string", "description": "The full question, ending with a question mark."},
-		"header":   map[string]any{"type": "string", "description": "A very short label for it, at most 12 characters."},
+		"question":    map[string]any{"type": "string", "description": "The full question, ending with a question mark."},
+		"header":      map[string]any{"type": "string", "description": "A very short label for it, at most 12 characters."},
+		"description": map[string]any{"type": "string", "description": "Optional: the background the user needs to answer, in a sentence or two."},
 		"options": map[string]any{"type": "array", "minItems": 2, "maxItems": 4, "items": option,
 			"description": "2-4 mutually exclusive choices. Put the one you recommend first and end its label with \"(Recommended)\". Do not add an \"Other\" choice: the user can always answer in their own words."},
 		"multiSelect": map[string]any{"type": "boolean", "description": "Whether the user may pick several options."},

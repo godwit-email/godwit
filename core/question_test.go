@@ -9,7 +9,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-const toneQuestion = `{"questions":[{"question":"Which tone?","header":"Tone","multiSelect":false,
+const toneQuestion = `{"questions":[{"question":"Which tone?","header":"Tone","description":"Bob is a new client.","multiSelect":false,
 	"options":[{"label":"Formal","description":"Polite and distant"},{"label":"Casual","description":"Like a friend"}]}]}`
 
 // askQuestion runs Ask in a new conversation whose model asks args, and
@@ -29,7 +29,9 @@ func TestAnsweredQuestionGoesBackToTheModel(t *testing.T) {
 	require.NoError(t, e.s.AnswerQuestion(t.Context(), in.Approvals[0].ID, [][]string{{"Formal"}}))
 	e.waitRun(t, in.RunID, "done")
 	assert.Equal(t, "The user answered your questions:\n\"Which tone?\"=\"Formal\"", e.toolMessage(t))
-	assert.Equal(t, "done", e.approval(t, in.Approvals[0].ID).State)
+	a := e.approval(t, in.Approvals[0].ID)
+	assert.Equal(t, "done", a.State)
+	assert.Contains(t, string(a.Args), `"description":"Bob is a new client."`, "the card shows it")
 }
 
 func TestSkippedQuestionLetsTheModelAssume(t *testing.T) {
