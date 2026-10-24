@@ -42,7 +42,7 @@ func (p *mailPage) draftsView(c *ui.Context) {
 			}
 		})
 		if b.DoubleClicked() || b.Shortcut(0, ui.KeyEnter) {
-			p.a.plat.OpenCompose(d.ID)
+			p.a.OpenDraft(d.ID)
 		}
 	}).Grow(1).Padding(0, th.Space(2)).Children(func() {
 		if len(drafts) == 0 && !p.loading {
@@ -143,7 +143,7 @@ func (p *mailPage) draftPane(c *ui.Context) {
 		p.sendDialog(c)
 		ui.Row(c).AlignItems(ui.Center).Gap(th.Space(2)).Padding(th.Space(2), th.Space(4)).BorderWidth(0, 0, theme.Hairline, 0).BorderColor(t.Border).Children(func() {
 			kit.ButtonGroup(c,
-				kit.GroupItem{Icon: "square-pen", Tip: i18n.T("mail.draft.edit"), OnClick: func() { p.a.plat.OpenCompose(d.ID) }},
+				kit.GroupItem{Icon: "square-pen", Tip: i18n.T("mail.draft.edit"), OnClick: func() { p.a.OpenDraft(d.ID) }},
 				kit.GroupItem{Icon: "send", Tip: sendTip, Disabled: editing || p.sending.busy, OnClick: func() { p.sendDraft(d) }},
 				kit.GroupItem{Icon: "trash-2", Tip: i18n.T("mail.draft.delete"), OnClick: func() { p.deleteDraft(d.ID) }})
 			ui.Spacer(c)

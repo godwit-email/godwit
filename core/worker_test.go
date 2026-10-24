@@ -46,6 +46,7 @@ func newWorkerEnv(t *testing.T, opts ...testmail.Option) (*workerEnv, <-chan eve
 	backoffMin, backoffMax = 20*time.Millisecond, 200*time.Millisecond
 	t.Cleanup(func() { backoffMin, backoffMax = b0, b1 }) // runs after the Close below
 	keyring.MockInit()
+	clock := useTestClock(t)
 	dir := t.TempDir()
 	s, err := New(bg, Options{DataDir: dir, AutoSync: true, ImageClient: loopbackImageClient()})
 	require.NoError(t, err)
@@ -56,7 +57,7 @@ func newWorkerEnv(t *testing.T, opts ...testmail.Option) (*workerEnv, <-chan eve
 	im := testmail.StartIMAP(t, opts...)
 	acc, err := s.AddAccount(bg, internalInput(t, im.Addr, smtpAddr, "alice@example.com", true))
 	require.NoError(t, err)
-	e := &workerEnv{sendEnv: &sendEnv{syncEnv: &syncEnv{s: s, im: im, acc: acc, dir: dir}, smtp: in},
+	e := &workerEnv{sendEnv: &sendEnv{syncEnv: &syncEnv{s: s, im: im, acc: acc, dir: dir}, smtp: in, clock: clock},
 		parked: parked, lockWait: lockWait}
 	waitEvent(t, ch, events.SyncFinished, 5*time.Second)
 	return e, ch

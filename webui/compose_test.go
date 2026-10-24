@@ -5,6 +5,7 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"slices"
 	"sort"
 	"strconv"
 	"sync"
@@ -277,6 +278,16 @@ func (f *fixture) gone(t *testing.T, id int64) bool {
 	return err != nil
 }
 
+// queued reports whether an outbox item holds draft id.
+func (f *fixture) queued(t *testing.T, id int64) bool {
+	t.Helper()
+	d, err := f.e.Svc.GetDraft(t.Context(), id)
+	require.NoError(t, err)
+	items, err := f.e.Svc.ListOutbox(t.Context(), d.AccountID)
+	require.NoError(t, err)
+	return slices.ContainsFunc(items, func(it core.OutboxItem) bool { return it.DraftID == id })
+}
+
 func TestComposeLoadRichBody(t *testing.T) {
 	i18n.SetLanguage("zh")
 	f := newFixture(t)
@@ -473,8 +484,11 @@ func TestComposeSendSendsLatest(t *testing.T) {
 	require.NoError(t, err)
 	assert.True(t, sr.Sent)
 	assert.Equal(t, []int{1}, f.done)
-	assert.True(t, f.gone(t, d.ID))
-	raw, err := os.ReadFile(filepath.Join(f.e.DataDir, "outbox", strconv.FormatInt(d.ID, 10)+".eml"))
+	assert.True(t, f.queued(t, d.ID))
+	paths, err := filepath.Glob(filepath.Join(f.e.DataDir, "outbox", strconv.FormatInt(d.ID, 10)+"-*.eml"))
+	require.NoError(t, err)
+	require.Len(t, paths, 1)
+	raw, err := os.ReadFile(paths[0])
 	require.NoError(t, err)
 	assert.Contains(t, string(raw), "latestbody")
 }
@@ -504,7 +518,7 @@ func TestComposeSendWarnings(t *testing.T) {
 	sr, err = f.page.Send(f.ctx(1), r1.Revision, sr.Digest)
 	require.NoError(t, err)
 	assert.True(t, sr.Sent)
-	assert.True(t, f.gone(t, d.ID))
+	assert.True(t, f.queued(t, d.ID))
 	assert.Equal(t, []int{1}, f.done)
 }
 

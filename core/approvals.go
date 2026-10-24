@@ -458,7 +458,9 @@ func (s *Service) execute(ctx context.Context, a approvalRow, ex *executor, args
 		// the commit; the guard statement checks it again inside the transaction.
 		s.editMu.Lock()
 		defer s.editMu.Unlock()
-		rows, err := s.db.Query(ctx, "SELECT 1 FROM drafts WHERE id = ? AND revision = ?", a.targetID, a.targetVersion)
+		// A draft in the outbox is read-only: as stale as a changed one.
+		rows, err := s.db.Query(ctx, `SELECT 1 FROM drafts WHERE id = ? AND revision = ?
+			AND NOT EXISTS (SELECT 1 FROM outbox WHERE draft_id = drafts.id)`, a.targetID, a.targetVersion)
 		if err != nil {
 			return errors.Join(err, finish("failed", msgNotSaved, nil, "failed"))
 		}

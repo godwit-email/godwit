@@ -148,7 +148,7 @@ func gui(ctx context.Context, dataDir string) int {
 		Navigate:            func(dir int) { onApp(func(a *app.App) { a.Navigate(dir) }) },
 		ConversationCreated: func(id, v int64) { onApp(func(a *app.App) { a.ConversationCreated(id, v) }) },
 		OnLink:              func(u string) { onApp(func(a *app.App) { a.OpenLink(u) }) },
-		OpenCompose:         openCompose,
+		OpenCompose:         func(id int64) { onApp(func(a *app.App) { a.OpenDraft(id) }) }, // a draft Wit made may be in the outbox
 	})
 	mygo.Bind(webui.NewWitPage(wit))
 	// The reader pages, one per expanded message in the main window, each

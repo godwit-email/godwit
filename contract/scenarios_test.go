@@ -37,10 +37,12 @@ func firstMessage(t *testing.T, api contract.API) core.MessageSummary {
 	return page.Items[len(page.Items)-1]
 }
 
-// waitOutbox syncs (the outbox is worked off by sync, and the Env has no
-// background sync) until the account's outbox is empty, and returns the last list.
+// waitOutbox lets the undo window pass and syncs (the outbox is worked off by
+// sync, and the Env has no background sync) until the account's outbox is
+// empty, and returns the last list.
 func waitOutbox(t *testing.T, api contract.API, env *coretest.Env, accountID int64) []core.OutboxItem {
 	t.Helper()
+	env.AdvanceClock(core.UndoSendWindow)
 	var list []core.OutboxItem
 	require.Eventually(t, func() bool {
 		require.NoError(t, env.Svc.SyncNow(t.Context(), accountID))
@@ -145,6 +147,12 @@ func TestCompose(t *testing.T) {
 		out["stale"] = res(api.SaveDraft(ctx, d1))
 		out["send"] = errInfo(api.Send(ctx, d2.ID))
 		out["queued"] = res(api.ListOutbox(ctx, acc.ID))
+		queued, err := api.ListOutbox(ctx, acc.ID)
+		require.NoError(t, err)
+		require.Len(t, queued, 1)
+		out["cancel"] = errInfo(api.CancelOutbox(ctx, queued[0].ID)) // undo send: the draft is back
+		out["canceled"] = res(api.ListOutbox(ctx, acc.ID))
+		out["sendBack"] = errInfo(api.Send(ctx, d2.ID))
 		out["outbox"] = waitOutbox(t, api, env, acc.ID)
 		out["sendAgain"] = errInfo(api.Send(ctx, d2.ID))
 

@@ -73,6 +73,7 @@ var sentinels = []struct {
 	{"mcp_send_off", core.ErrMCPSendOff},
 	{"mcp_send_composing", core.ErrMCPSendComposing},
 	{"mcp_send_busy", core.ErrMCPSendBusy},
+	{"no_outbox_draft", core.ErrNoOutboxDraft},
 	{"no_unsubscribe", core.ErrNoUnsubscribe},
 	{"unsubscribe_web", core.ErrUnsubscribeWeb},
 	{"unsubscribing", core.ErrUnsubscribing},
