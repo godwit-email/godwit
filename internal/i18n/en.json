@@ -446,6 +446,18 @@
   "mail_weekday_5": "Fri",
   "mail_weekday_6": "Sat",
   "mail_yesterday": "Yesterday",
+  "mcp_send_changed": "This changed just now; check it again before you send it.",
+  "mcp_send_desc": "An AI tool connected through MCP asks to send this draft. Check the recipients and content before you send it.",
+  "mcp_send_first": "First time",
+  "mcp_send_notify": "An AI tool asks to send “{arg1}”. Confirm it in Godwit.",
+  "@mcp_send_notify": {
+    "placeholders": {
+      "arg1": {
+        "type": "String"
+      }
+    }
+  },
+  "mcp_send_title": "Send this email?",
   "notify_new_mail": "New mail",
   "notify_new_mails": "{arg1, number, ::group-off} new messages",
   "@notify_new_mails": {
@@ -1415,9 +1427,15 @@
   "settings_launch_at_login_help": "Starts Godwit in the background after login",
   "settings_local_api": "Local API",
   "settings_local_api_copy": "Copy configuration",
-  "settings_local_api_help": "When on, scripts and AI tools on this computer can reach Godwit through the Local API. The full Local API can read mail, send mail, and change accounts and settings; AI tools connected through MCP (`godwit mcp`) can only read mail and create drafts, never send. Turn it on only if you trust the programs running on this computer.",
+  "settings_local_api_help": "When on, scripts and AI tools on this computer can reach Godwit through the Local API. The full Local API can read mail, send mail, and change accounts and settings; AI tools connected through MCP (`godwit mcp`) can read mail and write drafts, and the setting below decides whether they can send. Turn it on only if you trust the programs running on this computer.",
   "settings_local_api_mcp": "MCP client configuration",
   "settings_local_api_on": "Turn on the Local API",
+  "settings_local_api_send": "Send through MCP",
+  "settings_local_api_send_confirm": "Confirm each time",
+  "settings_local_api_send_direct": "Send directly",
+  "settings_local_api_send_help": "What happens when an AI tool connected through MCP, such as Claude or ChatGPT, asks to send a draft. With “Confirm each time”, Godwit opens a confirmation window where you check the recipients and content before sending.",
+  "settings_local_api_send_off": "Not allowed",
+  "settings_local_api_send_risk": "Mail an AI tool has read may hide content that talks it into sending. With this level, it can send in your name without your confirmation, including to addresses you don’t know.",
   "settings_local_api_socket": "Socket: {arg1}",
   "@settings_local_api_socket": {
     "placeholders": {

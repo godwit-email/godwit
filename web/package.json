@@ -5,11 +5,12 @@
   "scripts": {
     "dev": "vite",
     "preview": "vite --port 5173",
-    "build": "tsc -b && vite build",
+    "build": "tsc -b && vite build && bun run views",
     "test": "vitest run",
     "typecheck": "tsc -b --noEmit",
     "lint": "biome check src scripts",
-    "components": "bun scripts/components.ts"
+    "components": "bun scripts/components.ts",
+    "views": "bun scripts/views.ts"
   },
   "dependencies": {
     "@ai-sdk/react": "4.0.140",

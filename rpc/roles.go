@@ -5,16 +5,19 @@ import "encoding/json"
 // Roles a connection declares in hello.
 const (
 	RoleFull = "full" // every exposed method, for the user's own programs
-	RoleMCP  = "mcp"  // read and draft only, for godwit mcp
+	RoleMCP  = "mcp"  // read, draft and request a send, for godwit mcp
 )
 
 // mcpMethods is the mcp role's allowlist: reads that touch only stored data,
-// and drafts. Nothing here sends, deletes, changes accounts, settings,
-// extensions or model services, decides approvals or downloads attachments.
+// drafts, and RequestMCPSend, whose outcome core decides by the user's
+// 通过 MCP 发送 setting. Nothing else sends, and nothing here deletes, changes
+// accounts, settings, extensions or model services, decides approvals or
+// downloads attachments.
 var mcpMethods = map[string]bool{
 	"ListAccounts": true, "ListFolders": true, "ListThreads": true, "GetThread": true,
 	"ListMessages": true, "GetMessageText": true, "Search": true,
 	"ListDrafts": true, "GetDraft": true, "NewDraft": true, "SaveDraft": true,
+	"RequestMCPSend": true,
 }
 
 // mcpDraftModes are the NewDraft modes the mcp role may use; forward is not

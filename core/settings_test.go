@@ -25,7 +25,8 @@ func TestSettingsDefaults(t *testing.T) {
 	got, err := s.GetSettings(t.Context())
 	require.NoError(t, err)
 	assert.Equal(t, Settings{Theme: "system", Density: "compact", FontSize: 14, SettingsVersion: 4, ReplyLanguage: "match",
-		KeepInBackground: true, UnreadOnAppIcon: true, NotifyNewMail: true, NotifyPreview: true, ThreadView: true, RemoteImages: "auto", AutoLabel: true, JudgeThreshold: 0.8}, got)
+		KeepInBackground: true, UnreadOnAppIcon: true, NotifyNewMail: true, NotifyPreview: true, ThreadView: true, RemoteImages: "auto", AutoLabel: true, JudgeThreshold: 0.8,
+		MCPSend: "confirm"}, got)
 }
 
 func TestSettingsRoundTrip(t *testing.T) {
