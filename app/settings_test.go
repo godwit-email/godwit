@@ -489,8 +489,17 @@ func TestSettingsPrivacyAndAbout(t *testing.T) {
 	h.see("系统钥匙串可用")
 	h.openSettings("about")
 	h.see("版本 " + Version)
-	h.click("github.com/godwit-email/godwit")
+	h.called("NewBirdView") // failed here: the logo stands in
+	h.click("GitHub")
 	h.called("OpenURL https://github.com/godwit-email/godwit")
+	h.click("检查更新")
+	h.called("CheckForUpdates")
+	h.plat.mu.Lock()
+	h.plat.latest = "9.0.0"
+	h.plat.mu.Unlock()
+	h.openSettings("privacy")
+	h.openSettings("about")
+	h.click("升级到 9.0.0")
 }
 
 // blockingUpdate is the Service's UpdateAccount, whose first call waits

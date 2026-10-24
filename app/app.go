@@ -74,6 +74,19 @@ type Platform interface {
 	// that one first. flush asks the page to save now; done hears whether
 	// it did, on the UI thread, at most once. UI thread only.
 	NewSignatureView() (view ui.NativeWebView, show func(id int64), flush func(done func(ok bool)), close func(), err error)
+	// NewBirdView makes the About page's 3D bird in the main window; close
+	// destroys it. UI thread only.
+	NewBirdView() (view ui.NativeWebView, close func(), err error)
+	// CanCheckForUpdates reports whether the app updates itself: not the
+	// Store's package, which the Store updates.
+	CanCheckForUpdates() bool
+	// CheckForUpdates checks now; the updater's own window shows the result
+	// and installs a newer version.
+	CheckForUpdates()
+	// LatestVersion asks the update feed for a version newer than this
+	// one, without a window: "" when up to date. Blocks: call off the UI
+	// thread.
+	LatestVersion(ctx context.Context) (string, error)
 }
 
 // Notification is a system notification about a message.
@@ -419,6 +432,7 @@ func (a *App) Close() {
 	a.plat.ShowSignInCode(nil)
 	a.mail.reader.closeViews()
 	a.pages[PageSettings].(*settingsPage).closeSignature()
+	a.pages[PageSettings].(*settingsPage).closeBird()
 	a.tempMu.Lock()
 	defer a.tempMu.Unlock()
 	for _, d := range a.tempDirs {
