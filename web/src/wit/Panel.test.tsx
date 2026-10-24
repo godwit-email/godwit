@@ -2304,7 +2304,7 @@ describe("ask_user_question", () => {
     expect(screen.queryByRole("button", { name: "全部允许" })).toBeNull();
   });
 
-  it("a decided question shows each answer, or that it was skipped, before the answer it led to", async () => {
+  it("a decided question shows each answer, 未回答 where it was skipped, before the answer it led to", async () => {
     const turn = (a: Approval) =>
       hist({
         messages: [
@@ -2325,21 +2325,23 @@ describe("ask_user_question", () => {
       });
     const done = ask("done", { ...questions, answers: [["Formal"], ["Price", "Date"]] });
     const { unmount } = await setup({ history: turn(done) });
-    expect(screen.getByText("已回答")).toBeInTheDocument();
+    expect(screen.queryByText("已回答")).toBeNull(); // no status line: the answers say it
     expect(screen.getByText("Which topics?")).toBeInTheDocument();
     expect(screen.getByText("Price, Date")).toBeInTheDocument();
     expect(
-      screen.getByText("已回答").compareDocumentPosition(screen.getByText("Here is the draft.")),
+      screen
+        .getByText("Which tone?")
+        .compareDocumentPosition(screen.getByText("Here is the draft.")),
     ).toBe(Node.DOCUMENT_POSITION_FOLLOWING);
     unmount();
     const partly = ask("done", { ...questions, answers: [["Formal"], []] });
     const second = await setup({ history: turn(partly) });
     expect(screen.getByText("Formal")).toBeInTheDocument();
-    expect(screen.getByText("Which topics?").nextElementSibling).toHaveTextContent("已跳过");
+    expect(screen.getByText("Which topics?").nextElementSibling).toHaveTextContent("未回答");
     second.unmount();
     await setup({ history: turn(ask("rejected")) });
-    expect(screen.getByText("已跳过")).toBeInTheDocument();
-    expect(screen.getByText("Which topics?")).toBeInTheDocument(); // what was skipped
+    expect(screen.queryByText("已跳过")).toBeNull();
+    expect(screen.getByText("Which topics?").nextElementSibling).toHaveTextContent("未回答");
     expect(screen.queryByText("Price, Date")).toBeNull();
   });
 });

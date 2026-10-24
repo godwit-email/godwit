@@ -560,35 +560,27 @@ function Settled({ a, onDraft, t }: { a: Approval; onDraft?(id: number): Promise
   const label = toolLabel(a.tool, t);
   // the draft sent or deleted since this history was read: opening it fails, and its card goes
   const [gone, setGone] = useState(false);
+  // a question: each one with its answer, or 未回答 (skipped, or the lot skipped)
   if (a.tool === ASK_QUESTION_TOOL && a.state !== "failed") {
     const { questions, answers } = questionArgs(a);
     const done = a.state === "done";
-    const Icon = done ? RiCheckboxCircleLine : RiCloseCircleLine;
     return (
-      <>
-        <span className="flex items-center gap-2 text-muted-foreground text-sm">
-          <Icon className="size-3.5 shrink-0" />
-          <span>{t(done ? "wit.question.answered" : "wit.question.skipped")}</span>
-        </span>
-        {questions.length > 0 && (
-          <dl className="flex flex-col gap-1.5 rounded-xl border-[0.5px] bg-background px-3 py-2.5 text-md">
-            {questions.map((q, i) => (
-              <div key={q.question}>
-                <dt className="text-muted-foreground text-sm">{q.question}</dt>
-                {done && (
-                  <dd>
-                    {answers?.[i]?.length ? (
-                      answers[i].join(", ")
-                    ) : (
-                      <span className="text-muted-foreground">{t("wit.question.skipped")}</span>
-                    )}
-                  </dd>
+      questions.length > 0 && (
+        <dl className="flex flex-col gap-1.5 rounded-xl border-[0.5px] bg-background px-3 py-2.5 text-md">
+          {questions.map((q, i) => (
+            <div key={q.question}>
+              <dt className="text-muted-foreground text-sm">{q.question}</dt>
+              <dd>
+                {done && answers?.[i]?.length ? (
+                  answers[i].join(", ")
+                ) : (
+                  <span className="text-muted-foreground">{t("wit.question.unanswered")}</span>
                 )}
-              </div>
-            ))}
-          </dl>
-        )}
-      </>
+              </dd>
+            </div>
+          ))}
+        </dl>
+      )
     );
   }
   const [Icon, key, tone] =
