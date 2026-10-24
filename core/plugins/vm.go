@@ -29,11 +29,13 @@ type realClock struct{}
 func (realClock) AfterFunc(d time.Duration, f func()) func() bool { return time.AfterFunc(d, f).Stop }
 
 // VMOptions: a nil Clock is the real clock, a nil Watchdog the default one, a
-// nil Redact the identity.
+// nil Redact the identity. MemoryLimit is MoeVM's (0: MoeMemoryLimit); VM
+// has the Watchdog instead.
 type VMOptions struct {
-	Clock    Clock
-	Watchdog *Watchdog
-	Redact   func(string) string
+	Clock       Clock
+	Watchdog    *Watchdog
+	Redact      func(string) string
+	MemoryLimit int64
 }
 
 // VM is one plugin's goja runtime. Every touch of the runtime happens on its
