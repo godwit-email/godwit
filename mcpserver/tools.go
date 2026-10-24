@@ -34,12 +34,19 @@ var tools = []tool{
 	{"list_drafts", "List an account's drafts, most recently saved first.", true,
 		`{"type":"object","properties":{"account_id":{"type":"integer","minimum":1}},"required":["account_id"],"additionalProperties":false}`, listDrafts},
 	{"get_draft", "Get a draft: recipients, subject, its editable body, the quoted mail and the signature, and its revision (update_draft needs it).", true,
-		`{"type":"object","properties":{"draft_id":{"type":"integer","minimum":1}},"required":["draft_id"],"additionalProperties":false}`, getDraft},
+		draftArgs, getDraft},
 	{"create_draft", "Create a draft for the user to review and send; it is not sent. For a reply give reply_to_message_id (and reply_all to answer everyone): the draft is in that message's account, addressed and quoted for you, and to, cc and subject override only if given. A new draft needs to and subject and uses account_id or the default account. body is plain text.", false,
 		`{"type":"object","properties":{"to":{"type":"array","items":{"type":"string"}},"cc":{"type":"array","items":{"type":"string"}},"subject":{"type":"string"},"body":{"type":"string"},"account_id":{"type":"integer","minimum":1},"reply_to_message_id":{"type":"integer","minimum":1},"reply_all":{"type":"boolean"}},"required":["body"],"additionalProperties":false}`, createDraft},
 	{"update_draft", "Change a draft's subject, to, cc or plain-text body; fields left out stay as they are, and the quote and signature are kept. revision is the draft's from get_draft: if the draft changed since, nothing is saved; read it again.", false,
 		`{"type":"object","properties":{"draft_id":{"type":"integer","minimum":1},"revision":{"type":"integer","minimum":1},"subject":{"type":"string"},"to":{"type":"array","items":{"type":"string"}},"cc":{"type":"array","items":{"type":"string"}},"body":{"type":"string"}},"required":["draft_id","revision"],"additionalProperties":false}`, updateDraft},
 }
+
+var shows = []show{
+	{tool{"show_draft", "Show the user a draft as a card they can review, where the host can display one; elsewhere it returns what get_draft does. Call it only when the user wants to see a draft, not to read one yourself (use get_draft).", true,
+		draftArgs, getDraft}, "draft"},
+}
+
+const draftArgs = `{"type":"object","properties":{"draft_id":{"type":"integer","minimum":1}},"required":["draft_id"],"additionalProperties":false}`
 
 func listAccounts(ctx context.Context, c *rpc.Client, _ json.RawMessage) (string, error) {
 	var accs []core.Account

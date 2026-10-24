@@ -1,0 +1,57 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<style>/* The show tools' views: system fonts and colours only, inlined by bun run views. */
+:root {
+  color-scheme: light dark;
+  font:
+    14px / 1.5 system-ui,
+    sans-serif;
+}
+body {
+  margin: 0;
+  padding: 12px 16px;
+}
+dl {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 2px 12px;
+  margin: 0 0 12px;
+}
+dt {
+  color: GrayText;
+}
+dd {
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+.body,
+.quote,
+.signature {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.quote,
+.signature,
+.attachments {
+  margin-top: 12px;
+  color: GrayText;
+}
+.quote {
+  border-left: 2px solid GrayText;
+  padding-left: 8px;
+}
+.error {
+  color: #c62828;
+}
+</style>
+</head>
+<body>
+<script type="module">var f=new Map,j=1,u=(e)=>window.parent.postMessage({jsonrpc:"2.0",...e},"*");function y(e,t){let s=j++;return u({id:s,method:e,params:t}),new Promise((o,n)=>f.set(s,(r)=>r.error?n(Error(r.error.message)):o(r.result)))}var m=(e)=>(e.content??[]).filter((t)=>t.type==="text").map((t)=>t.text??"").join(""),v=(e,t)=>y("tools/call",{name:e,arguments:t}),b=(e)=>{let t=e?.theme;if(t==="light"||t==="dark")document.documentElement.style.colorScheme=t};async function E(e,t){window.addEventListener("message",(o)=>{let n=o.data;if(o.source!==window.parent||typeof n!=="object"||n===null)return;if(n.method===void 0)f.get(n.id)?.(n),f.delete(n.id);else if(n.id!==void 0)u({id:n.id,result:{}});else if(n.method==="ui/notifications/tool-result")t(n.params);else if(n.method==="ui/notifications/host-context-changed")b(n.params)});let s=await y("ui/initialize",{protocolVersion:"2026-01-26",appInfo:{name:`godwit-${e}`,version:"1"},appCapabilities:{}});b(s?.hostContext),u({method:"ui/notifications/initialized"}),new ResizeObserver(()=>{let{offsetWidth:o,offsetHeight:n}=document.body;u({method:"ui/notifications/size-changed",params:{width:o,height:n}})}).observe(document.body)}var R=/<untrusted_email id="([^"]*)" field="([^"]*)">([\s\S]*?)<\/untrusted_email>\n?/g,z=(e)=>e.replace(/&lt;/g,"<").replace(/&gt;/g,">").replace(/&amp;/g,"&");function k(e){let t=[...e.matchAll(R)].map(([,o,n,r])=>({id:o,field:n,value:z(r)}));return{lines:e.replace(R,"").split(`
+`).filter((o)=>o!==""),fields:t}}var S=[["to","To"],["cc","Cc"],["bcc","Bcc"],["subject","Subject"]],a=(e,t,s)=>{let o=document.createElement(e);return o.className=t,o.textContent=s,o};function g(e,t,s=""){let o=m(t);if(t.isError){e.replaceChildren(a("p","error",o));return}let{lines:n,fields:r}=k(o),p=n[0]?.match(/ · account (\d+)/)?.[1]??"",C=s.match(new RegExp(`^account ${p} · (\\S+)`,"m"))?.[1]??(p&&`account ${p}`),d=(c)=>r.filter((i)=>i.field===c).map((i)=>i.value).join(", "),l=document.createElement("article"),h=document.createElement("dl");for(let[c,i]of[["","From"],...S]){let x=c?d(c):C;if(x)h.append(a("dt","",i),a("dd","",x))}l.append(h,a("div","body",d("body")));for(let c of["quote","signature"]){let i=d(c);if(i)l.append(a("div",c,i))}let w=d("attachment_name");if(w)l.append(a("p","attachments",w));e.replaceChildren(l)}var M=document.body;E("draft",async(e)=>{if(g(M,e),e.isError)return;let t=await v("list_accounts",{}).catch(()=>{return});if(t&&!t.isError)g(M,e,m(t))});
+</script>
+</body>
+</html>

@@ -40,7 +40,7 @@ func TestMCPOverStdio(t *testing.T) {
 		t.Fatal(err)
 	}
 	res, err := cs.ListTools(t.Context(), nil)
-	if err != nil || len(res.Tools) != 10 {
+	if err != nil || len(res.Tools) != 11 {
 		t.Fatalf("ListTools = %v, %v", res, err)
 	}
 	text, err := cs.CallTool(t.Context(), &mcp.CallToolParams{Name: "list_accounts"})
