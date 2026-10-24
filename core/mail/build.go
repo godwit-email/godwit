@@ -205,6 +205,35 @@ func nonEmpty(s string) []string {
 	return []string{s}
 }
 
+// VisibleText is HTMLToText of what a reader of src sees: without the elements
+// mail hides (hidden) and the characters that show nothing (StripInvisible).
+// shortcut: only an element's own style counts, not a <style> rule hiding its
+// class; read the mail's stylesheet too if hidden text turns up that way.
+func VisibleText(src string) string {
+	doc, err := html.Parse(strings.NewReader(src))
+	if err != nil {
+		return ""
+	}
+	var drop func(*html.Node)
+	drop = func(n *html.Node) {
+		for c := n.FirstChild; c != nil; {
+			next := c.NextSibling
+			if c.Type == html.ElementNode && hidden(c) {
+				n.RemoveChild(c)
+			} else {
+				drop(c)
+			}
+			c = next
+		}
+	}
+	drop(doc)
+	var b strings.Builder
+	if err := html.Render(&b, doc); err != nil {
+		return ""
+	}
+	return StripInvisible(HTMLToText(b.String()))
+}
+
 // HTMLToText converts HTML to plain text: block elements become line breaks,
 // list items get a "- " prefix, links render as "text (url)".
 func HTMLToText(src string) string {

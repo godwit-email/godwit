@@ -358,12 +358,7 @@ func ParseStructure(bs imap.BodyStructure) (textParts []Attachment, atts []Attac
 // word (a soft hyphen); the joiners only at a word's ends, as inside one they
 // shape it (Persian's non-joiner, an emoji's joiner).
 func Snippet(text string) string {
-	words := strings.Fields(strings.Map(func(r rune) rune {
-		if invisible(r) {
-			return -1
-		}
-		return r
-	}, text))
+	words := strings.Fields(StripInvisible(text))
 	kept := words[:0]
 	for _, w := range words {
 		if w = strings.Trim(w, "\u200c\u200d"); w != "" {
@@ -375,6 +370,17 @@ func Snippet(text string) string {
 		s = string(r[:200])
 	}
 	return s
+}
+
+// StripInvisible drops the characters of text that show nothing (invisible),
+// so the joiners stay: inside a word they shape it.
+func StripInvisible(text string) string {
+	return strings.Map(func(r rune) rune {
+		if invisible(r) {
+			return -1
+		}
+		return r
+	}, text)
 }
 
 // invisible reports whether r shows nothing: a format character (zero-width

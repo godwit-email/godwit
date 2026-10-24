@@ -54,12 +54,14 @@ func modelHead(m Message) string {
 	return head
 }
 
-// modelBody is the text of m a model reads: its plain text, else its HTML as text.
+// modelBody is the text of m a model reads: what the reader shows, so the HTML
+// when there is one (the stored text is then the HTML's own, hidden parts
+// included, or a plain part no one sees), without what shows nothing.
 func modelBody(m Message) string {
-	if strings.TrimSpace(m.Text) == "" && m.HTML != "" {
-		return gomail.HTMLToText(m.HTML)
+	if m.HTML != "" {
+		return gomail.VisibleText(m.HTML)
 	}
-	return m.Text
+	return gomail.StripInvisible(m.Text)
 }
 
 // mailLinks calls f with each link in text, tracking parameters dropped, and
