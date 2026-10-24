@@ -205,33 +205,65 @@ func nonEmpty(s string) []string {
 	return []string{s}
 }
 
-// VisibleText is HTMLToText of what a reader of src sees: without the elements
-// mail hides (hidden) and the characters that show nothing (StripInvisible).
+// VisibleText is HTMLToText of what the reader shows of src, a body as
+// Sanitize leaves it: without what styles hide from it and the characters that
+// show nothing (StripInvisible). An element is gone when nothing inside it can
+// show (concealed); text in a zero font size is gone, but not a descendant's
+// that sets its own size.
 // shortcut: only an element's own style counts, not a <style> rule hiding its
-// class; read the mail's stylesheet too if hidden text turns up that way.
+// class nor the font shorthand; read those too if hidden text turns up that way.
 func VisibleText(src string) string {
 	doc, err := html.Parse(strings.NewReader(src))
 	if err != nil {
 		return ""
 	}
-	var drop func(*html.Node)
-	drop = func(n *html.Node) {
+	var drop func(n *html.Node, noFont bool)
+	drop = func(n *html.Node, noFont bool) {
 		for c := n.FirstChild; c != nil; {
 			next := c.NextSibling
-			if c.Type == html.ElementNode && hidden(c) {
+			switch {
+			case c.Type == html.TextNode && noFont, c.Type == html.ElementNode && concealed(c):
 				n.RemoveChild(c)
-			} else {
-				drop(c)
+			case c.Type == html.ElementNode:
+				drop(c, zeroFont(c, noFont))
 			}
 			c = next
 		}
 	}
-	drop(doc)
+	drop(doc, false)
 	var b strings.Builder
 	if err := html.Render(&b, doc); err != nil {
 		return ""
 	}
 	return StripInvisible(HTMLToText(b.String()))
+}
+
+// concealed: an element nothing inside can show from, as a descendant cannot
+// undo display:none or opacity, and max-height:0 hides only when it clips.
+func concealed(n *html.Node) bool {
+	decls := styleDecls(n)
+	clipped := decls["overflow"] == "hidden" || decls["overflow"] == "clip"
+	return decls["display"] == "none" || transparent(decls["opacity"]) ||
+		(clipped && (decls["max-height"] == "0" || decls["max-height"] == "0px"))
+}
+
+// zeroFont: n's text has no size, given whether its parent's has none. A size
+// relative to the parent's (em, %) or inherit keeps the parent's.
+func zeroFont(n *html.Node, parent bool) bool {
+	size := styleDecls(n)["font-size"]
+	if size == "" || size == "inherit" {
+		return parent
+	}
+	v, ok := length(size)
+	switch {
+	case !ok:
+		return false // a keyword: small, medium…
+	case v == 0:
+		return true
+	case strings.HasSuffix(size, "%") || (strings.HasSuffix(size, "em") && !strings.HasSuffix(size, "rem")):
+		return parent
+	}
+	return false
 }
 
 // HTMLToText converts HTML to plain text: block elements become line breaks,
