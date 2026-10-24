@@ -2414,6 +2414,26 @@ describe("an MCP server's form", () => {
     expect(onDecide).not.toHaveBeenCalled();
   });
 
+  it("the next round's form starts afresh, even while the answer to the last is under way", async () => {
+    let settle: (ok: boolean) => void = () => {};
+    const onAnswer = vi.fn(() => new Promise<boolean>((r) => (settle = r)));
+    const user = userEvent.setup();
+    const r = await setup({ onAnswer, onDecide: vi.fn() });
+    await user.type(input(), "book it{Enter}");
+    const call = { id: "b1", name: "mcp_1_book", args: "{}" };
+    r.emit({ kind: "tool_call", call });
+    r.emit({ kind: "interrupted", interrupts: [call], approvals: [form()], ends: true });
+    await user.click(await screen.findByRole("radio", { name: /Large/ }));
+    await user.click(screen.getByRole("button", { name: "下一题" }));
+    expect(screen.getByText("第 2/3 题")).toBeInTheDocument();
+    const second = { ...form(), form: form().form?.replace('"round":1', '"round":2') };
+    r.emit({ run: 7, kind: "interrupted", interrupts: [call], approvals: [second], ends: true });
+    r.resume(7);
+    expect(await screen.findByText("第 1/3 题")).toBeInTheDocument();
+    expect(screen.getByRole("radio", { name: /Large/ })).not.toBeChecked();
+    act(() => settle(true));
+  });
+
   it("a call allowed that then asks shows its form, and a form answered that asks again shows the next round", async () => {
     const onDecide = vi.fn().mockResolvedValue(true);
     const onAnswer = vi.fn().mockResolvedValue(true);

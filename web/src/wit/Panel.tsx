@@ -1445,7 +1445,8 @@ export function Panel({
         {shown.map((a) =>
           isQuestion(a) ? (
             <QuestionCard
-              key={a.id}
+              // by round: a form asked again on the approval starts with no answers, at its first
+              key={decisionKey(a)}
               a={a}
               busy={busy}
               answer={onAnswer && ((answers) => answerAs(a, answers))}
