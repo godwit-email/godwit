@@ -65,11 +65,21 @@ class Response {
   #status: number;
   #headers: Headers;
   #url: string;
-  constructor(body: ReadableStream<Uint8Array> | null = null, status = 200, headers = new Headers(), url = "") {
+  // init.url is the host's own: fetch sets it.
+  constructor(body: ReadableStream<Uint8Array> | string | null = null, init: { status?: number; headers?: unknown; url?: string } = {}) {
+    if (typeof body === "string") {
+      const bytes = new TextEncoder().encode(body);
+      body = new ReadableStream<Uint8Array>({
+        start(c) {
+          c.enqueue(bytes);
+          c.close();
+        },
+      });
+    }
     this.#body = body;
-    this.#status = status;
-    this.#headers = headers;
-    this.#url = url;
+    this.#status = init.status ?? 200;
+    this.#headers = new Headers(init.headers);
+    this.#url = init.url ?? "";
   }
   get body() {
     return this.#body;
@@ -130,7 +140,7 @@ async function fetch(input: unknown, init: { method?: string; headers?: unknown;
       hostAbort(r.id);
     },
   });
-  return new Response(body, r.status, new Headers(JSON.parse(r.headers)), url);
+  return new Response(body, { status: r.status, headers: JSON.parse(r.headers), url });
 }
 
 // Unused by the JSON requests made here; the SDKs only test for them.
@@ -161,6 +171,11 @@ g.Blob ??= Blob;
 g.File ??= File;
 g.FormData ??= FormData;
 g.fetch ??= fetch;
+// pi-ai reads a ChatGPT token's claims (base64url) with atob, which takes
+// only base64. The build points the bundle's atob here (package.json:
+// --define), as moejs's own is read-only: base64url reads as base64.
+const atob = g["atob"] as (s: string) => string;
+g.godwitAtob = (s: string) => atob(String(s).replace(/-/g, "+").replace(/_/g, "/"));
 g.performance ??= { now: hostNow };
 g.crypto ??= {
   getRandomValues(a: Uint8Array) {
