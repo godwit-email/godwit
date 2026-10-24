@@ -551,6 +551,10 @@ func (s *Service) send(ctx context.Context, draftID, want int64) error {
 // and the checking plugins are still checked, else errSendChanged. Plugin
 // changes wait from the comparison until the draft is queued.
 func (s *Service) enqueue(ctx context.Context, draftID, rev int64, checked []string) error {
+	if err := s.stopDraftRuns(ctx, draftID); err != nil { // the queued draft deletes its conversations
+		return err
+	}
+	defer s.runMu.Unlock()
 	s.editMu.Lock() // enters the outbox once, with the draft as it is now
 	defer s.editMu.Unlock()
 	s.pluginsMu.RLock()
