@@ -183,9 +183,9 @@ func TestAgentRunsAToolInGo(t *testing.T) {
 func TestAgentAnswersAtItsToolCallLimit(t *testing.T) {
 	srv := testllm.Start(t, "openai")
 	srv.Script(
-		testllm.Turn{Calls: []testllm.Call{{ID: "c1", Name: "search", Args: `{"q":"a"}`}}},
-		testllm.Turn{Calls: []testllm.Call{{ID: "c2", Name: "search", Args: `{"q":"b"}`}}},
-		testllm.Turn{Text: []string{"Partial answer."}},
+		testllm.Turn{Calls: []testllm.Call{{ID: "c1", Name: "search", Args: `{"q":"a"}`}}, Usage: [2]int{10, 1}},
+		testllm.Turn{Calls: []testllm.Call{{ID: "c2", Name: "search", Args: `{"q":"b"}`}}, Usage: [2]int{20, 2}},
+		testllm.Turn{Text: []string{"Partial answer."}, Usage: [2]int{30, 3}},
 	)
 	runs := 0
 	res, err := Agent(t.Context(), http.DefaultClient, AgentRequest{BaseURL: srv.URL, Model: "m", APIKey: "k", System: "Sys.", LimitNote: "Stop now.",
@@ -199,7 +199,8 @@ func TestAgentAnswersAtItsToolCallLimit(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if runs != 1 || !res.Limited || res.Calls || res.StopReason != "stop" || len(res.Messages) != 4 {
+	// The dropped round's reply was billed too.
+	if runs != 1 || !res.Limited || res.Calls || res.StopReason != "stop" || len(res.Messages) != 4 || res.Input != 60 || res.Output != 6 || res.Last != 30 {
 		t.Fatalf("runs %d, result %+v", runs, res)
 	}
 	reqs := srv.Requests()
@@ -256,5 +257,32 @@ func TestAgentCancelStopsItsTools(t *testing.T) {
 	})
 	if err != context.Canceled || !stopped {
 		t.Errorf("err %v, stopped %v", err, stopped)
+	}
+}
+
+// A round whose calls are all refused (an unknown tool) counts toward the
+// limit: the turn still ends with an answer.
+func TestAgentCountsRefusedRounds(t *testing.T) {
+	srv := testllm.Start(t, "openai")
+	srv.Script(
+		testllm.Turn{Calls: []testllm.Call{{ID: "c1", Name: "nope", Args: `{}`}}},
+		testllm.Turn{Calls: []testllm.Call{{ID: "c2", Name: "nope", Args: `{}`}}},
+		testllm.Turn{Text: []string{"Done."}},
+		testllm.Turn{Calls: []testllm.Call{{ID: "c3", Name: "nope", Args: `{}`}}}, // never asked for
+	)
+	var refused []string
+	res, err := Agent(t.Context(), http.DefaultClient, AgentRequest{BaseURL: srv.URL, Model: "m", APIKey: "k", LimitNote: "Stop now.",
+		Messages: []json.RawMessage{question("q")}, Tools: []Tool{searchTool}, MaxTurns: 1}, Hooks{
+		Emit:    func(string, string) {},
+		Refused: func(id, _ string, _ json.RawMessage, _ string) { refused = append(refused, id) },
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !res.Limited || res.StopReason != "stop" || len(srv.Requests()) != 3 {
+		t.Fatalf("requests %d, result %+v", len(srv.Requests()), res)
+	}
+	if strings.Join(refused, ",") != "c1" {
+		t.Errorf("refused %q: the dropped round's calls are not reported", refused)
 	}
 }

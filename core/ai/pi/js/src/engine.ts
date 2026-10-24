@@ -89,7 +89,8 @@ export async function agent(req: AgentRequest) {
   const options = optionsOf(req);
   const ran = new Set<string>(); // calls hostTool ran: it reported them
   const asked = new Map<string, unknown>(); // each call's arguments as the model wrote them
-  const rounds = new Set<AssistantMessage>();
+  const replies: AssistantMessage[] = []; // every reply the turn was billed for, the dropped one too
+  let rounds = 0; // replies that called tools, run or refused
   let limited: AssistantMessage | undefined;
   const tools: AgentTool[] = req.tools.map((t) => ({
     ...t,
@@ -115,17 +116,17 @@ export async function agent(req: AgentRequest) {
       ...options,
       convertToLlm: (msgs: AgentMessage[]) => msgs as Message[],
       async beforeToolCall({ assistantMessage }) {
-        if (limited === assistantMessage) return { block: true, terminate: true };
-        if (!rounds.has(assistantMessage) && rounds.size >= req.maxTurns) {
-          limited = assistantMessage;
-          return { block: true, terminate: true };
-        }
-        rounds.add(assistantMessage);
-        return undefined;
+        return limited === assistantMessage ? { block: true, terminate: true } : undefined;
       },
+      // A round whose calls were all refused never reaches beforeToolCall.
+      finishTurn: () => (limited ? { action: "end" as const } : undefined),
     },
     async (ev) => {
-      if (ev.type === "message_update") {
+      if (ev.type === "message_end" && ev.message.role === "assistant") {
+        // before its calls are prepared: past maxTurns rounds none of them runs
+        replies.push(ev.message);
+        if (ev.message.content.some((c) => c.type === "toolCall") && ++rounds > req.maxTurns) limited = ev.message;
+      } else if (ev.type === "message_update") {
         const e = ev.assistantMessageEvent;
         if (e.type === "text_delta") hostEmit("text", e.delta);
         else if (e.type === "thinking_delta") hostEmit("reasoning", e.delta);
@@ -155,9 +156,10 @@ export async function agent(req: AgentRequest) {
       if (ev.type === "text_delta") hostEmit("text", ev.delta);
       else if (ev.type === "thinking_delta") hostEmit("reasoning", ev.delta);
     }
-    messages.push(await s.result());
+    const answer = await s.result();
+    messages.push(answer);
+    replies.push(answer);
   }
-  const replies = messages.filter((m): m is AssistantMessage => m.role === "assistant");
   const last = replies[replies.length - 1];
   return {
     messages: JSON.stringify(messages),
