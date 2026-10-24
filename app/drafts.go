@@ -175,14 +175,14 @@ func (p *mailPage) draftPane(c *ui.Context) {
 					ui.Column(c).Padding(th.Space(4), 0, 0, 0).BorderWidth(theme.Hairline, 0, 0, 0).BorderColor(t.Border).Children(func() {
 						richtext.Render(c, info.doc, richtext.RenderOptions{OnLink: p.a.openLink})
 					})
-					p.draftAttachments(c, d.Attachments)
+					draftAttachments(c, d.Attachments)
 				})
 			})
 		})
 	})
 }
 
-func (p *mailPage) draftAttachments(c *ui.Context, atts []core.DraftAttachment) {
+func draftAttachments(c *ui.Context, atts []core.DraftAttachment) {
 	t, th := theme.Of(c), c.Theme()
 	ui.Row(c).Wrap().Gap(th.Space(2)).Children(func() {
 		for _, att := range atts {

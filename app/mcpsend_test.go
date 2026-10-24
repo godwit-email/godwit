@@ -3,6 +3,8 @@ package app
 import (
 	"context"
 	"errors"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -10,8 +12,8 @@ import (
 	"github.com/godwit-email/godwit/core/coretest"
 )
 
-// mcpSendHarness has an account and a draft to bob that godwit mcp asked to
-// send under 每次确认.
+// mcpSendHarness has an account and a draft to bob, with plan.pdf attached,
+// that godwit mcp asked to send under 每次确认.
 func mcpSendHarness(t *testing.T) (*harness, core.Account) {
 	t.Helper()
 	var acc core.Account
@@ -26,6 +28,16 @@ func mcpSendHarness(t *testing.T) (*harness, core.Account) {
 	}
 	d.To, d.Subject, d.HTML = []string{"bob@example.com"}, "Quarterly plan", "<p>the plan body</p>"
 	if d, err = h.env.Svc.SaveDraft(ctx, d); err != nil {
+		t.Fatal(err)
+	}
+	f := filepath.Join(t.TempDir(), "plan.pdf")
+	if err := os.WriteFile(f, make([]byte, 2048), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := h.env.Svc.AddAttachment(ctx, d.ID, f); err != nil {
+		t.Fatal(err)
+	}
+	if d, err = h.env.Svc.GetDraft(ctx, d.ID); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := h.env.Svc.RequestMCPSend(ctx, d.ID, d.Revision); err != nil {
@@ -63,6 +75,14 @@ func TestMCPSendConfirmWindow(t *testing.T) {
 	h.click("发送")
 	h.until("queued", func() bool { return h.outbox(acc) == 1 })
 	h.until("the dialog closed", func() bool { return !h.tt.HasText("发送这封邮件？") })
+}
+
+// The draft's attachments, which 发送 sends too, show with their sizes.
+func TestMCPSendConfirmAttachments(t *testing.T) {
+	h, _ := mcpSendHarness(t)
+	h.see("发送这封邮件？")
+	h.see("plan.pdf")
+	h.see("2 KB")
 }
 
 // A plugin's warnings on 发送 are shown as the draft list shows them; 仍然发送 sends it once.
@@ -117,6 +137,16 @@ func TestMCPSendConfirmReplaced(t *testing.T) {
 	d := ds[0]
 	d.Subject = "Revised plan"
 	if d, err = h.env.Svc.SaveDraft(ctx, d); err != nil {
+		t.Fatal(err)
+	}
+	f := filepath.Join(t.TempDir(), "plan.pdf")
+	if err := os.WriteFile(f, make([]byte, 2048), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := h.env.Svc.AddAttachment(ctx, d.ID, f); err != nil {
+		t.Fatal(err)
+	}
+	if d, err = h.env.Svc.GetDraft(ctx, d.ID); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := h.env.Svc.RequestMCPSend(ctx, d.ID, d.Revision); err != nil {

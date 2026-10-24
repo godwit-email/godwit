@@ -97,7 +97,7 @@ func (a *App) showMCPSends(ps []core.MCPSend) {
 }
 
 // mcpSendDialog is the request's sending account, every recipient (a
-// first-time one marked), subject and body; 发送 sends it, closing drops it.
+// first-time one marked), subject, body and attachments; 发送 sends it, closing drops it.
 func (a *App) mcpSendDialog(c *ui.Context) {
 	s := &a.mcpSend
 	if s.warned {
@@ -157,6 +157,7 @@ func (a *App) mcpSendDialog(c *ui.Context) {
 		}
 		field(i18n.T("compose.subject"), func() { ui.Text(c, d.Subject).Selectable() })
 		ui.Text(c, mail.HTMLToText(d.HTML)).Selectable().Padding(th.Space(3), 0, 0, 0).BorderWidth(theme.Hairline, 0, 0, 0).BorderColor(t.Border)
+		draftAttachments(c, d.Attachments)
 	}, func() {
 		if kit.Button(c, i18n.T("common.cancel"), kit.ButtonOpts{Variant: kit.Outline}).Clicked() {
 			s.open = false
