@@ -1,0 +1,17 @@
+{
+  "paraphrase": true,
+  "labels": {
+    "en": {
+      "otp": {"name": "Codes", "description": "Verification codes and magic sign-in links sent when you log in, sign up or confirm a payment"},
+      "newsletter": {"name": "Newsletters", "description": "Newsletters, marketing email and product announcements"}
+    },
+    "zh": {
+      "otp": {"name": "验证码", "description": "登录、注册或确认付款时发来的验证码和一键登录链接"},
+      "newsletter": {"name": "订阅与资讯", "description": "订阅的简报、营销推广和产品公告"}
+    },
+    "ja": {
+      "otp": {"name": "認証コード", "description": "ログイン、登録、支払い確認のときに届く確認コードやワンクリックログインのリンク"},
+      "newsletter": {"name": "ニュースレター", "description": "ニュースレター、販促メール、製品のお知らせ"}
+    }
+  }
+}

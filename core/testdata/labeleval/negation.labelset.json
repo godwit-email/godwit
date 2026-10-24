@@ -1,0 +1,7 @@
+{
+  "labels": {
+    "en": {"bill": {"name": "Bills", "description": "Bills, receipts and invoices, but not subscription renewal reminders"}},
+    "zh": {"bill": {"name": "账单", "description": "账单、收据和发票，但不包括订阅续费提醒"}},
+    "ja": {"bill": {"name": "請求・明細", "description": "請求書、領収書、インボイス。ただし、サブスクリプションの更新案内は含まない"}}
+  }
+}

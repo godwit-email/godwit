@@ -74,6 +74,9 @@ var sentinels = []struct {
 	{"mcp_send_composing", core.ErrMCPSendComposing},
 	{"mcp_send_busy", core.ErrMCPSendBusy},
 	{"no_outbox_draft", core.ErrNoOutboxDraft},
+	{"no_unsubscribe", core.ErrNoUnsubscribe},
+	{"unsubscribe_web", core.ErrUnsubscribeWeb},
+	{"unsubscribing", core.ErrUnsubscribing},
 	{"canceled", context.Canceled},
 	{"deadline", context.DeadlineExceeded},
 	{"auth_failed", conn.ErrAuthFailed}, // also a failed account check's cause
@@ -161,13 +164,13 @@ func Listen(dataDir string, svc *core.Service, version string) (*rpc.Server, err
 	})
 }
 
-// audit records full's Send and SendAcknowledged (by draft) and
-// ResolveOutbox "resend" (by outbox item), and mcp's NewDraft (by source
+// audit records full's Send and SendAcknowledged (by draft), ResolveOutbox
+// "resend" (by outbox item) and Unsubscribe (by message), and mcp's NewDraft (by source
 // message) and SaveDraft (by draft); nothing else.
 func audit(svc *core.Service, role, method string, params []json.RawMessage) error {
 	source := ""
 	switch {
-	case role == rpc.RoleFull && (method == "Send" || method == "SendAcknowledged" || method == "ResolveOutbox" && isResend(params)):
+	case role == rpc.RoleFull && (method == "Send" || method == "SendAcknowledged" || method == "ResolveOutbox" && isResend(params) || method == "Unsubscribe"):
 		source = core.AuditLocalAPI
 	case role == rpc.RoleMCP && (method == "NewDraft" || method == "SaveDraft"):
 		source = core.AuditMCP

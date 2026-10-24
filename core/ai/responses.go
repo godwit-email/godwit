@@ -74,7 +74,7 @@ func (p *responsesPlugin) ResolveAction(t api.ActionType, id string) api.Action 
 	if t != api.ActionTypeModel {
 		return nil
 	}
-	opts := &gai.ModelOptions{Supports: &gai.ModelSupports{Multiturn: true, Tools: true, SystemRole: true}}
+	opts := &gai.ModelOptions{Supports: &gai.ModelSupports{Multiturn: true, Tools: true, ToolChoice: true, SystemRole: true}}
 	return gai.NewModelAction(api.NewName(p.Name(), id), opts,
 		func(ctx context.Context, req *gai.ModelRequest, cfg any, cb gai.ModelStreamCallback) (*gai.ModelResponse, error) {
 			return p.generate(ctx, id, req, cfg, cb)
@@ -299,6 +299,9 @@ func responsesParams(model string, req *gai.ModelRequest) (responses.ResponseNew
 		Include: []responses.ResponseIncludable{responses.ResponseIncludableReasoningEncryptedContent},
 		Input:   responses.ResponseNewParamsInputUnion{OfInputItemList: items},
 	}
+	if req.ToolChoice != "" { // Genkit's auto, required and none are the Responses modes of the same names
+		params.ToolChoice = responses.ResponseNewParamsToolChoiceUnion{OfToolChoiceMode: param.NewOpt(responses.ToolChoiceOptions(req.ToolChoice))}
+	}
 	if len(system) > 0 {
 		params.Instructions = param.NewOpt(strings.Join(system, "\n"))
 	}
@@ -330,7 +333,11 @@ func signature(p *gai.Part) string {
 	return ""
 }
 
-// usageOf is a Responses response's token usage as Genkit's.
+// usageOf is a Responses response's token usage under Genkit's convention:
+// InputTokens is the whole prompt, cached tokens a part of it, and
+// OutputTokens leaves out the reasoning, which ThoughtsTokens counts.
 func usageOf(u responses.ResponseUsage) *gai.GenerationUsage {
-	return &gai.GenerationUsage{InputTokens: int(u.InputTokens), OutputTokens: int(u.OutputTokens), TotalTokens: int(u.TotalTokens)}
+	reasoning := int(u.OutputTokensDetails.ReasoningTokens)
+	return &gai.GenerationUsage{InputTokens: int(u.InputTokens), OutputTokens: int(u.OutputTokens) - reasoning,
+		ThoughtsTokens: reasoning, CachedContentTokens: int(u.InputTokensDetails.CachedTokens), TotalTokens: int(u.TotalTokens)}
 }

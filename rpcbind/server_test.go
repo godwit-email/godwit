@@ -81,6 +81,11 @@ func TestMCPAllowlistContents(t *testing.T) {
 	}
 	assert.False(t, rpc.MCPAllowed("NewDraft", []json.RawMessage{json.RawMessage(`1`), json.RawMessage(`"forward"`), json.RawMessage(`2`)}))
 	assert.True(t, rpcbind.Expose("CancelOutbox"), "full may undo a send")
+	// An injected agent must not make the user's machine POST anywhere (#218); full may.
+	for _, m := range []string{"Unsubscribe", "UnsubscribeMethod", "NewMailtoDraft"} {
+		assert.False(t, rpc.MCPAllowed(m, []json.RawMessage{json.RawMessage(`1`)}), m)
+		assert.True(t, rpcbind.Expose(m), m)
+	}
 }
 
 func TestMCPRoleAllowlist(t *testing.T) {
@@ -178,6 +183,9 @@ func TestMCPRoleAllowlist(t *testing.T) {
 		{"GetMessage", []any{msg.ID, true}},
 		{"GetAttachment", []any{text.Attachments[0].ID}},
 		{"NewDraft", []any{acc.ID, "forward", msg.ID}},
+		{"Unsubscribe", []any{msg.ID}},
+		{"UnsubscribeMethod", []any{msg.ID}},
+		{"NewMailtoDraft", []any{acc.ID, "mailto:eve@example.com"}},
 	} {
 		before := state()
 		err := c.Call(ctx, call.method, nil, call.args...)
@@ -245,12 +253,19 @@ func TestAuditExternal(t *testing.T) {
 	require.NoError(t, mcp.Call(ctx, "ListDrafts", nil, acc.ID)) // reads are not audited
 	require.NoError(t, full.Call(ctx, "Send", nil, d.ID))
 	require.NoError(t, full.Call(ctx, "ListAccounts", nil))
+	e.Deliver(t, acc.ID, "INBOX", coretest.Msg("bob@example.com", "alice@example.com", "Hi", "No list here."))
+	page, err := e.Svc.ListMessages(ctx, core.View{Unified: "inbox"}, "", 0)
+	require.NoError(t, err)
+	msg := page.Items[0].ID
+	require.NoError(t, full.Call(ctx, "UnsubscribeMethod", nil, msg))
+	assert.ErrorContains(t, full.Call(ctx, "Unsubscribe", nil, msg), core.ErrNoUnsubscribe.Error()) // audited all the same
 
 	rows := auditRows(t, e.DataDir)
 	assert.Equal(t, [][]any{
 		{"local_mcp", "NewDraft", nil, ""},
 		{"local_mcp", "SaveDraft", d.ID, ""},
 		{"local_api", "Send", d.ID, ""},
+		{"local_api", "Unsubscribe", msg, ""},
 	}, rows)
 	b, _ := json.Marshal(rows)
 	assert.NotContains(t, string(b), "secret plan")

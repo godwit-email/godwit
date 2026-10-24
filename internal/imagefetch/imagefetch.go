@@ -55,11 +55,25 @@ var (
 // Formats are the formats shown, as image.DecodeConfig names them.
 var Formats = map[string]bool{"png": true, "jpeg": true, "gif": true, "webp": true}
 
-// NewClient is a client of its own: no proxy, no cookie jar, no Referer,
-// public hosts only (checked on the address dialed, after DNS), http(s)
-// redirects only and at most MaxRedirects of them. allowLoopback lets
-// tests reach httptest servers, which listen on loopback.
+// NewClient is a client of its own: NewTransport's, http(s) redirects only
+// and at most MaxRedirects of them, Referer dropped on each.
 func NewClient(allowLoopback bool) *http.Client {
+	return &http.Client{Transport: NewTransport(allowLoopback), Timeout: Timeout, CheckRedirect: func(req *http.Request, via []*http.Request) error {
+		if len(via) > MaxRedirects {
+			return errTooManyRedirects
+		}
+		if !IsHTTP(req.URL) {
+			return ErrScheme
+		}
+		req.Header.Del("Referer")
+		return nil
+	}}
+}
+
+// NewTransport dials public hosts only (checked on the address dialed, after
+// DNS; ErrHost otherwise) and never through a proxy. allowLoopback lets
+// tests reach httptest servers, which listen on loopback.
+func NewTransport(allowLoopback bool) *http.Transport {
 	d := &net.Dialer{Timeout: Timeout, Control: func(_, address string, _ syscall.RawConn) error {
 		if allowLoopback {
 			return nil
@@ -74,18 +88,8 @@ func NewClient(allowLoopback bool) *http.Client {
 		}
 		return nil
 	}}
-	tr := &http.Transport{Proxy: nil, DialContext: d.DialContext, IdleConnTimeout: 30 * time.Second, MaxIdleConnsPerHost: 4,
+	return &http.Transport{Proxy: nil, DialContext: d.DialContext, IdleConnTimeout: 30 * time.Second, MaxIdleConnsPerHost: 4,
 		TLSHandshakeTimeout: Timeout, ResponseHeaderTimeout: Timeout, MaxResponseHeaderBytes: 64 << 10}
-	return &http.Client{Transport: tr, Timeout: Timeout, CheckRedirect: func(req *http.Request, via []*http.Request) error {
-		if len(via) > MaxRedirects {
-			return errTooManyRedirects
-		}
-		if !IsHTTP(req.URL) {
-			return ErrScheme
-		}
-		req.Header.Del("Referer")
-		return nil
-	}}
 }
 
 // notGlobal are ranges that are not public hosts although IsPrivate and the

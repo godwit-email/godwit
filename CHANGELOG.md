@@ -1,5 +1,20 @@
 # Changelog
 
+## [1.13.0](https://github.com/godwit-email/godwit/compare/v1.12.1...v1.13.0) (2026-10-24)
+
+
+### Features
+
+* **mcp:** MCP Apps show tools and sending through godwit mcp ([#200](https://github.com/godwit-email/godwit/issues/200)) ([7b901c1](https://github.com/godwit-email/godwit/commit/7b901c10e11a44fb5003df2070eb6a2892ba1489))
+* **settings:** redesign the About page around the 3D bird ([#195](https://github.com/godwit-email/godwit/issues/195)) ([843840c](https://github.com/godwit-email/godwit/commit/843840ce1a8d7f221e526adb83fc3139b34634fb))
+* **wit:** ask_user_question lets the model ask the user in an Ask run ([#203](https://github.com/godwit-email/godwit/issues/203)) ([599a4a6](https://github.com/godwit-email/godwit/commit/599a4a658235d5fc6d874f41ce1e4dfdc64e2caa))
+
+
+### Bug Fixes
+
+* **ai:** give models only the mail text the reader shows ([#209](https://github.com/godwit-email/godwit/issues/209)) ([0366ce4](https://github.com/godwit-email/godwit/commit/0366ce44275f0c99cd7fccfbc85769c19eabef9e))
+* **ai:** let a nil *Error format without a nil dereference ([#205](https://github.com/godwit-email/godwit/issues/205)) ([5ef1756](https://github.com/godwit-email/godwit/commit/5ef175618b4cb9e62e3870ade18b26e72669e279))
+
 ## [1.12.1](https://github.com/godwit-email/godwit/compare/v1.12.0...v1.12.1) (2026-10-24)
 
 

@@ -728,7 +728,7 @@ func (p *ComposePage) OpenModels(ctx context.Context) error {
 }
 
 // OpenLink opens a link from Wit's answer: an http or https one in the
-// browser; a mailto one as a new draft to its addresses, from the calling
+// browser; a mailto one as a new draft it fills, from the calling
 // window's account, in a compose window. Any other is ErrBadLink.
 func (p *ComposePage) OpenLink(ctx context.Context, link string) error {
 	_, svc, s, err := p.open(ctx)
@@ -757,22 +757,11 @@ func openLink(ctx context.Context, svc *core.Service, link string, account func(
 	default:
 		return ErrBadLink
 	}
-	addrs, _ := url.PathUnescape(u.Opaque)
-	var to []string
-	for _, a := range strings.Split(addrs, ",") {
-		if a = strings.TrimSpace(a); a != "" {
-			to = append(to, a)
-		}
-	}
 	acc, err := account()
 	if err != nil {
 		return err
 	}
-	d, err := svc.NewDraft(ctx, acc, "new", 0)
-	if err == nil {
-		d.To = to
-		d, err = svc.SaveDraft(ctx, d)
-	}
+	d, err := svc.NewMailtoDraft(ctx, acc, link)
 	if err != nil {
 		return err
 	}

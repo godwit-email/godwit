@@ -411,6 +411,17 @@ var Migrations = [][]string{{
 	// form and state, and once answered the answer it is called again with.
 	`ALTER TABLE approvals ADD COLUMN input TEXT`,
 }, {
+	// ai_cache.created_at is an output's last use: core.cleanAICache deletes
+	// by it every janitor tick.
+	`CREATE INDEX ai_cache_created ON ai_cache(created_at)`,
+}, {
+	// A message's List-Unsubscribe, List-Unsubscribe-Post and List-Id as sent
+	// (core.UnsubscribeMethod reads them): '' the sync found none, NULL the
+	// message was synced before these were fetched (fetched when it is shown).
+	`ALTER TABLE messages ADD COLUMN list_unsubscribe TEXT`,
+	`ALTER TABLE messages ADD COLUMN list_unsubscribe_post TEXT`,
+	`ALTER TABLE messages ADD COLUMN list_id TEXT`,
+}, {
 	// Undo send: the draft an item was sent from, read-only while the item
 	// holds it and deleted once the message may have gone out (NULL: none to
 	// bring back, as for items queued before). send_after is the earliest

@@ -12,6 +12,7 @@ import (
 	"os"
 	"path/filepath"
 	"slices"
+	"strconv"
 	"strings"
 	"time"
 	"unicode"
@@ -55,6 +56,8 @@ type reader struct {
 	actions   fetch[[]core.ActionInfo] // and plugin actions on messages
 	egress    egressAsk                // the action waiting for egress approval
 	egressDlg bool                     // its dialog shows
+	unsubAsk  int64                    // the message whose one-click unsubscribe waits to be confirmed
+	unsubDlg  bool                     // its dialog shows
 
 	getThread  func(ctx context.Context, id int64) (core.Thread, error)                       // tests wrap it
 	getMessage func(ctx context.Context, id int64, remote bool) (core.Message, error)         // tests wrap it
@@ -92,6 +95,9 @@ type msgBody struct {
 	remote   bool
 	allowErr error
 	trusted  bool
+
+	unsub     core.Unsubscribe // how it unsubscribes, by its headers; none until asked
+	unsubbing bool             // its unsubscribe is under way
 
 	avatar                                 ui.ImageSource
 	avatarStop                             context.CancelFunc
@@ -300,6 +306,26 @@ func (r *reader) loadBody(id int64) {
 		b.avatarBlocked = !trusted
 		r.openView(id)
 		r.loadAvatar(id, b.avatarAllow)
+		r.loadUnsubscribe(id)
+	})
+}
+
+// loadUnsubscribe asks how message id unsubscribes after its body shows:
+// an older message's headers may be fetched from its server first. Until
+// it answers, or when it fails, there is no 退订.
+func (r *reader) loadUnsubscribe(id int64) {
+	a, gen, b := r.p.a, r.gen, r.bodies[id]
+	if b == nil { // opening its page may already have switched the reader away
+		return
+	}
+	var u core.Unsubscribe
+	a.do(func(ctx context.Context) (err error) {
+		u, err = a.svc.UnsubscribeMethod(ctx, id)
+		return err
+	}, func(err error) {
+		if err == nil && gen == r.gen && r.bodies[id] == b {
+			b.unsub = u
+		}
 	})
 }
 
@@ -778,23 +804,33 @@ func (r *reader) message(c *ui.Context, m core.MessageSummary) {
 			if len(r.msgs) > 1 {
 				fold = func() { r.toggle(m.ID) }
 			}
-			kit.Pressable(c, kit.PressableOpts{OnClick: fold}).Gap(th.Space(2.5)).Children(func() {
-				// Until the avatar is fetched or refused, a pulse; then the image or the initial.
-				if b == nil || b.err == nil && !b.ready || b.avatarStop != nil {
-					kit.Skeleton(c, th.Space(8), th.Space(8)).Radius(t.Radius.Lg).Shrink(0).Label(name)
-				} else {
-					kit.AvatarImage(c, name, b.avatar)
-				}
-				ui.Column(c).Shrink(1).Children(func() {
-					ui.Row(c).Gap(th.Space(1)).Children(func() {
-						ui.Text(c, name).FontWeight(500).SingleLine()
-						if addr != "" && addr != name {
-							ui.Text(c, "<"+addr+">").TextColor(t.Muted).SingleLine()
-						}
+			ui.Row(c).Gap(th.Space(2)).AlignItems(ui.Center).Children(func() {
+				kit.Pressable(c, kit.PressableOpts{OnClick: fold}).Grow(1).Shrink(1).Gap(th.Space(2.5)).Children(func() {
+					// Until the avatar is fetched or refused, a pulse; then the image or the initial.
+					if b == nil || b.err == nil && !b.ready || b.avatarStop != nil {
+						kit.Skeleton(c, th.Space(8), th.Space(8)).Radius(t.Radius.Lg).Shrink(0).Label(name)
+					} else {
+						kit.AvatarImage(c, name, b.avatar)
+					}
+					ui.Column(c).Shrink(1).Children(func() {
+						ui.Row(c).Gap(th.Space(1)).Children(func() {
+							ui.Text(c, name).FontWeight(500).SingleLine()
+							if addr != "" && addr != name {
+								ui.Text(c, "<"+addr+">").TextColor(t.Muted).SingleLine()
+							}
+						})
+						when := senderDate(r.p.a.clock.Now(), m.Date)
+						kit.Text(c, i18n.Tf("reader.to", r.recipients(m), when), t.Text.Sm).TextColor(t.Muted)
 					})
-					when := senderDate(r.p.a.clock.Now(), m.Date)
-					kit.Text(c, i18n.Tf("reader.to", r.recipients(m), when), t.Text.Sm).TextColor(t.Muted)
 				})
+				if b != nil && b.unsub.Method != "" { // each message by its own headers
+					if b.unsubbing {
+						kit.Spinner(c)
+					} else {
+						kit.Button(c, i18n.T("reader.unsubscribe"), kit.ButtonOpts{Variant: kit.Ghost, Size: kit.SizeSm}).
+							OnClick(func() { r.unsubscribe(m.ID) })
+					}
+				}
 			})
 			r.aiArea(c, m)
 			r.cards(c, m)
@@ -1031,4 +1067,81 @@ func senderDate(now, t time.Time) string {
 		return i18n.Tf("reader.date", i18n.T(fmt.Sprintf("reader.month.%d", t.Month())), t.Day())
 	}
 	return listTime(now, t) + " " + clock
+}
+
+// unsubscribe is a message's 退订, by its headers: one-click asks first, a
+// web page opens after the link confirmation, a mailto drafts.
+func (r *reader) unsubscribe(id int64) {
+	b := r.bodies[id]
+	if b == nil || b.unsubbing {
+		return
+	}
+	switch b.unsub.Method {
+	case core.UnsubscribeOneClick:
+		r.unsubAsk, r.unsubDlg = id, true
+	case core.UnsubscribeWeb:
+		r.p.a.openLink(b.unsub.URL)
+	case core.UnsubscribeMail:
+		r.sendUnsubscribe(id)
+	}
+}
+
+// sendUnsubscribe has core unsubscribe from message id: a one-click result
+// toasts (a failure offers the page in the browser), a draft opens in a
+// compose window, never sent.
+func (r *reader) sendUnsubscribe(id int64) {
+	a, b := r.p.a, r.bodies[id]
+	if b == nil || b.unsubbing {
+		return
+	}
+	b.unsubbing = true
+	u := b.unsub
+	var res core.UnsubscribeResult
+	a.do(func(ctx context.Context) (err error) {
+		res, err = a.svc.Unsubscribe(ctx, id)
+		return err
+	}, func(err error) {
+		b.unsubbing = false
+		switch {
+		case err != nil:
+			a.toastErr(err)
+		case res.DraftID != 0:
+			a.plat.OpenCompose(res.DraftID)
+		case res.Failure == "":
+			a.toastAs(kit.ToastSuccess, i18n.Tf("reader.unsubscribe.sent", res.Host))
+		default:
+			msg := i18n.Tf("reader.unsubscribe.failed."+res.Failure, res.Host, strconv.Itoa(res.Status))
+			a.toasts = append(a.toasts, ui.Toast{ID: msg, Title: msg, Type: kit.ToastError,
+				Action: i18n.T("reader.unsubscribe.open"), OnAction: func() { a.openLink(u.URL) }})
+		}
+	})
+}
+
+// unsubscribeDialog confirms a one-click unsubscribe: the host the request
+// goes to in bold, and the list's name; 退订 sends it.
+func (r *reader) unsubscribeDialog(c *ui.Context) {
+	if !r.unsubDlg {
+		return
+	}
+	id, b := r.unsubAsk, r.bodies[r.unsubAsk]
+	if b == nil || b.unsub.Method != core.UnsubscribeOneClick {
+		r.unsubDlg = false
+		return
+	}
+	t := theme.Of(c)
+	opts := kit.DialogOpts{Size: kit.DialogSm, Desc: i18n.T("reader.unsubscribe.desc"), Close: i18n.T("common.close")}
+	kit.Dialog(c, &r.unsubDlg, i18n.T("reader.unsubscribe.title"), opts, func() {
+		ui.Text(c, b.unsub.Host).FontWeight(600)
+		if b.unsub.List != "" {
+			kit.Text(c, i18n.Tf("reader.unsubscribe.list", b.unsub.List), t.Text.Sm).TextColor(t.Muted)
+		}
+	}, func() {
+		if kit.Button(c, i18n.T("common.cancel"), kit.ButtonOpts{Variant: kit.Outline}).Clicked() {
+			r.unsubDlg = false
+		}
+		if kit.Button(c, i18n.T("reader.unsubscribe"), kit.ButtonOpts{}).AutoFocus().Clicked() {
+			r.unsubDlg = false
+			r.sendUnsubscribe(id)
+		}
+	})
 }

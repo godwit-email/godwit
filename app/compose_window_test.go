@@ -81,9 +81,9 @@ func TestSidebarComposeOpensWindow(t *testing.T) {
 
 func TestMailtoOpensWindow(t *testing.T) {
 	h, accs := mailHarness(t, nil, "me@example.com")
-	h.app.openLink("mailto:lena@example.com")
+	h.app.openLink("mailto:lena@example.com?cc=max@example.com&subject=Hi+there%21")
 	d := h.draft(h.composeOpened(0))
-	if d.AccountID != accs[0].ID || len(d.To) != 1 || d.To[0] != "lena@example.com" {
+	if d.AccountID != accs[0].ID || len(d.To) != 1 || d.To[0] != "lena@example.com" || len(d.Cc) != 1 || d.Subject != "Hi+there!" {
 		t.Fatalf("draft %+v", d)
 	}
 }
