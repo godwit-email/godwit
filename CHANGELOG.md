@@ -1,5 +1,15 @@
 # Changelog
 
+## [1.15.0](https://github.com/godwit-email/godwit/compare/v1.14.0...v1.15.0) (2026-10-24)
+
+
+### Features
+
+* **ai:** run one-off generation on pi for every model service kind ([#230](https://github.com/godwit-email/godwit/issues/230)) ([#242](https://github.com/godwit-email/godwit/issues/242)) ([7490bb4](https://github.com/godwit-email/godwit/commit/7490bb4e81464bf6376ad94cca42fadebd2358e6))
+* **ai:** run plugin models and judges on pi behind the Labs switch ([#231](https://github.com/godwit-email/godwit/issues/231)) ([#245](https://github.com/godwit-email/godwit/issues/245)) ([cda9097](https://github.com/godwit-email/godwit/commit/cda9097d167ce5d1b879e1be7ef6bc1c5eca02b4))
+* **ai:** run the mail summary on pi + moejs behind a Labs switch ([#229](https://github.com/godwit-email/godwit/issues/229)) ([#240](https://github.com/godwit-email/godwit/issues/240)) ([347cbcb](https://github.com/godwit-email/godwit/commit/347cbcb0fad62ee9fecae58d978f16d593cce89e))
+* **plugins:** run translate script plugins on moejs behind the Labs switch ([#237](https://github.com/godwit-email/godwit/issues/237)) ([#243](https://github.com/godwit-email/godwit/issues/243)) ([ec39319](https://github.com/godwit-email/godwit/commit/ec39319cb85ee6490d32b775e436fb16e9e2458f))
+
 ## [1.14.0](https://github.com/godwit-email/godwit/compare/v1.13.0...v1.14.0) (2026-10-24)
 
 
