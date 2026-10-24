@@ -13,6 +13,7 @@ import (
 	"testing"
 
 	"github.com/godwit-email/godwit/core/internal/testllm"
+	"github.com/openai/openai-go/v3/responses"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -368,4 +369,16 @@ func TestResponsesUsage(t *testing.T) {
 	_, res := run(newEngine(t), Request{Model: respModel(srv.URL, "m1"), Prompt: "x", Tools: mixedTools(&readRuns)})
 	require.Nil(t, res.Err)
 	assert.Equal(t, Usage{Input: 100, Output: 15, Last: 60}, res.Usage)
+}
+
+func TestResponsesUsageConvention(t *testing.T) {
+	var u responses.ResponseUsage
+	require.NoError(t, json.Unmarshal([]byte(`{"input_tokens":100,"input_tokens_details":{"cached_tokens":60},
+		"output_tokens":50,"output_tokens_details":{"reasoning_tokens":30},"total_tokens":150}`), &u))
+	got := usageOf(u)
+	assert.Equal(t, 100, got.InputTokens)
+	assert.Equal(t, 60, got.CachedContentTokens)
+	assert.Equal(t, 20, got.OutputTokens)
+	assert.Equal(t, 30, got.ThoughtsTokens)
+	assert.Equal(t, 150, got.TotalTokens)
 }

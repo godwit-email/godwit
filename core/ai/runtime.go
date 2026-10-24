@@ -21,6 +21,7 @@ import (
 	antsdk "github.com/anthropics/anthropic-sdk-go"
 	ant "github.com/anthropics/anthropic-sdk-go/option"
 	gai "github.com/firebase/genkit/go/ai"
+	"github.com/firebase/genkit/go/ai/tool"
 	"github.com/firebase/genkit/go/core/api"
 	"github.com/firebase/genkit/go/core/logger"
 	"github.com/firebase/genkit/go/core/status"
@@ -391,7 +392,7 @@ func (r *runner) run(req Request) Result {
 		if err != nil {
 			return fail(err)
 		}
-		opts = append(opts, gai.WithToolResponses(parts...))
+		opts = append(opts, gai.WithResume(parts...))
 	}
 	if req.MaxTurns > 0 {
 		opts = append(opts, gai.WithMaxTurns(req.MaxTurns))
@@ -523,7 +524,8 @@ func (c callIDs) New(context.Context) (*gai.Hooks, error) {
 			if err == nil && resp.Usage != nil {
 				c.r.mu.Lock()
 				c.r.usage.Input += resp.Usage.InputTokens
-				c.r.usage.Output += resp.Usage.OutputTokens
+				// Genkit counts thinking apart from OutputTokens; it is still generated and billed output.
+				c.r.usage.Output += resp.Usage.OutputTokens + resp.Usage.ThoughtsTokens
 				c.r.usage.Last = resp.Usage.InputTokens
 				c.r.mu.Unlock()
 			}
@@ -576,7 +578,7 @@ func (r *runner) tool(s ToolSpec) *gai.ToolAction[any, any] {
 			}
 		}
 		if err == nil && (d == Approve || s.NeedsApproval) {
-			return nil, tc.Interrupt(nil)
+			return nil, tool.Interrupt(tc, nil)
 		}
 		var out any
 		switch {
@@ -615,8 +617,7 @@ func respond(history []*gai.Message, tools map[string]*gai.ToolAction[any, any],
 		if !open {
 			continue // ran before the interrupt; Genkit replays its result
 		}
-		t := tools[p.ToolRequest.Name]
-		if t == nil {
+		if tools[p.ToolRequest.Name] == nil {
 			return nil, fmt.Errorf("ai: tool %q is not offered to this run", p.ToolRequest.Name)
 		}
 		res.Error = redact(res.Error)
@@ -624,7 +625,11 @@ func respond(history []*gai.Message, tools map[string]*gai.ToolAction[any, any],
 		if err != nil {
 			return nil, err
 		}
-		parts = append(parts, t.Respond(p, out, nil))
+		part, err := p.ToToolResponse(out)
+		if err != nil {
+			return nil, err
+		}
+		parts = append(parts, part)
 	}
 	return parts, nil
 }

@@ -330,7 +330,11 @@ func signature(p *gai.Part) string {
 	return ""
 }
 
-// usageOf is a Responses response's token usage as Genkit's.
+// usageOf is a Responses response's token usage under Genkit's convention:
+// InputTokens is the whole prompt, cached tokens a part of it, and
+// OutputTokens leaves out the reasoning, which ThoughtsTokens counts.
 func usageOf(u responses.ResponseUsage) *gai.GenerationUsage {
-	return &gai.GenerationUsage{InputTokens: int(u.InputTokens), OutputTokens: int(u.OutputTokens), TotalTokens: int(u.TotalTokens)}
+	reasoning := int(u.OutputTokensDetails.ReasoningTokens)
+	return &gai.GenerationUsage{InputTokens: int(u.InputTokens), OutputTokens: int(u.OutputTokens) - reasoning,
+		ThoughtsTokens: reasoning, CachedContentTokens: int(u.InputTokensDetails.CachedTokens), TotalTokens: int(u.TotalTokens)}
 }
