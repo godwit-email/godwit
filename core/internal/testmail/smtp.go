@@ -34,6 +34,57 @@ type Inbox struct {
 	auths      int
 	block      chan struct{} // closed by the BlockData release func
 	entered    chan struct{}
+	replies    map[replyKey]reply
+}
+
+// SMTPStage is when a Reply answers.
+type SMTPStage int
+
+const (
+	AtRcpt SMTPStage = iota // RCPT TO
+	AtData                  // the end of DATA
+)
+
+type replyKey struct {
+	to string
+	at SMTPStage
+}
+
+type reply struct {
+	err  *smtp.SMTPError
+	once bool
+}
+
+// Reply makes the server answer resp for the recipient to at stage: at its
+// RCPT TO, or once the full DATA of a message to it is read (the message is
+// then not recorded). With once it answers only the next time, then accepts
+// again; otherwise every time until Reply is called again. A nil resp clears it.
+func (in *Inbox) Reply(to string, at SMTPStage, resp *smtp.SMTPError, once bool) {
+	in.mu.Lock()
+	defer in.mu.Unlock()
+	if in.replies == nil {
+		in.replies = map[replyKey]reply{}
+	}
+	k := replyKey{to, at}
+	if resp == nil {
+		delete(in.replies, k)
+		return
+	}
+	in.replies[k] = reply{resp, once}
+}
+
+// takeReply is the reply set for to at stage, if any; a one-time one is used up.
+// The caller holds in.mu.
+func (in *Inbox) takeReply(to string, at SMTPStage) error {
+	k := replyKey{to, at}
+	r, ok := in.replies[k]
+	if !ok {
+		return nil
+	}
+	if r.once {
+		delete(in.replies, k)
+	}
+	return r.err
 }
 
 // BlockData makes the next sessions hold their reply after reading the full DATA
@@ -148,6 +199,12 @@ func (s *smtpSession) Mail(from string, _ *smtp.MailOptions) error {
 }
 
 func (s *smtpSession) Rcpt(to string, _ *smtp.RcptOptions) error {
+	s.in.mu.Lock()
+	err := s.in.takeReply(to, AtRcpt)
+	s.in.mu.Unlock()
+	if err != nil {
+		return err
+	}
 	s.cur.To = append(s.cur.To, to)
 	return nil
 }
@@ -167,6 +224,11 @@ func (s *smtpSession) Data(r io.Reader) error {
 	}
 	s.in.mu.Lock()
 	defer s.in.mu.Unlock()
+	for _, to := range s.cur.To {
+		if err := s.in.takeReply(to, AtData); err != nil {
+			return err
+		}
+	}
 	s.in.msgs = append(s.in.msgs, s.cur)
 	if s.in.fail > 0 {
 		s.in.fail--

@@ -29,6 +29,7 @@ import (
 
 	"github.com/emersion/go-imap/v2"
 	"github.com/godwit-email/godwit/core"
+	"github.com/godwit-email/godwit/core/internal/testclock"
 	"github.com/godwit-email/godwit/core/internal/testllm"
 	"github.com/godwit-email/godwit/core/internal/testmail"
 	"github.com/godwit-email/godwit/core/plugins"
@@ -59,6 +60,7 @@ type Env struct {
 	servers map[int64]*mailServers
 	started map[string]*mailServers // StartServers' servers by IMAP address, until an account adopts them
 	egress  atomic.Int64
+	clock   *testclock.Clock
 }
 
 type mailServers struct {
@@ -108,7 +110,8 @@ func New(t *testing.T, opts ...Option) *Env {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { svc.Close() })
-	e := &Env{Svc: svc, DataDir: dir, servers: map[int64]*mailServers{}, started: map[string]*mailServers{}}
+	e := &Env{Svc: svc, DataDir: dir, servers: map[int64]*mailServers{}, started: map[string]*mailServers{}, clock: testclock.New(time.Now())}
+	svc.SetClockForTest(e.clock)
 
 	api := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		e.egress.Add(1)
@@ -119,6 +122,10 @@ func New(t *testing.T, opts ...Option) *Env {
 	svc.SetNativeHostForTest(NativeChildEnv + "=1")
 	return e
 }
+
+// AdvanceClock moves the Service's clock forward by d, firing the waits that
+// come due.
+func (e *Env) AdvanceClock(d time.Duration) { e.clock.Advance(d) }
 
 var live atomic.Bool // an Env is running
 

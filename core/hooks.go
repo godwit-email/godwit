@@ -186,10 +186,6 @@ func (s *Service) hookWait(ctx context.Context, d time.Duration, wake <-chan str
 	}
 }
 
-type realClock struct{}
-
-func (realClock) AfterFunc(d time.Duration, f func()) func() bool { return time.AfterFunc(d, f).Stop }
-
 // hookEvents is the next batch after the plugin's cursor, with each event's
 // snapshot and whether its message has been deleted since.
 func (s *Service) hookEvents(ctx context.Context, name string) ([]hookEvent, error) {
