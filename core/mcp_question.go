@@ -201,6 +201,9 @@ func formContent(qs []formQuestion, sch *jsonschema.Schema, answers [][]string) 
 		case "integer":
 			var n int64
 			n, err = strconv.ParseInt(strings.TrimSpace(ans[0]), 10, 64)
+			if n > 1<<53 || n < -(1<<53) { // beyond what a float64 holds exactly: sent, it would be another number
+				err = errors.New("too large")
+			}
 			v = float64(n) // as JSON decodes it, which the schema check expects
 		case "boolean":
 			v, err = strconv.ParseBool(ans[0])

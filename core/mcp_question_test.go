@@ -76,6 +76,7 @@ func TestMCPQuestionOfApprovedCall(t *testing.T) {
 	assert.Error(t, e.s.AnswerQuestion(t.Context(), id, [][]string{{}, {"true"}, {"2"}}), "the room is required")
 	assert.Error(t, e.s.AnswerQuestion(t.Context(), id, [][]string{{"Large"}, {}, {"9"}}), "at most 7 nights")
 	assert.Error(t, e.s.AnswerQuestion(t.Context(), id, [][]string{{"Huge"}, {}, {}}), "only its choices")
+	assert.ErrorContains(t, e.s.AnswerQuestion(t.Context(), id, [][]string{{"Large"}, {}, {"9007199254740993"}}), "needs a integer", "not exact as a float64")
 
 	require.NoError(t, e.s.AnswerQuestion(t.Context(), id, [][]string{{"Large"}, {}, {"2"}}))
 	e.waitRun(t, in.RunID, "done")
