@@ -31,6 +31,7 @@ const (
 	SourcePlugin = "plugin"
 	SourceMCP    = "mcp"
 	SourceHook   = "hook"
+	SourceUser   = "user" // the user's own click in the app (a one-click unsubscribe), never a tool
 )
 
 // Call is one tool call. Egress lists the destinations of a network tool.

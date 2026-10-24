@@ -218,6 +218,7 @@ func (a *App) View(c *ui.Context) {
 	a.linkDialog(c)
 	a.closeDialog(c)
 	a.mail.reader.egressDialog(c)
+	a.mail.reader.unsubscribeDialog(c)
 	a.mcpSendDialog(c)
 	kit.ToastHost(c, i18n.T("toast.close"))
 	// Last, on the root, which overlays (menus, dialogs, Select lists, toasts)

@@ -410,6 +410,13 @@ var Migrations = [][]string{{
 	// An MCP call's question for the user (core.mcpInput, JSON): the server's
 	// form and state, and once answered the answer it is called again with.
 	`ALTER TABLE approvals ADD COLUMN input TEXT`,
+}, {
+	// A message's List-Unsubscribe, List-Unsubscribe-Post and List-Id as sent
+	// (core.UnsubscribeMethod reads them): '' the sync found none, NULL the
+	// message was synced before these were fetched (fetched when it is shown).
+	`ALTER TABLE messages ADD COLUMN list_unsubscribe TEXT`,
+	`ALTER TABLE messages ADD COLUMN list_unsubscribe_post TEXT`,
+	`ALTER TABLE messages ADD COLUMN list_id TEXT`,
 }}
 
 // HistoryRowsVersion is the schema version that keeps a conversation's
