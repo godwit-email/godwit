@@ -293,6 +293,21 @@ func (h *History) Close(responses []ToolResult) (*History, HistoryChanges, error
 	return h.with(map[int]*gai.Message{len(h.msgs) - 1: last}, []*gai.Message{toolMsg})
 }
 
+// OpenCalls are the calls of h's last message still waiting for a result,
+// as results to fill for Close; none when it has no open calls.
+func (h *History) OpenCalls() []ToolResult {
+	if !openCalls(h.msgs) {
+		return nil
+	}
+	var out []ToolResult
+	for _, p := range h.msgs[len(h.msgs)-1].Content {
+		if _, ran := p.Metadata["pendingOutput"]; p.IsToolRequest() && !ran {
+			out = append(out, ToolResult{CallID: p.ToolRequest.Ref, Name: p.ToolRequest.Name})
+		}
+	}
+	return out
+}
+
 // clone is a deep copy of m, through its encoding.
 func clone(m *gai.Message) (*gai.Message, error) {
 	b, err := json.Marshal(m)

@@ -450,12 +450,15 @@ func TestCancelRunClosesHistory(t *testing.T) {
 	require.ErrorIs(t, e.s.ResolveApproval(t.Context(), in.Approvals[0].ID, true), ErrInvalidState)
 	assert.Zero(t, e.applied.Load())
 	assert.Len(t, e.srv.Requests(), 1, "cancelling does not ask the model")
-	select {
-	case ev := <-evs:
-		assert.Equal(t, "approvals.changed", ev.Type)
-		assert.Equal(t, conv.ID, ev.ConversationID)
-	case <-time.After(time.Second):
-		t.Fatal("no approvals.changed")
+	for got := false; !got; { // the interrupting run's runs.changed may still arrive first
+		select {
+		case ev := <-evs:
+			if got = ev.Type == "approvals.changed"; got {
+				assert.Equal(t, conv.ID, ev.ConversationID)
+			}
+		case <-time.After(time.Second):
+			t.Fatal("no approvals.changed")
+		}
 	}
 
 	evs2 := e.start(t, conv, "something else")
@@ -760,6 +763,25 @@ func TestResumeClaimFailureFailsRun(t *testing.T) {
 	e.waitRun(t, in.RunID, "failed")
 	evs := e.start(t, conv, "again") // the failed run blocks nothing and left no open calls
 	assert.Equal(t, "done", evs[len(evs)-1].Kind)
+}
+
+func TestResumeSaveFailureLeavesNoOpenCalls(t *testing.T) {
+	e := newApprovalEnv(t)
+	conv := e.newConv(t, "ask", 0)
+	in := e.interrupt(t, conv, testllm.Call{Name: "fake_draft", Args: `{"subject":"A"}`})
+	_, err := e.s.db.Execute(t.Context(), `CREATE TRIGGER fail_save BEFORE UPDATE OF next_seq ON conversations
+		BEGIN SELECT RAISE(ABORT, 'injected save failure'); END`)
+	require.NoError(t, err)
+	require.NoError(t, e.s.ResolveApproval(t.Context(), in.Approvals[0].ID, true))
+	e.waitRun(t, in.RunID, "failed") // the resume's outcome could not be saved
+	_, err = e.s.db.Execute(t.Context(), "DROP TRIGGER fail_save")
+	require.NoError(t, err)
+	evs := e.start(t, conv, "again")
+	require.Equal(t, "done", evs[len(evs)-1].Kind, "%+v", evs[len(evs)-1].Err)
+	reqs := e.srv.Requests()
+	calls, results := toolPairs(t, reqs[len(reqs)-1])
+	assert.Equal(t, calls, results, "every tool request in the history has its result")
+	assert.NotContains(t, string(reqs[len(reqs)-1].Messages), msgRecovery, "the approved call keeps the result it recorded")
 }
 
 func TestRecoveryFailureFailsRun(t *testing.T) {
