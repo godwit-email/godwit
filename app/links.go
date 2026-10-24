@@ -20,7 +20,7 @@ func (a *App) openLink(link string) {
 	}
 	switch strings.ToLower(u.Scheme) {
 	case "mailto":
-		a.mailto(u, a.mail.reader.account())
+		a.mailto(link, a.mail.reader.account())
 	case "http", "https":
 		a.link, a.linkOpen = link, true
 	}
@@ -31,33 +31,21 @@ func (a *App) openLink(link string) {
 // is shown there, whatever the reader last showed.
 func (a *App) OpenLink(link string) {
 	if u, err := url.Parse(link); err == nil && strings.EqualFold(u.Scheme, "mailto") {
-		a.mailto(u, 0)
+		a.mailto(link, 0)
 		return
 	}
 	a.openLink(link)
 }
 
-// mailto starts a new draft from account acc (0: the default one) to the
-// link's addresses, and opens it in a compose window.
-func (a *App) mailto(u *url.URL, acc int64) {
-	addrs, _ := url.PathUnescape(u.Opaque)
-	var to []string
-	for _, s := range strings.Split(addrs, ",") {
-		if s = strings.TrimSpace(s); s != "" {
-			to = append(to, s)
-		}
-	}
+// mailto starts a new draft from account acc (0: the default one) as the
+// link fills it (core.NewMailtoDraft), and opens it in a compose window.
+func (a *App) mailto(link string, acc int64) {
 	if acc == 0 {
 		acc = a.defaultAccount()
 	}
 	var id int64
 	a.do(func(ctx context.Context) error {
-		d, err := a.svc.NewDraft(ctx, acc, "new", 0)
-		if err != nil {
-			return err
-		}
-		d.To = to
-		d, err = a.svc.SaveDraft(ctx, d)
+		d, err := a.svc.NewMailtoDraft(ctx, acc, link)
 		id = d.ID
 		return err
 	}, func(err error) {

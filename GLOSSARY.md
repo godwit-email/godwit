@@ -23,6 +23,10 @@ _Avoid_: 智能文件夹
 **期望位置 / 服务器位置**：
 一封邮件在用户眼中的文件夹，和最后经服务器确认的「文件夹 + UIDVALIDITY + UID」。两者在本地修改推送前可以不同。
 
+**一键退订**（`Unsubscribe`）：
+只按邮件头里 RFC 8058 的声明（`List-Unsubscribe-Post: List-Unsubscribe=One-Click` 加 https 链接），由 Godwit 代用户发一次 POST；不跟随跳转，只有 2xx 算已发送。其余退订方式（网页、mailto）交还用户：网页在浏览器里打开，mailto 只生成草稿。正文里的链接从不参与。
+_Avoid_: 取消订阅、自动退订
+
 **操作队列**：
 本地已经生效、等待推送到服务器的修改（标记、移动、删除）。
 

@@ -38,7 +38,13 @@ type Parsed struct {
 	Damaged                                      bool     // best-effort result: some part failed to read or decode
 	Warnings                                     []string // what went wrong, for logs
 	Attachments                                  []Attachment
+	// The List-Unsubscribe, List-Unsubscribe-Post and List-Id headers as
+	// sent, unfolded and trimmed; "" when absent or over MaxListHeaderBytes.
+	ListUnsubscribe, ListUnsubscribePost, ListID string
 }
+
+// MaxListHeaderBytes is the longest List-* header kept; a longer one counts as absent.
+const MaxListHeaderBytes = 2 << 10
 
 // Attachment Part is the IMAP-style 1-based dot path ("1", "2.1").
 // Data is empty when produced by ParseStructure.
@@ -99,6 +105,13 @@ func addrs(h *gomail.Header, key string) []string {
 	return out
 }
 
+func listHeader(h *gomail.Header, k string) string {
+	if v := strings.TrimSpace(h.Get(k)); len(v) <= MaxListHeaderBytes {
+		return v
+	}
+	return ""
+}
+
 func cleanID(s string) string { return strings.TrimSpace(strings.Trim(strings.TrimSpace(s), "<>")) }
 
 // classify decides whether a leaf is a displayable body and whether it is inline.
@@ -130,6 +143,7 @@ func Parse(raw []byte) (*Parsed, error) {
 		p.InReplyTo = l[0]
 	}
 	p.References, _ = h.MsgIDList("References")
+	p.ListUnsubscribe, p.ListUnsubscribePost, p.ListID = listHeader(&h, "List-Unsubscribe"), listHeader(&h, "List-Unsubscribe-Post"), listHeader(&h, "List-Id")
 	if err != nil {
 		p.warn("header: %v", err)
 	}

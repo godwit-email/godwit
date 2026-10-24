@@ -74,7 +74,7 @@ func (p *responsesPlugin) ResolveAction(t api.ActionType, id string) api.Action 
 	if t != api.ActionTypeModel {
 		return nil
 	}
-	opts := &gai.ModelOptions{Supports: &gai.ModelSupports{Multiturn: true, Tools: true, SystemRole: true}}
+	opts := &gai.ModelOptions{Supports: &gai.ModelSupports{Multiturn: true, Tools: true, ToolChoice: true, SystemRole: true}}
 	return gai.NewModelAction(api.NewName(p.Name(), id), opts,
 		func(ctx context.Context, req *gai.ModelRequest, cfg any, cb gai.ModelStreamCallback) (*gai.ModelResponse, error) {
 			return p.generate(ctx, id, req, cfg, cb)
@@ -298,6 +298,9 @@ func responsesParams(model string, req *gai.ModelRequest) (responses.ResponseNew
 		Store:   param.NewOpt(false),
 		Include: []responses.ResponseIncludable{responses.ResponseIncludableReasoningEncryptedContent},
 		Input:   responses.ResponseNewParamsInputUnion{OfInputItemList: items},
+	}
+	if req.ToolChoice != "" { // Genkit's auto, required and none are the Responses modes of the same names
+		params.ToolChoice = responses.ResponseNewParamsToolChoiceUnion{OfToolChoiceMode: param.NewOpt(responses.ToolChoiceOptions(req.ToolChoice))}
 	}
 	if len(system) > 0 {
 		params.Instructions = param.NewOpt(strings.Join(system, "\n"))

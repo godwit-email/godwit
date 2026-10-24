@@ -414,6 +414,13 @@ var Migrations = [][]string{{
 	// ai_cache.created_at is an output's last use: core.cleanAICache deletes
 	// by it every janitor tick.
 	`CREATE INDEX ai_cache_created ON ai_cache(created_at)`,
+}, {
+	// A message's List-Unsubscribe, List-Unsubscribe-Post and List-Id as sent
+	// (core.UnsubscribeMethod reads them): '' the sync found none, NULL the
+	// message was synced before these were fetched (fetched when it is shown).
+	`ALTER TABLE messages ADD COLUMN list_unsubscribe TEXT`,
+	`ALTER TABLE messages ADD COLUMN list_unsubscribe_post TEXT`,
+	`ALTER TABLE messages ADD COLUMN list_id TEXT`,
 }}
 
 // HistoryRowsVersion is the schema version that keeps a conversation's

@@ -249,10 +249,12 @@ func TestComposeOpenLink(t *testing.T) {
 	assert.ErrorIs(t, f.page.OpenLink(f.ctx(1), "javascript:x"), ErrBadLink)
 	assert.ErrorIs(t, f.page.OpenLink(f.ctx(1), "file:///etc/passwd"), ErrBadLink)
 	assert.Len(t, urls, 1)
-	require.NoError(t, f.page.OpenLink(f.ctx(1), "mailto:a@b.c"))
+	require.NoError(t, f.page.OpenLink(f.ctx(1), "mailto:a@b.c?subject=%E9%80%80%E8%AE%A2&body=a%0Ab"))
 	require.Len(t, opened, 1)
 	d := f.stored(t, opened[0])
 	assert.Equal(t, []string{"a@b.c"}, d.To)
+	assert.Equal(t, "退订", d.Subject)
+	assert.Contains(t, d.HTML, "a<br/>b")
 	assert.Equal(t, f.acc.ID, d.AccountID)
 	assert.ErrorIs(t, f.page.OpenLink(context.Background(), "https://x.org"), ErrNoDraft, "a window with no draft")
 }

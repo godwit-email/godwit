@@ -72,6 +72,7 @@ type config struct {
 	registry *core.RegistrySource
 	sys      core.SystemTranslator
 	confirm  bool
+	unsub    *http.Client
 }
 
 type Option func(*config)
@@ -85,6 +86,9 @@ func WithSystemTranslator(t core.SystemTranslator) Option { return func(c *confi
 // WithConfirmWindow is the GUI's Service: a window can confirm godwit mcp's
 // sends (core.Options.ConfirmWindow). Without it 每次确认 refuses them, as headless.
 func WithConfirmWindow() Option { return func(c *config) { c.confirm = true } }
+
+// WithUnsubscribeClient sends one-click unsubscribes with c, as one reaching an httptest server.
+func WithUnsubscribeClient(c *http.Client) Option { return func(cfg *config) { cfg.unsub = c } }
 
 // WithoutAutoSync starts no background sync; Deliver still syncs.
 func WithoutAutoSync() Option { return func(c *config) { c.autoSync = false } }
@@ -103,7 +107,7 @@ func New(t *testing.T, opts ...Option) *Env {
 	imageClient := imagefetch.NewClient(true)
 	imageClient.Transport.(*http.Transport).DialContext = netOptions("").Dial
 	svc, err := core.New(context.Background(), core.Options{DataDir: dir, AutoSync: cfg.autoSync, SystemLanguage: "zh-CN", ImageClient: imageClient,
-		Registry: cfg.registry, AppVersion: "1.2.0", SystemTranslator: cfg.sys, ConfirmWindow: cfg.confirm})
+		Registry: cfg.registry, AppVersion: "1.2.0", SystemTranslator: cfg.sys, ConfirmWindow: cfg.confirm, UnsubscribeClient: cfg.unsub})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -282,6 +286,7 @@ type msgConfig struct {
 	inReplyTo, messageID, html string
 	date                       time.Time
 	atts                       []attachment
+	header                     []string
 }
 
 type attachment struct {
@@ -297,6 +302,9 @@ func MessageID(id string) MsgOption { return func(c *msgConfig) { c.messageID = 
 // HTML adds an HTML alternative to the text body.
 func HTML(html string) MsgOption { return func(c *msgConfig) { c.html = html } }
 func Date(d time.Time) MsgOption { return func(c *msgConfig) { c.date = d } }
+
+// Header adds a header line, as "List-Id: <news.example>".
+func Header(line string) MsgOption { return func(c *msgConfig) { c.header = append(c.header, line) } }
 func Attachment(name, ctype string, data []byte) MsgOption {
 	return func(c *msgConfig) { c.atts = append(c.atts, attachment{name, ctype, data}) }
 }
@@ -326,6 +334,9 @@ func Msg(from, to, subject, body string, opts ...MsgOption) []byte {
 		c.messageID, from, to, mime.QEncoding.Encode("utf-8", subject), c.date.Format(time.RFC1123Z))
 	if c.inReplyTo != "" {
 		fmt.Fprintf(&b, "In-Reply-To: <%s>\r\nReferences: <%s>\r\n", c.inReplyTo, c.inReplyTo)
+	}
+	for _, l := range c.header {
+		b.WriteString(l + "\r\n")
 	}
 	part := leaf("Content-Type: text/plain; charset=utf-8\r\n", []byte(body))
 	if c.html != "" {
