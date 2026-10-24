@@ -82,7 +82,8 @@ func TestUndoSendToast(t *testing.T) {
 }
 
 // Each message gets one toast, however often the outbox changes, and it
-// closes once the message is on its way.
+// closes once the message is on its way; once it leaves the outbox, the App
+// keeps nothing of it.
 func TestUndoSendToastOncePerItem(t *testing.T) {
 	h, accs := mailHarness(t, []coretest.Option{coretest.WithoutAutoSync()}, "alice@example.com")
 	acc := accs[0]
@@ -100,6 +101,7 @@ func TestUndoSendToastOncePerItem(t *testing.T) {
 	if n := len(h.env.Sent(acc.ID)); n != 2 {
 		t.Fatalf("%d messages sent, want 2", n)
 	}
+	h.waitMail("filed, they are forgotten", func() bool { return h.outbox(acc) == 0 && len(h.app.undoToasts) == 0 })
 }
 
 // Undo after sending began says it cannot be taken back.

@@ -423,7 +423,8 @@ func (s *Service) smtpEndpoint(ctx context.Context, accountID int64, rejected st
 // sendItem submits a queued item and reports whether it is now sent. A refused
 // login puts the item back to queued and returns the conn.ErrAuthFailed error.
 // A permanent refusal (5xx) fails it; any other error before the server could
-// accept it queues it again after a backoff. The claim (queued to sending)
+// accept it queues it again after a backoff, unless ctx ended: then it is
+// queued as it was, with no try counted. The claim (queued to sending)
 // races CancelOutbox's delete: one of them wins.
 func (s *Service) sendItem(ctx, wctx context.Context, ep conn.Endpoint, from string, o outboxRow) (bool, error) {
 	if ok, err := s.setOutbox(ctx, o, "sending", ""); !ok || err != nil {
@@ -449,6 +450,9 @@ func (s *Service) sendItem(ctx, wctx context.Context, ep conn.Endpoint, from str
 	case errors.As(err, &rej) && rej.Code >= 500:
 		return false, s.failOutbox(wctx, o, err.Error(), OutboxFailure{Reason: "rejected", Stage: rej.Stage,
 			Recipient: rej.Recipient, Code: rej.Code, Enhanced: rej.Enhanced, Message: rej.Message})
+	case ctx.Err() != nil: // the sync stopped (quitting, the worker stopping): not a try
+		_, err = s.db.Execute(wctx, "UPDATE outbox SET state = 'queued' WHERE id = ? AND state = 'sending'", o.id)
+		return false, err
 	}
 	// Refused for now (4xx), or failed before the server could take it: retry later.
 	wait := min(retryMin<<min(o.attempts, 6), retryMax) // 2^6 min is past retryMax; the shift cannot overflow

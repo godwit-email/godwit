@@ -134,6 +134,31 @@ func TestQueuedDraftIsReadOnly(t *testing.T) {
 	e.onlyItem(t)
 }
 
+// While the item holds the draft, Wit starts nothing on it: a run there would
+// outlive the draft once the message goes.
+func TestNoWitOnQueuedDraft(t *testing.T) {
+	e := newSendEnv(t, false)
+	d := e.draftToSend(t)
+	require.NoError(t, e.s.Send(bg, d.ID))
+
+	_, err := e.s.Assist(bg, d.ID, "make it shorter")
+	assert.ErrorIs(t, err, ErrStaleDraft, "Assist")
+	_, err = e.s.AssistWith(bg, d.ID, "make it shorter", nil)
+	assert.ErrorIs(t, err, ErrStaleDraft, "AssistWith")
+	_, err = e.s.AssistSkill(bg, d.ID, "shorter", SkillOptions{})
+	assert.ErrorIs(t, err, ErrStaleDraft, "AssistSkill")
+	_, err = e.s.RewriteSelection(bg, d.ID, Selection{Revision: d.Revision}, "shorter")
+	assert.ErrorIs(t, err, ErrStaleDraft, "RewriteSelection")
+	_, err = e.s.AssistConversation(bg, d.ID, true)
+	assert.ErrorIs(t, err, ErrStaleDraft, "AssistConversation")
+	_, err = e.s.NewConversation(bg, "assist", d.ID)
+	assert.ErrorIs(t, err, ErrStaleDraft, "NewConversation")
+
+	require.NoError(t, e.s.CancelOutbox(bg, e.onlyItem(t).ID))
+	_, err = e.s.AssistConversation(bg, d.ID, true)
+	assert.NoError(t, err, "taken back, it is the user's again")
+}
+
 // With AutoSync on, the worker sends the message once the window has passed,
 // with no SyncNow.
 func TestWorkerSendsAfterUndoWindow(t *testing.T) {

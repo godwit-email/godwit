@@ -174,11 +174,13 @@ func undoToastID(id int64) string { return fmt.Sprint("undo-send:", id) }
 // offerUndo lists every account's outbox after it changed: a message in its
 // undo window gets a toast to take it back, once per item, until its time
 // comes; the toast of an item that left the window (sending began, or it
-// was taken back) closes. Only the newest listing counts.
+// was taken back) closes, and an item no longer listed is forgotten. Only
+// the newest listing counts.
 func (a *App) offerUndo() {
 	a.undoGen++
 	gen := a.undoGen
 	var queued []outboxEntry
+	listed := map[int64]bool{}
 	a.do(func(ctx context.Context) error {
 		accs, err := a.svc.ListAccounts(ctx)
 		if err != nil {
@@ -190,6 +192,7 @@ func (a *App) offerUndo() {
 				return err
 			}
 			for _, it := range items {
+				listed[it.ID] = true
 				if it.State == "queued" {
 					queued = append(queued, outboxEntry{it, cmp.Or(acc.Alias, acc.Email)})
 				}
@@ -223,6 +226,9 @@ func (a *App) offerUndo() {
 			if showing && !open[id] {
 				a.undoToasts[id] = false
 				a.closeToasts = append(a.closeToasts, undoToastID(id))
+			}
+			if !listed[id] { // out of the outbox for good: item ids are never reused
+				delete(a.undoToasts, id)
 			}
 		}
 	})

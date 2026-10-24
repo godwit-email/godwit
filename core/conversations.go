@@ -106,6 +106,9 @@ func (s *Service) NewConversation(ctx context.Context, kind string, draftID int6
 	if (kind != "ask" || draftID != 0) && (kind != "assist" || draftID == 0) {
 		return Conversation{}, fmt.Errorf("invalid conversation: kind %q, draft %d", kind, draftID)
 	}
+	if err := s.checkWitDraft(ctx, draftID); err != nil {
+		return Conversation{}, err
+	}
 	now := time.Now().Unix()
 	r, err := s.db.Execute(ctx, "INSERT INTO conversations(kind, draft_id, title, model, created_at, updated_at) VALUES (?, ?, '', '', ?, ?)",
 		kind, nullID(draftID), now, now)
@@ -998,8 +1001,12 @@ func (s *Service) launch(ctx context.Context, end func(), conv Conversation, pro
 
 // claimRun records a running run of conv unless the conversation has an
 // active one (ErrRunActive) and tracks it; h is the conversation's history
-// as of the claim. The caller holds runMu.
+// as of the claim. A draft in the outbox gets none (ErrStaleDraft). The caller
+// holds runMu.
 func (s *Service) claimRun(ctx context.Context, conv Conversation, ref string, tools []string) (*runJob, *ai.History, error) {
+	if err := s.checkWitDraft(ctx, conv.DraftID); err != nil {
+		return nil, nil, err
+	}
 	toolsJSON, _ := json.Marshal(tools)
 	snap, _ := json.Marshal(snapshot{})
 	now := time.Now().Unix()
@@ -1381,6 +1388,9 @@ func (s *Service) startResume(ctx context.Context, end func(), runID int64) erro
 		return nil
 	}
 	conv, err := s.conversation(ctx, store.Int(r[0]))
+	if err == nil {
+		err = s.checkWitDraft(ctx, conv.DraftID) // queued while the run waited: it fails, as it would outlive the draft
+	}
 	if err != nil {
 		return err
 	}

@@ -485,7 +485,10 @@ func TestComposeSendSendsLatest(t *testing.T) {
 	assert.True(t, sr.Sent)
 	assert.Equal(t, []int{1}, f.done)
 	assert.True(t, f.queued(t, d.ID))
-	raw, err := os.ReadFile(filepath.Join(f.e.DataDir, "outbox", strconv.FormatInt(d.ID, 10)+".eml"))
+	paths, err := filepath.Glob(filepath.Join(f.e.DataDir, "outbox", strconv.FormatInt(d.ID, 10)+"-*.eml"))
+	require.NoError(t, err)
+	require.Len(t, paths, 1)
+	raw, err := os.ReadFile(paths[0])
 	require.NoError(t, err)
 	assert.Contains(t, string(raw), "latestbody")
 }

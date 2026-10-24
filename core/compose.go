@@ -3,6 +3,7 @@ package core
 import (
 	"cmp"
 	"context"
+	"crypto/rand"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -64,6 +65,19 @@ func (s *Service) checkWritable(ctx context.Context, draftID int64) error {
 		return ErrStaleDraft
 	}
 	return nil
+}
+
+// checkWitDraft is ErrStaleDraft for Wit on a draft in the outbox: a run or
+// conversation there would outlive the draft once the message goes. A draftID
+// of 0 is no draft. A caller that starts a run holds runMu, which Send holds
+// from stopping the draft's runs until it is queued.
+func (s *Service) checkWitDraft(ctx context.Context, draftID int64) error {
+	if draftID == 0 {
+		return nil
+	}
+	s.editMu.Lock() // runMu, if held, before editMu, as enqueue
+	defer s.editMu.Unlock()
+	return s.checkWritable(ctx, draftID)
 }
 
 var draftModes = map[string]bool{"new": true, "reply": true, "reply_all": true, "forward": true}
@@ -661,8 +675,9 @@ func (s *Service) enqueue(ctx context.Context, draftID, rev int64, checked []str
 	if int64(len(raw)) > attachLimit { // encoding, headers and the text part count too
 		return ErrTooLarge
 	}
-	// Draft ids are never reused, and a draft is in one item at a time.
-	rawPath := filepath.Join(s.dataDir, "outbox", strconv.FormatInt(draftID, 10)+".eml")
+	// A path of its own: an item taken back removes its file after the draft is
+	// writable again, so it may be queued again first.
+	rawPath := filepath.Join(s.dataDir, "outbox", strconv.FormatInt(draftID, 10)+"-"+rand.Text()+".eml")
 	// Durable (file and directory entry) before the item is sent from it.
 	if err := store.WriteFileAtomic(rawPath, raw); err != nil {
 		return err

@@ -3,6 +3,7 @@ package core
 import (
 	"bytes"
 	"context"
+	"net"
 	netmail "net/mail"
 	"os"
 	"path/filepath"
@@ -303,6 +304,40 @@ func TestSendRetriesAfterNetworkError(t *testing.T) {
 	require.NoError(t, err)
 	e.sync(t)
 	assert.Len(t, e.smtp.Messages(), 1)
+}
+
+// A sync stopped while it submits (quitting, the worker stopping) puts the
+// item back as it was: not a try, and no wait before the next.
+func TestStoppedSendIsNotATry(t *testing.T) {
+	e := newSendEnv(t, false)
+	e.sendNew(t)
+	ln, err := net.Listen("tcp", "127.0.0.1:0") // accepts, never greets
+	require.NoError(t, err)
+	t.Cleanup(func() { ln.Close() })
+	go func() {
+		for {
+			if _, err := ln.Accept(); err != nil {
+				return
+			}
+		}
+	}()
+	_, err = e.s.db.Execute(bg, "UPDATE accounts SET smtp_port = ?", ln.Addr().(*net.TCPAddr).Port)
+	require.NoError(t, err)
+	ctx, cancel := context.WithCancel(bg)
+	done := make(chan error, 1)
+	go func() { done <- e.s.SyncNow(ctx, e.acc.ID) }()
+	require.Eventually(t, func() bool { return e.state(t) == "sending" }, 5*time.Second, 10*time.Millisecond)
+	cancel()
+	<-done
+
+	it := e.onlyItem(t)
+	assert.Equal(t, "queued", it.State)
+	assert.Zero(t, it.Attempts)
+	assert.True(t, it.NextAttempt.IsZero(), "no backoff")
+	_, err = e.s.db.Execute(bg, "UPDATE accounts SET smtp_port = ?", e.acc.SMTPPort)
+	require.NoError(t, err)
+	e.sync(t)
+	assert.Len(t, e.smtp.Messages(), 1, "sent on the next round")
 }
 
 func TestSendValidates(t *testing.T) {

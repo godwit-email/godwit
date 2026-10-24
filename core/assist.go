@@ -141,8 +141,12 @@ func (s *Service) AssistWith(ctx context.Context, draftID int64, input string, q
 }
 
 // assistDraft loads the draft and ties the call begun with ctx to its account.
+// One in the outbox is ErrStaleDraft.
 func (s *Service) assistDraft(ctx context.Context, draftID int64) (Draft, error) {
 	d, err := s.GetDraft(ctx, draftID)
+	if err == nil {
+		err = s.checkWitDraft(ctx, draftID)
+	}
 	if err != nil {
 		return Draft{}, err
 	}
