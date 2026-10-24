@@ -595,6 +595,14 @@ func (p *ComposePage) DecideAll(ctx context.Context, run int64, accept bool) (Bo
 	})
 }
 
+// Answer answers question approval, one of the calling window's draft, with
+// one list of answers per question (core AnswerQuestion). As Decide.
+func (p *ComposePage) Answer(ctx context.Context, approval int64, answers [][]string) (BodyChange, error) {
+	return p.decide(ctx, func(a core.Approval) bool { return a.ID == approval }, func(svc *core.Service, a core.Approval) error {
+		return svc.AnswerQuestion(context.WithoutCancel(ctx), a.ID, answers)
+	})
+}
+
 // Finish settles approval, an inline draft edit, with a decision per change
 // (Review.Changes; 1 accepts, -1 rejects): all accepted or all rejected
 // decides it; a mix applies the text the decisions make. As Decide.

@@ -586,6 +586,11 @@ function Compose({
     }
     return !!r;
   };
+  const answerTool = async (a: Approval, answers: string[][]) => {
+    if (deciding) return false;
+    runEdits.current = edits.current;
+    return !!(await bodyOp(() => witResume.decide(a.run, () => api.answer(a.id, answers))));
+  };
   const undo = async () => {
     setApplied(false);
     await bodyOp(() => api.undo());
@@ -974,6 +979,7 @@ function Compose({
               }}
               onRunning={setPanelRunning}
               onDecide={decideTool}
+              onAnswer={answerTool}
               onSearch={(q) => api.searchMail(q)}
               model={state.wit.model}
               onModels={() =>
