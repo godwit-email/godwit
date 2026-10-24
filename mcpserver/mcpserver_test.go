@@ -526,7 +526,7 @@ func TestMCPReadDownloadsNothing(t *testing.T) {
 	assert.Zero(t, cacheFiles(e.DataDir))
 	assert.Regexp(t, `attachment \d+ · \d+ bytes · inline\n<untrusted_email id="message-\d+" field="attachment_name">c.png</untrusted_email>`, out)
 	assert.Regexp(t, `attachment \d+ · \d+ bytes\n<untrusted_email id="message-\d+" field="attachment_name">r.pdf</untrusted_email>`, out)
-	assert.Contains(t, out, `field="body">see the chart</untrusted_email>`)
+	assert.Contains(t, out, `field="body">see</untrusted_email>`, "the HTML the reader shows, not the plain part")
 }
 
 // Numbers JSON Schema accepts as integers but Go does not decode (1.0, 1e0,

@@ -214,7 +214,7 @@ func TestMCPReadDownloadsNothing(t *testing.T) {
 	require.NoError(t, c.Call(ctx, "GetThread", &th, page.Items[0].ThreadID))
 	assert.Equal(t, before, e.IMAP(acc.ID).BytesSent(), "no IMAP traffic")
 	assert.Zero(t, cacheFiles(e.DataDir))
-	assert.Equal(t, "see the chart", m.Text)
+	assert.Equal(t, "see", m.Text, "the HTML the reader shows, not the plain part")
 	require.Len(t, m.Attachments, 1)
 	assert.Equal(t, "r.pdf", m.Attachments[0].Filename)
 }

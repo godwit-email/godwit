@@ -5,11 +5,12 @@ import (
 	"fmt"
 
 	"github.com/godwit-email/godwit/core/gateway"
+	"github.com/godwit-email/godwit/core/mail"
 	"github.com/godwit-email/godwit/core/store"
 )
 
-// MessageText is a message as stored: its plain text and metadata, with the
-// attachments listed but never fetched.
+// MessageText is a message as stored: its text as a model reads it (modelBody)
+// and metadata, with the attachments listed but never fetched.
 type MessageText struct {
 	MessageSummary
 	AccountID   int64
@@ -19,11 +20,11 @@ type MessageText struct {
 	Attachments []AttachmentInfo
 }
 
-// GetMessageText reads the message's stored text and metadata. Unlike
-// GetMessage it processes no HTML and reads or downloads no attachment or
-// inline image.
+// GetMessageText reads the message's text and metadata from the database: the
+// text a model reads, without what the reader never shows. Unlike GetMessage it
+// sanitizes no HTML and reads or downloads no attachment or inline image.
 func (s *Service) GetMessageText(ctx context.Context, id int64) (MessageText, error) {
-	rows, err := s.db.Query(ctx, "SELECT "+msgCols+", m.account_id, m.reply_to, m.body_text, m.body_truncated FROM messages m WHERE m.id = ?", id)
+	rows, err := s.db.Query(ctx, "SELECT "+msgCols+", m.account_id, m.reply_to, m.body_text, m.body_truncated, m.body_html FROM messages m WHERE m.id = ?", id)
 	if err != nil {
 		return MessageText{}, err
 	}
@@ -32,7 +33,12 @@ func (s *Service) GetMessageText(ctx context.Context, id int64) (MessageText, er
 	}
 	r := rows.Values[0]
 	m := MessageText{MessageSummary: scanSummary(r), AccountID: store.Int(r[11]), ReplyTo: store.Str(r[12]),
-		Text: store.Str(r[13]), Truncated: store.Int(r[14]) != 0}
+		Truncated: store.Int(r[14]) != 0}
+	body := Message{Text: store.Str(r[13])}
+	if raw := store.Str(r[15]); raw != "" {
+		body.HTML, _ = mail.Sanitize(raw, nil, false) // as mailForModel: the HTML the reader shows
+	}
+	m.Text = modelBody(body)
 	ar, err := s.db.Query(ctx, "SELECT id, filename, content_type, size, inline FROM attachments WHERE message_id = ? ORDER BY id", id)
 	if err != nil {
 		return MessageText{}, err
