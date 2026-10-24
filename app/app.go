@@ -241,6 +241,8 @@ type App struct {
 	link     string // the link waiting for confirmation
 	linkOpen bool   // the link dialog shows
 
+	mcpSend mcpSendState // godwit mcp's send request waiting for the user (mcpsend.go)
+
 	customIcons map[int64]accountImage // by account id: its uploaded icon (accountImage)
 
 	tempMu   sync.Mutex

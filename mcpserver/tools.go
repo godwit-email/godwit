@@ -39,6 +39,8 @@ var tools = []tool{
 		`{"type":"object","properties":{"to":{"type":"array","items":{"type":"string"}},"cc":{"type":"array","items":{"type":"string"}},"subject":{"type":"string"},"body":{"type":"string"},"account_id":{"type":"integer","minimum":1},"reply_to_message_id":{"type":"integer","minimum":1},"reply_all":{"type":"boolean"}},"required":["body"],"additionalProperties":false}`, createDraft},
 	{"update_draft", "Change a draft's subject, to, cc or plain-text body; fields left out stay as they are, and the quote and signature are kept. revision is the draft's from get_draft: if the draft changed since, nothing is saved; read it again.", false,
 		`{"type":"object","properties":{"draft_id":{"type":"integer","minimum":1},"revision":{"type":"integer","minimum":1},"subject":{"type":"string"},"to":{"type":"array","items":{"type":"string"}},"cc":{"type":"array","items":{"type":"string"}},"body":{"type":"string"}},"required":["draft_id","revision"],"additionalProperties":false}`, updateDraft},
+	{"send_draft", "Ask Godwit to send a draft as it is at revision (from get_draft). The user's Send through MCP setting decides: off fails; confirm (the default) returns at once while Godwit asks the user, who may decline; direct queues it in the outbox. If the draft changed since revision, nothing is sent; read it again.", false,
+		`{"type":"object","properties":{"draft_id":{"type":"integer","minimum":1},"revision":{"type":"integer","minimum":1}},"required":["draft_id","revision"],"additionalProperties":false}`, sendDraft},
 }
 
 func listAccounts(ctx context.Context, c *rpc.Client, _ json.RawMessage) (string, error) {
@@ -321,6 +323,25 @@ func updateDraft(ctx context.Context, c *rpc.Client, args json.RawMessage) (stri
 		return "", errors.New("invalid argument: revision (expected integer ≥ 1)")
 	}
 	return save(ctx, c, a.DraftID, a.Revision, a.edit)
+}
+
+// sendDraft relays the request; Godwit's core decides by the setting.
+func sendDraft(ctx context.Context, c *rpc.Client, args json.RawMessage) (string, error) {
+	var a struct {
+		DraftID  int64 `json:"draft_id"`
+		Revision int64 `json:"revision"`
+	}
+	if err := decode(args, &a); err != nil {
+		return "", err
+	}
+	var sent bool
+	if err := c.Call(ctx, "RequestMCPSend", &sent, a.DraftID, a.Revision); err != nil {
+		return "", err
+	}
+	if sent {
+		return "sent: the draft is in Godwit's outbox", nil
+	}
+	return "waiting for the user to confirm in Godwit; it is not sent yet", nil
 }
 
 // save reads the draft back, merges e and saves it against the revision read

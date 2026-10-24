@@ -57,6 +57,9 @@ type Options struct {
 	// ModelsDev is models.dev's catalog (ai.ModelsDevURL), where models'
 	// display names and context windows come from; "" fetches none (the apps set it).
 	ModelsDev string
+	// ConfirmWindow: a window can confirm godwit mcp's sends (每次确认); the
+	// GUI sets it. Without one (--headless) 每次确认 refuses them, as 不允许.
+	ConfirmWindow bool
 }
 
 // Service owns the database and event bus of one Godwit data directory.
@@ -113,6 +116,10 @@ type Service struct {
 	subsClosed bool
 	streamsEnd chan struct{}  // closed by Close: every witStream stops delivering
 	streams    sync.WaitGroup // witStream goroutines
+
+	sendReqMu sync.Mutex
+	sendReqs  map[int64]*mcpSend // godwit mcp's send requests not ended (mcpsend.go), by ID
+	sendReqID int64              // the last send request ID handed out
 
 	assistMu      sync.Mutex // finding or creating a draft's assist conversation
 	sessionGrants sync.Map   // grantKey -> true: session grants (本次对话都允许)

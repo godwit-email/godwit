@@ -95,6 +95,9 @@ func (a *App) onEvent(ev events.Event) {
 			p.load()
 		}
 		return
+	case events.MCPSendsChanged: // only the confirmation dialog shows them
+		a.loadMCPSends()
+		return
 	case events.SettingsChanged:
 		a.mail.reader.invalidateAvatars(false)
 	case events.SyncStarted:
@@ -212,6 +215,7 @@ func (a *App) View(c *ui.Context) {
 	a.linkDialog(c)
 	a.closeDialog(c)
 	a.mail.reader.egressDialog(c)
+	a.mcpSendDialog(c)
 	kit.ToastHost(c, i18n.T("toast.close"))
 	// Last, on the root, which overlays (menus, dialogs, Select lists, toasts)
 	// attach to: a c.SetTheme mid-frame resets its background to the theme's,

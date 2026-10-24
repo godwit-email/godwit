@@ -18,7 +18,8 @@ const (
 	MCPChanged        = "mcp.changed"
 	LabelsChanged     = "labels.changed"
 	SignaturesChanged = "signatures.changed"
-	ModelsChanged     = "models.changed" // a plugin model's files were downloaded or removed
+	ModelsChanged     = "models.changed"    // a plugin model's files were downloaded or removed
+	MCPSendsChanged   = "mcp_sends.changed" // godwit mcp's send requests waiting for the user changed
 )
 
 // subscriberBuffer is the per-subscriber queue capacity.

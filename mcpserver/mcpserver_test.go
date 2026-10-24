@@ -79,7 +79,7 @@ func cacheFiles(dataDir string) int {
 }
 
 var allTools = []string{"create_draft", "get_draft", "get_message", "get_thread", "list_accounts", "list_drafts",
-	"list_folders", "list_threads", "search", "update_draft"}
+	"list_folders", "list_threads", "search", "send_draft", "update_draft"}
 
 func TestMCPListTools(t *testing.T) {
 	e := coretest.New(t, coretest.WithoutAutoSync())
@@ -96,12 +96,69 @@ func TestMCPListTools(t *testing.T) {
 	}
 	assert.Equal(t, map[string]bool{"list_accounts": true, "list_folders": true, "list_threads": true, "get_thread": true,
 		"get_message": true, "search": true, "list_drafts": true, "get_draft": true,
-		"create_draft": false, "update_draft": false}, readOnly)
+		"create_draft": false, "update_draft": false, "send_draft": false}, readOnly)
 	assert.Contains(t, cs.InitializeResult().Instructions, "untrusted_email")
-	assert.Contains(t, cs.InitializeResult().Instructions, "cannot send")
+	assert.NotContains(t, cs.InitializeResult().Instructions, "cannot send")
+	assert.Contains(t, cs.InitializeResult().Instructions, "Send through MCP")
 }
 
-func TestMCPHasNoSend(t *testing.T) {
+// send_draft follows 通过 MCP 发送: off fails, confirm waits for the user's
+// Send in Godwit, direct queues the draft; a wrong revision fails as
+// update_draft's does.
+func TestMCPSendDraft(t *testing.T) {
+	for _, c := range []struct {
+		level, want     string
+		isErr           bool
+		outbox, pending int
+	}{
+		{core.MCPSendOff, core.ErrMCPSendOff.Error(), true, 0, 0},
+		{core.MCPSendConfirm, "waiting for the user to confirm in Godwit; it is not sent yet", false, 0, 1},
+		{core.MCPSendDirect, "sent: the draft is in Godwit's outbox", false, 1, 0},
+	} {
+		t.Run(c.level, func(t *testing.T) {
+			e := coretest.New(t, coretest.WithoutAutoSync(), coretest.WithConfirmWindow())
+			ctx := t.Context()
+			acc := e.AddAccount(t, "alice@example.com")
+			st, err := e.Svc.GetSettings(ctx)
+			require.NoError(t, err)
+			st.MCPSend = c.level
+			_, err = e.Svc.SetSettings(ctx, st)
+			require.NoError(t, err)
+			cs, _ := bridge(t, e)
+			d := createDraft(t, cs)
+
+			text, isErr := call(t, cs, "send_draft", map[string]any{"draft_id": d.ID, "revision": d.Revision + 1})
+			assert.True(t, isErr)
+			if c.level != core.MCPSendOff {
+				assert.Equal(t, "draft changed, read it again", text)
+			}
+			text, isErr = call(t, cs, "send_draft", map[string]any{"draft_id": d.ID, "revision": d.Revision})
+			assert.Equal(t, c.isErr, isErr)
+			assert.Equal(t, c.want, text)
+			out, err := e.Svc.ListOutbox(ctx, acc.ID)
+			require.NoError(t, err)
+			assert.Len(t, out, c.outbox)
+			ps, err := e.Svc.PendingMCPSends(ctx)
+			require.NoError(t, err)
+			assert.Len(t, ps, c.pending)
+		})
+	}
+}
+
+// createDraft makes a draft to bob through create_draft and reads it back.
+func createDraft(t *testing.T, cs *mcp.ClientSession) core.Draft {
+	t.Helper()
+	text := ok(t, cs, "create_draft", map[string]any{"to": []string{"bob@example.com"}, "subject": "hello", "body": "hi"})
+	var d core.Draft
+	_, err := fmt.Sscanf(text[strings.Index(text, "draft "):], "draft %d · account", &d.ID)
+	require.NoError(t, err)
+	_, err = fmt.Sscanf(text[strings.Index(text, "revision "):], "revision %d", &d.Revision)
+	require.NoError(t, err)
+	return d
+}
+
+// send_draft is the only way to send: the Send method stays forbidden.
+func TestMCPHasNoSendMethod(t *testing.T) {
 	e := coretest.New(t, coretest.WithoutAutoSync())
 	acc := e.AddAccount(t, "alice@example.com")
 	cs, c := bridge(t, e)

@@ -1,0 +1,138 @@
+package app
+
+import (
+	"context"
+	"slices"
+	"strconv"
+
+	"github.com/egoist/mygo/ui"
+	"github.com/godwit-email/godwit/core"
+	"github.com/godwit-email/godwit/core/mail"
+	"github.com/godwit-email/godwit/internal/i18n"
+	"github.com/godwit-email/godwit/internal/kit"
+	"github.com/godwit-email/godwit/internal/theme"
+)
+
+// mcpSendState is the confirmation of godwit mcp's send requests (每次确认):
+// the oldest waiting one in a dialog over the window, which comes to the
+// front with a notification pointing to it. Only its 发送 sends; closing it
+// drops the request.
+type mcpSendState struct {
+	open     bool
+	req      core.MCPSend
+	notified map[int64]bool // requests already brought to the front
+}
+
+// loadMCPSends reads the waiting requests after mcp_sends.changed.
+func (a *App) loadMCPSends() {
+	var ps []core.MCPSend
+	a.do(func(ctx context.Context) (err error) {
+		ps, err = a.svc.PendingMCPSends(ctx)
+		return err
+	}, func(err error) {
+		if err != nil {
+			a.toastErr(err)
+			return
+		}
+		a.showMCPSends(ps)
+	})
+}
+
+// showMCPSends shows the oldest of ps, unless one shows already; a new
+// request brings the window to the front and is notified once.
+func (a *App) showMCPSends(ps []core.MCPSend) {
+	s := &a.mcpSend
+	if s.open && slices.ContainsFunc(ps, func(p core.MCPSend) bool { return p.ID == s.req.ID }) {
+		return
+	}
+	s.open = len(ps) > 0
+	if !s.open {
+		return
+	}
+	s.req = ps[0]
+	if s.notified == nil {
+		s.notified = map[int64]bool{}
+	}
+	if s.notified[s.req.ID] {
+		return
+	}
+	s.notified[s.req.ID] = true
+	a.plat.ShowWindow()
+	subject := s.req.Draft.Subject
+	if subject == "" {
+		subject = i18n.T("mail.no_subject")
+	}
+	n := Notification{ID: "mcp_send:" + strconv.FormatInt(s.req.ID, 10), Title: "Godwit", Body: i18n.Tf("mcp_send.notify", subject)}
+	plat, logf := a.plat, a.logf
+	a.do(func(context.Context) error {
+		if plat.NotificationsSupported() {
+			if err := plat.Notify(n); err != nil {
+				logf("notify: MCP send: %v", err)
+			}
+		}
+		return nil
+	}, nil)
+}
+
+// mcpSendDialog is the request's sending account, every recipient (a
+// first-time one marked), subject and body; 发送 sends it, closing drops it.
+func (a *App) mcpSendDialog(c *ui.Context) {
+	s := &a.mcpSend
+	if !s.open {
+		return
+	}
+	t, th := theme.Of(c), c.Theme()
+	r, d := s.req, s.req.Draft
+	sent := false
+	kit.Dialog(c, &s.open, i18n.T("mcp_send.title"), kit.DialogOpts{Desc: i18n.T("mcp_send.desc"), Close: i18n.T("common.close")}, func() {
+		field := func(label string, body func()) {
+			ui.Row(c).Gap(th.Space(3)).AlignItems(ui.Start).Children(func() {
+				kit.Text(c, label, t.Text.Sm).TextColor(t.Muted).Width(th.Space(16)).Shrink(0)
+				ui.Column(c).Grow(1).Shrink(1).Gap(th.Space(1)).Children(body)
+			})
+		}
+		field(i18n.T("compose.from"), func() { ui.Text(c, r.From).Selectable() })
+		for _, l := range []struct {
+			label string
+			addrs []string
+		}{{i18n.T("compose.to"), d.To}, {i18n.T("compose.cc"), d.Cc}, {i18n.T("compose.bcc"), d.Bcc}} {
+			if len(l.addrs) == 0 {
+				continue
+			}
+			field(l.label, func() {
+				for _, addr := range l.addrs {
+					ui.Row(c).Gap(th.Space(2)).AlignItems(ui.Center).Children(func() {
+						ui.Text(c, addr).FontWeight(600).Selectable()
+						if slices.ContainsFunc(r.FirstTime, func(f string) bool { return mail.AddrKey(f) == mail.AddrKey(addr) }) {
+							kit.Badge(c, i18n.T("mcp_send.first"))
+						}
+					})
+				}
+			})
+		}
+		field(i18n.T("compose.subject"), func() { ui.Text(c, d.Subject).Selectable() })
+		ui.Text(c, mail.HTMLToText(d.HTML)).Selectable().Padding(th.Space(3), 0, 0, 0).BorderWidth(theme.Hairline, 0, 0, 0).BorderColor(t.Border)
+	}, func() {
+		if kit.Button(c, i18n.T("common.cancel"), kit.ButtonOpts{Variant: kit.Outline}).Clicked() {
+			s.open = false
+		}
+		if kit.Button(c, i18n.T("compose.send"), kit.ButtonOpts{}).Clicked() {
+			if a.plat.ComposeOpen(d.ID) { // its window may hold edits not saved yet, as the draft list's Send knows
+				a.toast(i18n.T("mail.draft.send_disabled"))
+			} else {
+				s.open, sent = false, true
+			}
+		}
+	})
+	if s.open {
+		return
+	}
+	id := r.ID
+	a.do(func(ctx context.Context) error { return a.svc.ResolveMCPSend(ctx, id, sent) }, func(err error) {
+		if err != nil {
+			a.toastErr(err)
+		} else if sent {
+			a.plat.DraftDeleted(d.ID)
+		}
+	})
+}

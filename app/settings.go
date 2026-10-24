@@ -401,6 +401,22 @@ func (p *settingsPage) privacyView(c *ui.Context) {
 	a := p.a
 	rows := []func(){func() {
 		kit.SwitchRow(c, &p.st.LocalAPI, i18n.T("settings.local_api.on"), i18n.T("settings.local_api.help"))
+	}, func() {
+		settingRow(c, i18n.T("settings.local_api.send"), i18n.T("settings.local_api.send.help"), func() {
+			level := p.st.MCPSend
+			if level == "" {
+				level = core.MCPSendConfirm
+			}
+			settingSelect(c, i18n.T("settings.local_api.send"), &level, []kit.Option[string]{
+				{Value: core.MCPSendOff, Label: i18n.T("settings.local_api.send.off")},
+				{Value: core.MCPSendConfirm, Label: i18n.T("settings.local_api.send.confirm")},
+				{Value: core.MCPSendDirect, Label: i18n.T("settings.local_api.send.direct")},
+			})
+			p.st.MCPSend = level
+		})
+		if p.st.MCPSend == core.MCPSendDirect {
+			settingBlock(c, func() { kit.Alert(c, kit.Warning, i18n.T("settings.local_api.send.risk"), nil) })
+		}
 	}}
 	if err := a.localAPIErr; err != nil {
 		rows = append(rows, func() {

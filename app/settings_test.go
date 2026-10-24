@@ -863,11 +863,11 @@ func TestLocalAPICopyWarnsFullAccess(t *testing.T) {
 	h := localAPIHarness(t, "", nil, nil)
 	h.openSettings("privacy")
 	h.see("完整的本机 API 能读取邮件、发送邮件、修改账户和设置")
-	h.see("只能读取邮件和创建草稿，不能发送")
+	h.see("可以读取邮件和写草稿，能否发送见下方设置")
 	i18n.SetLanguage("en")
 	h.tt.Frame()
 	h.see("The full Local API can read mail, send mail, and change accounts and settings")
-	h.see("can only read mail and create drafts, never send")
+	h.see("can read mail and write drafts, and the setting below decides whether they can send")
 }
 
 // localAPIRace clicks the switch on, off and on while the first "on" blocks,
