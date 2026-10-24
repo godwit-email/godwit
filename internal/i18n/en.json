@@ -884,6 +884,69 @@
   "reader_today": "Today",
   "reader_truncated": "This message is too long; only the beginning is shown",
   "reader_trust_sender": "Always trust this sender",
+  "reader_unsubscribe": "Unsubscribe",
+  "reader_unsubscribe_desc": "Godwit will send one unsubscribe request to this domain:",
+  "reader_unsubscribe_failed_connect": "Couldn''t connect to {arg1}.",
+  "@reader_unsubscribe_failed_connect": {
+    "placeholders": {
+      "arg1": {
+        "type": "String"
+      }
+    }
+  },
+  "reader_unsubscribe_failed_not_public": "{arg1} isn''t a public address, so nothing was sent.",
+  "@reader_unsubscribe_failed_not_public": {
+    "placeholders": {
+      "arg1": {
+        "type": "String"
+      }
+    }
+  },
+  "reader_unsubscribe_failed_redirect": "{arg1} asked to redirect the request, which Godwit doesn''t follow.",
+  "@reader_unsubscribe_failed_redirect": {
+    "placeholders": {
+      "arg1": {
+        "type": "String"
+      }
+    }
+  },
+  "reader_unsubscribe_failed_status": "{arg1} refused the unsubscribe request (HTTP {arg2}).",
+  "@reader_unsubscribe_failed_status": {
+    "placeholders": {
+      "arg1": {
+        "type": "String"
+      },
+      "arg2": {
+        "type": "String"
+      }
+    }
+  },
+  "reader_unsubscribe_failed_timeout": "{arg1} didn''t answer in time.",
+  "@reader_unsubscribe_failed_timeout": {
+    "placeholders": {
+      "arg1": {
+        "type": "String"
+      }
+    }
+  },
+  "reader_unsubscribe_list": "Mailing list: {arg1}",
+  "@reader_unsubscribe_list": {
+    "placeholders": {
+      "arg1": {
+        "type": "String"
+      }
+    }
+  },
+  "reader_unsubscribe_open": "Open unsubscribe page in browser",
+  "reader_unsubscribe_sent": "Unsubscribe request sent to {arg1}. It may take a few days to take effect.",
+  "@reader_unsubscribe_sent": {
+    "placeholders": {
+      "arg1": {
+        "type": "String"
+      }
+    }
+  },
+  "reader_unsubscribe_title": "Unsubscribe from this list?",
   "settings_about": "About",
   "settings_about_build": "Version",
   "settings_about_updates_check": "Check for Updates",

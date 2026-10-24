@@ -206,7 +206,7 @@ func doomed(ctx context.Context, db *store.DB, where string, args ...any) (ids, 
 
 func headerSection() *imap.FetchItemBodySection {
 	return &imap.FetchItemBodySection{Specifier: imap.PartSpecifierHeader,
-		HeaderFields: []string{"REFERENCES", "IN-REPLY-TO", "REPLY-TO"}, Peek: true}
+		HeaderFields: []string{"REFERENCES", "IN-REPLY-TO", "REPLY-TO", "LIST-UNSUBSCRIBE", "LIST-UNSUBSCRIBE-POST", "LIST-ID"}, Peek: true}
 }
 
 // fetchNew imports messages above last_uid; the first sync of a count range
@@ -526,6 +526,7 @@ func toParsed(m *imapclient.FetchMessageBuffer, texts map[string][]byte) *mail.P
 	p := &mail.Parsed{}
 	if h, err := mail.Parse(m.FindBodySection(headerSection())); err == nil {
 		p.InReplyTo, p.References, p.ReplyTo = h.InReplyTo, h.References, h.ReplyTo
+		p.ListUnsubscribe, p.ListUnsubscribePost, p.ListID = h.ListUnsubscribe, h.ListUnsubscribePost, h.ListID
 	}
 	if env := m.Envelope; env != nil {
 		p.MessageID, p.Subject, p.Date = env.MessageID, env.Subject, env.Date

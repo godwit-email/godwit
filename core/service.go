@@ -43,6 +43,10 @@ type Options struct {
 	// ImageClient downloads remote mail images; nil is imagefetch.NewClient(false)
 	// (public hosts only). Tests give one that reaches loopback.
 	ImageClient *http.Client
+	// UnsubscribeClient sends one-click unsubscribes; nil is one dialing as
+	// ImageClient's default does (public hosts only). Core never lets it
+	// follow a redirect or keep cookies. Tests give one that reaches loopback.
+	UnsubscribeClient *http.Client
 	// Registry is where reviewed plugins are listed; nil turns the plugin
 	// directory off (DefaultRegistry is Godwit's own). The apps set it.
 	Registry *RegistrySource
@@ -95,6 +99,9 @@ type Service struct {
 	calls       map[*call]struct{} // explicit network calls in flight (SyncNow, downloads, ...)
 	callsClosed bool
 	removing    map[int64]bool // accounts RemoveAccount is deleting
+
+	unsubMu   sync.Mutex
+	unsubbing map[int64]bool // messages whose one-click unsubscribe is under way
 
 	oauthMu sync.Mutex
 	flows   map[string]oauthFlow  // OAuth flows begun and not yet awaited or cancelled
@@ -204,6 +211,9 @@ func New(ctx context.Context, opts Options) (*Service, error) {
 	}
 	if opts.ImageClient == nil {
 		s.opts.ImageClient = imagefetch.NewClient(false)
+	}
+	if opts.UnsubscribeClient == nil {
+		s.opts.UnsubscribeClient = &http.Client{Transport: imagefetch.NewTransport(false), Timeout: imagefetch.Timeout}
 	}
 	if err := s.openImageCache(); err != nil {
 		db.Close()

@@ -32,24 +32,32 @@ import (
 var bg = context.Background()
 
 type syncEnv struct {
-	s   *Service
-	im  *testmail.IMAP
-	acc Account
-	dir string
+	s    *Service
+	im   *testmail.IMAP
+	smtp *testmail.Inbox
+	acc  Account
+	dir  string
 }
 
 func newSyncEnv(t *testing.T, opts ...testmail.Option) *syncEnv {
 	t.Helper()
+	return newSyncEnvWith(t, Options{}, opts...)
+}
+
+// newSyncEnvWith is newSyncEnv with o's options (DataDir and ImageClient are set here).
+func newSyncEnvWith(t *testing.T, o Options, opts ...testmail.Option) *syncEnv {
+	t.Helper()
 	keyring.MockInit()
 	dir := t.TempDir()
-	s, err := New(bg, Options{DataDir: dir, ImageClient: loopbackImageClient()})
+	o.DataDir, o.ImageClient = dir, loopbackImageClient()
+	s, err := New(bg, o)
 	require.NoError(t, err)
 	t.Cleanup(func() { s.Close() })
-	smtpAddr, _ := testmail.StartSMTP(t)
+	smtpAddr, in := testmail.StartSMTP(t)
 	im := testmail.StartIMAP(t, opts...)
 	acc, err := s.AddAccount(bg, internalInput(t, im.Addr, smtpAddr, "alice@example.com", true))
 	require.NoError(t, err)
-	return &syncEnv{s: s, im: im, acc: acc, dir: dir}
+	return &syncEnv{s: s, im: im, smtp: in, acc: acc, dir: dir}
 }
 
 // loopbackImageClient keeps arrival prefetch from contacting real sender sites.
