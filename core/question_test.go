@@ -144,3 +144,23 @@ func (e *approvalEnv) toolMessage(t *testing.T) string {
 	t.Fatal("no tool message")
 	return ""
 }
+
+func TestAssistAsksBeforeItWrites(t *testing.T) {
+	e := newAssistEnv(t)
+	d, err := e.s.NewDraft(t.Context(), 1, "new", 0)
+	require.NoError(t, err)
+	e.srv.Script(testllm.Turn{Calls: []testllm.Call{{Name: askQuestionTool, Args: toneQuestion}}},
+		testllm.Turn{Calls: []testllm.Call{{Name: "update_draft", Args: `{"html":"<p>Dear Bob,</p>"}`}}},
+		testllm.Turn{Text: []string{"Written."}})
+	evs := e.assist(t, d.ID, "Write to Bob")
+	last := evs[len(evs)-1]
+	require.Equal(t, "interrupted", last.Kind, "%+v", last.Err)
+	require.Len(t, last.Approvals, 1)
+	assert.Equal(t, "pending", last.Approvals[0].State, "an empty draft's question still waits for the user")
+	assert.Equal(t, d.HTML, e.getDraft(t, d.ID).HTML)
+
+	require.NoError(t, e.s.AnswerQuestion(t.Context(), last.Approvals[0].ID, [][]string{{"Formal"}}))
+	e.waitRunOf(t, last.RunID, "done")
+	assert.Equal(t, "<p>Dear Bob,</p>"+d.HTML, e.getDraft(t, d.ID).HTML, "the first text after the answer is written at once")
+	assert.Len(t, e.srv.Requests(), 3)
+}

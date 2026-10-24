@@ -19,6 +19,7 @@ vi.mock("@/mygo", () => ({
     review: vi.fn(),
     decide: vi.fn(),
     decideAll: vi.fn(),
+    answer: vi.fn(),
     finish: vi.fn(),
     undo: vi.fn(),
     rewrite: vi.fn(),
@@ -844,4 +845,46 @@ test("the panel picks the conversation's model as the Wit page does: the next As
   await user.click(await screen.findByRole("menuitemradio", { name: "gpt" }));
   await user.type(screen.getByRole("textbox", { name: "告诉 Wit 你想怎么回" }), "改短{Enter}");
   await waitFor(() => expect(api.ask).toHaveBeenCalledWith("改短", [], "b/gpt", ""));
+});
+
+test("a question in the panel is answered there; the resumed run streams on its answer", async () => {
+  const args = JSON.stringify({
+    questions: [
+      {
+        question: "Which tone?",
+        header: "Tone",
+        multiSelect: false,
+        options: [
+          { label: "Formal", description: "Polite" },
+          { label: "Casual", description: "Friendly" },
+        ],
+      },
+    ],
+  });
+  const question: Approval = {
+    ...pending,
+    callId: "q1",
+    tool: "ask_user_question",
+    summary: "Which tone?",
+    args,
+    draftEdit: false,
+  };
+  const [ask, said] = withPending.messages;
+  vi.mocked(api.answer).mockResolvedValue(change("正文", 7));
+  await setup({
+    ...withPending,
+    messages: [ask, { ...said, calls: [{ id: "q1", name: "ask_user_question", args }] }],
+    approvals: [question],
+  });
+  const user = userEvent.setup();
+  expect(await screen.findByText("Wit 想问你")).toBeInTheDocument();
+  expect(screen.queryByRole("region", { name: "正文修订" })).toBeNull();
+  await user.click(screen.getByRole("radio", { name: /Formal/ }));
+  await user.click(screen.getByRole("button", { name: "提交" }));
+  await waitFor(() => expect(api.answer).toHaveBeenCalledWith(4, [["Formal"]]));
+  expect(api.decide).not.toHaveBeenCalled();
+  emit({ kind: "text", text: "按正式的语气写好了。" });
+  emit({ kind: "done" });
+  expect(await screen.findByText("按正式的语气写好了。")).toBeInTheDocument();
+  expect(screen.queryByText("Wit 想问你")).toBeNull();
 });

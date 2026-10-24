@@ -23,10 +23,10 @@ import (
 	"golang.org/x/net/html/atom"
 )
 
-// assistTools are the tools of an Assist run: read mail, and propose a new
-// editable part for this draft, plus the running plugins' read tools (ADR 0003;
+// assistTools are the tools of an Assist run: read mail, ask the user, and
+// propose a new editable part for this draft, plus the running plugins' read tools (ADR 0003;
 // the compose panel changes only its draft). None of them sends mail.
-var assistTools = []string{"search_mail", "get_message", "read_attachment", "update_draft"}
+var assistTools = []string{"search_mail", "get_message", "read_attachment", "update_draft", askQuestionTool}
 
 const (
 	assistSystem = `You are Wit, the writing assistant beside the user's draft in the Godwit compose window. ` +
