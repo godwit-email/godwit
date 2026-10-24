@@ -139,6 +139,9 @@ func (s *Service) unsubscribeMethod(ctx context.Context, messageID int64) (Unsub
 		return Unsubscribe{}, fmt.Errorf("message %d not found", messageID)
 	}
 	r := rows.Values[0]
+	if err := s.bind(ctx, store.Int(r[0])); err != nil { // removing the account stops this call, POST included
+		return Unsubscribe{}, err
+	}
 	if store.Int(r[4]) != 0 { // confirming a spammer's list only confirms the address
 		return Unsubscribe{}, nil
 	}
@@ -155,9 +158,6 @@ func (s *Service) unsubscribeMethod(ctx context.Context, messageID int64) (Unsub
 // fetchListHeaders gets message's List-* headers from its server location
 // and stores them, as GetRawMessage downloads it; false when it cannot.
 func (s *Service) fetchListHeaders(ctx context.Context, accountID, messageID int64) (*mail.Parsed, bool) {
-	if s.bind(ctx, accountID) != nil {
-		return nil, false
-	}
 	unlock, err := s.lockAccount(ctx, accountID)
 	if err != nil {
 		return nil, false

@@ -1,6 +1,7 @@
 package core
 
 import (
+	"context"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -317,4 +318,30 @@ func (e *syncEnv) expungeAll(t *testing.T, folder string) {
 	all.AddRange(1, 0) // 1:*
 	require.NoError(t, c.Store(all, &imap.StoreFlags{Op: imap.StoreFlagsAdd, Flags: []imap.Flag{imap.FlagDeleted}}, nil).Close())
 	require.NoError(t, c.Expunge().Close())
+}
+
+// Removing the message's account stops its unsubscribe under way, as any call bound to it.
+func TestRemoveAccountStopsUnsubscribe(t *testing.T) {
+	ts := newUnsubServer(t)
+	arrived, release := make(chan struct{}), make(chan struct{})
+	ts.reply = func(_ http.ResponseWriter, r *http.Request) {
+		close(arrived)
+		select {
+		case <-release:
+		case <-r.Context().Done():
+		}
+	}
+	t.Cleanup(func() { close(release) })
+	e := newUnsubEnv(t, ts)
+	id := e.newsletter(t, "INBOX", "n1@shop.example", "List-Unsubscribe: <"+ts.URL+"/u>", "List-Unsubscribe-Post: List-Unsubscribe=One-Click")
+	done := make(chan error, 1)
+	go func() { _, err := e.s.Unsubscribe(bg, id); done <- err }()
+	<-arrived
+	require.NoError(t, e.s.RemoveAccount(bg, e.acc.ID))
+	select {
+	case err := <-done:
+		assert.ErrorIs(t, err, context.Canceled)
+	default:
+		t.Fatal("RemoveAccount returned while the unsubscribe was still under way")
+	}
 }
