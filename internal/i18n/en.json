@@ -884,7 +884,23 @@
   "reader_truncated": "This message is too long; only the beginning is shown",
   "reader_trust_sender": "Always trust this sender",
   "settings_about": "About",
-  "settings_about_license": "Open source under the Apache-2.0 license",
+  "settings_about_build": "Version",
+  "settings_about_updates_check": "Check for Updates",
+  "settings_about_upgrade": "Update to {arg1}",
+  "@settings_about_upgrade": {
+    "placeholders": {
+      "arg1": {
+        "type": "String"
+      }
+    }
+  },
+  "settings_about_links": "Links",
+  "settings_about_site": "Website",
+  "settings_about_source": "Source code",
+  "settings_about_star": "Star",
+  "settings_about_changelog": "Release notes",
+  "settings_about_feedback": "Report an issue",
+  "settings_about_license": "License",
   "settings_about_version": "Version {arg1}",
   "@settings_about_version": {
     "placeholders": {

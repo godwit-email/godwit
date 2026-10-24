@@ -13,13 +13,21 @@ const csp =
 // spec); that WebKit makes zero requests on paste is checked in the manual e2e.
 const devCsp =
   "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: godwit-img:; connect-src 'self' ws://localhost:* http://localhost:*";
+// The About page's bird decodes its meshopt-compressed model with WebAssembly and fetches the
+// model's textures from blob: URLs.
+const bird = (content: string, path: string) =>
+  path.endsWith("/about.html")
+    ? content
+        .replace("script-src 'self'", "script-src 'self' 'wasm-unsafe-eval'")
+        .replace("connect-src 'self'", "connect-src 'self' blob:")
+    : content;
 const cspMeta = (content: string, apply: Plugin["apply"]): Plugin => ({
   name: `godwit-csp-${apply}`,
   apply,
-  transformIndexHtml: () => [
+  transformIndexHtml: (_, ctx) => [
     {
       tag: "meta",
-      attrs: { "http-equiv": "Content-Security-Policy", content },
+      attrs: { "http-equiv": "Content-Security-Policy", content: bird(content, ctx.path) },
       injectTo: "head-prepend",
     },
   ],
@@ -27,6 +35,7 @@ const cspMeta = (content: string, apply: Plugin["apply"]): Plugin => ({
 
 export default defineConfig({
   plugins: [cspMeta(csp, "build"), cspMeta(devCsp, "serve"), react(), tailwindcss()],
+  server: { fs: { allow: [".", "../site/public/godwit.glb"] } }, // the About page's bird is the site's
   resolve: { alias: { "@": fileURLToPath(new URL("src", import.meta.url)) } },
   build: {
     outDir: "dist",
@@ -37,6 +46,7 @@ export default defineConfig({
         wit: fileURLToPath(new URL("wit.html", import.meta.url)),
         reader: fileURLToPath(new URL("reader.html", import.meta.url)),
         signature: fileURLToPath(new URL("signature.html", import.meta.url)),
+        about: fileURLToPath(new URL("about.html", import.meta.url)),
       },
     },
   },
