@@ -281,6 +281,9 @@ func (s *Service) ListDrafts(ctx context.Context, accountID int64) ([]Draft, err
 // ErrDraftGone: an approval made no draft, or it was sent or deleted since.
 var ErrDraftGone = errors.New("the draft is gone")
 
+// errDraftNotFound: GetDraft found no draft of the ID ("draft N not found").
+var errDraftNotFound = errors.New("not found")
+
 // DraftForApproval is the draft approval approvalID made (a create_draft the
 // user allowed), to open from where it was asked for.
 func (s *Service) DraftForApproval(ctx context.Context, approvalID int64) (int64, error) {
@@ -302,7 +305,7 @@ func (s *Service) GetDraft(ctx context.Context, id int64) (Draft, error) {
 		return Draft{}, err
 	}
 	if len(rows.Values) == 0 {
-		return Draft{}, fmt.Errorf("draft %d not found", id)
+		return Draft{}, fmt.Errorf("draft %d %w", id, errDraftNotFound)
 	}
 	r := rows.Values[0]
 	d := Draft{ID: id, AccountID: store.Int(r[0]), Mode: store.Str(r[1]), SourceMessageID: store.Int(r[2]),

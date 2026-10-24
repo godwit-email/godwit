@@ -51,7 +51,7 @@ run = "bun run components"
 [tasks."web:check"]
 dir = "web"
 depends = ["generate"]
-run = 'bun run typecheck && bun run lint && bun run test && bun run components && test -z "$(git status --porcelain -- .)"'
+run = 'bun run typecheck && bun run lint && bun run test && bun run components && bun run views && test -z "$(git status --porcelain -- . ../mcpserver/views)"'
 
 [tasks."site:install"]
 dir = "site"

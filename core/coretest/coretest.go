@@ -71,6 +71,7 @@ type config struct {
 	autoSync bool
 	registry *core.RegistrySource
 	sys      core.SystemTranslator
+	confirm  bool
 }
 
 type Option func(*config)
@@ -80,6 +81,10 @@ func WithRegistry(src *core.RegistrySource) Option { return func(c *config) { c.
 
 // WithSystemTranslator gives the Service the system's translation.
 func WithSystemTranslator(t core.SystemTranslator) Option { return func(c *config) { c.sys = t } }
+
+// WithConfirmWindow is the GUI's Service: a window can confirm godwit mcp's
+// sends (core.Options.ConfirmWindow). Without it 每次确认 refuses them, as headless.
+func WithConfirmWindow() Option { return func(c *config) { c.confirm = true } }
 
 // WithoutAutoSync starts no background sync; Deliver still syncs.
 func WithoutAutoSync() Option { return func(c *config) { c.autoSync = false } }
@@ -98,7 +103,7 @@ func New(t *testing.T, opts ...Option) *Env {
 	imageClient := imagefetch.NewClient(true)
 	imageClient.Transport.(*http.Transport).DialContext = netOptions("").Dial
 	svc, err := core.New(context.Background(), core.Options{DataDir: dir, AutoSync: cfg.autoSync, SystemLanguage: "zh-CN", ImageClient: imageClient,
-		Registry: cfg.registry, AppVersion: "1.2.0", SystemTranslator: cfg.sys})
+		Registry: cfg.registry, AppVersion: "1.2.0", SystemTranslator: cfg.sys, ConfirmWindow: cfg.confirm})
 	if err != nil {
 		t.Fatal(err)
 	}

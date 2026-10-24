@@ -66,7 +66,7 @@ func cacheFiles(dataDir string) int {
 // The mcp role's whole surface, compared with every method of *core.Service.
 func TestMCPAllowlistContents(t *testing.T) {
 	want := []string{"GetDraft", "GetMessageText", "GetThread", "ListAccounts", "ListDrafts", "ListFolders",
-		"ListMessages", "ListThreads", "NewDraft", "SaveDraft", "Search"}
+		"ListMessages", "ListThreads", "NewDraft", "RequestMCPSend", "SaveDraft", "Search"}
 	newMode := []json.RawMessage{json.RawMessage(`1`), json.RawMessage(`"new"`), json.RawMessage(`0`)}
 	var got []string
 	for m := range reflect.TypeFor[*core.Service]().Methods() {
@@ -159,6 +159,8 @@ func TestMCPRoleAllowlist(t *testing.T) {
 		{"SetFlags", []any{[]int64{msg.ID}, []string{`\Seen`, `\Flagged`}, []string{}}},
 		{"SetSettings", []any{settings}},
 		{"ResolveApproval", []any{approvals[0].ID, true}},
+		{"ResolveMCPSend", []any{1, true}},
+		{"PendingMCPSends", nil},
 		{"InstallPlugin", []any{coretest.PluginFixture(t, "card-demo")}},
 		{"AddAccount", []any{core.AccountInput{Email: "eve@example.com", Username: "u", Password: "p", IMAPHost: "127.0.0.1", IMAPPort: 1, SMTPHost: "127.0.0.1", SMTPPort: 1}}},
 		{"RemoveModelService", []any{services[0].ID}},

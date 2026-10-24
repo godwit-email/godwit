@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"maps"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -54,6 +55,9 @@ func call(t *testing.T, cs *mcp.ClientSession, tool string, args map[string]any)
 	res, err := cs.CallTool(t.Context(), &mcp.CallToolParams{Name: tool, Arguments: args})
 	require.NoError(t, err, tool)
 	assert.Nil(t, res.StructuredContent, "%s has structured content", tool)
+	meta := maps.Clone(res.Meta)
+	delete(meta, "io.modelcontextprotocol/serverInfo") // the SDK's own, on every result
+	assert.Empty(t, meta, "%s has _meta", tool)
 	require.Len(t, res.Content, 1, tool)
 	tc, ok := res.Content[0].(*mcp.TextContent)
 	require.True(t, ok, "%s: %T", tool, res.Content[0])
@@ -79,7 +83,7 @@ func cacheFiles(dataDir string) int {
 }
 
 var allTools = []string{"create_draft", "get_draft", "get_message", "get_thread", "list_accounts", "list_drafts",
-	"list_folders", "list_threads", "search", "update_draft"}
+	"list_folders", "list_threads", "search", "send_draft", "show_draft", "show_mail", "update_draft"}
 
 func TestMCPListTools(t *testing.T) {
 	e := coretest.New(t, coretest.WithoutAutoSync())
@@ -90,18 +94,79 @@ func TestMCPListTools(t *testing.T) {
 	for _, tool := range res.Tools {
 		require.NotNil(t, tool.Annotations, tool.Name)
 		readOnly[tool.Name] = tool.Annotations.ReadOnlyHint
+		sends := tool.Name == "send_draft" // mail leaves the mailbox, not to be undone
+		assert.Equal(t, &sends, tool.Annotations.DestructiveHint, tool.Name)
+		assert.Equal(t, &sends, tool.Annotations.OpenWorldHint, tool.Name)
 		assert.NotEmpty(t, tool.Description, tool.Name)
 		b, _ := json.Marshal(tool.InputSchema)
 		assert.Contains(t, string(b), `"additionalProperties":false`, tool.Name)
 	}
 	assert.Equal(t, map[string]bool{"list_accounts": true, "list_folders": true, "list_threads": true, "get_thread": true,
-		"get_message": true, "search": true, "list_drafts": true, "get_draft": true,
-		"create_draft": false, "update_draft": false}, readOnly)
+		"get_message": true, "search": true, "list_drafts": true, "get_draft": true, "show_draft": true, "show_mail": true,
+		"create_draft": false, "update_draft": false, "send_draft": false}, readOnly)
 	assert.Contains(t, cs.InitializeResult().Instructions, "untrusted_email")
-	assert.Contains(t, cs.InitializeResult().Instructions, "cannot send")
+	assert.NotContains(t, cs.InitializeResult().Instructions, "cannot send")
+	assert.Contains(t, cs.InitializeResult().Instructions, "Send through MCP")
 }
 
-func TestMCPHasNoSend(t *testing.T) {
+// send_draft follows 通过 MCP 发送: off fails, confirm waits for the user's
+// Send in Godwit, direct queues the draft; a wrong revision fails as
+// update_draft's does.
+func TestMCPSendDraft(t *testing.T) {
+	for _, c := range []struct {
+		level, want     string
+		isErr           bool
+		outbox, pending int
+	}{
+		// The texts are a contract: the draft view matches them (web/src/mcp/draft.ts).
+		{core.MCPSendOff, "sending through MCP is off; the user can turn it on in Godwit under Settings › Local API › Send through MCP", true, 0, 0},
+		{core.MCPSendConfirm, "waiting for the user to confirm in Godwit; it is not sent yet", false, 0, 1},
+		{core.MCPSendDirect, "sent: the draft is in Godwit's outbox", false, 1, 0},
+	} {
+		t.Run(c.level, func(t *testing.T) {
+			e := coretest.New(t, coretest.WithoutAutoSync(), coretest.WithConfirmWindow())
+			ctx := t.Context()
+			acc := e.AddAccount(t, "alice@example.com")
+			st, err := e.Svc.GetSettings(ctx)
+			require.NoError(t, err)
+			st.MCPSend = c.level
+			_, err = e.Svc.SetSettings(ctx, st)
+			require.NoError(t, err)
+			cs, _ := bridge(t, e)
+			d := createDraft(t, cs)
+
+			text, isErr := call(t, cs, "send_draft", map[string]any{"draft_id": d.ID, "revision": d.Revision + 1})
+			assert.True(t, isErr)
+			if c.level != core.MCPSendOff {
+				assert.Equal(t, "draft changed, read it again", text)
+			}
+			text, isErr = call(t, cs, "send_draft", map[string]any{"draft_id": d.ID, "revision": d.Revision})
+			assert.Equal(t, c.isErr, isErr)
+			assert.Equal(t, c.want, text)
+			out, err := e.Svc.ListOutbox(ctx, acc.ID)
+			require.NoError(t, err)
+			assert.Len(t, out, c.outbox)
+			ps, err := e.Svc.PendingMCPSends(ctx)
+			require.NoError(t, err)
+			assert.Len(t, ps, c.pending)
+		})
+	}
+}
+
+// createDraft makes a draft to bob through create_draft and reads it back.
+func createDraft(t *testing.T, cs *mcp.ClientSession) core.Draft {
+	t.Helper()
+	text := ok(t, cs, "create_draft", map[string]any{"to": []string{"bob@example.com"}, "subject": "hello", "body": "hi"})
+	var d core.Draft
+	_, err := fmt.Sscanf(text[strings.Index(text, "draft "):], "draft %d · account", &d.ID)
+	require.NoError(t, err)
+	_, err = fmt.Sscanf(text[strings.Index(text, "revision "):], "revision %d", &d.Revision)
+	require.NoError(t, err)
+	return d
+}
+
+// send_draft is the only way to send: the Send method stays forbidden.
+func TestMCPHasNoSendMethod(t *testing.T) {
 	e := coretest.New(t, coretest.WithoutAutoSync())
 	acc := e.AddAccount(t, "alice@example.com")
 	cs, c := bridge(t, e)
@@ -149,6 +214,9 @@ func TestMCPNoStructuredContent(t *testing.T) {
 		{"search", map[string]any{"query": "Friday"}},
 		{"list_drafts", map[string]any{"account_id": acc.ID}},
 		{"get_draft", map[string]any{"draft_id": ds[0].ID}},
+		{"show_draft", map[string]any{"draft_id": ds[0].ID}},
+		{"show_mail", map[string]any{"message_id": m.ID}},
+		{"show_mail", map[string]any{"thread_id": m.ThreadID}},
 		{"update_draft", map[string]any{"draft_id": ds[0].ID, "revision": ds[0].Revision, "subject": "s2"}},
 	} {
 		ok(t, cs, c.tool, c.args)
@@ -164,10 +232,83 @@ func TestMCPNoStructuredContent(t *testing.T) {
 		{"update_draft", map[string]any{"draft_id": ds[0].ID, "revision": 0}},
 		{"create_draft", map[string]any{"body": "no recipients"}},
 		{"get_draft", map[string]any{"draft_id": "x"}},
+		{"show_draft", map[string]any{"draft_id": 999999}},
+		{"show_mail", map[string]any{}},
+		{"show_mail", map[string]any{"message_id": m.ID, "thread_id": m.ThreadID}},
+		{"show_mail", map[string]any{"message_id": 999999}},
 	} {
 		text, isErr := call(t, cs, c.tool, c.args)
 		assert.True(t, isErr, "%s %v: %s", c.tool, c.args, text)
 	}
+}
+
+// Only the show tools carry a view (ADR 0022): each ui:// resource is the
+// embedded single-file HTML, which loads nothing and declares no domains.
+func TestMCPShowViews(t *testing.T) {
+	e := coretest.New(t, coretest.WithoutAutoSync())
+	cs, _ := bridge(t, e)
+	res, err := cs.ListTools(t.Context(), nil)
+	require.NoError(t, err)
+	views := map[string]string{"show_draft": "draft", "show_mail": "mail"}
+	uris := map[string]string{}
+	for _, tool := range res.Tools {
+		if views[tool.Name] == "" {
+			assert.Nil(t, tool.Meta, tool.Name)
+			continue
+		}
+		assert.Contains(t, tool.Description, "only when the user", tool.Name)
+		ui, _ := tool.Meta["ui"].(map[string]any)
+		uris[tool.Name], _ = ui["resourceUri"].(string)
+	}
+	require.Len(t, uris, len(views))
+	for name, uri := range uris {
+		require.True(t, strings.HasPrefix(uri, "ui://"), uri)
+		view, err := os.ReadFile("views/" + views[name] + ".html")
+		require.NoError(t, err)
+		got, err := cs.ReadResource(t.Context(), &mcp.ReadResourceParams{URI: uri})
+		require.NoError(t, err)
+		require.Len(t, got.Contents, 1)
+		c := got.Contents[0]
+		assert.Equal(t, "text/html;profile=mcp-app", c.MIMEType)
+		assert.Equal(t, string(view), c.Text, name)
+		b, _ := json.Marshal(c.Meta)
+		assert.NotContains(t, string(b), "Domains")
+		assert.NotRegexp(t, `(?i)<(script|link|img|iframe)[^>]*(src|href)=|@import|url\(|https?://`, c.Text)
+		assert.NotContains(t, c.Text, "ui/message", name)
+		assert.NotContains(t, c.Text, "ui/update-model-context", name)
+		assert.Contains(t, c.Text, "<script")
+	}
+}
+
+// A host without MCP Apps gets from show_mail what get_message or get_thread
+// returns.
+func TestMCPShowMailText(t *testing.T) {
+	e := coretest.New(t, coretest.WithoutAutoSync())
+	acc := e.AddAccount(t, "alice@example.com")
+	e.Deliver(t, acc.ID, "INBOX", coretest.Msg("bob@example.com", "alice@example.com", "Plans", "Meet on Friday."))
+	page, err := e.Svc.ListMessages(t.Context(), core.View{Unified: "inbox"}, "", 0)
+	require.NoError(t, err)
+	m := page.Items[0]
+	cs, _ := bridge(t, e)
+	assert.Equal(t, ok(t, cs, "get_message", map[string]any{"message_id": m.ID}),
+		ok(t, cs, "show_mail", map[string]any{"message_id": m.ID}))
+	assert.Equal(t, ok(t, cs, "get_thread", map[string]any{"thread_id": m.ThreadID}),
+		ok(t, cs, "show_mail", map[string]any{"thread_id": m.ThreadID}))
+}
+
+// A host without MCP Apps gets from show_draft what get_draft returns.
+func TestMCPShowDraftText(t *testing.T) {
+	e := coretest.New(t, coretest.WithoutAutoSync())
+	acc := e.AddAccount(t, "alice@example.com")
+	cs, _ := bridge(t, e)
+	ok(t, cs, "create_draft", map[string]any{"account_id": acc.ID, "to": []string{"bob@example.com"}, "subject": "Hi",
+		"body": "<b>bold</b> ![x](https://example.com/p.png) https://example.com"})
+	ds, err := e.Svc.ListDrafts(t.Context(), acc.ID)
+	require.NoError(t, err)
+	args := map[string]any{"draft_id": ds[0].ID}
+	shown := ok(t, cs, "show_draft", args)
+	assert.Equal(t, ok(t, cs, "get_draft", args), shown)
+	assert.Contains(t, shown, `field="body">&lt;b&gt;bold&lt;/b&gt;`)
 }
 
 func TestMCPSearchAndRead(t *testing.T) {

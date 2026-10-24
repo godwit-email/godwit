@@ -80,6 +80,9 @@ func (a *App) setRoute(r Route) {
 	if r.Page != PageMail {
 		a.mail.stopOlder() // older mail is fetched only while the list shows
 	}
+	if r.Page != PageSettings || r.Settings != "about" {
+		a.pages[PageSettings].(*settingsPage).closeBird() // its WebGL runs only while About shows
+	}
 	a.route = r
 	a.gen++
 	a.page().refresh(nil)
@@ -94,6 +97,9 @@ func (a *App) onEvent(ev events.Event) {
 		if p, ok := a.pages[PageWit].(*askPage); ok && a.route.Page == PageWit {
 			p.load()
 		}
+		return
+	case events.MCPSendsChanged: // only the confirmation dialog shows them
+		a.loadMCPSends()
 		return
 	case events.SettingsChanged:
 		a.mail.reader.invalidateAvatars(false)
@@ -212,6 +218,7 @@ func (a *App) View(c *ui.Context) {
 	a.linkDialog(c)
 	a.closeDialog(c)
 	a.mail.reader.egressDialog(c)
+	a.mcpSendDialog(c)
 	kit.ToastHost(c, i18n.T("toast.close"))
 	// Last, on the root, which overlays (menus, dialogs, Select lists, toasts)
 	// attach to: a c.SetTheme mid-frame resets its background to the theme's,

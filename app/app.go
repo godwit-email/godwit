@@ -74,6 +74,24 @@ type Platform interface {
 	// that one first. flush asks the page to save now; done hears whether
 	// it did, on the UI thread, at most once. UI thread only.
 	NewSignatureView() (view ui.NativeWebView, show func(id int64), flush func(done func(ok bool)), close func(), err error)
+	// NewBirdView makes the About page's 3D bird in the main window; close
+	// destroys it. UI thread only.
+	NewBirdView() (view ui.NativeWebView, close func(), err error)
+	// CanCheckForUpdates reports whether the app updates itself: not the
+	// Store's package, which the Store updates.
+	CanCheckForUpdates() bool
+	// CheckForUpdates checks now; the updater's own window shows the result
+	// and installs a newer version.
+	CheckForUpdates()
+	// LatestVersion asks the update feed for a version newer than this
+	// one, without a window: "" when up to date. Blocks: call off the UI
+	// thread.
+	LatestVersion(ctx context.Context) (string, error)
+	// RepoStarred asks the GitHub CLI whether the user starred Godwit's
+	// repository: ok is false without gh signed in. Blocks.
+	RepoStarred(ctx context.Context) (starred, ok bool)
+	// StarRepo stars it with the GitHub CLI. Blocks.
+	StarRepo(ctx context.Context) error
 }
 
 // Notification is a system notification about a message.
@@ -240,6 +258,8 @@ type App struct {
 
 	link     string // the link waiting for confirmation
 	linkOpen bool   // the link dialog shows
+
+	mcpSend mcpSendState // godwit mcp's send request waiting for the user (mcpsend.go)
 
 	customIcons map[int64]accountImage // by account id: its uploaded icon (accountImage)
 
@@ -419,6 +439,7 @@ func (a *App) Close() {
 	a.plat.ShowSignInCode(nil)
 	a.mail.reader.closeViews()
 	a.pages[PageSettings].(*settingsPage).closeSignature()
+	a.pages[PageSettings].(*settingsPage).closeBird()
 	a.tempMu.Lock()
 	defer a.tempMu.Unlock()
 	for _, d := range a.tempDirs {

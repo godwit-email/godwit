@@ -212,6 +212,7 @@ var HeadingScale = [6]float32{1.6, 1.4, 1.2, 1.1, 1, 1}
 const (
 	IconXs, IconSm, Icon, IconMd, IconLg, IconXl     = 12, 14, 16, 18, 20, 28
 	Logo                                             = 64             // the About page's logo
+	AboutBird                                        = 150            // the About page's 3D bird
 	BrandLogo                                        = 48             // onboarding's brand mark, beside the name
 	MarkSm, MarkMd, MarkLg, MarkXl                   = 16, 28, 40, 48 // provider marks
 	ServiceMarkOffset                                = 4              // optical alignment with a service name's first line

@@ -38,6 +38,9 @@ type Settings struct {
 	// answers keep their probabilities.
 	JudgeThreshold float64
 	LocalAPI       bool // the GUI serves the Local API; off by default
+	// MCPSend is what godwit mcp's send_draft does (通过 MCP 发送):
+	// MCPSendOff, MCPSendConfirm (the default; "" too) or MCPSendDirect.
+	MCPSend string
 	// SignatureDelimiter puts the RFC 3676 "-- " line before a new draft's
 	// signature, which clients such as Mutt and Thunderbird recognize and
 	// fold; off by default.
@@ -91,7 +94,8 @@ const (
 
 func defaultSettings() Settings {
 	return Settings{Theme: "system", Density: "compact", FontSize: 14, SettingsVersion: settingsVersion, ReplyLanguage: "match", RemoteImages: "auto",
-		KeepInBackground: true, UnreadOnAppIcon: true, NotifyNewMail: true, NotifyPreview: true, ThreadView: true, AutoLabel: true, JudgeThreshold: 0.8}
+		KeepInBackground: true, UnreadOnAppIcon: true, NotifyNewMail: true, NotifyPreview: true, ThreadView: true, AutoLabel: true, JudgeThreshold: 0.8,
+		MCPSend: MCPSendConfirm}
 }
 
 var langRE = regexp.MustCompile(`^[A-Za-z]{2,3}(-[A-Za-z0-9]{2,8})*$`)
@@ -112,6 +116,8 @@ func (st Settings) validate() error {
 		return fmt.Errorf("invalid density %q", st.Density)
 	case !in(st.RemoteImages, "", "auto", "trusted", "ask"):
 		return fmt.Errorf("invalid remote images mode %q", st.RemoteImages)
+	case !in(st.MCPSend, "", MCPSendOff, MCPSendConfirm, MCPSendDirect):
+		return fmt.Errorf("invalid MCP send level %q", st.MCPSend)
 	case !in(st.ReplyLanguage, "match", "reading"):
 		return fmt.Errorf("invalid reply language mode %q", st.ReplyLanguage)
 	case st.FontSize < 10 || st.FontSize > 32, st.BodyFontSize != 0 && (st.BodyFontSize < 10 || st.BodyFontSize > 32):

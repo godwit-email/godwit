@@ -106,7 +106,15 @@ type Error struct {
 	Detail string
 }
 
-func (e *Error) Error() string { return e.Msg }
+// Error tolerates a nil receiver: fmt calls it on an Event's nil Err, and the
+// recovered nil dereference is a hardware fault Go 1.27 can't take safely on
+// some Windows hosts (golang/go#81238).
+func (e *Error) Error() string {
+	if e == nil {
+		return "<nil>"
+	}
+	return e.Msg
+}
 
 // Is makes errors.Is(err, context.Canceled) hold for a canceled run.
 func (e *Error) Is(target error) bool { return e.Code == CodeCanceled && target == context.Canceled }

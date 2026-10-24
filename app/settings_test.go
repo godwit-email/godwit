@@ -489,8 +489,25 @@ func TestSettingsPrivacyAndAbout(t *testing.T) {
 	h.see("系统钥匙串可用")
 	h.openSettings("about")
 	h.see("版本 " + Version)
-	h.click("github.com/godwit-email/godwit")
+	h.called("NewBirdView") // failed here: the logo stands in
+	h.click("加星标")          // no gh: GitHub stars it
 	h.called("OpenURL https://github.com/godwit-email/godwit")
+	h.click("检查更新")
+	h.called("CheckForUpdates")
+	h.plat.mu.Lock()
+	h.plat.latest = "9.0.0"
+	h.plat.mu.Unlock()
+	h.openSettings("privacy")
+	h.openSettings("about")
+	h.click("升级到 9.0.0")
+	h.plat.mu.Lock()
+	h.plat.gh = true
+	h.plat.mu.Unlock()
+	h.openSettings("privacy")
+	h.openSettings("about")
+	h.click("加星标")
+	h.called("StarRepo")
+	h.see("GitHub") // starred: a link like the others
 }
 
 // blockingUpdate is the Service's UpdateAccount, whose first call waits
@@ -863,11 +880,11 @@ func TestLocalAPICopyWarnsFullAccess(t *testing.T) {
 	h := localAPIHarness(t, "", nil, nil)
 	h.openSettings("privacy")
 	h.see("完整的本机 API 能读取邮件、发送邮件、修改账户和设置")
-	h.see("只能读取邮件和创建草稿，不能发送")
+	h.see("可以读取邮件和写草稿，能否发送见下方设置")
 	i18n.SetLanguage("en")
 	h.tt.Frame()
 	h.see("The full Local API can read mail, send mail, and change accounts and settings")
-	h.see("can only read mail and create drafts, never send")
+	h.see("can read mail and write drafts, and the setting below decides whether they can send")
 }
 
 // localAPIRace clicks the switch on, off and on while the first "on" blocks,
@@ -1220,8 +1237,8 @@ func TestSignatureHTMLMode(t *testing.T) {
 
 	shows := len(slices.DeleteFunc(h.plat.Calls(), func(c string) bool { return !strings.HasPrefix(c, "ShowSignature") }))
 	h.click("HTML 代码")
-	h.drain()
-	h.tt.Frame()
+	// The close saves in the background; a click before it answers is ignored.
+	h.until("the close's save answers", func() bool { return p.sigCode == nil || !p.sigCode.closing })
 	if p.sigCode == nil {
 		t.Fatal("left the HTML mode with its save refused: the edit would be lost")
 	}
