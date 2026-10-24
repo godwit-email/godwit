@@ -28,24 +28,35 @@ var bundle string
 
 var compiled = sync.OnceValues(func() (*moejs.Module, error) { return moejs.Compile("engine.js", bundle) })
 
-// Request is one reply to a one-off prompt from an OpenAI-compatible service
-// (chat completions). Effort is "", "low", "medium" or "high".
+// Request is one reply to a one-off prompt. API is the pi-ai API that speaks
+// the service's protocol: openai-completions, anthropic-messages,
+// openai-responses or openai-codex-responses. APIKey "" sends no credential.
+// Effort is "", "low", "medium" or "high". MaxTokens caps the reply (0: none
+// where the API allows it); ThinkingBudget is anthropic-messages' thinking
+// budget for Effort.
 type Request struct {
-	BaseURL string `json:"baseUrl"`
-	Model   string `json:"model"`
-	APIKey  string `json:"apiKey"`
-	System  string `json:"system"`
-	Prompt  string `json:"prompt"`
-	Effort  string `json:"effort"`
+	API            string `json:"api"`
+	BaseURL        string `json:"baseUrl"`
+	Model          string `json:"model"`
+	APIKey         string `json:"apiKey"`
+	System         string `json:"system"`
+	Prompt         string `json:"prompt"`
+	Effort         string `json:"effort"`
+	MaxTokens      int64  `json:"maxTokens"`
+	ThinkingBudget int64  `json:"thinkingBudget"`
 }
 
 // Result is how a reply ended. StopReason is pi-ai's: "stop" is a whole reply,
 // "length" one cut off at the output limit, "error" a failure (Error says what
-// pi-ai saw). Status is the last HTTP status a request got, 0 if none
-// answered; Transport the error a request failed with before any answer.
+// pi-ai saw); or "blocked", a reply the service withheld, and "incomplete",
+// one it ended early for another reason. Code is the error code the service
+// last answered with (an HTTP error body's or a failed response's), Status
+// the last HTTP status a request got, 0 if none answered; Transport the error
+// a request failed with before any answer.
 type Result struct {
 	StopReason    string `json:"stopReason"`
 	Error         string `json:"error"`
+	Code          string `json:"code"`
 	Input, Output int
 	Status        int   `json:"-"`
 	Transport     error `json:"-"`

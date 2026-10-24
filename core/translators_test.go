@@ -256,6 +256,51 @@ func TestScriptPluginTranslate(t *testing.T) {
 	assert.Contains(t, list, TranslatorInfo{ID: "plugin/translate-demo", Name: "translate-demo", Running: true})
 }
 
+// With the Labs switch on, a translate plugin runs on moejs and translates the same (#237).
+func TestScriptPluginTranslateOnMoejs(t *testing.T) {
+	e := newSkillEnv(t)
+	st, _ := e.s.GetSettings(t.Context())
+	st.PiEngine, st.Translator = true, "plugin/translate-demo"
+	_, err := e.s.SetSettings(t.Context(), st)
+	require.NoError(t, err)
+	src, err := filepath.Abs(filepath.Join("coretest", "testdata", "translate-demo"))
+	require.NoError(t, err)
+	_, err = e.s.InstallPlugin(t.Context(), src)
+	require.NoError(t, err)
+	require.NoError(t, e.s.GrantPermission(t.Context(), "translate-demo"))
+	require.NoError(t, e.s.SetPluginEnabled(t.Context(), "translate-demo", true))
+	assert.Nil(t, e.s.running["translate-demo"].p.VM(), "not on goja")
+	setBody(t, e, "Hello\n\nSee you", "")
+	evs := e.run(t, "translate", Target{Kind: "message", ID: e.msg})
+	assert.Equal(t, "plugin/translate-demo", evs[0].Model)
+	assert.Equal(t, []string{"HELLO\n\nSEE YOU"}, texts(evs))
+}
+
+// A translate plugin that reaches for a ctx API still on goja runs there, as before.
+func TestScriptPluginOnMoejsFallsBackToGoja(t *testing.T) {
+	e := newSkillEnv(t)
+	st, _ := e.s.GetSettings(t.Context())
+	st.PiEngine, st.Translator = true, "plugin/tooly"
+	_, err := e.s.SetSettings(t.Context(), st)
+	require.NoError(t, err)
+	dir := filepath.Join(t.TempDir(), "tooly")
+	require.NoError(t, os.MkdirAll(dir, 0o700))
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "plugin.json"), []byte(`{"name":"tooly","version":"0.1.0","main":"index.ts","capabilities":["translate"],"permissions":{}}`), 0o600))
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "index.ts"), []byte(`export default function (ctx: any) {
+		ctx.tools.register({ name: "ping", description: "d", schema: { type: "object" }, write: false, run: () => "pong" })
+		ctx.translators.register({ translate: (req: any) => ({ texts: req.texts.map((t: string) => t + "!"), source: "en" }) })
+	}`), 0o600))
+	_, err = e.s.InstallPlugin(t.Context(), dir)
+	require.NoError(t, err)
+	require.NoError(t, e.s.GrantPermission(t.Context(), "tooly"))
+	require.NoError(t, e.s.SetPluginEnabled(t.Context(), "tooly", true))
+	rp := e.s.running["tooly"]
+	require.NotNil(t, rp.p.VM(), "on goja")
+	assert.Len(t, rp.p.Tools(), 1)
+	evs := e.run(t, "translate", Target{Kind: "selection", ID: e.msg, Text: "Hi"})
+	assert.Equal(t, []string{"Hi!"}, texts(evs))
+}
+
 // Changing the plugin's settings may change its translations: no stale cache.
 func TestPluginTranslateCacheFollowsConfig(t *testing.T) {
 	e := newSkillEnv(t)

@@ -98,6 +98,8 @@ type Plugin struct {
 	cfgVal     goja.Value
 	translator goja.Callable  // ctx.translators.register's translate
 	models     *modelProvider // ctx.models.register's (models.go)
+
+	moe *moePlugin // set instead of vm for a plugin on moejs (moehost.go)
 }
 
 type tool struct {
@@ -112,7 +114,17 @@ type action struct {
 
 type card struct{ match, render goja.Callable }
 
+// VM is the plugin's goja runtime; nil for a plugin on moejs.
 func (p *Plugin) VM() *VM { return p.vm }
+
+// Close stops the plugin's runtime.
+func (p *Plugin) Close() {
+	if p.moe != nil {
+		p.moe.vm.Close()
+		return
+	}
+	p.vm.Close()
+}
 
 func (p *Plugin) Tools() []ToolInfo {
 	out := []ToolInfo{}
@@ -261,17 +273,26 @@ func pluginMail(m MailMessage) MailMessage {
 // invocation (no writes, no egress, cfg as ctx.config), recording what it registers.
 func Load(ctx context.Context, vm *VM, m Manifest, h Host, cfg *ConfigSnapshot) (*Plugin, error) {
 	p := &Plugin{Name: m.Name, m: m, h: h, vm: vm, events: map[string]goja.Callable{}}
-	egress, _ := EgressFor(KindInit, m, true, false, false) // none: init never fetches
-	if err := vm.Init(ctx, Invocation{ID: "init", Kind: KindInit, EgressHosts: egress, Config: cfg}, p.newCtx); err != nil {
+	if err := vm.Init(ctx, initInvocation(m, cfg), p.newCtx); err != nil {
 		return nil, err
 	}
-	if slices.Contains(m.Capabilities, "translate") && p.translator == nil {
-		return nil, fmt.Errorf("plugin %s declares translate but registered no translator", m.Name)
+	return p, p.checkRegistered()
+}
+
+func initInvocation(m Manifest, cfg *ConfigSnapshot) Invocation {
+	egress, _ := EgressFor(KindInit, m, true, false, false) // none: init never fetches
+	return Invocation{ID: "init", Kind: KindInit, EgressHosts: egress, Config: cfg}
+}
+
+// checkRegistered: initialization registered what the manifest declares.
+func (p *Plugin) checkRegistered() error {
+	if slices.Contains(p.m.Capabilities, "translate") && p.translator == nil && (p.moe == nil || !isFunction(p.moe.translator)) {
+		return fmt.Errorf("plugin %s declares translate but registered no translator", p.Name)
 	}
-	if slices.Contains(m.Capabilities, "models") && p.models == nil {
-		return nil, fmt.Errorf("plugin %s declares models but registered none", m.Name)
+	if slices.Contains(p.m.Capabilities, "models") && p.models == nil {
+		return fmt.Errorf("plugin %s declares models but registered none", p.Name)
 	}
-	return p, nil
+	return nil
 }
 
 // need panics with a PermissionError unless the manifest, and for writes the
@@ -352,14 +373,53 @@ func egressHost(raw string) (string, error) {
 	return h, nil
 }
 
-// denyFetch audits a fetch refused before the host saw it, then throws err,
+// fetchDenied audits a fetch refused before the host saw it and returns err,
 // joined with the audit's failure if the row could not be written.
-func (p *Plugin) denyFetch(c *CallScope, raw, reason string, err error) {
+func (p *Plugin) fetchDenied(ctx context.Context, inv Invocation, raw, reason string, err error) error {
 	u, _ := url.Parse(raw) // egressHost parsed it
-	if aerr := p.h.AuditEgress(c.ctx, c.Invocation(), HostPort(u), "deny", reason); aerr != nil {
-		panic(errors.Join(err, aerr))
+	if aerr := p.h.AuditEgress(ctx, inv, HostPort(u), "deny", reason); aerr != nil {
+		return errors.Join(err, aerr)
 	}
-	panic(err)
+	return err
+}
+
+func (p *Plugin) denyFetch(c *CallScope, raw, reason string, err error) {
+	panic(p.fetchDenied(c.ctx, c.Invocation(), raw, reason, err))
+}
+
+// fetchURLAllowed refuses (audited) a ctx.net.fetch of a URL whose host the
+// manifest does not declare or inv was not given; it runs before init is read.
+func (p *Plugin) fetchURLAllowed(ctx context.Context, inv Invocation, raw string) error {
+	host, err := egressHost(raw)
+	if err != nil {
+		return err
+	}
+	if declared := slices.Contains(p.m.Permissions.Net, host); !declared || !slices.Contains(inv.EgressHosts, host) {
+		reason := "host_not_allowed"
+		if declared && inv.Unapproved {
+			reason = "approval_required"
+		}
+		return p.fetchDenied(ctx, inv, raw, reason, &PermissionError{Perm: "net:" + host})
+	}
+	return nil
+}
+
+// fetchInit is ctx.net.fetch's init, its own type: no field of it can replace
+// the URL checked first.
+type fetchInit struct {
+	Method  string            `json:"method"`
+	Headers map[string]string `json:"headers"`
+	Body    string            `json:"body"`
+}
+
+// fetchInvocation refuses (audited) an oversized body and is what the host
+// fetches req under: redirects only to hosts both declared and granted.
+func (p *Plugin) fetchInvocation(ctx context.Context, inv Invocation, req FetchRequest) (Invocation, error) {
+	if len(req.Body) > MaxFetchBody {
+		return inv, p.fetchDenied(ctx, inv, req.URL, "too_large", ErrTooLarge)
+	}
+	inv.EgressHosts = slices.DeleteFunc(slices.Clone(inv.EgressHosts), func(h string) bool { return !slices.Contains(p.m.Permissions.Net, h) })
+	return inv, nil
 }
 
 func (p *Plugin) newCtx(c *CallScope) goja.Value {
@@ -476,24 +536,11 @@ func (p *Plugin) newCtx(c *CallScope) goja.Value {
 	netObj := object("fetch", fn("net.fetch", func(c *CallScope, call goja.FunctionCall) goja.Value {
 		var req FetchRequest
 		arg(c, "net.fetch", call.Argument(0), &req.URL, "url must be a string")
-		host, err := egressHost(req.URL)
-		if err != nil {
+		if err := p.fetchURLAllowed(c.ctx, c.Invocation(), req.URL); err != nil {
 			panic(err)
 		}
-		if declared := slices.Contains(p.m.Permissions.Net, host); !declared || !slices.Contains(c.Invocation().EgressHosts, host) {
-			reason := "host_not_allowed"
-			if declared && c.Invocation().Unapproved {
-				reason = "approval_required"
-			}
-			p.denyFetch(c, req.URL, reason, &PermissionError{Perm: "net:" + host})
-		}
 		if init := call.Argument(1); !optional(init) {
-			// Its own type: no field of init can replace the URL checked above.
-			var in struct {
-				Method  string            `json:"method"`
-				Headers map[string]string `json:"headers"`
-				Body    string            `json:"body"`
-			}
+			var in fetchInit
 			func() {
 				defer func() { // an init over the argument limit is an oversized body: audited
 					if r := recover(); r == ErrTooLarge {
@@ -506,12 +553,11 @@ func (p *Plugin) newCtx(c *CallScope) goja.Value {
 			}()
 			req.Method, req.Headers, req.Body = in.Method, in.Headers, in.Body
 		}
-		if len(req.Body) > MaxFetchBody {
-			p.denyFetch(c, req.URL, "too_large", ErrTooLarge)
+		inv, err := p.fetchInvocation(c.ctx, c.Invocation(), req)
+		if err != nil {
+			panic(err)
 		}
-		inv, rt := c.Invocation(), c.Runtime()
-		// The host allows redirects only to hosts both declared and granted.
-		inv.EgressHosts = slices.DeleteFunc(slices.Clone(inv.EgressHosts), func(h string) bool { return !slices.Contains(p.m.Permissions.Net, h) })
+		rt := c.Runtime()
 		return c.Async(func(ctx context.Context) (any, error) {
 			r, err := p.h.Fetch(ctx, inv, req)
 			if err != nil {
@@ -568,22 +614,27 @@ func (p *Plugin) newCtx(c *CallScope) goja.Value {
 	)
 	_ = o.DefineAccessorProperty("config", fn("config", func(c *CallScope, _ goja.FunctionCall) goja.Value {
 		if p.cfgCall != c { // the invocation's snapshot, copied: what the plugin does to it stays in its call
-			cfg := c.Invocation().Config
-			if cfg == nil || cfg.Err != nil {
-				panic(errors.New("the plugin's configuration could not be read"))
-			}
-			vals, err := jsonData(cfg.Values)
+			vals, err := configData(c.Invocation().Config)
 			if err != nil {
 				panic(err)
-			}
-			if vals == nil {
-				vals = map[string]any{}
 			}
 			p.cfgCall, p.cfgVal = c, c.Runtime().ToValue(vals)
 		}
 		return p.cfgVal
 	}), nil, goja.FLAG_FALSE, goja.FLAG_TRUE)
 	return o
+}
+
+// configData is ctx.config: cfg's values as fresh JSON data.
+func configData(cfg *ConfigSnapshot) (any, error) {
+	if cfg == nil || cfg.Err != nil {
+		return nil, errors.New("the plugin's configuration could not be read")
+	}
+	vals, err := jsonData(cfg.Values)
+	if vals == nil && err == nil {
+		vals = map[string]any{}
+	}
+	return vals, err
 }
 
 func nonNil(l []string) []string {
@@ -687,6 +738,9 @@ func (p *Plugin) registerTranslator(c *CallScope, call goja.FunctionCall) goja.V
 // Translate runs the registered translator on req under inv and returns its
 // (awaited) result as plain JSON data.
 func (p *Plugin) Translate(ctx context.Context, inv Invocation, req any) (any, error) {
+	if p.moe != nil {
+		return p.moe.translate(ctx, inv, req)
+	}
 	if p.translator == nil {
 		return nil, fmt.Errorf("plugin %s has no translator", p.Name)
 	}

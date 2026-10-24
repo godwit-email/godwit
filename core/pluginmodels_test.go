@@ -134,26 +134,32 @@ func httpModelPlugin(protocol, host string) string {
 
 func TestPluginHTTPModels(t *testing.T) {
 	for protocol, kind := range map[string]string{"openai-completions": "openai", "openai-responses": "openai-responses", "anthropic-message": "anthropic"} {
-		t.Run(protocol, func(t *testing.T) {
-			s := newMailContextService(t)
-			srv, host := modelServer(t, s, kind)
-			srv.Script(testllm.Turn{Text: []string{"hello there"}})
-			startModelPlugin(t, s, "p", host, httpModelPlugin(protocol, host))
+		for _, onPi := range []bool{false, true} {
+			t.Run(fmt.Sprint(protocol, "/pi=", onPi), func(t *testing.T) {
+				s := newMailContextService(t)
+				srv, host := modelServer(t, s, kind)
+				srv.Script(testllm.Turn{Text: []string{"hello there"}})
+				startModelPlugin(t, s, "p", host, httpModelPlugin(protocol, host))
 
-			m, ref, err := s.resolveRef(t.Context(), "plugin/p/m1")
-			require.NoError(t, err)
-			assert.Equal(t, "plugin/p/m1", ref)
-			assert.Less(t, m.ServiceID, int64(0))
-			e, err := s.aiEngine()
-			require.NoError(t, err)
-			out, err := s.runText(t.Context(), e, ai.Request{Model: m, Prompt: "hi", MaxTurns: 1}, 100)
-			require.NoError(t, err)
-			assert.Equal(t, "hello there", out)
-			reqs := srv.Requests()
-			require.Len(t, reqs, 1)
-			assert.Equal(t, "upstream", reqs[0].Model, "the body the plugin changed")
-			assert.Equal(t, "secret-m1", reqs[0].Header.Get("X-Plugin-Key"))
-		})
+				m, ref, err := s.resolveRef(t.Context(), "plugin/p/m1")
+				require.NoError(t, err)
+				assert.Equal(t, "plugin/p/m1", ref)
+				assert.Less(t, m.ServiceID, int64(0))
+				e, err := s.aiEngine()
+				require.NoError(t, err)
+				out, err := s.runText(t.Context(), e, ai.Request{Model: m, Prompt: "hi", MaxTurns: 1, Pi: onPi}, 100)
+				require.NoError(t, err)
+				assert.Equal(t, "hello there", out)
+				reqs := srv.Requests()
+				require.Len(t, reqs, 1)
+				assert.Equal(t, "upstream", reqs[0].Model, "the body the plugin changed")
+				assert.Equal(t, "secret-m1", reqs[0].Header.Get("X-Plugin-Key"))
+				assert.Equal(t, onPi, reqs[0].Header.Get("User-Agent") == "Godwit", "pi-ai sent it")
+				if onPi {
+					assert.Empty(t, reqs[0].Header.Get("Authorization")+reqs[0].Header.Get("X-Api-Key"), "no placeholder key leaves")
+				}
+			})
+		}
 	}
 }
 

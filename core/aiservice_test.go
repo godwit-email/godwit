@@ -532,12 +532,28 @@ func TestRunSkillSummarizeOnPi(t *testing.T) {
 	assert.Contains(t, promptOf(t, reqs[0]), "Meet on Friday at the harbour.")
 	assert.Equal(t, 1, e.cacheRows(t), "cached as on Genkit")
 
-	// What pi does not cover yet stays on Genkit with the switch on.
-	e.srv.Script(testllm.Turn{Text: []string{"译文"}})
-	e.run(t, "translate", Target{Kind: "message", ID: e.msg})
+	// Translation and quick replies run on pi too (#230).
+	e.srv.Script(testllm.Turn{Text: []string{"译文"}},
+		testllm.Turn{Text: []string{`{"texts":["周五见"],"source":"en"}`}},
+		testllm.Turn{Text: []string{`{"replies":[{"html":"<p>好</p>"}]}`}})
+	assert.Equal(t, []string{"译文"}, texts(e.run(t, "translate", Target{Kind: "message", ID: e.msg})))
+	require.NotEmpty(t, e.run(t, "translate", Target{Kind: "message", ID: e.msg, PreserveHTML: true})[1].Translations)
+	rs, err := e.s.QuickReplies(t.Context(), e.msg)
+	require.NoError(t, err)
+	require.Len(t, rs, 1)
 	reqs = e.srv.Requests()
-	require.Len(t, reqs, 2)
-	assert.NotEqual(t, "Godwit", reqs[1].Header.Get("User-Agent"))
+	require.Len(t, reqs, 4)
+	for _, r := range reqs[1:] {
+		assert.Equal(t, "Godwit", r.Header.Get("User-Agent"), "pi-ai sent it")
+	}
+
+	// What pi does not cover yet stays on Genkit with the switch on.
+	conv := e.askConv(t)
+	e.srv.Script(testllm.Turn{Text: []string{"hi"}})
+	e.ask(t, conv.ID, "hi")
+	reqs = e.srv.Requests()
+	require.Len(t, reqs, 5)
+	assert.NotEqual(t, "Godwit", reqs[4].Header.Get("User-Agent"))
 }
 
 // With no judge service the default model answers judge questions, on pi
