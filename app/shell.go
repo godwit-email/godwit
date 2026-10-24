@@ -123,6 +123,8 @@ func (a *App) onEvent(ev events.Event) {
 		a.tick() // a failure that lasts turns red
 	case events.MessageReceived:
 		a.mailArrived(ev)
+	case events.OutboxChanged:
+		a.offerUndo()
 	case events.PluginsChanged: // a card's plugin may have been switched
 		a.mail.reader.reloadPluginParts()
 	}
@@ -186,7 +188,10 @@ func (a *App) View(c *ui.Context) {
 	for _, ts := range a.toasts {
 		c.AddToast(ts)
 	}
-	a.toasts = nil
+	for _, id := range a.closeToasts {
+		c.CloseToast(id)
+	}
+	a.toasts, a.closeToasts = nil, nil
 	kit.DialogShown() // forget another window's
 
 	if c.Shortcut(ui.Cmd, ui.KeyBracketLeft) {

@@ -35,6 +35,7 @@ type API interface {
 	Send(ctx context.Context, draftID int64) error
 	SendAcknowledged(ctx context.Context, draftID int64, digest string) error
 	ListOutbox(ctx context.Context, accountID int64) ([]core.OutboxItem, error)
+	CancelOutbox(ctx context.Context, id int64) error
 	GetSettings(ctx context.Context) (core.Settings, error)
 	SetSettings(ctx context.Context, st core.Settings) (core.Settings, error)
 	TrustImageSender(ctx context.Context, from string) error
@@ -235,6 +236,10 @@ func (r *Remote) SendAcknowledged(ctx context.Context, draftID int64, digest str
 
 func (r *Remote) ListOutbox(ctx context.Context, accountID int64) ([]core.OutboxItem, error) {
 	return call[[]core.OutboxItem](r, ctx, "ListOutbox", accountID)
+}
+
+func (r *Remote) CancelOutbox(ctx context.Context, id int64) error {
+	return r.C.Call(ctx, "CancelOutbox", nil, id)
 }
 
 func (r *Remote) GetSettings(ctx context.Context) (core.Settings, error) {

@@ -46,6 +46,12 @@ type (
 	Request = testllm.Request
 )
 
+// The SMTP stages SMTP.Reply answers at.
+const (
+	AtRcpt = testmail.AtRcpt
+	AtData = testmail.AtData
+)
+
 // EgressHost is the host fixture plugins fetch from, as http://egress.godwit.test:80/
 // (the port written out, as declared); it reaches the Env's local server,
 // whose every answer is "pong".
