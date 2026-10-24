@@ -46,7 +46,7 @@
    - 否则返回一个新错误 `errNeedsInput{requests, state}`。
 3. Wit 的执行层（无论是运行中的受信任工具，还是 `decideExternal` 里已批准的调用）收到 `errNeedsInput` 时，**新建一行待审批**：`Tool` 仍是这个 MCP 工具，`Args` 是 `{args, inputRequests, requestState}`，`Binding` 是同一个 `version:definitionHash`，来源 `mcp:<name>`。然后 run 中断，原调用的审批记为 done，告诉模型「等待用户回答 <服务器> 的问题」，并且不允许模型自己补答。
 4. 用户作答（`AnswerQuestion` 的扩展版，答案按 schema 转成有类型的 `Content`）就是批准这一行。执行就是 `decideExternal`：重新检查 binding，然后用 `InputResponses` 和 `RequestState` 再调一次 `CallTool`。结果回到模型的方式和今天一样（`mcpUntrusted`）。如果又返回 `input_required`，就再建一行，**每个调用最多 3 轮**，超过就失败。
-5. 「全部拒绝」或逐题跳过：重新调用时整组回 `cancel`，明确点「拒绝」时回 `decline`。都**会**发给服务器，让它能够收尾。如果 run 被取消，什么都不发，原因见下。
+5. 逐题跳过可选字段：这些字段不放进答案。全部跳过就拒绝这次调用，**不再联系服务器**（MRTR 是无状态的，服务器不需要收尾），并告诉模型用户没有回答。`decline` 和 `cancel` 暂不发送。如果某个服务器需要知道用户拒绝了，再加。
 
 ### 重启、取消、超时
 
@@ -99,14 +99,16 @@ ctx.tools.register({ name: "book_room", /* ... */ async run(args, input) {
 ## 4. 安全（ADR 0003、0004）
 
 - **谁能问**：只有正在 Wit run 里执行的 MCP 或插件**工具调用**能问，而且只能问用户，问题落在发起这个 run 的会话里。后台事件、翻译、模型请求、Action 都不能问。每个调用最多 3 轮，每轮的字段数和文本长度有上限（沿用 `ask_user_question` 的 1–4 题，扩展字段先限制在 8 个以内）。
-- **没有自动作答**：问题只能由 `AnswerQuestion` 的扩展版接受。「全部允许」「本次对话都允许」和受信任工具的标记都不替用户作答（#203 的 `ResolveAll` 已经跳过问题，扩展的问题沿用这一点）。没有默认答案自动提交；`default` 只用来预填表单。规范里的旧 handler 也不自动回 `cancel` 或 `decline`，而是回协议错误。
+- **没有自动作答**：问题只能由 `AnswerQuestion` 的扩展版接受。「全部允许」「本次对话都允许」和受信任工具的标记都不替用户作答（#203 的 `ResolveAll` 已经跳过问题，扩展的问题沿用这一点）。没有默认答案自动提交。旧协议在调用中途发来的表单不会被自动回 `cancel` 或 `decline`，而是得到协议错误（客户端没有 handler）。
 - **外发与 taint**：答案是一次外发，目的地就是这个扩展（`mcp:<name>`，或者插件及其 net 主机）。用户可能把邮件里的内容填进答案，而且原调用所在的 run 可能读过邮件。重调走 external 执行，所以仍然受 ADR 0004 的出口检查。区别在于：**作答卡片本身就是这次外发的审批**，卡片上显示目的地，用户不必再批一次。对插件来说，重调前和今天一样先标 `holds_mail`（如果 run 读过邮件）。
 - **至多一次**：重调是一次新的 external 执行，崩在执行中就记 `uncertain`，不再重发（ADR 0004）。工具可以用调用 ID `approval:<id>` 自己去重。
 - **不发信**（ADR 0003）：这个机制不给扩展新增任何能力，只是把用户的回答交给扩展。
-- **审计**：每次提问和作答都写一行审计（来源、目的地、结局）。答案存在审批行里，写库前用 `secrets.Redact` 清理，日志和审计里不记答案原文。
+- **审计**：服务器每次提问写一行 `input_required` 审计，重调照常写 `executed` / `failed`。答案按用户填写的原样存在审批行里（要原样发出，所以不做 Redact），审计和日志里不记答案。
 - **模型看不到答案**：MCP 和插件的答案只发给扩展，不进入模型上下文。模型只看到扩展返回的结果，而这个结果照常标为不可信数据。
 
-## 5. 实施顺序（建议）
+## 5. 实施顺序
+
+前三步（MCP）已实现：表单存在 `approvals.input` 列（`core/mcp_question.go`），卡片读 `Approval.form`。
 
 1. 后端的通用「扩展提问」审批：`Args` 的形状、`AnswerQuestion` 支持带类型的内容、binding 检查、轮数上限、`ResolveAll` 跳过。
 2. MCP 的 MRTR：关掉自动中间件，`callMCP` 处理 `NeedsInput`，两条执行路径建问题行；用 `mcpTestTransport` 起一个 MRTR 测试服务器。

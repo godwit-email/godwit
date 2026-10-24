@@ -73,7 +73,7 @@ func (db *DB) init(ctx context.Context, path string) error {
 			return fmt.Errorf("store: migration %d: %w", v, err)
 		}
 	}
-	dropBackups(path, len(Migrations))
+	dropBackups(path, cur)
 	return db.convertAutoVacuum(ctx)
 }
 
@@ -117,8 +117,10 @@ func copyFile(src, dst string) error {
 	return out.Close()
 }
 
-// dropBackups removes path.bak-v<n> backups once the schema is past n+1: a
-// version later than the migration they were taken for.
+// dropBackups removes path.bak-v<n> backups once a start begins past n+1
+// (cur, the version before migrating): a version later than the migration
+// they were taken for has run. Not by the version just migrated to: one
+// start that migrates past n+1 would drop the backup it just took.
 func dropBackups(path string, cur int) {
 	olds, _ := filepath.Glob(path + ".bak-v*")
 	for _, f := range olds {

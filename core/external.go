@@ -104,6 +104,9 @@ func (s *Service) runExternal(ctx context.Context, a approvalRow, d toolDesc) er
 	cut := rc.Err() != nil || errors.Is(err, plugins.ErrTimeout) || errors.Is(err, plugins.ErrMemoryLimit) ||
 		errors.Is(err, plugins.ErrClosed) || errors.Is(err, errMCPMaybeRan)
 	cancel()
+	if ni := (*needsInput)(nil); errors.As(err, &ni) { // nothing ran: it waits for the user's answer
+		return s.askAgain(db, a, ni.in)
+	}
 	if errors.Is(err, ErrStaleApproval) { // the tool refused: what it was bound to changed, nothing ran
 		return errors.Join(ErrStaleApproval, record("stale", msgStale, "stale"))
 	}

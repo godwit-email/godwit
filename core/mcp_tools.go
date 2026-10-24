@@ -155,6 +155,9 @@ func (s *Service) mcpToolDesc(srv MCPServer, def mcpDef, trusted bool) toolDesc 
 			}
 			text, err := s.callMCP(ctx, mcpCall{id: srv.ID, version: srv.Version, tool: tool, hash: hash,
 				callID: "tool:" + ai.CallID(ctx)}, args)
+			if ni := (*needsInput)(nil); errors.As(err, &ni) {
+				return nil, s.askMCP(ctx, srv, hash, args, ni.in, "Answer MCP server "+srv.Name+"'s question")
+			}
 			if err != nil {
 				return nil, cleanErr{mcpUntrusted(srv.Name, err.Error()), err}
 			}
@@ -172,8 +175,14 @@ func (s *Service) mcpToolDesc(srv MCPServer, def mcpDef, trusted bool) toolDesc 
 			}
 			// srv.Version is the version this tool belongs to, the one the
 			// binding just checked: callMCP refuses any other.
-			return s.callMCP(ctx, mcpCall{id: srv.ID, version: srv.Version, tool: tool, hash: hash,
-				callID: fmt.Sprintf("approval:%d", a.ID)}, a.Args)
+			call := mcpCall{id: srv.ID, version: srv.Version, tool: tool, hash: hash, callID: fmt.Sprintf("approval:%d", a.ID)}
+			if a.input != "" {
+				call.input = new(mcpInput)
+				if err := json.Unmarshal([]byte(a.input), call.input); err != nil {
+					return nil, err
+				}
+			}
+			return s.callMCP(ctx, call, a.Args)
 		},
 		Binding: func(ctx context.Context) (string, error) {
 			c, err := s.mcpLive(ctx, srv.ID)
@@ -196,10 +205,12 @@ func mcpUntrusted(name, text string) string {
 }
 
 // mcpCall is one call: the tool of server id at version, with its
-// definition hash; callID ties its HTTP requests' audit rows to it.
+// definition hash; callID ties its HTTP requests' audit rows to it. input,
+// if set, is the form it asked before, answered: it is called again with it.
 type mcpCall struct {
 	id, version        int64
 	tool, hash, callID string
+	input              *mcpInput
 }
 
 // Test hooks, nil in production: beforeMCPToolRun runs as a trusted tool's
@@ -240,7 +251,11 @@ func (s *Service) callMCP(ctx context.Context, call mcpCall, args json.RawMessag
 	rctx, cancel := context.WithTimeout(ctx, mcpCallTimeout)
 	defer cancel()
 	defer context.AfterFunc(c.life, cancel)() // the connection closed: the call ends
-	res, err := c.session.CallTool(rctx, &mcp.CallToolParams{Name: tool, Arguments: args})
+	params := &mcp.CallToolParams{Name: tool, Arguments: args}
+	if in := call.input; in != nil && in.Answer != nil {
+		params.InputResponses, params.RequestState = mcp.InputResponseMap{in.ID: in.Answer}, in.State
+	}
+	res, err := c.session.CallTool(rctx, params)
 	if err != nil {
 		if errors.Is(rctx.Err(), context.DeadlineExceeded) {
 			s.dropMCP(id, c, "stopped after a call timed out; refresh to start it again")
@@ -250,6 +265,13 @@ func (s *Service) callMCP(ctx context.Context, call mcpCall, args json.RawMessag
 			err = fmt.Errorf("%w: %w", errMCPMaybeRan, err)
 		}
 		return "", err
+	}
+	if res.NeedsInput() { // it asks the user: nothing ran
+		in, err := mcpInputOf(res, call.input)
+		if err != nil {
+			return "", err
+		}
+		return "", &needsInput{in}
 	}
 	text := capMCP(s.clean(mcpText(res))) // cleaned whole: a cut cannot split a secret
 	if res.IsError {

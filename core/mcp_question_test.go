@@ -1,0 +1,145 @@
+package core
+
+import (
+	"context"
+	"encoding/json"
+	"sync/atomic"
+	"testing"
+
+	"github.com/modelcontextprotocol/go-sdk/mcp"
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
+)
+
+// bookingForm is the form the fake "book" tool asks before it books.
+var bookingForm = map[string]any{"type": "object", "required": []any{"room"}, "properties": map[string]any{
+	"room":      map[string]any{"type": "string", "title": "Room", "oneOf": []any{map[string]any{"const": "a", "title": "Small"}, map[string]any{"const": "b", "title": "Large"}}},
+	"nights":    map[string]any{"type": "integer", "minimum": 1, "maximum": 7},
+	"breakfast": map[string]any{"type": "boolean"},
+}}
+
+// addBooking adds the "book" tool to f: called without answers it asks
+// bookingForm (input_required); with them it books and records the answer.
+func addBooking(f *fakeMCP) *atomic.Value {
+	var got atomic.Value
+	f.srv.AddTool(&mcp.Tool{Name: "book", InputSchema: map[string]any{"type": "object"}},
+		func(_ context.Context, r *mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+			f.calls.Add(1)
+			if res, ok := r.Params.InputResponses["form"].(*mcp.ElicitResult); ok && r.Params.RequestState == "s1" {
+				got.Store(res)
+				return &mcp.CallToolResult{Content: []mcp.Content{&mcp.TextContent{Text: "booked"}}}, nil
+			}
+			return &mcp.CallToolResult{InputRequests: mcp.InputRequestMap{"form": &mcp.ElicitParams{Message: "Which room?", RequestedSchema: bookingForm}},
+				RequestState: "s1"}, nil
+		})
+	return &got
+}
+
+func TestMCPQuestionOfApprovedCall(t *testing.T) {
+	e := newApprovalEnv(t)
+	f := newFakeMCP(t)
+	got := addBooking(f)
+	srv := fakeServer(t, e.s)
+
+	evs := e.ask(t, e.newConv(t, "ask", 0), callArgs(witName(t, srv, "book"), `{}`), finished)
+	in := evs[len(evs)-1]
+	require.Equal(t, "interrupted", in.Kind, "%+v", in.Err)
+	id := in.Approvals[0].ID
+	require.NoError(t, e.s.ResolveApproval(t.Context(), id, true))
+
+	// the call asked: the same approval waits again, now for the answers
+	a := e.approval(t, id)
+	require.Equal(t, "pending", a.State)
+	var form formView
+	require.NoError(t, json.Unmarshal(a.Form, &form))
+	assert.Equal(t, "fake", form.Server)
+	assert.Equal(t, "Which room?", form.Message)
+	require.Len(t, form.Questions, 3)
+	assert.Equal(t, "Room", form.Questions[0].Question, "required first")
+	assert.Equal(t, "choice", form.Questions[0].Kind)
+	assert.Equal(t, []questionOption{{Label: "Small"}, {Label: "Large"}}, form.Questions[0].Options)
+	assert.Equal(t, []string{"breakfast", "nights"}, []string{form.Questions[1].Question, form.Questions[2].Question})
+	assert.Equal(t, 1, e.count(t, "SELECT COUNT(*) FROM audit_log WHERE decision = 'input_required'"))
+
+	// nothing answers it but the user's answers
+	assert.ErrorIs(t, e.s.ResolveApproval(t.Context(), id, true), ErrNeedsAnswer)
+	require.NoError(t, e.s.ResolveAll(t.Context(), in.RunID, true))
+	assert.Equal(t, "pending", e.approval(t, id).State)
+	assert.Error(t, e.s.AnswerQuestion(t.Context(), id, [][]string{{}, {"true"}, {"2"}}), "the room is required")
+	assert.Error(t, e.s.AnswerQuestion(t.Context(), id, [][]string{{"Large"}, {}, {"9"}}), "at most 7 nights")
+	assert.Error(t, e.s.AnswerQuestion(t.Context(), id, [][]string{{"Huge"}, {}, {}}), "only its choices")
+
+	require.NoError(t, e.s.AnswerQuestion(t.Context(), id, [][]string{{"Large"}, {}, {"2"}}))
+	e.waitRun(t, in.RunID, "done")
+	res := got.Load().(*mcp.ElicitResult)
+	assert.Equal(t, "accept", res.Action)
+	assert.Equal(t, map[string]any{"room": "b", "nights": float64(2)}, res.Content)
+	a = e.approval(t, id)
+	assert.Equal(t, "done", a.State)
+	require.NoError(t, json.Unmarshal(a.Form, &form))
+	assert.Equal(t, [][]string{{"Large"}, {}, {"2"}}, form.Answers)
+	assert.Equal(t, int32(2), f.calls.Load())
+}
+
+func TestMCPQuestionOfTrustedCall(t *testing.T) {
+	e := newApprovalEnv(t)
+	f := newFakeMCP(t)
+	addBooking(f)
+	srv := fakeServer(t, e.s)
+	require.NoError(t, e.s.SetMCPToolTrusted(t.Context(), srv.ID, "book", true))
+	srv = mcpServer(t, e.s, srv.ID)
+
+	evs := e.ask(t, e.newConv(t, "ask", 0), callArgs(witName(t, srv, "book"), `{}`), finished)
+	in := evs[len(evs)-1]
+	require.Equal(t, "interrupted", in.Kind, "an in-run call that asks becomes an approval: %+v", in.Err)
+	require.Len(t, in.Approvals, 1)
+	assert.NotNil(t, in.Approvals[0].Form)
+	assert.Equal(t, []string{"mcp:fake"}, in.Approvals[0].Destinations)
+
+	require.NoError(t, e.s.AnswerQuestion(t.Context(), in.Approvals[0].ID, [][]string{{"Small"}, {"false"}, {}}))
+	e.waitRun(t, in.RunID, "done")
+	assert.Equal(t, "done", e.approval(t, in.Approvals[0].ID).State)
+	assert.Equal(t, int32(2), f.calls.Load())
+}
+
+func TestMCPQuestionSkipped(t *testing.T) {
+	e := newApprovalEnv(t)
+	f := newFakeMCP(t)
+	addBooking(f)
+	srv := fakeServer(t, e.s)
+
+	evs := e.ask(t, e.newConv(t, "ask", 0), callArgs(witName(t, srv, "book"), `{}`), finished)
+	in := evs[len(evs)-1]
+	id := in.Approvals[0].ID
+	require.NoError(t, e.s.ResolveApproval(t.Context(), id, true))
+	require.NoError(t, e.s.AnswerQuestion(t.Context(), id, [][]string{{}, {}, {}}))
+	e.waitRun(t, in.RunID, "done")
+	a := e.approval(t, id)
+	assert.Equal(t, "rejected", a.State)
+	assert.Equal(t, msgUnanswered, a.Error)
+	assert.Equal(t, int32(1), f.calls.Load(), "a skipped form is not sent")
+}
+
+func TestMCPInputOf(t *testing.T) {
+	form := &mcp.ElicitParams{Message: "?", RequestedSchema: bookingForm}
+	asks := func(reqs mcp.InputRequestMap) *mcp.CallToolResult {
+		return &mcp.CallToolResult{InputRequests: reqs, RequestState: "s"}
+	}
+	in, err := mcpInputOf(asks(mcp.InputRequestMap{"f": form}), nil)
+	require.NoError(t, err)
+	assert.Equal(t, mcpInput{ID: "f", Form: form, State: "s", Round: 1}, in)
+
+	_, err = mcpInputOf(asks(mcp.InputRequestMap{"f": form}), &mcpInput{Round: maxMCPRounds})
+	assert.ErrorContains(t, err, "in a row")
+	_, err = mcpInputOf(asks(mcp.InputRequestMap{}), nil)
+	assert.ErrorContains(t, err, "busy")
+	_, err = mcpInputOf(asks(mcp.InputRequestMap{"f": form, "g": form}), nil)
+	assert.ErrorContains(t, err, "several")
+	_, err = mcpInputOf(asks(mcp.InputRequestMap{"u": &mcp.ElicitParams{Mode: "url", URL: "https://x.test"}}), nil)
+	assert.ErrorContains(t, err, "only forms")
+	_, err = mcpInputOf(asks(mcp.InputRequestMap{"r": &mcp.ListRootsParams{}}), nil)
+	assert.ErrorContains(t, err, "only forms")
+	nested := &mcp.ElicitParams{RequestedSchema: map[string]any{"type": "object", "properties": map[string]any{"o": map[string]any{"type": "object"}}}}
+	_, err = mcpInputOf(asks(mcp.InputRequestMap{"n": nested}), nil)
+	assert.ErrorContains(t, err, "not a field")
+}
