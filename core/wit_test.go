@@ -468,6 +468,39 @@ func TestCompactConversation(t *testing.T) {
 	assert.ErrorIs(t, e.s.CompactConversation(t.Context(), conv.ID), ErrNothingToCompact)
 }
 
+// TestCompactWhileInterrupted: a compaction stored while a run waits for
+// approval does not change the history its resume sends.
+func TestCompactWhileInterrupted(t *testing.T) {
+	e := newSkillEnv(t)
+	conv := e.askConv(t)
+	for _, n := range []string{"1", "2"} {
+		e.srv.Script(testllm.Turn{Text: []string{"A" + n}})
+		evs := e.ask(t, conv.ID, "q"+n)
+		require.Equal(t, "done", evs[len(evs)-1].Kind)
+	}
+	e.srv.Script(testllm.Turn{Calls: []testllm.Call{{Name: "create_draft", Args: `{"to":["x@y.example"],"subject":"S","html":"<p>b</p>"}`}}},
+		testllm.Turn{Text: []string{"SUMMARY-OF-Q1"}}, testllm.Turn{Text: []string{"A3"}})
+	r3 := e.ask(t, conv.ID, "q3")
+	require.Equal(t, "interrupted", r3[len(r3)-1].Kind)
+	require.NoError(t, e.s.CompactConversation(t.Context(), conv.ID))
+	sum, _, err := e.s.convSummary(t.Context(), conv.ID)
+	require.NoError(t, err)
+	require.Equal(t, "SUMMARY-OF-Q1", sum.Text)
+
+	sub, stop := e.s.SubscribeConversation(conv.ID)
+	defer stop()
+	require.NoError(t, e.s.ResolveApproval(t.Context(), r3[len(r3)-1].Approvals[0].ID, true))
+	for ev := range sub {
+		if ev.Kind == "done" {
+			break
+		}
+	}
+	reqs := e.srv.Requests()
+	p := promptOf(t, reqs[len(reqs)-1])
+	assert.Contains(t, p, "A1", "sent as the run's first request sent it")
+	assert.NotContains(t, p, "SUMMARY-OF-Q1")
+}
+
 func TestAskCancel(t *testing.T) {
 	e := newSkillEnv(t)
 	conv := e.askConv(t)
