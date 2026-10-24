@@ -10,7 +10,9 @@ import (
 	"context"
 	"errors"
 	"log/slog"
+	"sort"
 	"strings"
+	"unicode/utf8"
 
 	"github.com/egoist/mygo/plugins/sqlite"
 	"github.com/godwit-email/godwit/core/ai"
@@ -103,26 +105,80 @@ func (s *Service) compact(ctx context.Context, id int64, model ai.ResolvedModel,
 	if err != nil {
 		return err
 	}
+	budget := s.historyBudget(model.BaseURL, model.Model)
 	if !force {
 		size, err := h.CompactedSize(sum)
-		if err != nil || size <= s.historyBudget(model.BaseURL, model.Model) {
+		if err != nil || size <= budget {
 			return err
 		}
 	}
-	upto := h.CompactPoint()
-	if upto <= sum.Upto {
+	if h.CompactPoint() <= sum.Upto {
 		if force {
 			return ErrNothingToCompact
 		}
 		return nil
 	}
-	prompt, err := h.Transcript(max(sum.Upto, h.Messages()[0].Seq), upto) // the first message is always sent
+	// One stretch at a time, each prompt within the budget, so a stretch
+	// larger than the model's window still moves the summary on.
+	for {
+		upto, prompt, err := compactPrompt(h, sum, budget)
+		if err != nil || upto == 0 {
+			return err
+		}
+		if err := s.summarize(ctx, id, model, prompt, sum, epoch, upto); err != nil {
+			return err
+		}
+		next, nextEpoch, err := s.convSummary(ctx, id)
+		if err != nil || nextEpoch != epoch || next.Upto != upto {
+			return err // rewound or compacted elsewhere meanwhile
+		}
+		sum = next
+	}
+}
+
+// compactPrompt is the prompt that summarizes h's next stretch after sum, the
+// summary so far included, and the Upto it reaches: the furthest compact
+// point whose prompt fits budget runes, or the next one cut to fit; 0 when
+// sum reaches CompactPoint.
+func compactPrompt(h *ai.History, sum ai.Summary, budget int) (int64, string, error) {
+	var points []int64
+	for _, p := range h.CompactPoints() {
+		if p > sum.Upto {
+			points = append(points, p)
+		}
+	}
+	if len(points) == 0 {
+		return 0, "", nil
+	}
+	from := max(sum.Upto, h.Messages()[0].Seq) // the first message is always sent
+	build := func(upto int64) (string, error) {
+		prompt, err := h.Transcript(from, upto)
+		if err == nil && sum.Text != "" {
+			prompt = "Summary of the conversation before this part:\n" + sum.Text + "\n\nThe conversation since:\n" + prompt
+		}
+		return prompt, err
+	}
+	var err error
+	// prompts grow with upto: the first point past the budget, less one
+	n := sort.Search(len(points), func(i int) bool {
+		p, e := build(points[i])
+		err = errors.Join(err, e)
+		return utf8.RuneCountInString(p) > budget
+	})
 	if err != nil {
-		return err
+		return 0, "", err
 	}
-	if sum.Text != "" {
-		prompt = "Summary of the conversation before this part:\n" + sum.Text + "\n\nThe conversation since:\n" + prompt
+	upto := points[max(n-1, 0)]
+	prompt, err := build(upto)
+	if rs := []rune(prompt); len(rs) > budget { // one turn alone is past it
+		prompt = string(rs[:budget]) + " [...]"
 	}
+	return upto, prompt, err
+}
+
+// summarize has the model condense prompt and saves the summary through upto,
+// unless conversation id's summary is no longer sum of epoch.
+func (s *Service) summarize(ctx context.Context, id int64, model ai.ResolvedModel, prompt string, sum ai.Summary, epoch, upto int64) error {
 	e, err := s.aiEngine()
 	if err != nil {
 		return err

@@ -634,6 +634,16 @@ func TestMalformedState(t *testing.T) {
 	assert.Empty(t, srv.Requests())
 }
 
+func TestStateKeepsLargeIntegers(t *testing.T) {
+	st := `[{"role":"model","content":[{"toolRequest":{"name":"read","ref":"a1","input":{"thread":1278455344230334865}}}]},` +
+		`{"role":"tool","content":[{"toolResponse":{"name":"read","ref":"a1","output":{"thread":1278455344230334865}}}]}]`
+	msgs, err := decodeState([]byte(st))
+	require.NoError(t, err)
+	b, err := json.Marshal(msgs)
+	require.NoError(t, err)
+	assert.Equal(t, 2, strings.Count(string(b), `{"thread":1278455344230334865}`), string(b))
+}
+
 func TestOpenCallsNeedResponses(t *testing.T) {
 	eachKind(t, func(t *testing.T, kind string) {
 		srv := testllm.Start(t, kind)

@@ -31,7 +31,8 @@ const (
 
 // Summary is what compacting a conversation left: Text stands in for its
 // messages after the first through the one with seq Upto. The zero Summary is
-// none; one that does not end before a question of the history is none too.
+// none; one that does not end before a question of the history, or at its
+// end, is none too.
 type Summary struct {
 	Text string
 	Upto int64
@@ -313,16 +314,29 @@ func (h *History) visible() []int {
 }
 
 // cut is where the visible messages vis go on after sum: 0 when it stands
-// for none.
+// for none. sum ending at the last of vis stands for it too: the question a
+// run asks next follows it (a rewind to the question after it). It never
+// passes the second-to-last turn's question, so the last two turns go in full
+// even when sum condensed one of them (it was written before a rewind dropped
+// the turn after it).
 func (h *History) cut(vis []int, sum Summary) int {
 	if sum.Text == "" {
 		return 0
 	}
 	i := slices.IndexFunc(vis, func(j int) bool { return h.seqs[j] == sum.Upto })
-	if i < 1 || i+1 >= len(vis) || h.msgs[vis[i+1]].Role != gai.RoleUser {
+	if i < 1 || i+1 < len(vis) && h.msgs[vis[i+1]].Role != gai.RoleUser {
 		return 0
 	}
-	return i + 1
+	var starts []int // where each turn after the first begins
+	for k, j := range vis {
+		if k > 0 && h.msgs[j].Role == gai.RoleUser {
+			starts = append(starts, k)
+		}
+	}
+	if len(starts) < 2 || starts[len(starts)-2] < 2 {
+		return 0
+	}
+	return min(i+1, starts[len(starts)-2])
 }
 
 // note is the model message standing in for visible messages 1..cut-1: sum's,
@@ -510,17 +524,26 @@ func (h *History) CompactedSize(sum Summary) (int, error) {
 // before its second-to-last turn, which stays with the last; 0 when that
 // leaves nothing to condense.
 func (h *History) CompactPoint() int64 {
+	if ps := h.CompactPoints(); len(ps) > 0 {
+		return ps[len(ps)-1]
+	}
+	return 0
+}
+
+// CompactPoints are the Uptos a summary of h may have, ascending: the message
+// before each turn after the first, through CompactPoint.
+func (h *History) CompactPoints() []int64 {
 	vis := h.visible()
-	var starts []int
+	var out []int64
 	for k, i := range vis {
 		if k > 0 && h.msgs[i].Role == gai.RoleUser {
-			starts = append(starts, k)
+			out = append(out, h.seqs[vis[k-1]])
 		}
 	}
-	if len(starts) < 2 {
-		return 0
+	if len(out) < 2 {
+		return nil
 	}
-	return h.seqs[vis[starts[len(starts)-2]-1]]
+	return out[:len(out)-1]
 }
 
 // Compactable reports whether a compaction of h has turns to condense that sum
