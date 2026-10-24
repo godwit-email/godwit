@@ -514,16 +514,26 @@ func TestPiHistoryResumesAGenkitInterrupt(t *testing.T) {
 func TestPiResponsesReasoningGoesOnOnGenkit(t *testing.T) {
 	srv := testllm.Start(t, "openai-responses")
 	srv.Script(testllm.Turn{Reasoning: "enc-1", Think: []string{"thinking"}, Text: []string{"one"}},
-		testllm.Turn{Text: []string{"two"}})
+		testllm.Turn{Reasoning: "enc-2", Think: []string{"more"}, Text: []string{"two"}},
+		testllm.Turn{Text: []string{"three"}})
 	sent := asking(nil, "first")
 	_, res := run(newEngine(t), Request{Model: modelFor(srv, KindResponses, "k"), History: sent, Pi: true, Effort: "low"})
 	require.Nil(t, res.Err)
 	h := must(LoadHistory(must(after(t, sent, res).Rows()), 3))
-	_, res = run(newEngine(t), Request{Model: modelFor(srv, KindResponses, "k"), History: asking(h, "second"), Effort: "low"})
-	require.Nil(t, res.Err)
+	// Genkit's own reasoning reply is saved as a pi message too, and goes back as it came.
+	for _, q := range []string{"second", "third"} {
+		sent = asking(h, q)
+		_, res = run(newEngine(t), Request{Model: modelFor(srv, KindResponses, "k"), History: sent, Effort: "low"})
+		require.Nil(t, res.Err, q)
+		h = after(t, sent, res)
+		h = must(LoadHistory(must(h.Rows()), h.Next()))
+	}
 	reqs := srv.Requests()
-	require.Len(t, reqs, 2)
+	require.Len(t, reqs, 3)
 	assert.False(t, ranOnPi(t, srv))
-	assert.Empty(t, reqs[1].Invalid)
-	assert.Contains(t, string(reqs[1].Messages), "enc-1")
+	for _, r := range reqs[1:] {
+		assert.Empty(t, r.Invalid)
+	}
+	assert.Contains(t, string(reqs[2].Messages), "enc-1")
+	assert.Contains(t, string(reqs[2].Messages), "enc-2")
 }

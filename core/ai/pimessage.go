@@ -154,6 +154,17 @@ func reasoningPart(b piBlock) *gai.Part {
 	return gai.NewReasoningPart(b.Thinking, sig)
 }
 
+// thinkingSignature is reasoning part p's signature as reasoningPart reads
+// it back: a Responses reasoning item (p has its ID) or the signature itself.
+func thinkingSignature(p *gai.Part) string {
+	sig := signature(p)
+	if id, _ := p.Metadata["id"].(string); id != "" {
+		b, _ := json.Marshal(map[string]any{"type": "reasoning", "id": id, "encrypted_content": sig, "summary": []any{}})
+		return string(b)
+	}
+	return sig
+}
+
 // piMessages are the pi messages of Genkit message m: one, or one per tool
 // result of a tool message.
 func piMessages(m *gai.Message) ([][]byte, error) {
@@ -177,7 +188,7 @@ func piMessages(m *gai.Message) ([][]byte, error) {
 		for _, p := range m.Content {
 			switch {
 			case p.IsReasoning():
-				blocks = append(blocks, piBlock{Type: "thinking", Thinking: p.Text})
+				blocks = append(blocks, piBlock{Type: "thinking", Thinking: p.Text, ThinkingSignature: thinkingSignature(p)})
 			case p.IsText():
 				blocks = append(blocks, piBlock{Type: "text", Text: p.Text})
 			case p.IsToolRequest():
