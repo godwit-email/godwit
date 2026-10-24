@@ -127,6 +127,170 @@ func TestCompleteUTF8(t *testing.T) {
 	}
 }
 
+func question(text string) json.RawMessage {
+	b, _ := json.Marshal(map[string]any{"role": "user", "content": text, "timestamp": 1})
+	return b
+}
+
+var searchTool = Tool{Name: "search", Description: "Search mail.", Parameters: map[string]any{
+	"type": "object", "properties": map[string]any{"q": map[string]any{"type": "string"}}, "required": []any{"q"},
+}}
+
+// The tool-call smoke test: a streamed call runs in Go, its result goes back,
+// and the model answers from it.
+func TestAgentRunsAToolInGo(t *testing.T) {
+	srv := testllm.Start(t, "openai")
+	srv.Script(
+		testllm.Turn{Calls: []testllm.Call{{ID: "c1", Name: "search", Args: `{"q":"invoice"}`}}, Usage: [2]int{10, 2}},
+		testllm.Turn{Text: []string{"Found ", "it."}, Usage: [2]int{20, 3}},
+	)
+	var got []string
+	res, err := Agent(t.Context(), http.DefaultClient, AgentRequest{Request: Request{API: "openai-completions", BaseURL: srv.URL, Model: "m", APIKey: "k", System: "Be brief."},
+		Messages: []json.RawMessage{question("Where is the invoice?")}, Tools: []Tool{searchTool}, MaxTurns: 5}, Hooks{
+		Emit: func(kind, text string) { got = append(got, kind+":"+text) },
+		Args: func(args json.RawMessage) (json.RawMessage, error) {
+			return json.RawMessage(strings.Replace(string(args), "invoice", "invoice OR bill", 1)), nil
+		},
+		Tool: func(ctx context.Context, id, name string, args json.RawMessage) (json.RawMessage, string) {
+			got = append(got, "tool:"+id+":"+name+":"+string(args))
+			return json.RawMessage(`{"hits":[42]}`), ""
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if want := `tool:c1:search:{"q":"invoice OR bill"}|text:Found |text:it.`; strings.Join(got, "|") != want {
+		t.Errorf("events %q, want %q", strings.Join(got, "|"), want)
+	}
+	if res.StopReason != "stop" || res.Limited || res.Input != 30 || res.Output != 5 || res.Last != 20 {
+		t.Errorf("result %+v", res)
+	}
+	var roles []string
+	for _, m := range res.Messages {
+		var r struct{ Role string }
+		json.Unmarshal(m, &r)
+		roles = append(roles, r.Role)
+	}
+	if strings.Join(roles, ",") != "user,assistant,toolResult,assistant" {
+		t.Errorf("roles %v", roles)
+	}
+	reqs := srv.Requests()
+	if len(reqs) != 2 || !strings.Contains(string(reqs[0].Tools), `"search"`) || !strings.Contains(string(reqs[1].Messages), `{\"hits\":[42]}`) {
+		t.Fatalf("requests %+v", reqs)
+	}
+	// The model's own arguments stay in the transcript.
+	if !strings.Contains(string(res.Messages[1]), `"q":"invoice"`) {
+		t.Errorf("assistant %s", res.Messages[1])
+	}
+}
+
+func TestAgentAnswersAtItsToolCallLimit(t *testing.T) {
+	srv := testllm.Start(t, "openai")
+	srv.Script(
+		testllm.Turn{Calls: []testllm.Call{{ID: "c1", Name: "search", Args: `{"q":"a"}`}}, Usage: [2]int{10, 1}},
+		testllm.Turn{Calls: []testllm.Call{{ID: "c2", Name: "search", Args: `{"q":"b"}`}}, Usage: [2]int{20, 2}},
+		testllm.Turn{Text: []string{"Partial answer."}, Usage: [2]int{30, 3}},
+	)
+	runs := 0
+	res, err := Agent(t.Context(), http.DefaultClient, AgentRequest{Request: Request{API: "openai-completions", BaseURL: srv.URL, Model: "m", APIKey: "k", System: "Sys."}, LimitNote: "Stop now.",
+		Messages: []json.RawMessage{question("q")}, Tools: []Tool{searchTool}, MaxTurns: 1}, Hooks{
+		Emit: func(string, string) {},
+		Tool: func(context.Context, string, string, json.RawMessage) (json.RawMessage, string) {
+			runs++
+			return json.RawMessage(`[]`), ""
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	// The dropped round's reply was billed too.
+	if runs != 1 || !res.Limited || res.Calls || res.StopReason != "stop" || len(res.Messages) != 4 || res.Input != 60 || res.Output != 6 || res.Last != 30 {
+		t.Fatalf("runs %d, result %+v", runs, res)
+	}
+	reqs := srv.Requests()
+	if len(reqs) != 3 || string(reqs[2].System) != `"Sys.\n\nStop now."` || strings.Contains(string(reqs[2].Messages), "c2") {
+		t.Fatalf("last request %s %s", reqs[2].System, reqs[2].Messages)
+	}
+	var body map[string]any
+	json.Unmarshal(reqs[2].Body, &body)
+	if body["tool_choice"] != "none" {
+		t.Errorf("tool_choice %v", body["tool_choice"])
+	}
+}
+
+func TestAgentRefusesInvalidArguments(t *testing.T) {
+	srv := testllm.Start(t, "openai")
+	srv.Script(
+		testllm.Turn{Calls: []testllm.Call{{ID: "c1", Name: "search", Args: `{}`}}},
+		testllm.Turn{Text: []string{"ok"}},
+	)
+	var refused []string
+	_, err := Agent(t.Context(), http.DefaultClient, AgentRequest{Request: Request{API: "openai-completions", BaseURL: srv.URL, Model: "m", APIKey: "k"},
+		Messages: []json.RawMessage{question("q")}, Tools: []Tool{searchTool}, MaxTurns: 5}, Hooks{
+		Emit: func(string, string) {},
+		Tool: func(context.Context, string, string, json.RawMessage) (json.RawMessage, string) {
+			t.Error("ran")
+			return nil, ""
+		},
+		Refused: func(id, name string, args json.RawMessage, msg string) {
+			refused = append(refused, id+":"+name+":"+string(args)+":"+msg)
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(refused) != 1 || !strings.HasPrefix(refused[0], "c1:search:{}:") || !strings.Contains(refused[0], "q") {
+		t.Errorf("refused %q", refused)
+	}
+}
+
+func TestAgentCancelStopsItsTools(t *testing.T) {
+	srv := testllm.Start(t, "openai")
+	srv.Script(testllm.Turn{Calls: []testllm.Call{{ID: "c1", Name: "search", Args: `{"q":"a"}`}}})
+	ctx, cancel := context.WithCancel(t.Context())
+	stopped := false
+	_, err := Agent(ctx, http.DefaultClient, AgentRequest{Request: Request{API: "openai-completions", BaseURL: srv.URL, Model: "m", APIKey: "k"},
+		Messages: []json.RawMessage{question("q")}, Tools: []Tool{searchTool}, MaxTurns: 5}, Hooks{
+		Emit: func(string, string) {},
+		Tool: func(ctx context.Context, _, _ string, _ json.RawMessage) (json.RawMessage, string) {
+			cancel()
+			<-ctx.Done()
+			stopped = true
+			return nil, "cancelled"
+		},
+	})
+	if err != context.Canceled || !stopped {
+		t.Errorf("err %v, stopped %v", err, stopped)
+	}
+}
+
+// A round whose calls are all refused (an unknown tool) counts toward the
+// limit: the turn still ends with an answer.
+func TestAgentCountsRefusedRounds(t *testing.T) {
+	srv := testllm.Start(t, "openai")
+	srv.Script(
+		testllm.Turn{Calls: []testllm.Call{{ID: "c1", Name: "nope", Args: `{}`}}},
+		testllm.Turn{Calls: []testllm.Call{{ID: "c2", Name: "nope", Args: `{}`}}},
+		testllm.Turn{Text: []string{"Done."}},
+		testllm.Turn{Calls: []testllm.Call{{ID: "c3", Name: "nope", Args: `{}`}}}, // never asked for
+	)
+	var refused []string
+	res, err := Agent(t.Context(), http.DefaultClient, AgentRequest{Request: Request{API: "openai-completions", BaseURL: srv.URL, Model: "m", APIKey: "k"}, LimitNote: "Stop now.",
+		Messages: []json.RawMessage{question("q")}, Tools: []Tool{searchTool}, MaxTurns: 1}, Hooks{
+		Emit:    func(string, string) {},
+		Refused: func(id, _ string, _ json.RawMessage, _ string) { refused = append(refused, id) },
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !res.Limited || res.StopReason != "stop" || len(srv.Requests()) != 3 {
+		t.Fatalf("requests %d, result %+v", len(srv.Requests()), res)
+	}
+	if strings.Join(refused, ",") != "c1" {
+		t.Errorf("refused %q: the dropped round's calls are not reported", refused)
+	}
+}
+
 func sentBody(t *testing.T, r testllm.Request) map[string]any {
 	t.Helper()
 	if r.Invalid != "" {

@@ -547,13 +547,13 @@ func TestRunSkillSummarizeOnPi(t *testing.T) {
 		assert.Equal(t, "Godwit", r.Header.Get("User-Agent"), "pi-ai sent it")
 	}
 
-	// What pi does not cover yet stays on Genkit with the switch on.
+	// So does a new Wit conversation (#232); TestAskOnPi has what stays on Genkit.
 	conv := e.askConv(t)
 	e.srv.Script(testllm.Turn{Text: []string{"hi"}})
 	e.ask(t, conv.ID, "hi")
 	reqs = e.srv.Requests()
 	require.Len(t, reqs, 5)
-	assert.NotEqual(t, "Godwit", reqs[4].Header.Get("User-Agent"))
+	assert.Equal(t, "Godwit", reqs[4].Header.Get("User-Agent"))
 }
 
 // With no judge service the default model answers judge questions, on pi
