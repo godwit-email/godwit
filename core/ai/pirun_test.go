@@ -2,6 +2,7 @@ package ai
 
 import (
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"net/http"
 	"testing"
@@ -20,6 +21,15 @@ func ranOnPi(t *testing.T, srv *testllm.Server) bool {
 	return reqs[len(reqs)-1].Header.Get("User-Agent") == "Godwit"
 }
 
+// codexToken is a ChatGPT access token whose claims, in base64url, hold "-".
+var codexToken = "h." + base64.RawURLEncoding.EncodeToString([]byte(`{"https://api.openai.com/auth":{"chatgpt_account_id":"acct~~"}}`)) + ".s"
+
+func codexModel(srv *testllm.Server) ResolvedModel {
+	m := modelFor(srv, KindResponses, codexToken)
+	m.BaseURL = srv.URL + "/backend-api/codex"
+	return m
+}
+
 func TestPiRunsAOneOff(t *testing.T) {
 	srv := testllm.Start(t, "openai")
 	srv.Script(testllm.Turn{Think: []string{"hmm"}, Text: []string{"Fri", "day"}, Usage: [2]int{9, 2}})
@@ -30,26 +40,111 @@ func TestPiRunsAOneOff(t *testing.T) {
 	assert.True(t, ranOnPi(t, srv))
 }
 
+// Every service kind, with and without a key (a local gateway), and both
+// subscriptions: ChatGPT's Codex backend and a Responses service signed in to.
+func TestPiRunsAOneOffOfEveryKind(t *testing.T) {
+	t.Setenv("ANTHROPIC_API_KEY", "env-key")
+	t.Setenv("ANTHROPIC_AUTH_TOKEN", "env-token")
+	t.Setenv("OPENAI_API_KEY", "env-key")
+	e := newEngine(t)
+	for _, kind := range kinds {
+		for _, key := range []string{"k", ""} {
+			srv := testllm.Start(t, kind)
+			srv.Script(testllm.Turn{Text: []string{"ok"}})
+			evs, res := run(e, Request{Model: modelFor(srv, kind, key), System: "s", Prompt: "p", Pi: true})
+			require.Nil(t, res.Err, kind)
+			assert.Equal(t, []Event{{Kind: "text", Text: "ok"}, {Kind: "done"}}, evs, kind)
+			assert.True(t, ranOnPi(t, srv), kind)
+			r := srv.Requests()[0]
+			require.Empty(t, r.Invalid, kind)
+			assert.Contains(t, string(r.System), `"s"`, kind)
+			if key == "" {
+				assert.Empty(t, r.Header.Get("Authorization"), kind)
+				assert.Empty(t, r.Header.Get("x-api-key"), kind)
+			}
+		}
+	}
+	srv := testllm.Start(t, KindResponses)
+	srv.Script(testllm.Turn{Text: []string{"ok"}})
+	_, res := run(e, Request{Model: codexModel(srv), Prompt: "p", Pi: true})
+	require.Nil(t, res.Err)
+	assert.True(t, ranOnPi(t, srv))
+	r := srv.Requests()[0]
+	assert.Equal(t, "/backend-api/codex/responses", r.Path)
+	assert.Equal(t, "acct~~", r.Header.Get("chatgpt-account-id"))
+	assert.Equal(t, "godwit", r.Header.Get("originator"))
+	assert.Contains(t, string(r.Body), `"instructions":"You are a helpful assistant."`)
+}
+
+// effortConfig's mapping, per kind.
+func TestPiAsksForTheEffort(t *testing.T) {
+	e := newEngine(t)
+	for kind, want := range map[string]string{
+		"openai":      `"reasoning_effort":"medium"`,
+		"anthropic":   `"max_tokens":12288`,
+		KindResponses: `"reasoning":{"effort":"medium","summary":"auto"}`,
+	} {
+		srv := testllm.Start(t, kind)
+		srv.Script(testllm.Turn{Text: []string{"ok"}})
+		_, res := run(e, Request{Model: modelFor(srv, kind, "k"), Prompt: "p", Pi: true, Effort: "medium"})
+		require.Nil(t, res.Err, kind)
+		body := string(srv.Requests()[0].Body)
+		assert.Contains(t, body, want, kind)
+		if kind == "anthropic" {
+			assert.Contains(t, body, `"thinking":{"type":"enabled","budget_tokens":8192}`)
+		}
+	}
+	srv := testllm.Start(t, KindResponses)
+	srv.Script(testllm.Turn{Text: []string{"ok"}})
+	_, res := run(e, Request{Model: codexModel(srv), Prompt: "p", Pi: true, Effort: "high"})
+	require.Nil(t, res.Err)
+	assert.Contains(t, string(srv.Requests()[0].Body), `"reasoning":{"effort":"high","summary":"auto"}`)
+
+	// A model that does not reason refuses the effort, as on Genkit.
+	srv = testllm.Start(t, "anthropic")
+	srv.Script(testllm.Turn{Status: http.StatusBadRequest})
+	_, res = run(e, Request{Model: modelFor(srv, "anthropic", "k"), Prompt: "p", Pi: true, Effort: "low"})
+	require.NotNil(t, res.Err)
+	assert.Equal(t, CodeBadResponse, res.Err.Code)
+}
+
 func TestPiLeavesTheRestToGenkit(t *testing.T) {
 	srv := testllm.Start(t, "openai")
 	e := newEngine(t)
 	for name, req := range map[string]Request{
-		"off":    {Model: modelFor(srv, "openai", "k"), Prompt: "p"},
-		"no key": {Model: modelFor(srv, "openai", ""), Prompt: "p", Pi: true},
+		"off": {Model: modelFor(srv, "openai", "k"), Prompt: "p"},
 		"tools": {Model: modelFor(srv, "openai", "k"), Prompt: "p", Pi: true,
 			Tools: []ToolSpec{{Name: "t", Schema: map[string]any{"type": "object"}, Run: func(context.Context, json.RawMessage) (any, error) { return "x", nil }}}},
-		"plugin": {Model: ResolvedModel{Kind: "openai", BaseURL: srv.URL, Model: "m-1", APIKey: "k", Client: http.DefaultClient}, Prompt: "p", Pi: true},
+		"a Genkit history": {Model: modelFor(srv, "openai", "k"), Pi: true, // a new one goes on pi (#232)
+			History: asking(must(LoadHistory([]StoredMessage{{Seq: 1, Data: []byte(`{"role":"user","content":[{"text":"hi"}]}`)}}, 2)), "p")},
 	} {
 		srv.Script(testllm.Turn{Text: []string{"ok"}})
 		_, res := run(e, req)
 		require.Nil(t, res.Err, name)
 		assert.False(t, ranOnPi(t, srv), name)
 	}
-	srv2 := testllm.Start(t, "anthropic")
-	srv2.Script(testllm.Turn{Text: []string{"ok"}})
-	_, res := run(e, Request{Model: modelFor(srv2, "anthropic", "k"), Prompt: "p", Pi: true})
+}
+
+// roundTrip is an http.RoundTripper of a func, as a plugin model's client has.
+type roundTrip func(*http.Request) (*http.Response, error)
+
+func (f roundTrip) RoundTrip(r *http.Request) (*http.Response, error) { return f(r) }
+
+// A plugin's model goes out through its own client, which prepares each
+// request; it has no key, so none is sent.
+func TestPiRunsAPluginModel(t *testing.T) {
+	srv := testllm.Start(t, "openai")
+	srv.Script(testllm.Turn{Text: []string{"ok"}})
+	c := &http.Client{Transport: roundTrip(func(r *http.Request) (*http.Response, error) {
+		r.Header.Set("X-Plugin-Key", "secret")
+		return http.DefaultTransport.RoundTrip(r)
+	})}
+	_, res := run(newEngine(t), Request{Model: ResolvedModel{ServiceID: -5, Kind: "openai", BaseURL: srv.URL, Model: "m-1", Client: c}, Prompt: "p", Pi: true})
 	require.Nil(t, res.Err)
-	assert.False(t, ranOnPi(t, srv2))
+	require.True(t, ranOnPi(t, srv))
+	h := srv.Requests()[0].Header
+	assert.Equal(t, "secret", h.Get("X-Plugin-Key"))
+	assert.Empty(t, h.Get("Authorization"))
 }
 
 func TestPiErrorsReadAsGenkitsDo(t *testing.T) {
@@ -71,25 +166,98 @@ func TestPiErrorsReadAsGenkitsDo(t *testing.T) {
 	assert.Equal(t, CodeUnavailable, res.Err.Code)
 }
 
-func TestPiRunOfAChangedServiceIsStale(t *testing.T) {
-	srv := testllm.Start(t, "openai")
+// The subscription codes respError reads, with its Details.
+func TestPiSubscriptionErrorsReadAsGenkitsDo(t *testing.T) {
 	e := newEngine(t)
-	e.Current = func(context.Context, int64) (int64, error) { return 2, nil }
-	_, res := run(e, Request{Model: modelFor(srv, "openai", "k"), Prompt: "p", Pi: true})
+	srv := testllm.Start(t, KindResponses)
+	usage := func(name string, m ResolvedModel, turn testllm.Turn) {
+		t.Helper()
+		srv.Script(turn)
+		evs, res := run(e, Request{Model: m, Prompt: "p", Pi: true})
+		srv.Advance()
+		require.NotNil(t, res.Err, name)
+		assert.Equal(t, CodeRateLimited, res.Err.Code, name)
+		assert.Equal(t, DetailChatGPTUsage, res.Err.Detail, name)
+		assert.NotContains(t, res.Err.Msg, "UPSTREAM-BODY", name)
+		assert.Equal(t, "error", last(t, evs).Kind, name)
+		assert.True(t, ranOnPi(t, srv), name)
+	}
+	usage("codex 429", codexModel(srv), testllm.Turn{Status: http.StatusTooManyRequests})
+	usage("codex usage_not_included", codexModel(srv), testllm.Turn{Status: http.StatusBadRequest, Code: "usage_not_included"})
+	usage("failed limit", modelFor(srv, KindResponses, "tok"), testllm.Turn{FailCode: "subscription_sharing_usage_limit_exceeded"})
+	usage("failed unavailable", modelFor(srv, KindResponses, "tok"), testllm.Turn{FailCode: "subscription_sharing_usage_unavailable", Fail: "UPSTREAM-BODY quota out"})
+	usage("HTTP limit", modelFor(srv, KindResponses, "tok"), testllm.Turn{Status: http.StatusTooManyRequests, Code: "subscription_sharing_usage_limit_exceeded"})
+
+	srv.Script(testllm.Turn{Status: http.StatusForbidden, Code: "subscription_sharing_user_not_eligible"})
+	_, res := run(e, Request{Model: modelFor(srv, KindResponses, "tok-secret"), Prompt: "p", Pi: true})
+	srv.Advance()
 	require.NotNil(t, res.Err)
-	assert.Equal(t, CodeStale, res.Err.Code)
+	assert.Equal(t, CodeUnauthorized, res.Err.Code)
+	assert.Equal(t, DetailChatGPTEligibility, res.Err.Detail)
+	assert.NotContains(t, res.Err.Msg, "tok-secret")
+
+	// Not the Codex backend: a 429 is an ordinary rate limit, with no plan to manage.
+	srv.Script(testllm.Turn{Status: http.StatusTooManyRequests, Code: "rate_limit_exceeded"})
+	_, res = run(e, Request{Model: modelFor(srv, KindResponses, "sk-1"), Prompt: "p", Pi: true})
+	srv.Advance()
+	require.NotNil(t, res.Err)
+	assert.Equal(t, CodeRateLimited, res.Err.Code)
+	assert.Empty(t, res.Err.Detail)
+
+	srv.Script(testllm.Turn{Fail: "x"})
+	_, res = run(e, Request{Model: modelFor(srv, KindResponses, "tok"), Prompt: "p", Pi: true})
+	require.NotNil(t, res.Err)
+	assert.Equal(t, CodeBadResponse, res.Err.Code)
+	assert.Empty(t, res.Err.Detail)
+}
+
+// A refusal, a filtered reply and one cut off end as on Genkit.
+func TestPiResponsesEndsReadAsGenkitsDo(t *testing.T) {
+	srv := testllm.Start(t, KindResponses)
+	srv.Script(testllm.Turn{Text: []string{"half"}, Incomplete: true})
+	_, res := run(newEngine(t), Request{Model: modelFor(srv, KindResponses, "k"), Prompt: "p", Pi: true})
+	require.NotNil(t, res.Err)
+	assert.Equal(t, "the model's reply was cut off at its output limit", res.Err.Msg)
+
+	srv.Script(testllm.Turn{Refusal: "I can't help with that."})
+	filtered := sse(t, []string{
+		ev("response.output_item.done", `{"output_index":0,"item":{"type":"message","id":"m","role":"assistant","status":"completed","content":[{"type":"refusal","refusal":"no"}]}}`),
+		ev("response.completed", `{"response":{"id":"r","status":"completed","output":[]}}`),
+	}, []string{
+		ev("response.incomplete", `{"response":{"id":"r","status":"incomplete","incomplete_details":{"reason":"content_filter"},"output":[]}}`),
+	})
+	for name, url := range map[string]string{"refusal events": srv.URL, "refusal content": filtered, "content filter": filtered} {
+		evs, res := run(newEngine(t), Request{Model: respModel(url, "m1"), Prompt: "p", Pi: true})
+		require.NotNil(t, res.Err, name)
+		assert.Equal(t, CodeIncomplete, res.Err.Code, name)
+		assert.Equal(t, "the model service withheld the reply", res.Err.Msg, name)
+		assert.Empty(t, kindsOf(evs, "text"), name)
+	}
+}
+
+func TestPiRunOfAChangedServiceIsStale(t *testing.T) {
+	eachKind(t, func(t *testing.T, kind string) {
+		srv := testllm.Start(t, kind)
+		e := newEngine(t)
+		e.Current = func(context.Context, int64) (int64, error) { return 2, nil }
+		_, res := run(e, Request{Model: modelFor(srv, kind, "k"), Prompt: "p", Pi: true})
+		require.NotNil(t, res.Err)
+		assert.Equal(t, CodeStale, res.Err.Code)
+	})
 }
 
 func TestPiRunEndsWhenItsServiceIsForgotten(t *testing.T) {
-	srv := testllm.Start(t, "openai")
-	srv.Script(testllm.Turn{Text: []string{"partial"}, Hang: true})
-	e := newEngine(t)
-	events, wait := e.Run(t.Context(), Request{Model: modelFor(srv, "openai", "k"), Prompt: "p", Pi: true})
-	assert.Equal(t, Event{Kind: "text", Text: "partial"}, <-events)
-	e.Forget(1)
-	_, res := collect(events, wait)
-	require.NotNil(t, res.Err)
-	assert.Equal(t, CodeStale, res.Err.Code)
+	eachKind(t, func(t *testing.T, kind string) {
+		srv := testllm.Start(t, kind)
+		srv.Script(testllm.Turn{Text: []string{"partial"}, Hang: true})
+		e := newEngine(t)
+		events, wait := e.Run(t.Context(), Request{Model: modelFor(srv, kind, "k"), Prompt: "p", Pi: true})
+		assert.Equal(t, Event{Kind: "text", Text: "partial"}, <-events)
+		e.Forget(1)
+		_, res := collect(events, wait)
+		require.NotNil(t, res.Err)
+		assert.Equal(t, CodeStale, res.Err.Code)
+	})
 }
 
 var piSearch = map[string]any{"type": "object", "properties": map[string]any{"q": map[string]any{"type": "string"}}, "required": []any{"q"}}
@@ -185,15 +353,26 @@ func TestPiAnswersAtTheToolCallLimit(t *testing.T) {
 	assert.Equal(t, errLimit(), res.Err)
 }
 
+// $defs in a plugin or MCP tool's schema are inlined: an Anthropic-compatible
+// service refuses them.
 func TestPiFlattensToolSchemas(t *testing.T) {
-	srv := testllm.Start(t, "openai")
-	srv.Script(testllm.Turn{Text: []string{"ok"}})
+	srv := testllm.Start(t, "anthropic")
+	srv.Script(
+		testllm.Turn{Calls: []testllm.Call{{ID: "c1", Name: "send", Args: `{"to":"bob@x"}`}}},
+		testllm.Turn{Text: []string{"ok"}},
+	)
 	schema := map[string]any{"type": "object", "$defs": map[string]any{"addr": map[string]any{"type": "string"}},
 		"properties": map[string]any{"to": map[string]any{"$ref": "#/$defs/addr"}}}
-	tool := ToolSpec{Name: "send", Schema: schema, Run: func(context.Context, json.RawMessage) (any, error) { return nil, nil }}
-	_, res := run(newEngine(t), Request{Model: modelFor(srv, "openai", "k"), History: asking(nil, "q"), Tools: []ToolSpec{tool}, Pi: true})
+	var got json.RawMessage
+	tool := ToolSpec{Name: "send", Schema: schema, Run: func(_ context.Context, args json.RawMessage) (any, error) { got = args; return "sent", nil }}
+	_, res := run(newEngine(t), Request{Model: modelFor(srv, "anthropic", "k"), History: asking(nil, "q"), Tools: []ToolSpec{tool}, Pi: true})
 	require.Nil(t, res.Err)
-	tools := string(srv.Requests()[0].Tools)
+	assert.True(t, ranOnPi(t, srv))
+	assert.JSONEq(t, `{"to":"bob@x"}`, string(got))
+	reqs := srv.Requests()
+	require.Len(t, reqs, 2)
+	assert.Empty(t, reqs[0].Invalid)
+	tools := string(reqs[0].Tools)
 	assert.NotContains(t, tools, "$defs")
 	assert.NotContains(t, tools, "$ref")
 	assert.Contains(t, tools, `"to":{"type":"string"}`)
@@ -272,4 +451,29 @@ func TestPiHistoryRunsOnGenkitWithTheSwitchOff(t *testing.T) {
 	require.NoError(t, err)
 	assert.Len(t, h.Turns(), 2)
 	assert.Equal(t, "two", h.Messages()[len(h.Messages())-1].Text)
+}
+
+func TestPiConversationOnResponses(t *testing.T) {
+	srv := testllm.Start(t, "openai-responses")
+	srv.Script(
+		testllm.Turn{Calls: []testllm.Call{{ID: "c1", Name: "search", Args: `{"q":"a"}`}}},
+		testllm.Turn{Text: []string{"Found."}},
+	)
+	search := ToolSpec{Name: "search", Schema: piSearch, Run: func(context.Context, json.RawMessage) (any, error) { return "x", nil }}
+	sent := asking(nil, "q")
+	evs, res := run(newEngine(t), Request{Model: modelFor(srv, KindResponses, "k"), System: "Be brief.", History: sent, Tools: []ToolSpec{search}, Pi: true})
+	require.Nil(t, res.Err)
+	assert.True(t, ranOnPi(t, srv))
+	assert.Equal(t, "done", evs[len(evs)-1].Kind)
+	reqs := srv.Requests()
+	require.Len(t, reqs, 2)
+	for _, r := range reqs {
+		assert.Empty(t, r.Invalid)
+		assert.Equal(t, `"Be brief."`, string(r.System), "the system prompt goes as instructions")
+	}
+	assert.Contains(t, string(reqs[1].Messages), `"call_id":"c1"`)
+	assert.Contains(t, string(reqs[0].Tools), `"strict":false`, "a function without strict is strict on Responses")
+	_, ch, err := sent.Restore(res)
+	require.NoError(t, err)
+	assert.Len(t, ch.Put, 4)
 }

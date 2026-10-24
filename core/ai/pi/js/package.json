@@ -3,7 +3,7 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "build": "bun build src/engine.ts --target=browser --format=esm --minify --outfile=../engine.js"
+    "build": "bun build src/engine.ts --target=browser --format=esm --minify --define atob=godwitAtob --outfile=../engine.js"
   },
   "dependencies": {
     "@earendil-works/pi-agent-core": "1.4.0",

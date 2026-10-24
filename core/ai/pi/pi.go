@@ -28,24 +28,35 @@ var bundle string
 
 var compiled = sync.OnceValues(func() (*moejs.Module, error) { return moejs.Compile("engine.js", bundle) })
 
-// Request is one reply to a one-off prompt from an OpenAI-compatible service
-// (chat completions). Effort is "", "low", "medium" or "high".
+// Request is one reply to a one-off prompt. API is the pi-ai API that speaks
+// the service's protocol: openai-completions, anthropic-messages,
+// openai-responses or openai-codex-responses. APIKey "" sends no credential.
+// Effort is "", "low", "medium" or "high". MaxTokens caps the reply (0: none
+// where the API allows it); ThinkingBudget is anthropic-messages' thinking
+// budget for Effort.
 type Request struct {
-	BaseURL string `json:"baseUrl"`
-	Model   string `json:"model"`
-	APIKey  string `json:"apiKey"`
-	System  string `json:"system"`
-	Prompt  string `json:"prompt"`
-	Effort  string `json:"effort"`
+	API            string `json:"api"`
+	BaseURL        string `json:"baseUrl"`
+	Model          string `json:"model"`
+	APIKey         string `json:"apiKey"`
+	System         string `json:"system"`
+	Prompt         string `json:"prompt"`
+	Effort         string `json:"effort"`
+	MaxTokens      int64  `json:"maxTokens"`
+	ThinkingBudget int64  `json:"thinkingBudget"`
 }
 
 // Result is how a reply ended. StopReason is pi-ai's: "stop" is a whole reply,
 // "length" one cut off at the output limit, "error" a failure (Error says what
-// pi-ai saw). Status is the last HTTP status a request got, 0 if none
-// answered; Transport the error a request failed with before any answer.
+// pi-ai saw); or "blocked", a reply the service withheld, and "incomplete",
+// one it ended early for another reason. Code is the error code the service
+// last answered with (an HTTP error body's or a failed response's), Status
+// the last HTTP status a request got, 0 if none answered; Transport the error
+// a request failed with before any answer.
 type Result struct {
 	StopReason    string `json:"stopReason"`
 	Error         string `json:"error"`
+	Code          string `json:"code"`
 	Input, Output int
 	Status        int   `json:"-"`
 	Transport     error `json:"-"`
@@ -56,35 +67,77 @@ type Result struct {
 // (ctx's error then).
 func Generate(ctx context.Context, client *http.Client, req Request, emit func(kind, text string)) (Result, error) {
 	var res Result
-	a, err := run(ctx, client, "generate", req, Hooks{Emit: emit}, &res)
+	h, err := run(ctx, client, "generate", req, &res, Hooks{Emit: emit}, 0)
 	if err != nil {
 		return Result{}, err
 	}
-	res.Status, res.Transport = a.status, a.transport
+	h.mu.Lock()
+	res.Status, res.Transport = h.status, h.transport
+	h.mu.Unlock()
 	return res, nil
 }
 
-// AgentRequest is one turn of a conversation: Messages are pi messages
-// (pi-ai's Message, as JSON), ending with the question. Tools are offered
-// to the model; after MaxTurns rounds of calls it answers from what it
-// found, its system prompt ending with LimitNote, and its calls are refused.
+// JudgeRequest is one judge API call: Body, the API's JSON request, is
+// posted to URL with the key as a bearer token (none when APIKey is "").
+type JudgeRequest struct {
+	URL    string          `json:"url"`
+	APIKey string          `json:"apiKey"`
+	Body   json.RawMessage `json:"body"`
+}
+
+// JudgeResult is a judge call's outcome: Body the reply's JSON when the
+// service answered 200, else Status its last HTTP status (0 if none
+// answered: Transport is then what the request failed with, nil when the
+// reply was unreadable).
+type JudgeResult struct {
+	Body      json.RawMessage
+	Status    int
+	Transport error
+}
+
+// Judge posts one judge request through pi-ai's classifier transport, which
+// retries as the SDKs do. A reply over maxBody bytes fails to read.
+func Judge(ctx context.Context, client *http.Client, req JudgeRequest, maxBody int64) (JudgeResult, error) {
+	var out struct {
+		Body   string `json:"body"`
+		Status int    `json:"status"`
+	}
+	h, err := run(ctx, client, "judge", req, &out, Hooks{}, maxBody)
+	if err != nil {
+		return JudgeResult{}, err
+	}
+	res := JudgeResult{Status: out.Status}
+	if out.Body != "" {
+		res.Body = json.RawMessage(out.Body)
+	}
+	if res.Body == nil && res.Status == 0 {
+		h.mu.Lock()
+		res.Transport = h.transport
+		h.mu.Unlock()
+	}
+	return res, nil
+}
+
+// AgentRequest is one turn of a conversation with the service Request names
+// (its Prompt unused): Messages are pi messages (pi-ai's Message, as JSON),
+// ending with the question. Tools are offered to the model; past MaxTurns
+// rounds of calls it answers from what it found, its system prompt ending
+// with LimitNote, and the last round's calls are refused.
 type AgentRequest struct {
-	BaseURL   string            `json:"baseUrl"`
-	Model     string            `json:"model"`
-	APIKey    string            `json:"apiKey"`
-	System    string            `json:"system"`
-	Effort    string            `json:"effort"`
+	Request
 	Messages  []json.RawMessage `json:"messages"`
 	Tools     []Tool            `json:"tools"`
 	MaxTurns  int               `json:"maxTurns"`
 	LimitNote string            `json:"limitNote"`
 }
 
-// Tool is a tool offered to the model; Parameters is its JSON schema.
+// Tool is a tool offered to the model; Parameters is its JSON schema, which
+// Strict asks the service to hold calls to (Responses).
 type Tool struct {
 	Name        string         `json:"name"`
 	Description string         `json:"description"`
 	Parameters  map[string]any `json:"parameters"`
+	Strict      bool           `json:"strict"`
 }
 
 // Hooks are what a run calls back on its goroutine, Tool on one of its own
@@ -99,26 +152,24 @@ type Hooks struct {
 	Refused func(id, name string, args json.RawMessage, errMsg string)
 }
 
-// AgentResult is how a turn ended. Messages are the pi messages it added,
-// the question first. Limited: the model reached MaxTurns and the last
-// message is its answer after it; Calls: that message still calls tools.
-// Last is the last request's input.
+// AgentResult is how a turn ended, its last reply as Result tells it.
+// Messages are the pi messages it added, the question first. Limited: the
+// model reached MaxTurns and the last message is its answer after it; Calls:
+// that message still calls tools. Input and Output sum every reply the turn
+// was billed for; Last is the last request's input.
 type AgentResult struct {
-	Messages            []json.RawMessage `json:"-"`
-	Raw                 string            `json:"messages"`
-	StopReason          string            `json:"stopReason"`
-	Error               string            `json:"error"`
-	Limited, Calls      bool
-	Input, Output, Last int
-	Status              int   `json:"-"`
-	Transport           error `json:"-"`
+	Result
+	Messages       []json.RawMessage `json:"-"`
+	Raw            string            `json:"messages"`
+	Limited, Calls bool
+	Last           int
 }
 
 // Agent runs one turn; it returns when the turn ended, or when ctx did
 // (ctx's error then) and the tools it ran have returned.
 func Agent(ctx context.Context, client *http.Client, req AgentRequest, hooks Hooks) (AgentResult, error) {
 	var res AgentResult
-	a, err := run(ctx, client, "agent", req, hooks, &res)
+	h, err := run(ctx, client, "agent", req, &res, hooks, 0)
 	if err != nil {
 		return AgentResult{}, err
 	}
@@ -126,58 +177,61 @@ func Agent(ctx context.Context, client *http.Client, req AgentRequest, hooks Hoo
 		return AgentResult{}, fmt.Errorf("pi: messages: %w", err)
 	}
 	res.Raw = ""
-	res.Status, res.Transport = a.status, a.transport
+	h.mu.Lock()
+	res.Status, res.Transport = h.status, h.transport
+	h.mu.Unlock()
 	return res, nil
 }
 
-// run calls the bundle's hook with req on a runtime of its own and decodes
-// what its promise settles with into out.
-func run(ctx context.Context, client *http.Client, hookName string, req any, hooks Hooks, out any) (answer, error) {
+// run calls the bundle's hook with arg, as JSON, on a new runtime and
+// decodes what it settles with into out. maxBody caps each response read, 0
+// not at all.
+func run(ctx context.Context, client *http.Client, hook string, arg, out any, hooks Hooks, maxBody int64) (*host, error) {
 	mod, err := compiled()
 	if err != nil {
-		return answer{}, fmt.Errorf("pi: compile: %w", err)
+		return nil, fmt.Errorf("pi: compile: %w", err)
 	}
 	rt := moejs.NewRuntime(moejs.Options{})
 	loop, err := eventloop.New(rt, eventloop.Options{})
 	if err != nil {
-		return answer{}, err
+		return nil, err
 	}
 	// Every request and tool of the run ends with it.
 	hctx, cancel := context.WithCancel(ctx)
-	h := &host{rt: rt, loop: loop, ctx: hctx, client: client, bodies: map[int64]*body{}, hooks: hooks}
+	h := &host{rt: rt, loop: loop, ctx: hctx, client: client, bodies: map[int64]*body{}, hooks: hooks, maxBody: maxBody}
 	defer h.tools.Wait()
 	defer cancel()
 	defer h.closeAll()
 	if err := h.install(); err != nil {
-		return answer{}, err
+		return nil, err
 	}
 	if err := rt.Load(mod); err != nil {
-		return answer{}, fmt.Errorf("pi: load: %w", err)
+		return nil, fmt.Errorf("pi: load: %w", err)
 	}
-	hook, err := mod.Hook(hookName)
+	fn, err := mod.Hook(hook)
 	if err != nil {
-		return answer{}, err
+		return nil, err
 	}
 	stop := context.AfterFunc(ctx, loop.Terminate)
 	defer stop()
 	var promise moejs.Value
 	err = loop.Run(func(rt *moejs.Runtime) error {
-		b, err := json.Marshal(req)
+		b, err := json.Marshal(arg)
 		if err != nil {
 			return err
 		}
-		arg, err := rt.ParseJSONString(string(b))
+		v, err := rt.ParseJSONString(string(b))
 		if err != nil {
 			return err
 		}
-		promise, err = rt.Call(hook, arg)
+		promise, err = rt.Call(fn, v)
 		return err
 	})
 	if ctx.Err() != nil {
-		return answer{}, ctx.Err()
+		return nil, ctx.Err()
 	}
 	if err != nil {
-		return answer{}, fmt.Errorf("pi: %w", err)
+		return nil, fmt.Errorf("pi: %w", err)
 	}
 	state, v, ok := moejs.PromiseResult(promise)
 	if !ok || state != moejs.PromiseFulfilled {
@@ -185,21 +239,12 @@ func run(ctx context.Context, client *http.Client, hookName string, req any, hoo
 		if ok {
 			msg = v.String()
 		}
-		return answer{}, fmt.Errorf("pi: %s", msg)
+		return nil, fmt.Errorf("pi: %s", msg)
 	}
 	if err := rt.Unmarshal(v, out); err != nil {
-		return answer{}, fmt.Errorf("pi: result: %w", err)
+		return nil, fmt.Errorf("pi: result: %w", err)
 	}
-	h.mu.Lock()
-	defer h.mu.Unlock()
-	return answer{h.status, h.transport}, nil
-}
-
-// answer is the last HTTP status a run's requests got, or the error one
-// failed with before any answer.
-type answer struct {
-	status    int
-	transport error
+	return h, nil
 }
 
 // host is one run's side of the bundle's host functions (js/src/web.ts).
@@ -211,6 +256,8 @@ type host struct {
 	hooks  Hooks
 	start  time.Time
 	tools  sync.WaitGroup // calls hostTool is running
+	// maxBody caps what is read of one response, 0 not at all.
+	maxBody int64
 
 	mu        sync.Mutex
 	next      int64
@@ -224,6 +271,7 @@ type body struct {
 	rc      io.ReadCloser
 	cancel  context.CancelFunc
 	pending []byte
+	read    int64
 }
 
 // maxRequestBody caps what the bundle may send in one request.
@@ -265,7 +313,7 @@ func (h *host) install() error {
 		},
 		"hostEmit": func(_ *moejs.Realm, _ moejs.Value, args []moejs.Value) (moejs.Value, error) {
 			switch kind, t := str(moejs.Arg(args, 0)), str(moejs.Arg(args, 1)); {
-			case (kind == "text" || kind == "reasoning") && t != "":
+			case (kind == "text" || kind == "reasoning") && t != "" && h.hooks.Emit != nil:
 				h.hooks.Emit(kind, t)
 			case kind == "refused" && h.hooks.Refused != nil:
 				var c struct {
@@ -394,6 +442,9 @@ func (h *host) read(id int64, settle settleFunc) {
 	buf := make([]byte, 32<<10)
 	for {
 		n, err := b.rc.Read(buf)
+		if b.read += int64(n); h.maxBody > 0 && b.read > h.maxBody {
+			n, err = 0, errors.New("response too large")
+		}
 		chunk := append(b.pending, buf[:n]...)
 		cut := len(chunk)
 		if err == nil {
