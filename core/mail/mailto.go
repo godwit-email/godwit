@@ -14,8 +14,9 @@ type Mailto struct {
 
 // ParseMailto reads a mailto: URI: the addresses of its path and its to
 // field are To; cc, bcc, subject and body are kept, other fields ignored.
-// Values are percent-decoded and + stays + (it is not form encoding); the
-// body's line breaks become \n, the subject's spaces.
+// Values are percent-decoded and + stays + (it is not form encoding); one
+// with a bad escape ("50% off") is kept as written. The body's line breaks
+// become \n, the subject's spaces.
 func ParseMailto(link string) (Mailto, error) {
 	scheme, rest, ok := strings.Cut(link, ":")
 	if !ok || !strings.EqualFold(scheme, "mailto") {
@@ -24,37 +25,37 @@ func ParseMailto(link string) (Mailto, error) {
 	rest, _, _ = strings.Cut(rest, "#")
 	path, query, _ := strings.Cut(rest, "?")
 	var m Mailto
-	addrs := func(dst *[]string, s string) error {
-		v, err := url.PathUnescape(s)
-		for _, a := range strings.Split(v, ",") {
+	addrs := func(dst *[]string, s string) {
+		for _, a := range strings.Split(unescape(s), ",") {
 			if a = strings.TrimSpace(a); a != "" {
 				*dst = append(*dst, a)
 			}
 		}
-		return err
 	}
-	err := addrs(&m.To, path)
+	addrs(&m.To, path)
 	for _, kv := range strings.Split(query, "&") {
 		k, v, _ := strings.Cut(kv, "=")
-		var e error
 		switch strings.ToLower(k) {
 		case "to":
-			e = addrs(&m.To, v)
+			addrs(&m.To, v)
 		case "cc":
-			e = addrs(&m.Cc, v)
+			addrs(&m.Cc, v)
 		case "bcc":
-			e = addrs(&m.Bcc, v)
+			addrs(&m.Bcc, v)
 		case "subject":
-			m.Subject, e = url.PathUnescape(v)
+			m.Subject = unescape(v)
 		case "body":
-			m.Body, e = url.PathUnescape(v)
+			m.Body = unescape(v)
 		}
-		err = errors.Join(err, e)
-	}
-	if err != nil {
-		return Mailto{}, errors.New("bad mailto link: " + err.Error())
 	}
 	m.Subject = strings.NewReplacer("\r\n", " ", "\r", " ", "\n", " ").Replace(m.Subject)
 	m.Body = strings.NewReplacer("\r\n", "\n", "\r", "\n").Replace(m.Body)
 	return m, nil
+}
+
+func unescape(s string) string {
+	if v, err := url.PathUnescape(s); err == nil {
+		return v
+	}
+	return s
 }

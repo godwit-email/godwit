@@ -1111,7 +1111,7 @@ func (r *reader) sendUnsubscribe(id int64) {
 			a.toastAs(kit.ToastSuccess, i18n.Tf("reader.unsubscribe.sent", res.Host))
 		default:
 			msg := i18n.Tf("reader.unsubscribe.failed."+res.Failure, res.Host, strconv.Itoa(res.Status))
-			a.toasts = append(a.toasts, ui.Toast{ID: msg, Title: msg, Type: kit.ToastError, Timeout: -1,
+			a.toasts = append(a.toasts, ui.Toast{ID: msg, Title: msg, Type: kit.ToastError,
 				Action: i18n.T("reader.unsubscribe.open"), OnAction: func() { a.openLink(u.URL) }})
 		}
 	})

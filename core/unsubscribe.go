@@ -287,7 +287,7 @@ func (s *Service) oneClick(ctx context.Context, messageID int64, u Unsubscribe) 
 		return res, err
 	}
 	res.Failure, res.Status = s.postOneClick(ctx, u.URL)
-	return res, nil
+	return res, ctx.Err() // the caller gave up: not the host's failure
 }
 
 // postOneClick sends the request: https only, no cookies, no Referer, no

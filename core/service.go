@@ -100,8 +100,8 @@ type Service struct {
 	callsClosed bool
 	removing    map[int64]bool // accounts RemoveAccount is deleting
 
-	unsubMu     sync.Mutex
-	unsubbing   map[int64]bool // messages whose one-click unsubscribe is under way
+	unsubMu   sync.Mutex
+	unsubbing map[int64]bool // messages whose one-click unsubscribe is under way
 
 	oauthMu sync.Mutex
 	flows   map[string]oauthFlow  // OAuth flows begun and not yet awaited or cancelled

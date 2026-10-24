@@ -87,12 +87,24 @@ func TestReaderMailtoUnsubscribeOpensDraft(t *testing.T) {
 	}
 }
 
-func TestReaderNoUnsubscribeWithoutHeader(t *testing.T) {
+// Each message of a thread has 退订 by its own headers: a reply without
+// List-Unsubscribe has none beside the newsletter's.
+func TestReaderUnsubscribePerMessage(t *testing.T) {
 	h, _, _ := unsubHarness(t, http.StatusOK)
-	h.showNewsletter()
-	h.drain()
+	acc := h.app.accounts[0]
+	news := h.deliverOne(acc, coretest.Msg("Shop <news@shop.example>", acc.Email, "Deals", "Hello.", coretest.MessageID("n@shop.example"),
+		coretest.Header("List-Unsubscribe: <mailto:leave@shop.example>")))
+	reply := h.deliverOne(acc, coretest.Msg("Bob <bob@example.com>", acc.Email, "Re: Deals", "Seen this?", coretest.InReplyTo("n@shop.example")))
+	if reply.ThreadID != news.ThreadID {
+		t.Fatalf("threads %d and %d", news.ThreadID, reply.ThreadID)
+	}
+	h.openThread(news.ThreadID)
+	h.app.mail.reader.toggle(news.ID) // the older one opens too
 	h.tt.Frame()
-	if _, ok := h.tt.Find("退订"); ok {
-		t.Fatal("退订 shown for a message without List-Unsubscribe")
+	h.seeBody(news.ID)
+	h.seeBody(reply.ID)
+	h.see("退订")
+	if n := h.countTexts("退订"); n != 2 { // one button: its label and its text
+		t.Fatalf("%d 退订 texts for one newsletter and one reply", n)
 	}
 }
