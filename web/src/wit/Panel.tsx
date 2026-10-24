@@ -28,7 +28,7 @@ import {
 } from "@remixicon/react";
 import type { DynamicToolUIPart, ReasoningUIPart } from "ai";
 import { cn } from "cn";
-import { type ReactNode, useEffect, useMemo, useRef, useState } from "react";
+import { type FormEvent, type ReactNode, useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
 import { Alert, AlertAction, AlertDescription } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
@@ -50,7 +50,6 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { HoverCard, HoverCardContent, HoverCardTrigger } from "@/components/ui/hover-card";
-import { Input } from "@/components/ui/input";
 import {
   InputGroup,
   InputGroupAddon,
@@ -68,6 +67,21 @@ import {
 } from "@/components/ui/message-scroller";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Progress } from "@/components/ui/progress";
+import {
+  Questionnaire,
+  QuestionnaireActions,
+  QuestionnaireChoice,
+  QuestionnaireChoiceDescription,
+  QuestionnaireChoices,
+  QuestionnaireDescription,
+  QuestionnaireInput,
+  QuestionnaireItem,
+  QuestionnaireNext,
+  QuestionnairePrevious,
+  QuestionnaireProgress,
+  QuestionnaireSubmit,
+  QuestionnaireTitle,
+} from "@/components/ui/questionnaire";
 import {
   Trace,
   TraceCollapsible,
@@ -438,8 +452,9 @@ function questionArgs(a: Approval): { questions: Question[]; answers?: string[][
 }
 
 /**
- * Questions Wit asks (ask_user_question) waiting: each with its options, one picked or several
- * where multiSelect, and the user's own words beside them; 跳过, or 提交 once every one is answered.
+ * Questions Wit asks (ask_user_question) waiting, one at a time (the Questionnaire): each with its
+ * options, one picked or several where multiSelect, or the user's own words; every one is
+ * required, so 提交 sends them all, and 跳过 skips the lot.
  */
 function QuestionCard({
   a,
@@ -456,31 +471,18 @@ function QuestionCard({
   t: T;
 }) {
   const { questions } = questionArgs(a);
-  const [picked, setPicked] = useState<string[][]>(() => questions.map(() => []));
-  const [own, setOwn] = useState<string[]>(() => questions.map(() => ""));
-  // own words replace a single answer's pick, and join a multiSelect's
-  const answers = questions.map((q, i) => {
-    const w = own[i].trim();
-    if (!w) return picked[i];
-    return q.multiSelect ? [...picked[i], w] : [w];
-  });
-  const pick = (i: number, label: string, multi: boolean) => {
-    setPicked((p) =>
-      p.map((x, j) =>
-        j !== i
-          ? x
-          : !multi
-            ? [label]
-            : x.includes(label)
-              ? x.filter((l) => l !== label)
-              : [...x, label],
+  // the picked options and the own words are the form's values, under each question's name
+  const submit = (e: FormEvent<HTMLFormElement>) => {
+    e.preventDefault();
+    const form = new FormData(e.currentTarget);
+    answer?.(
+      questions.map((_, i) =>
+        form
+          .getAll(`q${i}`)
+          .map((v) => String(v).trim())
+          .filter(Boolean),
       ),
     );
-    if (!multi) setOwn((o) => o.map((x, j) => (j === i ? "" : x)));
-  };
-  const write = (i: number, v: string, multi: boolean) => {
-    setOwn((o) => o.map((x, j) => (j === i ? v : x)));
-    if (!multi && v.trim()) setPicked((p) => p.map((x, j) => (j === i ? [] : x)));
   };
   return (
     <div className="overflow-hidden rounded-xl border-[0.5px] bg-background shadow-sm">
@@ -493,70 +495,65 @@ function QuestionCard({
           {t("wit.approval.pending")}
         </Badge>
       </div>
-      <div className="flex flex-col gap-4 px-3.5 py-3 text-md">
-        {questions.map((q, i) => (
-          <fieldset key={q.question} className="flex min-w-0 flex-col gap-1.5">
-            <legend className="mb-1.5 flex flex-wrap items-center gap-2">
-              {q.header && <Badge variant="secondary">{q.header}</Badge>}
-              <span className="font-medium">{q.question}</span>
-              {q.multiSelect && (
-                <span className="text-muted-foreground text-sm">{t("wit.question.multi")}</span>
-              )}
-            </legend>
-            {q.options.map((o) => {
-              const on = picked[i].includes(o.label);
+      <Questionnaire onSubmit={submit} className="px-3.5 py-3 text-md">
+        {questions.length > 1 && (
+          <QuestionnaireProgress
+            render={(props, s) => {
+              const text = t("wit.question.progress", s.current, s.total);
               return (
-                <label
-                  key={o.label}
-                  className={cn(
-                    "flex cursor-pointer items-start gap-2.5 rounded-lg border-[0.5px] px-3 py-2 transition-colors has-disabled:cursor-default has-disabled:opacity-50",
-                    on ? "border-primary bg-primary/5" : "hover:bg-muted",
-                  )}
+                <div
+                  {...props}
+                  role="progressbar"
+                  aria-label={t("wit.question.asks")}
+                  aria-valuetext={text}
                 >
-                  <input
-                    type={q.multiSelect ? "checkbox" : "radio"}
-                    name={`question-${a.id}-${i}`}
-                    checked={on}
-                    disabled={busy}
-                    onChange={() => pick(i, o.label, q.multiSelect)}
-                    className="mt-1 accent-primary"
-                  />
-                  <span className="flex flex-col">
-                    <span>{o.label}</span>
-                    {o.description && (
-                      <span className="text-muted-foreground text-sm">{o.description}</span>
-                    )}
-                  </span>
-                </label>
+                  {text}
+                </div>
               );
-            })}
-            <Input
+            }}
+          />
+        )}
+        {questions.map((q, i) => (
+          <QuestionnaireItem key={q.question} name={`q${i}`} multiple={q.multiSelect} required>
+            <QuestionnaireTitle className="flex flex-wrap items-center gap-2">
+              {q.header && <Badge variant="secondary">{q.header}</Badge>}
+              {q.question}
+            </QuestionnaireTitle>
+            {q.multiSelect && (
+              <QuestionnaireDescription>{t("wit.question.multi")}</QuestionnaireDescription>
+            )}
+            <QuestionnaireChoices>
+              {q.options.map((o) => (
+                <QuestionnaireChoice key={o.label} value={o.label}>
+                  {o.label}
+                  {o.description && (
+                    <QuestionnaireChoiceDescription>{o.description}</QuestionnaireChoiceDescription>
+                  )}
+                </QuestionnaireChoice>
+              ))}
+            </QuestionnaireChoices>
+            <QuestionnaireInput
               aria-label={t("wit.question.other")}
               placeholder={t("wit.question.other_placeholder")}
-              value={own[i]}
-              disabled={busy}
-              onChange={(e) => write(i, e.target.value, q.multiSelect)}
             />
-          </fieldset>
+          </QuestionnaireItem>
         ))}
-      </div>
-      <div className="flex justify-end gap-2 border-muted border-t-[0.5px] px-3.5 py-2.5">
-        <Button
-          variant="outline"
-          className="px-3 font-normal text-md"
-          disabled={busy}
-          onClick={skip}
-        >
-          {t("wit.question.skip")}
-        </Button>
-        <Button
-          className="px-3.5 text-md"
-          disabled={busy || !answer || answers.length === 0 || answers.some((x) => x.length === 0)}
-          onClick={() => answer?.(answers)}
-        >
-          {t("wit.question.submit")}
-        </Button>
-      </div>
+        <QuestionnaireActions>
+          <QuestionnairePrevious>{t("wit.question.previous")}</QuestionnairePrevious>
+          <Button
+            variant="outline"
+            className="col-start-2 row-start-1 justify-self-end"
+            disabled={busy}
+            onClick={skip}
+          >
+            {t("wit.question.skip")}
+          </Button>
+          <QuestionnaireNext>{t("wit.question.next")}</QuestionnaireNext>
+          <QuestionnaireSubmit disabled={busy || !answer}>
+            {t("wit.question.submit")}
+          </QuestionnaireSubmit>
+        </QuestionnaireActions>
+      </Questionnaire>
     </div>
   );
 }

@@ -2208,33 +2208,46 @@ describe("ask_user_question", () => {
     return { ...r, user };
   };
 
-  it("answers with options, several where it is multiSelect, once every question has one", async () => {
+  it("answers one question at a time: an option, then several where it is multiSelect", async () => {
     const onAnswer = vi.fn().mockResolvedValue(true);
     const onDecide = vi.fn().mockResolvedValue(true);
     const { user } = await interrupt({ onAnswer, onDecide });
     expect(await screen.findByText("Wit 想问你")).toBeInTheDocument();
+    expect(screen.getByText("第 1/2 题")).toBeInTheDocument();
     expect(screen.getByText("Which tone?")).toBeInTheDocument();
+    expect(screen.getByText("Which topics?")).not.toBeVisible(); // the next one waits
     expect(screen.queryByRole("button", { name: "允许" })).toBeNull();
-    const submit = screen.getByRole("button", { name: "提交" });
     await user.click(screen.getByRole("radio", { name: /Formal/ }));
-    expect(submit).toBeDisabled(); // Which topics? is not answered yet
+    await user.click(screen.getByRole("button", { name: "下一题" }));
+    expect(screen.getByText("第 2/2 题")).toBeInTheDocument();
     await user.click(screen.getByRole("checkbox", { name: /Price/ }));
     await user.click(screen.getByRole("checkbox", { name: /Date/ }));
-    await user.click(submit);
+    await user.click(screen.getByRole("button", { name: "提交" }));
     expect(onAnswer).toHaveBeenCalledWith(ask(), [["Formal"], ["Price", "Date"]]);
     await waitFor(() => expect(screen.queryByText("Wit 想问你")).toBeNull());
     expect(onDecide).not.toHaveBeenCalled();
   });
 
-  it("answers in the user's own words, or skips", async () => {
+  it("an unanswered question holds the next one back", async () => {
     const onAnswer = vi.fn().mockResolvedValue(true);
-    const onDecide = vi.fn().mockResolvedValue(true);
-    const { user } = await interrupt({ onAnswer, onDecide });
-    const [own] = await screen.findAllByRole("textbox", { name: "其他回答" });
-    await user.type(own, "Warm but short");
+    const { user } = await interrupt({ onAnswer, onDecide: vi.fn() });
+    await user.click(await screen.findByRole("button", { name: "下一题" }));
+    expect(screen.getByText("Which tone?")).toBeInTheDocument();
+    expect(screen.getByText("Which topics?")).not.toBeVisible();
+  });
+
+  it("answers in the user's own words", async () => {
+    const onAnswer = vi.fn().mockResolvedValue(true);
+    const { user } = await interrupt({ onAnswer, onDecide: vi.fn() });
+    await user.click(await screen.findByRole("radio", { name: /Formal/ }));
+    // own words replace a single answer's pick
+    await user.type(screen.getByRole("textbox", { name: "其他回答" }), "Warm but short");
+    expect(screen.getByRole("radio", { name: /Formal/ })).not.toBeChecked();
+    await user.click(screen.getByRole("button", { name: "下一题" }));
     await user.click(screen.getByRole("checkbox", { name: /Price/ }));
+    await user.type(screen.getByRole("textbox", { name: "其他回答" }), "Venue");
     await user.click(screen.getByRole("button", { name: "提交" }));
-    expect(onAnswer).toHaveBeenCalledWith(ask(), [["Warm but short"], ["Price"]]);
+    expect(onAnswer).toHaveBeenCalledWith(ask(), [["Warm but short"], ["Price", "Venue"]]);
   });
 
   it("跳过 rejects the question", async () => {
