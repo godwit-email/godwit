@@ -52,28 +52,16 @@ func (h judgeHTTP) piPost(ctx context.Context, body, out any) error {
 // piDecisions asks the OpenAI Decisions API on pi, in the wire format the
 // SDK encodes on the Genkit path (decisions).
 func (h judgeHTTP) piDecisions(ctx context.Context, input string, qs []Question) ([]Answer, error) {
-	type option struct {
-		Value       string `json:"value,omitempty"`
-		Label       string `json:"label,omitempty"`
-		Description string `json:"description,omitempty"`
-	}
 	type question struct {
-		Type         QuestionType `json:"type"`
-		Name         string       `json:"name"`
-		Instructions string       `json:"instructions"`
-		Choices      []option     `json:"choices,omitempty"`
-		Levels       []option     `json:"levels,omitempty"`
+		Type         QuestionType   `json:"type"`
+		Name         string         `json:"name"`
+		Instructions string         `json:"instructions"`
+		Choices      []ChoiceOption `json:"choices,omitempty"`
+		Levels       []Level        `json:"levels,omitempty"` // a level's label always goes, "" too, as the SDK sends it
 	}
 	wire := make([]question, len(qs))
 	for i, q := range qs {
-		w := question{Type: q.Type, Name: q.Name, Instructions: q.Instructions}
-		for _, o := range q.Choices {
-			w.Choices = append(w.Choices, option{Value: o.Value, Description: o.Description})
-		}
-		for _, l := range q.Levels {
-			w.Levels = append(w.Levels, option{Label: l.Label, Description: l.Description})
-		}
-		wire[i] = w
+		wire[i] = question{Type: q.Type, Name: q.Name, Instructions: q.Instructions, Choices: q.Choices, Levels: q.Levels}
 	}
 	var resp struct {
 		Answers []struct {

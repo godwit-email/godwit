@@ -94,6 +94,30 @@ func TestPiJudgeMatchesGenkit(t *testing.T) {
 	}
 }
 
+// A description-only level keeps its empty label on pi, as the SDK sends it.
+func TestPiDecisionsSendsEmptyLevelLabels(t *testing.T) {
+	qs := []Question{{Name: "tone", Instructions: "How angry?", Type: Score, Levels: []Level{{"", "calm"}, {"", "furious"}}}}
+	var reqs [2]string
+	for i, newJ := range []func(*http.Client, JudgeFormat, string, string, string) (Judge, error){NewJudge, NewPiJudge} {
+		srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			b, _ := io.ReadAll(r.Body)
+			var v any
+			json.Unmarshal(b, &v)
+			b, _ = json.Marshal(v)
+			reqs[i] = string(b)
+			io.WriteString(w, decisionsBody([]wa{{"tone", "score", 1.0}}))
+		}))
+		j, _ := newJ(nil, FormatDecisions, srv.URL, "k", "m")
+		if _, err := j.Ask(context.Background(), "mail", qs); err != nil {
+			t.Fatal(err)
+		}
+		srv.Close()
+	}
+	if !strings.Contains(reqs[1], `"levels":[{"description":"calm","label":""},{"description":"furious","label":""}]`) || reqs[0] != reqs[1] {
+		t.Errorf("genkit %s\npi     %s", reqs[0], reqs[1])
+	}
+}
+
 func TestPiJudgeTransportFailures(t *testing.T) {
 	j, _ := NewPiJudge(nil, FormatSystemOne, "http://127.0.0.1:1", "k", "m")
 	if _, err := j.Ask(context.Background(), "mail", testQs); !errors.Is(err, errUnreachable) {
