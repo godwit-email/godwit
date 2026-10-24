@@ -34,6 +34,23 @@ func TestAnsweredQuestionGoesBackToTheModel(t *testing.T) {
 	assert.Contains(t, string(a.Args), `"description":"Bob is a new client."`, "the card shows it")
 }
 
+func TestASkippedQuestionGoesBackAsSkipped(t *testing.T) {
+	e := newApprovalEnv(t)
+	in := e.askQuestion(t, `{"questions":[`+q("Which tone?")+`,`+q("Which day?")+`]}`)
+	require.NoError(t, e.s.AnswerQuestion(t.Context(), in.Approvals[0].ID, [][]string{{}, {"B"}}))
+	e.waitRun(t, in.RunID, "done")
+	assert.Equal(t, "The user answered your questions:\n\"Which tone?\"=\"(skipped)\"\n\"Which day?\"=\"B\"", e.toolMessage(t))
+}
+
+func TestSkippingEveryQuestionSkipsTheCall(t *testing.T) {
+	e := newApprovalEnv(t)
+	in := e.askQuestion(t, toneQuestion)
+	require.NoError(t, e.s.AnswerQuestion(t.Context(), in.Approvals[0].ID, [][]string{{}}))
+	e.waitRun(t, in.RunID, "done")
+	assert.Equal(t, "rejected", e.approval(t, in.Approvals[0].ID).State)
+	assert.Equal(t, msgUnanswered, e.toolMessage(t))
+}
+
 func TestSkippedQuestionLetsTheModelAssume(t *testing.T) {
 	e := newApprovalEnv(t)
 	in := e.askQuestion(t, toneQuestion)
@@ -77,7 +94,7 @@ func TestAnswersMustFitTheQuestions(t *testing.T) {
 	e := newApprovalEnv(t)
 	in := e.askQuestion(t, toneQuestion)
 	id := in.Approvals[0].ID
-	for _, bad := range [][][]string{nil, {{}}, {{" "}}, {{"Formal", "Casual"}}, {{"Formal"}, {"Extra"}}} {
+	for _, bad := range [][][]string{nil, {{" "}}, {{"Formal", "Casual"}}, {{"Formal"}, {"Extra"}}} {
 		assert.Error(t, e.s.AnswerQuestion(t.Context(), id, bad), "%q", bad)
 	}
 	assert.Equal(t, "pending", e.approval(t, id).State)

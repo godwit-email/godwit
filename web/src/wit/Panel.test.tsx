@@ -2254,11 +2254,22 @@ describe("ask_user_question", () => {
     expect(onAnswer).toHaveBeenCalledWith(ask(), [["Warm but short"], ["Price", "Venue"]]);
   });
 
-  it("跳过 rejects the question", async () => {
-    const onDecide = vi.fn().mockResolvedValue(true);
-    const { user } = await interrupt({ onAnswer: vi.fn(), onDecide });
+  it("跳过 skips one question", async () => {
+    const onAnswer = vi.fn().mockResolvedValue(true);
+    const { user } = await interrupt({ onAnswer, onDecide: vi.fn() });
     await user.click(await screen.findByRole("button", { name: "跳过" }));
-    expect(onDecide).toHaveBeenCalledWith(ask(), false, false);
+    expect(screen.getByText("第 2/2 题")).toBeInTheDocument();
+    await user.click(screen.getByRole("checkbox", { name: /Price/ }));
+    await user.click(screen.getByRole("button", { name: "提交" }));
+    expect(onAnswer).toHaveBeenCalledWith(ask(), [[], ["Price"]]);
+  });
+
+  it("skipping every question answers none", async () => {
+    const onAnswer = vi.fn().mockResolvedValue(true);
+    const { user } = await interrupt({ onAnswer, onDecide: vi.fn() });
+    await user.click(await screen.findByRole("button", { name: "跳过" }));
+    await user.click(screen.getByRole("button", { name: "跳过" })); // the last: submits
+    await waitFor(() => expect(onAnswer).toHaveBeenCalledWith(ask(), [[], []]));
   });
 
   it("全部允许 leaves the question waiting", async () => {
@@ -2293,14 +2304,14 @@ describe("ask_user_question", () => {
     expect(screen.queryByRole("button", { name: "全部允许" })).toBeNull();
   });
 
-  it("a decided question shows each answer, or that it was skipped", async () => {
+  it("a decided question shows each answer, or that it was skipped, before the answer it led to", async () => {
     const turn = (a: Approval) =>
       hist({
         messages: [
           {
             id: "a1",
             role: "assistant",
-            text: "",
+            text: "Here is the draft.",
             reasoning: "",
             quoted: [],
             calls: [{ id: "q1", name: "ask_user_question", args: a.args }],
@@ -2317,8 +2328,18 @@ describe("ask_user_question", () => {
     expect(screen.getByText("已回答")).toBeInTheDocument();
     expect(screen.getByText("Which topics?")).toBeInTheDocument();
     expect(screen.getByText("Price, Date")).toBeInTheDocument();
+    expect(
+      screen.getByText("已回答").compareDocumentPosition(screen.getByText("Here is the draft.")),
+    ).toBe(Node.DOCUMENT_POSITION_FOLLOWING);
     unmount();
+    const partly = ask("done", { ...questions, answers: [["Formal"], []] });
+    const second = await setup({ history: turn(partly) });
+    expect(screen.getByText("Formal")).toBeInTheDocument();
+    expect(screen.getByText("Which topics?").nextElementSibling).toHaveTextContent("已跳过");
+    second.unmount();
     await setup({ history: turn(ask("rejected")) });
     expect(screen.getByText("已跳过")).toBeInTheDocument();
+    expect(screen.getByText("Which topics?")).toBeInTheDocument(); // what was skipped
+    expect(screen.queryByText("Price, Date")).toBeNull();
   });
 });

@@ -107,14 +107,19 @@ func applyQuestion(_ context.Context, a Approval) ([]sqlite.Statement, any, any,
 	}
 	lines := []string{"The user answered your questions:"}
 	for i, q := range in.Questions {
-		lines = append(lines, fmt.Sprintf("%q=%q", q.Question, strings.Join(in.Answers[i], ", ")))
+		ans := strings.Join(in.Answers[i], ", ")
+		if ans == "" {
+			ans = "(skipped)"
+		}
+		lines = append(lines, fmt.Sprintf("%q=%q", q.Question, ans))
 	}
 	return nil, strings.Join(lines, "\n"), nil, nil
 }
 
 // AnswerQuestion accepts pending question id with answers, one list per
-// question: one answer each, several where it is multiSelect. An answer is
-// an option's label or the user's own words.
+// question: one answer each, several where it is multiSelect, none where the
+// user skipped it. An answer is an option's label or the user's own words.
+// Every question skipped skips the call (rejects it).
 func (s *Service) AnswerQuestion(ctx context.Context, id int64, answers [][]string) error {
 	ctx, end, err := s.begin(ctx, 0)
 	if err != nil {
@@ -135,15 +140,20 @@ func (s *Service) AnswerQuestion(ctx context.Context, id int64, answers [][]stri
 	if len(answers) != len(in.Questions) {
 		return errors.New("answer every question")
 	}
+	skipped := true
 	for i, q := range in.Questions {
 		for _, ans := range answers[i] {
 			if strings.TrimSpace(ans) == "" {
 				return errors.New("an answer is empty")
 			}
 		}
-		if n := len(answers[i]); n == 0 || n > 1 && !q.MultiSelect {
+		if len(answers[i]) > 1 && !q.MultiSelect {
 			return fmt.Errorf("question %d takes one answer", i+1)
 		}
+		skipped = skipped && len(answers[i]) == 0
+	}
+	if skipped {
+		return s.cleanError(s.decide(ctx, id, false, nil, true))
 	}
 	in.Answers = answers
 	b, err := json.Marshal(in)

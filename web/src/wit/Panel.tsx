@@ -79,6 +79,7 @@ import {
   QuestionnaireNext,
   QuestionnairePrevious,
   QuestionnaireProgress,
+  QuestionnaireSkip,
   QuestionnaireSubmit,
   QuestionnaireTitle,
 } from "@/components/ui/questionnaire";
@@ -351,7 +352,7 @@ function ToolCard({
   }
   const label = toolLabel(a.tool, t);
   return (
-    <div className="overflow-hidden rounded-xl border-[0.5px] bg-background shadow-sm">
+    <div className="overflow-hidden rounded-xl border-[0.5px] bg-background shadow-(--shadow-xs)">
       <div className="flex flex-wrap items-center gap-2 border-b-[0.5px] bg-sidebar px-3.5 py-2.5 leading-5">
         <span className="font-semibold">{t("wit.approval.wants", label)}</span>
         <span className="font-mono text-muted-foreground text-sm">{a.tool}</span>
@@ -455,21 +456,19 @@ function questionArgs(a: Approval): { questions: Question[]; answers?: string[][
 
 /**
  * Questions Wit asks (ask_user_question) waiting, one at a time (the Questionnaire): each with its
- * options, one picked or several where multiSelect, or the user's own words; every one is
- * required, so 提交 sends them all, and 跳过 skips the lot.
+ * options, one picked or several where multiSelect, or the user's own words, or 跳过 to skip it
+ * (the last one's submits); 提交 sends them all, a skipped one with no answer.
  */
 function QuestionCard({
   a,
   busy,
   answer,
-  skip,
   t,
 }: {
   a: Approval;
   busy: boolean;
-  /** Without it (a host that takes no answers) only 跳过 works. */
+  /** Without it, a host that takes no answers: nothing is sent. */
   answer?(answers: string[][]): void;
-  skip(): void;
   t: T;
 }) {
   const { questions } = questionArgs(a);
@@ -487,7 +486,7 @@ function QuestionCard({
     );
   };
   return (
-    <div className="overflow-hidden rounded-xl border-[0.5px] bg-background shadow-sm">
+    <div className="overflow-hidden rounded-xl border-[0.5px] bg-background shadow-(--shadow-xs)">
       <div className="flex items-center gap-2 border-b-[0.5px] bg-sidebar px-3.5 py-2.5 leading-5">
         <span className="font-semibold">{t("wit.question.asks")}</span>
         <Badge
@@ -516,7 +515,7 @@ function QuestionCard({
           />
         )}
         {questions.map((q, i) => (
-          <QuestionnaireItem key={q.question} name={`q${i}`} multiple={q.multiSelect} required>
+          <QuestionnaireItem key={q.question} name={`q${i}`} multiple={q.multiSelect}>
             <QuestionnaireTitle className="flex flex-wrap items-center gap-2">
               {q.header && <Badge variant="secondary">{q.header}</Badge>}
               {q.question}
@@ -545,14 +544,7 @@ function QuestionCard({
         ))}
         <QuestionnaireActions>
           <QuestionnairePrevious>{t("wit.question.previous")}</QuestionnairePrevious>
-          <Button
-            variant="outline"
-            className="col-start-2 row-start-1 justify-self-end"
-            disabled={busy}
-            onClick={skip}
-          >
-            {t("wit.question.skip")}
-          </Button>
+          <QuestionnaireSkip disabled={busy}>{t("wit.question.skip")}</QuestionnaireSkip>
           <QuestionnaireNext>{t("wit.question.next")}</QuestionnaireNext>
           <QuestionnaireSubmit disabled={busy || !answer}>
             {t("wit.question.submit")}
@@ -575,17 +567,23 @@ function Settled({ a, onDraft, t }: { a: Approval; onDraft?(id: number): Promise
     return (
       <>
         <span className="flex items-center gap-2 text-muted-foreground text-sm">
-          <Icon
-            className={cn("size-3.5 shrink-0", done ? "text-green-600" : "text-muted-foreground")}
-          />
+          <Icon className="size-3.5 shrink-0" />
           <span>{t(done ? "wit.question.answered" : "wit.question.skipped")}</span>
         </span>
-        {done && (
+        {questions.length > 0 && (
           <dl className="flex flex-col gap-1.5 rounded-xl border-[0.5px] bg-background px-3 py-2.5 text-md">
             {questions.map((q, i) => (
               <div key={q.question}>
                 <dt className="text-muted-foreground text-sm">{q.question}</dt>
-                <dd>{answers?.[i]?.join(", ")}</dd>
+                {done && (
+                  <dd>
+                    {answers?.[i]?.length ? (
+                      answers[i].join(", ")
+                    ) : (
+                      <span className="text-muted-foreground">{t("wit.question.skipped")}</span>
+                    )}
+                  </dd>
+                )}
               </div>
             ))}
           </dl>
@@ -791,6 +789,12 @@ function Answer({
             </AlertDescription>
           </Alert>
         ))}
+      {/* the questions it asked and their answers come before what it wrote with them */}
+      {settled
+        .filter((a) => a.tool === ASK_QUESTION_TOOL)
+        .map((a) => (
+          <Settled key={a.id} a={a} t={t} />
+        ))}
       {live && (!page || !text) && working}
       {text && (
         <Response
@@ -888,9 +892,11 @@ function Answer({
         </div>
       ))}
       {tools(requested.filter((a) => !a.draftEdit))}
-      {settled.map((a) => (
-        <Settled key={a.id} a={a} onDraft={onDraft} t={t} />
-      ))}
+      {settled
+        .filter((a) => a.tool !== ASK_QUESTION_TOOL)
+        .map((a) => (
+          <Settled key={a.id} a={a} onDraft={onDraft} t={t} />
+        ))}
     </div>
   );
 }
@@ -1395,7 +1401,6 @@ export function Panel({
               a={a}
               busy={busy}
               answer={onAnswer && ((answers) => answerAs(a, answers))}
-              skip={() => decideAs(a, false, false)}
               t={t}
             />
           ) : (
