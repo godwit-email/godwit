@@ -13,9 +13,10 @@ import (
 )
 
 // piCovers reports whether pi runs req: a one-off prompt to a stored model
-// service of any kind (#229, #230). Each migration step widens it.
+// service of any kind (#229, #230) or a plugin's model, whose client prepares
+// and sends each request (#231). Each migration step widens it.
 func piCovers(req Request) bool {
-	return piAPI(req.Model) != "" && req.Model.Client == nil &&
+	return piAPI(req.Model) != "" &&
 		req.History == nil && req.Prompt != "" && len(req.Tools) == 0 && len(req.Responses) == 0
 }
 

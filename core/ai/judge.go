@@ -174,13 +174,20 @@ func (j judge) Ask(ctx context.Context, input string, qs []Question) ([]Answer, 
 // NewJudge returns a client for a judge API at base+format.Path(). c is the
 // no-redirect model client (nil means NoRedirectClient).
 func NewJudge(c *http.Client, format JudgeFormat, base, key, model string) (Judge, error) {
+	return newJudge(c, format, base, key, model, false)
+}
+
+func newJudge(c *http.Client, format JudgeFormat, base, key, model string, onPi bool) (Judge, error) {
 	if c == nil {
 		c = NoRedirectClient
 	}
 	base = strings.TrimRight(base, "/")
-	h := judgeHTTP{c: c, base: base, url: base + format.Path(), key: key, model: model}
+	h := judgeHTTP{c: c, base: base, url: base + format.Path(), key: key, model: model, pi: onPi}
 	switch format {
 	case FormatDecisions:
+		if onPi {
+			return judge{h.piDecisions, 15 * time.Second}, nil
+		}
 		return judge{h.decisions, 15 * time.Second}, nil
 	case FormatSystemOne:
 		return judge{h.systemOne, 15 * time.Second}, nil
@@ -204,11 +211,15 @@ func ListJudgeModels(ctx context.Context, c *http.Client, format JudgeFormat, ba
 type judgeHTTP struct {
 	c                     *http.Client
 	base, url, key, model string // url is base and the format's path
+	pi                    bool   // post on pi (piPost)
 }
 
 // post sends body and decodes the reply into out, retrying 429, 529 and 5xx.
 // Errors never carry the key, the body or *url.Error text.
 func (h judgeHTTP) post(ctx context.Context, body, out any) error {
+	if h.pi {
+		return h.piPost(ctx, body, out)
+	}
 	b, err := json.Marshal(body)
 	if err != nil {
 		return err

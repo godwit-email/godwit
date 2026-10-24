@@ -555,3 +555,25 @@ func TestRunSkillSummarizeOnPi(t *testing.T) {
 	require.Len(t, reqs, 5)
 	assert.NotEqual(t, "Godwit", reqs[4].Header.Get("User-Agent"))
 }
+
+// With no judge service the default model answers judge questions, on pi
+// when the Labs switch is on, read as on the Genkit path.
+func TestGenJudgeOnPi(t *testing.T) {
+	e := newSkillEnv(t)
+	st, err := e.s.GetSettings(t.Context())
+	require.NoError(t, err)
+	st.PiEngine = true
+	_, err = e.s.SetSettings(t.Context(), st)
+	require.NoError(t, err)
+	j, label, gen, err := e.s.resolveJudge(t.Context())
+	require.NoError(t, err)
+	assert.True(t, gen)
+	assert.Equal(t, "x/m1", label)
+	e.srv.Script(testllm.Turn{Text: []string{"```json\n", `{"answers":[{"name":"q","answer":"yes"}]}`, "\n```"}})
+	got, err := j.Ask(t.Context(), "mail", []ai.Question{{Name: "q", Type: ai.Predicate, Instructions: "?"}})
+	require.NoError(t, err)
+	assert.Equal(t, 1.0, *got[0].Probability)
+	reqs := e.srv.Requests()
+	require.Len(t, reqs, 1)
+	assert.Equal(t, "Godwit", reqs[0].Header.Get("User-Agent"), "pi-ai sent it")
+}

@@ -6,7 +6,11 @@ import (
 	"encoding/json"
 	"fmt"
 	"github.com/godwit-email/godwit/core/ai"
+	"hash/fnv"
+	"io"
 	"maps"
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"strings"
@@ -384,4 +388,113 @@ func TestLabelEvalInterval(t *testing.T) {
 	require.Greater(t, l.ci[3], 0.25)
 	require.Greater(t, l.ci[2], 0.1)
 	require.Less(t, l.ci[3], 0.4)
+}
+
+// TestLabelEvalPiParity runs the label eval's cases through each judge API
+// on both engines (Labs: Settings.PiEngine), against a fake service whose
+// answers follow from the request alone: the requests, the answers and so
+// the scores must be the same on pi as on the Genkit path.
+func TestLabelEvalPiParity(t *testing.T) {
+	suite, err := loadEvalSuite("testdata/labeleval")
+	require.NoError(t, err)
+	var mu sync.Mutex
+	bodies := map[string][]string{} // by way: each request's body, as sent
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		b, _ := io.ReadAll(r.Body)
+		way, path, _ := strings.Cut(strings.TrimPrefix(r.URL.Path, "/"), "/")
+		mu.Lock()
+		bodies[way] = append(bodies[way], string(b))
+		mu.Unlock()
+		if onPi := strings.HasSuffix(way, "-pi"); onPi != (r.Header.Get("User-Agent") == "Godwit") {
+			t.Errorf("%s: sent by %q", way, r.Header.Get("User-Agent"))
+		}
+		var req struct {
+			Input, State string
+			Questions    json.RawMessage
+		}
+		require.NoError(t, json.Unmarshal(b, &req))
+		// A question's probability is a hash of the mail and its instructions;
+		// a few are refused, and one mail in eleven gets no valid answer.
+		answer := func(name, instructions string) (p float64, refused bool) {
+			h := fnv.New32a()
+			fmt.Fprint(h, req.Input+req.State, "\x00", instructions)
+			v := h.Sum32() % 1000
+			return float64(v) / 999, v%17 == 0
+		}
+		if h := fnv.New32a(); func() bool { fmt.Fprint(h, req.Input+req.State); return h.Sum32()%11 == 0 }() {
+			io.WriteString(w, `{"answers":`)
+			return
+		}
+		if path == "decisions" {
+			var qs []struct{ Name, Instructions string }
+			require.NoError(t, json.Unmarshal(req.Questions, &qs))
+			var out []map[string]any
+			for _, q := range qs {
+				p, refused := answer(q.Name, q.Instructions)
+				if refused {
+					out = append(out, map[string]any{"type": "refusal", "name": q.Name})
+				} else {
+					out = append(out, map[string]any{"type": "predicate", "name": q.Name, "probability": p})
+				}
+			}
+			json.NewEncoder(w).Encode(map[string]any{"answers": out})
+			return
+		}
+		var qs map[string]struct{ Instructions string }
+		require.NoError(t, json.Unmarshal(req.Questions, &qs))
+		out := map[string]any{}
+		for name, q := range qs {
+			p, refused := answer(name, q.Instructions)
+			if refused {
+				out[name] = map[string]any{"type": "refusal"}
+			} else {
+				out[name] = map[string]any{"type": "noul", "noul": p}
+			}
+		}
+		json.NewEncoder(w).Encode(map[string]any{"answers": out})
+	}))
+	t.Cleanup(srv.Close)
+
+	var ways []evalWay
+	for _, format := range []ai.JudgeFormat{ai.FormatDecisions, ai.FormatSystemOne} {
+		for _, onPi := range []bool{false, true} {
+			name := string(format) + map[bool]string{false: "-genkit", true: "-pi"}[onPi]
+			ways = append(ways, evalWay{name: name, setup: func(t *testing.T, s *Service) {
+				provider := map[ai.JudgeFormat]string{ai.FormatDecisions: ProviderOpenAI, ai.FormatSystemOne: ProviderTypeSafe}[format]
+				ms, err := s.AddModelService(bg, ModelServiceInput{Name: name, Provider: provider, BaseURL: srv.URL + "/" + name,
+					APIKey: "k", JudgeFormat: string(format), JudgeModel: "m"})
+				require.NoError(t, err)
+				setEvalSettings(t, s, func(st *Settings) { st.JudgeService, st.PiEngine = ms.Slug, onPi })
+				requireEvalJudge(t, s, false)
+			}})
+		}
+	}
+	runs := runLabelEval(t, suite, ways)
+	byKey := map[string]evalRun{}
+	for _, r := range runs {
+		require.NoError(t, r.err, r.way.name)
+		byKey[r.way.name+"/"+r.preset+"/"+r.set] = r
+	}
+	refused, unanswered := 0, 0
+	for key, g := range byKey {
+		way, rest, _ := strings.Cut(key, "/")
+		if !strings.HasSuffix(way, "-genkit") {
+			continue
+		}
+		refused, unanswered = refused+g.refused, unanswered+g.unanswered
+		p := byKey[strings.TrimSuffix(way, "-genkit")+"-pi/"+rest]
+		require.Equal(t, g.got, p.got, "%s: the answers", key)
+		require.Equal(t, [2]int{g.refused, g.unanswered}, [2]int{p.refused, p.unanswered}, key)
+		require.Equal(t, g.score(), p.score(), "%s: the scores", key)
+	}
+	require.Positive(t, refused, "the fake refuses some labels")
+	require.Positive(t, unanswered, "and answers some mail with nothing valid")
+	for _, format := range []string{"decisions", "systemone"} {
+		g, p := bodies[format+"-genkit"], bodies[format+"-pi"]
+		require.NotEmpty(t, g)
+		require.Equal(t, len(g), len(p), format)
+		for i := range g {
+			require.JSONEq(t, g[i], p[i], "%s: request %d", format, i)
+		}
+	}
 }

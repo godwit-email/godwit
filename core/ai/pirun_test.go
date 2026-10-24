@@ -115,7 +115,6 @@ func TestPiLeavesTheRestToGenkit(t *testing.T) {
 		"off": {Model: modelFor(srv, "openai", "k"), Prompt: "p"},
 		"tools": {Model: modelFor(srv, "openai", "k"), Prompt: "p", Pi: true,
 			Tools: []ToolSpec{{Name: "t", Schema: map[string]any{"type": "object"}, Run: func(context.Context, json.RawMessage) (any, error) { return "x", nil }}}},
-		"plugin":  {Model: ResolvedModel{Kind: "openai", BaseURL: srv.URL, Model: "m-1", APIKey: "k", Client: http.DefaultClient}, Prompt: "p", Pi: true},
 		"history": {Model: modelFor(srv, "openai", "k"), History: asking(nil, "p"), Pi: true},
 	} {
 		srv.Script(testllm.Turn{Text: []string{"ok"}})
@@ -123,6 +122,28 @@ func TestPiLeavesTheRestToGenkit(t *testing.T) {
 		require.Nil(t, res.Err, name)
 		assert.False(t, ranOnPi(t, srv), name)
 	}
+}
+
+// roundTrip is an http.RoundTripper of a func, as a plugin model's client has.
+type roundTrip func(*http.Request) (*http.Response, error)
+
+func (f roundTrip) RoundTrip(r *http.Request) (*http.Response, error) { return f(r) }
+
+// A plugin's model goes out through its own client, which prepares each
+// request; it has no key, so none is sent.
+func TestPiRunsAPluginModel(t *testing.T) {
+	srv := testllm.Start(t, "openai")
+	srv.Script(testllm.Turn{Text: []string{"ok"}})
+	c := &http.Client{Transport: roundTrip(func(r *http.Request) (*http.Response, error) {
+		r.Header.Set("X-Plugin-Key", "secret")
+		return http.DefaultTransport.RoundTrip(r)
+	})}
+	_, res := run(newEngine(t), Request{Model: ResolvedModel{ServiceID: -5, Kind: "openai", BaseURL: srv.URL, Model: "m-1", Client: c}, Prompt: "p", Pi: true})
+	require.Nil(t, res.Err)
+	require.True(t, ranOnPi(t, srv))
+	h := srv.Requests()[0].Header
+	assert.Equal(t, "secret", h.Get("X-Plugin-Key"))
+	assert.Empty(t, h.Get("Authorization"))
 }
 
 func TestPiErrorsReadAsGenkitsDo(t *testing.T) {
