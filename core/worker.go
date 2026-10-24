@@ -29,9 +29,12 @@ var (
 
 // worker is one account's background sync goroutine.
 type worker struct {
+	ctx    context.Context
 	cancel context.CancelFunc
 	done   chan struct{}
 	wake   chan struct{} // buffered 1: a local change asks for a sync
+	// stopTimer stops the timer wakeWorkerAt set, nil if none. Under workersMu.
+	stopTimer func() bool
 }
 
 // startWorker starts the account's worker if AutoSync is on, the service is open
@@ -46,7 +49,7 @@ func (s *Service) startWorker(id int64) {
 		return
 	}
 	ctx, cancel := context.WithCancel(context.Background())
-	w := &worker{cancel: cancel, done: make(chan struct{}), wake: make(chan struct{}, 1)}
+	w := &worker{ctx: ctx, cancel: cancel, done: make(chan struct{}), wake: make(chan struct{}, 1)}
 	if s.workers == nil {
 		s.workers = map[int64]*worker{}
 	}
@@ -54,6 +57,11 @@ func (s *Service) startWorker(id int64) {
 	go func() {
 		defer close(w.done)
 		s.runWorker(ctx, id, w.wake)
+		s.workersMu.Lock()
+		if w.stopTimer != nil {
+			w.stopTimer() // ctx is done: none is set again
+		}
+		s.workersMu.Unlock()
 		if beforeWorkerExit != nil {
 			beforeWorkerExit()
 		}
@@ -88,6 +96,25 @@ func (s *Service) wakeWorker(id int64) {
 		case w.wake <- struct{}{}:
 		default: // one is already pending
 		}
+	}
+}
+
+// wakeWorkerAt has the account's worker sync at t (on the Service's clock), in
+// place of the time set before; a zero t sets none.
+func (s *Service) wakeWorkerAt(id int64, t time.Time) {
+	s.workersMu.Lock()
+	defer s.workersMu.Unlock()
+	w := s.workers[id]
+	if w == nil || w.ctx.Err() != nil {
+		return
+	}
+	if w.stopTimer != nil {
+		w.stopTimer()
+		w.stopTimer = nil
+	}
+	if !t.IsZero() {
+		c := s.clk()
+		w.stopTimer = c.AfterFunc(t.Sub(c.Now()), func() { s.wakeWorker(id) })
 	}
 }
 

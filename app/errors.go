@@ -19,6 +19,7 @@ var errorKeys = []struct {
 	{core.ErrStaleDraft, "error.stale_draft"},
 	{core.ErrAccountIcon, "error.account_icon"},
 	{core.ErrInvalidState, "error.invalid_state"},
+	{core.ErrNoOutboxDraft, "error.no_outbox_draft"},
 	{core.ErrRunActive, "error.run_active"},
 	{core.ErrStaleApproval, "error.stale_approval"},
 	{core.ErrNeedsGrant, "error.needs_grant"},

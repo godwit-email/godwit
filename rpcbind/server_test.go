@@ -80,6 +80,7 @@ func TestMCPAllowlistContents(t *testing.T) {
 		assert.True(t, rpcbind.Expose(m), "%s must be callable at all", m)
 	}
 	assert.False(t, rpc.MCPAllowed("NewDraft", []json.RawMessage{json.RawMessage(`1`), json.RawMessage(`"forward"`), json.RawMessage(`2`)}))
+	assert.True(t, rpcbind.Expose("CancelOutbox"), "full may undo a send")
 	// An injected agent must not make the user's machine POST anywhere (#218); full may.
 	for _, m := range []string{"Unsubscribe", "UnsubscribeMethod", "NewMailtoDraft"} {
 		assert.False(t, rpc.MCPAllowed(m, []json.RawMessage{json.RawMessage(`1`)}), m)
@@ -115,6 +116,14 @@ func TestMCPRoleAllowlist(t *testing.T) {
 	d.To, d.Subject, d.HTML = []string{"dave@example.com"}, "out", "<p>hi</p>"
 	d, err = e.Svc.SaveDraft(ctx, d)
 	require.NoError(t, err)
+	q, err := e.Svc.NewDraft(ctx, acc.ID, "new", 0)
+	require.NoError(t, err)
+	q.To, q.Subject, q.HTML = []string{"dave@example.com"}, "queued", "<p>hi</p>"
+	q, err = e.Svc.SaveDraft(ctx, q)
+	require.NoError(t, err)
+	require.NoError(t, e.Svc.Send(ctx, q.ID)) // in its undo window
+	queued := must(t)(e.Svc.ListOutbox(ctx, acc.ID)).([]core.OutboxItem)
+	require.Len(t, queued, 1)
 	e.InstallPlugin(t, "config-demo")
 	services, err := e.Svc.ListModelServices(ctx)
 	require.NoError(t, err)
@@ -165,6 +174,7 @@ func TestMCPRoleAllowlist(t *testing.T) {
 		{"SetSettings", []any{settings}},
 		{"ResolveApproval", []any{approvals[0].ID, true}},
 		{"ResolveMCPSend", []any{1, true}},
+		{"CancelOutbox", []any{queued[0].ID}},
 		{"PendingMCPSends", nil},
 		{"InstallPlugin", []any{coretest.PluginFixture(t, "card-demo")}},
 		{"AddAccount", []any{core.AccountInput{Email: "eve@example.com", Username: "u", Password: "p", IMAPHost: "127.0.0.1", IMAPPort: 1, SMTPHost: "127.0.0.1", SMTPPort: 1}}},

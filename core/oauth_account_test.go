@@ -44,6 +44,7 @@ func newOAuthEnv(t *testing.T, autoSync bool) *oauthAccEnv {
 	setFor(t, &backoffMin, 20*time.Millisecond)
 	setFor(t, &backoffMax, 200*time.Millisecond)
 	keyring.MockInit()
+	clock := useTestClock(t)
 	dir := t.TempDir()
 	s, err := New(bg, Options{DataDir: dir, AutoSync: autoSync, ImageClient: loopbackImageClient()})
 	require.NoError(t, err)
@@ -56,7 +57,7 @@ func newOAuthEnv(t *testing.T, autoSync bool) *oauthAccEnv {
 	smtpAddr, in := testmail.StartSMTP(t, testmail.WithXOAuth2Func(func(tok string) bool {
 		return oa.ValidAccess(tok) && tok != e.smtpNo.Load()
 	}))
-	e.sendEnv, e.smtpAt = &sendEnv{syncEnv: &syncEnv{s: s, im: im, dir: dir}, smtp: in}, smtpAddr
+	e.sendEnv, e.smtpAt = &sendEnv{syncEnv: &syncEnv{s: s, im: im, dir: dir}, smtp: in, clock: clock}, smtpAddr
 	return e
 }
 

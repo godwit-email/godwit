@@ -4,6 +4,7 @@ import (
 	"context"
 	"testing"
 
+	"github.com/godwit-email/godwit/core"
 	"github.com/godwit-email/godwit/core/coretest"
 )
 
@@ -23,6 +24,7 @@ func TestOutboxResolve(t *testing.T) {
 	if err := h.env.Svc.Send(ctx, d.ID); err != nil {
 		t.Fatal(err)
 	}
+	h.env.AdvanceClock(core.UndoSendWindow)
 	_ = h.env.Svc.SyncNow(ctx, acc.ID) // the SMTP connection drops after DATA: send_uncertain
 	h.waitMail("the outbox entry", func() bool { return len(h.app.mail.outbox) == 1 && h.tt.HasText("发件箱") })
 	h.see("1")

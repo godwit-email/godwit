@@ -44,6 +44,7 @@ func TestCoretestDeliverAndSend(t *testing.T) {
 	_, err = e.Svc.SaveDraft(t.Context(), d)
 	require.NoError(t, err)
 	require.NoError(t, e.Svc.Send(t.Context(), d.ID))
+	e.AdvanceClock(core.UndoSendWindow)
 	require.Eventually(t, func() bool { return len(e.Sent(acc.ID)) == 1 }, 5*time.Second, 20*time.Millisecond)
 	assert.Contains(t, string(e.Sent(acc.ID)[0]), "Subject: out")
 	assert.Empty(t, e.Sent(other.ID))

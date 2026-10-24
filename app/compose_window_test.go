@@ -49,9 +49,11 @@ func (h *harness) draft(id int64) core.Draft {
 	return d
 }
 
-// sent waits until the account's SMTP server has n messages and returns them.
+// sent lets the undo window pass, waits until the account's SMTP server has n
+// messages and returns them.
 func (h *harness) sent(acc core.Account, n int) []string {
 	h.t.Helper()
+	h.env.AdvanceClock(core.UndoSendWindow)
 	h.until("sent mail", func() bool { return len(h.env.Sent(acc.ID)) >= n })
 	var out []string
 	for _, m := range h.env.Sent(acc.ID) {

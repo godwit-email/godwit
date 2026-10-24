@@ -99,6 +99,9 @@ func (s *Service) RequestMCPSend(ctx context.Context, draftID, revision int64) (
 	}
 	s.editMu.Lock()
 	d, err := s.GetDraft(ctx, draftID)
+	if err == nil {
+		err = s.checkWritable(ctx, draftID) // queued already
+	}
 	s.editMu.Unlock()
 	if err != nil {
 		return false, err
@@ -185,8 +188,11 @@ func (s *Service) PendingMCPSends(ctx context.Context) ([]MCPSend, error) {
 		}
 		s.editMu.Lock()
 		d, err := s.GetDraft(ctx, r.draftID)
+		if err == nil {
+			err = s.checkWritable(ctx, r.draftID) // queued meanwhile
+		}
 		s.editMu.Unlock()
-		if err != nil && !errors.Is(err, errDraftNotFound) {
+		if err != nil && !errors.Is(err, errDraftNotFound) && !errors.Is(err, ErrStaleDraft) {
 			return nil, err
 		}
 		if r.expired() || err != nil || d.Revision != r.revision {

@@ -7,6 +7,7 @@ import (
 
 	"github.com/emersion/go-imap/v2"
 	"github.com/emersion/go-imap/v2/imapclient"
+	"github.com/emersion/go-smtp"
 	"github.com/godwit-email/godwit/core/conn"
 	"github.com/godwit-email/godwit/core/internal/testmail"
 	"github.com/stretchr/testify/assert"
@@ -149,6 +150,48 @@ func TestSMTPFailAfterData(t *testing.T) {
 	ep.Password = "nope"
 	_, err := conn.DialSMTP(ctx, ep)
 	assert.Error(t, err)
+}
+
+// smtpSend sends rfc822 from a@b.c to to over a fresh connection.
+func smtpSend(t *testing.T, addr string, to ...string) error {
+	t.Helper()
+	host, port := split(t, addr)
+	c, err := conn.DialSMTP(ctx, conn.Endpoint{Host: host, Port: port, Security: conn.None, Username: "alice", Password: "secret"})
+	require.NoError(t, err)
+	defer c.Close()
+	return c.SendMail("a@b.c", to, strings.NewReader(rfc822))
+}
+
+func TestSMTPReplyAtRcpt(t *testing.T) {
+	addr, in := testmail.StartSMTP(t)
+	want := &smtp.SMTPError{Code: 550, EnhancedCode: smtp.EnhancedCode{5, 1, 1}, Message: "No such user"}
+	in.Reply("d@e.f", testmail.AtRcpt, want, false)
+	for range 2 {
+		var got *smtp.SMTPError
+		require.ErrorAs(t, smtpSend(t, addr, "d@e.f"), &got)
+		assert.Equal(t, want.Code, got.Code)
+		assert.Equal(t, want.EnhancedCode, got.EnhancedCode)
+		assert.Equal(t, want.Message, got.Message)
+	}
+	assert.Empty(t, in.Messages())
+	require.NoError(t, smtpSend(t, addr, "g@h.i"), "other recipients are accepted")
+	in.Reply("d@e.f", testmail.AtRcpt, nil, false)
+	require.NoError(t, smtpSend(t, addr, "d@e.f"), "nil clears the reply")
+	assert.Len(t, in.Messages(), 2)
+}
+
+func TestSMTPReplyAtDataOnce(t *testing.T) {
+	addr, in := testmail.StartSMTP(t)
+	in.Reply("d@e.f", testmail.AtData, &smtp.SMTPError{Code: 451, EnhancedCode: smtp.EnhancedCode{4, 7, 1}, Message: "Try again later"}, true)
+	var got *smtp.SMTPError
+	require.ErrorAs(t, smtpSend(t, addr, "g@h.i", "d@e.f"), &got)
+	assert.Equal(t, 451, got.Code)
+	assert.Equal(t, smtp.EnhancedCode{4, 7, 1}, got.EnhancedCode)
+	assert.Equal(t, "Try again later", got.Message)
+	assert.Empty(t, in.Messages(), "a message refused at DATA is not recorded")
+	require.NoError(t, smtpSend(t, addr, "g@h.i", "d@e.f"), "a one-time reply is used up")
+	require.Len(t, in.Messages(), 1)
+	assert.Equal(t, []string{"g@h.i", "d@e.f"}, in.Messages()[0].To)
 }
 
 func TestWithoutUIDPlusKeepsBodiesIntact(t *testing.T) {

@@ -152,6 +152,7 @@ type Service struct {
 	labelWake   chan struct{}              // wakes the label classifier
 	reclaimWake chan struct{}              // wakes the free-space reclaimer (reclaimSoon)
 	labelJudge  func(context.Context) (ai.Judge, error)
+	clock       Clock              // outbox timing; nil is the real clock
 	hookClock   plugins.Clock      // hook backoff and polling; nil is the real clock
 	pluginNet   plugins.NetOptions // ctx.net.fetch's network; tests inject a resolver and dialer
 	pluginClock plugins.Clock      // plugin VM call limits; nil is the real clock
@@ -185,17 +186,17 @@ func New(ctx context.Context, opts Options) (*Service, error) {
 	if err != nil {
 		return nil, err
 	}
-	if err := recoverOutbox(ctx, db); err != nil {
-		db.Close()
-		return nil, err
-	}
 	install, err := loadInstallID(ctx, db)
 	if err != nil {
 		db.Close()
 		return nil, err
 	}
 	s := &Service{db: db, bus: events.New(), dataDir: opts.DataDir, opts: opts, installID: install, streamsEnd: make(chan struct{}),
-		hookClock: testHookClock, pluginClock: testPluginClock, labelWake: make(chan struct{}, 1), reclaimWake: make(chan struct{}, 1)}
+		clock: testClock, hookClock: testHookClock, pluginClock: testPluginClock, labelWake: make(chan struct{}, 1), reclaimWake: make(chan struct{}, 1)}
+	if err := s.recoverOutbox(ctx); err != nil {
+		db.Close()
+		return nil, err
+	}
 	s.labelJudge = s.defaultLabelJudge
 	s.assets = newModelAssets(s)
 	if exe, err := os.Executable(); err == nil {

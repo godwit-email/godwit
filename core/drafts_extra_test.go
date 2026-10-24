@@ -78,6 +78,7 @@ func TestSetDraftAccount(t *testing.T) {
 	assert.Error(t, err)
 
 	require.NoError(t, e.Svc.Send(ctx, d.ID))
+	e.AdvanceClock(core.UndoSendWindow)
 	require.NoError(t, e.Svc.SyncNow(ctx, b.ID))
 	msgs := e.SMTP(b.ID).Messages()
 	require.Len(t, msgs, 1)
@@ -105,8 +106,7 @@ func TestSendRevisionStale(t *testing.T) {
 	_, err = e.Svc.GetDraft(ctx, d.ID)
 	require.NoError(t, err, "nothing sent")
 	require.NoError(t, e.Svc.SendRevision(ctx, d.ID, d.Revision))
-	_, err = e.Svc.GetDraft(ctx, d.ID)
-	assert.Error(t, err, "queued")
+	assert.ErrorIs(t, e.Svc.SendRevision(ctx, d.ID, d.Revision), core.ErrStaleDraft, "queued already")
 }
 
 func TestDeleteDraftIfEmptyRevision(t *testing.T) {
@@ -212,7 +212,11 @@ func TestDeleteOrSendDraftCancelsRun(t *testing.T) {
 				t.Fatal("the run still goes on after its draft is gone")
 			}
 			_, err = e.Svc.GetDraft(ctx, d.ID)
-			require.Error(t, err)
+			if name == "delete" {
+				require.Error(t, err)
+			} else {
+				require.NoError(t, err, "kept in the outbox until it may have gone out")
+			}
 		})
 	}
 }

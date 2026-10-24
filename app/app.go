@@ -266,8 +266,12 @@ type App struct {
 	tempMu   sync.Mutex
 	tempDirs []string // made by tempDir; Close removes them
 
-	unread map[int64]int // per account, summed over its folders
-	toasts []ui.Toast    // shown on the next frame
+	unread      map[int64]int // per account, summed over its folders
+	toasts      []ui.Toast    // shown on the next frame
+	closeToasts []string      // the IDs of toasts to close on the next frame
+
+	undoToasts map[int64]bool // outbox items offered undo send: true while the toast shows
+	undoGen    uint64         // bumped per offerUndo; only the newest listing counts
 }
 
 // New builds an App; Start brings it up.
@@ -302,6 +306,7 @@ func New(d Deps) *App {
 	a.pages[PageKit] = &kitPage{}
 	a.dev = d.Dev
 	a.syncing, a.syncErr, a.syncedAtBy = map[int64]bool{}, map[int64]syncFail{}, map[int64]time.Time{}
+	a.undoToasts = map[int64]bool{}
 	a.ctx, a.cancel = context.WithCancel(context.Background())
 	a.pumpDone = make(chan struct{})
 	return a
