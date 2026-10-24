@@ -431,6 +431,24 @@ func TestRewriteSelectionOnlyTouchesRange(t *testing.T) {
 	assert.Equal(t, sig, sig2)
 }
 
+// #179: a rewrite that fails to start leaves no conversation Assist would run in.
+func TestRewriteSelectionFailedStartLeavesNoConversation(t *testing.T) {
+	e := newAssistEnv(t)
+	d := e.replyDraft(t, "<p>One two three.</p>")
+	st, _ := e.s.GetSettings(t.Context())
+	st.DefaultModel = ""
+	_, err := e.s.SetSettings(t.Context(), st)
+	require.NoError(t, err)
+	_, err = e.s.RewriteSelection(t.Context(), d.ID, selectionOf(t, d, "two"), "shorter")
+	require.ErrorIs(t, err, ErrAINotConfigured)
+	id, err := e.s.AssistConversation(t.Context(), d.ID, false)
+	require.NoError(t, err)
+	assert.Zero(t, id)
+	rows, err := e.s.db.Query(t.Context(), "SELECT 1 FROM conversations WHERE draft_id = ?", d.ID)
+	require.NoError(t, err)
+	assert.Empty(t, rows.Values)
+}
+
 func TestRewriteSelectionStaleRevision(t *testing.T) {
 	e := newAssistEnv(t)
 	d := e.replyDraft(t, "<p>One two three.</p>")
