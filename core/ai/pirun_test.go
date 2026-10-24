@@ -5,6 +5,7 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"net/http"
+	"sync/atomic"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -476,4 +477,53 @@ func TestPiConversationOnResponses(t *testing.T) {
 	_, ch, err := sent.Restore(res)
 	require.NoError(t, err)
 	assert.Len(t, ch.Put, 4)
+}
+
+// A pi conversation run on Genkit (the switch off) can be interrupted for an
+// approval and resumed: the call that ran before the interrupt keeps its
+// output through the pi messages.
+func TestPiHistoryResumesAGenkitInterrupt(t *testing.T) {
+	srv := testllm.Start(t, "openai")
+	srv.Script(testllm.Turn{Text: []string{"hi"}},
+		testllm.Turn{Calls: []testllm.Call{{ID: "r1", Name: "read"}, {ID: "a1", Name: "write", Args: `{"n":1}`}}},
+		testllm.Turn{Text: []string{"done"}})
+	sent := asking(nil, "first")
+	_, res := run(newEngine(t), Request{Model: modelFor(srv, "openai", "k"), History: sent, Pi: true})
+	require.Nil(t, res.Err)
+	h := after(t, sent, res)
+	require.True(t, h.Pi())
+
+	var readRuns atomic.Int64
+	sent = asking(h, "go")
+	evs, res := run(newEngine(t), Request{Model: modelFor(srv, "openai", "k"), History: sent, Tools: mixedTools(&readRuns)})
+	require.Nil(t, res.Err)
+	require.Equal(t, "interrupted", last(t, evs).Kind)
+	h = after(t, sent, res)
+	stored := must(LoadHistory(must(h.Rows()), h.Next()))
+	require.True(t, stored.Pi())
+	evs, res = run(newEngine(t), Request{Model: modelFor(srv, "openai", "k"), History: resuming(stored), Tools: mixedTools(&readRuns),
+		Responses: []ToolResult{{CallID: "a1", Name: "write", Output: json.RawMessage(`{"draft":7}`)}}})
+	require.Nil(t, res.Err)
+	assert.Equal(t, "done", last(t, evs).Kind)
+	assert.EqualValues(t, 1, readRuns.Load(), "the read tool must not run again")
+	assert.Contains(t, string(srv.Requests()[2].Messages), "read-result")
+}
+
+// A Responses reasoning item a pi turn kept goes back as Genkit's plugin
+// replays it, encrypted content and ID, when the conversation goes on on Genkit.
+func TestPiResponsesReasoningGoesOnOnGenkit(t *testing.T) {
+	srv := testllm.Start(t, "openai-responses")
+	srv.Script(testllm.Turn{Reasoning: "enc-1", Think: []string{"thinking"}, Text: []string{"one"}},
+		testllm.Turn{Text: []string{"two"}})
+	sent := asking(nil, "first")
+	_, res := run(newEngine(t), Request{Model: modelFor(srv, KindResponses, "k"), History: sent, Pi: true, Effort: "low"})
+	require.Nil(t, res.Err)
+	h := must(LoadHistory(must(after(t, sent, res).Rows()), 3))
+	_, res = run(newEngine(t), Request{Model: modelFor(srv, KindResponses, "k"), History: asking(h, "second"), Effort: "low"})
+	require.Nil(t, res.Err)
+	reqs := srv.Requests()
+	require.Len(t, reqs, 2)
+	assert.False(t, ranOnPi(t, srv))
+	assert.Empty(t, reqs[1].Invalid)
+	assert.Contains(t, string(reqs[1].Messages), "enc-1")
 }

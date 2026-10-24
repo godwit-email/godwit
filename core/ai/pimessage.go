@@ -26,17 +26,20 @@ type piMessage struct {
 }
 
 // piBlock is one content block. GodwitContext marks a question's context
-// text (contextKey), GodwitCommand a command (commandKey): pi-ai sends
-// neither field on.
+// text (contextKey), GodwitCommand a command (commandKey); GodwitMetadata is
+// a tool call's Genkit metadata (a Genkit run on a pi conversation: the
+// output of a call that ran before an interrupt). pi-ai sends none of them on.
 type piBlock struct {
-	Type          string          `json:"type"`
-	Text          string          `json:"text,omitempty"`
-	Thinking      string          `json:"thinking,omitempty"`
-	ID            string          `json:"id,omitempty"`
-	Name          string          `json:"name,omitempty"`
-	Arguments     json.RawMessage `json:"arguments,omitempty"`
-	GodwitContext bool            `json:"godwitContext,omitempty"`
-	GodwitCommand *Command        `json:"godwitCommand,omitempty"`
+	Type              string          `json:"type"`
+	Text              string          `json:"text,omitempty"`
+	Thinking          string          `json:"thinking,omitempty"`
+	ThinkingSignature string          `json:"thinkingSignature,omitempty"`
+	ID                string          `json:"id,omitempty"`
+	Name              string          `json:"name,omitempty"`
+	Arguments         json.RawMessage `json:"arguments,omitempty"`
+	GodwitContext     bool            `json:"godwitContext,omitempty"`
+	GodwitCommand     *Command        `json:"godwitCommand,omitempty"`
+	GodwitMetadata    json.RawMessage `json:"godwitMetadata,omitempty"`
 }
 
 var errPiMessage = errors.New("ai: unreadable conversation state")
@@ -86,13 +89,22 @@ func genkitMessage(b []byte) (*gai.Message, error) {
 			case "text":
 				parts = append(parts, gai.NewTextPart(b.Text))
 			case "thinking":
-				parts = append(parts, gai.NewReasoningPart(b.Thinking, nil))
+				parts = append(parts, reasoningPart(b))
 			case "toolCall":
 				var in any
 				if err := exactJSON(cmpRaw(b.Arguments), &in); err != nil || b.ID == "" || b.Name == "" {
 					return nil, errPiMessage
 				}
-				parts = append(parts, gai.NewToolRequestPart(&gai.ToolRequest{Ref: b.ID, Name: b.Name, Input: in}))
+				p := gai.NewToolRequestPart(&gai.ToolRequest{Ref: b.ID, Name: b.Name, Input: in})
+				if len(b.GodwitMetadata) > 0 { // through Genkit's own decoding, which lifts an interrupt out of it
+					w, _ := json.Marshal(map[string]any{"toolRequest": p.ToolRequest, "metadata": b.GodwitMetadata})
+					p = &gai.Part{}
+					if json.Unmarshal(w, p) != nil {
+						return nil, errPiMessage
+					}
+					p.ToolRequest.Input = in
+				}
+				parts = append(parts, p)
 			}
 		}
 		return gai.NewModelMessage(parts...), nil
@@ -117,6 +129,29 @@ func genkitMessage(b []byte) (*gai.Message, error) {
 			gai.NewToolResponsePart(&gai.ToolResponse{Ref: m.ToolCallID, Name: m.ToolName, Output: out})}}, nil
 	}
 	return nil, errPiMessage
+}
+
+// reasoningPart is thinking block b as Genkit's plugins replay it: a
+// Responses reasoning item's encrypted content and ID (pi-ai keeps the item
+// as the signature), or Anthropic's signature.
+func reasoningPart(b piBlock) *gai.Part {
+	var item struct {
+		Type, ID         string
+		EncryptedContent string `json:"encrypted_content"`
+	}
+	if json.Unmarshal([]byte(b.ThinkingSignature), &item) == nil && item.Type == "reasoning" {
+		p := gai.NewReasoningPart(b.Thinking, []byte(item.EncryptedContent))
+		if p.Metadata == nil {
+			p.Metadata = map[string]any{}
+		}
+		p.Metadata["id"] = item.ID
+		return p
+	}
+	var sig []byte
+	if b.ThinkingSignature != "" {
+		sig = []byte(b.ThinkingSignature)
+	}
+	return gai.NewReasoningPart(b.Thinking, sig)
 }
 
 // piMessages are the pi messages of Genkit message m: one, or one per tool
@@ -146,7 +181,12 @@ func piMessages(m *gai.Message) ([][]byte, error) {
 			case p.IsText():
 				blocks = append(blocks, piBlock{Type: "text", Text: p.Text})
 			case p.IsToolRequest():
-				blocks = append(blocks, piBlock{Type: "toolCall", ID: p.ToolRequest.Ref, Name: p.ToolRequest.Name, Arguments: rawJSON(p.ToolRequest.Input)})
+				var wire struct{ Metadata json.RawMessage } // Genkit folds an interrupt into it
+				if b, err := json.Marshal(p); err == nil {
+					json.Unmarshal(b, &wire)
+				}
+				blocks = append(blocks, piBlock{Type: "toolCall", ID: p.ToolRequest.Ref, Name: p.ToolRequest.Name, Arguments: rawJSON(p.ToolRequest.Input),
+					GodwitMetadata: wire.Metadata})
 				stop = "toolUse"
 			}
 		}
