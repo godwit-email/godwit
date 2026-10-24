@@ -173,6 +173,25 @@ func TestMCPQuestionStaleAnswer(t *testing.T) {
 	assert.Equal(t, int32(1), f.calls.Load(), "the stale answer is not sent")
 }
 
+func TestMCPSkipOfAnEarlierRoundRefused(t *testing.T) {
+	e := newApprovalEnv(t)
+	f := newFakeMCP(t)
+	addBooking(f)
+	srv := fakeServer(t, e.s)
+	require.NoError(t, e.s.SetMCPToolTrusted(t.Context(), srv.ID, "book", true))
+	srv = mcpServer(t, e.s, srv.ID)
+	evs := e.ask(t, e.newConv(t, "ask", 0), callArgs(witName(t, srv, "book"), `{}`), finished)
+	id := evs[len(evs)-1].Approvals[0].ID
+
+	read, err := e.s.approvalRow(t.Context(), id)
+	require.NoError(t, err)
+	// another answer went through and the call asked again since the skip read the form
+	_, err = e.s.db.Execute(t.Context(), "UPDATE approvals SET input = json_set(input, '$.round', 2) WHERE id = ?", id)
+	require.NoError(t, err)
+	assert.ErrorIs(t, e.s.answerForm(t.Context(), read, 1, [][]string{{}, {}, {}}), ErrInvalidState)
+	assert.Equal(t, "pending", e.approval(t, id).State, "the new form is not skipped")
+}
+
 func TestMCPAnswerToAnotherRoundRefused(t *testing.T) {
 	e := newApprovalEnv(t)
 	f := newFakeMCP(t)

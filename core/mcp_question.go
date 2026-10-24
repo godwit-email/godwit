@@ -332,19 +332,21 @@ func (s *Service) answerForm(ctx context.Context, a approvalRow, round int, answ
 	if err != nil {
 		return err
 	}
-	if !slices.ContainsFunc(answers, func(l []string) bool { return len(l) > 0 }) {
-		return s.decide(ctx, a.ID, false, nil, true)
+	skipped := !slices.ContainsFunc(answers, func(l []string) bool { return len(l) > 0 })
+	if !skipped {
+		content, err := formContent(qs, sch, answers)
+		if err != nil {
+			return err
+		}
+		in.Answer = &mcp.ElicitResult{Action: "accept", Content: content}
 	}
-	content, err := formContent(qs, sch, answers)
-	if err != nil {
-		return err
-	}
-	in.Answers, in.Answer = answers, &mcp.ElicitResult{Action: "accept", Content: content}
+	in.Answers = answers
 	b, err := json.Marshal(in)
 	if err != nil {
 		return err
 	}
-	// only the form read: an answer to an earlier round, or a second answer, changes nothing
+	// only the form read, answered or skipped: an answer to an earlier round, or a second
+	// answer, changes nothing (it never decides a form the call asked since)
 	r, err := s.db.Execute(ctx, "UPDATE approvals SET input = ?, updated_at = ? WHERE id = ? AND state = 'pending' AND input = ?",
 		string(b), time.Now().Unix(), a.ID, a.input)
 	if err != nil {
@@ -353,5 +355,5 @@ func (s *Service) answerForm(ctx context.Context, a approvalRow, round int, answ
 	if r.Changes == 0 {
 		return ErrInvalidState
 	}
-	return s.decide(ctx, a.ID, true, nil, true)
+	return s.decide(ctx, a.ID, !skipped, nil, true)
 }
