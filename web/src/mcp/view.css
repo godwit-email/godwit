@@ -84,3 +84,12 @@ section article {
 .error {
   color: #c62828;
 }
+footer {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-top: 12px;
+}
+.status {
+  margin: 0;
+}
