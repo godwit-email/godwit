@@ -1237,8 +1237,8 @@ func TestSignatureHTMLMode(t *testing.T) {
 
 	shows := len(slices.DeleteFunc(h.plat.Calls(), func(c string) bool { return !strings.HasPrefix(c, "ShowSignature") }))
 	h.click("HTML 代码")
-	h.drain()
-	h.tt.Frame()
+	// The close saves in the background; a click before it answers is ignored.
+	h.until("the close's save answers", func() bool { return p.sigCode == nil || !p.sigCode.closing })
 	if p.sigCode == nil {
 		t.Fatal("left the HTML mode with its save refused: the edit would be lost")
 	}
