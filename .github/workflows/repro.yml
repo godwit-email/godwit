@@ -1,0 +1,39 @@
+name: repro
+on:
+  push:
+    branches: [claude/otel-panic-repro]
+jobs:
+  loop:
+    strategy:
+      fail-fast: false
+      matrix:
+        code: [base, fix]
+        shard: [0, 1, 2, 3]
+    runs-on: windows-latest
+    steps:
+      - shell: pwsh
+        run: |
+          Add-MpPreference -ExclusionPath $env:TEMP
+          (Get-CimInstance Win32_Processor).Name
+      - uses: actions/checkout@v7
+      - uses: jdx/mise-action@v5
+      - name: loop
+        shell: bash {0}
+        env:
+          CGO_ENABLED: "0"
+          CODE: ${{ matrix.code }}
+        run: |
+          if [ "$CODE" = base ]; then git show HEAD~1 -- core/ai/types.go | git apply -R || exit 1; fi
+          git diff --stat
+          go test -c -o ai.test.exe ./core/ai || exit 1
+          cd core/ai
+          fails=0
+          for i in $(seq 1 300); do
+            ../../ai.test.exe -test.count=1 -test.v > out.txt 2>&1
+            rc=$?
+            if [ $rc != 0 ]; then
+              fails=$((fails+1)); echo "=== FAIL run $i rc=$rc"; grep "^=== RUN" out.txt | tail -2; grep -v "^=== RUN\|^--- PASS\|^    " out.txt | head -40
+            fi
+          done
+          echo "fails=$fails"
+          test $fails = 0
