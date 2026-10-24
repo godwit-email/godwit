@@ -1,7 +1,9 @@
 package ai
 
 import (
+	"bytes"
 	"context"
+	"encoding/json"
 	"maps"
 	"slices"
 )
@@ -23,11 +25,7 @@ func (h judgeHTTP) systemOne(ctx context.Context, input string, qs []Question) (
 		case Predicate:
 			w.Type = "noul"
 		case Choice:
-			c := make(map[string]string, len(q.Choices))
-			for _, o := range q.Choices {
-				c[o.Value] = o.Description
-			}
-			w.Criteria = c
+			w.Criteria = orderedChoices(q.Choices)
 		case Score:
 			c := make([]string, len(q.Levels))
 			for i, l := range q.Levels {
@@ -101,4 +99,25 @@ func levelText(l Level) string {
 		return l.Description
 	}
 	return l.Label + ": " + l.Description
+}
+
+// orderedChoices encodes as a JSON object of value to description in the
+// choices' order, which a Go map would sort.
+type orderedChoices []ChoiceOption
+
+func (c orderedChoices) MarshalJSON() ([]byte, error) {
+	var buf bytes.Buffer
+	buf.WriteByte('{')
+	for i, o := range c {
+		if i > 0 {
+			buf.WriteByte(',')
+		}
+		k, _ := json.Marshal(o.Value)
+		v, _ := json.Marshal(o.Description)
+		buf.Write(k)
+		buf.WriteByte(':')
+		buf.Write(v)
+	}
+	buf.WriteByte('}')
+	return buf.Bytes(), nil
 }

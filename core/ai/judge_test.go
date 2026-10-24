@@ -131,6 +131,8 @@ func TestJudgeAnswerValidation(t *testing.T) {
 		{name: "probability below 0", as: with(0, wa{"urgent", "yes", -0.1})},
 		{name: "score below 0", as: with(2, wa{"tone", "score", -1.0})},
 		{name: "score above levels", as: with(2, wa{"tone", "score", 3.0})},
+		{name: "score a hair above levels", as: with(2, wa{"tone", "score", 2.0000000001}), skip: "gen", ok: true},
+		{name: "score just past slack", as: with(2, wa{"tone", "score", 2.00001})},
 		{name: "missing answer", as: okAnswers[:2]},
 		{name: "duplicate answer", as: append(append([]wa(nil), okAnswers...), okAnswers[0]), skip: "systemone"},
 		{name: "extra name", as: append(append([]wa(nil), okAnswers...), wa{"other", "yes", 0.5})},
@@ -229,6 +231,24 @@ func TestSystemOneRequestShape(t *testing.T) {
 		`"urgent":{"instructions":"Is it urgent?","type":"noul"}},"state":"the mail"}`
 	if b, _ := json.Marshal(got); string(b) != want {
 		t.Errorf("got  %s\nwant %s", b, want)
+	}
+}
+
+func TestSystemOneChoiceOrder(t *testing.T) {
+	var body []byte
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		body, _ = io.ReadAll(r.Body)
+		io.WriteString(w, systemOneBody([]wa{{"topic", "choice", "support"}}))
+	}))
+	defer srv.Close()
+	j, _ := NewJudge(nil, FormatSystemOne, srv.URL, "k", "m")
+	qs := []Question{{Name: "topic", Instructions: "Topic?", Type: Choice,
+		Choices: []ChoiceOption{{"support", "help"}, {"billing", "money"}}}}
+	if _, err := j.Ask(context.Background(), "mail", qs); err != nil {
+		t.Fatal(err)
+	}
+	if want := `"criteria":{"support":"help","billing":"money"}`; !strings.Contains(string(body), want) {
+		t.Errorf("got %s, want %s in it", body, want)
 	}
 }
 

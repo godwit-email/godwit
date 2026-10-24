@@ -121,6 +121,9 @@ const (
 	maxJudgeBody  = 4 << 20
 	judgeAttempts = 3
 	maxRetryAfter = 2 * time.Second
+	// scoreSlack is how far past the levels a score may land from float
+	// rounding and still be read as the end level.
+	scoreSlack = 1e-6
 )
 
 // sleep waits between retries; tests replace it.
@@ -391,10 +394,12 @@ func validateAnswers(qs []Question, answers []Answer) ([]Answer, error) {
 				v.Probabilities = append(v.Probabilities, Probability{Value: s, Probability: p.Probability})
 			}
 		case Score:
-			if a.Score == nil || math.IsNaN(*a.Score) || *a.Score < 0 || *a.Score > float64(len(q.Levels)-1) {
+			top := float64(len(q.Levels) - 1)
+			if a.Score == nil || math.IsNaN(*a.Score) || *a.Score < -scoreSlack || *a.Score > top+scoreSlack {
 				return nil, bad("a score outside the levels")
 			}
-			v.Score = a.Score
+			// An expected level can round a hair past either end.
+			v.Score = ptr(min(max(*a.Score, 0), top))
 			for _, p := range a.Probabilities {
 				i, ok := levelIndex(p.Value, q.Levels)
 				if !ok || !prob(p.Probability) {
