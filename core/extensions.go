@@ -20,6 +20,7 @@ import (
 	"time"
 	"unicode/utf8"
 
+	"github.com/Calcium-Ion/moejs"
 	"github.com/dop251/goja"
 	"github.com/egoist/mygo/plugins/sqlite"
 	"github.com/godwit-email/godwit/core/events"
@@ -567,14 +568,6 @@ func (s *Service) loadPlugin(ctx context.Context, name string, r pluginRow) erro
 	if r.m.IsNative() {
 		return s.loadNative(ctx, name, r)
 	}
-	code, err := plugins.Build(s.versionDir(name, r.installDir), r.m.Main)
-	if err != nil {
-		return err
-	}
-	prog, err := goja.Compile(name+".js", string(code), false)
-	if err != nil {
-		return fmt.Errorf("plugin %s: %s", name, s.secrets.Redact(err.Error()))
-	}
 	// ctx.config is a snapshot read here (under our lock) and replaced by
 	// SetPluginConfig, so reading it never waits for pluginsMu.
 	netOpts := s.pluginNet
@@ -583,10 +576,8 @@ func (s *Service) loadPlugin(ctx context.Context, name string, r pluginRow) erro
 	if err := h.refreshConfig(ctx); err != nil {
 		return err
 	}
-	vm := plugins.NewVM(name, prog, plugins.VMOptions{Clock: s.pluginClock, Redact: s.secrets.Redact})
-	p, err := plugins.Load(ctx, vm, r.m, h, h.snapshot())
+	p, err := s.startScript(ctx, name, r, h)
 	if err != nil {
-		vm.Close()
 		return err
 	}
 	s.stopPlugin(name)
@@ -607,6 +598,56 @@ func (s *Service) loadPlugin(ctx context.Context, name string, r pluginRow) erro
 	return nil
 }
 
+// startScript builds a script plugin, creates its VM and runs its
+// initialization: on moejs for a plugin RunsOnMoejs picks while the Labs
+// switch is on (#237), unless it reaches for a ctx API still on goja; on goja
+// otherwise.
+func (s *Service) startScript(ctx context.Context, name string, r pluginRow, h *pluginHost) (*plugins.Plugin, error) {
+	dir := s.versionDir(name, r.installDir)
+	opts := plugins.VMOptions{Clock: s.pluginClock, Redact: s.secrets.Redact}
+	st, err := s.loadSettings(ctx)
+	if err != nil {
+		return nil, err
+	}
+	if st.PiEngine && plugins.RunsOnMoejs(r.m) {
+		code, err := plugins.BuildWith(plugins.ESBuildModule, dir, r.m.Main)
+		if err != nil {
+			return nil, err
+		}
+		mod, err := moejs.Compile(name+".js", string(code))
+		if err != nil {
+			return nil, fmt.Errorf("plugin %s: %s", name, s.secrets.Redact(err.Error()))
+		}
+		vm, err := plugins.NewMoeVM(name, mod, opts)
+		if err != nil {
+			return nil, err
+		}
+		p, err := plugins.LoadMoe(ctx, vm, r.m, h, h.snapshot())
+		if err == nil {
+			return p, nil
+		}
+		vm.Close()
+		if !errors.Is(err, plugins.ErrNeedsGoja) {
+			return nil, err
+		}
+	}
+	code, err := plugins.Build(dir, r.m.Main)
+	if err != nil {
+		return nil, err
+	}
+	prog, err := goja.Compile(name+".js", string(code), false)
+	if err != nil {
+		return nil, fmt.Errorf("plugin %s: %s", name, s.secrets.Redact(err.Error()))
+	}
+	vm := plugins.NewVM(name, prog, opts)
+	p, err := plugins.Load(ctx, vm, r.m, h, h.snapshot())
+	if err != nil {
+		vm.Close()
+		return nil, err
+	}
+	return p, nil
+}
+
 func (s *Service) stopPlugin(name string) {
 	if rp := s.running[name]; rp != nil {
 		if rp.stopHooks != nil {
@@ -616,7 +657,7 @@ func (s *Service) stopPlugin(name string) {
 			rp.native.Close()
 			rp.dropLoaded()
 		} else {
-			rp.p.VM().Close()
+			rp.p.Close()
 		}
 		s.forgetPluginModels(name, rp)
 		delete(s.running, name)

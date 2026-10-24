@@ -238,12 +238,20 @@ type Compiler interface {
 	Compile(dir, main string) ([]byte, error)
 }
 
-// ESBuild bundles TypeScript or JavaScript with esbuild.
+// ESBuild bundles TypeScript or JavaScript with esbuild, for goja: an IIFE
+// that sets `plugin`, with what goja lacks down-levelled.
 var ESBuild Compiler = esbuildCompiler{}
 
-type esbuildCompiler struct{}
+// ESBuildModule bundles for moejs (MoeVM): one ES module whose default export
+// is the plugin, without goja's down-levelling.
+var ESBuildModule Compiler = esbuildCompiler{module: true}
 
-func esbuildOptions() api.BuildOptions {
+type esbuildCompiler struct{ module bool }
+
+func (c esbuildCompiler) options() api.BuildOptions {
+	if c.module {
+		return api.BuildOptions{Bundle: true, Write: false, Format: api.FormatESModule, Target: api.ES2022, Platform: api.PlatformNeutral}
+	}
 	return api.BuildOptions{
 		Bundle: true, Write: false, Format: api.FormatIIFE, GlobalName: "plugin",
 		Target: api.ES2022, Platform: api.PlatformNeutral,
@@ -265,15 +273,15 @@ func esbuildVersion() string {
 	return "unknown"
 }
 
-func (esbuildCompiler) Key() string {
-	sum := sha256.Sum256(fmt.Appendf(nil, "%s\x00%+v", esbuildVersion(), esbuildOptions()))
+func (c esbuildCompiler) Key() string {
+	sum := sha256.Sum256(fmt.Appendf(nil, "%s\x00%+v", esbuildVersion(), c.options()))
 	return hex.EncodeToString(sum[:])
 }
 
 // Compile bundles main and what it imports, all from inside dir: a relative
 // import that leaves dir, an absolute path or a bare module name fails. Type-only
 // imports ("import type ... from '@godwit/sdk'") are erased before resolving.
-func (esbuildCompiler) Compile(dir, main string) ([]byte, error) {
+func (c esbuildCompiler) Compile(dir, main string) ([]byte, error) {
 	root, err := filepath.Abs(dir)
 	if err == nil {
 		root, err = filepath.EvalSymlinks(root) // esbuild resolves them in ResolveDir ("/var" is "/private/var" on macOS)
@@ -281,7 +289,7 @@ func (esbuildCompiler) Compile(dir, main string) ([]byte, error) {
 	if err != nil {
 		return nil, err
 	}
-	opts := esbuildOptions()
+	opts := c.options()
 	opts.EntryPoints = []string{"./" + main}
 	opts.AbsWorkingDir = root
 	opts.Plugins = []api.Plugin{{Name: "snapshot", Setup: func(b api.PluginBuild) {
