@@ -245,7 +245,7 @@ func (s *Service) notifyHooks() {
 	}
 }
 
-// startJanitor cleans events_log every hookPoll until Close, hook plugins or not.
+// startJanitor cleans events_log and ai_cache every hookPoll until Close, hook plugins or not.
 func (s *Service) startJanitor() {
 	ctx, end, err := s.begin(context.Background(), 0)
 	if err != nil {
@@ -255,6 +255,7 @@ func (s *Service) startJanitor() {
 		defer end()
 		for s.hookWait(ctx, hookPoll, nil) {
 			s.cleanEvents(ctx) // best effort; the next tick tries again
+			s.cleanAICache(ctx)
 		}
 	}()
 }

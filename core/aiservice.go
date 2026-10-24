@@ -265,6 +265,11 @@ func (s *Service) cacheGet(ctx context.Context, key string) (string, bool, error
 	if err != nil || len(rows.Values) == 0 {
 		return "", false, err
 	}
+	// created_at is the last use (cleanAICache); like cachePut's write, a
+	// failed refresh only costs an earlier miss.
+	if _, err := s.db.Execute(ctx, "UPDATE ai_cache SET created_at = ? WHERE key = ?", time.Now().Unix(), key); err != nil {
+		slog.Default().Warn("ai cache refresh failed", "err", err)
+	}
 	return store.Str(rows.Values[0][0]), true, nil
 }
 
@@ -275,6 +280,17 @@ func (s *Service) cachePut(ctx context.Context, key string, account int64, outpu
 		key, account, output, time.Now().Unix()); err != nil {
 		slog.Default().Warn("ai cache write failed", "skill", what, "err", err)
 	}
+}
+
+// aiCacheKeepFor is how long an output stays cached after its last use: its
+// key cannot be traced back to a message, so outputs of deleted mail and of
+// changed keys go by age alone.
+const aiCacheKeepFor = 30 * 24 * time.Hour
+
+// cleanAICache deletes outputs unused for aiCacheKeepFor.
+func (s *Service) cleanAICache(ctx context.Context) error {
+	_, err := s.db.Execute(ctx, "DELETE FROM ai_cache WHERE created_at < ?", time.Now().Add(-aiCacheKeepFor).Unix())
+	return err
 }
 
 // QuickReply is one suggested reply: sanitized HTML and a plain-text preview.
