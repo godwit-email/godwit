@@ -306,6 +306,10 @@ func HTMLToText(src string) string {
 			case "li":
 				nl()
 				b.WriteString("- ")
+			case "td", "th": // a row's cells stay apart: "12 34", not "1234"
+				if cur := b.String(); cur != "" && !strings.HasSuffix(cur, "\n") && !strings.HasSuffix(cur, " ") {
+					b.WriteByte(' ')
+				}
 			case "a":
 				u := ""
 				for _, a := range t.Attr {

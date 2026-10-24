@@ -58,6 +58,7 @@ func TestHTMLToText(t *testing.T) {
 	got := mail.HTMLToText(`<p>a &amp; b</p><ul><li>x</li><li>y</li></ul><a href="http://e.com">link</a><br>end`)
 	assert.Equal(t, "a & b\n- x\n- y\nlink (http://e.com)\nend", got)
 	assert.Equal(t, "hi (http://d.com)", mail.HTMLToText(`<a data-href="http://d.com">hi</a>`))
+	assert.Equal(t, "Total 12 34\nTax 5", mail.HTMLToText(`<table><tr><th>Total</th><td>12</td><td>34</td></tr><tr><td>Tax</td><td> 5</td></tr></table>`))
 }
 
 func TestVisibleText(t *testing.T) {
