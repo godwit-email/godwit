@@ -58,11 +58,11 @@ func asking(h *History, prompt string) *Sent {
 	if h == nil {
 		h = NewHistory()
 	}
-	return must(h.Send(1<<20, Summary{})).Ask(prompt, "")
+	return must(h.Send(1<<20, Summary{}, false)).Ask(prompt, "")
 }
 
 // resuming is the view of a run resuming h.
-func resuming(h *History) *Sent { return must(h.Send(1<<20, Summary{})) }
+func resuming(h *History) *Sent { return must(h.Send(1<<20, Summary{}, false)) }
 
 // after is the history a run that sent s ended with.
 func after(t *testing.T, s *Sent, res Result) *History {
@@ -1011,5 +1011,131 @@ func TestRequestArgsErrorRefusesCall(t *testing.T) {
 		require.Len(t, results, 1)
 		assert.Equal(t, "no such link", results[0].Result.Error)
 		assert.Contains(t, string(srv.Requests()[1].Messages), "no such link", "the model is told why")
+	})
+}
+
+// toolChoice is a raw request's tool_choice: "none" for Anthropic's {"type":"none"}.
+func toolChoice(t *testing.T, body json.RawMessage) string {
+	t.Helper()
+	var b struct {
+		ToolChoice json.RawMessage `json:"tool_choice"`
+	}
+	require.NoError(t, json.Unmarshal(body, &b))
+	var s string
+	if json.Unmarshal(b.ToolChoice, &s) == nil {
+		return s
+	}
+	var o struct{ Type string }
+	json.Unmarshal(b.ToolChoice, &o)
+	return o.Type
+}
+
+func limitTurns(text string, calls ...string) []testllm.Turn {
+	var turns []testllm.Turn
+	for _, id := range calls {
+		turns = append(turns, testllm.Turn{Calls: []testllm.Call{{ID: id, Name: "lookup", Args: `{}`}}, Usage: [2]int{1, 1}})
+	}
+	return append(turns, testllm.Turn{Text: []string{text}, Usage: [2]int{1, 1}})
+}
+
+func lookupTool(runs *atomic.Int64) []ToolSpec {
+	return []ToolSpec{{Name: "lookup", Description: "look up", Run: func(context.Context, json.RawMessage) (any, error) {
+		runs.Add(1)
+		return "looked-up", nil
+	}}}
+}
+
+// #219: at the tool-call limit the run asks once more, with tools off, and
+// ends with that answer instead of an error.
+func TestRunAnswersAtToolLimit(t *testing.T) {
+	eachKind(t, func(t *testing.T, kind string) {
+		srv := testllm.Start(t, kind)
+		srv.Script(limitTurns("what I found so far", "c1", "c2", "c3")...)
+		var runs atomic.Int64
+		sent := asking(nil, "find it")
+		evs, res := run(newEngine(t), Request{Model: modelFor(srv, kind, "k"), System: "be brief", History: sent, Tools: lookupTool(&runs), MaxTurns: 2})
+		require.Nil(t, res.Err)
+		assert.Equal(t, "done", last(t, evs).Kind)
+		assert.EqualValues(t, 2, runs.Load(), "the third call never runs")
+
+		reqs := srv.Requests()
+		require.Len(t, reqs, 4)
+		final := reqs[3]
+		assert.Empty(t, final.Invalid)
+		assert.Equal(t, "none", toolChoice(t, final.Body))
+		assert.Contains(t, string(final.Tools), "look up")
+		system := string(final.System)
+		if kind == "openai" {
+			system = string(final.Messages)
+		}
+		assert.Contains(t, system, "be brief")
+		assert.Contains(t, system, "tool-call limit")
+		calls, results := toolIDs(t, kind, final.Messages)
+		assert.Equal(t, []string{"c1", "c2"}, calls)
+		assert.Equal(t, []string{"c1", "c2"}, results)
+
+		var got []string
+		for _, m := range after(t, sent, res).Messages() {
+			for _, c := range m.Calls {
+				got = append(got, "call "+c.ID)
+			}
+			for _, r := range m.Results {
+				got = append(got, "result "+r.CallID)
+			}
+			if m.Text != "" {
+				got = append(got, m.Role+": "+m.Text)
+			}
+		}
+		assert.Equal(t, []string{"user: find it", "call c1", "result c1", "call c2", "result c2", "model: what I found so far"}, got)
+		assert.Equal(t, 4, res.Usage.Input, "the closing call counts too")
+	})
+}
+
+// #219: a model that still calls a tool when asked to answer fails the run as
+// incomplete; nothing runs and nothing is kept, but its calls are counted.
+func TestRunToolLimitWithoutAnswer(t *testing.T) {
+	eachKind(t, func(t *testing.T, kind string) {
+		srv := testllm.Start(t, kind)
+		srv.Script(limitTurns("unused", "c1", "c2", "c3", "c4")...)
+		var runs atomic.Int64
+		evs, res := run(newEngine(t), Request{Model: modelFor(srv, kind, "k"), History: asking(nil, "find it"), Tools: lookupTool(&runs), MaxTurns: 2})
+		require.NotNil(t, res.Err)
+		assert.Equal(t, CodeIncomplete, res.Err.Code)
+		assert.Equal(t, "the model reached its tool-call limit without answering", res.Err.Msg)
+		assert.Equal(t, "error", last(t, evs).Kind)
+		assert.EqualValues(t, 2, runs.Load())
+		assert.Nil(t, res.out)
+		assert.Len(t, srv.Requests(), 4)
+		assert.Equal(t, 4, res.Usage.Input)
+	})
+}
+
+// #219: a resumed run counts its rounds from the resume, the resumed round
+// one of them (Genkit's count), and at its limit answers and restores as a
+// resume that ended normally does.
+func TestResumedRunAnswersAtToolLimit(t *testing.T) {
+	eachKind(t, func(t *testing.T, kind string) {
+		srv := testllm.Start(t, kind)
+		srv.Script(testllm.Turn{Calls: []testllm.Call{{ID: "a1", Name: "write", Args: `{}`}}})
+		var runs atomic.Int64
+		tools := append(lookupTool(&runs), ToolSpec{Name: "write", Description: "writes", NeedsApproval: true})
+		sent := asking(nil, "write it")
+		_, res := run(newEngine(t), Request{Model: modelFor(srv, kind, "k"), History: sent, Tools: tools, MaxTurns: 2})
+		require.Len(t, res.Interrupts, 1)
+
+		srv.Script(limitTurns("written, then looked up", "c1", "c2")...)
+		resumed := resuming(after(t, sent, res))
+		evs, res := run(newEngine(t), Request{Model: modelFor(srv, kind, "k"), History: resumed, Tools: tools, MaxTurns: 2,
+			Responses: []ToolResult{{CallID: "a1", Name: "write", Output: json.RawMessage(`"ok"`)}}})
+		require.Nil(t, res.Err)
+		assert.Equal(t, "done", last(t, evs).Kind)
+		assert.EqualValues(t, 1, runs.Load(), "c2 is past the limit")
+		msgs := after(t, resumed, res).Messages()
+		assert.Equal(t, "written, then looked up", msgs[len(msgs)-1].Text)
+		reqs := srv.Requests()
+		require.Len(t, reqs, 4)
+		assert.Equal(t, "none", toolChoice(t, reqs[3].Body))
+		_, results := toolIDs(t, kind, reqs[3].Messages)
+		assert.Equal(t, []string{"a1", "c1"}, results)
 	})
 }

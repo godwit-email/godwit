@@ -367,10 +367,14 @@ func (r *runner) run(req Request) Result {
 		tools[s.Name] = r.tool(s)
 		refs = append(refs, tools[s.Name])
 	}
-	opts := []gai.GenerateOption{gai.WithModel(model), gai.WithStreaming(r.stream), gai.WithUse(callIDs{r})}
+	base := []gai.GenerateOption{gai.WithModel(model), gai.WithStreaming(r.stream), gai.WithUse(callIDs{r})}
 	if len(refs) > 0 {
-		opts = append(opts, gai.WithTools(refs...))
+		base = append(base, gai.WithTools(refs...))
 	}
+	if cfg := effortConfig(req.Model.Kind, req.Effort); cfg != nil {
+		base = append(base, gai.WithConfig(cfg))
+	}
+	opts := slices.Clone(base)
 	if req.System != "" {
 		opts = append(opts, gai.WithSystem(req.System))
 	}
@@ -397,23 +401,48 @@ func (r *runner) run(req Request) Result {
 	if req.MaxTurns > 0 {
 		opts = append(opts, gai.WithMaxTurns(req.MaxTurns))
 	}
-	if cfg := effortConfig(req.Model.Kind, req.Effort); cfg != nil {
-		opts = append(opts, gai.WithConfig(cfg))
-	}
 
 	resp, err := genkit.Generate(r.e.logCtx(ctx), in.g, opts...)
+	limited := errors.Is(err, gai.ErrMaxTurnsExceeded) && resp != nil && ctx.Err() == nil
+	if limited {
+		// The partial ends after the last whole round, the refused calls
+		// dropped: it is asked once more to answer from it. The tools stay
+		// offered, as a conversation with tool calls needs them, but none runs.
+		var msgs []*gai.Message
+		for _, m := range resp.History() {
+			if m.Role != gai.RoleSystem {
+				msgs = append(msgs, m)
+			}
+		}
+		system := limitNote
+		if req.System != "" {
+			system = req.System + "\n\n" + limitNote
+		}
+		resp, err = genkit.Generate(r.e.logCtx(ctx), in.g, append(base, gai.WithSystem(system), gai.WithMessages(msgs...),
+			gai.WithToolChoice(gai.ToolChoiceNone), gai.WithReturnToolRequests(true), gai.WithMaxTurns(1))...)
+	}
 	if err == nil && ctx.Err() != nil {
 		err = context.Cause(ctx) // ended as Generate returned: events may have been dropped
 	}
 	if err != nil {
 		// The history stays as it was: a failed run leaves no half turn behind.
-		return Result{Err: classify(ctx, err)}
+		e := classify(ctx, err)
+		if limited && e.Code != CodeCanceled && e.Code != CodeStale && e.Detail == "" { // a Detail tells the user what to do
+			e = errLimit()
+		}
+		return Result{Err: e}
+	}
+	if limited && len(resp.ToolRequests()) > 0 {
+		return Result{Err: errLimit()}
 	}
 	switch resp.FinishReason {
 	case gai.FinishReasonStop, gai.FinishReasonInterrupted,
 		gai.FinishReasonUnknown, "": // a reason Genkit does not map: a normal end, as Genkit treats it
 	default:
 		// Cut off, filtered or failed part-way: nothing of it is kept.
+		if limited {
+			return Result{Err: errLimit()}
+		}
 		return Result{Err: incomplete(resp.FinishReason)}
 	}
 	var msgs []*gai.Message
@@ -430,6 +459,13 @@ func (r *runner) run(req Request) Result {
 		}
 	}
 	return res
+}
+
+// limitNote ends the system prompt of the request a run makes at its MaxTurns.
+const limitNote = "You have reached the tool-call limit for this request. Do not call any more tools. Answer the user from the tool results above, and say what is still missing and how the user can continue."
+
+func errLimit() *Error {
+	return &Error{Code: CodeIncomplete, Msg: "the model reached its tool-call limit without answering"}
 }
 
 // thinkingBudget is the Anthropic thinking budget per effort; max_tokens is

@@ -411,7 +411,7 @@ func TestAskHistoryBudget(t *testing.T) {
 	req := reqs[len(reqs)-1]
 	p := promptOf(t, req)
 	assert.Contains(t, p, "q1", "the first user message stays")
-	assert.Contains(t, p, ai.SummaryNote)
+	assert.Contains(t, p, ai.SummaryMailNote, "search_mail read mail: the summary is data")
 	assert.Contains(t, p, "SUMMARY-OF-Q1")
 	assert.NotContains(t, p, "T1-", "the summary stands in for the oldest turn")
 	assert.Contains(t, p, "T2-")
