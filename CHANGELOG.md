@@ -1,5 +1,19 @@
 # Changelog
 
+## [1.14.0](https://github.com/godwit-email/godwit/compare/v1.13.0...v1.14.0) (2026-10-24)
+
+
+### Features
+
+* **ai:** drop AI cache outputs unused for 30 days ([#222](https://github.com/godwit-email/godwit/issues/222)) ([6b6c13d](https://github.com/godwit-email/godwit/commit/6b6c13d44f4b4c403a8da37e12bf719565923678))
+* **outbox:** undo send, retry by SMTP reply, hand back mail queued too long ([#227](https://github.com/godwit-email/godwit/issues/227)) ([0a5e26d](https://github.com/godwit-email/godwit/commit/0a5e26de5c875675d6614ced422fc190d431d6e1))
+* **reader:** one-click unsubscribe by RFC 8058 headers only ([#225](https://github.com/godwit-email/godwit/issues/225)) ([ef5cce9](https://github.com/godwit-email/godwit/commit/ef5cce972d405bd36ca0a8924b8d1f8784a9056d))
+
+
+### Bug Fixes
+
+* **wit:** answer at the tool-call limit; summaries of mail are data ([#223](https://github.com/godwit-email/godwit/issues/223)) ([cafda00](https://github.com/godwit-email/godwit/commit/cafda00d1cf84f37683bdaac7f62fafa5a4efa43))
+
 ## [1.13.0](https://github.com/godwit-email/godwit/compare/v1.12.1...v1.13.0) (2026-10-24)
 
 
