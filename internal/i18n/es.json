@@ -218,6 +218,7 @@
   "mail_weekday_5": "vie",
   "mail_weekday_6": "sáb",
   "mail_yesterday": "Ayer",
+  "mcp_send_changed": "Esto acaba de cambiar; revísalo de nuevo antes de enviarlo.",
   "mcp_send_desc": "Una herramienta de IA conectada mediante MCP pide enviar este borrador. Revisa los destinatarios y el contenido antes de enviarlo.",
   "mcp_send_first": "Primera vez",
   "mcp_send_notify": "Una herramienta de IA pide enviar «{arg1}». Confírmalo en Godwit.",

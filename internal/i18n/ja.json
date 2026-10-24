@@ -218,6 +218,7 @@
   "mail_weekday_5": "金",
   "mail_weekday_6": "土",
   "mail_yesterday": "昨日",
+  "mcp_send_changed": "内容が変更されました。送信する前にもう一度確認してください。",
   "mcp_send_desc": "MCP 経由で接続された AI ツールがこの下書きの送信を求めています。宛先と内容を確認してから送信してください。",
   "mcp_send_first": "初めての宛先",
   "mcp_send_notify": "AI ツールが「{arg1}」の送信を求めています。Godwit で確認してください。",

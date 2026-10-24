@@ -206,6 +206,18 @@ func TestMCPSendDirectAuditFails(t *testing.T) {
 	assert.Equal(t, 1, e.outboxLen(t))
 }
 
+// A confirmed send whose audit fails is still sent: the mail is queued.
+func TestMCPSendConfirmAuditFails(t *testing.T) {
+	e, d := mcpSendEnv(t, MCPSendConfirm, true)
+	_, err := e.s.RequestMCPSend(bg, d.ID, d.Revision)
+	require.NoError(t, err)
+	id := e.pendingSends(t)[0].ID
+	_, err = e.s.db.Execute(bg, `CREATE TRIGGER no_audit BEFORE INSERT ON audit_log BEGIN SELECT RAISE(ABORT, 'audit broken'); END`)
+	require.NoError(t, err)
+	require.NoError(t, e.s.ResolveMCPSend(bg, id, true))
+	assert.Equal(t, 1, e.outboxLen(t))
+}
+
 // A draft has one request at most: a newer revision's replaces the older.
 func TestMCPSendReplaced(t *testing.T) {
 	e, d := mcpSendEnv(t, MCPSendConfirm, true)

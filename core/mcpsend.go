@@ -219,7 +219,12 @@ func (s *Service) ResolveMCPSend(ctx context.Context, id int64, accept bool) err
 	case serr != nil:
 		decision = "failed"
 	}
-	return errors.Join(serr, s.endMCPSend(ctx, id, true, decision))
+	aerr := s.endMCPSend(ctx, id, true, decision)
+	if serr == nil && aerr != nil { // the mail is queued: still sent
+		slog.Default().Warn("could not audit an MCP send", "draft", r.draftID, "err", aerr)
+		return nil
+	}
+	return errors.Join(serr, aerr)
 }
 
 func (s *Service) mcpSendRecord(id int64) *mcpSend {

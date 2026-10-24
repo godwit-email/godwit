@@ -5,6 +5,7 @@ import (
 	"errors"
 	"slices"
 	"strconv"
+	"time"
 
 	"github.com/egoist/mygo/ui"
 	"github.com/godwit-email/godwit/core"
@@ -25,7 +26,13 @@ type mcpSendState struct {
 	notified map[int64]bool // requests already brought to the front
 	warned   bool           // the warnings dialog shows
 	warnings core.SendCheck
+	changed  bool   // the shown request was replaced: the dialog says so
+	hold     bool   // 发送 waits mcpSendHold after a replacement, so what it sends was seen
+	unhold   func() // stops the hold's timer
 }
+
+// mcpSendHold is how long 发送 stays off after the shown request changes.
+const mcpSendHold = 2 * time.Second
 
 // loadMCPSends reads the waiting requests after mcp_sends.changed.
 func (a *App) loadMCPSends() {
@@ -56,6 +63,13 @@ func (a *App) showMCPSends(ps []core.MCPSend) {
 		return
 	}
 	s.req = ps[0]
+	if s.unhold != nil {
+		s.unhold()
+	}
+	s.changed, s.hold, s.unhold = shown, shown, nil
+	if shown {
+		s.unhold = a.after(mcpSendHold, func() { s.hold = false })
+	}
 	if s.notified == nil {
 		s.notified = map[int64]bool{}
 	}
@@ -113,6 +127,9 @@ func (a *App) mcpSendDialog(c *ui.Context) {
 				ui.Column(c).Grow(1).Shrink(1).Gap(th.Space(1)).Children(body)
 			})
 		}
+		if s.changed {
+			kit.Text(c, i18n.T("mcp_send.changed"), t.Text.Sm).TextColor(t.Muted)
+		}
 		field(i18n.T("compose.from"), func() { ui.Text(c, r.From).Selectable() })
 		for _, l := range []struct {
 			label string
@@ -138,7 +155,7 @@ func (a *App) mcpSendDialog(c *ui.Context) {
 		if kit.Button(c, i18n.T("common.cancel"), kit.ButtonOpts{Variant: kit.Outline}).Clicked() {
 			s.open = false
 		}
-		if kit.Button(c, i18n.T("compose.send"), kit.ButtonOpts{}).Clicked() {
+		if kit.Button(c, i18n.T("compose.send"), kit.ButtonOpts{Disabled: s.hold}).Clicked() {
 			if a.plat.ComposeOpen(d.ID) { // its window may hold edits not saved yet, as the draft list's Send knows
 				a.toast(i18n.T("mail.draft.send_disabled"))
 			} else {

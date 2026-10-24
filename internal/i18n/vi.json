@@ -218,6 +218,7 @@
   "mail_weekday_5": "T6",
   "mail_weekday_6": "T7",
   "mail_yesterday": "Hôm qua",
+  "mcp_send_changed": "Nội dung vừa thay đổi; hãy kiểm tra lại trước khi gửi.",
   "mcp_send_desc": "Một công cụ AI kết nối qua MCP yêu cầu gửi thư nháp này. Hãy kiểm tra người nhận và nội dung trước khi gửi.",
   "mcp_send_first": "Lần đầu",
   "mcp_send_notify": "Một công cụ AI yêu cầu gửi “{arg1}”. Hãy xác nhận trong Godwit.",

@@ -218,6 +218,7 @@
   "mail_weekday_5": "금",
   "mail_weekday_6": "토",
   "mail_yesterday": "어제",
+  "mcp_send_changed": "방금 내용이 바뀌었습니다. 보내기 전에 다시 확인하세요.",
   "mcp_send_desc": "MCP로 연결된 AI 도구가 이 초안을 보내려고 합니다. 받는 사람과 내용을 확인한 뒤 보내세요.",
   "mcp_send_first": "처음 보냄",
   "mcp_send_notify": "AI 도구가 ‘{arg1}’ 발송을 요청했습니다. Godwit에서 확인하세요.",

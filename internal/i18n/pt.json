@@ -218,6 +218,7 @@
   "mail_weekday_5": "sex",
   "mail_weekday_6": "sáb",
   "mail_yesterday": "Ontem",
+  "mcp_send_changed": "Isto acabou de mudar; verifique de novo antes de enviar.",
   "mcp_send_desc": "Uma ferramenta de IA conectada via MCP pede para enviar este rascunho. Confira os destinatários e o conteúdo antes de enviar.",
   "mcp_send_first": "Primeira vez",
   "mcp_send_notify": "Uma ferramenta de IA pede para enviar “{arg1}”. Confirme no Godwit.",

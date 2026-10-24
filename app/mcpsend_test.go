@@ -113,6 +113,16 @@ func TestMCPSendConfirmReplaced(t *testing.T) {
 	if shown != 1 || notified != 1 {
 		t.Fatalf("brought to the front %d times, notified %d times", shown, notified)
 	}
+	// The user confirms the version sent: 发送 waits a moment, saying the draft changed.
+	h.see("内容刚刚有变化，请重新核对后再发送。")
+	h.click("发送")
+	h.drain()
+	if h.outbox(acc) != 0 {
+		t.Fatal("the new revision was sent unseen")
+	}
+	h.advance(mcpSendHold)
+	h.click("发送")
+	h.until("queued", func() bool { return h.outbox(acc) == 1 })
 }
 
 // Closing the window drops the request: nothing is sent, the draft stays.

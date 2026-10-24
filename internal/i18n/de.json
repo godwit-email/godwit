@@ -223,6 +223,7 @@
   "mail_weekday_5": "Fr.",
   "mail_weekday_6": "Sa.",
   "mail_yesterday": "Gestern",
+  "mcp_send_changed": "Das hat sich gerade geändert; prüfe es erneut, bevor du es sendest.",
   "mcp_send_desc": "Ein über MCP verbundenes KI-Werkzeug möchte diesen Entwurf senden. Prüfe Empfänger und Inhalt, bevor du sendest.",
   "mcp_send_first": "Erstes Mal",
   "mcp_send_notify": "Ein KI-Werkzeug möchte „{arg1}“ senden. Bestätige es in Godwit.",

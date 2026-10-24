@@ -218,6 +218,7 @@
   "mail_weekday_5": "Ven.",
   "mail_weekday_6": "Sam.",
   "mail_yesterday": "Hier",
+  "mcp_send_changed": "Ceci vient de changer ; vérifiez-le à nouveau avant de l’envoyer.",
   "mcp_send_desc": "Un outil d’IA connecté via MCP demande à envoyer ce brouillon. Vérifiez les destinataires et le contenu avant de l’envoyer.",
   "mcp_send_first": "Première fois",
   "mcp_send_notify": "Un outil d’IA demande à envoyer « {arg1} ». Confirmez dans Godwit.",

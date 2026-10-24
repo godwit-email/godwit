@@ -218,6 +218,7 @@
   "mail_weekday_5": "Cum",
   "mail_weekday_6": "Cmt",
   "mail_yesterday": "Dün",
+  "mcp_send_changed": "Bu az önce değişti; göndermeden önce yeniden kontrol edin.",
   "mcp_send_desc": "MCP üzerinden bağlanan bir yapay zeka aracı bu taslağı göndermek istiyor. Göndermeden önce alıcıları ve içeriği kontrol edin.",
   "mcp_send_first": "İlk kez",
   "mcp_send_notify": "Bir yapay zeka aracı “{arg1}” iletisini göndermek istiyor. Godwit’te onaylayın.",

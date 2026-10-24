@@ -218,6 +218,7 @@
   "mail_weekday_5": "周五",
   "mail_weekday_6": "周六",
   "mail_yesterday": "昨天",
+  "mcp_send_changed": "内容刚刚有变化，请重新核对后再发送。",
   "mcp_send_desc": "通过 MCP 接入的 AI 工具请求发送这封草稿。请核对收件人和内容后再发送。",
   "mcp_send_first": "首次发送",
   "mcp_send_notify": "AI 工具请求发送「{arg1}」，请在 Godwit 中确认。",

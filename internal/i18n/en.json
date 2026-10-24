@@ -446,6 +446,7 @@
   "mail_weekday_5": "Fri",
   "mail_weekday_6": "Sat",
   "mail_yesterday": "Yesterday",
+  "mcp_send_changed": "This changed just now; check it again before you send it.",
   "mcp_send_desc": "An AI tool connected through MCP asks to send this draft. Check the recipients and content before you send it.",
   "mcp_send_first": "First time",
   "mcp_send_notify": "An AI tool asks to send “{arg1}”. Confirm it in Godwit.",
