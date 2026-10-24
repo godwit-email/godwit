@@ -1,5 +1,20 @@
 # Changelog
 
+## [1.12.1](https://github.com/godwit-email/godwit/compare/v1.12.0...v1.12.1) (2026-10-24)
+
+
+### Bug Fixes
+
+* **wit:** a resumed run sends the summary its first request sent ([#188](https://github.com/godwit-email/godwit/issues/188)) ([7065974](https://github.com/godwit-email/godwit/commit/7065974c471634542ab82bdf3b3797796faa98aa)), closes [#176](https://github.com/godwit-email/godwit/issues/176)
+* **wit:** cancel a draft's runs before deleting or sending it ([#193](https://github.com/godwit-email/godwit/issues/193)) ([389d4c7](https://github.com/godwit-email/godwit/commit/389d4c78bf91cf0bf50485e9700974dd9ac85db9)), closes [#178](https://github.com/godwit-email/godwit/issues/178)
+* **wit:** close the open calls a failed run leaves before the next question ([#191](https://github.com/godwit-email/godwit/issues/191)) ([3ee6a39](https://github.com/godwit-email/godwit/commit/3ee6a3972cda891084552fa0816966a1de69dda8))
+* **wit:** compact a conversation one stretch at a time within the model's budget ([#186](https://github.com/godwit-email/godwit/issues/186)) ([1dfdec8](https://github.com/godwit-email/godwit/commit/1dfdec8352aec416d497b425a72b60fac1a61f0c)), closes [#173](https://github.com/godwit-email/godwit/issues/173)
+* **wit:** drop the conversation a ⌘K rewrite made when its run fails to start ([#189](https://github.com/godwit-email/godwit/issues/189)) ([1f5690b](https://github.com/godwit-email/godwit/commit/1f5690bd4885478343eec4b68743ac02f8bc4ac8)), closes [#179](https://github.com/godwit-email/godwit/issues/179)
+* **wit:** keep large integers in tool calls and results exact across runs ([#185](https://github.com/godwit-email/godwit/issues/185)) ([8153c91](https://github.com/godwit-email/godwit/commit/8153c91c1d63f6af4588be02d099c2a3b11c8835)), closes [#172](https://github.com/godwit-email/godwit/issues/172)
+* **wit:** keep the last two turns whole when a kept summary reaches into them ([#183](https://github.com/godwit-email/godwit/issues/183)) ([61ca57e](https://github.com/godwit-email/godwit/commit/61ca57e1ab4e1a5f59132e10599199165aa19f4b)), closes [#170](https://github.com/godwit-email/godwit/issues/170)
+* **wit:** read a compaction's history after its summary epoch ([#190](https://github.com/godwit-email/godwit/issues/190)) ([c0137e0](https://github.com/godwit-email/godwit/commit/c0137e043968dc8e4e3b2f376223c6eee6d56160)), closes [#175](https://github.com/godwit-email/godwit/issues/175)
+* **wit:** use the summary when asking again right after its end ([#184](https://github.com/godwit-email/godwit/issues/184)) ([3d4b5ba](https://github.com/godwit-email/godwit/commit/3d4b5ba648489072f0a42de6a4be1b675f81fcaa)), closes [#171](https://github.com/godwit-email/godwit/issues/171)
+
 ## [1.12.0](https://github.com/godwit-email/godwit/compare/v1.11.0...v1.12.0) (2026-10-23)
 
 
