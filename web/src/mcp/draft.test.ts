@@ -105,6 +105,25 @@ test("a changed draft is reloaded into the card, which says so", async () => {
   expect(sendButton(root).disabled).toBe(false);
 });
 
+test("a reload answering after a newer result was drawn leaves the newer card", async () => {
+  const root = document.createElement("div");
+  let answer = (_: Result) => {};
+  const actions = {
+    send: async () => result("draft changed, read it again", true),
+    reload: () => new Promise<Result>((r) => (answer = r)),
+  };
+  render(root, result(shown), "", actions);
+  sendButton(root).click();
+  await settle();
+  const newer = shown.replaceAll("draft 7", "draft 8").replace("Hi Bob,", "Newer Bob,");
+  render(root, result(newer), "", actions); // a newer show_draft result while the reload is out
+  answer(result(shown.replace("revision 3", "revision 4").replace("Hi Bob,", "Stale Bob,")));
+  await settle();
+  expect(root.textContent).toContain("Newer Bob,");
+  expect(root.textContent).not.toContain("Stale Bob,");
+  expect(root.querySelector("footer")?.dataset.draft).toBe("8:3");
+});
+
 test("another send error shows its text and lets the user try again", async () => {
   const root = await sendWith(result("the message has no recipients", true));
   expect(root.textContent).toContain("the message has no recipients");

@@ -98,9 +98,10 @@ export function render(root: HTMLElement, r: Result, accounts = "", actions?: Ac
   if (files) card.append(el("p", "attachments", files));
   if (note) card.append(el("p", "status", note));
   if (actions) {
-    const bar = sendBar(r, actions, (fresh, line) =>
-      render(root, fresh, drawn.get(root)?.accounts, actions, line),
-    );
+    // A reload redraws only while root still shows this bar, not a newer result drawn meanwhile.
+    const bar: HTMLElement = sendBar(r, actions, (fresh, line) => {
+      if (root.contains(bar)) render(root, fresh, drawn.get(root)?.accounts, actions, line);
+    });
     // The same draft drawn again (the account list arriving) keeps its bar: a send may be out.
     const old = root.querySelector<HTMLElement>(":scope > article > footer");
     card.append(old && old.dataset.draft === bar.dataset.draft ? old : bar);
