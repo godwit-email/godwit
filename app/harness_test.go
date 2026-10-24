@@ -249,7 +249,7 @@ type fakePlatform struct {
 	codes        []core.SignInCode
 	codeBanners  []core.SignInCode
 	noCodeBanner bool
-	latest       string // LatestVersion's answer
+	latest       string   // LatestVersion's answer
 	files        []string // OpenFiles
 	dir          string   // OpenDirectory
 	savePath     string   // SaveFile
