@@ -55,50 +55,106 @@ type Result struct {
 // calling goroutine, in order. It returns when the reply ended or ctx did
 // (ctx's error then).
 func Generate(ctx context.Context, client *http.Client, req Request, emit func(kind, text string)) (Result, error) {
+	var res Result
+	h, err := run(ctx, client, "generate", req, &res, emit, 0)
+	if err != nil {
+		return Result{}, err
+	}
+	h.mu.Lock()
+	res.Status, res.Transport = h.status, h.transport
+	h.mu.Unlock()
+	return res, nil
+}
+
+// JudgeRequest is one judge API call: Body, the API's JSON request, is
+// posted to URL with the key as a bearer token (none when APIKey is "").
+type JudgeRequest struct {
+	URL    string          `json:"url"`
+	APIKey string          `json:"apiKey"`
+	Body   json.RawMessage `json:"body"`
+}
+
+// JudgeResult is a judge call's outcome: Body the reply's JSON when the
+// service answered 200, else Status its last HTTP status (0 if none
+// answered: Transport is then what the request failed with, nil when the
+// reply was unreadable).
+type JudgeResult struct {
+	Body      json.RawMessage
+	Status    int
+	Transport error
+}
+
+// Judge posts one judge request through pi-ai's classifier transport, which
+// retries as the SDKs do. A reply over maxBody bytes fails to read.
+func Judge(ctx context.Context, client *http.Client, req JudgeRequest, maxBody int64) (JudgeResult, error) {
+	var out struct {
+		Body   string `json:"body"`
+		Status int    `json:"status"`
+	}
+	h, err := run(ctx, client, "judge", req, &out, nil, maxBody)
+	if err != nil {
+		return JudgeResult{}, err
+	}
+	res := JudgeResult{Status: out.Status}
+	if out.Body != "" {
+		res.Body = json.RawMessage(out.Body)
+	}
+	if res.Body == nil && res.Status == 0 {
+		h.mu.Lock()
+		res.Transport = h.transport
+		h.mu.Unlock()
+	}
+	return res, nil
+}
+
+// run calls the bundle's hook with arg, as JSON, on a new runtime and
+// decodes what it settles with into out. maxBody caps each response read, 0
+// not at all.
+func run(ctx context.Context, client *http.Client, hook string, arg, out any, emit func(kind, text string), maxBody int64) (*host, error) {
 	mod, err := compiled()
 	if err != nil {
-		return Result{}, fmt.Errorf("pi: compile: %w", err)
+		return nil, fmt.Errorf("pi: compile: %w", err)
 	}
 	rt := moejs.NewRuntime(moejs.Options{})
 	loop, err := eventloop.New(rt, eventloop.Options{})
 	if err != nil {
-		return Result{}, err
+		return nil, err
 	}
 	// Every request of the run ends with it.
 	hctx, cancel := context.WithCancel(ctx)
 	defer cancel()
-	h := &host{rt: rt, loop: loop, ctx: hctx, client: client, bodies: map[int64]*body{}, emit: emit}
+	h := &host{rt: rt, loop: loop, ctx: hctx, client: client, bodies: map[int64]*body{}, emit: emit, maxBody: maxBody}
 	defer h.closeAll()
 	if err := h.install(); err != nil {
-		return Result{}, err
+		return nil, err
 	}
 	if err := rt.Load(mod); err != nil {
-		return Result{}, fmt.Errorf("pi: load: %w", err)
+		return nil, fmt.Errorf("pi: load: %w", err)
 	}
-	hook, err := mod.Hook("generate")
+	fn, err := mod.Hook(hook)
 	if err != nil {
-		return Result{}, err
+		return nil, err
 	}
 	stop := context.AfterFunc(ctx, loop.Terminate)
 	defer stop()
 	var promise moejs.Value
 	err = loop.Run(func(rt *moejs.Runtime) error {
-		b, err := json.Marshal(req)
+		b, err := json.Marshal(arg)
 		if err != nil {
 			return err
 		}
-		arg, err := rt.ParseJSONString(string(b))
+		v, err := rt.ParseJSONString(string(b))
 		if err != nil {
 			return err
 		}
-		promise, err = rt.Call(hook, arg)
+		promise, err = rt.Call(fn, v)
 		return err
 	})
 	if ctx.Err() != nil {
-		return Result{}, ctx.Err()
+		return nil, ctx.Err()
 	}
 	if err != nil {
-		return Result{}, fmt.Errorf("pi: %w", err)
+		return nil, fmt.Errorf("pi: %w", err)
 	}
 	state, v, ok := moejs.PromiseResult(promise)
 	if !ok || state != moejs.PromiseFulfilled {
@@ -106,16 +162,12 @@ func Generate(ctx context.Context, client *http.Client, req Request, emit func(k
 		if ok {
 			msg = v.String()
 		}
-		return Result{}, fmt.Errorf("pi: %s", msg)
+		return nil, fmt.Errorf("pi: %s", msg)
 	}
-	var res Result
-	if err := rt.Unmarshal(v, &res); err != nil {
-		return Result{}, fmt.Errorf("pi: result: %w", err)
+	if err := rt.Unmarshal(v, out); err != nil {
+		return nil, fmt.Errorf("pi: result: %w", err)
 	}
-	h.mu.Lock()
-	res.Status, res.Transport = h.status, h.transport
-	h.mu.Unlock()
-	return res, nil
+	return h, nil
 }
 
 // host is one run's side of the bundle's host functions (js/src/web.ts).
@@ -126,6 +178,8 @@ type host struct {
 	client *http.Client
 	emit   func(kind, text string)
 	start  time.Time
+	// maxBody caps what is read of one response, 0 not at all.
+	maxBody int64
 
 	mu        sync.Mutex
 	next      int64
@@ -139,6 +193,7 @@ type body struct {
 	rc      io.ReadCloser
 	cancel  context.CancelFunc
 	pending []byte
+	read    int64
 }
 
 // maxRequestBody caps what the bundle may send in one request.
@@ -274,6 +329,9 @@ func (h *host) read(id int64, settle settleFunc) {
 	buf := make([]byte, 32<<10)
 	for {
 		n, err := b.rc.Read(buf)
+		if b.read += int64(n); h.maxBody > 0 && b.read > h.maxBody {
+			n, err = 0, errors.New("response too large")
+		}
 		chunk := append(b.pending, buf[:n]...)
 		cut := len(chunk)
 		if err == nil {

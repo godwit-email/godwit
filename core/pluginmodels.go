@@ -247,8 +247,9 @@ func (s *Service) appleIntelligenceModel(ctx context.Context, ref string) (m plu
 	return m, true, fmt.Errorf("%w: %s", ErrModelNotFound, ref)
 }
 
-// pluginJudge is the judge a plugin judge model's ref names.
-func (s *Service) pluginJudge(ctx context.Context, ref string) (ai.Judge, error) {
+// pluginJudge is the judge a plugin judge model's ref names; onPi asks an
+// HTTP one on pi.
+func (s *Service) pluginJudge(ctx context.Context, ref string, onPi bool) (ai.Judge, error) {
 	if m, ok, err := s.appleIntelligenceModel(ctx, ref); ok {
 		if err != nil {
 			return nil, err
@@ -269,7 +270,7 @@ func (s *Service) pluginJudge(ctx context.Context, ref string) (ai.Judge, error)
 		return pluginModelJudge{s, name, rp, m, cfg}, nil
 	}
 	c := s.pluginModelClient(name, rp, m.ID, cfg)
-	j, err := ai.NewJudge(c, judgeFormats[m.Protocol], m.BaseURL, "", m.ID)
+	j, err := newJudge(onPi)(c, judgeFormats[m.Protocol], m.BaseURL, "", m.ID)
 	return pluginHTTPJudge{j, c.Transport.(*pluginModelTransport)}, err
 }
 

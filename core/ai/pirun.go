@@ -12,9 +12,10 @@ import (
 )
 
 // piCovers reports whether pi runs req: a one-off prompt to an
-// OpenAI-compatible service with a key (#229). Each migration step widens it.
+// OpenAI-compatible service with a key (#229) or a plugin's model, whose
+// client prepares and sends each request (#231). Each migration step widens it.
 func piCovers(req Request) bool {
-	return req.Model.Kind == "openai" && req.Model.Client == nil && req.Model.APIKey != "" &&
+	return req.Model.Kind == "openai" && (req.Model.APIKey != "" || req.Model.Client != nil) &&
 		req.History == nil && req.Prompt != "" && len(req.Tools) == 0 && len(req.Responses) == 0
 }
 
