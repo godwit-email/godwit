@@ -513,16 +513,19 @@ function QuestionCard({
   t: T;
 }) {
   const { questions, server, message } = questionArgs(a);
-  // the picked options and the own words are the form's values, under each question's name
+  // the picked options and the own words are the form's values, under each question's name: an
+  // option goes as written (an MCP form's must match exactly), own words trimmed
   const submit = (e: FormEvent<HTMLFormElement>) => {
     e.preventDefault();
     const form = new FormData(e.currentTarget);
     answer?.(
-      questions.map((_, i) =>
+      questions.map((q, i) =>
         form
           .getAll(`q${i}`)
-          .map((v) => String(v).trim())
-          .filter(Boolean),
+          .map(String)
+          .flatMap((v) =>
+            q.options?.some((o) => o.label === v) ? [v] : v.trim() ? [v.trim()] : [],
+          ),
       ),
     );
   };

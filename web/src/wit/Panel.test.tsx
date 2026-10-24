@@ -2414,6 +2414,42 @@ describe("an MCP server's form", () => {
     expect(onDecide).not.toHaveBeenCalled();
   });
 
+  it("a choice goes as the server wrote it, own words trimmed", async () => {
+    const onAnswer = vi.fn().mockResolvedValue(true);
+    const user = userEvent.setup();
+    const r = await setup({ onAnswer, onDecide: vi.fn() });
+    await user.type(input(), "book it{Enter}");
+    const call = { id: "b1", name: "mcp_1_book", args: "{}" };
+    const spaced = {
+      ...form(),
+      form: JSON.stringify({
+        server: "fake",
+        round: 1,
+        message: "",
+        questions: [
+          {
+            question: "Room",
+            header: "",
+            multiSelect: false,
+            kind: "choice",
+            options: [
+              { label: "Room A ", description: "" },
+              { label: "Room B", description: "" },
+            ],
+          },
+          { question: "Note", header: "", multiSelect: false, kind: "string", options: null },
+        ],
+      }),
+    };
+    r.emit({ kind: "tool_call", call });
+    r.emit({ kind: "interrupted", interrupts: [call], approvals: [spaced], ends: true });
+    await user.click(await screen.findByRole("radio", { name: /Room A/ }));
+    await user.click(screen.getByRole("button", { name: "下一题" }));
+    await user.type(screen.getByRole("textbox", { name: "Note" }), "  late  ");
+    await user.click(screen.getByRole("button", { name: "提交" }));
+    expect(onAnswer).toHaveBeenCalledWith(spaced, [["Room A "], ["late"]]);
+  });
+
   it("the next round's form starts afresh, even while the answer to the last is under way", async () => {
     let settle: (ok: boolean) => void = () => {};
     const onAnswer = vi.fn(() => new Promise<boolean>((r) => (settle = r)));
