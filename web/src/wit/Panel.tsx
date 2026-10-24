@@ -1456,7 +1456,8 @@ export function Panel({
       <MessageScroller className="min-h-0 flex-1">
         <MessageScrollerViewport>
           <MessageScrollerContent
-            className={page ? "mx-auto w-full max-w-202 gap-5 p-6" : "gap-2.5 p-4"}
+            // pb-10 clears the input area's fade (h-8): the last card ends above it, corners and all
+            className={page ? "mx-auto w-full max-w-202 gap-5 p-6 pb-10" : "gap-2.5 p-4 pb-10"}
           >
             {chat.messages.map((m, i) => (
               <MessageScrollerItem
