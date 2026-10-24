@@ -183,3 +183,102 @@ func TestMCPSendDirect(t *testing.T) {
 	assert.Equal(t, [][]any{{"local_mcp", "send_draft", d.ID, "direct"}},
 		e.rows(t, "SELECT source, tool, target_id, decision FROM audit_log WHERE source = 'local_mcp'"))
 }
+
+// 直接发送 leaves a draft open in a compose window alone, as the draft
+// list's Send and the confirmation do: its window may hold edits not saved yet.
+func TestMCPSendDirectComposing(t *testing.T) {
+	e, d := mcpSendEnv(t, MCPSendDirect, true)
+	e.s.opts.ComposeOpen = func(id int64) bool { return id == d.ID }
+	sent, err := e.s.RequestMCPSend(bg, d.ID, d.Revision)
+	require.ErrorIs(t, err, ErrMCPSendComposing)
+	assert.False(t, sent)
+	assert.Zero(t, e.outboxLen(t))
+}
+
+// A direct send whose audit fails is still sent: the mail is queued.
+func TestMCPSendDirectAuditFails(t *testing.T) {
+	e, d := mcpSendEnv(t, MCPSendDirect, true)
+	_, err := e.s.db.Execute(bg, `CREATE TRIGGER no_audit BEFORE INSERT ON audit_log BEGIN SELECT RAISE(ABORT, 'audit broken'); END`)
+	require.NoError(t, err)
+	sent, err := e.s.RequestMCPSend(bg, d.ID, d.Revision)
+	require.NoError(t, err)
+	assert.True(t, sent)
+	assert.Equal(t, 1, e.outboxLen(t))
+}
+
+// A draft has one request at most: a newer revision's replaces the older.
+func TestMCPSendReplaced(t *testing.T) {
+	e, d := mcpSendEnv(t, MCPSendConfirm, true)
+	_, err := e.s.RequestMCPSend(bg, d.ID, d.Revision)
+	require.NoError(t, err)
+	d.Subject = "changed"
+	d, err = e.s.SaveDraft(bg, d)
+	require.NoError(t, err)
+	_, err = e.s.RequestMCPSend(bg, d.ID, d.Revision)
+	require.NoError(t, err)
+	e.s.sendReqMu.Lock()
+	n := len(e.s.sendReqs)
+	e.s.sendReqMu.Unlock()
+	assert.Equal(t, 1, n)
+	ps := e.pendingSends(t)
+	require.Len(t, ps, 1)
+	assert.Equal(t, d.Revision, ps[0].Draft.Revision)
+}
+
+// Past maxMCPSends waiting requests, another draft's is refused.
+func TestMCPSendBusy(t *testing.T) {
+	e, d := mcpSendEnv(t, MCPSendConfirm, true)
+	_, err := e.s.RequestMCPSend(bg, d.ID, d.Revision)
+	require.NoError(t, err)
+	for i := 1; i <= maxMCPSends; i++ {
+		o, err := e.s.NewDraft(bg, e.acc.ID, "new", 0)
+		require.NoError(t, err)
+		o.To = []string{"bob@example.com"}
+		o, err = e.s.SaveDraft(bg, o)
+		require.NoError(t, err)
+		_, err = e.s.RequestMCPSend(bg, o.ID, o.Revision)
+		if i < maxMCPSends {
+			require.NoError(t, err)
+		} else {
+			require.ErrorIs(t, err, ErrMCPSendBusy)
+		}
+	}
+	assert.Len(t, e.pendingSends(t), maxMCPSends)
+	_, err = e.s.RequestMCPSend(bg, d.ID, d.Revision) // the same request again still waits
+	assert.NoError(t, err)
+}
+
+// A draft that cannot be read for another reason than being gone keeps its request.
+func TestMCPSendReadFails(t *testing.T) {
+	e, d := mcpSendEnv(t, MCPSendConfirm, true)
+	_, err := e.s.RequestMCPSend(bg, d.ID, d.Revision)
+	require.NoError(t, err)
+	_, err = e.s.db.Execute(bg, "ALTER TABLE draft_attachments RENAME TO draft_attachments_away")
+	require.NoError(t, err)
+	_, err = e.s.PendingMCPSends(bg)
+	require.Error(t, err)
+	_, err = e.s.db.Execute(bg, "ALTER TABLE draft_attachments_away RENAME TO draft_attachments")
+	require.NoError(t, err)
+	assert.Len(t, e.pendingSends(t), 1)
+	assert.Empty(t, e.rows(t, "SELECT decision FROM audit_log WHERE source = 'local_mcp'"))
+}
+
+// First-time recipients are found once, when the request is made.
+func TestMCPSendFirstTimeOnce(t *testing.T) {
+	e, d := mcpSendEnv(t, MCPSendConfirm, true)
+	_, err := e.s.RequestMCPSend(bg, d.ID, d.Revision)
+	require.NoError(t, err)
+	e.put(t, "Sent", eml("a@x", "alice@example.com", "bob@example.com", "earlier", "Mon, 05 Oct 2026 10:00:00 +0000", "hi"))
+	e.sync(t)
+	assert.Equal(t, []string{"bob@example.com"}, e.pendingSends(t)[0].FirstTime)
+}
+
+// A gone draft's request goes stale.
+func TestMCPSendDraftGone(t *testing.T) {
+	e, d := mcpSendEnv(t, MCPSendConfirm, true)
+	_, err := e.s.RequestMCPSend(bg, d.ID, d.Revision)
+	require.NoError(t, err)
+	require.NoError(t, e.s.DeleteDraft(bg, d.ID))
+	assert.Empty(t, e.pendingSends(t))
+	assert.Equal(t, [][]any{{"stale"}}, e.rows(t, "SELECT decision FROM audit_log WHERE source = 'local_mcp'"))
+}

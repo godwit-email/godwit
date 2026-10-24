@@ -31,6 +31,7 @@ const failed = (e: Error): Result => ({
 function sendBar(r: Result, actions: Actions, rerender: (r: Result, note: string) => void) {
   const [, id, revision] = text(r).match(/^draft (\d+) · .* · revision (\d+) · /m) ?? [];
   const bar = document.createElement("footer");
+  bar.dataset.draft = `${id}:${revision}`;
   const button = el("button", "", "Send") as HTMLButtonElement;
   button.type = "button";
   button.disabled = !id;
@@ -38,7 +39,7 @@ function sendBar(r: Result, actions: Actions, rerender: (r: Result, note: string
   button.onclick = async () => {
     button.disabled = true;
     const got = await actions.send(Number(id), Number(revision)).catch(failed);
-    const said = text(got);
+    const said = text(got); // the prefixes are godwit mcp's stable texts (textSent…, mcpserver.go)
     status.className = "status";
     if (!got.isError) {
       status.textContent = said.startsWith("sent")
@@ -95,7 +96,17 @@ export function render(root: HTMLElement, r: Result, accounts = "", actions?: Ac
   const files = value("attachment_name");
   if (files) card.append(el("p", "attachments", files));
   if (note) card.append(el("p", "status", note));
-  if (actions)
-    card.append(sendBar(r, actions, (fresh, line) => render(root, fresh, accounts, actions, line)));
+  shownAccounts.set(root, accounts);
+  if (actions) {
+    const bar = sendBar(r, actions, (fresh, line) =>
+      render(root, fresh, shownAccounts.get(root), actions, line),
+    );
+    // The same draft drawn again (the account list arriving) keeps its bar: a send may be out.
+    const old = root.querySelector<HTMLElement>(":scope > article > footer");
+    card.append(old && old.dataset.draft === bar.dataset.draft ? old : bar);
+  }
   root.replaceChildren(card);
 }
+
+/** The account list each root was last drawn with, for a bar kept across draws. */
+const shownAccounts = new WeakMap<HTMLElement, string>();

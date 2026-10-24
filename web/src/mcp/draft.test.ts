@@ -110,3 +110,36 @@ test("another send error shows its text and lets the user try again", async () =
   expect(root.textContent).toContain("the message has no recipients");
   expect(sendButton(root).disabled).toBe(false);
 });
+
+test("the account list arriving after Send keeps what Send did", async () => {
+  const root = document.createElement("div");
+  let answer = (_: Result) => {};
+  const actions = {
+    send: () => new Promise<Result>((r) => (answer = r)),
+    reload: async () => result(shown),
+  };
+  render(root, result(shown), "", actions);
+  sendButton(root).click();
+  render(root, result(shown), accounts, actions); // list_accounts answers while send_draft is out
+  expect(root.textContent).toContain("carol@example.com");
+  expect(sendButton(root).disabled).toBe(true);
+  answer(result("waiting for the user to confirm in Godwit; it is not sent yet"));
+  await settle();
+  expect(root.textContent).toContain("Waiting for you to confirm in Godwit");
+  expect(sendButton(root).disabled).toBe(true);
+});
+
+test("a changed draft reloaded after the account list still names the account", async () => {
+  const root = document.createElement("div");
+  const actions = {
+    send: async () => result("draft changed, read it again", true),
+    reload: async () => result(shown.replace("revision 3", "revision 4")),
+  };
+  render(root, result(shown), "", actions);
+  render(root, result(shown), accounts, actions);
+  sendButton(root).click();
+  await settle();
+  await settle();
+  expect(root.textContent).toContain("This draft changed");
+  expect(root.textContent).toContain("carol@example.com");
+});

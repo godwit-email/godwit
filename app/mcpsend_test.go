@@ -2,6 +2,7 @@ package app
 
 import (
 	"context"
+	"strings"
 	"testing"
 
 	"github.com/godwit-email/godwit/core"
@@ -61,6 +62,57 @@ func TestMCPSendConfirmWindow(t *testing.T) {
 	h.click("发送")
 	h.until("queued", func() bool { return h.outbox(acc) == 1 })
 	h.until("the dialog closed", func() bool { return !h.tt.HasText("发送这封邮件？") })
+}
+
+// A plugin's warnings on 发送 are shown as the draft list shows them; 仍然发送 sends it once.
+func TestMCPSendConfirmWarns(t *testing.T) {
+	h, acc := mcpSendHarness(t)
+	h.env.InstallPlugin(t, "send-warn")
+	h.see("发送这封邮件？")
+	h.click("发送")
+	h.see("发送前检查：check before sending: Quarterly plan")
+	if h.outbox(acc) != 0 {
+		t.Fatal("sent before the warning was acknowledged")
+	}
+	h.click("仍然发送")
+	h.until("queued", func() bool { return h.outbox(acc) == 1 })
+	h.until("the dialog gone", func() bool { return !h.tt.HasText("仍然发送") })
+	h.until("its window told", func() bool { return h.hasCall("DraftDeleted ") })
+}
+
+// A newer revision's request replaces the one shown without bringing the
+// window to the front again.
+func TestMCPSendConfirmReplaced(t *testing.T) {
+	h, acc := mcpSendHarness(t)
+	h.see("Quarterly plan")
+	h.until("the notification", func() bool { return h.hasCall("Notify mcp_send:") })
+	ctx := context.Background()
+	ds, err := h.env.Svc.ListDrafts(ctx, acc.ID)
+	if err != nil || len(ds) != 1 {
+		t.Fatalf("drafts %v %v", ds, err)
+	}
+	d := ds[0]
+	d.Subject = "Revised plan"
+	if d, err = h.env.Svc.SaveDraft(ctx, d); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := h.env.Svc.RequestMCPSend(ctx, d.ID, d.Revision); err != nil {
+		t.Fatal(err)
+	}
+	h.see("Revised plan")
+	h.drain()
+	shown, notified := 0, 0
+	for _, c := range h.plat.Calls() {
+		if c == "ShowWindow" {
+			shown++
+		}
+		if strings.HasPrefix(c, "Notify mcp_send:") {
+			notified++
+		}
+	}
+	if shown != 1 || notified != 1 {
+		t.Fatalf("brought to the front %d times, notified %d times", shown, notified)
+	}
 }
 
 // Closing the window drops the request: nothing is sent, the draft stays.

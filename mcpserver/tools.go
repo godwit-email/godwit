@@ -366,9 +366,9 @@ func sendDraft(ctx context.Context, c *rpc.Client, args json.RawMessage) (string
 		return "", err
 	}
 	if sent {
-		return "sent: the draft is in Godwit's outbox", nil
+		return textSent, nil
 	}
-	return "waiting for the user to confirm in Godwit; it is not sent yet", nil
+	return textWaiting, nil
 }
 
 // save reads the draft back, merges e and saves it against the revision read

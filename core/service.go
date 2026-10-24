@@ -60,6 +60,9 @@ type Options struct {
 	// ConfirmWindow: a window can confirm godwit mcp's sends (每次确认); the
 	// GUI sets it. Without one (--headless) 每次确认 refuses them, as 不允许.
 	ConfirmWindow bool
+	// ComposeOpen reports whether draftID's compose window is open or
+	// opening; the GUI sets it, and 直接发送 leaves such a draft alone. nil: none is.
+	ComposeOpen func(draftID int64) bool
 }
 
 // Service owns the database and event bus of one Godwit data directory.

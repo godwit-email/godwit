@@ -4,6 +4,7 @@ import (
 	"cmp"
 	"context"
 	"errors"
+	"log/slog"
 	"slices"
 	"time"
 
@@ -22,13 +23,23 @@ const (
 // mcpSendTTL is how long a send request waits for the user before it goes stale.
 const mcpSendTTL = 10 * time.Minute
 
-// ErrMCPSendOff: 通过 MCP 发送 is 不允许, or 每次确认 with no window to confirm in (--headless).
-var ErrMCPSendOff = errors.New("sending through MCP is off; the user can turn it on in Godwit under Settings › Local API › Send through MCP")
+// maxMCPSends is how many send requests may wait for the user at once.
+const maxMCPSends = 5
+
+var (
+	// ErrMCPSendOff: 通过 MCP 发送 is 不允许, or 每次确认 with no window to confirm in (--headless).
+	ErrMCPSendOff = errors.New("sending through MCP is off; the user can turn it on in Godwit under Settings › Local API › Send through MCP")
+	// ErrMCPSendComposing: 直接发送 of a draft open in a compose window,
+	// which may hold edits not saved yet.
+	ErrMCPSendComposing = errors.New("the draft is open in a compose window in Godwit; the user can send it there")
+	// ErrMCPSendBusy: maxMCPSends requests wait for the user already.
+	ErrMCPSendBusy = errors.New("too many sends are waiting for the user in Godwit; ask again once the user has answered them")
+)
 
 // MCPSend is a send request of godwit mcp waiting for the user, as the
 // confirmation window shows it: the draft at the revision it is bound to,
-// the sending account's address and the recipients that account has never
-// written to.
+// the sending account's address and the recipients that account had never
+// written to when it was asked.
 type MCPSend struct {
 	ID        int64
 	Draft     Draft
@@ -44,16 +55,20 @@ type mcpSend struct {
 	draftID, revision int64
 	executing         bool
 	created           time.Time
+	from              string
+	firstTime         []string
 }
 
 func (r *mcpSend) expired() bool { return time.Since(r.created) >= mcpSendTTL }
 
 // RequestMCPSend is godwit mcp's send_draft: what it does follows
 // Settings.MCPSend. 不允许 (or 每次确认 headless) is ErrMCPSendOff. 每次确认
-// records a request bound to the draft's revision, once per revision, for
+// records a request bound to the draft's revision, one per draft (a newer
+// revision's replaces the older), at most maxMCPSends (ErrMCPSendBusy), for
 // the user to confirm (PendingMCPSends, ResolveMCPSend), and announces
 // mcp_sends.changed; sent is false. 直接发送 queues the draft as Send does,
-// audited as an MCP send; sent is true. A revision other than the draft's is
+// audited as an MCP send, unless a compose window has it
+// (ErrMCPSendComposing); sent is true. A revision other than the draft's is
 // ErrStaleDraft.
 func (s *Service) RequestMCPSend(ctx context.Context, draftID, revision int64) (sent bool, err error) {
 	ctx, end, err := s.begin(ctx, 0)
@@ -68,10 +83,16 @@ func (s *Service) RequestMCPSend(ctx context.Context, draftID, revision int64) (
 	revision = max(revision, 0) // a negative one would mean any
 	switch level := cmp.Or(st.MCPSend, MCPSendConfirm); {
 	case level == MCPSendDirect:
+		if s.opts.ComposeOpen != nil && s.opts.ComposeOpen(draftID) {
+			return false, ErrMCPSendComposing
+		}
 		if err := s.send(ctx, draftID, revision); err != nil {
 			return false, err
 		}
-		return true, s.auditMCPSend(ctx, draftID, "direct")
+		if err := s.auditMCPSend(ctx, draftID, "direct"); err != nil { // the mail is queued: still sent
+			slog.Default().Warn("could not audit an MCP send", "draft", draftID, "err", err)
+		}
+		return true, nil
 	case level == MCPSendOff || !s.opts.ConfirmWindow:
 		return false, ErrMCPSendOff
 	}
@@ -87,18 +108,44 @@ func (s *Service) RequestMCPSend(ctx context.Context, draftID, revision int64) (
 	if _, err := recipients(d); err != nil {
 		return false, err
 	}
+	acc, err := s.account(ctx, d.AccountID)
+	if err != nil {
+		return false, err
+	}
+	first, err := s.firstTime(ctx, acc, d)
+	if err != nil {
+		return false, err
+	}
 	s.sendReqMu.Lock()
-	defer s.sendReqMu.Unlock()
-	for _, r := range s.sendReqs {
-		if r.draftID == draftID && r.revision == revision && !r.executing && !r.expired() {
+	var older []int64 // the draft's requests this one replaces
+	waiting := 0
+	for id, r := range s.sendReqs {
+		switch {
+		case r.executing:
+		case r.draftID != draftID:
+			waiting++
+		case r.revision == revision && !r.expired():
+			s.sendReqMu.Unlock()
 			return false, nil // asked already
+		default:
+			older = append(older, id)
 		}
+	}
+	if waiting >= maxMCPSends {
+		s.sendReqMu.Unlock()
+		return false, ErrMCPSendBusy
 	}
 	if s.sendReqs == nil {
 		s.sendReqs = map[int64]*mcpSend{}
 	}
 	s.sendReqID++
-	s.sendReqs[s.sendReqID] = &mcpSend{draftID: draftID, revision: revision, created: time.Now()}
+	s.sendReqs[s.sendReqID] = &mcpSend{draftID: draftID, revision: revision, created: time.Now(), from: acc.Email, firstTime: first}
+	s.sendReqMu.Unlock()
+	for _, id := range older {
+		if err := s.endMCPSend(ctx, id, false, "stale"); err != nil && !errors.Is(err, ErrInvalidState) {
+			slog.Default().Warn("could not audit an MCP send", "draft", draftID, "err", err)
+		}
+	}
 	s.bus.Publish(events.Event{Type: events.MCPSendsChanged})
 	return false, nil
 }
@@ -130,22 +177,16 @@ func (s *Service) PendingMCPSends(ctx context.Context) ([]MCPSend, error) {
 		s.editMu.Lock()
 		d, err := s.GetDraft(ctx, r.draftID)
 		s.editMu.Unlock()
+		if err != nil && !errors.Is(err, errDraftNotFound) {
+			return nil, err
+		}
 		if r.expired() || err != nil || d.Revision != r.revision {
 			if err := s.endMCPSend(ctx, id, false, "stale"); err != nil && !errors.Is(err, ErrInvalidState) {
 				return nil, err
 			}
 			continue
 		}
-		p := MCPSend{ID: id, Draft: d}
-		acc, err := s.account(ctx, d.AccountID)
-		if err != nil {
-			return nil, err
-		}
-		p.From = acc.Email
-		if p.FirstTime, err = s.firstTime(ctx, acc, d); err != nil {
-			return nil, err
-		}
-		out = append(out, p)
+		out = append(out, MCPSend{ID: id, Draft: d, From: r.from, FirstTime: r.firstTime})
 	}
 	return out, nil
 }

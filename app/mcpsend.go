@@ -2,6 +2,7 @@ package app
 
 import (
 	"context"
+	"errors"
 	"slices"
 	"strconv"
 
@@ -16,11 +17,14 @@ import (
 // mcpSendState is the confirmation of godwit mcp's send requests (每次确认):
 // the oldest waiting one in a dialog over the window, which comes to the
 // front with a notification pointing to it. Only its 发送 sends; closing it
-// drops the request.
+// drops the request. A plugin's warnings on 发送 show as the draft list's,
+// with 仍然发送.
 type mcpSendState struct {
 	open     bool
 	req      core.MCPSend
 	notified map[int64]bool // requests already brought to the front
+	warned   bool           // the warnings dialog shows
+	warnings core.SendCheck
 }
 
 // loadMCPSends reads the waiting requests after mcp_sends.changed.
@@ -39,12 +43,14 @@ func (a *App) loadMCPSends() {
 }
 
 // showMCPSends shows the oldest of ps, unless one shows already; a new
-// request brings the window to the front and is notified once.
+// request brings the window to the front and is notified once, unless it
+// replaces one the dialog shows.
 func (a *App) showMCPSends(ps []core.MCPSend) {
 	s := &a.mcpSend
 	if s.open && slices.ContainsFunc(ps, func(p core.MCPSend) bool { return p.ID == s.req.ID }) {
 		return
 	}
+	shown := s.open
 	s.open = len(ps) > 0
 	if !s.open {
 		return
@@ -53,10 +59,11 @@ func (a *App) showMCPSends(ps []core.MCPSend) {
 	if s.notified == nil {
 		s.notified = map[int64]bool{}
 	}
-	if s.notified[s.req.ID] {
+	fresh := !s.notified[s.req.ID] && !shown
+	s.notified[s.req.ID] = true
+	if !fresh {
 		return
 	}
-	s.notified[s.req.ID] = true
 	a.plat.ShowWindow()
 	subject := s.req.Draft.Subject
 	if subject == "" {
@@ -78,6 +85,21 @@ func (a *App) showMCPSends(ps []core.MCPSend) {
 // first-time one marked), subject and body; 发送 sends it, closing drops it.
 func (a *App) mcpSendDialog(c *ui.Context) {
 	s := &a.mcpSend
+	if s.warned {
+		w := s.warnings
+		warningsDialog(c, &s.warned, w, func() {
+			a.do(func(ctx context.Context) error {
+				return a.svc.SendAcknowledgedRevision(ctx, w.DraftID, w.Revision, w.Digest)
+			}, func(err error) {
+				if err != nil {
+					a.toastErr(err)
+				} else {
+					a.plat.DraftDeleted(w.DraftID)
+				}
+			})
+		})
+		return // the next request waits behind it
+	}
 	if !s.open {
 		return
 	}
@@ -129,9 +151,13 @@ func (a *App) mcpSendDialog(c *ui.Context) {
 	}
 	id := r.ID
 	a.do(func(ctx context.Context) error { return a.svc.ResolveMCPSend(ctx, id, sent) }, func(err error) {
-		if err != nil {
+		var warn *core.SendWarningsError
+		switch {
+		case errors.As(err, &warn):
+			s.warned, s.warnings = true, warn.Check
+		case err != nil:
 			a.toastErr(err)
-		} else if sent {
+		case sent:
 			a.plat.DraftDeleted(d.ID)
 		}
 	})

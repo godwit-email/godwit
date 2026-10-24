@@ -259,11 +259,21 @@ func (p *mailPage) sendDialog(c *ui.Context) {
 	if !p.sending.ask {
 		return
 	}
-	t, th := theme.Of(c), c.Theme()
 	s := p.sending
-	kit.Dialog(c, &p.sending.ask, i18n.T("compose.send"), kit.DialogOpts{Close: i18n.T("common.close")}, func() {
+	warningsDialog(c, &p.sending.ask, s.warnings, func() {
+		p.doSend(s.id, s.rev, func(ctx context.Context) error {
+			return p.a.svc.SendAcknowledgedRevision(ctx, s.id, s.rev, s.warnings.Digest)
+		})
+	})
+}
+
+// warningsDialog lists check's warnings while *ask; 仍然发送 closes it and
+// calls anyway, so it sends once.
+func warningsDialog(c *ui.Context, ask *bool, check core.SendCheck, anyway func()) {
+	t, th := theme.Of(c), c.Theme()
+	kit.Dialog(c, ask, i18n.T("compose.send"), kit.DialogOpts{Close: i18n.T("common.close")}, func() {
 		ui.Column(c).Gap(th.Space(3)).Children(func() {
-			for _, w := range s.warnings.Warnings {
+			for _, w := range check.Warnings {
 				ui.Column(c).Children(func() {
 					ui.Text(c, i18n.Tf("compose.warn", w.Message))
 					kit.Text(c, i18n.Tf("compose.warn.from", w.Plugin), t.Text.Sm).TextColor(t.Muted)
@@ -272,13 +282,11 @@ func (p *mailPage) sendDialog(c *ui.Context) {
 		})
 	}, func() {
 		if kit.Button(c, i18n.T("common.cancel"), kit.ButtonOpts{Variant: kit.Outline}).Clicked() {
-			p.sending.ask = false
+			*ask = false
 		}
 		if kit.Button(c, i18n.T("compose.send_anyway"), kit.ButtonOpts{}).Clicked() {
-			p.sending.ask = false
-			p.doSend(s.id, s.rev, func(ctx context.Context) error {
-				return p.a.svc.SendAcknowledgedRevision(ctx, s.id, s.rev, s.warnings.Digest)
-			})
+			*ask = false
+			anyway()
 		}
 	})
 }

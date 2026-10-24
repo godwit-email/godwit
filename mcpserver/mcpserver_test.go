@@ -94,6 +94,9 @@ func TestMCPListTools(t *testing.T) {
 	for _, tool := range res.Tools {
 		require.NotNil(t, tool.Annotations, tool.Name)
 		readOnly[tool.Name] = tool.Annotations.ReadOnlyHint
+		sends := tool.Name == "send_draft" // mail leaves the mailbox, not to be undone
+		assert.Equal(t, &sends, tool.Annotations.DestructiveHint, tool.Name)
+		assert.Equal(t, &sends, tool.Annotations.OpenWorldHint, tool.Name)
 		assert.NotEmpty(t, tool.Description, tool.Name)
 		b, _ := json.Marshal(tool.InputSchema)
 		assert.Contains(t, string(b), `"additionalProperties":false`, tool.Name)
@@ -115,7 +118,8 @@ func TestMCPSendDraft(t *testing.T) {
 		isErr           bool
 		outbox, pending int
 	}{
-		{core.MCPSendOff, core.ErrMCPSendOff.Error(), true, 0, 0},
+		// The texts are a contract: the draft view matches them (web/src/mcp/draft.ts).
+		{core.MCPSendOff, "sending through MCP is off; the user can turn it on in Godwit under Settings › Local API › Send through MCP", true, 0, 0},
 		{core.MCPSendConfirm, "waiting for the user to confirm in Godwit; it is not sent yet", false, 0, 1},
 		{core.MCPSendDirect, "sent: the draft is in Godwit's outbox", false, 1, 0},
 	} {

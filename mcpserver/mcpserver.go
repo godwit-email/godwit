@@ -81,8 +81,9 @@ func add(s *mcp.Server, c *rpc.Client, t tool, meta mcp.Meta) {
 		panic(fmt.Sprintf("mcpserver: %s schema: %v", t.name, err))
 	}
 	check := checker(t.name, &schema)
+	sends := t.name == "send_draft" // the only tool whose effect leaves the mailbox, not to be undone
 	s.AddTool(&mcp.Tool{Name: t.name, Description: t.desc, InputSchema: &schema, Meta: meta,
-		Annotations: &mcp.ToolAnnotations{ReadOnlyHint: t.readOnly, DestructiveHint: new(false), OpenWorldHint: new(false)}},
+		Annotations: &mcp.ToolAnnotations{ReadOnlyHint: t.readOnly, DestructiveHint: new(sends), OpenWorldHint: new(sends)}},
 		func(ctx context.Context, req *mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 			args := req.Params.Arguments
 			if len(args) == 0 || string(args) == "null" {
@@ -103,11 +104,23 @@ func result(text string, isError bool) *mcp.CallToolResult {
 	return &mcp.CallToolResult{Content: []mcp.Content{&mcp.TextContent{Text: text}}, IsError: isError}
 }
 
+// send_draft's outcomes, and update_draft's stale revision: stable texts
+// that the draft view matches by prefix (web/src/mcp/draft.ts).
+const (
+	textSent    = "sent: the draft is in Godwit's outbox"
+	textWaiting = "waiting for the user to confirm in Godwit; it is not sent yet"
+	textSendOff = "sending through MCP is off; the user can turn it on in Godwit under Settings › Local API › Send through MCP"
+	textStale   = "draft changed, read it again"
+)
+
 // message is err for the agent: short English. Errors from Godwit arrive
 // decoded and redacted (an unregistered one only says "internal error").
 func message(err error) string {
-	if errors.Is(err, core.ErrStaleDraft) {
-		return "draft changed, read it again"
+	switch {
+	case errors.Is(err, core.ErrStaleDraft):
+		return textStale
+	case errors.Is(err, core.ErrMCPSendOff):
+		return textSendOff
 	}
 	return err.Error()
 }
