@@ -284,19 +284,25 @@ func TestResolveOutboxResend(t *testing.T) {
 	assert.Len(t, e.onServer(t, "Sent"), 1)
 }
 
-func TestSendRetriesThenFails(t *testing.T) {
+// A server that cannot be reached is tried again later, with no limit on tries.
+func TestSendRetriesAfterNetworkError(t *testing.T) {
 	e := newSendEnv(t, false)
 	e.sendNew(t)
 	_, err := e.s.db.Execute(bg, "UPDATE accounts SET smtp_port = 1")
 	require.NoError(t, err)
-	for i := 0; i < 5; i++ {
+	for range 7 {
 		e.sync(t)
+		e.clock.Advance(time.Hour)
 	}
-	assert.Equal(t, "failed", e.state(t))
-	assert.Equal(t, 5, e.count(t, "SELECT attempts FROM outbox"))
 	out, _ := e.s.ListOutbox(bg, e.acc.ID)
 	require.Len(t, out, 1)
+	assert.Equal(t, "queued", out[0].State)
+	assert.Equal(t, 7, out[0].Attempts)
 	assert.NotEmpty(t, out[0].LastError)
+	_, err = e.s.db.Execute(bg, "UPDATE accounts SET smtp_port = ?", e.acc.SMTPPort)
+	require.NoError(t, err)
+	e.sync(t)
+	assert.Len(t, e.smtp.Messages(), 1)
 }
 
 func TestSendValidates(t *testing.T) {

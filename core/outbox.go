@@ -3,6 +3,7 @@ package core
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	netmail "net/mail"
@@ -32,8 +33,6 @@ var ErrNoOutboxDraft = errors.New("the outbox item has no draft to bring back")
 // sent, so that CancelOutbox can take it back.
 const UndoSendWindow = 10 * time.Second
 
-const maxSendAttempts = 5
-
 // beforeOutboxItem, when set, runs after processOutbox read the items and before
 // it handles each one. Tests use it to change an item under a running sync.
 var beforeOutboxItem func(id int64)
@@ -53,20 +52,63 @@ type OutboxItem struct {
 	// window), NextAttempt when it is retried; zero means now.
 	SendAfter, NextAttempt time.Time
 	Attempts               int
+	// Failure is why a failed item failed, for the host to explain in the
+	// user's language; nil otherwise, and for a failure without one (its raw
+	// copy could not be read; LastError says why).
+	Failure *OutboxFailure
 }
+
+// OutboxFailure is why an outbox item failed. It is stored as JSON in these
+// field names.
+type OutboxFailure struct {
+	// Reason is "rejected": the server refused the message for good (a 5xx
+	// reply), described by the other fields; or "expired": it waited in the
+	// queue longer than OutboxExpiry and was not sent.
+	Reason string `json:"reason"`
+	// Stage is the refused SMTP command, "MAIL", "RCPT" or "DATA" (rejected).
+	Stage string `json:"stage,omitempty"`
+	// Recipient is the refused address at RCPT (rejected).
+	Recipient string `json:"recipient,omitempty"`
+	// Code is the SMTP reply code, such as 550 (rejected).
+	Code int `json:"code,omitempty"`
+	// Enhanced is the enhanced status code, such as "5.1.1"; "" if the server
+	// sent none (rejected).
+	Enhanced string `json:"enhanced,omitempty"`
+	// Message is the server's reply text, untranslated (rejected).
+	Message string `json:"message,omitempty"`
+}
+
+// OutboxExpiry is how long an item may wait in the queue, counted from when it
+// is sent at the earliest (SendAfter; resend restarts it). Past it, the item
+// fails as expired instead of being sent.
+const OutboxExpiry = 3 * 24 * time.Hour
+
+// Retries of a message the server refused for now or could not take: the wait
+// is retryMin after the first try, doubled per try, at most retryMax.
+const (
+	retryMin = time.Minute
+	retryMax = time.Hour
+)
 
 // ListOutbox returns the account's unfinished outbox items, oldest first.
 func (s *Service) ListOutbox(ctx context.Context, accountID int64) ([]OutboxItem, error) {
-	rows, err := s.db.Query(ctx, `SELECT id, subject, state, last_error, created_at, draft_id, send_after, next_attempt_at, attempts
+	rows, err := s.db.Query(ctx, `SELECT id, subject, state, last_error, created_at, draft_id, send_after, next_attempt_at, attempts, failure
 		FROM outbox WHERE account_id = ? AND state != 'done' ORDER BY id`, accountID)
 	if err != nil {
 		return nil, err
 	}
 	out := make([]OutboxItem, 0, len(rows.Values))
 	for _, r := range rows.Values {
-		out = append(out, OutboxItem{ID: store.Int(r[0]), Subject: store.Str(r[1]), State: store.Str(r[2]),
+		it := OutboxItem{ID: store.Int(r[0]), Subject: store.Str(r[1]), State: store.Str(r[2]),
 			LastError: store.Str(r[3]), CreatedAt: time.Unix(store.Int(r[4]), 0), DraftID: store.Int(r[5]),
-			SendAfter: unixMilli(r[6]), NextAttempt: unixMilli(r[7]), Attempts: int(store.Int(r[8]))})
+			SendAfter: unixMilli(r[6]), NextAttempt: unixMilli(r[7]), Attempts: int(store.Int(r[8]))}
+		if f := store.Str(r[9]); f != "" {
+			it.Failure = new(OutboxFailure)
+			if err := json.Unmarshal([]byte(f), it.Failure); err != nil {
+				return nil, err
+			}
+		}
+		out = append(out, it)
 	}
 	return out, nil
 }
@@ -124,7 +166,8 @@ func (s *Service) takeBack(ctx context.Context, id int64, state string) error {
 
 // ResolveOutbox decides an item in send_uncertain, archive_uncertain or failed:
 // confirm_sent treats it as sent (it is archived next), resend queues it again
-// for now and discard drops it; confirm_sent and discard delete its draft. edit
+// for now (OutboxExpiry counts from then) and discard drops it; all three clear
+// its Failure, and confirm_sent and discard delete its draft. edit
 // takes a failed item back as CancelOutbox does. resend also retries a queued
 // item now, its undo window still kept.
 func (s *Service) ResolveOutbox(ctx context.Context, id int64, action string) error {
@@ -157,9 +200,9 @@ func (s *Service) ResolveOutbox(ctx context.Context, id int64, action string) er
 	var stmts []sqlite.Statement
 	switch action {
 	case "confirm_sent":
-		stmts = []sqlite.Statement{dropDraft, {SQL: "UPDATE outbox SET state = 'sent', last_error = NULL WHERE " + decidable, Args: []any{id}}}
+		stmts = []sqlite.Statement{dropDraft, {SQL: "UPDATE outbox SET state = 'sent', last_error = NULL, failure = NULL WHERE " + decidable, Args: []any{id}}}
 	case "resend":
-		stmts = []sqlite.Statement{{SQL: `UPDATE outbox SET state = 'queued', attempts = 0, last_error = NULL, send_after = ?,
+		stmts = []sqlite.Statement{{SQL: `UPDATE outbox SET state = 'queued', attempts = 0, last_error = NULL, failure = NULL, send_after = ?,
 			next_attempt_at = NULL WHERE ` + decidable, Args: []any{s.clk().Now().UnixMilli(), id}}}
 	case "discard":
 		stmts = []sqlite.Statement{dropDraft, {SQL: "DELETE FROM outbox WHERE " + decidable, Args: []any{id}}}
@@ -226,20 +269,24 @@ type outboxRow struct {
 	messageID, rawPath string
 	rcpts              []string
 	state              string
-	draftID            any // NULL without a draft
+	draftID            any   // NULL without a draft
+	attempts           int   // tries so far
+	queuedAt           int64 // unix ms the expiry counts from
 }
 
 // processOutbox sends the account's queued messages and files sent ones into the
 // Sent folder over c. Every state change is written before the network action it
 // guards, and a message whose submission may have succeeded is never sent again
-// automatically. Network failures are recorded on the items; database errors are
-// returned, and so is a refused SMTP login, which stops the round and pauses the
-// account's outbox (smtp_reauth).
+// automatically. A queued item past OutboxExpiry fails instead of being sent.
+// Network failures are recorded on the items; database errors are returned, and
+// so is a refused SMTP login, which stops the round and pauses the account's
+// outbox (smtp_reauth).
 func (s *Service) processOutbox(ctx context.Context, c *imapclient.Client, accountID int64) error {
 	start := s.clk().Now().UnixMilli()
 	defer s.wakeForOutbox(ctx, accountID, start)
 	// A queued item waits for its undo window and its retry time.
-	rows, err := s.db.Query(ctx, `SELECT id, message_id_hdr, raw_path, rcpts, state, draft_id FROM outbox
+	rows, err := s.db.Query(ctx, `SELECT id, message_id_hdr, raw_path, rcpts, state, draft_id, attempts,
+		COALESCE(send_after, created_at * 1000) FROM outbox
 		WHERE account_id = ? AND (state IN ('sent', 'send_uncertain', 'archive_uncertain')
 		OR state = 'queued' AND IFNULL(send_after, 0) <= ? AND IFNULL(next_attempt_at, 0) <= ?) ORDER BY id`, accountID, start, start)
 	if err != nil || len(rows.Values) == 0 {
@@ -272,12 +319,21 @@ func (s *Service) processOutbox(ctx context.Context, c *imapclient.Client, accou
 			return ctx.Err()
 		}
 		o := outboxRow{id: store.Int(r[0]), messageID: store.Str(r[1]), rawPath: store.Str(r[2]),
-			rcpts: jsonList(store.Str(r[3])), state: store.Str(r[4]), draftID: r[5]}
+			rcpts: jsonList(store.Str(r[3])), state: store.Str(r[4]), draftID: r[5], attempts: int(store.Int(r[6])),
+			queuedAt: store.Int(r[7])}
 		if beforeOutboxItem != nil {
 			beforeOutboxItem(o.id)
 		}
 		switch o.state {
 		case "queued":
+			if o.queuedAt < start-OutboxExpiry.Milliseconds() {
+				// Not sent days late without the user knowing: the user decides.
+				if err := s.failOutbox(wctx, o, "send: queued for over 3 days",
+					OutboxFailure{Reason: "expired"}); err != nil {
+					return err
+				}
+				continue
+			}
 			if ep == nil {
 				e, f, v, err := s.smtpEndpoint(ctx, accountID, "")
 				if err != nil {
@@ -366,7 +422,9 @@ func (s *Service) smtpEndpoint(ctx context.Context, accountID int64, rejected st
 
 // sendItem submits a queued item and reports whether it is now sent. A refused
 // login puts the item back to queued and returns the conn.ErrAuthFailed error.
-// The claim (queued to sending) races CancelOutbox's delete: one of them wins.
+// A permanent refusal (5xx) fails it; any other error before the server could
+// accept it queues it again after a backoff. The claim (queued to sending)
+// races CancelOutbox's delete: one of them wins.
 func (s *Service) sendItem(ctx, wctx context.Context, ep conn.Endpoint, from string, o outboxRow) (bool, error) {
 	if ok, err := s.setOutbox(ctx, o, "sending", ""); !ok || err != nil {
 		return false, err
@@ -378,6 +436,7 @@ func (s *Service) sendItem(ctx, wctx context.Context, ep conn.Endpoint, from str
 		return false, err
 	}
 	err = send.Send(ctx, ep, from, o.rcpts, raw)
+	var rej *send.RejectedError
 	switch {
 	case err == nil:
 		return s.setOutbox(wctx, o, "sent", "")
@@ -387,11 +446,26 @@ func (s *Service) sendItem(ctx, wctx context.Context, ep conn.Endpoint, from str
 	case errors.Is(err, conn.ErrAuthFailed):
 		_, derr := s.setOutbox(wctx, o, "queued", err.Error())
 		return false, errors.Join(err, derr)
+	case errors.As(err, &rej) && rej.Code >= 500:
+		return false, s.failOutbox(wctx, o, err.Error(), OutboxFailure{Reason: "rejected", Stage: rej.Stage,
+			Recipient: rej.Recipient, Code: rej.Code, Enhanced: rej.Enhanced, Message: rej.Message})
 	}
-	_, derr := s.db.Execute(wctx, `UPDATE outbox SET attempts = attempts + 1, last_error = ?,
-		state = CASE WHEN attempts + 1 >= ? THEN 'failed' ELSE 'queued' END WHERE id = ? AND state = 'sending'`,
-		err.Error(), maxSendAttempts, o.id)
+	// Refused for now (4xx), or failed before the server could take it: retry later.
+	wait := min(retryMin<<min(o.attempts, 6), retryMax) // 2^6 min is past retryMax; the shift cannot overflow
+	_, derr := s.db.Execute(wctx, `UPDATE outbox SET state = 'queued', attempts = attempts + 1, last_error = ?,
+		next_attempt_at = ? WHERE id = ? AND state = 'sending'`, err.Error(), s.clk().Now().Add(wait).UnixMilli(), o.id)
 	return false, derr
+}
+
+// failOutbox moves the item from o.state to failed for f.
+func (s *Service) failOutbox(ctx context.Context, o outboxRow, lastError string, f OutboxFailure) error {
+	b, err := json.Marshal(f)
+	if err != nil {
+		return err
+	}
+	_, err = s.db.Execute(ctx, "UPDATE outbox SET state = 'failed', last_error = ?, failure = ? WHERE id = ? AND state = ?",
+		lastError, string(b), o.id, o.state)
+	return err
 }
 
 // archiveItem files a sent item into the Sent folder unless it is there already

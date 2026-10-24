@@ -669,7 +669,7 @@ func (s *Service) enqueue(ctx context.Context, draftID, rev int64, checked []str
 	}
 	if _, err := s.db.Execute(ctx, `INSERT INTO outbox(account_id, message_id_hdr, raw_path, rcpts, state, subject, created_at,
 		draft_id, send_after) VALUES (?, ?, ?, ?, 'queued', ?, ?, ?, ?)`,
-		d.AccountID, messageID, rawPath, encodeList(rcpts), d.Subject, time.Now().Unix(), draftID,
+		d.AccountID, messageID, rawPath, encodeList(rcpts), d.Subject, s.clk().Now().Unix(), draftID,
 		s.clk().Now().Add(UndoSendWindow).UnixMilli()); err != nil {
 		os.Remove(rawPath)
 		return err

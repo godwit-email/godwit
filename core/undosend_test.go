@@ -6,6 +6,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/emersion/go-smtp"
 	"github.com/godwit-email/godwit/core/events"
 	"github.com/godwit-email/godwit/core/internal/testmail"
 	"github.com/stretchr/testify/assert"
@@ -201,26 +202,26 @@ func TestItemWithoutDraft(t *testing.T) {
 	assert.Zero(t, it.DraftID)
 	assert.True(t, it.SendAfter.IsZero())
 	assert.ErrorIs(t, e.s.CancelOutbox(bg, it.ID), ErrNoOutboxDraft)
-	_, err = e.s.db.Execute(bg, "UPDATE accounts SET smtp_port = 1")
-	require.NoError(t, err)
-	for range maxSendAttempts {
-		e.sync(t)
-	}
+	e.rejectBob()
+	e.sync(t)
 	require.Equal(t, "failed", e.state(t))
 	assert.ErrorIs(t, e.s.ResolveOutbox(bg, it.ID, "edit"), ErrNoOutboxDraft)
 	require.NoError(t, e.s.ResolveOutbox(bg, it.ID, "discard"))
 }
 
-// failNew sends a fresh draft that fails to send every time, and returns the
+// rejectBob makes the server refuse bob@example.com for good, until cleared
+// with Reply.
+func (e *sendEnv) rejectBob() {
+	e.smtp.Reply("bob@example.com", testmail.AtRcpt, &smtp.SMTPError{Code: 550, Message: "No such user"}, false)
+}
+
+// failNew sends a fresh draft to bob that the server refuses, and returns the
 // failed item.
 func (e *sendEnv) failNew(t *testing.T) OutboxItem {
 	t.Helper()
-	_, err := e.s.db.Execute(bg, "UPDATE accounts SET smtp_port = 1")
-	require.NoError(t, err)
+	e.rejectBob()
 	e.sendNew(t)
-	for range maxSendAttempts {
-		e.sync(t)
-	}
+	e.sync(t)
 	it := e.onlyItem(t)
 	require.Equal(t, "failed", it.State)
 	return it
@@ -228,7 +229,6 @@ func (e *sendEnv) failNew(t *testing.T) OutboxItem {
 
 func TestEditFailedItem(t *testing.T) {
 	e := newSendEnv(t, false)
-	smtpPort := e.acc.SMTPPort
 	it := e.failNew(t)
 	require.NotZero(t, it.DraftID)
 	assert.False(t, e.listed(t, it.DraftID))
@@ -244,8 +244,6 @@ func TestEditFailedItem(t *testing.T) {
 	_, err = e.s.SaveDraft(bg, d)
 	require.NoError(t, err)
 
-	_, err = e.s.db.Execute(bg, "UPDATE accounts SET smtp_port = ?", smtpPort)
-	require.NoError(t, err)
 	require.NoError(t, e.s.Send(bg, d.ID))
 	e.clock.Advance(UndoSendWindow)
 	e.sync(t)
@@ -270,10 +268,8 @@ func TestDiscardAndConfirmSentDropDraft(t *testing.T) {
 // resend sends a failed item at once; on a queued one it keeps the window.
 func TestResendKeepsOrSkipsWindow(t *testing.T) {
 	e := newSendEnv(t, false)
-	smtpPort := e.acc.SMTPPort
 	it := e.failNew(t)
-	_, err := e.s.db.Execute(bg, "UPDATE accounts SET smtp_port = ?", smtpPort)
-	require.NoError(t, err)
+	e.smtp.Reply("bob@example.com", testmail.AtRcpt, nil, false)
 	require.NoError(t, e.s.ResolveOutbox(bg, it.ID, "resend"))
 	assert.Equal(t, e.clock.Now().UnixMilli(), e.onlyItem(t).SendAfter.UnixMilli())
 	e.sync(t)
