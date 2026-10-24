@@ -48,8 +48,23 @@ type DraftAttachment struct {
 // it to edit the draft while Send is building the message.
 var afterDraftLoad func()
 
-// ErrStaleDraft means the draft changed since the revision the caller saved against.
+// ErrStaleDraft means the draft changed since the revision the caller saved
+// against, or it is in the outbox: read-only until it is taken back
+// (CancelOutbox), or gone once the message may have gone out.
 var ErrStaleDraft = errors.New("draft changed since it was loaded")
+
+// checkWritable is ErrStaleDraft while an outbox item holds the draft. The
+// caller holds editMu, so no Send queues the draft until it unlocks.
+func (s *Service) checkWritable(ctx context.Context, draftID int64) error {
+	rows, err := s.db.Query(ctx, "SELECT 1 FROM outbox WHERE draft_id = ? LIMIT 1", draftID)
+	if err != nil {
+		return err
+	}
+	if len(rows.Values) > 0 {
+		return ErrStaleDraft
+	}
+	return nil
+}
 
 var draftModes = map[string]bool{"new": true, "reply": true, "reply_all": true, "forward": true}
 
@@ -235,6 +250,9 @@ func (s *Service) SaveDraft(ctx context.Context, d Draft) (Draft, error) {
 		}
 		return s.GetDraft(ctx, r.LastInsertID)
 	}
+	if err := s.checkWritable(ctx, d.ID); err != nil {
+		return Draft{}, err
+	}
 	q, args := `UPDATE drafts SET to_addrs = ?, cc_addrs = ?, bcc_addrs = ?, reply_to = ?, subject = ?,
 		body_html = ?, updated_at = ?, revision = revision + 1 WHERE id = ?`,
 		[]any{encodeList(d.To), encodeList(d.Cc), encodeList(d.Bcc), d.ReplyTo, d.Subject, d.HTML, now, d.ID}
@@ -260,9 +278,11 @@ func (s *Service) SaveDraft(ctx context.Context, d Draft) (Draft, error) {
 	return s.GetDraft(ctx, d.ID)
 }
 
-// ListDrafts returns the account's drafts, most recently saved first.
+// ListDrafts returns the account's drafts, most recently saved first. Drafts
+// in the outbox are not listed.
 func (s *Service) ListDrafts(ctx context.Context, accountID int64) ([]Draft, error) {
-	rows, err := s.db.Query(ctx, "SELECT id FROM drafts WHERE account_id = ? ORDER BY updated_at DESC, id DESC", accountID)
+	rows, err := s.db.Query(ctx, `SELECT id FROM drafts WHERE account_id = ?
+		AND id NOT IN (SELECT draft_id FROM outbox WHERE draft_id IS NOT NULL) ORDER BY updated_at DESC, id DESC`, accountID)
 	if err != nil {
 		return nil, err
 	}
@@ -401,11 +421,12 @@ func (s *Service) draftRevision(ctx context.Context, draftID int64) (int64, erro
 	return store.Int(rows.Values[0][0]), nil
 }
 
-// checkRevision is ErrStaleDraft unless rev < 0 or the draft is at rev. The
-// caller holds editMu, so the draft stays there until it releases it.
+// checkRevision is ErrStaleDraft unless the draft is writable and rev < 0 or
+// the draft is at rev. The caller holds editMu, so the draft stays there until
+// it releases it.
 func (s *Service) checkRevision(ctx context.Context, draftID, rev int64) error {
-	if rev < 0 {
-		return nil
+	if err := s.checkWritable(ctx, draftID); err != nil || rev < 0 {
+		return err
 	}
 	now, err := s.draftRevision(ctx, draftID)
 	if err != nil {
@@ -515,6 +536,9 @@ func (s *Service) send(ctx context.Context, draftID, want int64) error {
 		if len(cs) > 0 {
 			s.editMu.Lock()
 			d, err := s.GetDraft(ctx, draftID)
+			if err == nil {
+				err = s.checkWritable(ctx, draftID) // queued already: nothing to check
+			}
 			s.editMu.Unlock()
 			if err != nil {
 				return err
@@ -552,9 +576,11 @@ func (s *Service) send(ctx context.Context, draftID, want int64) error {
 
 // enqueue queues the draft if it is still at revision rev (any, if rev < 0)
 // and the checking plugins are still checked, else errSendChanged. Plugin
-// changes wait from the comparison until the draft is queued.
+// changes wait from the comparison until the draft is queued. The item holds
+// the draft, read-only, and is sent once UndoSendWindow has passed; a draft
+// queued already is ErrStaleDraft.
 func (s *Service) enqueue(ctx context.Context, draftID, rev int64, checked []string) error {
-	if err := s.stopDraftRuns(ctx, draftID); err != nil { // the queued draft deletes its conversations
+	if err := s.stopDraftRuns(ctx, draftID); err != nil { // Wit proposes nothing for the queued draft
 		return err
 	}
 	defer s.runMu.Unlock()
@@ -564,6 +590,9 @@ func (s *Service) enqueue(ctx context.Context, draftID, rev int64, checked []str
 	defer s.pluginsMu.RUnlock()
 	d, err := s.GetDraft(ctx, draftID)
 	if err != nil {
+		return err
+	}
+	if err := s.checkWritable(ctx, draftID); err != nil {
 		return err
 	}
 	if (rev >= 0 && d.Revision != rev) || !slices.Equal(checkerIDs(s.sendCheckersLocked()), checked) {
@@ -632,24 +661,20 @@ func (s *Service) enqueue(ctx context.Context, draftID, rev int64, checked []str
 	if int64(len(raw)) > attachLimit { // encoding, headers and the text part count too
 		return ErrTooLarge
 	}
-	rawPath := filepath.Join(s.dataDir, "outbox", strconv.FormatInt(draftID, 10)+".eml") // draft ids are never reused
-	// Durable (file and directory entry) before the transaction below deletes the draft.
+	// Draft ids are never reused, and a draft is in one item at a time.
+	rawPath := filepath.Join(s.dataDir, "outbox", strconv.FormatInt(draftID, 10)+".eml")
+	// Durable (file and directory entry) before the item is sent from it.
 	if err := store.WriteFileAtomic(rawPath, raw); err != nil {
 		return err
 	}
-	if _, err := s.db.Transaction(ctx, []sqlite.Statement{
-		{SQL: `INSERT INTO outbox(account_id, message_id_hdr, raw_path, rcpts, state, subject, created_at)
-			VALUES (?, ?, ?, ?, 'queued', ?, ?)`,
-			Args: []any{d.AccountID, messageID, rawPath, encodeList(rcpts), d.Subject, time.Now().Unix()}},
-		{SQL: "DELETE FROM draft_attachments WHERE draft_id = ?", Args: []any{draftID}},
-		{SQL: "DELETE FROM drafts WHERE id = ?", Args: []any{draftID}},
-	}); err != nil {
+	if _, err := s.db.Execute(ctx, `INSERT INTO outbox(account_id, message_id_hdr, raw_path, rcpts, state, subject, created_at,
+		draft_id, send_after) VALUES (?, ?, ?, ?, 'queued', ?, ?, ?, ?)`,
+		d.AccountID, messageID, rawPath, encodeList(rcpts), d.Subject, time.Now().Unix(), draftID,
+		s.clk().Now().Add(UndoSendWindow).UnixMilli()); err != nil {
 		os.Remove(rawPath)
 		return err
 	}
 	s.bus.Publish(events.Event{Type: events.OutboxChanged, AccountID: d.AccountID})
-	s.wakeWorker(d.AccountID)
-	// ponytail: a failed removal leaves an orphan directory; sweep drafts/ on startup if it matters.
-	os.RemoveAll(s.draftDir(draftID))
+	s.wakeWorker(d.AccountID) // its round sets the time the item is sent at
 	return nil
 }

@@ -503,6 +503,9 @@ func (s *Service) UndoLastAssist(ctx context.Context, draftID int64) error {
 	if err != nil {
 		return err
 	}
+	if err := s.checkWritable(ctx, draftID); err != nil {
+		return err
+	}
 	if d.Revision != u.Revision {
 		return ErrInvalidState
 	}

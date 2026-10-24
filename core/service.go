@@ -179,10 +179,6 @@ func New(ctx context.Context, opts Options) (*Service, error) {
 	if err != nil {
 		return nil, err
 	}
-	if err := recoverOutbox(ctx, db); err != nil {
-		db.Close()
-		return nil, err
-	}
 	install, err := loadInstallID(ctx, db)
 	if err != nil {
 		db.Close()
@@ -190,6 +186,10 @@ func New(ctx context.Context, opts Options) (*Service, error) {
 	}
 	s := &Service{db: db, bus: events.New(), dataDir: opts.DataDir, opts: opts, installID: install, streamsEnd: make(chan struct{}),
 		clock: testClock, hookClock: testHookClock, pluginClock: testPluginClock, labelWake: make(chan struct{}, 1), reclaimWake: make(chan struct{}, 1)}
+	if err := s.recoverOutbox(ctx); err != nil {
+		db.Close()
+		return nil, err
+	}
 	s.labelJudge = s.defaultLabelJudge
 	s.assets = newModelAssets(s)
 	if exe, err := os.Executable(); err == nil {

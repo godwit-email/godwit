@@ -37,10 +37,12 @@ func firstMessage(t *testing.T, api contract.API) core.MessageSummary {
 	return page.Items[len(page.Items)-1]
 }
 
-// waitOutbox syncs (the outbox is worked off by sync, and the Env has no
-// background sync) until the account's outbox is empty, and returns the last list.
+// waitOutbox lets the undo window pass and syncs (the outbox is worked off by
+// sync, and the Env has no background sync) until the account's outbox is
+// empty, and returns the last list.
 func waitOutbox(t *testing.T, api contract.API, env *coretest.Env, accountID int64) []core.OutboxItem {
 	t.Helper()
+	env.AdvanceClock(core.UndoSendWindow)
 	var list []core.OutboxItem
 	require.Eventually(t, func() bool {
 		require.NoError(t, env.Svc.SyncNow(t.Context(), accountID))

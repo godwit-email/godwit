@@ -11,6 +11,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/godwit-email/godwit/core/internal/testclock"
 	"github.com/godwit-email/godwit/core/internal/testmail"
 	"github.com/godwit-email/godwit/core/mail"
 	"github.com/godwit-email/godwit/core/store"
@@ -21,7 +22,8 @@ import (
 
 type sendEnv struct {
 	*syncEnv
-	smtp *testmail.Inbox
+	smtp  *testmail.Inbox
+	clock *testclock.Clock // the Services' clock, reopened ones' too
 }
 
 // newSendEnv is newSyncEnv with access to the SMTP inbox. With autoSave the SMTP
@@ -29,6 +31,7 @@ type sendEnv struct {
 func newSendEnv(t *testing.T, autoSave bool) *sendEnv {
 	t.Helper()
 	keyring.MockInit()
+	clock := useTestClock(t)
 	dir := t.TempDir()
 	s, err := New(bg, Options{DataDir: dir, ImageClient: loopbackImageClient()})
 	require.NoError(t, err)
@@ -43,10 +46,18 @@ func newSendEnv(t *testing.T, autoSave bool) *sendEnv {
 	ai.Name, ai.Signature = "Alice", "Alice Liddell\nGodwit"
 	acc, err := s.AddAccount(bg, ai)
 	require.NoError(t, err)
-	return &sendEnv{syncEnv: &syncEnv{s: s, im: im, acc: acc, dir: dir}, smtp: in}
+	return &sendEnv{syncEnv: &syncEnv{s: s, im: im, acc: acc, dir: dir}, smtp: in, clock: clock}
 }
 
-// sendNew sends a fresh draft to bob and returns its Message-ID.
+// useTestClock gives the Services the test creates a fake clock.
+func useTestClock(t *testing.T) *testclock.Clock {
+	c := testclock.New(time.Now())
+	setFor(t, &testClock, Clock(c))
+	return c
+}
+
+// sendNew sends a fresh draft to bob, lets its undo window pass and returns
+// its Message-ID.
 func (e *sendEnv) sendNew(t *testing.T) string {
 	t.Helper()
 	d, err := e.s.NewDraft(bg, e.acc.ID, "new", 0)
@@ -55,6 +66,7 @@ func (e *sendEnv) sendNew(t *testing.T) string {
 	d, err = e.s.SaveDraft(bg, d)
 	require.NoError(t, err)
 	require.NoError(t, e.s.Send(bg, d.ID))
+	e.clock.Advance(UndoSendWindow)
 	return store.Str(e.rows(t, "SELECT message_id_hdr FROM outbox ORDER BY id DESC LIMIT 1")[0][0])
 }
 
@@ -93,6 +105,7 @@ func TestReplyToQuotedDisplayNames(t *testing.T) {
 	d, err := e.s.NewDraft(bg, e.acc.ID, "reply_all", e.idOf(t, "q@x"))
 	require.NoError(t, err)
 	require.NoError(t, e.s.Send(bg, d.ID))
+	e.clock.Advance(UndoSendWindow)
 	e.sync(t)
 	got := e.smtp.Messages()
 	require.Len(t, got, 1)
@@ -142,6 +155,7 @@ func TestSendHTMLWithBcc(t *testing.T) {
 	require.DirExists(t, draftDir)
 
 	require.NoError(t, e.s.Send(bg, d.ID))
+	e.clock.Advance(UndoSendWindow)
 	e.sync(t)
 
 	got := e.smtp.Messages()
@@ -201,7 +215,10 @@ func TestResolveOnlyUncertainOrFailed(t *testing.T) {
 	for _, st := range []string{"queued", "sending", "sent", "archiving", "done"} {
 		r, err := e.s.db.Execute(bg, "INSERT INTO outbox(account_id, state) VALUES (?, ?)", e.acc.ID, st)
 		require.NoError(t, err)
-		for _, a := range []string{"confirm_sent", "resend", "discard"} {
+		for _, a := range []string{"confirm_sent", "resend", "discard", "edit"} {
+			if st == "queued" && a == "resend" {
+				continue // retry now
+			}
 			assert.ErrorIs(t, e.s.ResolveOutbox(bg, r.LastInsertID, a), ErrInvalidState, st+" "+a)
 		}
 	}
@@ -398,7 +415,7 @@ func TestOutboxSkipsChangedItem(t *testing.T) {
 }
 
 // SaveDraft overlapping Send either lands before Send reads the draft or fails;
-// it never succeeds only to have the older content queued and the draft deleted.
+// it never succeeds only to have the older content queued.
 func TestSaveDraftDuringSend(t *testing.T) {
 	e := newSendEnv(t, false)
 	d, err := e.s.NewDraft(bg, e.acc.ID, "new", 0)
@@ -421,7 +438,7 @@ func TestSaveDraftDuringSend(t *testing.T) {
 	}
 	t.Cleanup(func() { afterDraftLoad = nil })
 	require.NoError(t, e.s.Send(bg, d.ID))
-	assert.Error(t, <-saved, "the draft is gone once sent")
+	assert.ErrorIs(t, <-saved, ErrStaleDraft, "the draft is read-only once sent")
 	out, err := e.s.ListOutbox(bg, e.acc.ID)
 	require.NoError(t, err)
 	assert.Equal(t, "old", out[0].Subject)
@@ -610,6 +627,7 @@ func TestSignatureDelimiterSetting(t *testing.T) {
 		d, err = e.s.SaveDraft(bg, d)
 		require.NoError(t, err)
 		require.NoError(t, e.s.Send(bg, d.ID))
+		e.clock.Advance(UndoSendWindow)
 		e.sync(t)
 		got := e.smtp.Messages()
 		p, err := mail.Parse(got[len(got)-1].Data)

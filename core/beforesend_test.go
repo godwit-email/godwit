@@ -99,8 +99,8 @@ func TestBeforeSendWarnThenAcknowledge(t *testing.T) {
 	assert.Equal(t, 1, outboxCount(t, s))
 	assert.Equal(t, 1, calls(t, s, "warner"), "an acknowledgement does not run the checks again")
 	assert.Equal(t, 1, calls(t, s, "auditor"))
-	_, err = s.GetDraft(t.Context(), d.ID)
-	assert.Error(t, err, "the draft is gone once queued")
+	_, err = s.SaveDraft(t.Context(), d)
+	assert.ErrorIs(t, err, ErrStaleDraft, "the draft is read-only once queued")
 }
 
 func TestBeforeSendBlock(t *testing.T) {

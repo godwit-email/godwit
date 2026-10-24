@@ -220,11 +220,15 @@ func TestDraftPaneShowsSignatureImages(t *testing.T) {
 	t.Fatal("the pane does not show the signature image")
 }
 
-func (h *harness) draftGone(id int64) {
+func (h *harness) draftQueued(id int64) {
 	h.t.Helper()
 	h.until("the draft queued", func() bool {
-		_, err := h.env.Svc.GetDraft(context.Background(), id)
-		return err != nil
+		d, err := h.env.Svc.GetDraft(context.Background(), id)
+		if err != nil {
+			return false
+		}
+		items, err := h.env.Svc.ListOutbox(context.Background(), d.AccountID)
+		return err == nil && slices.ContainsFunc(items, func(it core.OutboxItem) bool { return it.DraftID == id })
 	})
 }
 
@@ -232,7 +236,7 @@ func TestDraftPaneSend(t *testing.T) {
 	h, ds := draftsHarness(t, "Draft hello")
 	h.click("Draft hello")
 	h.click("发送")
-	h.draftGone(ds[0].ID)
+	h.draftQueued(ds[0].ID)
 	h.called(fmt.Sprint("DraftDeleted ", ds[0].ID))
 	h.until("the pane gone", func() bool { return !h.tt.HasText("继续编辑") })
 }
@@ -248,7 +252,7 @@ func TestDraftPaneSendWarnsThenAcknowledged(t *testing.T) {
 		t.Fatal("sent before the warning was acknowledged")
 	}
 	h.click("仍然发送")
-	h.draftGone(ds[0].ID)
+	h.draftQueued(ds[0].ID)
 	h.called(fmt.Sprint("DraftDeleted ", ds[0].ID))
 }
 

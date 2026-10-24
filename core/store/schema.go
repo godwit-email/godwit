@@ -410,6 +410,16 @@ var Migrations = [][]string{{
 	// An MCP call's question for the user (core.mcpInput, JSON): the server's
 	// form and state, and once answered the answer it is called again with.
 	`ALTER TABLE approvals ADD COLUMN input TEXT`,
+}, {
+	// Undo send: the draft an item was sent from, read-only while the item
+	// holds it and deleted once the message may have gone out (NULL: none to
+	// bring back, as for items queued before). send_after is the earliest
+	// send (the undo window's end), next_attempt_at the next retry, both unix
+	// milliseconds, NULL meaning now. failure is why it failed (JSON).
+	`ALTER TABLE outbox ADD COLUMN draft_id INTEGER REFERENCES drafts(id) ON DELETE SET NULL`,
+	`ALTER TABLE outbox ADD COLUMN send_after INTEGER`,
+	`ALTER TABLE outbox ADD COLUMN next_attempt_at INTEGER`,
+	`ALTER TABLE outbox ADD COLUMN failure TEXT`,
 }}
 
 // HistoryRowsVersion is the schema version that keeps a conversation's

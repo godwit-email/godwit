@@ -12,8 +12,8 @@ import (
 )
 
 // DeleteDraft deletes the draft and its attachment files, cancelling the
-// Wit runs of its conversations first. A draft already queued is in the
-// outbox, not here, and stays.
+// Wit runs of its conversations first. A draft in the outbox stays
+// (ErrStaleDraft).
 func (s *Service) DeleteDraft(ctx context.Context, id int64) error {
 	if err := s.stopDraftRuns(ctx, id); err != nil {
 		return err
@@ -21,6 +21,9 @@ func (s *Service) DeleteDraft(ctx context.Context, id int64) error {
 	defer s.runMu.Unlock()
 	s.editMu.Lock() // never while Send queues it
 	defer s.editMu.Unlock()
+	if err := s.checkWritable(ctx, id); err != nil {
+		return err
+	}
 	return s.deleteDraft(ctx, id)
 }
 
@@ -74,6 +77,9 @@ func (s *Service) SetDraftAccount(ctx context.Context, id, accountID, revision i
 	if err != nil {
 		return Draft{}, err
 	}
+	if err := s.checkWritable(ctx, id); err != nil {
+		return Draft{}, err
+	}
 	if d.Revision != revision {
 		return Draft{}, ErrStaleDraft
 	}
@@ -121,7 +127,8 @@ func (s *Service) SendAcknowledgedRevision(ctx context.Context, draftID, revisio
 // outside the quote and the signature, and the addresses and subject a new
 // draft of its mode starts with (none for a new one; a reply's own). A
 // draft Wit is working on (an assist run active, or an approval pending) is
-// in use, never empty. deleted reports whether it went.
+// in use, never empty; one in the outbox is ErrStaleDraft. deleted reports
+// whether it went.
 func (s *Service) DeleteDraftIfEmpty(ctx context.Context, id, revision int64) (deleted bool, err error) {
 	s.runMu.Lock() // no run starts or approval appears until the delete: runMu before editMu, as decide
 	defer s.runMu.Unlock()
@@ -129,6 +136,9 @@ func (s *Service) DeleteDraftIfEmpty(ctx context.Context, id, revision int64) (d
 	defer s.editMu.Unlock()
 	d, err := s.GetDraft(ctx, id)
 	if err != nil {
+		return false, err
+	}
+	if err := s.checkWritable(ctx, id); err != nil {
 		return false, err
 	}
 	busy, err := s.db.Query(ctx, `SELECT 1 FROM conversations c JOIN runs r ON r.conversation_id = c.id

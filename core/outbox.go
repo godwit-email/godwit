@@ -10,6 +10,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/egoist/mygo/plugins/sqlite"
 	"github.com/emersion/go-imap/v2"
 	"github.com/emersion/go-imap/v2/imapclient"
 	"github.com/godwit-email/godwit/core/conn"
@@ -20,8 +21,16 @@ import (
 )
 
 // ErrInvalidState is returned by ResolveOutbox and ResolveApproval for an item
-// that is not waiting for a decision.
+// that is not waiting for a decision, and by CancelOutbox for one no longer queued.
 var ErrInvalidState = errors.New("item is not waiting for a decision")
+
+// ErrNoOutboxDraft is CancelOutbox's and ResolveOutbox edit's error for an
+// item queued before undo send: it has no draft to bring back.
+var ErrNoOutboxDraft = errors.New("the outbox item has no draft to bring back")
+
+// UndoSendWindow is how long a sent message waits in the outbox before it is
+// sent, so that CancelOutbox can take it back.
+const UndoSendWindow = 10 * time.Second
 
 const maxSendAttempts = 5
 
@@ -36,33 +45,95 @@ type OutboxItem struct {
 	Subject          string
 	State, LastError string
 	CreatedAt        time.Time
+	// DraftID is the draft it was sent from, read-only until CancelOutbox or
+	// ResolveOutbox edit brings it back; 0 once the message may have gone
+	// out, and for items queued before undo send.
+	DraftID int64
+	// SendAfter is when it is sent at the earliest (the end of the undo
+	// window), NextAttempt when it is retried; zero means now.
+	SendAfter, NextAttempt time.Time
+	Attempts               int
 }
 
 // ListOutbox returns the account's unfinished outbox items, oldest first.
 func (s *Service) ListOutbox(ctx context.Context, accountID int64) ([]OutboxItem, error) {
-	rows, err := s.db.Query(ctx, `SELECT id, subject, state, last_error, created_at FROM outbox
-		WHERE account_id = ? AND state != 'done' ORDER BY id`, accountID)
+	rows, err := s.db.Query(ctx, `SELECT id, subject, state, last_error, created_at, draft_id, send_after, next_attempt_at, attempts
+		FROM outbox WHERE account_id = ? AND state != 'done' ORDER BY id`, accountID)
 	if err != nil {
 		return nil, err
 	}
 	out := make([]OutboxItem, 0, len(rows.Values))
 	for _, r := range rows.Values {
 		out = append(out, OutboxItem{ID: store.Int(r[0]), Subject: store.Str(r[1]), State: store.Str(r[2]),
-			LastError: store.Str(r[3]), CreatedAt: time.Unix(store.Int(r[4]), 0)})
+			LastError: store.Str(r[3]), CreatedAt: time.Unix(store.Int(r[4]), 0), DraftID: store.Int(r[5]),
+			SendAfter: unixMilli(r[6]), NextAttempt: unixMilli(r[7]), Attempts: int(store.Int(r[8]))})
 	}
 	return out, nil
 }
 
+// unixMilli is a stored time in unix milliseconds; NULL is the zero time.
+func unixMilli(v any) time.Time {
+	if v == nil {
+		return time.Time{}
+	}
+	return time.UnixMilli(store.Int(v))
+}
+
+// CancelOutbox takes a queued message back before it is sent: the item and its
+// raw copy go, and its draft is listed and writable again. An item no longer
+// queued (sending started, or later) is ErrInvalidState, one without a draft
+// ErrNoOutboxDraft. It does not wait for a running sync: the sync claims the
+// item for sending, or CancelOutbox deletes it, never both.
+func (s *Service) CancelOutbox(ctx context.Context, id int64) error {
+	ctx, end, err := s.begin(ctx, 0)
+	if err != nil {
+		return err
+	}
+	defer end()
+	return s.takeBack(ctx, id, "queued")
+}
+
+// takeBack deletes the item if it is in state with a draft, which it leaves
+// to the user again.
+func (s *Service) takeBack(ctx context.Context, id int64, state string) error {
+	rows, err := s.db.Query(ctx, "SELECT account_id, raw_path, state, draft_id FROM outbox WHERE id = ?", id)
+	if err != nil {
+		return err
+	}
+	if len(rows.Values) == 0 {
+		return fmt.Errorf("outbox item %d not found", id)
+	}
+	r := rows.Values[0]
+	if err := s.bind(ctx, store.Int(r[0])); err != nil {
+		return err
+	}
+	res, err := s.db.Execute(ctx, "DELETE FROM outbox WHERE id = ? AND state = ? AND draft_id IS NOT NULL", id, state)
+	if err != nil {
+		return err
+	}
+	if res.Changes == 0 {
+		if r[3] == nil && store.Str(r[2]) == state {
+			return ErrNoOutboxDraft
+		}
+		return ErrInvalidState
+	}
+	os.Remove(store.Str(r[1]))
+	s.bus.Publish(events.Event{Type: events.OutboxChanged, AccountID: store.Int(r[0])})
+	return nil
+}
+
 // ResolveOutbox decides an item in send_uncertain, archive_uncertain or failed:
 // confirm_sent treats it as sent (it is archived next), resend queues it again
-// and discard drops it.
+// for now and discard drops it; confirm_sent and discard delete its draft. edit
+// takes a failed item back as CancelOutbox does. resend also retries a queued
+// item now, its undo window still kept.
 func (s *Service) ResolveOutbox(ctx context.Context, id int64, action string) error {
 	ctx, end, err := s.begin(ctx, 0)
 	if err != nil {
 		return err
 	}
 	defer end()
-	rows, err := s.db.Query(ctx, "SELECT account_id, raw_path FROM outbox WHERE id = ?", id)
+	rows, err := s.db.Query(ctx, "SELECT account_id, raw_path, draft_id FROM outbox WHERE id = ?", id)
 	if err != nil {
 		return err
 	}
@@ -77,23 +148,35 @@ func (s *Service) ResolveOutbox(ctx context.Context, id int64, action string) er
 		return err
 	}
 	defer unlock()
+	if action == "edit" {
+		return s.takeBack(ctx, id, "failed")
+	}
 	const decidable = "id = ? AND state IN ('send_uncertain', 'archive_uncertain', 'failed')"
-	var sql string
+	// The draft goes with the item, in the same transaction: it is done with.
+	dropDraft := sqlite.Statement{SQL: "DELETE FROM drafts WHERE id = (SELECT draft_id FROM outbox WHERE " + decidable + ")", Args: []any{id}}
+	var stmts []sqlite.Statement
 	switch action {
 	case "confirm_sent":
-		sql = "UPDATE outbox SET state = 'sent', last_error = NULL WHERE " + decidable
+		stmts = []sqlite.Statement{dropDraft, {SQL: "UPDATE outbox SET state = 'sent', last_error = NULL WHERE " + decidable, Args: []any{id}}}
 	case "resend":
-		sql = "UPDATE outbox SET state = 'queued', attempts = 0, last_error = NULL WHERE " + decidable
+		stmts = []sqlite.Statement{{SQL: `UPDATE outbox SET state = 'queued', attempts = 0, last_error = NULL, send_after = ?,
+			next_attempt_at = NULL WHERE ` + decidable, Args: []any{s.clk().Now().UnixMilli(), id}}}
 	case "discard":
-		sql = "DELETE FROM outbox WHERE " + decidable
+		stmts = []sqlite.Statement{dropDraft, {SQL: "DELETE FROM outbox WHERE " + decidable, Args: []any{id}}}
 	default:
 		return fmt.Errorf("unknown outbox action %q", action)
 	}
-	r, err := s.db.Execute(ctx, sql, id)
+	rs, err := s.db.Transaction(ctx, stmts)
 	if err != nil {
 		return err
 	}
-	if r.Changes == 0 {
+	if rs[len(rs)-1].Changes == 0 && action == "resend" { // retry a queued one now
+		rs, err = s.db.Transaction(ctx, []sqlite.Statement{{SQL: "UPDATE outbox SET next_attempt_at = NULL WHERE id = ? AND state = 'queued'", Args: []any{id}}})
+		if err != nil {
+			return err
+		}
+	}
+	if rs[len(rs)-1].Changes == 0 {
 		return ErrInvalidState
 	}
 	if action == "discard" {
@@ -101,18 +184,40 @@ func (s *Service) ResolveOutbox(ctx context.Context, id int64, action string) er
 			os.Remove(p)
 		}
 	}
+	if action != "resend" {
+		s.removeDraftDir(rows.Values[0][2])
+	}
 	s.bus.Publish(events.Event{Type: events.OutboxChanged, AccountID: store.Int(rows.Values[0][0])})
 	s.wakeWorker(store.Int(rows.Values[0][0]))
 	return nil
 }
 
+// removeDraftDir removes the directory of a deleted draft, if id is one.
+func (s *Service) removeDraftDir(id any) {
+	if id != nil {
+		// ponytail: a failed removal leaves an orphan directory; sweep drafts/ on startup if it matters.
+		os.RemoveAll(s.draftDir(store.Int(id)))
+	}
+}
+
 // recoverOutbox runs at startup: an item caught mid-SMTP or mid-APPEND by a crash
-// may or may not have gone through.
-func recoverOutbox(ctx context.Context, db *store.DB) error {
-	if _, err := db.Execute(ctx, "UPDATE outbox SET state = 'send_uncertain' WHERE state = 'sending'"); err != nil {
+// may or may not have gone through. One that may have gone out takes its draft
+// with it, as setOutbox does.
+func (s *Service) recoverOutbox(ctx context.Context) error {
+	rows, err := s.db.Query(ctx, "SELECT draft_id FROM outbox WHERE state = 'sending' AND draft_id IS NOT NULL")
+	if err != nil {
 		return err
 	}
-	_, err := db.Execute(ctx, "UPDATE outbox SET state = 'archive_uncertain' WHERE state = 'archiving'")
+	if _, err := s.db.Transaction(ctx, []sqlite.Statement{
+		{SQL: "DELETE FROM drafts WHERE id IN (SELECT draft_id FROM outbox WHERE state = 'sending')"}, // draft_id becomes NULL
+		{SQL: "UPDATE outbox SET state = 'send_uncertain' WHERE state = 'sending'"},
+	}); err != nil {
+		return err
+	}
+	for _, r := range rows.Values {
+		s.removeDraftDir(r[0])
+	}
+	_, err = s.db.Execute(ctx, "UPDATE outbox SET state = 'archive_uncertain' WHERE state = 'archiving'")
 	return err
 }
 
@@ -121,6 +226,7 @@ type outboxRow struct {
 	messageID, rawPath string
 	rcpts              []string
 	state              string
+	draftID            any // NULL without a draft
 }
 
 // processOutbox sends the account's queued messages and files sent ones into the
@@ -130,8 +236,12 @@ type outboxRow struct {
 // returned, and so is a refused SMTP login, which stops the round and pauses the
 // account's outbox (smtp_reauth).
 func (s *Service) processOutbox(ctx context.Context, c *imapclient.Client, accountID int64) error {
-	rows, err := s.db.Query(ctx, `SELECT id, message_id_hdr, raw_path, rcpts, state FROM outbox
-		WHERE account_id = ? AND state IN ('queued', 'sent', 'send_uncertain', 'archive_uncertain') ORDER BY id`, accountID)
+	start := s.clk().Now().UnixMilli()
+	defer s.wakeForOutbox(ctx, accountID, start)
+	// A queued item waits for its undo window and its retry time.
+	rows, err := s.db.Query(ctx, `SELECT id, message_id_hdr, raw_path, rcpts, state, draft_id FROM outbox
+		WHERE account_id = ? AND (state IN ('sent', 'send_uncertain', 'archive_uncertain')
+		OR state = 'queued' AND IFNULL(send_after, 0) <= ? AND IFNULL(next_attempt_at, 0) <= ?) ORDER BY id`, accountID, start, start)
 	if err != nil || len(rows.Values) == 0 {
 		return err
 	}
@@ -162,7 +272,7 @@ func (s *Service) processOutbox(ctx context.Context, c *imapclient.Client, accou
 			return ctx.Err()
 		}
 		o := outboxRow{id: store.Int(r[0]), messageID: store.Str(r[1]), rawPath: store.Str(r[2]),
-			rcpts: jsonList(store.Str(r[3])), state: store.Str(r[4])}
+			rcpts: jsonList(store.Str(r[3])), state: store.Str(r[4]), draftID: r[5]}
 		if beforeOutboxItem != nil {
 			beforeOutboxItem(o.id)
 		}
@@ -226,6 +336,19 @@ func (s *Service) processOutbox(ctx context.Context, c *imapclient.Client, accou
 	return nil
 }
 
+// wakeForOutbox has the account's worker sync again when the next queued item
+// not due at start (unix milliseconds) comes due, in place of the time set
+// before. Items due at start were handled this round.
+func (s *Service) wakeForOutbox(ctx context.Context, accountID, start int64) {
+	rows, err := s.db.Query(ctx, `SELECT MIN(due) FROM (SELECT MAX(IFNULL(send_after, 0), IFNULL(next_attempt_at, 0)) AS due
+		FROM outbox WHERE account_id = ? AND state = 'queued') WHERE due > ?`, accountID, start)
+	var next time.Time
+	if err == nil && len(rows.Values) > 0 && rows.Values[0][0] != nil {
+		next = time.UnixMilli(store.Int(rows.Values[0][0]))
+	}
+	s.wakeWorkerAt(accountID, next)
+}
+
 // smtpEndpoint returns the account's SMTP server with its credentials, its
 // address and the credential version. rejected: an access token SMTP refused, or "".
 func (s *Service) smtpEndpoint(ctx context.Context, accountID int64, rejected string) (conn.Endpoint, string, uint64, error) {
@@ -243,6 +366,7 @@ func (s *Service) smtpEndpoint(ctx context.Context, accountID int64, rejected st
 
 // sendItem submits a queued item and reports whether it is now sent. A refused
 // login puts the item back to queued and returns the conn.ErrAuthFailed error.
+// The claim (queued to sending) races CancelOutbox's delete: one of them wins.
 func (s *Service) sendItem(ctx, wctx context.Context, ep conn.Endpoint, from string, o outboxRow) (bool, error) {
 	if ok, err := s.setOutbox(ctx, o, "sending", ""); !ok || err != nil {
 		return false, err
@@ -311,10 +435,24 @@ func (s *Service) archiveItem(ctx, wctx context.Context, c *imapclient.Client, s
 }
 
 // setOutbox moves the item from o.state to state and reports whether it did: an
-// item changed since it was read (resolved, discarded) is left alone.
+// item changed since it was read (resolved, discarded, cancelled) is left alone.
+// From sending to sent or send_uncertain the message may have gone out: its
+// draft is deleted in the same transaction, never to be sent again.
 func (s *Service) setOutbox(ctx context.Context, o outboxRow, state, lastError string) (bool, error) {
-	r, err := s.db.Execute(ctx, "UPDATE outbox SET state = ?, last_error = ? WHERE id = ? AND state = ?", state, lastError, o.id, o.state)
-	return err == nil && r.Changes == 1, err
+	stmts := []sqlite.Statement{{SQL: "UPDATE outbox SET state = ?, last_error = ? WHERE id = ? AND state = ?", Args: []any{state, lastError, o.id, o.state}}}
+	gone := o.state == "sending" && (state == "sent" || state == "send_uncertain") && o.draftID != nil
+	if gone { // only if the update moved it: the item is in state then (draft_id becomes NULL)
+		stmts = append(stmts, sqlite.Statement{SQL: "DELETE FROM drafts WHERE id = (SELECT draft_id FROM outbox WHERE id = ? AND state = ?)",
+			Args: []any{o.id, state}})
+	}
+	rs, err := s.db.Transaction(ctx, stmts)
+	if err != nil || rs[0].Changes != 1 {
+		return false, err
+	}
+	if gone {
+		s.removeDraftDir(o.draftID)
+	}
+	return true, nil
 }
 
 // finishOutbox marks the item done and drops its raw copy, which the Sent folder now holds.
