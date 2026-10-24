@@ -48,5 +48,7 @@ export async function generate(req: Request) {
     else if (ev.type === "thinking_delta") hostEmit("reasoning", ev.delta);
   }
   const m = await s.result();
-  return { stopReason: m.stopReason, error: m.errorMessage ?? "", input: m.usage.input, output: m.usage.output };
+  // pi-ai's input leaves out the cached tokens; Godwit's is the whole prompt.
+  const u = m.usage;
+  return { stopReason: m.stopReason, error: m.errorMessage ?? "", input: u.input + u.cacheRead + u.cacheWrite, output: u.output };
 }
