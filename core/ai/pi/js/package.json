@@ -1,0 +1,14 @@
+{
+  "name": "godwit-pi-engine",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "bun build src/engine.ts --target=browser --format=esm --minify --outfile=../engine.js"
+  },
+  "dependencies": {
+    "@earendil-works/pi-ai": "1.4.0",
+    "abort-controller": "3.0.0",
+    "core-js-pure": "3.46.0",
+    "web-streams-polyfill": "4.2.0"
+  }
+}

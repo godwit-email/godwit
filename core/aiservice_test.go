@@ -512,3 +512,30 @@ func TestResponsesRefusalNotCached(t *testing.T) {
 	assert.Equal(t, "done", evs[len(evs)-1].Kind)
 	assert.Len(t, rs.Requests(), 2, "the refusal was not cached")
 }
+
+func TestRunSkillSummarizeOnPi(t *testing.T) {
+	e := newSkillEnv(t)
+	st, err := e.s.GetSettings(t.Context())
+	require.NoError(t, err)
+	st.PiEngine = true
+	_, err = e.s.SetSettings(t.Context(), st)
+	require.NoError(t, err)
+
+	e.srv.Script(testllm.Turn{Text: []string{"- 周五", "在港口"}})
+	evs := e.run(t, "summarize", Target{Kind: "message", ID: e.msg})
+	assert.Equal(t, []string{"- 周五", "在港口"}, texts(evs))
+	assert.Equal(t, "done", evs[len(evs)-1].Kind)
+	reqs := e.srv.Requests()
+	require.Len(t, reqs, 1)
+	assert.Equal(t, "Godwit", reqs[0].Header.Get("User-Agent"), "pi-ai sent it")
+	assert.Contains(t, string(reqs[0].System), "Summarize the email text you are given.")
+	assert.Contains(t, promptOf(t, reqs[0]), "Meet on Friday at the harbour.")
+	assert.Equal(t, 1, e.cacheRows(t), "cached as on Genkit")
+
+	// What pi does not cover yet stays on Genkit with the switch on.
+	e.srv.Script(testllm.Turn{Text: []string{"译文"}})
+	e.run(t, "translate", Target{Kind: "message", ID: e.msg})
+	reqs = e.srv.Requests()
+	require.Len(t, reqs, 2)
+	assert.NotEqual(t, "Godwit", reqs[1].Header.Get("User-Agent"))
+}

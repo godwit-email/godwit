@@ -1,3 +1,5 @@
+github.com/Calcium-Ion/moejs v0.1.0-alpha.9 h1:WY1ebChegtafhPjHSQx3Q+gfnrjqYwHewHuO9k+v7e0=
+github.com/Calcium-Ion/moejs v0.1.0-alpha.9/go.mod h1:9YqHj36EV7pzV/vlEYSw49f3oggeJFdmqcjM9TmDpHs=
 github.com/Masterminds/semver/v3 v3.5.0 h1:kQceYJfbupGfZOKZQg0kou0DgAKhzDg2NZPAwZ/2OOE=
 github.com/Masterminds/semver/v3 v3.5.0/go.mod h1:4V+yj/TJE1HU9XfppCwVMZq3I84lprf4nC11bSS5beM=
 github.com/anthropics/anthropic-sdk-go v1.23.0 h1:YVNnxfVVPJM+zvQ1oDgTJUBtLttGpBHe1WtJBr0QeAs=

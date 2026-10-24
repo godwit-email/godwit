@@ -213,7 +213,7 @@ func TestSettings(t *testing.T) {
 			LaunchAtLogin: true, KeepInBackground: false, UnreadInMenuBar: true,
 			NotifyNewMail: false, NotifySmartOnly: true, NotifyPreview: false,
 			QuickReplies: true, Summary: true, ThreadView: false,
-			DefaultModel: "svc/big", SmallModel: "svc/small", JudgeService: "judge", JudgeThreshold: 0.85, Translator: "plugin/dlx", LocalAPI: true, SidebarWidth: 320, ListWidth: 400, SignatureDelimiter: true,
+			DefaultModel: "svc/big", SmallModel: "svc/small", JudgeService: "judge", JudgeThreshold: 0.85, Translator: "plugin/dlx", LocalAPI: true, SidebarWidth: 320, ListWidth: 400, SignatureDelimiter: true, PiEngine: true,
 			TrustedImageSenders: []string{"bob@example.com"},      // only TrustImageSender sets it; SetSettings keeps it
 			DisabledBuiltins:    []string{core.SignInCodesPlugin}} // only SetPluginEnabled sets it; SetSettings keeps it
 		bv, sv := reflect.ValueOf(before), reflect.ValueOf(st)
