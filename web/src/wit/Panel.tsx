@@ -50,6 +50,7 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { HoverCard, HoverCardContent, HoverCardTrigger } from "@/components/ui/hover-card";
+import { Input } from "@/components/ui/input";
 import {
   InputGroup,
   InputGroupAddon,
@@ -416,11 +417,180 @@ function ToolCard({
   );
 }
 
+const ASK_QUESTION_TOOL = "ask_user_question";
+
+type Question = {
+  question: string;
+  header: string;
+  multiSelect: boolean;
+  options: { label: string; description: string }[];
+};
+
+/** A question's arguments, with its answers once answered; no questions when they do not parse. */
+function questionArgs(a: Approval): { questions: Question[]; answers?: string[][] } {
+  try {
+    const v = JSON.parse(a.args || "{}");
+    if (Array.isArray(v?.questions)) return v;
+  } catch {
+    // not JSON: no questions to show
+  }
+  return { questions: [] };
+}
+
+/**
+ * Questions Wit asks (ask_user_question) waiting: each with its options, one picked or several
+ * where multiSelect, and the user's own words beside them; 跳过, or 提交 once every one is answered.
+ */
+function QuestionCard({
+  a,
+  busy,
+  answer,
+  skip,
+  t,
+}: {
+  a: Approval;
+  busy: boolean;
+  /** Without it (a host that takes no answers) only 跳过 works. */
+  answer?(answers: string[][]): void;
+  skip(): void;
+  t: T;
+}) {
+  const { questions } = questionArgs(a);
+  const [picked, setPicked] = useState<string[][]>(() => questions.map(() => []));
+  const [own, setOwn] = useState<string[]>(() => questions.map(() => ""));
+  // own words replace a single answer's pick, and join a multiSelect's
+  const answers = questions.map((q, i) => {
+    const w = own[i].trim();
+    if (!w) return picked[i];
+    return q.multiSelect ? [...picked[i], w] : [w];
+  });
+  const pick = (i: number, label: string, multi: boolean) => {
+    setPicked((p) =>
+      p.map((x, j) =>
+        j !== i
+          ? x
+          : !multi
+            ? [label]
+            : x.includes(label)
+              ? x.filter((l) => l !== label)
+              : [...x, label],
+      ),
+    );
+    if (!multi) setOwn((o) => o.map((x, j) => (j === i ? "" : x)));
+  };
+  const write = (i: number, v: string, multi: boolean) => {
+    setOwn((o) => o.map((x, j) => (j === i ? v : x)));
+    if (!multi && v.trim()) setPicked((p) => p.map((x, j) => (j === i ? [] : x)));
+  };
+  return (
+    <div className="overflow-hidden rounded-xl border-[0.5px] bg-background shadow-sm">
+      <div className="flex items-center gap-2 border-b-[0.5px] bg-sidebar px-3.5 py-2.5 leading-5">
+        <span className="font-semibold">{t("wit.question.asks")}</span>
+        <Badge
+          variant="outline"
+          className="ml-auto border-(--warning-border) bg-(--warning-bg) text-(--warning-text)"
+        >
+          {t("wit.approval.pending")}
+        </Badge>
+      </div>
+      <div className="flex flex-col gap-4 px-3.5 py-3 text-md">
+        {questions.map((q, i) => (
+          <fieldset key={q.question} className="flex min-w-0 flex-col gap-1.5">
+            <legend className="mb-1.5 flex flex-wrap items-center gap-2">
+              {q.header && <Badge variant="secondary">{q.header}</Badge>}
+              <span className="font-medium">{q.question}</span>
+              {q.multiSelect && (
+                <span className="text-muted-foreground text-sm">{t("wit.question.multi")}</span>
+              )}
+            </legend>
+            {q.options.map((o) => {
+              const on = picked[i].includes(o.label);
+              return (
+                <label
+                  key={o.label}
+                  className={cn(
+                    "flex cursor-pointer items-start gap-2.5 rounded-lg border-[0.5px] px-3 py-2 transition-colors has-disabled:cursor-default has-disabled:opacity-50",
+                    on ? "border-primary bg-primary/5" : "hover:bg-muted",
+                  )}
+                >
+                  <input
+                    type={q.multiSelect ? "checkbox" : "radio"}
+                    name={`question-${a.id}-${i}`}
+                    checked={on}
+                    disabled={busy}
+                    onChange={() => pick(i, o.label, q.multiSelect)}
+                    className="mt-1 accent-primary"
+                  />
+                  <span className="flex flex-col">
+                    <span>{o.label}</span>
+                    {o.description && (
+                      <span className="text-muted-foreground text-sm">{o.description}</span>
+                    )}
+                  </span>
+                </label>
+              );
+            })}
+            <Input
+              aria-label={t("wit.question.other")}
+              placeholder={t("wit.question.other_placeholder")}
+              value={own[i]}
+              disabled={busy}
+              onChange={(e) => write(i, e.target.value, q.multiSelect)}
+            />
+          </fieldset>
+        ))}
+      </div>
+      <div className="flex justify-end gap-2 border-muted border-t-[0.5px] px-3.5 py-2.5">
+        <Button
+          variant="outline"
+          className="px-3 font-normal text-md"
+          disabled={busy}
+          onClick={skip}
+        >
+          {t("wit.question.skip")}
+        </Button>
+        <Button
+          className="px-3.5 text-md"
+          disabled={busy || !answer || answers.length === 0 || answers.some((x) => x.length === 0)}
+          onClick={() => answer?.(answers)}
+        >
+          {t("wit.question.submit")}
+        </Button>
+      </div>
+    </div>
+  );
+}
+
 /** A decided approval as one line (已允许 / 已拒绝 / 没有完成 · what), a draft Wit made as its card. */
 function Settled({ a, onDraft, t }: { a: Approval; onDraft?(id: number): Promise<void>; t: T }) {
   const label = toolLabel(a.tool, t);
   // the draft sent or deleted since this history was read: opening it fails, and its card goes
   const [gone, setGone] = useState(false);
+  if (a.tool === ASK_QUESTION_TOOL && a.state !== "failed") {
+    const { questions, answers } = questionArgs(a);
+    const done = a.state === "done";
+    const Icon = done ? RiCheckboxCircleLine : RiCloseCircleLine;
+    return (
+      <>
+        <span className="flex items-center gap-2 text-muted-foreground text-sm">
+          <Icon
+            className={cn("size-3.5 shrink-0", done ? "text-green-600" : "text-muted-foreground")}
+          />
+          <span>{t(done ? "wit.question.answered" : "wit.question.skipped")}</span>
+        </span>
+        {done && (
+          <dl className="flex flex-col gap-1.5 rounded-xl border-[0.5px] bg-background px-3 py-2.5 text-md">
+            {questions.map((q, i) => (
+              <div key={q.question}>
+                <dt className="text-muted-foreground text-sm">{q.question}</dt>
+                <dd>{answers?.[i]?.join(", ")}</dd>
+              </div>
+            ))}
+          </dl>
+        )}
+      </>
+    );
+  }
   const [Icon, key, tone] =
     a.state === "done"
       ? [RiCheckboxCircleLine, "wit.approval.allowed", "text-green-600"]
@@ -786,6 +956,7 @@ export function Panel({
   onAsked,
   onSearch,
   onSession,
+  onAnswer,
 }: {
   info?: WitInfo;
   history: WitHistory;
@@ -821,6 +992,8 @@ export function Panel({
   onSearch?(q: string): Promise<MailHit[]>;
   /** Decides a with 本次对话都允许 (the Wit page only); true once decided. */
   onSession?(a: Approval): Promise<boolean>;
+  /** Answers question a (ask_user_question), one list per question; true once answered. */
+  onAnswer?(a: Approval, answers: string[][]): Promise<boolean>;
 }) {
   // A command's question: the skill as its menu names it (翻译成…, or the adjustment).
   const commandLabel = (c: WitCommand) => {
@@ -1153,10 +1326,24 @@ export function Panel({
   // Decides a, or with all its run's pending calls; its cards go once decided.
   const decideAs = async (a: Approval, accept: boolean, all: boolean) => {
     if (!onDecide || deciding.length > 0) return;
-    const ids = all ? open.filter((x) => x.run === a.run).map((x) => x.id) : [a.id];
+    // 全部允许 answers no question: those stay
+    const ids = all
+      ? open
+          .filter((x) => x.run === a.run && !(accept && x.tool === ASK_QUESTION_TOOL))
+          .map((x) => x.id)
+      : [a.id];
     setDeciding(ids);
     try {
       if (await onDecide(a, accept, all)) setDecided((d) => [...d, ...ids]);
+    } finally {
+      setDeciding([]);
+    }
+  };
+  const answerAs = async (a: Approval, answers: string[][]) => {
+    if (!onAnswer || deciding.length > 0) return;
+    setDeciding([a.id]);
+    try {
+      if (await onAnswer(a, answers)) setDecided((d) => [...d, a.id]);
     } finally {
       setDeciding([]);
     }
@@ -1165,7 +1352,11 @@ export function Panel({
     const shown = as.filter((a) => !decided.includes(a.id));
     const busy = !onDecide || deciding.length > 0;
     // all of the run's calls waiting, a body edit's among them
-    const pending = shown.length > 0 ? open.filter((x) => x.run === shown[0].run).length : 0;
+    // 全部允许 answers no question: questions are not counted
+    const pending =
+      shown.length > 0
+        ? open.filter((x) => x.run === shown[0].run && x.tool !== ASK_QUESTION_TOOL).length
+        : 0;
     return (
       <>
         {pending > 1 && (
@@ -1195,32 +1386,43 @@ export function Panel({
             </span>
           </div>
         )}
-        {shown.map((a) => (
-          <ToolCard
-            key={a.id}
-            a={a}
-            busy={busy}
-            decide={(accept) => decideAs(a, accept, false)}
-            session={
-              onSession && a.sessionAllow
-                ? async () => {
-                    if (deciding.length > 0) return;
-                    // the run's other pending calls of the tool are approved with it
-                    const ids = open
-                      .filter((x) => x.run === a.run && x.tool === a.tool)
-                      .map((x) => x.id);
-                    setDeciding(ids);
-                    try {
-                      if (await onSession(a)) setDecided((d) => [...d, ...ids]);
-                    } finally {
-                      setDeciding([]);
+        {shown.map((a) =>
+          a.tool === ASK_QUESTION_TOOL ? (
+            <QuestionCard
+              key={a.id}
+              a={a}
+              busy={busy}
+              answer={onAnswer && ((answers) => answerAs(a, answers))}
+              skip={() => decideAs(a, false, false)}
+              t={t}
+            />
+          ) : (
+            <ToolCard
+              key={a.id}
+              a={a}
+              busy={busy}
+              decide={(accept) => decideAs(a, accept, false)}
+              session={
+                onSession && a.sessionAllow
+                  ? async () => {
+                      if (deciding.length > 0) return;
+                      // the run's other pending calls of the tool are approved with it
+                      const ids = open
+                        .filter((x) => x.run === a.run && x.tool === a.tool)
+                        .map((x) => x.id);
+                      setDeciding(ids);
+                      try {
+                        if (await onSession(a)) setDecided((d) => [...d, ...ids]);
+                      } finally {
+                        setDeciding([]);
+                      }
                     }
-                  }
-                : undefined
-            }
-            t={t}
-          />
-        ))}
+                  : undefined
+              }
+              t={t}
+            />
+          ),
+        )}
       </>
     );
   };

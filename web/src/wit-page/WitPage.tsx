@@ -211,6 +211,15 @@ function Conversation({
       return false;
     }
   };
+  const onAnswer = async (a: Approval, answers: string[][]) => {
+    try {
+      await decide(a.run, () => api.answer(a.id, answers));
+      return true;
+    } catch (e) {
+      fail(e);
+      return false;
+    }
+  };
   return (
     <Panel
       layout="page"
@@ -219,6 +228,7 @@ function Conversation({
       locked={false}
       resume={resume}
       onDecide={onDecide}
+      onAnswer={onAnswer}
       onSession={onSession}
       onSearch={(q) => api.searchMail(q)}
       onLink={(url) => api.openLink(url)}

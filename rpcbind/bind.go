@@ -69,6 +69,7 @@ var sentinels = []struct {
 	{"signature_name", core.ErrSignatureName},
 	{"account_icon", core.ErrAccountIcon},
 	{"not_grantable", core.ErrNotGrantable},
+	{"needs_answer", core.ErrNeedsAnswer},
 	{"canceled", context.Canceled},
 	{"deadline", context.DeadlineExceeded},
 	{"auth_failed", conn.ErrAuthFailed}, // also a failed account check's cause

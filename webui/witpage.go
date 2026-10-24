@@ -463,6 +463,14 @@ func (p *WitPage) DecideSession(ctx context.Context, approval int64) error {
 	})
 }
 
+// Answer answers question approval, one of the conversation the page follows,
+// with one list of answers per question (core AnswerQuestion). As Decide.
+func (p *WitPage) Answer(ctx context.Context, approval int64, answers [][]string) error {
+	return p.decide(ctx, func(a core.Approval) bool { return a.ID == approval }, func(svc *core.Service) error {
+		return svc.AnswerQuestion(context.WithoutCancel(ctx), approval, answers)
+	})
+}
+
 // SearchMail is the quote picker's search (core Search, every account).
 func (p *WitPage) SearchMail(ctx context.Context, query string) ([]MailHit, error) {
 	_, svc, err := p.w.caller(ctx)

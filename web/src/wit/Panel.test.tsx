@@ -67,6 +67,7 @@ async function setup(
     onDraft?(approval: number): Promise<void>;
     onSearch?(q: string): Promise<MailHit[]>;
     onSession?(a: Approval): Promise<boolean>;
+    onAnswer?(a: Approval, answers: string[][]): Promise<boolean>;
     page?: boolean;
     info?: WitInfo;
   } = {},
@@ -102,6 +103,7 @@ async function setup(
       onDraft={o.onDraft}
       onSearch={o.onSearch}
       onSession={o.onSession}
+      onAnswer={o.onAnswer}
       layout={o.page ? "page" : "panel"}
       transport={tr}
       t={t}
@@ -2156,5 +2158,150 @@ describe("Panel", () => {
     expect(screen.queryByRole("button", { name: "本次对话都允许" })).toBeNull(); // not this tool
     await setup({ history, onDecide });
     expect(screen.queryByRole("button", { name: "本次对话都允许" })).toBeNull(); // not this host (compose)
+  });
+});
+
+describe("ask_user_question", () => {
+  const questions = {
+    questions: [
+      {
+        question: "Which tone?",
+        header: "Tone",
+        multiSelect: false,
+        options: [
+          { label: "Formal", description: "Polite" },
+          { label: "Casual", description: "Friendly" },
+        ],
+      },
+      {
+        question: "Which topics?",
+        header: "Topics",
+        multiSelect: true,
+        options: [
+          { label: "Price", description: "" },
+          { label: "Date", description: "" },
+        ],
+      },
+    ],
+  };
+  const ask = (state = "pending", args: object = questions): Approval => ({
+    id: 9,
+    run: 7,
+    callId: "q1",
+    tool: "ask_user_question",
+    summary: "Which tone?",
+    state,
+    error: "",
+    destinations: [],
+    args: JSON.stringify(args),
+    draftEdit: false,
+    sessionAllow: false,
+    draft: 0,
+  });
+  const interrupt = async (o: Parameters<typeof setup>[0]) => {
+    const user = userEvent.setup();
+    const r = await setup(o);
+    await user.type(input(), "write it{Enter}");
+    const call = { id: "q1", name: "ask_user_question", args: ask().args };
+    r.emit({ kind: "tool_call", call });
+    r.emit({ kind: "interrupted", interrupts: [call], approvals: [ask()], ends: true });
+    return { ...r, user };
+  };
+
+  it("answers with options, several where it is multiSelect, once every question has one", async () => {
+    const onAnswer = vi.fn().mockResolvedValue(true);
+    const onDecide = vi.fn().mockResolvedValue(true);
+    const { user } = await interrupt({ onAnswer, onDecide });
+    expect(await screen.findByText("Wit 想问你")).toBeInTheDocument();
+    expect(screen.getByText("Which tone?")).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "允许" })).toBeNull();
+    const submit = screen.getByRole("button", { name: "提交" });
+    await user.click(screen.getByRole("radio", { name: /Formal/ }));
+    expect(submit).toBeDisabled(); // Which topics? is not answered yet
+    await user.click(screen.getByRole("checkbox", { name: /Price/ }));
+    await user.click(screen.getByRole("checkbox", { name: /Date/ }));
+    await user.click(submit);
+    expect(onAnswer).toHaveBeenCalledWith(ask(), [["Formal"], ["Price", "Date"]]);
+    await waitFor(() => expect(screen.queryByText("Wit 想问你")).toBeNull());
+    expect(onDecide).not.toHaveBeenCalled();
+  });
+
+  it("answers in the user's own words, or skips", async () => {
+    const onAnswer = vi.fn().mockResolvedValue(true);
+    const onDecide = vi.fn().mockResolvedValue(true);
+    const { user } = await interrupt({ onAnswer, onDecide });
+    const [own] = await screen.findAllByRole("textbox", { name: "其他回答" });
+    await user.type(own, "Warm but short");
+    await user.click(screen.getByRole("checkbox", { name: /Price/ }));
+    await user.click(screen.getByRole("button", { name: "提交" }));
+    expect(onAnswer).toHaveBeenCalledWith(ask(), [["Warm but short"], ["Price"]]);
+  });
+
+  it("跳过 rejects the question", async () => {
+    const onDecide = vi.fn().mockResolvedValue(true);
+    const { user } = await interrupt({ onAnswer: vi.fn(), onDecide });
+    await user.click(await screen.findByRole("button", { name: "跳过" }));
+    expect(onDecide).toHaveBeenCalledWith(ask(), false, false);
+  });
+
+  it("全部允许 leaves the question waiting", async () => {
+    const user = userEvent.setup();
+    const onDecide = vi.fn().mockResolvedValue(true);
+    const { emit } = await setup({ onDecide, onAnswer: vi.fn() });
+    await user.type(input(), "go{Enter}");
+    const draft = (id: number): Approval => ({
+      ...ask(),
+      id,
+      callId: `p${id}`,
+      tool: "create_draft",
+      args: "{}",
+    });
+    const calls = [
+      { id: "p7", name: "create_draft", args: "{}" },
+      { id: "p8", name: "create_draft", args: "{}" },
+      { id: "q1", name: "ask_user_question", args: ask().args },
+    ];
+    for (const call of calls) emit({ kind: "tool_call", call });
+    emit({
+      kind: "interrupted",
+      interrupts: calls,
+      approvals: [draft(7), draft(8), ask()],
+      ends: true,
+    });
+    expect(await screen.findByText("2 个操作等你确认")).toBeInTheDocument(); // not the question
+    await user.click(screen.getByRole("button", { name: "全部允许" }));
+    expect(onDecide).toHaveBeenCalledWith(draft(7), true, true);
+    await waitFor(() => expect(screen.queryByText("Wit 想要：创建草稿")).toBeNull());
+    expect(screen.getByText("Wit 想问你")).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "全部允许" })).toBeNull();
+  });
+
+  it("a decided question shows each answer, or that it was skipped", async () => {
+    const turn = (a: Approval) =>
+      hist({
+        messages: [
+          {
+            id: "a1",
+            role: "assistant",
+            text: "",
+            reasoning: "",
+            quoted: [],
+            calls: [{ id: "q1", name: "ask_user_question", args: a.args }],
+            results: [],
+            citations: [],
+            runs: [7],
+            elapsed: 0,
+          },
+        ],
+        approvals: [a],
+      });
+    const done = ask("done", { ...questions, answers: [["Formal"], ["Price", "Date"]] });
+    const { unmount } = await setup({ history: turn(done) });
+    expect(screen.getByText("已回答")).toBeInTheDocument();
+    expect(screen.getByText("Which topics?")).toBeInTheDocument();
+    expect(screen.getByText("Price, Date")).toBeInTheDocument();
+    unmount();
+    await setup({ history: turn(ask("rejected")) });
+    expect(screen.getByText("已跳过")).toBeInTheDocument();
   });
 });

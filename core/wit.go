@@ -23,7 +23,7 @@ import (
 
 // askTools are the built-in tools of an Ask run, which also offers every
 // running plugin's tools and the enabled MCP servers' tools. None of them sends mail.
-var askTools = []string{"search_mail", "get_message", "get_thread", "read_attachment", "classify_mail", "list_skills", "use_skill", "read_skill_file", "create_draft"}
+var askTools = []string{"search_mail", "get_message", "get_thread", "read_attachment", "classify_mail", "list_skills", "use_skill", "read_skill_file", "create_draft", askQuestionTool}
 
 const (
 	askSystem = `You are Wit, the assistant of the Godwit mail app. Use the tools to search and read the user's mail and to use skills. ` +

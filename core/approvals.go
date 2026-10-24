@@ -357,6 +357,9 @@ func (s *Service) decideAs(ctx context.Context, id int64, accept bool, args json
 	if err != nil {
 		return err
 	}
+	if accept && a.Tool == askQuestionTool && args == nil {
+		return ErrNeedsAnswer
+	}
 	var ex *executor
 	if accept {
 		d, ok := s.desc(a.Tool)
@@ -422,6 +425,9 @@ func (s *Service) execute(ctx context.Context, a approvalRow, ex *executor, args
 		return err
 	}
 	if ex == nil {
+		if a.Tool == askQuestionTool {
+			return finish("rejected", msgUnanswered, nil, "rejected")
+		}
 		return finish("rejected", msgRejected, nil, "rejected")
 	}
 	if args != nil {
@@ -498,7 +504,8 @@ func (s *Service) failRun(ctx context.Context, runID int64, cause error) (int64,
 	return convID, err
 }
 
-// ResolveAll resolves the run's pending approvals one by one in seq order.
+// ResolveAll resolves the run's pending approvals one by one in seq order;
+// accepting leaves its questions pending: only AnswerQuestion accepts them.
 func (s *Service) ResolveAll(ctx context.Context, runID int64, accept bool) error {
 	ctx, end, err := s.begin(ctx, 0)
 	if err != nil {
@@ -515,6 +522,9 @@ func (s *Service) resolveAll(ctx context.Context, runID int64, accept bool) erro
 	}
 	var errs []error
 	for _, a := range as {
+		if accept && a.Tool == askQuestionTool { // only the user's answers accept it
+			continue
+		}
 		if err := s.resolveApproval(ctx, a.ID, accept); !errors.Is(err, ErrInvalidState) {
 			errs = append(errs, err)
 		}

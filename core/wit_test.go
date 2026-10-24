@@ -302,7 +302,7 @@ func TestAskNoSendTool(t *testing.T) {
 	reqs := e.srv.Requests()
 	require.Len(t, reqs, 1)
 	names := toolNames(t, reqs[0])
-	assert.Equal(t, []string{"classify_mail", "create_draft", "get_message", "get_thread", "list_skills", "read_attachment", "read_skill_file", "search_mail", "use_skill"}, names)
+	assert.Equal(t, []string{"ask_user_question", "classify_mail", "create_draft", "get_message", "get_thread", "list_skills", "read_attachment", "read_skill_file", "search_mail", "use_skill"}, names)
 	for _, n := range names {
 		assert.NotContains(t, n, "send")
 	}
