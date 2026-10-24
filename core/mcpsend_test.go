@@ -260,6 +260,32 @@ func TestMCPSendBusy(t *testing.T) {
 	assert.NoError(t, err)
 }
 
+// Requests that waited mcpSendTTL free their places, with no listing first.
+func TestMCPSendBusyExpired(t *testing.T) {
+	e, _ := mcpSendEnv(t, MCPSendConfirm, true)
+	draft := func() Draft {
+		o, err := e.s.NewDraft(bg, e.acc.ID, "new", 0)
+		require.NoError(t, err)
+		o.To = []string{"bob@example.com"}
+		o, err = e.s.SaveDraft(bg, o)
+		require.NoError(t, err)
+		return o
+	}
+	for range maxMCPSends {
+		o := draft()
+		_, err := e.s.RequestMCPSend(bg, o.ID, o.Revision)
+		require.NoError(t, err)
+	}
+	for _, r := range e.s.sendReqs {
+		r.created = time.Now().Add(-mcpSendTTL)
+	}
+	o := draft()
+	_, err := e.s.RequestMCPSend(bg, o.ID, o.Revision)
+	require.NoError(t, err)
+	assert.Len(t, e.s.sendReqs, 1)
+	assert.Len(t, e.rows(t, "SELECT 1 FROM audit_log WHERE source = 'local_mcp' AND decision = 'stale'"), maxMCPSends)
+}
+
 // A draft that cannot be read for another reason than being gone keeps its request.
 func TestMCPSendReadFails(t *testing.T) {
 	e, d := mcpSendEnv(t, MCPSendConfirm, true)

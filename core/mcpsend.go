@@ -117,22 +117,32 @@ func (s *Service) RequestMCPSend(ctx context.Context, draftID, revision int64) (
 		return false, err
 	}
 	s.sendReqMu.Lock()
-	var older []int64 // the draft's requests this one replaces
+	var older []int64 // the draft's requests this one replaces, and expired ones
 	waiting := 0
 	for id, r := range s.sendReqs {
 		switch {
 		case r.executing:
+		case r.expired():
+			older = append(older, id)
 		case r.draftID != draftID:
 			waiting++
-		case r.revision == revision && !r.expired():
+		case r.revision == revision:
 			s.sendReqMu.Unlock()
 			return false, nil // asked already
 		default:
 			older = append(older, id)
 		}
 	}
+	endOlder := func() {
+		for _, id := range older {
+			if err := s.endMCPSend(ctx, id, false, "stale"); err != nil && !errors.Is(err, ErrInvalidState) {
+				slog.Default().Warn("could not audit an MCP send", "draft", draftID, "err", err)
+			}
+		}
+	}
 	if waiting >= maxMCPSends {
 		s.sendReqMu.Unlock()
+		endOlder()
 		return false, ErrMCPSendBusy
 	}
 	if s.sendReqs == nil {
@@ -141,11 +151,7 @@ func (s *Service) RequestMCPSend(ctx context.Context, draftID, revision int64) (
 	s.sendReqID++
 	s.sendReqs[s.sendReqID] = &mcpSend{draftID: draftID, revision: revision, created: time.Now(), from: acc.Email, firstTime: first}
 	s.sendReqMu.Unlock()
-	for _, id := range older {
-		if err := s.endMCPSend(ctx, id, false, "stale"); err != nil && !errors.Is(err, ErrInvalidState) {
-			slog.Default().Warn("could not audit an MCP send", "draft", draftID, "err", err)
-		}
-	}
+	endOlder()
 	s.bus.Publish(events.Event{Type: events.MCPSendsChanged})
 	return false, nil
 }

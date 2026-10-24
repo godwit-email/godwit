@@ -1,5 +1,5 @@
 import { expect, test } from "vitest";
-import { render } from "./draft";
+import { render, withAccounts } from "./draft";
 
 // show_draft's text, as godwit mcp writes it (mcpserver/tools.go).
 const shown = `draft 7 · account 2 · reply to message 40 · revision 3 · saved 2026-10-24T09:00:00Z
@@ -140,6 +140,23 @@ test("a changed draft reloaded after the account list still names the account", 
   sendButton(root).click();
   await settle();
   await settle();
+  expect(root.textContent).toContain("This draft changed");
+  expect(root.textContent).toContain("carol@example.com");
+});
+
+test("the account list arriving after a reload names the account on the reloaded draft", async () => {
+  const root = document.createElement("div");
+  const actions = {
+    send: async () => result("draft changed, read it again", true),
+    reload: async () =>
+      result(shown.replace("revision 3", "revision 4").replace("Hi Bob,", "Hello Bob,")),
+  };
+  render(root, result(shown), "", actions);
+  sendButton(root).click();
+  await settle();
+  await settle();
+  withAccounts(root, accounts, actions); // list_accounts answers late
+  expect(root.textContent).toContain("Hello Bob,");
   expect(root.textContent).toContain("This draft changed");
   expect(root.textContent).toContain("carol@example.com");
 });

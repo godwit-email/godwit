@@ -68,6 +68,7 @@ function sendBar(r: Result, actions: Actions, rerender: (r: Result, note: string
  */
 export function render(root: HTMLElement, r: Result, accounts = "", actions?: Actions, note = "") {
   const shown = text(r);
+  drawn.set(root, { r, note, accounts });
   if (r.isError) {
     root.replaceChildren(el("p", "error", shown));
     return;
@@ -96,10 +97,9 @@ export function render(root: HTMLElement, r: Result, accounts = "", actions?: Ac
   const files = value("attachment_name");
   if (files) card.append(el("p", "attachments", files));
   if (note) card.append(el("p", "status", note));
-  shownAccounts.set(root, accounts);
   if (actions) {
     const bar = sendBar(r, actions, (fresh, line) =>
-      render(root, fresh, shownAccounts.get(root), actions, line),
+      render(root, fresh, drawn.get(root)?.accounts, actions, line),
     );
     // The same draft drawn again (the account list arriving) keeps its bar: a send may be out.
     const old = root.querySelector<HTMLElement>(":scope > article > footer");
@@ -108,5 +108,11 @@ export function render(root: HTMLElement, r: Result, accounts = "", actions?: Ac
   root.replaceChildren(card);
 }
 
-/** The account list each root was last drawn with, for a bar kept across draws. */
-const shownAccounts = new WeakMap<HTMLElement, string>();
+/** What each root was last drawn with, for a bar kept across draws and a late account list. */
+const drawn = new WeakMap<HTMLElement, { r: Result; note: string; accounts: string }>();
+
+/** Draws root's last result and note again, naming the account from accounts. */
+export function withAccounts(root: HTMLElement, accounts: string, actions?: Actions) {
+  const last = drawn.get(root);
+  if (last) render(root, last.r, accounts, actions, last.note);
+}
