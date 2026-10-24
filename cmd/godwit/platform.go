@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"fmt"
 	"image/png"
 	"log"
 	"net/url"
@@ -14,6 +15,7 @@ import (
 	"sync"
 
 	"github.com/egoist/mygo"
+	"github.com/egoist/mygo/plugins/updater"
 	"github.com/egoist/mygo/ui"
 	"github.com/godwit-email/godwit/app"
 	"github.com/godwit-email/godwit/assets"
@@ -221,6 +223,37 @@ func (p *platform) NewSignatureView() (ui.NativeWebView, func(int64), func(func(
 		}, func(ok bool) { p.win.Update(func() { done(ok) }) })
 	}
 	return v, show, flush, closeView, nil
+}
+
+// NewBirdView makes the About page's bird in the main window, kept on its
+// entry; it calls nothing back. UI thread.
+func (p *platform) NewBirdView() (ui.NativeWebView, func(), error) {
+	v, err := p.win.NewWebView(mygo.WebViewOptions{})
+	if err != nil {
+		return nil, nil, err
+	}
+	// The panel's color under the transparent page: a transparent web view
+	// shows the window's material, not the panel.
+	hex := func(c ui.Color) string { return fmt.Sprintf("#%02x%02x%02x", c.R, c.G, c.B) }
+	if err := v.SetBackgroundColor("light-dark(" + hex(theme.Light().Background) + ", " + hex(theme.Dark().Background) + ")"); err != nil {
+		log.Printf("the About page's bird: %v", err)
+	}
+	lockPage(v.Page())
+	if err := v.Page().LoadURL("/about.html"); err != nil {
+		v.Destroy()
+		return nil, nil, err
+	}
+	return v, v.Destroy, nil
+}
+
+func (*platform) CanCheckForUpdates() bool { return !packaged() } // as the app menu: a dev build says why it cannot
+func (*platform) CheckForUpdates()         { updater.CheckForUpdates() }
+func (*platform) LatestVersion(ctx context.Context) (string, error) {
+	u, err := mygo.Updater.Check(ctx)
+	if err != nil || u == nil {
+		return "", err
+	}
+	return u.Version, nil
 }
 
 // bodyView is the web view of the reader page page, while it is open as

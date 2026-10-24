@@ -80,6 +80,9 @@ func (a *App) setRoute(r Route) {
 	if r.Page != PageMail {
 		a.mail.stopOlder() // older mail is fetched only while the list shows
 	}
+	if r.Page != PageSettings || r.Settings != "about" {
+		a.pages[PageSettings].(*settingsPage).closeBird() // its WebGL runs only while About shows
+	}
 	a.route = r
 	a.gen++
 	a.page().refresh(nil)
