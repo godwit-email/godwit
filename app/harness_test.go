@@ -2,6 +2,7 @@ package app
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"slices"
 	"strings"
@@ -248,6 +249,9 @@ type fakePlatform struct {
 	codes        []core.SignInCode
 	codeBanners  []core.SignInCode
 	noCodeBanner bool
+	latest       string // LatestVersion's answer
+	gh           bool   // the GitHub CLI is signed in
+	starred      bool
 	files        []string // OpenFiles
 	dir          string   // OpenDirectory
 	savePath     string   // SaveFile
@@ -485,6 +489,29 @@ func (p *fakePlatform) Notify(n Notification) error {
 }
 func (p *fakePlatform) SetSignInCodes(codes []core.SignInCode) { p.codes = slices.Clone(codes) }
 func (p *fakePlatform) SignInCodeBannerSupported() bool        { return !p.noCodeBanner }
+func (p *fakePlatform) NewBirdView() (ui.NativeWebView, func(), error) {
+	p.record("NewBirdView")
+	return nil, nil, errors.New("no web views here") // the About page shows the logo
+}
+func (p *fakePlatform) CanCheckForUpdates() bool { return true }
+func (p *fakePlatform) CheckForUpdates()         { p.record("CheckForUpdates") }
+func (p *fakePlatform) RepoStarred(context.Context) (bool, bool) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	return p.starred, p.gh
+}
+func (p *fakePlatform) StarRepo(context.Context) error {
+	p.record("StarRepo")
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	p.starred = true
+	return nil
+}
+func (p *fakePlatform) LatestVersion(context.Context) (string, error) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	return p.latest, nil
+}
 func (p *fakePlatform) ShowSignInCode(code *core.SignInCode) {
 	if code != nil {
 		p.codeBanners = append(p.codeBanners, *code)

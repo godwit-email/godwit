@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"os"
+	"runtime"
 	"slices"
 	"strconv"
 	"strings"
@@ -22,7 +23,10 @@ import (
 // Version is the app's version; cmd/godwit sets it from the packaged app.
 var Version = "dev"
 
-const repoURL = "https://github.com/godwit-email/godwit"
+const (
+	siteURL = "https://godwit.email"
+	repoURL = "https://github.com/godwit-email/godwit"
+)
 
 var logo = ui.MustParseSVG(assets.Logo)
 
@@ -76,6 +80,17 @@ type settingsPage struct {
 	sigDelete bool             // its delete confirmation is open
 	sigDocs   map[int64]sigDoc // the account pages' signature previews
 	sigLink   *sigLink         // the signature page's link dialog, while it asks
+
+	// The About page's bird, made as the page shows and closed as it goes
+	// (setRoute); birdPosted is its making queued.
+	birdView   ui.NativeWebView
+	birdClose  func()
+	birdErr    error
+	birdPosted bool
+	latest     string // a newer version the update feed offers, read as About opens; "" none
+	gh         bool   // the GitHub CLI is signed in: the star button stars, else it opens the repository
+	starred    bool   // the user starred Godwit, by gh
+	starring   bool   // StarRepo runs
 
 	query string // the sidebar's search
 
@@ -148,6 +163,17 @@ func (p *settingsPage) refresh(hints []events.Event) {
 		if hints == nil { // opened: the directory may have changed since
 			p.ext.refreshRegistry()
 		}
+	case sec == "about" && hints == nil:
+		var v string
+		a.query(func(ctx context.Context) (err error) { v, err = a.plat.LatestVersion(ctx); return err },
+			func(err error) {
+				if err == nil {
+					p.latest = v
+				} // a dev build, offline: Check for Updates says why
+			})
+		var starred, ok bool
+		a.query(func(ctx context.Context) error { starred, ok = a.plat.RepoStarred(ctx); return nil },
+			func(error) { p.gh, p.starred = ok, starred })
 	case sec == "privacy" && hints == nil:
 		var err error
 		a.query(func(ctx context.Context) error { err = a.svc.KeychainStatus(ctx); return nil },
@@ -521,16 +547,131 @@ func (a *App) mcpConfig() string {
 }
 
 func (p *settingsPage) aboutView(c *ui.Context) {
-	t, th := theme.Of(c), c.Theme()
-	a := p.a
-	ui.Column(c).Gap(th.Space(2.5)).AlignItems(ui.Start).Children(func() {
-		ui.Icon(c, logo).Size(theme.Logo, theme.Logo).TextColor(t.Foreground)
+	t, th, a := theme.Of(c), c.Theme(), p.a
+	p.bird()
+	ui.Column(c).FillWidth().AlignItems(ui.Center).Gap(th.Space(1)).Children(func() {
+		ui.Column(c).FillWidth().Height(theme.AboutBird).Center().Children(func() {
+			if p.birdView != nil {
+				ui.WebView(c, p.birdView).FillWidth().Height(theme.AboutBird) // on the panel's color (NewBirdView)
+			} else { // while it is made, or without web views
+				ui.Icon(c, logo).Size(theme.Logo, theme.Logo).TextColor(t.Foreground)
+			}
+		})
 		kit.Text(c, "Godwit", t.Text.X2l).FontWeight(600)
 		ui.Text(c, i18n.Tf("settings.about.version", Version)).TextColor(t.Muted)
-		ui.Text(c, i18n.T("settings.about.license")).TextColor(t.Muted)
-		label := strings.TrimPrefix(repoURL, "https://")
-		kit.Button(c, label, kit.ButtonOpts{Variant: kit.Outline, Size: kit.SizeSm, Icon: "external-link"}).OnClick(func() {
-			a.do(func(context.Context) error { return a.plat.OpenURL(repoURL) }, a.toastErr)
-		})
 	})
+	// value is a row's muted value on the right, a button with icon after it.
+	value := func(text, icon string) bool {
+		return kit.ButtonFrame(c, kit.ButtonOpts{Variant: kit.Ghost, Size: kit.SizeSm}).Label(text).Gap(th.Space(1)).TextColor(t.Muted).Children(func() {
+			ui.Text(c, text).Role(ui.RoleNone) // the button's Label names it
+			ui.Icon(c, icons.Get(icon)).Size(theme.IconSm, theme.IconSm)
+		}).Clicked()
+	}
+	open := func(url string) {
+		a.do(func(context.Context) error { return a.plat.OpenURL(url) }, a.toastErr)
+	}
+	rows := []func(){func() {
+		settingRow(c, i18n.T("settings.about.build"), "", func() {
+			ui.Row(c).Gap(th.Space(2)).AlignItems(ui.Center).Children(func() {
+				ui.Text(c, "Godwit "+Version+" ("+runtime.GOOS+"/"+runtime.GOARCH+")").TextColor(t.Muted).Selectable()
+				if !a.plat.CanCheckForUpdates() {
+					return
+				}
+				// Either opens the updater's window: up to date, or the newer version to install.
+				label, v := i18n.T("settings.about.updates.check"), kit.Outline
+				if p.latest != "" {
+					label, v = i18n.Tf("settings.about.upgrade", p.latest), kit.Default
+				}
+				if settingButton(c, label, v, false).Clicked() {
+					a.plat.CheckForUpdates()
+				}
+			})
+		})
+	}, func() {
+		settingRow(c, i18n.T("settings.about.license"), "", func() {
+			if value("Apache-2.0", "arrow-up-right") {
+				open(repoURL + "/blob/main/LICENSE")
+			}
+		})
+	}}
+	settingsCard(c, rows...)
+	links := []func(){func() {
+		settingRow(c, i18n.T("settings.about.source"), "", func() {
+			if !p.starred {
+				p.starButton(c)
+			} else if value("GitHub", "arrow-up-right") {
+				open(repoURL)
+			}
+		})
+	}}
+	for _, l := range []struct{ key, value, url string }{
+		{"settings.about.site", "godwit.email", siteURL},
+		{"settings.about.changelog", "GitHub Releases", repoURL + "/releases"},
+		{"settings.about.feedback", "GitHub Issues", repoURL + "/issues"},
+	} {
+		links = append(links, func() {
+			settingRow(c, i18n.T(l.key), "", func() {
+				if value(l.value, "arrow-up-right") {
+					open(l.url)
+				}
+			})
+		})
+	}
+	settingsSection(c, i18n.T("settings.about.links"), "", links...)
+}
+
+// starButton stars Godwit's repository with the GitHub CLI; without gh it
+// opens the repository to star there.
+func (p *settingsPage) starButton(c *ui.Context) {
+	t, th, a := theme.Of(c), c.Theme(), p.a
+	label := i18n.T("settings.about.star")
+	b := kit.ButtonFrame(c, kit.ButtonOpts{Variant: kit.Outline, Size: kit.SizeSm}).Label(label).Gap(th.Space(1.5)).Children(func() {
+		ui.Icon(c, icons.Get("star")).Size(theme.IconSm, theme.IconSm).TextColor(t.Foreground)
+		ui.Text(c, label).Role(ui.RoleNone) // the button's Label names it
+		if !p.gh {
+			ui.Icon(c, icons.Get("arrow-up-right")).Size(theme.IconSm, theme.IconSm).TextColor(t.Muted)
+		}
+	})
+	if !b.Clicked() || p.starring {
+		return
+	}
+	if !p.gh {
+		a.do(func(context.Context) error { return a.plat.OpenURL(repoURL) }, a.toastErr)
+		return
+	}
+	p.starring = true
+	a.do(a.plat.StarRepo, func(err error) {
+		p.starring = false
+		if err != nil {
+			a.toastErr(err)
+			return
+		}
+		p.starred = true
+	})
+}
+
+// bird makes the About page's bird, once, after this frame (making a web
+// view may run the event loop).
+func (p *settingsPage) bird() {
+	if p.birdView != nil || p.birdPosted || p.birdErr != nil {
+		return
+	}
+	p.birdPosted = true
+	p.a.onUI(func() {
+		p.birdPosted = false
+		if p.a.route.Page != PageSettings || p.a.route.Settings != "about" {
+			return // gone before it was made
+		}
+		if p.birdView, p.birdClose, p.birdErr = p.a.plat.NewBirdView(); p.birdErr != nil {
+			p.a.logf("the About page's bird: %v", p.birdErr)
+		}
+	})
+}
+
+// closeBird closes the About page's bird, if made.
+func (p *settingsPage) closeBird() {
+	if p.birdClose != nil {
+		p.birdClose()
+	}
+	p.birdView, p.birdClose = nil, nil
 }
