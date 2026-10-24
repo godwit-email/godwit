@@ -71,9 +71,12 @@ type HistoryChanges struct {
 
 // History is a conversation's messages, each with its seq. It is never
 // changed in place: what changes it returns a new History and the changes
-// that save it.
+// that save it. A conversation started on pi saves pi messages (pimessage.go);
+// msgs are always their Genkit form.
 type History struct {
 	msgs []*gai.Message
+	raws [][]byte // each message as saved
+	pi   bool
 	seqs []int64
 	next int64
 }
@@ -95,15 +98,25 @@ func NewHistory() *History { return &History{next: 1} }
 // the seq its next message gets.
 func LoadHistory(rows []StoredMessage, next int64) (*History, error) {
 	h := &History{next: next}
-	for _, r := range rows {
-		m, err := decodeMessage(r.Data)
+	for i, r := range rows {
+		pi := isPiMessage(r.Data)
+		if i == 0 {
+			h.pi = pi
+		} else if pi != h.pi {
+			return nil, errors.New("ai: unreadable conversation state")
+		}
+		decode := decodeMessage
+		if pi {
+			decode = genkitMessage
+		}
+		m, err := decode(r.Data)
 		if err != nil {
 			return nil, err
 		}
 		if n := len(h.seqs); r.Seq < 1 || r.Seq >= next || n > 0 && r.Seq <= h.seqs[n-1] {
 			return nil, errors.New("ai: conversation messages out of order")
 		}
-		h.msgs, h.seqs = append(h.msgs, m), append(h.seqs, r.Seq)
+		h.msgs, h.raws, h.seqs = append(h.msgs, m), append(h.raws, r.Data), append(h.seqs, r.Seq)
 	}
 	return h, nil
 }
@@ -127,7 +140,8 @@ func LegacyHistory(state []byte, cmds []PlacedCommand) (h *History, seqOf func(i
 	old := make([]int64, len(msgs)+1)
 	cmdSeqs = make([]int64, len(cmds))
 	add := func(m *gai.Message) {
-		h.msgs, h.seqs = append(h.msgs, m), append(h.seqs, h.next)
+		b, _ := json.Marshal(m) // it was just decoded
+		h.msgs, h.raws, h.seqs = append(h.msgs, m), append(h.raws, b), append(h.seqs, h.next)
 		h.next++
 	}
 	c := 0
@@ -153,15 +167,14 @@ type PlacedCommand struct {
 // Rows are h's messages as saved.
 func (h *History) Rows() ([]StoredMessage, error) {
 	out := make([]StoredMessage, len(h.msgs))
-	for i, m := range h.msgs {
-		b, err := json.Marshal(m)
-		if err != nil {
-			return nil, err
-		}
+	for i, b := range h.raws {
 		out[i] = StoredMessage{Seq: h.seqs[i], Data: b}
 	}
 	return out, nil
 }
+
+// Pi reports whether a run of h may go on pi: it is new or was started there.
+func (h *History) Pi() bool { return h.pi || len(h.msgs) == 0 }
 
 // Next is the seq h's next message gets.
 func (h *History) Next() int64 { return h.next }
@@ -199,7 +212,7 @@ func (h *History) Turns() []Turn {
 
 // AddCommand is h with cmd asked after its last message.
 func (h *History) AddCommand(cmd Command) (*History, HistoryChanges, error) {
-	return h.with(nil, []*gai.Message{commandMessage(cmd)})
+	return h.with(nil, []*gai.Message{commandMessage(cmd)}, nil)
 }
 
 func commandMessage(cmd Command) *gai.Message {
@@ -226,8 +239,32 @@ func commandOf(m *gai.Message) *Command {
 }
 
 // with is h with the messages at the indexes of put replaced and add appended.
-func (h *History) with(put map[int]*gai.Message, add []*gai.Message) (*History, HistoryChanges, error) {
-	n := &History{msgs: slices.Clone(h.msgs), seqs: slices.Clone(h.seqs), next: h.next}
+// raws, if set, are add's pi messages (nil where none), from a run on pi: an
+// empty history takes them on. A pi history saves a Genkit message as its pi
+// messages (a tool message as one per result).
+func (h *History) with(put map[int]*gai.Message, add []*gai.Message, raws [][]byte) (*History, HistoryChanges, error) {
+	n := &History{msgs: slices.Clone(h.msgs), raws: slices.Clone(h.raws), pi: h.pi || len(h.msgs) == 0 && raws != nil,
+		seqs: slices.Clone(h.seqs), next: h.next}
+	encode := func(m *gai.Message, raw []byte) ([]*gai.Message, [][]byte, error) {
+		if raw != nil && n.pi {
+			return []*gai.Message{m}, [][]byte{raw}, nil
+		}
+		if !n.pi {
+			b, err := json.Marshal(m)
+			return []*gai.Message{m}, [][]byte{b}, err
+		}
+		bs, err := piMessages(m)
+		if err != nil {
+			return nil, nil, err
+		}
+		ms := make([]*gai.Message, len(bs))
+		for i, b := range bs {
+			if ms[i], err = genkitMessage(b); err != nil {
+				return nil, nil, err
+			}
+		}
+		return ms, bs, nil
+	}
 	var ch HistoryChanges
 	idx := make([]int, 0, len(put))
 	for i := range put {
@@ -235,21 +272,38 @@ func (h *History) with(put map[int]*gai.Message, add []*gai.Message) (*History, 
 	}
 	slices.Sort(idx)
 	for _, i := range idx {
-		n.msgs[i] = put[i]
-		b, err := json.Marshal(put[i])
+		if n.pi { // unchanged, a pi message keeps what its Genkit form has no room for
+			if same, err := sameMessage(put[i], h.msgs[i]); err != nil || same {
+				if err != nil {
+					return nil, HistoryChanges{}, err
+				}
+				continue
+			}
+		}
+		ms, bs, err := encode(put[i], nil)
 		if err != nil {
 			return nil, HistoryChanges{}, err
 		}
-		ch.Put = append(ch.Put, StoredMessage{Seq: n.seqs[i], Data: b})
+		if len(ms) != 1 {
+			return nil, HistoryChanges{}, errors.New("ai: cannot rewrite a conversation message")
+		}
+		n.msgs[i], n.raws[i] = ms[0], bs[0]
+		ch.Put = append(ch.Put, StoredMessage{Seq: n.seqs[i], Data: bs[0]})
 	}
-	for _, m := range add {
-		b, err := json.Marshal(m)
+	for k, m := range add {
+		var raw []byte
+		if raws != nil {
+			raw = raws[k]
+		}
+		ms, bs, err := encode(m, raw)
 		if err != nil {
 			return nil, HistoryChanges{}, err
 		}
-		n.msgs, n.seqs = append(n.msgs, m), append(n.seqs, n.next)
-		ch.Put = append(ch.Put, StoredMessage{Seq: n.next, Data: b})
-		n.next++
+		for i := range ms {
+			n.msgs, n.raws, n.seqs = append(n.msgs, ms[i]), append(n.raws, bs[i]), append(n.seqs, n.next)
+			ch.Put = append(ch.Put, StoredMessage{Seq: n.next, Data: bs[i]})
+			n.next++
+		}
 	}
 	ch.Next = n.next
 	return n, ch, nil
@@ -263,7 +317,7 @@ func (h *History) Rewind(at int64, sum Summary) (*History, HistoryChanges, error
 	if i < 0 || h.msgs[i].Role != gai.RoleUser || isCommand(h.msgs[i]) {
 		return nil, HistoryChanges{}, fmt.Errorf("no question at %d", at)
 	}
-	n := &History{msgs: slices.Clone(h.msgs[:i]), seqs: slices.Clone(h.seqs[:i]), next: h.next}
+	n := &History{msgs: slices.Clone(h.msgs[:i]), raws: slices.Clone(h.raws[:i]), pi: h.pi, seqs: slices.Clone(h.seqs[:i]), next: h.next}
 	return n, HistoryChanges{DropFrom: at, Next: h.next, DropSummary: sum.Text != "" && sum.Upto >= at}, nil
 }
 
@@ -296,7 +350,7 @@ func (h *History) Close(responses []ToolResult) (*History, HistoryChanges, error
 		}
 		toolMsg.Content = append(toolMsg.Content, gai.NewResponseForToolRequest(p, out))
 	}
-	return h.with(map[int]*gai.Message{len(h.msgs) - 1: last}, []*gai.Message{toolMsg})
+	return h.with(map[int]*gai.Message{len(h.msgs) - 1: last}, []*gai.Message{toolMsg}, nil)
 }
 
 // OpenCalls are the calls of h's last message still waiting for a result,
@@ -504,6 +558,10 @@ func (s *Sent) Restore(res Result) (*History, HistoryChanges, error) {
 	}
 	put := map[int]*gai.Message{}
 	var add []*gai.Message
+	var raws [][]byte // a run on pi's, of add
+	if res.raws != nil {
+		raws = [][]byte{}
+	}
 	for k, src := range s.src {
 		if out[k].Role != s.msgs[k].Role {
 			return nil, HistoryChanges{}, bad
@@ -512,6 +570,9 @@ func (s *Sent) Restore(res Result) (*History, HistoryChanges, error) {
 		case srcNote:
 		case srcQuestion:
 			add = append(add, out[k])
+			if raws != nil {
+				raws = append(raws, res.raws[k])
+			}
 		default:
 			same, err := sameMessage(out[k], s.h.msgs[src])
 			if err != nil {
@@ -523,7 +584,10 @@ func (s *Sent) Restore(res Result) (*History, HistoryChanges, error) {
 		}
 	}
 	add = append(add, out[len(s.msgs):]...)
-	return s.h.with(put, add)
+	if raws != nil {
+		raws = append(raws, res.raws[len(s.msgs):]...)
+	}
+	return s.h.with(put, add, raws)
 }
 
 func sameMessage(a, b *gai.Message) (bool, error) {

@@ -6,6 +6,7 @@
     "build": "bun build src/engine.ts --target=browser --format=esm --minify --outfile=../engine.js"
   },
   "dependencies": {
+    "@earendil-works/pi-agent-core": "1.4.0",
     "@earendil-works/pi-ai": "1.4.0",
     "abort-controller": "3.0.0",
     "core-js-pure": "3.46.0",

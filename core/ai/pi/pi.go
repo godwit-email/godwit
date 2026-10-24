@@ -55,29 +55,108 @@ type Result struct {
 // calling goroutine, in order. It returns when the reply ended or ctx did
 // (ctx's error then).
 func Generate(ctx context.Context, client *http.Client, req Request, emit func(kind, text string)) (Result, error) {
+	var res Result
+	a, err := run(ctx, client, "generate", req, Hooks{Emit: emit}, &res)
+	if err != nil {
+		return Result{}, err
+	}
+	res.Status, res.Transport = a.status, a.transport
+	return res, nil
+}
+
+// AgentRequest is one turn of a conversation: Messages are pi messages
+// (pi-ai's Message, as JSON), ending with the question. Tools are offered
+// to the model; after MaxTurns rounds of calls it answers from what it
+// found, its system prompt ending with LimitNote, and its calls are refused.
+type AgentRequest struct {
+	BaseURL   string            `json:"baseUrl"`
+	Model     string            `json:"model"`
+	APIKey    string            `json:"apiKey"`
+	System    string            `json:"system"`
+	Effort    string            `json:"effort"`
+	Messages  []json.RawMessage `json:"messages"`
+	Tools     []Tool            `json:"tools"`
+	MaxTurns  int               `json:"maxTurns"`
+	LimitNote string            `json:"limitNote"`
+}
+
+// Tool is a tool offered to the model; Parameters is its JSON schema.
+type Tool struct {
+	Name        string         `json:"name"`
+	Description string         `json:"description"`
+	Parameters  map[string]any `json:"parameters"`
+}
+
+// Hooks are what a run calls back on its goroutine, Tool on one of its own
+// per call. Emit gets each text and reasoning delta. Args rewrites a call's
+// arguments before they are validated (an error refuses the call); Tool
+// runs a call, its output JSON or an error message; Refused tells of a call
+// that never reached Tool.
+type Hooks struct {
+	Emit    func(kind, text string)
+	Args    func(args json.RawMessage) (json.RawMessage, error)
+	Tool    func(ctx context.Context, id, name string, args json.RawMessage) (output json.RawMessage, errMsg string)
+	Refused func(id, name string, args json.RawMessage, errMsg string)
+}
+
+// AgentResult is how a turn ended. Messages are the pi messages it added,
+// the question first. Limited: the model reached MaxTurns and the last
+// message is its answer after it; Calls: that message still calls tools.
+// Last is the last request's input.
+type AgentResult struct {
+	Messages            []json.RawMessage `json:"-"`
+	Raw                 string            `json:"messages"`
+	StopReason          string            `json:"stopReason"`
+	Error               string            `json:"error"`
+	Limited, Calls      bool
+	Input, Output, Last int
+	Status              int   `json:"-"`
+	Transport           error `json:"-"`
+}
+
+// Agent runs one turn; it returns when the turn ended, or when ctx did
+// (ctx's error then) and the tools it ran have returned.
+func Agent(ctx context.Context, client *http.Client, req AgentRequest, hooks Hooks) (AgentResult, error) {
+	var res AgentResult
+	a, err := run(ctx, client, "agent", req, hooks, &res)
+	if err != nil {
+		return AgentResult{}, err
+	}
+	if err := json.Unmarshal([]byte(res.Raw), &res.Messages); err != nil {
+		return AgentResult{}, fmt.Errorf("pi: messages: %w", err)
+	}
+	res.Raw = ""
+	res.Status, res.Transport = a.status, a.transport
+	return res, nil
+}
+
+// run calls the bundle's hook with req on a runtime of its own and decodes
+// what its promise settles with into out.
+func run(ctx context.Context, client *http.Client, hookName string, req any, hooks Hooks, out any) (answer, error) {
 	mod, err := compiled()
 	if err != nil {
-		return Result{}, fmt.Errorf("pi: compile: %w", err)
+		return answer{}, fmt.Errorf("pi: compile: %w", err)
 	}
 	rt := moejs.NewRuntime(moejs.Options{})
 	loop, err := eventloop.New(rt, eventloop.Options{})
 	if err != nil {
-		return Result{}, err
+		return answer{}, err
 	}
-	// Every request of the run ends with it.
+	// Every request and tool of the run ends with it.
 	hctx, cancel := context.WithCancel(ctx)
+	h := &host{rt: rt, loop: loop, ctx: hctx, client: client, bodies: map[int64]*body{}, hooks: hooks}
+	defer h.tools.Wait()
 	defer cancel()
-	h := &host{rt: rt, loop: loop, ctx: hctx, client: client, bodies: map[int64]*body{}, emit: emit}
 	defer h.closeAll()
 	if err := h.install(); err != nil {
-		return Result{}, err
+		return answer{}, err
 	}
 	if err := rt.Load(mod); err != nil {
-		return Result{}, fmt.Errorf("pi: load: %w", err)
+		return answer{}, fmt.Errorf("pi: load: %w", err)
 	}
-	hook, err := mod.Hook("generate")
+	hook, err := mod.Hook(hookName)
 	if err != nil {
-		return Result{}, err
+		return answer{}, err
 	}
 	stop := context.AfterFunc(ctx, loop.Terminate)
 	defer stop()
@@ -95,10 +174,10 @@ func Generate(ctx context.Context, client *http.Client, req Request, emit func(k
 		return err
 	})
 	if ctx.Err() != nil {
-		return Result{}, ctx.Err()
+		return answer{}, ctx.Err()
 	}
 	if err != nil {
-		return Result{}, fmt.Errorf("pi: %w", err)
+		return answer{}, fmt.Errorf("pi: %w", err)
 	}
 	state, v, ok := moejs.PromiseResult(promise)
 	if !ok || state != moejs.PromiseFulfilled {
@@ -106,16 +185,21 @@ func Generate(ctx context.Context, client *http.Client, req Request, emit func(k
 		if ok {
 			msg = v.String()
 		}
-		return Result{}, fmt.Errorf("pi: %s", msg)
+		return answer{}, fmt.Errorf("pi: %s", msg)
 	}
-	var res Result
-	if err := rt.Unmarshal(v, &res); err != nil {
-		return Result{}, fmt.Errorf("pi: result: %w", err)
+	if err := rt.Unmarshal(v, out); err != nil {
+		return answer{}, fmt.Errorf("pi: result: %w", err)
 	}
 	h.mu.Lock()
-	res.Status, res.Transport = h.status, h.transport
-	h.mu.Unlock()
-	return res, nil
+	defer h.mu.Unlock()
+	return answer{h.status, h.transport}, nil
+}
+
+// answer is the last HTTP status a run's requests got, or the error one
+// failed with before any answer.
+type answer struct {
+	status    int
+	transport error
 }
 
 // host is one run's side of the bundle's host functions (js/src/web.ts).
@@ -124,8 +208,9 @@ type host struct {
 	loop   *eventloop.Loop
 	ctx    context.Context
 	client *http.Client
-	emit   func(kind, text string)
+	hooks  Hooks
 	start  time.Time
+	tools  sync.WaitGroup // calls hostTool is running
 
 	mu        sync.Mutex
 	next      int64
@@ -179,12 +264,47 @@ func (h *host) install() error {
 			return h.rt.FromGo(out)
 		},
 		"hostEmit": func(_ *moejs.Realm, _ moejs.Value, args []moejs.Value) (moejs.Value, error) {
-			if kind := str(moejs.Arg(args, 0)); kind == "text" || kind == "reasoning" {
-				if t := str(moejs.Arg(args, 1)); t != "" {
-					h.emit(kind, t)
+			switch kind, t := str(moejs.Arg(args, 0)), str(moejs.Arg(args, 1)); {
+			case (kind == "text" || kind == "reasoning") && t != "":
+				h.hooks.Emit(kind, t)
+			case kind == "refused" && h.hooks.Refused != nil:
+				var c struct {
+					ID, Name, Error string
+					Args            json.RawMessage
+				}
+				if json.Unmarshal([]byte(t), &c) == nil {
+					h.hooks.Refused(c.ID, c.Name, c.Args, c.Error)
 				}
 			}
 			return moejs.Undefined(), nil
+		},
+		"hostArgs": func(_ *moejs.Realm, _ moejs.Value, args []moejs.Value) (moejs.Value, error) {
+			in := str(moejs.Arg(args, 0))
+			if h.hooks.Args == nil {
+				return moejs.String(in), nil
+			}
+			out, err := h.hooks.Args(json.RawMessage(in))
+			if err != nil {
+				return moejs.Undefined(), err // the loop refuses the call with its message
+			}
+			return moejs.String(string(out)), nil
+		},
+		"hostTool": func(_ *moejs.Realm, _ moejs.Value, args []moejs.Value) (moejs.Value, error) {
+			id, name, in := str(moejs.Arg(args, 0)), str(moejs.Arg(args, 1)), str(moejs.Arg(args, 2))
+			p, settle := h.loop.NewPromise()
+			h.tools.Add(1)
+			go func() {
+				defer h.tools.Done()
+				var out json.RawMessage
+				msg := "this tool cannot run here"
+				if h.hooks.Tool != nil {
+					out, msg = h.hooks.Tool(h.ctx, id, name, json.RawMessage(in))
+				}
+				settle(func(rt *moejs.Runtime) (moejs.Value, error) {
+					return rt.FromGo(map[string]any{"output": string(out), "error": msg})
+				})
+			}()
+			return p, nil
 		},
 		"hostFetch": func(_ *moejs.Realm, _ moejs.Value, args []moejs.Value) (moejs.Value, error) {
 			url, method, hdrs, payload := str(moejs.Arg(args, 0)), str(moejs.Arg(args, 1)), str(moejs.Arg(args, 2)), str(moejs.Arg(args, 3))

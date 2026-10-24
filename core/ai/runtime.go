@@ -322,15 +322,8 @@ func (r *runner) run(req Request) Result {
 	fail := func(err error) Result {
 		return Result{Err: &Error{Code: CodeInternal, Msg: r.redact(err.Error())}}
 	}
-	seen := map[string]bool{}
-	for _, s := range req.Tools {
-		if !toolName.MatchString(s.Name) || seen[s.Name] {
-			return fail(fmt.Errorf("ai: invalid or duplicate tool name %q", s.Name))
-		}
-		if s.Run == nil && !s.NeedsApproval && s.Gate == nil {
-			return fail(fmt.Errorf("ai: tool %q has no Run", s.Name))
-		}
-		seen[s.Name] = true
+	if err := checkTools(req.Tools); err != nil {
+		return fail(err)
 	}
 	var history []*gai.Message
 	switch h := req.History; {
@@ -590,22 +583,7 @@ var errDuplicateCallID = errors.New("ai: the model repeated a tool call ID")
 // tool is a dynamic tool for one run; Genkit registers it in a throwaway child
 // registry. A tool error goes back to the model as {"error": ...}.
 func (r *runner) tool(s ToolSpec) *gai.ToolAction[any, any] {
-	schema := s.Schema
-	if schema == nil {
-		schema = map[string]any{"type": "object", "properties": map[string]any{}}
-	}
-	desc := s.Description
-	if !s.Strict {
-		var descr string
-		var warns []string
-		schema, descr, warns = NormalizeSchema(schema)
-		if len(warns) > 0 {
-			r.e.warn.Warn("ai: tool schema could not be fully flattened", "tool", s.Name, "warnings", len(warns))
-		}
-		if descr != "" {
-			desc += "\n\n" + descr
-		}
-	}
+	schema, desc := r.schema(s)
 	return gai.NewTool(s.Name, desc, func(tc *gai.ToolContext, input any) (any, error) {
 		id := CallID(tc)
 		args := rawJSON(input)
@@ -643,6 +621,29 @@ func (r *runner) tool(s ToolSpec) *gai.ToolAction[any, any] {
 		// Out is any: without this, Genkit validates Respond outputs against
 		// its multipart envelope schema and rejects them.
 		gai.WithOutputSchema(map[string]any{}))
+}
+
+// schema is the input schema and description s is offered with: unless
+// Strict, flattened ($defs inlined) as every service takes it, and what the
+// flattening dropped described.
+func (r *runner) schema(s ToolSpec) (map[string]any, string) {
+	schema := s.Schema
+	if schema == nil {
+		schema = map[string]any{"type": "object", "properties": map[string]any{}}
+	}
+	desc := s.Description
+	if !s.Strict {
+		var descr string
+		var warns []string
+		schema, descr, warns = NormalizeSchema(schema)
+		if len(warns) > 0 {
+			r.e.warn.Warn("ai: tool schema could not be fully flattened", "tool", s.Name, "warnings", len(warns))
+		}
+		if descr != "" {
+			desc += "\n\n" + descr
+		}
+	}
+	return schema, desc
 }
 
 // respond answers the interrupted calls of history's last message.
