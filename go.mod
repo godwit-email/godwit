@@ -34,6 +34,7 @@ require (
 )
 
 require (
+	github.com/Calcium-Ion/moejs v0.1.0-alpha.9 // indirect
 	github.com/aymerick/douceur v0.2.0 // indirect
 	github.com/bahlo/generic-list-go v0.2.0 // indirect
 	github.com/buger/jsonparser v1.1.2 // indirect

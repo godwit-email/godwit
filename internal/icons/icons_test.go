@@ -3,7 +3,7 @@ package icons
 import "testing"
 
 var names = []string{"mail", "sparkles", "sliders-horizontal", "panel-left", "arrow-left", "arrow-right", "arrow-up-right",
-	"square-pen", "reply", "reply-all", "forward", "archive", "trash-2", "star", "mail-open", "search", "inbox",
+	"square-pen", "flask", "reply", "reply-all", "forward", "archive", "trash-2", "star", "mail-open", "search", "inbox",
 	"folder", "send", "file-pen", "paperclip", "plus", "x", "check", "chevron-down", "chevron-right",
 	"triangle-alert", "loader", "copy", "external-link", "eye", "eye-off", "image-off", "bold", "italic", "link", "list",
 	"list-ordered", "quote", "undo-2", "refresh-cw", "circle-check", "circle-x", "shield", "puzzle", "lock", "monitor",
@@ -18,7 +18,7 @@ var labelIcons = []string{"shield-keyhole", "bill", "truck", "plane", "calendar-
 
 // filled are the names with a fill style too: the rail's and the sidebars'.
 var filled = []string{"mail", "sparkles", "sliders-horizontal", "component", "inbox", "star", "send", "file-pen", "trash-2",
-	"archive", "spam", "folder", "outbox", "settings", "cpu", "puzzle", "shield", "info", "tag", "quill-pen"}
+	"archive", "spam", "folder", "outbox", "settings", "cpu", "puzzle", "shield", "info", "tag", "quill-pen", "flask"}
 
 func TestIconsParse(t *testing.T) {
 	for _, n := range names {

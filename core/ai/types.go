@@ -154,6 +154,9 @@ type Request struct {
 	// Effort is the reasoning effort asked of the model: "low", "medium" or
 	// "high"; "" asks for none (models that do not reason refuse it).
 	Effort string
+	// Pi runs the request on pi (Labs: Settings.PiEngine) when pi covers it
+	// (piCovers); anything else runs on Genkit as without it.
+	Pi bool
 }
 
 // Result is how a run ended. A successful run of a History is saved through

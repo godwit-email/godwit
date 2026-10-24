@@ -166,7 +166,9 @@ func (s *Service) runSkill(ctx context.Context, end func(), name string, t Targe
 	if err != nil {
 		return nil, err
 	}
-	events, wait := e.Run(ctx, ai.Request{Model: model, System: system, Prompt: strings.Join(blocks, "\n\n"), MaxTurns: 1})
+	// Labs: the summary is the first feature on pi (#229); the rest follow it.
+	pi := st.PiEngine && name == "summarize"
+	events, wait := e.Run(ctx, ai.Request{Model: model, System: system, Prompt: strings.Join(blocks, "\n\n"), MaxTurns: 1, Pi: pi})
 	events = s.expandEvents(ctx, events)
 
 	out := make(chan ai.Event, 1)

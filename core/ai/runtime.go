@@ -251,7 +251,11 @@ func (e *Engine) Run(ctx context.Context, req Request) (<-chan Event, func() Res
 	var res Result
 	go func() {
 		defer close(done)
-		res = r.run(req)
+		if req.Pi && piCovers(req) {
+			res = r.runPi(req)
+		} else {
+			res = r.run(req)
+		}
 		r.mu.Lock()
 		res.Usage = r.usage
 		r.mu.Unlock()

@@ -196,10 +196,10 @@ func (p *settingsPage) Title() (string, string) {
 	return i18n.T("settings.heading"), i18n.T("settings." + sec)
 }
 
-var appSections = []string{"general", "signatures", "models", "labels", "extensions", "privacy", "about"}
+var appSections = []string{"general", "signatures", "models", "labels", "extensions", "privacy", "labs", "about"}
 
 // sectionIcons are the app sections' sidebar icons.
-var sectionIcons = map[string]string{"general": "settings", "signatures": "quill-pen", "models": "cpu", "labels": "tag", "extensions": "puzzle", "privacy": "shield", "about": "info"}
+var sectionIcons = map[string]string{"general": "settings", "signatures": "quill-pen", "models": "cpu", "labels": "tag", "extensions": "puzzle", "privacy": "shield", "labs": "flask", "about": "info"}
 
 // Sidebar: the accounts, each with its provider's mark and a status dot,
 // then Add account; then the app's pages.
@@ -297,6 +297,8 @@ func (p *settingsPage) Content(c *ui.Context) {
 						p.labels.view(c, p)
 					case sec == "extensions":
 						p.ext.view(c)
+					case sec == "labs":
+						p.labsView(c)
 					case sec == "about":
 						p.aboutView(c)
 					default:
@@ -394,6 +396,16 @@ func settingButton(c *ui.Context, label string, v kit.Variant, disabled bool) ui
 // settingSelect is a select in a settings row.
 func settingSelect[T comparable](c *ui.Context, label string, sel *T, opts []kit.Option[T]) ui.Element {
 	return kit.SelectWith(c, kit.SelectOpts{Radius: theme.Of(c).Radius.Lg, MinWidth: theme.SettingsSelectMin, MaxWidth: theme.SettingsSelectMax, Flat: true}, sel, opts).Label(label)
+}
+
+// labsView: features still being built, each off until the user turns it on.
+func (p *settingsPage) labsView(c *ui.Context) {
+	pageHeading(c, i18n.T("settings.labs"), i18n.T("settings.labs.sub"))
+	p.syncSettings()
+	defer p.syncSettings() // what the switch changed while building
+	settingsSection(c, i18n.T("settings.labs.ai"), "", func() {
+		kit.SwitchRow(c, &p.st.PiEngine, i18n.T("settings.labs.pi"), i18n.T("settings.labs.pi.help"))
+	})
 }
 
 func (p *settingsPage) privacyView(c *ui.Context) {

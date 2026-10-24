@@ -16,6 +16,11 @@ run_windows = "echo the system-translation bridge is macOS only"
 run = "scripts/build-apple-intelligence.sh"
 run_windows = "echo the Apple Intelligence helper is macOS only"
 
+# The pi bundle the AI engine embeds (core/ai/pi/engine.js, committed); CI checks it is current.
+[tasks."ai:bundle"]
+dir = "core/ai/pi/js"
+run = "bun install --frozen-lockfile --ignore-scripts && bun run build"
+
 [tasks.dev]
 depends = ["web:install", "native:translate", "native:apple-intelligence"]
 run = "go tool mygo dev"
