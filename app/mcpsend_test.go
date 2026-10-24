@@ -2,6 +2,7 @@ package app
 
 import (
 	"context"
+	"errors"
 	"strings"
 	"testing"
 
@@ -78,6 +79,28 @@ func TestMCPSendConfirmWarns(t *testing.T) {
 	h.until("queued", func() bool { return h.outbox(acc) == 1 })
 	h.until("the dialog gone", func() bool { return !h.tt.HasText("仍然发送") })
 	h.until("its window told", func() bool { return h.hasCall("DraftDeleted ") })
+	h.drain()
+	if err := h.env.Svc.ResolveMCPSendAcknowledged(context.Background(), h.app.mcpSend.warnID, h.app.mcpSend.warnings.Digest, true); !errors.Is(err, core.ErrInvalidState) {
+		t.Fatalf("the request was not ended: %v", err)
+	}
+}
+
+// Cancelling the warnings drops the request: nothing is sent.
+func TestMCPSendConfirmWarnsCancel(t *testing.T) {
+	h, acc := mcpSendHarness(t)
+	h.env.InstallPlugin(t, "send-warn")
+	h.see("发送这封邮件？")
+	h.click("发送")
+	h.see("发送前检查：check before sending: Quarterly plan")
+	h.click("取消")
+	h.until("the dialog gone", func() bool { return !h.tt.HasText("仍然发送") })
+	h.drain()
+	if err := h.env.Svc.ResolveMCPSendAcknowledged(context.Background(), h.app.mcpSend.warnID, h.app.mcpSend.warnings.Digest, true); !errors.Is(err, core.ErrInvalidState) {
+		t.Fatalf("the request was not ended: %v", err)
+	}
+	if h.outbox(acc) != 0 {
+		t.Fatal("sent after cancel")
+	}
 }
 
 // A newer revision's request replaces the one shown without bringing the

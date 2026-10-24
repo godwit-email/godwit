@@ -320,3 +320,48 @@ func TestMCPSendDraftGone(t *testing.T) {
 	assert.Empty(t, e.pendingSends(t))
 	assert.Equal(t, [][]any{{"stale"}}, e.rows(t, "SELECT decision FROM audit_log WHERE source = 'local_mcp'"))
 }
+
+// mcpSendWarned is a request whose 发送 a plugin warned about: it stays
+// claimed until the user answers the warnings.
+func mcpSendWarned(t *testing.T) (*syncEnv, Draft, int64, SendCheck) {
+	t.Helper()
+	e, d := mcpSendEnv(t, MCPSendConfirm, true)
+	startTestPlugin(t, e.s, "warner", sendPerms, checker(`d => ({ warn: "check " + d.subject })`))
+	_, err := e.s.RequestMCPSend(bg, d.ID, d.Revision)
+	require.NoError(t, err)
+	id := e.pendingSends(t)[0].ID
+	var we *SendWarningsError
+	require.ErrorAs(t, e.s.ResolveMCPSend(bg, id, true), &we)
+	assert.Zero(t, e.outboxLen(t))
+	assert.Empty(t, e.pendingSends(t))
+	assert.Empty(t, e.rows(t, "SELECT decision FROM audit_log WHERE source = 'local_mcp'"), "not ended yet")
+	return e, d, id, we.Check
+}
+
+func TestMCPSendWarnedAcknowledged(t *testing.T) {
+	e, d, id, c := mcpSendWarned(t)
+	require.NoError(t, e.s.ResolveMCPSendAcknowledged(bg, id, c.Digest, true))
+	assert.Equal(t, 1, e.outboxLen(t))
+	assert.ErrorIs(t, e.s.ResolveMCPSendAcknowledged(bg, id, c.Digest, true), ErrInvalidState)
+	assert.Equal(t, 1, e.outboxLen(t))
+	assert.Equal(t, [][]any{{d.ID, "executed"}}, e.rows(t, "SELECT target_id, decision FROM audit_log WHERE source = 'local_mcp'"))
+}
+
+func TestMCPSendWarnedDeclined(t *testing.T) {
+	e, _, id, c := mcpSendWarned(t)
+	require.NoError(t, e.s.ResolveMCPSendAcknowledged(bg, id, c.Digest, false))
+	assert.ErrorIs(t, e.s.ResolveMCPSendAcknowledged(bg, id, c.Digest, true), ErrInvalidState)
+	assert.Zero(t, e.outboxLen(t))
+	assert.Equal(t, [][]any{{"rejected"}}, e.rows(t, "SELECT decision FROM audit_log WHERE source = 'local_mcp'"))
+}
+
+// Warnings never answered: the request still goes stale after ten minutes.
+func TestMCPSendWarnedExpires(t *testing.T) {
+	e, _, id, c := mcpSendWarned(t)
+	e.s.sendReqs[id].created = time.Now().Add(-mcpSendTTL)
+	assert.Empty(t, e.pendingSends(t))
+	assert.Empty(t, e.s.sendReqs)
+	assert.Equal(t, [][]any{{"stale"}}, e.rows(t, "SELECT decision FROM audit_log WHERE source = 'local_mcp'"))
+	assert.ErrorIs(t, e.s.ResolveMCPSendAcknowledged(bg, id, c.Digest, true), ErrInvalidState)
+	assert.Zero(t, e.outboxLen(t))
+}

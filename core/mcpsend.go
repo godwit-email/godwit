@@ -54,6 +54,7 @@ type MCPSend struct {
 type mcpSend struct {
 	draftID, revision int64
 	executing         bool
+	warned            bool // executing, a plugin's warnings wait for the user (ResolveMCPSendAcknowledged)
 	created           time.Time
 	from              string
 	firstTime         []string
@@ -116,6 +117,7 @@ func (s *Service) RequestMCPSend(ctx context.Context, draftID, revision int64) (
 	if err != nil {
 		return false, err
 	}
+	s.expireWarnedMCPSends(ctx)
 	s.sendReqMu.Lock()
 	var older []int64 // the draft's requests this one replaces, and expired ones
 	waiting := 0
@@ -165,6 +167,7 @@ func (s *Service) PendingMCPSends(ctx context.Context) ([]MCPSend, error) {
 		return nil, err
 	}
 	defer end()
+	s.expireWarnedMCPSends(ctx)
 	s.sendReqMu.Lock()
 	ids := make([]int64, 0, len(s.sendReqs))
 	for id, r := range s.sendReqs {
@@ -201,6 +204,8 @@ func (s *Service) PendingMCPSends(ctx context.Context) ([]MCPSend, error) {
 // once: another decision of it is ErrInvalidState. Accepted, it sends the
 // revision the request is bound to, as SendRevision does; one changed since,
 // or a request that waited mcpSendTTL, is stale (ErrStaleDraft) and sends nothing.
+// A plugin's warnings (SendWarningsError) keep it executing until the user
+// answers them (ResolveMCPSendAcknowledged) or it waited mcpSendTTL.
 func (s *Service) ResolveMCPSend(ctx context.Context, id int64, accept bool) error {
 	ctx, end, err := s.begin(ctx, 0)
 	if err != nil {
@@ -214,10 +219,46 @@ func (s *Service) ResolveMCPSend(ctx context.Context, id int64, accept bool) err
 	if r == nil {
 		return ErrInvalidState
 	}
+	return s.sendMCP(ctx, id, r, func() error { return s.send(ctx, r.draftID, r.revision) })
+}
+
+// ResolveMCPSendAcknowledged answers the warnings ResolveMCPSend returned for
+// request id, exactly once: send sends the revision acknowledged with digest,
+// as SendAcknowledgedRevision does, else drops the request. A request not
+// waiting on warnings is ErrInvalidState.
+func (s *Service) ResolveMCPSendAcknowledged(ctx context.Context, id int64, digest string, send bool) error {
+	ctx, end, err := s.begin(ctx, 0)
+	if err != nil {
+		return err
+	}
+	defer end()
+	s.sendReqMu.Lock()
+	r := s.sendReqs[id]
+	if r == nil || !r.warned {
+		s.sendReqMu.Unlock()
+		return ErrInvalidState
+	}
+	r.warned = false
+	s.sendReqMu.Unlock()
+	if !send {
+		return s.endMCPSend(ctx, id, true, "rejected")
+	}
+	return s.sendMCP(ctx, id, r, func() error { return s.sendAcknowledged(ctx, r.draftID, r.revision, digest) })
+}
+
+// sendMCP sends claimed request id with send and ends it audited by the
+// outcome; warnings keep it, waiting for the user's answer.
+func (s *Service) sendMCP(ctx context.Context, id int64, r *mcpSend, send func() error) error {
 	if r.expired() {
 		return errors.Join(ErrStaleDraft, s.endMCPSend(ctx, id, true, "stale"))
 	}
-	serr := s.send(ctx, r.draftID, r.revision)
+	serr := send()
+	if warn := (*SendWarningsError)(nil); errors.As(serr, &warn) {
+		s.sendReqMu.Lock()
+		r.warned = true
+		s.sendReqMu.Unlock()
+		return serr
+	}
 	decision := "executed"
 	switch {
 	case errors.Is(serr, ErrStaleDraft):
@@ -231,6 +272,24 @@ func (s *Service) ResolveMCPSend(ctx context.Context, id int64, accept bool) err
 		return nil
 	}
 	return errors.Join(serr, aerr)
+}
+
+// expireWarnedMCPSends ends, stale, the requests whose warnings waited mcpSendTTL.
+func (s *Service) expireWarnedMCPSends(ctx context.Context) {
+	s.sendReqMu.Lock()
+	var ids []int64
+	for id, r := range s.sendReqs {
+		if r.warned && r.expired() {
+			r.warned = false // claimed from ResolveMCPSendAcknowledged
+			ids = append(ids, id)
+		}
+	}
+	s.sendReqMu.Unlock()
+	for _, id := range ids {
+		if err := s.endMCPSend(ctx, id, true, "stale"); err != nil {
+			slog.Default().Warn("could not audit an MCP send", "request", id, "err", err)
+		}
+	}
 }
 
 func (s *Service) mcpSendRecord(id int64) *mcpSend {

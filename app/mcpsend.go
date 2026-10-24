@@ -19,12 +19,13 @@ import (
 // the oldest waiting one in a dialog over the window, which comes to the
 // front with a notification pointing to it. Only its 发送 sends; closing it
 // drops the request. A plugin's warnings on 发送 show as the draft list's,
-// with 仍然发送.
+// with 仍然发送; closing them drops the request too.
 type mcpSendState struct {
 	open     bool
 	req      core.MCPSend
 	notified map[int64]bool // requests already brought to the front
 	warned   bool           // the warnings dialog shows
+	warnID   int64          // the request warned about
 	warnings core.SendCheck
 	changed  bool   // the shown request was replaced: the dialog says so
 	hold     bool   // 发送 waits mcpSendHold after a replacement, so what it sends was seen
@@ -100,18 +101,23 @@ func (a *App) showMCPSends(ps []core.MCPSend) {
 func (a *App) mcpSendDialog(c *ui.Context) {
 	s := &a.mcpSend
 	if s.warned {
-		w := s.warnings
-		warningsDialog(c, &s.warned, w, func() {
+		w, id, anyway := s.warnings, s.warnID, false
+		warningsDialog(c, &s.warned, w, func() { anyway = true })
+		if !s.warned {
 			a.do(func(ctx context.Context) error {
-				return a.svc.SendAcknowledgedRevision(ctx, w.DraftID, w.Revision, w.Digest)
+				return a.svc.ResolveMCPSendAcknowledged(ctx, id, w.Digest, anyway)
 			}, func(err error) {
-				if err != nil {
+				var warn *core.SendWarningsError
+				switch {
+				case errors.As(err, &warn): // the checks changed: warned again
+					s.warned, s.warnings = true, warn.Check
+				case err != nil:
 					a.toastErr(err)
-				} else {
+				case anyway:
 					a.plat.DraftDeleted(w.DraftID)
 				}
 			})
-		})
+		}
 		return // the next request waits behind it
 	}
 	if !s.open {
@@ -171,7 +177,7 @@ func (a *App) mcpSendDialog(c *ui.Context) {
 		var warn *core.SendWarningsError
 		switch {
 		case errors.As(err, &warn):
-			s.warned, s.warnings = true, warn.Check
+			s.warned, s.warnID, s.warnings = true, id, warn.Check
 		case err != nil:
 			a.toastErr(err)
 		case sent:
