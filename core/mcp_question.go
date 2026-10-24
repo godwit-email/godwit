@@ -14,6 +14,7 @@ import (
 	"github.com/egoist/mygo/plugins/sqlite"
 	"github.com/godwit-email/godwit/core/ai"
 	"github.com/godwit-email/godwit/core/gateway"
+	"github.com/godwit-email/godwit/core/store"
 	"github.com/google/jsonschema-go/jsonschema"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
@@ -236,6 +237,7 @@ func formContent(qs []formQuestion, sch *jsonschema.Schema, answers [][]string) 
 // says, its fields, and once answered the answers.
 type formView struct {
 	Server    string         `json:"server"`
+	Round     int            `json:"round"`
 	Message   string         `json:"message"`
 	Questions []formQuestion `json:"questions"`
 	Answers   [][]string     `json:"answers,omitempty"`
@@ -251,7 +253,7 @@ func (a approvalRow) form() json.RawMessage {
 	if err != nil {
 		return nil
 	}
-	b, _ := json.Marshal(formView{Server: a.label, Message: in.Form.Message, Questions: qs, Answers: in.Answers})
+	b, _ := json.Marshal(formView{Server: a.label, Round: in.Round, Message: in.Form.Message, Questions: qs, Answers: in.Answers})
 	return b
 }
 
@@ -264,6 +266,9 @@ func (a approvalRow) unanswered() bool {
 // askMCP interrupts a trusted tool's in-run call for its form: it becomes an
 // approval, as an untrusted call's would, that answering it accepts.
 func (s *Service) askMCP(ctx context.Context, srv MCPServer, hash string, args json.RawMessage, in mcpInput, summary string) error {
+	if runOf(ctx).conv.Kind == "assist" {
+		return errNoFormHost
+	}
 	b, err := json.Marshal(in)
 	if err != nil {
 		return err
@@ -281,15 +286,33 @@ func nullText(b []byte) any {
 	return string(b)
 }
 
-// askAgain puts a claimed approval back to pending with the server's new form.
-func (s *Service) askAgain(ctx context.Context, a approvalRow, in mcpInput) error {
+// errNoFormHost: the compose window shows no MCP form yet (it answers no
+// questions), so a form asked in an assist run ends the call. shortcut: drop
+// it once the compose window answers questions (godwit-email/godwit#206).
+var errNoFormHost = errors.New("the MCP server asked the user a question, which only Wit's own window can show: ask there")
+
+// askAgain puts a claimed approval back to pending with the server's new form
+// and tells the conversation's followers, whose run stays interrupted: the
+// card shows again (the panel tells the round from the one it answered).
+// ok is false where no form can show (errNoFormHost): the caller fails it.
+func (s *Service) askAgain(ctx context.Context, a approvalRow, in mcpInput) (ok bool, err error) {
+	rows, err := s.db.Query(ctx, "SELECT kind FROM conversations WHERE id = ?", a.ConversationID)
+	if err != nil || len(rows.Values) == 0 || store.Str(rows.Values[0][0]) == "assist" {
+		return false, err
+	}
 	b, err := json.Marshal(in)
 	if err != nil {
-		return err
+		return false, err
 	}
-	_, err = s.db.Transaction(ctx, []sqlite.Statement{{SQL: "UPDATE approvals SET state = 'pending', input = ?, updated_at = ? WHERE id = ? AND state = 'executing'",
-		Args: []any{string(b), time.Now().Unix(), a.ID}}, s.auditRow(a, "input_required")})
-	return err
+	if _, err = s.db.Transaction(ctx, []sqlite.Statement{{SQL: "UPDATE approvals SET state = 'pending', input = ?, updated_at = ? WHERE id = ? AND state = 'executing'",
+		Args: []any{string(b), time.Now().Unix(), a.ID}}, s.auditRow(a, "input_required")}); err != nil {
+		return false, err
+	}
+	if as, err := s.approvals(ctx, "a.id = ?", a.ID); err == nil && len(as) == 1 {
+		s.publishWit(a.ConversationID, WitEvent{ConversationID: a.ConversationID, RunID: a.RunID, Turn: s.runTurn(ctx, a.RunID), Ends: true,
+			Event: ai.Event{Kind: "interrupted", Interrupts: []ai.ToolCall{{ID: a.CallID, Name: a.Tool, Args: a.Args}}}, Approvals: as})
+	}
+	return true, nil
 }
 
 // answerForm answers a's form: every answer empty rejects the call (the
@@ -315,7 +338,9 @@ func (s *Service) answerForm(ctx context.Context, a approvalRow, answers [][]str
 	if err != nil {
 		return err
 	}
-	r, err := s.db.Execute(ctx, "UPDATE approvals SET input = ?, updated_at = ? WHERE id = ? AND state = 'pending'", string(b), time.Now().Unix(), a.ID)
+	// only the form read: an answer to an earlier round, or a second answer, changes nothing
+	r, err := s.db.Execute(ctx, "UPDATE approvals SET input = ?, updated_at = ? WHERE id = ? AND state = 'pending' AND input = ?",
+		string(b), time.Now().Unix(), a.ID, a.input)
 	if err != nil {
 		return err
 	}

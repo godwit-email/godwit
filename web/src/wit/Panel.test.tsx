@@ -2362,6 +2362,7 @@ describe("an MCP server's form", () => {
     draft: 0,
     form: JSON.stringify({
       server: "fake",
+      round: 1,
       message: "Which room? <b>now</b>",
       questions: [
         {
@@ -2404,6 +2405,35 @@ describe("an MCP server's form", () => {
     await user.click(screen.getByRole("button", { name: "提交" }));
     expect(onAnswer).toHaveBeenCalledWith(form(), [["Large"], ["false"], ["2"]]);
     expect(onDecide).not.toHaveBeenCalled();
+  });
+
+  it("a call allowed that then asks shows its form, and a form answered that asks again shows the next round", async () => {
+    const onDecide = vi.fn().mockResolvedValue(true);
+    const onAnswer = vi.fn().mockResolvedValue(true);
+    const user = userEvent.setup();
+    const r = await setup({ onAnswer, onDecide });
+    await user.type(input(), "book it{Enter}");
+    const call = { id: "b1", name: "mcp_1_book", args: "{}" };
+    const { form: _, ...plain } = form();
+    r.emit({ run: 7, kind: "tool_call", call });
+    r.emit({ run: 7, kind: "interrupted", interrupts: [call], approvals: [plain], ends: true });
+    await user.click(await screen.findByRole("button", { name: "允许" }));
+    expect(onDecide).toHaveBeenCalled();
+    await waitFor(() => expect(screen.queryByRole("button", { name: "允许" })).toBeNull());
+    // the same approval, pending again with the server's form (core askAgain)
+    r.emit({ run: 7, kind: "interrupted", interrupts: [call], approvals: [form()], ends: true });
+    r.resume(7);
+    expect(await screen.findByText("MCP 服务器 fake 想问你")).toBeInTheDocument();
+    await user.click(screen.getByRole("radio", { name: /Large/ }));
+    await user.click(screen.getByRole("button", { name: "下一题" }));
+    await user.click(screen.getByRole("button", { name: "跳过" }));
+    await user.click(screen.getByRole("button", { name: "跳过" })); // the last: submits
+    await waitFor(() => expect(onAnswer).toHaveBeenCalledWith(form(), [["Large"], [], []]));
+    await waitFor(() => expect(screen.queryByText("MCP 服务器 fake 想问你")).toBeNull());
+    const next = { ...form(), form: form().form?.replace('"round":1', '"round":2') };
+    r.emit({ run: 7, kind: "interrupted", interrupts: [call], approvals: [next], ends: true });
+    r.resume(7);
+    expect(await screen.findByText("MCP 服务器 fake 想问你")).toBeInTheDocument();
   });
 
   it("an answered form shows its answers", async () => {

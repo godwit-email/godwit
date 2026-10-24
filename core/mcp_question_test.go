@@ -45,9 +45,17 @@ func TestMCPQuestionOfApprovedCall(t *testing.T) {
 	in := evs[len(evs)-1]
 	require.Equal(t, "interrupted", in.Kind, "%+v", in.Err)
 	id := in.Approvals[0].ID
+	sub, unsub := e.s.SubscribeConversation(in.ConversationID)
+	defer unsub()
 	require.NoError(t, e.s.ResolveApproval(t.Context(), id, true))
 
-	// the call asked: the same approval waits again, now for the answers
+	// the call asked: the same approval waits again, now for the answers, and followers are told
+	ev := <-sub
+	assert.Equal(t, "interrupted", ev.Kind)
+	assert.True(t, ev.Ends)
+	require.Len(t, ev.Approvals, 1)
+	assert.Equal(t, "pending", ev.Approvals[0].State)
+	assert.NotNil(t, ev.Approvals[0].Form)
 	a := e.approval(t, id)
 	require.Equal(t, "pending", a.State)
 	var form formView
@@ -142,4 +150,42 @@ func TestMCPInputOf(t *testing.T) {
 	nested := &mcp.ElicitParams{RequestedSchema: map[string]any{"type": "object", "properties": map[string]any{"o": map[string]any{"type": "object"}}}}
 	_, err = mcpInputOf(asks(mcp.InputRequestMap{"n": nested}), nil)
 	assert.ErrorContains(t, err, "not a field")
+}
+
+func TestMCPQuestionStaleAnswer(t *testing.T) {
+	e := newApprovalEnv(t)
+	f := newFakeMCP(t)
+	addBooking(f)
+	srv := fakeServer(t, e.s)
+	require.NoError(t, e.s.SetMCPToolTrusted(t.Context(), srv.ID, "book", true))
+	srv = mcpServer(t, e.s, srv.ID)
+	evs := e.ask(t, e.newConv(t, "ask", 0), callArgs(witName(t, srv, "book"), `{}`), finished)
+	id := evs[len(evs)-1].Approvals[0].ID
+
+	read, err := e.s.approvalRow(t.Context(), id)
+	require.NoError(t, err)
+	// another round (or another answer) came in since the form was read
+	_, err = e.s.db.Execute(t.Context(), "UPDATE approvals SET input = json_set(input, '$.round', 2) WHERE id = ?", id)
+	require.NoError(t, err)
+	assert.ErrorIs(t, e.s.answerForm(t.Context(), read, [][]string{{"Small"}, {}, {}}), ErrInvalidState)
+	assert.Equal(t, "pending", e.approval(t, id).State)
+	assert.Equal(t, int32(1), f.calls.Load(), "the stale answer is not sent")
+}
+
+func TestMCPQuestionNotInCompose(t *testing.T) {
+	e := newApprovalEnv(t)
+	f := newFakeMCP(t)
+	addBooking(f)
+	srv := fakeServer(t, e.s)
+	require.NoError(t, e.s.SetMCPToolTrusted(t.Context(), srv.ID, "book", true))
+	srv = mcpServer(t, e.s, srv.ID)
+	d, err := e.s.NewDraft(t.Context(), 1, "new", 0)
+	require.NoError(t, err)
+	e.srv.Script(callArgs(witName(t, srv, "book"), `{}`), finished)
+	ch, err := e.s.Assist(t.Context(), d.ID, "help")
+	require.NoError(t, err)
+	evs := drainWit(t, ch)
+	require.Equal(t, "done", evs[len(evs)-1].Kind, "the call fails; the run goes on: %+v", evs[len(evs)-1].Err)
+	assert.Zero(t, e.count(t, "SELECT COUNT(*) FROM approvals"))
+	assert.Contains(t, lastSent(t, e), "only Wit's own window can show")
 }

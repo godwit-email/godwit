@@ -452,10 +452,17 @@ type Question = {
 type Questions = {
   questions: Question[];
   answers?: string[][];
-  /** For an MCP server's form: the server that asks, and what it says. */
+  /** For an MCP server's form: the server that asks, the round (from 1), and what it says. */
   server?: string;
+  round?: number;
   message?: string;
 };
+
+/**
+ * What a decision here settles: the approval, and for an MCP form its round, since the server may
+ * ask again on the same approval once answered (or once its call is allowed).
+ */
+const decisionKey = (a: Approval) => (a.form ? `${a.id}:${questionArgs(a).round}` : String(a.id));
 
 /** Whether a is a question: Wit's (ask_user_question) or an MCP server's form. */
 const isQuestion = (a: Approval) => a.tool === ASK_QUESTION_TOOL || !!a.form;
@@ -1064,7 +1071,8 @@ export function Panel({
     return { messages, open };
   });
   const [deciding, setDeciding] = useState<number[]>([]);
-  const [decided, setDecided] = useState<number[]>([]);
+  // decisionKey's of the approvals decided here
+  const [decided, setDecided] = useState<string[]>([]);
   const chat = useChat<WitUIMessage>({ transport, messages: start.messages });
   const [draft, setDraft] = useState("");
   // as they are now, for what a run's end decides after reading the history
@@ -1369,7 +1377,7 @@ export function Panel({
   }
   // A tool's call waiting: decided here (once decided, its card goes until the run resumes).
   const open = [...approvals.values()].filter(
-    (a) => a.state === "pending" && !decided.includes(a.id),
+    (a) => a.state === "pending" && !decided.includes(decisionKey(a)),
   );
   // Decides a, or with all its run's pending calls; its cards go once decided.
   const decideAs = async (a: Approval, accept: boolean, all: boolean) => {
@@ -1380,7 +1388,8 @@ export function Panel({
       : [a.id];
     setDeciding(ids);
     try {
-      if (await onDecide(a, accept, all)) setDecided((d) => [...d, ...ids]);
+      if (await onDecide(a, accept, all))
+        setDecided((d) => [...d, ...open.filter((x) => ids.includes(x.id)).map(decisionKey)]);
     } finally {
       setDeciding([]);
     }
@@ -1389,13 +1398,13 @@ export function Panel({
     if (!onAnswer || deciding.length > 0) return;
     setDeciding([a.id]);
     try {
-      if (await onAnswer(a, answers)) setDecided((d) => [...d, a.id]);
+      if (await onAnswer(a, answers)) setDecided((d) => [...d, decisionKey(a)]);
     } finally {
       setDeciding([]);
     }
   };
   const tools = (as: Approval[]) => {
-    const shown = as.filter((a) => !decided.includes(a.id));
+    const shown = as.filter((a) => !decided.includes(decisionKey(a)));
     const busy = !onDecide || deciding.length > 0;
     // all of the run's calls waiting, a body edit's among them
     // 全部允许 answers no question: questions are not counted
@@ -1455,7 +1464,11 @@ export function Panel({
                         .map((x) => x.id);
                       setDeciding(ids);
                       try {
-                        if (await onSession(a)) setDecided((d) => [...d, ...ids]);
+                        if (await onSession(a))
+                          setDecided((d) => [
+                            ...d,
+                            ...open.filter((x) => ids.includes(x.id)).map(decisionKey),
+                          ]);
                       } finally {
                         setDeciding([]);
                       }
