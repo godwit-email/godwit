@@ -410,6 +410,10 @@ var Migrations = [][]string{{
 	// An MCP call's question for the user (core.mcpInput, JSON): the server's
 	// form and state, and once answered the answer it is called again with.
 	`ALTER TABLE approvals ADD COLUMN input TEXT`,
+}, {
+	// ai_cache.created_at is an output's last use: core.cleanAICache deletes
+	// by it every janitor tick.
+	`CREATE INDEX ai_cache_created ON ai_cache(created_at)`,
 }}
 
 // HistoryRowsVersion is the schema version that keeps a conversation's
