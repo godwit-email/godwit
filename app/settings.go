@@ -596,7 +596,13 @@ func (p *settingsPage) aboutView(c *ui.Context) {
 	}}
 	settingsCard(c, rows...)
 	links := []func(){func() {
-		settingRow(c, i18n.T("settings.about.source"), "", func() { p.starButton(c) })
+		settingRow(c, i18n.T("settings.about.source"), "", func() {
+			if !p.starred {
+				p.starButton(c)
+			} else if value("GitHub", "arrow-up-right") {
+				open(repoURL)
+			}
+		})
 	}}
 	for _, l := range []struct{ key, value, url string }{
 		{"settings.about.site", "godwit.email", siteURL},
@@ -614,16 +620,13 @@ func (p *settingsPage) aboutView(c *ui.Context) {
 	settingsSection(c, i18n.T("settings.about.links"), "", links...)
 }
 
-// starButton stars Godwit's repository with the GitHub CLI, or shows it
-// starred; without gh it opens the repository to star there.
+// starButton stars Godwit's repository with the GitHub CLI; without gh it
+// opens the repository to star there.
 func (p *settingsPage) starButton(c *ui.Context) {
 	t, th, a := theme.Of(c), c.Theme(), p.a
-	label, icon := i18n.T("settings.about.star"), icons.Get("star")
-	if p.starred {
-		label, icon = i18n.T("settings.about.starred"), icons.Fill("star")
-	}
+	label := i18n.T("settings.about.star")
 	b := kit.ButtonFrame(c, kit.ButtonOpts{Variant: kit.Outline, Size: kit.SizeSm}).Label(label).Gap(th.Space(1.5)).Children(func() {
-		ui.Icon(c, icon).Size(theme.IconSm, theme.IconSm).TextColor(t.Foreground)
+		ui.Icon(c, icons.Get("star")).Size(theme.IconSm, theme.IconSm).TextColor(t.Foreground)
 		ui.Text(c, label).Role(ui.RoleNone) // the button's Label names it
 		if !p.gh {
 			ui.Icon(c, icons.Get("arrow-up-right")).Size(theme.IconSm, theme.IconSm).TextColor(t.Muted)
@@ -632,7 +635,7 @@ func (p *settingsPage) starButton(c *ui.Context) {
 	if !b.Clicked() || p.starring {
 		return
 	}
-	if !p.gh || p.starred {
+	if !p.gh {
 		a.do(func(context.Context) error { return a.plat.OpenURL(repoURL) }, a.toastErr)
 		return
 	}

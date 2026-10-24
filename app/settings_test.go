@@ -507,7 +507,7 @@ func TestSettingsPrivacyAndAbout(t *testing.T) {
 	h.openSettings("about")
 	h.click("加星标")
 	h.called("StarRepo")
-	h.see("已加星标")
+	h.see("GitHub") // starred: a link like the others
 }
 
 // blockingUpdate is the Service's UpdateAccount, whose first call waits
