@@ -160,7 +160,7 @@ async function mount(canvas: HTMLCanvasElement) {
     if (fly > 0) t += dt;
     turn.rotation.y = spin;
     draw(pose());
-    if (!hover && !dragging && fly === 0 && Math.abs(spin) < 1e-3) {
+    if ((!hover || reduced) && !dragging && fly === 0 && Math.abs(spin) < 1e-3) {
       renderer.setAnimationLoop(null);
       t = last = 0;
     }
