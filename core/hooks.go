@@ -254,7 +254,8 @@ func (s *Service) startJanitor() {
 	go func() {
 		defer end()
 		for s.hookWait(ctx, hookPoll, nil) {
-			s.cleanEvents(ctx) // best effort; the next tick tries again
+			// best effort; the next tick tries again
+			s.cleanEvents(ctx)
 			s.cleanAICache(ctx)
 		}
 	}()

@@ -53,13 +53,13 @@ func TestAICacheExpires(t *testing.T) {
 			e.ageCache(t, 29)
 			require.NoError(t, e.s.cleanAICache(t.Context()))
 			assert.Equal(t, first, c.get(t, e), "29 days unused is still cached")
-			assert.Equal(t, 1, len(e.srv.Requests()))
+			assert.Len(t, e.srv.Requests(), 1)
 
 			e.ageCache(t, 31)
 			require.NoError(t, e.s.cleanAICache(t.Context()))
 			assert.Zero(t, e.cacheRows(t))
 			assert.NotEqual(t, first, c.get(t, e), "generated again")
-			assert.Equal(t, 2, len(e.srv.Requests()))
+			assert.Len(t, e.srv.Requests(), 2)
 		})
 	}
 }
@@ -74,7 +74,7 @@ func TestAICacheHitKeepsIt(t *testing.T) {
 	e.passDays(t, 2)
 	require.NoError(t, e.s.cleanAICache(t.Context()))
 	assert.Equal(t, []string{"sum"}, texts(e.run(t, "summarize", tg)), "the hit counted as a use")
-	assert.Equal(t, 1, len(e.srv.Requests()))
+	assert.Len(t, e.srv.Requests(), 1)
 }
 
 func TestAICacheRefreshFailureStillHits(t *testing.T) {
@@ -89,7 +89,7 @@ func TestAICacheRefreshFailureStillHits(t *testing.T) {
 	slog.SetDefault(slog.New(slog.NewTextHandler(&buf, nil)))
 	t.Cleanup(func() { slog.SetDefault(prev) })
 	assert.Equal(t, []string{"secret summary"}, texts(e.run(t, "summarize", tg)))
-	assert.Equal(t, 1, len(e.srv.Requests()))
+	assert.Len(t, e.srv.Requests(), 1)
 	assert.Contains(t, buf.String(), "ai cache refresh failed")
 	assert.NotContains(t, buf.String(), "secret summary")
 }
