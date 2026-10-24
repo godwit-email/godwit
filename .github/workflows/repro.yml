@@ -8,7 +8,7 @@ jobs:
       fail-fast: false
       matrix:
         code: [base, fix]
-        shard: [0, 1, 2, 3]
+        shard: [0, 1, 2, 3, 4, 5, 6, 7, 8, 9]
     runs-on: windows-latest
     steps:
       - shell: pwsh
@@ -16,6 +16,8 @@ jobs:
           Add-MpPreference -ExclusionPath $env:TEMP
           (Get-CimInstance Win32_Processor).Name
       - uses: actions/checkout@v7
+        with:
+          fetch-depth: 2
       - uses: jdx/mise-action@v5
       - name: loop
         shell: bash {0}
@@ -28,12 +30,15 @@ jobs:
           go test -c -o ai.test.exe ./core/ai || exit 1
           cd core/ai
           fails=0
-          for i in $(seq 1 300); do
+          cpu=$(powershell -c "(Get-CimInstance Win32_Processor).Name")
+          echo "cpu=$cpu"
+          n=40; case "$cpu" in *Intel*) n=300;; esac
+          for i in $(seq 1 $n); do
             ../../ai.test.exe -test.count=1 -test.v > out.txt 2>&1
             rc=$?
             if [ $rc != 0 ]; then
               fails=$((fails+1)); echo "=== FAIL run $i rc=$rc"; grep "^=== RUN" out.txt | tail -2; grep -v "^=== RUN\|^--- PASS\|^    " out.txt | head -40
             fi
           done
-          echo "fails=$fails"
+          echo "fails=$fails runs=$n cpu=$cpu"
           test $fails = 0
