@@ -87,6 +87,11 @@ type Platform interface {
 	// one, without a window: "" when up to date. Blocks: call off the UI
 	// thread.
 	LatestVersion(ctx context.Context) (string, error)
+	// RepoStarred asks the GitHub CLI whether the user starred Godwit's
+	// repository: ok is false without gh signed in. Blocks.
+	RepoStarred(ctx context.Context) (starred, ok bool)
+	// StarRepo stars it with the GitHub CLI. Blocks.
+	StarRepo(ctx context.Context) error
 }
 
 // Notification is a system notification about a message.

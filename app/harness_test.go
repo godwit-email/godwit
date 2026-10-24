@@ -249,7 +249,9 @@ type fakePlatform struct {
 	codes        []core.SignInCode
 	codeBanners  []core.SignInCode
 	noCodeBanner bool
-	latest       string   // LatestVersion's answer
+	latest       string // LatestVersion's answer
+	gh           bool   // the GitHub CLI is signed in
+	starred      bool
 	files        []string // OpenFiles
 	dir          string   // OpenDirectory
 	savePath     string   // SaveFile
@@ -493,6 +495,18 @@ func (p *fakePlatform) NewBirdView() (ui.NativeWebView, func(), error) {
 }
 func (p *fakePlatform) CanCheckForUpdates() bool { return true }
 func (p *fakePlatform) CheckForUpdates()         { p.record("CheckForUpdates") }
+func (p *fakePlatform) RepoStarred(context.Context) (bool, bool) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	return p.starred, p.gh
+}
+func (p *fakePlatform) StarRepo(context.Context) error {
+	p.record("StarRepo")
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	p.starred = true
+	return nil
+}
 func (p *fakePlatform) LatestVersion(context.Context) (string, error) {
 	p.mu.Lock()
 	defer p.mu.Unlock()

@@ -88,6 +88,9 @@ type settingsPage struct {
 	birdErr    error
 	birdPosted bool
 	latest     string // a newer version the update feed offers, read as About opens; "" none
+	gh         bool   // the GitHub CLI is signed in: the star button stars, else it opens the repository
+	starred    bool   // the user starred Godwit, by gh
+	starring   bool   // StarRepo runs
 
 	query string // the sidebar's search
 
@@ -168,6 +171,9 @@ func (p *settingsPage) refresh(hints []events.Event) {
 					p.latest = v
 				} // a dev build, offline: Check for Updates says why
 			})
+		var starred, ok bool
+		a.query(func(ctx context.Context) error { starred, ok = a.plat.RepoStarred(ctx); return nil },
+			func(error) { p.gh, p.starred = ok, starred })
 	case sec == "privacy" && hints == nil:
 		var err error
 		a.query(func(ctx context.Context) error { err = a.svc.KeychainStatus(ctx); return nil },
@@ -589,10 +595,11 @@ func (p *settingsPage) aboutView(c *ui.Context) {
 		})
 	}}
 	settingsCard(c, rows...)
-	var links []func()
+	links := []func(){func() {
+		settingRow(c, i18n.T("settings.about.source"), "", func() { p.starButton(c) })
+	}}
 	for _, l := range []struct{ key, value, url string }{
 		{"settings.about.site", "godwit.email", siteURL},
-		{"settings.about.source", "GitHub", repoURL},
 		{"settings.about.changelog", "GitHub Releases", repoURL + "/releases"},
 		{"settings.about.feedback", "GitHub Issues", repoURL + "/issues"},
 	} {
@@ -605,6 +612,39 @@ func (p *settingsPage) aboutView(c *ui.Context) {
 		})
 	}
 	settingsSection(c, i18n.T("settings.about.links"), "", links...)
+}
+
+// starButton stars Godwit's repository with the GitHub CLI, or shows it
+// starred; without gh it opens the repository to star there.
+func (p *settingsPage) starButton(c *ui.Context) {
+	t, th, a := theme.Of(c), c.Theme(), p.a
+	label, icon := i18n.T("settings.about.star"), icons.Get("star")
+	if p.starred {
+		label, icon = i18n.T("settings.about.starred"), icons.Fill("star")
+	}
+	b := kit.ButtonFrame(c, kit.ButtonOpts{Variant: kit.Outline, Size: kit.SizeSm}).Label(label).Gap(th.Space(1.5)).Children(func() {
+		ui.Icon(c, icon).Size(theme.IconSm, theme.IconSm).TextColor(t.Foreground)
+		ui.Text(c, label).Role(ui.RoleNone) // the button's Label names it
+		if !p.gh {
+			ui.Icon(c, icons.Get("arrow-up-right")).Size(theme.IconSm, theme.IconSm).TextColor(t.Muted)
+		}
+	})
+	if !b.Clicked() || p.starring {
+		return
+	}
+	if !p.gh || p.starred {
+		a.do(func(context.Context) error { return a.plat.OpenURL(repoURL) }, a.toastErr)
+		return
+	}
+	p.starring = true
+	a.do(a.plat.StarRepo, func(err error) {
+		p.starring = false
+		if err != nil {
+			a.toastErr(err)
+			return
+		}
+		p.starred = true
+	})
 }
 
 // bird makes the About page's bird, once, after this frame (making a web
