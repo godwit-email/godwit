@@ -155,6 +155,24 @@ func TestLabelEvalRejectsBadCases(t *testing.T) {
 	} {
 		require.ErrorContains(t, err, want)
 	}
+
+	// Label sets UpdateLabel would refuse, mid-run, are refused up front.
+	dir = t.TempDir()
+	writeEvalCases(t, dir, "a.jsonl", map[string]any{"id": "ok", "lang": "en", "mail": m, "expect": evalExpect(nil)})
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "bad.labelset.json"), []byte(`{"labels": {
+		"en": {"otp": {"name": " ", "description": "x"}, "bill": {"name": "orders", "description": "x"}, "nope": {"name": "Nope"}},
+		"fr": {}}}`), 0o600))
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "empty.labelset.json"), []byte(`{"labels": {}}`), 0o600))
+	_, err = loadEvalSuite(dir)
+	for _, want := range []string{
+		"bad.labelset.json: en: otp: a name of 1 to 32 characters",
+		`bad.labelset.json: en: bill: name "orders" is also order's`,
+		"bad.labelset.json: en: nope: unknown label",
+		`bad.labelset.json: unknown preset language "fr"`,
+		"empty.labelset.json: no preset language",
+	} {
+		require.ErrorContains(t, err, want)
+	}
 }
 
 // judgeFunc is an ai.Judge answering with f, safe for parallel runs.

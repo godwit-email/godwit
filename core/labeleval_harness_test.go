@@ -18,6 +18,7 @@ import (
 	"testing"
 	"text/tabwriter"
 	"time"
+	"unicode/utf8"
 
 	"github.com/emersion/go-imap/v2"
 	"github.com/godwit-email/godwit/core/ai"
@@ -97,13 +98,31 @@ func loadEvalSuite(dir string) (evalSuite, error) {
 			errs = append(errs, err)
 			continue
 		}
+		if len(set.Labels) == 0 {
+			errs = append(errs, fmt.Errorf("%s: no preset language: it would never run", name))
+		}
 		for lang, labels := range set.Labels {
 			if evalLangs[lang] == "" {
 				errs = append(errs, fmt.Errorf("%s: unknown preset language %q", name, lang))
+				continue
 			}
-			for slug := range labels {
-				if !isPreset(slug) {
-					errs = append(errs, fmt.Errorf("%s: %s: unknown label %q", name, lang, slug))
+			for slug, o := range labels {
+				at := fmt.Sprintf("%s: %s: %s", name, lang, slug)
+				label := strings.TrimSpace(o.Name)
+				switch {
+				case !isPreset(slug):
+					errs = append(errs, fmt.Errorf("%s: unknown label", at))
+				case label == "" || utf8.RuneCountInString(label) > MaxLabelName:
+					errs = append(errs, fmt.Errorf("%s: a name of 1 to %d characters", at, MaxLabelName))
+				case utf8.RuneCountInString(strings.TrimSpace(o.Description)) > MaxLabelDescription:
+					errs = append(errs, fmt.Errorf("%s: a description of at most %d characters", at, MaxLabelDescription))
+				}
+				for _, p := range presetLabels { // as UpdateLabel refuses it, before any model is called
+					other, ok := labels[p.slug]
+					if p.slug != slug && (strings.EqualFold(label, strings.TrimSpace(p.name.For(evalLangs[lang]))) ||
+						ok && strings.EqualFold(label, strings.TrimSpace(other.Name))) {
+						errs = append(errs, fmt.Errorf("%s: name %q is also %s's", at, label, p.slug))
+					}
 				}
 			}
 		}
@@ -258,6 +277,7 @@ type evalRun struct {
 // unanswered mail none at all.
 type evalGot struct {
 	p          map[string]float64
+	refused    map[string]bool
 	unanswered bool
 }
 
@@ -344,7 +364,10 @@ func runEval(t *testing.T, r *evalRun, set *evalSet) {
 	slugs := map[int64]string{}
 	for _, l := range labels {
 		slugs[l.ID] = l.Slug
-		if o, ok := set.label(r.preset, l.Slug); ok { // as the user edits it: the slug stays
+		if set == nil {
+			continue
+		}
+		if o, ok := set.Labels[r.preset][l.Slug]; ok { // as the user edits it: the slug stays
 			_, err := s.UpdateLabel(bg, l.ID, LabelInput{Name: o.Name, Description: o.Description, Color: l.Color, Icon: l.Icon})
 			require.NoError(t, err, "%s: %s", r.set, l.Slug)
 		}
@@ -386,14 +409,16 @@ func runEval(t *testing.T, r *evalRun, set *evalSet) {
 		}
 		require.Equal(t, 1, n, c.ID)
 		require.Equal(t, calls+1, rec.calls, "%s: one judge call", c.ID)
-		g := evalGot{p: map[string]float64{}, unanswered: rec.err != nil}
-		if g.unanswered {
+		g := evalGot{p: map[string]float64{}, refused: map[string]bool{}, unanswered: rec.err != nil}
+		if g.unanswered { // the classifier writes nothing, whatever answers came with the error
 			r.unanswered++
+			rec.ans = nil
 		}
 		for _, a := range rec.ans {
 			switch {
 			case a.Type == ai.Refusal:
 				r.refused++
+				g.refused[a.Name] = true
 			case a.Type == ai.Predicate && a.Probability != nil:
 				g.p[a.Name] = *a.Probability
 			}
@@ -421,15 +446,6 @@ func runEval(t *testing.T, r *evalRun, set *evalSet) {
 		}
 	}
 	r.calls, r.took, r.err = rec.calls, rec.took, nil
-}
-
-// label is the set's rewrite of a preset in a language; a nil set has none.
-func (set *evalSet) label(preset, slug string) (struct{ Name, Description string }, bool) {
-	if set == nil {
-		return struct{ Name, Description string }{}, false
-	}
-	o, ok := set.Labels[preset][slug]
-	return o, ok
 }
 
 type evalTally struct{ tp, fp, fn, tn int }
@@ -600,9 +616,11 @@ func evalReport(runs []evalRun, skipped []string) string {
 			var fp, fn []string
 			for _, c := range r.cases {
 				e, g := c.Expect[p.slug], r.got[c.ID]
-				answer := "refused"
+				answer := "no answer"
 				if v, ok := g.p[p.slug]; ok {
 					answer = fmt.Sprintf("%.2f", v)
+				} else if g.refused[p.slug] {
+					answer = "refused"
 				} else if g.unanswered {
 					answer = "unanswered"
 				}
