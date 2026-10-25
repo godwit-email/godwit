@@ -314,13 +314,16 @@ func TestHistoryResumeAndClose(t *testing.T) {
 	s, err := h.Send(100000, Summary{}, false)
 	require.NoError(t, err)
 	assert.False(t, s.asked())
+	// Pi preserves the sent prefix; the legacy fixture supplies only the new suffix.
+	resumed = append(append([]*message{}, s.msgs...), resumed[len(s.msgs):]...)
 	nh, ch, err := s.Restore(Result{out: resumed})
 	require.NoError(t, err)
 	assert.Equal(t, len(resumed), nh.Len())
 	for _, r := range ch.Put {
-		assert.True(t, r.Seq >= int64(h.Len()), "only the interrupted message and what came after are saved")
+		assert.True(t, r.Seq >= h.Next(), "only new messages are saved")
 	}
 	assert.Equal(t, "all done", nh.Messages()[nh.Len()-1].Text)
+	assert.Equal(t, h.raws, nh.raws[:h.Len()], "the saved prefix is unchanged")
 
 	_, _, err = h.Close(nil)
 	assert.Error(t, err, "every open call needs a result")

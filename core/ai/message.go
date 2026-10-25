@@ -17,10 +17,9 @@ type message struct {
 type role string
 
 const (
-	roleUser   role = "user"
-	roleModel  role = "model"
-	roleTool   role = "tool"
-	roleSystem role = "system"
+	roleUser  role = "user"
+	roleModel role = "model"
+	roleTool  role = "tool"
 )
 
 // part is one part of a message: text, reasoning, a tool request or a tool

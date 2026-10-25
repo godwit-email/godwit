@@ -41,7 +41,6 @@ func (r *runner) runPi(req Request) Result {
 	if err != nil {
 		return Result{Err: &Error{Code: CodeInternal, Msg: r.redact(err.Error())}}
 	}
-	defer r.e.release(in)
 	ctx, cancel := context.WithCancelCause(r.ctx)
 	defer cancel(nil)
 	stop := context.AfterFunc(in.ctx, func() { cancel(context.Cause(in.ctx)) })
