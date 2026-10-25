@@ -21,7 +21,6 @@ import (
 	"unicode/utf8"
 
 	"github.com/Calcium-Ion/moejs"
-	"github.com/dop251/goja"
 	"github.com/egoist/mygo/plugins/sqlite"
 	"github.com/godwit-email/godwit/core/events"
 	"github.com/godwit-email/godwit/core/plugins"
@@ -598,48 +597,20 @@ func (s *Service) loadPlugin(ctx context.Context, name string, r pluginRow) erro
 	return nil
 }
 
-// startScript builds a script plugin, creates its VM and runs its
-// initialization: on moejs for a plugin RunsOnMoejs picks while the Labs
-// switch is on (#237), unless it reaches for a ctx API still on goja; on goja
-// otherwise.
+// startScript builds a script plugin, creates its VM and runs its initialization.
 func (s *Service) startScript(ctx context.Context, name string, r pluginRow, h *pluginHost) (*plugins.Plugin, error) {
-	dir := s.versionDir(name, r.installDir)
-	opts := plugins.VMOptions{Clock: s.pluginClock, Redact: s.secrets.Redact}
-	st, err := s.loadSettings(ctx)
+	code, err := plugins.Build(s.versionDir(name, r.installDir), r.m.Main)
 	if err != nil {
 		return nil, err
 	}
-	if st.PiEngine && plugins.RunsOnMoejs(r.m) {
-		code, err := plugins.BuildWith(plugins.ESBuildModule, dir, r.m.Main)
-		if err != nil {
-			return nil, err
-		}
-		mod, err := moejs.Compile(name+".js", string(code))
-		if err != nil {
-			return nil, fmt.Errorf("plugin %s: %s", name, s.secrets.Redact(err.Error()))
-		}
-		vm, err := plugins.NewMoeVM(name, mod, opts)
-		if err != nil {
-			return nil, err
-		}
-		p, err := plugins.LoadMoe(ctx, vm, r.m, h, h.snapshot())
-		if err == nil {
-			return p, nil
-		}
-		vm.Close()
-		if !errors.Is(err, plugins.ErrNeedsGoja) {
-			return nil, err
-		}
-	}
-	code, err := plugins.Build(dir, r.m.Main)
-	if err != nil {
-		return nil, err
-	}
-	prog, err := goja.Compile(name+".js", string(code), false)
+	mod, err := moejs.Compile(name+".js", string(code))
 	if err != nil {
 		return nil, fmt.Errorf("plugin %s: %s", name, s.secrets.Redact(err.Error()))
 	}
-	vm := plugins.NewVM(name, prog, opts)
+	vm, err := plugins.NewVM(name, mod, plugins.VMOptions{Clock: s.pluginClock, Redact: s.secrets.Redact})
+	if err != nil {
+		return nil, err
+	}
 	p, err := plugins.Load(ctx, vm, r.m, h, h.snapshot())
 	if err != nil {
 		vm.Close()
@@ -767,7 +738,7 @@ func (s *Service) stopPlugins() {
 // maxFailures consecutive failed calls disable a plugin.
 const maxFailures = 3
 
-// pluginFailed counts a failed call (an error, a timeout, the watchdog) of the
+// pluginFailed counts a failed call (an error, a timeout, the memory limit) of the
 // running instance gen (runningPlugin.gen) of an enabled plugin; the third in a row disables and stops it. Never call it
 // from the plugin's own VM goroutine or holding pluginsMu.
 func (s *Service) pluginFailed(ctx context.Context, name string, gen uint64) error {

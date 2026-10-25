@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/Calcium-Ion/moejs"
 	"net"
 	"net/http"
 	"net/http/httptest"
@@ -42,6 +43,15 @@ func startTestPlugin(t *testing.T, s *Service, name, perms, code string) {
 	require.NoError(t, s.SetPluginEnabled(t.Context(), name, true))
 }
 
+// runJS runs JS source in the global scope of a plugin call.
+func runJS(c *plugins.CallScope, src string) (moejs.Value, error) {
+	sc, err := moejs.CompileScript("eval.js", src)
+	if err != nil {
+		return moejs.Undefined(), err
+	}
+	return c.Runtime().RunScript(sc)
+}
+
 // evalPlugin runs expr in the plugin's VM under inv and awaits it.
 func evalPlugin(t *testing.T, s *Service, name string, inv plugins.Invocation, expr string) (any, error) {
 	t.Helper()
@@ -49,8 +59,8 @@ func evalPlugin(t *testing.T, s *Service, name string, inv plugins.Invocation, e
 	rp := s.running[name]
 	s.pluginsMu.RUnlock()
 	require.NotNil(t, rp, "plugin %s is not running", name)
-	return rp.p.VM().Call(t.Context(), inv, func(c *plugins.CallScope) (any, error) {
-		return c.Runtime().RunString(expr)
+	return rp.p.VM().Call(t.Context(), inv, func(c *plugins.CallScope) (moejs.Value, error) {
+		return runJS(c, expr)
 	})
 }
 
@@ -339,7 +349,7 @@ func TestConfigSnapshot(t *testing.T) {
 	admit := func() plugins.Invocation { inv := toolRead; inv.Config = rp.host.snapshot(); return inv }
 	// No require inside a call: FailNow there would end the VM's goroutine.
 	read := func(c *plugins.CallScope) string {
-		v, err := c.Runtime().RunString(`ctx.config.plan`)
+		v, err := runJS(c, `ctx.config.plan`)
 		if err != nil {
 			return "error: " + err.Error()
 		}
@@ -349,13 +359,13 @@ func TestConfigSnapshot(t *testing.T) {
 	// A writer holds the lock (as one waiting for this call to end would).
 	s.pluginsMu.Lock()
 	cctx, cancel := context.WithTimeout(t.Context(), 2*time.Second)
-	got, err := vm.Call(cctx, admit(), func(c *plugins.CallScope) (any, error) { return read(c), nil })
+	got, err := vm.Call(cctx, admit(), func(c *plugins.CallScope) (moejs.Value, error) { return moejs.String(read(c)), nil })
 	cancel()
 	s.pluginsMu.Unlock()
 	require.NoError(t, err)
 	assert.Equal(t, "free", got)
 
-	got, err = vm.Call(t.Context(), admit(), func(c *plugins.CallScope) (any, error) {
+	got, err = vm.Call(t.Context(), admit(), func(c *plugins.CallScope) (moejs.Value, error) {
 		before := read(c)
 		done := make(chan error, 1)
 		go func() {
@@ -364,23 +374,23 @@ func TestConfigSnapshot(t *testing.T) {
 		select {
 		case err := <-done:
 			if err != nil {
-				return nil, err
+				return moejs.Undefined(), err
 			}
 		case <-time.After(5 * time.Second):
-			return nil, errors.New("SetPluginConfig blocked")
+			return moejs.Undefined(), errors.New("SetPluginConfig blocked")
 		}
-		return before + "," + read(c), nil
+		return moejs.String(before + "," + read(c)), nil
 	})
 	require.NoError(t, err)
 	assert.Equal(t, "free,free", got, "one snapshot per call")
-	got, err = vm.Call(t.Context(), admit(), func(c *plugins.CallScope) (any, error) { return read(c), nil })
+	got, err = vm.Call(t.Context(), admit(), func(c *plugins.CallScope) (moejs.Value, error) { return moejs.String(read(c)), nil })
 	require.NoError(t, err)
 	assert.Equal(t, "pro", got)
-	_, err = vm.Call(t.Context(), admit(), func(c *plugins.CallScope) (any, error) {
-		return c.Runtime().RunString(`ctx.config.plan = "hacked"`)
+	_, err = vm.Call(t.Context(), admit(), func(c *plugins.CallScope) (moejs.Value, error) {
+		return runJS(c, `ctx.config.plan = "hacked"`)
 	})
 	require.NoError(t, err)
-	got, err = vm.Call(t.Context(), admit(), func(c *plugins.CallScope) (any, error) { return read(c), nil })
+	got, err = vm.Call(t.Context(), admit(), func(c *plugins.CallScope) (moejs.Value, error) { return moejs.String(read(c)), nil })
 	require.NoError(t, err)
 	assert.Equal(t, "pro", got, "a plugin cannot change the snapshot")
 }

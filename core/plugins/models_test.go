@@ -19,7 +19,7 @@ const modelsPlugin = `var plugin = {default(ctx) {
 func TestModelsRegistration(t *testing.T) {
 	declares := Manifest{Name: "test", Capabilities: []string{"models"}}
 	load := func(m Manifest, src string) (*Plugin, error) {
-		return Load(context.Background(), newTestVM(t, src, nil), m, &fakeHost{}, testConfig)
+		return Load(context.Background(), newTestVM(t, src, VMOptions{}), m, &fakeHost{}, testConfig)
 	}
 	p, err := load(declares, modelsPlugin)
 	require.NoError(t, err)

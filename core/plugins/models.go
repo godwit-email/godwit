@@ -12,7 +12,7 @@ import (
 	"slices"
 	"strings"
 
-	"github.com/dop251/goja"
+	"github.com/Calcium-Ion/moejs"
 )
 
 // Protocols of HTTP models: the first three generate, the last two judge.
@@ -113,27 +113,38 @@ func ValidateModels(r ModelsResult, native bool) error {
 	return nil
 }
 
-// modelProvider is what ctx.models.register registered.
-type modelProvider struct{ list, prepare, judge goja.Callable }
+// modelProvider is what ctx.models.register registered; prepare and judge
+// are optional (zero: none).
+type modelProvider struct{ list, prepare, judge moejs.Value }
 
-func (p *Plugin) registerModels(c *CallScope, call goja.FunctionCall) goja.Value {
+func (p *Plugin) registerModels(c *CallScope, args []moejs.Value) (moejs.Value, error) {
 	const fn = "models.register"
-	duringInit(c)
-	if !slices.Contains(p.m.Capabilities, "models") {
-		panic(c.Runtime().NewTypeError(fn + ": plugin.json does not declare the models capability"))
+	if err := duringInit(c); err != nil {
+		return undef, err
 	}
-	o := call.Argument(0).ToObject(c.Runtime())
-	mp := &modelProvider{list: function(c, fn, o, "listModels")}
-	for k, dst := range map[string]*goja.Callable{"prepareRequest": &mp.prepare, "judge": &mp.judge} {
-		if v := o.Get(k); v != nil && !goja.IsUndefined(v) {
-			*dst = function(c, fn, o, k)
+	if !slices.Contains(p.m.Capabilities, "models") {
+		return undef, typeError(fn + ": plugin.json does not declare the models capability")
+	}
+	o := moejs.Arg(args, 0)
+	list, err := c.function(fn, o, "listModels")
+	if err != nil {
+		return undef, err
+	}
+	mp := &modelProvider{list: list}
+	for k, dst := range map[string]*moejs.Value{"prepareRequest": &mp.prepare, "judge": &mp.judge} {
+		v, err := c.vm.rt.Get(o, k)
+		if err == nil && !v.IsUndefined() {
+			*dst, err = c.function(fn, o, k)
+		}
+		if err != nil {
+			return undef, err
 		}
 	}
 	if p.models != nil {
-		panic(errors.New("models are already registered"))
+		return undef, errors.New("models are already registered")
 	}
 	p.models = mp
-	return goja.Undefined()
+	return undef, nil
 }
 
 // ListModels runs the registered listModels under inv.
@@ -142,29 +153,20 @@ func (p *Plugin) ListModels(ctx context.Context, inv Invocation) (any, error) {
 }
 
 // Prepares reports whether the plugin adjusts its models' requests.
-func (p *Plugin) Prepares() bool { return p.models != nil && p.models.prepare != nil }
+func (p *Plugin) Prepares() bool { return p.models != nil && isFunction(p.models.prepare) }
 
 // PrepareRequest runs the registered prepareRequest on req under inv.
 func (p *Plugin) PrepareRequest(ctx context.Context, inv Invocation, req ModelRequest) (any, error) {
 	if !p.Prepares() {
 		return nil, fmt.Errorf("plugin %s has no prepareRequest", p.Name)
 	}
-	return p.callJSON(ctx, inv, p.models.prepare, req)
-}
-
-// callJSON calls f with arg as JSON data, so the plugin sees its JSON field names.
-func (p *Plugin) callJSON(ctx context.Context, inv Invocation, f goja.Callable, arg any) (any, error) {
-	v, err := jsonData(arg)
-	if err != nil {
-		return nil, err
-	}
-	return p.call(ctx, inv, f, false, v)
+	return p.call(ctx, inv, p.models.prepare, false, req)
 }
 
 // JudgeModel runs the registered judge on req under inv.
 func (p *Plugin) JudgeModel(ctx context.Context, inv Invocation, req JudgeModelRequest) (any, error) {
-	if p.models == nil || p.models.judge == nil {
+	if p.models == nil || !isFunction(p.models.judge) {
 		return nil, fmt.Errorf("plugin %s has no judge", p.Name)
 	}
-	return p.callJSON(ctx, inv, p.models.judge, req)
+	return p.call(ctx, inv, p.models.judge, false, req)
 }

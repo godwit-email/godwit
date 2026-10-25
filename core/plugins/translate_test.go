@@ -16,27 +16,14 @@ import (
 
 var translateManifest = Manifest{Name: "test", Capabilities: []string{"translate"}, Permissions: Permissions{Net: []string{"api.example.com"}}}
 
-func newMoeTestVM(t *testing.T, src string, opts VMOptions) *MoeVM {
+func loadTranslator(t *testing.T, m Manifest, h Host, src string, opts VMOptions) (*Plugin, error) {
 	t.Helper()
-	mod, err := moejs.Compile("plugin.js", src)
-	require.NoError(t, err)
-	if opts.Clock == nil {
-		opts.Clock = &fakeClock{}
-	}
-	v, err := NewMoeVM("test", mod, opts)
-	require.NoError(t, err)
-	t.Cleanup(v.Close)
-	return v
+	return Load(context.Background(), newTestVM(t, src, opts), m, h, testConfig)
 }
 
-func loadMoeTest(t *testing.T, m Manifest, h Host, src string, opts VMOptions) (*Plugin, error) {
+func mustLoadTranslator(t *testing.T, h Host, src string, opts VMOptions) *Plugin {
 	t.Helper()
-	return LoadMoe(context.Background(), newMoeTestVM(t, src, opts), m, h, testConfig)
-}
-
-func mustLoadMoe(t *testing.T, h Host, src string, opts VMOptions) *Plugin {
-	t.Helper()
-	p, err := loadMoeTest(t, translateManifest, h, src, opts)
+	p, err := loadTranslator(t, translateManifest, h, src, opts)
 	require.NoError(t, err)
 	return p
 }
@@ -49,8 +36,8 @@ func translateReq() map[string]any {
 
 // The globals are the ECMAScript builtins moejs ships, and nothing more: no
 // timers, fetch, console, or anything of core/ai/pi's bundle.
-func TestMoeNoUndeclaredGlobals(t *testing.T) {
-	p := mustLoadMoe(t, &fakeHost{}, `let seen
+func TestNoUndeclaredGlobals(t *testing.T) {
+	p := mustLoadTranslator(t, &fakeHost{}, `let seen
 	export default function (ctx) {
 		seen = { globals: Object.getOwnPropertyNames(globalThis).sort(), ctx: Object.keys(ctx).sort() }
 		ctx.translators.register({ translate: () => seen })
@@ -71,33 +58,26 @@ func TestMoeNoUndeclaredGlobals(t *testing.T) {
 	assert.Equal(t, []any{"actions", "cards", "config", "llm", "mail", "models", "net", "on", "storage", "tools", "translators"}, got.(map[string]any)["ctx"])
 }
 
-// One plugin source, on goja and on moejs, translates the same.
-func TestMoeTranslateMatchesGoja(t *testing.T) {
-	const body = `(ctx) => {
+func TestTranslateUsesCtx(t *testing.T) {
+	h := &fakeHost{}
+	p := mustLoadTranslator(t, h, `export default (ctx) => {
 		ctx.translators.register({ async translate(req) {
 			const r = await ctx.net.fetch("https://api.example.com/t", { method: "POST", body: JSON.stringify(req) })
 			await ctx.storage.set("last", req.target)
 			const texts = req.texts.map((t) => t.toUpperCase())
 			return { texts, source: "en", status: r.status, body: await r.text(), cfg: ctx.config, last: await ctx.storage.get("last") }
 		} })
-	}`
-	h := &fakeHost{}
-	gojaPlugin, err := Load(context.Background(), newTestVM(t, `var plugin = {default: `+body+`}`, nil), translateManifest, h, testConfig)
+	}`, VMOptions{})
+	got, err := p.Translate(context.Background(), translateInv, translateReq())
 	require.NoError(t, err)
-	want, err := gojaPlugin.Translate(context.Background(), translateInv, translateReq())
-	require.NoError(t, err)
-
-	moe := &fakeHost{}
-	got, err := mustLoadMoe(t, moe, `export default `+body, VMOptions{}).Translate(context.Background(), translateInv, translateReq())
-	require.NoError(t, err)
-	assert.Equal(t, want, got)
-	assert.Equal(t, "HI", got.(map[string]any)["texts"].([]any)[0])
-	assert.Equal(t, h.got(), moe.got())
+	assert.Equal(t, map[string]any{"texts": []any{"HI", "YOU"}, "source": "en", "status": 200.0, "body": "hi https://api.example.com/t",
+		"cfg": map[string]any{"plan": "free", "n": 3.0, "tags": []any{"a"}}, "last": "zh-CN"}, got)
+	assert.Equal(t, []string{"Fetch", "StorageSet", "StorageGet"}, h.got())
 }
 
-func TestMoeEndlessLoopPreempted(t *testing.T) {
+func TestEndlessLoopPreempted(t *testing.T) {
 	clock := &fakeClock{}
-	p := mustLoadMoe(t, &fakeHost{}, `export default function (ctx) {
+	p := mustLoadTranslator(t, &fakeHost{}, `export default function (ctx) {
 		ctx.translators.register({ translate: (req) => { if (req.spin) for (;;) {} return { texts: req.texts, source: "en" } } })
 	}`, VMOptions{Clock: clock})
 	errc := make(chan error, 1)
@@ -125,8 +105,8 @@ func TestMoeEndlessLoopPreempted(t *testing.T) {
 	assert.ErrorIs(t, err, context.DeadlineExceeded)
 }
 
-func TestMoeMemoryLimit(t *testing.T) {
-	p := mustLoadMoe(t, &fakeHost{}, `export default function (ctx) {
+func TestMemoryLimit(t *testing.T) {
+	p := mustLoadTranslator(t, &fakeHost{}, `export default function (ctx) {
 		ctx.translators.register({ translate: (req) => {
 			if (req.eat) { const a = []; for (;;) a.push({ s: "x".repeat(1024) + a.length }) }
 			return { texts: req.texts, source: "en" }
@@ -141,8 +121,8 @@ func TestMoeMemoryLimit(t *testing.T) {
 	}
 }
 
-func TestMoeLimitsAndRedaction(t *testing.T) {
-	p := mustLoadMoe(t, &fakeHost{}, `export default function (ctx) {
+func TestTranslateLimitsAndRedaction(t *testing.T) {
+	p := mustLoadTranslator(t, &fakeHost{}, `export default function (ctx) {
 		ctx.translators.register({ translate: async (req) => {
 			if (req.big) return { texts: ["x".repeat(2 << 20)] }
 			if (req.leak) throw new Error("key sk-secret at /Users/me/x")
@@ -161,12 +141,15 @@ func TestMoeLimitsAndRedaction(t *testing.T) {
 	assert.EqualError(t, err, "plugin test: Error: key [redacted] at <path>")
 	assert.ErrorContains(t, call(map[string]any{"store": true}), "storage.set: plugin: data too large")
 	assert.ErrorContains(t, call(map[string]any{"bad": true}), "TypeError: storage.get: key must be a string")
-	assert.ErrorContains(t, call(map[string]any{"never": true}), "never settled")
+	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Millisecond)
+	defer cancel()
+	_, err = p.Translate(ctx, translateInv, map[string]any{"never": true})
+	assert.ErrorIs(t, err, context.DeadlineExceeded, "a promise nothing settles waits for the call's end")
 }
 
-func TestMoeFetchGateAudited(t *testing.T) {
+func TestTranslateFetchGateAudited(t *testing.T) {
 	h := &fakeHost{}
-	p := mustLoadMoe(t, h, `let ctx
+	p := mustLoadTranslator(t, h, `let ctx
 	export default function (c) { ctx = c; ctx.translators.register({ translate: async (req) => {
 		try { await ctx.net.fetch(req.url, req.init) } catch (e) { return e.message }
 	} }) }`, VMOptions{})
@@ -185,9 +168,9 @@ func TestMoeFetchGateAudited(t *testing.T) {
 }
 
 // A settlement for a call that already ended runs none of that call's JS.
-func TestMoeLateSettlementDropped(t *testing.T) {
+func TestLateSettlementDropped(t *testing.T) {
 	h := &blockingFetch{release: make(chan struct{})}
-	p := mustLoadMoe(t, h, `let ran = 0
+	p := mustLoadTranslator(t, h, `let ran = 0
 	export default function (ctx) { ctx.translators.register({ translate: async (req) => {
 		if (req.count) return ran
 		await ctx.net.fetch("https://api.example.com/")
@@ -198,10 +181,12 @@ func TestMoeLateSettlementDropped(t *testing.T) {
 	_, err := p.Translate(ctx, translateInv, map[string]any{})
 	assert.ErrorIs(t, err, context.DeadlineExceeded)
 	close(h.release)
+	require.Eventually(t, func() bool { return h.done.Load() == 1 }, 5*time.Second, time.Millisecond, "the late fetch did finish")
+	_, err = p.Translate(context.Background(), translateInv, map[string]any{"count": true}) // its settlement may land here
+	require.NoError(t, err)
 	got, err := p.Translate(context.Background(), translateInv, map[string]any{"count": true})
 	require.NoError(t, err)
 	assert.Equal(t, float64(0), got)
-	assert.Equal(t, int64(1), h.done.Load(), "the late fetch did finish")
 }
 
 type blockingFetch struct {
@@ -216,18 +201,10 @@ func (h *blockingFetch) Fetch(context.Context, Invocation, FetchRequest) (FetchR
 	return FetchResponse{Status: 200}, nil
 }
 
-// A ctx API still on goja sends the plugin back to goja when initialization
-// reaches for it, caught or not; after initialization it fails as on goja.
-func TestMoeNeedsGoja(t *testing.T) {
-	for _, src := range []string{
-		`export default function (ctx) { ctx.tools.register({ name: "t", description: "d", schema: {}, run: () => 1 }) }`,
-		`export default function (ctx) { try { ctx.actions.register({}) } catch {} ctx.translators.register({ translate: (r) => r }) }`,
-		`export default function (ctx) { ctx.on("message.received", () => {}) }`,
-	} {
-		_, err := loadMoeTest(t, translateManifest, &fakeHost{}, src, VMOptions{})
-		assert.ErrorIs(t, err, ErrNeedsGoja, src)
-	}
-	p := mustLoadMoe(t, &fakeHost{}, `let ctx
+// A translator holding neither mail nor llm gets neither, and registers only
+// during initialization.
+func TestTranslatorWithoutPermissions(t *testing.T) {
+	p := mustLoadTranslator(t, &fakeHost{}, `let ctx
 	export default function (c) { ctx = c; ctx.translators.register({ translate: async (req) => {
 		const out = []
 		for (const f of [() => ctx.mail.get(1), () => ctx.mail.move([1], 2), () => ctx.llm.complete("x"), () => ctx.tools.register({})]) {
@@ -241,20 +218,20 @@ func TestMoeNeedsGoja(t *testing.T) {
 		"llm.complete: permission denied: llm", "tools.register: only during initialization"}, got)
 }
 
-func TestMoeRegistration(t *testing.T) {
-	_, err := loadMoeTest(t, translateManifest, &fakeHost{}, `export default function () {}`, VMOptions{})
+func TestModuleRegistration(t *testing.T) {
+	_, err := loadTranslator(t, translateManifest, &fakeHost{}, `export default function () {}`, VMOptions{})
 	assert.ErrorContains(t, err, "registered no translator")
-	_, err = loadMoeTest(t, Manifest{Name: "test"}, &fakeHost{}, `export default function (ctx) { ctx.translators.register({ translate: (r) => r }) }`, VMOptions{})
+	_, err = loadTranslator(t, Manifest{Name: "test"}, &fakeHost{}, `export default function (ctx) { ctx.translators.register({ translate: (r) => r }) }`, VMOptions{})
 	assert.ErrorContains(t, err, "translate capability")
-	_, err = loadMoeTest(t, translateManifest, &fakeHost{}, `export const x = 1`, VMOptions{})
+	_, err = loadTranslator(t, translateManifest, &fakeHost{}, `export const x = 1`, VMOptions{})
 	assert.ErrorContains(t, err, "default export")
-	_, err = loadMoeTest(t, translateManifest, &fakeHost{}, `export default function (ctx) {
+	_, err = loadTranslator(t, translateManifest, &fakeHost{}, `export default function (ctx) {
 		const t = { translate: (r) => r }; ctx.translators.register(t); ctx.translators.register(t) }`, VMOptions{})
 	assert.ErrorContains(t, err, "already")
 }
 
-func TestMoeClose(t *testing.T) {
-	p := mustLoadMoe(t, &fakeHost{}, `export default function (ctx) { ctx.translators.register({ translate: (r) => { for (;;) {} } }) }`, VMOptions{})
+func TestPluginClose(t *testing.T) {
+	p := mustLoadTranslator(t, &fakeHost{}, `export default function (ctx) { ctx.translators.register({ translate: (r) => { for (;;) {} } }) }`, VMOptions{})
 	errc := make(chan error, 1)
 	go func() { _, err := p.Translate(context.Background(), translateInv, translateReq()); errc <- err }()
 	time.Sleep(20 * time.Millisecond)
@@ -265,21 +242,7 @@ func TestMoeClose(t *testing.T) {
 	p.Close() // twice is fine
 }
 
-func TestRunsOnMoejs(t *testing.T) {
-	assert.True(t, RunsOnMoejs(translateManifest))
-	for _, m := range []Manifest{
-		{Name: "x"},
-		{Name: "x", Capabilities: []string{"translate", "models"}},
-		{Name: "x", Capabilities: []string{"translate"}, Permissions: Permissions{Mail: []string{"read"}}},
-		{Name: "x", Capabilities: []string{"translate"}, Permissions: Permissions{LLM: true}},
-		{Name: "x", Capabilities: []string{"translate"}, Native: &NativeSpec{ABI: 1}},
-	} {
-		assert.False(t, RunsOnMoejs(m), "%+v", m)
-	}
-}
-
-// The moejs build is one ES module, without goja's down-levelling.
-func TestESBuildModule(t *testing.T) {
+func TestESBuild(t *testing.T) {
 	dir := t.TempDir()
 	require.NoError(t, os.WriteFile(filepath.Join(dir, "index.ts"), []byte(`import { up } from "./up"
 export default function (ctx: any) {
@@ -290,20 +253,43 @@ export default function (ctx: any) {
 	} })
 }`), 0o600))
 	require.NoError(t, os.WriteFile(filepath.Join(dir, "up.ts"), []byte(`export async function* up(xs: string[]) { for (const x of xs) yield x.toUpperCase() }`), 0o600))
-	code, err := ESBuildModule.Compile(dir, "index.ts")
+	code, err := ESBuild.Compile(dir, "index.ts")
 	require.NoError(t, err)
 	assert.Contains(t, string(code), "for await")
 	assert.Contains(t, string(code), "async function*")
-	assert.NotEqual(t, ESBuild.Key(), ESBuildModule.Key())
 
 	mod, err := moejs.Compile("plugin.js", string(code))
 	require.NoError(t, err)
-	v, err := NewMoeVM("test", mod, VMOptions{})
+	v, err := NewVM("test", mod, VMOptions{})
 	require.NoError(t, err)
 	t.Cleanup(v.Close)
-	p, err := LoadMoe(context.Background(), v, translateManifest, &fakeHost{}, testConfig)
+	p, err := Load(context.Background(), v, translateManifest, &fakeHost{}, testConfig)
 	require.NoError(t, err)
 	got, err := p.Translate(context.Background(), translateInv, translateReq())
 	require.NoError(t, err)
 	assert.Equal(t, map[string]any{"texts": []any{"HI", "YOU"}, "source": "en"}, got)
+}
+
+// A call ends as its result settles, not when every host call it started
+// does: the rest is cancelled with it and never runs its JS.
+func TestCallEndsAtItsResult(t *testing.T) {
+	h := &blockingFetch{release: make(chan struct{})}
+	defer close(h.release)
+	p := mustLoadTranslator(t, h, `let late = 0
+	export default function (ctx) { ctx.translators.register({ translate: async (req) => {
+		const slow = ctx.net.fetch("https://api.example.com/").then(() => late++)
+		if (req.race) return Promise.race([slow, ctx.storage.get("k").then(() => "fast")])
+		if (req.late) return late
+		return "cached"
+	} }) }`, VMOptions{})
+	for req, want := range map[string]any{"plain": "cached", "race": "fast"} {
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		got, err := p.Translate(ctx, translateInv, map[string]any{req: true})
+		cancel()
+		require.NoError(t, err, req)
+		assert.Equal(t, want, got, req)
+	}
+	got, err := p.Translate(context.Background(), translateInv, map[string]any{"late": true})
+	require.NoError(t, err)
+	assert.Equal(t, 0.0, got)
 }
