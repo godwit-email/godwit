@@ -31,7 +31,9 @@ const (
 		`Each mail a tool returns has a "ref" number, the same for that mail through the whole conversation. ` +
 		`When your answer draws on a mail, cite it right after the claim as [ref], for example [2]. Cite only refs the tools returned. ` +
 		`When the answer presents mail itself, such as the mail the user asked you to find or list, show each as a card: [[ref]] alone on its own line, ` +
-		`which the app shows with its sender, date, subject and snippet, so do not repeat those beside it.`
+		`which the app shows with its sender, date, subject and snippet, so do not repeat those beside it. ` +
+		`Keep the formatting light, as in a chat: plain paragraphs and short lists; use no Markdown headings (#), ` +
+		`and where a long answer needs sections, start each with a short bold phrase on its own line.`
 	titleRunes      = 40
 	maxSearchResult = 20
 	languageClues   = 3 // latest subjects from each recipient

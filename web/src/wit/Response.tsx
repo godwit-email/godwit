@@ -180,6 +180,17 @@ export function Response({
   const components = useMemo<Components>(
     () => ({
       img: () => null,
+      // Headings a step above the text at most, as chat apps set them, not a document's sizes.
+      h1: ({ children }: { children?: ReactNode }) => (
+        <h1 className="pt-1.5 font-semibold text-lg">{children}</h1>
+      ),
+      h2: ({ children }: { children?: ReactNode }) => (
+        <h2 className="pt-1.5 font-semibold text-lg">{children}</h2>
+      ),
+      h3: ({ children }: { children?: ReactNode }) => (
+        <h3 className="pt-1 font-semibold">{children}</h3>
+      ),
+      h4: ({ children }: { children?: ReactNode }) => <h4 className="font-semibold">{children}</h4>,
       // One border: the table's, rounded, its header on the sidebar colour, rows ruled.
       table: ({ children }: { children?: ReactNode }) => (
         <div className="overflow-x-auto rounded-lg border-[0.5px]">

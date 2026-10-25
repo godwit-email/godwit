@@ -28,6 +28,16 @@ describe("answer layout", () => {
     expect(screen.getByText("a")).toHaveClass("bg-sidebar", "font-medium");
   });
 
+  it("headings stay a step above the text at most", async () => {
+    render(<Response text={"# One\n\n## Two\n\n### Three\n\nbody"} onLink={() => {}} t={t} />);
+    expect(await screen.findByRole("heading", { level: 1 })).toHaveClass(
+      "text-lg",
+      "font-semibold",
+    );
+    expect(screen.getByRole("heading", { level: 2 })).toHaveClass("text-lg", "font-semibold");
+    expect(screen.getByRole("heading", { level: 3 })).not.toHaveClass("text-lg");
+  });
+
   it("[n] opens a popover with what cite(n) gives; one it has none for, code and no cite stay text", async () => {
     const user = userEvent.setup();
     const cite = vi.fn((n: number) => (n === 1 ? <span>the cited mail</span> : undefined));
