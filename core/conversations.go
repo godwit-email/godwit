@@ -978,10 +978,10 @@ func (s *Service) launch(ctx context.Context, end func(), conv Conversation, pro
 		}
 	}
 	onPi := false
-	if err == nil && conv.Kind == "ask" && ai.PiConversation(model, h) {
+	if err == nil && ai.PiConversation(model, h) {
 		var st Settings
 		st, err = s.loadSettings(ctx)
-		onPi = err == nil && st.PiEngine // Labs (#232)
+		onPi = err == nil && st.PiEngine // Labs: Wit page (#232) and compose panel (#235)
 	}
 	var req ai.Request
 	if err == nil {
