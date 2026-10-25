@@ -183,11 +183,7 @@ func (s *Service) summarize(ctx context.Context, id int64, model ai.ResolvedMode
 	if err != nil {
 		return err
 	}
-	st, err := s.loadSettings(ctx)
-	if err != nil {
-		return err
-	}
-	events, wait := e.Run(ctx, ai.Request{Model: model, System: compactSystem, Prompt: prompt, MaxTurns: 1, Pi: st.PiEngine})
+	events, wait := e.Run(ctx, ai.Request{Model: model, System: compactSystem, Prompt: prompt, MaxTurns: 1})
 	var text strings.Builder
 	for ev := range events {
 		if ev.Kind == "text" {

@@ -249,7 +249,7 @@ func (s *Service) appleIntelligenceModel(ctx context.Context, ref string) (m plu
 
 // pluginJudge is the judge a plugin judge model's ref names; onPi asks an
 // HTTP one on pi.
-func (s *Service) pluginJudge(ctx context.Context, ref string, onPi bool) (ai.Judge, error) {
+func (s *Service) pluginJudge(ctx context.Context, ref string) (ai.Judge, error) {
 	if m, ok, err := s.appleIntelligenceModel(ctx, ref); ok {
 		if err != nil {
 			return nil, err
@@ -270,12 +270,12 @@ func (s *Service) pluginJudge(ctx context.Context, ref string, onPi bool) (ai.Ju
 		return pluginModelJudge{s, name, rp, m, cfg}, nil
 	}
 	c := s.pluginModelClient(name, rp, m.ID, cfg)
-	j, err := newJudge(onPi)(c, judgeFormats[m.Protocol], m.BaseURL, "", m.ID)
+	j, err := ai.NewJudge(c, judgeFormats[m.Protocol], m.BaseURL, "", m.ID)
 	return pluginHTTPJudge{j, c.Transport.(*pluginModelTransport)}, err
 }
 
 // pluginModelClient is the client of rp's model id: one per instance, model
-// and settings snapshot, so the engine rebuilds its Genkit instance for a
+// and settings snapshot, so the engine rebuilds its instance for a
 // restarted or reconfigured plugin.
 func (s *Service) pluginModelClient(name string, rp *runningPlugin, id string, cfg any) *http.Client {
 	key := clientKey{id, cfg}

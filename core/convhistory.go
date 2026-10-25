@@ -223,8 +223,8 @@ func (s *Service) backfillHistory(ctx context.Context, id, draftID int64, state 
 // backfillPi converts each conversation still saved as Genkit messages to pi
 // messages (#234, ai.History.PiHistory), a transaction each: the seqs the
 // conversation, its runs and their snapshots keep move with the messages. One
-// it cannot convert keeps its messages and goes on on Genkit; the next start
-// tries again.
+// it cannot convert keeps its messages, which runs on pi read as they are;
+// the next start tries again.
 func (s *Service) backfillPi(ctx context.Context) error {
 	rows, err := s.db.Query(ctx, `SELECT c.id, (SELECT m.data FROM conversation_messages m WHERE m.conversation_id = c.id ORDER BY m.seq LIMIT 1)
 		FROM conversations c WHERE c.state IS NULL OR length(c.state) = 0`)

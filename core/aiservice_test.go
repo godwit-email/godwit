@@ -515,11 +515,6 @@ func TestResponsesRefusalNotCached(t *testing.T) {
 
 func TestRunSkillSummarizeOnPi(t *testing.T) {
 	e := newSkillEnv(t)
-	st, err := e.s.GetSettings(t.Context())
-	require.NoError(t, err)
-	st.PiEngine = true
-	_, err = e.s.SetSettings(t.Context(), st)
-	require.NoError(t, err)
 
 	e.srv.Script(testllm.Turn{Text: []string{"- 周五", "在港口"}})
 	evs := e.run(t, "summarize", Target{Kind: "message", ID: e.msg})
@@ -547,7 +542,7 @@ func TestRunSkillSummarizeOnPi(t *testing.T) {
 		assert.Equal(t, "Godwit", r.Header.Get("User-Agent"), "pi-ai sent it")
 	}
 
-	// So does a new Wit conversation (#232); TestAskOnPi has what stays on Genkit.
+	// So does a new Wit conversation (#232).
 	conv := e.askConv(t)
 	e.srv.Script(testllm.Turn{Text: []string{"hi"}})
 	e.ask(t, conv.ID, "hi")
@@ -556,15 +551,10 @@ func TestRunSkillSummarizeOnPi(t *testing.T) {
 	assert.Equal(t, "Godwit", reqs[4].Header.Get("User-Agent"))
 }
 
-// With no judge service the default model answers judge questions, on pi
-// when the Labs switch is on, read as on the Genkit path.
+// With no judge service the default model answers judge questions, on pi,
+// read as on the Genkit path.
 func TestGenJudgeOnPi(t *testing.T) {
 	e := newSkillEnv(t)
-	st, err := e.s.GetSettings(t.Context())
-	require.NoError(t, err)
-	st.PiEngine = true
-	_, err = e.s.SetSettings(t.Context(), st)
-	require.NoError(t, err)
 	j, label, gen, err := e.s.resolveJudge(t.Context())
 	require.NoError(t, err)
 	assert.True(t, gen)

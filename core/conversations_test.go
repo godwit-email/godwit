@@ -358,7 +358,6 @@ func TestBackfillPi(t *testing.T) {
 	require.NoError(t, err)
 	require.Len(t, c.Turns, 1, "and still opens")
 
-	e.setPi(t, true)
 	e.srv.Script(testllm.Turn{Text: []string{"a4"}})
 	evs := e.ask(t, conv.ID, "q4")
 	require.Equal(t, "done", evs[len(evs)-1].Kind, "%+v", evs[len(evs)-1].Err)
@@ -376,9 +375,9 @@ func TestBackfillPi(t *testing.T) {
 }
 
 // #234: a Genkit-format conversation waiting for an approval converts with
-// its interrupt: approving it resumes the run where it stopped (on Genkit,
-// where it began, #233), the draft is made once, and the conversation goes
-// on, on pi.
+// its interrupt: approving it resumes the run where it stopped, the draft is
+// made once, and the conversation goes on. (ai's TestGenkitInterruptResumesOnPi
+// resumes the state a run on Genkit left.)
 func TestBackfillPiPendingApproval(t *testing.T) {
 	e := newSkillEnv(t)
 	conv := e.askConv(t)
@@ -390,14 +389,13 @@ func TestBackfillPiPendingApproval(t *testing.T) {
 	require.NoError(t, err)
 	e.srv.Script(testllm.Turn{Calls: []testllm.Call{{Name: "search_mail", Args: `{"query":"harbour"}`},
 		{Name: "create_draft", Args: `{"to":["x@y.example"],"subject":"S","html":"<p>b</p>"}`}}}, testllm.Turn{Text: []string{"Drafted."}})
-	evs := e.ask(t, conv.ID, "draft it") // the switch off: on Genkit, saved as Genkit messages
+	evs := e.ask(t, conv.ID, "draft it") // saved as Genkit messages, as the conversation is
 	require.Equal(t, "interrupted", evs[len(evs)-1].Kind, "%+v", evs[len(evs)-1].Err)
 	require.Zero(t, e.count(t, `SELECT COUNT(*) FROM conversation_messages WHERE conversation_id = ? AND json_extract(data, '$.timestamp') IS NOT NULL`, conv.ID))
 	searches := len(witResults(evs, "search_mail"))
 
 	require.NoError(t, e.s.backfillPi(t.Context()))
 	assert.Zero(t, e.count(t, `SELECT COUNT(*) FROM conversation_messages WHERE conversation_id = ? AND json_extract(data, '$.timestamp') IS NULL`, conv.ID))
-	e.setPi(t, true)
 	drafts := e.count(t, "SELECT COUNT(*) FROM drafts")
 	sub, stop := e.s.SubscribeConversation(conv.ID)
 	defer stop()
@@ -410,8 +408,8 @@ func TestBackfillPiPendingApproval(t *testing.T) {
 		}
 	}
 	require.Equal(t, "done", resumed[len(resumed)-1].Kind, "%+v", resumed[len(resumed)-1].Err)
-	assert.Empty(t, witResults(resumed, "search_mail"), "the search that ran before the interrupt does not run again")
-	assert.Equal(t, 1, searches)
+	assert.Len(t, witResults(resumed, "search_mail"), 1, "the search held back with the approval runs once")
+	assert.Zero(t, searches)
 	assert.Equal(t, drafts+1, e.count(t, "SELECT COUNT(*) FROM drafts"), "drafted once")
 	calls, results := toolPairs(t, e.srv.Requests()[len(e.srv.Requests())-1])
 	assert.Len(t, calls, 2)

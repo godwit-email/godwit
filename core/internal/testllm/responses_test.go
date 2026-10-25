@@ -1,37 +1,91 @@
 package testllm
 
 import (
+	"bufio"
 	"encoding/json"
+	"fmt"
 	"io"
 	"net/http"
 	"strings"
 	"testing"
 
-	"github.com/openai/openai-go/v3"
-	"github.com/openai/openai-go/v3/option"
-	"github.com/openai/openai-go/v3/responses"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
 
-func sdk(s *Server) *openai.Client {
-	c := openai.NewClient(option.WithBaseURL(s.URL), option.WithAPIKey("k"))
-	return &c
+// event is a Responses stream event, the fields these tests read.
+type event struct {
+	Type           string         `json:"type"`
+	SequenceNumber int            `json:"sequence_number"`
+	Delta          string         `json:"delta"`
+	OutputIndex    int            `json:"output_index"`
+	ItemID         string         `json:"item_id"`
+	Arguments      string         `json:"arguments"`
+	Item           map[string]any `json:"item"`
+	Response       *struct {
+		Status string           `json:"status"`
+		Output []map[string]any `json:"output"`
+		Usage  struct {
+			TotalTokens int `json:"total_tokens"`
+		} `json:"usage"`
+		Error struct {
+			Message string `json:"message"`
+		} `json:"error"`
+		IncompleteDetails struct {
+			Reason string `json:"reason"`
+		} `json:"incomplete_details"`
+	} `json:"response"`
 }
 
-// stream runs one Responses request with the real SDK and returns its events.
-func stream(t *testing.T, s *Server, p responses.ResponseNewParams) ([]responses.ResponseStreamEventUnion, error) {
-	t.Helper()
-	st := sdk(s).Responses.NewStreaming(t.Context(), p)
-	defer st.Close()
-	var evs []responses.ResponseStreamEventUnion
-	for st.Next() {
-		evs = append(evs, st.Current())
+// outputText is the text of a response event's output messages.
+func (e event) outputText() string {
+	var b strings.Builder
+	for _, it := range e.Response.Output {
+		cs, _ := it["content"].([]any)
+		for _, c := range cs {
+			if c, _ := c.(map[string]any); c["type"] == "output_text" {
+				b.WriteString(c["text"].(string))
+			}
+		}
 	}
-	return evs, st.Err()
+	return b.String()
 }
 
-func types(evs []responses.ResponseStreamEventUnion) []string {
+// stream posts one Responses request, body with input as its input, and
+// returns its events; a status other than 200 is an error.
+func stream(t *testing.T, s *Server, input any, tools ...string) ([]event, error) {
+	t.Helper()
+	in, err := json.Marshal(input)
+	require.NoError(t, err)
+	body := `{"model":"m1","stream":true,"store":false,"include":["reasoning.encrypted_content"],"input":` + string(in)
+	if len(tools) > 0 {
+		body += `,"tools":[` + strings.Join(tools, ",") + `]`
+	}
+	req, err := http.NewRequestWithContext(t.Context(), http.MethodPost, s.URL+"/responses", strings.NewReader(body+"}"))
+	require.NoError(t, err)
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Authorization", "Bearer k")
+	res, err := http.DefaultClient.Do(req)
+	require.NoError(t, err)
+	defer res.Body.Close()
+	if res.StatusCode != http.StatusOK {
+		io.Copy(io.Discard, res.Body)
+		return nil, fmt.Errorf("HTTP %d", res.StatusCode)
+	}
+	var evs []event
+	sc := bufio.NewScanner(res.Body)
+	sc.Buffer(nil, 1<<20)
+	for sc.Scan() {
+		if data, ok := strings.CutPrefix(sc.Text(), "data: "); ok {
+			var e event
+			require.NoError(t, json.Unmarshal([]byte(data), &e), data)
+			evs = append(evs, e)
+		}
+	}
+	return evs, sc.Err()
+}
+
+func types(evs []event) []string {
 	var out []string
 	for _, e := range evs {
 		out = append(out, e.Type)
@@ -39,17 +93,12 @@ func types(evs []responses.ResponseStreamEventUnion) []string {
 	return out
 }
 
-var withReasoning = []responses.ResponseIncludable{"reasoning.encrypted_content"}
-
 func TestResponsesFakeStream(t *testing.T) {
 	s := Start(t, "openai-responses")
 	s.Script(Turn{Text: []string{"Hel", "lo"}, Calls: []Call{{Name: "look", Args: `{"q":"x"}`}}, Reasoning: "enc-1"},
 		Turn{Text: []string{"done"}})
-	tool := responses.ToolUnionParam{OfFunction: &responses.FunctionToolParam{Name: "look",
-		Parameters: map[string]any{"type": "object"}, Strict: openai.Bool(false)}}
-	p := responses.ResponseNewParams{Model: "m1", Store: openai.Bool(false), Include: withReasoning,
-		Input: responses.ResponseNewParamsInputUnion{OfString: openai.String("hi")}, Tools: []responses.ToolUnionParam{tool}}
-	evs, err := stream(t, s, p)
+	tool := `{"type":"function","name":"look","parameters":{"type":"object"},"strict":false}`
+	evs, err := stream(t, s, "hi", tool)
 	require.NoError(t, err)
 	assert.Equal(t, []string{"response.created",
 		"response.output_item.added", "response.output_item.done", // reasoning
@@ -59,129 +108,121 @@ func TestResponsesFakeStream(t *testing.T) {
 		"response.completed"}, types(evs))
 
 	var text, args string
-	var rs responses.ResponseReasoningItem
-	var fc responses.ResponseFunctionToolCall
+	var rs, fc map[string]any
 	for i, e := range evs {
 		assert.EqualValues(t, i, e.SequenceNumber)
-		switch v := e.AsAny().(type) {
-		case responses.ResponseTextDeltaEvent:
-			text += v.Delta
-			assert.EqualValues(t, 1, v.OutputIndex)
-			assert.True(t, strings.HasPrefix(v.ItemID, "msg_"))
-		case responses.ResponseFunctionCallArgumentsDeltaEvent:
-			args += v.Delta
-			assert.EqualValues(t, 2, v.OutputIndex)
-			assert.True(t, strings.HasPrefix(v.ItemID, "fc_"))
-		case responses.ResponseFunctionCallArgumentsDoneEvent:
-			assert.Equal(t, `{"q":"x"}`, v.Arguments)
-		case responses.ResponseOutputItemDoneEvent:
-			switch it := v.Item.AsAny().(type) {
-			case responses.ResponseReasoningItem:
-				rs = it
-			case responses.ResponseFunctionToolCall:
-				fc = it
+		switch e.Type {
+		case "response.output_text.delta":
+			text += e.Delta
+			assert.EqualValues(t, 1, e.OutputIndex)
+			assert.True(t, strings.HasPrefix(e.ItemID, "msg_"))
+		case "response.function_call_arguments.delta":
+			args += e.Delta
+			assert.EqualValues(t, 2, e.OutputIndex)
+			assert.True(t, strings.HasPrefix(e.ItemID, "fc_"))
+		case "response.function_call_arguments.done":
+			assert.Equal(t, `{"q":"x"}`, e.Arguments)
+		case "response.output_item.done":
+			switch e.Item["type"] {
+			case "reasoning":
+				rs = e.Item
+			case "function_call":
+				fc = e.Item
 			}
-		case responses.ResponseCompletedEvent:
-			assert.Equal(t, responses.ResponseStatusCompleted, v.Response.Status)
-			assert.Len(t, v.Response.Output, 3)
-			assert.EqualValues(t, 2, v.Response.Usage.TotalTokens)
-			assert.Equal(t, "Hello", v.Response.OutputText())
+		case "response.completed":
+			assert.Equal(t, "completed", e.Response.Status)
+			assert.Len(t, e.Response.Output, 3)
+			assert.EqualValues(t, 2, e.Response.Usage.TotalTokens)
+			assert.Equal(t, "Hello", e.outputText())
 		}
 	}
 	assert.Equal(t, "Hello", text)
 	assert.Equal(t, `{"q":"x"}`, args)
-	assert.Equal(t, "enc-1", rs.EncryptedContent)
-	assert.True(t, strings.HasPrefix(rs.ID, "rs_"))
-	assert.True(t, strings.HasPrefix(fc.ID, "fc_"))
-	assert.True(t, strings.HasPrefix(fc.CallID, "call_"))
-	assert.Equal(t, "look", fc.Name)
+	assert.Equal(t, "enc-1", rs["encrypted_content"])
+	assert.True(t, strings.HasPrefix(rs["id"].(string), "rs_"))
+	assert.True(t, strings.HasPrefix(fc["id"].(string), "fc_"))
+	assert.True(t, strings.HasPrefix(fc["call_id"].(string), "call_"))
+	assert.Equal(t, "look", fc["name"])
 
 	// The continuation, built the way a client would, passes validation.
-	rp, fp := rs.ToParam(), fc.ToParam()
-	out := responses.ResponseInputItemParamOfFunctionCallOutput(`{"r":1}`)
-	out.OfFunctionCallOutput.CallID = openai.String(fc.CallID)
-	p.Input = responses.ResponseNewParamsInputUnion{OfInputItemList: responses.ResponseInputParam{
-		responses.ResponseInputItemParamOfMessage("hi", responses.EasyInputMessageRoleUser),
-		{OfReasoning: &rp},
-		responses.ResponseInputItemParamOfMessage("Hello", responses.EasyInputMessageRoleAssistant),
-		{OfFunctionCall: &fp},
-		out,
-	}}
-	evs, err = stream(t, s, p)
+	evs, err = stream(t, s, []any{
+		map[string]any{"role": "user", "content": "hi"},
+		rs,
+		map[string]any{"role": "assistant", "content": "Hello"},
+		fc,
+		map[string]any{"type": "function_call_output", "call_id": fc["call_id"], "output": `{"r":1}`},
+	}, tool)
 	require.NoError(t, err)
 	reqs := s.Requests()
 	require.Len(t, reqs, 2)
 	assert.Empty(t, reqs[1].Invalid)
 	assert.Equal(t, "response.completed", evs[len(evs)-1].Type)
-	assert.Equal(t, "done", evs[len(evs)-1].Response.OutputText())
+	assert.Equal(t, "done", evs[len(evs)-1].outputText())
 }
 
 func TestResponsesFakeEndings(t *testing.T) {
 	s := Start(t, "openai-responses")
-	p := responses.ResponseNewParams{Model: "m1", Store: openai.Bool(false), Include: withReasoning,
-		Input: responses.ResponseNewParamsInputUnion{OfString: openai.String("hi")}}
 
 	s.Script(Turn{Text: []string{"a"}, Fail: "boom"})
-	evs, err := stream(t, s, p)
+	evs, err := stream(t, s, "hi")
 	require.NoError(t, err)
 	end := evs[len(evs)-1]
 	assert.Equal(t, "response.failed", end.Type)
 	assert.Equal(t, "boom", end.Response.Error.Message)
 
 	s.Script(Turn{Text: []string{"a"}, Incomplete: true})
-	evs, err = stream(t, s, p)
+	evs, err = stream(t, s, "hi")
 	require.NoError(t, err)
 	end = evs[len(evs)-1]
 	assert.Equal(t, "response.incomplete", end.Type)
 	assert.Equal(t, "max_output_tokens", end.Response.IncompleteDetails.Reason)
 
 	s.Script(Turn{Text: []string{"a"}, Calls: []Call{{Name: "f"}}, Truncate: true})
-	evs, err = stream(t, s, p)
+	evs, err = stream(t, s, "hi")
 	require.NoError(t, err)
 	for _, e := range evs {
 		assert.NotContains(t, []string{"response.completed", "response.failed", "response.incomplete"}, e.Type)
 	}
 	assert.Equal(t, "response.output_item.done", evs[len(evs)-1].Type)
 
-	// A status keeps answering the SDK's retries, even with turns scripted
+	// A status keeps answering a client's retries, even with turns scripted
 	// after it, until the test advances the script.
 	s.Script(Turn{Status: 500}, Turn{Text: []string{"back"}})
 	n := len(s.Requests())
-	_, err = stream(t, s, p)
-	require.Error(t, err)
-	assert.Len(t, s.Requests(), n+3, "the first try and two retries all fail")
-	_, err = stream(t, s, p)
-	require.Error(t, err, "still failing until Advance")
+	for range 3 {
+		_, err = stream(t, s, "hi")
+		require.Error(t, err)
+	}
+	assert.Len(t, s.Requests(), n+3)
 	s.Advance()
-	evs, err = stream(t, s, p)
+	evs, err = stream(t, s, "hi")
 	require.NoError(t, err)
-	assert.Equal(t, "back", evs[len(evs)-1].Response.OutputText())
+	assert.Equal(t, "back", evs[len(evs)-1].outputText())
 
 	// Script also moves past an answered status.
 	s.Script(Turn{Status: 503})
-	_, err = stream(t, s, p)
+	_, err = stream(t, s, "hi")
 	require.Error(t, err)
 	s.Script(Turn{Text: []string{"again"}})
-	evs, err = stream(t, s, p)
+	evs, err = stream(t, s, "hi")
 	require.NoError(t, err)
-	assert.Equal(t, "again", evs[len(evs)-1].Response.OutputText())
+	assert.Equal(t, "again", evs[len(evs)-1].outputText())
 }
 
 func TestResponsesFakeArgsUnicode(t *testing.T) {
 	s := Start(t, "openai-responses")
 	const args = `{"q":"中文🎉 ok"}`
 	s.Script(Turn{Calls: []Call{{Name: "f", Args: args}}})
-	evs, err := stream(t, s, responses.ResponseNewParams{Model: "m1", Store: openai.Bool(false), Include: withReasoning,
-		Input: responses.ResponseNewParamsInputUnion{OfString: openai.String("hi")}})
+	evs, err := stream(t, s, "hi")
 	require.NoError(t, err)
 	var deltas []string
 	var done string
 	for _, e := range evs {
 		switch e.Type {
 		case "response.function_call_arguments.delta":
-			deltas = append(deltas, e.AsResponseFunctionCallArgumentsDelta().Delta)
+			deltas = append(deltas, e.Delta)
 		case "response.function_call_arguments.done":
-			done = e.AsResponseFunctionCallArgumentsDone().Arguments
+			done = e.Arguments
 		}
 	}
 	assert.Len(t, deltas, 2)

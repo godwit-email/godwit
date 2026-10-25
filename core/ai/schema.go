@@ -6,7 +6,7 @@ import (
 )
 
 // NormalizeSchema flattens a tool input schema for providers that keep only the
-// root type/properties/required (Genkit's Anthropic plugin, ADR 0007): local
+// root type/properties/required (pi-ai's Anthropic provider, as Genkit's plugin did): local
 // $defs/definitions references are inlined, the root description is returned as
 // descr, and constructs that cannot be flattened (recursive definitions, root
 // anyOf/oneOf/allOf, unresolved refs) are reported in warnings. Recursive
@@ -199,7 +199,7 @@ func deepCopy(v any) any {
 }
 
 // strictSchema is a copy of in with additionalProperties:false on every object
-// reached through properties and items: what Genkit's compat_oai does for a
+// reached through properties and items: what Genkit's compat_oai did for a
 // strict tool, so both OpenAI protocols send the same schema.
 func strictSchema(in map[string]any) map[string]any {
 	out := copyMap(in)

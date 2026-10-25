@@ -7,7 +7,6 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
-	"net/http"
 	"net/url"
 	"slices"
 	"strconv"
@@ -790,9 +789,9 @@ func (s *Service) runText(ctx context.Context, e *ai.Engine, req ai.Request, max
 	return b.String(), nil
 }
 
-// aiEngine creates the engine on first use, so GENKIT_ENV=dev fails only AI
-// calls. The engine redacts every model key it is handed, and every extension
-// secret in s.secrets, from Genkit's logs, tool errors and run errors.
+// aiEngine creates the engine on first use. The engine redacts every model
+// key it is handed, and every extension secret in s.secrets, from tool errors
+// and run errors.
 func (s *Service) aiEngine() (*ai.Engine, error) {
 	s.aiMu.Lock()
 	defer s.aiMu.Unlock()
@@ -814,7 +813,7 @@ func (s *Service) aiEngine() (*ai.Engine, error) {
 	return s.ai, nil
 }
 
-// forgetModel drops the service's Genkit instance and cached token after a change or removal.
+// forgetModel drops the service's engine instance and cached token after a change or removal.
 func (s *Service) forgetModel(id int64) {
 	s.forgetModelToken(id)
 	s.aiMu.Lock()
@@ -959,7 +958,7 @@ func (s *Service) resolveJudge(ctx context.Context) (j ai.Judge, label string, g
 		return nil, "", false, err
 	}
 	if isPluginRef(st.JudgeService) { // never falls back: the user picked the plugin
-		j, err := s.pluginJudge(ctx, st.JudgeService, st.PiEngine)
+		j, err := s.pluginJudge(ctx, st.JudgeService)
 		return j, st.JudgeService, false, err
 	}
 	if st.JudgeService != "" {
@@ -968,7 +967,7 @@ func (s *Service) resolveJudge(ctx context.Context) (j ai.Judge, label string, g
 			return nil, "", false, err
 		}
 		if err == nil && m.JudgeFormat != "" {
-			j, err := newJudge(st.PiEngine)(s.modelHTTP, ai.JudgeFormat(m.JudgeFormat), m.BaseURL, key, m.JudgeModel)
+			j, err := ai.NewJudge(s.modelHTTP, ai.JudgeFormat(m.JudgeFormat), m.BaseURL, key, m.JudgeModel)
 			return j, m.Slug + "/" + m.JudgeModel, false, err
 		}
 	}
@@ -981,16 +980,8 @@ func (s *Service) resolveJudge(ctx context.Context) (j ai.Judge, label string, g
 		return nil, "", false, err
 	}
 	return ai.NewGenJudge(func(ctx context.Context, system, prompt string) (string, error) {
-		return s.runText(ctx, e, ai.Request{Model: model, System: system, Prompt: prompt, MaxTurns: 1, Pi: st.PiEngine}, maxJudgeText)
+		return s.runText(ctx, e, ai.Request{Model: model, System: system, Prompt: prompt, MaxTurns: 1}, maxJudgeText)
 	}), ref, true, nil
-}
-
-// newJudge is the judge constructor of the engine the Labs switch picks.
-func newJudge(onPi bool) func(*http.Client, ai.JudgeFormat, string, string, string) (ai.Judge, error) {
-	if onPi {
-		return ai.NewPiJudge
-	}
-	return ai.NewJudge
 }
 
 // maxJudgeText caps a generated judge answer: a JSON object of short answers.

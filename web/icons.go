@@ -32,8 +32,6 @@ var RemixIcons = map[string]string{
 	"file-pen":                  "node_modules/remixicon/icons/Document/draft-line.svg",
 	"file-pen-fill":             "node_modules/remixicon/icons/Document/draft-fill.svg",
 	"file-text":                 "node_modules/remixicon/icons/Document/file-text-line.svg",
-	"flask":                     "node_modules/remixicon/icons/Health & Medical/flask-line.svg",
-	"flask-fill":                "node_modules/remixicon/icons/Health & Medical/flask-fill.svg",
 	"folder":                    "node_modules/remixicon/icons/Document/folder-3-line.svg",
 	"folder-fill":               "node_modules/remixicon/icons/Document/folder-open-fill.svg",
 	"forward":                   "node_modules/remixicon/icons/System/share-forward-line.svg",
@@ -214,7 +212,6 @@ var BrandIcons = map[string]string{
 //go:embed "node_modules/remixicon/icons/Health & Medical/brain-line.svg"
 //go:embed "node_modules/remixicon/icons/Health & Medical/first-aid-kit-line.svg"
 //go:embed "node_modules/remixicon/icons/Health & Medical/flask-line.svg"
-//go:embed "node_modules/remixicon/icons/Health & Medical/flask-fill.svg"
 //go:embed "node_modules/remixicon/icons/Health & Medical/heart-3-line.svg"
 //go:embed "node_modules/remixicon/icons/Health & Medical/stethoscope-line.svg"
 //go:embed node_modules/remixicon/icons/Map/earth-line.svg

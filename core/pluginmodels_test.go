@@ -134,8 +134,8 @@ func httpModelPlugin(protocol, host string) string {
 
 func TestPluginHTTPModels(t *testing.T) {
 	for protocol, kind := range map[string]string{"openai-completions": "openai", "openai-responses": "openai-responses", "anthropic-message": "anthropic"} {
-		for _, onPi := range []bool{false, true} {
-			t.Run(fmt.Sprint(protocol, "/pi=", onPi), func(t *testing.T) {
+		{
+			t.Run(protocol, func(t *testing.T) {
 				s := newMailContextService(t)
 				srv, host := modelServer(t, s, kind)
 				srv.Script(testllm.Turn{Text: []string{"hello there"}})
@@ -147,23 +147,21 @@ func TestPluginHTTPModels(t *testing.T) {
 				assert.Less(t, m.ServiceID, int64(0))
 				e, err := s.aiEngine()
 				require.NoError(t, err)
-				out, err := s.runText(t.Context(), e, ai.Request{Model: m, Prompt: "hi", MaxTurns: 1, Pi: onPi}, 100)
+				out, err := s.runText(t.Context(), e, ai.Request{Model: m, Prompt: "hi", MaxTurns: 1}, 100)
 				require.NoError(t, err)
 				assert.Equal(t, "hello there", out)
 				reqs := srv.Requests()
 				require.Len(t, reqs, 1)
 				assert.Equal(t, "upstream", reqs[0].Model, "the body the plugin changed")
 				assert.Equal(t, "secret-m1", reqs[0].Header.Get("X-Plugin-Key"))
-				assert.Equal(t, onPi, reqs[0].Header.Get("User-Agent") == "Godwit", "pi-ai sent it")
-				if onPi {
-					assert.Empty(t, reqs[0].Header.Get("Authorization")+reqs[0].Header.Get("X-Api-Key"), "no placeholder key leaves")
-				}
+				assert.Equal(t, "Godwit", reqs[0].Header.Get("User-Agent"), "pi-ai sent it")
+				assert.Empty(t, reqs[0].Header.Get("Authorization")+reqs[0].Header.Get("X-Api-Key"), "no placeholder key leaves")
 			})
 		}
 	}
 }
 
-// With the Labs switch on, a plugin model's summary runs on pi: pi-ai
+// A plugin model's summary runs on pi: pi-ai
 // encodes the request, the plugin prepares it, and it leaves through the
 // plugin's client, checked, audited and marking the plugin as holding mail.
 func TestPluginModelSummaryOnPi(t *testing.T) {
@@ -172,7 +170,7 @@ func TestPluginModelSummaryOnPi(t *testing.T) {
 	startModelPlugin(t, e.s, "p", host, httpModelPlugin("openai-completions", host))
 	st, err := e.s.GetSettings(t.Context())
 	require.NoError(t, err)
-	st.DefaultModel, st.PiEngine = "plugin/p/m1", true
+	st.DefaultModel = "plugin/p/m1"
 	_, err = e.s.SetSettings(t.Context(), st)
 	require.NoError(t, err)
 
@@ -275,11 +273,6 @@ func TestPluginModelRefs(t *testing.T) {
 }
 
 func TestPluginHTTPJudge(t *testing.T) {
-	t.Run("genkit", func(t *testing.T) { testPluginHTTPJudge(t, false) })
-	t.Run("pi", func(t *testing.T) { testPluginHTTPJudge(t, true) })
-}
-
-func testPluginHTTPJudge(t *testing.T, onPi bool) {
 	s := newMailContextService(t)
 	var agent atomic.Value
 	var auth atomic.Value
@@ -303,7 +296,6 @@ func testPluginHTTPJudge(t *testing.T, onPi bool) {
 	st, err := s.GetSettings(t.Context())
 	require.NoError(t, err)
 	st.JudgeService = "plugin/p/jev"
-	st.PiEngine = onPi
 	_, err = s.SetSettings(t.Context(), st)
 	require.NoError(t, err)
 	j, label, gen, err := s.resolveJudge(t.Context())
@@ -314,7 +306,7 @@ func testPluginHTTPJudge(t *testing.T, onPi bool) {
 	require.NoError(t, err)
 	assert.InDelta(t, 0.9, *got[0].Probability, 1e-9)
 	assert.Equal(t, "Bearer plugin", auth.Load())
-	assert.Equal(t, onPi, agent.Load() == "Godwit", "pi-ai sent it")
+	assert.Equal(t, "Godwit", agent.Load(), "pi-ai sent it")
 
 	before := hits.Load()
 	require.NoError(t, s.SetPluginConfig(t.Context(), "p", map[string]json.RawMessage{"region": json.RawMessage(`"eu"`)}))
@@ -351,12 +343,11 @@ func TestStoppingPluginEndsItsRuns(t *testing.T) {
 			return s.SetPluginConfig(t.Context(), "p", map[string]json.RawMessage{"region": json.RawMessage(`"eu"`)})
 		},
 	} {
-		t.Run(name, func(t *testing.T) { testPluginChangeEndsRuns(t, change, false) })
-		t.Run(name+" on pi", func(t *testing.T) { testPluginChangeEndsRuns(t, change, true) })
+		t.Run(name, func(t *testing.T) { testPluginChangeEndsRuns(t, change) })
 	}
 }
 
-func testPluginChangeEndsRuns(t *testing.T, change func(*Service) error, onPi bool) {
+func testPluginChangeEndsRuns(t *testing.T, change func(*Service) error) {
 	s := newMailContextService(t)
 	srv, host := modelServer(t, s, "openai")
 	srv.Script(testllm.Turn{Text: []string{"partial"}, Hang: true})
@@ -367,11 +358,11 @@ func testPluginChangeEndsRuns(t *testing.T, change func(*Service) error, onPi bo
 	require.NoError(t, err)
 	done := make(chan error, 1)
 	go func() {
-		_, err := s.runText(t.Context(), e, ai.Request{Model: m, Prompt: "hi", MaxTurns: 1, Pi: onPi}, 100)
+		_, err := s.runText(t.Context(), e, ai.Request{Model: m, Prompt: "hi", MaxTurns: 1}, 100)
 		done <- err
 	}()
 	require.Eventually(t, func() bool { return len(srv.Requests()) == 1 }, 5*time.Second, 10*time.Millisecond)
-	assert.Equal(t, onPi, srv.Requests()[0].Header.Get("User-Agent") == "Godwit", "pi-ai sent it")
+	assert.Equal(t, "Godwit", srv.Requests()[0].Header.Get("User-Agent"), "pi-ai sent it")
 	require.NoError(t, change(s))
 	select {
 	case err := <-done:
@@ -395,7 +386,7 @@ func TestStoppedPluginClientRefuses(t *testing.T) {
 	t.Cleanup(ts.Close)
 	useNativeModels(t, s, nil, map[string]any{"models": map[string]any{"models": []map[string]any{
 		{"id": "jev", "name": "Jev", "transport": "http", "protocol": "typesafe-systemone", "baseURL": ts.URL}}}})
-	j, err := s.pluginJudge(t.Context(), "plugin/nm/jev", false)
+	j, err := s.pluginJudge(t.Context(), "plugin/nm/jev")
 	require.NoError(t, err)
 	qs := []ai.Question{{Name: "q", Type: ai.Predicate, Instructions: "?"}}
 	_, err = j.Ask(t.Context(), "mail", qs)
@@ -409,11 +400,6 @@ func TestStoppedPluginClientRefuses(t *testing.T) {
 // A model request is audited with what happened to it: here the name
 // resolves to a loopback address, which the plugin network refuses.
 func TestPluginModelRequestAuditedOutcome(t *testing.T) {
-	t.Run("genkit", func(t *testing.T) { testPluginModelRequestAuditedOutcome(t, false) })
-	t.Run("pi", func(t *testing.T) { testPluginModelRequestAuditedOutcome(t, true) })
-}
-
-func testPluginModelRequestAuditedOutcome(t *testing.T, onPi bool) {
 	s := newMailContextService(t)
 	srv, host := modelServer(t, s, "openai")
 	srv.Script(testllm.Turn{Text: []string{"never"}})
@@ -423,10 +409,10 @@ func testPluginModelRequestAuditedOutcome(t *testing.T, onPi bool) {
 	require.NoError(t, err)
 	e, err := s.aiEngine()
 	require.NoError(t, err)
-	_, err = s.runText(t.Context(), e, ai.Request{Model: m, Prompt: "hi", MaxTurns: 1, Pi: onPi}, 100)
+	_, err = s.runText(t.Context(), e, ai.Request{Model: m, Prompt: "hi", MaxTurns: 1}, 100)
 	var ae *ai.Error
 	require.ErrorAs(t, err, &ae)
-	assert.Equal(t, ai.CodeUnavailable, ae.Code, "as on either engine")
+	assert.Equal(t, ai.CodeUnavailable, ae.Code)
 	assert.Empty(t, srv.Requests())
 	rows, err := s.db.Query(t.Context(), "SELECT destination, decision, reason FROM audit_log WHERE tool = 'plugin:p:models'")
 	require.NoError(t, err)

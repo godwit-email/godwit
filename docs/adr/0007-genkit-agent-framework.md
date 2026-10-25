@@ -1,3 +1,7 @@
+---
+status: superseded by [0024](0024-pi-moejs-agent-runtime.md)
+---
+
 # Agent 框架用 Genkit Go，并隔离在 `ai` 模块后面
 
 Wit 的 agent 循环、流式输出、工具调用和审批中断都基于 Genkit Go（锁定 v1.13.1）：在三个候选里它的二进制最小（22 MB），而且自带经过验证的工具中断 / 恢复。`ai` 模块对外只暴露自己的类型（流式事件、工具定义、审批），不把 Genkit 的类型泄漏到 Service API，以后要换框架只动这一层。

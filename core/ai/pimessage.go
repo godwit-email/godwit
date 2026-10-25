@@ -3,13 +3,12 @@ package ai
 import (
 	"bytes"
 	"cmp"
+	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"strings"
 	"time"
-
-	gai "github.com/firebase/genkit/go/ai"
 )
 
 // A conversation started on pi saves its messages as pi-ai's Message (pi
@@ -54,7 +53,7 @@ func IsPiMessage(b []byte) bool {
 }
 
 // genkitMessage is the Genkit form of pi message b.
-func genkitMessage(b []byte) (*gai.Message, error) {
+func genkitMessage(b []byte) (*message, error) {
 	var m piMessage
 	if err := json.Unmarshal(b, &m); err != nil || m.Timestamp == nil {
 		return nil, errPiMessage
@@ -69,7 +68,7 @@ func genkitMessage(b []byte) (*gai.Message, error) {
 	} else if json.Unmarshal(m.Content, &blocks) != nil {
 		return nil, errPiMessage
 	}
-	var parts []*gai.Part
+	var parts []*part
 	switch m.Role {
 	case "user":
 		for _, b := range blocks {
@@ -77,19 +76,19 @@ func genkitMessage(b []byte) (*gai.Message, error) {
 			case b.GodwitCommand != nil:
 				return commandMessage(*b.GodwitCommand), nil
 			case b.Type == "text":
-				p := gai.NewTextPart(b.Text)
+				p := textPart(b.Text)
 				if b.GodwitContext {
 					p.Metadata = map[string]any{contextKey: true}
 				}
 				parts = append(parts, p)
 			}
 		}
-		return gai.NewUserMessage(parts...), nil
+		return userMessage(parts...), nil
 	case "assistant":
 		for _, b := range blocks {
 			switch b.Type {
 			case "text":
-				parts = append(parts, gai.NewTextPart(b.Text))
+				parts = append(parts, textPart(b.Text))
 			case "thinking":
 				parts = append(parts, reasoningPart(b))
 			case "toolCall":
@@ -97,19 +96,14 @@ func genkitMessage(b []byte) (*gai.Message, error) {
 				if err := exactJSON(cmpRaw(b.Arguments), &in); err != nil || b.ID == "" || b.Name == "" {
 					return nil, errPiMessage
 				}
-				p := gai.NewToolRequestPart(&gai.ToolRequest{Ref: b.ID, Name: b.Name, Input: in})
-				if len(b.GodwitMetadata) > 0 { // through Genkit's own decoding, which lifts an interrupt out of it
-					w, _ := json.Marshal(map[string]any{"toolRequest": p.ToolRequest, "metadata": b.GodwitMetadata})
-					p = &gai.Part{}
-					if json.Unmarshal(w, p) != nil {
-						return nil, errPiMessage
-					}
-					p.ToolRequest.Input = in
+				p := toolRequestPart(&toolRequest{Ref: b.ID, Name: b.Name, Input: in})
+				if len(b.GodwitMetadata) > 0 && json.Unmarshal(b.GodwitMetadata, &p.Metadata) != nil {
+					return nil, errPiMessage
 				}
 				parts = append(parts, p)
 			}
 		}
-		return gai.NewModelMessage(parts...), nil
+		return modelMessage(parts...), nil
 	case "toolResult":
 		if m.ToolCallID == "" || m.ToolName == "" {
 			return nil, errPiMessage
@@ -127,8 +121,8 @@ func genkitMessage(b []byte) (*gai.Message, error) {
 				out = map[string]any{"error": text.String()}
 			}
 		}
-		return &gai.Message{Role: gai.RoleTool, Content: []*gai.Part{
-			gai.NewToolResponsePart(&gai.ToolResponse{Ref: m.ToolCallID, Name: m.ToolName, Output: out})}}, nil
+		return &message{Role: roleTool, Content: []*part{
+			toolResponsePart(&toolResponse{Ref: m.ToolCallID, Name: m.ToolName, Output: out})}}, nil
 	}
 	return nil, errPiMessage
 }
@@ -136,13 +130,13 @@ func genkitMessage(b []byte) (*gai.Message, error) {
 // reasoningPart is thinking block b as Genkit's plugins replay it: a
 // Responses reasoning item's encrypted content and ID (pi-ai keeps the item
 // as the signature), or Anthropic's signature.
-func reasoningPart(b piBlock) *gai.Part {
+func reasoningPart(b piBlock) *part {
 	var item struct {
 		Type, ID         string
 		EncryptedContent string `json:"encrypted_content"`
 	}
 	if json.Unmarshal([]byte(b.ThinkingSignature), &item) == nil && item.Type == "reasoning" {
-		p := gai.NewReasoningPart(b.Thinking, []byte(item.EncryptedContent))
+		p := newReasoningPart(b.Thinking, []byte(item.EncryptedContent))
 		if p.Metadata == nil {
 			p.Metadata = map[string]any{}
 		}
@@ -153,12 +147,12 @@ func reasoningPart(b piBlock) *gai.Part {
 	if b.ThinkingSignature != "" {
 		sig = []byte(b.ThinkingSignature)
 	}
-	return gai.NewReasoningPart(b.Thinking, sig)
+	return newReasoningPart(b.Thinking, sig)
 }
 
 // thinkingSignature is reasoning part p's signature as reasoningPart reads
 // it back: a Responses reasoning item (p has its ID) or the signature itself.
-func thinkingSignature(p *gai.Part) string {
+func thinkingSignature(p *part) string {
 	sig := signature(p)
 	if id, _ := p.Metadata["id"].(string); id != "" {
 		b, _ := json.Marshal(map[string]any{"type": "reasoning", "id": id, "encrypted_content": sig, "summary": []any{}})
@@ -215,12 +209,12 @@ func replayed(b []byte, api, model string) []byte {
 
 // piMessages are the pi messages of Genkit message m: one, or one per tool
 // result of a tool message.
-func piMessages(m *gai.Message) ([][]byte, error) {
+func piMessages(m *message) ([][]byte, error) {
 	ts := time.Now().UnixMilli()
 	var blocks []piBlock
 	var out []any
 	switch m.Role {
-	case gai.RoleUser:
+	case roleUser:
 		if c := commandOf(m); c != nil {
 			blocks = []piBlock{{Type: "text", Text: "/" + c.Skill, GodwitCommand: c}}
 		} else {
@@ -231,7 +225,7 @@ func piMessages(m *gai.Message) ([][]byte, error) {
 			}
 		}
 		out = append(out, map[string]any{"role": "user", "content": blocks, "timestamp": ts})
-	case gai.RoleModel:
+	case roleModel:
 		stop := "stop"
 		for _, p := range m.Content {
 			switch {
@@ -240,12 +234,12 @@ func piMessages(m *gai.Message) ([][]byte, error) {
 			case p.IsText():
 				blocks = append(blocks, piBlock{Type: "text", Text: p.Text})
 			case p.IsToolRequest():
-				var wire struct{ Metadata json.RawMessage } // Genkit folds an interrupt into it
-				if b, err := json.Marshal(p); err == nil {
-					json.Unmarshal(b, &wire)
+				var meta json.RawMessage
+				if len(p.Metadata) > 0 {
+					meta = rawJSON(p.Metadata)
 				}
 				blocks = append(blocks, piBlock{Type: "toolCall", ID: p.ToolRequest.Ref, Name: p.ToolRequest.Name, Arguments: rawJSON(p.ToolRequest.Input),
-					GodwitMetadata: wire.Metadata})
+					GodwitMetadata: meta})
 				stop = "toolUse"
 			}
 		}
@@ -253,7 +247,7 @@ func piMessages(m *gai.Message) ([][]byte, error) {
 		out = append(out, map[string]any{"role": "assistant", "content": blocks, "api": "genkit", "provider": "godwit", "model": "",
 			"usage":      map[string]any{"input": 0, "output": 0, "cacheRead": 0, "cacheWrite": 0, "totalTokens": 0, "cost": map[string]any{"input": 0, "output": 0, "cacheRead": 0, "cacheWrite": 0, "total": 0}},
 			"stopReason": stop, "timestamp": ts})
-	case gai.RoleTool:
+	case roleTool:
 		for _, p := range m.Content {
 			if !p.IsToolResponse() {
 				continue
@@ -317,7 +311,7 @@ func (h *History) PiHistory() (*History, func(seq int64) int64, error) {
 		if err != nil {
 			return nil, nil, err
 		}
-		ms := make([]*gai.Message, len(bs))
+		ms := make([]*message, len(bs))
 		for k, b := range bs {
 			if ms[k], err = genkitMessage(b); err != nil {
 				return nil, nil, err
@@ -349,8 +343,8 @@ func (h *History) PiHistory() (*History, func(seq int64) int64, error) {
 // samePi reports whether ms, the Genkit form of m's pi messages, show and
 // replay as m does: its text, context, command, reasoning and signatures,
 // calls (with what Genkit keeps on them) and results, and no other part.
-func samePi(m *gai.Message, ms []*gai.Message) bool {
-	view := func(msgs ...*gai.Message) string {
+func samePi(m *message, ms []*message) bool {
+	view := func(msgs ...*message) string {
 		var d Message
 		var extra []any
 		for _, x := range display(msgs) {
@@ -376,4 +370,17 @@ func samePi(m *gai.Message, ms []*gai.Message) bool {
 		return string(b)
 	}
 	return view(m) == view(ms...)
+}
+
+// signature is a reasoning part's encrypted content: bytes as Genkit made
+// them, or base64 once the state went through JSON.
+func signature(p *part) string {
+	switch s := p.Metadata["signature"].(type) {
+	case []byte:
+		return string(s)
+	case string:
+		b, _ := base64.StdEncoding.DecodeString(s)
+		return string(b)
+	}
+	return ""
 }

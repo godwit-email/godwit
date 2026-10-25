@@ -13,7 +13,6 @@ import (
 	"testing"
 
 	"github.com/godwit-email/godwit/core/internal/testllm"
-	"github.com/openai/openai-go/v3/responses"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -63,7 +62,7 @@ func TestResponsesToolCall(t *testing.T) {
 	assert.JSONEq(t, `{"q":"é"}`, got.Load().(string))
 	calls := kindsOf(evs, "tool_call")
 	require.Len(t, calls, 1)
-	assert.Equal(t, "call_x", calls[0].Call.ID, "the call_id, not the fc_ item id")
+	assert.Equal(t, "call_x", callRef(calls[0].Call.ID), "the call_id first, then pi-ai's fc_ item id")
 	reqs := srv.Requests()
 	require.Len(t, reqs, 2)
 	require.Empty(t, reqs[1].Invalid)
@@ -136,7 +135,7 @@ func TestResponsesParallelTools(t *testing.T) {
 	require.Len(t, calls, 2)
 	byID := map[string]string{}
 	for _, c := range calls {
-		byID[c.Call.ID] = string(c.Call.Args)
+		byID[callRef(c.Call.ID)] = string(c.Call.Args)
 	}
 	assert.JSONEq(t, `{"q":"a"}`, byID["call_a"])
 	assert.JSONEq(t, `{"q":"b"}`, byID["call_b"])
@@ -182,10 +181,11 @@ func TestResponsesInterruptResume(t *testing.T) {
 	_, res := run(newEngine(t), Request{Model: respModel(srv.URL, "m1"), History: sent, Tools: mixedTools(&readRuns)})
 	require.Nil(t, res.Err)
 	require.Len(t, res.Interrupts, 1)
-	assert.Equal(t, "call_w", res.Interrupts[0].ID)
+	id := res.Interrupts[0].ID
+	assert.Equal(t, "call_w", callRef(id))
 
 	evs, res := run(newEngine(t), Request{Model: respModel(srv.URL, "m1"), History: resuming(after(t, sent, res)), Tools: mixedTools(&readRuns),
-		Responses: []ToolResult{{CallID: "call_w", Name: "write", Output: json.RawMessage(`{"draft":7}`)}}})
+		Responses: []ToolResult{{CallID: id, Name: "write", Output: json.RawMessage(`{"draft":7}`)}}})
 	require.Nil(t, res.Err)
 	assert.Equal(t, "done", last(t, evs).Kind)
 	assert.EqualValues(t, 1, readRuns.Load())
@@ -204,9 +204,8 @@ func TestResponsesTerminalStates(t *testing.T) {
 		turn testllm.Turn
 		code Code
 	}{
-		"failed":     {testllm.Turn{Fail: "UPSTREAM-BODY boom"}, CodeBadResponse},
-		"incomplete": {testllm.Turn{Incomplete: true}, CodeIncomplete},
-		"truncated":  {testllm.Turn{Truncate: true}, CodeBadResponse},
+		"failed":    {testllm.Turn{Fail: "UPSTREAM-BODY boom"}, CodeBadResponse},
+		"truncated": {testllm.Turn{Truncate: true}, CodeBadResponse},
 	} {
 		t.Run(name, func(t *testing.T) {
 			srv := testllm.Start(t, kindResp)
@@ -225,6 +224,21 @@ func TestResponsesTerminalStates(t *testing.T) {
 			assert.Equal(t, "error", last(t, evs).Kind)
 		})
 	}
+}
+
+// A reply cut off at the output limit runs none of its calls, whose
+// arguments may be cut too: pi-agent-core refuses them and the model goes on.
+func TestResponsesIncompleteCallsDoNotRun(t *testing.T) {
+	srv := testllm.Start(t, kindResp)
+	srv.Script(testllm.Turn{Text: []string{"half"}, Calls: []testllm.Call{{ID: "call_r", Name: "read"}}, Incomplete: true},
+		testllm.Turn{Text: []string{"sorry"}})
+	var readRuns atomic.Int64
+	evs, res := run(newEngine(t), Request{Model: respModel(srv.URL, "m1"), Prompt: "x", Tools: mixedTools(&readRuns)})
+	require.Nil(t, res.Err)
+	assert.Zero(t, readRuns.Load())
+	rs := kindsOf(evs, "tool_result")
+	require.Len(t, rs, 1)
+	assert.Contains(t, rs[0].Result.Error, "output token limit")
 }
 
 func TestResponsesErrors(t *testing.T) {
@@ -369,16 +383,4 @@ func TestResponsesUsage(t *testing.T) {
 	_, res := run(newEngine(t), Request{Model: respModel(srv.URL, "m1"), Prompt: "x", Tools: mixedTools(&readRuns)})
 	require.Nil(t, res.Err)
 	assert.Equal(t, Usage{Input: 100, Output: 15, Last: 60}, res.Usage)
-}
-
-func TestResponsesUsageConvention(t *testing.T) {
-	var u responses.ResponseUsage
-	require.NoError(t, json.Unmarshal([]byte(`{"input_tokens":100,"input_tokens_details":{"cached_tokens":60},
-		"output_tokens":50,"output_tokens_details":{"reasoning_tokens":30},"total_tokens":150}`), &u))
-	got := usageOf(u)
-	assert.Equal(t, 100, got.InputTokens)
-	assert.Equal(t, 60, got.CachedContentTokens)
-	assert.Equal(t, 20, got.OutputTokens)
-	assert.Equal(t, 30, got.ThoughtsTokens)
-	assert.Equal(t, 150, got.TotalTokens)
 }

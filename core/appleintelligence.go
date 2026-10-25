@@ -82,8 +82,8 @@ func (j appleIntelligenceJudge) Ask(ctx context.Context, input string, qs []ai.Q
 }
 
 // appleIntelligenceClient returns an http.Client whose Transport connects
-// Genkit's compat_oai plugin to Apple Intelligence. It caches the client so
-// concurrent task resolutions share one pointer, preventing Genkit instance churn (errStale).
+// pi-ai's Chat Completions provider to Apple Intelligence. It caches the client so
+// concurrent task resolutions share one pointer, preventing engine instance churn (errStale).
 func (s *Service) appleIntelligenceClient() *http.Client {
 	if s == nil {
 		return &http.Client{

@@ -48,10 +48,6 @@ type Settings struct {
 	// AutoLabel lets the classifier label new Inbox mail; on by default.
 	// A rescan runs either way.
 	AutoLabel bool
-	// PiEngine (Labs: 新 AI 引擎) runs what pi covers on pi instead of Genkit
-	// (docs/adr/0024-pi-moejs-agent-runtime.md); off by default. A run takes
-	// the engine as it starts.
-	PiEngine bool
 	// SidebarWidth is the page sidebars' width in DIPs, the user's drag:
 	// 0 for the default, else 240 to 480.
 	SidebarWidth int

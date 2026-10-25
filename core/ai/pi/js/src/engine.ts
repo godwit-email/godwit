@@ -83,6 +83,10 @@ function service(req: Request) {
       return new Response(text, { status: r.status, headers: r.headers });
     },
     onProviderStreamEvent(ev: any) {
+      if (req.api === "openai-completions") {
+        for (const c of ev?.choices ?? []) if (c?.finish_reason) c.finish_reason = finishReason(c.finish_reason);
+        return;
+      }
       switch (ev?.type) {
         case "response.refusal.delta":
         case "response.refusal.done":
@@ -159,10 +163,38 @@ function service(req: Request) {
     // stopReason is how reply m, the last, ended.
     stopReason(m: AssistantMessage): string {
       if (st.blocked || st.incomplete === "content_filter") return "blocked";
+      if (m.stopReason === "error" && m.errorMessage?.startsWith(finishPrefix)) // a Chat Completions reply that ended abnormally
+        return m.errorMessage === finishPrefix + "content_filter" ? "blocked" : "incomplete";
       if (st.incomplete && st.incomplete !== "max_output_tokens") return "incomplete";
       return m.stopReason;
     },
   };
+}
+
+// finishPrefix starts the error pi-ai gives a Chat Completions reply that
+// ended with any finish_reason but stop, length and tool_calls.
+const finishPrefix = "Provider finish_reason: ";
+
+// finishReason is a Chat Completions finish_reason as the Genkit path read it,
+// in the words pi-ai knows: one neither knew is a normal end, not a failure.
+function finishReason(r: string): string {
+  switch (r) {
+    case "stop":
+    case "length":
+    case "tool_calls":
+    case "function_call":
+    case "content_filter":
+    case "error":
+    case "network_error":
+      return r;
+    case "model_context_window_exceeded":
+      return "length";
+    case "sensitive":
+      return "content_filter";
+    case "insufficient_system_resource":
+      return "error";
+  }
+  return "stop"; // end_turn (xAI) and any other
 }
 
 // pi-ai's input leaves out the cached tokens; Godwit's is the whole prompt.

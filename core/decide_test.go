@@ -254,8 +254,8 @@ func TestClassifyMailLimits(t *testing.T) {
 		{"type": "choice", "name": "topic", "choice": "home"}, {"type": "score", "name": "urgency", "score": 2.0}}, out.Results[0].Answers)
 
 	withJudge(t, e)
-	assert.Contains(t, errOf(classifyTurn(ids(51))), "at most 50")
-	assert.Contains(t, errOf(classifyTurn(ids(0))), "at least 1")
+	assert.Contains(t, errOf(classifyTurn(ids(51))), "must not have more than 50 items")
+	assert.Contains(t, errOf(classifyTurn(ids(0))), "must not have fewer than 1 items")
 	assert.Contains(t, errOf(testllm.Turn{Calls: []testllm.Call{{Name: "classify_mail",
 		Args: `{"ids":[` + itoa(e.msg) + `],"questions":[{"name":"x","type":"predicate","instructions":"` + strings.Repeat("?", 17<<10) + `"}]}`}}}), "too long")
 	assert.Contains(t, errOf(testllm.Turn{Calls: []testllm.Call{{Name: "classify_mail",

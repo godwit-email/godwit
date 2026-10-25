@@ -2,43 +2,24 @@ package ai
 
 import (
 	"bytes"
-	"cmp"
 	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
-	"io/fs"
 	"log/slog"
-	"net"
 	"net/http"
 	"regexp"
 	"slices"
 	"sync"
 	"sync/atomic"
-	"testing/fstest"
 	"time"
-
-	antsdk "github.com/anthropics/anthropic-sdk-go"
-	ant "github.com/anthropics/anthropic-sdk-go/option"
-	gai "github.com/firebase/genkit/go/ai"
-	"github.com/firebase/genkit/go/ai/tool"
-	"github.com/firebase/genkit/go/core/api"
-	"github.com/firebase/genkit/go/core/logger"
-	"github.com/firebase/genkit/go/core/status"
-	"github.com/firebase/genkit/go/genkit"
-	"github.com/firebase/genkit/go/plugins/anthropic"
-	"github.com/firebase/genkit/go/plugins/compat_oai"
-	"github.com/openai/openai-go"
-	oai "github.com/openai/openai-go/option"
-	oaishared "github.com/openai/openai-go/shared"
-	"github.com/openai/openai-go/v3/shared"
 )
 
-// Engine runs models through Genkit: one Genkit instance per model service
-// configuration, created on first use. Genkit types never leave this package.
+// Engine runs models on pi (pirun.go). It keeps one instance per model
+// service configuration, created on first use, whose context ends the runs
+// on it when the service changes or goes away.
 type Engine struct {
 	warn    *slog.Logger // schema normalization warnings: tool name only
-	log     *slog.Logger // what Genkit logs through: Error and above, redacted
 	secrets func() []string
 	client  *http.Client // never follows redirects; Close drops its connections
 
@@ -48,9 +29,9 @@ type Engine struct {
 	closed  bool
 
 	keysMu sync.Mutex
-	keys   map[string]bool // every API key handed to Genkit, redacted from its logs
+	keys   map[string]bool // every API key the engine has used, redacted from what a run reports
 
-	inits atomic.Int64 // genkit.Init calls, for tests
+	inits atomic.Int64 // instances created, for tests
 
 	// Current, if set, returns the service's stored version (an error when it
 	// is gone). A run whose model has another version fails with CodeStale.
@@ -59,13 +40,11 @@ type Engine struct {
 }
 
 type instance struct {
-	cfg      ResolvedModel // Model cleared
-	g        *genkit.Genkit
-	provider string
-	ctx      context.Context // ends when the instance is dropped; so do its runs
-	cancel   context.CancelCauseFunc
-	runs     int  // runs using it (Engine.mu)
-	retired  bool // replaced for a new key: cancelled once runs reaches 0
+	cfg     ResolvedModel   // Model cleared
+	ctx     context.Context // ends when the instance is dropped; so do its runs
+	cancel  context.CancelCauseFunc
+	runs    int  // runs using it (Engine.mu)
+	retired bool // replaced for a new key: cancelled once runs reaches 0
 }
 
 // release ends one run's use of in; a retired instance is cancelled after its last run.
@@ -81,9 +60,6 @@ func (e *Engine) release(in *instance) {
 // errStale ends the runs of an instance whose service changed or went away.
 var errStale = errors.New("ai: the model service changed")
 
-// noPrompts keeps Init from loading ./prompts from the working directory.
-var noPrompts = fstest.MapFS{"prompts": {Mode: fs.ModeDir}}
-
 var errDenied = errors.New("tool call denied")
 
 // ErrInterrupt, from a tool's Run, interrupts the call as if its gate had
@@ -92,25 +68,19 @@ var ErrInterrupt = errors.New("ai: the call waits for the user")
 
 var toolName = regexp.MustCompile(`^[a-zA-Z0-9_-]{1,64}$`)
 
-// NewEngine refuses GENKIT_ENV=dev, which would start Genkit's reflection
-// server. logger receives Genkit's error logs with every key from secrets (and
-// every key the engine has used) redacted.
+// NewEngine is an engine whose runs redact every key from secrets (and every
+// key the engine has used) from what they report; l receives schema warnings.
 func NewEngine(l *slog.Logger, secrets func() []string) (*Engine, error) {
-	if api.CurrentEnvironment() == api.EnvironmentDev {
-		return nil, errors.New("ai: refusing to run with GENKIT_ENV=dev")
-	}
 	if l == nil {
 		l = slog.Default()
 	}
-	e := &Engine{
+	return &Engine{
+		warn:    l,
 		secrets: secrets,
 		client:  &http.Client{Transport: http.DefaultTransport.(*http.Transport).Clone(), CheckRedirect: NoRedirectClient.CheckRedirect},
 		insts:   map[int64]*instance{},
 		keys:    map[string]bool{},
-	}
-	e.log = slog.New(&redactor{l.Handler(), e.allSecrets})
-	e.warn = l
-	return e, nil
+	}, nil
 }
 
 func (e *Engine) allSecrets() []string {
@@ -125,8 +95,6 @@ func (e *Engine) allSecrets() []string {
 	}
 	return out
 }
-
-func (e *Engine) logCtx(ctx context.Context) context.Context { return logger.WithContext(ctx, e.log) }
 
 // Forget drops the service's instance (the service changed or was removed);
 // its runs in flight end with CodeStale.
@@ -161,7 +129,7 @@ func (e *Engine) Close() {
 	e.client.CloseIdleConnections()
 }
 
-func (e *Engine) instance(ctx context.Context, m ResolvedModel) (in *instance, err error) {
+func (e *Engine) instance(ctx context.Context, m ResolvedModel) (*instance, error) {
 	cfg := m
 	cfg.Model = ""
 	e.mu.Lock()
@@ -195,30 +163,7 @@ func (e *Engine) instance(ctx context.Context, m ResolvedModel) (in *instance, e
 		}
 		delete(e.insts, m.ServiceID)
 	}
-	if api.CurrentEnvironment() == api.EnvironmentDev {
-		return nil, errors.New("ai: refusing to run with GENKIT_ENV=dev")
-	}
-	// The SDKs append a "/" to a base path without one and lose its escapes
-	// (openai-go and anthropic-sdk-go WithBaseURL drop RawPath): given one,
-	// they keep it as it is, so "%2F" reaches the service as previewed.
-	base := m.BaseURL + "/" // normalized: it never ends in "/"
-	client := cmp.Or(m.Client, e.client)
-	var plugin api.Plugin
-	switch m.Kind {
-	case "openai":
-		// compat_oai clears the identity the SDK reads from the environment.
-		plugin = &compat_oai.OpenAICompatible{Provider: "godwit", APIKey: m.APIKey, BaseURL: base,
-			Opts: []oai.RequestOption{oai.WithHTTPClient(client)}}
-	case "anthropic":
-		// The SDK also reads ANTHROPIC_AUTH_TOKEN and sends it as Authorization.
-		key, opts := m.APIKey, []ant.RequestOption{ant.WithHTTPClient(client), ant.WithHeaderDel("Authorization")}
-		if key == "" { // a local gateway: no auth at all
-			key, opts = "godwit-no-key", append(opts, ant.WithHeaderDel("X-Api-Key"))
-		}
-		plugin = &anthropic.Anthropic{APIKey: key, BaseURL: AnthropicBase(m.BaseURL) + "/", Opts: opts}
-	case KindResponses:
-		plugin = newResponsesPlugin(base, m.APIKey, client)
-	default:
+	if piAPI(m) == "" {
 		return nil, fmt.Errorf("ai: unknown service kind %q", m.Kind)
 	}
 	if m.APIKey != "" {
@@ -226,17 +171,9 @@ func (e *Engine) instance(ctx context.Context, m ResolvedModel) (in *instance, e
 		e.keys[m.APIKey] = true
 		e.keysMu.Unlock()
 	}
-	// Init's signal.NotifyContext ends with this context.
-	ictx, cancel := context.WithCancelCause(e.logCtx(context.Background()))
-	defer func() {
-		if r := recover(); r != nil {
-			cancel(context.Canceled)
-			in, err = nil, errors.New("ai: model service setup failed")
-		}
-	}()
-	g := genkit.Init(ictx, genkit.WithPlugins(plugin), genkit.WithPromptFS(noPrompts))
+	ictx, cancel := context.WithCancelCause(context.Background())
 	e.inits.Add(1)
-	in = &instance{cfg: cfg, g: g, provider: plugin.Name(), ctx: ictx, cancel: cancel, runs: 1}
+	in := &instance{cfg: cfg, ctx: ictx, cancel: cancel, runs: 1}
 	e.insts[m.ServiceID] = in
 	return in, nil
 }
@@ -251,11 +188,7 @@ func (e *Engine) Run(ctx context.Context, req Request) (<-chan Event, func() Res
 	var res Result
 	go func() {
 		defer close(done)
-		if req.Pi && piCovers(req) {
-			res = r.runPi(req)
-		} else {
-			res = r.run(req)
-		}
+		res = r.run(req)
 		r.mu.Lock()
 		res.Usage = r.usage
 		r.mu.Unlock()
@@ -287,7 +220,7 @@ type runner struct {
 	ended bool
 }
 
-// send drops events after the last one: a tool Genkit abandoned after a failed
+// send drops events after the last one: a tool abandoned after a failed
 // round may still be running.
 // Events leave the last buffer slot free, waiting for the reader or ctx.
 func (r *runner) send(ev Event) {
@@ -318,6 +251,8 @@ func (r *runner) finish(ev Event) {
 // redact replaces every known key in s.
 func (r *runner) redact(s string) string { return Redact(s, append(r.e.allSecrets(), r.key)) }
 
+// run checks req and runs it on pi. A one-off with tools runs as the first
+// question of a new conversation.
 func (r *runner) run(req Request) Result {
 	fail := func(err error) Result {
 		return Result{Err: &Error{Code: CodeInternal, Msg: r.redact(err.Error())}}
@@ -325,137 +260,25 @@ func (r *runner) run(req Request) Result {
 	if err := checkTools(req.Tools); err != nil {
 		return fail(err)
 	}
-	var history []*gai.Message
 	switch h := req.History; {
 	case h != nil && req.Prompt != "":
 		return fail(errors.New("ai: a run of a history asks its question with Sent.Ask"))
 	case h != nil && len(req.Responses) > 0 && h.asked():
 		return fail(errors.New("ai: a resumed run takes no question"))
-	case h != nil:
-		history = h.msgs
-	case len(req.Responses) > 0:
-		return fail(errors.New("ai: a resumed run needs its history"))
-	}
-	in, err := r.e.instance(r.ctx, req.Model)
-	if errors.Is(err, errStale) {
-		return Result{Err: &Error{Code: CodeStale, Msg: "the model service changed; try again"}}
-	}
-	if err != nil {
-		return fail(err)
-	}
-	defer r.e.release(in)
-	// The run ends with its instance: a changed or removed service sends nothing more.
-	ctx, cancel := context.WithCancelCause(r.ctx)
-	defer cancel(nil)
-	stop := context.AfterFunc(in.ctx, func() { cancel(context.Cause(in.ctx)) })
-	defer stop()
-	// Sends give up with it too, so a stalled reader cannot hold the run.
-	r.mu.Lock()
-	r.ctx = ctx
-	r.mu.Unlock()
-	model := genkit.LookupModel(in.g, in.provider+"/"+req.Model.Model)
-	if model == nil {
-		return fail(fmt.Errorf("ai: model %q unavailable", req.Model.Model))
-	}
-
-	tools := map[string]*gai.ToolAction[any, any]{}
-	var refs []gai.ToolRef
-	for _, s := range req.Tools {
-		tools[s.Name] = r.tool(s)
-		refs = append(refs, tools[s.Name])
-	}
-	base := []gai.GenerateOption{gai.WithModel(model), gai.WithStreaming(r.stream), gai.WithUse(callIDs{r})}
-	if len(refs) > 0 {
-		base = append(base, gai.WithTools(refs...))
-	}
-	if cfg := effortConfig(req.Model.Kind, req.Effort); cfg != nil {
-		base = append(base, gai.WithConfig(cfg))
-	}
-	opts := slices.Clone(base)
-	if req.System != "" {
-		opts = append(opts, gai.WithSystem(req.System))
-	}
-	if len(history) > 0 {
-		opts = append(opts, gai.WithMessages(history...))
-	}
-	if req.Prompt != "" {
-		opts = append(opts, gai.WithPrompt(req.Prompt))
-	}
-	prior := history // before the question asked, if any
-	if req.History != nil && req.History.asked() {
-		prior = history[:len(history)-1]
-	}
-	if len(req.Responses) == 0 && openCalls(prior) {
+	case h != nil && len(req.Responses) == 0 && !h.asked():
+		return fail(errors.New("ai: a run of a history asks a question or resumes"))
+	case h != nil && len(req.Responses) == 0 && openCalls(h.msgs[:len(h.msgs)-1]):
 		return fail(errors.New("ai: the conversation has unanswered tool calls; pass Responses or close the state"))
-	}
-	if len(req.Responses) > 0 {
-		parts, err := respond(history, tools, req.Responses, r.redact)
+	case len(req.Responses) > 0 && h == nil:
+		return fail(errors.New("ai: a resumed run needs its history"))
+	case h == nil && len(req.Tools) > 0:
+		s, err := NewHistory().Send(0, Summary{}, false)
 		if err != nil {
 			return fail(err)
 		}
-		opts = append(opts, gai.WithResume(parts...))
+		req.History, req.Prompt = s.Ask(req.Prompt, ""), ""
 	}
-	if req.MaxTurns > 0 {
-		opts = append(opts, gai.WithMaxTurns(req.MaxTurns))
-	}
-
-	resp, err := genkit.Generate(r.e.logCtx(ctx), in.g, opts...)
-	limited := errors.Is(err, gai.ErrMaxTurnsExceeded) && resp != nil && ctx.Err() == nil
-	if limited {
-		// The partial ends after the last whole round, the refused calls
-		// dropped: it is asked once more to answer from it. The tools stay
-		// offered, as a conversation with tool calls needs them, but none runs.
-		var msgs []*gai.Message
-		for _, m := range resp.History() {
-			if m.Role != gai.RoleSystem {
-				msgs = append(msgs, m)
-			}
-		}
-		system := limitNote
-		if req.System != "" {
-			system = req.System + "\n\n" + limitNote
-		}
-		resp, err = genkit.Generate(r.e.logCtx(ctx), in.g, append(base, gai.WithSystem(system), gai.WithMessages(msgs...),
-			gai.WithToolChoice(gai.ToolChoiceNone), gai.WithReturnToolRequests(true), gai.WithMaxTurns(1))...)
-	}
-	if err == nil && ctx.Err() != nil {
-		err = context.Cause(ctx) // ended as Generate returned: events may have been dropped
-	}
-	if err != nil {
-		// The history stays as it was: a failed run leaves no half turn behind.
-		e := classify(ctx, err)
-		if limited && e.Code != CodeCanceled && e.Code != CodeStale && e.Detail == "" { // a Detail tells the user what to do
-			e = errLimit()
-		}
-		return Result{Err: e}
-	}
-	if limited && len(resp.ToolRequests()) > 0 {
-		return Result{Err: errLimit()}
-	}
-	switch resp.FinishReason {
-	case gai.FinishReasonStop, gai.FinishReasonInterrupted,
-		gai.FinishReasonUnknown, "": // a reason Genkit does not map: a normal end, as Genkit treats it
-	default:
-		// Cut off, filtered or failed part-way: nothing of it is kept.
-		if limited {
-			return Result{Err: errLimit()}
-		}
-		return Result{Err: incomplete(resp.FinishReason)}
-	}
-	var msgs []*gai.Message
-	for _, m := range resp.History() {
-		// The system prompt comes with each Request; an empty reply carries nothing.
-		if m.Role != gai.RoleSystem && len(m.Content) > 0 {
-			msgs = append(msgs, m)
-		}
-	}
-	res := Result{out: msgs, Messages: display(msgs)}
-	if resp.FinishReason == gai.FinishReasonInterrupted {
-		for _, p := range resp.Interrupts() {
-			res.Interrupts = append(res.Interrupts, toolCall(p.ToolRequest))
-		}
-	}
-	return res
+	return r.runPi(req)
 }
 
 // limitNote ends the system prompt of the request a run makes at its MaxTurns.
@@ -469,158 +292,12 @@ func errLimit() *Error {
 // raised above it by the answer's own room, Genkit's default 4096.
 var thinkingBudget = map[string]int64{"low": 2048, "medium": 8192, "high": 16384}
 
-// effortConfig is the model config asking kind's API for effort; nil for "".
-func effortConfig(kind, effort string) any {
-	if effort == "" {
-		return nil
-	}
-	switch kind {
-	case "anthropic":
-		b := thinkingBudget[effort]
-		return antsdk.MessageNewParams{MaxTokens: b + 4096, Thinking: antsdk.ThinkingConfigParamOfEnabled(b)}
-	case "openai":
-		return openai.ChatCompletionNewParams{ReasoningEffort: oaishared.ReasoningEffort(effort)}
-	case KindResponses:
-		return shared.ReasoningParam{Effort: shared.ReasoningEffort(effort), Summary: shared.ReasoningSummaryAuto}
-	}
-	return nil
-}
-
-func (r *runner) stream(_ context.Context, c *gai.ModelResponseChunk) error {
-	if c.Role == gai.RoleModel || c.Role == "" {
-		for _, p := range c.Content {
-			// an encrypted one (Responses) has no text
-			if r.reasoning && p != nil && p.IsReasoning() && p.Text != "" {
-				r.send(Event{Kind: "reasoning", Text: p.Text})
-			}
-		}
-		if t := c.Text(); t != "" {
-			r.send(Event{Kind: "text", Text: t})
-		}
-	}
-	return nil
-}
-
 type callIDKey struct{}
 
 // CallID is the ID of the tool call whose Gate or Run is given ctx.
 func CallID(ctx context.Context) string {
 	id, _ := ctx.Value(callIDKey{}).(string)
 	return id
-}
-
-// callIDs hands each tool call's ID to the tool function through its context,
-// and turns arguments that fail the tool's schema into an error result for the
-// model, which can then retry, instead of a failed run.
-type callIDs struct{ r *runner }
-
-func (callIDs) Name() string { return "godwit_call_ids" }
-
-func (c callIDs) New(context.Context) (*gai.Hooks, error) {
-	return &gai.Hooks{
-		WrapTool: func(ctx context.Context, p *gai.ToolParams, next gai.ToolNext) (*gai.MultipartToolResponse, error) {
-			// A call the tool never sees goes back to the model as an error result, which it can retry.
-			refuse := func(msg string) (*gai.MultipartToolResponse, error) {
-				call := toolCall(p.Request)
-				res := ToolResult{CallID: call.ID, Name: call.Name, Error: c.r.redact(msg)}
-				c.r.send(Event{Kind: "tool_call", Call: &call})
-				c.r.send(Event{Kind: "tool_result", Result: &res})
-				return &gai.MultipartToolResponse{Output: map[string]any{"error": res.Error}}, nil
-			}
-			if c.r.args != nil { // on a copy: the model's own request stays in the state
-				in := rawJSON(p.Request.Input)
-				out, err := c.r.args(ctx, in)
-				if err != nil {
-					return refuse(err.Error())
-				}
-				if !bytes.Equal(out, in) {
-					dec := json.NewDecoder(bytes.NewReader(out))
-					dec.UseNumber() // a large integer argument stays exact
-					var v any
-					if dec.Decode(&v) == nil {
-						req, q := *p.Request, *p
-						req.Input, q.Request = v, &req
-						p = &q
-					}
-				}
-			}
-			resp, err := next(context.WithValue(ctx, callIDKey{}, p.Request.Ref), p)
-			if err == nil || !errors.Is(err, status.ErrInvalidInput) {
-				return resp, err
-			}
-			// Genkit validated the arguments before the tool function ran.
-			return refuse("invalid arguments: " + err.Error())
-		},
-		// Results bind to call IDs, so a turn that repeats one is unusable.
-		WrapModel: func(ctx context.Context, p *gai.ModelParams, next gai.ModelNext) (*gai.ModelResponse, error) {
-			resp, err := next(ctx, p)
-			if err == nil && resp.Usage != nil {
-				c.r.mu.Lock()
-				c.r.usage.Input += resp.Usage.InputTokens
-				// Genkit counts thinking apart from OutputTokens; it is still generated and billed output.
-				c.r.usage.Output += resp.Usage.OutputTokens + resp.Usage.ThoughtsTokens
-				c.r.usage.Last = resp.Usage.InputTokens
-				c.r.mu.Unlock()
-			}
-			if err == nil && resp.Message != nil {
-				seen := map[string]bool{}
-				for _, part := range resp.Message.Content {
-					if part != nil && part.IsToolRequest() && part.ToolRequest != nil && part.ToolRequest.Ref != "" {
-						if seen[part.ToolRequest.Ref] {
-							return nil, errDuplicateCallID
-						}
-						seen[part.ToolRequest.Ref] = true
-					}
-				}
-			}
-			return resp, err
-		},
-	}, nil
-}
-
-var errDuplicateCallID = errors.New("ai: the model repeated a tool call ID")
-
-// tool is a dynamic tool for one run; Genkit registers it in a throwaway child
-// registry. A tool error goes back to the model as {"error": ...}.
-func (r *runner) tool(s ToolSpec) *gai.ToolAction[any, any] {
-	schema, desc := r.schema(s)
-	return gai.NewTool(s.Name, desc, func(tc *gai.ToolContext, input any) (any, error) {
-		id := CallID(tc)
-		args := rawJSON(input)
-		r.send(Event{Kind: "tool_call", Call: &ToolCall{ID: id, Name: s.Name, Args: args}})
-		d := Allow
-		var err error
-		if s.Gate != nil {
-			if d, err = s.Gate(tc, args); err == nil && d != Allow && d != Approve {
-				err = errDenied
-			}
-		}
-		if err == nil && (d == Approve || s.NeedsApproval) {
-			return nil, tool.Interrupt(tc, nil)
-		}
-		var out any
-		switch {
-		case err != nil:
-		case s.Run == nil: // a gate allowed a tool that can only be approved
-			err = errDenied
-		default:
-			if out, err = s.Run(tc, args); errors.Is(err, ErrInterrupt) {
-				return nil, tc.Interrupt(nil)
-			}
-		}
-		res := ToolResult{CallID: id, Name: s.Name}
-		if err != nil {
-			res.Error = r.redact(err.Error())
-			out = map[string]any{"error": res.Error}
-		} else {
-			res.Output = rawJSON(out)
-		}
-		r.send(Event{Kind: "tool_result", Result: &res})
-		return out, nil
-	}, gai.WithInputSchema(schema), gai.WithStrictSchema(s.Strict),
-		// Out is any: without this, Genkit validates Respond outputs against
-		// its multipart envelope schema and rejects them.
-		gai.WithOutputSchema(map[string]any{}))
 }
 
 // schema is the input schema and description s is offered with: unless
@@ -646,53 +323,24 @@ func (r *runner) schema(s ToolSpec) (map[string]any, string) {
 	return schema, desc
 }
 
-// respond answers the interrupted calls of history's last message.
-func respond(history []*gai.Message, tools map[string]*gai.ToolAction[any, any], results []ToolResult, redact func(string) string) ([]*gai.Part, error) {
-	calls, byID, err := matchResults(history, results)
-	if err != nil {
-		return nil, err
-	}
-	var parts []*gai.Part
-	for _, p := range calls {
-		res, open := byID[p.ToolRequest.Ref]
-		if !open {
-			continue // ran before the interrupt; Genkit replays its result
-		}
-		if tools[p.ToolRequest.Name] == nil {
-			return nil, fmt.Errorf("ai: tool %q is not offered to this run", p.ToolRequest.Name)
-		}
-		res.Error = redact(res.Error)
-		out, err := resultOutput(res)
-		if err != nil {
-			return nil, err
-		}
-		part, err := p.ToToolResponse(out)
-		if err != nil {
-			return nil, err
-		}
-		parts = append(parts, part)
-	}
-	return parts, nil
-}
-
 // openCalls reports whether history ends with a model turn's tool calls, which
 // only an interrupted run leaves behind.
-func openCalls(history []*gai.Message) bool {
-	if len(history) == 0 || history[len(history)-1].Role != gai.RoleModel {
+func openCalls(history []*message) bool {
+	if len(history) == 0 || history[len(history)-1].Role != roleModel {
 		return false
 	}
-	return slices.ContainsFunc(history[len(history)-1].Content, (*gai.Part).IsToolRequest)
+	return slices.ContainsFunc(history[len(history)-1].Content, (*part).IsToolRequest)
 }
 
 // matchResults returns the tool calls of history's last message, and results
 // keyed by call ID once they answer the open calls (no pendingOutput) one to
 // one by ID and name.
-func matchResults(history []*gai.Message, results []ToolResult) ([]*gai.Part, map[string]ToolResult, error) {
-	if len(history) == 0 || history[len(history)-1].Role != gai.RoleModel {
+func matchResults(history []*message, results []ToolResult) ([]*part, map[string]ToolResult, error) {
+	if len(history) == 0 || history[len(history)-1].Role != roleModel {
 		return nil, nil, errors.New("ai: no open tool calls")
 	}
 	open := map[string]string{} // ID -> tool name
-	var calls []*gai.Part
+	var calls []*part
 	for _, p := range history[len(history)-1].Content {
 		if !p.IsToolRequest() {
 			continue
@@ -743,52 +391,22 @@ func resultOutput(res ToolResult) (any, error) {
 	return out, nil
 }
 
-func decodeState(state []byte) ([]*gai.Message, error) {
+func decodeState(state []byte) ([]*message, error) {
 	if len(state) == 0 {
 		return nil, nil
 	}
 	bad := errors.New("ai: unreadable conversation state")
-	var msgs []*gai.Message
+	var msgs []*message // tool inputs and outputs decode exactly (part.UnmarshalJSON)
 	if err := json.Unmarshal(state, &msgs); err != nil {
 		return nil, bad
 	}
-	// Genkit's Part.UnmarshalJSON decodes tool inputs and outputs as float64,
-	// rounding integers above 2^53, so they are decoded again exactly.
-	var raw []struct {
-		Content []struct {
-			ToolRequest *struct {
-				Input json.RawMessage `json:"input"`
-			} `json:"toolRequest"`
-			ToolResponse *struct {
-				Output json.RawMessage `json:"output"`
-			} `json:"toolResponse"`
-		} `json:"content"`
-	}
-	if err := json.Unmarshal(state, &raw); err != nil {
-		return nil, bad
-	}
-	exact := func(b json.RawMessage, v *any) error {
-		if len(b) == 0 {
-			return nil
-		}
-		dec := json.NewDecoder(bytes.NewReader(b))
-		dec.UseNumber()
-		return dec.Decode(v)
-	}
-	for i, m := range msgs {
-		if m == nil || len(m.Content) == 0 || (m.Role != gai.RoleUser && m.Role != gai.RoleModel && m.Role != gai.RoleTool) {
+	for _, m := range msgs {
+		if m == nil || len(m.Content) == 0 || (m.Role != roleUser && m.Role != roleModel && m.Role != roleTool) {
 			return nil, bad
 		}
-		for j, p := range m.Content {
-			switch {
-			case p == nil,
-				p.IsToolRequest() && (p.ToolRequest == nil || p.ToolRequest.Name == "" || p.ToolRequest.Ref == ""),
-				p.IsToolResponse() && (p.ToolResponse == nil || p.ToolResponse.Name == "" || p.ToolResponse.Ref == ""):
-				return nil, bad
-			}
-			rp := raw[i].Content[j]
-			if p.IsToolRequest() && exact(rp.ToolRequest.Input, &p.ToolRequest.Input) != nil ||
-				p.IsToolResponse() && exact(rp.ToolResponse.Output, &p.ToolResponse.Output) != nil {
+		for _, p := range m.Content {
+			if p == nil || p.IsToolRequest() && (p.ToolRequest.Name == "" || p.ToolRequest.Ref == "") ||
+				p.IsToolResponse() && (p.ToolResponse.Name == "" || p.ToolResponse.Ref == "") {
 				return nil, bad
 			}
 		}
@@ -804,11 +422,11 @@ func rawJSON(v any) json.RawMessage {
 	return b
 }
 
-func toolCall(r *gai.ToolRequest) ToolCall {
+func toolCall(r *toolRequest) ToolCall {
 	return ToolCall{ID: r.Ref, Name: r.Name, Args: rawJSON(r.Input)}
 }
 
-func display(msgs []*gai.Message) []Message {
+func display(msgs []*message) []Message {
 	out := make([]Message, 0, len(msgs))
 	for _, m := range msgs {
 		d := Message{Role: string(m.Role), Command: commandOf(m)}
@@ -830,46 +448,22 @@ func display(msgs []*gai.Message) []Message {
 	return out
 }
 
-// classify turns a Genkit error into an Error whose message never carries the
-// key or a request or response body.
-func classify(ctx context.Context, err error) *Error {
-	if errors.Is(err, errDuplicateCallID) {
-		return &Error{Code: CodeBadResponse, Msg: "the model repeated a tool call ID"}
-	}
+// classify is the Error of a run that failed as ctx ended, never carrying
+// the key or a request or response body.
+func classify(ctx context.Context) *Error {
 	if errors.Is(context.Cause(ctx), errStale) {
 		return &Error{Code: CodeStale, Msg: "the model service changed during the run"}
 	}
-	if errors.Is(err, context.Canceled) || ctx.Err() != nil {
-		return &Error{Code: CodeCanceled, Msg: "the run was cancelled"}
-	}
-	switch status.Of(err) {
-	case status.Unauthenticated, status.PermissionDenied:
-		if errors.Is(err, errNotEligible) {
-			return &Error{Code: CodeUnauthorized, Msg: "the ChatGPT account is not eligible for subscription sharing", Detail: DetailChatGPTEligibility}
-		}
-		return &Error{Code: CodeUnauthorized, Msg: "the model service rejected the API key"}
-	case status.ResourceExhausted:
-		if errors.Is(err, errUsageLimit) {
-			return &Error{Code: CodeRateLimited, Msg: "the ChatGPT plan's usage limit is reached", Detail: DetailChatGPTUsage}
-		}
-		return &Error{Code: CodeRateLimited, Msg: "the model service is rate limiting requests"}
-	case status.Unavailable, status.DeadlineExceeded:
-		return &Error{Code: CodeUnavailable, Msg: "the model service is unavailable"}
-	}
-	var ne net.Error
-	if errors.As(err, &ne) {
-		return &Error{Code: CodeUnavailable, Msg: "could not reach the model service"}
-	}
-	return &Error{Code: CodeBadResponse, Msg: "the model service returned an unusable response"}
+	return &Error{Code: CodeCanceled, Msg: "the run was cancelled"}
 }
 
 // incomplete is the error for a reply that did not finish normally. The
 // service's own finish message is not used: it may repeat the request.
-func incomplete(r gai.FinishReason) *Error {
-	switch r {
-	case gai.FinishReasonLength:
+func incomplete(stopReason string) *Error {
+	switch stopReason {
+	case "length":
 		return &Error{Code: CodeIncomplete, Msg: "the model's reply was cut off at its output limit"}
-	case gai.FinishReasonBlocked:
+	case "blocked":
 		return &Error{Code: CodeIncomplete, Msg: "the model service withheld the reply"}
 	}
 	return &Error{Code: CodeIncomplete, Msg: "the model did not finish its reply"}
