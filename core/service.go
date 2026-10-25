@@ -227,6 +227,10 @@ func New(ctx context.Context, opts Options) (*Service, error) {
 		db.Close()
 		return nil, fmt.Errorf("conversation histories: %w", err)
 	}
+	if err := s.backfillPi(ctx); err != nil {
+		db.Close()
+		return nil, fmt.Errorf("conversation histories: %w", err)
+	}
 	if err := s.backfillSlugs(ctx); err != nil {
 		db.Close()
 		return nil, fmt.Errorf("model service slugs: %w", err)

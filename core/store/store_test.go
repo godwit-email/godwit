@@ -426,6 +426,22 @@ func TestAutoVacuumAndReclaim(t *testing.T) {
 	assert.Positive(t, pages("freelist_count"), "some stay free for reuse")
 }
 
+// Converting the conversations to pi messages backs the database up first.
+func TestMigrationPiMessagesBacksUp(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "godwit.db")
+	all := store.Migrations
+	require.Len(t, all, store.PiMessagesVersion)
+	store.Migrations = all[:store.PiMessagesVersion-1]
+	db, err := store.Open(ctx, path)
+	store.Migrations = all
+	require.NoError(t, err)
+	db.Close()
+	db, err = store.Open(ctx, path)
+	require.NoError(t, err)
+	db.Close()
+	assert.FileExists(t, fmt.Sprintf("%s.bak-v%d", path, store.PiMessagesVersion-1))
+}
+
 // A backup an earlier attempt made stays as it is.
 func TestMigrationKeepsEarlierBackup(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "godwit.db")

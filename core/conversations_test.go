@@ -2,6 +2,7 @@ package core
 
 import (
 	"encoding/json"
+	"fmt"
 	"strconv"
 	"strings"
 	"testing"
@@ -303,6 +304,75 @@ func TestBackfillHistories(t *testing.T) {
 	_, err = e.s.GetConversation(t.Context(), 900)
 	assert.ErrorIs(t, err, errUnreadableHistory)
 	assert.Equal(t, "not json", queryStr(t, e.s, "SELECT state FROM conversations WHERE id = 900"), "kept for the next start")
+}
+
+// #234: a conversation saved as Genkit messages converts to pi messages, a
+// tool message to one row per result: the seqs of its runs, summary and run
+// snapshots move with them, and it goes on, on pi. One that cannot convert
+// keeps its messages and still opens.
+func TestBackfillPi(t *testing.T) {
+	e := newSkillEnv(t)
+	conv := e.askConv(t)
+	broken := e.askConv(t)
+	text := func(role, text string) string { return `{"role":"` + role + `","content":[{"text":"` + text + `"}]}` }
+	rows := []string{text("user", "q1"),
+		`{"role":"model","content":[{"toolRequest":{"ref":"c1","name":"search_mail","input":{"query":"a"}}},{"toolRequest":{"ref":"c2","name":"search_mail","input":{"query":"b"}}}]}`,
+		`{"role":"tool","content":[{"toolResponse":{"ref":"c1","name":"search_mail","output":{"n":1}}},{"toolResponse":{"ref":"c2","name":"search_mail","output":{"n":2}}}]}`,
+		text("model", "a1"), text("user", "q2"), text("model", "a2"), text("user", "q3"), text("model", "a3")}
+	snap, _ := json.Marshal(snapshot{Summary: &ai.Summary{Text: "SUM-A", Upto: 4}})
+	stmts := []string{"UPDATE conversations SET next_seq = 9, summary = 'SUM-A', summary_upto = 4 WHERE id = ?"}
+	args := [][]any{{conv.ID}}
+	for i, r := range rows {
+		stmts = append(stmts, "INSERT INTO conversation_messages(conversation_id, seq, data) VALUES (?, ?, ?)")
+		args = append(args, []any{conv.ID, i + 1, []byte(r)})
+	}
+	for _, r := range [][]any{{101, 1, 5}, {102, 5, 7}, {103, 7, 9}} {
+		stmts = append(stmts, "INSERT INTO runs(id, conversation_id, state, model, tools, snapshot, hist_from, hist_to) VALUES (?, ?, 'done', '', '[]', ?, ?, ?)")
+		args = append(args, []any{r[0], conv.ID, snap, r[1], r[2]})
+	}
+	lost := `{"role":"user","content":[{"text":"q"},{"media":{"url":"data:image/png;base64,AA=="}}]}`
+	stmts = append(stmts, "INSERT INTO conversation_messages(conversation_id, seq, data) VALUES (?, 1, ?)", "UPDATE conversations SET next_seq = 2 WHERE id = ?")
+	args = append(args, []any{broken.ID, []byte(lost)}, []any{broken.ID})
+	for i, q := range stmts {
+		_, err := e.s.db.Execute(t.Context(), q, args[i]...)
+		require.NoError(t, err, q)
+	}
+	require.NoError(t, e.s.backfillPi(t.Context()))
+
+	assert.Equal(t, 9, e.count(t, `SELECT COUNT(*) FROM conversation_messages WHERE conversation_id = ? AND json_extract(data, '$.timestamp') IS NOT NULL`, conv.ID))
+	var shown []string
+	for _, m := range savedMessages(t, e.s, conv.ID) {
+		shown = append(shown, fmt.Sprintf("%d%s%d%d", m.Seq, m.Text, len(m.Calls), len(m.Results)))
+	}
+	assert.Equal(t, []string{"1q100", "220", "301", "401", "5a100", "6q200", "7a200", "8q300", "9a300"}, shown)
+	assert.Equal(t, []span{{ID: 101, From: 1, To: 6}, {ID: 102, From: 6, To: 8}, {ID: 103, From: 8, To: 10}}, spans(t, e.s, conv.ID))
+	sum, _, err := e.s.convSummary(t.Context(), conv.ID)
+	require.NoError(t, err)
+	assert.Equal(t, ai.Summary{Text: "SUM-A", Upto: 5}, sum, "a1's seq")
+	assert.Equal(t, "10", queryStr(t, e.s, "SELECT next_seq FROM conversations WHERE id = ?", conv.ID))
+	var got snapshot
+	require.NoError(t, json.Unmarshal([]byte(queryStr(t, e.s, "SELECT snapshot FROM runs WHERE id = 103")), &got))
+	assert.EqualValues(t, 5, got.Summary.Upto)
+	assert.Equal(t, lost, queryStr(t, e.s, "SELECT data FROM conversation_messages WHERE conversation_id = ?", broken.ID), "kept as it was")
+	c, err := e.s.GetConversation(t.Context(), broken.ID)
+	require.NoError(t, err)
+	require.Len(t, c.Turns, 1, "and still opens")
+
+	e.setPi(t, true)
+	e.srv.Script(testllm.Turn{Text: []string{"a4"}})
+	evs := e.ask(t, conv.ID, "q4")
+	require.Equal(t, "done", evs[len(evs)-1].Kind, "%+v", evs[len(evs)-1].Err)
+	reqs := e.srv.Requests()
+	req := reqs[len(reqs)-1]
+	assert.Equal(t, "Godwit", req.Header.Get("User-Agent"), "on pi")
+	p := promptOf(t, req)
+	for _, want := range []string{"q1", "SUM-A", "q2", "a2", "q3", "a3", "q4"} {
+		assert.Contains(t, p, want)
+	}
+	assert.NotContains(t, p, "a1", "the summary stands in for it")
+	c, err = e.s.GetConversation(t.Context(), conv.ID)
+	require.NoError(t, err)
+	assert.Len(t, c.Turns, 4)
 }
 
 // #219: an Ask run that keeps calling tools stops at witMaxTurns: the call

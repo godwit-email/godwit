@@ -16,8 +16,8 @@ import (
 )
 
 // PiConversation reports whether a run of history h on m goes on pi when
-// Request.Pi asks: pi speaks m's protocol and h is new or was started on
-// pi. Such a run offers no tool that needs an approval and asks no question
+// Request.Pi asks: pi speaks m's protocol and h is new or saved as pi
+// messages (every conversation once converted, #234). Such a run offers no tool that needs an approval and asks no question
 // (#233).
 func PiConversation(m ResolvedModel, h *History) bool { return piAPI(m) != "" && h.Pi() }
 
@@ -129,7 +129,7 @@ func (r *runner) agentPi(ctx context.Context, req Request, preq pi.Request, emit
 	msgs := make([]json.RawMessage, len(s.msgs))
 	for k, src := range s.src {
 		if src >= 0 {
-			msgs[k] = s.h.raws[src]
+			msgs[k] = replayed(s.h.raws[src], preq.API, preq.Model)
 			continue
 		}
 		bs, err := piMessages(s.msgs[k]) // the note, the question

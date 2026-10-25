@@ -2,8 +2,10 @@ package ai
 
 import (
 	"bytes"
+	"cmp"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"strings"
 	"time"
 
@@ -44,9 +46,9 @@ type piBlock struct {
 
 var errPiMessage = errors.New("ai: unreadable conversation state")
 
-// isPiMessage reports whether a saved message is a pi message: they all have
+// IsPiMessage reports whether a saved message is a pi message: they all have
 // a timestamp, Genkit's none.
-func isPiMessage(b []byte) bool {
+func IsPiMessage(b []byte) bool {
 	var m piMessage
 	return json.Unmarshal(b, &m) == nil && m.Timestamp != nil
 }
@@ -165,6 +167,52 @@ func thinkingSignature(p *gai.Part) string {
 	return sig
 }
 
+// replayed is pi message b as a run on api's model sends it: a reply Genkit
+// wrote (piMessages) is another model's to pi-ai, which drops its reasoning,
+// so one whose every reasoning signature is api's kind is marked the run's
+// model's, and its reasoning goes back as Genkit's plugins replay it.
+func replayed(b []byte, api, model string) []byte {
+	var m struct {
+		API     string
+		Content []piBlock
+	}
+	if json.Unmarshal(b, &m) != nil || m.API != "genkit" {
+		return b
+	}
+	fits := false
+	for _, c := range m.Content {
+		if c.Type != "thinking" {
+			continue
+		}
+		var item struct{ Type string }
+		resp := json.Unmarshal([]byte(c.ThinkingSignature), &item) == nil && item.Type == "reasoning"
+		switch api {
+		case "openai-responses", "openai-codex-responses":
+			fits = resp
+		case "anthropic-messages":
+			fits = c.ThinkingSignature != "" && !resp
+		default:
+			fits = false
+		}
+		if !fits {
+			return b
+		}
+	}
+	if !fits {
+		return b
+	}
+	var all map[string]json.RawMessage
+	if json.Unmarshal(b, &all) != nil {
+		return b
+	}
+	all["api"], all["model"] = rawJSON(api), rawJSON(model)
+	out, err := json.Marshal(all)
+	if err != nil {
+		return b
+	}
+	return out
+}
+
 // piMessages are the pi messages of Genkit message m: one, or one per tool
 // result of a tool message.
 func piMessages(m *gai.Message) ([][]byte, error) {
@@ -249,4 +297,83 @@ func cmpRaw(b json.RawMessage) json.RawMessage {
 		return json.RawMessage("{}")
 	}
 	return b
+}
+
+// PiHistory is h, a conversation saved before new ones were saved as pi
+// messages (#234), as pi messages, and the seq each seq of h moves to: a tool
+// message becomes one per result, so the seqs after it move on; a seq
+// between messages moves with the message after it. A message whose pi form
+// would show or replay differently fails it. A pi history is itself.
+func (h *History) PiHistory() (*History, func(seq int64) int64, error) {
+	if h.pi {
+		return h, func(seq int64) int64 { return seq }, nil
+	}
+	n := &History{pi: true}
+	var from []int64 // h's seq where each further shift begins
+	var by []int64   // the shift from it on
+	shift := int64(0)
+	for i, m := range h.msgs {
+		bs, err := piMessages(m)
+		if err != nil {
+			return nil, nil, err
+		}
+		ms := make([]*gai.Message, len(bs))
+		for k, b := range bs {
+			if ms[k], err = genkitMessage(b); err != nil {
+				return nil, nil, err
+			}
+		}
+		if !samePi(m, ms) {
+			return nil, nil, fmt.Errorf("ai: message %d does not convert to pi messages", h.seqs[i])
+		}
+		for k := range ms {
+			n.msgs, n.raws, n.seqs = append(n.msgs, ms[k]), append(n.raws, bs[k]), append(n.seqs, h.seqs[i]+shift+int64(k))
+		}
+		if len(ms) > 1 {
+			shift += int64(len(ms) - 1)
+			from, by = append(from, h.seqs[i]+1), append(by, shift)
+		}
+	}
+	n.next = h.next + shift
+	return n, func(seq int64) int64 {
+		s := int64(0)
+		for k, f := range from {
+			if seq >= f {
+				s = by[k]
+			}
+		}
+		return seq + s
+	}, nil
+}
+
+// samePi reports whether ms, the Genkit form of m's pi messages, show and
+// replay as m does: its text, context, command, reasoning and signatures,
+// calls (with what Genkit keeps on them) and results, and no other part.
+func samePi(m *gai.Message, ms []*gai.Message) bool {
+	view := func(msgs ...*gai.Message) string {
+		var d Message
+		var extra []any
+		for _, x := range display(msgs) {
+			d.Role, d.Command = x.Role, cmp.Or(d.Command, x.Command)
+			d.Text, d.Reasoning = d.Text+x.Text, d.Reasoning+x.Reasoning
+			d.Calls, d.Results = append(d.Calls, x.Calls...), append(d.Results, x.Results...)
+		}
+		for _, x := range msgs {
+			for _, p := range x.Content {
+				switch {
+				case p.IsText() && p.Metadata[contextKey] != nil:
+					extra = append(extra, p.Text)
+				case p.IsReasoning():
+					extra = append(extra, thinkingSignature(p))
+				case p.IsToolRequest():
+					extra = append(extra, p.Metadata)
+				case !p.IsText() && !p.IsToolResponse(): // a part pi messages have no room for
+					extra = append(extra, p)
+				}
+			}
+		}
+		b, _ := json.Marshal([]any{d, extra})
+		return string(b)
+	}
+	return view(m) == view(ms...)
 }
