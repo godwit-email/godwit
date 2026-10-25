@@ -48,8 +48,7 @@ func TestComposeRewriteSelection(t *testing.T) {
 			if !balanced(c.Range) { // across blocks: no replacement fits, the run still starts
 				llm.Script(coretest.Turn{Text: []string{"ok"}})
 			} else {
-				llm.Script(coretest.Turn{Calls: []coretest.Call{{ID: "c1", Name: "update_selection", Args: `{"html":"Zed"}`}}},
-					coretest.Turn{Text: []string{"ok"}})
+				llm.Script(coretest.Turn{Calls: []coretest.Call{{ID: "c1", Name: "update_selection", Args: `{"html":"Zed"}`}}})
 			}
 			n := len(f.events(1))
 			rs, err := f.page.Rewrite(f.ctx(1), res.Revision, c.Text, c.Start, c.End, "更具体一点")

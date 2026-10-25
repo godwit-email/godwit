@@ -1023,6 +1023,7 @@
   "wit_compose_link": "Ссылка изменена на {arg1}",
   "wit_compose_locked": "Сначала примите или отклоните правки ассистента",
   "wit_compose_new": "Новая версия",
+  "wit_compose_no_changes": "Нет изменений в черновике",
   "wit_compose_original": "Оригинал",
   "wit_compose_placeholder": "Укажите Wit, как ответить, например: подтверди даты, но перенеси вебинар на неделю позже",
   "wit_compose_reject": "Отклонить",

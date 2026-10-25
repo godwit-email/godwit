@@ -1023,6 +1023,7 @@
   "wit_compose_link": "Lien modifié en {arg1}",
   "wit_compose_locked": "Acceptez ou refusez d’abord les modifications de l’assistant",
   "wit_compose_new": "Nouvelle version",
+  "wit_compose_no_changes": "Aucune modification du brouillon",
   "wit_compose_original": "Original",
   "wit_compose_placeholder": "Indiquez à Wit comment répondre, p. ex. : accepter les dates mais décaler le webinaire d’une semaine",
   "wit_compose_reject": "Refuser",

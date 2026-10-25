@@ -33,6 +33,7 @@ const (
 	assistSystem = `You are Wit, the writing assistant beside the user's draft in the Godwit compose window. ` +
 		`update_draft replaces the editable part of the draft with your HTML (paragraphs in <p>, line breaks with <br>). ` +
 		`When the user asks to write or draft an email—even with only a brief topic—call update_draft directly without asking clarifying questions (recipient addresses and sending are handled by the user in the window outside update_draft). ` +
+		`When the user's request requires no changes to the draft (for example, if the draft already satisfies the request or does not contain the mentioned text), do not call update_draft; instead, explain briefly in one sentence in plain text why no change was needed. Never respond with an empty message. ` +
 		`Give update_draft a concise subject that fits the draft when it has none or only a placeholder. ` +
 		`Call update_draft at most once per turn. Once update_draft has been executed, do not call update_draft again: your task is complete. ` +
 		`You cannot send mail; only the user reviews and sends the draft. After update_draft runs, simply give a brief confirmation in plain text that the draft has been updated or prepared. Never claim or imply that you sent the email. ` +
@@ -55,6 +56,7 @@ const (
 	kindPartial   = "partial"   // shown as a word diff
 	kindRewrite   = "rewrite"   // more than half the words changed: shown side by side
 	kindTranslate = "translate" // translated: shown as translation
+	kindNoChange  = "no_change" // proposal is identical to current draft: no change
 
 	selectionContext = 500 // runes of read-only context on each side of a selection
 	recentMail       = 5   // latest mail with the recipients in an Assist run
@@ -494,6 +496,21 @@ func (s *Service) proposeUpdateWithSubject(ctx context.Context, draftID int64, s
 	if err != nil {
 		return prepared{}, err
 	}
+	cleanOld := cleanHTML(old)
+	cleanNew := cleanHTML(h)
+	subjUnchanged := true
+	if subject != nil {
+		clean := cleanSubject(*subject)
+		subjUnchanged = (clean == "" || clean == d.Subject)
+	}
+	if !mail.Blank(old) && cleanOld == cleanNew && subjUnchanged {
+		args := updateArgs{DraftID: d.ID, Revision: d.Revision, Old: old, HTML: h}
+		b, err := json.Marshal(args)
+		if err != nil {
+			return prepared{}, err
+		}
+		return prepared{Args: b, Summary: kindNoChange, TargetKind: "draft", TargetID: d.ID, TargetVersion: d.Revision}, nil
+	}
 	kind, err := changeKind(ctx, old, h)
 	if err != nil {
 		return prepared{}, err
@@ -608,6 +625,9 @@ func (s *Service) prepareUpdate(ctx context.Context, conv Conversation, args jso
 // and signature, and updates subject if provided. If the draft changed since, execute's revision check fails
 // the write, so the parts read here are those of the bound revision.
 func (s *Service) applyUpdate(ctx context.Context, a Approval) ([]sqlite.Statement, any, any, error) {
+	if a.Summary == kindNoChange {
+		return nil, map[string]any{"updated": true, "summary": "no_change"}, nil, nil
+	}
 	var in updateArgs
 	if err := json.Unmarshal(a.Args, &in); err != nil {
 		return nil, nil, nil, err
@@ -642,6 +662,8 @@ func (s *Service) applyInitial(ctx context.Context, as []Approval) ([]Approval, 
 		decision := "executed"
 		switch {
 		case isDraftEdit(a.Tool) && a.Summary == kindInitial:
+		case isDraftEdit(a.Tool) && a.Summary == kindNoChange:
+			decision = "no_change"
 		case s.granted(ctx, a.ID):
 			decision = decisionSession
 		default:

@@ -2038,6 +2038,7 @@
   },
   "wit_compose_locked": "Accept or reject the assistant''s changes first",
   "wit_compose_new": "New version",
+  "wit_compose_no_changes": "No changes to draft",
   "wit_compose_original": "Original",
   "wit_compose_placeholder": "Tell Wit how to reply, like: accept the dates but move the webinar a week later",
   "wit_compose_reject": "Reject",

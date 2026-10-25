@@ -1023,6 +1023,7 @@
   "wit_compose_link": "Link modificato in {arg1}",
   "wit_compose_locked": "Prima accetta o rifiuta le modifiche dell’assistente",
   "wit_compose_new": "Nuova versione",
+  "wit_compose_no_changes": "Nessuna modifica alla bozza",
   "wit_compose_original": "Originale",
   "wit_compose_placeholder": "Indica a Wit come rispondere, ad es.: accetta le date ma sposta il webinar di una settimana",
   "wit_compose_reject": "Rifiuta",

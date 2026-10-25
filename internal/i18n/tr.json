@@ -1023,6 +1023,7 @@
   "wit_compose_link": "Bağlantı {arg1} olarak değiştirildi",
   "wit_compose_locked": "Önce asistanın değişikliklerini kabul edin veya reddedin",
   "wit_compose_new": "Yeni sürüm",
+  "wit_compose_no_changes": "Taslakta değişiklik yok",
   "wit_compose_original": "Orijinal",
   "wit_compose_placeholder": "Wit’e nasıl yanıt verileceğini söyleyin, ör. tarihleri kabul et ama webinarı bir hafta sonraya ertele",
   "wit_compose_reject": "Reddet",

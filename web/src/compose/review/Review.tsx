@@ -8,7 +8,7 @@ import { sanitize } from "../editor/html";
 /** The panel card's line for a review: how many changes, or how much was rewritten. */
 export function reviewSummary(r: ReviewT, t: T): string {
   if (r.kind === "translate") return t("wit.compose.review.translate");
-  if (r.inline) return t("wit.compose.review.inline", r.changes);
+  if (r.inline) return r.changes === 0 ? t("wit.compose.no_changes") : t("wit.compose.review.inline", r.changes);
   return r.exact
     ? t("wit.compose.review.rewrite", Math.round(r.ratio * 100))
     : t("wit.compose.review.rewrite_plain");
@@ -243,7 +243,9 @@ export function Review({
           {r.kind === "translate"
             ? t("wit.compose.translated")
             : r.inline
-              ? t("wit.compose.pending", open)
+              ? open === 0
+                ? t("wit.compose.no_changes")
+                : t("wit.compose.pending", open)
               : r.exact
                 ? t("wit.compose.rewrite", pct)
                 : t("wit.compose.rewrite_plain")}
@@ -258,18 +260,22 @@ export function Review({
             {t(compare ? "wit.compose.back" : "wit.compose.compare")}
           </Button>
         )}
-        <Button
-          size="sm"
-          variant="outline"
-          className="text-base"
-          disabled={busy}
-          onClick={() => onDecide(false)}
-        >
-          {t("wit.compose.reject_all")}
-        </Button>
-        <Button size="sm" className="text-base" disabled={busy} onClick={() => onDecide(true)}>
-          {t("wit.compose.accept_all")}
-        </Button>
+        {r.changes > 0 && (
+          <>
+            <Button
+              size="sm"
+              variant="outline"
+              className="text-base"
+              disabled={busy}
+              onClick={() => onDecide(false)}
+            >
+              {t("wit.compose.reject_all")}
+            </Button>
+            <Button size="sm" className="text-base" disabled={busy} onClick={() => onDecide(true)}>
+              {t("wit.compose.accept_all")}
+            </Button>
+          </>
+        )}
       </div>
       <section aria-label={t("wit.compose.review_body")} className={`${BODY} bg-sidebar`}>
         {r.subject && r.subject !== r.old_subject && !compare && (

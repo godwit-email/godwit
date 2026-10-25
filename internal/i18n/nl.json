@@ -1023,6 +1023,7 @@
   "wit_compose_link": "Link gewijzigd naar {arg1}",
   "wit_compose_locked": "Accepteer of weiger eerst de wijzigingen van de assistent",
   "wit_compose_new": "Nieuwe versie",
+  "wit_compose_no_changes": "Geen wijzigingen in het concept",
   "wit_compose_original": "Origineel",
   "wit_compose_placeholder": "Vertel Wit hoe je wilt antwoorden, bijv.: accepteer de data maar verplaats het webinar een week later",
   "wit_compose_reject": "Weigeren",

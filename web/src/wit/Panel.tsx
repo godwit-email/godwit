@@ -950,6 +950,19 @@ function Answer({
   const calls = m.parts.filter((p): p is DynamicToolUIPart => p.type === "dynamic-tool");
   const requested = (p: DynamicToolUIPart) =>
     p.state === "approval-requested" ? approvals.get(p.approval.id) : undefined;
+  const hasNoChange =
+    calls.some((c) => {
+      if (c.toolName !== "update_draft" && c.toolName !== "update_selection") return false;
+      const s =
+        (c.state === "output-available" && (c.output as any)?.summary) ||
+        (c.state === "approval-requested" && approvals.get(c.approval?.id ?? "")?.summary);
+      return s === "no_change";
+    }) ||
+    m.parts.some(
+      (p) =>
+        p.type === "data-approvals" &&
+        p.data.some((a) => (approvals.get(String(a.id)) ?? a).summary === "no_change"),
+    );
   // Calls of one tool in a row, each a plain line (no card), go as one line: each run by its first.
   const runs = new Map<number, DynamicToolUIPart[]>();
   let run: DynamicToolUIPart[] | undefined;
@@ -1146,6 +1159,12 @@ function Answer({
       {loose.map((a) => (
         <Settled key={a.id} a={a} onDraft={onDraft} t={t} />
       ))}
+      {hasNoChange && (
+        <div className="flex items-center gap-2 rounded-lg bg-sidebar px-3 py-2 text-base text-muted-foreground">
+          <RiSparkling2Line className="size-4 shrink-0 text-foreground" />
+          <span>{t("wit.compose.no_changes")}</span>
+        </div>
+      )}
       {live && !moving && working}
       {((text && !live) || (cited.length > 0 && onCite)) && (
         <div className="-mt-1 -ml-1.5 flex items-center">

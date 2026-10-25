@@ -1479,6 +1479,25 @@ func (s *Service) startResume(ctx context.Context, end func(), runID int64) erro
 	if err != nil {
 		return err
 	}
+	allDraftEdits := len(as) > 0
+	hasUserDecision := false
+	for _, a := range as {
+		if !isDraftEdit(a.Tool) {
+			allDraftEdits = false
+		}
+		if a.Summary != kindInitial {
+			hasUserDecision = true
+		}
+	}
+	if allDraftEdits && hasUserDecision { // decided draft edits: the proposal was the whole run
+		convID, err := s.closeRun(ctx, runID, "done", "")
+		if err != nil {
+			return err
+		}
+		end()
+		s.publishWit(convID, WitEvent{ConversationID: convID, RunID: runID, Turn: s.runTurn(ctx, runID), Ends: true, Event: ai.Event{Kind: "done"}})
+		return nil
+	}
 	results := make([]ai.ToolResult, 0, len(as))
 	for _, a := range as {
 		results = append(results, a.toolResult())

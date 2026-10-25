@@ -1023,6 +1023,7 @@
   "wit_compose_link": "Link alterado para {arg1}",
   "wit_compose_locked": "Aceite ou rejeite primeiro as alterações do assistente",
   "wit_compose_new": "Nova versão",
+  "wit_compose_no_changes": "Nenhuma alteração no rascunho",
   "wit_compose_original": "Original",
   "wit_compose_placeholder": "Diga ao Wit como responder, por exemplo: aceite as datas, mas adie o webinar em uma semana",
   "wit_compose_reject": "Rejeitar",

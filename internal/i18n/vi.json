@@ -1023,6 +1023,7 @@
   "wit_compose_link": "Đã đổi liên kết thành {arg1}",
   "wit_compose_locked": "Hãy chấp nhận hoặc từ chối các thay đổi của trợ lý trước",
   "wit_compose_new": "Phiên bản mới",
+  "wit_compose_no_changes": "Không có thay đổi nào trong bản nháp",
   "wit_compose_original": "Bản gốc",
   "wit_compose_placeholder": "Bảo Wit cách trả lời, ví dụ: đồng ý lịch hẹn nhưng dời buổi hội thảo trực tuyến sang tuần sau",
   "wit_compose_reject": "Từ chối",

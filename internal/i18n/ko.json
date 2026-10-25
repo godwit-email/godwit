@@ -1023,6 +1023,7 @@
   "wit_compose_link": "링크를 {arg1}(으)로 변경",
   "wit_compose_locked": "먼저 어시스턴트의 변경 사항을 수락하거나 거부하세요",
   "wit_compose_new": "새 버전",
+  "wit_compose_no_changes": "초안에 변경 사항이 없습니다",
   "wit_compose_original": "원문",
   "wit_compose_placeholder": "Wit에게 어떻게 답장할지 알려주세요. 예: 일정은 수락하지만 웨비나는 일주일 연기",
   "wit_compose_reject": "거부",

@@ -1023,6 +1023,7 @@
   "wit_compose_link": "链接改为 {arg1}",
   "wit_compose_locked": "先接受或拒绝助手的修改",
   "wit_compose_new": "新版本",
+  "wit_compose_no_changes": "草稿未做更改",
   "wit_compose_original": "原文",
   "wit_compose_placeholder": "告诉 Wit 你想怎么回，比如：答应时间，但研讨会推迟一周",
   "wit_compose_reject": "拒绝",

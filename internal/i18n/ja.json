@@ -1023,6 +1023,7 @@
   "wit_compose_link": "リンク先を {arg1} に変更",
   "wit_compose_locked": "先にアシスタントの変更を承認または却下してください",
   "wit_compose_new": "新しいバージョン",
+  "wit_compose_no_changes": "下書きに変更はありません",
   "wit_compose_original": "原文",
   "wit_compose_placeholder": "返信の内容を Wit に伝える（例：日程は了承するけれど、ウェビナーは 1 週間延期したい）",
   "wit_compose_reject": "却下",

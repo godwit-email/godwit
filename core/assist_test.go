@@ -62,7 +62,7 @@ func (e skillEnv) assist(t *testing.T, draftID int64, input string) []WitEvent {
 func (e skillEnv) propose(t *testing.T, draftID int64, html string) WitEvent {
 	t.Helper()
 	b, _ := json.Marshal(map[string]string{"html": html})
-	e.srv.Script(testllm.Turn{Calls: []testllm.Call{{Name: "update_draft", Args: string(b)}}}, testllm.Turn{Text: []string{"Updated."}})
+	e.srv.Script(testllm.Turn{Calls: []testllm.Call{{Name: "update_draft", Args: string(b)}}})
 	evs := e.assist(t, draftID, "improve it")
 	last := evs[len(evs)-1]
 	require.Equal(t, "interrupted", last.Kind, "%+v", last.Err)
@@ -398,7 +398,7 @@ func TestAssistSubjectBlankKeptAndUndone(t *testing.T) {
 	d := e.newDraft(t, "Old", "<p>Version one.</p>")
 	propose := func(html, subject string) Approval {
 		b, _ := json.Marshal(map[string]string{"html": html, "subject": subject})
-		e.srv.Script(testllm.Turn{Calls: []testllm.Call{{Name: "update_draft", Args: string(b)}}}, testllm.Turn{Text: []string{"Updated."}})
+		e.srv.Script(testllm.Turn{Calls: []testllm.Call{{Name: "update_draft", Args: string(b)}}})
 		evs := e.assist(t, d.ID, "improve it")
 		last := evs[len(evs)-1]
 		require.Equal(t, "interrupted", last.Kind, "%+v", last.Err)
@@ -1029,4 +1029,68 @@ func TestAssistPromptClosingAndSenderPriority(t *testing.T) {
 	assert.Contains(t, sysPrompt2, "The draft has a stored signature that already concludes the email with a closing sign-off and name.")
 	assert.Contains(t, sysPrompt2, "Write ONLY the message content itself.")
 	assert.Contains(t, sysPrompt2, "Do NOT write any closing sign-off or farewell phrase, and do NOT write any sender name at the end.")
+}
+
+func TestAssistNoChangeSummaryAndAutoResolve(t *testing.T) {
+	e := newAssistEnv(t)
+	d := e.replyDraft(t, "<p>Exact text.</p>")
+	b, _ := json.Marshal(map[string]string{"html": "<p>Exact text.</p>"})
+	e.srv.Script(testllm.Turn{Calls: []testllm.Call{{Name: "update_draft", Args: string(b)}}})
+	evs := e.assist(t, d.ID, "keep it identical")
+	last := evs[len(evs)-1]
+	require.Equal(t, "interrupted", last.Kind)
+	require.Len(t, last.Approvals, 1)
+	a := last.Approvals[0]
+	assert.Equal(t, "no_change", a.Summary, "zero changes marked as no_change")
+	assert.Equal(t, "done", a.State, "auto-resolved at once so user sees no approval prompt")
+	e.waitRunOf(t, a.RunID, "done")
+	assert.Equal(t, d.HTML, e.getDraft(t, d.ID).HTML)
+}
+
+func TestAssistRejectFinishesDirectly(t *testing.T) {
+	e := newAssistEnv(t)
+	d := e.replyDraft(t, "<p>Initial text.</p>")
+	last := e.propose(t, d.ID, "<p>Different proposed text.</p>")
+	a := last.Approvals[0]
+	require.Equal(t, "pending", a.State)
+	require.NoError(t, e.s.ResolveApproval(t.Context(), a.ID, false))
+	e.waitRunOf(t, a.RunID, "done")
+	ap, err := e.s.getApproval(t.Context(), a.ID)
+	require.NoError(t, err)
+	assert.Equal(t, "rejected", ap.State)
+	assert.Equal(t, d.HTML, e.getDraft(t, d.ID).HTML, "draft remains unchanged upon rejection")
+	assert.Len(t, e.srv.Requests(), 1, "model was not re-invoked on rejection")
+}
+
+func TestAssistAcceptFinishesDirectly(t *testing.T) {
+	e := newAssistEnv(t)
+	d := e.replyDraft(t, "<p>Initial text.</p>")
+	last := e.propose(t, d.ID, "<p>Accepted proposed text.</p>")
+	a := last.Approvals[0]
+	require.Equal(t, "pending", a.State)
+	require.NoError(t, e.s.ResolveApproval(t.Context(), a.ID, true))
+	e.waitRunOf(t, a.RunID, "done")
+	ap, err := e.s.getApproval(t.Context(), a.ID)
+	require.NoError(t, err)
+	assert.Equal(t, "done", ap.State)
+	got, _, _ := parts(t, e.getDraft(t, d.ID).HTML)
+	assert.Equal(t, "<p>Accepted proposed text.</p>", got)
+	assert.Len(t, e.srv.Requests(), 1, "model was not re-invoked on accept")
+}
+
+func TestAssistTextExplanationWhenNoDraftUpdate(t *testing.T) {
+	e := newAssistEnv(t)
+	d := e.replyDraft(t, "<p>Dear recipient,</p><p>Initial draft.</p>")
+	explanation := "The current draft does not mention the clinic name, so no text change was necessary."
+	e.srv.Script(testllm.Turn{Text: []string{explanation}})
+	evs := e.assist(t, d.ID, "Clinic name is ABC and not DEF")
+	var texts []string
+	for _, ev := range evs {
+		if ev.Kind == "text" {
+			texts = append(texts, ev.Text)
+		}
+	}
+	assert.Contains(t, strings.Join(texts, ""), "no text change was necessary")
+	assert.Equal(t, "done", evs[len(evs)-1].Kind)
+	assert.Equal(t, d.HTML, e.getDraft(t, d.ID).HTML, "draft remains unchanged")
 }
