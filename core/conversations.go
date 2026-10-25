@@ -395,6 +395,31 @@ func (s *Service) mailOf(ctx context.Context, job *runJob, n int) (int64, error)
 	return 0, fmt.Errorf("mail %d %w: use the id of a mail the tools returned", n, errMailNotFound)
 }
 
+// contextCites numbers the mail an assist run's context shows (citeContext),
+// as its prompt names it, and saves what is not saved yet: all of it for a
+// run's start; for a resume, whose first drive saved the rest, only mail the
+// draft brought since.
+func (s *Service) contextCites(ctx context.Context, job *runJob, cs []Citation) []Citation {
+	if !job.resumed {
+		return s.number(ctx, job, "", citeContext, cs)
+	}
+	job.refsMu.Lock()
+	s.loadRefs(context.WithoutCancel(ctx), job)
+	var fresh []Citation
+	for i := range cs {
+		if n, ok := job.refs[cs[i].MessageID]; ok {
+			cs[i].N = n
+		} else {
+			fresh = append(fresh, cs[i])
+		}
+	}
+	job.refsMu.Unlock()
+	for _, f := range s.number(ctx, job, "", citeContext, fresh) {
+		cs[slices.IndexFunc(cs, func(c Citation) bool { return c.MessageID == f.MessageID })] = f
+	}
+	return cs
+}
+
 // snippets fills in cs's messages' snippets (citationsOf reads them the same way).
 func (s *Service) snippets(ctx context.Context, cs []Citation) {
 	ids := make([]any, len(cs))
@@ -1220,8 +1245,8 @@ func (s *Service) drive(job *runJob, end func(), run runFunc, req ai.Request, ou
 		emit(WitEvent{Event: ai.Event{Kind: "start"}})
 	}
 	cs := job.quoted
-	if len(job.cited) > 0 && !job.resumed {
-		cs = append(cs, s.number(job.ctx, job, "", citeContext, job.cited)...)
+	if len(job.cited) > 0 && !job.resumed { // numbered and saved with the prompt (contextCites)
+		cs = append(cs, job.cited...)
 	}
 	if len(cs) > 0 {
 		emit(WitEvent{Event: ai.Event{Kind: "context"}, Citations: cs})

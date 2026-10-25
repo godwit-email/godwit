@@ -230,7 +230,14 @@ func (s *Service) assistSystemPrompt(ctx context.Context, job *runJob, tools []t
 	if err != nil {
 		return "", err
 	}
-	job.cited = cited
+	job.cited = s.contextCites(ctx, job, cited)
+	// the context names each mail by its id, as the read tools do (blocks): one number per mail
+	for _, ct := range job.cited {
+		c = strings.ReplaceAll(c, fmt.Sprintf(`source="message:%d"`, ct.MessageID), fmt.Sprintf(`source="mail:%d"`, ct.N))
+	}
+	if len(job.cited) > 0 {
+		c += "\n\nEach email above is named by its id (mail:N in its source), which get_message takes."
+	}
 	return assistSystem + " " + timeSystem + "\n\n" + ai.UntrustedSystemNote + "\n\n" + answer + "Write the draft in " + target + ".\n\n" + c, nil
 }
 
