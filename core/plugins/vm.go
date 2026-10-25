@@ -182,8 +182,9 @@ func (v *VM) Call(ctx context.Context, inv Invocation, fn func(c *CallScope) (mo
 
 func (v *VM) exec(fn func(c *CallScope) (moejs.Value, error), c *CallScope) (any, error) {
 	var res moejs.Value
-	// Run returns once no host work of this call (or of an earlier one, which
-	// settles into nothing) is pending: no timers keep it alive.
+	// Run ends as the call's result settles; host work still in flight is
+	// cancelled with the call's context and settles into nothing. With nothing
+	// left that could settle it (no timers keep the loop alive), Run ends too.
 	err := v.loop.Run(func(rt *moejs.Runtime) error {
 		rt.ResetAllocation() // a budget per call, not per runtime
 		var err error
@@ -195,6 +196,22 @@ func (v *VM) exec(fn func(c *CallScope) (moejs.Value, error), c *CallScope) (any
 			}()
 			res, err = fn(c)
 		}()
+		if err != nil {
+			return err
+		}
+		if _, _, ok := moejs.PromiseResult(res); !ok {
+			v.loop.StopNoWait()
+			return nil
+		}
+		then, err := rt.Get(res, "then")
+		if err != nil {
+			return err
+		}
+		stop := rt.Function("", 0, func(*moejs.Realm, moejs.Value, []moejs.Value) (moejs.Value, error) {
+			v.loop.StopNoWait()
+			return moejs.Undefined(), nil
+		})
+		_, err = rt.CallFunction(then, res, stop, stop)
 		return err
 	})
 	if err != nil {

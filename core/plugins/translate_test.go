@@ -267,3 +267,27 @@ export default function (ctx: any) {
 	require.NoError(t, err)
 	assert.Equal(t, map[string]any{"texts": []any{"HI", "YOU"}, "source": "en"}, got)
 }
+
+// A call ends as its result settles, not when every host call it started
+// does: the rest is cancelled with it and never runs its JS.
+func TestCallEndsAtItsResult(t *testing.T) {
+	h := &blockingFetch{release: make(chan struct{})}
+	defer close(h.release)
+	p := mustLoadTranslator(t, h, `let late = 0
+	export default function (ctx) { ctx.translators.register({ translate: async (req) => {
+		const slow = ctx.net.fetch("https://api.example.com/").then(() => late++)
+		if (req.race) return Promise.race([slow, ctx.storage.get("k").then(() => "fast")])
+		if (req.late) return late
+		return "cached"
+	} }) }`, VMOptions{})
+	for req, want := range map[string]any{"plain": "cached", "race": "fast"} {
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		got, err := p.Translate(ctx, translateInv, map[string]any{req: true})
+		cancel()
+		require.NoError(t, err, req)
+		assert.Equal(t, want, got, req)
+	}
+	got, err := p.Translate(context.Background(), translateInv, map[string]any{"late": true})
+	require.NoError(t, err)
+	assert.Equal(t, 0.0, got)
+}
