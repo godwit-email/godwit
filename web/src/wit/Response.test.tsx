@@ -28,6 +28,16 @@ describe("answer layout", () => {
     expect(screen.getByText("a")).toHaveClass("bg-sidebar", "font-medium");
   });
 
+  it("hovering [n] shows its mail; the marker shows n alone", async () => {
+    const user = userEvent.setup();
+    const cite = (n: number) => (n === 1 ? <span>the cited mail</span> : undefined);
+    render(<Response text="see [1]" onLink={() => {}} t={t} cite={cite} />);
+    const marker = await screen.findByRole("button", { name: "[1]" });
+    expect(marker).toHaveTextContent(/^1$/);
+    await user.hover(marker);
+    expect(await screen.findByText("the cited mail")).toBeInTheDocument();
+  });
+
   it("headings stay a step above the text at most", async () => {
     render(<Response text={"# One\n\n## Two\n\n### Three\n\nbody"} onLink={() => {}} t={t} />);
     expect(await screen.findByRole("heading", { level: 1 })).toHaveClass(

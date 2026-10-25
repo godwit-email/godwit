@@ -121,19 +121,23 @@ function Cite({ n, card }: { n: number; card: ReactNode }) {
   return (
     <Popover open={open} onOpenChange={setOpen}>
       <PopoverTrigger
+        // hovering shows the mail, as a source does in chat apps; a click or Enter still opens it
+        openOnHover
+        delay={150}
+        aria-label={`[${n}]`}
         render={
           <button
             type="button"
-            className="cursor-pointer rounded-sm bg-muted px-1 align-baseline text-muted-foreground text-xs tabular-nums hover:text-foreground data-popup-open:bg-border data-popup-open:text-foreground"
+            className="mx-0.5 inline-flex h-5 min-w-5 cursor-pointer items-center justify-center rounded-sm bg-muted px-1.25 align-text-bottom text-[11px] text-muted-foreground tabular-nums leading-none hover:text-foreground data-popup-open:bg-border data-popup-open:text-foreground"
           />
         }
       >
-        [{n}]
+        {n}
       </PopoverTrigger>
       <PopoverContent
         side="bottom"
         align="start"
-        className="w-80 p-3"
+        className="w-80 gap-1.5 rounded-xl p-3 text-base"
         onClick={(e) => {
           if ((e.target as Element).closest("button, a")) setOpen(false);
         }}
@@ -221,7 +225,7 @@ export function Response({
           const n = Number(href.slice(CITE.length));
           const card = citeRef.current?.(n);
           if (!card) return <span>{children}</span>;
-          // Always "[n]": a model-written [text](#cite-n) cannot dress the cited mail up as anything else.
+          // Always n: a model-written [text](#cite-n) cannot dress the cited mail up as anything else.
           return <Cite n={n} card={card} />;
         }
         const url = safeLink(href);

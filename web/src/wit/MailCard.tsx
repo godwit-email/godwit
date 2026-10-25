@@ -64,7 +64,7 @@ export function MailCard({
   return (
     <div
       className={cn(
-        "flex min-w-0 flex-col text-sm",
+        "flex min-w-0 flex-col text-md",
         card && "group relative rounded-[10px] border-[0.5px] bg-background px-2.5 py-2",
         className,
       )}
@@ -80,10 +80,10 @@ export function MailCard({
           {[...name][0]?.toUpperCase() ?? "?"}
         </span>
         <span className="min-w-0 flex-1 truncate font-medium">{name}</span>
-        <span className="shrink-0 text-muted-foreground text-xs">{citeDate(date)}</span>
+        <span className="shrink-0 text-muted-foreground text-sm">{citeDate(date)}</span>
       </div>
-      <span className="mt-0.5 truncate">{subject || t("mail.no_subject")}</span>
-      {snippet && <span className="truncate text-muted-foreground text-xs">{snippet}</span>}
+      <span className="mt-0.5 truncate text-base">{subject || t("mail.no_subject")}</span>
+      {snippet && <span className="truncate text-muted-foreground text-sm">{snippet}</span>}
       {(onOpen || onQuote) && (
         <div
           role="toolbar"
@@ -96,13 +96,13 @@ export function MailCard({
           )}
         >
           {onOpen && (
-            <Button variant="ghost" size="xs" className="font-normal" onClick={onOpen}>
+            <Button variant="ghost" size="xs" className="font-normal text-sm" onClick={onOpen}>
               <RiExternalLinkLine className="text-muted-foreground" />
               {t("wit.mail.open")}
             </Button>
           )}
           {onQuote && (
-            <Button variant="ghost" size="xs" className="font-normal" onClick={onQuote}>
+            <Button variant="ghost" size="xs" className="font-normal text-sm" onClick={onQuote}>
               <RiChatQuoteLine className="text-muted-foreground" />
               {t("wit.quote")}
             </Button>
