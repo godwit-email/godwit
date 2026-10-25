@@ -49,7 +49,10 @@ export function CommandPicker({
   keys?: Ref<PickerKeys>;
   t: T;
 }) {
-  const [open, setOpen] = useState<Command>();
+  // the command whose options show, by key: its options read from the commands as they are now
+  // (a model list that arrives after it opened shows)
+  const [openKey, setOpen] = useState<string>();
+  const open = commands.find((c) => c.key === openKey);
   const q = query.toLowerCase();
   const top = commands.filter(
     (c) => !q || c.key.toLowerCase().includes(q) || c.label.toLowerCase().includes(q),
@@ -65,7 +68,7 @@ export function CommandPicker({
   const pick = (c: Command) => {
     if (c.disabled) return;
     if (c.options) {
-      setOpen(c);
+      setOpen(c.key);
       setActive(
         Math.max(
           0,
