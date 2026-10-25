@@ -11,6 +11,7 @@ import (
 	"time"
 	"unicode/utf8"
 
+	"github.com/Calcium-Ion/moejs"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -114,7 +115,7 @@ const stash = `var plugin = {default(ctx){ globalThis.ctx = ctx }}`
 
 func loadTest(t *testing.T, perms Permissions, h Host, src string) (*Plugin, error) {
 	t.Helper()
-	return Load(context.Background(), newTestVM(t, src, nil), Manifest{Name: "test", Permissions: perms}, h, testConfig)
+	return Load(context.Background(), newTestVM(t, src, VMOptions{}), Manifest{Name: "test", Permissions: perms}, h, testConfig)
 }
 
 func mustLoad(t *testing.T, perms Permissions, h Host, src string) *Plugin {
@@ -128,8 +129,8 @@ func mustLoad(t *testing.T, perms Permissions, h Host, src string) *Plugin {
 // message of what it threw.
 func try(t *testing.T, p *Plugin, inv Invocation, expr string) any {
 	t.Helper()
-	got, err := p.VM().Call(context.Background(), inv, func(c *CallScope) (any, error) {
-		return c.Runtime().RunString(`(async () => { try { return await (` + expr + `) } catch (e) { return "threw: " + e.message } })()`)
+	got, err := p.VM().Call(context.Background(), inv, func(c *CallScope) (moejs.Value, error) {
+		return script(c, `(async () => { try { return await (`+expr+`) } catch (e) { return "threw: " + e.message } })()`)
 	})
 	require.NoError(t, err)
 	return got
@@ -415,7 +416,7 @@ func TestTranslatorRegistrationMatchesManifest(t *testing.T) {
 	}}`
 	declares := Manifest{Name: "test", Capabilities: []string{"translate"}}
 	load := func(m Manifest, src string) (*Plugin, error) {
-		return Load(context.Background(), newTestVM(t, src, nil), m, &fakeHost{}, testConfig)
+		return Load(context.Background(), newTestVM(t, src, VMOptions{}), m, &fakeHost{}, testConfig)
 	}
 	p, err := load(declares, reg)
 	require.NoError(t, err)

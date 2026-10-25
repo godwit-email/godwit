@@ -238,25 +238,14 @@ type Compiler interface {
 	Compile(dir, main string) ([]byte, error)
 }
 
-// ESBuild bundles TypeScript or JavaScript with esbuild, for goja: an IIFE
-// that sets `plugin`, with what goja lacks down-levelled.
+// ESBuild bundles TypeScript or JavaScript with esbuild into one ES module
+// whose default export is the plugin, for the VM.
 var ESBuild Compiler = esbuildCompiler{}
 
-// ESBuildModule bundles for moejs (MoeVM): one ES module whose default export
-// is the plugin, without goja's down-levelling.
-var ESBuildModule Compiler = esbuildCompiler{module: true}
+type esbuildCompiler struct{}
 
-type esbuildCompiler struct{ module bool }
-
-func (c esbuildCompiler) options() api.BuildOptions {
-	if c.module {
-		return api.BuildOptions{Bundle: true, Write: false, Format: api.FormatESModule, Target: api.ES2022, Platform: api.PlatformNeutral}
-	}
-	return api.BuildOptions{
-		Bundle: true, Write: false, Format: api.FormatIIFE, GlobalName: "plugin",
-		Target: api.ES2022, Platform: api.PlatformNeutral,
-		Supported: map[string]bool{"async-generator": false, "for-await": false},
-	}
+func (esbuildCompiler) options() api.BuildOptions {
+	return api.BuildOptions{Bundle: true, Write: false, Format: api.FormatESModule, Target: api.ES2022, Platform: api.PlatformNeutral}
 }
 
 func esbuildVersion() string {

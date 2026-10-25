@@ -116,7 +116,7 @@ func TestBuildFromSnapshotOnly(t *testing.T) {
 	require.NoError(t, err)
 	assert.Contains(t, string(out), "snapshot-one")
 	assert.NotContains(t, string(out), "changed-later")
-	assert.Contains(t, string(out), "var plugin")
+	assert.Contains(t, string(out), "export {")
 
 	for name, code := range map[string]string{
 		"escape":   `import x from "../../etc/x"; export default x`,
