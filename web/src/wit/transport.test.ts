@@ -59,6 +59,8 @@ const turn = (t: Partial<WitTurn> & Pick<WitTurn, "id">): WitTurn => {
     runs: [1],
     elapsed: 0,
     canAskAgain: false,
+    asked: 0,
+    answered: 0,
     ...t,
   };
   return { ...all, steps: t.steps ?? stepsOf(all) };
@@ -395,6 +397,14 @@ describe("historyToMessages", () => {
       ]),
     );
     expect(a.parts.map((p) => p.type)).toEqual(["reasoning", "text", "dynamic-tool", "text"]);
+  });
+
+  it("a question carries when it was asked, its answer when it was answered", () => {
+    const [q, a] = historyToMessages(
+      hist([turn({ id: "1", text: "a", asked: 1000, answered: 2000 })]),
+    );
+    expect(q.metadata?.time).toBe(1000);
+    expect(a.metadata).toEqual({ time: 2000 });
   });
 
   it("a question keeps the mail it quoted", () => {

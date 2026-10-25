@@ -69,6 +69,8 @@ export const legacy = (h: Legacy): WitHistory => {
         runs: [...m.runs],
         elapsed: 0,
         canAskAgain: false,
+        asked: 0,
+        answered: 0,
       });
       if (m.role === "user") continue;
     }

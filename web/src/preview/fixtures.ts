@@ -169,6 +169,8 @@ const turn = (t: Partial<WitTurn> & Pick<WitTurn, "id" | "question" | "runs">): 
     citations: [],
     elapsed: 0,
     canAskAgain: false,
+    asked: Date.now() - 3_600_000, // an hour ago
+    answered: Date.now() - 3_540_000,
     ...t,
   };
   return { ...all, steps: t.steps ?? stepsOf(all) };

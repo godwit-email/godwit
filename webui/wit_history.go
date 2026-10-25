@@ -59,6 +59,10 @@ type WitTurn struct {
 	Elapsed int64 `json:"elapsed"`
 	// CanAskAgain: Ask's rewind takes it now.
 	CanAskAgain bool `json:"canAskAgain"`
+	// Asked and Answered are when it was asked and last answered, in Unix
+	// milliseconds (0: not known).
+	Asked    int64 `json:"asked"`
+	Answered int64 `json:"answered"`
 }
 
 // WitStep is a step of an answer: its reasoning or text, or a call (Call, its
@@ -91,6 +95,9 @@ func witTurns(c core.Conversation) []WitTurn {
 			Steps: make([]WitStep, 0, len(t.Steps)), Approvals: []Approval{}, Citations: []Citation{}, Runs: append([]int64{}, t.Runs...), Elapsed: t.Elapsed.Milliseconds(), CanAskAgain: t.CanAskAgain}
 		if t.Command != nil {
 			w.Command = &WitCommand{Skill: t.Command.Skill, Lang: t.Command.Lang}
+		}
+		if !t.Asked.IsZero() {
+			w.Asked, w.Answered = t.Asked.UnixMilli(), t.Answered.UnixMilli()
 		}
 		for _, q := range t.Quoted {
 			c := citationOf(q)

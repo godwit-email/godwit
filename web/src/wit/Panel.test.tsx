@@ -454,6 +454,18 @@ describe("Panel", () => {
     expect(screen.getByRole("menuitem", { name: /更短/ })).toHaveTextContent("长度");
   });
 
+  it("a question shows when it was sent under it", async () => {
+    const user = userEvent.setup();
+    await setup({ page: true });
+    await user.type(input("向 Wit 提问"), "hi{Enter}");
+    const q = (await screen.findByText("hi")).closest("[data-slot=message]") as HTMLElement;
+    const time = q.querySelector("time");
+    expect(time).not.toBeNull();
+    expect(Math.abs(Date.parse(time?.getAttribute("datetime") ?? "") - Date.now())).toBeLessThan(
+      60_000,
+    );
+  });
+
   it("sends with Enter, not with Shift+Enter or during composition", async () => {
     const user = userEvent.setup();
     const { api } = await setup();

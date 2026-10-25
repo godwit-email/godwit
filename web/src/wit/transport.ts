@@ -27,6 +27,8 @@ export type WitMeta = {
   canAskAgain?: boolean;
   /** An answer's runs' time at work, in milliseconds (core's; none while it streams). */
   elapsed?: number;
+  /** When a question was asked, or an answer last answered, in Unix milliseconds. */
+  time?: number;
 };
 /** Citations of the mail a run read; the approvals an interrupt waits on, or decided. */
 export type WitData = { citations: Citation[]; approvals: Approval[] };
@@ -189,6 +191,7 @@ export function historyToMessages(
   const out: WitUIMessage[] = [];
   for (const t of h.turns) {
     const metadata: WitMeta = { turn: t.id, canAskAgain: t.canAskAgain };
+    if (t.asked > 0) metadata.time = t.asked;
     if (t.quoted.length)
       Object.assign(metadata, { quoted: t.quoted.map((h) => h.id), hits: t.quoted });
     const text = t.command ? label(t.command) : t.question;
@@ -211,8 +214,15 @@ export function historyToMessages(
     if (as.length > 0) parts.push({ type: "data-approvals", data: as });
     if (t.citations.length > 0) parts.push({ type: "data-citations", data: t.citations });
     if (parts.length === 0) continue;
-    const elapsed = t.elapsed > 0 ? { elapsed: t.elapsed } : undefined;
-    out.push({ id: answerId(t.id), role: "assistant", metadata: elapsed, parts });
+    const meta: WitMeta = {};
+    if (t.elapsed > 0) meta.elapsed = t.elapsed;
+    if (t.answered > 0) meta.time = t.answered;
+    out.push({
+      id: answerId(t.id),
+      role: "assistant",
+      metadata: Object.keys(meta).length > 0 ? meta : undefined,
+      parts,
+    });
   }
   return out;
 }

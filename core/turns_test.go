@@ -211,7 +211,7 @@ func TestTurnsOf(t *testing.T) {
 		{"role":"user","content":[{"text":"q2"}]}]`
 	h, _, _, err := ai.LegacyHistory([]byte(state), nil)
 	require.NoError(t, err)
-	runs := []runInfo{{id: 1, from: 1, to: 5, active: 6400 * time.Millisecond}, {id: 2, from: 5, to: 6}}
+	runs := []runInfo{{id: 1, from: 1, to: 5, active: 6400 * time.Millisecond, began: time.Unix(100, 0), moved: time.Unix(160, 0)}, {id: 2, from: 5, to: 6}}
 	as := []Approval{{ID: 3, RunID: 1, CallID: "c1"}, {ID: 4, RunID: 2, CallID: "c1"}}
 	cs := []Citation{{N: 1, MessageID: 7, Subject: "s7", RunID: 1, Source: citeQuote}, {N: 2, MessageID: 5, RunID: 1, CallID: "c1"},
 		{N: 1, MessageID: 7, RunID: 1, CallID: "c1", Suspect: true, Quote: "x"}}
@@ -223,6 +223,8 @@ func TestTurnsOf(t *testing.T) {
 	assert.Equal(t, []TurnStep{{Kind: "text", Text: "a"}, {Kind: "call"}, {Kind: "text", Text: "b"}}, t0.Steps, "text, its call, then the text after it")
 	assert.Equal(t, []int64{1}, t0.Runs)
 	assert.Equal(t, 6400*time.Millisecond, t0.Elapsed)
+	assert.Equal(t, time.Unix(100, 0), t0.Asked, "when its first run began")
+	assert.Equal(t, time.Unix(160, 0), t0.Answered, "when its last run last moved on")
 	require.Len(t, t0.Calls, 1)
 	require.NotNil(t, t0.Calls[0].Result)
 	require.NotNil(t, t0.Calls[0].Approval)

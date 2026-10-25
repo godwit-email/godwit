@@ -199,6 +199,29 @@ function ContextUsage({ usage, t }: { usage: WitUsage; t: T }) {
   );
 }
 
+/**
+ * When a message was sent, as chat apps put it under the message: its time today, else its date
+ * and time (the year when not this one); the full date and time on hover.
+ */
+function MessageTime({ ms, className }: { ms: number; className?: string }) {
+  const d = new Date(ms);
+  const now = new Date();
+  const locale = currentLocale();
+  const opts: Intl.DateTimeFormatOptions = { hour: "2-digit", minute: "2-digit", hour12: false };
+  if (d.toDateString() !== now.toDateString())
+    Object.assign(opts, { month: "numeric", day: "numeric" });
+  if (d.getFullYear() !== now.getFullYear()) opts.year = "numeric";
+  return (
+    <time
+      dateTime={d.toISOString()}
+      title={d.toLocaleString(locale)}
+      className={cn("text-muted-foreground text-xs tabular-nums", className)}
+    >
+      {d.toLocaleString(locale, opts)}
+    </time>
+  );
+}
+
 const ARGS = 160; // a call's arguments shown, in characters (app/wit.go argsRunes)
 const BODY = 240; // a call's body on its approval card (app/wit.go bodyRunes)
 
@@ -1172,7 +1195,7 @@ function Answer({
               </Button>
             </>
           )}
-          {took && !timed && <span className="ml-auto text-muted-foreground text-xs">{took}</span>}
+          {m.metadata?.time && !live && <MessageTime ms={m.metadata.time} className="ml-auto" />}
         </div>
       )}
       {cited.length > 0 && onCite && sources && (
@@ -1448,7 +1471,7 @@ export function Panel({
   const ask = (text: string, metadata?: WitMeta) => {
     if (locked || running || !text) return;
     setCompacted(false);
-    void chat.sendMessage({ text, metadata });
+    void chat.sendMessage({ text, metadata: { ...metadata, time: Date.now() } });
   };
   const asked = useRef<object | undefined>(undefined);
   // biome-ignore lint/correctness/useExhaustiveDependencies: only a new handed question asks
@@ -1961,19 +1984,22 @@ export function Panel({
                           {textOf(m)}
                         </BubbleContent>
                       </Bubble>
-                      {at(m) !== undefined && !running && !locked && (
-                        // shown on the turn's hover, or when focused
-                        <Button
-                          variant="ghost"
-                          size="icon-xs"
-                          className="text-muted-foreground opacity-0 focus-visible:opacity-100 group-hover/turn:opacity-100"
-                          aria-label={t("wit.edit")}
-                          title={t("wit.edit")}
-                          onClick={() => edit(m)}
-                        >
-                          <RiEditLine />
-                        </Button>
-                      )}
+                      <div className="flex items-center gap-1.5">
+                        {at(m) !== undefined && !running && !locked && (
+                          // shown on the turn's hover, or when focused
+                          <Button
+                            variant="ghost"
+                            size="icon-xs"
+                            className="text-muted-foreground opacity-0 focus-visible:opacity-100 group-hover/turn:opacity-100"
+                            aria-label={t("wit.edit")}
+                            title={t("wit.edit")}
+                            onClick={() => edit(m)}
+                          >
+                            <RiEditLine />
+                          </Button>
+                        )}
+                        {m.metadata?.time && <MessageTime ms={m.metadata.time} />}
+                      </div>
                     </MessageContent>
                   </Message>
                 ) : (
