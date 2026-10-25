@@ -17,7 +17,6 @@ import (
 func newPiAssistEnv(t *testing.T) skillEnv {
 	t.Helper()
 	e := newAssistEnv(t)
-	e.setPi(t, true)
 	return e
 }
 
@@ -44,7 +43,6 @@ func TestPiAssistProposalAcceptReject(t *testing.T) {
 	assert.Contains(t, sys, "Meet on Friday at the harbour.", "the original email")
 	assert.Contains(t, sys, `<untrusted_email source="message:`, "as data")
 
-	e.setPi(t, false) // the run resumes on the engine it started on
 	e.accept(t, a)
 	got := e.getDraft(t, d.ID)
 	ed, q2, sig2 := parts(t, got.HTML)
@@ -53,7 +51,6 @@ func TestPiAssistProposalAcceptReject(t *testing.T) {
 	assert.Equal(t, sig, sig2)
 	e.allPi(t)
 
-	e.setPi(t, true)
 	b := e.propose(t, d.ID, "<p>No.</p>").Approvals[0]
 	assert.Equal(t, "rewrite", b.Summary)
 	require.NoError(t, e.s.ResolveApproval(t.Context(), b.ID, false))

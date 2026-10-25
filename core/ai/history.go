@@ -8,8 +8,6 @@ import (
 	"slices"
 	"strings"
 	"unicode/utf8"
-
-	gai "github.com/firebase/genkit/go/ai"
 )
 
 // HistoryNote stands in for the turns a sent view omits.
@@ -74,7 +72,7 @@ type HistoryChanges struct {
 // that save it. A conversation started on pi saves pi messages (pimessage.go);
 // msgs are always their Genkit form.
 type History struct {
-	msgs []*gai.Message
+	msgs []*message
 	raws [][]byte // each message as saved
 	pi   bool
 	seqs []int64
@@ -139,7 +137,7 @@ func LegacyHistory(state []byte, cmds []PlacedCommand) (h *History, seqOf func(i
 	h = &History{next: 1}
 	old := make([]int64, len(msgs)+1)
 	cmdSeqs = make([]int64, len(cmds))
-	add := func(m *gai.Message) {
+	add := func(m *message) {
 		b, _ := json.Marshal(m) // it was just decoded
 		h.msgs, h.raws, h.seqs = append(h.msgs, m), append(h.raws, b), append(h.seqs, h.next)
 		h.next++
@@ -173,9 +171,6 @@ func (h *History) Rows() ([]StoredMessage, error) {
 	return out, nil
 }
 
-// Pi reports whether a run of h may go on pi: it is new or saved as pi messages.
-func (h *History) Pi() bool { return h.pi || len(h.msgs) == 0 }
-
 // Next is the seq h's next message gets.
 func (h *History) Next() int64 { return h.next }
 
@@ -198,7 +193,7 @@ func (h *History) Turns() []Turn {
 	var out []Turn
 	for _, m := range h.Messages() {
 		switch {
-		case m.Role == string(gai.RoleUser):
+		case m.Role == string(roleUser):
 			if n := len(out); n > 0 {
 				out[n-1].To = m.Seq
 			}
@@ -212,21 +207,21 @@ func (h *History) Turns() []Turn {
 
 // AddCommand is h with cmd asked after its last message.
 func (h *History) AddCommand(cmd Command) (*History, HistoryChanges, error) {
-	return h.with(nil, []*gai.Message{commandMessage(cmd)}, nil)
+	return h.with(nil, []*message{commandMessage(cmd)}, nil)
 }
 
-func commandMessage(cmd Command) *gai.Message {
-	p := gai.NewTextPart("/" + cmd.Skill)
+func commandMessage(cmd Command) *message {
+	p := textPart("/" + cmd.Skill)
 	p.Metadata = map[string]any{commandKey: map[string]any{"skill": cmd.Skill, "lang": cmd.Lang}}
-	return gai.NewUserMessage(p)
+	return userMessage(p)
 }
 
-func isCommand(m *gai.Message) bool {
-	return m.Role == gai.RoleUser && slices.ContainsFunc(m.Content, func(p *gai.Part) bool { return p.Metadata[commandKey] != nil })
+func isCommand(m *message) bool {
+	return m.Role == roleUser && slices.ContainsFunc(m.Content, func(p *part) bool { return p.Metadata[commandKey] != nil })
 }
 
 // commandOf is the command m asks, if it is one.
-func commandOf(m *gai.Message) *Command {
+func commandOf(m *message) *Command {
 	for _, p := range m.Content {
 		if v, ok := p.Metadata[commandKey].(map[string]any); ok {
 			c := &Command{}
@@ -242,22 +237,22 @@ func commandOf(m *gai.Message) *Command {
 // raws, if set, are add's pi messages (nil where none), from a run on pi. An
 // empty history is a pi one (#234); a pi history saves a Genkit message as
 // its pi messages (a tool message as one per result).
-func (h *History) with(put map[int]*gai.Message, add []*gai.Message, raws [][]byte) (*History, HistoryChanges, error) {
+func (h *History) with(put map[int]*message, add []*message, raws [][]byte) (*History, HistoryChanges, error) {
 	n := &History{msgs: slices.Clone(h.msgs), raws: slices.Clone(h.raws), pi: h.pi || len(h.msgs) == 0,
 		seqs: slices.Clone(h.seqs), next: h.next}
-	encode := func(m *gai.Message, raw []byte) ([]*gai.Message, [][]byte, error) {
+	encode := func(m *message, raw []byte) ([]*message, [][]byte, error) {
 		if raw != nil && n.pi {
-			return []*gai.Message{m}, [][]byte{raw}, nil
+			return []*message{m}, [][]byte{raw}, nil
 		}
 		if !n.pi {
 			b, err := json.Marshal(m)
-			return []*gai.Message{m}, [][]byte{b}, err
+			return []*message{m}, [][]byte{b}, err
 		}
 		bs, err := piMessages(m)
 		if err != nil {
 			return nil, nil, err
 		}
-		ms := make([]*gai.Message, len(bs))
+		ms := make([]*message, len(bs))
 		for i, b := range bs {
 			if ms[i], err = genkitMessage(b); err != nil {
 				return nil, nil, err
@@ -314,7 +309,7 @@ func (h *History) with(put map[int]*gai.Message, add []*gai.Message, raws [][]by
 // condensed drops it (DropSummary).
 func (h *History) Rewind(at int64, sum Summary) (*History, HistoryChanges, error) {
 	i := slices.Index(h.seqs, at)
-	if i < 0 || h.msgs[i].Role != gai.RoleUser || isCommand(h.msgs[i]) {
+	if i < 0 || h.msgs[i].Role != roleUser || isCommand(h.msgs[i]) {
 		return nil, HistoryChanges{}, fmt.Errorf("no question at %d", at)
 	}
 	n := &History{msgs: slices.Clone(h.msgs[:i]), raws: slices.Clone(h.raws[:i]), pi: h.pi, seqs: slices.Clone(h.seqs[:i]), next: h.next}
@@ -330,13 +325,13 @@ func (h *History) Close(responses []ToolResult) (*History, HistoryChanges, error
 	if len(h.msgs) == 0 {
 		return nil, HistoryChanges{}, errors.New("ai: no open tool calls")
 	}
-	last, err := clone(h.msgs[len(h.msgs)-1])
-	if err != nil {
-		return nil, HistoryChanges{}, err
-	}
+	// The round keeps its marks (interrupt, pendingOutput) as saved, which no
+	// later run reads: rewritten, a pi message would be saved as another
+	// engine's, whose Responses call IDs pi-ai rewrites apart from its results'.
+	last := h.msgs[len(h.msgs)-1]
 	// A run on pi holds back the other calls of a round it interrupts: one
 	// left unanswered has no result.
-	if slices.ContainsFunc(last.Content, (*gai.Part).IsInterrupt) {
+	if slices.ContainsFunc(last.Content, (*part).IsInterrupt) {
 		responses = slices.Clone(responses)
 		for _, p := range last.Content {
 			_, ran := p.Metadata["pendingOutput"]
@@ -346,11 +341,11 @@ func (h *History) Close(responses []ToolResult) (*History, HistoryChanges, error
 			}
 		}
 	}
-	calls, byID, err := matchResults([]*gai.Message{last}, responses)
+	calls, byID, err := matchResults([]*message{last}, responses)
 	if err != nil {
 		return nil, HistoryChanges{}, err
 	}
-	toolMsg := &gai.Message{Role: gai.RoleTool}
+	toolMsg := &message{Role: roleTool}
 	for _, p := range calls {
 		out, ran := p.Metadata["pendingOutput"]
 		if !ran {
@@ -358,12 +353,9 @@ func (h *History) Close(responses []ToolResult) (*History, HistoryChanges, error
 				return nil, HistoryChanges{}, err
 			}
 		}
-		for _, k := range []string{"pendingOutput", "pendingMetadata", "pendingContent", "interrupt"} {
-			delete(p.Metadata, k)
-		}
-		toolMsg.Content = append(toolMsg.Content, gai.NewResponseForToolRequest(p, out))
+		toolMsg.Content = append(toolMsg.Content, responseFor(p, out))
 	}
-	return h.with(map[int]*gai.Message{len(h.msgs) - 1: last}, []*gai.Message{toolMsg}, nil)
+	return h.with(nil, []*message{toolMsg}, nil)
 }
 
 // notRun answers a call held back with an interrupted round that never ran.
@@ -382,15 +374,6 @@ func (h *History) OpenCalls() []ToolResult {
 		}
 	}
 	return out
-}
-
-// clone is a deep copy of m, through its encoding.
-func clone(m *gai.Message) (*gai.Message, error) {
-	b, err := json.Marshal(m)
-	if err != nil {
-		return nil, err
-	}
-	return decodeMessage(b)
 }
 
 // visible are the indexes of h's messages the model sees: all but commands.
@@ -415,12 +398,12 @@ func (h *History) cut(vis []int, sum Summary) int {
 		return 0
 	}
 	i := slices.IndexFunc(vis, func(j int) bool { return h.seqs[j] == sum.Upto })
-	if i < 1 || i+1 < len(vis) && h.msgs[vis[i+1]].Role != gai.RoleUser {
+	if i < 1 || i+1 < len(vis) && h.msgs[vis[i+1]].Role != roleUser {
 		return 0
 	}
 	var starts []int // where each turn after the first begins
 	for k, j := range vis {
-		if k > 0 && h.msgs[j].Role == gai.RoleUser {
+		if k > 0 && h.msgs[j].Role == roleUser {
 			starts = append(starts, k)
 		}
 	}
@@ -434,9 +417,9 @@ func (h *History) cut(vis []int, sum Summary) int {
 // when it stands for some (from minCut), else HistoryNote. A summary of a
 // conversation that read mail is the user's, marked as data; the rest are
 // the model's.
-func note(sum Summary, cut, minCut int, readMail bool) *gai.Message {
+func note(sum Summary, cut, minCut int, readMail bool) *message {
 	if minCut == 0 {
-		return gai.NewModelTextMessage(HistoryNote)
+		return modelText(HistoryNote)
 	}
 	head := SummaryNote
 	if readMail {
@@ -447,9 +430,9 @@ func note(sum Summary, cut, minCut int, readMail bool) *gai.Message {
 		text += "\n\n" + SummaryGapNote
 	}
 	if readMail {
-		return gai.NewUserTextMessage(text)
+		return userText(text)
 	}
-	return gai.NewModelTextMessage(text)
+	return modelText(text)
 }
 
 // Sent is what one run sends of a History (History.Send): the model's view,
@@ -458,7 +441,7 @@ func note(sum Summary, cut, minCut int, readMail bool) *gai.Message {
 // history.
 type Sent struct {
 	h    *History
-	msgs []*gai.Message
+	msgs []*message
 	src  []int // the index in h of each of msgs: -1 the note, -2 the question asked
 }
 
@@ -482,11 +465,11 @@ func (h *History) Send(budget int, sum Summary, readMail bool) (*Sent, error) {
 		}
 		return s, nil
 	}
-	size := func(msgs []*gai.Message) (int, error) {
+	size := func(msgs []*message) (int, error) {
 		b, err := json.Marshal(msgs)
 		return utf8.RuneCount(b), err
 	}
-	all := make([]*gai.Message, len(vis))
+	all := make([]*message, len(vis))
 	for k, i := range vis {
 		all[k] = h.msgs[i]
 	}
@@ -504,7 +487,7 @@ func (h *History) Send(budget int, sum Summary, readMail bool) (*Sent, error) {
 	}
 	var starts []int // where each turn after the first begins
 	for k, i := range vis {
-		if k > 0 && h.msgs[i].Role == gai.RoleUser {
+		if k > 0 && h.msgs[i].Role == roleUser {
 			starts = append(starts, k)
 		}
 	}
@@ -519,7 +502,7 @@ func (h *History) Send(budget int, sum Summary, readMail bool) (*Sent, error) {
 	var s *Sent
 	// shortcut: re-encodes per candidate cut, O(turns²); fine for chat-sized histories
 	for _, cut := range cuts {
-		s = &Sent{h: h, msgs: []*gai.Message{all[0], note(sum, cut, minCut, readMail)}, src: []int{vis[0], srcNote}}
+		s = &Sent{h: h, msgs: []*message{all[0], note(sum, cut, minCut, readMail)}, src: []int{vis[0], srcNote}}
 		for _, i := range vis[cut:] {
 			s.msgs, s.src = append(s.msgs, h.msgs[i]), append(s.src, i)
 		}
@@ -550,14 +533,14 @@ func (s *Sent) Contexts() []string {
 // prompt in the same message and stays in the history; Messages never show
 // it (quoted mail, for example).
 func (s *Sent) Ask(prompt, context string) *Sent {
-	var parts []*gai.Part
+	var parts []*part
 	if context != "" {
-		p := gai.NewTextPart(context)
+		p := textPart(context)
 		p.Metadata = map[string]any{contextKey: true}
 		parts = append(parts, p)
 	}
-	parts = append(parts, gai.NewTextPart(prompt))
-	return &Sent{h: s.h, msgs: append(slices.Clone(s.msgs), gai.NewUserMessage(parts...)), src: append(slices.Clone(s.src), srcQuestion)}
+	parts = append(parts, textPart(prompt))
+	return &Sent{h: s.h, msgs: append(slices.Clone(s.msgs), userMessage(parts...)), src: append(slices.Clone(s.src), srcQuestion)}
 }
 
 // asked reports whether s ends with a question it asks.
@@ -572,8 +555,8 @@ func (s *Sent) Restore(res Result) (*History, HistoryChanges, error) {
 	if len(out) < len(s.msgs) {
 		return nil, HistoryChanges{}, bad
 	}
-	put := map[int]*gai.Message{}
-	var add []*gai.Message
+	put := map[int]*message{}
+	var add []*message
 	var raws [][]byte // a run on pi's, of add
 	if res.raws != nil {
 		raws = [][]byte{}
@@ -606,7 +589,7 @@ func (s *Sent) Restore(res Result) (*History, HistoryChanges, error) {
 	return s.h.with(put, add, raws)
 }
 
-func sameMessage(a, b *gai.Message) (bool, error) {
+func sameMessage(a, b *message) (bool, error) {
 	x, err := json.Marshal(a)
 	if err != nil {
 		return false, err
@@ -620,7 +603,7 @@ func sameMessage(a, b *gai.Message) (bool, error) {
 // shortcut: counts the note of a conversation that read no mail, ~100 runes short for one that did; pass readMail once budgets get that tight.
 func (h *History) CompactedSize(sum Summary) (int, error) {
 	vis := h.visible()
-	msgs := make([]*gai.Message, 0, len(vis)+1)
+	msgs := make([]*message, 0, len(vis)+1)
 	if cut := h.cut(vis, sum); cut > 0 {
 		msgs = append(msgs, h.msgs[vis[0]], note(sum, cut, cut, false))
 		vis = vis[cut:]
@@ -648,7 +631,7 @@ func (h *History) CompactPoints() []int64 {
 	vis := h.visible()
 	var out []int64
 	for k, i := range vis {
-		if k > 0 && h.msgs[i].Role == gai.RoleUser {
+		if k > 0 && h.msgs[i].Role == roleUser {
 			out = append(out, h.seqs[vis[k-1]])
 		}
 	}
@@ -669,7 +652,7 @@ const maxTranscriptResult = 2000
 // summarize: who said what, the tools called and what they returned, each
 // result cut to maxTranscriptResult runes. Commands are left out.
 func (h *History) Transcript(after, upto int64) (string, error) {
-	var msgs []*gai.Message
+	var msgs []*message
 	for _, i := range h.visible() {
 		if h.seqs[i] > after && h.seqs[i] <= upto {
 			msgs = append(msgs, h.msgs[i])
@@ -681,7 +664,7 @@ func (h *History) Transcript(after, upto int64) (string, error) {
 	var b strings.Builder
 	for _, m := range display(msgs) {
 		who := "Assistant"
-		if m.Role == string(gai.RoleUser) {
+		if m.Role == string(roleUser) {
 			who = "User"
 		}
 		if m.Text != "" {
@@ -701,7 +684,7 @@ func (h *History) Transcript(after, upto int64) (string, error) {
 	return b.String(), nil
 }
 
-func decodeMessage(b []byte) (*gai.Message, error) {
+func decodeMessage(b []byte) (*message, error) {
 	msgs, err := decodeState(append(append([]byte{'['}, b...), ']'))
 	if err != nil {
 		return nil, err

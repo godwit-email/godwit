@@ -390,11 +390,11 @@ func TestLabelEvalInterval(t *testing.T) {
 	require.Less(t, l.ci[3], 0.4)
 }
 
-// TestLabelEvalPiParity runs the label eval's cases through each judge API
-// on both engines (Labs: Settings.PiEngine), against a fake service whose
-// answers follow from the request alone: the requests, the answers and so
-// the scores must be the same on pi as on the Genkit path.
-func TestLabelEvalPiParity(t *testing.T) {
+// TestLabelEvalJudgeAPIs runs the label eval's cases through each judge API
+// on pi, against a fake service whose answers follow from the request alone:
+// both APIs read the same answers into the same scores. (ai's
+// TestJudgeMatchesGenkit pins each request and reading to the Genkit path's.)
+func TestLabelEvalJudgeAPIs(t *testing.T) {
 	suite, err := loadEvalSuite("testdata/labeleval")
 	require.NoError(t, err)
 	var mu sync.Mutex
@@ -405,7 +405,7 @@ func TestLabelEvalPiParity(t *testing.T) {
 		mu.Lock()
 		bodies[way] = append(bodies[way], string(b))
 		mu.Unlock()
-		if onPi := strings.HasSuffix(way, "-pi"); onPi != (r.Header.Get("User-Agent") == "Godwit") {
+		if r.Header.Get("User-Agent") != "Godwit" {
 			t.Errorf("%s: sent by %q", way, r.Header.Get("User-Agent"))
 		}
 		var req struct {
@@ -457,14 +457,14 @@ func TestLabelEvalPiParity(t *testing.T) {
 
 	var ways []evalWay
 	for _, format := range []ai.JudgeFormat{ai.FormatDecisions, ai.FormatSystemOne} {
-		for _, onPi := range []bool{false, true} {
-			name := string(format) + map[bool]string{false: "-genkit", true: "-pi"}[onPi]
+		{
+			name := string(format) + "-way" // a base URL ending in the API's path would lose it
 			ways = append(ways, evalWay{name: name, setup: func(t *testing.T, s *Service) {
 				provider := map[ai.JudgeFormat]string{ai.FormatDecisions: ProviderOpenAI, ai.FormatSystemOne: ProviderTypeSafe}[format]
 				ms, err := s.AddModelService(bg, ModelServiceInput{Name: name, Provider: provider, BaseURL: srv.URL + "/" + name,
 					APIKey: "k", JudgeFormat: string(format), JudgeModel: "m"})
 				require.NoError(t, err)
-				setEvalSettings(t, s, func(st *Settings) { st.JudgeService, st.PiEngine = ms.Slug, onPi })
+				setEvalSettings(t, s, func(st *Settings) { st.JudgeService = ms.Slug })
 				requireEvalJudge(t, s, false)
 			}})
 		}
@@ -476,25 +476,19 @@ func TestLabelEvalPiParity(t *testing.T) {
 		byKey[r.way.name+"/"+r.preset+"/"+r.set] = r
 	}
 	refused, unanswered := 0, 0
-	for key, g := range byKey {
+	for key, d := range byKey {
 		way, rest, _ := strings.Cut(key, "/")
-		if !strings.HasSuffix(way, "-genkit") {
+		if way != "decisions-way" {
 			continue
 		}
-		refused, unanswered = refused+g.refused, unanswered+g.unanswered
-		p := byKey[strings.TrimSuffix(way, "-genkit")+"-pi/"+rest]
-		require.Equal(t, g.got, p.got, "%s: the answers", key)
-		require.Equal(t, [2]int{g.refused, g.unanswered}, [2]int{p.refused, p.unanswered}, key)
-		require.Equal(t, g.score(), p.score(), "%s: the scores", key)
+		refused, unanswered = refused+d.refused, unanswered+d.unanswered
+		s := byKey["systemone-way/"+rest]
+		require.Equal(t, d.got, s.got, "%s: the answers", key)
+		require.Equal(t, [2]int{d.refused, d.unanswered}, [2]int{s.refused, s.unanswered}, key)
+		require.Equal(t, d.score(), s.score(), "%s: the scores", key)
 	}
 	require.Positive(t, refused, "the fake refuses some labels")
 	require.Positive(t, unanswered, "and answers some mail with nothing valid")
-	for _, format := range []string{"decisions", "systemone"} {
-		g, p := bodies[format+"-genkit"], bodies[format+"-pi"]
-		require.NotEmpty(t, g)
-		require.Equal(t, len(g), len(p), format)
-		for i := range g {
-			require.JSONEq(t, g[i], p[i], "%s: request %d", format, i)
-		}
-	}
+	require.NotEmpty(t, bodies["decisions-way"])
+	require.Equal(t, len(bodies["decisions-way"]), len(bodies["systemone-way"]))
 }

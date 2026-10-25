@@ -3,6 +3,7 @@ package ai
 import (
 	"cmp"
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -139,3 +140,25 @@ type NoListError struct{ Status int }
 
 func (e *NoListError) Error() string        { return ErrNoModelList.Error() }
 func (e *NoListError) Is(target error) bool { return target == ErrNoModelList }
+
+// codexBase ends the address of ChatGPT's Codex backend (a Codex sign-in's service).
+const codexBase = "/backend-api/codex/"
+
+// codexAccountID is the ChatGPT account a Codex access token (a JWT) is for.
+func codexAccountID(token string) string {
+	parts := strings.Split(token, ".")
+	if len(parts) < 2 {
+		return ""
+	}
+	b, err := base64.RawURLEncoding.DecodeString(strings.TrimRight(parts[1], "="))
+	if err != nil {
+		return ""
+	}
+	var c struct {
+		Auth struct {
+			AccountID string `json:"chatgpt_account_id"`
+		} `json:"https://api.openai.com/auth"`
+	}
+	json.Unmarshal(b, &c)
+	return c.Auth.AccountID
+}

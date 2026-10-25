@@ -11,7 +11,6 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
-	"time"
 )
 
 var testQs = []Question{
@@ -274,75 +273,6 @@ func TestJudgeHTTPErrors(t *testing.T) {
 			}
 		}
 		srv.Close()
-	}
-}
-
-func stubSleep(t *testing.T) *[]time.Duration {
-	var slept []time.Duration
-	old := sleep
-	sleep = func(_ context.Context, d time.Duration) error { slept = append(slept, d); return nil }
-	t.Cleanup(func() { sleep = old })
-	return &slept
-}
-
-func TestJudgeRetries(t *testing.T) {
-	slept := stubSleep(t)
-	hits := 0
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		hits++
-		if hits == 1 {
-			w.Header().Set("Retry-After", "30")
-			w.WriteHeader(429)
-			return
-		}
-		io.WriteString(w, decisionsBody(okAnswers))
-	}))
-	defer srv.Close()
-	j, _ := NewJudge(nil, FormatDecisions, srv.URL, "k", "m")
-	if _, err := j.Ask(context.Background(), "mail", testQs); err != nil || hits != 2 {
-		t.Fatalf("hits %d: %v", hits, err)
-	}
-	if len(*slept) != 1 || (*slept)[0] != maxRetryAfter {
-		t.Errorf("slept %v, want one capped wait", *slept)
-	}
-
-	// 529 and 5xx retry too, at most 3 attempts in all.
-	for _, st := range []int{529, 503} {
-		hits = 0
-		srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { hits++; w.WriteHeader(st) }))
-		j, _ := NewJudge(nil, FormatSystemOne, srv.URL, "k", "m")
-		_, err := j.Ask(context.Background(), "mail", testQs)
-		var he *HTTPError
-		if hits != judgeAttempts || !errors.As(err, &he) || he.Status != st {
-			t.Errorf("%d: hits %d, %v", st, hits, err)
-		}
-		srv.Close()
-	}
-}
-
-// Review #16: one deadline covers the whole Ask, retries included.
-func TestJudgeSingleDeadline(t *testing.T) {
-	var deadlines []time.Time
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { w.WriteHeader(503) }))
-	defer srv.Close()
-	old := sleep
-	sleep = func(ctx context.Context, _ time.Duration) error {
-		d, _ := ctx.Deadline()
-		deadlines = append(deadlines, d)
-		return nil
-	}
-	defer func() { sleep = old }()
-	j, _ := NewJudge(nil, FormatDecisions, srv.URL, "k", "m")
-	start := time.Now()
-	j.Ask(context.Background(), "mail", testQs)
-	if len(deadlines) != 2 || deadlines[0] != deadlines[1] || deadlines[0].Sub(start) > 16*time.Second {
-		t.Errorf("deadlines %v", deadlines)
-	}
-	// A cancelled context stops the retries.
-	ctx, cancel := context.WithCancel(context.Background())
-	cancel()
-	if _, err := j.Ask(ctx, "mail", testQs); !errors.Is(err, context.Canceled) {
-		t.Errorf("cancelled: %v", err)
 	}
 }
 

@@ -19,7 +19,6 @@ import (
 func newPiApprovalEnv(t *testing.T) *approvalEnv {
 	t.Helper()
 	e := newApprovalEnv(t)
-	e.setPi(t, true)
 	return e
 }
 
@@ -73,14 +72,12 @@ func TestPiMixedRoundWaitsForTheApproval(t *testing.T) {
 	assert.Equal(t, "Finished.", msgs[len(msgs)-1].Text)
 }
 
-// A pending approval outlives the app; the run resumes on pi after it,
-// whatever the switch says since.
+// A pending approval outlives the app; the run resumes on pi after it.
 func TestPiApprovalSurvivesRestart(t *testing.T) {
 	e := newPiApprovalEnv(t)
 	conv := e.newConv(t, "ask", 0)
 	in := e.interrupt(t, conv, testllm.Call{Name: "fake_draft", Args: `{"subject":"Hi"}`})
 	e.restart(t)
-	e.setPi(t, false)
 	as, err := e.s.ListApprovals(t.Context(), conv.ID)
 	require.NoError(t, err)
 	require.Len(t, as, 1)
@@ -200,7 +197,6 @@ func TestPiAllowDoesNotAnswerAQuestion(t *testing.T) {
 // later calls of it in the conversation, on pi as on Genkit.
 func TestPiSessionAllow(t *testing.T) {
 	e := newExtEnv(t)
-	e.setPi(t, true)
 	conv := e.askConv(t)
 	sub, unsub := e.s.SubscribeConversation(conv.ID)
 	defer unsub()

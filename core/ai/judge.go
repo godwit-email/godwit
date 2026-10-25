@@ -1,12 +1,9 @@
 package ai
 
 import (
-	"bytes"
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
-	"io"
 	"math"
 	"net/http"
 	"regexp"
@@ -119,24 +116,11 @@ func (e *HTTPError) Error() string { return fmt.Sprintf("judge: HTTP %d", e.Stat
 const (
 	maxQuestions  = 128
 	maxJudgeBody  = 4 << 20
-	judgeAttempts = 3
-	maxRetryAfter = 2 * time.Second
+	judgeAttempts = 3 // how many times pi-ai's classifier transport tries a call
 	// scoreSlack is how far past the levels a score may land from float
 	// rounding and still be read as the end level.
 	scoreSlack = 1e-6
 )
-
-// sleep waits between retries; tests replace it.
-var sleep = func(ctx context.Context, d time.Duration) error {
-	t := time.NewTimer(d)
-	defer t.Stop()
-	select {
-	case <-t.C:
-		return nil
-	case <-ctx.Done():
-		return ctx.Err()
-	}
-}
 
 // batchFunc asks one batch of at most maxQuestions and returns its answers,
 // converted to the Decisions shape but not yet validated.
@@ -171,23 +155,16 @@ func (j judge) Ask(ctx context.Context, input string, qs []Question) ([]Answer, 
 	return out, nil
 }
 
-// NewJudge returns a client for a judge API at base+format.Path(). c is the
-// no-redirect model client (nil means NoRedirectClient).
+// NewJudge returns a client for a judge API at base+format.Path(), asked on
+// pi. c is the no-redirect model client (nil means NoRedirectClient).
 func NewJudge(c *http.Client, format JudgeFormat, base, key, model string) (Judge, error) {
-	return newJudge(c, format, base, key, model, false)
-}
-
-func newJudge(c *http.Client, format JudgeFormat, base, key, model string, onPi bool) (Judge, error) {
 	if c == nil {
 		c = NoRedirectClient
 	}
 	base = strings.TrimRight(base, "/")
-	h := judgeHTTP{c: c, base: base, url: base + format.Path(), key: key, model: model, pi: onPi}
+	h := judgeHTTP{c: c, url: base + format.Path(), key: key, model: model}
 	switch format {
 	case FormatDecisions:
-		if onPi {
-			return judge{h.piDecisions, 15 * time.Second}, nil
-		}
 		return judge{h.decisions, 15 * time.Second}, nil
 	case FormatSystemOne:
 		return judge{h.systemOne, 15 * time.Second}, nil
@@ -209,52 +186,8 @@ func ListJudgeModels(ctx context.Context, c *http.Client, format JudgeFormat, ba
 }
 
 type judgeHTTP struct {
-	c                     *http.Client
-	base, url, key, model string // url is base and the format's path
-	pi                    bool   // post on pi (piPost)
-}
-
-// post sends body and decodes the reply into out, retrying 429, 529 and 5xx.
-// Errors never carry the key, the body or *url.Error text.
-func (h judgeHTTP) post(ctx context.Context, body, out any) error {
-	if h.pi {
-		return h.piPost(ctx, body, out)
-	}
-	b, err := json.Marshal(body)
-	if err != nil {
-		return err
-	}
-	for attempt := 1; ; attempt++ {
-		req, err := http.NewRequestWithContext(ctx, http.MethodPost, h.url, bytes.NewReader(b))
-		if err != nil {
-			return errors.New("judge: bad base URL")
-		}
-		req.Header.Set("Content-Type", "application/json")
-		if h.key != "" {
-			req.Header.Set("Authorization", "Bearer "+h.key)
-		}
-		resp, err := h.c.Do(req)
-		if err != nil {
-			if err := ctxError(err); err != nil {
-				return err
-			}
-			return errUnreachable
-		}
-		st := resp.StatusCode
-		if st == http.StatusOK {
-			err := json.NewDecoder(io.LimitReader(resp.Body, maxJudgeBody)).Decode(out)
-			resp.Body.Close()
-			if err != nil {
-				return fmt.Errorf("%w: unreadable response", ErrJudgeAnswer)
-			}
-			return nil
-		}
-		io.Copy(io.Discard, io.LimitReader(resp.Body, 64<<10))
-		resp.Body.Close()
-		if err := h.retryAfter(ctx, attempt, st, resp.Header); err != nil {
-			return err
-		}
-	}
+	c               *http.Client
+	url, key, model string // url is the base and the format's path
 }
 
 var errUnreachable = errors.New("judge: could not reach the model service")
@@ -267,32 +200,6 @@ func ctxError(err error) error {
 		}
 	}
 	return nil
-}
-
-// retryAfter handles a failed status: it waits and returns nil when the
-// attempt may be retried (429, 529, 5xx), else returns the status's error.
-func (h judgeHTTP) retryAfter(ctx context.Context, attempt, st int, hdr http.Header) error {
-	switch {
-	case st == http.StatusUnauthorized:
-		return ErrModelAuth
-	case st == http.StatusForbidden:
-		return ErrModelForbidden
-	case (st == 429 || st == 529 || st >= 500) && attempt < judgeAttempts:
-		if err := sleep(ctx, backoff(attempt, hdr.Get("Retry-After"))); err != nil {
-			return fmt.Errorf("judge: %w", err)
-		}
-		return nil
-	}
-	return &HTTPError{st}
-}
-
-// backoff honors Retry-After seconds, capped at maxRetryAfter.
-func backoff(attempt int, retryAfter string) time.Duration {
-	d := time.Duration(250<<attempt) * time.Millisecond
-	if s, err := strconv.Atoi(strings.TrimSpace(retryAfter)); err == nil && s >= 0 {
-		d = time.Duration(s) * time.Second
-	}
-	return min(d, maxRetryAfter)
 }
 
 // questionName is the plugin-facing name rule (review #10), enforced here so

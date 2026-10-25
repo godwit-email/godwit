@@ -11,30 +11,8 @@ import (
 	"strings"
 	"sync"
 
-	gai "github.com/firebase/genkit/go/ai"
-
 	"github.com/godwit-email/godwit/core/ai/pi"
 )
-
-// PiConversation reports whether a run of history h on m goes on pi when
-// Request.Pi asks: pi speaks m's protocol and h is new or saved as pi
-// messages (every conversation once converted, #234).
-func PiConversation(m ResolvedModel, h *History) bool { return piAPI(m) != "" && h.Pi() }
-
-// piCovers reports whether pi runs req: a one-off prompt to a stored model
-// service of any kind (#229, #230) or a plugin's model, whose client prepares
-// and sends each request (#231), with no tools; or a question asked of a
-// PiConversation (#232), or the resume of one a run on pi interrupted (#233).
-// Each migration step widens it.
-func piCovers(req Request) bool {
-	switch {
-	case piAPI(req.Model) == "":
-		return false
-	case req.History == nil:
-		return req.Prompt != "" && len(req.Tools) == 0 && len(req.Responses) == 0
-	}
-	return req.Prompt == "" && req.History.h.Pi() && req.History.asked() == (len(req.Responses) == 0)
-}
 
 // piAPI is the pi-ai API that speaks m's protocol, "" for a kind it does not know.
 func piAPI(m ResolvedModel) string {
@@ -52,17 +30,10 @@ func piAPI(m ResolvedModel) string {
 	return ""
 }
 
-// runPi is run on pi, for a request piCovers. A one-off's Result carries its
-// prompt and reply as Messages, as Genkit's does (an Assist skill reads it).
+// runPi runs req, checked, on pi. A one-off's Result carries its prompt and
+// reply as Messages (an Assist skill reads it). The run ends with its model
+// service's instance: a changed or removed service sends nothing more.
 func (r *runner) runPi(req Request) Result {
-	if req.History != nil {
-		if err := checkTools(req.Tools); err != nil {
-			return Result{Err: &Error{Code: CodeInternal, Msg: r.redact(err.Error())}}
-		}
-	}
-	// shortcut: the run takes a Genkit instance for its lifecycle (the stale
-	// check, Forget and Close end it, keys are redacted); give pi its own when
-	// Genkit goes (#236).
 	in, err := r.e.instance(r.ctx, req.Model)
 	if errors.Is(err, errStale) {
 		return Result{Err: &Error{Code: CodeStale, Msg: "the model service changed; try again"}}
@@ -81,7 +52,7 @@ func (r *runner) runPi(req Request) Result {
 
 	preq := pi.Request{API: piAPI(req.Model), BaseURL: req.Model.BaseURL, Model: req.Model.Model, APIKey: req.Model.APIKey,
 		System: req.System, Prompt: req.Prompt, Effort: req.Effort}
-	if req.Model.Kind == KindAnthropic { // max_tokens is required: Genkit's default, raised by the thinking budget (effortConfig)
+	if req.Model.Kind == KindAnthropic { // max_tokens is required: Genkit's default, raised by the thinking budget
 		preq.BaseURL = AnthropicBase(req.Model.BaseURL)
 		preq.ThinkingBudget = thinkingBudget[req.Effort]
 		preq.MaxTokens = preq.ThinkingBudget + 4096
@@ -113,7 +84,7 @@ func (r *runner) runPi(req Request) Result {
 
 func (r *runner) piFailed(ctx context.Context, err error) Result {
 	if ctx.Err() != nil {
-		return Result{Err: classify(ctx, err)}
+		return Result{Err: classify(ctx)}
 	}
 	return Result{Err: &Error{Code: CodeInternal, Msg: r.redact(err.Error())}}
 }
@@ -128,7 +99,7 @@ var errNeedsUser = errors.New("this call now needs the user's approval or answer
 // gated is what a call's gate decided before its round ran: err refuses it.
 type gated struct{ err error }
 
-// gate decides a call of s as tool does on Genkit: hold, it waits for the user.
+// gate decides a call of s: hold, it waits for the user.
 func gate(ctx context.Context, s ToolSpec, args json.RawMessage) (g gated, hold bool) {
 	d := Allow
 	if s.Gate != nil {
@@ -140,10 +111,11 @@ func gate(ctx context.Context, s ToolSpec, args json.RawMessage) (g gated, hold 
 }
 
 // agentPi runs the question req.History asks on pi-agent-core's loop, or
-// resumes the round a run on pi interrupted (req.Responses); the tools run
-// here, as on Genkit. A round with a call that needs the user runs none of
-// its calls: the run ends interrupted, its state as Genkit leaves one, the
-// held calls marked interrupted and the calls held back with them open.
+// resumes the round a run interrupted (req.Responses; Genkit's runs too); the
+// tools run here. A round with a call that needs the user runs none of its
+// calls: the run ends interrupted, its state as an interrupted Genkit run
+// left one, the held calls marked interrupted and the calls held back with
+// them open.
 func (r *runner) agentPi(ctx context.Context, req Request, preq pi.Request, emit func(kind, text string)) Result {
 	s := req.History
 	areq := pi.AgentRequest{Request: preq, Tools: make([]pi.Tool, 0, len(req.Tools)), MaxTurns: cmp.Or(req.MaxTurns, defaultMaxTurns), LimitNote: limitNote}
@@ -153,17 +125,21 @@ func (r *runner) agentPi(ctx context.Context, req Request, preq pi.Request, emit
 			return Result{Err: &Error{Code: CodeInternal, Msg: r.redact(err.Error())}}
 		}
 	}
-	msgs := make([]json.RawMessage, len(s.msgs))
+	msgs := make([]json.RawMessage, 0, len(s.msgs))
 	for k, src := range s.src {
-		if src >= 0 {
-			msgs[k] = replayed(s.h.raws[src], preq.API, preq.Model)
+		if src >= 0 && s.h.pi {
+			msgs = append(msgs, replayed(s.h.raws[src], preq.API, preq.Model))
 			continue
 		}
-		bs, err := piMessages(s.msgs[k]) // the note, the question
+		// The note, the question, or a message of a conversation that did not
+		// convert to pi messages (#234): sent as what of it pi messages carry.
+		bs, err := piMessages(s.msgs[k])
 		if err != nil {
 			return Result{Err: &Error{Code: CodeInternal, Msg: err.Error()}}
 		}
-		msgs[k] = bs[0]
+		for _, b := range bs {
+			msgs = append(msgs, b)
+		}
 	}
 	areq.Messages = msgs
 	specs := map[string]ToolSpec{}
@@ -176,9 +152,21 @@ func (r *runner) agentPi(ctx context.Context, req Request, preq pi.Request, emit
 		areq.Tools = append(areq.Tools, pi.Tool{Name: t.Name, Description: desc, Parameters: schema, Strict: t.Strict})
 	}
 	var gates sync.Map // call ID -> gated
+	// A round's calls are all gated before any runs; results bind to call
+	// IDs, so a round that repeats one is unusable and none of it runs.
+	var roundMu sync.Mutex
+	round, repeated := map[string]bool{}, false
 	hooks := pi.Hooks{
 		Emit: emit,
 		Gate: func(ctx context.Context, id, name string, args json.RawMessage) bool {
+			ref, _, _ := strings.Cut(id, "|") // a Responses call's ID carries its item's after the call ID
+			roundMu.Lock()
+			dup := round[ref] || repeated
+			round[ref], repeated = true, dup
+			roundMu.Unlock()
+			if dup {
+				return true
+			}
 			g, hold := gate(context.WithValue(ctx, callIDKey{}, id), specs[name], args)
 			if hold {
 				r.send(Event{Kind: "tool_call", Call: &ToolCall{ID: id, Name: name, Args: args}})
@@ -188,6 +176,9 @@ func (r *runner) agentPi(ctx context.Context, req Request, preq pi.Request, emit
 			return false
 		},
 		Tool: func(ctx context.Context, id, name string, args json.RawMessage) (json.RawMessage, string, bool) {
+			roundMu.Lock()
+			clear(round) // the round's gating is over
+			roundMu.Unlock()
 			var g *gated
 			if v, ok := gates.LoadAndDelete(id); ok {
 				g = new(v.(gated))
@@ -216,6 +207,9 @@ func (r *runner) agentPi(ctx context.Context, req Request, preq pi.Request, emit
 	r.mu.Lock()
 	r.usage = Usage{Input: res.Input, Output: res.Output, Last: res.Last}
 	r.mu.Unlock()
+	if repeated {
+		return Result{Err: &Error{Code: CodeBadResponse, Msg: "the model repeated a tool call ID"}}
+	}
 	if res.Limited && (res.StopReason != "stop" || res.Calls) {
 		return Result{Err: errLimit()}
 	}
@@ -242,7 +236,7 @@ func (r *runner) agentPi(ctx context.Context, req Request, preq pi.Request, emit
 			out, raws = append(out, m), append(raws, b)
 		}
 	}
-	if s.asked() && (len(out) < len(s.msgs) || out[len(s.msgs)-1].Role != gai.RoleUser) {
+	if s.asked() && (len(out) < len(s.msgs) || out[len(s.msgs)-1].Role != roleUser) {
 		return Result{Err: &Error{Code: CodeInternal, Msg: "ai: the turn lost its question"}}
 	}
 	end := Result{out: out, raws: raws, Messages: display(out)}
@@ -318,7 +312,7 @@ func heldRound(msgs []json.RawMessage, held, deferred []string) ([]json.RawMessa
 // piAnswers are the results a resume gives the interrupted round msgs ends
 // with: responses answer its interrupted calls one to one by ID and name, and
 // each call that ran keeps its output.
-func piAnswers(msgs []*gai.Message, responses []ToolResult, redact func(string) string) (map[string]pi.Answer, error) {
+func piAnswers(msgs []*message, responses []ToolResult, redact func(string) string) (map[string]pi.Answer, error) {
 	if !openCalls(msgs) {
 		return nil, errors.New("ai: no open tool calls")
 	}
@@ -360,7 +354,7 @@ func piAnswer(v any) pi.Answer {
 	return pi.Answer{Text: string(rawJSON(v)), IsError: failed}
 }
 
-// runTool runs one call of a run on pi as tool does on Genkit, sending its
+// runTool runs one call of a run, sending its
 // tool_call and tool_result events. g is what its gate decided as its round
 // began; without it (a call held back with an interrupted round) the gate
 // decides now, and a call that needs the user then is refused (errNeedsUser),
@@ -407,13 +401,9 @@ func piError(res pi.Result, codex bool) *Error {
 	switch res.StopReason {
 	case "stop":
 		return nil
-	case "length":
-		return incomplete(gai.FinishReasonLength)
-	case "blocked":
-		return incomplete(gai.FinishReasonBlocked)
 	case "error":
 	default:
-		return incomplete(gai.FinishReasonOther)
+		return incomplete(res.StopReason)
 	}
 	usage := &Error{Code: CodeRateLimited, Msg: "the ChatGPT plan's usage limit is reached", Detail: DetailChatGPTUsage}
 	switch res.Code {

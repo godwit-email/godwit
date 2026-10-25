@@ -10,16 +10,10 @@ import (
 	"github.com/godwit-email/godwit/core/ai/pi"
 )
 
-// NewPiJudge is NewJudge on pi (Labs: Settings.PiEngine): pi-ai's classifier
-// transport sends each batch, encoded and read here as on the Genkit path,
-// so the answers and probabilities are the same.
-func NewPiJudge(c *http.Client, format JudgeFormat, base, key, model string) (Judge, error) {
-	return newJudge(c, format, base, key, model, true)
-}
-
-// piPost is post on pi: body to h.url, the reply decoded into out, retried
-// and failing as post does.
-func (h judgeHTTP) piPost(ctx context.Context, body, out any) error {
+// post sends body to h.url through pi-ai's classifier transport, which
+// retries 429, 529 and 5xx (judgeAttempts in all), and decodes the reply into
+// out. Errors never carry the key, the body or *url.Error text.
+func (h judgeHTTP) post(ctx context.Context, body, out any) error {
 	b, err := json.Marshal(body)
 	if err != nil {
 		return err
@@ -49,9 +43,8 @@ func (h judgeHTTP) piPost(ctx context.Context, body, out any) error {
 	return fmt.Errorf("%w: unreadable response", ErrJudgeAnswer)
 }
 
-// piDecisions asks the OpenAI Decisions API on pi, in the wire format the
-// SDK encodes on the Genkit path (decisions).
-func (h judgeHTTP) piDecisions(ctx context.Context, input string, qs []Question) ([]Answer, error) {
+// decisions asks the OpenAI Decisions API in the wire format its SDK encodes.
+func (h judgeHTTP) decisions(ctx context.Context, input string, qs []Question) ([]Answer, error) {
 	type question struct {
 		Type         QuestionType   `json:"type"`
 		Name         string         `json:"name"`
@@ -76,11 +69,11 @@ func (h judgeHTTP) piDecisions(ctx context.Context, input string, qs []Question)
 			}
 		}
 	}
-	if err := h.piPost(ctx, map[string]any{"model": h.model, "input": input, "questions": wire}, &resp); err != nil {
+	if err := h.post(ctx, map[string]any{"model": h.model, "input": input, "questions": wire}, &resp); err != nil {
 		return nil, err
 	}
-	// As decisionAnswer reads the SDK's: a value of the wrong JSON type or a
-	// missing probability is left for validation to reject.
+	// A value of the wrong JSON type or a missing probability is left for
+	// validation to reject.
 	out := make([]Answer, len(resp.Answers))
 	for i, a := range resp.Answers {
 		v := Answer{Type: a.Type, Name: a.Name, Probability: a.Probability, Score: a.Score, Confidence: a.Confidence}

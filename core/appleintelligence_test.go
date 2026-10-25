@@ -151,12 +151,6 @@ func TestAppleIntelligenceResolutionAndExecution(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, fake.genText, out)
 	assert.Greater(t, fake.calls, 0)
-	// On pi too (Labs: Settings.PiEngine): its client speaks the same protocol.
-	calls := fake.calls
-	out, err = e.s.runText(t.Context(), engine, ai.Request{Model: m, Prompt: "Schreib eine Antwort", MaxTurns: 1, Pi: true}, 1000)
-	require.NoError(t, err)
-	assert.Equal(t, fake.genText, out)
-	assert.Greater(t, fake.calls, calls)
 
 	// 2. Judge model resolution
 	st, err := e.s.GetSettings(t.Context())
@@ -373,7 +367,7 @@ func TestAppleIntelligenceReviewFixes(t *testing.T) {
 	e.s.opts.AppleIntelligence = &fakeAppleIntelligence{ver: "1"}
 	_, _, err := e.s.resolveRef(t.Context(), "plugin/"+AppleIntelligencePlugin+"/typo")
 	assert.ErrorIs(t, err, ErrModelNotFound)
-	_, err = e.s.pluginJudge(t.Context(), "plugin/"+AppleIntelligencePlugin+"/on-device", false)
+	_, err = e.s.pluginJudge(t.Context(), "plugin/"+AppleIntelligencePlugin+"/on-device")
 	assert.ErrorIs(t, err, ErrModelNotFound)
 
 	// An OS or helper update changes the version, so cached outputs aren't reused.
@@ -450,7 +444,7 @@ func TestAppleIntelligenceJudgeBatches(t *testing.T) {
 	// A judge kept by a labeling batch stops once the plugin is off.
 	e := newSkillEnv(t)
 	e.s.opts.AppleIntelligence = &fakeAppleIntelligence{ver: "1"}
-	j, err := e.s.pluginJudge(t.Context(), "plugin/"+AppleIntelligencePlugin+"/classifier", false)
+	j, err := e.s.pluginJudge(t.Context(), "plugin/"+AppleIntelligencePlugin+"/classifier")
 	require.NoError(t, err)
 	require.NoError(t, e.s.SetPluginEnabled(t.Context(), AppleIntelligencePlugin, false))
 	_, err = j.Ask(t.Context(), "mail", []ai.Question{{Name: "x", Type: ai.Predicate, Instructions: "x?"}})

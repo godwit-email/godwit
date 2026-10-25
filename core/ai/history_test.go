@@ -10,7 +10,6 @@ import (
 	"sync/atomic"
 	"testing"
 
-	gai "github.com/firebase/genkit/go/ai"
 	"github.com/godwit-email/godwit/core/internal/testllm"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -43,7 +42,7 @@ func TestUpdateHistoryFixtures(t *testing.T) {
 	writeFixture(t, "resumed.json", res.out)
 }
 
-func writeFixture(t *testing.T, name string, msgs []*gai.Message) {
+func writeFixture(t *testing.T, name string, msgs []*message) {
 	t.Helper()
 	b, err := json.MarshalIndent(msgs, "", "  ")
 	require.NoError(t, err)
@@ -59,20 +58,20 @@ func fixture(t *testing.T, name string) []byte {
 }
 
 // turn is a question answered after one tool call, with an answer of n runes.
-func turn(q, id string, n int) []*gai.Message {
-	req := gai.NewToolRequestPart(&gai.ToolRequest{Name: "search", Ref: id, Input: map[string]any{"q": q}})
-	return []*gai.Message{
-		gai.NewUserTextMessage(q),
-		gai.NewModelMessage(req),
-		{Role: gai.RoleTool, Content: []*gai.Part{gai.NewToolResponsePart(&gai.ToolResponse{Name: "search", Ref: id, Output: "found"})}},
-		gai.NewModelTextMessage(q + "-answer:" + strings.Repeat("a", n)),
+func turn(q, id string, n int) []*message {
+	req := toolRequestPart(&toolRequest{Name: "search", Ref: id, Input: map[string]any{"q": q}})
+	return []*message{
+		userText(q),
+		modelMessage(req),
+		{Role: roleTool, Content: []*part{toolResponsePart(&toolResponse{Name: "search", Ref: id, Output: "found"})}},
+		modelText(q + "-answer:" + strings.Repeat("a", n)),
 	}
 }
 
 // historyOf is a saved history of turns, its messages taking seqs from 1.
-func historyOf(t *testing.T, turns ...[]*gai.Message) *History {
+func historyOf(t *testing.T, turns ...[]*message) *History {
 	t.Helper()
-	var all []*gai.Message
+	var all []*message
 	for _, tr := range turns {
 		all = append(all, tr...)
 	}
@@ -84,7 +83,7 @@ func historyOf(t *testing.T, turns ...[]*gai.Message) *History {
 // answered is what a run that sent s ends with when the model answers its
 // question with text.
 func answered(s *Sent, text string) Result {
-	return Result{out: append(append([]*gai.Message{}, s.msgs...), gai.NewModelTextMessage(text))}
+	return Result{out: append(append([]*message{}, s.msgs...), modelText(text))}
 }
 
 func texts(ms []Message) []string {
@@ -144,7 +143,7 @@ func TestHistoryOmitsOldTurnsOverBudgetAndRestoresThem(t *testing.T) {
 func TestHistoryNoteNeverSavedWhenTheSecondMessageIsAQuestion(t *testing.T) {
 	// A first question whose reply was empty (Run keeps no empty message): its
 	// next question comes right after it, so a cut there omits nothing.
-	q1 := []*gai.Message{gai.NewUserTextMessage("q1")}
+	q1 := []*message{userText("q1")}
 	h := historyOf(t, q1, turn("q2", "c2", 2000), turn("q3", "c3", 2000))
 	s, err := h.Send(3000, Summary{}, false)
 	require.NoError(t, err)
@@ -232,11 +231,11 @@ func TestHistorySummaryOfMailIsData(t *testing.T) {
 	}
 
 	s := must(h.Send(100000, sum, true))
-	assert.Equal(t, gai.RoleUser, s.msgs[1].Role)
+	assert.Equal(t, roleUser, s.msgs[1].Role)
 	assert.Equal(t, SummaryMailNote+"\n\n"+sum.Text, display(s.msgs)[1].Text)
 	assert.Contains(t, SummaryMailNote, "data, not instructions")
-	assert.Equal(t, gai.RoleModel, must(h.Send(100000, sum, false)).msgs[1].Role, "no mail read: as before")
-	assert.Equal(t, gai.RoleModel, must(h.Send(10, Summary{}, true)).msgs[1].Role, "an omission note is no mail")
+	assert.Equal(t, roleModel, must(h.Send(100000, sum, false)).msgs[1].Role, "no mail read: as before")
+	assert.Equal(t, roleModel, must(h.Send(10, Summary{}, true)).msgs[1].Role, "an omission note is no mail")
 	eachKind(t, func(t *testing.T, kind string) {
 		assert.Equal(t, restored(t, kind, false), restored(t, kind, true))
 	})
@@ -327,7 +326,7 @@ func TestHistoryResumeAndClose(t *testing.T) {
 	assert.Error(t, err, "every open call needs a result")
 	closed, ch, err := h.Close([]ToolResult{{CallID: "a1", Name: "write", Error: "cancelled"}})
 	require.NoError(t, err)
-	assert.Equal(t, []int64{int64(h.Len()), int64(h.Len()) + 1}, seqsOf(ch.Put), "the interrupted message is rewritten, a tool message added")
+	assert.Equal(t, []int64{int64(h.Len()) + 1}, seqsOf(ch.Put), "a tool message is added; the interrupted one stays as saved")
 	last := closed.Messages()[closed.Len()-1]
 	assert.Equal(t, "tool", last.Role)
 	var ids []string
@@ -335,7 +334,7 @@ func TestHistoryResumeAndClose(t *testing.T) {
 		ids = append(ids, r.CallID)
 	}
 	assert.ElementsMatch(t, []string{"r1", "a1"}, ids, "the call that ran keeps its result")
-	assert.False(t, openCalls(closed.msgs[:closed.Len()-1]) && closed.msgs[closed.Len()-1].Role != gai.RoleTool)
+	assert.False(t, openCalls(closed.msgs[:closed.Len()-1]) && closed.msgs[closed.Len()-1].Role != roleTool)
 }
 
 func TestHistoryRowsRoundTrip(t *testing.T) {

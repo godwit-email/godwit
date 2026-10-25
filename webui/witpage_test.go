@@ -1006,7 +1006,7 @@ func TestWitPageReasoning(t *testing.T) {
 // summaries stream as reasoning events.
 func TestWitPageEffort(t *testing.T) {
 	for _, tc := range []struct{ kind, sent, none string }{
-		{"anthropic", `"thinking":{"budget_tokens":16384,"type":"enabled"}`, `"thinking":{`},
+		{"anthropic", `"thinking":{"type":"enabled","budget_tokens":16384}`, `"thinking":{`},
 		{"openai", `"reasoning_effort":"high"`, `"reasoning_effort"`},
 		{"openai-responses", `"reasoning":{"effort":"high","summary":"auto"}`, `"reasoning":{`},
 	} {

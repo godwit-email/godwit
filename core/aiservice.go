@@ -166,9 +166,7 @@ func (s *Service) runSkill(ctx context.Context, end func(), name string, t Targe
 	if err != nil {
 		return nil, err
 	}
-	// Labs: the summary and translation run on pi (#229, #230); other skills follow them.
-	pi := st.PiEngine && (name == "summarize" || translate)
-	events, wait := e.Run(ctx, ai.Request{Model: model, System: system, Prompt: strings.Join(blocks, "\n\n"), MaxTurns: 1, Pi: pi})
+	events, wait := e.Run(ctx, ai.Request{Model: model, System: system, Prompt: strings.Join(blocks, "\n\n"), MaxTurns: 1})
 	events = s.expandEvents(ctx, events)
 
 	out := make(chan ai.Event, 1)
@@ -373,7 +371,7 @@ func (s *Service) QuickReplies(ctx context.Context, messageID int64) ([]QuickRep
 	if err != nil {
 		return nil, err
 	}
-	events, wait := e.Run(ctx, ai.Request{Model: model, System: system, Prompt: strings.Join(blocks, "\n\n"), MaxTurns: 1, Pi: st.PiEngine})
+	events, wait := e.Run(ctx, ai.Request{Model: model, System: system, Prompt: strings.Join(blocks, "\n\n"), MaxTurns: 1})
 	var text strings.Builder
 	for ev := range events {
 		switch ev.Kind {

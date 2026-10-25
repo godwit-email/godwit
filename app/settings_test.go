@@ -1532,24 +1532,3 @@ func TestLinkHref(t *testing.T) {
 		}
 	}
 }
-
-// Labs: the pi engine is off until the user turns it on, and the switch saves it.
-func TestLabsPiEngineSwitch(t *testing.T) {
-	h := newHarness(t)
-	h.until("initial load", func() bool { return h.app.loaded })
-	if h.app.settings.PiEngine {
-		t.Fatal("the pi engine is on by default")
-	}
-	h.openSettings("labs")
-	h.see("新 AI 引擎（pi）")
-	h.click("新 AI 引擎（pi）")
-	h.until("saved on", func() bool {
-		st, err := h.env.Svc.GetSettings(context.Background())
-		return err == nil && st.PiEngine
-	})
-	h.click("新 AI 引擎（pi）")
-	h.until("saved off", func() bool {
-		st, err := h.env.Svc.GetSettings(context.Background())
-		return err == nil && !st.PiEngine
-	})
-}

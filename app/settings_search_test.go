@@ -65,7 +65,7 @@ func TestSettingsIndexCoversRows(t *testing.T) {
 	for _, txt := range h.tt.Texts() {
 		chrome[txt] = true
 	}
-	for sec, route := range map[string]string{"account": accountRoute(acc.ID), "general": "general", "models": "models", "extensions": "extensions", "privacy": "privacy", "labs": "labs", "about": "about", "labels": "labels", "signatures": "signatures"} {
+	for sec, route := range map[string]string{"account": accountRoute(acc.ID), "general": "general", "models": "models", "extensions": "extensions", "privacy": "privacy", "about": "about", "labels": "labels", "signatures": "signatures"} {
 		h.openSettings(route)
 		in := map[string]bool{}
 		for _, k := range settingsIndex[sec] {

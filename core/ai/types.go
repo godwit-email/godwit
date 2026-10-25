@@ -7,8 +7,6 @@ import (
 	"fmt"
 	"net/http"
 	"strings"
-
-	gai "github.com/firebase/genkit/go/ai"
 )
 
 // ModelRef names a model as "service/model"; the first "/" ends the service name.
@@ -154,16 +152,13 @@ type Request struct {
 	// Effort is the reasoning effort asked of the model: "low", "medium" or
 	// "high"; "" asks for none (models that do not reason refuse it).
 	Effort string
-	// Pi runs the request on pi (Labs: Settings.PiEngine) when pi covers it
-	// (piCovers); anything else runs on Genkit as without it.
-	Pi bool
 }
 
 // Result is how a run ended. A successful run of a History is saved through
 // its Sent's Restore; Messages are what it ended with, for display.
 type Result struct {
-	out        []*gai.Message // the run's whole view as it ended
-	raws       [][]byte       // a run on pi: the pi messages of out it added (nil for the others)
+	out        []*message // the run's whole view as it ended
+	raws       [][]byte   // a run on pi: the pi messages of out it added (nil for the others)
 	Messages   []Message
 	Interrupts []ToolCall
 	Err        *Error
