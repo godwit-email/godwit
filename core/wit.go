@@ -191,8 +191,7 @@ func blocks(items []mailItem, cs []Citation) []map[string]any {
 	out := make([]map[string]any, 0, len(items))
 	for i, it := range items {
 		n := cs[i].N
-		src := fmt.Sprintf(`<untrusted_email source="mail:%d"`, n)
-		out = append(out, map[string]any{"id": n, "cite": citeTag(n), "mail": blockSource.ReplaceAllLiteralString(it.Block, src)})
+		out = append(out, map[string]any{"id": n, "cite": citeTag(n), "mail": named(it.Block, n)})
 	}
 	return out
 }
@@ -200,7 +199,12 @@ func blocks(items []mailItem, cs []Citation) []map[string]any {
 // citeTag is how an answer cites mail n (Response reads it).
 func citeTag(n int) string { return fmt.Sprintf(`<mail id="%d"/>`, n) }
 
-// blockSource is a mail block's opening, which names its message ID (mailContext, summaryContext).
+// named is a mail block naming its mail by its id n in its source, not by its message ID.
+func named(block string, n int) string {
+	return blockSource.ReplaceAllLiteralString(block, fmt.Sprintf(`<untrusted_email source="mail:%d"`, n))
+}
+
+// blockSource is a mail block's opening, which names its message ID (mailContext, summaryContext, subjectContext).
 var blockSource = regexp.MustCompile(`^<untrusted_email source="(?:message|selection):\d+"`)
 
 func object(props map[string]any, required ...string) map[string]any {
@@ -564,9 +568,9 @@ func (s *Service) languageClues(ctx context.Context, in draftArgs) error {
 	b.WriteString("Not created yet. Write the draft in the language of the recipient's past emails to the user. " +
 		"Subjects of their latest emails, as language clues:\n")
 	items := s.subjectContext(job.scope, from)
-	s.cite(ctx, items)
-	for _, it := range items {
-		b.WriteString(it.Block + "\n")
+	cs := s.cite(ctx, items)
+	for i, it := range items {
+		b.WriteString(named(it.Block, cs[i].N) + "\n")
 	}
 	b.WriteString("Call create_draft again with the body in that language.")
 	return errors.New(b.String())

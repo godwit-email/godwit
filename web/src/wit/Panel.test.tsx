@@ -873,6 +873,72 @@ describe("Panel", () => {
     expect(api.ask).not.toHaveBeenCalled();
   });
 
+  it("a decided card stays between the stretches of work it stands between, each folded", async () => {
+    const calls = [
+      { id: "c1", name: "search_mail", args: "{}" },
+      { id: "c2", name: "get_message", args: "{}" },
+      { id: "c3", name: "create_draft", args: '{"subject":"Re"}' },
+      { id: "c4", name: "search_mail", args: "{}" },
+      { id: "c5", name: "get_message", args: "{}" },
+    ];
+    await setup({
+      history: hist({
+        ...empty,
+        messages: [
+          {
+            id: "q0",
+            role: "user",
+            text: "Q",
+            reasoning: "",
+            quoted: [],
+            calls: [],
+            results: [],
+            citations: [],
+            runs: [7],
+            elapsed: 0,
+          },
+          {
+            id: "a1",
+            role: "assistant",
+            text: "Done.",
+            reasoning: "",
+            quoted: [],
+            calls,
+            results: calls
+              .filter((c) => c.id !== "c3")
+              .map((c) => ({ callId: c.id, name: c.name, output: "1", error: "" })),
+            citations: [],
+            runs: [7],
+            elapsed: 0,
+          },
+        ],
+        approvals: [
+          {
+            id: 3,
+            run: 7,
+            callId: "c3",
+            tool: "create_draft",
+            summary: "",
+            state: "done",
+            error: "",
+            destinations: [],
+            args: '{"subject":"Re"}',
+            draftEdit: false,
+            sessionAllow: false,
+            draft: 0,
+          },
+        ],
+      }),
+    });
+    const answer = screen.getByText("Done.").closest("[data-role=assistant]") as HTMLElement;
+    expect(
+      within(answer).getAllByRole("button", { name: "搜索了 1 次邮件 · 读取了 1 封邮件" }),
+    ).toHaveLength(2);
+    expect(answer.textContent).toMatch(
+      /读取了 1 封邮件.*已允许 · 创建草稿.*读取了 1 封邮件.*Done\./,
+    );
+  });
+
   it("its work stays open while it runs and folds once it is done", async () => {
     const user = userEvent.setup();
     const { emit } = await setup();

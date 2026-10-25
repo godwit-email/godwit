@@ -829,21 +829,29 @@ function Answer({
   // a call with a card (waiting, or decided) shows it, never folded away
   const carded = (p: (typeof m.parts)[number]) =>
     p.type === "dynamic-tool" && (!!requested(p) || settled.some((a) => answers(a, p.toolCallId)));
-  // What it did before its final text (the text after its last step) folds into one line, when
-  // that is more than one line: the steps' kinds and counts name it.
+  // What it did before its final text (the text after its last step) folds into one line per
+  // stretch between cards, so a card keeps its place among the steps, when the stretch is more
+  // than one line: the steps' kinds and counts name it.
   const end =
     m.parts.findLastIndex(
       (p) => p.type === "dynamic-tool" || (p.type === "reasoning" && !!p.text),
     ) + 1;
-  const work = m.parts.flatMap((p, i) => (i < end && !carded(p) ? [i] : []));
-  const shown = work.filter((i) => {
+  const stretches: number[][] = [[]];
+  m.parts.forEach((p, i) => {
+    if (i >= end) return;
+    if (carded(p)) stretches.push([]);
+    else stretches[stretches.length - 1].push(i);
+  });
+  const shows = (i: number) => {
     const p = m.parts[i];
     return p.type === "dynamic-tool" ? runs.has(i) : p.type === "text" ? !!p.text.trim() : true;
-  });
-  const fold = shown.length > 1;
-  const thought = work.some((i) => m.parts[i].type === "reasoning");
+  };
+  const folds = stretches.filter((w) => w.filter(shows).length > 1);
+  const reasons = (w: number[]) => w.some((i) => m.parts[i].type === "reasoning");
   const took = !live && elapsed(m.metadata?.elapsed, t);
-  const workLabel = () => {
+  // the answer's time goes on the last folded line that thought, nearest the answer
+  const timed = folds.findLast(reasons);
+  const workLabel = (work: number[]) => {
     const count = new Map<string, number>();
     for (const i of work) {
       const p = m.parts[i];
@@ -851,7 +859,7 @@ function Answer({
     }
     return [
       // "已思考 6 秒": the answer's time at work, as agents give it
-      thought && (took ? t("wit.thought_for", took) : t("wit.reasoning")),
+      reasons(work) && (took && work === timed ? t("wit.thought_for", took) : t("wit.reasoning")),
       ...[...count].map(([name, k]) => {
         const key = `wit.tools.${name}`;
         if (t(key, k) !== key) return t(key, k);
@@ -970,12 +978,18 @@ function Answer({
             </AlertDescription>
           </Alert>
         ))}
-      {fold && (
-        <Work label={workLabel()} live={live}>
-          {work.map((i) => part(m.parts[i], i))}
-        </Work>
-      )}
-      {m.parts.map((p, i) => (fold && work.includes(i) ? null : part(p, i)))}
+      {m.parts.map((p, i) => {
+        const w = folds.find((w) => w.includes(i));
+        if (!w) return part(p, i);
+        return (
+          w[0] === i && (
+            // biome-ignore lint/suspicious/noArrayIndexKey: an answer's parts only grow
+            <Work key={`work${i}`} label={workLabel(w)} live={live}>
+              {w.map((k) => part(m.parts[k], k))}
+            </Work>
+          )
+        );
+      })}
       {loose.map((a) => (
         <Settled key={a.id} a={a} onDraft={onDraft} t={t} />
       ))}
@@ -1028,9 +1042,7 @@ function Answer({
               </Button>
             </>
           )}
-          {took && !(fold && thought) && (
-            <span className="ml-auto text-muted-foreground text-xs">{took}</span>
-          )}
+          {took && !timed && <span className="ml-auto text-muted-foreground text-xs">{took}</span>}
         </div>
       )}
       {cites.length > 0 && onCite && sources && (

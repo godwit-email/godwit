@@ -571,6 +571,8 @@ func TestAskReplyLanguagePrompt(t *testing.T) {
 		assert.Contains(t, clue, "<untrusted_email")
 		assert.Contains(t, clue, "Subject: Plans")
 		assert.NotContains(t, clue, "harbour", "subject lines only")
+		assert.Contains(t, clue, `<untrusted_email source="mail:1">`, "named by its id, which get_message takes")
+		assert.NotContains(t, clue, "message:")
 
 		e.srv.Script(createTo("nobody@z"))
 		other := e.ask(t, e.askConv(t).ID, "Write to someone new")
