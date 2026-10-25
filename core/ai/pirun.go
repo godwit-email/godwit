@@ -52,8 +52,8 @@ func piAPI(m ResolvedModel) string {
 	return ""
 }
 
-// runPi is run on pi, for a request piCovers. A one-off's Result carries no
-// Messages: nothing resumes or shows it.
+// runPi is run on pi, for a request piCovers. A one-off's Result carries its
+// prompt and reply as Messages, as Genkit's does (an Assist skill reads it).
 func (r *runner) runPi(req Request) Result {
 	if req.History != nil {
 		if err := checkTools(req.Tools); err != nil {
@@ -86,7 +86,11 @@ func (r *runner) runPi(req Request) Result {
 		preq.ThinkingBudget = thinkingBudget[req.Effort]
 		preq.MaxTokens = preq.ThinkingBudget + 4096
 	}
+	var reply strings.Builder
 	emit := func(kind, text string) {
+		if kind == "text" && req.History == nil {
+			reply.WriteString(text)
+		}
 		if kind == "text" || r.reasoning {
 			r.send(Event{Kind: kind, Text: text})
 		}
@@ -104,7 +108,7 @@ func (r *runner) runPi(req Request) Result {
 	if e := piError(res, preq.API == "openai-codex-responses"); e != nil {
 		return Result{Err: e}
 	}
-	return Result{}
+	return Result{Messages: []Message{{Role: "user", Text: req.Prompt}, {Role: "model", Text: reply.String()}}}
 }
 
 func (r *runner) piFailed(ctx context.Context, err error) Result {
