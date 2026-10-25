@@ -1,5 +1,21 @@
 # Changelog
 
+## [1.15.0](https://github.com/godwit-email/godwit/compare/v1.14.0...v1.15.0) (2026-10-25)
+
+
+### Features
+
+* **ai:** delete Genkit; pi is the only agent runtime ([#236](https://github.com/godwit-email/godwit/issues/236)) ([#250](https://github.com/godwit-email/godwit/issues/250)) ([e96e322](https://github.com/godwit-email/godwit/commit/e96e322127bb51815d470a940fe1d9ee97f65114))
+* **ai:** interrupt and resume approvals and questions on pi ([#233](https://github.com/godwit-email/godwit/issues/233)) ([#247](https://github.com/godwit-email/godwit/issues/247)) ([9ce3ada](https://github.com/godwit-email/godwit/commit/9ce3ada2646d47d551f7bf34d4c3aabb880525f8))
+* **ai:** run new Wit conversations on pi-agent-core with read-only tools ([#232](https://github.com/godwit-email/godwit/issues/232)) ([#244](https://github.com/godwit-email/godwit/issues/244)) ([77dc804](https://github.com/godwit-email/godwit/commit/77dc804254aac289ff2e7241799e2483dc324775))
+* **ai:** run one-off generation on pi for every model service kind ([#230](https://github.com/godwit-email/godwit/issues/230)) ([#242](https://github.com/godwit-email/godwit/issues/242)) ([7490bb4](https://github.com/godwit-email/godwit/commit/7490bb4e81464bf6376ad94cca42fadebd2358e6))
+* **ai:** run plugin models and judges on pi behind the Labs switch ([#231](https://github.com/godwit-email/godwit/issues/231)) ([#245](https://github.com/godwit-email/godwit/issues/245)) ([cda9097](https://github.com/godwit-email/godwit/commit/cda9097d167ce5d1b879e1be7ef6bc1c5eca02b4))
+* **ai:** run the compose window's Assist on pi behind the Labs switch ([#235](https://github.com/godwit-email/godwit/issues/235)) ([#249](https://github.com/godwit-email/godwit/issues/249)) ([dd81a59](https://github.com/godwit-email/godwit/commit/dd81a597ebac037635af86cc732f8fe707bc49aa))
+* **ai:** run the mail summary on pi + moejs behind a Labs switch ([#229](https://github.com/godwit-email/godwit/issues/229)) ([#240](https://github.com/godwit-email/godwit/issues/240)) ([347cbcb](https://github.com/godwit-email/godwit/commit/347cbcb0fad62ee9fecae58d978f16d593cce89e))
+* **ai:** save every conversation as pi messages and convert old ones at startup ([#234](https://github.com/godwit-email/godwit/issues/234)) ([#246](https://github.com/godwit-email/godwit/issues/246)) ([a61f7b3](https://github.com/godwit-email/godwit/commit/a61f7b3ea060bee00d7b60889ffc4d4bedba7f0f))
+* **plugins:** run every script plugin on moejs and delete goja ([#248](https://github.com/godwit-email/godwit/issues/248)) ([ea2cc67](https://github.com/godwit-email/godwit/commit/ea2cc67acbd617ec10b0db6462f9d42ac50c05ab))
+* **plugins:** run translate script plugins on moejs behind the Labs switch ([#237](https://github.com/godwit-email/godwit/issues/237)) ([#243](https://github.com/godwit-email/godwit/issues/243)) ([ec39319](https://github.com/godwit-email/godwit/commit/ec39319cb85ee6490d32b775e436fb16e9e2458f))
+
 ## [1.14.0](https://github.com/godwit-email/godwit/compare/v1.13.0...v1.14.0) (2026-10-24)
 
 
