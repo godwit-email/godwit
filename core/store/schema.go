@@ -434,6 +434,10 @@ var Migrations = [][]string{{
 }, {
 	// None: core.backfillPi converts the conversations saved as Genkit
 	// messages to pi messages (#234); the version backs the database up first.
+}, {
+	// An account's AI instructions and profile: '' none, up to 2000 runes of
+	// sender facts, contact info and style guidelines for drafting.
+	`ALTER TABLE accounts ADD COLUMN ai_instructions TEXT NOT NULL DEFAULT ''`,
 }}
 
 // HistoryRowsVersion is the schema version that keeps a conversation's

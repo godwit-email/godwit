@@ -1219,5 +1219,8 @@
   "wit_ctx_summary": "摘要",
   "wit_ctx_free": "剩餘",
   "wit_ctx_until": "距自動壓縮還剩 {arg1}%",
-  "wit_ctx_compact": "壓縮對話"
+  "wit_ctx_compact": "壓縮對話",
+  "settings_account_ai": "AI 設定與事實資訊",
+  "settings_account_ai_help": "用於此帳號起草郵件的個人事實（如姓名、電話、地址、職位）及寫作規則。",
+  "settings_account_ai_placeholder": "例如：\n姓名：張三\n電話：+886 2 12345678\n職位：總經理，ABC 有限公司\n提示：對外郵件始終保持正式語氣。"
 }

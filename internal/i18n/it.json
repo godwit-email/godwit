@@ -1219,5 +1219,8 @@
   "wit_ctx_summary": "Riepilogo",
   "wit_ctx_free": "Libero",
   "wit_ctx_until": "Ancora {arg1}% prima della compattazione automatica",
-  "wit_ctx_compact": "Compatta"
+  "wit_ctx_compact": "Compatta",
+  "settings_account_ai": "Istruzioni e informazioni IA",
+  "settings_account_ai_help": "Informazioni personali (es. nome, telefono, indirizzo, ruolo) e linee guida di redazione per questo account.",
+  "settings_account_ai_placeholder": "es.\nNome: Dott. Mario Rossi\nTelefono: +39 02 1234567\nRuolo: Amministratore Delegato, ABC S.r.l.\nLinee guida: Tono formale nelle email esterne."
 }

@@ -1219,5 +1219,8 @@
   "wit_ctx_summary": "Özet",
   "wit_ctx_free": "Boş",
   "wit_ctx_until": "Otomatik sıkıştırmaya %{arg1} kaldı",
-  "wit_ctx_compact": "Sıkıştır"
+  "wit_ctx_compact": "Sıkıştır",
+  "settings_account_ai": "Yapay Zeka Talimatları ve Bilgileri",
+  "settings_account_ai_help": "Bu hesap için kişisel bilgiler (örn. ad, telefon, adres, unvan) ve e-posta hazırlama kuralları.",
+  "settings_account_ai_placeholder": "örn.\nAd: Dr. Ahmet Yılmaz\nTelefon: +90 212 123 4567\nUnvan: Genel Müdür, ABC A.Ş.\nTalimatlar: Dış yazışmalarda daima resmi dil kullanın."
 }

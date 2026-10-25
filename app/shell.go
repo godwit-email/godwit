@@ -74,6 +74,11 @@ func (a *App) forward() {
 // setRoute shows r: results of queries for the old route are dropped, and
 // the page reads what it shows.
 func (a *App) setRoute(r Route) {
+	if a.route.Page == PageSettings && (r.Page != PageSettings || r.Settings != a.route.Settings) {
+		if sp, ok := a.pages[PageSettings].(*settingsPage); ok {
+			sp.commitEdits()
+		}
+	}
 	if a.goneLabel(r) {
 		r = Route{Page: PageMail, View: core.View{Unified: "inbox"}}
 	}

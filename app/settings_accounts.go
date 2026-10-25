@@ -3,12 +3,14 @@ package app
 import (
 	"context"
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 	"slices"
 	"strconv"
 	"strings"
 	"time"
+	"unicode/utf8"
 
 	"github.com/egoist/mygo/ui"
 	"github.com/godwit-email/godwit/core"
@@ -27,12 +29,12 @@ const accountSaveDelay = 600 * time.Millisecond
 // edit keeps what the user typed; otherwise it follows the account, though
 // not to a snapshot read before its last confirmed save.
 type accountForm struct {
-	name, alias  string
-	sync, okSync core.SyncRange // the sync range shown, and the account's
-	ok           core.Account   // the values last confirmed
-	okAt         uint64         // a.loadGen when ok was confirmed; older loads are stale
-	edits        [2]fieldEdit   // name, alias
-	syncBusy     int            // sync-range writes in flight
+	name, alias, aiInstructions string
+	sync, okSync                core.SyncRange // the sync range shown, and the account's
+	ok                          core.Account   // the values last confirmed
+	okAt                        uint64         // a.loadGen when ok was confirmed; older loads are stale
+	edits                       [3]fieldEdit   // name, alias, aiInstructions
+	syncBusy                    int            // sync-range writes in flight
 }
 
 // fieldEdit is one text field's debounce: typing restarts it, and only the
@@ -40,18 +42,35 @@ type accountForm struct {
 type fieldEdit struct {
 	gen     uint64
 	pending bool
+	busy    bool
 	stop    func()
 }
 
-func (f *accountForm) field(i int) *string { return [...]*string{&f.name, &f.alias}[i] }
+func (f *accountForm) isValid(i int) bool {
+	if i == 2 {
+		return utf8.RuneCountInString(f.aiInstructions) <= core.MaxAIInstructions
+	}
+	return true
+}
 
-func accountField(acc core.Account, i int) string { return [...]string{acc.Name, acc.Alias}[i] }
+func (f *accountForm) field(i int) *string {
+	return [...]*string{&f.name, &f.alias, &f.aiInstructions}[i]
+}
+
+func accountField(acc core.Account, i int) string {
+	return [...]string{acc.Name, acc.Alias, acc.AIInstructions}[i]
+}
 
 func fieldPatch(i int, v string) core.AccountPatch {
-	if i == 0 {
+	switch i {
+	case 0:
 		return core.AccountPatch{Name: &v}
+	case 1:
+		return core.AccountPatch{Alias: &v}
+	case 2:
+		return core.AccountPatch{AIInstructions: &v}
 	}
-	return core.AccountPatch{Alias: &v}
+	return core.AccountPatch{}
 }
 
 type serverForm struct {
@@ -62,7 +81,7 @@ type serverForm struct {
 func (p *settingsPage) form(acc core.Account) *accountForm {
 	f := p.forms[acc.ID]
 	if f == nil {
-		f = &accountForm{ok: acc, name: acc.Name, alias: acc.Alias, sync: acc.Sync, okSync: acc.Sync}
+		f = &accountForm{ok: acc, name: acc.Name, alias: acc.Alias, aiInstructions: acc.AIInstructions, sync: acc.Sync, okSync: acc.Sync}
 		p.forms[acc.ID] = f
 	}
 	if p.a.accountsGen > f.okAt {
@@ -196,12 +215,24 @@ func (p *settingsPage) closeSignature() {
 // writes; a failure of its newest edit restores the last confirmed value.
 func (p *settingsPage) saveField(id int64, f *accountForm, i int) {
 	a, e := p.a, &f.edits[i]
+	if !f.isValid(i) {
+		return
+	}
+	if e.busy {
+		return
+	}
+	e.busy = true
 	gen := e.gen
-	p.write(id, fieldPatch(i, *f.field(i)), func(saved core.Account, err error) {
-		if err == nil {
+	val := *f.field(i)
+	p.write(id, fieldPatch(i, val), func(saved core.Account, err error) {
+		e.busy = false
+		if err == nil && gen >= e.gen {
 			f.ok, f.okAt = saved, a.loadGen
 		}
 		if gen != e.gen {
+			if e.pending && e.stop == nil {
+				p.saveField(id, f, i)
+			}
 			return
 		}
 		e.pending = false
@@ -442,6 +473,7 @@ func (p *settingsPage) accountView(c *ui.Context, acc core.Account) {
 			}
 		})
 	p.accountSignatureView(c, acc)
+	p.accountAIInstructionsView(c, acc)
 	desc := p.syncState(acc)
 	if acc.Status == "ok" {
 		desc = strings.Join(slices.DeleteFunc([]string{desc, i18n.Tf("mail.unread_count", a.unread[acc.ID])}, func(s string) bool { return s == "" }), " · ")
@@ -997,4 +1029,32 @@ func (p *settingsPage) moveAccount(i, to int) {
 			a.load()
 		}
 	})
+}
+
+func (p *settingsPage) accountAIInstructionsView(c *ui.Context, acc core.Account) {
+	t, th := theme.Of(c), c.Theme()
+	f := p.form(acc)
+	count := utf8.RuneCountInString(f.aiInstructions)
+	counterColor := t.Muted
+	if count > core.MaxAIInstructions {
+		counterColor = t.Danger
+	}
+	counterText := fmt.Sprintf("%d / %d", count, core.MaxAIInstructions)
+
+	settingsSection(c, i18n.T("settings.account.ai"), "",
+		func() {
+			settingBlock(c, func() {
+				kit.Text(c, i18n.T("settings.account.ai.help"), t.Text.Sm).TextColor(t.Muted)
+				if kit.TextArea(c, &f.aiInstructions, kit.InputOpts{
+					Placeholder: i18n.T("settings.account.ai.placeholder"),
+					Invalid:     count > core.MaxAIInstructions,
+				}).Height(th.Space(28)).Radius(t.Radius.Lg).Changed() {
+					p.edited(acc.ID, f, 2)
+				}
+				ui.Row(c).FillWidth().Justify(ui.End).Children(func() {
+					kit.Text(c, counterText, t.Text.Sm).TextColor(counterColor)
+				})
+			})
+		},
+	)
 }

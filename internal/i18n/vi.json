@@ -1219,5 +1219,8 @@
   "wit_ctx_summary": "Tóm tắt",
   "wit_ctx_free": "Còn trống",
   "wit_ctx_until": "Còn {arg1}% trước khi tự thu gọn",
-  "wit_ctx_compact": "Thu gọn"
+  "wit_ctx_compact": "Thu gọn",
+  "settings_account_ai": "Hướng dẫn và thông tin cho AI",
+  "settings_account_ai_help": "Thông tin cá nhân (ví dụ: tên, điện thoại, địa chỉ, chức vụ) và nguyên tắc soạn thư cho tài khoản này.",
+  "settings_account_ai_placeholder": "ví dụ:\nTên: Nguyễn Văn A\nĐiện thoại: +84 24 1234 5678\nChức vụ: Giám đốc, Công ty ABC\nHướng dẫn: Luôn trang trọng với thư bên ngoài."
 }

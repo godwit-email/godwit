@@ -39,6 +39,7 @@ type Account struct {
 	Email, Name, Alias, Signature, Username string // Signature is SignatureID's (Signature.HTML), "" for none
 	SignatureID                             int64  // its default signature, 0 none
 	Icon                                    string // '' the provider's mark, label:<name>, brand:<provider id> or image:<n> (AccountIcon)
+	AIInstructions                          string // user instructions and facts for AI drafting on this account, up to MaxAIInstructions runes
 	IsDefault                               bool
 	Sync                                    SyncRange
 	Folders                                 int // folders synced so far: 0 before the first sync
@@ -78,6 +79,9 @@ type ServerSettings struct {
 // Narrowing it only stops fetching older mail; nothing stored is deleted.
 type SyncRange struct{ Limit, Months int }
 
+// MaxAIInstructions is the maximum rune length of an account's AI instructions.
+const MaxAIInstructions = 2000
+
 // AccountPatch changes the account settings that are not nil. Signature
 // rewrites the account's default signature (for every account using it),
 // making one named as the account if it has none; SignatureID picks it, 0
@@ -90,6 +94,7 @@ type AccountPatch struct {
 	Servers                *ServerSettings
 	Icon                   *string // '', label:<name> or brand:<provider id>
 	IconImage              []byte  // an uploaded png, jpeg, gif, webp or svg: Icon becomes image:<n>
+	AIInstructions         *string // user instructions and facts for AI drafting on this account, up to MaxAIInstructions runes
 }
 
 // AccountIcon is an account's uploaded icon image.

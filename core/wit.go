@@ -24,7 +24,7 @@ import (
 
 // askTools are the built-in tools of an Ask run, which also offers every
 // running plugin's tools and the enabled MCP servers' tools. None of them sends mail.
-var askTools = []string{"search_mail", "get_message", "get_thread", "read_attachment", "classify_mail", "list_skills", "use_skill", "read_skill_file", "create_draft", askQuestionTool}
+var askTools = []string{"search_mail", "get_message", "get_thread", "read_attachment", "classify_mail", "list_skills", "use_skill", "read_skill_file", "get_account_profile", "create_draft", askQuestionTool}
 
 const (
 	askSystem = `You are Wit, the assistant of the Godwit mail app. Use the tools to search and read the user's mail and to use skills. ` +
@@ -37,7 +37,8 @@ const (
 		`which the app shows with its sender, date, subject and snippet, so do not repeat those beside it. ` +
 		`A question that begins with /name names one of your skills: load it with use_skill first, then answer the rest of the question with it. ` +
 		`Keep the formatting light, as in a chat: plain paragraphs and short lists; use no Markdown headings (#), ` +
-		`and where a long answer needs sections, start each with a short bold phrase on its own line.`
+		`and where a long answer needs sections, start each with a short bold phrase on its own line. ` +
+		`User identities and instructions are provided in <sender_profile>. When drafting or when the user asks to include their contact details or personal data, take the information directly from <sender_profile> (or get_account_profile) and never ask the user for personal information already available there. Always formulate a concise, appropriate subject that fits the draft yourself; never ask the user for a subject line. To propose a draft in Godwit, call create_draft with a fitting subject, the body, and the recipient address; prioritize explicit sender names in instructions over the account name; if neither is provided, do not invent a name or adopt third-party names. If the recipient's address is not yet known, present your complete drafted email (subject and body) directly in your response and ask only for the recipient's address to create the draft in Godwit.`
 	titleRunes      = 40
 	maxSearchResult = 20
 	languageClues   = 3 // latest subjects from each recipient
@@ -165,6 +166,14 @@ func (s *Service) witSystem(ctx context.Context, job *runJob, tools []toolDesc) 
 	if st.ReplyLanguage == "match" {
 		drafts = "Write a new email in the language of the recipient's past emails to the user; if there are none, use " + lang + "."
 	}
+	if accounts, err := s.ListAccounts(ctx); err == nil && len(accounts) > 0 {
+		var b strings.Builder
+		b.WriteString("\n\nUser's configured email accounts and sender profiles:\n")
+		for _, a := range accounts {
+			b.WriteString(formatSenderProfile(a) + "\n")
+		}
+		drafts += b.String()
+	}
 	return askSystem + " " + timeSystem + "\n\n" + ai.UntrustedSystemNote + "\n\nAnswer the user in " + lang + ". " + drafts, nil
 }
 
@@ -255,10 +264,17 @@ func (s *Service) registerAskTools() {
 		object(map[string]any{"name": stringProp}, "name"), s.useSkill)
 	read("read_skill_file", "Read a file of a skill, under references/ or assets/.",
 		object(map[string]any{"name": stringProp, "path": stringProp}, "name", "path"), s.readSkillFile)
+	read("get_account_profile", "Get the sender profile, account name, and instructions for an account before drafting mail with create_draft. Explicit sender names in instructions take priority over the account name; if neither is provided, do not invent a name.",
+		object(map[string]any{"account_id": intProp}, "account_id"), s.getAccountProfile)
 	s.mustRegister(toolDesc{Spec: ai.ToolSpec{Name: "create_draft",
 		Description: "Propose a new draft. The user approves it before it is saved, and sends it themselves. html is the body; the signature is added.",
-		Schema: object(map[string]any{"account_id": intProp, "to": listProp, "cc": listProp, "subject": stringProp, "html": stringProp},
-			"to", "subject", "html")},
+		Schema: object(map[string]any{
+			"account_id": intProp,
+			"to":         listProp,
+			"cc":         listProp,
+			"subject":    stringProp,
+			"html":       map[string]any{"type": "string", "description": "Draft body as HTML (paragraphs in <p>, line breaks with <br>)."},
+		}, "to", "subject", "html")},
 		Write: true, Exec: &executor{Prepare: s.prepareDraft, Apply: s.applyDraft}})
 }
 
@@ -480,6 +496,25 @@ func (s *Service) readSkillFile(ctx context.Context, args json.RawMessage) (any,
 	return map[string]any{"path": in.Path, "content": string(b)}, nil
 }
 
+func (s *Service) getAccountProfile(ctx context.Context, args json.RawMessage) (any, error) {
+	var in struct {
+		AccountID int64 `json:"account_id"`
+	}
+	if err := json.Unmarshal(args, &in); err != nil {
+		return nil, err
+	}
+	acc, err := s.account(ctx, in.AccountID)
+	if err != nil {
+		return nil, fmt.Errorf("account not found: %w", err)
+	}
+	return map[string]any{
+		"account_id":   acc.ID,
+		"email":        acc.Email,
+		"name":         acc.Name,
+		"instructions": acc.AIInstructions,
+	}, nil
+}
+
 // draftArgs are create_draft's arguments; prepared, they are the final ones.
 type draftArgs struct {
 	AccountID int64    `json:"account_id"`
@@ -526,9 +561,10 @@ func (s *Service) prepareDraft(ctx context.Context, _ Conversation, args json.Ra
 	if err != nil {
 		return prepared{}, err
 	}
-	if in.HTML, err = s.sanitizeDraft(ctx, mail.StripMarkers(in.HTML)+d.HTML); err != nil {
+	if in.HTML, err = s.sanitizeDraft(ctx, mail.StripMarkers(ensureHTML(in.HTML))+d.HTML); err != nil {
 		return prepared{}, err
 	}
+	in.Subject = cleanSubject(in.Subject)
 	b, err := json.Marshal(in)
 	if err != nil {
 		return prepared{}, err

@@ -68,6 +68,7 @@ var sentinels = []struct {
 	{"signature_not_found", core.ErrSignatureNotFound},
 	{"signature_name", core.ErrSignatureName},
 	{"account_icon", core.ErrAccountIcon},
+	{"ai_instructions_too_long", core.ErrAIInstructionsTooLong},
 	{"not_grantable", core.ErrNotGrantable},
 	{"needs_answer", core.ErrNeedsAnswer},
 	{"mcp_send_off", core.ErrMCPSendOff},

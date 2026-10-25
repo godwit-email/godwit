@@ -307,7 +307,7 @@ func TestAskNoSendTool(t *testing.T) {
 	reqs := e.srv.Requests()
 	require.Len(t, reqs, 1)
 	names := toolNames(t, reqs[0])
-	assert.Equal(t, []string{"ask_user_question", "classify_mail", "create_draft", "get_message", "get_thread", "list_skills", "read_attachment", "read_skill_file", "search_mail", "use_skill"}, names)
+	assert.Equal(t, []string{"ask_user_question", "classify_mail", "create_draft", "get_account_profile", "get_message", "get_thread", "list_skills", "read_attachment", "read_skill_file", "search_mail", "use_skill"}, names)
 	for _, n := range names {
 		assert.NotContains(t, n, "send")
 	}
@@ -1119,4 +1119,72 @@ func TestAskOnPi(t *testing.T) {
 	c, err = e.s.GetConversation(t.Context(), conv.ID)
 	require.NoError(t, err)
 	require.Len(t, c.Turns, 2)
+}
+
+func TestAskAccountAIInstructionsPrompt(t *testing.T) {
+	e := newSkillEnv(t)
+	aiName := "Max Mustermann"
+	instructions := "Role: Freelancer\nPhone: +49 89 123456"
+	_, err := e.s.UpdateAccount(t.Context(), 1, AccountPatch{
+		Name:           &aiName,
+		AIInstructions: &instructions,
+	})
+	require.NoError(t, err)
+
+	conv := e.askConv(t)
+	e.srv.Script(testllm.Turn{Text: []string{"Hello"}})
+	e.ask(t, conv.ID, "Hi")
+
+	reqs := e.srv.Requests()
+	require.NotEmpty(t, reqs)
+	sys := strings.NewReplacer("\\u003c", "<", "\\u003e", ">", "\\u0026", "&", `\"`, `"`).Replace(string(reqs[0].System))
+
+	assert.Contains(t, sys, "User's configured email accounts and sender profiles:")
+	assert.Contains(t, sys, `<sender_profile account_id="1">`)
+	assert.Contains(t, sys, "<account_instructions>")
+	assert.Contains(t, sys, "Role: Freelancer")
+	assert.Contains(t, sys, "Phone: +49 89 123456")
+}
+
+func TestAskGetAccountProfile(t *testing.T) {
+	e := newSkillEnv(t)
+	aiName := "Max Mustermann"
+	instructions := "Role: Freelancer\nPhone: +49 89 123456"
+	_, err := e.s.UpdateAccount(t.Context(), 1, AccountPatch{
+		Name:           &aiName,
+		AIInstructions: &instructions,
+	})
+	require.NoError(t, err)
+
+	conv := e.askConv(t)
+	e.srv.Script(testllm.Turn{Calls: []testllm.Call{{Name: "get_account_profile", Args: `{"account_id":1}`}}},
+		testllm.Turn{Text: []string{"Got the profile"}})
+	evs := e.ask(t, conv.ID, "Get sender facts for account 1")
+	require.Equal(t, "done", evs[len(evs)-1].Kind)
+
+	rs := witResults(evs, "get_account_profile")
+	require.Len(t, rs, 1)
+	var m map[string]any
+	require.NoError(t, json.Unmarshal(rs[0].Result.Output, &m))
+	assert.Equal(t, float64(1), m["account_id"])
+	assert.Equal(t, "Max Mustermann", m["name"])
+	assert.Equal(t, instructions, m["instructions"])
+}
+
+func TestWitPromptAndToolSenderNamePriority(t *testing.T) {
+	e := newSkillEnv(t)
+	conv := e.askConv(t)
+	e.srv.Script(testllm.Turn{Text: []string{"Hello"}})
+	evs := e.ask(t, conv.ID, "Hi")
+	require.Equal(t, "done", evs[len(evs)-1].Kind)
+
+	reqs := e.srv.Requests()
+	require.NotEmpty(t, reqs)
+	sys := string(reqs[0].System)
+	assert.Contains(t, sys, "prioritize explicit sender names in instructions over the account name")
+	assert.Contains(t, sys, "if neither is provided, do not invent a name or adopt third-party names")
+
+	toolsStr := string(reqs[0].Tools)
+	assert.Contains(t, toolsStr, "get_account_profile")
+	assert.Contains(t, toolsStr, "Explicit sender names in instructions take priority over the account name")
 }

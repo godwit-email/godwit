@@ -241,3 +241,46 @@ func TestUpdateAccountIcon(t *testing.T) {
 	_, err = s.AccountIcon(ctx, acc.ID)
 	require.ErrorIs(t, err, core.ErrAccountNotFound, "the image goes with it")
 }
+
+func TestAccountAIInstructions(t *testing.T) {
+	keyring.MockInit()
+	im, smtpAddr := servers(t)
+	dir := t.TempDir()
+	s, err := core.New(ctx, core.Options{DataDir: dir})
+	require.NoError(t, err)
+	defer s.Close()
+	acc, err := s.AddAccount(ctx, input(t, im.Addr, smtpAddr, "secret"))
+	require.NoError(t, err)
+	assert.Empty(t, acc.AIInstructions)
+
+	instructions := "Name: Dr. Max Mustermann\nPhone: +49 89 123456\nTone: Professional and concise."
+	updated, err := s.UpdateAccount(ctx, acc.ID, core.AccountPatch{
+		AIInstructions: &instructions,
+	})
+	require.NoError(t, err)
+	assert.Equal(t, instructions, updated.AIInstructions)
+
+	list, err := s.ListAccounts(ctx)
+	require.NoError(t, err)
+	require.Len(t, list, 1)
+	assert.Equal(t, instructions, list[0].AIInstructions)
+
+	// Over limit error for instructions
+	tooLong := strings.Repeat("A", core.MaxAIInstructions+1)
+	_, err = s.UpdateAccount(ctx, acc.ID, core.AccountPatch{AIInstructions: &tooLong})
+	require.ErrorIs(t, err, core.ErrAIInstructionsTooLong)
+
+	// Exactly max length works
+	exactMax := strings.Repeat("A", core.MaxAIInstructions)
+	atLimit, err := s.UpdateAccount(ctx, acc.ID, core.AccountPatch{AIInstructions: &exactMax})
+	require.NoError(t, err)
+	assert.Equal(t, exactMax, atLimit.AIInstructions)
+
+	// Clear instructions
+	empty := "   "
+	cleared, err := s.UpdateAccount(ctx, acc.ID, core.AccountPatch{
+		AIInstructions: &empty,
+	})
+	require.NoError(t, err)
+	assert.Empty(t, cleared.AIInstructions)
+}

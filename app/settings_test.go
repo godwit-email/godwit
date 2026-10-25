@@ -176,6 +176,62 @@ func TestSettingsAccountIcon(t *testing.T) {
 	})
 }
 
+func TestSettingsAccountAIInstructions(t *testing.T) {
+	h, acc := withAccount(t)
+	p := h.openSettings(accountRoute(acc.ID))
+	h.see("AI 设定与事实信息")
+	h.see("0 / 2000")
+
+	f := p.forms[acc.ID]
+	f.aiInstructions = "Phone: +49 89 123456"
+	p.edited(acc.ID, f, 2)
+	h.advance(600 * time.Millisecond)
+
+	h.until("ai instructions saved", func() bool {
+		got := h.account(acc.ID)
+		return got.AIInstructions == "Phone: +49 89 123456"
+	})
+}
+
+func TestSettingsAccountAIInstructionsInvalidNotSaved(t *testing.T) {
+	h, acc := withAccount(t)
+	p := h.openSettings(accountRoute(acc.ID))
+
+	f := p.forms[acc.ID]
+	tooLong := strings.Repeat("A", core.MaxAIInstructions+1)
+	f.aiInstructions = tooLong
+	p.edited(acc.ID, f, 2)
+	h.advance(600 * time.Millisecond)
+	h.drain()
+
+	// Should not have been saved because it exceeds MaxAIInstructions.
+	got := h.account(acc.ID)
+	if got.AIInstructions != "" {
+		t.Fatalf("invalid text was saved: length = %d", len(got.AIInstructions))
+	}
+	// Field preserves what user typed so they can trim it.
+	if f.aiInstructions != tooLong {
+		t.Fatalf("field was prematurely reverted: %q", f.aiInstructions)
+	}
+}
+
+func TestSettingsAccountNavigateFlushesPending(t *testing.T) {
+	h, acc := withAccount(t)
+	p := h.openSettings(accountRoute(acc.ID))
+
+	f := p.forms[acc.ID]
+	f.aiInstructions = "Saved on navigate"
+	p.edited(acc.ID, f, 2)
+	// User navigates away before 600 ms debounce timer expires
+	h.advance(100 * time.Millisecond)
+	h.app.navigate(Route{Page: PageSettings, Settings: "general"})
+
+	h.until("ai instructions saved on navigation", func() bool {
+		got := h.account(acc.ID)
+		return got.AIInstructions == "Saved on navigate"
+	})
+}
+
 func TestSettingsAccountCustomIconUpload(t *testing.T) {
 	h, acc := withAccount(t)
 	p := h.openSettings(accountRoute(acc.ID))
