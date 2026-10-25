@@ -2394,5 +2394,44 @@
   "settings_account_icon_default": "Use default",
   "settings_account_icon_symbols": "Icons",
   "settings_account_icon_brands": "Logos",
-  "error_account_icon": "An account icon must be a PNG, JPEG, GIF, WebP or SVG image of at most 5 MB."
+  "error_account_icon": "An account icon must be a PNG, JPEG, GIF, WebP or SVG image of at most 5 MB.",
+  "wit_tool_search_mail": "Search mail",
+  "wit_tool_get_message": "Read a message",
+  "wit_tool_get_thread": "Read a thread",
+  "wit_tool_read_attachment": "Read an attachment",
+  "wit_tool_list_skills": "List skills",
+  "wit_tool_use_skill": "Use a skill",
+  "wit_tool_read_skill_file": "Read a skill file",
+  "wit_tools_search_mail": "{arg1, plural, one {Searched mail {arg1, number, ::group-off} time} other {Searched mail {arg1, number, ::group-off} times}}",
+  "@wit_tools_search_mail": {
+    "placeholders": {
+      "arg1": {
+        "type": "int"
+      }
+    }
+  },
+  "wit_tools_get_message": "{arg1, plural, one {Read {arg1, number, ::group-off} message} other {Read {arg1, number, ::group-off} messages}}",
+  "@wit_tools_get_message": {
+    "placeholders": {
+      "arg1": {
+        "type": "int"
+      }
+    }
+  },
+  "wit_tools_get_thread": "{arg1, plural, one {Read {arg1, number, ::group-off} thread} other {Read {arg1, number, ::group-off} threads}}",
+  "@wit_tools_get_thread": {
+    "placeholders": {
+      "arg1": {
+        "type": "int"
+      }
+    }
+  },
+  "wit_tools_read_attachment": "{arg1, plural, one {Read {arg1, number, ::group-off} attachment} other {Read {arg1, number, ::group-off} attachments}}",
+  "@wit_tools_read_attachment": {
+    "placeholders": {
+      "arg1": {
+        "type": "int"
+      }
+    }
+  }
 }

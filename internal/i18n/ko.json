@@ -1193,5 +1193,16 @@
   "settings_account_icon_default": "기본값 사용",
   "settings_account_icon_symbols": "아이콘",
   "settings_account_icon_brands": "로고",
-  "error_account_icon": "계정 아이콘은 5MB 이하의 PNG, JPEG, GIF, WebP 또는 SVG 이미지여야 합니다."
+  "error_account_icon": "계정 아이콘은 5MB 이하의 PNG, JPEG, GIF, WebP 또는 SVG 이미지여야 합니다.",
+  "wit_tool_search_mail": "메일 검색",
+  "wit_tool_get_message": "메일 읽기",
+  "wit_tool_get_thread": "스레드 읽기",
+  "wit_tool_read_attachment": "첨부 파일 읽기",
+  "wit_tool_list_skills": "스킬 목록 보기",
+  "wit_tool_use_skill": "스킬 사용",
+  "wit_tool_read_skill_file": "스킬 파일 읽기",
+  "wit_tools_search_mail": "{arg1, plural, other {메일을 {arg1, number, ::group-off}번 검색함}}",
+  "wit_tools_get_message": "{arg1, plural, other {메일 {arg1, number, ::group-off}개 읽음}}",
+  "wit_tools_get_thread": "{arg1, plural, other {스레드 {arg1, number, ::group-off}개 읽음}}",
+  "wit_tools_read_attachment": "{arg1, plural, other {첨부 파일 {arg1, number, ::group-off}개 읽음}}"
 }

@@ -1193,5 +1193,16 @@
   "settings_account_icon_default": "По умолчанию",
   "settings_account_icon_symbols": "Значки",
   "settings_account_icon_brands": "Логотипы",
-  "error_account_icon": "Значок аккаунта должен быть изображением PNG, JPEG, GIF, WebP или SVG размером не более 5 МБ."
+  "error_account_icon": "Значок аккаунта должен быть изображением PNG, JPEG, GIF, WebP или SVG размером не более 5 МБ.",
+  "wit_tool_search_mail": "Поиск в почте",
+  "wit_tool_get_message": "Чтение письма",
+  "wit_tool_get_thread": "Чтение переписки",
+  "wit_tool_read_attachment": "Чтение вложения",
+  "wit_tool_list_skills": "Список навыков",
+  "wit_tool_use_skill": "Использование навыка",
+  "wit_tool_read_skill_file": "Чтение файла навыка",
+  "wit_tools_search_mail": "{arg1, plural, one {{arg1, number, ::group-off} поиск в почте} few {{arg1, number, ::group-off} поиска в почте} many {{arg1, number, ::group-off} поисков в почте} other {{arg1, number, ::group-off} поиска в почте}}",
+  "wit_tools_get_message": "{arg1, plural, one {Прочитано {arg1, number, ::group-off} письмо} few {Прочитано {arg1, number, ::group-off} письма} many {Прочитано {arg1, number, ::group-off} писем} other {Прочитано {arg1, number, ::group-off} письма}}",
+  "wit_tools_get_thread": "{arg1, plural, one {Прочитана {arg1, number, ::group-off} переписка} few {Прочитано {arg1, number, ::group-off} переписки} many {Прочитано {arg1, number, ::group-off} переписок} other {Прочитано {arg1, number, ::group-off} переписки}}",
+  "wit_tools_read_attachment": "{arg1, plural, one {Прочитано {arg1, number, ::group-off} вложение} few {Прочитано {arg1, number, ::group-off} вложения} many {Прочитано {arg1, number, ::group-off} вложений} other {Прочитано {arg1, number, ::group-off} вложения}}"
 }

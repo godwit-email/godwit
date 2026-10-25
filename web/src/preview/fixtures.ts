@@ -15,6 +15,7 @@ import type {
   WitTurn,
   WitTurnCall,
 } from "@/mygo";
+import { stepsOf } from "@/wit/fixtures";
 import themeJson from "./theme.json";
 
 /** Light and dark tokens, as `webui.ThemeOf` emits them. */
@@ -157,18 +158,21 @@ const approval = (p: Partial<Approval> & Pick<Approval, "id" | "run" | "callId" 
   draftEdit: p.tool === "update_draft" || p.tool === "update_selection",
   ...p,
 });
-const turn = (t: Partial<WitTurn> & Pick<WitTurn, "id" | "question" | "runs">): WitTurn => ({
-  command: null,
-  quoted: [],
-  text: "",
-  reasoning: "",
-  calls: [],
-  approvals: [],
-  citations: [],
-  elapsed: 0,
-  canAskAgain: false,
-  ...t,
-});
+const turn = (t: Partial<WitTurn> & Pick<WitTurn, "id" | "question" | "runs">): WitTurn => {
+  const all = {
+    command: null,
+    quoted: [],
+    text: "",
+    reasoning: "",
+    calls: [],
+    approvals: [],
+    citations: [],
+    elapsed: 0,
+    canAskAgain: false,
+    ...t,
+  };
+  return { ...all, steps: t.steps ?? stepsOf(all) };
+};
 const on = (
   c: WitTurnCall["call"],
   result: WitResult | null = null,
@@ -179,7 +183,7 @@ const on = (
   approval: a,
 });
 
-const read = call("c1", "read_message", { id: 41 });
+const read = call("c1", "get_message", { id: 41 });
 const upd1 = call("c2", "update_draft", { html: html(formal) });
 const upd2 = call("c3", "update_draft", { html: html(formal) });
 const done1 = approval({
@@ -304,7 +308,7 @@ const search = call("s1", "search_mail", {
   query: "receipt OR 账单 OR invoice",
   since: "2026-10-01",
 });
-const reads = Array.from({ length: 7 }, (_, i) => call(`s${i + 2}`, "read_message", { id: i }));
+const reads = Array.from({ length: 7 }, (_, i) => call(`s${i + 2}`, "get_message", { id: i }));
 const table = `10 月共找到 4 个订阅扣款：
 
 | 服务 | 金额 | 扣款日 | 来源 |
@@ -357,6 +361,11 @@ export const witConversation = (): WitHistory =>
           ),
         ],
         text: "我起草了一封回复。创建草稿需要你确认：",
+        // what it said, then the call it waits on
+        steps: [
+          { kind: "text", text: "我起草了一封回复。创建草稿需要你确认：", call: 0 },
+          { kind: "call", text: "", call: 0 },
+        ],
       }),
     ],
   });

@@ -25,6 +25,9 @@ type Turn struct {
 	// tool calls in order, each with its result and its approval, if any.
 	Text, Reasoning string
 	Calls           []TurnCall
+	// Steps are the answer in the order it came: each message's reasoning,
+	// its text, then its calls.
+	Steps []TurnStep
 	// Approvals are its runs' approvals that answer none of Calls (a skill's
 	// proposal), in order.
 	Approvals []Approval
@@ -43,6 +46,14 @@ type TurnCall struct {
 	ai.ToolCall
 	Result   *ai.ToolResult
 	Approval *Approval
+}
+
+// TurnStep is a step of a turn's answer: its reasoning or text (Text), or a
+// call (Call, its index in the turn's Calls).
+type TurnStep struct {
+	Kind string // "reasoning", "text" or "call"
+	Text string
+	Call int
 }
 
 // Cited is a message a turn's runs showed the model, as the conversation
@@ -81,7 +92,7 @@ func turnsOf(h *ai.History, runs []runInfo, as []Approval, cs []Citation, canAsk
 	out := []Turn{}
 	for _, ht := range h.Turns() {
 		t := Turn{ID: strconv.FormatInt(ht.Seq, 10), Question: ht.Question.Text, Command: ht.Question.Command, Quoted: []Citation{},
-			Calls: []TurnCall{}, Approvals: []Approval{}, Cited: []Cited{}, Runs: []int64{}, CanAskAgain: canAsk && ht.Question.Command == nil}
+			Calls: []TurnCall{}, Steps: []TurnStep{}, Approvals: []Approval{}, Cited: []Cited{}, Runs: []int64{}, CanAskAgain: canAsk && ht.Question.Command == nil}
 		for _, r := range runs {
 			if r.from < ht.To && r.to > ht.Seq {
 				t.Runs = append(t.Runs, r.id)
@@ -91,12 +102,17 @@ func turnsOf(h *ai.History, runs []runInfo, as []Approval, cs []Citation, canAsk
 		calls := map[string]int{} // call ID -> index in t.Calls
 		for _, m := range ht.Answer {
 			m = expand(m)
+			if strings.TrimSpace(m.Reasoning) != "" {
+				t.Steps = append(t.Steps, TurnStep{Kind: "reasoning", Text: m.Reasoning})
+			}
 			if m.Role != "tool" && strings.TrimSpace(m.Text) != "" {
 				t.Text = join(t.Text, m.Text)
+				t.Steps = append(t.Steps, TurnStep{Kind: "text", Text: m.Text})
 			}
 			t.Reasoning = join(t.Reasoning, m.Reasoning)
 			for _, c := range m.Calls {
 				calls[c.ID] = len(t.Calls)
+				t.Steps = append(t.Steps, TurnStep{Kind: "call", Call: len(t.Calls)})
 				t.Calls = append(t.Calls, TurnCall{ToolCall: c})
 			}
 			for _, r := range m.Results {

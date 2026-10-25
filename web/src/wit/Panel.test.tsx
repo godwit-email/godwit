@@ -145,7 +145,7 @@ describe("Panel", () => {
     unmount();
   });
 
-  it("the panel's running answer says Wit thinks, or writes the body during update_draft, with Stop; Send stays", async () => {
+  it("the panel's running answer says Wit thinks, or writes the body during update_draft; Stop takes Send's place", async () => {
     const user = userEvent.setup();
     const { api, tr, emit } = await setup();
     const stopRun = vi.spyOn(tr, "stop").mockResolvedValue(undefined);
@@ -155,10 +155,7 @@ describe("Panel", () => {
     expect(screen.queryByText("正在写入正文…")).toBeNull();
     emit({ kind: "tool_call", call: { id: "c1", name: "update_draft", args: "{}" } });
     expect(await screen.findByText("正在写入正文…")).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "发送给 Wit" })).toHaveAttribute(
-      "aria-disabled",
-      "true",
-    );
+    expect(screen.queryByRole("button", { name: "发送给 Wit" })).toBeNull();
     await user.click(screen.getByRole("button", { name: "停止" }));
     expect(stopRun).toHaveBeenCalled();
   });
@@ -442,7 +439,7 @@ describe("Panel", () => {
     expect(elapsed(95_000, t)).toBe("1 分 35 秒");
   });
 
-  it("the steps fold into one 思考过程 line that unfolds as a timeline", async () => {
+  it("each step is a line of its own, in order: the reasoning folded once done, each call with its query and senders", async () => {
     const user = userEvent.setup();
     const cite = (n: number, id: number, from: string, callIds: string[]) => ({
       n,
@@ -500,24 +497,19 @@ describe("Panel", () => {
         ],
       }),
     });
-    // one line, folded: what it did
-    const folded = screen.getByRole("button", { name: /思考过程/ });
+    const thought = screen.getByRole("button", { name: "思考过程" });
+    expect(thought).toHaveAttribute("aria-expanded", "false");
+    await user.click(thought);
+    expect(await screen.findByText("先按收据搜")).toBeInTheDocument();
+    const answer = screen
+      .getByText("Two receipts.")
+      .closest("[data-role=assistant]") as HTMLElement;
+    // its calls between its reasoning and its text, each with what it found
+    expect(answer.textContent).toMatch(
+      /思考过程.*搜索邮件receipt OR 账单Acme CloudBob.*read_message.*搜索邮件invoiceAcme Cloud.*Two receipts\./,
+    );
     // and how long it worked: 6.4 s
-    expect(folded).toHaveTextContent(
-      "思考过程 · 6 秒 · 调用了 2 个工具 · search_mail ×2、read_message",
-    );
-    expect(folded).toHaveAttribute("aria-expanded", "false");
-    expect(screen.queryByRole("button", { name: /调用了/ })).toBe(folded); // no line of its own
-    await user.click(folded);
-    const steps = within(await screen.findByRole("list", { name: "思考过程" })).getAllByRole(
-      "listitem",
-    );
-    expect(steps.map((s) => s.textContent)).toEqual([
-      "先按收据搜",
-      "search_mailreceipt OR 账单Acme CloudBob",
-      "read_message",
-      "search_mailinvoiceAcme Cloud",
-    ]);
+    expect(within(answer).getByText("6 秒")).toBeInTheDocument();
   });
 
   const turn = hist({
@@ -874,7 +866,7 @@ describe("Panel", () => {
     expect(api.ask).not.toHaveBeenCalled();
   });
 
-  it("lists only finished calls: a pending approval or a running edit has its own card or row", async () => {
+  it("a pending approval is its call's card, a call its own line, a running edit the working line", async () => {
     const { emit } = await setup({
       history: hist({
         ...empty,
@@ -922,7 +914,8 @@ describe("Panel", () => {
         ],
       }),
     });
-    expect(screen.queryByText(/调用了/)).toBeNull();
+    expect(screen.queryByTitle("create_draft")).toBeNull();
+    expect(screen.getByText("Wit 想要：创建草稿")).toBeInTheDocument();
     await userEvent.setup().type(input(), "go{Enter}");
     emit({ kind: "tool_call", call: { id: "r1", name: "read_message", args: "{}" } });
     emit({
@@ -930,11 +923,11 @@ describe("Panel", () => {
       result: { callId: "r1", name: "read_message", output: "1", error: "" },
     });
     emit({ kind: "tool_call", call: { id: "u1", name: "update_draft", args: "{}" } });
-    expect(await screen.findByText("调用了 read_message")).toBeInTheDocument();
+    expect(await screen.findByTitle("read_message")).toBeInTheDocument();
     expect(screen.getByText("正在写入正文…")).toBeInTheDocument();
   });
 
-  it("folds tool calls, shows core's citation numbers, notes suspect ones", async () => {
+  it("lines up tool calls, one tool's in a row as one line, shows core's citation numbers, notes suspect ones", async () => {
     const user = userEvent.setup();
     const cite = (n: number, id: number, suspect = false) => ({
       n,
@@ -988,10 +981,12 @@ describe("Panel", () => {
         ],
       }),
     });
-    // the panel names the tools on a trace line, folded
-    const tools = screen.getByText("调用了 search · read").closest("button");
-    expect(tools?.querySelector("[data-slot=trace-line]")).toBeInTheDocument();
-    expect(tools).toHaveAttribute("aria-expanded", "false");
+    // the two searches one line that unfolds into each, the read a line of its own
+    const searches = screen.getByRole("button", { name: "search ×2" });
+    expect(searches).toHaveAttribute("aria-expanded", "false");
+    expect(screen.getAllByTitle(/^(search|read)$/).map((l) => l.textContent)).toEqual(["read"]);
+    await user.click(searches);
+    expect(await screen.findAllByTitle("search")).toHaveLength(2);
     expect(screen.getByText("Q").closest("[data-slot=bubble]")).toHaveAttribute(
       "data-variant",
       "secondary",
@@ -1013,6 +1008,42 @@ describe("Panel", () => {
     expect(
       screen.getAllByText("来源 [2] 中包含疑似指令。它只被当作邮件内容处理，没有执行。"),
     ).toHaveLength(2);
+  });
+
+  it("a run of one tool's calls reads as its count, in the tool's words", async () => {
+    const ids = ["g1", "g2", "g3"];
+    await setup({
+      history: hist({
+        ...empty,
+        messages: [
+          {
+            id: "q0",
+            role: "user",
+            text: "Q",
+            reasoning: "",
+            quoted: [],
+            calls: [],
+            results: [],
+            citations: [],
+            runs: [7],
+            elapsed: 0,
+          },
+          {
+            id: "a1",
+            role: "assistant",
+            text: "A",
+            reasoning: "",
+            quoted: [],
+            calls: ids.map((id) => ({ id, name: "get_message", args: "{}" })),
+            results: ids.map((callId) => ({ callId, name: "get_message", output: "1", error: "" })),
+            citations: [],
+            runs: [7],
+            elapsed: 0,
+          },
+        ],
+      }),
+    });
+    expect(screen.getByRole("button", { name: "读取了 3 封邮件" })).toBeInTheDocument();
   });
 
   it("quotes the suspect text as plain text", async () => {

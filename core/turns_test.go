@@ -201,7 +201,7 @@ func waitKind(t *testing.T, ch <-chan WitEvent, kind string) WitEvent {
 	return WitEvent{}
 }
 
-// A turn joins its answer's text, puts each result on its call, adds up its
+// A turn joins its answer's text, keeps its steps in order, puts each result on its call, adds up its
 // runs' time and cites each message once, as the conversation numbers it.
 func TestTurnsOf(t *testing.T) {
 	state := `[{"role":"user","content":[{"text":"q"}]},
@@ -220,6 +220,7 @@ func TestTurnsOf(t *testing.T) {
 	t0 := got[0]
 	assert.Equal(t, "1", t0.ID)
 	assert.Equal(t, "a\n\nb", t0.Text)
+	assert.Equal(t, []TurnStep{{Kind: "text", Text: "a"}, {Kind: "call"}, {Kind: "text", Text: "b"}}, t0.Steps, "text, its call, then the text after it")
 	assert.Equal(t, []int64{1}, t0.Runs)
 	assert.Equal(t, 6400*time.Millisecond, t0.Elapsed)
 	require.Len(t, t0.Calls, 1)

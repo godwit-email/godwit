@@ -1193,5 +1193,16 @@
   "settings_account_icon_default": "使用默认",
   "settings_account_icon_symbols": "图标",
   "settings_account_icon_brands": "Logo",
-  "error_account_icon": "账户图标须为不超过 5 MB 的 PNG、JPEG、GIF、WebP 或 SVG 图片。"
+  "error_account_icon": "账户图标须为不超过 5 MB 的 PNG、JPEG、GIF、WebP 或 SVG 图片。",
+  "wit_tool_search_mail": "搜索邮件",
+  "wit_tool_get_message": "读取邮件",
+  "wit_tool_get_thread": "读取会话",
+  "wit_tool_read_attachment": "读取附件",
+  "wit_tool_list_skills": "查看技能",
+  "wit_tool_use_skill": "使用技能",
+  "wit_tool_read_skill_file": "读取技能文件",
+  "wit_tools_search_mail": "{arg1, plural, other {搜索了 {arg1, number, ::group-off} 次邮件}}",
+  "wit_tools_get_message": "{arg1, plural, other {读取了 {arg1, number, ::group-off} 封邮件}}",
+  "wit_tools_get_thread": "{arg1, plural, other {读取了 {arg1, number, ::group-off} 个会话}}",
+  "wit_tools_read_attachment": "{arg1, plural, other {读取了 {arg1, number, ::group-off} 个附件}}"
 }

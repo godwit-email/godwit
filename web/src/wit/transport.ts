@@ -177,8 +177,8 @@ export const questionId = (turn: string) => `q${turn}`;
 export const answerId = (turn: string) => `a${turn}`;
 
 /**
- * The history as messages: each turn's question, then its answer with its calls (their results,
- * or the approval each waits on, as core placed it) and the approvals that answer no call of it (a
+ * The history as messages: each turn's question, then its answer's steps in order (its calls with
+ * their results, or the approval each waits on, as core placed it) and the approvals that answer no call of it (a
  * skill's: core writes no call for it), each a tool part of its own (partId). label names a
  * command's question (a skill run on the draft).
  */
@@ -193,20 +193,22 @@ export function historyToMessages(
       Object.assign(metadata, { quoted: t.quoted.map((h) => h.id), hits: t.quoted });
     const text = t.command ? label(t.command) : t.question;
     out.push({ id: questionId(t.id), role: "user", metadata, parts: [{ type: "text", text }] });
-    const parts: Part[] = t.reasoning
-      ? [{ type: "reasoning", text: t.reasoning, state: "done" }]
-      : [];
+    const parts: Part[] = [];
     const as: Approval[] = [];
-    for (const c of t.calls) {
-      if (c.approval) as.push(c.approval);
-      parts.push(toolPart(c.call, c.result ?? undefined, c.approval ?? undefined));
+    for (const s of t.steps) {
+      if (s.kind === "reasoning") parts.push({ type: "reasoning", text: s.text, state: "done" });
+      else if (s.kind === "text") parts.push({ type: "text", text: s.text, state: "done" });
+      else {
+        const c = t.calls[s.call];
+        if (c.approval) as.push(c.approval);
+        parts.push(toolPart(c.call, c.result ?? undefined, c.approval ?? undefined));
+      }
     }
     for (const a of t.approvals) {
       as.push(a);
       parts.push(toolPart({ id: partId(a), name: a.tool, args: "" }, undefined, a));
     }
     if (as.length > 0) parts.push({ type: "data-approvals", data: as });
-    if (t.text) parts.push({ type: "text", text: t.text, state: "done" });
     if (t.citations.length > 0) parts.push({ type: "data-citations", data: t.citations });
     if (parts.length === 0) continue;
     const elapsed = t.elapsed > 0 ? { elapsed: t.elapsed } : undefined;
@@ -217,13 +219,17 @@ export function historyToMessages(
 
 /**
  * The chunks that rebuild message m (the answer a resumed run goes on with); its calls go in seen.
- * Its last text part stays open: the run's deltas go on in it.
+ * Its last text part stays open when nothing came after it: the run's deltas go on in it.
  */
 function replay(m: WitUIMessage, seen: Set<string>): Chunk[] {
   const lastText = m.parts.findLastIndex((p) => p.type === "text");
+  const lastStep = m.parts.findLastIndex(
+    (p) => p.type === "text" || p.type === "reasoning" || p.type === "dynamic-tool",
+  );
+  const open = lastText === lastStep ? lastText : -1;
   return m.parts.flatMap((p, i): Chunk[] => {
     if (p.type === "text") {
-      if (i === lastText) {
+      if (i === open) {
         seen.add(TEXT);
         return [
           { type: "text-start", id: TEXT },

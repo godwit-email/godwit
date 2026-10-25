@@ -1193,5 +1193,16 @@
   "settings_account_icon_default": "Usa predefinita",
   "settings_account_icon_symbols": "Icone",
   "settings_account_icon_brands": "Loghi",
-  "error_account_icon": "L’icona dell’account deve essere un’immagine PNG, JPEG, GIF, WebP o SVG di massimo 5 MB."
+  "error_account_icon": "L’icona dell’account deve essere un’immagine PNG, JPEG, GIF, WebP o SVG di massimo 5 MB.",
+  "wit_tool_search_mail": "Cerca nella posta",
+  "wit_tool_get_message": "Leggi un messaggio",
+  "wit_tool_get_thread": "Leggi una conversazione",
+  "wit_tool_read_attachment": "Leggi un allegato",
+  "wit_tool_list_skills": "Elenca le skill",
+  "wit_tool_use_skill": "Usa una skill",
+  "wit_tool_read_skill_file": "Leggi un file della skill",
+  "wit_tools_search_mail": "{arg1, plural, one {{arg1, number, ::group-off} ricerca nella posta} many {{arg1, number, ::group-off} ricerche nella posta} other {{arg1, number, ::group-off} ricerche nella posta}}",
+  "wit_tools_get_message": "{arg1, plural, one {{arg1, number, ::group-off} messaggio letto} many {{arg1, number, ::group-off} messaggi letti} other {{arg1, number, ::group-off} messaggi letti}}",
+  "wit_tools_get_thread": "{arg1, plural, one {{arg1, number, ::group-off} conversazione letta} many {{arg1, number, ::group-off} conversazioni lette} other {{arg1, number, ::group-off} conversazioni lette}}",
+  "wit_tools_read_attachment": "{arg1, plural, one {{arg1, number, ::group-off} allegato letto} many {{arg1, number, ::group-off} allegati letti} other {{arg1, number, ::group-off} allegati letti}}"
 }

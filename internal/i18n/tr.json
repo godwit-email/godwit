@@ -1193,5 +1193,16 @@
   "settings_account_icon_default": "Varsayılanı kullan",
   "settings_account_icon_symbols": "Simgeler",
   "settings_account_icon_brands": "Logolar",
-  "error_account_icon": "Hesap simgesi en fazla 5 MB boyutunda PNG, JPEG, GIF, WebP veya SVG görseli olmalıdır."
+  "error_account_icon": "Hesap simgesi en fazla 5 MB boyutunda PNG, JPEG, GIF, WebP veya SVG görseli olmalıdır.",
+  "wit_tool_search_mail": "Postalarda ara",
+  "wit_tool_get_message": "İleti oku",
+  "wit_tool_get_thread": "Yazışmayı oku",
+  "wit_tool_read_attachment": "Eki oku",
+  "wit_tool_list_skills": "Becerileri listele",
+  "wit_tool_use_skill": "Beceri kullan",
+  "wit_tool_read_skill_file": "Beceri dosyasını oku",
+  "wit_tools_search_mail": "{arg1, plural, one {Postalarda {arg1, number, ::group-off} kez arandı} other {Postalarda {arg1, number, ::group-off} kez arandı}}",
+  "wit_tools_get_message": "{arg1, plural, one {{arg1, number, ::group-off} ileti okundu} other {{arg1, number, ::group-off} ileti okundu}}",
+  "wit_tools_get_thread": "{arg1, plural, one {{arg1, number, ::group-off} yazışma okundu} other {{arg1, number, ::group-off} yazışma okundu}}",
+  "wit_tools_read_attachment": "{arg1, plural, one {{arg1, number, ::group-off} ek okundu} other {{arg1, number, ::group-off} ek okundu}}"
 }

@@ -9,6 +9,7 @@ import type {
   WitTurn,
   WitTurnCall,
 } from "@/mygo";
+import { stepsOf } from "./fixtures";
 import { historyToMessages, toChunks, WitTransport, type WitUIMessage } from "./transport";
 
 vi.mock("@/mygo", () => ({ ComposePage: {}, events: { wit: { on: () => () => {} } } }));
@@ -45,20 +46,23 @@ const approval = (a: Partial<Approval>): Approval => ({
   ...a,
 });
 
-const turn = (t: Partial<WitTurn> & Pick<WitTurn, "id">): WitTurn => ({
-  question: "Q",
-  command: null,
-  quoted: [],
-  text: "",
-  reasoning: "",
-  calls: [],
-  approvals: [],
-  citations: [],
-  runs: [1],
-  elapsed: 0,
-  canAskAgain: false,
-  ...t,
-});
+const turn = (t: Partial<WitTurn> & Pick<WitTurn, "id">): WitTurn => {
+  const all = {
+    question: "Q",
+    command: null,
+    quoted: [],
+    text: "",
+    reasoning: "",
+    calls: [],
+    approvals: [],
+    citations: [],
+    runs: [1],
+    elapsed: 0,
+    canAskAgain: false,
+    ...t,
+  };
+  return { ...all, steps: t.steps ?? stepsOf(all) };
+};
 
 const on = (
   call: WitCall,
@@ -372,6 +376,25 @@ describe("historyToMessages", () => {
     expect(ms.map((m) => m.id)).toEqual(["q1", "a1", "q3", "a3", "q5"]);
     expect(ms[1].metadata).toEqual({ elapsed: 6400 });
     expect(ms[3].metadata).toBeUndefined();
+  });
+
+  it("an answer's parts follow its steps: text, a call, then the text after it", () => {
+    const c = { id: "c1", name: "search_mail", args: "{}" };
+    const [, a] = historyToMessages(
+      hist([
+        turn({
+          id: "1",
+          calls: [on(c, { callId: "c1", name: "search_mail", output: "[]", error: "" })],
+          steps: [
+            { kind: "reasoning", text: "r", call: 0 },
+            { kind: "text", text: "a", call: 0 },
+            { kind: "call", text: "", call: 0 },
+            { kind: "text", text: "b", call: 0 },
+          ],
+        }),
+      ]),
+    );
+    expect(a.parts.map((p) => p.type)).toEqual(["reasoning", "text", "dynamic-tool", "text"]);
   });
 
   it("a question keeps the mail it quoted", () => {

@@ -45,6 +45,8 @@ type WitTurn struct {
 	Reasoning string `json:"reasoning"`
 	// Calls are the answer's tool calls, each with its result and approval.
 	Calls []WitTurnCall `json:"calls"`
+	// Steps are the answer in the order it came (core.TurnStep).
+	Steps []WitStep `json:"steps"`
 	// Approvals are the turn's approvals that answer none of Calls (a skill's edit).
 	Approvals []Approval `json:"approvals"`
 	// Citations are the mail its runs showed the model, by their calls or their context.
@@ -55,6 +57,14 @@ type WitTurn struct {
 	Elapsed int64 `json:"elapsed"`
 	// CanAskAgain: Ask's rewind takes it now.
 	CanAskAgain bool `json:"canAskAgain"`
+}
+
+// WitStep is a step of an answer: its reasoning or text, or a call (Call, its
+// index in Calls).
+type WitStep struct {
+	Kind string `json:"kind"` // "reasoning", "text" or "call"
+	Text string `json:"text"`
+	Call int    `json:"call"`
 }
 
 // WitCommand is a command's skill and, for translate-draft, its language tag.
@@ -76,7 +86,7 @@ func witTurns(c core.Conversation) []WitTurn {
 	out := make([]WitTurn, 0, len(c.Turns))
 	for _, t := range c.Turns {
 		w := WitTurn{ID: t.ID, Question: t.Question, Quoted: []MailHit{}, Text: t.Text, Reasoning: t.Reasoning, Calls: []WitTurnCall{},
-			Approvals: []Approval{}, Citations: []Citation{}, Runs: append([]int64{}, t.Runs...), Elapsed: t.Elapsed.Milliseconds(), CanAskAgain: t.CanAskAgain}
+			Steps: make([]WitStep, 0, len(t.Steps)), Approvals: []Approval{}, Citations: []Citation{}, Runs: append([]int64{}, t.Runs...), Elapsed: t.Elapsed.Milliseconds(), CanAskAgain: t.CanAskAgain}
 		if t.Command != nil {
 			w.Command = &WitCommand{Skill: t.Command.Skill, Lang: t.Command.Lang}
 		}
@@ -95,6 +105,9 @@ func witTurns(c core.Conversation) []WitTurn {
 				tc.Approval = &a
 			}
 			w.Calls = append(w.Calls, tc)
+		}
+		for _, s := range t.Steps {
+			w.Steps = append(w.Steps, WitStep{Kind: s.Kind, Text: s.Text, Call: s.Call})
 		}
 		for _, a := range t.Approvals {
 			w.Approvals = append(w.Approvals, approvalOf(a))

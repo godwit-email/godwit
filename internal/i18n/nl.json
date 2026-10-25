@@ -1193,5 +1193,16 @@
   "settings_account_icon_default": "Standaard gebruiken",
   "settings_account_icon_symbols": "Pictogrammen",
   "settings_account_icon_brands": "Logo’s",
-  "error_account_icon": "Een accountpictogram moet een PNG-, JPEG-, GIF-, WebP- of SVG-afbeelding van maximaal 5 MB zijn."
+  "error_account_icon": "Een accountpictogram moet een PNG-, JPEG-, GIF-, WebP- of SVG-afbeelding van maximaal 5 MB zijn.",
+  "wit_tool_search_mail": "E-mail doorzoeken",
+  "wit_tool_get_message": "Bericht lezen",
+  "wit_tool_get_thread": "Gesprek lezen",
+  "wit_tool_read_attachment": "Bijlage lezen",
+  "wit_tool_list_skills": "Skills tonen",
+  "wit_tool_use_skill": "Skill gebruiken",
+  "wit_tool_read_skill_file": "Skillbestand lezen",
+  "wit_tools_search_mail": "{arg1, plural, one {{arg1, number, ::group-off} keer e-mail doorzocht} other {{arg1, number, ::group-off} keer e-mail doorzocht}}",
+  "wit_tools_get_message": "{arg1, plural, one {{arg1, number, ::group-off} bericht gelezen} other {{arg1, number, ::group-off} berichten gelezen}}",
+  "wit_tools_get_thread": "{arg1, plural, one {{arg1, number, ::group-off} gesprek gelezen} other {{arg1, number, ::group-off} gesprekken gelezen}}",
+  "wit_tools_read_attachment": "{arg1, plural, one {{arg1, number, ::group-off} bijlage gelezen} other {{arg1, number, ::group-off} bijlagen gelezen}}"
 }
