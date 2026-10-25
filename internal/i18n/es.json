@@ -1212,7 +1212,9 @@
   "wit_quote_recent": "Correo reciente",
   "wit_cmd_skills": "Habilidades",
   "wit_cmd_session": "Conversación",
-  "wit_cmd_compact": "Compactar la conversación",
+  "wit_cmd_compact": "Compactar",
   "wit_cmd_none": "No hay comandos que coincidan",
-  "wit_cmd_menu": "Comandos"
+  "wit_cmd_menu": "Comandos",
+  "wit_cmd_compact_hint": "Compactar el contexto de esta conversación ({arg1} % usado)",
+  "wit_cmd_model": "Modelo"
 }

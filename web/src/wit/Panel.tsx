@@ -5,10 +5,12 @@ import {
   RiArrowDownLine,
   RiArrowDownSLine,
   RiArrowUpLine,
+  RiBox3Line,
   RiBrainLine,
   RiCheckboxCircleLine,
   RiCloseCircleLine,
   RiDraftLine,
+  RiEditBoxLine,
   RiEditLine,
   RiEqualizerLine,
   RiErrorWarningLine,
@@ -16,6 +18,7 @@ import {
   RiFileCopyLine,
   RiGlobalLine,
   RiLoaderLine,
+  RiMagicLine,
   RiMailLine,
   RiRefreshLine,
   RiSearchLine,
@@ -1322,7 +1325,6 @@ export function Panel({
   const [slash, setSlash] = useState<string>();
   const commandKeys = useRef<PickerKeys>(null);
   const [skillList, setSkillList] = useState<{ name: string; description: string }[]>();
-  const [modelsOpen, setModelsOpen] = useState(false);
   const full = quoted.length >= MAX_QUOTED;
   const running = chat.status === "submitted" || chat.status === "streaming";
   const { resumeStream } = chat;
@@ -1331,11 +1333,16 @@ export function Panel({
     () => translateMenu(info?.languages ?? [], locale),
     [info?.languages, locale],
   );
-  // the skills, read once the / menu first opens
+  // the skills, read once the / menu first opens; the models, each time it opens
   useEffect(() => {
     if (slash === undefined || skillList || !skills) return;
     skills().then(setSkillList, () => setSkillList([]));
   }, [slash, skillList, skills]);
+  const slashOpen = slash !== undefined;
+  // biome-ignore lint/correctness/useExhaustiveDependencies: on opening only
+  useEffect(() => {
+    if (slashOpen && models) models.list().then(setChoices, () => {});
+  }, [slashOpen]);
 
   useEffect(() => {
     if (!history.running) return;
@@ -1736,7 +1743,8 @@ export function Panel({
     </TraceLine>
   );
   // The / menu's commands: the skills a question may name, 调整 / 翻译 (the compose window), and
-  // what the conversation can do. A skill is put in the input to ask with; the rest run at once.
+  // what the conversation can do, each with what it stands at: 压缩 its usage, 思考强度 and 模型
+  // their choices, opened in the menu. A skill is put in the input to ask with; the rest run at once.
   const session = t("wit.cmd.session");
   const now = (f: () => void) => () => {
     setSlash(undefined);
@@ -1747,6 +1755,7 @@ export function Panel({
     ...(skillList ?? []).map((sk) => ({
       key: `skill:${sk.name}`,
       group: t("wit.cmd.skills"),
+      icon: <RiMagicLine />,
       label: `/${sk.name}`,
       hint: sk.description,
       run: () => {
@@ -1758,6 +1767,7 @@ export function Panel({
       ? info.skills.map((sk) => ({
           key: `adjust:${sk.id}`,
           group: t("wit.compose.adjust"),
+          icon: <RiEqualizerLine />,
           label: sk.label,
           hint: sk.hint,
           run: now(() => ask(sk.label, { skill: sk.id, lang: "" })),
@@ -1767,20 +1777,51 @@ export function Panel({
       ? menuLanguages.map((l) => ({
           key: `translate:${l.tag}`,
           group: t("wit.compose.translate"),
+          icon: <RiTranslate2 />,
           label: t("wit.compose.translate_to", l.label),
           run: now(() =>
             ask(t("wit.compose.translate_to", l.label), { skill: "translate-draft", lang: l.tag }),
           ),
         }))
       : []),
-    ...(onNew ? [{ key: "new", group: session, label: t("ask.new"), run: now(onNew) }] : []),
+    ...(onNew
+      ? [
+          {
+            key: "new",
+            group: session,
+            icon: <RiEditBoxLine />,
+            label: t("ask.new"),
+            run: now(onNew),
+          },
+        ]
+      : []),
     ...(transport.compacts
       ? [
           {
             key: "compact",
             group: session,
+            icon: <UsageRing value={usage.history} />,
             label: t("wit.cmd.compact"),
+            hint: t("wit.cmd.compact_hint", Math.min(100, Math.round(usage.history * 100))),
             run: now(() => !compacting && !running && compact()),
+          },
+        ]
+      : []),
+    ...(effort
+      ? [
+          {
+            key: "effort",
+            group: session,
+            icon: <RiBrainLine />,
+            label: t("wit.effort"),
+            value: t(`wit.effort.${effort.value || "default"}`),
+            options: (["", "low", "medium", "high"] as const).map((v) => ({
+              key: `effort:${v}`,
+              group: session,
+              label: t(`wit.effort.${v || "default"}`),
+              checked: effort.value === v,
+              run: now(() => effort.pick(v)),
+            })),
           },
         ]
       : []),
@@ -1789,11 +1830,42 @@ export function Panel({
           {
             key: "model",
             group: session,
-            label: t("wit.model.pick"),
-            run: now(() => {
-              models.list().then(setChoices, fail);
-              setModelsOpen(true);
-            }),
+            icon: <RiBox3Line />,
+            label: t("wit.cmd.model"),
+            value: chosen,
+            options: [
+              ...(listedDefault
+                ? []
+                : [
+                    {
+                      key: "model:",
+                      group: session,
+                      label: t("wit.model.default", model),
+                      checked: !models.ref,
+                      run: now(() => models.pick("")),
+                    },
+                  ]),
+              ...(choices ?? []).map((c) => ({
+                key: `model:${c.ref}`,
+                group: session,
+                label: c.name,
+                hint: c.service,
+                checked: (models.ref || listedDefault?.ref) === c.ref,
+                // picking the default follows it again (no model of its own)
+                run: now(() => models.pick(c.ref === listedDefault?.ref ? "" : c.ref)),
+              })),
+              ...(onModels
+                ? [
+                    {
+                      key: "model:settings",
+                      group: session,
+                      icon: <RiSettings3Line />,
+                      label: t("wit.model"),
+                      run: now(onModels),
+                    },
+                  ]
+                : []),
+            ],
           },
         ]
       : []),
@@ -2074,10 +2146,7 @@ export function Panel({
         )}
         {model && models ? (
           <DropdownMenu
-            // open from its chip, or from the / menu's 选择模型
-            open={modelsOpen}
             onOpenChange={(open) => {
-              setModelsOpen(open);
               if (open) models.list().then(setChoices, fail);
             }}
           >

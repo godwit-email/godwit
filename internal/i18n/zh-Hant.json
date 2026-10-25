@@ -1212,7 +1212,9 @@
   "wit_quote_recent": "最近的郵件",
   "wit_cmd_skills": "技能",
   "wit_cmd_session": "對話",
-  "wit_cmd_compact": "壓縮對話",
+  "wit_cmd_compact": "壓縮",
   "wit_cmd_none": "沒有符合的指令",
-  "wit_cmd_menu": "指令"
+  "wit_cmd_menu": "指令",
+  "wit_cmd_compact_hint": "壓縮此對話的上下文（已使用 {arg1}%）",
+  "wit_cmd_model": "模型"
 }

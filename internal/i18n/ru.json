@@ -1212,7 +1212,9 @@
   "wit_quote_recent": "Недавние письма",
   "wit_cmd_skills": "Навыки",
   "wit_cmd_session": "Беседа",
-  "wit_cmd_compact": "Сжать беседу",
+  "wit_cmd_compact": "Сжать",
   "wit_cmd_none": "Нет подходящих команд",
-  "wit_cmd_menu": "Команды"
+  "wit_cmd_menu": "Команды",
+  "wit_cmd_compact_hint": "Сжать контекст этой беседы (занято {arg1}%)",
+  "wit_cmd_model": "Модель"
 }

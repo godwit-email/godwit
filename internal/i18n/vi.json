@@ -1212,7 +1212,9 @@
   "wit_quote_recent": "Thư gần đây",
   "wit_cmd_skills": "Kỹ năng",
   "wit_cmd_session": "Cuộc trò chuyện",
-  "wit_cmd_compact": "Thu gọn cuộc trò chuyện",
+  "wit_cmd_compact": "Thu gọn",
   "wit_cmd_none": "Không có lệnh phù hợp",
-  "wit_cmd_menu": "Lệnh"
+  "wit_cmd_menu": "Lệnh",
+  "wit_cmd_compact_hint": "Thu gọn ngữ cảnh của cuộc trò chuyện này (đã dùng {arg1}%)",
+  "wit_cmd_model": "Mô hình"
 }

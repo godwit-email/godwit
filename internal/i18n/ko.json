@@ -1212,7 +1212,9 @@
   "wit_quote_recent": "최근 메일",
   "wit_cmd_skills": "스킬",
   "wit_cmd_session": "대화",
-  "wit_cmd_compact": "대화 압축",
+  "wit_cmd_compact": "압축",
   "wit_cmd_none": "일치하는 명령이 없습니다",
-  "wit_cmd_menu": "명령"
+  "wit_cmd_menu": "명령",
+  "wit_cmd_compact_hint": "이 대화의 컨텍스트 압축 ({arg1}% 사용됨)",
+  "wit_cmd_model": "모델"
 }

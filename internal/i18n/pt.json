@@ -1212,7 +1212,9 @@
   "wit_quote_recent": "E-mails recentes",
   "wit_cmd_skills": "Habilidades",
   "wit_cmd_session": "Conversa",
-  "wit_cmd_compact": "Compactar a conversa",
+  "wit_cmd_compact": "Compactar",
   "wit_cmd_none": "Nenhum comando correspondente",
-  "wit_cmd_menu": "Comandos"
+  "wit_cmd_menu": "Comandos",
+  "wit_cmd_compact_hint": "Compactar o contexto desta conversa ({arg1}% usado)",
+  "wit_cmd_model": "Modelo"
 }

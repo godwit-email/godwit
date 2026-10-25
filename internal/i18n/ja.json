@@ -1212,7 +1212,9 @@
   "wit_quote_recent": "最近のメール",
   "wit_cmd_skills": "スキル",
   "wit_cmd_session": "会話",
-  "wit_cmd_compact": "会話を圧縮",
+  "wit_cmd_compact": "圧縮",
   "wit_cmd_none": "一致するコマンドはありません",
-  "wit_cmd_menu": "コマンド"
+  "wit_cmd_menu": "コマンド",
+  "wit_cmd_compact_hint": "この会話のコンテキストを圧縮（{arg1}% 使用中）",
+  "wit_cmd_model": "モデル"
 }

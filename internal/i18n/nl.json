@@ -1212,7 +1212,9 @@
   "wit_quote_recent": "Recente e-mail",
   "wit_cmd_skills": "Skills",
   "wit_cmd_session": "Gesprek",
-  "wit_cmd_compact": "Gesprek comprimeren",
+  "wit_cmd_compact": "Comprimeren",
   "wit_cmd_none": "Geen overeenkomende opdrachten",
-  "wit_cmd_menu": "Opdrachten"
+  "wit_cmd_menu": "Opdrachten",
+  "wit_cmd_compact_hint": "De context van dit gesprek comprimeren ({arg1}% gebruikt)",
+  "wit_cmd_model": "Model"
 }

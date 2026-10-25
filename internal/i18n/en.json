@@ -2448,7 +2448,16 @@
   "wit_quote_recent": "Recent mail",
   "wit_cmd_skills": "Skills",
   "wit_cmd_session": "Conversation",
-  "wit_cmd_compact": "Compact the conversation",
+  "wit_cmd_compact": "Compact",
   "wit_cmd_none": "No matching commands",
-  "wit_cmd_menu": "Commands"
+  "wit_cmd_menu": "Commands",
+  "wit_cmd_compact_hint": "Compact this conversation's context ({arg1}% used)",
+  "wit_cmd_model": "Model",
+  "@wit_cmd_compact_hint": {
+    "placeholders": {
+      "arg1": {
+        "type": "int"
+      }
+    }
+  }
 }

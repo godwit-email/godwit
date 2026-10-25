@@ -1212,7 +1212,9 @@
   "wit_quote_recent": "Neueste E-Mails",
   "wit_cmd_skills": "Skills",
   "wit_cmd_session": "Unterhaltung",
-  "wit_cmd_compact": "Unterhaltung verdichten",
+  "wit_cmd_compact": "Verdichten",
   "wit_cmd_none": "Keine passenden Befehle",
-  "wit_cmd_menu": "Befehle"
+  "wit_cmd_menu": "Befehle",
+  "wit_cmd_compact_hint": "Kontext dieser Unterhaltung verdichten ({arg1} % belegt)",
+  "wit_cmd_model": "Modell"
 }

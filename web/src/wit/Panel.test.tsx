@@ -72,6 +72,7 @@ async function setup(
     info?: WitInfo;
     skills?(): Promise<{ name: string; description: string }[]>;
     onNew?(): void;
+    effort?: { value: string; pick(value: string): void };
   } = {},
 ) {
   let listener: ((e: WitEvent) => void) | undefined;
@@ -108,6 +109,7 @@ async function setup(
       onAnswer={o.onAnswer}
       skills={o.skills}
       onNew={o.onNew}
+      effort={o.effort}
       layout={o.page ? "page" : "panel"}
       transport={tr}
       t={t}
@@ -393,7 +395,9 @@ describe("Panel", () => {
       "Find bills",
     );
     expect(within(menu).getByRole("option", { name: "新对话" })).toBeInTheDocument();
-    expect(within(menu).getByRole("option", { name: "压缩对话" })).toBeInTheDocument();
+    expect(within(menu).getByRole("option", { name: /^压缩/ })).toHaveTextContent(
+      "压缩压缩此对话的上下文（已使用 0%）",
+    );
     expect(within(menu).getByText("技能")).toBeInTheDocument();
     await user.type(box, "bi");
     expect(within(menu).getAllByRole("option")).toHaveLength(1);
@@ -407,6 +411,28 @@ describe("Panel", () => {
     expect(skills).toHaveBeenCalledOnce();
     await user.type(box, "a /");
     expect(screen.queryByRole("listbox", { name: "指令" })).toBeNull(); // only at the start
+  });
+
+  it("the / menu's 思考强度 shows what it stands at and opens its choices in place", async () => {
+    const user = userEvent.setup();
+    const pick = vi.fn();
+    await setup({ page: true, effort: { value: "low", pick } });
+    const box = input("向 Wit 提问");
+    await user.type(box, "/思考");
+    const row = await screen.findByRole("option", { name: /思考强度/ });
+    expect(row).toHaveTextContent("思考强度低");
+    await user.keyboard("{Enter}");
+    const choices = await screen.findByRole("listbox", { name: "思考强度" });
+    expect(within(choices).getByRole("option", { name: "低" })).toHaveAttribute(
+      "aria-selected",
+      "true",
+    );
+    await user.keyboard("{Escape}");
+    expect(await screen.findByRole("listbox", { name: "指令" })).toBeInTheDocument();
+    await user.keyboard("{Enter}");
+    await user.click(await screen.findByRole("option", { name: "高" }));
+    expect(pick).toHaveBeenCalledWith("high");
+    expect(box).toHaveValue("");
   });
 
   it("in the compose window the / menu runs 调整 and 翻译 as their menus do", async () => {

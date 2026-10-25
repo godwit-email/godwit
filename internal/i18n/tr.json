@@ -1212,7 +1212,9 @@
   "wit_quote_recent": "Son postalar",
   "wit_cmd_skills": "Beceriler",
   "wit_cmd_session": "Sohbet",
-  "wit_cmd_compact": "Sohbeti sıkıştır",
+  "wit_cmd_compact": "Sıkıştır",
   "wit_cmd_none": "Eşleşen komut yok",
-  "wit_cmd_menu": "Komutlar"
+  "wit_cmd_menu": "Komutlar",
+  "wit_cmd_compact_hint": "Bu sohbetin bağlamını sıkıştır (%{arg1} kullanıldı)",
+  "wit_cmd_model": "Model"
 }
