@@ -209,6 +209,15 @@ func fit(prompt string, budget int) string {
 	return prompt
 }
 
+// splitSummary is a split turn's summary (condenseSplit) as its turns' before
+// it and the turn's part so far; all of it the part when no turns came before.
+func splitSummary(text string) (head, part string) {
+	if i := strings.LastIndex(text, "\n\n"+splitTurnNote+"\n"); i >= 0 {
+		return text[:i], text[i+len("\n\n"+splitTurnNote+"\n"):]
+	}
+	return "", text
+}
+
 // turnsBetween reports whether h has messages the model sees after seq from
 // and before seq start: seqs are not reused, so a gap (a turn asked again)
 // may hold none.
@@ -220,10 +229,15 @@ func turnsBetween(h *ai.History, from, start int64) bool {
 
 // condenseSplit summarizes h through upto, which ends inside the turn of the
 // question at start (pi's split turn): the turns before it with the summary
-// so far, as ever, and the turn's first part apart, under splitTurnNote.
+// so far, as ever, and the turn's first part apart, under splitTurnNote. A
+// summary that already split this turn has its part folded into the new one,
+// so compacting a long turn again and again does not grow the summary.
 func (s *Service) condenseSplit(ctx context.Context, id int64, model ai.ResolvedModel, h *ai.History, sum ai.Summary, start, upto int64, budget int) (string, error) {
 	from := max(sum.Upto, h.Messages()[0].Seq) // the first message is always sent
-	head := sum.Text
+	head, before := sum.Text, ""
+	if sum.Upto >= start { // this turn split already: its part so far goes into the new one
+		head, before = splitSummary(sum.Text)
+	}
 	if turnsBetween(h, from, start) { // whole turns since the summary, before the split one
 		prompt, err := h.Transcript(from, start-1)
 		if err != nil {
@@ -239,6 +253,9 @@ func (s *Service) condenseSplit(ctx context.Context, id int64, model ai.Resolved
 	prompt, err := h.Transcript(max(start-1, from), upto)
 	if err != nil {
 		return "", err
+	}
+	if before != "" {
+		prompt = "Summary of the request so far:\n" + before + "\n\nThe request since:\n" + prompt
 	}
 	part, err := s.condense(ctx, id, model, turnPrefixSystem, fit(prompt, budget))
 	if err != nil || head == "" {

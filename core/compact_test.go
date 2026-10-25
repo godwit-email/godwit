@@ -71,3 +71,15 @@ func TestTurnsBetween(t *testing.T) {
 	assert.True(t, turnsBetween(h, 2, 11), "q2's turn")
 	assert.False(t, turnsBetween(h, 1, 2))
 }
+
+// A summary that split a turn reads back as its turns' before it and the
+// turn's part so far, which compacting the same turn again folds into its
+// new part instead of piling parts up.
+func TestSplitSummary(t *testing.T) {
+	head, part := splitSummary("turns 1 and 2\n\n" + splitTurnNote + "\nsearched c0 to c3")
+	assert.Equal(t, "turns 1 and 2", head)
+	assert.Equal(t, "searched c0 to c3", part)
+	head, part = splitSummary("searched c0 to c3")
+	assert.Empty(t, head, "the first turn: no turns before it")
+	assert.Equal(t, "searched c0 to c3", part)
+}
