@@ -1168,7 +1168,7 @@
   "wit_effort_high": "Hoch",
   "wit_elapsed_seconds": "{arg1} s",
   "wit_elapsed_minutes": "{arg1} min {arg2} s",
-  "wit_reasoning": "Denkprozess",
+  "wit_reasoning": "Nachgedacht",
   "wit_regenerate": "Neu generieren",
   "wit_suggest": "Frag Wit zum Beispiel",
   "wit_suggest_1": "Wer wartet noch auf meine Antwort?",
@@ -1204,5 +1204,6 @@
   "wit_tools_search_mail": "{arg1, plural, one {{arg1, number, ::group-off} Mal E-Mails durchsucht} other {{arg1, number, ::group-off} Mal E-Mails durchsucht}}",
   "wit_tools_get_message": "{arg1, plural, one {{arg1, number, ::group-off} Nachricht gelesen} other {{arg1, number, ::group-off} Nachrichten gelesen}}",
   "wit_tools_get_thread": "{arg1, plural, one {{arg1, number, ::group-off} Konversation gelesen} other {{arg1, number, ::group-off} Konversationen gelesen}}",
-  "wit_tools_read_attachment": "{arg1, plural, one {{arg1, number, ::group-off} Anhang gelesen} other {{arg1, number, ::group-off} Anhänge gelesen}}"
+  "wit_tools_read_attachment": "{arg1, plural, one {{arg1, number, ::group-off} Anhang gelesen} other {{arg1, number, ::group-off} Anhänge gelesen}}",
+  "wit_thought_for": "{arg1} nachgedacht"
 }

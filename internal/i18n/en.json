@@ -2141,7 +2141,7 @@
   "wit_quote_search": "Search mail",
   "wit_elapsed_seconds": "{arg1}s",
   "wit_elapsed_minutes": "{arg1}m {arg2}s",
-  "wit_reasoning": "Thought process",
+  "wit_reasoning": "Thought",
   "wit_regenerate": "Regenerate",
   "wit_scroll_end": "Jump to latest",
   "wit_send": "Send to Wit",
@@ -2431,6 +2431,14 @@
     "placeholders": {
       "arg1": {
         "type": "int"
+      }
+    }
+  },
+  "wit_thought_for": "Thought for {arg1}",
+  "@wit_thought_for": {
+    "placeholders": {
+      "arg1": {
+        "type": "String"
       }
     }
   }

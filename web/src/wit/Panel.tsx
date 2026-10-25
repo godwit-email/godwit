@@ -15,6 +15,7 @@ import {
   RiExternalLinkLine,
   RiFileCopyLine,
   RiGlobalLine,
+  RiListCheck2,
   RiLoaderLine,
   RiMailLine,
   RiRefreshLine,
@@ -614,6 +615,30 @@ function Thought({ text, streaming, t }: { text: string; streaming: boolean; t: 
   );
 }
 
+/**
+ * What an answer did before its final text, as one line ("已思考 2 分 5 秒 · 搜索了 30 次邮件"): open
+ * while the answer works, folded once it is done, as agents fold their steps under their answer.
+ */
+function Work({ label, live, children }: { label: string; live: boolean; children: ReactNode }) {
+  const [open, setOpen] = useState(live);
+  useEffect(() => setOpen(live), [live]);
+  return (
+    <TraceCollapsible open={open} onOpenChange={setOpen}>
+      <TraceCollapsibleTrigger>
+        <TraceLine status={live ? "running" : undefined}>
+          <TraceIcon>
+            <RiListCheck2 />
+          </TraceIcon>
+          <TraceTitle>{label}</TraceTitle>
+        </TraceLine>
+      </TraceCollapsibleTrigger>
+      <TraceCollapsibleContent className="flex flex-col gap-2.5">
+        {children}
+      </TraceCollapsibleContent>
+    </TraceCollapsible>
+  );
+}
+
 /** A call as a line of its answer: what it does, its query and the senders it found; spinning while it runs. */
 function ToolLine({
   p,
@@ -801,6 +826,41 @@ function Answer({
     )
       run = undefined; // what shows between breaks the run (data parts show nothing)
   });
+  // a call with a card (waiting, or decided) shows it, never folded away
+  const carded = (p: (typeof m.parts)[number]) =>
+    p.type === "dynamic-tool" && (!!requested(p) || settled.some((a) => answers(a, p.toolCallId)));
+  // What it did before its final text (the text after its last step) folds into one line, when
+  // that is more than one line: the steps' kinds and counts name it.
+  const end =
+    m.parts.findLastIndex(
+      (p) => p.type === "dynamic-tool" || (p.type === "reasoning" && !!p.text),
+    ) + 1;
+  const work = m.parts.flatMap((p, i) => (i < end && !carded(p) ? [i] : []));
+  const shown = work.filter((i) => {
+    const p = m.parts[i];
+    return p.type === "dynamic-tool" ? runs.has(i) : p.type === "text" ? !!p.text.trim() : true;
+  });
+  const fold = shown.length > 1;
+  const thought = work.some((i) => m.parts[i].type === "reasoning");
+  const took = !live && elapsed(m.metadata?.elapsed, t);
+  const workLabel = () => {
+    const count = new Map<string, number>();
+    for (const i of work) {
+      const p = m.parts[i];
+      if (p.type === "dynamic-tool") count.set(p.toolName, (count.get(p.toolName) ?? 0) + 1);
+    }
+    return [
+      // "已思考 6 秒": the answer's time at work, as agents give it
+      thought && (took ? t("wit.thought_for", took) : t("wit.reasoning")),
+      ...[...count].map(([name, k]) => {
+        const key = `wit.tools.${name}`;
+        if (t(key, k) !== key) return t(key, k);
+        return k > 1 ? `${toolLabel(name, t)} ×${k}` : toolLabel(name, t);
+      }),
+    ]
+      .filter(Boolean)
+      .join(" · ");
+  };
   // a decided approval with no call of this answer's parts (none expected) still shows, at the end
   const loose = settled.filter((a) => !calls.some((p) => answers(a, p.toolCallId)));
   // Something of it moves (text or thought streaming, a call spinning): no working line then, but
@@ -836,7 +896,60 @@ function Answer({
       />
     );
   };
-  const took = !live && elapsed(m.metadata?.elapsed, t);
+  // A part as it shows: a thought, text, a call's line (a run's first: the run) or its card.
+  const part = (p: (typeof m.parts)[number], i: number): ReactNode => {
+    if (p.type === "reasoning")
+      return (
+        p.text && (
+          <Thought key={i} text={p.text} streaming={live && p.state === "streaming"} t={t} />
+        )
+      );
+    if (p.type === "text")
+      return (
+        p.text.trim() && (
+          <Response
+            key={i}
+            text={p.text}
+            streaming={live && p.state === "streaming"}
+            size={page ? "page" : "panel"}
+            t={t}
+            onLink={onLink}
+            confirm={!page}
+            cite={(n) => mail(n, false)}
+            card={(n) => mail(n, true)}
+          />
+        )
+      );
+    if (p.type !== "dynamic-tool") return null;
+    const a = requested(p);
+    if (a)
+      return (
+        <Fragment key={p.toolCallId}>
+          {a.id === review?.approval && (
+            <div className="overflow-hidden rounded-xl border-[0.5px] border-primary">
+              <div className="flex items-center gap-2 bg-muted px-3 py-2 leading-5">
+                <span className="font-semibold">{t("wit.compose.review")}</span>
+                <span className="font-mono text-foreground/80 text-sm">{a.tool}</span>
+              </div>
+              <div className="px-3 py-2 text-md">{review?.summary}</div>
+              <div className="flex gap-1.5 border-muted border-t-[0.5px] px-3 py-2">
+                {review?.actions}
+              </div>
+            </div>
+          )}
+          {!a.draftEdit && tools([a])}
+        </Fragment>
+      );
+    const done = settled.find((x) => answers(x, p.toolCallId));
+    if (done) return <Settled key={p.toolCallId} a={done} onDraft={onDraft} t={t} />;
+    const ps = runs.get(i);
+    if (!ps) return null; // a later call of a run: its first shows it
+    return ps.length > 1 ? (
+      <ToolGroup key={p.toolCallId} ps={ps} going={going} cites={cites} t={t} />
+    ) : (
+      <ToolLine key={p.toolCallId} p={p} running={going(p)} cites={cites} t={t} />
+    );
+  };
   return (
     <div data-role="assistant" className="flex flex-col gap-2.5">
       {cites
@@ -857,61 +970,12 @@ function Answer({
             </AlertDescription>
           </Alert>
         ))}
-      {m.parts.map((p, i) => {
-        if (p.type === "reasoning")
-          return (
-            p.text && (
-              // biome-ignore lint/suspicious/noArrayIndexKey: an answer's parts only grow
-              <Thought key={i} text={p.text} streaming={live && p.state === "streaming"} t={t} />
-            )
-          );
-        if (p.type === "text")
-          return (
-            p.text.trim() && (
-              <Response
-                // biome-ignore lint/suspicious/noArrayIndexKey: an answer's parts only grow
-                key={i}
-                text={p.text}
-                streaming={live && p.state === "streaming"}
-                size={page ? "page" : "panel"}
-                t={t}
-                onLink={onLink}
-                confirm={!page}
-                cite={(n) => mail(n, false)}
-                card={(n) => mail(n, true)}
-              />
-            )
-          );
-        if (p.type !== "dynamic-tool") return null;
-        const a = requested(p);
-        if (a)
-          return (
-            <Fragment key={p.toolCallId}>
-              {a.id === review?.approval && (
-                <div className="overflow-hidden rounded-xl border-[0.5px] border-primary">
-                  <div className="flex items-center gap-2 bg-muted px-3 py-2 leading-5">
-                    <span className="font-semibold">{t("wit.compose.review")}</span>
-                    <span className="font-mono text-foreground/80 text-sm">{a.tool}</span>
-                  </div>
-                  <div className="px-3 py-2 text-md">{review?.summary}</div>
-                  <div className="flex gap-1.5 border-muted border-t-[0.5px] px-3 py-2">
-                    {review?.actions}
-                  </div>
-                </div>
-              )}
-              {!a.draftEdit && tools([a])}
-            </Fragment>
-          );
-        const done = settled.find((x) => answers(x, p.toolCallId));
-        if (done) return <Settled key={p.toolCallId} a={done} onDraft={onDraft} t={t} />;
-        const ps = runs.get(i);
-        if (!ps) return null; // a later call of a run: its first shows it
-        return ps.length > 1 ? (
-          <ToolGroup key={p.toolCallId} ps={ps} going={going} cites={cites} t={t} />
-        ) : (
-          <ToolLine key={p.toolCallId} p={p} running={going(p)} cites={cites} t={t} />
-        );
-      })}
+      {fold && (
+        <Work label={workLabel()} live={live}>
+          {work.map((i) => part(m.parts[i], i))}
+        </Work>
+      )}
+      {m.parts.map((p, i) => (fold && work.includes(i) ? null : part(p, i)))}
       {loose.map((a) => (
         <Settled key={a.id} a={a} onDraft={onDraft} t={t} />
       ))}
@@ -964,7 +1028,9 @@ function Answer({
               </Button>
             </>
           )}
-          {took && <span className="ml-auto text-muted-foreground text-xs">{took}</span>}
+          {took && !(fold && thought) && (
+            <span className="ml-auto text-muted-foreground text-xs">{took}</span>
+          )}
         </div>
       )}
       {cites.length > 0 && onCite && sources && (

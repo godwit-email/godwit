@@ -1161,7 +1161,7 @@
   "wit_effort_high": "Cao",
   "wit_elapsed_seconds": "{arg1} giây",
   "wit_elapsed_minutes": "{arg1} phút {arg2} giây",
-  "wit_reasoning": "Quá trình suy nghĩ",
+  "wit_reasoning": "Đã suy nghĩ",
   "wit_regenerate": "Tạo lại",
   "wit_suggest": "Thử hỏi Wit",
   "wit_suggest_1": "Ai vẫn đang chờ tôi trả lời?",
@@ -1204,5 +1204,6 @@
   "wit_tools_search_mail": "{arg1, plural, other {Đã tìm thư {arg1, number, ::group-off} lần}}",
   "wit_tools_get_message": "{arg1, plural, other {Đã đọc {arg1, number, ::group-off} thư}}",
   "wit_tools_get_thread": "{arg1, plural, other {Đã đọc {arg1, number, ::group-off} chuỗi thư}}",
-  "wit_tools_read_attachment": "{arg1, plural, other {Đã đọc {arg1, number, ::group-off} tệp đính kèm}}"
+  "wit_tools_read_attachment": "{arg1, plural, other {Đã đọc {arg1, number, ::group-off} tệp đính kèm}}",
+  "wit_thought_for": "Đã suy nghĩ {arg1}"
 }

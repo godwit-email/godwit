@@ -1161,7 +1161,7 @@
   "wit_effort_high": "높음",
   "wit_elapsed_seconds": "{arg1}초",
   "wit_elapsed_minutes": "{arg1}분 {arg2}초",
-  "wit_reasoning": "사고 과정",
+  "wit_reasoning": "생각 완료",
   "wit_regenerate": "다시 생성",
   "wit_suggest": "Wit에게 물어보세요",
   "wit_suggest_1": "아직 내 답장을 기다리는 사람은?",
@@ -1204,5 +1204,6 @@
   "wit_tools_search_mail": "{arg1, plural, other {메일을 {arg1, number, ::group-off}번 검색함}}",
   "wit_tools_get_message": "{arg1, plural, other {메일 {arg1, number, ::group-off}개 읽음}}",
   "wit_tools_get_thread": "{arg1, plural, other {스레드 {arg1, number, ::group-off}개 읽음}}",
-  "wit_tools_read_attachment": "{arg1, plural, other {첨부 파일 {arg1, number, ::group-off}개 읽음}}"
+  "wit_tools_read_attachment": "{arg1, plural, other {첨부 파일 {arg1, number, ::group-off}개 읽음}}",
+  "wit_thought_for": "{arg1} 동안 생각함"
 }

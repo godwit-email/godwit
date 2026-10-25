@@ -1096,7 +1096,7 @@
   "wit_quote_search": "搜索邮件",
   "wit_elapsed_seconds": "{arg1} 秒",
   "wit_elapsed_minutes": "{arg1} 分 {arg2} 秒",
-  "wit_reasoning": "思考过程",
+  "wit_reasoning": "已思考",
   "wit_regenerate": "重新生成",
   "wit_scroll_end": "回到最新",
   "wit_send": "发送给 Wit",
@@ -1204,5 +1204,6 @@
   "wit_tools_search_mail": "{arg1, plural, other {搜索了 {arg1, number, ::group-off} 次邮件}}",
   "wit_tools_get_message": "{arg1, plural, other {读取了 {arg1, number, ::group-off} 封邮件}}",
   "wit_tools_get_thread": "{arg1, plural, other {读取了 {arg1, number, ::group-off} 个会话}}",
-  "wit_tools_read_attachment": "{arg1, plural, other {读取了 {arg1, number, ::group-off} 个附件}}"
+  "wit_tools_read_attachment": "{arg1, plural, other {读取了 {arg1, number, ::group-off} 个附件}}",
+  "wit_thought_for": "已思考 {arg1}"
 }

@@ -1161,7 +1161,7 @@
   "wit_effort_high": "Alto",
   "wit_elapsed_seconds": "{arg1} s",
   "wit_elapsed_minutes": "{arg1} min {arg2} s",
-  "wit_reasoning": "Proceso de pensamiento",
+  "wit_reasoning": "Pensado",
   "wit_regenerate": "Regenerar",
   "wit_suggest": "Prueba a preguntarle a Wit",
   "wit_suggest_1": "¿Quién sigue esperando mi respuesta?",
@@ -1204,5 +1204,6 @@
   "wit_tools_search_mail": "{arg1, plural, one {Buscó en el correo {arg1, number, ::group-off} vez} many {Buscó en el correo {arg1, number, ::group-off} veces} other {Buscó en el correo {arg1, number, ::group-off} veces}}",
   "wit_tools_get_message": "{arg1, plural, one {Leyó {arg1, number, ::group-off} mensaje} many {Leyó {arg1, number, ::group-off} mensajes} other {Leyó {arg1, number, ::group-off} mensajes}}",
   "wit_tools_get_thread": "{arg1, plural, one {Leyó {arg1, number, ::group-off} conversación} many {Leyó {arg1, number, ::group-off} conversaciones} other {Leyó {arg1, number, ::group-off} conversaciones}}",
-  "wit_tools_read_attachment": "{arg1, plural, one {Leyó {arg1, number, ::group-off} adjunto} many {Leyó {arg1, number, ::group-off} adjuntos} other {Leyó {arg1, number, ::group-off} adjuntos}}"
+  "wit_tools_read_attachment": "{arg1, plural, one {Leyó {arg1, number, ::group-off} adjunto} many {Leyó {arg1, number, ::group-off} adjuntos} other {Leyó {arg1, number, ::group-off} adjuntos}}",
+  "wit_thought_for": "Pensó durante {arg1}"
 }

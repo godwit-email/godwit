@@ -415,7 +415,7 @@ describe("Panel", () => {
     expect(screen.queryByRole("button", { name: "重试" })).toBeNull();
   });
 
-  it("reasoning shows as a running trace line, then folds under 思考过程", async () => {
+  it("reasoning shows as a running trace line, then folds under 已思考", async () => {
     const user = userEvent.setup();
     const { api, emit } = await setup({ page: true });
     await user.type(input("向 Wit 提问"), "hi{Enter}");
@@ -425,7 +425,7 @@ describe("Panel", () => {
     expect(line.closest("[data-slot=trace-line]")).toHaveAttribute("data-status", "running");
     emit({ kind: "text", text: "三笔" });
     emit({ kind: "done" });
-    const folded = await screen.findByRole("button", { name: /思考过程/ });
+    const folded = await screen.findByRole("button", { name: "已思考" });
     expect(folded).toHaveAttribute("aria-expanded", "false");
     await user.click(folded);
     expect(await screen.findByText("先查账单")).toBeInTheDocument();
@@ -439,7 +439,7 @@ describe("Panel", () => {
     expect(elapsed(95_000, t)).toBe("1 分 35 秒");
   });
 
-  it("each step is a line of its own, in order: the reasoning folded once done, each call with its query and senders", async () => {
+  it("its work folds into one line above its text, once done; unfolded, each step a line in order", async () => {
     const user = userEvent.setup();
     const cite = (n: number, id: number, from: string, callIds: string[]) => ({
       n,
@@ -497,7 +497,14 @@ describe("Panel", () => {
         ],
       }),
     });
-    const thought = screen.getByRole("button", { name: "思考过程" });
+    // what it did, folded: its kinds and counts
+    const work = screen.getByRole("button", {
+      name: "已思考 6 秒 · 搜索了 2 次邮件 · read_message",
+    });
+    expect(work).toHaveAttribute("aria-expanded", "false");
+    expect(screen.getByText("Two receipts.")).toBeVisible();
+    await user.click(work);
+    const thought = await screen.findByRole("button", { name: "已思考" });
     expect(thought).toHaveAttribute("aria-expanded", "false");
     await user.click(thought);
     expect(await screen.findByText("先按收据搜")).toBeInTheDocument();
@@ -506,10 +513,10 @@ describe("Panel", () => {
       .closest("[data-role=assistant]") as HTMLElement;
     // its calls between its reasoning and its text, each with what it found
     expect(answer.textContent).toMatch(
-      /思考过程.*搜索邮件receipt OR 账单Acme CloudBob.*read_message.*搜索邮件invoiceAcme Cloud.*Two receipts\./,
+      /已思考 6 秒.*已思考.*搜索邮件receipt OR 账单Acme CloudBob.*read_message.*搜索邮件invoiceAcme Cloud.*Two receipts\./,
     );
-    // and how long it worked: 6.4 s
-    expect(within(answer).getByText("6 秒")).toBeInTheDocument();
+    // how long it worked is in the folded line, not again under the answer
+    expect(within(answer).queryByText("6 秒")).toBeNull();
   });
 
   const turn = hist({
@@ -866,6 +873,28 @@ describe("Panel", () => {
     expect(api.ask).not.toHaveBeenCalled();
   });
 
+  it("its work stays open while it runs and folds once it is done", async () => {
+    const user = userEvent.setup();
+    const { emit } = await setup();
+    await user.type(input(), "go{Enter}");
+    emit({ kind: "tool_call", call: { id: "s1", name: "search_mail", args: "{}" } });
+    emit({
+      kind: "tool_result",
+      result: { callId: "s1", name: "search_mail", output: "1", error: "" },
+    });
+    emit({ kind: "tool_call", call: { id: "g1", name: "get_message", args: "{}" } });
+    emit({
+      kind: "tool_result",
+      result: { callId: "g1", name: "get_message", output: "1", error: "" },
+    });
+    emit({ kind: "text", text: "Found it." });
+    const work = await screen.findByRole("button", { name: "搜索了 1 次邮件 · 读取了 1 封邮件" });
+    expect(work).toHaveAttribute("aria-expanded", "true");
+    emit({ kind: "done" });
+    await waitFor(() => expect(work).toHaveAttribute("aria-expanded", "false"));
+    expect(screen.getByText("Found it.")).toBeInTheDocument();
+  });
+
   it("a pending approval is its call's card, a call its own line, a running edit the working line", async () => {
     const { emit } = await setup({
       history: hist({
@@ -981,8 +1010,9 @@ describe("Panel", () => {
         ],
       }),
     });
-    // the two searches one line that unfolds into each, the read a line of its own
-    const searches = screen.getByRole("button", { name: "search ×2" });
+    // the work folded; unfolded, the two searches one line that unfolds into each, the read its own
+    await user.click(screen.getByRole("button", { name: "search ×2 · read" }));
+    const searches = await screen.findByRole("button", { name: "search ×2" });
     expect(searches).toHaveAttribute("aria-expanded", "false");
     expect(screen.getAllByTitle(/^(search|read)$/).map((l) => l.textContent)).toEqual(["read"]);
     await user.click(searches);

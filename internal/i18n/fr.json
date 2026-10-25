@@ -1161,7 +1161,7 @@
   "wit_effort_high": "Élevé",
   "wit_elapsed_seconds": "{arg1} s",
   "wit_elapsed_minutes": "{arg1} min {arg2} s",
-  "wit_reasoning": "Raisonnement",
+  "wit_reasoning": "Réflexion terminée",
   "wit_regenerate": "Régénérer",
   "wit_suggest": "Essayez de demander à Wit",
   "wit_suggest_1": "Qui attend encore ma réponse ?",
@@ -1204,5 +1204,6 @@
   "wit_tools_search_mail": "{arg1, plural, one {{arg1, number, ::group-off} recherche dans les e-mails} many {{arg1, number, ::group-off} recherches dans les e-mails} other {{arg1, number, ::group-off} recherches dans les e-mails}}",
   "wit_tools_get_message": "{arg1, plural, one {{arg1, number, ::group-off} message lu} many {{arg1, number, ::group-off} messages lus} other {{arg1, number, ::group-off} messages lus}}",
   "wit_tools_get_thread": "{arg1, plural, one {{arg1, number, ::group-off} conversation lue} many {{arg1, number, ::group-off} conversations lues} other {{arg1, number, ::group-off} conversations lues}}",
-  "wit_tools_read_attachment": "{arg1, plural, one {{arg1, number, ::group-off} pièce jointe lue} many {{arg1, number, ::group-off} pièces jointes lues} other {{arg1, number, ::group-off} pièces jointes lues}}"
+  "wit_tools_read_attachment": "{arg1, plural, one {{arg1, number, ::group-off} pièce jointe lue} many {{arg1, number, ::group-off} pièces jointes lues} other {{arg1, number, ::group-off} pièces jointes lues}}",
+  "wit_thought_for": "A réfléchi pendant {arg1}"
 }
