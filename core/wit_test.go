@@ -975,3 +975,77 @@ func TestAskAgainNumbersQuotes(t *testing.T) {
 	}
 	assert.Equal(t, map[int64]int{e.msg: 1, c: 2}, ns)
 }
+
+func (e skillEnv) setPi(t *testing.T, on bool) {
+	t.Helper()
+	st, err := e.s.GetSettings(t.Context())
+	require.NoError(t, err)
+	st.PiEngine = on
+	_, err = e.s.SetSettings(t.Context(), st)
+	require.NoError(t, err)
+}
+
+func TestAskOnPi(t *testing.T) {
+	e := newSkillEnv(t)
+	old := e.askConv(t) // a conversation started on Genkit
+	e.srv.Script(testllm.Turn{Text: []string{"A0"}})
+	evs := e.ask(t, old.ID, "hi")
+	require.Equal(t, "done", evs[len(evs)-1].Kind)
+
+	e.setPi(t, true)
+	conv := e.askConv(t)
+	e.srv.Script(testllm.Turn{Calls: []testllm.Call{{Name: "search_mail", Args: `{"query":"harbour"}`}}, Usage: [2]int{10, 2}},
+		testllm.Turn{Text: []string{"Friday at ", "the harbour."}, Usage: [2]int{30, 4}})
+	evs = e.ask(t, conv.ID, "When do we meet?")
+	require.Equal(t, "done", evs[len(evs)-1].Kind, "%+v", evs[len(evs)-1].Err)
+	reqs := e.srv.Requests()
+	require.Len(t, reqs, 3)
+	for _, r := range reqs[1:] {
+		assert.Equal(t, "Godwit", r.Header.Get("User-Agent"), "pi-ai sent it")
+	}
+	names := toolNames(t, reqs[1])
+	assert.Contains(t, names, "search_mail")
+	assert.NotContains(t, names, "create_draft", "tools that need an approval wait for #233")
+	assert.NotContains(t, names, "ask_user_question")
+	rs := witResults(evs, "search_mail")
+	require.Len(t, rs, 1)
+	assert.Empty(t, rs[0].Result.Error)
+	require.Len(t, rs[0].Citations, 1, "the tool's citations still reach the UI")
+	var text []string
+	for _, ev := range evs {
+		if ev.Kind == "text" {
+			text = append(text, ev.Text)
+		}
+	}
+	assert.Equal(t, []string{"Friday at ", "the harbour."}, text, "streamed")
+
+	c, err := e.s.GetConversation(t.Context(), conv.ID)
+	require.NoError(t, err)
+	assert.Equal(t, ai.Usage{Input: 40, Output: 6, Last: 30}, c.Usage)
+	var got []string
+	for _, m := range savedMessages(t, e.s, c.ID) {
+		got = append(got, m.Role)
+	}
+	assert.Equal(t, []string{"user", "model", "tool", "model"}, got)
+	assert.Equal(t, 4, e.count(t, `SELECT COUNT(*) FROM conversation_messages WHERE conversation_id = ? AND json_extract(data, '$.timestamp') IS NOT NULL`, conv.ID),
+		"saved as pi messages, one row each")
+
+	// A conversation started on Genkit stays there.
+	e.srv.Script(testllm.Turn{Text: []string{"A1"}})
+	evs = e.ask(t, old.ID, "again")
+	require.Equal(t, "done", evs[len(evs)-1].Kind)
+	reqs = e.srv.Requests()
+	assert.NotEqual(t, "Godwit", reqs[len(reqs)-1].Header.Get("User-Agent"))
+
+	// With the switch off, the pi conversation opens and goes on, on Genkit.
+	e.setPi(t, false)
+	e.srv.Script(testllm.Turn{Text: []string{"A2"}})
+	evs = e.ask(t, conv.ID, "And after?")
+	require.Equal(t, "done", evs[len(evs)-1].Kind, "%+v", evs[len(evs)-1].Err)
+	reqs = e.srv.Requests()
+	assert.NotEqual(t, "Godwit", reqs[len(reqs)-1].Header.Get("User-Agent"))
+	assert.Contains(t, promptOf(t, reqs[len(reqs)-1]), "the harbour.")
+	c, err = e.s.GetConversation(t.Context(), conv.ID)
+	require.NoError(t, err)
+	require.Len(t, c.Turns, 2)
+}

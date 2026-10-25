@@ -976,9 +976,20 @@ func (s *Service) launch(ctx context.Context, end func(), conv Conversation, pro
 			err = s.keptRefs(ctx, job, at)
 		}
 	}
+	onPi := false
+	if err == nil && conv.Kind == "ask" && ai.PiConversation(model, h) {
+		var st Settings
+		if st, err = s.loadSettings(ctx); err == nil && st.PiEngine {
+			// Labs (#232): a run on pi takes no approval yet (#233), so it is
+			// offered only the tools that need none: no writes, no questions.
+			onPi = true
+			tools = slices.DeleteFunc(slices.Clone(tools), func(t toolDesc) bool { return t.Write })
+		}
+	}
 	var req ai.Request
 	if err == nil {
 		req, err = s.request(ctx, job, model, h, tools)
+		req.Pi = onPi
 	}
 	var note, quote string
 	if err == nil && (conv.Kind == "ask" || conv.Kind == "assist") {

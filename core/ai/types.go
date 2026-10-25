@@ -163,6 +163,7 @@ type Request struct {
 // its Sent's Restore; Messages are what it ended with, for display.
 type Result struct {
 	out        []*gai.Message // the run's whole view as it ended
+	raws       [][]byte       // a run on pi: the pi messages of out it added (nil for the others)
 	Messages   []Message
 	Interrupts []ToolCall
 	Err        *Error

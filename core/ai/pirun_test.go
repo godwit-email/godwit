@@ -5,6 +5,7 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"net/http"
+	"sync/atomic"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -115,7 +116,8 @@ func TestPiLeavesTheRestToGenkit(t *testing.T) {
 		"off": {Model: modelFor(srv, "openai", "k"), Prompt: "p"},
 		"tools": {Model: modelFor(srv, "openai", "k"), Prompt: "p", Pi: true,
 			Tools: []ToolSpec{{Name: "t", Schema: map[string]any{"type": "object"}, Run: func(context.Context, json.RawMessage) (any, error) { return "x", nil }}}},
-		"history": {Model: modelFor(srv, "openai", "k"), History: asking(nil, "p"), Pi: true},
+		"a Genkit history": {Model: modelFor(srv, "openai", "k"), Pi: true, // a new one goes on pi (#232)
+			History: asking(must(LoadHistory([]StoredMessage{{Seq: 1, Data: []byte(`{"role":"user","content":[{"text":"hi"}]}`)}}, 2)), "p")},
 	} {
 		srv.Script(testllm.Turn{Text: []string{"ok"}})
 		_, res := run(e, req)
@@ -257,4 +259,281 @@ func TestPiRunEndsWhenItsServiceIsForgotten(t *testing.T) {
 		require.NotNil(t, res.Err)
 		assert.Equal(t, CodeStale, res.Err.Code)
 	})
+}
+
+var piSearch = map[string]any{"type": "object", "properties": map[string]any{"q": map[string]any{"type": "string"}}, "required": []any{"q"}}
+
+func TestPiRunsAConversationWithReadTools(t *testing.T) {
+	srv := testllm.Start(t, "openai")
+	srv.Script(
+		testllm.Turn{Calls: []testllm.Call{{ID: "c1", Name: "search", Args: `{"q":"invoice"}`}}, Usage: [2]int{10, 2}},
+		testllm.Turn{Think: []string{"ok"}, Text: []string{"It is ", "here."}, Usage: [2]int{30, 4}},
+	)
+	var callID string
+	search := ToolSpec{Name: "search", Schema: piSearch,
+		Gate: func(context.Context, json.RawMessage) (Decision, error) { return Allow, nil },
+		Run: func(ctx context.Context, args json.RawMessage) (any, error) {
+			callID = CallID(ctx)
+			return map[string]any{"args": json.RawMessage(args), "id": json.Number("9007199254740993")}, nil
+		}}
+	sent := must(NewHistory().Send(1<<20, Summary{}, false)).Ask("Where is it?", "[quoted mail]")
+	evs, res := run(newEngine(t), Request{Model: modelFor(srv, "openai", "k"), System: "s", History: sent, Tools: []ToolSpec{search}, Pi: true, Reasoning: true,
+		Args: func(_ context.Context, a json.RawMessage) (json.RawMessage, error) {
+			return json.RawMessage(`{"q":"invoice OR bill"}`), nil
+		}})
+	require.Nil(t, res.Err)
+	assert.True(t, ranOnPi(t, srv))
+	assert.Equal(t, "c1", callID)
+	var kinds []string
+	for _, ev := range evs {
+		kinds = append(kinds, ev.Kind)
+	}
+	assert.Equal(t, []string{"tool_call", "tool_result", "reasoning", "text", "text", "done"}, kinds)
+	assert.JSONEq(t, `{"q":"invoice OR bill"}`, string(evs[0].Call.Args))
+	assert.JSONEq(t, `{"args":{"q":"invoice OR bill"},"id":9007199254740993}`, string(evs[1].Result.Output))
+	assert.Equal(t, Usage{Input: 40, Output: 6, Last: 30}, res.Usage)
+	assert.Contains(t, string(srv.Requests()[0].Messages), "[quoted mail]")
+
+	h, ch, err := sent.Restore(res)
+	require.NoError(t, err)
+	require.Len(t, ch.Put, 4) // the question, the call, its result, the answer
+	for _, p := range ch.Put {
+		assert.True(t, isPiMessage(p.Data), string(p.Data))
+	}
+	assert.Contains(t, string(ch.Put[1].Data), `"q":"invoice"`) // what the model wrote
+	h, err = LoadHistory(ch.Put, ch.Next)
+	require.NoError(t, err)
+	assert.True(t, h.Pi())
+	msgs := h.Messages()
+	require.Len(t, msgs, 4)
+	assert.Equal(t, "Where is it?", msgs[0].Text) // the context stays out of sight
+	assert.Equal(t, "c1", msgs[1].Calls[0].ID)
+	assert.JSONEq(t, `{"args":{"q":"invoice OR bill"},"id":9007199254740993}`, string(msgs[2].Results[0].Output))
+	assert.Equal(t, "It is here.", msgs[3].Text)
+	assert.Equal(t, "ok", msgs[3].Reasoning)
+	assert.Equal(t, []string{"[quoted mail]"}, must(h.Send(1<<20, Summary{}, false)).Contexts())
+
+	// The next turn goes on pi too, the earlier one sent as pi saved it.
+	srv.Script(testllm.Turn{Text: []string{"Again."}})
+	next := must(h.Send(1<<20, Summary{}, false)).Ask("And now?", "")
+	_, res = run(newEngine(t), Request{Model: modelFor(srv, "openai", "k"), History: next, Tools: []ToolSpec{search}, Pi: true})
+	require.Nil(t, res.Err)
+	assert.True(t, ranOnPi(t, srv))
+	last := srv.Requests()[len(srv.Requests())-1]
+	assert.Contains(t, string(last.Messages), `"tool_call_id":"c1"`)
+	h2, ch, err := next.Restore(res)
+	require.NoError(t, err)
+	assert.Len(t, ch.Put, 2)
+	assert.Len(t, h2.Turns(), 2)
+}
+
+func TestPiAnswersAtTheToolCallLimit(t *testing.T) {
+	srv := testllm.Start(t, "openai")
+	srv.Script(
+		testllm.Turn{Calls: []testllm.Call{{ID: "c1", Name: "search", Args: `{"q":"a"}`}}},
+		testllm.Turn{Calls: []testllm.Call{{ID: "c2", Name: "search", Args: `{"q":"b"}`}}},
+		testllm.Turn{Text: []string{"What I found."}},
+	)
+	search := ToolSpec{Name: "search", Schema: piSearch, Run: func(context.Context, json.RawMessage) (any, error) { return "x", nil }}
+	sent := asking(nil, "q")
+	evs, res := run(newEngine(t), Request{Model: modelFor(srv, "openai", "k"), History: sent, Tools: []ToolSpec{search}, MaxTurns: 1, Pi: true})
+	require.Nil(t, res.Err)
+	assert.Equal(t, "done", evs[len(evs)-1].Kind)
+	assert.Contains(t, string(srv.Requests()[2].System), "tool-call limit")
+	_, ch, err := sent.Restore(res)
+	require.NoError(t, err)
+	assert.Len(t, ch.Put, 4) // the refused round is gone
+
+	srv.Script(
+		testllm.Turn{Calls: []testllm.Call{{ID: "c1", Name: "search", Args: `{"q":"a"}`}}},
+		testllm.Turn{Calls: []testllm.Call{{ID: "c2", Name: "search", Args: `{"q":"b"}`}}},
+		testllm.Turn{Calls: []testllm.Call{{ID: "c3", Name: "search", Args: `{"q":"c"}`}}},
+	)
+	_, res = run(newEngine(t), Request{Model: modelFor(srv, "openai", "k"), History: asking(nil, "q"), Tools: []ToolSpec{search}, MaxTurns: 1, Pi: true})
+	require.NotNil(t, res.Err)
+	assert.Equal(t, errLimit(), res.Err)
+}
+
+// $defs in a plugin or MCP tool's schema are inlined: an Anthropic-compatible
+// service refuses them.
+func TestPiFlattensToolSchemas(t *testing.T) {
+	srv := testllm.Start(t, "anthropic")
+	srv.Script(
+		testllm.Turn{Calls: []testllm.Call{{ID: "c1", Name: "send", Args: `{"to":"bob@x"}`}}},
+		testllm.Turn{Text: []string{"ok"}},
+	)
+	schema := map[string]any{"type": "object", "$defs": map[string]any{"addr": map[string]any{"type": "string"}},
+		"properties": map[string]any{"to": map[string]any{"$ref": "#/$defs/addr"}}}
+	var got json.RawMessage
+	tool := ToolSpec{Name: "send", Schema: schema, Run: func(_ context.Context, args json.RawMessage) (any, error) { got = args; return "sent", nil }}
+	_, res := run(newEngine(t), Request{Model: modelFor(srv, "anthropic", "k"), History: asking(nil, "q"), Tools: []ToolSpec{tool}, Pi: true})
+	require.Nil(t, res.Err)
+	assert.True(t, ranOnPi(t, srv))
+	assert.JSONEq(t, `{"to":"bob@x"}`, string(got))
+	reqs := srv.Requests()
+	require.Len(t, reqs, 2)
+	assert.Empty(t, reqs[0].Invalid)
+	tools := string(reqs[0].Tools)
+	assert.NotContains(t, tools, "$defs")
+	assert.NotContains(t, tools, "$ref")
+	assert.Contains(t, tools, `"to":{"type":"string"}`)
+}
+
+func TestPiRefusesACallThatNeedsApproval(t *testing.T) {
+	srv := testllm.Start(t, "openai")
+	srv.Script(
+		testllm.Turn{Calls: []testllm.Call{{ID: "c1", Name: "fetch", Args: `{}`}}},
+		testllm.Turn{Text: []string{"ok"}},
+	)
+	tool := ToolSpec{Name: "fetch", Gate: func(context.Context, json.RawMessage) (Decision, error) { return Approve, nil },
+		Run: func(context.Context, json.RawMessage) (any, error) { t.Error("ran"); return nil, nil }}
+	evs, res := run(newEngine(t), Request{Model: modelFor(srv, "openai", "k"), History: asking(nil, "q"), Tools: []ToolSpec{tool}, Pi: true})
+	require.Nil(t, res.Err)
+	assert.Equal(t, errNeedsApproval.Error(), evs[1].Result.Error)
+}
+
+func TestPiCancelStopsTheModelAndTools(t *testing.T) {
+	srv := testllm.Start(t, "openai")
+	srv.Script(testllm.Turn{Calls: []testllm.Call{{ID: "c1", Name: "search", Args: `{"q":"a"}`}}})
+	ctx, cancel := context.WithCancel(t.Context())
+	stopped := make(chan struct{})
+	tool := ToolSpec{Name: "search", Schema: piSearch, Run: func(ctx context.Context, _ json.RawMessage) (any, error) {
+		cancel()
+		<-ctx.Done()
+		close(stopped)
+		return nil, ctx.Err()
+	}}
+	_, res := collect(newEngine(t).Run(ctx, Request{Model: modelFor(srv, "openai", "k"), History: asking(nil, "q"), Tools: []ToolSpec{tool}, Pi: true}))
+	require.NotNil(t, res.Err)
+	assert.Equal(t, CodeCanceled, res.Err.Code)
+	<-stopped
+}
+
+func TestGenkitHistoriesStayOnGenkit(t *testing.T) {
+	srv := testllm.Start(t, "openai")
+	srv.Script(testllm.Turn{Text: []string{"one"}})
+	sent := asking(nil, "first")
+	_, res := run(newEngine(t), Request{Model: modelFor(srv, "openai", "k"), History: sent}) // the switch off
+	require.Nil(t, res.Err)
+	h, _, err := sent.Restore(res)
+	require.NoError(t, err)
+	assert.False(t, h.Pi())
+
+	srv.Script(testllm.Turn{Text: []string{"two"}})
+	_, res = run(newEngine(t), Request{Model: modelFor(srv, "openai", "k"), History: asking(h, "second"), Pi: true})
+	require.Nil(t, res.Err)
+	assert.False(t, ranOnPi(t, srv))
+}
+
+func TestPiHistoryRunsOnGenkitWithTheSwitchOff(t *testing.T) {
+	srv := testllm.Start(t, "openai")
+	srv.Script(testllm.Turn{Text: []string{"one"}})
+	sent := asking(nil, "first")
+	_, res := run(newEngine(t), Request{Model: modelFor(srv, "openai", "k"), History: sent, Pi: true})
+	require.Nil(t, res.Err)
+	h, _, err := sent.Restore(res)
+	require.NoError(t, err)
+
+	srv.Script(
+		testllm.Turn{Calls: []testllm.Call{{ID: "c1", Name: "search", Args: `{"q":"a"}`}}},
+		testllm.Turn{Text: []string{"two"}},
+	)
+	search := ToolSpec{Name: "search", Schema: piSearch, Run: func(context.Context, json.RawMessage) (any, error) { return "x", nil }}
+	next := asking(h, "second")
+	_, res = run(newEngine(t), Request{Model: modelFor(srv, "openai", "k"), History: next, Tools: []ToolSpec{search}})
+	require.Nil(t, res.Err)
+	assert.False(t, ranOnPi(t, srv))
+	h, ch, err := next.Restore(res)
+	require.NoError(t, err)
+	for _, p := range ch.Put {
+		assert.True(t, isPiMessage(p.Data), string(p.Data))
+	}
+	h, err = LoadHistory(must(h.Rows()), h.Next())
+	require.NoError(t, err)
+	assert.Len(t, h.Turns(), 2)
+	assert.Equal(t, "two", h.Messages()[len(h.Messages())-1].Text)
+}
+
+func TestPiConversationOnResponses(t *testing.T) {
+	srv := testllm.Start(t, "openai-responses")
+	srv.Script(
+		testllm.Turn{Calls: []testllm.Call{{ID: "c1", Name: "search", Args: `{"q":"a"}`}}},
+		testllm.Turn{Text: []string{"Found."}},
+	)
+	search := ToolSpec{Name: "search", Schema: piSearch, Run: func(context.Context, json.RawMessage) (any, error) { return "x", nil }}
+	sent := asking(nil, "q")
+	evs, res := run(newEngine(t), Request{Model: modelFor(srv, KindResponses, "k"), System: "Be brief.", History: sent, Tools: []ToolSpec{search}, Pi: true})
+	require.Nil(t, res.Err)
+	assert.True(t, ranOnPi(t, srv))
+	assert.Equal(t, "done", evs[len(evs)-1].Kind)
+	reqs := srv.Requests()
+	require.Len(t, reqs, 2)
+	for _, r := range reqs {
+		assert.Empty(t, r.Invalid)
+		assert.Equal(t, `"Be brief."`, string(r.System), "the system prompt goes as instructions")
+	}
+	assert.Contains(t, string(reqs[1].Messages), `"call_id":"c1"`)
+	assert.Contains(t, string(reqs[0].Tools), `"strict":false`, "a function without strict is strict on Responses")
+	_, ch, err := sent.Restore(res)
+	require.NoError(t, err)
+	assert.Len(t, ch.Put, 4)
+}
+
+// A pi conversation run on Genkit (the switch off) can be interrupted for an
+// approval and resumed: the call that ran before the interrupt keeps its
+// output through the pi messages.
+func TestPiHistoryResumesAGenkitInterrupt(t *testing.T) {
+	srv := testllm.Start(t, "openai")
+	srv.Script(testllm.Turn{Text: []string{"hi"}},
+		testllm.Turn{Calls: []testllm.Call{{ID: "r1", Name: "read"}, {ID: "a1", Name: "write", Args: `{"n":1}`}}},
+		testllm.Turn{Text: []string{"done"}})
+	sent := asking(nil, "first")
+	_, res := run(newEngine(t), Request{Model: modelFor(srv, "openai", "k"), History: sent, Pi: true})
+	require.Nil(t, res.Err)
+	h := after(t, sent, res)
+	require.True(t, h.Pi())
+
+	var readRuns atomic.Int64
+	sent = asking(h, "go")
+	evs, res := run(newEngine(t), Request{Model: modelFor(srv, "openai", "k"), History: sent, Tools: mixedTools(&readRuns)})
+	require.Nil(t, res.Err)
+	require.Equal(t, "interrupted", last(t, evs).Kind)
+	h = after(t, sent, res)
+	stored := must(LoadHistory(must(h.Rows()), h.Next()))
+	require.True(t, stored.Pi())
+	evs, res = run(newEngine(t), Request{Model: modelFor(srv, "openai", "k"), History: resuming(stored), Tools: mixedTools(&readRuns),
+		Responses: []ToolResult{{CallID: "a1", Name: "write", Output: json.RawMessage(`{"draft":7}`)}}})
+	require.Nil(t, res.Err)
+	assert.Equal(t, "done", last(t, evs).Kind)
+	assert.EqualValues(t, 1, readRuns.Load(), "the read tool must not run again")
+	assert.Contains(t, string(srv.Requests()[2].Messages), "read-result")
+}
+
+// A Responses reasoning item a pi turn kept goes back as Genkit's plugin
+// replays it, encrypted content and ID, when the conversation goes on on Genkit.
+func TestPiResponsesReasoningGoesOnOnGenkit(t *testing.T) {
+	srv := testllm.Start(t, "openai-responses")
+	srv.Script(testllm.Turn{Reasoning: "enc-1", Think: []string{"thinking"}, Text: []string{"one"}},
+		testllm.Turn{Reasoning: "enc-2", Think: []string{"more"}, Text: []string{"two"}},
+		testllm.Turn{Text: []string{"three"}})
+	sent := asking(nil, "first")
+	_, res := run(newEngine(t), Request{Model: modelFor(srv, KindResponses, "k"), History: sent, Pi: true, Effort: "low"})
+	require.Nil(t, res.Err)
+	h := must(LoadHistory(must(after(t, sent, res).Rows()), 3))
+	// Genkit's own reasoning reply is saved as a pi message too, and goes back as it came.
+	for _, q := range []string{"second", "third"} {
+		sent = asking(h, q)
+		_, res = run(newEngine(t), Request{Model: modelFor(srv, KindResponses, "k"), History: sent, Effort: "low"})
+		require.Nil(t, res.Err, q)
+		h = after(t, sent, res)
+		h = must(LoadHistory(must(h.Rows()), h.Next()))
+	}
+	reqs := srv.Requests()
+	require.Len(t, reqs, 3)
+	assert.False(t, ranOnPi(t, srv))
+	for _, r := range reqs[1:] {
+		assert.Empty(t, r.Invalid)
+	}
+	assert.Contains(t, string(reqs[2].Messages), "enc-1")
+	assert.Contains(t, string(reqs[2].Messages), "enc-2")
 }
