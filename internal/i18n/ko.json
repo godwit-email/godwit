@@ -1209,5 +1209,10 @@
   "wit_work_running": "처리 중",
   "wit_work_done": "완료",
   "wit_work_done_in": "완료, {arg1} 소요",
-  "wit_quote_recent": "최근 메일"
+  "wit_quote_recent": "최근 메일",
+  "wit_cmd_skills": "스킬",
+  "wit_cmd_session": "대화",
+  "wit_cmd_compact": "대화 압축",
+  "wit_cmd_none": "일치하는 명령이 없습니다",
+  "wit_cmd_menu": "명령"
 }

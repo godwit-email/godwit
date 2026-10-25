@@ -1209,5 +1209,10 @@
   "wit_work_running": "Đang xử lý",
   "wit_work_done": "Đã xong",
   "wit_work_done_in": "Đã xong, mất {arg1}",
-  "wit_quote_recent": "Thư gần đây"
+  "wit_quote_recent": "Thư gần đây",
+  "wit_cmd_skills": "Kỹ năng",
+  "wit_cmd_session": "Cuộc trò chuyện",
+  "wit_cmd_compact": "Thu gọn cuộc trò chuyện",
+  "wit_cmd_none": "Không có lệnh phù hợp",
+  "wit_cmd_menu": "Lệnh"
 }

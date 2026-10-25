@@ -1209,5 +1209,10 @@
   "wit_work_running": "處理中",
   "wit_work_done": "已完成",
   "wit_work_done_in": "已完成，用時 {arg1}",
-  "wit_quote_recent": "最近的郵件"
+  "wit_quote_recent": "最近的郵件",
+  "wit_cmd_skills": "技能",
+  "wit_cmd_session": "對話",
+  "wit_cmd_compact": "壓縮對話",
+  "wit_cmd_none": "沒有符合的指令",
+  "wit_cmd_menu": "指令"
 }

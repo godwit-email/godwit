@@ -72,6 +72,7 @@ func newWitPageFixture(t *testing.T, setup ...func(*coretest.Env)) *witPageFixtu
 		OpenMessage:         func(id int64) { f.record(func() { f.messages = append(f.messages, id) }) },
 		OpenModels:          func() { f.record(func() { f.models++ }) },
 		Navigate:            func(dir int) { f.record(func() { f.navs = append(f.navs, dir) }) },
+		NewConversation:     func() { f.record(func() { f.navs = append(f.navs, 0) }) },
 		OnLink:              func(u string) { f.record(func() { f.urls = append(f.urls, u) }) },
 		OpenCompose:         func(id int64) { f.record(func() { f.composed = append(f.composed, id) }) },
 	})
@@ -926,6 +927,32 @@ func TestAskDecideSession(t *testing.T) {
 	require.NoError(t, err)
 	f.idle(t, conv)
 	assert.Equal(t, before+2, f.drafts(t), "the second is approved by the grant")
+}
+
+// The input's / menu: the skills a question may name (the model's own:
+// enabled, none bound to the UI), and a new conversation.
+func TestPageSkillsAndNew(t *testing.T) {
+	f := newWitPageFixture(t)
+	got, err := f.p.Skills(f.ctx())
+	require.NoError(t, err)
+	all, err := f.e.Svc.ListSkills(f.ctx())
+	require.NoError(t, err)
+	var want []WitSkill
+	for _, sk := range all {
+		if sk.Enabled && !sk.UI && sk.Error == "" {
+			want = append(want, WitSkill{Name: sk.Name, Description: sk.Description})
+		}
+	}
+	assert.ElementsMatch(t, want, got)
+	for _, sk := range all {
+		if sk.UI {
+			assert.NotContains(t, got, WitSkill{Name: sk.Name, Description: sk.Description}, "bound to the UI: not the model's")
+		}
+	}
+	require.NoError(t, f.p.NewConversation(f.ctx()))
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	assert.Equal(t, []int{0}, f.navs)
 }
 
 // The quote picker searches every account; Ask sends the quoted IDs, which

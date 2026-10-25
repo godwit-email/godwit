@@ -1209,5 +1209,10 @@
   "wit_work_running": "In corso",
   "wit_work_done": "Fatto",
   "wit_work_done_in": "Fatto in {arg1}",
-  "wit_quote_recent": "Posta recente"
+  "wit_quote_recent": "Posta recente",
+  "wit_cmd_skills": "Skill",
+  "wit_cmd_session": "Conversazione",
+  "wit_cmd_compact": "Compatta la conversazione",
+  "wit_cmd_none": "Nessun comando corrispondente",
+  "wit_cmd_menu": "Comandi"
 }

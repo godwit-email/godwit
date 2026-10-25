@@ -123,6 +123,11 @@ const pages: Record<string, { states: string[]; entry: () => Promise<unknown>; s
         "WitPage.Load": async () => fx.witPage(mode, conv),
         "WitPage.Follow": async () => (conv ? fx.witConversation() : fx.witEmpty()),
         "WitPage.Navigate": nothing,
+        "WitPage.NewConversation": nothing,
+        "WitPage.Skills": async () => [
+          { name: "find-bills", description: "找出账单与订阅扣款" },
+          { name: "follow-ups", description: "找出还在等你回复的邮件" },
+        ],
         "WitPage.OpenCited": nothing,
         "WitPage.OpenLink": nothing,
         "WitPage.OpenModels": nothing,

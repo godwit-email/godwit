@@ -1209,5 +1209,10 @@
   "wit_work_running": "Выполняется",
   "wit_work_done": "Готово",
   "wit_work_done_in": "Готово за {arg1}",
-  "wit_quote_recent": "Недавние письма"
+  "wit_quote_recent": "Недавние письма",
+  "wit_cmd_skills": "Навыки",
+  "wit_cmd_session": "Беседа",
+  "wit_cmd_compact": "Сжать беседу",
+  "wit_cmd_none": "Нет подходящих команд",
+  "wit_cmd_menu": "Команды"
 }

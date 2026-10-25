@@ -1209,5 +1209,10 @@
   "wit_work_running": "Bezig",
   "wit_work_done": "Klaar",
   "wit_work_done_in": "Klaar in {arg1}",
-  "wit_quote_recent": "Recente e-mail"
+  "wit_quote_recent": "Recente e-mail",
+  "wit_cmd_skills": "Skills",
+  "wit_cmd_session": "Gesprek",
+  "wit_cmd_compact": "Gesprek comprimeren",
+  "wit_cmd_none": "Geen overeenkomende opdrachten",
+  "wit_cmd_menu": "Opdrachten"
 }

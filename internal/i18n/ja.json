@@ -1209,5 +1209,10 @@
   "wit_work_running": "処理中",
   "wit_work_done": "完了",
   "wit_work_done_in": "完了（{arg1}）",
-  "wit_quote_recent": "最近のメール"
+  "wit_quote_recent": "最近のメール",
+  "wit_cmd_skills": "スキル",
+  "wit_cmd_session": "会話",
+  "wit_cmd_compact": "会話を圧縮",
+  "wit_cmd_none": "一致するコマンドはありません",
+  "wit_cmd_menu": "コマンド"
 }

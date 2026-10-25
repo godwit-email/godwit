@@ -1209,5 +1209,10 @@
   "wit_work_running": "In Arbeit",
   "wit_work_done": "Fertig",
   "wit_work_done_in": "Fertig nach {arg1}",
-  "wit_quote_recent": "Neueste E-Mails"
+  "wit_quote_recent": "Neueste E-Mails",
+  "wit_cmd_skills": "Skills",
+  "wit_cmd_session": "Unterhaltung",
+  "wit_cmd_compact": "Unterhaltung verdichten",
+  "wit_cmd_none": "Keine passenden Befehle",
+  "wit_cmd_menu": "Befehle"
 }

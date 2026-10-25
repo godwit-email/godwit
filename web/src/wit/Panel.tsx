@@ -110,6 +110,7 @@ import type {
 } from "@/mygo";
 import { currentLocale, type T } from "@/shared/i18n";
 import { Citations, type Nums } from "./Citations";
+import { type Command, CommandPicker } from "./Commands";
 import { MailCard, senderName } from "./MailCard";
 import { type PickerKeys, QuoteChips, QuotePicker } from "./Quote";
 import { Cite, citedNumbers, plainCites, Response } from "./Response";
@@ -1223,6 +1224,8 @@ export function Panel({
   onSearch,
   onSession,
   onAnswer,
+  skills,
+  onNew,
 }: {
   info?: WitInfo;
   history: WitHistory;
@@ -1260,6 +1263,10 @@ export function Panel({
   onSession?(a: Approval): Promise<boolean>;
   /** Answers question a (ask_user_question), one list per question; true once answered. */
   onAnswer?(a: Approval, answers: string[][]): Promise<boolean>;
+  /** The skills a question may name with / (the Wit page): the / menu lists them. */
+  skills?(): Promise<{ name: string; description: string }[]>;
+  /** Shows a new conversation (the / menu's 新对话; the Wit page). */
+  onNew?(): void;
 }) {
   // A command's question: the skill as its menu names it (翻译成…, or the adjustment).
   const commandLabel = (c: WitCommand) => {
@@ -1311,6 +1318,11 @@ export function Panel({
   const [picking, setPicking] = useState<{ at: number; query: string }>();
   const textarea = useRef<HTMLTextAreaElement>(null);
   const pickerKeys = useRef<PickerKeys>(null);
+  // The / menu: open while the input starts with a / and a word, its query that word.
+  const [slash, setSlash] = useState<string>();
+  const commandKeys = useRef<PickerKeys>(null);
+  const [skillList, setSkillList] = useState<{ name: string; description: string }[]>();
+  const [modelsOpen, setModelsOpen] = useState(false);
   const full = quoted.length >= MAX_QUOTED;
   const running = chat.status === "submitted" || chat.status === "streaming";
   const { resumeStream } = chat;
@@ -1319,6 +1331,11 @@ export function Panel({
     () => translateMenu(info?.languages ?? [], locale),
     [info?.languages, locale],
   );
+  // the skills, read once the / menu first opens
+  useEffect(() => {
+    if (slash === undefined || skillList || !skills) return;
+    skills().then(setSkillList, () => setSkillList([]));
+  }, [slash, skillList, skills]);
 
   useEffect(() => {
     if (!history.running) return;
@@ -1506,6 +1523,8 @@ export function Panel({
   // or the @ goes. An @ inside a word (an address) is just text.
   const typed = (value: string, caret: number) => {
     setDraft(value);
+    const head = value.slice(0, caret);
+    setSlash(/^\/\S*$/.test(head) ? head.slice(1) : undefined);
     if (picking && picking.at >= 0) {
       const query = value.slice(picking.at + 1, caret);
       if (value[picking.at] !== "@" || caret <= picking.at || /\s/.test(query))
@@ -1716,6 +1735,69 @@ export function Panel({
       <TraceTitle>{t(writes ? "wit.compose.working" : "wit.thinking")}</TraceTitle>
     </TraceLine>
   );
+  // The / menu's commands: the skills a question may name, 调整 / 翻译 (the compose window), and
+  // what the conversation can do. A skill is put in the input to ask with; the rest run at once.
+  const session = t("wit.cmd.session");
+  const now = (f: () => void) => () => {
+    setSlash(undefined);
+    setDraft("");
+    f();
+  };
+  const commands: Command[] = [
+    ...(skillList ?? []).map((sk) => ({
+      key: `skill:${sk.name}`,
+      group: t("wit.cmd.skills"),
+      label: `/${sk.name}`,
+      hint: sk.description,
+      run: () => {
+        setSlash(undefined);
+        setDraft(`/${sk.name} `);
+      },
+    })),
+    ...(info && !info.translateOnly
+      ? info.skills.map((sk) => ({
+          key: `adjust:${sk.id}`,
+          group: t("wit.compose.adjust"),
+          label: sk.label,
+          hint: sk.hint,
+          run: now(() => ask(sk.label, { skill: sk.id, lang: "" })),
+        }))
+      : []),
+    ...(info
+      ? menuLanguages.map((l) => ({
+          key: `translate:${l.tag}`,
+          group: t("wit.compose.translate"),
+          label: t("wit.compose.translate_to", l.label),
+          run: now(() =>
+            ask(t("wit.compose.translate_to", l.label), { skill: "translate-draft", lang: l.tag }),
+          ),
+        }))
+      : []),
+    ...(onNew ? [{ key: "new", group: session, label: t("ask.new"), run: now(onNew) }] : []),
+    ...(transport.compacts
+      ? [
+          {
+            key: "compact",
+            group: session,
+            label: t("wit.cmd.compact"),
+            run: now(() => !compacting && !running && compact()),
+          },
+        ]
+      : []),
+    ...(model && models
+      ? [
+          {
+            key: "model",
+            group: session,
+            label: t("wit.model.pick"),
+            run: now(() => {
+              models.list().then(setChoices, fail);
+              setModelsOpen(true);
+            }),
+          },
+        ]
+      : []),
+  ];
   const conversation = (
     <MessageScrollerProvider autoScroll>
       <MessageScroller className="min-h-0 flex-1">
@@ -1866,6 +1948,15 @@ export function Panel({
           </InputGroupButton>
         </div>
       )}
+      {slash !== undefined && commands.length > 0 && !locked && (
+        <CommandPicker
+          commands={commands}
+          query={slash}
+          onClose={() => setSlash(undefined)}
+          keys={commandKeys}
+          t={t}
+        />
+      )}
       {picking && onSearch && (
         <QuotePicker
           search={onSearch}
@@ -1890,6 +1981,7 @@ export function Panel({
         value={draft}
         onChange={(e) => typed(e.target.value, e.target.selectionStart)}
         onKeyDown={(e) => {
+          if (slash !== undefined && commands.length > 0 && commandKeys.current?.key(e)) return;
           if (picking && picking.at >= 0 && pickerKeys.current?.key(e)) return;
           // not while an input method composes: its Esc closes the candidates
           if (
@@ -1982,7 +2074,10 @@ export function Panel({
         )}
         {model && models ? (
           <DropdownMenu
+            // open from its chip, or from the / menu's 选择模型
+            open={modelsOpen}
             onOpenChange={(open) => {
+              setModelsOpen(open);
               if (open) models.list().then(setChoices, fail);
             }}
           >

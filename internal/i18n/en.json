@@ -2445,5 +2445,10 @@
       }
     }
   },
-  "wit_quote_recent": "Recent mail"
+  "wit_quote_recent": "Recent mail",
+  "wit_cmd_skills": "Skills",
+  "wit_cmd_session": "Conversation",
+  "wit_cmd_compact": "Compact the conversation",
+  "wit_cmd_none": "No matching commands",
+  "wit_cmd_menu": "Commands"
 }

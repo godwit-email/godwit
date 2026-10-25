@@ -70,6 +70,8 @@ async function setup(
     onAnswer?(a: Approval, answers: string[][]): Promise<boolean>;
     page?: boolean;
     info?: WitInfo;
+    skills?(): Promise<{ name: string; description: string }[]>;
+    onNew?(): void;
   } = {},
 ) {
   let listener: ((e: WitEvent) => void) | undefined;
@@ -104,6 +106,8 @@ async function setup(
       onSearch={o.onSearch}
       onSession={o.onSession}
       onAnswer={o.onAnswer}
+      skills={o.skills}
+      onNew={o.onNew}
       layout={o.page ? "page" : "panel"}
       transport={tr}
       t={t}
@@ -375,6 +379,43 @@ describe("Panel", () => {
     const card = input("向 Wit 提问").closest(".rounded-xl.border-\\[0\\.5px\\]");
     expect(card).toHaveClass("flex-1", "overflow-hidden", "bg-background");
     fadeOver(input("向 Wit 提问"), card);
+  });
+
+  it("a / at the input's start opens the commands: a skill goes in the input, 新对话 runs", async () => {
+    const user = userEvent.setup();
+    const onNew = vi.fn();
+    const skills = vi.fn().mockResolvedValue([{ name: "bills", description: "Find bills" }]);
+    await setup({ page: true, skills, onNew });
+    const box = input("向 Wit 提问");
+    await user.type(box, "/");
+    const menu = await screen.findByRole("listbox", { name: "指令" });
+    expect(await within(menu).findByRole("option", { name: /\/bills/ })).toHaveTextContent(
+      "Find bills",
+    );
+    expect(within(menu).getByRole("option", { name: "新对话" })).toBeInTheDocument();
+    expect(within(menu).getByRole("option", { name: "压缩对话" })).toBeInTheDocument();
+    expect(within(menu).getByText("技能")).toBeInTheDocument();
+    await user.type(box, "bi");
+    expect(within(menu).getAllByRole("option")).toHaveLength(1);
+    await user.keyboard("{Enter}");
+    expect(box).toHaveValue("/bills ");
+    expect(screen.queryByRole("listbox", { name: "指令" })).toBeNull();
+    await user.clear(box);
+    await user.type(box, "/新{Enter}");
+    expect(onNew).toHaveBeenCalledOnce();
+    expect(box).toHaveValue("");
+    expect(skills).toHaveBeenCalledOnce();
+    await user.type(box, "a /");
+    expect(screen.queryByRole("listbox", { name: "指令" })).toBeNull(); // only at the start
+  });
+
+  it("in the compose window the / menu runs 调整 and 翻译 as their menus do", async () => {
+    const user = userEvent.setup();
+    const { api } = await setup();
+    await user.type(input(), "/更正");
+    await user.keyboard("{Enter}");
+    await waitFor(() => expect(api.skill).toHaveBeenCalledWith("tone-formal", ""));
+    expect(input()).toHaveValue("");
   });
 
   it("the 调整 menu shows each skill's hint", async () => {

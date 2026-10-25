@@ -171,6 +171,9 @@ func (a *App) OpenSettings() { a.navigate(Route{Page: PageSettings}) }
 // OpenModels opens the model settings (the Wit page's model chip).
 func (a *App) OpenModels() { a.navigate(Route{Page: PageSettings, Settings: "models"}) }
 
+// NewConversation shows a new conversation, as the sidebar's 新对话 does.
+func (a *App) NewConversation() { a.navigate(Route{Page: PageWit}) }
+
 // Navigate goes back (dir < 0) or forward (dir > 0), as ⌘[ and ⌘] do: the
 // Wit page forwards them, as native shortcuts miss keys it has.
 func (a *App) Navigate(dir int) {

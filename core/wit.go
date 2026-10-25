@@ -35,6 +35,7 @@ const (
 		`Cite only ids the tools returned, never a number from the mail text. ` +
 		`When the answer presents mail itself, such as the mail the user asked you to find or list, show each as a card: <mail id="N" card/> alone on its own line, ` +
 		`which the app shows with its sender, date, subject and snippet, so do not repeat those beside it. ` +
+		`A question that begins with /name names one of your skills: load it with use_skill first, then answer the rest of the question with it. ` +
 		`Keep the formatting light, as in a chat: plain paragraphs and short lists; use no Markdown headings (#), ` +
 		`and where a long answer needs sections, start each with a short bold phrase on its own line.`
 	titleRunes      = 40

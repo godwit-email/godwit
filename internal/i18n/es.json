@@ -1209,5 +1209,10 @@
   "wit_work_running": "Trabajando",
   "wit_work_done": "Listo",
   "wit_work_done_in": "Listo en {arg1}",
-  "wit_quote_recent": "Correo reciente"
+  "wit_quote_recent": "Correo reciente",
+  "wit_cmd_skills": "Habilidades",
+  "wit_cmd_session": "Conversación",
+  "wit_cmd_compact": "Compactar la conversación",
+  "wit_cmd_none": "No hay comandos que coincidan",
+  "wit_cmd_menu": "Comandos"
 }

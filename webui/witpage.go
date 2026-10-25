@@ -71,6 +71,8 @@ type WitPageDeps struct {
 	OpenMessage func(id int64)
 	OpenModels  func()
 	Navigate    func(dir int)
+	// NewConversation shows a new conversation, as the sidebar's 新对话 does.
+	NewConversation func()
 	// ConversationCreated is told Ask made conversation id, asked under
 	// snapshot version.
 	ConversationCreated func(id, version int64)
@@ -645,6 +647,39 @@ func (p *WitPage) OpenModels(ctx context.Context) error {
 var ErrBadDirection = errors.New("navigate goes back (-1) or forward (1)")
 
 // Navigate goes back (-1) or forward (1), as ⌘[ and ⌘] do natively.
+// NewConversation shows a new conversation (the input's /new).
+func (p *WitPage) NewConversation(ctx context.Context) error {
+	if _, _, err := p.w.caller(ctx); err != nil {
+		return keyed(err)
+	}
+	if p.w.d.NewConversation != nil {
+		p.w.d.NewConversation()
+	}
+	return nil
+}
+
+// WitSkill is a skill the input's / menu offers: the model's own (no UI binding), enabled.
+type WitSkill struct {
+	Name        string `json:"name"`
+	Description string `json:"description"`
+}
+
+// Skills lists the skills a question can name with /, as the model's list_skills does.
+func (p *WitPage) Skills(ctx context.Context) ([]WitSkill, error) {
+	_, svc, err := p.w.caller(ctx)
+	if err != nil {
+		return nil, keyed(err)
+	}
+	all, err := svc.ListSkills(ctx)
+	out := []WitSkill{}
+	for _, sk := range all {
+		if sk.Enabled && !sk.UI && sk.Error == "" {
+			out = append(out, WitSkill{Name: sk.Name, Description: sk.Description})
+		}
+	}
+	return out, keyed(err)
+}
+
 func (p *WitPage) Navigate(ctx context.Context, dir int) error {
 	if _, _, err := p.w.caller(ctx); err != nil {
 		return keyed(err)

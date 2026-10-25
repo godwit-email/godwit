@@ -1209,5 +1209,10 @@
   "wit_work_running": "Çalışıyor",
   "wit_work_done": "Tamamlandı",
   "wit_work_done_in": "{arg1} içinde tamamlandı",
-  "wit_quote_recent": "Son postalar"
+  "wit_quote_recent": "Son postalar",
+  "wit_cmd_skills": "Beceriler",
+  "wit_cmd_session": "Sohbet",
+  "wit_cmd_compact": "Sohbeti sıkıştır",
+  "wit_cmd_none": "Eşleşen komut yok",
+  "wit_cmd_menu": "Komutlar"
 }
