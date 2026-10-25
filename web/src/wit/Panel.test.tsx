@@ -530,12 +530,14 @@ describe("Panel", () => {
     // its calls between its reasoning and its text, each with who sent what it found: one by
     // name, several as the first +N
     expect(answer.textContent).toMatch(
-      /已完成，用时 6 秒.*思考 · 先按收据搜.*搜索邮件receipt OR 账单· Acme Cloud \+1.*read_message.*搜索邮件invoice· Acme Cloud.*Two receipts\./,
+      /已完成，用时 6 秒.*思考 · 先按收据搜.*搜索邮件receipt OR 账单· Acme Cloud \+1.*read_message.*搜索邮件invoice· ?Acme Cloud.*Two receipts\./,
     );
     // several unfold into each
     expect(screen.queryByText("Bob")).toBeNull();
     await user.click(screen.getByRole("button", { name: /receipt OR 账单/ }));
-    expect(await screen.findByText("Bob")).toBeInTheDocument();
+    // each found mail a chip, its card on hover
+    await user.hover(await screen.findByRole("button", { name: "Bob" }));
+    expect(await screen.findByText("S51")).toBeInTheDocument();
     expect(screen.queryAllByRole("button", { name: /invoice/ })).toHaveLength(0); // one sender: no fold
     // how long it worked is in the folded line, not again under the answer
     expect(within(answer).queryByText("6 秒")).toBeNull();

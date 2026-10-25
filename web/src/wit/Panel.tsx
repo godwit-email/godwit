@@ -112,7 +112,7 @@ import { currentLocale, type T } from "@/shared/i18n";
 import { Citations, type Nums } from "./Citations";
 import { MailCard, senderName } from "./MailCard";
 import { type PickerKeys, QuoteChips, QuotePicker } from "./Quote";
-import { plainCites, Response } from "./Response";
+import { Cite, plainCites, Response } from "./Response";
 import {
   historyToMessages,
   questionId,
@@ -672,17 +672,23 @@ function Work({ label, live, children }: { label: string; live: boolean; childre
 
 /**
  * A call as a line of its answer: what it does, its query and who sent the mail it found (one by
- * name, several as the first +N, unfolding into each); spinning while it runs.
+ * name, several as the first +N, unfolding into a chip for each mail); hovering a sender shows its
+ * mail's card (card). Spinning while it runs.
  */
 function ToolLine({
   p,
   running,
   cites,
+  nums,
+  card,
   t,
 }: {
   p: DynamicToolUIPart;
   running: boolean;
   cites: Citation[];
+  nums: Nums;
+  /** The card of mail n, as a citation's popover shows it. */
+  card(n: number): ReactNode;
   t: T;
 }) {
   const Icon = running ? RiLoaderLine : stepIcon(p.toolName);
@@ -690,11 +696,17 @@ function ToolLine({
     typeof (p.input as { query?: unknown })?.query === "string"
       ? (p.input as { query: string }).query
       : "";
-  const senders = [
-    ...new Set(
-      cites.filter((c) => c.callIds.includes(p.toolCallId)).map((c) => senderName(c.from)),
-    ),
-  ];
+  const found = cites.filter((c) => c.callIds.includes(p.toolCallId));
+  const senders = [...new Set(found.map((c) => senderName(c.from)))];
+  // a found mail's sender, its card on hover
+  const sender = (c: Citation, className: string) => {
+    const n = nums.get(c.messageId)?.n ?? c.n;
+    return (
+      <Cite key={c.messageId} n={n} card={card(n)} className={className}>
+        {senderName(c.from)}
+      </Cite>
+    );
+  };
   const line = (
     <TraceLine
       status={running ? "running" : p.state === "output-error" ? "error" : undefined}
@@ -709,27 +721,35 @@ function ToolLine({
           {clip(query)}
         </span>
       )}
-      {senders.length > 0 && (
-        <span className="min-w-0 shrink-0 truncate">
-          · {senders[0]}
-          {senders.length > 1 && ` +${senders.length - 1}`}
+      {found.length === 1 ? (
+        <span className="flex min-w-0 shrink-0 items-center gap-1">
+          ·
+          {sender(
+            found[0],
+            "min-w-0 cursor-pointer truncate hover:text-foreground hover:underline",
+          )}
         </span>
+      ) : (
+        senders.length > 0 && (
+          <span className="min-w-0 shrink-0 truncate">
+            · {senders[0]}
+            {senders.length > 1 && ` +${senders.length - 1}`}
+          </span>
+        )
       )}
     </TraceLine>
   );
-  if (senders.length < 2) return line;
+  if (found.length < 2) return line;
   return (
     <TraceCollapsible>
       <TraceCollapsibleTrigger>{line}</TraceCollapsibleTrigger>
       <TraceCollapsibleContent className="flex flex-wrap gap-1">
-        {senders.map((n) => (
-          <span
-            key={n}
-            className="rounded-full border-[0.5px] px-2 text-muted-foreground text-xs leading-5"
-          >
-            {n}
-          </span>
-        ))}
+        {found.map((c) =>
+          sender(
+            c,
+            "cursor-pointer rounded-full border-[0.5px] px-2 text-muted-foreground text-xs leading-5 hover:text-foreground data-popup-open:bg-muted data-popup-open:text-foreground",
+          ),
+        )}
       </TraceCollapsibleContent>
     </TraceCollapsible>
   );
@@ -743,11 +763,15 @@ function ToolGroup({
   ps,
   going,
   cites,
+  nums,
+  card,
   t,
 }: {
   ps: DynamicToolUIPart[];
   going(p: DynamicToolUIPart): boolean;
   cites: Citation[];
+  nums: Nums;
+  card(n: number): ReactNode;
   t: T;
 }) {
   const name = ps[0].toolName;
@@ -772,7 +796,15 @@ function ToolGroup({
       </TraceCollapsibleTrigger>
       <TraceCollapsibleContent className="flex flex-col gap-2">
         {ps.map((p) => (
-          <ToolLine key={p.toolCallId} p={p} running={going(p)} cites={cites} t={t} />
+          <ToolLine
+            key={p.toolCallId}
+            p={p}
+            running={going(p)}
+            cites={cites}
+            nums={nums}
+            card={card}
+            t={t}
+          />
         ))}
       </TraceCollapsibleContent>
     </TraceCollapsible>
@@ -984,9 +1016,25 @@ function Answer({
     const ps = runs.get(i);
     if (!ps) return null; // a later call of a run: its first shows it
     return ps.length > 1 ? (
-      <ToolGroup key={p.toolCallId} ps={ps} going={going} cites={cites} t={t} />
+      <ToolGroup
+        key={p.toolCallId}
+        ps={ps}
+        going={going}
+        cites={cites}
+        nums={nums}
+        card={(n) => mail(n, false)}
+        t={t}
+      />
     ) : (
-      <ToolLine key={p.toolCallId} p={p} running={going(p)} cites={cites} t={t} />
+      <ToolLine
+        key={p.toolCallId}
+        p={p}
+        running={going(p)}
+        cites={cites}
+        nums={nums}
+        card={(n) => mail(n, false)}
+        t={t}
+      />
     );
   };
   return (

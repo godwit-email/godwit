@@ -135,8 +135,21 @@ function Address({ url }: { url: string }) {
   );
 }
 
-/** A source marker [n]: a popover with its card, closed again by any action the card takes. */
-function Cite({ n, card }: { n: number; card: ReactNode }) {
+/**
+ * A source marker [n] (or what children show, such as a sender's chip): a popover with its card,
+ * closed again by any action the card takes.
+ */
+export function Cite({
+  n,
+  card,
+  children,
+  className,
+}: {
+  n: number;
+  card: ReactNode;
+  children?: ReactNode;
+  className?: string;
+}) {
   const [open, setOpen] = useState(false);
   return (
     <Popover open={open} onOpenChange={setOpen}>
@@ -144,15 +157,18 @@ function Cite({ n, card }: { n: number; card: ReactNode }) {
         // hovering shows the mail, as a source does in chat apps; a click or Enter still opens it
         openOnHover
         delay={150}
-        aria-label={`[${n}]`}
+        aria-label={children ? undefined : `[${n}]`}
         render={
           <button
             type="button"
-            className="mx-0.5 inline-flex h-5 min-w-5 cursor-pointer items-center justify-center rounded-sm bg-muted px-1.25 align-text-bottom text-[11px] text-muted-foreground tabular-nums leading-none hover:text-foreground data-popup-open:bg-border data-popup-open:text-foreground"
+            className={
+              className ??
+              "mx-0.5 inline-flex h-5 min-w-5 cursor-pointer items-center justify-center rounded-sm bg-muted px-1.25 align-text-bottom text-[11px] text-muted-foreground tabular-nums leading-none hover:text-foreground data-popup-open:bg-border data-popup-open:text-foreground"
+            }
           />
         }
       >
-        {n}
+        {children ?? n}
       </PopoverTrigger>
       <PopoverContent
         side="bottom"
