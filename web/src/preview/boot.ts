@@ -124,6 +124,8 @@ const pages: Record<string, { states: string[]; entry: () => Promise<unknown>; s
         "WitPage.Follow": async () => (conv ? fx.witConversation() : fx.witEmpty()),
         "WitPage.Navigate": nothing,
         "WitPage.NewConversation": nothing,
+        // a while, so the conversation's compacting line shows
+        "WitPage.Compact": () => new Promise<void>((r) => setTimeout(r, 3000)),
         "WitPage.Skills": async () => [
           { name: "find-bills", description: "找出账单与订阅扣款" },
           { name: "follow-ups", description: "找出还在等你回复的邮件" },

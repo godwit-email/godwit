@@ -9,6 +9,7 @@ import {
   RiBrainLine,
   RiCheckboxCircleLine,
   RiCloseCircleLine,
+  RiContractUpDownLine,
   RiDraftLine,
   RiEditBoxLine,
   RiEditLine,
@@ -1317,6 +1318,8 @@ export function Panel({
   // What the conversation took, as last read (a run's end reads it again).
   const [usage, setUsage] = useState(history.usage);
   const [compacting, setCompacting] = useState(false);
+  // a compaction done here: said in the conversation until the next question
+  const [compacted, setCompacted] = useState(false);
   // The picker: from the + menu (at -1), or from an @ at draft[at] with what follows it as query.
   const [picking, setPicking] = useState<{ at: number; query: string }>();
   const textarea = useRef<HTMLTextAreaElement>(null);
@@ -1401,6 +1404,7 @@ export function Panel({
 
   const ask = (text: string, metadata?: WitMeta) => {
     if (locked || running || !text) return;
+    setCompacted(false);
     void chat.sendMessage({ text, metadata });
   };
   const asked = useRef<object | undefined>(undefined);
@@ -1556,10 +1560,11 @@ export function Panel({
   // summary is saved.
   const compact = () => {
     setCompacting(true);
+    setCompacted(false);
     transport
       .compact()
       .then(() => {
-        toast.success(t("wit.usage.compacted"));
+        setCompacted(true);
         return transport.history();
       })
       .then((h) => h && setUsage(h.usage), fail)
@@ -1982,6 +1987,17 @@ export function Panel({
               </div>
             )}
             {running && last?.role !== "assistant" && working}
+            {/* a compaction, as a step of the conversation: under way, then done */}
+            {(compacting || compacted) && (
+              <TraceLine status={compacting ? "running" : undefined} role="status">
+                <TraceIcon>
+                  <RiContractUpDownLine />
+                </TraceIcon>
+                <TraceTitle>
+                  {t(compacting ? "wit.usage.compacting" : "wit.usage.compacted")}
+                </TraceTitle>
+              </TraceLine>
+            )}
           </MessageScrollerContent>
         </MessageScrollerViewport>
         <MessageScrollerButton className="z-10">

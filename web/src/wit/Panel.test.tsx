@@ -860,7 +860,7 @@ describe("Panel", () => {
     );
   });
 
-  it("compacting now summarizes the older turns and reads the usage again", async () => {
+  it("compacting now shows in the conversation, summarizes the older turns and reads the usage again", async () => {
     const user = userEvent.setup();
     const before = hist({
       ...turn,
@@ -871,12 +871,26 @@ describe("Panel", () => {
       ...before,
       usage: { ...before.usage, history: 0.3, compactable: false },
     });
+    let done!: () => void;
+    api.compact.mockReturnValue(new Promise<void>((r) => (done = r)));
     await user.click(screen.getByRole("button", { name: "上下文" }));
     await user.click(await screen.findByRole("button", { name: "立即压缩" }));
     expect(api.compact).toHaveBeenCalled();
+    // under way: a running line in the conversation, as a thought is
+    const line = await screen.findByText("正在压缩…", { selector: "[data-slot=trace-title]" });
+    expect(line.closest("[data-slot=trace-line]")).toHaveAttribute("data-status", "running");
+    await act(async () => done());
     expect(await screen.findByText("历史已用 30%")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "立即压缩" })).toBeDisabled();
-    expect(toast.success).toHaveBeenCalledWith("已压缩：较早的对话已总结成摘要。");
+    expect(
+      await screen.findByText("已压缩：较早的对话已总结成摘要。", {
+        selector: "[data-slot=trace-title]",
+      }),
+    ).toBeInTheDocument();
+    // the next question takes its place
+    await user.keyboard("{Escape}");
+    await user.type(input("向 Wit 提问"), "next{Enter}");
+    await waitFor(() => expect(screen.queryByText("已压缩：较早的对话已总结成摘要。")).toBeNull());
   });
 
   it("/compact sent compacts instead of asking", async () => {
