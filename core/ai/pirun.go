@@ -138,7 +138,7 @@ func (r *runner) agentPi(ctx context.Context, req Request, preq pi.Request, emit
 			return Result{Err: &Error{Code: CodeInternal, Msg: err.Error()}}
 		}
 		for _, b := range bs {
-			msgs = append(msgs, b)
+			msgs = append(msgs, replayed(b, preq.API, preq.Model))
 		}
 	}
 	areq.Messages = msgs

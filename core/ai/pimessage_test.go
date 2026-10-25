@@ -167,6 +167,11 @@ func TestPiHistoryKeepsAnthropicSignatures(t *testing.T) {
 	assert.True(t, ranOnPi(t, srv))
 	assert.Contains(t, string(srv.Requests()[0].Messages), `"signature":"sig-1"`)
 
+	// So does one the startup conversion left as it was.
+	_, res = run(newEngine(t), Request{Model: modelFor(srv, KindAnthropic, "k"), History: asking(genkitHistory(t), "second")})
+	require.Nil(t, res.Err)
+	assert.Contains(t, string(srv.Requests()[1].Messages), `"signature":"sig-1"`)
+
 	srv = testllm.Start(t, "openai-responses")
 	srv.Script(testllm.Turn{Text: []string{"two"}})
 	_, res = run(newEngine(t), Request{Model: modelFor(srv, KindResponses, "k"), History: asking(p, "second")})
