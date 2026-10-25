@@ -1,5 +1,5 @@
 import "./web";
-import { runAgentLoop, type AgentMessage, type AgentTool } from "@earendil-works/pi-agent-core";
+import { runAgentLoop, runAgentLoopContinue, runToolCall, type AgentMessage, type AgentTool } from "@earendil-works/pi-agent-core";
 import type { AssistantMessage, AssistantMessageEvent, Message } from "@earendil-works/pi-ai";
 import { stream as anthropicMessages } from "@earendil-works/pi-ai/api/anthropic-messages";
 import { stream as openaiCodexResponses } from "@earendil-works/pi-ai/api/openai-codex-responses";
@@ -11,8 +11,12 @@ import { normalizeContext, toToolDeclaration } from "@earendil-works/pi-ai/utils
 declare const hostEmit: (kind: "text" | "reasoning" | "refused", text: string) => void;
 // hostArgs rewrites a call's arguments (Request.Args); it throws to refuse the call.
 declare const hostArgs: (args: string) => string;
-// hostTool runs a call in Go: its output as JSON, or its error.
-declare const hostTool: (id: string, name: string, args: string) => Promise<{ output: string; error: string }>;
+// hostGate decides a call before any call of its round runs: true holds it
+// for the user (an approval or a question).
+declare const hostGate: (id: string, name: string, args: string) => boolean;
+// hostTool runs a call in Go: its output as JSON, or its error; interrupt:
+// it waits for the user instead.
+declare const hostTool: (id: string, name: string, args: string) => Promise<{ output: string; error: string; interrupt: boolean }>;
 
 // Request is pi.Request, as JSON.
 interface Request {
@@ -177,6 +181,7 @@ export async function generate(req: Request) {
 // AgentRequest is pi.AgentRequest, as JSON.
 interface AgentRequest extends Request {
   messages: Message[];
+  answers?: Record<string, { text: string; isError: boolean }>;
   tools: { name: string; description: string; parameters: Record<string, unknown>; strict: boolean }[];
   maxTurns: number;
   limitNote: string;
@@ -186,10 +191,17 @@ interface AgentRequest extends Request {
 // end with the question, each tool call runs in Go (hostTool). Past maxTurns
 // rounds of calls (run or refused) the next round's calls are refused and
 // dropped, and the model answers once more, told so by limitNote, with no
-// tool choice.
+// tool choice. A round with a call held for the user (hostGate, or a tool
+// that interrupts as it runs) runs no call that was not running yet and ends
+// the turn: held lists those calls, deferred the ones held back with them.
+// Given answers, the turn resumes such a round instead: messages end with
+// it, answers give the results of its held calls (and of those that ran),
+// and the calls held back run first.
 export async function agent(req: AgentRequest) {
   const svc = service(req);
   const ran = new Set<string>(); // calls hostTool ran: it reported them
+  const held = new Set<string>();
+  const deferred = new Set<string>();
   const asked = new Map<string, unknown>(); // each call's arguments as the model wrote them
   const replies: AssistantMessage[] = []; // every reply the turn was billed for, the dropped one too
   let rounds = 0; // replies that called tools
@@ -200,49 +212,80 @@ export async function agent(req: AgentRequest) {
     label: t.name,
     parameters: t.parameters as AgentTool["parameters"],
     prepareArguments: (args: unknown) => JSON.parse(hostArgs(JSON.stringify(args ?? {}))),
+    // pi-agent-core runs a round's calls only once beforeToolCall has seen every one of them
     async execute(id: string, params: unknown) {
+      const stop = { content: [{ type: "text" as const, text: "held" }], details: {}, terminate: true };
+      if (held.size > 0) {
+        deferred.add(id);
+        return stop;
+      }
       ran.add(id);
       const r = await hostTool(id, t.name, JSON.stringify(params ?? {}));
+      if (r.interrupt) {
+        held.add(id);
+        return stop;
+      }
       if (r.error) return { content: [{ type: "text" as const, text: JSON.stringify({ error: r.error }) }], details: {}, isError: true };
       return { content: [{ type: "text" as const, text: r.output }], details: {} };
     },
   }));
   const decls = tools.map(toToolDeclaration);
-  const history = req.messages.slice(0, -1);
-  const question = req.messages[req.messages.length - 1];
   const transcript = (system: string, messages: Message[]) =>
     normalizeContext({ systemPrompt: svc.systemPrompt(system), tools: decls, messages }).messages;
-  const added = await runAgentLoop(
-    [question],
-    { messages: transcript(req.system, history), tools },
-    {
-      model: svc.model,
-      ...svc.options,
-      convertToLlm: (msgs: AgentMessage[]) => msgs as Message[],
-      async beforeToolCall({ assistantMessage }) {
-        return limited === assistantMessage ? { block: true, terminate: true } : undefined;
-      },
-      // A round whose calls were all refused never reaches beforeToolCall.
-      finishTurn: () => (limited ? { action: "end" as const } : undefined),
-    },
-    async (ev) => {
-      if (ev.type === "message_end" && ev.message.role === "assistant") {
-        // before its calls are prepared: past maxTurns rounds none of them runs
-        replies.push(ev.message);
-        if (ev.message.content.some((c) => c.type === "toolCall") && ++rounds > req.maxTurns) limited = ev.message;
-      } else if (ev.type === "message_update") {
-        svc.relay(ev.assistantMessageEvent);
-      } else if (ev.type === "tool_execution_start") {
-        asked.set(ev.toolCallId, ev.args);
-      } else if (ev.type === "tool_execution_end" && !ran.has(ev.toolCallId) && !limited) {
-        // refused before it ran (unknown tool, invalid or rewritten arguments): Go reports it
-        const text = ev.result?.content?.[0]?.text ?? "";
-        hostEmit("refused", JSON.stringify({ id: ev.toolCallId, name: ev.toolName, args: asked.get(ev.toolCallId) ?? {}, error: text }));
+  // refused tells Go of a call refused before it ran (unknown tool, invalid or rewritten arguments).
+  const refused = (id: string, name: string, args: unknown, text: string) =>
+    hostEmit("refused", JSON.stringify({ id, name, args: args ?? {}, error: text }));
+  const config = {
+    model: svc.model,
+    ...svc.options,
+    convertToLlm: (msgs: AgentMessage[]) => msgs as Message[],
+    async beforeToolCall({ assistantMessage, toolCall, args }: { assistantMessage: AssistantMessage; toolCall: { id: string; name: string }; args: unknown }) {
+      if (limited === assistantMessage || hostGate(toolCall.id, toolCall.name, JSON.stringify(args ?? {}))) {
+        if (limited !== assistantMessage) held.add(toolCall.id);
+        return { block: true, terminate: true };
       }
+      return undefined;
     },
-    undefined,
-    (_m, ctx, o) => svc.stream(ctx, { signal: o?.signal }),
-  );
+    // A round whose calls were all refused never reaches beforeToolCall; a
+    // held round ends the turn whatever its other calls returned.
+    finishTurn: () => (limited || held.size > 0 ? { action: "end" as const } : undefined),
+  };
+  const emit = async (ev: any) => {
+    if (ev.type === "message_end" && ev.message.role === "assistant") {
+      // before its calls are prepared: past maxTurns rounds none of them runs
+      replies.push(ev.message);
+      if (ev.message.content.some((c: any) => c.type === "toolCall") && ++rounds > req.maxTurns) limited = ev.message;
+    } else if (ev.type === "message_update") {
+      svc.relay(ev.assistantMessageEvent);
+    } else if (ev.type === "tool_execution_start") {
+      asked.set(ev.toolCallId, ev.args);
+    } else if (ev.type === "tool_execution_end" && !ran.has(ev.toolCallId) && !limited && !held.has(ev.toolCallId) && !deferred.has(ev.toolCallId)) {
+      refused(ev.toolCallId, ev.toolName, asked.get(ev.toolCallId), ev.result?.content?.[0]?.text ?? "");
+    }
+  };
+  const streamFn = (_m: unknown, ctx: unknown, o?: { signal?: AbortSignal }) => svc.stream(ctx, { signal: o?.signal });
+  let history = req.messages; // what the turn goes on from
+  let added: AgentMessage[];
+  if (req.answers) {
+    // The held round's results, in call order: the host's, or the held-back call's now.
+    const round = history[history.length - 1] as AssistantMessage;
+    const results: Message[] = [];
+    for (const c of round.content) {
+      if (c.type !== "toolCall") continue;
+      const a = req.answers[c.id];
+      if (a) {
+        results.push({ role: "toolResult", toolCallId: c.id, toolName: c.name, content: [{ type: "text", text: a.text }], isError: a.isError, timestamp: Date.now() });
+        continue;
+      }
+      const o = await runToolCall(c, { tools, assistantMessage: round, context: { systemPrompt: "", messages: history, tools } });
+      if (!ran.has(c.id)) refused(c.id, c.name, c.arguments, (o.result.content?.[0] as { text?: string })?.text ?? "");
+      results.push({ role: "toolResult", toolCallId: c.id, toolName: c.name, content: o.result.content ?? [], details: o.result.details, isError: o.isError, timestamp: Date.now() } as Message);
+    }
+    added = [...results, ...(await runAgentLoopContinue({ messages: transcript(req.system, [...history, ...results]), tools }, config, emit, undefined, streamFn as any))];
+  } else {
+    history = history.slice(0, -1);
+    added = await runAgentLoop([req.messages[req.messages.length - 1]], { messages: transcript(req.system, history), tools }, config, emit, undefined, streamFn as any);
+  }
   // A system message would declare changed tools; the next turn declares its own.
   let messages = (added as Message[]).filter((m) => m.role !== "system");
   if (limited) {
@@ -266,6 +309,8 @@ export async function agent(req: AgentRequest) {
     input: replies.reduce((n, m) => n + inputOf(m), 0),
     output: replies.reduce((n, m) => n + m.usage.output, 0),
     last: last ? inputOf(last) : 0,
+    held: [...held],
+    deferred: [...deferred],
   };
 }
 

@@ -323,7 +323,8 @@ func (h *History) Rewind(at int64, sum Summary) (*History, HistoryChanges, error
 
 // Close answers every open call of h's last message, without asking the
 // model: calls that already ran keep their result, the others take theirs
-// from responses, which must match them one to one by ID and name. A
+// from responses, which must match them one to one by ID and name (calls a
+// run on pi held back with its interrupt may go unanswered: notRun). A
 // cancelled run uses it so the conversation can go on.
 func (h *History) Close(responses []ToolResult) (*History, HistoryChanges, error) {
 	if len(h.msgs) == 0 {
@@ -332,6 +333,18 @@ func (h *History) Close(responses []ToolResult) (*History, HistoryChanges, error
 	last, err := clone(h.msgs[len(h.msgs)-1])
 	if err != nil {
 		return nil, HistoryChanges{}, err
+	}
+	// A run on pi holds back the other calls of a round it interrupts: one
+	// left unanswered has no result.
+	if slices.ContainsFunc(last.Content, (*gai.Part).IsInterrupt) {
+		responses = slices.Clone(responses)
+		for _, p := range last.Content {
+			_, ran := p.Metadata["pendingOutput"]
+			answered := slices.ContainsFunc(responses, func(r ToolResult) bool { return p.IsToolRequest() && r.CallID == p.ToolRequest.Ref })
+			if p.IsToolRequest() && !p.IsInterrupt() && !ran && !answered {
+				responses = append(responses, ToolResult{CallID: p.ToolRequest.Ref, Name: p.ToolRequest.Name, Error: notRun})
+			}
+		}
 	}
 	calls, byID, err := matchResults([]*gai.Message{last}, responses)
 	if err != nil {
@@ -352,6 +365,9 @@ func (h *History) Close(responses []ToolResult) (*History, HistoryChanges, error
 	}
 	return h.with(map[int]*gai.Message{len(h.msgs) - 1: last}, []*gai.Message{toolMsg}, nil)
 }
+
+// notRun answers a call held back with an interrupted round that never ran.
+const notRun = "the run ended before this call ran"
 
 // OpenCalls are the calls of h's last message still waiting for a result,
 // as results to fill for Close; none when it has no open calls.
