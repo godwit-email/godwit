@@ -1205,6 +1205,8 @@
   "wit_tools_get_message": "{arg1, plural, one {{arg1, number, ::group-off} bericht gelezen} other {{arg1, number, ::group-off} berichten gelezen}}",
   "wit_tools_get_thread": "{arg1, plural, one {{arg1, number, ::group-off} gesprek gelezen} other {{arg1, number, ::group-off} gesprekken gelezen}}",
   "wit_tools_read_attachment": "{arg1, plural, one {{arg1, number, ::group-off} bijlage gelezen} other {{arg1, number, ::group-off} bijlagen gelezen}}",
-  "wit_thought_for": "{arg1} nagedacht",
-  "wit_thinking_now": "Denkt na"
+  "wit_thinking_now": "Denkt na",
+  "wit_work_running": "Bezig",
+  "wit_work_done": "Klaar",
+  "wit_work_done_in": "Klaar in {arg1}"
 }

@@ -1205,6 +1205,8 @@
   "wit_tools_get_message": "{arg1, plural, one {Leyó {arg1, number, ::group-off} mensaje} many {Leyó {arg1, number, ::group-off} mensajes} other {Leyó {arg1, number, ::group-off} mensajes}}",
   "wit_tools_get_thread": "{arg1, plural, one {Leyó {arg1, number, ::group-off} conversación} many {Leyó {arg1, number, ::group-off} conversaciones} other {Leyó {arg1, number, ::group-off} conversaciones}}",
   "wit_tools_read_attachment": "{arg1, plural, one {Leyó {arg1, number, ::group-off} adjunto} many {Leyó {arg1, number, ::group-off} adjuntos} other {Leyó {arg1, number, ::group-off} adjuntos}}",
-  "wit_thought_for": "Pensó durante {arg1}",
-  "wit_thinking_now": "Pensando"
+  "wit_thinking_now": "Pensando",
+  "wit_work_running": "Trabajando",
+  "wit_work_done": "Listo",
+  "wit_work_done_in": "Listo en {arg1}"
 }

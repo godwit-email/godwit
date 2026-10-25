@@ -1205,6 +1205,8 @@
   "wit_tools_get_message": "{arg1, plural, other {讀取了 {arg1, number, ::group-off} 封郵件}}",
   "wit_tools_get_thread": "{arg1, plural, other {讀取了 {arg1, number, ::group-off} 個對話}}",
   "wit_tools_read_attachment": "{arg1, plural, other {讀取了 {arg1, number, ::group-off} 個附件}}",
-  "wit_thought_for": "思考 {arg1}",
-  "wit_thinking_now": "思考中"
+  "wit_thinking_now": "思考中",
+  "wit_work_running": "處理中",
+  "wit_work_done": "已完成",
+  "wit_work_done_in": "已完成，用時 {arg1}"
 }

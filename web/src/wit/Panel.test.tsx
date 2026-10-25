@@ -515,7 +515,7 @@ describe("Panel", () => {
     });
     // what it did, folded: its kinds and counts
     const work = screen.getByRole("button", {
-      name: "思考 6 秒 · 搜索了 2 次邮件 · read_message",
+      name: "已完成，用时 6 秒",
     });
     expect(work).toHaveAttribute("aria-expanded", "false");
     expect(screen.getByText("Two receipts.")).toBeVisible();
@@ -527,10 +527,16 @@ describe("Panel", () => {
     const answer = screen
       .getByText("Two receipts.")
       .closest("[data-role=assistant]") as HTMLElement;
-    // its calls between its reasoning and its text, each with what it found
+    // its calls between its reasoning and its text, each with who sent what it found: one by
+    // name, several as the first +N
     expect(answer.textContent).toMatch(
-      /思考 6 秒.*思考 · 先按收据搜.*搜索邮件receipt OR 账单Acme CloudBob.*read_message.*搜索邮件invoiceAcme Cloud.*Two receipts\./,
+      /已完成，用时 6 秒.*思考 · 先按收据搜.*搜索邮件receipt OR 账单· Acme Cloud \+1.*read_message.*搜索邮件invoice· Acme Cloud.*Two receipts\./,
     );
+    // several unfold into each
+    expect(screen.queryByText("Bob")).toBeNull();
+    await user.click(screen.getByRole("button", { name: /receipt OR 账单/ }));
+    expect(await screen.findByText("Bob")).toBeInTheDocument();
+    expect(screen.queryAllByRole("button", { name: /invoice/ })).toHaveLength(0); // one sender: no fold
     // how long it worked is in the folded line, not again under the answer
     expect(within(answer).queryByText("6 秒")).toBeNull();
   });
@@ -947,12 +953,8 @@ describe("Panel", () => {
       }),
     });
     const answer = screen.getByText("Done.").closest("[data-role=assistant]") as HTMLElement;
-    expect(
-      within(answer).getAllByRole("button", { name: "搜索了 1 次邮件 · 读取了 1 封邮件" }),
-    ).toHaveLength(2);
-    expect(answer.textContent).toMatch(
-      /读取了 1 封邮件.*已允许 · 创建草稿.*读取了 1 封邮件.*Done\./,
-    );
+    expect(within(answer).getAllByRole("button", { name: "已完成" })).toHaveLength(2);
+    expect(answer.textContent).toMatch(/已完成.*已允许 · 创建草稿.*已完成.*Done\./);
   });
 
   it("its work stays open while it runs and folds once it is done", async () => {
@@ -970,10 +972,11 @@ describe("Panel", () => {
       result: { callId: "g1", name: "get_message", output: "1", error: "" },
     });
     emit({ kind: "text", text: "Found it." });
-    const work = await screen.findByRole("button", { name: "搜索了 1 次邮件 · 读取了 1 封邮件" });
+    const work = await screen.findByRole("button", { name: "处理中" });
     expect(work).toHaveAttribute("aria-expanded", "true");
     emit({ kind: "done" });
     await waitFor(() => expect(work).toHaveAttribute("aria-expanded", "false"));
+    expect(work).toHaveTextContent("已完成");
     expect(screen.getByText("Found it.")).toBeInTheDocument();
   });
 
@@ -1094,7 +1097,7 @@ describe("Panel", () => {
       }),
     });
     // the work folded; unfolded, the two searches one line that unfolds into each, the read its own
-    await user.click(screen.getByRole("button", { name: "search ×2 · read" }));
+    await user.click(screen.getByRole("button", { name: "已完成" }));
     const searches = await screen.findByRole("button", { name: "search ×2" });
     expect(searches).toHaveAttribute("aria-expanded", "false");
     expect(screen.getAllByTitle(/^(search|read)$/).map((l) => l.textContent)).toEqual(["read"]);

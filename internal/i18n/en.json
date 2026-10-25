@@ -2434,13 +2434,15 @@
       }
     }
   },
-  "wit_thought_for": "Thought for {arg1}",
-  "@wit_thought_for": {
+  "wit_thinking_now": "Thinking",
+  "wit_work_running": "Working",
+  "wit_work_done": "Done",
+  "wit_work_done_in": "Done in {arg1}",
+  "@wit_work_done_in": {
     "placeholders": {
       "arg1": {
         "type": "String"
       }
     }
-  },
-  "wit_thinking_now": "Thinking"
+  }
 }

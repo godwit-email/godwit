@@ -15,7 +15,6 @@ import {
   RiExternalLinkLine,
   RiFileCopyLine,
   RiGlobalLine,
-  RiListCheck2,
   RiLoaderLine,
   RiMailLine,
   RiRefreshLine,
@@ -651,8 +650,8 @@ function Thought({ text, streaming, t }: { text: string; streaming: boolean; t: 
 }
 
 /**
- * What an answer did before its final text, as one line ("已思考 2 分 5 秒 · 搜索了 30 次邮件"): open
- * while the answer works, folded once it is done, as agents fold their steps under their answer.
+ * What an answer did before its final text, as one line ("已完成，用时 42 秒"): open while the
+ * answer works (处理中), folded once it is done, as agents fold their steps under their answer.
  */
 function Work({ label, live, children }: { label: string; live: boolean; children: ReactNode }) {
   const [open, setOpen] = useState(live);
@@ -661,9 +660,6 @@ function Work({ label, live, children }: { label: string; live: boolean; childre
     <TraceCollapsible open={open} onOpenChange={setOpen}>
       <TraceCollapsibleTrigger>
         <TraceLine status={live ? "running" : undefined}>
-          <TraceIcon>
-            <RiListCheck2 />
-          </TraceIcon>
           <TraceTitle>{label}</TraceTitle>
         </TraceLine>
       </TraceCollapsibleTrigger>
@@ -674,7 +670,10 @@ function Work({ label, live, children }: { label: string; live: boolean; childre
   );
 }
 
-/** A call as a line of its answer: what it does, its query and the senders it found; spinning while it runs. */
+/**
+ * A call as a line of its answer: what it does, its query and who sent the mail it found (one by
+ * name, several as the first +N, unfolding into each); spinning while it runs.
+ */
 function ToolLine({
   p,
   running,
@@ -696,38 +695,43 @@ function ToolLine({
       cites.filter((c) => c.callIds.includes(p.toolCallId)).map((c) => senderName(c.from)),
     ),
   ];
-  return (
-    <div className="flex min-w-0 flex-col gap-1.5">
-      <TraceLine
-        status={running ? "running" : p.state === "output-error" ? "error" : undefined}
-        title={p.toolName}
-      >
-        <TraceIcon>
-          <Icon className={cn(running && "animate-spin")} />
-        </TraceIcon>
-        <TraceTitle>{toolLabel(p.toolName, t)}</TraceTitle>
-        {query && (
-          <span className="min-w-0 truncate rounded-sm bg-muted px-1.5 font-mono text-xs">
-            {clip(query)}
-          </span>
-        )}
-      </TraceLine>
-      {senders.length > 0 && (
-        <span className="flex flex-wrap gap-1 pl-6">
-          {senders.slice(0, 5).map((n) => (
-            <span
-              key={n}
-              className="rounded-full border-[0.5px] px-2 text-muted-foreground text-xs leading-5"
-            >
-              {n}
-            </span>
-          ))}
-          {senders.length > 5 && (
-            <span className="text-muted-foreground text-xs leading-5">+{senders.length - 5}</span>
-          )}
+  const line = (
+    <TraceLine
+      status={running ? "running" : p.state === "output-error" ? "error" : undefined}
+      title={p.toolName}
+    >
+      <TraceIcon>
+        <Icon className={cn(running && "animate-spin")} />
+      </TraceIcon>
+      <TraceTitle>{toolLabel(p.toolName, t)}</TraceTitle>
+      {query && (
+        <span className="min-w-0 truncate rounded-sm bg-muted px-1.5 font-mono text-xs">
+          {clip(query)}
         </span>
       )}
-    </div>
+      {senders.length > 0 && (
+        <span className="min-w-0 shrink-0 truncate">
+          · {senders[0]}
+          {senders.length > 1 && ` +${senders.length - 1}`}
+        </span>
+      )}
+    </TraceLine>
+  );
+  if (senders.length < 2) return line;
+  return (
+    <TraceCollapsible>
+      <TraceCollapsibleTrigger>{line}</TraceCollapsibleTrigger>
+      <TraceCollapsibleContent className="flex flex-wrap gap-1">
+        {senders.map((n) => (
+          <span
+            key={n}
+            className="rounded-full border-[0.5px] px-2 text-muted-foreground text-xs leading-5"
+          >
+            {n}
+          </span>
+        ))}
+      </TraceCollapsibleContent>
+    </TraceCollapsible>
   );
 }
 
@@ -866,7 +870,7 @@ function Answer({
     p.type === "dynamic-tool" && (!!requested(p) || settled.some((a) => answers(a, p.toolCallId)));
   // What it did before its final text (the text after its last step) folds into one line per
   // stretch between cards, so a card keeps its place among the steps, when the stretch is more
-  // than one line: the steps' kinds and counts name it.
+  // than one line.
   const end =
     m.parts.findLastIndex(
       (p) => p.type === "dynamic-tool" || (p.type === "reasoning" && !!p.text),
@@ -887,28 +891,15 @@ function Answer({
   const folds = stretches.filter(
     (w) => w.filter(shows).length > 1 && w.some((i) => m.parts[i].type !== "text" && shows(i)),
   );
-  const reasons = (w: number[]) => w.some((i) => m.parts[i].type === "reasoning");
   const took = !live && elapsed(m.metadata?.elapsed, t);
-  // the answer's time goes on the last folded line that thought, nearest the answer
-  const timed = folds.findLast(reasons);
-  const workLabel = (work: number[]) => {
-    const count = new Map<string, number>();
-    for (const i of work) {
-      const p = m.parts[i];
-      if (p.type === "dynamic-tool") count.set(p.toolName, (count.get(p.toolName) ?? 0) + 1);
-    }
-    return [
-      // "已思考 6 秒": the answer's time at work, as agents give it
-      reasons(work) && (took && work === timed ? t("wit.thought_for", took) : t("wit.reasoning")),
-      ...[...count].map(([name, k]) => {
-        const key = `wit.tools.${name}`;
-        if (t(key, k) !== key) return t(key, k);
-        return k > 1 ? `${toolLabel(name, t)} ×${k}` : toolLabel(name, t);
-      }),
-    ]
-      .filter(Boolean)
-      .join(" · ");
-  };
+  // the answer's time goes on its last folded line, nearest the answer
+  const timed = folds.at(-1);
+  const workLabel = (work: number[]) =>
+    live
+      ? t("wit.work_running")
+      : took && work === timed
+        ? t("wit.work_done_in", took)
+        : t("wit.work_done");
   // a decided approval with no call of this answer's parts (none expected) still shows, at the end
   const loose = settled.filter((a) => !calls.some((p) => answers(a, p.toolCallId)));
   // Something of it moves (text or thought streaming, a call spinning): no working line then, but
