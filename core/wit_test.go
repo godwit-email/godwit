@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"maps"
 	"os"
 	"path/filepath"
 	"slices"
@@ -1029,6 +1030,23 @@ func TestAskAgainResumeKeepsNumbers(t *testing.T) {
 	require.Len(t, rs, 1)
 	require.Empty(t, rs[0].Result.Error)
 	assert.Equal(t, c, rs[0].Citations[0].MessageID, "mail 2 is the mail this answer showed, not the replaced one's")
+}
+
+// A run held back across the switch to mail ids (no snapshot.MailIDs) may
+// resume a call that names its mail by message ID: one its tools showed it
+// reads as that message; anything else, and every newer run, as an id.
+func TestMailOfOldRun(t *testing.T) {
+	s := &Service{}
+	refs := map[int64]int{42: 1, 7: 2}
+	old := &runJob{refs: maps.Clone(refs), oldIDs: true}
+	id, err := s.mailOf(t.Context(), old, 42)
+	require.NoError(t, err)
+	assert.EqualValues(t, 42, id, "a message ID it was shown")
+	id, err = s.mailOf(t.Context(), old, 2)
+	require.NoError(t, err)
+	assert.EqualValues(t, 7, id, "else an id")
+	_, err = s.mailOf(t.Context(), &runJob{refs: maps.Clone(refs)}, 42)
+	assert.ErrorIs(t, err, errMailNotFound, "a newer run knows mail by id alone")
 }
 
 func TestAskOnPi(t *testing.T) {

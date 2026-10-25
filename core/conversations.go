@@ -394,6 +394,9 @@ func (s *Service) mailOf(ctx context.Context, job *runJob, n int) (int64, error)
 	job.refsMu.Lock()
 	defer job.refsMu.Unlock()
 	s.loadRefs(context.WithoutCancel(ctx), job)
+	if _, ok := job.refs[int64(n)]; ok && job.oldIDs { // a message ID the run's tools showed it before mail ids
+		return int64(n), nil
+	}
 	for id, k := range job.refs {
 		if k == n {
 			return id, nil
@@ -872,12 +875,15 @@ type runJob struct {
 	cites    sync.Map // call ID -> []Citation, stored by read tools
 	refsMu   sync.Mutex
 	refs     map[int64]int // message ID -> citation number, read on first use (number)
-	clued    sync.Map      // recipients create_draft has shown language clues for
-	base     *ai.History   // the history the run started from (its question asked again: before it)
-	after    *ai.History   // what the run ended with (drive), and the changes that save it
-	changes  ai.HistoryChanges
-	resumed  bool   // a resume: the run's context was shown and cited already
-	turn     string // the turn its question starts (Turn.ID)
+	// oldIDs: a resumed run begun before mail ids (snapshot.MailIDs): calls it
+	// held back may name mail by message ID (mailOf)
+	oldIDs  bool
+	clued   sync.Map    // recipients create_draft has shown language clues for
+	base    *ai.History // the history the run started from (its question asked again: before it)
+	after   *ai.History // what the run ended with (drive), and the changes that save it
+	changes ai.HistoryChanges
+	resumed bool   // a resume: the run's context was shown and cited already
+	turn    string // the turn its question starts (Turn.ID)
 	// host, set for a host-made proposal (AssistSkill), turns the finished
 	// tool-less run into an interrupt on the proposal; it is not resumed. Its
 	// command is the question the history keeps for it.
@@ -903,6 +909,9 @@ type snapshot struct {
 	Host     bool        `json:"host,omitempty"`    // a host-made proposal: nothing to resume
 	Effort   string      `json:"effort,omitempty"`  // the run's reasoning effort
 	Summary  *ai.Summary `json:"summary,omitempty"` // runJob.summary; none from before it was kept
+	// MailIDs: the run's tools know a mail by its citation number, its id (blocks);
+	// a run from before took message IDs
+	MailIDs bool `json:"mail_ids,omitempty"`
 }
 
 type runKey struct{}
@@ -1065,7 +1074,7 @@ func (s *Service) claimRun(ctx context.Context, conv Conversation, ref string, t
 		return nil, nil, err
 	}
 	toolsJSON, _ := json.Marshal(tools)
-	snap, _ := json.Marshal(snapshot{})
+	snap, _ := json.Marshal(snapshot{MailIDs: true})
 	now := time.Now().Unix()
 	r, err := s.db.Execute(ctx, `INSERT INTO runs(conversation_id, state, model, tools, snapshot, created_at, updated_at)
 		SELECT ?, 'running', ?, ?, ?, ?, ? WHERE NOT EXISTS (SELECT 1 FROM runs WHERE conversation_id = ?
@@ -1373,7 +1382,7 @@ func (s *Service) settleRun(ctx context.Context, job *runJob, req ai.Request, re
 		return WitEvent{Event: ai.Event{Kind: "done"}}, err
 	}
 	now := time.Now().Unix()
-	snap, _ := json.Marshal(snapshot{ReadMail: job.scope.ReadMail(), Round: job.round, Host: job.host != nil, Effort: req.Effort, Summary: job.summary})
+	snap, _ := json.Marshal(snapshot{ReadMail: job.scope.ReadMail(), Round: job.round, Host: job.host != nil, Effort: req.Effort, Summary: job.summary, MailIDs: !job.oldIDs})
 	stmts := append(historyStmts(job.conv.ID, job.changes), runSpan(job.id, job.base.Next(), job.after.Next()), runUsage(job.id, res.Usage),
 		sqlite.Statement{SQL: "UPDATE runs SET state = 'interrupted', snapshot = ?, updated_at = ? WHERE id = ?", Args: []any{snap, now, job.id}})
 	for i, c := range res.Interrupts {
@@ -1480,7 +1489,7 @@ func (s *Service) startResume(ctx context.Context, end func(), runID int64) erro
 		return err
 	}
 	job := s.track(ctx, runID, conv, scope, snap.Round+len(as))
-	job.resumed, job.rewind, job.turn, job.summary = true, rw, s.runTurn(ctx, runID), snap.Summary
+	job.resumed, job.rewind, job.turn, job.summary, job.oldIDs = true, rw, s.runTurn(ctx, runID), snap.Summary, !snap.MailIDs
 	req, err := s.request(ctx, job, model, h, offered(conv.Kind, s.registered(names...)))
 	if err != nil {
 		s.untrack(job)
