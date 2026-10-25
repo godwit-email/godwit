@@ -1711,8 +1711,12 @@ export function Panel({
       <MessageScroller className="min-h-0 flex-1">
         <MessageScrollerViewport>
           <MessageScrollerContent
-            // pb-6 clears the input's fade (h-6) and no more: the last line ends just above it
-            className={page ? "mx-auto w-full max-w-202 gap-5 p-6" : "gap-2.5 p-4 pb-6"}
+            // pb-6 clears the input's fade (h-6) and no more: the last line ends just above it.
+            // Step lines (trace's text-sm) take the text's size: only their grey sets them apart.
+            className={cn(
+              "[&_[data-slot=trace-line]]:text-md",
+              page ? "mx-auto w-full max-w-202 gap-5 p-6" : "gap-2.5 p-4 pb-6",
+            )}
           >
             {chat.messages.map((m, i) => (
               <MessageScrollerItem
