@@ -5,6 +5,12 @@ updates:
     directory: /
     schedule:
       interval: weekly
+    # Dependabot holds new Go versions back 3 days even without this block;
+    # mygo has to skip that, as mygo-runtime does in web/, or the two PRs
+    # open at different versions.
+    cooldown:
+      default-days: 3
+      exclude: [github.com/egoist/mygo]
     commit-message:
       prefix: build
       include: scope
