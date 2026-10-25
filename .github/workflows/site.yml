@@ -22,6 +22,9 @@ jobs:
     steps:
       - uses: actions/checkout@v7
       - uses: jdx/mise-action@v5
+      - uses: actions/setup-node@v7 # astro build runs on Node; the runner's preinstalled one lags Astro's minimum
+        with:
+          node-version: 24
       - run: mise run site:check
       - name: Deploy
         if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'

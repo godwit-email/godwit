@@ -11,21 +11,21 @@
     "test": "bun test src"
   },
   "devDependencies": {
-    "@cloudflare/workers-types": "5.20261012.1",
+    "@cloudflare/workers-types": "5.20261022.1",
     "@expo-google-fonts/noto-sans-sc": "0.4.4",
     "@fontsource-variable/geist": "5.3.0",
     "@fontsource-variable/geist-mono": "5.3.0",
     "@resvg/resvg-js": "2.6.2",
     "@tailwindcss/vite": "4.3.3",
-    "@types/bun": "1.4.2",
+    "@types/bun": "1.4.3",
     "@types/three": "0.186.0",
-    "astro": "7.3.8",
-    "geist": "1.7.2",
-    "motion": "14.1.0",
-    "remixicon": "4.8.0",
+    "astro": "7.4.2",
+    "geist": "1.8.2",
+    "motion": "14.6.0",
+    "remixicon": "4.9.1",
     "tailwindcss": "4.3.3",
     "three": "0.186.1",
     "typescript": "7.0.2",
-    "wrangler": "4.149.0"
+    "wrangler": "4.152.0"
   }
 }
