@@ -1017,9 +1017,10 @@ describe("Panel", () => {
       kind: "tool_result",
       result: { callId: "r1", name: "read_message", output: "1", error: "" },
     });
-    emit({ kind: "tool_call", call: { id: "u1", name: "update_draft", args: "{}" } });
+    // alone, the call is a line of its own; with the edit after it, the two are the work's line
     expect(await screen.findByTitle("read_message")).toBeInTheDocument();
-    expect(screen.getByText("正在写入正文…")).toBeInTheDocument();
+    emit({ kind: "tool_call", call: { id: "u1", name: "update_draft", args: "{}" } });
+    expect(await screen.findByText("正在写入正文…")).toBeInTheDocument();
   });
 
   it("lines up tool calls, one tool's in a row as one line, shows core's citation numbers, notes suspect ones", async () => {
