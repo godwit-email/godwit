@@ -1205,5 +1205,6 @@
   "wit_tools_get_message": "{arg1, plural, one {{arg1, number, ::group-off} messaggio letto} many {{arg1, number, ::group-off} messaggi letti} other {{arg1, number, ::group-off} messaggi letti}}",
   "wit_tools_get_thread": "{arg1, plural, one {{arg1, number, ::group-off} conversazione letta} many {{arg1, number, ::group-off} conversazioni lette} other {{arg1, number, ::group-off} conversazioni lette}}",
   "wit_tools_read_attachment": "{arg1, plural, one {{arg1, number, ::group-off} allegato letto} many {{arg1, number, ::group-off} allegati letti} other {{arg1, number, ::group-off} allegati letti}}",
-  "wit_thought_for": "Ha ragionato per {arg1}"
+  "wit_thought_for": "Ha ragionato per {arg1}",
+  "wit_thinking_now": "Sta ragionando"
 }

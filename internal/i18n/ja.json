@@ -1161,7 +1161,7 @@
   "wit_effort_high": "高",
   "wit_elapsed_seconds": "{arg1} 秒",
   "wit_elapsed_minutes": "{arg1} 分 {arg2} 秒",
-  "wit_reasoning": "思考済み",
+  "wit_reasoning": "思考",
   "wit_regenerate": "再生成",
   "wit_suggest": "Wit に聞いてみましょう",
   "wit_suggest_1": "まだ返信を待っている人は？",
@@ -1205,5 +1205,6 @@
   "wit_tools_get_message": "{arg1, plural, other {{arg1, number, ::group-off} 件のメールを読みました}}",
   "wit_tools_get_thread": "{arg1, plural, other {{arg1, number, ::group-off} 件のスレッドを読みました}}",
   "wit_tools_read_attachment": "{arg1, plural, other {{arg1, number, ::group-off} 個の添付ファイルを読みました}}",
-  "wit_thought_for": "{arg1}思考しました"
+  "wit_thought_for": "{arg1}思考",
+  "wit_thinking_now": "思考中"
 }

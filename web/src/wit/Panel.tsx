@@ -594,10 +594,42 @@ function Settled({ a, onDraft, t }: { a: Approval; onDraft?(id: number): Promise
   );
 }
 
-/** A reasoning part: open while it streams, folded once it is done (the user may open it again). */
+// A heading line of a thought: "# Title", or "**Title**" / "__Title__" alone (how reasoning
+// summaries head their parts).
+const HEADING = /^\s*(?:#{1,6}\s+(.+?)[\s#]*|\*\*([^*\n]+)\*\*|__([^_\n]+)__)\s*$/;
+
+/** Markdown's marks out of a line: what it reads as, on one line. */
+const plain = (s: string) =>
+  s
+    .replace(/\[([^\]]*)\]\([^)]*\)/g, "$1")
+    .replace(/\*\*|__|`/g, "")
+    .replace(/^\s*(?:#{1,6}|>|[-*+]|\d+\.)\s+/, "")
+    .replace(/\s+/g, " ")
+    .trim();
+
+/**
+ * What a thought is about, as its line names it ("思考 · …"), as agents do: its latest heading
+ * while it streams; once done, its first heading, else its first sentence. "" for none.
+ */
+export function thoughtTitle(text: string, streaming: boolean): string {
+  const heads = text.split("\n").flatMap((l) => {
+    const m = HEADING.exec(l);
+    const h = m && plain(m[1] ?? m[2] ?? m[3]);
+    return h ? [h] : [];
+  });
+  if (streaming || heads.length > 0) return (streaming ? heads.at(-1) : heads[0]) ?? "";
+  const first = plain(text.split("\n").find((l) => plain(l)) ?? "");
+  return /^.*?(?:[。！？]|[.!?](?=\s|$))/.exec(first)?.[0] ?? first;
+}
+
+/**
+ * A reasoning part: "思考中 · its latest heading" while it streams, open; "思考 · its title" once
+ * done, folded (the user may open it again). The line keeps to one line; hovering shows the title.
+ */
 function Thought({ text, streaming, t }: { text: string; streaming: boolean; t: T }) {
   const [open, setOpen] = useState(streaming);
   useEffect(() => setOpen(streaming), [streaming]);
+  const title = thoughtTitle(text, streaming);
   return (
     <TraceCollapsible open={open} onOpenChange={setOpen}>
       <TraceCollapsibleTrigger>
@@ -605,7 +637,10 @@ function Thought({ text, streaming, t }: { text: string; streaming: boolean; t: 
           <TraceIcon>
             <RiBrainLine />
           </TraceIcon>
-          <TraceTitle>{t(streaming ? "wit.thinking" : "wit.reasoning")}</TraceTitle>
+          <TraceTitle title={title || undefined}>
+            {t(streaming ? "wit.thinking_now" : "wit.reasoning")}
+            {title && ` · ${clip(title, 80)}`}
+          </TraceTitle>
         </TraceLine>
       </TraceCollapsibleTrigger>
       <TraceCollapsibleContent className="whitespace-pre-wrap text-sm">

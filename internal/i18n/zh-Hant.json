@@ -1161,7 +1161,7 @@
   "wit_effort_high": "高",
   "wit_elapsed_seconds": "{arg1} 秒",
   "wit_elapsed_minutes": "{arg1} 分 {arg2} 秒",
-  "wit_reasoning": "已思考",
+  "wit_reasoning": "思考",
   "wit_regenerate": "重新產生",
   "wit_suggest": "試著問 Wit",
   "wit_suggest_1": "誰還在等我回覆？",
@@ -1205,5 +1205,6 @@
   "wit_tools_get_message": "{arg1, plural, other {讀取了 {arg1, number, ::group-off} 封郵件}}",
   "wit_tools_get_thread": "{arg1, plural, other {讀取了 {arg1, number, ::group-off} 個對話}}",
   "wit_tools_read_attachment": "{arg1, plural, other {讀取了 {arg1, number, ::group-off} 個附件}}",
-  "wit_thought_for": "已思考 {arg1}"
+  "wit_thought_for": "思考 {arg1}",
+  "wit_thinking_now": "思考中"
 }

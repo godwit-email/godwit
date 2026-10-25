@@ -4,7 +4,7 @@ import { toast } from "sonner";
 import type { Approval, MailHit, WitEvent, WitHistory, WitInfo } from "@/mygo";
 import { makeT } from "@/shared/i18n";
 import { legacy as hist } from "./fixtures";
-import { elapsed, formRound, Panel, type PanelReview } from "./Panel";
+import { elapsed, formRound, Panel, type PanelReview, thoughtTitle } from "./Panel";
 import { WitTransport } from "./transport";
 
 vi.mock("@/mygo", () => ({ events: { wit: { on: () => () => {} } } }));
@@ -415,20 +415,36 @@ describe("Panel", () => {
     expect(screen.queryByRole("button", { name: "重试" })).toBeNull();
   });
 
-  it("reasoning shows as a running trace line, then folds under 已思考", async () => {
+  it("reasoning shows as a running 思考中 line, then folds under 思考 · its first sentence", async () => {
     const user = userEvent.setup();
     const { api, emit } = await setup({ page: true });
     await user.type(input("向 Wit 提问"), "hi{Enter}");
     await waitFor(() => expect(api.ask).toHaveBeenCalled());
     emit({ kind: "reasoning", text: "先查账单" });
-    const line = await screen.findByText("正在思考…", { selector: "[data-slot=trace-title]" });
+    const line = await screen.findByText("思考中", { selector: "[data-slot=trace-title]" });
     expect(line.closest("[data-slot=trace-line]")).toHaveAttribute("data-status", "running");
     emit({ kind: "text", text: "三笔" });
     emit({ kind: "done" });
-    const folded = await screen.findByRole("button", { name: "已思考" });
+    const folded = await screen.findByRole("button", { name: "思考 · 先查账单" });
     expect(folded).toHaveAttribute("aria-expanded", "false");
     await user.click(folded);
     expect(await screen.findByText("先查账单")).toBeInTheDocument();
+  });
+
+  it("a thought's title: its latest heading while it streams; once done its first heading, else its first sentence", () => {
+    const summary =
+      "**Finding the bills**\n\nSearching receipts.\n\n**Checking amounts**\n\nOne is promo.";
+    expect(thoughtTitle(summary, true)).toBe("Checking amounts");
+    expect(thoughtTitle(summary, false)).toBe("Finding the bills");
+    expect(thoughtTitle("## Plan\nlook", false)).toBe("Plan");
+    expect(thoughtTitle("已定位到报错：服务未运行。接下来查日志", false)).toBe(
+      "已定位到报错：服务未运行。",
+    );
+    expect(
+      thoughtTitle("\n- Look at `get_message` and [docs](https://x.y). Then more", false),
+    ).toBe("Look at get_message and docs.");
+    expect(thoughtTitle("v1.2 is out, no end", false)).toBe("v1.2 is out, no end");
+    expect(thoughtTitle("plain text while streaming", true)).toBe("");
   });
 
   it("says how long an answer worked: seconds, then minutes; nothing when not known", () => {
@@ -499,12 +515,12 @@ describe("Panel", () => {
     });
     // what it did, folded: its kinds and counts
     const work = screen.getByRole("button", {
-      name: "已思考 6 秒 · 搜索了 2 次邮件 · read_message",
+      name: "思考 6 秒 · 搜索了 2 次邮件 · read_message",
     });
     expect(work).toHaveAttribute("aria-expanded", "false");
     expect(screen.getByText("Two receipts.")).toBeVisible();
     await user.click(work);
-    const thought = await screen.findByRole("button", { name: "已思考" });
+    const thought = await screen.findByRole("button", { name: "思考 · 先按收据搜" });
     expect(thought).toHaveAttribute("aria-expanded", "false");
     await user.click(thought);
     expect(await screen.findByText("先按收据搜")).toBeInTheDocument();
@@ -513,7 +529,7 @@ describe("Panel", () => {
       .closest("[data-role=assistant]") as HTMLElement;
     // its calls between its reasoning and its text, each with what it found
     expect(answer.textContent).toMatch(
-      /已思考 6 秒.*已思考.*搜索邮件receipt OR 账单Acme CloudBob.*read_message.*搜索邮件invoiceAcme Cloud.*Two receipts\./,
+      /思考 6 秒.*思考 · 先按收据搜.*搜索邮件receipt OR 账单Acme CloudBob.*read_message.*搜索邮件invoiceAcme Cloud.*Two receipts\./,
     );
     // how long it worked is in the folded line, not again under the answer
     expect(within(answer).queryByText("6 秒")).toBeNull();
