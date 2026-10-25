@@ -1,7 +1,7 @@
 import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { makeT } from "@/shared/i18n";
-import { Response } from "./Response";
+import { plainCites, Response } from "./Response";
 
 const t = makeT("zh-Hans");
 
@@ -26,6 +26,42 @@ describe("answer layout", () => {
     expect(table?.parentElement).toHaveClass("border-[0.5px]", "rounded-lg");
     expect(container.querySelectorAll(".border-\\[0\\.5px\\]")).toHaveLength(1);
     expect(screen.getByText("a")).toHaveClass("bg-sidebar", "font-medium");
+  });
+
+  it("<mail id/> cites a mail; beside it a plain [n] is text, not a citation", async () => {
+    const cite = vi.fn((n: number) => <span>mail {n}</span>);
+    render(<Response text={'paid <mail id="1"/>, see [2]'} onLink={() => {}} t={t} cite={cite} />);
+    expect(await screen.findByRole("button", { name: "[1]" })).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "[2]" })).toBeNull();
+    expect(screen.getByText(/see \[2\]/)).toBeInTheDocument();
+    expect(screen.queryByText(/<mail/)).toBeNull();
+  });
+
+  it("<mail id card/> lines show cards, each in its place", async () => {
+    const card = (n: number) => <span>card {n}</span>;
+    render(
+      <Response
+        text={'Two mails:\n<mail id="1" card/>\n<mail id="2" card/>\nThat is all.'}
+        onLink={() => {}}
+        t={t}
+        card={card}
+      />,
+    );
+    expect(await screen.findByText("card 1")).toBeInTheDocument();
+    expect(screen.getByText("card 2")).toBeInTheDocument();
+    expect(screen.getByText("That is all.")).toBeInTheDocument();
+  });
+
+  it("while it streams, a tag not yet whole shows nothing", async () => {
+    const { container } = render(
+      <Response text={'paid <mail id="1'} streaming onLink={() => {}} t={t} />,
+    );
+    await screen.findByText(/paid/);
+    expect(container.textContent).not.toContain("<mail");
+  });
+
+  it("copying an answer gives its tags as [n]", () => {
+    expect(plainCites('paid <mail id="1"/> and\n<mail id="2" card/>')).toBe("paid [1] and\n[2]");
   });
 
   it("hovering [n] shows its mail; the marker shows n alone", async () => {

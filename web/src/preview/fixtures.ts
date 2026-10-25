@@ -313,10 +313,10 @@ const table = `10 月共找到 4 个订阅扣款：
 
 | 服务 | 金额 | 扣款日 | 来源 |
 | --- | --- | --- | --- |
-| Acme Cloud | [AMOUNT] | 10/02 | [1] |
-| [服务 B] | [AMOUNT] | 10/03 | [2] |
-| [服务 C] | [AMOUNT] | 10/05 | [3] |
-| [服务 D] | [AMOUNT] | 10/07 | [4] |
+| Acme Cloud | [AMOUNT] | 10/02 | <mail id="1"/> |
+| [服务 B] | [AMOUNT] | 10/03 | <mail id="2"/> |
+| [服务 C] | [AMOUNT] | 10/05 | <mail id="3"/> |
+| [服务 D] | [AMOUNT] | 10/07 | <mail id="4"/> |
 
 另有 3 封是促销邮件，不是实际扣款，已排除。`;
 const createDraft = call("s9", "create_draft", {

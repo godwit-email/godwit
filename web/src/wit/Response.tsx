@@ -71,7 +71,27 @@ const citeLinks = () => (tree: Node) => {
 // Model output is untrusted. Set explicitly, never Streamdown's defaults (rehype-raw and a harden
 // that allows every protocol): raw HTML as text (and skipHtml, no rehype-raw), sanitized, no
 // images, and links only for http, https and mailto, each through the confirmation below.
-const remarkPlugins = [...Object.values(defaultRemarkPlugins), htmlAsText, cardLinks, citeLinks];
+const remarkPlugins = [...Object.values(defaultRemarkPlugins), htmlAsText, cardLinks];
+// An answer that cites by tag: a plain "[n]" in it is text, not a citation.
+const legacyPlugins = [...remarkPlugins, citeLinks];
+
+/** How an answer cites mail n (core citeTag): <mail id="n"/>, or <mail id="n" card/> for its card. */
+const MAIL_TAG = /<mail\s+id="?(\d+)"?(\s+card)?\s*\/?>(?:\s*<\/mail>)?/g;
+
+/**
+ * text with its mail tags as the markers the plugins read: a card as a paragraph of [[n]], a
+ * citation as a link to CITE+n. While it streams, a tag not yet whole shows nothing.
+ * shortcut: a tag inside code is turned too; parse it in the tree if answers quote tags as code.
+ */
+function mailTags(text: string, streaming: boolean) {
+  const whole = streaming ? text.replace(/<(?:m(?:a(?:i(?:l\b[^>]*)?)?)?)?$/, "") : text;
+  return whole.replace(MAIL_TAG, (_, n: string, card?: string) =>
+    card ? `\n\n[[${n}]]\n\n` : `[${n}](${CITE}${n})`,
+  );
+}
+
+/** The text with its mail tags as "[n]": what copying an answer gives. */
+export const plainCites = (text: string) => text.replace(MAIL_TAG, (_, n: string) => `[${n}]`);
 type Pluggable = NonNullable<StreamdownProps["rehypePlugins"]>[number];
 type Schema = { protocols?: Record<string, string[]>; tagNames?: string[] };
 type Plugin = Extract<Pluggable, (...args: never[]) => unknown>;
@@ -150,8 +170,9 @@ function Cite({ n, card }: { n: number; card: ReactNode }) {
 
 /**
  * An answer: Markdown, hardened. A link opens only after its confirmation (link.open → onLink); a
- * source marker [n] opens a popover with what cite(n) gives, if anything (else it is text); a
- * paragraph of [[n]] alone shows what card(n) gives in its place, if anything (else its text).
+ * mail tag <mail id="n"/> (in an answer from before tags, a marker [n]) opens a popover with what
+ * cite(n) gives, if anything (else it is text); <mail id="n" card/> (before, a paragraph of [[n]]
+ * alone) shows what card(n) gives in its place, if anything (else its text).
  */
 export function Response({
   text,
@@ -258,13 +279,13 @@ export function Response({
         className={cn("space-y-2.5 text-md", size === "page" && "leading-[1.75]")}
         mode={streaming ? "streaming" : "static"}
         skipHtml
-        remarkPlugins={remarkPlugins}
+        remarkPlugins={/<mail\s+id=/.test(text) ? remarkPlugins : legacyPlugins}
         rehypePlugins={rehypePlugins}
         components={components}
         linkSafety={{ enabled: false }}
         controls={false}
       >
-        {text}
+        {mailTags(text, streaming)}
       </Streamdown>
       <AlertDialog open={!!link} onOpenChange={(o) => !o && setLink(undefined)}>
         <AlertDialogContent>

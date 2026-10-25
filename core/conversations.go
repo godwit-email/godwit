@@ -68,7 +68,7 @@ type WitEvent struct {
 // (its tool_result), or when CallID is "" what Source says: mail the user
 // quoted (citeQuote) or an assist run's context (citeContext). N is the message's
 // citation number in the conversation (from 1, by first citation): the
-// model sees it as the mail's "ref" and cites it as [N].
+// model knows the mail by it alone (its id) and cites it as <mail id="N"/>.
 type Citation struct {
 	N             int
 	MessageID     int64
@@ -356,14 +356,7 @@ func (s *Service) number(ctx context.Context, job *runJob, call, source string, 
 	ctx = context.WithoutCancel(ctx)
 	job.refsMu.Lock()
 	defer job.refsMu.Unlock()
-	if job.refs == nil {
-		job.refs = map[int64]int{}
-		saved, err := s.citationsOf(ctx, job.conv.ID)
-		if err != nil {
-			slog.Default().Warn("could not read a conversation's citations", "conversation", job.conv.ID, "err", err)
-		}
-		numberCitations(saved, job.refs)
-	}
+	s.loadRefs(ctx, job)
 	for i := range cs {
 		cs[i].RunID, cs[i].CallID, cs[i].Source = job.id, call, source
 	}
@@ -373,6 +366,33 @@ func (s *Service) number(ctx context.Context, job *runJob, call, source string, 
 		s.snippets(ctx, cs)
 	}
 	return cs
+}
+
+// loadRefs reads job's conversation's citation numbers on first use; job.refsMu is held.
+func (s *Service) loadRefs(ctx context.Context, job *runJob) {
+	if job.refs != nil {
+		return
+	}
+	job.refs = map[int64]int{}
+	saved, err := s.citationsOf(ctx, job.conv.ID)
+	if err != nil {
+		slog.Default().Warn("could not read a conversation's citations", "conversation", job.conv.ID, "err", err)
+	}
+	numberCitations(saved, job.refs)
+}
+
+// mailOf is the message the model knows as mail n in job's conversation: the
+// mail its tools showed it with that id (citation number).
+func (s *Service) mailOf(ctx context.Context, job *runJob, n int) (int64, error) {
+	job.refsMu.Lock()
+	defer job.refsMu.Unlock()
+	s.loadRefs(context.WithoutCancel(ctx), job)
+	for id, k := range job.refs {
+		if k == n {
+			return id, nil
+		}
+	}
+	return 0, fmt.Errorf("mail %d %w: use the id of a mail the tools returned", n, errMailNotFound)
 }
 
 // snippets fills in cs's messages' snippets (citationsOf reads them the same way).

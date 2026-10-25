@@ -314,7 +314,7 @@ func TestMCPTrustedToolNoApprovalUntilMailRead(t *testing.T) {
 	assert.Equal(t, int32(1), f.calls.Load())
 	assert.Zero(t, e.count(t, "SELECT COUNT(*) FROM approvals"))
 
-	evs = e.ask(t, e.newConv(t, "ask", 0), callArgs("get_message", fmt.Sprintf(`{"id":%d}`, e.msg)), callArgs(name, `{}`), finished)
+	evs = e.ask(t, e.newConv(t, "ask", 0), callArgs("search_mail", `{"query":"harbour"}`), callArgs("get_message", `{"id":1}`), callArgs(name, `{}`), finished)
 	in := evs[len(evs)-1]
 	require.Equal(t, "interrupted", in.Kind, "egress after reading mail: %+v", in.Err)
 	assert.Equal(t, []string{"mcp:fake"}, in.Approvals[0].Destinations)

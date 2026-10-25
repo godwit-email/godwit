@@ -2,7 +2,6 @@ package core
 
 import (
 	"context"
-	"fmt"
 	"strings"
 	"testing"
 
@@ -32,7 +31,7 @@ func TestConversationKeepsMailTaint(t *testing.T) {
 	lookup := witName(t, mcpServer(t, e.s, srv.ID), "lookup")
 
 	conv := e.newConv(t, "ask", 0)
-	evs := e.ask(t, conv, callArgs("get_message", fmt.Sprintf(`{"id":%d}`, e.msg)), finished)
+	evs := e.ask(t, conv, callArgs("search_mail", `{"query":"harbour"}`), callArgs("get_message", `{"id":1}`), finished)
 	require.Equal(t, "done", evs[len(evs)-1].Kind, "%+v", evs[len(evs)-1].Err)
 
 	for _, restart := range []bool{false, true} {

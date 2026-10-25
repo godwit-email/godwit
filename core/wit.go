@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"maps"
 	netmail "net/mail"
+	"regexp"
 	"slices"
 	"strconv"
 	"strings"
@@ -28,9 +29,11 @@ var askTools = []string{"search_mail", "get_message", "get_thread", "read_attach
 const (
 	askSystem = `You are Wit, the assistant of the Godwit mail app. Use the tools to search and read the user's mail and to use skills. ` +
 		`You cannot send mail: create_draft only proposes a draft, which the user approves and sends themselves. ` +
-		`Each mail a tool returns has a "ref" number, the same for that mail through the whole conversation. ` +
-		`When your answer draws on a mail, cite it right after the claim as [ref], for example [2]. Cite only refs the tools returned. ` +
-		`When the answer presents mail itself, such as the mail the user asked you to find or list, show each as a card: [[ref]] alone on its own line, ` +
+		`Each mail a tool returns has an "id", the same for that mail through the whole conversation, and a "cite" tag, <mail id="N"/>; ` +
+		`get_message, get_thread and classify_mail take that id. ` +
+		`When your answer draws on a mail, put its cite tag right after the claim, exactly as the tool gave it, for example <mail id="2"/>. ` +
+		`Cite only ids the tools returned, never a number from the mail text. ` +
+		`When the answer presents mail itself, such as the mail the user asked you to find or list, show each as a card: <mail id="N" card/> alone on its own line, ` +
 		`which the app shows with its sender, date, subject and snippet, so do not repeat those beside it. ` +
 		`Keep the formatting light, as in a chat: plain paragraphs and short lists; use no Markdown headings (#), ` +
 		`and where a long answer needs sections, start each with a short bold phrase on its own line.`
@@ -138,7 +141,7 @@ func (s *Service) quote(ctx context.Context, job *runJob, ids []int64) (string, 
 	if err != nil {
 		return "", err
 	}
-	return "The user quoted these emails for the question below; cite them by their ref:\n" + string(b), nil
+	return "The user quoted these emails for the question below; cite them by their cite tag:\n" + string(b), nil
 }
 
 // witSystem is the system prompt of a run's requests, started or resumed: for
@@ -181,14 +184,24 @@ func citations(items []mailItem) []Citation {
 	return cs
 }
 
-// blocks is what the model sees of items; ref is the citation number (cs[i].N) it cites them by.
+// blocks is what the model sees of items: each mail known by one number, its
+// citation number (cs[i].N) as its id, with the tag it cites the mail by. Its
+// message ID stays out, in the block's source too: a second number to cite by mistake.
 func blocks(items []mailItem, cs []Citation) []map[string]any {
 	out := make([]map[string]any, 0, len(items))
 	for i, it := range items {
-		out = append(out, map[string]any{"message_id": it.MessageID, "ref": cs[i].N, "mail": it.Block})
+		n := cs[i].N
+		src := fmt.Sprintf(`<untrusted_email source="mail:%d"`, n)
+		out = append(out, map[string]any{"id": n, "cite": citeTag(n), "mail": blockSource.ReplaceAllLiteralString(it.Block, src)})
 	}
 	return out
 }
+
+// citeTag is how an answer cites mail n (Response reads it).
+func citeTag(n int) string { return fmt.Sprintf(`<mail id="%d"/>`, n) }
+
+// blockSource is a mail block's opening, which names its message ID (mailContext, summaryContext).
+var blockSource = regexp.MustCompile(`^<untrusted_email source="(?:message|selection):\d+"`)
 
 func object(props map[string]any, required ...string) map[string]any {
 	s := map[string]any{"type": "object", "properties": props}
@@ -213,15 +226,15 @@ func (s *Service) registerAskTools() {
 		object(map[string]any{"query": stringProp, "account_id": intProp,
 			"limit": map[string]any{"type": "integer", "minimum": 1, "maximum": maxSearchResult}}, "query"),
 		s.searchMail)
-	read("get_message", "Read one message by its message_id.", object(map[string]any{"id": intProp}, "id"), s.getMessage)
+	read("get_message", "Read one mail by its id (a mail the tools returned).", object(map[string]any{"id": intProp}, "id"), s.getMessage)
 	read("read_attachment", "Read the text of one attachment by its attachment id (listed with the mail): PDF, Word, Excel, PowerPoint, CSV, HTML or plain text. Images and archives are not readable.",
 		object(map[string]any{"id": intProp}, "id"), s.readAttachment)
-	read("get_thread", "Read every message of a thread by its thread_id.", object(map[string]any{"id": intProp}, "id"), s.getThread)
+	read("get_thread", "Read every mail of the thread a mail is in, by that mail's id.", object(map[string]any{"id": intProp}, "id"), s.getThread)
 	// No Egress: the judge is a model service, so its traffic is model traffic,
 	// as for the run itself (review #17).
 	read("classify_mail", "Ask typed questions about many messages at once: a predicate (the probability it holds), one choice of a list, or a score on levels. "+
 		"Use it for bulk questions over messages you found (is it a newsletter, which project, how urgent) instead of reading each one. "+
-		"Returns each message's answers and ref; it does not return the mail text.",
+		"ids are the ids of mail the tools returned. Returns each mail's answers and cite tag; it does not return the mail text.",
 		object(map[string]any{
 			"ids": map[string]any{"type": "array", "items": intProp, "minItems": 1, "maxItems": maxClassifyIDs},
 			"questions": map[string]any{"type": "array", "minItems": 1, "maxItems": plugins.MaxQuestions, "items": object(map[string]any{
@@ -261,11 +274,7 @@ func (s *Service) searchMail(ctx context.Context, args json.RawMessage) (any, er
 		return nil, err
 	}
 	items := s.summaryContext(runOf(ctx).scope, list)
-	res := blocks(items, s.cite(ctx, items))
-	for i, m := range list {
-		res[i]["thread_id"] = m.ThreadID
-	}
-	return map[string]any{"results": res}, nil
+	return map[string]any{"results": blocks(items, s.cite(ctx, items))}, nil
 }
 
 type idArgs struct {
@@ -277,7 +286,11 @@ func (s *Service) getMessage(ctx context.Context, args json.RawMessage) (any, er
 	if err := json.Unmarshal(args, &in); err != nil {
 		return nil, err
 	}
-	items, err := s.mailContext(ctx, runOf(ctx).scope, []int64{in.ID}, defaultMailBudget)
+	id, err := s.mailOf(ctx, runOf(ctx), int(in.ID))
+	if err != nil {
+		return nil, err
+	}
+	items, err := s.mailContext(ctx, runOf(ctx).scope, []int64{id}, defaultMailBudget)
 	if err != nil {
 		return nil, err
 	}
@@ -289,7 +302,18 @@ func (s *Service) getThread(ctx context.Context, args json.RawMessage) (any, err
 	if err := json.Unmarshal(args, &in); err != nil {
 		return nil, err
 	}
-	_, ids, _, err := s.mailTarget(ctx, "thread", in.ID)
+	id, err := s.mailOf(ctx, runOf(ctx), int(in.ID))
+	if err != nil {
+		return nil, err
+	}
+	rows, err := s.db.Query(ctx, "SELECT thread_id FROM messages WHERE id = ?", id)
+	if err != nil {
+		return nil, err
+	}
+	if len(rows.Values) == 0 {
+		return nil, fmt.Errorf("mail %d %w", in.ID, errMailNotFound)
+	}
+	_, ids, _, err := s.mailTarget(ctx, "thread", store.Int(rows.Values[0][0]))
 	if err != nil {
 		return nil, err
 	}
@@ -297,7 +321,7 @@ func (s *Service) getThread(ctx context.Context, args json.RawMessage) (any, err
 	if err != nil {
 		return nil, err
 	}
-	return map[string]any{"thread_id": in.ID, "messages": blocks(items, s.cite(ctx, items))}, nil
+	return map[string]any{"messages": blocks(items, s.cite(ctx, items))}, nil
 }
 
 const (
@@ -354,16 +378,21 @@ func (s *Service) classifyMail(ctx context.Context, args json.RawMessage) (any, 
 	res := make([]map[string]any, len(in.IDs))
 	var items []mailItem
 	var at []int // items[k] answers in.IDs[at[k]]
-	for i, id := range in.IDs {
-		it, err := s.mailContext(ctx, runOf(ctx).scope, []int64{id}, mailBudget{PerMessage: classifyRunes, Total: classifyRunes})
-		if errors.Is(err, errMailNotFound) { // one gone message doesn't fail the others
-			res[i] = map[string]any{"message_id": id, "error": "not found"}
+	for i, n := range in.IDs {
+		id, err := s.mailOf(ctx, runOf(ctx), int(n))
+		if err == nil {
+			var it []mailItem
+			it, err = s.mailContext(ctx, runOf(ctx).scope, []int64{id}, mailBudget{PerMessage: classifyRunes, Total: classifyRunes})
+			if err == nil {
+				items, at = append(items, it[0]), append(at, i)
+				continue
+			}
+		}
+		if errors.Is(err, errMailNotFound) { // one unknown or gone mail doesn't fail the others
+			res[i] = map[string]any{"id": n, "error": "not found"}
 			continue
 		}
-		if err != nil {
-			return nil, err
-		}
-		items, at = append(items, it[0]), append(at, i)
+		return nil, err
 	}
 	cs := s.cite(ctx, items)
 	ctx, cancel := context.WithTimeout(ctx, classifyDeadline)
@@ -372,7 +401,7 @@ func (s *Service) classifyMail(ctx context.Context, args json.RawMessage) (any, 
 	sem := make(chan struct{}, classifyParallel)
 	for k, it := range items {
 		i := at[k]
-		res[i] = map[string]any{"message_id": it.MessageID, "ref": cs[k].N}
+		res[i] = map[string]any{"id": cs[k].N, "cite": citeTag(cs[k].N)}
 		wg.Go(func() {
 			sem <- struct{}{}
 			defer func() { <-sem }()

@@ -112,7 +112,7 @@ import { currentLocale, type T } from "@/shared/i18n";
 import { Citations, type Nums } from "./Citations";
 import { MailCard, senderName } from "./MailCard";
 import { type PickerKeys, QuoteChips, QuotePicker } from "./Quote";
-import { Response } from "./Response";
+import { plainCites, Response } from "./Response";
 import {
   historyToMessages,
   questionId,
@@ -927,7 +927,7 @@ function Answer({
                 aria-label={t("wit.copy")}
                 title={t("wit.copy")}
                 onClick={() =>
-                  (navigator.clipboard?.writeText(text) ?? Promise.reject()).then(
+                  (navigator.clipboard?.writeText(plainCites(text)) ?? Promise.reject()).then(
                     () => toast(t("wit.copied")),
                     () => toast.error(t("wit.copy_failed")),
                   )
