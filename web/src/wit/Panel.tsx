@@ -1554,8 +1554,8 @@ export function Panel({
       <MessageScroller className="min-h-0 flex-1">
         <MessageScrollerViewport>
           <MessageScrollerContent
-            // pb-10 clears the input area's fade (h-8): the last card ends above it, corners and all
-            className={page ? "mx-auto w-full max-w-202 gap-5 p-6 pb-10" : "gap-2.5 p-4 pb-10"}
+            // pb-6 clears the input's fade (h-6) and no more: the last line ends just above it
+            className={page ? "mx-auto w-full max-w-202 gap-5 p-6" : "gap-2.5 p-4 pb-6"}
           >
             {chat.messages.map((m, i) => (
               <MessageScrollerItem
@@ -1952,11 +1952,11 @@ export function Panel({
     </InputGroup>
   );
 
-  // the conversation fades out under the input area, which is solid to the card's bottom edge
+  // the conversation fades out right above the input, which is solid to the card's bottom edge
   const fade = (
     <div
       aria-hidden
-      className="pointer-events-none absolute inset-x-0 bottom-full h-8 bg-linear-to-b from-transparent to-background"
+      className="pointer-events-none absolute inset-x-0 bottom-full h-6 bg-linear-to-b from-transparent to-background"
     />
   );
   // a card on the window's material: the native layout's content cards
@@ -1968,7 +1968,7 @@ export function Panel({
           {conversation}
           <div className="relative bg-background">
             {fade}
-            <div className="mx-auto flex w-full max-w-202 flex-col gap-2 p-6">
+            <div className="mx-auto flex w-full max-w-202 flex-col gap-2 px-6 pb-6">
               {error}
               {input}
             </div>

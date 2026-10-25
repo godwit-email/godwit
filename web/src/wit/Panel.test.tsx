@@ -354,7 +354,7 @@ describe("Panel", () => {
   it("both layouts are cards, the conversation fading out under a solid input area", async () => {
     const fadeOver = (box: HTMLElement, card: Element | null) => {
       const fade = card?.querySelector("[aria-hidden].bg-linear-to-b");
-      expect(fade).toHaveClass("pointer-events-none", "absolute", "bottom-full", "h-8");
+      expect(fade).toHaveClass("pointer-events-none", "absolute", "bottom-full", "h-6");
       expect(fade?.parentElement).toHaveClass("relative", "bg-background");
       expect(fade?.parentElement).toContainElement(box);
     };
