@@ -211,7 +211,7 @@ jobs:
           version: v0.4.3 # supports --clientAssertion for both packaged and unpackaged apps
       - name: Get the Microsoft Store client assertion (OIDC)
         if: steps.creds.outputs.ready == 'true'
-        uses: actions/github-script@v8
+        uses: actions/github-script@v9
         with:
           script: |
             const token = await core.getIDToken('api://AzureADTokenExchange');
