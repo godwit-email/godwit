@@ -11,7 +11,7 @@ import (
 )
 
 // post sends body to h.url through pi-ai's classifier transport, which
-// retries 429, 529 and 5xx (judgeAttempts in all), and decodes the reply into
+// retries 429, 529 and 5xx, and decodes the reply into
 // out. Errors never carry the key, the body or *url.Error text.
 func (h judgeHTTP) post(ctx context.Context, body, out any) error {
 	b, err := json.Marshal(body)
@@ -45,17 +45,6 @@ func (h judgeHTTP) post(ctx context.Context, body, out any) error {
 
 // decisions asks the OpenAI Decisions API in the wire format its SDK encodes.
 func (h judgeHTTP) decisions(ctx context.Context, input string, qs []Question) ([]Answer, error) {
-	type question struct {
-		Type         QuestionType   `json:"type"`
-		Name         string         `json:"name"`
-		Instructions string         `json:"instructions"`
-		Choices      []ChoiceOption `json:"choices,omitempty"`
-		Levels       []Level        `json:"levels,omitempty"` // a level's label always goes, "" too, as the SDK sends it
-	}
-	wire := make([]question, len(qs))
-	for i, q := range qs {
-		wire[i] = question{Type: q.Type, Name: q.Name, Instructions: q.Instructions, Choices: q.Choices, Levels: q.Levels}
-	}
 	var resp struct {
 		Answers []struct {
 			Type                           QuestionType
@@ -69,7 +58,7 @@ func (h judgeHTTP) decisions(ctx context.Context, input string, qs []Question) (
 			}
 		}
 	}
-	if err := h.post(ctx, map[string]any{"model": h.model, "input": input, "questions": wire}, &resp); err != nil {
+	if err := h.post(ctx, map[string]any{"model": h.model, "input": input, "questions": qs}, &resp); err != nil {
 		return nil, err
 	}
 	// A value of the wrong JSON type or a missing probability is left for

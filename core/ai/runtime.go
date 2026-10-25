@@ -23,10 +23,9 @@ type Engine struct {
 	secrets func() []string
 	client  *http.Client // never follows redirects; Close drops its connections
 
-	mu      sync.Mutex
-	insts   map[int64]*instance
-	retired map[*instance]bool // replaced instances still running; Close cancels them too
-	closed  bool
+	mu     sync.Mutex
+	insts  map[int64]*instance
+	closed bool
 
 	keysMu sync.Mutex
 	keys   map[string]bool // every API key the engine has used, redacted from what a run reports
@@ -40,21 +39,9 @@ type Engine struct {
 }
 
 type instance struct {
-	cfg     ResolvedModel   // Model cleared
-	ctx     context.Context // ends when the instance is dropped; so do its runs
-	cancel  context.CancelCauseFunc
-	runs    int  // runs using it (Engine.mu)
-	retired bool // replaced for a new key: cancelled once runs reaches 0
-}
-
-// release ends one run's use of in; a retired instance is cancelled after its last run.
-func (e *Engine) release(in *instance) {
-	e.mu.Lock()
-	defer e.mu.Unlock()
-	if in.runs--; in.retired && in.runs == 0 {
-		in.cancel(errStale)
-		delete(e.retired, in)
-	}
+	cfg    ResolvedModel   // Model cleared
+	ctx    context.Context // ends when the instance is dropped; so do its runs
+	cancel context.CancelCauseFunc
 }
 
 // errStale ends the runs of an instance whose service changed or went away.
@@ -105,12 +92,6 @@ func (e *Engine) Forget(serviceID int64) {
 		in.cancel(errStale)
 		delete(e.insts, serviceID)
 	}
-	for in := range e.retired { // its runs on an older key are stale too
-		if in.cfg.ServiceID == serviceID {
-			in.cancel(errStale)
-			delete(e.retired, in)
-		}
-	}
 }
 
 // Close drops every instance; later runs fail and runs in flight are cancelled.
@@ -121,17 +102,13 @@ func (e *Engine) Close() {
 		in.cancel(context.Canceled)
 		delete(e.insts, id)
 	}
-	for in := range e.retired {
-		in.cancel(context.Canceled)
-	}
-	e.retired = nil
 	e.mu.Unlock()
 	e.client.CloseIdleConnections()
 }
 
 func (e *Engine) instance(ctx context.Context, m ResolvedModel) (*instance, error) {
 	cfg := m
-	cfg.Model = ""
+	cfg.Model, cfg.APIKey = "", ""
 	e.mu.Lock()
 	defer e.mu.Unlock()
 	if e.closed {
@@ -144,36 +121,24 @@ func (e *Engine) instance(ctx context.Context, m ResolvedModel) (*instance, erro
 			return nil, errStale
 		}
 	}
-	if in := e.insts[m.ServiceID]; in != nil {
-		if in.cfg == cfg {
-			in.runs++
-			return in, nil
-		}
-		same := in.cfg
-		same.APIKey = cfg.APIKey
-		switch {
-		case same != cfg, in.runs == 0:
-			in.cancel(errStale)
-		default: // only the key rotated: its runs finish on the old one, then it goes
-			in.retired = true
-			if e.retired == nil {
-				e.retired = map[*instance]bool{}
-			}
-			e.retired[in] = true
-		}
-		delete(e.insts, m.ServiceID)
-	}
-	if piAPI(m) == "" {
-		return nil, fmt.Errorf("ai: unknown service kind %q", m.Kind)
-	}
 	if m.APIKey != "" {
 		e.keysMu.Lock()
 		e.keys[m.APIKey] = true
 		e.keysMu.Unlock()
 	}
+	if in := e.insts[m.ServiceID]; in != nil {
+		if in.cfg == cfg {
+			return in, nil
+		}
+		in.cancel(errStale)
+		delete(e.insts, m.ServiceID)
+	}
+	if piAPI(m) == "" {
+		return nil, fmt.Errorf("ai: unknown service kind %q", m.Kind)
+	}
 	ictx, cancel := context.WithCancelCause(context.Background())
 	e.inits.Add(1)
-	in := &instance{cfg: cfg, ctx: ictx, cancel: cancel, runs: 1}
+	in := &instance{cfg: cfg, ctx: ictx, cancel: cancel}
 	e.insts[m.ServiceID] = in
 	return in, nil
 }

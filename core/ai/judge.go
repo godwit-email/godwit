@@ -114,9 +114,8 @@ type HTTPError struct{ Status int }
 func (e *HTTPError) Error() string { return fmt.Sprintf("judge: HTTP %d", e.Status) }
 
 const (
-	maxQuestions  = 128
-	maxJudgeBody  = 4 << 20
-	judgeAttempts = 3 // how many times pi-ai's classifier transport tries a call
+	maxQuestions = 128
+	maxJudgeBody = 4 << 20
 	// scoreSlack is how far past the levels a score may land from float
 	// rounding and still be read as the end level.
 	scoreSlack = 1e-6

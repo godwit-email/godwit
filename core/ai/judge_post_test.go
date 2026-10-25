@@ -167,7 +167,7 @@ func TestJudgeRetries(t *testing.T) {
 		j, _ := NewJudge(nil, FormatSystemOne, srv.URL, "k", "m")
 		_, err := j.Ask(context.Background(), "mail", testQs)
 		var he *HTTPError
-		if hits != judgeAttempts || !errors.As(err, &he) || he.Status != st {
+		if hits != 3 || !errors.As(err, &he) || he.Status != st {
 			t.Errorf("%d: hits %d, %v", st, hits, err)
 		}
 		srv.Close()

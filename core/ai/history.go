@@ -1,7 +1,6 @@
 package ai
 
 import (
-	"bytes"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -207,7 +206,7 @@ func (h *History) Turns() []Turn {
 
 // AddCommand is h with cmd asked after its last message.
 func (h *History) AddCommand(cmd Command) (*History, HistoryChanges, error) {
-	return h.with(nil, []*message{commandMessage(cmd)}, nil)
+	return h.with([]*message{commandMessage(cmd)}, nil)
 }
 
 func commandMessage(cmd Command) *message {
@@ -233,11 +232,11 @@ func commandOf(m *message) *Command {
 	return nil
 }
 
-// with is h with the messages at the indexes of put replaced and add appended.
+// with is h with add appended.
 // raws, if set, are add's pi messages (nil where none), from a run on pi. An
 // empty history is a pi one (#234); a pi history saves a Genkit message as
 // its pi messages (a tool message as one per result).
-func (h *History) with(put map[int]*message, add []*message, raws [][]byte) (*History, HistoryChanges, error) {
+func (h *History) with(add []*message, raws [][]byte) (*History, HistoryChanges, error) {
 	n := &History{msgs: slices.Clone(h.msgs), raws: slices.Clone(h.raws), pi: h.pi || len(h.msgs) == 0,
 		seqs: slices.Clone(h.seqs), next: h.next}
 	encode := func(m *message, raw []byte) ([]*message, [][]byte, error) {
@@ -261,30 +260,6 @@ func (h *History) with(put map[int]*message, add []*message, raws [][]byte) (*Hi
 		return ms, bs, nil
 	}
 	var ch HistoryChanges
-	idx := make([]int, 0, len(put))
-	for i := range put {
-		idx = append(idx, i)
-	}
-	slices.Sort(idx)
-	for _, i := range idx {
-		if n.pi { // unchanged, a pi message keeps what its Genkit form has no room for
-			if same, err := sameMessage(put[i], h.msgs[i]); err != nil || same {
-				if err != nil {
-					return nil, HistoryChanges{}, err
-				}
-				continue
-			}
-		}
-		ms, bs, err := encode(put[i], nil)
-		if err != nil {
-			return nil, HistoryChanges{}, err
-		}
-		if len(ms) != 1 {
-			return nil, HistoryChanges{}, errors.New("ai: cannot rewrite a conversation message")
-		}
-		n.msgs[i], n.raws[i] = ms[0], bs[0]
-		ch.Put = append(ch.Put, StoredMessage{Seq: n.seqs[i], Data: bs[0]})
-	}
 	for k, m := range add {
 		var raw []byte
 		if raws != nil {
@@ -355,7 +330,7 @@ func (h *History) Close(responses []ToolResult) (*History, HistoryChanges, error
 		}
 		toolMsg.Content = append(toolMsg.Content, responseFor(p, out))
 	}
-	return h.with(nil, []*message{toolMsg}, nil)
+	return h.with([]*message{toolMsg}, nil)
 }
 
 // notRun answers a call held back with an interrupted round that never ran.
@@ -547,15 +522,14 @@ func (s *Sent) Ask(prompt, context string) *Sent {
 func (s *Sent) asked() bool { return len(s.src) > 0 && s.src[len(s.src)-1] == srcQuestion }
 
 // Restore is the whole history res, the successful end of a run that sent s,
-// leaves, and the changes that save it: the messages res rewrote of what s
-// sent and the ones it added, after the history s was sent from.
+// leaves, and the changes that append its new question and replies to the
+// history s was sent from. The sent prefix is never rewritten.
 func (s *Sent) Restore(res Result) (*History, HistoryChanges, error) {
 	out := res.out
 	bad := errors.New("ai: cannot restore the conversation history")
 	if len(out) < len(s.msgs) {
 		return nil, HistoryChanges{}, bad
 	}
-	put := map[int]*message{}
 	var add []*message
 	var raws [][]byte // a run on pi's, of add
 	if res.raws != nil {
@@ -572,30 +546,13 @@ func (s *Sent) Restore(res Result) (*History, HistoryChanges, error) {
 			if raws != nil {
 				raws = append(raws, res.raws[k])
 			}
-		default:
-			same, err := sameMessage(out[k], s.h.msgs[src])
-			if err != nil {
-				return nil, HistoryChanges{}, err
-			}
-			if !same {
-				put[src] = out[k]
-			}
 		}
 	}
 	add = append(add, out[len(s.msgs):]...)
 	if raws != nil {
 		raws = append(raws, res.raws[len(s.msgs):]...)
 	}
-	return s.h.with(put, add, raws)
-}
-
-func sameMessage(a, b *message) (bool, error) {
-	x, err := json.Marshal(a)
-	if err != nil {
-		return false, err
-	}
-	y, err := json.Marshal(b)
-	return bytes.Equal(x, y), err
+	return s.h.with(add, raws)
 }
 
 // CompactedSize is the runes of h with sum standing in for what it condensed,

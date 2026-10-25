@@ -807,27 +807,18 @@ func TestInstanceKeyChangeKeepsOldRuns(t *testing.T) {
 	evs2, res2 := run(e, Request{Model: m2, Prompt: "two", MaxTurns: 1})
 	require.Nil(t, res2.Err)
 	assert.Equal(t, "done", last(t, evs2).Kind)
-	assert.EqualValues(t, 2, e.inits.Load())
-	e.mu.Lock()
-	var old *instance
-	for in := range e.retired {
-		old = in
-	}
-	e.mu.Unlock()
-	require.NotNil(t, old, "the replaced instance waits for its run")
-	assert.NoError(t, old.ctx.Err())
+	reqs := srv.Requests()
+	require.Len(t, reqs, 2)
+	assert.Equal(t, "Bearer token-1", reqs[0].Header.Get("Authorization"))
+	assert.Equal(t, "Bearer token-2", reqs[1].Header.Get("Authorization"))
 
 	srv.Release()
 	evs1, res1 := collect(events1, wait1)
 	require.Nil(t, res1.Err)
 	assert.Equal(t, "done", last(t, evs1).Kind)
-	assert.Error(t, old.ctx.Err(), "and goes once that run is over")
-	e.mu.Lock()
-	assert.Empty(t, e.retired)
-	e.mu.Unlock()
 }
 
-func TestForgetCancelsRetiredInstance(t *testing.T) {
+func TestForgetCancelsRunsOnAnOlderKey(t *testing.T) {
 	e := newEngine(t)
 	srv := testllm.Start(t, KindResponses)
 	srv.Script(testllm.Turn{Text: []string{"first"}, Hang: true}, testllm.Turn{Text: []string{"second"}})
@@ -843,9 +834,6 @@ func TestForgetCancelsRetiredInstance(t *testing.T) {
 	_, res1 := collect(events1, wait1)
 	require.NotNil(t, res1.Err)
 	assert.Equal(t, CodeStale, res1.Err.Code)
-	e.mu.Lock()
-	assert.Empty(t, e.retired)
-	e.mu.Unlock()
 }
 
 func TestCodexRequestShape(t *testing.T) {
@@ -1083,4 +1071,42 @@ func TestResumedRunAnswersAtToolLimit(t *testing.T) {
 		_, results := toolIDs(t, kind, reqs[3].Messages)
 		assert.Equal(t, []string{"a1", "c1"}, results)
 	})
+}
+
+func TestRotationRegistersEveryKeyForRedaction(t *testing.T) {
+	e := newEngine(t)
+	srv := testllm.Start(t, "openai")
+	srv.Script(testllm.Turn{Text: []string{"one"}}, testllm.Turn{Text: []string{"two"}},
+		testllm.Turn{Calls: []testllm.Call{{ID: "c1", Name: "leaky"}}}, testllm.Turn{Text: []string{"done"}})
+	_, first := run(e, Request{Model: modelFor(srv, "openai", "old-token-123"), Prompt: "one"})
+	require.Nil(t, first.Err)
+	_, second := run(e, Request{Model: modelFor(srv, "openai", "new-token-456"), Prompt: "two"})
+	require.Nil(t, second.Err)
+	tools := []ToolSpec{{Name: "leaky", Run: func(context.Context, json.RawMessage) (any, error) {
+		return nil, errors.New("denied old-token-123 new-token-456")
+	}}}
+	evs, res := run(e, Request{Model: modelFor(srv, "openai", "third-token-789"), Prompt: "three", Tools: tools})
+	require.Nil(t, res.Err)
+	results := kindsOf(evs, "tool_result")
+	require.Len(t, results, 1)
+	assert.Equal(t, "denied [redacted] [redacted]", results[0].Result.Error)
+	assert.NotContains(t, string(must(json.Marshal(res.out))), "old-token-123")
+	assert.NotContains(t, string(must(json.Marshal(res.out))), "new-token-456")
+}
+
+func TestCloseCancelsRunsAcrossTokenRotation(t *testing.T) {
+	e := newEngine(t)
+	srv := testllm.Start(t, KindResponses)
+	srv.Script(testllm.Turn{Text: []string{"first"}, Hang: true}, testllm.Turn{Text: []string{"second"}})
+	firstModel := modelFor(srv, KindResponses, "token-1")
+	events, wait := e.Run(context.Background(), Request{Model: firstModel, Prompt: "one"})
+	require.Eventually(t, func() bool { return len(srv.Requests()) == 1 }, 5*time.Second, 5*time.Millisecond)
+	secondModel := firstModel
+	secondModel.APIKey = "token-2"
+	_, second := run(e, Request{Model: secondModel, Prompt: "two"})
+	require.Nil(t, second.Err)
+	e.Close()
+	_, first := collect(events, wait)
+	require.NotNil(t, first.Err)
+	assert.Equal(t, CodeCanceled, first.Err.Code)
 }
