@@ -1859,7 +1859,7 @@ describe("Panel", () => {
     // [[1]] shows the mail as a card in the answer, its actions on a hover toolbar
     const inline = await screen.findByRole("toolbar", { name: "Your receipt" });
     expect(inline).toHaveClass("group-hover:opacity-100");
-    expect(inline.parentElement).toHaveTextContent("Amount charged this month");
+    expect(inline.closest(".group")).toHaveTextContent("Amount charged this month");
     await user.click(screen.getByRole("button", { name: "[1]" }));
     const card = (await screen.findAllByRole("toolbar", { name: "Your receipt" })).find(
       (e) => e !== inline,

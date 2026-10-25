@@ -318,7 +318,9 @@ const table = `10 月共找到 4 个订阅扣款：
 | [服务 C] | [AMOUNT] | 10/05 | <mail id="3"/> |
 | [服务 D] | [AMOUNT] | 10/07 | <mail id="4"/> |
 
-另有 3 封是促销邮件，不是实际扣款，已排除。`;
+另有 3 封是促销邮件，不是实际扣款，已排除。最近的一笔：
+
+<mail id="1" card/>`;
 const createDraft = call("s9", "create_draft", {
   to: ["Lena Fischer <lena@partner.example>"],
   subject: "Re: Q4 partnership proposal",

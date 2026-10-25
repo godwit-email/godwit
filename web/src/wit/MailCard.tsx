@@ -36,7 +36,8 @@ export function avatarTone(name: string): string {
 /**
  * A mail as a card: a small avatar on the sender line with the date, the subject and a snippet,
  * then 查看邮件 / 引用邮件 for the actions it is given: along its foot (in a popover), or, as a
- * card in an answer (card), framed with the actions floating over its top edge on hover or focus.
+ * card in an answer (card), framed, no wider than it needs, the actions taking the date's place
+ * on its sender line on hover or focus.
  */
 export function MailCard({
   from,
@@ -61,11 +62,36 @@ export function MailCard({
   className?: string;
 }) {
   const name = senderName(from);
+  const actions = (onOpen || onQuote) && (
+    <div
+      role="toolbar"
+      aria-label={subject}
+      className={cn(
+        "flex gap-0.5",
+        card
+          ? "pointer-events-none absolute top-1/2 right-0 -translate-y-1/2 bg-background opacity-0 transition-opacity group-focus-within:pointer-events-auto group-focus-within:opacity-100 group-hover:pointer-events-auto group-hover:opacity-100"
+          : "-mx-1.5 mt-2 border-t-[0.5px] pt-1.5",
+      )}
+    >
+      {onOpen && (
+        <Button variant="ghost" size="xs" className="font-normal text-sm" onClick={onOpen}>
+          <RiExternalLinkLine className="text-muted-foreground" />
+          {t("wit.mail.open")}
+        </Button>
+      )}
+      {onQuote && (
+        <Button variant="ghost" size="xs" className="font-normal text-sm" onClick={onQuote}>
+          <RiChatQuoteLine className="text-muted-foreground" />
+          {t("wit.quote")}
+        </Button>
+      )}
+    </div>
+  );
   return (
     <div
       className={cn(
         "flex min-w-0 flex-col text-md",
-        card && "group relative rounded-[10px] border-[0.5px] bg-background px-2.5 py-2",
+        card && "group max-w-md rounded-[10px] border-[0.5px] bg-background px-2.5 py-2",
         className,
       )}
     >
@@ -80,35 +106,20 @@ export function MailCard({
           {[...name][0]?.toUpperCase() ?? "?"}
         </span>
         <span className="min-w-0 flex-1 truncate font-medium">{name}</span>
-        <span className="shrink-0 text-muted-foreground text-sm">{citeDate(date)}</span>
+        {card ? (
+          <span className="relative flex shrink-0 items-center">
+            <span className="text-muted-foreground text-sm transition-opacity group-focus-within:opacity-0 group-hover:opacity-0">
+              {citeDate(date)}
+            </span>
+            {actions}
+          </span>
+        ) : (
+          <span className="shrink-0 text-muted-foreground text-sm">{citeDate(date)}</span>
+        )}
       </div>
       <span className="mt-0.5 truncate text-base">{subject || t("mail.no_subject")}</span>
       {snippet && <span className="truncate text-muted-foreground text-sm">{snippet}</span>}
-      {(onOpen || onQuote) && (
-        <div
-          role="toolbar"
-          aria-label={subject}
-          className={cn(
-            "flex gap-0.5",
-            card
-              ? "absolute -top-3.5 right-2 rounded-lg border-[0.5px] bg-background p-0.5 opacity-0 shadow-sm transition-opacity group-focus-within:opacity-100 group-hover:opacity-100"
-              : "-mx-1.5 mt-2 border-t-[0.5px] pt-1.5",
-          )}
-        >
-          {onOpen && (
-            <Button variant="ghost" size="xs" className="font-normal text-sm" onClick={onOpen}>
-              <RiExternalLinkLine className="text-muted-foreground" />
-              {t("wit.mail.open")}
-            </Button>
-          )}
-          {onQuote && (
-            <Button variant="ghost" size="xs" className="font-normal text-sm" onClick={onQuote}>
-              <RiChatQuoteLine className="text-muted-foreground" />
-              {t("wit.quote")}
-            </Button>
-          )}
-        </div>
-      )}
+      {!card && actions}
     </div>
   );
 }
