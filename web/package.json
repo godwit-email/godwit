@@ -13,7 +13,7 @@
     "views": "bun scripts/views.ts"
   },
   "dependencies": {
-    "@ai-sdk/react": "4.0.152",
+    "@ai-sdk/react": "4.0.140",
     "@base-ui/react": "1.9.0",
     "@lobehub/icons-static-svg": "^1.98.0",
     "@platejs/basic-nodes": "53.0.0",
@@ -22,7 +22,7 @@
     "@remixicon/react": "4.9.0",
     "@shadcn/react": "0.3.1",
     "@tanstack/react-query": "5.104.5",
-    "ai": "7.0.148",
+    "ai": "7.0.137",
     "class-variance-authority": "0.7.1",
     "cn": "0.5.0",
     "mygo-runtime": "0.6.0",
