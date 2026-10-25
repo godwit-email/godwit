@@ -2,6 +2,7 @@ package core
 
 import (
 	"encoding/json"
+	"github.com/Calcium-Ion/moejs"
 	"sync"
 	"testing"
 	"time"
@@ -18,10 +19,10 @@ func blockVM(t *testing.T, s *Service, name string) (release func()) {
 	vm := s.running[name].p.VM()
 	s.pluginsMu.RUnlock()
 	started, done := make(chan struct{}), make(chan struct{})
-	go vm.Call(t.Context(), plugins.Invocation{ID: "blocker", Kind: plugins.KindHook}, func(*plugins.CallScope) (any, error) {
+	go vm.Call(t.Context(), plugins.Invocation{ID: "blocker", Kind: plugins.KindHook}, func(*plugins.CallScope) (moejs.Value, error) {
 		close(started)
 		<-done
-		return nil, nil
+		return moejs.Undefined(), nil
 	})
 	<-started
 	return sync.OnceFunc(func() { close(done) })

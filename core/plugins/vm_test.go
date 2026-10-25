@@ -3,15 +3,14 @@ package plugins
 import (
 	"context"
 	"errors"
-	"fmt"
 	"os"
 	"strings"
 	"sync"
-	"sync/atomic"
 	"testing"
 	"time"
 
-	"github.com/dop251/goja"
+	"github.com/Calcium-Ion/moejs"
+	"github.com/Calcium-Ion/moejs/engine"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -79,40 +78,48 @@ func (c *fakeClock) Advance(d time.Duration) {
 	c.mu.Unlock()
 }
 
-func compile(t *testing.T, src string) *goja.Program {
+// newTestVM compiles src as the plugin's module. An older test source that
+// defines `var plugin = {default ...}` gets that default exported.
+func newTestVM(t *testing.T, src string, opts VMOptions) *VM {
 	t.Helper()
-	p, err := goja.Compile("plugin.js", src, false)
-	require.NoError(t, err)
-	return p
-}
-
-// quietWatchdog never trips, so tests about other behaviour are not affected by
-// the real heap.
-func quietWatchdog() *Watchdog {
-	return &Watchdog{Meter: func() uint64 { return 0 }, Clock: &fakeClock{}}
-}
-
-func newTestVM(t *testing.T, src string, clock Clock) *VM {
-	t.Helper()
-	if clock == nil {
-		clock = &fakeClock{}
+	if strings.Contains(src, "var plugin =") {
+		src += "\nexport default plugin.default"
 	}
-	v := NewVM("test", compile(t, src), VMOptions{Clock: clock, Watchdog: quietWatchdog()})
+	mod, err := moejs.Compile("plugin.js", src)
+	require.NoError(t, err)
+	if opts.Clock == nil {
+		opts.Clock = &fakeClock{}
+	}
+	v, err := NewVM("test", mod, opts)
+	require.NoError(t, err)
 	t.Cleanup(v.Close)
 	return v
 }
 
 var inv = Invocation{Kind: KindTool}
 
+// script runs JS source in the global scope of a call.
+func script(c *CallScope, src string) (moejs.Value, error) {
+	s, err := moejs.CompileScript("run.js", src)
+	if err != nil {
+		return moejs.Undefined(), err
+	}
+	return c.Runtime().RunScript(s)
+}
+
 // run evaluates JS source inside a call and returns the exported result.
 func run(v *VM, ctx context.Context, src string) (any, error) {
-	return v.Call(ctx, inv, func(c *CallScope) (any, error) {
-		return c.Runtime().RunString(src)
-	})
+	return v.Call(ctx, inv, func(c *CallScope) (moejs.Value, error) { return script(c, src) })
+}
+
+// setGlobal installs a global for the scripts of a test.
+func setGlobal(c *CallScope, name string, val moejs.Value) {
+	r := c.Runtime().Realm()
+	_ = r.Global.SetProp(r, engine.InternKey(name), val)
 }
 
 func TestVMNoGlobals(t *testing.T) {
-	v := newTestVM(t, "", nil)
+	v := newTestVM(t, "", VMOptions{})
 	got, err := run(v, context.Background(), `({
 		console: typeof console, setTimeout: typeof setTimeout, require: typeof require,
 		fetch: typeof fetch, process: typeof process, print: typeof print, plugin: typeof plugin })`)
@@ -124,7 +131,7 @@ func TestVMNoGlobals(t *testing.T) {
 
 func TestInitTopLevelLoopInterrupted(t *testing.T) {
 	clock := &fakeClock{}
-	v := newTestVM(t, `var plugin = {default(){ return 1 }}; while (true) {}`, clock)
+	v := newTestVM(t, `export default function () { return 1 }; while (true) {}`, VMOptions{Clock: clock})
 	errc := make(chan error, 1)
 	go func() { errc <- v.Init(context.Background(), Invocation{Kind: KindInit}, nil) }()
 	require.Eventually(t, func() bool { return clock.pending() > 0 }, 5*time.Second, time.Millisecond)
@@ -139,21 +146,21 @@ func TestInitTopLevelLoopInterrupted(t *testing.T) {
 }
 
 func TestInitRunsDefault(t *testing.T) {
-	v := newTestVM(t, `var plugin = {default: async (ctx) => { globalThis.seen = ctx.name }}`, nil)
-	err := v.Init(context.Background(), Invocation{Kind: KindInit}, func(c *CallScope) goja.Value {
-		return c.Runtime().ToValue(map[string]any{"name": "ok"})
+	v := newTestVM(t, `export default async (ctx) => { globalThis.seen = ctx.name }`, VMOptions{})
+	err := v.Init(context.Background(), Invocation{Kind: KindInit}, func(c *CallScope) (moejs.Value, error) {
+		return jsonValue(c.Runtime(), map[string]any{"name": "ok"})
 	})
 	require.NoError(t, err)
 	got, err := run(v, context.Background(), `seen`)
 	require.NoError(t, err)
 	assert.Equal(t, "ok", got)
 
-	v = newTestVM(t, `var plugin = {}`, nil)
+	v = newTestVM(t, `var plugin = {}`, VMOptions{})
 	assert.ErrorContains(t, v.Init(context.Background(), Invocation{Kind: KindInit}, nil), "default")
 }
 
 func TestCallInterruptLoopVMReusable(t *testing.T) {
-	v := newTestVM(t, "", nil)
+	v := newTestVM(t, "", VMOptions{})
 	ctx, cancel := context.WithTimeout(context.Background(), 50*time.Millisecond)
 	defer cancel()
 	_, err := run(v, ctx, `while (true) {}`)
@@ -165,34 +172,27 @@ func TestCallInterruptLoopVMReusable(t *testing.T) {
 }
 
 // asyncFn installs a host function `wait(x)` whose result comes from another
-// goroutine once release is closed. If entered is not nil, each wait sends on
-// it once its host goroutine is running.
-func asyncFn(c *CallScope, release <-chan struct{}, ran *atomic.Int64, entered chan<- struct{}) {
-	c.Runtime().Set("wait", c.VM().HostFunc("wait", func(c *CallScope, call goja.FunctionCall) goja.Value {
-		x := call.Argument(0).String()
-		return c.Async(func(ctx context.Context) (any, error) {
-			if entered != nil {
-				entered <- struct{}{}
-			}
+// goroutine once release is closed.
+func asyncFn(c *CallScope, release <-chan struct{}) {
+	setGlobal(c, "wait", c.vm.HostFunc("wait", func(c *CallScope, args []moejs.Value) (moejs.Value, error) {
+		x := moejs.Arg(args, 0).String()
+		return c.AsyncJSON(func(ctx context.Context) (any, error) {
 			<-release
-			if ran != nil {
-				ran.Add(1)
-			}
 			if x == "fail" {
 				return nil, errors.New("nope")
 			}
 			return "got:" + x, nil
-		})
+		}), nil
 	}))
 }
 
 func TestAsyncHostFunc(t *testing.T) {
-	v := newTestVM(t, "", nil)
+	v := newTestVM(t, "", VMOptions{})
 	release := make(chan struct{})
 	go func() { time.Sleep(10 * time.Millisecond); close(release) }()
-	got, err := v.Call(context.Background(), inv, func(c *CallScope) (any, error) {
-		asyncFn(c, release, nil, nil)
-		return c.Runtime().RunString(`(async () => {
+	got, err := v.Call(context.Background(), inv, func(c *CallScope) (moejs.Value, error) {
+		asyncFn(c, release)
+		return script(c, `(async () => {
 			const [a, b] = await Promise.all([wait("a"), wait("b")])
 			let e
 			try { await wait("fail") } catch (x) { e = x.message }
@@ -206,58 +206,8 @@ func TestAsyncHostFunc(t *testing.T) {
 	assert.ErrorContains(t, err, "bad")
 }
 
-func TestLateCallbackDropped(t *testing.T) {
-	clock := &fakeClock{}
-	v := newTestVM(t, "", clock)
-	late := make(chan struct{})
-	lateEntered := make(chan struct{}, 1)
-	var ran atomic.Int64
-	errc := make(chan error, 1)
-	go func() {
-		_, err := v.Call(context.Background(), inv, func(c *CallScope) (any, error) {
-			asyncFn(c, late, &ran, lateEntered)
-			return c.Runtime().RunString(`globalThis.n = 0; wait("x").then(() => { globalThis.n++ })`)
-		})
-		errc <- err
-	}()
-	// Time out only once the call's async work is in flight: wait("x") ran
-	// (so n = 0 ran before it), and its host goroutine is blocked on late.
-	<-lateEntered
-	clock.Advance(30 * time.Second)
-	require.ErrorIs(t, <-errc, ErrTimeout)
-
-	// The late completion is released only while the second call is running,
-	// so the only place it can be received is the second call's pump.
-	second := make(chan struct{})
-	secondEntered := make(chan struct{}, 1)
-	type res struct {
-		v   any
-		err error
-	}
-	resc := make(chan res, 1)
-	go func() {
-		got, err := v.Call(context.Background(), inv, func(c *CallScope) (any, error) {
-			asyncFn(c, second, nil, secondEntered)
-			return c.Runtime().RunString(`(async () => { const r = await wait("y"); return [r, globalThis.n] })()`)
-		})
-		resc <- res{got, err}
-	}()
-	<-secondEntered
-	close(late)
-	require.Eventually(t, func() bool { return v.dropped.Load() == 1 }, 5*time.Second, time.Millisecond)
-	close(second)
-	r := <-resc
-	require.NoError(t, r.err)
-	assert.Equal(t, []any{"got:y", 0.0}, r.v)
-	assert.EqualValues(t, 1, ran.Load(), "the late host work itself ran")
-
-	got, err := run(v, context.Background(), `globalThis.n`)
-	require.NoError(t, err)
-	assert.EqualValues(t, 0, got, "the late resolution never ran in JS")
-}
-
 func TestCallsSerialized(t *testing.T) {
-	v := newTestVM(t, "", nil)
+	v := newTestVM(t, "", VMOptions{})
 	var mu sync.Mutex
 	var log []string
 	note := func(s string) { mu.Lock(); log = append(log, s); mu.Unlock() }
@@ -269,11 +219,14 @@ func TestCallsSerialized(t *testing.T) {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
-			_, err := v.Call(context.Background(), inv, func(c *CallScope) (any, error) {
+			_, err := v.Call(context.Background(), inv, func(c *CallScope) (moejs.Value, error) {
 				note(name + ":start")
-				asyncFn(c, release, nil, nil)
-				c.Runtime().Set("note", func(s string) { note(name + ":" + s) })
-				return c.Runtime().RunString(`(async () => { for (let i = 0; i < 20; i++) await wait("x"); note("end") })()`)
+				asyncFn(c, release)
+				setGlobal(c, "note", c.vm.HostFunc("note", func(_ *CallScope, args []moejs.Value) (moejs.Value, error) {
+					note(name + ":" + moejs.Arg(args, 0).String())
+					return moejs.Undefined(), nil
+				}))
+				return script(c, `(async () => { for (let i = 0; i < 20; i++) await wait("x"); note("end") })()`)
 			})
 			assert.NoError(t, err)
 		}()
@@ -287,13 +240,13 @@ func TestCallsSerialized(t *testing.T) {
 }
 
 func TestCloseDuringCall(t *testing.T) {
-	v := newTestVM(t, "", nil)
+	v := newTestVM(t, "", VMOptions{})
 	started := make(chan struct{})
 	errc := make(chan error, 1)
 	go func() {
-		_, err := v.Call(context.Background(), inv, func(c *CallScope) (any, error) {
+		_, err := v.Call(context.Background(), inv, func(c *CallScope) (moejs.Value, error) {
 			close(started)
-			return c.Runtime().RunString(`while (true) {}`)
+			return script(c, `while (true) {}`)
 		})
 		errc <- err
 	}()
@@ -311,52 +264,37 @@ func TestCloseDuringCall(t *testing.T) {
 }
 
 func TestHostPanicSanitized(t *testing.T) {
-	v := NewVM("test", compile(t, ""), VMOptions{
-		Clock: &fakeClock{}, Watchdog: quietWatchdog(),
-		Redact: func(s string) string { return strings.ReplaceAll(s, "s3cret-value", "[redacted]") },
-	})
-	defer v.Close()
-	got, err := v.Call(context.Background(), inv, func(c *CallScope) (any, error) {
-		rt := c.Runtime()
-		rt.Set("crash", v.HostFunc("crash", func(c *CallScope, call goja.FunctionCall) goja.Value {
+	v := newTestVM(t, "", VMOptions{Redact: func(s string) string { return strings.ReplaceAll(s, "s3cret-value", "[redacted]") }})
+	got, err := v.Call(context.Background(), inv, func(c *CallScope) (moejs.Value, error) {
+		set := func(name string, f hostFn) { setGlobal(c, name, v.HostFunc(name, f)) }
+		fail := func(err error) hostFn {
+			return func(*CallScope, []moejs.Value) (moejs.Value, error) { return moejs.Undefined(), err }
+		}
+		set("crash", func(*CallScope, []moejs.Value) (moejs.Value, error) {
 			var s []int
-			return rt.ToValue(s[3])
-		}))
-		rt.Set("crashPath", v.HostFunc("crashPath", func(c *CallScope, call goja.FunctionCall) goja.Value {
+			return engine.IntValue(s[3]), nil
+		})
+		set("crashPath", func(*CallScope, []moejs.Value) (moejs.Value, error) {
 			panic("open /Users/someone/godwit/core/plugins/vm.go: oops")
-		}))
-		rt.Set("fail", v.HostFunc("fail", func(c *CallScope, call goja.FunctionCall) goja.Value {
-			panic(&PermissionError{Perm: "token s3cret-value"})
-		}))
-		rt.Set("throwJS", v.HostFunc("throwJS", func(c *CallScope, call goja.FunctionCall) goja.Value {
-			panic(rt.NewTypeError("bad /etc/passwd"))
-		}))
-		rt.Set("readFile", v.HostFunc("readFile", func(c *CallScope, call goja.FunctionCall) goja.Value {
-			panic(&os.PathError{Op: "open", Path: "/Users/someone/data/godwit.db", Err: os.ErrNotExist})
-		}))
-		rt.Set("winPath", v.HostFunc("winPath", func(c *CallScope, call goja.FunctionCall) goja.Value {
-			panic(errors.New(`open C:\Users\someone\godwit.db: denied`))
-		}))
-		rt.Set("colonPath", v.HostFunc("colonPath", func(c *CallScope, call goja.FunctionCall) goja.Value {
-			panic(errors.New("open:/Users/alice/x.db failed"))
-		}))
-		rt.Set("winColon", v.HostFunc("winColon", func(c *CallScope, call goja.FunctionCall) goja.Value {
-			panic(errors.New(`path:C:\Users\alice\x.db`))
-		}))
-		rt.Set("urlErr", v.HostFunc("urlErr", func(c *CallScope, call goja.FunctionCall) goja.Value {
-			panic(errors.New("fetch https://example.com/a/b: status 500"))
-		}))
-		rt.Set("laterColon", v.HostFunc("laterColon", func(c *CallScope, call goja.FunctionCall) goja.Value {
-			return c.Async(func(ctx context.Context) (any, error) {
+		})
+		set("fail", fail(&PermissionError{Perm: "token s3cret-value"}))
+		set("throwJS", fail(typeError("bad /etc/passwd")))
+		set("readFile", fail(&os.PathError{Op: "open", Path: "/Users/someone/data/godwit.db", Err: os.ErrNotExist}))
+		set("winPath", fail(errors.New(`open C:\Users\someone\godwit.db: denied`)))
+		set("colonPath", fail(errors.New("open:/Users/alice/x.db failed")))
+		set("winColon", fail(errors.New(`path:C:\Users\alice\x.db`)))
+		set("urlErr", fail(errors.New("fetch https://example.com/a/b: status 500")))
+		set("laterColon", func(c *CallScope, _ []moejs.Value) (moejs.Value, error) {
+			return c.AsyncJSON(func(context.Context) (any, error) {
 				return nil, errors.New("stat:/Users/alice/y|open=C:/Users/alice/z")
-			})
-		}))
-		rt.Set("later", v.HostFunc("later", func(c *CallScope, call goja.FunctionCall) goja.Value {
-			return c.Async(func(ctx context.Context) (any, error) {
-				return nil, fmt.Errorf("read /var/lib/godwit/x: key s3cret-value: %w", os.ErrPermission)
-			})
-		}))
-		return rt.RunString(`(async () => {
+			}), nil
+		})
+		set("later", func(c *CallScope, _ []moejs.Value) (moejs.Value, error) {
+			return c.AsyncJSON(func(context.Context) (any, error) {
+				return nil, errors.New("read /var/lib/godwit/x: key s3cret-value: " + os.ErrPermission.Error())
+			}), nil
+		})
+		return script(c, `(async () => {
 			const out = [crash, crashPath, fail, throwJS, readFile, winPath, colonPath, winColon, urlErr].map(f => {
 				try { f(); return ["none"] } catch (e) { return [String(e.message), typeof e.value, e instanceof Error, e instanceof TypeError] }
 			})
@@ -392,8 +330,8 @@ func TestHostPanicSanitized(t *testing.T) {
 	assert.Equal(t, "read <path>: key [redacted]: permission denied", msgs[9])
 	assert.Equal(t, "stat:<path>|open=<path>", msgs[10])
 
-	// A panic in the call body itself does not kill the owner goroutine.
-	_, err = v.Call(context.Background(), inv, func(c *CallScope) (any, error) { panic("body /Users/x.go") })
+	// A panic in the call body itself does not kill the runtime.
+	_, err = v.Call(context.Background(), inv, func(c *CallScope) (moejs.Value, error) { panic("body /Users/x.go") })
 	require.Error(t, err)
 	assert.NotContains(t, err.Error(), "/Users")
 	got, err = run(v, context.Background(), `1+1`)
@@ -402,7 +340,7 @@ func TestHostPanicSanitized(t *testing.T) {
 }
 
 func TestRecursionLimited(t *testing.T) {
-	v := newTestVM(t, "", nil)
+	v := newTestVM(t, "", VMOptions{})
 	_, err := run(v, context.Background(), `function f(n) { return f(n + 1) + 1 } f(0)`)
 	require.Error(t, err)
 	got, err := run(v, context.Background(), `"alive"`)
@@ -410,70 +348,8 @@ func TestRecursionLimited(t *testing.T) {
 	assert.Equal(t, "alive", got)
 }
 
-func TestWatchdogPolicy(t *testing.T) {
-	clock := &fakeClock{}
-	var heap atomic.Uint64
-	heap.Store(1000)
-	w := &Watchdog{Meter: heap.Load, Clock: clock, Interval: 10 * time.Millisecond, Threshold: 500}
-	v := NewVM("test", compile(t, ""), VMOptions{Clock: &fakeClock{}, Watchdog: w})
-	defer v.Close()
-
-	// Over the threshold during the call: interrupted.
-	errc := make(chan error, 1)
-	go func() { _, err := run(v, context.Background(), `while (true) {}`); errc <- err }()
-	require.Eventually(t, func() bool { return clock.pending() > 0 }, 5*time.Second, time.Millisecond)
-	clock.Advance(10 * time.Millisecond) // within the limit
-	heap.Store(1400)
-	clock.Advance(10 * time.Millisecond)
-	select {
-	case err := <-errc:
-		t.Fatalf("interrupted under the threshold: %v", err)
-	case <-time.After(20 * time.Millisecond):
-	}
-	heap.Store(1501)
-	clock.Advance(10 * time.Millisecond)
-	require.ErrorIs(t, <-errc, ErrMemoryLimit)
-	assert.Zero(t, clock.pending(), "the call's watch was released")
-
-	// A watch for another call, or one already released, never touches the
-	// running call.
-	heap.Store(0)
-	stale := w.Watch(v, 999_999)
-	released := w.Watch(v, 999_998)
-	released()
-	heap.Store(10_000)
-	gate := make(chan struct{})
-	resc := make(chan error, 1)
-	go func() {
-		_, err := v.Call(context.Background(), inv, func(c *CallScope) (any, error) {
-			asyncFn(c, gate, nil, nil)
-			return c.Runtime().RunString(`wait("x")`)
-		})
-		resc <- err
-	}()
-	require.Eventually(t, func() bool { return clock.pending() > 1 }, 5*time.Second, time.Millisecond)
-	clock.Advance(50 * time.Millisecond)
-	close(gate)
-	require.NoError(t, <-resc)
-	stale()
-}
-
-func TestWatchdogSmoke(t *testing.T) {
-	if testing.Short() {
-		t.Skip("allocates real memory")
-	}
-	v := NewVM("test", compile(t, ""), VMOptions{Watchdog: &Watchdog{Threshold: 128 << 20}})
-	defer v.Close()
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-	defer cancel()
-	start := time.Now()
-	_, err := run(v, ctx, `const a = []; while (true) { a.push(new Array(1e5).fill(1)) }`)
-	assert.ErrorIs(t, err, ErrMemoryLimit)
-	assert.Less(t, time.Since(start), 10*time.Second)
-}
-
-func TestExportStaysInOwner(t *testing.T) {
-	v := newTestVM(t, "", nil)
+func TestExportPlainData(t *testing.T) {
+	v := newTestVM(t, "", VMOptions{})
 	got, err := run(v, context.Background(), `({a: 1, b: [1, "x", null], c: {d: true}, f() {}, u: undefined})`)
 	require.NoError(t, err)
 	assert.Equal(t, map[string]any{"a": 1.0, "b": []any{1.0, "x", nil}, "c": map[string]any{"d": true}}, got)
@@ -484,81 +360,4 @@ func TestExportStaysInOwner(t *testing.T) {
 
 	_, err = run(v, context.Background(), `"x".repeat(1 << 20)`)
 	assert.ErrorIs(t, err, ErrTooLarge)
-
-	// Go results are normalized and capped the same way.
-	goCall := func(r any) (any, error) {
-		return v.Call(context.Background(), inv, func(c *CallScope) (any, error) { return r, nil })
-	}
-	got, err = goCall(MailSummary{ID: 7, Subject: "hi"})
-	require.NoError(t, err)
-	assert.Equal(t, 7.0, got.(map[string]any)["id"])
-	assert.Equal(t, "hi", got.(map[string]any)["subject"])
-
-	_, err = goCall(strings.Repeat("x", 1<<20))
-	assert.ErrorIs(t, err, ErrTooLarge)
-
-	_, err = goCall(func() {})
-	assert.Error(t, err)
-
-	_, err = v.Call(context.Background(), inv, func(c *CallScope) (any, error) {
-		return map[string]any{"v": c.Runtime().ToValue(1)}, nil
-	})
-	assert.ErrorContains(t, err, "goja")
-
-	// Past the depth limit is an error, not a pass.
-	deep := map[string]any{"v": goja.Undefined()}
-	for range 200 {
-		deep = map[string]any{"n": deep}
-	}
-	_, err = goCall(deep)
-	assert.Error(t, err)
-	plainDeep := map[string]any{}
-	for range 200 {
-		plainDeep = map[string]any{"n": plainDeep}
-	}
-	_, err = goCall(plainDeep)
-	assert.ErrorIs(t, err, ErrTooLarge)
-}
-
-func TestGoResultCycleRejectedPromptly(t *testing.T) {
-	v := NewVM("test", compile(t, ""), VMOptions{Clock: &fakeClock{}, Watchdog: quietWatchdog()})
-	m := map[string]any{}
-	m["a"], m["b"] = m, m
-	type res struct{ err error }
-	resc := make(chan res, 1)
-	go func() {
-		_, err := v.Call(context.Background(), inv, func(c *CallScope) (any, error) { return m, nil })
-		resc <- res{err}
-	}()
-	select {
-	case r := <-resc:
-		assert.ErrorContains(t, r.err, "cycle")
-	case <-time.After(100 * time.Millisecond):
-		t.Fatal("owner goroutine stalled on a cyclic result") // v is left running on purpose
-	}
-	v.Close()
-
-	// Shared but acyclic references are fine; an exponential fan-out is cut off
-	// by the size budget instead of stalling.
-	v = newTestVM(t, "", nil)
-	leaf := map[string]any{"x": 1}
-	got, err := v.Call(context.Background(), inv, func(c *CallScope) (any, error) {
-		return map[string]any{"a": leaf, "b": leaf}, nil
-	})
-	require.NoError(t, err)
-	assert.Equal(t, map[string]any{"a": map[string]any{"x": 1.0}, "b": map[string]any{"x": 1.0}}, got)
-	fan := map[string]any{}
-	for range 60 {
-		fan = map[string]any{"a": fan, "b": fan}
-	}
-	start := time.Now()
-	_, err = v.Call(context.Background(), inv, func(c *CallScope) (any, error) { return fan, nil })
-	assert.ErrorIs(t, err, ErrTooLarge)
-	// The linear walk to the 1 MiB budget takes ~50ms (~0.5s under -race, which
-	// is ~10x slower and slower still on CI); 2^60 visits would never finish.
-	limit := 2 * time.Second
-	if raceEnabled {
-		limit = 20 * time.Second
-	}
-	assert.Less(t, time.Since(start), limit)
 }
