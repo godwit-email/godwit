@@ -281,8 +281,9 @@ func (s *Service) GetConversation(ctx context.Context, id int64) (Conversation, 
 	if err != nil {
 		return Conversation{}, err
 	}
-	c.Compactable = h.Compactable(sum)
-	c.HistoryUse = float64(size) / float64(s.refHistoryBudget(ctx, c.Model))
+	budget := s.refHistoryBudget(ctx, c.Model)
+	c.Compactable = h.Compactable(sum, compactKeep(budget))
+	c.HistoryUse = float64(size) / float64(budget)
 	return c, nil
 }
 

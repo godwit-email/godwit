@@ -14,7 +14,8 @@ import type { PickerKeys } from "./Quote";
 /**
  * A command the input's / menu offers: its group's heading, its icon, what it is called, what it
  * stands at now (value) or does (hint). One with options opens them in the menu's place instead
- * of running; an option the command stands at is checked.
+ * of running; an option the command stands at is checked. A disabled one shows, greyed, and does
+ * nothing (its hint says why).
  */
 export type Command = {
   key: string;
@@ -24,6 +25,7 @@ export type Command = {
   value?: string;
   hint?: string;
   checked?: boolean;
+  disabled?: boolean;
   options?: Command[];
   run?(): void;
 };
@@ -61,6 +63,7 @@ export function CommandPicker({
   }, [query]);
   const id = useId();
   const pick = (c: Command) => {
+    if (c.disabled) return;
     if (c.options) {
       setOpen(c);
       setActive(
@@ -133,7 +136,8 @@ export function CommandPicker({
                 role="option"
                 tabIndex={-1}
                 aria-selected={i === active}
-                className="flex cursor-default items-center gap-2.5 rounded-md px-2.5 py-1.5 aria-selected:bg-accent"
+                aria-disabled={c.disabled || undefined}
+                className="flex cursor-default items-center gap-2.5 rounded-md px-2.5 py-1.5 aria-selected:bg-accent aria-disabled:opacity-50"
                 // the focus stays in the textarea that drives the list
                 onMouseDown={(e) => e.preventDefault()}
                 onMouseEnter={() => setActive(i)}

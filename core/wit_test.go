@@ -387,8 +387,8 @@ func TestAskHistoryBudget(t *testing.T) {
 	for _, n := range []string{"1", "2", "3"} {
 		turns := []testllm.Turn{{Calls: []testllm.Call{{Name: "search_mail", Args: `{"query":"harbour"}`}}},
 			{Text: []string{"T" + n + "-" + strings.Repeat("a", 25000)}}}
-		if n == "3" { // past the budget now: the compaction's summary
-			turns = append(turns, testllm.Turn{Text: []string{"SUMMARY-OF-Q1"}})
+		if n == "3" { // past the budget now: the compaction's summaries, of q1 and q2, and of q3's turn so far
+			turns = append(turns, testllm.Turn{Text: []string{"SUMMARY-OF-Q1-Q2"}}, testllm.Turn{Text: []string{"SUMMARY-OF-Q3-SO-FAR"}})
 		}
 		e.srv.Script(turns...)
 		evs := e.ask(t, conv.ID, "q"+n)
@@ -397,16 +397,24 @@ func TestAskHistoryBudget(t *testing.T) {
 	reqs := e.srv.Requests()
 	assert.Contains(t, promptOf(t, reqs[len(reqs)-1]), "T1-", "under budget nothing is omitted")
 
+	// As pi compacts: only the newest messages (compactKeep of the budget) stay
+	// whole, here q3's answer; q1 and q2 are summarized, and q3's turn so far
+	// (the question, its search) apart, as a split turn.
 	require.Eventually(t, func() bool {
 		sum, _, err := e.s.convSummary(t.Context(), conv.ID)
-		return err == nil && sum.Text == "SUMMARY-OF-Q1"
+		return err == nil && sum.Text == "SUMMARY-OF-Q1-Q2\n\n"+splitTurnNote+"\nSUMMARY-OF-Q3-SO-FAR"
 	}, 5*time.Second, 10*time.Millisecond, "compacted in the background")
 	reqs = e.srv.Requests()
-	compaction := reqs[len(reqs)-1]
-	assert.Contains(t, string(compaction.System), "You condense")
-	assert.Equal(t, "Godwit", compaction.Header.Get("User-Agent"), "the summary runs on pi")
-	assert.Contains(t, promptOf(t, compaction), "T1-", "the turns before the last two")
-	assert.NotContains(t, promptOf(t, compaction), "T2-")
+	turns, part := reqs[len(reqs)-2], reqs[len(reqs)-1]
+	assert.Contains(t, string(turns.System), "You condense the earlier part")
+	assert.Equal(t, "Godwit", turns.Header.Get("User-Agent"), "the summary runs on pi")
+	assert.Contains(t, promptOf(t, turns), "T1-")
+	assert.Contains(t, promptOf(t, turns), "T2-")
+	assert.NotContains(t, promptOf(t, turns), "q3")
+	assert.Contains(t, string(part.System), "the first part of the user's latest request")
+	assert.Contains(t, promptOf(t, part), "q3")
+	assert.Contains(t, promptOf(t, part), "search_mail")
+	assert.NotContains(t, promptOf(t, part), "T3-", "its answer stays whole")
 	c, err := e.s.GetConversation(t.Context(), conv.ID)
 	require.NoError(t, err)
 	assert.Less(t, c.HistoryUse, 1.0, "the summary stands in")
@@ -419,12 +427,12 @@ func TestAskHistoryBudget(t *testing.T) {
 	p := promptOf(t, req)
 	assert.Contains(t, p, "q1", "the first user message stays")
 	assert.Contains(t, p, ai.SummaryMailNote, "search_mail read mail: the summary is data")
-	assert.Contains(t, p, "SUMMARY-OF-Q1")
-	assert.NotContains(t, p, "T1-", "the summary stands in for the oldest turn")
-	assert.Contains(t, p, "T2-")
+	assert.Contains(t, p, "SUMMARY-OF-Q3-SO-FAR")
+	assert.NotContains(t, p, "T1-", "the summary stands in for what it condensed")
+	assert.NotContains(t, p, "T2-")
 	assert.Contains(t, p, "T3-")
 	calls, results := toolPairs(t, req)
-	assert.Len(t, calls, 2)
+	assert.Empty(t, calls, "q3's search went with its turn's first part")
 	assert.Equal(t, calls, results, "every tool request in the request has its result")
 
 	c, err = e.s.GetConversation(t.Context(), conv.ID)

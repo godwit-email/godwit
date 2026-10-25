@@ -1802,7 +1802,11 @@ export function Panel({
             group: session,
             icon: <UsageRing value={usage.history} />,
             label: t("wit.cmd.compact"),
-            hint: t("wit.cmd.compact_hint", Math.min(100, Math.round(usage.history * 100))),
+            // nothing to condense yet: greyed, saying so, as the meter's button is
+            disabled: !usage.compactable,
+            hint: usage.compactable
+              ? t("wit.cmd.compact_hint", Math.min(100, Math.round(usage.history * 100)))
+              : t("error.nothing_to_compact"),
             run: now(() => !compacting && !running && compact()),
           },
         ]

@@ -395,9 +395,10 @@ describe("Panel", () => {
       "Find bills",
     );
     expect(within(menu).getByRole("option", { name: "新对话" })).toBeInTheDocument();
-    expect(within(menu).getByRole("option", { name: /^压缩/ })).toHaveTextContent(
-      "压缩压缩此对话的上下文（已使用 0%）",
-    );
+    // nothing to condense yet: greyed, saying so
+    const compactRow = within(menu).getByRole("option", { name: /^压缩/ });
+    expect(compactRow).toHaveTextContent("压缩这段对话还没有可以压缩的内容。");
+    expect(compactRow).toHaveAttribute("aria-disabled", "true");
     expect(within(menu).getByText("技能")).toBeInTheDocument();
     await user.type(box, "bi");
     expect(within(menu).getAllByRole("option")).toHaveLength(1);
@@ -880,7 +881,10 @@ describe("Panel", () => {
 
   it("/compact sent compacts instead of asking", async () => {
     const user = userEvent.setup();
-    const { api } = await setup({ page: true, history: turn });
+    const { api } = await setup({
+      page: true,
+      history: { ...turn, usage: { ...turn.usage, compactable: true } },
+    });
     await user.type(screen.getByRole("textbox"), "/compact{Enter}");
     await waitFor(() => expect(api.compact).toHaveBeenCalled());
     expect(api.ask).not.toHaveBeenCalled();
