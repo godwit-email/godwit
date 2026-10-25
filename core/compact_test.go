@@ -52,3 +52,22 @@ func testCompactPrompt(t *testing.T, h *ai.History) {
 	assert.EqualValues(t, 2, upto, "one turn past the budget still moves on")
 	assert.LessOrEqual(t, utf8.RuneCountInString(p), 106, "cut to fit")
 }
+
+// Seqs are not reused: a turn asked again right after the summary leaves a
+// gap with no message in it, and no whole turns before the split one.
+func TestTurnsBetween(t *testing.T) {
+	var rows []ai.StoredMessage
+	for _, m := range []struct {
+		seq        int64
+		role, text string
+	}{{1, "user", "q1"}, {2, "model", "A1"}, {3, "user", "q2"}, {4, "model", "A2"}, {11, "user", "q3 again"}, {12, "model", "A3"}} {
+		b, err := json.Marshal(map[string]any{"role": m.role, "content": []map[string]string{{"text": m.text}}})
+		require.NoError(t, err)
+		rows = append(rows, ai.StoredMessage{Seq: m.seq, Data: b})
+	}
+	h, err := ai.LoadHistory(rows, 13)
+	require.NoError(t, err)
+	assert.False(t, turnsBetween(h, 4, 11), "the gap 5 to 10 holds nothing")
+	assert.True(t, turnsBetween(h, 2, 11), "q2's turn")
+	assert.False(t, turnsBetween(h, 1, 2))
+}

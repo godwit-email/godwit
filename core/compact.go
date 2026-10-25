@@ -12,6 +12,7 @@ import (
 	"context"
 	"errors"
 	"log/slog"
+	"slices"
 	"sort"
 	"strings"
 	"unicode/utf8"
@@ -208,13 +209,22 @@ func fit(prompt string, budget int) string {
 	return prompt
 }
 
+// turnsBetween reports whether h has messages the model sees after seq from
+// and before seq start: seqs are not reused, so a gap (a turn asked again)
+// may hold none.
+func turnsBetween(h *ai.History, from, start int64) bool {
+	return slices.ContainsFunc(h.Messages(), func(m ai.Message) bool {
+		return m.Seq > from && m.Seq < start && m.Command == nil
+	})
+}
+
 // condenseSplit summarizes h through upto, which ends inside the turn of the
 // question at start (pi's split turn): the turns before it with the summary
 // so far, as ever, and the turn's first part apart, under splitTurnNote.
 func (s *Service) condenseSplit(ctx context.Context, id int64, model ai.ResolvedModel, h *ai.History, sum ai.Summary, start, upto int64, budget int) (string, error) {
 	from := max(sum.Upto, h.Messages()[0].Seq) // the first message is always sent
 	head := sum.Text
-	if start-1 > from { // whole turns since the summary, before the split one
+	if turnsBetween(h, from, start) { // whole turns since the summary, before the split one
 		prompt, err := h.Transcript(from, start-1)
 		if err != nil {
 			return "", err
