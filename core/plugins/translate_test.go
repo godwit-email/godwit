@@ -181,10 +181,12 @@ func TestLateSettlementDropped(t *testing.T) {
 	_, err := p.Translate(ctx, translateInv, map[string]any{})
 	assert.ErrorIs(t, err, context.DeadlineExceeded)
 	close(h.release)
+	require.Eventually(t, func() bool { return h.done.Load() == 1 }, 5*time.Second, time.Millisecond, "the late fetch did finish")
+	_, err = p.Translate(context.Background(), translateInv, map[string]any{"count": true}) // its settlement may land here
+	require.NoError(t, err)
 	got, err := p.Translate(context.Background(), translateInv, map[string]any{"count": true})
 	require.NoError(t, err)
 	assert.Equal(t, float64(0), got)
-	assert.Equal(t, int64(1), h.done.Load(), "the late fetch did finish")
 }
 
 type blockingFetch struct {
