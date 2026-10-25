@@ -330,9 +330,9 @@ func numberCitations(cs []Citation, refs map[int64]int) {
 
 // keptRefs numbers job's citations as the conversation will have them once
 // asked again in place of the question with seq at (commitRewind): only the
-// runs it keeps count.
+// runs it keeps count, and job's own (a resume's citations so far).
 func (s *Service) keptRefs(ctx context.Context, job *runJob, at int64) error {
-	rows, err := s.db.Query(ctx, "SELECT id FROM runs WHERE conversation_id = ? AND (hist_from IS NULL OR hist_from < ?)", job.conv.ID, at)
+	rows, err := s.db.Query(ctx, "SELECT id FROM runs WHERE conversation_id = ? AND (hist_from IS NULL OR hist_from < ? OR id = ?)", job.conv.ID, at, job.id)
 	if err != nil {
 		return err
 	}
@@ -372,6 +372,13 @@ func (s *Service) number(ctx context.Context, job *runJob, call, source string, 
 func (s *Service) loadRefs(ctx context.Context, job *runJob) {
 	if job.refs != nil {
 		return
+	}
+	if job.rewind != nil { // a question asked again, resumed: number as its launch did, without what it replaces
+		err := s.keptRefs(ctx, job, job.rewind.from)
+		if err == nil {
+			return
+		}
+		slog.Default().Warn("could not read a conversation's citations", "conversation", job.conv.ID, "err", err)
 	}
 	job.refs = map[int64]int{}
 	saved, err := s.citationsOf(ctx, job.conv.ID)

@@ -983,6 +983,54 @@ func TestAskAgainNumbersQuotes(t *testing.T) {
 	assert.Equal(t, map[int64]int{e.msg: 1, c: 2}, ns)
 }
 
+// A question asked again that pauses for an approval numbers mail on its
+// resume as its launch did: the run it replaces still saved, its numbers are
+// free, so get_message reads the mail the new answer showed by that number.
+func TestAskAgainResumeKeepsNumbers(t *testing.T) {
+	e := newSkillEnv(t)
+	b := addMessage(t, e.s, "Tickets", "Ann <ann@x>", "train at nine", "", 1_700_000_300)
+	c := addMessage(t, e.s, "Hotel", "Bo <bo@x>", "room twelve", "", 1_700_000_400)
+	conv := e.askConv(t)
+	e.srv.Script(testllm.Turn{Text: []string{"One."}}, testllm.Turn{Text: []string{"Two."}})
+	for _, q := range []struct {
+		text string
+		id   int64
+	}{{"first", e.msg}, {"second", b}} { // e.msg is mail 1, b mail 2
+		ch, err := e.s.AskWith(t.Context(), conv.ID, q.text, []int64{q.id})
+		require.NoError(t, err)
+		drainWit(t, ch)
+	}
+	got, err := e.s.GetConversation(t.Context(), conv.ID)
+	require.NoError(t, err)
+	e.srv.Script(found("room twelve"),
+		testllm.Turn{Calls: []testllm.Call{{Name: "create_draft", Args: `{"to":["a@b.c"],"subject":"Re","html":"<p>x</p>"}`}}})
+	ch, err := e.s.AskAgain(t.Context(), conv.ID, got.Turns[1].ID, "second, edited", nil)
+	require.NoError(t, err)
+	evs := drainWit(t, ch)
+	last := evs[len(evs)-1]
+	require.Equal(t, "interrupted", last.Kind, "%+v", last.Err)
+	sr := witResults(evs, "search_mail")
+	require.Len(t, sr, 1)
+	require.Equal(t, c, sr[0].Citations[0].MessageID)
+	require.Equal(t, 2, sr[0].Citations[0].N, "b's number, free again")
+
+	e.srv.Script(testllm.Turn{Calls: []testllm.Call{{Name: "get_message", Args: `{"id":2}`}}}, testllm.Turn{Text: []string{"Room twelve."}})
+	sub, stop := e.s.SubscribeConversation(conv.ID)
+	defer stop()
+	require.NoError(t, e.s.ResolveApproval(t.Context(), last.Approvals[0].ID, true))
+	var resumed []WitEvent
+	for ev := range sub {
+		resumed = append(resumed, ev)
+		if ev.Kind == "done" {
+			break
+		}
+	}
+	rs := witResults(resumed, "get_message")
+	require.Len(t, rs, 1)
+	require.Empty(t, rs[0].Result.Error)
+	assert.Equal(t, c, rs[0].Citations[0].MessageID, "mail 2 is the mail this answer showed, not the replaced one's")
+}
+
 func TestAskOnPi(t *testing.T) {
 	e := newSkillEnv(t)
 	old := e.askConv(t) // a conversation started on Genkit, saved as pi messages too (#234)
