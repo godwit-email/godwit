@@ -1125,7 +1125,14 @@ function Answer({
         </div>
       )}
       {cites.length > 0 && onCite && sources && (
-        <Citations items={cites} nums={nums} onOpen={onCite} t={t} />
+        // a long list scrolls in place (an answer may have read hundreds of mails)
+        <Citations
+          items={cites}
+          nums={nums}
+          onOpen={onCite}
+          t={t}
+          className="max-h-96 overflow-y-auto overscroll-contain"
+        />
       )}
       {cites.length > 0 && !onCite && (
         <div className="flex flex-wrap gap-1">
