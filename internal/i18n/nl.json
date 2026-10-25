@@ -1208,5 +1208,6 @@
   "wit_thinking_now": "Denkt na",
   "wit_work_running": "Bezig",
   "wit_work_done": "Klaar",
-  "wit_work_done_in": "Klaar in {arg1}"
+  "wit_work_done_in": "Klaar in {arg1}",
+  "wit_quote_recent": "Recente e-mail"
 }

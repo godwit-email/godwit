@@ -8,6 +8,7 @@ import (
 	"net/url"
 	"slices"
 	"strings"
+	"time"
 
 	"github.com/godwit-email/godwit/core"
 	"github.com/godwit-email/godwit/core/mail"
@@ -385,7 +386,11 @@ type MailHit struct {
 const quoteHits = 8
 
 func searchMail(ctx context.Context, svc *core.Service, query string) ([]MailHit, error) {
-	ms, err := svc.Search(ctx, 0, query, quoteHits)
+	q := core.SearchQuery{Text: query}
+	if strings.TrimSpace(query) == "" { // nothing typed yet: the latest mail, newest first
+		q.Until = time.Now().Add(time.Hour)
+	}
+	ms, err := svc.SearchWith(ctx, q, quoteHits)
 	out := make([]MailHit, 0, len(ms))
 	for _, m := range ms {
 		h := MailHit{ID: m.ID, Subject: m.Subject, From: m.From}

@@ -1208,5 +1208,6 @@
   "wit_thinking_now": "생각 중",
   "wit_work_running": "처리 중",
   "wit_work_done": "완료",
-  "wit_work_done_in": "완료, {arg1} 소요"
+  "wit_work_done_in": "완료, {arg1} 소요",
+  "wit_quote_recent": "최근 메일"
 }

@@ -1208,5 +1208,6 @@
   "wit_thinking_now": "Sta ragionando",
   "wit_work_running": "In corso",
   "wit_work_done": "Fatto",
-  "wit_work_done_in": "Fatto in {arg1}"
+  "wit_work_done_in": "Fatto in {arg1}",
+  "wit_quote_recent": "Posta recente"
 }

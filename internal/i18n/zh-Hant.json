@@ -1208,5 +1208,6 @@
   "wit_thinking_now": "思考中",
   "wit_work_running": "處理中",
   "wit_work_done": "已完成",
-  "wit_work_done_in": "已完成，用時 {arg1}"
+  "wit_work_done_in": "已完成，用時 {arg1}",
+  "wit_quote_recent": "最近的郵件"
 }

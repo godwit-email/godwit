@@ -1208,5 +1208,6 @@
   "wit_thinking_now": "Думает",
   "wit_work_running": "Выполняется",
   "wit_work_done": "Готово",
-  "wit_work_done_in": "Готово за {arg1}"
+  "wit_work_done_in": "Готово за {arg1}",
+  "wit_quote_recent": "Недавние письма"
 }

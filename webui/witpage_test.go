@@ -937,6 +937,10 @@ func TestAskQuotesMail(t *testing.T) {
 	require.NoError(t, err)
 	require.Len(t, hits, 1)
 	assert.Equal(t, MailHit{ID: m.ID, Subject: m.Subject, From: m.From, Date: m.Date.UnixMilli()}, hits[0])
+	recent, err := f.p.SearchMail(f.ctx(), " ")
+	require.NoError(t, err)
+	require.NotEmpty(t, recent, "nothing typed: the latest mail")
+	assert.Equal(t, m.ID, recent[0].ID)
 
 	f.llm.Script(coretest.Turn{Text: []string{"见 [1]。"}})
 	rs, err := f.p.Ask(f.ctx(), 0, "总结一下", []int64{m.ID}, "", "", "")

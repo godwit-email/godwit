@@ -2444,5 +2444,6 @@
         "type": "String"
       }
     }
-  }
+  },
+  "wit_quote_recent": "Recent mail"
 }

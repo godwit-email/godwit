@@ -1208,5 +1208,6 @@
   "wit_thinking_now": "Düşünüyor",
   "wit_work_running": "Çalışıyor",
   "wit_work_done": "Tamamlandı",
-  "wit_work_done_in": "{arg1} içinde tamamlandı"
+  "wit_work_done_in": "{arg1} içinde tamamlandı",
+  "wit_quote_recent": "Son postalar"
 }

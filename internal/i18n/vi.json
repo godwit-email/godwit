@@ -1208,5 +1208,6 @@
   "wit_thinking_now": "Đang suy nghĩ",
   "wit_work_running": "Đang xử lý",
   "wit_work_done": "Đã xong",
-  "wit_work_done_in": "Đã xong, mất {arg1}"
+  "wit_work_done_in": "Đã xong, mất {arg1}",
+  "wit_quote_recent": "Thư gần đây"
 }

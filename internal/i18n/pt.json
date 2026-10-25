@@ -1208,5 +1208,6 @@
   "wit_thinking_now": "Pensando",
   "wit_work_running": "Trabalhando",
   "wit_work_done": "Concluído",
-  "wit_work_done_in": "Concluído em {arg1}"
+  "wit_work_done_in": "Concluído em {arg1}",
+  "wit_quote_recent": "E-mails recentes"
 }

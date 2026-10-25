@@ -1934,6 +1934,26 @@ describe("Panel", () => {
     await waitFor(() => expect(screen.queryByRole("button", { name: "引用邮件" })).toBeNull());
   });
 
+  it("an @ alone offers the latest mail, under 最近的邮件; typing searches", async () => {
+    const user = userEvent.setup();
+    const onSearch = vi.fn((q: string) =>
+      Promise.resolve(
+        q
+          ? [{ id: 8, subject: "合同", from: "f", date: 0 }]
+          : [{ id: 9, subject: "发票", from: "f", date: 0 }],
+      ),
+    );
+    await setup({ page: true, onSearch });
+    const box = input("向 Wit 提问");
+    await user.type(box, "@");
+    expect(await screen.findByRole("option", { name: /发票/ })).toBeInTheDocument();
+    expect(onSearch).toHaveBeenCalledWith("");
+    expect(screen.getByText("最近的邮件")).toBeInTheDocument();
+    await user.type(box, "合");
+    expect(await screen.findByRole("option", { name: /合同/ })).toBeInTheDocument();
+    expect(screen.queryByText("最近的邮件")).toBeNull();
+  });
+
   it("sending checks the quoted mail first: a deleted one leaves the input, the rest wait", async () => {
     const user = userEvent.setup();
     const onSearch = vi.fn().mockResolvedValue([

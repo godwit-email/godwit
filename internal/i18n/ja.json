@@ -1208,5 +1208,6 @@
   "wit_thinking_now": "思考中",
   "wit_work_running": "処理中",
   "wit_work_done": "完了",
-  "wit_work_done_in": "完了（{arg1}）"
+  "wit_work_done_in": "完了（{arg1}）",
+  "wit_quote_recent": "最近のメール"
 }
