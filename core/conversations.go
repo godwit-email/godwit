@@ -12,6 +12,7 @@ import (
 	"strings"
 	"sync"
 	"time"
+	"unicode/utf8"
 
 	"github.com/egoist/mygo/plugins/sqlite"
 	"github.com/godwit-email/godwit/core/ai"
@@ -38,8 +39,10 @@ type Conversation struct {
 	// (from 0; past 1, its oldest turns are summarized or left out). ListConversations
 	// leaves both empty. Compactable: CompactConversation has turns to
 	// summarize.
-	Usage       ai.Usage
-	HistoryUse  float64
+	Usage      ai.Usage
+	HistoryUse float64
+	// SummaryUse is the part of HistoryUse its summary takes (0: none).
+	SummaryUse  float64
 	Compactable bool
 	// Answering means a run of it is running or resuming (or an allowed
 	// call of it executes); Awaiting that one waits for the user to decide
@@ -68,7 +71,7 @@ type WitEvent struct {
 // (its tool_result), or when CallID is "" what Source says: mail the user
 // quoted (citeQuote) or an assist run's context (citeContext). N is the message's
 // citation number in the conversation (from 1, by first citation): the
-// model sees it as the mail's "ref" and cites it as [N].
+// model knows the mail by it alone (its id) and cites it as <mail id="N"/>.
 type Citation struct {
 	N             int
 	MessageID     int64
@@ -281,8 +284,12 @@ func (s *Service) GetConversation(ctx context.Context, id int64) (Conversation, 
 	if err != nil {
 		return Conversation{}, err
 	}
-	c.Compactable = h.Compactable(sum)
-	c.HistoryUse = float64(size) / float64(s.refHistoryBudget(ctx, c.Model))
+	budget := s.refHistoryBudget(ctx, c.Model)
+	c.Compactable = h.Compactable(sum, compactKeep(budget))
+	c.HistoryUse = float64(size) / float64(budget)
+	if sum.Text != "" && sum.Upto > 0 {
+		c.SummaryUse = min(float64(utf8.RuneCountInString(sum.Text))/float64(budget), c.HistoryUse)
+	}
 	return c, nil
 }
 
@@ -330,9 +337,9 @@ func numberCitations(cs []Citation, refs map[int64]int) {
 
 // keptRefs numbers job's citations as the conversation will have them once
 // asked again in place of the question with seq at (commitRewind): only the
-// runs it keeps count.
+// runs it keeps count, and job's own (a resume's citations so far).
 func (s *Service) keptRefs(ctx context.Context, job *runJob, at int64) error {
-	rows, err := s.db.Query(ctx, "SELECT id FROM runs WHERE conversation_id = ? AND (hist_from IS NULL OR hist_from < ?)", job.conv.ID, at)
+	rows, err := s.db.Query(ctx, "SELECT id FROM runs WHERE conversation_id = ? AND (hist_from IS NULL OR hist_from < ? OR id = ?)", job.conv.ID, at, job.id)
 	if err != nil {
 		return err
 	}
@@ -356,14 +363,7 @@ func (s *Service) number(ctx context.Context, job *runJob, call, source string, 
 	ctx = context.WithoutCancel(ctx)
 	job.refsMu.Lock()
 	defer job.refsMu.Unlock()
-	if job.refs == nil {
-		job.refs = map[int64]int{}
-		saved, err := s.citationsOf(ctx, job.conv.ID)
-		if err != nil {
-			slog.Default().Warn("could not read a conversation's citations", "conversation", job.conv.ID, "err", err)
-		}
-		numberCitations(saved, job.refs)
-	}
+	s.loadRefs(ctx, job)
 	for i := range cs {
 		cs[i].RunID, cs[i].CallID, cs[i].Source = job.id, call, source
 	}
@@ -371,6 +371,68 @@ func (s *Service) number(ctx context.Context, job *runJob, call, source string, 
 	if len(cs) > 0 {
 		s.saveCitations(ctx, job.id, cs)
 		s.snippets(ctx, cs)
+	}
+	return cs
+}
+
+// loadRefs reads job's conversation's citation numbers on first use; job.refsMu is held.
+func (s *Service) loadRefs(ctx context.Context, job *runJob) {
+	if job.refs != nil {
+		return
+	}
+	if job.rewind != nil { // a question asked again, resumed: number as its launch did, without what it replaces
+		err := s.keptRefs(ctx, job, job.rewind.from)
+		if err == nil {
+			return
+		}
+		slog.Default().Warn("could not read a conversation's citations", "conversation", job.conv.ID, "err", err)
+	}
+	job.refs = map[int64]int{}
+	saved, err := s.citationsOf(ctx, job.conv.ID)
+	if err != nil {
+		slog.Default().Warn("could not read a conversation's citations", "conversation", job.conv.ID, "err", err)
+	}
+	numberCitations(saved, job.refs)
+}
+
+// mailOf is the message the model knows as mail n in job's conversation: the
+// mail its tools showed it with that id (citation number).
+func (s *Service) mailOf(ctx context.Context, job *runJob, n int) (int64, error) {
+	job.refsMu.Lock()
+	defer job.refsMu.Unlock()
+	s.loadRefs(context.WithoutCancel(ctx), job)
+	if _, ok := job.refs[int64(n)]; ok && job.oldIDs { // a message ID the run's tools showed it before mail ids
+		return int64(n), nil
+	}
+	for id, k := range job.refs {
+		if k == n {
+			return id, nil
+		}
+	}
+	return 0, fmt.Errorf("mail %d %w: use the id of a mail the tools returned", n, errMailNotFound)
+}
+
+// contextCites numbers the mail an assist run's context shows (citeContext),
+// as its prompt names it, and saves what is not saved yet: all of it for a
+// run's start; for a resume, whose first drive saved the rest, only mail the
+// draft brought since.
+func (s *Service) contextCites(ctx context.Context, job *runJob, cs []Citation) []Citation {
+	if !job.resumed {
+		return s.number(ctx, job, "", citeContext, cs)
+	}
+	job.refsMu.Lock()
+	s.loadRefs(context.WithoutCancel(ctx), job)
+	var fresh []Citation
+	for i := range cs {
+		if n, ok := job.refs[cs[i].MessageID]; ok {
+			cs[i].N = n
+		} else {
+			fresh = append(fresh, cs[i])
+		}
+	}
+	job.refsMu.Unlock()
+	for _, f := range s.number(ctx, job, "", citeContext, fresh) {
+		cs[slices.IndexFunc(cs, func(c Citation) bool { return c.MessageID == f.MessageID })] = f
 	}
 	return cs
 }
@@ -820,12 +882,15 @@ type runJob struct {
 	cites    sync.Map // call ID -> []Citation, stored by read tools
 	refsMu   sync.Mutex
 	refs     map[int64]int // message ID -> citation number, read on first use (number)
-	clued    sync.Map      // recipients create_draft has shown language clues for
-	base     *ai.History   // the history the run started from (its question asked again: before it)
-	after    *ai.History   // what the run ended with (drive), and the changes that save it
-	changes  ai.HistoryChanges
-	resumed  bool   // a resume: the run's context was shown and cited already
-	turn     string // the turn its question starts (Turn.ID)
+	// oldIDs: a resumed run begun before mail ids (snapshot.MailIDs): calls it
+	// held back may name mail by message ID (mailOf)
+	oldIDs  bool
+	clued   sync.Map    // recipients create_draft has shown language clues for
+	base    *ai.History // the history the run started from (its question asked again: before it)
+	after   *ai.History // what the run ended with (drive), and the changes that save it
+	changes ai.HistoryChanges
+	resumed bool   // a resume: the run's context was shown and cited already
+	turn    string // the turn its question starts (Turn.ID)
 	// host, set for a host-made proposal (AssistSkill), turns the finished
 	// tool-less run into an interrupt on the proposal; it is not resumed. Its
 	// command is the question the history keeps for it.
@@ -851,6 +916,9 @@ type snapshot struct {
 	Host     bool        `json:"host,omitempty"`    // a host-made proposal: nothing to resume
 	Effort   string      `json:"effort,omitempty"`  // the run's reasoning effort
 	Summary  *ai.Summary `json:"summary,omitempty"` // runJob.summary; none from before it was kept
+	// MailIDs: the run's tools know a mail by its citation number, its id (blocks);
+	// a run from before took message IDs
+	MailIDs bool `json:"mail_ids,omitempty"`
 }
 
 type runKey struct{}
@@ -1013,7 +1081,7 @@ func (s *Service) claimRun(ctx context.Context, conv Conversation, ref string, t
 		return nil, nil, err
 	}
 	toolsJSON, _ := json.Marshal(tools)
-	snap, _ := json.Marshal(snapshot{})
+	snap, _ := json.Marshal(snapshot{MailIDs: true})
 	now := time.Now().Unix()
 	r, err := s.db.Execute(ctx, `INSERT INTO runs(conversation_id, state, model, tools, snapshot, created_at, updated_at)
 		SELECT ?, 'running', ?, ?, ?, ?, ? WHERE NOT EXISTS (SELECT 1 FROM runs WHERE conversation_id = ?
@@ -1200,8 +1268,8 @@ func (s *Service) drive(job *runJob, end func(), run runFunc, req ai.Request, ou
 		emit(WitEvent{Event: ai.Event{Kind: "start"}})
 	}
 	cs := job.quoted
-	if len(job.cited) > 0 && !job.resumed {
-		cs = append(cs, s.number(job.ctx, job, "", citeContext, job.cited)...)
+	if len(job.cited) > 0 && !job.resumed { // numbered and saved with the prompt (contextCites)
+		cs = append(cs, job.cited...)
 	}
 	if len(cs) > 0 {
 		emit(WitEvent{Event: ai.Event{Kind: "context"}, Citations: cs})
@@ -1321,7 +1389,7 @@ func (s *Service) settleRun(ctx context.Context, job *runJob, req ai.Request, re
 		return WitEvent{Event: ai.Event{Kind: "done"}}, err
 	}
 	now := time.Now().Unix()
-	snap, _ := json.Marshal(snapshot{ReadMail: job.scope.ReadMail(), Round: job.round, Host: job.host != nil, Effort: req.Effort, Summary: job.summary})
+	snap, _ := json.Marshal(snapshot{ReadMail: job.scope.ReadMail(), Round: job.round, Host: job.host != nil, Effort: req.Effort, Summary: job.summary, MailIDs: !job.oldIDs})
 	stmts := append(historyStmts(job.conv.ID, job.changes), runSpan(job.id, job.base.Next(), job.after.Next()), runUsage(job.id, res.Usage),
 		sqlite.Statement{SQL: "UPDATE runs SET state = 'interrupted', snapshot = ?, updated_at = ? WHERE id = ?", Args: []any{snap, now, job.id}})
 	for i, c := range res.Interrupts {
@@ -1428,7 +1496,7 @@ func (s *Service) startResume(ctx context.Context, end func(), runID int64) erro
 		return err
 	}
 	job := s.track(ctx, runID, conv, scope, snap.Round+len(as))
-	job.resumed, job.rewind, job.turn, job.summary = true, rw, s.runTurn(ctx, runID), snap.Summary
+	job.resumed, job.rewind, job.turn, job.summary, job.oldIDs = true, rw, s.runTurn(ctx, runID), snap.Summary, !snap.MailIDs
 	req, err := s.request(ctx, job, model, h, offered(conv.Kind, s.registered(names...)))
 	if err != nil {
 		s.untrack(job)

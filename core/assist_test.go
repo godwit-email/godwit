@@ -165,7 +165,7 @@ func TestAssistProposesEdit(t *testing.T) {
 	require.NoError(t, json.Unmarshal(e.srv.Requests()[0].System, &sys))
 	assert.Contains(t, sys, "I will come on Friday.", "the editable part")
 	assert.Contains(t, sys, "Meet on Friday at the harbour.", "the original email")
-	assert.Contains(t, sys, `<untrusted_email source="message:`)
+	assert.Contains(t, sys, `<untrusted_email source="mail:`)
 	assert.NotContains(t, sys, "-- ", "not the signature")
 
 	e.accept(t, a)
@@ -179,6 +179,36 @@ func TestAssistProposesEdit(t *testing.T) {
 	cs, err := e.s.ListConversations(t.Context(), "assist")
 	require.NoError(t, err)
 	assert.Len(t, cs, 1, "one assist conversation per draft")
+}
+
+// The assist context names its mail by id, as the read tools do: get_message
+// reads the email a reply answers by the id its context shows, and the
+// context's citations carry that number.
+func TestAssistContextMailByID(t *testing.T) {
+	e := newAssistEnv(t)
+	d := e.replyDraft(t, "<p>I will come on Friday.</p>")
+	e.srv.Script(testllm.Turn{Calls: []testllm.Call{{Name: "get_message", Args: `{"id":1}`}}}, testllm.Turn{Text: []string{"ok"}})
+	evs := e.assist(t, d.ID, "what did Bob say?")
+	require.Equal(t, "done", evs[len(evs)-1].Kind, "%+v", evs[len(evs)-1].Err)
+
+	var sys string
+	require.NoError(t, json.Unmarshal(e.srv.Requests()[0].System, &sys))
+	assert.Contains(t, sys, `<untrusted_email source="mail:1">`)
+	assert.NotContains(t, sys, "message:"+itoa(e.msg))
+	var ctx []Citation
+	for _, ev := range evs {
+		if ev.Kind == "context" {
+			ctx = ev.Citations
+		}
+	}
+	require.NotEmpty(t, ctx)
+	assert.Equal(t, 1, ctx[0].N)
+	assert.Equal(t, e.msg, ctx[0].MessageID)
+	rs := witResults(evs, "get_message")
+	require.Len(t, rs, 1)
+	require.Empty(t, rs[0].Result.Error)
+	assert.Equal(t, e.msg, rs[0].Citations[0].MessageID, "the id its context showed reads that mail")
+	assert.Equal(t, 1, rs[0].Citations[0].N)
 }
 
 func TestAssistSummaryKinds(t *testing.T) {

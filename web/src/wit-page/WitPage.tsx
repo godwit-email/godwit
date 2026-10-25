@@ -32,6 +32,9 @@ const message = (e: unknown) => (e instanceof Error ? e.message : String(e));
  * ignored); the core run goes on. A first question's conversation is kept for the next one; the
  * witOpen native sends for it (maybe before ask returns) is the conversation shown, no switch.
  */
+/** The skills the input's / menu lists (one reference: the panel reads them once). */
+const skills = () => api.skills();
+
 export function WitPage() {
   const [st, setSt] = useState<WitPageState>();
   const [view, setView] = useState<{ history: WitHistory; tr: WitTransport; key: number }>();
@@ -231,6 +234,8 @@ function Conversation({
       onAnswer={onAnswer}
       onSession={onSession}
       onSearch={(q) => api.searchMail(q)}
+      skills={skills}
+      onNew={() => void api.newConversation().catch(fail)}
       onLink={(url) => api.openLink(url)}
       onCite={(id) =>
         api.openCited(id).catch((e) => {

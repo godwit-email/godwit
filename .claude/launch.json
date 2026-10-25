@@ -8,6 +8,12 @@
       "port": 5173
     },
     {
+      "name": "preview",
+      "runtimeExecutable": "bun",
+      "runtimeArgs": ["run", "--cwd", "web", "preview"],
+      "port": 5173
+    },
+    {
       "name": "site",
       "runtimeExecutable": "mise",
       "runtimeArgs": ["run", "site:dev"],

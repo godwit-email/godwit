@@ -466,7 +466,7 @@ func TestNetOnlyPluginToolNoMail(t *testing.T) {
 	assert.Contains(t, toolOutput(t, evs), "pong")
 	assert.Equal(t, int64(1), hits.Load())
 
-	evs = e.ask(t, e.newConv(t, "ask", 0), callArgs("get_message", fmt.Sprintf(`{"id":%d}`, e.msg)),
+	evs = e.ask(t, e.newConv(t, "ask", 0), callArgs("search_mail", `{"query":"harbour"}`), callArgs("get_message", `{"id":1}`),
 		callArgs("plugin_shipper_ship", `{}`), finished)
 	in := evs[len(evs)-1]
 	require.Equal(t, "interrupted", in.Kind, "%+v", in.Err)

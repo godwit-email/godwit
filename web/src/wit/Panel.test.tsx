@@ -4,7 +4,7 @@ import { toast } from "sonner";
 import type { Approval, MailHit, WitEvent, WitHistory, WitInfo } from "@/mygo";
 import { makeT } from "@/shared/i18n";
 import { legacy as hist } from "./fixtures";
-import { elapsed, formRound, Panel, type PanelReview } from "./Panel";
+import { elapsed, formRound, Panel, type PanelReview, thoughtTitle } from "./Panel";
 import { WitTransport } from "./transport";
 
 vi.mock("@/mygo", () => ({ events: { wit: { on: () => () => {} } } }));
@@ -34,7 +34,7 @@ const empty: WitHistory = {
   conversation: 1,
   model: "",
   effort: "",
-  usage: { input: 0, output: 0, context: 0, history: 0, compactable: false },
+  usage: { input: 0, output: 0, context: 0, history: 0, summary: 0, compactable: false },
   running: 0,
   turns: [],
 };
@@ -70,6 +70,9 @@ async function setup(
     onAnswer?(a: Approval, answers: string[][]): Promise<boolean>;
     page?: boolean;
     info?: WitInfo;
+    skills?(): Promise<{ name: string; description: string }[]>;
+    onNew?(): void;
+    effort?: { value: string; pick(value: string): void };
   } = {},
 ) {
   let listener: ((e: WitEvent) => void) | undefined;
@@ -104,6 +107,9 @@ async function setup(
       onSearch={o.onSearch}
       onSession={o.onSession}
       onAnswer={o.onAnswer}
+      skills={o.skills}
+      onNew={o.onNew}
+      effort={o.effort}
       layout={o.page ? "page" : "panel"}
       transport={tr}
       t={t}
@@ -145,7 +151,7 @@ describe("Panel", () => {
     unmount();
   });
 
-  it("the panel's running answer says Wit thinks, or writes the body during update_draft, with Stop; Send stays", async () => {
+  it("the panel's running answer says Wit thinks, or writes the body during update_draft; Stop takes Send's place", async () => {
     const user = userEvent.setup();
     const { api, tr, emit } = await setup();
     const stopRun = vi.spyOn(tr, "stop").mockResolvedValue(undefined);
@@ -155,10 +161,7 @@ describe("Panel", () => {
     expect(screen.queryByText("正在写入正文…")).toBeNull();
     emit({ kind: "tool_call", call: { id: "c1", name: "update_draft", args: "{}" } });
     expect(await screen.findByText("正在写入正文…")).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "发送给 Wit" })).toHaveAttribute(
-      "aria-disabled",
-      "true",
-    );
+    expect(screen.queryByRole("button", { name: "发送给 Wit" })).toBeNull();
     await user.click(screen.getByRole("button", { name: "停止" }));
     expect(stopRun).toHaveBeenCalled();
   });
@@ -357,7 +360,7 @@ describe("Panel", () => {
   it("both layouts are cards, the conversation fading out under a solid input area", async () => {
     const fadeOver = (box: HTMLElement, card: Element | null) => {
       const fade = card?.querySelector("[aria-hidden].bg-linear-to-b");
-      expect(fade).toHaveClass("pointer-events-none", "absolute", "bottom-full", "h-8");
+      expect(fade).toHaveClass("pointer-events-none", "absolute", "bottom-full", "h-6");
       expect(fade?.parentElement).toHaveClass("relative", "bg-background");
       expect(fade?.parentElement).toContainElement(box);
     };
@@ -380,6 +383,68 @@ describe("Panel", () => {
     fadeOver(input("向 Wit 提问"), card);
   });
 
+  it("a / at the input's start opens the commands: a skill goes in the input, 新对话 runs", async () => {
+    const user = userEvent.setup();
+    const onNew = vi.fn();
+    const skills = vi.fn().mockResolvedValue([{ name: "bills", description: "Find bills" }]);
+    await setup({ page: true, skills, onNew });
+    const box = input("向 Wit 提问");
+    await user.type(box, "/");
+    const menu = await screen.findByRole("listbox", { name: "指令" });
+    expect(await within(menu).findByRole("option", { name: /\/bills/ })).toHaveTextContent(
+      "Find bills",
+    );
+    expect(within(menu).getByRole("option", { name: "新对话" })).toBeInTheDocument();
+    // nothing to condense yet: greyed, saying so
+    const compactRow = within(menu).getByRole("option", { name: /^压缩/ });
+    expect(compactRow).toHaveTextContent("压缩这段对话还没有可以压缩的内容。");
+    expect(compactRow).toHaveAttribute("aria-disabled", "true");
+    expect(within(menu).getByText("技能")).toBeInTheDocument();
+    await user.type(box, "bi");
+    expect(within(menu).getAllByRole("option")).toHaveLength(1);
+    await user.keyboard("{Enter}");
+    expect(box).toHaveValue("/bills ");
+    expect(screen.queryByRole("listbox", { name: "指令" })).toBeNull();
+    await user.clear(box);
+    await user.type(box, "/新{Enter}");
+    expect(onNew).toHaveBeenCalledOnce();
+    expect(box).toHaveValue("");
+    expect(skills).toHaveBeenCalledOnce();
+    await user.type(box, "a /");
+    expect(screen.queryByRole("listbox", { name: "指令" })).toBeNull(); // only at the start
+  });
+
+  it("the / menu's 思考强度 shows what it stands at and opens its choices in place", async () => {
+    const user = userEvent.setup();
+    const pick = vi.fn();
+    await setup({ page: true, effort: { value: "low", pick } });
+    const box = input("向 Wit 提问");
+    await user.type(box, "/思考");
+    const row = await screen.findByRole("option", { name: /思考强度/ });
+    expect(row).toHaveTextContent("思考强度低");
+    await user.keyboard("{Enter}");
+    const choices = await screen.findByRole("listbox", { name: "思考强度" });
+    expect(within(choices).getByRole("option", { name: "低" })).toHaveAttribute(
+      "aria-selected",
+      "true",
+    );
+    await user.keyboard("{Escape}");
+    expect(await screen.findByRole("listbox", { name: "指令" })).toBeInTheDocument();
+    await user.keyboard("{Enter}");
+    await user.click(await screen.findByRole("option", { name: "高" }));
+    expect(pick).toHaveBeenCalledWith("high");
+    expect(box).toHaveValue("");
+  });
+
+  it("in the compose window the / menu runs 调整 and 翻译 as their menus do", async () => {
+    const user = userEvent.setup();
+    const { api } = await setup();
+    await user.type(input(), "/更正");
+    await user.keyboard("{Enter}");
+    await waitFor(() => expect(api.skill).toHaveBeenCalledWith("tone-formal", ""));
+    expect(input()).toHaveValue("");
+  });
+
   it("the 调整 menu shows each skill's hint", async () => {
     const user = userEvent.setup();
     await setup();
@@ -387,6 +452,18 @@ describe("Panel", () => {
     const item = await screen.findByRole("menuitem", { name: /更正式/ });
     expect(item).toHaveTextContent("语气");
     expect(screen.getByRole("menuitem", { name: /更短/ })).toHaveTextContent("长度");
+  });
+
+  it("a question shows when it was sent under it", async () => {
+    const user = userEvent.setup();
+    await setup({ page: true });
+    await user.type(input("向 Wit 提问"), "hi{Enter}");
+    const q = (await screen.findByText("hi")).closest("[data-slot=message]") as HTMLElement;
+    const time = q.querySelector("time");
+    expect(time).not.toBeNull();
+    expect(Math.abs(Date.parse(time?.getAttribute("datetime") ?? "") - Date.now())).toBeLessThan(
+      60_000,
+    );
   });
 
   it("sends with Enter, not with Shift+Enter or during composition", async () => {
@@ -418,20 +495,36 @@ describe("Panel", () => {
     expect(screen.queryByRole("button", { name: "重试" })).toBeNull();
   });
 
-  it("reasoning shows as a running trace line, then folds under 思考过程", async () => {
+  it("reasoning shows as a running 思考中 line, then folds under 思考 · its first sentence", async () => {
     const user = userEvent.setup();
     const { api, emit } = await setup({ page: true });
     await user.type(input("向 Wit 提问"), "hi{Enter}");
     await waitFor(() => expect(api.ask).toHaveBeenCalled());
     emit({ kind: "reasoning", text: "先查账单" });
-    const line = await screen.findByText("正在思考…", { selector: "[data-slot=trace-title]" });
+    const line = await screen.findByText("思考中", { selector: "[data-slot=trace-title]" });
     expect(line.closest("[data-slot=trace-line]")).toHaveAttribute("data-status", "running");
     emit({ kind: "text", text: "三笔" });
     emit({ kind: "done" });
-    const folded = await screen.findByRole("button", { name: /思考过程/ });
+    const folded = await screen.findByRole("button", { name: "思考 · 先查账单" });
     expect(folded).toHaveAttribute("aria-expanded", "false");
     await user.click(folded);
     expect(await screen.findByText("先查账单")).toBeInTheDocument();
+  });
+
+  it("a thought's title: its latest heading while it streams; once done its first heading, else its first sentence", () => {
+    const summary =
+      "**Finding the bills**\n\nSearching receipts.\n\n**Checking amounts**\n\nOne is promo.";
+    expect(thoughtTitle(summary, true)).toBe("Checking amounts");
+    expect(thoughtTitle(summary, false)).toBe("Finding the bills");
+    expect(thoughtTitle("## Plan\nlook", false)).toBe("Plan");
+    expect(thoughtTitle("已定位到报错：服务未运行。接下来查日志", false)).toBe(
+      "已定位到报错：服务未运行。",
+    );
+    expect(
+      thoughtTitle("\n- Look at `get_message` and [docs](https://x.y). Then more", false),
+    ).toBe("Look at get_message and docs.");
+    expect(thoughtTitle("v1.2 is out, no end", false)).toBe("v1.2 is out, no end");
+    expect(thoughtTitle("plain text while streaming", true)).toBe("");
   });
 
   it("says how long an answer worked: seconds, then minutes; nothing when not known", () => {
@@ -442,7 +535,7 @@ describe("Panel", () => {
     expect(elapsed(95_000, t)).toBe("1 分 35 秒");
   });
 
-  it("the steps fold into one 思考过程 line that unfolds as a timeline", async () => {
+  it("its work folds into one line above its text, once done; unfolded, each step a line in order", async () => {
     const user = userEvent.setup();
     const cite = (n: number, id: number, from: string, callIds: string[]) => ({
       n,
@@ -500,24 +593,34 @@ describe("Panel", () => {
         ],
       }),
     });
-    // one line, folded: what it did
-    const folded = screen.getByRole("button", { name: /思考过程/ });
-    // and how long it worked: 6.4 s
-    expect(folded).toHaveTextContent(
-      "思考过程 · 6 秒 · 调用了 2 个工具 · search_mail ×2、read_message",
+    // what it did, folded: its kinds and counts
+    const work = screen.getByRole("button", {
+      name: "已完成，用时 6 秒",
+    });
+    expect(work).toHaveAttribute("aria-expanded", "false");
+    expect(screen.getByText("Two receipts.")).toBeVisible();
+    await user.click(work);
+    const thought = await screen.findByRole("button", { name: "思考 · 先按收据搜" });
+    expect(thought).toHaveAttribute("aria-expanded", "false");
+    await user.click(thought);
+    expect(await screen.findByText("先按收据搜")).toBeInTheDocument();
+    const answer = screen
+      .getByText("Two receipts.")
+      .closest("[data-role=assistant]") as HTMLElement;
+    // its calls between its reasoning and its text, each with who sent what it found: one by
+    // name, several as the first +N
+    expect(answer.textContent).toMatch(
+      /已完成，用时 6 秒.*思考 · 先按收据搜.*搜索邮件receipt OR 账单· Acme Cloud \+1.*read_message.*搜索邮件invoice· ?Acme Cloud.*Two receipts\./,
     );
-    expect(folded).toHaveAttribute("aria-expanded", "false");
-    expect(screen.queryByRole("button", { name: /调用了/ })).toBe(folded); // no line of its own
-    await user.click(folded);
-    const steps = within(await screen.findByRole("list", { name: "思考过程" })).getAllByRole(
-      "listitem",
-    );
-    expect(steps.map((s) => s.textContent)).toEqual([
-      "先按收据搜",
-      "search_mailreceipt OR 账单Acme CloudBob",
-      "read_message",
-      "search_mailinvoiceAcme Cloud",
-    ]);
+    // several unfold into each
+    expect(screen.queryByText("Bob")).toBeNull();
+    await user.click(screen.getByRole("button", { name: /receipt OR 账单/ }));
+    // each found mail a chip, its card on hover
+    await user.hover(await screen.findByRole("button", { name: "Bob" }));
+    expect(await screen.findByText("S51")).toBeInTheDocument();
+    expect(screen.queryAllByRole("button", { name: /invoice/ })).toHaveLength(0); // one sender: no fold
+    // how long it worked is in the folded line, not again under the answer
+    expect(within(answer).queryByText("6 秒")).toBeNull();
   });
 
   const turn = hist({
@@ -684,13 +787,13 @@ describe("Panel", () => {
       page: true,
       history: hist({
         ...turn,
-        usage: { input: 10, output: 1, context: 10, history: 0.2, compactable: false },
+        usage: { input: 10, output: 1, context: 10, history: 0.2, summary: 0, compactable: false },
       }),
     });
     api.follow.mockResolvedValue(
       hist({
         ...turn,
-        usage: { input: 30, output: 1, context: 20, history: 0.2, compactable: false },
+        usage: { input: 30, output: 1, context: 20, history: 0.2, summary: 0, compactable: false },
       }),
     );
     await user.type(input("向 Wit 提问"), "hi{Enter}");
@@ -743,7 +846,14 @@ describe("Panel", () => {
       page: true,
       history: hist({
         ...turn,
-        usage: { input: 1200, output: 80, context: 900, history: 0.42, compactable: false },
+        usage: {
+          input: 1200,
+          output: 80,
+          context: 900,
+          history: 0.42,
+          summary: 0.1,
+          compactable: false,
+        },
       }),
     });
     // a ring alone: no percentage beside it; a click shows the details
@@ -751,7 +861,11 @@ describe("Panel", () => {
     expect(meter).toHaveTextContent(/^$/);
     expect(meter.querySelector("svg")).not.toHaveClass("text-amber-500");
     await user.click(meter);
-    expect(await screen.findByText("历史已用 42%")).toBeInTheDocument();
+    expect(await screen.findByText("已使用 42%")).toBeInTheDocument();
+    // what takes it, as rows: the conversation, its summary, what is left
+    const rows = screen.getAllByRole("listitem").map((li) => li.textContent);
+    expect(rows).toEqual(["对话32%", "摘要10%", "剩余58%"]);
+    expect(screen.getByText("距自动压缩还剩 58%")).toBeInTheDocument();
     expect(screen.getByText("上次请求：900 tokens")).toBeInTheDocument();
     expect(screen.getByText("本对话共：输入 1,200 · 输出 80 tokens")).toBeInTheDocument();
   });
@@ -761,7 +875,14 @@ describe("Panel", () => {
       page: true,
       history: hist({
         ...turn,
-        usage: { input: 1200, output: 80, context: 900, history: 0.8, compactable: false },
+        usage: {
+          input: 1200,
+          output: 80,
+          context: 900,
+          history: 0.8,
+          summary: 0,
+          compactable: false,
+        },
       }),
     });
     expect(screen.getByRole("button", { name: "上下文" }).querySelector("svg")).toHaveClass(
@@ -769,28 +890,45 @@ describe("Panel", () => {
     );
   });
 
-  it("compacting now summarizes the older turns and reads the usage again", async () => {
+  it("compacting now shows in the conversation, summarizes the older turns and reads the usage again", async () => {
     const user = userEvent.setup();
     const before = hist({
       ...turn,
-      usage: { input: 1200, output: 80, context: 900, history: 0.9, compactable: true },
+      usage: { input: 1200, output: 80, context: 900, history: 0.9, summary: 0, compactable: true },
     });
     const { api } = await setup({ page: true, history: before });
     api.follow.mockResolvedValue({
       ...before,
-      usage: { ...before.usage, history: 0.3, compactable: false },
+      usage: { ...before.usage, history: 0.3, summary: 0, compactable: false },
     });
+    let done!: () => void;
+    api.compact.mockReturnValue(new Promise<void>((r) => (done = r)));
     await user.click(screen.getByRole("button", { name: "上下文" }));
-    await user.click(await screen.findByRole("button", { name: "立即压缩" }));
+    await user.click(await screen.findByRole("button", { name: "压缩对话" }));
     expect(api.compact).toHaveBeenCalled();
-    expect(await screen.findByText("历史已用 30%")).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "立即压缩" })).toBeDisabled();
-    expect(toast.success).toHaveBeenCalledWith("已压缩：较早的对话已总结成摘要。");
+    // under way: a running line in the conversation, as a thought is
+    const line = await screen.findByText("正在压缩…", { selector: "[data-slot=trace-title]" });
+    expect(line.closest("[data-slot=trace-line]")).toHaveAttribute("data-status", "running");
+    await act(async () => done());
+    expect(await screen.findByText("已使用 30%")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "压缩对话" })).toBeDisabled();
+    expect(
+      await screen.findByText("已压缩：较早的对话已总结成摘要。", {
+        selector: "[data-slot=trace-title]",
+      }),
+    ).toBeInTheDocument();
+    // the next question takes its place
+    await user.keyboard("{Escape}");
+    await user.type(input("向 Wit 提问"), "next{Enter}");
+    await waitFor(() => expect(screen.queryByText("已压缩：较早的对话已总结成摘要。")).toBeNull());
   });
 
   it("/compact sent compacts instead of asking", async () => {
     const user = userEvent.setup();
-    const { api } = await setup({ page: true, history: turn });
+    const { api } = await setup({
+      page: true,
+      history: { ...turn, usage: { ...turn.usage, compactable: true } },
+    });
     await user.type(screen.getByRole("textbox"), "/compact{Enter}");
     await waitFor(() => expect(api.compact).toHaveBeenCalled());
     expect(api.ask).not.toHaveBeenCalled();
@@ -874,7 +1012,92 @@ describe("Panel", () => {
     expect(api.ask).not.toHaveBeenCalled();
   });
 
-  it("lists only finished calls: a pending approval or a running edit has its own card or row", async () => {
+  it("a decided card stays between the stretches of work it stands between, each folded", async () => {
+    const calls = [
+      { id: "c1", name: "search_mail", args: "{}" },
+      { id: "c2", name: "get_message", args: "{}" },
+      { id: "c3", name: "create_draft", args: '{"subject":"Re"}' },
+      { id: "c4", name: "search_mail", args: "{}" },
+      { id: "c5", name: "get_message", args: "{}" },
+    ];
+    await setup({
+      history: hist({
+        ...empty,
+        messages: [
+          {
+            id: "q0",
+            role: "user",
+            text: "Q",
+            reasoning: "",
+            quoted: [],
+            calls: [],
+            results: [],
+            citations: [],
+            runs: [7],
+            elapsed: 0,
+          },
+          {
+            id: "a1",
+            role: "assistant",
+            text: "Done.",
+            reasoning: "",
+            quoted: [],
+            calls,
+            results: calls
+              .filter((c) => c.id !== "c3")
+              .map((c) => ({ callId: c.id, name: c.name, output: "1", error: "" })),
+            citations: [],
+            runs: [7],
+            elapsed: 0,
+          },
+        ],
+        approvals: [
+          {
+            id: 3,
+            run: 7,
+            callId: "c3",
+            tool: "create_draft",
+            summary: "",
+            state: "done",
+            error: "",
+            destinations: [],
+            args: '{"subject":"Re"}',
+            draftEdit: false,
+            sessionAllow: false,
+            draft: 0,
+          },
+        ],
+      }),
+    });
+    const answer = screen.getByText("Done.").closest("[data-role=assistant]") as HTMLElement;
+    expect(within(answer).getAllByRole("button", { name: "已完成" })).toHaveLength(2);
+    expect(answer.textContent).toMatch(/已完成.*已允许 · 创建草稿.*已完成.*Done\./);
+  });
+
+  it("its work stays open while it runs and folds once it is done", async () => {
+    const user = userEvent.setup();
+    const { emit } = await setup();
+    await user.type(input(), "go{Enter}");
+    emit({ kind: "tool_call", call: { id: "s1", name: "search_mail", args: "{}" } });
+    emit({
+      kind: "tool_result",
+      result: { callId: "s1", name: "search_mail", output: "1", error: "" },
+    });
+    emit({ kind: "tool_call", call: { id: "g1", name: "get_message", args: "{}" } });
+    emit({
+      kind: "tool_result",
+      result: { callId: "g1", name: "get_message", output: "1", error: "" },
+    });
+    emit({ kind: "text", text: "Found it." });
+    const work = await screen.findByRole("button", { name: "处理中" });
+    expect(work).toHaveAttribute("aria-expanded", "true");
+    emit({ kind: "done" });
+    await waitFor(() => expect(work).toHaveAttribute("aria-expanded", "false"));
+    expect(work).toHaveTextContent("已完成");
+    expect(screen.getByText("Found it.")).toBeInTheDocument();
+  });
+
+  it("a pending approval is its call's card, a call its own line, a running edit the working line", async () => {
     const { emit } = await setup({
       history: hist({
         ...empty,
@@ -922,19 +1145,21 @@ describe("Panel", () => {
         ],
       }),
     });
-    expect(screen.queryByText(/调用了/)).toBeNull();
+    expect(screen.queryByTitle("create_draft")).toBeNull();
+    expect(screen.getByText("Wit 想要：创建草稿")).toBeInTheDocument();
     await userEvent.setup().type(input(), "go{Enter}");
     emit({ kind: "tool_call", call: { id: "r1", name: "read_message", args: "{}" } });
     emit({
       kind: "tool_result",
       result: { callId: "r1", name: "read_message", output: "1", error: "" },
     });
+    // alone, the call is a line of its own; with the edit after it, the two are the work's line
+    expect(await screen.findByTitle("read_message")).toBeInTheDocument();
     emit({ kind: "tool_call", call: { id: "u1", name: "update_draft", args: "{}" } });
-    expect(await screen.findByText("调用了 read_message")).toBeInTheDocument();
-    expect(screen.getByText("正在写入正文…")).toBeInTheDocument();
+    expect(await screen.findByText("正在写入正文…")).toBeInTheDocument();
   });
 
-  it("folds tool calls, shows core's citation numbers, notes suspect ones", async () => {
+  it("lines up tool calls, one tool's in a row as one line, shows core's citation numbers, notes suspect ones", async () => {
     const user = userEvent.setup();
     const cite = (n: number, id: number, suspect = false) => ({
       n,
@@ -988,10 +1213,13 @@ describe("Panel", () => {
         ],
       }),
     });
-    // the panel names the tools on a trace line, folded
-    const tools = screen.getByText("调用了 search · read").closest("button");
-    expect(tools?.querySelector("[data-slot=trace-line]")).toBeInTheDocument();
-    expect(tools).toHaveAttribute("aria-expanded", "false");
+    // the work folded; unfolded, the two searches one line that unfolds into each, the read its own
+    await user.click(screen.getByRole("button", { name: "已完成" }));
+    const searches = await screen.findByRole("button", { name: "search ×2" });
+    expect(searches).toHaveAttribute("aria-expanded", "false");
+    expect(screen.getAllByTitle(/^(search|read)$/).map((l) => l.textContent)).toEqual(["read"]);
+    await user.click(searches);
+    expect(await screen.findAllByTitle("search")).toHaveLength(2);
     expect(screen.getByText("Q").closest("[data-slot=bubble]")).toHaveAttribute(
       "data-variant",
       "secondary",
@@ -1013,6 +1241,42 @@ describe("Panel", () => {
     expect(
       screen.getAllByText("来源 [2] 中包含疑似指令。它只被当作邮件内容处理，没有执行。"),
     ).toHaveLength(2);
+  });
+
+  it("a run of one tool's calls reads as its count, in the tool's words", async () => {
+    const ids = ["g1", "g2", "g3"];
+    await setup({
+      history: hist({
+        ...empty,
+        messages: [
+          {
+            id: "q0",
+            role: "user",
+            text: "Q",
+            reasoning: "",
+            quoted: [],
+            calls: [],
+            results: [],
+            citations: [],
+            runs: [7],
+            elapsed: 0,
+          },
+          {
+            id: "a1",
+            role: "assistant",
+            text: "A",
+            reasoning: "",
+            quoted: [],
+            calls: ids.map((id) => ({ id, name: "get_message", args: "{}" })),
+            results: ids.map((callId) => ({ callId, name: "get_message", output: "1", error: "" })),
+            citations: [],
+            runs: [7],
+            elapsed: 0,
+          },
+        ],
+      }),
+    });
+    expect(screen.getByRole("button", { name: "读取了 3 封邮件" })).toBeInTheDocument();
   });
 
   it("quotes the suspect text as plain text", async () => {
@@ -1308,6 +1572,56 @@ describe("Panel", () => {
     await user.click(screen.getByRole("button", { name: "全部拒绝" }));
     expect(onDecide).toHaveBeenLastCalledWith(ap(5, "p1"), false, true);
     await waitFor(() => expect(screen.queryByText("Wit 想要：plugin_netty_ping")).toBeNull());
+  });
+
+  it("text before a card, after only citations, stays text: nothing to fold", async () => {
+    const user = userEvent.setup();
+    const { emit } = await setup();
+    await user.type(input(), "go{Enter}");
+    const cite = {
+      n: 1,
+      messageId: 50,
+      subject: "S",
+      from: "f",
+      date: 0,
+      suspect: false,
+      quote: "",
+      snippet: "",
+      gone: false,
+      callIds: [],
+    };
+    const call = { id: "p1", name: "plugin_netty_ping", args: "{}" };
+    emit({ kind: "context", citations: [cite] });
+    emit({ kind: "text", text: "Pinging first." });
+    emit({ kind: "tool_call", call });
+    emit({
+      kind: "interrupted",
+      interrupts: [call],
+      approvals: [
+        {
+          id: 5,
+          run: 7,
+          callId: "p1",
+          tool: "plugin_netty_ping",
+          summary: "",
+          state: "pending",
+          error: "",
+          destinations: [],
+          args: "{}",
+          draftEdit: false,
+          sessionAllow: false,
+          draft: 0,
+        },
+      ],
+      ends: true,
+    });
+    expect(await screen.findByText("Wit 想要：plugin_netty_ping")).toBeInTheDocument();
+    expect(screen.getByText("Pinging first.")).toBeVisible();
+    expect(
+      screen
+        .queryAllByRole("button")
+        .filter((b) => b.textContent === "" && b.hasAttribute("aria-expanded")),
+    ).toHaveLength(0);
   });
 
   it("decided approvals fold into one line each; a draft Wit made opens in compose", async () => {
@@ -1660,7 +1974,7 @@ describe("Panel", () => {
     // [[1]] shows the mail as a card in the answer, its actions on a hover toolbar
     const inline = await screen.findByRole("toolbar", { name: "Your receipt" });
     expect(inline).toHaveClass("group-hover:opacity-100");
-    expect(inline.parentElement).toHaveTextContent("Amount charged this month");
+    expect(inline.closest(".group")).toHaveTextContent("Amount charged this month");
     await user.click(screen.getByRole("button", { name: "[1]" }));
     const card = (await screen.findAllByRole("toolbar", { name: "Your receipt" })).find(
       (e) => e !== inline,
@@ -1733,6 +2047,26 @@ describe("Panel", () => {
     await user.click(await screen.findByRole("button", { name: "[1]" }));
     await screen.findAllByText("Old mail");
     await waitFor(() => expect(screen.queryByRole("button", { name: "引用邮件" })).toBeNull());
+  });
+
+  it("an @ alone offers the latest mail, under 最近的邮件; typing searches", async () => {
+    const user = userEvent.setup();
+    const onSearch = vi.fn((q: string) =>
+      Promise.resolve(
+        q
+          ? [{ id: 8, subject: "合同", from: "f", date: 0 }]
+          : [{ id: 9, subject: "发票", from: "f", date: 0 }],
+      ),
+    );
+    await setup({ page: true, onSearch });
+    const box = input("向 Wit 提问");
+    await user.type(box, "@");
+    expect(await screen.findByRole("option", { name: /发票/ })).toBeInTheDocument();
+    expect(onSearch).toHaveBeenCalledWith("");
+    expect(screen.getByText("最近的邮件")).toBeInTheDocument();
+    await user.type(box, "合");
+    expect(await screen.findByRole("option", { name: /合同/ })).toBeInTheDocument();
+    expect(screen.queryByText("最近的邮件")).toBeNull();
   });
 
   it("sending checks the quoted mail first: a deleted one leaves the input, the rest wait", async () => {
@@ -1957,12 +2291,12 @@ describe("Panel", () => {
           {
             id: "a1",
             role: "assistant",
-            text: "A",
+            text: 'A <mail id="1"/> and <mail id="2"/>.',
             reasoning: "",
             quoted: [],
             calls: [],
             results: [],
-            citations: [cite(1, 50), cite(2, 51, true)],
+            citations: [cite(1, 50), cite(2, 51, true), cite(3, 52)],
             runs: [7],
             elapsed: 0,
           },
@@ -1972,12 +2306,14 @@ describe("Panel", () => {
     // no column beside the conversation: each answer folds its citations under its actions
     expect(document.querySelector("aside aside, [data-slot=citations-column]")).toBeNull();
     expect(screen.queryByRole("region", { name: "引用的邮件" })).toBeNull();
+    // the mail its text cites: 52, read but not cited, is not listed
     const toggle = screen.getByRole("button", { name: "引用了 2 封邮件" });
     expect(toggle).toHaveAttribute("aria-expanded", "false");
     expect(toggle.closest("[data-role=assistant]")).not.toBeNull();
     await user.click(toggle);
     const list = screen.getByRole("region", { name: "引用的邮件" });
     expect(list.textContent).toContain("f50");
+    expect(list.textContent).not.toContain("f52");
     expect(list.textContent).toContain("（无主题）");
     expect(list.textContent).toContain("含疑似指令，已作为数据处理");
     expect(screen.getByRole("textbox", { name: "向 Wit 提问" })).toBeInTheDocument();

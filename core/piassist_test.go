@@ -41,7 +41,7 @@ func TestPiAssistProposalAcceptReject(t *testing.T) {
 	var sys string
 	require.NoError(t, json.Unmarshal(e.srv.Requests()[0].System, &sys))
 	assert.Contains(t, sys, "Meet on Friday at the harbour.", "the original email")
-	assert.Contains(t, sys, `<untrusted_email source="message:`, "as data")
+	assert.Contains(t, sys, `<untrusted_email source="mail:`, "as data")
 
 	e.accept(t, a)
 	got := e.getDraft(t, d.ID)

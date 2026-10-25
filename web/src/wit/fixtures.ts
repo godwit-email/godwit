@@ -1,4 +1,13 @@
-import type { Approval, Citation, MailHit, WitCall, WitHistory, WitResult, WitTurn } from "@/mygo";
+import type {
+  Approval,
+  Citation,
+  MailHit,
+  WitCall,
+  WitHistory,
+  WitResult,
+  WitStep,
+  WitTurn,
+} from "@/mygo";
 
 // Test fixtures only.
 
@@ -19,11 +28,18 @@ export type Shown = {
 /** A history fixture written as messages and approvals (legacy). */
 export type Legacy = Partial<WitHistory> & { messages?: Shown[]; approvals?: Approval[] };
 
+/** A fixture turn's steps as one message gives them: its reasoning, its calls, then its text. */
+export const stepsOf = (t: Pick<WitTurn, "reasoning" | "calls" | "text">): WitStep[] => [
+  ...(t.reasoning ? [{ kind: "reasoning", text: t.reasoning, call: 0 }] : []),
+  ...t.calls.map((_, i) => ({ kind: "call", text: "", call: i })),
+  ...(t.text ? [{ kind: "text", text: t.text, call: 0 }] : []),
+];
+
 const none: WitHistory = {
   conversation: 1,
   model: "",
   effort: "",
-  usage: { input: 0, output: 0, context: 0, history: 0, compactable: false },
+  usage: { input: 0, output: 0, context: 0, history: 0, summary: 0, compactable: false },
   running: 0,
   turns: [],
 };
@@ -47,11 +63,14 @@ export const legacy = (h: Legacy): WitHistory => {
         text: "",
         reasoning: "",
         calls: [],
+        steps: [],
         approvals: [],
         citations: [],
         runs: [...m.runs],
         elapsed: 0,
         canAskAgain: false,
+        asked: 0,
+        answered: 0,
       });
       if (m.role === "user") continue;
     }
@@ -66,6 +85,7 @@ export const legacy = (h: Legacy): WitHistory => {
       result: m.results.find((r) => r.callId === c.id) ?? null,
       approval: approvals.find((a) => a.callId === c.id && m.runs.includes(a.run)) ?? null,
     }));
+    t.steps = stepsOf(t);
   }
   for (const a of approvals) {
     if (turns.some((t) => t.calls.some((c) => c.approval === a))) continue;

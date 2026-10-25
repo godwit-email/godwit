@@ -363,36 +363,26 @@ func (h *History) visible() []int {
 }
 
 // cut is where the visible messages vis go on after sum: 0 when it stands
-// for none. sum ending at the last of vis stands for it too: the question a
-// run asks next follows it (a rewind to the question after it). It never
-// passes the second-to-last turn's question, so the last two turns go in full
-// even when sum condensed one of them (it was written before a rewind dropped
-// the turn after it).
+// for none. sum may end inside a turn (CompactPoints), never between a tool
+// call and its result. sum ending at the last of vis stands for it too: the
+// question a run asks next follows it (a rewind to the question after it).
 func (h *History) cut(vis []int, sum Summary) int {
 	if sum.Text == "" {
 		return 0
 	}
 	i := slices.IndexFunc(vis, func(j int) bool { return h.seqs[j] == sum.Upto })
-	if i < 1 || i+1 < len(vis) && h.msgs[vis[i+1]].Role != roleUser {
+	if i < 1 || i+1 < len(vis) && h.msgs[vis[i+1]].Role == roleTool {
 		return 0
 	}
-	var starts []int // where each turn after the first begins
-	for k, j := range vis {
-		if k > 0 && h.msgs[j].Role == roleUser {
-			starts = append(starts, k)
-		}
-	}
-	if len(starts) < 2 || starts[len(starts)-2] < 2 {
-		return 0
-	}
-	return min(i+1, starts[len(starts)-2])
+	return i + 1
 }
 
 // note is the message standing in for visible messages 1..cut-1: sum's,
 // when it stands for some (from minCut), else HistoryNote. A summary of a
-// conversation that read mail is the user's, marked as data; the rest are
-// the model's.
-func note(sum Summary, cut, minCut int, readMail bool) *message {
+// conversation that read mail is the user's, marked as data, and so is one
+// the model's own message follows (a summary ending inside a turn), so two of
+// the model's never come in a row; the rest are the model's.
+func note(sum Summary, cut, minCut int, readMail, beforeModel bool) *message {
 	if minCut == 0 {
 		return modelText(HistoryNote)
 	}
@@ -404,7 +394,7 @@ func note(sum Summary, cut, minCut int, readMail bool) *message {
 	if cut > minCut {
 		text += "\n\n" + SummaryGapNote
 	}
-	if readMail {
+	if readMail || beforeModel {
 		return userText(text)
 	}
 	return modelText(text)
@@ -477,7 +467,8 @@ func (h *History) Send(budget int, sum Summary, readMail bool) (*Sent, error) {
 	var s *Sent
 	// shortcut: re-encodes per candidate cut, O(turns²); fine for chat-sized histories
 	for _, cut := range cuts {
-		s = &Sent{h: h, msgs: []*message{all[0], note(sum, cut, minCut, readMail)}, src: []int{vis[0], srcNote}}
+		next := cut < len(vis) && h.msgs[vis[cut]].Role != roleUser
+		s = &Sent{h: h, msgs: []*message{all[0], note(sum, cut, minCut, readMail, next)}, src: []int{vis[0], srcNote}}
 		for _, i := range vis[cut:] {
 			s.msgs, s.src = append(s.msgs, h.msgs[i]), append(s.src, i)
 		}
@@ -562,7 +553,7 @@ func (h *History) CompactedSize(sum Summary) (int, error) {
 	vis := h.visible()
 	msgs := make([]*message, 0, len(vis)+1)
 	if cut := h.cut(vis, sum); cut > 0 {
-		msgs = append(msgs, h.msgs[vis[0]], note(sum, cut, cut, false))
+		msgs = append(msgs, h.msgs[vis[0]], note(sum, cut, cut, false, cut < len(vis) && h.msgs[vis[cut]].Role != roleUser))
 		vis = vis[cut:]
 	}
 	for _, i := range vis {
@@ -572,35 +563,71 @@ func (h *History) CompactedSize(sum Summary) (int, error) {
 	return utf8.RuneCount(b), err
 }
 
-// CompactPoint is how far a summary of h may reach (its Upto): the message
-// before its second-to-last turn, which stays with the last; 0 when that
+// CompactPoint is how far a summary of h may reach (its Upto), keeping at
+// least keep runes of its newest messages whole (CompactPoints); 0 when that
 // leaves nothing to condense.
-func (h *History) CompactPoint() int64 {
-	if ps := h.CompactPoints(); len(ps) > 0 {
+func (h *History) CompactPoint(keep int) int64 {
+	if ps := h.CompactPoints(keep); len(ps) > 0 {
 		return ps[len(ps)-1]
 	}
 	return 0
 }
 
-// CompactPoints are the Uptos a summary of h may have, ascending: the message
-// before each turn after the first, through CompactPoint.
-func (h *History) CompactPoints() []int64 {
+// CompactPoints are the Uptos a summary of h may have, ascending, as pi's
+// compaction cuts: after any message but the first, where at least keep runes
+// (of their JSON) of the newest messages follow whole, even inside a turn,
+// but never between a tool call and its result; and, whatever their size, the
+// message before each turn after the first but the last two.
+func (h *History) CompactPoints(keep int) []int64 {
 	vis := h.visible()
-	var out []int64
+	at := map[int]bool{} // k: a summary may end at vis[k]
+	var starts []int     // where each turn after the first begins
 	for k, i := range vis {
 		if k > 0 && h.msgs[i].Role == roleUser {
-			out = append(out, h.seqs[vis[k-1]])
+			starts = append(starts, k)
 		}
 	}
-	if len(out) < 2 {
-		return nil
+	for n, k := range starts {
+		if n < len(starts)-1 {
+			at[k-1] = true
+		}
 	}
-	return out[:len(out)-1]
+	kept := 0 // runes of vis[k+1:]
+	for k := len(vis) - 2; k >= 1; k-- {
+		b, _ := json.Marshal(h.msgs[vis[k+1]]) // a loaded message encodes
+		kept += utf8.RuneCount(b)
+		if kept >= keep && h.msgs[vis[k+1]].Role != roleTool {
+			at[k] = true
+		}
+	}
+	out := make([]int64, 0, len(at))
+	for k := range at {
+		out = append(out, h.seqs[vis[k]])
+	}
+	slices.Sort(out)
+	return out
 }
 
-// Compactable reports whether a compaction of h has turns to condense that sum
-// does not: CompactPoint is past it.
-func (h *History) Compactable(sum Summary) bool { return h.CompactPoint() > sum.Upto }
+// Compactable reports whether a compaction of h, keeping keep runes, has
+// messages to condense that sum does not: CompactPoint is past it.
+func (h *History) Compactable(sum Summary, keep int) bool { return h.CompactPoint(keep) > sum.Upto }
+
+// SplitTurn is the seq of the question whose turn a summary through upto
+// ends inside (pi's split turn): the model's message, not a question, comes
+// next. 0 when upto ends a turn, or the history.
+func (h *History) SplitTurn(upto int64) int64 {
+	vis := h.visible()
+	i := slices.IndexFunc(vis, func(j int) bool { return h.seqs[j] == upto })
+	if i < 0 || i+1 >= len(vis) || h.msgs[vis[i+1]].Role == roleUser {
+		return 0
+	}
+	for ; i >= 0; i-- {
+		if h.msgs[vis[i]].Role == roleUser {
+			return h.seqs[vis[i]]
+		}
+	}
+	return 0
+}
 
 // maxTranscriptResult is the runes of a tool result a Transcript keeps.
 const maxTranscriptResult = 2000

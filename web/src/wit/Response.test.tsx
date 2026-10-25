@@ -1,7 +1,7 @@
 import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { makeT } from "@/shared/i18n";
-import { Response } from "./Response";
+import { citedNumbers, plainCites, Response } from "./Response";
 
 const t = makeT("zh-Hans");
 
@@ -26,6 +26,68 @@ describe("answer layout", () => {
     expect(table?.parentElement).toHaveClass("border-[0.5px]", "rounded-lg");
     expect(container.querySelectorAll(".border-\\[0\\.5px\\]")).toHaveLength(1);
     expect(screen.getByText("a")).toHaveClass("bg-sidebar", "font-medium");
+  });
+
+  it("<mail id/> cites a mail; beside it a plain [n] is text, not a citation", async () => {
+    const cite = vi.fn((n: number) => <span>mail {n}</span>);
+    render(<Response text={'paid <mail id="1"/>, see [2]'} onLink={() => {}} t={t} cite={cite} />);
+    expect(await screen.findByRole("button", { name: "[1]" })).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "[2]" })).toBeNull();
+    expect(screen.getByText(/see \[2\]/)).toBeInTheDocument();
+    expect(screen.queryByText(/<mail/)).toBeNull();
+  });
+
+  it("<mail id card/> lines show cards, each in its place", async () => {
+    const card = (n: number) => <span>card {n}</span>;
+    render(
+      <Response
+        text={'Two mails:\n<mail id="1" card/>\n<mail id="2" card/>\nThat is all.'}
+        onLink={() => {}}
+        t={t}
+        card={card}
+      />,
+    );
+    expect(await screen.findByText("card 1")).toBeInTheDocument();
+    expect(screen.getByText("card 2")).toBeInTheDocument();
+    expect(screen.getByText("That is all.")).toBeInTheDocument();
+  });
+
+  it("while it streams, a tag not yet whole shows nothing", async () => {
+    const { container } = render(
+      <Response text={'paid <mail id="1'} streaming onLink={() => {}} t={t} />,
+    );
+    await screen.findByText(/paid/);
+    expect(container.textContent).not.toContain("<mail");
+  });
+
+  it("the mail an answer cites: its tags; before tags, its [n] and [[n]]", () => {
+    expect(citedNumbers('a <mail id="2"/> b <mail id="5" card/> [7]')).toEqual(new Set([2, 5]));
+    expect(citedNumbers("a [1] b\n[[3]]")).toEqual(new Set([1, 3]));
+    expect(citedNumbers("none")).toEqual(new Set());
+  });
+
+  it("copying an answer gives its tags as [n]", () => {
+    expect(plainCites('paid <mail id="1"/> and\n<mail id="2" card/>')).toBe("paid [1] and\n[2]");
+  });
+
+  it("hovering [n] shows its mail; the marker shows n alone", async () => {
+    const user = userEvent.setup();
+    const cite = (n: number) => (n === 1 ? <span>the cited mail</span> : undefined);
+    render(<Response text="see [1]" onLink={() => {}} t={t} cite={cite} />);
+    const marker = await screen.findByRole("button", { name: "[1]" });
+    expect(marker).toHaveTextContent(/^1$/);
+    await user.hover(marker);
+    expect(await screen.findByText("the cited mail")).toBeInTheDocument();
+  });
+
+  it("headings stay a step above the text at most", async () => {
+    render(<Response text={"# One\n\n## Two\n\n### Three\n\nbody"} onLink={() => {}} t={t} />);
+    expect(await screen.findByRole("heading", { level: 1 })).toHaveClass(
+      "text-lg",
+      "font-semibold",
+    );
+    expect(screen.getByRole("heading", { level: 2 })).toHaveClass("text-lg", "font-semibold");
+    expect(screen.getByRole("heading", { level: 3 })).not.toHaveClass("text-lg");
   });
 
   it("[n] opens a popover with what cite(n) gives; one it has none for, code and no cite stay text", async () => {

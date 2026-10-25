@@ -15,6 +15,7 @@ import type {
   WitTurn,
   WitTurnCall,
 } from "@/mygo";
+import { stepsOf } from "@/wit/fixtures";
 import themeJson from "./theme.json";
 
 /** Light and dark tokens, as `webui.ThemeOf` emits them. */
@@ -157,18 +158,23 @@ const approval = (p: Partial<Approval> & Pick<Approval, "id" | "run" | "callId" 
   draftEdit: p.tool === "update_draft" || p.tool === "update_selection",
   ...p,
 });
-const turn = (t: Partial<WitTurn> & Pick<WitTurn, "id" | "question" | "runs">): WitTurn => ({
-  command: null,
-  quoted: [],
-  text: "",
-  reasoning: "",
-  calls: [],
-  approvals: [],
-  citations: [],
-  elapsed: 0,
-  canAskAgain: false,
-  ...t,
-});
+const turn = (t: Partial<WitTurn> & Pick<WitTurn, "id" | "question" | "runs">): WitTurn => {
+  const all = {
+    command: null,
+    quoted: [],
+    text: "",
+    reasoning: "",
+    calls: [],
+    approvals: [],
+    citations: [],
+    elapsed: 0,
+    canAskAgain: false,
+    asked: Date.now() - 3_600_000, // an hour ago
+    answered: Date.now() - 3_540_000,
+    ...t,
+  };
+  return { ...all, steps: t.steps ?? stepsOf(all) };
+};
 const on = (
   c: WitTurnCall["call"],
   result: WitResult | null = null,
@@ -179,7 +185,7 @@ const on = (
   approval: a,
 });
 
-const read = call("c1", "read_message", { id: 41 });
+const read = call("c1", "get_message", { id: 41 });
 const upd1 = call("c2", "update_draft", { html: html(formal) });
 const upd2 = call("c3", "update_draft", { html: html(formal) });
 const done1 = approval({
@@ -202,7 +208,7 @@ const history = (p: Partial<WitHistory> & Pick<WitHistory, "turns">): WitHistory
   conversation: 1,
   model: "",
   effort: "",
-  usage: { input: 0, output: 0, context: 0, history: 0, compactable: false },
+  usage: { input: 0, output: 0, context: 0, history: 0, summary: 0, compactable: false },
   running: 0,
   ...p,
 });
@@ -304,17 +310,19 @@ const search = call("s1", "search_mail", {
   query: "receipt OR 账单 OR invoice",
   since: "2026-10-01",
 });
-const reads = Array.from({ length: 7 }, (_, i) => call(`s${i + 2}`, "read_message", { id: i }));
+const reads = Array.from({ length: 7 }, (_, i) => call(`s${i + 2}`, "get_message", { id: i }));
 const table = `10 月共找到 4 个订阅扣款：
 
 | 服务 | 金额 | 扣款日 | 来源 |
 | --- | --- | --- | --- |
-| Acme Cloud | [AMOUNT] | 10/02 | [1] |
-| [服务 B] | [AMOUNT] | 10/03 | [2] |
-| [服务 C] | [AMOUNT] | 10/05 | [3] |
-| [服务 D] | [AMOUNT] | 10/07 | [4] |
+| Acme Cloud | [AMOUNT] | 10/02 | <mail id="1"/> |
+| [服务 B] | [AMOUNT] | 10/03 | <mail id="2"/> |
+| [服务 C] | [AMOUNT] | 10/05 | <mail id="3"/> |
+| [服务 D] | [AMOUNT] | 10/07 | <mail id="4"/> |
 
-另有 3 封是促销邮件，不是实际扣款，已排除。`;
+另有 3 封是促销邮件，不是实际扣款，已排除。最近的一笔：
+
+<mail id="1" card/>`;
 const createDraft = call("s9", "create_draft", {
   to: ["Lena Fischer <lena@partner.example>"],
   subject: "Re: Q4 partnership proposal",
@@ -323,7 +331,14 @@ const createDraft = call("s9", "create_draft", {
 
 export const witConversation = (): WitHistory =>
   history({
-    usage: { input: 18400, output: 1260, context: 9800, history: 0.36, compactable: true },
+    usage: {
+      input: 18400,
+      output: 1260,
+      context: 9800,
+      history: 0.36,
+      summary: 0.08,
+      compactable: true,
+    },
     turns: [
       turn({
         id: "1",
@@ -357,6 +372,11 @@ export const witConversation = (): WitHistory =>
           ),
         ],
         text: "我起草了一封回复。创建草稿需要你确认：",
+        // what it said, then the call it waits on
+        steps: [
+          { kind: "text", text: "我起草了一封回复。创建草稿需要你确认：", call: 0 },
+          { kind: "call", text: "", call: 0 },
+        ],
       }),
     ],
   });

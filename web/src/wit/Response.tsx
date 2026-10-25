@@ -71,7 +71,36 @@ const citeLinks = () => (tree: Node) => {
 // Model output is untrusted. Set explicitly, never Streamdown's defaults (rehype-raw and a harden
 // that allows every protocol): raw HTML as text (and skipHtml, no rehype-raw), sanitized, no
 // images, and links only for http, https and mailto, each through the confirmation below.
-const remarkPlugins = [...Object.values(defaultRemarkPlugins), htmlAsText, cardLinks, citeLinks];
+const remarkPlugins = [...Object.values(defaultRemarkPlugins), htmlAsText, cardLinks];
+// An answer that cites by tag: a plain "[n]" in it is text, not a citation.
+const legacyPlugins = [...remarkPlugins, citeLinks];
+
+/** How an answer cites mail n (core citeTag): <mail id="n"/>, or <mail id="n" card/> for its card. */
+const MAIL_TAG = /<mail\s+id="?(\d+)"?(\s+card)?\s*\/?>(?:\s*<\/mail>)?/g;
+
+/**
+ * text with its mail tags as the markers the plugins read: a card as a paragraph of [[n]], a
+ * citation as a link to CITE+n. While it streams, a tag not yet whole shows nothing.
+ * shortcut: a tag inside code is turned too; parse it in the tree if answers quote tags as code.
+ */
+function mailTags(text: string, streaming: boolean) {
+  const whole = streaming ? text.replace(/<(?:m(?:a(?:i(?:l\b[^>]*)?)?)?)?$/, "") : text;
+  return whole.replace(MAIL_TAG, (_, n: string, card?: string) =>
+    card ? `\n\n[[${n}]]\n\n` : `[${n}](${CITE}${n})`,
+  );
+}
+
+/**
+ * The mail numbers text cites: its mail tags; in an answer from before tags, its [n] and [[n]].
+ */
+export function citedNumbers(text: string): Set<number> {
+  const tagged = [...text.matchAll(MAIL_TAG)].map((m) => Number(m[1]));
+  if (tagged.length > 0) return new Set(tagged);
+  return new Set([...text.matchAll(/\[\[?(\d+)\]\]?/g)].map((m) => Number(m[1])));
+}
+
+/** The text with its mail tags as "[n]": what copying an answer gives. */
+export const plainCites = (text: string) => text.replace(MAIL_TAG, (_, n: string) => `[${n}]`);
 type Pluggable = NonNullable<StreamdownProps["rehypePlugins"]>[number];
 type Schema = { protocols?: Record<string, string[]>; tagNames?: string[] };
 type Plugin = Extract<Pluggable, (...args: never[]) => unknown>;
@@ -115,25 +144,45 @@ function Address({ url }: { url: string }) {
   );
 }
 
-/** A source marker [n]: a popover with its card, closed again by any action the card takes. */
-function Cite({ n, card }: { n: number; card: ReactNode }) {
+/**
+ * A source marker [n] (or what children show, such as a sender's chip): a popover with its card,
+ * closed again by any action the card takes.
+ */
+export function Cite({
+  n,
+  card,
+  children,
+  className,
+}: {
+  n: number;
+  card: ReactNode;
+  children?: ReactNode;
+  className?: string;
+}) {
   const [open, setOpen] = useState(false);
   return (
     <Popover open={open} onOpenChange={setOpen}>
       <PopoverTrigger
+        // hovering shows the mail, as a source does in chat apps; a click or Enter still opens it
+        openOnHover
+        delay={150}
+        aria-label={children ? undefined : `[${n}]`}
         render={
           <button
             type="button"
-            className="cursor-pointer rounded-sm bg-muted px-1 align-baseline text-muted-foreground text-xs tabular-nums hover:text-foreground data-popup-open:bg-border data-popup-open:text-foreground"
+            className={
+              className ??
+              "mx-0.5 inline-flex h-5 min-w-5 cursor-pointer items-center justify-center rounded-sm bg-muted px-1.25 align-text-bottom text-[11px] text-muted-foreground tabular-nums leading-none hover:text-foreground data-popup-open:bg-border data-popup-open:text-foreground"
+            }
           />
         }
       >
-        [{n}]
+        {children ?? n}
       </PopoverTrigger>
       <PopoverContent
         side="bottom"
         align="start"
-        className="w-80 p-3"
+        className="w-80 gap-1.5 rounded-xl p-3 text-base"
         onClick={(e) => {
           if ((e.target as Element).closest("button, a")) setOpen(false);
         }}
@@ -146,8 +195,9 @@ function Cite({ n, card }: { n: number; card: ReactNode }) {
 
 /**
  * An answer: Markdown, hardened. A link opens only after its confirmation (link.open → onLink); a
- * source marker [n] opens a popover with what cite(n) gives, if anything (else it is text); a
- * paragraph of [[n]] alone shows what card(n) gives in its place, if anything (else its text).
+ * mail tag <mail id="n"/> (in an answer from before tags, a marker [n]) opens a popover with what
+ * cite(n) gives, if anything (else it is text); <mail id="n" card/> (before, a paragraph of [[n]]
+ * alone) shows what card(n) gives in its place, if anything (else its text).
  */
 export function Response({
   text,
@@ -180,6 +230,17 @@ export function Response({
   const components = useMemo<Components>(
     () => ({
       img: () => null,
+      // Headings a step above the text at most, as chat apps set them, not a document's sizes.
+      h1: ({ children }: { children?: ReactNode }) => (
+        <h1 className="pt-1.5 font-semibold text-lg">{children}</h1>
+      ),
+      h2: ({ children }: { children?: ReactNode }) => (
+        <h2 className="pt-1.5 font-semibold text-lg">{children}</h2>
+      ),
+      h3: ({ children }: { children?: ReactNode }) => (
+        <h3 className="pt-1 font-semibold">{children}</h3>
+      ),
+      h4: ({ children }: { children?: ReactNode }) => <h4 className="font-semibold">{children}</h4>,
       // One border: the table's, rounded, its header on the sidebar colour, rows ruled.
       table: ({ children }: { children?: ReactNode }) => (
         <div className="overflow-x-auto rounded-lg border-[0.5px]">
@@ -210,7 +271,7 @@ export function Response({
           const n = Number(href.slice(CITE.length));
           const card = citeRef.current?.(n);
           if (!card) return <span>{children}</span>;
-          // Always "[n]": a model-written [text](#cite-n) cannot dress the cited mail up as anything else.
+          // Always n: a model-written [text](#cite-n) cannot dress the cited mail up as anything else.
           return <Cite n={n} card={card} />;
         }
         const url = safeLink(href);
@@ -243,13 +304,13 @@ export function Response({
         className={cn("space-y-2.5 text-md", size === "page" && "leading-[1.75]")}
         mode={streaming ? "streaming" : "static"}
         skipHtml
-        remarkPlugins={remarkPlugins}
+        remarkPlugins={/<mail\s+id=/.test(text) ? remarkPlugins : legacyPlugins}
         rehypePlugins={rehypePlugins}
         components={components}
         linkSafety={{ enabled: false }}
         controls={false}
       >
-        {text}
+        {mailTags(text, streaming)}
       </Streamdown>
       <AlertDialog open={!!link} onOpenChange={(o) => !o && setLink(undefined)}>
         <AlertDialogContent>

@@ -5,10 +5,13 @@ import {
   RiArrowDownLine,
   RiArrowDownSLine,
   RiArrowUpLine,
+  RiBox3Line,
   RiBrainLine,
   RiCheckboxCircleLine,
   RiCloseCircleLine,
+  RiContractUpDownLine,
   RiDraftLine,
+  RiEditBoxLine,
   RiEditLine,
   RiEqualizerLine,
   RiErrorWarningLine,
@@ -16,6 +19,7 @@ import {
   RiFileCopyLine,
   RiGlobalLine,
   RiLoaderLine,
+  RiMagicLine,
   RiMailLine,
   RiRefreshLine,
   RiSearchLine,
@@ -26,9 +30,17 @@ import {
   RiToolsLine,
   RiTranslate2,
 } from "@remixicon/react";
-import type { DynamicToolUIPart, ReasoningUIPart } from "ai";
+import type { DynamicToolUIPart } from "ai";
 import { cn } from "cn";
-import { type FormEvent, type ReactNode, useEffect, useMemo, useRef, useState } from "react";
+import {
+  type FormEvent,
+  Fragment,
+  type ReactNode,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 import { toast } from "sonner";
 import { Alert, AlertAction, AlertDescription } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
@@ -66,7 +78,6 @@ import {
   MessageScrollerViewport,
 } from "@/components/ui/message-scroller";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
-import { Progress } from "@/components/ui/progress";
 import {
   Questionnaire,
   QuestionnaireActions,
@@ -84,7 +95,6 @@ import {
   QuestionnaireTitle,
 } from "@/components/ui/questionnaire";
 import {
-  Trace,
   TraceCollapsible,
   TraceCollapsibleContent,
   TraceCollapsibleTrigger,
@@ -100,12 +110,14 @@ import type {
   WitCommand,
   WitHistory,
   WitInfo,
+  WitUsage,
 } from "@/mygo";
 import { currentLocale, type T } from "@/shared/i18n";
 import { Citations, type Nums } from "./Citations";
+import { type Command, CommandPicker } from "./Commands";
 import { MailCard, senderName } from "./MailCard";
 import { type PickerKeys, QuoteChips, QuotePicker } from "./Quote";
-import { Response } from "./Response";
+import { Cite, citedNumbers, plainCites, Response } from "./Response";
 import {
   historyToMessages,
   questionId,
@@ -144,13 +156,71 @@ const UsageRing = ({ value }: { value: number }) => {
   );
 };
 
-const Busy = ({ t }: { t: T }) => (
-  <RiLoaderLine
-    role="status"
-    aria-label={t("wit.loading")}
-    className="size-4 animate-spin text-muted-foreground"
-  />
-);
+/**
+ * How full the history budget is, as Claude Code shows its context: the share used, a bar of what
+ * takes it (the conversation, its summary) and what is left, each a row with its share.
+ */
+function ContextUsage({ usage, t }: { usage: WitUsage; t: T }) {
+  const pct = (v: number) => Math.round(Math.min(1, Math.max(0, v)) * 100);
+  const summary = pct(usage.summary);
+  const used = pct(usage.history);
+  const rows = [
+    {
+      key: "conversation",
+      label: t("wit.ctx.conversation"),
+      value: Math.max(0, used - summary),
+      tone: "bg-blue-500",
+    },
+    ...(summary > 0
+      ? [{ key: "summary", label: t("wit.ctx.summary"), value: summary, tone: "bg-amber-500" }]
+      : []),
+    { key: "free", label: t("wit.ctx.free"), value: 100 - used, tone: "bg-muted" },
+  ];
+  return (
+    <div className="flex flex-col gap-2">
+      <span className="font-medium">{t("wit.ctx.used", used)}</span>
+      <div className="flex h-1.5 gap-0.5 overflow-hidden rounded-full bg-muted" aria-hidden="true">
+        {rows
+          .filter((r) => r.key !== "free" && r.value > 0)
+          .map((r) => (
+            <span key={r.key} className={cn("h-full", r.tone)} style={{ width: `${r.value}%` }} />
+          ))}
+      </div>
+      <ul className="flex flex-col gap-1">
+        {rows.map((r) => (
+          <li key={r.key} className="flex items-center gap-2">
+            <span className={cn("size-2.5 shrink-0 rounded-[3px]", r.tone)} aria-hidden="true" />
+            <span className="flex-1">{r.label}</span>
+            <span className="text-muted-foreground tabular-nums">{r.value}%</span>
+          </li>
+        ))}
+      </ul>
+    </div>
+  );
+}
+
+/**
+ * When a message was sent, as chat apps put it under the message: its time today, else its date
+ * and time (the year when not this one); the full date and time on hover.
+ */
+function MessageTime({ ms, className }: { ms: number; className?: string }) {
+  const d = new Date(ms);
+  const now = new Date();
+  const locale = currentLocale();
+  const opts: Intl.DateTimeFormatOptions = { hour: "2-digit", minute: "2-digit", hour12: false };
+  if (d.toDateString() !== now.toDateString())
+    Object.assign(opts, { month: "numeric", day: "numeric" });
+  if (d.getFullYear() !== now.getFullYear()) opts.year = "numeric";
+  return (
+    <time
+      dateTime={d.toISOString()}
+      title={d.toLocaleString(locale)}
+      className={cn("text-muted-foreground text-xs tabular-nums", className)}
+    >
+      {d.toLocaleString(locale, opts)}
+    </time>
+  );
+}
 
 const ARGS = 160; // a call's arguments shown, in characters (app/wit.go argsRunes)
 const BODY = 240; // a call's body on its approval card (app/wit.go bodyRunes)
@@ -180,18 +250,6 @@ function citesOf(...ms: WitUIMessage[]): Citation[] {
   return out;
 }
 
-/**
- * The tools an answer called: on the page "调用了 n 个工具 · a ×2、b" (the distinct tools, each
- * with its count), in the panel "调用了 a · b".
- */
-function toolsLabel(calls: DynamicToolUIPart[], page: boolean, t: T): string {
-  const count = new Map<string, number>();
-  for (const c of calls) count.set(c.toolName, (count.get(c.toolName) ?? 0) + 1);
-  if (!page) return t("wit.tools.called", [...count.keys()].join(" · "));
-  const names = [...count].map(([n, k]) => (k > 1 ? `${n} ×${k}` : n));
-  return `${t("wit.tools", count.size)} · ${names.join(t("mail.list_sep"))}`;
-}
-
 /** How long an answer worked (ms) as the steps line says it: N 秒, M 分 S 秒; "" when not known. */
 export const elapsed = (ms: number | undefined, t: T) => {
   if (!ms) return "";
@@ -216,96 +274,6 @@ const stepIcon = (tool: string) =>
     : /message|thread|attachment/.test(tool)
       ? RiMailLine
       : RiToolsLine;
-
-/**
- * An answer's steps in order, as a timeline: what it thought, each call (a search with its query
- * and the senders it found), the one under way spinning.
- */
-function Steps({
-  m,
-  live,
-  cites,
-  t,
-}: {
-  m: WitUIMessage;
-  /** The calls under way. */
-  live: DynamicToolUIPart[];
-  cites: Citation[];
-  t: T;
-}) {
-  const steps = m.parts.filter(
-    (p): p is ReasoningUIPart | DynamicToolUIPart =>
-      (p.type === "reasoning" && !!p.text) || p.type === "dynamic-tool",
-  );
-  return (
-    <ol aria-label={t("wit.reasoning")} className="flex flex-col pt-1">
-      {steps.map((p, i) => {
-        const going = p.type === "dynamic-tool" && live.includes(p);
-        const Icon =
-          p.type === "reasoning" ? RiBrainLine : going ? RiLoaderLine : stepIcon(p.toolName);
-        const query =
-          p.type === "dynamic-tool" && typeof (p.input as { query?: unknown })?.query === "string"
-            ? (p.input as { query: string }).query
-            : "";
-        const senders =
-          p.type === "dynamic-tool"
-            ? [
-                ...new Set(
-                  cites
-                    .filter((c) => c.callIds.includes(p.toolCallId))
-                    .map((c) => senderName(c.from)),
-                ),
-              ]
-            : [];
-        return (
-          <li key={p.type === "reasoning" ? `r${i}` : p.toolCallId} className="flex gap-2.5">
-            <span aria-hidden="true" className="flex flex-col items-center">
-              <span className="flex size-5 items-center justify-center text-muted-foreground">
-                <Icon className={cn("size-3.5", going && "animate-spin")} />
-              </span>
-              {i < steps.length - 1 && <span className="w-px flex-1 bg-border" />}
-            </span>
-            {p.type === "reasoning" ? (
-              <span className="whitespace-pre-wrap pb-3 text-muted-foreground text-sm leading-relaxed">
-                {p.text}
-              </span>
-            ) : (
-              <span className="flex min-w-0 flex-col gap-1.5 pb-3 text-sm">
-                <span className="flex flex-wrap items-center gap-1.5">
-                  <code className={cn("text-xs", p.state === "output-error" && "text-destructive")}>
-                    {p.toolName}
-                  </code>
-                  {query && (
-                    <span className="rounded-sm bg-muted px-1.5 font-mono text-xs">
-                      {clip(query)}
-                    </span>
-                  )}
-                </span>
-                {senders.length > 0 && (
-                  <span className="flex flex-wrap gap-1">
-                    {senders.slice(0, 5).map((n) => (
-                      <span
-                        key={n}
-                        className="rounded-full border-[0.5px] px-2 text-muted-foreground text-xs leading-5"
-                      >
-                        {n}
-                      </span>
-                    ))}
-                    {senders.length > 5 && (
-                      <span className="text-muted-foreground text-xs leading-5">
-                        +{senders.length - 5}
-                      </span>
-                    )}
-                  </span>
-                )}
-              </span>
-            )}
-          </li>
-        );
-      })}
-    </ol>
-  );
-}
 
 /** Decides approval a, or with all every pending one of its run; true once decided. */
 export type Decide = (a: Approval, accept: boolean, all: boolean) => Promise<boolean>;
@@ -696,6 +664,231 @@ function Settled({ a, onDraft, t }: { a: Approval; onDraft?(id: number): Promise
   );
 }
 
+// A heading line of a thought: "# Title", or "**Title**" / "__Title__" alone (how reasoning
+// summaries head their parts).
+const HEADING = /^\s*(?:#{1,6}\s+(.+?)[\s#]*|\*\*([^*\n]+)\*\*|__([^_\n]+)__)\s*$/;
+
+/** Markdown's marks out of a line: what it reads as, on one line. */
+const plain = (s: string) =>
+  s
+    .replace(/\[([^\]]*)\]\([^)]*\)/g, "$1")
+    .replace(/\*\*|__|`/g, "")
+    .replace(/^\s*(?:#{1,6}|>|[-*+]|\d+\.)\s+/, "")
+    .replace(/\s+/g, " ")
+    .trim();
+
+/**
+ * What a thought is about, as its line names it ("思考 · …"), as agents do: its latest heading
+ * while it streams; once done, its first heading, else its first sentence. "" for none.
+ */
+export function thoughtTitle(text: string, streaming: boolean): string {
+  const heads = text.split("\n").flatMap((l) => {
+    const m = HEADING.exec(l);
+    const h = m && plain(m[1] ?? m[2] ?? m[3]);
+    return h ? [h] : [];
+  });
+  if (streaming || heads.length > 0) return (streaming ? heads.at(-1) : heads[0]) ?? "";
+  const first = plain(text.split("\n").find((l) => plain(l)) ?? "");
+  return /^.*?(?:[。！？]|[.!?](?=\s|$))/.exec(first)?.[0] ?? first;
+}
+
+/**
+ * A reasoning part: "思考中 · its latest heading" while it streams, open; "思考 · its title" once
+ * done, folded (the user may open it again). The line keeps to one line; hovering shows the title.
+ */
+function Thought({ text, streaming, t }: { text: string; streaming: boolean; t: T }) {
+  const [open, setOpen] = useState(streaming);
+  useEffect(() => setOpen(streaming), [streaming]);
+  const title = thoughtTitle(text, streaming);
+  return (
+    <TraceCollapsible open={open} onOpenChange={setOpen}>
+      <TraceCollapsibleTrigger>
+        <TraceLine status={streaming ? "running" : undefined}>
+          <TraceIcon>
+            <RiBrainLine />
+          </TraceIcon>
+          <TraceTitle title={title || undefined}>
+            {t(streaming ? "wit.thinking_now" : "wit.reasoning")}
+            {title && ` · ${clip(title, 80)}`}
+          </TraceTitle>
+        </TraceLine>
+      </TraceCollapsibleTrigger>
+      <TraceCollapsibleContent className="whitespace-pre-wrap text-sm">
+        {text}
+      </TraceCollapsibleContent>
+    </TraceCollapsible>
+  );
+}
+
+/**
+ * What an answer did before its final text, as one line ("已完成，用时 42 秒"): open while the
+ * answer works (处理中), folded once it is done, as agents fold their steps under their answer.
+ */
+function Work({ label, live, children }: { label: string; live: boolean; children: ReactNode }) {
+  const [open, setOpen] = useState(live);
+  useEffect(() => setOpen(live), [live]);
+  return (
+    <TraceCollapsible open={open} onOpenChange={setOpen}>
+      <TraceCollapsibleTrigger>
+        <TraceLine status={live ? "running" : undefined}>
+          <TraceTitle>{label}</TraceTitle>
+        </TraceLine>
+      </TraceCollapsibleTrigger>
+      <TraceCollapsibleContent className="flex flex-col gap-2.5">
+        {children}
+      </TraceCollapsibleContent>
+    </TraceCollapsible>
+  );
+}
+
+/**
+ * A call as a line of its answer: what it does, its query and who sent the mail it found (one by
+ * name, several as the first +N, unfolding into a chip for each mail); hovering a sender shows its
+ * mail's card (card). Spinning while it runs.
+ */
+function ToolLine({
+  p,
+  running,
+  cites,
+  nums,
+  card,
+  t,
+}: {
+  p: DynamicToolUIPart;
+  running: boolean;
+  cites: Citation[];
+  nums: Nums;
+  /** The card of mail n, as a citation's popover shows it. */
+  card(n: number): ReactNode;
+  t: T;
+}) {
+  const Icon = running ? RiLoaderLine : stepIcon(p.toolName);
+  const query =
+    typeof (p.input as { query?: unknown })?.query === "string"
+      ? (p.input as { query: string }).query
+      : "";
+  const found = cites.filter((c) => c.callIds.includes(p.toolCallId));
+  const senders = [...new Set(found.map((c) => senderName(c.from)))];
+  // a found mail's sender, its card on hover
+  const sender = (c: Citation, className: string) => {
+    const n = nums.get(c.messageId)?.n ?? c.n;
+    return (
+      <Cite key={c.messageId} n={n} card={card(n)} className={className}>
+        {senderName(c.from)}
+      </Cite>
+    );
+  };
+  const line = (
+    <TraceLine
+      status={running ? "running" : p.state === "output-error" ? "error" : undefined}
+      title={p.toolName}
+    >
+      <TraceIcon>
+        <Icon className={cn(running && "animate-spin")} />
+      </TraceIcon>
+      <TraceTitle>{toolLabel(p.toolName, t)}</TraceTitle>
+      {query && (
+        <span className="min-w-0 truncate rounded-sm bg-muted px-1.5 font-mono text-xs">
+          {clip(query)}
+        </span>
+      )}
+      {found.length === 1 ? (
+        <span className="flex min-w-0 shrink-0 items-center gap-1">
+          ·
+          {sender(
+            found[0],
+            "min-w-0 cursor-pointer truncate hover:text-foreground hover:underline",
+          )}
+        </span>
+      ) : (
+        senders.length > 0 && (
+          <span className="min-w-0 shrink-0 truncate">
+            · {senders[0]}
+            {senders.length > 1 && ` +${senders.length - 1}`}
+          </span>
+        )
+      )}
+    </TraceLine>
+  );
+  if (found.length < 2) return line;
+  return (
+    <TraceCollapsible>
+      <TraceCollapsibleTrigger>{line}</TraceCollapsibleTrigger>
+      <TraceCollapsibleContent className="flex flex-wrap gap-1">
+        {found.map((c) =>
+          sender(
+            c,
+            "cursor-pointer rounded-full border-[0.5px] px-2 text-muted-foreground text-xs leading-5 hover:text-foreground data-popup-open:bg-muted data-popup-open:text-foreground",
+          ),
+        )}
+      </TraceCollapsibleContent>
+    </TraceCollapsible>
+  );
+}
+
+/**
+ * A run of calls of one tool, as one line that unfolds into a line for each: "读取了 7 封邮件" where
+ * the tool has its count's wording, else its name ×7.
+ */
+function ToolGroup({
+  ps,
+  going,
+  cites,
+  nums,
+  card,
+  t,
+}: {
+  ps: DynamicToolUIPart[];
+  going(p: DynamicToolUIPart): boolean;
+  cites: Citation[];
+  nums: Nums;
+  card(n: number): ReactNode;
+  t: T;
+}) {
+  const name = ps[0].toolName;
+  const key = `wit.tools.${name}`;
+  const label =
+    t(key, ps.length) !== key ? t(key, ps.length) : `${toolLabel(name, t)} ×${ps.length}`;
+  const running = ps.some(going);
+  const Icon = running ? RiLoaderLine : stepIcon(name);
+  return (
+    <TraceCollapsible>
+      <TraceCollapsibleTrigger>
+        <TraceLine
+          status={
+            running ? "running" : ps.some((p) => p.state === "output-error") ? "error" : undefined
+          }
+        >
+          <TraceIcon>
+            <Icon className={cn(running && "animate-spin")} />
+          </TraceIcon>
+          <TraceTitle>{label}</TraceTitle>
+        </TraceLine>
+      </TraceCollapsibleTrigger>
+      <TraceCollapsibleContent className="flex flex-col gap-2">
+        {ps.map((p) => (
+          <ToolLine
+            key={p.toolCallId}
+            p={p}
+            running={going(p)}
+            cites={cites}
+            nums={nums}
+            card={card}
+            t={t}
+          />
+        ))}
+      </TraceCollapsibleContent>
+    </TraceCollapsible>
+  );
+}
+
+/** Whether approval a answers the call of part id (a skill's has a part ID of its own: partId). */
+const answers = (a: Approval, id: string) => a.callId === id || `${a.callId}-${a.id}` === id;
+
+/**
+ * An answer, its parts in the order they came: what it thought (open while it thinks), each call as
+ * a line (or, where it waits on the user or the user decided it, its card), and what it wrote.
+ */
 function Answer({
   m,
   live,
@@ -717,7 +910,7 @@ function Answer({
   nums: Nums;
   approvals: Map<string, Approval>;
   review?: PanelReview;
-  /** The answer's calls waiting for the user, as cards (with a header over a run's several). */
+  /** A call's approval waiting for the user, as its card (the run's first with the run's header). */
   tools: (as: Approval[]) => ReactNode;
   onDraft?(approval: number): Promise<void>;
   onLink(url: string): void;
@@ -726,32 +919,23 @@ function Answer({
   onQuote(h: MailHit): void;
   /** Asks the answer's question again in its place (重新生成), where it can be. */
   onAgain?(): void;
-  /** What shows while the answer is live: the panel's working row, or the page's spinner. */
+  /** What shows while the answer is live and nothing of it moves: the working line. */
   working: ReactNode;
   page: boolean;
   t: T;
 }) {
-  const calls = m.parts.filter((p): p is DynamicToolUIPart => p.type === "dynamic-tool");
-  // The tools line lists finished calls; a pending one shows as its card or the working row.
-  const done = calls.filter(
-    (c) =>
-      c.state === "output-available" || c.state === "output-error" || c.state === "output-denied",
-  );
-  // Calls under way: no result yet and none waiting on the user.
-  const going = live ? calls.filter((c) => c.state === "input-available") : [];
-  const thought = m.parts.filter((p): p is ReasoningUIPart => p.type === "reasoning" && !!p.text);
-  const thinking = live && thought.some((p) => p.state === "streaming");
   // a message found gone since (opening it failed) is gone in every answer that cites it
   const cites = citesOf(m).map((c) => (nums.get(c.messageId)?.c.gone ? { ...c, gone: true } : c));
   const [sources, setSources] = useState(false);
   const text = m.parts
     .flatMap((p) => (p.type === "text" && p.text.trim() ? [p.text] : []))
     .join("\n\n");
-  const requested = calls.flatMap((c) => {
-    const a = c.state === "approval-requested" ? approvals.get(c.approval.id) : undefined;
-    return a ? [a] : [];
-  });
-  const waiting = requested.filter((a) => a.id === review?.approval);
+  // the mail its text cites, what 引用了 N 封邮件 lists: not all the mail it read
+  const ns = citedNumbers(text);
+  const cited = cites.filter((c) => ns.has(nums.get(c.messageId)?.n ?? c.n));
+  // The calls under way: no result yet and none waiting on the user.
+  const going = (p: DynamicToolUIPart) =>
+    live && (p.state === "input-streaming" || p.state === "input-available");
   // Its own calls the user decided (draft edits have their own rows), as they stand now: an
   // answer's approvals are its run's (a call ID alone may be another run's).
   const settled = m.parts
@@ -763,6 +947,77 @@ function Answer({
         ["done", "failed", "rejected", "stale"].includes(a.state) &&
         !a.draftEdit,
     );
+  const calls = m.parts.filter((p): p is DynamicToolUIPart => p.type === "dynamic-tool");
+  const requested = (p: DynamicToolUIPart) =>
+    p.state === "approval-requested" ? approvals.get(p.approval.id) : undefined;
+  // Calls of one tool in a row, each a plain line (no card), go as one line: each run by its first.
+  const runs = new Map<number, DynamicToolUIPart[]>();
+  let run: DynamicToolUIPart[] | undefined;
+  m.parts.forEach((p, i) => {
+    if (
+      p.type === "dynamic-tool" &&
+      !requested(p) &&
+      !settled.some((a) => answers(a, p.toolCallId))
+    ) {
+      if (run?.[0].toolName === p.toolName) run.push(p);
+      else {
+        run = [p];
+        runs.set(i, run);
+      }
+    } else if (
+      p.type === "dynamic-tool" ||
+      (p.type === "text" && p.text.trim()) ||
+      (p.type === "reasoning" && p.text)
+    )
+      run = undefined; // what shows between breaks the run (data parts show nothing)
+  });
+  // a call with a card (waiting, or decided) shows it, never folded away
+  const carded = (p: (typeof m.parts)[number]) =>
+    p.type === "dynamic-tool" && (!!requested(p) || settled.some((a) => answers(a, p.toolCallId)));
+  // What it did before its final text (the text after its last step) folds into one line per
+  // stretch between cards, so a card keeps its place among the steps, when the stretch is more
+  // than one line.
+  const end =
+    m.parts.findLastIndex(
+      (p) => p.type === "dynamic-tool" || (p.type === "reasoning" && !!p.text),
+    ) + 1;
+  const stretches: number[][] = [[]];
+  m.parts.forEach((p, i) => {
+    if (i >= end) return;
+    if (carded(p)) stretches.push([]);
+    else stretches[stretches.length - 1].push(i);
+  });
+  // what shows a line: a call (a run's first), a thought, text; data parts show nothing
+  const shows = (i: number) => {
+    const p = m.parts[i];
+    if (p.type === "dynamic-tool") return runs.has(i);
+    return (p.type === "text" || p.type === "reasoning") && !!p.text.trim();
+  };
+  // a stretch with a step to name it folds; text alone stays as it is
+  const folds = stretches.filter(
+    (w) => w.filter(shows).length > 1 && w.some((i) => m.parts[i].type !== "text" && shows(i)),
+  );
+  const took = !live && elapsed(m.metadata?.elapsed, t);
+  // the answer's time goes on its last folded line, nearest the answer
+  const timed = folds.at(-1);
+  const workLabel = (work: number[]) =>
+    live
+      ? t("wit.work_running")
+      : took && work === timed
+        ? t("wit.work_done_in", took)
+        : t("wit.work_done");
+  // a decided approval with no call of this answer's parts (none expected) still shows, at the end
+  const loose = settled.filter((a) => !calls.some((p) => answers(a, p.toolCallId)));
+  // Something of it moves (text or thought streaming, a call spinning): no working line then, but
+  // for a body edit's call, which the line names (正在写入正文).
+  const moving = m.parts.some(
+    (p) =>
+      ((p.type === "text" || p.type === "reasoning") && p.state === "streaming") ||
+      (p.type === "dynamic-tool" &&
+        going(p) &&
+        p.toolName !== "update_draft" &&
+        p.toolName !== "update_selection"),
+  );
   // [n] in the answer shows citation n's mail in a popover, [[n]] as a card in the text: either
   // opens it (when the host opens cited mail) or quotes it in the input.
   const mail = (n: number, card: boolean) => {
@@ -786,46 +1041,78 @@ function Answer({
       />
     );
   };
+  // A part as it shows: a thought, text, a call's line (a run's first: the run) or its card.
+  const part = (p: (typeof m.parts)[number], i: number): ReactNode => {
+    if (p.type === "reasoning")
+      return (
+        p.text && (
+          <Thought key={i} text={p.text} streaming={live && p.state === "streaming"} t={t} />
+        )
+      );
+    if (p.type === "text")
+      return (
+        p.text.trim() && (
+          <Response
+            key={i}
+            text={p.text}
+            streaming={live && p.state === "streaming"}
+            size={page ? "page" : "panel"}
+            t={t}
+            onLink={onLink}
+            confirm={!page}
+            cite={(n) => mail(n, false)}
+            card={(n) => mail(n, true)}
+          />
+        )
+      );
+    if (p.type !== "dynamic-tool") return null;
+    const a = requested(p);
+    if (a)
+      return (
+        <Fragment key={p.toolCallId}>
+          {a.id === review?.approval && (
+            <div className="overflow-hidden rounded-xl border-[0.5px] border-primary">
+              <div className="flex items-center gap-2 bg-muted px-3 py-2 leading-5">
+                <span className="font-semibold">{t("wit.compose.review")}</span>
+                <span className="font-mono text-foreground/80 text-sm">{a.tool}</span>
+              </div>
+              <div className="px-3 py-2 text-md">{review?.summary}</div>
+              <div className="flex gap-1.5 border-muted border-t-[0.5px] px-3 py-2">
+                {review?.actions}
+              </div>
+            </div>
+          )}
+          {!a.draftEdit && tools([a])}
+        </Fragment>
+      );
+    const done = settled.find((x) => answers(x, p.toolCallId));
+    if (done) return <Settled key={p.toolCallId} a={done} onDraft={onDraft} t={t} />;
+    const ps = runs.get(i);
+    if (!ps) return null; // a later call of a run: its first shows it
+    return ps.length > 1 ? (
+      <ToolGroup
+        key={p.toolCallId}
+        ps={ps}
+        going={going}
+        cites={cites}
+        nums={nums}
+        card={(n) => mail(n, false)}
+        t={t}
+      />
+    ) : (
+      <ToolLine
+        key={p.toolCallId}
+        p={p}
+        running={going(p)}
+        cites={cites}
+        nums={nums}
+        card={(n) => mail(n, false)}
+        t={t}
+      />
+    );
+  };
   return (
     <div data-role="assistant" className="flex flex-col gap-2.5">
-      {(thought.length > 0 || done.length > 0 || going.length > 0) && (
-        // the answer's steps: what it thought, the tools it called, the calls under way
-        <Trace className={page ? "[&_[data-slot=trace-line]]:text-base" : undefined}>
-          {(thought.length > 0 || done.length > 0) && (
-            <TraceCollapsible>
-              <TraceCollapsibleTrigger>
-                <TraceLine status={thinking ? "running" : undefined}>
-                  <TraceIcon>
-                    <RiBrainLine />
-                  </TraceIcon>
-                  <TraceTitle>
-                    {thinking
-                      ? t("wit.thinking")
-                      : [
-                          thought.length > 0 && t("wit.reasoning"),
-                          elapsed(m.metadata?.elapsed, t),
-                          done.length > 0 && toolsLabel(done, page, t),
-                        ]
-                          .filter(Boolean)
-                          .join(" · ")}
-                  </TraceTitle>
-                </TraceLine>
-              </TraceCollapsibleTrigger>
-              <TraceCollapsibleContent>
-                <Steps m={m} live={going} cites={cites} t={t} />
-              </TraceCollapsibleContent>
-            </TraceCollapsible>
-          )}
-          {going.map((c) => (
-            <TraceLine key={c.toolCallId} status="running">
-              <TraceIcon>
-                <RiToolsLine />
-              </TraceIcon>
-              <TraceTitle>{toolLabel(c.toolName, t)}</TraceTitle>
-            </TraceLine>
-          ))}
-        </Trace>
-      )}
       {cites
         .flatMap((c) => {
           const k = nums.get(c.messageId);
@@ -844,24 +1131,23 @@ function Answer({
             </AlertDescription>
           </Alert>
         ))}
-      {/* the questions it asked and their answers come before what it wrote with them */}
-      {settled.filter(isQuestion).map((a) => (
-        <Settled key={a.id} a={a} t={t} />
+      {m.parts.map((p, i) => {
+        const w = folds.find((w) => w.includes(i));
+        if (!w) return part(p, i);
+        return (
+          w[0] === i && (
+            // biome-ignore lint/suspicious/noArrayIndexKey: an answer's parts only grow
+            <Work key={`work${i}`} label={workLabel(w)} live={live}>
+              {w.map((k) => part(m.parts[k], k))}
+            </Work>
+          )
+        );
+      })}
+      {loose.map((a) => (
+        <Settled key={a.id} a={a} onDraft={onDraft} t={t} />
       ))}
-      {live && (!page || !text) && working}
-      {text && (
-        <Response
-          text={text}
-          streaming={live}
-          size={page ? "page" : "panel"}
-          t={t}
-          onLink={onLink}
-          confirm={!page}
-          cite={(n) => mail(n, false)}
-          card={(n) => mail(n, true)}
-        />
-      )}
-      {((text && !live) || (cites.length > 0 && onCite)) && (
+      {live && !moving && working}
+      {((text && !live) || (cited.length > 0 && onCite)) && (
         <div className="-mt-1 -ml-1.5 flex items-center">
           {text && !live && (
             <>
@@ -872,7 +1158,7 @@ function Answer({
                 aria-label={t("wit.copy")}
                 title={t("wit.copy")}
                 onClick={() =>
-                  (navigator.clipboard?.writeText(text) ?? Promise.reject()).then(
+                  (navigator.clipboard?.writeText(plainCites(text)) ?? Promise.reject()).then(
                     () => toast(t("wit.copied")),
                     () => toast.error(t("wit.copy_failed")),
                   )
@@ -894,7 +1180,7 @@ function Answer({
               )}
             </>
           )}
-          {cites.length > 0 && onCite && (
+          {cited.length > 0 && onCite && (
             <>
               {text && !live && <span aria-hidden="true" className="mx-1.5 h-3.5 w-px bg-border" />}
               <Button
@@ -904,19 +1190,27 @@ function Answer({
                 aria-expanded={sources}
                 onClick={() => setSources((o) => !o)}
               >
-                {t("wit.citations.count", cites.length)}
+                {t("wit.citations.count", cited.length)}
                 <RiArrowDownSLine className={cn("transition-transform", sources && "rotate-180")} />
               </Button>
             </>
           )}
+          {m.metadata?.time && !live && <MessageTime ms={m.metadata.time} className="ml-auto" />}
         </div>
       )}
-      {cites.length > 0 && onCite && sources && (
-        <Citations items={cites} nums={nums} onOpen={onCite} t={t} />
+      {cited.length > 0 && onCite && sources && (
+        // a long list scrolls in place (an answer may have read hundreds of mails)
+        <Citations
+          items={cited}
+          nums={nums}
+          onOpen={onCite}
+          t={t}
+          className="max-h-96 overflow-y-auto overscroll-contain"
+        />
       )}
-      {cites.length > 0 && !onCite && (
+      {cited.length > 0 && !onCite && (
         <div className="flex flex-wrap gap-1">
-          {cites.map((c) => (
+          {cited.map((c) => (
             <HoverCard key={c.messageId}>
               <HoverCardTrigger render={<Badge variant="outline" className="cursor-default" />}>
                 [{nums.get(c.messageId)?.n}]
@@ -932,24 +1226,6 @@ function Answer({
           ))}
         </div>
       )}
-      {waiting.map((a) => (
-        <div key={a.id} className="overflow-hidden rounded-xl border-[0.5px] border-primary">
-          <div className="flex items-center gap-2 bg-muted px-3 py-2 leading-5">
-            <span className="font-semibold">{t("wit.compose.review")}</span>
-            <span className="font-mono text-foreground/80 text-sm">{a.tool}</span>
-          </div>
-          <div className="px-3 py-2 text-md">{review?.summary}</div>
-          <div className="flex gap-1.5 border-muted border-t-[0.5px] px-3 py-2">
-            {review?.actions}
-          </div>
-        </div>
-      ))}
-      {tools(requested.filter((a) => !a.draftEdit))}
-      {settled
-        .filter((a) => !isQuestion(a))
-        .map((a) => (
-          <Settled key={a.id} a={a} onDraft={onDraft} t={t} />
-        ))}
     </div>
   );
 }
@@ -1018,6 +1294,8 @@ export function Panel({
   onSearch,
   onSession,
   onAnswer,
+  skills,
+  onNew,
 }: {
   info?: WitInfo;
   history: WitHistory;
@@ -1055,6 +1333,10 @@ export function Panel({
   onSession?(a: Approval): Promise<boolean>;
   /** Answers question a (ask_user_question), one list per question; true once answered. */
   onAnswer?(a: Approval, answers: string[][]): Promise<boolean>;
+  /** The skills a question may name with / (the Wit page): the / menu lists them. */
+  skills?(): Promise<{ name: string; description: string }[]>;
+  /** Shows a new conversation (the / menu's 新对话; the Wit page). */
+  onNew?(): void;
 }) {
   // A command's question: the skill as its menu names it (翻译成…, or the adjustment).
   const commandLabel = (c: WitCommand) => {
@@ -1102,10 +1384,16 @@ export function Panel({
   // What the conversation took, as last read (a run's end reads it again).
   const [usage, setUsage] = useState(history.usage);
   const [compacting, setCompacting] = useState(false);
+  // a compaction done here: said in the conversation until the next question
+  const [compacted, setCompacted] = useState(false);
   // The picker: from the + menu (at -1), or from an @ at draft[at] with what follows it as query.
   const [picking, setPicking] = useState<{ at: number; query: string }>();
   const textarea = useRef<HTMLTextAreaElement>(null);
   const pickerKeys = useRef<PickerKeys>(null);
+  // The / menu: open while the input starts with a / and a word, its query that word.
+  const [slash, setSlash] = useState<string>();
+  const commandKeys = useRef<PickerKeys>(null);
+  const [skillList, setSkillList] = useState<{ name: string; description: string }[]>();
   const full = quoted.length >= MAX_QUOTED;
   const running = chat.status === "submitted" || chat.status === "streaming";
   const { resumeStream } = chat;
@@ -1114,6 +1402,16 @@ export function Panel({
     () => translateMenu(info?.languages ?? [], locale),
     [info?.languages, locale],
   );
+  // the skills, read once the / menu first opens; the models, each time it opens
+  useEffect(() => {
+    if (slash === undefined || skillList || !skills) return;
+    skills().then(setSkillList, () => setSkillList([]));
+  }, [slash, skillList, skills]);
+  const slashOpen = slash !== undefined;
+  // biome-ignore lint/correctness/useExhaustiveDependencies: on opening only
+  useEffect(() => {
+    if (slashOpen && models) models.list().then(setChoices, () => {});
+  }, [slashOpen]);
 
   useEffect(() => {
     if (!history.running) return;
@@ -1172,7 +1470,8 @@ export function Panel({
 
   const ask = (text: string, metadata?: WitMeta) => {
     if (locked || running || !text) return;
-    void chat.sendMessage({ text, metadata });
+    setCompacted(false);
+    void chat.sendMessage({ text, metadata: { ...metadata, time: Date.now() } });
   };
   const asked = useRef<object | undefined>(undefined);
   // biome-ignore lint/correctness/useExhaustiveDependencies: only a new handed question asks
@@ -1301,6 +1600,8 @@ export function Panel({
   // or the @ goes. An @ inside a word (an address) is just text.
   const typed = (value: string, caret: number) => {
     setDraft(value);
+    const head = value.slice(0, caret);
+    setSlash(/^\/\S*$/.test(head) ? head.slice(1) : undefined);
     if (picking && picking.at >= 0) {
       const query = value.slice(picking.at + 1, caret);
       if (value[picking.at] !== "@" || caret <= picking.at || /\s/.test(query))
@@ -1325,10 +1626,11 @@ export function Panel({
   // summary is saved.
   const compact = () => {
     setCompacting(true);
+    setCompacted(false);
     transport
       .compact()
       .then(() => {
-        toast.success(t("wit.usage.compacted"));
+        setCompacted(true);
         return transport.history();
       })
       .then((h) => h && setUsage(h.usage), fail)
@@ -1416,9 +1718,14 @@ export function Panel({
     // 全部允许 answers no question: questions are not counted
     const pending =
       shown.length > 0 ? open.filter((x) => x.run === shown[0].run && !isQuestion(x)).length : 0;
+    // the header goes over the run's first card still waiting (a body edit has none)
+    const head =
+      pending > 1 &&
+      open.find((x) => x.run === shown[0].run && !isQuestion(x) && !x.draftEdit)?.id ===
+        shown[0].id;
     return (
       <>
-        {pending > 1 && (
+        {head && (
           <div className="flex items-center gap-2 px-0.5">
             <span className="text-muted-foreground text-sm">
               {t("wit.approval.count", pending)}
@@ -1491,8 +1798,8 @@ export function Panel({
   };
   const page = layout === "page";
   // The page's column (max-w-202): 760 of text inside its 24 padding, as the design's.
-  // A run going: the page's spinner; the panel's row, with Stop, says Wit writes the body while a
-  // body edit's call is in (no result yet), else that it thinks.
+  // A run going: its working line says Wit writes the body while a body edit's call is in (no
+  // result yet), else that it thinks; Stop is the input's.
   const writes =
     last?.role === "assistant" &&
     last.parts.some(
@@ -1501,29 +1808,154 @@ export function Panel({
         (p.toolName === "update_draft" || p.toolName === "update_selection") && // a streamed call: no approval says it yet
         (p.state === "input-streaming" || p.state === "input-available"),
     );
-  const working = page ? (
-    <Busy t={t} />
-  ) : (
-    <div className="flex items-center gap-2 text-muted-foreground">
-      <span className="size-2 shrink-0 rounded-full bg-muted-foreground/65" />
-      <span role="status">{t(writes ? "wit.compose.working" : "wit.thinking")}</span>
-      <Button
-        variant="outline"
-        size="sm"
-        className="ml-auto font-normal text-base text-foreground"
-        onClick={stop}
-      >
-        {t("wit.stop")}
-      </Button>
-    </div>
+  const working = (
+    <TraceLine status="running" role="status">
+      <TraceTitle>{t(writes ? "wit.compose.working" : "wit.thinking")}</TraceTitle>
+    </TraceLine>
   );
+  // The / menu's commands: the skills a question may name, 调整 / 翻译 (the compose window), and
+  // what the conversation can do, each with what it stands at: 压缩 its usage, 思考强度 and 模型
+  // their choices, opened in the menu. A skill is put in the input to ask with; the rest run at once.
+  const session = t("wit.cmd.session");
+  const now = (f: () => void) => () => {
+    setSlash(undefined);
+    setDraft("");
+    f();
+  };
+  const commands: Command[] = [
+    ...(skillList ?? []).map((sk) => ({
+      key: `skill:${sk.name}`,
+      group: t("wit.cmd.skills"),
+      icon: <RiMagicLine />,
+      label: `/${sk.name}`,
+      hint: sk.description,
+      run: () => {
+        setSlash(undefined);
+        setDraft(`/${sk.name} `);
+      },
+    })),
+    ...(info && !info.translateOnly
+      ? info.skills.map((sk) => ({
+          key: `adjust:${sk.id}`,
+          group: t("wit.compose.adjust"),
+          icon: <RiEqualizerLine />,
+          label: sk.label,
+          hint: sk.hint,
+          run: now(() => ask(sk.label, { skill: sk.id, lang: "" })),
+        }))
+      : []),
+    ...(info
+      ? menuLanguages.map((l) => ({
+          key: `translate:${l.tag}`,
+          group: t("wit.compose.translate"),
+          icon: <RiTranslate2 />,
+          label: t("wit.compose.translate_to", l.label),
+          run: now(() =>
+            ask(t("wit.compose.translate_to", l.label), { skill: "translate-draft", lang: l.tag }),
+          ),
+        }))
+      : []),
+    ...(onNew
+      ? [
+          {
+            key: "new",
+            group: session,
+            icon: <RiEditBoxLine />,
+            label: t("ask.new"),
+            run: now(onNew),
+          },
+        ]
+      : []),
+    ...(transport.compacts
+      ? [
+          {
+            key: "compact",
+            group: session,
+            icon: <UsageRing value={usage.history} />,
+            label: t("wit.cmd.compact"),
+            // nothing to condense yet: greyed, saying so, as the meter's button is
+            disabled: !usage.compactable,
+            hint: usage.compactable
+              ? t("wit.cmd.compact_hint", Math.min(100, Math.round(usage.history * 100)))
+              : t("error.nothing_to_compact"),
+            run: now(() => !compacting && !running && compact()),
+          },
+        ]
+      : []),
+    ...(effort
+      ? [
+          {
+            key: "effort",
+            group: session,
+            icon: <RiBrainLine />,
+            label: t("wit.effort"),
+            value: t(`wit.effort.${effort.value || "default"}`),
+            options: (["", "low", "medium", "high"] as const).map((v) => ({
+              key: `effort:${v}`,
+              group: session,
+              label: t(`wit.effort.${v || "default"}`),
+              checked: effort.value === v,
+              run: now(() => effort.pick(v)),
+            })),
+          },
+        ]
+      : []),
+    ...(model && models
+      ? [
+          {
+            key: "model",
+            group: session,
+            icon: <RiBox3Line />,
+            label: t("wit.cmd.model"),
+            value: chosen,
+            options: [
+              ...(listedDefault
+                ? []
+                : [
+                    {
+                      key: "model:",
+                      group: session,
+                      label: t("wit.model.default", model),
+                      checked: !models.ref,
+                      run: now(() => models.pick("")),
+                    },
+                  ]),
+              ...(choices ?? []).map((c) => ({
+                key: `model:${c.ref}`,
+                group: session,
+                label: c.name,
+                hint: c.service,
+                checked: (models.ref || listedDefault?.ref) === c.ref,
+                // picking the default follows it again (no model of its own)
+                run: now(() => models.pick(c.ref === listedDefault?.ref ? "" : c.ref)),
+              })),
+              ...(onModels
+                ? [
+                    {
+                      key: "model:settings",
+                      group: session,
+                      icon: <RiSettings3Line />,
+                      label: t("wit.model"),
+                      run: now(onModels),
+                    },
+                  ]
+                : []),
+            ],
+          },
+        ]
+      : []),
+  ];
   const conversation = (
     <MessageScrollerProvider autoScroll>
       <MessageScroller className="min-h-0 flex-1">
         <MessageScrollerViewport>
           <MessageScrollerContent
-            // pb-10 clears the input area's fade (h-8): the last card ends above it, corners and all
-            className={page ? "mx-auto w-full max-w-202 gap-5 p-6 pb-10" : "gap-2.5 p-4 pb-10"}
+            // pb-6 clears the input's fade (h-6) and no more: the last line ends just above it.
+            // Step lines (trace's text-sm) take the text's size: only their grey sets them apart.
+            className={cn(
+              "[&_[data-slot=trace-line]]:text-md",
+              page ? "mx-auto w-full max-w-202 gap-5 p-6" : "gap-2.5 p-4 pb-6",
+            )}
           >
             {chat.messages.map((m, i) => (
               <MessageScrollerItem
@@ -1552,19 +1984,22 @@ export function Panel({
                           {textOf(m)}
                         </BubbleContent>
                       </Bubble>
-                      {at(m) !== undefined && !running && !locked && (
-                        // shown on the turn's hover, or when focused
-                        <Button
-                          variant="ghost"
-                          size="icon-xs"
-                          className="text-muted-foreground opacity-0 focus-visible:opacity-100 group-hover/turn:opacity-100"
-                          aria-label={t("wit.edit")}
-                          title={t("wit.edit")}
-                          onClick={() => edit(m)}
-                        >
-                          <RiEditLine />
-                        </Button>
-                      )}
+                      <div className="flex items-center gap-1.5">
+                        {at(m) !== undefined && !running && !locked && (
+                          // shown on the turn's hover, or when focused
+                          <Button
+                            variant="ghost"
+                            size="icon-xs"
+                            className="text-muted-foreground opacity-0 focus-visible:opacity-100 group-hover/turn:opacity-100"
+                            aria-label={t("wit.edit")}
+                            title={t("wit.edit")}
+                            onClick={() => edit(m)}
+                          >
+                            <RiEditLine />
+                          </Button>
+                        )}
+                        {m.metadata?.time && <MessageTime ms={m.metadata.time} />}
+                      </div>
                     </MessageContent>
                   </Message>
                 ) : (
@@ -1621,6 +2056,17 @@ export function Panel({
               </div>
             )}
             {running && last?.role !== "assistant" && working}
+            {/* a compaction, as a step of the conversation: under way, then done */}
+            {(compacting || compacted) && (
+              <TraceLine status={compacting ? "running" : undefined} role="status">
+                <TraceIcon>
+                  <RiContractUpDownLine />
+                </TraceIcon>
+                <TraceTitle>
+                  {t(compacting ? "wit.usage.compacting" : "wit.usage.compacted")}
+                </TraceTitle>
+              </TraceLine>
+            )}
           </MessageScrollerContent>
         </MessageScrollerViewport>
         <MessageScrollerButton className="z-10">
@@ -1663,6 +2109,15 @@ export function Panel({
           </InputGroupButton>
         </div>
       )}
+      {slash !== undefined && commands.length > 0 && !locked && (
+        <CommandPicker
+          commands={commands}
+          query={slash}
+          onClose={() => setSlash(undefined)}
+          keys={commandKeys}
+          t={t}
+        />
+      )}
       {picking && onSearch && (
         <QuotePicker
           search={onSearch}
@@ -1687,6 +2142,7 @@ export function Panel({
         value={draft}
         onChange={(e) => typed(e.target.value, e.target.selectionStart)}
         onKeyDown={(e) => {
+          if (slash !== undefined && commands.length > 0 && commandKeys.current?.key(e)) return;
           if (picking && picking.at >= 0 && pickerKeys.current?.key(e)) return;
           // not while an input method composes: its Esc closes the candidates
           if (
@@ -1735,44 +2191,49 @@ export function Panel({
                 <InputGroupButton
                   variant="ghost"
                   size="icon-sm"
-                  className="ml-auto"
+                  // the model chip's own padding is the space between them: the ring sits as far
+                  // from its name as its chevron from the send button
+                  className={cn("ml-auto", model && "-mr-2")}
                   aria-label={t("wit.usage")}
                 />
               }
             >
               <UsageRing value={usage.history} />
             </PopoverTrigger>
-            <PopoverContent side="top" className="flex w-72 flex-col gap-2 text-sm">
-              <span className="font-medium">
-                {t("wit.usage.history", Math.min(100, Math.round(usage.history * 100)))}
-              </span>
-              <Progress value={Math.min(100, usage.history * 100)} />
-              <span className="text-muted-foreground">{t("wit.usage.note")}</span>
+            <PopoverContent side="top" className="flex w-72 flex-col gap-3 text-sm">
+              <ContextUsage usage={usage} t={t} />
               {transport.compacts && (
-                <Button
-                  variant="outline"
-                  size="sm"
-                  className="self-start font-normal"
-                  disabled={compacting || running || !usage.compactable}
-                  onClick={compact}
-                >
-                  {compacting && <RiLoaderLine className="size-3.5 animate-spin" />}
-                  {t(compacting ? "wit.usage.compacting" : "wit.usage.compact")}
-                </Button>
+                <div className="flex items-center justify-between gap-3 border-t-[0.5px] pt-3">
+                  <span className="text-muted-foreground">
+                    {t("wit.ctx.until", Math.max(0, 100 - Math.round(usage.history * 100)))}
+                  </span>
+                  <Button
+                    variant="secondary"
+                    size="sm"
+                    className="shrink-0 font-normal"
+                    disabled={compacting || running || !usage.compactable}
+                    onClick={compact}
+                  >
+                    {compacting && <RiLoaderLine className="size-3.5 animate-spin" />}
+                    {t(compacting ? "wit.usage.compacting" : "wit.ctx.compact")}
+                  </Button>
+                </div>
               )}
-              {usage.context > 0 && (
-                <span className="tabular-nums">
-                  {t("wit.usage.last", usage.context.toLocaleString())}
-                </span>
-              )}
-              {usage.input > 0 && (
-                <span className="tabular-nums">
-                  {t(
-                    "wit.usage.total",
-                    usage.input.toLocaleString(),
-                    usage.output.toLocaleString(),
+              {(usage.context > 0 || usage.input > 0) && (
+                <div className="flex flex-col gap-0.5 text-muted-foreground text-xs tabular-nums">
+                  {usage.context > 0 && (
+                    <span>{t("wit.usage.last", usage.context.toLocaleString())}</span>
                   )}
-                </span>
+                  {usage.input > 0 && (
+                    <span>
+                      {t(
+                        "wit.usage.total",
+                        usage.input.toLocaleString(),
+                        usage.output.toLocaleString(),
+                      )}
+                    </span>
+                  )}
+                </div>
               )}
             </PopoverContent>
           </Popover>
@@ -1894,7 +2355,7 @@ export function Panel({
             </InputGroupButton>
           )
         )}
-        {running && page ? (
+        {running ? (
           <InputGroupButton
             className={cn(!model && !meter && "ml-auto")}
             variant="outline"
@@ -1920,11 +2381,11 @@ export function Panel({
     </InputGroup>
   );
 
-  // the conversation fades out under the input area, which is solid to the card's bottom edge
+  // the conversation fades out right above the input, which is solid to the card's bottom edge
   const fade = (
     <div
       aria-hidden
-      className="pointer-events-none absolute inset-x-0 bottom-full h-8 bg-linear-to-b from-transparent to-background"
+      className="pointer-events-none absolute inset-x-0 bottom-full h-6 bg-linear-to-b from-transparent to-background"
     />
   );
   // a card on the window's material: the native layout's content cards
@@ -1936,7 +2397,7 @@ export function Panel({
           {conversation}
           <div className="relative bg-background">
             {fade}
-            <div className="mx-auto flex w-full max-w-202 flex-col gap-2 p-6">
+            <div className="mx-auto flex w-full max-w-202 flex-col gap-2 px-6 pb-6">
               {error}
               {input}
             </div>

@@ -2141,7 +2141,7 @@
   "wit_quote_search": "Search mail",
   "wit_elapsed_seconds": "{arg1}s",
   "wit_elapsed_minutes": "{arg1}m {arg2}s",
-  "wit_reasoning": "Thought process",
+  "wit_reasoning": "Thought",
   "wit_regenerate": "Regenerate",
   "wit_scroll_end": "Jump to latest",
   "wit_send": "Send to Wit",
@@ -2184,11 +2184,8 @@
   "wit_suggest_4": "Find my latest invoices",
   "wit_thinking": "Thinking…",
   "wit_usage": "Context",
-  "wit_usage_history": "History {arg1}% full",
-  "wit_usage_note": "Once it is full, the oldest turns are summarized, and the model is sent the summary in their place.",
   "wit_usage_last": "Last request: {arg1} tokens",
   "wit_usage_total": "This conversation: {arg1} in · {arg2} out tokens",
-  "wit_usage_compact": "Compact now",
   "wit_usage_compacting": "Compacting…",
   "wit_usage_compacted": "Compacted: the older turns are now a summary.",
   "wit_tool_ask_user_question": "Ask you",
@@ -2394,5 +2391,90 @@
   "settings_account_icon_default": "Use default",
   "settings_account_icon_symbols": "Icons",
   "settings_account_icon_brands": "Logos",
-  "error_account_icon": "An account icon must be a PNG, JPEG, GIF, WebP or SVG image of at most 5 MB."
+  "error_account_icon": "An account icon must be a PNG, JPEG, GIF, WebP or SVG image of at most 5 MB.",
+  "wit_tool_search_mail": "Search mail",
+  "wit_tool_get_message": "Read a message",
+  "wit_tool_get_thread": "Read a thread",
+  "wit_tool_read_attachment": "Read an attachment",
+  "wit_tool_list_skills": "List skills",
+  "wit_tool_use_skill": "Use a skill",
+  "wit_tool_read_skill_file": "Read a skill file",
+  "wit_tools_search_mail": "{arg1, plural, one {Searched mail {arg1, number, ::group-off} time} other {Searched mail {arg1, number, ::group-off} times}}",
+  "@wit_tools_search_mail": {
+    "placeholders": {
+      "arg1": {
+        "type": "int"
+      }
+    }
+  },
+  "wit_tools_get_message": "{arg1, plural, one {Read {arg1, number, ::group-off} message} other {Read {arg1, number, ::group-off} messages}}",
+  "@wit_tools_get_message": {
+    "placeholders": {
+      "arg1": {
+        "type": "int"
+      }
+    }
+  },
+  "wit_tools_get_thread": "{arg1, plural, one {Read {arg1, number, ::group-off} thread} other {Read {arg1, number, ::group-off} threads}}",
+  "@wit_tools_get_thread": {
+    "placeholders": {
+      "arg1": {
+        "type": "int"
+      }
+    }
+  },
+  "wit_tools_read_attachment": "{arg1, plural, one {Read {arg1, number, ::group-off} attachment} other {Read {arg1, number, ::group-off} attachments}}",
+  "@wit_tools_read_attachment": {
+    "placeholders": {
+      "arg1": {
+        "type": "int"
+      }
+    }
+  },
+  "wit_thinking_now": "Thinking",
+  "wit_work_running": "Working",
+  "wit_work_done": "Done",
+  "wit_work_done_in": "Done in {arg1}",
+  "@wit_work_done_in": {
+    "placeholders": {
+      "arg1": {
+        "type": "String"
+      }
+    }
+  },
+  "wit_quote_recent": "Recent mail",
+  "wit_cmd_skills": "Skills",
+  "wit_cmd_session": "Conversation",
+  "wit_cmd_compact": "Compact",
+  "wit_cmd_none": "No matching commands",
+  "wit_cmd_menu": "Commands",
+  "wit_cmd_compact_hint": "Compact this conversation's context ({arg1}% used)",
+  "wit_cmd_model": "Model",
+  "@wit_cmd_compact_hint": {
+    "placeholders": {
+      "arg1": {
+        "type": "int"
+      }
+    }
+  },
+  "wit_ctx_used": "{arg1}% used",
+  "wit_ctx_conversation": "Conversation",
+  "wit_ctx_summary": "Summary",
+  "wit_ctx_free": "Free",
+  "wit_ctx_until": "{arg1}% left before auto-compact",
+  "wit_ctx_compact": "Compact",
+  "@wit_ctx_used": {
+    "placeholders": {
+      "arg1": {
+        "type": "int"
+      }
+    }
+  },
+  "@wit_ctx_until": {
+    "placeholders": {
+      "arg1": {
+        "type": "int"
+      }
+    }
+  }
 }

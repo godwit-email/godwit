@@ -54,7 +54,7 @@ describe("MailCard", () => {
     expect(screen.queryByRole("toolbar")).toBeNull();
   });
 
-  it("as a card in an answer: framed, its actions on a toolbar that shows on hover or focus", () => {
+  it("as a card in an answer: framed, no wider than it needs, its actions taking the date's place on hover or focus", () => {
     render(
       <MailCard
         card
@@ -73,6 +73,9 @@ describe("MailCard", () => {
       "group-hover:opacity-100",
       "group-focus-within:opacity-100",
     );
-    expect(bar.parentElement).toHaveClass("group", "border-[0.5px]");
+    expect(bar.closest(".group")).toHaveClass("border-[0.5px]", "max-w-md");
+    // on the sender line, over the date it hides, not floating over the card's edge
+    expect(bar).toHaveClass("absolute", "right-0");
+    expect(bar.previousElementSibling).toHaveClass("group-hover:opacity-0");
   });
 });
