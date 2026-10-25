@@ -1169,11 +1169,8 @@
   "wit_suggest_3": "今月のサブスクにいくら使った？",
   "wit_suggest_4": "最新の請求書を探して",
   "wit_usage": "コンテキスト",
-  "wit_usage_history": "履歴の使用率 {arg1}%",
-  "wit_usage_note": "いっぱいになると、古いやり取りは要約され、モデルには代わりにその要約が送られます。",
   "wit_usage_last": "前回のリクエスト：{arg1} トークン",
   "wit_usage_total": "この会話の合計：入力 {arg1} · 出力 {arg2} トークン",
-  "wit_usage_compact": "今すぐ圧縮",
   "wit_usage_compacting": "圧縮中…",
   "wit_usage_compacted": "圧縮しました：古いやり取りは要約になりました。",
   "compose_strikethrough": "取り消し線",
@@ -1216,5 +1213,11 @@
   "wit_cmd_none": "一致するコマンドはありません",
   "wit_cmd_menu": "コマンド",
   "wit_cmd_compact_hint": "この会話のコンテキストを圧縮（{arg1}% 使用中）",
-  "wit_cmd_model": "モデル"
+  "wit_cmd_model": "モデル",
+  "wit_ctx_used": "{arg1}% 使用中",
+  "wit_ctx_conversation": "会話",
+  "wit_ctx_summary": "要約",
+  "wit_ctx_free": "空き",
+  "wit_ctx_until": "自動圧縮まで残り {arg1}%",
+  "wit_ctx_compact": "会話を圧縮"
 }

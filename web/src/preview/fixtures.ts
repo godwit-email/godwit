@@ -206,7 +206,7 @@ const history = (p: Partial<WitHistory> & Pick<WitHistory, "turns">): WitHistory
   conversation: 1,
   model: "",
   effort: "",
-  usage: { input: 0, output: 0, context: 0, history: 0, compactable: false },
+  usage: { input: 0, output: 0, context: 0, history: 0, summary: 0, compactable: false },
   running: 0,
   ...p,
 });
@@ -329,7 +329,14 @@ const createDraft = call("s9", "create_draft", {
 
 export const witConversation = (): WitHistory =>
   history({
-    usage: { input: 18400, output: 1260, context: 9800, history: 0.36, compactable: true },
+    usage: {
+      input: 18400,
+      output: 1260,
+      context: 9800,
+      history: 0.36,
+      summary: 0.08,
+      compactable: true,
+    },
     turns: [
       turn({
         id: "1",

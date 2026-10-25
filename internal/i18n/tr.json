@@ -1169,11 +1169,8 @@
   "wit_suggest_3": "Bu ay aboneliklerim ne kadar tuttu?",
   "wit_suggest_4": "En son faturalarımı bul",
   "wit_usage": "Bağlam",
-  "wit_usage_history": "Geçmiş %{arg1} dolu",
-  "wit_usage_note": "Dolduğunda en eski konuşmalar özetlenir ve modele onların yerine bu özet gönderilir.",
   "wit_usage_last": "Son istek: {arg1} token",
   "wit_usage_total": "Bu konuşma: {arg1} giriş · {arg2} çıkış token",
-  "wit_usage_compact": "Şimdi sıkıştır",
   "wit_usage_compacting": "Sıkıştırılıyor…",
   "wit_usage_compacted": "Sıkıştırıldı: eski konuşmalar artık bir özet.",
   "compose_strikethrough": "Üstü çizili",
@@ -1216,5 +1213,11 @@
   "wit_cmd_none": "Eşleşen komut yok",
   "wit_cmd_menu": "Komutlar",
   "wit_cmd_compact_hint": "Bu sohbetin bağlamını sıkıştır (%{arg1} kullanıldı)",
-  "wit_cmd_model": "Model"
+  "wit_cmd_model": "Model",
+  "wit_ctx_used": "%{arg1} kullanıldı",
+  "wit_ctx_conversation": "Sohbet",
+  "wit_ctx_summary": "Özet",
+  "wit_ctx_free": "Boş",
+  "wit_ctx_until": "Otomatik sıkıştırmaya %{arg1} kaldı",
+  "wit_ctx_compact": "Sıkıştır"
 }

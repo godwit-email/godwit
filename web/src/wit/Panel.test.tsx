@@ -34,7 +34,7 @@ const empty: WitHistory = {
   conversation: 1,
   model: "",
   effort: "",
-  usage: { input: 0, output: 0, context: 0, history: 0, compactable: false },
+  usage: { input: 0, output: 0, context: 0, history: 0, summary: 0, compactable: false },
   running: 0,
   turns: [],
 };
@@ -775,13 +775,13 @@ describe("Panel", () => {
       page: true,
       history: hist({
         ...turn,
-        usage: { input: 10, output: 1, context: 10, history: 0.2, compactable: false },
+        usage: { input: 10, output: 1, context: 10, history: 0.2, summary: 0, compactable: false },
       }),
     });
     api.follow.mockResolvedValue(
       hist({
         ...turn,
-        usage: { input: 30, output: 1, context: 20, history: 0.2, compactable: false },
+        usage: { input: 30, output: 1, context: 20, history: 0.2, summary: 0, compactable: false },
       }),
     );
     await user.type(input("向 Wit 提问"), "hi{Enter}");
@@ -834,7 +834,14 @@ describe("Panel", () => {
       page: true,
       history: hist({
         ...turn,
-        usage: { input: 1200, output: 80, context: 900, history: 0.42, compactable: false },
+        usage: {
+          input: 1200,
+          output: 80,
+          context: 900,
+          history: 0.42,
+          summary: 0.1,
+          compactable: false,
+        },
       }),
     });
     // a ring alone: no percentage beside it; a click shows the details
@@ -842,7 +849,11 @@ describe("Panel", () => {
     expect(meter).toHaveTextContent(/^$/);
     expect(meter.querySelector("svg")).not.toHaveClass("text-amber-500");
     await user.click(meter);
-    expect(await screen.findByText("历史已用 42%")).toBeInTheDocument();
+    expect(await screen.findByText("已使用 42%")).toBeInTheDocument();
+    // what takes it, as rows: the conversation, its summary, what is left
+    const rows = screen.getAllByRole("listitem").map((li) => li.textContent);
+    expect(rows).toEqual(["对话32%", "摘要10%", "剩余58%"]);
+    expect(screen.getByText("距自动压缩还剩 58%")).toBeInTheDocument();
     expect(screen.getByText("上次请求：900 tokens")).toBeInTheDocument();
     expect(screen.getByText("本对话共：输入 1,200 · 输出 80 tokens")).toBeInTheDocument();
   });
@@ -852,7 +863,14 @@ describe("Panel", () => {
       page: true,
       history: hist({
         ...turn,
-        usage: { input: 1200, output: 80, context: 900, history: 0.8, compactable: false },
+        usage: {
+          input: 1200,
+          output: 80,
+          context: 900,
+          history: 0.8,
+          summary: 0,
+          compactable: false,
+        },
       }),
     });
     expect(screen.getByRole("button", { name: "上下文" }).querySelector("svg")).toHaveClass(
@@ -864,24 +882,24 @@ describe("Panel", () => {
     const user = userEvent.setup();
     const before = hist({
       ...turn,
-      usage: { input: 1200, output: 80, context: 900, history: 0.9, compactable: true },
+      usage: { input: 1200, output: 80, context: 900, history: 0.9, summary: 0, compactable: true },
     });
     const { api } = await setup({ page: true, history: before });
     api.follow.mockResolvedValue({
       ...before,
-      usage: { ...before.usage, history: 0.3, compactable: false },
+      usage: { ...before.usage, history: 0.3, summary: 0, compactable: false },
     });
     let done!: () => void;
     api.compact.mockReturnValue(new Promise<void>((r) => (done = r)));
     await user.click(screen.getByRole("button", { name: "上下文" }));
-    await user.click(await screen.findByRole("button", { name: "立即压缩" }));
+    await user.click(await screen.findByRole("button", { name: "压缩对话" }));
     expect(api.compact).toHaveBeenCalled();
     // under way: a running line in the conversation, as a thought is
     const line = await screen.findByText("正在压缩…", { selector: "[data-slot=trace-title]" });
     expect(line.closest("[data-slot=trace-line]")).toHaveAttribute("data-status", "running");
     await act(async () => done());
-    expect(await screen.findByText("历史已用 30%")).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "立即压缩" })).toBeDisabled();
+    expect(await screen.findByText("已使用 30%")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "压缩对话" })).toBeDisabled();
     expect(
       await screen.findByText("已压缩：较早的对话已总结成摘要。", {
         selector: "[data-slot=trace-title]",

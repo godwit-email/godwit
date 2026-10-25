@@ -2184,11 +2184,8 @@
   "wit_suggest_4": "Find my latest invoices",
   "wit_thinking": "Thinking…",
   "wit_usage": "Context",
-  "wit_usage_history": "History {arg1}% full",
-  "wit_usage_note": "Once it is full, the oldest turns are summarized, and the model is sent the summary in their place.",
   "wit_usage_last": "Last request: {arg1} tokens",
   "wit_usage_total": "This conversation: {arg1} in · {arg2} out tokens",
-  "wit_usage_compact": "Compact now",
   "wit_usage_compacting": "Compacting…",
   "wit_usage_compacted": "Compacted: the older turns are now a summary.",
   "wit_tool_ask_user_question": "Ask you",
@@ -2454,6 +2451,26 @@
   "wit_cmd_compact_hint": "Compact this conversation's context ({arg1}% used)",
   "wit_cmd_model": "Model",
   "@wit_cmd_compact_hint": {
+    "placeholders": {
+      "arg1": {
+        "type": "int"
+      }
+    }
+  },
+  "wit_ctx_used": "{arg1}% used",
+  "wit_ctx_conversation": "Conversation",
+  "wit_ctx_summary": "Summary",
+  "wit_ctx_free": "Free",
+  "wit_ctx_until": "{arg1}% left before auto-compact",
+  "wit_ctx_compact": "Compact",
+  "@wit_ctx_used": {
+    "placeholders": {
+      "arg1": {
+        "type": "int"
+      }
+    }
+  },
+  "@wit_ctx_until": {
     "placeholders": {
       "arg1": {
         "type": "int"

@@ -1169,11 +1169,8 @@
   "wit_suggest_3": "Quanto mi sono costati gli abbonamenti questo mese?",
   "wit_suggest_4": "Trova le mie ultime fatture",
   "wit_usage": "Contesto",
-  "wit_usage_history": "Cronologia al {arg1}%",
-  "wit_usage_note": "Quando è piena, i turni più vecchi vengono riassunti e al modello viene inviato il riassunto al loro posto.",
   "wit_usage_last": "Ultima richiesta: {arg1} token",
   "wit_usage_total": "Questa conversazione: {arg1} in entrata · {arg2} in uscita token",
-  "wit_usage_compact": "Compatta ora",
   "wit_usage_compacting": "Compattazione…",
   "wit_usage_compacted": "Compattata: i turni precedenti ora sono un riassunto.",
   "compose_strikethrough": "Barrato",
@@ -1216,5 +1213,11 @@
   "wit_cmd_none": "Nessun comando corrispondente",
   "wit_cmd_menu": "Comandi",
   "wit_cmd_compact_hint": "Compatta il contesto di questa conversazione ({arg1}% usato)",
-  "wit_cmd_model": "Modello"
+  "wit_cmd_model": "Modello",
+  "wit_ctx_used": "{arg1}% usato",
+  "wit_ctx_conversation": "Conversazione",
+  "wit_ctx_summary": "Riepilogo",
+  "wit_ctx_free": "Libero",
+  "wit_ctx_until": "Ancora {arg1}% prima della compattazione automatica",
+  "wit_ctx_compact": "Compatta"
 }

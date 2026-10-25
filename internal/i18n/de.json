@@ -1176,11 +1176,8 @@
   "wit_suggest_3": "Was haben mich meine Abos diesen Monat gekostet?",
   "wit_suggest_4": "Finde meine neuesten Rechnungen",
   "wit_usage": "Kontext",
-  "wit_usage_history": "Verlauf zu {arg1} % belegt",
-  "wit_usage_note": "Ist er voll, werden die ältesten Runden zusammengefasst und die Zusammenfassung statt ihrer an das Modell gesendet.",
   "wit_usage_last": "Letzte Anfrage: {arg1} Tokens",
   "wit_usage_total": "Diese Unterhaltung: {arg1} ein · {arg2} aus Tokens",
-  "wit_usage_compact": "Jetzt zusammenfassen",
   "wit_usage_compacting": "Wird zusammengefasst…",
   "wit_usage_compacted": "Zusammengefasst: Die älteren Runden sind jetzt eine Zusammenfassung.",
   "settings_account_icon": "Konto-Icon",
@@ -1216,5 +1213,11 @@
   "wit_cmd_none": "Keine passenden Befehle",
   "wit_cmd_menu": "Befehle",
   "wit_cmd_compact_hint": "Kontext dieser Unterhaltung verdichten ({arg1} % belegt)",
-  "wit_cmd_model": "Modell"
+  "wit_cmd_model": "Modell",
+  "wit_ctx_used": "{arg1} % belegt",
+  "wit_ctx_conversation": "Unterhaltung",
+  "wit_ctx_summary": "Zusammenfassung",
+  "wit_ctx_free": "Frei",
+  "wit_ctx_until": "Noch {arg1} % bis zum automatischen Verdichten",
+  "wit_ctx_compact": "Verdichten"
 }

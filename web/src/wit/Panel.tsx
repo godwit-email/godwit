@@ -78,7 +78,6 @@ import {
   MessageScrollerViewport,
 } from "@/components/ui/message-scroller";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
-import { Progress } from "@/components/ui/progress";
 import {
   Questionnaire,
   QuestionnaireActions,
@@ -111,6 +110,7 @@ import type {
   WitCommand,
   WitHistory,
   WitInfo,
+  WitUsage,
 } from "@/mygo";
 import { currentLocale, type T } from "@/shared/i18n";
 import { Citations, type Nums } from "./Citations";
@@ -155,6 +155,49 @@ const UsageRing = ({ value }: { value: number }) => {
     </svg>
   );
 };
+
+/**
+ * How full the history budget is, as Claude Code shows its context: the share used, a bar of what
+ * takes it (the conversation, its summary) and what is left, each a row with its share.
+ */
+function ContextUsage({ usage, t }: { usage: WitUsage; t: T }) {
+  const pct = (v: number) => Math.round(Math.min(1, Math.max(0, v)) * 100);
+  const summary = pct(usage.summary);
+  const used = pct(usage.history);
+  const rows = [
+    {
+      key: "conversation",
+      label: t("wit.ctx.conversation"),
+      value: Math.max(0, used - summary),
+      tone: "bg-blue-500",
+    },
+    ...(summary > 0
+      ? [{ key: "summary", label: t("wit.ctx.summary"), value: summary, tone: "bg-amber-500" }]
+      : []),
+    { key: "free", label: t("wit.ctx.free"), value: 100 - used, tone: "bg-muted" },
+  ];
+  return (
+    <div className="flex flex-col gap-2">
+      <span className="font-medium">{t("wit.ctx.used", used)}</span>
+      <div className="flex h-1.5 gap-0.5 overflow-hidden rounded-full bg-muted" aria-hidden="true">
+        {rows
+          .filter((r) => r.key !== "free" && r.value > 0)
+          .map((r) => (
+            <span key={r.key} className={cn("h-full", r.tone)} style={{ width: `${r.value}%` }} />
+          ))}
+      </div>
+      <ul className="flex flex-col gap-1">
+        {rows.map((r) => (
+          <li key={r.key} className="flex items-center gap-2">
+            <span className={cn("size-2.5 shrink-0 rounded-[3px]", r.tone)} aria-hidden="true" />
+            <span className="flex-1">{r.label}</span>
+            <span className="text-muted-foreground tabular-nums">{r.value}%</span>
+          </li>
+        ))}
+      </ul>
+    </div>
+  );
+}
 
 const ARGS = 160; // a call's arguments shown, in characters (app/wit.go argsRunes)
 const BODY = 240; // a call's body on its approval card (app/wit.go bodyRunes)
@@ -2129,37 +2172,40 @@ export function Panel({
             >
               <UsageRing value={usage.history} />
             </PopoverTrigger>
-            <PopoverContent side="top" className="flex w-72 flex-col gap-2 text-sm">
-              <span className="font-medium">
-                {t("wit.usage.history", Math.min(100, Math.round(usage.history * 100)))}
-              </span>
-              <Progress value={Math.min(100, usage.history * 100)} />
-              <span className="text-muted-foreground">{t("wit.usage.note")}</span>
+            <PopoverContent side="top" className="flex w-72 flex-col gap-3 text-sm">
+              <ContextUsage usage={usage} t={t} />
               {transport.compacts && (
-                <Button
-                  variant="outline"
-                  size="sm"
-                  className="self-start font-normal"
-                  disabled={compacting || running || !usage.compactable}
-                  onClick={compact}
-                >
-                  {compacting && <RiLoaderLine className="size-3.5 animate-spin" />}
-                  {t(compacting ? "wit.usage.compacting" : "wit.usage.compact")}
-                </Button>
+                <div className="flex items-center justify-between gap-3 border-t-[0.5px] pt-3">
+                  <span className="text-muted-foreground">
+                    {t("wit.ctx.until", Math.max(0, 100 - Math.round(usage.history * 100)))}
+                  </span>
+                  <Button
+                    variant="secondary"
+                    size="sm"
+                    className="shrink-0 font-normal"
+                    disabled={compacting || running || !usage.compactable}
+                    onClick={compact}
+                  >
+                    {compacting && <RiLoaderLine className="size-3.5 animate-spin" />}
+                    {t(compacting ? "wit.usage.compacting" : "wit.ctx.compact")}
+                  </Button>
+                </div>
               )}
-              {usage.context > 0 && (
-                <span className="tabular-nums">
-                  {t("wit.usage.last", usage.context.toLocaleString())}
-                </span>
-              )}
-              {usage.input > 0 && (
-                <span className="tabular-nums">
-                  {t(
-                    "wit.usage.total",
-                    usage.input.toLocaleString(),
-                    usage.output.toLocaleString(),
+              {(usage.context > 0 || usage.input > 0) && (
+                <div className="flex flex-col gap-0.5 text-muted-foreground text-xs tabular-nums">
+                  {usage.context > 0 && (
+                    <span>{t("wit.usage.last", usage.context.toLocaleString())}</span>
                   )}
-                </span>
+                  {usage.input > 0 && (
+                    <span>
+                      {t(
+                        "wit.usage.total",
+                        usage.input.toLocaleString(),
+                        usage.output.toLocaleString(),
+                      )}
+                    </span>
+                  )}
+                </div>
               )}
             </PopoverContent>
           </Popover>

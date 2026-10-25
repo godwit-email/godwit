@@ -1169,11 +1169,8 @@
   "wit_suggest_3": "¿Cuánto me costaron mis suscripciones este mes?",
   "wit_suggest_4": "Encuentra mis facturas más recientes",
   "wit_usage": "Contexto",
-  "wit_usage_history": "Historial al {arg1} %",
-  "wit_usage_note": "Cuando se llene, los turnos más antiguos se resumen y el modelo recibe el resumen en su lugar.",
   "wit_usage_last": "Última solicitud: {arg1} tokens",
   "wit_usage_total": "Esta conversación: {arg1} de entrada · {arg2} de salida tokens",
-  "wit_usage_compact": "Compactar ahora",
   "wit_usage_compacting": "Compactando…",
   "wit_usage_compacted": "Compactado: los turnos anteriores ahora son un resumen.",
   "compose_strikethrough": "Tachado",
@@ -1216,5 +1213,11 @@
   "wit_cmd_none": "No hay comandos que coincidan",
   "wit_cmd_menu": "Comandos",
   "wit_cmd_compact_hint": "Compactar el contexto de esta conversación ({arg1} % usado)",
-  "wit_cmd_model": "Modelo"
+  "wit_cmd_model": "Modelo",
+  "wit_ctx_used": "{arg1} % usado",
+  "wit_ctx_conversation": "Conversación",
+  "wit_ctx_summary": "Resumen",
+  "wit_ctx_free": "Libre",
+  "wit_ctx_until": "Quedan {arg1} % para compactar automáticamente",
+  "wit_ctx_compact": "Compactar"
 }

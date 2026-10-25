@@ -12,6 +12,7 @@ import (
 	"strings"
 	"sync"
 	"time"
+	"unicode/utf8"
 
 	"github.com/egoist/mygo/plugins/sqlite"
 	"github.com/godwit-email/godwit/core/ai"
@@ -38,8 +39,10 @@ type Conversation struct {
 	// (from 0; past 1, its oldest turns are summarized or left out). ListConversations
 	// leaves both empty. Compactable: CompactConversation has turns to
 	// summarize.
-	Usage       ai.Usage
-	HistoryUse  float64
+	Usage      ai.Usage
+	HistoryUse float64
+	// SummaryUse is the part of HistoryUse its summary takes (0: none).
+	SummaryUse  float64
 	Compactable bool
 	// Answering means a run of it is running or resuming (or an allowed
 	// call of it executes); Awaiting that one waits for the user to decide
@@ -284,6 +287,9 @@ func (s *Service) GetConversation(ctx context.Context, id int64) (Conversation, 
 	budget := s.refHistoryBudget(ctx, c.Model)
 	c.Compactable = h.Compactable(sum, compactKeep(budget))
 	c.HistoryUse = float64(size) / float64(budget)
+	if sum.Text != "" && sum.Upto > 0 {
+		c.SummaryUse = min(float64(utf8.RuneCountInString(sum.Text))/float64(budget), c.HistoryUse)
+	}
 	return c, nil
 }
 

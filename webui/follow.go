@@ -142,7 +142,7 @@ func (f *follow) pump(t Target, ch <-chan core.WitEvent, emit func(Target, WitEv
 // history is c for the panel.
 func history(c core.Conversation) WitHistory {
 	h := WitHistory{Conversation: c.ID, Turns: witTurns(c), Model: c.Model, Effort: c.Effort,
-		Usage: WitUsage{Input: c.Usage.Input, Output: c.Usage.Output, Context: c.Usage.Last, History: c.HistoryUse, Compactable: c.Compactable}}
+		Usage: WitUsage{Input: c.Usage.Input, Output: c.Usage.Output, Context: c.Usage.Last, History: c.HistoryUse, Summary: c.SummaryUse, Compactable: c.Compactable}}
 	if !c.Awaiting {
 		h.Running = c.ActiveRunID
 	}

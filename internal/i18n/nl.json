@@ -1169,11 +1169,8 @@
   "wit_suggest_3": "Wat kostten mijn abonnementen deze maand?",
   "wit_suggest_4": "Zoek mijn nieuwste facturen",
   "wit_usage": "Context",
-  "wit_usage_history": "Geschiedenis {arg1}% vol",
-  "wit_usage_note": "Als die vol is, worden de oudste beurten samengevat en krijgt het model die samenvatting in hun plaats.",
   "wit_usage_last": "Laatste verzoek: {arg1} tokens",
   "wit_usage_total": "Dit gesprek: {arg1} in · {arg2} uit tokens",
-  "wit_usage_compact": "Nu comprimeren",
   "wit_usage_compacting": "Comprimeren…",
   "wit_usage_compacted": "Gecomprimeerd: de oudere beurten zijn nu een samenvatting.",
   "compose_strikethrough": "Doorgehaald",
@@ -1216,5 +1213,11 @@
   "wit_cmd_none": "Geen overeenkomende opdrachten",
   "wit_cmd_menu": "Opdrachten",
   "wit_cmd_compact_hint": "De context van dit gesprek comprimeren ({arg1}% gebruikt)",
-  "wit_cmd_model": "Model"
+  "wit_cmd_model": "Model",
+  "wit_ctx_used": "{arg1}% gebruikt",
+  "wit_ctx_conversation": "Gesprek",
+  "wit_ctx_summary": "Samenvatting",
+  "wit_ctx_free": "Vrij",
+  "wit_ctx_until": "Nog {arg1}% tot automatisch comprimeren",
+  "wit_ctx_compact": "Comprimeren"
 }

@@ -24,10 +24,12 @@ type WitHistory struct {
 // are summarized or left out), and whether WitPage.Compact has turns to
 // summarize (Compactable).
 type WitUsage struct {
-	Input       int     `json:"input"`
-	Output      int     `json:"output"`
-	Context     int     `json:"context"`
-	History     float64 `json:"history"`
+	Input   int     `json:"input"`
+	Output  int     `json:"output"`
+	Context int     `json:"context"`
+	History float64 `json:"history"`
+	// Summary is the part of History the conversation's summary takes.
+	Summary     float64 `json:"summary"`
 	Compactable bool    `json:"compactable"`
 }
 

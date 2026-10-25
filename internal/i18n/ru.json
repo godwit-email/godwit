@@ -1169,11 +1169,8 @@
   "wit_suggest_3": "Сколько стоили мои подписки в этом месяце?",
   "wit_suggest_4": "Найди мои последние счета",
   "wit_usage": "Контекст",
-  "wit_usage_history": "История заполнена на {arg1}%",
-  "wit_usage_note": "Когда она заполнится, самые старые реплики будут кратко изложены, и модель получит это изложение вместо них.",
   "wit_usage_last": "Последний запрос: {arg1} токенов",
   "wit_usage_total": "Этот разговор: {arg1} на входе · {arg2} на выходе токенов",
-  "wit_usage_compact": "Сжать сейчас",
   "wit_usage_compacting": "Сжатие…",
   "wit_usage_compacted": "Сжато: более ранние реплики теперь кратко изложены.",
   "compose_strikethrough": "Зачеркнутый",
@@ -1216,5 +1213,11 @@
   "wit_cmd_none": "Нет подходящих команд",
   "wit_cmd_menu": "Команды",
   "wit_cmd_compact_hint": "Сжать контекст этой беседы (занято {arg1}%)",
-  "wit_cmd_model": "Модель"
+  "wit_cmd_model": "Модель",
+  "wit_ctx_used": "Занято {arg1}%",
+  "wit_ctx_conversation": "Беседа",
+  "wit_ctx_summary": "Сводка",
+  "wit_ctx_free": "Свободно",
+  "wit_ctx_until": "До автосжатия осталось {arg1}%",
+  "wit_ctx_compact": "Сжать"
 }

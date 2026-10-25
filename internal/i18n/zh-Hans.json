@@ -1122,11 +1122,8 @@
   "wit_suggest_4": "找出最近的发票",
   "wit_thinking": "正在思考…",
   "wit_usage": "上下文",
-  "wit_usage_history": "历史已用 {arg1}%",
-  "wit_usage_note": "用满以后，最早的对话会被总结成摘要，模型收到的是摘要而不是原文。",
   "wit_usage_last": "上次请求：{arg1} tokens",
   "wit_usage_total": "本对话共：输入 {arg1} · 输出 {arg2} tokens",
-  "wit_usage_compact": "立即压缩",
   "wit_usage_compacting": "正在压缩…",
   "wit_usage_compacted": "已压缩：较早的对话已总结成摘要。",
   "wit_tool_ask_user_question": "向你提问",
@@ -1216,5 +1213,11 @@
   "wit_cmd_none": "没有匹配的指令",
   "wit_cmd_menu": "指令",
   "wit_cmd_compact_hint": "压缩此对话的上下文（已使用 {arg1}%）",
-  "wit_cmd_model": "模型"
+  "wit_cmd_model": "模型",
+  "wit_ctx_used": "已使用 {arg1}%",
+  "wit_ctx_conversation": "对话",
+  "wit_ctx_summary": "摘要",
+  "wit_ctx_free": "剩余",
+  "wit_ctx_until": "距自动压缩还剩 {arg1}%",
+  "wit_ctx_compact": "压缩对话"
 }
