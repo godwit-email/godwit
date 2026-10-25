@@ -2165,7 +2165,9 @@ export function Panel({
                 <InputGroupButton
                   variant="ghost"
                   size="icon-sm"
-                  className="ml-auto"
+                  // the model chip's own padding is the space between them: the ring sits as far
+                  // from its name as its chevron from the send button
+                  className={cn("ml-auto", model && "-mr-2")}
                   aria-label={t("wit.usage")}
                 />
               }
