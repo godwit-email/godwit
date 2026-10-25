@@ -122,13 +122,23 @@ func Judge(ctx context.Context, client *http.Client, req JudgeRequest, maxBody i
 // (its Prompt unused): Messages are pi messages (pi-ai's Message, as JSON),
 // ending with the question. Tools are offered to the model; past MaxTurns
 // rounds of calls it answers from what it found, its system prompt ending
-// with LimitNote, and the last round's calls are refused.
+// with LimitNote, and the last round's calls are refused. Answers, if set,
+// resume a held round (AgentResult.Held) instead: Messages end with it, and
+// Answers are the results of its calls, by ID, that held or ran; the others
+// run first.
 type AgentRequest struct {
 	Request
 	Messages  []json.RawMessage `json:"messages"`
+	Answers   map[string]Answer `json:"answers,omitempty"`
 	Tools     []Tool            `json:"tools"`
 	MaxTurns  int               `json:"maxTurns"`
 	LimitNote string            `json:"limitNote"`
+}
+
+// Answer is a call's result as the model reads it: Text, an error if IsError.
+type Answer struct {
+	Text    string `json:"text"`
+	IsError bool   `json:"isError"`
 }
 
 // Tool is a tool offered to the model; Parameters is its JSON schema, which
@@ -142,13 +152,16 @@ type Tool struct {
 
 // Hooks are what a run calls back on its goroutine, Tool on one of its own
 // per call. Emit gets each text and reasoning delta. Args rewrites a call's
-// arguments before they are validated (an error refuses the call); Tool
-// runs a call, its output JSON or an error message; Refused tells of a call
-// that never reached Tool.
+// arguments before they are validated (an error refuses the call); Gate,
+// given each valid call of a round before any of them runs, holds one for
+// the user (true): the round then stops. Tool runs a call, its output JSON
+// or an error message, or holds it as it runs (interrupt); Refused tells of
+// a call that never reached Tool.
 type Hooks struct {
 	Emit    func(kind, text string)
 	Args    func(args json.RawMessage) (json.RawMessage, error)
-	Tool    func(ctx context.Context, id, name string, args json.RawMessage) (output json.RawMessage, errMsg string)
+	Gate    func(ctx context.Context, id, name string, args json.RawMessage) (hold bool)
+	Tool    func(ctx context.Context, id, name string, args json.RawMessage) (output json.RawMessage, errMsg string, interrupt bool)
 	Refused func(id, name string, args json.RawMessage, errMsg string)
 }
 
@@ -156,13 +169,17 @@ type Hooks struct {
 // Messages are the pi messages it added, the question first. Limited: the
 // model reached MaxTurns and the last message is its answer after it; Calls:
 // that message still calls tools. Input and Output sum every reply the turn
-// was billed for; Last is the last request's input.
+// was billed for; Last is the last request's input. Held: the turn ended at
+// a round whose calls with these IDs wait for the user; none of its calls
+// ran but those that were running, and Deferred were held back with them.
+// Messages then end with the round and every call's result, held ones too.
 type AgentResult struct {
 	Result
 	Messages       []json.RawMessage `json:"-"`
 	Raw            string            `json:"messages"`
 	Limited, Calls bool
 	Last           int
+	Held, Deferred []string
 }
 
 // Agent runs one turn; it returns when the turn ended, or when ctx did
@@ -337,6 +354,10 @@ func (h *host) install() error {
 			}
 			return moejs.String(string(out)), nil
 		},
+		"hostGate": func(_ *moejs.Realm, _ moejs.Value, args []moejs.Value) (moejs.Value, error) {
+			hold := h.hooks.Gate != nil && h.hooks.Gate(h.ctx, str(moejs.Arg(args, 0)), str(moejs.Arg(args, 1)), json.RawMessage(str(moejs.Arg(args, 2))))
+			return h.rt.FromGo(hold)
+		},
 		"hostTool": func(_ *moejs.Realm, _ moejs.Value, args []moejs.Value) (moejs.Value, error) {
 			id, name, in := str(moejs.Arg(args, 0)), str(moejs.Arg(args, 1)), str(moejs.Arg(args, 2))
 			p, settle := h.loop.NewPromise()
@@ -344,12 +365,12 @@ func (h *host) install() error {
 			go func() {
 				defer h.tools.Done()
 				var out json.RawMessage
-				msg := "this tool cannot run here"
+				msg, interrupt := "this tool cannot run here", false
 				if h.hooks.Tool != nil {
-					out, msg = h.hooks.Tool(h.ctx, id, name, json.RawMessage(in))
+					out, msg, interrupt = h.hooks.Tool(h.ctx, id, name, json.RawMessage(in))
 				}
 				settle(func(rt *moejs.Runtime) (moejs.Value, error) {
-					return rt.FromGo(map[string]any{"output": string(out), "error": msg})
+					return rt.FromGo(map[string]any{"output": string(out), "error": msg, "interrupt": interrupt})
 				})
 			}()
 			return p, nil

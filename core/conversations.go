@@ -851,6 +851,7 @@ type snapshot struct {
 	Host     bool        `json:"host,omitempty"`    // a host-made proposal: nothing to resume
 	Effort   string      `json:"effort,omitempty"`  // the run's reasoning effort
 	Summary  *ai.Summary `json:"summary,omitempty"` // runJob.summary; none from before it was kept
+	Pi       bool        `json:"pi,omitempty"`      // the run started on pi (Labs): it resumes there, whatever the switch says since
 }
 
 type runKey struct{}
@@ -979,12 +980,8 @@ func (s *Service) launch(ctx context.Context, end func(), conv Conversation, pro
 	onPi := false
 	if err == nil && conv.Kind == "ask" && ai.PiConversation(model, h) {
 		var st Settings
-		if st, err = s.loadSettings(ctx); err == nil && st.PiEngine {
-			// Labs (#232): a run on pi takes no approval yet (#233), so it is
-			// offered only the tools that need none: no writes, no questions.
-			onPi = true
-			tools = slices.DeleteFunc(slices.Clone(tools), func(t toolDesc) bool { return t.Write })
-		}
+		st, err = s.loadSettings(ctx)
+		onPi = err == nil && st.PiEngine // Labs (#232)
 	}
 	var req ai.Request
 	if err == nil {
@@ -1332,7 +1329,7 @@ func (s *Service) settleRun(ctx context.Context, job *runJob, req ai.Request, re
 		return WitEvent{Event: ai.Event{Kind: "done"}}, err
 	}
 	now := time.Now().Unix()
-	snap, _ := json.Marshal(snapshot{ReadMail: job.scope.ReadMail(), Round: job.round, Host: job.host != nil, Effort: req.Effort, Summary: job.summary})
+	snap, _ := json.Marshal(snapshot{ReadMail: job.scope.ReadMail(), Round: job.round, Host: job.host != nil, Effort: req.Effort, Summary: job.summary, Pi: req.Pi})
 	stmts := append(historyStmts(job.conv.ID, job.changes), runSpan(job.id, job.base.Next(), job.after.Next()), runUsage(job.id, res.Usage),
 		sqlite.Statement{SQL: "UPDATE runs SET state = 'interrupted', snapshot = ?, updated_at = ? WHERE id = ?", Args: []any{snap, now, job.id}})
 	for i, c := range res.Interrupts {
@@ -1447,6 +1444,7 @@ func (s *Service) startResume(ctx context.Context, end func(), runID int64) erro
 	}
 	req.Responses = results
 	req.Effort = snap.Effort // as the run began: Anthropic refuses thinking switched on mid-turn
+	req.Pi = snap.Pi
 	go s.drive(job, end, e.Run, req, nil)
 	return nil
 }
