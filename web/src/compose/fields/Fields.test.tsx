@@ -1,6 +1,6 @@
 import { act, fireEvent, render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { createRef, useState } from "react";
+import { createRef, type Ref, useState } from "react";
 import { makeT } from "@/shared/i18n";
 import { Fields, type FieldsEdit, type FieldsHandle } from "./Fields";
 
@@ -11,33 +11,45 @@ const accounts = [
   { id: 2, email: "work@x.com" },
 ];
 
+type Init = Partial<Record<"to" | "cc" | "bcc", string[]> & { replyTo: string }>;
+
 // A stateful host, as the page is: edits flow back in as props.
-function setup(
-  init: Partial<Record<"to" | "cc" | "bcc", string[]> & { replyTo: string }> = {},
-  frozen = false,
-) {
+function Host({
+  init,
+  frozen,
+  onChange,
+  onFrom,
+  fieldsRef,
+}: {
+  init: Init;
+  frozen: boolean;
+  onChange: (e: FieldsEdit) => void;
+  onFrom: (id: number) => void;
+  fieldsRef: Ref<FieldsHandle>;
+}) {
+  const [v, setV] = useState({ to: [], cc: [], bcc: [], replyTo: "", subject: "", ...init });
+  return (
+    <Fields
+      ref={fieldsRef}
+      accounts={accounts}
+      from={1}
+      onFrom={onFrom}
+      frozen={frozen}
+      {...v}
+      onChange={(e: FieldsEdit) => {
+        onChange(e);
+        setV((o) => ({ ...o, ...e }));
+      }}
+      t={t}
+    />
+  );
+}
+
+function setup(init: Init = {}, frozen = false) {
   const onChange = vi.fn();
   const onFrom = vi.fn();
   const ref = createRef<FieldsHandle>();
-  function Host() {
-    const [v, setV] = useState({ to: [], cc: [], bcc: [], replyTo: "", subject: "", ...init });
-    return (
-      <Fields
-        ref={ref}
-        accounts={accounts}
-        from={1}
-        onFrom={onFrom}
-        frozen={frozen}
-        {...v}
-        onChange={(e: FieldsEdit) => {
-          onChange(e);
-          setV((o) => ({ ...o, ...e }));
-        }}
-        t={t}
-      />
-    );
-  }
-  render(<Host />);
+  render(<Host init={init} frozen={frozen} onChange={onChange} onFrom={onFrom} fieldsRef={ref} />);
   return { onChange, onFrom, ref };
 }
 

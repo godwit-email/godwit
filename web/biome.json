@@ -1,18 +1,12 @@
 {
-  "$schema": "https://biomejs.dev/schemas/2.5.15/schema.json",
+  "$schema": "https://biomejs.dev/schemas/2.6.2/schema.json",
   "files": {
-    "includes": [
-      "**",
-      "!src/components/ui",
-      "!src/mygo.ts",
-      "!src/i18n.ts",
-      "!dist"
-    ]
+    "includes": ["**", "!src/components/ui", "!src/mygo.ts", "!src/i18n.ts", "!dist"]
   },
   "linter": {
     "enabled": true,
     "rules": {
-      "recommended": true
+      "preset": "recommended"
     }
   },
   "formatter": {
