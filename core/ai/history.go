@@ -99,7 +99,7 @@ func NewHistory() *History { return &History{next: 1} }
 func LoadHistory(rows []StoredMessage, next int64) (*History, error) {
 	h := &History{next: next}
 	for i, r := range rows {
-		pi := isPiMessage(r.Data)
+		pi := IsPiMessage(r.Data)
 		if i == 0 {
 			h.pi = pi
 		} else if pi != h.pi {
@@ -173,7 +173,7 @@ func (h *History) Rows() ([]StoredMessage, error) {
 	return out, nil
 }
 
-// Pi reports whether a run of h may go on pi: it is new or was started there.
+// Pi reports whether a run of h may go on pi: it is new or saved as pi messages.
 func (h *History) Pi() bool { return h.pi || len(h.msgs) == 0 }
 
 // Next is the seq h's next message gets.
@@ -239,11 +239,11 @@ func commandOf(m *gai.Message) *Command {
 }
 
 // with is h with the messages at the indexes of put replaced and add appended.
-// raws, if set, are add's pi messages (nil where none), from a run on pi: an
-// empty history takes them on. A pi history saves a Genkit message as its pi
-// messages (a tool message as one per result).
+// raws, if set, are add's pi messages (nil where none), from a run on pi. An
+// empty history is a pi one (#234); a pi history saves a Genkit message as
+// its pi messages (a tool message as one per result).
 func (h *History) with(put map[int]*gai.Message, add []*gai.Message, raws [][]byte) (*History, HistoryChanges, error) {
-	n := &History{msgs: slices.Clone(h.msgs), raws: slices.Clone(h.raws), pi: h.pi || len(h.msgs) == 0 && raws != nil,
+	n := &History{msgs: slices.Clone(h.msgs), raws: slices.Clone(h.raws), pi: h.pi || len(h.msgs) == 0,
 		seqs: slices.Clone(h.seqs), next: h.next}
 	encode := func(m *gai.Message, raw []byte) ([]*gai.Message, [][]byte, error) {
 		if raw != nil && n.pi {

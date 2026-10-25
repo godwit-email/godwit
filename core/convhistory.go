@@ -220,6 +220,91 @@ func (s *Service) backfillHistory(ctx context.Context, id, draftID int64, state 
 	return err
 }
 
+// backfillPi converts each conversation still saved as Genkit messages to pi
+// messages (#234, ai.History.PiHistory), a transaction each: the seqs the
+// conversation, its runs and their snapshots keep move with the messages. One
+// it cannot convert keeps its messages and goes on on Genkit; the next start
+// tries again.
+func (s *Service) backfillPi(ctx context.Context) error {
+	rows, err := s.db.Query(ctx, `SELECT c.id, (SELECT m.data FROM conversation_messages m WHERE m.conversation_id = c.id ORDER BY m.seq LIMIT 1)
+		FROM conversations c WHERE c.state IS NULL OR length(c.state) = 0`)
+	if err != nil {
+		return err
+	}
+	for _, r := range rows.Values {
+		id := store.Int(r[0])
+		if first := asBytes(r[1]); first == nil || ai.IsPiMessage(first) {
+			continue
+		}
+		if err := s.backfillPiHistory(ctx, id); err != nil {
+			slog.Default().Warn("could not convert a conversation to pi messages", "conversation", id, "err", err)
+		}
+	}
+	return nil
+}
+
+func (s *Service) backfillPiHistory(ctx context.Context, id int64) error {
+	conv, err := s.db.Query(ctx, "SELECT next_seq, summary_upto FROM conversations WHERE id = ?", id)
+	if err != nil || len(conv.Values) == 0 {
+		return err
+	}
+	next, upto := store.Int(conv.Values[0][0]), store.Int(conv.Values[0][1])
+	msgs, err := s.db.Query(ctx, "SELECT seq, data FROM conversation_messages WHERE conversation_id = ? ORDER BY seq", id)
+	if err != nil {
+		return err
+	}
+	saved := make([]ai.StoredMessage, len(msgs.Values))
+	for i, m := range msgs.Values {
+		saved[i] = ai.StoredMessage{Seq: store.Int(m[0]), Data: asBytes(m[1])}
+	}
+	h, err := ai.LoadHistory(saved, next)
+	if err != nil {
+		return err
+	}
+	p, seqOf, err := h.PiHistory()
+	if err != nil {
+		return err
+	}
+	through := func(seq int64) int64 { return seqOf(seq+1) - 1 } // the last row of the message with seq
+	if upto > 0 {
+		upto = through(upto)
+	}
+	conv, err = s.db.Query(ctx, "SELECT id, hist_from, hist_to, rewind_from, rewind_to, snapshot FROM runs WHERE conversation_id = ?", id)
+	if err != nil {
+		return err
+	}
+	rows, err := p.Rows()
+	if err != nil {
+		return err
+	}
+	stmts := []sqlite.Statement{{SQL: "DELETE FROM conversation_messages WHERE conversation_id = ?", Args: []any{id}}}
+	for _, m := range rows {
+		stmts = append(stmts, sqlite.Statement{SQL: "INSERT INTO conversation_messages(conversation_id, seq, data) VALUES (?, ?, ?)", Args: []any{id, m.Seq, m.Data}})
+	}
+	for _, r := range conv.Values {
+		args := make([]any, 0, 6)
+		for _, v := range r[1:5] {
+			if v != nil {
+				v = seqOf(store.Int(v))
+			}
+			args = append(args, v)
+		}
+		snap := r[5]
+		var sn snapshot
+		if json.Unmarshal(asBytes(snap), &sn) == nil && sn.Summary != nil && sn.Summary.Upto > 0 { // a resume sends it again
+			sn.Summary.Upto = through(sn.Summary.Upto)
+			if snap, err = json.Marshal(sn); err != nil {
+				return err
+			}
+		}
+		stmts = append(stmts, sqlite.Statement{SQL: "UPDATE runs SET hist_from = ?, hist_to = ?, rewind_from = ?, rewind_to = ?, snapshot = ? WHERE id = ?",
+			Args: append(args, snap, r[0])})
+	}
+	stmts = append(stmts, sqlite.Statement{SQL: "UPDATE conversations SET next_seq = ?, summary_upto = ? WHERE id = ?", Args: []any{p.Next(), upto, id}})
+	_, err = s.db.Transaction(ctx, stmts)
+	return err
+}
+
 func asBytes(v any) []byte {
 	switch b := v.(type) {
 	case []byte:

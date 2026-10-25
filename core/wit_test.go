@@ -376,8 +376,16 @@ func TestAskHistoryPersisted(t *testing.T) {
 	assert.Equal(t, c.Title, list[0].Title)
 }
 
+// TestAskHistoryBudget runs on both engines (#234).
 func TestAskHistoryBudget(t *testing.T) {
+	for _, onPi := range []bool{false, true} {
+		t.Run(map[bool]string{false: "genkit", true: "pi"}[onPi], func(t *testing.T) { testAskHistoryBudget(t, onPi) })
+	}
+}
+
+func testAskHistoryBudget(t *testing.T, onPi bool) {
 	e := newSkillEnv(t)
+	e.setPi(t, onPi)
 	conv := e.askConv(t)
 	for _, n := range []string{"1", "2", "3"} {
 		turns := []testllm.Turn{{Calls: []testllm.Call{{Name: "search_mail", Args: `{"query":"harbour"}`}}},
@@ -399,6 +407,7 @@ func TestAskHistoryBudget(t *testing.T) {
 	reqs = e.srv.Requests()
 	compaction := reqs[len(reqs)-1]
 	assert.Contains(t, string(compaction.System), "You condense")
+	assert.Equal(t, onPi, compaction.Header.Get("User-Agent") == "Godwit", "the summary runs on the engine the switch picks")
 	assert.Contains(t, promptOf(t, compaction), "T1-", "the turns before the last two")
 	assert.NotContains(t, promptOf(t, compaction), "T2-")
 	c, err := e.s.GetConversation(t.Context(), conv.ID)
@@ -409,6 +418,7 @@ func TestAskHistoryBudget(t *testing.T) {
 	require.Equal(t, "done", evs[len(evs)-1].Kind)
 	reqs = e.srv.Requests()
 	req := reqs[len(reqs)-1]
+	assert.Equal(t, onPi, req.Header.Get("User-Agent") == "Godwit")
 	p := promptOf(t, req)
 	assert.Contains(t, p, "q1", "the first user message stays")
 	assert.Contains(t, p, ai.SummaryMailNote, "search_mail read mail: the summary is data")
@@ -439,8 +449,16 @@ func TestAskHistoryBudget(t *testing.T) {
 	assert.Zero(t, sum, "a rewind past the summary drops it")
 }
 
+// TestCompactConversation runs on both engines (#234).
 func TestCompactConversation(t *testing.T) {
+	for _, onPi := range []bool{false, true} {
+		t.Run(map[bool]string{false: "genkit", true: "pi"}[onPi], func(t *testing.T) { testCompactConversation(t, onPi) })
+	}
+}
+
+func testCompactConversation(t *testing.T, onPi bool) {
 	e := newSkillEnv(t)
+	e.setPi(t, onPi)
 	conv := e.askConv(t)
 	for _, n := range []string{"1", "2"} {
 		e.srv.Script(testllm.Turn{Text: []string{"A" + n}})
@@ -987,7 +1005,7 @@ func (e skillEnv) setPi(t *testing.T, on bool) {
 
 func TestAskOnPi(t *testing.T) {
 	e := newSkillEnv(t)
-	old := e.askConv(t) // a conversation started on Genkit
+	old := e.askConv(t) // a conversation started on Genkit, saved as pi messages too (#234)
 	e.srv.Script(testllm.Turn{Text: []string{"A0"}})
 	evs := e.ask(t, old.ID, "hi")
 	require.Equal(t, "done", evs[len(evs)-1].Kind)
@@ -1030,12 +1048,13 @@ func TestAskOnPi(t *testing.T) {
 	assert.Equal(t, 4, e.count(t, `SELECT COUNT(*) FROM conversation_messages WHERE conversation_id = ? AND json_extract(data, '$.timestamp') IS NOT NULL`, conv.ID),
 		"saved as pi messages, one row each")
 
-	// A conversation started on Genkit stays there.
+	// A conversation started on Genkit goes on, on pi.
 	e.srv.Script(testllm.Turn{Text: []string{"A1"}})
 	evs = e.ask(t, old.ID, "again")
 	require.Equal(t, "done", evs[len(evs)-1].Kind)
 	reqs = e.srv.Requests()
-	assert.NotEqual(t, "Godwit", reqs[len(reqs)-1].Header.Get("User-Agent"))
+	assert.Equal(t, "Godwit", reqs[len(reqs)-1].Header.Get("User-Agent"))
+	assert.Contains(t, promptOf(t, reqs[len(reqs)-1]), "A0")
 
 	// With the switch off, the pi conversation opens and goes on, on Genkit.
 	e.setPi(t, false)

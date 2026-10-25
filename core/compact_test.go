@@ -22,9 +22,16 @@ func TestCompactPromptFitsTheBudget(t *testing.T) {
 		require.NoError(t, err)
 		rows = append(rows, ai.StoredMessage{Seq: int64(i + 1), Data: b})
 	}
-	h, err := ai.LoadHistory(rows, 9)
+	genkit, err := ai.LoadHistory(rows, 9)
 	require.NoError(t, err)
+	pi, _, err := genkit.PiHistory()
+	require.NoError(t, err)
+	for _, h := range []*ai.History{genkit, pi} {
+		testCompactPrompt(t, h)
+	}
+}
 
+func testCompactPrompt(t *testing.T, h *ai.History) {
 	upto, p, err := compactPrompt(h, ai.Summary{}, 1500)
 	require.NoError(t, err)
 	assert.EqualValues(t, 2, upto, "only q1's turn fits")

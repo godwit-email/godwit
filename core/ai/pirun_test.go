@@ -299,7 +299,7 @@ func TestPiRunsAConversationWithReadTools(t *testing.T) {
 	require.NoError(t, err)
 	require.Len(t, ch.Put, 4) // the question, the call, its result, the answer
 	for _, p := range ch.Put {
-		assert.True(t, isPiMessage(p.Data), string(p.Data))
+		assert.True(t, IsPiMessage(p.Data), string(p.Data))
 	}
 	assert.Contains(t, string(ch.Put[1].Data), `"q":"invoice"`) // what the model wrote
 	h, err = LoadHistory(ch.Put, ch.Next)
@@ -594,10 +594,14 @@ func TestGenkitHistoriesStayOnGenkit(t *testing.T) {
 	require.Nil(t, res.Err)
 	h, _, err := sent.Restore(res)
 	require.NoError(t, err)
-	assert.False(t, h.Pi())
+	assert.True(t, h.Pi(), "a new conversation is saved as pi messages on either engine (#234)")
 
+	// One not yet converted (MigratePi skipped it) stays on Genkit.
+	old, _, _, err := LegacyHistory([]byte(`[{"role":"user","content":[{"text":"first"}]},{"role":"model","content":[{"text":"one"}]}]`), nil)
+	require.NoError(t, err)
+	assert.False(t, old.Pi())
 	srv.Script(testllm.Turn{Text: []string{"two"}})
-	_, res = run(newEngine(t), Request{Model: modelFor(srv, "openai", "k"), History: asking(h, "second"), Pi: true})
+	_, res = run(newEngine(t), Request{Model: modelFor(srv, "openai", "k"), History: asking(old, "second"), Pi: true})
 	require.Nil(t, res.Err)
 	assert.False(t, ranOnPi(t, srv))
 }
@@ -623,7 +627,7 @@ func TestPiHistoryRunsOnGenkitWithTheSwitchOff(t *testing.T) {
 	h, ch, err := next.Restore(res)
 	require.NoError(t, err)
 	for _, p := range ch.Put {
-		assert.True(t, isPiMessage(p.Data), string(p.Data))
+		assert.True(t, IsPiMessage(p.Data), string(p.Data))
 	}
 	h, err = LoadHistory(must(h.Rows()), h.Next())
 	require.NoError(t, err)

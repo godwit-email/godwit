@@ -431,8 +431,15 @@ var Migrations = [][]string{{
 	`ALTER TABLE outbox ADD COLUMN send_after INTEGER`,
 	`ALTER TABLE outbox ADD COLUMN next_attempt_at INTEGER`,
 	`ALTER TABLE outbox ADD COLUMN failure TEXT`,
+}, {
+	// None: core.backfillPi converts the conversations saved as Genkit
+	// messages to pi messages (#234); the version backs the database up first.
 }}
 
 // HistoryRowsVersion is the schema version that keeps a conversation's
-// messages one row each; Open backs the database up before migrating to it.
-const HistoryRowsVersion = 32
+// messages one row each, PiMessagesVersion the one that keeps them as pi
+// messages; Open backs the database up before migrating to either.
+const (
+	HistoryRowsVersion = 32
+	PiMessagesVersion  = 37
+)

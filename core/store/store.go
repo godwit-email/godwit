@@ -60,7 +60,7 @@ func (db *DB) init(ctx context.Context, path string) error {
 			return err
 		}
 	}
-	if cur > 0 && cur < HistoryRowsVersion {
+	if cur > 0 && cur < PiMessagesVersion {
 		backup(ctx, db, path, cur)
 	}
 	for v := cur + 1; v <= len(Migrations); v++ {

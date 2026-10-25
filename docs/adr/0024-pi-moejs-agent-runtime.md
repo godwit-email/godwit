@@ -22,6 +22,7 @@ Wit 和其他 AI 功能改由 **pi** 运行：`pi-ai` 负责各家模型协议�
 - moejs 固定依赖上游版本（目前是 `v0.1.0-alpha.9`）。它还是 alpha，只有一个维护者，所以每次升级 moejs 或 pi 都必须先通过 `core/ai/pi` 的冒烟测试：在 moejs 里运行真实的 provider 代码，对接模拟服务。出问题时再 fork。
 - 对未知的 OpenAI 兼容服务，pi-ai 默认会把推理模型的系统提示改用 `developer` 角色发送，还会附带 `store: false`。很多兼容服务不接受这两样，Genkit 路径也都不发，所以 bundle 把这两个兼容项固定关掉。
 - 每次运行新建一个运行时，加载已编译的 bundle。它不跨运行保留任何状态，取消时直接终止整个事件循环。
+- 对话一律存成 pi 消息（#234），不论开关和哪个引擎在跑：Genkit 跑的轮次也转成 pi 消息存。已有的 Genkit 格式对话在启动时转换（照 [0021](0021-conversations-in-sqlite-rows.md) 的做法：`user_version` 提升前先备份数据库，转换不了的对话保留原样、照旧走 Genkit，下次启动再试）。这一步不分开关、不可回退，旧版本打不开转换后的库。
 - 脚本插件一律在 moejs 上运行，不受实验室开关控制：esbuild 把插件编译成一个 ES 模块（严格模式，不再降级），每个插件一个运行时，不与 agent 的 bundle 共用。内存上限按宏任务计（`plugins.MemoryLimit`），调用期限和以前一样靠 `Interrupt` 抢占。
 
 ## Considered Options
