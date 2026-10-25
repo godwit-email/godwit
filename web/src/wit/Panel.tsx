@@ -112,7 +112,7 @@ import { currentLocale, type T } from "@/shared/i18n";
 import { Citations, type Nums } from "./Citations";
 import { MailCard, senderName } from "./MailCard";
 import { type PickerKeys, QuoteChips, QuotePicker } from "./Quote";
-import { Cite, plainCites, Response } from "./Response";
+import { Cite, citedNumbers, plainCites, Response } from "./Response";
 import {
   historyToMessages,
   questionId,
@@ -859,6 +859,9 @@ function Answer({
   const text = m.parts
     .flatMap((p) => (p.type === "text" && p.text.trim() ? [p.text] : []))
     .join("\n\n");
+  // the mail its text cites, what 引用了 N 封邮件 lists: not all the mail it read
+  const ns = citedNumbers(text);
+  const cited = cites.filter((c) => ns.has(nums.get(c.messageId)?.n ?? c.n));
   // The calls under way: no result yet and none waiting on the user.
   const going = (p: DynamicToolUIPart) =>
     live && (p.state === "input-streaming" || p.state === "input-available");
@@ -1073,7 +1076,7 @@ function Answer({
         <Settled key={a.id} a={a} onDraft={onDraft} t={t} />
       ))}
       {live && !moving && working}
-      {((text && !live) || (cites.length > 0 && onCite)) && (
+      {((text && !live) || (cited.length > 0 && onCite)) && (
         <div className="-mt-1 -ml-1.5 flex items-center">
           {text && !live && (
             <>
@@ -1106,7 +1109,7 @@ function Answer({
               )}
             </>
           )}
-          {cites.length > 0 && onCite && (
+          {cited.length > 0 && onCite && (
             <>
               {text && !live && <span aria-hidden="true" className="mx-1.5 h-3.5 w-px bg-border" />}
               <Button
@@ -1116,7 +1119,7 @@ function Answer({
                 aria-expanded={sources}
                 onClick={() => setSources((o) => !o)}
               >
-                {t("wit.citations.count", cites.length)}
+                {t("wit.citations.count", cited.length)}
                 <RiArrowDownSLine className={cn("transition-transform", sources && "rotate-180")} />
               </Button>
             </>
@@ -1124,19 +1127,19 @@ function Answer({
           {took && !timed && <span className="ml-auto text-muted-foreground text-xs">{took}</span>}
         </div>
       )}
-      {cites.length > 0 && onCite && sources && (
+      {cited.length > 0 && onCite && sources && (
         // a long list scrolls in place (an answer may have read hundreds of mails)
         <Citations
-          items={cites}
+          items={cited}
           nums={nums}
           onOpen={onCite}
           t={t}
           className="max-h-96 overflow-y-auto overscroll-contain"
         />
       )}
-      {cites.length > 0 && !onCite && (
+      {cited.length > 0 && !onCite && (
         <div className="flex flex-wrap gap-1">
-          {cites.map((c) => (
+          {cited.map((c) => (
             <HoverCard key={c.messageId}>
               <HoverCardTrigger render={<Badge variant="outline" className="cursor-default" />}>
                 [{nums.get(c.messageId)?.n}]

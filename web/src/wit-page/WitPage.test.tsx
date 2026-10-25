@@ -301,7 +301,7 @@ test("cited click opens", async () => {
       messages: [
         msg("q", "user", "Q", [1]),
         {
-          ...msg("a", "assistant", "A", [1]),
+          ...msg("a", "assistant", 'A <mail id="1"/>', [1]),
           citations: [
             {
               n: 1,

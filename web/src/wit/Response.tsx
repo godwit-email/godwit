@@ -90,6 +90,15 @@ function mailTags(text: string, streaming: boolean) {
   );
 }
 
+/**
+ * The mail numbers text cites: its mail tags; in an answer from before tags, its [n] and [[n]].
+ */
+export function citedNumbers(text: string): Set<number> {
+  const tagged = [...text.matchAll(MAIL_TAG)].map((m) => Number(m[1]));
+  if (tagged.length > 0) return new Set(tagged);
+  return new Set([...text.matchAll(/\[\[?(\d+)\]\]?/g)].map((m) => Number(m[1])));
+}
+
 /** The text with its mail tags as "[n]": what copying an answer gives. */
 export const plainCites = (text: string) => text.replace(MAIL_TAG, (_, n: string) => `[${n}]`);
 type Pluggable = NonNullable<StreamdownProps["rehypePlugins"]>[number];

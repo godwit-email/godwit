@@ -2156,12 +2156,12 @@ describe("Panel", () => {
           {
             id: "a1",
             role: "assistant",
-            text: "A",
+            text: 'A <mail id="1"/> and <mail id="2"/>.',
             reasoning: "",
             quoted: [],
             calls: [],
             results: [],
-            citations: [cite(1, 50), cite(2, 51, true)],
+            citations: [cite(1, 50), cite(2, 51, true), cite(3, 52)],
             runs: [7],
             elapsed: 0,
           },
@@ -2171,12 +2171,14 @@ describe("Panel", () => {
     // no column beside the conversation: each answer folds its citations under its actions
     expect(document.querySelector("aside aside, [data-slot=citations-column]")).toBeNull();
     expect(screen.queryByRole("region", { name: "引用的邮件" })).toBeNull();
+    // the mail its text cites: 52, read but not cited, is not listed
     const toggle = screen.getByRole("button", { name: "引用了 2 封邮件" });
     expect(toggle).toHaveAttribute("aria-expanded", "false");
     expect(toggle.closest("[data-role=assistant]")).not.toBeNull();
     await user.click(toggle);
     const list = screen.getByRole("region", { name: "引用的邮件" });
     expect(list.textContent).toContain("f50");
+    expect(list.textContent).not.toContain("f52");
     expect(list.textContent).toContain("（无主题）");
     expect(list.textContent).toContain("含疑似指令，已作为数据处理");
     expect(screen.getByRole("textbox", { name: "向 Wit 提问" })).toBeInTheDocument();

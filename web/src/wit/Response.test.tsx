@@ -1,7 +1,7 @@
 import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { makeT } from "@/shared/i18n";
-import { plainCites, Response } from "./Response";
+import { citedNumbers, plainCites, Response } from "./Response";
 
 const t = makeT("zh-Hans");
 
@@ -58,6 +58,12 @@ describe("answer layout", () => {
     );
     await screen.findByText(/paid/);
     expect(container.textContent).not.toContain("<mail");
+  });
+
+  it("the mail an answer cites: its tags; before tags, its [n] and [[n]]", () => {
+    expect(citedNumbers('a <mail id="2"/> b <mail id="5" card/> [7]')).toEqual(new Set([2, 5]));
+    expect(citedNumbers("a [1] b\n[[3]]")).toEqual(new Set([1, 3]));
+    expect(citedNumbers("none")).toEqual(new Set());
   });
 
   it("copying an answer gives its tags as [n]", () => {
