@@ -7,12 +7,12 @@ Opens a page in a normal browser over fake data, to screenshot it against the de
 `?page=<page>&state=<state>&theme=light|dark` (theme defaults to light; the pages draw the tokens
 from `theme.json`, a copy of `webui.ThemeOf` at font size 14; zh-Hans text comes from the generated i18n catalog).
 
-| page      | states                                                         |
-| --------- | -------------------------------------------------------------- |
+| page      | states                                                                                                                 |
+| --------- | ---------------------------------------------------------------------------------------------------------------------- |
 | compose   | `plain`, `streaming`, `inline`, `rewrite`, `applied`, `cmdk`, `signature`, `translate` (no model, a plugin translates) |
-| wit       | `conversation`, `empty`, `plus`, `picker`, `quoted`            |
-| signature | `filled`                                                       |
-| reader    | `basic` (not in the design set)                                |
+| wit       | `conversation`, `empty`, `plus`, `picker`, `quoted`                                                                    |
+| signature | `filled`                                                                                                               |
+| reader    | `basic` (not in the design set)                                                                                        |
 
 Example: `/preview.html?page=compose&state=inline&theme=dark`.
 
