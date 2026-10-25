@@ -1454,6 +1454,56 @@ describe("Panel", () => {
     await waitFor(() => expect(screen.queryByText("Wit 想要：plugin_netty_ping")).toBeNull());
   });
 
+  it("text before a card, after only citations, stays text: nothing to fold", async () => {
+    const user = userEvent.setup();
+    const { emit } = await setup();
+    await user.type(input(), "go{Enter}");
+    const cite = {
+      n: 1,
+      messageId: 50,
+      subject: "S",
+      from: "f",
+      date: 0,
+      suspect: false,
+      quote: "",
+      snippet: "",
+      gone: false,
+      callIds: [],
+    };
+    const call = { id: "p1", name: "plugin_netty_ping", args: "{}" };
+    emit({ kind: "context", citations: [cite] });
+    emit({ kind: "text", text: "Pinging first." });
+    emit({ kind: "tool_call", call });
+    emit({
+      kind: "interrupted",
+      interrupts: [call],
+      approvals: [
+        {
+          id: 5,
+          run: 7,
+          callId: "p1",
+          tool: "plugin_netty_ping",
+          summary: "",
+          state: "pending",
+          error: "",
+          destinations: [],
+          args: "{}",
+          draftEdit: false,
+          sessionAllow: false,
+          draft: 0,
+        },
+      ],
+      ends: true,
+    });
+    expect(await screen.findByText("Wit 想要：plugin_netty_ping")).toBeInTheDocument();
+    expect(screen.getByText("Pinging first.")).toBeVisible();
+    expect(
+      screen
+        .queryAllByRole("button")
+        .filter((b) => b.textContent === "" && b.hasAttribute("aria-expanded")),
+    ).toHaveLength(0);
+  });
+
   it("decided approvals fold into one line each; a draft Wit made opens in compose", async () => {
     const user = userEvent.setup();
     const onDraft = vi.fn().mockResolvedValue(undefined);

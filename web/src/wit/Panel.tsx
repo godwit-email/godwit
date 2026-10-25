@@ -877,11 +877,16 @@ function Answer({
     if (carded(p)) stretches.push([]);
     else stretches[stretches.length - 1].push(i);
   });
+  // what shows a line: a call (a run's first), a thought, text; data parts show nothing
   const shows = (i: number) => {
     const p = m.parts[i];
-    return p.type === "dynamic-tool" ? runs.has(i) : p.type === "text" ? !!p.text.trim() : true;
+    if (p.type === "dynamic-tool") return runs.has(i);
+    return (p.type === "text" || p.type === "reasoning") && !!p.text.trim();
   };
-  const folds = stretches.filter((w) => w.filter(shows).length > 1);
+  // a stretch with a step to name it folds; text alone stays as it is
+  const folds = stretches.filter(
+    (w) => w.filter(shows).length > 1 && w.some((i) => m.parts[i].type !== "text" && shows(i)),
+  );
   const reasons = (w: number[]) => w.some((i) => m.parts[i].type === "reasoning");
   const took = !live && elapsed(m.metadata?.elapsed, t);
   // the answer's time goes on the last folded line that thought, nearest the answer
