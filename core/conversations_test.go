@@ -375,6 +375,61 @@ func TestBackfillPi(t *testing.T) {
 	assert.Len(t, c.Turns, 4)
 }
 
+// #234: a Genkit-format conversation waiting for an approval converts with
+// its interrupt: approving it resumes the run where it stopped (on Genkit,
+// where it began, #233), the draft is made once, and the conversation goes
+// on, on pi.
+func TestBackfillPiPendingApproval(t *testing.T) {
+	e := newSkillEnv(t)
+	conv := e.askConv(t)
+	for i, r := range []string{`{"role":"user","content":[{"text":"q0"}]}`, `{"role":"model","content":[{"text":"a0"}]}`} {
+		_, err := e.s.db.Execute(t.Context(), "INSERT INTO conversation_messages(conversation_id, seq, data) VALUES (?, ?, ?)", conv.ID, i+1, []byte(r))
+		require.NoError(t, err)
+	}
+	_, err := e.s.db.Execute(t.Context(), "UPDATE conversations SET next_seq = 3 WHERE id = ?", conv.ID)
+	require.NoError(t, err)
+	e.srv.Script(testllm.Turn{Calls: []testllm.Call{{Name: "search_mail", Args: `{"query":"harbour"}`},
+		{Name: "create_draft", Args: `{"to":["x@y.example"],"subject":"S","html":"<p>b</p>"}`}}}, testllm.Turn{Text: []string{"Drafted."}})
+	evs := e.ask(t, conv.ID, "draft it") // the switch off: on Genkit, saved as Genkit messages
+	require.Equal(t, "interrupted", evs[len(evs)-1].Kind, "%+v", evs[len(evs)-1].Err)
+	require.Zero(t, e.count(t, `SELECT COUNT(*) FROM conversation_messages WHERE conversation_id = ? AND json_extract(data, '$.timestamp') IS NOT NULL`, conv.ID))
+	searches := len(witResults(evs, "search_mail"))
+
+	require.NoError(t, e.s.backfillPi(t.Context()))
+	assert.Zero(t, e.count(t, `SELECT COUNT(*) FROM conversation_messages WHERE conversation_id = ? AND json_extract(data, '$.timestamp') IS NULL`, conv.ID))
+	e.setPi(t, true)
+	drafts := e.count(t, "SELECT COUNT(*) FROM drafts")
+	sub, stop := e.s.SubscribeConversation(conv.ID)
+	defer stop()
+	require.NoError(t, e.s.ResolveApproval(t.Context(), evs[len(evs)-1].Approvals[0].ID, true))
+	var resumed []WitEvent
+	for ev := range sub {
+		resumed = append(resumed, ev)
+		if ev.Kind == "done" || ev.Kind == "error" {
+			break
+		}
+	}
+	require.Equal(t, "done", resumed[len(resumed)-1].Kind, "%+v", resumed[len(resumed)-1].Err)
+	assert.Empty(t, witResults(resumed, "search_mail"), "the search that ran before the interrupt does not run again")
+	assert.Equal(t, 1, searches)
+	assert.Equal(t, drafts+1, e.count(t, "SELECT COUNT(*) FROM drafts"), "drafted once")
+	calls, results := toolPairs(t, e.srv.Requests()[len(e.srv.Requests())-1])
+	assert.Len(t, calls, 2)
+	assert.Equal(t, calls, results)
+
+	e.srv.Script(testllm.Turn{Text: []string{"a2"}})
+	evs = e.ask(t, conv.ID, "thanks")
+	require.Equal(t, "done", evs[len(evs)-1].Kind, "%+v", evs[len(evs)-1].Err)
+	reqs := e.srv.Requests()
+	assert.Equal(t, "Godwit", reqs[len(reqs)-1].Header.Get("User-Agent"), "on pi")
+	for _, want := range []string{"q0", "a0", "draft it", "Drafted.", "thanks"} {
+		assert.Contains(t, promptOf(t, reqs[len(reqs)-1]), want)
+	}
+	c, err := e.s.GetConversation(t.Context(), conv.ID)
+	require.NoError(t, err)
+	assert.Len(t, c.Turns, 3)
+}
+
 // #219: an Ask run that keeps calling tools stops at witMaxTurns: the call
 // past it never runs, one more request asks for an answer with tools off,
 // and the conversation keeps that answer and counts its tokens.

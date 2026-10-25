@@ -5,6 +5,7 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"net/http"
+	"strings"
 	"sync/atomic"
 	"testing"
 
@@ -379,17 +380,193 @@ func TestPiFlattensToolSchemas(t *testing.T) {
 	assert.Contains(t, tools, `"to":{"type":"string"}`)
 }
 
-func TestPiRefusesACallThatNeedsApproval(t *testing.T) {
+// A round with a call that needs approval runs none of its calls and asks
+// the model nothing more; the run ends interrupted as on Genkit, and the
+// saved state resumes on pi after a restart: the held-back call runs then,
+// once.
+func TestPiMixedInterrupt(t *testing.T) {
+	eachKind(t, func(t *testing.T, kind string) {
+		srv := testllm.Start(t, kind)
+		srv.Script(testllm.Turn{Calls: []testllm.Call{
+			{ID: "r1", Name: "read"},
+			{ID: "a1", Name: "write", Args: `{"n":1}`},
+			{ID: "a2", Name: "write", Args: `{"n":2}`},
+		}}, testllm.Turn{Text: []string{"all done"}})
+		var readRuns atomic.Int64
+		sent := asking(nil, "go")
+		evs, res := run(newEngine(t), Request{Model: modelFor(srv, kind, "k"), History: sent, Tools: mixedTools(&readRuns), Pi: true})
+		require.Nil(t, res.Err)
+		assert.True(t, ranOnPi(t, srv))
+		assert.Zero(t, readRuns.Load(), "nothing runs before the approval")
+		end := last(t, evs)
+		require.Equal(t, "interrupted", end.Kind)
+		require.Len(t, end.Interrupts, 2)
+		assert.Equal(t, []string{"a1", "a2"}, []string{callRef(end.Interrupts[0].ID), callRef(end.Interrupts[1].ID)})
+		assert.JSONEq(t, `{"n":2}`, string(end.Interrupts[1].Args))
+		assert.Equal(t, end.Interrupts, res.Interrupts)
+		assert.Empty(t, kindsOf(evs, "tool_result"))
+		require.Len(t, srv.Requests(), 1)
+
+		h := after(t, sent, res)
+		stored := must(LoadHistory(must(h.Rows()), h.Next()))
+		require.True(t, stored.Pi())
+		var open []string
+		for _, c := range stored.OpenCalls() {
+			open = append(open, callRef(c.CallID))
+		}
+		assert.Equal(t, []string{"r1", "a1", "a2"}, open, "the read call was held back")
+		evs, res = run(newEngine(t), Request{Model: modelFor(srv, kind, "k"), History: resuming(stored), Tools: mixedTools(&readRuns), Pi: true,
+			Responses: []ToolResult{{CallID: end.Interrupts[0].ID, Name: "write", Output: json.RawMessage(`{"draft":7}`)},
+				{CallID: end.Interrupts[1].ID, Name: "write", Error: "user rejected"}}})
+		require.Nil(t, res.Err)
+		assert.True(t, ranOnPi(t, srv))
+		assert.Equal(t, "done", last(t, evs).Kind)
+		assert.EqualValues(t, 1, readRuns.Load())
+		reqs := srv.Requests()
+		require.Len(t, reqs, 2)
+		calls, results := toolIDs(t, kind, reqs[1].Messages)
+		assert.Equal(t, []string{"r1", "a1", "a2"}, calls)
+		assert.Equal(t, calls, results)
+		for _, s := range []string{"read-result", "draft", "user rejected"} {
+			assert.Contains(t, string(reqs[1].Messages), s)
+		}
+		h, ch, err := resuming(stored).Restore(res)
+		require.NoError(t, err)
+		assert.Len(t, ch.Put, 4, "three results and the answer")
+		h = must(LoadHistory(must(h.Rows()), h.Next()))
+		assert.Empty(t, h.OpenCalls())
+		assert.Equal(t, "all done", h.Messages()[len(h.Messages())-1].Text)
+	})
+}
+
+// callRef is the model's ID of a call pi-ai named: a Responses call's ID
+// adds its item's.
+func callRef(id string) string { ref, _, _ := strings.Cut(id, "|"); return ref }
+
+// A gate decides each call once, on the arguments the Args hook rewrote,
+// before any call of the round runs; one it denies does not run either, and
+// is decided again when the round resumes.
+func TestPiGatesTheWholeRoundFirst(t *testing.T) {
 	srv := testllm.Start(t, "openai")
-	srv.Script(
-		testllm.Turn{Calls: []testllm.Call{{ID: "c1", Name: "fetch", Args: `{}`}}},
-		testllm.Turn{Text: []string{"ok"}},
-	)
-	tool := ToolSpec{Name: "fetch", Gate: func(context.Context, json.RawMessage) (Decision, error) { return Approve, nil },
-		Run: func(context.Context, json.RawMessage) (any, error) { t.Error("ran"); return nil, nil }}
-	evs, res := run(newEngine(t), Request{Model: modelFor(srv, "openai", "k"), History: asking(nil, "q"), Tools: []ToolSpec{tool}, Pi: true})
+	srv.Script(testllm.Turn{Calls: []testllm.Call{
+		{ID: "o1", Name: "open", Args: `{"q":"a"}`}, {ID: "d1", Name: "denied"}, {ID: "g1", Name: "gated", Args: `{"q":"b"}`},
+	}}, testllm.Turn{Text: []string{"ok"}})
+	var gates, runs atomic.Int64
+	var seen []string
+	count := func(context.Context, json.RawMessage) (any, error) { runs.Add(1); return "ran", nil }
+	gate := func(d Decision) func(context.Context, json.RawMessage) (Decision, error) {
+		return func(ctx context.Context, args json.RawMessage) (Decision, error) {
+			gates.Add(1)
+			seen = append(seen, CallID(ctx)+string(args))
+			return d, nil
+		}
+	}
+	tools := []ToolSpec{
+		{Name: "open", Schema: piSearch, Run: count, Gate: gate(Allow)},
+		{Name: "denied", Run: count, NeedsApproval: true, Gate: gate(Deny)},
+		{Name: "gated", Schema: piSearch, Run: count, Gate: gate(Approve)},
+	}
+	rewrite := func(_ context.Context, a json.RawMessage) (json.RawMessage, error) {
+		return json.RawMessage(strings.ReplaceAll(string(a), `"b"`, `"b2"`)), nil
+	}
+	sent := asking(nil, "go")
+	evs, res := run(newEngine(t), Request{Model: modelFor(srv, "openai", "k"), History: sent, Tools: tools, Pi: true, Args: rewrite})
 	require.Nil(t, res.Err)
-	assert.Equal(t, errNeedsApproval.Error(), evs[1].Result.Error)
+	require.Equal(t, "interrupted", last(t, evs).Kind)
+	assert.EqualValues(t, 3, gates.Load())
+	assert.Zero(t, runs.Load())
+	assert.Contains(t, seen, `g1{"q":"b2"}`)
+	assert.JSONEq(t, `{"q":"b"}`, string(res.Interrupts[0].Args), "the state keeps what the model wrote")
+
+	h := after(t, sent, res)
+	evs, res = run(newEngine(t), Request{Model: modelFor(srv, "openai", "k"), History: resuming(h), Tools: tools, Pi: true, Args: rewrite,
+		Responses: []ToolResult{{CallID: "g1", Name: "gated", Output: json.RawMessage(`"approved"`)}}})
+	require.Nil(t, res.Err)
+	assert.EqualValues(t, 5, gates.Load(), "the held-back calls are decided again")
+	assert.EqualValues(t, 1, runs.Load())
+	errs := map[string]string{}
+	for _, ev := range kindsOf(evs, "tool_result") {
+		errs[ev.Result.CallID] = ev.Result.Error
+	}
+	assert.Equal(t, map[string]string{"o1": "", "d1": "tool call denied"}, errs)
+}
+
+// A tool that interrupts as it runs (an MCP form) ends the run once its
+// round is done; a call that ran with it keeps its result and does not run
+// again on resume.
+func TestPiToolInterruptsAsItRuns(t *testing.T) {
+	srv := testllm.Start(t, "anthropic")
+	srv.Script(testllm.Turn{Calls: []testllm.Call{{ID: "r1", Name: "read"}, {ID: "f1", Name: "form"}}},
+		testllm.Turn{Text: []string{"thanks"}})
+	var readRuns atomic.Int64
+	tools := append(mixedTools(&readRuns), ToolSpec{Name: "form", Run: func(context.Context, json.RawMessage) (any, error) { return nil, ErrInterrupt }})
+	sent := asking(nil, "go")
+	evs, res := run(newEngine(t), Request{Model: modelFor(srv, "anthropic", "k"), History: sent, Tools: tools, Pi: true})
+	require.Nil(t, res.Err)
+	require.Equal(t, "interrupted", last(t, evs).Kind)
+	require.Len(t, res.Interrupts, 1)
+	assert.Equal(t, "f1", res.Interrupts[0].ID)
+	assert.EqualValues(t, 1, readRuns.Load())
+	assert.Len(t, srv.Requests(), 1)
+
+	h := after(t, sent, res)
+	h = must(LoadHistory(must(h.Rows()), h.Next()))
+	assert.Equal(t, []ToolResult{{CallID: "f1", Name: "form"}}, h.OpenCalls())
+	_, res = run(newEngine(t), Request{Model: modelFor(srv, "anthropic", "k"), History: resuming(h), Tools: tools, Pi: true,
+		Responses: []ToolResult{{CallID: "f1", Name: "form", Output: json.RawMessage(`{"answer":"yes"}`)}}})
+	require.Nil(t, res.Err)
+	assert.EqualValues(t, 1, readRuns.Load(), "the read tool must not run again")
+	for _, s := range []string{"read-result", "answer"} {
+		assert.Contains(t, string(srv.Requests()[1].Messages), s)
+	}
+}
+
+// Closing a held round (a cancel) answers the calls held back with it too.
+func TestPiCloseAnswersHeldBackCalls(t *testing.T) {
+	srv := testllm.Start(t, "openai")
+	srv.Script(testllm.Turn{Calls: []testllm.Call{{ID: "r1", Name: "read"}, {ID: "a1", Name: "write"}}},
+		testllm.Turn{Text: []string{"fine"}})
+	var readRuns atomic.Int64
+	sent := asking(nil, "go")
+	_, res := run(newEngine(t), Request{Model: modelFor(srv, "openai", "k"), History: sent, Tools: mixedTools(&readRuns), Pi: true})
+	require.Len(t, res.Interrupts, 1)
+	h := must(LoadHistory(must(after(t, sent, res).Rows()), after(t, sent, res).Next()))
+	closed, _, err := h.Close([]ToolResult{{CallID: "a1", Name: "write", Error: "cancelled"}})
+	require.NoError(t, err)
+	var results []ToolResult
+	for _, m := range closed.Messages()[2:] { // a pi history keeps one message per result
+		results = append(results, m.Results...)
+	}
+	assert.Equal(t, []ToolResult{{CallID: "r1", Name: "read", Output: json.RawMessage(`{"error":"` + notRun + `"}`)},
+		{CallID: "a1", Name: "write", Output: json.RawMessage(`{"error":"cancelled"}`)}}, results)
+	assert.Zero(t, readRuns.Load())
+
+	_, res = run(newEngine(t), Request{Model: modelFor(srv, "openai", "k"), History: asking(closed, "next"), Tools: mixedTools(&readRuns), Pi: true})
+	require.Nil(t, res.Err)
+	calls, ids := toolIDs(t, "openai", srv.Requests()[1].Messages)
+	assert.Equal(t, calls, ids)
+}
+
+// A resume must answer exactly the interrupted calls; the history stays open.
+func TestPiResumeMatchesTheInterrupts(t *testing.T) {
+	srv := testllm.Start(t, "openai")
+	srv.Script(testllm.Turn{Calls: []testllm.Call{{ID: "r1", Name: "read"}, {ID: "a1", Name: "write"}}})
+	var readRuns atomic.Int64
+	sent := asking(nil, "go")
+	_, res := run(newEngine(t), Request{Model: modelFor(srv, "openai", "k"), History: sent, Tools: mixedTools(&readRuns), Pi: true})
+	require.Len(t, res.Interrupts, 1)
+	h := after(t, sent, res)
+	for _, resps := range [][]ToolResult{
+		{{CallID: "r1", Name: "read", Output: json.RawMessage(`"x"`)}},
+		{{CallID: "a1", Name: "read", Output: json.RawMessage(`"x"`)}},
+		{{CallID: "a1", Name: "write", Output: json.RawMessage(`"x"`)}, {CallID: "a1", Name: "write", Output: json.RawMessage(`"x"`)}},
+	} {
+		_, r := run(newEngine(t), Request{Model: modelFor(srv, "openai", "k"), History: resuming(h), Tools: mixedTools(&readRuns), Pi: true, Responses: resps})
+		require.NotNil(t, r.Err)
+		assert.Equal(t, CodeInternal, r.Err.Code)
+	}
+	assert.Len(t, srv.Requests(), 1, "no model request")
+	assert.Zero(t, readRuns.Load())
 }
 
 func TestPiCancelStopsTheModelAndTools(t *testing.T) {

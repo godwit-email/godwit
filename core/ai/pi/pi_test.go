@@ -151,9 +151,9 @@ func TestAgentRunsAToolInGo(t *testing.T) {
 		Args: func(args json.RawMessage) (json.RawMessage, error) {
 			return json.RawMessage(strings.Replace(string(args), "invoice", "invoice OR bill", 1)), nil
 		},
-		Tool: func(ctx context.Context, id, name string, args json.RawMessage) (json.RawMessage, string) {
+		Tool: func(ctx context.Context, id, name string, args json.RawMessage) (json.RawMessage, string, bool) {
 			got = append(got, "tool:"+id+":"+name+":"+string(args))
-			return json.RawMessage(`{"hits":[42]}`), ""
+			return json.RawMessage(`{"hits":[42]}`), "", false
 		},
 	})
 	if err != nil {
@@ -195,9 +195,9 @@ func TestAgentAnswersAtItsToolCallLimit(t *testing.T) {
 	res, err := Agent(t.Context(), http.DefaultClient, AgentRequest{Request: Request{API: "openai-completions", BaseURL: srv.URL, Model: "m", APIKey: "k", System: "Sys."}, LimitNote: "Stop now.",
 		Messages: []json.RawMessage{question("q")}, Tools: []Tool{searchTool}, MaxTurns: 1}, Hooks{
 		Emit: func(string, string) {},
-		Tool: func(context.Context, string, string, json.RawMessage) (json.RawMessage, string) {
+		Tool: func(context.Context, string, string, json.RawMessage) (json.RawMessage, string, bool) {
 			runs++
-			return json.RawMessage(`[]`), ""
+			return json.RawMessage(`[]`), "", false
 		},
 	})
 	if err != nil {
@@ -228,9 +228,9 @@ func TestAgentRefusesInvalidArguments(t *testing.T) {
 	_, err := Agent(t.Context(), http.DefaultClient, AgentRequest{Request: Request{API: "openai-completions", BaseURL: srv.URL, Model: "m", APIKey: "k"},
 		Messages: []json.RawMessage{question("q")}, Tools: []Tool{searchTool}, MaxTurns: 5}, Hooks{
 		Emit: func(string, string) {},
-		Tool: func(context.Context, string, string, json.RawMessage) (json.RawMessage, string) {
+		Tool: func(context.Context, string, string, json.RawMessage) (json.RawMessage, string, bool) {
 			t.Error("ran")
-			return nil, ""
+			return nil, "", false
 		},
 		Refused: func(id, name string, args json.RawMessage, msg string) {
 			refused = append(refused, id+":"+name+":"+string(args)+":"+msg)
@@ -252,11 +252,11 @@ func TestAgentCancelStopsItsTools(t *testing.T) {
 	_, err := Agent(ctx, http.DefaultClient, AgentRequest{Request: Request{API: "openai-completions", BaseURL: srv.URL, Model: "m", APIKey: "k"},
 		Messages: []json.RawMessage{question("q")}, Tools: []Tool{searchTool}, MaxTurns: 5}, Hooks{
 		Emit: func(string, string) {},
-		Tool: func(ctx context.Context, _, _ string, _ json.RawMessage) (json.RawMessage, string) {
+		Tool: func(ctx context.Context, _, _ string, _ json.RawMessage) (json.RawMessage, string, bool) {
 			cancel()
 			<-ctx.Done()
 			stopped = true
-			return nil, "cancelled"
+			return nil, "cancelled", false
 		},
 	})
 	if err != context.Canceled || !stopped {

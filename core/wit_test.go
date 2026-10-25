@@ -1023,8 +1023,8 @@ func TestAskOnPi(t *testing.T) {
 	}
 	names := toolNames(t, reqs[1])
 	assert.Contains(t, names, "search_mail")
-	assert.NotContains(t, names, "create_draft", "tools that need an approval wait for #233")
-	assert.NotContains(t, names, "ask_user_question")
+	assert.Contains(t, names, "create_draft", "tools that need an approval are offered too")
+	assert.Contains(t, names, "ask_user_question")
 	rs := witResults(evs, "search_mail")
 	require.Len(t, rs, 1)
 	assert.Empty(t, rs[0].Result.Error)
