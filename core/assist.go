@@ -947,7 +947,8 @@ func (s *Service) assistSkill(ctx context.Context, end func(), draftID int64, na
 		ref, run = translatorPrefix+plugin, s.pluginDraftRun(plugin, src, target, d.Subject, withSubject)
 	} else {
 		if ref == "" {
-			if ref = st.DefaultModel; ref == "" {
+			ref = cmp.Or(conv.Model, st.DefaultModel)
+			if ref == "" {
 				return nil, ErrAINotConfigured
 			}
 		}
@@ -963,7 +964,7 @@ func (s *Service) assistSkill(ctx context.Context, end func(), draftID int64, na
 		if name == "translate-draft" { // never "the original's language": the skill does not see it
 			system += "\n\nTarget language: " + target + "."
 		}
-		run, req = e.Run, ai.Request{Model: model, System: system, MaxTurns: 1}
+		run, req = e.Run, ai.Request{Model: model, System: system, MaxTurns: 1, Reasoning: true, Effort: conv.Effort}
 	}
 	if err := s.gateway().Record(ctx, gateway.Entry{Source: gateway.SourceSkill, Tool: "skill:" + name, TargetKind: "draft", TargetID: d.ID, Decision: "run"}); err != nil {
 		return nil, err

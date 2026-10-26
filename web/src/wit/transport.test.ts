@@ -412,6 +412,25 @@ describe("historyToMessages", () => {
     const [q] = historyToMessages(hist([turn({ id: "1", quoted: [hit] })]));
     expect(q.metadata).toMatchObject({ quoted: [7], hits: [hit] });
   });
+
+  it("a command turn ignores raw text steps in answer, keeping reasoning and approvals", () => {
+    const a = approval({ id: 9, callId: "skill" });
+    const [, ans] = historyToMessages(
+      hist([
+        turn({
+          id: "1",
+          command: { skill: "longer", lang: "" },
+          approvals: [a],
+          steps: [
+            { kind: "reasoning", text: "thought", call: 0 },
+            { kind: "text", text: "<subject>Title</subject><p>Draft</p>", call: 0 },
+          ],
+        }),
+      ]),
+    );
+    expect(ans.parts.map((p) => p.type)).toEqual(["reasoning", "dynamic-tool", "data-approvals"]);
+    expect(ans.parts.find((p) => p.type === "text")).toBeUndefined();
+  });
 });
 
 describe("WitTransport", () => {

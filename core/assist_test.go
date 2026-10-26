@@ -776,6 +776,36 @@ func TestAssistSkillUsage(t *testing.T) {
 	assert.Equal(t, "12", queryStr(t, e.s, "SELECT output_tokens FROM runs ORDER BY id DESC LIMIT 1"))
 }
 
+func TestAssistSkillStreamsReasoningAndNoDraftText(t *testing.T) {
+	e := newAssistEnv(t)
+	d := e.replyDraft(t, "<p>Hallo</p>")
+	convID, err := e.s.AssistConversation(t.Context(), d.ID, true)
+	require.NoError(t, err)
+	require.NoError(t, e.s.SetConversationModel(t.Context(), convID, "", "high"))
+
+	e.srv.Script(testllm.Turn{
+		Think: []string{"Thinking about making it longer."},
+		Text:  []string{"<p>Sehr geehrte Damen und Herren, dies ist ausführlicher.</p>"},
+	})
+	ch, err := e.s.AssistSkill(t.Context(), d.ID, "longer", SkillOptions{})
+	require.NoError(t, err)
+	evs := drainWit(t, ch)
+	require.NotEmpty(t, evs)
+
+	var kinds []string
+	for _, ev := range evs {
+		kinds = append(kinds, ev.Kind)
+	}
+	assert.Contains(t, kinds, "reasoning", "reasoning events must be streamed to the client")
+	assert.NotContains(t, kinds, "text", "raw draft html text events must NOT be streamed to chat")
+	assert.Equal(t, "interrupted", evs[len(evs)-1].Kind)
+	require.Len(t, evs[len(evs)-1].Approvals, 1)
+
+	reqs := e.srv.Requests()
+	require.Len(t, reqs, 1)
+	assert.Contains(t, string(reqs[0].Body), `"reasoning_effort":"high"`)
+}
+
 func TestSplitSubject(t *testing.T) {
 	for _, c := range []struct{ in, subject, body string }{
 		{"<subject>Hi</subject>\n<body><p>A</p></body>", "Hi", "<p>A</p>"},

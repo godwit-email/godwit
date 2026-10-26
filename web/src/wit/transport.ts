@@ -200,11 +200,14 @@ export function historyToMessages(
     const as: Approval[] = [];
     for (const s of t.steps) {
       if (s.kind === "reasoning") parts.push({ type: "reasoning", text: s.text, state: "done" });
-      else if (s.kind === "text") parts.push({ type: "text", text: s.text, state: "done" });
-      else {
+      else if (s.kind === "text") {
+        if (!t.command) parts.push({ type: "text", text: s.text, state: "done" });
+      } else {
         const c = t.calls[s.call];
-        if (c.approval) as.push(c.approval);
-        parts.push(toolPart(c.call, c.result ?? undefined, c.approval ?? undefined));
+        if (c) {
+          if (c.approval) as.push(c.approval);
+          parts.push(toolPart(c.call, c.result ?? undefined, c.approval ?? undefined));
+        }
       }
     }
     for (const a of t.approvals) {

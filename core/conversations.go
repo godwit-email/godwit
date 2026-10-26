@@ -1277,6 +1277,9 @@ func (s *Service) drive(job *runJob, end func(), run runFunc, req ai.Request, ou
 	events, wait := run(job.ctx, req)
 	for ev := range s.expandEvents(job.ctx, events) {
 		if !terminal(WitEvent{Event: ev}) {
+			if job.host != nil && ev.Kind == "text" {
+				continue
+			}
 			wev := WitEvent{Event: ev}
 			if ev.Kind == "tool_result" {
 				if c, ok := job.cites.LoadAndDelete(ev.Result.CallID); ok {
