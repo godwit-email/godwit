@@ -29,7 +29,7 @@ func (m *modelsView) view(c *ui.Context) {
 		}})
 	}
 	if st := m.a.settings; len(m.services) > 0 || len(m.plugins) > 0 || isPluginRef(st.DefaultModel) || isPluginRef(st.SmallModel) || isPluginRef(st.JudgeService) {
-		u := deriveUsage(m.a.settings, m.services, m.plugins)
+		u := deriveUsage(m.a.settings, m.services, m.plugins, m.pluginStatus)
 		m.usage(c, u)
 		m.list(c, u)
 	}
@@ -84,7 +84,44 @@ func (m *modelsView) list(c *ui.Context, u usage) {
 					})
 				})
 				ui.Icon(c, icons.Get("chevron-right")).Size(theme.Icon, theme.Icon).TextColor(t.Muted).Shrink(0)
-			}).Padding(th.Space(2), th.Space(4))
+			}).Padding(th.Space(2), th.Space(4)).ContextMenu(func(menu *ui.Menu) {
+				if menu.Item(i18n.T("settings.models.test")).Chosen() {
+					m.testRow(s)
+				}
+			})
+		})
+	}
+	if i := slices.IndexFunc(m.plugins, func(p core.PluginModels) bool { return p.Plugin == core.AppleIntelligencePlugin }); i >= 0 {
+		p := m.plugins[i]
+		rows = append(rows, func() {
+			// The system runs it, with nothing to edit: no chevron, just its menu's test.
+			ui.Row(c.Key("apple-intelligence")).Gap(th.Space(3)).AlignItems(ui.Center).Padding(th.Space(2), th.Space(4)).Children(func() {
+				ui.Box(c).Size(th.Space(8), th.Space(8)).Shrink(0).AlignSelf(ui.Start).Margin(theme.ServiceMarkOffset, 0, 0, 0).Radius(t.Radius.Lg).Background(t.Background).Center().Label("Apple Intelligence").Children(func() {
+					ui.Icon(c, icons.Get("sparkles")).Size(th.Space(5), th.Space(5)).TextColor(t.Foreground)
+				})
+				ui.Column(c).Grow(1).Shrink(1).Gap(th.Space(1)).Children(func() {
+					ui.Row(c).Gap(th.Space(2)).AlignItems(ui.Center).Children(func() {
+						ui.Text(c, "Apple Intelligence").FontWeight(500).LineHeight(theme.LineFor("Apple Intelligence")).SingleLine().Shrink(1)
+						statusLine(c, pluginLook(p, m.pluginStatus))
+					})
+					kit.Text(c, i18n.T("settings.models.apple_intelligence.sub"), t.Text.Sm).Font(theme.Mono).LineHeight(theme.LineBase).TextColor(t.Muted).SingleLine()
+					ui.Row(c).Wrap().Gap(th.Space(1.5)).Children(func() {
+						st := m.a.settings
+						var genOn, judgeOn bool
+						for _, mod := range p.Models {
+							ref := pluginRef(p.Plugin, mod.ID)
+							judgeOn = judgeOn || mod.Judges() && st.JudgeService == ref
+							genOn = genOn || !mod.Judges() && (st.DefaultModel == ref || st.SmallModel == ref)
+						}
+						capChip(c, i18n.Plural("settings.models.gen", 1), genOn)
+						capChip(c, i18n.Tf("settings.models.judge_chip", "Apple Intelligence"), judgeOn)
+					})
+				})
+			}).ContextMenu(func(menu *ui.Menu) {
+				if menu.Item(i18n.T("settings.models.test")).Chosen() {
+					m.testPluginRow(p)
+				}
+			})
 		})
 	}
 	settingsSection(c, i18n.T("settings.models.services"), i18n.T("settings.models.foot"), rows...)
@@ -153,7 +190,7 @@ func (m *modelsView) usage(c *ui.Context, u usage) {
 				})
 			},
 			func() {
-				usageRow(c, small, i18n.T("settings.models.use.small.desc"), nil, func() {
+				usageRow(c, small, i18n.T("settings.models.use.small.desc"), &u.small, func() {
 					sel(small, &m.smallModel, u.smallOpts, func(st *core.Settings, v string) { st.SmallModel = v })
 				})
 			},

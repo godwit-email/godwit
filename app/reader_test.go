@@ -563,6 +563,74 @@ func TestReaderThreadCollapse(t *testing.T) {
 	})
 }
 
+func TestReaderThreadHistoryCollapse(t *testing.T) {
+	h, accs := mailHarness(t, nil, "alice@example.com")
+	acc, base := accs[0], h.clock.Now()
+	words := []string{"one", "two", "three", "four", "five", "six", "seven"}
+	for i, w := range words {
+		opts := []coretest.MsgOption{coretest.MessageID(w + "@x"), at(base, len(words)-i)}
+		if i > 0 {
+			opts = append(opts, coretest.InReplyTo(words[i-1]+"@x"))
+		}
+		h.put(acc, "INBOX", coretest.Msg("bob@example.com", acc.Email, "Plan", "msg "+w, opts...))
+	}
+	h.syncNow(acc)
+	page, _ := h.env.Svc.ListThreads(context.Background(), core.View{Unified: "inbox"}, "", 10)
+	thread := page.Items[0].ID
+	msgs := h.messages(thread)
+	if len(msgs) != 7 {
+		t.Fatalf("%d messages in the thread, want 7", len(msgs))
+	}
+	// all read but the fourth: it and the newest open, splitting the folded ones into runs of 3 and 2
+	var seen []int64
+	for i, m := range msgs {
+		if i != 3 {
+			seen = append(seen, m.ID)
+		}
+	}
+	if err := h.env.Svc.SetFlags(context.Background(), seen, []string{`\Seen`}, nil); err != nil {
+		t.Fatal(err)
+	}
+	h.openThread(thread)
+	h.seeBody(msgs[6].ID)
+	r := h.app.mail.reader
+	if !r.open[msgs[3].ID] || !r.open[msgs[6].ID] || r.open[msgs[0].ID] {
+		t.Fatalf("open %v; want the fourth and the newest", r.open)
+	}
+	h.until("each run is a card", func() bool {
+		return h.tt.HasText("展开历史邮件（3 封）") && h.tt.HasText("展开历史邮件（2 封）") && !h.tt.HasText("msg one") && !h.tt.HasText("msg five")
+	})
+
+	h.click("展开历史邮件（3 封）")
+	h.until("only the first run expanded", func() bool {
+		return h.tt.HasText("msg one") && h.tt.HasText("msg three") && h.countTexts("折叠历史邮件") == 1 &&
+			h.tt.HasText("展开历史邮件（2 封）") && !h.tt.HasText("msg five")
+	})
+	h.click("折叠历史邮件")
+	h.until("collapsed again", func() bool {
+		return h.tt.HasText("展开历史邮件（3 封）") && !h.tt.HasText("msg one")
+	})
+
+	// the threshold counts the thread's messages: 7 collapses at 7, not at 8
+	st := h.app.settings
+	st.ThreadCollapseThreshold = 8
+	h.app.changeSettings(st)
+	h.until("below the threshold", func() bool {
+		return !h.tt.HasText("展开历史邮件（3 封）") && h.tt.HasText("msg one") && h.tt.HasText("msg five")
+	})
+	st.ThreadCollapseThreshold = 7
+	h.app.changeSettings(st)
+	h.until("at the threshold", func() bool {
+		return h.tt.HasText("展开历史邮件（3 封）") && !h.tt.HasText("msg one")
+	})
+
+	st.ThreadCollapse = false
+	h.app.changeSettings(st)
+	h.until("collapsing off", func() bool {
+		return !h.tt.HasText("展开历史邮件（3 封）") && h.tt.HasText("msg one") && h.tt.HasText("msg five")
+	})
+}
+
 func TestReaderMarksRead(t *testing.T) {
 	h, accs := mailHarness(t, nil, "alice@example.com")
 	acc, base := accs[0], h.clock.Now()

@@ -34,8 +34,11 @@ const (
 		`Give update_draft a concise subject that fits the draft when it has none or only a placeholder, and keep the subject in step with ` +
 		`the draft when the user asks to change its tone, length, dates, topic or intent. A reply's or forward's subject stays as it is ` +
 		`unless the user explicitly asks to change the subject. When the user asks for a change, actually make it. ` +
+		`When the request needs no change to the draft (it already does what is asked, or lacks the text the user refers to), do not call update_draft: ` +
+		`say in one plain sentence why nothing changed. ` +
 		`Call update_draft at most once per turn. Once update_draft has been executed, do not call update_draft again: your task is complete. ` +
-		`After update_draft runs, simply give a brief confirmation or explanation in plain text without making any further tool calls. ` +
+		`If update_draft reports no_change, say in one plain sentence why the draft stays as it is, without further tool calls. ` +
+		`When the user declines your last update_draft and then says what to change, revise that proposal accordingly. ` +
 		`The user reviews every change except the first text of an empty draft. The quoted email and the signature stay as they are: ` +
 		`never write them. You cannot send mail. ` +
 		`<sender> is the user writing from the draft's account: sign with its name, take facts such as a phone number from its instructions and follow their guidelines; ` +
@@ -49,6 +52,7 @@ const (
 	kindPartial   = "partial"   // shown as a word diff
 	kindRewrite   = "rewrite"   // more than half the words changed: shown side by side
 	kindTranslate = "translate" // translated: shown as translation
+	kindNoChange  = "no_change" // the same draft: nothing to review, settled at once
 
 	selectionContext = 500 // runes of read-only context on each side of a selection
 	recentMail       = 5   // latest mail with the recipients in an Assist run
@@ -200,6 +204,21 @@ func (s *Service) assistConversation(ctx context.Context, draftID int64) (Conver
 		return s.conversation(ctx, id)
 	}
 	return s.newAssistConversation(ctx, draftID, "")
+}
+
+// SetDraftModel sets the model of draftID's assist conversation, keeping
+// its effort, as picked before its next question asks on it.
+func (s *Service) SetDraftModel(ctx context.Context, draftID int64, model string) error {
+	ctx, end, err := s.begin(ctx, 0)
+	if err != nil {
+		return err
+	}
+	defer end()
+	conv, err := s.assistConversation(ctx, draftID)
+	if err != nil {
+		return err
+	}
+	return s.SetConversationModel(ctx, conv.ID, model, conv.Effort)
 }
 
 func (s *Service) newAssistConversation(ctx context.Context, draftID int64, title string) (Conversation, error) {
@@ -381,12 +400,20 @@ func (s *Service) proposeUpdateWithSubject(ctx context.Context, draftID int64, s
 	if err != nil {
 		return prepared{}, err
 	}
+	newSubject := subject != nil && strings.TrimSpace(*subject) != "" && *subject != d.Subject // a blank subject would erase it unseen
+	if !mail.Blank(old) && !newSubject && sameHTML(old, h) {
+		b, err := json.Marshal(updateArgs{DraftID: d.ID, Revision: d.Revision, Old: old, HTML: h})
+		if err != nil {
+			return prepared{}, err
+		}
+		return prepared{Args: b, Summary: kindNoChange, TargetKind: "draft", TargetID: d.ID, TargetVersion: d.Revision}, nil
+	}
 	kind, err := changeKind(ctx, old, h)
 	if err != nil {
 		return prepared{}, err
 	}
 	args := updateArgs{DraftID: d.ID, Revision: d.Revision, Old: old, HTML: h}
-	if subject != nil && strings.TrimSpace(*subject) != "" && *subject != d.Subject { // a blank subject would erase it unseen
+	if newSubject {
 		args.Subject = subject
 		args.OldSubject = d.Subject
 		if kind == kindInitial && !mail.Blank(old) {
@@ -428,6 +455,9 @@ func (s *Service) prepareUpdate(ctx context.Context, conv Conversation, args jso
 // and signature, and updates subject if provided. If the draft changed since, execute's revision check fails
 // the write, so the parts read here are those of the bound revision.
 func (s *Service) applyUpdate(ctx context.Context, a Approval) ([]sqlite.Statement, any, any, error) {
+	if a.Summary == kindNoChange {
+		return nil, map[string]any{"updated": false, "summary": kindNoChange}, nil, nil
+	}
 	var in updateArgs
 	if err := json.Unmarshal(a.Args, &in); err != nil {
 		return nil, nil, nil, err
@@ -449,8 +479,8 @@ func (s *Service) applyUpdate(ctx context.Context, a Approval) ([]sqlite.Stateme
 }
 
 // applyInitial approves, through the normal path, the pending proposals that
-// write an empty draft (the first generation is written directly)
-// and those a session grant covers (audited auto:session). It returns the
+// write an empty draft (the first generation is written directly), those that
+// change nothing (audited no_change), and those a session grant covers (audited auto:session). It returns the
 // approvals as they are now, and whether any was decided; the caller then
 // resumes the run (resumeRun).
 func (s *Service) applyInitial(ctx context.Context, as []Approval) ([]Approval, bool) {
@@ -462,6 +492,8 @@ func (s *Service) applyInitial(ctx context.Context, as []Approval) ([]Approval, 
 		decision := "executed"
 		switch {
 		case isDraftEdit(a.Tool) && a.Summary == kindInitial:
+		case isDraftEdit(a.Tool) && a.Summary == kindNoChange:
+			decision = kindNoChange
 		case s.granted(ctx, a.ID):
 			decision = decisionSession
 		default:
@@ -632,6 +664,9 @@ func (s *Service) rewriteSelection(ctx context.Context, end func(), draftID int6
 	if err != nil {
 		return nil, err
 	}
+	if parent, perr := s.assistConversation(ctx, draftID); perr == nil && parent.Model != "" {
+		_ = s.SetConversationModel(ctx, conv.ID, parent.Model, parent.Effort)
+	}
 	tool := toolDesc{Spec: selectionSpec, Write: true, Exec: &executor{Apply: s.applyUpdate,
 		Prepare: func(ctx context.Context, conv Conversation, args json.RawMessage) (prepared, error) {
 			h, err := htmlArg(args)
@@ -742,10 +777,8 @@ func (s *Service) assistSkill(ctx context.Context, end func(), draftID int64, na
 		}
 		ref, run = translatorPrefix+plugin, s.pluginDraftRun(plugin, src, target, d.Subject, withSubject)
 	} else {
-		if ref == "" {
-			if ref = st.DefaultModel; ref == "" {
-				return nil, ErrAINotConfigured
-			}
+		if ref = cmp.Or(ref, conv.Model, st.DefaultModel); ref == "" {
+			return nil, ErrAINotConfigured
 		}
 		model, err := s.resolveModel(ctx, ref)
 		if err != nil {
@@ -759,7 +792,7 @@ func (s *Service) assistSkill(ctx context.Context, end func(), draftID int64, na
 		if name == "translate-draft" { // never "the original's language": the skill does not see it
 			system += "\n\nTarget language: " + target + "."
 		}
-		run, req = e.Run, ai.Request{Model: model, System: system, MaxTurns: 1}
+		run, req = e.Run, ai.Request{Model: model, System: system, MaxTurns: 1, Reasoning: true, Effort: conv.Effort}
 	}
 	if err := s.gateway().Record(ctx, gateway.Entry{Source: gateway.SourceSkill, Tool: "skill:" + name, TargetKind: "draft", TargetID: d.ID, Decision: "run"}); err != nil {
 		return nil, err
@@ -931,6 +964,11 @@ func changeKind(ctx context.Context, old, new string) (string, error) {
 	}
 	return kindPartial, nil
 }
+
+// sameHTML reports whether two editable parts are the same sanitized HTML: a
+// change of formatting alone (bold, a link) is a change, and so is whitespace,
+// which <pre> and white-space styles show.
+func sameHTML(a, b string) bool { return cleanHTML(a) == cleanHTML(b) }
 
 func words(h string) []string {
 	var out []string

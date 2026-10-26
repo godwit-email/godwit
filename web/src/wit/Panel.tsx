@@ -947,6 +947,25 @@ function Answer({
         ["done", "failed", "rejected", "stale"].includes(a.state) &&
         !a.draftEdit,
     );
+  // The answer's last draft edit as it stands now, said in one line once it is settled: from the
+  // approval's saved state and summary, so a reload says the same.
+  const edit = m.parts
+    .flatMap((p) => (p.type === "data-approvals" ? p.data : []))
+    .map((a) => approvals.get(String(a.id)) ?? a)
+    .findLast((a) => a.draftEdit);
+  const status = !edit
+    ? undefined
+    : edit.summary === "no_change"
+      ? t("wit.compose.status_no_change")
+      : edit.state === "done"
+        ? t(
+            edit.summary === "initial"
+              ? "wit.compose.status_initial"
+              : "wit.compose.status_applied",
+          )
+        : edit.state === "rejected" || edit.state === "stale"
+          ? t("wit.compose.status_rejected")
+          : undefined;
   const calls = m.parts.filter((p): p is DynamicToolUIPart => p.type === "dynamic-tool");
   const requested = (p: DynamicToolUIPart) =>
     p.state === "approval-requested" ? approvals.get(p.approval.id) : undefined;
@@ -1074,9 +1093,22 @@ function Answer({
             <div className="overflow-hidden rounded-xl border-[0.5px] border-primary">
               <div className="flex items-center gap-2 bg-muted px-3 py-2 leading-5">
                 <span className="font-semibold">{t("wit.compose.review")}</span>
-                <span className="font-mono text-foreground/80 text-sm">{a.tool}</span>
+                <span className="flex-1 font-mono text-foreground/80 text-sm">{a.tool}</span>
+                {review?.onAdjust && (
+                  <Button
+                    size="icon-xs"
+                    variant="ghost"
+                    className="text-muted-foreground"
+                    title={t("wit.compose.adjust")}
+                    aria-label={t("wit.compose.adjust")}
+                    onClick={review.onAdjust}
+                  >
+                    <RiEditLine />
+                  </Button>
+                )}
               </div>
               <div className="px-3 py-2 text-md">{review?.summary}</div>
+              {review?.adjusting}
               <div className="flex gap-1.5 border-muted border-t-[0.5px] px-3 py-2">
                 {review?.actions}
               </div>
@@ -1146,6 +1178,15 @@ function Answer({
       {loose.map((a) => (
         <Settled key={a.id} a={a} onDraft={onDraft} t={t} />
       ))}
+      {status && (
+        <div
+          role="status"
+          className="flex items-center gap-2 rounded-lg bg-sidebar px-3 py-2 text-base"
+        >
+          <RiSparkling2Line className="size-4 shrink-0" />
+          {status}
+        </div>
+      )}
       {live && !moving && working}
       {((text && !live) || (cited.length > 0 && onCite)) && (
         <div className="-mt-1 -ml-1.5 flex items-center">
@@ -1231,7 +1272,14 @@ function Answer({
 }
 
 /** The edit the page reviews: its card in the panel holds its summary, then its decisions. */
-export type PanelReview = { approval: number; summary: ReactNode; actions: ReactNode };
+export type PanelReview = {
+  approval: number;
+  summary: ReactNode;
+  actions: ReactNode;
+  /** Opens or closes the card's adjustment input (调整), shown as adjusting. */
+  onAdjust?(): void;
+  adjusting?: ReactNode;
+};
 
 /**
  * Wit's conversation and input, in either host. As the compose window's panel (layout "panel"):
@@ -1386,6 +1434,13 @@ export function Panel({
   const [compacting, setCompacting] = useState(false);
   // a compaction done here: said in the conversation until the next question
   const [compacted, setCompacted] = useState(false);
+  // inline confirmation when the active model was changed
+  const [modelNotice, setModelNotice] = useState<string | null>(null);
+  useEffect(() => {
+    if (!modelNotice) return;
+    const timer = setTimeout(() => setModelNotice(null), 5000);
+    return () => clearTimeout(timer);
+  }, [modelNotice]);
   // The picker: from the + menu (at -1), or from an @ at draft[at] with what follows it as query.
   const [picking, setPicking] = useState<{ at: number; query: string }>();
   const textarea = useRef<HTMLTextAreaElement>(null);
@@ -1471,16 +1526,17 @@ export function Panel({
   const ask = (text: string, metadata?: WitMeta) => {
     if (locked || running || !text) return;
     setCompacted(false);
+    setModelNotice(null);
     void chat.sendMessage({ text, metadata: { ...metadata, time: Date.now() } });
   };
   const asked = useRef<object | undefined>(undefined);
-  // biome-ignore lint/correctness/useExhaustiveDependencies: only a new handed question asks
+  // biome-ignore lint/correctness/useExhaustiveDependencies: only a new handed question asks, once the panel takes one
   useEffect(() => {
-    if (!handed || asked.current === handed) return;
+    if (!handed || asked.current === handed || locked || running) return;
     asked.current = handed;
     onAsked?.();
     ask(handed.text);
-  }, [handed]);
+  }, [handed, locked, running]);
   // A question not asked after all goes back to the input, unless something was typed since: its
   // text, its quotes, and an edit still one (sent again, it still replaces the old question).
   const putBack = (q: WitUIMessage) => {
@@ -1644,6 +1700,16 @@ export function Panel({
     : model;
   // The settings' default among them (none: it is not a model listed).
   const listedDefault = choices?.find((c) => c.default);
+  // picks ref ("": the default) and says so in the conversation
+  const pickModel = (ref: string) => {
+    models?.pick(ref);
+    const label = ref
+      ? (choices?.find((c) => c.ref === ref)?.name ?? ref)
+      : model
+        ? t("wit.model.default", model)
+        : t("wit.model.pick");
+    setModelNotice(t("wit.model.changed", label));
+  };
   // The menu groups the choices by their service, in the order they come.
   const services = new Map<string, ModelChoice[]>();
   for (const c of choices ?? []) services.set(c.service, [...(services.get(c.service) ?? []), c]);
@@ -1917,7 +1983,7 @@ export function Panel({
                       group: session,
                       label: t("wit.model.default", model),
                       checked: !models.ref,
-                      run: now(() => models.pick("")),
+                      run: now(() => pickModel("")),
                     },
                   ]),
               ...(choices ?? []).map((c) => ({
@@ -1927,7 +1993,7 @@ export function Panel({
                 hint: c.service,
                 checked: (models.ref || listedDefault?.ref) === c.ref,
                 // picking the default follows it again (no model of its own)
-                run: now(() => models.pick(c.ref === listedDefault?.ref ? "" : c.ref)),
+                run: now(() => pickModel(c.ref === listedDefault?.ref ? "" : c.ref)),
               })),
               ...(onModels
                 ? [
@@ -2066,6 +2132,15 @@ export function Panel({
                   {t(compacting ? "wit.usage.compacting" : "wit.usage.compacted")}
                 </TraceTitle>
               </TraceLine>
+            )}
+            {modelNotice && (
+              <div
+                role="status"
+                className="flex items-center gap-2 rounded-lg bg-sidebar px-3 py-2 text-base text-foreground"
+              >
+                <RiSparkling2Line className="size-4 shrink-0 text-foreground" />
+                <span>{modelNotice}</span>
+              </div>
             )}
           </MessageScrollerContent>
         </MessageScrollerViewport>
@@ -2268,7 +2343,7 @@ export function Panel({
                 // the default only by its name when it is none of the models listed
                 <DropdownMenuRadioGroup
                   value={models.ref}
-                  onValueChange={(v: string) => models.pick(v)}
+                  onValueChange={(v: string) => pickModel(v)}
                 >
                   <DropdownMenuRadioItem closeOnClick value="">
                     {t("wit.model.default", model)}
@@ -2283,7 +2358,7 @@ export function Panel({
                     // the default model is checked while the conversation follows the default
                     value={models.ref || (listedDefault?.ref ?? "")}
                     // picking the default follows it again (no model of its own)
-                    onValueChange={(v: string) => models.pick(v === listedDefault?.ref ? "" : v)}
+                    onValueChange={(v: string) => pickModel(v === listedDefault?.ref ? "" : v)}
                   >
                     {list.map((c) => (
                       <DropdownMenuRadioItem closeOnClick key={c.ref} value={c.ref}>

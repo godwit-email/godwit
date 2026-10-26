@@ -898,6 +898,15 @@
     }
   },
   "reader_today": "Today",
+  "reader_thread_collapse": "Collapse email history",
+  "reader_thread_expand": "{arg1, plural, one {Expand email history ({arg1, number, ::group-off} email)} other {Expand email history ({arg1, number, ::group-off} emails)}}",
+  "@reader_thread_expand": {
+    "placeholders": {
+      "arg1": {
+        "type": "int"
+      }
+    }
+  },
   "reader_truncated": "This message is too long; only the beginning is shown",
   "reader_trust_sender": "Always trust this sender",
   "reader_unsubscribe": "Unsubscribe",
@@ -1923,6 +1932,10 @@
   "settings_theme_system": "System",
   "settings_thread_view": "Conversation view",
   "settings_thread_view_help": "Group mail of the same conversation together",
+  "settings_thread_collapse": "Collapse thread history",
+  "settings_thread_collapse_help": "Group older messages in long conversations into an expandable card",
+  "settings_thread_collapse_threshold": "Collapse history from",
+  "settings_thread_collapse_threshold_help": "Minimum number of messages in a conversation (2–100, default: 5)",
   "settings_translator": "Translate with",
   "settings_translator_gone": "{arg1} (uninstalled)",
   "@settings_translator_gone": {
@@ -2025,6 +2038,7 @@
   "wit_compose_accept": "Accept",
   "wit_compose_accept_all": "Accept all",
   "wit_compose_adjust": "Adjust",
+  "wit_compose_adjust_placeholder": "What should change in this proposal?",
   "wit_compose_applied": "Applied to the body",
   "wit_compose_back": "Back to new version",
   "wit_compose_cmdk": "⌘K · Change only the selection",
@@ -2080,6 +2094,10 @@
     }
   },
   "wit_compose_rewrite_plain": "Rewritten",
+  "wit_compose_status_applied": "Proposal accepted.",
+  "wit_compose_status_initial": "Draft written.",
+  "wit_compose_status_no_change": "No changes to the draft.",
+  "wit_compose_status_rejected": "Proposal discarded.",
   "wit_compose_translated": "Translated",
   "wit_compose_source": "Original email",
   "wit_compose_translate": "Translate",
@@ -2493,5 +2511,7 @@
         "type": "int"
       }
     }
-  }
+  },
+  "wit_model_changed": "Model changed: {arg1}",
+  "settings_models_apple_intelligence_sub": "On-device intelligence"
 }

@@ -1,5 +1,5 @@
 import { RiSparkling2Line } from "@remixicon/react";
-import { type FocusEvent, type ReactNode, useRef, useState } from "react";
+import { type FocusEvent, type ReactNode, useLayoutEffect, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
 import type { ReviewBlock, ReviewOp, Review as ReviewT, ReviewToken } from "@/mygo";
 import type { T } from "@/shared/i18n";
@@ -152,6 +152,21 @@ export function Review({
   // Offsets are from the change's first line box, the origin of an inline's containing block.
   const [at, setAt] = useState({ left: 0, top: 0 });
   const closing = useRef<ReturnType<typeof setTimeout>>(undefined);
+  const body = useRef<HTMLElement>(null);
+  const pop = useRef<HTMLSpanElement>(null);
+  // The buttons stay inside the body: shifted back in when they would cross its left or right edge;
+  // wider than the body (a long link), they start at its left edge, so the correction settles.
+  // biome-ignore lint/correctness/useExhaustiveDependencies: measured again whenever they open or move
+  useLayoutEffect(() => {
+    const b = body.current?.getBoundingClientRect();
+    const p = pop.current?.getBoundingClientRect();
+    if (!b || !p) return;
+    const shift =
+      p.width > b.width
+        ? b.left - p.left
+        : Math.max(b.left - p.left, 0) + Math.min(b.right - p.right, 0);
+    if (Math.abs(shift) >= 0.5) setAt((a) => ({ ...a, left: a.left + shift }));
+  }, [active, at]);
   const show = (k: number, el: HTMLElement, y = Infinity) => {
     clearTimeout(closing.current);
     if (active === k) return; // back from the buttons: keep them where they are
@@ -206,7 +221,7 @@ export function Review({
               {ops.length > 0 ? ops : " "}
               {active === s.k && (
                 // pt-1, not mt-1: the gap stays inside the change, so moving the mouse onto the buttons keeps them open.
-                <span className="absolute z-10 pt-1" style={at}>
+                <span ref={pop} className="absolute z-10 pt-1" style={at}>
                   <span className="flex items-center gap-1 whitespace-nowrap rounded-lg border-[0.5px] bg-popover p-1 text-base shadow-md">
                     {link && (
                       <span className="px-1 text-muted-foreground text-sm">
@@ -258,6 +273,9 @@ export function Review({
             {t(compare ? "wit.compose.back" : "wit.compose.compare")}
           </Button>
         )}
+        <Button size="sm" className="text-base" disabled={busy} onClick={() => onDecide(true)}>
+          {t("wit.compose.accept_all")}
+        </Button>
         <Button
           size="sm"
           variant="outline"
@@ -267,21 +285,27 @@ export function Review({
         >
           {t("wit.compose.reject_all")}
         </Button>
-        <Button size="sm" className="text-base" disabled={busy} onClick={() => onDecide(true)}>
-          {t("wit.compose.accept_all")}
-        </Button>
       </div>
-      <section aria-label={t("wit.compose.review_body")} className={`${BODY} bg-sidebar`}>
+      <section
+        ref={body}
+        aria-label={t("wit.compose.review_body")}
+        className={`${BODY} bg-sidebar`}
+      >
         {r.subject && r.subject !== r.old_subject && !compare && (
           <div className="mb-3 flex flex-col gap-1 rounded-lg border bg-card/60 p-3 text-sm">
             <span className="font-semibold text-xs text-muted-foreground uppercase tracking-wider">
               {t("compose.subject")}
             </span>
             <div className="flex flex-wrap items-center gap-1.5 text-base">
-              {r.subject_ops?.map((op, i) => (
-                // biome-ignore lint/suspicious/noArrayIndexKey: ops are fixed for a review
-                <Op key={i} op={op} d={0} />
-              ))}
+              {/* a rewrite shows the new subject as it is: its word diff would be mostly noise */}
+              {r.inline ? (
+                r.subject_ops?.map((op, i) => (
+                  // biome-ignore lint/suspicious/noArrayIndexKey: ops are fixed for a review
+                  <Op key={i} op={op} d={0} />
+                ))
+              ) : (
+                <span>{r.subject}</span>
+              )}
             </div>
           </div>
         )}

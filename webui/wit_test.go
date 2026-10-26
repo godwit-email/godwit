@@ -370,14 +370,15 @@ func TestComposeWitJSONLists(t *testing.T) {
 
 func TestComposeFirstGenerationFollows(t *testing.T) {
 	f, d, llm := witFixture(t, "")
-	llm.Script(proposeTurn("", "<p>Thanks, Lena!</p>"), coretest.Turn{Text: []string{"写好了"}})
+	llm.Script(proposeTurn("", "<p>Thanks, Lena!</p>"))
 	_, err := f.page.Ask(f.ctx(1), "写一封感谢信", nil, "", "")
 	require.NoError(t, err)
 	f.waitKind(t, 1, "done")
 	ks := kinds(f.events(1))
 	in := slices.Index(ks, "interrupted")
 	require.GreaterOrEqual(t, in, 0, "%v", ks)
-	assert.Contains(t, ks[in:], "text", "the resume follows")
+	assert.Equal(t, "done", ks[len(ks)-1], "the run finishes directly as done")
+	assert.NotContains(t, ks[in:], "text", "no redundant model turn after draft edit")
 	ev := f.events(1)[in]
 	require.Len(t, ev.Approvals, 1)
 	assert.Equal(t, "done", ev.Approvals[0].State)

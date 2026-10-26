@@ -34,7 +34,7 @@ const htmlCSS = (t: Theme, scheme: string) => {
 export const isDark = (t: Theme, systemDark: boolean) =>
   t.mode === "dark" || (t.mode === "system" && systemDark);
 
-// Go marks a stylesheet that has styles for the dark scheme (core/mail).
+// Go marks a stylesheet that has styles for the dark scheme, or a mail on a dark canvas (core/mail).
 const hasDarkStyles = (b: ReaderBody) => b.html.startsWith('<style data-dark="">');
 
 /**

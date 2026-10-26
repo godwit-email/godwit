@@ -3,8 +3,10 @@ package app
 import (
 	"cmp"
 	"context"
+	"math"
 	"reflect"
 	"slices"
+	"strconv"
 	"strings"
 
 	"github.com/egoist/mygo/ui"
@@ -297,7 +299,23 @@ func (p *settingsPage) generalView(c *ui.Context) {
 		sw(&st.Summary, i18n.T("settings.summary"), i18n.T("settings.summary.help")),
 		sw(&st.QuickReplies, i18n.T("settings.quick_replies"), i18n.T("settings.quick_replies.help")))
 	settingsSection(c, i18n.T("settings.mail"), "",
-		sw(&st.ThreadView, i18n.T("settings.thread_view"), i18n.T("settings.thread_view.help")))
+		sw(&st.ThreadView, i18n.T("settings.thread_view"), i18n.T("settings.thread_view.help")),
+		sw(&st.ThreadCollapse, i18n.T("settings.thread_collapse"), i18n.T("settings.thread_collapse.help")),
+		func() {
+			if !st.ThreadCollapse {
+				return
+			}
+			t, th := theme.Of(c), c.Theme()
+			settingRow(c, i18n.T("settings.thread_collapse_threshold"), i18n.T("settings.thread_collapse_threshold.help"), func() {
+				n := float64(st.ThreadCollapseThreshold)
+				ui.Row(c).Width(theme.UsageSelectMin).Gap(th.Space(3)).AlignItems(ui.Center).Children(func() {
+					if ui.Slider(c, &n, core.MinThreadCollapse, core.MaxThreadCollapse).Step(1).Grow(1).Shrink(1).Label(i18n.T("settings.thread_collapse_threshold")).Changed() {
+						st.ThreadCollapseThreshold = int(math.Round(n))
+					}
+					kit.Text(c, strconv.Itoa(st.ThreadCollapseThreshold), t.Text.Sm).Width(th.Space(10)).TextAlign(ui.End).TextColor(t.Muted)
+				})
+			})
+		})
 }
 
 // themeTile is a small picture of the window in a theme: rail, sidebar and

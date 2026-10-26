@@ -468,17 +468,14 @@ func (s *Service) lockAccount(ctx context.Context, id int64) (unlock func(), err
 
 // SyncNow connects to the account's IMAP server, pushes queued local changes,
 // sends and files the outbox, and fetches new mail. Calls for the same account
-// run one at a time. Afterwards the background worker is woken; if it was parked
-// on reauth_required and this call logged in, it resumes.
+// run one at a time.
 func (s *Service) SyncNow(ctx context.Context, accountID int64) error {
 	ctx, end, err := s.begin(ctx, accountID)
 	if err != nil {
 		return err
 	}
 	defer end()
-	err = s.syncNow(ctx, accountID, true)
-	s.wakeWorker(accountID) // the worker re-reads the status itself, so no stale decision here
-	return err
+	return s.syncNow(ctx, accountID, true)
 }
 
 // syncNow is SyncNow for the worker (explicit false). A cancelled sync is a
