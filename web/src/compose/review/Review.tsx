@@ -207,7 +207,7 @@ export function Review({
               {active === s.k && (
                 // pt-1, not mt-1: the gap stays inside the change, so moving the mouse onto the buttons keeps them open.
                 <span className="absolute z-10 pt-1" style={at}>
-                  <span className="flex items-center gap-1 whitespace-nowrap rounded-lg border-[0.5px] bg-popover p-1 text-base shadow-md">
+                  <span className="flex items-center gap-1 whitespace-nowrap rounded-xl border border-black/10 bg-white/85 p-1 text-base shadow-2xl backdrop-blur-2xl ring-1 ring-black/5 dark:border-white/12 dark:bg-[#252528]/85 dark:ring-white/5">
                     {link && (
                       <span className="px-1 text-muted-foreground text-sm">
                         {t("wit.compose.link", link)}
@@ -237,7 +237,7 @@ export function Review({
   const pct = Math.round(r.ratio * 100);
   return (
     <div className="flex flex-col">
-      <div className="flex items-center gap-2 bg-sidebar px-4 py-2 text-base">
+      <div className="flex items-center gap-2 border-b border-black/10 bg-white/85 px-4 py-2 text-base backdrop-blur-xl dark:border-white/12 dark:bg-[#252528]/85">
         <RiSparkling2Line className="size-3.5 shrink-0" />
         <span className="flex-1">
           {r.kind === "translate"

@@ -91,7 +91,8 @@ export function MailCard({
     <div
       className={cn(
         "flex min-w-0 flex-col text-md",
-        card && "group max-w-md rounded-[10px] border-[0.5px] bg-background px-2.5 py-2",
+        card &&
+          "group max-w-md rounded-[10px] border-[0.5px] border-black/10 bg-white/85 px-2.5 py-2 shadow-xs backdrop-blur-xl ring-1 ring-black/5 dark:border-white/12 dark:bg-[#252528]/85 dark:ring-white/5 dark:shadow-[0_1px_4px_rgba(0,0,0,0.3),inset_0_1px_0_0_rgba(255,255,255,0.06)]",
         className,
       )}
     >

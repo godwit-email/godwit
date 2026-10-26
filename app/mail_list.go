@@ -511,18 +511,35 @@ func (p *mailPage) Content(c *ui.Context) {
 			}
 		})
 	}, func() {
-		kit.Panel(c, r).Grow(1).Children(func() {
-			if isDrafts {
-				p.draftPane(c)
-			} else {
-				p.reader.view(c)
-			}
-		})
+		hasDraft := isDrafts && slices.ContainsFunc(p.drafts, func(d core.Draft) bool { return d.ID == p.draftSel && d.ID != 0 })
+		if !isDrafts && p.reader.key[0] == 0 {
+			emptyPane(c, r)
+		} else if isDrafts && !hasDraft {
+			emptyPane(c, r)
+		} else {
+			kit.Panel(c, r).Grow(1).Children(func() {
+				if isDrafts {
+					p.draftPane(c)
+				} else {
+					p.reader.view(c)
+				}
+			})
+		}
 	})
 	a.listW = min(max(a.listW, theme.ListMinWidth), theme.ListMaxWidth)
 	if changed {
 		a.saveWidths()
 	}
+}
+
+// emptyPane renders the reading or draft pane when no item is chosen:
+// an outlined solid card with the centered Godwit bird watermark.
+func emptyPane(c *ui.Context, radius float32) {
+	t := theme.Of(c)
+	kit.Panel(c, radius).Grow(1).Center().Children(func() {
+		ui.Icon(c, icons.Bird).Size(theme.WatermarkLg, theme.WatermarkLg).
+			TextColor(t.Border)
+	})
 }
 
 // listHeader is the search box, or the first date group's heading (the
@@ -702,6 +719,11 @@ func (p *mailPage) listView(c *ui.Context) {
 	}
 	ls.list.Selected, ls.list.Selection = &ls.cur, &ls.sel
 	act, target := "", []mailItem(nil)
+	baseTh := c.Theme()
+	mailTh := *baseTh
+	mailTh.Accent = ui.Transparent
+	c.SetTheme(&mailTh)
+	defer c.SetTheme(baseTh)
 	l := kit.List(c, ls.list, len(es), func(i int) {
 		if es[i].head != "" { // a date heading: no row, never chosen
 			// left as the header's name: the list's own Space(2) and Space(2) more
@@ -714,7 +736,8 @@ func (p *mailPage) listView(c *ui.Context) {
 			return
 		}
 		it := rows[es[i].row]
-		p.item(c, it).ContextMenu(func(m *ui.Menu) {
+		selected := i == ls.cur || ls.sel.Has(it.key())
+		p.item(c, it, selected).ContextMenu(func(m *ui.Menu) {
 			on := []mailItem{it}
 			if ls.sel.Has(it.key()) {
 				on = p.chosen(rows)
@@ -934,11 +957,11 @@ func rowOf(es []listEntry, cur int) int {
 }
 
 // item is a row of the list: a search result, or a thread or message.
-func (p *mailPage) item(c *ui.Context, it mailItem) ui.Element {
+func (p *mailPage) item(c *ui.Context, it mailItem, selected bool) ui.Element {
 	if p.searched {
-		return p.resultRow(c, it)
+		return p.resultRow(c, it, selected)
 	}
-	return p.row(c, it)
+	return p.row(c, it, selected)
 }
 
 // folderLine is "folder · account" of a result.
@@ -963,10 +986,17 @@ func (p *mailPage) resultWho(it mailItem) string {
 
 // resultRow is a search result: no unread gutter, the subject and the start
 // of the text with the matches marked, and the folder it is in.
-func (p *mailPage) resultRow(c *ui.Context, it mailItem) ui.Element {
+func (p *mailPage) resultRow(c *ui.Context, it mailItem, selected bool) ui.Element {
 	t, th := theme.Of(c), c.Theme()
 	q := p.hlQuery
-	return ui.Column(c).Gap(th.Space(0.5)).Padding(th.Space(2), th.Space(3)).Children(func() {
+	row := ui.Column(c).Grow(1).Gap(th.Space(0.5)).Padding(th.Space(2), th.Space(3))
+	if selected {
+		row.Radius(t.Radius.Lg).Clip().
+			Material(kit.Glass(t.GlassBg)).
+			Border(theme.Hairline, t.GlassBorder)
+		kit.Elevate(c, row, theme.ShadowXs)
+	}
+	return row.Children(func() {
 		ui.Row(c).Gap(th.Space(1.5)).Children(func() {
 			ui.Text(c, p.resultWho(it)).SingleLine().Grow(1).Shrink(1)
 			if it.Attach {
@@ -1042,14 +1072,21 @@ func (p *mailPage) searchedDesc() string {
 // row is one thread or message: who, when, the subject and the start of the
 // text; unread ones in bold, with a dot in the row's left gutter that says
 // how many are unread to assistive technology.
-func (p *mailPage) row(c *ui.Context, it mailItem) ui.Element {
+func (p *mailPage) row(c *ui.Context, it mailItem, selected bool) ui.Element {
 	t := theme.Of(c)
 	th, small := c.Theme(), t.Text.Sm
 	weight := 400
 	if it.Unread > 0 {
 		weight = 600
 	}
-	return ui.Column(c).Gap(th.Space(0.5)).Padding(th.Space(2.5), th.Space(2.5), th.Space(2.5), th.Space(5)).Children(func() {
+	row := ui.Column(c).Grow(1).Gap(th.Space(0.5)).Padding(th.Space(2.5), th.Space(2.5), th.Space(2.5), th.Space(5))
+	if selected {
+		row.Radius(t.Radius.Lg).Clip().
+			Material(kit.Glass(t.GlassBg)).
+			Border(theme.Hairline, t.GlassBorder)
+		kit.Elevate(c, row, theme.ShadowXs)
+	}
+	return row.Children(func() {
 		if it.Unread > 0 {
 			ui.Box(c).Absolute().Left(th.Space(1.5)).Top(th.Space(4)).Size(th.Space(2), th.Space(2)).Radius(th.Space(1)).Background(t.Unread).
 				Label(i18n.Tf("mail.row.unread", it.Unread))

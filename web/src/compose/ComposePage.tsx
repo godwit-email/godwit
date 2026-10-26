@@ -803,7 +803,7 @@ function Compose({
                   </Alert>
                 )}
                 {running && (
-                  <div className="flex items-center gap-2 bg-sidebar px-4 py-2 text-base">
+                  <div className="flex items-center gap-2 border-b border-black/10 bg-white/85 px-4 py-2 text-base backdrop-blur-xl dark:border-white/12 dark:bg-[#252528]/85">
                     <RiSparkling2Line className="size-3.5 shrink-0" />
                     <span className="flex-1">{t("wit.compose.writing_banner")}</span>
                     <Button variant="outline" size="sm" className="text-base" onClick={stop}>

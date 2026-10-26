@@ -27,7 +27,10 @@ type Tokens struct {
 	// HoverTint is a tint of the foreground for what sits on the window's
 	// material (the page switch's track, the top bar's ghost buttons), which
 	// a solid gray would cover; over white it is Hover's gray.
-	HoverTint                                                       ui.Color
+	HoverTint ui.Color
+	// GlassBg, GlassBorder and GlassHover are the unified liquid glass surface background, border, and hover colors,
+	// matching web liquid glass (white/85 with black/10 in light; #252528/85 with white/12 in dark).
+	GlassBg, GlassBorder, GlassHover                                ui.Color
 	WarningBg, WarningBorder, WarningText, Danger, DangerBg         ui.Color
 	SuccessBg, SuccessBorder, SuccessText, DangerBorder, DangerText ui.Color
 	InsBg, InsText, DelBg, DelText                                  ui.Color
@@ -178,9 +181,9 @@ const (
 	SectionGap           = 10 // a section's title to its card
 	PortWidth            = 90 // port fields
 	SelectMinWidth       = 120
-	FilterMenuMin        = 200 // a search filter chip's menu
+	FilterMenuMin        = 250 // a search filter chip's menu
 	LabelMenuWidth       = 240 // the reader's label menu
-	SyncMenuWidth        = 336 // the top bar's sync status list: 360 with the popover's padding
+	SyncMenuWidth        = 320 // the top bar's sync status list: compact, fitted popover
 	LabelSwatch          = 32  // a label color's button: a 24 dot, a 2 ring when chosen
 	LabelSwatchDot       = 24
 	LabelSwatchRing      = 2
@@ -231,7 +234,7 @@ const (
 	EmptyIcon, EmptyDescMax                          = 40, 400        // an empty state's icon tile; its text's widest
 	GroupHeight, GroupSepHeight                      = 32, 16         // a button group; its separators
 	TabUnderline                                     = 2              // the selected underline tab's bottom border
-	Watermark                                        = 96             // the empty reader pane's bird
+	Watermark, WatermarkLg                           = 96, 180        // the empty reader pane's bird; enlarged frosted watermark
 	FormLabelWidth, ModelIDInputWidth                = 96, 132        // a dialog form's label column; the add-model-ID field
 	AIButtonHeight, SummaryIndent, CardTracking      = 30, 18, 3      // the reader's Summary/Translate buttons; a summary's bullets; a card value's letter spacing
 	SummaryDot                                       = 5              // a summary point's disc
@@ -353,7 +356,8 @@ func Light() Tokens {
 		Border: p.Neutral200.Color(), Input: p.Neutral200.Color(), Ring: p.Neutral400.Color(), Idle: p.Neutral400.Color(), Outline: p.Neutral950.Color().Alpha(0.05), DividerHover: p.Neutral300.Color(), MarkTile: p.White.Color(), OnSolid: p.White.Color(), Raised: p.White.Color(), Card: p.Neutral50.Color(),
 		Primary: p.Neutral900.Color(), PrimaryText: p.White.Color(),
 		SidebarSelected: p.Neutral100.Color(), HoverTint: p.Neutral950.Color().Alpha(0.04),
-		Hover: p.Neutral100.Color(),
+		Hover:   p.Neutral100.Color(),
+		GlassBg: p.White.Color().Alpha(0.85), GlassBorder: p.Neutral950.Color().Alpha(0.10), GlassHover: p.Neutral100.Color(),
 	})
 }
 
@@ -366,7 +370,8 @@ func Dark() Tokens {
 		Border: p.White.Color().Alpha(0.1), Input: p.White.Color().Alpha(0.15), Ring: p.Neutral500.Color(), Idle: p.Neutral500.Color(), Outline: p.White.Color().Alpha(0.05), DividerHover: p.Neutral700.Color(), MarkTile: p.White.Color(), OnSolid: p.White.Color(), FloatInset: p.White.Color().Alpha(0.2), Raised: p.Neutral900.Color(), Card: p.Neutral900.Color(),
 		Primary: p.Neutral200.Color(), PrimaryText: p.Neutral900.Color(),
 		SidebarSelected: p.Neutral800.Color(), HoverTint: p.White.Color().Alpha(0.08),
-		Hover: p.Neutral800.Color(),
+		Hover:   p.Neutral800.Color(),
+		GlassBg: ui.Hex("#252528").Alpha(0.85), GlassBorder: p.White.Color().Alpha(0.12), GlassHover: ui.Hex("#2f2f33").Alpha(0.90),
 	})
 }
 
@@ -417,7 +422,7 @@ func mygoTheme(t Tokens) *ui.Theme {
 	if t.Dark {
 		th = *ui.DarkTheme()
 	}
-	th.Background, th.Surface, th.SurfaceHover, th.SurfacePressed = t.Background, t.Background, t.Hover, t.Border
+	th.Background, th.Surface, th.SurfaceHover, th.SurfacePressed = t.Background, t.Background, t.Hover.Mix(t.Background, 0.5), t.Border
 	th.Border, th.Text, th.TextMuted = t.Border, t.Foreground, t.Muted
 	th.Accent, th.AccentText = t.Primary, t.PrimaryText
 	th.AccentHover, th.AccentPressed = t.Primary.Mix(t.Background, 0.1), t.Primary.Mix(t.Background, 0.2)

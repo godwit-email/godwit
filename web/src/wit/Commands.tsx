@@ -116,7 +116,7 @@ export function CommandPicker({
     <div
       role="dialog"
       aria-label={t("wit.cmd.menu")}
-      className="absolute bottom-full left-0 z-3 mb-2 flex max-h-80 w-96 max-w-full flex-col gap-0.5 overflow-y-auto rounded-xl border-[0.5px] bg-popover p-1 text-popover-foreground shadow-md"
+      className="absolute bottom-full left-0 z-3 mb-2 flex max-h-80 w-96 max-w-full flex-col gap-0.5 overflow-y-auto rounded-xl border border-black/10 bg-white/85 p-1.5 text-popover-foreground shadow-2xl backdrop-blur-2xl ring-1 ring-black/5 outline-none dark:border-white/12 dark:bg-[#252528]/85 dark:ring-white/5"
     >
       {shown.length === 0 ? (
         <p className="px-2.5 py-2 text-muted-foreground text-sm">{t("wit.cmd.none")}</p>

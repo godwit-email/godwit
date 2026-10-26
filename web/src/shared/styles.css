@@ -75,7 +75,7 @@
   --foreground: oklch(0.145 0 0);
   --card: oklch(1 0 0);
   --card-foreground: oklch(0.145 0 0);
-  --popover: oklch(1 0 0);
+  --popover: rgba(255, 255, 255, 0.85);
   --popover-foreground: oklch(0.145 0 0);
   --primary: oklch(0.205 0 0);
   --primary-foreground: oklch(0.985 0 0);
@@ -111,7 +111,7 @@
   --foreground: oklch(0.985 0 0);
   --card: oklch(0.205 0 0);
   --card-foreground: oklch(0.985 0 0);
-  --popover: oklch(0.205 0 0);
+  --popover: rgba(37, 37, 40, 0.85);
   --popover-foreground: oklch(0.985 0 0);
   --primary: oklch(0.922 0 0);
   --primary-foreground: oklch(0.205 0 0);
@@ -156,6 +156,34 @@
 /* Also override scroll utilities in generated components without editing their source. */
 * {
   overscroll-behavior: none;
+}
+
+/* Frosted liquid glass for generated popups and menus without editing their source. */
+[data-slot="popover-content"],
+[data-slot="dropdown-menu-content"],
+[data-slot="select-content"],
+[data-slot="alert-dialog-content"],
+[data-slot="hover-card-content"] {
+  backdrop-filter: blur(24px);
+  -webkit-backdrop-filter: blur(24px);
+  border-radius: 0.75rem;
+  border-width: 1px;
+  border-style: solid;
+  border-color: rgba(0, 0, 0, 0.1);
+  box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.25);
+  outline: 1px solid rgba(0, 0, 0, 0.05);
+}
+
+.dark
+  :is(
+    [data-slot="popover-content"],
+    [data-slot="dropdown-menu-content"],
+    [data-slot="select-content"],
+    [data-slot="alert-dialog-content"],
+    [data-slot="hover-card-content"]
+  ) {
+  border-color: rgba(255, 255, 255, 0.12);
+  outline: 1px solid rgba(255, 255, 255, 0.05);
 }
 
 /* No font is bundled: web pages use the system's (ADR 0012). */

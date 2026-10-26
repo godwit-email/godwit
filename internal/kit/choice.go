@@ -115,8 +115,11 @@ func SelectWith[T comparable](c *ui.Context, o SelectOpts, sel *T, opts []Option
 		s.Trigger.MaxWidth(o.MaxWidth)
 	}
 	s.Popup(func(panel ui.Element) {
-		panel.Margin(theme.PopupOffset, 0, 0, 0).Padding(th.Space(1)).Radius(t.Radius.Lg).Background(t.Background).Border(theme.Hairline, t.Border)
-		Elevate(c, panel, theme.ShadowMd)
+		panel.Margin(theme.PopupOffset, 0, 0, 0).Padding(th.Space(1)).
+			Radius(t.Radius.X2l).Clip().
+			Material(Glass(t.GlassBg)).
+			Border(theme.Hairline, t.GlassBorder)
+		Elevate(c, panel, theme.ShadowLg)
 		for _, o := range opts {
 			item := s.Item(o.Value).Height(th.Space(8)).PaddingX(th.Space(2)).Gap(th.Space(2)).Radius(t.Radius.Md)
 			if item.Highlighted() {

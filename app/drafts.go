@@ -34,7 +34,7 @@ func (p *mailPage) draftsView(c *ui.Context) {
 	p.draftList.Key = func(i int) any { return drafts[i].ID }
 	kit.List(c, p.draftList, len(drafts), func(i int) {
 		d := drafts[i]
-		b := kit.Pressable(c, kit.PressableOpts{Selected: d.ID == p.draftSel, OnClick: func() { p.draftSel = d.ID }}).
+		b := kit.Pressable(c, kit.PressableOpts{Selected: d.ID == p.draftSel, Glass: d.ID == p.draftSel, OnClick: func() { p.draftSel = d.ID }}).
 			Padding(th.Space(2.5), th.Space(2.5), th.Space(2.5), th.Space(5))
 		b.Children(func() { p.draftRow(c, d) }).ContextMenu(func(m *ui.Menu) {
 			if m.Item(i18n.T("mail.draft.delete")).Chosen() {

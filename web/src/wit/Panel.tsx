@@ -320,8 +320,8 @@ function ToolCard({
   }
   const label = toolLabel(a.tool, t);
   return (
-    <div className="overflow-hidden rounded-xl border-[0.5px] bg-background shadow-(--shadow-xs)">
-      <div className="flex flex-wrap items-center gap-2 border-b-[0.5px] bg-sidebar px-3.5 py-2.5 leading-5">
+    <div className="overflow-hidden rounded-xl border border-black/10 bg-white/85 shadow-md backdrop-blur-xl ring-1 ring-black/5 dark:border-white/12 dark:bg-[#252528]/85 dark:ring-white/5">
+      <div className="flex flex-wrap items-center gap-2 border-b border-black/10 bg-black/[0.02] px-3.5 py-2.5 leading-5 dark:border-white/10 dark:bg-white/[0.03]">
         <span className="font-semibold">{t("wit.approval.wants", label)}</span>
         <span className="font-mono text-muted-foreground text-sm">{a.tool}</span>
         <span className="ml-auto flex gap-1.5">
@@ -498,8 +498,8 @@ function QuestionCard({
     );
   };
   return (
-    <div className="overflow-hidden rounded-xl border-[0.5px] bg-background shadow-(--shadow-xs)">
-      <div className="flex items-center gap-2 border-b-[0.5px] bg-sidebar px-3.5 py-2.5 leading-5">
+    <div className="overflow-hidden rounded-xl border border-black/10 bg-white/85 shadow-md backdrop-blur-xl ring-1 ring-black/5 dark:border-white/12 dark:bg-[#252528]/85 dark:ring-white/5">
+      <div className="flex items-center gap-2 border-b border-black/10 bg-black/[0.02] px-3.5 py-2.5 leading-5 dark:border-white/10 dark:bg-white/[0.03]">
         <span className="font-semibold">
           {server ? t("wit.question.asks_mcp", server) : t("wit.question.asks")}
         </span>
@@ -595,7 +595,7 @@ function Settled({ a, onDraft, t }: { a: Approval; onDraft?(id: number): Promise
     const done = a.state === "done";
     return (
       questions.length > 0 && (
-        <dl className="flex flex-col gap-1.5 rounded-xl border-[0.5px] bg-background px-3 py-2.5 text-md">
+        <dl className="flex flex-col gap-1.5 rounded-xl border border-black/10 bg-white/85 px-3 py-2.5 text-md shadow-xs backdrop-blur-xl ring-1 ring-black/5 dark:border-white/12 dark:bg-[#252528]/85 dark:ring-white/5">
           {questions.map((q, i) => (
             <div key={q.question}>
               <dt className="text-muted-foreground text-sm">{q.question}</dt>
@@ -635,8 +635,8 @@ function Settled({ a, onDraft, t }: { a: Approval; onDraft?(id: number): Promise
         {label !== a.tool && <span className="font-mono text-muted-foreground/70">{a.tool}</span>}
       </span>
       {a.tool === "create_draft" && a.state === "done" && a.draft > 0 && !gone && (
-        <div className="flex items-center gap-3 rounded-xl border-[0.5px] bg-background px-3 py-2.5">
-          <span className="flex size-8 shrink-0 items-center justify-center rounded-lg border-[0.5px] bg-sidebar text-muted-foreground">
+        <div className="flex items-center gap-3 rounded-xl border border-black/10 bg-white/85 px-3 py-2.5 shadow-xs backdrop-blur-xl ring-1 ring-black/5 dark:border-white/12 dark:bg-[#252528]/85 dark:ring-white/5">
+          <span className="flex size-8 shrink-0 items-center justify-center rounded-lg border border-black/10 bg-black/[0.03] text-muted-foreground dark:border-white/10 dark:bg-white/[0.05]">
             <RiDraftLine className="size-4" />
           </span>
           <span className="flex min-w-0 flex-1 flex-col">
@@ -2030,7 +2030,7 @@ export function Panel({
             ))}
             {page && chat.messages.length === 0 && !running && !locked && (
               <div className="flex flex-col items-center gap-3 pt-[16vh] text-center">
-                <span className="flex size-12 items-center justify-center rounded-2xl border-[0.5px] bg-sidebar">
+                <span className="flex size-12 items-center justify-center rounded-2xl border border-black/10 bg-white/85 shadow-xs ring-1 ring-black/5 backdrop-blur-xl dark:border-white/12 dark:bg-[#252528]/85 dark:ring-white/5">
                   <RiSparkling2Line className="size-6" />
                 </span>
                 <h1 className="font-semibold text-xl">{t("wit.empty.title")}</h1>
@@ -2042,14 +2042,14 @@ export function Panel({
                   {[1, 2, 3, 4].map((n) => {
                     const q = t(`wit.suggest.${n}`);
                     return (
-                      <Button
+                      <button
                         key={n}
-                        variant="outline"
-                        className="h-auto rounded-full px-3.5 py-1.5 font-normal text-md"
+                        type="button"
+                        className="inline-flex cursor-pointer items-center rounded-full border border-black/10 bg-white/85 px-3.5 py-1.5 font-normal text-md text-foreground shadow-xs backdrop-blur-xl ring-1 ring-black/5 transition-all outline-none hover:border-black/20 hover:bg-black/5 focus-visible:ring-2 focus-visible:ring-ring dark:border-white/12 dark:bg-[#252528]/85 dark:ring-white/5 dark:shadow-[0_1px_3px_rgba(0,0,0,0.3),inset_0_1px_0_rgba(255,255,255,0.08)] dark:hover:bg-[#2f2f33]/90"
                         onClick={() => ask(q)}
                       >
                         {q}
-                      </Button>
+                      </button>
                     );
                   })}
                 </div>
@@ -2092,7 +2092,7 @@ export function Panel({
   // disabled control would grey the whole group.
   const idle = locked || !draft.trim() || running;
   const input = (
-    <InputGroup className="relative gap-2 rounded-2xl border-0 bg-background px-3 py-2.5 shadow-(--shadow-float)">
+    <InputGroup className="relative gap-2 rounded-2xl border border-black/10 bg-white/85 px-3 py-2.5 shadow-xl backdrop-blur-2xl ring-1 ring-black/5 outline-none dark:border-white/12 dark:bg-[#252528]/85 dark:ring-white/5 dark:shadow-[0_8px_32px_rgba(0,0,0,0.5),inset_0_1px_0_0_rgba(255,255,255,0.08)]">
       {editing && (
         <div className="-mx-3 -mt-2.5 mb-0.5 flex items-center gap-2 rounded-t-2xl bg-muted px-3 py-1.5 text-muted-foreground text-sm">
           <RiEditLine className="size-3.5 shrink-0" />
@@ -2389,7 +2389,8 @@ export function Panel({
     />
   );
   // a card on the window's material: the native layout's content cards
-  const card = "rounded-xl border-[0.5px] bg-background shadow-(--shadow-xs)";
+  const card = "rounded-xl border-[0.5px] border-border bg-background shadow-(--shadow-xs)";
+
   if (page) {
     return (
       <div className="@container flex h-full min-h-0 gap-2">
@@ -2409,9 +2410,9 @@ export function Panel({
   // 调整 / 翻译: quick actions above the input; locked, they do nothing but keep their look.
   const trayButton = (Icon: typeof RiEqualizerLine, label: string) => (
     <Button
-      variant="secondary"
+      variant="ghost"
       size="sm"
-      className="h-7 gap-1.5 rounded-full px-2.5 font-normal text-xs text-foreground/80 shadow-xs hover:bg-secondary/80 disabled:opacity-100"
+      className="h-7 gap-1.5 rounded-full border border-black/10 bg-white/85 px-2.5 font-normal text-xs text-foreground shadow-xs backdrop-blur-xl ring-1 ring-black/5 hover:border-black/20 hover:bg-black/5 disabled:opacity-100 dark:border-white/12 dark:bg-[#252528]/85 dark:ring-white/5 dark:shadow-[0_1px_3px_rgba(0,0,0,0.3),inset_0_1px_0_rgba(255,255,255,0.08)] dark:hover:bg-[#2f2f33]/90 dark:aria-expanded:bg-[#2f2f33]"
     >
       <Icon className="size-3.5 text-muted-foreground" />
       {label}
@@ -2443,7 +2444,12 @@ export function Panel({
         {info && (
           <div
             data-tray
-            className={cn("flex items-center gap-1.5", only ? "rounded-2xl bg-muted p-1" : "mb-2")}
+            className={cn(
+              "flex items-center gap-1.5",
+              only
+                ? "rounded-2xl border border-black/10 bg-white/85 p-1 ring-1 ring-black/5 backdrop-blur-xl dark:border-white/12 dark:bg-[#252528]/85 dark:ring-white/5"
+                : "mb-2",
+            )}
           >
             {!only && (
               <DropdownMenu>

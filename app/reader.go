@@ -687,7 +687,7 @@ func (r *reader) view(c *ui.Context) {
 	col := ui.Column(c).Grow(1).Shrink(1)
 	if r.key[0] == 0 { // nothing chosen: the bird
 		col.Center().Children(func() {
-			ui.Icon(c, icons.Bird).Size(theme.Watermark, theme.Watermark).TextColor(t.Border)
+			ui.Icon(c, icons.Bird).Size(theme.WatermarkLg, theme.WatermarkLg).TextColor(t.Border)
 		})
 		return
 	}

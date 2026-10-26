@@ -61,6 +61,7 @@ func Card(c *ui.Context, body func()) ui.Element {
 // PressableOpts say how a Pressable looks and what clicking it does.
 type PressableOpts struct {
 	Selected, Bordered bool
+	Glass              bool // frosted liquid glass with hairline border and HoverTint
 	Bare               bool // no hover or selected background: the caller draws its own
 	OnClick            func()
 }
@@ -70,10 +71,19 @@ type PressableOpts struct {
 func Pressable(c *ui.Context, o PressableOpts) ui.Element {
 	t := theme.Of(c)
 	b := ui.ButtonBase(c).Justify(ui.Start).Radius(t.Radius.Lg).Transition(colors(theme.MotionFast))
-	if o.Bordered {
+	if o.Glass {
+		tint := t.GlassBg
+		if b.Hovered() {
+			tint = t.GlassHover
+		}
+		b.Radius(t.Radius.Lg).Clip().
+			Material(Glass(tint)).
+			Border(theme.Hairline, t.GlassBorder)
+		Elevate(c, b, theme.ShadowXs)
+	} else if o.Bordered {
 		b.Border(theme.Stroke, t.Border).Background(t.Background)
 	}
-	if !o.Bare {
+	if !o.Bare && !o.Glass {
 		switch {
 		case o.Selected:
 			b.Background(t.SidebarSelected)

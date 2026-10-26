@@ -177,41 +177,49 @@ func (a *App) syncStatus(c *ui.Context) {
 		ui.Text(c, text).SingleLine().Shrink(1)
 		ui.Icon(c, icons.Get("chevron-down")).Size(theme.IconXs, theme.IconXs)
 	})
-	kit.Popover(c, chip, &a.syncOpen, func() { a.syncMenu(c, hs) })
+	topOffset := th.Space(3) // 12px, matching the right inset of the black window background
+	kit.PopoverAt(c, chip, &a.syncOpen, ui.AnchorBottomEnd, ui.AnchorTopEnd, topOffset, func() { a.syncMenu(c, hs) })
 }
 
 // syncMenu lists each account: its state, why, and what to do about it.
 func (a *App) syncMenu(c *ui.Context, hs []syncHealth) {
 	t, th := theme.Of(c), c.Theme()
 	small := t.Text.Sm
-	indent := theme.StatusDot + th.Space(2) // under the account name, past its dot
+	xs := t.Text.Xs
+	indent := float32(theme.MarkSm) + th.Space(2) // under the account name, past its icon
 	act := func(f func()) func() { return func() { a.syncOpen = false; f() } }
 	ui.Column(c).Width(theme.SyncMenuWidth).Gap(th.Space(3)).Children(func() {
-		ui.Row(c).AlignItems(ui.Center).Gap(th.Space(2)).Children(func() {
-			ui.Text(c, i18n.T("shell.sync.title")).FontWeight(600).Grow(1)
-			kit.Button(c, i18n.T("shell.sync.all"), kit.ButtonOpts{Variant: kit.Ghost, Size: kit.SizeSm, Icon: "refresh-cw"}).OnClick(act(a.SyncAll))
+		ui.Row(c).AlignItems(ui.Center).Justify(ui.SpaceBetween).Gap(th.Space(2)).Children(func() {
+			kit.Text(c, i18n.T("shell.sync.title"), small).FontWeight(600).Shrink(0)
+			kit.Button(c, i18n.T("shell.sync.all"), kit.ButtonOpts{Variant: kit.Ghost, Size: kit.SizeSm, Icon: "refresh-cw"}).
+				FontSize(xs).Height(th.Space(6)).PaddingX(th.Space(2)).Shrink(0).OnClick(act(a.SyncAll))
 		})
 		for _, h := range hs {
 			kit.Separator(c, false)
 			ui.Column(c.Key(h.acc.ID)).Gap(th.Space(1)).Children(func() {
-				ui.Row(c).AlignItems(ui.Center).Gap(th.Space(2)).Children(func() {
-					if s, ok := syncDot(h.level); ok {
-						kit.StatusDot(c, s)
-					} else {
-						ui.Box(c).Size(theme.StatusDot, theme.StatusDot)
-					}
-					ui.Text(c, accountName(h.acc)).SingleLine().Grow(1).Shrink(1)
-					color := t.Muted
-					switch h.level {
-					case syncAction:
-						color = t.DangerText
-					case syncRetrying:
-						color = t.WarningText
-					}
-					kit.Text(c, h.status, small).TextColor(color).SingleLine()
+				ui.Row(c).AlignItems(ui.Center).Justify(ui.SpaceBetween).Gap(th.Space(2)).Children(func() {
+					ui.Row(c).AlignItems(ui.Center).Gap(th.Space(2)).Shrink(1).Children(func() {
+						ui.Box(c).Size(theme.MarkSm, theme.MarkSm).Shrink(0).Children(func() {
+							a.accountIcon(c, h.acc, theme.MarkSm)
+						})
+						kit.Text(c, accountName(h.acc), small).FontWeight(500).SingleLine().Shrink(1)
+					})
+					ui.Row(c).AlignItems(ui.Center).Gap(th.Space(1.5)).Shrink(0).Children(func() {
+						if s, ok := syncDot(h.level); ok {
+							kit.StatusDot(c, s)
+						}
+						color := t.Foreground
+						switch h.level {
+						case syncAction:
+							color = t.DangerText
+						case syncRetrying:
+							color = t.WarningText
+						}
+						kit.Text(c, h.status, xs).TextColor(color).SingleLine()
+					})
 				})
 				if h.reason != "" {
-					r := kit.Text(c, h.reason, small).TextColor(t.Muted).Padding(0, 0, 0, indent)
+					r := kit.Text(c, h.reason, xs).TextColor(t.Muted).Padding(0, 0, 0, indent)
 					if h.err != "" {
 						kit.Tooltip(c, r, h.err)
 					}
@@ -223,7 +231,7 @@ func (a *App) syncMenu(c *ui.Context, hs []syncHealth) {
 							if b.primary {
 								o.Variant = kit.Default
 							}
-							kit.Button(c.Key(b.label), b.label, o).OnClick(act(b.do))
+							kit.Button(c.Key(b.label), b.label, o).FontSize(xs).OnClick(act(b.do))
 						}
 					})
 				}
