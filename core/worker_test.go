@@ -328,6 +328,39 @@ func TestWorkerParksWhileReauthRequired(t *testing.T) {
 	workerResumed(t, e, "r2@x")
 }
 
+// TestWorkerResumesAndSyncsAutomaticallyAfterReauth: a worker parked on
+// reauth_required resumes after UpdatePassword, with no SyncNow, and imports new mail.
+func TestWorkerResumesAndSyncsAutomaticallyAfterReauth(t *testing.T) {
+	e, ch := newWorkerEnv(t)
+	parkWorker(t, e, ch)
+	n := e.im.Logins()
+
+	// While parked, no further logins occur
+	time.Sleep(200 * time.Millisecond)
+	assert.Equal(t, n, e.im.Logins(), "no logins while reauth_required")
+
+	// Incoming message arrives on the server while the worker is parked
+	e.put(t, "INBOX", msg("after-reauth@x"))
+
+	// User updates the password (normal reauthentication flow via UpdatePassword)
+	require.NoError(t, e.s.UpdatePassword(bg, e.acc.ID, "secret"))
+
+	// Account status must be restored to ok
+	a, err := e.s.account(bg, e.acc.ID)
+	require.NoError(t, err)
+	assert.Equal(t, "ok", a.Status)
+	assert.Empty(t, a.StatusDetail)
+
+	// Worker must automatically unpark, run a sync round, and import the message without SyncNow
+	require.Eventually(t, func() bool {
+		return e.count(t, "SELECT count(*) FROM messages WHERE message_id = 'after-reauth@x'") == 1
+	}, 5*time.Second, 20*time.Millisecond, "parked worker automatically resumed and imported mail")
+
+	// Worker is back in IDLE and imports another subsequent message
+	workerResumed(t, e, "subsequent@x")
+	assert.Equal(t, 1, e.count(t, "SELECT count(*) FROM messages WHERE message_id = 'subsequent@x'"))
+}
+
 func TestReauthResumesOnLoginEvenIfSyncFails(t *testing.T) {
 	e, ch := newWorkerEnv(t)
 	parkWorker(t, e, ch)
@@ -446,4 +479,76 @@ func TestSMTPAuthFailurePausesOnlyOutbox(t *testing.T) {
 	assert.Equal(t, "ok", acc.Status)
 	assert.Empty(t, acc.StatusDetail)
 	assert.Len(t, e.smtp.Messages(), 4)
+}
+
+// TestSyncNowDoesNotTriggerDuplicateWorkerSync: a SyncNow while the worker idles
+// runs one sync, not a second one from the worker, and the worker still picks up new mail.
+func TestSyncNowDoesNotTriggerDuplicateWorkerSync(t *testing.T) {
+	e, ch := newWorkerEnv(t)
+
+	syncStarted := make(chan struct{}, 10)
+	syncFinished := make(chan struct{}, 10)
+	done := make(chan struct{})
+	defer close(done)
+	go func() {
+		for {
+			select {
+			case ev, ok := <-ch:
+				if !ok {
+					return
+				}
+				switch ev.Type {
+				case events.SyncStarted:
+					syncStarted <- struct{}{}
+				case events.SyncFinished:
+					syncFinished <- struct{}{}
+				}
+			case <-done:
+				return
+			}
+		}
+	}()
+
+	// Execute manual SyncNow
+	require.NoError(t, e.s.SyncNow(bg, e.acc.ID))
+	waitSignal(t, syncStarted, "SyncNow SyncStarted", 5*time.Second)
+	waitSignal(t, syncFinished, "SyncNow SyncFinished", 5*time.Second)
+
+	// Ensure no second SyncStarted fires from an unneeded worker wake
+	select {
+	case <-syncStarted:
+		t.Fatal("unexpected duplicate SyncStarted fired after SyncNow")
+	case <-time.After(250 * time.Millisecond):
+	}
+
+	// Verify worker remains functional for real incoming server events
+	e.put(t, "INBOX", msg("after-syncnow@x"))
+	waitSignal(t, syncStarted, "worker handles new incoming mail", 5*time.Second)
+	waitSignal(t, syncFinished, "worker finished incoming mail sync", 5*time.Second)
+	assert.Equal(t, 1, e.count(t, "SELECT count(*) FROM messages WHERE message_id = 'after-syncnow@x'"))
+}
+
+// TestSyncNowConcurrentWithIncomingMail: a SyncNow racing new mail on the server
+// loses no message.
+func TestSyncNowConcurrentWithIncomingMail(t *testing.T) {
+	e, _ := newWorkerEnv(t)
+
+	unlock, err := e.s.lockAccount(bg, e.acc.ID)
+	require.NoError(t, err)
+
+	syncNowDone := make(chan error, 1)
+	go func() {
+		syncNowDone <- e.s.SyncNow(bg, e.acc.ID)
+	}()
+
+	waitSignal(t, e.lockWait, "SyncNow waiting for lock", 5*time.Second)
+
+	e.put(t, "INBOX", msg("concurrent@x"))
+
+	unlock()
+
+	require.NoError(t, <-syncNowDone)
+
+	workerResumed(t, e, "concurrent@x")
+	assert.Equal(t, 1, e.count(t, "SELECT count(*) FROM messages WHERE message_id = 'concurrent@x'"))
 }

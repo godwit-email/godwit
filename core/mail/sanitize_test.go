@@ -336,3 +336,90 @@ func TestSanitizeBodyBackgroundImage(t *testing.T) {
 	assert.Contains(t, safe, `data-bg="https://c.example/bg.png"`)
 	assert.Contains(t, safe, "background: #eee repeat-x")
 }
+
+// Inline styles with trailing newlines, indentation, or trailing semicolons
+// are normalised so bluemonday does not drop the style attribute.
+func TestSanitizeStyleWhitespace(t *testing.T) {
+	input := `<span style="
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      text-decoration: none;
+      color: #7A7A7A;
+      font-size: 14px;
+      line-height: 20px;
+      font-weight: 500;
+  ">Receipt</span>`
+	safe, _ := mail.Sanitize(input, nil, false)
+	assert.Contains(t, safe, `color: #7A7A7A`)
+	assert.Contains(t, safe, `font-size: 14px`)
+	assert.Contains(t, safe, `font-weight: 500`)
+
+	// Card with multi-line styles and background-color
+	card := `<table style="
+      width: 100%;
+      background-color: #ffffff;
+      border-radius: 12px;
+  "><tr><td>content</td></tr></table>`
+	safeCard, _ := mail.Sanitize(card, nil, false)
+	assert.Contains(t, safeCard, `background-color: #ffffff`)
+	assert.Contains(t, safeCard, `border-radius: 12px`)
+}
+
+// Inherently dark emails (dark canvas via body/container bgcolor or style, or meta color-scheme)
+// are marked with <style data-dark=""> so the reader does not invert them into white.
+func TestSanitizeDarkCanvas(t *testing.T) {
+	// Table container with dark background
+	stripe := `<table class="st-Background" bgcolor="#000000" width="100%"><tr><td><div style="background-color:#ffffff;color:#1a1a1a">Slip</div></td></tr></table>`
+	safeStripe, _ := mail.Sanitize(stripe, nil, false)
+	assert.True(t, strings.HasPrefix(safeStripe, `<style data-dark="">`), "dark container marks dark-aware")
+	assert.Contains(t, safeStripe, `bgcolor="#000000"`)
+	assert.Contains(t, safeStripe, `background-color: #ffffff`)
+
+	// Body with dark bgcolor
+	darkBody := `<html><body bgcolor="#1a1a1a"><p>Hello</p></body></html>`
+	safeBody, _ := mail.Sanitize(darkBody, nil, false)
+	assert.True(t, strings.HasPrefix(safeBody, `<style data-dark="">`), "dark body bgcolor marks dark-aware")
+	assert.Contains(t, safeBody, `background-color: #1a1a1a`, "wrapper div receives background-color style from body bgcolor")
+
+	// Meta color-scheme dark
+	metaDark := `<html><head><meta name="color-scheme" content="dark"></head><body><p>Hello</p></body></html>`
+	safeMeta, _ := mail.Sanitize(metaDark, nil, false)
+	assert.True(t, strings.HasPrefix(safeMeta, `<style data-dark="">`), "meta dark marks dark-aware")
+
+	// Standard light email remains without data-dark
+	light := `<html><body bgcolor="#ffffff"><p>Hello</p></body></html>`
+	safeLight, _ := mail.Sanitize(light, nil, false)
+	assert.False(t, strings.HasPrefix(safeLight, `<style data-dark="">`), "light email is not dark-aware")
+}
+
+// A ; inside quotes or a data: URL does not split a declaration, so the ones
+// around it survive.
+func TestSanitizeStyleSemicolonInValue(t *testing.T) {
+	safe, _ := mail.Sanitize(`<span style="
+      font-family: 'A;B', sans-serif;
+      list-style-image: url(data:image/png;base64,AAAA);
+      color: #123456;
+  ">x</span>`, nil, false)
+	assert.Contains(t, safe, "color: #123456")
+}
+
+// What marks a mail as painted on a dark canvas, and what does not.
+func TestSanitizeDarkCanvasBounds(t *testing.T) {
+	dark := func(src string) bool {
+		safe, _ := mail.Sanitize(src, nil, false)
+		return strings.HasPrefix(safe, `<style data-dark="">`)
+	}
+	assert.True(t, dark(`<div style="width:100%;background-color:#111">x</div>`), "a full-width div by style")
+	assert.True(t, dark(`<center><table width="100%" style="background:rgb(20, 20, 20)"><tr><td>x</td></tr></table></center>`), "through one wrapper")
+	assert.True(t, dark(`<div style="width:100%;background:no-repeat rgb(0 0 0 / 0.9)">x</div>`), "a shorthand's colour, space-separated")
+	assert.True(t, dark(`<meta name="color-scheme" content="only dark"><p>x</p>`))
+
+	assert.False(t, dark(`<table width="100%" bgcolor="#00000000"><tr><td>x</td></tr></table>`), "transparent black, by hex")
+	assert.False(t, dark(`<div style="width:100%;background-color:rgba(0,0,0,0)">x</div>`), "transparent black, by rgba")
+	assert.False(t, dark(`<div style="width:100%;background-color:#zzz">x</div>`), "a colour it cannot read")
+	assert.False(t, dark(`<div style="background-color:#111">x</div>`), "not full width")
+	assert.False(t, dark(`<table width="100%" bgcolor="#000" role="button"><tr><td>x</td></tr></table>`), "a button")
+	assert.False(t, dark(`<meta name="color-scheme" content="light dark"><p>x</p>`), "either scheme is not a dark one")
+	assert.False(t, dark(`<table width="100%"><tr><td><table width="600"><tr><td>Hello`+
+		`<table width="100%" bgcolor="#222"><tr><td>Footer</td></tr></table></td></tr></table></td></tr></table>`),
+		"a dark footer deep in a light mail")
+}

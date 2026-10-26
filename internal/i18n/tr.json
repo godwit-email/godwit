@@ -1228,5 +1228,7 @@
   "wit_ctx_summary": "Özet",
   "wit_ctx_free": "Boş",
   "wit_ctx_until": "Otomatik sıkıştırmaya %{arg1} kaldı",
-  "wit_ctx_compact": "Sıkıştır"
+  "wit_ctx_compact": "Sıkıştır",
+  "wit_model_changed": "Model değiştirildi: {arg1}",
+  "settings_models_apple_intelligence_sub": "Bu Mac''te yerel"
 }

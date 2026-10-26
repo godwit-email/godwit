@@ -2,6 +2,7 @@ package app
 
 import (
 	"context"
+	"errors"
 	"slices"
 	"strconv"
 	"strings"
@@ -194,13 +195,54 @@ func (a *App) showUnread(inbox int) {
 // Compose starts a new draft in a compose window, as the sidebar's button does.
 func (a *App) Compose() { a.mail.compose() }
 
-// SyncAll syncs every account now.
+// SyncAll syncs every account now. The status shows syncing until the last one
+// returns; a click while that batch is in flight starts nothing more.
 func (a *App) SyncAll() {
+	if a.syncBatch != nil || len(a.accounts) == 0 {
+		return
+	}
+	b := &syncBatch{pending: make(map[int64]bool, len(a.accounts)), failed: map[int64]bool{}}
+	for _, acc := range a.accounts {
+		b.pending[acc.ID] = true
+	}
+	a.syncBatch = b
+	a.tick()
 	for _, acc := range a.accounts {
 		id := acc.ID
-		a.do(func(ctx context.Context) error { return a.svc.SyncNow(ctx, id) }, a.toastErr)
+		a.do(func(ctx context.Context) error { return a.svc.SyncNow(ctx, id) }, func(err error) { a.onBatchDone(id, err) })
 	}
 }
+
+// onBatchDone records one account's SyncNow returning. One no longer pending
+// was removed meanwhile, so its error is not shown; nor is a cancelled one's, as
+// removing the account cancels it.
+func (a *App) onBatchDone(id int64, err error) {
+	if !a.batchPending(id) {
+		return
+	}
+	delete(a.syncBatch.pending, id)
+	if err != nil && !errors.Is(err, context.Canceled) {
+		a.syncBatch.failed[id] = true
+		a.toastErr(err)
+	}
+	a.finishBatch()
+}
+
+// finishBatch ends the Sync All once no account is pending, setting the last
+// sync time when none failed.
+func (a *App) finishBatch() {
+	if a.syncBatch == nil || len(a.syncBatch.pending) > 0 {
+		return
+	}
+	if len(a.syncBatch.failed) == 0 {
+		a.syncedAt = a.clock.Now()
+	}
+	a.syncBatch = nil
+	a.tick()
+}
+
+// batchPending reports whether the Sync All in flight still waits on the account.
+func (a *App) batchPending(id int64) bool { return a.syncBatch != nil && a.syncBatch.pending[id] }
 
 // KeepInBackground reports whether closing the window only hides it.
 func (a *App) KeepInBackground() bool { return a.settings.KeepInBackground }

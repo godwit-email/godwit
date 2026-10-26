@@ -54,7 +54,8 @@ func TestKeychainLockedAtRuntime(t *testing.T) {
 	assert.Equal(t, "keychain_unavailable", a.StatusDetail)
 
 	n := len(ofType(collect(ch), events.SyncFailed))
-	time.Sleep(500 * time.Millisecond) // the woken worker fails and backs off, again and again
+	e.put(t, "INBOX", msg("back@x")) // incoming mail wakes the worker; read fails and backs off
+	time.Sleep(500 * time.Millisecond)
 	assert.Greater(t, len(ofType(collect(ch), events.SyncFailed))+n, 1, "the worker retries")
 	select {
 	case <-e.parked:

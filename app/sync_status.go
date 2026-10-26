@@ -85,7 +85,7 @@ func (a *App) syncHealth(acc core.Account) syncHealth {
 	case failed:
 		h.level, h.status, h.short = syncRetrying, i18n.T("shell.sync.retrying"), i18n.T("shell.sync.retrying.short")
 		h.reason, h.actions = i18n.Tf("shell.sync.retrying.reason", failCause(f.kind, host)), []syncButton{retry}
-	case a.syncing[id]:
+	case a.syncing[id] || a.batchPending(id):
 		h.level, h.status = syncBusy, i18n.T("shell.sync.syncing")
 	default:
 		if at, ok := a.syncedAtBy[id]; ok {
@@ -151,12 +151,15 @@ func (a *App) syncStatus(c *ui.Context) {
 	t, th := theme.Of(c), c.Theme()
 	w := hs[0]
 	text, color := "", t.Muted
-	switch w.level {
-	case syncAction:
+	dotLevel := w.level
+	switch {
+	case a.syncBatch != nil: // a Sync All shows syncing until its last account returns
+		text, dotLevel = i18n.T("shell.sync.syncing"), syncBusy
+	case w.level == syncAction:
 		text, color = i18n.Tf("shell.sync.account", accountName(w.acc), cmp.Or(w.short, w.status)), t.DangerText
-	case syncRetrying:
+	case w.level == syncRetrying:
 		text, color = i18n.Tf("shell.sync.account", accountName(w.acc), w.short), t.WarningText
-	case syncBusy:
+	case w.level == syncBusy:
 		text = w.status
 	default:
 		if a.syncedAt.IsZero() {
@@ -168,7 +171,7 @@ func (a *App) syncStatus(c *ui.Context) {
 		Gap(th.Space(1.5)).Expanded(a.syncOpen).Label(text)
 	chip.OnClick(func() { a.syncOpen = !a.syncOpen })
 	chip.Children(func() {
-		if s, ok := syncDot(w.level); ok {
+		if s, ok := syncDot(dotLevel); ok {
 			kit.StatusDot(c, s)
 		}
 		ui.Text(c, text).SingleLine().Shrink(1)

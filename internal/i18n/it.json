@@ -1228,5 +1228,7 @@
   "wit_ctx_summary": "Riepilogo",
   "wit_ctx_free": "Libero",
   "wit_ctx_until": "Ancora {arg1}% prima della compattazione automatica",
-  "wit_ctx_compact": "Compatta"
+  "wit_ctx_compact": "Compatta",
+  "wit_model_changed": "Modello modificato: {arg1}",
+  "settings_models_apple_intelligence_sub": "Su questo dispositivo"
 }

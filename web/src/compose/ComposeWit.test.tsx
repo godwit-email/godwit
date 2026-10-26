@@ -26,6 +26,7 @@ vi.mock("@/mygo", () => ({
     openLink: vi.fn(),
     send: vi.fn(),
     models: vi.fn(),
+    setModel: vi.fn(),
     openCited: vi.fn(),
     checkCited: vi.fn(),
   },
@@ -245,6 +246,7 @@ beforeEach(() => {
   vi.mocked(api.follow).mockResolvedValue(legacy(empty));
   vi.mocked(api.review).mockResolvedValue(inline);
   vi.mocked(api.stop).mockResolvedValue();
+  vi.mocked(api.setModel).mockResolvedValue();
 });
 
 const body = () => screen.findByRole("textbox", { name: "正文" });

@@ -165,6 +165,12 @@ type Route struct {
 	Settings                            string
 }
 
+// syncBatch is a Sync All in flight: it counts as a sync only once every account finished without failing.
+type syncBatch struct {
+	pending map[int64]bool // accounts whose SyncNow has not returned
+	failed  map[int64]bool // accounts whose SyncNow failed
+}
+
 // App is the interface's state. Every field is read and written on the UI thread.
 type App struct {
 	svc   *core.Service
@@ -236,6 +242,7 @@ type App struct {
 	refreshStop       func()         // the pending throttled refresh; nil when none
 	events, refreshes int            // counted for tests: refreshes stay far fewer than events
 
+	syncBatch  *syncBatch          // the Sync All in flight; nil when none
 	syncing    map[int64]bool      // accounts syncing now
 	syncErr    map[int64]syncFail  // each account's failing sync, until it syncs
 	syncOpen   bool                // the sync status's account list shows
@@ -392,6 +399,19 @@ func (a *App) load() {
 			}
 		}
 		a.accounts, a.accountsGen, a.unread, a.loaded = accs, gen, unread, true
+		if b := a.syncBatch; b != nil { // a removed account no longer holds up or fails the batch
+			for id := range b.pending {
+				if !slices.ContainsFunc(accs, func(acc core.Account) bool { return acc.ID == id }) {
+					delete(b.pending, id)
+				}
+			}
+			for id := range b.failed {
+				if !slices.ContainsFunc(accs, func(acc core.Account) bool { return acc.ID == id }) {
+					delete(b.failed, id)
+				}
+			}
+			a.finishBatch()
+		}
 		if sigs != nil {
 			a.signatures = sigs
 		}
