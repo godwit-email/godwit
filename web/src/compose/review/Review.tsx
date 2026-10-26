@@ -1,4 +1,4 @@
-import { RiSparkling2Line } from "@remixicon/react";
+import { RiArrowGoBackLine, RiCheckLine, RiSparkling2Line } from "@remixicon/react";
 import { type FocusEvent, type ReactNode, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
 import type { ReviewBlock, ReviewOp, Review as ReviewT, ReviewToken } from "@/mygo";
@@ -124,6 +124,7 @@ export function Review({
   busy,
   onDecide,
   onFinish,
+  onAdjust,
   after,
   t,
 }: {
@@ -132,18 +133,34 @@ export function Review({
   after?: ReactNode;
   onDecide(accept: boolean): void;
   onFinish(decisions: number[]): void;
+  onAdjust?(instructions: string): void;
   t: T;
 }) {
   const [decided, setDecided] = useState<number[]>(() => Array(r.changes).fill(0));
+  const [history, setHistory] = useState<number[]>([]);
   const [active, setActive] = useState(-1);
   const [compare, setCompare] = useState(false);
   const open = decided.filter((d) => d === 0).length;
+  const hasDecisions = decided.some((d) => d !== 0);
 
   const decide = (k: number, d: number) => {
     const next = decided.map((x, i) => (i === k ? d : x));
     setDecided(next);
+    setHistory((prev) => [...prev, k]);
     setActive(-1);
     if (next.every((x) => x !== 0)) onFinish(next);
+  };
+
+  const undoLastDecision = () => {
+    if (history.length === 0) return;
+    const lastK = history[history.length - 1];
+    setHistory((prev) => prev.slice(0, -1));
+    setDecided((prev) => prev.map((x, i) => (i === lastK ? 0 : x)));
+  };
+
+  const applyCurrentDecisions = () => {
+    const finalDecisions = decided.map((d) => (d === 0 ? -1 : d));
+    onFinish(finalDecisions);
   };
   const leave = (e: FocusEvent) => {
     if (!e.currentTarget.contains(e.relatedTarget)) setActive(-1);
@@ -250,6 +267,32 @@ export function Review({
                 ? t("wit.compose.rewrite", pct)
                 : t("wit.compose.rewrite_plain")}
         </span>
+        {hasDecisions && r.inline && !compare && (
+          <div className="flex items-center gap-1">
+            <Button
+              size="icon-sm"
+              variant="ghost"
+              className="size-7 rounded-md text-muted-foreground hover:text-foreground cursor-pointer"
+              disabled={busy || history.length === 0}
+              title={t("editor.undo")}
+              aria-label={t("editor.undo")}
+              onClick={undoLastDecision}
+            >
+              <RiArrowGoBackLine className="size-4" />
+            </Button>
+            <Button
+              size="icon-sm"
+              variant="ghost"
+              className="size-7 rounded-md text-primary hover:text-primary/80 cursor-pointer"
+              disabled={busy}
+              title={t("wit.compose.accept")}
+              aria-label={t("wit.compose.accept")}
+              onClick={applyCurrentDecisions}
+            >
+              <RiCheckLine className="size-4" />
+            </Button>
+          </div>
+        )}
         {!r.inline && (
           <Button
             size="sm"

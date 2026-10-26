@@ -197,6 +197,91 @@ const editOf = (s: ComposeState): ComposeEdit => ({
   revision: s.revision,
 });
 
+function PanelReviewActions({
+  deciding,
+  onAccept,
+  onReject,
+  t,
+}: {
+  deciding: boolean;
+  onAccept: () => void;
+  onReject: () => void;
+  t: T;
+}) {
+  return (
+    <div className="flex w-full items-center gap-2">
+      <Button
+        size="sm"
+        className="flex-1 font-normal text-sm"
+        disabled={deciding}
+        onClick={onAccept}
+      >
+        {t("wit.compose.accept_all")}
+      </Button>
+      <Button
+        size="sm"
+        variant="outline"
+        className="flex-1 font-normal text-sm"
+        disabled={deciding}
+        onClick={onReject}
+      >
+        {t("wit.compose.reject_all")}
+      </Button>
+    </div>
+  );
+}
+
+function PanelReviewAdjust({
+  deciding,
+  onAdjust,
+  onCancel,
+  t,
+}: {
+  deciding: boolean;
+  onAdjust: (instructions: string) => void;
+  onCancel: () => void;
+  t: T;
+}) {
+  const [adjustText, setAdjustText] = useState("");
+
+  return (
+    <div className="flex flex-col gap-2 border-t border-border/40 bg-card px-3.5 py-2.5">
+      <textarea
+        autoFocus
+        rows={2}
+        value={adjustText}
+        onChange={(e) => setAdjustText(e.target.value)}
+        onKeyDown={(e) => {
+          if (e.key === "Enter" && !e.shiftKey && adjustText.trim()) {
+            e.preventDefault();
+            onAdjust(adjustText.trim());
+          } else if (e.key === "Escape") {
+            onCancel();
+          }
+        }}
+        placeholder={t("wit.compose.adjust_placeholder")}
+        className="w-full resize-none rounded-md border border-border/60 bg-background/50 p-2 text-sm placeholder:text-muted-foreground/60 focus:outline-none focus:ring-1 focus:ring-ring"
+      />
+      <div className="flex justify-end gap-2">
+        <Button size="xs" variant="outline" className="font-normal" onClick={onCancel}>
+          {t("wit.compose.adjust_cancel")}
+        </Button>
+        <Button
+          size="xs"
+          disabled={!adjustText.trim() || deciding}
+          onClick={() => {
+            if (adjustText.trim()) {
+              onAdjust(adjustText.trim());
+            }
+          }}
+        >
+          {t("wit.compose.adjust_send")}
+        </Button>
+      </div>
+    </div>
+  );
+}
+
 function Compose({
   state,
   saver,
@@ -297,6 +382,9 @@ function Compose({
   const [reloading, setReloading] = useState(false);
   const [reloadErr, setReloadErr] = useState(""); // a failed reload's error, in the page's copy
   const [applied, setApplied] = useState(false);
+  const [decisions, setDecisions] = useState<Record<number, "applied" | "rejected" | "adjusted">>({});
+  const [panelAdjusting, setPanelAdjusting] = useState(false);
+  const [handed, setHanded] = useState<{ text: string } | undefined>();
   const [cmdk, setCmdk] = useState<CmdKSelection | null>(null);
   const [streamed, setStreamed] = useState(""); // update_draft's HTML, shown while Wit writes a blank body
   const edits = useRef(0); // local body edits taken
@@ -563,16 +651,25 @@ function Compose({
     const a = current;
     if (!a || deciding) return;
     runEdits.current = edits.current;
+    if (a) setDecisions((prev) => ({ ...prev, [a.id]: accepts ? "applied" : "rejected" }));
     const r = await bodyOp(() => witResume.decide(a.run, () => op(a.id)));
     if (r) setPendings((p) => p.filter((x) => x.id !== a.id));
     if (r && !r.conflict && accepts) setApplied(true); // the body took Wit's edit: undo offers it back
     void reload();
+  };
+  const handleAdjust = async (instructions: string) => {
+    const a = current;
+    if (!a || deciding) return;
+    setDecisions((prev) => ({ ...prev, [a.id]: "adjusted" }));
+    await decide((id) => api.decide(id, true), true);
+    setHanded({ text: instructions });
   };
   // Decides a tool's call (its card in the panel), or every one of its run waiting; the run it
   // resumes streams in the panel.
   const decideTool = async (a: Approval, accept: boolean, all: boolean) => {
     if (deciding) return false;
     runEdits.current = edits.current;
+    setDecisions((prev) => ({ ...prev, [a.id]: accept ? "applied" : "rejected" }));
     const r = await bodyOp(() =>
       witResume.decide(a.run, () =>
         all ? api.decideAll(a.run, accept) : api.decide(a.id, accept),
@@ -826,6 +923,7 @@ function Compose({
                     busy={deciding}
                     onDecide={(accept) => decide((id) => api.decide(id, accept), accept)}
                     onFinish={(ds) => decide((id) => api.finish(id, ds), ds.includes(1))}
+                    onAdjust={handleAdjust}
                     after={tail}
                     t={t}
                   />
@@ -925,31 +1023,47 @@ function Compose({
                 reviewing
                   ? {
                       approval: reviewing.approval,
+                      title:
+                        reviewing.kind === "initial"
+                          ? t("wit.compose.review_draft")
+                          : t("wit.compose.review_changes"),
                       summary: reviewSummary(reviewing, t),
+                      onToggleAdjust: () => setPanelAdjusting((v) => !v),
+                      adjustArea: panelAdjusting ? (
+                        <PanelReviewAdjust
+                          deciding={deciding}
+                          onAdjust={(instructions) => {
+                            setPanelAdjusting(false);
+                            handleAdjust(instructions);
+                          }}
+                          onCancel={() => setPanelAdjusting(false)}
+                          t={t}
+                        />
+                      ) : null,
                       actions: (
-                        <>
-                          <Button
-                            size="sm"
-                            className="px-3 font-normal text-base"
-                            disabled={deciding}
-                            onClick={() => decide((id) => api.decide(id, true), true)}
-                          >
-                            {t("wit.compose.accept_all")}
-                          </Button>
-                          <Button
-                            size="sm"
-                            variant="outline"
-                            className="font-normal text-base"
-                            disabled={deciding}
-                            onClick={() => decide((id) => api.decide(id, false), false)}
-                          >
-                            {t("wit.compose.reject_all")}
-                          </Button>
-                        </>
+                        <PanelReviewActions
+                          deciding={deciding}
+                          onAccept={() => {
+                            if (reviewing) {
+                              setDecisions((prev) => ({ ...prev, [reviewing.approval]: "applied" }));
+                            }
+                            decide((id) => api.decide(id, true), true);
+                          }}
+                          onReject={() => {
+                            if (reviewing) {
+                              setDecisions((prev) => ({ ...prev, [reviewing.approval]: "rejected" }));
+                            }
+                            decide((id) => api.decide(id, false), false);
+                          }}
+                          t={t}
+                        />
                       ),
                     }
                   : undefined
               }
+              decisions={decisions}
+              ask={handed}
+              onAsked={() => setHanded(undefined)}
               resume={witResume.resume}
               onLink={(url) => api.openLink(url)}
               onCite={(id) =>

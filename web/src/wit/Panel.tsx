@@ -895,6 +895,7 @@ function Answer({
   nums,
   approvals,
   review,
+  decisions,
   tools,
   onLink,
   onCite,
@@ -910,6 +911,7 @@ function Answer({
   nums: Nums;
   approvals: Map<string, Approval>;
   review?: PanelReview;
+  decisions?: Record<number, "applied" | "rejected" | "adjusted">;
   /** A call's approval waiting for the user, as its card (the run's first with the run's header). */
   tools: (as: Approval[]) => ReactNode;
   onDraft?(approval: number): Promise<void>;
@@ -950,9 +952,10 @@ function Answer({
   const calls = m.parts.filter((p): p is DynamicToolUIPart => p.type === "dynamic-tool");
   const requested = (p: DynamicToolUIPart) =>
     p.state === "approval-requested" ? approvals.get(p.approval.id) : undefined;
+  const isDraftEdit = (tool: string) => tool === "update_draft" || tool === "update_selection";
   const hasNoChange =
     calls.some((c) => {
-      if (c.toolName !== "update_draft" && c.toolName !== "update_selection") return false;
+      if (!isDraftEdit(c.toolName)) return false;
       const s =
         (c.state === "output-available" && (c.output as any)?.summary) ||
         (c.state === "approval-requested" && approvals.get(c.approval?.id ?? "")?.summary);
@@ -963,6 +966,77 @@ function Answer({
         p.type === "data-approvals" &&
         p.data.some((a) => (approvals.get(String(a.id)) ?? a).summary === "no_change"),
     );
+
+  const hasAdjusted =
+    !hasNoChange &&
+    (calls.some((c) => {
+      if (!isDraftEdit(c.toolName)) return false;
+      if (c.approval?.id && decisions?.[Number(c.approval.id)] === "adjusted") return true;
+      const a = c.approval?.id ? approvals.get(c.approval.id) : undefined;
+      return Boolean(a?.id && decisions?.[a.id] === "adjusted");
+    }) ||
+    m.parts.some(
+      (p) =>
+        p.type === "data-approvals" &&
+        p.data.some((a) => isDraftEdit(a.tool) && decisions?.[a.id] === "adjusted"),
+    ));
+
+  const hasApplied =
+    !hasNoChange &&
+    !hasAdjusted &&
+    (calls.some((c) => {
+      if (!isDraftEdit(c.toolName)) return false;
+      if (c.approval?.id && decisions?.[Number(c.approval.id)] === "adjusted") return false;
+      if (c.approval?.id && decisions?.[Number(c.approval.id)] === "applied") return true;
+      const a = c.approval?.id ? approvals.get(c.approval.id) : undefined;
+      if (a?.id && decisions?.[a.id] === "adjusted") return false;
+      if (c.state === "output-available") {
+        const out = c.output as any;
+        if (out?.summary === "no_change" || out?.no_change) return false;
+        return true;
+      }
+      return (
+        (a?.id && decisions?.[a.id] === "applied") ||
+        (a?.state === "done" && a?.summary !== "no_change")
+      );
+    }) ||
+    m.parts.some(
+      (p) =>
+        p.type === "data-approvals" &&
+        p.data.some(
+          (a) =>
+            isDraftEdit(a.tool) &&
+            (decisions?.[a.id] === "applied" ||
+              (decisions?.[a.id] !== "adjusted" &&
+                a.state === "done" &&
+                a.summary !== "no_change")),
+        ),
+    ));
+
+  const hasRejected =
+    !hasNoChange &&
+    !hasApplied &&
+    !hasAdjusted &&
+    (calls.some((c) => {
+      if (!isDraftEdit(c.toolName)) return false;
+      if (c.approval?.id && decisions?.[Number(c.approval.id)] === "rejected") return true;
+      if (c.state === "output-denied") return true;
+      const a = c.approval?.id ? approvals.get(c.approval.id) : undefined;
+      return (
+        (a?.id && decisions?.[a.id] === "rejected") ||
+        a?.state === "rejected" ||
+        a?.state === "stale"
+      );
+    }) ||
+    m.parts.some(
+      (p) =>
+        p.type === "data-approvals" &&
+        p.data.some(
+          (a) =>
+            isDraftEdit(a.tool) &&
+            (decisions?.[a.id] === "rejected" || a.state === "rejected" || a.state === "stale"),
+        ),
+    ));
   // Calls of one tool in a row, each a plain line (no card), go as one line: each run by its first.
   const runs = new Map<number, DynamicToolUIPart[]>();
   let run: DynamicToolUIPart[] | undefined;
@@ -1084,13 +1158,28 @@ function Answer({
       return (
         <Fragment key={p.toolCallId}>
           {a.id === review?.approval && (
-            <div className="overflow-hidden rounded-xl border-[0.5px] border-primary">
-              <div className="flex items-center gap-2 bg-muted px-3 py-2 leading-5">
-                <span className="font-semibold">{t("wit.compose.review")}</span>
-                <span className="font-mono text-foreground/80 text-sm">{a.tool}</span>
+            <div className="overflow-hidden rounded-xl border border-border bg-card shadow-md">
+              <div className="flex items-center justify-between border-b border-border/40 bg-muted px-3.5 py-2.5 leading-5">
+                <div className="flex items-center gap-2">
+                  <span className="font-semibold text-sm">{review?.title ?? t("wit.compose.review")}</span>
+                  <span className="font-mono text-foreground/80 text-sm">{a.tool}</span>
+                </div>
+                {review?.onToggleAdjust && (
+                  <Button
+                    size="icon-xs"
+                    variant="ghost"
+                    className="size-6 text-muted-foreground hover:text-foreground cursor-pointer"
+                    onClick={review.onToggleAdjust}
+                    title={t("wit.compose.adjust")}
+                    aria-label={t("wit.compose.adjust")}
+                  >
+                    <RiEditLine className="size-3.5" />
+                  </Button>
+                )}
               </div>
-              <div className="px-3 py-2 text-md">{review?.summary}</div>
-              <div className="flex gap-1.5 border-muted border-t-[0.5px] px-3 py-2">
+              <div className="bg-card px-3.5 py-2.5 text-md text-foreground">{review?.summary}</div>
+              {review?.adjustArea}
+              <div className="flex gap-2 border-t border-border/40 bg-card px-3.5 py-2.5">
                 {review?.actions}
               </div>
             </div>
@@ -1160,9 +1249,27 @@ function Answer({
         <Settled key={a.id} a={a} onDraft={onDraft} t={t} />
       ))}
       {hasNoChange && (
-        <div className="flex items-center gap-2 rounded-lg bg-sidebar px-3 py-2 text-base text-muted-foreground">
+        <div className="flex items-center gap-2 rounded-lg bg-sidebar px-3 py-2 text-base text-foreground">
           <RiSparkling2Line className="size-4 shrink-0 text-foreground" />
           <span>{t("wit.compose.no_changes")}</span>
+        </div>
+      )}
+      {hasAdjusted && (
+        <div className="flex items-center gap-2 rounded-lg bg-sidebar px-3 py-2 text-base text-foreground">
+          <RiSparkling2Line className="size-4 shrink-0 text-foreground" />
+          <span>{t("wit.compose.adjusting_status")}</span>
+        </div>
+      )}
+      {hasApplied && (
+        <div className="flex items-center gap-2 rounded-lg bg-sidebar px-3 py-2 text-base text-foreground">
+          <RiSparkling2Line className="size-4 shrink-0 text-foreground" />
+          <span>{t("wit.compose.applied_status")}</span>
+        </div>
+      )}
+      {hasRejected && (
+        <div className="flex items-center gap-2 rounded-lg bg-sidebar px-3 py-2 text-base text-foreground">
+          <RiSparkling2Line className="size-4 shrink-0 text-foreground" />
+          <span>{t("wit.compose.rejected_status")}</span>
         </div>
       )}
       {live && !moving && working}
@@ -1250,7 +1357,14 @@ function Answer({
 }
 
 /** The edit the page reviews: its card in the panel holds its summary, then its decisions. */
-export type PanelReview = { approval: number; summary: ReactNode; actions: ReactNode };
+export type PanelReview = {
+  approval: number;
+  summary: ReactNode;
+  actions: ReactNode;
+  title?: string;
+  onToggleAdjust?: () => void;
+  adjustArea?: ReactNode;
+};
 
 /**
  * Wit's conversation and input, in either host. As the compose window's panel (layout "panel"):
@@ -1294,6 +1408,7 @@ export function Panel({
   history,
   locked,
   review,
+  decisions,
   resume,
   onRunning,
   onDecide,
@@ -1320,6 +1435,7 @@ export function Panel({
   history: WitHistory;
   locked: boolean;
   review?: PanelReview;
+  decisions?: Record<number, "applied" | "rejected" | "adjusted">;
   resume?: { run: number };
   onRunning?(on: boolean): void;
   onDecide?: Decide;
@@ -2028,6 +2144,7 @@ export function Panel({
                     nums={nums}
                     approvals={approvals}
                     review={review}
+                    decisions={decisions}
                     tools={tools}
                     onDraft={onDraft}
                     onLink={link}
