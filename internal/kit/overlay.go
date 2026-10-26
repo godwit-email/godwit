@@ -115,6 +115,19 @@ func Frost(fill ui.Color) ui.Material {
 	return scrim{theme.BackdropBlur * 2, fill.Alpha(0.7)}
 }
 
+// PopoverAt is a panel anchored to anchor at (at, self) with topOffset while *open; a press outside or Escape closes it.
+func PopoverAt(c *ui.Context, anchor ui.Element, open *bool, at, self ui.Anchor, topOffset float32, body func()) {
+	t, th := theme.Of(c), c.Theme()
+	k := enter(c, open, theme.MotionFast)
+	ui.PopoverBase(c, anchor, open, func(panel ui.Element) {
+		panel.AttachTo(anchor, at, self).
+			Opacity(k).Margin(topOffset+rise(k), 0, 0, 0).Padding(th.Space(3)).
+			Radius(t.Radius.Lg).Gap(th.Space(2)).Background(t.Background).Border(theme.Hairline, t.Border)
+		Elevate(c, panel, theme.ShadowMd)
+		body()
+	})
+}
+
 // Popover is a panel below anchor while *open; a press outside or Escape closes it.
 func Popover(c *ui.Context, anchor ui.Element, open *bool, body func()) {
 	t, th := theme.Of(c), c.Theme()
