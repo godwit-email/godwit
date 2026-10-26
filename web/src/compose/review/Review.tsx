@@ -1,5 +1,5 @@
 import { RiArrowGoBackLine, RiCheckLine, RiSparkling2Line } from "@remixicon/react";
-import { type FocusEvent, type ReactNode, useRef, useState } from "react";
+import { type FocusEvent, type ReactNode, useLayoutEffect, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
 import type { ReviewBlock, ReviewOp, Review as ReviewT, ReviewToken } from "@/mygo";
 import type { T } from "@/shared/i18n";
@@ -169,16 +169,52 @@ export function Review({
   // Offsets are from the change's first line box, the origin of an inline's containing block.
   const [at, setAt] = useState({ left: 0, top: 0 });
   const closing = useRef<ReturnType<typeof setTimeout>>(undefined);
+  const popupRef = useRef<HTMLSpanElement>(null);
+
   const show = (k: number, el: HTMLElement, y = Infinity) => {
     clearTimeout(closing.current);
     if (active === k) return; // back from the buttons: keep them where they are
     const rs = [...el.getClientRects()];
     const line = rs.find((r) => y <= r.bottom) ?? rs[rs.length - 1];
-    setAt(
-      line ? { left: line.left - rs[0].left, top: line.bottom - rs[0].top } : { left: 0, top: 0 },
-    );
+    if (!line) {
+      setAt({ left: 0, top: 0 });
+      setActive(k);
+      return;
+    }
+    const baseLeft = line.left - rs[0].left;
+    const baseTop = line.bottom - rs[0].top;
+    let initialLeft = baseLeft;
+    const section = el.closest("section");
+    if (section) {
+      const boundary = section.getBoundingClientRect();
+      const estimatedWidth = popupRef.current?.offsetWidth || 200;
+      if (line.left + estimatedWidth > boundary.right - 12) {
+        const overflow = line.left + estimatedWidth - (boundary.right - 12);
+        initialLeft = Math.max(baseLeft - overflow, boundary.left + 12 - rs[0].left);
+      }
+    }
+    setAt({ left: initialLeft, top: baseTop });
     setActive(k);
   };
+
+  useLayoutEffect(() => {
+    if (active < 0 || !popupRef.current) return;
+    const pop = popupRef.current;
+    const popRect = pop.getBoundingClientRect();
+    const section = pop.closest("section");
+    if (!section) return;
+    const boundary = section.getBoundingClientRect();
+    const maxRight = boundary.right - 12;
+    const minLeft = boundary.left + 12;
+    if (popRect.right > maxRight) {
+      const shift = popRect.right - maxRight;
+      setAt((prev) => ({ ...prev, left: prev.left - shift }));
+    } else if (popRect.left < minLeft) {
+      const shift = minLeft - popRect.left;
+      setAt((prev) => ({ ...prev, left: prev.left + shift }));
+    }
+  }, [active]);
+
   // A short grace on leaving, so the mouse can cross to the buttons.
   const hide = () => {
     closing.current = setTimeout(() => setActive(-1), 200);
@@ -214,7 +250,7 @@ export function Review({
               data-change={s.k}
               // biome-ignore lint/a11y/noNoninteractiveTabindex: the caret's stand-in: a change can take focus
               tabIndex={0}
-              className="relative outline-none"
+              className={`relative outline-none ${active === s.k ? "z-30" : ""}`}
               onMouseEnter={(e) => show(s.k, e.currentTarget, e.clientY)}
               onMouseLeave={hide}
               onFocus={(e) => show(s.k, e.currentTarget)}
@@ -223,7 +259,13 @@ export function Review({
               {ops.length > 0 ? ops : " "}
               {active === s.k && (
                 // pt-1, not mt-1: the gap stays inside the change, so moving the mouse onto the buttons keeps them open.
-                <span className="absolute z-10 pt-1" style={at}>
+                <span
+                  ref={popupRef}
+                  className="absolute z-50 pt-1"
+                  style={at}
+                  onMouseEnter={() => clearTimeout(closing.current)}
+                  onMouseLeave={hide}
+                >
                   <span className="flex items-center gap-1 whitespace-nowrap rounded-lg border-[0.5px] bg-popover p-1 text-base shadow-md">
                     {link && (
                       <span className="px-1 text-muted-foreground text-sm">
