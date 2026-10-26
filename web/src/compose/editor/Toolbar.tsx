@@ -2,6 +2,8 @@ import { upsertLink } from "@platejs/link";
 import { toggleBulletedList, toggleNumberedList } from "@platejs/list-classic";
 import {
   type RemixiconComponentType,
+  RiArrowGoBackLine,
+  RiArrowGoForwardLine,
   RiBold,
   RiCheckLine,
   RiDoubleQuotesL,
@@ -36,14 +38,54 @@ import type { T } from "@/shared/i18n";
 import { safeHref } from "./html";
 import { LinkPopover } from "./LinkPopover";
 
-type Key = "bold" | "italic" | "underline" | "strikethrough" | "link" | "ul" | "ol" | "blockquote";
+type Key =
+  | "undo"
+  | "redo"
+  | "bold"
+  | "italic"
+  | "underline"
+  | "strikethrough"
+  | "link"
+  | "ul"
+  | "ol"
+  | "blockquote";
 
 const items: {
   key: Key;
   label: string;
   Icon: RemixiconComponentType;
-  run(e: SlateEditor): void;
+  run(e: SlateEditor, onUndo?: () => void, onRedo?: () => void): void;
 }[] = [
+  {
+    key: "undo",
+    label: "compose.undo",
+    Icon: RiArrowGoBackLine,
+    run: (e, onUndo) => {
+      const history = (e as { history?: { undos?: unknown[] } }).history;
+      if (history?.undos && history.undos.length > 0) {
+        (e as { undo?: () => void }).undo?.();
+      } else if (onUndo) {
+        onUndo();
+      } else {
+        (e as { undo?: () => void }).undo?.();
+      }
+    },
+  },
+  {
+    key: "redo",
+    label: "compose.redo",
+    Icon: RiArrowGoForwardLine,
+    run: (e, _, onRedo) => {
+      const history = (e as { history?: { redos?: unknown[] } }).history;
+      if (history?.redos && history.redos.length > 0) {
+        (e as { redo?: () => void }).redo?.();
+      } else if (onRedo) {
+        onRedo();
+      } else {
+        (e as { redo?: () => void }).redo?.();
+      }
+    },
+  },
   { key: "bold", label: "compose.bold", Icon: RiBold, run: (e) => e.tf.toggleMark("bold") },
   { key: "italic", label: "compose.italic", Icon: RiItalic, run: (e) => e.tf.toggleMark("italic") },
   {
@@ -135,8 +177,10 @@ export function Toolbar(props: {
   linkOpen: boolean;
   onLinkOpenChange(open: boolean): void;
   attach?: ReactNode;
+  onUndo?: () => void;
+  onRedo?: () => void;
 }) {
-  const { t, linkOpen, onLinkOpenChange, attach } = props;
+  const { t, linkOpen, onLinkOpenChange, attach, onUndo, onRedo } = props;
   const editor = useEditorRef();
   const readOnly = useEditorReadOnly();
   const value = useEditorSelector(active, []).split(" ").filter(Boolean);
@@ -160,17 +204,33 @@ export function Toolbar(props: {
     return true;
   };
 
+  const canUndo = useEditorSelector((e) => {
+    const h = (e as { history?: { undos?: unknown[] } }).history;
+    return Boolean(h?.undos && h.undos.length > 0);
+  }, []);
+
+  const canRedo = useEditorSelector((e) => {
+    const h = (e as { history?: { redos?: unknown[] } }).history;
+    return Boolean(h?.redos && h.redos.length > 0);
+  }, []);
+
+  const isButtonDisabled = (key: Key): boolean => {
+    if (readOnly) return true;
+    if (key === "undo") return !canUndo;
+    if (key === "redo") return !canRedo;
+    return false;
+  };
+
   const button = (it: (typeof items)[number]): ReactElement => (
     <ToggleGroupItem
       value={it.key}
       aria-label={t(it.label)}
-      // read-only (Wit's lock), the toggles do nothing but keep their look, as the design shows
-      className="size-7 min-w-7 rounded-md px-0 text-foreground/80 disabled:opacity-100"
-      disabled={readOnly}
+      className="size-7 min-w-7 rounded-md px-0 text-foreground/80 transition-all duration-200 disabled:opacity-30 disabled:pointer-events-none"
+      disabled={isButtonDisabled(it.key)}
       onMouseDown={(e) => e.preventDefault()} // keep the editor's selection
       onClick={() => {
         if (it.key === "link") return;
-        it.run(editor);
+        it.run(editor, onUndo, onRedo);
         editor.tf.focus();
       }}
     >
@@ -316,11 +376,28 @@ export function Toolbar(props: {
 }
 
 /** The toolbar while no editor shows (a review or Wit writing in its place): every toggle off. */
-export function IdleToolbar({ t, attach }: { t: T; attach?: ReactNode }) {
+export function IdleToolbar({
+  t,
+  attach,
+  onUndo,
+  onRedo,
+}: {
+  t: T;
+  attach?: ReactNode;
+  onUndo?: () => void;
+  onRedo?: () => void;
+}) {
   const editor = usePlateEditor({ plugins: [] });
   return (
     <Plate editor={editor} readOnly>
-      <Toolbar t={t} linkOpen={false} onLinkOpenChange={() => {}} attach={attach} />
+      <Toolbar
+        t={t}
+        linkOpen={false}
+        onLinkOpenChange={() => {}}
+        attach={attach}
+        onUndo={onUndo}
+        onRedo={onRedo}
+      />
     </Plate>
   );
 }

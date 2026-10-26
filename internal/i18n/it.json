@@ -1234,5 +1234,7 @@
   "wit_ctx_compact": "Compatta",
   "settings_account_ai": "Istruzioni e informazioni IA",
   "settings_account_ai_help": "Informazioni personali (es. nome, telefono, indirizzo, ruolo) e linee guida di redazione per questo account.",
-  "settings_account_ai_placeholder": "es.\nNome: Dott. Mario Rossi\nTelefono: +39 02 1234567\nRuolo: Amministratore Delegato, ABC S.r.l.\nLinee guida: Tono formale nelle email esterne."
+  "settings_account_ai_placeholder": "es.\nNome: Dott. Mario Rossi\nTelefono: +39 02 1234567\nRuolo: Amministratore Delegato, ABC S.r.l.\nLinee guida: Tono formale nelle email esterne.",
+  "compose_undo": "Annulla",
+  "compose_redo": "Ripeti"
 }

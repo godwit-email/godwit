@@ -1,17 +1,20 @@
-import { isHotkey, RangeApi, type TRange } from "platejs";
+import { isHotkey, RangeApi, type TRange, type Value } from "platejs";
 import { createPlatePlugin, Plate, PlateContent, usePlateEditor } from "platejs/react";
 import {
   createContext,
+  forwardRef,
   type ReactNode,
   useCallback,
   useContext,
   useEffect,
+  useImperativeHandle,
+  useLayoutEffect,
   useRef,
   useState,
 } from "react";
 import { createPortal } from "react-dom";
 import type { T } from "@/shared/i18n";
-import { fromHTML, offsetOf, toHTML, toText } from "./html";
+import { deserialize, fromHTML, offsetOf, toHTML, toText } from "./html";
 import { plugins } from "./plugins";
 import { Toolbar } from "./Toolbar";
 
@@ -58,8 +61,17 @@ const HeldBlockPlugin = createPlatePlugin({
  * to `onCmdK` when set (Wit), else opens the link popover. While a `popover` is given (⌘K's), it
  * shows right under the block the selection ends in, and the selection ⌘K took stays marked.
  */
-export function Editor(props: {
+export type EditorHandle = {
+  setValue(html: string): void;
+  undo(): void;
+  redo(): void;
+  canUndo(): boolean;
+  canRedo(): boolean;
+};
+
+export type EditorProps = {
   initial: string;
+  initialUndo?: string;
   readOnly: boolean;
   placeholder: string;
   onChange(html: string): void;
@@ -69,14 +81,91 @@ export function Editor(props: {
   onCmdK?(s: CmdKSelection): void;
   toolbarSlot?: HTMLElement | null;
   popover?: ReactNode;
-}) {
-  const { initial, readOnly, placeholder, onChange, onComposing, t, attach, onCmdK } = props;
-  const { toolbarSlot, popover } = props;
+  onUndo?: () => void;
+  onRedo?: () => void;
+};
+
+export const Editor = forwardRef<EditorHandle, EditorProps>(function Editor(props, ref) {
+  const { initial, initialUndo, readOnly, placeholder, onChange, onComposing, t, attach, onCmdK } =
+    props;
+  const { toolbarSlot, popover, onUndo, onRedo } = props;
   const held = !!popover;
+  const hasInitialUndo = useRef(initialUndo !== undefined && initialUndo !== initial);
   const editor = usePlateEditor({
     plugins: [...plugins, HeldBlockPlugin],
-    value: (e) => fromHTML(e, initial),
+    value: (e) => fromHTML(e, hasInitialUndo.current ? (initialUndo as string) : initial),
   });
+
+  useLayoutEffect(() => {
+    if (hasInitialUndo.current) {
+      hasInitialUndo.current = false;
+      const nodes = deserialize(editor, initial);
+      const val = (nodes.length ? nodes : [{ type: "p", children: [{ text: "" }] }]) as Value;
+      const tf = editor.tf as unknown as { withNewBatch?: (fn: () => void) => void };
+      if (typeof tf.withNewBatch === "function") {
+        tf.withNewBatch(() => {
+          editor.tf.setValue(val);
+        });
+      } else {
+        editor.tf.setValue(val);
+      }
+    }
+  }, [editor, initial]);
+
+  useEffect(() => {
+    const e = editor as unknown as { undo?: () => void; redo?: () => void };
+    const prevUndo = e.undo;
+    const prevRedo = e.redo;
+    if (prevUndo) {
+      e.undo = () => {
+        prevUndo();
+        onChange(toHTML(editor.children));
+      };
+    }
+    if (prevRedo) {
+      e.redo = () => {
+        prevRedo();
+        onChange(toHTML(editor.children));
+      };
+    }
+    return () => {
+      if (prevUndo) e.undo = prevUndo;
+      if (prevRedo) e.redo = prevRedo;
+    };
+  }, [editor, onChange]);
+
+  useImperativeHandle(
+    ref,
+    () => ({
+      setValue(html: string) {
+        const nodes = deserialize(editor, html);
+        const val = (nodes.length ? nodes : [{ type: "p", children: [{ text: "" }] }]) as Value;
+        const tf = editor.tf as unknown as { withNewBatch?: (fn: () => void) => void };
+        if (typeof tf.withNewBatch === "function") {
+          tf.withNewBatch(() => {
+            editor.tf.setValue(val);
+          });
+        } else {
+          editor.tf.setValue(val);
+        }
+      },
+      undo() {
+        (editor as unknown as { undo?: () => void }).undo?.();
+      },
+      redo() {
+        (editor as unknown as { redo?: () => void }).redo?.();
+      },
+      canUndo() {
+        const h = (editor as unknown as { history?: { undos?: unknown[] } }).history;
+        return Boolean(h?.undos && h.undos.length > 0);
+      },
+      canRedo() {
+        const h = (editor as unknown as { history?: { redos?: unknown[] } }).history;
+        return Boolean(h?.redos && h.redos.length > 0);
+      },
+    }),
+    [editor],
+  );
   const [linkOpen, setLinkOpen] = useState(false);
   const taken = useRef<TRange | null>(null); // the selection ⌘K took
   const [mark, setMark] = useState({ block: -1, whole: false });
@@ -88,7 +177,14 @@ export function Editor(props: {
     [held],
   );
   const toolbar = (
-    <Toolbar t={t} linkOpen={linkOpen} onLinkOpenChange={setLinkOpen} attach={attach} />
+    <Toolbar
+      t={t}
+      linkOpen={linkOpen}
+      onLinkOpenChange={setLinkOpen}
+      attach={attach}
+      onUndo={onUndo}
+      onRedo={onRedo}
+    />
   );
 
   const editableRef = useRef<HTMLDivElement | null>(null);
@@ -211,6 +307,31 @@ export function Editor(props: {
                 editor.tf.insertText("\n");
                 return;
               }
+              if (
+                isHotkey("mod+z", { byKey: true }, e.nativeEvent) &&
+                !e.shiftKey &&
+                e.target === e.currentTarget &&
+                !e.nativeEvent.isComposing
+              ) {
+                const history = (editor as unknown as { history?: { undos?: unknown[] } }).history;
+                if ((!history?.undos || history.undos.length === 0) && onUndo) {
+                  e.preventDefault();
+                  onUndo();
+                  return;
+                }
+              }
+              if (
+                isHotkey(["mod+shift+z", "mod+y"], { byKey: true }, e.nativeEvent) &&
+                e.target === e.currentTarget &&
+                !e.nativeEvent.isComposing
+              ) {
+                const history = (editor as unknown as { history?: { redos?: unknown[] } }).history;
+                if ((!history?.redos || history.redos.length === 0) && onRedo) {
+                  e.preventDefault();
+                  onRedo();
+                  return;
+                }
+              }
               // ⌘K on a selection: Wit's rewrite when offered, else the link popover. Not from
               // inside the popover, which sits in the editable's DOM.
               if (
@@ -242,4 +363,4 @@ export function Editor(props: {
       </Plate>
     </HeldContext.Provider>
   );
-}
+});

@@ -28,7 +28,7 @@ import { formRound, Panel as WitPanel, witError } from "@/wit/Panel";
 import { useResume } from "@/wit/resume";
 import { approvalsOf, WitTransport } from "@/wit/transport";
 import { Attachments } from "./Attachments";
-import { type CmdKSelection, Editor } from "./editor/Editor";
+import { type CmdKSelection, Editor, type EditorHandle } from "./editor/Editor";
 import { IdleToolbar } from "./editor/Toolbar";
 import { Fields, type FieldsEdit, type FieldsHandle } from "./fields/Fields";
 import { Notices } from "./Notices";
@@ -391,6 +391,16 @@ function Compose({
   const [panelAdjusting, setPanelAdjusting] = useState(false);
   const [handed, setHanded] = useState<{ text: string } | undefined>();
   const [cmdk, setCmdk] = useState<CmdKSelection | null>(null);
+  const editorRef = useRef<EditorHandle>(null);
+  const adopting = useRef(false);
+  const aiSubjectChanges = useRef<
+    {
+      prevSubject: string;
+      newSubject: string;
+      prevBody: string;
+      newBody: string;
+    }[]
+  >([]);
   const [streamed, setStreamed] = useState(""); // update_draft's HTML, shown while Wit writes a blank body
   const edits = useRef(0); // local body edits taken
   const runEdits = useRef(0); // body edits when the last run or decision started
@@ -416,8 +426,18 @@ function Compose({
     (key === "wit.compose.locked" ? toast.warning : toast)(t(key), { id: "locked" });
   };
 
-  // The body as stored, adopted: the editor remounts on it; the saver reads it as saved.
+  // The body as stored, adopted: the editor updates its content; the saver reads it as saved.
   const adopt = (revision: number, body: string, subject?: string) => {
+    const prevBody = cur.current.body;
+    const prevSubject = cur.current.subject;
+    if (subject !== undefined && subject !== prevSubject) {
+      aiSubjectChanges.current.push({
+        prevSubject,
+        newSubject: subject,
+        prevBody,
+        newBody: body,
+      });
+    }
     cur.current = {
       ...cur.current,
       body,
@@ -425,7 +445,16 @@ function Compose({
       ...(subject !== undefined ? { subject } : {}),
     };
     setF(cur.current);
-    setInitial((i) => ({ body, n: i.n + 1 }));
+    if (editorRef.current) {
+      adopting.current = true;
+      try {
+        editorRef.current.setValue(body);
+      } finally {
+        adopting.current = false;
+      }
+    } else {
+      setInitial((i) => ({ body, n: i.n + 1 }));
+    }
     // biome-ignore lint/correctness/useHookAtTopLevel: the saver's method, not a hook
     saver.current?.useLatest(revision, cur.current);
   };
@@ -586,8 +615,31 @@ function Compose({
   const edit = (e: Partial<ComposeEdit>) => {
     // A closing's answer is out (the window may be gone), the draft is sent, or a
     // conflict resolution is replacing it.
-    if (gate.frozen || doneRef.current || busy.current) return;
-    const n = { ...cur.current, ...e };
+    if (gate.frozen || doneRef.current || busy.current || adopting.current) return;
+    const nextEdit = { ...e };
+    if (e.body !== undefined && aiSubjectChanges.current.length > 0) {
+      const normalize = (html: string) =>
+        html
+          .replace(/<br\s*\/?>/gi, "<br>")
+          .replace(/<p><br><\/p>|<p><\/p>/gi, "")
+          .replace(/\s+/g, " ")
+          .trim();
+      const normBody = normalize(e.body);
+      const undoMatch = [...aiSubjectChanges.current]
+        .reverse()
+        .find((c) => normalize(c.prevBody) === normBody && cur.current.subject === c.newSubject);
+      if (undoMatch) {
+        nextEdit.subject = undoMatch.prevSubject;
+      } else {
+        const redoMatch = aiSubjectChanges.current.find(
+          (c) => normalize(c.newBody) === normBody && cur.current.subject === c.prevSubject,
+        );
+        if (redoMatch) {
+          nextEdit.subject = redoMatch.newSubject;
+        }
+      }
+    }
+    const n = { ...cur.current, ...nextEdit };
     if (sv?.edit(n) === false) return; // refused while an operation runs
     cur.current = n;
     setF(n);
@@ -721,9 +773,13 @@ function Compose({
       witResume.decide(a.run, () => api.answer(a.id, formRound(a), answers)),
     ));
   };
-  const undo = async () => {
+  const undo = () => {
     setApplied(false);
-    await bodyOp(() => api.undo());
+    editorRef.current?.undo();
+    void bodyOp(() => api.undo());
+  };
+  const redo = () => {
+    editorRef.current?.redo();
   };
   const closeCmdK = useCallback(() => setCmdk(null), []);
   const openCmdK = (sel: CmdKSelection) => {
@@ -972,6 +1028,7 @@ function Compose({
                       <Static html={streamed} label={t("compose.body")} caret />
                     ) : (
                       <Editor
+                        ref={editorRef}
                         key={`${state.draftId}:${initial.n}`}
                         initial={initial.body}
                         readOnly={locked || witLocked}
@@ -986,6 +1043,8 @@ function Compose({
                         }
                         toolbarSlot={toolbarSlot}
                         attach={attach}
+                        onUndo={undo}
+                        onRedo={redo}
                         popover={
                           cmdk &&
                           !locked &&
@@ -1035,7 +1094,7 @@ function Compose({
             {/* The toolbar (rendered by the editor into the slot, or idle while none shows), then Send. */}
             <div data-bar className="mx-4 flex shrink-0 flex-wrap items-center gap-2 py-3">
               <div ref={setToolbarSlot} className="contents">
-                {!showEditor && <IdleToolbar t={t} attach={attach} />}
+                {!showEditor && <IdleToolbar t={t} attach={attach} onUndo={undo} onRedo={redo} />}
               </div>
               <SendBar sending={sending} frozen={locked} onSend={() => send()} t={t} />
             </div>

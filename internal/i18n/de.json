@@ -1234,5 +1234,7 @@
   "wit_ctx_compact": "Verdichten",
   "settings_account_ai": "KI-Anweisungen & Fakten",
   "settings_account_ai_help": "Persönliche Fakten (z. B. Name, Telefon, Adresse, Rolle) und Schreibanweisungen für dieses Konto.",
-  "settings_account_ai_placeholder": "z. B.\nName: Dr. Max Mustermann\nTelefon: +49 89 1234567\nRolle: Geschäftsführer, ABC GmbH\nHinweise: Bei externen Mails immer formell (Siezen). Termine nur Di–Do vorschlagen."
+  "settings_account_ai_placeholder": "z. B.\nName: Dr. Max Mustermann\nTelefon: +49 89 1234567\nRolle: Geschäftsführer, ABC GmbH\nHinweise: Bei externen Mails immer formell (Siezen). Termine nur Di–Do vorschlagen.",
+  "compose_undo": "Rückgängig",
+  "compose_redo": "Wiederholen"
 }

@@ -1234,5 +1234,7 @@
   "wit_ctx_compact": "压缩对话",
   "settings_account_ai": "AI 设定与事实信息",
   "settings_account_ai_help": "用于此账户起草邮件的个人事实（如姓名、电话、地址、职位）及写作规则。",
-  "settings_account_ai_placeholder": "例如：\n姓名：张三\n电话：+86 10 12345678\n职位：总经理，ABC 有限公司\n提示：对外邮件始终保持正式语气。"
+  "settings_account_ai_placeholder": "例如：\n姓名：张三\n电话：+86 10 12345678\n职位：总经理，ABC 有限公司\n提示：对外邮件始终保持正式语气。",
+  "compose_undo": "撤销",
+  "compose_redo": "重做"
 }

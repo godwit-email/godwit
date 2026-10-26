@@ -1234,5 +1234,7 @@
   "wit_ctx_compact": "会話を圧縮",
   "settings_account_ai": "AI指示と事実情報",
   "settings_account_ai_help": "このアカウントの個人情報（氏名、電話番号、住所、役職など）およびメール作成のガイドライン。",
-  "settings_account_ai_placeholder": "例：\n氏名：山田 太郎\n電話：03-1234-5678\n役職：代表取締役、ABC株式会社\n指示：社外メールは敬語を使用。"
+  "settings_account_ai_placeholder": "例：\n氏名：山田 太郎\n電話：03-1234-5678\n役職：代表取締役、ABC株式会社\n指示：社外メールは敬語を使用。",
+  "compose_undo": "元に戻す",
+  "compose_redo": "やり直す"
 }

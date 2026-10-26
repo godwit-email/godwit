@@ -1234,5 +1234,7 @@
   "wit_ctx_compact": "Comprimeren",
   "settings_account_ai": "AI-instructies en feiten",
   "settings_account_ai_help": "Persoonlijke feiten (bijv. naam, telefoon, adres, functie) en opstelrichtlijnen voor dit account.",
-  "settings_account_ai_placeholder": "bijv.\nNaam: Dr. Jan Jansen\nTelefoon: +31 20 1234567\nFunctie: Directeur, ABC B.V.\nRichtlijnen: Altijd formeel bij externe e-mails."
+  "settings_account_ai_placeholder": "bijv.\nNaam: Dr. Jan Jansen\nTelefoon: +31 20 1234567\nFunctie: Directeur, ABC B.V.\nRichtlijnen: Altijd formeel bij externe e-mails.",
+  "compose_undo": "Ongedaan maken",
+  "compose_redo": "Opnieuw"
 }

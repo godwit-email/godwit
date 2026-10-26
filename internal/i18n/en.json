@@ -2491,5 +2491,7 @@
   },
   "settings_account_ai": "AI Instructions & Facts",
   "settings_account_ai_help": "Personal facts (e.g. name, phone, address, role) and drafting guidelines for this account.",
-  "settings_account_ai_placeholder": "e.g.\nName: Dr. Jane Doe\nPhone: +1 555-0199\nRole: VP of Engineering, Acme Inc.\nGuidelines: Always formal with external partners. Suggest meetings Tue–Thu only."
+  "settings_account_ai_placeholder": "e.g.\nName: Dr. Jane Doe\nPhone: +1 555-0199\nRole: VP of Engineering, Acme Inc.\nGuidelines: Always formal with external partners. Suggest meetings Tue–Thu only.",
+  "compose_undo": "Undo",
+  "compose_redo": "Redo"
 }

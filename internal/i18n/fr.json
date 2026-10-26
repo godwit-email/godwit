@@ -1234,5 +1234,7 @@
   "wit_ctx_compact": "Compacter",
   "settings_account_ai": "Instructions et informations IA",
   "settings_account_ai_help": "Informations personnelles (ex. nom, téléphone, adresse, rôle) et directives de rédaction pour ce compte.",
-  "settings_account_ai_placeholder": "ex.\nNom : Dr. Jean Dupont\nTéléphone : +33 1 23 45 67 89\nRôle : Directeur général, ABC SAS\nDirectives : Toujours formel avec les externes."
+  "settings_account_ai_placeholder": "ex.\nNom : Dr. Jean Dupont\nTéléphone : +33 1 23 45 67 89\nRôle : Directeur général, ABC SAS\nDirectives : Toujours formel avec les externes.",
+  "compose_undo": "Annuler",
+  "compose_redo": "Rétablir"
 }
