@@ -1487,6 +1487,12 @@ func (s *Service) startResume(ctx context.Context, end func(), runID int64) erro
 		if err != nil {
 			return err
 		}
+		// as a run done the usual way (settleRun): the closed history may be over its budget
+		if model, err := s.resolveModel(ctx, store.Str(r[1])); err == nil {
+			if closed, err := s.history(ctx, convID); err == nil {
+				s.compactLater(convID, model, closed)
+			}
+		}
 		end()
 		s.publishWit(convID, WitEvent{ConversationID: convID, RunID: runID, Turn: s.runTurn(ctx, runID), Ends: true, Event: ai.Event{Kind: "done"}})
 		return nil

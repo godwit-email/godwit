@@ -978,9 +978,12 @@ function Compose({
                   ? {
                       approval: reviewing.approval,
                       summary: reviewSummary(reviewing, t),
-                      // a skill's proposal is not in Wit's history: a follow-up could not revise it
+                      // only Wit's own update_draft is in the history the follow-up runs on: a
+                      // skill's proposal is not, and a ⌘K one is in a conversation of its own
                       onAdjust:
-                        current?.callId === "skill" ? undefined : () => setAdjusting((v) => !v),
+                        current?.tool === "update_draft" && current.callId !== "skill"
+                          ? () => setAdjusting((v) => !v)
+                          : undefined,
                       adjusting: adjusting && (
                         <AdjustInput
                           busy={deciding}
