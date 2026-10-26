@@ -18,12 +18,10 @@ import (
 // MaxResultBytes caps the JSON a plugin call hands back to the host.
 const MaxResultBytes = 1 << 20
 
-// MemoryLimit is what one macrotask of a plugin may allocate (a call, or the
-// host settling one of its promises): past it the runtime stops the call with
-// ErrMemoryLimit.
-// shortcut: the budget is per macrotask (eventloop resets it before each
-// settlement), so a call that allocates between many host awaits is bounded
-// only by its deadline; carry the count across settlements if that matters.
+// MemoryLimit is what a plugin's runtime may hold: past it the runtime stops
+// the call with ErrMemoryLimit. The budget spans the event loop's run, across
+// host awaits, and an allocation past it first measures what the plugin still
+// keeps, so one that keeps little may allocate as much as it likes.
 const MemoryLimit = 256 << 20
 
 // Clock schedules the call deadlines; tests inject a fake one.
