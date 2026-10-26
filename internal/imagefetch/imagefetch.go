@@ -6,6 +6,7 @@
 package imagefetch
 
 import (
+	"bufio"
 	"bytes"
 	"context"
 	"encoding/base64"
@@ -26,6 +27,7 @@ import (
 	"time"
 
 	_ "golang.org/x/image/webp" // Config
+	xproxy "golang.org/x/net/proxy"
 )
 
 // The budget of one message's images (global constraints).
@@ -70,88 +72,175 @@ func NewClient(allowLoopback bool) *http.Client {
 	}}
 }
 
-// SystemProxy is the proxy the OS is set to use for u, nil for none; the GUI
-// sets it where it can read the system's settings. Nil means no proxy.
+// SystemProxy is the proxy for a request to u, nil for none (only http://
+// and socks5:// ones are used); the app sets it to the user's (sysproxy).
 var SystemProxy func(u *url.URL) *url.URL
 
 // fakeIP is the range proxies in TUN mode answer DNS with (fake-ip): such an
 // address stands for the name looked up, which the proxy resolves itself.
 var fakeIP = netip.MustParsePrefix("198.18.0.0/15")
 
-// NewTransport dials public hosts only (checked on the address dialed, after
-// DNS; ErrHost otherwise), a name's fake-ip address too. Through the system
-// proxy (SystemProxy), which resolves names itself, it refuses addresses and
-// names that are not public. allowLoopback lets tests reach httptest servers,
-// which listen on loopback, and never uses a proxy.
+// lookup resolves a name; tests stand in for DNS.
+var lookup = net.DefaultResolver.LookupNetIP
+
+// NewTransport reaches public hosts only (ErrHost otherwise). It resolves a
+// host itself and dials the addresses it checked (pinned), so a name that
+// resolves differently on the second ask (DNS rebinding) changes nothing:
+// every answer must be public, or every one a fake-ip one (a TUN proxy's).
+// Through the system proxy (SystemProxy) it tunnels to the pinned address,
+// never the name, so the proxy cannot resolve it elsewhere; for a fake-ip
+// name it gives the name to a proxy on this computer, which knows what the
+// fake address stands for, and refuses a proxy elsewhere. allowLoopback lets
+// tests reach httptest servers, which listen on loopback.
 func NewTransport(allowLoopback bool) *http.Transport {
-	proxy := func(req *http.Request) (*url.URL, error) {
-		if allowLoopback {
-			return nil, nil
-		}
-		host := strings.ToLower(req.URL.Hostname())
-		if ip, err := netip.ParseAddr(host); err == nil && !PublicIP(ip.Unmap()) || host == "localhost" || strings.HasSuffix(host, ".localhost") {
-			return nil, ErrHost
-		}
-		if SystemProxy == nil {
-			return nil, nil
-		}
-		return SystemProxy(req.URL), nil
-	}
 	dial := func(ctx context.Context, network, address string) (net.Conn, error) {
-		host, _, err := net.SplitHostPort(address)
+		if allowLoopback {
+			return (&net.Dialer{Timeout: Timeout}).DialContext(ctx, network, address)
+		}
+		host, port, err := net.SplitHostPort(address)
 		if err != nil {
 			return nil, ErrHost
 		}
-		_, literal := netip.ParseAddr(host)
-		named := literal != nil
-		viaProxy := !allowLoopback && isSystemProxy(address)
-		d := &net.Dialer{Timeout: Timeout, Control: func(_, address string, _ syscall.RawConn) error {
-			if allowLoopback || viaProxy {
-				return nil
+		host = strings.ToLower(host)
+		if host == "localhost" || strings.HasSuffix(host, ".localhost") {
+			return nil, ErrHost
+		}
+		addrs, fake, err := resolve(ctx, host)
+		if err != nil {
+			return nil, err
+		}
+		var proxy *url.URL
+		if SystemProxy != nil {
+			// shortcut: the scheme is told by the port (dialing does not see the URL); use the URL's if a user's HTTP and HTTPS proxies differ in what they reach.
+			scheme := "http"
+			if port == "443" {
+				scheme = "https"
 			}
-			host, _, err := net.SplitHostPort(address)
-			if err != nil {
-				return ErrHost
-			}
-			if ip, err := netip.ParseAddr(host); err != nil || !dialable(ip.Unmap(), named) {
-				return ErrHost
-			}
-			return nil
-		}}
-		return d.DialContext(ctx, network, address)
+			proxy = SystemProxy(&url.URL{Scheme: scheme, Host: address})
+		}
+		switch {
+		case proxy == nil:
+			return dialPinned(ctx, network, addrs, port, fake)
+		case !fake:
+			return dialProxy(ctx, proxy, net.JoinHostPort(addrs[0].String(), port))
+		case onThisComputer(proxy):
+			return dialProxy(ctx, proxy, address) // the fake address means nothing to the proxy; the name does
+		}
+		return nil, ErrHost // a proxy elsewhere has no idea what our fake-ip resolver meant
 	}
-	return &http.Transport{Proxy: proxy, DialContext: dial, IdleConnTimeout: 30 * time.Second, MaxIdleConnsPerHost: 4,
+	return &http.Transport{DialContext: dial, IdleConnTimeout: 30 * time.Second, MaxIdleConnsPerHost: 4,
 		TLSHandshakeTimeout: Timeout, ResponseHeaderTimeout: Timeout, MaxResponseHeaderBytes: 64 << 10}
 }
 
-// dialable is whether ip may be dialed directly: a public one, or the fake-ip
-// one DNS gave for a name (named), never one written as is.
-func dialable(ip netip.Addr, named bool) bool {
-	return PublicIP(ip) || named && fakeIP.Contains(ip)
-}
-
-// isSystemProxy is whether address is one of the system's proxies now, which
-// may be loopback or private: decided per dial, as the settings say, so no
-// request's choice of proxy affects another's.
-func isSystemProxy(address string) bool {
-	if SystemProxy == nil {
-		return false
+// resolve is host's addresses to dial, IPv4 first: a literal one as is,
+// when public; a name's answers when every one is public, or every one a
+// fake-ip one (fake).
+func resolve(ctx context.Context, host string) (addrs []netip.Addr, fake bool, err error) {
+	if ip, err := netip.ParseAddr(host); err == nil {
+		if ip = ip.Unmap(); !PublicIP(ip) {
+			return nil, false, ErrHost
+		}
+		return []netip.Addr{ip}, false, nil
 	}
-	for _, scheme := range []string{"http", "https"} {
-		if p := SystemProxy(&url.URL{Scheme: scheme, Host: "example.com"}); p != nil && canonicalAddr(p) == address {
-			return true
+	answers, err := lookup(ctx, "ip", host)
+	if err != nil {
+		return nil, false, err
+	}
+	fake = len(answers) > 0
+	for _, a := range answers {
+		a = a.Unmap()
+		fake = fake && fakeIP.Contains(a)
+		if a.Is4() {
+			addrs = append([]netip.Addr{a}, addrs...)
+		} else {
+			addrs = append(addrs, a)
 		}
 	}
-	return false
+	if len(addrs) == 0 {
+		return nil, false, ErrHost
+	}
+	if !fake {
+		for _, a := range addrs {
+			if !PublicIP(a) {
+				return nil, false, ErrHost
+			}
+		}
+	}
+	return addrs, fake, nil
 }
 
-// canonicalAddr is u's host:port as the Transport dials it.
-func canonicalAddr(u *url.URL) string {
-	port := u.Port()
-	if port == "" {
-		port = map[string]string{"http": "80", "https": "443", "socks5": "1080", "socks5h": "1080"}[u.Scheme]
+// dialPinned dials addrs in turn, checking again the address each connects
+// to.
+func dialPinned(ctx context.Context, network string, addrs []netip.Addr, port string, fake bool) (net.Conn, error) {
+	d := &net.Dialer{Timeout: Timeout, Control: func(_, address string, _ syscall.RawConn) error {
+		ap, err := netip.ParseAddrPort(address)
+		if ip := ap.Addr().Unmap(); err != nil || !PublicIP(ip) && !(fake && fakeIP.Contains(ip)) {
+			return ErrHost
+		}
+		return nil
+	}}
+	var err error
+	for _, a := range addrs {
+		var c net.Conn
+		if c, err = d.DialContext(ctx, network, net.JoinHostPort(a.String(), port)); err == nil {
+			return c, nil
+		}
+		if ctx.Err() != nil {
+			break
+		}
 	}
-	return net.JoinHostPort(u.Hostname(), port)
+	return nil, err
+}
+
+// onThisComputer is whether proxy listens on this computer.
+func onThisComputer(proxy *url.URL) bool {
+	h := strings.ToLower(proxy.Hostname())
+	ip, err := netip.ParseAddr(h)
+	return h == "localhost" || err == nil && ip.Unmap().IsLoopback()
+}
+
+// dialProxy opens a tunnel to target (host:port) through proxy: an http://
+// one by CONNECT, a socks5:// one by SOCKS5.
+// shortcut: plain http:// images go through CONNECT too; send them as absolute-URI requests if a proxy refuses CONNECT to port 80.
+func dialProxy(ctx context.Context, proxy *url.URL, target string) (net.Conn, error) {
+	d := &net.Dialer{Timeout: Timeout}
+	switch proxy.Scheme {
+	case "socks5":
+		s, err := xproxy.SOCKS5("tcp", proxy.Host, nil, d)
+		if err != nil {
+			return nil, err
+		}
+		return s.(xproxy.ContextDialer).DialContext(ctx, "tcp", target)
+	case "http":
+		c, err := d.DialContext(ctx, "tcp", proxy.Host)
+		if err != nil {
+			return nil, err
+		}
+		deadline := time.Now().Add(Timeout)
+		if dl, ok := ctx.Deadline(); ok && dl.Before(deadline) {
+			deadline = dl
+		}
+		c.SetDeadline(deadline)
+		br := bufio.NewReader(c)
+		var resp *http.Response
+		if _, err = fmt.Fprintf(c, "CONNECT %s HTTP/1.1\r\nHost: %s\r\n\r\n", target, target); err == nil {
+			resp, err = http.ReadResponse(br, &http.Request{Method: http.MethodConnect})
+		}
+		switch {
+		case err != nil:
+		case resp.StatusCode != http.StatusOK:
+			err = fmt.Errorf("proxy refused the tunnel: %s", resp.Status)
+		case br.Buffered() > 0:
+			err = errors.New("proxy sent data before the tunnel opened")
+		}
+		if err != nil {
+			c.Close()
+			return nil, err
+		}
+		c.SetDeadline(time.Time{})
+		return c, nil
+	}
+	return nil, fmt.Errorf("unsupported proxy %q", proxy.Scheme)
 }
 
 // notGlobal are ranges that are not public hosts although IsPrivate and the
