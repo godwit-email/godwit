@@ -183,6 +183,17 @@ func TestSanitizeKeepsLayout(t *testing.T) {
 	assert.NotContains(t, safe, "position", "an overlay must not survive")
 }
 
+// A table's spacing attributes survive, as numbers only: without cellspacing="0"
+// a card of bgcolor cells shows the default 2px gaps between them.
+func TestSanitizeKeepsTableSpacing(t *testing.T) {
+	safe, _ := mail.Sanitize(`<table border="0" cellpadding="0" cellspacing="0"><tr><td bgcolor="#f5f5f5">x</td></tr></table>`+
+		`<table cellspacing="0;x" cellpadding="javascript:1" border="1px"><tr><td>y</td></tr></table>`+
+		`<div cellspacing="0">z</div>`, nil, false)
+	assert.Contains(t, safe, `<table border="0" cellpadding="0" cellspacing="0">`)
+	assert.Contains(t, safe, "<table><tbody><tr><td>y</td></tr></tbody></table>", "only numbers")
+	assert.Contains(t, safe, "<div>z</div>", "only on tables")
+}
+
 const styled = `<html><head><style>
 @import url(https://evil.example/x.css);
 @font-face { font-family: x; src: url(https://evil.example/f.woff) }

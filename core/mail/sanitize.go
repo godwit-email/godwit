@@ -51,6 +51,8 @@ func policy() *bluemonday.Policy {
 	p.AllowElements("table", "thead", "tbody", "tfoot", "tr", "td", "th", "caption", "colgroup", "col", "div", "span", "font", "center")
 	p.AllowAttrs("colspan", "rowspan", "align", "valign", "width", "height", "bgcolor", "color", "size", "face").Globally()
 	p.AllowAttrs("style").Globally()
+	// cellspacing="0" closes the gaps in a card made of bgcolor cells
+	p.AllowAttrs("cellspacing", "cellpadding", "border").Matching(bluemonday.Integer).OnElements("table")
 	p.AllowAttrs(bgAttr).Matching(remoteURL).Globally() // set by prepare from a background url()
 	p.AllowStyles(cssProps...).Matching(cssValue).Globally()
 	p.AllowURLSchemes("http", "https", "mailto", strings.TrimSuffix(cidScheme, ":"))
