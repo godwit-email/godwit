@@ -2,6 +2,7 @@ package kit
 
 import (
 	"image/color"
+	"strings"
 	"testing"
 	"time"
 
@@ -129,5 +130,30 @@ func TestKitLabelChipDisplay(t *testing.T) {
 	tt.Advance(900 * time.Millisecond)
 	if !tt.HasText("账单 · 由模型标记") {
 		t.Errorf("expected combined tooltip on icon-only chip, got %q", tt.Texts())
+	}
+}
+
+// TestKitLabelChipIconOnly: an icon-only chip is named for screen readers and
+// tips its name on hover; one with no icon falls back to its name.
+func TestKitLabelChipIconOnly(t *testing.T) {
+	tt := ui.NewTester(themed(func(c *ui.Context) {
+		ui.Column(c).AlignItems(ui.Start).Gap(20).Children(func() {
+			LabelChip(c, LabelChipOpts{Text: "账单", Icon: "bill", Display: "icon", Color: theme.Of(c).Label("amber")})
+			LabelChip(c, LabelChipOpts{Text: "旅行", Display: "icon", Color: theme.Of(c).Label("amber")})
+		})
+	}), 300, 200)
+	tt.Frame()
+	if !tt.HasText("旅行") {
+		t.Errorf("a chip with no icon hides its name: %q", tt.Texts())
+	}
+	r, ok := tt.Find("账单")
+	if !ok {
+		t.Fatalf("an icon-only chip has no accessible name: %q", tt.Texts())
+	}
+	tt.Move(r.X+r.W/2, r.Y+r.H/2)
+	tt.Advance(900 * time.Millisecond)
+	// the chip's label and the tip
+	if n := strings.Count(strings.Join(tt.Texts(), "\n"), "账单"); n != 2 {
+		t.Errorf("no name tip on hover: %q", tt.Texts())
 	}
 }

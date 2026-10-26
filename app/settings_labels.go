@@ -55,15 +55,15 @@ func (v *labelsView) view(c *ui.Context, p *settingsPage) {
 
 	display := p.st.LabelDisplay
 	if display == "" {
-		display = "both"
+		display = core.LabelDisplayBoth
 	}
 	settingsSection(c, i18n.T("settings.labels.display"), "",
 		func() {
 			settingRow(c, i18n.T("settings.labels.display.style"), i18n.T("settings.labels.display.style.help"), func() {
 				opts := []kit.Option[string]{
-					{Value: "both", Label: i18n.T("settings.labels.display.both")},
-					{Value: "icon", Label: i18n.T("settings.labels.display.icon")},
-					{Value: "text", Label: i18n.T("settings.labels.display.text")},
+					{Value: core.LabelDisplayBoth, Label: i18n.T("settings.labels.display.both")},
+					{Value: core.LabelDisplayIcon, Label: i18n.T("settings.labels.display.icon")},
+					{Value: core.LabelDisplayText, Label: i18n.T("settings.labels.display.text")},
 				}
 				settingSelect(c, i18n.T("settings.labels.display.style"), &display, opts)
 				p.st.LabelDisplay = display
@@ -118,7 +118,7 @@ func (v *labelsView) row(c *ui.Context, l core.Label) {
 	row.Children(func() {
 		ui.Icon(c, icons.Get("grip")).Size(theme.Icon, theme.Icon).TextColor(t.Idle)
 		ui.Row(c).Width(th.Space(28)).Children(func() {
-			kit.LabelChip(c, kit.LabelChipOpts{Text: l.Name, Icon: l.Icon, Display: v.a.settings.LabelDisplay, Color: t.Label(l.Color)})
+			kit.LabelChip(c, kit.LabelChipOpts{Text: l.Name, Icon: l.Icon, Color: t.Label(l.Color)})
 		})
 		desc, color := l.Description, t.Muted
 		if desc == "" {
@@ -197,7 +197,7 @@ func (v *labelsView) dialog(c *ui.Context) {
 					caption = i18n.T("settings.labels.preview.auto")
 				}
 				ui.Row(c).Gap(th.Space(2)).AlignItems(ui.Center).Children(func() {
-					kit.LabelChip(c, kit.LabelChipOpts{Text: preview, Icon: v.icon, Display: v.a.settings.LabelDisplay, Color: t.Label(v.color), Auto: auto})
+					kit.LabelChip(c, kit.LabelChipOpts{Text: preview, Icon: v.icon, Color: t.Label(v.color), Auto: auto})
 					kit.Text(c, caption, t.Text.Sm).TextColor(t.Muted)
 				})
 			}

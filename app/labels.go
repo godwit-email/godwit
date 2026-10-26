@@ -13,8 +13,12 @@ import (
 	"github.com/godwit-email/godwit/internal/theme"
 )
 
-// listChips is how many chips a list row shows before "+N".
-const listChips = 2
+// listChips is how many chips a list row shows before "+N"; listIconChips,
+// with icon-only chips, which are narrower.
+const (
+	listChips     = 2
+	listIconChips = 4
+)
 
 // label is the label of an id, as the last load read it.
 func (a *App) label(id int64) (core.Label, bool) {
@@ -43,15 +47,15 @@ func (a *App) labelChip(c *ui.Context, al core.AppliedLabel, onClick, onRemove f
 	kit.LabelChip(c, o)
 }
 
-// rowChips is a list row's labels: the first listChips (or 4 for icons), then "+N".
+// rowChips is a list row's labels: the first listChips (listIconChips for icons), then "+N".
 func (a *App) rowChips(c *ui.Context, ls []core.AppliedLabel) {
 	if len(ls) == 0 {
 		return
 	}
 	t, th := theme.Of(c), c.Theme()
 	maxChips := listChips
-	if a.settings.LabelDisplay == "icon" {
-		maxChips = 4
+	if a.settings.LabelDisplay == core.LabelDisplayIcon {
+		maxChips = listIconChips
 	}
 	ui.Row(c).Gap(th.Space(1)).AlignItems(ui.Center).Margin(th.Space(1), 0, 0, 0).Children(func() {
 		for _, l := range ls[:min(len(ls), maxChips)] {

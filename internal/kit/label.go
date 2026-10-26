@@ -8,8 +8,8 @@ import (
 
 // LabelChipOpts is a mail label as a chip. Icon is a label icon's name without
 // the "label-" prefix; Tip shows on hover. Auto draws the chip the model set:
-// the same color, an edge instead of a fill. Display is "both" (default; ""
-// too), "icon" or "text".
+// the same color, an edge instead of a fill. Display is core.LabelDisplay*:
+// "both" (the default; "" too), "icon" or "text".
 type LabelChipOpts struct {
 	Text, Icon, Tip string
 	Display         string
@@ -36,6 +36,9 @@ func LabelChip(c *ui.Context, o LabelChipOpts) ui.Element {
 	showText := o.Display != "icon" && o.Text != ""
 	if !showIcon && !showText {
 		showText = true
+	}
+	if !showText {
+		chip.Label(o.Text) // an icon-only row chip has no text for screen readers
 	}
 	right := th.Space(1.5)
 	if o.OnRemove != nil {
