@@ -167,7 +167,7 @@ export function errorText(e: unknown, t: T): string {
 
 /** A draft edit waiting for a decision: the page reviews it in place of the body. */
 const pendingEdit = (a: Approval) =>
-  a.state === "pending" && (a.tool === "update_draft" || a.tool === "update_selection");
+  a.state === "pending" && (a.tool === "update_draft" || a.tool === "update_selection") && a.summary !== "no_change";
 
 const message = (e: unknown) => (e instanceof Error ? e.message : String(e));
 
@@ -538,7 +538,15 @@ function Compose({
     if (!currentId) return;
     let live = true;
     api.review(currentId).then(
-      (r) => live && setReview(r),
+      (r) => {
+        if (!live) return;
+        if (r.inline && r.changes === 0 && (!r.subject || r.subject === r.old_subject)) {
+          void api.decide(currentId, true);
+          setPendings((p) => p.filter((x) => x.id !== currentId));
+          return;
+        }
+        setReview(r);
+      },
       (e) => live && toast.error(witError(message(e), currentT.current)),
     );
     return () => {
@@ -546,7 +554,12 @@ function Compose({
     };
   }, [currentId]);
 
-  const reviewing = review && review.approval === currentId ? review : undefined;
+  const reviewing =
+    review &&
+    review.approval === currentId &&
+    !(review.inline && review.changes === 0 && (!review.subject || review.subject === review.old_subject))
+      ? review
+      : undefined;
 
   const sv = saver.current;
   const locked = frozen || done || resolving || !!sv?.frozen;
@@ -647,21 +660,26 @@ function Compose({
     }
   };
   // Decides the edit reviewed; the run it resumes streams in the panel, and the draft is read again.
-  const decide = async (op: (id: number) => Promise<BodyChange>, accepts: boolean) => {
+  const decide = async (
+    op: (id: number) => Promise<BodyChange>,
+    accepts: boolean,
+    decisionType?: "applied" | "rejected" | "adjusted",
+  ) => {
     const a = current;
-    if (!a || deciding) return;
+    if (!a || deciding) return null;
     runEdits.current = edits.current;
-    if (a) setDecisions((prev) => ({ ...prev, [a.id]: accepts ? "applied" : "rejected" }));
+    if (a) setDecisions((prev) => ({ ...prev, [a.id]: decisionType ?? (accepts ? "applied" : "rejected") }));
     const r = await bodyOp(() => witResume.decide(a.run, () => op(a.id)));
     if (r) setPendings((p) => p.filter((x) => x.id !== a.id));
     if (r && !r.conflict && accepts) setApplied(true); // the body took Wit's edit: undo offers it back
-    void reload();
+    await reload();
+    return r;
   };
   const handleAdjust = async (instructions: string) => {
     const a = current;
     if (!a || deciding) return;
     setDecisions((prev) => ({ ...prev, [a.id]: "adjusted" }));
-    await decide((id) => api.decide(id, true), true);
+    await decide((id) => api.decide(id, true), true, "adjusted");
     setHanded({ text: instructions });
   };
   // Decides a tool's call (its card in the panel), or every one of its run waiting; the run it

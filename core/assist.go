@@ -503,7 +503,9 @@ func (s *Service) proposeUpdateWithSubject(ctx context.Context, draftID int64, s
 		clean := cleanSubject(*subject)
 		subjUnchanged = (clean == "" || clean == d.Subject)
 	}
-	if !mail.Blank(old) && cleanOld == cleanNew && subjUnchanged {
+	wordsOld := words(cleanOld)
+	wordsNew := words(cleanNew)
+	if !mail.Blank(old) && subjUnchanged && (cleanOld == cleanNew || slices.Equal(wordsOld, wordsNew)) {
 		args := updateArgs{DraftID: d.ID, Revision: d.Revision, Old: old, HTML: h}
 		b, err := json.Marshal(args)
 		if err != nil {

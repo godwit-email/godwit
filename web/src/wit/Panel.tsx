@@ -1637,13 +1637,14 @@ export function Panel({
     void chat.sendMessage({ text, metadata: { ...metadata, time: Date.now() } });
   };
   const asked = useRef<object | undefined>(undefined);
-  // biome-ignore lint/correctness/useExhaustiveDependencies: only a new handed question asks
+  // biome-ignore lint/correctness/useExhaustiveDependencies: only a new handed question asks when ready
   useEffect(() => {
     if (!handed || asked.current === handed) return;
+    if (locked || running) return;
     asked.current = handed;
     onAsked?.();
     ask(handed.text);
-  }, [handed]);
+  }, [handed, locked, running]);
   // A question not asked after all goes back to the input, unless something was typed since: its
   // text, its quotes, and an edit still one (sent again, it still replaces the old question).
   const putBack = (q: WitUIMessage) => {
