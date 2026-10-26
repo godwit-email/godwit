@@ -8,6 +8,7 @@ import { Alert, AlertAction, AlertDescription } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import { ResizableHandle, ResizablePanel, ResizablePanelGroup } from "@/components/ui/resizable";
 import { Toaster } from "@/components/ui/sonner";
+import { Textarea } from "@/components/ui/textarea";
 import {
   type Approval,
   type Attachment,
@@ -197,6 +198,47 @@ const editOf = (s: ComposeState): ComposeEdit => ({
   revision: s.revision,
 });
 
+/** The review card's adjustment input (调整): what should change in the proposal, sent with Enter. */
+function AdjustInput({
+  busy,
+  onSend,
+  onCancel,
+  t,
+}: {
+  busy: boolean;
+  onSend(text: string): void;
+  onCancel(): void;
+  t: T;
+}) {
+  const [text, setText] = useState("");
+  const send = () => text.trim() && onSend(text.trim());
+  return (
+    <div className="flex flex-col gap-2 border-muted border-t-[0.5px] px-3 py-2">
+      <Textarea
+        autoFocus
+        rows={2}
+        value={text}
+        placeholder={t("wit.compose.adjust_placeholder")}
+        onChange={(e) => setText(e.target.value)}
+        onKeyDown={(e) => {
+          if (e.key === "Enter" && !e.shiftKey && !e.nativeEvent.isComposing) {
+            e.preventDefault();
+            send();
+          } else if (e.key === "Escape") onCancel();
+        }}
+      />
+      <div className="flex justify-end gap-1.5">
+        <Button size="xs" variant="outline" className="font-normal" onClick={onCancel}>
+          {t("common.cancel")}
+        </Button>
+        <Button size="xs" disabled={busy || !text.trim()} onClick={send}>
+          {t("wit.compose.adjust")}
+        </Button>
+      </div>
+    </div>
+  );
+}
+
 function Compose({
   state,
   saver,
@@ -297,6 +339,8 @@ function Compose({
   const [reloading, setReloading] = useState(false);
   const [reloadErr, setReloadErr] = useState(""); // a failed reload's error, in the page's copy
   const [applied, setApplied] = useState(false);
+  const [adjusting, setAdjusting] = useState(false); // the review card's adjustment input is open
+  const [handed, setHanded] = useState<{ text: string }>(); // what to change, for the panel to ask
   const [cmdk, setCmdk] = useState<CmdKSelection | null>(null);
   const [streamed, setStreamed] = useState(""); // update_draft's HTML, shown while Wit writes a blank body
   const edits = useRef(0); // local body edits taken
@@ -447,6 +491,7 @@ function Compose({
   const currentId = current?.id;
   useEffect(() => {
     setReview(undefined);
+    setAdjusting(false); // a new edit under review: its card opens without the input
     if (!currentId) return;
     let live = true;
     api.review(currentId).then(
@@ -561,12 +606,19 @@ function Compose({
   // Decides the edit reviewed; the run it resumes streams in the panel, and the draft is read again.
   const decide = async (op: (id: number) => Promise<BodyChange>, accepts: boolean) => {
     const a = current;
-    if (!a || deciding) return;
+    if (!a || deciding) return false;
     runEdits.current = edits.current;
     const r = await bodyOp(() => witResume.decide(a.run, () => op(a.id)));
     if (r) setPendings((p) => p.filter((x) => x.id !== a.id));
     if (r && !r.conflict && accepts) setApplied(true); // the body took Wit's edit: undo offers it back
     void reload();
+    return !!r;
+  };
+  // 调整: the proposal is set aside unapplied (the body stays as it was), and what should change in it
+  // goes to Wit as the next question, which revises it.
+  const adjust = async (text: string) => {
+    setAdjusting(false);
+    if (await decide((id) => api.decide(id, false), false)) setHanded({ text });
   };
   // Decides a tool's call (its card in the panel), or every one of its run waiting; the run it
   // resumes streams in the panel.
@@ -926,6 +978,15 @@ function Compose({
                   ? {
                       approval: reviewing.approval,
                       summary: reviewSummary(reviewing, t),
+                      onAdjust: () => setAdjusting((v) => !v),
+                      adjusting: adjusting && (
+                        <AdjustInput
+                          busy={deciding}
+                          onSend={adjust}
+                          onCancel={() => setAdjusting(false)}
+                          t={t}
+                        />
+                      ),
                       actions: (
                         <>
                           <Button
@@ -950,6 +1011,8 @@ function Compose({
                     }
                   : undefined
               }
+              ask={handed}
+              onAsked={() => setHanded(undefined)}
               resume={witResume.resume}
               onLink={(url) => api.openLink(url)}
               onCite={(id) =>

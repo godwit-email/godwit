@@ -403,11 +403,21 @@ test("opening ⌘K clears the applied note", async () => {
 });
 
 test("rewrite: the new version, compare toggles to 原文 | 新版本", async () => {
-  vi.mocked(api.review).mockResolvedValue({ ...inline, inline: false, ratio: 0.62, blocks: [] });
+  vi.mocked(api.review).mockResolvedValue({
+    ...inline,
+    inline: false,
+    ratio: 0.62,
+    blocks: [],
+    old_subject: "Old Subject",
+    subject: "New Subject",
+    subject_ops: [op("del", 0, "Old"), op("ins", 0, "New"), op("same", -1, " Subject")],
+  });
   await setup(withPending);
   expect(await screen.findByText("已整体重写，改动约 62%")).toBeInTheDocument();
   expect(screen.getByText("整体重写，改动约 62%。")).toBeInTheDocument(); // the panel card
   expect(screen.getByText("Hi Ann and more")).toBeInTheDocument();
+  expect(screen.getByText("New Subject")).toBeInTheDocument();
+  expect(screen.queryByText("Old")).toBeNull(); // diffs are not shown in rewrite mode
   expect(screen.queryByRole("region", { name: "原文" })).toBeNull();
   fireEvent.click(screen.getByRole("button", { name: "对比原文" }));
   expect(screen.getByRole("region", { name: "原文" })).toHaveTextContent("Hi Bob and");
@@ -888,3 +898,33 @@ test("a question in the panel is answered there; the resumed run streams on its 
   expect(await screen.findByText("按正式的语气写好了。")).toBeInTheDocument();
   expect(screen.queryByText("Wit 想问你")).toBeNull();
 });
+
+test("调整 on the panel card sets the proposal aside unapplied and asks Wit what to change", async () => {
+  vi.mocked(api.decide).mockResolvedValue(change("正文", 9));
+  vi.mocked(api.latest).mockResolvedValue(latest("正文", 9));
+  vi.mocked(api.ask).mockResolvedValue(rs(8));
+  await setup(withPending);
+  await screen.findByRole("region", { name: "正文修订" });
+  // the card's header (its tool's name), not the panel's own 调整
+  const card = screen.getByText("update_draft").parentElement as HTMLElement;
+  fireEvent.click(within(card).getByRole("button", { name: "调整" }));
+  await userEvent.type(screen.getByPlaceholderText("这份提案要怎么改？"), "第二句短一点{Enter}");
+  await waitFor(() => expect(api.decide).toHaveBeenCalledWith(4, false));
+  expect(api.decide).not.toHaveBeenCalledWith(4, true);
+  emit({ kind: "done" });
+  await waitFor(() => expect(api.ask).toHaveBeenCalledWith("第二句短一点", [], "", ""));
+  expect(await body()).toHaveValue("正文");
+});
+
+test.each([
+  ["partial", "done", "已接受提案。"],
+  ["initial", "done", "草稿已写好。"],
+  ["no_change", "done", "草稿没有改动。"],
+  ["partial", "rejected", "已放弃提案。"],
+])(
+  "a settled %s edit (%s) says so on its answer, from the saved approval",
+  async (summary, st, line) => {
+    await setup({ ...withPending, approvals: [{ ...pending, summary, state: st }] });
+    expect(await screen.findByRole("status")).toHaveTextContent(line);
+  },
+);
