@@ -480,7 +480,7 @@
   "settings_about_feedback": "Sorun bildir",
   "settings_about_license": "Lisans",
   "settings_about_version": "Sürüm {arg1}",
-  "settings_account_ai": "Yapay Zeka Talimatları ve Bilgileri",
+  "settings_account_ai": "Wit Talimatları",
   "settings_account_ai_help": "Bu hesap için kişisel bilgiler (örn. ad, telefon, adres, unvan) ve e-posta hazırlama kuralları.",
   "settings_account_ai_long": "En fazla {arg1, number, ::group-off} karakter",
   "settings_account_ai_placeholder": "örn.\nAd: Dr. Ahmet Yılmaz\nTelefon: +90 212 123 4567\nUnvan: Genel Müdür, ABC A.Ş.\nTalimatlar: Dış yazışmalarda daima resmi dil kullanın.",

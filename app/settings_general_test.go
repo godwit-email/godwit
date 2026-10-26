@@ -57,6 +57,20 @@ func TestThemeThumbsDark(t *testing.T) {
 			t.Errorf("%s: rail pixel %v, want %v", label, got, want)
 		}
 	}
+	// "system" is the light window on its left half, the dark one on its right.
+	r, ok := h.tt.Find("跟随系统")
+	if !ok {
+		t.Fatal("no system thumbnail")
+	}
+	for _, px := range []struct {
+		x    float32
+		want ui.Color
+	}{{r.X + 4, theme.Light().Window}, {r.X + r.W - 4, theme.Dark().Background}} {
+		got, want := h.tt.Image().RGBAAt(int(px.x), int(r.Y+r.H)-6), px.want.SRGB()
+		if d := max(diff(got.R, want.R), diff(got.G, want.G), diff(got.B, want.B)); d > 8 {
+			t.Errorf("system at x %v: pixel %v, want %v", px.x-r.X, got, want)
+		}
+	}
 }
 
 // TestThemeThumbsFit: at font 16 the thumbnails stay inside the row and clear of the label.

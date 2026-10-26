@@ -480,7 +480,7 @@
   "settings_about_feedback": "Meld een probleem",
   "settings_about_license": "Licentie",
   "settings_about_version": "Versie {arg1}",
-  "settings_account_ai": "AI-instructies en feiten",
+  "settings_account_ai": "Wit-instructies",
   "settings_account_ai_help": "Persoonlijke feiten (bijv. naam, telefoon, adres, functie) en opstelrichtlijnen voor dit account.",
   "settings_account_ai_long": "Maximaal {arg1, number, ::group-off} tekens",
   "settings_account_ai_placeholder": "bijv.\nNaam: Dr. Jan Jansen\nTelefoon: +31 20 1234567\nFunctie: Directeur, ABC B.V.\nRichtlijnen: Altijd formeel bij externe e-mails.",

@@ -77,11 +77,16 @@ func (p *settingsPage) accountByEmail(q string) *core.Account {
 		return nil
 	}
 	for i, acc := range p.a.accounts {
-		if strings.Contains(strings.ToLower(acc.Email), q) {
+		if accountMatches(acc, q) {
 			return &p.a.accounts[i]
 		}
 	}
 	return nil
+}
+
+// accountMatches reports whether a lowercased query is in the account's email or its sidebar name.
+func accountMatches(acc core.Account, q string) bool {
+	return strings.Contains(strings.ToLower(acc.Email), q) || strings.Contains(strings.ToLower(acc.Alias), q)
 }
 
 // searchField is the sidebar's 搜索设置 field; Enter opens the first match.

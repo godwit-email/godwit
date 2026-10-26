@@ -463,18 +463,18 @@ func (p *settingsPage) accountView(c *ui.Context, acc core.Account) {
 			}
 		})
 	p.accountSignatureView(c, acc)
-	settingsSection(c, i18n.T("settings.account.ai"), "", func() {
-		settingBlock(c, func() {
-			kit.Text(c, i18n.T("settings.account.ai.help"), t.Text.Sm).TextColor(t.Muted)
-			long := aiTooLong(f.ai)
-			if kit.TextArea(c, &f.ai, kit.InputOpts{Placeholder: i18n.T("settings.account.ai.placeholder"), Invalid: long}).
-				Height(th.Space(28)).Radius(t.Radius.Lg).Label(i18n.T("settings.account.ai")).Changed() {
-				p.edited(acc.ID, f, fieldAI)
-			}
-			if long {
-				kit.Text(c, i18n.Tf("settings.account.ai.long", core.MaxAIInstructions), t.Text.Sm).TextColor(t.Danger)
-			}
-		})
+	// The text area is the section's body, with no card around it, as macOS shows a long text.
+	ui.Column(c).Gap(theme.SectionGap).Children(func() {
+		sectionTitle(c, i18n.T("settings.account.ai"))
+		long := aiTooLong(f.ai)
+		if kit.TextArea(c, &f.ai, kit.InputOpts{Placeholder: i18n.T("settings.account.ai.placeholder"), Invalid: long}).
+			Height(th.Space(28)).Radius(t.Radius.Xl).Label(i18n.T("settings.account.ai")).Changed() { // a settings card's corners
+			p.edited(acc.ID, f, fieldAI)
+		}
+		if long {
+			kit.Text(c, i18n.Tf("settings.account.ai.long", core.MaxAIInstructions), t.Text.Sm).TextColor(t.Danger).PaddingX(th.Space(4))
+		}
+		kit.Text(c, i18n.T("settings.account.ai.help"), t.Text.Sm).TextColor(t.Muted).PaddingX(th.Space(4))
 	})
 	desc := p.syncState(acc)
 	if acc.Status == "ok" {

@@ -139,6 +139,12 @@ func TestSettingsAccountEdit(t *testing.T) {
 		f := h.app.pages[PageSettings].(*settingsPage).forms[acc.ID]
 		return !f.edits[0].pending && !f.edits[1].pending
 	})
+	// The sidebar lists the account by its sidebar name (a field's value is not a text), and a search finds it by it.
+	h.see("个人")
+	p := h.app.pages[PageSettings].(*settingsPage)
+	if got := p.accountByEmail("个人"); got == nil || got.ID != acc.ID {
+		t.Fatalf("a search by the sidebar name misses the account: %+v", got)
+	}
 
 	// Sync range and Sync now.
 	h.click("每个文件夹最近 2000 封")
@@ -156,7 +162,7 @@ func TestSettingsAccountEdit(t *testing.T) {
 func TestSettingsAccountAIInstructions(t *testing.T) {
 	h, acc := withAccount(t)
 	p := h.openSettings(accountRoute(acc.ID))
-	h.see("AI 设定与事实信息")
+	h.see("Wit 指令")
 	f := p.forms[acc.ID]
 	long := strings.Repeat("长", core.MaxAIInstructions+1)
 	f.ai = long

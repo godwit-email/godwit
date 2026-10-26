@@ -480,7 +480,7 @@
   "settings_about_feedback": "Informar de un problema",
   "settings_about_license": "Licencia",
   "settings_about_version": "Versión {arg1}",
-  "settings_account_ai": "Instrucciones y datos de IA",
+  "settings_account_ai": "Instrucciones para Wit",
   "settings_account_ai_help": "Datos personales (p. ej. nombre, teléfono, dirección, cargo) y pautas de redacción para esta cuenta.",
   "settings_account_ai_long": "Como máximo {arg1, number, ::group-off} caracteres",
   "settings_account_ai_placeholder": "p. ej.\nNombre: Dr. Juan Pérez\nTeléfono: +34 91 123 4567\nCargo: Director Ejecutivo, ABC S.L.\nInstrucciones: Trato formal con clientes.",

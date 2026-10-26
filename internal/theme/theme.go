@@ -167,39 +167,36 @@ const (
 	SettingsSelectMax   = 280
 	UsageSelectMin      = 240 // a select in the model services' 用途 card
 	SettingsInputWidth  = 260 // an input in a settings row
-	// SignatureEditorHeight is the signature page: its toolbar (4+28+4 and a
-	// hairline) over the editor's least 96 and its 10/10 padding; the editor
-	// scrolls inside.
-	SignatureEditorHeight = 153
-	// SignatureCodeHeight is a signature in the HTML mode: the native
-	// toolbar over MyGo's code editor, which takes the rest.
-	SignatureCodeHeight  = 257
-	HeadingGap           = 6  // a page heading to its subtitle
-	SectionGap           = 10 // a section's title to its card
-	PortWidth            = 90 // port fields
-	SelectMinWidth       = 120
-	FilterMenuMin        = 200 // a search filter chip's menu
-	LabelMenuWidth       = 240 // the reader's label menu
-	SyncMenuWidth        = 336 // the top bar's sync status list: 360 with the popover's padding
-	LabelSwatch          = 32  // a label color's button: a 24 dot, a 2 ring when chosen
-	LabelSwatchDot       = 24
-	LabelSwatchRing      = 2
-	LabelIconCell        = 36 // a cell of the label icon grid
-	ToastMaxWidth        = 420
-	ToastMax             = 3  // toasts shown at once
-	TitleButtonHeight    = 24 // buttons in the top bar
-	PopupOffset          = 4  // room between a popup and its anchor
-	SelectedBorder       = 2  // the border of a chosen tile
-	GripWidth            = 3  // a resize grip's line, down the middle of the panels' gap
-	GripHeight           = 56
-	RingWidth            = 3   // shadcn's focused box ring, outside its border
-	QuoteBar             = 2   // the bar left of a quote in a mail body
-	ImagePlaceholder     = 64  // an image not loaded, when its size is unknown
-	ReaderMaxWidth       = 720 // the reading pane's text column
-	AttachmentWidth      = 282 // an attachment in the reading pane, with its download button
-	DraftAttachmentWidth = 286 // an attachment in the drafts pane
-	WitMaxWidth          = 760 // the Ask page's conversation column
-	CitationsWidth       = 320 // the Ask page's cited mail column
+	// SignatureEditorHeight is a signature's editor, the same in both modes so
+	// switching keeps the card's size: the page's toolbar over its editor, or
+	// the native toolbar over MyGo's code editor; either scrolls inside.
+	SignatureEditorHeight = 257
+	HeadingGap            = 6  // a page heading to its subtitle
+	SectionGap            = 10 // a section's title to its card
+	PortWidth             = 90 // port fields
+	SelectMinWidth        = 120
+	FilterMenuMin         = 200 // a search filter chip's menu
+	LabelMenuWidth        = 240 // the reader's label menu
+	SyncMenuWidth         = 336 // the top bar's sync status list: 360 with the popover's padding
+	LabelSwatch           = 32  // a label color's button: a 24 dot, a 2 ring when chosen
+	LabelSwatchDot        = 24
+	LabelSwatchRing       = 2
+	LabelIconCell         = 36 // a cell of the label icon grid
+	ToastMaxWidth         = 420
+	ToastMax              = 3  // toasts shown at once
+	TitleButtonHeight     = 24 // buttons in the top bar
+	PopupOffset           = 4  // room between a popup and its anchor
+	SelectedBorder        = 2  // the border of a chosen tile
+	GripWidth             = 3  // a resize grip's line, down the middle of the panels' gap
+	GripHeight            = 56
+	RingWidth             = 3   // shadcn's focused box ring, outside its border
+	QuoteBar              = 2   // the bar left of a quote in a mail body
+	ImagePlaceholder      = 64  // an image not loaded, when its size is unknown
+	ReaderMaxWidth        = 720 // the reading pane's text column
+	AttachmentWidth       = 282 // an attachment in the reading pane, with its download button
+	DraftAttachmentWidth  = 286 // an attachment in the drafts pane
+	WitMaxWidth           = 760 // the Ask page's conversation column
+	CitationsWidth        = 320 // the Ask page's cited mail column
 )
 
 // BoldWeight is the font weight of bold text in mail bodies and the editor.

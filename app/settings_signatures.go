@@ -496,7 +496,7 @@ func (p *settingsPage) openCode() {
 func (p *settingsPage) codeView(c *ui.Context) {
 	t, th := theme.Of(c), c.Theme()
 	sc := p.sigCode
-	ui.Column(c).FillWidth().Height(theme.SignatureCodeHeight).Children(func() {
+	ui.Column(c).FillWidth().Height(theme.SignatureEditorHeight).Children(func() {
 		ui.Row(c).FillWidth().Gap(th.Space(2)).Padding(th.Space(1), th.Space(1.5)).AlignItems(ui.Center).Children(func() {
 			if sc.refused != "" {
 				kit.Text(c, i18n.T(sc.refused), t.Text.Sm).TextColor(t.Danger).SingleLine().Shrink(1).Padding(0, 0, 0, th.Space(2))
@@ -509,13 +509,13 @@ func (p *settingsPage) codeView(c *ui.Context) {
 				kit.Text(c, i18n.T("settings.account.signature.html"), t.Text.Xs).FontWeight(500)
 			})
 		})
-		hairline(c)
+		kit.Separator(c, false).Shrink(0) // the toolbar's edge, across the card as the page's
 		if sc.loading {
 			ui.Box(c).FillWidth().Grow(1)
 			return
 		}
-		ct := editor.DefaultTheme(th) // on the card's fill, as the page's editor
-		ct.Background = t.Card
+		ct := editor.DefaultTheme(th) // an input's fill under the card's toolbar, as the page's editor
+		ct.Background = t.Background
 		sc.st.Theme = ct
 		editor.View(c, &sc.st).FillWidth().Grow(1)
 		if v := sc.st.Buffer.Version(); v != sc.ver {

@@ -1008,7 +1008,7 @@
       }
     }
   },
-  "settings_account_ai": "AI Instructions & Facts",
+  "settings_account_ai": "Wit Instructions",
   "settings_account_ai_help": "Personal facts (e.g. name, phone, address, role) and drafting guidelines for this account.",
   "settings_account_ai_long": "At most {arg1, number, ::group-off} characters",
   "@settings_account_ai_long": {
