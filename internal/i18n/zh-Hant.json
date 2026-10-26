@@ -1223,5 +1223,7 @@
   "wit_ctx_summary": "摘要",
   "wit_ctx_free": "剩餘",
   "wit_ctx_until": "距自動壓縮還剩 {arg1}%",
-  "wit_ctx_compact": "壓縮對話"
+  "wit_ctx_compact": "壓縮對話",
+  "wit_model_changed": "模型已變更：{arg1}",
+  "settings_models_apple_intelligence_sub": "此 Mac 上的裝置端智慧"
 }

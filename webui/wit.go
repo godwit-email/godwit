@@ -343,6 +343,16 @@ func (p *ComposePage) Models(ctx context.Context) ([]ModelChoice, error) {
 	return modelChoices(ctx, svc)
 }
 
+// SetModel sets the chosen model on the draft's assist conversation.
+func (p *ComposePage) SetModel(ctx context.Context, model string) error {
+	_, svc, s, err := p.open(ctx)
+	if err != nil {
+		return keyed(err)
+	}
+	defer s.mu.Unlock()
+	return keyed(svc.SetDraftModel(ctx, s.draftID, model))
+}
+
 // CheckCited is ErrMailGone for a cited message deleted since, as the Wit
 // page's.
 func (p *ComposePage) CheckCited(ctx context.Context, message int64) error {

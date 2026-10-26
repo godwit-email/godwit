@@ -1386,6 +1386,13 @@ export function Panel({
   const [compacting, setCompacting] = useState(false);
   // a compaction done here: said in the conversation until the next question
   const [compacted, setCompacted] = useState(false);
+  // inline confirmation when the active model was changed
+  const [modelNotice, setModelNotice] = useState<string | null>(null);
+  useEffect(() => {
+    if (!modelNotice) return;
+    const timer = setTimeout(() => setModelNotice(null), 5000);
+    return () => clearTimeout(timer);
+  }, [modelNotice]);
   // The picker: from the + menu (at -1), or from an @ at draft[at] with what follows it as query.
   const [picking, setPicking] = useState<{ at: number; query: string }>();
   const textarea = useRef<HTMLTextAreaElement>(null);
@@ -1471,6 +1478,7 @@ export function Panel({
   const ask = (text: string, metadata?: WitMeta) => {
     if (locked || running || !text) return;
     setCompacted(false);
+    setModelNotice(null);
     void chat.sendMessage({ text, metadata: { ...metadata, time: Date.now() } });
   };
   const asked = useRef<object | undefined>(undefined);
@@ -1644,6 +1652,16 @@ export function Panel({
     : model;
   // The settings' default among them (none: it is not a model listed).
   const listedDefault = choices?.find((c) => c.default);
+  // picks ref ("": the default) and says so in the conversation
+  const pickModel = (ref: string) => {
+    models?.pick(ref);
+    const label = ref
+      ? (choices?.find((c) => c.ref === ref)?.name ?? ref)
+      : model
+        ? t("wit.model.default", model)
+        : t("wit.model.pick");
+    setModelNotice(t("wit.model.changed", label));
+  };
   // The menu groups the choices by their service, in the order they come.
   const services = new Map<string, ModelChoice[]>();
   for (const c of choices ?? []) services.set(c.service, [...(services.get(c.service) ?? []), c]);
@@ -1917,7 +1935,7 @@ export function Panel({
                       group: session,
                       label: t("wit.model.default", model),
                       checked: !models.ref,
-                      run: now(() => models.pick("")),
+                      run: now(() => pickModel("")),
                     },
                   ]),
               ...(choices ?? []).map((c) => ({
@@ -1927,7 +1945,7 @@ export function Panel({
                 hint: c.service,
                 checked: (models.ref || listedDefault?.ref) === c.ref,
                 // picking the default follows it again (no model of its own)
-                run: now(() => models.pick(c.ref === listedDefault?.ref ? "" : c.ref)),
+                run: now(() => pickModel(c.ref === listedDefault?.ref ? "" : c.ref)),
               })),
               ...(onModels
                 ? [
@@ -2066,6 +2084,15 @@ export function Panel({
                   {t(compacting ? "wit.usage.compacting" : "wit.usage.compacted")}
                 </TraceTitle>
               </TraceLine>
+            )}
+            {modelNotice && (
+              <div
+                role="status"
+                className="flex items-center gap-2 rounded-lg bg-sidebar px-3 py-2 text-base text-foreground"
+              >
+                <RiSparkling2Line className="size-4 shrink-0 text-foreground" />
+                <span>{modelNotice}</span>
+              </div>
             )}
           </MessageScrollerContent>
         </MessageScrollerViewport>
@@ -2268,7 +2295,7 @@ export function Panel({
                 // the default only by its name when it is none of the models listed
                 <DropdownMenuRadioGroup
                   value={models.ref}
-                  onValueChange={(v: string) => models.pick(v)}
+                  onValueChange={(v: string) => pickModel(v)}
                 >
                   <DropdownMenuRadioItem closeOnClick value="">
                     {t("wit.model.default", model)}
@@ -2283,7 +2310,7 @@ export function Panel({
                     // the default model is checked while the conversation follows the default
                     value={models.ref || (listedDefault?.ref ?? "")}
                     // picking the default follows it again (no model of its own)
-                    onValueChange={(v: string) => models.pick(v === listedDefault?.ref ? "" : v)}
+                    onValueChange={(v: string) => pickModel(v === listedDefault?.ref ? "" : v)}
                   >
                     {list.map((c) => (
                       <DropdownMenuRadioItem closeOnClick key={c.ref} value={c.ref}>

@@ -1223,5 +1223,7 @@
   "wit_ctx_summary": "Samenvatting",
   "wit_ctx_free": "Vrij",
   "wit_ctx_until": "Nog {arg1}% tot automatisch comprimeren",
-  "wit_ctx_compact": "Comprimeren"
+  "wit_ctx_compact": "Comprimeren",
+  "wit_model_changed": "Model gewijzigd: {arg1}",
+  "settings_models_apple_intelligence_sub": "Lokaal op deze Mac"
 }

@@ -13,6 +13,7 @@ import (
 	"github.com/godwit-email/godwit/core/ai"
 	"github.com/godwit-email/godwit/core/internal/testllm"
 	"github.com/godwit-email/godwit/core/mail"
+	"github.com/godwit-email/godwit/core/store"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -809,4 +810,24 @@ func TestSplitSubject(t *testing.T) {
 	_, body, ok := splitSubject("<p>No subject</p>")
 	assert.False(t, ok)
 	assert.Equal(t, "<p>No subject</p>", body)
+}
+
+// A model picked for a draft stays on its assist conversation, effort kept,
+// for the compose window opened again.
+func TestSetDraftModel(t *testing.T) {
+	e := newAssistEnv(t)
+	ms, err := e.s.UpdateModelService(t.Context(), e.ms.ID, ModelServiceInput{Name: e.ms.Name, Kind: "openai", BaseURL: e.srv.URL, Models: []string{"m1", "m2"}})
+	require.NoError(t, err)
+	d := e.newDraft(t, "Hi", "<p>Hi.</p>")
+	require.NoError(t, e.s.SetDraftModel(t.Context(), d.ID, ms.Slug+"/m1"))
+	rows, err := e.s.db.Query(t.Context(), "SELECT id FROM conversations WHERE kind = 'assist' AND draft_id = ?", d.ID)
+	require.NoError(t, err)
+	require.Len(t, rows.Values, 1)
+	id := store.Int(rows.Values[0][0])
+	require.NoError(t, e.s.SetConversationModel(t.Context(), id, ms.Slug+"/m1", "high"))
+	require.NoError(t, e.s.SetDraftModel(t.Context(), d.ID, ms.Slug+"/m2"))
+	c, err := e.s.GetConversation(t.Context(), id)
+	require.NoError(t, err)
+	assert.Equal(t, [2]string{ms.Slug + "/m2", "high"}, [2]string{c.Model, c.Effort})
+	require.Error(t, e.s.SetDraftModel(t.Context(), d.ID, ms.Slug+"/nope"))
 }

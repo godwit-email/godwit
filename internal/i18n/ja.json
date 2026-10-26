@@ -1223,5 +1223,7 @@
   "wit_ctx_summary": "要約",
   "wit_ctx_free": "空き",
   "wit_ctx_until": "自動圧縮まで残り {arg1}%",
-  "wit_ctx_compact": "会話を圧縮"
+  "wit_ctx_compact": "会話を圧縮",
+  "wit_model_changed": "モデルを変更しました: {arg1}",
+  "settings_models_apple_intelligence_sub": "この Mac 上のオンデバイス"
 }
