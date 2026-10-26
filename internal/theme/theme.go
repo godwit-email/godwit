@@ -414,7 +414,7 @@ func mygoTheme(t Tokens) *ui.Theme {
 	if t.Dark {
 		th = *ui.DarkTheme()
 	}
-	th.Background, th.Surface, th.SurfaceHover, th.SurfacePressed = t.Background, t.Background, t.Hover, t.Border
+	th.Background, th.Surface, th.SurfaceHover, th.SurfacePressed = t.Background, t.Background, t.Hover.Mix(t.Background, 0.5), t.Border
 	th.Border, th.Text, th.TextMuted = t.Border, t.Foreground, t.Muted
 	th.Accent, th.AccentText = t.Primary, t.PrimaryText
 	th.AccentHover, th.AccentPressed = t.Primary.Mix(t.Background, 0.1), t.Primary.Mix(t.Background, 0.2)
