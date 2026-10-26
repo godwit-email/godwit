@@ -410,6 +410,7 @@ func TestSanitizeDarkCanvasBounds(t *testing.T) {
 	}
 	assert.True(t, dark(`<div style="width:100%;background-color:#111">x</div>`), "a full-width div by style")
 	assert.True(t, dark(`<center><table width="100%" style="background:rgb(20, 20, 20)"><tr><td>x</td></tr></table></center>`), "through one wrapper")
+	assert.True(t, dark(`<div style="width:100%;background:no-repeat rgb(0 0 0 / 0.9)">x</div>`), "a shorthand's colour, space-separated")
 	assert.True(t, dark(`<meta name="color-scheme" content="only dark"><p>x</p>`))
 
 	assert.False(t, dark(`<table width="100%" bgcolor="#00000000"><tr><td>x</td></tr></table>`), "transparent black, by hex")

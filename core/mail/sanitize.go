@@ -9,6 +9,7 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/gorilla/css/scanner"
 	"github.com/microcosm-cc/bluemonday"
 	"golang.org/x/net/html"
 	"golang.org/x/net/html/atom"
@@ -389,109 +390,87 @@ func SanitizeDraft(src string, cids map[string]bool) string {
 }
 
 // cleanStyle rejoins an element's inline declarations trimmed, dropping empty
-// ones; a ; within quotes or parentheses (a data: URL) does not end one.
+// ones; read as tokens, so a ; in a string or a url() does not end one.
 func cleanStyle(s string) string {
+	ts, ok := tokens(s)
+	if !ok {
+		return s
+	}
 	var out []string
-	var quote byte
-	depth, start := 0, 0
-	for i := 0; i <= len(s); i++ {
-		if i < len(s) {
-			switch c := s[i]; {
-			case quote != 0:
-				if c == quote {
-					quote = 0
-				}
-				continue
-			case c == '"' || c == '\'':
-				quote = c
-				continue
-			case c == '(':
-				depth++
-			case c == ')' && depth > 0:
-				depth--
-			}
-			if depth > 0 || s[i] != ';' {
-				continue
-			}
+	for _, d := range splitAt(ts, ";") {
+		if d = trimS(d); len(d) > 0 {
+			out = append(out, join(d))
 		}
-		if d := strings.TrimSpace(s[start:i]); d != "" {
-			out = append(out, d)
-		}
-		start = i + 1
 	}
 	return strings.Join(out, "; ")
 }
 
-// isDarkColor reports whether a background is dark and opaque enough to be the
-// mail's canvas. One it cannot read is not: guessing black would keep a light
-// mail uninverted.
+// isDarkColor reports whether the first colour in a background value is dark
+// and opaque enough to be the mail's canvas. One it cannot read is not: guessing
+// black would keep a light mail uninverted.
 func isDarkColor(val string) bool {
-	val = strings.ToLower(strings.TrimSpace(val))
-	switch val {
-	case "black", "navy", "darkblue", "midnightblue", "darkgreen", "darkslategray", "maroon":
-		return true
-	}
-	rgba := []float64{0, 0, 0, 1}
-	if h, ok := strings.CutPrefix(val, "#"); ok {
-		if len(h) == 3 || len(h) == 4 { // #abc is #aabbcc
-			var b strings.Builder
-			for i := range len(h) {
-				b.WriteString(h[i:i+1] + h[i:i+1])
-			}
-			h = b.String()
-		}
-		v, err := strconv.ParseUint(h, 16, 32)
-		if err != nil || len(h) != 6 && len(h) != 8 {
-			return false
-		}
-		if len(h) == 8 {
-			rgba[3] = float64(v&0xff) / 255
-			v >>= 8
-		}
-		rgba[0], rgba[1], rgba[2] = float64(v>>16), float64(v>>8&0xff), float64(v&0xff)
-	} else if args, ok := strings.CutSuffix(val, ")"); ok && (strings.HasPrefix(args, "rgb(") || strings.HasPrefix(args, "rgba(")) {
-		parts := strings.Split(args[strings.IndexByte(args, '(')+1:], ",")
-		if len(parts) != 3 && len(parts) != 4 {
-			return false
-		}
-		for i, p := range parts {
-			f, err := strconv.ParseFloat(strings.TrimSpace(p), 64)
-			if err != nil {
-				return false // rgb(0 0 0), percentages: not read
-			}
-			rgba[i] = f
-		}
-	} else {
+	ts, ok := tokens(val)
+	if !ok {
 		return false
 	}
-	return rgba[3] >= 0.5 && 0.299*rgba[0]+0.587*rgba[1]+0.114*rgba[2] < 128
+	dark := func(c []float64) bool { return c[3] >= 0.5 && 0.299*c[0]+0.587*c[1]+0.114*c[2] < 128 }
+	for i, t := range ts {
+		switch {
+		case t.Type == scanner.TokenIdent && slices.Contains(darkNames, strings.ToLower(t.Value)):
+			return true
+		case t.Type == scanner.TokenHash:
+			h := t.Value[1:]
+			if len(h) == 3 || len(h) == 4 { // #abc is #aabbcc
+				var b strings.Builder
+				for i := range len(h) {
+					b.WriteString(h[i:i+1] + h[i:i+1])
+				}
+				h = b.String()
+			}
+			v, err := strconv.ParseUint(h, 16, 32)
+			if err != nil || len(h) != 6 && len(h) != 8 {
+				return false
+			}
+			a := uint64(255)
+			if len(h) == 8 {
+				a, v = v&0xff, v>>8
+			}
+			return dark([]float64{float64(v >> 16), float64(v >> 8 & 0xff), float64(v & 0xff), float64(a) / 255})
+		case t.Type == scanner.TokenFunction && (strings.EqualFold(t.Value, "rgb(") || strings.EqualFold(t.Value, "rgba(")):
+			c, n := []float64{0, 0, 0, 1}, 0
+			for _, t := range ts[i+1:] {
+				switch {
+				case isChar(t, ")"):
+					return (n == 3 || n == 4) && dark(c)
+				case t.Type == scanner.TokenNumber && n < 4:
+					f, err := strconv.ParseFloat(t.Value, 64)
+					if err != nil {
+						return false
+					}
+					c[n], n = f, n+1
+				case t.Type != scanner.TokenS && !isChar(t, ",/"):
+					return false // a percentage: not read
+				}
+			}
+			return false
+		}
+	}
+	return false
 }
 
-// elementBackground is n's background colour as written: bgcolor, else its style's.
+var darkNames = []string{"black", "navy", "darkblue", "midnightblue", "darkgreen", "darkslategray", "maroon"}
+
+// elementBackground is n's background as written: bgcolor, else its style's
+// background-color or background (a shorthand, which isDarkColor reads the colour of).
 func elementBackground(n *html.Node) string {
 	if bg, ok := attr(n, "bgcolor"); ok && bg != "" {
 		return bg
 	}
 	decls := styleDecls(n)
-	if c, ok := decls["background-color"]; ok && c != "" {
+	if c := decls["background-color"]; c != "" {
 		return c
 	}
-	if b, ok := decls["background"]; ok && b != "" {
-		if i := strings.Index(b, "rgb"); i >= 0 { // whole, though it may hold spaces
-			if j := strings.IndexByte(b[i:], ')'); j >= 0 {
-				return b[i : i+j+1]
-			}
-		}
-		for _, f := range strings.Fields(b) {
-			if strings.HasPrefix(f, "#") || strings.HasPrefix(f, "rgb") || f == "black" || f == "white" {
-				return f
-			}
-		}
-		if fields := strings.Fields(b); len(fields) > 0 && !strings.Contains(fields[0], "(") {
-			return fields[0]
-		}
-	}
-	return ""
+	return decls["background"]
 }
 
 // topLevel reports whether n is a child of <body>, or a grandchild through one
