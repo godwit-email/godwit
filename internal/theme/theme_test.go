@@ -54,6 +54,9 @@ func TestThemeTokens(t *testing.T) {
 	if FromSettings(st, false).Dark || !FromSettings(st, true).Dark {
 		t.Error("system theme does not follow the system")
 	}
+	if FromSettings(core.Settings{}, false).Dark || !FromSettings(core.Settings{}, true).Dark {
+		t.Error("empty initial theme does not follow the system")
+	}
 	st.Theme = "dark"
 	if !FromSettings(st, false).Dark {
 		t.Error("dark theme is not dark")

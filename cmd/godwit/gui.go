@@ -38,6 +38,7 @@ func windowOptions(goos string) mygo.WindowOptions {
 		// Not hiddenInset: its toolbar makes the title bar as tall as AppKit's
 		// (66 on macOS 26). Center the traffic lights in our own top bar.
 		o.Vibrancy, o.TitleBarStyle = mygo.VibrancySidebar, mygo.TitleBarHidden
+		o.Transparent = true
 		o.TrafficLightPosition = &mygo.Point{X: trafficLightInset, Y: (theme.TopBarHeight - trafficLightSize) / 2}
 	case "windows":
 		o.Vibrancy, o.TitleBarHeight = mygo.VibrancyMica, 40
@@ -241,7 +242,8 @@ func gui(ctx context.Context, dataDir string) int {
 		reader.SetService(svc)
 		sig.SetService(svc)
 		uiLang := "" // keep the database preference authoritative over MyGo's saved locale
-		if st, err := svc.GetSettings(ctx); err != nil {
+		st, err := svc.GetSettings(ctx)
+		if err != nil {
 			log.Printf("reading settings: %v; the menus use the system language", err)
 		} else {
 			uiLang = st.UILanguage
@@ -259,7 +261,7 @@ func gui(ctx context.Context, dataDir string) int {
 		opts := windowOptions(runtime.GOOS)
 		plat = &platform{dataDir: dataDir, svc: svc, windows: windows, wit: wit, roles: roles, reader: reader, sig: sig}
 		var win *mygo.Window
-		a = app.New(app.Deps{Svc: svc, Platform: plat, Post: func(f func()) { win.Update(f) },
+		a = app.New(app.Deps{Svc: svc, Platform: plat, Settings: st, Post: func(f func()) { win.Update(f) },
 			SystemLanguage: lang, SetLanguage: setLanguage,
 			Vibrancy: opts.Vibrancy != mygo.VibrancyNone, Dev: mygo.IsDev()})
 		plat.onAPIStop = a.LocalAPIStopped
