@@ -787,13 +787,29 @@ describe("Panel", () => {
       page: true,
       history: hist({
         ...turn,
-        usage: { input: 10, output: 1, context: 10, cached: 0, history: 0.2, summary: 0, compactable: false },
+        usage: {
+          input: 10,
+          output: 1,
+          context: 10,
+          cached: 0,
+          history: 0.2,
+          summary: 0,
+          compactable: false,
+        },
       }),
     });
     api.follow.mockResolvedValue(
       hist({
         ...turn,
-        usage: { input: 30, output: 1, context: 20, cached: 0, history: 0.2, summary: 0, compactable: false },
+        usage: {
+          input: 30,
+          output: 1,
+          context: 20,
+          cached: 0,
+          history: 0.2,
+          summary: 0,
+          compactable: false,
+        },
       }),
     );
     await user.type(input("向 Wit 提问"), "hi{Enter}");
@@ -896,7 +912,15 @@ describe("Panel", () => {
     const user = userEvent.setup();
     const before = hist({
       ...turn,
-      usage: { input: 1200, output: 80, context: 900, cached: 0, history: 0.9, summary: 0, compactable: true },
+      usage: {
+        input: 1200,
+        output: 80,
+        context: 900,
+        cached: 0,
+        history: 0.9,
+        summary: 0,
+        compactable: true,
+      },
     });
     const { api } = await setup({ page: true, history: before });
     api.follow.mockResolvedValue({
