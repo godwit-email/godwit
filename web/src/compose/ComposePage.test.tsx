@@ -40,16 +40,35 @@ vi.mock("mygo-runtime", async (original) => ({
 // Plate has its own tests; here the body is a textarea that, like Plate, reads `initial` at mount
 // and takes no input while read-only.
 vi.mock("./editor/Editor", async () => {
-  const { useState } = await import("react");
+  const { forwardRef, useEffect, useImperativeHandle, useState } = await import("react");
   return {
-    Editor(p: {
-      initial: string;
-      readOnly: boolean;
-      onChange(html: string): void;
-      t(k: string): string;
-      attach?: React.ReactNode;
-    }) {
+    Editor: forwardRef(function Editor(
+      p: {
+        initial: string;
+        readOnly: boolean;
+        onChange(html: string): void;
+        t(k: string): string;
+        attach?: React.ReactNode;
+      },
+      ref,
+    ) {
       const [v, setV] = useState(p.initial);
+      useEffect(() => {
+        setV(p.initial);
+      }, [p.initial]);
+      useImperativeHandle(ref, () => ({
+        setValue(html: string) {
+          setV(html);
+        },
+        undo() {},
+        redo() {},
+        canUndo() {
+          return false;
+        },
+        canRedo() {
+          return false;
+        },
+      }));
       return (
         <div>
           {p.attach}
@@ -65,7 +84,7 @@ vi.mock("./editor/Editor", async () => {
           />
         </div>
       );
-    },
+    }),
   };
 });
 

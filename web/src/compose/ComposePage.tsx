@@ -452,6 +452,7 @@ function Compose({
       } finally {
         adopting.current = false;
       }
+      setInitial((i) => ({ ...i, body }));
     } else {
       setInitial((i) => ({ body, n: i.n + 1 }));
     }
@@ -1028,7 +1029,7 @@ function Compose({
                   >
                     <Editor
                       ref={editorRef}
-                      key={state.draftId}
+                      key={`${state.draftId}:${initial.n}`}
                       initial={initial.body}
                       readOnly={locked || witLocked || Boolean(reviewing)}
                       placeholder={wit && !state.wit.translateOnly ? t("wit.compose.empty") : ""}

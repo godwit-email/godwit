@@ -51,18 +51,37 @@ vi.mock("sonner", async (orig) => ({
 // The body as a textarea that reads `initial` at mount; ⌘K on a selection gives its plain text
 // (the textarea's value) and the selection, as the Plate editor does (its own tests cover toText).
 vi.mock("./editor/Editor", async () => {
-  const { useState } = await import("react");
+  const { forwardRef, useEffect, useImperativeHandle, useState } = await import("react");
   return {
-    Editor(p: {
-      initial: string;
-      readOnly: boolean;
-      placeholder: string;
-      onChange(html: string): void;
-      onCmdK?(s: unknown): void;
-      popover?: unknown;
-      t(k: string): string;
-    }) {
+    Editor: forwardRef(function Editor(
+      p: {
+        initial: string;
+        readOnly: boolean;
+        placeholder: string;
+        onChange(html: string): void;
+        onCmdK?(s: unknown): void;
+        popover?: unknown;
+        t(k: string): string;
+      },
+      ref,
+    ) {
       const [v, setV] = useState(p.initial);
+      useEffect(() => {
+        setV(p.initial);
+      }, [p.initial]);
+      useImperativeHandle(ref, () => ({
+        setValue(html: string) {
+          setV(html);
+        },
+        undo() {},
+        redo() {},
+        canUndo() {
+          return false;
+        },
+        canRedo() {
+          return false;
+        },
+      }));
       return (
         <>
           <textarea
@@ -90,7 +109,7 @@ vi.mock("./editor/Editor", async () => {
           {p.popover as ReactNode}
         </>
       );
-    },
+    }),
   };
 });
 
