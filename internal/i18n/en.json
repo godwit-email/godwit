@@ -898,6 +898,15 @@
     }
   },
   "reader_today": "Today",
+  "reader_thread_collapse": "Collapse email history",
+  "reader_thread_expand": "{arg1, plural, one {Expand email history ({arg1, number, ::group-off} email)} other {Expand email history ({arg1, number, ::group-off} emails)}}",
+  "@reader_thread_expand": {
+    "placeholders": {
+      "arg1": {
+        "type": "int"
+      }
+    }
+  },
   "reader_truncated": "This message is too long; only the beginning is shown",
   "reader_trust_sender": "Always trust this sender",
   "reader_unsubscribe": "Unsubscribe",
@@ -1917,6 +1926,10 @@
   "settings_theme_system": "System",
   "settings_thread_view": "Conversation view",
   "settings_thread_view_help": "Group mail of the same conversation together",
+  "settings_thread_collapse": "Collapse thread history",
+  "settings_thread_collapse_help": "Group older messages in long conversations into an expandable card",
+  "settings_thread_collapse_threshold": "Collapse history from",
+  "settings_thread_collapse_threshold_help": "Minimum number of messages in a conversation (2–100, default: 5)",
   "settings_translator": "Translate with",
   "settings_translator_gone": "{arg1} (uninstalled)",
   "@settings_translator_gone": {

@@ -26,6 +26,8 @@ type Settings struct {
 	UnreadOnAppIcon                                  bool
 	NotifyNewMail, NotifySmartOnly, NotifyPreview    bool
 	QuickReplies, Summary, ThreadView                bool
+	ThreadCollapse                                   bool // collapse runs of folded messages into an expandable card
+	ThreadCollapseThreshold                          int  // a thread collapses from this many messages, MinThreadCollapse to MaxThreadCollapse
 	DefaultModel, SmallModel                         string
 	// Translator is the reader's translation channel: "" the model, or
 	// "plugin/<name>" a plugin declaring translate (ListTranslators).
@@ -92,9 +94,17 @@ const (
 	MaxJudgeThreshold = 0.95
 )
 
+// MinThreadCollapse and MaxThreadCollapse bound ThreadCollapseThreshold.
+const (
+	MinThreadCollapse     = 2
+	MaxThreadCollapse     = 100
+	DefaultThreadCollapse = 5
+)
+
 func defaultSettings() Settings {
 	return Settings{Theme: "system", Density: "compact", FontSize: 14, SettingsVersion: settingsVersion, ReplyLanguage: "match", RemoteImages: "auto",
-		KeepInBackground: true, UnreadOnAppIcon: true, NotifyNewMail: true, NotifyPreview: true, ThreadView: true, AutoLabel: true, JudgeThreshold: 0.8,
+		KeepInBackground: true, UnreadOnAppIcon: true, NotifyNewMail: true, NotifyPreview: true, ThreadView: true,
+		ThreadCollapse: true, ThreadCollapseThreshold: DefaultThreadCollapse, AutoLabel: true, JudgeThreshold: 0.8,
 		MCPSend: MCPSendConfirm}
 }
 
@@ -128,6 +138,8 @@ func (st Settings) validate() error {
 		return fmt.Errorf("list width must be between 280 and 560")
 	case !(st.JudgeThreshold >= MinJudgeThreshold && st.JudgeThreshold <= MaxJudgeThreshold):
 		return fmt.Errorf("judge threshold must be between %g and %g", MinJudgeThreshold, MaxJudgeThreshold)
+	case st.ThreadCollapseThreshold < MinThreadCollapse || st.ThreadCollapseThreshold > MaxThreadCollapse:
+		return fmt.Errorf("thread collapse threshold must be between %d and %d", MinThreadCollapse, MaxThreadCollapse)
 	}
 	if name, ok := strings.CutPrefix(st.Translator, translatorPrefix); st.Translator != "" && (!ok || !skills.ValidName(name)) {
 		return fmt.Errorf("invalid translator %q", st.Translator)
@@ -189,6 +201,7 @@ func (s *Service) loadSettings(ctx context.Context) (Settings, error) {
 		}
 	}
 	st.JudgeThreshold = max(MinJudgeThreshold, min(MaxJudgeThreshold, st.JudgeThreshold)) // older builds allowed 0..1
+	st.ThreadCollapseThreshold = max(MinThreadCollapse, min(MaxThreadCollapse, st.ThreadCollapseThreshold))
 	st.SettingsVersion = settingsVersion
 	return st, nil
 }

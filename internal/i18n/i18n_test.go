@@ -135,3 +135,18 @@ func TestAllSupportedLocales(t *testing.T) {
 		}
 	}
 }
+
+func TestThreadExpandPlural(t *testing.T) {
+	t.Cleanup(func() { SetLanguage("zh-Hans") })
+	SetLanguage("en")
+	if got := Plural("reader.thread.expand", 1); got != "Expand email history (1 email)" {
+		t.Errorf("one: %q", got)
+	}
+	if got := Plural("reader.thread.expand", 3); got != "Expand email history (3 emails)" {
+		t.Errorf("other: %q", got)
+	}
+	SetLanguage("ru")
+	if got := Plural("reader.thread.expand", 3); got != "Развернуть историю переписки (3 письма)" {
+		t.Errorf("ru few: %q", got)
+	}
+}
