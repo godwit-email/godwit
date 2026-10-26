@@ -1246,5 +1246,16 @@
   "wit_ctx_until": "自動圧縮まで残り {arg1}%",
   "wit_ctx_compact": "会話を圧縮",
   "wit_model_changed": "モデルを変更しました: {arg1}",
-  "settings_models_apple_intelligence_sub": "この Mac 上のオンデバイス"
+  "settings_models_apple_intelligence_sub": "この Mac 上のオンデバイス",
+  "reader_copy_address": "アドレスをコピー",
+  "reader_address_copied": "アドレスをコピーしました",
+  "reader_block_sender": "送信者をブロック",
+  "reader_unblock_sender": "送信者のブロックを解除",
+  "reader_sender_blocked": "送信者をブロックしました",
+  "reader_sender_unblocked": "送信者のブロックを解除しました",
+  "settings_blocked": "ブロック中の送信者",
+  "settings_blocked_sub": "ブロックされた送信者からの受信メールは自動的に迷惑メールへ移動されます。",
+  "settings_blocked_none": "ブロック中の送信者はいません。",
+  "settings_blocked_remove": "解除",
+  "settings_blocked_remove_label": "{arg1}のブロックを解除"
 }

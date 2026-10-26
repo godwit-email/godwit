@@ -127,6 +127,25 @@ func TestNotifyEachMessage(t *testing.T) {
 			t.Fatalf("notes %+v, want the inbox one alone", notes)
 		}
 	})
+	t.Run("blocked sender", func(t *testing.T) {
+		h, acc := notifyHarness(t, nil)
+		if err := h.env.IMAP(acc.ID).User.Create("Junk", nil); err != nil {
+			t.Fatal(err)
+		}
+		if err := h.env.Svc.SyncNow(context.Background(), acc.ID); err != nil {
+			t.Fatal(err)
+		}
+		if err := h.env.Svc.BlockSender(context.Background(), "spammer@example.com"); err != nil {
+			t.Fatal(err)
+		}
+		h.advance(refreshEvery)
+		h.env.Deliver(t, acc.ID, "INBOX", coretest.Msg("spammer@example.com", acc.Email, "Spam", "x"))
+		h.until("arrival registered", func() bool { return h.app.newMail[acc.ID] != nil && len(h.app.newMail[acc.ID].msgs) == 1 })
+		if notes := h.notesAfter(0); len(notes) != 0 {
+			t.Fatalf("notes %+v for blocked sender", notes)
+		}
+		h.until("moved to junk", func() bool { return h.countIn(h.folderOf(acc, "junk")) == 1 })
+	})
 	t.Run("failure logged", func(t *testing.T) {
 		h, acc := notifyHarness(t, func(st *core.Settings) { st.NotifyPreview = true })
 		h.plat.mu.Lock()

@@ -20,6 +20,7 @@ import (
 	"github.com/egoist/mygo/ui"
 	"github.com/godwit-email/godwit/core"
 	"github.com/godwit-email/godwit/core/coretest"
+	"github.com/godwit-email/godwit/internal/i18n"
 )
 
 var readerAvatarSVG = []byte(`<svg xmlns="http://www.w3.org/2000/svg" width="64" height="64"><rect width="64" height="64" fill="#ff0000"/></svg>`)
@@ -846,6 +847,37 @@ func TestReaderNewReplyExpandsAndReads(t *testing.T) {
 	reply := msgs[1].ID
 	h.waitMail("the reply expanded", func() bool { return r.open[reply] && h.plat.view(reply) != nil })
 	h.until("the reply read", func() bool { return seen(h.messages(m.ThreadID)[1]) })
+}
+
+func TestReaderSenderPopover(t *testing.T) {
+	h, accs := mailHarness(t, nil, "alice@example.com")
+	acc := accs[0]
+	m := h.deliverOne(acc, coretest.Msg("Spammer <spammer@example.com>", acc.Email, "Spam", "buy now"))
+	h.openThread(m.ThreadID)
+	h.seeBody(m.ID)
+	r := h.app.mail.reader
+	if r.isBlocked("spammer@example.com") {
+		t.Fatal("unexpectedly blocked")
+	}
+
+	// Verify opening Godwit-native popover via the chevron button
+	h.click("spammer@example.com")
+	h.until("popover open", func() bool { return r.senderOpen && r.senderMsgID == m.ID })
+	h.see(i18n.T("reader.copy_address"))
+	h.see(i18n.T("reader.block_sender"))
+
+	// Click Block Sender inside the popover
+	h.click(i18n.T("reader.block_sender"))
+	h.until("blocked", func() bool {
+		h.advance(refreshEvery)
+		return r.isBlocked("spammer@example.com")
+	})
+
+	r.unblockSender("spammer@example.com")
+	h.until("unblocked", func() bool {
+		h.advance(refreshEvery)
+		return !r.isBlocked("spammer@example.com")
+	})
 }
 
 func TestReaderBodyRetry(t *testing.T) {

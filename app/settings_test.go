@@ -1565,3 +1565,23 @@ func TestLinkHref(t *testing.T) {
 		}
 	}
 }
+
+func TestSettingsBlockedSenders(t *testing.T) {
+	h, _ := withAccount(t)
+	h.openSettings("privacy")
+	h.see("没有已屏蔽的发件人")
+	if err := h.env.Svc.BlockSender(context.Background(), "spammer@example.com"); err != nil {
+		t.Fatal(err)
+	}
+	h.settle()
+	h.advance(refreshEvery)
+	h.see("spammer@example.com")
+	h.click("取消屏蔽 spammer@example.com")
+	h.until("unblocked", func() bool {
+		st, err := h.env.Svc.GetSettings(context.Background())
+		return err == nil && len(st.BlockedSenders) == 0
+	})
+	h.settle()
+	h.advance(refreshEvery)
+	h.see("没有已屏蔽的发件人")
+}

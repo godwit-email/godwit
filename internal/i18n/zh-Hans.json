@@ -1246,5 +1246,16 @@
   "wit_ctx_until": "距自动压缩还剩 {arg1}%",
   "wit_ctx_compact": "压缩对话",
   "wit_model_changed": "模型已更改：{arg1}",
-  "settings_models_apple_intelligence_sub": "此 Mac 上的设备端智能"
+  "settings_models_apple_intelligence_sub": "此 Mac 上的设备端智能",
+  "reader_copy_address": "复制地址",
+  "reader_address_copied": "地址已复制",
+  "reader_block_sender": "屏蔽发件人",
+  "reader_unblock_sender": "取消屏蔽发件人",
+  "reader_sender_blocked": "发件人已屏蔽",
+  "reader_sender_unblocked": "已取消屏蔽发件人",
+  "settings_blocked": "已屏蔽的发件人",
+  "settings_blocked_sub": "来自已屏蔽发件人的新邮件会自动移到垃圾邮件。",
+  "settings_blocked_none": "没有已屏蔽的发件人。",
+  "settings_blocked_remove": "取消屏蔽",
+  "settings_blocked_remove_label": "取消屏蔽 {arg1}"
 }

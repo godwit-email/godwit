@@ -1246,5 +1246,16 @@
   "wit_ctx_until": "Ancora {arg1}% prima della compattazione automatica",
   "wit_ctx_compact": "Compatta",
   "wit_model_changed": "Modello modificato: {arg1}",
-  "settings_models_apple_intelligence_sub": "Su questo dispositivo"
+  "settings_models_apple_intelligence_sub": "Su questo dispositivo",
+  "reader_copy_address": "Copia indirizzo",
+  "reader_address_copied": "Indirizzo copiato",
+  "reader_block_sender": "Blocca mittente",
+  "reader_unblock_sender": "Sblocca mittente",
+  "reader_sender_blocked": "Mittente bloccato",
+  "reader_sender_unblocked": "Mittente sbloccato",
+  "settings_blocked": "Mittenti bloccati",
+  "settings_blocked_sub": "I messaggi in arrivo dai mittenti bloccati vengono spostati automaticamente in Indesiderata.",
+  "settings_blocked_none": "Nessun mittente bloccato.",
+  "settings_blocked_remove": "Sblocca",
+  "settings_blocked_remove_label": "Sblocca {arg1}"
 }

@@ -1246,5 +1246,16 @@
   "wit_ctx_until": "距自動壓縮還剩 {arg1}%",
   "wit_ctx_compact": "壓縮對話",
   "wit_model_changed": "模型已變更：{arg1}",
-  "settings_models_apple_intelligence_sub": "此 Mac 上的裝置端智慧"
+  "settings_models_apple_intelligence_sub": "此 Mac 上的裝置端智慧",
+  "reader_copy_address": "複製地址",
+  "reader_address_copied": "地址已複製",
+  "reader_block_sender": "封鎖寄件者",
+  "reader_unblock_sender": "取消封鎖寄件者",
+  "reader_sender_blocked": "寄件者已封鎖",
+  "reader_sender_unblocked": "已取消封鎖寄件者",
+  "settings_blocked": "已封鎖的寄件者",
+  "settings_blocked_sub": "來自已封鎖寄件人的新郵件會自動移到垃圾郵件。",
+  "settings_blocked_none": "沒有已封鎖的寄件者。",
+  "settings_blocked_remove": "取消封鎖",
+  "settings_blocked_remove_label": "取消封鎖 {arg1}"
 }

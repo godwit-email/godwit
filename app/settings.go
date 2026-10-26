@@ -470,6 +470,7 @@ func (p *settingsPage) privacyView(c *ui.Context) {
 	settingsSection(c, i18n.T("settings.local_api"), "", rows...)
 	p.remoteImagesView(c)
 	p.trustedView(c)
+	p.blockedView(c)
 }
 
 // readImageCache reads the remote image cache's size for the privacy page.
@@ -539,6 +540,27 @@ func (p *settingsPage) trustedView(c *ui.Context) {
 		})
 	}
 	settingsSection(c, i18n.T("settings.trusted"), i18n.T("settings.trusted.sub"), rows...)
+}
+
+// blockedView lists the senders the user blocked, each with an unblock button.
+func (p *settingsPage) blockedView(c *ui.Context) {
+	t, a := theme.Of(c), p.a
+	var rows []func()
+	for _, addr := range a.settings.BlockedSenders {
+		rows = append(rows, func() {
+			settingRow(c, addr, "", func() {
+				if settingButton(c, i18n.T("settings.blocked.remove"), kit.Outline, false).Label(i18n.Tf("settings.blocked.remove.label", addr)).Clicked() {
+					a.do(func(ctx context.Context) error { return a.svc.UnblockSender(ctx, addr) }, a.toastErr)
+				}
+			}).Label(addr)
+		})
+	}
+	if len(rows) == 0 {
+		rows = append(rows, func() {
+			settingBlock(c, func() { ui.Text(c, i18n.T("settings.blocked.none")).TextColor(t.Muted) })
+		})
+	}
+	settingsSection(c, i18n.T("settings.blocked"), i18n.T("settings.blocked.sub"), rows...)
 }
 
 // godwitExe is this executable's absolute path.

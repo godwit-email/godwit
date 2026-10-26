@@ -2524,5 +2524,16 @@
     }
   },
   "wit_model_changed": "Model changed: {arg1}",
-  "settings_models_apple_intelligence_sub": "On-device intelligence"
+  "settings_models_apple_intelligence_sub": "On-device intelligence",
+  "reader_copy_address": "Copy Address",
+  "reader_address_copied": "Address copied",
+  "reader_block_sender": "Block Sender",
+  "reader_unblock_sender": "Unblock Sender",
+  "reader_sender_blocked": "Sender blocked",
+  "reader_sender_unblocked": "Sender unblocked",
+  "settings_blocked": "Blocked Senders",
+  "settings_blocked_sub": "Incoming messages from blocked senders are automatically moved to Junk.",
+  "settings_blocked_none": "No blocked senders.",
+  "settings_blocked_remove": "Unblock",
+  "settings_blocked_remove_label": "Unblock {arg1}"
 }

@@ -1246,5 +1246,16 @@
   "wit_ctx_until": "До автосжатия осталось {arg1}%",
   "wit_ctx_compact": "Сжать",
   "wit_model_changed": "Модель изменена: {arg1}",
-  "settings_models_apple_intelligence_sub": "Локально на этом Mac"
+  "settings_models_apple_intelligence_sub": "Локально на этом Mac",
+  "reader_copy_address": "Скопировать адрес",
+  "reader_address_copied": "Адрес скопирован",
+  "reader_block_sender": "Заблокировать отправителя",
+  "reader_unblock_sender": "Разблокировать отправителя",
+  "reader_sender_blocked": "Отправитель заблокирован",
+  "reader_sender_unblocked": "Отправитель разблокирован",
+  "settings_blocked": "Заблокированные отправители",
+  "settings_blocked_sub": "Входящие письма от заблокированных отправителей автоматически перемещаются в спам.",
+  "settings_blocked_none": "Нет заблокированных отправителей.",
+  "settings_blocked_remove": "Разблокировать",
+  "settings_blocked_remove_label": "Разблокировать {arg1}"
 }

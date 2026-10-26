@@ -99,7 +99,13 @@ func inboxArrivals(ctx context.Context, svc *core.Service, acc int64, got *arriv
 	for _, id := range got.msgs {
 		want[id] = true
 	}
+	st, _ := svc.GetSettings(ctx)
+	blocked := map[string]bool{}
+	for _, b := range st.BlockedSenders {
+		blocked[strings.ToLower(b)] = true
+	}
 	var out []core.MessageSummary
+	var toJunk []int64
 	for _, tid := range slices.Compact(slices.Sorted(slices.Values(got.threads))) {
 		th, err := svc.GetThread(ctx, tid)
 		if err != nil {
@@ -108,8 +114,18 @@ func inboxArrivals(ctx context.Context, svc *core.Service, acc int64, got *arriv
 		for _, m := range th.Messages {
 			if want[m.ID] && inbox[m.FolderID] {
 				delete(want, m.ID) // a message in two gathered threads counts once
+				_, addr := sender(m.From)
+				if blocked[strings.ToLower(addr)] {
+					toJunk = append(toJunk, m.ID)
+					continue
+				}
 				out = append(out, m)
 			}
+		}
+	}
+	if len(toJunk) > 0 {
+		if err := svc.MoveToRole(ctx, toJunk, "junk"); err != nil {
+			_ = svc.Delete(ctx, toJunk)
 		}
 	}
 	return out, nil

@@ -223,6 +223,7 @@ func TestSettings(t *testing.T) {
 			QuickReplies: true, Summary: true, ThreadView: false,
 			DefaultModel: "svc/big", SmallModel: "svc/small", JudgeService: "judge", JudgeThreshold: 0.85, Translator: "plugin/dlx", LocalAPI: true, SidebarWidth: 320, ListWidth: 400, SignatureDelimiter: true,
 			TrustedImageSenders: []string{"bob@example.com"},      // only TrustImageSender sets it; SetSettings keeps it
+			BlockedSenders:      []string{"spammer@example.com"},  // only BlockSender sets it; SetSettings keeps it
 			DisabledBuiltins:    []string{core.SignInCodesPlugin}} // only SetPluginEnabled sets it; SetSettings keeps it
 		bv, sv := reflect.ValueOf(before), reflect.ValueOf(st)
 		for i := range sv.NumField() { // every field must make the round trip
@@ -231,10 +232,15 @@ func TestSettings(t *testing.T) {
 			}
 		}
 		require.NoError(t, api.TrustImageSender(ctx, "Bob <bob@example.com>"))
+		require.NoError(t, api.BlockSender(ctx, "Spammer <spammer@example.com>"))
 		require.NoError(t, env.Svc.SetPluginEnabled(ctx, core.SignInCodesPlugin, false))
 		out["set"] = res(api.SetSettings(ctx, st))
 		out["after"] = res(api.GetSettings(ctx))
 		require.NoError(t, api.UntrustImageSender(ctx, "bob@example.com"))
+		require.NoError(t, api.UnblockSender(ctx, "spammer@example.com"))
+		unblocked, err := api.GetSettings(ctx)
+		require.NoError(t, err)
+		out["unblocked"] = unblocked.BlockedSenders
 		untrusted, err := api.GetSettings(ctx)
 		require.NoError(t, err)
 		out["untrusted"] = untrusted.TrustedImageSenders

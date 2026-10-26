@@ -1246,5 +1246,16 @@
   "wit_ctx_until": "Otomatik sıkıştırmaya %{arg1} kaldı",
   "wit_ctx_compact": "Sıkıştır",
   "wit_model_changed": "Model değiştirildi: {arg1}",
-  "settings_models_apple_intelligence_sub": "Bu Mac''te yerel"
+  "settings_models_apple_intelligence_sub": "Bu Mac''te yerel",
+  "reader_copy_address": "Adresi Kopyala",
+  "reader_address_copied": "Adres kopyalandı",
+  "reader_block_sender": "Göndereni Engelle",
+  "reader_unblock_sender": "Gönderenin Engelini Kaldır",
+  "reader_sender_blocked": "Gönderen engellendi",
+  "reader_sender_unblocked": "Gönderenin engeli kaldırıldı",
+  "settings_blocked": "Engellenen Gönderenler",
+  "settings_blocked_sub": "Engellenen gönderenlerden gelen iletiler otomatik olarak İstenmeyen klasörüne taşınır.",
+  "settings_blocked_none": "Engellenen gönderen yok.",
+  "settings_blocked_remove": "Engeli Kaldır",
+  "settings_blocked_remove_label": "{arg1} engelini kaldır"
 }

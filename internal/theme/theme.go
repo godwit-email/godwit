@@ -176,6 +176,7 @@ const (
 	PortWidth             = 90 // port fields
 	SelectMinWidth        = 120
 	FilterMenuMin         = 200 // a search filter chip's menu
+	SenderMenuWidth       = 200 // the reader's sender actions menu
 	LabelMenuWidth        = 240 // the reader's label menu
 	SyncMenuWidth         = 336 // the top bar's sync status list: 360 with the popover's padding
 	LabelSwatch           = 32  // a label color's button: a 24 dot, a 2 ring when chosen

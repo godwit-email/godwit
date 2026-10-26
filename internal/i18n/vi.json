@@ -1246,5 +1246,16 @@
   "wit_ctx_until": "Còn {arg1}% trước khi tự thu gọn",
   "wit_ctx_compact": "Thu gọn",
   "wit_model_changed": "Đã đổi mô hình: {arg1}",
-  "settings_models_apple_intelligence_sub": "Cục bộ trên máy Mac này"
+  "settings_models_apple_intelligence_sub": "Cục bộ trên máy Mac này",
+  "reader_copy_address": "Sao chép địa chỉ",
+  "reader_address_copied": "Đã sao chép địa chỉ",
+  "reader_block_sender": "Chặn người gửi",
+  "reader_unblock_sender": "Bỏ chặn người gửi",
+  "reader_sender_blocked": "Đã chặn người gửi",
+  "reader_sender_unblocked": "Đã bỏ chặn người gửi",
+  "settings_blocked": "Người gửi bị chặn",
+  "settings_blocked_sub": "Thư đến từ người gửi bị chặn sẽ tự động chuyển vào Thư rác.",
+  "settings_blocked_none": "Không có người gửi nào bị chặn.",
+  "settings_blocked_remove": "Bỏ chặn",
+  "settings_blocked_remove_label": "Bỏ chặn {arg1}"
 }
