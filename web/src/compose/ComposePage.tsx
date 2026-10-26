@@ -167,7 +167,9 @@ export function errorText(e: unknown, t: T): string {
 
 /** A draft edit waiting for a decision: the page reviews it in place of the body. */
 const pendingEdit = (a: Approval) =>
-  a.state === "pending" && (a.tool === "update_draft" || a.tool === "update_selection") && a.summary !== "no_change";
+  a.state === "pending" &&
+  (a.tool === "update_draft" || a.tool === "update_selection") &&
+  a.summary !== "no_change";
 
 const message = (e: unknown) => (e instanceof Error ? e.message : String(e));
 
@@ -247,6 +249,7 @@ function PanelReviewAdjust({
   return (
     <div className="flex flex-col gap-2 border-t border-border/40 bg-card px-3.5 py-2.5">
       <textarea
+        // biome-ignore lint/a11y/noAutofocus: autofocus needed for prompt input
         autoFocus
         rows={2}
         value={adjustText}
@@ -382,7 +385,9 @@ function Compose({
   const [reloading, setReloading] = useState(false);
   const [reloadErr, setReloadErr] = useState(""); // a failed reload's error, in the page's copy
   const [applied, setApplied] = useState(false);
-  const [decisions, setDecisions] = useState<Record<number, "applied" | "rejected" | "adjusted">>({});
+  const [decisions, setDecisions] = useState<Record<number, "applied" | "rejected" | "adjusted">>(
+    {},
+  );
   const [panelAdjusting, setPanelAdjusting] = useState(false);
   const [handed, setHanded] = useState<{ text: string } | undefined>();
   const [cmdk, setCmdk] = useState<CmdKSelection | null>(null);
@@ -557,7 +562,11 @@ function Compose({
   const reviewing =
     review &&
     review.approval === currentId &&
-    !(review.inline && review.changes === 0 && (!review.subject || review.subject === review.old_subject))
+    !(
+      review.inline &&
+      review.changes === 0 &&
+      (!review.subject || review.subject === review.old_subject)
+    )
       ? review
       : undefined;
 
@@ -668,7 +677,11 @@ function Compose({
     const a = current;
     if (!a || deciding) return null;
     runEdits.current = edits.current;
-    if (a) setDecisions((prev) => ({ ...prev, [a.id]: decisionType ?? (accepts ? "applied" : "rejected") }));
+    if (a)
+      setDecisions((prev) => ({
+        ...prev,
+        [a.id]: decisionType ?? (accepts ? "applied" : "rejected"),
+      }));
     const r = await bodyOp(() => witResume.decide(a.run, () => op(a.id)));
     if (r) setPendings((p) => p.filter((x) => x.id !== a.id));
     if (r && !r.conflict && accepts) setApplied(true); // the body took Wit's edit: undo offers it back
@@ -941,7 +954,6 @@ function Compose({
                     busy={deciding}
                     onDecide={(accept) => decide((id) => api.decide(id, accept), accept)}
                     onFinish={(ds) => decide((id) => api.finish(id, ds), ds.includes(1))}
-                    onAdjust={handleAdjust}
                     after={tail}
                     t={t}
                   />
@@ -1063,13 +1075,19 @@ function Compose({
                           deciding={deciding}
                           onAccept={() => {
                             if (reviewing) {
-                              setDecisions((prev) => ({ ...prev, [reviewing.approval]: "applied" }));
+                              setDecisions((prev) => ({
+                                ...prev,
+                                [reviewing.approval]: "applied",
+                              }));
                             }
                             decide((id) => api.decide(id, true), true);
                           }}
                           onReject={() => {
                             if (reviewing) {
-                              setDecisions((prev) => ({ ...prev, [reviewing.approval]: "rejected" }));
+                              setDecisions((prev) => ({
+                                ...prev,
+                                [reviewing.approval]: "rejected",
+                              }));
                             }
                             decide((id) => api.decide(id, false), false);
                           }}

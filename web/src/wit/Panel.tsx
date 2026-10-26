@@ -956,8 +956,9 @@ function Answer({
   const hasNoChange =
     calls.some((c) => {
       if (!isDraftEdit(c.toolName)) return false;
+      const out = c.output as { summary?: string } | undefined;
       const s =
-        (c.state === "output-available" && (c.output as any)?.summary) ||
+        (c.state === "output-available" && out?.summary) ||
         (c.state === "approval-requested" && approvals.get(c.approval?.id ?? "")?.summary);
       return s === "no_change";
     }) ||
@@ -975,30 +976,30 @@ function Answer({
       const a = c.approval?.id ? approvals.get(c.approval.id) : undefined;
       return Boolean(a?.id && decisions?.[a.id] === "adjusted");
     }) ||
-    m.parts.some(
-      (p) =>
-        p.type === "data-approvals" &&
-        p.data.some((a) => isDraftEdit(a.tool) && decisions?.[a.id] === "adjusted"),
-    ));
+      m.parts.some(
+        (p) =>
+          p.type === "data-approvals" &&
+          p.data.some((a) => isDraftEdit(a.tool) && decisions?.[a.id] === "adjusted"),
+      ));
 
   const hasInitial =
     !hasNoChange &&
     !hasAdjusted &&
     (calls.some((c) => {
       if (!isDraftEdit(c.toolName)) return false;
+      const out = c.output as { summary?: string } | undefined;
       const s =
-        (c.state === "output-available" && (c.output as any)?.summary) ||
+        (c.state === "output-available" && out?.summary) ||
         (c.approval?.id && approvals.get(c.approval.id)?.summary);
       return s === "initial";
     }) ||
-    m.parts.some(
-      (p) =>
-        p.type === "data-approvals" &&
-        p.data.some(
-          (a) =>
-            isDraftEdit(a.tool) && (approvals.get(String(a.id)) ?? a).summary === "initial",
-        ),
-    ));
+      m.parts.some(
+        (p) =>
+          p.type === "data-approvals" &&
+          p.data.some(
+            (a) => isDraftEdit(a.tool) && (approvals.get(String(a.id)) ?? a).summary === "initial",
+          ),
+      ));
 
   const hasApplied =
     !hasNoChange &&
@@ -1011,8 +1012,9 @@ function Answer({
       const a = c.approval?.id ? approvals.get(c.approval.id) : undefined;
       if (a?.id && decisions?.[a.id] === "adjusted") return false;
       if (c.state === "output-available") {
-        const out = c.output as any;
-        if (out?.summary === "no_change" || out?.no_change || out?.summary === "initial") return false;
+        const out = c.output as { summary?: string; no_change?: boolean } | undefined;
+        if (out?.summary === "no_change" || out?.no_change || out?.summary === "initial")
+          return false;
         return true;
       }
       return (
@@ -1020,19 +1022,19 @@ function Answer({
         (a?.state === "done" && a?.summary !== "no_change" && a?.summary !== "initial")
       );
     }) ||
-    m.parts.some(
-      (p) =>
-        p.type === "data-approvals" &&
-        p.data.some(
-          (a) =>
-            isDraftEdit(a.tool) &&
-            (decisions?.[a.id] === "applied" ||
-              (decisions?.[a.id] !== "adjusted" &&
-                a.state === "done" &&
-                a.summary !== "no_change" &&
-                a.summary !== "initial")),
-        ),
-    ));
+      m.parts.some(
+        (p) =>
+          p.type === "data-approvals" &&
+          p.data.some(
+            (a) =>
+              isDraftEdit(a.tool) &&
+              (decisions?.[a.id] === "applied" ||
+                (decisions?.[a.id] !== "adjusted" &&
+                  a.state === "done" &&
+                  a.summary !== "no_change" &&
+                  a.summary !== "initial")),
+          ),
+      ));
 
   const hasRejected =
     !hasNoChange &&
@@ -1050,15 +1052,15 @@ function Answer({
         a?.state === "stale"
       );
     }) ||
-    m.parts.some(
-      (p) =>
-        p.type === "data-approvals" &&
-        p.data.some(
-          (a) =>
-            isDraftEdit(a.tool) &&
-            (decisions?.[a.id] === "rejected" || a.state === "rejected" || a.state === "stale"),
-        ),
-    ));
+      m.parts.some(
+        (p) =>
+          p.type === "data-approvals" &&
+          p.data.some(
+            (a) =>
+              isDraftEdit(a.tool) &&
+              (decisions?.[a.id] === "rejected" || a.state === "rejected" || a.state === "stale"),
+          ),
+      ));
   // Calls of one tool in a row, each a plain line (no card), go as one line: each run by its first.
   const runs = new Map<number, DynamicToolUIPart[]>();
   let run: DynamicToolUIPart[] | undefined;
@@ -1183,7 +1185,9 @@ function Answer({
             <div className="overflow-hidden rounded-xl border border-border bg-card shadow-md">
               <div className="flex items-center justify-between border-b border-border/40 bg-muted px-3.5 py-2.5 leading-5">
                 <div className="flex items-center gap-2">
-                  <span className="font-semibold text-sm">{review?.title ?? t("wit.compose.review")}</span>
+                  <span className="font-semibold text-sm">
+                    {review?.title ?? t("wit.compose.review")}
+                  </span>
                   <span className="font-mono text-foreground/80 text-sm">{a.tool}</span>
                 </div>
                 {review?.onToggleAdjust && (

@@ -410,11 +410,7 @@ test("rewrite: the new version, compare toggles to 原文 | 新版本", async ()
     blocks: [],
     old_subject: "Old Subject",
     subject: "New Subject",
-    subject_ops: [
-      op("del", 0, "Old"),
-      op("ins", 0, "New"),
-      op("same", -1, " Subject"),
-    ],
+    subject_ops: [op("del", 0, "Old"), op("ins", 0, "New"), op("same", -1, " Subject")],
   });
   await setup(withPending);
   expect(await screen.findByText("已整体重写，改动约 62%")).toBeInTheDocument();

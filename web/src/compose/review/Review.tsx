@@ -8,7 +8,10 @@ import { sanitize } from "../editor/html";
 /** The panel card's line for a review: how many changes, or how much was rewritten. */
 export function reviewSummary(r: ReviewT, t: T): string {
   if (r.kind === "translate") return t("wit.compose.review.translate");
-  if (r.inline) return r.changes === 0 ? t("wit.compose.no_changes") : t("wit.compose.review.inline", r.changes);
+  if (r.inline)
+    return r.changes === 0
+      ? t("wit.compose.no_changes")
+      : t("wit.compose.review.inline", r.changes);
   return r.exact
     ? t("wit.compose.review.rewrite", Math.round(r.ratio * 100))
     : t("wit.compose.review.rewrite_plain");
@@ -124,7 +127,6 @@ export function Review({
   busy,
   onDecide,
   onFinish,
-  onAdjust,
   after,
   t,
 }: {
@@ -133,7 +135,6 @@ export function Review({
   after?: ReactNode;
   onDecide(accept: boolean): void;
   onFinish(decisions: number[]): void;
-  onAdjust?(instructions: string): void;
   t: T;
 }) {
   const [decided, setDecided] = useState<number[]>(() => Array(r.changes).fill(0));
@@ -259,6 +260,7 @@ export function Review({
               {ops.length > 0 ? ops : " "}
               {active === s.k && (
                 // pt-1, not mt-1: the gap stays inside the change, so moving the mouse onto the buttons keeps them open.
+                // biome-ignore lint/a11y/noStaticElementInteractions: popover hover container keeps actions open
                 <span
                   ref={popupRef}
                   className="absolute z-50 pt-1"
