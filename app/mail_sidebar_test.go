@@ -35,7 +35,7 @@ func TestSidebarFolders(t *testing.T) {
 		got = append(got, row)
 	}
 	want := []string{
-		"收件箱", "草稿", "归档", "垃圾邮件", // drafts are local
+		"收件箱", "已标星", "草稿", "归档", "垃圾邮件", // drafts are local
 		"Projects +3", "  Expenses", "  Q4 (prefix) +2", "    Contracts", "Projects", "Projects Old",
 		"[Gmail] (prefix) +0", "  Important", "flat",
 	}

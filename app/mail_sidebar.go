@@ -17,14 +17,16 @@ import (
 )
 
 // roleOrder is the order of the role folders, above an account's own folders.
-var roleOrder = []string{"inbox", "drafts", "sent", "archive", "junk", "trash"}
+var roleOrder = []string{"inbox", "flagged", "drafts", "sent", "archive", "junk", "trash"}
 
 // folderIcons are the icons of folder roles; another folder shows "folder".
-var folderIcons = map[string]string{"inbox": "inbox", "drafts": "file-pen", "sent": "send", "archive": "archive", "junk": "spam", "trash": "trash-2"}
+var folderIcons = map[string]string{"inbox": "inbox", "flagged": "star", "drafts": "file-pen", "sent": "send", "archive": "archive", "junk": "spam", "trash": "trash-2"}
 
-// folderName is a role folder's name in the UI's language, else the server's
-// name: also for Gmail's Starred (flagged), which has none of ours.
+// folderName is a role folder's name in the UI's language, else the server's name.
 func folderName(f core.Folder) string {
+	if f.Role == "flagged" {
+		return i18n.T("mail.unified.starred")
+	}
 	if slices.Contains(roleOrder, f.Role) {
 		return i18n.T("mail.folder." + f.Role)
 	}
@@ -55,6 +57,9 @@ func sidebarFolders(acc int64, fs []core.Folder) []sideFolder {
 		if _, ok := byRole[f.Role]; f.Role != "" && !ok {
 			byRole[f.Role] = f
 		}
+	}
+	if byRole["flagged"].Role == "" {
+		byRole["flagged"] = core.Folder{AccountID: acc, Role: "flagged"}
 	}
 	if byRole["drafts"].Role == "" {
 		byRole["drafts"] = core.Folder{AccountID: acc, Role: "drafts"}
@@ -121,7 +126,6 @@ func (p *mailPage) Sidebar(c *ui.Context) {
 		})
 		ui.Box(c).Height(th.Space(2))
 		p.navItem(c, "inbox", i18n.T("mail.unified.inbox"), core.View{Unified: "inbox"}, p.inboxUnread())
-		p.navItem(c, "star", i18n.T("mail.unified.starred"), core.View{Unified: "starred"}, 0)
 		if n := len(p.outbox); n > 0 {
 			p.navItem(c, "outbox", i18n.T("mail.outbox"), core.View{Unified: "outbox"}, n)
 		}
@@ -204,6 +208,9 @@ func (p *mailPage) folderRow(c *ui.Context, f sideFolder, open *bool) {
 	v := core.View{FolderID: f.ID}
 	if f.Role == "drafts" && f.ID == 0 {
 		v = localDrafts(f.AccountID)
+	}
+	if f.Role == "flagged" {
+		v = accountStarred(f.AccountID)
 	}
 	real := f.ID != 0 || f.Role != ""
 	on := real && p.viewShown(v)

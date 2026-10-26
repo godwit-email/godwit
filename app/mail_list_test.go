@@ -129,9 +129,9 @@ func TestSidebarAccountsAndViews(t *testing.T) {
 	for _, s := range []string{"写邮件", "全部收件箱", "已标星", "添加账户", "2"} {
 		h.see(s)
 	}
-	// Folders by role: inbox, sent, archive, trash (the fake server has no drafts or junk).
+	// Folders by role: inbox, flagged, sent, archive, trash (the fake server has no drafts or junk).
 	var ys []float32
-	for _, name := range []string{"收件箱", "已发送", "归档", "已删除"} {
+	for _, name := range []string{"收件箱", "已标星", "已发送", "归档", "已删除"} {
 		r, ok := h.tt.Find(name)
 		if !ok {
 			t.Fatalf("no folder %s: %q", name, h.tt.Texts())
@@ -158,7 +158,7 @@ func TestSidebarAccountsAndViews(t *testing.T) {
 	h.click("Work")
 	h.until("one 已发送 folder after collapsing", func() bool { return count("已发送") == 1 })
 	h.click("已标星")
-	if v := h.app.route.View; v.Unified != "starred" {
+	if v := h.app.route.View; v != accountStarred(accs[1].ID) {
 		t.Fatalf("view %+v", v)
 	}
 	h.click("归档") // carol's: alice's group is collapsed
@@ -491,6 +491,11 @@ func TestRowMenuByState(t *testing.T) {
 	h.waitMail("unstarred by S", func() bool { return h.items()[0].Flagged == 0 })
 	h.tt.Key(0, ui.KeyU)
 	h.waitMail("unread by U", func() bool { return h.items()[0].Unread == 1 })
+	// Click the star button directly on the row:
+	h.click("加星")
+	h.waitMail("starred by direct button", func() bool { return h.items()[0].Flagged == 1 })
+	h.click("取消星标")
+	h.waitMail("unstarred by direct button", func() bool { return h.items()[0].Flagged == 0 })
 }
 
 func TestBatchAcrossAccounts(t *testing.T) {

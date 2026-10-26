@@ -733,7 +733,12 @@ func (r *reader) toolbar(c *ui.Context) {
 			kit.GroupItem{Icon: "reply-all", Tip: i18n.T("reader.reply_all"), OnClick: func() { r.draft("reply_all") }},
 			kit.GroupItem{Icon: "forward", Tip: i18n.T("reader.forward"), OnClick: func() { r.draft("forward") }},
 		)
+		starIcon, starTip := "star", i18n.T("mail.action.star")
+		if r.starred() {
+			starIcon, starTip = "star-fill", i18n.T("mail.action.unstar")
+		}
 		file := []kit.GroupItem{
+			{Icon: starIcon, Tip: starTip, OnClick: func() { r.act("toggle_star") }},
 			{Icon: "archive", Tip: i18n.T("mail.action.archive"), OnClick: func() { r.act("archive") }},
 			{Icon: "trash-2", Tip: i18n.T("mail.action.delete"), OnClick: func() { r.act("delete") }},
 		}
@@ -743,6 +748,12 @@ func (r *reader) toolbar(c *ui.Context) {
 		kit.ButtonGroup(c, file...)
 		ui.Spacer(c)
 		ui.Row(c).Wrap().Gap(th.Space(1)).AlignItems(ui.Center).Children(func() { r.aiTools(c) })
+	})
+}
+
+func (r *reader) starred() bool {
+	return slices.ContainsFunc(r.msgs, func(m core.MessageSummary) bool {
+		return slices.Contains(m.Flags, `\Flagged`)
 	})
 }
 
