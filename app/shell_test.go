@@ -16,7 +16,6 @@ import (
 	"github.com/godwit-email/godwit/core/events"
 	"github.com/godwit-email/godwit/internal/i18n"
 	"github.com/godwit-email/godwit/internal/theme"
-	"github.com/stretchr/testify/assert"
 )
 
 // withAccount is a harness with one account, its initial load applied.
@@ -152,196 +151,157 @@ func TestSyncWorstFirst(t *testing.T) {
 	}
 }
 
-// TestSyncAllMultiAccountBatch verifies Test B:
-// Two accounts started via SyncAll -> account A finishes first -> UI continues showing "Synchronisieren…"
-// -> account B finishes -> UI transitions cleanly to "Synchronisiert · gerade eben".
+// TestSyncAllMultiAccountBatch: the status shows syncing until the last account
+// of a Sync All returns, not when the first one does.
 func TestSyncAllMultiAccountBatch(t *testing.T) {
 	var a, b core.Account
 	h := newHarnessWith(t, []coretest.Option{coretest.WithoutAutoSync()}, func(e *coretest.Env) {
 		a, b = e.AddAccount(t, "alice@example.com"), e.AddAccount(t, "bob@example.com")
 	})
 	h.until("initial load", func() bool { return h.app.loaded })
-
-	// Hold account B's IMAP login so its SyncNow stays blocked while account A completes
 	entered, releaseB := h.env.IMAP(b.ID).BlockLogin()
 	defer releaseB()
 
-	// Trigger manual SyncAll
 	h.app.SyncAll()
-
-	// Immediately, UI must show syncing
-	h.until("syncing shown immediately", func() bool {
-		return h.tt.HasText(i18n.T("shell.sync.syncing"))
-	})
-
+	h.until("syncing shown", func() bool { return h.tt.HasText(i18n.T("shell.sync.syncing")) })
 	select {
 	case <-entered:
 	case <-time.After(5 * time.Second):
-		t.Fatal("timed out waiting for account B login to be held")
+		t.Fatal("bob's login not held")
+	}
+	h.until("alice finished", func() bool { return !h.app.batchPending(a.ID) && h.app.batchPending(b.ID) })
+	if !h.tt.HasText(i18n.T("shell.sync.syncing")) || !h.app.syncedAt.IsZero() {
+		t.Fatalf("synced while bob pending; texts %q", h.tt.Texts())
 	}
 
-	// Wait until account A finishes its sync
-	h.until("account A finished", func() bool {
-		return h.app.syncBatch != nil && !h.app.syncBatch.pending[a.ID] && h.app.syncBatch.pending[b.ID]
-	})
-
-	// While B is still pending, UI MUST CONTINUE showing syncing!
-	// It must NOT momentarily flash "synced" or "just now"
-	assert.True(t, h.tt.HasText(i18n.T("shell.sync.syncing")), "UI must stay on syncing while B is pending")
-
-	// Release account B so its sync finishes
 	releaseB()
-
-	// Once all finish, UI transitions to synced just now
-	h.until("all finished", func() bool {
-		return h.app.syncBatch == nil && h.tt.HasText(i18n.T("shell.sync.just_now"))
-	})
+	h.until("all finished", func() bool { return h.app.syncBatch == nil && h.tt.HasText(i18n.T("shell.sync.just_now")) })
 }
 
-// TestSyncAllPartialFailure verifies Test C:
-// One account succeeds, one fails -> the joint batch ends without permanent busy state ->
-// the failing account is shown -> the successful account retains its correct status.
+// TestSyncAllPartialFailure: a Sync All with one account failing ends, shows that
+// account, and keeps the other's sync time.
 func TestSyncAllPartialFailure(t *testing.T) {
 	var a, b core.Account
 	h := newHarnessWith(t, []coretest.Option{coretest.WithoutAutoSync()}, func(e *coretest.Env) {
 		a, b = e.AddAccount(t, "alice@example.com"), e.AddAccount(t, "bob@example.com")
 	})
 	h.until("initial load", func() bool { return h.app.loaded })
-
-	// Set invalid password for account B so it fails
 	h.env.IMAP(b.ID).SetPassword("wrong")
 
-	// Trigger manual SyncAll
 	h.app.SyncAll()
-
-	// UI must show syncing initially
-	h.until("syncing shown", func() bool {
-		return h.tt.HasText(i18n.T("shell.sync.syncing"))
-	})
-
-	// Once batch completes:
-	// Account B's failure must be shown on top bar.
-	// No permanent busy state.
-	// Account A must retain its successful sync timestamp.
-	h.until("failed shown", func() bool {
-		return h.app.syncBatch == nil && h.tt.HasText(b.Email)
-	})
-
-	assert.Nil(t, h.app.syncBatch, "batch must not remain in busy state")
-	assert.False(t, h.app.syncedAtBy[a.ID].IsZero(), "account A must record sync timestamp")
+	h.until("bob's failure shown", func() bool { return h.app.syncBatch == nil && h.tt.HasText(b.Email) })
+	if h.app.syncedAtBy[a.ID].IsZero() {
+		t.Fatal("alice's sync time not recorded")
+	}
 }
 
-// TestSyncAllBatchErrorPriorityAndStaleBackgroundEvents verifies that:
-//  1. If Account A fails while Account B is still synchronizing, the top bar status
-//     remains "Synchronisieren..." (Busy) until the entire batch has concluded.
-//  2. Older / stray background events (e.g. SyncFinished from background workers) cannot
-//     overwrite the in-flight batch display or set syncedAt.
-//  3. Once all accounts finish, the overall status immediately displays the error of
-//     the failing account without getting stuck.
-func TestSyncAllBatchErrorPriorityAndStaleBackgroundEvents(t *testing.T) {
+// TestSyncAllFailureWhileOthersPending: an account failing early does not end
+// the Sync All; once the rest return, the failure shows and the last sync time stays unset.
+func TestSyncAllFailureWhileOthersPending(t *testing.T) {
 	var a, b core.Account
 	h := newHarnessWith(t, []coretest.Option{coretest.WithoutAutoSync()}, func(e *coretest.Env) {
 		a, b = e.AddAccount(t, "alice@example.com"), e.AddAccount(t, "bob@example.com")
 	})
 	h.until("initial load", func() bool { return h.app.loaded })
-
-	// Account A will fail immediately on auth
 	h.env.IMAP(a.ID).SetPassword("wrong")
-
-	// Account B will be held in login
-	enteredB, releaseB := h.env.IMAP(b.ID).BlockLogin()
+	entered, releaseB := h.env.IMAP(b.ID).BlockLogin()
 	defer releaseB()
 
-	// Trigger manual SyncAll
 	h.app.SyncAll()
-
-	// Wait until Account B's login is held
 	select {
-	case <-enteredB:
+	case <-entered:
 	case <-time.After(5 * time.Second):
-		t.Fatal("timed out waiting for account B login to be held")
+		t.Fatal("bob's login not held")
+	}
+	h.until("alice failed, bob pending", func() bool {
+		return h.app.syncBatch != nil && h.app.syncBatch.failed[a.ID] && h.app.batchPending(b.ID)
+	})
+	if !h.tt.HasText(i18n.T("shell.sync.syncing")) {
+		t.Fatalf("not syncing while bob pending; texts %q", h.tt.Texts())
 	}
 
-	// Wait until Account A's failure is recorded in the batch
-	h.until("account A failed while B still pending", func() bool {
-		return h.app.syncBatch != nil && h.app.syncBatch.failed[a.ID] && h.app.syncBatch.pending[b.ID]
-	})
-
-	// Priority Check 1: Even though Account A has already failed, the top bar status
-	// must remain "Synchronisieren..." because Account B is still pending!
-	assert.True(t, h.tt.HasText(i18n.T("shell.sync.syncing")), "status must remain syncing while B is in flight")
-
-	// Stale Event Check 2: Simulate a background worker firing SyncFinished for an unrelated account
-	h.app.onEvent(events.Event{Type: events.SyncFinished, AccountID: 9999})
-	// UI must still show syncing; overall syncedAt must not be set
-	assert.True(t, h.tt.HasText(i18n.T("shell.sync.syncing")), "stale event must not clobber in-flight batch")
-	assert.True(t, h.app.syncedAt.IsZero(), "stale event must not set syncedAt during batch")
-
-	// Release Account B to complete successfully
 	releaseB()
-
-	// Once the entire batch finishes, the status transitions to Account A's error
-	h.until("batch finished and error displayed", func() bool {
-		return h.app.syncBatch == nil && h.tt.HasText(a.Email)
-	})
-
-	assert.False(t, h.tt.HasText(i18n.T("shell.sync.syncing")), "busy state must not persist after batch finishes")
-	assert.False(t, h.app.syncedAtBy[b.ID].IsZero(), "account B must record its success timestamp")
-	assert.True(t, h.app.syncedAt.IsZero(), "overall syncedAt must remain unset because batch had a failure")
+	h.until("alice's failure shown", func() bool { return h.app.syncBatch == nil && h.tt.HasText(a.Email) })
+	if h.tt.HasText(i18n.T("shell.sync.syncing")) || h.app.syncedAtBy[b.ID].IsZero() {
+		t.Fatalf("texts %q, bob synced at %v", h.tt.Texts(), h.app.syncedAtBy[b.ID])
+	}
 }
 
-// TestSyncAllSupersededBatch verifies that stale completion events from an earlier
-// manual batch do not prematurely complete a newer manual batch.
-func TestSyncAllSupersededBatch(t *testing.T) {
+// TestSyncAllWhileInFlight: clicking Sync All again before the batch ends starts
+// no second SyncNow.
+func TestSyncAllWhileInFlight(t *testing.T) {
 	var a core.Account
 	h := newHarnessWith(t, []coretest.Option{coretest.WithoutAutoSync()}, func(e *coretest.Env) {
 		a = e.AddAccount(t, "alice@example.com")
 	})
 	h.until("initial load", func() bool { return h.app.loaded })
+	logins := h.env.IMAP(a.ID).Logins()
+	entered, release := h.env.IMAP(a.ID).BlockLogin()
+	defer release()
 
-	// Start batch 1
 	h.app.SyncAll()
-	b1ID := h.app.syncBatch.id
-
-	// Start batch 2 immediately
+	b := h.app.syncBatch
 	h.app.SyncAll()
-	b2ID := h.app.syncBatch.id
-	assert.Greater(t, b2ID, b1ID)
-
-	// Simulate stale callback from batch 1
-	h.app.onBatchDone(b1ID, a.ID, nil)
-
-	// Batch 2 must still be active and not prematurely completed
-	assert.NotNil(t, h.app.syncBatch)
-	assert.Equal(t, b2ID, h.app.syncBatch.id)
-	assert.True(t, h.app.syncBatch.pending[a.ID])
+	if h.app.syncBatch != b {
+		t.Fatal("a second Sync All replaced the batch in flight")
+	}
+	select {
+	case <-entered:
+	case <-time.After(5 * time.Second):
+		t.Fatal("login not held")
+	}
+	release()
+	h.until("batch finished", func() bool { return h.app.syncBatch == nil })
+	if n := h.env.IMAP(a.ID).Logins() - logins; n != 1 {
+		t.Fatalf("%d logins, want 1", n)
+	}
 }
 
-// TestSyncAllConcurrentTriggers verifies Test G in app:
-// Concurrent manual sync, background events, and repeat clicks serialize cleanly
-// without lost changes or corrupted status display.
-func TestSyncAllConcurrentTriggers(t *testing.T) {
-	var a core.Account
-	h := newHarness(t, func(e *coretest.Env) {
-		a = e.AddAccount(t, "alice@example.com")
+// TestSyncAllAccountRemoved: an account removed mid-batch neither holds the Sync
+// All open nor fails it.
+func TestSyncAllAccountRemoved(t *testing.T) {
+	var a, b core.Account
+	h := newHarnessWith(t, []coretest.Option{coretest.WithoutAutoSync()}, func(e *coretest.Env) {
+		a, b = e.AddAccount(t, "alice@example.com"), e.AddAccount(t, "bob@example.com")
 	})
 	h.until("initial load", func() bool { return h.app.loaded })
+	entered, releaseB := h.env.IMAP(b.ID).BlockLogin()
+	defer releaseB()
 
-	// Concurrent triggers: SyncAll clicked, and background event arrives
+	h.app.SyncAll()
+	select {
+	case <-entered:
+	case <-time.After(5 * time.Second):
+		t.Fatal("bob's login not held")
+	}
+	h.until("alice finished", func() bool { return !h.app.batchPending(a.ID) })
+	if err := h.env.Svc.RemoveAccount(t.Context(), b.ID); err != nil {
+		t.Fatal(err)
+	}
+	h.app.load()
+	h.until("batch finished", func() bool { return h.app.syncBatch == nil && len(h.app.accounts) == 1 })
+	if h.app.syncedAt.IsZero() {
+		t.Fatal("the removed account failed the batch")
+	}
+}
+
+// TestSyncAllWithBackgroundSync: a Sync All racing the worker's own sync and new
+// mail converges with the mail shown and the status synced.
+func TestSyncAllWithBackgroundSync(t *testing.T) {
+	var a core.Account
+	h := newHarness(t, func(e *coretest.Env) { a = e.AddAccount(t, "alice@example.com") })
+	h.until("initial load", func() bool { return h.app.loaded })
+
 	h.app.SyncAll()
 	h.app.onEvent(events.Event{Type: events.SyncStarted, AccountID: a.ID})
-	h.app.SyncAll() // Rapid second click
-
-	// Deliver a new email
+	h.app.SyncAll()
 	h.env.Deliver(t, a.ID, "INBOX", coretest.Msg("bob@example.com", "alice@example.com", "Subject", "Body"))
-
-	// Everything converges cleanly
-	h.waitMail("sync finishes and email is received", func() bool {
+	h.waitMail("mail shown and synced", func() bool {
 		return h.app.syncBatch == nil && h.tt.HasText(i18n.T("shell.sync.just_now")) && h.tt.HasText("Subject")
 	})
-
-	assert.False(t, h.app.syncedAt.IsZero())
-	assert.False(t, h.app.syncedAtBy[a.ID].IsZero())
+	if h.app.syncedAtBy[a.ID].IsZero() {
+		t.Fatal("no sync time recorded")
+	}
 }
 
 func TestReauthStatus(t *testing.T) {

@@ -146,8 +146,8 @@ func (s *Service) runWorker(ctx context.Context, id int64, wake chan struct{}) {
 // awaitCredentials parks the worker while IMAP refuses the password or the
 // keychain has none (status reauth_required; SMTP refusing it only pauses the
 // outbox, and an unavailable keychain, status error, backs off instead), so it
-// makes no login attempts. SyncNow wakes it afterwards (a LOGIN that succeeds
-// clears the status); so does any local change, which only re-reads the status. It reports
+// makes no login attempts. Any LOGIN that succeeds, as SyncNow's, clears the
+// status and wakes it; so does any local change, which only re-reads the status. It reports
 // false when ctx ends.
 func (s *Service) awaitCredentials(ctx context.Context, id int64, wake chan struct{}) bool {
 	for {

@@ -109,7 +109,7 @@ func (a *App) onEvent(ev events.Event) {
 		delete(a.syncing, ev.AccountID)
 		delete(a.syncErr, ev.AccountID)
 		now := a.clock.Now()
-		if a.syncBatch == nil && len(a.syncErr) == 0 {
+		if a.syncBatch == nil { // a Sync All sets it once all its accounts finish
 			a.syncedAt = now
 		}
 		a.syncedAtBy[ev.AccountID] = now

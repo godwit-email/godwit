@@ -2,6 +2,7 @@ package app
 
 import (
 	"context"
+	"errors"
 	"slices"
 	"strconv"
 	"strings"
@@ -194,54 +195,54 @@ func (a *App) showUnread(inbox int) {
 // Compose starts a new draft in a compose window, as the sidebar's button does.
 func (a *App) Compose() { a.mail.compose() }
 
-// SyncAll syncs every account now in a coordinated manual batch.
+// SyncAll syncs every account now. The status shows syncing until the last one
+// returns; a click while that batch is in flight starts nothing more.
 func (a *App) SyncAll() {
-	if len(a.accounts) == 0 {
+	if a.syncBatch != nil || len(a.accounts) == 0 {
 		return
 	}
-	a.syncBatchGen++
-	batchID := a.syncBatchGen
-	b := &syncBatch{
-		id:      batchID,
-		pending: make(map[int64]bool, len(a.accounts)),
-		failed:  make(map[int64]bool),
-	}
+	b := &syncBatch{pending: make(map[int64]bool, len(a.accounts)), failed: map[int64]bool{}}
 	for _, acc := range a.accounts {
 		b.pending[acc.ID] = true
 	}
 	a.syncBatch = b
 	a.tick()
-
 	for _, acc := range a.accounts {
 		id := acc.ID
-		a.do(func(ctx context.Context) error {
-			return a.svc.SyncNow(ctx, id)
-		}, func(err error) {
-			a.onBatchDone(batchID, id, err)
-		})
+		a.do(func(ctx context.Context) error { return a.svc.SyncNow(ctx, id) }, func(err error) { a.onBatchDone(id, err) })
 	}
 }
 
-func (a *App) onBatchDone(batchID uint64, accountID int64, err error) {
-	if a.syncBatch == nil || a.syncBatch.id != batchID {
-		if err != nil {
-			a.toastErr(err)
-		}
+// onBatchDone records one account's SyncNow returning. One no longer pending
+// was removed meanwhile, so its error is not shown; nor is a cancelled one's, as
+// removing the account cancels it.
+func (a *App) onBatchDone(id int64, err error) {
+	if !a.batchPending(id) {
 		return
 	}
-	delete(a.syncBatch.pending, accountID)
-	if err != nil {
-		a.syncBatch.failed[accountID] = true
+	delete(a.syncBatch.pending, id)
+	if err != nil && !errors.Is(err, context.Canceled) {
+		a.syncBatch.failed[id] = true
 		a.toastErr(err)
 	}
-	if len(a.syncBatch.pending) == 0 {
-		if len(a.syncBatch.failed) == 0 && len(a.syncErr) == 0 {
-			a.syncedAt = a.clock.Now()
-		}
-		a.syncBatch = nil
-		a.tick()
-	}
+	a.finishBatch()
 }
+
+// finishBatch ends the Sync All once no account is pending, setting the last
+// sync time when none failed.
+func (a *App) finishBatch() {
+	if a.syncBatch == nil || len(a.syncBatch.pending) > 0 {
+		return
+	}
+	if len(a.syncBatch.failed) == 0 {
+		a.syncedAt = a.clock.Now()
+	}
+	a.syncBatch = nil
+	a.tick()
+}
+
+// batchPending reports whether the Sync All in flight still waits on the account.
+func (a *App) batchPending(id int64) bool { return a.syncBatch != nil && a.syncBatch.pending[id] }
 
 // KeepInBackground reports whether closing the window only hides it.
 func (a *App) KeepInBackground() bool { return a.settings.KeepInBackground }

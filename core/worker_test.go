@@ -328,10 +328,8 @@ func TestWorkerParksWhileReauthRequired(t *testing.T) {
 	workerResumed(t, e, "r2@x")
 }
 
-// TestWorkerResumesAndSyncsAutomaticallyAfterReauth explicitly proves that a
-// worker parked on reauth_required automatically resumes synchronization upon
-// successful re-authentication (without manual SyncNow intervention) and imports
-// incoming messages.
+// TestWorkerResumesAndSyncsAutomaticallyAfterReauth: a worker parked on
+// reauth_required resumes after UpdatePassword, with no SyncNow, and imports new mail.
 func TestWorkerResumesAndSyncsAutomaticallyAfterReauth(t *testing.T) {
 	e, ch := newWorkerEnv(t)
 	parkWorker(t, e, ch)
@@ -483,9 +481,8 @@ func TestSMTPAuthFailurePausesOnlyOutbox(t *testing.T) {
 	assert.Len(t, e.smtp.Messages(), 4)
 }
 
-// TestSyncNowDoesNotTriggerDuplicateWorkerSync verifies Test A:
-// Worker in IDLE -> manual SyncNow executes once -> no second sync is triggered
-// -> worker remains functional for real events.
+// TestSyncNowDoesNotTriggerDuplicateWorkerSync: a SyncNow while the worker idles
+// runs one sync, not a second one from the worker, and the worker still picks up new mail.
 func TestSyncNowDoesNotTriggerDuplicateWorkerSync(t *testing.T) {
 	e, ch := newWorkerEnv(t)
 
@@ -531,8 +528,8 @@ func TestSyncNowDoesNotTriggerDuplicateWorkerSync(t *testing.T) {
 	assert.Equal(t, 1, e.count(t, "SELECT count(*) FROM messages WHERE message_id = 'after-syncnow@x'"))
 }
 
-// TestSyncNowConcurrentWithIncomingMail verifies Test G in core:
-// Concurrent manual sync and server events serialize cleanly with no lost changes.
+// TestSyncNowConcurrentWithIncomingMail: a SyncNow racing new mail on the server
+// loses no message.
 func TestSyncNowConcurrentWithIncomingMail(t *testing.T) {
 	e, _ := newWorkerEnv(t)
 

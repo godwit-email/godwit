@@ -165,11 +165,10 @@ type Route struct {
 	Settings                            string
 }
 
-// syncBatch coordinates a manual "Sync All" across multiple accounts.
+// syncBatch is a Sync All in flight: it counts as a sync only once every account finished without failing.
 type syncBatch struct {
-	id      uint64
-	pending map[int64]bool
-	failed  map[int64]bool
+	pending map[int64]bool // accounts whose SyncNow has not returned
+	failed  map[int64]bool // accounts whose SyncNow failed
 }
 
 // App is the interface's state. Every field is read and written on the UI thread.
@@ -243,14 +242,13 @@ type App struct {
 	refreshStop       func()         // the pending throttled refresh; nil when none
 	events, refreshes int            // counted for tests: refreshes stay far fewer than events
 
-	syncBatchGen uint64
-	syncBatch    *syncBatch
-	syncing      map[int64]bool      // accounts syncing now
-	syncErr      map[int64]syncFail  // each account's failing sync, until it syncs
-	syncOpen     bool                // the sync status's account list shows
-	syncedAt     time.Time           // the last successful sync; zero before one
-	syncedAtBy   map[int64]time.Time // each account's last successful sync since launch
-	ticking      bool                // a minute tick redraws the sync age
+	syncBatch  *syncBatch          // the Sync All in flight; nil when none
+	syncing    map[int64]bool      // accounts syncing now
+	syncErr    map[int64]syncFail  // each account's failing sync, until it syncs
+	syncOpen   bool                // the sync status's account list shows
+	syncedAt   time.Time           // the last successful sync; zero before one
+	syncedAtBy map[int64]time.Time // each account's last successful sync since launch
+	ticking    bool                // a minute tick redraws the sync age
 
 	addAccount *onboarding // the add-account sheet; nil when closed
 	mail       *mailPage   // the Mail section
@@ -401,18 +399,18 @@ func (a *App) load() {
 			}
 		}
 		a.accounts, a.accountsGen, a.unread, a.loaded = accs, gen, unread, true
-		if a.syncBatch != nil {
-			for id := range a.syncBatch.pending {
+		if b := a.syncBatch; b != nil { // a removed account no longer holds up or fails the batch
+			for id := range b.pending {
 				if !slices.ContainsFunc(accs, func(acc core.Account) bool { return acc.ID == id }) {
-					delete(a.syncBatch.pending, id)
+					delete(b.pending, id)
 				}
 			}
-			if len(a.syncBatch.pending) == 0 {
-				if len(a.syncBatch.failed) == 0 {
-					a.syncedAt = a.clock.Now()
+			for id := range b.failed {
+				if !slices.ContainsFunc(accs, func(acc core.Account) bool { return acc.ID == id }) {
+					delete(b.failed, id)
 				}
-				a.syncBatch = nil
 			}
+			a.finishBatch()
 		}
 		if sigs != nil {
 			a.signatures = sigs

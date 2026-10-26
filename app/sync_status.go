@@ -85,7 +85,7 @@ func (a *App) syncHealth(acc core.Account) syncHealth {
 	case failed:
 		h.level, h.status, h.short = syncRetrying, i18n.T("shell.sync.retrying"), i18n.T("shell.sync.retrying.short")
 		h.reason, h.actions = i18n.Tf("shell.sync.retrying.reason", failCause(f.kind, host)), []syncButton{retry}
-	case a.syncing[id] || a.syncBatch != nil && a.syncBatch.pending[id]:
+	case a.syncing[id] || a.batchPending(id):
 		h.level, h.status = syncBusy, i18n.T("shell.sync.syncing")
 	default:
 		if at, ok := a.syncedAtBy[id]; ok {
@@ -153,7 +153,7 @@ func (a *App) syncStatus(c *ui.Context) {
 	text, color := "", t.Muted
 	dotLevel := w.level
 	switch {
-	case a.syncBatch != nil && len(a.syncBatch.pending) > 0:
+	case a.syncBatch != nil: // a Sync All shows syncing until its last account returns
 		text, dotLevel = i18n.T("shell.sync.syncing"), syncBusy
 	case w.level == syncAction:
 		text, color = i18n.Tf("shell.sync.account", accountName(w.acc), cmp.Or(w.short, w.status)), t.DangerText
