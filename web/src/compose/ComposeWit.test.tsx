@@ -5,7 +5,7 @@ import type { Approval, BodyChange, ComposeState, Review, RunStart, WitEvent } f
 import { type Legacy, legacy } from "@/wit/fixtures";
 import { ComposePage } from "./ComposePage";
 
-const h = vi.hoisted(() => ({ wit: new Set<(e: WitEvent) => void>() }));
+const h = vi.hoisted(() => ({ wit: new Set<(e: WitEvent) => void>(), editorMounts: 0 }));
 vi.mock("@/mygo", () => ({
   ComposePage: {
     load: vi.fn(),
@@ -52,7 +52,7 @@ vi.mock("sonner", async (orig) => ({
 // The body as a textarea that reads `initial` at mount; ⌘K on a selection gives its plain text
 // (the textarea's value) and the selection, as the Plate editor does (its own tests cover toText).
 vi.mock("./editor/Editor", async () => {
-  const { useState } = await import("react");
+  const { useEffect, useImperativeHandle, useState } = await import("react");
   return {
     Editor(p: {
       initial: string;
@@ -62,8 +62,13 @@ vi.mock("./editor/Editor", async () => {
       onCmdK?(s: unknown): void;
       popover?: unknown;
       t(k: string): string;
+      ref?: React.Ref<{ setValue(html: string): void }>;
     }) {
       const [v, setV] = useState(p.initial);
+      useImperativeHandle(p.ref, () => ({ setValue: setV }), []);
+      useEffect(() => {
+        h.editorMounts++;
+      }, []);
       return (
         <>
           <textarea
@@ -353,6 +358,45 @@ test("accept all → decide(id, true)", async () => {
   expect(await body()).toHaveValue("<p>Hi Ann and more</p>");
   expect(await screen.findByText("已应用到正文")).toBeInTheDocument();
   expect(screen.getByRole("button", { name: "撤销" })).toBeInTheDocument();
+});
+
+test("a review hides the editor without unmounting it: accepting sets the body into it", async () => {
+  vi.mocked(api.decide).mockResolvedValue(change("<p>Hi Ann and more</p>", 9));
+  vi.mocked(api.latest).mockResolvedValue(latest("<p>Hi Ann and more</p>", 9));
+  await setup(withPending);
+  await screen.findByRole("region", { name: "正文修订" });
+  expect(screen.queryByRole("textbox", { name: "正文" })).toBeNull(); // hidden under the review
+  const mounts = h.editorMounts;
+  fireEvent.click(screen.getAllByRole("button", { name: "全部接受" })[1]);
+  expect(await body()).toHaveValue("<p>Hi Ann and more</p>");
+  expect(h.editorMounts).toBe(mounts); // the same editor, its undo history kept
+});
+
+test("Wit writing a blank body hides the editor without unmounting it", async () => {
+  vi.mocked(api.load).mockResolvedValue({ ...state, body: "<p><br></p>" });
+  vi.mocked(api.ask).mockResolvedValue(rs(7));
+  vi.mocked(api.latest).mockResolvedValue(latest("<p>Hi Lena</p>", 9));
+  await setup();
+  const mounts = h.editorMounts;
+  await userEvent.type(screen.getByRole("textbox", { name: "告诉 Wit 你想怎么回" }), "写{Enter}");
+  expect(await screen.findByText("助手正在写入正文，暂时不能编辑")).toBeInTheDocument();
+  expect(screen.queryByRole("textbox", { name: "正文" })).toBeNull();
+  emit({ kind: "done" });
+  expect(await body()).toHaveValue("<p>Hi Lena</p>");
+  expect(h.editorMounts).toBe(mounts);
+});
+
+test("⌘Z after Wit applied is the editor's own: it never undoes on the server", async () => {
+  vi.mocked(api.latest).mockResolvedValue(latest("Wit 写的", 9));
+  await setup();
+  emit({ kind: "done" });
+  expect(await screen.findByText("已应用到正文")).toBeInTheDocument();
+  const b = await body();
+  fireEvent.keyDown(b, { key: "z", metaKey: true });
+  fireEvent.keyDown(b, { key: "z", ctrlKey: true });
+  fireEvent.keyDown(document.body, { key: "z", metaKey: true });
+  await act(async () => {});
+  expect(api.undo).not.toHaveBeenCalled();
 });
 
 test("reject all: the body is kept, and there is nothing to undo", async () => {

@@ -3,15 +3,17 @@ import { createPlatePlugin, Plate, PlateContent, usePlateEditor } from "platejs/
 import {
   createContext,
   type ReactNode,
+  type Ref,
   useCallback,
   useContext,
   useEffect,
+  useImperativeHandle,
   useRef,
   useState,
 } from "react";
 import { createPortal } from "react-dom";
 import type { T } from "@/shared/i18n";
-import { fromHTML, offsetOf, toHTML, toText } from "./html";
+import { deserialize, fromHTML, offsetOf, toHTML, toText } from "./html";
 import { plugins } from "./plugins";
 import { Toolbar } from "./Toolbar";
 
@@ -50,6 +52,9 @@ const HeldBlockPlugin = createPlatePlugin({
   },
 });
 
+/** The page's hold on a mounted editor: `setValue` replaces the body as one undoable step, unreported. */
+export type EditorHandle = { setValue(html: string): void };
+
 /**
  * The compose body: a Plate editor over the native page's formats, loaded from `initial` (read at
  * mount only) and reporting every content change as HTML. The toolbar, ending in the `attach`
@@ -69,14 +74,28 @@ export function Editor(props: {
   onCmdK?(s: CmdKSelection): void;
   toolbarSlot?: HTMLElement | null;
   popover?: ReactNode;
+  ref?: Ref<EditorHandle>;
 }) {
   const { initial, readOnly, placeholder, onChange, onComposing, t, attach, onCmdK } = props;
-  const { toolbarSlot, popover } = props;
+  const { toolbarSlot, popover, ref } = props;
   const held = !!popover;
   const editor = usePlateEditor({
     plugins: [...plugins, HeldBlockPlugin],
     value: (e) => fromHTML(e, initial),
   });
+  // The body setValue made, the page's own and no edit. Slate reports changes a microtask later, so the
+  // next report is matched against it, never assumed to be it.
+  const set = useRef<string | null>(null);
+  useImperativeHandle(
+    ref,
+    () => ({
+      setValue(html) {
+        editor.tf.withNewBatch(() => editor.tf.setValue(deserialize(editor, html)));
+        set.current = toHTML(editor.children);
+      },
+    }),
+    [editor],
+  );
   const [linkOpen, setLinkOpen] = useState(false);
   const taken = useRef<TRange | null>(null); // the selection ⌘K took
   const [mark, setMark] = useState({ block: -1, whole: false });
@@ -174,7 +193,12 @@ export function Editor(props: {
       <Plate
         editor={editor}
         readOnly={readOnly}
-        onValueChange={({ value }) => onChange(toHTML(value))}
+        onValueChange={({ value }) => {
+          const html = toHTML(value);
+          const own = html === set.current;
+          set.current = null;
+          if (!own) onChange(html);
+        }}
       >
         <div className="flex flex-col">
           {toolbarSlot ? createPortal(toolbar, toolbarSlot) : toolbar}

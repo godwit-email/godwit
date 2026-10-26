@@ -79,6 +79,7 @@
   "compose_new": "New message",
   "compose_quote": "Quote",
   "compose_quote_show": "Show the quoted message (read-only for the assistant)",
+  "compose_redo": "Redo",
   "compose_remove": "Remove {arg1}",
   "@compose_remove": {
     "placeholders": {
@@ -108,6 +109,7 @@
   "compose_to": "To",
   "compose_to_input": "Add recipients",
   "compose_underline": "Underline",
+  "compose_undo": "Undo",
   "compose_strikethrough": "Strikethrough",
   "compose_font_size": "Font size",
   "compose_font_family": "Font family",

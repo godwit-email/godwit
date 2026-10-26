@@ -29,7 +29,7 @@ import { formRound, Panel as WitPanel, witError } from "@/wit/Panel";
 import { useResume } from "@/wit/resume";
 import { approvalsOf, WitTransport } from "@/wit/transport";
 import { Attachments } from "./Attachments";
-import { type CmdKSelection, Editor } from "./editor/Editor";
+import { type CmdKSelection, Editor, type EditorHandle } from "./editor/Editor";
 import { IdleToolbar } from "./editor/Toolbar";
 import { Fields, type FieldsEdit, type FieldsHandle } from "./fields/Fields";
 import { Notices } from "./Notices";
@@ -254,6 +254,7 @@ function Compose({
   const currentT = useRef(t);
   currentT.current = t;
   const fieldsRef = useRef<FieldsHandle>(null);
+  const editorRef = useRef<EditorHandle>(null);
   // The edit as it stands, read synchronously: commitPending's edits arrive within the settling.
   const cur = useRef(editOf(state));
   const [f, setF] = useState(cur.current);
@@ -367,7 +368,7 @@ function Compose({
     (key === "wit.compose.locked" ? toast.warning : toast)(t(key), { id: "locked" });
   };
 
-  // The body as stored, adopted: the editor remounts on it; the saver reads it as saved.
+  // The body as stored, adopted: the editor takes it as one undoable step; the saver reads it as saved.
   const adopt = (revision: number, body: string, subject?: string) => {
     cur.current = {
       ...cur.current,
@@ -376,7 +377,7 @@ function Compose({
       ...(subject !== undefined ? { subject } : {}),
     };
     setF(cur.current);
-    setInitial((i) => ({ body, n: i.n + 1 }));
+    editorRef.current?.setValue(body);
     // biome-ignore lint/correctness/useHookAtTopLevel: the saver's method, not a hook
     saver.current?.useLatest(revision, cur.current);
   };
@@ -871,7 +872,7 @@ function Compose({
                     </Button>
                   </div>
                 )}
-                {reviewing ? (
+                {reviewing && (
                   <Review
                     key={reviewing.approval}
                     review={reviewing}
@@ -881,51 +882,52 @@ function Compose({
                     after={tail}
                     t={t}
                   />
-                ) : (
-                  // biome-ignore lint/a11y/noStaticElementInteractions: a click below the text only moves focus into it
-                  <div
-                    data-locked={running || undefined}
-                    className={`${BODY} data-locked:bg-sidebar`}
-                    onMouseDown={(e) => {
-                      if (e.target !== e.currentTarget) return;
-                      e.preventDefault();
-                      e.currentTarget.querySelector<HTMLElement>("[contenteditable=true]")?.focus();
-                    }}
-                  >
-                    {writing ? (
-                      <Static html={streamed} label={t("compose.body")} caret />
-                    ) : (
-                      <Editor
-                        key={`${state.draftId}:${initial.n}`}
-                        initial={initial.body}
-                        readOnly={locked || witLocked}
-                        placeholder={wit && !state.wit.translateOnly ? t("wit.compose.empty") : ""}
-                        onChange={(body) => edit({ body })}
-                        onComposing={() => {}} // <main> tracks compositions, the fields' too
-                        t={t}
-                        onCmdK={
-                          wit && !locked && !witLocked && !state.wit.translateOnly
-                            ? openCmdK
-                            : undefined
-                        }
-                        toolbarSlot={toolbarSlot}
-                        attach={attach}
-                        popover={
-                          cmdk &&
-                          !locked &&
-                          !witLocked && (
-                            <CmdK
-                              onSubmit={(instruction) => void rewrite(cmdk, instruction)}
-                              onClose={closeCmdK}
-                              t={t}
-                            />
-                          )
-                        }
-                      />
-                    )}
-                    {tail}
-                  </div>
                 )}
+                {/* The editor stays mounted, hidden, while a review or Wit's writing shows: its undo history lives in it. */}
+                {/* biome-ignore lint/a11y/noStaticElementInteractions: a click below the text only moves focus into it */}
+                <div
+                  data-locked={running || undefined}
+                  hidden={!!reviewing}
+                  className={`${BODY} data-locked:bg-sidebar`}
+                  onMouseDown={(e) => {
+                    if (e.target !== e.currentTarget) return;
+                    e.preventDefault();
+                    e.currentTarget.querySelector<HTMLElement>("[contenteditable=true]")?.focus();
+                  }}
+                >
+                  {writing && <Static html={streamed} label={t("compose.body")} caret />}
+                  <div hidden={writing} className="contents">
+                    <Editor
+                      ref={editorRef}
+                      key={`${state.draftId}:${initial.n}`}
+                      initial={initial.body}
+                      readOnly={locked || witLocked || !showEditor}
+                      placeholder={wit && !state.wit.translateOnly ? t("wit.compose.empty") : ""}
+                      onChange={(body) => edit({ body })}
+                      onComposing={() => {}} // <main> tracks compositions, the fields' too
+                      t={t}
+                      onCmdK={
+                        wit && !locked && !witLocked && !state.wit.translateOnly
+                          ? openCmdK
+                          : undefined
+                      }
+                      toolbarSlot={showEditor ? toolbarSlot : null}
+                      attach={attach}
+                      popover={
+                        cmdk &&
+                        !locked &&
+                        !witLocked && (
+                          <CmdK
+                            onSubmit={(instruction) => void rewrite(cmdk, instruction)}
+                            onClose={closeCmdK}
+                            t={t}
+                          />
+                        )
+                      }
+                    />
+                  </div>
+                  {!reviewing && tail /* the review shows it after its own text */}
+                </div>
               </div>
               <div className="mx-4 mb-4 flex flex-col gap-4 *:empty:hidden">
                 <Attachments
