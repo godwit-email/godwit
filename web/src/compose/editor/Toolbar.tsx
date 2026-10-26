@@ -2,6 +2,8 @@ import { upsertLink } from "@platejs/link";
 import { toggleBulletedList, toggleNumberedList } from "@platejs/list-classic";
 import {
   type RemixiconComponentType,
+  RiArrowGoBackLine,
+  RiArrowGoForwardLine,
   RiBold,
   RiCheckLine,
   RiDoubleQuotesL,
@@ -127,7 +129,7 @@ function active(e: SlateEditor): string {
 }
 
 /**
- * The format toggles (bold, italic, link, bulleted and numbered list, quote) for the Plate editor
+ * Undo and redo, the format toggles (bold, italic, link, bulleted and numbered list, quote) for the Plate editor
  * around it, then the `attach` slot. The link toggle opens the LinkPopover (controlled by the editor, which ⌘K also opens).
  */
 export function Toolbar(props: {
@@ -183,6 +185,37 @@ export function Toolbar(props: {
     return `${m?.fontFamily ?? ""}\n${m?.fontSize ?? ""}`;
   }, []);
   const [currentFontFamily, currentFontSize] = marks.split("\n");
+  const canUndo = useEditorSelector((e) => e.history.undos.length > 0, []);
+  const canRedo = useEditorSelector((e) => e.history.redos.length > 0, []);
+
+  // Undo or redo in the editor's own history (⌘Z, ⌘⇧Z do the same); a step undone is an edit, saved as one.
+  const historyButton = (
+    label: string,
+    Icon: RemixiconComponentType,
+    can: boolean,
+    run: () => void,
+  ) => (
+    <Tooltip>
+      <TooltipTrigger
+        render={
+          <button
+            type="button"
+            aria-label={t(label)}
+            disabled={readOnly || !can}
+            onMouseDown={(e) => e.preventDefault()} // keep the editor's selection
+            onClick={() => {
+              run();
+              editor.tf.focus();
+            }}
+            className="inline-flex size-7 items-center justify-center rounded-md text-foreground/80 hover:bg-accent hover:text-accent-foreground disabled:opacity-50"
+          >
+            <Icon className="size-3.75" />
+          </button>
+        }
+      />
+      <TooltipContent>{t(label)}</TooltipContent>
+    </Tooltip>
+  );
 
   const applyMark = (key: "fontFamily" | "fontSize", val: string) => {
     if (saved.current) editor.tf.select(saved.current);
@@ -259,6 +292,12 @@ export function Toolbar(props: {
 
   return (
     <div className="-ml-1.5 flex flex-wrap items-center gap-0.5">
+      {historyButton("compose.undo", RiArrowGoBackLine, canUndo, () => editor.tf.undo())}
+      {historyButton("compose.redo", RiArrowGoForwardLine, canRedo, () => editor.tf.redo())}
+      <Separator
+        orientation="vertical"
+        className="mx-0.5 h-4.5 bg-transparent data-vertical:w-0 data-vertical:self-center data-vertical:border-l-[0.5px]"
+      />
       <ToggleGroup multiple value={value} size="sm" spacing={0.5}>
         {items.map((it) => {
           const trigger = <TooltipTrigger render={button(it)} />;

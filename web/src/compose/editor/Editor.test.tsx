@@ -1,6 +1,7 @@
-import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, createEvent, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { Editor } from "./Editor";
+import { createRef } from "react";
+import { Editor, type EditorHandle } from "./Editor";
 
 // jsdom lacks isContentEditable, which Slate checks on every event target.
 Object.defineProperty(HTMLElement.prototype, "isContentEditable", {
@@ -17,8 +18,10 @@ const mod = /Mac|iPhone|iPad/.test(navigator.userAgent) ? { metaKey: true } : { 
 function setup(initial = "<p>hello world</p>", readOnly = false) {
   const onChange = vi.fn();
   const onComposing = vi.fn();
+  const ref = createRef<EditorHandle>();
   const ui = (ro: boolean) => (
     <Editor
+      ref={ref}
       initial={initial}
       readOnly={ro}
       placeholder="p"
@@ -29,7 +32,7 @@ function setup(initial = "<p>hello world</p>", readOnly = false) {
   );
   const { rerender } = render(ui(readOnly));
   const box = screen.getByLabelText("body");
-  return { box, onChange, onComposing, setReadOnly: (ro: boolean) => rerender(ui(ro)) };
+  return { box, onChange, onComposing, ref, setReadOnly: (ro: boolean) => rerender(ui(ro)) };
 }
 
 // Selects the first `len` characters after `from` in the first text node, as a user drag would.
@@ -205,6 +208,62 @@ describe("Editor", () => {
     await waitFor(() => expect(last(onChange)).toBe("<p>a</p>"));
     await quote();
     await waitFor(() => expect(last(onChange)).toBe("<blockquote><p>a</p></blockquote>"));
+  });
+
+  it("undo and redo follow the history: off with none, step back and forth, off read-only", async () => {
+    const user = userEvent.setup();
+    const button = (name: string) => screen.getByRole("button", { name });
+    const { box, onChange, setReadOnly } = setup("<p>a</p>");
+    expect(button("compose.undo")).toBeDisabled();
+    expect(button("compose.redo")).toBeDisabled();
+    await select(box, 0, 0);
+    await user.click(button("compose.quote"));
+    await waitFor(() => expect(last(onChange)).toBe("<blockquote><p>a</p></blockquote>"));
+    expect(button("compose.undo")).toBeEnabled();
+    expect(button("compose.redo")).toBeDisabled();
+    await user.click(button("compose.undo"));
+    await waitFor(() => expect(last(onChange)).toBe("<p>a</p>"));
+    expect(button("compose.undo")).toBeDisabled();
+    expect(button("compose.redo")).toBeEnabled();
+    await user.click(button("compose.redo"));
+    await waitFor(() => expect(last(onChange)).toBe("<blockquote><p>a</p></blockquote>"));
+    expect(button("compose.redo")).toBeDisabled();
+    setReadOnly(true);
+    expect(button("compose.undo")).toBeDisabled();
+  });
+
+  it("⌘Z and ⌘⇧Z undo and redo in the editor", async () => {
+    const user = userEvent.setup();
+    const { box, onChange } = setup("<p>a</p>");
+    await select(box, 0, 0);
+    await user.click(screen.getByRole("button", { name: "compose.quote" }));
+    await waitFor(() => expect(last(onChange)).toBe("<blockquote><p>a</p></blockquote>"));
+    // Slate's own history keys match `which` (unset by jsdom) and take Mod from navigator.platform (Ctrl here).
+    const z = (shiftKey = false) => {
+      const ev = createEvent.keyDown(box, { key: "z", shiftKey, ctrlKey: true });
+      Object.defineProperty(ev, "which", { value: 90 });
+      fireEvent(box, ev);
+    };
+    z();
+    await waitFor(() => expect(last(onChange)).toBe("<p>a</p>"));
+    z(true);
+    await waitFor(() => expect(last(onChange)).toBe("<blockquote><p>a</p></blockquote>"));
+  });
+
+  it("setValue is one undoable step each, not reported as an edit; undoing one is", async () => {
+    const user = userEvent.setup();
+    const { box, onChange, ref } = setup("<p>a</p>");
+    act(() => ref.current?.setValue("<p>b</p>"));
+    act(() => ref.current?.setValue("<p>c</p>"));
+    await waitFor(() => expect(box).toHaveTextContent("c"));
+    expect(onChange).not.toHaveBeenCalled();
+    const undo = screen.getByRole("button", { name: "compose.undo" });
+    await user.click(undo);
+    await waitFor(() => expect(last(onChange)).toBe("<p>b</p>"));
+    await user.click(undo);
+    await waitFor(() => expect(last(onChange)).toBe("<p>a</p>"));
+    await user.click(screen.getByRole("button", { name: "compose.redo" }));
+    await waitFor(() => expect(last(onChange)).toBe("<p>b</p>"));
   });
 
   it("the font menus apply to the selection and show the choice", async () => {
