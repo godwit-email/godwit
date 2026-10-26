@@ -1195,6 +1195,7 @@
   "wit_usage": "Контекст",
   "wit_usage_last": "Последний запрос: {arg1} токенов",
   "wit_usage_total": "Этот разговор: {arg1} на входе · {arg2} на выходе токенов",
+  "wit_usage_cached": "Из кэша: {arg1} токенов",
   "wit_usage_compacting": "Сжатие…",
   "wit_usage_compacted": "Сжато: более ранние реплики теперь кратко изложены.",
   "compose_strikethrough": "Зачеркнутый",

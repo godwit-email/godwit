@@ -152,6 +152,8 @@ type Request struct {
 	// Effort is the reasoning effort asked of the model: "low", "medium" or
 	// "high"; "" asks for none (models that do not reason refuse it).
 	Effort string
+	// Session, if set, keys the service's prompt cache for a conversation's runs.
+	Session string
 }
 
 // Result is how a run ended. A successful run of a History is saved through
@@ -167,5 +169,6 @@ type Result struct {
 
 // Usage is the tokens a run's model calls took, as the service reported them:
 // Input and Output summed over its calls, Last the last call's input (the
-// history the model was last shown). 0 where the service reports none.
-type Usage struct{ Input, Output, Last int }
+// history the model was last shown), Cached the part of Input read from the
+// service's prompt cache. 0 where the service reports none.
+type Usage struct{ Input, Output, Last, Cached int }

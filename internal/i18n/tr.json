@@ -1195,6 +1195,7 @@
   "wit_usage": "Bağlam",
   "wit_usage_last": "Son istek: {arg1} token",
   "wit_usage_total": "Bu konuşma: {arg1} giriş · {arg2} çıkış token",
+  "wit_usage_cached": "Önbellekten okunan: {arg1} token",
   "wit_usage_compacting": "Sıkıştırılıyor…",
   "wit_usage_compacted": "Sıkıştırıldı: eski konuşmalar artık bir özet.",
   "compose_strikethrough": "Üstü çizili",

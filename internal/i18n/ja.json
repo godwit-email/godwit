@@ -1195,6 +1195,7 @@
   "wit_usage": "コンテキスト",
   "wit_usage_last": "前回のリクエスト：{arg1} トークン",
   "wit_usage_total": "この会話の合計：入力 {arg1} · 出力 {arg2} トークン",
+  "wit_usage_cached": "キャッシュから読み込み：{arg1} トークン",
   "wit_usage_compacting": "圧縮中…",
   "wit_usage_compacted": "圧縮しました：古いやり取りは要約になりました。",
   "compose_strikethrough": "取り消し線",

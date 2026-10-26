@@ -1148,6 +1148,7 @@
   "wit_usage": "上下文",
   "wit_usage_last": "上次请求：{arg1} tokens",
   "wit_usage_total": "本对话共：输入 {arg1} · 输出 {arg2} tokens",
+  "wit_usage_cached": "缓存命中：{arg1} tokens",
   "wit_usage_compacting": "正在压缩…",
   "wit_usage_compacted": "已压缩：较早的对话已总结成摘要。",
   "wit_tool_ask_user_question": "向你提问",

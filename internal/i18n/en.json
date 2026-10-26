@@ -2231,6 +2231,7 @@
   "wit_usage": "Context",
   "wit_usage_last": "Last request: {arg1} tokens",
   "wit_usage_total": "This conversation: {arg1} in · {arg2} out tokens",
+  "wit_usage_cached": "Read from cache: {arg1} tokens",
   "wit_usage_compacting": "Compacting…",
   "wit_usage_compacted": "Compacted: the older turns are now a summary.",
   "wit_tool_ask_user_question": "Ask you",

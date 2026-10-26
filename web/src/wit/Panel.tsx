@@ -2308,6 +2308,9 @@ export function Panel({
                       )}
                     </span>
                   )}
+                  {usage.cached > 0 && (
+                    <span>{t("wit.usage.cached", usage.cached.toLocaleString())}</span>
+                  )}
                 </div>
               )}
             </PopoverContent>

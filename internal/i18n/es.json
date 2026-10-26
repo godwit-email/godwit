@@ -1195,6 +1195,7 @@
   "wit_usage": "Contexto",
   "wit_usage_last": "Última solicitud: {arg1} tokens",
   "wit_usage_total": "Esta conversación: {arg1} de entrada · {arg2} de salida tokens",
+  "wit_usage_cached": "Leídos de la caché: {arg1} tokens",
   "wit_usage_compacting": "Compactando…",
   "wit_usage_compacted": "Compactado: los turnos anteriores ahora son un resumen.",
   "compose_strikethrough": "Tachado",

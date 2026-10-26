@@ -39,7 +39,7 @@ const none: WitHistory = {
   conversation: 1,
   model: "",
   effort: "",
-  usage: { input: 0, output: 0, context: 0, history: 0, summary: 0, compactable: false },
+  usage: { input: 0, output: 0, context: 0, cached: 0, history: 0, summary: 0, compactable: false },
   running: 0,
   turns: [],
 };

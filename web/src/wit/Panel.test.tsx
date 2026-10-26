@@ -34,7 +34,7 @@ const empty: WitHistory = {
   conversation: 1,
   model: "",
   effort: "",
-  usage: { input: 0, output: 0, context: 0, history: 0, summary: 0, compactable: false },
+  usage: { input: 0, output: 0, context: 0, cached: 0, history: 0, summary: 0, compactable: false },
   running: 0,
   turns: [],
 };
@@ -787,13 +787,29 @@ describe("Panel", () => {
       page: true,
       history: hist({
         ...turn,
-        usage: { input: 10, output: 1, context: 10, history: 0.2, summary: 0, compactable: false },
+        usage: {
+          input: 10,
+          output: 1,
+          context: 10,
+          cached: 0,
+          history: 0.2,
+          summary: 0,
+          compactable: false,
+        },
       }),
     });
     api.follow.mockResolvedValue(
       hist({
         ...turn,
-        usage: { input: 30, output: 1, context: 20, history: 0.2, summary: 0, compactable: false },
+        usage: {
+          input: 30,
+          output: 1,
+          context: 20,
+          cached: 0,
+          history: 0.2,
+          summary: 0,
+          compactable: false,
+        },
       }),
     );
     await user.type(input("向 Wit 提问"), "hi{Enter}");
@@ -850,6 +866,7 @@ describe("Panel", () => {
           input: 1200,
           output: 80,
           context: 900,
+          cached: 0,
           history: 0.42,
           summary: 0.1,
           compactable: false,
@@ -879,6 +896,7 @@ describe("Panel", () => {
           input: 1200,
           output: 80,
           context: 900,
+          cached: 0,
           history: 0.8,
           summary: 0,
           compactable: false,
@@ -894,7 +912,15 @@ describe("Panel", () => {
     const user = userEvent.setup();
     const before = hist({
       ...turn,
-      usage: { input: 1200, output: 80, context: 900, history: 0.9, summary: 0, compactable: true },
+      usage: {
+        input: 1200,
+        output: 80,
+        context: 900,
+        cached: 0,
+        history: 0.9,
+        summary: 0,
+        compactable: true,
+      },
     });
     const { api } = await setup({ page: true, history: before });
     api.follow.mockResolvedValue({

@@ -33,7 +33,8 @@ var compiled = sync.OnceValues(func() (*moejs.Module, error) { return moejs.Comp
 // openai-responses or openai-codex-responses. APIKey "" sends no credential.
 // Effort is "", "low", "medium" or "high". MaxTokens caps the reply (0: none
 // where the API allows it); ThinkingBudget is anthropic-messages' thinking
-// budget for Effort.
+// budget for Effort. Session, if set, keys the service's prompt cache, which
+// is then used: the turns of one conversation share it.
 type Request struct {
 	API            string `json:"api"`
 	BaseURL        string `json:"baseUrl"`
@@ -44,6 +45,7 @@ type Request struct {
 	Effort         string `json:"effort"`
 	MaxTokens      int64  `json:"maxTokens"`
 	ThinkingBudget int64  `json:"thinkingBudget"`
+	Session        string `json:"session"`
 }
 
 // Result is how a reply ended. StopReason is pi-ai's: "stop" is a whole reply,
@@ -52,12 +54,14 @@ type Request struct {
 // one it ended early for another reason. Code is the error code the service
 // last answered with (an HTTP error body's or a failed response's), Status
 // the last HTTP status a request got, 0 if none answered; Transport the error
-// a request failed with before any answer.
+// a request failed with before any answer. Cached is the part of Input the
+// service read from its prompt cache.
 type Result struct {
 	StopReason    string `json:"stopReason"`
 	Error         string `json:"error"`
 	Code          string `json:"code"`
 	Input, Output int
+	Cached        int
 	Status        int   `json:"-"`
 	Transport     error `json:"-"`
 }

@@ -29,6 +29,7 @@ interface Request {
   effort: "" | "low" | "medium" | "high";
   maxTokens: number;
   thinkingBudget: number;
+  session: string;
 }
 
 type Payload = Record<string, unknown> & { thinking?: Record<string, unknown> };
@@ -119,7 +120,11 @@ function service(req: Request) {
       if (p.thinking) delete p.thinking.display;
       return p;
     },
-    cacheRetention: "none" as const,
+    // A conversation's turns repeat its history: cache it, keyed by the
+    // conversation; a one-off prompt is not asked again, so it would pay
+    // Anthropic's cache write for nothing.
+    cacheRetention: req.session ? ("short" as const) : ("none" as const),
+    sessionId: req.session || undefined,
     transport: "sse" as const, // the Codex backend's WebSocket is not supported here
     headers: req.api === "openai-codex-responses" ? { originator: "godwit" } : undefined,
     maxRetries: 2, // the SDKs' default, which the Genkit path uses
@@ -207,7 +212,7 @@ export async function generate(req: Request) {
   const s = svc.stream(normalizeContext({ systemPrompt: svc.systemPrompt(req.system), messages: [{ role: "user", content: req.prompt, timestamp: Date.now() }] }));
   for await (const ev of s) svc.relay(ev);
   const m = await s.result();
-  return { stopReason: svc.stopReason(m), error: m.errorMessage ?? "", code: svc.st.code, input: inputOf(m), output: m.usage.output };
+  return { stopReason: svc.stopReason(m), error: m.errorMessage ?? "", code: svc.st.code, input: inputOf(m), output: m.usage.output, cached: m.usage.cacheRead };
 }
 
 // AgentRequest is pi.AgentRequest, as JSON.
@@ -340,6 +345,7 @@ export async function agent(req: AgentRequest) {
     calls: last?.content.some((c) => c.type === "toolCall") ?? false,
     input: replies.reduce((n, m) => n + inputOf(m), 0),
     output: replies.reduce((n, m) => n + m.usage.output, 0),
+    cached: replies.reduce((n, m) => n + m.usage.cacheRead, 0),
     last: last ? inputOf(last) : 0,
     held: [...held],
     deferred: [...deferred],

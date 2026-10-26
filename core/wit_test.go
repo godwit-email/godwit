@@ -1085,7 +1085,7 @@ func TestAskOnPi(t *testing.T) {
 
 	conv := e.askConv(t)
 	e.srv.Script(testllm.Turn{Calls: []testllm.Call{{Name: "search_mail", Args: `{"query":"harbour"}`}}, Usage: [2]int{10, 2}},
-		testllm.Turn{Text: []string{"Friday at ", "the harbour."}, Usage: [2]int{30, 4}})
+		testllm.Turn{Text: []string{"Friday at ", "the harbour."}, Usage: [2]int{30, 4}, Cached: 20})
 	evs = e.ask(t, conv.ID, "When do we meet?")
 	require.Equal(t, "done", evs[len(evs)-1].Kind, "%+v", evs[len(evs)-1].Err)
 	reqs := e.srv.Requests()
@@ -1111,7 +1111,7 @@ func TestAskOnPi(t *testing.T) {
 
 	c, err := e.s.GetConversation(t.Context(), conv.ID)
 	require.NoError(t, err)
-	assert.Equal(t, ai.Usage{Input: 40, Output: 6, Last: 30}, c.Usage)
+	assert.Equal(t, ai.Usage{Input: 40, Output: 6, Last: 30, Cached: 20}, c.Usage)
 	var got []string
 	for _, m := range savedMessages(t, e.s, c.ID) {
 		got = append(got, m.Role)
