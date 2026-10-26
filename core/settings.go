@@ -48,6 +48,10 @@ type Settings struct {
 	// AutoLabel lets the classifier label new Inbox mail; on by default.
 	// A rescan runs either way.
 	AutoLabel bool
+	// LabelDisplay is how labels are displayed across the app:
+	// "both" (default; "" too) shows icon and name, "icon" shows only icon,
+	// and "text" shows only name.
+	LabelDisplay string
 	// SidebarWidth is the page sidebars' width in DIPs, the user's drag:
 	// 0 for the default, else 240 to 480.
 	SidebarWidth int
@@ -94,7 +98,7 @@ const (
 
 func defaultSettings() Settings {
 	return Settings{Theme: "system", Density: "compact", FontSize: 14, SettingsVersion: settingsVersion, ReplyLanguage: "match", RemoteImages: "auto",
-		KeepInBackground: true, UnreadOnAppIcon: true, NotifyNewMail: true, NotifyPreview: true, ThreadView: true, AutoLabel: true, JudgeThreshold: 0.8,
+		KeepInBackground: true, UnreadOnAppIcon: true, NotifyNewMail: true, NotifyPreview: true, ThreadView: true, AutoLabel: true, LabelDisplay: "both", JudgeThreshold: 0.8,
 		MCPSend: MCPSendConfirm}
 }
 
@@ -120,6 +124,8 @@ func (st Settings) validate() error {
 		return fmt.Errorf("invalid MCP send level %q", st.MCPSend)
 	case !in(st.ReplyLanguage, "match", "reading"):
 		return fmt.Errorf("invalid reply language mode %q", st.ReplyLanguage)
+	case !in(st.LabelDisplay, "", "both", "icon", "text"):
+		return fmt.Errorf("invalid label display %q", st.LabelDisplay)
 	case st.FontSize < 10 || st.FontSize > 32, st.BodyFontSize != 0 && (st.BodyFontSize < 10 || st.BodyFontSize > 32):
 		return fmt.Errorf("font size must be between 10 and 32")
 	case st.SidebarWidth != 0 && (st.SidebarWidth < 240 || st.SidebarWidth > 480):

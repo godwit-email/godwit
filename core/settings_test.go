@@ -25,7 +25,7 @@ func TestSettingsDefaults(t *testing.T) {
 	got, err := s.GetSettings(t.Context())
 	require.NoError(t, err)
 	assert.Equal(t, Settings{Theme: "system", Density: "compact", FontSize: 14, SettingsVersion: 4, ReplyLanguage: "match",
-		KeepInBackground: true, UnreadOnAppIcon: true, NotifyNewMail: true, NotifyPreview: true, ThreadView: true, RemoteImages: "auto", AutoLabel: true, JudgeThreshold: 0.8,
+		KeepInBackground: true, UnreadOnAppIcon: true, NotifyNewMail: true, NotifyPreview: true, ThreadView: true, RemoteImages: "auto", AutoLabel: true, LabelDisplay: "both", JudgeThreshold: 0.8,
 		MCPSend: "confirm"}, got)
 }
 
@@ -118,6 +118,7 @@ func TestSettingsValidation(t *testing.T) {
 		"theme":          func(x *Settings) { x.Theme = "neon" },
 		"density":        func(x *Settings) { x.Density = "tiny" },
 		"reply":          func(x *Settings) { x.ReplyLanguage = "other" },
+		"labeldisplay":   func(x *Settings) { x.LabelDisplay = "invalid" },
 		"font":           func(x *Settings) { x.FontSize = 9 },
 		"bodyfont":       func(x *Settings) { x.BodyFontSize = 33 },
 		"lang":           func(x *Settings) { x.UILanguage = "zh_CN!" },

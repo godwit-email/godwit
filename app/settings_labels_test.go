@@ -308,3 +308,22 @@ func TestSettingsLabelsSwatchesFit(t *testing.T) {
 		})
 	}
 }
+
+func TestSettingsLabelsDisplay(t *testing.T) {
+	h, _ := withAccount(t)
+	h.labelsPage()
+	h.see("标签样式")
+	h.see("图标与文本")
+	h.click("图标与文本")
+	h.click("仅图标")
+	h.until("label display changed to icon", func() bool {
+		return h.app.settings.LabelDisplay == "icon"
+	})
+	st, err := h.env.Svc.GetSettings(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if st.LabelDisplay != "icon" {
+		t.Errorf("stored LabelDisplay %q, want icon", st.LabelDisplay)
+	}
+}

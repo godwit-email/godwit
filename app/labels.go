@@ -36,24 +36,28 @@ func (a *App) labelChip(c *ui.Context, al core.AppliedLabel, onClick, onRemove f
 	if al.Auto {
 		tip = i18n.T("label.tip.auto")
 	}
-	o := kit.LabelChipOpts{Text: l.Name, Icon: l.Icon, Tip: tip, Color: theme.Of(c).Label(l.Color), Auto: al.Auto, OnClick: onClick}
+	o := kit.LabelChipOpts{Text: l.Name, Icon: l.Icon, Display: a.settings.LabelDisplay, Tip: tip, Color: theme.Of(c).Label(l.Color), Auto: al.Auto, OnClick: onClick}
 	if onRemove != nil {
 		o.OnRemove, o.RemoveLabel = onRemove, i18n.Tf("reader.labels.remove", l.Name)
 	}
 	kit.LabelChip(c, o)
 }
 
-// rowChips is a list row's labels: the first listChips, then "+N".
+// rowChips is a list row's labels: the first listChips (or 4 for icons), then "+N".
 func (a *App) rowChips(c *ui.Context, ls []core.AppliedLabel) {
 	if len(ls) == 0 {
 		return
 	}
 	t, th := theme.Of(c), c.Theme()
+	maxChips := listChips
+	if a.settings.LabelDisplay == "icon" {
+		maxChips = 4
+	}
 	ui.Row(c).Gap(th.Space(1)).AlignItems(ui.Center).Margin(th.Space(1), 0, 0, 0).Children(func() {
-		for _, l := range ls[:min(len(ls), listChips)] {
+		for _, l := range ls[:min(len(ls), maxChips)] {
 			a.labelChip(c, l, nil, nil)
 		}
-		if n := len(ls) - listChips; n > 0 {
+		if n := len(ls) - maxChips; n > 0 {
 			kit.Text(c, i18n.Tf("label.more", n), t.Text.Sm).TextColor(t.Muted)
 		}
 	})
