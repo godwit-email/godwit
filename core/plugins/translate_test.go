@@ -45,7 +45,7 @@ func TestNoUndeclaredGlobals(t *testing.T) {
 	got, err := p.Translate(context.Background(), translateInv, translateReq())
 	require.NoError(t, err)
 	builtins := strings.Fields(`AggregateError Array ArrayBuffer Atomics BigInt BigInt64Array BigUint64Array Boolean DataView Date
-		Error EvalError Float16Array Float32Array Float64Array Function Infinity Int16Array Int32Array Int8Array JSON Map Math NaN
+		Error EvalError Float16Array Float32Array Float64Array Function Infinity Int16Array Int32Array Int8Array Intl JSON Map Math NaN
 		Number Object Promise Proxy RangeError ReferenceError Reflect RegExp Set SharedArrayBuffer String Symbol SyntaxError
 		TextDecoder TextEncoder TypeError URIError Uint16Array Uint32Array Uint8Array Uint8ClampedArray WeakMap WeakRef WeakSet
 		atob btoa decodeURI decodeURIComponent encodeURI encodeURIComponent escape eval globalThis isFinite isNaN parseFloat
