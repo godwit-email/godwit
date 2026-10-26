@@ -1195,6 +1195,7 @@
   "wit_usage": "上下文",
   "wit_usage_last": "上次請求：{arg1} tokens",
   "wit_usage_total": "本對話共：輸入 {arg1} · 輸出 {arg2} tokens",
+  "wit_usage_cached": "快取命中：{arg1} tokens",
   "wit_usage_compacting": "正在壓縮…",
   "wit_usage_compacted": "已壓縮：較早的對話已總結成摘要。",
   "compose_strikethrough": "刪除線",

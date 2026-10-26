@@ -280,8 +280,8 @@ func (s *Service) condense(ctx context.Context, id int64, model ai.ResolvedModel
 	}
 	res := wait()
 	s.runRejected(model, res.Err)
-	spent := sqlite.Statement{SQL: `UPDATE conversations SET spent_input = spent_input + ?, spent_output = spent_output + ? WHERE id = ?`,
-		Args: []any{res.Usage.Input, res.Usage.Output, id}}
+	spent := sqlite.Statement{SQL: `UPDATE conversations SET spent_input = spent_input + ?, spent_output = spent_output + ?, spent_cached = spent_cached + ? WHERE id = ?`,
+		Args: []any{res.Usage.Input, res.Usage.Output, res.Usage.Cached, id}}
 	if res.Err != nil {
 		return "", errors.Join(res.Err, s.exec(ctx, spent))
 	}

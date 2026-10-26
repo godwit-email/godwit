@@ -24,9 +24,11 @@ type WitHistory struct {
 // are summarized or left out), and whether WitPage.Compact has turns to
 // summarize (Compactable).
 type WitUsage struct {
-	Input   int     `json:"input"`
-	Output  int     `json:"output"`
-	Context int     `json:"context"`
+	Input   int `json:"input"`
+	Output  int `json:"output"`
+	Context int `json:"context"`
+	// Cached is the part of Input the services read from their prompt caches.
+	Cached  int     `json:"cached"`
 	History float64 `json:"history"`
 	// Summary is the part of History the conversation's summary takes.
 	Summary     float64 `json:"summary"`

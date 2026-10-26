@@ -1195,6 +1195,7 @@
   "wit_usage": "컨텍스트",
   "wit_usage_last": "마지막 요청: {arg1} 토큰",
   "wit_usage_total": "이 대화: 입력 {arg1} · 출력 {arg2} 토큰",
+  "wit_usage_cached": "캐시에서 읽음: {arg1} 토큰",
   "wit_usage_compacting": "압축 중…",
   "wit_usage_compacted": "압축했습니다: 이전 대화가 요약으로 바뀌었습니다.",
   "compose_strikethrough": "취소선",

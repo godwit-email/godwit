@@ -1202,6 +1202,7 @@
   "wit_usage": "Kontext",
   "wit_usage_last": "Letzte Anfrage: {arg1} Tokens",
   "wit_usage_total": "Diese Unterhaltung: {arg1} ein · {arg2} aus Tokens",
+  "wit_usage_cached": "Aus dem Cache gelesen: {arg1} Tokens",
   "wit_usage_compacting": "Wird zusammengefasst…",
   "wit_usage_compacted": "Zusammengefasst: Die älteren Runden sind jetzt eine Zusammenfassung.",
   "settings_account_icon": "Konto-Icon",

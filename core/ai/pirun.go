@@ -50,7 +50,7 @@ func (r *runner) runPi(req Request) Result {
 	r.mu.Unlock()
 
 	preq := pi.Request{API: piAPI(req.Model), BaseURL: req.Model.BaseURL, Model: req.Model.Model, APIKey: req.Model.APIKey,
-		System: req.System, Prompt: req.Prompt, Effort: req.Effort}
+		System: req.System, Prompt: req.Prompt, Effort: req.Effort, Session: req.Session}
 	if req.Model.Kind == KindAnthropic { // max_tokens is required: Genkit's default, raised by the thinking budget
 		preq.BaseURL = AnthropicBase(req.Model.BaseURL)
 		preq.ThinkingBudget = thinkingBudget[req.Effort]
@@ -73,7 +73,7 @@ func (r *runner) runPi(req Request) Result {
 		return r.piFailed(ctx, err)
 	}
 	r.mu.Lock()
-	r.usage = Usage{Input: res.Input, Output: res.Output, Last: res.Input}
+	r.usage = Usage{Input: res.Input, Output: res.Output, Last: res.Input, Cached: res.Cached}
 	r.mu.Unlock()
 	if e := piError(res, preq.API == "openai-codex-responses"); e != nil {
 		return Result{Err: e}
@@ -204,7 +204,7 @@ func (r *runner) agentPi(ctx context.Context, req Request, preq pi.Request, emit
 		return r.piFailed(ctx, err)
 	}
 	r.mu.Lock()
-	r.usage = Usage{Input: res.Input, Output: res.Output, Last: res.Last}
+	r.usage = Usage{Input: res.Input, Output: res.Output, Last: res.Last, Cached: res.Cached}
 	r.mu.Unlock()
 	if repeated {
 		return Result{Err: &Error{Code: CodeBadResponse, Msg: "the model repeated a tool call ID"}}

@@ -208,7 +208,7 @@ const history = (p: Partial<WitHistory> & Pick<WitHistory, "turns">): WitHistory
   conversation: 1,
   model: "",
   effort: "",
-  usage: { input: 0, output: 0, context: 0, history: 0, summary: 0, compactable: false },
+  usage: { input: 0, output: 0, context: 0, cached: 0, history: 0, summary: 0, compactable: false },
   running: 0,
   ...p,
 });
@@ -335,6 +335,7 @@ export const witConversation = (): WitHistory =>
       input: 18400,
       output: 1260,
       context: 9800,
+      cached: 12000,
       history: 0.36,
       summary: 0.08,
       compactable: true,

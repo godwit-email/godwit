@@ -437,6 +437,11 @@ var Migrations = [][]string{{
 }, {
 	// What Wit knows about the account's sender for drafting (core.MaxAIInstructions).
 	`ALTER TABLE accounts ADD COLUMN ai_instructions TEXT NOT NULL DEFAULT ''`,
+}, {
+	// The part of a run's input tokens the service read from its prompt
+	// cache, and of a rewind's dropped runs (spent_input's).
+	`ALTER TABLE runs ADD COLUMN cached_tokens INTEGER NOT NULL DEFAULT 0`,
+	`ALTER TABLE conversations ADD COLUMN spent_cached INTEGER NOT NULL DEFAULT 0`,
 }}
 
 // HistoryRowsVersion is the schema version that keeps a conversation's

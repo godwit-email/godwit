@@ -1195,6 +1195,7 @@
   "wit_usage": "Contesto",
   "wit_usage_last": "Ultima richiesta: {arg1} token",
   "wit_usage_total": "Questa conversazione: {arg1} in entrata · {arg2} in uscita token",
+  "wit_usage_cached": "Letti dalla cache: {arg1} token",
   "wit_usage_compacting": "Compattazione…",
   "wit_usage_compacted": "Compattata: i turni precedenti ora sono un riassunto.",
   "compose_strikethrough": "Barrato",

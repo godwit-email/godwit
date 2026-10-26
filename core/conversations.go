@@ -267,14 +267,15 @@ func (s *Service) GetConversation(ctx context.Context, id int64) (Conversation, 
 	c.Turns = turnsOf(h, runs, as, cs, c.Kind == "ask" && c.ActiveRunID == 0, expand)
 	rows, err := s.db.Query(ctx, `SELECT COALESCE(SUM(input_tokens), 0) + (SELECT spent_input FROM conversations WHERE id = ?),
 		COALESCE(SUM(output_tokens), 0) + (SELECT spent_output FROM conversations WHERE id = ?),
-		COALESCE((SELECT context_tokens FROM runs WHERE conversation_id = ? AND context_tokens > 0 ORDER BY id DESC LIMIT 1), 0)
-		FROM runs WHERE conversation_id = ?`, id, id, id, id)
+		COALESCE((SELECT context_tokens FROM runs WHERE conversation_id = ? AND context_tokens > 0 ORDER BY id DESC LIMIT 1), 0),
+		COALESCE(SUM(cached_tokens), 0) + (SELECT spent_cached FROM conversations WHERE id = ?)
+		FROM runs WHERE conversation_id = ?`, id, id, id, id, id)
 	if err != nil {
 		return Conversation{}, err
 	}
 	if len(rows.Values) > 0 {
 		r := rows.Values[0]
-		c.Usage = ai.Usage{Input: int(store.Int(r[0])), Output: int(store.Int(r[1])), Last: int(store.Int(r[2]))}
+		c.Usage = ai.Usage{Input: int(store.Int(r[0])), Output: int(store.Int(r[1])), Last: int(store.Int(r[2])), Cached: int(store.Int(r[3]))}
 	}
 	sum, _, err := s.convSummary(ctx, id)
 	if err != nil {
@@ -295,8 +296,8 @@ func (s *Service) GetConversation(ctx context.Context, id int64) (Conversation, 
 
 // runUsage adds res's tokens to runID's.
 func runUsage(runID int64, u ai.Usage) sqlite.Statement {
-	return sqlite.Statement{SQL: `UPDATE runs SET input_tokens = input_tokens + ?, output_tokens = output_tokens + ?,
-		context_tokens = CASE WHEN ? > 0 THEN ? ELSE context_tokens END WHERE id = ?`, Args: []any{u.Input, u.Output, u.Last, u.Last, runID}}
+	return sqlite.Statement{SQL: `UPDATE runs SET input_tokens = input_tokens + ?, output_tokens = output_tokens + ?, cached_tokens = cached_tokens + ?,
+		context_tokens = CASE WHEN ? > 0 THEN ? ELSE context_tokens END WHERE id = ?`, Args: []any{u.Input, u.Output, u.Cached, u.Last, u.Last, runID}}
 }
 
 // citationsOf is conversation id's saved citations, numbered.
@@ -956,7 +957,8 @@ func (s *Service) request(ctx context.Context, job *runJob, model ai.ResolvedMod
 	}
 	job.base = h
 	return ai.Request{Model: model, System: system, History: sent, Tools: s.specs(job, tools), MaxTurns: witMaxTurns, Reasoning: true, Effort: job.conv.Effort,
-		Args: s.linkExpander().toolArgs}, nil // link references expanded before a call is validated, gated, prepared or run
+		Session: fmt.Sprintf("godwit-conversation-%d", job.conv.ID),
+		Args:    s.linkExpander().toolArgs}, nil // link references expanded before a call is validated, gated, prepared or run
 }
 
 // track registers a run in flight. The caller holds runMu.

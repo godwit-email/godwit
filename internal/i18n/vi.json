@@ -1195,6 +1195,7 @@
   "wit_usage": "Ngữ cảnh",
   "wit_usage_last": "Yêu cầu gần nhất: {arg1} token",
   "wit_usage_total": "Cuộc trò chuyện này: vào {arg1} · ra {arg2} token",
+  "wit_usage_cached": "Đọc từ bộ nhớ đệm: {arg1} token",
   "wit_usage_compacting": "Đang nén…",
   "wit_usage_compacted": "Đã nén: các lượt cũ hơn giờ là một bản tóm tắt.",
   "compose_strikethrough": "Gạch ngang",

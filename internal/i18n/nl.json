@@ -1195,6 +1195,7 @@
   "wit_usage": "Context",
   "wit_usage_last": "Laatste verzoek: {arg1} tokens",
   "wit_usage_total": "Dit gesprek: {arg1} in · {arg2} uit tokens",
+  "wit_usage_cached": "Uit cache gelezen: {arg1} tokens",
   "wit_usage_compacting": "Comprimeren…",
   "wit_usage_compacted": "Gecomprimeerd: de oudere beurten zijn nu een samenvatting.",
   "compose_strikethrough": "Doorgehaald",

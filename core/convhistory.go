@@ -107,8 +107,9 @@ func commitRewind(convID, runID int64, rw pendingRewind, question string) []sqli
 	stmts := []sqlite.Statement{
 		{SQL: "DELETE FROM conversation_messages WHERE conversation_id = ? AND seq >= ? AND seq < ?", Args: []any{convID, rw.from, rw.to}},
 		{SQL: `UPDATE conversations SET spent_input = spent_input + (SELECT COALESCE(SUM(input_tokens), 0) ` + dropped + `),
-			spent_output = spent_output + (SELECT COALESCE(SUM(output_tokens), 0) ` + dropped + `) WHERE id = ?`,
-			Args: append(append(append([]any{}, args...), args...), convID)},
+			spent_output = spent_output + (SELECT COALESCE(SUM(output_tokens), 0) ` + dropped + `),
+			spent_cached = spent_cached + (SELECT COALESCE(SUM(cached_tokens), 0) ` + dropped + `) WHERE id = ?`,
+			Args: append(append(append(append([]any{}, args...), args...), args...), convID)},
 		{SQL: "DELETE " + dropped, Args: args},
 		{SQL: "UPDATE runs SET " + noRewind + " WHERE id = ?", Args: []any{runID}},
 		{SQL: "UPDATE conversations SET summary_epoch = summary_epoch + 1 WHERE id = ?", Args: []any{convID}},
