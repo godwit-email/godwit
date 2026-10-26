@@ -973,7 +973,7 @@
   "settings_thread_collapse": "E-posta geçmişini daralt",
   "settings_thread_collapse_help": "Uzun konuşmalardaki eski e-postaları genişletilebilir bir kartta topla",
   "settings_thread_collapse_threshold": "Daraltma eşiği",
-  "settings_thread_collapse_threshold_help": "Bir konuşmadaki minimum e-posta sayısı (1–100, varsayılan: 5)",
+  "settings_thread_collapse_threshold_help": "Bir konuşmadaki minimum e-posta sayısı (2–100, varsayılan: 5)",
   "settings_translator": "Çeviri aracı",
   "settings_translator_gone": "{arg1} (kaldırıldı)",
   "settings_translator_help": "Eklentilerin Uzantılar bölümünden etkinleştirilmesi gerekir",

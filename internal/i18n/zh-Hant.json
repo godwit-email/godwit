@@ -973,7 +973,7 @@
   "settings_thread_collapse": "摺疊會話歷史",
   "settings_thread_collapse_help": "長會話中的較早郵件合併為可展開的卡片",
   "settings_thread_collapse_threshold": "歷史摺疊臨界值",
-  "settings_thread_collapse_threshold_help": "會話中觸發摺疊的郵件數（1–100，預設：5）",
+  "settings_thread_collapse_threshold_help": "會話中觸發摺疊的郵件數（2–100，預設：5）",
   "settings_translator": "翻譯方式",
   "settings_translator_gone": "{arg1}（已解除安裝）",
   "settings_translator_help": "外掛需要在擴充功能裡啟用",

@@ -46,7 +46,7 @@ type reader struct {
 	labelMenu   bool
 	labelQuery  string
 	open        map[int64]bool // messages shown in full
-	historyOpen bool           // thread's collapsed intermediate messages are shown
+	historyOpen map[int64]bool // collapsed runs of folded messages shown anyway, by the run's first message
 	bodies      map[int64]*msgBody
 	scroll      ui.ScrollState // the messages' scrolling; a body's page hands on the wheels it does not use
 
@@ -144,8 +144,7 @@ func (r *reader) reset(k [2]int64) {
 	r.stopAI()
 	r.key, r.loaded, r.subject, r.msgs = k, false, "", nil
 	r.threadIDs, r.labels, r.labelMenu, r.labelQuery = nil, nil, false, ""
-	r.open, r.bodies = map[int64]bool{}, map[int64]*msgBody{}
-	r.historyOpen = false
+	r.open, r.historyOpen, r.bodies = map[int64]bool{}, map[int64]bool{}, map[int64]*msgBody{}
 	r.scroll.X, r.scroll.Y = 0, 0
 	r.gen++
 }
@@ -744,73 +743,45 @@ func (r *reader) toolbar(c *ui.Context) {
 	})
 }
 
-// renderMessages renders a thread's messages: when there are enough
-// consecutive folded messages (governed by Settings.ThreadCollapse and
-// Settings.ThreadCollapseThreshold), they collapse into a single history toggle card
-// unless the user expanded the history.
+// renderMessages renders a thread's messages. In a thread of at least
+// Settings.ThreadCollapseThreshold messages, each run of two or more folded
+// messages collapses into one history card, which expands that run alone.
 func (r *reader) renderMessages(c *ui.Context) {
-	type run struct {
-		open bool
-		msgs []core.MessageSummary
-	}
-	var runs []run
-	for _, m := range r.msgs {
-		open := r.open[m.ID]
-		if len(runs) == 0 || runs[len(runs)-1].open != open {
-			runs = append(runs, run{open: open, msgs: []core.MessageSummary{m}})
-		} else {
-			runs[len(runs)-1].msgs = append(runs[len(runs)-1].msgs, m)
-		}
-	}
-	collapse, minFolded := r.collapseThreshold()
-	for _, rn := range runs {
-		if rn.open {
-			for _, m := range rn.msgs {
-				r.message(c, m)
-			}
-		} else if collapse && len(rn.msgs) >= minFolded && !r.historyOpen {
-			r.historyToggle(c, len(rn.msgs), false)
-		} else {
-			if collapse && len(rn.msgs) >= minFolded {
-				r.historyToggle(c, len(rn.msgs), true)
-			}
-			for _, m := range rn.msgs {
-				r.folded(c, m)
-			}
-		}
-	}
-}
-
-func (r *reader) collapseThreshold() (bool, int) {
-	if r.p == nil || r.p.a == nil {
-		return true, 4
-	}
 	st := r.p.a.settings
-	if !st.ThreadCollapse {
-		return false, 0
+	collapse := st.ThreadCollapse && len(r.msgs) >= st.ThreadCollapseThreshold
+	for i := 0; i < len(r.msgs); {
+		m := r.msgs[i]
+		if r.open[m.ID] {
+			r.message(c, m)
+			i++
+			continue
+		}
+		j := i + 1
+		for j < len(r.msgs) && !r.open[r.msgs[j].ID] {
+			j++
+		}
+		run := r.msgs[i:j]
+		if collapse && len(run) >= 2 {
+			r.historyToggle(c, m.ID, len(run))
+		}
+		if !collapse || len(run) < 2 || r.historyOpen[m.ID] {
+			for _, f := range run {
+				r.folded(c, f)
+			}
+		}
+		i = j
 	}
-	thresh := st.ThreadCollapseThreshold
-	if thresh < 1 || thresh > 100 {
-		thresh = 5
-	}
-	minFolded := thresh - 1
-	if minFolded < 1 {
-		minFolded = 1
-	}
-	return true, minFolded
 }
 
-// historyToggle is a card matching the folded message row format to expand
-// or collapse a run of folded previous messages in a thread.
-func (r *reader) historyToggle(c *ui.Context, n int, expanded bool) {
+// historyToggle is the card that expands or collapses the run of n folded
+// messages starting at message first.
+func (r *reader) historyToggle(c *ui.Context, first int64, n int) {
 	t, th := theme.Of(c), c.Theme()
-	label := i18n.T("reader.thread.collapse")
-	rot := float32(180)
-	if !expanded {
-		label = i18n.Tf("reader.thread.expand", n)
-		rot = 0
+	label, rot := i18n.Tf("reader.thread.expand", n), float32(0)
+	if r.historyOpen[first] {
+		label, rot = i18n.T("reader.thread.collapse"), 180
 	}
-	b := kit.Pressable(c, kit.PressableOpts{Bordered: true, OnClick: func() { r.historyOpen = !r.historyOpen }}).
+	b := kit.Pressable(c, kit.PressableOpts{Bordered: true, OnClick: func() { r.historyOpen[first] = !r.historyOpen[first] }}).
 		FillWidth().MaxWidth(theme.ReaderMaxWidth).AlignSelf(ui.Center).Gap(th.Space(2.5)).Padding(th.Space(2), th.Space(3)).Justify(ui.Center)
 	b.Children(func() {
 		ui.Icon(c, icons.Get("chevron-down")).Size(theme.IconSm, theme.IconSm).TextColor(t.Muted).Rotate(rot)

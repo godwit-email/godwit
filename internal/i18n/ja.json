@@ -973,7 +973,7 @@
   "settings_thread_collapse": "履歴を折りたたむ",
   "settings_thread_collapse_help": "長いスレッド内の過去のメールを展開可能なカードにまとめます",
   "settings_thread_collapse_threshold": "履歴を折りたたむ件数",
-  "settings_thread_collapse_threshold_help": "スレッド内で折りたたむ最小メール数（1〜100、デフォルト: 5）",
+  "settings_thread_collapse_threshold_help": "スレッド内で折りたたむ最小メール数（2〜100、デフォルト: 5）",
   "settings_translator": "翻訳エンジン",
   "settings_translator_gone": "{arg1}（アンインストール済み）",
   "settings_translator_help": "プラグインは「拡張機能」で有効にする必要があります",

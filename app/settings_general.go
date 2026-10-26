@@ -3,6 +3,7 @@ package app
 import (
 	"cmp"
 	"context"
+	"math"
 	"reflect"
 	"slices"
 	"strconv"
@@ -305,20 +306,13 @@ func (p *settingsPage) generalView(c *ui.Context) {
 				return
 			}
 			t, th := theme.Of(c), c.Theme()
-			if p.collapseThresholdText == "" {
-				p.collapseThresholdText = strconv.Itoa(cmp.Or(st.ThreadCollapseThreshold, 5))
-			}
-			val, err := strconv.Atoi(strings.TrimSpace(p.collapseThresholdText))
-			bad := err != nil || val < 1 || val > 100
 			settingRow(c, i18n.T("settings.thread_collapse_threshold"), i18n.T("settings.thread_collapse_threshold.help"), func() {
-				ui.Row(c).Gap(th.Space(2)).AlignItems(ui.Center).Children(func() {
-					in := kit.Input(c, &p.collapseThresholdText, kit.InputOpts{Invalid: bad}).
-						Width(theme.PortWidth).Radius(t.Radius.Md).Label(i18n.T("settings.thread_collapse_threshold"))
-					if in.Changed() {
-						if n, err := strconv.Atoi(strings.TrimSpace(p.collapseThresholdText)); err == nil && n >= 1 && n <= 100 {
-							st.ThreadCollapseThreshold = n
-						}
+				n := float64(st.ThreadCollapseThreshold)
+				ui.Row(c).Width(theme.UsageSelectMin).Gap(th.Space(3)).AlignItems(ui.Center).Children(func() {
+					if ui.Slider(c, &n, core.MinThreadCollapse, core.MaxThreadCollapse).Step(1).Grow(1).Shrink(1).Label(i18n.T("settings.thread_collapse_threshold")).Changed() {
+						st.ThreadCollapseThreshold = int(math.Round(n))
 					}
+					kit.Text(c, strconv.Itoa(st.ThreadCollapseThreshold), t.Text.Sm).Width(th.Space(10)).TextAlign(ui.End).TextColor(t.Muted)
 				})
 			})
 		})
