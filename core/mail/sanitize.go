@@ -5,6 +5,7 @@ import (
 	"net/http"
 	"net/url"
 	"regexp"
+	"slices"
 	"strconv"
 	"strings"
 
@@ -191,13 +192,10 @@ func prepare(src string, received bool) (string, int, []styleSheet, bool) {
 		if n.Type != html.ElementNode {
 			return
 		}
-		if received && n.DataAtom == atom.Meta {
-			name, _ := attr(n, "name")
+		if name, _ := attr(n, "name"); received && n.DataAtom == atom.Meta && strings.EqualFold(name, "color-scheme") {
+			// "light dark" only says the mail can be shown either way, not that it is dark
 			content, _ := attr(n, "content")
-			name = strings.ToLower(name)
-			if (name == "color-scheme" || name == "supported-color-schemes") &&
-				strings.Contains(strings.ToLower(content), "dark") &&
-				!strings.Contains(strings.ToLower(content), "only light") {
+			if f := strings.Fields(strings.ToLower(content)); slices.Contains(f, "dark") && !slices.Contains(f, "light") {
 				darkCanvas = true
 			}
 		}
@@ -208,9 +206,7 @@ func prepare(src string, received bool) (string, int, []styleSheet, bool) {
 			}
 		}
 		if received && (n.DataAtom == atom.Table || n.DataAtom == atom.Div) {
-			role, _ := attr(n, "role")
-			bg := elementBackground(n)
-			if role != "button" && isDarkColor(bg) && (isContainer(n) || (n.Parent != nil && n.Parent.DataAtom == atom.Body)) {
+			if role, _ := attr(n, "role"); role != "button" && isContainer(n) && topLevel(n) && isDarkColor(elementBackground(n)) {
 				darkCanvas = true
 			}
 		}
@@ -234,17 +230,19 @@ func prepare(src string, received bool) (string, int, []styleSheet, bool) {
 			}
 		}
 		if s, ok := attr(n, "style"); ok {
+			st := s
 			if strings.Contains(strings.ToLower(s), "url(") {
 				blocked++
 				if rest, u := splitBackground(s); u != "" {
 					setAttr(n, bgAttr, u)
-					s = rest
+					st = rest
 				}
 			}
-			if s = cleanStyle(s); s != "" {
-				setAttr(n, "style", s)
-			} else {
-				delAttr(n, "style")
+			if received { // bluemonday drops a whole style it cannot parse, as "a: b;\n  " can be
+				st = cleanStyle(st)
+			}
+			if st != s {
+				setAttr(n, "style", st)
 			}
 		}
 		if n.DataAtom != atom.Img {
@@ -365,7 +363,10 @@ func Sanitize(src string, inline map[string]Attachment, loadRemote bool) (safe s
 	safe = finish(p.Sanitize(prepared), inline, nil, loadRemote, false)
 	css, darkCSS := sanitizeCSS(sheets)
 	if darkCSS || darkCanvas {
-		// The reader keeps the mail's own dark styles, not its own inversion.
+		// The reader keeps the mail's own dark styles, not its own inversion. As
+		// html.Render writes it, so a body written again (the image proxy's) starts the same.
+		// A dark canvas with no styles still gets the (empty) sheet: the reader has only
+		// the body's markup to tell by.
 		safe = `<style data-dark="">` + css + "</style>" + safe
 	} else if css != "" {
 		safe = "<style>" + css + "</style>" + safe
@@ -387,85 +388,86 @@ func SanitizeDraft(src string, cids map[string]bool) string {
 	return finish(p.Sanitize(prepared), nil, cids, false, true)
 }
 
-// cleanStyle normalises an element's inline style declarations: trimming whitespace,
-// newlines and empty declarations so bluemonday's parser does not drop the attribute.
+// cleanStyle rejoins an element's inline declarations trimmed, dropping empty
+// ones; a ; within quotes or parentheses (a data: URL) does not end one.
 func cleanStyle(s string) string {
-	parts := strings.Split(s, ";")
 	var out []string
-	for _, p := range parts {
-		p = strings.TrimSpace(p)
-		if p != "" {
-			out = append(out, p)
+	var quote byte
+	depth, start := 0, 0
+	for i := 0; i <= len(s); i++ {
+		if i < len(s) {
+			switch c := s[i]; {
+			case quote != 0:
+				if c == quote {
+					quote = 0
+				}
+				continue
+			case c == '"' || c == '\'':
+				quote = c
+				continue
+			case c == '(':
+				depth++
+			case c == ')' && depth > 0:
+				depth--
+			}
+			if depth > 0 || s[i] != ';' {
+				continue
+			}
 		}
-	}
-	if len(out) == 0 {
-		return ""
+		if d := strings.TrimSpace(s[start:i]); d != "" {
+			out = append(out, d)
+		}
+		start = i + 1
 	}
 	return strings.Join(out, "; ")
 }
 
-func parseHex(c byte) uint8 {
-	switch {
-	case '0' <= c && c <= '9':
-		return c - '0'
-	case 'a' <= c && c <= 'f':
-		return c - 'a' + 10
-	case 'A' <= c && c <= 'F':
-		return c - 'A' + 10
-	}
-	return 0
-}
-
+// isDarkColor reports whether a background is dark and opaque enough to be the
+// mail's canvas. One it cannot read is not: guessing black would keep a light
+// mail uninverted.
 func isDarkColor(val string) bool {
-	val = strings.TrimSpace(strings.ToLower(val))
-	val = strings.TrimSuffix(val, "!important")
-	val = strings.TrimSpace(val)
-	if val == "" || val == "transparent" || val == "inherit" || val == "initial" || val == "unset" || val == "none" {
-		return false
-	}
+	val = strings.ToLower(strings.TrimSpace(val))
 	switch val {
 	case "black", "navy", "darkblue", "midnightblue", "darkgreen", "darkslategray", "maroon":
 		return true
-	case "white", "whitesmoke", "snow", "ghostwhite", "floralwhite", "linen", "antiquewhite":
+	}
+	rgba := []float64{0, 0, 0, 1}
+	if h, ok := strings.CutPrefix(val, "#"); ok {
+		if len(h) == 3 || len(h) == 4 { // #abc is #aabbcc
+			var b strings.Builder
+			for i := range len(h) {
+				b.WriteString(h[i:i+1] + h[i:i+1])
+			}
+			h = b.String()
+		}
+		v, err := strconv.ParseUint(h, 16, 32)
+		if err != nil || len(h) != 6 && len(h) != 8 {
+			return false
+		}
+		if len(h) == 8 {
+			rgba[3] = float64(v&0xff) / 255
+			v >>= 8
+		}
+		rgba[0], rgba[1], rgba[2] = float64(v>>16), float64(v>>8&0xff), float64(v&0xff)
+	} else if args, ok := strings.CutSuffix(val, ")"); ok && (strings.HasPrefix(args, "rgb(") || strings.HasPrefix(args, "rgba(")) {
+		parts := strings.Split(args[strings.IndexByte(args, '(')+1:], ",")
+		if len(parts) != 3 && len(parts) != 4 {
+			return false
+		}
+		for i, p := range parts {
+			f, err := strconv.ParseFloat(strings.TrimSpace(p), 64)
+			if err != nil {
+				return false // rgb(0 0 0), percentages: not read
+			}
+			rgba[i] = f
+		}
+	} else {
 		return false
 	}
-	if strings.HasPrefix(val, "#") {
-		hex := val[1:]
-		var r, g, b uint8
-		switch len(hex) {
-		case 3, 4:
-			r = parseHex(hex[0]) * 17
-			g = parseHex(hex[1]) * 17
-			b = parseHex(hex[2]) * 17
-		case 6, 8:
-			r = parseHex(hex[0])*16 + parseHex(hex[1])
-			g = parseHex(hex[2])*16 + parseHex(hex[3])
-			b = parseHex(hex[4])*16 + parseHex(hex[5])
-		default:
-			return false
-		}
-		lum := (299*int(r) + 587*int(g) + 114*int(b)) / 1000
-		return lum < 128
-	}
-	if strings.HasPrefix(val, "rgb(") || strings.HasPrefix(val, "rgba(") {
-		start := strings.IndexByte(val, '(')
-		end := strings.IndexByte(val, ')')
-		if start < 0 || end < 0 || end <= start {
-			return false
-		}
-		args := strings.Split(val[start+1:end], ",")
-		if len(args) < 3 {
-			return false
-		}
-		r, _ := strconv.Atoi(strings.TrimSpace(args[0]))
-		g, _ := strconv.Atoi(strings.TrimSpace(args[1]))
-		b, _ := strconv.Atoi(strings.TrimSpace(args[2]))
-		lum := (299*r + 587*g + 114*b) / 1000
-		return lum < 128
-	}
-	return false
+	return rgba[3] >= 0.5 && 0.299*rgba[0]+0.587*rgba[1]+0.114*rgba[2] < 128
 }
 
+// elementBackground is n's background colour as written: bgcolor, else its style's.
 func elementBackground(n *html.Node) string {
 	if bg, ok := attr(n, "bgcolor"); ok && bg != "" {
 		return bg
@@ -475,6 +477,11 @@ func elementBackground(n *html.Node) string {
 		return c
 	}
 	if b, ok := decls["background"]; ok && b != "" {
+		if i := strings.Index(b, "rgb"); i >= 0 { // whole, though it may hold spaces
+			if j := strings.IndexByte(b[i:], ')'); j >= 0 {
+				return b[i : i+j+1]
+			}
+		}
 		for _, f := range strings.Fields(b) {
 			if strings.HasPrefix(f, "#") || strings.HasPrefix(f, "rgb") || f == "black" || f == "white" {
 				return f
@@ -487,6 +494,26 @@ func elementBackground(n *html.Node) string {
 	return ""
 }
 
+// topLevel reports whether n is a child of <body>, or a grandchild through one
+// wrapping element (a table's rows and cells not counted): a dark footer or banner
+// deeper in does not make the canvas dark.
+func topLevel(n *html.Node) bool {
+	wrappers := 0
+	for p := n.Parent; p != nil; p = p.Parent {
+		switch p.DataAtom {
+		case atom.Body:
+			return true
+		case atom.Tbody, atom.Thead, atom.Tfoot, atom.Tr, atom.Td, atom.Th:
+		default:
+			if wrappers++; wrappers > 1 {
+				return false
+			}
+		}
+	}
+	return false
+}
+
+// isContainer reports whether n spans the page's width, as a mail's canvas does.
 func isContainer(n *html.Node) bool {
 	if w, ok := attr(n, "width"); ok && (w == "100%" || w == "100") {
 		return true

@@ -390,3 +390,35 @@ func TestSanitizeDarkCanvas(t *testing.T) {
 	safeLight, _ := mail.Sanitize(light, nil, false)
 	assert.False(t, strings.HasPrefix(safeLight, `<style data-dark="">`), "light email is not dark-aware")
 }
+
+// A ; inside quotes or a data: URL does not split a declaration, so the ones
+// around it survive.
+func TestSanitizeStyleSemicolonInValue(t *testing.T) {
+	safe, _ := mail.Sanitize(`<span style="
+      font-family: 'A;B', sans-serif;
+      list-style-image: url(data:image/png;base64,AAAA);
+      color: #123456;
+  ">x</span>`, nil, false)
+	assert.Contains(t, safe, "color: #123456")
+}
+
+// What marks a mail as painted on a dark canvas, and what does not.
+func TestSanitizeDarkCanvasBounds(t *testing.T) {
+	dark := func(src string) bool {
+		safe, _ := mail.Sanitize(src, nil, false)
+		return strings.HasPrefix(safe, `<style data-dark="">`)
+	}
+	assert.True(t, dark(`<div style="width:100%;background-color:#111">x</div>`), "a full-width div by style")
+	assert.True(t, dark(`<center><table width="100%" style="background:rgb(20, 20, 20)"><tr><td>x</td></tr></table></center>`), "through one wrapper")
+	assert.True(t, dark(`<meta name="color-scheme" content="only dark"><p>x</p>`))
+
+	assert.False(t, dark(`<table width="100%" bgcolor="#00000000"><tr><td>x</td></tr></table>`), "transparent black, by hex")
+	assert.False(t, dark(`<div style="width:100%;background-color:rgba(0,0,0,0)">x</div>`), "transparent black, by rgba")
+	assert.False(t, dark(`<div style="width:100%;background-color:#zzz">x</div>`), "a colour it cannot read")
+	assert.False(t, dark(`<div style="background-color:#111">x</div>`), "not full width")
+	assert.False(t, dark(`<table width="100%" bgcolor="#000" role="button"><tr><td>x</td></tr></table>`), "a button")
+	assert.False(t, dark(`<meta name="color-scheme" content="light dark"><p>x</p>`), "either scheme is not a dark one")
+	assert.False(t, dark(`<table width="100%"><tr><td><table width="600"><tr><td>Hello`+
+		`<table width="100%" bgcolor="#222"><tr><td>Footer</td></tr></table></td></tr></table></td></tr></table>`),
+		"a dark footer deep in a light mail")
+}
