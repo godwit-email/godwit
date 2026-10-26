@@ -497,60 +497,43 @@ func (s *Service) callModelPlugin(ctx context.Context, name string, rp *runningP
 	return s.pluginSucceeded(ctx, name, rp.gen)
 }
 
-// TestPluginModel tests capability (judge or gen) of a plugin model reference.
+// TestPluginModel tests the plugin's model ref names, as the model settings
+// list does: a judge answers a yes/no, any other model the shortest real
+// generation. Nothing is stored: a plugin's model has no service row.
 func (s *Service) TestPluginModel(ctx context.Context, ref string) (CapStatus, error) {
-	if !isPluginRef(ref) {
-		return CapStatus{}, ErrModelUnavailable
-	}
 	start := time.Now()
-	var isJudge bool
-	if m, ok, err := s.appleIntelligenceModel(ctx, ref); ok {
-		if err != nil {
-			st := CapStatus{State: "fail", At: time.Now()}
-			st.Code, st.HTTPStatus = capCode(err)
-			return st, err
-		}
-		isJudge = m.Judges()
-	} else {
-		_, _, m, _, err := s.pluginModel(ctx, ref)
-		if err != nil {
-			st := CapStatus{State: "fail", At: time.Now()}
-			st.Code, st.HTTPStatus = capCode(err)
-			return st, err
-		}
-		isJudge = m.Judges()
-	}
-	if isJudge {
-		j, err := s.pluginJudge(ctx, ref)
-		if err != nil {
-			st := CapStatus{State: "fail", At: time.Now()}
-			st.Code, st.HTTPStatus = capCode(err)
-			return st, err
-		}
-		qs := []ai.Question{{Name: "ping", Type: ai.Predicate, Instructions: "Ping"}}
-		_, err = j.Ask(ctx, "Ping", qs)
+	status := func(err error) (CapStatus, error) {
 		st := CapStatus{State: "ok", LatencyMs: int(time.Since(start).Milliseconds()), At: time.Now()}
 		if err != nil {
-			st.State = "fail"
+			st.State, st.LatencyMs = "fail", 0
 			st.Code, st.HTTPStatus = capCode(err)
 		}
 		return st, err
+	}
+	if !isPluginRef(ref) {
+		return status(ErrModelUnavailable)
+	}
+	m, ok, err := s.appleIntelligenceModel(ctx, ref)
+	if !ok {
+		_, _, m, _, err = s.pluginModel(ctx, ref)
+	}
+	if err != nil {
+		return status(err)
+	}
+	if m.Judges() {
+		j, err := s.pluginJudge(ctx, ref)
+		if err == nil {
+			_, err = j.Ask(ctx, "Ping", []ai.Question{{Name: "ping", Type: ai.Predicate, Instructions: "Ping"}})
+		}
+		return status(err)
 	}
 	rm, err := s.resolvePluginModel(ctx, ref)
 	if err != nil {
-		st := CapStatus{State: "fail", At: time.Now()}
-		st.Code, st.HTTPStatus = capCode(err)
-		return st, err
+		return status(err)
 	}
 	e, err := s.aiEngine()
-	if err != nil {
-		return CapStatus{State: "fail", At: time.Now()}, err
+	if err == nil {
+		_, err = s.runText(ctx, e, ai.Request{Model: rm, Prompt: "Reply with OK.", MaxTurns: 1}, 0)
 	}
-	_, err = s.runText(ctx, e, ai.Request{Model: rm, Prompt: "Reply with OK.", MaxTurns: 1}, 0)
-	st := CapStatus{State: "ok", LatencyMs: int(time.Since(start).Milliseconds()), At: time.Now()}
-	if err != nil {
-		st.State = "fail"
-		st.Code, st.HTTPStatus = capCode(err)
-	}
-	return st, err
+	return status(err)
 }

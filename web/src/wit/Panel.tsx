@@ -1652,16 +1652,15 @@ export function Panel({
     : model;
   // The settings' default among them (none: it is not a model listed).
   const listedDefault = choices?.find((c) => c.default);
-  const handleModelPick = (pickedRef: string) => {
-    models?.pick(pickedRef);
-    const chosenLabel =
-      pickedRef === ""
-        ? model
-          ? t("wit.model.default", model)
-          : t("wit.model.pick")
-        : (choices?.find((c) => c.ref === pickedRef)?.name ??
-          pickedRef.slice(pickedRef.indexOf("/") + 1));
-    setModelNotice(t("wit.model.changed", chosenLabel));
+  // picks ref ("": the default) and says so in the conversation
+  const pickModel = (ref: string) => {
+    models?.pick(ref);
+    const label = ref
+      ? (choices?.find((c) => c.ref === ref)?.name ?? ref)
+      : model
+        ? t("wit.model.default", model)
+        : t("wit.model.pick");
+    setModelNotice(t("wit.model.changed", label));
   };
   // The menu groups the choices by their service, in the order they come.
   const services = new Map<string, ModelChoice[]>();
@@ -1936,7 +1935,7 @@ export function Panel({
                       group: session,
                       label: t("wit.model.default", model),
                       checked: !models.ref,
-                      run: now(() => handleModelPick("")),
+                      run: now(() => pickModel("")),
                     },
                   ]),
               ...(choices ?? []).map((c) => ({
@@ -1946,7 +1945,7 @@ export function Panel({
                 hint: c.service,
                 checked: (models.ref || listedDefault?.ref) === c.ref,
                 // picking the default follows it again (no model of its own)
-                run: now(() => handleModelPick(c.ref === listedDefault?.ref ? "" : c.ref)),
+                run: now(() => pickModel(c.ref === listedDefault?.ref ? "" : c.ref)),
               })),
               ...(onModels
                 ? [
@@ -2296,7 +2295,7 @@ export function Panel({
                 // the default only by its name when it is none of the models listed
                 <DropdownMenuRadioGroup
                   value={models.ref}
-                  onValueChange={(v: string) => handleModelPick(v)}
+                  onValueChange={(v: string) => pickModel(v)}
                 >
                   <DropdownMenuRadioItem closeOnClick value="">
                     {t("wit.model.default", model)}
@@ -2311,10 +2310,7 @@ export function Panel({
                     // the default model is checked while the conversation follows the default
                     value={models.ref || (listedDefault?.ref ?? "")}
                     // picking the default follows it again (no model of its own)
-                    onValueChange={(v: string) => {
-                      const pickedRef = v === listedDefault?.ref ? "" : v;
-                      handleModelPick(pickedRef);
-                    }}
+                    onValueChange={(v: string) => pickModel(v === listedDefault?.ref ? "" : v)}
                   >
                     {list.map((c) => (
                       <DropdownMenuRadioItem closeOnClick key={c.ref} value={c.ref}>

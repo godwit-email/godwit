@@ -930,7 +930,7 @@ func TestDeriveUsage(t *testing.T) {
 			smalls: []string{"插件未运行：plugin/lux/chat", "与默认模型相同", "Anthropic / [MODEL D]"}},
 	} {
 		t.Run(c.name, func(t *testing.T) {
-			u := deriveUsage(c.st, c.svcs, c.plugins)
+			u := deriveUsage(c.st, c.svcs, c.plugins, nil)
 			if u.gen != c.gen || u.judge != c.judge {
 				t.Errorf("lines %+v %+v, want %+v %+v", u.gen, u.judge, c.gen, c.judge)
 			}
@@ -960,7 +960,7 @@ func TestDeriveUsageSmall(t *testing.T) {
 	}}}
 
 	// 1. Same as default model
-	u1 := deriveUsage(core.Settings{DefaultModel: "anthropic/[MODEL D]", SmallModel: ""}, []core.ModelService{ant, smallSvc}, plugins)
+	u1 := deriveUsage(core.Settings{DefaultModel: "anthropic/[MODEL D]", SmallModel: ""}, []core.ModelService{ant, smallSvc}, plugins, nil)
 	if u1.small != u1.gen {
 		t.Errorf("u1.small %+v != u1.gen %+v", u1.small, u1.gen)
 	}
@@ -969,7 +969,7 @@ func TestDeriveUsageSmall(t *testing.T) {
 	}
 
 	// 2. Custom small model service
-	u2 := deriveUsage(core.Settings{DefaultModel: "anthropic/[MODEL D]", SmallModel: "fast/small-m"}, []core.ModelService{ant, smallSvc}, plugins)
+	u2 := deriveUsage(core.Settings{DefaultModel: "anthropic/[MODEL D]", SmallModel: "fast/small-m"}, []core.ModelService{ant, smallSvc}, plugins, nil)
 	if u2.small.look != lookOK || !strings.Contains(u2.small.text, "FastSvc") || !strings.Contains(u2.small.text, "45 ms") {
 		t.Errorf("u2.small unexpected: %+v", u2.small)
 	}
@@ -982,28 +982,69 @@ func TestDeriveUsageSmall(t *testing.T) {
 	}
 }
 
-func TestModelsViewLiveProbing(t *testing.T) {
-	h := newHarness(t)
-	m := h.app.pages[PageSettings].(*settingsPage).models
-	var mu sync.Mutex
-	var probedCaps []string
-	m.testService = func(ctx context.Context, id int64, in core.ModelServiceInput, c string) (core.CapStatus, error) {
-		mu.Lock()
-		probedCaps = append(probedCaps, c)
-		mu.Unlock()
-		return core.CapStatus{State: "ok", LatencyMs: 99}, nil
+// TestServiceRowTest: 测试连接 from a service row's menu tests it as saved,
+// and core stores the status the row then shows.
+func TestServiceRowTest(t *testing.T) {
+	h := withLLM(t)
+	h.openSettings("models")
+	h.see("test")
+	if s, _ := h.modelService("test"); len(s.Status) != 0 {
+		t.Fatalf("tested before asked: %+v", s.Status)
 	}
-	m.services = []core.ModelService{
-		{ID: 1, Name: "TestSvc", Slug: "test", Kind: "openai", Models: []string{"m1"}, JudgeFormat: "decisions"},
+	if err := h.tt.RightClick("test"); err != nil {
+		t.Fatal(err)
 	}
-	m.probeActive()
-	h.until("probed gen and judge", func() bool {
-		mu.Lock()
-		defer mu.Unlock()
-		return slices.Contains(probedCaps, core.CapGen) && slices.Contains(probedCaps, core.CapJudge) &&
-			len(m.services) > 0 && m.services[0].Status[core.CapGen].LatencyMs == 99 &&
-			m.services[0].Status[core.CapJudge].LatencyMs == 99
+	if err := h.tt.ChooseMenuItem("测试连接"); err != nil {
+		t.Fatalf("%v; menu %q", err, h.tt.Menu())
+	}
+	h.until("status stored", func() bool {
+		s, _ := h.modelService("test")
+		return s.Status[core.CapGen].State == "ok"
 	})
+	h.until("shown", func() bool {
+		m := h.app.pages[PageSettings].(*settingsPage).models
+		return len(m.services) == 1 && m.services[0].Status[core.CapGen].State == "ok"
+	})
+}
+
+// TestPluginRowTest: a plugin row's test covers each of its models, Apple
+// Intelligence's classifier with its on-device model, and its chip says how.
+func TestPluginRowTest(t *testing.T) {
+	h := withLLM(t)
+	m := h.openSettings("models").models
+	var mu sync.Mutex
+	var tested []string
+	m.testPlugin = func(_ context.Context, ref string) (core.CapStatus, error) {
+		mu.Lock()
+		tested = append(tested, ref)
+		mu.Unlock()
+		if strings.HasSuffix(ref, "/classifier") {
+			return core.CapStatus{State: "fail", Code: "unavailable"}, core.ErrModelUnavailable
+		}
+		return core.CapStatus{State: "ok", LatencyMs: 12}, nil
+	}
+	p := core.PluginModels{Plugin: core.AppleIntelligencePlugin, Models: []plugins.ProviderModel{
+		{ID: "on-device", Name: "Apple Intelligence", Operation: "small"},
+		{ID: "classifier", Name: "Apple Intelligence", Operation: "judge"},
+	}}
+	if l := pluginLook(p, nil); l.look != lookOK || l.text != "正常" {
+		t.Fatalf("untested %+v", l)
+	}
+	m.testPluginRow(p)
+	h.until("both tested", func() bool { return len(m.pluginStatus) == 2 })
+	mu.Lock()
+	defer mu.Unlock()
+	slices.Sort(tested)
+	if want := []string{pluginRef(p.Plugin, "classifier"), pluginRef(p.Plugin, "on-device")}; !slices.Equal(tested, want) {
+		t.Fatalf("tested %q, want %q", tested, want)
+	}
+	if l := pluginLook(p, m.pluginStatus); l.look != lookFail {
+		t.Fatalf("a failed classifier shows %+v", l)
+	}
+	delete(m.pluginStatus, pluginRef(p.Plugin, "classifier"))
+	if l := pluginLook(p, m.pluginStatus); l.look != lookOK || l.text != "连接正常 · 12 ms" {
+		t.Fatalf("passed %+v", l)
+	}
 }
 
 // TestServiceLook: the list's chip is Key 失效 on a refused key, 连接失败 on

@@ -138,11 +138,7 @@ func (p *settingsPage) refresh(hints []events.Event) {
 			l.answer("", false)
 		}
 	}
-	sec, acc := p.section()
-	if sec != "models" {
-		p.models.stopProbe()
-	}
-	switch {
+	switch sec, acc := p.section(); {
 	case acc != nil:
 		p.readUsage(acc.ID)
 		p.readMailbox(acc.ID)
