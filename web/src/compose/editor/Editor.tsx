@@ -83,13 +83,15 @@ export function Editor(props: {
     plugins: [...plugins, HeldBlockPlugin],
     value: (e) => fromHTML(e, initial),
   });
-  const quiet = useRef(false); // the change setValue makes is the page's own, not an edit
+  // The body setValue made, the page's own and no edit. Slate reports changes a microtask later, so the
+  // next report is matched against it, never assumed to be it.
+  const set = useRef<string | null>(null);
   useImperativeHandle(
     ref,
     () => ({
       setValue(html) {
-        quiet.current = true;
         editor.tf.withNewBatch(() => editor.tf.setValue(deserialize(editor, html)));
+        set.current = toHTML(editor.children);
       },
     }),
     [editor],
@@ -192,8 +194,10 @@ export function Editor(props: {
         editor={editor}
         readOnly={readOnly}
         onValueChange={({ value }) => {
-          if (quiet.current) quiet.current = false;
-          else onChange(toHTML(value));
+          const html = toHTML(value);
+          const own = html === set.current;
+          set.current = null;
+          if (!own) onChange(html);
         }}
       >
         <div className="flex flex-col">

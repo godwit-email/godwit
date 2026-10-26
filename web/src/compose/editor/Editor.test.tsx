@@ -266,6 +266,17 @@ describe("Editor", () => {
     await waitFor(() => expect(last(onChange)).toBe("<p>b</p>"));
   });
 
+  it("a setValue of the same body leaves the next edit reported", async () => {
+    const user = userEvent.setup();
+    const { box, onChange, ref } = setup("<p>a</p>");
+    act(() => ref.current?.setValue("<p>a</p>"));
+    await act(async () => {});
+    expect(onChange).not.toHaveBeenCalled();
+    await select(box, 0, 0);
+    await user.click(screen.getByRole("button", { name: "compose.quote" }));
+    await waitFor(() => expect(last(onChange)).toBe("<blockquote><p>a</p></blockquote>"));
+  });
+
   it("the font menus apply to the selection and show the choice", async () => {
     const user = userEvent.setup();
     const { box, onChange } = setup("<p>hello world</p>");
