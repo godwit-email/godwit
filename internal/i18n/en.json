@@ -2032,6 +2032,7 @@
   "wit_compose_accept": "Accept",
   "wit_compose_accept_all": "Accept all",
   "wit_compose_adjust": "Adjust",
+  "wit_compose_adjust_placeholder": "What should change in this proposal?",
   "wit_compose_applied": "Applied to the body",
   "wit_compose_back": "Back to new version",
   "wit_compose_cmdk": "⌘K · Change only the selection",
@@ -2087,6 +2088,10 @@
     }
   },
   "wit_compose_rewrite_plain": "Rewritten",
+  "wit_compose_status_applied": "Proposal accepted.",
+  "wit_compose_status_initial": "Draft written.",
+  "wit_compose_status_no_change": "No changes to the draft.",
+  "wit_compose_status_rejected": "Proposal discarded.",
   "wit_compose_translated": "Translated",
   "wit_compose_source": "Original email",
   "wit_compose_translate": "Translate",

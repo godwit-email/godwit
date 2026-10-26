@@ -62,7 +62,7 @@ func (e skillEnv) assist(t *testing.T, draftID int64, input string) []WitEvent {
 func (e skillEnv) propose(t *testing.T, draftID int64, html string) WitEvent {
 	t.Helper()
 	b, _ := json.Marshal(map[string]string{"html": html})
-	e.srv.Script(testllm.Turn{Calls: []testllm.Call{{Name: "update_draft", Args: string(b)}}}, testllm.Turn{Text: []string{"Updated."}})
+	e.srv.Script(testllm.Turn{Calls: []testllm.Call{{Name: "update_draft", Args: string(b)}}})
 	evs := e.assist(t, draftID, "improve it")
 	last := evs[len(evs)-1]
 	require.Equal(t, "interrupted", last.Kind, "%+v", last.Err)
@@ -128,8 +128,7 @@ func TestAssistInitialAppliesDirectly(t *testing.T) {
 	e := newAssistEnv(t)
 	d, err := e.s.NewDraft(t.Context(), 1, "new", 0)
 	require.NoError(t, err)
-	e.srv.Script(testllm.Turn{Calls: []testllm.Call{{Name: "update_draft", Args: `{"html":"<p>Thanks, Bob!</p>"}`}}},
-		testllm.Turn{Text: []string{"Written."}})
+	e.srv.Script(testllm.Turn{Calls: []testllm.Call{{Name: "update_draft", Args: `{"html":"<p>Thanks, Bob!</p>"}`}}})
 	evs := e.assist(t, d.ID, "Write a thank-you note")
 	last := evs[len(evs)-1]
 	require.Equal(t, "interrupted", last.Kind, "%+v", last.Err)
@@ -144,7 +143,7 @@ func TestAssistInitialAppliesDirectly(t *testing.T) {
 	assert.Equal(t, 1, e.count(t, "SELECT COUNT(*) FROM audit_log WHERE tool = 'update_draft' AND decision = 'executed' AND target_id = ?", d.ID))
 	e.waitRunOf(t, a.RunID, "done")
 	reqs := e.srv.Requests()
-	require.Len(t, reqs, 2, "the run goes on with the result")
+	require.Len(t, reqs, 1, "the run finishes directly without re-invoking the model")
 	assert.Equal(t, []string{"ask_user_question", "get_message", "read_attachment", "search_mail", "update_draft"}, toolNames(t, reqs[0]))
 }
 
@@ -416,7 +415,7 @@ func TestAssistSubjectBlankKeptAndUndone(t *testing.T) {
 	d := e.newDraft(t, "Old", "<p>Version one.</p>")
 	propose := func(html, subject string) Approval {
 		b, _ := json.Marshal(map[string]string{"html": html, "subject": subject})
-		e.srv.Script(testllm.Turn{Calls: []testllm.Call{{Name: "update_draft", Args: string(b)}}}, testllm.Turn{Text: []string{"Updated."}})
+		e.srv.Script(testllm.Turn{Calls: []testllm.Call{{Name: "update_draft", Args: string(b)}}})
 		evs := e.assist(t, d.ID, "improve it")
 		last := evs[len(evs)-1]
 		require.Equal(t, "interrupted", last.Kind, "%+v", last.Err)
@@ -795,6 +794,36 @@ func TestAssistSkillUsage(t *testing.T) {
 	assert.Equal(t, "12", queryStr(t, e.s, "SELECT output_tokens FROM runs ORDER BY id DESC LIMIT 1"))
 }
 
+func TestAssistSkillStreamsReasoningAndNoDraftText(t *testing.T) {
+	e := newAssistEnv(t)
+	d := e.replyDraft(t, "<p>Hallo</p>")
+	convID, err := e.s.AssistConversation(t.Context(), d.ID, true)
+	require.NoError(t, err)
+	require.NoError(t, e.s.SetConversationModel(t.Context(), convID, "", "high"))
+
+	e.srv.Script(testllm.Turn{
+		Think: []string{"Thinking about making it longer."},
+		Text:  []string{"<p>Sehr geehrte Damen und Herren, dies ist ausführlicher.</p>"},
+	})
+	ch, err := e.s.AssistSkill(t.Context(), d.ID, "longer", SkillOptions{})
+	require.NoError(t, err)
+	evs := drainWit(t, ch)
+	require.NotEmpty(t, evs)
+
+	var kinds []string
+	for _, ev := range evs {
+		kinds = append(kinds, ev.Kind)
+	}
+	assert.Contains(t, kinds, "reasoning", "reasoning events must be streamed to the client")
+	assert.NotContains(t, kinds, "text", "raw draft html text events must NOT be streamed to chat")
+	assert.Equal(t, "interrupted", evs[len(evs)-1].Kind)
+	require.Len(t, evs[len(evs)-1].Approvals, 1)
+
+	reqs := e.srv.Requests()
+	require.Len(t, reqs, 1)
+	assert.Contains(t, string(reqs[0].Body), `"reasoning_effort":"high"`)
+}
+
 func TestSplitSubject(t *testing.T) {
 	for _, c := range []struct{ in, subject, body string }{
 		{"<subject>Hi</subject>\n<body><p>A</p></body>", "Hi", "<p>A</p>"},
@@ -810,6 +839,93 @@ func TestSplitSubject(t *testing.T) {
 	_, body, ok := splitSubject("<p>No subject</p>")
 	assert.False(t, ok)
 	assert.Equal(t, "<p>No subject</p>", body)
+}
+
+func TestAssistNoChangeSummaryAndAutoResolve(t *testing.T) {
+	e := newAssistEnv(t)
+	d := e.replyDraft(t, "<p>Exact text.</p>")
+	b, _ := json.Marshal(map[string]string{"html": "<p>Exact text.</p>"})
+	e.srv.Script(testllm.Turn{Calls: []testllm.Call{{Name: "update_draft", Args: string(b)}}},
+		testllm.Turn{Text: []string{"The draft already says that."}})
+	evs := e.assist(t, d.ID, "keep it identical")
+	last := evs[len(evs)-1]
+	require.Equal(t, "interrupted", last.Kind)
+	require.Len(t, last.Approvals, 1)
+	a := last.Approvals[0]
+	assert.Equal(t, "no_change", a.Summary, "zero changes marked as no_change")
+	assert.Equal(t, "done", a.State, "auto-resolved at once so user sees no approval prompt")
+	e.waitRunOf(t, a.RunID, "done")
+	assert.Equal(t, d.HTML, e.getDraft(t, d.ID).HTML)
+	assert.Equal(t, 1, e.count(t, "SELECT COUNT(*) FROM audit_log WHERE tool = 'update_draft' AND decision = 'no_change' AND target_id = ?", d.ID))
+	reqs := e.srv.Requests()
+	require.Len(t, reqs, 2, "the model is resumed to say why nothing changed")
+	assert.Contains(t, string(reqs[1].Body), `\"updated\":false`)
+}
+
+func TestAssistFormattingOnlyIsAChange(t *testing.T) {
+	e := newAssistEnv(t)
+	d := e.replyDraft(t, "<p>Exact text.</p>")
+	last := e.propose(t, d.ID, "<p><strong>Exact</strong> text.</p>")
+	require.Len(t, last.Approvals, 1)
+	assert.Equal(t, kindPartial, last.Approvals[0].Summary, "bold alone is a change to review")
+	assert.Equal(t, "pending", last.Approvals[0].State)
+}
+
+func TestAssistPreWhitespaceIsAChange(t *testing.T) {
+	e := newAssistEnv(t)
+	d := e.replyDraft(t, "<pre>first\nsecond</pre>")
+	last := e.propose(t, d.ID, "<pre>first second</pre>")
+	require.Len(t, last.Approvals, 1)
+	assert.NotEqual(t, kindNoChange, last.Approvals[0].Summary, "whitespace in <pre> shows")
+	assert.Equal(t, "pending", last.Approvals[0].State)
+}
+
+func TestAssistRejectFinishesDirectly(t *testing.T) {
+	e := newAssistEnv(t)
+	d := e.replyDraft(t, "<p>Initial text.</p>")
+	last := e.propose(t, d.ID, "<p>Different proposed text.</p>")
+	a := last.Approvals[0]
+	require.Equal(t, "pending", a.State)
+	require.NoError(t, e.s.ResolveApproval(t.Context(), a.ID, false))
+	e.waitRunOf(t, a.RunID, "done")
+	ap, err := e.s.getApproval(t.Context(), a.ID)
+	require.NoError(t, err)
+	assert.Equal(t, "rejected", ap.State)
+	assert.Equal(t, d.HTML, e.getDraft(t, d.ID).HTML, "draft remains unchanged upon rejection")
+	assert.Len(t, e.srv.Requests(), 1, "model was not re-invoked on rejection")
+}
+
+func TestAssistAcceptFinishesDirectly(t *testing.T) {
+	e := newAssistEnv(t)
+	d := e.replyDraft(t, "<p>Initial text.</p>")
+	last := e.propose(t, d.ID, "<p>Accepted proposed text.</p>")
+	a := last.Approvals[0]
+	require.Equal(t, "pending", a.State)
+	require.NoError(t, e.s.ResolveApproval(t.Context(), a.ID, true))
+	e.waitRunOf(t, a.RunID, "done")
+	ap, err := e.s.getApproval(t.Context(), a.ID)
+	require.NoError(t, err)
+	assert.Equal(t, "done", ap.State)
+	got, _, _ := parts(t, e.getDraft(t, d.ID).HTML)
+	assert.Equal(t, "<p>Accepted proposed text.</p>", got)
+	assert.Len(t, e.srv.Requests(), 1, "model was not re-invoked on accept")
+}
+
+func TestAssistTextExplanationWhenNoDraftUpdate(t *testing.T) {
+	e := newAssistEnv(t)
+	d := e.replyDraft(t, "<p>Dear recipient,</p><p>Initial draft.</p>")
+	explanation := "The current draft does not mention the clinic name, so no text change was necessary."
+	e.srv.Script(testllm.Turn{Text: []string{explanation}})
+	evs := e.assist(t, d.ID, "Clinic name is ABC and not DEF")
+	var texts []string
+	for _, ev := range evs {
+		if ev.Kind == "text" {
+			texts = append(texts, ev.Text)
+		}
+	}
+	assert.Contains(t, strings.Join(texts, ""), "no text change was necessary")
+	assert.Equal(t, "done", evs[len(evs)-1].Kind)
+	assert.Equal(t, d.HTML, e.getDraft(t, d.ID).HTML, "draft remains unchanged")
 }
 
 // A model picked for a draft stays on its assist conversation, effort kept,

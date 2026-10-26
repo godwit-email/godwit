@@ -947,6 +947,25 @@ function Answer({
         ["done", "failed", "rejected", "stale"].includes(a.state) &&
         !a.draftEdit,
     );
+  // The answer's last draft edit as it stands now, said in one line once it is settled: from the
+  // approval's saved state and summary, so a reload says the same.
+  const edit = m.parts
+    .flatMap((p) => (p.type === "data-approvals" ? p.data : []))
+    .map((a) => approvals.get(String(a.id)) ?? a)
+    .findLast((a) => a.draftEdit);
+  const status = !edit
+    ? undefined
+    : edit.summary === "no_change"
+      ? t("wit.compose.status_no_change")
+      : edit.state === "done"
+        ? t(
+            edit.summary === "initial"
+              ? "wit.compose.status_initial"
+              : "wit.compose.status_applied",
+          )
+        : edit.state === "rejected" || edit.state === "stale"
+          ? t("wit.compose.status_rejected")
+          : undefined;
   const calls = m.parts.filter((p): p is DynamicToolUIPart => p.type === "dynamic-tool");
   const requested = (p: DynamicToolUIPart) =>
     p.state === "approval-requested" ? approvals.get(p.approval.id) : undefined;
@@ -1074,9 +1093,22 @@ function Answer({
             <div className="overflow-hidden rounded-xl border-[0.5px] border-primary">
               <div className="flex items-center gap-2 bg-muted px-3 py-2 leading-5">
                 <span className="font-semibold">{t("wit.compose.review")}</span>
-                <span className="font-mono text-foreground/80 text-sm">{a.tool}</span>
+                <span className="flex-1 font-mono text-foreground/80 text-sm">{a.tool}</span>
+                {review?.onAdjust && (
+                  <Button
+                    size="icon-xs"
+                    variant="ghost"
+                    className="text-muted-foreground"
+                    title={t("wit.compose.adjust")}
+                    aria-label={t("wit.compose.adjust")}
+                    onClick={review.onAdjust}
+                  >
+                    <RiEditLine />
+                  </Button>
+                )}
               </div>
               <div className="px-3 py-2 text-md">{review?.summary}</div>
+              {review?.adjusting}
               <div className="flex gap-1.5 border-muted border-t-[0.5px] px-3 py-2">
                 {review?.actions}
               </div>
@@ -1146,6 +1178,15 @@ function Answer({
       {loose.map((a) => (
         <Settled key={a.id} a={a} onDraft={onDraft} t={t} />
       ))}
+      {status && (
+        <div
+          role="status"
+          className="flex items-center gap-2 rounded-lg bg-sidebar px-3 py-2 text-base"
+        >
+          <RiSparkling2Line className="size-4 shrink-0" />
+          {status}
+        </div>
+      )}
       {live && !moving && working}
       {((text && !live) || (cited.length > 0 && onCite)) && (
         <div className="-mt-1 -ml-1.5 flex items-center">
@@ -1231,7 +1272,14 @@ function Answer({
 }
 
 /** The edit the page reviews: its card in the panel holds its summary, then its decisions. */
-export type PanelReview = { approval: number; summary: ReactNode; actions: ReactNode };
+export type PanelReview = {
+  approval: number;
+  summary: ReactNode;
+  actions: ReactNode;
+  /** Opens or closes the card's adjustment input (调整), shown as adjusting. */
+  onAdjust?(): void;
+  adjusting?: ReactNode;
+};
 
 /**
  * Wit's conversation and input, in either host. As the compose window's panel (layout "panel"):
@@ -1482,13 +1530,13 @@ export function Panel({
     void chat.sendMessage({ text, metadata: { ...metadata, time: Date.now() } });
   };
   const asked = useRef<object | undefined>(undefined);
-  // biome-ignore lint/correctness/useExhaustiveDependencies: only a new handed question asks
+  // biome-ignore lint/correctness/useExhaustiveDependencies: only a new handed question asks, once the panel takes one
   useEffect(() => {
-    if (!handed || asked.current === handed) return;
+    if (!handed || asked.current === handed || locked || running) return;
     asked.current = handed;
     onAsked?.();
     ask(handed.text);
-  }, [handed]);
+  }, [handed, locked, running]);
   // A question not asked after all goes back to the input, unless something was typed since: its
   // text, its quotes, and an edit still one (sent again, it still replaces the old question).
   const putBack = (q: WitUIMessage) => {

@@ -190,7 +190,7 @@ func decideResumes(t *testing.T, accept bool) {
 	assert.Equal(t, f.editable(t, d.ID), bc.Body)
 	assert.Equal(t, accept, strings.Contains(bc.Body, "Tuesday"))
 	f.doneAfter(t, n, a.Run)
-	assert.Contains(t, kinds(f.events(1)[n:]), "text", "the resumed run streams")
+	assert.Contains(t, kinds(f.events(1)[n:]), "done", "the resumed run finishes at once")
 }
 
 func TestComposeFinishValidates(t *testing.T) {

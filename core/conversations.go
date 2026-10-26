@@ -1277,6 +1277,9 @@ func (s *Service) drive(job *runJob, end func(), run runFunc, req ai.Request, ou
 	events, wait := run(job.ctx, req)
 	for ev := range s.expandEvents(job.ctx, events) {
 		if !terminal(WitEvent{Event: ev}) {
+			if job.host != nil && ev.Kind == "text" { // a command's text is the draft it proposes, not chat
+				continue
+			}
 			wev := WitEvent{Event: ev}
 			if ev.Kind == "tool_result" {
 				if c, ok := job.cites.LoadAndDelete(ev.Result.CallID); ok {
@@ -1479,6 +1482,21 @@ func (s *Service) startResume(ctx context.Context, end func(), runID int64) erro
 	if err != nil {
 		return err
 	}
+	if rw == nil && draftEditsOnly(as) { // decided: the edit was the whole answer; closeRun keeps the results in the history
+		convID, err := s.closeRun(ctx, runID, "done", "")
+		if err != nil {
+			return err
+		}
+		// as a run done the usual way (settleRun): the closed history may be over its budget
+		if model, err := s.resolveModel(ctx, store.Str(r[1])); err == nil {
+			if closed, err := s.history(ctx, convID); err == nil {
+				s.compactLater(convID, model, closed)
+			}
+		}
+		end()
+		s.publishWit(convID, WitEvent{ConversationID: convID, RunID: runID, Turn: s.runTurn(ctx, runID), Ends: true, Event: ai.Event{Kind: "done"}})
+		return nil
+	}
 	results := make([]ai.ToolResult, 0, len(as))
 	for _, a := range as {
 		results = append(results, a.toolResult())
@@ -1506,6 +1524,17 @@ func (s *Service) startResume(ctx context.Context, end func(), runID int64) erro
 	req.Effort = snap.Effort // as the run began: Anthropic refuses thinking switched on mid-turn
 	go s.drive(job, end, e.Run, req, nil)
 	return nil
+}
+
+// draftEditsOnly reports whether as are all decided draft edits that leave
+// the model nothing to say: a no_change one resumes it to explain why.
+func draftEditsOnly(as []approvalRow) bool {
+	for _, a := range as {
+		if !isDraftEdit(a.Tool) || a.Summary == kindNoChange {
+			return false
+		}
+	}
+	return len(as) > 0
 }
 
 // questionOf is the text of h's question with seq seq ("" for none).
