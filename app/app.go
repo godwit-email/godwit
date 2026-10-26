@@ -123,6 +123,7 @@ func (o serviceOAuth) Cancel(flowID string) { o.svc.CancelOAuth(flowID) }
 // (win.Update in production). Clock and OAuth default to the real ones.
 type Deps struct {
 	Svc      *core.Service
+	Settings core.Settings
 	Platform Platform
 	Post     func(func())
 	Clock    Clock
@@ -283,7 +284,7 @@ type App struct {
 
 // New builds an App; Start brings it up.
 func New(d Deps) *App {
-	a := &App{setLanguage: d.SetLanguage, svc: d.Svc, plat: d.Platform, post: d.Post, clock: d.Clock, oauth: d.OAuth, sysLang: d.SystemLanguage, vibrancy: d.Vibrancy, appUnread: -1}
+	a := &App{settings: d.Settings, setLanguage: d.SetLanguage, svc: d.Svc, plat: d.Platform, post: d.Post, clock: d.Clock, oauth: d.OAuth, sysLang: d.SystemLanguage, vibrancy: d.Vibrancy, appUnread: -1}
 	if a.setLanguage == nil {
 		a.setLanguage = func(tag string) { i18n.SetLanguage(cmp.Or(tag, a.sysLang)) }
 	}

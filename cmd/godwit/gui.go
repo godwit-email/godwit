@@ -32,12 +32,15 @@ const trafficLightSize, trafficLightInset = 14, 16
 // windowOptions is the main window on goos.
 func windowOptions(goos string) mygo.WindowOptions {
 	o := mygo.WindowOptions{Title: "Godwit", Width: 1280, Height: 820, MinWidth: 960, MinHeight: 600, StateKey: "main",
-		TitleBarStyle: mygo.TitleBarHiddenInset}
+		TitleBarStyle:   mygo.TitleBarHiddenInset,
+		BackgroundColor: "light-dark(#fafafa, #18181b)",
+	}
 	switch goos {
 	case "darwin":
 		// Not hiddenInset: its toolbar makes the title bar as tall as AppKit's
 		// (66 on macOS 26). Center the traffic lights in our own top bar.
 		o.Vibrancy, o.TitleBarStyle = mygo.VibrancySidebar, mygo.TitleBarHidden
+		o.Transparent = true
 		o.TrafficLightPosition = &mygo.Point{X: trafficLightInset, Y: (theme.TopBarHeight - trafficLightSize) / 2}
 	case "windows":
 		o.Vibrancy, o.TitleBarHeight = mygo.VibrancyMica, 40
@@ -240,10 +243,12 @@ func gui(ctx context.Context, dataDir string) int {
 		wit.SetService(svc)
 		reader.SetService(svc)
 		sig.SetService(svc)
+		var st core.Settings
 		uiLang := "" // keep the database preference authoritative over MyGo's saved locale
-		if st, err := svc.GetSettings(ctx); err != nil {
+		if s, err := svc.GetSettings(ctx); err != nil {
 			log.Printf("reading settings: %v; the menus use the system language", err)
 		} else {
+			st = s
 			uiLang = st.UILanguage
 			// Before the window opens: its material and controls follow this, not the system's.
 			mygo.Theme.SetSource(mygo.ThemeSource(st.Theme))
@@ -259,7 +264,7 @@ func gui(ctx context.Context, dataDir string) int {
 		opts := windowOptions(runtime.GOOS)
 		plat = &platform{dataDir: dataDir, svc: svc, windows: windows, wit: wit, roles: roles, reader: reader, sig: sig}
 		var win *mygo.Window
-		a = app.New(app.Deps{Svc: svc, Platform: plat, Post: func(f func()) { win.Update(f) },
+		a = app.New(app.Deps{Svc: svc, Platform: plat, Settings: st, Post: func(f func()) { win.Update(f) },
 			SystemLanguage: lang, SetLanguage: setLanguage,
 			Vibrancy: opts.Vibrancy != mygo.VibrancyNone, Dev: mygo.IsDev()})
 		plat.onAPIStop = a.LocalAPIStopped

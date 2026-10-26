@@ -182,7 +182,7 @@ func (a *App) View(c *ui.Context) {
 	theme.Apply(c, theme.FromSettings(a.settings, c.Theme().Dark))
 	t, th := theme.Of(c), c.Theme()
 	root := t.Window
-	if a.vibrancy && a.loaded && a.route.Page != PageOnboarding {
+	if a.vibrancy && a.route.Page != PageOnboarding {
 		root = ui.Transparent // the material shows where the window's own color would
 		if !t.Dark {
 			root = t.Window.Alpha(theme.MaterialTint) // lighter, as the design's material, the blur still showing

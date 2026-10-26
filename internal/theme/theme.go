@@ -374,7 +374,7 @@ func Dark() Tokens {
 // font sizes, and the density: comfortable rows and paddings are 1.25×.
 func FromSettings(st core.Settings, systemDark bool) Tokens {
 	t := Light()
-	if st.Theme == "dark" || st.Theme == "system" && systemDark {
+	if st.Theme == "dark" || (st.Theme == "system" || st.Theme == "") && systemDark {
 		t = Dark()
 	}
 	if st.FontSize > 0 {
