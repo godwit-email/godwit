@@ -1,5 +1,28 @@
 # Changelog
 
+## [1.16.0](https://github.com/godwit-email/godwit/compare/v1.15.0...v1.16.0) (2026-10-26)
+
+
+### Features
+
+* **account,wit:** per-account AI instructions for drafting ([#269](https://github.com/godwit-email/godwit/issues/269)) ([d2f87b7](https://github.com/godwit-email/godwit/commit/d2f87b7422ef83cddcc17bc702d11d310edd43af))
+* **compose,wit:** draft review cards, settled-edit status and no-op edits (slim redo of [#268](https://github.com/godwit-email/godwit/issues/268)) ([#276](https://github.com/godwit-email/godwit/issues/276)) ([3871608](https://github.com/godwit-email/godwit/commit/387160826e98050f8bbd2169d12386b783d26fad))
+* **compose:** toolbar undo and redo over the editor's own history ([#279](https://github.com/godwit-email/godwit/issues/279)) ([498e496](https://github.com/godwit-email/godwit/commit/498e4963ba92655f1acf07e341a3d0c561cafdc0))
+* **models:** on-demand service tests, compose model persistence, and Apple Intelligence service row ([#272](https://github.com/godwit-email/godwit/issues/272)) ([1eeb205](https://github.com/godwit-email/godwit/commit/1eeb20517a3a6e00f40fd276c3f7c2ffd10afbc5))
+* **reader,settings:** collapse long thread history into expandable card with configurable threshold ([#273](https://github.com/godwit-email/godwit/issues/273)) ([904eb3f](https://github.com/godwit-email/godwit/commit/904eb3f7d1147c21d3c9eaaff94a7a3a7b4a7e5f))
+* **settings,labels:** add label display style setting (icon and text, icon only, text only) ([#275](https://github.com/godwit-email/godwit/issues/275)) ([ab50787](https://github.com/godwit-email/godwit/commit/ab5078740da17fc79d8f27139ff780cedeb59f28))
+* **settings:** Wit instructions, bordered cards, sidebar names, signature editor ([#282](https://github.com/godwit-email/godwit/issues/282)) ([e04ade8](https://github.com/godwit-email/godwit/commit/e04ade8e127bc710789384f81f89d84c6d2cff17))
+* **wit:** show an answer's steps in the order they came ([#252](https://github.com/godwit-email/godwit/issues/252)) ([d5eccc8](https://github.com/godwit-email/godwit/commit/d5eccc86cac267a6712f21fbe568486da1d61986))
+
+
+### Bug Fixes
+
+* **mail,reader:** preserve multi-line inline styles and prevent dark canvas inversion in dark mode ([#274](https://github.com/godwit-email/godwit/issues/274)) ([97de648](https://github.com/godwit-email/godwit/commit/97de6482c9e0d94ce10b38009323999589ea8e29))
+* **mail:** keep a table's cellspacing, cellpadding and border ([#281](https://github.com/godwit-email/godwit/issues/281)) ([54f17f4](https://github.com/godwit-email/godwit/commit/54f17f4dcc03f7489b0807d60aba7851d60db122))
+* **reader,images:** load remote images behind fake-ip TUN proxies and the macOS system proxy ([#280](https://github.com/godwit-email/godwit/issues/280)) ([7ffc718](https://github.com/godwit-email/godwit/commit/7ffc718d76bd9ce1d7f2fda9f966d88329f3d4b3))
+* **shell,theme:** eliminate white flash on startup in light and dark mode ([#278](https://github.com/godwit-email/godwit/issues/278)) ([af946b2](https://github.com/godwit-email/godwit/commit/af946b20841132882561ae9af847cd7a659c96b8))
+* **sync:** eliminate redundant sync rounds and stabilize multi-account sync status ([#271](https://github.com/godwit-email/godwit/issues/271)) ([7ea4c56](https://github.com/godwit-email/godwit/commit/7ea4c56e046d0796f547380e0d62954e18215da6))
+
 ## [1.15.0](https://github.com/godwit-email/godwit/compare/v1.14.0...v1.15.0) (2026-10-25)
 
 
