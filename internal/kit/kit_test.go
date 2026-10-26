@@ -1224,3 +1224,22 @@ func TestAvatarColorKeptPerNameNeverGray(t *testing.T) {
 		t.Errorf("%d colors for 8 names", len(seen))
 	}
 }
+
+func TestPopoverAt(t *testing.T) {
+	open := true
+	tt := ui.NewTester(themed(func(c *ui.Context) {
+		b := Button(c, "Anchor", ButtonOpts{})
+		PopoverAt(c, b, &open, ui.AnchorBottomEnd, ui.AnchorTopEnd, 12, func() {
+			ui.Text(c, "PopoverAt sample content")
+		})
+	}), 400, 300)
+	tt.Advance(2 * theme.MotionFast)
+	if !tt.HasText("PopoverAt sample content") {
+		t.Error("PopoverAt shows no content while open")
+	}
+	tt.Key(0, ui.KeyEscape)
+	tt.Frame()
+	if tt.HasText("PopoverAt sample content") {
+		t.Error("Escape did not close PopoverAt")
+	}
+}
