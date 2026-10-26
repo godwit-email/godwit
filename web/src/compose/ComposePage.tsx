@@ -1003,7 +1003,7 @@ function Compose({
                     </Button>
                   </div>
                 )}
-                {reviewing ? (
+                {reviewing && (
                   <Review
                     key={reviewing.approval}
                     review={reviewing}
@@ -1013,51 +1013,55 @@ function Compose({
                     after={tail}
                     t={t}
                   />
-                ) : (
+                )}
+                {/* The body: kept mounted during review so Slate's history is preserved */}
+                {!writing && (
                   // biome-ignore lint/a11y/noStaticElementInteractions: a click below the text only moves focus into it
                   <div
                     data-locked={running || undefined}
-                    className={`${BODY} data-locked:bg-sidebar`}
+                    className={`${BODY} data-locked:bg-sidebar ${reviewing ? "hidden" : ""}`}
                     onMouseDown={(e) => {
                       if (e.target !== e.currentTarget) return;
                       e.preventDefault();
                       e.currentTarget.querySelector<HTMLElement>("[contenteditable=true]")?.focus();
                     }}
                   >
-                    {writing ? (
-                      <Static html={streamed} label={t("compose.body")} caret />
-                    ) : (
-                      <Editor
-                        ref={editorRef}
-                        key={`${state.draftId}:${initial.n}`}
-                        initial={initial.body}
-                        readOnly={locked || witLocked}
-                        placeholder={wit && !state.wit.translateOnly ? t("wit.compose.empty") : ""}
-                        onChange={(body) => edit({ body })}
-                        onComposing={() => {}} // <main> tracks compositions, the fields' too
-                        t={t}
-                        onCmdK={
-                          wit && !locked && !witLocked && !state.wit.translateOnly
-                            ? openCmdK
-                            : undefined
-                        }
-                        toolbarSlot={toolbarSlot}
-                        attach={attach}
-                        onUndo={undo}
-                        onRedo={redo}
-                        popover={
-                          cmdk &&
-                          !locked &&
-                          !witLocked && (
-                            <CmdK
-                              onSubmit={(instruction) => void rewrite(cmdk, instruction)}
-                              onClose={closeCmdK}
-                              t={t}
-                            />
-                          )
-                        }
-                      />
-                    )}
+                    <Editor
+                      ref={editorRef}
+                      key={state.draftId}
+                      initial={initial.body}
+                      readOnly={locked || witLocked || Boolean(reviewing)}
+                      placeholder={wit && !state.wit.translateOnly ? t("wit.compose.empty") : ""}
+                      onChange={(body) => edit({ body })}
+                      onComposing={() => {}} // <main> tracks compositions, the fields' too
+                      t={t}
+                      onCmdK={
+                        wit && !locked && !witLocked && !state.wit.translateOnly
+                          ? openCmdK
+                          : undefined
+                      }
+                      toolbarSlot={showEditor ? toolbarSlot : null}
+                      attach={attach}
+                      onUndo={undo}
+                      onRedo={redo}
+                      popover={
+                        cmdk &&
+                        !locked &&
+                        !witLocked && (
+                          <CmdK
+                            onSubmit={(instruction) => void rewrite(cmdk, instruction)}
+                            onClose={closeCmdK}
+                            t={t}
+                          />
+                        )
+                      }
+                    />
+                    {!reviewing && tail}
+                  </div>
+                )}
+                {writing && (
+                  <div data-locked className={`${BODY} bg-sidebar`}>
+                    <Static html={streamed} label={t("compose.body")} caret />
                     {tail}
                   </div>
                 )}

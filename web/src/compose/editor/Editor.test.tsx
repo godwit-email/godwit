@@ -1,6 +1,6 @@
 import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { Editor } from "./Editor";
+import { Editor, type EditorHandle } from "./Editor";
 
 // jsdom lacks isContentEditable, which Slate checks on every event target.
 Object.defineProperty(HTMLElement.prototype, "isContentEditable", {
@@ -380,5 +380,44 @@ describe("Editor", () => {
     await select(box, 4, 0);
     replace(box, "word");
     await waitFor(() => expect(last(onChange)).toBe("<p>word </p>"));
+  });
+
+  it("setValue creates multiple undoable steps", async () => {
+    const ref = { current: null as unknown as EditorHandle };
+    const onChange = vi.fn();
+    render(
+      <Editor
+        ref={ref}
+        initial="<p>first</p>"
+        readOnly={false}
+        placeholder=""
+        onChange={onChange}
+        onComposing={() => {}}
+        t={t}
+      />,
+    );
+    act(() => {
+      ref.current.setValue("<p>second</p>");
+    });
+    expect(ref.current.canUndo()).toBe(true);
+    act(() => {
+      ref.current.setValue("<p>third</p>");
+    });
+    expect(ref.current.canUndo()).toBe(true);
+    act(() => {
+      ref.current.undo();
+    });
+    expect(onChange).toHaveBeenLastCalledWith("<p>second</p>");
+    expect(ref.current.canUndo()).toBe(true);
+    act(() => {
+      ref.current.undo();
+    });
+    expect(onChange).toHaveBeenLastCalledWith("<p>first</p>");
+    expect(ref.current.canUndo()).toBe(false);
+    expect(ref.current.canRedo()).toBe(true);
+    act(() => {
+      ref.current.redo();
+    });
+    expect(onChange).toHaveBeenLastCalledWith("<p>second</p>");
   });
 });
