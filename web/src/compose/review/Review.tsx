@@ -305,6 +305,9 @@ export function Review({
         )}
         {r.changes > 0 && (
           <>
+            <Button size="sm" className="text-base" disabled={busy} onClick={() => onDecide(true)}>
+              {t("wit.compose.accept_all")}
+            </Button>
             <Button
               size="sm"
               variant="outline"
@@ -313,9 +316,6 @@ export function Review({
               onClick={() => onDecide(false)}
             >
               {t("wit.compose.reject_all")}
-            </Button>
-            <Button size="sm" className="text-base" disabled={busy} onClick={() => onDecide(true)}>
-              {t("wit.compose.accept_all")}
             </Button>
           </>
         )}
