@@ -989,6 +989,17 @@
       }
     }
   },
+  "settings_account_ai": "AI Instructions & Facts",
+  "settings_account_ai_help": "Personal facts (e.g. name, phone, address, role) and drafting guidelines for this account.",
+  "settings_account_ai_long": "At most {arg1, number, ::group-off} characters",
+  "@settings_account_ai_long": {
+    "placeholders": {
+      "arg1": {
+        "type": "int"
+      }
+    }
+  },
+  "settings_account_ai_placeholder": "e.g.\nName: Dr. Jane Doe\nPhone: +1 555-0199\nRole: VP of Engineering, Acme Inc.\nGuidelines: Always formal with external partners. Suggest meetings Tue–Thu only.",
   "settings_account_alias": "Name in the sidebar",
   "settings_account_basic": "Basics",
   "settings_account_clear_cache": "Clear attachment cache",

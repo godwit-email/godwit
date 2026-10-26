@@ -16,6 +16,7 @@ import (
 	"strconv"
 	"strings"
 	"time"
+	"unicode/utf8"
 
 	"github.com/egoist/mygo/plugins/sqlite"
 	"github.com/godwit-email/godwit/core/auth"
@@ -259,7 +260,7 @@ func b2i(b bool) int {
 
 const accountCols = `id, email, name, alias, COALESCE((SELECT html FROM signatures WHERE id = signature_id), ''), username, is_default, sync_limit, auth_type, status,
 	imap_host, imap_port, imap_security, smtp_host, smtp_port, smtp_security, smtp_reauth, provider, status_detail,
-	sync_since_months, (SELECT count(*) FROM folders WHERE account_id = accounts.id), signature_id, icon`
+	sync_since_months, (SELECT count(*) FROM folders WHERE account_id = accounts.id), signature_id, icon, ai_instructions`
 
 // ErrAccountNotFound is returned for an account id that does not exist.
 var ErrAccountNotFound = errors.New("account not found")
@@ -283,6 +284,7 @@ func scanAccount(r []any) Account {
 		IMAPHost: store.Str(r[10]), IMAPPort: int(store.Int(r[11])), IMAPSecurity: Security(store.Str(r[12])),
 		SMTPHost: store.Str(r[13]), SMTPPort: int(store.Int(r[14])), SMTPSecurity: Security(store.Str(r[15])),
 		Provider: store.Str(r[17]), StatusDetail: store.Str(r[18]), SignatureID: store.Int(r[21]), Icon: store.Str(r[22]),
+		AIInstructions: store.Str(r[23]),
 	}
 	// SMTP refuses the password: the user is asked for it the same way. status and
 	// status_detail are IMAP's and the keychain's, and they take precedence.
@@ -489,6 +491,13 @@ func (s *Service) UpdateAccount(ctx context.Context, id int64, p AccountPatch) (
 	}
 	if p.Alias != nil {
 		set("alias", *p.Alias)
+	}
+	if p.AIInstructions != nil {
+		v := strings.TrimSpace(*p.AIInstructions)
+		if utf8.RuneCountInString(v) > MaxAIInstructions {
+			return Account{}, fmt.Errorf("AI instructions have at most %d characters", MaxAIInstructions)
+		}
+		set("ai_instructions", v)
 	}
 	var iconStmts []sqlite.Statement
 	switch {

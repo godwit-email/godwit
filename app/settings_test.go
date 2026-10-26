@@ -151,6 +151,33 @@ func TestSettingsAccountEdit(t *testing.T) {
 	h.see("已同步 · 刚刚")
 }
 
+// Instructions longer than core takes are not saved: they stay for the user
+// to shorten, and shortened they save.
+func TestSettingsAccountAIInstructions(t *testing.T) {
+	h, acc := withAccount(t)
+	p := h.openSettings(accountRoute(acc.ID))
+	h.see("AI 设定与事实信息")
+	f := p.forms[acc.ID]
+	long := strings.Repeat("长", core.MaxAIInstructions+1)
+	f.ai = long
+	p.edited(acc.ID, f, fieldAI)
+	h.advance(accountSaveDelay)
+	h.drain()
+	h.see("最多 2000 个字")
+	if got := h.account(acc.ID).AIInstructions; got != "" {
+		t.Fatalf("too long instructions saved: %d runes", len([]rune(got)))
+	}
+	if f.ai != long {
+		t.Fatalf("too long instructions dropped")
+	}
+
+	f.ai = "电话：+86 10 12345678"
+	p.edited(acc.ID, f, fieldAI)
+	h.advance(accountSaveDelay)
+	h.until("saved", func() bool { return h.account(acc.ID).AIInstructions == "电话：+86 10 12345678" })
+	h.until("the form settles", func() bool { return !f.edits[fieldAI].pending })
+}
+
 func TestSettingsAccountIcon(t *testing.T) {
 	h, acc := withAccount(t)
 	p := h.openSettings(accountRoute(acc.ID))

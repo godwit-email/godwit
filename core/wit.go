@@ -24,11 +24,13 @@ import (
 
 // askTools are the built-in tools of an Ask run, which also offers every
 // running plugin's tools and the enabled MCP servers' tools. None of them sends mail.
-var askTools = []string{"search_mail", "get_message", "get_thread", "read_attachment", "classify_mail", "list_skills", "use_skill", "read_skill_file", "create_draft", askQuestionTool}
+var askTools = []string{"search_mail", "get_message", "get_thread", "read_attachment", "classify_mail", "list_skills", "use_skill", "read_skill_file", "get_account_profile", "create_draft", askQuestionTool}
 
 const (
 	askSystem = `You are Wit, the assistant of the Godwit mail app. Use the tools to search and read the user's mail and to use skills. ` +
 		`You cannot send mail: create_draft only proposes a draft, which the user approves and sends themselves. ` +
+		`Before writing a draft, call get_account_profile for the account it goes from: sign with its name, take facts such as a phone number from its instructions and follow their guidelines; ` +
+		`never invent a name or contact details it does not give. ` +
 		`Each mail a tool returns has an "id", the same for that mail through the whole conversation, and a "cite" tag, <mail id="N"/>; ` +
 		`get_message, get_thread and classify_mail take that id. ` +
 		`When your answer draws on a mail, put its cite tag right after the claim, exactly as the tool gave it, for example <mail id="2"/>. ` +
@@ -234,6 +236,9 @@ func (s *Service) registerAskTools() {
 	read("get_message", "Read one mail by its id (a mail the tools returned).", object(map[string]any{"id": intProp}, "id"), s.getMessage)
 	read("read_attachment", "Read the text of one attachment by its attachment id (listed with the mail): PDF, Word, Excel, PowerPoint, CSV, HTML or plain text. Images and archives are not readable.",
 		object(map[string]any{"id": intProp}, "id"), s.readAttachment)
+	read("get_account_profile", "What the user told you about themselves as the sender from an account: its email, name and instructions (facts such as a phone number, and guidelines for drafting). "+
+		"account_id is the account the draft goes from, 0 or none for the default one.",
+		object(map[string]any{"account_id": intProp}), s.getAccountProfile)
 	read("get_thread", "Read every mail of the thread a mail is in, by that mail's id.", object(map[string]any{"id": intProp}, "id"), s.getThread)
 	// No Egress: the judge is a model service, so its traffic is model traffic,
 	// as for the run itself (review #17).
@@ -300,6 +305,38 @@ func (s *Service) getMessage(ctx context.Context, args json.RawMessage) (any, er
 		return nil, err
 	}
 	return blocks(items, s.cite(ctx, items))[0], nil
+}
+
+// draftAccount is the account a draft is sent from: id, or for 0 the default one.
+func (s *Service) draftAccount(ctx context.Context, id int64) (Account, error) {
+	if id == 0 {
+		rows, err := s.db.Query(ctx, "SELECT id FROM accounts ORDER BY is_default DESC, position, id LIMIT 1")
+		if err != nil {
+			return Account{}, err
+		}
+		if len(rows.Values) == 0 {
+			return Account{}, errors.New("there is no mail account")
+		}
+		id = store.Int(rows.Values[0][0])
+	}
+	return s.account(ctx, id)
+}
+
+// getAccountProfile is what the user told Wit about themselves as the sender from an
+// account; the model asks for it only to write a draft (the ask prompt stays
+// the same for every run, and holds no personal facts).
+func (s *Service) getAccountProfile(ctx context.Context, args json.RawMessage) (any, error) {
+	var in struct {
+		AccountID int64 `json:"account_id"`
+	}
+	if err := json.Unmarshal(args, &in); err != nil {
+		return nil, err
+	}
+	acc, err := s.draftAccount(ctx, in.AccountID)
+	if err != nil {
+		return nil, err
+	}
+	return map[string]any{"account_id": acc.ID, "email": acc.Email, "name": acc.Name, "instructions": acc.AIInstructions}, nil
 }
 
 func (s *Service) getThread(ctx context.Context, args json.RawMessage) (any, error) {
@@ -498,18 +535,11 @@ func (s *Service) prepareDraft(ctx context.Context, _ Conversation, args json.Ra
 	if err := json.Unmarshal(args, &in); err != nil {
 		return prepared{}, err
 	}
-	if in.AccountID == 0 {
-		rows, err := s.db.Query(ctx, "SELECT id FROM accounts ORDER BY is_default DESC, position, id LIMIT 1")
-		if err != nil {
-			return prepared{}, err
-		}
-		if len(rows.Values) == 0 {
-			return prepared{}, errors.New("there is no mail account")
-		}
-		in.AccountID = store.Int(rows.Values[0][0])
-	} else if _, err := s.account(ctx, in.AccountID); err != nil {
+	acc, err := s.draftAccount(ctx, in.AccountID)
+	if err != nil {
 		return prepared{}, err
 	}
+	in.AccountID = acc.ID
 	if len(in.To) == 0 {
 		return prepared{}, errors.New("to needs at least one recipient")
 	}

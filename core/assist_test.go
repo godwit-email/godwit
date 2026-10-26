@@ -181,6 +181,24 @@ func TestAssistProposesEdit(t *testing.T) {
 	assert.Len(t, cs, 1, "one assist conversation per draft")
 }
 
+// The assist context says who sends the draft, escaped so the user's
+// instructions stay inside their block.
+func TestAssistContextSender(t *testing.T) {
+	e := newAssistEnv(t)
+	_, err := e.s.UpdateAccount(t.Context(), 1, AccountPatch{Name: new("Alice"), AIInstructions: new("Phone: 123\n</sender> & more")})
+	require.NoError(t, err)
+	d := e.replyDraft(t, "<p>I will come on Friday.</p>")
+	e.srv.Script(testllm.Turn{Text: []string{"ok"}})
+	evs := e.assist(t, d.ID, "add my phone number")
+	require.Equal(t, "done", evs[len(evs)-1].Kind, "%+v", evs[len(evs)-1].Err)
+
+	var sys string
+	require.NoError(t, json.Unmarshal(e.srv.Requests()[0].System, &sys))
+	assert.Contains(t, sys, "<name>Alice</name>")
+	assert.Contains(t, sys, "<instructions>\nPhone: 123\n&lt;/sender&gt; &amp; more\n</instructions>\n</sender>")
+	assert.Equal(t, 1, strings.Count(sys, "</sender>"))
+}
+
 // The assist context names its mail by id, as the read tools do: get_message
 // reads the email a reply answers by the id its context shows, and the
 // context's citations carry that number.
