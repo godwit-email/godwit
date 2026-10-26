@@ -16,7 +16,7 @@ type GroupItem struct {
 // the icons are Foreground, not a lone icon button's Muted.
 func ButtonGroup(c *ui.Context, items ...GroupItem) ui.Element {
 	t, th := theme.Of(c), c.Theme()
-	return ui.Row(c).Height(theme.GroupHeight).PaddingX(th.Space(0.5)).Gap(th.Space(0.5)).AlignItems(ui.Center).Radius(t.Radius.Lg).Border(theme.Stroke, t.Border).Background(t.Background).Children(func() {
+	return ui.Row(c).Height(theme.GroupHeight).Padding(th.Space(0.5)).Gap(th.Space(0.5)).AlignItems(ui.Center).Radius(t.Radius.Lg).Border(theme.Stroke, t.Border).Background(t.Background).Clip().Children(func() {
 		for i, it := range items {
 			if i > 0 {
 				ui.Box(c).Size(theme.Stroke, theme.GroupSepHeight).Margin(0, th.Space(0.5)).Background(t.Border)
