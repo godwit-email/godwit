@@ -241,3 +241,30 @@ func TestUpdateAccountIcon(t *testing.T) {
 	_, err = s.AccountIcon(ctx, acc.ID)
 	require.ErrorIs(t, err, core.ErrAccountNotFound, "the image goes with it")
 }
+
+func TestUpdateAccountAIInstructions(t *testing.T) {
+	keyring.MockInit()
+	im, smtpAddr := servers(t)
+	s, err := core.New(ctx, core.Options{DataDir: t.TempDir()})
+	require.NoError(t, err)
+	defer s.Close()
+	acc, err := s.AddAccount(ctx, input(t, im.Addr, smtpAddr, "secret"))
+	require.NoError(t, err)
+	assert.Empty(t, acc.AIInstructions)
+
+	facts := "  Phone: +49 89 123456\n"
+	updated, err := s.UpdateAccount(ctx, acc.ID, core.AccountPatch{AIInstructions: &facts})
+	require.NoError(t, err)
+	assert.Equal(t, "Phone: +49 89 123456", updated.AIInstructions, "trimmed")
+	accs, err := s.ListAccounts(ctx)
+	require.NoError(t, err)
+	assert.Equal(t, "Phone: +49 89 123456", accs[0].AIInstructions, "stored")
+
+	long := strings.Repeat("长", core.MaxAIInstructions+1)
+	_, err = s.UpdateAccount(ctx, acc.ID, core.AccountPatch{AIInstructions: &long})
+	require.Error(t, err)
+	edge := " " + strings.Repeat("长", core.MaxAIInstructions) + " "
+	updated, err = s.UpdateAccount(ctx, acc.ID, core.AccountPatch{AIInstructions: &edge})
+	require.NoError(t, err, "the limit counts trimmed runes")
+	assert.Equal(t, strings.TrimSpace(edge), updated.AIInstructions)
+}

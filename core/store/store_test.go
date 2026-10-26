@@ -430,7 +430,6 @@ func TestAutoVacuumAndReclaim(t *testing.T) {
 func TestMigrationPiMessagesBacksUp(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "godwit.db")
 	all := store.Migrations
-	require.Len(t, all, store.PiMessagesVersion)
 	store.Migrations = all[:store.PiMessagesVersion-1]
 	db, err := store.Open(ctx, path)
 	store.Migrations = all

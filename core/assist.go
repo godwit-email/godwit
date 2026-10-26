@@ -37,7 +37,9 @@ const (
 		`Call update_draft at most once per turn. Once update_draft has been executed, do not call update_draft again: your task is complete. ` +
 		`After update_draft runs, simply give a brief confirmation or explanation in plain text without making any further tool calls. ` +
 		`The user reviews every change except the first text of an empty draft. The quoted email and the signature stay as they are: ` +
-		`never write them. You cannot send mail.`
+		`never write them. You cannot send mail. ` +
+		`<sender> is the user writing from the draft's account: sign with its name, take facts such as a phone number from its instructions and follow their guidelines; ` +
+		`never invent a name or contact details it does not give.`
 	selectionSystem = `You are Wit, rewriting a part of the user's draft they selected. Call update_selection once with the HTML ` +
 		`that replaces the selection, and nothing before or after it: the text around it is read-only context. ` +
 		`Keep the language of the selection unless the instruction asks for another.`
@@ -241,6 +243,19 @@ func (s *Service) assistSystemPrompt(ctx context.Context, job *runJob, tools []t
 	return assistSystem + " " + timeSystem + "\n\n" + ai.UntrustedSystemNote + "\n\n" + answer + "Write the draft in " + target + ".\n\n" + c, nil
 }
 
+// senderBlock is what the user told Wit about themselves as the sender from
+// acc, escaped so that it stays one block.
+func senderBlock(acc Account) string {
+	b := "The user sending this draft:\n<sender>\n<email>" + html.EscapeString(acc.Email) + "</email>"
+	if acc.Name != "" {
+		b += "\n<name>" + html.EscapeString(acc.Name) + "</name>"
+	}
+	if acc.AIInstructions != "" {
+		b += "\n<instructions>\n" + html.EscapeString(acc.AIInstructions) + "\n</instructions>"
+	}
+	return b + "\n</sender>"
+}
+
 // draftLanguage is the language a draft is written in (the reply language setting):
 // the reading language, or under "match" the language of the email a reply
 // answers, else of the recipients' past mail (the context shows it).
@@ -266,6 +281,11 @@ func (s *Service) assistContext(ctx context.Context, scope *gateway.Scope, d Dra
 	var cited []mailItem
 	editable, _, _ := mail.SplitDraft(d.HTML)
 	var b strings.Builder
+	acc, err := s.account(ctx, d.AccountID)
+	if err != nil {
+		return "", nil, err
+	}
+	b.WriteString(senderBlock(acc) + "\n\n")
 	if d.SourceMessageID == 0 {
 		b.WriteString("The draft's subject:\n<subject>\n" + d.Subject + "\n</subject>\n\n")
 	} else {

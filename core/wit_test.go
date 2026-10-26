@@ -300,6 +300,25 @@ func TestAskInjectionInSubject(t *testing.T) {
 	assert.Contains(t, promptOf(t, e.srv.Requests()[1]), `suspect=\"true\"`, "the model sees the flag")
 }
 
+// get_account_profile gives the model what the user told Wit about themselves, only
+// when it asks: the ask prompt holds none of it.
+func TestAskGetAccountProfile(t *testing.T) {
+	e := newSkillEnv(t)
+	facts := "Phone: +49 89 123456"
+	_, err := e.s.UpdateAccount(t.Context(), 1, AccountPatch{AIInstructions: &facts})
+	require.NoError(t, err)
+	e.srv.Script(testllm.Turn{Calls: []testllm.Call{{Name: "get_account_profile", Args: `{}`}}}, testllm.Turn{Text: []string{"ok"}})
+	evs := e.ask(t, e.askConv(t).ID, "Draft a note to Bob with my phone number")
+	require.Equal(t, "done", evs[len(evs)-1].Kind, "%+v", evs[len(evs)-1].Err)
+
+	rs := witResults(evs, "get_account_profile")
+	require.Len(t, rs, 1)
+	assert.Contains(t, string(rs[0].Result.Output), facts, "the default account's instructions")
+	reqs := e.srv.Requests()
+	assert.NotContains(t, string(reqs[0].System), facts)
+	assert.Equal(t, string(reqs[0].System), string(reqs[1].System), "the prompt stays the same")
+}
+
 func TestAskNoSendTool(t *testing.T) {
 	e := newSkillEnv(t)
 	evs := e.ask(t, e.askConv(t).ID, "Send my reply to Bob")
@@ -307,7 +326,7 @@ func TestAskNoSendTool(t *testing.T) {
 	reqs := e.srv.Requests()
 	require.Len(t, reqs, 1)
 	names := toolNames(t, reqs[0])
-	assert.Equal(t, []string{"ask_user_question", "classify_mail", "create_draft", "get_message", "get_thread", "list_skills", "read_attachment", "read_skill_file", "search_mail", "use_skill"}, names)
+	assert.Equal(t, []string{"ask_user_question", "classify_mail", "create_draft", "get_account_profile", "get_message", "get_thread", "list_skills", "read_attachment", "read_skill_file", "search_mail", "use_skill"}, names)
 	for _, n := range names {
 		assert.NotContains(t, n, "send")
 	}

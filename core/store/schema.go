@@ -434,6 +434,9 @@ var Migrations = [][]string{{
 }, {
 	// None: core.backfillPi converts the conversations saved as Genkit
 	// messages to pi messages (#234); the version backs the database up first.
+}, {
+	// What Wit knows about the account's sender for drafting (core.MaxAIInstructions).
+	`ALTER TABLE accounts ADD COLUMN ai_instructions TEXT NOT NULL DEFAULT ''`,
 }}
 
 // HistoryRowsVersion is the schema version that keeps a conversation's
