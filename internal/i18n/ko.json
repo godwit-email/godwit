@@ -1027,6 +1027,7 @@
   "wit_compose_accepted": "변경 사항이 적용되었습니다.",
   "wit_compose_rejected": "변경 사항이 삭제되었습니다.",
   "wit_compose_applied_status": "제안이 성공적으로 적용되었습니다.",
+  "wit_compose_initial_status": "초안이 업데이트되었습니다.",
   "wit_compose_rejected_status": "변경 사항이 삭제되었습니다.",
   "wit_compose_adjusting_status": "조정 사항을 처리하는 중입니다…",
   "wit_compose_adjust_placeholder": "조정 지침 입력…",

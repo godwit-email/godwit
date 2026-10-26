@@ -1032,6 +1032,7 @@
   "wit_compose_accepted": "Änderungen wurden übernommen.",
   "wit_compose_rejected": "Änderungen wurden verworfen.",
   "wit_compose_applied_status": "Vorschlag erfolgreich übernommen.",
+  "wit_compose_initial_status": "Entwurf wurde aktualisiert.",
   "wit_compose_rejected_status": "Änderungen wurden verworfen.",
   "wit_compose_adjusting_status": "Anpassungswünsche werden bearbeitet…",
   "wit_compose_adjust_placeholder": "Anpassungswünsche eingeben…",

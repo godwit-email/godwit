@@ -1027,6 +1027,7 @@
   "wit_compose_accepted": "Изменения применены.",
   "wit_compose_rejected": "Изменения отклонены.",
   "wit_compose_applied_status": "Предложение успешно применено.",
+  "wit_compose_initial_status": "Черновик обновлен.",
   "wit_compose_rejected_status": "Изменения отклонены.",
   "wit_compose_adjusting_status": "Правки обрабатываются…",
   "wit_compose_adjust_placeholder": "Введите инструкции по правкам…",

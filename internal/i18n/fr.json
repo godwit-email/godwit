@@ -1027,6 +1027,7 @@
   "wit_compose_accepted": "Les modifications ont été appliquées.",
   "wit_compose_rejected": "Les modifications ont été rejetées.",
   "wit_compose_applied_status": "Proposition appliquée avec succès.",
+  "wit_compose_initial_status": "Le brouillon a été mis à jour.",
   "wit_compose_rejected_status": "Les modifications ont été rejetées.",
   "wit_compose_adjusting_status": "Les ajustements sont en cours de traitement…",
   "wit_compose_adjust_placeholder": "Entrez les instructions d’ajustement…",

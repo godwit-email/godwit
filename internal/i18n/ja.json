@@ -1027,6 +1027,7 @@
   "wit_compose_accepted": "変更が適用されました。",
   "wit_compose_rejected": "変更は破棄されました。",
   "wit_compose_applied_status": "提案が正常に適用されました。",
+  "wit_compose_initial_status": "下書きが更新されました。",
   "wit_compose_rejected_status": "変更は破棄されました。",
   "wit_compose_adjusting_status": "調整を処理しています…",
   "wit_compose_adjust_placeholder": "調整の指示を入力…",

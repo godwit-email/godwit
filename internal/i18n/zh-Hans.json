@@ -1027,6 +1027,7 @@
   "wit_compose_accepted": "修改已应用。",
   "wit_compose_rejected": "修改已放弃。",
   "wit_compose_applied_status": "建议已成功应用。",
+  "wit_compose_initial_status": "草稿已更新。",
   "wit_compose_rejected_status": "修改已放弃。",
   "wit_compose_adjusting_status": "正在处理调整要求…",
   "wit_compose_adjust_placeholder": "输入调整要求…",

@@ -1027,6 +1027,7 @@
   "wit_compose_accepted": "Các thay đổi đã được áp dụng.",
   "wit_compose_rejected": "Các thay đổi đã bị hủy.",
   "wit_compose_applied_status": "Đề xuất đã được áp dụng thành công.",
+  "wit_compose_initial_status": "Bản nháp đã được cập nhật.",
   "wit_compose_rejected_status": "Các thay đổi đã bị hủy.",
   "wit_compose_adjusting_status": "Đang xử lý các điều chỉnh…",
   "wit_compose_adjust_placeholder": "Nhập hướng dẫn điều chỉnh…",

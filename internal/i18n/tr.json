@@ -1027,6 +1027,7 @@
   "wit_compose_accepted": "Değişiklikler uygulandı.",
   "wit_compose_rejected": "Değişiklikler reddedildi.",
   "wit_compose_applied_status": "Öneri başarıyla uygulandı.",
+  "wit_compose_initial_status": "Taslak güncellendi.",
   "wit_compose_rejected_status": "Değişiklikler reddedildi.",
   "wit_compose_adjusting_status": "Düzenlemeler işleniyor…",
   "wit_compose_adjust_placeholder": "Düzenleme talimatlarını girin…",

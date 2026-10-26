@@ -1027,6 +1027,7 @@
   "wit_compose_accepted": "Se aplicaron los cambios.",
   "wit_compose_rejected": "Se descartaron los cambios.",
   "wit_compose_applied_status": "Propuesta aplicada con éxito.",
+  "wit_compose_initial_status": "Borrador actualizado.",
   "wit_compose_rejected_status": "Se descartaron los cambios.",
   "wit_compose_adjusting_status": "Se están procesando los ajustes…",
   "wit_compose_adjust_placeholder": "Introduce instrucciones de ajuste…",

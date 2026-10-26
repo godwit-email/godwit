@@ -981,9 +981,29 @@ function Answer({
         p.data.some((a) => isDraftEdit(a.tool) && decisions?.[a.id] === "adjusted"),
     ));
 
+  const hasInitial =
+    !hasNoChange &&
+    !hasAdjusted &&
+    (calls.some((c) => {
+      if (!isDraftEdit(c.toolName)) return false;
+      const s =
+        (c.state === "output-available" && (c.output as any)?.summary) ||
+        (c.approval?.id && approvals.get(c.approval.id)?.summary);
+      return s === "initial";
+    }) ||
+    m.parts.some(
+      (p) =>
+        p.type === "data-approvals" &&
+        p.data.some(
+          (a) =>
+            isDraftEdit(a.tool) && (approvals.get(String(a.id)) ?? a).summary === "initial",
+        ),
+    ));
+
   const hasApplied =
     !hasNoChange &&
     !hasAdjusted &&
+    !hasInitial &&
     (calls.some((c) => {
       if (!isDraftEdit(c.toolName)) return false;
       if (c.approval?.id && decisions?.[Number(c.approval.id)] === "adjusted") return false;
@@ -992,12 +1012,12 @@ function Answer({
       if (a?.id && decisions?.[a.id] === "adjusted") return false;
       if (c.state === "output-available") {
         const out = c.output as any;
-        if (out?.summary === "no_change" || out?.no_change) return false;
+        if (out?.summary === "no_change" || out?.no_change || out?.summary === "initial") return false;
         return true;
       }
       return (
         (a?.id && decisions?.[a.id] === "applied") ||
-        (a?.state === "done" && a?.summary !== "no_change")
+        (a?.state === "done" && a?.summary !== "no_change" && a?.summary !== "initial")
       );
     }) ||
     m.parts.some(
@@ -1009,7 +1029,8 @@ function Answer({
             (decisions?.[a.id] === "applied" ||
               (decisions?.[a.id] !== "adjusted" &&
                 a.state === "done" &&
-                a.summary !== "no_change")),
+                a.summary !== "no_change" &&
+                a.summary !== "initial")),
         ),
     ));
 
@@ -1017,6 +1038,7 @@ function Answer({
     !hasNoChange &&
     !hasApplied &&
     !hasAdjusted &&
+    !hasInitial &&
     (calls.some((c) => {
       if (!isDraftEdit(c.toolName)) return false;
       if (c.approval?.id && decisions?.[Number(c.approval.id)] === "rejected") return true;
@@ -1252,6 +1274,12 @@ function Answer({
         <div className="flex items-center gap-2 rounded-lg bg-sidebar px-3 py-2 text-base text-foreground">
           <RiSparkling2Line className="size-4 shrink-0 text-foreground" />
           <span>{t("wit.compose.no_changes")}</span>
+        </div>
+      )}
+      {hasInitial && (
+        <div className="flex items-center gap-2 rounded-lg bg-sidebar px-3 py-2 text-base text-foreground">
+          <RiSparkling2Line className="size-4 shrink-0 text-foreground" />
+          <span>{t("wit.compose.initial_status")}</span>
         </div>
       )}
       {hasAdjusted && (

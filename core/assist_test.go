@@ -128,8 +128,7 @@ func TestAssistInitialAppliesDirectly(t *testing.T) {
 	e := newAssistEnv(t)
 	d, err := e.s.NewDraft(t.Context(), 1, "new", 0)
 	require.NoError(t, err)
-	e.srv.Script(testllm.Turn{Calls: []testllm.Call{{Name: "update_draft", Args: `{"html":"<p>Thanks, Bob!</p>"}`}}},
-		testllm.Turn{Text: []string{"Written."}})
+	e.srv.Script(testllm.Turn{Calls: []testllm.Call{{Name: "update_draft", Args: `{"html":"<p>Thanks, Bob!</p>"}`}}})
 	evs := e.assist(t, d.ID, "Write a thank-you note")
 	last := evs[len(evs)-1]
 	require.Equal(t, "interrupted", last.Kind, "%+v", last.Err)
@@ -144,7 +143,7 @@ func TestAssistInitialAppliesDirectly(t *testing.T) {
 	assert.Equal(t, 1, e.count(t, "SELECT COUNT(*) FROM audit_log WHERE tool = 'update_draft' AND decision = 'executed' AND target_id = ?", d.ID))
 	e.waitRunOf(t, a.RunID, "done")
 	reqs := e.srv.Requests()
-	require.Len(t, reqs, 2, "the run goes on with the result")
+	require.Len(t, reqs, 1, "the run finishes directly without re-invoking the model")
 	assert.Equal(t, []string{"ask_user_question", "get_message", "read_attachment", "search_mail", "update_draft"}, toolNames(t, reqs[0]))
 }
 
