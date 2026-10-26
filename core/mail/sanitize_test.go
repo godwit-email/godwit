@@ -336,3 +336,57 @@ func TestSanitizeBodyBackgroundImage(t *testing.T) {
 	assert.Contains(t, safe, `data-bg="https://c.example/bg.png"`)
 	assert.Contains(t, safe, "background: #eee repeat-x")
 }
+
+// Inline styles with trailing newlines, indentation, or trailing semicolons
+// are normalised so bluemonday does not drop the style attribute.
+func TestSanitizeStyleWhitespace(t *testing.T) {
+	input := `<span style="
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      text-decoration: none;
+      color: #7A7A7A;
+      font-size: 14px;
+      line-height: 20px;
+      font-weight: 500;
+  ">Receipt</span>`
+	safe, _ := mail.Sanitize(input, nil, false)
+	assert.Contains(t, safe, `color: #7A7A7A`)
+	assert.Contains(t, safe, `font-size: 14px`)
+	assert.Contains(t, safe, `font-weight: 500`)
+
+	// Card with multi-line styles and background-color
+	card := `<table style="
+      width: 100%;
+      background-color: #ffffff;
+      border-radius: 12px;
+  "><tr><td>content</td></tr></table>`
+	safeCard, _ := mail.Sanitize(card, nil, false)
+	assert.Contains(t, safeCard, `background-color: #ffffff`)
+	assert.Contains(t, safeCard, `border-radius: 12px`)
+}
+
+// Inherently dark emails (dark canvas via body/container bgcolor or style, or meta color-scheme)
+// are marked with <style data-dark=""> so the reader does not invert them into white.
+func TestSanitizeDarkCanvas(t *testing.T) {
+	// Table container with dark background
+	stripe := `<table class="st-Background" bgcolor="#000000" width="100%"><tr><td><div style="background-color:#ffffff;color:#1a1a1a">Slip</div></td></tr></table>`
+	safeStripe, _ := mail.Sanitize(stripe, nil, false)
+	assert.True(t, strings.HasPrefix(safeStripe, `<style data-dark="">`), "dark container marks dark-aware")
+	assert.Contains(t, safeStripe, `bgcolor="#000000"`)
+	assert.Contains(t, safeStripe, `background-color: #ffffff`)
+
+	// Body with dark bgcolor
+	darkBody := `<html><body bgcolor="#1a1a1a"><p>Hello</p></body></html>`
+	safeBody, _ := mail.Sanitize(darkBody, nil, false)
+	assert.True(t, strings.HasPrefix(safeBody, `<style data-dark="">`), "dark body bgcolor marks dark-aware")
+	assert.Contains(t, safeBody, `background-color: #1a1a1a`, "wrapper div receives background-color style from body bgcolor")
+
+	// Meta color-scheme dark
+	metaDark := `<html><head><meta name="color-scheme" content="dark"></head><body><p>Hello</p></body></html>`
+	safeMeta, _ := mail.Sanitize(metaDark, nil, false)
+	assert.True(t, strings.HasPrefix(safeMeta, `<style data-dark="">`), "meta dark marks dark-aware")
+
+	// Standard light email remains without data-dark
+	light := `<html><body bgcolor="#ffffff"><p>Hello</p></body></html>`
+	safeLight, _ := mail.Sanitize(light, nil, false)
+	assert.False(t, strings.HasPrefix(safeLight, `<style data-dark="">`), "light email is not dark-aware")
+}

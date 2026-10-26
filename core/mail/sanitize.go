@@ -5,6 +5,7 @@ import (
 	"net/http"
 	"net/url"
 	"regexp"
+	"strconv"
 	"strings"
 
 	"github.com/microcosm-cc/bluemonday"
@@ -173,22 +174,45 @@ func render(parent *html.Node) string {
 // placeholder scheme, returning the body-only markup for bluemonday. For
 // received mail the links move to data-href here: bluemonday drops an href it
 // cannot parse (a space, a {placeholder}, a bad port), which would leave the
-// link dead.
-func prepare(src string, received bool) (string, int, []styleSheet) {
+// link dead. It also detects whether the email has a dark canvas (via meta
+// color-scheme or a dark background on body/containers) so that dark mode does
+// not invert an inherently dark email.
+func prepare(src string, received bool) (string, int, []styleSheet, bool) {
 	doc, err := html.Parse(strings.NewReader(src))
 	if err != nil {
-		return "", 0, nil
+		return "", 0, nil, false
 	}
 	blocked := 0
 	var body *html.Node
 	var pixels, styles []*html.Node
 	var sheets []styleSheet
+	darkCanvas := false
 	walkNodes(doc, func(n *html.Node) {
 		if n.Type != html.ElementNode {
 			return
 		}
+		if received && n.DataAtom == atom.Meta {
+			name, _ := attr(n, "name")
+			content, _ := attr(n, "content")
+			name = strings.ToLower(name)
+			if (name == "color-scheme" || name == "supported-color-schemes") &&
+				strings.Contains(strings.ToLower(content), "dark") &&
+				!strings.Contains(strings.ToLower(content), "only light") {
+				darkCanvas = true
+			}
+		}
 		if n.DataAtom == atom.Body {
 			body = n
+			if received && isDarkColor(elementBackground(n)) {
+				darkCanvas = true
+			}
+		}
+		if received && (n.DataAtom == atom.Table || n.DataAtom == atom.Div) {
+			role, _ := attr(n, "role")
+			bg := elementBackground(n)
+			if role != "button" && isDarkColor(bg) && (isContainer(n) || (n.Parent != nil && n.Parent.DataAtom == atom.Body)) {
+				darkCanvas = true
+			}
 		}
 		if n.DataAtom == atom.Style {
 			if received { // kept by sanitizeCSS, in what Sanitize returns
@@ -209,11 +233,18 @@ func prepare(src string, received bool) (string, int, []styleSheet) {
 				delAttr(n, "href")
 			}
 		}
-		if s, ok := attr(n, "style"); ok && strings.Contains(strings.ToLower(s), "url(") {
-			blocked++
-			if rest, u := splitBackground(s); u != "" {
-				setAttr(n, bgAttr, u)
-				setAttr(n, "style", rest)
+		if s, ok := attr(n, "style"); ok {
+			if strings.Contains(strings.ToLower(s), "url(") {
+				blocked++
+				if rest, u := splitBackground(s); u != "" {
+					setAttr(n, bgAttr, u)
+					s = rest
+				}
+			}
+			if s = cleanStyle(s); s != "" {
+				setAttr(n, "style", s)
+			} else {
+				delAttr(n, "style")
 			}
 		}
 		if n.DataAtom != atom.Img {
@@ -242,13 +273,26 @@ func prepare(src string, received bool) (string, int, []styleSheet) {
 		n.Parent.RemoveChild(n)
 	}
 	if body == nil {
-		return "", blocked, nil
+		return "", blocked, nil, false
 	}
 	if received { // the page's own background sits on <body>, which only its children survive: wrap them
 		w := &html.Node{Type: html.ElementNode, Data: "div", DataAtom: atom.Div}
 		for _, k := range []string{"style", "bgcolor", bgAttr} { // bgAttr: the body's own background image
 			if v, ok := attr(body, k); ok {
 				setAttr(w, k, v)
+			}
+		}
+		if bg, ok := attr(body, "bgcolor"); ok && bg != "" {
+			st, _ := attr(w, "style")
+			if !strings.Contains(strings.ToLower(st), "background") {
+				if st != "" && !strings.HasSuffix(strings.TrimSpace(st), ";") {
+					st += ";"
+				}
+				if st != "" {
+					st += " "
+				}
+				st += "background-color: " + bg
+				setAttr(w, "style", st)
 			}
 		}
 		if len(w.Attr) > 0 {
@@ -259,7 +303,7 @@ func prepare(src string, received bool) (string, int, []styleSheet) {
 			body.AppendChild(w)
 		}
 	}
-	return render(body), blocked, sheets
+	return render(body), blocked, sheets, darkCanvas
 }
 
 var allowedImage = map[string]bool{"image/png": true, "image/jpeg": true, "image/gif": true, "image/webp": true}
@@ -314,19 +358,17 @@ func finish(safe string, inline map[string]Attachment, keep map[string]bool, loa
 // data-href (not navigable); remote images are dropped unless loadRemote.
 // blockedRemote counts remote resources found in the original HTML.
 func Sanitize(src string, inline map[string]Attachment, loadRemote bool) (safe string, blockedRemote int) {
-	prepared, blocked, sheets := prepare(src, true)
+	prepared, blocked, sheets, darkCanvas := prepare(src, true)
 	p := policy()
 	p.AllowAttrs("data-href").OnElements("a", "area")
 	p.AllowAttrs("class", "id").Globally() // what the mail's own <style> selects by; prepare cleaned them
 	safe = finish(p.Sanitize(prepared), inline, nil, loadRemote, false)
-	if css, dark := sanitizeCSS(sheets); css != "" {
-		open := "<style>"
-		if dark {
-			// The reader keeps the mail's own dark styles, not its own inversion. As
-			// html.Render writes it, so a body written again (the image proxy's) starts the same.
-			open = `<style data-dark="">`
-		}
-		safe = open + css + "</style>" + safe
+	css, darkCSS := sanitizeCSS(sheets)
+	if darkCSS || darkCanvas {
+		// The reader keeps the mail's own dark styles, not its own inversion.
+		safe = `<style data-dark="">` + css + "</style>" + safe
+	} else if css != "" {
+		safe = "<style>" + css + "</style>" + safe
 	}
 	return safe, blocked
 }
@@ -339,10 +381,124 @@ func SanitizeCompose(src string) string { return SanitizeDraft(src, nil) }
 // Content-ID in cids (the draft account's signature images); any other cid,
 // data: or remote source is dropped.
 func SanitizeDraft(src string, cids map[string]bool) string {
-	prepared, _, _ := prepare(src, false)
+	prepared, _, _, _ := prepare(src, false)
 	p := policy()
 	p.AllowAttrs(marker).Matching(markerValue).Globally()
 	return finish(p.Sanitize(prepared), nil, cids, false, true)
+}
+
+// cleanStyle normalises an element's inline style declarations: trimming whitespace,
+// newlines and empty declarations so bluemonday's parser does not drop the attribute.
+func cleanStyle(s string) string {
+	parts := strings.Split(s, ";")
+	var out []string
+	for _, p := range parts {
+		p = strings.TrimSpace(p)
+		if p != "" {
+			out = append(out, p)
+		}
+	}
+	if len(out) == 0 {
+		return ""
+	}
+	return strings.Join(out, "; ")
+}
+
+func parseHex(c byte) uint8 {
+	switch {
+	case '0' <= c && c <= '9':
+		return c - '0'
+	case 'a' <= c && c <= 'f':
+		return c - 'a' + 10
+	case 'A' <= c && c <= 'F':
+		return c - 'A' + 10
+	}
+	return 0
+}
+
+func isDarkColor(val string) bool {
+	val = strings.TrimSpace(strings.ToLower(val))
+	val = strings.TrimSuffix(val, "!important")
+	val = strings.TrimSpace(val)
+	if val == "" || val == "transparent" || val == "inherit" || val == "initial" || val == "unset" || val == "none" {
+		return false
+	}
+	switch val {
+	case "black", "navy", "darkblue", "midnightblue", "darkgreen", "darkslategray", "maroon":
+		return true
+	case "white", "whitesmoke", "snow", "ghostwhite", "floralwhite", "linen", "antiquewhite":
+		return false
+	}
+	if strings.HasPrefix(val, "#") {
+		hex := val[1:]
+		var r, g, b uint8
+		switch len(hex) {
+		case 3, 4:
+			r = parseHex(hex[0]) * 17
+			g = parseHex(hex[1]) * 17
+			b = parseHex(hex[2]) * 17
+		case 6, 8:
+			r = parseHex(hex[0])*16 + parseHex(hex[1])
+			g = parseHex(hex[2])*16 + parseHex(hex[3])
+			b = parseHex(hex[4])*16 + parseHex(hex[5])
+		default:
+			return false
+		}
+		lum := (299*int(r) + 587*int(g) + 114*int(b)) / 1000
+		return lum < 128
+	}
+	if strings.HasPrefix(val, "rgb(") || strings.HasPrefix(val, "rgba(") {
+		start := strings.IndexByte(val, '(')
+		end := strings.IndexByte(val, ')')
+		if start < 0 || end < 0 || end <= start {
+			return false
+		}
+		args := strings.Split(val[start+1:end], ",")
+		if len(args) < 3 {
+			return false
+		}
+		r, _ := strconv.Atoi(strings.TrimSpace(args[0]))
+		g, _ := strconv.Atoi(strings.TrimSpace(args[1]))
+		b, _ := strconv.Atoi(strings.TrimSpace(args[2]))
+		lum := (299*r + 587*g + 114*b) / 1000
+		return lum < 128
+	}
+	return false
+}
+
+func elementBackground(n *html.Node) string {
+	if bg, ok := attr(n, "bgcolor"); ok && bg != "" {
+		return bg
+	}
+	decls := styleDecls(n)
+	if c, ok := decls["background-color"]; ok && c != "" {
+		return c
+	}
+	if b, ok := decls["background"]; ok && b != "" {
+		for _, f := range strings.Fields(b) {
+			if strings.HasPrefix(f, "#") || strings.HasPrefix(f, "rgb") || f == "black" || f == "white" {
+				return f
+			}
+		}
+		if fields := strings.Fields(b); len(fields) > 0 && !strings.Contains(fields[0], "(") {
+			return fields[0]
+		}
+	}
+	return ""
+}
+
+func isContainer(n *html.Node) bool {
+	if w, ok := attr(n, "width"); ok && (w == "100%" || w == "100") {
+		return true
+	}
+	decls := styleDecls(n)
+	if w := decls["width"]; w == "100%" || strings.HasPrefix(w, "100vw") {
+		return true
+	}
+	if mw := decls["min-width"]; mw == "100%" {
+		return true
+	}
+	return false
 }
 
 // ReplaceImages returns src with every <img> source s replaced by f(s); an
