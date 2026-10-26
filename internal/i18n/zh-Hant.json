@@ -411,6 +411,7 @@
   "reader_egress_body": "外掛 {arg1} 會把資料傳送到：",
   "reader_egress_title": "允許外掛傳送資料？",
   "reader_forward": "轉寄",
+  "reader_images_failed": "{arg1, number, ::group-off} 張圖片載入失敗",
   "reader_labels_add": "標籤",
   "reader_labels_add_label": "新增標籤",
   "reader_labels_auto": "模型標記",

@@ -122,7 +122,12 @@ function useSystemDark(): boolean {
  */
 export function Body({ body, theme }: { body: ReaderBody; theme: Theme }) {
   const systemDark = useSystemDark();
-  const srcdoc = useMemo(() => buildSrcdoc(body, theme, systemDark), [body, theme, systemDark]);
+  // The version makes each body Go sends a new document: a retry rebuilds the same HTML, and an
+  // unchanged srcdoc would not load again, nor ask for its failed images anew.
+  const srcdoc = useMemo(
+    () => `${buildSrcdoc(body, theme, systemDark)}<!-- ${body.version} -->`,
+    [body, theme, systemDark],
+  );
   const frame = useRef<HTMLIFrameElement>(null);
   const t = useT(body.locale);
 

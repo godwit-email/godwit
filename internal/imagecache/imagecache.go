@@ -433,6 +433,14 @@ func (c *Cache) Clear() error {
 	return errors.Join(errs...)
 }
 
+// ForgetFailure lets the next Get of src try again at once, though src
+// failed within failedTTL: an explicit retry.
+func (c *Cache) ForgetFailure(src string) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	delete(c.failed, Key(src))
+}
+
 // Get is src's image: from disk, or downloaded now (once, however many ask
 // at the same time). A download goes on when its caller gives up, so the next
 // ask finds it; a URL that failed fails at once for a few minutes.

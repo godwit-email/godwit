@@ -411,6 +411,7 @@
   "reader_egress_body": "プラグイン {arg1} は次の宛先にデータを送信します：",
   "reader_egress_title": "プラグインにデータの送信を許可しますか？",
   "reader_forward": "転送",
+  "reader_images_failed": "{arg1, number, ::group-off} 件の画像を読み込めませんでした",
   "reader_labels_add": "ラベル",
   "reader_labels_add_label": "ラベルを追加",
   "reader_labels_auto": "モデルによる自動付与",

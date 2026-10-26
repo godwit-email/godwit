@@ -257,6 +257,19 @@ func (s *Service) MessageExists(ctx context.Context, id int64) (bool, error) {
 	return len(rows.Values) > 0, nil
 }
 
+// StoredHTML is message id's HTML body as synced, unsanitized; "" when it
+// has none. It needs no connection, unlike GetRawMessage.
+func (s *Service) StoredHTML(ctx context.Context, id int64) (string, error) {
+	rows, err := s.db.Query(ctx, "SELECT body_html FROM messages WHERE id = ?", id)
+	if err != nil {
+		return "", err
+	}
+	if len(rows.Values) == 0 {
+		return "", fmt.Errorf("message %d not found", id)
+	}
+	return store.Str(rows.Values[0][0]), nil
+}
+
 // downloaded first if needed and embedded.
 func (s *Service) GetMessage(ctx context.Context, id int64, loadRemoteImages bool) (Message, error) {
 	rows, err := s.db.Query(ctx, "SELECT "+msgCols+", m.reply_to, m.body_text, m.body_html, m.body_truncated, "+inJunk+" FROM messages m LEFT JOIN folders f ON f.id = m.folder_id WHERE m.id = ?", id)

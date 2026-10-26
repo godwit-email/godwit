@@ -63,7 +63,7 @@ func newSyncEnvWith(t *testing.T, o Options, opts ...testmail.Option) *syncEnv {
 // loopbackImageClient keeps arrival prefetch from contacting real sender sites.
 func loopbackImageClient() *http.Client {
 	imageClient := imagefetch.NewClient(true)
-	imageClient.Transport.(*http.Transport).DialContext = func(ctx context.Context, network, addr string) (net.Conn, error) {
+	imageClient.Transport.(*imagefetch.Transport).DialContext = func(ctx context.Context, network, addr string) (net.Conn, error) {
 		host, _, err := net.SplitHostPort(addr)
 		if ip := net.ParseIP(host); err != nil || ip == nil || !ip.IsLoopback() {
 			return nil, fmt.Errorf("test images: refusing non-loopback address %s", addr)

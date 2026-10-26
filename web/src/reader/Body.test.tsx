@@ -316,6 +316,17 @@ test("remote images are godwit-img: URLs left to the frame: the page asks Go for
   expect(Object.keys(api)).not.toContain("image");
 });
 
+test("a retry's body, the same HTML in a new version, loads the frame anew", async () => {
+  await start(body(1, '<img src="godwit-img://m1/abc">', { remote: true }));
+  const srcdoc = () => document.querySelector("iframe")?.getAttribute("srcdoc");
+  const before = srcdoc();
+  expect(before).toBeTruthy();
+  act(() => {
+    for (const f of h.body) f(body(2, '<img src="godwit-img://m1/abc">', { remote: true }));
+  });
+  expect(srcdoc()).not.toBe(before);
+});
+
 test("a theme event rebuilds plain text in the new theme", async () => {
   await start(body(1, "", { plain: "hi" }));
   act(() => {

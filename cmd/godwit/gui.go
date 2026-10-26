@@ -191,6 +191,9 @@ func gui(ctx context.Context, dataDir string) int {
 		OnFailed: func(k any, m int64, err error) {
 			onBody(k, m, func(a *app.App, v ui.NativeWebView) { a.BodyFailed(v, m, err) })
 		},
+		OnImagesFailed: func(k any, m int64, n int) {
+			onBody(k, m, func(a *app.App, v ui.NativeWebView) { a.BodyImagesFailed(v, m, n) })
+		},
 	})
 	mygo.Bind(webui.NewReaderPage(reader))
 	// The image proxy: remote images of a body load from godwit-img: URLs.

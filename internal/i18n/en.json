@@ -828,6 +828,14 @@
   },
   "reader_egress_title": "Let the plugin send data?",
   "reader_forward": "Forward",
+  "reader_images_failed": "{arg1, number, ::group-off} images couldn''t load",
+  "@reader_images_failed": {
+    "placeholders": {
+      "arg1": {
+        "type": "int"
+      }
+    }
+  },
   "reader_labels_add": "Label",
   "reader_labels_add_label": "Add label",
   "reader_labels_auto": "By model",

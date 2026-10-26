@@ -2,16 +2,21 @@ package imagefetch
 
 import (
 	"bytes"
+	"context"
 	"encoding/base64"
 	"errors"
 	"image"
 	"image/png"
+	"io"
+	"net"
 	"net/http"
 	"net/http/httptest"
 	"net/netip"
+	"net/url"
 	"strings"
 	"sync/atomic"
 	"testing"
+	"time"
 )
 
 func pngOf(t *testing.T, w, h int) []byte {
@@ -125,5 +130,214 @@ func TestFetch(t *testing.T) {
 	}
 	if _, err := Download(t.Context(), c, "ftp://x.example/a.png"); !errors.Is(err, ErrScheme) {
 		t.Errorf("ftp: %v", err)
+	}
+}
+
+// fakeDNS answers lookups from answers until the test ends.
+func fakeDNS(t *testing.T, answers map[string][]string) {
+	t.Helper()
+	old := lookup
+	t.Cleanup(func() { lookup = old })
+	lookup = func(_ context.Context, _, host string) ([]netip.Addr, error) {
+		var out []netip.Addr
+		for _, a := range answers[host] {
+			out = append(out, netip.MustParseAddr(a))
+		}
+		if len(out) == 0 {
+			return nil, &net.DNSError{Err: "no such host", Name: host, IsNotFound: true}
+		}
+		return out, nil
+	}
+}
+
+func TestResolve(t *testing.T) {
+	fakeDNS(t, map[string][]string{
+		"public.example": {"2606:4700::1111", "93.184.216.34"},
+		"fake.example":   {"198.18.0.7"},
+		"mixed.example":  {"198.18.0.7", "93.184.216.34"},
+		"lan.example":    {"93.184.216.34", "192.168.1.1"},
+	})
+	for host, want := range map[string]struct {
+		first string
+		fake  bool
+		err   error
+	}{
+		"public.example": {first: "93.184.216.34"}, // IPv4 first
+		"fake.example":   {first: "198.18.0.7", fake: true},
+		"mixed.example":  {err: ErrHost}, // a fake answer beside a real one is judged as any
+		"lan.example":    {err: ErrHost}, // every answer must be public
+		"8.8.8.8":        {first: "8.8.8.8"},
+		"198.18.0.7":     {err: ErrHost}, // written as is: no name stands behind it
+		"10.0.0.1":       {err: ErrHost},
+	} {
+		addrs, fake, err := resolve(t.Context(), host)
+		if !errors.Is(err, want.err) || err == nil && (addrs[0].String() != want.first || fake != want.fake) {
+			t.Errorf("%s: %v %v %v, want %+v", host, addrs, fake, err, want)
+		}
+	}
+}
+
+// connectProxy is an HTTP proxy that tunnels every CONNECT to backend,
+// noting the target it was asked for.
+func connectProxy(t *testing.T, backend string) (*httptest.Server, *atomic.Value) {
+	t.Helper()
+	var asked atomic.Value
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodConnect {
+			http.Error(w, "CONNECT only", http.StatusMethodNotAllowed)
+			return
+		}
+		asked.Store(r.Host)
+		up, err := net.Dial("tcp", backend)
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusBadGateway)
+			return
+		}
+		w.WriteHeader(http.StatusOK)
+		c, _, err := w.(http.Hijacker).Hijack()
+		if err != nil {
+			up.Close()
+			return
+		}
+		go func() { io.Copy(up, c); up.Close() }()
+		go func() { io.Copy(c, up); c.Close() }()
+	}))
+	t.Cleanup(srv.Close)
+	return srv, &asked
+}
+
+func TestSystemProxyPinsAddress(t *testing.T) {
+	pic := pngOf(t, 1, 2)
+	img := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { w.Write(pic) }))
+	defer img.Close()
+	proxy, asked := connectProxy(t, img.Listener.Addr().String())
+	fakeDNS(t, map[string][]string{
+		"images.example": {"93.184.216.34"},
+		"fake.example":   {"198.18.0.7"},
+		"lan.example":    {"192.168.1.1"},
+	})
+	proxyURL, _ := url.Parse(proxy.URL)
+	SystemProxy = func(*url.URL) *url.URL { return proxyURL }
+	defer func() { SystemProxy = nil }()
+
+	c := NewClient(false)
+	data, _, _, _, err := Fetch(t.Context(), c, "http://images.example/a.png")
+	if err != nil || !bytes.Equal(data, pic) || asked.Load() != "93.184.216.34:80" {
+		t.Fatalf("through the proxy: %v, asked %v", err, asked.Load())
+	}
+	if _, _, _, _, err := Fetch(t.Context(), c, "http://fake.example/a.png"); err != nil || asked.Load() != "fake.example:80" {
+		t.Errorf("a fake-ip name goes to a proxy on this computer by name: %v, asked %v", err, asked.Load())
+	}
+	asked.Store("")
+	for _, u := range []string{"http://lan.example/a.png", "http://192.168.1.1/a.png", "http://127.0.0.1/a.png", "http://localhost/a.png", "http://x.localhost/a.png"} {
+		if _, _, _, _, err := Fetch(t.Context(), c, u); !errors.Is(err, ErrHost) || asked.Load() != "" {
+			t.Errorf("%s: %v, asked %v", u, err, asked.Load())
+		}
+	}
+
+	SystemProxy = func(*url.URL) *url.URL { return &url.URL{Scheme: "http", Host: "203.0.113.9:8080"} }
+	if _, _, _, _, err := Fetch(t.Context(), NewClient(false), "http://fake.example/a.png"); !errors.Is(err, ErrHost) {
+		t.Errorf("a fake-ip name through a proxy elsewhere: %v", err)
+	}
+}
+
+func TestSystemProxyRefusesTunnel(t *testing.T) {
+	proxy := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		http.Error(w, "no", http.StatusForbidden)
+	}))
+	defer proxy.Close()
+	fakeDNS(t, map[string][]string{"images.example": {"93.184.216.34"}})
+	proxyURL, _ := url.Parse(proxy.URL)
+	SystemProxy = func(*url.URL) *url.URL { return proxyURL }
+	defer func() { SystemProxy = nil }()
+	if _, _, _, _, err := Fetch(t.Context(), NewClient(false), "http://images.example/a.png"); err == nil || !strings.Contains(err.Error(), "403") {
+		t.Errorf("refused tunnel: %v", err)
+	}
+}
+
+func TestSystemProxyBySchemeNotPort(t *testing.T) {
+	refuse := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		http.Error(w, "no", http.StatusForbidden)
+	}))
+	defer refuse.Close()
+	fakeDNS(t, map[string][]string{"images.example": {"93.184.216.34"}})
+	proxyURL, _ := url.Parse(refuse.URL)
+	var schemes []string
+	SystemProxy = func(u *url.URL) *url.URL { schemes = append(schemes, u.Scheme); return proxyURL }
+	defer func() { SystemProxy = nil }()
+	c := NewClient(false)
+	for _, u := range []string{"https://images.example:8443/a.png", "http://images.example:443/a.png"} {
+		Fetch(t.Context(), c, u)
+	}
+	if strings.Join(schemes, ",") != "https,http" {
+		t.Errorf("schemes asked for %v", schemes)
+	}
+}
+
+func TestDialPinnedRacesAddresses(t *testing.T) {
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer ln.Close()
+	_, port, _ := net.SplitHostPort(ln.Addr().String())
+	// The first address never answers (its dial hangs until the test ends);
+	// the second one does.
+	hang := make(chan struct{})
+	defer close(hang)
+	addrs := []netip.Addr{netip.MustParseAddr("192.0.2.1"), netip.MustParseAddr("127.0.0.1")}
+	start := time.Now()
+	c, err := dialPinned(t.Context(), "tcp", addrs, port, func(ip netip.Addr) bool {
+		if ip == addrs[0] {
+			<-hang
+			return false
+		}
+		return true
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	c.Close()
+	if d := time.Since(start); d > 3*time.Second {
+		t.Errorf("took %v: the first address held up the second", d)
+	}
+	if _, err := dialPinned(t.Context(), "tcp", addrs[1:], port, PublicIP); !errors.Is(err, ErrHost) {
+		t.Errorf("checked as it connects: %v", err)
+	}
+}
+
+func TestSystemProxyCredentials(t *testing.T) {
+	pic := pngOf(t, 1, 1)
+	img := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { w.Write(pic) }))
+	defer img.Close()
+	tunnel, _ := connectProxy(t, img.Listener.Addr().String())
+	var got atomic.Value
+	proxy := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		got.Store(r.Header.Get("Proxy-Authorization"))
+		if r.Header.Get("Proxy-Authorization") != "Basic "+base64.StdEncoding.EncodeToString([]byte("alice:s3cret")) {
+			http.Error(w, "auth", http.StatusProxyAuthRequired)
+			return
+		}
+		tunnel.Config.Handler.ServeHTTP(w, r)
+	}))
+	defer proxy.Close()
+	fakeDNS(t, map[string][]string{"images.example": {"93.184.216.34"}})
+	proxyURL, _ := url.Parse(proxy.URL)
+	proxyURL.User = url.UserPassword("alice", "s3cret")
+	SystemProxy = func(*url.URL) *url.URL { return proxyURL }
+	defer func() { SystemProxy = nil }()
+	if _, _, _, _, err := Fetch(t.Context(), NewClient(false), "http://images.example/a.png"); err != nil {
+		t.Fatalf("with credentials: %v (sent %q)", err, got.Load())
+	}
+}
+
+func TestDialProxyDefaultPort(t *testing.T) {
+	ctx, cancel := context.WithCancel(t.Context())
+	cancel() // dial nothing: the error names the address it would have
+	for proxy, want := range map[string]string{"http://127.0.0.1": "127.0.0.1:80", "socks5://127.0.0.1": "127.0.0.1:1080"} {
+		u, _ := url.Parse(proxy)
+		if _, err := dialProxy(ctx, u, "93.184.216.34:443"); err == nil || !strings.Contains(err.Error(), want) {
+			t.Errorf("%s: %v, want a dial to %s", proxy, err, want)
+		}
 	}
 }

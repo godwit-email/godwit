@@ -48,6 +48,7 @@ type readerFixture struct {
 	cuts     map[int64]bool
 	built    []emittedBody // OnBuilt's
 	failed   []any         // the pages OnFailed named
+	imgFails []int         // OnImagesFailed's counts
 }
 
 type emittedBody struct {
@@ -78,7 +79,8 @@ func newReaderFixture(t *testing.T) *readerFixture {
 		OnBuilt: func(k any, b ReaderBody) {
 			f.record(func() { f.cuts[b.Message], f.built = b.Cut, append(f.built, emittedBody{k, b}) })
 		},
-		OnFailed: func(k any, _ int64, _ error) { f.record(func() { f.failed = append(f.failed, k) }) },
+		OnFailed:       func(k any, _ int64, _ error) { f.record(func() { f.failed = append(f.failed, k) }) },
+		OnImagesFailed: func(_ any, _ int64, n int) { f.record(func() { f.imgFails = append(f.imgFails, n) }) },
 	})
 	st, err := f.e.Svc.GetSettings(t.Context())
 	require.NoError(t, err)
@@ -553,6 +555,32 @@ func TestReaderImageRefusedNotInBody(t *testing.T) {
 	assert.Zero(t, srv.hits())
 }
 
+func TestReaderRetryRefetchesFailedImage(t *testing.T) {
+	pic := pngOf(t, 2, 2)
+	var up atomic.Bool
+	srv := newImageServer(t, func(w http.ResponseWriter, r *http.Request) {
+		if !up.Load() {
+			http.Error(w, "down", http.StatusServiceUnavailable)
+			return
+		}
+		w.Write(pic)
+	})
+	f := newReaderFixture(t)
+	src := srv.URL + "/pixel.png"
+	m := f.remoteMail(t, "hi", src)
+	k := f.page(m.ID)
+	f.r.Allow(m.ID)
+	first := f.waitEmitted(t, k).Version
+	require.Equal(t, http.StatusBadGateway, f.image(t, m.ID, src).Code)
+	up.Store(true)
+	require.Equal(t, http.StatusBadGateway, f.image(t, m.ID, src).Code, "the failure is remembered")
+	f.r.Allow(m.ID) // the retry
+	require.Eventually(t, func() bool { return f.waitEmitted(t, k).Version > first }, 10*time.Second, 5*time.Millisecond)
+	rec := f.image(t, m.ID, src)
+	require.Equal(t, http.StatusOK, rec.Code, "a retry tries again at once")
+	assert.Equal(t, pic, rec.Body.Bytes())
+}
+
 func TestReaderImageFailureIs502(t *testing.T) {
 	srv := newImageServer(t, func(w http.ResponseWriter, r *http.Request) { w.Write([]byte("<html>")) })
 	f := newReaderFixture(t)
@@ -560,8 +588,14 @@ func TestReaderImageFailureIs502(t *testing.T) {
 	m := f.remoteMail(t, "hi", src)
 	k := f.page(m.ID)
 	f.r.Allow(m.ID)
-	f.waitEmitted(t, k)
+	first := f.waitEmitted(t, k).Version
 	assert.Equal(t, http.StatusBadGateway, f.image(t, m.ID, src).Code, "not an image")
+	f.image(t, m.ID, src)
+	f.record(func() { assert.Equal(t, []int{1}, f.imgFails, "the page is told once per image") })
+	f.r.Allow(m.ID) // the retry
+	require.Eventually(t, func() bool { return f.waitEmitted(t, k).Version > first }, 10*time.Second, 5*time.Millisecond)
+	f.image(t, m.ID, src)
+	f.record(func() { assert.Equal(t, []int{1, 1}, f.imgFails, "counted again after a retry") })
 }
 
 func TestReaderPolicyLoadsImagesAtOnce(t *testing.T) {
