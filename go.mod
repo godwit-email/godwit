@@ -1,6 +1,6 @@
 module github.com/godwit-email/godwit
 
-go 1.27.1
+go 1.27.3
 
 require (
 	github.com/Calcium-Ion/moejs v0.1.0-alpha.9
