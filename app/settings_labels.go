@@ -45,14 +45,30 @@ func newLabelsView(a *App) *labelsView {
 }
 
 func (v *labelsView) view(c *ui.Context, p *settingsPage) {
+	p.syncSettings()
+	defer p.syncSettings()
 	a := v.a
 	pageHeading(c, i18n.T("settings.labels"), i18n.T("settings.labels.sub"), func() {
 		settingButton(c, i18n.T("settings.labels.new"), kit.Outline, false).OnClick(func() { v.open(core.Label{Color: "gray", Icon: "folder-3"}) })
 	})
 	settingsSection(c, i18n.T("settings.labels.list"), i18n.T("settings.labels.list.foot"), func() { v.list(c) })
 
-	p.syncSettings()
-	defer p.syncSettings()
+	display := p.st.LabelDisplay
+	if display == "" {
+		display = core.LabelDisplayBoth
+	}
+	settingsSection(c, i18n.T("settings.labels.display"), "",
+		func() {
+			settingRow(c, i18n.T("settings.labels.display.style"), i18n.T("settings.labels.display.style.help"), func() {
+				opts := []kit.Option[string]{
+					{Value: core.LabelDisplayBoth, Label: i18n.T("settings.labels.display.both")},
+					{Value: core.LabelDisplayIcon, Label: i18n.T("settings.labels.display.icon")},
+					{Value: core.LabelDisplayText, Label: i18n.T("settings.labels.display.text")},
+				}
+				settingSelect(c, i18n.T("settings.labels.display.style"), &display, opts)
+				p.st.LabelDisplay = display
+			})
+		})
 	settingsSection(c, i18n.T("settings.labels.auto"), "",
 		func() {
 			kit.SwitchRow(c, &p.st.AutoLabel, i18n.T("settings.labels.auto.on"), i18n.T("settings.labels.auto.on.help"))

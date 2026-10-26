@@ -1456,6 +1456,12 @@
   "settings_labels_dialog_edit": "Edit label",
   "settings_labels_dialog_new": "New label",
   "settings_labels_dialog_sub": "The model uses the name and description to decide which mail gets this label.",
+  "settings_labels_display": "Display",
+  "settings_labels_display_both": "Icon and text",
+  "settings_labels_display_icon": "Icon only",
+  "settings_labels_display_style": "Display style",
+  "settings_labels_display_style_help": "How labels are shown in the mail list and thread",
+  "settings_labels_display_text": "Text only",
   "settings_labels_edit": "Edit “{arg1}”",
   "@settings_labels_edit": {
     "placeholders": {
