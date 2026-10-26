@@ -970,6 +970,7 @@ function Compose({
                 pick: (r) => {
                   pick.current.model = r;
                   setModelRef(r);
+                  void api.setModel(r).catch((e) => toast.error(witError(message(e), t)));
                 },
               }}
               effort={{

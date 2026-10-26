@@ -20,6 +20,7 @@ import (
 	"slices"
 	"sort"
 	"strings"
+	"time"
 
 	"github.com/godwit-email/godwit/core/ai"
 	"github.com/godwit-email/godwit/core/gateway"
@@ -494,4 +495,62 @@ func (s *Service) callModelPlugin(ctx context.Context, name string, rp *runningP
 		return errors.Join(fmt.Errorf("model plugin %s: %w", name, s.cleanError(err)), count)
 	}
 	return s.pluginSucceeded(ctx, name, rp.gen)
+}
+
+// TestPluginModel tests capability (judge or gen) of a plugin model reference.
+func (s *Service) TestPluginModel(ctx context.Context, ref string) (CapStatus, error) {
+	if !isPluginRef(ref) {
+		return CapStatus{}, ErrModelUnavailable
+	}
+	start := time.Now()
+	var isJudge bool
+	if m, ok, err := s.appleIntelligenceModel(ctx, ref); ok {
+		if err != nil {
+			st := CapStatus{State: "fail", At: time.Now()}
+			st.Code, st.HTTPStatus = capCode(err)
+			return st, err
+		}
+		isJudge = m.Judges()
+	} else {
+		_, _, m, _, err := s.pluginModel(ctx, ref)
+		if err != nil {
+			st := CapStatus{State: "fail", At: time.Now()}
+			st.Code, st.HTTPStatus = capCode(err)
+			return st, err
+		}
+		isJudge = m.Judges()
+	}
+	if isJudge {
+		j, err := s.pluginJudge(ctx, ref)
+		if err != nil {
+			st := CapStatus{State: "fail", At: time.Now()}
+			st.Code, st.HTTPStatus = capCode(err)
+			return st, err
+		}
+		qs := []ai.Question{{Name: "ping", Type: ai.Predicate, Instructions: "Ping"}}
+		_, err = j.Ask(ctx, "Ping", qs)
+		st := CapStatus{State: "ok", LatencyMs: int(time.Since(start).Milliseconds()), At: time.Now()}
+		if err != nil {
+			st.State = "fail"
+			st.Code, st.HTTPStatus = capCode(err)
+		}
+		return st, err
+	}
+	rm, err := s.resolvePluginModel(ctx, ref)
+	if err != nil {
+		st := CapStatus{State: "fail", At: time.Now()}
+		st.Code, st.HTTPStatus = capCode(err)
+		return st, err
+	}
+	e, err := s.aiEngine()
+	if err != nil {
+		return CapStatus{State: "fail", At: time.Now()}, err
+	}
+	_, err = s.runText(ctx, e, ai.Request{Model: rm, Prompt: "Reply with OK.", MaxTurns: 1}, 0)
+	st := CapStatus{State: "ok", LatencyMs: int(time.Since(start).Milliseconds()), At: time.Now()}
+	if err != nil {
+		st.State = "fail"
+		st.Code, st.HTTPStatus = capCode(err)
+	}
+	return st, err
 }

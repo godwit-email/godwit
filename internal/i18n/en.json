@@ -2476,5 +2476,7 @@
         "type": "int"
       }
     }
-  }
+  },
+  "wit_model_changed": "Model changed: {arg1}",
+  "settings_models_apple_intelligence_sub": "On-device intelligence"
 }

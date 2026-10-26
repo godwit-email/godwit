@@ -29,7 +29,7 @@ func (m *modelsView) view(c *ui.Context) {
 		}})
 	}
 	if st := m.a.settings; len(m.services) > 0 || len(m.plugins) > 0 || isPluginRef(st.DefaultModel) || isPluginRef(st.SmallModel) || isPluginRef(st.JudgeService) {
-		u := deriveUsage(m.a.settings, m.services, m.plugins)
+		u := deriveUsage(m.a.settings, m.services, m.plugins, m.pluginStatus)
 		m.usage(c, u)
 		m.list(c, u)
 	}
@@ -86,6 +86,40 @@ func (m *modelsView) list(c *ui.Context, u usage) {
 				ui.Icon(c, icons.Get("chevron-right")).Size(theme.Icon, theme.Icon).TextColor(t.Muted).Shrink(0)
 			}).Padding(th.Space(2), th.Space(4))
 		})
+	}
+	for _, p := range m.plugins {
+		if p.Plugin == core.AppleIntelligencePlugin {
+			rows = append(rows, func() {
+				ui.Row(c.Key("apple-intelligence")).Gap(th.Space(3)).AlignItems(ui.Center).Padding(th.Space(2), th.Space(4)).Children(func() {
+					ui.Box(c).Size(th.Space(8), th.Space(8)).Shrink(0).AlignSelf(ui.Start).Margin(theme.ServiceMarkOffset, 0, 0, 0).Radius(t.Radius.Lg).Background(t.Background).Center().Label("Apple Intelligence").Children(func() {
+						ui.Icon(c, icons.Get("sparkles")).Size(th.Space(5), th.Space(5)).TextColor(t.Foreground)
+					})
+					ui.Column(c).Grow(1).Shrink(1).Gap(th.Space(1)).Children(func() {
+						ui.Row(c).Gap(th.Space(2)).AlignItems(ui.Center).Children(func() {
+							ui.Text(c, "Apple Intelligence").FontWeight(500).LineHeight(theme.LineFor("Apple Intelligence")).SingleLine().Shrink(1)
+							l, label := lookOK, i18n.T("settings.models.status.normal")
+							if st, ok := m.pluginStatus["plugin/apple-intelligence/on-device"]; ok {
+								if st.State == "ok" && st.LatencyMs > 0 {
+									l, label = lookOK, i18n.Tf("settings.models.test.ok", st.LatencyMs)
+								} else if st.State != "ok" {
+									l, label = lookFail, i18n.T("settings.models.fail.error")
+								}
+							}
+							statusLine(c, line{label, l})
+						})
+						kit.Text(c, i18n.T("settings.models.apple_intelligence.sub"), t.Text.Sm).Font(theme.Mono).LineHeight(theme.LineBase).TextColor(t.Muted).SingleLine()
+						ui.Row(c).Wrap().Gap(th.Space(1.5)).Children(func() {
+							isSmallActive := u.smallSvc == nil && m.a.settings.SmallModel == "plugin/apple-intelligence/on-device"
+							isGenActive := u.genSvc == nil && m.a.settings.DefaultModel == "plugin/apple-intelligence/on-device"
+							isJudgeActive := u.judgeSvc == nil && m.a.settings.JudgeService == "plugin/apple-intelligence/classifier"
+							capChip(c, i18n.Plural("settings.models.gen", 1), isGenActive || isSmallActive)
+							capChip(c, i18n.Tf("settings.models.judge_chip", "Apple Intelligence"), isJudgeActive)
+						})
+					})
+				})
+			})
+			break
+		}
 	}
 	settingsSection(c, i18n.T("settings.models.services"), i18n.T("settings.models.foot"), rows...)
 }
@@ -153,7 +187,7 @@ func (m *modelsView) usage(c *ui.Context, u usage) {
 				})
 			},
 			func() {
-				usageRow(c, small, i18n.T("settings.models.use.small.desc"), nil, func() {
+				usageRow(c, small, i18n.T("settings.models.use.small.desc"), &u.small, func() {
 					sel(small, &m.smallModel, u.smallOpts, func(st *core.Settings, v string) { st.SmallModel = v })
 				})
 			},

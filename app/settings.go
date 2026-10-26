@@ -101,7 +101,7 @@ type settingsPage struct {
 
 func newSettingsPage(a *App) *settingsPage {
 	return &settingsPage{a: a, forms: map[int64]*accountForm{}, usage: map[int64]int64{}, imgSize: -1, boxes: map[int64]*mailbox{}, reauth: map[int64]bool{}, sigDocs: map[int64]sigDoc{},
-		update: a.svc.UpdateAccount, models: &modelsView{a: a, checkService: a.svc.CheckModelService, testService: a.svc.TestCapability, serviceAvatar: a.svc.ModelServiceAvatar}, ext: &extView{a: a, tab: 1}, labels: newLabelsView(a)}
+		update: a.svc.UpdateAccount, models: &modelsView{a: a, checkService: a.svc.CheckModelService, testService: a.svc.TestCapability, testPlugin: a.svc.TestPluginModel, serviceAvatar: a.svc.ModelServiceAvatar}, ext: &extView{a: a, tab: 1}, labels: newLabelsView(a)}
 }
 
 // section is the page shown: an unknown or missing account falls back to
@@ -138,7 +138,11 @@ func (p *settingsPage) refresh(hints []events.Event) {
 			l.answer("", false)
 		}
 	}
-	switch sec, acc := p.section(); {
+	sec, acc := p.section()
+	if sec != "models" {
+		p.models.stopProbe()
+	}
+	switch {
 	case acc != nil:
 		p.readUsage(acc.ID)
 		p.readMailbox(acc.ID)

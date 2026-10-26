@@ -1219,5 +1219,7 @@
   "wit_ctx_summary": "요약",
   "wit_ctx_free": "남음",
   "wit_ctx_until": "자동 압축까지 {arg1}% 남음",
-  "wit_ctx_compact": "대화 압축"
+  "wit_ctx_compact": "대화 압축",
+  "wit_model_changed": "모델 변경됨: {arg1}",
+  "settings_models_apple_intelligence_sub": "이 Mac의 온디바이스 인텔리전스"
 }

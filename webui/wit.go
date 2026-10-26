@@ -31,6 +31,8 @@ type WitInfo struct {
 	Chips []string `json:"chips"`
 	// Model is the default model's label, as the input's chip.
 	Model string `json:"model"`
+	// ModelRef is the conversation model's slug reference ("" for settings default).
+	ModelRef string `json:"modelRef,omitempty"`
 }
 
 // Skill is a 调整 menu item.
@@ -228,7 +230,18 @@ func witInfo(ctx context.Context, svc *core.Service, d core.Draft) (WitInfo, err
 	}
 	// translate-draft runs on a running plugin without a model (core assistSkill)
 	plugin := st.Translator != "" && slices.ContainsFunc(ts, func(t core.TranslatorInfo) bool { return t.ID == st.Translator && t.Running })
-	info := WitInfo{Enabled: st.DefaultModel != "" || plugin, TranslateOnly: st.DefaultModel == "" && plugin, Chips: []string{}, Model: modelLabel(ctx, svc, st.DefaultModel)}
+	modelRef, _ := svc.DraftModel(ctx, d.ID)
+	modelName := modelLabel(ctx, svc, st.DefaultModel)
+	if modelRef != "" {
+		modelName = modelLabel(ctx, svc, modelRef)
+	}
+	info := WitInfo{
+		Enabled:       st.DefaultModel != "" || plugin,
+		TranslateOnly: st.DefaultModel == "" && plugin,
+		Chips:         []string{},
+		Model:         modelName,
+		ModelRef:      modelRef,
+	}
 	for _, id := range adjustSkills {
 		info.Skills = append(info.Skills, Skill{ID: id, Label: i18n.T("wit.skill." + id), Hint: i18n.T("wit.skill." + id + ".hint")})
 	}
@@ -341,6 +354,16 @@ func (p *ComposePage) Models(ctx context.Context) ([]ModelChoice, error) {
 	}
 	s.mu.Unlock()
 	return modelChoices(ctx, svc)
+}
+
+// SetModel sets the chosen model on the draft's assist conversation.
+func (p *ComposePage) SetModel(ctx context.Context, model string) error {
+	_, svc, s, err := p.open(ctx)
+	if err != nil {
+		return keyed(err)
+	}
+	defer s.mu.Unlock()
+	return keyed(svc.SetDraftModel(ctx, s.draftID, model))
 }
 
 // CheckCited is ErrMailGone for a cited message deleted since, as the Wit

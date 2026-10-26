@@ -200,6 +200,34 @@ func (s *Service) assistConversation(ctx context.Context, draftID int64) (Conver
 	return s.newAssistConversation(ctx, draftID, "")
 }
 
+// SetDraftModel sets the assist conversation model for draftID.
+func (s *Service) SetDraftModel(ctx context.Context, draftID int64, model string) error {
+	ctx, end, err := s.begin(ctx, 0)
+	if err != nil {
+		return err
+	}
+	defer end()
+	conv, err := s.assistConversation(ctx, draftID)
+	if err != nil {
+		return err
+	}
+	return s.SetConversationModel(ctx, conv.ID, model, "")
+}
+
+// DraftModel returns the assist conversation model for draftID ("" for default).
+func (s *Service) DraftModel(ctx context.Context, draftID int64) (string, error) {
+	ctx, end, err := s.begin(ctx, 0)
+	if err != nil {
+		return "", err
+	}
+	defer end()
+	conv, err := s.assistConversation(ctx, draftID)
+	if err != nil {
+		return "", err
+	}
+	return conv.Model, nil
+}
+
 func (s *Service) newAssistConversation(ctx context.Context, draftID int64, title string) (Conversation, error) {
 	now := time.Now().Unix()
 	r, err := s.db.Execute(ctx, "INSERT INTO conversations(kind, draft_id, title, model, created_at, updated_at) VALUES ('assist', ?, ?, '', ?, ?)",
@@ -611,6 +639,9 @@ func (s *Service) rewriteSelection(ctx context.Context, end func(), draftID int6
 	conv, err := s.newAssistConversation(ctx, draftID, titleOf(instruction))
 	if err != nil {
 		return nil, err
+	}
+	if parent, perr := s.assistConversation(ctx, draftID); perr == nil && parent.Model != "" {
+		_ = s.SetConversationModel(ctx, conv.ID, parent.Model, "")
 	}
 	tool := toolDesc{Spec: selectionSpec, Write: true, Exec: &executor{Apply: s.applyUpdate,
 		Prepare: func(ctx context.Context, conv Conversation, args json.RawMessage) (prepared, error) {

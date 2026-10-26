@@ -1219,5 +1219,7 @@
   "wit_ctx_summary": "Tóm tắt",
   "wit_ctx_free": "Còn trống",
   "wit_ctx_until": "Còn {arg1}% trước khi tự thu gọn",
-  "wit_ctx_compact": "Thu gọn"
+  "wit_ctx_compact": "Thu gọn",
+  "wit_model_changed": "Đã đổi mô hình: {arg1}",
+  "settings_models_apple_intelligence_sub": "Cục bộ trên máy Mac này"
 }

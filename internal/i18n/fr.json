@@ -1219,5 +1219,7 @@
   "wit_ctx_summary": "Résumé",
   "wit_ctx_free": "Libre",
   "wit_ctx_until": "Encore {arg1} % avant le compactage automatique",
-  "wit_ctx_compact": "Compacter"
+  "wit_ctx_compact": "Compacter",
+  "wit_model_changed": "Modèle modifié : {arg1}",
+  "settings_models_apple_intelligence_sub": "Sur cet appareil"
 }

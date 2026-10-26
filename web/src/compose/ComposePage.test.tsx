@@ -17,6 +17,7 @@ vi.mock("@/mygo", () => ({
     addAttachments: vi.fn(),
     removeAttachment: vi.fn(),
     send: vi.fn(),
+    setModel: vi.fn(),
   },
   events: {
     closing: {

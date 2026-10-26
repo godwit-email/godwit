@@ -1219,5 +1219,7 @@
   "wit_ctx_summary": "Zusammenfassung",
   "wit_ctx_free": "Frei",
   "wit_ctx_until": "Noch {arg1} % bis zum automatischen Verdichten",
-  "wit_ctx_compact": "Verdichten"
+  "wit_ctx_compact": "Verdichten",
+  "wit_model_changed": "Modell geändert: {arg1}",
+  "settings_models_apple_intelligence_sub": "Lokal auf diesem Mac"
 }

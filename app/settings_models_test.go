@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"slices"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -949,6 +950,62 @@ func TestDeriveUsage(t *testing.T) {
 	}
 }
 
+func TestDeriveUsageSmall(t *testing.T) {
+	ant := core.ModelService{ID: 1, Name: "Anthropic", Slug: "anthropic", Kind: "anthropic", Models: []string{"[MODEL D]"},
+		Status: map[string]core.CapStatus{core.CapGen: {State: "ok", LatencyMs: 150}}}
+	smallSvc := core.ModelService{ID: 2, Name: "FastSvc", Slug: "fast", Kind: "openai", Models: []string{"small-m"},
+		Status: map[string]core.CapStatus{core.CapGen: {State: "ok", LatencyMs: 45}}}
+	plugins := []core.PluginModels{{Plugin: "lux", Models: []plugins.ProviderModel{
+		{ID: "small-plug", Name: "SmallPlug", Operation: "small"},
+	}}}
+
+	// 1. Same as default model
+	u1 := deriveUsage(core.Settings{DefaultModel: "anthropic/[MODEL D]", SmallModel: ""}, []core.ModelService{ant, smallSvc}, plugins)
+	if u1.small != u1.gen {
+		t.Errorf("u1.small %+v != u1.gen %+v", u1.small, u1.gen)
+	}
+	if u1.smallSvc == nil || u1.smallSvc.ID != ant.ID {
+		t.Errorf("u1.smallSvc should point to ant, got %+v", u1.smallSvc)
+	}
+
+	// 2. Custom small model service
+	u2 := deriveUsage(core.Settings{DefaultModel: "anthropic/[MODEL D]", SmallModel: "fast/small-m"}, []core.ModelService{ant, smallSvc}, plugins)
+	if u2.small.look != lookOK || !strings.Contains(u2.small.text, "FastSvc") || !strings.Contains(u2.small.text, "45 ms") {
+		t.Errorf("u2.small unexpected: %+v", u2.small)
+	}
+
+	// 3. Custom small model plugin
+	u3 := deriveUsage(core.Settings{DefaultModel: "anthropic/[MODEL D]", SmallModel: "plugin/lux/small-plug"}, []core.ModelService{ant, smallSvc}, plugins,
+		map[string]core.CapStatus{"plugin/lux/small-plug": {State: "ok", LatencyMs: 25}})
+	if u3.small.look != lookOK || !strings.Contains(u3.small.text, "SmallPlug") || !strings.Contains(u3.small.text, "25 ms") {
+		t.Errorf("u3.small unexpected: %+v", u3.small)
+	}
+}
+
+func TestModelsViewLiveProbing(t *testing.T) {
+	h := newHarness(t)
+	m := h.app.pages[PageSettings].(*settingsPage).models
+	var mu sync.Mutex
+	var probedCaps []string
+	m.testService = func(ctx context.Context, id int64, in core.ModelServiceInput, c string) (core.CapStatus, error) {
+		mu.Lock()
+		probedCaps = append(probedCaps, c)
+		mu.Unlock()
+		return core.CapStatus{State: "ok", LatencyMs: 99}, nil
+	}
+	m.services = []core.ModelService{
+		{ID: 1, Name: "TestSvc", Slug: "test", Kind: "openai", Models: []string{"m1"}, JudgeFormat: "decisions"},
+	}
+	m.probeActive()
+	h.until("probed gen and judge", func() bool {
+		mu.Lock()
+		defer mu.Unlock()
+		return slices.Contains(probedCaps, core.CapGen) && slices.Contains(probedCaps, core.CapJudge) &&
+			len(m.services) > 0 && m.services[0].Status[core.CapGen].LatencyMs == 99 &&
+			m.services[0].Status[core.CapJudge].LatencyMs == 99
+	})
+}
+
 // TestServiceLook: the list's chip is Key 失效 on a refused key, 连接失败 on
 // another failure, 未测试 while an enabled capability is untested.
 func TestServiceLook(t *testing.T) {
@@ -959,6 +1016,7 @@ func TestServiceLook(t *testing.T) {
 		label string
 	}{
 		{core.ModelService{Kind: "openai", Status: map[string]core.CapStatus{core.CapGen: ok}}, lookOK, "正常"},
+		{core.ModelService{Kind: "openai", Status: map[string]core.CapStatus{core.CapGen: {State: "ok", LatencyMs: 317}}}, lookOK, "连接正常 · 317 ms"},
 		{core.ModelService{Kind: "openai"}, lookUntested, "未测试"},
 		{core.ModelService{Kind: "openai", JudgeFormat: "decisions", Status: map[string]core.CapStatus{core.CapGen: ok}}, lookUntested, "未测试"},
 		{core.ModelService{Kind: "openai", JudgeFormat: "decisions", Status: map[string]core.CapStatus{core.CapGen: down, core.CapJudge: auth}}, lookFail, "Key 失效"},

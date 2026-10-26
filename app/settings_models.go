@@ -10,6 +10,8 @@ import (
 	"slices"
 	"strconv"
 	"strings"
+	"sync"
+	"time"
 
 	"github.com/egoist/mygo/ui"
 	"github.com/godwit-email/godwit/core"
@@ -41,7 +43,13 @@ type modelsView struct {
 
 	checkService func(ctx context.Context, id int64, in core.ModelServiceInput) (core.ServiceCheck, error) // tests swap these
 	testService  func(ctx context.Context, id int64, in core.ModelServiceInput, c string) (core.CapStatus, error)
+	testPlugin   func(ctx context.Context, ref string) (core.CapStatus, error)
 	saveService  func(ctx context.Context, id int64, in core.ModelServiceInput) (core.ModelService, error)
+
+	pluginStatus map[string]core.CapStatus
+	probeGen     int
+	probing      bool
+	probeTimer   func()
 }
 
 // modelForm edits one service (id 0: a new one). A result for a form that
@@ -428,6 +436,147 @@ func (m *modelsView) load() {
 			return
 		}
 		m.services, m.plugins, m.loaded = list, plugs, true
+		m.scheduleNextProbe()
+	})
+}
+
+// stopProbe cancels any pending probe timer.
+func (m *modelsView) stopProbe() {
+	if m.probeTimer != nil {
+		m.probeTimer()
+		m.probeTimer = nil
+	}
+}
+
+// probeActive probes connectivity and latency for all active model services
+// and running plugins, dynamically updating the status and latency values.
+func (m *modelsView) probeActive() {
+	if m.probing {
+		return
+	}
+	m.probing = true
+	m.probeGen++
+	run := m.probeGen
+	a := m.a
+
+	type probeTask struct {
+		svcID   int64
+		input   core.ModelServiceInput
+		cap     string
+		isPlug  bool
+		plugRef string
+	}
+	var tasks []probeTask
+	seen := map[string]bool{}
+
+	st := a.settings
+	for _, s := range m.services {
+		if s.Kind != "" {
+			tasks = append(tasks, probeTask{svcID: s.ID, input: s.Input(), cap: core.CapGen})
+			seen[s.Slug+"/"+core.CapGen] = true
+		}
+		if s.JudgeFormat != "" {
+			tasks = append(tasks, probeTask{svcID: s.ID, input: s.Input(), cap: core.CapJudge})
+			seen[s.Slug+"/"+core.CapJudge] = true
+		}
+	}
+	if isPluginRef(st.JudgeService) && !seen[st.JudgeService] {
+		tasks = append(tasks, probeTask{isPlug: true, plugRef: st.JudgeService, cap: core.CapJudge})
+		seen[st.JudgeService] = true
+	}
+	for _, ref := range []string{st.DefaultModel, st.SmallModel} {
+		if isPluginRef(ref) && !seen[ref] {
+			tasks = append(tasks, probeTask{isPlug: true, plugRef: ref, cap: core.CapGen})
+			seen[ref] = true
+		}
+	}
+	for _, p := range m.plugins {
+		if p.Plugin == core.AppleIntelligencePlugin {
+			ref := "plugin/" + p.Plugin + "/on-device"
+			if !seen[ref] {
+				tasks = append(tasks, probeTask{isPlug: true, plugRef: ref, cap: core.CapGen})
+				seen[ref] = true
+			}
+		}
+	}
+
+	if len(tasks) == 0 {
+		m.probing = false
+		return
+	}
+
+	testSvc := m.testService
+	testPlug := m.testPlugin
+
+	a.do(func(ctx context.Context) error {
+		type result struct {
+			task probeTask
+			st   core.CapStatus
+			err  error
+		}
+		results := make([]result, len(tasks))
+		var wg sync.WaitGroup
+		for i, t := range tasks {
+			wg.Add(1)
+			go func(idx int, task probeTask) {
+				defer wg.Done()
+				tctx, cancel := context.WithTimeout(ctx, 15*time.Second)
+				defer cancel()
+				var cst core.CapStatus
+				var err error
+				if task.isPlug {
+					if testPlug != nil {
+						cst, err = testPlug(tctx, task.plugRef)
+					}
+				} else if testSvc != nil {
+					cst, err = testSvc(tctx, task.svcID, task.input, task.cap)
+				}
+				results[idx] = result{task: task, st: cst, err: err}
+			}(i, t)
+		}
+		wg.Wait()
+
+		a.onUI(func() {
+			m.probing = false
+			if m.probeGen != run {
+				return
+			}
+			for _, r := range results {
+				if r.task.isPlug {
+					if m.pluginStatus == nil {
+						m.pluginStatus = make(map[string]core.CapStatus)
+					}
+					m.pluginStatus[r.task.plugRef] = r.st
+				} else {
+					for si := range m.services {
+						if m.services[si].ID == r.task.svcID {
+							if m.services[si].Status == nil {
+								m.services[si].Status = make(map[string]core.CapStatus)
+							}
+							m.services[si].Status[r.task.cap] = r.st
+						}
+					}
+				}
+			}
+			m.scheduleNextProbe()
+		})
+		return nil
+	}, nil)
+}
+
+func (m *modelsView) scheduleNextProbe() {
+	if m.probeTimer != nil {
+		m.probeTimer()
+		m.probeTimer = nil
+	}
+	if m.a.route.Page != PageSettings || m.a.route.Settings != "models" {
+		return
+	}
+	m.probeTimer = m.a.after(10*time.Second, func() {
+		m.probeTimer = nil
+		if m.a.route.Page == PageSettings && m.a.route.Settings == "models" {
+			m.probeActive()
+		}
 	})
 }
 
@@ -849,6 +998,7 @@ func (m *modelsView) setModel(set func(*core.Settings)) {
 	st.NoTranslate = slices.Clone(st.NoTranslate)
 	set(&st)
 	m.a.changeSettings(st)
+	m.probeActive()
 }
 
 // look is a status line's dot and text color: what a test found.
@@ -885,18 +1035,22 @@ type line struct {
 type usage struct {
 	genOpts, smallOpts, judgeOpts []kit.Option[string]
 	disabled                      bool // no generate model: the selects say 先添加一个服务
-	gen, judge                    line
-	genSvc, judgeSvc              *core.ModelService // the defaults that resolve; judgeSvc nil: generation answers, unless pluginJudge
+	gen, small, judge             line
+	genSvc, smallSvc, judgeSvc    *core.ModelService // the defaults that resolve; judgeSvc nil: generation answers, unless pluginJudge
 	pluginJudge                   bool               // the judge setting names a plugin's model: generation never answers for it
 	alert                         string             // the default generator failed its test
 	suggest                       bool               // a judge service would be faster
 }
 
 // deriveUsage is the 用途 card for st, the services and the running plugins' models.
-func deriveUsage(st core.Settings, services []core.ModelService, plugins []core.PluginModels) usage {
+func deriveUsage(st core.Settings, services []core.ModelService, plugins []core.PluginModels, pluginStatus ...map[string]core.CapStatus) usage {
 	u := usage{pluginJudge: isPluginRef(st.JudgeService)}
-	var genModel, plugGen, plugJudge string // the defaults' labels when a plugin's model
+	var genModel, plugGen, plugJudge, plugSmall string // the defaults' labels when a plugin's model
 	var genPlug, smallPlug, judgePlug []kit.Option[string]
+	var pstatus map[string]core.CapStatus
+	if len(pluginStatus) > 0 {
+		pstatus = pluginStatus[0]
+	}
 	for _, p := range plugins {
 		for _, mod := range p.Models {
 			label := p.Plugin + " / " + mod.Name
@@ -915,10 +1069,16 @@ func deriveUsage(st core.Settings, services []core.ModelService, plugins []core.
 				}
 			case mod.Operation == "small":
 				smallPlug = append(smallPlug, o)
+				if o.Value == st.SmallModel {
+					plugSmall = o.Label
+				}
 			default:
 				genPlug = append(genPlug, o)
 				if o.Value == st.DefaultModel {
 					plugGen, genModel = o.Label, o.Label
+				}
+				if o.Value == st.SmallModel {
+					plugSmall = o.Label
 				}
 			}
 		}
@@ -931,6 +1091,9 @@ func deriveUsage(st core.Settings, services []core.ModelService, plugins []core.
 				if ref == st.DefaultModel {
 					u.genSvc, genModel = &services[i], u.genOpts[len(u.genOpts)-1].Label
 				}
+				if ref == st.SmallModel {
+					u.smallSvc = &services[i]
+				}
 			}
 		}
 		if s.JudgeFormat != "" && s.Slug == st.JudgeService {
@@ -942,9 +1105,13 @@ func deriveUsage(st core.Settings, services []core.ModelService, plugins []core.
 	if len(u.genOpts) == 0 && len(smallPlug) == 0 && len(judgePlug) == 0 {
 		u.genOpts, u.smallOpts, u.judgeOpts, u.disabled = none, none, none, true
 		u.gen = line{i18n.T("settings.models.use.gen.none"), lookNone}
+		u.small = line{i18n.T("settings.models.use.gen.none"), lookNone}
 		u.judge = line{i18n.T("settings.models.use.judge.none"), lookNone}
 		if isPluginRef(st.DefaultModel) { // its plugin stopped: say so, not "none"
 			u.gen = line{i18n.Tf("settings.models.plugin_unavailable", st.DefaultModel), lookFail}
+		}
+		if isPluginRef(st.SmallModel) && plugSmall == "" {
+			u.small = line{i18n.Tf("settings.models.plugin_unavailable", st.SmallModel), lookFail}
 		}
 		if isPluginRef(st.JudgeService) && plugJudge == "" {
 			u.judge = line{i18n.Tf("settings.models.plugin_unavailable", st.JudgeService), lookFail}
@@ -965,12 +1132,46 @@ func deriveUsage(st core.Settings, services []core.ModelService, plugins []core.
 	}
 	// A setting naming what isn't offered shows as 未设置, as core falls back past it.
 	u.smallOpts, u.judgeOpts = unset(u.smallOpts, st.SmallModel), unset(u.judgeOpts, st.JudgeService)
+	smallLine := func() {
+		switch {
+		case st.SmallModel == "":
+			u.small = u.gen
+			u.smallSvc = u.genSvc
+		case u.smallSvc != nil:
+			u.small = capLine(u.smallSvc, core.CapGen)
+		case plugSmall != "":
+			if pst, ok := pstatus[st.SmallModel]; ok {
+				if pst.State == "ok" {
+					u.small = line{plugSmall + " · " + i18n.Tf("settings.models.test.ok", pst.LatencyMs), lookOK}
+				} else {
+					u.small = line{plugSmall + " · " + failReason(pst), lookFail}
+				}
+			} else {
+				u.small = line{plugSmall, lookNone}
+			}
+		case isPluginRef(st.SmallModel):
+			u.small = line{i18n.Tf("settings.models.plugin_unavailable", st.SmallModel), lookFail}
+		case st.SmallModel != "":
+			u.small = line{i18n.Tf("settings.models.default.missing", st.SmallModel), lookFail}
+		default:
+			u.small = u.gen
+			u.smallSvc = u.genSvc
+		}
+	}
 	judgeLine := func() {
 		switch {
 		case u.judgeSvc != nil:
 			u.judge = capLine(u.judgeSvc, core.CapJudge)
 		case plugJudge != "":
-			u.judge = line{plugJudge, lookNone}
+			if pst, ok := pstatus[st.JudgeService]; ok {
+				if pst.State == "ok" {
+					u.judge = line{plugJudge + " · " + i18n.Tf("settings.models.test.ok", pst.LatencyMs), lookOK}
+				} else {
+					u.judge = line{plugJudge + " · " + failReason(pst), lookFail}
+				}
+			} else {
+				u.judge = line{plugJudge, lookNone}
+			}
 		case isPluginRef(st.JudgeService):
 			u.judge = line{i18n.Tf("settings.models.plugin_unavailable", st.JudgeService), lookFail}
 		}
@@ -983,14 +1184,24 @@ func deriveUsage(st core.Settings, services []core.ModelService, plugins []core.
 		} else if st.DefaultModel != "" {
 			u.gen = line{i18n.Tf("settings.models.default.missing", st.DefaultModel), lookFail}
 		}
+		smallLine()
 		judgeLine()
 		return u
 	}
 	if u.genSvc != nil {
 		u.gen = capLine(u.genSvc, core.CapGen)
 	} else {
-		u.gen = line{plugGen, lookNone}
+		if pst, ok := pstatus[st.DefaultModel]; ok {
+			if pst.State == "ok" {
+				u.gen = line{plugGen + " · " + i18n.Tf("settings.models.test.ok", pst.LatencyMs), lookOK}
+			} else {
+				u.gen = line{plugGen + " · " + failReason(pst), lookFail}
+			}
+		} else {
+			u.gen = line{plugGen, lookNone}
+		}
 	}
+	smallLine()
 	if judgeLine(); u.judgeSvc == nil && !u.pluginJudge {
 		u.judge, u.suggest = line{i18n.Tf("settings.models.use.judge.slow", genModel), lookSlow}, true
 	}
@@ -1071,6 +1282,11 @@ func svcLook(s core.ModelService) (look, string) {
 		return l, i18n.T("settings.models.fail.error")
 	case lookUntested:
 		return l, i18n.T("settings.models.status.untested")
+	}
+	for _, c := range caps {
+		if st, ok := s.Status[c]; ok && st.State == "ok" && st.LatencyMs > 0 {
+			return lookOK, i18n.Tf("settings.models.test.ok", st.LatencyMs)
+		}
 	}
 	return l, i18n.T("settings.models.status.ok")
 }
