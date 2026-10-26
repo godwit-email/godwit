@@ -870,6 +870,15 @@ func TestAssistFormattingOnlyIsAChange(t *testing.T) {
 	assert.Equal(t, "pending", last.Approvals[0].State)
 }
 
+func TestAssistPreWhitespaceIsAChange(t *testing.T) {
+	e := newAssistEnv(t)
+	d := e.replyDraft(t, "<pre>first\nsecond</pre>")
+	last := e.propose(t, d.ID, "<pre>first second</pre>")
+	require.Len(t, last.Approvals, 1)
+	assert.NotEqual(t, kindNoChange, last.Approvals[0].Summary, "whitespace in <pre> shows")
+	assert.Equal(t, "pending", last.Approvals[0].State)
+}
+
 func TestAssistRejectFinishesDirectly(t *testing.T) {
 	e := newAssistEnv(t)
 	d := e.replyDraft(t, "<p>Initial text.</p>")

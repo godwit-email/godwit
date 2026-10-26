@@ -947,11 +947,10 @@ func changeKind(ctx context.Context, old, new string) (string, error) {
 	return kindPartial, nil
 }
 
-// sameHTML reports whether two editable parts are the same HTML up to
-// whitespace: a change of formatting alone (bold, a link) is a change.
-func sameHTML(a, b string) bool {
-	return strings.Join(strings.Fields(cleanHTML(a)), " ") == strings.Join(strings.Fields(cleanHTML(b)), " ")
-}
+// sameHTML reports whether two editable parts are the same sanitized HTML: a
+// change of formatting alone (bold, a link) is a change, and so is whitespace,
+// which <pre> and white-space styles show.
+func sameHTML(a, b string) bool { return cleanHTML(a) == cleanHTML(b) }
 
 func words(h string) []string {
 	var out []string
