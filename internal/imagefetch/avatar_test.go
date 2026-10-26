@@ -226,7 +226,7 @@ func TestAvatarRedirectPrivateDialRejected(t *testing.T) {
 	initial := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { http.Redirect(w, r, private.URL, 302) }))
 	defer initial.Close()
 	base := NewClient(false)
-	tr := base.Transport.(*http.Transport)
+	tr := base.Transport.(*Transport)
 	publicDial := tr.DialContext
 	initialURL, _ := url.Parse(initial.URL)
 	tr.TLSClientConfig = initial.Client().Transport.(*http.Transport).TLSClientConfig.Clone()

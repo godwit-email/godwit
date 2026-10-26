@@ -113,7 +113,7 @@ func New(t *testing.T, opts ...Option) *Env {
 	keyring.MockInit()
 	dir := t.TempDir()
 	imageClient := imagefetch.NewClient(true)
-	imageClient.Transport.(*http.Transport).DialContext = netOptions("").Dial
+	imageClient.Transport.(*imagefetch.Transport).DialContext = netOptions("").Dial
 	svc, err := core.New(context.Background(), core.Options{DataDir: dir, AutoSync: cfg.autoSync, SystemLanguage: "zh-CN", ImageClient: imageClient,
 		Registry: cfg.registry, AppVersion: "1.2.0", SystemTranslator: cfg.sys, ConfirmWindow: cfg.confirm, UnsubscribeClient: cfg.unsub})
 	if err != nil {

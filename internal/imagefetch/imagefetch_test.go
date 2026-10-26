@@ -16,6 +16,7 @@ import (
 	"strings"
 	"sync/atomic"
 	"testing"
+	"time"
 )
 
 func pngOf(t *testing.T, w, h int) []byte {
@@ -251,5 +252,56 @@ func TestSystemProxyRefusesTunnel(t *testing.T) {
 	defer func() { SystemProxy = nil }()
 	if _, _, _, _, err := Fetch(t.Context(), NewClient(false), "http://images.example/a.png"); err == nil || !strings.Contains(err.Error(), "403") {
 		t.Errorf("refused tunnel: %v", err)
+	}
+}
+
+func TestSystemProxyBySchemeNotPort(t *testing.T) {
+	refuse := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		http.Error(w, "no", http.StatusForbidden)
+	}))
+	defer refuse.Close()
+	fakeDNS(t, map[string][]string{"images.example": {"93.184.216.34"}})
+	proxyURL, _ := url.Parse(refuse.URL)
+	var schemes []string
+	SystemProxy = func(u *url.URL) *url.URL { schemes = append(schemes, u.Scheme); return proxyURL }
+	defer func() { SystemProxy = nil }()
+	c := NewClient(false)
+	for _, u := range []string{"https://images.example:8443/a.png", "http://images.example:443/a.png"} {
+		Fetch(t.Context(), c, u)
+	}
+	if strings.Join(schemes, ",") != "https,http" {
+		t.Errorf("schemes asked for %v", schemes)
+	}
+}
+
+func TestDialPinnedRacesAddresses(t *testing.T) {
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer ln.Close()
+	_, port, _ := net.SplitHostPort(ln.Addr().String())
+	// The first address never answers (its dial hangs until the test ends);
+	// the second one does.
+	hang := make(chan struct{})
+	defer close(hang)
+	addrs := []netip.Addr{netip.MustParseAddr("192.0.2.1"), netip.MustParseAddr("127.0.0.1")}
+	start := time.Now()
+	c, err := dialPinned(t.Context(), "tcp", addrs, port, func(ip netip.Addr) bool {
+		if ip == addrs[0] {
+			<-hang
+			return false
+		}
+		return true
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	c.Close()
+	if d := time.Since(start); d > 3*time.Second {
+		t.Errorf("took %v: the first address held up the second", d)
+	}
+	if _, err := dialPinned(t.Context(), "tcp", addrs[1:], port, PublicIP); !errors.Is(err, ErrHost) {
+		t.Errorf("checked as it connects: %v", err)
 	}
 }

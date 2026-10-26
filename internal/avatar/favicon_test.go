@@ -59,7 +59,7 @@ func newFaviconFixture(t *testing.T, handler http.HandlerFunc) *faviconFixture {
 	u, _ := url.Parse(s.URL)
 	tr := s.Client().Transport.(*http.Transport).Clone()
 	tr.TLSClientConfig.ServerName = u.Hostname()
-	public := imagefetch.NewClient(false).Transport.(*http.Transport)
+	public := imagefetch.NewTransport(false)
 	tr.DialContext = func(ctx context.Context, network, addr string) (net.Conn, error) {
 		host, _, _ := net.SplitHostPort(addr)
 		if host == "example.com" || host == "mail.example.co.uk" || host == "example.co.uk" || host == "cdn.example.com" {

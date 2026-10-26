@@ -92,7 +92,7 @@ var lookup = net.DefaultResolver.LookupNetIP
 // name it gives the name to a proxy on this computer, which knows what the
 // fake address stands for, and refuses a proxy elsewhere. allowLoopback lets
 // tests reach httptest servers, which listen on loopback.
-func NewTransport(allowLoopback bool) *http.Transport {
+func NewTransport(allowLoopback bool) *Transport {
 	dial := func(ctx context.Context, network, address string) (net.Conn, error) {
 		if allowLoopback {
 			return (&net.Dialer{Timeout: Timeout}).DialContext(ctx, network, address)
@@ -111,16 +111,15 @@ func NewTransport(allowLoopback bool) *http.Transport {
 		}
 		var proxy *url.URL
 		if SystemProxy != nil {
-			// shortcut: the scheme is told by the port (dialing does not see the URL); use the URL's if a user's HTTP and HTTPS proxies differ in what they reach.
-			scheme := "http"
-			if port == "443" {
-				scheme = "https"
+			scheme, _ := ctx.Value(schemeKey{}).(string) // RoundTrip's; the dial's context keeps the request's values
+			if scheme == "" {
+				scheme = map[bool]string{true: "https", false: "http"}[port == "443"]
 			}
 			proxy = SystemProxy(&url.URL{Scheme: scheme, Host: address})
 		}
 		switch {
 		case proxy == nil:
-			return dialPinned(ctx, network, addrs, port, fake)
+			return dialPinned(ctx, network, addrs, port, func(ip netip.Addr) bool { return PublicIP(ip) || fake && fakeIP.Contains(ip) })
 		case !fake:
 			return dialProxy(ctx, proxy, net.JoinHostPort(addrs[0].String(), port))
 		case onThisComputer(proxy):
@@ -128,8 +127,18 @@ func NewTransport(allowLoopback bool) *http.Transport {
 		}
 		return nil, ErrHost // a proxy elsewhere has no idea what our fake-ip resolver meant
 	}
-	return &http.Transport{DialContext: dial, IdleConnTimeout: 30 * time.Second, MaxIdleConnsPerHost: 4,
-		TLSHandshakeTimeout: Timeout, ResponseHeaderTimeout: Timeout, MaxResponseHeaderBytes: 64 << 10}
+	return &Transport{&http.Transport{DialContext: dial, IdleConnTimeout: 30 * time.Second, MaxIdleConnsPerHost: 4,
+		TLSHandshakeTimeout: Timeout, ResponseHeaderTimeout: Timeout, MaxResponseHeaderBytes: 64 << 10}}
+}
+
+// Transport is NewTransport's: an http.Transport whose dials know the
+// scheme of the request they are for, which picks the proxy.
+type Transport struct{ *http.Transport }
+
+type schemeKey struct{}
+
+func (t *Transport) RoundTrip(req *http.Request) (*http.Response, error) {
+	return t.Transport.RoundTrip(req.WithContext(context.WithValue(req.Context(), schemeKey{}, req.URL.Scheme)))
 }
 
 // resolve is host's addresses to dial, IPv4 first: a literal one as is,
@@ -169,24 +178,54 @@ func resolve(ctx context.Context, host string) (addrs []netip.Addr, fake bool, e
 	return addrs, fake, nil
 }
 
-// dialPinned dials addrs in turn, checking again the address each connects
-// to.
-func dialPinned(ctx context.Context, network string, addrs []netip.Addr, port string, fake bool) (net.Conn, error) {
+// fallbackDelay is how long each pinned address gets alone before the next
+// is dialed too, as net.Dialer's Happy Eyeballs does.
+const fallbackDelay = 300 * time.Millisecond
+
+// dialPinned races addrs, each started fallbackDelay after the one before,
+// so one that drops connections silently cannot hold up the rest; the
+// first to connect wins. Each is checked again as it connects (allowed).
+func dialPinned(ctx context.Context, network string, addrs []netip.Addr, port string, allowed func(netip.Addr) bool) (net.Conn, error) {
 	d := &net.Dialer{Timeout: Timeout, Control: func(_, address string, _ syscall.RawConn) error {
-		ap, err := netip.ParseAddrPort(address)
-		if ip := ap.Addr().Unmap(); err != nil || !PublicIP(ip) && !(fake && fakeIP.Contains(ip)) {
+		if ap, err := netip.ParseAddrPort(address); err != nil || !allowed(ap.Addr().Unmap()) {
 			return ErrHost
 		}
 		return nil
 	}}
+	ctx, cancel := context.WithCancel(ctx)
+	defer cancel()
+	type result struct {
+		c   net.Conn
+		err error
+	}
+	results := make(chan result, len(addrs))
+	for i, a := range addrs {
+		go func() {
+			select {
+			case <-time.After(time.Duration(i) * fallbackDelay):
+			case <-ctx.Done():
+				results <- result{err: ctx.Err()}
+				return
+			}
+			c, err := d.DialContext(ctx, network, net.JoinHostPort(a.String(), port))
+			results <- result{c, err}
+		}()
+	}
 	var err error
-	for _, a := range addrs {
-		var c net.Conn
-		if c, err = d.DialContext(ctx, network, net.JoinHostPort(a.String(), port)); err == nil {
-			return c, nil
+	for n := range len(addrs) {
+		r := <-results
+		if r.err == nil {
+			go func() { // the losers: close any that connected too
+				for range len(addrs) - n - 1 {
+					if r := <-results; r.c != nil {
+						r.c.Close()
+					}
+				}
+			}()
+			return r.c, nil
 		}
-		if ctx.Err() != nil {
-			break
+		if err == nil || !errors.Is(r.err, context.Canceled) {
+			err = r.err
 		}
 	}
 	return nil, err
