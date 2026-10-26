@@ -154,14 +154,18 @@ export function Review({
   const closing = useRef<ReturnType<typeof setTimeout>>(undefined);
   const body = useRef<HTMLElement>(null);
   const pop = useRef<HTMLSpanElement>(null);
-  // The buttons stay inside the body: shifted back in when they would cross its left or right edge.
+  // The buttons stay inside the body: shifted back in when they would cross its left or right edge;
+  // wider than the body (a long link), they start at its left edge, so the correction settles.
   // biome-ignore lint/correctness/useExhaustiveDependencies: measured again whenever they open or move
   useLayoutEffect(() => {
     const b = body.current?.getBoundingClientRect();
     const p = pop.current?.getBoundingClientRect();
     if (!b || !p) return;
-    const shift = Math.max(b.left - p.left, 0) + Math.min(b.right - p.right, 0);
-    if (shift) setAt((a) => ({ ...a, left: a.left + shift }));
+    const shift =
+      p.width > b.width
+        ? b.left - p.left
+        : Math.max(b.left - p.left, 0) + Math.min(b.right - p.right, 0);
+    if (Math.abs(shift) >= 0.5) setAt((a) => ({ ...a, left: a.left + shift }));
   }, [active, at]);
   const show = (k: number, el: HTMLElement, y = Infinity) => {
     clearTimeout(closing.current);

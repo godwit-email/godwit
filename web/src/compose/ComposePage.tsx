@@ -978,7 +978,9 @@ function Compose({
                   ? {
                       approval: reviewing.approval,
                       summary: reviewSummary(reviewing, t),
-                      onAdjust: () => setAdjusting((v) => !v),
+                      // a skill's proposal is not in Wit's history: a follow-up could not revise it
+                      onAdjust:
+                        current?.callId === "skill" ? undefined : () => setAdjusting((v) => !v),
                       adjusting: adjusting && (
                         <AdjustInput
                           busy={deciding}

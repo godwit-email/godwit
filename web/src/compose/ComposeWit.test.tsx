@@ -928,3 +928,10 @@ test.each([
     expect(await screen.findByRole("status")).toHaveTextContent(line);
   },
 );
+
+test("a skill's proposal has no 调整: Wit's history does not hold it to revise", async () => {
+  await setup({ ...withPending, approvals: [{ ...pending, callId: "skill" }] });
+  await screen.findByRole("region", { name: "正文修订" });
+  const card = (await screen.findByText("update_draft")).parentElement as HTMLElement;
+  expect(within(card).queryByRole("button", { name: "调整" })).toBeNull();
+});
