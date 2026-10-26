@@ -149,9 +149,14 @@ func (p *platform) ComposeOpen(id int64) bool { return p.windows.IsOpen(id) }
 // loads (loadAfterSetup), so that its first call finds it so; close
 // undoes each and destroys it. UI thread.
 func (p *platform) NewBodyView(message int64) (ui.NativeWebView, func(), error) {
-	v, err := p.win.NewWebView(mygo.WebViewOptions{})
+	hex := func(c ui.Color) string { return fmt.Sprintf("#%02x%02x%02x", c.R, c.G, c.B) }
+	bg := "light-dark(" + hex(theme.Light().Background) + ", " + hex(theme.Dark().Background) + ")"
+	v, err := p.win.NewWebView(mygo.WebViewOptions{BackgroundColor: bg})
 	if err != nil {
 		return nil, nil, err
+	}
+	if err := v.SetBackgroundColor(bg); err != nil {
+		log.Printf("the body view: %v", err)
 	}
 	page := v.Page()
 	closeView := func() {

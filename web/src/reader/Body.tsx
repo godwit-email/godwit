@@ -73,7 +73,7 @@ export function ReaderApp() {
     return <Failed error={failed} retry={() => load.current()} locale={body?.locale} />;
   if (!body || !theme) return <main />;
   return (
-    <main>
+    <main className="bg-transparent">
       <Body body={body} theme={theme} />
     </main>
   );
