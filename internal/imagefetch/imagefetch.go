@@ -245,7 +245,12 @@ func dialProxy(ctx context.Context, proxy *url.URL, target string) (net.Conn, er
 	d := &net.Dialer{Timeout: Timeout}
 	switch proxy.Scheme {
 	case "socks5":
-		s, err := xproxy.SOCKS5("tcp", proxy.Host, nil, d)
+		var auth *xproxy.Auth
+		if u := proxy.User; u != nil {
+			pass, _ := u.Password()
+			auth = &xproxy.Auth{User: u.Username(), Password: pass}
+		}
+		s, err := xproxy.SOCKS5("tcp", proxy.Host, auth, d)
 		if err != nil {
 			return nil, err
 		}
@@ -262,7 +267,12 @@ func dialProxy(ctx context.Context, proxy *url.URL, target string) (net.Conn, er
 		c.SetDeadline(deadline)
 		br := bufio.NewReader(c)
 		var resp *http.Response
-		if _, err = fmt.Fprintf(c, "CONNECT %s HTTP/1.1\r\nHost: %s\r\n\r\n", target, target); err == nil {
+		authz := ""
+		if u := proxy.User; u != nil {
+			pass, _ := u.Password()
+			authz = "Proxy-Authorization: Basic " + base64.StdEncoding.EncodeToString([]byte(u.Username()+":"+pass)) + "\r\n"
+		}
+		if _, err = fmt.Fprintf(c, "CONNECT %s HTTP/1.1\r\nHost: %s\r\n%s\r\n", target, target, authz); err == nil {
 			resp, err = http.ReadResponse(br, &http.Request{Method: http.MethodConnect})
 		}
 		switch {

@@ -305,3 +305,28 @@ func TestDialPinnedRacesAddresses(t *testing.T) {
 		t.Errorf("checked as it connects: %v", err)
 	}
 }
+
+func TestSystemProxyCredentials(t *testing.T) {
+	pic := pngOf(t, 1, 1)
+	img := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { w.Write(pic) }))
+	defer img.Close()
+	tunnel, _ := connectProxy(t, img.Listener.Addr().String())
+	var got atomic.Value
+	proxy := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		got.Store(r.Header.Get("Proxy-Authorization"))
+		if r.Header.Get("Proxy-Authorization") != "Basic "+base64.StdEncoding.EncodeToString([]byte("alice:s3cret")) {
+			http.Error(w, "auth", http.StatusProxyAuthRequired)
+			return
+		}
+		tunnel.Config.Handler.ServeHTTP(w, r)
+	}))
+	defer proxy.Close()
+	fakeDNS(t, map[string][]string{"images.example": {"93.184.216.34"}})
+	proxyURL, _ := url.Parse(proxy.URL)
+	proxyURL.User = url.UserPassword("alice", "s3cret")
+	SystemProxy = func(*url.URL) *url.URL { return proxyURL }
+	defer func() { SystemProxy = nil }()
+	if _, _, _, _, err := Fetch(t.Context(), NewClient(false), "http://images.example/a.png"); err != nil {
+		t.Fatalf("with credentials: %v (sent %q)", err, got.Load())
+	}
+}
