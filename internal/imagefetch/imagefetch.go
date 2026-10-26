@@ -243,6 +243,10 @@ func onThisComputer(proxy *url.URL) bool {
 // shortcut: plain http:// images go through CONNECT too; send them as absolute-URI requests if a proxy refuses CONNECT to port 80.
 func dialProxy(ctx context.Context, proxy *url.URL, target string) (net.Conn, error) {
 	d := &net.Dialer{Timeout: Timeout}
+	addr := proxy.Host
+	if proxy.Port() == "" { // the scheme's default port
+		addr = net.JoinHostPort(proxy.Hostname(), map[string]string{"http": "80", "socks5": "1080"}[proxy.Scheme])
+	}
 	switch proxy.Scheme {
 	case "socks5":
 		var auth *xproxy.Auth
@@ -250,13 +254,13 @@ func dialProxy(ctx context.Context, proxy *url.URL, target string) (net.Conn, er
 			pass, _ := u.Password()
 			auth = &xproxy.Auth{User: u.Username(), Password: pass}
 		}
-		s, err := xproxy.SOCKS5("tcp", proxy.Host, auth, d)
+		s, err := xproxy.SOCKS5("tcp", addr, auth, d)
 		if err != nil {
 			return nil, err
 		}
 		return s.(xproxy.ContextDialer).DialContext(ctx, "tcp", target)
 	case "http":
-		c, err := d.DialContext(ctx, "tcp", proxy.Host)
+		c, err := d.DialContext(ctx, "tcp", addr)
 		if err != nil {
 			return nil, err
 		}

@@ -330,3 +330,14 @@ func TestSystemProxyCredentials(t *testing.T) {
 		t.Fatalf("with credentials: %v (sent %q)", err, got.Load())
 	}
 }
+
+func TestDialProxyDefaultPort(t *testing.T) {
+	ctx, cancel := context.WithCancel(t.Context())
+	cancel() // dial nothing: the error names the address it would have
+	for proxy, want := range map[string]string{"http://127.0.0.1": "127.0.0.1:80", "socks5://127.0.0.1": "127.0.0.1:1080"} {
+		u, _ := url.Parse(proxy)
+		if _, err := dialProxy(ctx, u, "93.184.216.34:443"); err == nil || !strings.Contains(err.Error(), want) {
+			t.Errorf("%s: %v, want a dial to %s", proxy, err, want)
+		}
+	}
+}
