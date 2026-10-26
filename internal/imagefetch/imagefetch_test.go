@@ -172,3 +172,24 @@ func TestSystemProxy(t *testing.T) {
 		t.Errorf("the proxy's own address, not proxied: %v", err)
 	}
 }
+
+func TestSystemProxyPerScheme(t *testing.T) {
+	a, b := httptest.NewServer(http.NotFoundHandler()), httptest.NewServer(http.NotFoundHandler())
+	defer a.Close()
+	defer b.Close()
+	SystemProxy = func(u *url.URL) *url.URL {
+		p, _ := url.Parse(map[string]string{"http": a.URL, "https": b.URL}[u.Scheme])
+		return p
+	}
+	defer func() { SystemProxy = nil }()
+	// Both stay dialable whichever a request chose last.
+	for _, srv := range []*httptest.Server{a, b, a} {
+		u, _ := url.Parse(srv.URL)
+		if !isSystemProxy(u.Host) {
+			t.Errorf("%s not a system proxy", u.Host)
+		}
+	}
+	if isSystemProxy("127.0.0.1:1") {
+		t.Error("another loopback address passed as a proxy")
+	}
+}

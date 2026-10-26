@@ -555,6 +555,32 @@ func TestReaderImageRefusedNotInBody(t *testing.T) {
 	assert.Zero(t, srv.hits())
 }
 
+func TestReaderRetryRefetchesFailedImage(t *testing.T) {
+	pic := pngOf(t, 2, 2)
+	var up atomic.Bool
+	srv := newImageServer(t, func(w http.ResponseWriter, r *http.Request) {
+		if !up.Load() {
+			http.Error(w, "down", http.StatusServiceUnavailable)
+			return
+		}
+		w.Write(pic)
+	})
+	f := newReaderFixture(t)
+	src := srv.URL + "/pixel.png"
+	m := f.remoteMail(t, "hi", src)
+	k := f.page(m.ID)
+	f.r.Allow(m.ID)
+	first := f.waitEmitted(t, k).Version
+	require.Equal(t, http.StatusBadGateway, f.image(t, m.ID, src).Code)
+	up.Store(true)
+	require.Equal(t, http.StatusBadGateway, f.image(t, m.ID, src).Code, "the failure is remembered")
+	f.r.Allow(m.ID) // the retry
+	require.Eventually(t, func() bool { return f.waitEmitted(t, k).Version > first }, 10*time.Second, 5*time.Millisecond)
+	rec := f.image(t, m.ID, src)
+	require.Equal(t, http.StatusOK, rec.Code, "a retry tries again at once")
+	assert.Equal(t, pic, rec.Body.Bytes())
+}
+
 func TestReaderImageFailureIs502(t *testing.T) {
 	srv := newImageServer(t, func(w http.ResponseWriter, r *http.Request) { w.Write([]byte("<html>")) })
 	f := newReaderFixture(t)

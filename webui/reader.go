@@ -191,7 +191,12 @@ func (r *Reader) unbind(key any) {
 // message no page shows is left alone. It returns at once: the body is
 // read on a goroutine.
 func (r *Reader) Allow(message int64) {
-	r.reload(message, func(st *bodyOf) { st.allowed, st.failed = true, nil })
+	r.reload(message, func(st *bodyOf) {
+		for token := range st.failed { // a retry: try them again now
+			r.svc.ImageCache().ForgetFailure(st.tokens[token])
+		}
+		st.allowed, st.failed = true, nil
+	})
 }
 
 // Translate displays translated text in the original body; nil restores the original.

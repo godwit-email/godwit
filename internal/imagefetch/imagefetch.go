@@ -84,7 +84,6 @@ var fakeIP = netip.MustParsePrefix("198.18.0.0/15")
 // names that are not public. allowLoopback lets tests reach httptest servers,
 // which listen on loopback, and never uses a proxy.
 func NewTransport(allowLoopback bool) *http.Transport {
-	var proxyAddr atomic.Value // the last proxy's host:port, the one non-public address dialed
 	proxy := func(req *http.Request) (*url.URL, error) {
 		if allowLoopback {
 			return nil, nil
@@ -96,11 +95,7 @@ func NewTransport(allowLoopback bool) *http.Transport {
 		if SystemProxy == nil {
 			return nil, nil
 		}
-		p := SystemProxy(req.URL)
-		if p != nil {
-			proxyAddr.Store(canonicalAddr(p))
-		}
-		return p, nil
+		return SystemProxy(req.URL), nil
 	}
 	dial := func(ctx context.Context, network, address string) (net.Conn, error) {
 		host, _, err := net.SplitHostPort(address)
@@ -109,7 +104,7 @@ func NewTransport(allowLoopback bool) *http.Transport {
 		}
 		_, literal := netip.ParseAddr(host)
 		named := literal != nil
-		viaProxy := address == proxyAddr.Load()
+		viaProxy := !allowLoopback && isSystemProxy(address)
 		d := &net.Dialer{Timeout: Timeout, Control: func(_, address string, _ syscall.RawConn) error {
 			if allowLoopback || viaProxy {
 				return nil
@@ -133,6 +128,21 @@ func NewTransport(allowLoopback bool) *http.Transport {
 // one DNS gave for a name (named), never one written as is.
 func dialable(ip netip.Addr, named bool) bool {
 	return PublicIP(ip) || named && fakeIP.Contains(ip)
+}
+
+// isSystemProxy is whether address is one of the system's proxies now, which
+// may be loopback or private: decided per dial, as the settings say, so no
+// request's choice of proxy affects another's.
+func isSystemProxy(address string) bool {
+	if SystemProxy == nil {
+		return false
+	}
+	for _, scheme := range []string{"http", "https"} {
+		if p := SystemProxy(&url.URL{Scheme: scheme, Host: "example.com"}); p != nil && canonicalAddr(p) == address {
+			return true
+		}
+	}
+	return false
 }
 
 // canonicalAddr is u's host:port as the Transport dials it.
