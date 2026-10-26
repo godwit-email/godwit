@@ -409,6 +409,7 @@
   "reader_egress_body": "插件 {arg1} 会把数据发送到：",
   "reader_egress_title": "允许插件发送数据？",
   "reader_forward": "转发",
+  "reader_images_failed": "{arg1, number, ::group-off} 张图片加载失败",
   "reader_labels_add": "标签",
   "reader_labels_add_label": "添加标签",
   "reader_labels_auto": "模型标记",

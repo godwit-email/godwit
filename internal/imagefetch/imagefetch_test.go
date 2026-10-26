@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/netip"
+	"net/url"
 	"strings"
 	"sync/atomic"
 	"testing"
@@ -125,5 +126,49 @@ func TestFetch(t *testing.T) {
 	}
 	if _, err := Download(t.Context(), c, "ftp://x.example/a.png"); !errors.Is(err, ErrScheme) {
 		t.Errorf("ftp: %v", err)
+	}
+}
+
+func TestDialable(t *testing.T) {
+	for _, c := range []struct {
+		addr  string
+		named bool
+		want  bool
+	}{
+		{"8.8.8.8", false, true},
+		{"198.18.20.5", true, true},   // a name's fake-ip address (TUN proxy)
+		{"198.18.20.5", false, false}, // written as is
+		{"127.0.0.1", true, false},
+		{"192.168.1.1", true, false},
+	} {
+		if got := dialable(netip.MustParseAddr(c.addr), c.named); got != c.want {
+			t.Errorf("dialable(%s, named %v) = %v", c.addr, c.named, got)
+		}
+	}
+}
+
+func TestSystemProxy(t *testing.T) {
+	pic := pngOf(t, 1, 2)
+	var asked atomic.Value
+	proxy := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		asked.Store(r.URL.String())
+		w.Write(pic)
+	}))
+	defer proxy.Close()
+	SystemProxy = func(*url.URL) *url.URL { u, _ := url.Parse(proxy.URL); return u }
+	defer func() { SystemProxy = nil }()
+
+	c := NewClient(false)
+	if _, _, _, _, err := Fetch(t.Context(), c, "http://images.example/a.png"); err != nil || asked.Load() != "http://images.example/a.png" {
+		t.Fatalf("through the proxy: %v, asked %v", err, asked.Load())
+	}
+	for _, u := range []string{"http://127.0.0.1/a.png", "http://192.168.1.1/a.png", "http://localhost/a.png", "http://x.localhost/a.png"} {
+		if _, _, _, _, err := Fetch(t.Context(), c, u); !errors.Is(err, ErrHost) {
+			t.Errorf("%s: %v", u, err)
+		}
+	}
+	SystemProxy = nil
+	if _, _, _, _, err := Fetch(t.Context(), NewClient(false), proxy.URL+"/a.png"); !errors.Is(err, ErrHost) {
+		t.Errorf("the proxy's own address, not proxied: %v", err)
 	}
 }

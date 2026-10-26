@@ -1330,12 +1330,14 @@ func (p *mailPage) devHTML(it mailItem) {
 			}
 			id = t.Messages[len(t.Messages)-1].ID
 		}
-		raw, err := a.svc.GetRawMessage(ctx, id)
-		if err != nil {
-			return err
-		}
-		parsed, err := gomail.Parse(raw)
-		if err != nil {
+		var html string
+		if raw, err := a.svc.GetRawMessage(ctx, id); err == nil {
+			parsed, err := gomail.Parse(raw)
+			if err != nil {
+				return err
+			}
+			html = parsed.HTML
+		} else if html, err = a.svc.StoredHTML(ctx, id); err != nil { // offline, or no credentials (a synced dev database)
 			return err
 		}
 		dir, err := a.tempDir(a.plat.TempDir())
@@ -1343,7 +1345,7 @@ func (p *mailPage) devHTML(it mailItem) {
 			return err
 		}
 		path = filepath.Join(dir, fmt.Sprintf("message-%d.html", id))
-		return os.WriteFile(path, []byte(parsed.HTML), 0o600)
+		return os.WriteFile(path, []byte(html), 0o600)
 	}, func(err error) {
 		if err != nil {
 			a.toastErr(err)

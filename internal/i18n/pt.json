@@ -409,6 +409,7 @@
   "reader_egress_body": "O plugin {arg1} enviará dados para:",
   "reader_egress_title": "Permitir que o plugin envie dados?",
   "reader_forward": "Encaminhar",
+  "reader_images_failed": "Não foi possível carregar {arg1, number, ::group-off} imagens",
   "reader_labels_add": "Marcador",
   "reader_labels_add_label": "Adicionar marcador",
   "reader_labels_auto": "Pelo modelo",

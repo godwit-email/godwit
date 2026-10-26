@@ -409,6 +409,7 @@
   "reader_egress_body": "{arg1} eklentisi şu adrese veri gönderecek:",
   "reader_egress_title": "Eklentinin veri göndermesine izin verilsin mi?",
   "reader_forward": "İlet",
+  "reader_images_failed": "{arg1, number, ::group-off} görsel yüklenemedi",
   "reader_labels_add": "Etiket",
   "reader_labels_add_label": "Etiket ekle",
   "reader_labels_auto": "Model",

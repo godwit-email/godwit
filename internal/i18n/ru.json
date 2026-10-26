@@ -409,6 +409,7 @@
   "reader_egress_body": "Плагин {arg1} отправит данные на:",
   "reader_egress_title": "Разрешить плагину отправку данных?",
   "reader_forward": "Переслать",
+  "reader_images_failed": "Не удалось загрузить изображения: {arg1, number, ::group-off}",
   "reader_labels_add": "Метка",
   "reader_labels_add_label": "Добавить метку",
   "reader_labels_auto": "От модели",

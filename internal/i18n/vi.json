@@ -409,6 +409,7 @@
   "reader_egress_body": "Plugin {arg1} sẽ gửi dữ liệu đến:",
   "reader_egress_title": "Cho phép plugin gửi dữ liệu?",
   "reader_forward": "Chuyển tiếp",
+  "reader_images_failed": "Không tải được {arg1, number, ::group-off} hình ảnh",
   "reader_labels_add": "Nhãn",
   "reader_labels_add_label": "Thêm nhãn",
   "reader_labels_auto": "Bởi mô hình",

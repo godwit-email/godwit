@@ -96,6 +96,9 @@ type msgBody struct {
 	remote   bool
 	allowErr error
 	trusted  bool
+	// imgFailed is the remote images the proxy could not serve
+	// (BodyImagesFailed); a retry reloads the body.
+	imgFailed int
 
 	unsub     core.Unsubscribe // how it unsubscribes, by its headers; none until asked
 	unsubbing bool             // its unsubscribe is under way
@@ -914,6 +917,16 @@ func (r *reader) message(c *ui.Context, m core.MessageSummary) {
 					}
 				})
 			}
+			if b.imgFailed > 0 && !bodyBlocked {
+				ui.Row(c).Wrap().Gap(th.Space(3)).AlignItems(ui.Center).Padding(th.Space(2), th.Space(3)).Radius(t.Radius.Lg).
+					Background(t.WarningBg).Border(theme.Hairline, t.WarningBorder).Children(func() {
+					kit.Text(c, i18n.Tf("reader.images_failed", b.imgFailed), t.Text.Base).LineHeight(theme.LineCJK).TextColor(t.WarningText)
+					kit.TextLink(c, i18n.T("common.retry"), t.WarningText, t.Text.Base).OnClick(func() {
+						b.imgFailed = 0
+						r.p.a.plat.AllowImages(m.ID)
+					})
+				})
+			}
 			r.translationState(c, m)
 		})
 		if !bodyReady {
@@ -1082,6 +1095,14 @@ func (a *App) BodyBuilt(view ui.NativeWebView, message int64, cut, remote bool) 
 		if remote {
 			b.allowErr = nil
 		}
+	}
+}
+
+// BodyImagesFailed is told n of message's remote images could not load:
+// the notice offers a retry.
+func (a *App) BodyImagesFailed(view ui.NativeWebView, message int64, n int) {
+	if b := a.mail.reader.shown(view, message); b != nil {
+		b.imgFailed = n
 	}
 }
 

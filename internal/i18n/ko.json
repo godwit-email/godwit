@@ -409,6 +409,7 @@
   "reader_egress_body": "플러그인 {arg1}이(가) 다음 위치로 데이터를 전송합니다:",
   "reader_egress_title": "플러그인의 데이터 전송을 허용하시겠습니까?",
   "reader_forward": "전달",
+  "reader_images_failed": "이미지 {arg1, number, ::group-off}개를 불러오지 못했습니다",
   "reader_labels_add": "라벨",
   "reader_labels_add_label": "라벨 추가",
   "reader_labels_auto": "모델 자동 분류",

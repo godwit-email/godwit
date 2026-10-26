@@ -70,26 +70,78 @@ func NewClient(allowLoopback bool) *http.Client {
 	}}
 }
 
+// SystemProxy is the proxy the OS is set to use for u, nil for none; the GUI
+// sets it where it can read the system's settings. Nil means no proxy.
+var SystemProxy func(u *url.URL) *url.URL
+
+// fakeIP is the range proxies in TUN mode answer DNS with (fake-ip): such an
+// address stands for the name looked up, which the proxy resolves itself.
+var fakeIP = netip.MustParsePrefix("198.18.0.0/15")
+
 // NewTransport dials public hosts only (checked on the address dialed, after
-// DNS; ErrHost otherwise) and never through a proxy. allowLoopback lets
-// tests reach httptest servers, which listen on loopback.
+// DNS; ErrHost otherwise), a name's fake-ip address too. Through the system
+// proxy (SystemProxy), which resolves names itself, it refuses addresses and
+// names that are not public. allowLoopback lets tests reach httptest servers,
+// which listen on loopback, and never uses a proxy.
 func NewTransport(allowLoopback bool) *http.Transport {
-	d := &net.Dialer{Timeout: Timeout, Control: func(_, address string, _ syscall.RawConn) error {
+	var proxyAddr atomic.Value // the last proxy's host:port, the one non-public address dialed
+	proxy := func(req *http.Request) (*url.URL, error) {
 		if allowLoopback {
-			return nil
+			return nil, nil
 		}
+		host := strings.ToLower(req.URL.Hostname())
+		if ip, err := netip.ParseAddr(host); err == nil && !PublicIP(ip.Unmap()) || host == "localhost" || strings.HasSuffix(host, ".localhost") {
+			return nil, ErrHost
+		}
+		if SystemProxy == nil {
+			return nil, nil
+		}
+		p := SystemProxy(req.URL)
+		if p != nil {
+			proxyAddr.Store(canonicalAddr(p))
+		}
+		return p, nil
+	}
+	dial := func(ctx context.Context, network, address string) (net.Conn, error) {
 		host, _, err := net.SplitHostPort(address)
 		if err != nil {
-			return ErrHost
+			return nil, ErrHost
 		}
-		ip, err := netip.ParseAddr(host)
-		if err != nil || !PublicIP(ip.Unmap()) {
-			return ErrHost
-		}
-		return nil
-	}}
-	return &http.Transport{Proxy: nil, DialContext: d.DialContext, IdleConnTimeout: 30 * time.Second, MaxIdleConnsPerHost: 4,
+		_, literal := netip.ParseAddr(host)
+		named := literal != nil
+		viaProxy := address == proxyAddr.Load()
+		d := &net.Dialer{Timeout: Timeout, Control: func(_, address string, _ syscall.RawConn) error {
+			if allowLoopback || viaProxy {
+				return nil
+			}
+			host, _, err := net.SplitHostPort(address)
+			if err != nil {
+				return ErrHost
+			}
+			if ip, err := netip.ParseAddr(host); err != nil || !dialable(ip.Unmap(), named) {
+				return ErrHost
+			}
+			return nil
+		}}
+		return d.DialContext(ctx, network, address)
+	}
+	return &http.Transport{Proxy: proxy, DialContext: dial, IdleConnTimeout: 30 * time.Second, MaxIdleConnsPerHost: 4,
 		TLSHandshakeTimeout: Timeout, ResponseHeaderTimeout: Timeout, MaxResponseHeaderBytes: 64 << 10}
+}
+
+// dialable is whether ip may be dialed directly: a public one, or the fake-ip
+// one DNS gave for a name (named), never one written as is.
+func dialable(ip netip.Addr, named bool) bool {
+	return PublicIP(ip) || named && fakeIP.Contains(ip)
+}
+
+// canonicalAddr is u's host:port as the Transport dials it.
+func canonicalAddr(u *url.URL) string {
+	port := u.Port()
+	if port == "" {
+		port = map[string]string{"http": "80", "https": "443", "socks5": "1080", "socks5h": "1080"}[u.Scheme]
+	}
+	return net.JoinHostPort(u.Hostname(), port)
 }
 
 // notGlobal are ranges that are not public hosts although IsPrivate and the

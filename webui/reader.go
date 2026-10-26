@@ -88,6 +88,10 @@ type ReaderDeps struct {
 	// OnFailed is told, for each page bound to message, that the body
 	// Allow read failed: native offers 加载图片 again. Under the lock too.
 	OnFailed func(page any, message int64, err error)
+	// OnImagesFailed is told, for each page bound to message, how many of
+	// its remote images the proxy could not serve: native offers a retry
+	// (Allow). Under the lock too.
+	OnImagesFailed func(page any, message int64, n int)
 }
 
 // Reader keeps the reader pages (role "reader"), each bound to a message:
@@ -119,6 +123,7 @@ type bodyOf struct {
 	// the page decodes every image at once. charged is the tokens counted.
 	pixels       *imagefetch.Budget
 	charged      map[string]bool
+	failed       map[string]bool   // the tokens the proxy could not serve since the last Allow
 	translations map[string]string // display only, applied to the original body's text
 }
 
@@ -186,7 +191,7 @@ func (r *Reader) unbind(key any) {
 // message no page shows is left alone. It returns at once: the body is
 // read on a goroutine.
 func (r *Reader) Allow(message int64) {
-	r.reload(message, func(st *bodyOf) { st.allowed = true })
+	r.reload(message, func(st *bodyOf) { st.allowed, st.failed = true, nil })
 }
 
 // Translate displays translated text in the original body; nil restores the original.
@@ -498,6 +503,10 @@ func (r *Reader) ImageHandler() http.Handler {
 		}
 		img, err := svc.ImageCache().Get(req.Context(), src)
 		if err != nil {
+			if req.Context().Err() == nil { // not the page going away
+				log.Printf("image proxy: message %d: %v", message, err)
+				r.imageFailed(message, token)
+			}
 			http.Error(w, "image unavailable", http.StatusBadGateway)
 			return
 		}
@@ -512,6 +521,26 @@ func (r *Reader) ImageHandler() http.Handler {
 		h.Set("X-Content-Type-Options", "nosniff")
 		_, _ = w.Write(img.Data)
 	})
+}
+
+// imageFailed counts token as one of message's images the proxy could not
+// serve, and tells its pages.
+func (r *Reader) imageFailed(message int64, token string) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	st := r.msgs[message]
+	if st == nil || st.failed[token] {
+		return
+	}
+	if st.failed == nil {
+		st.failed = map[string]bool{}
+	}
+	st.failed[token] = true
+	for k, m := range r.bound {
+		if m == message && r.d.OnImagesFailed != nil {
+			r.d.OnImagesFailed(k, message, len(st.failed))
+		}
+	}
 }
 
 // chargePixels takes img's pixels from message's budget, once per token; false

@@ -409,6 +409,7 @@
   "reader_egress_body": "Le plugin {arg1} enverra des données à :",
   "reader_egress_title": "Autoriser le plugin à envoyer des données ?",
   "reader_forward": "Transférer",
+  "reader_images_failed": "Impossible de charger {arg1, number, ::group-off} images",
   "reader_labels_add": "Étiquette",
   "reader_labels_add_label": "Ajouter une étiquette",
   "reader_labels_auto": "Par le modèle",

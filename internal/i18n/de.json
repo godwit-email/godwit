@@ -414,6 +414,7 @@
   "reader_egress_body": "Plugin {arg1} sendet Daten an:",
   "reader_egress_title": "Darf das Plugin Daten senden?",
   "reader_forward": "Weiterleiten",
+  "reader_images_failed": "{arg1, number, ::group-off} Bilder konnten nicht geladen werden",
   "reader_labels_add": "Label",
   "reader_labels_add_label": "Label hinzufügen",
   "reader_labels_auto": "Vom Modell",
