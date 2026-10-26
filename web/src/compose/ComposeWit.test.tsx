@@ -403,11 +403,25 @@ test("opening ⌘K clears the applied note", async () => {
 });
 
 test("rewrite: the new version, compare toggles to 原文 | 新版本", async () => {
-  vi.mocked(api.review).mockResolvedValue({ ...inline, inline: false, ratio: 0.62, blocks: [] });
+  vi.mocked(api.review).mockResolvedValue({
+    ...inline,
+    inline: false,
+    ratio: 0.62,
+    blocks: [],
+    old_subject: "Old Subject",
+    subject: "New Subject",
+    subject_ops: [
+      op("del", 0, "Old"),
+      op("ins", 0, "New"),
+      op("same", -1, " Subject"),
+    ],
+  });
   await setup(withPending);
   expect(await screen.findByText("已整体重写，改动约 62%")).toBeInTheDocument();
   expect(screen.getByText("整体重写，改动约 62%。")).toBeInTheDocument(); // the panel card
   expect(screen.getByText("Hi Ann and more")).toBeInTheDocument();
+  expect(screen.getByText("New Subject")).toBeInTheDocument();
+  expect(screen.queryByText("Old")).toBeNull(); // diffs are not shown in rewrite mode
   expect(screen.queryByRole("region", { name: "原文" })).toBeNull();
   fireEvent.click(screen.getByRole("button", { name: "对比原文" }));
   expect(screen.getByRole("region", { name: "原文" })).toHaveTextContent("Hi Bob and");

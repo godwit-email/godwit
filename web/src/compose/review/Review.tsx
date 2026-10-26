@@ -327,10 +327,14 @@ export function Review({
               {t("compose.subject")}
             </span>
             <div className="flex flex-wrap items-center gap-1.5 text-base">
-              {r.subject_ops?.map((op, i) => (
-                // biome-ignore lint/suspicious/noArrayIndexKey: ops are fixed for a review
-                <Op key={i} op={op} d={0} />
-              ))}
+              {r.inline ? (
+                r.subject_ops?.map((op, i) => (
+                  // biome-ignore lint/suspicious/noArrayIndexKey: ops are fixed for a review
+                  <Op key={i} op={op} d={0} />
+                ))
+              ) : (
+                <span className="font-medium text-foreground">{r.subject}</span>
+              )}
             </div>
           </div>
         )}
