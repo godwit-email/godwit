@@ -319,30 +319,44 @@ func (p *settingsPage) generalView(c *ui.Context) {
 }
 
 // themeTile is a small picture of the window in a theme: rail, sidebar and
-// content; "system" is the light window on a light/dark diagonal. The name is
-// only its tooltip and label.
+// content; "system" is the light window on its left half and the dark one on
+// its right. The name is only its tooltip and label.
 func (p *settingsPage) themeTile(c *ui.Context, th string) {
 	t := theme.Of(c)
 	on := p.st.Theme == th
-	tok := theme.Light()
+	light, dark := theme.Light(), theme.Dark()
 	if th == "dark" {
-		tok = theme.Dark()
+		light = dark
+	}
+	// fill paints a part spanning x0 to x0+w of the picture: in "system", light
+	// left of the picture's middle and dark right of it, each part cut where it crosses.
+	fill := func(e ui.Element, x0, w float32, l, d ui.Color) ui.Element {
+		f := (theme.ThemeTileWidth/2 - x0) / w
+		switch {
+		case th != "system" || f >= 1:
+			return e.Background(l)
+		case f <= 0:
+			return e.Background(d)
+		}
+		return e.LinearGradient(ui.LinearGradient{From: l, To: d, Angle: 90, Start: f, End: f})
 	}
 	label := i18n.T("settings.theme." + th)
 	b := kit.Pressable(c, kit.PressableOpts{Bare: true, OnClick: func() { p.st.Theme = th }}).Label(label).Role(ui.RoleRadio).Checked(on).
-		Size(theme.ThemeTileWidth, theme.ThemeTileHeight).Radius(t.Radius.Md).Clip().Border(theme.Stroke, t.Border).Background(tok.Window)
+		Size(theme.ThemeTileWidth, theme.ThemeTileHeight).Radius(t.Radius.Md).Clip().Border(theme.Stroke, t.Border)
+	fill(b, 0, theme.ThemeTileWidth, light.Window, dark.Window)
 	if on {
 		b.Border(theme.SelectedBorder, t.Primary)
 	}
-	if th == "system" {
-		b.LinearGradient(ui.LinearGradient{From: tok.Window, To: theme.Dark().Window, Angle: 135, Start: 0.5, End: 0.5})
-	}
+	const content = theme.TileRail + theme.TileSide                  // the content's left edge
+	const inner = theme.ThemeTileWidth - content - 2*theme.TileInset // its lines' full width
 	b.AlignItems(ui.Stretch).Children(func() {
 		ui.Box(c).Width(theme.TileRail).Shrink(0)
-		ui.Box(c).Width(theme.TileSide).Shrink(0).Margin(theme.TileInset, 0, 0, 0).Background(tok.Sidebar).Radius(t.Radius.Md, 0, 0, 0)
-		ui.Column(c).Grow(1).Margin(theme.TileInset, 0, 0, 0).Padding(theme.TileInset).Gap(theme.TileGap).Background(tok.Background).Children(func() {
-			ui.Box(c).Height(theme.TileLine).WidthPercent(70).Radius(t.Radius.Xs).Background(tok.Border)
-			ui.Box(c).Height(theme.TileLine).WidthPercent(45).Radius(t.Radius.Xs).Background(tok.Border)
+		fill(ui.Box(c).Width(theme.TileSide).Shrink(0).Margin(theme.TileInset, 0, 0, 0).Radius(t.Radius.Md, 0, 0, 0), theme.TileRail, theme.TileSide, light.Sidebar, dark.Sidebar)
+		col := ui.Column(c).Grow(1).Margin(theme.TileInset, 0, 0, 0).Padding(theme.TileInset).Gap(theme.TileGap)
+		fill(col, content, theme.ThemeTileWidth-content, light.Background, dark.Background).Children(func() {
+			for _, pct := range []float32{70, 45} {
+				fill(ui.Box(c).Height(theme.TileLine).WidthPercent(pct).Radius(t.Radius.Xs), content+theme.TileInset, inner*pct/100, light.Border, dark.Border)
+			}
 		})
 	})
 	kit.TooltipLabelled(c, b, label)

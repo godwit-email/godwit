@@ -190,9 +190,8 @@ func TestSyncAllPartialFailure(t *testing.T) {
 
 	h.app.SyncAll()
 	h.until("bob's failure shown", func() bool { return h.app.syncBatch == nil && h.tt.HasText(b.Email) })
-	if h.app.syncedAtBy[a.ID].IsZero() {
-		t.Fatal("alice's sync time not recorded")
-	}
+	// Alice's SyncFinished comes over the event bus, which may reach the UI after the batch's end.
+	h.until("alice's sync time recorded", func() bool { return !h.app.syncedAtBy[a.ID].IsZero() })
 }
 
 // TestSyncAllFailureWhileOthersPending: an account failing early does not end
@@ -222,9 +221,10 @@ func TestSyncAllFailureWhileOthersPending(t *testing.T) {
 
 	releaseB()
 	h.until("alice's failure shown", func() bool { return h.app.syncBatch == nil && h.tt.HasText(a.Email) })
-	if h.tt.HasText(i18n.T("shell.sync.syncing")) || h.app.syncedAtBy[b.ID].IsZero() {
-		t.Fatalf("texts %q, bob synced at %v", h.tt.Texts(), h.app.syncedAtBy[b.ID])
+	if h.tt.HasText(i18n.T("shell.sync.syncing")) {
+		t.Fatalf("still syncing; texts %q", h.tt.Texts())
 	}
+	h.until("bob's sync time recorded", func() bool { return !h.app.syncedAtBy[b.ID].IsZero() }) // its event may come after the batch's end
 }
 
 // TestSyncAllWhileInFlight: clicking Sync All again before the batch ends starts
@@ -299,9 +299,7 @@ func TestSyncAllWithBackgroundSync(t *testing.T) {
 	h.waitMail("mail shown and synced", func() bool {
 		return h.app.syncBatch == nil && h.tt.HasText(i18n.T("shell.sync.just_now")) && h.tt.HasText("Subject")
 	})
-	if h.app.syncedAtBy[a.ID].IsZero() {
-		t.Fatal("no sync time recorded")
-	}
+	h.until("sync time recorded", func() bool { return !h.app.syncedAtBy[a.ID].IsZero() }) // its event may come after the batch's end
 }
 
 func TestReauthStatus(t *testing.T) {

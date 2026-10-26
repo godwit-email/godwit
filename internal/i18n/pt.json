@@ -480,7 +480,7 @@
   "settings_about_feedback": "Relatar um problema",
   "settings_about_license": "Licença",
   "settings_about_version": "Versão {arg1}",
-  "settings_account_ai": "Instruções e dados de IA",
+  "settings_account_ai": "Instruções para o Wit",
   "settings_account_ai_help": "Informações pessoais (ex.: nome, telefone, endereço, cargo) e diretrizes de redação para esta conta.",
   "settings_account_ai_long": "No máximo {arg1, number, ::group-off} caracteres",
   "settings_account_ai_placeholder": "ex.:\nNome: Dr. João Silva\nTelefone: +351 21 123 4567\nCargo: Diretor Geral, ABC Lda.\nDiretrizes: Sempre formal com externos.",

@@ -149,9 +149,9 @@ function Bar({ t, mode, children }: { t: T; mode: Mode; children?: ReactNode }) 
   );
 }
 
-/** A divider inset to the text, as between the rows of a settings section. */
+/** The toolbar's edge over the editing area, across the whole card. */
 function Rule() {
-  return <div className="mx-4 border-b-[0.5px]" />;
+  return <div className="border-b-[0.5px]" />;
 }
 
 /** The formats, greyed out: a layout signature edits only its text. */
@@ -297,7 +297,7 @@ function LayoutEditor(props: { t: T; initial: string; mode: Mode; onChange(html:
         </Button>
       </div>
       <Rule />
-      <div className="min-h-0 flex-1 overflow-auto">
+      <div className="min-h-0 flex-1 overflow-auto bg-background">
         {/* biome-ignore lint/a11y/useSemanticElements: rich text (a table, images) cannot be a <textarea> */}
         <div
           ref={box}
@@ -381,7 +381,7 @@ function RichEditor(props: {
       <div className="flex h-screen flex-col">
         <Toolbar t={t} mode={mode} pickImage={pickImage} askLink={askLink} />
         {/* The wrapper scrolls, not the editable: WebKit stops repainting a scrolling contenteditable. */}
-        <div className="min-h-0 flex-1 overflow-auto">
+        <div className="min-h-0 flex-1 overflow-auto bg-background">
           <PlateContent
             aria-label={t("settings.account.signature.label")}
             className="min-h-full px-4 py-2.5 leading-[1.6] outline-none [&_a]:text-primary [&_a]:underline"

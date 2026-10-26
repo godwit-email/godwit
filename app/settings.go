@@ -226,14 +226,14 @@ func (p *settingsPage) Sidebar(c *ui.Context) {
 		account := func(acc core.Account) {
 			item(accountRoute(acc.ID)).Children(func() {
 				a.accountMark(c, acc)
-				ui.Text(c, acc.Email).SingleLine().Grow(1).Shrink(1)
+				ui.Text(c, accountName(acc)).SingleLine().Grow(1).Shrink(1)
 			})
 		}
 		switch n := len(a.accounts); {
 		case !hit.accounts:
 		case hit.email == "" && n > 1: // dragged to reorder; not while a search hides some
 			p.accountOrder.Key = func(i int) any { return a.accounts[i].ID }
-			p.accountOrder.Label = func(i int) string { return a.accounts[i].Email }
+			p.accountOrder.Label = func(i int) string { return accountName(a.accounts[i]) }
 			p.accountOrder.Reorder = func(rows []int, to int) { p.moveAccount(rows[0], to) }
 			gap := th.Space(0.5) // the sidebar column's
 			kit.List(c, &p.accountOrder, n, func(i int) {
@@ -245,7 +245,7 @@ func (p *settingsPage) Sidebar(c *ui.Context) {
 			}).FillWidth().Height(float32(n)*(th.Space(8)+gap) - gap)
 		default:
 			for _, acc := range a.accounts {
-				if hit.email == "" || strings.Contains(strings.ToLower(acc.Email), hit.email) {
+				if hit.email == "" || accountMatches(acc, hit.email) {
 					account(acc)
 				}
 			}
@@ -346,10 +346,10 @@ func sectionTitle(c *ui.Context, title string) {
 }
 
 // settingsCard is a section's card of rows, with hairlines between them: a
-// borderless Card fill, so gray chips in its rows are drawn on Background.
+// Card fill in a hairline border, so gray chips in its rows are drawn on Background.
 func settingsCard(c *ui.Context, rows ...func()) {
 	t := theme.Of(c)
-	ui.Column(c).Radius(t.Radius.Xl).Background(t.Card).Clip().Children(func() {
+	ui.Column(c).Radius(t.Radius.Xl).Background(t.Card).Border(theme.Hairline, t.Border).Clip().Children(func() {
 		for i, row := range rows {
 			if i > 0 {
 				hairline(c)
