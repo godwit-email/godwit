@@ -174,6 +174,51 @@ type Snapshot = {
   shadows: { property: string; value: string }[];
 };
 
+function textPseudoRegions(root: HTMLElement): Set<HTMLElement> {
+  const regions = new Set<HTMLElement>();
+  const doc = root.ownerDocument;
+  const visit = (rules: CSSRuleList) => {
+    for (const rule of rules) {
+      if ("cssRules" in rule) {
+        if (
+          rule.type === CSSRule.MEDIA_RULE &&
+          doc.defaultView?.matchMedia &&
+          !doc.defaultView.matchMedia((rule as CSSMediaRule).conditionText).matches
+        )
+          continue;
+        visit((rule as CSSGroupingRule).cssRules);
+      }
+      if (!("selectorText" in rule)) continue;
+      const selector = (rule as CSSStyleRule).selectorText;
+      let start = 0;
+      let depth = 0;
+      // Keep selector-list commas, quoted attributes and functional selectors distinct.
+      for (const token of selector.matchAll(
+        /\\.|"(?:\\.|[^"\\])*"|'(?:\\.|[^'\\])*'|[()[\],]|::?first-(?:line|letter)\b|::marker\b/gi,
+      )) {
+        const value = token[0];
+        if (value === "(" || value === "[") depth++;
+        else if (value === ")" || value === "]") depth--;
+        else if (depth === 0 && value === ",") start = token.index + 1;
+        else if (depth === 0 && value.startsWith(":")) {
+          let owner = selector.slice(start, token.index);
+          if (!owner || /[\s>+~]$/.test(owner)) owner += "*";
+          for (const el of doc.querySelectorAll<HTMLElement>(owner)) {
+            // Outside markers can paint in the list's margin, beyond its own background.
+            const region =
+              value.toLowerCase() === "::marker"
+                ? (el.closest("ul,ol")?.parentElement ?? el.parentElement ?? root)
+                : el;
+            if (root.contains(region)) regions.add(region);
+          }
+        }
+      }
+    }
+  };
+  for (const sheet of doc.styleSheets) visit(sheet.cssRules);
+  return regions;
+}
+
 /** The trusted reader owns these temporary overrides; the message document runs no code. */
 export function adaptDarkMode(frame: HTMLIFrameElement, theme: Theme): () => void {
   const doc = frame.contentDocument;
@@ -206,6 +251,8 @@ export function adaptDarkMode(frame: HTMLIFrameElement, theme: Theme): () => voi
     doc.documentElement.style.colorScheme = "light";
     try {
       const snapshots = new Map<HTMLElement, Snapshot>();
+      // shortcut: styled text pseudos keep their complete region until pseudo colours are mapped.
+      const textRegions = textPseudoRegions(root);
       let retryNeeded = false;
       // Read the entire light baseline before any overrides can affect inheritance.
       for (const el of [root, ...root.querySelectorAll<HTMLElement>("*")]) {
@@ -249,7 +296,7 @@ export function adaptDarkMode(frame: HTMLIFrameElement, theme: Theme): () => voi
           fg,
           source,
           target: source,
-          protected: false,
+          protected: textRegions.has(el),
           mediaProtected: false,
           visible,
           opacity,
@@ -276,6 +323,16 @@ export function adaptDarkMode(frame: HTMLIFrameElement, theme: Theme): () => voi
         if (visible && opacity > 0 && opacity < 1 && (parent?.opacity ?? 1) === 1) {
           if (!parent) throw new Error("Translucent mail root");
           parent.protected = true;
+        }
+        // shortcut: column paint is outside cell ancestry; preserve its table until modelled.
+        if (
+          visible &&
+          opacity > 0 &&
+          (el.tagName === "COL" || el.tagName === "COLGROUP") &&
+          (bg[3] > 0 || (computed.backgroundImage && computed.backgroundImage !== "none"))
+        ) {
+          const table = snapshots.get(el.closest("table") as HTMLElement);
+          if (table) table.protected = true;
         }
       }
       for (const node of [...snapshots.values()].reverse()) {

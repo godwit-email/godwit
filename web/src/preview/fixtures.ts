@@ -515,6 +515,33 @@ export const readerAuthorDark = `<style data-dark="">
   </div>
 </div>`;
 
+export const readerPaintFallback = `<style>
+#godwit-body .first-line::first-line, #godwit-body .first-letter:first-letter, #godwit-body .ordinary {color:#111}
+#godwit-body .marker::marker {color:#111}
+#godwit-body p::selection {background:#fff;color:#111}
+@media all {
+  #godwit-body :is(.absent,:is(.legacy-line,.missing)):first-line,
+  #godwit-body .modern-letter[title="notice,::first-line"]::first-letter {color:#111}
+}
+</style><div id="paper" style="background:#fff;color:#111">
+  <p id="line" class="first-line">The first line remains readable.</p>
+  <p id="letter" class="first-letter"><span>Important notice</span></p>
+  <p id="nested-line" class="legacy-line">Nested rules remain readable.</p>
+  <p id="nested-letter" class="modern-letter" title="notice,::first-line">Modern letters remain readable.</p>
+  <p id="ordinary" class="ordinary">Ordinary content still adapts.</p>
+  <div id="marker-region"><ul id="marker-list" style="padding-left:0;margin-left:24px">
+    <li class="marker">An important bulleted condition</li>
+  </ul></div>
+  <table id="column"><colgroup><col bgcolor="#555" style="background:#555"></colgroup>
+    <tbody><tr><td id="column-text" style="color:#fff">Text on a column</td></tr></tbody></table>
+  <table id="group"><colgroup style="background:#555"><col></colgroup>
+    <tbody><tr><td id="group-text" style="color:#fff">Text on a column group</td></tr></tbody></table>
+  <table id="art"><colgroup><col style="background-image:linear-gradient(#fff,#eee)"></colgroup>
+    <tbody><tr><td id="art-text">Text on column artwork</td></tr></tbody></table>
+  <table id="ordinary-table"><colgroup><col></colgroup>
+    <tbody><tr><td id="ordinary-text">Ordinary table content</td></tr></tbody></table>
+</div>`;
+
 export const readerFallback = `<div style="background:#fff;color:#111;padding:32px">
   <h1 style="font-size:24px">Conservative colour handling</h1>
   <p>Ordinary text around unsupported regions still adapts.</p>
@@ -523,6 +550,7 @@ export const readerFallback = `<div style="background:#fff;color:#111;padding:32
     <p style="opacity:.3">A translucent group needs its original outside backdrop.</p>
     <p style="color:rgba(0,0,0,0)">This text must remain invisible.</p>
   </div>
+  ${readerPaintFallback}
   <p id="fallback-readable">The last paragraph remains readable in the selected theme.</p>
 </div>`;
 export const signatureHtml =

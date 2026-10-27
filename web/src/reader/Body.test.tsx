@@ -27,7 +27,12 @@ vi.mock("@/mygo", () => ({
 }));
 
 import { ReaderPage as api } from "@/mygo";
-import { readerColored, readerGradients, readerMixed } from "@/preview/fixtures";
+import {
+  readerColored,
+  readerGradients,
+  readerMixed,
+  readerPaintFallback,
+} from "@/preview/fixtures";
 import { ReaderApp } from "./Body";
 
 const theme: Theme = {
@@ -374,6 +379,55 @@ test("dark neutral mail keeps readable text and distinct card and secondary text
   expect(style("card").backgroundColor).not.toBe(style("paper").backgroundColor);
   expect(style("paper").filter).not.toContain("invert");
   expect(input.html).toBe(html);
+});
+
+test("first-line and first-letter styles keep their complete original region while ordinary text adapts", async () => {
+  let current = await start(body(1, readerPaintFallback, { theme: darkTheme }));
+  const style = (id: string) =>
+    current.win.getComputedStyle(current.doc.getElementById(id) as HTMLElement);
+  for (const id of ["line", "letter", "nested-line", "nested-letter"]) {
+    expect(style(id).backgroundColor).toBe("rgb(255, 255, 255)");
+    expect(style(id).color).toBe("rgb(17, 17, 17)");
+  }
+  expect(style("paper").backgroundColor).not.toBe("rgb(255, 255, 255)");
+  expect(style("ordinary").color).not.toBe("rgb(17, 17, 17)");
+  expect(
+    current.win.getComputedStyle(current.doc.querySelector("#letter span") as HTMLElement).color,
+  ).toBe("rgb(17, 17, 17)");
+  act(() => {
+    for (const receive of h.theme) receive({ ...darkTheme, mode: "light" });
+  });
+  current = await loaded();
+  expect(current.doc.getElementById("line")?.getAttribute("style")).toBeNull();
+  expect(style("ordinary").color).toBe("rgb(17, 17, 17)");
+});
+
+test("column and column-group artwork keeps the whole table pairing while ordinary tables adapt", async () => {
+  const { doc, win } = await start(body(1, readerPaintFallback, { theme: darkTheme }));
+  const style = (id: string) => win.getComputedStyle(doc.getElementById(id) as HTMLElement);
+  for (const id of ["column", "group", "art"])
+    expect(style(id).backgroundColor).toBe("rgb(255, 255, 255)");
+  expect(style("column-text").color).toBe("rgb(255, 255, 255)");
+  expect(style("group-text").color).toBe("rgb(255, 255, 255)");
+  expect(style("art-text").color).toBe("rgb(17, 17, 17)");
+  expect(
+    win.getComputedStyle(doc.querySelector("#column col") as HTMLElement).backgroundColor,
+  ).toBe("rgb(85, 85, 85)");
+  expect(style("paper").backgroundColor).not.toBe("rgb(255, 255, 255)");
+  expect(style("ordinary-text").color).not.toBe("rgb(17, 17, 17)");
+});
+
+test("styled list markers keep the backdrop outside a zero-padding list", async () => {
+  const { doc, win } = await start(body(1, readerPaintFallback, { theme: darkTheme }));
+  const region = doc.getElementById("marker-region") as HTMLElement;
+  const list = doc.getElementById("marker-list") as HTMLElement;
+  expect(win.getComputedStyle(region).backgroundColor).toBe("rgb(255, 255, 255)");
+  expect(win.getComputedStyle(list.querySelector("li") as HTMLElement).color).toBe(
+    "rgb(17, 17, 17)",
+  );
+  expect(win.getComputedStyle(doc.getElementById("paper") as HTMLElement).backgroundColor).not.toBe(
+    "rgb(255, 255, 255)",
+  );
 });
 
 test("resizing adapted mail reads the new light baseline instead of its previous overrides", async () => {
