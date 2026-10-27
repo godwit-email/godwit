@@ -38,7 +38,7 @@ type Masker struct {
 	values  map[string]entry // by hash
 	learned map[[sha256.Size]byte]bool
 	names   []string // the values of NAME placeholders, longest first
-	secrets []entry  // the values of placeholders found by their label (secretSpans)
+	secrets []entry  // the values of placeholders found by their label (secretSpans): secrets, passports
 }
 
 type entry struct{ kind, value string }
@@ -83,7 +83,7 @@ func (m *Masker) placeholder(kind, v string) (string, error) {
 	}
 	if _, ok := m.values[hash]; !ok && kind == nameKind {
 		m.addName(v)
-	} else if !ok && labeled[kind] && len(v) >= minKnownSecret {
+	} else if n, lab := labeled[kind]; !ok && lab && len(v) >= n {
 		m.secrets = append(m.secrets, entry{kind, v})
 	}
 	m.values[hash] = entry{kind, v}
@@ -327,14 +327,12 @@ func (m *Masker) defuse(s string) string {
 	})
 }
 
-// labeled are the kinds a rule finds only after their label (password: …),
-// and minKnownSecret the shortest of their values known without it.
-var labeled = map[string]bool{"SECRET": true, "PASSWORD": true}
-
-const minKnownSecret = 8
+// labeled are the kinds a rule finds only after their label (password: …,
+// passport: …), each with the shortest of its values known without it.
+var labeled = map[string]int{"SECRET": 8, "PASSWORD": 8, "PASSPORT": 6}
 
 // secretSpans are where s has a value once found by its label, now without
-// it: a text cut after "password:" still masks what follows.
+// it: a text cut after "password:" or "passport:" still masks what follows.
 func (m *Masker) secretSpans(s string) []span {
 	m.mu.RLock()
 	defer m.mu.RUnlock()

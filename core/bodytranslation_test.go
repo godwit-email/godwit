@@ -131,15 +131,18 @@ func TestBodyTranslationMasksAcrossACut(t *testing.T) {
 // A secret found by its label stays masked when the text is cut between
 // the label and the value.
 func TestBodyTranslationMasksASecretCutFromItsLabel(t *testing.T) {
-	const secret = "abcd1234efgh5678"
-	e := newSkillEnv(t)
-	text := strings.Repeat("a", 8179) + " password: " + secret
-	setBody(t, e, text, "")
-	e.srv.Script(testllm.Turn{Text: []string{`{"texts":["x","y"],"source":"en"}`}})
-	evs := e.run(t, "translate", Target{Kind: "message", ID: e.msg, PreserveHTML: true})
-	require.Equal(t, "done", evs[len(evs)-1].Kind, "%+v", evs)
-	for _, r := range e.srv.Requests() {
-		assert.NotContains(t, string(r.Body), secret)
+	for label, value := range map[string]string{"password": "abcd1234efgh5678", "passport": "E12345678"} {
+		t.Run(label, func(t *testing.T) {
+			e := newSkillEnv(t)
+			text := strings.Repeat("a", 8179) + " " + label + ": " + value
+			setBody(t, e, text, "")
+			e.srv.Script(testllm.Turn{Text: []string{`{"texts":["x","y"],"source":"en"}`}})
+			evs := e.run(t, "translate", Target{Kind: "message", ID: e.msg, PreserveHTML: true})
+			require.Equal(t, "done", evs[len(evs)-1].Kind, "%+v", evs)
+			for _, r := range e.srv.Requests() {
+				assert.NotContains(t, string(r.Body), value)
+			}
+		})
 	}
 }
 
