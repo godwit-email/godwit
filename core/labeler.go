@@ -9,6 +9,7 @@ import (
 
 	"github.com/egoist/mygo/plugins/sqlite"
 	"github.com/godwit-email/godwit/core/ai"
+	"github.com/godwit-email/godwit/core/ai/mask"
 	"github.com/godwit-email/godwit/core/events"
 	"github.com/godwit-email/godwit/core/store"
 )
@@ -133,7 +134,7 @@ func (s *Service) classifyBatch(ctx context.Context) (int, error) {
 			if err != nil {
 				return done, err
 			}
-			answers, err := judge.Ask(ctx, labelState(m), qs)
+			answers, err := judge.Ask(mask.Tag(ctx, featureLabels, nil), labelState(m), qs)
 			if err != nil {
 				if !unanswerable(err) {
 					return done, err
@@ -155,11 +156,12 @@ func (s *Service) classifyBatch(ctx context.Context) (int, error) {
 // unanswerable reports an error that would repeat for this message alone: no
 // valid answer, or the service or judge plugin rejecting the request (a
 // content filter). The message is done with its labels as they are, so one
-// message does not stop the rest. A plugin judge that is unavailable or
-// failed (ai.ErrJudgeUnavailable, ai.ErrJudgePlugin) stops the round.
+// message does not stop the rest; so does a message 脱敏 blocks (拦截). A
+// plugin judge that is unavailable or failed (ai.ErrJudgeUnavailable,
+// ai.ErrJudgePlugin) stops the round.
 func unanswerable(err error) bool {
 	var he *ai.HTTPError
-	return errors.Is(err, ai.ErrJudgeAnswer) || errors.Is(err, errJudgeInput) || errors.As(err, &he) && he.Status == 400
+	return MaskBlocked(err) != nil || errors.Is(err, ai.ErrJudgeAnswer) || errors.Is(err, errJudgeInput) || errors.As(err, &he) && he.Status == 400
 }
 
 // labelQuestions returns the labels to ask about for a message, those it has

@@ -5,20 +5,100 @@ import (
 	"crypto/rand"
 	"errors"
 	"iter"
+	"log/slog"
+	"strings"
+	"time"
 
+	"github.com/egoist/mygo/plugins/sqlite"
+	"github.com/godwit-email/godwit/core/ai"
 	"github.com/godwit-email/godwit/core/ai/mask"
 	"github.com/godwit-email/godwit/core/store"
 )
 
 // What 脱敏 does with a category's values (MaskCategory.Action): 遮住 sends
-// placeholders (the default; "" too); 仅警告 sends them as they are and notes
-// them; 拦截 sends nothing. Only 遮住 acts yet: the others are kept as the
-// user chose them for when they do, and mask meanwhile.
+// placeholders (the default; "" too); 仅警告 sends them as they are and
+// records them; 拦截 sends nothing of the request.
 const (
-	MaskHide  = "mask"
-	MaskWarn  = "warn"
-	MaskBlock = "block"
+	MaskHide  = mask.Hide
+	MaskWarn  = mask.Warn
+	MaskBlock = mask.Block
 )
+
+// The features that send to a model service, as the masking log names
+// them (MaskRecord.Feature).
+const (
+	featureWit       = "wit"
+	featureCompose   = "compose" // Wit in a draft's compose window, and its skills
+	featureSkill     = "skill"   // a skill on mail: summary, translation …
+	featureReplies   = "quick_replies"
+	featureTranslate = "translate"
+	featureLabels    = "labels"
+	featureCompact   = "compact"
+	featurePlugin    = "plugin"
+)
+
+// maskLogDays is how long the masking log keeps a request's record.
+const maskLogDays = 30
+
+// MaskRecord is a value a request to a model service or a translation
+// plugin held (脱敏记录): which feature sent it, its kind and category ("":
+// the user's own), its first character and length, never the value; and
+// what was done with it (MaskHide, MaskWarn or MaskBlock).
+type MaskRecord struct {
+	At                             time.Time
+	Feature, Kind, Category, First string
+	Len                            int
+	Action                         string
+}
+
+// MaskingLog is the masking log of the last 30 days, newest first.
+func (s *Service) MaskingLog(ctx context.Context) ([]MaskRecord, error) {
+	if err := s.exec(ctx, pruneMaskLog()); err != nil {
+		return nil, err
+	}
+	rows, err := s.db.Query(ctx, "SELECT at, feature, kind, category, first, len, action FROM mask_log ORDER BY id DESC")
+	if err != nil {
+		return nil, err
+	}
+	out := make([]MaskRecord, 0, len(rows.Values))
+	for _, r := range rows.Values {
+		out = append(out, MaskRecord{At: time.Unix(store.Int(r[0]), 0), Feature: store.Str(r[1]), Kind: store.Str(r[2]), Category: store.Str(r[3]),
+			First: store.Str(r[4]), Len: int(store.Int(r[5])), Action: store.Str(r[6])})
+	}
+	return out, nil
+}
+
+func pruneMaskLog() sqlite.Statement {
+	return sqlite.Statement{SQL: "DELETE FROM mask_log WHERE at < ?", Args: []any{time.Now().AddDate(0, 0, -maskLogDays).Unix()}}
+}
+
+// recordMasking adds what a request of feature held to the masking log.
+// A failure is logged: the request has gone, or been blocked, either way.
+func (s *Service) recordMasking(feature string, hits []mask.Hit) {
+	now := time.Now().Unix()
+	stmts := []sqlite.Statement{pruneMaskLog()}
+	for _, h := range hits {
+		stmts = append(stmts, sqlite.Statement{SQL: "INSERT INTO mask_log(at, feature, kind, category, first, len, action) VALUES (?, ?, ?, ?, ?, ?, ?)",
+			Args: []any{now, feature, h.Kind, h.Category, h.First, h.Len, h.Action}})
+	}
+	if _, err := s.db.Transaction(context.Background(), stmts); err != nil {
+		slog.Default().Warn("could not record what masking found", "err", err)
+	}
+}
+
+// MaskBlocked is the categories (mask's names) whose values blocked err's
+// request (拦截), nil if masking did not block it.
+func MaskBlocked(err error) []string {
+	var b *mask.BlockedError
+	if errors.As(err, &b) {
+		return b.Categories
+	}
+	var ae *ai.Error
+	if errors.As(err, &ae) && ae.Code == ai.CodeBlocked {
+		return strings.Split(ae.Detail, ",")
+	}
+	return nil
+}
 
 // The user's rules (自定义正则) as mask has them, for the UI, which reaches
 // core only through its own package.
@@ -80,11 +160,13 @@ func defaultMaskCategories() MaskCategories {
 
 // maskConfig is what st sets the masker to.
 func (st Settings) maskConfig() mask.Config {
-	c := mask.Config{Words: st.MaskWords, WordsCase: st.MaskWordsCase, WordsWhole: st.MaskWordsWhole, Rules: st.MaskRules, Allow: st.MaskAllow}
+	c := mask.Config{Words: st.MaskWords, WordsCase: st.MaskWordsCase, WordsWhole: st.MaskWordsWhole, Rules: st.MaskRules, Allow: st.MaskAllow,
+		Actions: map[string]string{}}
 	for name, cat := range st.MaskCategories.All() {
 		if !cat.On {
 			c.Off = append(c.Off, name)
 		}
+		c.Actions[name] = cat.Action
 	}
 	return c
 }
@@ -115,6 +197,7 @@ func (s *Service) masker() (*mask.Masker, error) {
 		return nil, err
 	}
 	m := mask.New([]byte(store.Str(rows.Values[0][0])))
+	m.Record = s.recordMasking
 	if err := m.Configure(st.maskConfig()); err != nil { // a rule stored by hand: nothing goes out unmasked
 		return nil, err
 	}

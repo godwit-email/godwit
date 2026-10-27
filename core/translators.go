@@ -122,18 +122,11 @@ type boundTranslator struct {
 // maskTexts masks texts as call would, for a caller about to cut them into
 // pieces, where a value cut in two would not be found: it sends the pieces
 // with masked set and restores (masker.Restore) the texts it joins from them.
-func (b boundTranslator) maskTexts(texts []string) ([]string, error) {
+func (b boundTranslator) maskTexts(ctx context.Context, texts []string) ([]string, error) {
 	if b.masker == nil || !b.masker.On() {
 		return texts, nil
 	}
-	out := make([]string, len(texts))
-	for i, t := range texts {
-		var err error
-		if out[i], err = b.masker.Text(t); err != nil {
-			return nil, err
-		}
-	}
-	return out, nil
+	return b.masker.RequestTexts(ctx, texts)
 }
 
 // translatorFor is the plugin name as a translator: the system's for the
@@ -342,7 +335,7 @@ func (s *Service) runPluginTranslate(ctx context.Context, end func(), plugin str
 // translations are restored however it changed the placeholders.
 func (s *Service) callTranslator(ctx context.Context, plugin string, tr translator, rp *runningPlugin, b boundTranslator, req translateRequest) (translateResult, error) {
 	if !req.masked {
-		texts, err := b.maskTexts(req.Texts)
+		texts, err := b.maskTexts(ctx, req.Texts)
 		if err != nil {
 			return translateResult{}, err
 		}
@@ -379,7 +372,7 @@ func (s *Service) pluginDraftRun(plugin, src, target, subject string, translateS
 			defer close(events)
 			outHTML, err := s.translateDraftHTML(ctx, plugin, src, target)
 			if err != nil {
-				res = ai.Result{Err: &ai.Error{Code: ai.CodeInternal, Msg: err.Error()}}
+				res = ai.Result{Err: cmp.Or(ai.Blocked(err), &ai.Error{Code: ai.CodeInternal, Msg: err.Error()})}
 				return
 			}
 			out := outHTML
@@ -487,7 +480,7 @@ func (s *Service) translateDraftHTML(ctx context.Context, plugin, src, target st
 	if len(texts) == 0 {
 		return src, nil
 	}
-	if texts, err = tr.maskTexts(texts); err != nil {
+	if texts, err = tr.maskTexts(ctx, texts); err != nil {
 		return "", err
 	}
 	// Long blocks go in pieces, and pieces in batches, each request well within the ABI's limit.
