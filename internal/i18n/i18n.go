@@ -3,7 +3,6 @@ package i18n
 
 import (
 	"encoding/json"
-	"fmt"
 	"strconv"
 	"strings"
 	"sync/atomic"
@@ -12,15 +11,16 @@ import (
 	mygoi18n "github.com/egoist/mygo/i18n"
 )
 
-var lang atomic.Value
+var lang, locale atomic.Value
 var messageKey = strings.NewReplacer(".", "_", "-", "_")
 
-func init() { lang.Store("zh-Hans") }
+func init() { lang.Store("zh-Hans"); locale.Store("zh-Hans") }
 
 // SetLanguage selects the catalog language best matching tag (or "en") and
 // accepts MyGo's pseudo locales for layout checks.
 func SetLanguage(tag string) {
 	tag = mygoi18n.Normalize(tag)
+	locale.Store(tag)
 	switch {
 	case mygoi18n.IsPseudo(tag):
 	case mygoi18n.Match([]string{tag}, Catalog.Languages()) != "":
@@ -57,76 +57,52 @@ func Tf(key string, args ...any) string {
 // Plural uses the language's ICU plural rules.
 func Plural(key string, n int) string { return Tf(key, n) }
 
-// FormatDate formats t for list views and cards according to Language():
-// in the current year: e.g. "01.10." (de), "10/01" (en/zh), "01/10" (fr/es);
-// in a different year: e.g. "01.10.2025" (de), "10/01/2025" (en), "2025/10/01" (zh).
+// FormatDate is FormatDateIn in the locale SetLanguage was given, which keeps
+// the region the catalog match drops (en-GB is "en" for T, day-first here).
 func FormatDate(t, now time.Time) string {
-	return FormatDateIn(t, now, Language())
+	return FormatDateIn(t, now, locale.Load().(string))
 }
 
-// FormatDateIn formats t for list views and cards according to lang/locale,
-// adhering to Unicode CLDR standards:
-//   - de: DD.MM. / DD.MM.YYYY
-//   - fr, es, it, pt, vi: DD/MM / DD/MM/YYYY
-//   - en-GB, en-IE, en-AU, en-NZ: DD/MM / DD/MM/YYYY
-//   - en-US (and en default): MM/DD / MM/DD/YYYY
-//   - zh, ja: MM/DD / YYYY/MM/DD
-//   - ko: MM. DD. / YYYY. MM. DD.
-//   - nl: DD-MM / DD-MM-YYYY
-//   - ru, tr: DD.MM / DD.MM.YYYY
+// FormatDateIn is t's numeric date in lang (CLDR short date, Md / yMd), in
+// now's zone, without the year in now's year: "01.10." / "01.10.2025" (de).
 func FormatDateIn(t, now time.Time, lang string) string {
 	t = t.In(now.Location())
-	tag := strings.ToLower(strings.TrimSpace(lang))
-	base, region, _ := strings.Cut(tag, "-")
-	sameYear := t.Year() == now.Year()
-	switch base {
-	case "de":
-		if sameYear {
-			return fmt.Sprintf("%02d.%02d.", t.Day(), t.Month())
-		}
-		return fmt.Sprintf("%02d.%02d.%d", t.Day(), t.Month(), t.Year())
-	case "fr", "es", "it", "pt", "vi":
-		if sameYear {
-			return fmt.Sprintf("%02d/%02d", t.Day(), t.Month())
-		}
-		return fmt.Sprintf("%02d/%02d/%d", t.Day(), t.Month(), t.Year())
-	case "nl":
-		if sameYear {
-			return fmt.Sprintf("%02d-%02d", t.Day(), t.Month())
-		}
-		return fmt.Sprintf("%02d-%02d-%d", t.Day(), t.Month(), t.Year())
-	case "ru", "tr":
-		if sameYear {
-			return fmt.Sprintf("%02d.%02d", t.Day(), t.Month())
-		}
-		return fmt.Sprintf("%02d.%02d.%d", t.Day(), t.Month(), t.Year())
-	case "ko":
-		if sameYear {
-			return fmt.Sprintf("%d. %d.", t.Month(), t.Day())
-		}
-		return fmt.Sprintf("%d. %d. %d.", t.Year(), t.Month(), t.Day())
-	case "zh", "ja":
-		if sameYear {
-			return fmt.Sprintf("%d/%02d", t.Month(), t.Day())
-		}
-		return fmt.Sprintf("%d/%02d/%02d", t.Year(), t.Month(), t.Day())
-	case "en":
-		if region == "gb" || region == "ie" || region == "au" || region == "nz" {
-			if sameYear {
-				return fmt.Sprintf("%02d/%02d", t.Day(), t.Month())
-			}
-			return fmt.Sprintf("%02d/%02d/%d", t.Day(), t.Month(), t.Year())
-		}
-		if sameYear {
-			return fmt.Sprintf("%d/%02d", t.Month(), t.Day())
-		}
-		return fmt.Sprintf("%d/%02d/%d", t.Month(), t.Day(), t.Year())
-	default:
-		if sameYear {
-			return fmt.Sprintf("%d/%02d", t.Month(), t.Day())
-		}
-		return fmt.Sprintf("%d/%02d/%d", t.Month(), t.Day(), t.Year())
+	l := dateLayout(lang)
+	if t.Year() == now.Year() {
+		return t.Format(l[0])
 	}
+	return t.Format(l[1])
+}
+
+// FullDateIn is t's numeric date with the year in lang, in t's own zone.
+func FullDateIn(t time.Time, lang string) string { return t.Format(dateLayout(lang)[1]) }
+
+// dateLayouts are the time layouts of a date without and with the year, by base language.
+var dateLayouts = map[string][2]string{
+	"de": {"02.01.", "02.01.2006"},
+	"fr": {"02/01", "02/01/2006"},
+	"es": {"02/01", "02/01/2006"},
+	"it": {"02/01", "02/01/2006"},
+	"pt": {"02/01", "02/01/2006"},
+	"vi": {"02/01", "02/01/2006"},
+	"nl": {"02-01", "02-01-2006"},
+	"ru": {"02.01", "02.01.2006"},
+	"tr": {"02.01", "02.01.2006"},
+	"ko": {"1. 2.", "2006. 1. 2."},
+	"zh": {"1/02", "2006/01/02"},
+	"ja": {"1/02", "2006/01/02"},
+	"en": {"1/02", "1/02/2006"},
+}
+
+func dateLayout(lang string) [2]string {
+	base, region, _ := strings.Cut(strings.ToLower(strings.TrimSpace(lang)), "-")
+	if base == "en" && (region == "gb" || region == "ie" || region == "au" || region == "nz") {
+		return dateLayouts["fr"]
+	}
+	if l, ok := dateLayouts[base]; ok {
+		return l
+	}
+	return dateLayouts["en"]
 }
 
 // Keys returns the source catalog's message keys.

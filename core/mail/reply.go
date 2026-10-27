@@ -1,11 +1,13 @@
 package mail
 
 import (
+	"cmp"
 	"fmt"
 	"html"
 	"net/mail"
 	"strings"
-	"time"
+
+	"github.com/godwit-email/godwit/internal/i18n"
 )
 
 // AddrKey is the lowercased bare address of an address string ("Bob <b@x>" → "b@x").
@@ -49,26 +51,8 @@ func QuoteHTMLIn(orig *Parsed, lang string) string {
 	if orig.HTML == "" {
 		body = strings.ReplaceAll(html.EscapeString(strings.ReplaceAll(orig.Text, "\r\n", "\n")), "\n", "<br>")
 	}
-	date, from := formatQuoteDate(orig.Date, lang), html.EscapeString(orig.From)
+	date, from := i18n.FullDateIn(orig.Date, cmp.Or(lang, "zh-Hans"))+orig.Date.Format(" 15:04"), html.EscapeString(orig.From)
 	return "<p>" + quoteLead(lang, date, from) + "</p><blockquote>" + body + "</blockquote>"
-}
-
-func formatQuoteDate(d time.Time, lang string) string {
-	base, _, _ := strings.Cut(strings.ToLower(strings.TrimSpace(lang)), "-")
-	switch base {
-	case "de":
-		return d.Format("02.01.2006, 15:04")
-	case "fr", "es", "it", "pt", "vi":
-		return d.Format("02/01/2006 15:04")
-	case "nl":
-		return d.Format("02-01-2006 15:04")
-	case "ru", "tr":
-		return d.Format("02.01.2006 15:04")
-	case "en":
-		return d.Format("01/02/2006 15:04")
-	default:
-		return d.Format("2006-01-02 15:04")
-	}
 }
 
 func quoteLead(lang, date, from string) string {

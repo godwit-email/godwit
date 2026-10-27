@@ -211,4 +211,8 @@ func TestFormatDate(t *testing.T) {
 	if got := FormatDate(sameYear, now); got != "01.10." {
 		t.Errorf("Language() de: got %q, want %q", got, "01.10.")
 	}
+	SetLanguage("en-GB") // the catalog is "en", the date day-first
+	if got := FormatDate(sameYear, now); Language() != "en" || got != "01/10" {
+		t.Errorf("en-GB: Language() %q, FormatDate %q, want en, %q", Language(), got, "01/10")
+	}
 }
