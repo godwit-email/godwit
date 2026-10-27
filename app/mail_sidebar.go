@@ -116,7 +116,7 @@ func (p *mailPage) Sidebar(c *ui.Context) {
 		a.pageSwitch(c)
 		ui.Spacer(c)
 		kit.IconButton(c, "search", i18n.T("mail.search"), kit.ButtonOpts{Variant: kit.Ghost, Size: kit.SizeSm}).
-			OnClick(func() { p.searchOpen = true })
+			OnClick(a.openPalette)
 	})
 	sidebarScroll(c, func() {
 		compose := kit.SidebarItem(c, kit.SidebarItemOpts{OnClick: p.compose}).Gap(th.Space(2.5))

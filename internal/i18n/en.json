@@ -2581,5 +2581,32 @@
   "settings_blocked_sub": "Incoming messages from blocked senders are automatically moved to Junk.",
   "settings_blocked_none": "No blocked senders.",
   "settings_blocked_remove": "Unblock",
-  "settings_blocked_remove_label": "Unblock {arg1}"
+  "settings_blocked_remove_label": "Unblock {arg1}",
+  "palette_label": "Search",
+  "palette_placeholder": "Search mail, conversations, contacts and attachments",
+  "palette_kind_all": "All",
+  "palette_kind_mail": "Mail",
+  "palette_kind_conversation": "Conversations",
+  "palette_kind_contact": "Contacts",
+  "palette_kind_attachment": "Attachments",
+  "palette_recent": "Recent",
+  "palette_actions": "Actions",
+  "palette_action_compose": "Compose",
+  "palette_action_new_conversation": "New conversation",
+  "palette_action_drafts": "Go to Drafts",
+  "palette_action_labels": "Manage labels",
+  "palette_action_add_account": "Add account",
+  "palette_action_settings": "Open Settings",
+  "palette_empty_title": "No results for \"{arg1}\"",
+  "@palette_empty_title": {
+    "placeholders": {
+      "arg1": {
+        "type": "String"
+      }
+    }
+  },
+  "palette_empty_desc": "Only mail synced to this device was searched. Press Tab to let Wit find it.",
+  "palette_hint_open": "Open",
+  "palette_hint_kind": "Switch type",
+  "palette_hint_close": "Close"
 }

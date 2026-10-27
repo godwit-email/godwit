@@ -122,6 +122,13 @@ func TestSearchResultFolderLine(t *testing.T) {
 	}
 }
 
+// openListSearch opens the list's search, which ⌘F no longer does (it opens
+// the palette); the palette's 查看全部 lands there.
+func openListSearch(h *harness) {
+	h.app.mail.searchOpen = true
+	h.tt.Frame()
+}
+
 func searchEmpty(h *harness) {
 	p := h.app.mail
 	p.searchOpen, p.searched, p.query, p.hlQuery, p.results = true, true, "zzz", "zzz", nil
@@ -164,7 +171,7 @@ func TestSearchHandoffRowAndHint(t *testing.T) {
 	h.waitMail("a thread", func() bool { return len(h.items()) == 1 })
 	var asks []string
 	h.app.SetWitAsk(func(q string) { asks = append(asks, q) })
-	h.tt.Key(ui.Cmd, ui.KeyF)
+	openListSearch(h)
 	h.see("只搜索已同步到本机的邮件")
 	h.typeText("Invoice")
 	h.tt.Key(0, ui.KeyEnter)
@@ -240,7 +247,7 @@ func TestSearchSidebarUnselected(t *testing.T) {
 	if !selected() {
 		t.Fatal("全部收件箱 not selected")
 	}
-	h.tt.Key(ui.Cmd, ui.KeyF)
+	openListSearch(h)
 	h.typeText("Invoice")
 	h.tt.Key(0, ui.KeyEnter)
 	h.until("the search result, no view selected", func() bool { return h.app.mail.searched && !selected() })
@@ -267,7 +274,7 @@ func TestSearchFilterChips(t *testing.T) {
 			return p.searched && p.hlQuery == p.query && len(p.results) == want
 		})
 	}
-	h.tt.Key(ui.Cmd, ui.KeyF)
+	openListSearch(h)
 	h.typeText("Invoice")
 	h.tt.Key(0, ui.KeyEnter)
 	n(3)

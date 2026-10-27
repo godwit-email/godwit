@@ -610,7 +610,7 @@ func (p *mailPage) listHeader(c *ui.Context, head string) {
 		return
 	}
 	if c.Shortcut(ui.Cmd, ui.KeyF) {
-		p.searchOpen = true
+		p.a.openPalette()
 	}
 	ui.Row(c).AlignItems(ui.Center).Padding(th.Space(3), th.Space(4), th.Space(2), th.Space(4)).Gap(th.Space(2)).Children(func() {
 		kit.Text(c, head, t.Text.Base).FontWeight(500).TextColor(t.Muted)
@@ -618,7 +618,7 @@ func (p *mailPage) listHeader(c *ui.Context, head string) {
 		kit.Tabs(c, &p.filter, i18n.T("mail.filter.all"), i18n.T("mail.filter.unread"))
 		if p.a.sidebarHidden { // else the sidebar's header has it
 			kit.IconButton(c, "search", i18n.T("mail.search"), kit.ButtonOpts{Variant: kit.Ghost, Size: kit.SizeSm}).
-				OnClick(func() { p.searchOpen = true })
+				OnClick(p.a.openPalette)
 		}
 	})
 }

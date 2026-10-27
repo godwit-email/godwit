@@ -1217,10 +1217,10 @@ func (a *App) BodyNavigate(view ui.NativeWebView, dir int) {
 	}
 }
 
-// BodySearch opens the mail list's search for a body's page (⌘F).
+// BodySearch opens the search palette for a body's page (⌘F, ⌘K).
 func (a *App) BodySearch(view ui.NativeWebView) {
 	if a.mail.reader.current(view) {
-		a.mail.searchOpen = true
+		a.openPalette()
 	}
 }
 

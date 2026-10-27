@@ -255,6 +255,7 @@ type App struct {
 
 	addAccount *onboarding // the add-account sheet; nil when closed
 	mail       *mailPage   // the Mail section
+	palette    palette     // the ⌘K search panel
 	writes     *writeQueue // writes to the Service, ordered per resource
 
 	closeAsk    bool   // a write failed or is slow as the window closes: ask

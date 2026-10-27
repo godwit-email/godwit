@@ -217,8 +217,12 @@ func (a *App) View(c *ui.Context) {
 		bareBar(c, barH)
 		ui.Column(c).Grow(1).Children(func() { a.page().Content(c) })
 	default:
+		if c.Shortcut(ui.Cmd, ui.KeyK) {
+			a.openPalette()
+		}
 		a.titleBar(c, barH)
 		a.body(c)
+		a.palette.view(c)
 	}
 	if a.addAccount != nil {
 		a.addAccount.sheetView(c)
