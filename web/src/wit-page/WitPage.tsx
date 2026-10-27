@@ -10,7 +10,7 @@ import {
   type WitOpenMsg,
   type WitPageState,
 } from "@/mygo";
-import { type T, useT } from "@/shared/i18n";
+import { type T, timeZone, useT } from "@/shared/i18n";
 import { forwardShortcuts } from "@/shared/shortcuts";
 import { applyTheme, type Theme } from "@/shared/theme";
 import { type Decide, formRound, Panel, witError } from "@/wit/Panel";
@@ -56,7 +56,15 @@ export function WitPage() {
       ask: (text, quoted = [], rewind = "") => {
         const g = gen;
         const p = api
-          .ask(conv.current, text, quoted, pick.current.model, pick.current.effort, rewind)
+          .ask(
+            conv.current,
+            text,
+            quoted,
+            pick.current.model,
+            pick.current.effort,
+            rewind,
+            timeZone(),
+          )
           .then((rs) => {
             if (g === gen) conv.current = rs.conversation;
             return { run: rs.run, turn: rs.turn };

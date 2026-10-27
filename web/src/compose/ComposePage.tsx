@@ -23,7 +23,7 @@ import {
   type WitEvent,
   type WitHistory,
 } from "@/mygo";
-import { type T, useT } from "@/shared/i18n";
+import { type T, timeZone, useT } from "@/shared/i18n";
 import { applyTheme, type Theme } from "@/shared/theme";
 import { formRound, Panel as WitPanel, witError } from "@/wit/Panel";
 import { useResume } from "@/wit/resume";
@@ -466,8 +466,10 @@ function Compose({
     const off = events.wit.on((ev) => onWit.current(ev));
     const tr = new WitTransport({
       ask: (text, quoted = []) =>
-        startRun.current(() => api.ask(text, quoted, pick.current.model, pick.current.effort)),
-      skill: (id, lang) => startRun.current(() => api.skill(id, lang)),
+        startRun.current(() =>
+          api.ask(text, quoted, pick.current.model, pick.current.effort, timeZone()),
+        ),
+      skill: (id, lang) => startRun.current(() => api.skill(id, lang, timeZone())),
       follow: () => api.follow(),
       stop: (run) => api.stop(run),
     });

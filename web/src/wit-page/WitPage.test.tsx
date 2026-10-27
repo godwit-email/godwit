@@ -49,6 +49,8 @@ vi.mock("sonner", async (orig) => ({
 import { WitPage as api } from "@/mygo";
 import { WitPage } from "./WitPage";
 
+const zone = Intl.DateTimeFormat().resolvedOptions().timeZone;
+
 const state = (conversation: number, version: number, model = "m1"): WitPageState => ({
   conversation,
   version,
@@ -151,7 +153,7 @@ test("switching conversations drops the old stream", async () => {
   });
   await start(3);
   await userEvent.setup().type(input(), "hi{Enter}");
-  await waitFor(() => expect(api.ask).toHaveBeenCalledWith(3, "hi", [], "", "", ""));
+  await waitFor(() => expect(api.ask).toHaveBeenCalledWith(3, "hi", [], "", "", "", zone));
   emit({ conversation: 3, run: 7, text: "old " });
   expect(await screen.findByText("old")).toBeInTheDocument();
   vi.mocked(api.follow).mockResolvedValueOnce(hist(4, "four"));
@@ -206,7 +208,7 @@ test("first ask creates and keeps the conversation", async () => {
   await waitFor(() => expect(api.follow).toHaveBeenLastCalledWith(7));
   expect(vi.mocked(api.follow).mock.calls.filter(([c]) => c === 7)).toHaveLength(1);
   await user.type(input(), "second{Enter}");
-  await waitFor(() => expect(api.ask).toHaveBeenLastCalledWith(7, "second", [], "", "", ""));
+  await waitFor(() => expect(api.ask).toHaveBeenLastCalledWith(7, "second", [], "", "", "", zone));
   expect(screen.getByText("made")).toBeInTheDocument();
 });
 
@@ -235,7 +237,7 @@ test("ask returning after a switch is ignored", async () => {
     turn: "1",
   });
   await user.type(await screen.findByRole("textbox", { name: "向 Wit 提问" }), "next{Enter}");
-  await waitFor(() => expect(api.ask).toHaveBeenLastCalledWith(4, "next", [], "", "", ""));
+  await waitFor(() => expect(api.ask).toHaveBeenLastCalledWith(4, "next", [], "", "", "", zone));
 });
 
 test("witState updates the model label and copy without a new follow", async () => {
@@ -264,7 +266,7 @@ test("the model chip picks the next question's model; its last item opens settin
   await user.click(await screen.findByRole("menuitemradio", { name: "m2" }));
   expect(screen.getByRole("button", { name: /m2/ })).toBeInTheDocument();
   await user.type(input(), "hi{Enter}");
-  await waitFor(() => expect(api.ask).toHaveBeenCalledWith(3, "hi", [], "s/m2", "", ""));
+  await waitFor(() => expect(api.ask).toHaveBeenCalledWith(3, "hi", [], "s/m2", "", "", zone));
   await user.click(screen.getByRole("button", { name: /m2/ }));
   await user.click(await screen.findByRole("menuitem", { name: "模型服务设置" }));
   expect(api.openModels).toHaveBeenCalled();
@@ -289,7 +291,7 @@ test("the model menu's effort submenu picks the next question's reasoning effort
   await waitFor(() => expect(screen.getByRole("button", { name: /m1/ })).toHaveTextContent("高"));
   await waitFor(() => expect(screen.queryByRole("menu")).toBeNull());
   await user.type(input(), "hi{Enter}");
-  await waitFor(() => expect(api.ask).toHaveBeenCalledWith(3, "hi", [], "", "high", ""));
+  await waitFor(() => expect(api.ask).toHaveBeenCalledWith(3, "hi", [], "", "high", "", zone));
 });
 
 test("cited click opens", async () => {
@@ -434,7 +436,7 @@ test("navigation while the first question is creating switches at once; the ask'
     turn: "1",
   });
   await user.type(input(), "next{Enter}");
-  await waitFor(() => expect(api.ask).toHaveBeenLastCalledWith(4, "next", [], "", "", ""));
+  await waitFor(() => expect(api.ask).toHaveBeenLastCalledWith(4, "next", [], "", "", "", zone));
 });
 
 test("a stale Load does not overwrite a newer witState", async () => {
@@ -485,7 +487,7 @@ test("witAsk asks the handed question once, in the new conversation", async () =
   vi.mocked(api.follow).mockResolvedValueOnce(hist(0));
   open(0, 2); // native navigates to a new conversation, then hands the question
   send(h.ask, "invoice");
-  await waitFor(() => expect(api.ask).toHaveBeenCalledWith(0, "invoice", [], "", "", ""));
+  await waitFor(() => expect(api.ask).toHaveBeenCalledWith(0, "invoice", [], "", "", "", zone));
   expect(api.ask).toHaveBeenCalledTimes(1);
   expect(await screen.findByText("invoice")).toBeInTheDocument();
   // a later switch remounts the panel: the question is not asked again
@@ -505,7 +507,7 @@ test("witAsk on the page already showing a new conversation asks at once", async
   });
   await start(0);
   send(h.ask, "where is it");
-  await waitFor(() => expect(api.ask).toHaveBeenCalledWith(0, "where is it", [], "", "", ""));
+  await waitFor(() => expect(api.ask).toHaveBeenCalledWith(0, "where is it", [], "", "", "", zone));
   expect(api.ask).toHaveBeenCalledTimes(1);
 });
 

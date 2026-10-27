@@ -154,7 +154,7 @@ type Service struct {
 	labelWake   chan struct{}              // wakes the label classifier
 	reclaimWake chan struct{}              // wakes the free-space reclaimer (reclaimSoon)
 	labelJudge  func(context.Context) (ai.Judge, error)
-	clock       Clock              // outbox timing; nil is the real clock
+	clock       Clock              // outbox timing and Wit's time note; nil is the real clock
 	hookClock   plugins.Clock      // hook backoff and polling; nil is the real clock
 	pluginNet   plugins.NetOptions // ctx.net.fetch's network; tests inject a resolver and dialer
 	pluginClock plugins.Clock      // plugin VM call limits; nil is the real clock
