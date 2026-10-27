@@ -118,6 +118,12 @@ func viewCond(v View) (string, []any, error) {
 		return "m.folder_id IN (SELECT id FROM folders WHERE role = 'inbox')", nil, nil
 	case v.Unified == "starred" && v.FolderID == 0:
 		return `instr(m.flags, '\Flagged') > 0`, nil, nil
+	case strings.HasPrefix(v.Unified, "starred:") && v.FolderID == 0:
+		accID, err := strconv.ParseInt(strings.TrimPrefix(v.Unified, "starred:"), 10, 64)
+		if err != nil {
+			return "", nil, fmt.Errorf("invalid starred account view: %w", err)
+		}
+		return `m.account_id = ? AND instr(m.flags, '\Flagged') > 0`, []any{accID}, nil
 	case v.Unified == "" && v.FolderID != 0:
 		return "m.folder_id = ?", []any{v.FolderID}, nil
 	}

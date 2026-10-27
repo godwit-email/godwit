@@ -733,7 +733,12 @@ func (r *reader) toolbar(c *ui.Context) {
 			kit.GroupItem{Icon: "reply-all", Tip: i18n.T("reader.reply_all"), OnClick: func() { r.draft("reply_all") }},
 			kit.GroupItem{Icon: "forward", Tip: i18n.T("reader.forward"), OnClick: func() { r.draft("forward") }},
 		)
+		starIcon, starTip := "star", i18n.T("mail.action.star")
+		if r.starred() {
+			starIcon, starTip = "star-fill", i18n.T("mail.action.unstar")
+		}
 		file := []kit.GroupItem{
+			{Icon: starIcon, Tip: starTip, OnClick: func() { r.act("toggle_star") }},
 			{Icon: "archive", Tip: i18n.T("mail.action.archive"), OnClick: func() { r.act("archive") }},
 			{Icon: "trash-2", Tip: i18n.T("mail.action.delete"), OnClick: func() { r.act("delete") }},
 		}
@@ -743,6 +748,18 @@ func (r *reader) toolbar(c *ui.Context) {
 		kit.ButtonGroup(c, file...)
 		ui.Spacer(c)
 		ui.Row(c).Wrap().Gap(th.Space(1)).AlignItems(ui.Center).Children(func() { r.aiTools(c) })
+	})
+}
+
+// starred reports whether all the toolbar acts on is starred: toggle_star
+// unstars only then, else it stars the rest.
+func (r *reader) starred() bool {
+	msgs := r.msgs
+	if r.key[1] != 0 && len(msgs) > 0 { // a message's reader acts on it alone
+		msgs = msgs[len(msgs)-1:]
+	}
+	return len(msgs) > 0 && !slices.ContainsFunc(msgs, func(m core.MessageSummary) bool {
+		return !slices.Contains(m.Flags, `\Flagged`)
 	})
 }
 

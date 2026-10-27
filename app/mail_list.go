@@ -402,6 +402,20 @@ func localDrafts(acc int64) core.View {
 	return core.View{Unified: "drafts:" + strconv.FormatInt(acc, 10)}
 }
 
+// accountStarred is the starred view of an account.
+func accountStarred(acc int64) core.View {
+	return core.View{Unified: "starred:" + strconv.FormatInt(acc, 10)}
+}
+
+// starredOf returns the account whose starred messages v lists.
+func starredOf(v core.View) (int64, bool) {
+	if id, ok := strings.CutPrefix(v.Unified, "starred:"); ok {
+		n, err := strconv.ParseInt(id, 10, 64)
+		return n, err == nil
+	}
+	return 0, false
+}
+
 // draftsOf returns the account whose drafts v lists: a drafts-role folder's,
 // or a localDrafts entry's.
 func draftsOf(folders map[int64][]core.Folder, v core.View) (int64, bool) {
@@ -416,6 +430,9 @@ func draftsOf(folders map[int64][]core.Folder, v core.View) (int64, bool) {
 // viewAccount is the account a view belongs to; 0 for a unified view.
 func (p *mailPage) viewAccount(v core.View) int64 {
 	if acc, ok := draftsOf(p.folders, v); ok {
+		return acc
+	}
+	if acc, ok := starredOf(v); ok {
 		return acc
 	}
 	f, _ := p.folder(v.FolderID)
@@ -458,12 +475,12 @@ func (p *mailPage) Title() (string, string) {
 	if l, ok := p.a.label(v.LabelID); ok && v.LabelID != 0 {
 		return l.Name, unreadSub(l.Unread)
 	}
-	switch v.Unified {
-	case "inbox":
+	switch {
+	case v.Unified == "inbox":
 		return i18n.T("mail.unified.inbox"), unreadSub(p.inboxUnread())
-	case "starred":
+	case v.Unified == "starred" || strings.HasPrefix(v.Unified, "starred:"):
 		return i18n.T("mail.unified.starred"), ""
-	case "outbox":
+	case v.Unified == "outbox":
 		return i18n.T("mail.outbox"), ""
 	default:
 		if _, ok := draftsOf(p.folders, v); ok && v.FolderID == 0 {
@@ -966,9 +983,11 @@ func (p *mailPage) resultWho(it mailItem) string {
 func (p *mailPage) resultRow(c *ui.Context, it mailItem) ui.Element {
 	t, th := theme.Of(c), c.Theme()
 	q := p.hlQuery
-	return ui.Column(c).Gap(th.Space(0.5)).Padding(th.Space(2), th.Space(3)).Children(func() {
-		ui.Row(c).Gap(th.Space(1.5)).Children(func() {
+	col := ui.Column(c).Gap(th.Space(0.5)).Padding(th.Space(2), th.Space(3))
+	return col.Children(func() {
+		ui.Row(c).Gap(th.Space(1.5)).AlignItems(ui.Center).Children(func() {
 			ui.Text(c, p.resultWho(it)).SingleLine().Grow(1).Shrink(1)
+			p.starButton(c, it, col.Hovered())
 			if it.Attach {
 				ui.Icon(c, icons.Get("paperclip")).Size(theme.IconXs, theme.IconXs).TextColor(t.Muted).Label(i18n.T("mail.attachment"))
 			}
@@ -1039,6 +1058,27 @@ func (p *mailPage) searchedDesc() string {
 	return i18n.T("mail.search.empty_desc")
 }
 
+// starButton is a direct star/unstar toggle button on a mail row. As S, it
+// unstars only a row all starred; an unstarred row's shows on hover or focus,
+// always there for the keyboard and assistive technology.
+func (p *mailPage) starButton(c *ui.Context, it mailItem, hovered bool) {
+	t := theme.Of(c)
+	starred := it.Flagged == it.Count
+	icon, label := "star", i18n.T("mail.action.star")
+	if starred {
+		icon, label = "star-fill", i18n.T("mail.action.unstar")
+	}
+	b := kit.IconButton(c, icon, label, kit.ButtonOpts{Variant: kit.Ghost, Size: kit.SizeXs})
+	if it.Flagged > 0 {
+		b.TextColor(t.Attention)
+	} else if !hovered && !b.FocusVisible() {
+		b.Opacity(0)
+	}
+	b.OnClick(func() {
+		p.batch("toggle_star", []mailItem{it})
+	})
+}
+
 // row is one thread or message: who, when, the subject and the start of the
 // text; unread ones in bold, with a dot in the row's left gutter that says
 // how many are unread to assistive technology.
@@ -1049,13 +1089,15 @@ func (p *mailPage) row(c *ui.Context, it mailItem) ui.Element {
 	if it.Unread > 0 {
 		weight = 600
 	}
-	return ui.Column(c).Gap(th.Space(0.5)).Padding(th.Space(2.5), th.Space(2.5), th.Space(2.5), th.Space(5)).Children(func() {
+	col := ui.Column(c).Gap(th.Space(0.5)).Padding(th.Space(2.5), th.Space(2.5), th.Space(2.5), th.Space(5))
+	return col.Children(func() {
 		if it.Unread > 0 {
 			ui.Box(c).Absolute().Left(th.Space(1.5)).Top(th.Space(4)).Size(th.Space(2), th.Space(2)).Radius(th.Space(1)).Background(t.Unread).
 				Label(i18n.Tf("mail.row.unread", it.Unread))
 		}
-		ui.Row(c).Gap(th.Space(1.5)).Children(func() {
+		ui.Row(c).Gap(th.Space(1.5)).AlignItems(ui.Center).Children(func() {
 			ui.Text(c, it.Who).FontWeight(weight).SingleLine().Grow(1).Shrink(1)
+			p.starButton(c, it, col.Hovered())
 			if it.Attach {
 				ui.Icon(c, icons.Get("paperclip")).Size(theme.IconXs, theme.IconXs).TextColor(t.Muted).Label(i18n.T("mail.attachment"))
 			}
@@ -1180,6 +1222,9 @@ func (p *mailPage) batch(act string, rows []mailItem) {
 			return role[m.FolderID] == "inbox"
 		case v.Unified == "starred":
 			return slices.Contains(m.Flags, `\Flagged`)
+		case strings.HasPrefix(v.Unified, "starred:"):
+			acc, ok := starredOf(v)
+			return ok && acctOf[m.FolderID] == acc && slices.Contains(m.Flags, `\Flagged`)
 		}
 		return m.FolderID == v.FolderID
 	}
