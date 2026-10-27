@@ -245,7 +245,7 @@ func (a *App) titleBar(c *ui.Context, h float32) {
 	t, th := theme.Of(c), c.Theme()
 	bar := c.TitleBar()
 	padL := bar.Left + th.Space(2)
-	padR := bar.Right + th.Space(4)
+	padR := bar.Right + th.Space(2) // the sync status's right edge on the content panels'
 	if goos == "windows" {
 		padR = bar.Right + th.Space(3) // the design's 150 = 3 caption buttons of 46 + 12
 	}

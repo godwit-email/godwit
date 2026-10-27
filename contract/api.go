@@ -40,12 +40,15 @@ type API interface {
 	SetSettings(ctx context.Context, st core.Settings) (core.Settings, error)
 	TrustImageSender(ctx context.Context, from string) error
 	UntrustImageSender(ctx context.Context, addr string) error
+	BlockSender(ctx context.Context, from string) error
+	UnblockSender(ctx context.Context, addr string) error
 	CheckModelService(ctx context.Context, id int64, in core.ModelServiceInput) (core.ServiceCheck, error)
 	RunSkill(ctx context.Context, name string, t core.Target) (<-chan ai.Event, error)
 	NewConversation(ctx context.Context, kind string, draftID int64) (core.Conversation, error)
 	Ask(ctx context.Context, conversationID int64, input string) (<-chan core.WitEvent, error)
 	SubscribeConversation(id int64) (<-chan core.WitEvent, func())
 	ResolveApproval(ctx context.Context, id int64, accept bool) error
+	ResolveApprovalWithArgs(ctx context.Context, id int64, accept bool, args json.RawMessage) error
 	ListApprovals(ctx context.Context, conversationID int64) ([]core.Approval, error)
 	Subscribe() (<-chan events.Event, func())
 	RunAction(ctx context.Context, id string, t core.Target, opts core.RunActionOptions) (core.ActionResult, error)
@@ -258,6 +261,14 @@ func (r *Remote) UntrustImageSender(ctx context.Context, addr string) error {
 	return r.C.Call(ctx, "UntrustImageSender", nil, addr)
 }
 
+func (r *Remote) BlockSender(ctx context.Context, from string) error {
+	return r.C.Call(ctx, "BlockSender", nil, from)
+}
+
+func (r *Remote) UnblockSender(ctx context.Context, addr string) error {
+	return r.C.Call(ctx, "UnblockSender", nil, addr)
+}
+
 func (r *Remote) CheckModelService(ctx context.Context, id int64, in core.ModelServiceInput) (core.ServiceCheck, error) {
 	return call[core.ServiceCheck](r, ctx, "CheckModelService", id, in)
 }
@@ -280,6 +291,10 @@ func (r *Remote) SubscribeConversation(id int64) (<-chan core.WitEvent, func()) 
 
 func (r *Remote) ResolveApproval(ctx context.Context, id int64, accept bool) error {
 	return r.C.Call(ctx, "ResolveApproval", nil, id, accept)
+}
+
+func (r *Remote) ResolveApprovalWithArgs(ctx context.Context, id int64, accept bool, args json.RawMessage) error {
+	return r.C.Call(ctx, "ResolveApprovalWithArgs", nil, id, accept, args)
 }
 
 func (r *Remote) ListApprovals(ctx context.Context, conversationID int64) ([]core.Approval, error) {

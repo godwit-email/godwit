@@ -67,6 +67,8 @@ type Options struct {
 	// ComposeOpen reports whether draftID's compose window is open or
 	// opening; the GUI sets it, and 直接发送 leaves such a draft alone. nil: none is.
 	ComposeOpen func(draftID int64) bool
+	// OpenURL opens an external URL in the user's default browser.
+	OpenURL func(url string) error
 }
 
 // Service owns the database and event bus of one Godwit data directory.

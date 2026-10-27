@@ -130,7 +130,8 @@ func TestSidebarAccountsAndViews(t *testing.T) {
 	for _, s := range []string{"写邮件", "全部收件箱", "已标星", "添加账户", "2"} {
 		h.see(s)
 	}
-	// Folders by role: inbox, sent, archive, trash (the fake server has no drafts or junk).
+	// Folders by role: inbox, flagged, sent, archive, trash (the fake server has no drafts or junk).
+	// The first 已标星 is the unified one, above the accounts: the order skips it.
 	var ys []float32
 	for _, name := range []string{"收件箱", "已发送", "归档", "已删除"} {
 		r, ok := h.tt.Find(name)
@@ -154,12 +155,24 @@ func TestSidebarAccountsAndViews(t *testing.T) {
 	if n := count("已发送"); n != 1 {
 		t.Fatalf("%d 已发送 folders, want only the first account's", n)
 	}
+	if n := count("已标星"); n != 2 {
+		t.Fatalf("%d 已标星, want the unified one and the first account's", n)
+	}
 	h.click("carol@example.com") // unfolds the second account, animated: wait for its end
 	h.until("both accounts' 已发送", func() bool { return count("已发送") == 2 })
 	h.click("Work")
 	h.until("one 已发送 folder after collapsing", func() bool { return count("已发送") == 1 })
 	h.click("已标星")
 	if v := h.app.route.View; v.Unified != "starred" {
+		t.Fatalf("view %+v", v)
+	}
+	// carol's 已标星 sits between her inbox and local drafts
+	in, _ := h.tt.Find("收件箱")
+	drafts, _ := h.tt.Find("草稿")
+	h.tt.ClickAt(in.X+in.W/2, (in.Y+in.H/2+drafts.Y+drafts.H/2)/2)
+	h.drain()
+	h.tt.Frame()
+	if v := h.app.route.View; v != accountStarred(accs[1].ID) {
 		t.Fatalf("view %+v", v)
 	}
 	h.click("归档") // carol's: alice's group is collapsed
@@ -510,6 +523,11 @@ func TestRowMenuByState(t *testing.T) {
 	h.waitMail("unstarred by S", func() bool { return h.items()[0].Flagged == 0 })
 	h.tt.Key(0, ui.KeyU)
 	h.waitMail("unread by U", func() bool { return h.items()[0].Unread == 1 })
+	// Click the star button directly on the row:
+	h.click("加星")
+	h.waitMail("starred by direct button", func() bool { return h.items()[0].Flagged == 1 })
+	h.click("取消星标")
+	h.waitMail("unstarred by direct button", func() bool { return h.items()[0].Flagged == 0 })
 }
 
 func TestBatchAcrossAccounts(t *testing.T) {

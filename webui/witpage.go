@@ -3,6 +3,7 @@ package webui
 import (
 	"cmp"
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"net/url"
@@ -446,6 +447,17 @@ func (p *WitPage) Stop(ctx context.Context, run int64) error {
 func (p *WitPage) Decide(ctx context.Context, approval int64, accept bool) error {
 	return p.decide(ctx, func(a core.Approval) bool { return a.ID == approval }, func(svc *core.Service) error {
 		return svc.ResolveApproval(context.WithoutCancel(ctx), approval, accept)
+	})
+}
+
+// DecideWithArgs accepts or rejects approval with edited arguments args.
+func (p *WitPage) DecideWithArgs(ctx context.Context, approval int64, accept bool, args string) error {
+	return p.decide(ctx, func(a core.Approval) bool { return a.ID == approval }, func(svc *core.Service) error {
+		var raw json.RawMessage
+		if strings.TrimSpace(args) != "" {
+			raw = json.RawMessage(args)
+		}
+		return svc.ResolveApprovalWithArgs(context.WithoutCancel(ctx), approval, accept, raw)
 	})
 }
 

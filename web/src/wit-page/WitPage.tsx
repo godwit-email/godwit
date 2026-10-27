@@ -196,9 +196,15 @@ function Conversation({
   const fail = (e: unknown) => toast.error(witError(message(e), t));
   const [ref, setRef] = useState(view.history.model);
   const [effort, setEffort] = useState(view.history.effort);
-  const onDecide: Decide = async (a, accept, all) => {
+  const onDecide: Decide = async (a, accept, all, editedArgs) => {
     try {
-      await decide(a.run, () => (all ? api.decideAll(a.run, accept) : api.decide(a.id, accept)));
+      await decide(a.run, () =>
+        all
+          ? api.decideAll(a.run, accept)
+          : editedArgs !== undefined
+            ? api.decideWithArgs(a.id, accept, editedArgs)
+            : api.decide(a.id, accept),
+      );
       return true;
     } catch (e) {
       fail(e);

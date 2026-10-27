@@ -118,6 +118,12 @@ func viewCond(v View) (string, []any, error) {
 		return "m.folder_id IN (SELECT id FROM folders WHERE role = 'inbox')", nil, nil
 	case v.Unified == "starred" && v.FolderID == 0:
 		return `instr(m.flags, '\Flagged') > 0`, nil, nil
+	case strings.HasPrefix(v.Unified, "starred:") && v.FolderID == 0:
+		accID, err := strconv.ParseInt(strings.TrimPrefix(v.Unified, "starred:"), 10, 64)
+		if err != nil {
+			return "", nil, fmt.Errorf("invalid starred account view: %w", err)
+		}
+		return `m.account_id = ? AND instr(m.flags, '\Flagged') > 0`, []any{accID}, nil
 	case v.Unified == "" && v.FolderID != 0:
 		return "m.folder_id = ?", []any{v.FolderID}, nil
 	}
@@ -164,12 +170,14 @@ type SearchQuery struct {
 	Since, Until   time.Time // the date from Since, before Until
 	HasAttachments bool
 	LabelID        int64 // mail with this label on
+	Unread         *bool // true for unread (\Seen absent), false for read (\Seen present)
+	Starred        *bool // true for starred (\Flagged present), false for unstarred
 }
 
 // Filtered reports whether a filter beyond the account is set: such a query
 // needs no text.
 func (q SearchQuery) Filtered() bool {
-	return strings.TrimSpace(q.From) != "" || !q.Since.IsZero() || !q.Until.IsZero() || q.HasAttachments || q.LabelID != 0
+	return strings.TrimSpace(q.From) != "" || !q.Since.IsZero() || !q.Until.IsZero() || q.HasAttachments || q.LabelID != 0 || q.Unread != nil || q.Starred != nil
 }
 
 // Search finds synced messages; accountID 0 searches every account.
@@ -195,11 +203,12 @@ func (s *Service) SearchWith(ctx context.Context, q SearchQuery, limit int) ([]M
 	case utf8.RuneCountInString(query) < 3:
 		// ponytail: full scan; use a bigram index when mailboxes get large.
 		like := likeArg(query)
-		cond = `(m.subject LIKE ? ESCAPE '\' OR m.from_addr LIKE ? ESCAPE '\' OR m.body_text LIKE ? ESCAPE '\')`
-		args = []any{like, like, like}
+		cond = `(m.subject LIKE ? ESCAPE '\' OR m.from_addr LIKE ? ESCAPE '\' OR m.body_text LIKE ? ESCAPE '\' OR m.id IN (SELECT ml.message_id FROM message_labels ml JOIN labels l ON l.id = ml.label_id WHERE ml.active = 1 AND (l.name LIKE ? ESCAPE '\' OR l.slug LIKE ? ESCAPE '\')))`
+		args = []any{like, like, like, like, like}
 	default:
-		cond = "m.id IN (SELECT rowid FROM messages_fts WHERE messages_fts MATCH ?)"
-		args = []any{`"` + strings.ReplaceAll(query, `"`, `""`) + `"`}
+		like := likeArg(query)
+		cond = `(m.id IN (SELECT rowid FROM messages_fts WHERE messages_fts MATCH ?) OR m.id IN (SELECT ml.message_id FROM message_labels ml JOIN labels l ON l.id = ml.label_id WHERE ml.active = 1 AND (l.name LIKE ? ESCAPE '\' OR l.slug LIKE ? ESCAPE '\')))`
+		args = []any{`"` + strings.ReplaceAll(query, `"`, `""`) + `"`, like, like}
 	}
 	if q.AccountID != 0 {
 		cond += " AND m.account_id = ?"
@@ -224,6 +233,20 @@ func (s *Service) SearchWith(ctx context.Context, q SearchQuery, limit int) ([]M
 	if q.LabelID != 0 {
 		cond += " AND " + labelCond
 		args = append(args, q.LabelID)
+	}
+	if q.Unread != nil {
+		if *q.Unread {
+			cond += ` AND instr(m.flags, '\Seen') = 0`
+		} else {
+			cond += ` AND instr(m.flags, '\Seen') > 0`
+		}
+	}
+	if q.Starred != nil {
+		if *q.Starred {
+			cond += ` AND instr(m.flags, '\Flagged') > 0`
+		} else {
+			cond += ` AND instr(m.flags, '\Flagged') = 0`
+		}
 	}
 	rows, err := s.db.Query(ctx, "SELECT "+msgCols+" FROM messages m WHERE "+cond+" ORDER BY m.date DESC, m.id DESC LIMIT ?",
 		append(args, clampLimit(limit))...)
