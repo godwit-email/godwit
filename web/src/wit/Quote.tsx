@@ -5,6 +5,7 @@ import {
   useEffect,
   useId,
   useImperativeHandle,
+  useRef,
   useState,
 } from "react";
 import { Badge } from "@/components/ui/badge";
@@ -20,8 +21,8 @@ export type PickerKeys = { key(e: KeyboardEvent): boolean };
 /**
  * The quote picker (引用邮件): a search of the user's mail over the input, its hits a listbox.
  * From the + menu it has its own search box; from an @ in the text, `query` is what follows the @
- * and the textarea forwards its keys (`keys`). With nothing typed it offers the latest mail. ArrowUp / ArrowDown move, Enter picks, Escape
- * closes. Invented UI (the mockup shows only its entry point), built from the menu's look.
+ * and the textarea forwards its keys (`keys`). With nothing typed it offers the latest mail. ArrowUp / ArrowDown move, Enter picks, Escape,
+ * ✕ or a press outside closes. Invented UI (the mockup shows only its entry point), built from the menu's look.
  */
 export function QuotePicker({
   search,
@@ -45,6 +46,16 @@ export function QuotePicker({
   const [hits, setHits] = useState<MailHit[]>();
   const [active, setActive] = useState(0);
   const id = useId();
+  const box = useRef<HTMLDivElement>(null);
+  // The own search box has no backdrop: a press outside closes it (an @ query lives in the textarea).
+  useEffect(() => {
+    if (!own) return;
+    const down = (e: PointerEvent) => {
+      if (!box.current?.contains(e.target as Node)) onClose();
+    };
+    document.addEventListener("pointerdown", down);
+    return () => document.removeEventListener("pointerdown", down);
+  }, [own, onClose]);
   useEffect(() => {
     let live = true;
     const timer = setTimeout(
@@ -92,6 +103,7 @@ export function QuotePicker({
   if (!own && hits === undefined) return null;
   return (
     <div
+      ref={box}
       role="dialog"
       aria-label={t("wit.quote")}
       className="absolute bottom-full left-0 z-3 mb-2 flex w-80 max-w-full flex-col gap-1 rounded-lg border-[0.5px] bg-popover p-1 text-popover-foreground shadow-md"
