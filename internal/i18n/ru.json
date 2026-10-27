@@ -1251,6 +1251,7 @@
   "reader_address_copied": "Адрес скопирован",
   "reader_block_sender": "Заблокировать отправителя",
   "reader_unblock_sender": "Разблокировать отправителя",
+  "reader_blocked_badge": "Заблокирован",
   "reader_sender_blocked": "Отправитель заблокирован",
   "reader_sender_unblocked": "Отправитель разблокирован",
   "settings_blocked": "Заблокированные отправители",

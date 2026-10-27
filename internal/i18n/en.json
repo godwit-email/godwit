@@ -2529,6 +2529,7 @@
   "reader_address_copied": "Address copied",
   "reader_block_sender": "Block Sender",
   "reader_unblock_sender": "Unblock Sender",
+  "reader_blocked_badge": "Blocked",
   "reader_sender_blocked": "Sender blocked",
   "reader_sender_unblocked": "Sender unblocked",
   "settings_blocked": "Blocked Senders",

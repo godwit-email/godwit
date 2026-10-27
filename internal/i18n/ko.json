@@ -1251,6 +1251,7 @@
   "reader_address_copied": "주소가 복사되었습니다",
   "reader_block_sender": "보낸 사람 차단",
   "reader_unblock_sender": "보낸 사람 차단 해제",
+  "reader_blocked_badge": "차단됨",
   "reader_sender_blocked": "보낸 사람이 차단되었습니다",
   "reader_sender_unblocked": "보낸 사람 차단이 해제되었습니다",
   "settings_blocked": "차단된 보낸 사람",

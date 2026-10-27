@@ -127,24 +127,54 @@ func TestNotifyEachMessage(t *testing.T) {
 			t.Fatalf("notes %+v, want the inbox one alone", notes)
 		}
 	})
-	t.Run("blocked sender", func(t *testing.T) {
-		h, acc := notifyHarness(t, nil)
-		if err := h.env.IMAP(acc.ID).User.Create("Junk", nil); err != nil {
-			t.Fatal(err)
-		}
-		if err := h.env.Svc.SyncNow(context.Background(), acc.ID); err != nil {
-			t.Fatal(err)
+	// blockSpammer blocks spammer@example.com, with a Junk folder or none,
+	// and delivers one message from them to the INBOX.
+	blockSpammer := func(t *testing.T, h *harness, acc core.Account, junk bool) {
+		if junk {
+			if err := h.env.IMAP(acc.ID).User.Create("Junk", nil); err != nil {
+				t.Fatal(err)
+			}
+			if err := h.env.Svc.SyncNow(context.Background(), acc.ID); err != nil {
+				t.Fatal(err)
+			}
 		}
 		if err := h.env.Svc.BlockSender(context.Background(), "spammer@example.com"); err != nil {
 			t.Fatal(err)
 		}
 		h.advance(refreshEvery)
-		h.env.Deliver(t, acc.ID, "INBOX", coretest.Msg("spammer@example.com", acc.Email, "Spam", "x"))
+		h.env.Deliver(t, acc.ID, "INBOX", coretest.Msg("Spammer <SPAMMER@example.com>", acc.Email, "Spam", "x"))
 		h.until("arrival registered", func() bool { return h.app.newMail[acc.ID] != nil && len(h.app.newMail[acc.ID].msgs) == 1 })
+	}
+	t.Run("blocked sender", func(t *testing.T) {
+		h, acc := notifyHarness(t, nil)
+		blockSpammer(t, h, acc, true)
 		if notes := h.notesAfter(0); len(notes) != 0 {
 			t.Fatalf("notes %+v for blocked sender", notes)
 		}
 		h.until("moved to junk", func() bool { return h.countIn(h.folderOf(acc, "junk")) == 1 })
+	})
+	t.Run("blocked sender with notifications off", func(t *testing.T) {
+		h, acc := notifyHarness(t, func(st *core.Settings) { st.NotifyNewMail = false })
+		blockSpammer(t, h, acc, true)
+		h.advance(notifyWait)
+		h.until("moved to junk", func() bool { return h.countIn(h.folderOf(acc, "junk")) == 1 })
+	})
+	t.Run("blocked sender without junk stays", func(t *testing.T) {
+		h, acc := notifyHarness(t, nil)
+		inbox := h.folderOf(acc, "inbox")
+		before := h.countIn(inbox)
+		blockSpammer(t, h, acc, false)
+		h.advance(notifyWait)
+		h.until("the log line", func() bool { return len(h.logged()) > 0 })
+		if l := strings.Join(h.logged(), "\n"); !strings.Contains(l, "junk") {
+			t.Fatalf("log %q", l)
+		}
+		if notes := h.notesAfter(0); len(notes) != 0 {
+			t.Fatalf("notes %+v for blocked sender", notes)
+		}
+		if n := h.countIn(inbox); n != before+1 {
+			t.Fatalf("inbox has %d, want %d: the mail must stay, never be deleted", n, before+1)
+		}
 	})
 	t.Run("failure logged", func(t *testing.T) {
 		h, acc := notifyHarness(t, func(st *core.Settings) { st.NotifyPreview = true })

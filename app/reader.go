@@ -20,6 +20,7 @@ import (
 	"github.com/egoist/mygo/ui"
 	"github.com/godwit-email/godwit/core"
 	"github.com/godwit-email/godwit/core/ai"
+	gomail "github.com/godwit-email/godwit/core/mail"
 	"github.com/godwit-email/godwit/internal/i18n"
 	"github.com/godwit-email/godwit/internal/icons"
 	"github.com/godwit-email/godwit/internal/kit"
@@ -798,10 +799,10 @@ func (r *reader) historyToggle(c *ui.Context, first int64, n int) {
 // folded is a message as one line: sender, the start of its text, time.
 func (r *reader) folded(c *ui.Context, m core.MessageSummary) {
 	t, th := theme.Of(c), c.Theme()
-	name, addr := sender(m.From)
+	name, _ := sender(m.From)
 	kit.Pressable(c, kit.PressableOpts{Bordered: true, OnClick: func() { r.toggle(m.ID) }}).FillWidth().MaxWidth(theme.ReaderMaxWidth).AlignSelf(ui.Center).Gap(th.Space(3)).Padding(th.Space(2), th.Space(3)).Children(func() {
 		ui.Text(c, name).FontWeight(500).SingleLine().Shrink(0)
-		if r.isBlocked(addr) {
+		if r.isBlocked(m.From) {
 			kit.Badge(c, i18n.T("reader.blocked_badge"))
 		}
 		ui.Text(c, m.Snippet).TextColor(t.Muted).SingleLine().Grow(1).Shrink(1)
@@ -869,7 +870,7 @@ func (r *reader) message(c *ui.Context, m core.MessageSummary) {
 							if addr != "" && addr != name {
 								ui.Text(c, "<"+addr+">").TextColor(t.Muted).SingleLine()
 							}
-							if r.isBlocked(addr) {
+							if r.isBlocked(m.From) {
 								kit.Badge(c, i18n.T("reader.blocked_badge"))
 							}
 						})
@@ -1238,37 +1239,33 @@ func (r *reader) unsubscribeDialog(c *ui.Context) {
 	})
 }
 
-func (r *reader) isBlocked(addr string) bool {
-	if addr == "" {
-		return false
-	}
-	return slices.Contains(r.p.a.settings.BlockedSenders, strings.ToLower(addr))
+// isBlocked is whether from (a From header or its address) is a blocked sender.
+func (r *reader) isBlocked(from string) bool {
+	return slices.Contains(r.p.a.settings.BlockedSenders, gomail.AddrKey(from))
 }
 
-func (r *reader) blockSender(addr string) {
-	a := r.p.a
+// setBlocked blocks or unblocks from's address, in core and then in the
+// settings shown, so the badge and lists change at once; done follows success.
+func (a *App) setBlocked(from string, block bool, done func()) {
 	a.do(func(ctx context.Context) error {
-		return a.svc.BlockSender(ctx, addr)
+		if block {
+			return a.svc.BlockSender(ctx, from)
+		}
+		return a.svc.UnblockSender(ctx, from)
 	}, func(err error) {
 		if err != nil {
 			a.toastErr(err)
 			return
 		}
-		a.toast(i18n.T("reader.sender_blocked"))
-		r.act("junk")
-	})
-}
-
-func (r *reader) unblockSender(addr string) {
-	a := r.p.a
-	a.do(func(ctx context.Context) error {
-		return a.svc.UnblockSender(ctx, addr)
-	}, func(err error) {
-		if err != nil {
-			a.toastErr(err)
-			return
+		key := gomail.AddrKey(from)
+		l := slices.DeleteFunc(slices.Clone(a.settings.BlockedSenders), func(s string) bool { return s == key })
+		if block {
+			l = append(l, key)
 		}
-		a.toast(i18n.T("reader.sender_unblocked"))
+		a.settings.BlockedSenders = l
+		if done != nil {
+			done()
+		}
 	})
 }
 
@@ -1312,11 +1309,11 @@ func (r *reader) senderPopover(c *ui.Context, addr, rawFrom string) {
 
 		if r.isBlocked(target) {
 			row(i18n.T("reader.unblock_sender"), "shield", false, closeMenu(func() {
-				r.unblockSender(target)
+				r.p.a.setBlocked(target, false, func() { r.p.a.toast(i18n.T("reader.sender_unblocked")) })
 			}))
 		} else {
 			row(i18n.T("reader.block_sender"), "spam", true, closeMenu(func() {
-				r.blockSender(target)
+				r.p.a.setBlocked(target, true, func() { r.p.a.toast(i18n.T("reader.sender_blocked")) })
 			}))
 		}
 	})

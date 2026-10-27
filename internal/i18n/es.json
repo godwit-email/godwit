@@ -1251,6 +1251,7 @@
   "reader_address_copied": "Dirección copiada",
   "reader_block_sender": "Bloquear remitente",
   "reader_unblock_sender": "Desbloquear remitente",
+  "reader_blocked_badge": "Bloqueado",
   "reader_sender_blocked": "Remitente bloqueado",
   "reader_sender_unblocked": "Remitente desbloqueado",
   "settings_blocked": "Remitentes bloqueados",

@@ -11,6 +11,7 @@ import (
 
 	"github.com/godwit-email/godwit/core/ai"
 	"github.com/godwit-email/godwit/core/events"
+	gomail "github.com/godwit-email/godwit/core/mail"
 	"github.com/godwit-email/godwit/core/skills"
 	"github.com/godwit-email/godwit/core/store"
 )
@@ -286,7 +287,7 @@ func (s *Service) TrustImageSender(ctx context.Context, from string) error {
 		return fmt.Errorf("invalid sender address: %w", err)
 	}
 	addr := strings.ToLower(a.Address)
-	return s.editTrusted(ctx, func(l []string) ([]string, error) {
+	return s.editSenders(ctx, trustedSenders, func(l []string) ([]string, error) {
 		if slices.Contains(l, addr) {
 			return l, nil
 		}
@@ -300,13 +301,13 @@ func (s *Service) TrustImageSender(ctx context.Context, from string) error {
 // UntrustImageSender stops trusting addr.
 func (s *Service) UntrustImageSender(ctx context.Context, addr string) error {
 	addr = strings.ToLower(strings.TrimSpace(addr))
-	return s.editTrusted(ctx, func(l []string) ([]string, error) {
+	return s.editSenders(ctx, trustedSenders, func(l []string) ([]string, error) {
 		return slices.DeleteFunc(l, func(a string) bool { return a == addr }), nil
 	})
 }
 
-// editTrusted changes the trusted senders under settingsMu.
-func (s *Service) editTrusted(ctx context.Context, edit func([]string) ([]string, error)) error {
+// editSenders changes the sender list that field picks, under settingsMu.
+func (s *Service) editSenders(ctx context.Context, field func(*Settings) *[]string, edit func([]string) ([]string, error)) error {
 	ctx, end, err := s.begin(ctx, 0)
 	if err != nil {
 		return err
@@ -318,27 +319,28 @@ func (s *Service) editTrusted(ctx context.Context, edit func([]string) ([]string
 	if err != nil {
 		return err
 	}
-	l, err := edit(slices.Clone(st.TrustedImageSenders))
+	l, err := edit(slices.Clone(*field(&st)))
 	if err != nil {
 		return err
 	}
-	st.TrustedImageSenders = l
+	*field(&st) = l
 	_, err = s.storeSettings(ctx, st)
 	return err
 }
 
+func trustedSenders(st *Settings) *[]string { return &st.TrustedImageSenders }
+func blockedSenders(st *Settings) *[]string { return &st.BlockedSenders }
+
 const maxBlockedSenders = 1000
 
-// BlockSender blocks the sender address; from must parse as an address or be a valid email.
+// BlockSender blocks the address of from (a From header), keyed as
+// gomail.AddrKey so arrivals and the reader match it the same way.
 func (s *Service) BlockSender(ctx context.Context, from string) error {
-	addr := strings.ToLower(strings.TrimSpace(from))
-	if a, err := mail.ParseAddress(from); err == nil {
-		addr = strings.ToLower(a.Address)
-	}
+	addr := gomail.AddrKey(from)
 	if addr == "" || !strings.Contains(addr, "@") {
 		return fmt.Errorf("invalid sender address: %q", from)
 	}
-	return s.editBlocked(ctx, func(l []string) ([]string, error) {
+	return s.editSenders(ctx, blockedSenders, func(l []string) ([]string, error) {
 		if slices.Contains(l, addr) {
 			return l, nil
 		}
@@ -351,32 +353,10 @@ func (s *Service) BlockSender(ctx context.Context, from string) error {
 
 // UnblockSender removes addr from the blocked senders list.
 func (s *Service) UnblockSender(ctx context.Context, addr string) error {
-	addr = strings.ToLower(strings.TrimSpace(addr))
-	return s.editBlocked(ctx, func(l []string) ([]string, error) {
+	addr = gomail.AddrKey(addr)
+	return s.editSenders(ctx, blockedSenders, func(l []string) ([]string, error) {
 		return slices.DeleteFunc(l, func(a string) bool { return a == addr }), nil
 	})
-}
-
-// editBlocked changes the blocked senders under settingsMu.
-func (s *Service) editBlocked(ctx context.Context, edit func([]string) ([]string, error)) error {
-	ctx, end, err := s.begin(ctx, 0)
-	if err != nil {
-		return err
-	}
-	defer end()
-	s.settingsMu.Lock()
-	defer s.settingsMu.Unlock()
-	st, err := s.loadSettings(ctx)
-	if err != nil {
-		return err
-	}
-	l, err := edit(slices.Clone(st.BlockedSenders))
-	if err != nil {
-		return err
-	}
-	st.BlockedSenders = l
-	_, err = s.storeSettings(ctx, st)
-	return err
 }
 
 // inJunk is whether folder f is junk, detected or given by the user, even

@@ -550,7 +550,7 @@ func (p *settingsPage) blockedView(c *ui.Context) {
 		rows = append(rows, func() {
 			settingRow(c, addr, "", func() {
 				if settingButton(c, i18n.T("settings.blocked.remove"), kit.Outline, false).Label(i18n.Tf("settings.blocked.remove.label", addr)).Clicked() {
-					a.do(func(ctx context.Context) error { return a.svc.UnblockSender(ctx, addr) }, a.toastErr)
+					a.setBlocked(addr, false, nil)
 				}
 			}).Label(addr)
 		})

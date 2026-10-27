@@ -1251,6 +1251,7 @@
   "reader_address_copied": "地址已复制",
   "reader_block_sender": "屏蔽发件人",
   "reader_unblock_sender": "取消屏蔽发件人",
+  "reader_blocked_badge": "已屏蔽",
   "reader_sender_blocked": "发件人已屏蔽",
   "reader_sender_unblocked": "已取消屏蔽发件人",
   "settings_blocked": "已屏蔽的发件人",

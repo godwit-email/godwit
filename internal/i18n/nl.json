@@ -1251,6 +1251,7 @@
   "reader_address_copied": "Adres gekopieerd",
   "reader_block_sender": "Afzender blokkeren",
   "reader_unblock_sender": "Afzender deblokkeren",
+  "reader_blocked_badge": "Geblokkeerd",
   "reader_sender_blocked": "Afzender geblokkeerd",
   "reader_sender_unblocked": "Afzender gedeblokkeerd",
   "settings_blocked": "Geblokkeerde afzenders",

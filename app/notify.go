@@ -10,6 +10,7 @@ import (
 
 	"github.com/godwit-email/godwit/core"
 	"github.com/godwit-email/godwit/core/events"
+	"github.com/godwit-email/godwit/core/mail"
 	"github.com/godwit-email/godwit/internal/i18n"
 )
 
@@ -42,24 +43,41 @@ func (a *App) mailArrived(ev events.Event) {
 	got.threads = append(got.threads, ev.ThreadIDs...)
 }
 
-// notify shows a notification for each message that arrived in the account's
-// inboxes, unless disabled or the window is in front. Preview shows the sender,
-// subject and snippet; otherwise it says only "Godwit" and "new mail".
+// notify moves the account's inbox arrivals from blocked senders to Junk, and
+// shows a notification for each of the others, unless disabled or the window
+// is in front. Preview shows the sender, subject and snippet; otherwise it
+// says only "Godwit" and "new mail".
 func (a *App) notify(acc int64, got *arrivals) {
 	st := a.settings
-	if !st.NotifyNewMail || a.foreground {
-		return
-	}
+	show := st.NotifyNewMail && !a.foreground
 	texts := i18n.In(i18n.Language())
 	plat, svc, logf := a.plat, a.svc, a.logf
 	codeBanner, now := st.NotifyPreview && plat.SignInCodeBannerSupported(), a.clock.Now()
 	a.do(func(ctx context.Context) error {
-		if !plat.NotificationsSupported() {
-			return nil
-		}
 		msgs, err := inboxArrivals(ctx, svc, acc, got)
 		if err != nil {
 			logf("notify: account %d: reading new mail: %v", acc, err)
+			return nil
+		}
+		cur, err := svc.GetSettings(ctx) // the stored list: a block takes effect at once
+		if err != nil {
+			logf("notify: account %d: reading blocked senders: %v", acc, err)
+		}
+		var junk []int64
+		msgs = slices.DeleteFunc(msgs, func(m core.MessageSummary) bool {
+			blocked := slices.Contains(cur.BlockedSenders, mail.AddrKey(m.From))
+			if blocked {
+				junk = append(junk, m.ID)
+			}
+			return blocked
+		})
+		if len(junk) > 0 {
+			// Never deleted instead: a failed move leaves the mail in the inbox, unnotified.
+			if err := svc.MoveToRole(ctx, junk, "junk"); err != nil {
+				logf("notify: account %d: moving blocked senders' mail to junk: %v", acc, err)
+			}
+		}
+		if !show || !plat.NotificationsSupported() {
 			return nil
 		}
 		if codeBanner {
@@ -99,13 +117,7 @@ func inboxArrivals(ctx context.Context, svc *core.Service, acc int64, got *arriv
 	for _, id := range got.msgs {
 		want[id] = true
 	}
-	st, _ := svc.GetSettings(ctx)
-	blocked := map[string]bool{}
-	for _, b := range st.BlockedSenders {
-		blocked[strings.ToLower(b)] = true
-	}
 	var out []core.MessageSummary
-	var toJunk []int64
 	for _, tid := range slices.Compact(slices.Sorted(slices.Values(got.threads))) {
 		th, err := svc.GetThread(ctx, tid)
 		if err != nil {
@@ -114,18 +126,8 @@ func inboxArrivals(ctx context.Context, svc *core.Service, acc int64, got *arriv
 		for _, m := range th.Messages {
 			if want[m.ID] && inbox[m.FolderID] {
 				delete(want, m.ID) // a message in two gathered threads counts once
-				_, addr := sender(m.From)
-				if blocked[strings.ToLower(addr)] {
-					toJunk = append(toJunk, m.ID)
-					continue
-				}
 				out = append(out, m)
 			}
-		}
-	}
-	if len(toJunk) > 0 {
-		if err := svc.MoveToRole(ctx, toJunk, "junk"); err != nil {
-			_ = svc.Delete(ctx, toJunk)
 		}
 	}
 	return out, nil

@@ -1251,6 +1251,7 @@
   "reader_address_copied": "Adresse kopiert",
   "reader_block_sender": "Absender blockieren",
   "reader_unblock_sender": "Blockierung aufheben",
+  "reader_blocked_badge": "Blockiert",
   "reader_sender_blocked": "Absender blockiert",
   "reader_sender_unblocked": "Blockierung aufgehoben",
   "settings_blocked": "Blockierte Absender",

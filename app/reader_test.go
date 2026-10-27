@@ -866,18 +866,19 @@ func TestReaderSenderPopover(t *testing.T) {
 	h.see(i18n.T("reader.copy_address"))
 	h.see(i18n.T("reader.block_sender"))
 
-	// Click Block Sender inside the popover
+	// Blocking shows the badge at once and leaves the conversation where it is.
 	h.click(i18n.T("reader.block_sender"))
-	h.until("blocked", func() bool {
-		h.advance(refreshEvery)
-		return r.isBlocked("spammer@example.com")
-	})
+	h.until("blocked", func() bool { return r.isBlocked("Spammer <spammer@example.com>") })
+	h.see(i18n.T("reader.blocked_badge"))
+	h.see(i18n.T("reader.sender_blocked"))
+	if h.app.route.ThreadID != m.ThreadID {
+		t.Fatalf("route %+v: blocking must not move the open conversation", h.app.route)
+	}
 
-	r.unblockSender("spammer@example.com")
-	h.until("unblocked", func() bool {
-		h.advance(refreshEvery)
-		return !r.isBlocked("spammer@example.com")
-	})
+	h.click("spammer@example.com")
+	h.click(i18n.T("reader.unblock_sender"))
+	h.until("unblocked", func() bool { return !r.isBlocked("spammer@example.com") })
+	h.see(i18n.T("reader.sender_unblocked"))
 }
 
 func TestReaderBodyRetry(t *testing.T) {

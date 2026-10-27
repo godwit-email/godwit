@@ -1251,6 +1251,7 @@
   "reader_address_copied": "アドレスをコピーしました",
   "reader_block_sender": "送信者をブロック",
   "reader_unblock_sender": "送信者のブロックを解除",
+  "reader_blocked_badge": "ブロック中",
   "reader_sender_blocked": "送信者をブロックしました",
   "reader_sender_unblocked": "送信者のブロックを解除しました",
   "settings_blocked": "ブロック中の送信者",

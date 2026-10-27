@@ -1251,6 +1251,7 @@
   "reader_address_copied": "Adres kopyalandı",
   "reader_block_sender": "Göndereni Engelle",
   "reader_unblock_sender": "Gönderenin Engelini Kaldır",
+  "reader_blocked_badge": "Engellendi",
   "reader_sender_blocked": "Gönderen engellendi",
   "reader_sender_unblocked": "Gönderenin engeli kaldırıldı",
   "settings_blocked": "Engellenen Gönderenler",
