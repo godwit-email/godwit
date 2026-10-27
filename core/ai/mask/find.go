@@ -1,17 +1,21 @@
 package mask
 
 import (
+	"cmp"
 	"regexp"
 	"slices"
 	"strings"
 )
 
-// rule finds values of one kind: the match, or its first group that matched;
-// bound are the characters that may not touch it on either side. fit, if
-// set, checks it and says how much of it is the value (0: none).
+// rule finds values of one kind, in category cat: the match, or its first
+// group that matched, of re or of match in its place; bound are the
+// characters that may not touch it on either side. fit, if set, checks it
+// and says how much of it is the value (0: none).
 type rule struct {
 	kind  string
+	cat   string
 	re    *regexp.Regexp
+	match func(s string) [][]int
 	bound string
 	fit   func(v string) int
 }
@@ -51,6 +55,18 @@ var rules = []rule{
 			`|(?:护照(?:号码|号)?|護照(?:號碼|号码)?|パスポート(?:番号)?)[ \t]*(?:[:：=][ \t]*)?(?:是[ \t]*|は[ \t]*)?["']?([A-Z0-9]{6,9})`)},
 	// an IBAN, as one word or printed in groups of four, by its checksum
 	{kind: "IBAN", bound: alnum, re: regexp.MustCompile(`[A-Z]{2}\d{2}(?:[A-Z0-9]{11,30}|(?: [A-Z0-9]{4}){2,7}(?: [A-Z0-9]{1,3})?)`), fit: ibanFit},
+
+	// a number with + and its country code; a mainland China mobile; a
+	// landline with its area code set apart, as an order number's is not
+	{kind: "PHONE", cat: CatPhone, bound: alnum, re: regexp.MustCompile(`\+[1-9]\d{0,3}(?:[ .-]?(?:\(\d{1,4}\)|\d{1,6})){1,6}`), fit: intlPhone},
+	{kind: "PHONE", cat: CatPhone, bound: alnum + "-", re: regexp.MustCompile(`1[3-9]\d(?:[ -]?\d{4}){2}(?:\.\d+)?`), fit: whole(notAnAmount)},
+	{kind: "PHONE", cat: CatPhone, bound: alnum + "-", re: regexp.MustCompile(`(?:0\d{2,3}[ -]|[(（]0\d{2,3}[)）][ -]?)\d{3,4}[ -]?\d{4}`)},
+
+	// an address's user name: its domain goes as it is, for labels and sorting go by it
+	{kind: "EMAIL", cat: CatEmail, bound: tokenCh + ".%+", re: regexp.MustCompile(`([A-Za-z0-9._%+-]+)@[A-Za-z0-9](?:[A-Za-z0-9-]*[A-Za-z0-9])?(?:\.[A-Za-z0-9](?:[A-Za-z0-9-]*[A-Za-z0-9])?)*\.[A-Za-z]{2,}`)},
+
+	{kind: "CODE", cat: CatCode, bound: alnum, match: codes},
+	{kind: "LINK", cat: CatCode, match: links},
 }
 
 // span is a value found at s[start:end].
@@ -59,11 +75,21 @@ type span struct {
 	kind       string
 }
 
-// find is the values in s, in order, none overlapping.
-func find(s string) []span {
+// find is the values in s, in order, none overlapping, of the categories
+// on says are on.
+func find(s string, on func(cat string) bool) []span {
 	var found []span
 	for _, r := range rules {
-		for _, loc := range r.re.FindAllStringSubmatchIndex(s, -1) {
+		if !on(cmp.Or(r.cat, CatSecret)) {
+			continue
+		}
+		var locs [][]int
+		if r.match != nil {
+			locs = r.match(s)
+		} else {
+			locs = r.re.FindAllStringSubmatchIndex(s, -1)
+		}
+		for _, loc := range locs {
 			a, b := loc[0], loc[1]
 			for g := 2; g < len(loc); g += 2 {
 				if loc[g] >= 0 {
@@ -113,6 +139,36 @@ func secretValue(v string) bool {
 	return notAVariable(v) && strings.ContainsAny(v, digits) && strings.IndexFunc(v, func(r rune) bool { return r >= 'A' && r <= 'Z' || r >= 'a' && r <= 'z' }) >= 0
 }
 
+// intlPhone is how much of v is a number of 8 to 15 digits, as E.164's
+// are: groups after one may be the numbers that follow it.
+func intlPhone(v string) int {
+	for {
+		if n := countDigits(v); n <= 15 {
+			if n < 8 {
+				return 0
+			}
+			return len(v)
+		}
+		i := strings.LastIndexAny(v, " .-(")
+		if i <= 0 {
+			return 0
+		}
+		v = strings.TrimRight(v[:i], " .-")
+	}
+}
+
+func countDigits(v string) int {
+	return strings.Count(strings.Map(func(r rune) rune {
+		if r >= '0' && r <= '9' {
+			return 'd'
+		}
+		return -1
+	}, v), "d")
+}
+
+// notAnAmount turns away a number with decimals: 13812345678.00.
+func notAnAmount(v string) bool { return !strings.Contains(v, ".") }
+
 // chineseID is whether v's last character is the check digit of its first 17.
 func chineseID(v string) bool {
 	w := []int{7, 9, 10, 5, 8, 4, 2, 1, 6, 3, 7, 9, 10, 5, 8, 4, 2}
@@ -149,12 +205,7 @@ func luhn(v string) bool {
 
 // passportOK is a number with five digits or more, not one character repeated.
 func passportOK(v string) bool {
-	return strings.Count(strings.Map(func(r rune) rune {
-		if r >= '0' && r <= '9' {
-			return 'd'
-		}
-		return -1
-	}, v), "d") >= 5 && strings.Trim(v, v[:1]) != ""
+	return countDigits(v) >= 5 && strings.Trim(v, v[:1]) != ""
 }
 
 // ibanLen is how long each country's IBAN is.
