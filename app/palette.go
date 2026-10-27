@@ -52,6 +52,7 @@ type palette struct {
 	scroll bool      // the arrows moved sel: bring it into view
 	rows   []palItem // as last built, which the keys act on
 
+	m     paletteMenu        // ⌥↵'s
 	cards map[int64]*palCard // by message id, loaded as each is chosen
 }
 
@@ -62,6 +63,7 @@ type palItem struct {
 	unread           bool
 	open             func()
 	msg              *core.MessageSummary // a mail's, for its preview card
+	acts             func() []palAct      // its ⌥↵ menu; nil for none
 }
 
 // palGroup is a heading and its rows; total, when not 0, is how many there
@@ -97,6 +99,7 @@ func (p *palette) view(c *ui.Context) {
 		p.rows = append(p.rows, g.items...)
 	}
 	p.sel = min(max(p.sel, 0), max(len(p.rows)-1, 0))
+	p.m.acts = p.menuActs()
 	hover := -1
 	o := kit.PaletteOpts{
 		Label: i18n.T("palette.label"), Placeholder: i18n.T("palette.placeholder"), Close: i18n.T("common.close"),
@@ -105,6 +108,7 @@ func (p *palette) view(c *ui.Context) {
 			{Label: i18n.T("palette.hint.open"), Key: "↵"},
 			{Label: i18n.T("palette.hint.kind"), Key: "←→"},
 			{Label: i18n.T("palette.hint.filter"), Key: "/"},
+			{Label: i18n.T("palette.hint.actions"), Key: "⌥↵"},
 			{Label: i18n.T("palette.hint.view_all"), Key: "⌘↵"},
 			{Label: i18n.T("palette.hint.wit"), Key: "Tab", OnClick: p.askWit},
 			{Label: i18n.T("palette.hint.close"), Key: "Esc"},
@@ -151,10 +155,11 @@ func (p *palette) view(c *ui.Context) {
 		m := *p.rows[p.sel].msg
 		kit.PalettePreview(c, func() { p.preview(c, m) })
 	}
-	if hover >= 0 && hover != p.hover {
+	if hover >= 0 && hover != p.hover && !p.m.open { // the menu stays on its row
 		p.sel = hover // the pointer moved onto a row; keys move it from there
 	}
 	p.hover, p.scroll = hover, false
+	p.menuFrame(c)
 }
 
 // row is rows[i], one line: its icon, title, the muted line after it, the
@@ -165,7 +170,7 @@ func (p *palette) row(c *ui.Context, i int, it palItem) ui.Element {
 	if i == p.sel && p.scroll {
 		r.ScrollIntoView()
 	}
-	return r.Children(func() {
+	r.Children(func() {
 		ui.Icon(c, icons.Get(it.icon)).Size(theme.IconSm, theme.IconSm).TextColor(t.Muted)
 		marked(c, it.title, p.hl).SingleLine().Shrink(1)
 		if it.sub != "" {
@@ -178,13 +183,23 @@ func (p *palette) row(c *ui.Context, i int, it palItem) ui.Element {
 		if it.unread {
 			ui.Box(c).Shrink(0).Size(th.Space(2), th.Space(2)).Radius(th.Space(1)).Background(t.Unread).Label(i18n.Tf("mail.row.unread", 1))
 		}
+		if i == p.sel && it.acts != nil {
+			kit.IconButton(c, "ellipsis", i18n.T("palette.more"), kit.ButtonOpts{Variant: kit.Ghost, Size: kit.SizeSm}).OnClick(p.openMenu)
+		}
 	})
+	if i == p.sel && p.m.open {
+		p.menuView(c, r)
+	}
+	return r
 }
 
 // key is the search box's: ↑↓ move through every group and wrap, ↵ opens,
 // ←→ change the kind while the box is empty, ⌃Tab and ⌃⇧Tab any time; Tab
 // asks Wit, ⌘↵ shows every mail hit in the list.
 func (p *palette) key(k ui.TextKey) bool {
+	if p.m.open && p.menuKey(k) {
+		return true
+	}
 	if p.filtering && p.filterKey(k) {
 		return true
 	}
@@ -202,6 +217,8 @@ func (p *palette) key(k ui.TextKey) bool {
 		}
 	case k.Mods == 0 && k.Key == ui.KeyEnter:
 		p.choose(p.sel)
+	case k.Mods == ui.Alt && k.Key == ui.KeyEnter:
+		p.openMenu()
 	case k.Mods == 0 && (k.Key == ui.KeyLeft || k.Key == ui.KeyRight) && k.Text() == "":
 		p.step(k.Key == ui.KeyRight)
 	case k.Mods == 0 && k.Key == ui.KeyTab:
@@ -242,6 +259,7 @@ func (p *palette) find() {
 	a := p.a
 	p.gen++
 	p.asked, p.askedKind, p.started, p.sel = p.query, p.kind, true, 0
+	p.m.open = false
 	sf := p.sf()
 	q := core.FindQuery{SearchQuery: sf.query(a.clock.Now(), sf.acc, p.query), Kind: paletteKinds[p.kind]}
 	if q.Kind == "" {
@@ -314,7 +332,7 @@ func (p *palette) mailItems(ms []core.MessageSummary) []palItem {
 		out = append(out, palItem{icon: "mail", title: cmp.Or(m.Subject, i18n.T("mail.no_subject")), sub: sub, when: m.Date, unread: it.Unread > 0, msg: &m,
 			open: func() {
 				p.a.navigate(Route{Page: PageMail, View: core.View{Unified: "inbox"}, ThreadID: thread, MessageID: id})
-			}})
+			}, acts: p.mailActs(m, it.Unread > 0)})
 	}
 	return out
 }
@@ -323,8 +341,9 @@ func (p *palette) convItems(cs []core.Conversation) []palItem {
 	out := make([]palItem, 0, len(cs))
 	for _, cv := range cs {
 		id := cv.ID
+		open := func() { p.a.navigate(Route{Page: PageWit, ConversationID: id}) }
 		out = append(out, palItem{icon: "label-chat-3", title: cmp.Or(cv.Title, i18n.T("ask.new")), when: cv.UpdatedAt,
-			open: func() { p.a.navigate(Route{Page: PageWit, ConversationID: id}) }})
+			open: open, acts: p.convActs(id, open)})
 	}
 	return out
 }
@@ -333,8 +352,9 @@ func (p *palette) contactItems(cs []core.Contact) []palItem {
 	out := make([]palItem, 0, len(cs))
 	for _, ct := range cs {
 		addr := ct.Address
+		open := func() { p.a.mail.mailFrom(addr) }
 		out = append(out, palItem{icon: "user", title: cmp.Or(ct.Name, addr), sub: addr, when: ct.Last,
-			open: func() { p.a.mail.mailFrom(addr) }})
+			open: open, acts: p.contactActs(addr, open)})
 	}
 	return out
 }
@@ -343,8 +363,9 @@ func (p *palette) attachmentItems(as []core.FoundAttachment) []palItem {
 	out := make([]palItem, 0, len(as))
 	for _, at := range as {
 		id := at.MessageID
+		open := func() { p.a.OpenMessage(id) }
 		out = append(out, palItem{icon: "paperclip", title: at.Filename, sub: displayName(at.From) + " · " + at.Subject, when: at.Date,
-			open: func() { p.a.OpenMessage(id) }})
+			open: open, acts: p.attachmentActs(at.AttachmentInfo, open)})
 	}
 	return out
 }
