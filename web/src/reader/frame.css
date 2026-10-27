@@ -66,9 +66,28 @@ html {
   max-width: 100% !important;
 }
 
+.godwit-filter-def {
+  position: fixed;
+  width: 0;
+  height: 0;
+  pointer-events: none;
+}
+
+#godwit-body.godwit-dark:not(.godwit-invert) {
+  filter: url(#godwit-dark);
+}
+
 #godwit-body.godwit-invert,
 #godwit-body.godwit-invert img {
   filter: invert(1) hue-rotate(180deg);
+}
+
+#godwit-body.godwit-invert {
+  filter: invert(1) hue-rotate(180deg) url(#godwit-dark);
+}
+
+#godwit-body.godwit-light {
+  filter: url(#godwit-light);
 }
 
 /* Invert only the background layer back, keeping the text in dark mode. */

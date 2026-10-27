@@ -139,6 +139,16 @@ test("html mail in system mode follows the page's appearance", () => {
   expect(cls(render({}, "system", true))).toBe("godwit-dark godwit-invert");
 });
 
+test("reader normalizes dark and light backgrounds via SVG filter", () => {
+  const darkDoc = parse(buildSrcdoc(body(), theme({ mode: "dark" })));
+  expect(darkDoc.querySelector("filter#godwit-dark")).not.toBeNull();
+  expect(darkDoc.getElementById("godwit-body")?.className).toBe("godwit-dark godwit-invert");
+
+  const lightDoc = parse(buildSrcdoc(body(), theme({ mode: "light" })));
+  expect(lightDoc.querySelector("filter#godwit-light")).not.toBeNull();
+  expect(lightDoc.getElementById("godwit-body")?.className).toBe("godwit-light");
+});
+
 test("the document's colour scheme: dark only for html mail with dark styles in the dark", () => {
   const scheme = (b: Partial<ReaderBody>, mode: Theme["mode"], sys = false) =>
     frameScheme(body(b), theme({ mode }), sys);
