@@ -39,7 +39,13 @@ type palette struct {
 	gen       uint64
 	res       core.FindResult
 	hl        string // the text res answers
+	hf        bool   // res answers filters
 	err       error
+
+	filters   []palFilter // the chips, in the order chosen
+	filtering bool        // / shows the filter list
+	fsel      int         // into filterOpts
+	typed     string      // query as the last frame had it, to tell a / typed
 
 	sel    int       // into rows
 	hover  int       // the row the pointer was over last frame, -1 for none
@@ -74,6 +80,10 @@ func (p *palette) view(c *ui.Context) {
 	if p.a == nil {
 		return // never opened
 	}
+	if slashed(p.typed, p.query) {
+		p.query, p.filtering, p.fsel = p.typed, true, 0
+	}
+	p.typed = p.query
 	if p.open && (!p.started || p.query != p.asked || p.kind != p.askedKind) {
 		p.find()
 	}
@@ -87,10 +97,11 @@ func (p *palette) view(c *ui.Context) {
 	hover := -1
 	o := kit.PaletteOpts{
 		Label: i18n.T("palette.label"), Placeholder: i18n.T("palette.placeholder"), Close: i18n.T("common.close"),
-		OnKey: p.key, Glass: p.a.vibrancy,
+		OnKey: p.key, Glass: p.a.vibrancy, Chips: func() { p.chips(c) },
 		Hints: []kit.PaletteHint{
 			{Label: i18n.T("palette.hint.open"), Key: "↵"},
 			{Label: i18n.T("palette.hint.kind"), Key: "←→"},
+			{Label: i18n.T("palette.hint.filter"), Key: "/"},
 			{Label: i18n.T("palette.hint.close"), Key: "Esc"},
 		},
 	}
@@ -100,6 +111,9 @@ func (p *palette) view(c *ui.Context) {
 		}
 	}, func() {
 		switch {
+		case p.filtering:
+			p.filterList(c)
+			return
 		case p.err != nil:
 			kit.Text(c, humanize(p.err), t.Text.Sm).TextColor(t.Danger).Padding(th.Space(2))
 			return
@@ -108,6 +122,9 @@ func (p *palette) view(c *ui.Context) {
 				ui.Text(c, i18n.Tf("palette.empty.title", p.hl)).FontWeight(500)
 				kit.Text(c, i18n.T("palette.empty.desc"), t.Text.Sm).TextColor(t.Muted)
 			})
+			return
+		case len(p.rows) == 0 && p.hf:
+			kit.Text(c, i18n.T("mail.search.empty_filtered"), t.Text.Sm).TextColor(t.Muted).Padding(th.Space(6), th.Space(4)).AlignSelf(ui.Center)
 			return
 		}
 		i := 0
@@ -158,8 +175,13 @@ func (p *palette) row(c *ui.Context, i int, it palItem) ui.Element {
 // key is the search box's: ↑↓ move through every group and wrap, ↵ opens,
 // ←→ change the kind while the box is empty, ⌃Tab and ⌃⇧Tab any time.
 func (p *palette) key(k ui.TextKey) bool {
+	if p.filtering && p.filterKey(k) {
+		return true
+	}
 	n := len(p.rows)
 	switch {
+	case k.Mods == 0 && k.Key == ui.KeyBackspace && k.Text() == "" && len(p.filters) > 0:
+		p.removeFilter(len(p.filters) - 1)
 	case k.Mods == 0 && (k.Key == ui.KeyDown || k.Key == ui.KeyUp):
 		if n > 0 {
 			step := 1
@@ -206,7 +228,8 @@ func (p *palette) find() {
 	a := p.a
 	p.gen++
 	p.asked, p.askedKind, p.started, p.sel = p.query, p.kind, true, 0
-	q := core.FindQuery{SearchQuery: core.SearchQuery{Text: strings.TrimSpace(p.query)}, Kind: paletteKinds[p.kind]}
+	sf := p.sf()
+	q := core.FindQuery{SearchQuery: sf.query(a.clock.Now(), sf.acc, p.query), Kind: paletteKinds[p.kind]}
 	if q.Kind == "" {
 		q.Limit = paletteFew
 	}
@@ -219,7 +242,7 @@ func (p *palette) find() {
 		if gen != p.gen {
 			return
 		}
-		p.res, p.err, p.hl = res, err, q.Text
+		p.res, p.err, p.hl, p.hf = res, err, q.Text, q.Filtered()
 	})
 }
 
@@ -234,7 +257,7 @@ func (p *palette) groups() []palGroup {
 			out = append(out, g)
 		}
 	}
-	if kind == "" && p.hl == "" {
+	if kind == "" && p.hl == "" && !p.hf {
 		recent := slices.Concat(mail, convs, atts)
 		slices.SortStableFunc(recent, func(a, b palItem) int { return b.when.Compare(a.when) })
 		add(palGroup{title: i18n.T("palette.recent"), items: recent})
@@ -242,7 +265,7 @@ func (p *palette) groups() []palGroup {
 		return out
 	}
 	total := func(n int) int {
-		if p.hl == "" {
+		if p.hl == "" && !p.hf {
 			return 0 // a kind's recent hits: no count
 		}
 		return n
@@ -251,7 +274,7 @@ func (p *palette) groups() []palGroup {
 	add(palGroup{kindLabel("conversation"), total(r.Conversations.Total), convs})
 	add(palGroup{kindLabel("contact"), total(r.Contacts.Total), contacts})
 	add(palGroup{kindLabel("attachment"), total(r.Attachments.Total), atts})
-	if kind == "" {
+	if kind == "" && !p.hf {
 		acts := p.actions()
 		add(palGroup{i18n.T("palette.actions"), len(acts), acts})
 	}
