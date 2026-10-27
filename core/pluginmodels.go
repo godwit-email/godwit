@@ -272,11 +272,7 @@ func (s *Service) pluginJudge(ctx context.Context, ref string) (ai.Judge, error)
 		return pluginModelJudge{s, name, rp, m, cfg}, nil
 	}
 	c := s.pluginModelClient(name, rp, m.ID, cfg)
-	mk, err := s.masker()
-	if err != nil {
-		return nil, err
-	}
-	j, err := ai.NewJudge(c, mk, judgeFormats[m.Protocol], m.BaseURL, "", m.ID)
+	j, err := s.newJudge(c, judgeFormats[m.Protocol], m.BaseURL, "", m.ID)
 	return pluginHTTPJudge{j, c.Transport.(*pluginModelTransport)}, err
 }
 

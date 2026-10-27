@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"net/http"
 	"net/url"
 	"slices"
 	"strconv"
@@ -738,11 +739,7 @@ func (s *Service) testGenRun(ctx context.Context, id int64, in ModelServiceInput
 
 func (s *Service) testJudge(ctx context.Context, in ModelServiceInput, key string) error {
 	f := ai.JudgeFormat(in.JudgeFormat)
-	m, err := s.masker()
-	if err != nil {
-		return err
-	}
-	j, err := ai.NewJudge(s.modelHTTP, m, f, in.BaseURL, key, in.JudgeModel)
+	j, err := s.newJudge(s.modelHTTP, f, in.BaseURL, key, in.JudgeModel)
 	if err != nil {
 		return err
 	}
@@ -977,11 +974,7 @@ func (s *Service) resolveJudge(ctx context.Context) (j ai.Judge, label string, g
 			return nil, "", false, err
 		}
 		if err == nil && m.JudgeFormat != "" {
-			mk, err := s.masker()
-			if err != nil {
-				return nil, "", false, err
-			}
-			j, err := ai.NewJudge(s.modelHTTP, mk, ai.JudgeFormat(m.JudgeFormat), m.BaseURL, key, m.JudgeModel)
+			j, err := s.newJudge(s.modelHTTP, ai.JudgeFormat(m.JudgeFormat), m.BaseURL, key, m.JudgeModel)
 			return j, m.Slug + "/" + m.JudgeModel, false, err
 		}
 	}
@@ -996,6 +989,15 @@ func (s *Service) resolveJudge(ctx context.Context) (j ai.Judge, label string, g
 	return ai.NewGenJudge(func(ctx context.Context, system, prompt string) (string, error) {
 		return s.runText(ctx, e, ai.Request{Model: model, System: system, Prompt: prompt, MaxTurns: 1, Raw: true}, maxJudgeText)
 	}, e.Masker), ref, true, nil
+}
+
+// newJudge is ai.NewJudge with the Service's masker.
+func (s *Service) newJudge(c *http.Client, f ai.JudgeFormat, base, key, model string) (ai.Judge, error) {
+	m, err := s.masker()
+	if err != nil {
+		return nil, err
+	}
+	return ai.NewJudge(c, m, f, base, key, model)
 }
 
 // maxJudgeText caps a generated judge answer: a JSON object of short answers.

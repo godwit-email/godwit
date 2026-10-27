@@ -202,10 +202,9 @@ func (s *Service) masker() (*mask.Masker, error) {
 	}
 	m := mask.New([]byte(store.Str(rows.Values[0][0])))
 	m.Record = s.recordMasking
-	if err := m.Configure(st.maskConfig()); err != nil { // a rule stored by hand: nothing goes out unmasked
+	if err := st.setMasker(m); err != nil { // a rule stored by hand: nothing goes out unmasked
 		return nil, err
 	}
-	m.SetOn(st.Masking)
 	s.mask = m
 	return m, nil
 }
@@ -216,9 +215,14 @@ func (s *Service) maskingChanged(st Settings) {
 	s.maskMu.Lock()
 	defer s.maskMu.Unlock()
 	if s.mask != nil {
-		_ = s.mask.Configure(st.maskConfig()) // SetSettings checked it; a failure keeps the last
-		s.mask.SetOn(st.Masking)
+		_ = st.setMasker(s.mask) // SetSettings checked it; a failure keeps the last
 	}
+}
+
+// setMasker masks with m as st says: a config m refuses leaves its last.
+func (st Settings) setMasker(m *mask.Masker) error {
+	m.SetOn(st.Masking)
+	return m.Configure(st.maskConfig())
 }
 
 // PreviewMasking is text as it would go to a model off this device under
