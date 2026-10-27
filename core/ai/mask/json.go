@@ -57,18 +57,31 @@ func (m *Masker) json(s string, sc scope, f *Found) (out string, ok bool, err er
 	return out, ok, err
 }
 
-// member is text for the string s under its key: a key that names a
-// credential ({"api_key": "…"}) goes in front, as the secret rules need it
-// to see the value, and only the value comes back.
+// member is text for the string s under its key: a key that names what a
+// rule finds only after its label ({"api_key": "…"}, {"passport": "…"})
+// goes in front as that label, and only the value comes back.
 func (m *Masker) member(s string, sc scope, f *Found) (string, error) {
-	if credKey.MatchString(sc.key) {
-		pre := sc.key + "="
+	if pre := label(sc.key); pre != "" {
 		if out, err := m.text(pre+s, !sc.model, f); strings.HasPrefix(out, pre) || err != nil {
 			return strings.TrimPrefix(out, pre), err
 		}
 	}
 	return m.text(s, !sc.model, f)
 }
+
+// label is what goes before a value under key for its rule to find it.
+func label(key string) string {
+	switch {
+	case credKey.MatchString(key):
+		return key + "="
+	case passportKey.MatchString(key):
+		return "passport: "
+	}
+	return ""
+}
+
+// passportKey is a key that names a passport's number.
+var passportKey = regexp.MustCompile(`(?i)passport|护照|護照|パスポート`)
 
 // credKey is a key that names a credential, as the SECRET rule's label does.
 var credKey = regexp.MustCompile(`(?i)^[A-Za-z0-9_.-]*(?:password|passwd|secret|token|api[_-]?key|access[_-]?key|private[_-]?key|credential)[A-Za-z0-9_.-]*$`)
@@ -292,7 +305,19 @@ func (w *walker) value(i int, sc scope) (int, bool) {
 		}
 		return end, true
 	}
-	return w.skip(i)
+	end, ok := w.skip(i)
+	// In a tool's own JSON a number is data too ({"card": 4111…}): masked, it
+	// goes as the placeholder's string.
+	if tok := w.in[i:end]; ok && sc.tool && numberRe.MatchString(tok) {
+		if t := w.fn(tok, sc); t != tok {
+			w.out.WriteString(w.in[w.last:i])
+			w.out.WriteByte('"')
+			w.out.WriteString(jsonEscape(t))
+			w.out.WriteByte('"')
+			w.last = end
+		}
+	}
+	return end, ok
 }
 
 // members are the object's at in[i:], read but not rewritten, and its end.

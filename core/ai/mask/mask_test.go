@@ -316,6 +316,15 @@ func TestMalformedJSONIsMaskedAsText(t *testing.T) {
 	assert.NotContains(t, out, "abcd1234efgh5678")
 }
 
+// In JSON a string holds, a number is scanned, and a passport's key is its label.
+func TestMasksANumberAndAPassportInJSON(t *testing.T) {
+	body := `{"model":"m","max_tokens":4111111111111111,"messages":[{"role":"user","content":"{\"card\":` + strings.ReplaceAll(card, " ", "") + `,\"passport\":\"E12345678\",\"n\":2}"}]}`
+	out, err := mask.New(key).Body(body)
+	require.NoError(t, err)
+	assert.Equal(t, `{"card":"<BANK_CARD>","passport":"<PASSPORT>","n":2}`, shown(at(t, out, "messages", 0, "content")))
+	assert.Contains(t, out, `"max_tokens":4111111111111111`, "the request's own numbers are not")
+}
+
 // What has nothing to mask goes out byte for byte.
 func TestABodyWithNothingToMaskIsKept(t *testing.T) {
 	body := `{"model": "m", "input": "Hi <you>", "n": 1.50}`
