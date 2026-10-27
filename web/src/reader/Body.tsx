@@ -10,6 +10,7 @@ import { buildSrcdoc, frameScheme } from "./frame";
 import { wheelForwarder } from "./wheel";
 
 const ignore = () => {};
+let nextDocument = 0;
 
 // Go refuses a taller body (webui maxBodyHeight): the page clamps to it.
 const MAX_HEIGHT = 1 << 20;
@@ -123,12 +124,11 @@ function useSystemDark(): boolean {
  */
 export function Body({ body, theme }: { body: ReaderBody; theme: Theme }) {
   const systemDark = useSystemDark();
-  // The version makes each body Go sends a new document: a retry rebuilds the same HTML, and an
-  // unchanged srcdoc would not load again, nor ask for its failed images anew.
-  const srcdoc = useMemo(
-    () => `${buildSrcdoc(body, theme, systemDark)}<!-- ${body.version} -->`,
-    [body, theme, systemDark],
-  );
+  // Every update gets a fresh document marker, so a retry also reloads identical HTML and images.
+  const { srcdoc, marker } = useMemo(() => {
+    const marker = `godwit-reader-${++nextDocument}`;
+    return { srcdoc: `${buildSrcdoc(body, theme, systemDark)}<!--${marker}-->`, marker };
+  }, [body, theme, systemDark]);
   const frame = useRef<HTMLIFrameElement>(null);
   const t = useT(body.locale);
 
@@ -143,20 +143,31 @@ export function Body({ body, theme }: { body: ReaderBody; theme: Theme }) {
   useEffect(() => {
     const f = frame.current;
     if (!f) return;
+    let live = true;
+    let wired: Document | null = null;
     let detach = ignore;
     const onLoad = () => {
-      detach();
-      detach = wire(f);
+      const doc = f.contentDocument;
+      if (!doc || doc.lastChild?.nodeValue !== marker || doc.readyState === "loading") return false;
+      if (wired !== doc) {
+        detach();
+        detach = wire(f);
+        wired = doc;
+      }
+      return true;
+    };
+    // Images can delay load; expose the parsed document as soon as its current marker is present.
+    const ready = () => {
+      if (live && !onLoad()) requestAnimationFrame(ready);
     };
     f.addEventListener("load", onLoad);
-    // Rewired with the document as it is: an unchanged srcdoc doesn't load again (a loading one
-    // still fires load, which rewires the new document).
-    onLoad();
+    ready();
     return () => {
+      live = false;
       f.removeEventListener("load", onLoad);
       detach();
     };
-  }, [wire]);
+  }, [wire, marker]);
 
   return (
     <iframe

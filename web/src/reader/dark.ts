@@ -87,6 +87,7 @@ type Snapshot = {
   source: Color;
   target: Color;
   protected: boolean;
+  mediaProtected: boolean;
   visible: boolean;
   opacity: number;
   ratio: number;
@@ -106,9 +107,9 @@ export function adaptDarkMode(frame: HTMLIFrameElement, theme: Theme): () => voi
   const surface: Color = parse(theme.dark?.["--muted"] ?? "") ?? [38, 38, 38, 1];
   const lightText: Color = parse(theme.light?.["--foreground"] ?? "") ?? [10, 10, 10, 1];
   const originals = new Map<HTMLElement, string | null>();
-  const set = (el: HTMLElement, key: string, value: Color) => {
+  const set = (el: HTMLElement, key: string, value: Color | string) => {
     if (!originals.has(el)) originals.set(el, el.getAttribute("style"));
-    el.style.setProperty(key, css(value), "important");
+    el.style.setProperty(key, typeof value === "string" ? value : css(value), "important");
   };
   const restore = () => {
     for (const [el, style] of originals) {
@@ -148,6 +149,7 @@ export function adaptDarkMode(frame: HTMLIFrameElement, theme: Theme): () => voi
           source,
           target: source,
           protected: false,
+          mediaProtected: false,
           visible,
           opacity,
           ratio:
@@ -171,15 +173,22 @@ export function adaptDarkMode(frame: HTMLIFrameElement, theme: Theme): () => voi
             ? node.source
             : mix(dark, surface, clamp((255 - brightness(node.source)) / 32))
           : (parent?.target ?? dark);
-        // shortcut: unknown colour and media regions retain their complete light pairing until supported.
-        node.protected =
+        const fixedProtection =
           node.protected ||
-          parent?.protected === true ||
-          node.opacity < 1 ||
+          (parent?.protected === true && !parent.mediaProtected) ||
+          node.opacity < 1;
+        // An opaque fill covers ancestor artwork; translucent descendants still need its pairing.
+        node.mediaProtected =
+          !fixedProtection &&
+          ((!!node.image && node.image !== "none") ||
+            (parent?.mediaProtected === true && node.bg[3] < 1));
+        // shortcut: unknown colours retain their light pairing until the colour converter supports them.
+        node.protected =
+          fixedProtection ||
+          node.mediaProtected ||
           !neutral(node.source) ||
           !neutral(node.fg) ||
-          node.el.tagName === "IMG" ||
-          (!!node.image && node.image !== "none");
+          node.el.tagName === "IMG";
         let text = node.fg;
         if (!node.protected && node.fg[3] > 0) {
           const candidate =
@@ -194,6 +203,8 @@ export function adaptDarkMode(frame: HTMLIFrameElement, theme: Theme): () => voi
           node.target = node.source;
           if (!parent?.protected) {
             set(node.el, "background-color", node.source);
+            if (node.el.tagName === "IMG" && (!node.image || node.image === "none"))
+              set(node.el, "background-clip", "content-box");
             set(node.el, "color", node.fg);
           }
         } else {
