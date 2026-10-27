@@ -182,7 +182,7 @@ func translateMasked(ctx context.Context, originals []string, id int64, target s
 		}
 		masked = cut
 	}
-	return translateRestored(ctx, originals, masked, func(tr, src string) string { return unmask(tr, src, links) }, target, keep, call)
+	return translateRestored(ctx, originals, masked, func(tr, src string) string { return unmask(m.Restore(tr), src, links) }, target, keep, call)
 }
 
 // translateRestored is translateBodyTexts on masked, originals with values

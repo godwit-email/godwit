@@ -5,6 +5,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/godwit-email/godwit/core/ai/mask"
 	"github.com/godwit-email/godwit/core/internal/testllm"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -125,4 +126,16 @@ func TestBodyTranslationMasksAcrossACut(t *testing.T) {
 	body := string(e.srv.Requests()[0].Body)
 	assert.True(t, strings.Contains(body, "{{BANK_CARD_"), "the card is masked")
 	assert.False(t, strings.Contains(body, "1111"), "no piece of the card is sent")
+}
+
+// A text needing no translation comes back as it was, its values too, not
+// as it was masked.
+func TestBodyTranslationKeepsTheValuesOfAnUntranslatedText(t *testing.T) {
+	const text = "卡号 4111 1111 1111 1111"
+	res, err := translateMasked(t.Context(), []string{text}, 1, "zh-CN", nil, mask.New([]byte("k")),
+		func(_ context.Context, req translateRequest) (translateResult, error) {
+			return translateResult{Texts: []string{"x"}, Source: "zh-CN"}, nil
+		})
+	require.NoError(t, err)
+	assert.Equal(t, text, res.Text)
 }
