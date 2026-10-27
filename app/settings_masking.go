@@ -163,25 +163,29 @@ func (p *settingsPage) maskCustom(c *ui.Context) {
 // page says why.
 func (p *settingsPage) saveMasking() {
 	d := &p.mask
-	rules, lines := parseRules(d.rules)
-	allow := parseLines(d.allow)
-	if d.err = maskCheck(rules, lines, allow); d.err != "" {
+	st, lines := d.edited(p.st)
+	if d.err = maskCheck(st, lines); d.err != "" {
 		return
 	}
-	p.st.MaskWords, p.st.MaskRules, p.st.MaskAllow = parseLines(d.words), rules, allow
-	d.editing = false
+	p.st, d.editing = st, false
+}
+
+// edited is st with the words, rules and allowlist as d has them, and the
+// line each rule is on.
+func (d *maskDraft) edited(st core.Settings) (core.Settings, []int) {
+	rules, lines := parseRules(d.rules)
+	st.MaskWords, st.MaskRules, st.MaskAllow = parseLines(d.words), rules, parseLines(d.allow)
+	return st, lines
 }
 
 // maskPreview masks the pasted text as the page's settings say, the fields
 // being edited too, and saves nothing.
 func (p *settingsPage) maskPreview(c *ui.Context) {
 	d, t, th := &p.mask, theme.Of(c), c.Theme()
-	st := p.st
-	rules, lines := parseRules(d.rules)
-	st.MaskWords, st.MaskRules, st.MaskAllow = parseLines(d.words), rules, parseLines(d.allow)
-	if key := fmt.Sprintf("%q %+v %v %v %v %v", d.preview, st.MaskCategories, st.MaskWords, st.MaskWordsCase, st.MaskWordsWhole, st.MaskAllow) + ruleLines(rules); key != d.shownFor {
+	st, lines := d.edited(p.st)
+	if key := fmt.Sprintf("%q %+v %v %v %v %v", d.preview, st.MaskCategories, st.MaskWords, st.MaskWordsCase, st.MaskWordsWhole, st.MaskAllow) + ruleLines(st.MaskRules); key != d.shownFor {
 		d.shownFor = key
-		if msg := maskCheck(rules, lines, st.MaskAllow); msg != "" {
+		if msg := maskCheck(st, lines); msg != "" {
 			d.shown = msg
 		} else if out, err := p.a.svc.PreviewMasking(context.Background(), st, d.preview); err != nil {
 			d.shown = humanize(err)
@@ -239,19 +243,18 @@ func ruleLines(rules []core.MaskRule) string {
 	return b.String()
 }
 
-// maskCheck says why rules (on lines) or allow can't be saved; "" if they can.
-func maskCheck(rules []core.MaskRule, lines []int, allow []string) string {
-	if len(rules) > core.MaxMaskRules {
-		return i18n.Tf("settings.masking.rules.too_many", core.MaxMaskRules)
-	}
-	if len(allow) > core.MaxMaskAllow {
-		return i18n.Tf("settings.masking.allow.too_many", core.MaxMaskAllow)
-	}
-	err := core.CheckMaskRules(rules)
+// maskCheck says why st's rules (on lines) or allowlist can't be saved; ""
+// if they can.
+func maskCheck(st core.Settings, lines []int) string {
+	err := core.CheckMasking(st.MaskRules, st.MaskAllow)
 	var re *core.MaskRuleError
 	switch {
 	case err == nil:
 		return ""
+	case errors.Is(err, core.ErrMaskTooManyRules):
+		return i18n.Tf("settings.masking.rules.too_many", core.MaxMaskRules)
+	case errors.Is(err, core.ErrMaskTooManyAllow):
+		return i18n.Tf("settings.masking.allow.too_many", core.MaxMaskAllow)
 	case !errors.As(err, &re):
 		return humanize(err)
 	case errors.Is(err, core.ErrMaskKind):

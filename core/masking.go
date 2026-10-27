@@ -111,8 +111,10 @@ type (
 )
 
 var (
-	ErrMaskKind       = mask.ErrKind
-	ErrMaskEmptyMatch = mask.ErrEmptyMatch
+	ErrMaskKind         = mask.ErrKind
+	ErrMaskEmptyMatch   = mask.ErrEmptyMatch
+	ErrMaskTooManyRules = mask.ErrTooManyRules
+	ErrMaskTooManyAllow = mask.ErrTooManyAllow
 )
 
 const (
@@ -120,8 +122,10 @@ const (
 	MaxMaskAllow = mask.MaxAllow
 )
 
-// CheckMaskRules says what is wrong with rules, as SetSettings would.
-func CheckMaskRules(rules []MaskRule) error { return mask.Check(mask.Config{Rules: rules}) }
+// CheckMasking says what is wrong with rules and allow, as SetSettings would.
+func CheckMasking(rules []MaskRule, allow []string) error {
+	return mask.Check(mask.Config{Rules: rules, Allow: allow})
+}
 
 // MaskCategory is one category of 脱敏: whether it is found, and what is
 // done with its values (MaskHide, MaskWarn or MaskBlock).

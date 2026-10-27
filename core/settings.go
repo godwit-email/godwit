@@ -59,14 +59,14 @@ type Settings struct {
 	// MaskCategories say which categories masking finds, and what is done
 	// with each one's values.
 	MaskCategories MaskCategories
-	// MaskWords are the user's own words to mask (自定义词), as TERM: in any
-	// case unless MaskWordsCase, inside longer words unless MaskWordsWhole.
+	// MaskWords are the user's own words to mask (自定义词), as TERM: in either
+	// letter case unless MaskWordsCase, inside longer words unless MaskWordsWhole.
 	MaskWords                     []string
 	MaskWordsCase, MaskWordsWhole bool
 	// MaskRules are the user's patterns (自定义正则), each masking as its kind;
 	// at most mask.MaxRules, checked as they are saved.
 	MaskRules []mask.Rule
-	// MaskAllow are the values never masked (白名单), in any case; at most mask.MaxAllow.
+	// MaskAllow are the values never masked (白名单), whatever their letter case; at most mask.MaxAllow.
 	MaskAllow []string
 	// LabelDisplay is how label chips show: LabelDisplayBoth (the default;
 	// "" too), LabelDisplayIcon or LabelDisplayText.

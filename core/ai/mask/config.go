@@ -72,10 +72,13 @@ func (e *RuleError) Error() string {
 
 func (e *RuleError) Unwrap() error { return e.Err }
 
-// What is wrong with a rule, besides a pattern RE2 can't compile.
+// What is wrong with a rule, besides a pattern RE2 can't compile; and with
+// too many rules or allowed values.
 var (
-	ErrKind       = errors.New("a kind is a letter, then letters, digits or _, at most 24")
-	ErrEmptyMatch = errors.New("the pattern matches empty text")
+	ErrKind         = errors.New("a kind is a letter, then letters, digits or _, at most 24")
+	ErrEmptyMatch   = errors.New("the pattern matches empty text")
+	ErrTooManyRules = fmt.Errorf("at most %d masking rules", MaxRules)
+	ErrTooManyAllow = fmt.Errorf("at most %d values may go unmasked", MaxAllow)
 )
 
 // kindRe is a kind as a placeholder names it.
@@ -110,10 +113,10 @@ func (m *Masker) Configure(c Config) error {
 
 func compile(c Config) (*compiled, error) {
 	if len(c.Rules) > MaxRules {
-		return nil, fmt.Errorf("at most %d masking rules", MaxRules)
+		return nil, ErrTooManyRules
 	}
 	if len(c.Allow) > MaxAllow {
-		return nil, fmt.Errorf("at most %d values may go unmasked", MaxAllow)
+		return nil, ErrTooManyAllow
 	}
 	cc := &compiled{off: map[string]bool{}, allow: map[string]bool{}, actions: c.Actions}
 	for _, o := range c.Off {
