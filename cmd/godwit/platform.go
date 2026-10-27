@@ -149,14 +149,9 @@ func (p *platform) ComposeOpen(id int64) bool { return p.windows.IsOpen(id) }
 // loads (loadAfterSetup), so that its first call finds it so; close
 // undoes each and destroys it. UI thread.
 func (p *platform) NewBodyView(message int64) (ui.NativeWebView, func(), error) {
-	hex := func(c ui.Color) string { return fmt.Sprintf("#%02x%02x%02x", c.R, c.G, c.B) }
-	bg := "light-dark(" + hex(theme.Light().Background) + ", " + hex(theme.Dark().Background) + ")"
-	v, err := p.win.NewWebView(mygo.WebViewOptions{BackgroundColor: bg})
+	v, err := p.win.NewWebView(mygo.WebViewOptions{BackgroundColor: panelBackground()})
 	if err != nil {
 		return nil, nil, err
-	}
-	if err := v.SetBackgroundColor(bg); err != nil {
-		log.Printf("the body view: %v", err)
 	}
 	page := v.Page()
 	closeView := func() {
@@ -230,18 +225,21 @@ func (p *platform) NewSignatureView() (ui.NativeWebView, func(int64), func(func(
 	return v, show, flush, closeView, nil
 }
 
+// panelBackground is the panel's color for a web view whose page is
+// transparent (the reader's body, the About page's bird): a transparent web
+// view shows the window's material, not the panel. In light-dark, it follows
+// the app's theme as it changes.
+func panelBackground() string {
+	hex := func(c ui.Color) string { return fmt.Sprintf("#%02x%02x%02x", c.R, c.G, c.B) }
+	return "light-dark(" + hex(theme.Light().Background) + ", " + hex(theme.Dark().Background) + ")"
+}
+
 // NewBirdView makes the About page's bird in the main window, kept on its
 // entry; it calls nothing back. UI thread.
 func (p *platform) NewBirdView() (ui.NativeWebView, func(), error) {
-	v, err := p.win.NewWebView(mygo.WebViewOptions{})
+	v, err := p.win.NewWebView(mygo.WebViewOptions{BackgroundColor: panelBackground()})
 	if err != nil {
 		return nil, nil, err
-	}
-	// The panel's color under the transparent page: a transparent web view
-	// shows the window's material, not the panel.
-	hex := func(c ui.Color) string { return fmt.Sprintf("#%02x%02x%02x", c.R, c.G, c.B) }
-	if err := v.SetBackgroundColor("light-dark(" + hex(theme.Light().Background) + ", " + hex(theme.Dark().Background) + ")"); err != nil {
-		log.Printf("the About page's bird: %v", err)
 	}
 	lockPage(v.Page())
 	if err := v.Page().LoadURL("/about.html"); err != nil {
