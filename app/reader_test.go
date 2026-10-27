@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"fmt"
 	"net"
 	"net/http"
 	"net/http/httptest"
@@ -974,6 +975,28 @@ func TestRelativeSenderDate(t *testing.T) {
 			t.Errorf("senderDate(%v) = %q, want %q", c.t, got, c.want)
 		}
 	}
+
+	diffYear := time.Date(2025, 10, 2, 7, 30, 0, 0, time.UTC)
+	if got := senderDate(now, diffYear); got != "2025 年 10 月 2 日" {
+		t.Errorf("senderDate diffYear = %q, want %q", got, "2025 年 10 月 2 日")
+	}
+
+	t.Cleanup(func() { i18n.SetLanguage("zh-CN") })
+	i18n.SetLanguage("de")
+	for _, c := range []struct {
+		t    time.Time
+		want string
+	}{
+		{time.Date(2026, 10, 14, 9, 41, 0, 0, time.UTC), "Heute 09:41"},
+		{time.Date(2026, 10, 13, 18, 5, 0, 0, time.UTC), "Gestern 18:05"},
+		{time.Date(2026, 10, 12, 7, 30, 0, 0, time.UTC), "Mo. 07:30"},
+		{time.Date(2026, 10, 2, 7, 30, 0, 0, time.UTC), "2. Okt."},
+		{diffYear, "2. Okt. 2025"},
+	} {
+		if got := senderDate(now, c.t); got != c.want {
+			t.Errorf("de senderDate(%v) = %q, want %q", c.t, got, c.want)
+		}
+	}
 }
 
 // TestReaderToolbarAt16: the toolbar's buttons fit the window, unclipped and
@@ -1166,4 +1189,124 @@ func TestReaderAvatarMoveDropsOldBodyRead(t *testing.T) {
 	if !b.msg.InJunk || b.msg.FolderID == m.FolderID || b.trusted || b.avatar != nil {
 		t.Fatal("old body read restored pre-move metadata or avatar")
 	}
+}
+
+func TestReaderSaveAndPrint(t *testing.T) {
+	h, accs := mailHarness(t, nil, "alice@example.com")
+	acc := accs[0]
+	m := h.deliverOne(acc, coretest.Msg("bob@example.com", acc.Email, "Save and Print Test", "Body contents here"))
+	h.openThread(m.ThreadID)
+	h.seeBody(m.ID)
+
+	tmp := t.TempDir()
+	savePath := filepath.Join(tmp, "test-saved.eml")
+
+	// 1. Save button in toolbar
+	h.plat.mu.Lock()
+	h.plat.savePath = savePath
+	h.plat.mu.Unlock()
+
+	h.click(i18n.T("reader.save"))
+	arg := h.callArg("SaveFile")
+	if !strings.HasSuffix(arg, ".eml") {
+		t.Fatalf("expected .eml default name, got %q", arg)
+	}
+	h.until("mail saved to disk", func() bool {
+		data, err := os.ReadFile(savePath)
+		return err == nil && len(data) > 0
+	})
+
+	// 2. Print button in toolbar
+	h.click(i18n.T("reader.print"))
+	printArg := h.callArg("Print")
+	if printArg != fmt.Sprint(m.ID) {
+		t.Fatalf("expected Print call for message %d, got %q", m.ID, printArg)
+	}
+
+	// 3. Cmd+S shortcut
+	savePath2 := filepath.Join(tmp, "shortcut-saved.eml")
+	h.plat.mu.Lock()
+	h.plat.savePath = savePath2
+	h.plat.calls = nil
+	h.plat.mu.Unlock()
+
+	h.tt.Key(ui.Cmd, ui.KeyS)
+	h.drain()
+	h.until("shortcut mail saved", func() bool {
+		data, err := os.ReadFile(savePath2)
+		return err == nil && len(data) > 0
+	})
+
+	// 4. Cmd+P shortcut
+	h.plat.mu.Lock()
+	h.plat.calls = nil
+	h.plat.mu.Unlock()
+
+	h.tt.Key(ui.Cmd, ui.KeyP)
+	h.drain()
+	printArg2 := h.callArg("Print")
+	if printArg2 != fmt.Sprint(m.ID) {
+		t.Fatalf("expected Print call via shortcut for %d, got %q", m.ID, printArg2)
+	}
+
+	// 5. BodySave and BodyPrint via native webview callbacks
+	view := h.plat.view(m.ID)
+	if view == nil {
+		t.Fatal("expected non-nil body view")
+	}
+
+	savePath3 := filepath.Join(tmp, "body-saved.eml")
+	h.plat.mu.Lock()
+	h.plat.savePath = savePath3
+	h.plat.calls = nil
+	h.plat.mu.Unlock()
+
+	h.app.BodySave(view)
+	h.until("body save completed", func() bool {
+		data, err := os.ReadFile(savePath3)
+		return err == nil && len(data) > 0
+	})
+
+	h.app.BodyPrint(view)
+	printArg3 := h.callArg("Print")
+	if printArg3 != fmt.Sprint(m.ID) {
+		t.Fatalf("expected BodyPrint call for %d, got %q", m.ID, printArg3)
+	}
+}
+
+func TestReaderPrintFocusedMessage(t *testing.T) {
+	h, accs := mailHarness(t, nil, "alice@example.com")
+	acc, base := accs[0], h.clock.Now()
+	h.put(acc, "INBOX", coretest.Msg("bob@example.com", acc.Email, "Plan", "first words", coretest.MessageID("a@x"), at(base, 2)))
+	h.put(acc, "INBOX", coretest.Msg("carol@example.com", acc.Email, "Re: Plan", "second words", coretest.MessageID("b@x"), coretest.InReplyTo("a@x"), at(base, 1)))
+	h.syncNow(acc)
+	page, _ := h.env.Svc.ListThreads(context.Background(), core.View{Unified: "inbox"}, "", 10)
+	msgs := h.messages(page.Items[0].ID)
+	if err := h.env.Svc.SetFlags(context.Background(), []int64{msgs[0].ID}, []string{`\Seen`}, nil); err != nil {
+		t.Fatal(err)
+	}
+	h.openThread(page.Items[0].ID)
+	h.seeBody(msgs[1].ID)
+	r := h.app.mail.reader
+	print := func(want int64, do func()) {
+		t.Helper()
+		h.plat.mu.Lock()
+		h.plat.calls = nil
+		h.plat.mu.Unlock()
+		do()
+		h.drain()
+		if got := h.callArg("Print"); got != fmt.Sprint(want) {
+			t.Fatalf("printed %s, want %d", got, want)
+		}
+	}
+	key := func() { h.tt.Key(ui.Cmd, ui.KeyP) }
+
+	print(msgs[1].ID, key) // nothing focused: the newest
+	h.click("bob@example.com")
+	h.seeBody(msgs[0].ID)
+	print(msgs[0].ID, key) // the one just expanded
+	print(msgs[1].ID, func() { h.app.BodyPrint(h.plat.view(msgs[1].ID)) })
+	print(msgs[1].ID, key) // the page that took ⌘P keeps the focus
+	r.toggle(msgs[1].ID)   // the focused one folded: the newest expanded
+	print(msgs[0].ID, key)
 }
