@@ -12,6 +12,7 @@ import (
 	"encoding/base32"
 	"errors"
 	"fmt"
+	"html"
 	"regexp"
 	"slices"
 	"strings"
@@ -155,18 +156,52 @@ func loose(s string, f func(p, hash string, braced bool) string) string {
 
 // Restore puts back the value of each placeholder in s this masker made,
 // however the model wrote it; others are left as they are.
-func (m *Masker) Restore(s string) string {
+func (m *Masker) Restore(s string) string { return m.restore(s, nil) }
+
+// RestoreHTML is Restore for HTML, a draft's body: each value is escaped,
+// and a placeholder whose braces are percent-encoded, as sanitizing leaves
+// one in an href, restores too.
+func (m *Masker) RestoreHTML(s string) string { return m.restore(unencode(s), html.EscapeString) }
+
+// restore is Restore, each value through esc if set.
+func (m *Masker) restore(s string, esc func(string) string) string {
 	if m == nil {
 		return s
 	}
 	m.mu.RLock()
 	defer m.mu.RUnlock()
 	return loose(s, func(p, hash string, _ bool) string {
-		if e, ok := m.values[hash]; ok {
-			return e.value
+		e, ok := m.values[hash]
+		switch {
+		case !ok:
+			return p
+		case esc != nil:
+			return esc(e.value)
 		}
+		return e.value
+	})
+}
+
+// encodedRe is a placeholder with its braces percent-encoded.
+var encodedRe = regexp.MustCompile(`(?i)(?:%7B){1,2}[A-Za-z0-9_]*_[A-Za-z2-7]{12}(?:%7D){1,2}`)
+
+var braces = strings.NewReplacer("%7B", "{", "%7b", "{", "%7D", "}", "%7d", "}")
+
+// unencode is s with the braces of each placeholder in it decoded.
+func unencode(s string) string {
+	return encodedRe.ReplaceAllStringFunc(s, braces.Replace)
+}
+
+// Left says s, about to be mailed, still holds a placeholder (its braces
+// percent-encoded too): one in braces, or a bare one of a kind a rule masks.
+// Sending it would mail the placeholder, not the value.
+func Left(s string) bool {
+	left := false
+	loose(unencode(s), func(p, _ string, braced bool) string {
+		left = left || braced || isKind(p)
 		return p
 	})
+	return left
 }
 
 // defuse breaks the placeholders in s, as core's defuseRefs does link

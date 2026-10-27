@@ -109,6 +109,7 @@
   "error_stale_draft": "O rascunho foi alterado em outro lugar.",
   "error_too_large": "O anexo excede o limite de tamanho.",
   "error_link_ref": "Um link neste rascunho aponta para um e-mail que já não está disponível. Substitua o link antes de enviar.",
+  "error_placeholder": "Este rascunho ainda contém um marcador no lugar de informação privada. Substitua-o pelo texto real antes de enviar.",
   "error_translator_unavailable": "O plugin de tradução não está em execução. Ative-o em Configurações › Extensões ou traduza novamente com o modelo.",
   "error_system_language_not_installed": "Baixe estes idiomas em Ajustes do Sistema › Geral › Idioma e Região › Idiomas de Tradução e traduza de novo.",
   "error_system_language_unsupported": "O macOS não traduz entre estes idiomas. Escolha outro método de tradução em Ajustes › Geral.",

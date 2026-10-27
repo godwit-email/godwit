@@ -245,6 +245,11 @@ func (r *runner) agentPi(ctx context.Context, req Request, preq pi.Request, emit
 	}
 	raws := make([][]byte, len(out), len(out)+len(res.Messages))
 	for _, b := range res.Messages {
+		var pm piMessage
+		if json.Unmarshal(b, &pm) == nil && pm.Role == "toolResult" {
+			// A result can echo the model's arguments (pi-ai's argumentsError): it is kept as the user sees it.
+			b, _ = r.e.Masker.RestoreArgs(b)
+		}
 		m, err := genkitMessage(b)
 		if err != nil {
 			return Result{Err: &Error{Code: CodeBadResponse, Msg: "the model service returned an unusable response"}}

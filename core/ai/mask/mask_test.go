@@ -227,6 +227,25 @@ func TestRestoresToolArguments(t *testing.T) {
 	assert.Equal(t, args, string(out))
 }
 
+// A draft's HTML gets its values escaped, in an href whose braces were
+// percent-encoded too; what is left that names no value is caught.
+func TestRestoresADraftsHTML(t *testing.T) {
+	m := mask.New(key)
+	p, _ := m.Text("-----BEGIN PRIVATE KEY-----\nMI\"<\n-----END PRIVATE KEY-----")
+	enc := strings.NewReplacer("{", "%7B", "}", "%7d").Replace(p)
+	html := `<p>` + p + `</p><a href="https://x.example/?k=` + enc + `">go</a>`
+	out := m.RestoreHTML(html)
+	assert.Equal(t, "<p>-----BEGIN PRIVATE KEY-----\nMI&#34;&lt;\n-----END PRIVATE KEY-----</p>"+
+		"<a href=\"https://x.example/?k=-----BEGIN PRIVATE KEY-----\nMI&#34;&lt;\n-----END PRIVATE KEY-----\">go</a>", out)
+	assert.False(t, mask.Left(out))
+
+	for _, s := range []string{"{{BANK_CARD_aaaaaaaaaaaa}}", "BANK_CARD_aaaaaaaaaaaa", `<a href="?k=%7B%7BBANK_CARD_aaaaaaaaaaaa%7D%7D">`} {
+		assert.True(t, mask.Left(m.RestoreHTML(s)), s)
+		assert.True(t, mask.Left(s), s)
+	}
+	assert.False(t, mask.Left("report_finalversion {a} 100%7D"))
+}
+
 // stream restores chunks as a run's stream does: held back from Cut on,
 // the rest at the end without a cut placeholder.
 func stream(m *mask.Masker, chunks ...string) string {

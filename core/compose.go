@@ -560,11 +560,11 @@ func (s *Service) send(ctx context.Context, draftID, want int64) error {
 			if want >= 0 && d.Revision != want {
 				return ErrStaleDraft
 			}
-			if _, err := recipients(d); err != nil {
-				return err // not sendable: nothing to check
-			}
 			if err := s.expandDraftLinks(ctx, &d); err != nil {
 				return err // the checks see what is sent
+			}
+			if _, err := recipients(d); err != nil {
+				return err // not sendable: nothing to check
 			}
 			warns, err := s.runSendChecks(ctx, d, cs)
 			if err != nil {
@@ -615,7 +615,10 @@ func (s *Service) enqueue(ctx context.Context, draftID, rev int64, checked []str
 	if afterDraftLoad != nil {
 		afterDraftLoad()
 	}
-	rcpts, err := recipients(d)
+	if err := s.expandDraftLinks(ctx, &d); err != nil {
+		return err
+	}
+	rcpts, err := recipients(d) // the envelope has the restored addresses
 	if err != nil {
 		return err
 	}
@@ -640,9 +643,6 @@ func (s *Service) enqueue(ctx context.Context, draftID, rev int64, checked []str
 	}
 	acc, err := s.account(ctx, d.AccountID)
 	if err != nil {
-		return err
-	}
-	if err := s.expandDraftLinks(ctx, &d); err != nil {
 		return err
 	}
 	o := mail.Outgoing{From: (&netmail.Address{Name: acc.Name, Address: acc.Email}).String(), ReplyTo: d.ReplyTo,

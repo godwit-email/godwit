@@ -109,6 +109,7 @@
   "error_stale_draft": "Thư nháp đã được thay đổi ở nơi khác.",
   "error_too_large": "Tệp đính kèm vượt quá giới hạn dung lượng.",
   "error_link_ref": "Một liên kết trong bản nháp trỏ đến email không còn khả dụng. Hãy thay liên kết trước khi gửi.",
+  "error_placeholder": "Bản nháp vẫn còn một ký hiệu giữ chỗ thay cho thông tin riêng tư. Hãy thay bằng nội dung thật trước khi gửi.",
   "error_translator_unavailable": "Plugin dịch thuật hiện không chạy. Hãy bật trong Cài đặt › Tiện ích mở rộng, hoặc dịch lại bằng mô hình.",
   "error_system_language_not_installed": "Hãy tải các ngôn ngữ này trong Cài đặt hệ thống › Cài đặt chung › Ngôn ngữ & Vùng › Ngôn ngữ dịch rồi dịch lại.",
   "error_system_language_unsupported": "macOS không dịch giữa các ngôn ngữ này. Hãy chọn cách dịch khác trong Cài đặt › Cài đặt chung.",

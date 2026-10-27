@@ -109,6 +109,7 @@
   "error_stale_draft": "Taslak başka bir yerde değiştirildi.",
   "error_too_large": "Ek, boyut sınırını aşıyor.",
   "error_link_ref": "Bu taslaktaki bir bağlantı artık mevcut olmayan bir e-postayı gösteriyor. Göndermeden önce bağlantıyı değiştirin.",
+  "error_placeholder": "Bu taslakta hâlâ özel bir bilginin yerini tutan bir yer tutucu var. Göndermeden önce gerçek metinle değiştirin.",
   "error_translator_unavailable": "Çeviri eklentisi çalışmıyor. Ayarlar › Uzantılar bölümünden etkinleştirin veya modelle yeniden çevirin.",
   "error_system_language_not_installed": "Bu dilleri Sistem Ayarları › Genel › Dil ve Bölge › Çeviri Dilleri'nden indirip yeniden çevirin.",
   "error_system_language_unsupported": "macOS bu diller arasında çeviri yapmıyor. Ayarlar › Genel'den başka bir çeviri yöntemi seçin.",
