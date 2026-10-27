@@ -38,6 +38,7 @@ type Masker struct {
 	values  map[string]entry // by hash
 	learned map[[sha256.Size]byte]bool
 	names   []string // the values of NAME placeholders, longest first
+	secrets []entry  // the values of placeholders found by their label (secretSpans)
 }
 
 type entry struct{ kind, value string }
@@ -82,6 +83,8 @@ func (m *Masker) placeholder(kind, v string) (string, error) {
 	}
 	if _, ok := m.values[hash]; !ok && kind == nameKind {
 		m.addName(v)
+	} else if !ok && labeled[kind] && len(v) >= minKnownSecret {
+		m.secrets = append(m.secrets, entry{kind, v})
 	}
 	m.values[hash] = entry{kind, v}
 	return "{{" + kind + "_" + hash + "}}", nil
@@ -138,7 +141,7 @@ func (m *Masker) text(s string, defuse bool, f *Found) (out string, err error) {
 	last := 0
 	cc := m.cfg.Load()
 	view, at := unescaped(s)
-	spans, over := cc.find(view, m.nameSpans(view))
+	spans, over := cc.find(view, append(m.nameSpans(view), m.secretSpans(view)...))
 	spans, over = m.outside(view, spans), m.outside(view, over)
 	for _, sp := range over {
 		if cc.action(sp.kind) == Block && !f.learning() {
@@ -281,13 +284,9 @@ func unencode(s string) string {
 // word or the user's rules mask. Sending it would mail the placeholder,
 // not the value.
 func (m *Masker) Left(s string) bool {
-	var own []rule
-	if m != nil {
-		own = m.cfg.Load().own
-	}
 	left := false
 	loose(unencode(s), func(p, _ string, braced bool) string {
-		left = left || braced || isKind(p, own)
+		left = left || braced || isKind(p, m.own())
 		return p
 	})
 	return left
@@ -326,4 +325,33 @@ func (m *Masker) defuse(s string) string {
 		i := strings.LastIndex(strings.ToLower(p), hash)
 		return p[:i-1] + "-" + p[i:]
 	})
+}
+
+// labeled are the kinds a rule finds only after their label (password: …),
+// and minKnownSecret the shortest of their values known without it.
+var labeled = map[string]bool{"SECRET": true, "PASSWORD": true}
+
+const minKnownSecret = 8
+
+// secretSpans are where s has a value once found by its label, now without
+// it: a text cut after "password:" still masks what follows.
+func (m *Masker) secretSpans(s string) []span {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	var out []span
+	for _, e := range m.secrets {
+		for at := 0; ; {
+			i := strings.Index(s[at:], e.value)
+			if i < 0 {
+				break
+			}
+			a, b := at+i, at+i+len(e.value)
+			at = a + 1
+			if a > 0 && alnumRune(lastRune(s[:a])) || b < len(s) && alnumRune(firstRune(s[b:])) {
+				continue
+			}
+			out = append(out, span{a, b, e.kind})
+		}
+	}
+	return out
 }

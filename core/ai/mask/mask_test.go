@@ -263,10 +263,10 @@ func stream(m *mask.Masker, chunks ...string) string {
 	var out, held string
 	for _, c := range chunks {
 		text := held + c
-		cut := mask.Cut(text)
+		cut := m.Cut(text)
 		out, held = out+m.Restore(text[:cut]), text[cut:]
 	}
-	return out + m.Restore(mask.DropCut(held))
+	return out + m.Restore(m.DropCut(held))
 }
 
 func TestRestoresAPlaceholderCutBetweenChunks(t *testing.T) {

@@ -2,6 +2,7 @@ package mask
 
 import (
 	"regexp"
+	"slices"
 	"strings"
 )
 
@@ -25,11 +26,11 @@ var (
 
 // Cut is where text, a stream so far, may end in a placeholder the next
 // chunk finishes; len(text) when it does not.
-func Cut(text string) int {
+func (m *Masker) Cut(text string) int {
 	if loc := braceTail.FindStringIndex(text); loc != nil && len(text)-loc[0] <= maxHeld && !strings.HasSuffix(text, "}}") {
 		return loc[0]
 	}
-	if loc := wordTail.FindStringIndex(text); loc != nil && kindPrefix(text[loc[0]:]) {
+	if loc := wordTail.FindStringIndex(text); loc != nil && kindPrefix(text[loc[0]:], m.own()) {
 		return loc[0]
 	}
 	return len(text)
@@ -37,24 +38,24 @@ func Cut(text string) int {
 
 // DropCut is text without the placeholder its end cut short: one the model
 // was still writing when the stream ended, which names no value.
-func DropCut(text string) string {
+func (m *Masker) DropCut(text string) string {
 	loc := cutTail.FindStringIndex(text)
 	if loc == nil {
 		return text
 	}
 	switch t := strings.TrimRight(text[loc[0]:], " \t"); {
 	case wholeBody.MatchString(t): // restored as it is
-	case strings.HasPrefix(t, "{{"), strings.Contains(t, "_") && kindPrefix(t):
+	case strings.HasPrefix(t, "{{"), strings.Contains(t, "_") && kindPrefix(t, m.own()):
 		return text[:loc[0]]
 	}
 	return text
 }
 
 // kindPrefix says w, in any case, starts a placeholder without braces: a
-// start of KIND_, or KIND_ and up to its hash.
-func kindPrefix(w string) bool {
+// start of KIND_, or KIND_ and up to its hash, of a built-in kind or own.
+func kindPrefix(w string, own []rule) bool {
 	u := strings.ToUpper(w)
-	for _, r := range rules {
+	for _, r := range slices.Concat([]rule{{kind: nameKind}, {kind: TermKind}}, own, rules) {
 		k := r.kind + "_"
 		if strings.HasPrefix(k, u) {
 			return true
@@ -64,4 +65,12 @@ func kindPrefix(w string) bool {
 		}
 	}
 	return false
+}
+
+// own are the user's rules, whose kinds name placeholders too.
+func (m *Masker) own() []rule {
+	if m == nil {
+		return nil
+	}
+	return m.cfg.Load().own
 }

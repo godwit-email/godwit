@@ -81,7 +81,7 @@ func (r *runner) runPi(req Request) Result {
 	}
 	text := reply.String()
 	if !req.Raw {
-		text = r.e.Masker.Restore(mask.DropCut(text))
+		text = r.e.Masker.Restore(r.e.Masker.DropCut(text))
 	}
 	return Result{Messages: []Message{{Role: "user", Text: req.Prompt}, {Role: "model", Text: text}}}
 }

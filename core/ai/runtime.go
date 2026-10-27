@@ -247,14 +247,14 @@ func (r *runner) restored(ev Event) []Event {
 	var out []Event
 	streamed := ev.Kind == "text" || ev.Kind == "reasoning"
 	if r.held != "" && ev.Kind != r.heldKind {
-		out = append(out, Event{Kind: r.heldKind, Text: m.Restore(mask.DropCut(r.held))})
+		out = append(out, Event{Kind: r.heldKind, Text: m.Restore(m.DropCut(r.held))})
 		r.held = ""
 	}
 	if !streamed {
 		return append(out, ev)
 	}
 	text := r.held + ev.Text
-	cut := mask.Cut(text)
+	cut := m.Cut(text)
 	if r.held, r.heldKind = text[cut:], ev.Kind; cut > 0 {
 		ev.Text = m.Restore(text[:cut])
 		out = append(out, ev)

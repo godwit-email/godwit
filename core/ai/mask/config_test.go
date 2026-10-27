@@ -2,6 +2,7 @@ package mask_test
 
 import (
 	"fmt"
+	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -152,4 +153,27 @@ func TestAnUnknownTermPlaceholderIsLeft(t *testing.T) {
 		assert.Error(t, err, p)
 	}
 	assert.False(t, m.Left("report_finalversion"))
+}
+
+// A placeholder of a word, the user's rule or a name the stream cuts is
+// held back like a built-in one, and restores whole.
+func TestAStreamHoldsBackAWordsPlaceholder(t *testing.T) {
+	m := configured(t, mask.Config{Words: []string{"acme"}})
+	p, err := m.Text("acme")
+	require.NoError(t, err)
+	bare := strings.Trim(p, "{}")
+	assert.Equal(t, 0, m.Cut(bare[:8]), "a start of TERM_… is held back")
+	assert.Equal(t, "acme", m.Restore(bare))
+}
+
+// A value found by its label masks without it afterwards: a text cut after
+// "password:" does not send what follows.
+func TestALabeledSecretIsKnownWithoutItsLabel(t *testing.T) {
+	m := mask.New(key)
+	_, err := m.Text("password: abcd1234efgh5678")
+	require.NoError(t, err)
+	out, err := m.Text("abcd1234efgh5678")
+	require.NoError(t, err)
+	assert.NotContains(t, out, "abcd1234efgh5678")
+	assert.Equal(t, "abcd1234efgh5678", m.Restore(out))
 }
