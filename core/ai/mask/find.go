@@ -8,12 +8,14 @@ import (
 
 // rule finds values of one kind: the match, or its first group that matched;
 // bound are the characters that may not touch it on either side. fit, if
-// set, checks it and says how much of it is the value (0: none).
+// set, checks it and says how much of it is the value (0: none); word
+// takes it only as a whole word.
 type rule struct {
 	kind  string
 	re    *regexp.Regexp
 	bound string
 	fit   func(v string) int
+	word  bool
 }
 
 const (
@@ -59,10 +61,15 @@ type span struct {
 	kind       string
 }
 
-// find is the values in s, in order, none overlapping.
-func find(s string) []span {
+// find is the values in s, in order, none overlapping: of the user's rules
+// and words first, then of the built-in rules of the categories on, but
+// none the user allowed.
+func (c *compiled) find(s string) []span {
 	var found []span
-	for _, r := range rules {
+	for _, r := range slices.Concat(c.own, rules) {
+		if c.off[categories[r.kind]] {
+			continue
+		}
 		for _, loc := range r.re.FindAllStringSubmatchIndex(s, -1) {
 			a, b := loc[0], loc[1]
 			for g := 2; g < len(loc); g += 2 {
@@ -76,7 +83,8 @@ func find(s string) []span {
 					continue
 				}
 			}
-			if a > 0 && strings.IndexByte(r.bound, s[a-1]) >= 0 || b < len(s) && strings.IndexByte(r.bound, s[b]) >= 0 {
+			if a > 0 && strings.IndexByte(r.bound, s[a-1]) >= 0 || b < len(s) && strings.IndexByte(r.bound, s[b]) >= 0 ||
+				r.word && !wholeWord(s, a, b) || c.allow[strings.ToLower(s[a:b])] {
 				continue
 			}
 			found = append(found, span{a, b, r.kind})

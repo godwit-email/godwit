@@ -26,6 +26,7 @@ import (
 type Masker struct {
 	key []byte
 	off atomic.Bool
+	cfg atomic.Pointer[compiled]
 
 	mu      sync.RWMutex
 	values  map[string]entry // by hash
@@ -36,7 +37,9 @@ type entry struct{ kind, value string }
 
 // New is a masker with key, the device's secret, on.
 func New(key []byte) *Masker {
-	return &Masker{key: slices.Clone(key), values: map[string]entry{}, learned: map[[sha256.Size]byte]bool{}}
+	m := &Masker{key: slices.Clone(key), values: map[string]entry{}, learned: map[[sha256.Size]byte]bool{}}
+	m.cfg.Store(&compiled{})
+	return m
 }
 
 // On says whether what is sent is to be masked (the switch, 总开关): the
@@ -101,7 +104,7 @@ func (m *Masker) text(s string, defuse bool) (out string, err error) {
 	}
 	var b strings.Builder
 	last := 0
-	for _, sp := range find(s) {
+	for _, sp := range m.cfg.Load().find(s) {
 		p, err := m.placeholder(sp.kind, s[sp.start:sp.end])
 		if err != nil {
 			return "", err
