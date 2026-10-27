@@ -54,12 +54,9 @@ func (m *Masker) RestoreArgs(args json.RawMessage) (out json.RawMessage, err err
 	}
 	s, ok := walk(string(args), scope{tool: true}, func(s string, _ scope) string {
 		s = m.Restore(s)
-		loose(s, func(p, _ string, braced bool) string {
-			if braced || isKind(p) {
-				err = errUnknown
-			}
-			return p
-		})
+		if Left(s) {
+			err = errUnknown
+		}
 		return s
 	})
 	if !ok {
