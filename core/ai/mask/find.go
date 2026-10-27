@@ -81,6 +81,44 @@ type span struct {
 // over are those an earlier one of another category overlapped: their
 // category still blocks.
 func (c *compiled) find(s string, known []span) (out, over []span) {
+	found := slices.Clone(c.ruled(s))
+	for _, sp := range known {
+		if !c.off[categories[sp.kind]] && !c.allow[strings.ToLower(s[sp.start:sp.end])] {
+			found = append(found, sp)
+		}
+	}
+	slices.SortStableFunc(found, func(x, y span) int { return x.start - y.start })
+	for _, sp := range found {
+		if len(out) == 0 || sp.start >= out[len(out)-1].end {
+			out = append(out, sp)
+		} else if categories[sp.kind] != categories[out[len(out)-1].kind] {
+			over = append(over, sp)
+		}
+	}
+	return out, over
+}
+
+// ruled is what c's rules find in s, remembered: a run sends its whole
+// history again at each step, and c is new when the user's settings change.
+func (c *compiled) ruled(s string) []span {
+	c.mu.Lock()
+	found, ok := c.seen[s]
+	c.mu.Unlock()
+	if ok {
+		return found
+	}
+	found = c.scan(s)
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if c.size += len(s); c.seen == nil || c.size > memoBytes {
+		c.seen, c.size = map[string][]span{}, len(s) // shortcut: forgets everything at once, enough while one history fits
+	}
+	c.seen[s] = found
+	return found
+}
+
+// scan is what c's rules find in s.
+func (c *compiled) scan(s string) []span {
 	var found []span
 	for i, r := range slices.Concat(c.own, rules) {
 		own := i < len(c.own)
@@ -113,20 +151,7 @@ func (c *compiled) find(s string, known []span) (out, over []span) {
 			found = append(found, span{a, b, r.kind, own})
 		}
 	}
-	for _, sp := range known {
-		if !c.off[categories[sp.kind]] && !c.allow[strings.ToLower(s[sp.start:sp.end])] {
-			found = append(found, sp)
-		}
-	}
-	slices.SortStableFunc(found, func(x, y span) int { return x.start - y.start })
-	for _, sp := range found {
-		if len(out) == 0 || sp.start >= out[len(out)-1].end {
-			out = append(out, sp)
-		} else if categories[sp.kind] != categories[out[len(out)-1].kind] {
-			over = append(over, sp)
-		}
-	}
-	return out, over
+	return found
 }
 
 // whole is a fit that takes all of a value ok accepts.

@@ -60,6 +60,9 @@ func codes(s string) [][]int {
 // resets a password stands in s. One longer than 80 characters went as a
 // godwit://link/ reference already.
 func links(s string) [][]int {
+	if !strings.Contains(s, "https://") { // ActionLink takes only these: skip its slow scan
+		return nil
+	}
 	var out [][]int
 	mails(s, func(at int, subject, text string) {
 		link, _ := mail.ActionLink(subject, text, "")

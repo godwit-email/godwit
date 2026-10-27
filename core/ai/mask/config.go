@@ -7,6 +7,7 @@ import (
 	"regexp"
 	"slices"
 	"strings"
+	"sync"
 	"unicode"
 	"unicode/utf8"
 )
@@ -90,6 +91,10 @@ type compiled struct {
 	actions map[string]string // by category; the user's own kinds are always masked
 	own     []rule            // the user's rules and words, found before the built-in ones
 	allow   map[string]bool
+
+	mu   sync.Mutex
+	seen map[string][]span // ruled's memo, of size bytes of text
+	size int
 }
 
 // Check says what is wrong with c, if anything: a rule's pattern that does
