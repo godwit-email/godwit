@@ -10,6 +10,7 @@ import (
 	"strings"
 
 	"github.com/godwit-email/godwit/core/ai"
+	"github.com/godwit-email/godwit/core/ai/mask"
 	"github.com/godwit-email/godwit/core/events"
 	gomail "github.com/godwit-email/godwit/core/mail"
 	"github.com/godwit-email/godwit/core/skills"
@@ -55,6 +56,18 @@ type Settings struct {
 	// card numbers go to a model off this device as placeholders. On by
 	// default, for settings stored before it too.
 	Masking bool
+	// MaskCategories say which categories masking finds, and what is done
+	// with each one's values.
+	MaskCategories MaskCategories
+	// MaskWords are the user's own words to mask (自定义词), as TERM: in any
+	// case unless MaskWordsCase, inside longer words unless MaskWordsWhole.
+	MaskWords                     []string
+	MaskWordsCase, MaskWordsWhole bool
+	// MaskRules are the user's patterns (自定义正则), each masking as its kind;
+	// at most mask.MaxRules, checked as they are saved.
+	MaskRules []mask.Rule
+	// MaskAllow are the values never masked (白名单), in any case; at most mask.MaxAllow.
+	MaskAllow []string
 	// LabelDisplay is how label chips show: LabelDisplayBoth (the default;
 	// "" too), LabelDisplayIcon or LabelDisplayText.
 	LabelDisplay string
@@ -123,7 +136,7 @@ func defaultSettings() Settings {
 	return Settings{Theme: "system", Density: "compact", FontSize: 14, SettingsVersion: settingsVersion, ReplyLanguage: "match", RemoteImages: "auto",
 		KeepInBackground: true, UnreadOnAppIcon: true, NotifyNewMail: true, NotifyPreview: true, ThreadView: true,
 		ThreadCollapse: true, ThreadCollapseThreshold: DefaultThreadCollapse, AutoLabel: true, LabelDisplay: LabelDisplayBoth, JudgeThreshold: 0.8,
-		MCPSend: MCPSendConfirm, Masking: true}
+		MCPSend: MCPSendConfirm, Masking: true, MaskCategories: defaultMaskCategories()}
 }
 
 var langRE = regexp.MustCompile(`^[A-Za-z]{2,3}(-[A-Za-z0-9]{2,8})*$`)
@@ -163,6 +176,14 @@ func (st Settings) validate() error {
 	}
 	if name, ok := strings.CutPrefix(st.Translator, translatorPrefix); st.Translator != "" && (!ok || !skills.ValidName(name)) {
 		return fmt.Errorf("invalid translator %q", st.Translator)
+	}
+	for name, c := range st.MaskCategories.All() {
+		if !in(c.Action, "", MaskHide, MaskWarn, MaskBlock) {
+			return fmt.Errorf("invalid masking action %q for %s", c.Action, name)
+		}
+	}
+	if err := mask.Check(st.maskConfig()); err != nil {
+		return err
 	}
 	if strings.Contains(st.JudgeService, "/") && !isPluginRef(st.JudgeService) {
 		return fmt.Errorf("invalid judge service %q", st.JudgeService)

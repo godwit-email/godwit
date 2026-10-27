@@ -17,6 +17,7 @@ import (
 
 	"github.com/godwit-email/godwit/contract"
 	"github.com/godwit-email/godwit/core"
+	"github.com/godwit-email/godwit/core/ai/mask"
 	"github.com/godwit-email/godwit/core/auth"
 	"github.com/godwit-email/godwit/core/coretest"
 	"github.com/godwit-email/godwit/core/events"
@@ -222,6 +223,9 @@ func TestSettings(t *testing.T) {
 			NotifyNewMail: false, NotifySmartOnly: true, NotifyPreview: false,
 			QuickReplies: true, Summary: true, ThreadView: false,
 			DefaultModel: "svc/big", SmallModel: "svc/small", JudgeService: "judge", JudgeThreshold: 0.85, Translator: "plugin/dlx", LocalAPI: true, SidebarWidth: 320, ListWidth: 400, SignatureDelimiter: true,
+			MaskCategories: core.MaskCategories{Names: core.MaskCategory{On: true, Action: core.MaskWarn}},
+			MaskWords:      []string{"Falcon"}, MaskWordsCase: true, MaskWordsWhole: true,
+			MaskRules: []mask.Rule{{Kind: "EMPLOYEE_ID", Regex: `E\d{6}`}}, MaskAllow: []string{"GitHub"},
 			TrustedImageSenders: []string{"bob@example.com"},      // only TrustImageSender sets it; SetSettings keeps it
 			BlockedSenders:      []string{"spammer@example.com"},  // only BlockSender sets it; SetSettings keeps it
 			DisabledBuiltins:    []string{core.SignInCodesPlugin}} // only SetPluginEnabled sets it; SetSettings keeps it
