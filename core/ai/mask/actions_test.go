@@ -71,3 +71,23 @@ func plain(hits []mask.Hit) []mask.Hit {
 	}
 	return out
 }
+
+// A value another one overlaps still blocks: a custom word inside an address
+// set to 拦截 does not let the address go out.
+func TestAnOverlappedValueStillBlocks(t *testing.T) {
+	m := configured(t, mask.Config{Words: []string{"alice"}, Actions: map[string]string{mask.Emails: mask.Block}})
+	_, err := m.Text("mail alice@example.com")
+	var blocked *mask.BlockedError
+	require.ErrorAs(t, err, &blocked)
+	assert.Equal(t, []string{mask.Emails}, blocked.Categories)
+}
+
+// Learning a stored text rebuilds its placeholders whatever its category's
+// action is now: one masked before, then set to 拦截, still restores.
+func TestLearnRestoresACategoryNowBlocked(t *testing.T) {
+	p, err := configured(t, mask.Config{}).Text("card " + card)
+	require.NoError(t, err)
+	m := configured(t, mask.Config{Actions: map[string]string{mask.IDs: mask.Block}})
+	m.Learn(`{"messages":[{"role":"user","content":"card ` + card + `"}]}`)
+	assert.Equal(t, "card "+card, m.Restore(p))
+}

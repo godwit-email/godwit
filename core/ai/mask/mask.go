@@ -115,15 +115,15 @@ func (m *Masker) Learn(text string) {
 	m.learned[sum] = true
 	m.mu.Unlock()
 	if !seen {
-		m.Body(text)
+		m.bodyTo(text, &Found{learn: true})
 	}
 }
 
 // text masks s; defuse says it is not the model's own. A rule that fails
 // fails it: what it would have found must not go out. Each value found is
-// added to f; one of a category set to Block fails it (*BlockedError), but
-// only once all of s is masked, so a blocked request still teaches the
-// masker its placeholders (Learn).
+// added to f; one of a category set to Block fails it (*BlockedError), even
+// where another value overlapped it, but only once all of s is masked.
+// Learning (f.learn) masks every value, whatever its category's action.
 func (m *Masker) text(s string, defuse bool, f *Found) (out string, err error) {
 	defer func() {
 		if r := recover(); r != nil {
@@ -138,8 +138,18 @@ func (m *Masker) text(s string, defuse bool, f *Found) (out string, err error) {
 	last := 0
 	cc := m.cfg.Load()
 	view, at := unescaped(s)
-	for _, sp := range cc.find(view, m.nameSpans(view)) {
+	spans, over := cc.find(view, m.nameSpans(view))
+	for _, sp := range over {
+		if cc.action(sp.kind) == Block && !f.learning() {
+			f.add(m.hit(sp.kind, view[sp.start:sp.end], Block))
+			block = block.with(categories[sp.kind])
+		}
+	}
+	for _, sp := range spans {
 		v, act := view[sp.start:sp.end], cc.action(sp.kind)
+		if f.learning() {
+			act = Mask
+		}
 		if at != nil {
 			sp.start, sp.end = at[sp.start], at[sp.end]
 		}

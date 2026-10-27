@@ -77,7 +77,9 @@ type span struct {
 // find is the values in s, in order, none overlapping: of the user's rules
 // and words first, then of the built-in rules of the categories on, then
 // those known; where two start together, a rule's. None the user allowed.
-func (c *compiled) find(s string, known []span) []span {
+// over are those an earlier one of another category overlapped: their
+// category still blocks.
+func (c *compiled) find(s string, known []span) (out, over []span) {
 	var found []span
 	for _, r := range slices.Concat(c.own, rules) {
 		if c.off[categories[r.kind]] {
@@ -115,13 +117,14 @@ func (c *compiled) find(s string, known []span) []span {
 		}
 	}
 	slices.SortStableFunc(found, func(x, y span) int { return x.start - y.start })
-	out := found[:0]
 	for _, sp := range found {
 		if len(out) == 0 || sp.start >= out[len(out)-1].end {
 			out = append(out, sp)
+		} else if categories[sp.kind] != categories[out[len(out)-1].kind] {
+			over = append(over, sp)
 		}
 	}
-	return out
+	return out, over
 }
 
 // whole is a fit that takes all of a value ok accepts.

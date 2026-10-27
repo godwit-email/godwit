@@ -69,7 +69,11 @@ func (m *Masker) hit(kind, v, action string) Hit {
 type Found struct {
 	mu   sync.Mutex
 	hits []Hit
+	// learn masks every value whatever its action, for its placeholder: Learn
+	learn bool
 }
+
+func (f *Found) learning() bool { return f != nil && f.learn }
 
 func (f *Found) add(hs ...Hit) {
 	if f == nil {
