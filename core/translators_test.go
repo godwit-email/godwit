@@ -446,6 +446,79 @@ func TestTranslateDraftHTMLKeepsImagesAndCode(t *testing.T) {
 	}
 }
 
+// 脱敏 at a translation plugin (docs/adr/0025-mask-at-cloud-egress.md, M3):
+// at each of the four calls the plugin gets the card as a placeholder, and
+// the reader, the cache and the draft get the card.
+func TestPluginTranslateMasks(t *testing.T) {
+	const card = "4111 1111 1111 1111"
+	e := newAssistEnv(t)
+	record := useNativeTranslator(t, e.s, nil)
+	assertMasked := func(what string) {
+		t.Helper()
+		req := translateRequests(t, record)
+		require.NotEmpty(t, req)
+		got := fmt.Sprint(req[len(req)-1]["texts"])
+		assert.NotContains(t, got, card, what)
+		assert.Contains(t, got, "{{BANK_CARD_", what)
+	}
+
+	setBody(t, e, "Card "+card+"\n\nSee you", "")
+	tg := Target{Kind: "message", ID: e.msg}
+	want := []string{"[zh-CN] Card " + card + "\n\n[zh-CN] See you"}
+	assert.Equal(t, want, texts(e.run(t, "translate", tg)), "the reading pane")
+	assertMasked("the reading pane")
+	assert.Equal(t, want, texts(e.run(t, "translate", tg)), "cached with the card")
+
+	sel := Target{Kind: "selection", ID: e.msg, Text: "Pay with " + card}
+	assert.Equal(t, []string{"[zh-CN] Pay with " + card}, texts(e.run(t, "translate", sel)), "a selection")
+	assertMasked("a selection")
+
+	setBody(t, e, "", "<p>Card "+card+"</p>")
+	body := Target{Kind: "message", ID: e.msg, PreserveHTML: true}
+	evs := e.run(t, "translate", body)
+	require.Equal(t, "done", evs[len(evs)-1].Kind, "%+v", evs)
+	assert.Equal(t, map[string]string{"Card " + card: "[zh-CN] Card " + card}, evs[1].Translations, "the body")
+	assertMasked("the body")
+	assert.Equal(t, evs, e.run(t, "translate", body), "cached with the card")
+
+	d := e.newDraft(t, "Card "+card, "<p>Card "+card+"</p>")
+	e.accept(t, translateDraft(t, e, d, SkillOptions{TargetLanguage: "fr"}))
+	got := e.getDraft(t, d.ID)
+	assert.Equal(t, "[fr] Card "+card, got.Subject, "the draft's subject")
+	assertMasked("the draft's subject")
+	ed, _, _ := parts(t, got.HTML)
+	assert.Equal(t, "<p>[fr] Card "+card+"</p>", ed, "the draft")
+	for _, r := range translateRequests(t, record) {
+		assert.NotContains(t, fmt.Sprint(r["texts"]), card)
+	}
+}
+
+// A value a long text is cut inside is masked before the cut, in the body
+// and in a draft, and a placeholder the plugin wrote in capitals restores.
+func TestPluginTranslateMasksAcrossACut(t *testing.T) {
+	const card = "4111 1111 1111 1111"
+	e := newAssistEnv(t)
+	record := useNativeTranslator(t, e.s, map[string]any{"translateUpper": true})
+	// splitText cuts at the last space before the limit: inside the card.
+	long := func(limit int) string { return strings.Repeat("a", limit-10) + " " + card + " b" }
+
+	text := long(8 << 10)
+	setBody(t, e, text, "")
+	evs := e.run(t, "translate", Target{Kind: "message", ID: e.msg, PreserveHTML: true})
+	require.Equal(t, "done", evs[len(evs)-1].Kind, "%+v", evs)
+	require.Greater(t, len(translateRequests(t, record)[0]["texts"].([]any)), 1, "the text was cut")
+	assert.Contains(t, evs[1].Translations[text], card)
+
+	d := e.newDraft(t, "", "<p>"+long(draftPieceBytes)+"</p>")
+	e.accept(t, translateDraft(t, e, d, SkillOptions{TargetLanguage: "fr"}))
+	assert.Contains(t, e.getDraft(t, d.ID).HTML, card)
+	for _, r := range translateRequests(t, record) {
+		for _, x := range r["texts"].([]any) {
+			assert.NotContains(t, x, "1111", "no piece of the card is sent")
+		}
+	}
+}
+
 // A draft larger than one ABI request is sent in batches, in order.
 func TestTranslateDraftHTMLBatches(t *testing.T) {
 	e := newAssistEnv(t)

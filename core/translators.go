@@ -20,6 +20,7 @@ import (
 	"unicode/utf8"
 
 	"github.com/godwit-email/godwit/core/ai"
+	"github.com/godwit-email/godwit/core/ai/mask"
 	"github.com/godwit-email/godwit/core/gateway"
 	"github.com/godwit-email/godwit/core/mail"
 	"github.com/godwit-email/godwit/core/plugins"
@@ -44,6 +45,8 @@ type translateRequest struct {
 	Texts  []string `json:"texts"`
 	Source string   `json:"source"`
 	Target string   `json:"target"`
+	// masked: the caller masked Texts (maskTexts) and restores what it joins.
+	masked bool
 }
 
 type translateResult struct {
@@ -108,10 +111,29 @@ func (s *Service) ListTranslators(ctx context.Context) ([]TranslatorInfo, error)
 }
 
 // boundTranslator is a translation channel ready to call: version is part of
-// its cache keys, what may change its translations.
+// its cache keys, what may change its translations. masker masks what call
+// sends, nil for the system's translation, which runs on this device.
 type boundTranslator struct {
 	version []any
 	call    func(ctx context.Context, req translateRequest) (translateResult, error)
+	masker  *mask.Masker
+}
+
+// maskTexts masks texts as call would, for a caller about to cut them into
+// pieces, where a value cut in two would not be found: it sends the pieces
+// with masked set and restores (masker.Restore) the texts it joins from them.
+func (b boundTranslator) maskTexts(texts []string) ([]string, error) {
+	if b.masker == nil || !b.masker.On() {
+		return texts, nil
+	}
+	out := make([]string, len(texts))
+	for i, t := range texts {
+		var err error
+		if out[i], err = b.masker.Text(t); err != nil {
+			return nil, err
+		}
+	}
+	return out, nil
 }
 
 // translatorFor is the plugin name as a translator: the system's for the
@@ -144,9 +166,15 @@ func (s *Service) translatorFor(ctx context.Context, name string) (boundTranslat
 	if err != nil {
 		return boundTranslator{}, err
 	}
-	return boundTranslator{version: []any{rp.hash, cfgVer}, call: func(ctx context.Context, req translateRequest) (translateResult, error) {
-		return s.callTranslator(ctx, name, tr, rp, req)
-	}}, nil
+	mk, err := s.masker()
+	if err != nil {
+		return boundTranslator{}, err
+	}
+	b := boundTranslator{version: []any{rp.hash, cfgVer}, masker: mk}
+	b.call = func(ctx context.Context, req translateRequest) (translateResult, error) {
+		return s.callTranslator(ctx, name, tr, rp, b, req)
+	}
+	return b, nil
 }
 
 // pluginTranslator is the running plugin name as a translator.
@@ -309,8 +337,17 @@ func (s *Service) runPluginTranslate(ctx context.Context, end func(), plugin str
 // callTranslator runs one translation and keeps the plugin's failure count:
 // a script plugin's error counts as an action's does, a native one's error
 // envelope is its answer (plugins.IsNativeFailure), and a wrong number of
-// texts always counts.
-func (s *Service) callTranslator(ctx context.Context, plugin string, tr translator, rp *runningPlugin, req translateRequest) (translateResult, error) {
+// texts always counts. The plugin is a service off this device: it gets the
+// texts masked (脱敏, docs/adr/0025-mask-at-cloud-egress.md), and its
+// translations are restored however it changed the placeholders.
+func (s *Service) callTranslator(ctx context.Context, plugin string, tr translator, rp *runningPlugin, b boundTranslator, req translateRequest) (translateResult, error) {
+	if !req.masked {
+		texts, err := b.maskTexts(req.Texts)
+		if err != nil {
+			return translateResult{}, err
+		}
+		req.Texts = texts
+	}
 	res, err := tr.translate(ctx, req)
 	if err == nil && len(res.Texts) != len(req.Texts) {
 		err = fmt.Errorf("%w: %d texts for %d", errTranslatorAnswer, len(res.Texts), len(req.Texts))
@@ -324,6 +361,9 @@ func (s *Service) callTranslator(ctx context.Context, plugin string, tr translat
 			failed = s.pluginFailed(ctx, plugin, rp.gen)
 		}
 		return translateResult{}, errors.Join(fmt.Errorf("translation plugin %s: %w", plugin, s.cleanError(err)), failed)
+	}
+	for i, t := range res.Texts {
+		res.Texts[i] = b.masker.Restore(t)
 	}
 	return res, s.pluginSucceeded(ctx, plugin, rp.gen)
 }
@@ -447,6 +487,9 @@ func (s *Service) translateDraftHTML(ctx context.Context, plugin, src, target st
 	if len(texts) == 0 {
 		return src, nil
 	}
+	if texts, err = tr.maskTexts(texts); err != nil {
+		return "", err
+	}
 	// Long blocks go in pieces, and pieces in batches, each request well within the ABI's limit.
 	var pieces []draftPiece
 	for i, t := range texts {
@@ -464,7 +507,7 @@ func (s *Service) translateDraftHTML(ctx context.Context, plugin, src, target st
 			batch = append(batch, pieces[end].text)
 			end++
 		}
-		res, err := tr.call(ctx, translateRequest{Texts: batch, Target: target})
+		res, err := tr.call(ctx, translateRequest{Texts: batch, Target: target, masked: true})
 		if err != nil {
 			return "", err
 		}
@@ -475,7 +518,7 @@ func (s *Service) translateDraftHTML(ctx context.Context, plugin, src, target st
 		start = end
 	}
 	for i, seg := range segs {
-		setText(seg, leads[i]+out[i]+trails[i])
+		setText(seg, leads[i]+tr.masker.Restore(out[i])+trails[i])
 	}
 	for _, n := range leaves {
 		pruneEmpty(n)
