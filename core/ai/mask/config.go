@@ -47,7 +47,7 @@ const (
 type Rule struct{ Kind, Regex string }
 
 // Config is what the user set: the categories turned Off; what is done
-// with each category's values (Actions: Warn or Block, else Hide); their
+// with each category's values (Actions: Warn or Block, else Mask); their
 // Words, matched in any case unless WordsCase, inside other words unless
 // WordsWhole; their Rules; and the values never masked (Allow, in any case).
 type Config struct {

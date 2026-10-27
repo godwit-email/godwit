@@ -12,7 +12,7 @@ import (
 // placeholders; 仅警告 sends them as they are, and they are recorded; 拦截
 // sends nothing of the request (docs/adr/0025-mask-at-cloud-egress.md).
 const (
-	Hide  = "mask"
+	Mask  = "mask"
 	Warn  = "warn"
 	Block = "block"
 )
@@ -23,7 +23,7 @@ func (c *compiled) action(kind string) string {
 	if a := c.actions[categories[kind]]; categories[kind] != "" && (a == Warn || a == Block) {
 		return a
 	}
-	return Hide
+	return Mask
 }
 
 // BlockedError refuses a request that holds values of Categories, each set

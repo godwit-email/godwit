@@ -106,13 +106,13 @@ func maskCategoryRow(c *ui.Context, name string, cat *core.MaskCategory) {
 	settingRow(c, label, i18n.T("settings.masking.cat."+name+".help"), func() {
 		ui.Row(c).Gap(c.Theme().Space(3)).AlignItems(ui.Center).Children(func() {
 			if cat.On {
-				action := cmp.Or(cat.Action, core.MaskHide)
+				action := cmp.Or(cat.Action, core.MaskMask)
 				settingSelect(c, i18n.T("settings.masking.action"), &action, []kit.Option[string]{
-					{Value: core.MaskHide, Label: i18n.T("settings.masking.action.mask")},
+					{Value: core.MaskMask, Label: i18n.T("settings.masking.action.mask")},
 					{Value: core.MaskWarn, Label: i18n.T("settings.masking.action.warn")},
 					{Value: core.MaskBlock, Label: i18n.T("settings.masking.action.block")},
 				})
-				if action != cmp.Or(cat.Action, core.MaskHide) {
+				if action != cmp.Or(cat.Action, core.MaskMask) {
 					cat.Action = action
 				}
 			}

@@ -42,7 +42,7 @@ func TestARequestRecordsWhatItFound(t *testing.T) {
 	assert.Contains(t, out, "ann@example.com")
 	assert.Equal(t, "wit", feature)
 	assert.Equal(t, []mask.Hit{
-		{Kind: "BANK_CARD", Category: mask.IDs, First: "4", Len: 19, Action: mask.Hide},
+		{Kind: "BANK_CARD", Category: mask.IDs, First: "4", Len: 19, Action: mask.Mask},
 		{Kind: "EMAIL", Category: mask.Emails, First: "a", Len: 3, Action: mask.Warn},
 	}, plain(got))
 
@@ -51,9 +51,9 @@ func TestARequestRecordsWhatItFound(t *testing.T) {
 	require.ErrorAs(t, err, &blocked)
 	assert.Equal(t, []mask.Hit{
 		{Kind: "PHONE", Category: mask.Phones, First: "+", Len: 17, Action: mask.Block},
-		{Kind: "BANK_CARD", Category: mask.IDs, First: "4", Len: 19, Action: mask.Hide},
+		{Kind: "BANK_CARD", Category: mask.IDs, First: "4", Len: 19, Action: mask.Mask},
 	}, plain(got), "a blocked request is recorded too")
-	assert.Equal(t, 1, turn.Count(mask.Hide), "the card, once")
+	assert.Equal(t, 1, turn.Count(mask.Mask), "the card, once")
 	assert.Equal(t, 1, turn.Count(mask.Warn))
 	assert.Equal(t, 1, turn.Count(mask.Block))
 

@@ -178,7 +178,7 @@ func (st Settings) validate() error {
 		return fmt.Errorf("invalid translator %q", st.Translator)
 	}
 	for name, c := range st.MaskCategories.All() {
-		if !in(c.Action, "", MaskHide, MaskWarn, MaskBlock) {
+		if !in(c.Action, "", MaskMask, MaskWarn, MaskBlock) {
 			return fmt.Errorf("invalid masking action %q for %s", c.Action, name)
 		}
 	}

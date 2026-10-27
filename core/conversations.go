@@ -1302,7 +1302,7 @@ func (s *Service) drive(job *runJob, end func(), run runFunc, req ai.Request, ou
 	res := wait()
 	s.worked(ctx, job.id, start) // each drive of it (a resume is another), before the outcome is told
 	if err := s.exec(ctx, sqlite.Statement{SQL: "UPDATE runs SET masked = MAX(masked, ?), mask_warned = MAX(mask_warned, ?) WHERE id = ?",
-		Args: []any{found.Count(mask.Hide), found.Count(mask.Warn), job.id}}); err != nil {
+		Args: []any{found.Count(mask.Mask), found.Count(mask.Warn), job.id}}); err != nil {
 		slog.Default().Warn("could not record what a run's masking found", "run", job.id, "err", err)
 	}
 	s.runRejected(req.Model, res.Err)

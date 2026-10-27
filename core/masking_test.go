@@ -171,7 +171,7 @@ func TestMaskingCategoriesDefaults(t *testing.T) {
 	cats := defaultSettings().MaskCategories
 	for name, c := range cats.All() {
 		assert.Equal(t, name != mask.Names, c.On, name)
-		assert.Equal(t, MaskHide, c.Action, name)
+		assert.Equal(t, MaskMask, c.Action, name)
 		n++
 	}
 	assert.Equal(t, 6, n)
@@ -244,7 +244,7 @@ func TestWarnedValuesGoAsTheyAreAndAreShown(t *testing.T) {
 		assert.WithinDuration(t, time.Now(), r.At, time.Minute)
 	}
 	assert.Equal(t, []MaskRecord{
-		{Feature: "wit", Kind: "BANK_CARD", Category: mask.IDs, First: "4", Len: 19, Action: MaskHide, At: log[0].At},
+		{Feature: "wit", Kind: "BANK_CARD", Category: mask.IDs, First: "4", Len: 19, Action: MaskMask, At: log[0].At},
 		{Feature: "wit", Kind: "EMAIL", Category: mask.Emails, First: "a", Len: 3, Action: MaskWarn, At: log[1].At},
 	}, []MaskRecord{log[1], log[0]}, "newest first")
 	rows, err := e.s.db.Query(t.Context(), "SELECT * FROM mask_log")

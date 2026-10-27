@@ -19,7 +19,7 @@ import (
 // placeholders (the default; "" too); 仅警告 sends them as they are and
 // records them; 拦截 sends nothing of the request.
 const (
-	MaskHide  = mask.Hide
+	MaskMask  = mask.Mask
 	MaskWarn  = mask.Warn
 	MaskBlock = mask.Block
 )
@@ -43,7 +43,7 @@ const maskLogDays = 30
 // MaskRecord is a value a request to a model service or a translation
 // plugin held (脱敏记录): which feature sent it, its kind and category ("":
 // the user's own), its first character and length, never the value; and
-// what was done with it (MaskHide, MaskWarn or MaskBlock).
+// what was done with it (MaskMask, MaskWarn or MaskBlock).
 type MaskRecord struct {
 	At                             time.Time
 	Feature, Kind, Category, First string
@@ -128,7 +128,7 @@ func CheckMasking(rules []MaskRule, allow []string) error {
 }
 
 // MaskCategory is one category of 脱敏: whether it is found, and what is
-// done with its values (MaskHide, MaskWarn or MaskBlock).
+// done with its values (MaskMask, MaskWarn or MaskBlock).
 type MaskCategory struct {
 	On     bool
 	Action string
@@ -157,7 +157,7 @@ func (c *MaskCategories) All() iter.Seq2[string, *MaskCategory] {
 func defaultMaskCategories() MaskCategories {
 	var c MaskCategories
 	for name, cat := range c.All() {
-		*cat = MaskCategory{On: name != mask.Names, Action: MaskHide}
+		*cat = MaskCategory{On: name != mask.Names, Action: MaskMask}
 	}
 	return c
 }
