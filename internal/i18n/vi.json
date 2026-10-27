@@ -1314,7 +1314,6 @@
   "palette_action_labels": "Quản lý nhãn",
   "palette_action_add_account": "Thêm tài khoản",
   "palette_action_settings": "Mở Cài đặt",
-  "palette_filter_unread": "Chưa đọc",
   "palette_filter_starred": "Có gắn sao",
   "palette_filter_account": "Tài khoản: {arg1}",
   "palette_filter_label": "Nhãn: {arg1}",
@@ -1328,6 +1327,6 @@
   "palette_hint_kind": "Đổi loại",
   "palette_hint_close": "Đóng",
   "palette_hint_wit": "Hỏi Wit",
-  "palette_hint_view_all": "Xem tất cả",
-  "palette_view_all": "Xem tất cả {arg1} thư trong danh sách"
+  "palette_view_all": "Xem tất cả {arg1} thư trong danh sách",
+  "palette_contact_mails": "{arg1, number, ::group-off} thư"
 }

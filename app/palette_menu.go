@@ -42,11 +42,7 @@ func (p *palette) menuKey(k ui.TextKey) bool {
 	switch {
 	case k.Mods == 0 && (k.Key == ui.KeyDown || k.Key == ui.KeyUp):
 		if n > 0 {
-			step := 1
-			if k.Key == ui.KeyUp {
-				step = n - 1
-			}
-			p.m.sel = (p.m.sel + step) % n
+			p.m.sel = wrapStep(p.m.sel, n, k.Key == ui.KeyUp)
 		}
 	case k.Mods == 0 && k.Key == ui.KeyEnter:
 		p.runAct(p.m.sel)
@@ -96,10 +92,8 @@ func (p *palette) menuFrame(c *ui.Context) {
 			kit.Button(c, i18n.T("common.cancel"), kit.ButtonOpts{Variant: kit.Outline}).OnClick(func() { p.m.delAsk = false })
 			kit.Button(c, i18n.T("common.delete"), kit.ButtonOpts{Variant: kit.Destructive}).OnClick(func() {
 				p.m.delAsk = false
-				if ap, ok := p.a.pages[PageWit].(*askPage); ok {
-					ap.remove(p.m.delID)
-					p.refreshAfterWrites()
-				}
+				p.a.deleteConversation(p.m.delID)
+				p.refreshAfterWrites()
 			})
 		})
 }
@@ -136,19 +130,14 @@ func (p *palette) mailActs(m core.MessageSummary, unread bool) func() []palAct {
 		a := p.a
 		batch := func(act string) func() {
 			return func() {
-				// As a search's results, every mail is in view: archive it wherever it is.
-				mp := a.mail
-				was := mp.searched
-				mp.searched = true
-				mp.batch(act, []mailItem{messageItem(m)})
-				mp.searched = was
+				a.mail.batchScoped(act, []mailItem{messageItem(m)}, true) // a hit is in no view: archive it wherever it is
 				p.refreshAfterWrites()
 			}
 		}
 		reply := func(mode string) func() {
 			return func() {
 				p.open = false
-				a.replyTo(m, mode)
+				a.draft(m, 0, mode)
 			}
 		}
 		read := i18n.T("mail.action.read")
@@ -209,32 +198,11 @@ func (p *palette) contactActs(addr string, open func()) func() []palAct {
 // it, open its mail.
 func (p *palette) attachmentActs(at core.AttachmentInfo, open func()) func() []palAct {
 	return func() []palAct {
-		r := p.a.mail.reader
+		a := p.a
 		return []palAct{
-			{i18n.T("palette.act.preview"), func() { r.openAttachment(at) }},
-			{i18n.T("reader.save_as"), func() { r.saveAttachment(at) }},
+			{i18n.T("palette.act.preview"), func() { a.openAttachment(at) }},
+			{i18n.T("reader.save_as"), func() { a.saveAttachment(at) }},
 			{i18n.T("palette.act.open_mail"), func() { p.open = false; open() }},
 		}
 	}
-}
-
-// replyTo starts a reply or reply-all to m and opens it in a compose
-// window, as the reader's draft does.
-func (a *App) replyTo(m core.MessageSummary, mode string) {
-	var id int64
-	a.do(func(ctx context.Context) error {
-		acc, err := folderAccount(ctx, a.svc, m.FolderID)
-		if err != nil {
-			return err
-		}
-		d, err := a.svc.NewDraft(ctx, acc, mode, m.ID)
-		id = d.ID
-		return err
-	}, func(err error) {
-		if err != nil {
-			a.toastErr(err)
-			return
-		}
-		a.plat.OpenCompose(id)
-	})
 }

@@ -1314,7 +1314,6 @@
   "palette_action_labels": "Управление метками",
   "palette_action_add_account": "Добавить аккаунт",
   "palette_action_settings": "Открыть настройки",
-  "palette_filter_unread": "Непрочитанные",
   "palette_filter_starred": "Помеченные",
   "palette_filter_account": "Аккаунт: {arg1}",
   "palette_filter_label": "Метка: {arg1}",
@@ -1328,6 +1327,6 @@
   "palette_hint_kind": "Сменить тип",
   "palette_hint_close": "Закрыть",
   "palette_hint_wit": "Спросить Wit",
-  "palette_hint_view_all": "Показать все",
-  "palette_view_all": "Показать все ({arg1}) в списке писем"
+  "palette_view_all": "Показать все ({arg1}) в списке писем",
+  "palette_contact_mails": "Писем: {arg1, number, ::group-off}"
 }

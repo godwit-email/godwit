@@ -1314,7 +1314,6 @@
   "palette_action_labels": "Gestisci etichette",
   "palette_action_add_account": "Aggiungi account",
   "palette_action_settings": "Apri Impostazioni",
-  "palette_filter_unread": "Non letti",
   "palette_filter_starred": "Speciali",
   "palette_filter_account": "Account: {arg1}",
   "palette_filter_label": "Etichetta: {arg1}",
@@ -1328,6 +1327,6 @@
   "palette_hint_kind": "Cambia tipo",
   "palette_hint_close": "Chiudi",
   "palette_hint_wit": "Chiedi a Wit",
-  "palette_hint_view_all": "Mostra tutto",
-  "palette_view_all": "Mostra tutti i {arg1} nell'elenco della posta"
+  "palette_view_all": "Mostra tutti i {arg1} nell'elenco della posta",
+  "palette_contact_mails": "{arg1, number, ::group-off} email"
 }

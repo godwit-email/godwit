@@ -1314,7 +1314,6 @@
   "palette_action_labels": "Labels beheren",
   "palette_action_add_account": "Account toevoegen",
   "palette_action_settings": "Instellingen openen",
-  "palette_filter_unread": "Ongelezen",
   "palette_filter_starred": "Met ster",
   "palette_filter_account": "Account: {arg1}",
   "palette_filter_label": "Label: {arg1}",
@@ -1328,6 +1327,6 @@
   "palette_hint_kind": "Type wisselen",
   "palette_hint_close": "Sluiten",
   "palette_hint_wit": "Vraag Wit",
-  "palette_hint_view_all": "Alles bekijken",
-  "palette_view_all": "Alle {arg1} bekijken in de maillijst"
+  "palette_view_all": "Alle {arg1} bekijken in de maillijst",
+  "palette_contact_mails": "{arg1, number, ::group-off} e-mails"
 }

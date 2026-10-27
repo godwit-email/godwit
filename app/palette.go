@@ -59,6 +59,8 @@ type palette struct {
 // palItem is a row of the palette: what it shows and what choosing it does.
 type palItem struct {
 	icon, title, sub string
+	meta             string // in place of when, as a contact's mail count
+	kbd              string // its key, after the rest
 	when             time.Time
 	unread           bool
 	open             func()
@@ -105,13 +107,11 @@ func (p *palette) view(c *ui.Context) {
 		Label: i18n.T("palette.label"), Placeholder: i18n.T("palette.placeholder"), Close: i18n.T("common.close"),
 		OnKey: p.key, Glass: p.a.vibrancy, Chips: func() { p.chips(c) },
 		Hints: []kit.PaletteHint{
-			{Label: i18n.T("palette.hint.open"), Key: "↵"},
+			{Label: i18n.T("palette.hint.close"), Key: "Esc"},
 			{Label: i18n.T("palette.hint.kind"), Key: "←→"},
 			{Label: i18n.T("palette.hint.filter"), Key: "/"},
 			{Label: i18n.T("palette.hint.actions"), Key: "⌥↵"},
-			{Label: i18n.T("palette.hint.view_all"), Key: "⌘↵"},
 			{Label: i18n.T("palette.hint.wit"), Key: "Tab", OnClick: p.askWit},
-			{Label: i18n.T("palette.hint.close"), Key: "Esc"},
 		},
 	}
 	kit.Palette(c, &p.open, &p.query, o, func() {
@@ -151,7 +151,7 @@ func (p *palette) view(c *ui.Context) {
 			}
 		}
 	})
-	if p.open && p.sel < len(p.rows) && p.rows[p.sel].msg != nil {
+	if p.open && !p.m.open && p.sel < len(p.rows) && p.rows[p.sel].msg != nil { // the menu covers the card
 		m := *p.rows[p.sel].msg
 		kit.PalettePreview(c, func() { p.preview(c, m) })
 	}
@@ -177,14 +177,21 @@ func (p *palette) row(c *ui.Context, i int, it palItem) ui.Element {
 			marked(c, it.sub, p.hl).FontSize(t.Text.Sm).TextColor(t.Muted).SingleLine().Shrink(1)
 		}
 		ui.Spacer(c)
-		if !it.when.IsZero() {
-			kit.Text(c, listTime(p.a.clock.Now(), it.when), t.Text.Xs).TextColor(t.Muted).Shrink(0)
+		meta := it.meta
+		if meta == "" && !it.when.IsZero() {
+			meta = listTime(p.a.clock.Now(), it.when)
+		}
+		if meta != "" {
+			kit.Text(c, meta, t.Text.Xs).TextColor(t.Muted).Shrink(0)
 		}
 		if it.unread {
 			ui.Box(c).Shrink(0).Size(th.Space(2), th.Space(2)).Radius(th.Space(1)).Background(t.Unread).Label(i18n.Tf("mail.row.unread", 1))
 		}
 		if i == p.sel && it.acts != nil {
 			kit.IconButton(c, "ellipsis", i18n.T("palette.more"), kit.ButtonOpts{Variant: kit.Ghost, Size: kit.SizeSm}).OnClick(p.openMenu)
+		}
+		if it.kbd != "" {
+			kit.Kbd(c, it.kbd).Shrink(0)
 		}
 	})
 	if i == p.sel && p.m.open {
@@ -209,11 +216,7 @@ func (p *palette) key(k ui.TextKey) bool {
 		p.removeFilter(len(p.filters) - 1)
 	case k.Mods == 0 && (k.Key == ui.KeyDown || k.Key == ui.KeyUp):
 		if n > 0 {
-			step := 1
-			if k.Key == ui.KeyUp {
-				step = n - 1
-			}
-			p.sel, p.scroll = (p.sel+step)%n, true
+			p.sel, p.scroll = wrapStep(p.sel, n, k.Key == ui.KeyUp), true
 		}
 	case k.Mods == 0 && k.Key == ui.KeyEnter:
 		p.choose(p.sel)
@@ -233,14 +236,18 @@ func (p *palette) key(k ui.TextKey) bool {
 	return true
 }
 
+// wrapStep is the index after i of n, or before it when up, wrapping, as
+// ↑↓ move in the palette's lists.
+func wrapStep(i, n int, up bool) int {
+	if up {
+		return (i + n - 1) % n
+	}
+	return (i + 1) % n
+}
+
 // step moves to the next kind tab, or the one before, wrapping.
 func (p *palette) step(forth bool) {
-	n := len(paletteKinds)
-	if forth {
-		p.kind = (p.kind + 1) % n
-	} else {
-		p.kind = (p.kind + n - 1) % n
-	}
+	p.kind = wrapStep(p.kind, len(paletteKinds), !forth)
 }
 
 // choose opens rows[i] and closes the palette.
@@ -262,6 +269,9 @@ func (p *palette) find() {
 	p.m.open = false
 	sf := p.sf()
 	q := core.FindQuery{SearchQuery: sf.query(a.clock.Now(), sf.acc, p.query), Kind: paletteKinds[p.kind]}
+	// shortcut: a kind's tab shows at most core's cap of 200 hits; page it
+	// (or link 查看全部 for every kind) once people dig past that.
+	q.Limit = 200
 	if q.Kind == "" {
 		q.Limit = paletteFew
 	}
@@ -353,7 +363,7 @@ func (p *palette) contactItems(cs []core.Contact) []palItem {
 	for _, ct := range cs {
 		addr := ct.Address
 		open := func() { p.a.mail.mailFrom(addr) }
-		out = append(out, palItem{icon: "user", title: cmp.Or(ct.Name, addr), sub: addr, when: ct.Last,
+		out = append(out, palItem{icon: "user", title: cmp.Or(ct.Name, addr), sub: addr, when: ct.Last, meta: i18n.Tf("palette.contact.mails", ct.Messages),
 			open: open, acts: p.contactActs(addr, open)})
 	}
 	return out
@@ -411,7 +421,12 @@ func (p *mailPage) firstDrafts() core.View {
 // sender.
 func (p *mailPage) mailFrom(addr string) {
 	p.a.navigate(Route{Page: PageMail, View: p.view})
+	p.searchFor("", searchFilters{from: addr})
+}
+
+// searchFor opens the list's search afresh on query and filters sf.
+func (p *mailPage) searchFor(query string, sf searchFilters) {
 	p.closeSearch()
-	p.searchOpen, p.sf.from = true, addr
+	p.searchOpen, p.query, p.sf = true, query, sf
 	p.runSearch()
 }

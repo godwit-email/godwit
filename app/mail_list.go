@@ -1231,6 +1231,12 @@ func (p *mailPage) closeSearch() {
 // only the messages in the view; an account without an archive (junk)
 // folder is skipped and named.
 func (p *mailPage) batch(act string, rows []mailItem) {
+	p.batchScoped(act, rows, p.searched) // a search's results are in view wherever they are
+}
+
+// batchScoped is batch whatever the list shows: with anywhere every message
+// counts as in view, as the palette's hits, which are in no view, need.
+func (p *mailPage) batchScoped(act string, rows []mailItem, anywhere bool) {
 	if len(rows) == 0 {
 		return
 	}
@@ -1253,7 +1259,7 @@ func (p *mailPage) batch(act string, rows []mailItem) {
 	for _, acc := range a.accounts {
 		names[acc.ID] = acc.Email
 	}
-	v, search := p.view, p.searched
+	v, search := p.view, anywhere
 	var labeled map[int64][]core.AppliedLabel // a label view's messages' labels
 	inView := func(m core.MessageSummary) bool {
 		switch {

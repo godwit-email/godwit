@@ -2605,7 +2605,6 @@
   "palette_action_labels": "Manage labels",
   "palette_action_add_account": "Add account",
   "palette_action_settings": "Open Settings",
-  "palette_filter_unread": "Unread",
   "palette_filter_starred": "Starred",
   "palette_filter_account": "Account: {arg1}",
   "@palette_filter_account": {
@@ -2661,12 +2660,19 @@
   "palette_hint_kind": "Switch type",
   "palette_hint_close": "Close",
   "palette_hint_wit": "Ask Wit",
-  "palette_hint_view_all": "View all",
   "palette_view_all": "View all {arg1} in the mail list",
+  "palette_contact_mails": "{arg1, number, ::group-off} emails",
   "@palette_view_all": {
     "placeholders": {
       "arg1": {
         "type": "String"
+      }
+    }
+  },
+  "@palette_contact_mails": {
+    "placeholders": {
+      "arg1": {
+        "type": "int"
       }
     }
   }

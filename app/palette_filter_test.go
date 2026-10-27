@@ -65,3 +65,18 @@ func TestPaletteFilterChips(t *testing.T) {
 	h.see("最近")
 	h.see("写邮件")
 }
+
+// The / that opens the filters is not left in the box.
+func TestPaletteSlashLeavesNoSlash(t *testing.T) {
+	h, _ := invoices(t)
+	h.typeText("a ")
+	h.tt.Frame()
+	before, _ := h.tt.TextCaret()
+	h.typeText("/")
+	h.until("the filter list", func() bool { return filtersShown(h) })
+	h.tt.Frame()
+	after, _ := h.tt.TextCaret() // the box's text is not among Texts: its caret says where the text ends
+	if after.X != before.X || h.app.palette.query != "a " {
+		t.Fatalf("caret %v, was %v; query %q", after.X, before.X, h.app.palette.query)
+	}
+}

@@ -30,12 +30,10 @@ func (p *palette) viewAll() {
 		v = core.View{Unified: "inbox"} // the mail page not shown yet
 	}
 	p.a.navigate(Route{Page: PageMail, View: v})
-	mp.closeSearch()
-	mp.searchOpen, mp.query, mp.sf = true, p.query, sf
-	mp.runSearch()
+	mp.searchFor(p.query, sf)
 }
 
 // viewAllItem is the row after the mail hits when some are left out.
 func (p *palette) viewAllItem(total int) palItem {
-	return palItem{icon: "list", title: i18n.Tf("palette.view_all", total), open: p.viewAll}
+	return palItem{icon: "list", title: i18n.Tf("palette.view_all", total), kbd: "⌘↵", open: p.viewAll}
 }

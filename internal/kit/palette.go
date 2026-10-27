@@ -20,7 +20,7 @@ type PaletteOpts struct {
 }
 
 // PaletteHint is a shortcut the palette's bottom bar names: Key, then Label.
-// With OnClick it is a button too.
+// With OnClick it is a button too, at the bar's end: give it last.
 type PaletteHint struct {
 	Label, Key string
 	OnClick    func()
@@ -84,6 +84,7 @@ func Palette(c *ui.Context, open *bool, query *string, o PaletteOpts, head, body
 						Text(c, h.Label, t.Text.Xs).TextColor(t.Muted)
 					}
 					if h.OnClick != nil {
+						ui.Spacer(c)
 						Pressable(c, PressableOpts{OnClick: h.OnClick}).Label(h.Label).Gap(th.Space(1.5)).AlignItems(ui.Center).
 							Padding(th.Space(0.5), th.Space(1)).Margin(0, -th.Space(1)).Radius(t.Radius.Md).Children(hint)
 					} else {

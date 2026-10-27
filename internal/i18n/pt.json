@@ -1314,7 +1314,6 @@
   "palette_action_labels": "Gerenciar etiquetas",
   "palette_action_add_account": "Adicionar conta",
   "palette_action_settings": "Abrir Configurações",
-  "palette_filter_unread": "Não lidos",
   "palette_filter_starred": "Com estrela",
   "palette_filter_account": "Conta: {arg1}",
   "palette_filter_label": "Etiqueta: {arg1}",
@@ -1328,6 +1327,6 @@
   "palette_hint_kind": "Mudar tipo",
   "palette_hint_close": "Fechar",
   "palette_hint_wit": "Perguntar ao Wit",
-  "palette_hint_view_all": "Ver tudo",
-  "palette_view_all": "Ver todos os {arg1} na lista de e-mails"
+  "palette_view_all": "Ver todos os {arg1} na lista de e-mails",
+  "palette_contact_mails": "{arg1, number, ::group-off} e-mails"
 }

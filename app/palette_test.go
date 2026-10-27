@@ -4,11 +4,52 @@ import (
 	"fmt"
 	"slices"
 	"testing"
+	"time"
 
 	"github.com/egoist/mygo/ui"
 	"github.com/godwit-email/godwit/core"
 	"github.com/godwit-email/godwit/core/coretest"
+	"github.com/godwit-email/godwit/internal/theme"
 )
+
+// A contact row shows how much mail they sent.
+func TestPaletteContactCount(t *testing.T) {
+	h, _ := invoices(t)
+	h.click("联系人")
+	h.typeText("bob")
+	h.until("Bob's four mails", func() bool { return inPalette(h, "4 封邮件") })
+}
+
+// A kind's own tab lists past core's default page of 50.
+func TestPaletteKindTabListsMore(t *testing.T) {
+	h, accs := mailHarness(t, nil, "alice@example.com")
+	h.putMany(accs[0], 60)
+	h.waitMail("the threads", func() bool { return len(h.items()) >= 50 })
+	h.tt.Key(ui.Cmd, ui.KeyK)
+	h.until("the palette", func() bool { return paletteShown(h) })
+	h.tt.Key(0, ui.KeyRight) // 邮件
+	h.typeText("msg")
+	h.until("the oldest of sixty", func() bool { return inPalette(h, "msg 059") })
+}
+
+// The query's hits are highlighted in the rows.
+func TestPaletteHighlightsHits(t *testing.T) {
+	h, _ := invoices(t)
+	h.typeText("invoice")
+	h.see("邮件 · 4")
+	h.tt.Advance(time.Second) // past the palette's fade in
+	h.tt.Frame()
+	r, _ := h.tt.Find("邮件 · 4") // the heading over the mail rows: only the palette has it
+	img, want := h.tt.Image(), theme.Light().Highlight.SRGB()
+	for y := int(r.Y + r.H); y < int(r.Y+r.H)+36; y++ { // the first row
+		for x := int(r.X); x < int(r.X)+640; x++ {
+			if got := img.RGBAAt(x, y); got.R == want.R && got.G == want.G && got.B == want.B {
+				return
+			}
+		}
+	}
+	t.Fatal("Invoice 1's hit is not highlighted")
+}
 
 // paletteShown is whether the palette's kind tabs show.
 func paletteShown(h *harness) bool { return h.tt.HasText("联系人") && h.tt.HasText("附件") }

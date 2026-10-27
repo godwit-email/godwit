@@ -1314,7 +1314,6 @@
   "palette_action_labels": "ラベルを管理",
   "palette_action_add_account": "アカウントを追加",
   "palette_action_settings": "設定を開く",
-  "palette_filter_unread": "未読",
   "palette_filter_starred": "スター付き",
   "palette_filter_account": "アカウント：{arg1}",
   "palette_filter_label": "ラベル：{arg1}",
@@ -1328,6 +1327,6 @@
   "palette_hint_kind": "種類を切り替え",
   "palette_hint_close": "閉じる",
   "palette_hint_wit": "Wit に聞く",
-  "palette_hint_view_all": "すべて表示",
-  "palette_view_all": "メール一覧で {arg1} 件をすべて表示"
+  "palette_view_all": "メール一覧で {arg1} 件をすべて表示",
+  "palette_contact_mails": "{arg1, number, ::group-off} 通のメール"
 }

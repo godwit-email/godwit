@@ -130,7 +130,7 @@ func (p *mailPage) filterChips(c *ui.Context) {
 		for _, x := range []struct {
 			on    *bool
 			label string
-		}{{&p.sf.unread, i18n.T("palette.filter.unread")}, {&p.sf.starred, i18n.T("palette.filter.starred")}} {
+		}{{&p.sf.unread, i18n.T("mail.filter.unread")}, {&p.sf.starred, i18n.T("palette.filter.starred")}} {
 			if *x.on {
 				filterChip(c.Key(x.label), x.label, true, nil, func() { p.setFilter(func(*searchFilters) { *x.on = false }) }).
 					Label(i18n.Tf("palette.filter.remove", x.label))

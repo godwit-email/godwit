@@ -29,7 +29,7 @@ func (p *palette) filterOpts() []palFilter {
 	a := p.a
 	out := []palFilter{
 		{"attach", i18n.T("mail.search.has_attachments"), func(f *searchFilters) { f.attach = true }},
-		{"unread", i18n.T("palette.filter.unread"), func(f *searchFilters) { f.unread = true }},
+		{"unread", i18n.T("mail.filter.unread"), func(f *searchFilters) { f.unread = true }},
 		{"starred", i18n.T("palette.filter.starred"), func(f *searchFilters) { f.starred = true }},
 	}
 	for _, acc := range a.accounts {
@@ -95,11 +95,7 @@ func (p *palette) filterKey(k ui.TextKey) bool {
 	n := len(opts)
 	switch {
 	case k.Mods == 0 && (k.Key == ui.KeyDown || k.Key == ui.KeyUp):
-		step := 1
-		if k.Key == ui.KeyUp {
-			step = n - 1
-		}
-		p.fsel = (p.fsel + step) % n
+		p.fsel = wrapStep(p.fsel, n, k.Key == ui.KeyUp)
 	case k.Mods == 0 && k.Key == ui.KeyEnter:
 		p.addFilter(opts[min(p.fsel, n-1)], func() { k.SetText("") })
 	case k.Mods == 0 && k.Key == ui.KeyEscape:

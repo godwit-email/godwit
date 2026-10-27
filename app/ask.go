@@ -105,17 +105,16 @@ func (p *askPage) Sidebar(c *ui.Context) {
 				}).
 				ContextMenu(func(m *ui.Menu) {
 					if m.Item(i18n.T("ask.delete")).Chosen() {
-						p.remove(id)
+						p.a.deleteConversation(id)
 					}
 				})
 		}
 	})
 }
 
-// remove deletes a conversation; shown, a new one takes its place, and it
-// leaves the history.
-func (p *askPage) remove(id int64) {
-	a := p.a
+// deleteConversation deletes a conversation; shown, a new one takes its
+// place, and it leaves the history.
+func (a *App) deleteConversation(id int64) {
 	a.writes.Chain(convKey(id), func(ctx context.Context) error { return a.svc.DeleteConversation(ctx, id) }, func(err error) {
 		if err != nil {
 			a.toastErr(err)
@@ -127,7 +126,7 @@ func (p *askPage) remove(id int64) {
 			a.setRoute(Route{Page: PageWit})
 			return
 		}
-		p.load()
+		a.pages[PageWit].(*askPage).load()
 	})
 }
 

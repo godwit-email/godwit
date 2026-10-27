@@ -1314,7 +1314,6 @@
   "palette_action_labels": "Labels verwalten",
   "palette_action_add_account": "Konto hinzufügen",
   "palette_action_settings": "Einstellungen öffnen",
-  "palette_filter_unread": "Ungelesen",
   "palette_filter_starred": "Markiert",
   "palette_filter_account": "Konto: {arg1}",
   "palette_filter_label": "Label: {arg1}",
@@ -1328,6 +1327,6 @@
   "palette_hint_kind": "Typ wechseln",
   "palette_hint_close": "Schließen",
   "palette_hint_wit": "Wit fragen",
-  "palette_hint_view_all": "Alle anzeigen",
-  "palette_view_all": "Alle {arg1} in der Mailliste anzeigen"
+  "palette_view_all": "Alle {arg1} in der Mailliste anzeigen",
+  "palette_contact_mails": "{arg1, number, ::group-off} E-Mails"
 }

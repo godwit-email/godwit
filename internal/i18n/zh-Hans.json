@@ -1314,7 +1314,6 @@
   "palette_action_labels": "管理标签",
   "palette_action_add_account": "添加账户",
   "palette_action_settings": "打开设置",
-  "palette_filter_unread": "未读",
   "palette_filter_starred": "已标星",
   "palette_filter_account": "账户：{arg1}",
   "palette_filter_label": "标签：{arg1}",
@@ -1328,6 +1327,6 @@
   "palette_hint_kind": "切换类型",
   "palette_hint_close": "关闭",
   "palette_hint_wit": "问 Wit",
-  "palette_hint_view_all": "查看全部",
-  "palette_view_all": "在邮件列表中查看全部 {arg1} 封"
+  "palette_view_all": "在邮件列表中查看全部 {arg1} 封",
+  "palette_contact_mails": "{arg1, number, ::group-off} 封邮件"
 }

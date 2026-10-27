@@ -1314,7 +1314,6 @@
   "palette_action_labels": "Gérer les libellés",
   "palette_action_add_account": "Ajouter un compte",
   "palette_action_settings": "Ouvrir les réglages",
-  "palette_filter_unread": "Non lus",
   "palette_filter_starred": "Suivis",
   "palette_filter_account": "Compte : {arg1}",
   "palette_filter_label": "Étiquette : {arg1}",
@@ -1328,6 +1327,6 @@
   "palette_hint_kind": "Changer de type",
   "palette_hint_close": "Fermer",
   "palette_hint_wit": "Demander à Wit",
-  "palette_hint_view_all": "Tout afficher",
-  "palette_view_all": "Afficher les {arg1} dans la liste des e-mails"
+  "palette_view_all": "Afficher les {arg1} dans la liste des e-mails",
+  "palette_contact_mails": "{arg1, number, ::group-off} e-mails"
 }

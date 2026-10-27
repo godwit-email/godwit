@@ -192,7 +192,7 @@ func TestAskDeleteShown(t *testing.T) {
 	}
 	h.app.navigate(Route{Page: PageWit, ConversationID: c.ID})
 	h.until("listed", func() bool { h.tt.Frame(); return h.tt.HasText("未命名对话") })
-	h.ask().remove(c.ID)
+	h.app.deleteConversation(c.ID)
 	h.until("a new conversation", func() bool { return h.app.route == Route{Page: PageWit} })
 	if opens.convs[len(opens.convs)-1] != 0 {
 		t.Fatalf("the page was told %v", opens.convs)
