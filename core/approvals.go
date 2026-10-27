@@ -345,6 +345,16 @@ func (s *Service) ResolveApproval(ctx context.Context, id int64, accept bool) er
 	return s.cleanError(s.resolveApproval(ctx, id, accept))
 }
 
+// ResolveApprovalWithArgs accepts or rejects pending approval id with edited arguments args.
+func (s *Service) ResolveApprovalWithArgs(ctx context.Context, id int64, accept bool, args json.RawMessage) error {
+	ctx, end, err := s.begin(ctx, 0)
+	if err != nil {
+		return err
+	}
+	defer end()
+	return s.cleanError(s.decide(ctx, id, accept, args, true))
+}
+
 func (s *Service) resolveApproval(ctx context.Context, id int64, accept bool) error {
 	return s.decide(ctx, id, accept, nil, true)
 }

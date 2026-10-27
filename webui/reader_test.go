@@ -845,7 +845,8 @@ func TestPrepareBodyProxiesRemoteImages(t *testing.T) {
 	assert.Contains(t, out, `<img src="`+proxied(12, "https://cdn.example/known.png")+`" alt="a" width="40" height="30"/>`, "the cached size reserves the space")
 	assert.Contains(t, out, `src="`+proxied(12, "https://cdn.example/sized.png")+`" width="9"/>`, "a declared size stays")
 	assert.Contains(t, out, `src="`+proxied(12, "https://cdn.example/new.png")+`" alt="n"/>`)
-	assert.Contains(t, out, `style="color: red;background-image:url(`+proxied(12, "https://cdn.example/bg.jpg")+`);--godwit-bg:url(`+proxied(12, "https://cdn.example/bg.jpg")+`)"`)
+	assert.Contains(t, out, `style="color: red;background-image:url(`+proxied(12, "https://cdn.example/bg.jpg")+`)"`)
+	assert.NotContains(t, out, "--godwit-bg", "no unused inversion layer is emitted")
 	assert.NotContains(t, out, "javascript")
 }
 

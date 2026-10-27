@@ -111,7 +111,7 @@ func TestSearchResultFolderLine(t *testing.T) {
 	if got := p.folderLine(other); got != "Receipts · carol@example.com" {
 		t.Errorf("other account's line %q", got)
 	}
-	if got := folderName(core.Folder{Name: "[Gmail]/Starred", Role: "flagged"}); got != "[Gmail]/Starred" {
+	if got := folderName(core.Folder{Name: "[Gmail]/All Mail", Role: "all"}); got != "[Gmail]/All Mail" {
 		t.Errorf("a role with no name of ours shows %q", got)
 	}
 	if got := p.resultWho(sent); got != "我 → Lena Fischer" {

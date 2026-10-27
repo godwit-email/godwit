@@ -1,12 +1,14 @@
 package core
 
 import (
+	"cmp"
 	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"maps"
 	netmail "net/mail"
+	"net/url"
 	"regexp"
 	"slices"
 	"strconv"
@@ -20,23 +22,29 @@ import (
 	"github.com/godwit-email/godwit/core/mail"
 	"github.com/godwit-email/godwit/core/plugins"
 	"github.com/godwit-email/godwit/core/store"
+	"golang.org/x/net/html"
 )
 
 // askTools are the built-in tools of an Ask run, which also offers every
 // running plugin's tools and the enabled MCP servers' tools. None of them sends mail.
-var askTools = []string{"search_mail", "get_message", "get_thread", "read_attachment", "classify_mail", "list_skills", "use_skill", "read_skill_file", "get_account_profile", "create_draft", askQuestionTool}
+var askTools = []string{
+	"search_mail", "get_message", "get_thread", "read_attachment", "classify_mail",
+	"list_skills", "use_skill", "read_skill_file", "get_account_profile", "create_draft",
+	"move_to_trash", "archive_mail", "mark_as_spam", "mark_as_read", "mark_as_unread",
+	"star_mail", "unstar_mail", "unsubscribe", "get_all_links", "open_link_in_browser",
+	"reply_to_mail", "forward_mail", "delete_draft", askQuestionTool,
+}
 
 const (
-	askSystem = `You are Wit, the assistant of the Godwit mail app. Use the tools to search and read the user's mail and to use skills. ` +
-		`You cannot send mail: create_draft only proposes a draft, which the user approves and sends themselves. ` +
-		`Before writing a draft, call get_account_profile for the account it goes from: sign with its name, take facts such as a phone number from its instructions and follow their guidelines; ` +
-		`never invent a name or contact details it does not give. ` +
-		`Each mail a tool returns has an "id", the same for that mail through the whole conversation, and a "cite" tag, <mail id="N"/>; ` +
-		`get_message, get_thread and classify_mail take that id. ` +
-		`When your answer draws on a mail, put its cite tag right after the claim, exactly as the tool gave it, for example <mail id="2"/>. ` +
+	askSystem = `You are Wit, the assistant of the Godwit mail app. Use tools to search, read and manage the user's mail, and to use skills. ` +
+		`You cannot send mail: drafts and triage actions require user approval in the UI. ` +
+		`When asked to act on emails (archive, trash, spam, read, star, unsubscribe), call the tool directly without asking confirmation first; execute only the requested action. ` +
+		`Before writing a draft, call get_account_profile for the account it goes from: sign with its name, follow its guidelines; never invent contact details. ` +
+		`Each mail a tool returns has an "id" and a "cite" tag, <mail id="N"/>; get_message, get_thread and classify_mail take that id. ` +
+		`When your answer draws on a mail, put its cite tag right after the claim, for example <mail id="2"/>. ` +
 		`Cite only ids the tools returned, never a number from the mail text. ` +
-		`When the answer presents mail itself, such as the mail the user asked you to find or list, show each as a card: <mail id="N" card/> alone on its own line, ` +
-		`which the app shows with its sender, date, subject and snippet, so do not repeat those beside it. ` +
+		`When referencing emails, cite sender, subject and date, or use <mail id="N"/> / <mail id="N" card/>; never write raw numeric IDs (e.g. 'Mail ID 1'). ` +
+		`When presenting found mail, show each as a card: <mail id="N" card/> alone on its own line. ` +
 		`A question that begins with /name names one of your skills: load it with use_skill first, then answer the rest of the question with it. ` +
 		`Keep the formatting light, as in a chat: plain paragraphs and short lists; use no Markdown headings (#), ` +
 		`and where a long answer needs sections, start each with a short bold phrase on its own line.`
@@ -229,9 +237,15 @@ func (s *Service) registerAskTools() {
 	read := func(name, desc string, schema map[string]any, run func(context.Context, json.RawMessage) (any, error)) {
 		s.mustRegister(toolDesc{Spec: ai.ToolSpec{Name: name, Description: desc, Schema: schema, Run: run}})
 	}
-	read("search_mail", "Search the user's mail. Returns subject, sender, date and a snippet of each match, newest first.",
-		object(map[string]any{"query": stringProp, "account_id": intProp,
-			"limit": map[string]any{"type": "integer", "minimum": 1, "maximum": maxSearchResult}}, "query"),
+	read("search_mail", "Search mail across content, subject, sender and labels. Returns subject, sender, date and snippet, newest first.",
+		object(map[string]any{
+			"query":      stringProp,
+			"from":       stringProp,
+			"since":      stringProp,
+			"until":      stringProp,
+			"account_id": intProp,
+			"limit":      map[string]any{"type": "integer", "minimum": 1, "maximum": maxSearchResult},
+		}, "query"),
 		s.searchMail)
 	read("get_message", "Read one mail by its id (a mail the tools returned).", object(map[string]any{"id": intProp}, "id"), s.getMessage)
 	read("read_attachment", "Read the text of one attachment by its attachment id (listed with the mail): PDF, Word, Excel, PowerPoint, CSV, HTML or plain text. Images and archives are not readable.",
@@ -265,21 +279,211 @@ func (s *Service) registerAskTools() {
 		Schema: object(map[string]any{"account_id": intProp, "to": listProp, "cc": listProp, "subject": stringProp, "html": stringProp},
 			"to", "subject", "html")},
 		Write: true, Exec: &executor{Prepare: s.prepareDraft, Apply: s.applyDraft}})
+
+	// Mail triage & flag tools
+	batchTool := func(name, desc, action string) {
+		s.mustRegister(toolDesc{Spec: ai.ToolSpec{
+			Name:        name,
+			Description: desc,
+			Schema:      object(map[string]any{"ids": map[string]any{"type": "array", "items": intProp, "minItems": 1}}, "ids"),
+		}, Write: true, Exec: &executor{Prepare: s.prepareBatchAction(action), Apply: s.applyBatchAction}})
+	}
+	batchTool("move_to_trash", "Propose moving messages to the Trash folder by their ids. The user approves it before any message is moved.", "move_to_trash")
+	batchTool("archive_mail", "Propose archiving messages by their ids. The user approves it before any message is archived.", "archive_mail")
+	batchTool("mark_as_spam", "Propose marking messages as spam (moving to Junk) by their ids. The user approves it before any message is moved.", "mark_as_spam")
+	batchTool("mark_as_read", "Propose marking messages as read by their ids. The user approves it before flags are changed.", "mark_as_read")
+	batchTool("mark_as_unread", "Propose marking messages as unread by their ids. The user approves it before flags are changed.", "mark_as_unread")
+	batchTool("star_mail", "Propose starring (flagging) messages by their ids. The user approves it before flags are changed.", "star_mail")
+	batchTool("unstar_mail", "Propose unstarring (unflagging) messages by their ids. The user approves it before flags are changed.", "unstar_mail")
+
+	// Unsubscribe & links
+	s.mustRegister(toolDesc{Spec: ai.ToolSpec{
+		Name:        "unsubscribe",
+		Description: "Propose unsubscribing from a mailing list or sender using the email's List-Unsubscribe headers. The user approves it before unsubscribing. id is the mail id.",
+		Schema:      object(map[string]any{"id": intProp}, "id"),
+	}, Write: true, Exec: &executor{Prepare: s.prepareUnsubscribe, Apply: s.applyUnsubscribe}})
+
+	read("get_all_links", "Extract all links and URLs from an email's body by its id. Returns URL, anchor text, and context.",
+		object(map[string]any{"id": intProp}, "id"), s.getAllLinks)
+
+	s.mustRegister(toolDesc{Spec: ai.ToolSpec{
+		Name:        "open_link_in_browser",
+		Description: "Propose opening an external link (http or https) in the default web browser. The user approves it before it is opened.",
+		Schema:      object(map[string]any{"url": stringProp}, "url"),
+	}, Write: true, Exec: &executor{Prepare: s.prepareOpenLink, Apply: s.applyOpenLink}})
+
+	// Compose & replies
+	s.mustRegister(toolDesc{Spec: ai.ToolSpec{
+		Name:        "reply_to_mail",
+		Description: "Propose a reply draft to an email. The user approves it before it is saved, and sends it themselves. id is the mail id to reply to. reply_all replies to all recipients if true. html is the reply body.",
+		Schema:      object(map[string]any{"id": intProp, "reply_all": map[string]any{"type": "boolean"}, "html": stringProp}, "id", "html"),
+	}, Write: true, Exec: &executor{Prepare: s.prepareReplyMail, Apply: s.applyReplyOrForwardDraft}})
+
+	s.mustRegister(toolDesc{Spec: ai.ToolSpec{
+		Name:        "forward_mail",
+		Description: "Propose forwarding an email to recipients. The user approves it before it is saved, and sends it themselves. id is the mail id to forward. to is the list of recipient email addresses. html is optional introductory text.",
+		Schema:      object(map[string]any{"id": intProp, "to": listProp, "cc": listProp, "html": stringProp}, "id", "to"),
+	}, Write: true, Exec: &executor{Prepare: s.prepareForwardMail, Apply: s.applyReplyOrForwardDraft}})
+
+	s.mustRegister(toolDesc{Spec: ai.ToolSpec{
+		Name:        "delete_draft",
+		Description: "Propose deleting a draft. The user approves it before the draft is deleted. draft_id is the draft's id.",
+		Schema:      object(map[string]any{"draft_id": intProp}, "draft_id"),
+	}, Write: true, Exec: &executor{Prepare: s.prepareDeleteDraft, Apply: s.applyDeleteDraft}})
+}
+
+type searchMailInput struct {
+	Query     string `json:"query"`
+	Label     string `json:"label,omitempty"`
+	From      string `json:"from,omitempty"`
+	Since     string `json:"since,omitempty"`
+	Until     string `json:"until,omitempty"`
+	AccountID int64  `json:"account_id,omitempty"`
+	Limit     int    `json:"limit,omitempty"`
+}
+
+func parseDateOrDuration(s string) (time.Time, bool) {
+	s = strings.TrimSpace(strings.Trim(s, `"'`))
+	if s == "" {
+		return time.Time{}, false
+	}
+	if len(s) >= 2 {
+		unit := s[len(s)-1]
+		val, err := strconv.Atoi(s[:len(s)-1])
+		if err == nil && val > 0 {
+			switch unit {
+			case 'd', 'D':
+				return time.Now().AddDate(0, 0, -val), true
+			case 'w', 'W':
+				return time.Now().AddDate(0, 0, -val*7), true
+			case 'm', 'M':
+				return time.Now().AddDate(0, -val, 0), true
+			case 'y', 'Y':
+				return time.Now().AddDate(-val, 0, 0), true
+			case 'h', 'H':
+				return time.Now().Add(-time.Duration(val) * time.Hour), true
+			}
+		}
+	}
+	for _, layout := range []string{
+		"2006-01-02",
+		"2006-01-02 15:04:05",
+		"2006-01-02T15:04:05",
+		time.RFC3339,
+		"02.01.2006",
+	} {
+		if t, err := time.Parse(layout, s); err == nil {
+			return t, true
+		}
+	}
+	return time.Time{}, false
+}
+
+var (
+	filterLabelRegex = regexp.MustCompile(`(?i)\blabel:\s*("([^"]+)"|'([^']+)'|([^\s,]+))`)
+	filterFromRegex  = regexp.MustCompile(`(?i)\bfrom:\s*("([^"]+)"|'([^']+)'|([^\s,]+))`)
+	filterSinceRegex = regexp.MustCompile(`(?i)\bsince:\s*("([^"]+)"|'([^']+)'|([^\s,]+))`)
+	filterUntilRegex = regexp.MustCompile(`(?i)\buntil:\s*("([^"]+)"|'([^']+)'|([^\s,]+))`)
+	filterIsRegex    = regexp.MustCompile(`(?i)\bis:\s*("([^"]+)"|'([^']+)'|([^\s,]+))`)
+)
+
+func extractFilterValue(m []string) string {
+	for i := 2; i < len(m); i++ {
+		if m[i] != "" {
+			return m[i]
+		}
+	}
+	if len(m) > 1 {
+		return m[1]
+	}
+	return ""
+}
+
+func (s *Service) parseSearchQuery(ctx context.Context, in searchMailInput) (SearchQuery, error) {
+	raw := in.Query
+	label := in.Label
+	from := in.From
+	sinceStr := in.Since
+	untilStr := in.Until
+	var unread, starred *bool
+
+	if m := filterLabelRegex.FindStringSubmatch(raw); len(m) > 0 {
+		if label == "" {
+			label = extractFilterValue(m)
+		}
+		raw = filterLabelRegex.ReplaceAllString(raw, "")
+	}
+	if m := filterFromRegex.FindStringSubmatch(raw); len(m) > 0 {
+		if from == "" {
+			from = extractFilterValue(m)
+		}
+		raw = filterFromRegex.ReplaceAllString(raw, "")
+	}
+	if m := filterSinceRegex.FindStringSubmatch(raw); len(m) > 0 {
+		if sinceStr == "" {
+			sinceStr = extractFilterValue(m)
+		}
+		raw = filterSinceRegex.ReplaceAllString(raw, "")
+	}
+	if m := filterUntilRegex.FindStringSubmatch(raw); len(m) > 0 {
+		if untilStr == "" {
+			untilStr = extractFilterValue(m)
+		}
+		raw = filterUntilRegex.ReplaceAllString(raw, "")
+	}
+	if m := filterIsRegex.FindStringSubmatch(raw); len(m) > 0 {
+		v := strings.ToLower(extractFilterValue(m))
+		switch v {
+		case "unread":
+			t := true
+			unread = &t
+		case "read":
+			f := false
+			unread = &f
+		case "starred", "flagged":
+			t := true
+			starred = &t
+		case "unstarred":
+			f := false
+			starred = &f
+		}
+		raw = filterIsRegex.ReplaceAllString(raw, "")
+	}
+
+	raw = strings.TrimSpace(raw)
+	if raw == "" && strings.TrimSpace(label) != "" {
+		raw = strings.TrimSpace(label)
+	} else if strings.TrimSpace(label) != "" && !strings.Contains(strings.ToLower(raw), strings.ToLower(strings.TrimSpace(label))) {
+		raw = raw + " " + strings.TrimSpace(label)
+	}
+
+	sinceTime, _ := parseDateOrDuration(sinceStr)
+	untilTime, _ := parseDateOrDuration(untilStr)
+
+	return SearchQuery{
+		AccountID: in.AccountID,
+		Text:      raw,
+		From:      strings.TrimSpace(from),
+		Since:     sinceTime,
+		Until:     untilTime,
+		Unread:    unread,
+		Starred:   starred,
+	}, nil
 }
 
 func (s *Service) searchMail(ctx context.Context, args json.RawMessage) (any, error) {
-	var in struct {
-		Query     string `json:"query"`
-		AccountID int64  `json:"account_id"`
-		Limit     int    `json:"limit"`
-	}
+	var in searchMailInput
 	if err := json.Unmarshal(args, &in); err != nil {
 		return nil, err
 	}
 	if in.Limit <= 0 || in.Limit > maxSearchResult {
 		in.Limit = maxSearchResult
 	}
-	list, err := s.Search(ctx, in.AccountID, in.Query, in.Limit)
+	q, err := s.parseSearchQuery(ctx, in)
+	if err != nil {
+		return nil, err
+	}
+	list, err := s.SearchWith(ctx, q, in.Limit)
 	if err != nil {
 		return nil, err
 	}
@@ -653,4 +857,559 @@ func (s *Service) applyDraft(_ context.Context, a Approval) ([]sqlite.Statement,
 		updated_at, ai_approval_id) VALUES (?, 'new', ?, ?, '[]', '', ?, ?, ?, ?)`,
 			Args: []any{in.AccountID, encodeList(in.To), encodeList(in.Cc), in.Subject, in.HTML, time.Now().Unix(), a.ID}}},
 		map[string]any{"created": true, "subject": in.Subject}, nil, nil
+}
+
+type batchItem struct {
+	ID        int    `json:"id"`
+	MsgID     int64  `json:"msg_id"`
+	AccountID int64  `json:"account_id"`
+	Subject   string `json:"subject"`
+	From      string `json:"from"`
+	Date      int64  `json:"date"`
+}
+
+type batchArgs struct {
+	Action      string      `json:"action"`
+	IDs         []int       `json:"ids"`
+	Items       []batchItem `json:"items"`
+	SelectedIDs []int       `json:"selected_ids"`
+}
+
+func (s *Service) prepareBatchAction(defaultAction string) func(context.Context, Conversation, json.RawMessage) (prepared, error) {
+	return func(ctx context.Context, _ Conversation, raw json.RawMessage) (prepared, error) {
+		var in struct {
+			IDs    []int  `json:"ids"`
+			Action string `json:"action"`
+		}
+		if err := json.Unmarshal(raw, &in); err != nil {
+			return prepared{}, err
+		}
+		in.Action = defaultAction // the tool, not an argument, names what is done
+		if len(in.IDs) == 0 {
+			return prepared{}, errors.New("ids cannot be empty")
+		}
+		items := make([]batchItem, 0, len(in.IDs))
+		for _, citeID := range in.IDs {
+			msgID, err := s.mailOf(ctx, runOf(ctx), citeID)
+			if err != nil {
+				return prepared{}, err
+			}
+			rows, err := s.db.Query(ctx, "SELECT account_id, subject, from_addr, date FROM messages WHERE id = ?", msgID)
+			if err != nil {
+				return prepared{}, err
+			}
+			if len(rows.Values) == 0 {
+				return prepared{}, fmt.Errorf("mail %d %w", citeID, errMailNotFound)
+			}
+			r := rows.Values[0]
+			items = append(items, batchItem{
+				ID:        citeID,
+				MsgID:     msgID,
+				AccountID: store.Int(r[0]),
+				Subject:   store.Str(r[1]),
+				From:      store.Str(r[2]),
+				Date:      store.Int(r[3]),
+			})
+		}
+		var summary string
+		n := len(items)
+		switch in.Action {
+		case "move_to_trash":
+			summary = fmt.Sprintf("Move %d messages to Trash", n)
+		case "archive_mail":
+			summary = fmt.Sprintf("Archive %d messages", n)
+		case "mark_as_spam":
+			summary = fmt.Sprintf("Mark %d messages as spam", n)
+		case "mark_as_read":
+			summary = fmt.Sprintf("Mark %d messages as read", n)
+		case "mark_as_unread":
+			summary = fmt.Sprintf("Mark %d messages as unread", n)
+		case "star_mail":
+			summary = fmt.Sprintf("Star %d messages", n)
+		case "unstar_mail":
+			summary = fmt.Sprintf("Unstar %d messages", n)
+		default:
+			summary = fmt.Sprintf("%s on %d messages", in.Action, n)
+		}
+		ba := batchArgs{
+			Action:      in.Action,
+			IDs:         in.IDs,
+			Items:       items,
+			SelectedIDs: in.IDs,
+		}
+		b, err := json.Marshal(ba)
+		if err != nil {
+			return prepared{}, err
+		}
+		return prepared{
+			Args:       b,
+			Summary:    summary,
+			TargetKind: "messages",
+		}, nil
+	}
+}
+
+func (s *Service) applyBatchAction(ctx context.Context, a Approval) ([]sqlite.Statement, any, any, error) {
+	var in batchArgs
+	if err := json.Unmarshal(a.Args, &in); err != nil {
+		return nil, nil, nil, err
+	}
+	action := a.Tool
+	// The card sends the ids left checked; none checked applies to none.
+	selectedSet := make(map[int]bool)
+	if in.SelectedIDs != nil {
+		for _, id := range in.SelectedIDs {
+			selectedSet[id] = true
+		}
+	} else {
+		for _, id := range in.IDs {
+			selectedSet[id] = true
+		}
+	}
+
+	byAccount := make(map[int64][]int64)
+	var processedCount int
+	for _, it := range in.Items {
+		if !selectedSet[it.ID] {
+			continue
+		}
+		byAccount[it.AccountID] = append(byAccount[it.AccountID], it.MsgID)
+		processedCount++
+	}
+	if len(in.Items) == 0 && len(in.IDs) > 0 {
+		for _, citeID := range in.IDs {
+			if !selectedSet[citeID] {
+				continue
+			}
+			msgID, err := s.mailOf(ctx, runOf(ctx), citeID)
+			if err != nil {
+				return nil, nil, nil, err
+			}
+			rows, err := s.db.Query(ctx, "SELECT account_id FROM messages WHERE id = ?", msgID)
+			if err != nil || len(rows.Values) == 0 {
+				continue
+			}
+			accID := store.Int(rows.Values[0][0])
+			byAccount[accID] = append(byAccount[accID], msgID)
+			processedCount++
+		}
+	}
+
+	if processedCount == 0 {
+		return nil, map[string]any{"applied": 0, "action": action}, nil, nil
+	}
+
+	for _, msgIDs := range byAccount {
+		switch action {
+		case "move_to_trash":
+			if err := s.Delete(ctx, msgIDs); err != nil {
+				return nil, nil, nil, err
+			}
+		case "archive_mail":
+			if err := s.MoveToRole(ctx, msgIDs, "archive"); err != nil {
+				return nil, nil, nil, err
+			}
+		case "mark_as_spam":
+			if err := s.MoveToRole(ctx, msgIDs, "junk"); err != nil {
+				return nil, nil, nil, err
+			}
+		case "mark_as_read":
+			if err := s.SetFlags(ctx, msgIDs, []string{`\Seen`}, nil); err != nil {
+				return nil, nil, nil, err
+			}
+		case "mark_as_unread":
+			if err := s.SetFlags(ctx, msgIDs, nil, []string{`\Seen`}); err != nil {
+				return nil, nil, nil, err
+			}
+		case "star_mail":
+			if err := s.SetFlags(ctx, msgIDs, []string{`\Flagged`}, nil); err != nil {
+				return nil, nil, nil, err
+			}
+		case "unstar_mail":
+			if err := s.SetFlags(ctx, msgIDs, nil, []string{`\Flagged`}); err != nil {
+				return nil, nil, nil, err
+			}
+		default:
+			return nil, nil, nil, fmt.Errorf("unknown batch action %q", action)
+		}
+	}
+
+	return nil, map[string]any{"applied": processedCount, "action": action}, nil, nil
+}
+
+type unsubArgs struct {
+	ID     int    `json:"id"`
+	MsgID  int64  `json:"msg_id"`
+	Method string `json:"method"`
+	Host   string `json:"host"`
+	URL    string `json:"url"`
+	List   string `json:"list"`
+}
+
+func (s *Service) prepareUnsubscribe(ctx context.Context, _ Conversation, raw json.RawMessage) (prepared, error) {
+	var in struct {
+		ID int `json:"id"`
+	}
+	if err := json.Unmarshal(raw, &in); err != nil {
+		return prepared{}, err
+	}
+	msgID, err := s.mailOf(ctx, runOf(ctx), in.ID)
+	if err != nil {
+		return prepared{}, err
+	}
+	u, err := s.UnsubscribeMethod(ctx, msgID)
+	if err != nil {
+		return prepared{}, err
+	}
+	if u.Method == "" {
+		return prepared{}, errors.New("this email does not provide an unsubscribe header")
+	}
+	target := cmp.Or(u.List, u.Host, "mailing list")
+	summary := "Unsubscribe from " + target
+	arg := unsubArgs{
+		ID:     in.ID,
+		MsgID:  msgID,
+		Method: u.Method,
+		Host:   u.Host,
+		URL:    u.URL,
+		List:   u.List,
+	}
+	b, err := json.Marshal(arg)
+	if err != nil {
+		return prepared{}, err
+	}
+	return prepared{
+		Args:       b,
+		Summary:    summary,
+		TargetKind: "message",
+		TargetID:   msgID,
+	}, nil
+}
+
+func (s *Service) applyUnsubscribe(ctx context.Context, a Approval) ([]sqlite.Statement, any, any, error) {
+	var in unsubArgs
+	if err := json.Unmarshal(a.Args, &in); err != nil {
+		return nil, nil, nil, err
+	}
+	res, err := s.Unsubscribe(ctx, in.MsgID)
+	if errors.Is(err, ErrUnsubscribeWeb) {
+		return nil, map[string]any{"unsubscribed": false, "method": "web", "url": in.URL, "message": "Please open the unsubscribe link in your browser"}, nil, nil
+	}
+	if err != nil {
+		return nil, nil, nil, err
+	}
+	return nil, map[string]any{
+		"unsubscribed": res.Failure == "",
+		"method":       res.Method,
+		"host":         res.Host,
+		"failure":      res.Failure,
+		"draft_id":     res.DraftID,
+	}, nil, nil
+}
+
+type mailLink struct {
+	URL  string `json:"url"`
+	Text string `json:"text"`
+}
+
+func (s *Service) getAllLinks(ctx context.Context, raw json.RawMessage) (any, error) {
+	var in idArgs
+	if err := json.Unmarshal(raw, &in); err != nil {
+		return nil, err
+	}
+	msgID, err := s.mailOf(ctx, runOf(ctx), int(in.ID))
+	if err != nil {
+		return nil, err
+	}
+	rows, err := s.db.Query(ctx, "SELECT body_html, body_text FROM messages WHERE id = ?", msgID)
+	if err != nil {
+		return nil, err
+	}
+	if len(rows.Values) == 0 {
+		return nil, fmt.Errorf("mail %d %w", in.ID, errMailNotFound)
+	}
+	bodyHTML := store.Str(rows.Values[0][0])
+	bodyText := store.Str(rows.Values[0][1])
+
+	seen := make(map[string]bool)
+	var links []mailLink
+
+	if bodyHTML != "" {
+		doc, err := html.Parse(strings.NewReader(bodyHTML))
+		if err == nil {
+			var extract func(*html.Node)
+			extract = func(n *html.Node) {
+				if n.Type == html.ElementNode && strings.EqualFold(n.Data, "a") {
+					var href string
+					for _, attr := range n.Attr {
+						if strings.EqualFold(attr.Key, "href") {
+							href = strings.TrimSpace(attr.Val)
+							break
+						}
+					}
+					if href != "" && !seen[href] && (strings.HasPrefix(href, "http://") || strings.HasPrefix(href, "https://") || strings.HasPrefix(href, "mailto:")) {
+						seen[href] = true
+						var text strings.Builder
+						for c := n.FirstChild; c != nil; c = c.NextSibling {
+							if c.Type == html.TextNode {
+								text.WriteString(c.Data)
+							}
+						}
+						links = append(links, mailLink{
+							URL:  href,
+							Text: strings.TrimSpace(text.String()),
+						})
+					}
+				}
+				for c := n.FirstChild; c != nil; c = c.NextSibling {
+					extract(c)
+				}
+			}
+			extract(doc)
+		}
+	}
+
+	if len(links) == 0 && bodyText != "" {
+		re := regexp.MustCompile(`https?://[^\s<>"]+`)
+		matches := re.FindAllString(bodyText, -1)
+		for _, m := range matches {
+			if !seen[m] {
+				seen[m] = true
+				links = append(links, mailLink{URL: m, Text: m})
+			}
+		}
+	}
+
+	return map[string]any{"mail_id": in.ID, "links": links}, nil
+}
+
+type openLinkArgs struct {
+	URL string `json:"url"`
+}
+
+// prepareOpenLink checks the link; the card shows it whole, since a link from
+// a mail can carry data out in its query.
+func (s *Service) prepareOpenLink(_ context.Context, _ Conversation, raw json.RawMessage) (prepared, error) {
+	var in openLinkArgs
+	if err := json.Unmarshal(raw, &in); err != nil {
+		return prepared{}, err
+	}
+	u, err := url.Parse(strings.TrimSpace(in.URL))
+	if err != nil || (u.Scheme != "http" && u.Scheme != "https") || u.Host == "" {
+		return prepared{}, errors.New("url must start with http:// or https://")
+	}
+	if s.opts.OpenURL == nil {
+		return prepared{}, errors.New("this app cannot open links in a browser")
+	}
+	b, err := json.Marshal(openLinkArgs{URL: u.String()})
+	if err != nil {
+		return prepared{}, err
+	}
+	return prepared{Args: b, Summary: "Open " + u.String(), TargetKind: "url"}, nil
+}
+
+func (s *Service) applyOpenLink(_ context.Context, a Approval) ([]sqlite.Statement, any, any, error) {
+	var in openLinkArgs
+	if err := json.Unmarshal(a.Args, &in); err != nil {
+		return nil, nil, nil, err
+	}
+	u, err := url.Parse(in.URL)
+	if err != nil || (u.Scheme != "http" && u.Scheme != "https") || s.opts.OpenURL == nil {
+		return nil, nil, nil, errors.New("url must start with http:// or https://")
+	}
+	if err := s.opts.OpenURL(u.String()); err != nil {
+		return nil, nil, nil, err
+	}
+	return nil, map[string]any{"opened": true, "url": u.String()}, nil, nil
+}
+
+type replyForwardArgs struct {
+	ID              int      `json:"id,omitempty"`
+	ReplyAll        bool     `json:"reply_all,omitempty"`
+	AccountID       int64    `json:"account_id"`
+	Mode            string   `json:"mode"`
+	SourceMessageID int64    `json:"source_message_id"`
+	To              []string `json:"to"`
+	Cc              []string `json:"cc"`
+	Subject         string   `json:"subject"`
+	HTML            string   `json:"html"`
+}
+
+func (s *Service) prepareReplyMail(ctx context.Context, _ Conversation, raw json.RawMessage) (prepared, error) {
+	var in struct {
+		ID       int    `json:"id"`
+		ReplyAll bool   `json:"reply_all"`
+		HTML     string `json:"html"`
+	}
+	if err := json.Unmarshal(raw, &in); err != nil {
+		return prepared{}, err
+	}
+	msgID, err := s.mailOf(ctx, runOf(ctx), in.ID)
+	if err != nil {
+		return prepared{}, err
+	}
+	rows, err := s.db.Query(ctx, "SELECT account_id FROM messages WHERE id = ?", msgID)
+	if err != nil {
+		return prepared{}, err
+	}
+	if len(rows.Values) == 0 {
+		return prepared{}, fmt.Errorf("mail %d %w", in.ID, errMailNotFound)
+	}
+	accID := store.Int(rows.Values[0][0])
+	mode := "reply"
+	if in.ReplyAll {
+		mode = "reply_all"
+	}
+	d, err := s.buildDraft(ctx, accID, mode, msgID)
+	if err != nil {
+		return prepared{}, err
+	}
+	bodyHTML := mail.StripMarkers(in.HTML) + d.HTML
+	sanitized, err := s.sanitizeDraft(ctx, bodyHTML)
+	if err != nil {
+		return prepared{}, err
+	}
+	args := replyForwardArgs{
+		ID:              in.ID,
+		ReplyAll:        in.ReplyAll,
+		AccountID:       accID,
+		Mode:            mode,
+		SourceMessageID: msgID,
+		To:              d.To,
+		Cc:              d.Cc,
+		Subject:         d.Subject,
+		HTML:            sanitized,
+	}
+	b, err := json.Marshal(args)
+	if err != nil {
+		return prepared{}, err
+	}
+	return prepared{
+		Args:       b,
+		Summary:    "Reply to " + strings.Join(d.To, ", ") + ": " + d.Subject,
+		TargetKind: "account",
+		TargetID:   accID,
+	}, nil
+}
+
+func (s *Service) prepareForwardMail(ctx context.Context, _ Conversation, raw json.RawMessage) (prepared, error) {
+	var in struct {
+		ID   int      `json:"id"`
+		To   []string `json:"to"`
+		Cc   []string `json:"cc"`
+		HTML string   `json:"html"`
+	}
+	if err := json.Unmarshal(raw, &in); err != nil {
+		return prepared{}, err
+	}
+	if len(in.To) == 0 {
+		return prepared{}, errors.New("to needs at least one recipient")
+	}
+	for _, a := range slices.Concat(in.To, in.Cc) {
+		if _, err := netmail.ParseAddress(a); err != nil {
+			return prepared{}, fmt.Errorf("invalid address %q", a)
+		}
+	}
+	msgID, err := s.mailOf(ctx, runOf(ctx), in.ID)
+	if err != nil {
+		return prepared{}, err
+	}
+	rows, err := s.db.Query(ctx, "SELECT account_id FROM messages WHERE id = ?", msgID)
+	if err != nil {
+		return prepared{}, err
+	}
+	if len(rows.Values) == 0 {
+		return prepared{}, fmt.Errorf("mail %d %w", in.ID, errMailNotFound)
+	}
+	accID := store.Int(rows.Values[0][0])
+	d, err := s.buildDraft(ctx, accID, "forward", msgID)
+	if err != nil {
+		return prepared{}, err
+	}
+	bodyHTML := mail.StripMarkers(in.HTML) + d.HTML
+	sanitized, err := s.sanitizeDraft(ctx, bodyHTML)
+	if err != nil {
+		return prepared{}, err
+	}
+	args := replyForwardArgs{
+		ID:              in.ID,
+		AccountID:       accID,
+		Mode:            "forward",
+		SourceMessageID: msgID,
+		To:              in.To,
+		Cc:              in.Cc,
+		Subject:         d.Subject,
+		HTML:            sanitized,
+	}
+	b, err := json.Marshal(args)
+	if err != nil {
+		return prepared{}, err
+	}
+	return prepared{
+		Args:       b,
+		Summary:    "Forward to " + strings.Join(in.To, ", ") + ": " + d.Subject,
+		TargetKind: "account",
+		TargetID:   accID,
+	}, nil
+}
+
+func (s *Service) applyReplyOrForwardDraft(ctx context.Context, a Approval) ([]sqlite.Statement, any, any, error) {
+	var in replyForwardArgs
+	if err := json.Unmarshal(a.Args, &in); err != nil {
+		return nil, nil, nil, err
+	}
+	res, err := s.db.Execute(ctx, `INSERT INTO drafts(account_id, mode, source_message_id, to_addrs, cc_addrs, bcc_addrs, reply_to, subject, body_html, updated_at, ai_approval_id) VALUES (?, ?, ?, ?, ?, '[]', '', ?, ?, ?, ?)`,
+		in.AccountID, in.Mode, in.SourceMessageID, encodeList(in.To), encodeList(in.Cc), in.Subject, in.HTML, time.Now().Unix(), a.ID)
+	if err != nil {
+		return nil, nil, nil, err
+	}
+	draftID := res.LastInsertID
+	if in.Mode == "forward" && in.SourceMessageID > 0 {
+		_ = s.copyAttachments(ctx, draftID, in.SourceMessageID)
+	}
+	return nil, map[string]any{"created": true, "draft_id": draftID, "subject": in.Subject}, nil, nil
+}
+
+type deleteDraftArgs struct {
+	DraftID int64  `json:"draft_id"`
+	Subject string `json:"subject"`
+}
+
+func (s *Service) prepareDeleteDraft(ctx context.Context, _ Conversation, raw json.RawMessage) (prepared, error) {
+	var in struct {
+		DraftID int64 `json:"draft_id"`
+	}
+	if err := json.Unmarshal(raw, &in); err != nil {
+		return prepared{}, err
+	}
+	rows, err := s.db.Query(ctx, "SELECT id, subject FROM drafts WHERE id = ?", in.DraftID)
+	if err != nil {
+		return prepared{}, err
+	}
+	if len(rows.Values) == 0 {
+		return prepared{}, fmt.Errorf("draft %d not found", in.DraftID)
+	}
+	subject := store.Str(rows.Values[0][1])
+	summary := "Delete draft: " + cmp.Or(subject, "(no subject)")
+	b, err := json.Marshal(deleteDraftArgs{DraftID: in.DraftID, Subject: subject})
+	if err != nil {
+		return prepared{}, err
+	}
+	return prepared{
+		Args:       b,
+		Summary:    summary,
+		TargetKind: "draft",
+		TargetID:   in.DraftID,
+	}, nil
+}
+
+func (s *Service) applyDeleteDraft(ctx context.Context, a Approval) ([]sqlite.Statement, any, any, error) {
+	var in deleteDraftArgs
+	if err := json.Unmarshal(a.Args, &in); err != nil {
+		return nil, nil, nil, err
+	}
+	if err := s.DeleteDraft(ctx, in.DraftID); err != nil {
+		return nil, nil, nil, err
+	}
+	return nil, map[string]any{"deleted": true, "draft_id": in.DraftID}, nil, nil
 }

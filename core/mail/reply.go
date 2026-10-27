@@ -1,10 +1,13 @@
 package mail
 
 import (
+	"cmp"
 	"fmt"
 	"html"
 	"net/mail"
 	"strings"
+
+	"github.com/godwit-email/godwit/internal/i18n"
 )
 
 // AddrKey is the lowercased bare address of an address string ("Bob <b@x>" → "b@x").
@@ -48,7 +51,7 @@ func QuoteHTMLIn(orig *Parsed, lang string) string {
 	if orig.HTML == "" {
 		body = strings.ReplaceAll(html.EscapeString(strings.ReplaceAll(orig.Text, "\r\n", "\n")), "\n", "<br>")
 	}
-	date, from := orig.Date.Format("2006-01-02 15:04"), html.EscapeString(orig.From)
+	date, from := i18n.FullDateIn(orig.Date, cmp.Or(lang, "zh-Hans"))+orig.Date.Format(" 15:04"), html.EscapeString(orig.From)
 	return "<p>" + quoteLead(lang, date, from) + "</p><blockquote>" + body + "</blockquote>"
 }
 

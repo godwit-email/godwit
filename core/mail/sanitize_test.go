@@ -375,31 +375,38 @@ func TestSanitizeStyleWhitespace(t *testing.T) {
 	assert.Contains(t, safeCard, `border-radius: 12px`)
 }
 
-// Inherently dark emails (dark canvas via body/container bgcolor or style, or meta color-scheme)
-// are marked with <style data-dark=""> so the reader does not invert them into white.
+// A naturally dark canvas does not claim that the author supplied dark CSS.
+func TestSanitizeDarkCanvasDoesNotClaimAuthorTheme(t *testing.T) {
+	safe, _ := mail.Sanitize(`<body style="background:#111"><p>Dark canvas</p></body>`, nil, false)
+	assert.True(t, strings.HasPrefix(safe, `<style data-dark-canvas="">`), safe)
+	assert.NotContains(t, safe, `<style data-dark="">`)
+	author, _ := mail.Sanitize(`<style>@media (prefers-color-scheme:dark){p{color:#eee}}</style><body style="background:#111"><p>Author theme</p></body>`, nil, false)
+	assert.True(t, strings.HasPrefix(author, `<style data-dark="">`), author)
+}
+
 func TestSanitizeDarkCanvas(t *testing.T) {
 	// Table container with dark background
 	stripe := `<table class="st-Background" bgcolor="#000000" width="100%"><tr><td><div style="background-color:#ffffff;color:#1a1a1a">Slip</div></td></tr></table>`
 	safeStripe, _ := mail.Sanitize(stripe, nil, false)
-	assert.True(t, strings.HasPrefix(safeStripe, `<style data-dark="">`), "dark container marks dark-aware")
+	assert.True(t, strings.HasPrefix(safeStripe, `<style data-dark-canvas="">`), "dark container marks its canvas")
 	assert.Contains(t, safeStripe, `bgcolor="#000000"`)
 	assert.Contains(t, safeStripe, `background-color: #ffffff`)
 
 	// Body with dark bgcolor
 	darkBody := `<html><body bgcolor="#1a1a1a"><p>Hello</p></body></html>`
 	safeBody, _ := mail.Sanitize(darkBody, nil, false)
-	assert.True(t, strings.HasPrefix(safeBody, `<style data-dark="">`), "dark body bgcolor marks dark-aware")
+	assert.True(t, strings.HasPrefix(safeBody, `<style data-dark-canvas="">`), "dark body bgcolor marks its canvas")
 	assert.Contains(t, safeBody, `background-color: #1a1a1a`, "wrapper div receives background-color style from body bgcolor")
 
 	// Meta color-scheme dark
 	metaDark := `<html><head><meta name="color-scheme" content="dark"></head><body><p>Hello</p></body></html>`
 	safeMeta, _ := mail.Sanitize(metaDark, nil, false)
-	assert.True(t, strings.HasPrefix(safeMeta, `<style data-dark="">`), "meta dark marks dark-aware")
+	assert.True(t, strings.HasPrefix(safeMeta, `<style data-dark-canvas="">`), "meta dark marks its canvas")
 
 	// Standard light email remains without data-dark
 	light := `<html><body bgcolor="#ffffff"><p>Hello</p></body></html>`
 	safeLight, _ := mail.Sanitize(light, nil, false)
-	assert.False(t, strings.HasPrefix(safeLight, `<style data-dark="">`), "light email is not dark-aware")
+	assert.False(t, strings.HasPrefix(safeLight, `<style data-dark-canvas="">`), "light email has no dark canvas")
 }
 
 // A ; inside quotes or a data: URL does not split a declaration, so the ones
@@ -417,7 +424,7 @@ func TestSanitizeStyleSemicolonInValue(t *testing.T) {
 func TestSanitizeDarkCanvasBounds(t *testing.T) {
 	dark := func(src string) bool {
 		safe, _ := mail.Sanitize(src, nil, false)
-		return strings.HasPrefix(safe, `<style data-dark="">`)
+		return strings.HasPrefix(safe, `<style data-dark-canvas="">`)
 	}
 	assert.True(t, dark(`<div style="width:100%;background-color:#111">x</div>`), "a full-width div by style")
 	assert.True(t, dark(`<center><table width="100%" style="background:rgb(20, 20, 20)"><tr><td>x</td></tr></table></center>`), "through one wrapper")

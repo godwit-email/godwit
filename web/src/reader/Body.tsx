@@ -5,10 +5,12 @@ import { ReaderPage as api, events, type ReaderBody, type Theme } from "@/mygo";
 import { useT } from "@/shared/i18n";
 import { forwardShortcuts } from "@/shared/shortcuts";
 import { applyTheme, type Theme as PageTheme } from "@/shared/theme";
+import { adaptDarkMode } from "./dark";
 import { buildSrcdoc, frameScheme } from "./frame";
 import { wheelForwarder } from "./wheel";
 
 const ignore = () => {};
+let nextDocument = 0;
 
 // Go refuses a taller body (webui maxBodyHeight): the page clamps to it.
 const MAX_HEIGHT = 1 << 20;
@@ -64,6 +66,8 @@ export function ReaderApp() {
         (dir) => api.navigate(dir),
         window,
         () => api.search(),
+        () => api.save(),
+        () => api.print(),
       ),
     [],
   );
@@ -122,12 +126,11 @@ function useSystemDark(): boolean {
  */
 export function Body({ body, theme }: { body: ReaderBody; theme: Theme }) {
   const systemDark = useSystemDark();
-  // The version makes each body Go sends a new document: a retry rebuilds the same HTML, and an
-  // unchanged srcdoc would not load again, nor ask for its failed images anew.
-  const srcdoc = useMemo(
-    () => `${buildSrcdoc(body, theme, systemDark)}<!-- ${body.version} -->`,
-    [body, theme, systemDark],
-  );
+  // Every update gets a fresh document marker, so a retry also reloads identical HTML and images.
+  const { srcdoc, marker } = useMemo(() => {
+    const marker = `godwit-reader-${++nextDocument}`;
+    return { srcdoc: `${buildSrcdoc(body, theme, systemDark)}<!--${marker}-->`, marker };
+  }, [body, theme, systemDark]);
   const frame = useRef<HTMLIFrameElement>(null);
   const t = useT(body.locale);
 
@@ -138,24 +141,40 @@ export function Body({ body, theme }: { body: ReaderBody; theme: Theme }) {
     return () => removeEventListener("wheel", wheel);
   }, [wheel]);
 
-  const wire = useCallback((f: HTMLIFrameElement) => attach(f, wheel), [wheel]);
+  const wire = useCallback((f: HTMLIFrameElement) => attach(f, wheel, theme), [wheel, theme]);
   useEffect(() => {
     const f = frame.current;
     if (!f) return;
+    let polling = true;
+    let wired: Document | null = null;
     let detach = ignore;
     const onLoad = () => {
-      detach();
-      detach = wire(f);
+      const doc = f.contentDocument;
+      if (!doc || doc.lastChild?.nodeValue !== marker || doc.readyState === "loading") return false;
+      if (wired !== doc) {
+        detach();
+        detach = wire(f);
+        wired = doc;
+      }
+      return true;
     };
-    f.addEventListener("load", onLoad);
-    // Rewired with the document as it is: an unchanged srcdoc doesn't load again (a loading one
-    // still fires load, which rewires the new document).
-    onLoad();
+    // Images can delay load; expose the parsed document as soon as its current marker is present.
+    // Polling ends at the first load: from then on load events alone track the document.
+    const ready = () => {
+      if (polling && !onLoad()) requestAnimationFrame(ready);
+    };
+    const loaded = () => {
+      polling = false;
+      onLoad();
+    };
+    f.addEventListener("load", loaded);
+    ready();
     return () => {
-      f.removeEventListener("load", onLoad);
+      polling = false;
+      f.removeEventListener("load", loaded);
       detach();
     };
-  }, [wire]);
+  }, [wire, marker]);
 
   return (
     <iframe
@@ -175,13 +194,17 @@ export function Body({ body, theme }: { body: ReaderBody; theme: Theme }) {
 }
 
 /** Wires a loaded body document; returns the unwiring. */
-function attach(frame: HTMLIFrameElement, wheel: (e: WheelEvent) => void): () => void {
+function attach(
+  frame: HTMLIFrameElement,
+  wheel: (e: WheelEvent) => void,
+  theme: Theme,
+): () => void {
   const doc = frame.contentDocument;
   const win = frame.contentWindow;
   const wrap = doc?.getElementById("godwit-body");
   if (!doc || !win || !wrap) return ignore; // the initial about:blank
   let live = true;
-  const offs: (() => void)[] = [];
+  const offs: (() => void)[] = [adaptDarkMode(frame, theme)];
   const on = <E extends Event>(
     t: EventTarget,
     type: string,
@@ -270,6 +293,8 @@ function attach(frame: HTMLIFrameElement, wheel: (e: WheelEvent) => void): () =>
       (dir) => api.navigate(dir),
       win,
       () => api.search(),
+      () => api.save(),
+      () => api.print(),
     ),
   );
 

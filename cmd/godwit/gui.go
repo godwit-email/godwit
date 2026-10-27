@@ -185,6 +185,8 @@ func gui(ctx context.Context, dataDir string) int {
 			onBody(k, 0, func(a *app.App, v ui.NativeWebView) { a.BodyNavigate(v, dir) })
 		},
 		OnSearch: func(k any) { onBody(k, 0, func(a *app.App, v ui.NativeWebView) { a.BodySearch(v) }) },
+		OnSave:   func(k any) { onBody(k, 0, func(a *app.App, v ui.NativeWebView) { a.BodySave(v) }) },
+		OnPrint:  func(k any) { onBody(k, 0, func(a *app.App, v ui.NativeWebView) { a.BodyPrint(v) }) },
 		OnBuilt: func(k any, b webui.ReaderBody) {
 			onBody(k, b.Message, func(a *app.App, v ui.NativeWebView) { a.BodyBuilt(v, b.Message, b.Cut, b.Remote) })
 		},
@@ -231,7 +233,7 @@ func gui(ctx context.Context, dataDir string) int {
 		if err == nil {
 			svc, err = core.New(ctx, core.Options{DataDir: dataDir, AutoSync: true, LabelMail: true, SystemLanguage: lang,
 				Registry: reg, ModelsDev: ai.ModelsDevURL, AppVersion: app.Version, SystemTranslator: systemTranslator(), AppleIntelligence: appleIntelligence(),
-				ConfirmWindow: true, ComposeOpen: windows.IsOpen})
+				ConfirmWindow: true, ComposeOpen: windows.IsOpen, OpenURL: mygo.Shell.OpenExternal})
 		}
 		if err != nil {
 			i18n.SetLanguage(lang)

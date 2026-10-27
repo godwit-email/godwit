@@ -3,6 +3,7 @@ package core
 import (
 	"context"
 	"encoding/base64"
+	"fmt"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -87,6 +88,37 @@ func TestListThreadsPaging(t *testing.T) {
 	_, err = e.s.ListThreads(bg, v, "!!bad", 5)
 	assert.Error(t, err)
 	_, err = e.s.ListThreads(bg, View{}, "", 5)
+	assert.Error(t, err)
+}
+
+func TestViewStarredAccount(t *testing.T) {
+	e := newSyncEnv(t)
+	e.put(t, "INBOX", eml("a1@x", "Bob <bob@example.com>", "alice@example.com", "a1", "Mon, 05 Oct 2026 09:00:00 +0000", "b1"))
+	e.sync(t)
+	require.NoError(t, e.s.SetFlags(bg, []int64{e.idOf(t, "a1@x")}, []string{`\Flagged`}, nil))
+
+	e2 := e.second(t)
+	e2.put(t, "INBOX", eml("c1@x", "Eve <eve@example.com>", "carol@example.com", "c1", "Mon, 05 Oct 2026 09:00:00 +0000", "b2"))
+	e2.sync(t)
+	require.NoError(t, e.s.SetFlags(bg, []int64{e2.idOf(t, "c1@x")}, []string{`\Flagged`}, nil))
+
+	all, err := e.s.ListMessages(bg, View{Unified: "starred"}, "", 50)
+	require.NoError(t, err)
+	assert.Len(t, all.Items, 2)
+
+	acc1View := View{Unified: fmt.Sprintf("starred:%d", e.acc.ID)}
+	acc1, err := e.s.ListMessages(bg, acc1View, "", 50)
+	require.NoError(t, err)
+	assert.Len(t, acc1.Items, 1)
+	assert.Equal(t, e.idOf(t, "a1@x"), acc1.Items[0].ID)
+
+	acc2View := View{Unified: fmt.Sprintf("starred:%d", e2.acc.ID)}
+	acc2, err := e.s.ListMessages(bg, acc2View, "", 50)
+	require.NoError(t, err)
+	assert.Len(t, acc2.Items, 1)
+	assert.Equal(t, e2.idOf(t, "c1@x"), acc2.Items[0].ID)
+
+	_, err = e.s.ListMessages(bg, View{Unified: "starred:invalid"}, "", 50)
 	assert.Error(t, err)
 }
 

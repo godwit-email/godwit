@@ -820,6 +820,20 @@
       }
     }
   },
+  "reader_date_year": "{arg1} {arg2, number, ::group-off}, {arg3, number, ::group-off}",
+  "@reader_date_year": {
+    "placeholders": {
+      "arg1": {
+        "type": "String"
+      },
+      "arg2": {
+        "type": "int"
+      },
+      "arg3": {
+        "type": "int"
+      }
+    }
+  },
   "reader_egress_allow": "Allow once",
   "reader_egress_body": "Plugin {arg1} will send data to:",
   "@reader_egress_body": {
@@ -896,9 +910,12 @@
       }
     }
   },
+  "reader_print": "Print email",
   "reader_reply": "Reply",
   "reader_reply_all": "Reply all",
+  "reader_save": "Save email",
   "reader_save_as": "Save as…",
+  "reader_saved": "Email saved",
   "reader_to": "To {arg1} · {arg2}",
   "@reader_to": {
     "placeholders": {
@@ -2240,6 +2257,31 @@
   "wit_tool_ask_user_question": "Ask you",
   "wit_tool_classify_mail": "classify mail",
   "wit_tool_create_draft": "create a draft",
+  "wit_tool_move_to_trash": "Move to Trash",
+  "wit_tool_archive_mail": "Archive mail",
+  "wit_tool_mark_as_spam": "Mark as spam",
+  "wit_tool_mark_as_read": "Mark as read",
+  "wit_tool_mark_as_unread": "Mark as unread",
+  "wit_tool_star_mail": "Star mail",
+  "wit_tool_unstar_mail": "Unstar mail",
+  "wit_tool_unsubscribe": "Unsubscribe",
+  "wit_tool_get_all_links": "Get all links",
+  "wit_tool_open_link_in_browser": "Open link in browser",
+  "wit_tool_reply_to_mail": "Reply to mail",
+  "wit_tool_forward_mail": "Forward mail",
+  "wit_tool_delete_draft": "Delete draft",
+  "wit_action_trash": "Move to Trash",
+  "wit_action_archive": "Archive",
+  "wit_action_spam": "Spam",
+  "wit_action_read": "Mark read",
+  "wit_action_unread": "Mark unread",
+  "wit_action_star": "Star",
+  "wit_action_unstar": "Unstar",
+  "wit_approval_edit": "Edit draft",
+  "wit_approval_cancel_edit": "Cancel",
+  "wit_batch_select_all": "Select all",
+  "wit_batch_deselect_all": "Deselect all",
+  "wit_batch_no_sender": "(No sender)",
   "wit_tool_update_draft": "Edit the body",
   "wit_tool_update_selection": "Edit the selection",
   "wit_tools_called": "Used {arg1}",
@@ -2527,5 +2569,17 @@
     }
   },
   "wit_model_changed": "Model changed: {arg1}",
-  "settings_models_apple_intelligence_sub": "On-device intelligence"
+  "settings_models_apple_intelligence_sub": "On-device intelligence",
+  "reader_copy_address": "Copy Address",
+  "reader_address_copied": "Address copied",
+  "reader_block_sender": "Block Sender",
+  "reader_unblock_sender": "Unblock Sender",
+  "reader_blocked_badge": "Blocked",
+  "reader_sender_blocked": "Sender blocked",
+  "reader_sender_unblocked": "Sender unblocked",
+  "settings_blocked": "Blocked Senders",
+  "settings_blocked_sub": "Incoming messages from blocked senders are automatically moved to Junk.",
+  "settings_blocked_none": "No blocked senders.",
+  "settings_blocked_remove": "Unblock",
+  "settings_blocked_remove_label": "Unblock {arg1}"
 }

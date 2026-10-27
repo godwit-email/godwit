@@ -20,6 +20,7 @@ import (
 	"github.com/egoist/mygo/ui"
 	"github.com/godwit-email/godwit/core"
 	"github.com/godwit-email/godwit/core/ai"
+	gomail "github.com/godwit-email/godwit/core/mail"
 	"github.com/godwit-email/godwit/internal/i18n"
 	"github.com/godwit-email/godwit/internal/icons"
 	"github.com/godwit-email/godwit/internal/kit"
@@ -46,19 +47,22 @@ type reader struct {
 	labelMenu   bool
 	labelQuery  string
 	open        map[int64]bool // messages shown in full
+	focus       int64          // the message last expanded, or whose page took ⌘S/⌘P: what save and print act on while it is open
 	historyOpen map[int64]bool // collapsed runs of folded messages shown anyway, by the run's first message
 	bodies      map[int64]*msgBody
 	scroll      ui.ScrollState // the messages' scrolling; a body's page hands on the wheels it does not use
 
-	ai        map[int64]*msgAI         // by message; kept across switches so a summary runs once
-	aiCtx     context.Context          // the AI work of the key shown; nil until some starts
-	aiStop    context.CancelFunc       // cancels aiCtx
-	skills    fetch[[]core.SkillInfo]  // the skill menu: skills on messages but summarize and translate
-	actions   fetch[[]core.ActionInfo] // and plugin actions on messages
-	egress    egressAsk                // the action waiting for egress approval
-	egressDlg bool                     // its dialog shows
-	unsubAsk  int64                    // the message whose one-click unsubscribe waits to be confirmed
-	unsubDlg  bool                     // its dialog shows
+	ai          map[int64]*msgAI         // by message; kept across switches so a summary runs once
+	aiCtx       context.Context          // the AI work of the key shown; nil until some starts
+	aiStop      context.CancelFunc       // cancels aiCtx
+	skills      fetch[[]core.SkillInfo]  // the skill menu: skills on messages but summarize and translate
+	actions     fetch[[]core.ActionInfo] // and plugin actions on messages
+	egress      egressAsk                // the action waiting for egress approval
+	egressDlg   bool                     // its dialog shows
+	unsubAsk    int64                    // the message whose one-click unsubscribe waits to be confirmed
+	unsubDlg    bool                     // its dialog shows
+	senderOpen  bool                     // the sender action popover shows
+	senderMsgID int64                    // which message's sender popover is open
 
 	getThread  func(ctx context.Context, id int64) (core.Thread, error)                       // tests wrap it
 	getMessage func(ctx context.Context, id int64, remote bool) (core.Message, error)         // tests wrap it
@@ -145,8 +149,9 @@ func (r *reader) reset(k [2]int64) {
 		b.closeView()
 	}
 	r.stopAI()
-	r.key, r.loaded, r.subject, r.msgs = k, false, "", nil
+	r.key, r.loaded, r.subject, r.msgs, r.focus = k, false, "", nil, 0
 	r.threadIDs, r.labels, r.labelMenu, r.labelQuery = nil, nil, false, ""
+	r.senderOpen, r.senderMsgID = false, 0
 	r.open, r.historyOpen, r.bodies = map[int64]bool{}, map[int64]bool{}, map[int64]*msgBody{}
 	r.scroll.X, r.scroll.Y = 0, 0
 	r.gen++
@@ -267,6 +272,7 @@ func (r *reader) toggle(id int64) {
 		return
 	}
 	r.expand(id)
+	r.focus = id
 	for _, m := range r.msgs {
 		if m.ID == id && !isSeen(m) {
 			r.markRead([]core.MessageSummary{m})
@@ -465,6 +471,18 @@ func (r *reader) shown(v ui.NativeWebView, message int64) *msgBody {
 	return nil
 }
 
+// focusView makes the message whose page is v, if shown, the one save and
+// print act on, and reports whether it was.
+func (r *reader) focusView(v ui.NativeWebView) bool {
+	for id, b := range r.bodies {
+		if b.view != nil && b.view == v && r.open[id] {
+			r.focus = id
+			return true
+		}
+	}
+	return false
+}
+
 // current reports whether v is the page of a body shown.
 func (r *reader) current(v ui.NativeWebView) bool {
 	for id, b := range r.bodies {
@@ -505,6 +523,24 @@ func (r *reader) last() (core.MessageSummary, bool) {
 		return core.MessageSummary{}, false
 	}
 	return r.msgs[len(r.msgs)-1], true
+}
+
+// target is the message save and print act on: the focused one while it is
+// expanded, else the newest expanded, else the newest.
+func (r *reader) target() (core.MessageSummary, bool) {
+	var open []core.MessageSummary
+	for _, m := range r.msgs {
+		if r.focus == m.ID && r.open[m.ID] {
+			return m, true
+		}
+		if r.open[m.ID] {
+			open = append(open, m)
+		}
+	}
+	if len(open) > 0 {
+		return open[len(open)-1], true
+	}
+	return r.last()
 }
 
 // account is the account of the message shown; 0 when none is.
@@ -685,6 +721,50 @@ func copyFile(src, dst string) error {
 	return out.Close()
 }
 
+// saveMail saves the target message to an .eml file.
+func (r *reader) saveMail() {
+	m, ok := r.target()
+	if !ok {
+		return
+	}
+	a := r.p.a
+	plat := a.plat
+	a.do(func(ctx context.Context) error {
+		stem := []rune(m.Subject)
+		stem = stem[:min(len(stem), 100)] // file systems cap names near 255 bytes
+		dst, err := plat.SaveFile(fileName(string(stem), "email") + ".eml")
+		if err != nil || dst == "" {
+			return err
+		}
+		raw, err := a.svc.GetRawMessage(ctx, m.ID)
+		if err != nil {
+			// Offline: a simplified copy built from what is stored, its HTML
+			// body only (attachments are dropped). Build encodes the headers.
+			html, herr := a.svc.StoredHTML(ctx, m.ID)
+			if herr != nil {
+				return err
+			}
+			if raw, _, err = gomail.Build(gomail.Outgoing{From: m.From, To: m.To, Cc: m.Cc, Subject: m.Subject, HTML: html}, m.Date); err != nil {
+				return err
+			}
+		}
+		return os.WriteFile(dst, raw, 0o644)
+	}, func(err error) {
+		if err != nil {
+			a.toastErr(err)
+		} else {
+			a.toast(i18n.T("reader.saved"))
+		}
+	})
+}
+
+// printMail prints the target message's body page.
+func (r *reader) printMail() {
+	if m, ok := r.target(); ok {
+		r.p.a.plat.Print(m.ID)
+	}
+}
+
 // view is the reading pane: the toolbar over the subject and the messages.
 func (r *reader) view(c *ui.Context) {
 	t, th := theme.Of(c), c.Theme()
@@ -697,6 +777,12 @@ func (r *reader) view(c *ui.Context) {
 	}
 	if !r.loaded || len(r.msgs) == 0 {
 		return
+	}
+	if c.Shortcut(ui.Cmd, ui.KeyS) {
+		r.saveMail()
+	}
+	if c.Shortcut(ui.Cmd, ui.KeyP) {
+		r.printMail()
 	}
 	col.Children(func() {
 		r.toolbar(c)
@@ -733,7 +819,11 @@ func (r *reader) toolbar(c *ui.Context) {
 			kit.GroupItem{Icon: "reply-all", Tip: i18n.T("reader.reply_all"), OnClick: func() { r.draft("reply_all") }},
 			kit.GroupItem{Icon: "forward", Tip: i18n.T("reader.forward"), OnClick: func() { r.draft("forward") }},
 		)
-		file := []kit.GroupItem{}
+		starIcon, starTip := "star", i18n.T("mail.action.star")
+		if r.starred() {
+			starIcon, starTip = "star-fill", i18n.T("mail.action.unstar")
+		}
+		file := []kit.GroupItem{{Icon: starIcon, Tip: starTip, OnClick: func() { r.act("toggle_star") }}}
 		role := r.p.currentFolderRole()
 		if role != "inbox" {
 			file = append(file, kit.GroupItem{Icon: "inbox", Tip: i18n.T("mail.action.inbox"), OnClick: func() { r.act("inbox") }})
@@ -746,8 +836,24 @@ func (r *reader) toolbar(c *ui.Context) {
 		}
 		file = append(file, kit.GroupItem{Icon: "trash-2", Tip: i18n.T("mail.action.delete"), OnClick: func() { r.act("delete") }})
 		kit.ButtonGroup(c, file...)
+		kit.ButtonGroup(c,
+			kit.GroupItem{Icon: "save", Tip: i18n.T("reader.save"), OnClick: func() { r.saveMail() }},
+			kit.GroupItem{Icon: "printer", Tip: i18n.T("reader.print"), OnClick: func() { r.printMail() }},
+		)
 		ui.Spacer(c)
 		ui.Row(c).Wrap().Gap(th.Space(1)).AlignItems(ui.Center).Children(func() { r.aiTools(c) })
+	})
+}
+
+// starred reports whether all the toolbar acts on is starred: toggle_star
+// unstars only then, else it stars the rest.
+func (r *reader) starred() bool {
+	msgs := r.msgs
+	if r.key[1] != 0 && len(msgs) > 0 { // a message's reader acts on it alone
+		msgs = msgs[len(msgs)-1:]
+	}
+	return len(msgs) > 0 && !slices.ContainsFunc(msgs, func(m core.MessageSummary) bool {
+		return !slices.Contains(m.Flags, `\Flagged`)
 	})
 }
 
@@ -803,6 +909,9 @@ func (r *reader) folded(c *ui.Context, m core.MessageSummary) {
 	name, _ := sender(m.From)
 	kit.Pressable(c, kit.PressableOpts{Bordered: true, OnClick: func() { r.toggle(m.ID) }}).FillWidth().MaxWidth(theme.ReaderMaxWidth).AlignSelf(ui.Center).Gap(th.Space(3)).Padding(th.Space(2), th.Space(3)).Children(func() {
 		ui.Text(c, name).FontWeight(500).SingleLine().Shrink(0)
+		if r.isBlocked(m.From) {
+			kit.Badge(c, i18n.T("reader.blocked_badge"))
+		}
 		ui.Text(c, m.Snippet).TextColor(t.Muted).SingleLine().Grow(1).Shrink(1)
 		kit.Text(c, listTime(r.p.a.clock.Now(), m.Date), t.Text.Sm).TextColor(t.Muted).Shrink(0)
 	})
@@ -854,7 +963,8 @@ func (r *reader) message(c *ui.Context, m core.MessageSummary) {
 				fold = func() { r.toggle(m.ID) }
 			}
 			ui.Row(c).Gap(th.Space(2)).AlignItems(ui.Center).Children(func() {
-				kit.Pressable(c, kit.PressableOpts{OnClick: fold}).Grow(1).Shrink(1).Gap(th.Space(2.5)).Children(func() {
+				btn := kit.Pressable(c, kit.PressableOpts{OnClick: fold}).Gap(th.Space(2.5))
+				btn.Children(func() {
 					// Until the avatar is fetched or refused, a pulse; then the image or the initial.
 					if b == nil || b.err == nil && !b.ready || b.avatarStop != nil {
 						kit.Skeleton(c, th.Space(8), th.Space(8)).Radius(t.Radius.Lg).Shrink(0).Label(name)
@@ -862,16 +972,39 @@ func (r *reader) message(c *ui.Context, m core.MessageSummary) {
 						kit.AvatarImage(c, name, b.avatar)
 					}
 					ui.Column(c).Shrink(1).Children(func() {
-						ui.Row(c).Gap(th.Space(1)).Children(func() {
+						ui.Row(c).Gap(th.Space(1)).AlignItems(ui.Center).Children(func() {
 							ui.Text(c, name).FontWeight(500).SingleLine()
 							if addr != "" && addr != name {
 								ui.Text(c, "<"+addr+">").TextColor(t.Muted).SingleLine()
+							}
+							if r.isBlocked(m.From) {
+								kit.Badge(c, i18n.T("reader.blocked_badge"))
 							}
 						})
 						when := senderDate(r.p.a.clock.Now(), m.Date)
 						kit.Text(c, i18n.Tf("reader.to", r.recipients(m), when), t.Text.Sm).TextColor(t.Muted)
 					})
 				})
+				target := cmp.Or(addr, m.From)
+				chev := kit.Pressable(c, kit.PressableOpts{
+					OnClick: func() {
+						if r.senderOpen && r.senderMsgID == m.ID {
+							r.senderOpen = false
+						} else {
+							r.senderOpen = true
+							r.senderMsgID = m.ID
+						}
+					},
+				}).Size(th.Space(6), th.Space(6)).Radius(t.Radius.Md).Center().Label(target)
+				chev.Children(func() {
+					ui.Icon(c, icons.Get("chevron-down")).Size(theme.IconXs, theme.IconXs).TextColor(t.Muted)
+				})
+				if r.senderOpen && r.senderMsgID == m.ID {
+					kit.Popover(c, chev, &r.senderOpen, func() {
+						r.senderPopover(c, addr, m.From)
+					})
+				}
+				ui.Spacer(c)
 				if b != nil && b.unsub.Method != "" { // each message by its own headers
 					if b.unsubbing {
 						kit.Spinner(c)
@@ -1091,6 +1224,20 @@ func (a *App) BodySearch(view ui.NativeWebView) {
 	}
 }
 
+// BodySave saves the message of a body's page (⌘S).
+func (a *App) BodySave(view ui.NativeWebView) {
+	if a.mail.reader.focusView(view) {
+		a.mail.reader.saveMail()
+	}
+}
+
+// BodyPrint prints the message of a body's page (⌘P).
+func (a *App) BodyPrint(view ui.NativeWebView) {
+	if a.mail.reader.focusView(view) {
+		a.mail.reader.printMail()
+	}
+}
+
 // BodyBuilt is told message's body as its page got it: whether it is only
 // the start (ReaderBody.Cut), for the truncated notice, and has the remote
 // images (Remote), which hides their notice.
@@ -1120,7 +1267,7 @@ func (a *App) BodyFailed(view ui.NativeWebView, message int64, err error) {
 }
 
 // senderDate is a message's time in the sender line: today or yesterday,
-// the weekday this week, with the hour; else month and day.
+// the weekday this week, with the hour; else month and day (with year if different).
 func senderDate(now, t time.Time) string {
 	t = t.In(now.Location())
 	clock := t.Format("15:04")
@@ -1131,6 +1278,9 @@ func senderDate(now, t time.Time) string {
 	case !t.Before(today):
 		return i18n.T("reader.today") + " " + clock
 	case t.Before(weekStart) && t.Before(today.AddDate(0, 0, -1)): // as listTime: older than yesterday and this week
+		if t.Year() != now.Year() {
+			return i18n.Tf("reader.date_year", i18n.T(fmt.Sprintf("reader.month.%d", t.Month())), t.Day(), t.Year())
+		}
 		return i18n.Tf("reader.date", i18n.T(fmt.Sprintf("reader.month.%d", t.Month())), t.Day())
 	}
 	return listTime(now, t) + " " + clock
@@ -1209,6 +1359,86 @@ func (r *reader) unsubscribeDialog(c *ui.Context) {
 		if kit.Button(c, i18n.T("reader.unsubscribe"), kit.ButtonOpts{}).AutoFocus().Clicked() {
 			r.unsubDlg = false
 			r.sendUnsubscribe(id)
+		}
+	})
+}
+
+// isBlocked is whether from (a From header or its address) is a blocked sender.
+func (r *reader) isBlocked(from string) bool {
+	return slices.Contains(r.p.a.settings.BlockedSenders, gomail.AddrKey(from))
+}
+
+// setBlocked blocks or unblocks from's address, in core and then in the
+// settings shown, so the badge and lists change at once; done follows success.
+func (a *App) setBlocked(from string, block bool, done func()) {
+	a.do(func(ctx context.Context) error {
+		if block {
+			return a.svc.BlockSender(ctx, from)
+		}
+		return a.svc.UnblockSender(ctx, from)
+	}, func(err error) {
+		if err != nil {
+			a.toastErr(err)
+			return
+		}
+		key := gomail.AddrKey(from)
+		l := slices.DeleteFunc(slices.Clone(a.settings.BlockedSenders), func(s string) bool { return s == key })
+		if block {
+			l = append(l, key)
+		}
+		a.settings.BlockedSenders = l
+		if done != nil {
+			done()
+		}
+	})
+}
+
+func (r *reader) senderPopover(c *ui.Context, addr, rawFrom string) {
+	target := addr
+	if target == "" {
+		target = rawFrom
+	}
+	if target == "" {
+		return
+	}
+	t, th := theme.Of(c), c.Theme()
+	closeMenu := func(act func()) func() {
+		return func() {
+			r.senderOpen = false
+			if act != nil {
+				act()
+			}
+		}
+	}
+
+	ui.Column(c).Width(theme.SenderMenuWidth).Gap(th.Space(1)).Children(func() {
+		row := func(label, iconName string, danger bool, onClick func()) {
+			color := t.Foreground
+			if danger {
+				color = t.DangerText
+			}
+			p := kit.Pressable(c, kit.PressableOpts{OnClick: onClick}).
+				FillWidth().Padding(th.Space(1.5), th.Space(2)).
+				Radius(t.Radius.Md).Gap(th.Space(2.5)).AlignItems(ui.Center).Label(label)
+			p.Children(func() {
+				ui.Icon(c, icons.Get(iconName)).Size(theme.Icon, theme.Icon).TextColor(color)
+				ui.Text(c, label).TextColor(color).SingleLine()
+			})
+		}
+
+		row(i18n.T("reader.copy_address"), "copy", false, closeMenu(func() {
+			c.WriteClipboard(target)
+			r.p.a.toast(i18n.T("reader.address_copied"))
+		}))
+
+		if r.isBlocked(target) {
+			row(i18n.T("reader.unblock_sender"), "shield", false, closeMenu(func() {
+				r.p.a.setBlocked(target, false, func() { r.p.a.toast(i18n.T("reader.sender_unblocked")) })
+			}))
+		} else {
+			row(i18n.T("reader.block_sender"), "spam", true, closeMenu(func() {
+				r.p.a.setBlocked(target, true, func() { r.p.a.toast(i18n.T("reader.sender_blocked")) })
+			}))
 		}
 	})
 }

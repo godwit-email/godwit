@@ -1,6 +1,6 @@
 import { cn } from "cn";
 import type { Citation } from "@/mygo";
-import type { T } from "@/shared/i18n";
+import { currentLocale, type T } from "@/shared/i18n";
 
 /**
  * Citations' numbers through the conversation, by message ID; suspect once any citation is, with
@@ -8,12 +8,21 @@ import type { T } from "@/shared/i18n";
  */
 export type Nums = Map<number, { n: number; suspect: boolean; quote: string; c: Citation }>;
 
-/** A citation's date, absolute: M/DD this year, YYYY/M/DD another ("" for none). */
-export function citeDate(ms: number): string {
+/** Format date according to Unicode CLDR standards via Intl.DateTimeFormat. */
+export function formatDate(date: Date, locale = currentLocale(), showYear = false): string {
+  return new Intl.DateTimeFormat(locale, {
+    day: "numeric",
+    month: "numeric",
+    ...(showYear && { year: "numeric" }),
+  }).format(date);
+}
+
+/** A citation's date, absolute: localized for current year (e.g. 19.10. or 10/19), full date for another year ("" for none). */
+export function citeDate(ms: number, locale = currentLocale()): string {
   if (!ms) return "";
   const d = new Date(ms);
-  const md = `${d.getMonth() + 1}/${String(d.getDate()).padStart(2, "0")}`;
-  return d.getFullYear() === new Date().getFullYear() ? md : `${d.getFullYear()}/${md}`;
+  const sameYear = d.getFullYear() === new Date().getFullYear();
+  return formatDate(d, locale, !sameYear);
 }
 
 /**

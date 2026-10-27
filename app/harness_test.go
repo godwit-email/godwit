@@ -424,6 +424,10 @@ func (p *fakePlatform) TranslateBody(message int64, texts map[string]string) {
 	}
 }
 
+func (p *fakePlatform) Print(message int64) {
+	p.record("Print", fmt.Sprint(message))
+}
+
 // view is message's open body page, or nil.
 func (p *fakePlatform) view(message int64) *fakeBodyView {
 	p.mu.Lock()
