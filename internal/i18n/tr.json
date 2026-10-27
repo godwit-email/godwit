@@ -137,6 +137,7 @@
   "mail_accounts": "Hesaplar",
   "mail_action_archive": "Arşivle",
   "mail_action_delete": "Sil",
+  "mail_action_inbox": "Gelen Kutusu’na taşı",
   "mail_action_junk": "İstenmeyen’e taşı",
   "mail_action_read": "Okundu olarak işaretle",
   "mail_action_star": "Yıldız ekle",

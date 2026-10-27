@@ -137,6 +137,7 @@
   "mail_accounts": "Comptes",
   "mail_action_archive": "Archiver",
   "mail_action_delete": "Supprimer",
+  "mail_action_inbox": "Déplacer vers Boîte de réception",
   "mail_action_junk": "Déplacer dans les indésirables",
   "mail_action_read": "Marquer comme lu",
   "mail_action_star": "Suivre",

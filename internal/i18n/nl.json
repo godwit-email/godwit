@@ -137,6 +137,7 @@
   "mail_accounts": "Accounts",
   "mail_action_archive": "Archiveren",
   "mail_action_delete": "Verwijderen",
+  "mail_action_inbox": "Verplaatsen naar Postvak IN",
   "mail_action_junk": "Verplaatsen naar Ongewenst",
   "mail_action_read": "Markeren als gelezen",
   "mail_action_star": "Met ster markeren",

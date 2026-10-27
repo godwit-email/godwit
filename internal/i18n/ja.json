@@ -137,6 +137,7 @@
   "mail_accounts": "アカウント",
   "mail_action_archive": "アーカイブ",
   "mail_action_delete": "削除",
+  "mail_action_inbox": "受信トレイへ移動",
   "mail_action_junk": "迷惑メールへ移動",
   "mail_action_read": "開封済みにする",
   "mail_action_star": "スターを付ける",

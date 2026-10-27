@@ -14,6 +14,7 @@ import (
 	"github.com/emersion/go-imap/v2"
 	"github.com/godwit-email/godwit/core"
 	"github.com/godwit-email/godwit/core/coretest"
+	"github.com/godwit-email/godwit/internal/i18n"
 )
 
 // mailHarness is a harness with an account per email, on the mail page.
@@ -491,6 +492,84 @@ func TestRowMenuByState(t *testing.T) {
 	h.waitMail("unstarred by S", func() bool { return h.items()[0].Flagged == 0 })
 	h.tt.Key(0, ui.KeyU)
 	h.waitMail("unread by U", func() bool { return h.items()[0].Unread == 1 })
+}
+
+// TestContextMenuMoveRoleOptions verifies that right-clicking mail in any of
+// Inbox, Archive, Junk, or Trash displays move options for the other 3 folders,
+// never offers the current folder, and executes the move correctly.
+func TestContextMenuMoveRoleOptions(t *testing.T) {
+	h, accs := mailHarness(t, nil, "alice@example.com")
+	if err := h.env.IMAP(accs[0].ID).User.Create("Junk", nil); err != nil {
+		t.Fatal(err)
+	}
+	h.syncNow(accs[0])
+
+	base := h.clock.Now()
+	h.put(accs[0], "INBOX", coretest.Msg("bob@example.com", "alice@example.com", "first", "x", at(base, 1)))
+	h.syncNow(accs[0])
+	h.waitMail("inbox mail", func() bool { return len(h.items()) == 1 })
+
+	inboxAct := i18n.T("mail.action.inbox")
+	archiveAct := i18n.T("mail.action.archive")
+	junkAct := i18n.T("mail.action.junk")
+	deleteAct := i18n.T("mail.action.delete")
+
+	assertMenu := func(wantHave []string, wantNot []string) {
+		t.Helper()
+		if err := h.tt.RightClick("first"); err != nil {
+			t.Fatal(err)
+		}
+		menu := h.tt.Menu()
+		for _, w := range wantHave {
+			if !slices.Contains(menu, w) {
+				t.Fatalf("menu %v missing expected item %q", menu, w)
+			}
+		}
+		for _, n := range wantNot {
+			if slices.Contains(menu, n) {
+				t.Fatalf("menu %v should not contain %q", menu, n)
+			}
+		}
+	}
+
+	// 1. In Inbox: should offer Archive, Junk, Delete; NOT Inbox
+	assertMenu([]string{archiveAct, junkAct, deleteAct}, []string{inboxAct})
+	if err := h.tt.ChooseMenuItem(archiveAct); err != nil {
+		t.Fatal(err)
+	}
+	h.waitMail("inbox empty after archive", func() bool { return len(h.items()) == 0 })
+
+	// 2. In Archive: navigate to Archive
+	h.click(i18n.T("mail.folder.archive"))
+	h.waitMail("in archive", func() bool { return len(h.items()) == 1 })
+	assertMenu([]string{inboxAct, junkAct, deleteAct}, []string{archiveAct})
+	if err := h.tt.ChooseMenuItem(junkAct); err != nil {
+		t.Fatal(err)
+	}
+	h.waitMail("archive empty after junk", func() bool { return len(h.items()) == 0 })
+
+	// 3. In Junk: navigate to Junk
+	h.click(i18n.T("mail.folder.junk"))
+	h.waitMail("in junk", func() bool { return len(h.items()) == 1 })
+	assertMenu([]string{inboxAct, archiveAct, deleteAct}, []string{junkAct})
+	if err := h.tt.ChooseMenuItem(deleteAct); err != nil {
+		t.Fatal(err)
+	}
+	h.waitMail("junk empty after delete", func() bool { return len(h.items()) == 0 })
+
+	// 4. In Trash: navigate to Trash
+	h.click(i18n.T("mail.folder.trash"))
+	h.waitMail("in trash", func() bool { return len(h.items()) == 1 })
+	assertMenu([]string{inboxAct, archiveAct, junkAct, deleteAct}, nil)
+	if err := h.tt.ChooseMenuItem(inboxAct); err != nil {
+		t.Fatal(err)
+	}
+	h.waitMail("trash empty after move to inbox", func() bool { return len(h.items()) == 0 })
+
+	// 5. Back in Inbox
+	h.click(i18n.T("mail.unified.inbox"))
+	h.waitMail("back in inbox", func() bool { return len(h.items()) == 1 })
+	assertMenu([]string{archiveAct, junkAct, deleteAct}, []string{inboxAct})
 }
 
 func TestBatchAcrossAccounts(t *testing.T) {

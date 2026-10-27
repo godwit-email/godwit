@@ -137,6 +137,7 @@
   "mail_accounts": "Contas",
   "mail_action_archive": "Arquivar",
   "mail_action_delete": "Excluir",
+  "mail_action_inbox": "Mover para Caixa de Entrada",
   "mail_action_junk": "Mover para Lixo Eletrônico",
   "mail_action_read": "Marcar como lido",
   "mail_action_star": "Destacar",

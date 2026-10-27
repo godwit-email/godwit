@@ -137,6 +137,7 @@
   "mail_accounts": "Аккаунты",
   "mail_action_archive": "Архивировать",
   "mail_action_delete": "Удалить",
+  "mail_action_inbox": "Во Входящие",
   "mail_action_junk": "В спам",
   "mail_action_read": "Отметить как прочитанное",
   "mail_action_star": "Пометить",

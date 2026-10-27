@@ -20,6 +20,7 @@ import (
 	"github.com/egoist/mygo/ui"
 	"github.com/godwit-email/godwit/core"
 	"github.com/godwit-email/godwit/core/coretest"
+	"github.com/godwit-email/godwit/internal/i18n"
 )
 
 var readerAvatarSVG = []byte(`<svg xmlns="http://www.w3.org/2000/svg" width="64" height="64"><rect width="64" height="64" fill="#ff0000"/></svg>`)
@@ -1020,6 +1021,25 @@ func TestJunkActionNotInJunk(t *testing.T) {
 	h.see("回复")
 	if h.tt.HasText("移到垃圾邮件") {
 		t.Fatal("移到垃圾邮件 inside Junk")
+	}
+}
+
+func TestReaderMoveToInbox(t *testing.T) {
+	h, accs := mailHarness(t, nil, "alice@example.com")
+	acc := accs[0]
+	m := h.deliverOne(acc, coretest.Msg("bob@example.com", acc.Email, "In Archive", "content"))
+	f := h.folderOf(acc, "archive")
+	if err := h.env.Svc.MoveToRole(context.Background(), []int64{m.ID}, "archive"); err != nil {
+		t.Fatal(err)
+	}
+	h.post(func() { h.app.navigate(Route{Page: PageMail, View: core.View{FolderID: f.ID}}) })
+	h.until("the archive folder", func() bool { return h.app.mail.view.FolderID == f.ID && !h.app.mail.loading })
+	h.openThread(m.ThreadID)
+	h.seeBody(m.ID)
+	h.click(i18n.T("mail.action.inbox"))
+	h.until("in inbox", func() bool { return h.countIn(h.folderOf(acc, "inbox")) == 1 })
+	if r := h.app.route; r.ThreadID != 0 || r.MessageID != 0 {
+		t.Fatalf("the reader still shows %+v", r)
 	}
 }
 

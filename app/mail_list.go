@@ -167,6 +167,8 @@ func (p *mailPage) write(ctx context.Context, op string, ids []int64, folder int
 		return svc.Delete(ctx, ids)
 	case "junk":
 		return svc.MoveToRole(ctx, ids, "junk")
+	case "inbox":
+		return svc.MoveToRole(ctx, ids, "inbox")
 	}
 	return fmt.Errorf("unknown mail action %q", op)
 }
@@ -390,10 +392,20 @@ func (p *mailPage) chosen(rows []mailItem) []mailItem {
 
 func (p *mailPage) folder(id int64) (core.Folder, bool) { return findFolder(p.folders, id) }
 
+// currentFolderRole returns the role of the folder currently shown (inbox, archive, junk, trash), or "".
+func (p *mailPage) currentFolderRole() string {
+	if p.view.Unified == "inbox" {
+		return "inbox"
+	}
+	if f, ok := p.folder(p.view.FolderID); ok {
+		return f.Role
+	}
+	return ""
+}
+
 // inJunk reports whether the view is a junk folder: 移到垃圾邮件 is not offered there.
 func (p *mailPage) inJunk() bool {
-	f, ok := p.folder(p.view.FolderID)
-	return ok && f.Role == "junk"
+	return p.currentFolderRole() == "junk"
 }
 
 // localDrafts is the drafts entry of an account whose server has no drafts
@@ -727,13 +739,19 @@ func (p *mailPage) listView(c *ui.Context) {
 			if slices.ContainsFunc(on, func(r mailItem) bool { return r.Flagged < r.Count }) {
 				star = "star"
 			}
-			for _, k := range []string{read, star, "", "archive", "delete", "junk"} {
-				if k == "junk" && p.inJunk() {
-					continue // already there
+			for _, k := range []string{read, star} {
+				if m.Item(i18n.T("mail.action." + k)).Chosen() {
+					act, target = k, on
 				}
-				if k == "" {
-					m.Separator()
-				} else if m.Item(i18n.T("mail.action." + k)).Chosen() {
+			}
+			m.Separator()
+
+			role := p.currentFolderRole()
+			for _, k := range []string{"inbox", "archive", "junk", "delete"} {
+				if k != "delete" && role == k {
+					continue // never show current folder as target
+				}
+				if m.Item(i18n.T("mail.action." + k)).Chosen() {
 					act, target = k, on
 				}
 			}
@@ -1225,7 +1243,7 @@ func (p *mailPage) batch(act string, rows []mailItem) {
 			}
 		}
 		for _, m := range msgs {
-			if (op == "archive" || op == "delete" || op == "junk") && !inView(m) {
+			if (op == "archive" || op == "delete" || op == "junk" || op == "inbox") && !inView(m) {
 				continue
 			}
 			acc, ok := acctOf[m.FolderID]
@@ -1246,7 +1264,7 @@ func (p *mailPage) batch(act string, rows []mailItem) {
 			if len(skipped) > 0 {
 				a.toastAs(kit.ToastWarning, i18n.Tf("mail.no_"+op, strings.Join(skipped, i18n.T("mail.list_sep"))))
 			}
-			if op == "archive" || op == "delete" || op == "junk" {
+			if op == "archive" || op == "delete" || op == "junk" || op == "inbox" {
 				l.sel.Clear()
 			}
 		}

@@ -502,10 +502,10 @@ type ErrNoRoleFolder struct{ Role string }
 
 func (e *ErrNoRoleFolder) Error() string { return "the account has no " + e.Role + " folder" }
 
-// MoveToRole moves the messages to their account's folder of role (trash,
-// junk or archive); ones already there stay.
+// MoveToRole moves the messages to their account's folder of role (inbox,
+// trash, junk or archive); ones already there stay.
 func (s *Service) MoveToRole(ctx context.Context, ids []int64, role string) error {
-	if role != "trash" && role != "junk" && role != "archive" {
+	if role != "trash" && role != "junk" && role != "archive" && role != "inbox" {
 		return fmt.Errorf("invalid role %q", role)
 	}
 	s.editMu.Lock()

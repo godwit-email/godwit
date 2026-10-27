@@ -142,6 +142,7 @@
   "mail_accounts": "Konten",
   "mail_action_archive": "Archivieren",
   "mail_action_delete": "Löschen",
+  "mail_action_inbox": "In Postfach verschieben",
   "mail_action_junk": "In Spam verschieben",
   "mail_action_read": "Als gelesen markieren",
   "mail_action_star": "Markieren",

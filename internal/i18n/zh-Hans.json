@@ -137,6 +137,7 @@
   "mail_accounts": "账户",
   "mail_action_archive": "归档",
   "mail_action_delete": "删除",
+  "mail_action_inbox": "移至收件箱",
   "mail_action_junk": "移到垃圾邮件",
   "mail_action_read": "标为已读",
   "mail_action_star": "加星",

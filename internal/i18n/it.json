@@ -137,6 +137,7 @@
   "mail_accounts": "Account",
   "mail_action_archive": "Archivia",
   "mail_action_delete": "Elimina",
+  "mail_action_inbox": "Sposta in Posta in arrivo",
   "mail_action_junk": "Sposta in Indesiderata",
   "mail_action_read": "Segna come già letto",
   "mail_action_star": "Aggiungi agli speciali",

@@ -243,6 +243,7 @@
   "mail_accounts": "Accounts",
   "mail_action_archive": "Archive",
   "mail_action_delete": "Delete",
+  "mail_action_inbox": "Move to Inbox",
   "mail_action_junk": "Move to Junk",
   "mail_action_read": "Mark as read",
   "mail_action_star": "Star",

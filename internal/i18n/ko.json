@@ -137,6 +137,7 @@
   "mail_accounts": "계정",
   "mail_action_archive": "보관",
   "mail_action_delete": "삭제",
+  "mail_action_inbox": "받은편지함으로 이동",
   "mail_action_junk": "정크 메일로 이동",
   "mail_action_read": "읽음으로 표시",
   "mail_action_star": "별표 표시",
