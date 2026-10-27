@@ -1,5 +1,29 @@
 # Changelog
 
+## [1.17.0](https://github.com/godwit-email/godwit/compare/v1.16.0...v1.17.0) (2026-10-27)
+
+
+### Features
+
+* **i18n:** localize date and time formatting according to Unicode CLDR standards ([#306](https://github.com/godwit-email/godwit/issues/306)) ([3adf210](https://github.com/godwit-email/godwit/commit/3adf2103a37e81521c450bd61b9beef1a6f1a9c3))
+* **mail:** direct star toggle on mail rows and per-account starred category ([#291](https://github.com/godwit-email/godwit/issues/291)) ([065c017](https://github.com/godwit-email/godwit/commit/065c017ce719880aa15f4b8f6d4e8040e29f65ff))
+* **mail:** enable context menu transitions across inbox, archive, junk, and trash ([#304](https://github.com/godwit-email/godwit/issues/304)) ([84eb57d](https://github.com/godwit-email/godwit/commit/84eb57ddc004d85a04cd48b108a3c3d2c451e7ad))
+* **reader,settings:** sender actions popover and blocked senders management ([#292](https://github.com/godwit-email/godwit/issues/292)) ([05417f9](https://github.com/godwit-email/godwit/commit/05417f98583549653679b73198f2a01f7c20bf58))
+* **reader:** adapt email colors to their backgrounds in dark mode ([#301](https://github.com/godwit-email/godwit/issues/301)) ([9b5ac8a](https://github.com/godwit-email/godwit/commit/9b5ac8a41780c3b7369fb11d07239e1146e53cb5))
+* **reader:** add save mail (CMD+S) and print mail (CMD+P) actions ([#305](https://github.com/godwit-email/godwit/issues/305)) ([000f819](https://github.com/godwit-email/godwit/commit/000f8196d145f242636ccc9b9041fed74bf6658c))
+* **shell,sync:** polish sync status popover layout, account icons, and alignment ([#285](https://github.com/godwit-email/godwit/issues/285)) ([964ea28](https://github.com/godwit-email/godwit/commit/964ea289f2a6ab2bda6901054a0553e3c75cedfe))
+* **wit:** add mail triage, flag & reply actions with interactive batch approval card ([#302](https://github.com/godwit-email/godwit/issues/302)) ([ff0e5f7](https://github.com/godwit-email/godwit/commit/ff0e5f78af3608bbeb5e980edb0d5d873816b9fa))
+* **wit:** cache a conversation's prompt and show its cache hits ([#283](https://github.com/godwit-email/godwit/issues/283)) ([526d69f](https://github.com/godwit-email/godwit/commit/526d69f30e6f557bc09998df647fbf3d36cd81ab))
+
+
+### Bug Fixes
+
+* **app:** deflake TestPageMailtoFromDefaultAccount ([#308](https://github.com/godwit-email/godwit/issues/308)) ([9e0e9c1](https://github.com/godwit-email/godwit/commit/9e0e9c1ab15b2d9fb1f005954c4c643dda7fd542))
+* **mail:** leave Junk and Trash out of an account's unread count ([#303](https://github.com/godwit-email/godwit/issues/303)) ([816bb6f](https://github.com/godwit-email/godwit/commit/816bb6f18e0920145cd202c66dde363006c2295a))
+* **reader:** match native webview background for transparent body ([#294](https://github.com/godwit-email/godwit/issues/294)) ([96ca375](https://github.com/godwit-email/godwit/commit/96ca37539ba6e3ca751ca15e10ba53bc1d7c0bdf))
+* **wit:** add explicit close button to quote search popover ([#286](https://github.com/godwit-email/godwit/issues/286)) ([4931286](https://github.com/godwit-email/godwit/commit/49312865ab38e1759bdd87aab97513084f864701))
+* **wit:** give the time note in the UI's current time zone ([#307](https://github.com/godwit-email/godwit/issues/307)) ([cbb4193](https://github.com/godwit-email/godwit/commit/cbb4193aa50a3d6cfc3b4435da385b5c9f8bd9bd)), closes [#146](https://github.com/godwit-email/godwit/issues/146)
+
 ## [1.16.0](https://github.com/godwit-email/godwit/compare/v1.15.0...v1.16.0) (2026-10-26)
 
 
