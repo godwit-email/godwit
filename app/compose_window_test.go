@@ -94,7 +94,10 @@ func TestPageMailtoFromDefaultAccount(t *testing.T) {
 	h, accs := mailHarness(t, nil, "me@example.com", "work@example.com")
 	m := h.deliverOne(accs[1], coretest.Msg("Bob <bob@example.com>", accs[1].Email, "Hi", "hi"))
 	h.openThread(m.ThreadID)
-	h.until("the reader showing the work account's message", func() bool { return h.app.mail.reader.account() == accs[1].ID })
+	// The page may have loaded before the work account's first sync made its
+	// folders: only a (throttled, fake-clock) refresh lets the reader map the
+	// message's folder to that account.
+	h.waitMail("the reader showing the work account's message", func() bool { return h.app.mail.reader.account() == accs[1].ID })
 	h.app.OpenLink("mailto:lena@example.com")
 	if d := h.draft(h.composeOpened(0)); d.AccountID != h.app.defaultAccount() || d.AccountID == accs[1].ID {
 		t.Fatalf("draft from account %d, default %d", d.AccountID, h.app.defaultAccount())
