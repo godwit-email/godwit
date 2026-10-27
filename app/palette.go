@@ -78,7 +78,8 @@ type palGroup struct {
 
 // openPalette shows the palette afresh, as ⌘K, ⌘F and the search buttons do.
 func (a *App) openPalette() {
-	a.palette = palette{a: a, open: true, hover: -1}
+	// gen carries on: an answer still on its way from before must not match a new search
+	a.palette = palette{a: a, open: true, hover: -1, gen: a.palette.gen}
 }
 
 // view builds the palette (closed, it fades out), searching again when the
@@ -417,11 +418,11 @@ func (p *mailPage) firstDrafts() core.View {
 	return localDrafts(acc)
 }
 
-// mailFrom lists the synced mail from addr: the list's search, filtered by
-// sender.
+// mailFrom lists the synced mail from addr in every account: the list's
+// search, filtered by sender.
 func (p *mailPage) mailFrom(addr string) {
 	p.a.navigate(Route{Page: PageMail, View: p.view})
-	p.searchFor("", searchFilters{from: addr})
+	p.searchFor("", searchFilters{from: addr, accSet: true})
 }
 
 // searchFor opens the list's search afresh on query and filters sf.

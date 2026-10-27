@@ -250,6 +250,43 @@ func TestPaletteOpensEachKind(t *testing.T) {
 	h.until("settings", func() bool { return h.app.route.Page == PageSettings && !paletteShown(h) })
 }
 
+// A contact's mail spans every account, as the palette's count does, even
+// when the mail page was left on one account's folder.
+func TestPaletteContactSearchesEveryAccount(t *testing.T) {
+	h, accs := mailHarness(t, nil, "alice@example.com", "carol@example.com")
+	for i, acc := range accs {
+		h.put(acc, "INBOX", coretest.Msg("Bob <bob@example.com>", acc.Email, fmt.Sprintf("Invoice %d", i), "pay"))
+		h.syncNow(acc)
+	}
+	h.waitMail("two threads", func() bool { return len(h.items()) == 2 })
+	f := h.folderOf(accs[0], "inbox")
+	h.post(func() { h.app.navigate(Route{Page: PageMail, View: core.View{FolderID: f.ID}}) })
+	h.waitMail("alice's inbox", func() bool { return len(h.items()) == 1 })
+	h.tt.Key(ui.Cmd, ui.KeyK)
+	h.until("the palette", func() bool { return paletteShown(h) })
+	h.click("联系人")
+	h.typeText("bob")
+	h.see("联系人 · 1")
+	h.tt.Key(0, ui.KeyEnter)
+	h.until("Bob's mail from both accounts", func() bool {
+		p := h.app.mail
+		return !paletteShown(h) && p.searched && len(p.results) == 2
+	})
+}
+
+// Reopening keeps counting searches, so an answer from before cannot pass
+// as the newest one.
+func TestPaletteReopenKeepsGeneration(t *testing.T) {
+	h, _ := invoices(t)
+	h.typeText("invoice")
+	h.see("邮件 · 4")
+	before := h.app.palette.gen
+	h.post(func() { h.app.openPalette() })
+	h.until("the reopened palette's first search counted past the old ones", func() bool {
+		return h.app.palette.started && h.app.palette.gen > before
+	})
+}
+
 func TestPaletteContactShowsTheirMail(t *testing.T) {
 	h, _ := invoices(t)
 	h.click("联系人")
