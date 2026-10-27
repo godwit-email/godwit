@@ -69,6 +69,15 @@ func TestFindsKeysAndIDNumbers(t *testing.T) {
 	}
 }
 
+// A value HTML escaped is found as it reads, and restores unescaped.
+func TestFindsAnHTMLEscapedValue(t *testing.T) {
+	m := mask.New(key)
+	out, err := m.Text("<p>Mail john&#64;example.com, card 4111&#32;1111&#32;1111&#32;1111 &amp; more</p>")
+	require.NoError(t, err)
+	assert.Equal(t, "<p>Mail <EMAIL>&#64;example.com, card <BANK_CARD> &amp; more</p>", shown(out))
+	assert.Equal(t, "<p>Mail john&#64;example.com, card 4111 1111 1111 1111 &amp; more</p>", m.Restore(out))
+}
+
 // A value gets one placeholder under a key, in any masker: a restart's
 // masker makes the ones the last made. Another key makes others.
 func TestAPlaceholderFollowsTheKey(t *testing.T) {

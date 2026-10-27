@@ -137,8 +137,12 @@ func (m *Masker) text(s string, defuse bool, f *Found) (out string, err error) {
 	var block *BlockedError
 	last := 0
 	cc := m.cfg.Load()
-	for _, sp := range cc.find(s, m.nameSpans(s)) {
-		v, act := s[sp.start:sp.end], cc.action(sp.kind)
+	view, at := unescaped(s)
+	for _, sp := range cc.find(view, m.nameSpans(view)) {
+		v, act := view[sp.start:sp.end], cc.action(sp.kind)
+		if at != nil {
+			sp.start, sp.end = at[sp.start], at[sp.end]
+		}
 		f.add(m.hit(sp.kind, v, act))
 		switch act {
 		case Warn:
@@ -160,6 +164,38 @@ func (m *Masker) text(s string, defuse bool, f *Found) (out string, err error) {
 		return b.String(), block
 	}
 	return b.String(), nil
+}
+
+// unescaped is s with its HTML character references (&#64;, &amp;) decoded,
+// for values are found as they read, and at, where in s each of its bytes
+// and its end are; nil when s has none.
+func unescaped(s string) (string, []int) {
+	if !strings.Contains(s, "&") {
+		return s, nil
+	}
+	var b strings.Builder
+	at := make([]int, 0, len(s)+1)
+	for i := 0; i < len(s); {
+		if s[i] == '&' {
+			if j := strings.IndexByte(s[i:min(i+32, len(s))], ';'); j > 0 {
+				if r := html.UnescapeString(s[i : i+j+1]); r != s[i:i+j+1] {
+					b.WriteString(r)
+					for range len(r) {
+						at = append(at, i)
+					}
+					i += j + 1
+					continue
+				}
+			}
+		}
+		b.WriteByte(s[i])
+		at = append(at, i)
+		i++
+	}
+	if b.Len() == len(s) && b.String() == s {
+		return s, nil
+	}
+	return b.String(), append(at, len(s))
 }
 
 // looseRe is a placeholder as a model may write one back: in any case, a
