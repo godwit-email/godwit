@@ -893,9 +893,12 @@
       }
     }
   },
+  "reader_print": "Print email",
   "reader_reply": "Reply",
   "reader_reply_all": "Reply all",
+  "reader_save": "Save email",
   "reader_save_as": "Save as…",
+  "reader_saved": "Email saved",
   "reader_to": "To {arg1} · {arg2}",
   "@reader_to": {
     "placeholders": {

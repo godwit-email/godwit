@@ -22,8 +22,13 @@ vi.mock("@/mygo", () => ({
     openLink: vi.fn(async () => {}),
     navigate: vi.fn(async () => {}),
     search: vi.fn(async () => {}),
+    save: vi.fn(async () => {}),
+    print: vi.fn(async () => {}),
   },
-  events: { readerBody: { on: h.on(h.body) }, theme: { on: h.on(h.theme) } },
+  events: {
+    readerBody: { on: h.on(h.body) },
+    theme: { on: h.on(h.theme) },
+  },
 }));
 
 import { ReaderPage as api } from "@/mygo";

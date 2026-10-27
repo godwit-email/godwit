@@ -66,6 +66,8 @@ export function ReaderApp() {
         (dir) => api.navigate(dir),
         window,
         () => api.search(),
+        () => api.save(),
+        () => api.print(),
       ),
     [],
   );
@@ -291,6 +293,8 @@ function attach(
       (dir) => api.navigate(dir),
       win,
       () => api.search(),
+      () => api.save(),
+      () => api.print(),
     ),
   );
 
