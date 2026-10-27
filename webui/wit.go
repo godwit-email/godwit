@@ -3,6 +3,7 @@ package webui
 import (
 	"cmp"
 	"context"
+	"encoding/json"
 	"errors"
 	netmail "net/mail"
 	"net/url"
@@ -599,6 +600,17 @@ func (p *ComposePage) Review(ctx context.Context, approval int64) (Review, error
 func (p *ComposePage) Decide(ctx context.Context, approval int64, accept bool) (BodyChange, error) {
 	return p.decide(ctx, func(a core.Approval) bool { return a.ID == approval }, func(svc *core.Service, a core.Approval) error {
 		return svc.ResolveApproval(context.WithoutCancel(ctx), a.ID, accept)
+	})
+}
+
+// DecideWithArgs accepts or rejects approval with edited arguments args.
+func (p *ComposePage) DecideWithArgs(ctx context.Context, approval int64, accept bool, args string) (BodyChange, error) {
+	return p.decide(ctx, func(a core.Approval) bool { return a.ID == approval }, func(svc *core.Service, a core.Approval) error {
+		var raw json.RawMessage
+		if strings.TrimSpace(args) != "" {
+			raw = json.RawMessage(args)
+		}
+		return svc.ResolveApprovalWithArgs(context.WithoutCancel(ctx), a.ID, accept, raw)
 	})
 }
 

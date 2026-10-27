@@ -623,12 +623,16 @@ function Compose({
   };
   // Decides a tool's call (its card in the panel), or every one of its run waiting; the run it
   // resumes streams in the panel.
-  const decideTool = async (a: Approval, accept: boolean, all: boolean) => {
+  const decideTool = async (a: Approval, accept: boolean, all: boolean, editedArgs?: string) => {
     if (deciding) return false;
     runEdits.current = edits.current;
     const r = await bodyOp(() =>
       witResume.decide(a.run, () =>
-        all ? api.decideAll(a.run, accept) : api.decide(a.id, accept),
+        all
+          ? api.decideAll(a.run, accept)
+          : editedArgs !== undefined
+            ? api.decideWithArgs(a.id, accept, editedArgs)
+            : api.decide(a.id, accept),
       ),
     );
     if (r && all) {

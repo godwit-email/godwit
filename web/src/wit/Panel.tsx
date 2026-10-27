@@ -276,7 +276,225 @@ const stepIcon = (tool: string) =>
       : RiToolsLine;
 
 /** Decides approval a, or with all every pending one of its run; true once decided. */
-export type Decide = (a: Approval, accept: boolean, all: boolean) => Promise<boolean>;
+export type Decide = (
+  a: Approval,
+  accept: boolean,
+  all: boolean,
+  editedArgs?: string,
+) => Promise<boolean>;
+
+export const isBatchAction = (a: Approval) =>
+  [
+    "move_to_trash",
+    "archive_mail",
+    "mark_as_spam",
+    "mark_as_read",
+    "mark_as_unread",
+    "star_mail",
+    "unstar_mail",
+  ].includes(a.tool);
+
+function BatchApprovalCard({
+  a,
+  busy,
+  decide,
+  t,
+}: {
+  a: Approval;
+  busy: boolean;
+  decide(accept: boolean, editedArgs?: string): void;
+  t: T;
+}) {
+  let args: {
+    action?: string;
+    ids?: number[];
+    items?: { id: number; msg_id: number; subject: string; from: string; date: number }[];
+    selected_ids?: number[];
+  } = {};
+  try {
+    const v = JSON.parse(a.args || "{}");
+    if (v && typeof v === "object") args = v;
+  } catch {
+    // not JSON
+  }
+
+  const items = args.items ?? [];
+  const [currentAction, setCurrentAction] = useState<string>(args.action || a.tool);
+  const [selected, setSelected] = useState<Set<number>>(() => new Set(items.map((it) => it.id)));
+
+  const allSelected = items.length > 0 && selected.size === items.length;
+  const toggleAll = () => {
+    if (allSelected) {
+      setSelected(new Set());
+    } else {
+      setSelected(new Set(items.map((it) => it.id)));
+    }
+  };
+
+  const toggleItem = (id: number) => {
+    setSelected((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  };
+
+  const actionOptions: { value: string; label: string }[] = [
+    {
+      value: "move_to_trash",
+      label:
+        t("wit.action.trash") !== "wit.action.trash" ? t("wit.action.trash") : "In den Papierkorb",
+    },
+    {
+      value: "archive_mail",
+      label:
+        t("wit.action.archive") !== "wit.action.archive" ? t("wit.action.archive") : "Archivieren",
+    },
+    {
+      value: "mark_as_spam",
+      label:
+        t("wit.action.spam") !== "wit.action.spam" ? t("wit.action.spam") : "Als Spam markieren",
+    },
+    {
+      value: "mark_as_read",
+      label: t("wit.action.read") !== "wit.action.read" ? t("wit.action.read") : "Als gelesen",
+    },
+    {
+      value: "mark_as_unread",
+      label:
+        t("wit.action.unread") !== "wit.action.unread" ? t("wit.action.unread") : "Als ungelesen",
+    },
+    {
+      value: "star_mail",
+      label:
+        t("wit.action.star") !== "wit.action.star" ? t("wit.action.star") : "Mit Stern markieren",
+    },
+    {
+      value: "unstar_mail",
+      label:
+        t("wit.action.unstar") !== "wit.action.unstar" ? t("wit.action.unstar") : "Stern entfernen",
+    },
+  ];
+
+  const handleApprove = () => {
+    const sel = [...selected];
+    const payload = JSON.stringify({
+      ...args,
+      action: currentAction,
+      ids: sel,
+      selected_ids: sel,
+      items: items.filter((it) => selected.has(it.id)),
+    });
+    decide(true, payload);
+  };
+
+  const actionLabel = actionOptions.find((o) => o.value === currentAction)?.label ?? currentAction;
+
+  return (
+    <div className="overflow-hidden rounded-xl border-[0.5px] bg-background shadow-(--shadow-xs)">
+      <div className="flex flex-wrap items-center gap-2 border-b-[0.5px] bg-sidebar px-3.5 py-2.5 leading-5">
+        <span className="font-semibold">{actionLabel}</span>
+        <select
+          value={currentAction}
+          onChange={(e) => setCurrentAction(e.target.value)}
+          disabled={busy}
+          className="rounded border border-input bg-background px-2 py-0.5 text-xs font-medium text-foreground cursor-pointer"
+        >
+          {actionOptions.map((opt) => (
+            <option key={opt.value} value={opt.value}>
+              {opt.label}
+            </option>
+          ))}
+        </select>
+        <span className="ml-auto flex gap-1.5">
+          <Badge
+            variant="outline"
+            className="border-(--warning-border) bg-(--warning-bg) text-(--warning-text)"
+          >
+            {t("wit.approval.pending")}
+          </Badge>
+        </span>
+      </div>
+
+      <div className="flex flex-col gap-2 px-3.5 py-3 text-sm">
+        {items.length > 0 && (
+          <div className="flex items-center justify-between border-b pb-2 text-xs text-muted-foreground">
+            <label className="flex items-center gap-2 cursor-pointer select-none">
+              <input
+                type="checkbox"
+                checked={allSelected}
+                onChange={toggleAll}
+                disabled={busy}
+                className="size-3.5 rounded accent-primary cursor-pointer"
+              />
+              <span>
+                {allSelected ? "Alle abwählen" : "Alle auswählen"} ({selected.size}/{items.length})
+              </span>
+            </label>
+          </div>
+        )}
+
+        <div className="max-h-60 overflow-y-auto flex flex-col gap-1.5 pr-1">
+          {items.map((it) => {
+            const isChecked = selected.has(it.id);
+            return (
+              <label
+                key={it.id}
+                className={`flex items-start gap-2.5 rounded-lg border p-2 transition-colors cursor-pointer select-none ${
+                  isChecked
+                    ? "bg-muted/40 border-muted-foreground/30"
+                    : "opacity-60 bg-transparent border-muted/50"
+                }`}
+              >
+                <input
+                  type="checkbox"
+                  checked={isChecked}
+                  onChange={() => toggleItem(it.id)}
+                  disabled={busy}
+                  className="mt-0.5 size-3.5 rounded accent-primary cursor-pointer shrink-0"
+                />
+                <div className="min-w-0 flex-1">
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="font-medium truncate text-foreground">
+                      {it.from || "(kein Absender)"}
+                    </span>
+                    <span className="text-[11px] text-muted-foreground shrink-0 font-mono">
+                      #{it.id}
+                    </span>
+                  </div>
+                  <div className="truncate text-xs text-muted-foreground">
+                    {it.subject || "(kein Betreff)"}
+                  </div>
+                </div>
+              </label>
+            );
+          })}
+        </div>
+      </div>
+
+      <div className="flex flex-wrap items-center gap-2 border-muted border-t-[0.5px] px-3.5 py-2.5">
+        <span className="ml-auto flex flex-wrap gap-2">
+          <Button
+            variant="outline"
+            className="px-3 font-normal text-md"
+            disabled={busy}
+            onClick={() => decide(false)}
+          >
+            {t("wit.approval.reject")}
+          </Button>
+          <Button
+            className="px-3.5 text-md"
+            disabled={busy || selected.size === 0}
+            onClick={handleApprove}
+          >
+            {actionLabel} ({selected.size})
+          </Button>
+        </span>
+      </div>
+    </div>
+  );
+}
 
 /**
  * A tool call waiting for the user (app/wit.go card): what Wit wants, the tool, its plugin and that
@@ -292,7 +510,7 @@ function ToolCard({
 }: {
   a: Approval;
   busy: boolean;
-  decide(accept: boolean): void;
+  decide(accept: boolean, editedArgs?: string): void;
   /** 本次对话都允许, where the host offers it and the call may take it. */
   session?(): void;
   t: T;
@@ -304,6 +522,23 @@ function ToolCard({
   } catch {
     // not JSON: nothing to show of it
   }
+
+  const isDraftTool =
+    a.tool === "create_draft" || a.tool === "reply_to_mail" || a.tool === "forward_mail";
+  const [editing, setEditing] = useState(false);
+  const [editSubject, setEditSubject] = useState(
+    typeof args.subject === "string" ? args.subject : "",
+  );
+  let rawBody = "";
+  for (const k of ["html", "body", "text"]) {
+    const v = args[k];
+    if (typeof v !== "string" || !v.trim()) continue;
+    rawBody =
+      k === "html" ? (new DOMParser().parseFromString(v, "text/html").body.textContent ?? "") : v;
+    break;
+  }
+  const [editBody, setEditBody] = useState(rawBody);
+
   const fields: [string, string][] = [
     [t("wit.approval.to"), strList(args.to).join(", ")],
     [t("wit.approval.cc"), strList(args.cc).join(", ")],
@@ -319,6 +554,16 @@ function ToolCard({
     break;
   }
   const label = toolLabel(a.tool, t);
+
+  const handleAllow = () => {
+    if (editing && (editSubject !== (args.subject ?? "") || editBody !== rawBody)) {
+      const updated = { ...args, subject: editSubject, html: editBody };
+      decide(true, JSON.stringify(updated));
+    } else {
+      decide(true);
+    }
+  };
+
   return (
     <div className="overflow-hidden rounded-xl border-[0.5px] bg-background shadow-(--shadow-xs)">
       <div className="flex flex-wrap items-center gap-2 border-b-[0.5px] bg-sidebar px-3.5 py-2.5 leading-5">
@@ -338,16 +583,45 @@ function ToolCard({
       </div>
       <div className="flex flex-col gap-1.5 px-3.5 py-3 text-md">
         {a.summary && a.summary !== label && <p className="text-muted-foreground">{a.summary}</p>}
-        {fields.map(
-          ([label, value]) =>
-            value && (
-              <div key={label} className="flex items-start gap-3.5">
-                <span className="shrink-0 text-muted-foreground">{label}</span>
-                <span className="min-w-0 break-words">{value}</span>
-              </div>
-            ),
+        {editing ? (
+          <div className="flex flex-col gap-2.5">
+            <label className="flex flex-col gap-1">
+              <span className="text-xs font-medium text-muted-foreground">
+                {t("wit.approval.subject")}
+              </span>
+              <input
+                type="text"
+                value={editSubject}
+                onChange={(e) => setEditSubject(e.target.value)}
+                disabled={busy}
+                className="w-full rounded border border-input bg-background px-2.5 py-1 text-sm font-medium"
+              />
+            </label>
+            <label className="flex flex-col gap-1">
+              <span className="text-xs font-medium text-muted-foreground">{t("compose.body")}</span>
+              <textarea
+                rows={4}
+                value={editBody}
+                onChange={(e) => setEditBody(e.target.value)}
+                disabled={busy}
+                className="w-full rounded border border-input bg-background px-2.5 py-1.5 text-sm font-sans"
+              />
+            </label>
+          </div>
+        ) : (
+          <>
+            {fields.map(
+              ([label, value]) =>
+                value && (
+                  <div key={label} className="flex items-start gap-3.5">
+                    <span className="shrink-0 text-muted-foreground">{label}</span>
+                    <span className="min-w-0 break-words">{value}</span>
+                  </div>
+                ),
+            )}
+            {body && <p className="line-clamp-3 text-muted-foreground">{body}</p>}
+          </>
         )}
-        {body && <p className="line-clamp-3 text-muted-foreground">{body}</p>}
         {a.destinations.length > 0 && (
           <div className="flex items-start gap-3.5">
             <span className="shrink-0 text-muted-foreground">{t("wit.approval.sends_to")}</span>
@@ -366,7 +640,25 @@ function ToolCard({
         )}
       </div>
       <div className="flex flex-wrap items-center gap-2 border-muted border-t-[0.5px] px-3.5 py-2.5">
-        {a.tool === "create_draft" && (
+        {isDraftTool && (
+          <Button
+            variant="ghost"
+            size="sm"
+            className="h-7 px-2 text-xs font-normal text-muted-foreground hover:text-foreground"
+            disabled={busy}
+            onClick={() => setEditing(!editing)}
+          >
+            <RiEditLine className="mr-1 size-3.5" />
+            {editing
+              ? t("wit.approval.cancel_edit") !== "wit.approval.cancel_edit"
+                ? t("wit.approval.cancel_edit")
+                : "Abbrechen"
+              : t("wit.approval.edit") !== "wit.approval.edit"
+                ? t("wit.approval.edit")
+                : "Bearbeiten"}
+          </Button>
+        )}
+        {a.tool === "create_draft" && !editing && (
           <span className="flex items-center gap-1.5 text-muted-foreground text-sm">
             <RiShieldLine className="size-3.5" />
             {t("wit.approval.send_note")}
@@ -381,7 +673,7 @@ function ToolCard({
           >
             {t("wit.approval.reject")}
           </Button>
-          {session && (
+          {session && !editing && (
             <Button
               variant="outline"
               className="px-3 font-normal text-md"
@@ -391,7 +683,7 @@ function ToolCard({
               {t("wit.approval.allow_session")}
             </Button>
           )}
-          <Button className="px-3.5 text-md" disabled={busy} onClick={() => decide(true)}>
+          <Button className="px-3.5 text-md" disabled={busy} onClick={handleAllow}>
             {t("wit.approval.allow")}
           </Button>
         </span>
@@ -634,32 +926,35 @@ function Settled({ a, onDraft, t }: { a: Approval; onDraft?(id: number): Promise
         <span>{t(key, label)}</span>
         {label !== a.tool && <span className="font-mono text-muted-foreground/70">{a.tool}</span>}
       </span>
-      {a.tool === "create_draft" && a.state === "done" && a.draft > 0 && !gone && (
-        <div className="flex items-center gap-3 rounded-xl border-[0.5px] bg-background px-3 py-2.5">
-          <span className="flex size-8 shrink-0 items-center justify-center rounded-lg border-[0.5px] bg-sidebar text-muted-foreground">
-            <RiDraftLine className="size-4" />
-          </span>
-          <span className="flex min-w-0 flex-1 flex-col">
-            <span className="truncate font-medium">{subject || t("mail.no_subject")}</span>
-            <span className="text-muted-foreground text-sm">{t("wit.draft.saved")}</span>
-          </span>
-          {onDraft && (
-            <Button
-              variant="ghost"
-              size="sm"
-              className="font-normal"
-              onClick={() =>
-                onDraft(a.id).catch(
-                  (e) => (e as Error | undefined)?.message === "wit.draft.gone" && setGone(true),
-                )
-              }
-            >
-              {t("wit.draft.open")}
-              <RiExternalLinkLine className="text-muted-foreground" />
-            </Button>
-          )}
-        </div>
-      )}
+      {(a.tool === "create_draft" || a.tool === "reply_to_mail" || a.tool === "forward_mail") &&
+        a.state === "done" &&
+        a.draft > 0 &&
+        !gone && (
+          <div className="flex items-center gap-3 rounded-xl border-[0.5px] bg-background px-3 py-2.5">
+            <span className="flex size-8 shrink-0 items-center justify-center rounded-lg border-[0.5px] bg-sidebar text-muted-foreground">
+              <RiDraftLine className="size-4" />
+            </span>
+            <span className="flex min-w-0 flex-1 flex-col">
+              <span className="truncate font-medium">{subject || t("mail.no_subject")}</span>
+              <span className="text-muted-foreground text-sm">{t("wit.draft.saved")}</span>
+            </span>
+            {onDraft && (
+              <Button
+                variant="ghost"
+                size="sm"
+                className="font-normal"
+                onClick={() =>
+                  onDraft(a.id).catch(
+                    (e) => (e as Error | undefined)?.message === "wit.draft.gone" && setGone(true),
+                  )
+                }
+              >
+                {t("wit.draft.open")}
+                <RiExternalLinkLine className="text-muted-foreground" />
+              </Button>
+            )}
+          </div>
+        )}
     </>
   );
 }
@@ -1754,7 +2049,7 @@ export function Panel({
     (a) => a.state === "pending" && !decided.includes(decisionKey(a)),
   );
   // Decides a, or with all its run's pending calls; its cards go once decided.
-  const decideAs = async (a: Approval, accept: boolean, all: boolean) => {
+  const decideAs = async (a: Approval, accept: boolean, all: boolean, editedArgs?: string) => {
     if (!onDecide || deciding.length > 0) return;
     // 全部允许 answers no question: those stay
     const ids = all
@@ -1762,8 +2057,11 @@ export function Panel({
       : [a.id];
     setDeciding(ids);
     try {
-      if (await onDecide(a, accept, all))
-        setDecided((d) => [...d, ...open.filter((x) => ids.includes(x.id)).map(decisionKey)]);
+      const ok =
+        editedArgs !== undefined
+          ? await onDecide(a, accept, all, editedArgs)
+          : await onDecide(a, accept, all);
+      if (ok) setDecided((d) => [...d, ...open.filter((x) => ids.includes(x.id)).map(decisionKey)]);
     } finally {
       setDeciding([]);
     }
@@ -1828,12 +2126,20 @@ export function Panel({
               answer={onAnswer && ((answers) => answerAs(a, answers))}
               t={t}
             />
+          ) : isBatchAction(a) ? (
+            <BatchApprovalCard
+              key={a.id}
+              a={a}
+              busy={busy}
+              decide={(accept, editedArgs) => decideAs(a, accept, false, editedArgs)}
+              t={t}
+            />
           ) : (
             <ToolCard
               key={a.id}
               a={a}
               busy={busy}
-              decide={(accept) => decideAs(a, accept, false)}
+              decide={(accept, editedArgs) => decideAs(a, accept, false, editedArgs)}
               session={
                 onSession && a.sessionAllow
                   ? async () => {
