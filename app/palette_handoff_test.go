@@ -5,6 +5,7 @@ import (
 	"testing"
 
 	"github.com/egoist/mygo/ui"
+	"github.com/godwit-email/godwit/core"
 )
 
 // paletteOver opens the palette over settings and types q.
@@ -87,6 +88,28 @@ func TestPaletteViewAllKeepsEveryPaletteHit(t *testing.T) {
 	h.tt.Key(ui.Cmd, ui.KeyEnter)
 	p := h.app.mail
 	h.until("all 120 in the list", func() bool { return !paletteShown(h) && p.searched && len(p.results) == 120 })
+}
+
+// Left on Drafts or the Outbox, which draw no search, view-all and a contact
+// move to a list that shows one.
+func TestPaletteHandoffLeavesDraftsAndOutbox(t *testing.T) {
+	h, _ := invoices(t)
+	h.tt.Key(0, ui.KeyEscape)
+	p := h.app.mail
+	for _, v := range []core.View{p.firstDrafts(), {Unified: "outbox"}} {
+		h.post(func() { h.app.navigate(Route{Page: PageMail, View: v}) })
+		h.until("the view", func() bool { return h.app.mail.view == v })
+		h.tt.Key(ui.Cmd, ui.KeyK)
+		h.until("the palette", func() bool { return paletteShown(h) })
+		h.typeText("invoice")
+		h.see("邮件 · 4")
+		h.tt.Key(ui.Cmd, ui.KeyEnter)
+		h.until("the results in a list", func() bool {
+			_, drafts := draftsOf(p.folders, p.view)
+			return !paletteShown(h) && p.searched && len(p.results) == 4 && !drafts && p.view.Unified != "outbox"
+		})
+		h.see("找到 4 封 · 全部账户 · 只搜索已同步到本机的邮件")
+	}
 }
 
 func TestPaletteViewAllRow(t *testing.T) {

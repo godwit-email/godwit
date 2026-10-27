@@ -1,7 +1,6 @@
 package app
 
 import (
-	"github.com/godwit-email/godwit/core"
 	"github.com/godwit-email/godwit/internal/i18n"
 )
 
@@ -23,13 +22,7 @@ func (p *palette) viewAll() {
 		sf.acc, sf.accSet = 0, true
 	}
 	p.open = false
-	mp := p.a.mail
-	v := mp.view
-	if v == (core.View{}) {
-		v = core.View{Unified: "inbox"} // the mail page not shown yet
-	}
-	p.a.navigate(Route{Page: PageMail, View: v})
-	mp.searchFor(p.query, sf)
+	p.a.mail.searchFor(p.query, sf)
 }
 
 // viewAllItem is the row after the mail hits when some are left out.

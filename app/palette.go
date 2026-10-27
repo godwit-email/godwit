@@ -421,12 +421,18 @@ func (p *mailPage) firstDrafts() core.View {
 // mailFrom lists the synced mail from addr in every account: the list's
 // search, filtered by sender.
 func (p *mailPage) mailFrom(addr string) {
-	p.a.navigate(Route{Page: PageMail, View: p.view})
 	p.searchFor("", searchFilters{from: addr, accSet: true})
 }
 
-// searchFor opens the list's search afresh on query and filters sf.
+// searchFor shows the mail page and opens the list's search afresh on query
+// and filters sf, in the view left there unless it draws no search (Drafts,
+// the Outbox, none yet), where it is the unified inbox.
 func (p *mailPage) searchFor(query string, sf searchFilters) {
+	v := p.view
+	if _, drafts := draftsOf(p.folders, v); drafts || v.Unified == "outbox" || v == (core.View{}) {
+		v = core.View{Unified: "inbox"}
+	}
+	p.a.navigate(Route{Page: PageMail, View: v})
 	p.closeSearch()
 	p.searchOpen, p.query, p.sf = true, query, sf
 	p.runSearch()
