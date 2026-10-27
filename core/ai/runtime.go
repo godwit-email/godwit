@@ -440,12 +440,17 @@ func toolCall(r *toolRequest) ToolCall {
 }
 
 // RestoreMessage is msg as the user sees it: the placeholders m made in its
-// text, reasoning and calls' arguments restored.
+// text, reasoning, calls' arguments and results restored.
 func RestoreMessage(m *mask.Masker, msg Message) Message {
 	msg.Text, msg.Reasoning = m.Restore(msg.Text), m.Restore(msg.Reasoning)
 	msg.Calls = slices.Clone(msg.Calls)
 	for i, c := range msg.Calls {
 		msg.Calls[i].Args, _ = m.RestoreArgs(c.Args)
+	}
+	msg.Results = slices.Clone(msg.Results)
+	for i, r := range msg.Results {
+		msg.Results[i].Output, _ = m.RestoreArgs(r.Output)
+		msg.Results[i].Error = m.Restore(r.Error)
 	}
 	return msg
 }

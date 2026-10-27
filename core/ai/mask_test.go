@@ -183,3 +183,43 @@ func TestAJudgeIsAskedWithPlaceholders(t *testing.T) {
 	assert.NotContains(t, got, testCard)
 	assert.Contains(t, got, "{{BANK_CARD_")
 }
+
+// Arguments the model wrote that do not parse come back in the call's result
+// as written (pi-ai's argumentsError): the user sees, and the history keeps,
+// their values.
+func TestAnArgumentsErrorShowsTheValues(t *testing.T) {
+	e, m := maskedEngine(t)
+	p, _ := m.Text(testCard)
+	srv := testllm.Start(t, "openai")
+	srv.Script(testllm.Turn{Calls: []testllm.Call{{ID: "c1", Name: "search", Args: `{"q":"` + p + `"`}}}, testllm.Turn{Text: []string{"ok"}})
+	search := ToolSpec{Name: "search", Schema: piSearch, Run: func(context.Context, json.RawMessage) (any, error) {
+		t.Error("ran")
+		return nil, nil
+	}}
+	sent := asking(nil, "go")
+	evs, res := run(e, Request{Model: modelFor(srv, "openai", "k"), History: sent, Tools: []ToolSpec{search}})
+	require.Nil(t, res.Err)
+	require.Len(t, kindsOf(evs, "tool_result"), 1)
+	live := kindsOf(evs, "tool_result")[0].Result.Error
+	assert.Contains(t, live, testCard)
+	assert.NotContains(t, live, p)
+	require.Len(t, res.Messages[2].Results, 1)
+	shown := string(res.Messages[2].Results[0].Output) + res.Messages[2].Results[0].Error
+	assert.Contains(t, shown, testCard)
+	assert.NotContains(t, shown, p)
+
+	rows := must(after(t, sent, res).Rows())
+	assert.Contains(t, string(rows[2].Data), testCard, "the result as the user sees it")
+	assert.NotContains(t, string(rows[2].Data), p)
+	assert.NotContains(t, string(srv.Requests()[1].Body), testCard, "and the model sees the placeholder again")
+}
+
+// A result stored with placeholders, before they were restored, shows its values.
+func TestAStoredResultShowsTheValues(t *testing.T) {
+	_, m := maskedEngine(t)
+	p, _ := m.Text(testCard)
+	out, _ := json.Marshal("Received arguments: " + p)
+	msg := RestoreMessage(m, Message{Role: "tool", Results: []ToolResult{{CallID: "c1", Output: out, Error: "card " + p}}})
+	assert.JSONEq(t, `"Received arguments: `+testCard+`"`, string(msg.Results[0].Output))
+	assert.Equal(t, "card "+testCard, msg.Results[0].Error)
+}
