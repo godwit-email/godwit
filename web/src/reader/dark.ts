@@ -449,11 +449,25 @@ export function adaptDarkMode(frame: HTMLIFrameElement, theme: Theme): () => voi
   run();
   let live = true;
   let queued = false;
-  let width = frame.getBoundingClientRect().width;
+  // Colours depend on geometry only through media queries; the frame's own height changes on
+  // every measure, so recompute on width or on any media rule changing its result.
+  const layout = () => {
+    const matches: boolean[] = [];
+    const visit = (rules: CSSRuleList) => {
+      for (const rule of rules) {
+        if (rule.type === CSSRule.MEDIA_RULE && win.matchMedia)
+          matches.push(win.matchMedia((rule as CSSMediaRule).conditionText).matches);
+        if ("cssRules" in rule) visit((rule as CSSGroupingRule).cssRules);
+      }
+    };
+    for (const sheet of doc.styleSheets) visit(sheet.cssRules);
+    return `${frame.getBoundingClientRect().width} ${matches}`;
+  };
+  let current = layout();
   const resized = () => {
-    const next = frame.getBoundingClientRect().width;
-    if (next === width) return;
-    width = next;
+    const next = layout();
+    if (next === current) return;
+    current = next;
     if (queued) return;
     queued = true;
     requestAnimationFrame(() => {

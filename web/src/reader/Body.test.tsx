@@ -1213,3 +1213,29 @@ test("marker polling stops once the frame has loaded", async () => {
   flush();
   expect(frames).toEqual([]);
 });
+
+test("a height media query that changes its result recomputes at the same width", async () => {
+  const { frame, doc, win } = await start(
+    body(
+      1,
+      `<style>@media (min-height:200px){#godwit-body #tall{display:block}}</style>
+    <style id="active"></style>
+    <div style="background:#fff;color:#111"><p id="tall" style="color:#000;display:none">Shown when tall</p></div>`,
+      { theme: darkTheme },
+    ),
+  );
+  let tall = false;
+  // jsdom has no media-query layout: report the height rule and supply what it activates.
+  Object.assign(win, { matchMedia: () => ({ matches: tall }) });
+  const text = doc.getElementById("tall") as HTMLElement;
+  frame.getBoundingClientRect = () => ({ width: 600, height: 100 }) as DOMRect;
+  act(() => window.dispatchEvent(new Event("resize")));
+  flush();
+  tall = true;
+  (doc.getElementById("active") as HTMLStyleElement).textContent =
+    "#godwit-body #tall{display:block !important}";
+  frame.getBoundingClientRect = () => ({ width: 600, height: 400 }) as DOMRect;
+  act(() => window.dispatchEvent(new Event("resize")));
+  flush();
+  expect(renderedContrast(text, win)).toBeGreaterThanOrEqual(4.5);
+});
