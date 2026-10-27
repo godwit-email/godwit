@@ -111,3 +111,18 @@ func TestBodyTranslationRestoresAfterParsing(t *testing.T) {
 	require.Equal(t, "done", evs[len(evs)-1].Kind, "%+v", evs)
 	assert.Equal(t, map[string]string{"Key " + pem: "Clé " + pem}, evs[1].Translations)
 }
+
+// A value a long text is cut inside goes to the model whole, masked: the
+// texts are masked before they are cut.
+func TestBodyTranslationMasksAcrossACut(t *testing.T) {
+	const card = "4111 1111 1111 1111"
+	e := newSkillEnv(t)
+	text := strings.Repeat("a", 8<<10-10) + " " + card + " b" // splitText cuts at the last space before the limit: inside the card
+	setBody(t, e, text, "")
+	e.srv.Script(testllm.Turn{Text: []string{`{"texts":["x","y"],"source":"en"}`}})
+	evs := e.run(t, "translate", Target{Kind: "message", ID: e.msg, PreserveHTML: true})
+	require.Equal(t, "done", evs[len(evs)-1].Kind, "%+v", evs)
+	body := string(e.srv.Requests()[0].Body)
+	assert.True(t, strings.Contains(body, "{{BANK_CARD_"), "the card is masked")
+	assert.False(t, strings.Contains(body, "1111"), "no piece of the card is sent")
+}

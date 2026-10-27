@@ -1,6 +1,7 @@
 package core
 
 import (
+	"cmp"
 	"context"
 	"encoding/json"
 	"errors"
@@ -10,6 +11,7 @@ import (
 	"unicode"
 
 	"github.com/godwit-email/godwit/core/ai"
+	"github.com/godwit-email/godwit/core/ai/mask"
 	"github.com/godwit-email/godwit/core/gateway"
 	"github.com/godwit-email/godwit/core/mail"
 	"github.com/godwit-email/godwit/core/skills"
@@ -53,7 +55,8 @@ func (s *Service) runBodyTranslation(ctx context.Context, end func(), sk skills.
 	var ref string
 	var version any
 	var call func(context.Context, translateRequest) (translateResult, error)
-	mask := false // a model reads long links as references, as in mailContext
+	byModel := false        // a model reads long links as references, as in mailContext
+	var masker *mask.Masker // masks the texts before they are cut, as the model's requests will
 	var bound boundTranslator
 	entry := gateway.Entry{Source: gateway.SourceSkill, Tool: "skill:translate", TargetKind: "message", TargetID: t.ID, Decision: "run"}
 	if plugin, ok := strings.CutPrefix(st.Translator, translatorPrefix); ok {
@@ -76,7 +79,10 @@ func (s *Service) runBodyTranslation(ctx context.Context, end func(), sk skills.
 		if err != nil {
 			return nil, err
 		}
-		ref, version, mask = modelRef, []any{model.ServiceID, model.Version}, true
+		ref, version, byModel = modelRef, []any{model.ServiceID, model.Version}, true
+		if !model.OnDevice && e.Masker.On() {
+			masker = e.Masker
+		}
 		system := sk.Body + "\n\n" + ai.UntrustedSystemNote + "\nTarget language: " + lang +
 			". Languages needing no translation: " + strings.Join(append([]string{lang}, keep...), ", ") +
 			`. For this request return ONLY a JSON object {"texts":[...],"source":"language-tag"}. Translate each input string in order, with exactly one nonempty output per input. Preserve strings needing no translation unchanged instead of NO_TRANSLATION. Do not include headers, notes, Markdown, or the untrusted_email wrapper.`
@@ -117,8 +123,8 @@ func (s *Service) runBodyTranslation(ctx context.Context, end func(), sk skills.
 		defer close(out)
 		out <- ai.Event{Kind: "context", Text: string(b), Model: ref}
 		if !hit {
-			if mask {
-				result, err = translateMasked(ctx, originals, t.ID, lang, keep, call)
+			if byModel {
+				result, err = translateMasked(ctx, originals, t.ID, lang, keep, masker, call)
 			} else {
 				var masked []string
 				if masked, err = bound.maskTexts(ctx, originals); err == nil {
@@ -151,9 +157,31 @@ func (s *Service) runBodyTranslation(ctx context.Context, end func(), sk skills.
 }
 
 // translateMasked is translateBodyTexts with the long links of message id
-// masked before the texts are cut into pieces, and put back after.
-func translateMasked(ctx context.Context, originals []string, id int64, target string, keep []string, call func(context.Context, translateRequest) (translateResult, error)) (bodyTranslation, error) {
+// masked before the texts are cut into pieces, and put back after. With m,
+// the texts are cut as m masks them, so no value is cut in two: each piece
+// goes with its values back, for call's request to mask them whole.
+func translateMasked(ctx context.Context, originals []string, id int64, target string, keep []string, m *mask.Masker, call func(context.Context, translateRequest) (translateResult, error)) (bodyTranslation, error) {
 	masked, links := maskLinks(originals, id)
+	if m != nil {
+		cut := make([]string, len(masked))
+		for i, t := range masked {
+			var err error
+			if cut[i], err = m.Text(t); err != nil {
+				_, rerr := m.RequestTexts(ctx, masked) // recorded, as the request would have been
+				return bodyTranslation{}, cmp.Or(rerr, err)
+			}
+		}
+		send := call
+		call = func(ctx context.Context, req translateRequest) (translateResult, error) {
+			texts := make([]string, len(req.Texts))
+			for i, t := range req.Texts {
+				texts[i] = m.Restore(t)
+			}
+			req.Texts = texts
+			return send(ctx, req)
+		}
+		masked = cut
+	}
 	return translateRestored(ctx, originals, masked, func(tr, src string) string { return unmask(tr, src, links) }, target, keep, call)
 }
 

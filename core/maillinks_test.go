@@ -207,7 +207,7 @@ func TestLinkExpanderLimits(t *testing.T) {
 
 	huge := "https://a.com/" + strings.Repeat("x", 20<<10)
 	var seen []string
-	res, err := translateMasked(ctx, []string{"see " + huge}, id, "fr", nil, func(_ context.Context, req translateRequest) (translateResult, error) {
+	res, err := translateMasked(ctx, []string{"see " + huge}, id, "fr", nil, nil, func(_ context.Context, req translateRequest) (translateResult, error) {
 		out := make([]string, len(req.Texts))
 		for i, t := range req.Texts {
 			seen = append(seen, t)
