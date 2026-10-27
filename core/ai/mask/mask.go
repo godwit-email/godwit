@@ -139,6 +139,7 @@ func (m *Masker) text(s string, defuse bool, f *Found) (out string, err error) {
 	cc := m.cfg.Load()
 	view, at := unescaped(s)
 	spans, over := cc.find(view, m.nameSpans(view))
+	spans, over = m.outside(view, spans), m.outside(view, over)
 	for _, sp := range over {
 		if cc.action(sp.kind) == Block && !f.learning() {
 			f.add(m.hit(sp.kind, view[sp.start:sp.end], Block))
@@ -276,15 +277,40 @@ func unencode(s string) string {
 }
 
 // Left says s, about to be mailed, still holds a placeholder (its braces
-// percent-encoded too): one in braces, or a bare one of a kind a rule masks.
-// Sending it would mail the placeholder, not the value.
-func Left(s string) bool {
+// percent-encoded too): one in braces, or a bare one of a kind a rule, a
+// word or the user's rules mask. Sending it would mail the placeholder,
+// not the value.
+func (m *Masker) Left(s string) bool {
+	var own []rule
+	if m != nil {
+		own = m.cfg.Load().own
+	}
 	left := false
 	loose(unencode(s), func(p, _ string, braced bool) string {
-		left = left || braced || isKind(p)
+		left = left || braced || isKind(p, own)
 		return p
 	})
 	return left
+}
+
+// outside is spans less those inside a placeholder this masker made: a
+// word that matches part of one, in the model's own text, must not break it.
+func (m *Masker) outside(s string, spans []span) []span {
+	var made [][]int
+	m.mu.RLock()
+	for _, loc := range looseRe.FindAllStringSubmatchIndex(s, -1) {
+		g := 2 // the hash's group, as in loose
+		if loc[g] < 0 {
+			g = 4
+		}
+		if _, ok := m.values[strings.ToLower(s[loc[g]:loc[g+1]])]; ok {
+			made = append(made, loc)
+		}
+	}
+	m.mu.RUnlock()
+	return slices.DeleteFunc(spans, func(sp span) bool {
+		return slices.ContainsFunc(made, func(r []int) bool { return sp.start < r[1] && r[0] < sp.end })
+	})
 }
 
 // defuse breaks the placeholders in s, as core's defuseRefs does link

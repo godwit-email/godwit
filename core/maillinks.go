@@ -16,7 +16,6 @@ import (
 	"unicode/utf8"
 
 	"github.com/godwit-email/godwit/core/ai"
-	"github.com/godwit-email/godwit/core/ai/mask"
 	gomail "github.com/godwit-email/godwit/core/mail"
 )
 
@@ -518,7 +517,7 @@ func (s *Service) expandDraft(ctx context.Context, d *Draft) error {
 	}
 	d.Subject, d.ReplyTo, d.HTML = m.Restore(d.Subject), m.Restore(d.ReplyTo), m.RestoreHTML(d.HTML)
 	d.To, d.Cc, d.Bcc = restore(d.To), restore(d.Cc), restore(d.Bcc)
-	if mask.Left(strings.Join(slices.Concat([]string{d.Subject, d.ReplyTo, d.HTML}, d.To, d.Cc, d.Bcc), "\n")) {
+	if m.Left(strings.Join(slices.Concat([]string{d.Subject, d.ReplyTo, d.HTML}, d.To, d.Cc, d.Bcc), "\n")) {
 		return ErrPlaceholder
 	}
 	return nil

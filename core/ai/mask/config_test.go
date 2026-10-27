@@ -127,3 +127,29 @@ func TestNamesFollowTheSettings(t *testing.T) {
 	require.NoError(t, m.Configure(mask.Config{Off: []string{mask.Emails}, Allow: []string{"github"}}))
 	assert.Equal(t, "From: <NAME> <zw@example.com>\nTo: GitHub <noreply@github.com>\n\n<NAME>, GitHub says hi", masked(t, m, mail))
 }
+
+// A word that matches part of a placeholder the model wrote back leaves it
+// whole: it still restores, and a tool may take it.
+func TestAWordLeavesAPlaceholderWhole(t *testing.T) {
+	m := configured(t, mask.Config{Words: []string{"email"}})
+	p, err := m.Text("alice@example.com")
+	require.NoError(t, err)
+	out, err := m.Body(`{"messages":[{"role":"assistant","content":"sent to ` + p + `"}]}`)
+	require.NoError(t, err)
+	assert.Contains(t, out, `"sent to `+p+`"`)
+	args, err := m.RestoreArgs([]byte(`{"to":"` + p + `"}`))
+	require.NoError(t, err)
+	assert.JSONEq(t, `{"to":"alice@example.com"}`, string(args))
+}
+
+// A bare placeholder of a word or of the user's rule that names no value is
+// left over: a tool does not take it, and it is not mailed.
+func TestAnUnknownTermPlaceholderIsLeft(t *testing.T) {
+	m := configured(t, mask.Config{Words: []string{"acme"}, Rules: []mask.Rule{{Kind: "ORDER", Regex: `ORD-\d+`}}})
+	for _, p := range []string{"TERM_aaaaaaaaaaaa", "ORDER_aaaaaaaaaaaa"} {
+		assert.True(t, m.Left(p), p)
+		_, err := m.RestoreArgs([]byte(`{"q":"` + p + `"}`))
+		assert.Error(t, err, p)
+	}
+	assert.False(t, m.Left("report_finalversion"))
+}

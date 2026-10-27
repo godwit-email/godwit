@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"regexp"
+	"slices"
 	"strings"
 )
 
@@ -98,7 +99,7 @@ func (m *Masker) RestoreArgs(args json.RawMessage) (out json.RawMessage, err err
 	}
 	s, ok := walk(string(args), scope{tool: true}, func(s string, _ scope) string {
 		s = m.Restore(s)
-		if Left(s) {
+		if m.Left(s) {
 			err = errUnknown
 		}
 		return s
@@ -109,14 +110,16 @@ func (m *Masker) RestoreArgs(args json.RawMessage) (out json.RawMessage, err err
 	return json.RawMessage(s), err
 }
 
-// isKind says the bare placeholder p starts with a kind the rules mask:
-// BANK_CARD_…, not report_finalversion.
-func isKind(p string) bool {
+// isKind says the bare placeholder p starts with a kind the rules, the
+// user's own among them, mask: BANK_CARD_…, TERM_…, not report_finalversion.
+func isKind(p string, own []rule) bool {
 	u := strings.ToUpper(p)
-	if strings.HasPrefix(u, nameKind+"_") && len(u) == len(nameKind)+1+hashLen {
-		return true
+	for _, k := range []string{nameKind, TermKind} {
+		if strings.HasPrefix(u, k+"_") && len(u) == len(k)+1+hashLen {
+			return true
+		}
 	}
-	for _, r := range rules {
+	for _, r := range slices.Concat(own, rules) {
 		if strings.HasPrefix(u, r.kind+"_") && len(u) == len(r.kind)+1+hashLen {
 			return true
 		}
