@@ -1058,25 +1058,21 @@ func (p *mailPage) searchedDesc() string {
 	return i18n.T("mail.search.empty_desc")
 }
 
-// starButton is a direct star/unstar toggle button on a mail row.
+// starButton is a direct star/unstar toggle button on a mail row. As S, it
+// unstars only a row all starred; an unstarred row's shows on hover or focus,
+// always there for the keyboard and assistive technology.
 func (p *mailPage) starButton(c *ui.Context, it mailItem, hovered bool) {
 	t := theme.Of(c)
-	starred := it.Flagged > 0
-	label := i18n.T("mail.action.star")
+	starred := it.Flagged == it.Count
+	icon, label := "star", i18n.T("mail.action.star")
 	if starred {
-		label = i18n.T("mail.action.unstar")
-	}
-	if !starred && !hovered {
-		ui.Box(c).Size(theme.IconSm, theme.IconSm)
-		return
-	}
-	icon := "star"
-	if starred {
-		icon = "star-fill"
+		icon, label = "star-fill", i18n.T("mail.action.unstar")
 	}
 	b := kit.IconButton(c, icon, label, kit.ButtonOpts{Variant: kit.Ghost, Size: kit.SizeXs})
-	if starred {
+	if it.Flagged > 0 {
 		b.TextColor(t.Attention)
+	} else if !hovered && !b.FocusVisible() {
+		b.Opacity(0)
 	}
 	b.OnClick(func() {
 		p.batch("toggle_star", []mailItem{it})
@@ -1227,8 +1223,8 @@ func (p *mailPage) batch(act string, rows []mailItem) {
 		case v.Unified == "starred":
 			return slices.Contains(m.Flags, `\Flagged`)
 		case strings.HasPrefix(v.Unified, "starred:"):
-			accID, _ := strconv.ParseInt(strings.TrimPrefix(v.Unified, "starred:"), 10, 64)
-			return acctOf[m.FolderID] == accID && slices.Contains(m.Flags, `\Flagged`)
+			acc, ok := starredOf(v)
+			return ok && acctOf[m.FolderID] == acc && slices.Contains(m.Flags, `\Flagged`)
 		}
 		return m.FolderID == v.FolderID
 	}

@@ -126,6 +126,7 @@ func (p *mailPage) Sidebar(c *ui.Context) {
 		})
 		ui.Box(c).Height(th.Space(2))
 		p.navItem(c, "inbox", i18n.T("mail.unified.inbox"), core.View{Unified: "inbox"}, p.inboxUnread())
+		p.navItem(c, "star", i18n.T("mail.unified.starred"), core.View{Unified: "starred"}, 0)
 		if n := len(p.outbox); n > 0 {
 			p.navItem(c, "outbox", i18n.T("mail.outbox"), core.View{Unified: "outbox"}, n)
 		}

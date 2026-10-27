@@ -751,9 +751,15 @@ func (r *reader) toolbar(c *ui.Context) {
 	})
 }
 
+// starred reports whether all the toolbar acts on is starred: toggle_star
+// unstars only then, else it stars the rest.
 func (r *reader) starred() bool {
-	return slices.ContainsFunc(r.msgs, func(m core.MessageSummary) bool {
-		return slices.Contains(m.Flags, `\Flagged`)
+	msgs := r.msgs
+	if r.key[1] != 0 && len(msgs) > 0 { // a message's reader acts on it alone
+		msgs = msgs[len(msgs)-1:]
+	}
+	return len(msgs) > 0 && !slices.ContainsFunc(msgs, func(m core.MessageSummary) bool {
+		return !slices.Contains(m.Flags, `\Flagged`)
 	})
 }
 
