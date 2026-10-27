@@ -25,6 +25,8 @@ var sentinels = []struct {
 	{"too_large", core.ErrTooLarge},
 	{"link_ref", core.ErrLinkRef},
 	{"placeholder", core.ErrPlaceholder},
+	{"mask_kind", core.ErrMaskKind},
+	{"mask_empty_match", core.ErrMaskEmptyMatch},
 	{"not_on_server_yet", core.ErrNotOnServerYet},
 	{"stale_draft", core.ErrStaleDraft},
 	{"not_synced", core.ErrNotSynced},
