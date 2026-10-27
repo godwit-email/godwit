@@ -75,6 +75,20 @@ func TestPaletteViewAll(t *testing.T) {
 
 // The row 在邮件列表中查看全部 shows only when hits are left out, and a
 // click on it is ⌘↵.
+// View-all lists at least what the palette's mail tab could: core's most.
+func TestPaletteViewAllKeepsEveryPaletteHit(t *testing.T) {
+	h, accs := mailHarness(t, nil, "alice@example.com")
+	h.putMany(accs[0], 120)
+	h.waitMail("the threads", func() bool { return len(h.items()) >= 50 })
+	h.tt.Key(ui.Cmd, ui.KeyK)
+	h.until("the palette", func() bool { return paletteShown(h) })
+	h.typeText("msg")
+	h.see("邮件 · 120")
+	h.tt.Key(ui.Cmd, ui.KeyEnter)
+	p := h.app.mail
+	h.until("all 120 in the list", func() bool { return !paletteShown(h) && p.searched && len(p.results) == 120 })
+}
+
 func TestPaletteViewAllRow(t *testing.T) {
 	h, _ := invoices(t)
 	h.tt.Key(0, ui.KeyRight) // 邮件

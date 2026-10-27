@@ -27,9 +27,10 @@ import (
 )
 
 const (
-	pageSize    = 50
-	maxPage     = 200 // the Service's largest page
-	searchLimit = 100 // the most results a search reads: a full answer may have more
+	pageSize = 50
+	maxPage  = 200 // the Service's largest page
+	// shortcut: core caps a search at 200 and the list has no paging past it ("200+"); page with a cursor if that bites.
+	searchLimit = 200 // the most results a search reads, as many as the palette shows
 )
 
 // mailItem is a row of the list: a thread, or a message (flat view, search).
