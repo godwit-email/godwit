@@ -6,11 +6,13 @@ package core
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"maps"
 
 	"github.com/godwit-email/godwit/core/ai"
+	"github.com/godwit-email/godwit/core/ai/mask"
 	"github.com/godwit-email/godwit/core/plugins"
 )
 
@@ -89,9 +91,12 @@ func (j pluginModelJudge) dispatch(ctx context.Context, input string, q ai.Quest
 		return nil, err
 	}
 	qs := []ai.Question{q}
-	req := plugins.JudgeModelRequest{ModelID: j.model.ID, Input: input, Questions: qs}
+	m, req, err := j.masked(plugins.JudgeModelRequest{ModelID: j.model.ID, Input: input, Questions: qs})
+	if err != nil {
+		return nil, err // not sent: no fault of the plugin's
+	}
 	var answers []ai.Answer
-	err := j.s.callModelPlugin(ctx, j.name, j.rp, func(ctx context.Context) error {
+	err = j.s.callModelPlugin(ctx, j.name, j.rp, func(ctx context.Context) error {
 		var res plugins.JudgeModelResult
 		var err error
 		if j.rp.native != nil {
@@ -102,13 +107,34 @@ func (j pluginModelJudge) dispatch(ctx context.Context, input string, q ai.Quest
 			err = decodeAnswer(v, cerr, &res, "judge")
 		}
 		if err == nil {
-			if answers, err = ai.ValidateAnswers(qs, res.Answers); err != nil {
+			if answers, err = ai.ValidateAnswers(qs, ai.RestoreAnswers(m, res.Answers)); err != nil {
 				err = fmt.Errorf("%w: %s", errPluginAnswer, err) // not ErrJudgeAnswer: the plugin is at fault, not this input
 			}
 		}
 		return err
 	})
 	return answers, judgeFailure(ctx, err)
+}
+
+// masked is req as the plugin is asked it while masking is on: its input,
+// instructions and options with placeholders, as an HTTP judge's body is
+// (docs/adr/0025-mask-at-cloud-egress.md), and the masker that restores
+// the answers.
+func (j pluginModelJudge) masked(req plugins.JudgeModelRequest) (*mask.Masker, plugins.JudgeModelRequest, error) {
+	m, err := j.s.masker()
+	if err != nil || !m.On() {
+		return m, req, err
+	}
+	b, err := json.Marshal(req)
+	if err != nil {
+		return nil, req, err
+	}
+	body, err := m.Body(string(b))
+	if err != nil {
+		return nil, req, err
+	}
+	var out plugins.JudgeModelRequest
+	return m, out, json.Unmarshal([]byte(body), &out)
 }
 
 // load verifies the files of a model with assets and has the plugin's
