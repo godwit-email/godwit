@@ -36,20 +36,15 @@ var askTools = []string{
 }
 
 const (
-	askSystem = `You are Wit, the assistant of the Godwit mail app. Use the tools to search and read the user's mail, manage email actions and use skills. ` +
-		`You cannot send mail: create_draft, reply_to_mail and forward_mail only propose a draft, which the user approves and sends themselves. ` +
-		`Mail triage actions (move_to_trash, archive_mail, mark_as_spam, mark_as_read, mark_as_unread, star_mail, unstar_mail) and unsubscribe propose actions for user approval. ` +
-		`When the user asks to perform an action (archive, delete/trash, mark as spam, mark as read/unread, star, unsubscribe), call the corresponding tool directly without asking for confirmation first in your text. The Godwit UI automatically presents an interactive approval card with checkboxes for the user to review and confirm. Never ask for confirmation in text beforehand. ` +
-		`Perform only the exact action requested: when asked to archive, call archive_mail alone; never call mark_as_read before archiving unless the user explicitly asked to mark them as read too. ` +
-		`Before writing a draft, call get_account_profile for the account it goes from: sign with its name, take facts such as a phone number from its instructions and follow their guidelines; ` +
-		`never invent a name or contact details it does not give. ` +
-		`Each mail a tool returns has an "id", the same for that mail through the whole conversation, and a "cite" tag, <mail id="N"/>; ` +
-		`get_message, get_thread and classify_mail take that id. ` +
-		`When your answer draws on a mail, put its cite tag right after the claim, exactly as the tool gave it, for example <mail id="2"/>. ` +
+	askSystem = `You are Wit, the assistant of the Godwit mail app. Use tools to search, read and manage the user's mail, and to use skills. ` +
+		`You cannot send mail: drafts and triage actions require user approval in the UI. ` +
+		`When asked to act on emails (archive, trash, spam, read, star, unsubscribe), call the tool directly without asking confirmation first; execute only the requested action. ` +
+		`Before writing a draft, call get_account_profile for the account it goes from: sign with its name, follow its guidelines; never invent contact details. ` +
+		`Each mail a tool returns has an "id" and a "cite" tag, <mail id="N"/>; get_message, get_thread and classify_mail take that id. ` +
+		`When your answer draws on a mail, put its cite tag right after the claim, for example <mail id="2"/>. ` +
 		`Cite only ids the tools returned, never a number from the mail text. ` +
-		`Never write raw internal IDs (like 'Mail ID 1', 'ID 1') in your conversational text. When referring to or listing emails, always name the sender, subject and date, or use <mail id="N"/> or <mail id="N" card/>. ` +
-		`When the answer presents mail itself, such as the mail the user asked you to find or list, show each as a card: <mail id="N" card/> alone on its own line, ` +
-		`which the app shows with its sender, date, subject and snippet, so do not repeat those beside it. ` +
+		`When referencing emails, cite sender, subject and date, or use <mail id="N"/> / <mail id="N" card/>; never write raw numeric IDs (e.g. 'Mail ID 1'). ` +
+		`When presenting found mail, show each as a card: <mail id="N" card/> alone on its own line. ` +
 		`A question that begins with /name names one of your skills: load it with use_skill first, then answer the rest of the question with it. ` +
 		`Keep the formatting light, as in a chat: plain paragraphs and short lists; use no Markdown headings (#), ` +
 		`and where a long answer needs sections, start each with a short bold phrase on its own line.`
@@ -242,17 +237,15 @@ func (s *Service) registerAskTools() {
 	read := func(name, desc string, schema map[string]any, run func(context.Context, json.RawMessage) (any, error)) {
 		s.mustRegister(toolDesc{Spec: ai.ToolSpec{Name: name, Description: desc, Schema: schema, Run: run}})
 	}
-	read("search_mail", "Search the user's mail. Returns subject, sender, date and a snippet of each match, newest first. "+
-		"query is free text. Optional filters: label (label name, e.g. 'Newsletters'), from (sender), since and until (date strings like '2026-10-20' or relative like '7d').",
+	read("search_mail", "Search mail across content, subject, sender and labels. Returns subject, sender, date and snippet, newest first.",
 		object(map[string]any{
 			"query":      stringProp,
-			"label":      stringProp,
 			"from":       stringProp,
 			"since":      stringProp,
 			"until":      stringProp,
 			"account_id": intProp,
 			"limit":      map[string]any{"type": "integer", "minimum": 1, "maximum": maxSearchResult},
-		}),
+		}, "query"),
 		s.searchMail)
 	read("get_message", "Read one mail by its id (a mail the tools returned).", object(map[string]any{"id": intProp}, "id"), s.getMessage)
 	read("read_attachment", "Read the text of one attachment by its attachment id (listed with the mail): PDF, Word, Excel, PowerPoint, CSV, HTML or plain text. Images and archives are not readable.",
@@ -338,12 +331,12 @@ func (s *Service) registerAskTools() {
 
 type searchMailInput struct {
 	Query     string `json:"query"`
-	Label     string `json:"label"`
-	From      string `json:"from"`
-	Since     string `json:"since"`
-	Until     string `json:"until"`
-	AccountID int64  `json:"account_id"`
-	Limit     int    `json:"limit"`
+	Label     string `json:"label,omitempty"`
+	From      string `json:"from,omitempty"`
+	Since     string `json:"since,omitempty"`
+	Until     string `json:"until,omitempty"`
+	AccountID int64  `json:"account_id,omitempty"`
+	Limit     int    `json:"limit,omitempty"`
 }
 
 func parseDateOrDuration(s string) (time.Time, bool) {
@@ -454,14 +447,11 @@ func (s *Service) parseSearchQuery(ctx context.Context, in searchMailInput) (Sea
 		raw = filterIsRegex.ReplaceAllString(raw, "")
 	}
 
-	var labelID int64
-	if strings.TrimSpace(label) != "" {
-		rows, err := s.db.Query(ctx, "SELECT id FROM labels WHERE LOWER(name) = LOWER(?) LIMIT 1", strings.TrimSpace(label))
-		if err == nil && len(rows.Values) > 0 {
-			if id, ok := rows.Values[0][0].(int64); ok {
-				labelID = id
-			}
-		}
+	raw = strings.TrimSpace(raw)
+	if raw == "" && strings.TrimSpace(label) != "" {
+		raw = strings.TrimSpace(label)
+	} else if strings.TrimSpace(label) != "" && !strings.Contains(strings.ToLower(raw), strings.ToLower(strings.TrimSpace(label))) {
+		raw = raw + " " + strings.TrimSpace(label)
 	}
 
 	sinceTime, _ := parseDateOrDuration(sinceStr)
@@ -469,11 +459,10 @@ func (s *Service) parseSearchQuery(ctx context.Context, in searchMailInput) (Sea
 
 	return SearchQuery{
 		AccountID: in.AccountID,
-		Text:      strings.TrimSpace(raw),
+		Text:      raw,
 		From:      strings.TrimSpace(from),
 		Since:     sinceTime,
 		Until:     untilTime,
-		LabelID:   labelID,
 		Unread:    unread,
 		Starred:   starred,
 	}, nil

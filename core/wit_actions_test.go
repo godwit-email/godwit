@@ -301,4 +301,16 @@ func TestWitSearchMailWithLabelAndDates(t *testing.T) {
 	m3 := resSearch3.(map[string]any)
 	results3 := m3["results"].([]map[string]any)
 	assert.Len(t, results3, 1)
+
+	// 4. Insert an email with NO label, but 'newsletter' in the content
+	_, err = e.s.db.Execute(ctx, `INSERT INTO messages(account_id, folder_id, subject, from_addr, date, body_text) VALUES (1, 1, 'Product Digest', 'digest@x.com', ?, 'Weekly newsletter edition')`, now-86400)
+	require.NoError(t, err)
+	require.NoError(t, e.s.RebuildSearchIndex(ctx))
+
+	// Search for 'Newsletter' finds BOTH labeled messages and content-matched messages!
+	resSearch4, err := e.s.searchMail(runCtx, []byte(`{"query":"Newsletter","since":"7d"}`))
+	require.NoError(t, err)
+	m4 := resSearch4.(map[string]any)
+	results4 := m4["results"].([]map[string]any)
+	assert.Len(t, results4, 2) // res1 (labeled + subject) and digest (body content)
 }

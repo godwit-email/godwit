@@ -197,11 +197,12 @@ func (s *Service) SearchWith(ctx context.Context, q SearchQuery, limit int) ([]M
 	case utf8.RuneCountInString(query) < 3:
 		// ponytail: full scan; use a bigram index when mailboxes get large.
 		like := likeArg(query)
-		cond = `(m.subject LIKE ? ESCAPE '\' OR m.from_addr LIKE ? ESCAPE '\' OR m.body_text LIKE ? ESCAPE '\')`
-		args = []any{like, like, like}
+		cond = `(m.subject LIKE ? ESCAPE '\' OR m.from_addr LIKE ? ESCAPE '\' OR m.body_text LIKE ? ESCAPE '\' OR m.id IN (SELECT ml.message_id FROM message_labels ml JOIN labels l ON l.id = ml.label_id WHERE ml.active = 1 AND (l.name LIKE ? ESCAPE '\' OR l.slug LIKE ? ESCAPE '\')))`
+		args = []any{like, like, like, like, like}
 	default:
-		cond = "m.id IN (SELECT rowid FROM messages_fts WHERE messages_fts MATCH ?)"
-		args = []any{`"` + strings.ReplaceAll(query, `"`, `""`) + `"`}
+		like := likeArg(query)
+		cond = `(m.id IN (SELECT rowid FROM messages_fts WHERE messages_fts MATCH ?) OR m.id IN (SELECT ml.message_id FROM message_labels ml JOIN labels l ON l.id = ml.label_id WHERE ml.active = 1 AND (l.name LIKE ? ESCAPE '\' OR l.slug LIKE ? ESCAPE '\')))`
+		args = []any{`"` + strings.ReplaceAll(query, `"`, `""`) + `"`, like, like}
 	}
 	if q.AccountID != 0 {
 		cond += " AND m.account_id = ?"
