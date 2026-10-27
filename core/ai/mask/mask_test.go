@@ -280,10 +280,11 @@ func TestRestoresAPlaceholderCutBetweenChunks(t *testing.T) {
 			require.Equal(t, want, stream(m, text[:i], text[i:j], text[j:]), "%q|%q|%q", text[:i], text[i:j], text[j:])
 		}
 	}
-	// A placeholder the stream ended in the middle of goes; text that only
-	// starts like one stays.
+	// A placeholder in braces the stream ended in the middle of goes; a
+	// last word without them stays, the reply's own as likely as not.
 	assert.Equal(t, "see ", stream(m, "see {{BANK_CA"))
-	assert.Equal(t, "see ", stream(m, "see BANK_CARD_abc"))
+	assert.Equal(t, "see BANK_CARD_abc", stream(m, "see BANK_CARD_abc"))
+	assert.Equal(t, "Set API_KEY", stream(m, "Set API_KEY"))
 	assert.Equal(t, "see BANK", stream(m, "see BANK"))
 	assert.Equal(t, "if (x) {", stream(m, "if (x) {"))
 }

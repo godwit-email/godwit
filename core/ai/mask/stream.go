@@ -18,8 +18,8 @@ var (
 	braceTail = regexp.MustCompile(`\{\{?[ \t]*[^{}\s]*[ \t]*\}?$`)
 	// wordTail is a last word, which may be one without braces.
 	wordTail = regexp.MustCompile(`\b[A-Za-z][A-Za-z0-9_]*$`)
-	// cutTail is what DropCut may drop: {{ and a body with no }, or a last word.
-	cutTail = regexp.MustCompile(`\{\{[ \t]*[^{}\s]*$|\b[A-Za-z][A-Za-z0-9_]*$`)
+	// cutTail is what DropCut may drop: {{ and a body with no }.
+	cutTail = regexp.MustCompile(`\{\{[ \t]*[^{}\s]*$`)
 	// wholeBody ends a whole placeholder's body: _ and the hash.
 	wholeBody = regexp.MustCompile(`_[A-Za-z2-7]{12}$`)
 )
@@ -36,19 +36,16 @@ func (m *Masker) Cut(text string) int {
 	return len(text)
 }
 
-// DropCut is text without the placeholder its end cut short: one the model
-// was still writing when the stream ended, which names no value.
+// DropCut is text without the placeholder its end cut short: one in braces
+// the model was still writing when the stream ended, which names no value.
+// A last word without braces stays: API_KEY or PHONE_NUMBER is as likely
+// the reply's own.
 func (m *Masker) DropCut(text string) string {
 	loc := cutTail.FindStringIndex(text)
-	if loc == nil {
+	if loc == nil || wholeBody.MatchString(strings.TrimRight(text[loc[0]:], " \t")) { // a whole one is restored as it is
 		return text
 	}
-	switch t := strings.TrimRight(text[loc[0]:], " \t"); {
-	case wholeBody.MatchString(t): // restored as it is
-	case strings.HasPrefix(t, "{{"), strings.Contains(t, "_") && kindPrefix(t, m.own()):
-		return text[:loc[0]]
-	}
-	return text
+	return text[:loc[0]]
 }
 
 // kindPrefix says w, in any case, starts a placeholder without braces: a
