@@ -532,6 +532,17 @@ func TestPluginTranslateBlocks(t *testing.T) {
 	assert.Empty(t, translateRequests(t, record))
 }
 
+// A translation plugin's error that quotes what it was sent shows the
+// values, not their placeholders.
+func TestPluginTranslateErrorRestores(t *testing.T) {
+	e := newAssistEnv(t)
+	useNativeTranslator(t, e.s, map[string]any{"translateError": "rate_limited"})
+	_, err := e.s.RunSkill(t.Context(), "translate", Target{Kind: "selection", ID: e.msg, Text: "Card 4111 1111 1111 1111"})
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "Card 4111 1111 1111 1111")
+	assert.NotContains(t, err.Error(), "{{")
+}
+
 // A draft larger than one ABI request is sent in batches, in order.
 func TestTranslateDraftHTMLBatches(t *testing.T) {
 	e := newAssistEnv(t)

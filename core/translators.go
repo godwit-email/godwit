@@ -332,7 +332,7 @@ func (s *Service) runPluginTranslate(ctx context.Context, end func(), plugin str
 // envelope is its answer (plugins.IsNativeFailure), and a wrong number of
 // texts always counts. The plugin is a service off this device: it gets the
 // texts masked (脱敏, docs/adr/0025-mask-at-cloud-egress.md), and its
-// translations are restored however it changed the placeholders.
+// translations and errors are restored however it changed the placeholders.
 func (s *Service) callTranslator(ctx context.Context, plugin string, tr translator, rp *runningPlugin, b boundTranslator, req translateRequest) (translateResult, error) {
 	if !req.masked {
 		texts, err := b.maskTexts(ctx, req.Texts)
@@ -353,7 +353,8 @@ func (s *Service) callTranslator(ctx context.Context, plugin string, tr translat
 		if rp.native == nil || plugins.IsNativeFailure(err) || errors.Is(err, errTranslatorAnswer) {
 			failed = s.pluginFailed(ctx, plugin, rp.gen)
 		}
-		return translateResult{}, errors.Join(fmt.Errorf("translation plugin %s: %w", plugin, s.cleanError(err)), failed)
+		err = cleanErr{s.clean(b.masker.Restore(err.Error())), err} // it may quote the texts it was sent
+		return translateResult{}, errors.Join(fmt.Errorf("translation plugin %s: %w", plugin, err), failed)
 	}
 	for i, t := range res.Texts {
 		res.Texts[i] = b.masker.Restore(t)

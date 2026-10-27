@@ -22,7 +22,7 @@ import (
 // describeSleepMs. translate answers "[<target>] <text>" per text from source
 // (default "en"), in capitals with translateUpper (as a service may change a
 // placeholder), one text short with translateWrongCount, or the error
-// envelope translateError; with record each request is appended to
+// envelope translateError, quoting the texts; with record each request is appended to
 // record + ".translate", and recordEnv adds the environment to configure's record.
 // Methods: describe, configure (writes its request to record, if set),
 // translate (echoes the texts, source "en"), fail (a rate_limited envelope),
@@ -147,14 +147,15 @@ func FakeNativeOpener(stderr io.Writer) NativeOpener {
 					f.Write(append(append([]byte{}, req...), '\n'))
 					f.Close()
 				}
-				if spec.TranslateError != "" {
-					return []byte(`{"ok":false,"error":{"code":"` + spec.TranslateError + `","message":"slow down","retryable":true}}`), nil
-				}
 				var r struct {
 					Texts  []string `json:"texts"`
 					Target string   `json:"target"`
 				}
 				json.Unmarshal(req, &r)
+				if spec.TranslateError != "" { // quoting what it was sent, as a service may
+					msg, _ := json.Marshal("slow down: " + strings.Join(r.Texts, " "))
+					return []byte(`{"ok":false,"error":{"code":"` + spec.TranslateError + `","message":` + string(msg) + `,"retryable":true}}`), nil
+				}
 				out := make([]string, 0, len(r.Texts))
 				for _, t := range r.Texts {
 					out = append(out, "["+r.Target+"] "+t)
