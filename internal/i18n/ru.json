@@ -407,6 +407,7 @@
   "reader_avatar_blocked": "Аватар отправителя заблокирован; при его загрузке возможен запрос к сайту отправителя и Gravatar",
   "reader_body": "Текст письма",
   "reader_date": "{arg2, number, ::group-off} {arg1}",
+  "reader_date_year": "{arg2, number, ::group-off} {arg1} {arg3, number, ::group-off} г.",
   "reader_egress_allow": "Разрешить один раз",
   "reader_egress_body": "Плагин {arg1} отправит данные на:",
   "reader_egress_title": "Разрешить плагину отправку данных?",

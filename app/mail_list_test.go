@@ -14,6 +14,7 @@ import (
 	"github.com/emersion/go-imap/v2"
 	"github.com/godwit-email/godwit/core"
 	"github.com/godwit-email/godwit/core/coretest"
+	"github.com/godwit-email/godwit/internal/i18n"
 )
 
 // mailHarness is a harness with an account per email, on the mail page.
@@ -252,6 +253,24 @@ func TestListTime(t *testing.T) {
 	} {
 		if got := listTime(monday, c.t); got != c.want {
 			t.Errorf("on Monday listTime(%v) = %q, want %q", c.t, got, c.want)
+		}
+	}
+
+	t.Cleanup(func() { i18n.SetLanguage("zh-CN") })
+	i18n.SetLanguage("de")
+	for _, c := range []struct {
+		t    time.Time
+		want string
+	}{
+		{now.Add(-time.Hour), "08:00"},
+		{now.Add(-10 * time.Hour), "Gestern"},
+		{now.AddDate(0, 0, -4), "Mo."},
+		{now.AddDate(0, 0, -5), "04.10."},
+		{now.AddDate(0, 0, -11), "28.09."},
+		{now.AddDate(-1, 0, 0), "09.10.2025"},
+	} {
+		if got := listTime(now, c.t); got != c.want {
+			t.Errorf("de listTime(%v) = %q, want %q", c.t, got, c.want)
 		}
 	}
 }

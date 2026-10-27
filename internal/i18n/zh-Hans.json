@@ -407,6 +407,7 @@
   "reader_avatar_blocked": "已阻止发件人头像，加载时可能访问发件人网站和 Gravatar",
   "reader_body": "邮件正文",
   "reader_date": "{arg1} {arg2, number, ::group-off} 日",
+  "reader_date_year": "{arg3, number, ::group-off} 年 {arg1} {arg2, number, ::group-off} 日",
   "reader_egress_allow": "允许这一次",
   "reader_egress_body": "插件 {arg1} 会把数据发送到：",
   "reader_egress_title": "允许插件发送数据？",

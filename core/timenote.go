@@ -5,9 +5,10 @@ import (
 	"time"
 )
 
-// timeSystem tells the model how to read the time note and mail dates.
+// timeSystem tells the model how to read the time note and mail dates, and write them.
 const timeSystem = `A user turn may begin with the current time; until another does, the last one given holds. ` +
-	`Mail dates are in UTC: go by the user's local time for "today", "yesterday" and the times you tell the user.`
+	`Mail dates are in UTC: go by the user's local time for "today", "yesterday" and the times you tell the user, ` +
+	`and write dates as the language of your answer does, not as ISO YYYY-MM-DD.`
 
 // timeNotePrefix starts the time note; timeNoteLayout is how it gives the time.
 const (

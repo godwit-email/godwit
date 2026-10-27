@@ -1263,7 +1263,7 @@ func (a *App) BodyFailed(view ui.NativeWebView, message int64, err error) {
 }
 
 // senderDate is a message's time in the sender line: today or yesterday,
-// the weekday this week, with the hour; else month and day.
+// the weekday this week, with the hour; else month and day (with year if different).
 func senderDate(now, t time.Time) string {
 	t = t.In(now.Location())
 	clock := t.Format("15:04")
@@ -1274,6 +1274,9 @@ func senderDate(now, t time.Time) string {
 	case !t.Before(today):
 		return i18n.T("reader.today") + " " + clock
 	case t.Before(weekStart) && t.Before(today.AddDate(0, 0, -1)): // as listTime: older than yesterday and this week
+		if t.Year() != now.Year() {
+			return i18n.Tf("reader.date_year", i18n.T(fmt.Sprintf("reader.month.%d", t.Month())), t.Day(), t.Year())
+		}
 		return i18n.Tf("reader.date", i18n.T(fmt.Sprintf("reader.month.%d", t.Month())), t.Day())
 	}
 	return listTime(now, t) + " " + clock

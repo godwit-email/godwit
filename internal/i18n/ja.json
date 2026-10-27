@@ -407,6 +407,7 @@
   "reader_avatar_blocked": "差出人のアバターをブロックしました。読み込むと差出人の Web サイトや Gravatar に接続される可能性があります",
   "reader_body": "メール本文",
   "reader_date": "{arg1}{arg2, number, ::group-off}日",
+  "reader_date_year": "{arg3, number, ::group-off}年{arg1}{arg2, number, ::group-off}日",
   "reader_egress_allow": "今回のみ許可",
   "reader_egress_body": "プラグイン {arg1} は次の宛先にデータを送信します：",
   "reader_egress_title": "プラグインにデータの送信を許可しますか？",

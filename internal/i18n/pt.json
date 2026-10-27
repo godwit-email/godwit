@@ -407,6 +407,7 @@
   "reader_avatar_blocked": "Avatar do remetente bloqueado; carregá-lo pode contatar o site do remetente e o Gravatar",
   "reader_body": "Corpo da mensagem",
   "reader_date": "{arg2, number, ::group-off} de {arg1}",
+  "reader_date_year": "{arg2, number, ::group-off} de {arg1} de {arg3, number, ::group-off}",
   "reader_egress_allow": "Permitir uma vez",
   "reader_egress_body": "O plugin {arg1} enviará dados para:",
   "reader_egress_title": "Permitir que o plugin envie dados?",

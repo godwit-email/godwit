@@ -1526,7 +1526,7 @@ function Answer({
                 <span className="font-medium">{c.subject}</span>
                 <span className="text-muted-foreground text-xs">
                   {c.from}
-                  {c.date ? ` · ${new Date(c.date).toLocaleString()}` : ""}
+                  {c.date ? ` · ${new Date(c.date).toLocaleString(currentLocale())}` : ""}
                 </span>
               </HoverCardContent>
             </HoverCard>
