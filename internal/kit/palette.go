@@ -20,7 +20,11 @@ type PaletteOpts struct {
 }
 
 // PaletteHint is a shortcut the palette's bottom bar names: Key, then Label.
-type PaletteHint struct{ Label, Key string }
+// With OnClick it is a button too.
+type PaletteHint struct {
+	Label, Key string
+	OnClick    func()
+}
 
 // paletteSel is the selected PaletteRow built this frame, which the search
 // box names to assistive technology. UI thread only.
@@ -75,10 +79,16 @@ func Palette(c *ui.Context, open *bool, query *string, o PaletteOpts, head, body
 			ui.Row(c).Shrink(0).Gap(th.Space(4)).AlignItems(ui.Center).Padding(th.Space(2), th.Space(4)).
 				BorderWidth(theme.Hairline, 0, 0, 0).BorderColor(t.Border).Children(func() {
 				for _, h := range o.Hints {
-					ui.Row(c).Gap(th.Space(1.5)).AlignItems(ui.Center).Children(func() {
+					hint := func() {
 						Kbd(c, h.Key)
 						Text(c, h.Label, t.Text.Xs).TextColor(t.Muted)
-					})
+					}
+					if h.OnClick != nil {
+						Pressable(c, PressableOpts{OnClick: h.OnClick}).Label(h.Label).Gap(th.Space(1.5)).AlignItems(ui.Center).
+							Padding(th.Space(0.5), th.Space(1)).Margin(0, -th.Space(1)).Radius(t.Radius.Md).Children(hint)
+					} else {
+						ui.Row(c).Gap(th.Space(1.5)).AlignItems(ui.Center).Children(hint)
+					}
 				}
 			})
 		}

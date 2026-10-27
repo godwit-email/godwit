@@ -1318,5 +1318,8 @@
   "palette_empty_desc": "Yalnızca bu cihaza eşitlenen postalar arandı. Wit'in bulması için Tab'a basın.",
   "palette_hint_open": "Aç",
   "palette_hint_kind": "Türü değiştir",
-  "palette_hint_close": "Kapat"
+  "palette_hint_close": "Kapat",
+  "palette_hint_wit": "Wit'e sor",
+  "palette_hint_view_all": "Tümünü gör",
+  "palette_view_all": "Posta listesinde {arg1} iletinin tümünü gör"
 }

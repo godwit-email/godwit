@@ -119,7 +119,7 @@ func TestPaletteGroups(t *testing.T) {
 }
 
 // ↑↓ go through every group and wrap, hovering a row chooses it too; ↵
-// opens the row chosen. Rows: Invoice 1, 2, 3, then the attachment.
+// opens the row chosen. Rows: Invoice 1, 2, 3, 查看全部, then the attachment.
 func TestPaletteKeysOpen(t *testing.T) {
 	h, _ := invoices(t)
 	again := func() {
@@ -138,14 +138,15 @@ func TestPaletteKeysOpen(t *testing.T) {
 	routeTo(h, "Invoice 3")
 
 	again()
-	h.tt.Key(0, ui.KeyUp) // wraps to the attachment, then up to Invoice 2
+	h.tt.Key(0, ui.KeyUp) // wraps to the attachment, then up past 查看全部 to Invoice 2
+	h.tt.Key(0, ui.KeyUp)
 	h.tt.Key(0, ui.KeyUp)
 	h.tt.Key(0, ui.KeyUp)
 	h.tt.Key(0, ui.KeyEnter)
 	routeTo(h, "Invoice 2")
 
 	again()
-	for range 3 { // from the mail into the attachments
+	for range 4 { // from the mail into the attachments
 		h.tt.Key(0, ui.KeyDown)
 	}
 	h.tt.Key(0, ui.KeyEnter)

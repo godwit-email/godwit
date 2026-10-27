@@ -1318,5 +1318,8 @@
   "palette_empty_desc": "Поиск шёл только по письмам, синхронизированным на это устройство. Нажмите Tab, чтобы искал Wit.",
   "palette_hint_open": "Открыть",
   "palette_hint_kind": "Сменить тип",
-  "palette_hint_close": "Закрыть"
+  "palette_hint_close": "Закрыть",
+  "palette_hint_wit": "Спросить Wit",
+  "palette_hint_view_all": "Показать все",
+  "palette_view_all": "Показать все ({arg1}) в списке писем"
 }

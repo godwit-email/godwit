@@ -126,6 +126,16 @@ func (p *mailPage) filterChips(c *ui.Context) {
 		filterChip(c, i18n.T("mail.search.has_attachments"), p.sf.attach, nil, func() {
 			p.setFilter(func(f *searchFilters) { f.attach = !f.attach })
 		}).Checked(p.sf.attach)
+		// The palette's filters, carried over by 查看全部: shown while set.
+		for _, x := range []struct {
+			on    *bool
+			label string
+		}{{&p.sf.unread, i18n.T("palette.filter.unread")}, {&p.sf.starred, i18n.T("palette.filter.starred")}} {
+			if *x.on {
+				filterChip(c.Key(x.label), x.label, true, nil, func() { p.setFilter(func(*searchFilters) { *x.on = false }) }).
+					Label(i18n.Tf("palette.filter.remove", x.label))
+			}
+		}
 		p.labelFilter(c)
 	})
 }

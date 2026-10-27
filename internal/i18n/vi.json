@@ -1318,5 +1318,8 @@
   "palette_empty_desc": "Chỉ tìm trong thư đã đồng bộ về máy này. Nhấn Tab để Wit tìm giúp.",
   "palette_hint_open": "Mở",
   "palette_hint_kind": "Đổi loại",
-  "palette_hint_close": "Đóng"
+  "palette_hint_close": "Đóng",
+  "palette_hint_wit": "Hỏi Wit",
+  "palette_hint_view_all": "Xem tất cả",
+  "palette_view_all": "Xem tất cả {arg1} thư trong danh sách"
 }

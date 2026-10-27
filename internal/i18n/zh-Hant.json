@@ -1318,5 +1318,8 @@
   "palette_empty_desc": "只搜尋了已同步到本機的郵件，按 Tab 讓 Wit 幫你找",
   "palette_hint_open": "開啟",
   "palette_hint_kind": "切換類型",
-  "palette_hint_close": "關閉"
+  "palette_hint_close": "關閉",
+  "palette_hint_wit": "問 Wit",
+  "palette_hint_view_all": "檢視全部",
+  "palette_view_all": "在郵件列表中檢視全部 {arg1} 封"
 }

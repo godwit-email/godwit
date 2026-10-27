@@ -1318,5 +1318,8 @@
   "palette_empty_desc": "Durchsucht wurden nur Mails, die auf dieses Gerät synchronisiert sind. Mit Tab lässt du Wit suchen.",
   "palette_hint_open": "Öffnen",
   "palette_hint_kind": "Typ wechseln",
-  "palette_hint_close": "Schließen"
+  "palette_hint_close": "Schließen",
+  "palette_hint_wit": "Wit fragen",
+  "palette_hint_view_all": "Alle anzeigen",
+  "palette_view_all": "Alle {arg1} in der Mailliste anzeigen"
 }

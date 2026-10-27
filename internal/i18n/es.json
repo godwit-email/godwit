@@ -1318,5 +1318,8 @@
   "palette_empty_desc": "Solo se buscó en el correo sincronizado con este dispositivo. Pulsa Tab para que Wit lo busque.",
   "palette_hint_open": "Abrir",
   "palette_hint_kind": "Cambiar tipo",
-  "palette_hint_close": "Cerrar"
+  "palette_hint_close": "Cerrar",
+  "palette_hint_wit": "Preguntar a Wit",
+  "palette_hint_view_all": "Ver todo",
+  "palette_view_all": "Ver los {arg1} en la lista de correo"
 }

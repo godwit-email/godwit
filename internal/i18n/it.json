@@ -1318,5 +1318,8 @@
   "palette_empty_desc": "Sono state cercate solo le email sincronizzate su questo dispositivo. Premi Tab per far cercare a Wit.",
   "palette_hint_open": "Apri",
   "palette_hint_kind": "Cambia tipo",
-  "palette_hint_close": "Chiudi"
+  "palette_hint_close": "Chiudi",
+  "palette_hint_wit": "Chiedi a Wit",
+  "palette_hint_view_all": "Mostra tutto",
+  "palette_view_all": "Mostra tutti i {arg1} nell'elenco della posta"
 }

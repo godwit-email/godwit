@@ -105,6 +105,8 @@ func (p *palette) view(c *ui.Context) {
 			{Label: i18n.T("palette.hint.open"), Key: "↵"},
 			{Label: i18n.T("palette.hint.kind"), Key: "←→"},
 			{Label: i18n.T("palette.hint.filter"), Key: "/"},
+			{Label: i18n.T("palette.hint.view_all"), Key: "⌘↵"},
+			{Label: i18n.T("palette.hint.wit"), Key: "Tab", OnClick: p.askWit},
 			{Label: i18n.T("palette.hint.close"), Key: "Esc"},
 		},
 	}
@@ -180,7 +182,8 @@ func (p *palette) row(c *ui.Context, i int, it palItem) ui.Element {
 }
 
 // key is the search box's: ↑↓ move through every group and wrap, ↵ opens,
-// ←→ change the kind while the box is empty, ⌃Tab and ⌃⇧Tab any time.
+// ←→ change the kind while the box is empty, ⌃Tab and ⌃⇧Tab any time; Tab
+// asks Wit, ⌘↵ shows every mail hit in the list.
 func (p *palette) key(k ui.TextKey) bool {
 	if p.filtering && p.filterKey(k) {
 		return true
@@ -201,6 +204,10 @@ func (p *palette) key(k ui.TextKey) bool {
 		p.choose(p.sel)
 	case k.Mods == 0 && (k.Key == ui.KeyLeft || k.Key == ui.KeyRight) && k.Text() == "":
 		p.step(k.Key == ui.KeyRight)
+	case k.Mods == 0 && k.Key == ui.KeyTab:
+		p.askWit()
+	case k.Mods == ui.Cmd && k.Key == ui.KeyEnter:
+		p.viewAll()
 	case k.Key == ui.KeyTab && (k.Mods == ui.Ctrl || k.Mods == ui.Ctrl|ui.Shift):
 		p.step(k.Mods == ui.Ctrl)
 	default:
@@ -276,6 +283,9 @@ func (p *palette) groups() []palGroup {
 			return 0 // a kind's recent hits: no count
 		}
 		return n
+	}
+	if (p.hl != "" || p.hf) && r.Mail.Total > len(mail) {
+		mail = append(mail, p.viewAllItem(r.Mail.Total))
 	}
 	add(palGroup{kindLabel("mail"), total(r.Mail.Total), mail})
 	add(palGroup{kindLabel("conversation"), total(r.Conversations.Total), convs})

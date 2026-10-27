@@ -1318,5 +1318,8 @@
   "palette_empty_desc": "Alleen mail die met dit apparaat is gesynchroniseerd is doorzocht. Druk op Tab om Wit te laten zoeken.",
   "palette_hint_open": "Openen",
   "palette_hint_kind": "Type wisselen",
-  "palette_hint_close": "Sluiten"
+  "palette_hint_close": "Sluiten",
+  "palette_hint_wit": "Vraag Wit",
+  "palette_hint_view_all": "Alles bekijken",
+  "palette_view_all": "Alle {arg1} bekijken in de maillijst"
 }

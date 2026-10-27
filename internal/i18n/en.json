@@ -2651,5 +2651,15 @@
   "palette_empty_desc": "Only mail synced to this device was searched. Press Tab to let Wit find it.",
   "palette_hint_open": "Open",
   "palette_hint_kind": "Switch type",
-  "palette_hint_close": "Close"
+  "palette_hint_close": "Close",
+  "palette_hint_wit": "Ask Wit",
+  "palette_hint_view_all": "View all",
+  "palette_view_all": "View all {arg1} in the mail list",
+  "@palette_view_all": {
+    "placeholders": {
+      "arg1": {
+        "type": "String"
+      }
+    }
+  }
 }
