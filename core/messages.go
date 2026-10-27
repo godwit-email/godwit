@@ -193,10 +193,32 @@ func likeArg(s string) string {
 // SearchWith finds synced messages matching q, newest first. A query with
 // neither text nor a filter finds nothing.
 func (s *Service) SearchWith(ctx context.Context, q SearchQuery, limit int) ([]MessageSummary, error) {
-	query := strings.TrimSpace(q.Text)
-	if query == "" && !q.Filtered() {
+	if strings.TrimSpace(q.Text) == "" && !q.Filtered() {
 		return nil, nil
 	}
+	cond, args := searchText(q.Text)
+	fcond, fargs := searchFilter(q)
+	return s.searchMessages(ctx, cond+" AND "+fcond, append(args, fargs...), limit)
+}
+
+// searchMessages lists the messages (alias m) matching cond, newest first.
+func (s *Service) searchMessages(ctx context.Context, cond string, args []any, limit int) ([]MessageSummary, error) {
+	rows, err := s.db.Query(ctx, "SELECT "+msgCols+" FROM messages m WHERE "+cond+" ORDER BY m.date DESC, m.id DESC LIMIT ?",
+		append(args, clampLimit(limit))...)
+	if err != nil {
+		return nil, err
+	}
+	out := make([]MessageSummary, 0, len(rows.Values))
+	for _, r := range rows.Values {
+		out = append(out, scanSummary(r))
+	}
+	return out, nil
+}
+
+// searchText is the condition on messages alias m that text matches: "1"
+// for blank text.
+func searchText(text string) (string, []any) {
+	query := strings.TrimSpace(text)
 	cond, args := "1", []any(nil)
 	switch {
 	case query == "":
@@ -210,6 +232,13 @@ func (s *Service) SearchWith(ctx context.Context, q SearchQuery, limit int) ([]M
 		cond = `(m.id IN (SELECT rowid FROM messages_fts WHERE messages_fts MATCH ?) OR m.id IN (SELECT ml.message_id FROM message_labels ml JOIN labels l ON l.id = ml.label_id WHERE ml.active = 1 AND (l.name LIKE ? ESCAPE '\' OR l.slug LIKE ? ESCAPE '\')))`
 		args = []any{`"` + strings.ReplaceAll(query, `"`, `""`) + `"`, like, like}
 	}
+	return cond, args
+}
+
+// searchFilter is the condition on messages alias m for q's account and
+// filters, its text aside: "1" for none.
+func searchFilter(q SearchQuery) (string, []any) {
+	cond, args := "1", []any(nil)
 	if q.AccountID != 0 {
 		cond += " AND m.account_id = ?"
 		args = append(args, q.AccountID)
@@ -248,16 +277,7 @@ func (s *Service) SearchWith(ctx context.Context, q SearchQuery, limit int) ([]M
 			cond += ` AND instr(m.flags, '\Flagged') = 0`
 		}
 	}
-	rows, err := s.db.Query(ctx, "SELECT "+msgCols+" FROM messages m WHERE "+cond+" ORDER BY m.date DESC, m.id DESC LIMIT ?",
-		append(args, clampLimit(limit))...)
-	if err != nil {
-		return nil, err
-	}
-	out := make([]MessageSummary, 0, len(rows.Values))
-	for _, r := range rows.Values {
-		out = append(out, scanSummary(r))
-	}
-	return out, nil
+	return cond, args
 }
 
 // RebuildSearchIndex recreates the full-text index from the messages table in
