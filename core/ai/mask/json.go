@@ -55,6 +55,9 @@ var errUnknown = errors.New("a {{…}} placeholder in the arguments could not be
 // strings restored. err, when one is left that names no value, refuses the
 // call; out is still all that could be restored, for showing it.
 func (m *Masker) RestoreArgs(args json.RawMessage) (out json.RawMessage, err error) {
+	if m == nil {
+		return args, nil
+	}
 	s, ok := walk(string(args), scope{tool: true}, func(s string, _ scope) string {
 		s = m.Restore(s)
 		loose(s, func(p, _ string, braced bool) string {

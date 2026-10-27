@@ -22,11 +22,13 @@ func ParseModelRef(s string) (ModelRef, error) {
 
 // ResolvedModel is a model reference resolved against a stored service, or
 // a plugin's model: Client, when set, is its own HTTP client, and the engine
-// does not check its version.
+// does not check its version. OnDevice: the model runs on this device (Apple
+// Intelligence), so what it is sent is not masked.
 type ResolvedModel struct {
 	ServiceID, Version           int64
 	Kind, BaseURL, Model, APIKey string
 	Client                       *http.Client
+	OnDevice                     bool
 }
 
 // Message is a conversation message for display; it is never used to resume.

@@ -51,6 +51,10 @@ type Settings struct {
 	// AutoLabel lets the classifier label new Inbox mail; on by default.
 	// A rescan runs either way.
 	AutoLabel bool
+	// Masking is 脱敏 (docs/adr/0025-mask-at-cloud-egress.md): keys, ID and
+	// card numbers go to a model off this device as placeholders. On by
+	// default, for settings stored before it too.
+	Masking bool
 	// LabelDisplay is how label chips show: LabelDisplayBoth (the default;
 	// "" too), LabelDisplayIcon or LabelDisplayText.
 	LabelDisplay string
@@ -119,7 +123,7 @@ func defaultSettings() Settings {
 	return Settings{Theme: "system", Density: "compact", FontSize: 14, SettingsVersion: settingsVersion, ReplyLanguage: "match", RemoteImages: "auto",
 		KeepInBackground: true, UnreadOnAppIcon: true, NotifyNewMail: true, NotifyPreview: true, ThreadView: true,
 		ThreadCollapse: true, ThreadCollapseThreshold: DefaultThreadCollapse, AutoLabel: true, LabelDisplay: LabelDisplayBoth, JudgeThreshold: 0.8,
-		MCPSend: MCPSendConfirm}
+		MCPSend: MCPSendConfirm, Masking: true}
 }
 
 var langRE = regexp.MustCompile(`^[A-Za-z]{2,3}(-[A-Za-z0-9]{2,8})*$`)
@@ -255,6 +259,7 @@ func (s *Service) storeSettings(ctx context.Context, st Settings) (Settings, err
 		ON CONFLICT(key) DO UPDATE SET value = excluded.value`, string(b)); err != nil {
 		return Settings{}, err
 	}
+	s.maskingChanged(st)
 	s.bus.Publish(events.Event{Type: events.SettingsChanged})
 	return st, nil
 }

@@ -11,6 +11,8 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/godwit-email/godwit/core/ai/mask"
 )
 
 // QuestionType is a question's type. Questions and answers take the OpenAI
@@ -155,13 +157,14 @@ func (j judge) Ask(ctx context.Context, input string, qs []Question) ([]Answer, 
 }
 
 // NewJudge returns a client for a judge API at base+format.Path(), asked on
-// pi. c is the no-redirect model client (nil means NoRedirectClient).
-func NewJudge(c *http.Client, format JudgeFormat, base, key, model string) (Judge, error) {
+// pi. c is the no-redirect model client (nil means NoRedirectClient); m, if
+// set, masks what it is asked while masking is on.
+func NewJudge(c *http.Client, m *mask.Masker, format JudgeFormat, base, key, model string) (Judge, error) {
 	if c == nil {
 		c = NoRedirectClient
 	}
 	base = strings.TrimRight(base, "/")
-	h := judgeHTTP{c: c, url: base + format.Path(), key: key, model: model}
+	h := judgeHTTP{c: c, m: m, url: base + format.Path(), key: key, model: model}
 	switch format {
 	case FormatDecisions:
 		return judge{h.decisions, 15 * time.Second}, nil
@@ -186,6 +189,7 @@ func ListJudgeModels(ctx context.Context, c *http.Client, format JudgeFormat, ba
 
 type judgeHTTP struct {
 	c               *http.Client
+	m               *mask.Masker
 	url, key, model string // url is the base and the format's path
 }
 

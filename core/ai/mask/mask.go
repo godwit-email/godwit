@@ -16,24 +16,35 @@ import (
 	"slices"
 	"strings"
 	"sync"
+	"sync/atomic"
 )
 
 // Masker masks text and restores it, with one table of the placeholders it
 // made, kept in memory only: after a restart, masking the stored values
-// again (Learn) fills it back. Safe for concurrent use.
+// again (Learn) fills it back. Safe for concurrent use; a nil Masker
+// restores nothing.
 type Masker struct {
 	key []byte
+	off atomic.Bool
 
-	mu     sync.RWMutex
-	values map[string]entry // by hash
+	mu      sync.RWMutex
+	values  map[string]entry // by hash
+	learned map[[sha256.Size]byte]bool
 }
 
 type entry struct{ kind, value string }
 
-// New is a masker with key, the device's secret.
+// New is a masker with key, the device's secret, on.
 func New(key []byte) *Masker {
-	return &Masker{key: slices.Clone(key), values: map[string]entry{}}
+	return &Masker{key: slices.Clone(key), values: map[string]entry{}, learned: map[[sha256.Size]byte]bool{}}
 }
+
+// On says whether what is sent is to be masked (the switch, 总开关): the
+// callers that send ask it. Restoring goes on either way.
+func (m *Masker) On() bool { return !m.off.Load() }
+
+// SetOn turns masking on or off.
+func (m *Masker) SetOn(on bool) { m.off.Store(!on) }
 
 var b32 = base32.StdEncoding.WithPadding(base32.NoPadding)
 
@@ -64,7 +75,18 @@ func (m *Masker) Text(s string) (string, error) { return m.text(s, true) }
 
 // Learn masks text, a stored request's or message's (JSON or not), for the
 // placeholders alone: the values it holds restore again after a restart.
-func (m *Masker) Learn(text string) { m.Body(text) }
+// A text learned before is not read again.
+// shortcut: learned keeps a hash per text for good; a bounded cache if it is seen to matter.
+func (m *Masker) Learn(text string) {
+	sum := sha256.Sum256([]byte(text))
+	m.mu.Lock()
+	seen := m.learned[sum]
+	m.learned[sum] = true
+	m.mu.Unlock()
+	if !seen {
+		m.Body(text)
+	}
+}
 
 // text masks s; defuse says it is not the model's own. A rule that fails
 // fails it: what it would have found must not go out.
@@ -124,6 +146,9 @@ func loose(s string, f func(p, hash string, braced bool) string) string {
 // Restore puts back the value of each placeholder in s this masker made,
 // however the model wrote it; others are left as they are.
 func (m *Masker) Restore(s string) string {
+	if m == nil {
+		return s
+	}
 	m.mu.RLock()
 	defer m.mu.RUnlock()
 	return loose(s, func(p, hash string, _ bool) string {
@@ -134,9 +159,9 @@ func (m *Masker) Restore(s string) string {
 	})
 }
 
-// defuse breaks the placeholders in s, as linkRefs' defuseRefs does the
-// link references in mail: one written in braces, or one the masker made,
-// gets a "-" before its hash, which no placeholder has.
+// defuse breaks the placeholders in s, as core's defuseRefs does link
+// references planted in mail: one written in braces, or one the masker
+// made, gets a "-" for the "_" before its hash, which no placeholder has.
 func (m *Masker) defuse(s string) string {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
