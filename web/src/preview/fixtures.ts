@@ -474,6 +474,35 @@ export const readerNaturalDark = `<style data-dark-canvas=""></style>
   </div>
 </div>`;
 
+export const readerGradients = `<style id="gradient-rules">
+#godwit-body .gradient-mail {background:#fff;color:#111;max-width:640px;margin:auto;padding:24px}
+#godwit-body .gradient-section {padding:20px;margin:16px 0}
+#godwit-body .gradient-heading {background-image:linear-gradient(120deg,rgb(255,240,204) 0%,rgb(255,210,160) 100%)}
+#godwit-body .gradient-responsive {background-image:linear-gradient(to right,rgb(230,240,255),rgb(190,210,255))}
+@media(max-width:480px) {#godwit-body .gradient-mail {padding:12px} #godwit-body .gradient-responsive {background-image:linear-gradient(rgb(45,60,90),rgb(20,35,60));color:#ddd}}
+</style>
+<div class="gradient-mail">
+  <h1 id="gradient-heading" class="gradient-section gradient-heading" style="font-size:24px">A softer reading surface</h1>
+  <p>Text-bearing gradients simplify into solid colours in dark reading.</p>
+  <div id="gradient-nested" class="gradient-section" style="background-image:radial-gradient(circle at center,rgb(255,245,220) 20%,rgb(255,210,160) 80%)">
+    <strong id="gradient-nested-text">Your delivery is ready.</strong>
+    <p>The container has no direct text, but its descendants still need a readable backdrop.</p>
+  </div>
+  <div style="background:#ccc">
+    <div id="gradient-alpha" class="gradient-section" style="background-image:linear-gradient(120deg,rgba(255,255,255,.4) 0%,rgba(100,140,220,.6) 100%)">
+      <p id="gradient-alpha-text" style="color:rgba(130,10,40,.7)">Transparent stops share the original underlying surface.</p>
+    </div>
+  </div>
+  <div id="gradient-decoration" style="height:12px;background-image:linear-gradient(to right,rgb(255,210,160),rgb(190,210,255))"><span style="display:none">Hidden preheader</span></div>
+  <p id="gradient-responsive" class="gradient-section gradient-responsive">This region follows the current reading width.</p>
+  <div id="gradient-complex" class="gradient-section" style="background-image:linear-gradient(rgba(255,220,160,.5),transparent),linear-gradient(90deg,transparent,rgb(230,240,255))">
+    <p id="gradient-complex-text">Layered artwork keeps its original colour pairing.</p>
+    <div id="gradient-card" style="background:#fff;padding:16px">This independent solid card still adapts.</div>
+  </div>
+  <div id="gradient-lengths" class="gradient-section" style="background-image:linear-gradient(rgb(255,255,255) 10px,rgb(220,230,250) 80px)">Unresolved length stops keep their original gradient.</div>
+  <p id="gradient-tail" data-href="https://example.com/delivery">End of message - delivery details</p>
+</div>`;
+
 export const readerAuthorDark = `<style data-dark="">
 #godwit-body .authored {background:#fff;color:#111;padding:32px}
 #godwit-body.godwit-dark .authored {background:#222;color:#ddd}

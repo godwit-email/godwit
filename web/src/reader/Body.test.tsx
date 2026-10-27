@@ -27,7 +27,7 @@ vi.mock("@/mygo", () => ({
 }));
 
 import { ReaderPage as api } from "@/mygo";
-import { readerColored } from "@/preview/fixtures";
+import { readerColored, readerGradients } from "@/preview/fixtures";
 import { ReaderApp } from "./Body";
 
 const theme: Theme = {
@@ -526,6 +526,168 @@ function renderedContrast(
   const [a, b] = [light(fg), light(bg)];
   return (Math.max(a, b) + 0.05) / (Math.min(a, b) + 0.05);
 }
+
+test("text-bearing gradients become readable solid surfaces while decoration keeps its gradient", async () => {
+  const html = `<div style="background:#fff;color:#111">
+    <div id="direct" style="background-image:linear-gradient(160deg,rgb(255,240,204),rgb(255,210,160));padding:16px">Your delivery</div>
+    <div id="nested" style="background-image:linear-gradient(to right,rgb(240,240,240),rgb(210,210,210))">
+      <p><span id="nested-text">The delivery details</span></p>
+    </div>
+    <div id="decoration" style="background-image:linear-gradient(rgb(255,240,204),rgb(255,210,160));height:12px">
+      <span style="display:none">Hidden preheader</span><span style="color:rgba(0,0,0,0)">Invisible</span><span style="font-size:0">Zero-size preheader</span>
+    </div>
+  </div>`;
+  const { doc, win } = await start(body(1, html, { theme: darkTheme }));
+  const element = (id: string) => doc.getElementById(id) as HTMLElement;
+  const style = (id: string) => win.getComputedStyle(element(id));
+  for (const id of ["direct", "nested"]) {
+    expect(style(id).backgroundImage).toBe("none");
+    expect(Math.max(...channels(style(id).backgroundColor).slice(0, 3))).toBeLessThan(100);
+  }
+  for (const id of ["direct", "nested-text"])
+    expect(renderedContrast(element(id), win)).toBeGreaterThanOrEqual(4.5);
+  expect(style("decoration").backgroundImage).toContain("linear-gradient");
+  expect(style("decoration").height).toBe("12px");
+  expect(style("direct").padding).toBe("16px");
+});
+
+test("gradient stops and alpha share the solid-surface contrast rules and inherited backdrop", async () => {
+  const html = `<div style="background:#ccc;color:#111">
+    <div id="gradient" style="background-image:linear-gradient(120deg,rgba(255,255,255,.4) 0%,rgba(100,140,220,.6) 100%)">
+      <span id="gradient-text" style="color:rgba(130,10,40,.7)">Transparent gradient</span>
+    </div>
+    <div id="solid" style="background:rgb(183,195,219)">
+      <span id="solid-text" style="color:rgba(130,10,40,.7)">Matching solid surface</span>
+    </div>
+    <div id="radial" style="background-image:radial-gradient(circle at center,rgb(255,240,204) 20%,rgb(255,210,160) 80%)">Radial heading</div>
+  </div>`;
+  const { doc, win } = await start(body(1, html, { theme: darkTheme }));
+  const element = (id: string) => doc.getElementById(id) as HTMLElement;
+  const style = (id: string) => win.getComputedStyle(element(id));
+  expect(style("gradient").backgroundImage).toBe("none");
+  expect(style("gradient").backgroundColor).toBe(style("solid").backgroundColor);
+  expect(style("gradient-text").color).toBe(style("solid-text").color);
+  expect(channels(style("gradient-text").color)[3]).toBe(0.7);
+  expect(renderedContrast(element("gradient-text"), win)).toBeGreaterThanOrEqual(4.5);
+  expect(style("radial").backgroundImage).toBe("none");
+  expect(renderedContrast(element("radial"), win)).toBeGreaterThanOrEqual(4.5);
+});
+
+test("complex gradient combinations preserve their original pairing and the required ancestor artwork", async () => {
+  const html = `<div style="background:#fff;color:#111">
+    <div id="outer" style="background-image:linear-gradient(rgb(255,255,255),rgb(200,200,200))">
+      <p id="caption">Original outer caption</p>
+      <div id="complex" style="background-image:linear-gradient(rgba(255,220,160,.5),transparent),linear-gradient(90deg,transparent,rgb(255,255,255))">Layered caption</div>
+      <div id="solid-card" style="background:#fff"><span id="card-text">Independent card</span></div>
+    </div>
+    <div id="url" style="background-image:linear-gradient(rgb(255,255,255),rgb(200,200,200)),url(godwit-img://m9/art)">Image caption</div>
+    <div id="length-stops" style="background-image:linear-gradient(rgb(255,255,255) 10px,rgb(200,200,200) 80px)">Unresolved lengths</div>
+    <div id="opacity-parent" style="background:#fff">
+      <div style="opacity:.4">
+        <div id="opacity-gradient" style="background:#fff;background-image:linear-gradient(rgb(255,255,255),rgb(200,200,200))">Dim caption</div>
+      </div>
+    </div>
+  </div>`;
+  const { doc, win } = await start(body(1, html, { theme: darkTheme }));
+  const element = (id: string) => doc.getElementById(id) as HTMLElement;
+  const style = (id: string) => win.getComputedStyle(element(id));
+  for (const id of ["outer", "complex", "url", "length-stops", "opacity-gradient"]) {
+    expect(style(id).backgroundImage).toContain("gradient");
+    expect(style(id).color).toBe("rgb(17, 17, 17)");
+  }
+  for (const id of ["outer", "url", "length-stops", "opacity-parent"])
+    expect(style(id).backgroundColor).toBe("rgb(255, 255, 255)");
+  expect(style("url").backgroundImage).toContain("godwit-img://m9/art");
+  expect(style("solid-card").backgroundColor).not.toBe("rgb(255, 255, 255)");
+  expect(renderedContrast(element("card-text"), win)).toBeGreaterThanOrEqual(4.5);
+});
+
+test("opacity protected text keeps the ancestor gradient through transparent intermediate elements", async () => {
+  const html = `<div style="background:#fff;color:#111">
+    <div id="gradient" style="background-image:linear-gradient(rgb(255,255,255),rgb(100,100,100))">
+      <div id="transparent"><span id="dim" style="opacity:.2">Dim caption</span></div>
+    </div>
+  </div>`;
+  const { doc, win } = await start(body(1, html, { theme: darkTheme }));
+  const style = (id: string) => win.getComputedStyle(doc.getElementById(id) as HTMLElement);
+  expect(style("gradient").backgroundImage).toContain("linear-gradient");
+  expect(style("gradient").backgroundColor).toBe("rgb(255, 255, 255)");
+  expect(style("transparent").backgroundColor).toBe("rgba(0, 0, 0, 0)");
+  expect(style("dim").color).toBe("rgb(17, 17, 17)");
+  expect(style("dim").opacity).toBe("0.2");
+});
+
+test("unreachable text contrast restores its original ancestor gradient without hiding the document", async () => {
+  const html = `<div style="background:#fff;color:#111">
+    <div id="gradient" style="background-image:linear-gradient(rgb(255,255,255),rgb(100,100,100))">
+      <div><span id="faint" style="color:rgba(0,0,0,.05)">Original faint caption</span></div>
+      <div id="card" style="background:#fff">Independent card</div>
+    </div>
+    <p id="ordinary">Ordinary text still adapts.</p>
+  </div>`;
+  const { doc, win } = await start(body(1, html, { theme: darkTheme }));
+  const style = (id: string) => win.getComputedStyle(doc.getElementById(id) as HTMLElement);
+  expect(style("gradient").backgroundImage).toContain("linear-gradient");
+  expect(style("gradient").backgroundColor).toBe("rgb(255, 255, 255)");
+  expect(style("faint").color).toBe("rgba(0, 0, 0, 0.05)");
+  expect(style("faint").backgroundColor).toBe("rgba(0, 0, 0, 0)");
+  expect(style("card").backgroundColor).not.toBe("rgb(255, 255, 255)");
+  expect(style("ordinary").color).not.toBe("rgb(17, 17, 17)");
+  expect(doc.getElementById("godwit-body")?.classList.contains("godwit-auto")).toBe(false);
+});
+
+test("the gradient preview restores light artwork and recomputes from each current body and width", async () => {
+  const input = body(1, readerGradients, { theme: darkTheme });
+  let current = await start(input);
+  const style = (id: string) =>
+    current.win.getComputedStyle(current.doc.getElementById(id) as HTMLElement);
+  const colours = () =>
+    ["gradient-heading", "gradient-nested", "gradient-alpha"].map((id) => [
+      style(id).backgroundImage,
+      style(id).backgroundColor,
+      style(id).color,
+    ]);
+  const first = colours();
+  expect(first.every(([image]) => image === "none")).toBe(true);
+  current.frame.getBoundingClientRect = () => ({ width: 380, height: 100 }) as DOMRect;
+  // jsdom has no media-query layout: supply the rule a narrower viewport would activate.
+  const sheet = current.doc.getElementById("gradient-rules") as HTMLStyleElement;
+  sheet.textContent +=
+    "#godwit-body .gradient-responsive {background-image:linear-gradient(rgb(45,60,90),rgb(20,35,60));color:#ddd}";
+  act(() => window.dispatchEvent(new Event("resize")));
+  flush();
+  expect(colours()).toEqual(first);
+  expect(style("gradient-responsive").backgroundImage).toBe("none");
+  expect(style("gradient-responsive").color).toBe("rgb(221, 221, 221)");
+  expect(
+    renderedContrast(current.doc.getElementById("gradient-responsive") as HTMLElement, current.win),
+  ).toBeGreaterThanOrEqual(4.5);
+  act(() => {
+    for (const receive of h.theme) receive({ ...darkTheme, mode: "light" });
+  });
+  current = await loaded();
+  for (const id of ["gradient-heading", "gradient-nested", "gradient-alpha"])
+    expect(style(id).backgroundImage).toContain("gradient");
+  expect(style("gradient-heading").color).toBe("rgb(17, 17, 17)");
+  act(() => {
+    for (const receive of h.theme) receive(darkTheme);
+    for (const receive of h.body)
+      receive(
+        body(2, readerGradients.replace("A softer reading surface", "Updated delivery"), {
+          theme: darkTheme,
+        }),
+      );
+  });
+  current = await loaded();
+  expect(colours()).toEqual(first);
+  expect(current.doc.getElementById("gradient-heading")?.textContent).toBe("Updated delivery");
+  const link = current.doc.getElementById("gradient-tail") as HTMLElement;
+  link.dispatchEvent(
+    new current.win.KeyboardEvent("keydown", { key: "Enter", bubbles: true, cancelable: true }),
+  );
+  expect(api.openLink).toHaveBeenCalledExactlyOnceWith("https://example.com/delivery");
+  expect(input.html).toBe(readerGradients);
+});
 
 test("coloured surfaces, brand text and CTA keep their meaning and readable final colours", async () => {
   const html = `<div style="background:#fff;color:#111">

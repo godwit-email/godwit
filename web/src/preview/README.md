@@ -12,7 +12,7 @@ from `theme.json`, a copy of `webui.ThemeOf` at font size 14; zh-Hans text comes
 | compose   | `plain`, `streaming`, `inline`, `rewrite`, `applied`, `cmdk`, `signature`, `translate` (no model, a plugin translates) |
 | wit       | `conversation`, `empty`, `plus`, `picker`, `quoted`                                                                    |
 | signature | `filled`                                                                                                               |
-| reader    | `basic`, `neutral`, `colored`, `natural-dark`, `author-dark`, `fallback`, `media` (mail colour and image fixtures)                         |
+| reader    | `basic`, `neutral`, `colored`, `natural-dark`, `author-dark`, `fallback`, `media`, `gradients` (mail colour and image fixtures)                         |
 
 Example: `/preview.html?page=compose&state=inline&theme=dark`.
 
@@ -22,3 +22,5 @@ Example: `/preview.html?page=compose&state=inline&theme=dark`.
 `streaming`'s body is its update_draft call's text, cut short where the mockup's caret is.
 
 The `media` reader fixture embeds PNG/JPEG references for transparent logos, white screenshots, and colour preservation. Background `data:` images stand in for already authorized proxy responses at the `ReaderBody` boundary; the production Go image policy is unchanged.
+
+The `gradients` fixture covers single linear/radial gradients with percentage stops, translucent colours, descendant text, decoration, and width-dependent colours. Repeating gradients, length stops, colour hints, multiple layers, and URL combinations retain the sender's complete pairing.

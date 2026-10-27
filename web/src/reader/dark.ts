@@ -110,6 +110,51 @@ function shadow(value: string, fg: Color, bg: Color): string | null {
   return shadows.join(", ");
 }
 
+function gradient(value: string, backdrop: Color): Color | null {
+  // shortcut: single gradients with percentage stops only; preserve other layers until supported.
+  const match = /^(linear|radial)-gradient\((.+)\)$/i.exec(value);
+  if (!match) return null;
+  const stops = match[2].split(/,(?![^()]*\))/).map((part) => part.trim());
+  const direction =
+    match[1] === "linear"
+      ? /^(?:-?[\d.]+(?:deg|grad|rad|turn)|to (?:left|right|top|bottom)(?: (?:left|right|top|bottom))?)$/i
+      : /^(?:circle|ellipse)(?: at (?:center|[\d.]+% [\d.]+%))?$/i;
+  if (direction.test(stops[0])) stops.shift();
+  if (stops.length < 2) return null;
+  const colors: Color[] = [];
+  const positions: number[] = [];
+  for (const stop of stops) {
+    const token = /^(rgba?\([^()]+\)|#[\da-f]{3,8}|transparent)(?:\s+([\d.]+)%|\s+(0))?$/i.exec(
+      stop,
+    );
+    if (!token) return null;
+    const color = parse(token[1]);
+    if (!color) return null;
+    colors.push(over(color, backdrop));
+    positions.push(token[2] ? Number(token[2]) / 100 : token[3] ? 0 : Number.NaN);
+  }
+  if (Number.isNaN(positions[0])) positions[0] = 0;
+  if (Number.isNaN(positions[positions.length - 1])) positions[positions.length - 1] = 1;
+  let anchor = 0;
+  for (let i = 1; i < positions.length; i++) {
+    if (Number.isNaN(positions[i])) continue;
+    if (positions[i] < positions[anchor] || positions[i] > 1) return null;
+    for (let j = anchor + 1; j < i; j++)
+      positions[j] =
+        positions[anchor] + ((positions[i] - positions[anchor]) * (j - anchor)) / (i - anchor);
+    anchor = i;
+  }
+  const result: Color = [0, 0, 0, 1];
+  for (let i = 0; i < colors.length; i++) {
+    const before = i === 0 ? positions[i] : (positions[i] - positions[i - 1]) / 2;
+    const after =
+      i === colors.length - 1 ? 1 - positions[i] : (positions[i + 1] - positions[i]) / 2;
+    for (let channel = 0; channel < 3; channel++)
+      result[channel] += colors[i][channel] * (before + after);
+  }
+  return result;
+}
+
 type Snapshot = {
   el: HTMLElement;
   bg: Color;
@@ -122,6 +167,9 @@ type Snapshot = {
   opacity: number;
   ratio: number;
   image: string;
+  hasText: boolean;
+  needsBackdrop: boolean;
+  gradientOwner: HTMLElement | null;
   edges: { property: string; color: Color; outline: boolean }[];
   shadows: { property: string; value: string }[];
 };
@@ -152,12 +200,13 @@ export function adaptDarkMode(frame: HTMLIFrameElement, theme: Theme): () => voi
     originals.clear();
   };
 
-  const run = () => {
+  const run = (preserved = new Set<HTMLElement>(), retry = true) => {
     restore();
     root.classList.remove("godwit-auto");
     doc.documentElement.style.colorScheme = "light";
     try {
       const snapshots = new Map<HTMLElement, Snapshot>();
+      let retryNeeded = false;
       // Read the entire light baseline before any overrides can affect inheritance.
       for (const el of [root, ...root.querySelectorAll<HTMLElement>("*")]) {
         if (["STYLE", "META", "LINK", "BR"].includes(el.tagName)) continue;
@@ -209,6 +258,14 @@ export function adaptDarkMode(frame: HTMLIFrameElement, theme: Theme): () => voi
               ? 3
               : 4.5,
           image: computed.backgroundImage,
+          hasText:
+            visible &&
+            opacity > 0 &&
+            fg[3] > 0 &&
+            size !== 0 &&
+            [...el.childNodes].some((child) => child.nodeType === 3 && child.textContent?.trim()),
+          needsBackdrop: preserved.has(el),
+          gradientOwner: null,
           edges,
           shadows: [
             { property: "box-shadow", value: computed.boxShadow },
@@ -221,10 +278,46 @@ export function adaptDarkMode(frame: HTMLIFrameElement, theme: Theme): () => voi
           parent.protected = true;
         }
       }
+      for (const node of [...snapshots.values()].reverse()) {
+        const parent = snapshots.get(node.el.parentElement as HTMLElement);
+        if (parent && node.hasText) parent.hasText = true;
+        // Preserved artwork needs its original gradient backdrop up to an opaque boundary.
+        if (
+          parent &&
+          node.visible &&
+          node.opacity > 0 &&
+          node.bg[3] < 1 &&
+          (node.needsBackdrop ||
+            node.protected ||
+            node.el.tagName === "IMG" ||
+            (node.image &&
+              node.image !== "none" &&
+              (!node.hasText || !gradient(node.image, node.source))))
+        )
+          parent.needsBackdrop = true;
+      }
       for (const node of snapshots.values()) {
         const parent = snapshots.get(node.el.parentElement as HTMLElement);
         if (!node.visible || node.opacity === 0) continue;
-        const ownBackground = node.el === root || node.bg[3] > 0;
+        const fixedProtection =
+          node.protected ||
+          (parent?.protected === true && !parent.mediaProtected) ||
+          node.opacity < 1;
+        const source = over(node.bg, parent?.source ?? light);
+        const flattened =
+          !fixedProtection &&
+          !node.needsBackdrop &&
+          !(parent?.mediaProtected && node.bg[3] < 1) &&
+          node.hasText
+            ? gradient(node.image, source)
+            : null;
+        node.source = flattened ?? source;
+        node.gradientOwner = flattened
+          ? node.el
+          : node.bg[3] === 1
+            ? null
+            : (parent?.gradientOwner ?? null);
+        const ownBackground = node.el === root || node.bg[3] > 0 || !!flattened;
         const mapped = mix(dark, surface, clamp((255 - brightness(node.source)) / 32));
         node.target = ownBackground
           ? brightness(node.source) < 100
@@ -233,14 +326,10 @@ export function adaptDarkMode(frame: HTMLIFrameElement, theme: Theme): () => voi
               ? mapped
               : withLightness(node.source, lightness(mapped))
           : (parent?.target ?? dark);
-        const fixedProtection =
-          node.protected ||
-          (parent?.protected === true && !parent.mediaProtected) ||
-          node.opacity < 1;
         // An opaque fill covers ancestor artwork; translucent descendants still need its pairing.
         node.mediaProtected =
           !fixedProtection &&
-          ((!!node.image && node.image !== "none") ||
+          ((!!node.image && node.image !== "none" && !flattened) ||
             (parent?.mediaProtected === true && node.bg[3] < 1));
         node.protected = fixedProtection || node.mediaProtected || node.el.tagName === "IMG";
         let text = node.fg;
@@ -251,7 +340,17 @@ export function adaptDarkMode(frame: HTMLIFrameElement, theme: Theme): () => voi
               : mix(primary, secondary, clamp(brightness(node.fg) / 160));
           candidate[3] = node.fg[3];
           text = readable(candidate, node.target, node.ratio) ?? node.fg;
-          if (contrast(text, node.target) < node.ratio) node.protected = true;
+          if (contrast(text, node.target) < node.ratio) {
+            node.protected = true;
+            if (node.gradientOwner) {
+              preserved.add(node.gradientOwner);
+              retryNeeded = true;
+            }
+            if (flattened) {
+              node.source = source;
+              node.mediaProtected = true;
+            }
+          }
         }
         if (node.protected) {
           node.target = node.source;
@@ -262,6 +361,7 @@ export function adaptDarkMode(frame: HTMLIFrameElement, theme: Theme): () => voi
             set(node.el, "color", node.fg);
           }
         } else {
+          if (flattened) setValue(node.el, "background-image", "none");
           if (ownBackground) set(node.el, "background-color", node.target);
           if (node.fg[3] > 0) set(node.el, "color", text);
           for (const edge of node.edges) {
@@ -279,6 +379,8 @@ export function adaptDarkMode(frame: HTMLIFrameElement, theme: Theme): () => voi
           }
         }
       }
+      // A failed descendant needs the original artwork; one bounded retry restores its region.
+      if (retry && retryNeeded) run(preserved, false);
     } catch {
       restore();
       set(doc.body, "background-color", light);
