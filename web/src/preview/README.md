@@ -12,7 +12,7 @@ from `theme.json`, a copy of `webui.ThemeOf` at font size 14; zh-Hans text comes
 | compose   | `plain`, `streaming`, `inline`, `rewrite`, `applied`, `cmdk`, `signature`, `translate` (no model, a plugin translates) |
 | wit       | `conversation`, `empty`, `plus`, `picker`, `quoted`                                                                    |
 | signature | `filled`                                                                                                               |
-| reader    | `basic`, `neutral`, `natural-dark`, `author-dark`, `fallback` (mail colour fixtures)                                    |
+| reader    | `basic`, `neutral`, `colored`, `natural-dark`, `author-dark`, `fallback` (mail colour fixtures)                         |
 
 Example: `/preview.html?page=compose&state=inline&theme=dark`.
 

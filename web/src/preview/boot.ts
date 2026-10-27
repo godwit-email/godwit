@@ -165,7 +165,7 @@ const pages: Record<string, { states: string[]; entry: () => Promise<unknown>; s
     },
   },
   reader: {
-    states: ["basic", "neutral", "natural-dark", "author-dark", "fallback"],
+    states: ["basic", "neutral", "colored", "natural-dark", "author-dark", "fallback"],
     entry: () => import("@/reader/main"),
     setup() {
       const body: ReaderBody = {
@@ -174,6 +174,7 @@ const pages: Record<string, { states: string[]; entry: () => Promise<unknown>; s
         html:
           {
             neutral: fx.readerNeutral,
+            colored: fx.readerColored,
             "natural-dark": fx.readerNaturalDark,
             "author-dark": fx.readerAuthorDark,
             fallback: fx.readerFallback,

@@ -58,26 +58,56 @@ function contrast(fg: Color, bg: Color): number {
   return (Math.max(a, b) + 0.05) / (Math.min(a, b) + 0.05);
 }
 
+const lightness = (c: Color) => (Math.max(...c.slice(0, 3)) + Math.min(...c.slice(0, 3))) / 510;
+
+function withLightness(c: Color, value: number): Color {
+  const min = Math.min(...c.slice(0, 3)) / 255;
+  const max = Math.max(...c.slice(0, 3)) / 255;
+  const chroma = max - min;
+  const saturation = chroma === 0 ? 0 : chroma / (1 - Math.abs(max + min - 1));
+  const nextChroma = (1 - Math.abs(2 * value - 1)) * saturation;
+  const channel = (v: number) =>
+    255 * (value - nextChroma / 2 + (chroma === 0 ? 0 : ((v / 255 - min) * nextChroma) / chroma));
+  return rounded([channel(c[0]), channel(c[1]), channel(c[2]), c[3]]);
+}
+
 function readable(fg: Color, bg: Color, ratio: number): Color | null {
   fg = rounded(fg);
   bg = rounded(bg);
   if (contrast(fg, bg) >= ratio) return fg;
-  const white: Color = [255, 255, 255, fg[3]];
-  const black: Color = [0, 0, 0, fg[3]];
-  const end = contrast(white, bg) > contrast(black, bg) ? white : black;
-  if (contrast(end, bg) < ratio) return null;
-  let low = 0;
-  let high = 1;
-  for (let i = 0; i < 12; i++) {
-    const middle = (low + high) / 2;
-    const candidate = rounded(mix(fg, end, middle));
-    candidate[3] = fg[3];
-    if (contrast(candidate, bg) >= ratio) high = middle;
-    else low = middle;
+  const start = lightness(fg);
+  let result: Color | null = null;
+  for (const end of [0, 1]) {
+    if (contrast(withLightness(fg, end), bg) < ratio) continue;
+    let low = 0;
+    let high = 1;
+    for (let i = 0; i < 12; i++) {
+      const middle = (low + high) / 2;
+      const candidate = withLightness(fg, start + (end - start) * middle);
+      if (contrast(candidate, bg) >= ratio) high = middle;
+      else low = middle;
+    }
+    const candidate = withLightness(fg, start + (end - start) * high);
+    if (!result || Math.abs(lightness(candidate) - start) < Math.abs(lightness(result) - start))
+      result = candidate;
   }
-  const result = rounded(mix(fg, end, high));
-  result[3] = fg[3];
   return result;
+}
+
+function shadow(value: string, fg: Color, bg: Color): string | null {
+  if (!value || value === "none") return null;
+  const shadows: string[] = [];
+  for (const part of value.split(/,(?![^()]*\))/)) {
+    const token = part.match(/rgba?\([^)]*\)|#[\da-f]{3,8}\b|currentcolor/i)?.[0];
+    const color = !token || token.toLowerCase() === "currentcolor" ? fg : parse(token);
+    const geometry = (token ? part.replace(token, "") : part).trim();
+    if (!color || !/^(?:inset\s+)?(?:-?(?:\d*\.)?\d+(?:px)?\s*){2,4}(?:\s+inset)?$/.test(geometry))
+      return null;
+    shadows.push(
+      `${geometry} ${css(withLightness(color, Math.min(lightness(color), lightness(bg) / 2)))}`,
+    );
+  }
+  return shadows.join(", ");
 }
 
 type Snapshot = {
@@ -91,6 +121,8 @@ type Snapshot = {
   opacity: number;
   ratio: number;
   image: string;
+  edges: { property: string; color: Color; outline: boolean }[];
+  shadows: { property: string; value: string }[];
 };
 
 /** The trusted reader owns these temporary overrides; the message document runs no code. */
@@ -106,10 +138,11 @@ export function adaptDarkMode(frame: HTMLIFrameElement, theme: Theme): () => voi
   const surface: Color = parse(theme.dark?.["--muted"] ?? "") ?? [38, 38, 38, 1];
   const lightText: Color = parse(theme.light?.["--foreground"] ?? "") ?? [10, 10, 10, 1];
   const originals = new Map<HTMLElement, string | null>();
-  const set = (el: HTMLElement, key: string, value: Color) => {
+  const setValue = (el: HTMLElement, key: string, value: string) => {
     if (!originals.has(el)) originals.set(el, el.getAttribute("style"));
-    el.style.setProperty(key, css(value), "important");
+    el.style.setProperty(key, value, "important");
   };
+  const set = (el: HTMLElement, key: string, value: Color) => setValue(el, key, css(value));
   const restore = () => {
     for (const [el, style] of originals) {
       if (style === null) el.removeAttribute("style");
@@ -141,6 +174,25 @@ export function adaptDarkMode(frame: HTMLIFrameElement, theme: Theme): () => voi
           parent?.visible !== false &&
           computed.display !== "none" &&
           computed.visibility !== "hidden";
+        const edges: Snapshot["edges"] = [];
+        for (const edge of [
+          "border-top",
+          "border-right",
+          "border-bottom",
+          "border-left",
+          "outline",
+        ]) {
+          const outline = edge === "outline";
+          const style = computed.getPropertyValue(`${edge}-style`);
+          const active =
+            style !== "none" &&
+            style !== "hidden" &&
+            Number.parseFloat(computed.getPropertyValue(`${edge}-width`)) > 0;
+          if (active || (outline && el.hasAttribute("data-href"))) {
+            const color = (active && parse(computed.getPropertyValue(`${edge}-color`))) || fg;
+            if (color[3] > 0) edges.push({ property: `${edge}-color`, color, outline });
+          }
+        }
         snapshots.set(el, {
           el,
           bg,
@@ -155,6 +207,11 @@ export function adaptDarkMode(frame: HTMLIFrameElement, theme: Theme): () => voi
               ? 3
               : 4.5,
           image: computed.backgroundImage,
+          edges,
+          shadows: [
+            { property: "box-shadow", value: computed.boxShadow },
+            { property: "text-shadow", value: computed.textShadow },
+          ],
         });
         // Group opacity composites against the outside backdrop, not the group's own fill.
         if (visible && opacity > 0 && opacity < 1 && (parent?.opacity ?? 1) === 1) {
@@ -166,24 +223,25 @@ export function adaptDarkMode(frame: HTMLIFrameElement, theme: Theme): () => voi
         const parent = snapshots.get(node.el.parentElement as HTMLElement);
         if (!node.visible || node.opacity === 0) continue;
         const ownBackground = node.el === root || node.bg[3] > 0;
+        const mapped = mix(dark, surface, clamp((255 - brightness(node.source)) / 32));
         node.target = ownBackground
           ? brightness(node.source) < 100
             ? node.source
-            : mix(dark, surface, clamp((255 - brightness(node.source)) / 32))
+            : neutral(node.source)
+              ? mapped
+              : withLightness(node.source, lightness(mapped))
           : (parent?.target ?? dark);
-        // shortcut: unknown colour and media regions retain their complete light pairing until supported.
+        // shortcut: media regions retain their complete light pairing until supported.
         node.protected =
           node.protected ||
           parent?.protected === true ||
           node.opacity < 1 ||
-          !neutral(node.source) ||
-          !neutral(node.fg) ||
           node.el.tagName === "IMG" ||
           (!!node.image && node.image !== "none");
         let text = node.fg;
         if (!node.protected && node.fg[3] > 0) {
           const candidate =
-            brightness(node.source) < 100
+            brightness(node.source) < 100 || !neutral(node.fg)
               ? node.fg
               : mix(primary, secondary, clamp(brightness(node.fg) / 160));
           candidate[3] = node.fg[3];
@@ -199,6 +257,19 @@ export function adaptDarkMode(frame: HTMLIFrameElement, theme: Theme): () => voi
         } else {
           if (ownBackground) set(node.el, "background-color", node.target);
           if (node.fg[3] > 0) set(node.el, "color", text);
+          for (const edge of node.edges) {
+            const backdrop = edge.outline ? (parent?.target ?? dark) : node.target;
+            const ratio = edge.outline ? 3 : clamp(contrast(edge.color, node.source), 1.5, 3);
+            const candidate = neutral(edge.color)
+              ? withLightness(edge.color, lightness(backdrop))
+              : edge.color;
+            const color = readable(candidate, backdrop, ratio);
+            if (color) set(node.el, edge.property, color);
+          }
+          for (const item of node.shadows) {
+            const value = shadow(item.value, node.fg, node.target);
+            if (value) setValue(node.el, item.property, value);
+          }
         }
       }
     } catch {

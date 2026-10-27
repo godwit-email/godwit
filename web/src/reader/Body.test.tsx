@@ -27,6 +27,7 @@ vi.mock("@/mygo", () => ({
 }));
 
 import { ReaderPage as api } from "@/mygo";
+import { readerColored } from "@/preview/fixtures";
 import { ReaderApp } from "./Body";
 
 const theme: Theme = {
@@ -474,12 +475,11 @@ test("a theme round trip restores original light declarations and a newer docume
   ).toBe(firstDark);
 });
 
-test("unknown coloured and image regions keep their original foreground and inherited backdrop", async () => {
+test("image regions keep their original foreground and inherited backdrop", async () => {
   const { doc, win } = await start(
     body(
       1,
       `<div style="background:#fff;color:#111">
-    <span id="brand" style="color:#c22b4c">Brand</span>
     <div id="art" style="background-image:url(godwit-img://m9/art)">Caption</div>
     <span id="clear" style="color:rgba(0,0,0,0)">Hidden</span>
     <div id="ordinary">Reading</div></div>`,
@@ -487,13 +487,168 @@ test("unknown coloured and image regions keep their original foreground and inhe
     ),
   );
   const style = (id: string) => win.getComputedStyle(doc.getElementById(id) as HTMLElement);
-  expect(style("brand").color).toBe("rgb(194, 43, 76)");
-  expect(style("brand").backgroundColor).toBe("rgb(255, 255, 255)");
   expect(style("art").color).toBe("rgb(17, 17, 17)");
   expect(style("art").backgroundColor).toBe("rgb(255, 255, 255)");
   expect(style("art").backgroundImage).toContain("godwit-img://m9/art");
   expect(style("clear").color).toBe("rgba(0, 0, 0, 0)");
   expect(style("ordinary").color).not.toBe("rgb(17, 17, 17)");
+});
+
+const channels = (value: string) => (value.match(/[\d.]+/g) ?? []).map(Number);
+function renderedContrast(
+  el: HTMLElement,
+  win: Window,
+  foreground = win.getComputedStyle(el).color,
+) {
+  const layers: HTMLElement[] = [];
+  for (let node: HTMLElement | null = el; node; node = node.parentElement) layers.unshift(node);
+  const composite = (front: number[], back: number[]) =>
+    front.slice(0, 3).map((v, i) => v * (front[3] ?? 1) + back[i] * (1 - (front[3] ?? 1)));
+  let bg = [255, 255, 255];
+  for (const layer of layers) {
+    const value = win.getComputedStyle(layer).backgroundColor;
+    if (value && value !== "transparent") bg = composite(channels(value), bg);
+  }
+  const fg = composite(channels(foreground), bg);
+  const light = (rgb: number[]) =>
+    rgb
+      .map((n) => {
+        const s = n / 255;
+        return s <= 0.04045 ? s / 12.92 : ((s + 0.055) / 1.055) ** 2.4;
+      })
+      .reduce((sum, n, i) => sum + n * [0.2126, 0.7152, 0.0722][i], 0);
+  const [a, b] = [light(fg), light(bg)];
+  return (Math.max(a, b) + 0.05) / (Math.min(a, b) + 0.05);
+}
+
+test("coloured surfaces, brand text and CTA keep their meaning and readable final colours", async () => {
+  const html = `<div style="background:#fff;color:#111">
+    <div id="warning" style="background:#fff0cc;color:#a31515">Payment needs attention</div>
+    <div id="success" style="background:#dcfce7;color:#166534">Payment received</div>
+    <span id="brand" style="color:#c22b4c">Northline</span>
+    <div style="background:#171717"><span id="ready" style="color:#ff6b6b">Brand red</span></div>
+    <span id="cta" data-href="https://example.com/order" style="background:#be185d;color:#fff">View order</span>
+  </div>`;
+  const input = body(1, html, { theme: darkTheme });
+  const { doc, win } = await start(input);
+  const element = (id: string) => doc.getElementById(id) as HTMLElement;
+  const style = (id: string) => win.getComputedStyle(element(id));
+  expect(
+    channels(style("warning").backgroundColor)
+      .slice(0, 3)
+      .every((n) => n < 160),
+  ).toBe(true);
+  expect(channels(style("success").backgroundColor)[1]).toBeGreaterThan(
+    channels(style("success").backgroundColor)[0],
+  );
+  expect(channels(style("brand").color)[0]).toBeGreaterThan(channels(style("brand").color)[1]);
+  expect(style("brand").backgroundColor).toBe("rgba(0, 0, 0, 0)");
+  expect(style("ready").color).toBe("rgb(255, 107, 107)");
+  expect(style("cta").backgroundColor).toBe("rgb(190, 24, 93)");
+  for (const id of ["warning", "success", "brand", "ready", "cta"])
+    expect(renderedContrast(element(id), win)).toBeGreaterThanOrEqual(4.5);
+  element("cta").focus();
+  element("cta").dispatchEvent(
+    new win.KeyboardEvent("keydown", { key: "Enter", bubbles: true, cancelable: true }),
+  );
+  expect(api.openLink).toHaveBeenCalledExactlyOnceWith("https://example.com/order");
+  expect(input.html).toBe(html);
+});
+
+test("coloured text uses final alpha composition and large-text thresholds without revealing invisible text", async () => {
+  const html = `<div style="background:#fff;color:#111">
+    <div style="background:#173348"><span id="alpha" style="color:rgba(187,22,78,.7)">Transparent brand</span></div>
+    <p id="normal" style="background:#234;color:#426bba">Normal text</p>
+    <p id="large" style="background:#234;color:#426bba;font-size:24px">Large text</p>
+    <p id="bold" style="background:#234;color:#426bba;font-size:18.7px;font-weight:bold">Large bold</p>
+    <div style="background:rgba(255,200,100,.5)">
+      <span id="fallback" style="color:rgba(130,10,40,.05)">Keep original pairing</span>
+      <span id="hidden" style="color:rgba(130,10,40,0)">Hidden</span>
+    </div>
+  </div>`;
+  const { doc, win } = await start(body(1, html, { theme: darkTheme }));
+  const element = (id: string) => doc.getElementById(id) as HTMLElement;
+  const style = (id: string) => win.getComputedStyle(element(id));
+  for (const id of ["alpha", "normal"])
+    expect(renderedContrast(element(id), win)).toBeGreaterThanOrEqual(4.5);
+  for (const id of ["large", "bold"]) {
+    expect(renderedContrast(element(id), win)).toBeGreaterThanOrEqual(3);
+    expect(renderedContrast(element(id), win)).toBeLessThan(4.5);
+  }
+  expect(channels(style("alpha").color)[3]).toBe(0.7);
+  expect(style("fallback").color).toBe("rgba(130, 10, 40, 0.05)");
+  expect(style("fallback").backgroundColor).toBe("rgb(255, 228, 178)");
+  expect(style("hidden").color).toBe("rgba(130, 10, 40, 0)");
+});
+
+test("borders and focus stay visible while shadow geometry and link behaviour are preserved", async () => {
+  const html = `<div id="paper" style="background:#fff;color:#111">
+    <div id="card" style="background:#eee;border:2px solid #ddd;box-shadow:0 4px 22px rgba(46,92,255,.1),inset 1px 2px 3px rgba(255,255,255,.66)">Card</div>
+    <span id="link" data-href="https://example.com" style="outline:2px solid #111;color:#163a80;text-shadow:1px 2px 3px rgba(255,255,255,.6)">Open order</span>
+  </div>`;
+  const { doc, win } = await start(body(1, html, { theme: darkTheme }));
+  const card = doc.getElementById("card") as HTMLElement;
+  const link = doc.getElementById("link") as HTMLElement;
+  const cardStyle = win.getComputedStyle(card);
+  expect(cardStyle.borderTopWidth).toBe("2px");
+  expect(cardStyle.borderTopStyle).toBe("solid");
+  expect(channels(cardStyle.borderTopColor)[0]).toBeLessThan(130);
+  expect(renderedContrast(card, win, cardStyle.borderTopColor)).toBeGreaterThanOrEqual(1.5);
+  link.focus();
+  const linkStyle = win.getComputedStyle(link);
+  // jsdom does not expand outline's shorthand into computed width and style.
+  expect(link.style.outline).toBe("2px solid #111");
+  expect(
+    renderedContrast(doc.getElementById("paper") as HTMLElement, win, linkStyle.outlineColor),
+  ).toBeGreaterThanOrEqual(3);
+  const geometry = (value: string) =>
+    value
+      .replace(/rgba?\([^)]*\)/g, "")
+      .replace(/\s+/g, " ")
+      .replace(/\s*,\s*/g, ", ")
+      .trim();
+  expect(geometry(cardStyle.boxShadow)).toBe("0 4px 22px, inset 1px 2px 3px");
+  expect(geometry(linkStyle.textShadow)).toBe("1px 2px 3px");
+  for (const color of `${cardStyle.boxShadow} ${linkStyle.textShadow}`.match(/rgba?\([^)]*\)/g) ??
+    [])
+    expect(Math.max(...channels(color).slice(0, 3))).toBeLessThan(50);
+  link.click();
+  expect(api.openLink).toHaveBeenCalledExactlyOnceWith("https://example.com");
+});
+
+test("the coloured preview restores light styling and recomputes stable colours on resize and replacement", async () => {
+  let current = await start(body(1, readerColored, { theme: darkTheme }));
+  const colours = () =>
+    ["colored-brand", "colored-warning", "colored-success", "colored-cta"].map((id) => {
+      const style = current.win.getComputedStyle(current.doc.getElementById(id) as HTMLElement);
+      return [style.color, style.backgroundColor, style.borderTopColor];
+    });
+  const first = colours();
+  current.frame.getBoundingClientRect = () => ({ width: 380, height: 100 }) as DOMRect;
+  act(() => window.dispatchEvent(new Event("resize")));
+  flush();
+  expect(colours()).toEqual(first);
+  act(() => {
+    for (const receive of h.theme) receive({ ...darkTheme, mode: "light" });
+  });
+  current = await loaded();
+  expect(
+    current.win.getComputedStyle(current.doc.getElementById("colored-brand") as HTMLElement).color,
+  ).toBe("rgb(194, 43, 76)");
+  expect(
+    current.win.getComputedStyle(current.doc.getElementById("colored-warning") as HTMLElement)
+      .backgroundColor,
+  ).toBe("rgb(255, 240, 204)");
+  act(() => {
+    for (const receive of h.theme) receive(darkTheme);
+    for (const receive of h.body)
+      receive(
+        body(2, readerColored.replace("Your delivery", "Updated delivery"), { theme: darkTheme }),
+      );
+  });
+  current = await loaded();
+  expect(colours()).toEqual(first);
+  expect(current.doc.querySelector("h1")?.textContent).toBe("Updated delivery, in full colour");
 });
 
 test("the final rendered neutral text meets the promised contrast, including channel rounding", async () => {

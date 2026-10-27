@@ -434,6 +434,35 @@ export const readerNeutral = `<style>
   <p class="muted" style="font-size:12px">Keep this email for your records.</p>
 </div>`;
 
+export const readerColored = `<style>
+#godwit-body .receipt {background:#fff;color:#111;padding:32px;max-width:640px;margin:auto}
+#godwit-body .receipt .status {padding:16px;border:1px solid #d6a252;margin:16px 0}
+#godwit-body .receipt .responsive {background:#e0ecff;color:#153f80;padding:16px}
+@media(max-width:480px) {#godwit-body .receipt {padding:16px} #godwit-body .receipt .responsive {background:#172f52;color:#e0ecff}}
+</style>
+<div class="receipt">
+  <p id="colored-brand" style="color:#c22b4c;font-size:20px;font-weight:700">NORTHLINE STUDIO</p>
+  <h1 style="font-size:24px">Your delivery, in full colour</h1>
+  <p id="colored-primary">Your order is ready. Review the details below.</p>
+  <div id="colored-warning" class="status" style="background:#fff0cc;color:#a31515">Action needed: confirm your delivery address.</div>
+  <div id="colored-success" class="status" style="background:#dcfce7;color:#166534;border-color:#85bb99">Payment received. Your items are reserved.</div>
+  <div style="background:#f2e8fa;color:#532c78;padding:20px;box-shadow:0 4px 22px rgba(46,92,255,.1),inset 1px 2px 3px rgba(255,255,255,.66)">
+    <p id="colored-alpha" style="color:rgba(90,10,80,.7)">A little colour in every detail.</p>
+    <p id="colored-shadow" style="text-shadow:1px 2px 3px rgba(255,255,255,.6)">Designed to travel well.</p>
+    <span id="colored-hidden" style="color:rgba(130,10,40,0)">Invisible preheader</span>
+  </div>
+  <p id="colored-responsive" class="responsive">Delivery estimate: Thursday, October 29.</p>
+  <p><span id="colored-cta" data-href="https://example.com/orders/2187" style="display:inline-block;background:#be185d;color:#fff;border:2px solid #be185d;padding:12px 20px;border-radius:6px;outline:2px solid #111">Review your order</span></p>
+  <p><span id="colored-link" data-href="https://example.com/help" style="color:#163a80">Contact the delivery team</span></p>
+  <div style="background:#173348;color:#fff;padding:16px">
+    <p id="colored-ready" style="color:#ff6b6b">A brand colour already suited to dark reading.</p>
+    <p id="colored-large" style="color:#426bba;font-size:24px">See you soon.</p>
+  </div>
+  <div style="background:rgba(255,200,100,.5);padding:16px">
+    <span id="colored-fallback" style="color:rgba(130,10,40,.05)">This low-alpha text keeps its original pairing.</span>
+  </div>
+</div>`;
+
 export const readerNaturalDark = `<style data-dark-canvas=""></style>
 <div id="natural-canvas" style="background:#222;color:#ddd;padding:32px">
   <h1 style="font-size:24px">Night shift notes</h1>
