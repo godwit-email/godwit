@@ -244,3 +244,25 @@ func TestAJudgeChoiceComesBackAsTheValue(t *testing.T) {
 	assert.Equal(t, "card "+testCard, got[0].Choice)
 	assert.Equal(t, "card "+testCard, got[0].Probabilities[0].Value)
 }
+
+// A category set to 拦截 sends nothing: a run that would send it fails
+// naming it, at the step that would, and every request is recorded with
+// its run's feature.
+func TestABlockedRunStopsAtTheStepThatWouldSendIt(t *testing.T) {
+	e, m := maskedEngine(t)
+	require.NoError(t, m.Configure(mask.Config{Actions: map[string]string{mask.IDs: mask.Block}}))
+	var features []string
+	m.Record = func(f string, _ []mask.Hit) { features = append(features, f) }
+	srv := testllm.Start(t, KindOpenAI)
+	srv.Script(testllm.Turn{Calls: []testllm.Call{{ID: "c1", Name: "search", Args: `{"q":"x"}`}}}, testllm.Turn{Text: []string{"ok"}})
+	ran := 0
+	search := ToolSpec{Name: "search", Schema: piSearch, Run: func(context.Context, json.RawMessage) (any, error) { ran++; return "card " + testCard, nil }}
+	ctx := mask.Tag(context.Background(), "wit", nil)
+	_, res := collect(e.Run(ctx, Request{Model: modelFor(srv, KindOpenAI, "k"), History: asking(nil, "key "+testKey), Tools: []ToolSpec{search}}))
+	require.NotNil(t, res.Err)
+	assert.Equal(t, CodeBlocked, res.Err.Code)
+	assert.Equal(t, mask.IDs, res.Err.Detail)
+	assert.Equal(t, 1, ran)
+	assert.Len(t, srv.Requests(), 1, "the step with the card never went out")
+	assert.Equal(t, []string{"wit", "wit"}, features)
+}
