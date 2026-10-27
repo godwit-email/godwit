@@ -574,6 +574,10 @@ func splitText(s string, max int) []draftPiece {
 		if i := strings.LastIndex(s[:min(cut+len(linkRefPrefix), len(s))], linkRefPrefix); i > 0 && i < cut && linkRefRe.FindStringIndex(s[i:cut]) == nil {
 			cut = i
 		}
+		// So does a masking placeholder, {{KIND_hash}}: a piece's prefix put inside one breaks it.
+		if i := strings.LastIndex(s[:min(cut+1, len(s))], "{{"); i > 0 && i < cut && cut-i <= 64 && !strings.Contains(s[i:cut], "}}") {
+			cut = i
+		}
 		out = append(out, draftPiece{text: s[:cut]})
 		s = s[cut:]
 	}

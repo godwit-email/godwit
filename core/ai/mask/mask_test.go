@@ -307,6 +307,14 @@ func TestADataURIIsKeptButNotTextLikeOne(t *testing.T) {
 	assert.Equal(t, img, at(t, out, "messages", 1, "content"))
 }
 
+// Text that only looks like JSON, a bare word as a value, is masked as text.
+func TestMalformedJSONIsMaskedAsText(t *testing.T) {
+	body := `{"model":"m","messages":[{"role":"user","content":"{\"api_key\": abcd1234efgh5678}"}]}`
+	out, err := mask.New(key).Body(body)
+	require.NoError(t, err)
+	assert.NotContains(t, out, "abcd1234efgh5678")
+}
+
 // What has nothing to mask goes out byte for byte.
 func TestABodyWithNothingToMaskIsKept(t *testing.T) {
 	body := `{"model": "m", "input": "Hi <you>", "n": 1.50}`

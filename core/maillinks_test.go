@@ -317,6 +317,20 @@ func TestLinkRefsTranslationPieces(t *testing.T) {
 	require.Equal(t, "see godwit:link/a.com?m=1&h=0123abcd0123abcd", masked[0], "planted, defused before translation")
 }
 
+// A masking placeholder stays in one piece too, wherever a hard cut lands in it.
+func TestPlaceholderTranslationPieces(t *testing.T) {
+	p := "{{BANK_CARD_abcdefghijkl}}"
+	for back := 1; back < len(p); back++ {
+		text := strings.Repeat("a", 8<<10-len(p)+back) + p + strings.Repeat("a", 100)
+		pieces := splitText(text, 8<<10)
+		whole := false
+		for _, pc := range pieces {
+			whole = whole || strings.Contains(pc.text, p)
+		}
+		require.True(t, whole, "cut %d bytes before its end", back)
+	}
+}
+
 func TestLinkRefsReplyAndArgsEdges(t *testing.T) {
 	s := newMailContextService(t)
 	ctx := t.Context()

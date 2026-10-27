@@ -376,8 +376,16 @@ func (w *walker) skip(i int) (int, bool) {
 	for j < len(w.in) && strings.IndexByte(",]} \t\r\n", w.in[j]) < 0 {
 		j++
 	}
-	return j, j > i
+	switch tok := w.in[i:j]; tok {
+	case "true", "false", "null":
+		return j, true
+	default: // a word that is no JSON makes the text no JSON: it is masked as text
+		return j, numberRe.MatchString(tok)
+	}
 }
+
+// numberRe is a JSON number.
+var numberRe = regexp.MustCompile(`^-?(?:0|[1-9]\d*)(?:\.\d+)?(?:[eE][+-]?\d+)?$`)
 
 // skipString is the end of the string literal at in[i:].
 func (w *walker) skipString(i int) (int, bool) {
