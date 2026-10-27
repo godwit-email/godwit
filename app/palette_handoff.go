@@ -1,8 +1,6 @@
 package app
 
 import (
-	"strings"
-
 	"github.com/godwit-email/godwit/core"
 	"github.com/godwit-email/godwit/internal/i18n"
 )
@@ -17,8 +15,9 @@ func (p *palette) askWit() {
 // as ⌘↵ does: every mail hit, in every account as the palette searched.
 func (p *palette) viewAll() {
 	sf := p.sf()
-	if strings.TrimSpace(p.query) == "" && sf == (searchFilters{}) {
-		return // nothing to search
+	// the list's own test: an account alone is nothing to search by there
+	if q := sf.query(p.a.clock.Now(), sf.acc, p.query); q.Text == "" && !q.Filtered() {
+		return
 	}
 	if !sf.accSet {
 		sf.acc, sf.accSet = 0, true

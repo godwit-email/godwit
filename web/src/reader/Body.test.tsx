@@ -1212,7 +1212,8 @@ test("marker polling stops once the frame has loaded", async () => {
     if (!f?.getAttribute("srcdoc")) throw new Error("no frame yet");
     return f;
   });
-  expect(frames.length).toBeGreaterThan(0);
+  // The polling effect runs after the commit that sets srcdoc: wait for its first frame.
+  await waitFor(() => expect(frames.length).toBeGreaterThan(0));
   // A load whose document never carries the marker (e.g. the frame navigated away).
   act(() => {
     frame.dispatchEvent(new Event("load"));

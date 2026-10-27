@@ -274,6 +274,26 @@ func TestPaletteContactSearchesEveryAccount(t *testing.T) {
 	})
 }
 
+// An account chip alone is no search for the list (core's Filtered leaves the
+// account out), so the palette offers no view-all and ⌘↵ stays put.
+func TestPaletteAccountOnlyNoViewAll(t *testing.T) {
+	h, _ := invoices(t)
+	h.tt.Key(0, ui.KeyRight) // 邮件: three hits would leave one out
+	h.typeText("/")
+	h.until("the filter list", func() bool { return filtersShown(h) })
+	h.click("账户：alice@example.com")
+	h.see("移除「账户：alice@example.com」")
+	if h.tt.HasText("在邮件列表中查看全部 4 封") {
+		t.Fatal("view-all offered for an account alone")
+	}
+	h.tt.Key(ui.Cmd, ui.KeyEnter)
+	h.drain()
+	h.tt.Frame()
+	if !paletteShown(h) || h.app.mail.searchOpen {
+		t.Fatalf("⌘↵ on an account alone: palette %v, list search %v", paletteShown(h), h.app.mail.searchOpen)
+	}
+}
+
 // Reopening keeps counting searches, so an answer from before cannot pass
 // as the newest one.
 func TestPaletteReopenKeepsGeneration(t *testing.T) {
