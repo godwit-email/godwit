@@ -61,6 +61,7 @@ type settingsPage struct {
 	noTrans     bool                  // the no-translate language list is open
 	translators []core.TranslatorInfo // the 翻译方式 choices, read on opening General
 	mask        maskDraft             // 隐私脱敏's text fields
+	maskLog     []core.MaskRecord     // 脱敏记录, newest first, as last read
 
 	keychain    error // the keychain probe's result
 	keychainSet bool  // the probe finished
@@ -159,6 +160,9 @@ func (p *settingsPage) refresh(hints []events.Event) {
 					p.ext.reg = registry
 				}
 			})
+		if hints == nil {
+			p.readMaskLog()
+		}
 	case sec == "extensions" && (hints == nil || slices.ContainsFunc(hints, extChange)):
 		p.ext.load()
 		if hints == nil { // opened: the directory may have changed since

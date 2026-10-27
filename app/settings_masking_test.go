@@ -4,6 +4,7 @@ import (
 	"testing"
 
 	"github.com/godwit-email/godwit/core"
+	"github.com/godwit-email/godwit/core/coretest"
 	"github.com/godwit-email/godwit/internal/i18n"
 )
 
@@ -70,6 +71,34 @@ func TestMaskingCategorySwitches(t *testing.T) {
 	h.tt.Frame()
 	h.until("names on", func() bool { return h.app.settings.MaskCategories.Names.On })
 	h.see(i18n.T("settings.masking.action.mask"))
+}
+
+// A summary of mail a blocked category (拦截) holds is not asked: the
+// reader says which category held it back.
+func TestABlockedSummarySaysWhy(t *testing.T) {
+	h, acc, llm := aiHarness(t, true, func(st *core.Settings) { noQuick(st); st.MaskCategories.IDs.Action = core.MaskBlock })
+	m := h.deliverOne(acc, coretest.Msg("bob@example.com", acc.Email, "Card", "my card is 4111 1111 1111 1111"))
+	h.openThread(m.ThreadID)
+	h.see("隐私脱敏拦截了这次请求，其中有证件与金融号码")
+	if n := llm.Requests(); n != 0 {
+		t.Fatalf("%d requests sent", n)
+	}
+}
+
+// 脱敏记录 lists what was sent, by its first character and length.
+func TestMaskingLogShowsWhatWasSent(t *testing.T) {
+	h, acc, llm := aiHarness(t, true, func(st *core.Settings) { noQuick(st); st.MaskCategories.Emails.Action = core.MaskWarn })
+	llm.Script(coretest.Turn{Text: []string{"ok"}})
+	m := h.deliverOne(acc, coretest.Msg("bob@example.com", acc.Email, "Card", "card 4111 1111 1111 1111"))
+	h.openThread(m.ThreadID)
+	h.until("the summary done", func() bool { s := h.app.mail.reader.ai[m.ID]; return s != nil && s.summary != nil && s.summary.done })
+	h.masking()
+	h.see(i18n.T("settings.masking.log"))
+	h.see("4…，19 个字符")
+	h.see("b…，3 个字符")
+	if h.tt.HasText("4111") {
+		t.Fatal("the log shows a value")
+	}
 }
 
 func TestMaskingCopy(t *testing.T) {

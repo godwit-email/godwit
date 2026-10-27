@@ -58,7 +58,9 @@ func humanize(err error) string {
 	var check *core.CheckError
 	var blocked *core.SendBlockedError
 	var aiErr *ai.Error
-	switch {
+	switch cats := core.MaskBlocked(err); {
+	case cats != nil:
+		return i18n.Tf("error.ai.blocked", maskCategories(cats))
 	case errors.As(err, &check):
 		for _, s := range check.Report.Steps {
 			if !s.OK && !s.Skipped {
