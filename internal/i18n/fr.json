@@ -184,6 +184,8 @@
   "mail_older_failed": "Impossible de charger les messages plus anciens : {arg1}",
   "mail_older_loading": "Chargement des messages plus anciens…",
   "mail_outbox": "Boîte d’envoi",
+  "mail_purge_desc": "Les messages sélectionnés seront supprimés du serveur. Cette action est irréversible.",
+  "mail_purge_title": "Supprimer définitivement ?",
   "mail_resize_list": "Redimensionner la liste",
   "mail_row_unread": "{arg1, number, ::group-off} non lu(s)",
   "mail_search": "Rechercher",

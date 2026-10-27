@@ -184,6 +184,8 @@
   "mail_older_failed": "이전 메일을 불러오지 못했습니다: {arg1}",
   "mail_older_loading": "이전 메일을 불러오는 중…",
   "mail_outbox": "보낼 편지함",
+  "mail_purge_desc": "선택한 메일이 서버에서 삭제됩니다. 이 작업은 되돌릴 수 없습니다.",
+  "mail_purge_title": "영구적으로 삭제할까요?",
   "mail_resize_list": "목록 너비 조절",
   "mail_row_unread": "{arg1, number, ::group-off}개 안 읽음",
   "mail_search": "검색",

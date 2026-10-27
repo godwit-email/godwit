@@ -184,6 +184,8 @@
   "mail_older_failed": "Impossibile caricare le email precedenti: {arg1}",
   "mail_older_loading": "Caricamento email precedenti…",
   "mail_outbox": "Posta in uscita",
+  "mail_purge_desc": "La posta selezionata verrà rimossa dal server. Questa operazione è irreversibile.",
+  "mail_purge_title": "Eliminare definitivamente?",
   "mail_resize_list": "Ridimensiona l’elenco",
   "mail_row_unread": "{arg1, number, ::group-off} non letti",
   "mail_search": "Cerca",

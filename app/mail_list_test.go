@@ -561,6 +561,16 @@ func TestContextMenuMoveRoleOptions(t *testing.T) {
 	h.click(i18n.T("mail.folder.trash"))
 	h.waitMail("in trash", func() bool { return len(h.items()) == 1 })
 	assertMenu([]string{inboxAct, archiveAct, junkAct, deleteAct}, nil)
+	// Delete here is permanent: it asks first, and cancelling keeps the mail.
+	if err := h.tt.ChooseMenuItem(deleteAct); err != nil {
+		t.Fatal(err)
+	}
+	h.click(i18n.T("common.cancel"))
+	h.until("the dialog closed", func() bool { return !h.app.mail.purgeAsk })
+	if len(h.items()) != 1 || h.countIn(h.folderOf(accs[0], "trash")) != 1 {
+		t.Fatal("cancelling the permanent delete changed the trash")
+	}
+	assertMenu([]string{inboxAct}, nil)
 	if err := h.tt.ChooseMenuItem(inboxAct); err != nil {
 		t.Fatal(err)
 	}
@@ -570,6 +580,29 @@ func TestContextMenuMoveRoleOptions(t *testing.T) {
 	h.click(i18n.T("mail.unified.inbox"))
 	h.waitMail("back in inbox", func() bool { return len(h.items()) == 1 })
 	assertMenu([]string{archiveAct, junkAct, deleteAct}, []string{inboxAct})
+
+	// 6. Delete, then Delete again in Trash and confirm: gone for good.
+	if err := h.tt.ChooseMenuItem(deleteAct); err != nil {
+		t.Fatal(err)
+	}
+	h.waitMail("inbox empty after delete", func() bool { return len(h.items()) == 0 })
+	h.click(i18n.T("mail.folder.trash"))
+	h.waitMail("in trash again", func() bool { return len(h.items()) == 1 })
+	assertMenu([]string{deleteAct}, nil)
+	if err := h.tt.ChooseMenuItem(deleteAct); err != nil {
+		t.Fatal(err)
+	}
+	h.until("the confirmation", func() bool { return h.app.mail.purgeAsk })
+	// Closed, the reader's own Delete does not come before the dialog's.
+	h.post(func() { h.app.navigate(Route{Page: PageMail, View: h.app.route.View}) })
+	h.until("the reader closed", func() bool { return h.app.route.ThreadID == 0 && h.app.mail.purgeAsk })
+	h.click(i18n.T("common.delete"))
+	trash := h.folderOf(accs[0], "trash")
+	// The row goes once the push expunged it and the fetch after it saw it gone.
+	h.waitMail("trash empty after the permanent delete", func() bool {
+		h.syncNow(accs[0])
+		return h.countIn(trash) == 0 && len(h.items()) == 0
+	})
 }
 
 func TestBatchAcrossAccounts(t *testing.T) {

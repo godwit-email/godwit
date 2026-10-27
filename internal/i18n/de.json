@@ -189,6 +189,8 @@
   "mail_older_failed": "Ältere E-Mails konnten nicht geladen werden: {arg1}",
   "mail_older_loading": "Ältere E-Mails werden geladen…",
   "mail_outbox": "Postausgang",
+  "mail_purge_desc": "Die ausgewählten E-Mails werden vom Server entfernt. Dies kann nicht rückgängig gemacht werden.",
+  "mail_purge_title": "Endgültig löschen?",
   "mail_resize_list": "Listenbreite anpassen",
   "mail_row_unread": "{arg1, number, ::group-off} ungelesen",
   "mail_search": "Suchen",

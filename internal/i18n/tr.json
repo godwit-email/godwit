@@ -184,6 +184,8 @@
   "mail_older_failed": "Daha eski e-postalar yüklenemedi: {arg1}",
   "mail_older_loading": "Daha eski e-postalar yükleniyor…",
   "mail_outbox": "Giden Kutusu",
+  "mail_purge_desc": "Seçilen e-postalar sunucudan kaldırılacak. Bu işlem geri alınamaz.",
+  "mail_purge_title": "Kalıcı olarak silinsin mi?",
   "mail_resize_list": "Liste genişliğini ayarla",
   "mail_row_unread": "{arg1, number, ::group-off} okunmamış",
   "mail_search": "Ara",

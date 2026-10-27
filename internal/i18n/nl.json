@@ -184,6 +184,8 @@
   "mail_older_failed": "Kan oudere e-mail niet laden: {arg1}",
   "mail_older_loading": "Oudere e-mail laden…",
   "mail_outbox": "Postvak UIT",
+  "mail_purge_desc": "De geselecteerde e-mail wordt van de server verwijderd. Dit kan niet ongedaan worden gemaakt.",
+  "mail_purge_title": "Definitief verwijderen?",
   "mail_resize_list": "Breedte van de lijst aanpassen",
   "mail_row_unread": "{arg1, number, ::group-off} ongelezen",
   "mail_search": "Zoeken",

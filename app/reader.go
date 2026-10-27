@@ -527,11 +527,11 @@ func (r *reader) items() []mailItem {
 	return []mailItem{{ID: r.key[0], Thread: true, Count: len(r.msgs)}}
 }
 
-// act applies a list action to what is shown; archiving, deleting and
-// moving to junk close it.
+// act applies a list action to what is shown; the ones that take it out of
+// the view close it, except Delete in Trash, which first asks.
 func (r *reader) act(op string) {
 	r.p.batch(op, r.items())
-	if op == "archive" || op == "delete" || op == "junk" || op == "inbox" {
+	if removes(op) && !r.p.purgeAsk {
 		rt := &r.p.a.route
 		rt.ThreadID, rt.MessageID = 0, 0
 		r.sync(false)
@@ -744,9 +744,7 @@ func (r *reader) toolbar(c *ui.Context) {
 		if role != "junk" {
 			file = append(file, kit.GroupItem{Icon: "spam", Tip: i18n.T("mail.action.junk"), OnClick: func() { r.act("junk") }})
 		}
-		if role != "trash" {
-			file = append(file, kit.GroupItem{Icon: "trash-2", Tip: i18n.T("mail.action.delete"), OnClick: func() { r.act("delete") }})
-		}
+		file = append(file, kit.GroupItem{Icon: "trash-2", Tip: i18n.T("mail.action.delete"), OnClick: func() { r.act("delete") }})
 		kit.ButtonGroup(c, file...)
 		ui.Spacer(c)
 		ui.Row(c).Wrap().Gap(th.Space(1)).AlignItems(ui.Center).Children(func() { r.aiTools(c) })

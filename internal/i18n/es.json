@@ -184,6 +184,8 @@
   "mail_older_failed": "No se pudieron cargar los correos anteriores: {arg1}",
   "mail_older_loading": "Cargando correos anteriores…",
   "mail_outbox": "Bandeja de salida",
+  "mail_purge_desc": "El correo seleccionado se eliminará del servidor. No se puede deshacer.",
+  "mail_purge_title": "¿Eliminar definitivamente?",
   "mail_resize_list": "Cambiar el tamaño de la lista",
   "mail_row_unread": "{arg1, number, ::group-off} sin leer",
   "mail_search": "Buscar",

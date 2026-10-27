@@ -15,10 +15,16 @@ import (
 // PurgeRoles are the roles a purge can empty.
 var PurgeRoles = []string{"junk", "trash"}
 
-// purgePayload is a purge op's payload: the role whose folder (dst_folder_id) it empties.
+// purgePayload is a purge op's payload: the role whose folder (dst_folder_id) it
+// empties. Now marks one the user asked for, which skips the policy's checks.
 type purgePayload struct {
 	Role string `json:"role"`
+	Now  bool   `json:"now,omitempty"`
 }
+
+// PurgeNow is the payload of a purge op the user asked for: it expunges the
+// message from Trash at once, whatever the policy.
+var PurgeNow = func() string { b, _ := json.Marshal(purgePayload{Role: "trash", Now: true}); return string(b) }()
 
 // purgeable is the condition on message m (with policy p and its folder f joined)
 // that a purge may expunge it: shown and on the server in the role's folder at
@@ -98,6 +104,21 @@ var PurgeStep func(step string)
 const claimable = `state = 'pending' AND EXISTS (SELECT 1 FROM messages m JOIN purge_policies p ON p.account_id = m.account_id
 	AND p.role = ? JOIN folders f ON f.id = p.folder_id WHERE m.id = ops.message_id AND p.folder_id = ops.dst_folder_id AND ` + purgeable + `)`
 
+// claimableNow is claimable for a purge the user asked for: still pending, its
+// message shown and on the server in the op's folder at the folder's UIDVALIDITY,
+// and no other change of it waiting.
+const claimableNow = `state = 'pending' AND EXISTS (SELECT 1 FROM messages m JOIN folders f ON f.id = ops.dst_folder_id
+	WHERE m.id = ops.message_id AND m.folder_id = f.id AND m.server_folder_id = f.id AND m.server_uidvalidity = f.uidvalidity
+	AND NOT EXISTS (SELECT 1 FROM ops o WHERE o.message_id = m.id AND o.state IN ('pending', 'awaiting_claim') AND o.id != ops.id))`
+
+// purgeClaim is the claimable condition of a purge op with payload p and id, and its arguments.
+func purgeClaim(p purgePayload, id int64) (string, []any) {
+	if p.Now {
+		return claimableNow, nil
+	}
+	return claimable, []any{p.Role, id}
+}
+
 // purgeStillDue checks a purge op as it is pushed: claimable, its folder still
 // the role's folder, on a server with UIDPLUS.
 func purgeStillDue(ctx context.Context, db *store.DB, c *imapclient.Client, o op) (bool, error) {
@@ -113,7 +134,8 @@ func purgeStillDue(ctx context.Context, db *store.DB, c *imapclient.Client, o op
 	if err != nil || folder != o.dst {
 		return false, err
 	}
-	r, err = db.Query(ctx, "SELECT 1 FROM ops WHERE id = ? AND "+claimable, o.id, p.Role, o.id)
+	cond, args := purgeClaim(p, o.id)
+	r, err = db.Query(ctx, "SELECT 1 FROM ops WHERE id = ? AND "+cond, append([]any{o.id}, args...)...)
 	return err == nil && len(r.Values) > 0, err
 }
 
@@ -141,6 +163,10 @@ func pushPurge(ctx context.Context, db *store.DB, c *imapclient.Client, o op, sr
 	}
 	var p purgePayload
 	_ = json.Unmarshal([]byte(o.payload), &p)
+	if p.Now && !c.Caps().Has(imap.CapUIDPlus) {
+		msg := "the server does not support UIDPLUS, so mail cannot be deleted permanently without risking other mail"
+		return msg, finish(ctx, db, o, "failed", msg)
+	}
 	due, err := purgeStillDue(ctx, db, c, o)
 	if err != nil {
 		return "", err
@@ -148,7 +174,8 @@ func pushPurge(ctx context.Context, db *store.DB, c *imapclient.Client, o op, sr
 	if !due {
 		return cancel()
 	}
-	res, err := db.Execute(ctx, "UPDATE ops SET attempts = attempts + 1 WHERE id = ? AND "+claimable, o.id, p.Role, o.id)
+	cond, args := purgeClaim(p, o.id)
+	res, err := db.Execute(ctx, "UPDATE ops SET attempts = attempts + 1 WHERE id = ? AND "+cond, append([]any{o.id}, args...)...)
 	if err != nil {
 		return "", err
 	}

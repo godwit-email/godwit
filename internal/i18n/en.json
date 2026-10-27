@@ -360,6 +360,8 @@
   },
   "mail_older_loading": "Loading older mail…",
   "mail_outbox": "Outbox",
+  "mail_purge_desc": "The selected mail will be removed from the server. This cannot be undone.",
+  "mail_purge_title": "Delete permanently?",
   "mail_resize_list": "Resize the list",
   "mail_row_unread": "{arg1, number, ::group-off} unread",
   "@mail_row_unread": {

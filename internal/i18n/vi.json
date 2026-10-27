@@ -184,6 +184,8 @@
   "mail_older_failed": "Không thể tải thư cũ hơn: {arg1}",
   "mail_older_loading": "Đang tải thư cũ hơn…",
   "mail_outbox": "Hộp thư đi",
+  "mail_purge_desc": "Thư đã chọn sẽ bị xóa khỏi máy chủ. Không thể hoàn tác thao tác này.",
+  "mail_purge_title": "Xóa vĩnh viễn?",
   "mail_resize_list": "Thay đổi độ rộng danh sách",
   "mail_row_unread": "{arg1, number, ::group-off} chưa đọc",
   "mail_search": "Tìm kiếm",

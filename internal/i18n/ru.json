@@ -184,6 +184,8 @@
   "mail_older_failed": "Не удалось загрузить более старые письма: {arg1}",
   "mail_older_loading": "Загрузка более старых писем…",
   "mail_outbox": "Исходящие",
+  "mail_purge_desc": "Выбранные письма будут удалены с сервера. Это действие нельзя отменить.",
+  "mail_purge_title": "Удалить навсегда?",
   "mail_resize_list": "Изменить ширину списка",
   "mail_row_unread": "{arg1, number, ::group-off} непрочит.",
   "mail_search": "Поиск",

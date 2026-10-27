@@ -184,6 +184,8 @@
   "mail_older_failed": "Não foi possível carregar e-mails mais antigos: {arg1}",
   "mail_older_loading": "Carregando e-mails mais antigos…",
   "mail_outbox": "Caixa de saída",
+  "mail_purge_desc": "Os e-mails selecionados serão removidos do servidor. Esta ação não pode ser desfeita.",
+  "mail_purge_title": "Excluir permanentemente?",
   "mail_resize_list": "Redimensionar a lista",
   "mail_row_unread": "{arg1, number, ::group-off} não lido(s)",
   "mail_search": "Pesquisar",
