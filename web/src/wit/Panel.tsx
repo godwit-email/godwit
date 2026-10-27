@@ -321,7 +321,8 @@ function BatchApprovalCard({
   }
 
   const items = args.items ?? [];
-  const action = args.action || a.tool;
+  // The tool names the action; the server ignores any other.
+  const action = a.tool;
   const [selected, setSelected] = useState<Set<number>>(() => new Set(items.map((it) => it.id)));
 
   const allSelected = items.length > 0 && selected.size === items.length;
@@ -342,37 +343,14 @@ function BatchApprovalCard({
     });
   };
 
-  const getActionLabel = (act: string) => {
-    switch (act) {
-      case "move_to_trash":
-        return t("wit.action.trash") !== "wit.action.trash"
-          ? t("wit.action.trash")
-          : "In den Papierkorb";
-      case "archive_mail":
-        return t("wit.action.archive") !== "wit.action.archive"
-          ? t("wit.action.archive")
-          : "Archivieren";
-      case "mark_as_spam":
-        return t("wit.action.spam") !== "wit.action.spam"
-          ? t("wit.action.spam")
-          : "Als Spam markieren";
-      case "mark_as_read":
-        return t("wit.action.read") !== "wit.action.read" ? t("wit.action.read") : "Als gelesen";
-      case "mark_as_unread":
-        return t("wit.action.unread") !== "wit.action.unread"
-          ? t("wit.action.unread")
-          : "Als ungelesen";
-      case "star_mail":
-        return t("wit.action.star") !== "wit.action.star"
-          ? t("wit.action.star")
-          : "Mit Stern markieren";
-      case "unstar_mail":
-        return t("wit.action.unstar") !== "wit.action.unstar"
-          ? t("wit.action.unstar")
-          : "Stern entfernen";
-      default:
-        return act;
-    }
+  const actionKeys: Record<string, string> = {
+    move_to_trash: "wit.action.trash",
+    archive_mail: "wit.action.archive",
+    mark_as_spam: "wit.action.spam",
+    mark_as_read: "wit.action.read",
+    mark_as_unread: "wit.action.unread",
+    star_mail: "wit.action.star",
+    unstar_mail: "wit.action.unstar",
   };
 
   const handleApprove = () => {
@@ -387,7 +365,7 @@ function BatchApprovalCard({
     decide(true, payload);
   };
 
-  const actionLabel = getActionLabel(action);
+  const actionLabel = actionKeys[action] ? t(actionKeys[action]) : action;
 
   return (
     <div className="overflow-hidden rounded-xl border-[0.5px] bg-background shadow-(--shadow-xs)">
@@ -415,7 +393,8 @@ function BatchApprovalCard({
                 className="size-3.5 rounded accent-green-600 dark:accent-green-500 cursor-pointer"
               />
               <span>
-                {allSelected ? "Alle abwählen" : "Alle auswählen"} ({selected.size}/{items.length})
+                {allSelected ? t("wit.batch.deselect_all") : t("wit.batch.select_all")} (
+                {selected.size}/{items.length})
               </span>
             </label>
           </div>
@@ -443,7 +422,7 @@ function BatchApprovalCard({
                 <div className="min-w-0 flex-1">
                   <div className="flex items-center justify-between gap-2">
                     <span className="font-medium truncate text-foreground">
-                      {it.from || "(kein Absender)"}
+                      {it.from || t("wit.batch.no_sender")}
                     </span>
                     {onCite && it.msg_id > 0 && (
                       <button
@@ -453,16 +432,16 @@ function BatchApprovalCard({
                           e.preventDefault();
                           onCite(it.msg_id);
                         }}
-                        title="E-Mail anzeigen"
+                        title={t("wit.mail.open")}
                         className="inline-flex items-center gap-1 text-[11px] text-primary hover:underline shrink-0 cursor-pointer font-medium"
                       >
                         <RiMailLine className="size-3" />
-                        <span>E-Mail anzeigen</span>
+                        <span>{t("wit.mail.open")}</span>
                       </button>
                     )}
                   </div>
                   <div className="truncate text-xs text-muted-foreground">
-                    {it.subject || "(kein Betreff)"}
+                    {it.subject || t("mail.no_subject")}
                   </div>
                 </div>
               </label>
@@ -647,13 +626,7 @@ function ToolCard({
             onClick={() => setEditing(!editing)}
           >
             <RiEditLine className="mr-1 size-3.5" />
-            {editing
-              ? t("wit.approval.cancel_edit") !== "wit.approval.cancel_edit"
-                ? t("wit.approval.cancel_edit")
-                : "Abbrechen"
-              : t("wit.approval.edit") !== "wit.approval.edit"
-                ? t("wit.approval.edit")
-                : "Bearbeiten"}
+            {editing ? t("wit.approval.cancel_edit") : t("wit.approval.edit")}
           </Button>
         )}
         {a.tool === "create_draft" && !editing && (

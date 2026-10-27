@@ -148,6 +148,40 @@ describe("BatchApprovalCard & Draft Editing", () => {
     expect(passedArgs.items[0].id).toBe(1);
   });
 
+  test("with every mail unchecked, nothing can be confirmed", async () => {
+    const approval: Approval = {
+      id: 44,
+      run: 10,
+      callId: "call_batch_3",
+      tool: "star_mail",
+      args: JSON.stringify({
+        action: "move_to_trash", // the tool, not this, names the action
+        ids: [1],
+        items: [{ id: 1, msg_id: 101, subject: "", from: "", date: 1700000000 }],
+        selected_ids: [1],
+      }),
+      summary: "Star 1 message",
+      state: "pending",
+      destinations: [],
+      error: "",
+      sessionAllow: false,
+      draft: 0,
+      draftEdit: false,
+    };
+
+    const { user, onDecide } = await setupPanel(approval);
+    expect(screen.getByText(t("wit.batch.no_sender"))).toBeInTheDocument();
+    expect(screen.getByText(t("mail.no_subject"))).toBeInTheDocument();
+
+    await user.click(
+      screen.getByRole("checkbox", { name: new RegExp(t("wit.batch.deselect_all")) }),
+    );
+    const confirm = screen.getByRole("button", { name: `${t("wit.action.star")} (0)` });
+    expect(confirm).toBeDisabled();
+    await user.click(confirm);
+    expect(onDecide).not.toHaveBeenCalled();
+  });
+
   test("renders fixed action title and does not show an action dropdown", async () => {
     const approval: Approval = {
       id: 43,

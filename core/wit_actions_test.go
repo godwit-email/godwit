@@ -74,7 +74,7 @@ func TestWitBatchActions(t *testing.T) {
 		}
 	}
 
-	// Test action switching: user changed action to "archive_mail"
+	// An action in the arguments does not override the tool: the card names what the tool does.
 	ba.Action = "archive_mail"
 	ba.SelectedIDs = []int{1, 2}
 	b, err = json.Marshal(ba)
@@ -82,15 +82,35 @@ func TestWitBatchActions(t *testing.T) {
 
 	_, res, _, err = e.s.applyBatchAction(ctx, Approval{ID: 3, Tool: "move_to_trash", Args: b})
 	require.NoError(t, err)
-	assert.Equal(t, map[string]any{"applied": 2, "action": "archive_mail"}, res)
+	assert.Equal(t, map[string]any{"applied": 2, "action": "move_to_trash"}, res)
 
-	// Verify messages moved to archive
-	archiveID, _, err := mailsync.RoleFolder(ctx, e.s.db, 1, "archive")
+	trashID, _, err := mailsync.RoleFolder(ctx, e.s.db, 1, "trash")
 	require.NoError(t, err)
 	rows, err = e.s.db.Query(ctx, "SELECT folder_id FROM messages WHERE id IN (?, ?)", msg1, msg2)
 	require.NoError(t, err)
-	assert.Equal(t, archiveID, store.Int(rows.Values[0][0]))
-	assert.Equal(t, archiveID, store.Int(rows.Values[1][0]))
+	assert.Equal(t, trashID, store.Int(rows.Values[0][0]))
+	assert.Equal(t, trashID, store.Int(rows.Values[1][0]))
+}
+
+func TestWitBatchNoneSelectedAppliesNone(t *testing.T) {
+	e := newSkillEnv(t)
+	ctx := t.Context()
+	msg1 := addMessage(t, e.s, "Newsletter 1", "news@example.com", "News content", "", 1_700_000_100)
+
+	// Every checkbox unchecked: the card sends an empty selection.
+	b, err := json.Marshal(batchArgs{
+		IDs:         []int{1},
+		Items:       []batchItem{{ID: 1, MsgID: msg1, AccountID: 1}},
+		SelectedIDs: []int{},
+	})
+	require.NoError(t, err)
+	_, res, _, err := e.s.applyBatchAction(ctx, Approval{ID: 1, Tool: "star_mail", Args: b})
+	require.NoError(t, err)
+	assert.Equal(t, map[string]any{"applied": 0, "action": "star_mail"}, res)
+
+	rows, err := e.s.db.Query(ctx, "SELECT flags FROM messages WHERE id = ?", msg1)
+	require.NoError(t, err)
+	assert.NotContains(t, store.Str(rows.Values[0][0]), `\Flagged`)
 }
 
 func TestWitComposeAndReplies(t *testing.T) {
@@ -169,9 +189,19 @@ func TestWitLinksAndOpenBrowser(t *testing.T) {
 		return nil
 	}
 
-	// Test openLinkInBrowser
+	// Opening a link needs the user's approval, as every other action does.
+	d, ok := e.s.desc("open_link_in_browser")
+	require.True(t, ok)
+	assert.True(t, d.Write)
+	require.NotNil(t, d.Exec)
+
 	openArgs, _ := json.Marshal(map[string]string{"url": "https://example.com/test"})
-	res, err := e.s.openLinkInBrowser(ctx, openArgs)
+	p, err := e.s.prepareOpenLink(ctx, Conversation{}, openArgs)
+	require.NoError(t, err)
+	assert.Equal(t, "Open https://example.com/test", p.Summary)
+	assert.Nil(t, openedURL.Load(), "nothing opens before approval")
+
+	_, res, _, err := e.s.applyOpenLink(ctx, Approval{ID: 1, Tool: "open_link_in_browser", Args: p.Args})
 	require.NoError(t, err)
 	assert.Equal(t, map[string]any{"opened": true, "url": "https://example.com/test"}, res)
 	require.NotNil(t, openedURL.Load())
@@ -179,7 +209,12 @@ func TestWitLinksAndOpenBrowser(t *testing.T) {
 
 	// Test scheme validation
 	badArgs, _ := json.Marshal(map[string]string{"url": "file:///etc/passwd"})
-	_, err = e.s.openLinkInBrowser(ctx, badArgs)
+	_, err = e.s.prepareOpenLink(ctx, Conversation{}, badArgs)
+	assert.Error(t, err)
+
+	// Without a browser to open it in, there is nothing to approve.
+	e.s.opts.OpenURL = nil
+	_, err = e.s.prepareOpenLink(ctx, Conversation{}, openArgs)
 	assert.Error(t, err)
 }
 

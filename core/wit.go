@@ -306,8 +306,11 @@ func (s *Service) registerAskTools() {
 	read("get_all_links", "Extract all links and URLs from an email's body by its id. Returns URL, anchor text, and context.",
 		object(map[string]any{"id": intProp}, "id"), s.getAllLinks)
 
-	read("open_link_in_browser", "Open an external link (http or https) in the default web browser.",
-		object(map[string]any{"url": stringProp}, "url"), s.openLinkInBrowser)
+	s.mustRegister(toolDesc{Spec: ai.ToolSpec{
+		Name:        "open_link_in_browser",
+		Description: "Propose opening an external link (http or https) in the default web browser. The user approves it before it is opened.",
+		Schema:      object(map[string]any{"url": stringProp}, "url"),
+	}, Write: true, Exec: &executor{Prepare: s.prepareOpenLink, Apply: s.applyOpenLink}})
 
 	// Compose & replies
 	s.mustRegister(toolDesc{Spec: ai.ToolSpec{
@@ -869,7 +872,7 @@ type batchArgs struct {
 	Action      string      `json:"action"`
 	IDs         []int       `json:"ids"`
 	Items       []batchItem `json:"items"`
-	SelectedIDs []int       `json:"selected_ids,omitempty"`
+	SelectedIDs []int       `json:"selected_ids"`
 }
 
 func (s *Service) prepareBatchAction(defaultAction string) func(context.Context, Conversation, json.RawMessage) (prepared, error) {
@@ -881,9 +884,7 @@ func (s *Service) prepareBatchAction(defaultAction string) func(context.Context,
 		if err := json.Unmarshal(raw, &in); err != nil {
 			return prepared{}, err
 		}
-		if in.Action == "" {
-			in.Action = defaultAction
-		}
+		in.Action = defaultAction // the tool, not an argument, names what is done
 		if len(in.IDs) == 0 {
 			return prepared{}, errors.New("ids cannot be empty")
 		}
@@ -953,16 +954,14 @@ func (s *Service) applyBatchAction(ctx context.Context, a Approval) ([]sqlite.St
 	if err := json.Unmarshal(a.Args, &in); err != nil {
 		return nil, nil, nil, err
 	}
-	action := in.Action
-	if action == "" {
-		action = a.Tool
-	}
+	action := a.Tool
+	// The card sends the ids left checked; none checked applies to none.
 	selectedSet := make(map[int]bool)
-	if len(in.SelectedIDs) > 0 {
+	if in.SelectedIDs != nil {
 		for _, id := range in.SelectedIDs {
 			selectedSet[id] = true
 		}
-	} else if len(in.IDs) > 0 {
+	} else {
 		for _, id := range in.IDs {
 			selectedSet[id] = true
 		}
@@ -971,7 +970,7 @@ func (s *Service) applyBatchAction(ctx context.Context, a Approval) ([]sqlite.St
 	byAccount := make(map[int64][]int64)
 	var processedCount int
 	for _, it := range in.Items {
-		if len(selectedSet) > 0 && !selectedSet[it.ID] {
+		if !selectedSet[it.ID] {
 			continue
 		}
 		byAccount[it.AccountID] = append(byAccount[it.AccountID], it.MsgID)
@@ -979,7 +978,7 @@ func (s *Service) applyBatchAction(ctx context.Context, a Approval) ([]sqlite.St
 	}
 	if len(in.Items) == 0 && len(in.IDs) > 0 {
 		for _, citeID := range in.IDs {
-			if len(selectedSet) > 0 && !selectedSet[citeID] {
+			if !selectedSet[citeID] {
 				continue
 			}
 			msgID, err := s.mailOf(ctx, runOf(ctx), citeID)
@@ -1184,23 +1183,44 @@ func (s *Service) getAllLinks(ctx context.Context, raw json.RawMessage) (any, er
 	return map[string]any{"mail_id": in.ID, "links": links}, nil
 }
 
-func (s *Service) openLinkInBrowser(_ context.Context, raw json.RawMessage) (any, error) {
-	var in struct {
-		URL string `json:"url"`
-	}
+type openLinkArgs struct {
+	URL string `json:"url"`
+}
+
+// prepareOpenLink checks the link; the card shows it whole, since a link from
+// a mail can carry data out in its query.
+func (s *Service) prepareOpenLink(_ context.Context, _ Conversation, raw json.RawMessage) (prepared, error) {
+	var in openLinkArgs
 	if err := json.Unmarshal(raw, &in); err != nil {
-		return nil, err
+		return prepared{}, err
+	}
+	u, err := url.Parse(strings.TrimSpace(in.URL))
+	if err != nil || (u.Scheme != "http" && u.Scheme != "https") || u.Host == "" {
+		return prepared{}, errors.New("url must start with http:// or https://")
+	}
+	if s.opts.OpenURL == nil {
+		return prepared{}, errors.New("this app cannot open links in a browser")
+	}
+	b, err := json.Marshal(openLinkArgs{URL: u.String()})
+	if err != nil {
+		return prepared{}, err
+	}
+	return prepared{Args: b, Summary: "Open " + u.String(), TargetKind: "url"}, nil
+}
+
+func (s *Service) applyOpenLink(_ context.Context, a Approval) ([]sqlite.Statement, any, any, error) {
+	var in openLinkArgs
+	if err := json.Unmarshal(a.Args, &in); err != nil {
+		return nil, nil, nil, err
 	}
 	u, err := url.Parse(in.URL)
-	if err != nil || (u.Scheme != "http" && u.Scheme != "https") {
-		return nil, errors.New("url must start with http:// or https://")
+	if err != nil || (u.Scheme != "http" && u.Scheme != "https") || s.opts.OpenURL == nil {
+		return nil, nil, nil, errors.New("url must start with http:// or https://")
 	}
-	if s.opts.OpenURL != nil {
-		if err := s.opts.OpenURL(in.URL); err != nil {
-			return nil, err
-		}
+	if err := s.opts.OpenURL(u.String()); err != nil {
+		return nil, nil, nil, err
 	}
-	return map[string]any{"opened": true, "url": in.URL}, nil
+	return nil, map[string]any{"opened": true, "url": u.String()}, nil, nil
 }
 
 type replyForwardArgs struct {
