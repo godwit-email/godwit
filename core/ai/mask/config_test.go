@@ -186,3 +186,14 @@ func TestAUserRuleIgnoresItsKindsCategory(t *testing.T) {
 		assert.Equal(t, "id <EMAIL>", masked(t, configured(t, c), "id customer-1234"))
 	}
 }
+
+// A value restored into a tool's html argument is text there: escaped, it
+// is not read as markup.
+func TestRestoreArgsEscapesHTML(t *testing.T) {
+	m := configured(t, mask.Config{Words: []string{"<Acme>"}})
+	p, err := m.Text("<Acme>")
+	require.NoError(t, err)
+	out, err := m.RestoreArgs([]byte(`{"html":"<p>` + p + `</p>","subject":"` + p + `"}`))
+	require.NoError(t, err)
+	assert.JSONEq(t, `{"html":"<p>&lt;Acme&gt;</p>","subject":"<Acme>"}`, string(out))
+}

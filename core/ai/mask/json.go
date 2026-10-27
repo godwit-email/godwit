@@ -110,8 +110,12 @@ func (m *Masker) RestoreArgs(args json.RawMessage) (out json.RawMessage, err err
 	if m == nil {
 		return args, nil
 	}
-	s, ok := walk(string(args), scope{tool: true}, func(s string, _ scope) string {
-		s = m.Restore(s)
+	s, ok := walk(string(args), scope{tool: true}, func(s string, sc scope) string {
+		if sc.key == "html" { // a draft's HTML: a value is text in it, not markup
+			s = m.RestoreHTML(s)
+		} else {
+			s = m.Restore(s)
+		}
 		if m.Left(s) {
 			err = errUnknown
 		}
