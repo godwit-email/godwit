@@ -62,11 +62,11 @@ func (m *Masker) json(s string, sc scope, f *Found) (out string, ok bool, err er
 // goes in front as that label, and only the value comes back.
 func (m *Masker) member(s string, sc scope, f *Found) (string, error) {
 	if pre := label(sc.key); pre != "" {
-		if out, err := m.text(pre+s, !sc.model, f); strings.HasPrefix(out, pre) || err != nil {
+		if out, err := m.text(pre+s, !sc.model && !f.trusts(), f); strings.HasPrefix(out, pre) || err != nil {
 			return strings.TrimPrefix(out, pre), err
 		}
 	}
-	return m.text(s, !sc.model, f)
+	return m.text(s, !sc.model && !f.trusts(), f)
 }
 
 // label is what goes before a value under key for its rule to find it.

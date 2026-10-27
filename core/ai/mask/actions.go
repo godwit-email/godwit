@@ -71,9 +71,22 @@ type Found struct {
 	hits []Hit
 	// learn masks every value whatever its action, for its placeholder: Learn
 	learn bool
+	// premasked: Godwit masked the text before (Premasked), so its placeholders
+	// are the masker's own, not planted: they go as they are
+	premasked bool
 }
 
 func (f *Found) learning() bool { return f != nil && f.learn }
+
+func (f *Found) trusts() bool { return f != nil && f.premasked }
+
+type premaskedKey struct{}
+
+// Premasked says ctx's requests carry text Godwit masked itself (RequestTexts),
+// cut into pieces after: its placeholders are not defused at the egress.
+func Premasked(ctx context.Context) context.Context {
+	return context.WithValue(ctx, premaskedKey{}, true)
+}
 
 func (f *Found) add(hs ...Hit) {
 	if f == nil {
@@ -123,7 +136,7 @@ func Tag(ctx context.Context, feature string, found *Found) context.Context {
 // does, and records what it found (Record, and ctx's Found): a request
 // that is blocked too.
 func (m *Masker) Request(ctx context.Context, body string) (string, error) {
-	f := new(Found)
+	f := &Found{premasked: ctx.Value(premaskedKey{}) != nil}
 	out, err := m.bodyTo(body, f)
 	m.sent(ctx, f)
 	return out, err

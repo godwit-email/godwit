@@ -131,10 +131,14 @@ func TestBodyTranslationMasksAcrossACut(t *testing.T) {
 // A secret found by its label stays masked when the text is cut between
 // the label and the value.
 func TestBodyTranslationMasksASecretCutFromItsLabel(t *testing.T) {
-	for label, value := range map[string]string{"password": "abcd1234efgh5678", "passport": "E12345678"} {
+	for _, c := range []struct {
+		label, value string
+		lead         int // the cut lands after the label
+	}{{"password", "abcd1234efgh5678", 8179}, {"passport", "E12345678", 8179}, {"verification code", "482913", 8171}} {
+		label, value := c.label, c.value
 		t.Run(label, func(t *testing.T) {
 			e := newSkillEnv(t)
-			text := strings.Repeat("a", 8179) + " " + label + ": " + value
+			text := strings.Repeat("a", c.lead) + " " + label + ": " + value
 			setBody(t, e, text, "")
 			e.srv.Script(testllm.Turn{Text: []string{`{"texts":["x","y"],"source":"en"}`}})
 			evs := e.run(t, "translate", Target{Kind: "message", ID: e.msg, PreserveHTML: true})

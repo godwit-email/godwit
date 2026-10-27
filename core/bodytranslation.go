@@ -1,7 +1,6 @@
 package core
 
 import (
-	"cmp"
 	"context"
 	"encoding/json"
 	"errors"
@@ -158,27 +157,18 @@ func (s *Service) runBodyTranslation(ctx context.Context, end func(), sk skills.
 
 // translateMasked is translateBodyTexts with the long links of message id
 // masked before the texts are cut into pieces, and put back after. With m,
-// the texts are cut as m masks them, so no value is cut in two: each piece
-// goes with its values back, for call's request to mask them whole.
+// the texts are cut as m masks them and go so: no value is cut in two, nor
+// from the label it was found by.
 func translateMasked(ctx context.Context, originals []string, id int64, target string, keep []string, m *mask.Masker, call func(context.Context, translateRequest) (translateResult, error)) (bodyTranslation, error) {
 	masked, links := maskLinks(originals, id)
 	if m != nil {
-		cut := make([]string, len(masked))
-		for i, t := range masked {
-			var err error
-			if cut[i], err = m.Text(t); err != nil {
-				_, rerr := m.RequestTexts(ctx, masked) // recorded, as the request would have been
-				return bodyTranslation{}, cmp.Or(rerr, err)
-			}
+		cut, err := m.RequestTexts(ctx, masked) // recorded here: what goes out is already masked
+		if err != nil {
+			return bodyTranslation{}, err
 		}
 		send := call
 		call = func(ctx context.Context, req translateRequest) (translateResult, error) {
-			texts := make([]string, len(req.Texts))
-			for i, t := range req.Texts {
-				texts[i] = m.Restore(t)
-			}
-			req.Texts = texts
-			return send(ctx, req)
+			return send(mask.Premasked(ctx), req)
 		}
 		masked = cut
 	}
