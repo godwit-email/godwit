@@ -1052,7 +1052,7 @@ func (s *Service) launch(ctx context.Context, end func(), conv Conversation, pro
 	}
 	var note, quote string
 	if err == nil && (conv.Kind == "ask" || conv.Kind == "assist") {
-		note = timeNote(req.History.Contexts(), time.Now())
+		note = timeNote(req.History.Contexts(), s.userNow(ctx))
 	}
 	if err == nil && len(quoted) > 0 {
 		quote, err = s.quote(ctx, job, quoted)

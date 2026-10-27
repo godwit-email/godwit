@@ -1,9 +1,37 @@
 package core
 
 import (
+	"context"
 	"strings"
 	"time"
 )
+
+type zoneKey struct{}
+
+// WithTimeZone is ctx with the user's IANA time zone (the UI's, sent with each
+// call) for the local time Wit's runs give the model. Go loads time.Local
+// once per process, so it goes stale when the OS zone changes while the app
+// runs. An empty or unknown name leaves ctx as it is: time.Local holds.
+func WithTimeZone(ctx context.Context, name string) context.Context {
+	if name == "" {
+		return ctx
+	}
+	loc, err := time.LoadLocation(name)
+	if err != nil {
+		return ctx
+	}
+	return context.WithValue(ctx, zoneKey{}, loc)
+}
+
+// userNow is the clock's time in the zone WithTimeZone put on ctx, else in
+// time.Local.
+func (s *Service) userNow(ctx context.Context) time.Time {
+	loc, ok := ctx.Value(zoneKey{}).(*time.Location)
+	if !ok {
+		loc = time.Local
+	}
+	return s.clk().Now().In(loc)
+}
 
 // timeSystem tells the model how to read the time note and mail dates.
 const timeSystem = `A user turn may begin with the current time; until another does, the last one given holds. ` +

@@ -325,12 +325,13 @@ func openConversation(ctx context.Context, svc *core.Service, draftID int64) (in
 
 // Ask asks Wit about the calling window's draft, with the mail the user
 // quoted (message IDs; core AssistWith), and returns the run it started; its
-// events go to the window on WitStream.
-func (p *ComposePage) Ask(ctx context.Context, input string, quoted []int64, model, effort string) (RunStart, error) {
+// events go to the window on WitStream. zone is the window's IANA time zone
+// (core WithTimeZone).
+func (p *ComposePage) Ask(ctx context.Context, input string, quoted []int64, model, effort, zone string) (RunStart, error) {
 	return p.start(ctx, func(ctx context.Context, svc *core.Service, conv int64) error {
 		return svc.SetConversationModel(ctx, conv, model, effort)
 	}, func(ctx context.Context, svc *core.Service, id int64) (<-chan core.WitEvent, error) {
-		return svc.AssistWith(ctx, id, input, quoted)
+		return svc.AssistWith(core.WithTimeZone(ctx, zone), id, input, quoted)
 	})
 }
 
@@ -414,11 +415,12 @@ func searchMail(ctx context.Context, svc *core.Service, query string) ([]MailHit
 }
 
 // Skill runs skill id on the calling window's draft (core AssistSkill);
-// translate-draft writes in language ("" for the reading language). It
-// returns the run it started; its events go to the window on WitStream.
-func (p *ComposePage) Skill(ctx context.Context, id, language string) (RunStart, error) {
+// translate-draft writes in language ("" for the reading language), zone is
+// the window's IANA time zone (core WithTimeZone). It returns the run it
+// started; its events go to the window on WitStream.
+func (p *ComposePage) Skill(ctx context.Context, id, language, zone string) (RunStart, error) {
 	return p.start(ctx, nil, func(ctx context.Context, svc *core.Service, draftID int64) (<-chan core.WitEvent, error) {
-		return svc.AssistSkill(ctx, draftID, id, core.SkillOptions{TargetLanguage: language})
+		return svc.AssistSkill(core.WithTimeZone(ctx, zone), draftID, id, core.SkillOptions{TargetLanguage: language})
 	})
 }
 

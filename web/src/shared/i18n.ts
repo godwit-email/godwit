@@ -24,6 +24,11 @@ export function currentLocale(): string {
   return navigator.language || "en";
 }
 
+/** The IANA time zone, read per call: the core's own goes stale when the OS zone changes. */
+export function timeZone(): string {
+  return Intl.DateTimeFormat().resolvedOptions().timeZone;
+}
+
 export function useT(locale?: string): T {
   const [changed, setChanged] = useState<string | undefined>(() =>
     isMyGo() ? runtimeLocale() : undefined,

@@ -322,8 +322,10 @@ func (p *WitPage) Follow(ctx context.Context, conv int64) (WitHistory, error) {
 // question of that turn (WitTurn.ID) and what followed (core AskAgain): a
 // refused question leaves the conversation as it was. The page follows conv
 // from before the run starts, unless a newer selection came meanwhile. Only
-// Stop cancels the run: a page reload does not.
-func (p *WitPage) Ask(ctx context.Context, conv int64, input string, quoted []int64, model, effort string, rewind string) (RunStart, error) {
+// Stop cancels the run: a page reload does not. zone is the page's IANA time
+// zone (core WithTimeZone).
+func (p *WitPage) Ask(ctx context.Context, conv int64, input string, quoted []int64, model, effort string, rewind string, zone string) (RunStart, error) {
+	ctx = core.WithTimeZone(ctx, zone)
 	t, svc, err := p.w.caller(ctx)
 	if err != nil {
 		return RunStart{}, keyed(err)
