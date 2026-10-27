@@ -243,6 +243,7 @@
   "mail_accounts": "Accounts",
   "mail_action_archive": "Archive",
   "mail_action_delete": "Delete",
+  "mail_action_inbox": "Move to Inbox",
   "mail_action_junk": "Move to Junk",
   "mail_action_read": "Mark as read",
   "mail_action_star": "Star",
@@ -359,6 +360,8 @@
   },
   "mail_older_loading": "Loading older mail…",
   "mail_outbox": "Outbox",
+  "mail_purge_desc": "The selected mail will be removed from the server. This cannot be undone.",
+  "mail_purge_title": "Delete permanently?",
   "mail_resize_list": "Resize the list",
   "mail_row_unread": "{arg1, number, ::group-off} unread",
   "@mail_row_unread": {

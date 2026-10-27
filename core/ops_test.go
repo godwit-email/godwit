@@ -486,6 +486,18 @@ func TestMoveToJunk(t *testing.T) {
 	assert.Equal(t, []string{}, e.onServer(t, "INBOX"))
 }
 
+func TestMoveToInbox(t *testing.T) {
+	e := newSyncEnv(t)
+	e.put(t, "Trash", msg("m@x"))
+	e.sync(t)
+	id := e.idOf(t, "m@x")
+	require.NoError(t, e.s.MoveToRole(bg, []int64{id}, "inbox"))
+	assert.Equal(t, [][]any{{id, e.folderID(t, "INBOX")}}, e.rows(t, "SELECT id, folder_id FROM messages"))
+	e.sync(t)
+	assert.Equal(t, []string{"m@x"}, e.onServer(t, "INBOX"))
+	assert.Equal(t, []string{}, e.onServer(t, "Trash"))
+}
+
 func TestMoveToRoleWithoutFolder(t *testing.T) {
 	e := newSyncEnv(t)
 	e.put(t, "INBOX", msg("m@x"))
@@ -495,7 +507,7 @@ func TestMoveToRoleWithoutFolder(t *testing.T) {
 	var nf *ErrNoRoleFolder
 	require.ErrorAs(t, err, &nf)
 	assert.Equal(t, "junk", nf.Role)
-	assert.Error(t, e.s.MoveToRole(bg, []int64{id}, "inbox"), "only trash, junk and archive")
+	assert.Error(t, e.s.MoveToRole(bg, []int64{id}, "drafts"), "only inbox, trash, junk and archive")
 	assert.Zero(t, e.count(t, "SELECT count(*) FROM ops"))
 	assert.Equal(t, e.folderID(t, "INBOX"), store.Int(e.rows(t, "SELECT folder_id FROM messages WHERE id = ?", id)[0][0]))
 }

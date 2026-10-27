@@ -1079,6 +1079,25 @@ func TestJunkActionNotInJunk(t *testing.T) {
 	}
 }
 
+func TestReaderMoveToInbox(t *testing.T) {
+	h, accs := mailHarness(t, nil, "alice@example.com")
+	acc := accs[0]
+	m := h.deliverOne(acc, coretest.Msg("bob@example.com", acc.Email, "In Archive", "content"))
+	f := h.folderOf(acc, "archive")
+	if err := h.env.Svc.MoveToRole(context.Background(), []int64{m.ID}, "archive"); err != nil {
+		t.Fatal(err)
+	}
+	h.post(func() { h.app.navigate(Route{Page: PageMail, View: core.View{FolderID: f.ID}}) })
+	h.until("the archive folder", func() bool { return h.app.mail.view.FolderID == f.ID && !h.app.mail.loading })
+	h.openThread(m.ThreadID)
+	h.seeBody(m.ID)
+	h.click(i18n.T("mail.action.inbox"))
+	h.until("in inbox", func() bool { return h.countIn(h.folderOf(acc, "inbox")) == 1 })
+	if r := h.app.route; r.ThreadID != 0 || r.MessageID != 0 {
+		t.Fatalf("the reader still shows %+v", r)
+	}
+}
+
 func TestReaderAvatarMoveToJunk(t *testing.T) {
 	h, acc := avatarHarness(t, "auto", func(w http.ResponseWriter, r *http.Request) { w.Write(readerAvatarSVG) })
 	if err := h.env.IMAP(acc.ID).User.Create("Junk", nil); err != nil {

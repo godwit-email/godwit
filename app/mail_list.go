@@ -110,6 +110,9 @@ type mailPage struct {
 
 	reader *reader // the thread or message the route names
 
+	purgeAsk  bool       // Delete in Trash awaits its confirmation
+	purgeRows []mailItem // what it deletes permanently
+
 	exec    func(ctx context.Context, op string, ids []int64, folder int64) error // write; tests wrap it
 	fetched func()                                                                // tests: runs off the UI thread once a reload has read the list
 }
@@ -167,6 +170,10 @@ func (p *mailPage) write(ctx context.Context, op string, ids []int64, folder int
 		return svc.Delete(ctx, ids)
 	case "junk":
 		return svc.MoveToRole(ctx, ids, "junk")
+	case "inbox":
+		return svc.MoveToRole(ctx, ids, "inbox")
+	case "purge":
+		return svc.DeleteForever(ctx, ids)
 	}
 	return fmt.Errorf("unknown mail action %q", op)
 }
@@ -390,10 +397,35 @@ func (p *mailPage) chosen(rows []mailItem) []mailItem {
 
 func (p *mailPage) folder(id int64) (core.Folder, bool) { return findFolder(p.folders, id) }
 
-// inJunk reports whether the view is a junk folder: 移到垃圾邮件 is not offered there.
-func (p *mailPage) inJunk() bool {
-	f, ok := p.folder(p.view.FolderID)
-	return ok && f.Role == "junk"
+// currentFolderRole returns the role of the folder currently shown (inbox, archive, junk, trash), or "".
+func (p *mailPage) currentFolderRole() string {
+	if p.view.Unified == "inbox" {
+		return "inbox"
+	}
+	if f, ok := p.folder(p.view.FolderID); ok {
+		return f.Role
+	}
+	return ""
+}
+
+// removes reports whether op takes the messages out of the view.
+func removes(op string) bool {
+	return op == "archive" || op == "delete" || op == "junk" || op == "inbox" || op == "purge"
+}
+
+// purgeDialog confirms Delete in Trash, which deletes permanently.
+func (p *mailPage) purgeDialog(c *ui.Context) {
+	if !p.purgeAsk {
+		return
+	}
+	kit.Dialog(c, &p.purgeAsk, i18n.T("mail.purge.title"),
+		kit.DialogOpts{Size: kit.DialogSm, Desc: i18n.T("mail.purge.desc"), Close: i18n.T("common.close")}, nil, func() {
+			kit.Button(c, i18n.T("common.cancel"), kit.ButtonOpts{Variant: kit.Outline}).OnClick(func() { p.purgeAsk = false })
+			kit.Button(c, i18n.T("common.delete"), kit.ButtonOpts{Variant: kit.Destructive}).OnClick(func() {
+				p.purgeAsk = false
+				p.batch("purge", p.purgeRows)
+			})
+		})
 }
 
 // localDrafts is the drafts entry of an account whose server has no drafts
@@ -698,6 +730,7 @@ func (p *mailPage) listView(c *ui.Context) {
 	rows := p.shown()
 	ls := p.ls()
 	es := p.entries(rows)
+	p.purgeDialog(c)
 	// The header names the date group at the top of the list, as the list
 	// scrolled last frame; that group's own heading, pinned under it, is
 	// drawn clear so the name shows once.
@@ -744,13 +777,19 @@ func (p *mailPage) listView(c *ui.Context) {
 			if slices.ContainsFunc(on, func(r mailItem) bool { return r.Flagged < r.Count }) {
 				star = "star"
 			}
-			for _, k := range []string{read, star, "", "archive", "delete", "junk"} {
-				if k == "junk" && p.inJunk() {
-					continue // already there
+			for _, k := range []string{read, star} {
+				if m.Item(i18n.T("mail.action." + k)).Chosen() {
+					act, target = k, on
 				}
-				if k == "" {
-					m.Separator()
-				} else if m.Item(i18n.T("mail.action." + k)).Chosen() {
+			}
+			m.Separator()
+
+			role := p.currentFolderRole()
+			for _, k := range []string{"inbox", "archive", "junk", "delete"} {
+				if k != "delete" && role == k {
+					continue // never show current folder as target
+				}
+				if m.Item(i18n.T("mail.action." + k)).Chosen() {
 					act, target = k, on
 				}
 			}
@@ -1195,6 +1234,10 @@ func (p *mailPage) batch(act string, rows []mailItem) {
 	if len(rows) == 0 {
 		return
 	}
+	if act == "delete" && p.currentFolderRole() == "trash" {
+		p.purgeAsk, p.purgeRows = true, rows
+		return
+	}
 	a := p.a
 	acctOf, role, archive, junk := map[int64]int64{}, map[int64]string{}, map[int64]int64{}, map[int64]bool{}
 	for acc, fs := range p.folders {
@@ -1270,7 +1313,7 @@ func (p *mailPage) batch(act string, rows []mailItem) {
 			}
 		}
 		for _, m := range msgs {
-			if (op == "archive" || op == "delete" || op == "junk") && !inView(m) {
+			if removes(op) && !inView(m) {
 				continue
 			}
 			acc, ok := acctOf[m.FolderID]
@@ -1291,7 +1334,7 @@ func (p *mailPage) batch(act string, rows []mailItem) {
 			if len(skipped) > 0 {
 				a.toastAs(kit.ToastWarning, i18n.Tf("mail.no_"+op, strings.Join(skipped, i18n.T("mail.list_sep"))))
 			}
-			if op == "archive" || op == "delete" || op == "junk" {
+			if removes(op) {
 				l.sel.Clear()
 			}
 		}

@@ -427,8 +427,8 @@ func (s *Service) apply(ctx context.Context, accountID int64, ts []target, stmts
 	return nil
 }
 
-// checkFlag accepts IMAP flag atoms the user may set. \Deleted is refused: deleting
-// is a move to Trash, never an expunge.
+// checkFlag accepts IMAP flag atoms the user may set. \Deleted is refused: an
+// expunge only goes through a purge op (DeleteForever, the purge policies).
 func checkFlag(f string) error {
 	atom := strings.TrimPrefix(f, `\`)
 	if atom == "" || strings.EqualFold(f, `\Deleted`) || strings.EqualFold(f, `\Recent`) ||
@@ -520,15 +520,42 @@ func (s *Service) Delete(ctx context.Context, ids []int64) error {
 	return s.MoveToRole(ctx, ids, "trash")
 }
 
+// DeleteForever queues a permanent delete of the messages in their account's
+// Trash; ones elsewhere stay. A move out of Trash before the push cancels it, and
+// the fetch after the push drops the rows.
+func (s *Service) DeleteForever(ctx context.Context, ids []int64) error {
+	s.editMu.Lock()
+	defer s.editMu.Unlock()
+	acc, ts, err := s.targets(ctx, ids)
+	if err != nil || len(ts) == 0 {
+		return err
+	}
+	trash, err := s.roleFolder(ctx, acc, "trash")
+	if err != nil {
+		return err
+	}
+	var purged []target
+	var stmts []sqlite.Statement
+	for _, m := range ts {
+		if m.folder != trash {
+			continue
+		}
+		purged = append(purged, m)
+		stmts = append(stmts, sqlite.Statement{SQL: `INSERT INTO ops(account_id, message_id, kind, dst_folder_id, payload, depends_on, created_at)
+			VALUES (?, ?, 'purge', ?, ?, ` + latestOp + `, unixepoch())`, Args: []any{acc, m.id, trash, mailsync.PurgeNow, m.id}})
+	}
+	return s.apply(ctx, acc, purged, stmts)
+}
+
 // ErrNoRoleFolder is MoveToRole's error for an account without a folder of Role.
 type ErrNoRoleFolder struct{ Role string }
 
 func (e *ErrNoRoleFolder) Error() string { return "the account has no " + e.Role + " folder" }
 
-// MoveToRole moves the messages to their account's folder of role (trash,
-// junk or archive); ones already there stay.
+// MoveToRole moves the messages to their account's folder of role (inbox,
+// trash, junk or archive); ones already there stay.
 func (s *Service) MoveToRole(ctx context.Context, ids []int64, role string) error {
-	if role != "trash" && role != "junk" && role != "archive" {
+	if role != "trash" && role != "junk" && role != "archive" && role != "inbox" {
 		return fmt.Errorf("invalid role %q", role)
 	}
 	s.editMu.Lock()

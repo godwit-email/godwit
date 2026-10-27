@@ -530,6 +530,117 @@ func TestRowMenuByState(t *testing.T) {
 	h.waitMail("unstarred by direct button", func() bool { return h.items()[0].Flagged == 0 })
 }
 
+// TestContextMenuMoveRoleOptions verifies that right-clicking mail in any of
+// Inbox, Archive, Junk, or Trash displays move options for the other 3 folders,
+// never offers the current folder, and executes the move correctly.
+func TestContextMenuMoveRoleOptions(t *testing.T) {
+	h, accs := mailHarness(t, nil, "alice@example.com")
+	if err := h.env.IMAP(accs[0].ID).User.Create("Junk", nil); err != nil {
+		t.Fatal(err)
+	}
+	h.syncNow(accs[0])
+
+	base := h.clock.Now()
+	h.put(accs[0], "INBOX", coretest.Msg("bob@example.com", "alice@example.com", "first", "x", at(base, 1)))
+	h.syncNow(accs[0])
+	h.waitMail("inbox mail", func() bool { return len(h.items()) == 1 })
+
+	inboxAct := i18n.T("mail.action.inbox")
+	archiveAct := i18n.T("mail.action.archive")
+	junkAct := i18n.T("mail.action.junk")
+	deleteAct := i18n.T("mail.action.delete")
+
+	assertMenu := func(wantHave []string, wantNot []string) {
+		t.Helper()
+		if err := h.tt.RightClick("first"); err != nil {
+			t.Fatal(err)
+		}
+		menu := h.tt.Menu()
+		for _, w := range wantHave {
+			if !slices.Contains(menu, w) {
+				t.Fatalf("menu %v missing expected item %q", menu, w)
+			}
+		}
+		for _, n := range wantNot {
+			if slices.Contains(menu, n) {
+				t.Fatalf("menu %v should not contain %q", menu, n)
+			}
+		}
+	}
+
+	// 1. In Inbox: should offer Archive, Junk, Delete; NOT Inbox
+	assertMenu([]string{archiveAct, junkAct, deleteAct}, []string{inboxAct})
+	if err := h.tt.ChooseMenuItem(archiveAct); err != nil {
+		t.Fatal(err)
+	}
+	h.waitMail("inbox empty after archive", func() bool { return len(h.items()) == 0 })
+
+	// 2. In Archive: navigate to Archive
+	h.click(i18n.T("mail.folder.archive"))
+	h.waitMail("in archive", func() bool { return len(h.items()) == 1 })
+	assertMenu([]string{inboxAct, junkAct, deleteAct}, []string{archiveAct})
+	if err := h.tt.ChooseMenuItem(junkAct); err != nil {
+		t.Fatal(err)
+	}
+	h.waitMail("archive empty after junk", func() bool { return len(h.items()) == 0 })
+
+	// 3. In Junk: navigate to Junk
+	h.click(i18n.T("mail.folder.junk"))
+	h.waitMail("in junk", func() bool { return len(h.items()) == 1 })
+	assertMenu([]string{inboxAct, archiveAct, deleteAct}, []string{junkAct})
+	if err := h.tt.ChooseMenuItem(deleteAct); err != nil {
+		t.Fatal(err)
+	}
+	h.waitMail("junk empty after delete", func() bool { return len(h.items()) == 0 })
+
+	// 4. In Trash: navigate to Trash
+	h.click(i18n.T("mail.folder.trash"))
+	h.waitMail("in trash", func() bool { return len(h.items()) == 1 })
+	assertMenu([]string{inboxAct, archiveAct, junkAct, deleteAct}, nil)
+	// Delete here is permanent: it asks first, and cancelling keeps the mail.
+	if err := h.tt.ChooseMenuItem(deleteAct); err != nil {
+		t.Fatal(err)
+	}
+	h.click(i18n.T("common.cancel"))
+	h.until("the dialog closed", func() bool { return !h.app.mail.purgeAsk })
+	if len(h.items()) != 1 || h.countIn(h.folderOf(accs[0], "trash")) != 1 {
+		t.Fatal("cancelling the permanent delete changed the trash")
+	}
+	assertMenu([]string{inboxAct}, nil)
+	if err := h.tt.ChooseMenuItem(inboxAct); err != nil {
+		t.Fatal(err)
+	}
+	h.waitMail("trash empty after move to inbox", func() bool { return len(h.items()) == 0 })
+
+	// 5. Back in Inbox
+	h.click(i18n.T("mail.unified.inbox"))
+	h.waitMail("back in inbox", func() bool { return len(h.items()) == 1 })
+	assertMenu([]string{archiveAct, junkAct, deleteAct}, []string{inboxAct})
+
+	// 6. Delete, then Delete again in Trash and confirm: gone for good.
+	if err := h.tt.ChooseMenuItem(deleteAct); err != nil {
+		t.Fatal(err)
+	}
+	h.waitMail("inbox empty after delete", func() bool { return len(h.items()) == 0 })
+	h.click(i18n.T("mail.folder.trash"))
+	h.waitMail("in trash again", func() bool { return len(h.items()) == 1 })
+	assertMenu([]string{deleteAct}, nil)
+	if err := h.tt.ChooseMenuItem(deleteAct); err != nil {
+		t.Fatal(err)
+	}
+	h.until("the confirmation", func() bool { return h.app.mail.purgeAsk })
+	// Closed, the reader's own Delete does not come before the dialog's.
+	h.post(func() { h.app.navigate(Route{Page: PageMail, View: h.app.route.View}) })
+	h.until("the reader closed", func() bool { return h.app.route.ThreadID == 0 && h.app.mail.purgeAsk })
+	h.click(i18n.T("common.delete"))
+	trash := h.folderOf(accs[0], "trash")
+	// The row goes once the push expunged it and the fetch after it saw it gone.
+	h.waitMail("trash empty after the permanent delete", func() bool {
+		h.syncNow(accs[0])
+		return h.countIn(trash) == 0 && len(h.items()) == 0
+	})
+}
+
 func TestBatchAcrossAccounts(t *testing.T) {
 	h, accs := mailHarness(t, nil, "alice@example.com", "carol@example.com", "dave@example.com")
 	if err := h.env.IMAP(accs[2].ID).User.Delete("Archive"); err != nil {

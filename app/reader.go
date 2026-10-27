@@ -563,11 +563,11 @@ func (r *reader) items() []mailItem {
 	return []mailItem{{ID: r.key[0], Thread: true, Count: len(r.msgs)}}
 }
 
-// act applies a list action to what is shown; archiving, deleting and
-// moving to junk close it.
+// act applies a list action to what is shown; the ones that take it out of
+// the view close it, except Delete in Trash, which first asks.
 func (r *reader) act(op string) {
 	r.p.batch(op, r.items())
-	if op == "archive" || op == "delete" || op == "junk" {
+	if removes(op) && !r.p.purgeAsk {
 		rt := &r.p.a.route
 		rt.ThreadID, rt.MessageID = 0, 0
 		r.sync(false)
@@ -823,14 +823,18 @@ func (r *reader) toolbar(c *ui.Context) {
 		if r.starred() {
 			starIcon, starTip = "star-fill", i18n.T("mail.action.unstar")
 		}
-		file := []kit.GroupItem{
-			{Icon: starIcon, Tip: starTip, OnClick: func() { r.act("toggle_star") }},
-			{Icon: "archive", Tip: i18n.T("mail.action.archive"), OnClick: func() { r.act("archive") }},
-			{Icon: "trash-2", Tip: i18n.T("mail.action.delete"), OnClick: func() { r.act("delete") }},
+		file := []kit.GroupItem{{Icon: starIcon, Tip: starTip, OnClick: func() { r.act("toggle_star") }}}
+		role := r.p.currentFolderRole()
+		if role != "inbox" {
+			file = append(file, kit.GroupItem{Icon: "inbox", Tip: i18n.T("mail.action.inbox"), OnClick: func() { r.act("inbox") }})
 		}
-		if !r.p.inJunk() {
+		if role != "archive" {
+			file = append(file, kit.GroupItem{Icon: "archive", Tip: i18n.T("mail.action.archive"), OnClick: func() { r.act("archive") }})
+		}
+		if role != "junk" {
 			file = append(file, kit.GroupItem{Icon: "spam", Tip: i18n.T("mail.action.junk"), OnClick: func() { r.act("junk") }})
 		}
+		file = append(file, kit.GroupItem{Icon: "trash-2", Tip: i18n.T("mail.action.delete"), OnClick: func() { r.act("delete") }})
 		kit.ButtonGroup(c, file...)
 		kit.ButtonGroup(c,
 			kit.GroupItem{Icon: "save", Tip: i18n.T("reader.save"), OnClick: func() { r.saveMail() }},

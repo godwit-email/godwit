@@ -438,3 +438,41 @@ func TestPurgeRacingRescue(t *testing.T) {
 		})
 	}
 }
+
+func TestDeleteForeverExpungesFromTrashOnly(t *testing.T) {
+	e := newSyncEnv(t)
+	e.put(t, "Trash", msg("gone@x"))
+	e.putFlagged(t, "Trash", msg("other-client@x"), `\Deleted`)
+	e.put(t, "INBOX", msg("kept@x"))
+	e.sync(t)
+	require.NoError(t, e.s.SetFlags(bg, []int64{e.idOf(t, "gone@x")}, []string{`\Seen`}, nil))
+	require.NoError(t, e.s.DeleteForever(bg, []int64{e.idOf(t, "gone@x")}))
+	require.NoError(t, e.s.DeleteForever(bg, []int64{e.idOf(t, "kept@x")}))
+	e.sync(t)
+	assert.Equal(t, []string{`other-client@x \Deleted`}, e.onServer(t, "Trash"), "UID EXPUNGE, after the pending flags change")
+	assert.Equal(t, []string{"kept@x"}, e.onServer(t, "INBOX"), "mail outside Trash is not purged")
+	assert.Zero(t, e.count(t, "SELECT count(*) FROM messages WHERE message_id = 'gone@x'"))
+	assert.Empty(t, e.ops(t))
+}
+
+func TestDeleteForeverRescued(t *testing.T) {
+	e := newSyncEnv(t)
+	e.put(t, "Trash", msg("m@x"))
+	e.sync(t)
+	id := e.idOf(t, "m@x")
+	require.NoError(t, e.s.DeleteForever(bg, []int64{id}))
+	require.NoError(t, e.s.Move(bg, []int64{id}, e.folderID(t, "INBOX")))
+	e.sync(t)
+	assert.Equal(t, []string{"m@x"}, e.onServer(t, "INBOX"))
+	assert.Equal(t, []string{}, e.onServer(t, "Trash"))
+}
+
+func TestDeleteForeverNeedsUIDPlus(t *testing.T) {
+	e := newSyncEnv(t, testmail.WithoutUIDPlus())
+	e.put(t, "Trash", msg("m@x"))
+	e.sync(t)
+	require.NoError(t, e.s.DeleteForever(bg, []int64{e.idOf(t, "m@x")}))
+	_ = e.s.SyncNow(bg, e.acc.ID) // reports the failed op
+	assert.Equal(t, []string{"m@x"}, e.onServer(t, "Trash"))
+	assert.Equal(t, 1, e.count(t, "SELECT count(*) FROM ops WHERE kind = 'purge' AND state = 'failed'"), "a failure the user sees, not a silent cancel")
+}
