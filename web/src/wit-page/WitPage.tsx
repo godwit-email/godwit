@@ -140,7 +140,15 @@ export function WitPage() {
     };
   }, []);
 
-  useEffect(() => forwardShortcuts((dir) => api.navigate(dir)), []);
+  useEffect(
+    () =>
+      forwardShortcuts(
+        (dir) => api.navigate(dir),
+        window,
+        () => api.search(),
+      ),
+    [],
+  );
 
   const theme = st?.theme as Theme | undefined;
   useEffect(() => {

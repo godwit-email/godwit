@@ -68,10 +68,12 @@ type WitPageDeps struct {
 	// Ask sends WitAsk to the page.
 	Ask func(query string)
 	// OpenMessage opens message id in the reader; OpenModels the model
-	// settings; Navigate goes back (-1) or forward (1).
+	// settings; Navigate goes back (-1) or forward (1); Search opens the
+	// search palette.
 	OpenMessage func(id int64)
 	OpenModels  func()
 	Navigate    func(dir int)
+	Search      func()
 	// NewConversation shows a new conversation, as the sidebar's 新对话 does.
 	NewConversation func()
 	// ConversationCreated is told Ask made conversation id, asked under
@@ -702,5 +704,15 @@ func (p *WitPage) Navigate(ctx context.Context, dir int) error {
 		return keyed(ErrBadDirection)
 	}
 	p.w.d.Navigate(dir)
+	return nil
+}
+
+// Search opens the search palette, as ⌘K and ⌘F do natively: a page that
+// has the keyboard misses the native shortcut.
+func (p *WitPage) Search(ctx context.Context) error {
+	if _, _, err := p.w.caller(ctx); err != nil {
+		return keyed(err)
+	}
+	p.w.d.Search()
 	return nil
 }

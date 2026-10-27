@@ -32,6 +32,7 @@ vi.mock("@/mygo", () => ({
     openModels: vi.fn(),
     models: vi.fn(),
     navigate: vi.fn(),
+    search: vi.fn(),
   },
   events: {
     wit: { on: h.on(h.wit) },
@@ -339,6 +340,14 @@ test("cmd-[ forwards", async () => {
   fireEvent.keyDown(input(), { key: "[", metaKey: true, isComposing: true });
   fireEvent.keyDown(input(), { key: "[" });
   expect(api.navigate).toHaveBeenCalledTimes(2);
+});
+
+test("cmd-k and cmd-f open the search palette", async () => {
+  vi.mocked(api.search).mockResolvedValue(undefined);
+  await start(0);
+  fireEvent.keyDown(input(), { key: "k", metaKey: true });
+  fireEvent.keyDown(document.body, { key: "f", metaKey: true });
+  expect(api.search).toHaveBeenCalledTimes(2);
 });
 
 test("answer hardening holds through this page; links go straight to WitPage.openLink (native confirms)", async () => {

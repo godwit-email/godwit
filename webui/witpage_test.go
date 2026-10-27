@@ -37,6 +37,7 @@ type witPageFixture struct {
 	created  [][2]int64
 	messages []int64
 	models   int
+	searches int
 	asks     []string
 	navs     []int
 	urls     []string
@@ -72,6 +73,7 @@ func newWitPageFixture(t *testing.T, setup ...func(*coretest.Env)) *witPageFixtu
 		OpenMessage:         func(id int64) { f.record(func() { f.messages = append(f.messages, id) }) },
 		OpenModels:          func() { f.record(func() { f.models++ }) },
 		Navigate:            func(dir int) { f.record(func() { f.navs = append(f.navs, dir) }) },
+		Search:              func() { f.record(func() { f.searches++ }) },
 		NewConversation:     func() { f.record(func() { f.navs = append(f.navs, 0) }) },
 		OnLink:              func(u string) { f.record(func() { f.urls = append(f.urls, u) }) },
 		OpenCompose:         func(id int64) { f.record(func() { f.composed = append(f.composed, id) }) },
@@ -216,6 +218,7 @@ func TestWitPageRoleRefused(t *testing.T) {
 		assert.ErrorIs(t, f.p.OpenLink(ctx, "https://example.com"), ErrWrongPage, name)
 		assert.ErrorIs(t, f.p.OpenModels(ctx), ErrWrongPage, name)
 		assert.ErrorIs(t, f.p.Navigate(ctx, -1), ErrWrongPage, name)
+		assert.ErrorIs(t, f.p.Search(ctx), ErrWrongPage, name)
 	}
 	// Another role's page.
 	pages := NewPages(func(ctx context.Context) any { return ctx.Value(pageKey{}) })
@@ -236,6 +239,7 @@ func TestWitPageRoleRefused(t *testing.T) {
 	assert.Empty(t, f.urls)
 	assert.Zero(t, f.models)
 	assert.Empty(t, f.navs)
+	assert.Zero(t, f.searches)
 	assert.Empty(t, f.events())
 }
 
@@ -247,6 +251,8 @@ func TestWitPageCallbacks(t *testing.T) {
 	assert.Error(t, f.p.Navigate(f.ctx(), 2))
 	assert.Equal(t, 1, f.models)
 	assert.Equal(t, []int{-1, 1}, f.navs)
+	require.NoError(t, f.p.Search(f.ctx()))
+	assert.Equal(t, 1, f.searches)
 
 	// links go to native, which handles them as mail's: http(s) after its dialog, mailto as a draft
 	require.NoError(t, f.p.OpenLink(f.ctx(), "https://example.com/a"))
