@@ -1196,3 +1196,20 @@ test("image permission, failure and retry keep the backdrop and detach the old d
   expect(current.doc.querySelector("img")?.getAttribute("style")).toBeNull();
   expect(current.doc.querySelector("img")?.getAttribute("src")).toBe("godwit-img://m9/logo");
 });
+
+test("marker polling stops once the frame has loaded", async () => {
+  vi.mocked(api.load).mockResolvedValue(body(1, "<p>Hello</p>"));
+  render(<ReaderApp />);
+  const frame = await waitFor(() => {
+    const f = document.querySelector("iframe");
+    if (!f?.getAttribute("srcdoc")) throw new Error("no frame yet");
+    return f;
+  });
+  expect(frames.length).toBeGreaterThan(0);
+  // A load whose document never carries the marker (e.g. the frame navigated away).
+  act(() => {
+    frame.dispatchEvent(new Event("load"));
+  });
+  flush();
+  expect(frames).toEqual([]);
+});

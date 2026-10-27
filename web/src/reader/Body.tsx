@@ -143,7 +143,7 @@ export function Body({ body, theme }: { body: ReaderBody; theme: Theme }) {
   useEffect(() => {
     const f = frame.current;
     if (!f) return;
-    let live = true;
+    let polling = true;
     let wired: Document | null = null;
     let detach = ignore;
     const onLoad = () => {
@@ -157,14 +157,19 @@ export function Body({ body, theme }: { body: ReaderBody; theme: Theme }) {
       return true;
     };
     // Images can delay load; expose the parsed document as soon as its current marker is present.
+    // Polling ends at the first load: from then on load events alone track the document.
     const ready = () => {
-      if (live && !onLoad()) requestAnimationFrame(ready);
+      if (polling && !onLoad()) requestAnimationFrame(ready);
     };
-    f.addEventListener("load", onLoad);
+    const loaded = () => {
+      polling = false;
+      onLoad();
+    };
+    f.addEventListener("load", loaded);
     ready();
     return () => {
-      live = false;
-      f.removeEventListener("load", onLoad);
+      polling = false;
+      f.removeEventListener("load", loaded);
       detach();
     };
   }, [wire, marker]);
