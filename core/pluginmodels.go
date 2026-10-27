@@ -185,6 +185,7 @@ func (s *Service) resolvePluginModel(ctx context.Context, ref string) (ai.Resolv
 			BaseURL:   "http://127.0.0.1:0",
 			Model:     m.ID,
 			Client:    s.appleIntelligenceClient(),
+			OnDevice:  true, // only here: a loopback BaseURL may be a proxy to the cloud
 		}, nil
 	}
 	name, rp, m, cfg, err := s.pluginModel(ctx, ref)
@@ -271,7 +272,11 @@ func (s *Service) pluginJudge(ctx context.Context, ref string) (ai.Judge, error)
 		return pluginModelJudge{s, name, rp, m, cfg}, nil
 	}
 	c := s.pluginModelClient(name, rp, m.ID, cfg)
-	j, err := ai.NewJudge(c, judgeFormats[m.Protocol], m.BaseURL, "", m.ID)
+	mk, err := s.masker()
+	if err != nil {
+		return nil, err
+	}
+	j, err := ai.NewJudge(c, mk, judgeFormats[m.Protocol], m.BaseURL, "", m.ID)
 	return pluginHTTPJudge{j, c.Transport.(*pluginModelTransport)}, err
 }
 

@@ -11,6 +11,7 @@ import (
 	"strings"
 	"sync"
 
+	"github.com/godwit-email/godwit/core/ai/mask"
 	"github.com/godwit-email/godwit/core/ai/pi"
 )
 
@@ -68,7 +69,7 @@ func (r *runner) runPi(req Request) Result {
 	if req.History != nil {
 		return r.agentPi(ctx, req, preq, emit)
 	}
-	res, err := pi.Generate(ctx, cmp.Or(req.Model.Client, r.e.client), preq, emit)
+	res, err := pi.Generate(ctx, cmp.Or(req.Model.Client, r.e.client), preq, pi.Hooks{Emit: emit, Mask: maskHook(r.e.Masker, req.Model.OnDevice)})
 	if err != nil {
 		return r.piFailed(ctx, err)
 	}
@@ -78,7 +79,20 @@ func (r *runner) runPi(req Request) Result {
 	if e := piError(res, preq.API == "openai-codex-responses"); e != nil {
 		return Result{Err: e}
 	}
-	return Result{Messages: []Message{{Role: "user", Text: req.Prompt}, {Role: "model", Text: reply.String()}}}
+	return Result{Messages: []Message{{Role: "user", Text: req.Prompt}, {Role: "model", Text: r.e.Masker.Restore(mask.DropCut(reply.String()))}}}
+}
+
+// maskHook is how a run masks its requests with m: off this device and with
+// masking on, each body; else each body only shows m the values it holds,
+// so what comes back restores (a conversation may change models).
+func maskHook(m *mask.Masker, onDevice bool) func(string) (string, error) {
+	switch {
+	case m == nil:
+		return nil
+	case onDevice || !m.On():
+		return func(body string) (string, error) { m.Learn(body); return body, nil }
+	}
+	return m.Body
 }
 
 func (r *runner) piFailed(ctx context.Context, err error) Result {
@@ -186,18 +200,22 @@ func (r *runner) agentPi(ctx context.Context, req Request, preq pi.Request, emit
 			return res.Output, res.Error, interrupt
 		},
 		Refused: func(id, name string, args json.RawMessage, msg string) {
+			args, _ = r.e.Masker.RestoreArgs(args) // as the model wrote them, if no Args hook took them
 			r.send(Event{Kind: "tool_call", Call: &ToolCall{ID: id, Name: name, Args: args}})
-			r.send(Event{Kind: "tool_result", Result: &ToolResult{CallID: id, Name: name, Error: r.redact(msg)}})
+			r.send(Event{Kind: "tool_result", Result: &ToolResult{CallID: id, Name: name, Error: r.redact(r.e.Masker.Restore(msg))}})
 		},
-	}
-	if r.args != nil {
-		hooks.Args = func(args json.RawMessage) (json.RawMessage, error) {
-			out, err := r.args(ctx, args)
+		// The placeholders are restored first: a call that still holds one is refused.
+		Args: func(args json.RawMessage) (json.RawMessage, error) {
+			out, err := r.e.Masker.RestoreArgs(args)
+			if err == nil && r.args != nil {
+				out, err = r.args(ctx, out)
+			}
 			if err != nil {
 				return nil, errors.New(r.redact(err.Error()))
 			}
 			return out, nil
-		}
+		},
+		Mask: maskHook(r.e.Masker, req.Model.OnDevice),
 	}
 	res, err := pi.Agent(ctx, cmp.Or(req.Model.Client, r.e.client), areq, hooks)
 	if err != nil {
@@ -239,10 +257,15 @@ func (r *runner) agentPi(ctx context.Context, req Request, preq pi.Request, emit
 		return Result{Err: &Error{Code: CodeInternal, Msg: "ai: the turn lost its question"}}
 	}
 	end := Result{out: out, raws: raws, Messages: display(out)}
+	for i, m := range end.Messages {
+		end.Messages[i] = RestoreMessage(r.e.Masker, m)
+	}
 	if len(res.Held) > 0 {
 		for _, p := range out[len(out)-1].Content {
 			if p.IsInterrupt() {
-				end.Interrupts = append(end.Interrupts, toolCall(p.ToolRequest))
+				c := toolCall(p.ToolRequest)
+				c.Args, _ = r.e.Masker.RestoreArgs(c.Args)
+				end.Interrupts = append(end.Interrupts, c)
 			}
 		}
 	}

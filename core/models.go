@@ -728,6 +728,9 @@ func (s *Service) testGenRun(ctx context.Context, id int64, in ModelServiceInput
 		return err
 	}
 	defer e.Close()
+	if e.Masker, err = s.masker(); err != nil {
+		return err
+	}
 	_, err = s.runText(ctx, e, ai.Request{Model: ai.ResolvedModel{ServiceID: id, Kind: in.Kind, BaseURL: in.BaseURL, Model: models[0], APIKey: key},
 		Prompt: "Reply with OK.", MaxTurns: 1}, 0)
 	return err
@@ -735,7 +738,11 @@ func (s *Service) testGenRun(ctx context.Context, id int64, in ModelServiceInput
 
 func (s *Service) testJudge(ctx context.Context, in ModelServiceInput, key string) error {
 	f := ai.JudgeFormat(in.JudgeFormat)
-	j, err := ai.NewJudge(s.modelHTTP, f, in.BaseURL, key, in.JudgeModel)
+	m, err := s.masker()
+	if err != nil {
+		return err
+	}
+	j, err := ai.NewJudge(s.modelHTTP, m, f, in.BaseURL, key, in.JudgeModel)
 	if err != nil {
 		return err
 	}
@@ -798,6 +805,9 @@ func (s *Service) aiEngine() (*ai.Engine, error) {
 	if s.ai == nil {
 		e, err := ai.NewEngine(slog.Default(), s.secrets.Values)
 		if err != nil {
+			return nil, err
+		}
+		if e.Masker, err = s.masker(); err != nil {
 			return nil, err
 		}
 		// No modelMu here: an update holds it while it calls Forget.
@@ -967,7 +977,11 @@ func (s *Service) resolveJudge(ctx context.Context) (j ai.Judge, label string, g
 			return nil, "", false, err
 		}
 		if err == nil && m.JudgeFormat != "" {
-			j, err := ai.NewJudge(s.modelHTTP, ai.JudgeFormat(m.JudgeFormat), m.BaseURL, key, m.JudgeModel)
+			mk, err := s.masker()
+			if err != nil {
+				return nil, "", false, err
+			}
+			j, err := ai.NewJudge(s.modelHTTP, mk, ai.JudgeFormat(m.JudgeFormat), m.BaseURL, key, m.JudgeModel)
 			return j, m.Slug + "/" + m.JudgeModel, false, err
 		}
 	}
