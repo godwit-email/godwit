@@ -45,6 +45,8 @@ type palette struct {
 	hover  int       // the row the pointer was over last frame, -1 for none
 	scroll bool      // the arrows moved sel: bring it into view
 	rows   []palItem // as last built, which the keys act on
+
+	cards map[int64]*palCard // by message id, loaded as each is chosen
 }
 
 // palItem is a row of the palette: what it shows and what choosing it does.
@@ -53,6 +55,7 @@ type palItem struct {
 	when             time.Time
 	unread           bool
 	open             func()
+	msg              *core.MessageSummary // a mail's, for its preview card
 }
 
 // palGroup is a heading and its rows; total, when not 0, is how many there
@@ -125,6 +128,10 @@ func (p *palette) view(c *ui.Context) {
 			}
 		}
 	})
+	if p.open && p.sel < len(p.rows) && p.rows[p.sel].msg != nil {
+		m := *p.rows[p.sel].msg
+		kit.PalettePreview(c, func() { p.preview(c, m) })
+	}
 	if hover >= 0 && hover != p.hover {
 		p.sel = hover // the pointer moved onto a row; keys move it from there
 	}
@@ -271,7 +278,7 @@ func (p *palette) mailItems(ms []core.MessageSummary) []palItem {
 			sub += " · " + mp.folderLine(it)
 		}
 		thread, id := m.ThreadID, m.ID
-		out = append(out, palItem{icon: "mail", title: cmp.Or(m.Subject, i18n.T("mail.no_subject")), sub: sub, when: m.Date, unread: it.Unread > 0,
+		out = append(out, palItem{icon: "mail", title: cmp.Or(m.Subject, i18n.T("mail.no_subject")), sub: sub, when: m.Date, unread: it.Unread > 0, msg: &m,
 			open: func() {
 				p.a.navigate(Route{Page: PageMail, View: core.View{Unified: "inbox"}, ThreadID: thread, MessageID: id})
 			}})
