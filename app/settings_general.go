@@ -298,6 +298,7 @@ func (p *settingsPage) generalView(c *ui.Context) {
 	settingsSection(c, i18n.T("settings.ai"), "",
 		sw(&st.Summary, i18n.T("settings.summary"), i18n.T("settings.summary.help")),
 		sw(&st.QuickReplies, i18n.T("settings.quick_replies"), i18n.T("settings.quick_replies.help")))
+	p.maskingView(c)
 	settingsSection(c, i18n.T("settings.mail"), "",
 		sw(&st.ThreadView, i18n.T("settings.thread_view"), i18n.T("settings.thread_view.help")),
 		sw(&st.ThreadCollapse, i18n.T("settings.thread_collapse"), i18n.T("settings.thread_collapse.help")),

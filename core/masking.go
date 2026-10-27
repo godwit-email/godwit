@@ -20,6 +20,29 @@ const (
 	MaskBlock = "block"
 )
 
+// The user's rules (自定义正则) as mask has them, for the UI, which reaches
+// core only through its own package.
+type (
+	// MaskRule is one of the user's patterns, masking what it finds as its kind.
+	MaskRule = mask.Rule
+	// MaskRuleError says which rule can't be used: ErrMaskKind,
+	// ErrMaskEmptyMatch, or the pattern RE2 can't compile.
+	MaskRuleError = mask.RuleError
+)
+
+var (
+	ErrMaskKind       = mask.ErrKind
+	ErrMaskEmptyMatch = mask.ErrEmptyMatch
+)
+
+const (
+	MaxMaskRules = mask.MaxRules
+	MaxMaskAllow = mask.MaxAllow
+)
+
+// CheckMaskRules says what is wrong with rules, as SetSettings would.
+func CheckMaskRules(rules []MaskRule) error { return mask.Check(mask.Config{Rules: rules}) }
+
 // MaskCategory is one category of 脱敏: whether it is found, and what is
 // done with its values (MaskHide, MaskWarn or MaskBlock).
 type MaskCategory struct {

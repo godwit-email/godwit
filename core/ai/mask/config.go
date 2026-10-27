@@ -68,6 +68,12 @@ func (e *RuleError) Error() string {
 
 func (e *RuleError) Unwrap() error { return e.Err }
 
+// What is wrong with a rule, besides a pattern RE2 can't compile.
+var (
+	ErrKind       = errors.New("a kind is a letter, then letters, digits or _, at most 24")
+	ErrEmptyMatch = errors.New("the pattern matches empty text")
+)
+
 // kindRe is a kind as a placeholder names it.
 var kindRe = regexp.MustCompile(`^[A-Z][A-Z0-9_]{0,23}$`)
 
@@ -115,9 +121,9 @@ func compile(c Config) (*compiled, error) {
 		re, err := regexp.Compile(r.Regex)
 		switch {
 		case !kindRe.MatchString(kind):
-			err = errors.New("a kind is a letter, then letters, digits or _, at most 24")
+			err = ErrKind
 		case err == nil && re.MatchString(""):
-			err = errors.New("the pattern matches empty text")
+			err = ErrEmptyMatch
 		}
 		if err != nil {
 			return nil, &RuleError{Index: i, Kind: r.Kind, Err: err}
