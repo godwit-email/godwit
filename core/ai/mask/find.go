@@ -47,7 +47,7 @@ var rules = []rule{
 		secretCh + `{3,63}[A-Za-z0-9_\-/+=~!@#%^&*])`), fit: whole(notAVariable)},
 
 	{kind: "ID_CARD", bound: alnum, re: regexp.MustCompile(`[1-9]\d{5}(?:18|19|20)\d{2}(?:0[1-9]|1[0-2])(?:0[1-9]|[12]\d|3[01])\d{3}[\dXx]`), fit: whole(chineseID)},
-	{kind: "BANK_CARD", bound: digits, re: regexp.MustCompile(`[3-6]\d{3}(?:[ -]?\d{4}){2,3}(?:[ -]?\d{1,3})?`), fit: whole(luhn)},
+	{kind: "BANK_CARD", bound: digits, match: cards},
 	// a passport's number only after the word: a number alone is no passport's
 	{kind: "PASSPORT", bound: alnum, fit: whole(passportOK),
 		re: regexp.MustCompile(`(?i:\bpassport(?:[ \t]*(?:no\.?|number|num|#))?)["']?[ \t]*(?:[:#=：][ \t]*)?(?:(?i:is)[ \t]+)?["']?([A-Z0-9]{6,9})` +
@@ -183,6 +183,37 @@ func chineseID(v string) bool {
 		sum += int(v[i]-'0') * w[i]
 	}
 	return strings.ToUpper(v[17:]) == string("10X98765432"[sum%11])
+}
+
+var cardRe = regexp.MustCompile(`[3-6]\d{3}(?:[ -]?\d{4}){2,3}(?:[ -]?\d{1,3})?`)
+
+// cards are the card numbers in s, by the Luhn check: groups after one may
+// be the numbers that follow it (… 1111 12), and one that fails is tried
+// again from its next digit, for a card may follow it (E123456 4111 …).
+func cards(s string) [][]int {
+	var out [][]int
+	for i := 0; i < len(s); {
+		loc := cardRe.FindStringIndex(s[i:])
+		if loc == nil {
+			break
+		}
+		a, b := i+loc[0], i+loc[1]
+		for a == 0 || !strings.ContainsRune(digits, rune(s[a-1])) {
+			if luhn(s[a:b]) {
+				out = append(out, []int{a, b})
+				break
+			}
+			j := strings.LastIndexAny(s[a:b], " -")
+			if j < 0 {
+				break
+			}
+			b = a + j
+		}
+		if i = a + 1; len(out) > 0 && out[len(out)-1][0] == a {
+			i = out[len(out)-1][1]
+		}
+	}
+	return out
 }
 
 // luhn is whether v's 15 to 19 digits pass the Luhn check, as a card number's do.

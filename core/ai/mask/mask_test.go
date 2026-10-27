@@ -45,6 +45,8 @@ func TestFindsKeysAndIDNumbers(t *testing.T) {
 		"身份证 11010519491231002X 请核对":          "身份证 <ID_CARD> 请核对",
 		"Card 4111 1111 1111 1111, thanks":    "Card <BANK_CARD>, thanks",
 		"卡号6222021234567890128":               "卡号<BANK_CARD>",
+		"Card 4111 1111 1111 1111 12":         "Card <BANK_CARD> 12",
+		"Ref E123456 4111 1111 1111 1111":     "Ref E123456 <BANK_CARD>",
 		"护照号码：E12345678":                      "护照号码：<PASSPORT>",
 		"Passport No. X1234567 expires":       "Passport No. <PASSPORT> expires",
 		"IBAN GB82 WEST 1234 5698 7654 32 OK": "IBAN <IBAN> OK",
