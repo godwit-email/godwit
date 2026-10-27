@@ -177,59 +177,79 @@ func (a *App) syncStatus(c *ui.Context) {
 		ui.Text(c, text).SingleLine().Shrink(1)
 		ui.Icon(c, icons.Get("chevron-down")).Size(theme.IconXs, theme.IconXs)
 	})
-	kit.Popover(c, chip, &a.syncOpen, func() { a.syncMenu(c, hs) })
+	kit.PopoverAt(c, chip, &a.syncOpen, ui.AnchorBottomEnd, ui.AnchorTopEnd, theme.PopupOffset, func() { a.syncMenu(c, hs) })
 }
 
 // syncMenu lists each account: its state, why, and what to do about it.
 func (a *App) syncMenu(c *ui.Context, hs []syncHealth) {
 	t, th := theme.Of(c), c.Theme()
 	small := t.Text.Sm
-	indent := theme.StatusDot + th.Space(2) // under the account name, past its dot
+	xs := t.Text.Xs
+	indent := float32(theme.MarkSm) + th.Space(2) // under the account name, past its icon
 	act := func(f func()) func() { return func() { a.syncOpen = false; f() } }
-	ui.Column(c).Width(theme.SyncMenuWidth).Gap(th.Space(3)).Children(func() {
-		ui.Row(c).AlignItems(ui.Center).Gap(th.Space(2)).Children(func() {
-			ui.Text(c, i18n.T("shell.sync.title")).FontWeight(600).Grow(1)
-			kit.Button(c, i18n.T("shell.sync.all"), kit.ButtonOpts{Variant: kit.Ghost, Size: kit.SizeSm, Icon: "refresh-cw"}).OnClick(act(a.SyncAll))
+	// No taller than the window below the title bar: the popover's offset and padding, and the window's bottom inset.
+	_, winH := c.Size()
+	maxH := winH - c.TitleBar().Height - theme.PopupOffset - 2*th.Space(3) - th.Space(2)
+	ui.Column(c).Width(theme.SyncMenuWidth).MaxHeight(maxH).Gap(th.Space(3)).Children(func() {
+		ui.Row(c).Shrink(0).AlignItems(ui.Center).Justify(ui.SpaceBetween).Gap(th.Space(2)).Children(func() {
+			kit.Text(c, i18n.T("shell.sync.title"), small).FontWeight(600).Shrink(0)
+			kit.Button(c, i18n.T("shell.sync.all"), kit.ButtonOpts{Variant: kit.Ghost, Size: kit.SizeSm, Icon: "refresh-cw"}).
+				FontSize(xs).Height(th.Space(6)).PaddingX(th.Space(2)).Shrink(0).OnClick(act(a.SyncAll))
 		})
-		for _, h := range hs {
-			kit.Separator(c, false)
-			ui.Column(c.Key(h.acc.ID)).Gap(th.Space(1)).Children(func() {
-				ui.Row(c).AlignItems(ui.Center).Gap(th.Space(2)).Children(func() {
+		// Out into the popover's right padding, so the bar runs there rather than over the statuses.
+		ui.Scroll(c).Shrink(1).Margin(0, -th.Space(3), 0, 0).Children(func() {
+			ui.Column(c).Padding(0, th.Space(3), 0, 0).Gap(th.Space(3)).Children(func() { a.syncAccounts(c, hs, indent, act) })
+		})
+	})
+}
+
+// syncAccounts is syncMenu's scrolling list: each account under a separator.
+func (a *App) syncAccounts(c *ui.Context, hs []syncHealth, indent float32, act func(func()) func()) {
+	t, th := theme.Of(c), c.Theme()
+	small, xs := t.Text.Sm, t.Text.Xs
+	for _, h := range hs {
+		kit.Separator(c, false)
+		ui.Column(c.Key(h.acc.ID)).Gap(th.Space(1)).Children(func() {
+			ui.Row(c).AlignItems(ui.Center).Justify(ui.SpaceBetween).Gap(th.Space(2)).Children(func() {
+				ui.Row(c).AlignItems(ui.Center).Gap(th.Space(2)).Shrink(1).Children(func() {
+					ui.Box(c).Size(theme.MarkSm, theme.MarkSm).Shrink(0).Children(func() {
+						a.accountIcon(c, h.acc, theme.MarkSm)
+					})
+					kit.Text(c, accountName(h.acc), small).FontWeight(500).SingleLine().Shrink(1)
+				})
+				ui.Row(c).AlignItems(ui.Center).Gap(th.Space(1.5)).Shrink(0).Children(func() {
 					if s, ok := syncDot(h.level); ok {
 						kit.StatusDot(c, s)
-					} else {
-						ui.Box(c).Size(theme.StatusDot, theme.StatusDot)
 					}
-					ui.Text(c, accountName(h.acc)).SingleLine().Grow(1).Shrink(1)
-					color := t.Muted
+					color := t.Foreground
 					switch h.level {
 					case syncAction:
 						color = t.DangerText
 					case syncRetrying:
 						color = t.WarningText
 					}
-					kit.Text(c, h.status, small).TextColor(color).SingleLine()
+					kit.Text(c, h.status, xs).TextColor(color).SingleLine()
 				})
-				if h.reason != "" {
-					r := kit.Text(c, h.reason, small).TextColor(t.Muted).Padding(0, 0, 0, indent)
-					if h.err != "" {
-						kit.Tooltip(c, r, h.err)
-					}
-				}
-				if len(h.actions) > 0 {
-					ui.Row(c).Gap(th.Space(2)).Padding(th.Space(1), 0, 0, indent).Children(func() {
-						for _, b := range h.actions {
-							o := kit.ButtonOpts{Variant: kit.Outline, Size: kit.SizeSm}
-							if b.primary {
-								o.Variant = kit.Default
-							}
-							kit.Button(c.Key(b.label), b.label, o).OnClick(act(b.do))
-						}
-					})
-				}
 			})
-		}
-	})
+			if h.reason != "" {
+				r := kit.Text(c, h.reason, xs).TextColor(t.Muted).Padding(0, 0, 0, indent)
+				if h.err != "" {
+					kit.Tooltip(c, r, h.err)
+				}
+			}
+			if len(h.actions) > 0 {
+				ui.Row(c).Gap(th.Space(2)).Padding(th.Space(1), 0, 0, indent).Children(func() {
+					for _, b := range h.actions {
+						o := kit.ButtonOpts{Variant: kit.Outline, Size: kit.SizeSm}
+						if b.primary {
+							o.Variant = kit.Default
+						}
+						kit.Button(c.Key(b.label), b.label, o).FontSize(xs).OnClick(act(b.do))
+					}
+				})
+			}
+		})
+	}
 }
 
 // accountMark is the account's provider mark or custom icon, with a badge on its corner
