@@ -95,3 +95,19 @@ func TestBodyTranslationRejectsIncompleteAnswer(t *testing.T) {
 		})
 	}
 }
+
+// A value with a line break or a quote restores after the model's JSON
+// is parsed: restored before, it would break the JSON.
+func TestBodyTranslationRestoresAfterParsing(t *testing.T) {
+	const pem = "-----BEGIN RSA PRIVATE KEY-----\nMIIEowIBAAKCAQEA\n-----END RSA PRIVATE KEY-----"
+	e := newSkillEnv(t)
+	setBody(t, e, "Key "+pem, "")
+	mk, err := e.s.masker()
+	require.NoError(t, err)
+	p, err := mk.Text(pem)
+	require.NoError(t, err)
+	e.srv.Script(testllm.Turn{Text: []string{`{"texts":["Clé ` + p + `"],"source":"en"}`}})
+	evs := e.run(t, "translate", Target{Kind: "message", ID: e.msg, PreserveHTML: true})
+	require.Equal(t, "done", evs[len(evs)-1].Kind, "%+v", evs)
+	assert.Equal(t, map[string]string{"Key " + pem: "Clé " + pem}, evs[1].Translations)
+}

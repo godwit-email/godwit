@@ -45,6 +45,25 @@ func TestQuickRepliesThree(t *testing.T) {
 	assert.Len(t, e.srv.Requests(), 2)
 }
 
+// A value with a quote restores after the model's JSON is parsed: restored
+// before, it would break the JSON.
+func TestQuickRepliesRestoreAfterParsing(t *testing.T) {
+	e := newSkillEnv(t)
+	st, _ := e.s.GetSettings(t.Context())
+	st.MaskWords = []string{`Fal"con`}
+	_, err := e.s.SetSettings(t.Context(), st)
+	require.NoError(t, err)
+	mk, err := e.s.masker()
+	require.NoError(t, err)
+	p, err := mk.Text(`Fal"con`)
+	require.NoError(t, err)
+	e.srv.Script(testllm.Turn{Text: []string{`{"replies":[{"html":"<p>On ` + p + ` &amp; more</p>"}]}`}})
+	rs, err := e.s.QuickReplies(t.Context(), e.msg)
+	require.NoError(t, err)
+	require.Len(t, rs, 1)
+	assert.Equal(t, `On Fal"con & more`, rs[0].Preview)
+}
+
 func TestQuickRepliesOff(t *testing.T) {
 	e := newSkillEnv(t)
 	st, _ := e.s.GetSettings(t.Context())

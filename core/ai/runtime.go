@@ -156,7 +156,7 @@ func (e *Engine) instance(ctx context.Context, m ResolvedModel) (*instance, erro
 // the events (sends give up when ctx ends).
 func (e *Engine) Run(ctx context.Context, req Request) (<-chan Event, func() Result) {
 	// One slot more than the events use: the terminal event always fits.
-	r := &runner{e: e, ctx: ctx, ch: make(chan Event, eventBuffer+1), key: req.Model.APIKey, reasoning: req.Reasoning, args: req.Args}
+	r := &runner{e: e, ctx: ctx, ch: make(chan Event, eventBuffer+1), key: req.Model.APIKey, reasoning: req.Reasoning, raw: req.Raw, args: req.Args}
 	done := make(chan struct{})
 	var res Result
 	go func() {
@@ -186,6 +186,7 @@ type runner struct {
 	key string
 	// reasoning: Request.Reasoning
 	reasoning bool
+	raw       bool                                                            // Request.Raw
 	args      func(context.Context, json.RawMessage) (json.RawMessage, error) // Request.Args
 	usage     Usage                                                           // so far, under mu
 
@@ -240,7 +241,7 @@ func (r *runner) finish(ev Event) {
 // the stream left cut. Called holding mu.
 func (r *runner) restored(ev Event) []Event {
 	m := r.e.Masker
-	if m == nil {
+	if m == nil || r.raw {
 		return []Event{ev}
 	}
 	var out []Event

@@ -83,13 +83,16 @@ func (s *Service) runBodyTranslation(ctx context.Context, end func(), sk skills.
 		call = func(ctx context.Context, req translateRequest) (translateResult, error) {
 			b, _ := json.Marshal(req.Texts)
 			prompt := ai.Untrusted(fmt.Sprintf("message:%d", t.ID), string(b), ai.InjectionQuote(strings.Join(req.Texts, "\n")) != "")
-			text, err := s.runText(ctx, e, ai.Request{Model: model, System: system, Prompt: prompt, MaxTurns: 1}, 128<<10)
+			text, err := s.runText(ctx, e, ai.Request{Model: model, System: system, Prompt: prompt, MaxTurns: 1, Raw: true}, 128<<10)
 			if err != nil {
 				return translateResult{}, err
 			}
 			var res translateResult
 			if err := json.Unmarshal([]byte(text), &res); err != nil {
 				return res, fmt.Errorf("translation returned invalid JSON: %w", err)
+			}
+			for i, t := range res.Texts {
+				res.Texts[i] = e.Masker.Restore(t)
 			}
 			return res, nil
 		}

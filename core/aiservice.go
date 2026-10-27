@@ -374,7 +374,7 @@ func (s *Service) QuickReplies(ctx context.Context, messageID int64) ([]QuickRep
 	if err != nil {
 		return nil, err
 	}
-	events, wait := e.Run(ctx, ai.Request{Model: model, System: system, Prompt: strings.Join(blocks, "\n\n"), MaxTurns: 1})
+	events, wait := e.Run(ctx, ai.Request{Model: model, System: system, Prompt: strings.Join(blocks, "\n\n"), MaxTurns: 1, Raw: true})
 	var text strings.Builder
 	for ev := range events {
 		switch ev.Kind {
@@ -389,7 +389,7 @@ func (s *Service) QuickReplies(ctx context.Context, messageID int64) ([]QuickRep
 	}
 
 	x := s.linkExpander()
-	rs, err := parseQuickReplies(text.String(), func(h string) string { return x.text(ctx, h) })
+	rs, err := parseQuickReplies(text.String(), func(h string) string { return x.text(ctx, e.Masker.RestoreHTML(h)) })
 	if err != nil {
 		return nil, err
 	}

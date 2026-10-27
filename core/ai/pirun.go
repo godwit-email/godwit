@@ -79,7 +79,11 @@ func (r *runner) runPi(req Request) Result {
 	if e := piError(res, preq.API == "openai-codex-responses"); e != nil {
 		return Result{Err: e}
 	}
-	return Result{Messages: []Message{{Role: "user", Text: req.Prompt}, {Role: "model", Text: r.e.Masker.Restore(mask.DropCut(reply.String()))}}}
+	text := reply.String()
+	if !req.Raw {
+		text = r.e.Masker.Restore(mask.DropCut(text))
+	}
+	return Result{Messages: []Message{{Role: "user", Text: req.Prompt}, {Role: "model", Text: text}}}
 }
 
 // maskHook is how a run masks its requests with m: off this device and with

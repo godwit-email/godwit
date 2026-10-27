@@ -8,6 +8,8 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/godwit-email/godwit/core/ai/mask"
 )
 
 // Generator is one plain text generation: no tools, one turn.
@@ -22,11 +24,12 @@ const genJudgeSystem = `You answer typed questions about the text in the user me
 
 // NewGenJudge answers with the generation model when no judge service is
 // configured. Its yes/no probabilities are 0 or 1 and its scores are integer
-// levels; the answers pass the same validation as the judge APIs'.
-func NewGenJudge(gen Generator) Judge {
+// levels; the answers pass the same validation as the judge APIs'. m, if
+// set, restores the answers: gen's run sends its reply raw (Request.Raw).
+func NewGenJudge(gen Generator, m *mask.Masker) Judge {
 	return judge{func(ctx context.Context, input string, qs []Question) ([]Answer, error) {
 		return genAsk(ctx, gen, input, qs)
-	}, 60 * time.Second, nil} // the generation run restores its reply
+	}, 60 * time.Second, m}
 }
 
 // GenJudgeQuestions is the questions as NewGenJudge's prompt carries them,

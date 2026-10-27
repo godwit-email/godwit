@@ -160,6 +160,10 @@ type Request struct {
 	Effort string
 	// Session, if set, keys the service's prompt cache for a conversation's runs.
 	Session string
+	// Raw: a one-off's reply comes as the model wrote it, its placeholders
+	// (脱敏) and all, for a caller that parses it (JSON) restores the values
+	// in what it parsed: a value with a quote or a line break would break it.
+	Raw bool
 }
 
 // Result is how a run ended. A successful run of a History is saved through

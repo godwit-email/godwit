@@ -994,8 +994,8 @@ func (s *Service) resolveJudge(ctx context.Context) (j ai.Judge, label string, g
 		return nil, "", false, err
 	}
 	return ai.NewGenJudge(func(ctx context.Context, system, prompt string) (string, error) {
-		return s.runText(ctx, e, ai.Request{Model: model, System: system, Prompt: prompt, MaxTurns: 1}, maxJudgeText)
-	}), ref, true, nil
+		return s.runText(ctx, e, ai.Request{Model: model, System: system, Prompt: prompt, MaxTurns: 1, Raw: true}, maxJudgeText)
+	}, e.Masker), ref, true, nil
 }
 
 // maxJudgeText caps a generated judge answer: a JSON object of short answers.
