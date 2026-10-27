@@ -30,6 +30,34 @@ func TestMaskingIsOnByDefault(t *testing.T) {
 	assert.False(t, m.On())
 }
 
+// Codes, phones and addresses are each masked unless turned off, for
+// settings stored before they were too; the masker follows the switch.
+func TestEachCategoryIsOnUntilTurnedOff(t *testing.T) {
+	e := newApprovalEnv(t)
+	_, err := e.s.db.Execute(t.Context(), "INSERT INTO settings(key, value) VALUES ('app', ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value", `{"Theme":"dark","SettingsVersion":4,"Masking":true}`)
+	require.NoError(t, err)
+	st, err := e.s.GetSettings(t.Context())
+	require.NoError(t, err)
+	assert.Equal(t, map[string]bool{"secret": true, "code": true, "phone": true, "email": true}, st.MaskCategories)
+
+	m, err := e.s.masker()
+	require.NoError(t, err)
+	st.MaskCategories["phone"] = false
+	_, err = e.s.SetSettings(t.Context(), st)
+	require.NoError(t, err)
+	out, err := m.Text("Call +86 138 1234 5678 or ann@example.com")
+	require.NoError(t, err)
+	assert.True(t, strings.HasPrefix(out, "Call +86 138 1234 5678 or {{EMAIL_"), out)
+	st, err = e.s.GetSettings(t.Context())
+	require.NoError(t, err)
+	assert.False(t, st.MaskCategories["phone"])
+	assert.True(t, st.MaskCategories["email"])
+
+	st.MaskCategories["fax"] = false
+	_, err = e.s.SetSettings(t.Context(), st)
+	require.Error(t, err)
+}
+
 // Wit sends the card as a placeholder, and the user sees the card where the
 // model wrote the placeholder: live, in the conversation, and after a
 // restart, when the card gets the same placeholder again.

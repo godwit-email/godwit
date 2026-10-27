@@ -36,14 +36,17 @@ func (s *Service) masker() (*mask.Masker, error) {
 	}
 	s.mask = mask.New([]byte(store.Str(rows.Values[0][0])))
 	s.mask.SetOn(st.Masking)
+	s.mask.SetCategories(st.MaskCategories)
 	return s.mask, nil
 }
 
-// maskingChanged turns masking on or off as st says, once it exists.
+// maskingChanged turns masking and its categories on or off as st says,
+// once it exists.
 func (s *Service) maskingChanged(st Settings) {
 	s.maskMu.Lock()
 	defer s.maskMu.Unlock()
 	if s.mask != nil {
 		s.mask.SetOn(st.Masking)
+		s.mask.SetCategories(st.MaskCategories)
 	}
 }

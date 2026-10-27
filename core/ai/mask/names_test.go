@@ -20,6 +20,13 @@ func mailBody(t *testing.T, mail string) string {
 	}})
 }
 
+// namesMasker keeps addresses as they are: these tests are about names.
+func namesMasker() *mask.Masker {
+	m := mask.New(key)
+	m.SetCategories(map[string]bool{mask.CatEmail: false})
+	return m
+}
+
 // marshal is v as JSON, < > & as they are.
 func marshal(t *testing.T, v any) string {
 	var b strings.Builder
@@ -30,7 +37,7 @@ func marshal(t *testing.T, v any) string {
 }
 
 func TestMasksADisplayNameInTheHeaderAndTheText(t *testing.T) {
-	m := mask.New(key)
+	m := namesMasker()
 	m.SetNames(true)
 	in := mailBody(t, "Subject: 周报\nFrom: 张三 <zhang@example.com>\nTo: \"Li, Na\" <li@example.com>, Robert Smith <bob@example.com>\n\n李娜你好，张三这周休假。Robert Smith 代班, Li, Na 知道。")
 	out, err := m.Body(in)
@@ -50,7 +57,7 @@ func TestMasksADisplayNameInTheHeaderAndTheText(t *testing.T) {
 }
 
 func TestNamesAreNotMaskedWhenOff(t *testing.T) {
-	m := mask.New(key)
+	m := namesMasker()
 	in := mailBody(t, "From: 张三 <zhang@example.com>\n\n张三这周休假。")
 	out, err := m.Body(in)
 	require.NoError(t, err)
@@ -66,7 +73,7 @@ func TestNamesAreNotMaskedWhenOff(t *testing.T) {
 }
 
 func TestAShortDisplayNameIsNotMasked(t *testing.T) {
-	m := mask.New(key)
+	m := namesMasker()
 	m.SetNames(true)
 	for _, mail := range []string{
 		"From: Al <al@example.com>\n\nAl said the deal is final.",
@@ -80,7 +87,7 @@ func TestAShortDisplayNameIsNotMasked(t *testing.T) {
 }
 
 func TestANameIsMatchedAsAWholeWord(t *testing.T) {
-	m := mask.New(key)
+	m := namesMasker()
 	m.SetNames(true)
 	out, err := m.Text("From: Mark Lee <mark@example.com>\n\nMark Leeds wrote to Mark Lee.")
 	require.NoError(t, err)
@@ -90,7 +97,7 @@ func TestANameIsMatchedAsAWholeWord(t *testing.T) {
 // The model wrote a name it was given into a draft's recipients: restored,
 // the call goes; a made-up NAME_ placeholder refuses it.
 func TestRestoresANameInToolArguments(t *testing.T) {
-	m := mask.New(key)
+	m := namesMasker()
 	m.SetNames(true)
 	out, err := m.Text("From: 张三 <zhang@example.com>")
 	require.NoError(t, err)

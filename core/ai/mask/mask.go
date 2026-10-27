@@ -13,6 +13,7 @@ import (
 	"errors"
 	"fmt"
 	"html"
+	"maps"
 	"regexp"
 	"slices"
 	"strings"
@@ -27,6 +28,7 @@ import (
 type Masker struct {
 	key     []byte
 	off     atomic.Bool
+	cats    atomic.Pointer[map[string]bool]
 	namesOn atomic.Bool
 
 	mu      sync.RWMutex
@@ -48,6 +50,33 @@ func (m *Masker) On() bool { return !m.off.Load() }
 
 // SetOn turns masking on or off.
 func (m *Masker) SetOn(on bool) { m.off.Store(!on) }
+
+// The categories masking is turned on and off by; each kind is of one.
+const (
+	CatSecret = "secret" // keys, ID and card numbers
+	CatCode   = "code"   // sign-in codes and one-time links
+	CatPhone  = "phone"
+	CatEmail  = "email"
+)
+
+// Categories are all the categories.
+var Categories = []string{CatSecret, CatCode, CatPhone, CatEmail}
+
+// SetCategories turns each category in cats on or off; one not in it is on.
+func (m *Masker) SetCategories(cats map[string]bool) {
+	cats = maps.Clone(cats)
+	m.cats.Store(&cats)
+}
+
+// catOn says whether the values of category cat are masked.
+func (m *Masker) catOn(cat string) bool {
+	if cats := m.cats.Load(); cats != nil {
+		if on, ok := (*cats)[cat]; ok {
+			return on
+		}
+	}
+	return true
+}
 
 var b32 = base32.StdEncoding.WithPadding(base32.NoPadding)
 
@@ -112,7 +141,7 @@ func (m *Masker) text(s string, defuse bool) (out string, err error) {
 	}
 	var b strings.Builder
 	last := 0
-	for _, sp := range find(s, m.nameSpans(s)) {
+	for _, sp := range find(s, m.catOn, m.nameSpans(s)) {
 		p, err := m.placeholder(sp.kind, s[sp.start:sp.end])
 		if err != nil {
 			return "", err

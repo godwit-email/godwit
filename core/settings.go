@@ -10,6 +10,7 @@ import (
 	"strings"
 
 	"github.com/godwit-email/godwit/core/ai"
+	"github.com/godwit-email/godwit/core/ai/mask"
 	"github.com/godwit-email/godwit/core/events"
 	gomail "github.com/godwit-email/godwit/core/mail"
 	"github.com/godwit-email/godwit/core/skills"
@@ -55,6 +56,9 @@ type Settings struct {
 	// card numbers go to a model off this device as placeholders. On by
 	// default, for settings stored before it too.
 	Masking bool
+	// MaskCategories turns each of masking's categories (mask.Categories)
+	// on or off; all on by default, a category added later too.
+	MaskCategories map[string]bool
 	// LabelDisplay is how label chips show: LabelDisplayBoth (the default;
 	// "" too), LabelDisplayIcon or LabelDisplayText.
 	LabelDisplay string
@@ -123,7 +127,17 @@ func defaultSettings() Settings {
 	return Settings{Theme: "system", Density: "compact", FontSize: 14, SettingsVersion: settingsVersion, ReplyLanguage: "match", RemoteImages: "auto",
 		KeepInBackground: true, UnreadOnAppIcon: true, NotifyNewMail: true, NotifyPreview: true, ThreadView: true,
 		ThreadCollapse: true, ThreadCollapseThreshold: DefaultThreadCollapse, AutoLabel: true, LabelDisplay: LabelDisplayBoth, JudgeThreshold: 0.8,
-		MCPSend: MCPSendConfirm, Masking: true}
+		MCPSend: MCPSendConfirm, Masking: true, MaskCategories: maskCategories()}
+}
+
+// maskCategories is every category on: stored settings are read over it,
+// so a category they lack stays on.
+func maskCategories() map[string]bool {
+	cats := map[string]bool{}
+	for _, c := range mask.Categories {
+		cats[c] = true
+	}
+	return cats
 }
 
 var langRE = regexp.MustCompile(`^[A-Za-z]{2,3}(-[A-Za-z0-9]{2,8})*$`)
@@ -136,6 +150,11 @@ func (st Settings) validate() error {
 			}
 		}
 		return false
+	}
+	for cat := range st.MaskCategories {
+		if !slices.Contains(mask.Categories, cat) {
+			return fmt.Errorf("invalid masking category %q", cat)
+		}
 	}
 	switch {
 	case !in(st.Theme, "system", "light", "dark"):
