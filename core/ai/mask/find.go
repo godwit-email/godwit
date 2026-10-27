@@ -64,8 +64,8 @@ var rules = []rule{
 	// an address's user name: its domain goes as it is, for labels and sorting go by it
 	{kind: "EMAIL", bound: tokenCh + ".%+", re: regexp.MustCompile(`([A-Za-z0-9._%+-]+)@[A-Za-z0-9](?:[A-Za-z0-9-]*[A-Za-z0-9])?(?:\.[A-Za-z0-9](?:[A-Za-z0-9-]*[A-Za-z0-9])?)*\.[A-Za-z]{2,}`)},
 
-	{kind: "CODE", bound: alnum, match: codes},
-	{kind: "LINK", match: links},
+	{kind: "CODE", bound: alnum, match: memo(codes)},
+	{kind: "LINK", match: memo(links)},
 }
 
 // span is a value found at s[start:end].

@@ -3,6 +3,7 @@ package mask
 import (
 	"regexp"
 	"strings"
+	"sync"
 
 	"github.com/godwit-email/godwit/core/mail"
 )
@@ -73,3 +74,30 @@ func links(s string) [][]int {
 	})
 	return out
 }
+
+// memo is f, which reads s alone, remembering what it found: a run sends
+// its whole history again at each step, and mail's recognizers are slow.
+func memo(f func(s string) [][]int) func(s string) [][]int {
+	var mu sync.Mutex
+	seen, size := map[string][][]int{}, 0
+	return func(s string) [][]int {
+		mu.Lock()
+		locs, ok := seen[s]
+		mu.Unlock()
+		if ok {
+			return locs
+		}
+		locs = f(s)
+		mu.Lock()
+		defer mu.Unlock()
+		if size += len(s); size > memoBytes {
+			clear(seen) // shortcut: forgets everything at once, enough while one history fits
+			size = len(s)
+		}
+		seen[s] = locs
+		return locs
+	}
+}
+
+// memoBytes bounds the text memo keeps.
+const memoBytes = 16 << 20
