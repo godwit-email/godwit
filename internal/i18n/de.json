@@ -1246,5 +1246,17 @@
   "wit_ctx_until": "Noch {arg1} % bis zum automatischen Verdichten",
   "wit_ctx_compact": "Verdichten",
   "wit_model_changed": "Modell geändert: {arg1}",
-  "settings_models_apple_intelligence_sub": "Lokal auf diesem Mac"
+  "settings_models_apple_intelligence_sub": "Lokal auf diesem Mac",
+  "reader_copy_address": "Adresse kopieren",
+  "reader_address_copied": "Adresse kopiert",
+  "reader_block_sender": "Absender blockieren",
+  "reader_unblock_sender": "Blockierung aufheben",
+  "reader_blocked_badge": "Blockiert",
+  "reader_sender_blocked": "Absender blockiert",
+  "reader_sender_unblocked": "Blockierung aufgehoben",
+  "settings_blocked": "Blockierte Absender",
+  "settings_blocked_sub": "E-Mails von blockierten Absendern werden automatisch in den Spam verschoben.",
+  "settings_blocked_none": "Keine blockierten Absender.",
+  "settings_blocked_remove": "Entfernen",
+  "settings_blocked_remove_label": "Blockierung für {arg1} aufheben"
 }

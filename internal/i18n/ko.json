@@ -1246,5 +1246,17 @@
   "wit_ctx_until": "자동 압축까지 {arg1}% 남음",
   "wit_ctx_compact": "대화 압축",
   "wit_model_changed": "모델 변경됨: {arg1}",
-  "settings_models_apple_intelligence_sub": "이 Mac의 온디바이스 인텔리전스"
+  "settings_models_apple_intelligence_sub": "이 Mac의 온디바이스 인텔리전스",
+  "reader_copy_address": "주소 복사",
+  "reader_address_copied": "주소가 복사되었습니다",
+  "reader_block_sender": "보낸 사람 차단",
+  "reader_unblock_sender": "보낸 사람 차단 해제",
+  "reader_blocked_badge": "차단됨",
+  "reader_sender_blocked": "보낸 사람이 차단되었습니다",
+  "reader_sender_unblocked": "보낸 사람 차단이 해제되었습니다",
+  "settings_blocked": "차단된 보낸 사람",
+  "settings_blocked_sub": "차단된 보낸 사람의 수신 메일은 자동으로 정크 메일로 이동됩니다.",
+  "settings_blocked_none": "차단된 보낸 사람이 없습니다.",
+  "settings_blocked_remove": "차단 해제",
+  "settings_blocked_remove_label": "{arg1} 차단 해제"
 }

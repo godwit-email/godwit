@@ -1246,5 +1246,17 @@
   "wit_ctx_until": "Nog {arg1}% tot automatisch comprimeren",
   "wit_ctx_compact": "Comprimeren",
   "wit_model_changed": "Model gewijzigd: {arg1}",
-  "settings_models_apple_intelligence_sub": "Lokaal op deze Mac"
+  "settings_models_apple_intelligence_sub": "Lokaal op deze Mac",
+  "reader_copy_address": "Adres kopiëren",
+  "reader_address_copied": "Adres gekopieerd",
+  "reader_block_sender": "Afzender blokkeren",
+  "reader_unblock_sender": "Afzender deblokkeren",
+  "reader_blocked_badge": "Geblokkeerd",
+  "reader_sender_blocked": "Afzender geblokkeerd",
+  "reader_sender_unblocked": "Afzender gedeblokkeerd",
+  "settings_blocked": "Geblokkeerde afzenders",
+  "settings_blocked_sub": "Inkomende berichten van geblokkeerde afzenders worden automatisch verplaatst naar Ongewenst.",
+  "settings_blocked_none": "Geen geblokkeerde afzenders.",
+  "settings_blocked_remove": "Deblokkeren",
+  "settings_blocked_remove_label": "Deblokkeer {arg1}"
 }

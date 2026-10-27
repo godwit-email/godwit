@@ -11,6 +11,7 @@ import (
 
 	"github.com/godwit-email/godwit/core/ai"
 	"github.com/godwit-email/godwit/core/events"
+	gomail "github.com/godwit-email/godwit/core/mail"
 	"github.com/godwit-email/godwit/core/skills"
 	"github.com/godwit-email/godwit/core/store"
 )
@@ -63,6 +64,9 @@ type Settings struct {
 	// images load at once (始终信任此发件人). Only TrustImageSender and
 	// UntrustImageSender change it; SetSettings keeps the stored list.
 	TrustedImageSenders []string
+	// BlockedSenders are the lower-cased From addresses the user blocked.
+	// Only BlockSender and UnblockSender change it; SetSettings keeps the stored list.
+	BlockedSenders []string
 	// RemoteImages is when a message's remote images and sender avatars load, through the image
 	// proxy: "auto" (default, "" too) at once, "trusted" for the trusted
 	// senders only, "ask" after 加载图片. Mail in Junk never loads them by itself.
@@ -235,6 +239,7 @@ func (s *Service) SetSettings(ctx context.Context, st Settings) (Settings, error
 		return Settings{}, err
 	}
 	st.TrustedImageSenders = stored.TrustedImageSenders // a page's stale snapshot must not undo a trust
+	st.BlockedSenders = stored.BlockedSenders           // nor a blocked sender
 	st.DisabledBuiltins = stored.DisabledBuiltins       // nor a plugin switch
 	return s.storeSettings(ctx, st)
 }
@@ -282,7 +287,7 @@ func (s *Service) TrustImageSender(ctx context.Context, from string) error {
 		return fmt.Errorf("invalid sender address: %w", err)
 	}
 	addr := strings.ToLower(a.Address)
-	return s.editTrusted(ctx, func(l []string) ([]string, error) {
+	return s.editSenders(ctx, trustedSenders, func(l []string) ([]string, error) {
 		if slices.Contains(l, addr) {
 			return l, nil
 		}
@@ -296,13 +301,13 @@ func (s *Service) TrustImageSender(ctx context.Context, from string) error {
 // UntrustImageSender stops trusting addr.
 func (s *Service) UntrustImageSender(ctx context.Context, addr string) error {
 	addr = strings.ToLower(strings.TrimSpace(addr))
-	return s.editTrusted(ctx, func(l []string) ([]string, error) {
+	return s.editSenders(ctx, trustedSenders, func(l []string) ([]string, error) {
 		return slices.DeleteFunc(l, func(a string) bool { return a == addr }), nil
 	})
 }
 
-// editTrusted changes the trusted senders under settingsMu.
-func (s *Service) editTrusted(ctx context.Context, edit func([]string) ([]string, error)) error {
+// editSenders changes the sender list that field picks, under settingsMu.
+func (s *Service) editSenders(ctx context.Context, field func(*Settings) *[]string, edit func([]string) ([]string, error)) error {
 	ctx, end, err := s.begin(ctx, 0)
 	if err != nil {
 		return err
@@ -314,13 +319,44 @@ func (s *Service) editTrusted(ctx context.Context, edit func([]string) ([]string
 	if err != nil {
 		return err
 	}
-	l, err := edit(slices.Clone(st.TrustedImageSenders))
+	l, err := edit(slices.Clone(*field(&st)))
 	if err != nil {
 		return err
 	}
-	st.TrustedImageSenders = l
+	*field(&st) = l
 	_, err = s.storeSettings(ctx, st)
 	return err
+}
+
+func trustedSenders(st *Settings) *[]string { return &st.TrustedImageSenders }
+func blockedSenders(st *Settings) *[]string { return &st.BlockedSenders }
+
+const maxBlockedSenders = 1000
+
+// BlockSender blocks the address of from (a From header), keyed as
+// gomail.AddrKey so arrivals and the reader match it the same way.
+func (s *Service) BlockSender(ctx context.Context, from string) error {
+	addr := gomail.AddrKey(from)
+	if addr == "" || !strings.Contains(addr, "@") {
+		return fmt.Errorf("invalid sender address: %q", from)
+	}
+	return s.editSenders(ctx, blockedSenders, func(l []string) ([]string, error) {
+		if slices.Contains(l, addr) {
+			return l, nil
+		}
+		if len(l) >= maxBlockedSenders {
+			return nil, fmt.Errorf("at most %d blocked senders", maxBlockedSenders)
+		}
+		return append(l, addr), nil
+	})
+}
+
+// UnblockSender removes addr from the blocked senders list.
+func (s *Service) UnblockSender(ctx context.Context, addr string) error {
+	addr = gomail.AddrKey(addr)
+	return s.editSenders(ctx, blockedSenders, func(l []string) ([]string, error) {
+		return slices.DeleteFunc(l, func(a string) bool { return a == addr }), nil
+	})
 }
 
 // inJunk is whether folder f is junk, detected or given by the user, even

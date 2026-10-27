@@ -20,6 +20,7 @@ import (
 	"github.com/egoist/mygo/ui"
 	"github.com/godwit-email/godwit/core"
 	"github.com/godwit-email/godwit/core/ai"
+	gomail "github.com/godwit-email/godwit/core/mail"
 	"github.com/godwit-email/godwit/internal/i18n"
 	"github.com/godwit-email/godwit/internal/icons"
 	"github.com/godwit-email/godwit/internal/kit"
@@ -50,15 +51,17 @@ type reader struct {
 	bodies      map[int64]*msgBody
 	scroll      ui.ScrollState // the messages' scrolling; a body's page hands on the wheels it does not use
 
-	ai        map[int64]*msgAI         // by message; kept across switches so a summary runs once
-	aiCtx     context.Context          // the AI work of the key shown; nil until some starts
-	aiStop    context.CancelFunc       // cancels aiCtx
-	skills    fetch[[]core.SkillInfo]  // the skill menu: skills on messages but summarize and translate
-	actions   fetch[[]core.ActionInfo] // and plugin actions on messages
-	egress    egressAsk                // the action waiting for egress approval
-	egressDlg bool                     // its dialog shows
-	unsubAsk  int64                    // the message whose one-click unsubscribe waits to be confirmed
-	unsubDlg  bool                     // its dialog shows
+	ai          map[int64]*msgAI         // by message; kept across switches so a summary runs once
+	aiCtx       context.Context          // the AI work of the key shown; nil until some starts
+	aiStop      context.CancelFunc       // cancels aiCtx
+	skills      fetch[[]core.SkillInfo]  // the skill menu: skills on messages but summarize and translate
+	actions     fetch[[]core.ActionInfo] // and plugin actions on messages
+	egress      egressAsk                // the action waiting for egress approval
+	egressDlg   bool                     // its dialog shows
+	unsubAsk    int64                    // the message whose one-click unsubscribe waits to be confirmed
+	unsubDlg    bool                     // its dialog shows
+	senderOpen  bool                     // the sender action popover shows
+	senderMsgID int64                    // which message's sender popover is open
 
 	getThread  func(ctx context.Context, id int64) (core.Thread, error)                       // tests wrap it
 	getMessage func(ctx context.Context, id int64, remote bool) (core.Message, error)         // tests wrap it
@@ -147,6 +150,7 @@ func (r *reader) reset(k [2]int64) {
 	r.stopAI()
 	r.key, r.loaded, r.subject, r.msgs = k, false, "", nil
 	r.threadIDs, r.labels, r.labelMenu, r.labelQuery = nil, nil, false, ""
+	r.senderOpen, r.senderMsgID = false, 0
 	r.open, r.historyOpen, r.bodies = map[int64]bool{}, map[int64]bool{}, map[int64]*msgBody{}
 	r.scroll.X, r.scroll.Y = 0, 0
 	r.gen++
@@ -815,6 +819,9 @@ func (r *reader) folded(c *ui.Context, m core.MessageSummary) {
 	name, _ := sender(m.From)
 	kit.Pressable(c, kit.PressableOpts{Bordered: true, OnClick: func() { r.toggle(m.ID) }}).FillWidth().MaxWidth(theme.ReaderMaxWidth).AlignSelf(ui.Center).Gap(th.Space(3)).Padding(th.Space(2), th.Space(3)).Children(func() {
 		ui.Text(c, name).FontWeight(500).SingleLine().Shrink(0)
+		if r.isBlocked(m.From) {
+			kit.Badge(c, i18n.T("reader.blocked_badge"))
+		}
 		ui.Text(c, m.Snippet).TextColor(t.Muted).SingleLine().Grow(1).Shrink(1)
 		kit.Text(c, listTime(r.p.a.clock.Now(), m.Date), t.Text.Sm).TextColor(t.Muted).Shrink(0)
 	})
@@ -866,7 +873,8 @@ func (r *reader) message(c *ui.Context, m core.MessageSummary) {
 				fold = func() { r.toggle(m.ID) }
 			}
 			ui.Row(c).Gap(th.Space(2)).AlignItems(ui.Center).Children(func() {
-				kit.Pressable(c, kit.PressableOpts{OnClick: fold}).Grow(1).Shrink(1).Gap(th.Space(2.5)).Children(func() {
+				btn := kit.Pressable(c, kit.PressableOpts{OnClick: fold}).Gap(th.Space(2.5))
+				btn.Children(func() {
 					// Until the avatar is fetched or refused, a pulse; then the image or the initial.
 					if b == nil || b.err == nil && !b.ready || b.avatarStop != nil {
 						kit.Skeleton(c, th.Space(8), th.Space(8)).Radius(t.Radius.Lg).Shrink(0).Label(name)
@@ -874,16 +882,39 @@ func (r *reader) message(c *ui.Context, m core.MessageSummary) {
 						kit.AvatarImage(c, name, b.avatar)
 					}
 					ui.Column(c).Shrink(1).Children(func() {
-						ui.Row(c).Gap(th.Space(1)).Children(func() {
+						ui.Row(c).Gap(th.Space(1)).AlignItems(ui.Center).Children(func() {
 							ui.Text(c, name).FontWeight(500).SingleLine()
 							if addr != "" && addr != name {
 								ui.Text(c, "<"+addr+">").TextColor(t.Muted).SingleLine()
+							}
+							if r.isBlocked(m.From) {
+								kit.Badge(c, i18n.T("reader.blocked_badge"))
 							}
 						})
 						when := senderDate(r.p.a.clock.Now(), m.Date)
 						kit.Text(c, i18n.Tf("reader.to", r.recipients(m), when), t.Text.Sm).TextColor(t.Muted)
 					})
 				})
+				target := cmp.Or(addr, m.From)
+				chev := kit.Pressable(c, kit.PressableOpts{
+					OnClick: func() {
+						if r.senderOpen && r.senderMsgID == m.ID {
+							r.senderOpen = false
+						} else {
+							r.senderOpen = true
+							r.senderMsgID = m.ID
+						}
+					},
+				}).Size(th.Space(6), th.Space(6)).Radius(t.Radius.Md).Center().Label(target)
+				chev.Children(func() {
+					ui.Icon(c, icons.Get("chevron-down")).Size(theme.IconXs, theme.IconXs).TextColor(t.Muted)
+				})
+				if r.senderOpen && r.senderMsgID == m.ID {
+					kit.Popover(c, chev, &r.senderOpen, func() {
+						r.senderPopover(c, addr, m.From)
+					})
+				}
+				ui.Spacer(c)
 				if b != nil && b.unsub.Method != "" { // each message by its own headers
 					if b.unsubbing {
 						kit.Spinner(c)
@@ -1221,6 +1252,86 @@ func (r *reader) unsubscribeDialog(c *ui.Context) {
 		if kit.Button(c, i18n.T("reader.unsubscribe"), kit.ButtonOpts{}).AutoFocus().Clicked() {
 			r.unsubDlg = false
 			r.sendUnsubscribe(id)
+		}
+	})
+}
+
+// isBlocked is whether from (a From header or its address) is a blocked sender.
+func (r *reader) isBlocked(from string) bool {
+	return slices.Contains(r.p.a.settings.BlockedSenders, gomail.AddrKey(from))
+}
+
+// setBlocked blocks or unblocks from's address, in core and then in the
+// settings shown, so the badge and lists change at once; done follows success.
+func (a *App) setBlocked(from string, block bool, done func()) {
+	a.do(func(ctx context.Context) error {
+		if block {
+			return a.svc.BlockSender(ctx, from)
+		}
+		return a.svc.UnblockSender(ctx, from)
+	}, func(err error) {
+		if err != nil {
+			a.toastErr(err)
+			return
+		}
+		key := gomail.AddrKey(from)
+		l := slices.DeleteFunc(slices.Clone(a.settings.BlockedSenders), func(s string) bool { return s == key })
+		if block {
+			l = append(l, key)
+		}
+		a.settings.BlockedSenders = l
+		if done != nil {
+			done()
+		}
+	})
+}
+
+func (r *reader) senderPopover(c *ui.Context, addr, rawFrom string) {
+	target := addr
+	if target == "" {
+		target = rawFrom
+	}
+	if target == "" {
+		return
+	}
+	t, th := theme.Of(c), c.Theme()
+	closeMenu := func(act func()) func() {
+		return func() {
+			r.senderOpen = false
+			if act != nil {
+				act()
+			}
+		}
+	}
+
+	ui.Column(c).Width(theme.SenderMenuWidth).Gap(th.Space(1)).Children(func() {
+		row := func(label, iconName string, danger bool, onClick func()) {
+			color := t.Foreground
+			if danger {
+				color = t.DangerText
+			}
+			p := kit.Pressable(c, kit.PressableOpts{OnClick: onClick}).
+				FillWidth().Padding(th.Space(1.5), th.Space(2)).
+				Radius(t.Radius.Md).Gap(th.Space(2.5)).AlignItems(ui.Center).Label(label)
+			p.Children(func() {
+				ui.Icon(c, icons.Get(iconName)).Size(theme.Icon, theme.Icon).TextColor(color)
+				ui.Text(c, label).TextColor(color).SingleLine()
+			})
+		}
+
+		row(i18n.T("reader.copy_address"), "copy", false, closeMenu(func() {
+			c.WriteClipboard(target)
+			r.p.a.toast(i18n.T("reader.address_copied"))
+		}))
+
+		if r.isBlocked(target) {
+			row(i18n.T("reader.unblock_sender"), "shield", false, closeMenu(func() {
+				r.p.a.setBlocked(target, false, func() { r.p.a.toast(i18n.T("reader.sender_unblocked")) })
+			}))
+		} else {
+			row(i18n.T("reader.block_sender"), "spam", true, closeMenu(func() {
+				r.p.a.setBlocked(target, true, func() { r.p.a.toast(i18n.T("reader.sender_blocked")) })
+			}))
 		}
 	})
 }

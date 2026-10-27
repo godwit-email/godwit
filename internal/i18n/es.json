@@ -1246,5 +1246,17 @@
   "wit_ctx_until": "Quedan {arg1} % para compactar automáticamente",
   "wit_ctx_compact": "Compactar",
   "wit_model_changed": "Modelo cambiado: {arg1}",
-  "settings_models_apple_intelligence_sub": "En este dispositivo"
+  "settings_models_apple_intelligence_sub": "En este dispositivo",
+  "reader_copy_address": "Copiar dirección",
+  "reader_address_copied": "Dirección copiada",
+  "reader_block_sender": "Bloquear remitente",
+  "reader_unblock_sender": "Desbloquear remitente",
+  "reader_blocked_badge": "Bloqueado",
+  "reader_sender_blocked": "Remitente bloqueado",
+  "reader_sender_unblocked": "Remitente desbloqueado",
+  "settings_blocked": "Remitentes bloqueados",
+  "settings_blocked_sub": "Los mensajes entrantes de remitentes bloqueados se mueven automáticamente al correo no deseado.",
+  "settings_blocked_none": "No hay remitentes bloqueados.",
+  "settings_blocked_remove": "Desbloquear",
+  "settings_blocked_remove_label": "Desbloquear {arg1}"
 }
