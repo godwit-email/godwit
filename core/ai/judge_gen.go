@@ -26,7 +26,7 @@ const genJudgeSystem = `You answer typed questions about the text in the user me
 func NewGenJudge(gen Generator) Judge {
 	return judge{func(ctx context.Context, input string, qs []Question) ([]Answer, error) {
 		return genAsk(ctx, gen, input, qs)
-	}, 60 * time.Second}
+	}, 60 * time.Second, nil} // the generation run restores its reply
 }
 
 // GenJudgeQuestions is the questions as NewGenJudge's prompt carries them,
