@@ -185,10 +185,11 @@ func (w *walker) ws(i int) int {
 	return i
 }
 
-// member is an object's key and its value at in[start:end].
+// member is an object's key, at in[kstart:kend], and its value at in[start:end].
 type member struct {
-	key        string
-	start, end int
+	key          string
+	kstart, kend int
+	start, end   int
 }
 
 // value rewrites the value at in[i:] and returns its end.
@@ -216,6 +217,11 @@ func (w *walker) value(i int, sc scope) (int, bool) {
 				c.defs = mb.key != "text" || w.in[mb.start] == '{' // Responses' text is settings, a completion's is a prompt
 			case mb.key == "input" && (typ == "tool_use" || typ == "server_tool_use"):
 				c.tool = true
+			}
+			if sc.key == "criteria" && !sc.tool && !sc.defs { // System One's choices are its keys
+				if _, ok := w.value(mb.kstart, scope{key: sc.key, model: model}); !ok {
+					return i, false
+				}
 			}
 			if _, ok := w.value(mb.start, c); !ok {
 				return i, false
@@ -276,6 +282,7 @@ func (w *walker) members(i int) ([]member, int, bool) {
 		if i >= len(w.in) || w.in[i] != '"' {
 			return nil, i, false
 		}
+		kstart := i
 		kend, ok := w.skipString(i)
 		var k string
 		if !ok || json.Unmarshal([]byte(w.in[i:kend]), &k) != nil {
@@ -289,7 +296,7 @@ func (w *walker) members(i int) ([]member, int, bool) {
 		if !ok {
 			return nil, i, false
 		}
-		ms = append(ms, member{k, start, end})
+		ms = append(ms, member{k, kstart, kend, start, end})
 		switch i = w.ws(end); {
 		case i < len(w.in) && w.in[i] == ',':
 			i = w.ws(i + 1)

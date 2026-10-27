@@ -245,6 +245,58 @@ func TestAJudgeChoiceComesBackAsTheValue(t *testing.T) {
 	assert.Equal(t, "card "+testCard, got[0].Probabilities[0].Value)
 }
 
+// System One carries a choice as a key of its criteria: it goes as its
+// placeholder too, and the answer comes back as the choice itself.
+func TestASystemOneChoiceComesBackAsTheValue(t *testing.T) {
+	var got string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		b, _ := io.ReadAll(r.Body)
+		got = string(b)
+		var req struct {
+			Questions map[string]struct{ Criteria map[string]string }
+		}
+		json.Unmarshal(b, &req)
+		var v string
+		for k := range req.Questions["label"].Criteria {
+			if k != "none" {
+				v = k
+			}
+		}
+		json.NewEncoder(w).Encode(map[string]any{"answers": map[string]any{"label": map[string]any{"type": "choice", "choice": v,
+			"probabilities": map[string]float64{v: 0.8, "none": 0.2}}}})
+	}))
+	defer srv.Close()
+	_, m := maskedEngine(t)
+	j, err := NewJudge(nil, m, FormatSystemOne, srv.URL, "k", "m")
+	require.NoError(t, err)
+	got2, err := j.Ask(t.Context(), "mail", []Question{{Name: "label", Type: Choice, Instructions: "Which?",
+		Choices: []ChoiceOption{{Value: "none"}, {Value: "card " + testCard}}}})
+	require.NoError(t, err)
+	assert.NotContains(t, got, testCard)
+	assert.Contains(t, got, "{{BANK_CARD_")
+	assert.Equal(t, "card "+testCard, got2[0].Choice)
+}
+
+// Without a judge service the generation model answers from a prompt that is
+// all text, so a custom word can mask a question's name: the answer still
+// finds its question.
+func TestAGenJudgeAnswersAMaskedName(t *testing.T) {
+	_, m := maskedEngine(t)
+	require.NoError(t, m.Configure(mask.Config{Words: []string{"Acme"}}))
+	gen := func(_ context.Context, _, prompt string) (string, error) {
+		masked, err := m.Text(prompt)
+		require.NoError(t, err)
+		require.NotContains(t, masked, `"name":"acme"`)
+		name, _ := m.Text("acme")
+		return `{"answers":[{"name":"` + name + `","answer":"yes"}]}`, nil
+	}
+	got, err := NewGenJudge(gen, m).Ask(t.Context(), "mail", []Question{{Name: "acme", Type: Predicate, Instructions: "From Acme?"}})
+	require.NoError(t, err)
+	require.Len(t, got, 1)
+	assert.Equal(t, "acme", got[0].Name)
+	assert.Equal(t, 1.0, *got[0].Probability)
+}
+
 // A category set to 拦截 sends nothing: a run that would send it fails
 // naming it, at the step that would, and every request is recorded with
 // its run's feature.
