@@ -10,11 +10,13 @@ import (
 // box types no text with (the arrows, Enter, Tab, those with Cmd or Ctrl)
 // before it does, as ui's OnTextKey: true takes the key. Glass draws the
 // panel as frosted glass, for a window on a material; else it is opaque.
+// Chips, when set, builds the PaletteChips before the box.
 type PaletteOpts struct {
 	Label, Placeholder, Close string
 	OnKey                     func(k ui.TextKey) bool
 	Hints                     []PaletteHint
 	Glass                     bool
+	Chips                     func()
 }
 
 // PaletteHint is a shortcut the palette's bottom bar names: Key, then Label.
@@ -50,6 +52,9 @@ func Palette(c *ui.Context, open *bool, query *string, o PaletteOpts, head, body
 		var in ui.Element
 		ui.Row(c).Shrink(0).AlignItems(ui.Center).Gap(th.Space(2)).Padding(th.Space(3), th.Space(3), th.Space(2), th.Space(4)).Children(func() {
 			ui.Icon(c, icons.Get("search")).Size(theme.Icon, theme.Icon).TextColor(t.Muted)
+			if o.Chips != nil {
+				o.Chips()
+			}
 			in = ui.TextInputBase(c, query).Placeholder(o.Placeholder).Label(o.Label).FocusRing(false).AutoFocus().Grow(1).FontSize(t.Text.Base)
 			if o.OnKey != nil {
 				in.OnTextKey(o.OnKey)
@@ -91,6 +96,25 @@ func PaletteTab(c *ui.Context, label string, chosen bool) ui.Element {
 	return b.Children(func() { ui.Text(c, label) })
 }
 
+// PalettePreview is a card 8px off a Palette's right edge, level with the
+// selected PaletteRow, which it follows as the list scrolls; body builds
+// its content. Build it after the Palette in the same frame, while open.
+func PalettePreview(c *ui.Context, body func()) {
+	row := paletteSel
+	if row == (ui.Element{}) {
+		return
+	}
+	t, th := theme.Of(c), c.Theme()
+	ui.Overlay(c, func() {
+		// The row stops the list's 8px padding short of the panel's edge.
+		card := ui.Column(c).AttachTo(row, ui.AnchorTopEnd, ui.AnchorTopStart).MarginStart(th.Space(4)).
+			Width(th.Space(72)).Gap(th.Space(2)).Padding(th.Space(4)).Radius(t.Radius.Xl).
+			Background(t.Background).Border(theme.Hairline, t.Border)
+		Elevate(c, card, theme.ShadowLg)
+		card.Children(body)
+	})
+}
+
 // PaletteRow is a one-line result of a Palette for content the caller
 // builds: an option of its list, tinted while selected. Give it its Label,
 // Gap and Children.
@@ -103,4 +127,17 @@ func PaletteRow(c *ui.Context, selected bool) ui.Element {
 		paletteSel = b
 	}
 	return b
+}
+
+// PaletteChip is a filter set in a Palette's search row: its label and a
+// button, named remove, which it returns for the caller's OnClick.
+func PaletteChip(c *ui.Context, label, remove string) ui.Element {
+	t, th := theme.Of(c), c.Theme()
+	var x ui.Element
+	ui.Row(c).Shrink(0).AlignItems(ui.Center).Gap(th.Space(0.5)).Height(th.Space(6)).Padding(0, th.Space(0.5), 0, th.Space(2)).
+		Radius(t.Radius.Md).Background(t.HoverTint).Children(func() {
+		Text(c, label, t.Text.Sm).SingleLine()
+		x = IconButton(c, "x", remove, ButtonOpts{Variant: Ghost, Size: SizeXs})
+	})
+	return x
 }

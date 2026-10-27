@@ -111,7 +111,7 @@ func (p *palette) menuActs() []palAct {
 		return nil
 	}
 	if p.m.labeling {
-		return p.labelActs(p.rows[p.sel].msg)
+		return p.labelActs(*p.rows[p.sel].msg)
 	}
 	return p.rows[p.sel].acts()
 }

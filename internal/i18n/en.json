@@ -2605,6 +2605,49 @@
   "palette_action_labels": "Manage labels",
   "palette_action_add_account": "Add account",
   "palette_action_settings": "Open Settings",
+  "palette_filter_unread": "Unread",
+  "palette_filter_starred": "Starred",
+  "palette_filter_account": "Account: {arg1}",
+  "@palette_filter_account": {
+    "placeholders": {
+      "arg1": {
+        "type": "String"
+      }
+    }
+  },
+  "palette_filter_label": "Label: {arg1}",
+  "@palette_filter_label": {
+    "placeholders": {
+      "arg1": {
+        "type": "String"
+      }
+    }
+  },
+  "palette_filter_time": "Time: {arg1}",
+  "@palette_filter_time": {
+    "placeholders": {
+      "arg1": {
+        "type": "String"
+      }
+    }
+  },
+  "palette_filter_from": "From: {arg1}",
+  "@palette_filter_from": {
+    "placeholders": {
+      "arg1": {
+        "type": "String"
+      }
+    }
+  },
+  "palette_filter_remove": "Remove “{arg1}”",
+  "@palette_filter_remove": {
+    "placeholders": {
+      "arg1": {
+        "type": "String"
+      }
+    }
+  },
+  "palette_hint_filter": "Filters",
   "palette_empty_title": "No results for \"{arg1}\"",
   "@palette_empty_title": {
     "placeholders": {

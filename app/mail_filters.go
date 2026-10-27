@@ -22,6 +22,8 @@ type searchFilters struct {
 	span      int    // a searchSpans index; 0 is any time
 	attach    bool
 	labelID   int64  // a label the mail must have; 0 is any
+	unread    bool   // unread mail only (the palette's filters)
+	starred   bool   // starred mail only (the palette's filters)
 	fromDraft string // the sender box while its menu is open
 
 	accOpen, fromOpen, spanOpen, labelOpen bool
@@ -58,8 +60,21 @@ func (p *mailPage) searchAccount() int64 {
 
 // searchQuery is the box's text with the chips' filters.
 func (p *mailPage) searchQuery() core.SearchQuery {
-	return core.SearchQuery{AccountID: p.searchAccount(), Text: strings.TrimSpace(p.query), From: strings.TrimSpace(p.sf.from),
-		Since: spanStart(p.a.clock.Now(), p.sf.span), HasAttachments: p.sf.attach, LabelID: p.sf.labelID}
+	return p.sf.query(p.a.clock.Now(), p.searchAccount(), p.query)
+}
+
+// query is text in account acc (0 for every one) with the filters, as of now.
+func (f searchFilters) query(now time.Time, acc int64, text string) core.SearchQuery {
+	q := core.SearchQuery{AccountID: acc, Text: strings.TrimSpace(text), From: strings.TrimSpace(f.from),
+		Since: spanStart(now, f.span), HasAttachments: f.attach, LabelID: f.labelID}
+	yes := true
+	if f.unread {
+		q.Unread = &yes
+	}
+	if f.starred {
+		q.Starred = &yes
+	}
+	return q
 }
 
 // filterChips is the row of filters under the search box; a change searches
