@@ -59,8 +59,9 @@ type span struct {
 	kind       string
 }
 
-// find is the values in s, in order, none overlapping.
-func find(s string) []span {
+// find is the values in s the rules find and those known, in order, none
+// overlapping: where two start together, a rule's.
+func find(s string, known []span) []span {
 	var found []span
 	for _, r := range rules {
 		for _, loc := range r.re.FindAllStringSubmatchIndex(s, -1) {
@@ -82,6 +83,7 @@ func find(s string) []span {
 			found = append(found, span{a, b, r.kind})
 		}
 	}
+	found = append(found, known...)
 	slices.SortStableFunc(found, func(x, y span) int { return x.start - y.start })
 	out := found[:0]
 	for _, sp := range found {
