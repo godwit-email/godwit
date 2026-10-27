@@ -28,8 +28,8 @@ import (
 // translate (echoes the texts, source "en"), fail (a rate_limited envelope),
 // probe.sleep {"ms"} and probe.crash (writes echoStderr, exits 2); models.list
 // (answers models), models.prepare (adds header X-Native: 1),
-// models.load and models.judge (probability 0.9 for each question, no
-// answers with judgeWrong), each failing with its error code if set and,
+// models.load and models.judge (probability 0.9 for each question, a
+// choice's last value, no answers with judgeWrong), each failing with its error code if set and,
 // with record, appending its request to record + "." + method.
 func FakeNativeOpener(stderr io.Writer) NativeOpener {
 	return func(path string, hostABI uint32) (NativeCall, error) {
@@ -104,12 +104,19 @@ func FakeNativeOpener(stderr io.Writer) NativeOpener {
 					return fail(spec.JudgeError), nil
 				}
 				var r struct {
-					Questions []struct{ Name string } `json:"questions"`
+					Questions []struct {
+						Name, Type string
+						Choices    []struct{ Value string }
+					} `json:"questions"`
 				}
 				json.Unmarshal(req, &r)
 				answers := []map[string]any{}
 				for _, q := range r.Questions {
-					if !spec.JudgeWrong {
+					switch {
+					case spec.JudgeWrong:
+					case q.Type == "choice" && len(q.Choices) > 0:
+						answers = append(answers, map[string]any{"type": "choice", "name": q.Name, "choice": q.Choices[len(q.Choices)-1].Value})
+					default:
 						answers = append(answers, map[string]any{"type": "predicate", "name": q.Name, "probability": 0.9})
 					}
 				}
