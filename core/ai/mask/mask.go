@@ -30,6 +30,10 @@ type Masker struct {
 	namesOn atomic.Bool
 	cfg     atomic.Pointer[compiled]
 
+	// Record, if set, is told what each Request found, with the feature
+	// its context is Tagged with. Set it before the first Request.
+	Record func(feature string, hits []Hit)
+
 	mu      sync.RWMutex
 	values  map[string]entry // by hash
 	learned map[[sha256.Size]byte]bool
@@ -60,12 +64,17 @@ const hashLen = 12
 // errCollision: two values share a hash, and one would restore as the other.
 var errCollision = errors.New("mask: two values share a placeholder")
 
+// hash is the hash part of the placeholder of v, of kind.
+func (m *Masker) hash(kind, v string) string {
+	h := hmac.New(sha256.New, m.key)
+	h.Write([]byte(kind + "\x00" + v))
+	return strings.ToLower(b32.EncodeToString(h.Sum(nil))[:hashLen])
+}
+
 // placeholder is v's placeholder, remembered for Restore.
 // shortcut: the table only grows, by each value masked; evict when it is seen to matter.
 func (m *Masker) placeholder(kind, v string) (string, error) {
-	h := hmac.New(sha256.New, m.key)
-	h.Write([]byte(kind + "\x00" + v))
-	hash := strings.ToLower(b32.EncodeToString(h.Sum(nil))[:hashLen])
+	hash := m.hash(kind, v)
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	if e, ok := m.values[hash]; ok && e != (entry{kind, v}) {
@@ -79,12 +88,20 @@ func (m *Masker) placeholder(kind, v string) (string, error) {
 }
 
 // Text masks the values found in s, text Godwit wrote: a placeholder in it
-// (planted in mail) is defused first.
-func (m *Masker) Text(s string) (string, error) {
+// (planted in mail) is defused first. A category set to Block fails it
+// (*BlockedError); one set to Warn goes as it is.
+func (m *Masker) Text(s string) (string, error) { return m.textTo(s, nil) }
+
+// textTo is Text, what it finds added to f.
+func (m *Masker) textTo(s string, f *Found) (string, error) {
 	if err := m.learnNames(s); err != nil {
 		return "", err
 	}
-	return m.text(s, true)
+	out, err := m.text(s, true, f)
+	if err != nil {
+		return "", err
+	}
+	return out, nil
 }
 
 // Learn masks text, a stored request's or message's (JSON or not), for the
@@ -103,8 +120,11 @@ func (m *Masker) Learn(text string) {
 }
 
 // text masks s; defuse says it is not the model's own. A rule that fails
-// fails it: what it would have found must not go out.
-func (m *Masker) text(s string, defuse bool) (out string, err error) {
+// fails it: what it would have found must not go out. Each value found is
+// added to f; one of a category set to Block fails it (*BlockedError), but
+// only once all of s is masked, so a blocked request still teaches the
+// masker its placeholders (Learn).
+func (m *Masker) text(s string, defuse bool, f *Found) (out string, err error) {
 	defer func() {
 		if r := recover(); r != nil {
 			out, err = "", fmt.Errorf("mask: %v", r)
@@ -114,9 +134,20 @@ func (m *Masker) text(s string, defuse bool) (out string, err error) {
 		s = m.defuse(s)
 	}
 	var b strings.Builder
+	var block *BlockedError
 	last := 0
-	for _, sp := range m.cfg.Load().find(s, m.nameSpans(s)) {
-		p, err := m.placeholder(sp.kind, s[sp.start:sp.end])
+	cc := m.cfg.Load()
+	for _, sp := range cc.find(s, m.nameSpans(s)) {
+		v, act := s[sp.start:sp.end], cc.action(sp.kind)
+		f.add(m.hit(sp.kind, v, act))
+		switch act {
+		case Warn:
+			continue
+		case Block:
+			block = block.with(categories[sp.kind])
+			continue
+		}
+		p, err := m.placeholder(sp.kind, v)
 		if err != nil {
 			return "", err
 		}
@@ -125,6 +156,9 @@ func (m *Masker) text(s string, defuse bool) (out string, err error) {
 		last = sp.end
 	}
 	b.WriteString(s[last:])
+	if block != nil {
+		return b.String(), block
+	}
 	return b.String(), nil
 }
 

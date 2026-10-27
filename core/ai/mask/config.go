@@ -46,11 +46,13 @@ const (
 // of Kind, its first group that matched if it has one, else all it matches.
 type Rule struct{ Kind, Regex string }
 
-// Config is what the user set: the categories turned Off; their Words,
-// matched in any case unless WordsCase, inside other words unless
+// Config is what the user set: the categories turned Off; what is done
+// with each category's values (Actions: Warn or Block, else Hide); their
+// Words, matched in any case unless WordsCase, inside other words unless
 // WordsWhole; their Rules; and the values never masked (Allow, in any case).
 type Config struct {
 	Off                   []string
+	Actions               map[string]string
 	Words                 []string
 	WordsCase, WordsWhole bool
 	Rules                 []Rule
@@ -81,9 +83,10 @@ var kindRe = regexp.MustCompile(`^[A-Z][A-Z0-9_]{0,23}$`)
 
 // compiled is a Config as find runs it.
 type compiled struct {
-	off   map[string]bool
-	own   []rule // the user's rules and words, found before the built-in ones
-	allow map[string]bool
+	off     map[string]bool
+	actions map[string]string // by category; the user's own kinds are always masked
+	own     []rule            // the user's rules and words, found before the built-in ones
+	allow   map[string]bool
 }
 
 // Check says what is wrong with c, if anything: a rule's pattern that does
@@ -112,7 +115,7 @@ func compile(c Config) (*compiled, error) {
 	if len(c.Allow) > MaxAllow {
 		return nil, fmt.Errorf("at most %d values may go unmasked", MaxAllow)
 	}
-	cc := &compiled{off: map[string]bool{}, allow: map[string]bool{}}
+	cc := &compiled{off: map[string]bool{}, allow: map[string]bool{}, actions: c.Actions}
 	for _, o := range c.Off {
 		cc.off[o] = true
 	}
