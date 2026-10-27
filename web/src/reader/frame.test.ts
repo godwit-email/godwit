@@ -116,37 +116,36 @@ const aware = {
   html: '<style data-dark="">#godwit-body.godwit-dark .a{color:red}</style><p>x</p>',
 };
 
-test("html mail follows the theme: light, dark with its own dark styles, dark inverted without", () => {
+test("html mail keeps author dark styles, otherwise starts from a hidden light baseline", () => {
   expect(cls(render({}, "light"))).toBe("godwit-light");
   expect(cls(render(aware, "light"))).toBe("godwit-light");
   expect(cls(render(aware, "dark"))).toBe("godwit-dark");
-  expect(cls(render({}, "dark"))).toBe("godwit-dark godwit-invert");
+  const automatic = render({}, "dark");
+  expect(automatic.getElementById("godwit-body")?.hasAttribute("data-auto-dark")).toBe(true);
+  expect(cls(automatic)).toContain("godwit-light");
   const css = styles(render({}, "dark"));
-  expect(css).toMatch(
-    /#godwit-body\.godwit-invert,#godwit-body\.godwit-invert img\{filter:invert\(1\)/,
-  );
-  expect(css).toMatch(/\.godwit-invert img\{filter:invert\(1\)/);
-  // a background image is inverted back on its own layer, not with its element's content
-  expect(css).toContain('[style*="--godwit-bg"]::before{');
-  expect(css).toMatch(/::before\{[^}]*background-image:var\(--godwit-bg\)[^}]*filter:invert\(1\)/);
-  expect(css).not.toMatch(/\[style\*="--godwit-bg"\]\{[^}]*filter/);
+  expect(css).not.toContain("invert(");
+  expect(css).not.toContain("::before");
+  expect(css).toContain("visibility:hidden");
   expect(css).toContain("oklch(0.985 0 0)");
 });
 
 test("html mail in system mode follows the page's appearance", () => {
   expect(cls(render(aware, "system", false))).toBe("godwit-light");
   expect(cls(render(aware, "system", true))).toBe("godwit-dark");
-  expect(cls(render({}, "system", true))).toBe("godwit-dark godwit-invert");
+  expect(
+    render({}, "system", true).getElementById("godwit-body")?.hasAttribute("data-auto-dark"),
+  ).toBe(true);
 });
 
-test("the document's colour scheme: dark only for html mail with dark styles in the dark", () => {
+test("the document colour scheme follows the reader, including automatically adapted HTML", () => {
   const scheme = (b: Partial<ReaderBody>, mode: Theme["mode"], sys = false) =>
     frameScheme(body(b), theme({ mode }), sys);
-  expect(scheme({}, "dark")).toBe("light");
+  expect(scheme({}, "dark")).toBe("dark");
   expect(scheme(aware, "dark")).toBe("dark");
   expect(scheme(aware, "light")).toBe("light");
   expect(scheme(aware, "system", true)).toBe("dark");
-  expect(scheme({}, "system", true)).toBe("light");
+  expect(scheme({}, "system", true)).toBe("dark");
   expect(render(aware, "dark").querySelector("style")?.textContent).toContain("color-scheme:dark");
 });
 

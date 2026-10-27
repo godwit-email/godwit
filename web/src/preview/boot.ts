@@ -165,13 +165,40 @@ const pages: Record<string, { states: string[]; entry: () => Promise<unknown>; s
     },
   },
   reader: {
-    states: ["basic"],
+    states: [
+      "basic",
+      "neutral",
+      "colored",
+      "natural-dark",
+      "author-dark",
+      "fallback",
+      "media",
+      "gradients",
+      "mixed",
+      "large-paragraphs",
+      "large-cells",
+      "large-nested",
+    ],
     entry: () => import("@/reader/main"),
     setup() {
       const body: ReaderBody = {
         message: 41,
         version: 1,
-        html: "<p>Following up on our call last week, I put together a draft proposal for the Q4 partnership.</p><p>Best,<br>Lena</p>",
+        html:
+          {
+            neutral: fx.readerNeutral,
+            colored: fx.readerColored,
+            "natural-dark": fx.readerNaturalDark,
+            "author-dark": fx.readerAuthorDark,
+            fallback: fx.readerFallback,
+            media: fx.readerMedia,
+            gradients: fx.readerGradients,
+            mixed: fx.readerMixed,
+            "large-paragraphs": fx.readerLargeParagraphs,
+            "large-cells": fx.readerLargeCells,
+            "large-nested": fx.readerLargeNested,
+          }[state] ??
+          "<p>Following up on our call last week, I put together a draft proposal for the Q4 partnership.</p><p>Best,<br>Lena</p>",
         plain: "",
         remote: false,
         blocked: 0,
