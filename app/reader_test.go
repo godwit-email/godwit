@@ -1219,4 +1219,3 @@ func TestReaderSaveAndPrint(t *testing.T) {
 		t.Fatalf("expected BodyPrint call for %d, got %q", m.ID, printArg3)
 	}
 }
-
