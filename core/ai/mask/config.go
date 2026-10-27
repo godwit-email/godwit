@@ -26,6 +26,7 @@ const (
 var categories = map[string]string{
 	"PRIVATE_KEY": Secrets, "API_KEY": Secrets, "TOKEN": Secrets, "PASSWORD": Secrets, "SECRET": Secrets,
 	"ID_CARD": IDs, "BANK_CARD": IDs, "PASSPORT": IDs, "IBAN": IDs,
+	nameKind: Names,
 }
 
 // Category is the category of a built-in kind; "" for the user's own.
@@ -92,12 +93,13 @@ func Check(c Config) error {
 	return err
 }
 
-// Configure masks as c says from the next text on; a c Check refuses
-// leaves the masker as it was.
+// Configure masks as c says from the next text on, names too unless
+// they are Off (SetNames); a c Check refuses leaves the masker as it was.
 func (m *Masker) Configure(c Config) error {
 	cc, err := compile(c)
 	if err == nil {
 		m.cfg.Store(cc)
+		m.SetNames(!cc.off[Names])
 	}
 	return err
 }

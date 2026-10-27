@@ -183,3 +183,24 @@ func TestAJudgeIsAskedWithPlaceholders(t *testing.T) {
 	assert.NotContains(t, got, testCard)
 	assert.Contains(t, got, "{{BANK_CARD_")
 }
+
+// A choice that holds a value goes as its placeholder, and the judge's
+// answer, naming the placeholder, comes back as the choice itself.
+func TestAJudgeChoiceComesBackAsTheValue(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var req struct{ Questions []Question }
+		json.NewDecoder(r.Body).Decode(&req)
+		v := req.Questions[0].Choices[1].Value
+		json.NewEncoder(w).Encode(map[string]any{"answers": []any{map[string]any{"type": "choice", "name": "label", "choice": v,
+			"probabilities": []any{map[string]any{"value": v, "probability": 0.8}}}}})
+	}))
+	defer srv.Close()
+	_, m := maskedEngine(t)
+	j, err := NewJudge(nil, m, FormatDecisions, srv.URL, "k", "m")
+	require.NoError(t, err)
+	got, err := j.Ask(t.Context(), "mail", []Question{{Name: "label", Type: Choice, Instructions: "Which?",
+		Choices: []ChoiceOption{{Value: "none"}, {Value: "card " + testCard}}}})
+	require.NoError(t, err)
+	assert.Equal(t, "card "+testCard, got[0].Choice)
+	assert.Equal(t, "card "+testCard, got[0].Probabilities[0].Value)
+}

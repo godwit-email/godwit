@@ -18,6 +18,9 @@ import (
 // What has nothing to mask comes back byte for byte; a body that isn't
 // JSON is masked as text.
 func (m *Masker) Body(body string) (string, error) {
+	if err := m.learnBodyNames(body); err != nil {
+		return "", err
+	}
 	out, ok, err := m.json(body, scope{top: true})
 	if !ok {
 		return m.Text(body)
@@ -27,18 +30,25 @@ func (m *Masker) Body(body string) (string, error) {
 
 // json masks the JSON document s at sc; ok is false if it is not one.
 func (m *Masker) json(s string, sc scope) (out string, ok bool, err error) {
-	out, ok = walk(s, sc, func(s string, sc scope) string {
-		if t := strings.TrimLeft(s, " \t\r\n"); t != "" && (t[0] == '{' || t[0] == '[') {
-			if out, ok, e := m.json(s, scope{tool: true, model: sc.model}); ok {
-				err = cmp.Or(err, e)
-				return out
-			}
-		}
+	out, ok = deep(s, sc, func(s string, sc scope) string {
 		out, e := m.text(s, !sc.model)
 		err = cmp.Or(err, e)
 		return out
 	})
 	return out, ok, err
+}
+
+// deep is walk, into the JSON document a string holds too (a tool's
+// arguments or result).
+func deep(s string, sc scope, fn func(s string, sc scope) string) (string, bool) {
+	return walk(s, sc, func(s string, sc scope) string {
+		if t := strings.TrimLeft(s, " \t\r\n"); t != "" && (t[0] == '{' || t[0] == '[') {
+			if out, ok := deep(s, scope{tool: true, model: sc.model}, fn); ok {
+				return out
+			}
+		}
+		return fn(s, sc)
+	})
 }
 
 // errUnknown refuses a tool call whose arguments hold a placeholder that
@@ -72,6 +82,9 @@ func (m *Masker) RestoreArgs(args json.RawMessage) (out json.RawMessage, err err
 // BANK_CARD_…, not report_finalversion.
 func isKind(p string) bool {
 	u := strings.ToUpper(p)
+	if strings.HasPrefix(u, nameKind+"_") && len(u) == len(nameKind)+1+hashLen {
+		return true
+	}
 	for _, r := range rules {
 		if strings.HasPrefix(u, r.kind+"_") && len(u) == len(r.kind)+1+hashLen {
 			return true

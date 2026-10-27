@@ -41,6 +41,7 @@ func TestEveryKindHasACategory(t *testing.T) {
 	for _, k := range []string{"ID_CARD", "BANK_CARD", "PASSPORT", "IBAN"} {
 		assert.Equal(t, mask.IDs, mask.Category(k), k)
 	}
+	assert.Equal(t, mask.Names, mask.Category("NAME"))
 	assert.Equal(t, "", mask.Category("EMPLOYEE_ID"), "the user's own")
 }
 
@@ -115,4 +116,14 @@ func TestRefusesARuleThatCannotBeUsed(t *testing.T) {
 func TestARulesKindIsUpperCased(t *testing.T) {
 	m := configured(t, mask.Config{Rules: []mask.Rule{{Kind: " employee_id ", Regex: `E\d{6}`}}})
 	assert.Equal(t, "<EMPLOYEE_ID>", masked(t, m, "E123456"))
+}
+
+// Names follow their category, and an allowed display name, a brand's
+// most often, is sent as it is.
+func TestNamesFollowTheSettings(t *testing.T) {
+	const mail = "From: Zhang Wei <zw@example.com>\nTo: GitHub <noreply@github.com>\n\nZhang Wei, GitHub says hi"
+	m := configured(t, mask.Config{Off: []string{mask.Names}})
+	assert.Equal(t, mail, masked(t, m, mail))
+	require.NoError(t, m.Configure(mask.Config{Allow: []string{"github"}}))
+	assert.Equal(t, "From: <NAME> <zw@example.com>\nTo: GitHub <noreply@github.com>\n\n<NAME>, GitHub says hi", masked(t, m, mail))
 }

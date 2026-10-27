@@ -14,6 +14,7 @@ type fakeSystemTranslator struct {
 	installed []string
 	err       error
 	calls     int
+	texts     []string // what it was asked to translate
 }
 
 func (f *fakeSystemTranslator) Version() string { return f.version }
@@ -22,6 +23,7 @@ func (f *fakeSystemTranslator) InstalledLanguages() []string { return f.installe
 
 func (f *fakeSystemTranslator) Translate(_ context.Context, texts []string, _, target string) ([]string, string, error) {
 	f.calls++
+	f.texts = append(f.texts, texts...)
 	if f.err != nil {
 		return nil, "", f.err
 	}
@@ -74,6 +76,27 @@ func TestSystemTranslation(t *testing.T) {
 	assert.False(t, isListed(t, e.s), "listed as off")
 	_, err = e.s.RunSkill(t.Context(), "translate", tg)
 	assert.ErrorIs(t, err, ErrTranslatorUnavailable)
+}
+
+// The system's translation runs on this device: it gets the card itself,
+// not a placeholder (docs/adr/0025-mask-at-cloud-egress.md).
+func TestSystemTranslationIsNotMasked(t *testing.T) {
+	const card = "4111 1111 1111 1111"
+	e := newAssistEnv(t)
+	sys := &fakeSystemTranslator{version: "26A1"}
+	e.s.opts.SystemTranslator = sys
+	st, err := e.s.GetSettings(t.Context())
+	require.NoError(t, err)
+	st.Translator = "plugin/" + SystemTranslationPlugin
+	_, err = e.s.SetSettings(t.Context(), st)
+	require.NoError(t, err)
+
+	setBody(t, e, "Card "+card, "")
+	assert.Equal(t, []string{"[zh-CN] Card " + card}, texts(e.run(t, "translate", Target{Kind: "message", ID: e.msg})))
+	e.run(t, "translate", Target{Kind: "message", ID: e.msg, PreserveHTML: true})
+	d := e.newDraft(t, "", "<p>Card "+card+"</p>")
+	e.accept(t, translateDraft(t, e, d, SkillOptions{TargetLanguage: "fr"}))
+	assert.Equal(t, []string{"Card " + card, "Card " + card, "Card " + card}, sys.texts)
 }
 
 func TestSystemTranslationNotInstalled(t *testing.T) {

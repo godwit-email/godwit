@@ -62,9 +62,9 @@ type span struct {
 }
 
 // find is the values in s, in order, none overlapping: of the user's rules
-// and words first, then of the built-in rules of the categories on, but
-// none the user allowed.
-func (c *compiled) find(s string) []span {
+// and words first, then of the built-in rules of the categories on, then
+// those known; where two start together, a rule's. None the user allowed.
+func (c *compiled) find(s string, known []span) []span {
 	var found []span
 	for _, r := range slices.Concat(c.own, rules) {
 		if c.off[categories[r.kind]] {
@@ -88,6 +88,11 @@ func (c *compiled) find(s string) []span {
 				continue
 			}
 			found = append(found, span{a, b, r.kind})
+		}
+	}
+	for _, sp := range known {
+		if !c.off[categories[sp.kind]] && !c.allow[strings.ToLower(s[sp.start:sp.end])] {
+			found = append(found, sp)
 		}
 	}
 	slices.SortStableFunc(found, func(x, y span) int { return x.start - y.start })
