@@ -1242,7 +1242,7 @@
   "settings_masking_rules": "Regular expressions",
   "settings_masking_rules_help": "One per line: a category name, a space, then an RE2 pattern, as ORDER_NO PO-\\d+. With a group, only the first group is masked. At most 32",
   "settings_masking_allow": "Allowlist",
-  "settings_masking_allow_help": "One value per line, sent as it is in any case. At most 200",
+  "settings_masking_allow_help": "One value per line, sent as it is regardless of letter case. At most 200",
   "settings_masking_save": "Save",
   "settings_masking_rules_invalid": "The pattern on line {arg1} does not work: {arg2}",
   "settings_masking_rules_kind": "The category name on line {arg1} must start with a letter and have only letters, digits and _, at most 24",
