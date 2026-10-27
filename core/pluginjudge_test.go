@@ -290,3 +290,22 @@ func TestPluginJudgeLoadAcrossRestart(t *testing.T) {
 	require.NoError(t, err)
 	assert.EqualValues(t, 1, fa.verified.Load(), "not verified and loaded again")
 }
+
+// A plugin's judge model is a model service too: it is asked with
+// placeholders, and its answer naming one comes back as the choice.
+func TestPluginJudgeMasks(t *testing.T) {
+	const card = "4111 1111 1111 1111"
+	s := newMailContextService(t)
+	record := usePluginJudge(t, s, nil, nil)
+	j, _, _, err := s.resolveJudge(t.Context())
+	require.NoError(t, err)
+	got, err := j.Ask(t.Context(), "Card "+card, []ai.Question{{Name: "label", Type: ai.Choice, Instructions: "Card " + card + "?",
+		Choices: []ai.ChoiceOption{{Value: "none", Description: "not " + card}, {Value: "card " + card}}}})
+	require.NoError(t, err)
+	assert.Equal(t, "card "+card, got[0].Choice)
+	calls := recorded(t, record, "models.judge")
+	require.Len(t, calls, 1)
+	assert.NotContains(t, calls[0], card)
+	assert.Equal(t, 4, strings.Count(calls[0], "{{BANK_CARD_"), "the input, instructions, a description and a value")
+	assert.Contains(t, calls[0], `"value":"none"`)
+}
