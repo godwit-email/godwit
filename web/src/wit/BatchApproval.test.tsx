@@ -21,7 +21,11 @@ const info: WitInfo = {
 describe("BatchApprovalCard & Draft Editing", () => {
   const t = makeT("de");
 
-  const setupPanel = async (approval: Approval, onDecide = vi.fn().mockResolvedValue(true)) => {
+  const setupPanel = async (
+    approval: Approval,
+    onDecide = vi.fn().mockResolvedValue(true),
+    onCite = vi.fn(),
+  ) => {
     const history = hist({
       messages: [
         {
@@ -69,13 +73,14 @@ describe("BatchApprovalCard & Draft Editing", () => {
         history={history}
         locked={false}
         onDecide={onDecide}
+        onCite={onCite}
         onLink={vi.fn().mockResolvedValue(undefined)}
         transport={tr}
         t={t}
       />,
     );
 
-    return { user: userEvent.setup(), onDecide };
+    return { user: userEvent.setup(), onDecide, onCite };
   };
 
   test("renders batch items with checkboxes and allows deselecting", async () => {
@@ -102,12 +107,18 @@ describe("BatchApprovalCard & Draft Editing", () => {
       draftEdit: false,
     };
 
-    const { user, onDecide } = await setupPanel(approval);
+    const { user, onDecide, onCite } = await setupPanel(approval);
 
     expect(screen.getByText("Newsletter A")).toBeInTheDocument();
     expect(screen.getByText("Newsletter B")).toBeInTheDocument();
     expect(screen.getByText("a@example.com")).toBeInTheDocument();
     expect(screen.getByText("b@example.com")).toBeInTheDocument();
+
+    // Check "E-Mail anzeigen" buttons exist and trigger onCite
+    const showMailButtons = screen.getAllByRole("button", { name: /E-Mail anzeigen/i });
+    expect(showMailButtons).toHaveLength(2);
+    await user.click(showMailButtons[0]);
+    expect(onCite).toHaveBeenCalledWith(101);
 
     const checkboxes = screen.getAllByRole("checkbox");
     expect(checkboxes).toHaveLength(3); // 1 select-all + 2 items
@@ -137,14 +148,14 @@ describe("BatchApprovalCard & Draft Editing", () => {
     expect(passedArgs.items[0].id).toBe(1);
   });
 
-  test("allows switching action from dropdown", async () => {
+  test("renders fixed action title and does not show an action dropdown", async () => {
     const approval: Approval = {
       id: 43,
       run: 10,
       callId: "call_batch_2",
-      tool: "move_to_trash",
+      tool: "archive_mail",
       args: JSON.stringify({
-        action: "move_to_trash",
+        action: "archive_mail",
         ids: [1],
         items: [
           {
@@ -156,7 +167,7 @@ describe("BatchApprovalCard & Draft Editing", () => {
           },
         ],
       }),
-      summary: "Move 1 messages to Trash",
+      summary: "Archive 1 message",
       state: "pending",
       destinations: [],
       error: "",
@@ -167,8 +178,9 @@ describe("BatchApprovalCard & Draft Editing", () => {
 
     const { user, onDecide } = await setupPanel(approval);
 
-    const select = screen.getByRole("combobox");
-    await user.selectOptions(select, "archive_mail");
+    // No dropdown to switch action
+    expect(screen.queryByRole("combobox")).not.toBeInTheDocument();
+    expect(screen.getByText("Archivieren")).toBeInTheDocument();
 
     const approveBtn = screen.getByRole("button", { name: /Archivieren \(1\)/ });
     expect(approveBtn).toBeInTheDocument();

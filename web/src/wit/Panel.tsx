@@ -298,11 +298,13 @@ function BatchApprovalCard({
   a,
   busy,
   decide,
+  onCite,
   t,
 }: {
   a: Approval;
   busy: boolean;
   decide(accept: boolean, editedArgs?: string): void;
+  onCite?(id: number): void;
   t: T;
 }) {
   let args: {
@@ -319,7 +321,7 @@ function BatchApprovalCard({
   }
 
   const items = args.items ?? [];
-  const [currentAction, setCurrentAction] = useState<string>(args.action || a.tool);
+  const action = args.action || a.tool;
   const [selected, setSelected] = useState<Set<number>>(() => new Set(items.map((it) => it.id)));
 
   const allSelected = items.length > 0 && selected.size === items.length;
@@ -340,48 +342,44 @@ function BatchApprovalCard({
     });
   };
 
-  const actionOptions: { value: string; label: string }[] = [
-    {
-      value: "move_to_trash",
-      label:
-        t("wit.action.trash") !== "wit.action.trash" ? t("wit.action.trash") : "In den Papierkorb",
-    },
-    {
-      value: "archive_mail",
-      label:
-        t("wit.action.archive") !== "wit.action.archive" ? t("wit.action.archive") : "Archivieren",
-    },
-    {
-      value: "mark_as_spam",
-      label:
-        t("wit.action.spam") !== "wit.action.spam" ? t("wit.action.spam") : "Als Spam markieren",
-    },
-    {
-      value: "mark_as_read",
-      label: t("wit.action.read") !== "wit.action.read" ? t("wit.action.read") : "Als gelesen",
-    },
-    {
-      value: "mark_as_unread",
-      label:
-        t("wit.action.unread") !== "wit.action.unread" ? t("wit.action.unread") : "Als ungelesen",
-    },
-    {
-      value: "star_mail",
-      label:
-        t("wit.action.star") !== "wit.action.star" ? t("wit.action.star") : "Mit Stern markieren",
-    },
-    {
-      value: "unstar_mail",
-      label:
-        t("wit.action.unstar") !== "wit.action.unstar" ? t("wit.action.unstar") : "Stern entfernen",
-    },
-  ];
+  const getActionLabel = (act: string) => {
+    switch (act) {
+      case "move_to_trash":
+        return t("wit.action.trash") !== "wit.action.trash"
+          ? t("wit.action.trash")
+          : "In den Papierkorb";
+      case "archive_mail":
+        return t("wit.action.archive") !== "wit.action.archive"
+          ? t("wit.action.archive")
+          : "Archivieren";
+      case "mark_as_spam":
+        return t("wit.action.spam") !== "wit.action.spam"
+          ? t("wit.action.spam")
+          : "Als Spam markieren";
+      case "mark_as_read":
+        return t("wit.action.read") !== "wit.action.read" ? t("wit.action.read") : "Als gelesen";
+      case "mark_as_unread":
+        return t("wit.action.unread") !== "wit.action.unread"
+          ? t("wit.action.unread")
+          : "Als ungelesen";
+      case "star_mail":
+        return t("wit.action.star") !== "wit.action.star"
+          ? t("wit.action.star")
+          : "Mit Stern markieren";
+      case "unstar_mail":
+        return t("wit.action.unstar") !== "wit.action.unstar"
+          ? t("wit.action.unstar")
+          : "Stern entfernen";
+      default:
+        return act;
+    }
+  };
 
   const handleApprove = () => {
     const sel = [...selected];
     const payload = JSON.stringify({
       ...args,
-      action: currentAction,
+      action,
       ids: sel,
       selected_ids: sel,
       items: items.filter((it) => selected.has(it.id)),
@@ -389,24 +387,12 @@ function BatchApprovalCard({
     decide(true, payload);
   };
 
-  const actionLabel = actionOptions.find((o) => o.value === currentAction)?.label ?? currentAction;
+  const actionLabel = getActionLabel(action);
 
   return (
     <div className="overflow-hidden rounded-xl border-[0.5px] bg-background shadow-(--shadow-xs)">
       <div className="flex flex-wrap items-center gap-2 border-b-[0.5px] bg-sidebar px-3.5 py-2.5 leading-5">
         <span className="font-semibold">{actionLabel}</span>
-        <select
-          value={currentAction}
-          onChange={(e) => setCurrentAction(e.target.value)}
-          disabled={busy}
-          className="rounded border border-input bg-background px-2 py-0.5 text-xs font-medium text-foreground cursor-pointer"
-        >
-          {actionOptions.map((opt) => (
-            <option key={opt.value} value={opt.value}>
-              {opt.label}
-            </option>
-          ))}
-        </select>
         <span className="ml-auto flex gap-1.5">
           <Badge
             variant="outline"
@@ -435,7 +421,7 @@ function BatchApprovalCard({
           </div>
         )}
 
-        <div className="max-h-60 overflow-y-auto flex flex-col gap-1.5 pr-1">
+        <div className="max-h-60 overflow-y-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden flex flex-col gap-1.5">
           {items.map((it) => {
             const isChecked = selected.has(it.id);
             return (
@@ -459,9 +445,21 @@ function BatchApprovalCard({
                     <span className="font-medium truncate text-foreground">
                       {it.from || "(kein Absender)"}
                     </span>
-                    <span className="text-[11px] text-muted-foreground shrink-0 font-mono">
-                      #{it.id}
-                    </span>
+                    {onCite && it.msg_id > 0 && (
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          e.preventDefault();
+                          onCite(it.msg_id);
+                        }}
+                        title="E-Mail anzeigen"
+                        className="inline-flex items-center gap-1 text-[11px] text-primary hover:underline shrink-0 cursor-pointer font-medium"
+                      >
+                        <RiMailLine className="size-3" />
+                        <span>E-Mail anzeigen</span>
+                      </button>
+                    )}
                   </div>
                   <div className="truncate text-xs text-muted-foreground">
                     {it.subject || "(kein Betreff)"}
@@ -2132,6 +2130,7 @@ export function Panel({
               a={a}
               busy={busy}
               decide={(accept, editedArgs) => decideAs(a, accept, false, editedArgs)}
+              onCite={onCite}
               t={t}
             />
           ) : (

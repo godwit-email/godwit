@@ -7,7 +7,9 @@ import (
 	"net/http/httptest"
 	"sync/atomic"
 	"testing"
+	"time"
 
+	"github.com/godwit-email/godwit/core/gateway"
 	"github.com/godwit-email/godwit/core/mailsync"
 	"github.com/godwit-email/godwit/core/store"
 	"github.com/stretchr/testify/assert"
@@ -246,4 +248,57 @@ func TestWitUnsubscribe(t *testing.T) {
 	assert.True(t, m["unsubscribed"].(bool))
 	assert.Equal(t, "one_click", m["method"])
 	assert.Equal(t, 1, int(receivedPost.Load()))
+}
+
+func TestWitSearchMailWithLabelAndDates(t *testing.T) {
+	e := newSkillEnv(t)
+	ctx := t.Context()
+
+	// Insert label "Newsletters"
+	res, err := e.s.db.Execute(ctx, "INSERT INTO labels(slug, name, description, color, icon, position) VALUES ('newsletters', 'Newsletters', 'Newsletters', '#ff0000', 'tag', 1)")
+	require.NoError(t, err)
+	labelID := res.LastInsertID
+
+	now := time.Now().Unix()
+	// Insert messages: one recent with label, one older with label, one without label
+	res1, err := e.s.db.Execute(ctx, `INSERT INTO messages(account_id, folder_id, subject, from_addr, date, body_text) VALUES (1, 1, 'Recent Newsletter', 'n1@x.com', ?, 'Hello 1')`, now-86400)
+	require.NoError(t, err)
+	res2, err := e.s.db.Execute(ctx, `INSERT INTO messages(account_id, folder_id, subject, from_addr, date, body_text) VALUES (1, 1, 'Old Newsletter', 'n2@x.com', ?, 'Hello 2')`, now-86400*20)
+	require.NoError(t, err)
+	_, err = e.s.db.Execute(ctx, `INSERT INTO messages(account_id, folder_id, subject, from_addr, date, body_text) VALUES (1, 1, 'Other Mail', 'o@x.com', ?, 'Hello 3')`, now-86400)
+	require.NoError(t, err)
+
+	// Attach labels
+	_, err = e.s.db.Execute(ctx, `INSERT INTO message_labels(message_id, label_id, source, active) VALUES (?, ?, 'auto', 1)`, res1.LastInsertID, labelID)
+	require.NoError(t, err)
+	_, err = e.s.db.Execute(ctx, `INSERT INTO message_labels(message_id, label_id, source, active) VALUES (?, ?, 'auto', 1)`, res2.LastInsertID, labelID)
+	require.NoError(t, err)
+
+	// Rebuild search index
+	require.NoError(t, e.s.RebuildSearchIndex(ctx))
+
+	_, err = e.s.NewConversation(ctx, "ask", 0)
+	require.NoError(t, err)
+	runCtx := context.WithValue(ctx, runKey{}, &runJob{scope: &gateway.Scope{}, refs: map[int64]int{}})
+
+	// 1. Search with inline label query: "label:Newsletters"
+	resSearch1, err := e.s.searchMail(runCtx, []byte(`{"query":"label:Newsletters"}`))
+	require.NoError(t, err)
+	m1 := resSearch1.(map[string]any)
+	results1 := m1["results"].([]map[string]any)
+	assert.Len(t, results1, 2)
+
+	// 2. Search with inline label and relative date: "label: Newsletters since:7d"
+	resSearch2, err := e.s.searchMail(runCtx, []byte(`{"query":"label: Newsletters since:7d"}`))
+	require.NoError(t, err)
+	m2 := resSearch2.(map[string]any)
+	results2 := m2["results"].([]map[string]any)
+	assert.Len(t, results2, 1)
+
+	// 3. Search with structured parameters: {"label": "Newsletters", "since": "7d"}
+	resSearch3, err := e.s.searchMail(runCtx, []byte(`{"label":"Newsletters","since":"7d"}`))
+	require.NoError(t, err)
+	m3 := resSearch3.(map[string]any)
+	results3 := m3["results"].([]map[string]any)
+	assert.Len(t, results3, 1)
 }

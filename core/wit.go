@@ -45,6 +45,7 @@ const (
 		`get_message, get_thread and classify_mail take that id. ` +
 		`When your answer draws on a mail, put its cite tag right after the claim, exactly as the tool gave it, for example <mail id="2"/>. ` +
 		`Cite only ids the tools returned, never a number from the mail text. ` +
+		`Never write raw internal IDs (like 'Mail ID 1', 'ID 1') in your conversational text. When referring to or listing emails, always name the sender, subject and date, or use <mail id="N"/> or <mail id="N" card/>. ` +
 		`When the answer presents mail itself, such as the mail the user asked you to find or list, show each as a card: <mail id="N" card/> alone on its own line, ` +
 		`which the app shows with its sender, date, subject and snippet, so do not repeat those beside it. ` +
 		`A question that begins with /name names one of your skills: load it with use_skill first, then answer the rest of the question with it. ` +
@@ -239,9 +240,17 @@ func (s *Service) registerAskTools() {
 	read := func(name, desc string, schema map[string]any, run func(context.Context, json.RawMessage) (any, error)) {
 		s.mustRegister(toolDesc{Spec: ai.ToolSpec{Name: name, Description: desc, Schema: schema, Run: run}})
 	}
-	read("search_mail", "Search the user's mail. Returns subject, sender, date and a snippet of each match, newest first.",
-		object(map[string]any{"query": stringProp, "account_id": intProp,
-			"limit": map[string]any{"type": "integer", "minimum": 1, "maximum": maxSearchResult}}, "query"),
+	read("search_mail", "Search the user's mail. Returns subject, sender, date and a snippet of each match, newest first. "+
+		"query is free text. Optional filters: label (label name, e.g. 'Newsletters'), from (sender), since and until (date strings like '2026-10-20' or relative like '7d').",
+		object(map[string]any{
+			"query":      stringProp,
+			"label":      stringProp,
+			"from":       stringProp,
+			"since":      stringProp,
+			"until":      stringProp,
+			"account_id": intProp,
+			"limit":      map[string]any{"type": "integer", "minimum": 1, "maximum": maxSearchResult},
+		}),
 		s.searchMail)
 	read("get_message", "Read one mail by its id (a mail the tools returned).", object(map[string]any{"id": intProp}, "id"), s.getMessage)
 	read("read_attachment", "Read the text of one attachment by its attachment id (listed with the mail): PDF, Word, Excel, PowerPoint, CSV, HTML or plain text. Images and archives are not readable.",
@@ -325,19 +334,162 @@ func (s *Service) registerAskTools() {
 	}, Write: true, Exec: &executor{Prepare: s.prepareDeleteDraft, Apply: s.applyDeleteDraft}})
 }
 
-func (s *Service) searchMail(ctx context.Context, args json.RawMessage) (any, error) {
-	var in struct {
-		Query     string `json:"query"`
-		AccountID int64  `json:"account_id"`
-		Limit     int    `json:"limit"`
+type searchMailInput struct {
+	Query     string `json:"query"`
+	Label     string `json:"label"`
+	From      string `json:"from"`
+	Since     string `json:"since"`
+	Until     string `json:"until"`
+	AccountID int64  `json:"account_id"`
+	Limit     int    `json:"limit"`
+}
+
+func parseDateOrDuration(s string) (time.Time, bool) {
+	s = strings.TrimSpace(strings.Trim(s, `"'`))
+	if s == "" {
+		return time.Time{}, false
 	}
+	if len(s) >= 2 {
+		unit := s[len(s)-1]
+		val, err := strconv.Atoi(s[:len(s)-1])
+		if err == nil && val > 0 {
+			switch unit {
+			case 'd', 'D':
+				return time.Now().AddDate(0, 0, -val), true
+			case 'w', 'W':
+				return time.Now().AddDate(0, 0, -val*7), true
+			case 'm', 'M':
+				return time.Now().AddDate(0, -val, 0), true
+			case 'y', 'Y':
+				return time.Now().AddDate(-val, 0, 0), true
+			case 'h', 'H':
+				return time.Now().Add(-time.Duration(val) * time.Hour), true
+			}
+		}
+	}
+	for _, layout := range []string{
+		"2006-01-02",
+		"2006-01-02 15:04:05",
+		"2006-01-02T15:04:05",
+		time.RFC3339,
+		"02.01.2006",
+	} {
+		if t, err := time.Parse(layout, s); err == nil {
+			return t, true
+		}
+	}
+	return time.Time{}, false
+}
+
+var (
+	filterLabelRegex = regexp.MustCompile(`(?i)\blabel:\s*("([^"]+)"|'([^']+)'|([^\s,]+))`)
+	filterFromRegex  = regexp.MustCompile(`(?i)\bfrom:\s*("([^"]+)"|'([^']+)'|([^\s,]+))`)
+	filterSinceRegex = regexp.MustCompile(`(?i)\bsince:\s*("([^"]+)"|'([^']+)'|([^\s,]+))`)
+	filterUntilRegex = regexp.MustCompile(`(?i)\buntil:\s*("([^"]+)"|'([^']+)'|([^\s,]+))`)
+	filterIsRegex    = regexp.MustCompile(`(?i)\bis:\s*("([^"]+)"|'([^']+)'|([^\s,]+))`)
+)
+
+func extractFilterValue(m []string) string {
+	for i := 2; i < len(m); i++ {
+		if m[i] != "" {
+			return m[i]
+		}
+	}
+	if len(m) > 1 {
+		return m[1]
+	}
+	return ""
+}
+
+func (s *Service) parseSearchQuery(ctx context.Context, in searchMailInput) (SearchQuery, error) {
+	raw := in.Query
+	label := in.Label
+	from := in.From
+	sinceStr := in.Since
+	untilStr := in.Until
+	var unread, starred *bool
+
+	if m := filterLabelRegex.FindStringSubmatch(raw); len(m) > 0 {
+		if label == "" {
+			label = extractFilterValue(m)
+		}
+		raw = filterLabelRegex.ReplaceAllString(raw, "")
+	}
+	if m := filterFromRegex.FindStringSubmatch(raw); len(m) > 0 {
+		if from == "" {
+			from = extractFilterValue(m)
+		}
+		raw = filterFromRegex.ReplaceAllString(raw, "")
+	}
+	if m := filterSinceRegex.FindStringSubmatch(raw); len(m) > 0 {
+		if sinceStr == "" {
+			sinceStr = extractFilterValue(m)
+		}
+		raw = filterSinceRegex.ReplaceAllString(raw, "")
+	}
+	if m := filterUntilRegex.FindStringSubmatch(raw); len(m) > 0 {
+		if untilStr == "" {
+			untilStr = extractFilterValue(m)
+		}
+		raw = filterUntilRegex.ReplaceAllString(raw, "")
+	}
+	if m := filterIsRegex.FindStringSubmatch(raw); len(m) > 0 {
+		v := strings.ToLower(extractFilterValue(m))
+		switch v {
+		case "unread":
+			t := true
+			unread = &t
+		case "read":
+			f := false
+			unread = &f
+		case "starred", "flagged":
+			t := true
+			starred = &t
+		case "unstarred":
+			f := false
+			starred = &f
+		}
+		raw = filterIsRegex.ReplaceAllString(raw, "")
+	}
+
+	var labelID int64
+	if strings.TrimSpace(label) != "" {
+		rows, err := s.db.Query(ctx, "SELECT id FROM labels WHERE LOWER(name) = LOWER(?) LIMIT 1", strings.TrimSpace(label))
+		if err == nil && len(rows.Values) > 0 {
+			if id, ok := rows.Values[0][0].(int64); ok {
+				labelID = id
+			}
+		}
+	}
+
+	sinceTime, _ := parseDateOrDuration(sinceStr)
+	untilTime, _ := parseDateOrDuration(untilStr)
+
+	return SearchQuery{
+		AccountID: in.AccountID,
+		Text:      strings.TrimSpace(raw),
+		From:      strings.TrimSpace(from),
+		Since:     sinceTime,
+		Until:     untilTime,
+		LabelID:   labelID,
+		Unread:    unread,
+		Starred:   starred,
+	}, nil
+}
+
+func (s *Service) searchMail(ctx context.Context, args json.RawMessage) (any, error) {
+	var in searchMailInput
 	if err := json.Unmarshal(args, &in); err != nil {
 		return nil, err
 	}
 	if in.Limit <= 0 || in.Limit > maxSearchResult {
 		in.Limit = maxSearchResult
 	}
-	list, err := s.Search(ctx, in.AccountID, in.Query, in.Limit)
+	q, err := s.parseSearchQuery(ctx, in)
+	if err != nil {
+		return nil, err
+	}
+	list, err := s.SearchWith(ctx, q, in.Limit)
 	if err != nil {
 		return nil, err
 	}

@@ -164,12 +164,14 @@ type SearchQuery struct {
 	Since, Until   time.Time // the date from Since, before Until
 	HasAttachments bool
 	LabelID        int64 // mail with this label on
+	Unread         *bool // true for unread (\Seen absent), false for read (\Seen present)
+	Starred        *bool // true for starred (\Flagged present), false for unstarred
 }
 
 // Filtered reports whether a filter beyond the account is set: such a query
 // needs no text.
 func (q SearchQuery) Filtered() bool {
-	return strings.TrimSpace(q.From) != "" || !q.Since.IsZero() || !q.Until.IsZero() || q.HasAttachments || q.LabelID != 0
+	return strings.TrimSpace(q.From) != "" || !q.Since.IsZero() || !q.Until.IsZero() || q.HasAttachments || q.LabelID != 0 || q.Unread != nil || q.Starred != nil
 }
 
 // Search finds synced messages; accountID 0 searches every account.
@@ -224,6 +226,20 @@ func (s *Service) SearchWith(ctx context.Context, q SearchQuery, limit int) ([]M
 	if q.LabelID != 0 {
 		cond += " AND " + labelCond
 		args = append(args, q.LabelID)
+	}
+	if q.Unread != nil {
+		if *q.Unread {
+			cond += ` AND instr(m.flags, '\Seen') = 0`
+		} else {
+			cond += ` AND instr(m.flags, '\Seen') > 0`
+		}
+	}
+	if q.Starred != nil {
+		if *q.Starred {
+			cond += ` AND instr(m.flags, '\Flagged') > 0`
+		} else {
+			cond += ` AND instr(m.flags, '\Flagged') = 0`
+		}
 	}
 	rows, err := s.db.Query(ctx, "SELECT "+msgCols+" FROM messages m WHERE "+cond+" ORDER BY m.date DESC, m.id DESC LIMIT ?",
 		append(args, clampLimit(limit))...)
