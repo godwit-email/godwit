@@ -2,6 +2,7 @@ package mask
 
 import (
 	"bytes"
+	"cmp"
 	"encoding/json"
 	"errors"
 	"strings"
@@ -29,22 +30,15 @@ func (m *Masker) json(s string, sc scope) (out string, ok bool, err error) {
 	out, ok = walk(s, sc, func(s string, sc scope) string {
 		if t := strings.TrimLeft(s, " \t\r\n"); t != "" && (t[0] == '{' || t[0] == '[') {
 			if out, ok, e := m.json(s, scope{tool: true, model: sc.model}); ok {
-				err = cmpErr(err, e)
+				err = cmp.Or(err, e)
 				return out
 			}
 		}
 		out, e := m.text(s, !sc.model)
-		err = cmpErr(err, e)
+		err = cmp.Or(err, e)
 		return out
 	})
 	return out, ok, err
-}
-
-func cmpErr(err, e error) error {
-	if err != nil {
-		return err
-	}
-	return e
 }
 
 // errUnknown refuses a tool call whose arguments hold a placeholder that
