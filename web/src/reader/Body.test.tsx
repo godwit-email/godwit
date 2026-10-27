@@ -27,7 +27,7 @@ vi.mock("@/mygo", () => ({
 }));
 
 import { ReaderPage as api } from "@/mygo";
-import { readerColored, readerGradients } from "@/preview/fixtures";
+import { readerColored, readerGradients, readerMixed } from "@/preview/fixtures";
 import { ReaderApp } from "./Body";
 
 const theme: Theme = {
@@ -526,6 +526,150 @@ function renderedContrast(
   const [a, b] = [light(fg), light(bg)];
   return (Math.max(a, b) + 0.05) / (Math.min(a, b) + 0.05);
 }
+
+test("the mixed preview preserves artwork and fallback alongside readable independent regions", async () => {
+  const input = body(1, readerMixed);
+  let current = await start(input);
+  const light = current.doc.querySelector(".mixed-mail")?.innerHTML;
+  const element = (id: string) => current.doc.getElementById(id) as HTMLElement;
+  const style = (id: string) => current.win.getComputedStyle(element(id));
+  const art = style("mixed-art").backgroundImage;
+  const gradient = style("mixed-responsive").backgroundImage;
+  const logo = element("mixed-logo").getAttribute("src");
+  act(() => {
+    for (const receive of h.theme) receive(darkTheme);
+  });
+  current = await loaded();
+  expect(style("mixed-art").backgroundImage).toBe(art);
+  expect(style("mixed-art").backgroundColor).toBe("rgb(255, 255, 255)");
+  expect(style("mixed-caption").color).toBe("rgb(17, 17, 17)");
+  expect(style("mixed-solid").backgroundColor).not.toBe("rgb(220, 252, 231)");
+  expect(style("mixed-cta").backgroundColor).toBe("rgb(190, 24, 93)");
+  expect(style("mixed-gradient").backgroundImage).toBe("none");
+  expect(style("mixed-responsive").backgroundImage).toBe(gradient);
+  expect(style("mixed-responsive").backgroundColor).toBe("rgb(255, 255, 255)");
+  expect(style("mixed-faint").color).toBe("rgba(130, 10, 40, 0.05)");
+  expect(style("mixed-logo").backgroundColor).toBe("rgb(255, 255, 255)");
+  expect(element("mixed-logo").getAttribute("src")).toBe(logo);
+  for (const id of [
+    "mixed-primary",
+    "mixed-secondary",
+    "mixed-solid-text",
+    "mixed-cta",
+    "mixed-gradient",
+  ])
+    expect(renderedContrast(element(id), current.win)).toBeGreaterThanOrEqual(4.5);
+  expect(style("mixed-neutral").backgroundColor).not.toBe(style("mixed-art").backgroundColor);
+  act(() => {
+    for (const receive of h.theme) receive(theme);
+  });
+  current = await loaded();
+  expect(current.doc.querySelector(".mixed-mail")?.innerHTML).toBe(light);
+  expect(input.html).toBe(readerMixed);
+});
+
+test("the mixed preview leaves and re-enters fallback when the active width rules change", async () => {
+  const { frame, doc, win } = await start(body(1, readerMixed, { theme: darkTheme }));
+  const sheet = doc.getElementById("mixed-rules") as HTMLStyleElement;
+  const rules = sheet.textContent;
+  const element = (id: string) => doc.getElementById(id) as HTMLElement;
+  const style = (id: string) => win.getComputedStyle(element(id));
+  const pairing = () => [
+    style("mixed-responsive").backgroundImage,
+    style("mixed-responsive").backgroundColor,
+    style("mixed-faint").color,
+  ];
+  const fallback = pairing();
+  const cta = style("mixed-cta").color;
+  const resize = (width: number, activeRules: string) => {
+    // jsdom has no media-query layout; the real preview exercises these rules at each width.
+    sheet.textContent = rules + activeRules;
+    frame.getBoundingClientRect = () => ({ width, height: 100 }) as DOMRect;
+    act(() => window.dispatchEvent(new Event("resize")));
+    flush();
+  };
+  const narrowRules =
+    "#godwit-body .mixed-responsive {background-image:linear-gradient(rgb(230,240,255),rgb(190,210,255))} #godwit-body .mixed-faint {color:#532c78}";
+  resize(380, narrowRules);
+  const adapted = pairing();
+  expect(adapted[0]).toBe("none");
+  expect(renderedContrast(element("mixed-faint"), win)).toBeGreaterThanOrEqual(4.5);
+  resize(740, "");
+  expect(pairing()).toEqual(fallback);
+  resize(380, narrowRules);
+  expect(pairing()).toEqual(adapted);
+  expect(style("mixed-cta").color).toBe(cta);
+});
+
+test("system appearance, font and competing mixed bodies settle on the latest input without old listeners", async () => {
+  const system = Object.assign(new EventTarget(), { matches: true });
+  vi.stubGlobal("matchMedia", () => system);
+  const systemTheme = { ...darkTheme, mode: "system" };
+  let current = await start(body(1, readerMixed, { theme: systemTheme }));
+  const oldImage = current.doc.getElementById("mixed-logo") as HTMLImageElement;
+  const oldLink = current.doc.getElementById("mixed-cta") as HTMLElement;
+  const original = current.win.getComputedStyle(
+    current.doc.getElementById("mixed-primary") as HTMLElement,
+  ).color;
+  current.frame.getBoundingClientRect = () => ({ width: 380, height: 100 }) as DOMRect;
+  act(() => {
+    window.dispatchEvent(new Event("resize"));
+    oldImage.dispatchEvent(new Event("load"));
+    for (const receive of h.theme) {
+      receive(theme);
+      receive({ ...systemTheme, bodyFontSize: 18 });
+    }
+    for (const receive of h.body) {
+      receive(body(3, readerMixed.replace("The complete delivery note", "Translated delivery")));
+      receive(body(2, "<p>Stale original body</p>"));
+      receive(body(4, readerMixed.replace("The complete delivery note", "Latest delivery")));
+    }
+  });
+  flush();
+  current = await loaded(false);
+  flush();
+  flush();
+  expect(current.doc.querySelector("h1")?.textContent).toBe("Latest delivery");
+  expect(current.win.getComputedStyle(current.doc.documentElement).fontSize).toBe("18px");
+  expect(
+    current.win.getComputedStyle(current.doc.getElementById("mixed-primary") as HTMLElement).color,
+  ).toBe(original);
+  expect(
+    current.win.getComputedStyle(current.doc.getElementById("godwit-body") as HTMLElement)
+      .visibility,
+  ).toBe("visible");
+  vi.mocked(api.height).mockClear();
+  oldImage.dispatchEvent(new Event("load"));
+  oldLink.click();
+  oldLink.dispatchEvent(new current.win.KeyboardEvent("keydown", { key: "Enter", bubbles: true }));
+  flush();
+  expect(api.height).not.toHaveBeenCalled();
+  expect(api.openLink).not.toHaveBeenCalled();
+  const link = current.doc.getElementById("mixed-cta") as HTMLElement;
+  link.dispatchEvent(
+    new current.win.KeyboardEvent("keydown", { key: "Enter", bubbles: true, cancelable: true }),
+  );
+  expect(api.openLink).toHaveBeenCalledExactlyOnceWith("https://example.com/delivery");
+  act(() => {
+    system.matches = false;
+    system.dispatchEvent(new Event("change"));
+  });
+  current = await loaded();
+  expect(
+    current.win.getComputedStyle(current.doc.querySelector(".mixed-mail") as HTMLElement)
+      .backgroundColor,
+  ).toBe("rgb(255, 255, 255)");
+  act(() => {
+    system.matches = true;
+    system.dispatchEvent(new Event("change"));
+  });
+  current = await loaded();
+  expect(current.doc.querySelector("h1")?.textContent).toBe("Latest delivery");
+  expect(current.win.getComputedStyle(current.doc.documentElement).fontSize).toBe("18px");
+  expect(
+    current.win.getComputedStyle(current.doc.getElementById("mixed-primary") as HTMLElement).color,
+  ).toBe(original);
+});
 
 test("text-bearing gradients become readable solid surfaces while decoration keeps its gradient", async () => {
   const html = `<div style="background:#fff;color:#111">

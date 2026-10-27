@@ -174,6 +174,10 @@ const pages: Record<string, { states: string[]; entry: () => Promise<unknown>; s
       "fallback",
       "media",
       "gradients",
+      "mixed",
+      "large-paragraphs",
+      "large-cells",
+      "large-nested",
     ],
     entry: () => import("@/reader/main"),
     setup() {
@@ -189,6 +193,10 @@ const pages: Record<string, { states: string[]; entry: () => Promise<unknown>; s
             fallback: fx.readerFallback,
             media: fx.readerMedia,
             gradients: fx.readerGradients,
+            mixed: fx.readerMixed,
+            "large-paragraphs": fx.readerLargeParagraphs,
+            "large-cells": fx.readerLargeCells,
+            "large-nested": fx.readerLargeNested,
           }[state] ??
           "<p>Following up on our call last week, I put together a draft proposal for the Q4 partnership.</p><p>Best,<br>Lena</p>",
         plain: "",

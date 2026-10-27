@@ -587,3 +587,46 @@ export const readerMedia = `<style>
   <img id="media-receipt" src="${readerReceipt}" width="240" height="400" alt="White receipt screenshot">
   <p id="media-tail" data-href="https://example.com/receipt">End of message - view receipt</p>
 </div>`;
+
+export const readerMixed = `<style id="mixed-rules">
+#godwit-body .mixed-mail {background:#fff;color:#111;max-width:640px;margin:auto;padding:24px}
+#godwit-body .mixed-card {background:#eee;padding:16px;margin:16px 0;border:1px solid #ccc}
+#godwit-body .mixed-responsive {background-image:linear-gradient(rgb(255,245,220),rgb(255,210,160));padding:16px}
+#godwit-body .mixed-faint {color:rgba(130,10,40,.05)}
+@media(max-width:480px) {#godwit-body .mixed-mail {padding:12px} #godwit-body .mixed-responsive {background-image:linear-gradient(rgb(230,240,255),rgb(190,210,255))} #godwit-body .mixed-faint {color:#532c78}}
+</style>
+<div class="mixed-mail">
+  <h1 style="font-size:24px">The complete delivery note</h1>
+  <p id="mixed-primary">Your order is ready. Every part of this message should stay readable.</p>
+  <div id="mixed-neutral" class="mixed-card"><p>Delivery details</p><p id="mixed-secondary" style="color:#888">Keep this receipt for your records.</p></div>
+  <img id="mixed-logo" src="${readerLogo}" width="144" height="40" alt="Godwit">
+  <div id="mixed-art" style="background-image:linear-gradient(rgba(255,220,160,.5),transparent),url(${readerTexture});background-size:auto,24px 24px;padding:20px">
+    <p id="mixed-caption">The artwork and this caption keep their original pairing.</p>
+    <div id="mixed-solid" style="background:#dcfce7;color:#166534;padding:16px">
+      <p id="mixed-solid-text">Payment received. This independent solid card still adapts.</p>
+      <span id="mixed-cta" data-href="https://example.com/delivery" style="display:inline-block;background:#be185d;color:#fff;border:2px solid #be185d;padding:12px;outline:2px solid #111">Review delivery</span>
+    </div>
+  </div>
+  <p id="mixed-gradient" style="background-image:linear-gradient(rgb(255,240,204),rgb(255,210,160));padding:16px">A readable gradient heading becomes a solid surface.</p>
+  <div id="mixed-responsive" class="mixed-responsive">
+    <span id="mixed-faint" class="mixed-faint">This region keeps its original artwork when the text cannot reach contrast.</span>
+  </div>
+  <div id="mixed-scroll" style="overflow-x:auto;margin-top:16px"><table style="width:800px;border-collapse:collapse"><tbody><tr><td style="background:#eee;border:1px solid #ccc;padding:12px">Item</td><td style="border:1px solid #ccc;padding:12px">Shipment reference</td></tr></tbody></table></div>
+  <p id="mixed-tail" data-href="https://example.com/receipt">End of message - view receipt</p>
+</div>`;
+
+// Match the three body-preservation shapes in webui.TestReaderBodyWhole.
+export const readerLargeParagraphs =
+  '<div style="background:#fff;color:#111">' +
+  "<p>Delivery details</p>".repeat(6000) +
+  '<p id="large-tail">End of 6000 paragraphs</p></div>';
+export const readerLargeCells =
+  '<div style="background:#fff;color:#111;overflow-x:auto"><table><tbody><tr>' +
+  "<td>Item</td>".repeat(3000) +
+  '</tr></tbody></table><p id="large-tail">End of 3000 table cells</p></div>';
+export const readerLargeNested =
+  '<div style="background:#fff;color:#111">' +
+  "<div>".repeat(30) +
+  "<b>x</b>".repeat(25000) +
+  "</div>".repeat(30) +
+  '<p id="large-tail">End of 25000 nested inline elements</p></div>';
