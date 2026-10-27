@@ -8,15 +8,21 @@ import { currentLocale, type T } from "@/shared/i18n";
  */
 export type Nums = Map<number, { n: number; suspect: boolean; quote: string; c: Citation }>;
 
-/** A citation's date, absolute: localized for current year (e.g. 01.10. or 10/01), full date for another year ("" for none). */
+/** Format date according to Unicode CLDR standards via Intl.DateTimeFormat. */
+export function formatDate(date: Date, locale = currentLocale(), showYear = false): string {
+  return new Intl.DateTimeFormat(locale, {
+    day: "numeric",
+    month: "numeric",
+    ...(showYear && { year: "numeric" }),
+  }).format(date);
+}
+
+/** A citation's date, absolute: localized for current year (e.g. 19.10. or 10/19), full date for another year ("" for none). */
 export function citeDate(ms: number, locale = currentLocale()): string {
   if (!ms) return "";
   const d = new Date(ms);
   const sameYear = d.getFullYear() === new Date().getFullYear();
-  return new Intl.DateTimeFormat(locale, sameYear
-    ? { month: "numeric", day: "2-digit" }
-    : { year: "numeric", month: "numeric", day: "2-digit" }
-  ).format(d);
+  return formatDate(d, locale, !sameYear);
 }
 
 /**

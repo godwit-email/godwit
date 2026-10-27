@@ -165,12 +165,20 @@ func TestFormatDate(t *testing.T) {
 		t.Errorf("de diffYear: got %q, want %q", got, "01.10.2025")
 	}
 
-	// English: M/DD / M/DD/YYYY
-	if got := FormatDateIn(sameYear, now, "en"); got != "10/01" {
-		t.Errorf("en sameYear: got %q, want %q", got, "10/01")
+	// English (US): M/DD / M/DD/YYYY
+	if got := FormatDateIn(sameYear, now, "en-US"); got != "10/01" {
+		t.Errorf("en-US sameYear: got %q, want %q", got, "10/01")
 	}
-	if got := FormatDateIn(diffYear, now, "en"); got != "10/01/2025" {
-		t.Errorf("en diffYear: got %q, want %q", got, "10/01/2025")
+	if got := FormatDateIn(diffYear, now, "en-US"); got != "10/01/2025" {
+		t.Errorf("en-US diffYear: got %q, want %q", got, "10/01/2025")
+	}
+
+	// English (GB): DD/MM / DD/MM/YYYY
+	if got := FormatDateIn(sameYear, now, "en-GB"); got != "01/10" {
+		t.Errorf("en-GB sameYear: got %q, want %q", got, "01/10")
+	}
+	if got := FormatDateIn(diffYear, now, "en-GB"); got != "01/10/2025" {
+		t.Errorf("en-GB diffYear: got %q, want %q", got, "01/10/2025")
 	}
 
 	// French: DD/MM / DD/MM/YYYY
@@ -187,6 +195,14 @@ func TestFormatDate(t *testing.T) {
 	}
 	if got := FormatDateIn(diffYear, now, "zh-Hans"); got != "2025/10/01" {
 		t.Errorf("zh diffYear: got %q, want %q", got, "2025/10/01")
+	}
+
+	// Korean: M. D. / YYYY. M. D.
+	if got := FormatDateIn(sameYear, now, "ko"); got != "10. 1." {
+		t.Errorf("ko sameYear: got %q, want %q", got, "10. 1.")
+	}
+	if got := FormatDateIn(diffYear, now, "ko"); got != "2025. 10. 1." {
+		t.Errorf("ko diffYear: got %q, want %q", got, "2025. 10. 1.")
 	}
 
 	// Active Language()

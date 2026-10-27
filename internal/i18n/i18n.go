@@ -64,10 +64,20 @@ func FormatDate(t, now time.Time) string {
 	return FormatDateIn(t, now, Language())
 }
 
-// FormatDateIn formats t for list views and cards according to lang.
+// FormatDateIn formats t for list views and cards according to lang/locale,
+// adhering to Unicode CLDR standards:
+//   - de: DD.MM. / DD.MM.YYYY
+//   - fr, es, it, pt, vi: DD/MM / DD/MM/YYYY
+//   - en-GB, en-IE, en-AU, en-NZ: DD/MM / DD/MM/YYYY
+//   - en-US (and en default): MM/DD / MM/DD/YYYY
+//   - zh, ja: MM/DD / YYYY/MM/DD
+//   - ko: MM. DD. / YYYY. MM. DD.
+//   - nl: DD-MM / DD-MM-YYYY
+//   - ru, tr: DD.MM / DD.MM.YYYY
 func FormatDateIn(t, now time.Time, lang string) string {
 	t = t.In(now.Location())
-	base, _, _ := strings.Cut(strings.ToLower(strings.TrimSpace(lang)), "-")
+	tag := strings.ToLower(strings.TrimSpace(lang))
+	base, region, _ := strings.Cut(tag, "-")
 	sameYear := t.Year() == now.Year()
 	switch base {
 	case "de":
@@ -90,12 +100,28 @@ func FormatDateIn(t, now time.Time, lang string) string {
 			return fmt.Sprintf("%02d.%02d", t.Day(), t.Month())
 		}
 		return fmt.Sprintf("%02d.%02d.%d", t.Day(), t.Month(), t.Year())
-	case "zh", "ja", "ko":
+	case "ko":
+		if sameYear {
+			return fmt.Sprintf("%d. %d.", t.Month(), t.Day())
+		}
+		return fmt.Sprintf("%d. %d. %d.", t.Year(), t.Month(), t.Day())
+	case "zh", "ja":
 		if sameYear {
 			return fmt.Sprintf("%d/%02d", t.Month(), t.Day())
 		}
 		return fmt.Sprintf("%d/%02d/%02d", t.Year(), t.Month(), t.Day())
-	default: // "en"
+	case "en":
+		if region == "gb" || region == "ie" || region == "au" || region == "nz" {
+			if sameYear {
+				return fmt.Sprintf("%02d/%02d", t.Day(), t.Month())
+			}
+			return fmt.Sprintf("%02d/%02d/%d", t.Day(), t.Month(), t.Year())
+		}
+		if sameYear {
+			return fmt.Sprintf("%d/%02d", t.Month(), t.Day())
+		}
+		return fmt.Sprintf("%d/%02d/%d", t.Month(), t.Day(), t.Year())
+	default:
 		if sameYear {
 			return fmt.Sprintf("%d/%02d", t.Month(), t.Day())
 		}
