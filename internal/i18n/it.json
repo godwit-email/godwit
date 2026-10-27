@@ -109,6 +109,7 @@
   "error_stale_draft": "La bozza è stata modificata altrove.",
   "error_too_large": "L’allegato supera il limite di dimensione.",
   "error_link_ref": "Un link in questa bozza rimanda a un’email non più disponibile. Sostituisci il link prima di inviare.",
+  "error_placeholder": "Questa bozza contiene ancora un segnaposto al posto di un’informazione privata. Sostituiscilo con il testo reale prima di inviare.",
   "error_translator_unavailable": "Il plugin di traduzione non è in esecuzione. Abilitalo in Impostazioni › Estensioni oppure traduci di nuovo con il modello.",
   "error_system_language_not_installed": "Scarica queste lingue in Impostazioni di Sistema › Generali › Lingua e Zona › Lingue di traduzione, poi traduci di nuovo.",
   "error_system_language_unsupported": "macOS non traduce tra queste lingue. Scegli un altro metodo di traduzione in Impostazioni › Generali.",

@@ -706,3 +706,51 @@ func TestSendRefusesLinkReference(t *testing.T) {
 	require.ErrorIs(t, e.s.Send(bg, d.ID), ErrLinkRef)
 	assert.Zero(t, e.count(t, "SELECT count(*) FROM outbox"))
 }
+
+// A placeholder that names no value, in any address, the subject or the
+// body (an href's braces percent-encoded too), is never mailed.
+func TestSendRefusesAPlaceholder(t *testing.T) {
+	const p = "{{BANK_CARD_aaaaaaaaaaaa}}"
+	for name, set := range map[string]func(*Draft){
+		"to":       func(d *Draft) { d.To = []string{p} },
+		"cc":       func(d *Draft) { d.Cc = []string{p + " <carol@example.com>"} },
+		"bcc":      func(d *Draft) { d.Bcc = []string{p} },
+		"reply-to": func(d *Draft) { d.ReplyTo = p },
+		"subject":  func(d *Draft) { d.Subject = "Card " + p },
+		"body":     func(d *Draft) { d.HTML = "<p>Card " + p + "</p>" },
+		"href":     func(d *Draft) { d.HTML = `<p><a href="https://pay.example/` + p + `">pay</a></p>` },
+	} {
+		t.Run(name, func(t *testing.T) {
+			e := newSendEnv(t, false)
+			d, err := e.s.NewDraft(bg, e.acc.ID, "new", 0)
+			require.NoError(t, err)
+			d.To, d.HTML = []string{"bob@example.com"}, "<p>hi</p>"
+			set(&d)
+			d, err = e.s.SaveDraft(bg, d)
+			require.NoError(t, err)
+			require.ErrorIs(t, e.s.Send(bg, d.ID), ErrPlaceholder)
+			assert.Zero(t, e.count(t, "SELECT count(*) FROM outbox"))
+		})
+	}
+}
+
+// A placeholder the masker made is mailed as its value.
+func TestSendRestoresAPlaceholder(t *testing.T) {
+	const card = "4111 1111 1111 1111"
+	e := newSendEnv(t, false)
+	m, err := e.s.masker()
+	require.NoError(t, err)
+	p, err := m.Text(card)
+	require.NoError(t, err)
+	d, err := e.s.NewDraft(bg, e.acc.ID, "new", 0)
+	require.NoError(t, err)
+	d.To, d.Subject, d.HTML = []string{"Card " + p + " <bob@example.com>"}, "Card "+p, `<p><a href="https://pay.example/`+p+`">`+p+`</a></p>`
+	d, err = e.s.SaveDraft(bg, d)
+	require.NoError(t, err)
+	require.NoError(t, e.s.Send(bg, d.ID))
+	raw, err := os.ReadFile(store.Str(e.rows(t, "SELECT raw_path FROM outbox")[0][0]))
+	require.NoError(t, err)
+	assert.NotContains(t, string(raw), "BANK_CARD")
+	assert.Equal(t, `["bob@example.com"]`, store.Str(e.rows(t, "SELECT rcpts FROM outbox")[0][0]))
+	assert.Equal(t, "Card "+card, store.Str(e.rows(t, "SELECT subject FROM outbox")[0][0]))
+}

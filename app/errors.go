@@ -43,6 +43,7 @@ var errorKeys = []struct {
 	{core.ErrBaseURLScheme, "error.base_url_scheme"},
 	{core.ErrTooLarge, "error.too_large"},
 	{core.ErrLinkRef, "error.link_ref"},
+	{core.ErrPlaceholder, "error.placeholder"},
 	{core.ErrKeychainUnavailable, "error.keychain"},
 	{errFlushSlow, "error.flush_slow"},
 	{errSignatureUnsaved, "error.signature_unsaved"},

@@ -109,6 +109,7 @@
   "error_stale_draft": "Het concept is ergens anders gewijzigd.",
   "error_too_large": "De bijlage overschrijdt de maximale grootte.",
   "error_link_ref": "Een link in dit concept verwijst naar een e-mail die niet meer beschikbaar is. Vervang de link voordat je verzendt.",
+  "error_placeholder": "Dit concept bevat nog een plaatsaanduiding voor privégegevens. Vervang die door de echte tekst voordat je verzendt.",
   "error_translator_unavailable": "De vertaalplug-in is niet actief. Schakel deze in via Instellingen › Extensies, of vertaal opnieuw met het model.",
   "error_system_language_not_installed": "Download deze talen in Systeeminstellingen › Algemeen › Taal en regio › Vertaaltalen en vertaal opnieuw.",
   "error_system_language_unsupported": "macOS vertaalt niet tussen deze talen. Kies een andere vertaalmethode in Instellingen › Algemeen.",
