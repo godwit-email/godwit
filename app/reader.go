@@ -20,6 +20,7 @@ import (
 	"github.com/egoist/mygo/ui"
 	"github.com/godwit-email/godwit/core"
 	"github.com/godwit-email/godwit/core/ai"
+	gomail "github.com/godwit-email/godwit/core/mail"
 	"github.com/godwit-email/godwit/internal/i18n"
 	"github.com/godwit-email/godwit/internal/icons"
 	"github.com/godwit-email/godwit/internal/kit"
@@ -46,6 +47,7 @@ type reader struct {
 	labelMenu   bool
 	labelQuery  string
 	open        map[int64]bool // messages shown in full
+	focus       int64          // the message last expanded, or whose page took ⌘S/⌘P: what save and print act on while it is open
 	historyOpen map[int64]bool // collapsed runs of folded messages shown anyway, by the run's first message
 	bodies      map[int64]*msgBody
 	scroll      ui.ScrollState // the messages' scrolling; a body's page hands on the wheels it does not use
@@ -145,7 +147,7 @@ func (r *reader) reset(k [2]int64) {
 		b.closeView()
 	}
 	r.stopAI()
-	r.key, r.loaded, r.subject, r.msgs = k, false, "", nil
+	r.key, r.loaded, r.subject, r.msgs, r.focus = k, false, "", nil, 0
 	r.threadIDs, r.labels, r.labelMenu, r.labelQuery = nil, nil, false, ""
 	r.open, r.historyOpen, r.bodies = map[int64]bool{}, map[int64]bool{}, map[int64]*msgBody{}
 	r.scroll.X, r.scroll.Y = 0, 0
@@ -267,6 +269,7 @@ func (r *reader) toggle(id int64) {
 		return
 	}
 	r.expand(id)
+	r.focus = id
 	for _, m := range r.msgs {
 		if m.ID == id && !isSeen(m) {
 			r.markRead([]core.MessageSummary{m})
@@ -465,6 +468,18 @@ func (r *reader) shown(v ui.NativeWebView, message int64) *msgBody {
 	return nil
 }
 
+// focusView makes the message whose page is v, if shown, the one save and
+// print act on, and reports whether it was.
+func (r *reader) focusView(v ui.NativeWebView) bool {
+	for id, b := range r.bodies {
+		if b.view != nil && b.view == v && r.open[id] {
+			r.focus = id
+			return true
+		}
+	}
+	return false
+}
+
 // current reports whether v is the page of a body shown.
 func (r *reader) current(v ui.NativeWebView) bool {
 	for id, b := range r.bodies {
@@ -505,6 +520,24 @@ func (r *reader) last() (core.MessageSummary, bool) {
 		return core.MessageSummary{}, false
 	}
 	return r.msgs[len(r.msgs)-1], true
+}
+
+// target is the message save and print act on: the focused one while it is
+// expanded, else the newest expanded, else the newest.
+func (r *reader) target() (core.MessageSummary, bool) {
+	var open []core.MessageSummary
+	for _, m := range r.msgs {
+		if r.focus == m.ID && r.open[m.ID] {
+			return m, true
+		}
+		if r.open[m.ID] {
+			open = append(open, m)
+		}
+	}
+	if len(open) > 0 {
+		return open[len(open)-1], true
+	}
+	return r.last()
 }
 
 // account is the account of the message shown; 0 when none is.
@@ -685,39 +718,32 @@ func copyFile(src, dst string) error {
 	return out.Close()
 }
 
-// saveMail saves the newest message of the open thread to an .eml file.
+// saveMail saves the target message to an .eml file.
 func (r *reader) saveMail() {
-	m, ok := r.last()
+	m, ok := r.target()
 	if !ok {
 		return
 	}
 	a := r.p.a
 	plat := a.plat
-	subject := r.subject
 	a.do(func(ctx context.Context) error {
-		defaultName := fileName(strings.TrimSuffix(subject, ".eml"), "email") + ".eml"
-		dst, err := plat.SaveFile(defaultName)
+		stem := []rune(m.Subject)
+		stem = stem[:min(len(stem), 100)] // file systems cap names near 255 bytes
+		dst, err := plat.SaveFile(fileName(string(stem), "email") + ".eml")
 		if err != nil || dst == "" {
 			return err
 		}
-		var raw []byte
-		if b, err := a.svc.GetRawMessage(ctx, m.ID); err == nil {
-			raw = b
-		} else {
-			html, _ := a.svc.StoredHTML(ctx, m.ID)
-			var sb strings.Builder
-			if m.From != "" {
-				sb.WriteString("From: " + m.From + "\r\n")
+		raw, err := a.svc.GetRawMessage(ctx, m.ID)
+		if err != nil {
+			// Offline: a simplified copy built from what is stored, its HTML
+			// body only (attachments are dropped). Build encodes the headers.
+			html, herr := a.svc.StoredHTML(ctx, m.ID)
+			if herr != nil {
+				return err
 			}
-			if len(m.To) > 0 {
-				sb.WriteString("To: " + strings.Join(m.To, ", ") + "\r\n")
+			if raw, _, err = gomail.Build(gomail.Outgoing{From: m.From, To: m.To, Cc: m.Cc, Subject: m.Subject, HTML: html}, m.Date); err != nil {
+				return err
 			}
-			sb.WriteString("Subject: " + m.Subject + "\r\n")
-			sb.WriteString("Date: " + m.Date.Format(time.RFC1123Z) + "\r\n")
-			sb.WriteString("MIME-Version: 1.0\r\n")
-			sb.WriteString("Content-Type: text/html; charset=utf-8\r\n\r\n")
-			sb.WriteString(html)
-			raw = []byte(sb.String())
 		}
 		return os.WriteFile(dst, raw, 0o644)
 	}, func(err error) {
@@ -729,13 +755,11 @@ func (r *reader) saveMail() {
 	})
 }
 
-// printMail prints the current message's body page.
+// printMail prints the target message's body page.
 func (r *reader) printMail() {
-	m, ok := r.last()
-	if !ok {
-		return
+	if m, ok := r.target(); ok {
+		r.p.a.plat.Print(m.ID)
 	}
-	r.p.a.plat.Print(m.ID)
 }
 
 // view is the reading pane: the toolbar over the subject and the messages.
@@ -801,8 +825,8 @@ func (r *reader) toolbar(c *ui.Context) {
 		}
 		kit.ButtonGroup(c, file...)
 		kit.ButtonGroup(c,
-			kit.GroupItem{Icon: "save", Tip: i18n.T("reader.save") + " (⌘S)", OnClick: func() { r.saveMail() }},
-			kit.GroupItem{Icon: "printer", Tip: i18n.T("reader.print") + " (⌘P)", OnClick: func() { r.printMail() }},
+			kit.GroupItem{Icon: "save", Tip: i18n.T("reader.save"), OnClick: func() { r.saveMail() }},
+			kit.GroupItem{Icon: "printer", Tip: i18n.T("reader.print"), OnClick: func() { r.printMail() }},
 		)
 		ui.Spacer(c)
 		ui.Row(c).Wrap().Gap(th.Space(1)).AlignItems(ui.Center).Children(func() { r.aiTools(c) })
@@ -1149,16 +1173,16 @@ func (a *App) BodySearch(view ui.NativeWebView) {
 	}
 }
 
-// BodySave saves the message for a body's page (⌘S).
+// BodySave saves the message of a body's page (⌘S).
 func (a *App) BodySave(view ui.NativeWebView) {
-	if a.mail.reader.current(view) {
+	if a.mail.reader.focusView(view) {
 		a.mail.reader.saveMail()
 	}
 }
 
-// BodyPrint prints the message for a body's page (⌘P).
+// BodyPrint prints the message of a body's page (⌘P).
 func (a *App) BodyPrint(view ui.NativeWebView) {
-	if a.mail.reader.current(view) {
+	if a.mail.reader.focusView(view) {
 		a.mail.reader.printMail()
 	}
 }

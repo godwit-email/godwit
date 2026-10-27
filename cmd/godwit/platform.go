@@ -293,7 +293,6 @@ func (p *platform) TranslateBody(message int64, texts map[string]string) {
 func (p *platform) Print(message int64) {
 	for page, v := range p.bodies {
 		if id, ok := p.reader.Bound(page); ok && id == message {
-			_ = webui.ReaderPrint.EmitPage(page, message)
 			v.Page().Print()
 			return
 		}

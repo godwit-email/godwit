@@ -1152,7 +1152,7 @@ func TestReaderSaveAndPrint(t *testing.T) {
 	h.plat.savePath = savePath
 	h.plat.mu.Unlock()
 
-	h.click(i18n.T("reader.save") + " (⌘S)")
+	h.click(i18n.T("reader.save"))
 	arg := h.callArg("SaveFile")
 	if !strings.HasSuffix(arg, ".eml") {
 		t.Fatalf("expected .eml default name, got %q", arg)
@@ -1163,7 +1163,7 @@ func TestReaderSaveAndPrint(t *testing.T) {
 	})
 
 	// 2. Print button in toolbar
-	h.click(i18n.T("reader.print") + " (⌘P)")
+	h.click(i18n.T("reader.print"))
 	printArg := h.callArg("Print")
 	if printArg != fmt.Sprint(m.ID) {
 		t.Fatalf("expected Print call for message %d, got %q", m.ID, printArg)
@@ -1218,4 +1218,41 @@ func TestReaderSaveAndPrint(t *testing.T) {
 	if printArg3 != fmt.Sprint(m.ID) {
 		t.Fatalf("expected BodyPrint call for %d, got %q", m.ID, printArg3)
 	}
+}
+
+func TestReaderPrintFocusedMessage(t *testing.T) {
+	h, accs := mailHarness(t, nil, "alice@example.com")
+	acc, base := accs[0], h.clock.Now()
+	h.put(acc, "INBOX", coretest.Msg("bob@example.com", acc.Email, "Plan", "first words", coretest.MessageID("a@x"), at(base, 2)))
+	h.put(acc, "INBOX", coretest.Msg("carol@example.com", acc.Email, "Re: Plan", "second words", coretest.MessageID("b@x"), coretest.InReplyTo("a@x"), at(base, 1)))
+	h.syncNow(acc)
+	page, _ := h.env.Svc.ListThreads(context.Background(), core.View{Unified: "inbox"}, "", 10)
+	msgs := h.messages(page.Items[0].ID)
+	if err := h.env.Svc.SetFlags(context.Background(), []int64{msgs[0].ID}, []string{`\Seen`}, nil); err != nil {
+		t.Fatal(err)
+	}
+	h.openThread(page.Items[0].ID)
+	h.seeBody(msgs[1].ID)
+	r := h.app.mail.reader
+	print := func(want int64, do func()) {
+		t.Helper()
+		h.plat.mu.Lock()
+		h.plat.calls = nil
+		h.plat.mu.Unlock()
+		do()
+		h.drain()
+		if got := h.callArg("Print"); got != fmt.Sprint(want) {
+			t.Fatalf("printed %s, want %d", got, want)
+		}
+	}
+	key := func() { h.tt.Key(ui.Cmd, ui.KeyP) }
+
+	print(msgs[1].ID, key) // nothing focused: the newest
+	h.click("bob@example.com")
+	h.seeBody(msgs[0].ID)
+	print(msgs[0].ID, key) // the one just expanded
+	print(msgs[1].ID, func() { h.app.BodyPrint(h.plat.view(msgs[1].ID)) })
+	print(msgs[1].ID, key) // the page that took ⌘P keeps the focus
+	r.toggle(msgs[1].ID)   // the focused one folded: the newest expanded
+	print(msgs[0].ID, key)
 }

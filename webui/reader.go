@@ -58,9 +58,6 @@ type ReaderBody struct {
 // ReaderReload tells a reader page its body changed (加载图片, a retry).
 var ReaderReload = mygo.NewEvent[ReaderBody]("readerBody")
 
-// ReaderPrint asks a reader page to print its body.
-var ReaderPrint = mygo.NewEvent[int64]("readerPrint")
-
 // ReaderDeps is what Reader needs from the platform. The callbacks post to
 // the UI thread themselves. Each names the page (its key) it is about, bound
 // as the call was made: by the time the post runs the page may be closed or

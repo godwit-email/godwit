@@ -143,13 +143,6 @@ export function Body({ body, theme }: { body: ReaderBody; theme: Theme }) {
 
   const wire = useCallback((f: HTMLIFrameElement) => attach(f, wheel, theme), [wheel, theme]);
   useEffect(() => {
-    return events.readerPrint?.on(() => {
-      const win = frame.current?.contentWindow ?? window;
-      win.focus();
-      win.print();
-    });
-  }, []);
-  useEffect(() => {
     const f = frame.current;
     if (!f) return;
     let polling = true;

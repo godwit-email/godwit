@@ -788,12 +788,6 @@ func (p *mailPage) listView(c *ui.Context) {
 	if act != "" {
 		p.batch(act, target)
 	}
-	if c.Shortcut(ui.Cmd, ui.KeyS) {
-		p.reader.saveMail()
-	}
-	if c.Shortcut(ui.Cmd, ui.KeyP) {
-		p.reader.printMail()
-	}
 	if p.older.busy || p.older.err != nil {
 		p.olderRow(c)
 	}

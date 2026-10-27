@@ -28,7 +28,6 @@ vi.mock("@/mygo", () => ({
   events: {
     readerBody: { on: h.on(h.body) },
     theme: { on: h.on(h.theme) },
-    readerPrint: { on: () => () => {} },
   },
 }));
 
