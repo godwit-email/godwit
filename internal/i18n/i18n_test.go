@@ -212,4 +212,3 @@ func TestFormatDate(t *testing.T) {
 		t.Errorf("Language() de: got %q, want %q", got, "01.10.")
 	}
 }
-
