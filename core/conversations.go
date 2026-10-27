@@ -255,7 +255,9 @@ func (s *Service) GetConversation(ctx context.Context, id int64) (Conversation, 
 	if err != nil {
 		return Conversation{}, err
 	}
-	expand := func(m ai.Message) ai.Message { // the saved history keeps the references the model wrote
+	mk, _ := s.masker()
+	expand := func(m ai.Message) ai.Message { // the saved history keeps the references and placeholders the model wrote
+		m = ai.RestoreMessage(mk, m)
 		x := s.linkExpander() // per message, as each was expanded live: history grows past maxExpandMessages
 		m.Text, m.Reasoning = x.text(ctx, m.Text), x.text(ctx, m.Reasoning)
 		m.Calls = slices.Clone(m.Calls)
