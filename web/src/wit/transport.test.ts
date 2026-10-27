@@ -58,6 +58,8 @@ const turn = (t: Partial<WitTurn> & Pick<WitTurn, "id">): WitTurn => {
     citations: [],
     runs: [1],
     elapsed: 0,
+    masked: 0,
+    warned: 0,
     canAskAgain: false,
     asked: 0,
     answered: 0,

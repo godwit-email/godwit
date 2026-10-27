@@ -118,7 +118,7 @@ func (s *Service) runBodyTranslation(ctx context.Context, end func(), sk skills.
 				result, err = translateMasked(ctx, originals, t.ID, lang, keep, call)
 			} else {
 				var masked []string
-				if masked, err = bound.maskTexts(originals); err == nil {
+				if masked, err = bound.maskTexts(ctx, originals); err == nil {
 					result, err = translateRestored(ctx, originals, masked, func(tr, _ string) string { return bound.masker.Restore(tr) }, lang, keep, call)
 				}
 			}
@@ -128,8 +128,8 @@ func (s *Service) runBodyTranslation(ctx context.Context, end func(), sk skills.
 			}
 		}
 		if err != nil {
-			var ae *ai.Error
-			if !errors.As(err, &ae) {
+			ae := ai.Blocked(err)
+			if ae == nil && !errors.As(err, &ae) {
 				code := ai.CodeInternal
 				if errors.Is(err, context.Canceled) {
 					code = ai.CodeCanceled

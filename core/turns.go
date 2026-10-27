@@ -36,6 +36,9 @@ type Turn struct {
 	Cited   []Cited
 	Runs    []int64
 	Elapsed time.Duration // how long its runs worked (Run.Active)
+	// Masked is how many values 脱敏 masked in what its runs sent (已脱敏 N
+	// 处), Warned how many it sent as they are (仅警告).
+	Masked, Warned int
 	// Asked is when its first run began, Answered when its last one last
 	// moved on (zero: none).
 	Asked, Answered time.Time
@@ -70,10 +73,11 @@ type Cited struct {
 
 // runInfo is a run of a conversation as its turns need it.
 type runInfo struct {
-	id           int64
-	from, to     int64
-	active       time.Duration
-	began, moved time.Time // created_at, updated_at
+	id             int64
+	from, to       int64
+	active         time.Duration
+	began, moved   time.Time // created_at, updated_at
+	masked, warned int
 }
 
 // turnsOf groups h's messages into turns with what its runs, approvals and
@@ -105,6 +109,8 @@ func turnsOf(h *ai.History, runs []runInfo, as []Approval, cs []Citation, canAsk
 				t.Runs = append(t.Runs, r.id)
 				t.Elapsed += r.active
 				t.Answered = r.moved
+				// a resume sends what the run before it sent, and more
+				t.Masked, t.Warned = max(t.Masked, r.masked), max(t.Warned, r.warned)
 			}
 		}
 		calls := map[string]int{} // call ID -> index in t.Calls
@@ -174,14 +180,14 @@ func join(a, b string) string {
 // conversationRuns are conversation id's runs that added any of its history,
 // in run order.
 func (s *Service) conversationRuns(ctx context.Context, id int64) ([]runInfo, error) {
-	rows, err := s.db.Query(ctx, "SELECT id, hist_from, hist_to, active_ms, created_at, updated_at FROM runs WHERE conversation_id = ? AND hist_from IS NOT NULL ORDER BY id", id)
+	rows, err := s.db.Query(ctx, "SELECT id, hist_from, hist_to, active_ms, created_at, updated_at, masked, mask_warned FROM runs WHERE conversation_id = ? AND hist_from IS NOT NULL ORDER BY id", id)
 	if err != nil {
 		return nil, err
 	}
 	out := make([]runInfo, 0, len(rows.Values))
 	for _, r := range rows.Values {
 		out = append(out, runInfo{id: store.Int(r[0]), from: store.Int(r[1]), to: store.Int(r[2]), active: time.Duration(store.Int(r[3])) * time.Millisecond,
-			began: time.Unix(store.Int(r[4]), 0), moved: time.Unix(store.Int(r[5]), 0)})
+			began: time.Unix(store.Int(r[4]), 0), moved: time.Unix(store.Int(r[5]), 0), masked: int(store.Int(r[6])), warned: int(store.Int(r[7]))})
 	}
 	return out, nil
 }

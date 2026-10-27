@@ -4,7 +4,9 @@ import (
 	"fmt"
 	"strings"
 	"testing"
+	"time"
 
+	"github.com/godwit-email/godwit/core/ai"
 	"github.com/godwit-email/godwit/core/ai/mask"
 	"github.com/godwit-email/godwit/core/internal/testllm"
 	"github.com/stretchr/testify/assert"
@@ -199,4 +201,88 @@ func TestMaskingPreviewStoresNothing(t *testing.T) {
 	out, err = e.s.PreviewMasking(t.Context(), st, "Falcon")
 	require.NoError(t, err)
 	assert.Equal(t, "Falcon", out, "masking off sends it as it is")
+}
+
+// setMaskAction sets what is done with category's values.
+func setMaskAction(t *testing.T, s *Service, actions map[string]string) {
+	t.Helper()
+	st, err := s.GetSettings(t.Context())
+	require.NoError(t, err)
+	for name, c := range st.MaskCategories.All() {
+		if a, ok := actions[name]; ok {
+			c.Action = a
+		}
+	}
+	_, err = s.SetSettings(t.Context(), st)
+	require.NoError(t, err)
+}
+
+// 仅警告 sends the address as it is: the turn says how many values it
+// masked and that one went unmasked, and the record has both, never a value.
+func TestWarnedValuesGoAsTheyAreAndAreShown(t *testing.T) {
+	const card, addr = "4111 1111 1111 1111", "ann@example.com"
+	e := newApprovalEnv(t)
+	setMaskAction(t, e.s, map[string]string{mask.Emails: MaskWarn})
+	conv := e.newConv(t, "ask", 0)
+	e.srv.Script(testllm.Turn{Text: []string{"ok"}})
+	e.start(t, conv, "Is "+card+" "+addr+"'s card?")
+	body := string(e.srv.Requests()[0].Body)
+	assert.Contains(t, body, addr)
+	assert.NotContains(t, body, card)
+
+	c, err := e.s.GetConversation(t.Context(), conv.ID)
+	require.NoError(t, err)
+	require.Len(t, c.Turns, 1)
+	assert.Equal(t, 1, c.Turns[0].Masked)
+	assert.Equal(t, 1, c.Turns[0].Warned)
+
+	log, err := e.s.MaskingLog(t.Context())
+	require.NoError(t, err)
+	require.Len(t, log, 2)
+	for _, r := range log {
+		assert.Equal(t, "wit", r.Feature)
+		assert.WithinDuration(t, time.Now(), r.At, time.Minute)
+	}
+	assert.Equal(t, []MaskRecord{
+		{Feature: "wit", Kind: "BANK_CARD", Category: mask.IDs, First: "4", Len: 19, Action: MaskHide, At: log[0].At},
+		{Feature: "wit", Kind: "EMAIL", Category: mask.Emails, First: "a", Len: 3, Action: MaskWarn, At: log[1].At},
+	}, []MaskRecord{log[1], log[0]}, "newest first")
+	rows, err := e.s.db.Query(t.Context(), "SELECT * FROM mask_log")
+	require.NoError(t, err)
+	assert.NotContains(t, fmt.Sprint(rows.Values), "4111")
+	assert.NotContains(t, fmt.Sprint(rows.Values), "ann")
+}
+
+// 拦截 sends nothing: Wit fails naming the category, and the request is
+// recorded as blocked.
+func TestABlockedWitQuestionIsNotSent(t *testing.T) {
+	e := newApprovalEnv(t)
+	setMaskAction(t, e.s, map[string]string{mask.IDs: MaskBlock})
+	conv := e.newConv(t, "ask", 0)
+	evs := e.start(t, conv, "Is 4111 1111 1111 1111 my card?")
+	last := evs[len(evs)-1]
+	require.Equal(t, "error", last.Kind)
+	assert.Equal(t, ai.CodeBlocked, last.Err.Code)
+	assert.Equal(t, []string{mask.IDs}, MaskBlocked(last.Err))
+	assert.Empty(t, e.srv.Requests())
+	log, err := e.s.MaskingLog(t.Context())
+	require.NoError(t, err)
+	require.Len(t, log, 1)
+	assert.Equal(t, MaskBlock, log[0].Action)
+}
+
+// The record keeps 30 days.
+func TestTheMaskingLogKeepsThirtyDays(t *testing.T) {
+	e := newApprovalEnv(t)
+	m, err := e.s.masker()
+	require.NoError(t, err)
+	old := time.Now().Add(-31 * 24 * time.Hour).Unix()
+	_, err = e.s.db.Execute(t.Context(), "INSERT INTO mask_log(at, feature, kind, category, first, len, action) VALUES (?, 'wit', 'PHONE', 'phones', '1', 11, 'mask')", old)
+	require.NoError(t, err)
+	_, err = m.Request(mask.Tag(t.Context(), "summary", nil), "card 4111 1111 1111 1111")
+	require.NoError(t, err)
+	log, err := e.s.MaskingLog(t.Context())
+	require.NoError(t, err)
+	require.Len(t, log, 1)
+	assert.Equal(t, "summary", log[0].Feature)
 }

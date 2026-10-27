@@ -59,6 +59,10 @@ type WitTurn struct {
 	// Elapsed is how long its runs worked, in milliseconds (0: not known, as
 	// for a run before this was kept).
 	Elapsed int64 `json:"elapsed"`
+	// Masked is how many values 脱敏 masked in what its runs sent, Warned
+	// how many went as they are (仅警告).
+	Masked int `json:"masked"`
+	Warned int `json:"warned"`
 	// CanAskAgain: Ask's rewind takes it now.
 	CanAskAgain bool `json:"canAskAgain"`
 	// Asked and Answered are when it was asked and last answered, in Unix
@@ -94,7 +98,7 @@ func witTurns(c core.Conversation) []WitTurn {
 	out := make([]WitTurn, 0, len(c.Turns))
 	for _, t := range c.Turns {
 		w := WitTurn{ID: t.ID, Question: t.Question, Quoted: []MailHit{}, Text: t.Text, Reasoning: t.Reasoning, Calls: []WitTurnCall{},
-			Steps: make([]WitStep, 0, len(t.Steps)), Approvals: []Approval{}, Citations: []Citation{}, Runs: append([]int64{}, t.Runs...), Elapsed: t.Elapsed.Milliseconds(), CanAskAgain: t.CanAskAgain}
+			Steps: make([]WitStep, 0, len(t.Steps)), Approvals: []Approval{}, Citations: []Citation{}, Runs: append([]int64{}, t.Runs...), Elapsed: t.Elapsed.Milliseconds(), Masked: t.Masked, Warned: t.Warned, CanAskAgain: t.CanAskAgain}
 		if t.Command != nil {
 			w.Command = &WitCommand{Skill: t.Command.Skill, Lang: t.Command.Lang}
 		}

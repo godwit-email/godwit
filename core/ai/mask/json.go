@@ -16,25 +16,42 @@ import (
 // string holding JSON of its own (a tool's arguments or result) is masked
 // as that JSON, so values are found in its text as the model reads it.
 // What has nothing to mask comes back byte for byte; a body that isn't
-// JSON is masked as text.
-func (m *Masker) Body(body string) (string, error) {
+// JSON is masked as text. A category set to Block fails it (*BlockedError,
+// naming each category that did); one set to Warn goes as it is.
+func (m *Masker) Body(body string) (string, error) { return m.bodyTo(body, nil) }
+
+// bodyTo is Body, what it finds added to f.
+func (m *Masker) bodyTo(body string, f *Found) (string, error) {
 	if err := m.learnBodyNames(body); err != nil {
 		return "", err
 	}
-	out, ok, err := m.json(body, scope{top: true})
-	if !ok {
-		return m.Text(body)
+	out, ok, err := m.json(body, scope{top: true}, f)
+	switch {
+	case !ok:
+		return m.textTo(body, f)
+	case err != nil:
+		return "", err
 	}
-	return out, err
+	return out, nil
 }
 
-// json masks the JSON document s at sc; ok is false if it is not one.
-func (m *Masker) json(s string, sc scope) (out string, ok bool, err error) {
+// json masks the JSON document s at sc; ok is false if it is not one. The
+// first error that is not a block wins; blocks add up their categories.
+func (m *Masker) json(s string, sc scope, f *Found) (out string, ok bool, err error) {
+	var block *BlockedError
 	out, ok = deep(s, sc, func(s string, sc scope) string {
-		out, e := m.text(s, !sc.model)
-		err = cmp.Or(err, e)
+		out, e := m.text(s, !sc.model, f)
+		var b *BlockedError
+		if errors.As(e, &b) {
+			block = block.with(b.Categories...)
+		} else {
+			err = cmp.Or(err, e)
+		}
 		return out
 	})
+	if block != nil {
+		err = cmp.Or(err, error(block))
+	}
 	return out, ok, err
 }
 

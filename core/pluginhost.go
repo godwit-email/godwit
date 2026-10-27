@@ -12,6 +12,7 @@ import (
 	"sync/atomic"
 
 	"github.com/godwit-email/godwit/core/ai"
+	"github.com/godwit-email/godwit/core/ai/mask"
 	"github.com/godwit-email/godwit/core/gateway"
 	"github.com/godwit-email/godwit/core/mail"
 	"github.com/godwit-email/godwit/core/plugins"
@@ -231,7 +232,7 @@ func (h *pluginHost) LLMComplete(ctx context.Context, prompt string) (out string
 			return err
 		}
 		system := pluginLLMNote + "\n\n" + ai.UntrustedSystemNote + "\n\nAnswer in " + h.s.readingLanguage(ctx) + "."
-		events, wait := e.Run(ctx, ai.Request{Model: model, System: system,
+		events, wait := e.Run(mask.Tag(ctx, featurePlugin, nil), ai.Request{Model: model, System: system,
 			Prompt: ai.Untrusted("plugin:"+h.name, prompt, ai.SuspectInjection(prompt)), MaxTurns: 1})
 		var b strings.Builder
 		for ev := range events {
@@ -270,7 +271,7 @@ func (h *pluginHost) LLMDecide(ctx context.Context, input string, qs []plugins.Q
 		if err := h.s.gateway().Record(ctx, gateway.Entry{Source: gateway.SourcePlugin, Extension: h.name, Tool: "plugin:" + h.name + ":llm.decide", Decision: "run"}); err != nil {
 			return err
 		}
-		out, err = j.Ask(ctx, input, qs)
+		out, err = j.Ask(mask.Tag(ctx, featurePlugin, nil), input, qs)
 		return err
 	})
 	return out, err

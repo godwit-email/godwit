@@ -69,7 +69,7 @@ func (r *runner) runPi(req Request) Result {
 	if req.History != nil {
 		return r.agentPi(ctx, req, preq, emit)
 	}
-	res, err := pi.Generate(ctx, cmp.Or(req.Model.Client, r.e.client), preq, pi.Hooks{Emit: emit, Mask: maskHook(r.e.Masker, req.Model.OnDevice)})
+	res, err := pi.Generate(ctx, cmp.Or(req.Model.Client, r.e.client), preq, pi.Hooks{Emit: emit, Mask: maskHook(ctx, r.e.Masker, req.Model.OnDevice)})
 	if err != nil {
 		return r.piFailed(ctx, err)
 	}
@@ -84,18 +84,31 @@ func (r *runner) runPi(req Request) Result {
 
 // maskHook is how a run masks its requests with m: off this device and with
 // masking on, each body; else each body only shows m the values it holds,
-// so what comes back restores (a conversation may change models).
-func maskHook(m *mask.Masker, onDevice bool) func(string) (string, error) {
+// so what comes back restores (a conversation may change models). Each
+// request masked is recorded as ctx's (mask.Tag).
+func maskHook(ctx context.Context, m *mask.Masker, onDevice bool) func(string) (string, error) {
 	switch {
 	case m == nil:
 		return nil
 	case onDevice || !m.On():
 		return func(body string) (string, error) { m.Learn(body); return body, nil }
 	}
-	return m.Body
+	return func(body string) (string, error) { return m.Request(ctx, body) }
+}
+
+// Blocked is the Error of err if 脱敏 blocked its request, else nil.
+func Blocked(err error) *Error {
+	var b *mask.BlockedError
+	if !errors.As(err, &b) {
+		return nil
+	}
+	return &Error{Code: CodeBlocked, Msg: b.Error(), Detail: strings.Join(b.Categories, ",")}
 }
 
 func (r *runner) piFailed(ctx context.Context, err error) Result {
+	if e := Blocked(err); e != nil {
+		return Result{Err: e}
+	}
 	if ctx.Err() != nil {
 		return Result{Err: classify(ctx)}
 	}
@@ -215,7 +228,7 @@ func (r *runner) agentPi(ctx context.Context, req Request, preq pi.Request, emit
 			}
 			return out, nil
 		},
-		Mask: maskHook(r.e.Masker, req.Model.OnDevice),
+		Mask: maskHook(ctx, r.e.Masker, req.Model.OnDevice),
 	}
 	res, err := pi.Agent(ctx, cmp.Or(req.Model.Client, r.e.client), areq, hooks)
 	if err != nil {

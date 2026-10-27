@@ -91,6 +91,10 @@ const (
 	// CodeIncomplete: the service ended the reply abnormally (cut off at the
 	// output limit, filtered, failed part-way); nothing of it is kept.
 	CodeIncomplete Code = "incomplete"
+	// CodeBlocked: 脱敏 sent nothing, for the request held values of the
+	// categories Detail lists (mask's names, comma-separated) the user set
+	// to 拦截.
+	CodeBlocked Code = "blocked"
 )
 
 const DetailChatGPTUsage = "chatgpt_usage"

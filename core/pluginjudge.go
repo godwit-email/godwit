@@ -91,7 +91,7 @@ func (j pluginModelJudge) dispatch(ctx context.Context, input string, q ai.Quest
 		return nil, err
 	}
 	qs := []ai.Question{q}
-	m, req, err := j.masked(plugins.JudgeModelRequest{ModelID: j.model.ID, Input: input, Questions: qs})
+	m, req, err := j.masked(ctx, plugins.JudgeModelRequest{ModelID: j.model.ID, Input: input, Questions: qs})
 	if err != nil {
 		return nil, err // not sent: no fault of the plugin's
 	}
@@ -120,7 +120,7 @@ func (j pluginModelJudge) dispatch(ctx context.Context, input string, q ai.Quest
 // instructions and options with placeholders, as an HTTP judge's body is
 // (docs/adr/0025-mask-at-cloud-egress.md), and the masker that restores
 // the answers.
-func (j pluginModelJudge) masked(req plugins.JudgeModelRequest) (*mask.Masker, plugins.JudgeModelRequest, error) {
+func (j pluginModelJudge) masked(ctx context.Context, req plugins.JudgeModelRequest) (*mask.Masker, plugins.JudgeModelRequest, error) {
 	m, err := j.s.masker()
 	if err != nil || !m.On() {
 		return m, req, err
@@ -129,7 +129,7 @@ func (j pluginModelJudge) masked(req plugins.JudgeModelRequest) (*mask.Masker, p
 	if err != nil {
 		return nil, req, err
 	}
-	body, err := m.Body(string(b))
+	body, err := m.Request(ctx, string(b))
 	if err != nil {
 		return nil, req, err
 	}

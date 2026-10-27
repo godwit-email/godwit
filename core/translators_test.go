@@ -13,6 +13,7 @@ import (
 	"unicode/utf8"
 
 	"github.com/godwit-email/godwit/core/ai"
+	"github.com/godwit-email/godwit/core/ai/mask"
 	"github.com/godwit-email/godwit/core/plugins"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -517,6 +518,18 @@ func TestPluginTranslateMasksAcrossACut(t *testing.T) {
 			assert.NotContains(t, x, "1111", "no piece of the card is sent")
 		}
 	}
+}
+
+// A translation plugin is sent nothing of a request a blocked category
+// (拦截) holds: the translation fails naming it.
+func TestPluginTranslateBlocks(t *testing.T) {
+	e := newAssistEnv(t)
+	record := useNativeTranslator(t, e.s, nil)
+	setMaskAction(t, e.s, map[string]string{mask.IDs: MaskBlock})
+	setBody(t, e, "Card 4111 1111 1111 1111\n\nSee you", "")
+	_, err := e.s.RunSkill(t.Context(), "translate", Target{Kind: "message", ID: e.msg})
+	assert.Equal(t, []string{mask.IDs}, MaskBlocked(err))
+	assert.Empty(t, translateRequests(t, record))
 }
 
 // A draft larger than one ABI request is sent in batches, in order.
