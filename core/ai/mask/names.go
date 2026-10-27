@@ -100,7 +100,7 @@ func (m *Masker) nameSpans(s string) []span {
 			if word(n, true) && a > 0 && alnumRune(lastRune(s[:a])) || word(n, false) && b < len(s) && alnumRune(firstRune(s[b:])) {
 				continue
 			}
-			out = append(out, span{a, b, nameKind})
+			out = append(out, span{a, b, nameKind, false})
 		}
 	}
 	return out

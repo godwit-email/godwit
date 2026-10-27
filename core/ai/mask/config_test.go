@@ -177,3 +177,12 @@ func TestALabeledSecretIsKnownWithoutItsLabel(t *testing.T) {
 	assert.NotContains(t, out, "abcd1234efgh5678")
 	assert.Equal(t, "abcd1234efgh5678", m.Restore(out))
 }
+
+// The user's rule masks what it finds even under a built-in kind whose
+// category is off or set to 仅警告.
+func TestAUserRuleIgnoresItsKindsCategory(t *testing.T) {
+	rules := []mask.Rule{{Kind: "EMAIL", Regex: `customer-[0-9]+`}}
+	for _, c := range []mask.Config{{Off: []string{mask.Emails}, Rules: rules}, {Actions: map[string]string{mask.Emails: mask.Warn}, Rules: rules}} {
+		assert.Equal(t, "id <EMAIL>", masked(t, configured(t, c), "id customer-1234"))
+	}
+}

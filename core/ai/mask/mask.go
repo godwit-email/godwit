@@ -144,14 +144,14 @@ func (m *Masker) text(s string, defuse bool, f *Found) (out string, err error) {
 	spans, over := cc.find(view, append(m.nameSpans(view), m.secretSpans(view)...))
 	spans, over = m.outside(view, spans), m.outside(view, over)
 	for _, sp := range over {
-		if cc.action(sp.kind) == Block && !f.learning() {
+		if !sp.own && cc.action(sp.kind) == Block && !f.learning() {
 			f.add(m.hit(sp.kind, view[sp.start:sp.end], Block))
 			block = block.with(categories[sp.kind])
 		}
 	}
 	for _, sp := range spans {
 		v, act := view[sp.start:sp.end], cc.action(sp.kind)
-		if f.learning() {
+		if f.learning() || sp.own {
 			act = Mask
 		}
 		if at != nil {
@@ -350,7 +350,7 @@ func (m *Masker) secretSpans(s string) []span {
 			if a > 0 && alnumRune(lastRune(s[:a])) || b < len(s) && alnumRune(firstRune(s[b:])) {
 				continue
 			}
-			out = append(out, span{a, b, e.kind})
+			out = append(out, span{a, b, e.kind, false})
 		}
 	}
 	return out

@@ -72,6 +72,7 @@ var rules = []rule{
 type span struct {
 	start, end int
 	kind       string
+	own        bool // the user's rule or word: always masked, whatever its kind's category is set to
 }
 
 // find is the values in s, in order, none overlapping: of the user's rules
@@ -81,8 +82,9 @@ type span struct {
 // category still blocks.
 func (c *compiled) find(s string, known []span) (out, over []span) {
 	var found []span
-	for _, r := range slices.Concat(c.own, rules) {
-		if c.off[categories[r.kind]] {
+	for i, r := range slices.Concat(c.own, rules) {
+		own := i < len(c.own)
+		if !own && c.off[categories[r.kind]] {
 			continue
 		}
 		var locs [][]int
@@ -108,7 +110,7 @@ func (c *compiled) find(s string, known []span) (out, over []span) {
 				r.word && !wholeWord(s, a, b) || c.allow[strings.ToLower(s[a:b])] {
 				continue
 			}
-			found = append(found, span{a, b, r.kind})
+			found = append(found, span{a, b, r.kind, own})
 		}
 	}
 	for _, sp := range known {
