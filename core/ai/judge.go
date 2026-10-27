@@ -128,10 +128,11 @@ const (
 type batchFunc func(ctx context.Context, input string, qs []Question) ([]Answer, error)
 
 // judge validates the questions, splits them into batches under one deadline
-// and validates every answer.
+// and validates every answer, its placeholders restored by m first.
 type judge struct {
 	ask     batchFunc
 	timeout time.Duration
+	m       *mask.Masker
 }
 
 func (j judge) Ask(ctx context.Context, input string, qs []Question) ([]Answer, error) {
@@ -147,7 +148,7 @@ func (j judge) Ask(ctx context.Context, input string, qs []Question) ([]Answer, 
 		if err != nil {
 			return nil, err
 		}
-		as, err := validateAnswers(qs[:n], got)
+		as, err := validateAnswers(qs[:n], RestoreAnswers(j.m, got))
 		if err != nil {
 			return nil, err
 		}
@@ -167,9 +168,9 @@ func NewJudge(c *http.Client, m *mask.Masker, format JudgeFormat, base, key, mod
 	h := judgeHTTP{c: c, m: m, url: base + format.Path(), key: key, model: model}
 	switch format {
 	case FormatDecisions:
-		return judge{h.decisions, 15 * time.Second}, nil
+		return judge{h.decisions, 15 * time.Second, m}, nil
 	case FormatSystemOne:
-		return judge{h.systemOne, 15 * time.Second}, nil
+		return judge{h.systemOne, 15 * time.Second, m}, nil
 	}
 	return nil, fmt.Errorf("unknown judge format %q", format)
 }
@@ -215,6 +216,26 @@ func ValidateQuestions(qs []Question) error { return validateQuestions(qs) }
 // ValidateAnswers checks a plugin judge's answers to qs as a service's are checked.
 func ValidateAnswers(qs []Question, answers []Answer) ([]Answer, error) {
 	return validateAnswers(qs, answers)
+}
+
+// RestoreAnswers is answers with the placeholders m made in their choice
+// values restored: a judge asked with masked choices answers with the
+// placeholders, and validation and callers want the choices themselves.
+func RestoreAnswers(m *mask.Masker, answers []Answer) []Answer {
+	if m == nil {
+		return answers
+	}
+	out := slices.Clone(answers)
+	for i, a := range out {
+		out[i].Choice = m.Restore(a.Choice)
+		out[i].Probabilities = slices.Clone(a.Probabilities)
+		for k, p := range out[i].Probabilities {
+			if v, ok := p.Value.(string); ok {
+				out[i].Probabilities[k].Value = m.Restore(v)
+			}
+		}
+	}
+	return out
 }
 
 func validateQuestions(qs []Question) error {

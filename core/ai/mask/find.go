@@ -75,9 +75,10 @@ type span struct {
 	kind       string
 }
 
-// find is the values in s, in order, none overlapping, of the categories
-// on says are on.
-func find(s string, on func(cat string) bool) []span {
+// find is the values in s the rules of the categories on says are on find,
+// and those known, in order, none overlapping: where two start together, a
+// rule's.
+func find(s string, on func(cat string) bool, known []span) []span {
 	var found []span
 	for _, r := range rules {
 		if !on(cmp.Or(r.cat, CatSecret)) {
@@ -108,6 +109,7 @@ func find(s string, on func(cat string) bool) []span {
 			found = append(found, span{a, b, r.kind})
 		}
 	}
+	found = append(found, known...)
 	slices.SortStableFunc(found, func(x, y span) int { return x.start - y.start })
 	out := found[:0]
 	for _, sp := range found {

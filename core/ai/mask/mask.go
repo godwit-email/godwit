@@ -25,13 +25,15 @@ import (
 // again (Learn) fills it back. Safe for concurrent use; a nil Masker
 // restores nothing.
 type Masker struct {
-	key  []byte
-	off  atomic.Bool
-	cats atomic.Pointer[map[string]bool]
+	key     []byte
+	off     atomic.Bool
+	cats    atomic.Pointer[map[string]bool]
+	namesOn atomic.Bool
 
 	mu      sync.RWMutex
 	values  map[string]entry // by hash
 	learned map[[sha256.Size]byte]bool
+	names   []string // the values of NAME placeholders, longest first
 }
 
 type entry struct{ kind, value string }
@@ -94,13 +96,21 @@ func (m *Masker) placeholder(kind, v string) (string, error) {
 	if e, ok := m.values[hash]; ok && e != (entry{kind, v}) {
 		return "", errCollision
 	}
+	if _, ok := m.values[hash]; !ok && kind == nameKind {
+		m.addName(v)
+	}
 	m.values[hash] = entry{kind, v}
 	return "{{" + kind + "_" + hash + "}}", nil
 }
 
 // Text masks the values found in s, text Godwit wrote: a placeholder in it
 // (planted in mail) is defused first.
-func (m *Masker) Text(s string) (string, error) { return m.text(s, true) }
+func (m *Masker) Text(s string) (string, error) {
+	if err := m.learnNames(s); err != nil {
+		return "", err
+	}
+	return m.text(s, true)
+}
 
 // Learn masks text, a stored request's or message's (JSON or not), for the
 // placeholders alone: the values it holds restore again after a restart.
@@ -130,7 +140,7 @@ func (m *Masker) text(s string, defuse bool) (out string, err error) {
 	}
 	var b strings.Builder
 	last := 0
-	for _, sp := range find(s, m.catOn) {
+	for _, sp := range find(s, m.catOn, m.nameSpans(s)) {
 		p, err := m.placeholder(sp.kind, s[sp.start:sp.end])
 		if err != nil {
 			return "", err
