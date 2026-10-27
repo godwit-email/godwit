@@ -167,7 +167,25 @@ func (s *Service) witSystem(ctx context.Context, job *runJob, tools []toolDesc) 
 	if st.ReplyLanguage == "match" {
 		drafts = "Write a new email in the language of the recipient's past emails to the user; if there are none, use " + lang + "."
 	}
-	return askSystem + " " + timeSystem + "\n\n" + ai.UntrustedSystemNote + "\n\nAnswer the user in " + lang + ". " + drafts, nil
+	return askSystem + " " + timeSystem + "\n\n" + ai.UntrustedSystemNote + "\n\nAnswer the user in " + lang + ". " + dateInstruction(lang) + " " + drafts, nil
+}
+
+func dateInstruction(lang string) string {
+	base, _, _ := strings.Cut(strings.ToLower(strings.TrimSpace(lang)), "-")
+	switch base {
+	case "de":
+		return "Format dates and times in German conventions: DD.MM.YYYY (or DD.MM. for current year) and 24-hour time (e.g. 01.10.2026, 01.10., 14:30 Uhr), never raw ISO dates like '(YYYY-MM-DD)'."
+	case "fr", "es", "it", "pt", "vi":
+		return "Format dates and times in local conventions: DD/MM/YYYY (or DD/MM for current year) and 24-hour time, never raw ISO dates like '(YYYY-MM-DD)'."
+	case "nl":
+		return "Format dates and times in Dutch conventions: DD-MM-YYYY (or DD-MM) and 24-hour time, never raw ISO dates like '(YYYY-MM-DD)'."
+	case "ru", "tr":
+		return "Format dates and times in local conventions: DD.MM.YYYY (or DD.MM) and 24-hour time, never raw ISO dates like '(YYYY-MM-DD)'."
+	case "zh", "ja", "ko":
+		return "Format dates and times in local conventions (e.g. YYYY年M月D日 or M月D日), never raw ISO dates like '(YYYY-MM-DD)'."
+	default:
+		return "Format dates and times naturally according to the user's locale (e.g. MM/DD/YYYY or DD/MM/YYYY), never raw ISO dates like '(YYYY-MM-DD)'."
+	}
 }
 
 // cite numbers and records the mail a read tool showed the model, for its

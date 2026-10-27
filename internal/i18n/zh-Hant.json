@@ -407,6 +407,7 @@
   "reader_avatar_blocked": "已阻擋寄件人頭像，載入時可能存取寄件人網站和 Gravatar",
   "reader_body": "郵件內文",
   "reader_date": "{arg1} {arg2, number, ::group-off} 日",
+  "reader_date_year": "{arg3, number, ::group-off} 年 {arg1} {arg2, number, ::group-off} 日",
   "reader_egress_allow": "允許這一次",
   "reader_egress_body": "外掛 {arg1} 會把資料傳送到：",
   "reader_egress_title": "允許外掛傳送資料？",

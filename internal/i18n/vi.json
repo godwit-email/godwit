@@ -407,6 +407,7 @@
   "reader_avatar_blocked": "Đã chặn ảnh đại diện người gửi; việc tải có thể kết nối tới trang web của người gửi và Gravatar",
   "reader_body": "Nội dung thư",
   "reader_date": "{arg2, number, ::group-off} {arg1}",
+  "reader_date_year": "{arg2, number, ::group-off} {arg1}, {arg3, number, ::group-off}",
   "reader_egress_allow": "Cho phép một lần",
   "reader_egress_body": "Plugin {arg1} sẽ gửi dữ liệu đến:",
   "reader_egress_title": "Cho phép plugin gửi dữ liệu?",

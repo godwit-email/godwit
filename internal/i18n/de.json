@@ -412,6 +412,7 @@
   "reader_avatar_blocked": "Absender-Avatar blockiert; das Laden könnte die Website des Absenders oder Gravatar kontaktieren",
   "reader_body": "Nachrichtentext",
   "reader_date": "{arg2, number, ::group-off}. {arg1}",
+  "reader_date_year": "{arg2, number, ::group-off}. {arg1} {arg3, number, ::group-off}",
   "reader_egress_allow": "Einmalig erlauben",
   "reader_egress_body": "Plugin {arg1} sendet Daten an:",
   "reader_egress_title": "Darf das Plugin Daten senden?",

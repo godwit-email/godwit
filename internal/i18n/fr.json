@@ -407,6 +407,7 @@
   "reader_avatar_blocked": "Avatar de l’expéditeur bloqué ; son chargement peut contacter le site de l’expéditeur et Gravatar",
   "reader_body": "Corps du message",
   "reader_date": "{arg2, number, ::group-off} {arg1}",
+  "reader_date_year": "{arg2, number, ::group-off} {arg1} {arg3, number, ::group-off}",
   "reader_egress_allow": "Autoriser une fois",
   "reader_egress_body": "Le plugin {arg1} enverra des données à :",
   "reader_egress_title": "Autoriser le plugin à envoyer des données ?",

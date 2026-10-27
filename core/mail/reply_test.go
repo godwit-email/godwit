@@ -46,8 +46,8 @@ func TestQuoteHTML(t *testing.T) {
 	assert.NotContains(t, q, "script")
 	q = mail.QuoteHTML(&mail.Parsed{From: "a@x.com", Date: d, Text: "<b>\nline2"})
 	assert.Contains(t, q, "&lt;b&gt;<br>")
-	assert.Contains(t, mail.QuoteHTMLIn(&mail.Parsed{From: "a@x.com", Date: d, Text: "hi"}, "en"), "On 2026-01-02 03:04, a@x.com wrote:")
+	assert.Contains(t, mail.QuoteHTMLIn(&mail.Parsed{From: "a@x.com", Date: d, Text: "hi"}, "en"), "On 01/02/2026 03:04, a@x.com wrote:")
 	assert.Contains(t, mail.QuoteHTMLIn(&mail.Parsed{From: "a@x.com", Date: d, Text: "hi"}, "zh-Hant"), "於 2026-01-02 03:04，a@x.com 寫道：")
-	assert.Contains(t, mail.QuoteHTMLIn(&mail.Parsed{From: "a@x.com", Date: d, Text: "hi"}, "de"), "Am 2026-01-02 03:04 schrieb a@x.com:")
+	assert.Contains(t, mail.QuoteHTMLIn(&mail.Parsed{From: "a@x.com", Date: d, Text: "hi"}, "de"), "Am 02.01.2026, 03:04 schrieb a@x.com:")
 	assert.Contains(t, mail.QuoteHTMLIn(&mail.Parsed{From: "a@x.com", Date: d, Text: "hi"}, "ja"), "2026-01-02 03:04、a@x.com さんは書きました：")
 }

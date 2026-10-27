@@ -407,6 +407,7 @@
   "reader_avatar_blocked": "Gönderen avatarı engellendi; yüklenmesi gönderenin web sitesiyle ve Gravatar ile bağlantı kurabilir",
   "reader_body": "İleti gövdesi",
   "reader_date": "{arg2, number, ::group-off} {arg1}",
+  "reader_date_year": "{arg2, number, ::group-off} {arg1} {arg3, number, ::group-off}",
   "reader_egress_allow": "Bir kez izin ver",
   "reader_egress_body": "{arg1} eklentisi şu adrese veri gönderecek:",
   "reader_egress_title": "Eklentinin veri göndermesine izin verilsin mi?",

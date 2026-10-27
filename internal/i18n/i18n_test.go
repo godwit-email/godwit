@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"strings"
 	"testing"
+	"time"
 )
 
 func TestPseudoLocale(t *testing.T) {
@@ -150,3 +151,49 @@ func TestThreadExpandPlural(t *testing.T) {
 		t.Errorf("ru few: %q", got)
 	}
 }
+
+func TestFormatDate(t *testing.T) {
+	now := time.Date(2026, 10, 9, 12, 0, 0, 0, time.UTC)
+	sameYear := time.Date(2026, 10, 1, 10, 0, 0, 0, time.UTC)
+	diffYear := time.Date(2025, 10, 1, 10, 0, 0, 0, time.UTC)
+
+	// German: DD.MM. / DD.MM.YYYY
+	if got := FormatDateIn(sameYear, now, "de"); got != "01.10." {
+		t.Errorf("de sameYear: got %q, want %q", got, "01.10.")
+	}
+	if got := FormatDateIn(diffYear, now, "de"); got != "01.10.2025" {
+		t.Errorf("de diffYear: got %q, want %q", got, "01.10.2025")
+	}
+
+	// English: M/DD / M/DD/YYYY
+	if got := FormatDateIn(sameYear, now, "en"); got != "10/01" {
+		t.Errorf("en sameYear: got %q, want %q", got, "10/01")
+	}
+	if got := FormatDateIn(diffYear, now, "en"); got != "10/01/2025" {
+		t.Errorf("en diffYear: got %q, want %q", got, "10/01/2025")
+	}
+
+	// French: DD/MM / DD/MM/YYYY
+	if got := FormatDateIn(sameYear, now, "fr"); got != "01/10" {
+		t.Errorf("fr sameYear: got %q, want %q", got, "01/10")
+	}
+	if got := FormatDateIn(diffYear, now, "fr"); got != "01/10/2025" {
+		t.Errorf("fr diffYear: got %q, want %q", got, "01/10/2025")
+	}
+
+	// Chinese: M/DD / YYYY/MM/DD
+	if got := FormatDateIn(sameYear, now, "zh-Hans"); got != "10/01" {
+		t.Errorf("zh sameYear: got %q, want %q", got, "10/01")
+	}
+	if got := FormatDateIn(diffYear, now, "zh-Hans"); got != "2025/10/01" {
+		t.Errorf("zh diffYear: got %q, want %q", got, "2025/10/01")
+	}
+
+	// Active Language()
+	t.Cleanup(func() { SetLanguage("zh-Hans") })
+	SetLanguage("de")
+	if got := FormatDate(sameYear, now); got != "01.10." {
+		t.Errorf("Language() de: got %q, want %q", got, "01.10.")
+	}
+}
+

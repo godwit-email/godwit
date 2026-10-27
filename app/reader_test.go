@@ -20,6 +20,7 @@ import (
 	"github.com/egoist/mygo/ui"
 	"github.com/godwit-email/godwit/core"
 	"github.com/godwit-email/godwit/core/coretest"
+	"github.com/godwit-email/godwit/internal/i18n"
 )
 
 var readerAvatarSVG = []byte(`<svg xmlns="http://www.w3.org/2000/svg" width="64" height="64"><rect width="64" height="64" fill="#ff0000"/></svg>`)
@@ -939,6 +940,28 @@ func TestRelativeSenderDate(t *testing.T) {
 	} {
 		if got := senderDate(now, c.t); got != c.want {
 			t.Errorf("senderDate(%v) = %q, want %q", c.t, got, c.want)
+		}
+	}
+
+	diffYear := time.Date(2025, 10, 2, 7, 30, 0, 0, time.UTC)
+	if got := senderDate(now, diffYear); got != "2025 年 10 月 2 日" {
+		t.Errorf("senderDate diffYear = %q, want %q", got, "2025 年 10 月 2 日")
+	}
+
+	t.Cleanup(func() { i18n.SetLanguage("zh-CN") })
+	i18n.SetLanguage("de")
+	for _, c := range []struct {
+		t    time.Time
+		want string
+	}{
+		{time.Date(2026, 10, 14, 9, 41, 0, 0, time.UTC), "Heute 09:41"},
+		{time.Date(2026, 10, 13, 18, 5, 0, 0, time.UTC), "Gestern 18:05"},
+		{time.Date(2026, 10, 12, 7, 30, 0, 0, time.UTC), "Mo. 07:30"},
+		{time.Date(2026, 10, 2, 7, 30, 0, 0, time.UTC), "2. Okt."},
+		{diffYear, "2. Okt. 2025"},
+	} {
+		if got := senderDate(now, c.t); got != c.want {
+			t.Errorf("de senderDate(%v) = %q, want %q", c.t, got, c.want)
 		}
 	}
 }
