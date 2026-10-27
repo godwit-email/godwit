@@ -412,7 +412,7 @@ function BatchApprovalCard({
                 checked={allSelected}
                 onChange={toggleAll}
                 disabled={busy}
-                className="size-3.5 rounded accent-primary cursor-pointer"
+                className="size-3.5 rounded accent-green-600 dark:accent-green-500 cursor-pointer"
               />
               <span>
                 {allSelected ? "Alle abwählen" : "Alle auswählen"} ({selected.size}/{items.length})
@@ -438,7 +438,7 @@ function BatchApprovalCard({
                   checked={isChecked}
                   onChange={() => toggleItem(it.id)}
                   disabled={busy}
-                  className="mt-0.5 size-3.5 rounded accent-primary cursor-pointer shrink-0"
+                  className="mt-0.5 size-3.5 rounded accent-green-600 dark:accent-green-500 cursor-pointer shrink-0"
                 />
                 <div className="min-w-0 flex-1">
                   <div className="flex items-center justify-between gap-2">
