@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"fmt"
 	"net"
 	"net/http"
 	"net/http/httptest"
@@ -20,6 +21,7 @@ import (
 	"github.com/egoist/mygo/ui"
 	"github.com/godwit-email/godwit/core"
 	"github.com/godwit-email/godwit/core/coretest"
+	"github.com/godwit-email/godwit/internal/i18n"
 )
 
 var readerAvatarSVG = []byte(`<svg xmlns="http://www.w3.org/2000/svg" width="64" height="64"><rect width="64" height="64" fill="#ff0000"/></svg>`)
@@ -1134,3 +1136,87 @@ func TestReaderAvatarMoveDropsOldBodyRead(t *testing.T) {
 		t.Fatal("old body read restored pre-move metadata or avatar")
 	}
 }
+
+func TestReaderSaveAndPrint(t *testing.T) {
+	h, accs := mailHarness(t, nil, "alice@example.com")
+	acc := accs[0]
+	m := h.deliverOne(acc, coretest.Msg("bob@example.com", acc.Email, "Save and Print Test", "Body contents here"))
+	h.openThread(m.ThreadID)
+	h.seeBody(m.ID)
+
+	tmp := t.TempDir()
+	savePath := filepath.Join(tmp, "test-saved.eml")
+
+	// 1. Save button in toolbar
+	h.plat.mu.Lock()
+	h.plat.savePath = savePath
+	h.plat.mu.Unlock()
+
+	h.click(i18n.T("reader.save") + " (⌘S)")
+	arg := h.callArg("SaveFile")
+	if !strings.HasSuffix(arg, ".eml") {
+		t.Fatalf("expected .eml default name, got %q", arg)
+	}
+	h.until("mail saved to disk", func() bool {
+		data, err := os.ReadFile(savePath)
+		return err == nil && len(data) > 0
+	})
+
+	// 2. Print button in toolbar
+	h.click(i18n.T("reader.print") + " (⌘P)")
+	printArg := h.callArg("Print")
+	if printArg != fmt.Sprint(m.ID) {
+		t.Fatalf("expected Print call for message %d, got %q", m.ID, printArg)
+	}
+
+	// 3. Cmd+S shortcut
+	savePath2 := filepath.Join(tmp, "shortcut-saved.eml")
+	h.plat.mu.Lock()
+	h.plat.savePath = savePath2
+	h.plat.calls = nil
+	h.plat.mu.Unlock()
+
+	h.tt.Key(ui.Cmd, ui.KeyS)
+	h.drain()
+	h.until("shortcut mail saved", func() bool {
+		data, err := os.ReadFile(savePath2)
+		return err == nil && len(data) > 0
+	})
+
+	// 4. Cmd+P shortcut
+	h.plat.mu.Lock()
+	h.plat.calls = nil
+	h.plat.mu.Unlock()
+
+	h.tt.Key(ui.Cmd, ui.KeyP)
+	h.drain()
+	printArg2 := h.callArg("Print")
+	if printArg2 != fmt.Sprint(m.ID) {
+		t.Fatalf("expected Print call via shortcut for %d, got %q", m.ID, printArg2)
+	}
+
+	// 5. BodySave and BodyPrint via native webview callbacks
+	view := h.plat.view(m.ID)
+	if view == nil {
+		t.Fatal("expected non-nil body view")
+	}
+
+	savePath3 := filepath.Join(tmp, "body-saved.eml")
+	h.plat.mu.Lock()
+	h.plat.savePath = savePath3
+	h.plat.calls = nil
+	h.plat.mu.Unlock()
+
+	h.app.BodySave(view)
+	h.until("body save completed", func() bool {
+		data, err := os.ReadFile(savePath3)
+		return err == nil && len(data) > 0
+	})
+
+	h.app.BodyPrint(view)
+	printArg3 := h.callArg("Print")
+	if printArg3 != fmt.Sprint(m.ID) {
+		t.Fatalf("expected BodyPrint call for %d, got %q", m.ID, printArg3)
+	}
+}
+

@@ -67,6 +67,8 @@ type Platform interface {
 	AllowImages(message int64)
 	// TranslateBody replaces only the body's text nodes; nil shows the original.
 	TranslateBody(message int64, texts map[string]string)
+	// Print prints the message's body page. UI thread only.
+	Print(message int64)
 	// NewSignatureView makes the signature page (a signature's rich-text
 	// editor, in Settings › Signatures) in the main window; the App makes
 	// one and closes it (unregistered and destroyed) as it closes. show

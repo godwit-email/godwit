@@ -58,6 +58,9 @@ type ReaderBody struct {
 // ReaderReload tells a reader page its body changed (加载图片, a retry).
 var ReaderReload = mygo.NewEvent[ReaderBody]("readerBody")
 
+// ReaderPrint asks a reader page to print its body.
+var ReaderPrint = mygo.NewEvent[int64]("readerPrint")
+
 // ReaderDeps is what Reader needs from the platform. The callbacks post to
 // the UI thread themselves. Each names the page (its key) it is about, bound
 // as the call was made: by the time the post runs the page may be closed or
@@ -79,6 +82,10 @@ type ReaderDeps struct {
 	OnNavigate func(page any, dir int)
 	// OnSearch opens the mail list's search, as ⌘F does natively.
 	OnSearch func(page any)
+	// OnSave saves the current message, as ⌘S does natively.
+	OnSave func(page any)
+	// OnPrint prints the current message, as ⌘P does natively.
+	OnPrint func(page any)
 	// OnBuilt is told, for each page bound to b.Message, each body built
 	// as the message's current version: native shows the truncated notice
 	// by b.Cut and hides the remote-image notice once b.Remote. It runs
@@ -477,6 +484,32 @@ func (p *ReaderPage) Search(ctx context.Context) error {
 		return err
 	}
 	p.r.d.OnSearch(key)
+	return nil
+}
+
+// Save saves the message, as ⌘S does natively: a page that has the
+// keyboard misses the native shortcut.
+func (p *ReaderPage) Save(ctx context.Context) error {
+	key, _, _, err := p.r.callerKey(ctx)
+	if err != nil {
+		return err
+	}
+	if p.r.d.OnSave != nil {
+		p.r.d.OnSave(key)
+	}
+	return nil
+}
+
+// Print prints the message, as ⌘P does natively: a page that has the
+// keyboard misses the native shortcut.
+func (p *ReaderPage) Print(ctx context.Context) error {
+	key, _, _, err := p.r.callerKey(ctx)
+	if err != nil {
+		return err
+	}
+	if p.r.d.OnPrint != nil {
+		p.r.d.OnPrint(key)
+	}
 	return nil
 }
 

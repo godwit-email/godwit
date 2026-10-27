@@ -98,6 +98,7 @@ var RemixIcons = map[string]string{
 	"panel-left":                "node_modules/remixicon/icons/Design/layout-left-line.svg",
 	"paperclip":                 "node_modules/remixicon/icons/Editor/attachment-2.svg",
 	"plus":                      "node_modules/remixicon/icons/System/add-line.svg",
+	"printer":                   "node_modules/remixicon/icons/Business/printer-line.svg",
 	"puzzle":                    "node_modules/remixicon/icons/Development/puzzle-line.svg",
 	"puzzle-fill":               "node_modules/remixicon/icons/Development/puzzle-fill.svg",
 	"quill-pen":                 "node_modules/remixicon/icons/Design/quill-pen-line.svg",
@@ -106,6 +107,7 @@ var RemixIcons = map[string]string{
 	"refresh-cw":                "node_modules/remixicon/icons/System/refresh-line.svg",
 	"reply":                     "node_modules/remixicon/icons/Business/reply-line.svg",
 	"reply-all":                 "node_modules/remixicon/icons/Business/reply-all-line.svg",
+	"save":                      "node_modules/remixicon/icons/Device/save-line.svg",
 	"search":                    "node_modules/remixicon/icons/System/search-line.svg",
 	"send":                      "node_modules/remixicon/icons/Business/send-plane-line.svg",
 	"send-fill":                 "node_modules/remixicon/icons/Business/send-plane-fill.svg",
@@ -165,6 +167,7 @@ var BrandIcons = map[string]string{
 //go:embed node_modules/remixicon/icons/Business/mail-fill.svg
 //go:embed node_modules/remixicon/icons/Business/mail-line.svg
 //go:embed node_modules/remixicon/icons/Business/mail-open-line.svg
+//go:embed node_modules/remixicon/icons/Business/printer-line.svg
 //go:embed node_modules/remixicon/icons/Business/reply-all-line.svg
 //go:embed node_modules/remixicon/icons/Business/reply-line.svg
 //go:embed node_modules/remixicon/icons/Business/send-plane-fill.svg
@@ -186,6 +189,7 @@ var BrandIcons = map[string]string{
 //go:embed node_modules/remixicon/icons/Device/computer-line.svg
 //go:embed node_modules/remixicon/icons/Device/cpu-fill.svg
 //go:embed node_modules/remixicon/icons/Device/cpu-line.svg
+//go:embed node_modules/remixicon/icons/Device/save-line.svg
 //go:embed node_modules/remixicon/icons/Document/bill-line.svg
 //go:embed node_modules/remixicon/icons/Document/book-2-line.svg
 //go:embed node_modules/remixicon/icons/Document/draft-fill.svg

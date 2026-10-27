@@ -66,6 +66,8 @@ export function ReaderApp() {
         (dir) => api.navigate(dir),
         window,
         () => api.search(),
+        () => api.save(),
+        () => api.print(),
       ),
     [],
   );
@@ -140,6 +142,13 @@ export function Body({ body, theme }: { body: ReaderBody; theme: Theme }) {
   }, [wheel]);
 
   const wire = useCallback((f: HTMLIFrameElement) => attach(f, wheel, theme), [wheel, theme]);
+  useEffect(() => {
+    return events.readerPrint?.on(() => {
+      const win = frame.current?.contentWindow ?? window;
+      win.focus();
+      win.print();
+    });
+  }, []);
   useEffect(() => {
     const f = frame.current;
     if (!f) return;
@@ -291,6 +300,8 @@ function attach(
       (dir) => api.navigate(dir),
       win,
       () => api.search(),
+      () => api.save(),
+      () => api.print(),
     ),
   );
 

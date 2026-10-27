@@ -685,6 +685,59 @@ func copyFile(src, dst string) error {
 	return out.Close()
 }
 
+// saveMail saves the newest message of the open thread to an .eml file.
+func (r *reader) saveMail() {
+	m, ok := r.last()
+	if !ok {
+		return
+	}
+	a := r.p.a
+	plat := a.plat
+	subject := r.subject
+	a.do(func(ctx context.Context) error {
+		defaultName := fileName(strings.TrimSuffix(subject, ".eml"), "email") + ".eml"
+		dst, err := plat.SaveFile(defaultName)
+		if err != nil || dst == "" {
+			return err
+		}
+		var raw []byte
+		if b, err := a.svc.GetRawMessage(ctx, m.ID); err == nil {
+			raw = b
+		} else {
+			html, _ := a.svc.StoredHTML(ctx, m.ID)
+			var sb strings.Builder
+			if m.From != "" {
+				sb.WriteString("From: " + m.From + "\r\n")
+			}
+			if len(m.To) > 0 {
+				sb.WriteString("To: " + strings.Join(m.To, ", ") + "\r\n")
+			}
+			sb.WriteString("Subject: " + m.Subject + "\r\n")
+			sb.WriteString("Date: " + m.Date.Format(time.RFC1123Z) + "\r\n")
+			sb.WriteString("MIME-Version: 1.0\r\n")
+			sb.WriteString("Content-Type: text/html; charset=utf-8\r\n\r\n")
+			sb.WriteString(html)
+			raw = []byte(sb.String())
+		}
+		return os.WriteFile(dst, raw, 0o644)
+	}, func(err error) {
+		if err != nil {
+			a.toastErr(err)
+		} else {
+			a.toast(i18n.T("reader.saved"))
+		}
+	})
+}
+
+// printMail prints the current message's body page.
+func (r *reader) printMail() {
+	m, ok := r.last()
+	if !ok {
+		return
+	}
+	r.p.a.plat.Print(m.ID)
+}
+
 // view is the reading pane: the toolbar over the subject and the messages.
 func (r *reader) view(c *ui.Context) {
 	t, th := theme.Of(c), c.Theme()
@@ -697,6 +750,12 @@ func (r *reader) view(c *ui.Context) {
 	}
 	if !r.loaded || len(r.msgs) == 0 {
 		return
+	}
+	if c.Shortcut(ui.Cmd, ui.KeyS) {
+		r.saveMail()
+	}
+	if c.Shortcut(ui.Cmd, ui.KeyP) {
+		r.printMail()
 	}
 	col.Children(func() {
 		r.toolbar(c)
@@ -741,6 +800,10 @@ func (r *reader) toolbar(c *ui.Context) {
 			file = append(file, kit.GroupItem{Icon: "spam", Tip: i18n.T("mail.action.junk"), OnClick: func() { r.act("junk") }})
 		}
 		kit.ButtonGroup(c, file...)
+		kit.ButtonGroup(c,
+			kit.GroupItem{Icon: "save", Tip: i18n.T("reader.save") + " (⌘S)", OnClick: func() { r.saveMail() }},
+			kit.GroupItem{Icon: "printer", Tip: i18n.T("reader.print") + " (⌘P)", OnClick: func() { r.printMail() }},
+		)
 		ui.Spacer(c)
 		ui.Row(c).Wrap().Gap(th.Space(1)).AlignItems(ui.Center).Children(func() { r.aiTools(c) })
 	})
@@ -1083,6 +1146,20 @@ func (a *App) BodyNavigate(view ui.NativeWebView, dir int) {
 func (a *App) BodySearch(view ui.NativeWebView) {
 	if a.mail.reader.current(view) {
 		a.mail.searchOpen = true
+	}
+}
+
+// BodySave saves the message for a body's page (⌘S).
+func (a *App) BodySave(view ui.NativeWebView) {
+	if a.mail.reader.current(view) {
+		a.mail.reader.saveMail()
+	}
+}
+
+// BodyPrint prints the message for a body's page (⌘P).
+func (a *App) BodyPrint(view ui.NativeWebView) {
+	if a.mail.reader.current(view) {
+		a.mail.reader.printMail()
 	}
 }
 
