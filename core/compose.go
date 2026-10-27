@@ -560,7 +560,7 @@ func (s *Service) send(ctx context.Context, draftID, want int64) error {
 			if want >= 0 && d.Revision != want {
 				return ErrStaleDraft
 			}
-			if err := s.expandDraftLinks(ctx, &d); err != nil {
+			if err := s.expandDraft(ctx, &d); err != nil {
 				return err // the checks see what is sent
 			}
 			if _, err := recipients(d); err != nil {
@@ -615,7 +615,7 @@ func (s *Service) enqueue(ctx context.Context, draftID, rev int64, checked []str
 	if afterDraftLoad != nil {
 		afterDraftLoad()
 	}
-	if err := s.expandDraftLinks(ctx, &d); err != nil {
+	if err := s.expandDraft(ctx, &d); err != nil {
 		return err
 	}
 	rcpts, err := recipients(d) // the envelope has the restored addresses

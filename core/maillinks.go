@@ -498,11 +498,11 @@ func (x *linkExpander) toolArgs(ctx context.Context, args json.RawMessage) (json
 	return out, nil
 }
 
-// expandDraftLinks expands the link references in d's subject and body, and
+// expandDraft expands the link references in d's subject and body, and
 // restores the placeholders in those and its addresses (docs/adr/0025),
 // before it is checked or sent: Wit's draft tools already did, but one may be
 // typed or pasted back in.
-func (s *Service) expandDraftLinks(ctx context.Context, d *Draft) error {
+func (s *Service) expandDraft(ctx context.Context, d *Draft) error {
 	x := s.linkExpander()
 	d.Subject, d.HTML = x.text(ctx, d.Subject), x.text(ctx, d.HTML)
 	if hasLinkRef(d.Subject + d.HTML) {
