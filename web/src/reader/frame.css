@@ -36,9 +36,9 @@ html {
   color: var(--godwit-fg-dark, #fafafa);
 }
 
-/* Inverted mail starts light so the filter produces the dark appearance. */
-:where(#godwit-body.godwit-invert) {
-  color: #0a0a0a;
+/* The parent reveals the light baseline after applying dark colour overrides. */
+#godwit-body.godwit-auto {
+  visibility: hidden;
 }
 
 :where(#godwit-body.godwit-plain) {
@@ -57,40 +57,13 @@ html {
   border-radius: 2px;
 }
 
-:where(#godwit-body.godwit-dark:not(.godwit-invert) [data-href]) {
+:where(#godwit-body.godwit-dark [data-href]) {
   color: #8ab4f8;
 }
 
 #godwit-body img {
   /* biome-ignore lint/complexity/noImportantStyles: Fit images even when the email sets an inline width limit. */
   max-width: 100% !important;
-}
-
-#godwit-body.godwit-invert,
-#godwit-body.godwit-invert img {
-  filter: invert(1) hue-rotate(180deg);
-}
-
-/* Invert only the background layer back, keeping the text in dark mode. */
-#godwit-body.godwit-invert [style*="--godwit-bg"] {
-  position: relative;
-  isolation: isolate;
-  /* biome-ignore lint/complexity/noImportantStyles: Replace the email's inline background with the separate inversion layer. */
-  background-image: none !important;
-}
-
-#godwit-body.godwit-invert [style*="--godwit-bg"]::before {
-  content: "";
-  position: absolute;
-  inset: 0;
-  z-index: -1;
-  pointer-events: none;
-  background-image: var(--godwit-bg);
-  background-size: inherit;
-  background-position: inherit;
-  background-repeat: inherit;
-  border-radius: inherit;
-  filter: invert(1) hue-rotate(180deg);
 }
 
 /* Keep the ratio when shrinking, but preserve a height-only icon's size. */

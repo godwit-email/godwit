@@ -5,6 +5,7 @@ import { ReaderPage as api, events, type ReaderBody, type Theme } from "@/mygo";
 import { useT } from "@/shared/i18n";
 import { forwardShortcuts } from "@/shared/shortcuts";
 import { applyTheme, type Theme as PageTheme } from "@/shared/theme";
+import { adaptDarkMode } from "./dark";
 import { buildSrcdoc, frameScheme } from "./frame";
 import { wheelForwarder } from "./wheel";
 
@@ -138,7 +139,7 @@ export function Body({ body, theme }: { body: ReaderBody; theme: Theme }) {
     return () => removeEventListener("wheel", wheel);
   }, [wheel]);
 
-  const wire = useCallback((f: HTMLIFrameElement) => attach(f, wheel), [wheel]);
+  const wire = useCallback((f: HTMLIFrameElement) => attach(f, wheel, theme), [wheel, theme]);
   useEffect(() => {
     const f = frame.current;
     if (!f) return;
@@ -175,13 +176,17 @@ export function Body({ body, theme }: { body: ReaderBody; theme: Theme }) {
 }
 
 /** Wires a loaded body document; returns the unwiring. */
-function attach(frame: HTMLIFrameElement, wheel: (e: WheelEvent) => void): () => void {
+function attach(
+  frame: HTMLIFrameElement,
+  wheel: (e: WheelEvent) => void,
+  theme: Theme,
+): () => void {
   const doc = frame.contentDocument;
   const win = frame.contentWindow;
   const wrap = doc?.getElementById("godwit-body");
   if (!doc || !win || !wrap) return ignore; // the initial about:blank
   let live = true;
-  const offs: (() => void)[] = [];
+  const offs: (() => void)[] = [adaptDarkMode(frame, theme)];
   const on = <E extends Event>(
     t: EventTarget,
     type: string,

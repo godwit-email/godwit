@@ -337,3 +337,187 @@ test("a theme event rebuilds plain text in the new theme", async () => {
   expect(css).toContain("#eee");
   expect(css).toContain("18px");
 });
+
+const darkTheme: Theme = {
+  ...theme,
+  mode: "dark",
+  light: { "--background": "#fff", "--foreground": "#111" },
+  dark: {
+    "--background": "#0a0a0a",
+    "--foreground": "#fafafa",
+    "--muted-foreground": "#a3a3a3",
+    "--muted": "#262626",
+  },
+};
+
+test("dark neutral mail keeps readable text and distinct card and secondary text colours", async () => {
+  const html = `<div id="paper" style="background:#fff;color:#111">
+    <p id="primary">Order received</p>
+    <p id="secondary" style="color:#888">Delivery details</p>
+    <div id="card" style="background:#eee">Your order</div>
+  </div>`;
+  const input = body(1, html, { theme: darkTheme });
+  const { doc, win } = await start(input);
+  const style = (id: string) => win.getComputedStyle(doc.getElementById(id) as HTMLElement);
+  const red = (value: string) => Number(value.match(/[\d.]+/)?.[0]);
+  expect(red(style("paper").backgroundColor)).toBeLessThan(50);
+  expect(red(style("primary").color)).toBeGreaterThan(200);
+  expect(red(style("secondary").color)).toBeGreaterThan(140);
+  expect(red(style("secondary").color)).toBeLessThan(red(style("primary").color));
+  expect(style("card").backgroundColor).not.toBe(style("paper").backgroundColor);
+  expect(style("paper").filter).not.toContain("invert");
+  expect(input.html).toBe(html);
+});
+
+test("resizing adapted mail reads the new light baseline instead of its previous overrides", async () => {
+  const { frame, doc, win } = await start(
+    body(
+      1,
+      `<style id="responsive">
+    #godwit-body .panel { background:#fff; color:#111 }
+    </style><div class="panel">Responsive content</div>`,
+      { theme: darkTheme },
+    ),
+  );
+  const panel = doc.querySelector(".panel") as HTMLElement;
+  expect(win.getComputedStyle(panel).backgroundColor).not.toBe("rgb(255, 255, 255)");
+  // jsdom has no media-query layout: supply the rule a narrower viewport would activate.
+  const sheet = doc.getElementById("responsive") as HTMLStyleElement;
+  sheet.textContent = "#godwit-body .panel { background:#222; color:#ddd }";
+  frame.getBoundingClientRect = () => ({ width: 400, height: 100 }) as DOMRect;
+  act(() => window.dispatchEvent(new Event("resize")));
+  flush();
+  expect(win.getComputedStyle(panel).backgroundColor).toBe("rgb(34, 34, 34)");
+  expect(win.getComputedStyle(panel).color).toBe("rgb(221, 221, 221)");
+});
+
+test("translucent groups keep their original outside backdrop without revealing hidden text", async () => {
+  const { doc, win } = await start(
+    body(
+      1,
+      `
+    <div id="group" style="background:#fff;color:#111">
+      <p style="opacity:.2"><span id="dim">Terms</span></p>
+      <span id="hidden" style="color:rgba(0,0,0,0)">Hidden</span>
+    </div>
+      <div style="display:none;opacity:.2">Hidden preheader</div>
+    <p id="outside" style="background:#fff;color:#111">Readable elsewhere</p>`,
+      { theme: darkTheme },
+    ),
+  );
+  const style = (id: string) => win.getComputedStyle(doc.getElementById(id) as HTMLElement);
+  expect(style("group").backgroundColor).toBe("rgb(255, 255, 255)");
+  expect(style("group").color).toBe("rgb(17, 17, 17)");
+  expect(style("hidden").color).toBe("rgba(0, 0, 0, 0)");
+  expect(style("outside").backgroundColor).not.toBe("rgb(255, 255, 255)");
+});
+
+test("natural dark surfaces keep their colour while light cards adapt; author dark CSS takes precedence", async () => {
+  const content = `<div id="canvas" style="background:#222;color:#ddd">
+    <p>Dark surface</p><div id="card" style="background:#fff;color:#111">Light card</div></div>`;
+  let current = await start(
+    body(1, `<style data-dark-canvas=""></style>${content}`, { theme: darkTheme }),
+  );
+  expect(
+    current.win.getComputedStyle(current.doc.getElementById("canvas") as HTMLElement)
+      .backgroundColor,
+  ).toBe("rgb(34, 34, 34)");
+  expect(
+    current.win.getComputedStyle(current.doc.getElementById("card") as HTMLElement).backgroundColor,
+  ).not.toBe("rgb(255, 255, 255)");
+  act(() => {
+    for (const receive of h.body)
+      receive(
+        body(
+          2,
+          `<style data-dark="">#godwit-body.godwit-dark #canvas{background:#222}</style>${content}`,
+          { theme: darkTheme },
+        ),
+      );
+  });
+  current = await loaded();
+  expect(
+    current.win.getComputedStyle(current.doc.getElementById("card") as HTMLElement).backgroundColor,
+  ).toBe("rgb(255, 255, 255)");
+});
+
+test("a theme round trip restores original light declarations and a newer document wins over queued work", async () => {
+  const html = '<div id="mail" style="background:#fff;color:#111!important">First</div>';
+  let current = await start(body(1, html, { theme: darkTheme }));
+  const original = new DOMParser()
+    .parseFromString(html, "text/html")
+    .getElementById("mail")
+    ?.getAttribute("style");
+  act(() => {
+    for (const receive of h.theme) receive({ ...darkTheme, mode: "light" });
+  });
+  current = await loaded();
+  expect(current.doc.getElementById("mail")?.getAttribute("style")).toBe(original);
+  act(() => {
+    for (const receive of h.theme) receive(darkTheme);
+  });
+  current = await loaded();
+  const firstDark = current.win.getComputedStyle(
+    current.doc.getElementById("mail") as HTMLElement,
+  ).color;
+  current.frame.getBoundingClientRect = () => ({ width: 350, height: 100 }) as DOMRect;
+  act(() => {
+    window.dispatchEvent(new Event("resize"));
+    for (const receive of h.body)
+      receive(body(2, html.replace("First", "Second"), { theme: darkTheme }));
+  });
+  current = await loaded();
+  flush();
+  expect(current.doc.getElementById("mail")?.textContent).toBe("Second");
+  expect(
+    current.win.getComputedStyle(current.doc.getElementById("mail") as HTMLElement).color,
+  ).toBe(firstDark);
+});
+
+test("unknown coloured and image regions keep their original foreground and inherited backdrop", async () => {
+  const { doc, win } = await start(
+    body(
+      1,
+      `<div style="background:#fff;color:#111">
+    <span id="brand" style="color:#c22b4c">Brand</span>
+    <div id="art" style="background-image:url(godwit-img://m9/art)">Caption</div>
+    <span id="clear" style="color:rgba(0,0,0,0)">Hidden</span>
+    <div id="ordinary">Reading</div></div>`,
+      { theme: darkTheme },
+    ),
+  );
+  const style = (id: string) => win.getComputedStyle(doc.getElementById(id) as HTMLElement);
+  expect(style("brand").color).toBe("rgb(194, 43, 76)");
+  expect(style("brand").backgroundColor).toBe("rgb(255, 255, 255)");
+  expect(style("art").color).toBe("rgb(17, 17, 17)");
+  expect(style("art").backgroundColor).toBe("rgb(255, 255, 255)");
+  expect(style("art").backgroundImage).toContain("godwit-img://m9/art");
+  expect(style("clear").color).toBe("rgba(0, 0, 0, 0)");
+  expect(style("ordinary").color).not.toBe("rgb(17, 17, 17)");
+});
+
+test("the final rendered neutral text meets the promised contrast, including channel rounding", async () => {
+  const html = [30, 40, 50, 60, 70, 80, 90]
+    .map(
+      (n) =>
+        `<p style="background:rgb(${n},${n},${n});color:rgb(${n + 1},${n + 1},${n + 1})">Readable</p>`,
+    )
+    .join("");
+  const { doc, win } = await start(body(1, html, { theme: darkTheme }));
+  const luminance = (value: string) => {
+    const rgb = (value.match(/[\d.]+/g) ?? [])
+      .slice(0, 3)
+      .map(Number)
+      .map((n) => {
+        const s = n / 255;
+        return s <= 0.04045 ? s / 12.92 : ((s + 0.055) / 1.055) ** 2.4;
+      });
+    return rgb[0] * 0.2126 + rgb[1] * 0.7152 + rgb[2] * 0.0722;
+  };
+  for (const paragraph of doc.querySelectorAll("p")) {
+    const style = win.getComputedStyle(paragraph);
+    const fg = luminance(style.color);
+    const bg = luminance(style.backgroundColor);
+    expect((Math.max(fg, bg) + 0.05) / (Math.min(fg, bg) + 0.05)).toBeGreaterThanOrEqual(4.5);
+  }
+});

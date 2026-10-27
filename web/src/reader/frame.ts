@@ -34,17 +34,16 @@ const htmlCSS = (t: Theme, scheme: string) => {
 export const isDark = (t: Theme, systemDark: boolean) =>
   t.mode === "dark" || (t.mode === "system" && systemDark);
 
-// Go marks a stylesheet that has styles for the dark scheme, or a mail on a dark canvas (core/mail).
+// Go marks a stylesheet with author-provided dark rules (core/mail).
 const hasDarkStyles = (b: ReaderBody) => b.html.startsWith('<style data-dark="">');
 
 /**
  * The colour scheme of a body's document, also set on its iframe element (a scheme differing from
- * the iframe's would give it an opaque canvas): HTML mail is dark only in the dark theme and with
- * dark styles of its own (else it is drawn light and inverted); plain text follows the theme's mode
- * ("system": both, by the appearance).
+ * the iframe's would give it an opaque canvas). HTML follows the selected appearance; plain text
+ * can follow the system directly.
  */
 export function frameScheme(b: ReaderBody, t: Theme, systemDark = false): string {
-  if (b.html !== "") return isDark(t, systemDark) && hasDarkStyles(b) ? "dark" : "light";
+  if (b.html !== "") return isDark(t, systemDark) ? "dark" : "light";
   return t.mode === "light" || t.mode === "dark" ? t.mode : "light dark";
 }
 
@@ -71,18 +70,19 @@ export function buildSrcdoc(b: ReaderBody, t: Theme, systemDark = false): string
     base(size(t.bodyFontSize), html ? "normal" : "1.5") +
     (html ? htmlCSS(t, frameScheme(b, t, systemDark)) : plainCSS(t, frameScheme(b, t)));
   const dark = isDark(t, systemDark);
+  const auto = html && dark && !hasDarkStyles(b);
   const cls = !html
     ? "godwit-plain"
     : dark
       ? hasDarkStyles(b)
         ? "godwit-dark"
-        : "godwit-dark godwit-invert"
+        : "godwit-light godwit-auto"
       : "godwit-light";
   return (
     "<!doctype html><html><head>" +
     `<meta http-equiv="Content-Security-Policy" content="${FRAME_CSP}">` +
     '<meta charset="utf-8">' +
     `<style>${css}</style></head>` +
-    `<body><div id="godwit-body" class="${cls}">${html ? b.html : escapeText(b.plain)}</div></body></html>`
+    `<body><div id="godwit-body" class="${cls}"${auto ? " data-auto-dark" : ""}>${html ? b.html : escapeText(b.plain)}</div></body></html>`
   );
 }

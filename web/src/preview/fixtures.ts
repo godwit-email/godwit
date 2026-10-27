@@ -408,6 +408,65 @@ export const signature = (mode: "light" | "dark"): SignatureState => ({
   locale: "zh-Hans",
   theme: theme(mode),
 });
+
+export const readerNeutral = `<style>
+#godwit-body .invoice { background:#fff; color:#171717; padding:32px; max-width:640px; margin:auto; }
+#godwit-body .invoice .muted { color:#777; }
+#godwit-body .invoice .card { background:#f0f0f0; padding:20px; border-radius:12px; }
+#godwit-body .invoice td { padding:12px; border-bottom:1px solid #ddd; }
+#godwit-body.godwit-light .invoice .summary { background:#f8f8f8; color:#222; }
+@media(max-width:480px) { #godwit-body .invoice {padding:16px} #godwit-body.godwit-light .invoice .summary {background:#ddd} }
+</style>
+<div class="invoice">
+  <p class="muted">NORTHLINE STUDIO / ORDER 2187</p>
+  <h1 style="font-size:24px">Your order is on its way</h1>
+  <p id="neutral-primary">Hi Lena, your workspace essentials have shipped.</p>
+  <p id="neutral-secondary" class="muted">Delivery is expected on Thursday, October 29.</p>
+  <div id="neutral-card" class="card">
+    <strong>Delivery address</strong><p>42 Orchard Lane<br>Singapore 238823</p>
+  </div>
+  <table style="width:100%;border-collapse:collapse;margin-top:24px">
+    <tr><td>Desk lamp</td><td style="text-align:right">$68.00</td></tr>
+    <tr bgcolor="#f4f4f4"><td>Notebook set</td><td style="text-align:right">$19.50</td></tr>
+    <tr><td>Shipping</td><td style="text-align:right">$4.80</td></tr>
+  </table>
+  <p id="neutral-responsive" class="summary" style="padding:16px">Total paid: <strong>$92.30</strong></p>
+  <p class="muted" style="font-size:12px">Keep this email for your records.</p>
+</div>`;
+
+export const readerNaturalDark = `<style data-dark-canvas=""></style>
+<div id="natural-canvas" style="background:#222;color:#ddd;padding:32px">
+  <h1 style="font-size:24px">Night shift notes</h1>
+  <p>This surface was already dark before the reader adapted it.</p>
+  <div id="natural-card" style="background:#fff;color:#111;padding:24px;border-radius:12px">
+    <h2 style="font-size:18px">Tomorrow's handoff</h2>
+    <p>The original light card should now fit the reading theme.</p>
+    <p style="color:#888">The surrounding dark surface keeps its original colour.</p>
+  </div>
+</div>`;
+
+export const readerAuthorDark = `<style data-dark="">
+#godwit-body .authored {background:#fff;color:#111;padding:32px}
+#godwit-body.godwit-dark .authored {background:#222;color:#ddd}
+</style>
+<div class="authored">
+  <h1 style="font-size:24px">A theme supplied by the sender</h1>
+  <p>The reader leaves this sender's dark styling in control.</p>
+  <div id="author-white-card" style="background:#fff;color:#111;padding:24px;border-radius:12px">
+    This card deliberately remains light in the sender's dark theme.
+  </div>
+</div>`;
+
+export const readerFallback = `<div style="background:#fff;color:#111;padding:32px">
+  <h1 style="font-size:24px">Conservative colour handling</h1>
+  <p>Ordinary text around unsupported regions still adapts.</p>
+  <div id="fallback-colour" style="background:#b22222;color:#fff;padding:16px">A brand-coloured region keeps its original pairing.</div>
+  <div id="fallback-opacity" style="background:#f4f4f4;padding:16px;margin-top:16px">
+    <p style="opacity:.3">A translucent group needs its original outside backdrop.</p>
+    <p style="color:rgba(0,0,0,0)">This text must remain invisible.</p>
+  </div>
+  <p id="fallback-readable">The last paragraph remains readable in the selected theme.</p>
+</div>`;
 export const signatureHtml =
   '<p><strong>Alex Chen</strong></p><p>Partnerships · Example Co.</p><p><a href="https://example.com">example.com</a></p>';
 /** A company logo, as SignaturePage.Load gives a signature image (a data: URL). */

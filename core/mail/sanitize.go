@@ -179,8 +179,8 @@ func render(parent *html.Node) string {
 // received mail the links move to data-href here: bluemonday drops an href it
 // cannot parse (a space, a {placeholder}, a bad port), which would leave the
 // link dead. It also detects whether the email has a dark canvas (via meta
-// color-scheme or a dark background on body/containers) so that dark mode does
-// not invert an inherently dark email.
+// color-scheme or a dark background on body/containers), separately from
+// author-provided dark CSS.
 func prepare(src string, received bool) (string, int, []styleSheet, bool) {
 	doc, err := html.Parse(strings.NewReader(src))
 	if err != nil {
@@ -365,12 +365,11 @@ func Sanitize(src string, inline map[string]Attachment, loadRemote bool) (safe s
 	p.AllowAttrs("class", "id").Globally() // what the mail's own <style> selects by; prepare cleaned them
 	safe = finish(p.Sanitize(prepared), inline, nil, loadRemote, false)
 	css, darkCSS := sanitizeCSS(sheets)
-	if darkCSS || darkCanvas {
-		// The reader keeps the mail's own dark styles, not its own inversion. As
-		// html.Render writes it, so a body written again (the image proxy's) starts the same.
-		// A dark canvas with no styles still gets the (empty) sheet: the reader has only
-		// the body's markup to tell by.
+	if darkCSS {
+		// Keep the marker stable through html.Render when the image proxy rewrites the body.
 		safe = `<style data-dark="">` + css + "</style>" + safe
+	} else if darkCanvas {
+		safe = `<style data-dark-canvas="">` + css + "</style>" + safe
 	} else if css != "" {
 		safe = "<style>" + css + "</style>" + safe
 	}
