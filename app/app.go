@@ -372,6 +372,9 @@ func (a *App) load() {
 			}
 			unread[acc.ID] = 0 // every account has a key, folders or not
 			for _, f := range fs {
+				if f.Role == "junk" || f.Role == "trash" { // as the sidebar's folder rows count
+					continue
+				}
 				unread[acc.ID] += f.Unread
 				if f.Role == "inbox" {
 					inbox += f.Unread

@@ -332,6 +332,22 @@ func TestEventBurstConverges(t *testing.T) {
 	}
 }
 
+// An account's unread count leaves out its Junk and Trash, as their rows do.
+func TestAccountUnreadSkipsJunkAndTrash(t *testing.T) {
+	h, acc := withAccount(t)
+	if err := h.env.IMAP(acc.ID).User.Create("Junk", nil); err != nil {
+		t.Fatal(err)
+	}
+	for _, f := range []string{"INBOX", "Junk", "Trash"} {
+		h.env.Deliver(t, acc.ID, f, coretest.Msg("bob@example.com", "alice@example.com", f, "body"))
+	}
+	_ = h.env.Svc.SyncNow(context.Background(), acc.ID)
+	h.until("1 unread", func() bool {
+		h.advance(250 * time.Millisecond)
+		return h.app.unread[acc.ID] == 1
+	})
+}
+
 func TestHumanizeErrors(t *testing.T) {
 	wrap := func(err error) error { return fmt.Errorf("op: %w", err) }
 	seen := map[string]bool{}
