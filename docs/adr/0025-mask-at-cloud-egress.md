@@ -1,5 +1,5 @@
 ---
-status: proposed
+status: accepted
 ---
 
 # 发给云端的文本一律脱敏，在 Go 的出口处进行
