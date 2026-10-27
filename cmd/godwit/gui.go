@@ -231,7 +231,7 @@ func gui(ctx context.Context, dataDir string) int {
 		if err == nil {
 			svc, err = core.New(ctx, core.Options{DataDir: dataDir, AutoSync: true, LabelMail: true, SystemLanguage: lang,
 				Registry: reg, ModelsDev: ai.ModelsDevURL, AppVersion: app.Version, SystemTranslator: systemTranslator(), AppleIntelligence: appleIntelligence(),
-				ConfirmWindow: true, ComposeOpen: windows.IsOpen})
+				ConfirmWindow: true, ComposeOpen: windows.IsOpen, OpenURL: mygo.Shell.OpenExternal})
 		}
 		if err != nil {
 			i18n.SetLanguage(lang)

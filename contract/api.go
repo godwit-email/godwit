@@ -48,6 +48,7 @@ type API interface {
 	Ask(ctx context.Context, conversationID int64, input string) (<-chan core.WitEvent, error)
 	SubscribeConversation(id int64) (<-chan core.WitEvent, func())
 	ResolveApproval(ctx context.Context, id int64, accept bool) error
+	ResolveApprovalWithArgs(ctx context.Context, id int64, accept bool, args json.RawMessage) error
 	ListApprovals(ctx context.Context, conversationID int64) ([]core.Approval, error)
 	Subscribe() (<-chan events.Event, func())
 	RunAction(ctx context.Context, id string, t core.Target, opts core.RunActionOptions) (core.ActionResult, error)
@@ -290,6 +291,10 @@ func (r *Remote) SubscribeConversation(id int64) (<-chan core.WitEvent, func()) 
 
 func (r *Remote) ResolveApproval(ctx context.Context, id int64, accept bool) error {
 	return r.C.Call(ctx, "ResolveApproval", nil, id, accept)
+}
+
+func (r *Remote) ResolveApprovalWithArgs(ctx context.Context, id int64, accept bool, args json.RawMessage) error {
+	return r.C.Call(ctx, "ResolveApprovalWithArgs", nil, id, accept, args)
 }
 
 func (r *Remote) ListApprovals(ctx context.Context, conversationID int64) ([]core.Approval, error) {
