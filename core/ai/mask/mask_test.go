@@ -288,6 +288,25 @@ func TestRestoresAPlaceholderCutBetweenChunks(t *testing.T) {
 	assert.Equal(t, "if (x) {", stream(m, "if (x) {"))
 }
 
+// A secret in JSON a string holds is found by the key that names it, as
+// it would be in the same text: only the value is masked.
+func TestMasksASecretByItsKeyInJSON(t *testing.T) {
+	body := `{"model":"m","messages":[{"role":"tool","tool_call_id":"c1","content":"{\"api_key\":\"abcd1234efgh5678\",\"name\":\"x\"}"}]}`
+	out, err := mask.New(key).Body(body)
+	require.NoError(t, err)
+	assert.Equal(t, `{"api_key":"<SECRET>","name":"x"}`, shown(at(t, out, "messages", 0, "content")))
+}
+
+// Only a whole data: URI goes as it is; text that starts with "data:" is masked.
+func TestADataURIIsKeptButNotTextLikeOne(t *testing.T) {
+	img := "data:image/png;base64,iVBORw0KGgo4111111111111111="
+	body := `{"model":"m","messages":[{"role":"user","content":"data: card ` + card + `"},{"role":"user","content":"` + img + `"}]}`
+	out, err := mask.New(key).Body(body)
+	require.NoError(t, err)
+	assert.Equal(t, "data: card <BANK_CARD>", shown(at(t, out, "messages", 0, "content")))
+	assert.Equal(t, img, at(t, out, "messages", 1, "content"))
+}
+
 // What has nothing to mask goes out byte for byte.
 func TestABodyWithNothingToMaskIsKept(t *testing.T) {
 	body := `{"model": "m", "input": "Hi <you>", "n": 1.50}`

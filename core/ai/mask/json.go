@@ -5,6 +5,7 @@ import (
 	"cmp"
 	"encoding/json"
 	"errors"
+	"regexp"
 	"strings"
 )
 
@@ -40,7 +41,7 @@ func (m *Masker) bodyTo(body string, f *Found) (string, error) {
 func (m *Masker) json(s string, sc scope, f *Found) (out string, ok bool, err error) {
 	var block *BlockedError
 	out, ok = deep(s, sc, func(s string, sc scope) string {
-		out, e := m.text(s, !sc.model, f)
+		out, e := m.member(s, sc, f)
 		var b *BlockedError
 		if errors.As(e, &b) {
 			block = block.with(b.Categories...)
@@ -54,6 +55,22 @@ func (m *Masker) json(s string, sc scope, f *Found) (out string, ok bool, err er
 	}
 	return out, ok, err
 }
+
+// member is text for the string s under its key: a key that names a
+// credential ({"api_key": "…"}) goes in front, as the secret rules need it
+// to see the value, and only the value comes back.
+func (m *Masker) member(s string, sc scope, f *Found) (string, error) {
+	if credKey.MatchString(sc.key) {
+		pre := sc.key + "="
+		if out, err := m.text(pre+s, !sc.model, f); strings.HasPrefix(out, pre) || err != nil {
+			return strings.TrimPrefix(out, pre), err
+		}
+	}
+	return m.text(s, !sc.model, f)
+}
+
+// credKey is a key that names a credential, as the SECRET rule's label does.
+var credKey = regexp.MustCompile(`(?i)^[A-Za-z0-9_.-]*(?:password|passwd|secret|token|api[_-]?key|access[_-]?key|private[_-]?key|credential)[A-Za-z0-9_.-]*$`)
 
 // deep is walk, into the JSON document a string holds too (a tool's
 // arguments or result).
@@ -140,10 +157,14 @@ var defKeys = map[string]bool{
 	"stream_options": true, "response_format": true, "thinking": true, "metadata": true, "output_config": true, "output_format": true,
 }
 
+// dataURI is a whole data: URI, media the service decodes; text that only
+// starts with "data:" is not one.
+var dataURI = regexp.MustCompile(`^data:[\w.+-]*/[\w.+-]*(?:;[\w.+-]+=[\w.+-]+)*(?:;base64)?,[A-Za-z0-9+/=%._~-]*$`)
+
 // skipped says the string s at sc goes as it is.
 func skipped(s string, sc scope) bool {
 	switch {
-	case strings.HasPrefix(s, "data:"):
+	case dataURI.MatchString(s):
 		return true
 	case sc.tool:
 		return false
