@@ -60,6 +60,7 @@ type settingsPage struct {
 	st, shown   core.Settings         // what the controls are bound to, and what they showed last frame
 	noTrans     bool                  // the no-translate language list is open
 	translators []core.TranslatorInfo // the 翻译方式 choices, read on opening General
+	mask        maskDraft             // 隐私脱敏's text fields
 
 	keychain    error // the keychain probe's result
 	keychainSet bool  // the probe finished

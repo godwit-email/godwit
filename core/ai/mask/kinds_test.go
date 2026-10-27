@@ -91,12 +91,12 @@ func TestACategoryTurnedOffIsSentAsItIs(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, "Code <CODE> is your verification code. Call <PHONE> or mail <EMAIL>@example.com, card <BANK_CARD>", shown(before))
 	for cat, want := range map[string]string{
-		mask.CatCode:   "Code 482913 is your verification code. Call <PHONE> or mail <EMAIL>@example.com, card <BANK_CARD>",
-		mask.CatPhone:  "Code <CODE> is your verification code. Call +86 138 1234 5678 or mail <EMAIL>@example.com, card <BANK_CARD>",
-		mask.CatEmail:  "Code <CODE> is your verification code. Call <PHONE> or mail ann@example.com, card <BANK_CARD>",
-		mask.CatSecret: "Code <CODE> is your verification code. Call <PHONE> or mail <EMAIL>@example.com, card 4111 1111 1111 1111",
+		mask.Codes:  "Code 482913 is your verification code. Call <PHONE> or mail <EMAIL>@example.com, card <BANK_CARD>",
+		mask.Phones: "Code <CODE> is your verification code. Call +86 138 1234 5678 or mail <EMAIL>@example.com, card <BANK_CARD>",
+		mask.Emails: "Code <CODE> is your verification code. Call <PHONE> or mail ann@example.com, card <BANK_CARD>",
+		mask.IDs:    "Code <CODE> is your verification code. Call <PHONE> or mail <EMAIL>@example.com, card 4111 1111 1111 1111",
 	} {
-		m.SetCategories(map[string]bool{cat: false})
+		require.NoError(t, m.Configure(mask.Config{Off: []string{cat}}))
 		out, err := m.Text(in)
 		require.NoError(t, err)
 		assert.Equal(t, want, shown(out), cat)

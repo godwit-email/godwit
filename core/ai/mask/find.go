@@ -1,23 +1,22 @@
 package mask
 
 import (
-	"cmp"
 	"regexp"
 	"slices"
 	"strings"
 )
 
-// rule finds values of one kind, in category cat: the match, or its first
-// group that matched, of re or of match in its place; bound are the
-// characters that may not touch it on either side. fit, if set, checks it
-// and says how much of it is the value (0: none).
+// rule finds values of one kind: the match, or its first group that matched,
+// of re or of match in its place; bound are the characters that may not
+// touch it on either side. fit, if set, checks it and says how much of it
+// is the value (0: none); word takes it only as a whole word.
 type rule struct {
 	kind  string
-	cat   string
 	re    *regexp.Regexp
 	match func(s string) [][]int
 	bound string
 	fit   func(v string) int
+	word  bool
 }
 
 const (
@@ -58,15 +57,15 @@ var rules = []rule{
 
 	// a number with + and its country code; a mainland China mobile; a
 	// landline with its area code set apart, as an order number's is not
-	{kind: "PHONE", cat: CatPhone, bound: alnum, re: regexp.MustCompile(`\+[1-9]\d{0,3}(?:[ .-]?(?:\(\d{1,4}\)|\d{1,6})){1,6}`), fit: intlPhone},
-	{kind: "PHONE", cat: CatPhone, bound: alnum + "-", re: regexp.MustCompile(`1[3-9]\d(?:[ -]?\d{4}){2}(?:\.\d+)?`), fit: whole(notAnAmount)},
-	{kind: "PHONE", cat: CatPhone, bound: alnum + "-", re: regexp.MustCompile(`(?:0\d{2,3}[ -]|[(（]0\d{2,3}[)）][ -]?)\d{3,4}[ -]?\d{4}`)},
+	{kind: "PHONE", bound: alnum, re: regexp.MustCompile(`\+[1-9]\d{0,3}(?:[ .-]?(?:\(\d{1,4}\)|\d{1,6})){1,6}`), fit: intlPhone},
+	{kind: "PHONE", bound: alnum + "-", re: regexp.MustCompile(`1[3-9]\d(?:[ -]?\d{4}){2}(?:\.\d+)?`), fit: whole(notAnAmount)},
+	{kind: "PHONE", bound: alnum + "-", re: regexp.MustCompile(`(?:0\d{2,3}[ -]|[(（]0\d{2,3}[)）][ -]?)\d{3,4}[ -]?\d{4}`)},
 
 	// an address's user name: its domain goes as it is, for labels and sorting go by it
-	{kind: "EMAIL", cat: CatEmail, bound: tokenCh + ".%+", re: regexp.MustCompile(`([A-Za-z0-9._%+-]+)@[A-Za-z0-9](?:[A-Za-z0-9-]*[A-Za-z0-9])?(?:\.[A-Za-z0-9](?:[A-Za-z0-9-]*[A-Za-z0-9])?)*\.[A-Za-z]{2,}`)},
+	{kind: "EMAIL", bound: tokenCh + ".%+", re: regexp.MustCompile(`([A-Za-z0-9._%+-]+)@[A-Za-z0-9](?:[A-Za-z0-9-]*[A-Za-z0-9])?(?:\.[A-Za-z0-9](?:[A-Za-z0-9-]*[A-Za-z0-9])?)*\.[A-Za-z]{2,}`)},
 
-	{kind: "CODE", cat: CatCode, bound: alnum, match: codes},
-	{kind: "LINK", cat: CatCode, match: links},
+	{kind: "CODE", bound: alnum, match: codes},
+	{kind: "LINK", match: links},
 }
 
 // span is a value found at s[start:end].
@@ -75,13 +74,13 @@ type span struct {
 	kind       string
 }
 
-// find is the values in s the rules of the categories on says are on find,
-// and those known, in order, none overlapping: where two start together, a
-// rule's.
-func find(s string, on func(cat string) bool, known []span) []span {
+// find is the values in s, in order, none overlapping: of the user's rules
+// and words first, then of the built-in rules of the categories on, then
+// those known; where two start together, a rule's. None the user allowed.
+func (c *compiled) find(s string, known []span) []span {
 	var found []span
-	for _, r := range rules {
-		if !on(cmp.Or(r.cat, CatSecret)) {
+	for _, r := range slices.Concat(c.own, rules) {
+		if c.off[categories[r.kind]] {
 			continue
 		}
 		var locs [][]int
@@ -103,13 +102,18 @@ func find(s string, on func(cat string) bool, known []span) []span {
 					continue
 				}
 			}
-			if a > 0 && strings.IndexByte(r.bound, s[a-1]) >= 0 || b < len(s) && strings.IndexByte(r.bound, s[b]) >= 0 {
+			if a > 0 && strings.IndexByte(r.bound, s[a-1]) >= 0 || b < len(s) && strings.IndexByte(r.bound, s[b]) >= 0 ||
+				r.word && !wholeWord(s, a, b) || c.allow[strings.ToLower(s[a:b])] {
 				continue
 			}
 			found = append(found, span{a, b, r.kind})
 		}
 	}
-	found = append(found, known...)
+	for _, sp := range known {
+		if !c.off[categories[sp.kind]] && !c.allow[strings.ToLower(s[sp.start:sp.end])] {
+			found = append(found, sp)
+		}
+	}
 	slices.SortStableFunc(found, func(x, y span) int { return x.start - y.start })
 	out := found[:0]
 	for _, sp := range found {

@@ -23,7 +23,8 @@ func mailBody(t *testing.T, mail string) string {
 // namesMasker keeps addresses as they are: these tests are about names.
 func namesMasker() *mask.Masker {
 	m := mask.New(key)
-	m.SetCategories(map[string]bool{mask.CatEmail: false})
+	_ = m.Configure(mask.Config{Off: []string{mask.Emails}})
+	m.SetNames(false) // until a test turns them on
 	return m
 }
 
