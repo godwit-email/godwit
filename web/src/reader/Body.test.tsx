@@ -87,7 +87,7 @@ afterEach(() => {
 });
 
 /** Loads the iframe's srcdoc into its document (jsdom doesn't) and fires load. */
-async function loaded() {
+async function loaded(fireLoad = true) {
   const frame = await waitFor(() => {
     const f = document.querySelector("iframe");
     if (!f?.getAttribute("srcdoc")) throw new Error("no frame yet");
@@ -99,9 +99,15 @@ async function loaded() {
   const doc = frame.contentDocument!;
   const parsed = new DOMParser().parseFromString(frame.getAttribute("srcdoc") ?? "", "text/html");
   doc.replaceChild(doc.importNode(parsed.documentElement, true), doc.documentElement);
-  act(() => {
-    frame.dispatchEvent(new Event("load"));
-  });
+  for (const node of [...doc.childNodes])
+    if (node.nodeType === Node.COMMENT_NODE) doc.removeChild(node);
+  for (const node of parsed.childNodes)
+    if (node.nodeType === Node.COMMENT_NODE) doc.appendChild(doc.importNode(node, true));
+  if (fireLoad) {
+    act(() => {
+      frame.dispatchEvent(new Event("load"));
+    });
+  }
   // biome-ignore lint/style/noNonNullAssertion: likewise its window
   return { frame, doc, win: frame.contentWindow! as Window & typeof globalThis };
 }
@@ -675,4 +681,158 @@ test("the final rendered neutral text meets the promised contrast, including cha
     const bg = luminance(style.backgroundColor);
     expect((Math.max(fg, bg) + 0.05) / (Math.min(fg, bg) + 0.05)).toBeGreaterThanOrEqual(4.5);
   }
+});
+
+test("image backdrops stay inside the image content box without changing its pixels or dimensions", async () => {
+  const src =
+    "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAACklEQVR4nGMAAQAABQABDQottAAAAABJRU5ErkJggg==";
+  const html = `<div id="paper" style="background:#fff;color:#111">
+    <div style="background:rgba(0,0,0,.2)">
+      <img id="logo" src="${src}" width="96" height="32" style="padding:12px;border:2px solid #111" alt="Transparent logo">
+    </div><p id="nearby">Ordinary text</p></div>`;
+  const { doc, win } = await start(body(1, html, { theme: darkTheme }));
+  const img = doc.getElementById("logo") as HTMLImageElement;
+  const style = win.getComputedStyle(img);
+  expect(style.backgroundColor).toBe("rgb(204, 204, 204)");
+  expect(style.backgroundClip).toBe("content-box");
+  expect(style.padding).toBe("12px");
+  expect(style.borderWidth).toBe("2px");
+  expect(style.filter).not.toMatch(/invert|hue-rotate/);
+  expect(img.getAttribute("src")).toBe(src);
+  expect(img.getAttribute("width")).toBe("96");
+  expect(img.getAttribute("height")).toBe("32");
+  expect(img.parentElement?.children).toHaveLength(1);
+  expect(win.getComputedStyle(doc.getElementById("paper") as HTMLElement).backgroundColor).not.toBe(
+    "rgb(255, 255, 255)",
+  );
+});
+
+test("background artwork keeps its composed backdrop and text while opaque cards and siblings adapt", async () => {
+  const { doc, win } = await start(
+    body(
+      1,
+      `<div style="background:#fff;color:#111">
+    <div style="background:rgba(0,0,0,.2)">
+      <div id="art" style="background-image:url(godwit-img://m9/art);background-size:24px 16px;background-position:5px 7px;background-repeat:repeat-x">
+        <p id="caption">Original caption</p>
+        <div id="tint" style="background:rgba(255,255,255,.5)"><p id="tinted-caption">Translucent inset</p></div>
+        <div id="card" style="background:#fff"><p id="card-text">Independent solid card</p></div>
+      </div>
+    </div><p id="ordinary">Neighbouring text</p></div>`,
+      { theme: darkTheme },
+    ),
+  );
+  const style = (id: string) => win.getComputedStyle(doc.getElementById(id) as HTMLElement);
+  expect(style("art").backgroundColor).toBe("rgb(204, 204, 204)");
+  expect(style("art").backgroundImage).toContain("godwit-img://m9/art");
+  expect(style("art").backgroundSize).toBe("24px 16px");
+  expect(style("art").backgroundPosition).toBe("5px 7px");
+  expect(style("art").backgroundRepeat).toBe("repeat-x");
+  expect(style("caption").color).toBe("rgb(17, 17, 17)");
+  expect(style("tint").backgroundColor).toBe("rgba(255, 255, 255, 0.5)");
+  expect(style("tinted-caption").color).toBe("rgb(17, 17, 17)");
+  expect(style("card").backgroundColor).not.toBe("rgb(255, 255, 255)");
+  expect(style("card-text").color).not.toBe("rgb(17, 17, 17)");
+  expect(style("ordinary").color).not.toBe("rgb(17, 17, 17)");
+});
+
+test("opaque coloured cards escape media protection but retain opacity protection", async () => {
+  const { doc, win } = await start(
+    body(
+      1,
+      `<div style="background:#fff;color:#111">
+      <div style="background-image:url(godwit-img://m9/art)">
+        <div id="card" style="background:#dcfce7;color:#166534">Independent coloured card</div>
+      </div>
+      <div style="background:#fff0cc;color:#a31515">
+        <div style="opacity:.5;background-image:url(godwit-img://m9/art)">
+          <div id="faded" style="background:#dcfce7;color:#166534">Keep original pairing</div>
+        </div>
+      </div>
+    </div>`,
+      { theme: darkTheme },
+    ),
+  );
+  const card = doc.getElementById("card") as HTMLElement;
+  const faded = doc.getElementById("faded") as HTMLElement;
+  expect(win.getComputedStyle(card).backgroundColor).not.toBe("rgb(220, 252, 231)");
+  expect(renderedContrast(card, win)).toBeGreaterThanOrEqual(4.5);
+  expect(win.getComputedStyle(faded).backgroundColor).toBe("rgb(220, 252, 231)");
+  expect(win.getComputedStyle(faded).color).toBe("rgb(22, 101, 52)");
+});
+
+test("parsed dark mail is readable before delayed images finish loading", async () => {
+  vi.mocked(api.load).mockResolvedValue(
+    body(
+      1,
+      `<div style="background:#fff;color:#111">
+    <p id="waiting-text">Read while the image is pending</p><img id="waiting-image" src="godwit-img://m9/slow" width="320" height="180">
+  </div>`,
+      { theme: darkTheme, remote: true },
+    ),
+  );
+  render(<ReaderApp />);
+  const { doc, win } = await loaded(false);
+  Object.defineProperty(doc, "readyState", { configurable: true, value: "interactive" });
+  flush();
+  const wrap = doc.getElementById("godwit-body") as HTMLElement;
+  expect(win.getComputedStyle(wrap).visibility).toBe("visible");
+  expect(win.getComputedStyle(doc.getElementById("waiting-text") as HTMLElement).color).not.toBe(
+    "rgb(17, 17, 17)",
+  );
+  expect(
+    win.getComputedStyle(doc.getElementById("waiting-image") as HTMLElement).backgroundColor,
+  ).toBe("rgb(255, 255, 255)");
+  flush();
+  expect(api.height).toHaveBeenCalled();
+});
+
+test("image permission, failure and retry keep the backdrop and detach the old document", async () => {
+  const markup = (source: string) => `<div style="background:#fff;color:#111">
+    <img id="image" ${source} width="96" height="32" alt="Company logo">
+    <p data-href="https://example.com">Open details</p></div>`;
+  let current = await start(body(1, markup(""), { theme: darkTheme, blocked: 1 }));
+  expect(current.doc.querySelector("img")?.getAttribute("src")).toBeNull();
+  const oldImage = current.doc.querySelector("img") as HTMLImageElement;
+  const allowed = markup('src="godwit-img://m9/logo"');
+  act(() => {
+    for (const receive of h.body) receive(body(2, allowed, { theme: darkTheme, remote: true }));
+  });
+  current = await loaded(false);
+  flush();
+  const image = current.doc.querySelector("img") as HTMLImageElement;
+  const wrap = current.doc.getElementById("godwit-body") as HTMLElement;
+  wrap.getBoundingClientRect = () => ({ height: 120 }) as DOMRect;
+  image.dispatchEvent(new Event("error"));
+  flush();
+  expect(current.win.getComputedStyle(image).backgroundColor).toBe("rgb(255, 255, 255)");
+  expect(api.height).toHaveBeenLastCalledWith(120);
+  act(() => current.frame.dispatchEvent(new Event("load")));
+  (current.doc.querySelector("[data-href]") as HTMLElement).click();
+  expect(api.openLink).toHaveBeenCalledExactlyOnceWith("https://example.com");
+
+  const before = current.frame.getAttribute("srcdoc");
+  act(() => {
+    for (const receive of h.body) receive(body(3, allowed, { theme: darkTheme, remote: true }));
+  });
+  expect(current.frame.getAttribute("srcdoc")).not.toBe(before);
+  flush(); // The previous document cannot satisfy the new document's readiness check.
+  current = await loaded(false);
+  flush();
+  flush();
+  expect(
+    current.win.getComputedStyle(current.doc.querySelector("img") as HTMLElement).backgroundClip,
+  ).toBe("content-box");
+  vi.mocked(api.height).mockClear();
+  oldImage.dispatchEvent(new Event("load"));
+  image.dispatchEvent(new Event("load"));
+  flush();
+  expect(api.height).not.toHaveBeenCalled();
+
+  act(() => {
+    for (const receive of h.theme) receive({ ...darkTheme, mode: "light" });
+  });
+  current = await loaded();
+  expect(current.doc.querySelector("img")?.getAttribute("style")).toBeNull();
+  expect(current.doc.querySelector("img")?.getAttribute("src")).toBe("godwit-img://m9/logo");
 });

@@ -12,7 +12,7 @@ from `theme.json`, a copy of `webui.ThemeOf` at font size 14; zh-Hans text comes
 | compose   | `plain`, `streaming`, `inline`, `rewrite`, `applied`, `cmdk`, `signature`, `translate` (no model, a plugin translates) |
 | wit       | `conversation`, `empty`, `plus`, `picker`, `quoted`                                                                    |
 | signature | `filled`                                                                                                               |
-| reader    | `basic`, `neutral`, `colored`, `natural-dark`, `author-dark`, `fallback` (mail colour fixtures)                         |
+| reader    | `basic`, `neutral`, `colored`, `natural-dark`, `author-dark`, `fallback`, `media` (mail colour and image fixtures)                         |
 
 Example: `/preview.html?page=compose&state=inline&theme=dark`.
 
@@ -20,3 +20,5 @@ Example: `/preview.html?page=compose&state=inline&theme=dark`.
 `window.mygo`, `fixtures.ts` the data, `boot.ts` picks the state and scripts what a state needs
 (`streaming`'s tool calls, `applied`'s finished run, `cmdk`'s selection and ⌘K).
 `streaming`'s body is its update_draft call's text, cut short where the mockup's caret is.
+
+The `media` reader fixture embeds PNG/JPEG references for transparent logos, white screenshots, and colour preservation. Background `data:` images stand in for already authorized proxy responses at the `ReaderBody` boundary; the production Go image policy is unchanged.

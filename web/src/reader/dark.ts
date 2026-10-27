@@ -117,6 +117,7 @@ type Snapshot = {
   source: Color;
   target: Color;
   protected: boolean;
+  mediaProtected: boolean;
   visible: boolean;
   opacity: number;
   ratio: number;
@@ -200,6 +201,7 @@ export function adaptDarkMode(frame: HTMLIFrameElement, theme: Theme): () => voi
           source,
           target: source,
           protected: false,
+          mediaProtected: false,
           visible,
           opacity,
           ratio:
@@ -231,13 +233,16 @@ export function adaptDarkMode(frame: HTMLIFrameElement, theme: Theme): () => voi
               ? mapped
               : withLightness(node.source, lightness(mapped))
           : (parent?.target ?? dark);
-        // shortcut: media regions retain their complete light pairing until supported.
-        node.protected =
+        const fixedProtection =
           node.protected ||
-          parent?.protected === true ||
-          node.opacity < 1 ||
-          node.el.tagName === "IMG" ||
-          (!!node.image && node.image !== "none");
+          (parent?.protected === true && !parent.mediaProtected) ||
+          node.opacity < 1;
+        // An opaque fill covers ancestor artwork; translucent descendants still need its pairing.
+        node.mediaProtected =
+          !fixedProtection &&
+          ((!!node.image && node.image !== "none") ||
+            (parent?.mediaProtected === true && node.bg[3] < 1));
+        node.protected = fixedProtection || node.mediaProtected || node.el.tagName === "IMG";
         let text = node.fg;
         if (!node.protected && node.fg[3] > 0) {
           const candidate =
@@ -252,6 +257,8 @@ export function adaptDarkMode(frame: HTMLIFrameElement, theme: Theme): () => voi
           node.target = node.source;
           if (!parent?.protected) {
             set(node.el, "background-color", node.source);
+            if (node.el.tagName === "IMG" && (!node.image || node.image === "none"))
+              setValue(node.el, "background-clip", "content-box");
             set(node.el, "color", node.fg);
           }
         } else {

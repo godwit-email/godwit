@@ -165,7 +165,7 @@ const pages: Record<string, { states: string[]; entry: () => Promise<unknown>; s
     },
   },
   reader: {
-    states: ["basic", "neutral", "colored", "natural-dark", "author-dark", "fallback"],
+    states: ["basic", "neutral", "colored", "natural-dark", "author-dark", "fallback", "media"],
     entry: () => import("@/reader/main"),
     setup() {
       const body: ReaderBody = {
@@ -178,6 +178,7 @@ const pages: Record<string, { states: string[]; entry: () => Promise<unknown>; s
             "natural-dark": fx.readerNaturalDark,
             "author-dark": fx.readerAuthorDark,
             fallback: fx.readerFallback,
+            media: fx.readerMedia,
           }[state] ??
           "<p>Following up on our call last week, I put together a draft proposal for the Q4 partnership.</p><p>Best,<br>Lena</p>",
         plain: "",
