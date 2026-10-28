@@ -1,5 +1,16 @@
 # Changelog
 
+## [1.18.0](https://github.com/godwit-email/godwit/compare/v1.17.0...v1.18.0) (2026-10-28)
+
+
+### Features
+
+* ⌘K search palette for mail, conversations, contacts and attachments ([#326](https://github.com/godwit-email/godwit/issues/326)) ([a023381](https://github.com/godwit-email/godwit/commit/a023381b1946a955f2023564714e32a4d99bbe60))
+* **app:** unframe the reader toolbar; save and print move to a more menu ([#332](https://github.com/godwit-email/godwit/issues/332)) ([1b2d0cf](https://github.com/godwit-email/godwit/commit/1b2d0cf4f4072c893e11541514a2bc0dc2a542af))
+* **kit:** harmonize sidebar item hover and selected states ([#330](https://github.com/godwit-email/godwit/issues/330)) ([8583948](https://github.com/godwit-email/godwit/commit/8583948c9dd0cb604726216e83691606eb84219b))
+* **kit:** soften list row hover contrast scoped to kit.List ([#329](https://github.com/godwit-email/godwit/issues/329)) ([7306196](https://github.com/godwit-email/godwit/commit/7306196db92e447d9a56141cbd0d5c7c72f10b6e))
+* mask text sent to cloud services (ADR 0025) ([#309](https://github.com/godwit-email/godwit/issues/309)) ([e798cea](https://github.com/godwit-email/godwit/commit/e798cea81132c7c7ad0b2831e71972501b1f06f2))
+
 ## [1.17.0](https://github.com/godwit-email/godwit/compare/v1.16.0...v1.17.0) (2026-10-27)
 
 
