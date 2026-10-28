@@ -7,6 +7,7 @@ import (
 	"html"
 	"io"
 	"maps"
+	"math"
 	"net/mail"
 	"net/url"
 	"os"
@@ -66,6 +67,7 @@ type reader struct {
 	moreOpen    bool                     // the toolbar's more menu (save, print) shows
 	barTop      float32                  // the floating toolbar's height as the last frame laid it out: the messages start under it
 	barBottom   float32                  // the reply bar's, likewise: the messages end above it
+	pane        ui.Rect                  // the messages' scroll box as the last frame laid it out, in the window: the bars float at its top and bottom
 	replyAsk    string                   // the reply bar's question to Wit, until it is asked
 
 	getThread  func(ctx context.Context, id int64) (core.Thread, error)                       // tests wrap it
@@ -93,6 +95,7 @@ type msgBody struct {
 	view        ui.NativeWebView // the body's page; nil while folded, not read yet, or when it could not be made
 	close       func()           // closes view: unbinds and destroys it
 	height      int              // the page's last reported height, CSS px; 0 until it reports
+	glass       [2]int           // what the bars cover of the page, as last told it (BodyGlass); -1 to tell it again
 	translation *aiRun           // the translated text currently displayed by the page
 
 	// The remote images: allow is the user's 加载图片, which every page
@@ -792,7 +795,7 @@ func (r *reader) view(c *ui.Context) {
 	// The toolbar and the reply bar float over the messages, which scroll
 	// under them: one sheet, the bars frosted over it.
 	col.Children(func() {
-		ui.Scroll(c).Grow(1).TrackScroll(&r.scroll).ScrollbarInsets(r.barTop, 0, r.barBottom).Children(func() {
+		r.pane = ui.Scroll(c).Grow(1).TrackScroll(&r.scroll).ScrollbarInsets(r.barTop, 0, r.barBottom).Children(func() {
 			ui.Column(c).FillWidth().Padding(r.barTop+th.Space(5), th.Space(7), r.barBottom+th.Space(5)).Children(func() {
 				ui.Column(c).FillWidth().Gap(th.Space(3.5)).Children(func() {
 					subject := cmp.Or(r.subject, i18n.T("mail.no_subject"))
@@ -816,10 +819,22 @@ func (r *reader) view(c *ui.Context) {
 					r.renderMessages(c)
 				})
 			})
-		})
+		}).LayoutBounds()
 		r.barTop = r.measured(c, r.toolbar(c).Absolute().Left(0).Top(0).Right(0), r.barTop)
 		r.barBottom = r.measured(c, r.replyBar(c).Absolute().Left(0).Right(0).Bottom(0), r.barBottom)
 	})
+}
+
+// glass tells b's page how much of it the bars cover, box being where it
+// shows this frame: the page blurs there itself, as the bars' blur cannot
+// see a web view.
+func (r *reader) glass(b *msgBody, box ui.Rect) {
+	cover := func(px float32) int { return int(math.Ceil(float64(max(0, min(px, box.H))))) }
+	g := [2]int{cover(r.pane.Y + r.barTop - box.Y), cover(box.Y + box.H - (r.pane.Y + r.pane.H - r.barBottom))}
+	if g != b.glass && b.view != nil {
+		b.glass = g
+		r.p.a.plat.BodyGlass(b.view, g[0], g[1])
+	}
 }
 
 // measured is e's height as the last frame laid it out, asking for another
@@ -1115,7 +1130,8 @@ func (r *reader) message(c *ui.Context, m core.MessageSummary) {
 			return
 		}
 		if b.view != nil { // the body takes the pane's width; what frames it keeps to the column
-			kit.WebView(c, b.view).Height(max(float32(b.height), th.Space(6))) // a line until the page reports
+			// a line until the page reports; Draw's box is where the web view goes this frame
+			kit.WebView(c, b.view).Height(max(float32(b.height), th.Space(6))).Draw(func(_ *ui.Painter, box ui.Rect) { r.glass(b, box) })
 		}
 		r.column(c).Gap(th.Space(3.5)).Children(func() {
 			if b.cut {
@@ -1261,6 +1277,7 @@ func (r *reader) trustSender(from, addr string) {
 func (a *App) BodyHeight(view ui.NativeWebView, message int64, px int) {
 	if b := a.mail.reader.shown(view, message); b != nil {
 		b.height = px
+		b.glass = [2]int{-1, -1} // the page listens now: what it was told before it loaded was dropped
 	}
 }
 

@@ -66,6 +66,10 @@ type Platform interface {
 	// (加载图片). Call it after NewBodyView: it forgets once the last page
 	// of the message closes.
 	AllowImages(message int64)
+	// BodyGlass tells a body's page how much of it, in CSS pixels, the
+	// reader's bars cover from its top and from its bottom: the page blurs
+	// there. UI thread only.
+	BodyGlass(view ui.NativeWebView, top, bottom int)
 	// TranslateBody replaces only the body's text nodes; nil shows the original.
 	TranslateBody(message int64, texts map[string]string)
 	// Print prints the message's body page. UI thread only.
