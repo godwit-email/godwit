@@ -37,7 +37,7 @@ func SidebarCollapsible(c *ui.Context, open *bool, muted bool, trigger, panel fu
 		tr.Gap(th.Space(1)).FontSize(t.Text.Sm).TextColor(t.Muted)
 	}
 	if tr.Hovered() {
-		tr.Background(t.Hover)
+		tr.Background(t.HoverTint)
 	}
 	tr.Children(func() {
 		trigger()
