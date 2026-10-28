@@ -17,6 +17,7 @@ import (
 	"github.com/godwit-email/godwit/core"
 	"github.com/godwit-email/godwit/core/events"
 	"github.com/godwit-email/godwit/internal/i18n"
+	"github.com/godwit-email/godwit/internal/kit"
 )
 
 // Platform is what the App needs from the operating system. OpenFiles,
@@ -288,6 +289,7 @@ type App struct {
 // New builds an App; Start brings it up.
 func New(d Deps) *App {
 	a := &App{settings: d.Settings, settingsOK: d.Settings, setLanguage: d.SetLanguage, svc: d.Svc, plat: d.Platform, post: d.Post, clock: d.Clock, oauth: d.OAuth, sysLang: d.SystemLanguage, vibrancy: d.Vibrancy, appUnread: -1}
+	kit.Glass = d.Vibrancy // dialogs frost their panels over a window on a material
 	if a.setLanguage == nil {
 		a.setLanguage = func(tag string) { i18n.SetLanguage(cmp.Or(tag, a.sysLang)) }
 	}

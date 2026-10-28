@@ -106,7 +106,7 @@ func (p *palette) view(c *ui.Context) {
 	hover := -1
 	o := kit.PaletteOpts{
 		Label: i18n.T("palette.label"), Placeholder: i18n.T("palette.placeholder"), Close: i18n.T("common.close"),
-		OnKey: p.key, Glass: p.a.vibrancy, Chips: func() { p.chips(c) },
+		OnKey: p.key, Chips: func() { p.chips(c) },
 		Hints: []kit.PaletteHint{
 			{Label: i18n.T("palette.hint.close"), Key: "Esc"},
 			{Label: i18n.T("palette.hint.kind"), Key: "←→"},

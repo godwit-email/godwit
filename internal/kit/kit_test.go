@@ -1190,23 +1190,37 @@ func TestMain(m *testing.M) {
 	os.Exit(m.Run())
 }
 
-// TestDialogBackdropBlurs: behind a dialog, a hard edge in the window blurs.
-func TestDialogBackdropBlurs(t *testing.T) {
+// TestDialogGlass: a dialog's backdrop only tints the window, a hard edge
+// staying sharp; with Glass its panel frosts what is behind it, without it
+// the panel is opaque.
+func TestDialogGlass(t *testing.T) {
 	BackdropBlur = true
-	t.Cleanup(func() { BackdropBlur = false })
-	open := true
-	tt := ui.NewTester(themed(func(c *ui.Context) {
-		t := theme.Of(c)
-		ui.Row(c).Fill().Children(func() {
-			ui.Box(c).Width(200).FillHeight().Background(t.Foreground)
-			ui.Box(c).Grow(1).FillHeight().Background(t.Background)
-		})
-		Dialog(c, &open, "T", DialogOpts{Size: DialogSm, Close: "Close"}, nil, nil)
-	}), 800, 600)
-	tt.Advance(2 * theme.MotionBase)
-	// Just right of the black column, low in the window, well below the panel.
-	if p := tt.Image().RGBAAt(201, 500); p.R > 220 {
-		t.Errorf("edge pixel %v is not blurred", p)
+	t.Cleanup(func() { BackdropBlur, Glass = false, false })
+	for _, glass := range []bool{true, false} {
+		Glass = glass
+		open := true
+		tt := ui.NewTester(themed(func(c *ui.Context) {
+			t := theme.Of(c)
+			ui.Row(c).Fill().Children(func() {
+				ui.Box(c).Width(200).FillHeight().Background(t.Foreground)
+				ui.Box(c).Grow(1).FillHeight().Background(t.Background)
+			})
+			Dialog(c, &open, "T", DialogOpts{Size: DialogSm, Close: "Close"}, func() { ui.Box(c).Height(300) }, nil)
+		}), 800, 600)
+		tt.Advance(2 * theme.MotionBase)
+		img := tt.Image()
+		// Just right of the black column, low in the window, well below the panel: tinted, not blurred.
+		if p := img.RGBAAt(201, 560); p.R < 200 {
+			t.Errorf("glass %v: backdrop edge pixel %v is blurred", glass, p)
+		}
+		// The same edge inside the panel's empty body.
+		p := img.RGBAAt(201, 300)
+		if glass && p.R > 240 {
+			t.Errorf("glass: panel pixel %v does not frost the edge behind it", p)
+		}
+		if !glass && p.R < 250 {
+			t.Errorf("opaque: panel pixel %v shows what is behind it", p)
+		}
 	}
 }
 

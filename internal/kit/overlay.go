@@ -44,8 +44,9 @@ func Dialog(c *ui.Context, open *bool, title string, o DialogOpts, body, footer 
 	}
 	ui.DialogBase(c, open, func(backdrop, panel ui.Element) {
 		dialogShown = true
-		backdrop.Material(scrim{theme.BackdropBlur * k, ink(t).Alpha(dim * k)}).Justify(ui.Start).Padding(th.Space(16), 0, 0, 0)
-		panel.Opacity(k).Margin(rise(k), 0, 0, 0).Width(width).MaxHeight(maxH).Radius(t.Radius.X2l).Clip().Background(t.Raised).Border(theme.Hairline, t.Border)
+		backdrop.Background(ink(t).Alpha(dim*k)).Justify(ui.Start).Padding(th.Space(16), 0, 0, 0)
+		panel.Opacity(k).Margin(rise(k), 0, 0, 0).Width(width).MaxHeight(maxH).Radius(t.Radius.X2l).Clip().Border(theme.Hairline, t.Border)
+		glassPanel(panel, t)
 		Elevate(c, panel, theme.ShadowSm)
 		header := ui.Row(c).Shrink(0).AlignItems(ui.Start).Gap(th.Space(4)).Padding(th.Space(4))
 		if body != nil {
@@ -83,7 +84,7 @@ var dialogShown bool
 
 // DialogShown reports whether a Dialog was built since it was last called,
 // and forgets it. A window on a transparent material paints itself opaque
-// under one: the backdrop's blur covers only what is opaque, and sharp text
+// under one: the panel's frost covers only what is opaque, and sharp text
 // on the material would show through it.
 func DialogShown() bool {
 	s := dialogShown
@@ -91,12 +92,26 @@ func DialogShown() bool {
 	return s
 }
 
-// BackdropBlur turns the dialogs' backdrop blur on. Tests turn it off: the
+// BackdropBlur turns the frosted panels' blur on. Tests turn it off: the
 // CPU renderer the Tester draws with blurs pixel by pixel, which under -race
 // runs every dialog test many times slower.
 var BackdropBlur = true
 
-// scrim is a dialog's backdrop: what is behind it blurred, then tinted.
+// Glass frosts the panels of dialogs and the search palette: set where the
+// window sits on a material (Deps.Vibrancy); elsewhere they are opaque. The
+// backdrop under them only tints the window.
+var Glass bool
+
+// glassPanel fills a dialog's panel: frosted glass under Glass, else opaque.
+func glassPanel(panel ui.Element, t theme.Tokens) {
+	if Glass {
+		panel.Material(scrim{theme.BackdropBlur * 4, t.Raised.Alpha(0.8)})
+	} else {
+		panel.Background(t.Raised)
+	}
+}
+
+// scrim is what is behind blurred, then tinted: a frosted surface.
 type scrim struct {
 	blur float32
 	tint ui.Color

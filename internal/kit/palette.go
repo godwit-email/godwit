@@ -8,14 +8,12 @@ import (
 
 // PaletteOpts name a Palette and its search box. OnKey sees the keys the
 // box types no text with (the arrows, Enter, Tab, those with Cmd or Ctrl)
-// before it does, as ui's OnTextKey: true takes the key. Glass draws the
-// panel as frosted glass, for a window on a material; else it is opaque.
-// Chips, when set, builds the PaletteChips before the box.
+// before it does, as ui's OnTextKey: true takes the key. Chips, when set,
+// builds the PaletteChips before the box. Its panel is a dialog's (Glass).
 type PaletteOpts struct {
 	Label, Placeholder, Close string
 	OnKey                     func(k ui.TextKey) bool
 	Hints                     []PaletteHint
-	Glass                     bool
 	Chips                     func()
 }
 
@@ -44,14 +42,10 @@ func Palette(c *ui.Context, open *bool, query *string, o PaletteOpts, head, body
 	}
 	ui.DialogBase(c, open, func(backdrop, panel ui.Element) {
 		dialogShown = true
-		backdrop.Material(scrim{theme.BackdropBlur * k, ink(t).Alpha(dim * k)}).Justify(ui.Start).Padding(th.Space(16), 0, 0, 0)
+		backdrop.Background(ink(t).Alpha(dim*k)).Justify(ui.Start).Padding(th.Space(16), 0, 0, 0)
 		panel.Label(o.Label).Opacity(k).Margin(rise(k), 0, 0, 0).Width(theme.DialogWideWidth).MaxHeight(theme.SheetMaxHeight).
 			Radius(t.Radius.X2l).Clip().Border(theme.Hairline, t.Border)
-		if o.Glass {
-			panel.Material(scrim{theme.BackdropBlur * 4, t.Background.Alpha(0.8)})
-		} else {
-			panel.Background(t.Background)
-		}
+		glassPanel(panel, t)
 		Elevate(c, panel, theme.ShadowXl)
 		var in ui.Element
 		ui.Row(c).Shrink(0).AlignItems(ui.Center).Gap(th.Space(2)).Padding(th.Space(3), th.Space(3), th.Space(2), th.Space(4)).Children(func() {
