@@ -583,6 +583,27 @@ func TestDialogScrims(t *testing.T) {
 	}
 }
 
+// A frosted panel's tint keeps to its rounded corners: just inside the
+// corner of its box the backdrop shows, not the panel's fill.
+func TestDialogGlassCorners(t *testing.T) {
+	Glass = true
+	t.Cleanup(func() { Glass = false })
+	open := true
+	tt := ui.NewTester(themed(func(c *ui.Context) {
+		ui.Box(c).Fill().Background(theme.Light().Background)
+		Dialog(c, &open, "Corner", DialogOpts{Size: DialogSm, Close: "Close"}, nil, nil)
+	}), 800, 600)
+	tt.Advance(2 * theme.MotionBase)
+	r, ok := tt.Find("Corner")
+	if !ok {
+		t.Fatalf("texts %q", tt.Texts())
+	}
+	// The title sits 16 in from the panel's top left; 2 in from that corner is outside its radius.
+	if p := tt.Image().RGBAAt(int(r.X)-16+2, int(r.Y)-16+2); diff(p.R, 204) > 3 {
+		t.Errorf("panel corner pixel %v, want the backdrop's 204", p)
+	}
+}
+
 // An alert asks one question: Cancel, Escape or the backdrop close it, no ×.
 func TestDialogAlertHasNoClose(t *testing.T) {
 	open := true

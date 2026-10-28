@@ -135,7 +135,7 @@ func (s scrim) PaintMaterial(p *ui.Painter, box ui.Rect, radii [4]float32) {
 	if BackdropBlur {
 		glass.Blur{Radius: s.blur}.PaintMaterial(p, box, radii)
 	}
-	p.Fill(box, s.tint, 0)
+	p.Fill(box, s.tint, radii[0]) // its surfaces round every corner alike
 }
 
 // Frost fills a row with fill (the surface it sits on) over what is behind it
