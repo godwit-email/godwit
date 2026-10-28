@@ -45,6 +45,10 @@ func TestSearchWithFilters(t *testing.T) {
 	require.Equal(t, []int64{quoted}, ids(SearchQuery{FromAddr: "a b@x"}), "a quoted local part, as a contact keys it (AddrKey)")
 	_, err = s.db.Execute(t.Context(), "DELETE FROM messages WHERE id = ?", quoted)
 	require.NoError(t, err)
+	emile := addMessage(t, s, "budget", "Émile <Émile@x>", "", "", day.AddDate(0, 0, 3).Unix())
+	require.Equal(t, []int64{emile}, ids(SearchQuery{FromAddr: "émile@x"}), "Unicode case folds as AddrKey folds it")
+	_, err = s.db.Execute(t.Context(), "DELETE FROM messages WHERE id = ?", emile)
+	require.NoError(t, err)
 	_, err = s.db.Execute(t.Context(), "DELETE FROM messages WHERE id = ?", notbob) // the checks below count without it
 	require.NoError(t, err)
 	require.Equal(t, []int64{recent, other}, ids(SearchQuery{Since: day.AddDate(0, 0, 1)}))

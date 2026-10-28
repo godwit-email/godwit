@@ -173,6 +173,8 @@ type SearchQuery struct {
 	LabelID        int64 // mail with this label on
 	Unread         *bool // true for unread (\Seen absent), false for read (\Seen present)
 	Starred        *bool // true for starred (\Flagged present), false for unstarred
+
+	fromHeaders []string // the stored From headers of FromAddr (withSenders)
 }
 
 // Filtered reports whether a filter beyond the account is set: such a query
@@ -197,9 +199,38 @@ func (s *Service) SearchWith(ctx context.Context, q SearchQuery, limit int) ([]M
 	if strings.TrimSpace(q.Text) == "" && !q.Filtered() {
 		return nil, nil
 	}
+	q, err := s.withSenders(ctx, q)
+	if err != nil {
+		return nil, err
+	}
 	cond, args := searchText(q.Text)
 	fcond, fargs := searchFilter(q)
 	return s.searchMessages(ctx, cond+" AND "+fcond, append(args, fargs...), limit)
+}
+
+// withSenders resolves q.FromAddr to the From headers stored for it, as
+// AddrKey reads them: SQLite folds only ASCII case, and a header may quote
+// its local part ("a b"@x) or wrap it in a display name.
+func (s *Service) withSenders(ctx context.Context, q SearchQuery) (SearchQuery, error) {
+	key := strings.ToLower(strings.TrimSpace(q.FromAddr))
+	if key == "" {
+		return q, nil
+	}
+	cond, args := "1", []any(nil)
+	if at := strings.LastIndexByte(key, '@'); at >= 0 && strings.IndexFunc(key[at:], func(r rune) bool { return r >= utf8.RuneSelf }) < 0 {
+		cond, args = `from_addr LIKE ? ESCAPE '\'`, []any{likeArg(key[at:])} // narrowed by an ASCII domain, which LIKE folds
+	}
+	rows, err := s.db.Query(ctx, "SELECT DISTINCT from_addr FROM messages WHERE "+cond, args...)
+	if err != nil {
+		return q, err
+	}
+	q.fromHeaders = []string{}
+	for _, r := range rows.Values {
+		if h := store.Str(r[0]); gomail.AddrKey(h) == key {
+			q.fromHeaders = append(q.fromHeaders, h)
+		}
+	}
+	return q, nil
 }
 
 // searchMessages lists the messages (alias m) matching cond, newest first.
@@ -249,11 +280,10 @@ func searchFilter(q SearchQuery) (string, []any) {
 		cond += ` AND m.from_addr LIKE ? ESCAPE '\'`
 		args = append(args, likeArg(from))
 	}
-	if addr := strings.ToLower(strings.TrimSpace(q.FromAddr)); addr != "" {
-		addr = gomail.FormatAddress("", addr) // as the header stores it: "a b"@x, quoted
-		// a bare address, or one in a display name's angle brackets
-		cond += ` AND (lower(m.from_addr) = ? OR lower(m.from_addr) LIKE ? ESCAPE '\')`
-		args = append(args, addr, "%<"+strings.NewReplacer(`\`, `\\`, "%", `\%`, "_", `\_`).Replace(addr)+">")
+	if strings.TrimSpace(q.FromAddr) != "" { // resolved by withSenders: none stored matches nothing
+		cond += " AND m.from_addr IN (SELECT value FROM json_each(?))"
+		b, _ := json.Marshal(q.fromHeaders)
+		args = append(args, string(b))
 	}
 	if !q.Since.IsZero() {
 		cond += " AND m.date >= ?"

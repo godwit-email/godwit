@@ -61,10 +61,13 @@ func (s *Service) Find(ctx context.Context, q FindQuery) (FindResult, error) {
 	if !slices.Contains([]string{"", "mail", "conversation", "contact", "attachment"}, q.Kind) {
 		return res, fmt.Errorf("unknown kind %q", q.Kind)
 	}
+	var err error
+	if q.SearchQuery, err = s.withSenders(ctx, q.SearchQuery); err != nil {
+		return res, err
+	}
 	want := func(kind string, filterable bool) bool {
 		return (q.Kind == "" || q.Kind == kind) && (filterable || !q.Filtered())
 	}
-	var err error
 	if want("mail", true) {
 		if res.Mail, err = s.findMail(ctx, q); err != nil {
 			return res, err
