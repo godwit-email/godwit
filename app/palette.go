@@ -90,7 +90,7 @@ func (p *palette) view(c *ui.Context) {
 	if p.a == nil {
 		return // never opened
 	}
-	if slashed(p.typed, p.query) {
+	if !p.asking && slashed(p.typed, p.query) {
 		p.query, p.filtering, p.fsel = p.typed, true, 0
 	}
 	p.typed = p.query

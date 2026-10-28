@@ -141,3 +141,21 @@ func TestPaletteViewAllRow(t *testing.T) {
 	p := h.app.mail
 	h.until("the list's search", func() bool { return !paletteShown(h) && p.searched && len(p.results) == 4 })
 }
+
+// A / in a question to Wit stays text: no filter list takes it.
+func TestPaletteAskKeepsSlash(t *testing.T) {
+	h, _, _ := askHarness(t, true)
+	var asks []string
+	h.app.SetWitAsk(func(q string) { asks = append(asks, q) })
+	paletteOver(h, "总结")
+	h.tt.Key(0, ui.KeyTab)
+	h.until("the question box", func() bool { return !paletteShown(h) })
+	for _, r := range " /tmp/report" { // a key at a time: / after the space is the one the search takes
+		h.typeText(string(r))
+	}
+	h.tt.Key(0, ui.KeyEnter)
+	h.until("asked", func() bool { return len(asks) == 1 })
+	if asks[0] != "总结 /tmp/report" {
+		t.Fatalf("asked %q", asks[0])
+	}
+}
