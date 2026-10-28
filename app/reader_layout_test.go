@@ -5,11 +5,13 @@ import (
 	"fmt"
 	"slices"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"testing"
 
 	"github.com/egoist/mygo/ui"
 	"github.com/godwit-email/godwit/core"
+	"github.com/godwit-email/godwit/core/ai"
 	"github.com/godwit-email/godwit/core/coretest"
 	"github.com/godwit-email/godwit/internal/theme"
 )
@@ -234,5 +236,73 @@ func TestReaderFoldedGistNoModel(t *testing.T) {
 	h.see("first words")
 	if _, ok := h.tt.Find("AI 要点"); ok || asked.Load() {
 		t.Fatalf("a gist without a model (asked %v)", asked.Load())
+	}
+}
+
+// digestSkill makes r's summaries of a thread answer text, and records the
+// kinds of target its summaries ran on.
+func digestSkill(r *reader, text func() string) (kinds func() []string) {
+	var mu sync.Mutex
+	var seen []string
+	real := r.runSkill
+	r.runSkill = func(ctx context.Context, name string, tg core.Target) (<-chan ai.Event, error) {
+		mu.Lock()
+		seen = append(seen, tg.Kind)
+		mu.Unlock()
+		if name != "summarize" || tg.Kind != "thread" {
+			return real(ctx, name, tg)
+		}
+		out := make(chan ai.Event, 3)
+		out <- ai.Event{Kind: "context", Model: "x/m1"}
+		out <- ai.Event{Kind: "text", Text: text()}
+		out <- ai.Event{Kind: "done"}
+		close(out)
+		return out, nil
+	}
+	return func() []string { mu.Lock(); defer mu.Unlock(); return slices.Clone(seen) }
+}
+
+// A thread's summary shows its steps with their sources, a source not of the
+// thread dropped, and what waits on the user; a source opens its message.
+func TestReaderThreadDigest(t *testing.T) {
+	h, acc, _ := aiHarness(t, true, noQuick)
+	msgs := h.thread2(acc)
+	r := h.app.mail.reader
+	r.gistFn = func(context.Context, int64) (string, error) { return "", nil }
+	digestSkill(r, func() string {
+		return fmt.Sprintf("PROGRESS\n- Bob proposed a plan [message:%d]\n- Carol replied [message:%d]\n- Lost [message:999]\nTODO: Reply to Carol\n",
+			msgs[0].ID, msgs[1].ID)
+	})
+	h.openThread(msgs[0].ThreadID)
+	h.see("Bob proposed a plan")
+	h.see("等你处理")
+	h.see("Reply to Carol")
+	h.see("基于 2 封往来")
+	if h.tt.HasText("PROGRESS") || h.tt.HasText("999") {
+		t.Fatalf("the digest shows as written: %q", h.tt.Texts())
+	}
+	if r.open[msgs[0].ID] {
+		t.Fatal("the older message opened before its source was clicked")
+	}
+	h.click(r.sourceLabel(msgs[0]))
+	h.until("the source's message open", func() bool { return r.open[msgs[0].ID] })
+}
+
+// A digest that cannot be read shows as written; a message alone keeps its
+// own summary, not its thread's.
+func TestReaderThreadDigestFallback(t *testing.T) {
+	h, acc, _ := aiHarness(t, true, noQuick)
+	msgs := h.thread2(acc)
+	r := h.app.mail.reader
+	r.gistFn = func(context.Context, int64) (string, error) { return "", nil }
+	kinds := digestSkill(r, func() string { return "Just some prose." })
+	h.openThread(msgs[0].ThreadID)
+	h.see("Just some prose.")
+
+	m := h.deliverOne(acc, coretest.Msg("dave@example.com", acc.Email, "Alone", "just one"))
+	h.openThread(m.ThreadID)
+	h.until("its summary run", func() bool { return slices.Contains(kinds(), "message") })
+	if got := kinds(); !slices.Equal(got, []string{"thread", "message"}) {
+		t.Fatalf("summaries ran on %q", got)
 	}
 }

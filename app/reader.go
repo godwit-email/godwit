@@ -51,6 +51,7 @@ type reader struct {
 	focus        int64          // the message last expanded, or whose page took ⌘S/⌘P: what save and print act on while it is open
 	historyShown bool           // the thread's history (its messages before the newest it keeps in sight) shown: a history card clicked
 	historyOpen  map[int64]bool // folded messages shown though the history is collapsed: ones the reader folded
+	revealID     int64          // a message to scroll to once it is laid out (a digest's source); 0 for none
 	bodies       map[int64]*msgBody
 	scroll       ui.ScrollState // the messages' scrolling; a body's page hands on the wheels it does not use
 
@@ -161,7 +162,7 @@ func (r *reader) reset(k [2]int64) {
 	r.key, r.loaded, r.subject, r.msgs, r.focus = k, false, "", nil, 0
 	r.threadIDs, r.labels, r.labelMenu, r.labelQuery = nil, nil, false, ""
 	r.senderOpen, r.senderMsgID, r.moreOpen, r.replyAsk = false, 0, false, "" // a question is for the thread it was typed in
-	r.open, r.historyOpen, r.historyShown, r.bodies = map[int64]bool{}, map[int64]bool{}, false, map[int64]*msgBody{}
+	r.open, r.historyOpen, r.historyShown, r.revealID, r.bodies = map[int64]bool{}, map[int64]bool{}, false, 0, map[int64]*msgBody{}
 	r.scroll.X, r.scroll.Y = 0, 0
 	r.gen++
 }
@@ -929,7 +930,7 @@ func (r *reader) renderMessages(c *ui.Context) {
 	n := 0 // what was rendered: a hairline parts each from the one before
 	// part renders one part of the thread under key, with motion; a hairline
 	// keeps to the message after it (sep).
-	part := func(sep, key any, motion ui.ElementTransition, f func()) {
+	part := func(sep, key any, motion ui.ElementTransition, f func()) ui.Element {
 		if n > 0 {
 			r.column(c).Key(sep).Transition(threadMotion).Children(func() { kit.Separator(c, false) })
 		}
@@ -938,7 +939,7 @@ func (r *reader) renderMessages(c *ui.Context) {
 		// past it (a folded row's, the sender's): it grows and shrinks as the
 		// message opens, folds or its body reports.
 		// Stretched, not FillWidth: its negative margins widen it, keeping its content where the subject is.
-		ui.Column(c).AlignSelf(ui.Stretch).Margin(-th.Space(1), -th.Space(2)).Padding(th.Space(1), th.Space(2)).Clip().Key(key).Transition(motion).Children(f)
+		return ui.Column(c).AlignSelf(ui.Stretch).Margin(-th.Space(1), -th.Space(2)).Padding(th.Space(1), th.Space(2)).Clip().Key(key).Transition(motion).Children(f)
 	}
 	if history > 0 && r.historyShown {
 		part(threadSep{0}, threadHistory{0}, threadMotion, func() { r.historyToggle(c, 0, history) })
@@ -946,7 +947,7 @@ func (r *reader) renderMessages(c *ui.Context) {
 	for i := 0; i < len(r.msgs); {
 		m := r.msgs[i]
 		if r.open[m.ID] {
-			part(threadSep{m.ID}, threadPart{m.ID}, openMotion, func() { r.message(c, m) })
+			r.revealAt(c, m.ID, part(threadSep{m.ID}, threadPart{m.ID}, openMotion, func() { r.message(c, m) }))
 			i++
 			continue
 		}
@@ -961,6 +962,21 @@ func (r *reader) renderMessages(c *ui.Context) {
 		}
 		i = j
 	}
+}
+
+// revealAt scrolls the messages to message id's top, under the toolbar, once
+// e, its part, has been laid out, when it is the one to reveal.
+func (r *reader) revealAt(c *ui.Context, id int64, e ui.Element) {
+	if id != r.revealID {
+		return
+	}
+	b := e.LayoutBounds()
+	if b.H == 0 { // not laid out yet: the next frame
+		c.Invalidate()
+		return
+	}
+	r.scroll.Y = max(0, r.scroll.Y+b.Y-r.pane.Y-r.barTop)
+	r.revealID = 0
 }
 
 // The keys of a thread's parts (renderMessages): a message, open or folded

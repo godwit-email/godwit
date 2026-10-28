@@ -760,6 +760,14 @@
   "provider_qq_mark": "QQ",
   "provider_yahoo": "Yahoo Mail",
   "provider_yahoo_mark": "Y",
+  "reader_ai_based_on": "based on {arg1}",
+  "@reader_ai_based_on": {
+    "placeholders": {
+      "arg1": {
+        "type": "String"
+      }
+    }
+  },
   "reader_ai_card_from": "{arg1} · from plugin {arg2}",
   "@reader_ai_card_from": {
     "placeholders": {
@@ -786,6 +794,7 @@
   "reader_ai_show_original": "Show original",
   "reader_ai_summarize": "Summary",
   "reader_ai_summary": "Summary",
+  "reader_ai_todo": "Waiting on you",
   "reader_ai_translate": "Translate",
   "reader_ai_translated": "Translated into {arg1} · {arg2}",
   "@reader_ai_translated": {

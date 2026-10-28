@@ -140,10 +140,18 @@ func (s *Service) runSkill(ctx context.Context, end func(), name string, t Targe
 		system += "\n\nTarget language: " + lang + ". Languages that need no translation: " +
 			strings.Join(append([]string{lang}, keep...), ", ") + ". If the text is in one of them, reply exactly " + noTranslation + " and nothing else."
 	}
+	digest := name == "summarize" && t.Kind == "thread" // ParseThreadDigest reads it
+	if digest {
+		system += "\n\n" + threadDigestFormat
+	}
 
 	key := ""
 	if t.Kind == "message" || t.Kind == "thread" {
-		key = cacheKey(sk.Name, sk.Version, t.Kind, t.ID, members, model.ServiceID, model.Version, model.Model, lang, keep)
+		parts := []any{sk.Name, sk.Version, t.Kind, t.ID, members, model.ServiceID, model.Version, model.Model, lang, keep}
+		if digest { // apart from summaries cached before the format
+			parts = append(parts, threadDigestFormat)
+		}
+		key = cacheKey(parts...)
 		o, hit, err := s.cacheGet(ctx, key)
 		if err != nil {
 			return nil, err

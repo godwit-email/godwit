@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"maps"
 	"slices"
+	"strconv"
 	"strings"
 	"time"
 
@@ -210,7 +211,7 @@ func (r *reader) stopAI() {
 func (r *reader) startFor(id int64) {
 	st := r.state(id)
 	if last, _ := r.last(); id == last.ID && r.taskReady("summarize") && r.p.a.settings.Summary && st.summary == nil {
-		st.summary = r.stream(id, "summarize")
+		st.summary = r.summarize(id)
 	}
 	r.loadCards(id, false)
 	r.loadTags(id, false)
@@ -288,13 +289,27 @@ func (r *reader) startAI() {
 // stream runs skill on a message; its text streams into the run returned,
 // labelled with the model the run reports in its context event.
 func (r *reader) stream(id int64, skill string) *aiRun {
+	return r.streamOn(core.Target{Kind: "message", ID: id, PreserveHTML: skill == "translate"}, skill)
+}
+
+// summarize runs the summary the newest message id shows: in a thread of
+// more than one, the thread's (its digest, ParseThreadDigest), else its own.
+func (r *reader) summarize(id int64) *aiRun {
+	if len(r.msgs) > 1 {
+		return r.streamOn(core.Target{Kind: "thread", ID: r.key[0]}, "summarize")
+	}
+	return r.stream(id, "summarize")
+}
+
+// streamOn runs skill on t, its output streaming into the run it returns.
+func (r *reader) streamOn(t core.Target, skill string) *aiRun {
 	a, ctx, start := r.p.a, r.aiContext(), r.runSkill
 	run := &aiRun{running: true, lang: r.readingLang(), markdown: &markdown.Options{OnLink: a.openLink}}
 	if skill == "translate" {
 		run.markdown = nil
 	}
 	a.do(func(context.Context) error {
-		ch, err := start(ctx, skill, core.Target{Kind: "message", ID: id, PreserveHTML: skill == "translate"})
+		ch, err := start(ctx, skill, t)
 		if err != nil {
 			return err
 		}
@@ -337,7 +352,7 @@ func (r *reader) toggleSummary() {
 	on := !r.summaryShown(st)
 	st.sumShown = &on
 	if on && (st.summary == nil || st.summary.err != nil) {
-		st.summary = r.stream(m.ID, "summarize")
+		st.summary = r.summarize(m.ID)
 	}
 }
 
@@ -517,11 +532,81 @@ func (r *reader) summaryPanel(c *ui.Context, m core.MessageSummary) {
 		return
 	}
 	if sum := st.summary; sum != nil && r.summaryShown(st) {
-		r.panel(c, i18n.T("reader.ai.summary"), sum.model, nil, func() {
-			r.output(c, sum)
-			r.runState(c, sum, func() { st.summary = r.stream(m.ID, "summarize") })
+		meta := sum.model
+		if len(r.msgs) > 1 {
+			meta = strings.Join(slices.DeleteFunc([]string{meta, i18n.Tf("reader.ai.based_on", i18n.Tf("reader.thread.count", len(r.msgs)))},
+				func(s string) bool { return s == "" }), " · ")
+		}
+		r.panel(c, i18n.T("reader.ai.summary"), meta, nil, func() {
+			switch {
+			case len(r.msgs) < 2:
+				r.output(c, sum)
+			case sum.done: // a digest, else (unreadable) its text as written
+				if d, ok := core.ParseThreadDigest(sum.text, r.threadIDs); ok {
+					r.digest(c, d)
+				} else {
+					r.output(c, sum)
+				}
+			}
+			r.runState(c, sum, func() { st.summary = r.summarize(m.ID) })
 		})
 	}
+}
+
+// digest is a thread's summary: its steps, numbered, each with a link to
+// the message it comes from, and below a hairline what waits on the user.
+func (r *reader) digest(c *ui.Context, d core.ThreadDigest) {
+	t, th := theme.Of(c), c.Theme()
+	ui.Column(c).Gap(th.Space(1.5)).Role(ui.RoleList).Children(func() {
+		for i, step := range d.Progress {
+			ui.Row(c.Key(i)).Gap(th.Space(2)).AlignItems(ui.Start).Role(ui.RoleListItem).Children(func() {
+				kit.Text(c, strconv.Itoa(i+1)+".", t.Text.Base).TextColor(t.Muted).Shrink(0)
+				ui.Row(c).Wrap().Gap(th.Space(1.5)).AlignItems(ui.Center).Shrink(1).Children(func() {
+					ui.Text(c, step.Text).LineHeight(theme.LineReading).Shrink(1)
+					if m, ok := r.byID(step.Message); ok {
+						kit.TextLink(c, r.sourceLabel(m), t.Muted, t.Text.Sm).OnClick(func() { r.reveal(m.ID) })
+					}
+				})
+			})
+		}
+	})
+	if d.Todo != "" {
+		kit.Separator(c, false)
+		ui.Column(c).Gap(th.Space(1)).Children(func() {
+			kit.Text(c, i18n.T("reader.ai.todo"), t.Text.Sm).FontWeight(600)
+			ui.Text(c, d.Todo).LineHeight(theme.LineReading)
+		})
+	}
+}
+
+// byID is the thread's message id, if the reader shows it.
+func (r *reader) byID(id int64) (core.MessageSummary, bool) {
+	i := slices.IndexFunc(r.msgs, func(m core.MessageSummary) bool { return m.ID == id })
+	if i < 0 {
+		return core.MessageSummary{}, false
+	}
+	return r.msgs[i], true
+}
+
+// sourceLabel names a message a digest's step comes from: its day and its
+// sender ("我" for the user's).
+func (r *reader) sourceLabel(m core.MessageSummary) string {
+	who, addr := sender(m.From)
+	for _, acc := range r.p.a.accounts {
+		if strings.EqualFold(acc.Email, addr) {
+			who = i18n.T("reader.me")
+		}
+	}
+	return listTime(r.p.a.clock.Now(), m.Date) + " · " + who
+}
+
+// reveal opens message id, from the history if it is there, and scrolls to it.
+func (r *reader) reveal(id int64) {
+	r.historyShown = true
+	if !r.open[id] {
+		r.toggle(id)
+	}
+	r.revealID = id
 }
 
 // translationState keeps the original body visible while translating or on failure.
