@@ -59,11 +59,12 @@ func TestQuickRepliesRestoreAfterParsing(t *testing.T) {
 	require.NoError(t, err)
 	p, err := mk.Text(`Fal"con`)
 	require.NoError(t, err)
-	e.srv.Script(testllm.Turn{Text: []string{`{"replies":[{"html":"<p>On ` + p + ` &amp; more</p>"}]}`}})
+	e.srv.Script(testllm.Turn{Text: []string{`{"replies":[{"label":"` + p + `","html":"<p>On ` + p + ` &amp; more</p>"}]}`}})
 	rs, err := e.s.QuickReplies(t.Context(), e.msg)
 	require.NoError(t, err)
 	require.Len(t, rs, 1)
 	assert.Equal(t, `On Fal"con & more`, rs[0].Preview)
+	assert.Equal(t, `Fal"con`, rs[0].Label)
 }
 
 func TestQuickRepliesOff(t *testing.T) {

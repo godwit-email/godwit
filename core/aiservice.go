@@ -8,6 +8,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"html"
 	"log/slog"
 	"slices"
 	"strings"
@@ -439,7 +440,7 @@ func parseQuickReplies(out string, expand func(string) string) ([]QuickReply, er
 		if runes := []rune(p); len(runes) > quickPreviewRunes {
 			p = string(runes[:quickPreviewRunes])
 		}
-		l := strings.Join(strings.Fields(r.Label), " ")
+		l := strings.Join(strings.Fields(mail.HTMLToText(expand(html.EscapeString(r.Label)))), " ") // expand restores HTML
 		if runes := []rune(l); len(runes) > quickLabelRunes {
 			l = string(runes[:quickLabelRunes])
 		}

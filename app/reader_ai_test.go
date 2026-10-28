@@ -210,20 +210,23 @@ func (h *harness) thread2(acc core.Account) []core.MessageSummary {
 	return h.messages(page.Items[0].ID)
 }
 
-func TestSummaryEveryExpanded(t *testing.T) {
+// A thread summarizes only its newest message, the one it shows under the
+// subject: an older expanded one would spend tokens on nothing shown.
+func TestSummaryNewestOnly(t *testing.T) {
 	h, acc, _ := aiHarness(t, true, noQuick)
 	msgs := h.thread2(acc)
 	r := h.app.mail.reader
 	h.openThread(msgs[0].ThreadID)
-	h.until("both summaries done", func() bool {
-		for _, m := range msgs {
-			if s := r.ai[m.ID]; s == nil || s.summary == nil || !s.summary.done {
-				return false
-			}
-		}
-		return true
+	h.until("the newest summary done", func() bool {
+		s := r.ai[msgs[1].ID]
+		return s != nil && s.summary != nil && s.summary.done
 	})
-	// a thread's summary is its newest message's, once, under the subject
+	if !r.open[msgs[0].ID] {
+		t.Fatal("the older message folded")
+	}
+	if s := r.ai[msgs[0].ID]; s != nil && s.summary != nil {
+		t.Fatal("the older expanded message was summarized")
+	}
 	if n := h.countTexts("m1"); n != 1 {
 		t.Fatalf("%d summaries shown: %q", n, h.tt.Texts())
 	}

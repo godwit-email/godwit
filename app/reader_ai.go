@@ -204,10 +204,11 @@ func (r *reader) stopAI() {
 }
 
 // startFor starts what an expanded message shows by itself: its summary
-// (Settings.Summary with a model) and its plugin cards. Each runs once.
+// (Settings.Summary with a model; the newest only, the one a thread shows)
+// and its plugin cards. Each runs once.
 func (r *reader) startFor(id int64) {
 	st := r.state(id)
-	if r.taskReady("summarize") && r.p.a.settings.Summary && st.summary == nil {
+	if last, _ := r.last(); id == last.ID && r.taskReady("summarize") && r.p.a.settings.Summary && st.summary == nil {
 		st.summary = r.stream(id, "summarize")
 	}
 	r.loadCards(id, false)

@@ -155,7 +155,7 @@ func (r *reader) reset(k [2]int64) {
 	r.stopAI()
 	r.key, r.loaded, r.subject, r.msgs, r.focus = k, false, "", nil, 0
 	r.threadIDs, r.labels, r.labelMenu, r.labelQuery = nil, nil, false, ""
-	r.senderOpen, r.senderMsgID, r.moreOpen = false, 0, false
+	r.senderOpen, r.senderMsgID, r.moreOpen, r.replyAsk = false, 0, false, "" // a question is for the thread it was typed in
 	r.open, r.historyOpen, r.bodies = map[int64]bool{}, map[int64]bool{}, map[int64]*msgBody{}
 	r.scroll.X, r.scroll.Y = 0, 0
 	r.gen++
