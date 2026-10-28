@@ -17,34 +17,50 @@ func paletteOver(h *harness, q string) {
 	h.typeText(q)
 }
 
-// Tab hands the query to Wit, as does a click on the footer's 问 Wit.
+// Tab turns the box into a question to Wit, the text kept, and back; ↵
+// asks it. The footer's 问 Wit turns it too.
 func TestPaletteTabAsksWit(t *testing.T) {
 	h, _, _ := askHarness(t, true)
 	var asks []string
 	h.app.SetWitAsk(func(q string) { asks = append(asks, q) })
 	paletteOver(h, "去年的发票")
 	h.tt.Key(0, ui.KeyTab)
-	h.until("the Wit page", func() bool { return h.app.route.Page == PageWit && !paletteShown(h) })
-	if !slices.Equal(asks, []string{"去年的发票"}) {
+	h.until("the question box", func() bool { return !paletteShown(h) && h.tt.HasText("发送") && h.app.palette.open })
+	h.tt.Key(0, ui.KeyTab)
+	h.until("the search again", func() bool { return paletteShown(h) })
+	if q := h.app.palette.query; q != "去年的发票" {
+		t.Fatalf("query %q", q)
+	}
+	h.tt.Key(0, ui.KeyTab)
+	h.until("the question box", func() bool { return !paletteShown(h) })
+	h.tt.Key(ui.Shift, ui.KeyEnter)
+	h.typeText("要报销的")
+	h.tt.Key(0, ui.KeyEnter)
+	h.until("the Wit page", func() bool { return h.app.route.Page == PageWit && !h.app.palette.open })
+	if !slices.Equal(asks, []string{"去年的发票\n要报销的"}) {
 		t.Fatalf("asks %q", asks)
 	}
 
 	paletteOver(h, "合同")
 	h.click("问 Wit")
-	h.until("the Wit page", func() bool { return h.app.route.Page == PageWit && !paletteShown(h) })
-	if !slices.Equal(asks, []string{"去年的发票", "合同"}) {
+	h.until("the question box", func() bool { return !paletteShown(h) })
+	h.tt.Key(0, ui.KeyEnter)
+	h.until("the Wit page", func() bool { return !h.app.palette.open })
+	if !slices.Equal(asks, []string{"去年的发票\n要报销的", "合同"}) {
 		t.Fatalf("asks %q", asks)
 	}
 }
 
-// Without a model Tab only shows the Wit page, which says how to add one.
+// Without a model asking only shows the Wit page, which says how to add one.
 func TestPaletteTabNoModelOnlyNavigates(t *testing.T) {
 	h, _, _ := askHarness(t, false)
 	var asks []string
 	h.app.SetWitAsk(func(q string) { asks = append(asks, q) })
 	paletteOver(h, "发票")
 	h.tt.Key(0, ui.KeyTab)
-	h.until("the Wit page", func() bool { return h.app.route.Page == PageWit && !paletteShown(h) })
+	h.until("the question box", func() bool { return !paletteShown(h) })
+	h.tt.Key(0, ui.KeyEnter)
+	h.until("the Wit page", func() bool { return h.app.route.Page == PageWit && !h.app.palette.open })
 	if len(asks) != 0 {
 		t.Fatalf("asks %q", asks)
 	}

@@ -52,6 +52,8 @@ type palette struct {
 	scroll bool      // the arrows moved sel: bring it into view
 	rows   []palItem // as last built, which the keys act on
 
+	asking bool // Tab made the box a question to Wit
+
 	m     paletteMenu        // ⌥↵'s
 	cards map[int64]*palCard // by message id, loaded as each is chosen
 }
@@ -92,7 +94,7 @@ func (p *palette) view(c *ui.Context) {
 		p.query, p.filtering, p.fsel = p.typed, true, 0
 	}
 	p.typed = p.query
-	if p.open && (!p.started || p.query != p.asked || p.kind != p.askedKind) {
+	if p.open && !p.asking && (!p.started || p.query != p.asked || p.kind != p.askedKind) {
 		p.find()
 	}
 	t, th := theme.Of(c), c.Theme()
@@ -112,8 +114,15 @@ func (p *palette) view(c *ui.Context) {
 			{Label: i18n.T("palette.hint.kind"), Key: "←→"},
 			{Label: i18n.T("palette.hint.filter"), Key: "/"},
 			{Label: i18n.T("palette.hint.actions"), Key: "⌥↵"},
-			{Label: i18n.T("palette.hint.wit"), Key: "Tab", OnClick: p.askWit},
+			{Label: i18n.T("palette.hint.wit"), Key: "Tab", OnClick: p.toggleAsk},
 		},
+	}
+	if p.asking {
+		o.Label, o.Placeholder, o.Send, o.OnSend, o.OnKey, o.Chips = i18n.T("wit.input"), i18n.T("wit.placeholder"), i18n.T("wit.send"), p.askWit, p.askKey, nil
+		o.Hints = []kit.PaletteHint{
+			{Label: i18n.T("compose.send"), Key: "↵"},
+			{Label: i18n.T("mail.search"), Key: "Tab", OnClick: p.toggleAsk},
+		}
 	}
 	if p.m.open {
 		o.Keys = p.menuShortcut
@@ -155,7 +164,7 @@ func (p *palette) view(c *ui.Context) {
 			}
 		}
 	})
-	if p.open && !p.m.open && p.sel < len(p.rows) && p.rows[p.sel].msg != nil { // the menu covers the card
+	if p.open && !p.asking && !p.m.open && p.sel < len(p.rows) && p.rows[p.sel].msg != nil { // the menu covers the card
 		m := *p.rows[p.sel].msg
 		kit.PalettePreview(c, func() { p.preview(c, m) })
 	}
@@ -233,7 +242,7 @@ func (p *palette) key(k ui.TextKey) bool {
 	case k.Mods == 0 && (k.Key == ui.KeyLeft || k.Key == ui.KeyRight) && k.Text() == "":
 		p.step(k.Key == ui.KeyRight)
 	case k.Mods == 0 && k.Key == ui.KeyTab:
-		p.askWit()
+		p.toggleAsk()
 	case k.Mods == ui.Cmd && k.Key == ui.KeyEnter:
 		p.viewAll()
 	case k.Key == ui.KeyTab && (k.Mods == ui.Ctrl || k.Mods == ui.Ctrl|ui.Shift):

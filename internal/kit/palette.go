@@ -1,6 +1,8 @@
 package kit
 
 import (
+	"strings"
+
 	"github.com/egoist/mygo/ui"
 	"github.com/godwit-email/godwit/internal/icons"
 	"github.com/godwit-email/godwit/internal/theme"
@@ -11,11 +13,15 @@ import (
 // before it does, as ui's OnTextKey: true takes the key. Chips, when set,
 // builds the PaletteChips before the box. Keys, when set, holds the box:
 // it types no text, and Keys sees every key pressed first (a menu's
-// letters). Its panel is a dialog's (Glass).
+// letters). Send, when set, makes the box a message to send instead of a
+// search: a framed text area and a button named Send, and no head or body.
+// Its panel is a dialog's (Glass).
 type PaletteOpts struct {
 	Label, Placeholder, Close string
 	OnKey                     func(k ui.TextKey) bool
 	Keys                      func(mods ui.Modifiers, key ui.Key) bool
+	Send                      string
+	OnSend                    func()
 	Hints                     []PaletteHint
 	Chips                     func()
 }
@@ -53,38 +59,57 @@ func Palette(c *ui.Context, open *bool, query *string, o PaletteOpts, head, body
 		glassPanel(panel, t)
 		Elevate(c, panel, theme.ShadowX2l)
 		var in ui.Element
-		ui.Row(c).Shrink(0).AlignItems(ui.Center).Gap(th.Space(2)).Padding(th.Space(3), th.Space(3), th.Space(2), th.Space(4)).Children(func() {
-			ui.Icon(c, icons.Get("search")).Size(theme.Icon, theme.Icon).TextColor(t.Muted)
-			if o.Chips != nil {
-				o.Chips()
-			}
-			in = ui.TextInputBase(c, query).Placeholder(o.Placeholder).Label(o.Label).FocusRing(false).AutoFocus().Grow(1).FontSize(t.Text.Base)
-			if o.OnKey != nil {
-				in.OnTextKey(o.OnKey)
-			}
-			if o.Keys != nil || paletteHeld != 0 {
-				in.ReadOnly(true).HandleInput(func(ev ui.InputEvent) bool {
-					switch {
-					case ev.Kind == ui.InputKeyUp && ev.Key == paletteHeld:
-						paletteHeld = 0
-					case ev.Kind == ui.InputKeyDown && o.Keys != nil && o.Keys(ev.Mods, ev.Key):
-						paletteHeld = ev.Key
-						return true
+		if o.Send != "" {
+			paletteSel = ui.Element{}
+			ui.Column(c.Key("send")).Shrink(0).Padding(th.Space(3)).Children(func() {
+				ui.Column(c).Gap(th.Space(2)).Padding(th.Space(3)).Radius(t.Radius.Xl).Border(theme.Hairline, t.Border).Background(t.Background).Children(func() {
+					in = ui.TextAreaBase(c, query).Placeholder(o.Placeholder).Label(o.Label).FocusRing(false).AutoFocus().
+						MinHeight(th.Space(14)).MaxHeight(th.Space(60)).FontSize(t.Text.Base)
+					if o.OnKey != nil {
+						in.OnTextKey(o.OnKey)
 					}
-					return false
+					ui.Row(c).Justify(ui.End).Children(func() {
+						IconButton(c, "send", o.Send, ButtonOpts{Size: SizeSm, Disabled: strings.TrimSpace(*query) == ""}).OnClick(o.OnSend)
+					})
 				})
-			}
-			IconButton(c, "x", o.Close, ButtonOpts{Variant: Ghost, Size: SizeSm}).OnClick(func() { *open = false })
-		})
+			})
+			head, body = nil, nil
+		} else {
+			ui.Row(c).Shrink(0).AlignItems(ui.Center).Gap(th.Space(2)).Padding(th.Space(3), th.Space(3), th.Space(2), th.Space(4)).Children(func() {
+				ui.Icon(c, icons.Get("search")).Size(theme.Icon, theme.Icon).TextColor(t.Muted)
+				if o.Chips != nil {
+					o.Chips()
+				}
+				in = ui.TextInputBase(c, query).Placeholder(o.Placeholder).Label(o.Label).FocusRing(false).AutoFocus().Grow(1).FontSize(t.Text.Base)
+				if o.OnKey != nil {
+					in.OnTextKey(o.OnKey)
+				}
+				if o.Keys != nil || paletteHeld != 0 {
+					in.ReadOnly(true).HandleInput(func(ev ui.InputEvent) bool {
+						switch {
+						case ev.Kind == ui.InputKeyUp && ev.Key == paletteHeld:
+							paletteHeld = 0
+						case ev.Kind == ui.InputKeyDown && o.Keys != nil && o.Keys(ev.Mods, ev.Key):
+							paletteHeld = ev.Key
+							return true
+						}
+						return false
+					})
+				}
+				IconButton(c, "x", o.Close, ButtonOpts{Variant: Ghost, Size: SizeSm}).OnClick(func() { *open = false })
+			})
+		}
 		if head != nil {
 			ui.Row(c).Role(ui.RoleTabList).KeepFocus().Shrink(0).Gap(th.Space(1)).Padding(0, th.Space(3), th.Space(2), th.Space(3)).Children(head)
 		}
-		paletteSel = ui.Element{}
-		ui.Scroll(c).Shrink(1).Grow(1).BorderWidth(theme.Hairline, 0, 0, 0).BorderColor(t.Border).Children(func() {
-			ui.Column(c).Role(ui.RoleList).KeepFocus().Label(o.Label).Padding(th.Space(2)).Gap(th.Space(0.5)).Children(body)
-		})
-		if paletteSel != (ui.Element{}) {
-			in.ActiveDescendant(paletteSel)
+		if body != nil {
+			paletteSel = ui.Element{}
+			ui.Scroll(c).Shrink(1).Grow(1).BorderWidth(theme.Hairline, 0, 0, 0).BorderColor(t.Border).Children(func() {
+				ui.Column(c).Role(ui.RoleList).KeepFocus().Label(o.Label).Padding(th.Space(2)).Gap(th.Space(0.5)).Children(body)
+			})
+			if paletteSel != (ui.Element{}) {
+				in.ActiveDescendant(paletteSel)
+			}
 		}
 		if len(o.Hints) > 0 {
 			ui.Row(c).Shrink(0).Gap(th.Space(4)).AlignItems(ui.Center).Padding(th.Space(2), th.Space(4)).
