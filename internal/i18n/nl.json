@@ -457,6 +457,7 @@
   "reader_thread_collapse": "E-mailgeschiedenis samenvouwen",
   "reader_thread_expand": "{arg1, plural, one {E-mailgeschiedenis uitvouwen ({arg1, number, ::group-off} e-mail)} other {E-mailgeschiedenis uitvouwen ({arg1, number, ::group-off} e-mails)}}",
   "reader_trackers_blocked": "{arg1, plural, one {{arg1, number, ::group-off} tracker geblokkeerd} other {{arg1, number, ::group-off} trackers geblokkeerd}}",
+  "reader_trackers_tip": "Trackingpixels laten de afzender weten wanneer je een e-mail opent. Godwit blokkeert ze altijd, ook bij vertrouwde afzenders.",
   "reader_truncated": "Dit bericht is te lang; alleen het begin wordt getoond",
   "reader_trust": "Afzender vertrouwen",
   "reader_trust_sender": "Deze afzender altijd vertrouwen",

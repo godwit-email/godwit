@@ -924,6 +924,7 @@
       }
     }
   },
+  "reader_trackers_tip": "Tracking pixels tell the sender when you open a message. Godwit always blocks them, even for senders you trust.",
   "reader_truncated": "This message is too long; only the beginning is shown",
   "reader_trust": "Trust sender",
   "reader_trust_sender": "Always trust this sender",

@@ -457,6 +457,7 @@
   "reader_thread_collapse": "摺疊歷史郵件",
   "reader_thread_expand": "展開歷史郵件（{arg1, number, ::group-off} 封）",
   "reader_trackers_blocked": "已阻擋 {arg1, number, ::group-off} 個追蹤器",
+  "reader_trackers_tip": "追蹤像素會在你打開郵件時通知寄件人，Godwit 總是攔截它們，信任寄件人也不放行。",
   "reader_truncated": "內文過長，只顯示了開頭",
   "reader_trust": "信任寄件者",
   "reader_trust_sender": "始終信任此寄件人",

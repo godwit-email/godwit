@@ -457,6 +457,7 @@
   "reader_thread_collapse": "メール履歴を折りたたむ",
   "reader_thread_expand": "メール履歴を展開（{arg1, number, ::group-off} 通）",
   "reader_trackers_blocked": "{arg1, plural, other {{arg1, number, ::group-off} 件のトラッカーをブロックしました}}",
+  "reader_trackers_tip": "トラッキングピクセルはメールを開いたことを送信者に知らせます。Godwit は常にブロックし、信頼した送信者でも許可しません。",
   "reader_truncated": "本文が長すぎるため、先頭のみ表示しています",
   "reader_trust": "送信者を信頼",
   "reader_trust_sender": "この差出人を常に信頼する",

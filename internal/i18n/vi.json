@@ -457,6 +457,7 @@
   "reader_thread_collapse": "Thu gọn lịch sử email",
   "reader_thread_expand": "Mở rộng lịch sử email ({arg1, number, ::group-off} email)",
   "reader_trackers_blocked": "{arg1, plural, other {Đã chặn {arg1, number, ::group-off} trình theo dõi}}",
+  "reader_trackers_tip": "Pixel theo dõi báo cho người gửi khi bạn mở email. Godwit luôn chặn chúng, kể cả với người gửi bạn tin cậy.",
   "reader_truncated": "Thư này quá dài; chỉ hiển thị phần đầu",
   "reader_trust": "Tin cậy người gửi",
   "reader_trust_sender": "Luôn tin cậy người gửi này",

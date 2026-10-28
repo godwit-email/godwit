@@ -457,6 +457,7 @@
   "reader_thread_collapse": "E-posta geçmişini daralt",
   "reader_thread_expand": "E-posta geçmişini genişlet ({arg1, number, ::group-off} e-posta)",
   "reader_trackers_blocked": "{arg1, plural, one {{arg1, number, ::group-off} izleyici engellendi} other {{arg1, number, ::group-off} izleyici engellendi}}",
+  "reader_trackers_tip": "İzleme pikselleri, e-postayı açtığınızda gönderene haber verir. Godwit bunları her zaman engeller, güvenilen gönderenlerde bile.",
   "reader_truncated": "Bu ileti çok uzun; yalnızca başlangıç kısmı gösteriliyor",
   "reader_trust": "Gönderene güven",
   "reader_trust_sender": "Bu gönderene her zaman güven",

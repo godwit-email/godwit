@@ -1155,6 +1155,7 @@ func (r *reader) message(c *ui.Context, m core.MessageSummary) {
 					})
 					ui.Row(c).Wrap().Gap(th.Space(1.5)).AlignItems(ui.Center).Children(func() {
 						kit.Text(c, i18n.Tf("reader.to", r.recipients(m)), t.Text.Sm).TextColor(t.Muted)
+						r.trackersNote(c, b)
 						r.imagesNote(c, m, b, addr)
 					})
 				})
@@ -1183,9 +1184,6 @@ func (r *reader) message(c *ui.Context, m core.MessageSummary) {
 				return
 			}
 			bodyReady = true
-			if n := b.msg.TrackersBlocked; n > 0 { // always blocked, so nothing to offer: a quiet note
-				kit.Text(c, i18n.Tf("reader.trackers_blocked", n), t.Text.Sm).TextColor(t.Muted)
-			}
 			bodyBlocked := b.msg.RemoteImagesBlocked > 0 && !b.remote && !b.trusted
 			if b.allowErr != nil && (bodyBlocked || addr != "" && b.avatarBlocked && !b.avatarAllow) {
 				kit.Alert(c, kit.Danger, humanize(b.allowErr), func() {
@@ -1230,6 +1228,21 @@ func (r *reader) message(c *ui.Context, m core.MessageSummary) {
 // imagesNote follows the recipients while remote images wait (the body's,
 // or the sender's avatar): how many, then 加载 and 信任发件人. A failed
 // load is an alert under the header instead.
+// trackersNote is, in the header's second line, the tracking pixels the
+// body's page left out: always, trusted sender or not, so it offers nothing.
+func (r *reader) trackersNote(c *ui.Context, b *msgBody) {
+	if b == nil || !b.ready || b.msg.TrackersBlocked == 0 {
+		return
+	}
+	t, th := theme.Of(c), c.Theme()
+	kit.Text(c, "·", t.Text.Sm).TextColor(t.Muted)
+	note := ui.Row(c).Gap(th.Space(1)).AlignItems(ui.Center).TextColor(t.Muted).Children(func() {
+		ui.Icon(c, icons.Get("shield")).Size(theme.IconXs, theme.IconXs)
+		kit.Text(c, i18n.Tf("reader.trackers_blocked", b.msg.TrackersBlocked), t.Text.Sm)
+	})
+	kit.Tooltip(c, note, i18n.T("reader.trackers_tip"))
+}
+
 func (r *reader) imagesNote(c *ui.Context, m core.MessageSummary, b *msgBody, addr string) {
 	if b == nil || !b.ready || b.allowErr != nil {
 		return

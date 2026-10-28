@@ -539,22 +539,35 @@ func TestReaderTrackersBlocked(t *testing.T) {
 	h, accs := mailHarness(t, nil, "alice@example.com")
 	remoteImages(t, h, "trusted")
 	acc := accs[0]
-	img := coretest.HTML(`<p>Hi</p><img src="https://img.example/p.png" width="2" height="2">` +
-		`<img src="https://t.example/o.gif" width="1" height="1"><img src="https://x.list-manage.com/track/open.php?u=1">`)
-	m := h.deliverOne(acc, coretest.Msg("Bob <bob@example.com>", acc.Email, "News", "text", img))
-	h.openThread(m.ThreadID)
-	h.seeBody(m.ID)
-	h.see("已阻止 2 个跟踪器")
-	h.see("已阻止 1 张远程图片")
-	h.click("始终信任此发件人")
-	h.until("allowed", func() bool { return h.countCalls(fmt.Sprint("AllowImages ", m.ID)) == 1 })
-	n := h.deliverOne(acc, coretest.Msg("bob@example.com", acc.Email, "More news", "text", img))
-	h.openThread(n.ThreadID)
-	h.seeBody(n.ID)
-	h.see("已阻止 2 个跟踪器")
-	if h.tt.HasText("张远程图片") || h.tt.HasText("加载图片") {
-		t.Fatal("a trusted sender's message shows the remote images notice")
+	pixels := `<img src="https://t.example/o.gif" width="1" height="1"><img src="https://x.list-manage.com/track/open.php?u=1">`
+	// two, so the body's count tells them from the sender's avatar, one image of its own
+	photo := `<img src="https://img.example/p.png" width="2" height="2"><img src="https://img.example/q.png" width="2" height="2">`
+	// the header's second line: "发给 我", then the trackers, then the images
+	line := func(m core.MessageSummary, trackers, images bool) {
+		t.Helper()
+		h.openThread(m.ThreadID)
+		h.seeBody(m.ID)
+		h.see("发给 我")
+		if got := h.tt.HasText("已阻止 2 个跟踪器"); got != trackers {
+			t.Fatalf("%q: trackers shown %v, want %v: %q", m.Subject, got, trackers, h.tt.Texts())
+		}
+		if got := h.tt.HasText("2 张图片未加载"); got != images {
+			t.Fatalf("%q: images shown %v, want %v: %q", m.Subject, got, images, h.tt.Texts())
+		}
+		if h.tt.HasText("张远程图片") {
+			t.Fatalf("%q: a notice above the body: %q", m.Subject, h.tt.Texts())
+		}
 	}
+	line(h.deliverOne(acc, coretest.Msg("carol@example.com", acc.Email, "Neither", "text", coretest.HTML(`<p>Hi</p>`))), false, false)
+	line(h.deliverOne(acc, coretest.Msg("dave@example.com", acc.Email, "Trackers", "text", coretest.HTML(`<p>Hi</p>`+pixels))), true, false)
+	line(h.deliverOne(acc, coretest.Msg("erin@example.com", acc.Email, "Images", "text", coretest.HTML(`<p>Hi</p>`+photo))), false, true)
+	both := coretest.HTML(`<p>Hi</p>` + photo + pixels)
+	m := h.deliverOne(acc, coretest.Msg("Bob <bob@example.com>", acc.Email, "Both", "text", both))
+	line(m, true, true)
+	h.click("信任发件人")
+	h.until("allowed", func() bool { return h.countCalls(fmt.Sprint("AllowImages ", m.ID)) == 1 })
+	// trusted: the next one shows its trackers alone
+	line(h.deliverOne(acc, coretest.Msg("bob@example.com", acc.Email, "More", "text", both)), true, false)
 }
 
 // A quoted local part: core gets the From as sent, which parses.

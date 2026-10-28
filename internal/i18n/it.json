@@ -457,6 +457,7 @@
   "reader_thread_collapse": "Comprimi cronologia email",
   "reader_thread_expand": "{arg1, plural, one {Espandi cronologia email ({arg1, number, ::group-off} email)} many {Espandi cronologia email ({arg1, number, ::group-off} email)} other {Espandi cronologia email ({arg1, number, ::group-off} email)}}",
   "reader_trackers_blocked": "{arg1, plural, one {{arg1, number, ::group-off} tracker bloccato} many {{arg1, number, ::group-off} tracker bloccati} other {{arg1, number, ::group-off} tracker bloccati}}",
+  "reader_trackers_tip": "I pixel di tracciamento avvisano il mittente quando apri un’email. Godwit li blocca sempre, anche per i mittenti attendibili.",
   "reader_truncated": "Questo messaggio è troppo lungo; viene mostrato solo l’inizio",
   "reader_trust": "Considera attendibile il mittente",
   "reader_trust_sender": "Fidati sempre di questo mittente",
