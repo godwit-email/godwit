@@ -658,6 +658,27 @@ func TestDialogOpensInPlace(t *testing.T) {
 	}
 }
 
+// A Top dialog keeps its top 64 below the window's, whatever its height: a
+// form whose steps change it grows down instead of moving.
+func TestDialogTop(t *testing.T) {
+	for _, h := range []float32{100, 400} {
+		open := true
+		tt := ui.NewTester(themed(func(c *ui.Context) {
+			Dialog(c, &open, "Pinned", DialogOpts{Close: "Close", Top: true}, func() { ui.Box(c).Height(h) }, nil)
+		}), 800, 1000)
+		tt.SetPreferences(ui.Preferences{ReduceMotion: true})
+		tt.Frame()
+		tt.Frame()
+		r, ok := tt.Find("Pinned")
+		if !ok {
+			t.Fatalf("texts %q", tt.Texts())
+		}
+		if top := r.Y - 16; top < 62 || top > 66 { // the title sits 16 inside the panel
+			t.Errorf("body %v: panel top near %v, want 64", h, top)
+		}
+	}
+}
+
 func TestShadowX2l(t *testing.T) {
 	if len(theme.ShadowX2l) != 1 || theme.ShadowX2l[0] != (theme.ShadowLayer{Y: 25, Blur: 50, Spread: -12, Alpha: 0.25}) {
 		t.Errorf("ShadowX2l %v is not Tailwind's shadow-2xl", theme.ShadowX2l)

@@ -256,7 +256,7 @@ func (m *modelsView) dialog(c *ui.Context) {
 	if f.id != 0 {
 		title, desc = i18n.Tf("settings.models.edit", f.name), svcProvider(f.provider)+" · "+cmp.Or(f.email, f.baseURL)
 	}
-	opts := kit.DialogOpts{Size: kit.DialogLg, Desc: desc, Danger: f.confirmDel, Close: i18n.T("common.close")}
+	opts := kit.DialogOpts{Size: kit.DialogLg, Desc: desc, Danger: f.confirmDel, Close: i18n.T("common.close"), Top: true} // grows as a test reports
 	kit.Dialog(c, &m.open, title, opts, func() { m.formView(c, f) }, func() { m.footer(c, f) })
 	if !m.open { // closed by Escape or a click outside
 		m.close()

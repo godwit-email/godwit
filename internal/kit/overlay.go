@@ -20,10 +20,12 @@ const (
 // of its close button, and Danger, which tints the footer for a confirmation.
 // Alert makes it one question (confirm, delete, open a link): the alert
 // backdrop and no close button, Cancel, Escape or a click outside closing it.
+// Top keeps it near the window's top instead of above centre, for a form
+// whose height changes as it is used (steps, results): it grows down.
 type DialogOpts struct {
-	Size          DialogSize
-	Desc, Close   string
-	Danger, Alert bool
+	Size               DialogSize
+	Desc, Close        string
+	Danger, Alert, Top bool
 }
 
 // Dialog is a modal panel anchored near the top: a header with the title, the
@@ -47,7 +49,11 @@ func Dialog(c *ui.Context, open *bool, title string, o DialogOpts, body, footer 
 	ui.DialogBase(c, open, func(backdrop, panel ui.Element) {
 		dialogShown = true
 		backdrop.Background(scrim.Alpha(k)) // Alpha scales: the scrim fades with the panel
-		aboveCentre(c, backdrop, panel)
+		if o.Top {
+			backdrop.Justify(ui.Start).Padding(theme.DialogTop, 0, 0, 0)
+		} else {
+			aboveCentre(c, backdrop, panel)
+		}
 		panel.Opacity(k).Margin(rise(k), 0, 0, 0).Width(width).MaxHeight(maxH).Radius(t.Radius.X2l).Clip().Border(theme.Hairline, t.Border)
 		glassPanel(panel, t)
 		Elevate(c, panel, theme.ShadowX2l)

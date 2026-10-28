@@ -160,6 +160,7 @@ const (
 	BackdropBlur        = 4    // a frosted panel blurs what is behind it 4× this much
 	DialogLift          = 0.2  // a dialog's backdrop pads its bottom by this share of its height: the panel centred at 40%
 	DialogMinTop        = 32   // yet a dialog stays at least this far below the window's top
+	DialogTop           = 64   // a Top dialog's distance from the window's top
 	SheetWidth          = 560  // DialogMd: forms, the add-account dialog
 	DialogWideWidth     = 640  // DialogLg
 	DialogWideMax       = 788  // DialogLg's tallest
