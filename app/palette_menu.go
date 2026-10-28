@@ -95,13 +95,13 @@ func (p *palette) runAct(i int) {
 
 // menuView builds the menu's items below the selected row.
 func (p *palette) menuView(c *ui.Context, row ui.Element) {
-	t, th := theme.Of(c), c.Theme()
+	th := c.Theme()
 	title := p.rows[p.sel].title
-	kit.PopoverAt(c, row, &p.m.open, ui.AnchorBottomRight, ui.AnchorTopRight, theme.PopupOffset, func() {
-		ui.Column(c).Role(ui.RoleMenu).Label(title).Width(theme.LabelMenuWidth).Gap(th.Space(0.5)).Children(func() {
-			kit.Text(c, title, t.Text.Xs).TextColor(t.Muted).SingleLine().Padding(th.Space(1.5), th.Space(2), th.Space(1), th.Space(2))
+	kit.MenuAt(c, row, &p.m.open, ui.AnchorBottomRight, ui.AnchorTopRight, theme.PopupOffset, title, func() {
+		ui.Column(c).Width(theme.LabelMenuWidth).Gap(th.Space(0.5)).Children(func() {
+			kit.MenuLabel(c, title)
 			for i, act := range p.m.acts {
-				kit.PaletteRow(c.Key(i), i == p.m.sel).Label(act.title).OnClick(func() { p.runAct(i) }).Children(func() {
+				kit.MenuItem(c.Key(i), i == p.m.sel).Label(act.title).OnClick(func() { p.runAct(i) }).Children(func() {
 					ui.Text(c, act.title).SingleLine().Shrink(1)
 					if k := act.kbd(); k != "" {
 						ui.Spacer(c)

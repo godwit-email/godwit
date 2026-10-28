@@ -166,6 +166,38 @@ func PopoverAt(c *ui.Context, anchor ui.Element, open *bool, at, self ui.Anchor,
 	})
 }
 
+// MenuAt is a menu anchored as PopoverAt: a tight panel of MenuItems,
+// perhaps under a MenuLabel, labelled label.
+func MenuAt(c *ui.Context, anchor ui.Element, open *bool, at, self ui.Anchor, topOffset float32, label string, body func()) {
+	t, th := theme.Of(c), c.Theme()
+	k := enter(c, open, theme.MotionFast)
+	ui.PopoverBase(c, anchor, open, func(panel ui.Element) {
+		panel.AttachTo(anchor, at, self).Role(ui.RoleMenu).Label(label).
+			Opacity(k).Margin(topOffset+rise(k), 0, 0, 0).Padding(th.Space(1)).
+			Radius(t.Radius.Lg).Gap(th.Space(0.5)).Background(t.Background).Border(theme.Hairline, t.Border)
+		Elevate(c, panel, theme.ShadowMd)
+		body()
+	})
+}
+
+// MenuLabel is a muted heading over a menu's items.
+func MenuLabel(c *ui.Context, text string) ui.Element {
+	t, th := theme.Of(c), c.Theme()
+	return Text(c, text, t.Text.Xs).TextColor(t.Muted).SingleLine().Padding(th.Space(1.5), th.Space(2), th.Space(1), th.Space(2))
+}
+
+// MenuItem is an item of a menu, tinted while selected (the keys' choice);
+// give it its Label and Children.
+func MenuItem(c *ui.Context, selected bool) ui.Element {
+	t, th := theme.Of(c), c.Theme()
+	b := ui.ButtonBase(c).Role(ui.RoleMenuItem).Selected(selected).Justify(ui.Start).AlignItems(ui.Center).Gap(th.Space(2)).
+		Height(th.Space(8)).PaddingX(th.Space(2)).Radius(t.Radius.Md).TextColor(t.Foreground) // a tint, not the inverted text
+	if selected || b.Hovered() {
+		b.Background(t.HoverTint)
+	}
+	return b
+}
+
 // Popover is a panel below anchor while *open; a press outside or Escape closes it.
 func Popover(c *ui.Context, anchor ui.Element, open *bool, body func()) {
 	t, th := theme.Of(c), c.Theme()
