@@ -123,7 +123,8 @@ func PalettePreview(c *ui.Context, body func()) {
 func PaletteRow(c *ui.Context, selected bool) ui.Element {
 	t, th := theme.Of(c), c.Theme()
 	b := ui.ButtonBase(c).Role(ui.RoleListItem).Selected(selected).Justify(ui.Start).AlignItems(ui.Center).
-		Height(th.Space(9)).PaddingX(th.Space(2.5)).Radius(t.Radius.Lg)
+		Height(th.Space(9)).PaddingX(th.Space(2.5)).Radius(t.Radius.Lg).
+		TextColor(t.Foreground) // not a Selected button's inverted text: the tint is light
 	if selected {
 		b.Background(t.HoverTint)
 		paletteSel = b

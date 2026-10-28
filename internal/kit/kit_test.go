@@ -679,6 +679,30 @@ func TestDialogTop(t *testing.T) {
 	}
 }
 
+// A selected palette row keeps the foreground for its text: its light tint
+// is no system selection, whose inverted (white) text would vanish on it.
+func TestPaletteRowSelectedText(t *testing.T) {
+	tt := ui.NewTester(themed(func(c *ui.Context) {
+		ui.Column(c).Fill().Padding(8).Background(theme.Of(c).Background).Children(func() {
+			PaletteRow(c, true).Children(func() { ui.Text(c, "Hit") })
+		})
+	}), 300, 100)
+	tt.Frame()
+	r, ok := tt.Find("Hit")
+	if !ok {
+		t.Fatalf("texts %q", tt.Texts())
+	}
+	img, darkest := tt.Image(), 255
+	for x := int(r.X); x < int(r.X+r.W); x++ {
+		for y := int(r.Y); y < int(r.Y+r.H); y++ {
+			darkest = min(darkest, int(img.RGBAAt(x, y).R))
+		}
+	}
+	if darkest > 80 {
+		t.Errorf("the selected row's text is no darker than %d: not the foreground", darkest)
+	}
+}
+
 func TestShadowX2l(t *testing.T) {
 	if len(theme.ShadowX2l) != 1 || theme.ShadowX2l[0] != (theme.ShadowLayer{Y: 25, Blur: 50, Spread: -12, Alpha: 0.25}) {
 		t.Errorf("ShadowX2l %v is not Tailwind's shadow-2xl", theme.ShadowX2l)
