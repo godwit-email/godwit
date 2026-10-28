@@ -33,6 +33,9 @@ func Mid(a, b OKLCH) OKLCH {
 
 var (
 	White = OKLCH{1, 0, 0} // #fff
+	Black = OKLCH{0, 0, 0} // #000
+	// MacAlertGray is the gray macOS washes a window with under an alert, at 60%.
+	MacAlertGray = OKLCH{0.7412, 0, 0} // #ababab
 
 	Neutral50  = OKLCH{0.985, 0, 0}
 	Neutral100 = OKLCH{0.97, 0, 0}

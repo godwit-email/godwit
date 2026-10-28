@@ -18,10 +18,12 @@ const (
 
 // DialogOpts are a dialog's size, the muted line under its title, the label
 // of its close button, and Danger, which tints the footer for a confirmation.
+// Alert makes it one question (confirm, delete, open a link): the alert
+// backdrop and no close button, Cancel, Escape or a click outside closing it.
 type DialogOpts struct {
-	Size        DialogSize
-	Desc, Close string
-	Danger      bool
+	Size          DialogSize
+	Desc, Close   string
+	Danger, Alert bool
 }
 
 // Dialog is a modal panel anchored near the top: a header with the title, the
@@ -38,16 +40,17 @@ func Dialog(c *ui.Context, open *bool, title string, o DialogOpts, body, footer 
 	case DialogLg:
 		width, maxH = theme.DialogWideWidth, theme.DialogWideMax
 	}
-	dim := float32(0.1)
-	if t.Dark { // a tenth barely darkens the dark window
-		dim = 0.4
+	scrim := t.Scrim
+	if o.Alert {
+		scrim = t.AlertScrim
 	}
 	ui.DialogBase(c, open, func(backdrop, panel ui.Element) {
 		dialogShown = true
-		backdrop.Background(ink(t).Alpha(dim*k)).Justify(ui.Start).Padding(th.Space(16), 0, 0, 0)
+		backdrop.Background(scrim.Alpha(k)) // Alpha scales: the scrim fades with the panel
+		aboveCentre(backdrop, panel)
 		panel.Opacity(k).Margin(rise(k), 0, 0, 0).Width(width).MaxHeight(maxH).Radius(t.Radius.X2l).Clip().Border(theme.Hairline, t.Border)
 		glassPanel(panel, t)
-		Elevate(c, panel, theme.ShadowSm)
+		Elevate(c, panel, theme.ShadowX2l)
 		header := ui.Row(c).Shrink(0).AlignItems(ui.Start).Gap(th.Space(4)).Padding(th.Space(4))
 		if body != nil {
 			header.Padding(th.Space(4), th.Space(4), th.Space(4)-theme.RingWidth, th.Space(4))
@@ -59,8 +62,10 @@ func Dialog(c *ui.Context, open *bool, title string, o DialogOpts, body, footer 
 					ui.Text(c, o.Desc).LineHeight(theme.LineFor(o.Desc)).TextColor(t.Muted)
 				}
 			})
-			// Into the corner: the button's own padding keeps the glyph in line with the title.
-			IconButton(c, "x", o.Close, ButtonOpts{Variant: Ghost, Size: SizeSm}).Margin(-th.Space(2), -th.Space(2), 0, 0).OnClick(func() { *open = false })
+			if !o.Alert {
+				// Into the corner: the button's own padding keeps the glyph in line with the title.
+				IconButton(c, "x", o.Close, ButtonOpts{Variant: Ghost, Size: SizeSm}).Margin(-th.Space(2), -th.Space(2), 0, 0).OnClick(func() { *open = false })
+			}
 		})
 		if body != nil {
 			ui.Scroll(c).Shrink(1).Children(func() {
@@ -77,6 +82,15 @@ func Dialog(c *ui.Context, open *bool, title string, o DialogOpts, body, footer 
 			bar.Children(footer)
 		}
 	})
+}
+
+// aboveCentre sets panel a little above the middle of backdrop: its centre
+// at 40% of the window, yet at least 32 below the top. It reads the last
+// frame's sizes; the first frame, still transparent, centres the panel.
+func aboveCentre(backdrop, panel ui.Element) {
+	h, p := backdrop.LayoutBounds().H, panel.LayoutBounds().H
+	lift := max(0, min(h*theme.DialogLift, h-p-2*theme.DialogMinTop))
+	backdrop.Padding(0, 0, lift, 0)
 }
 
 // dialogShown is whether a Dialog was built since DialogShown last said. UI thread only.

@@ -420,7 +420,7 @@ func (p *mailPage) purgeDialog(c *ui.Context) {
 		return
 	}
 	kit.Dialog(c, &p.purgeAsk, i18n.T("mail.purge.title"),
-		kit.DialogOpts{Size: kit.DialogSm, Desc: i18n.T("mail.purge.desc"), Close: i18n.T("common.close")}, nil, func() {
+		kit.DialogOpts{Size: kit.DialogSm, Alert: true, Desc: i18n.T("mail.purge.desc"), Close: i18n.T("common.close")}, nil, func() {
 			kit.Button(c, i18n.T("common.cancel"), kit.ButtonOpts{Variant: kit.Outline}).OnClick(func() { p.purgeAsk = false })
 			kit.Button(c, i18n.T("common.delete"), kit.ButtonOpts{Variant: kit.Destructive}).OnClick(func() {
 				p.purgeAsk = false

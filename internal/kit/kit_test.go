@@ -553,6 +553,73 @@ func TestKitDialogCloseButton(t *testing.T) {
 	}
 }
 
+// TestDialogScrims: as macOS, a dialog dims the window with black at 20% in
+// either appearance; an alert washes it with gray at 60%, light or dark.
+func TestDialogScrims(t *testing.T) {
+	for _, c := range []struct {
+		alert, dark bool
+		want        uint8 // over the near-black (#0a) column
+	}{
+		{false, false, 0x0a * 8 / 10}, {false, true, 0x0a * 8 / 10},
+		{true, false, 107}, {true, true, 18}, // 60% of #ab or #17 over #0a
+	} {
+		open := true
+		tt := ui.NewTester(themed(func(ctx *ui.Context) {
+			ui.Row(ctx).Fill().Children(func() {
+				ui.Box(ctx).Width(200).FillHeight().Background(theme.Light().Foreground) // #0a0a0a
+				ui.Box(ctx).Grow(1).FillHeight().Background(theme.Light().Background)    // #fff
+			})
+			Dialog(ctx, &open, "T", DialogOpts{Size: DialogSm, Close: "Close", Alert: c.alert}, nil, nil)
+		}), 800, 600)
+		tt.SetDark(c.dark)
+		tt.Advance(2 * theme.MotionBase)
+		img := tt.Image()
+		if p := img.RGBAAt(100, 580); diff(p.R, c.want) > 2 {
+			t.Errorf("alert %v dark %v: backdrop over black %v, want %d", c.alert, c.dark, p, c.want)
+		}
+		if p, want := img.RGBAAt(700, 580), uint8(204); !c.alert && diff(p.R, want) > 2 {
+			t.Errorf("dark %v: dialog backdrop over white %v, want %d", c.dark, p, want)
+		}
+	}
+}
+
+// An alert asks one question: Cancel, Escape or the backdrop close it, no ×.
+func TestDialogAlertHasNoClose(t *testing.T) {
+	open := true
+	tt := ui.NewTester(themed(func(c *ui.Context) {
+		Dialog(c, &open, "Delete?", DialogOpts{Size: DialogSm, Close: "Close", Alert: true}, nil, func() { Button(c, "Cancel", ButtonOpts{}) })
+	}), 800, 600)
+	if !tt.HasText("Delete?") {
+		t.Fatalf("open alert shows %q", tt.Texts())
+	}
+	if err := tt.Click("Close"); err == nil {
+		t.Error("an alert has a close button")
+	}
+}
+
+// A dialog sits a little above the middle: its centre at 40% of the window.
+func TestDialogAboveCentre(t *testing.T) {
+	open := true
+	tt := ui.NewTester(themed(func(c *ui.Context) {
+		Dialog(c, &open, "Top", DialogOpts{Size: DialogSm, Close: "Close"}, func() { ui.Box(c).Height(200) }, func() { Button(c, "Bottom", ButtonOpts{}) })
+	}), 800, 1000)
+	tt.Advance(2 * theme.MotionBase)
+	top, ok1 := tt.Find("Top")
+	bottom, ok2 := tt.Find("Bottom")
+	if !ok1 || !ok2 {
+		t.Fatalf("texts %q", tt.Texts())
+	}
+	if mid := (top.Y + bottom.Y + bottom.H) / 2; mid < 380 || mid > 420 {
+		t.Errorf("panel centre near %v, want about 400 of 1000", mid)
+	}
+}
+
+func TestShadowX2l(t *testing.T) {
+	if len(theme.ShadowX2l) != 1 || theme.ShadowX2l[0] != (theme.ShadowLayer{Y: 25, Blur: 50, Spread: -12, Alpha: 0.25}) {
+		t.Errorf("ShadowX2l %v is not Tailwind's shadow-2xl", theme.ShadowX2l)
+	}
+}
+
 func TestKitBareInputMatchesBase(t *testing.T) {
 	a, b, d := "", "", ""
 	var th theme.Tokens
@@ -1130,8 +1197,9 @@ func TestDialogWidths(t *testing.T) {
 			Dialog(c, &open, "T", DialogOpts{Size: size, Close: "Close"}, func() { ui.Text(c, "body") }, func() { ui.Text(c, "foot") })
 		}), 900, 600)
 		tt.Advance(2 * theme.MotionBase)
+		title, _ := tt.Find("T")
 		img, first, last := tt.Image(), -1, -1
-		y := 84 // below the panel's corners, in its white header
+		y := int(title.Y) - 4 // in the header's padding, above the title
 		for x := 0; x < 900; x++ {
 			if p := img.RGBAAt(x, y); p.R == 255 && p.G == 255 && p.B == 255 {
 				if first < 0 {

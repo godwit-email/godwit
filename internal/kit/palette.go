@@ -36,17 +36,14 @@ var paletteSel ui.Element
 func Palette(c *ui.Context, open *bool, query *string, o PaletteOpts, head, body func()) {
 	t, th := theme.Of(c), c.Theme()
 	k := enter(c, open, theme.MotionBase)
-	dim := float32(0.1)
-	if t.Dark {
-		dim = 0.4
-	}
 	ui.DialogBase(c, open, func(backdrop, panel ui.Element) {
 		dialogShown = true
-		backdrop.Background(ink(t).Alpha(dim*k)).Justify(ui.Start).Padding(th.Space(16), 0, 0, 0)
+		// a dialog's scrim, but fixed near the top: as hits come and go the panel only grows down
+		backdrop.Background(t.Scrim.Alpha(k)).Justify(ui.Start).Padding(th.Space(16), 0, 0, 0)
 		panel.Label(o.Label).Opacity(k).Margin(rise(k), 0, 0, 0).Width(theme.DialogWideWidth).MaxHeight(theme.SheetMaxHeight).
 			Radius(t.Radius.X2l).Clip().Border(theme.Hairline, t.Border)
 		glassPanel(panel, t)
-		Elevate(c, panel, theme.ShadowXl)
+		Elevate(c, panel, theme.ShadowX2l)
 		var in ui.Element
 		ui.Row(c).Shrink(0).AlignItems(ui.Center).Gap(th.Space(2)).Padding(th.Space(3), th.Space(3), th.Space(2), th.Space(4)).Children(func() {
 			ui.Icon(c, icons.Get("search")).Size(theme.Icon, theme.Icon).TextColor(t.Muted)

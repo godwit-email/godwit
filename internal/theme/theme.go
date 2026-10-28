@@ -47,6 +47,10 @@ type Tokens struct {
 	// Raised is a dialog's panel: Background in the light, a step up
 	// (neutral-900) in the dark, so it stands off the window behind.
 	Raised ui.Color
+	// Scrim is a dialog's backdrop: black at 20% in either appearance, as
+	// macOS dims a window under a sheet. AlertScrim is an alert's: macOS's
+	// gray at 60% (neutral-900 in the dark).
+	Scrim, AlertScrim ui.Color
 	// Card is a settings section's fill: a borderless block of rows a step
 	// off Background (neutral-50; neutral-900 in the dark).
 	Card ui.Color
@@ -153,7 +157,9 @@ const (
 	ListMaxWidth        = 560
 	TopBarHeight        = 44   // the top bar's least height
 	DialogSmWidth       = 440  // confirmations
-	BackdropBlur        = 4    // a dialog's backdrop blurs what is behind it this much
+	BackdropBlur        = 4    // a frosted panel blurs what is behind it 4× this much
+	DialogLift          = 0.2  // a dialog's backdrop pads its bottom by this share of its height: the panel centred at 40%
+	DialogMinTop        = 32   // yet a dialog stays at least this far below the window's top
 	SheetWidth          = 560  // DialogMd: forms, the add-account dialog
 	DialogWideWidth     = 640  // DialogLg
 	DialogWideMax       = 788  // DialogLg's tallest
@@ -244,14 +250,15 @@ type Elevation []ShadowLayer
 
 // Shadows, Tailwind v4's as shadcn uses them: Xs under inputs, selects,
 // checkboxes, outline buttons and the page panel; Sm under cards and the selected tab; Md
-// under popovers and select lists; Lg under dialogs, sheets and toasts; Xl
-// for anything above those.
+// under popovers and select lists; Lg under toasts and floating cards; Xl
+// for anything above those; X2l under dialogs and the search palette.
 var (
-	ShadowXs = Elevation{{1, 2, 0, 0.05}}
-	ShadowSm = Elevation{{1, 3, 0, 0.1}, {1, 2, -1, 0.1}}
-	ShadowMd = Elevation{{4, 6, -1, 0.1}, {2, 4, -2, 0.1}}
-	ShadowLg = Elevation{{10, 15, -3, 0.1}, {4, 6, -4, 0.1}}
-	ShadowXl = Elevation{{20, 25, -5, 0.1}, {8, 10, -6, 0.1}}
+	ShadowXs  = Elevation{{1, 2, 0, 0.05}}
+	ShadowSm  = Elevation{{1, 3, 0, 0.1}, {1, 2, -1, 0.1}}
+	ShadowMd  = Elevation{{4, 6, -1, 0.1}, {2, 4, -2, 0.1}}
+	ShadowLg  = Elevation{{10, 15, -3, 0.1}, {4, 6, -4, 0.1}}
+	ShadowXl  = Elevation{{20, 25, -5, 0.1}, {8, 10, -6, 0.1}}
+	ShadowX2l = Elevation{{25, 50, -12, 0.25}}
 )
 
 // FloatInsetBlur is the blur of FloatInset's inner edge, in DIPs.
@@ -348,7 +355,7 @@ func Light() Tokens {
 	return status(Tokens{
 		Window: p.Neutral50.Color(), Sidebar: p.Neutral50.Color(),
 		Background: p.White.Color(), Foreground: p.Neutral950.Color(), Muted: p.Neutral500.Color(),
-		Border: p.Neutral200.Color(), Input: p.Neutral200.Color(), Ring: p.Neutral400.Color(), Idle: p.Neutral400.Color(), Outline: p.Neutral950.Color().Alpha(0.05), DividerHover: p.Neutral300.Color(), MarkTile: p.White.Color(), OnSolid: p.White.Color(), Raised: p.White.Color(), Card: p.Neutral50.Color(),
+		Border: p.Neutral200.Color(), Input: p.Neutral200.Color(), Ring: p.Neutral400.Color(), Idle: p.Neutral400.Color(), Outline: p.Neutral950.Color().Alpha(0.05), DividerHover: p.Neutral300.Color(), MarkTile: p.White.Color(), OnSolid: p.White.Color(), Raised: p.White.Color(), Card: p.Neutral50.Color(), Scrim: p.Black.Color().Alpha(0.2), AlertScrim: p.MacAlertGray.Color().Alpha(0.6),
 		Primary: p.Neutral900.Color(), PrimaryText: p.White.Color(),
 		SidebarSelected: p.Neutral100.Color(), HoverTint: p.Neutral950.Color().Alpha(0.04),
 		Hover: p.Neutral100.Color(),
@@ -361,7 +368,7 @@ func Dark() Tokens {
 		Dark:   true,
 		Window: p.Mid(p.Neutral900, p.Neutral800).Color(), Sidebar: p.Neutral900.Color(),
 		Background: p.Neutral950.Color(), Foreground: p.Neutral50.Color(), Muted: p.Neutral400.Color(),
-		Border: p.White.Color().Alpha(0.1), Input: p.White.Color().Alpha(0.15), Ring: p.Neutral500.Color(), Idle: p.Neutral500.Color(), Outline: p.White.Color().Alpha(0.05), DividerHover: p.Neutral700.Color(), MarkTile: p.White.Color(), OnSolid: p.White.Color(), FloatInset: p.White.Color().Alpha(0.2), Raised: p.Neutral900.Color(), Card: p.Neutral900.Color(),
+		Border: p.White.Color().Alpha(0.1), Input: p.White.Color().Alpha(0.15), Ring: p.Neutral500.Color(), Idle: p.Neutral500.Color(), Outline: p.White.Color().Alpha(0.05), DividerHover: p.Neutral700.Color(), MarkTile: p.White.Color(), OnSolid: p.White.Color(), FloatInset: p.White.Color().Alpha(0.2), Raised: p.Neutral900.Color(), Card: p.Neutral900.Color(), Scrim: p.Black.Color().Alpha(0.2), AlertScrim: p.Neutral900.Color().Alpha(0.6),
 		Primary: p.Neutral200.Color(), PrimaryText: p.Neutral900.Color(),
 		SidebarSelected: p.Neutral800.Color(), HoverTint: p.White.Color().Alpha(0.08),
 		Hover: p.Neutral800.Color(),

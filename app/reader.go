@@ -1347,7 +1347,7 @@ func (r *reader) unsubscribeDialog(c *ui.Context) {
 		return
 	}
 	t := theme.Of(c)
-	opts := kit.DialogOpts{Size: kit.DialogSm, Desc: i18n.T("reader.unsubscribe.desc"), Close: i18n.T("common.close")}
+	opts := kit.DialogOpts{Size: kit.DialogSm, Alert: true, Desc: i18n.T("reader.unsubscribe.desc"), Close: i18n.T("common.close")}
 	kit.Dialog(c, &r.unsubDlg, i18n.T("reader.unsubscribe.title"), opts, func() {
 		ui.Text(c, b.unsub.Host).FontWeight(600)
 		if b.unsub.List != "" {

@@ -271,7 +271,7 @@ func (p *settingsPage) deleteSignatureDialog(c *ui.Context, sig core.Signature, 
 	}
 	a := p.a
 	kit.Dialog(c, &p.sigDelete, i18n.Tf("settings.signature.delete.confirm", sig.Name),
-		kit.DialogOpts{Size: kit.DialogSm, Desc: deleteHint(users), Close: i18n.T("common.close")}, nil, func() {
+		kit.DialogOpts{Size: kit.DialogSm, Alert: true, Desc: deleteHint(users), Close: i18n.T("common.close")}, nil, func() {
 			kit.Button(c, i18n.T("common.cancel"), kit.ButtonOpts{Variant: kit.Outline}).OnClick(func() { p.sigDelete = false })
 			kit.Button(c, i18n.T("common.delete"), kit.ButtonOpts{Variant: kit.Destructive}).OnClick(func() {
 				p.sigDelete = false
