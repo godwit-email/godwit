@@ -147,6 +147,26 @@ func (s scrim) PaintMaterial(p *ui.Painter, box ui.Rect, radii [4]float32) {
 	p.Fill(box, s.tint, radii[0]) // its surfaces round every corner alike
 }
 
+// GlassMaterial blurs what is behind it with genuine Gaussian backdrop blur,
+// then fills with tint.
+type GlassMaterial struct {
+	Blur float32
+	Tint ui.Color
+}
+
+func (g GlassMaterial) PaintMaterial(p *ui.Painter, box ui.Rect, radii [4]float32) {
+	if BackdropBlur && g.Blur > 0 {
+		glass.Blur{Radius: g.Blur}.PaintMaterial(p, box, radii)
+	}
+	p.Fill(box, g.Tint, radii[0])
+}
+
+// LiquidGlass creates the unified Liquid Glass material: true Gaussian backdrop blur
+// tinted with the surface color.
+func LiquidGlass(tint ui.Color) ui.Material {
+	return GlassMaterial{Blur: theme.GlassBlur, Tint: tint}
+}
+
 // Frost fills a row with fill (the surface it sits on) over what is behind it
 // blurred: plain at rest, frosted glass as a drag lifts the row over others.
 func Frost(fill ui.Color) ui.Material {
@@ -160,7 +180,9 @@ func PopoverAt(c *ui.Context, anchor ui.Element, open *bool, at, self ui.Anchor,
 	ui.PopoverBase(c, anchor, open, func(panel ui.Element) {
 		panel.AttachTo(anchor, at, self).
 			Opacity(k).Margin(topOffset+rise(k), 0, 0, 0).Padding(th.Space(3)).
-			Radius(t.Radius.Lg).Gap(th.Space(2)).Background(t.Background).Border(theme.Hairline, t.Border)
+			Radius(t.Radius.Lg).Clip().Gap(th.Space(2)).
+			Material(LiquidGlass(t.GlassBg)).
+			Border(theme.Hairline, t.GlassBorder)
 		Elevate(c, panel, theme.ShadowMd)
 		body()
 	})
@@ -174,7 +196,9 @@ func MenuAt(c *ui.Context, anchor ui.Element, open *bool, at, self ui.Anchor, to
 	ui.PopoverBase(c, anchor, open, func(panel ui.Element) {
 		panel.AttachTo(anchor, at, self).Role(ui.RoleMenu).Label(label).
 			Opacity(k).Margin(topOffset+rise(k), 0, 0, 0).Padding(th.Space(1)).
-			Radius(t.Radius.Lg).Gap(th.Space(0.5)).Background(t.Background).Border(theme.Hairline, t.Border)
+			Radius(t.Radius.Lg).Clip().Gap(th.Space(0.5)).
+			Material(LiquidGlass(t.GlassBg)).
+			Border(theme.Hairline, t.GlassBorder)
 		Elevate(c, panel, theme.ShadowMd)
 		body()
 	})
@@ -200,13 +224,7 @@ func MenuItem(c *ui.Context, selected bool) ui.Element {
 
 // Popover is a panel below anchor while *open; a press outside or Escape closes it.
 func Popover(c *ui.Context, anchor ui.Element, open *bool, body func()) {
-	t, th := theme.Of(c), c.Theme()
-	k := enter(c, open, theme.MotionFast)
-	ui.PopoverBase(c, anchor, open, func(panel ui.Element) {
-		panel.Opacity(k).Margin(theme.PopupOffset+rise(k), 0, 0, 0).Padding(th.Space(3)).Radius(t.Radius.Lg).Gap(th.Space(2)).Background(t.Background).Border(theme.Hairline, t.Border)
-		Elevate(c, panel, theme.ShadowMd)
-		body()
-	})
+	PopoverAt(c, anchor, open, ui.AnchorBottomStart, ui.AnchorTopStart, theme.PopupOffset, body)
 }
 
 // Tooltip shows text by anchor on keyboard focus at once and on hover after a

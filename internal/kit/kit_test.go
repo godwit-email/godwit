@@ -1474,3 +1474,14 @@ func TestKbdKeys(t *testing.T) {
 		}
 	}
 }
+
+func TestGlassMaterialAndTokens(t *testing.T) {
+	l := theme.Light()
+	mat := LiquidGlass(l.GlassBg).(GlassMaterial)
+	if mat.Blur != theme.GlassBlur {
+		t.Errorf("glass blur = %v, want %v", mat.Blur, theme.GlassBlur)
+	}
+	if mat.Tint != l.GlassBg {
+		t.Errorf("glass tint = %v, want %v", mat.Tint, l.GlassBg)
+	}
+}
