@@ -6,7 +6,19 @@ import (
 	"testing"
 
 	"github.com/egoist/mygo/ui"
+	gomail "github.com/godwit-email/godwit/core/mail"
 )
+
+// A contact's address survives the mailto: link it is written to with:
+// #, ? and % in a valid address stay its own.
+func TestMailtoOf(t *testing.T) {
+	for _, addr := range []string{"bob@example.com", "foo#bar@example.com", "foo?bar@example.com", "foo%41@example.com", "a+b@example.com"} {
+		m, err := gomail.ParseMailto(mailtoOf(addr))
+		if err != nil || len(m.To) != 1 || m.To[0] != addr {
+			t.Errorf("%s: %q gives %+v, %v", addr, mailtoOf(addr), m, err)
+		}
+	}
+}
 
 // A menu opened on the old rows while a search runs closes when its results
 // replace them: its row index would then name another hit.
