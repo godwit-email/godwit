@@ -63,6 +63,7 @@ type reader struct {
 	unsubDlg    bool                     // its dialog shows
 	senderOpen  bool                     // the sender action popover shows
 	senderMsgID int64                    // which message's sender popover is open
+	moreOpen    bool                     // the toolbar's more menu (save, print) shows
 
 	getThread  func(ctx context.Context, id int64) (core.Thread, error)                       // tests wrap it
 	getMessage func(ctx context.Context, id int64, remote bool) (core.Message, error)         // tests wrap it
@@ -151,7 +152,7 @@ func (r *reader) reset(k [2]int64) {
 	r.stopAI()
 	r.key, r.loaded, r.subject, r.msgs, r.focus = k, false, "", nil, 0
 	r.threadIDs, r.labels, r.labelMenu, r.labelQuery = nil, nil, false, ""
-	r.senderOpen, r.senderMsgID = false, 0
+	r.senderOpen, r.senderMsgID, r.moreOpen = false, 0, false
 	r.open, r.historyOpen, r.bodies = map[int64]bool{}, map[int64]bool{}, map[int64]*msgBody{}
 	r.scroll.X, r.scroll.Y = 0, 0
 	r.gen++
@@ -838,14 +839,22 @@ func (r *reader) toolbar(c *ui.Context) {
 		file = append(file, kit.GroupItem{Icon: "trash-2", Tip: i18n.T("mail.action.delete"), OnClick: func() { r.act("delete") }})
 		kit.GroupDivider(c).Margin(0, th.Space(1.5))
 		kit.ButtonGroup(c, file...)
-		kit.IconButton(c, "ellipsis", i18n.T("reader.more"), kit.ButtonOpts{Variant: kit.Ghost}).TextColor(t.Foreground).Menu(func(menu *ui.Menu) {
-			if menu.Item(i18n.T("reader.save")).Chosen() {
-				r.saveMail()
-			}
-			if menu.Item(i18n.T("reader.print")).Chosen() {
-				r.printMail()
-			}
-		})
+		more := kit.IconButton(c, "ellipsis", i18n.T("reader.more"), kit.ButtonOpts{Variant: kit.Ghost}).TextColor(t.Foreground).
+			OnClick(func() { r.moreOpen = !r.moreOpen })
+		if r.moreOpen {
+			// kit's menu, not a native one: its items carry icons.
+			kit.MenuAt(c, more, &r.moreOpen, ui.AnchorBottomLeft, ui.AnchorTopLeft, theme.PopupOffset, i18n.T("reader.more"), func() {
+				for i, it := range []struct {
+					icon, label string
+					run         func()
+				}{{"save", i18n.T("reader.save"), r.saveMail}, {"printer", i18n.T("reader.print"), r.printMail}} {
+					kit.MenuItem(c.Key(i), false).Label(it.label).OnClick(func() { r.moreOpen = false; it.run() }).Children(func() {
+						ui.Icon(c, icons.Get(it.icon)).Size(theme.IconSm, theme.IconSm).TextColor(t.Muted)
+						ui.Text(c, it.label).SingleLine()
+					})
+				}
+			})
+		}
 		ui.Spacer(c)
 		ui.Row(c).Wrap().Gap(th.Space(1)).AlignItems(ui.Center).Children(func() { r.aiTools(c) })
 	})
