@@ -1,3 +1,4 @@
+import { StrictMode } from "react";
 import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import type { WitEvent, WitHistory, WitOpenMsg, WitPageState } from "@/mygo";
@@ -586,4 +587,26 @@ test("a question core kept unanswered shows with why, and 重试 asks it again",
   expect(screen.getByText("登录已失效，请重新登录")).toBeInTheDocument();
   fireEvent.click(screen.getByRole("button", { name: "重试" }));
   await waitFor(() => expect(api.ask).toHaveBeenCalledWith(3, "invoice", [], "", "", "", zone));
+});
+
+// As the page runs (main.tsx): StrictMode mounts the panel twice, which must not lose the question.
+test("in StrictMode, a question handed before the page loaded is asked once", async () => {
+  vi.mocked(api.ask).mockResolvedValue({
+    run: 9,
+    conversation: 7,
+    revision: 0,
+    conflict: false,
+    turn: "1",
+  });
+  h.pending = "invoice";
+  vi.mocked(api.load).mockResolvedValue(state(0, 1));
+  render(
+    <StrictMode>
+      <WitPage />
+    </StrictMode>,
+  );
+  await screen.findByRole("textbox", { name: "向 Wit 提问" });
+  await waitFor(() => expect(api.ask).toHaveBeenCalledWith(0, "invoice", [], "", "", "", zone));
+  await act(async () => {});
+  expect(api.ask).toHaveBeenCalledTimes(1);
 });

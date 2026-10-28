@@ -1810,9 +1810,14 @@ export function Panel({
   // biome-ignore lint/correctness/useExhaustiveDependencies: only a new handed question asks, once the panel takes one
   useEffect(() => {
     if (!handed || asked.current === handed || locked || running) return;
-    asked.current = handed;
-    onAsked?.();
-    ask(handed.text);
+    // After the mount settles: a question asked as the panel mounts is lost when StrictMode
+    // mounts it again, and the remount's own run would find it asked.
+    const timer = setTimeout(() => {
+      asked.current = handed;
+      onAsked?.();
+      ask(handed.text);
+    });
+    return () => clearTimeout(timer);
   }, [handed, locked, running]);
   // A question not asked after all goes back to the input, unless something was typed since: its
   // text, its quotes, and an edit still one (sent again, it still replaces the old question).
