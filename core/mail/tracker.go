@@ -15,16 +15,22 @@ var trackerPaths = []string{
 	"/edm/catcher",               // TikTok
 	"list-manage.com/track/open", // Mailchimp
 	"/wf/open",                   // SendGrid
+	"awstrack.me/i0/",            // Amazon SES
 	"/track/open",
 	"google-analytics.com/collect",
 }
 
 var styleSize = regexp.MustCompile(`(?i)^\s*(width|height)\s*:\s*(\d+)(?:px)?\s*$`)
 
-// isTracker reports an <img> that is a tracking pixel: declared 1×1 or
-// smaller (by attributes or style) or invisible, or a known tracker's URL.
+// isTracker reports a remote <img> that is a tracking pixel: declared 1×1 or
+// smaller (by attributes or style), 0 wide or high, or a known tracker's URL.
+// It errs towards a real image: display:none alone is not enough, as a mail's
+// media queries may show it, and a thin rule (600×1) is not a pixel.
 func isTracker(n *html.Node) bool {
 	src, _ := attr(n, "src")
+	if !isRemote(src) { // a cid: or data: image tells no one it was opened
+		return false
+	}
 	l := strings.ToLower(src)
 	for _, p := range trackerPaths {
 		if strings.Contains(l, p) {

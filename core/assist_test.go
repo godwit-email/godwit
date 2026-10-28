@@ -119,7 +119,7 @@ func TestSanitizeKeepsDraftMarkers(t *testing.T) {
 	assert.NotContains(t, safe, "data-other")
 	assert.Equal(t, safe, mail.SanitizeCompose(safe), "stored drafts are a fixed point")
 
-	recv, _ := mail.Sanitize(in, nil, false)
+	recv, _, _ := mail.Sanitize(in, nil, false)
 	assert.NotContains(t, recv, "data-godwit", "received mail keeps no markers")
 	assert.NotContains(t, mail.StripMarkers(in), "data-godwit")
 	assert.Contains(t, mail.StripMarkers(in), "<blockquote>q</blockquote>")

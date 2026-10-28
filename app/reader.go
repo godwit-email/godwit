@@ -1043,6 +1043,9 @@ func (r *reader) message(c *ui.Context, m core.MessageSummary) {
 				return
 			}
 			bodyReady = true
+			if n := b.msg.TrackersBlocked; n > 0 { // always blocked, so nothing to offer: a quiet note
+				kit.Text(c, i18n.Tf("reader.trackers_blocked", n), t.Text.Sm).TextColor(t.Muted)
+			}
 			bodyBlocked := b.msg.RemoteImagesBlocked > 0 && !b.remote && !b.trusted
 			avatarBlocked := addr != "" && b.avatarBlocked && !b.avatarAllow
 			switch {

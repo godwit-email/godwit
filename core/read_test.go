@@ -152,6 +152,34 @@ func TestGetMessageSanitized(t *testing.T) {
 	}
 }
 
+// A tracking pixel is dropped and counted apart from the remote images,
+// even for a sender whose images are trusted.
+func TestGetMessageTrackers(t *testing.T) {
+	e := newSyncEnv(t)
+	e.put(t, "INBOX", htmlEml("p@x", `<p>hi</p><img src="https://img.example/logo.png" width="120" height="40"><img src="https://t.example/o.gif" width="1" height="1">`))
+	e.sync(t)
+	id := e.rows(t, "SELECT id FROM messages")[0][0].(int64)
+	m, err := e.s.GetMessage(bg, id, false)
+	require.NoError(t, err)
+	assert.Equal(t, 1, m.RemoteImagesBlocked)
+	assert.Equal(t, 1, m.TrackersBlocked)
+
+	st, err := e.s.GetSettings(bg)
+	require.NoError(t, err)
+	st.RemoteImages = "trusted"
+	_, err = e.s.SetSettings(bg, st)
+	require.NoError(t, err)
+	require.NoError(t, e.s.TrustImageSender(bg, "bob@example.com"))
+	allowed, err := e.s.ImagesAllowed(bg, id)
+	require.NoError(t, err)
+	require.True(t, allowed)
+	m, err = e.s.GetMessage(bg, id, allowed)
+	require.NoError(t, err)
+	assert.Contains(t, m.HTML, "logo.png")
+	assert.NotContains(t, m.HTML, "o.gif")
+	assert.Equal(t, 1, m.TrackersBlocked)
+}
+
 func TestGetMessageInlineImage(t *testing.T) {
 	e := newSyncEnv(t)
 	raw, err := os.ReadFile("mail/testdata/inline-image.eml")

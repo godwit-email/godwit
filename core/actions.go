@@ -220,7 +220,7 @@ func actionResult(v any) (ActionResult, error) {
 			if r.HTML, ok = h.(string); !ok {
 				return ActionResult{}, bad
 			}
-			r.HTML, _ = mail.Sanitize(r.HTML, nil, false)
+			r.HTML, _, _ = mail.Sanitize(r.HTML, nil, false)
 		}
 		if d, has := v["draftId"]; has {
 			f, ok := d.(float64)

@@ -725,7 +725,7 @@ func attr(n *html.Node, key string) string {
 // starts with the sanitizer's mark of dark styles, as the reader looks for it
 // (web/src/reader/frame.ts): else it inverts a mail that styles its own dark.
 func TestReaderBodyKeepsDarkMark(t *testing.T) {
-	safe, _ := mail.Sanitize(`<style>@media (prefers-color-scheme: dark) { .a { color: #eee } }</style><p class="a">x</p><img src="https://img.example/a.png">`, nil, true)
+	safe, _, _ := mail.Sanitize(`<style>@media (prefers-color-scheme: dark) { .a { color: #eee } }</style><p class="a">x</p><img src="https://img.example/a.png">`, nil, true)
 	out, tokens := prepareBody(safe, imagefetch.NewBudget(), 1, noDims)
 	require.Len(t, tokens, 1, "the image went through the proxy: the body was written again")
 	assert.True(t, strings.HasPrefix(out, `<style data-dark="">`), out)

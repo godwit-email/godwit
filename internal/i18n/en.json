@@ -940,6 +940,14 @@
       }
     }
   },
+  "reader_trackers_blocked": "{arg1, plural, one {Blocked {arg1, number, ::group-off} tracker} other {Blocked {arg1, number, ::group-off} trackers}}",
+  "@reader_trackers_blocked": {
+    "placeholders": {
+      "arg1": {
+        "type": "int"
+      }
+    }
+  },
   "reader_truncated": "This message is too long; only the beginning is shown",
   "reader_trust_sender": "Always trust this sender",
   "reader_unsubscribe": "Unsubscribe",

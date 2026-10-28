@@ -174,19 +174,19 @@ func render(parent *html.Node) string {
 	return sb.String()
 }
 
-// prepare counts remote resources in the original HTML and swaps cid: for the
-// placeholder scheme, returning the body-only markup for bluemonday. For
+// prepare counts remote resources and tracking pixels (dropped, never counted
+// as remote) in the original HTML and swaps cid: for the placeholder scheme, returning the body-only markup for bluemonday. For
 // received mail the links move to data-href here: bluemonday drops an href it
 // cannot parse (a space, a {placeholder}, a bad port), which would leave the
 // link dead. It also detects whether the email has a dark canvas (via meta
 // color-scheme or a dark background on body/containers), separately from
 // author-provided dark CSS.
-func prepare(src string, received bool) (string, int, []styleSheet, bool) {
+func prepare(src string, received bool) (string, int, int, []styleSheet, bool) {
 	doc, err := html.Parse(strings.NewReader(src))
 	if err != nil {
-		return "", 0, nil, false
+		return "", 0, 0, nil, false
 	}
-	blocked := 0
+	blocked, trackers := 0, 0
 	var body *html.Node
 	var pixels, styles []*html.Node
 	var sheets []styleSheet
@@ -253,6 +253,7 @@ func prepare(src string, received bool) (string, int, []styleSheet, bool) {
 		}
 		if isTracker(n) {
 			pixels = append(pixels, n)
+			trackers++
 			return
 		}
 		if _, ok := attr(n, "srcset"); ok {
@@ -274,7 +275,7 @@ func prepare(src string, received bool) (string, int, []styleSheet, bool) {
 		n.Parent.RemoveChild(n)
 	}
 	if body == nil {
-		return "", blocked, nil, false
+		return "", blocked, trackers, nil, false
 	}
 	if received { // the page's own background sits on <body>, which only its children survive: wrap them
 		w := &html.Node{Type: html.ElementNode, Data: "div", DataAtom: atom.Div}
@@ -304,7 +305,7 @@ func prepare(src string, received bool) (string, int, []styleSheet, bool) {
 			body.AppendChild(w)
 		}
 	}
-	return render(body), blocked, sheets, darkCanvas
+	return render(body), blocked, trackers, sheets, darkCanvas
 }
 
 var allowedImage = map[string]bool{"image/png": true, "image/jpeg": true, "image/gif": true, "image/webp": true}
@@ -357,9 +358,10 @@ func finish(safe string, inline map[string]Attachment, keep map[string]bool, loa
 
 // Sanitize cleans received HTML. inline is keyed by Content-ID. Links become
 // data-href (not navigable); remote images are dropped unless loadRemote.
-// blockedRemote counts remote resources found in the original HTML.
-func Sanitize(src string, inline map[string]Attachment, loadRemote bool) (safe string, blockedRemote int) {
-	prepared, blocked, sheets, darkCanvas := prepare(src, true)
+// blockedRemote counts remote resources found in the original HTML; trackers
+// counts the tracking pixels, dropped whatever loadRemote says.
+func Sanitize(src string, inline map[string]Attachment, loadRemote bool) (safe string, blockedRemote, trackers int) {
+	prepared, blocked, trackers, sheets, darkCanvas := prepare(src, true)
 	p := policy()
 	p.AllowAttrs("data-href").OnElements("a", "area")
 	p.AllowAttrs("class", "id").Globally() // what the mail's own <style> selects by; prepare cleaned them
@@ -373,7 +375,7 @@ func Sanitize(src string, inline map[string]Attachment, loadRemote bool) (safe s
 	} else if css != "" {
 		safe = "<style>" + css + "</style>" + safe
 	}
-	return safe, blocked
+	return safe, blocked, trackers
 }
 
 // SanitizeCompose cleans pasted content in the composer: same whitelist, no
@@ -384,7 +386,7 @@ func SanitizeCompose(src string) string { return SanitizeDraft(src, nil) }
 // Content-ID in cids (the draft account's signature images); any other cid,
 // data: or remote source is dropped.
 func SanitizeDraft(src string, cids map[string]bool) string {
-	prepared, _, _, _ := prepare(src, false)
+	prepared, _, _, _, _ := prepare(src, false)
 	p := policy()
 	p.AllowAttrs(marker).Matching(markerValue).Globally()
 	return finish(p.Sanitize(prepared), nil, cids, false, true)
