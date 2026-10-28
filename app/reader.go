@@ -1072,7 +1072,7 @@ func (r *reader) message(c *ui.Context, m core.MessageSummary) {
 			return
 		}
 		if b.view != nil { // the body takes the pane's width; what frames it keeps to the column
-			ui.WebView(c, b.view).Height(max(float32(b.height), th.Space(6))) // a line until the page reports
+			kit.WebView(c, b.view).Height(max(float32(b.height), th.Space(6))) // a line until the page reports
 		}
 		r.column(c).Gap(th.Space(3.5)).Children(func() {
 			if b.cut {

@@ -196,6 +196,7 @@ func (a *App) View(c *ui.Context) {
 	}
 	a.toasts, a.closeToasts = nil, nil
 	kit.DialogShown() // forget another window's
+	kit.NewFrame()
 
 	if c.Shortcut(ui.Cmd, ui.KeyBracketLeft) {
 		a.back()

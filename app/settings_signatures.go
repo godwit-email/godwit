@@ -203,7 +203,7 @@ func (p *settingsPage) signatureView(c *ui.Context, sig core.Signature) {
 		case p.sigErr != nil:
 			settingBlock(c, func() { ui.Text(c, humanize(p.sigErr)).TextColor(t.Muted) })
 		case p.sigView != nil:
-			ui.WebView(c, p.sigView).FillWidth().Height(theme.SignatureEditorHeight) // the page draws its toolbar and editor
+			kit.WebView(c, p.sigView).FillWidth().Height(theme.SignatureEditorHeight) // the page draws its toolbar and editor
 		default:
 			ui.Box(c).FillWidth().Height(theme.SignatureEditorHeight)
 		}

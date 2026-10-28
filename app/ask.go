@@ -137,7 +137,7 @@ func (p *askPage) Content(c *ui.Context) {
 		return
 	}
 	if v := p.a.witView; v != nil {
-		ui.WebView(c, v).Grow(1) // transparent: the page draws its own panels
+		kit.WebView(c, v).Grow(1) // transparent: the page draws its own panels
 	}
 }
 

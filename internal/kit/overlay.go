@@ -119,6 +119,7 @@ var Glass bool
 // glassPanel fills a dialog's panel: frosted glass under Glass, else opaque.
 func glassPanel(panel ui.Element, t theme.Tokens) {
 	if Glass {
+		frosted = true // web views under it show a screenshot it can blur (WebView)
 		panel.Material(scrim{theme.BackdropBlur * 4, t.Raised.Alpha(0.8)})
 	} else {
 		panel.Background(t.Raised)
