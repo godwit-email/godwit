@@ -970,3 +970,18 @@ func TestSetDraftModel(t *testing.T) {
 	assert.Equal(t, [2]string{ms.Slug + "/m2", "high"}, [2]string{c.Model, c.Effort})
 	require.Error(t, e.s.SetDraftModel(t.Context(), d.ID, ms.Slug+"/nope"))
 }
+
+func TestEnsureHTML(t *testing.T) {
+	assert.Equal(t, "", ensureHTML(""))
+	assert.Equal(t, "<p>Hello</p>", ensureHTML("<p>Hello</p>"))
+	assert.Equal(t, "<div>Hello</div>", ensureHTML("<div>Hello</div>"))
+	assert.Equal(t, "A<br>B", ensureHTML("A<br>B"))
+	assert.Equal(t, "<p>Line 1</p>", ensureHTML("Line 1"))
+	assert.Equal(t, "<p>Line 1</p><p>Line 2</p>", ensureHTML("Line 1\n\nLine 2"))
+	assert.Equal(t, "<p>Line 1<br>Line 2</p>", ensureHTML("Line 1\nLine 2"))
+	assert.Equal(t, "<p>Para 1<br>Line 1b</p><p>Para 2</p>", ensureHTML("Para 1\nLine 1b\n\nPara 2"))
+	assert.Equal(t, "<p>A &amp; B &lt; C</p>", ensureHTML("A & B < C"))
+	// cleanHTML with ensureHTML should preserve paragraphs and line breaks
+	assert.Equal(t, "<p>Line 1</p><p>Line 2</p>", cleanHTML(ensureHTML("Line 1\n\nLine 2")))
+	assert.Equal(t, "<p>Line 1<br/>Line 2</p>", cleanHTML(ensureHTML("Line 1\nLine 2")))
+}

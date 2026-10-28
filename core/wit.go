@@ -276,8 +276,13 @@ func (s *Service) registerAskTools() {
 		object(map[string]any{"name": stringProp, "path": stringProp}, "name", "path"), s.readSkillFile)
 	s.mustRegister(toolDesc{Spec: ai.ToolSpec{Name: "create_draft",
 		Description: "Propose a new draft. The user approves it before it is saved, and sends it themselves. html is the body; the signature is added.",
-		Schema: object(map[string]any{"account_id": intProp, "to": listProp, "cc": listProp, "subject": stringProp, "html": stringProp},
-			"to", "subject", "html")},
+		Schema: object(map[string]any{
+			"account_id": intProp,
+			"to":         listProp,
+			"cc":         listProp,
+			"subject":    stringProp,
+			"html":       map[string]any{"type": "string", "description": "Draft body as HTML (paragraphs in <p>, line breaks with <br>)."},
+		}, "to", "subject", "html")},
 		Write: true, Exec: &executor{Prepare: s.prepareDraft, Apply: s.applyDraft}})
 
 	// Mail triage & flag tools
@@ -760,7 +765,7 @@ func (s *Service) prepareDraft(ctx context.Context, _ Conversation, args json.Ra
 	if err != nil {
 		return prepared{}, err
 	}
-	if in.HTML, err = s.sanitizeDraft(ctx, mail.StripMarkers(in.HTML)+d.HTML); err != nil {
+	if in.HTML, err = s.sanitizeDraft(ctx, mail.StripMarkers(ensureHTML(in.HTML))+d.HTML); err != nil {
 		return prepared{}, err
 	}
 	b, err := json.Marshal(in)
