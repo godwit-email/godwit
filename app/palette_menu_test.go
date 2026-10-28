@@ -6,16 +6,26 @@ import (
 	"testing"
 
 	"github.com/egoist/mygo/ui"
-	gomail "github.com/godwit-email/godwit/core/mail"
 )
 
-// A contact's address survives the mailto: link it is written to with:
-// #, ? and % in a valid address stay its own.
-func TestMailtoOf(t *testing.T) {
-	for _, addr := range []string{"bob@example.com", "foo#bar@example.com", "foo?bar@example.com", "foo%41@example.com", "a+b@example.com"} {
-		m, err := gomail.ParseMailto(mailtoOf(addr))
-		if err != nil || len(m.To) != 1 || m.To[0] != addr {
-			t.Errorf("%s: %q gives %+v, %v", addr, mailtoOf(addr), m, err)
+// Writing to a contact drafts to their address as a header gives it: a
+// quoted local part keeps its quotes, a comma in it stays one address, and
+// #, ? and % are the address's own.
+func TestPaletteComposeTo(t *testing.T) {
+	h, _ := mailHarness(t, nil, "alice@example.com")
+	for _, c := range []struct{ key, want string }{
+		{"bob@example.com", "bob@example.com"},
+		{"foo#bar?baz%41@example.com", "foo#bar?baz%41@example.com"},
+		{"a b@example.com", `"a b"@example.com`},
+		{"a,b@example.com", `"a,b"@example.com`},
+	} {
+		before, _ := h.lastCompose()
+		h.post(func() { h.app.composeTo(c.key) })
+		var id int64
+		h.until("a compose window", func() bool { id, _ = h.lastCompose(); return id != before })
+		d, err := h.env.Svc.GetDraft(t.Context(), id)
+		if err != nil || len(d.To) != 1 || d.To[0] != c.want {
+			t.Errorf("%s: draft to %q, %v; want [%s]", c.key, d.To, err, c.want)
 		}
 	}
 }

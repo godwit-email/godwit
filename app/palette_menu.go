@@ -2,7 +2,6 @@ package app
 
 import (
 	"context"
-	"net/url"
 
 	"github.com/egoist/mygo/ui"
 	"github.com/godwit-email/godwit/core"
@@ -188,16 +187,12 @@ func (p *palette) convActs(id int64, open func()) func() []palAct {
 func (p *palette) contactActs(addr string, open func()) func() []palAct {
 	return func() []palAct {
 		return []palAct{
-			{i18n.T("palette.action.compose"), func() { p.open = false; p.a.mailto(mailtoOf(addr), 0) }},
+			{i18n.T("palette.action.compose"), func() { p.open = false; p.a.composeTo(addr) }},
 			{i18n.T("palette.act.contact_mail"), func() { p.open = false; open() }},
 			{i18n.T("palette.act.copy_address"), func() { p.m.clip = addr }},
 		}
 	}
 }
-
-// mailtoOf is a mailto: link to addr, escaped: ParseMailto takes # as a
-// fragment, ? as fields and % as an escape, all valid in an address.
-func mailtoOf(addr string) string { return "mailto:" + url.PathEscape(addr) }
 
 // attachmentActs are an attachment's: open it with its application, save
 // it, open its mail.

@@ -6,6 +6,7 @@ import (
 	"strings"
 
 	"github.com/egoist/mygo/ui"
+	gomail "github.com/godwit-email/godwit/core/mail"
 	"github.com/godwit-email/godwit/internal/i18n"
 	"github.com/godwit-email/godwit/internal/kit"
 )
@@ -46,6 +47,30 @@ func (a *App) mailto(link string, acc int64) {
 	var id int64
 	a.do(func(ctx context.Context) error {
 		d, err := a.svc.NewMailtoDraft(ctx, acc, link)
+		id = d.ID
+		return err
+	}, func(err error) {
+		if err != nil {
+			a.toastErr(err)
+			return
+		}
+		a.plat.OpenCompose(id)
+	})
+}
+
+// composeTo starts a new draft from the default account to addr, a parsed
+// address (a contact's), and opens it. It skips mailto: links: one would
+// split a quoted local part at a comma, and its key lacks the quotes.
+func (a *App) composeTo(addr string) {
+	acc := a.defaultAccount()
+	var id int64
+	a.do(func(ctx context.Context) error {
+		d, err := a.svc.NewDraft(ctx, acc, "new", 0)
+		if err != nil {
+			return err
+		}
+		d.To = []string{gomail.FormatAddress("", addr)} // "a b"@x, quoted as a header needs
+		d, err = a.svc.SaveDraft(ctx, d)
 		id = d.ID
 		return err
 	}, func(err error) {
