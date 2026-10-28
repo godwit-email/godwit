@@ -810,11 +810,11 @@ func (r *reader) view(c *ui.Context) {
 	})
 }
 
-// toolbar: the reply group and the archive group as icon buttons, then
-// the AI buttons.
+// toolbar: the reply group and the archive group as icon buttons, a menu
+// of the rarer save and print, then the AI buttons.
 func (r *reader) toolbar(c *ui.Context) {
 	t, th := theme.Of(c), c.Theme()
-	ui.Row(c).Wrap().Gap(th.Space(2)).AlignItems(ui.Center).Padding(th.Space(2), th.Space(4)).BorderWidth(0, 0, theme.Hairline, 0).BorderColor(t.Border).Children(func() {
+	ui.Row(c).Wrap().Gap(th.Space(0.5)).AlignItems(ui.Center).Padding(th.Space(2), th.Space(3)).BorderWidth(0, 0, theme.Hairline, 0).BorderColor(t.Border).Children(func() {
 		kit.ButtonGroup(c,
 			kit.GroupItem{Icon: "reply", Tip: i18n.T("reader.reply"), OnClick: func() { r.draft("reply") }},
 			kit.GroupItem{Icon: "reply-all", Tip: i18n.T("reader.reply_all"), OnClick: func() { r.draft("reply_all") }},
@@ -836,11 +836,16 @@ func (r *reader) toolbar(c *ui.Context) {
 			file = append(file, kit.GroupItem{Icon: "spam", Tip: i18n.T("mail.action.junk"), OnClick: func() { r.act("junk") }})
 		}
 		file = append(file, kit.GroupItem{Icon: "trash-2", Tip: i18n.T("mail.action.delete"), OnClick: func() { r.act("delete") }})
+		kit.GroupDivider(c).Margin(0, th.Space(1.5))
 		kit.ButtonGroup(c, file...)
-		kit.ButtonGroup(c,
-			kit.GroupItem{Icon: "save", Tip: i18n.T("reader.save"), OnClick: func() { r.saveMail() }},
-			kit.GroupItem{Icon: "printer", Tip: i18n.T("reader.print"), OnClick: func() { r.printMail() }},
-		)
+		kit.IconButton(c, "ellipsis", i18n.T("reader.more"), kit.ButtonOpts{Variant: kit.Ghost}).TextColor(t.Foreground).Menu(func(menu *ui.Menu) {
+			if menu.Item(i18n.T("reader.save")).Chosen() {
+				r.saveMail()
+			}
+			if menu.Item(i18n.T("reader.print")).Chosen() {
+				r.printMail()
+			}
+		})
 		ui.Spacer(c)
 		ui.Row(c).Wrap().Gap(th.Space(1)).AlignItems(ui.Center).Children(func() { r.aiTools(c) })
 	})

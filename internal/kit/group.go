@@ -12,22 +12,24 @@ type GroupItem struct {
 	Disabled  bool
 }
 
-// ButtonGroup is bordered icon buttons side by side, split by hairlines;
-// the icons are Foreground, not a lone icon button's Muted.
+// ButtonGroup is ghost icon buttons side by side, unframed; GroupDivider
+// parts groups. The icons are Foreground, not a lone icon button's Muted.
 func ButtonGroup(c *ui.Context, items ...GroupItem) ui.Element {
-	t, th := theme.Of(c), c.Theme()
-	return ui.Row(c).Height(theme.GroupHeight).PaddingX(th.Space(0.5)).Gap(th.Space(0.5)).AlignItems(ui.Center).Radius(t.Radius.Lg).Border(theme.Stroke, t.Border).Background(t.Background).Children(func() {
-		for i, it := range items {
-			if i > 0 {
-				ui.Box(c).Size(theme.Stroke, theme.GroupSepHeight).Margin(0, th.Space(0.5)).Background(t.Border)
-			}
-			b := IconButton(c, it.Icon, it.Tip, ButtonOpts{Variant: Ghost, Size: SizeSm, Disabled: it.Disabled})
+	th := c.Theme()
+	return ui.Row(c).Gap(th.Space(0.5)).AlignItems(ui.Center).Children(func() {
+		for _, it := range items {
+			b := IconButton(c, it.Icon, it.Tip, ButtonOpts{Variant: Ghost, Disabled: it.Disabled})
 			if !it.Disabled {
-				b.TextColor(t.Foreground)
+				b.TextColor(theme.Of(c).Foreground)
 			}
 			if it.OnClick != nil {
 				b.OnClick(it.OnClick)
 			}
 		}
 	})
+}
+
+// GroupDivider is the hairline between ButtonGroups in a toolbar.
+func GroupDivider(c *ui.Context) ui.Element {
+	return ui.Box(c).Size(theme.Stroke, c.Theme().Space(5)).Shrink(0).Background(theme.Of(c).Border)
 }

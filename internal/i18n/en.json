@@ -903,6 +903,7 @@
   "reader_month_7": "Jul",
   "reader_month_8": "Aug",
   "reader_month_9": "Sep",
+  "reader_more": "More actions",
   "reader_open_in_browser": "View in browser",
   "reader_remote_blocked": "Blocked {arg1, number, ::group-off} remote images so the sender can''t tell whether you opened this message",
   "@reader_remote_blocked": {

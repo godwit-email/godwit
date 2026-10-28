@@ -452,6 +452,7 @@
   "reader_month_7": "7月",
   "reader_month_8": "8月",
   "reader_month_9": "9月",
+  "reader_more": "その他の操作",
   "reader_open_in_browser": "ブラウザで表示",
   "reader_remote_blocked": "開封追跡を防ぐため、{arg1, number, ::group-off} 件のリモート画像をブロックしました",
   "reader_print": "メールを印刷",

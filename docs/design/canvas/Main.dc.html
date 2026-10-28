@@ -217,16 +217,16 @@ button{font:inherit;cursor:pointer}
           </div>
         </sc-if>
         <sc-if value="{{isInbox}}" hint-placeholder-val="{{ true }}">
-        <div style="display: flex; align-items: center; gap: 8px; padding: 8px 16px; border-bottom: 1px solid #E5E5E5; flex-wrap: wrap">
-          <sc-for list="{{inboxGroups}}" as="g" hint-placeholder-count="2"><div role="group" aria-label="{{g.label}}" style="display: flex; align-items: center; gap: 2px; height: 32px; box-sizing: border-box; padding: 0 2px; border: 1px solid #E5E5E5; border-radius: 8px; background: #FFFFFF"><sc-for list="{{g.items}}" as="b" hint-placeholder-count="3"><sc-if value="{{b.sep}}" hint-placeholder-val="{{ false }}"><span aria-hidden="true" style="width: 1px; height: 16px; margin: 0 2px; background: #E5E5E5"></span></sc-if><span style="position: relative; display: flex"><sc-if value="{{b.link}}" hint-placeholder-val="{{ false }}"><a href="{{b.href}}" aria-label="{{b.label}}" onMouseEnter="{{b.enter}}" onMouseLeave="{{b.leave}}" onFocus="{{b.enter}}" onBlur="{{b.leave}}" style="{{b.style}}"><svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><g transform="{{b.tf}}"><path d="{{b.d}}"></path></g><path d="{{b.d2}}"></path></svg></a></sc-if><sc-if value="{{b.btn}}" hint-placeholder-val="{{ true }}"><button type="button" aria-label="{{b.label}}" aria-disabled="{{b.disabled}}" onMouseEnter="{{b.enter}}" onMouseLeave="{{b.leave}}" onFocus="{{b.enter}}" onBlur="{{b.leave}}" style="{{b.style}}"><svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><g transform="{{b.tf}}"><path d="{{b.d}}"></path></g><path d="{{b.d2}}"></path></svg></button></sc-if><sc-if value="{{b.tip}}" hint-placeholder-val="{{ false }}"><span role="tooltip" style="position: absolute; top: calc(100% + 6px); left: 50%; transform: translateX(-50%); padding: 4px 8px; border-radius: 6px; background: #171717; color: #FFFFFF; font-size: 12px; white-space: nowrap; box-shadow: 0 4px 6px -1px rgba(0,0,0,0.1), 0 2px 4px -2px rgba(0,0,0,0.1); pointer-events: none; z-index: 3">{{b.tipText}}</span></sc-if></span></sc-for></div></sc-for>
-          <span style="margin-left: auto; display: flex; gap: 4px; flex-wrap: wrap">
+        <div style="display: flex; align-items: center; gap: 2px; padding: 6px 12px; border-bottom: 1px solid #E5E5E5; flex-wrap: wrap">
+          <sc-for list="{{inboxGroups}}" as="g" hint-placeholder-count="2"><sc-if value="{{g.sep}}" hint-placeholder-val="{{ false }}"><span aria-hidden="true" style="width: 1px; height: 20px; margin: 0 6px; background: #E5E5E5"></span></sc-if><div role="group" aria-label="{{g.label}}" style="display: flex; align-items: center; gap: 2px"><sc-for list="{{g.items}}" as="b" hint-placeholder-count="3"><span style="position: relative; display: flex"><sc-if value="{{b.link}}" hint-placeholder-val="{{ false }}"><a href="{{b.href}}" aria-label="{{b.label}}" onMouseEnter="{{b.enter}}" onMouseLeave="{{b.leave}}" onFocus="{{b.enter}}" onBlur="{{b.leave}}" style="{{b.style}}"><svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><g transform="{{b.tf}}"><path d="{{b.d}}"></path></g><path d="{{b.d2}}"></path></svg></a></sc-if><sc-if value="{{b.btn}}" hint-placeholder-val="{{ true }}"><button type="button" aria-label="{{b.label}}" aria-disabled="{{b.disabled}}" onMouseEnter="{{b.enter}}" onMouseLeave="{{b.leave}}" onFocus="{{b.enter}}" onBlur="{{b.leave}}" style="{{b.style}}"><svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><g transform="{{b.tf}}"><path d="{{b.d}}"></path></g><path d="{{b.d2}}"></path></svg></button></sc-if><sc-if value="{{b.tip}}" hint-placeholder-val="{{ false }}"><span role="tooltip" style="position: absolute; top: calc(100% + 6px); left: 50%; transform: translateX(-50%); padding: 4px 8px; border-radius: 6px; background: #171717; color: #FFFFFF; font-size: 12px; white-space: nowrap; box-shadow: 0 4px 6px -1px rgba(0,0,0,0.1), 0 2px 4px -2px rgba(0,0,0,0.1); pointer-events: none; z-index: 3">{{b.tipText}}</span></sc-if></span></sc-for></div></sc-for>
+          <span style="margin-left: auto; display: flex; gap: 2px; flex-wrap: wrap">
             <button type="button" onClick="{{toggleSummary}}" style="{{summaryBtnStyle}}">
               <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M21 8V20.9932C21 21.5501 20.5552 22 20.0066 22H3.9934C3.44495 22 3 21.556 3 21.0082V2.9918C3 2.45531 3.4487 2 4.00221 2H14.9968L21 8ZM19 9H14V4H5V20H19V9ZM8 7H11V9H8V7ZM8 11H16V13H8V11ZM8 15H16V17H8V15Z"></path></svg>总结
             </button>
             <button type="button" onClick="{{toggleTranslate}}" style="{{translateBtnStyle}}">
               <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M5 15V17C5 18.0544 5.81588 18.9182 6.85074 18.9945L7 19H10V21H7C4.79086 21 3 19.2091 3 17V15H5ZM18 10L22.4 21H20.245L19.044 18H14.954L13.755 21H11.601L16 10H18ZM17 12.8852L15.753 16H18.245L17 12.8852ZM8 2V4H12V11H8V14H6V11H2V4H6V2H8ZM17 3C19.2091 3 21 4.79086 21 7V9H19V7C19 5.89543 18.1046 5 17 5H14V3H17ZM6 6H4V9H6V6ZM10 6H8V9H10V6Z"></path></svg>翻译
             </button>
-            <button type="button" style="height: 30px; padding: 0 10px; border: 1px solid #E5E5E5; border-radius: 8px; background: #FFFFFF; color: #0A0A0A">更多 skill ▾</button>
+            <button type="button" style="height: 32px; padding: 0 10px; border: 0; border-radius: 8px; background: transparent; color: #0A0A0A; font: inherit">更多 skill ▾</button>
           </span>
         </div>
 
@@ -333,8 +333,8 @@ button{font:inherit;cursor:pointer}
         </article>
         </sc-if>
         <sc-if value="{{isDrafts}}" hint-placeholder-val="{{ false }}">
-        <div style="display: flex; align-items: center; gap: 8px; padding: 8px 16px; border-bottom: 1px solid #E5E5E5">
-          <sc-for list="{{draftGroups}}" as="g" hint-placeholder-count="2"><div role="group" aria-label="{{g.label}}" style="display: flex; align-items: center; gap: 2px; height: 32px; box-sizing: border-box; padding: 0 2px; border: 1px solid #E5E5E5; border-radius: 8px; background: #FFFFFF"><sc-for list="{{g.items}}" as="b" hint-placeholder-count="3"><sc-if value="{{b.sep}}" hint-placeholder-val="{{ false }}"><span aria-hidden="true" style="width: 1px; height: 16px; margin: 0 2px; background: #E5E5E5"></span></sc-if><span style="position: relative; display: flex"><sc-if value="{{b.link}}" hint-placeholder-val="{{ false }}"><a href="{{b.href}}" aria-label="{{b.label}}" onMouseEnter="{{b.enter}}" onMouseLeave="{{b.leave}}" onFocus="{{b.enter}}" onBlur="{{b.leave}}" style="{{b.style}}"><svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><g transform="{{b.tf}}"><path d="{{b.d}}"></path></g><path d="{{b.d2}}"></path></svg></a></sc-if><sc-if value="{{b.btn}}" hint-placeholder-val="{{ true }}"><button type="button" aria-label="{{b.label}}" aria-disabled="{{b.disabled}}" onMouseEnter="{{b.enter}}" onMouseLeave="{{b.leave}}" onFocus="{{b.enter}}" onBlur="{{b.leave}}" style="{{b.style}}"><svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><g transform="{{b.tf}}"><path d="{{b.d}}"></path></g><path d="{{b.d2}}"></path></svg></button></sc-if><sc-if value="{{b.tip}}" hint-placeholder-val="{{ false }}"><span role="tooltip" style="position: absolute; top: calc(100% + 6px); left: 50%; transform: translateX(-50%); padding: 4px 8px; border-radius: 6px; background: #171717; color: #FFFFFF; font-size: 12px; white-space: nowrap; box-shadow: 0 4px 6px -1px rgba(0,0,0,0.1), 0 2px 4px -2px rgba(0,0,0,0.1); pointer-events: none; z-index: 3">{{b.tipText}}</span></sc-if></span></sc-for></div></sc-for>
+        <div style="display: flex; align-items: center; gap: 2px; padding: 6px 12px; border-bottom: 1px solid #E5E5E5">
+          <sc-for list="{{draftGroups}}" as="g" hint-placeholder-count="2"><sc-if value="{{g.sep}}" hint-placeholder-val="{{ false }}"><span aria-hidden="true" style="width: 1px; height: 20px; margin: 0 6px; background: #E5E5E5"></span></sc-if><div role="group" aria-label="{{g.label}}" style="display: flex; align-items: center; gap: 2px"><sc-for list="{{g.items}}" as="b" hint-placeholder-count="3"><span style="position: relative; display: flex"><sc-if value="{{b.link}}" hint-placeholder-val="{{ false }}"><a href="{{b.href}}" aria-label="{{b.label}}" onMouseEnter="{{b.enter}}" onMouseLeave="{{b.leave}}" onFocus="{{b.enter}}" onBlur="{{b.leave}}" style="{{b.style}}"><svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><g transform="{{b.tf}}"><path d="{{b.d}}"></path></g><path d="{{b.d2}}"></path></svg></a></sc-if><sc-if value="{{b.btn}}" hint-placeholder-val="{{ true }}"><button type="button" aria-label="{{b.label}}" aria-disabled="{{b.disabled}}" onMouseEnter="{{b.enter}}" onMouseLeave="{{b.leave}}" onFocus="{{b.enter}}" onBlur="{{b.leave}}" style="{{b.style}}"><svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><g transform="{{b.tf}}"><path d="{{b.d}}"></path></g><path d="{{b.d2}}"></path></svg></button></sc-if><sc-if value="{{b.tip}}" hint-placeholder-val="{{ false }}"><span role="tooltip" style="position: absolute; top: calc(100% + 6px); left: 50%; transform: translateX(-50%); padding: 4px 8px; border-radius: 6px; background: #171717; color: #FFFFFF; font-size: 12px; white-space: nowrap; box-shadow: 0 4px 6px -1px rgba(0,0,0,0.1), 0 2px 4px -2px rgba(0,0,0,0.1); pointer-events: none; z-index: 3">{{b.tipText}}</span></sc-if></span></sc-for></div></sc-for>
           <span style="margin-left: auto; font-size: 12px; color: #737373">{{draft.status}}</span>
         </div>
         <article style="padding: 20px 28px; display: flex; flex-direction: column; gap: 16px; max-width: 720px">
@@ -599,7 +599,7 @@ class Component extends DCLogic {
       };
     });
     var btn = function (on) {
-      return 'height: 30px; padding: 0 10px; display: flex; align-items: center; gap: 6px; border-radius: 8px; border: 1px solid ' + (on ? '#171717' : '#E5E5E5') + '; background: ' + (on ? '#F5F5F5' : '#FFFFFF') + '; color: ' + (on ? '#0A0A0A' : '#0A0A0A');
+      return 'height: 32px; padding: 0 10px; display: flex; align-items: center; gap: 6px; border-radius: 8px; border: 0; font: inherit; background: ' + (on ? '#F5F5F5' : 'transparent') + '; color: #0A0A0A';
     };
     var st = this.state;
     var quick = [
@@ -618,7 +618,7 @@ class Component extends DCLogic {
         label: label, d: d, d2: opt.d2 || '', tf: opt.tf || '', sep: !!opt.sep, href: opt.href || '', link: !!opt.href, btn: !opt.href, disabled: off ? 'true' : 'false',
         tip: hov === id, tipText: opt.tip || label,
         enter: function () { self.setState({ hov: id }); }, leave: function () { self.setState({ hov: null }); },
-        style: 'width: 28px; height: 28px; border: 0; border-radius: 6px; background: transparent; display: flex; align-items: center; justify-content: center; text-decoration: none; color: ' + (off ? '#A1A1A1; cursor: not-allowed' : '#0A0A0A')
+        style: 'width: 32px; height: 32px; padding: 0; border: 0; border-radius: 8px; background: ' + (hov === id && !off ? '#F5F5F5' : 'transparent') + '; display: flex; align-items: center; justify-content: center; text-decoration: none; color: ' + (off ? '#A1A1A1; cursor: not-allowed' : '#0A0A0A')
       };
     };
     var L = function (n) { return ICON[n].line; };
@@ -627,10 +627,13 @@ class Component extends DCLogic {
         mk('reply', '回复', L('reply'), { href: 'Compose.dc.html' }),
         mk('replyAll', '全部回复', 'M14 4.5V9C19.5228 9 24 13.4772 24 19C24 19.2727 23.9891 19.5428 23.9677 19.81C22.5055 17.0364 19.6381 15.119 16.313 15.0053L16 15H13.9999L14 19.5L6 12L14 4.5ZM8 4.5V7.237L2.92 12L7.999 16.761L8 19.5L0 12L8 4.5ZM12 9.11646L8.92423 12L11.9999 14.8834L11.9999 13L16.0341 13.0003L16.3814 13.0065C17.6657 13.0504 18.9053 13.3165 20.0568 13.7734C18.5898 12.0749 16.4204 11 14 11H12V9.11646Z', { href: 'Compose.dc.html', sep: true }),
         mk('forward', '转发', L('reply'), { href: 'Compose.dc.html', sep: true, tf: 'matrix(-1 0 0 1 24 0)' }) ] },
-      { label: '整理', items: [
+      { label: '整理', sep: true, items: [
+        mk('star', '加星标', L('star')),
         mk('archive', '归档', L('archive')),
-        mk('delete', '删除', L('delete-bin'), { sep: true }),
-        mk('junk', '移到垃圾邮件', L('spam-2'), { sep: true }) ] }
+        mk('junk', '移到垃圾邮件', L('spam-2')),
+        mk('delete', '删除', L('delete-bin')) ] },
+      { label: '更多', items: [
+        mk('more', '更多操作', 'M4.5 10.5C3.675 10.5 3 11.175 3 12C3 12.825 3.675 13.5 4.5 13.5C5.325 13.5 6 12.825 6 12C6 11.175 5.325 10.5 4.5 10.5ZM19.5 10.5C18.675 10.5 18 11.175 18 12C18 12.825 18.675 13.5 19.5 13.5C20.325 13.5 21 12.825 21 12C21 11.175 20.325 10.5 19.5 10.5ZM12 10.5C11.175 10.5 10.5 11.175 10.5 12C10.5 12.825 11.175 13.5 12 13.5C12.825 13.5 13.5 12.825 13.5 12C13.5 11.175 12.825 10.5 12 10.5Z', { tip: '更多：保存、打印' }) ] }
     ];
     var dEdit = (DRAFTS[this.state.dsel] || {}).editing;
     var draftGroups = [

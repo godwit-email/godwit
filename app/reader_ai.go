@@ -420,13 +420,12 @@ func (r *reader) aiTools(c *ui.Context) {
 	m, _ := r.last()
 	st := r.state(m.ID)
 	t := theme.Of(c)
-	// aiButton is bordered, flat (no Outline shadow), at the AI height; on,
-	// it takes the Primary border and a Hover fill.
-	// aiButton shows icon before label; a menu's shows a chevron after it.
+	// aiButton is a ghost at the toolbar's icon button height; on, it keeps
+	// the hover fill. It shows icon before label; a menu's shows a chevron after it.
 	aiButton := func(icon, label string, on, menu bool) ui.Element {
-		b := kit.ButtonFrame(c, out).Label(label).Height(theme.AIButtonHeight).Radius(t.Radius.Lg).Border(theme.Stroke, t.Border)
+		b := kit.ButtonFrame(c, out).Label(label).Height(c.Theme().Space(8))
 		if on {
-			b.Border(theme.Stroke, t.Primary).Background(t.Hover)
+			b.Background(t.HoverTint)
 		}
 		return b.Children(func() {
 			if icon != "" {

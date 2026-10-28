@@ -452,6 +452,7 @@
   "reader_month_7": "juil.",
   "reader_month_8": "août",
   "reader_month_9": "sept.",
+  "reader_more": "Plus d’actions",
   "reader_open_in_browser": "Afficher dans le navigateur",
   "reader_remote_blocked": "{arg1, number, ::group-off} images distantes bloquées pour empêcher l’expéditeur de savoir si vous avez ouvert ce message",
   "reader_print": "Imprimer l'e-mail",

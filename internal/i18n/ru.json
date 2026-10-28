@@ -452,6 +452,7 @@
   "reader_month_7": "июл.",
   "reader_month_8": "авг.",
   "reader_month_9": "сент.",
+  "reader_more": "Другие действия",
   "reader_open_in_browser": "Открыть в браузере",
   "reader_remote_blocked": "Заблокировано внешних изображений: {arg1, number, ::group-off}, чтобы отправитель не узнал, открывали ли вы это письмо",
   "reader_print": "Печать письма",
