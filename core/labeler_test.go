@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/godwit-email/godwit/core/ai"
+	"github.com/godwit-email/godwit/core/ai/mask"
 	"github.com/godwit-email/godwit/core/store"
 	"github.com/stretchr/testify/require"
 )
@@ -198,6 +199,19 @@ func TestClassifyErrorKeepsPending(t *testing.T) {
 	_, err := s.classifyBatch(t.Context())
 	require.Error(t, err)
 	require.Nil(t, labeledAt(t, s, a))
+	got, err := s.MessageLabels(t.Context(), []int64{a})
+	require.NoError(t, err)
+	require.Empty(t, got[a])
+}
+
+// A mail 脱敏 blocks (拦截) is skipped, its labels as they are, and not tried again.
+func TestClassifySkipsABlockedMail(t *testing.T) {
+	s := newLabelService(t, "", "zh-CN")
+	useLabelJudge(s, &fakeJudge{err: fmt.Errorf("judge: %w", &mask.BlockedError{Categories: []string{mask.IDs}})})
+	a := addMessage(t, s, "a", "a@x", "", "", 1)
+	_, err := s.classifyBatch(t.Context())
+	require.NoError(t, err)
+	require.Greater(t, store.Int(labeledAt(t, s, a)), int64(0))
 	got, err := s.MessageLabels(t.Context(), []int64{a})
 	require.NoError(t, err)
 	require.Empty(t, got[a])

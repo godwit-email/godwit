@@ -497,14 +497,28 @@ func (x *linkExpander) toolArgs(ctx context.Context, args json.RawMessage) (json
 	return out, nil
 }
 
-// expandDraftLinks expands the link references in d's subject and body
+// expandDraft expands the link references in d's subject and body, and
+// restores the placeholders in those and its addresses (docs/adr/0025),
 // before it is checked or sent: Wit's draft tools already did, but one may be
 // typed or pasted back in.
-func (s *Service) expandDraftLinks(ctx context.Context, d *Draft) error {
+func (s *Service) expandDraft(ctx context.Context, d *Draft) error {
 	x := s.linkExpander()
 	d.Subject, d.HTML = x.text(ctx, d.Subject), x.text(ctx, d.HTML)
 	if hasLinkRef(d.Subject + d.HTML) {
 		return ErrLinkRef
+	}
+	m, _ := s.masker() // without it, nothing restores and any placeholder is refused
+	restore := func(l []string) []string {
+		out := make([]string, len(l))
+		for i, v := range l {
+			out[i] = m.Restore(v)
+		}
+		return out
+	}
+	d.Subject, d.ReplyTo, d.HTML = m.Restore(d.Subject), m.Restore(d.ReplyTo), m.RestoreHTML(d.HTML)
+	d.To, d.Cc, d.Bcc = restore(d.To), restore(d.Cc), restore(d.Bcc)
+	if m.Left(strings.Join(slices.Concat([]string{d.Subject, d.ReplyTo, d.HTML}, d.To, d.Cc, d.Bcc), "\n")) {
+		return ErrPlaceholder
 	}
 	return nil
 }
@@ -512,3 +526,7 @@ func (s *Service) expandDraftLinks(ctx context.Context, d *Draft) error {
 // ErrLinkRef is a draft that still holds a link reference: sending it would
 // mail the recipient a link that only works here.
 var ErrLinkRef = errors.New("the draft has a link reference that could not be restored (" + linkRefPrefix + "…): replace the link before sending")
+
+// ErrPlaceholder is a draft that still holds a 脱敏 placeholder: sending it
+// would mail the recipient the placeholder, not its value.
+var ErrPlaceholder = errors.New("the draft has a placeholder that could not be restored ({{…}}): replace it with what it stands for before sending")

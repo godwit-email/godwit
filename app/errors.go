@@ -43,6 +43,7 @@ var errorKeys = []struct {
 	{core.ErrBaseURLScheme, "error.base_url_scheme"},
 	{core.ErrTooLarge, "error.too_large"},
 	{core.ErrLinkRef, "error.link_ref"},
+	{core.ErrPlaceholder, "error.placeholder"},
 	{core.ErrKeychainUnavailable, "error.keychain"},
 	{errFlushSlow, "error.flush_slow"},
 	{errSignatureUnsaved, "error.signature_unsaved"},
@@ -57,7 +58,9 @@ func humanize(err error) string {
 	var check *core.CheckError
 	var blocked *core.SendBlockedError
 	var aiErr *ai.Error
-	switch {
+	switch cats := core.MaskBlocked(err); {
+	case cats != nil:
+		return i18n.Tf("error.ai.blocked", maskCategories(cats))
 	case errors.As(err, &check):
 		for _, s := range check.Report.Steps {
 			if !s.OK && !s.Skipped {

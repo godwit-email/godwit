@@ -13,6 +13,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"sync"
 	"testing"
@@ -394,6 +395,8 @@ func TestLabelEvalInterval(t *testing.T) {
 // on pi, against a fake service whose answers follow from the request alone:
 // both APIs read the same answers into the same scores. (ai's
 // TestJudgeMatchesGenkit pins each request and reading to the Genkit path's.)
+var evalPlaceholder = regexp.MustCompile(`\{\{([A-Z_]+)_[a-z2-7]{12}\}\}`)
+
 func TestLabelEvalJudgeAPIs(t *testing.T) {
 	suite, err := loadEvalSuite("testdata/labeleval")
 	require.NoError(t, err)
@@ -412,7 +415,8 @@ func TestLabelEvalJudgeAPIs(t *testing.T) {
 			Input, State string
 			Questions    json.RawMessage
 		}
-		require.NoError(t, json.Unmarshal(b, &req))
+		// Each way's Service masks with its own key: a placeholder counts by its kind.
+		require.NoError(t, json.Unmarshal(evalPlaceholder.ReplaceAll(b, []byte("{{$1}}")), &req))
 		// A question's probability is a hash of the mail and its instructions;
 		// a few are refused, and one mail in eleven gets no valid answer.
 		answer := func(name, instructions string) (p float64, refused bool) {

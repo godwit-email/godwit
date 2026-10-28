@@ -26,7 +26,7 @@ func judgeOnce(t *testing.T, f JudgeFormat, key string, status int, body string)
 		io.WriteString(w, body)
 	}))
 	defer srv.Close()
-	j, err := NewJudge(nil, f, srv.URL+"/v1", key, "m")
+	j, err := NewJudge(nil, nil, f, srv.URL+"/v1", key, "m")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -120,7 +120,7 @@ func TestDecisionsSendsEmptyLevelLabels(t *testing.T) {
 		io.WriteString(w, decisionsBody([]wa{{"tone", "score", 1.0}}))
 	}))
 	defer srv.Close()
-	j, _ := NewJudge(nil, FormatDecisions, srv.URL, "k", "m")
+	j, _ := NewJudge(nil, nil, FormatDecisions, srv.URL, "k", "m")
 	if _, err := j.Ask(context.Background(), "mail", qs); err != nil {
 		t.Fatal(err)
 	}
@@ -130,7 +130,7 @@ func TestDecisionsSendsEmptyLevelLabels(t *testing.T) {
 }
 
 func TestJudgeTransportFailures(t *testing.T) {
-	j, _ := NewJudge(nil, FormatSystemOne, "http://127.0.0.1:1", "k", "m")
+	j, _ := NewJudge(nil, nil, FormatSystemOne, "http://127.0.0.1:1", "k", "m")
 	if _, err := j.Ask(context.Background(), "mail", testQs); !errors.Is(err, errUnreachable) {
 		t.Errorf("unreachable: %v", err)
 	}
@@ -153,7 +153,7 @@ func TestJudgeRetries(t *testing.T) {
 		io.WriteString(w, decisionsBody(okAnswers))
 	}))
 	defer srv.Close()
-	j, _ := NewJudge(nil, FormatDecisions, srv.URL, "k", "m")
+	j, _ := NewJudge(nil, nil, FormatDecisions, srv.URL, "k", "m")
 	start := time.Now()
 	if _, err := j.Ask(context.Background(), "mail", testQs); err != nil || hits != 2 {
 		t.Fatalf("hits %d: %v", hits, err)
@@ -164,7 +164,7 @@ func TestJudgeRetries(t *testing.T) {
 	for _, st := range []int{529, 503} {
 		hits = 0
 		srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { hits++; w.WriteHeader(st) }))
-		j, _ := NewJudge(nil, FormatSystemOne, srv.URL, "k", "m")
+		j, _ := NewJudge(nil, nil, FormatSystemOne, srv.URL, "k", "m")
 		_, err := j.Ask(context.Background(), "mail", testQs)
 		var he *HTTPError
 		if hits != 3 || !errors.As(err, &he) || he.Status != st {

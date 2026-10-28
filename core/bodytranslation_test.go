@@ -5,6 +5,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/godwit-email/godwit/core/ai/mask"
 	"github.com/godwit-email/godwit/core/internal/testllm"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -94,4 +95,69 @@ func TestBodyTranslationRejectsIncompleteAnswer(t *testing.T) {
 			assert.Zero(t, e.cacheRows(t))
 		})
 	}
+}
+
+// A value with a line break or a quote restores after the model's JSON
+// is parsed: restored before, it would break the JSON.
+func TestBodyTranslationRestoresAfterParsing(t *testing.T) {
+	const pem = "-----BEGIN RSA PRIVATE KEY-----\nMIIEowIBAAKCAQEA\n-----END RSA PRIVATE KEY-----"
+	e := newSkillEnv(t)
+	setBody(t, e, "Key "+pem, "")
+	mk, err := e.s.masker()
+	require.NoError(t, err)
+	p, err := mk.Text(pem)
+	require.NoError(t, err)
+	e.srv.Script(testllm.Turn{Text: []string{`{"texts":["Clé ` + p + `"],"source":"en"}`}})
+	evs := e.run(t, "translate", Target{Kind: "message", ID: e.msg, PreserveHTML: true})
+	require.Equal(t, "done", evs[len(evs)-1].Kind, "%+v", evs)
+	assert.Equal(t, map[string]string{"Key " + pem: "Clé " + pem}, evs[1].Translations)
+}
+
+// A value a long text is cut inside goes to the model whole, masked: the
+// texts are masked before they are cut.
+func TestBodyTranslationMasksAcrossACut(t *testing.T) {
+	const card = "4111 1111 1111 1111"
+	e := newSkillEnv(t)
+	text := strings.Repeat("a", 8<<10-10) + " " + card + " b" // splitText cuts at the last space before the limit: inside the card
+	setBody(t, e, text, "")
+	e.srv.Script(testllm.Turn{Text: []string{`{"texts":["x","y"],"source":"en"}`}})
+	evs := e.run(t, "translate", Target{Kind: "message", ID: e.msg, PreserveHTML: true})
+	require.Equal(t, "done", evs[len(evs)-1].Kind, "%+v", evs)
+	body := string(e.srv.Requests()[0].Body)
+	assert.True(t, strings.Contains(body, "{{BANK_CARD_"), "the card is masked")
+	assert.False(t, strings.Contains(body, "1111"), "no piece of the card is sent")
+}
+
+// A secret found by its label stays masked when the text is cut between
+// the label and the value.
+func TestBodyTranslationMasksASecretCutFromItsLabel(t *testing.T) {
+	for _, c := range []struct {
+		label, value string
+		lead         int // the cut lands after the label
+	}{{"password", "abcd1234efgh5678", 8179}, {"passport", "E12345678", 8179}, {"verification code", "482913", 8171}} {
+		label, value := c.label, c.value
+		t.Run(label, func(t *testing.T) {
+			e := newSkillEnv(t)
+			text := strings.Repeat("a", c.lead) + " " + label + ": " + value
+			setBody(t, e, text, "")
+			e.srv.Script(testllm.Turn{Text: []string{`{"texts":["x","y"],"source":"en"}`}})
+			evs := e.run(t, "translate", Target{Kind: "message", ID: e.msg, PreserveHTML: true})
+			require.Equal(t, "done", evs[len(evs)-1].Kind, "%+v", evs)
+			for _, r := range e.srv.Requests() {
+				assert.NotContains(t, string(r.Body), value)
+			}
+		})
+	}
+}
+
+// A text needing no translation comes back as it was, its values too, not
+// as it was masked.
+func TestBodyTranslationKeepsTheValuesOfAnUntranslatedText(t *testing.T) {
+	const text = "卡号 4111 1111 1111 1111"
+	res, err := translateMasked(t.Context(), []string{text}, 1, "zh-CN", nil, mask.New([]byte("k")),
+		func(_ context.Context, req translateRequest) (translateResult, error) {
+			return translateResult{Texts: []string{"x"}, Source: "zh-CN"}, nil
+		})
+	require.NoError(t, err)
+	assert.Equal(t, text, res.Text)
 }

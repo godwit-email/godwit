@@ -792,7 +792,8 @@ func (s *Service) assistSkill(ctx context.Context, end func(), draftID int64, na
 		if name == "translate-draft" { // never "the original's language": the skill does not see it
 			system += "\n\nTarget language: " + target + "."
 		}
-		run, req = e.Run, ai.Request{Model: model, System: system, MaxTurns: 1, Reasoning: true, Effort: conv.Effort}
+		// Raw: the values go back into the draft's HTML escaped, once it is parsed (host)
+		run, req = e.Run, ai.Request{Model: model, System: system, MaxTurns: 1, Reasoning: true, Effort: conv.Effort, Raw: true}
 	}
 	if err := s.gateway().Record(ctx, gateway.Entry{Source: gateway.SourceSkill, Tool: "skill:" + name, TargetKind: "draft", TargetID: d.ID, Decision: "run"}); err != nil {
 		return nil, err
@@ -829,7 +830,8 @@ func (s *Service) assistSkill(ctx context.Context, end func(), draftID int64, na
 				out = m.Text
 			}
 		}
-		if out = unfence(out); out == "" {
+		m, _ := s.masker() // without it there is nothing to restore: a plugin's text already is
+		if out = unfence(m.DropCut(out)); out == "" {
 			return ai.Result{Err: &ai.Error{Code: ai.CodeBadResponse, Msg: "the skill returned no text"}}
 		}
 		outText := out
@@ -837,10 +839,11 @@ func (s *Service) assistSkill(ctx context.Context, end func(), draftID int64, na
 		if sel == nil {
 			subj, body, ok := splitSubject(out)
 			if ok && withSubject {
-				newSubj = &subj
+				newSubj = new(m.Restore(subj))
 			}
 			outText = body
 		}
+		outText = m.RestoreHTML(outText)
 		p, err := s.proposeUpdateWithSubject(ctx, d.ID, newSubj, func(old string, rev int64) (string, error) {
 			if sel == nil {
 				return cleanHTML(outText), nil

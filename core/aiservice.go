@@ -15,6 +15,7 @@ import (
 	"unicode/utf8"
 
 	"github.com/godwit-email/godwit/core/ai"
+	"github.com/godwit-email/godwit/core/ai/mask"
 	"github.com/godwit-email/godwit/core/gateway"
 	"github.com/godwit-email/godwit/core/mail"
 	"github.com/godwit-email/godwit/core/store"
@@ -66,6 +67,7 @@ func (s *Service) RunSkill(ctx context.Context, name string, t Target) (<-chan a
 }
 
 func (s *Service) runSkill(ctx context.Context, end func(), name string, t Target) (<-chan ai.Event, error) {
+	ctx = mask.Tag(ctx, cmp.Or(map[string]string{"translate": featureTranslate}[name], featureSkill), nil)
 	sk, err := s.skill(ctx, name)
 	if err != nil {
 		return nil, err
@@ -314,6 +316,7 @@ func (s *Service) QuickReplies(ctx context.Context, messageID int64) ([]QuickRep
 		return nil, err
 	}
 	defer end()
+	ctx = mask.Tag(ctx, featureReplies, nil)
 	st, err := s.loadSettings(ctx)
 	if err != nil || !st.QuickReplies {
 		return nil, err
@@ -371,7 +374,7 @@ func (s *Service) QuickReplies(ctx context.Context, messageID int64) ([]QuickRep
 	if err != nil {
 		return nil, err
 	}
-	events, wait := e.Run(ctx, ai.Request{Model: model, System: system, Prompt: strings.Join(blocks, "\n\n"), MaxTurns: 1})
+	events, wait := e.Run(ctx, ai.Request{Model: model, System: system, Prompt: strings.Join(blocks, "\n\n"), MaxTurns: 1, Raw: true})
 	var text strings.Builder
 	for ev := range events {
 		switch ev.Kind {
@@ -386,7 +389,7 @@ func (s *Service) QuickReplies(ctx context.Context, messageID int64) ([]QuickRep
 	}
 
 	x := s.linkExpander()
-	rs, err := parseQuickReplies(text.String(), func(h string) string { return x.text(ctx, h) })
+	rs, err := parseQuickReplies(text.String(), func(h string) string { return x.text(ctx, e.Masker.RestoreHTML(h)) })
 	if err != nil {
 		return nil, err
 	}

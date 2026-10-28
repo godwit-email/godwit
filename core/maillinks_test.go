@@ -171,7 +171,7 @@ func TestLinkRefsBounds(t *testing.T) {
 	require.Equal(t, hugeRef, s.expandLinks(ctx, hugeRef), "a link over maxExpandURL is not expanded")
 	require.Equal(t, ref+"f", s.expandLinks(ctx, ref+"f"), "a longer hash is no reference")
 	d := Draft{HTML: "<p>" + ref + "f</p>"}
-	require.ErrorIs(t, s.expandDraftLinks(ctx, &d), ErrLinkRef, "and sending fails closed")
+	require.ErrorIs(t, s.expandDraft(ctx, &d), ErrLinkRef, "and sending fails closed")
 
 	in := make(chan ai.Event, 3)
 	in <- ai.Event{Kind: "text", Text: "go " + ref}
@@ -207,7 +207,7 @@ func TestLinkExpanderLimits(t *testing.T) {
 
 	huge := "https://a.com/" + strings.Repeat("x", 20<<10)
 	var seen []string
-	res, err := translateMasked(ctx, []string{"see " + huge}, id, "fr", nil, func(_ context.Context, req translateRequest) (translateResult, error) {
+	res, err := translateMasked(ctx, []string{"see " + huge}, id, "fr", nil, nil, func(_ context.Context, req translateRequest) (translateResult, error) {
 		out := make([]string, len(req.Texts))
 		for i, t := range req.Texts {
 			seen = append(seen, t)
@@ -237,7 +237,7 @@ func TestLinkRefsFailClosed(t *testing.T) {
 	require.Equal(t, longLink, s.expandLinks(ctx, ref), "and it expands")
 
 	d := Draft{Subject: "Godwit://LINK/a.com?m=1&h=0123abcd0123abcd"}
-	require.ErrorIs(t, s.expandDraftLinks(ctx, &d), ErrLinkRef, "any case of the prefix is caught")
+	require.ErrorIs(t, s.expandDraft(ctx, &d), ErrLinkRef, "any case of the prefix is caught")
 
 	_, err = s.linkExpander().toolArgs(ctx, json.RawMessage(`{"url":"`+linkRefPrefix+`a.com?m=999&h=0123abcd0123abcd"}`))
 	require.Error(t, err, "a tool never gets a reference that did not expand")
@@ -317,6 +317,20 @@ func TestLinkRefsTranslationPieces(t *testing.T) {
 	require.Equal(t, "see godwit:link/a.com?m=1&h=0123abcd0123abcd", masked[0], "planted, defused before translation")
 }
 
+// A masking placeholder stays in one piece too, wherever a hard cut lands in it.
+func TestPlaceholderTranslationPieces(t *testing.T) {
+	p := "{{BANK_CARD_abcdefghijkl}}"
+	for back := 1; back < len(p); back++ {
+		text := strings.Repeat("a", 8<<10-len(p)+back) + p + strings.Repeat("a", 100)
+		pieces := splitText(text, 8<<10)
+		whole := false
+		for _, pc := range pieces {
+			whole = whole || strings.Contains(pc.text, p)
+		}
+		require.True(t, whole, "cut %d bytes before its end", back)
+	}
+}
+
 func TestLinkRefsReplyAndArgsEdges(t *testing.T) {
 	s := newMailContextService(t)
 	ctx := t.Context()
@@ -325,7 +339,7 @@ func TestLinkRefsReplyAndArgsEdges(t *testing.T) {
 	d, err := s.NewDraft(ctx, 1, "reply", src)
 	require.NoError(t, err)
 	require.False(t, hasLinkRef(d.Subject+d.HTML), "a reference planted in the mail is defused in the quote")
-	require.NoError(t, s.expandDraftLinks(ctx, &d), "so the reply can be sent")
+	require.NoError(t, s.expandDraft(ctx, &d), "so the reply can be sent")
 
 	id := addMessage(t, s, "Sale", "shop@x", longLink, "", 1_700_000_100)
 	ref := linkRefs(longLink, id)

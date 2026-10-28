@@ -16,19 +16,20 @@ import (
 // FakeNativeOpener is a NativeOpener for tests that loads nothing: the
 // "library" file is JSON {"describe": {...}, "initFail": bool, "echoStderr":
 // "...", "record": "<path>", "describeSleepMs": n, "recordEnv": bool,
-// "source": "en", "translateWrongCount": bool, "translateError": "<code>",
+// "source": "en", "translateWrongCount": bool, "translateError": "<code>", "translateUpper": bool,
 // "models": {...}, "judgeError": "<code>", "judgeWrong": bool, "judgeSleepMs": n, "loadError": "<code>"}.
 // initFail writes echoStderr and fails init; describe answers after
 // describeSleepMs. translate answers "[<target>] <text>" per text from source
-// (default "en"), one text short with translateWrongCount, or the error
-// envelope translateError; with record each request is appended to
+// (default "en"), in capitals with translateUpper (as a service may change a
+// placeholder), one text short with translateWrongCount, or the error
+// envelope translateError, quoting the texts; with record each request is appended to
 // record + ".translate", and recordEnv adds the environment to configure's record.
 // Methods: describe, configure (writes its request to record, if set),
 // translate (echoes the texts, source "en"), fail (a rate_limited envelope),
 // probe.sleep {"ms"} and probe.crash (writes echoStderr, exits 2); models.list
 // (answers models), models.prepare (adds header X-Native: 1),
-// models.load and models.judge (probability 0.9 for each question, no
-// answers with judgeWrong), each failing with its error code if set and,
+// models.load and models.judge (probability 0.9 for each question, a
+// choice's last value, no answers with judgeWrong), each failing with its error code if set and,
 // with record, appending its request to record + "." + method.
 func FakeNativeOpener(stderr io.Writer) NativeOpener {
 	return func(path string, hostABI uint32) (NativeCall, error) {
@@ -47,6 +48,7 @@ func FakeNativeOpener(stderr io.Writer) NativeOpener {
 			Source          string          `json:"source"`
 			WrongCount      bool            `json:"translateWrongCount"`
 			TranslateError  string          `json:"translateError"`
+			TranslateUpper  bool            `json:"translateUpper"`
 			Models          json.RawMessage `json:"models"`
 			JudgeError      string          `json:"judgeError"`
 			JudgeWrong      bool            `json:"judgeWrong"`
@@ -102,12 +104,19 @@ func FakeNativeOpener(stderr io.Writer) NativeOpener {
 					return fail(spec.JudgeError), nil
 				}
 				var r struct {
-					Questions []struct{ Name string } `json:"questions"`
+					Questions []struct {
+						Name, Type string
+						Choices    []struct{ Value string }
+					} `json:"questions"`
 				}
 				json.Unmarshal(req, &r)
 				answers := []map[string]any{}
 				for _, q := range r.Questions {
-					if !spec.JudgeWrong {
+					switch {
+					case spec.JudgeWrong:
+					case q.Type == "choice" && len(q.Choices) > 0:
+						answers = append(answers, map[string]any{"type": "choice", "name": q.Name, "choice": q.Choices[len(q.Choices)-1].Value})
+					default:
 						answers = append(answers, map[string]any{"type": "predicate", "name": q.Name, "probability": 0.9})
 					}
 				}
@@ -138,17 +147,21 @@ func FakeNativeOpener(stderr io.Writer) NativeOpener {
 					f.Write(append(append([]byte{}, req...), '\n'))
 					f.Close()
 				}
-				if spec.TranslateError != "" {
-					return []byte(`{"ok":false,"error":{"code":"` + spec.TranslateError + `","message":"slow down","retryable":true}}`), nil
-				}
 				var r struct {
 					Texts  []string `json:"texts"`
 					Target string   `json:"target"`
 				}
 				json.Unmarshal(req, &r)
+				if spec.TranslateError != "" { // quoting what it was sent, as a service may
+					msg, _ := json.Marshal("slow down: " + strings.Join(r.Texts, " "))
+					return []byte(`{"ok":false,"error":{"code":"` + spec.TranslateError + `","message":` + string(msg) + `,"retryable":true}}`), nil
+				}
 				out := make([]string, 0, len(r.Texts))
 				for _, t := range r.Texts {
 					out = append(out, "["+r.Target+"] "+t)
+					if spec.TranslateUpper {
+						out[len(out)-1] = strings.ToUpper(out[len(out)-1])
+					}
 				}
 				if spec.WrongCount && len(out) > 0 {
 					out = out[1:]

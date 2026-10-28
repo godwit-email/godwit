@@ -10,6 +10,7 @@ import (
 	"unicode"
 
 	"github.com/godwit-email/godwit/core/ai"
+	"github.com/godwit-email/godwit/core/ai/mask"
 	"github.com/godwit-email/godwit/core/gateway"
 	"github.com/godwit-email/godwit/core/mail"
 	"github.com/godwit-email/godwit/core/skills"
@@ -53,14 +54,20 @@ func (s *Service) runBodyTranslation(ctx context.Context, end func(), sk skills.
 	var ref string
 	var version any
 	var call func(context.Context, translateRequest) (translateResult, error)
-	mask := false // a model reads long links as references, as in mailContext
+	byModel := false        // a model reads long links as references, as in mailContext
+	var masker *mask.Masker // masks the texts before they are cut, as the model's requests will
+	var bound boundTranslator
 	entry := gateway.Entry{Source: gateway.SourceSkill, Tool: "skill:translate", TargetKind: "message", TargetID: t.ID, Decision: "run"}
 	if plugin, ok := strings.CutPrefix(st.Translator, translatorPrefix); ok {
 		tr, err := s.translatorFor(ctx, plugin)
 		if err != nil {
 			return nil, err
 		}
-		ref, version, call = st.Translator, tr.version, tr.call
+		ref, version, bound = st.Translator, tr.version, tr
+		call = func(ctx context.Context, req translateRequest) (translateResult, error) {
+			req.masked = true // before the texts were cut
+			return tr.call(ctx, req)
+		}
 		entry.Source, entry.Extension, entry.Tool = gateway.SourcePlugin, plugin, "plugin:"+plugin+"/translate"
 	} else {
 		model, modelRef, err := s.resolveTask(ctx, sk.Model, sk.Tier == "small")
@@ -71,20 +78,26 @@ func (s *Service) runBodyTranslation(ctx context.Context, end func(), sk skills.
 		if err != nil {
 			return nil, err
 		}
-		ref, version, mask = modelRef, []any{model.ServiceID, model.Version}, true
+		ref, version, byModel = modelRef, []any{model.ServiceID, model.Version}, true
+		if !model.OnDevice && e.Masker.On() {
+			masker = e.Masker
+		}
 		system := sk.Body + "\n\n" + ai.UntrustedSystemNote + "\nTarget language: " + lang +
 			". Languages needing no translation: " + strings.Join(append([]string{lang}, keep...), ", ") +
 			`. For this request return ONLY a JSON object {"texts":[...],"source":"language-tag"}. Translate each input string in order, with exactly one nonempty output per input. Preserve strings needing no translation unchanged instead of NO_TRANSLATION. Do not include headers, notes, Markdown, or the untrusted_email wrapper.`
 		call = func(ctx context.Context, req translateRequest) (translateResult, error) {
 			b, _ := json.Marshal(req.Texts)
 			prompt := ai.Untrusted(fmt.Sprintf("message:%d", t.ID), string(b), ai.InjectionQuote(strings.Join(req.Texts, "\n")) != "")
-			text, err := s.runText(ctx, e, ai.Request{Model: model, System: system, Prompt: prompt, MaxTurns: 1}, 128<<10)
+			text, err := s.runText(ctx, e, ai.Request{Model: model, System: system, Prompt: prompt, MaxTurns: 1, Raw: true}, 128<<10)
 			if err != nil {
 				return translateResult{}, err
 			}
 			var res translateResult
 			if err := json.Unmarshal([]byte(text), &res); err != nil {
 				return res, fmt.Errorf("translation returned invalid JSON: %w", err)
+			}
+			for i, t := range res.Texts {
+				res.Texts[i] = e.Masker.Restore(t)
 			}
 			return res, nil
 		}
@@ -109,10 +122,13 @@ func (s *Service) runBodyTranslation(ctx context.Context, end func(), sk skills.
 		defer close(out)
 		out <- ai.Event{Kind: "context", Text: string(b), Model: ref}
 		if !hit {
-			if mask {
-				result, err = translateMasked(ctx, originals, t.ID, lang, keep, call)
+			if byModel {
+				result, err = translateMasked(ctx, originals, t.ID, lang, keep, masker, call)
 			} else {
-				result, err = translateBodyTexts(ctx, originals, lang, keep, call)
+				var masked []string
+				if masked, err = bound.maskTexts(ctx, originals); err == nil {
+					result, err = translateRestored(ctx, originals, masked, func(tr, _ string) string { return bound.masker.Restore(tr) }, lang, keep, call)
+				}
 			}
 			if err == nil {
 				cached, _ := json.Marshal(result)
@@ -120,8 +136,8 @@ func (s *Service) runBodyTranslation(ctx context.Context, end func(), sk skills.
 			}
 		}
 		if err != nil {
-			var ae *ai.Error
-			if !errors.As(err, &ae) {
+			ae := ai.Blocked(err)
+			if ae == nil && !errors.As(err, &ae) {
 				code := ai.CodeInternal
 				if errors.Is(err, context.Canceled) {
 					code = ai.CodeCanceled
@@ -140,17 +156,37 @@ func (s *Service) runBodyTranslation(ctx context.Context, end func(), sk skills.
 }
 
 // translateMasked is translateBodyTexts with the long links of message id
-// masked before the texts are cut into pieces, and put back after.
-func translateMasked(ctx context.Context, originals []string, id int64, target string, keep []string, call func(context.Context, translateRequest) (translateResult, error)) (bodyTranslation, error) {
+// masked before the texts are cut into pieces, and put back after. With m,
+// the texts are cut as m masks them and go so: no value is cut in two, nor
+// from the label it was found by.
+func translateMasked(ctx context.Context, originals []string, id int64, target string, keep []string, m *mask.Masker, call func(context.Context, translateRequest) (translateResult, error)) (bodyTranslation, error) {
 	masked, links := maskLinks(originals, id)
+	if m != nil {
+		cut, err := m.RequestTexts(ctx, masked) // recorded here: what goes out is already masked
+		if err != nil {
+			return bodyTranslation{}, err
+		}
+		send := call
+		call = func(ctx context.Context, req translateRequest) (translateResult, error) {
+			return send(mask.Premasked(ctx), req)
+		}
+		masked = cut
+	}
+	return translateRestored(ctx, originals, masked, func(tr, src string) string { return unmask(m.Restore(tr), src, links) }, target, keep, call)
+}
+
+// translateRestored is translateBodyTexts on masked, originals with values
+// replaced before they are cut into pieces; restore puts them back in tr, a
+// translation of the masked text src.
+func translateRestored(ctx context.Context, originals, masked []string, restore func(tr, src string) string, target string, keep []string, call func(context.Context, translateRequest) (translateResult, error)) (bodyTranslation, error) {
 	res, err := translateBodyTexts(ctx, masked, target, keep, call)
 	if err != nil {
 		return res, err
 	}
-	out := bodyTranslation{Text: unmask(res.Text, strings.Join(masked, "\n"), links), Translations: map[string]string{}}
+	out := bodyTranslation{Text: restore(res.Text, strings.Join(masked, "\n")), Translations: map[string]string{}}
 	for i, text := range originals {
 		if tr, ok := res.Translations[masked[i]]; ok {
-			if tr = unmask(tr, masked[i], links); tr != text {
+			if tr = restore(tr, masked[i]); tr != text {
 				out.Translations[text] = tr
 			}
 		}

@@ -16,6 +16,7 @@ import (
 
 	"github.com/egoist/mygo/plugins/sqlite"
 	"github.com/godwit-email/godwit/core/ai"
+	"github.com/godwit-email/godwit/core/ai/mask"
 	"github.com/godwit-email/godwit/core/events"
 	"github.com/godwit-email/godwit/core/gateway"
 	gomail "github.com/godwit-email/godwit/core/mail"
@@ -255,7 +256,9 @@ func (s *Service) GetConversation(ctx context.Context, id int64) (Conversation, 
 	if err != nil {
 		return Conversation{}, err
 	}
-	expand := func(m ai.Message) ai.Message { // the saved history keeps the references the model wrote
+	mk, _ := s.masker()
+	expand := func(m ai.Message) ai.Message { // the saved history keeps the references and placeholders the model wrote
+		m = ai.RestoreMessage(mk, m)
 		x := s.linkExpander() // per message, as each was expanded live: history grows past maxExpandMessages
 		m.Text, m.Reasoning = x.text(ctx, m.Text), x.text(ctx, m.Reasoning)
 		m.Calls = slices.Clone(m.Calls)
@@ -1276,7 +1279,11 @@ func (s *Service) drive(job *runJob, end func(), run runFunc, req ai.Request, ou
 	if len(cs) > 0 {
 		emit(WitEvent{Event: ai.Event{Kind: "context"}, Citations: cs})
 	}
-	events, wait := run(job.ctx, req)
+	found, feature := new(mask.Found), featureWit
+	if job.conv.Kind == "assist" {
+		feature = featureCompose
+	}
+	events, wait := run(mask.Tag(job.ctx, feature, found), req)
 	for ev := range s.expandEvents(job.ctx, events) {
 		if !terminal(WitEvent{Event: ev}) {
 			if job.host != nil && ev.Kind == "text" { // a command's text is the draft it proposes, not chat
@@ -1294,6 +1301,10 @@ func (s *Service) drive(job *runJob, end func(), run runFunc, req ai.Request, ou
 	ctx := context.WithoutCancel(job.ctx) // the outcome is recorded even when cancelled
 	res := wait()
 	s.worked(ctx, job.id, start) // each drive of it (a resume is another), before the outcome is told
+	if err := s.exec(ctx, sqlite.Statement{SQL: "UPDATE runs SET masked = MAX(masked, ?), mask_warned = MAX(mask_warned, ?) WHERE id = ?",
+		Args: []any{found.Count(mask.Mask), found.Count(mask.Warn), job.id}}); err != nil {
+		slog.Default().Warn("could not record what a run's masking found", "run", job.id, "err", err)
+	}
 	s.runRejected(req.Model, res.Err)
 	if res.Err == nil {
 		used := res.Usage // whatever res becomes, the model calls took these

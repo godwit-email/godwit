@@ -259,6 +259,15 @@ export const elapsed = (ms: number | undefined, t: T) => {
     : t("wit.elapsed.minutes", Math.floor(s / 60), s % 60);
 };
 
+/** What 脱敏 did to what an answer's runs sent: 已脱敏 N 处, and those sent as they are; "" for none. */
+const maskNote = (meta: WitMeta | undefined, t: T) => {
+  const n = meta?.masked ?? 0;
+  const w = meta?.warned ?? 0;
+  if (n > 0 && w > 0) return t("wit.masked_warned", n, w);
+  if (n > 0) return t("wit.masked", n);
+  return w > 0 ? t("wit.warned", w) : "";
+};
+
 const clip = (s: string, n = ARGS) => (s.length > n ? `${s.slice(0, n)}…` : s);
 
 const toolLabel = (tool: string, t: T) =>
@@ -1283,6 +1292,7 @@ function Answer({
     (w) => w.filter(shows).length > 1 && w.some((i) => m.parts[i].type !== "text" && shows(i)),
   );
   const took = !live && elapsed(m.metadata?.elapsed, t);
+  const masking = !live && maskNote(m.metadata, t);
   // the answer's time goes on its last folded line, nearest the answer
   const timed = folds.at(-1);
   const workLabel = (work: number[]) =>
@@ -1454,7 +1464,7 @@ function Answer({
         </div>
       )}
       {live && !moving && working}
-      {((text && !live) || (cited.length > 0 && onCite)) && (
+      {((text && !live) || (cited.length > 0 && onCite) || masking) && (
         <div className="-mt-1 -ml-1.5 flex items-center">
           {text && !live && (
             <>
@@ -1502,6 +1512,7 @@ function Answer({
               </Button>
             </>
           )}
+          {masking && <span className="px-1.5 text-muted-foreground text-xs">{masking}</span>}
           {m.metadata?.time && !live && <MessageTime ms={m.metadata.time} className="ml-auto" />}
         </div>
       )}

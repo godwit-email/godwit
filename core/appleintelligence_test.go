@@ -26,6 +26,7 @@ type fakeAppleIntelligence struct {
 	judgeAns []ai.Answer
 	judgeErr error
 	calls    int
+	asked    string // the last judge input
 }
 
 func (f *fakeAppleIntelligence) Version() string { return f.ver }
@@ -43,6 +44,7 @@ func (f *fakeAppleIntelligence) Generate(_ context.Context, system, prompt strin
 
 func (f *fakeAppleIntelligence) Judge(_ context.Context, input string, qs []ai.Question) ([]ai.Answer, error) {
 	f.calls++
+	f.asked = input
 	if f.judgeErr != nil {
 		return nil, f.judgeErr
 	}
@@ -449,6 +451,22 @@ func TestAppleIntelligenceJudgeBatches(t *testing.T) {
 	require.NoError(t, e.s.SetPluginEnabled(t.Context(), AppleIntelligencePlugin, false))
 	_, err = j.Ask(t.Context(), "mail", []ai.Question{{Name: "x", Type: ai.Predicate, Instructions: "x?"}})
 	assert.ErrorIs(t, err, ErrModelUnavailable)
+}
+
+// Apple Intelligence runs on this device: its judge is asked the values
+// as they are, masking on.
+func TestAppleIntelligenceJudgeIsNotMasked(t *testing.T) {
+	e := newSkillEnv(t)
+	fake := &fakeAppleIntelligence{ver: "1"}
+	e.s.opts.AppleIntelligence = fake
+	j, err := e.s.pluginJudge(t.Context(), "plugin/"+AppleIntelligencePlugin+"/classifier")
+	require.NoError(t, err)
+	m, err := e.s.masker()
+	require.NoError(t, err)
+	require.True(t, m.On())
+	_, err = j.Ask(t.Context(), "Card 4111 1111 1111 1111", []ai.Question{{Name: "x", Type: ai.Predicate, Instructions: "x?"}})
+	require.NoError(t, err)
+	assert.Equal(t, "Card 4111 1111 1111 1111", fake.asked)
 }
 
 func TestAppleIntelligenceTruncateMailKeepsWrapper(t *testing.T) {

@@ -1,4 +1,4 @@
-import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { toast } from "sonner";
 import type { Approval, MailHit, WitEvent, WitHistory, WitInfo } from "@/mygo";
@@ -306,6 +306,27 @@ describe("Panel", () => {
     });
     await user.click(screen.getByRole("button", { name: "复制" }));
     expect(await navigator.clipboard.readText()).toBe("答案");
+  });
+
+  it("an answer says how many values 脱敏 masked, and those it sent as they are", async () => {
+    const answer = {
+      id: "a0",
+      role: "assistant",
+      text: "答案",
+      reasoning: "",
+      quoted: [],
+      calls: [],
+      results: [],
+      citations: [],
+      runs: [1],
+      elapsed: 0,
+    };
+    await setup({ history: hist({ ...empty, messages: [{ ...answer, masked: 2, warned: 1 }] }) });
+    expect(await screen.findByText("已脱敏 2 处，1 处仅警告未遮")).toBeInTheDocument();
+    cleanup();
+    await setup({ history: hist({ ...empty, messages: [answer] }) });
+    await screen.findByText("答案");
+    expect(screen.queryByText(/已脱敏/)).not.toBeInTheDocument();
   });
 
   it("a copy the clipboard refuses says so", async () => {

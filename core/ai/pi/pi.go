@@ -6,6 +6,7 @@
 package pi
 
 import (
+	"cmp"
 	"context"
 	"crypto/rand"
 	_ "embed"
@@ -66,12 +67,12 @@ type Result struct {
 	Transport     error `json:"-"`
 }
 
-// Generate streams one reply: emit gets each text and reasoning delta on the
-// calling goroutine, in order. It returns when the reply ended or ctx did
-// (ctx's error then).
-func Generate(ctx context.Context, client *http.Client, req Request, emit func(kind, text string)) (Result, error) {
+// Generate streams one reply: hooks.Emit gets each text and reasoning delta
+// on the calling goroutine, in order. It returns when the reply ended or ctx
+// did (ctx's error then).
+func Generate(ctx context.Context, client *http.Client, req Request, hooks Hooks) (Result, error) {
 	var res Result
-	h, err := run(ctx, client, "generate", req, &res, Hooks{Emit: emit}, 0)
+	h, err := run(ctx, client, "generate", req, &res, Hooks{Emit: hooks.Emit, Mask: hooks.Mask}, 0)
 	if err != nil {
 		return Result{}, err
 	}
@@ -100,13 +101,14 @@ type JudgeResult struct {
 }
 
 // Judge posts one judge request through pi-ai's classifier transport, which
-// retries as the SDKs do. A reply over maxBody bytes fails to read.
-func Judge(ctx context.Context, client *http.Client, req JudgeRequest, maxBody int64) (JudgeResult, error) {
+// retries as the SDKs do; of hooks only Mask is called. A reply over maxBody
+// bytes fails to read.
+func Judge(ctx context.Context, client *http.Client, req JudgeRequest, maxBody int64, hooks Hooks) (JudgeResult, error) {
 	var out struct {
 		Body   string `json:"body"`
 		Status int    `json:"status"`
 	}
-	h, err := run(ctx, client, "judge", req, &out, Hooks{}, maxBody)
+	h, err := run(ctx, client, "judge", req, &out, Hooks{Mask: hooks.Mask}, maxBody)
 	if err != nil {
 		return JudgeResult{}, err
 	}
@@ -160,13 +162,17 @@ type Tool struct {
 // given each valid call of a round before any of them runs, holds one for
 // the user (true): the round then stops. Tool runs a call, its output JSON
 // or an error message, or holds it as it runs (interrupt); Refused tells of
-// a call that never reached Tool.
+// a call that never reached Tool. Mask, called on a goroutine of its own,
+// rewrites each request body before the request is made, so what net/http
+// sends again on a new connection is rewritten too (docs/adr/0025): an
+// error fails the run, the request unsent.
 type Hooks struct {
 	Emit    func(kind, text string)
 	Args    func(args json.RawMessage) (json.RawMessage, error)
 	Gate    func(ctx context.Context, id, name string, args json.RawMessage) (hold bool)
 	Tool    func(ctx context.Context, id, name string, args json.RawMessage) (output json.RawMessage, errMsg string, interrupt bool)
 	Refused func(id, name string, args json.RawMessage, errMsg string)
+	Mask    func(body string) (string, error)
 }
 
 // AgentResult is how a turn ended, its last reply as Result tells it.
@@ -251,6 +257,12 @@ func run(ctx context.Context, client *http.Client, hook string, arg, out any, ho
 	if ctx.Err() != nil {
 		return nil, ctx.Err()
 	}
+	h.mu.Lock()
+	unmasked := h.unmasked
+	h.mu.Unlock()
+	if unmasked != nil {
+		return nil, fmt.Errorf("pi: masking a request: %w", unmasked)
+	}
 	if err != nil {
 		return nil, fmt.Errorf("pi: %w", err)
 	}
@@ -285,6 +297,7 @@ type host struct {
 	bodies    map[int64]*body
 	status    int
 	transport error
+	unmasked  error // the first Mask failure, which ended the run
 }
 
 // body is a response being read: pending is a UTF-8 sequence a chunk cut.
@@ -412,6 +425,16 @@ type settleFunc = func(func(*moejs.Runtime) (moejs.Value, error))
 func (h *host) fetch(url, method, hdrs, payload string, settle settleFunc) {
 	fail := func(err error) {
 		settle(func(*moejs.Runtime) (moejs.Value, error) { return moejs.Undefined(), err })
+	}
+	if h.hooks.Mask != nil {
+		var err error
+		if payload, err = h.hooks.Mask(payload); err != nil {
+			h.mu.Lock()
+			h.unmasked = cmp.Or(h.unmasked, err)
+			h.mu.Unlock()
+			h.loop.Terminate() // the SDK would try it again
+			return
+		}
 	}
 	ctx, cancel := context.WithCancel(h.ctx)
 	req, err := http.NewRequestWithContext(ctx, method, url, strings.NewReader(payload))

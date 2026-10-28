@@ -3,6 +3,7 @@ package core
 import (
 	"context"
 	"encoding/json"
+	"html"
 	"os"
 	"path/filepath"
 	"strings"
@@ -383,6 +384,28 @@ func TestAssistSkillTranslateDraft(t *testing.T) {
 	require.NotNil(t, savedMessages(t, e.s, c.ID)[0].Command)
 	assert.Equal(t, "translate-draft", savedMessages(t, e.s, c.ID)[0].Command.Skill)
 	assert.Empty(t, savedMessages(t, e.s, c.ID)[0].Text)
+}
+
+// A value with < in it goes back into the draft's HTML as text: the skill's
+// answer is parsed before its placeholders are restored, escaped.
+func TestAssistSkillRestoresAValueAsText(t *testing.T) {
+	const pem = "-----BEGIN PRIVATE KEY-----\nMI<x\n-----END PRIVATE KEY-----"
+	e := newAssistEnv(t)
+	d := e.newDraft(t, "Key", "<p>Key "+html.EscapeString(pem)+"</p>")
+	mk, err := e.s.masker()
+	require.NoError(t, err)
+	p, err := mk.Text(pem)
+	require.NoError(t, err)
+	e.srv.Script(testllm.Turn{Text: []string{"<p>Here: " + p + "</p>"}})
+	ch, err := e.s.AssistSkill(t.Context(), d.ID, "shorter", SkillOptions{})
+	require.NoError(t, err)
+	evs := drainWit(t, ch)
+	last := evs[len(evs)-1]
+	require.Equal(t, "interrupted", last.Kind, "%+v", last.Err)
+	assert.NotContains(t, string(e.srv.Requests()[0].Body), "MI<x")
+	e.accept(t, last.Approvals[0])
+	ed, _, _ := parts(t, e.getDraft(t, d.ID).HTML)
+	assert.Contains(t, ed, "MI&lt;x", "the value is text in the draft")
 }
 
 // newDraft is a new draft (no mail it answers) with subject and editable.

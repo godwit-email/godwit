@@ -13,6 +13,8 @@ import (
 	"sync"
 	"sync/atomic"
 	"time"
+
+	"github.com/godwit-email/godwit/core/ai/mask"
 )
 
 // Engine runs models on pi (pirun.go). It keeps one instance per model
@@ -36,6 +38,12 @@ type Engine struct {
 	// is gone). A run whose model has another version fails with CodeStale.
 	// Set it before the first Run; it is called holding the engine's lock.
 	Current func(ctx context.Context, serviceID int64) (int64, error)
+
+	// Masker, if set, masks what runs send a model off this device while it
+	// is on, and restores the placeholders in what every run gets back:
+	// streamed text, tool calls, what a run ends with (docs/adr/0025).
+	// Set it before the first Run.
+	Masker *mask.Masker
 }
 
 type instance struct {
@@ -148,7 +156,7 @@ func (e *Engine) instance(ctx context.Context, m ResolvedModel) (*instance, erro
 // the events (sends give up when ctx ends).
 func (e *Engine) Run(ctx context.Context, req Request) (<-chan Event, func() Result) {
 	// One slot more than the events use: the terminal event always fits.
-	r := &runner{e: e, ctx: ctx, ch: make(chan Event, eventBuffer+1), key: req.Model.APIKey, reasoning: req.Reasoning, args: req.Args}
+	r := &runner{e: e, ctx: ctx, ch: make(chan Event, eventBuffer+1), key: req.Model.APIKey, reasoning: req.Reasoning, raw: req.Raw, args: req.Args}
 	done := make(chan struct{})
 	var res Result
 	go func() {
@@ -178,11 +186,15 @@ type runner struct {
 	key string
 	// reasoning: Request.Reasoning
 	reasoning bool
+	raw       bool                                                            // Request.Raw
 	args      func(context.Context, json.RawMessage) (json.RawMessage, error) // Request.Args
 	usage     Usage                                                           // so far, under mu
 
 	mu    sync.Mutex // sends, and the close after the last one
 	ended bool
+	// held is streamed text of heldKind not sent yet: it may end in a
+	// placeholder cut between chunks
+	held, heldKind string
 }
 
 // send drops events after the last one: a tool abandoned after a failed
@@ -191,6 +203,12 @@ type runner struct {
 func (r *runner) send(ev Event) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
+	for _, ev := range r.restored(ev) {
+		r.put(ev)
+	}
+}
+
+func (r *runner) put(ev Event) {
 	// ponytail: polls while the reader lags; a wake-up channel if it matters
 	for !r.ended && len(r.ch) >= eventBuffer {
 		select {
@@ -208,9 +226,40 @@ func (r *runner) send(ev Event) {
 func (r *runner) finish(ev Event) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
-	r.ch <- ev
+	evs := r.restored(ev)
+	for _, ev := range evs[:len(evs)-1] {
+		r.put(ev)
+	}
+	r.ch <- evs[len(evs)-1]
 	r.ended = true
 	close(r.ch)
+}
+
+// restored is the events ev sends, the masker's placeholders in streamed
+// text restored: text is held back while it may end in a placeholder cut
+// between chunks, and sent before any other event, without a placeholder
+// the stream left cut. Called holding mu.
+func (r *runner) restored(ev Event) []Event {
+	m := r.e.Masker
+	if m == nil || r.raw {
+		return []Event{ev}
+	}
+	var out []Event
+	streamed := ev.Kind == "text" || ev.Kind == "reasoning"
+	if r.held != "" && ev.Kind != r.heldKind {
+		out = append(out, Event{Kind: r.heldKind, Text: m.Restore(m.DropCut(r.held))})
+		r.held = ""
+	}
+	if !streamed {
+		return append(out, ev)
+	}
+	text := r.held + ev.Text
+	cut := m.Cut(text)
+	if r.held, r.heldKind = text[cut:], ev.Kind; cut > 0 {
+		ev.Text = m.Restore(text[:cut])
+		out = append(out, ev)
+	}
+	return out
 }
 
 // redact replaces every known key in s.
@@ -389,6 +438,22 @@ func rawJSON(v any) json.RawMessage {
 
 func toolCall(r *toolRequest) ToolCall {
 	return ToolCall{ID: r.Ref, Name: r.Name, Args: rawJSON(r.Input)}
+}
+
+// RestoreMessage is msg as the user sees it: the placeholders m made in its
+// text, reasoning, calls' arguments and results restored.
+func RestoreMessage(m *mask.Masker, msg Message) Message {
+	msg.Text, msg.Reasoning = m.Restore(msg.Text), m.Restore(msg.Reasoning)
+	msg.Calls = slices.Clone(msg.Calls)
+	for i, c := range msg.Calls {
+		msg.Calls[i].Args, _ = m.RestoreArgs(c.Args)
+	}
+	msg.Results = slices.Clone(msg.Results)
+	for i, r := range msg.Results {
+		msg.Results[i].Output, _ = m.RestoreArgs(r.Output)
+		msg.Results[i].Error = m.Restore(r.Error)
+	}
+	return msg
 }
 
 func display(msgs []*message) []Message {

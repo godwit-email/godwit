@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"net/http"
 	"net/url"
 	"slices"
 	"strconv"
@@ -728,6 +729,9 @@ func (s *Service) testGenRun(ctx context.Context, id int64, in ModelServiceInput
 		return err
 	}
 	defer e.Close()
+	if e.Masker, err = s.masker(); err != nil {
+		return err
+	}
 	_, err = s.runText(ctx, e, ai.Request{Model: ai.ResolvedModel{ServiceID: id, Kind: in.Kind, BaseURL: in.BaseURL, Model: models[0], APIKey: key},
 		Prompt: "Reply with OK.", MaxTurns: 1}, 0)
 	return err
@@ -735,7 +739,7 @@ func (s *Service) testGenRun(ctx context.Context, id int64, in ModelServiceInput
 
 func (s *Service) testJudge(ctx context.Context, in ModelServiceInput, key string) error {
 	f := ai.JudgeFormat(in.JudgeFormat)
-	j, err := ai.NewJudge(s.modelHTTP, f, in.BaseURL, key, in.JudgeModel)
+	j, err := s.newJudge(s.modelHTTP, f, in.BaseURL, key, in.JudgeModel)
 	if err != nil {
 		return err
 	}
@@ -798,6 +802,9 @@ func (s *Service) aiEngine() (*ai.Engine, error) {
 	if s.ai == nil {
 		e, err := ai.NewEngine(slog.Default(), s.secrets.Values)
 		if err != nil {
+			return nil, err
+		}
+		if e.Masker, err = s.masker(); err != nil {
 			return nil, err
 		}
 		// No modelMu here: an update holds it while it calls Forget.
@@ -967,7 +974,7 @@ func (s *Service) resolveJudge(ctx context.Context) (j ai.Judge, label string, g
 			return nil, "", false, err
 		}
 		if err == nil && m.JudgeFormat != "" {
-			j, err := ai.NewJudge(s.modelHTTP, ai.JudgeFormat(m.JudgeFormat), m.BaseURL, key, m.JudgeModel)
+			j, err := s.newJudge(s.modelHTTP, ai.JudgeFormat(m.JudgeFormat), m.BaseURL, key, m.JudgeModel)
 			return j, m.Slug + "/" + m.JudgeModel, false, err
 		}
 	}
@@ -980,8 +987,17 @@ func (s *Service) resolveJudge(ctx context.Context) (j ai.Judge, label string, g
 		return nil, "", false, err
 	}
 	return ai.NewGenJudge(func(ctx context.Context, system, prompt string) (string, error) {
-		return s.runText(ctx, e, ai.Request{Model: model, System: system, Prompt: prompt, MaxTurns: 1}, maxJudgeText)
-	}), ref, true, nil
+		return s.runText(ctx, e, ai.Request{Model: model, System: system, Prompt: prompt, MaxTurns: 1, Raw: true}, maxJudgeText)
+	}, e.Masker), ref, true, nil
+}
+
+// newJudge is ai.NewJudge with the Service's masker.
+func (s *Service) newJudge(c *http.Client, f ai.JudgeFormat, base, key, model string) (ai.Judge, error) {
+	m, err := s.masker()
+	if err != nil {
+		return nil, err
+	}
+	return ai.NewJudge(c, m, f, base, key, model)
 }
 
 // maxJudgeText caps a generated judge answer: a JSON object of short answers.

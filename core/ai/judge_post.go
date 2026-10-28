@@ -18,7 +18,7 @@ func (h judgeHTTP) post(ctx context.Context, body, out any) error {
 	if err != nil {
 		return err
 	}
-	res, err := pi.Judge(ctx, h.c, pi.JudgeRequest{URL: h.url, APIKey: h.key, Body: b}, maxJudgeBody)
+	res, err := pi.Judge(ctx, h.c, pi.JudgeRequest{URL: h.url, APIKey: h.key, Body: b}, maxJudgeBody, pi.Hooks{Mask: maskHook(ctx, h.m, false)})
 	if err != nil {
 		if err := ctxError(err); err != nil {
 			return err

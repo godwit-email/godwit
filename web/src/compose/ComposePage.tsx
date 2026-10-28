@@ -157,6 +157,7 @@ const errorKeys: [string, string][] = [
   ["draft changed since it was loaded", "error.stale_draft"],
   ["attachment exceeds the size limit", "error.too_large"],
   ["link reference that could not be restored", "error.link_ref"],
+  ["placeholder that could not be restored", "error.placeholder"],
 ];
 
 /** What a rejected call means to the user, in the page's copy. */
