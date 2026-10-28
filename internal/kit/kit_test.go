@@ -984,6 +984,44 @@ func TestButtonGroupTooltips(t *testing.T) {
 	}
 }
 
+func TestButtonGroupGeometry(t *testing.T) {
+	for _, density := range []string{"compact", "comfortable"} {
+		t.Run(density, func(t *testing.T) {
+			tt := ui.NewTester(themedDensity(density, func(c *ui.Context) {
+				ButtonGroup(c,
+					GroupItem{Icon: "archive", Tip: "Archive"},
+					GroupItem{Icon: "trash-2", Tip: "Delete"},
+					GroupItem{Icon: "spam", Tip: "Spam"},
+				)
+			}), 300, 100)
+			arc, ok := tt.Find("Archive")
+			if !ok {
+				t.Fatal("no Archive button")
+			}
+			del, _ := tt.Find("Delete")
+			spm, _ := tt.Find("Spam")
+
+			// In compact (scale 1): height 32, buttons 28x28 at Y=2.
+			// In comfortable (scale 1.25): height 40, buttons 35x35 at Y=2.5.
+			wantBtnH, wantBtnY := float32(28), float32(2)
+			if density == "comfortable" {
+				wantBtnH, wantBtnY = 35, 2.5
+			}
+			if arc.Y != wantBtnY || arc.H != wantBtnH || del.Y != wantBtnY || del.H != wantBtnH || spm.Y != wantBtnY || spm.H != wantBtnH {
+				t.Errorf("%s vertical layout: arc=%+v del=%+v spm=%+v, want Y=%v H=%v", density, arc, del, spm, wantBtnY, wantBtnH)
+			}
+
+			// Focus visible ring on first button must not be clipped by container.
+			tt.Key(0, ui.KeyTab)
+			tt.Frame()
+			focusPixel := tt.Image().RGBAAt(0, int(arc.Y+arc.H/2))
+			if focusPixel.A == 0 {
+				t.Errorf("%s focus ring at edge pixel was clipped: %v", density, focusPixel)
+			}
+		})
+	}
+}
+
 func TestTabsUnderline(t *testing.T) {
 	sel := 0
 	var tk theme.Tokens
