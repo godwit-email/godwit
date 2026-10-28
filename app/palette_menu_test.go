@@ -8,6 +8,23 @@ import (
 	"github.com/egoist/mygo/ui"
 )
 
+// A menu opened on the old rows while a search runs closes when its results
+// replace them: its row index would then name another hit.
+func TestPaletteMenuClosesOnNewResults(t *testing.T) {
+	h, _ := invoices(t)
+	h.typeText("invoice")
+	h.see("邮件 · 4")
+	p := &h.app.palette
+	h.tt.Key(0, ui.KeyBackspace) // a new search starts; its answer waits in the queue
+	h.tt.Frame()
+	h.tt.Key(ui.Alt, ui.KeyEnter)
+	h.tt.Frame()
+	if !p.m.open {
+		t.Fatal("the menu did not open on the old rows")
+	}
+	h.until("the new results", func() bool { return p.res.Mail.Total == 4 && !p.m.open })
+}
+
 // paletteHas is whether a text of the palette holds s.
 func paletteHas(h *harness, s string) bool {
 	texts := h.tt.Texts()
@@ -36,14 +53,15 @@ func TestPaletteMenuMail(t *testing.T) {
 	}
 	h.tt.Key(0, ui.KeyEnter)
 	h.until("the menu closed", func() bool { return !h.tt.HasText("全部回复") })
-	h.until("read, the menu offers unread", func() bool {
-		h.tt.Key(ui.Alt, ui.KeyEnter)
-		h.drain()
-		h.tt.Frame()
-		ok := h.tt.HasText("标为未读")
-		h.tt.Key(0, ui.KeyEscape)
-		return ok && paletteShown(h)
+	// The search again after the write closes a menu opened before it lands: wait for it.
+	h.until("the hit read", func() bool {
+		r := h.app.palette.res.Mail.Items
+		return len(r) == 1 && slices.Contains(r[0].Flags, `\Seen`)
 	})
+	h.tt.Key(ui.Alt, ui.KeyEnter)
+	h.see("标为未读")
+	h.tt.Key(0, ui.KeyEscape)
+	h.until("the menu closed over the palette", func() bool { return !h.tt.HasText("标为未读") && paletteShown(h) })
 
 	h.tt.Key(ui.Alt, ui.KeyEnter)
 	h.see("全部回复")

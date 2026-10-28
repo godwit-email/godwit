@@ -286,6 +286,7 @@ func (p *palette) find() {
 			return
 		}
 		p.res, p.err, p.hl, p.hf = res, err, q.Text, q.Filtered()
+		p.m.open, p.m.labeling = false, false // a menu opened on the old rows would act on another hit
 	})
 }
 
