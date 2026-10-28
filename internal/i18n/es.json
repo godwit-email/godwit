@@ -1176,6 +1176,8 @@
   "wit_send": "Enviar a Wit",
   "wit_skill_format": "Dar formato",
   "wit_skill_format_hint": "Solo párrafos y estructura",
+  "wit_skill_humanize": "Más humano",
+  "wit_skill_humanize_hint": "Eliminar patrones de IA",
   "wit_skill_longer": "Más largo",
   "wit_skill_longer_hint": "Longitud",
   "wit_skill_proofread": "Corregir",

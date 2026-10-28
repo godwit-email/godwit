@@ -1176,6 +1176,8 @@
   "wit_send": "Sturen naar Wit",
   "wit_skill_format": "Opmaken",
   "wit_skill_format_hint": "Alleen alinea's en structuur",
+  "wit_skill_humanize": "Menselijker",
+  "wit_skill_humanize_hint": "AI-patronen verwijderen",
   "wit_skill_longer": "Langer",
   "wit_skill_longer_hint": "Lengte",
   "wit_skill_proofread": "Nakijken",

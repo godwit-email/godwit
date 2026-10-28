@@ -49,7 +49,7 @@ type Language struct {
 }
 
 // adjustSkills are the 调整 menu's skills, in its order.
-var adjustSkills = []string{"tone-formal", "tone-friendly", "shorter", "longer", "proofread", "format"}
+var adjustSkills = []string{"tone-formal", "tone-friendly", "shorter", "longer", "proofread", "format", "humanize"}
 
 // languages are the 翻译 menu's common targets (app/settings_general.go).
 var languages = []Language{

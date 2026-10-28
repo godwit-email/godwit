@@ -145,6 +145,7 @@ func TestBuiltinSkillsValid(t *testing.T) {
 		"longer":          {[]string{"draft", "selection"}, "replace-draft"},
 		"proofread":       {[]string{"draft", "selection"}, "replace-draft"},
 		"format":          {[]string{"draft", "selection"}, "replace-draft"},
+		"humanize":        {[]string{"draft", "selection"}, "replace-draft"},
 	}
 	got := skills.Builtins()
 	require.Len(t, got, len(want))

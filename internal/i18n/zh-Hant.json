@@ -1176,6 +1176,8 @@
   "wit_send": "傳送給 Wit",
   "wit_skill_format": "排版整理",
   "wit_skill_format_hint": "僅整理段落與結構",
+  "wit_skill_humanize": "更有人情味",
+  "wit_skill_humanize_hint": "消除AI套話",
   "wit_skill_longer": "更長",
   "wit_skill_longer_hint": "長度",
   "wit_skill_proofread": "校對",

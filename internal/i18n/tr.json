@@ -1176,6 +1176,8 @@
   "wit_send": "Wit’e gönder",
   "wit_skill_format": "Biçimlendir",
   "wit_skill_format_hint": "Yalnızca paragraflar ve yapı",
+  "wit_skill_humanize": "Daha doğal",
+  "wit_skill_humanize_hint": "Yapay zeka kalıplarını kaldır",
   "wit_skill_longer": "Daha uzun",
   "wit_skill_longer_hint": "Uzunluk",
   "wit_skill_proofread": "Yazım denetimi",
