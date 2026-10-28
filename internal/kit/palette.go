@@ -44,8 +44,7 @@ func Palette(c *ui.Context, open *bool, query *string, o PaletteOpts, head, body
 	}
 	ui.DialogBase(c, open, func(backdrop, panel ui.Element) {
 		dialogShown = true
-		// only a tint: the page stays sharp behind it, the panel alone is frosted
-		backdrop.Background(ink(t).Alpha(dim*k)).Justify(ui.Start).Padding(th.Space(16), 0, 0, 0)
+		backdrop.Material(scrim{theme.BackdropBlur * k, ink(t).Alpha(dim * k)}).Justify(ui.Start).Padding(th.Space(16), 0, 0, 0)
 		panel.Label(o.Label).Opacity(k).Margin(rise(k), 0, 0, 0).Width(theme.DialogWideWidth).MaxHeight(theme.SheetMaxHeight).
 			Radius(t.Radius.X2l).Clip().Border(theme.Hairline, t.Border)
 		if o.Glass {
