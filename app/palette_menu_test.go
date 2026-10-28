@@ -185,15 +185,15 @@ func TestPaletteMenuKeys(t *testing.T) {
 	h.typeText("Invoice 2")
 	h.see("邮件 · 1")
 	h.tt.Key(ui.Alt, ui.KeyEnter)
-	h.see("⇧R")
+	h.see("全部回复")
 	before := len(slices.DeleteFunc(h.tt.Texts(), func(s string) bool { return s != "Invoice 2" }))
 	h.tt.Key(0, ui.KeyEscape)
-	h.until("the menu closed", func() bool { return !h.tt.HasText("⇧R") })
+	h.until("the menu closed", func() bool { return !h.tt.HasText("全部回复") })
 	if after := len(slices.DeleteFunc(h.tt.Texts(), func(s string) bool { return s != "Invoice 2" })); before != after+1 {
 		t.Fatalf("the menu does not name its row: %d then %d", before, after)
 	}
 	h.tt.Key(ui.Alt, ui.KeyEnter)
-	h.see("⇧R")
+	h.see("全部回复")
 	h.tt.TypeKey(0, ui.KeyE, "e")
 	h.until("archived", func() bool { return h.countIn(h.folderOf(accs[0], "archive")) == 1 })
 	if q := h.app.palette.query; q != "Invoice 2" {

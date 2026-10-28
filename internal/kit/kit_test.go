@@ -5,6 +5,7 @@ import (
 	"image/color"
 	"os"
 	"slices"
+	"strings"
 	"testing"
 	"time"
 
@@ -1397,5 +1398,14 @@ func TestAvatarColorKeptPerNameNeverGray(t *testing.T) {
 	}
 	if len(seen) < 3 {
 		t.Errorf("%d colors for 8 names", len(seen))
+	}
+}
+
+// A shortcut is a keycap each key.
+func TestKbdKeys(t *testing.T) {
+	for in, want := range map[string]string{"⇧⌘K": "⇧ ⌘ K", "⌥↵": "⌥ ↵", "←→": "← →", "Esc": "Esc", "⌘,": "⌘ ,", "↵": "↵"} {
+		if got := strings.Join(kbdKeys(in), " "); got != want {
+			t.Errorf("%s: %q, want %q", in, got, want)
+		}
 	}
 }
