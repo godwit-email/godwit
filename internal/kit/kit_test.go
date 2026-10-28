@@ -836,6 +836,28 @@ func TestKitListSelectedGray(t *testing.T) {
 	}
 }
 
+// TestKitListHoverSoft: a List's hovered row uses softened hover contrast.
+func TestKitListHoverSoft(t *testing.T) {
+	var th theme.Tokens
+	var s ui.ListState
+	cur := 0
+	s.Selected = &cur
+	tt := ui.NewTester(themed(func(c *ui.Context) {
+		th = theme.Of(c)
+		List(c, &s, 2, func(i int) { ui.Text(c, []string{"one", "two"}[i]).Padding(8) }).Height(100)
+	}), 300, 120)
+	r, ok := tt.Find("two")
+	if !ok {
+		t.Fatal("no row two")
+	}
+	tt.Move(r.X+r.W/2, r.Y+r.H/2)
+	tt.Advance(100 * time.Millisecond)
+	got := tt.Image().RGBAAt(int(r.X)+4, int(r.Y+r.H/2))
+	if want := th.Hover.Mix(th.Background, 0.5); got.R != want.R || got.G != want.G || got.B != want.B {
+		t.Errorf("hovered row %v, want %v", got, want)
+	}
+}
+
 // TestKitNavSwitchFillsSelected: the page shown in a NavSwitch has its
 // icon's fill style, which inks much more of the button than the line style.
 func TestKitNavSwitchFillsSelected(t *testing.T) {
