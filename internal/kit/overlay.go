@@ -154,8 +154,9 @@ func Frost(fill ui.Color) ui.Material {
 }
 
 // Bar fills a bar the content scrolls under (the reader's toolbar and reply
-// bar) with fill over what is behind it blurred. A web view's page under it
-// shows through the tint unblurred: the blur cannot see a native view.
+// bar) with fill over what is behind it blurred. The blur cannot see a
+// native view: a web view's page under it blurs itself (the reader's
+// BodyGlass).
 func Bar(fill ui.Color) ui.Material {
 	return scrim{theme.BackdropBlur * 2, fill.Alpha(0.85)}
 }
