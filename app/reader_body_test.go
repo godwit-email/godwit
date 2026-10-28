@@ -363,7 +363,7 @@ func TestReaderRemoteImages(t *testing.T) {
 	m := msgs[1]
 	h.openThread(m.ThreadID)
 	v := h.seeBody(m.ID)
-	h.see("已阻止 1 张远程图片，防止发件人追踪你是否打开了邮件")
+	h.see("1 张图片未加载")
 	// The plaintext message now has its own avatar load action; target
 	// this message's existing body-image action by folding the older one.
 	h.app.mail.reader.toggle(msgs[0].ID)
@@ -371,13 +371,13 @@ func TestReaderRemoteImages(t *testing.T) {
 	if h.hasCall("AllowImages") {
 		t.Fatal("allowed before 加载图片")
 	}
-	h.click("加载图片")
+	h.click("加载")
 	allow := fmt.Sprint("AllowImages ", m.ID)
 	if h.countCalls(allow) != 1 {
 		t.Fatalf("calls %q", h.plat.Calls())
 	}
 	h.tt.Frame()
-	if !h.tt.HasText("已阻止") || h.tt.HasText("加载图片") {
+	if _, link := h.tt.Find("加载"); !h.tt.HasText("张图片未加载") || link {
 		t.Fatalf("the notice did not wait for the page: %q", h.tt.Texts())
 	}
 	h.app.BodyFailed(v, m.ID, errors.New("images went away"))
@@ -388,11 +388,11 @@ func TestReaderRemoteImages(t *testing.T) {
 	}
 	h.app.BodyBuilt(v, m.ID, false, false) // an older body, without them
 	h.tt.Frame()
-	if !h.tt.HasText("已阻止") {
+	if !h.tt.HasText("张图片未加载") {
 		t.Fatal("the notice went before the page had the images")
 	}
 	h.app.BodyBuilt(v, m.ID, false, true)
-	h.until("the notice gone", func() bool { return !h.tt.HasText("已阻止") && !h.tt.HasText("images went away") })
+	h.until("the notice gone", func() bool { return !h.tt.HasText("张图片未加载") && !h.tt.HasText("images went away") })
 	r := h.app.mail.reader
 	r.toggle(m.ID)
 	r.toggle(m.ID)
@@ -520,8 +520,8 @@ func TestReaderTrustSender(t *testing.T) {
 	m := h.deliverOne(acc, coretest.Msg("Bob <Bob@Example.com>", acc.Email, "News", "text", img))
 	h.openThread(m.ThreadID)
 	h.seeBody(m.ID)
-	h.see("已阻止 1 张远程图片")
-	h.click("始终信任此发件人")
+	h.see("1 张图片未加载")
+	h.click("信任发件人")
 	h.until("allowed", func() bool { return h.countCalls(fmt.Sprint("AllowImages ", m.ID)) == 1 })
 	st, err := h.env.Svc.GetSettings(context.Background())
 	if err != nil || !slices.Equal(st.TrustedImageSenders, []string{"bob@example.com"}) {
@@ -531,7 +531,7 @@ func TestReaderTrustSender(t *testing.T) {
 	h.openThread(n.ThreadID)
 	h.seeBody(n.ID)
 	h.tt.Frame()
-	if h.tt.HasText("已阻止") {
+	if h.tt.HasText("张图片未加载") {
 		t.Fatal("a trusted sender's message shows the notice")
 	}
 }
@@ -545,7 +545,7 @@ func TestReaderTrustQuotedSender(t *testing.T) {
 	m := h.deliverOne(acc, coretest.Msg(`Bob <"bob smith"@example.com>`, acc.Email, "News", "text", img))
 	h.openThread(m.ThreadID)
 	h.seeBody(m.ID)
-	h.click("始终信任此发件人")
+	h.click("信任发件人")
 	h.until("allowed", func() bool { return h.countCalls(fmt.Sprint("AllowImages ", m.ID)) == 1 })
 }
 
@@ -571,7 +571,7 @@ func TestReaderTrustSkipsJunk(t *testing.T) {
 		}
 		h.seeBody(x.ID)
 	}
-	h.click("始终信任此发件人")
+	h.click("信任发件人")
 	h.until("allowed", func() bool { return h.countCalls(fmt.Sprint("AllowImages ", m.ID)) == 1 })
 	for _, x := range msgs {
 		if x.ID != m.ID && h.countCalls(fmt.Sprint("AllowImages ", x.ID)) != 0 {

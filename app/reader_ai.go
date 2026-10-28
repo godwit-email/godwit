@@ -477,11 +477,8 @@ func (r *reader) aiArea(c *ui.Context, m core.MessageSummary) {
 		return
 	}
 	t, th := theme.Of(c), c.Theme()
-	if sum := st.summary; sum != nil && r.summaryShown(st) {
-		r.panel(c, i18n.T("reader.ai.summary"), modelLabel(i18n.Tf("reader.ai.summary.meta", "summarize", sum.model)), nil, func() {
-			r.output(c, sum)
-			r.runState(c, sum, func() { st.summary = r.stream(m.ID, "summarize") })
-		})
+	if len(r.msgs) == 1 { // a thread's shows under its subject (summaryPanel)
+		r.summaryPanel(c, m)
 	}
 	if res := st.result; res != nil {
 		r.panel(c, res.title, "", func() { st.result = nil }, func() {
@@ -494,6 +491,21 @@ func (r *reader) aiArea(c *ui.Context, m core.MessageSummary) {
 			ui.Icon(c, icons.Get("languages")).Size(theme.IconSm, theme.IconSm).TextColor(t.Muted)
 			kit.Text(c, modelLabel(i18n.Tf("reader.ai.translated", shortLang(tr.lang), tr.model)), t.Text.Sm).TextColor(t.Muted)
 			kit.TextLink(c, i18n.T("reader.ai.show_original"), t.Foreground, t.Text.Sm).OnClick(func() { r.toggleTranslate(m.ID) })
+		})
+	}
+}
+
+// summaryPanel is m's summary while shown: under the sender of a message
+// read alone, under the subject of a thread (which summarizes its newest).
+func (r *reader) summaryPanel(c *ui.Context, m core.MessageSummary) {
+	st := r.ai[m.ID]
+	if st == nil {
+		return
+	}
+	if sum := st.summary; sum != nil && r.summaryShown(st) {
+		r.panel(c, i18n.T("reader.ai.summary"), sum.model, nil, func() {
+			r.output(c, sum)
+			r.runState(c, sum, func() { st.summary = r.stream(m.ID, "summarize") })
 		})
 	}
 }
@@ -721,33 +733,64 @@ func (r *reader) tagChips(c *ui.Context) {
 	}
 }
 
-// quickReplies are up to three one-line replies under the newest message;
-// Tab moves between them, a click or Enter opens one in a compose window.
-func (r *reader) quickReplies(c *ui.Context, m core.MessageSummary) {
-	last, _ := r.last()
-	st := r.ai[m.ID]
-	if m.ID != last.ID || st == nil || !r.taskReady("") || !r.p.a.settings.QuickReplies {
-		return
-	}
-	r.fetchErr(c, st.quick.err, st.quick.loading, func() { r.loadQuick(m.ID, true) })
-	if len(st.quick.v) == 0 {
-		return
-	}
+// replyBar floats at the reading pane's foot: the newest message's quick
+// replies as short labels, each a draft to edit, then a box that hands a
+// question about the thread, quoting that message, to Wit.
+func (r *reader) replyBar(c *ui.Context) ui.Element {
 	t, th := theme.Of(c), c.Theme()
-	ui.Column(c).Gap(th.Space(2)).Margin(th.Space(2), 0, 0, 0).Padding(th.Space(4), 0, 0, 0).BorderWidth(theme.Hairline, 0, 0, 0).BorderColor(t.Hover).Children(func() {
-		ui.Row(c).Gap(th.Space(1.5)).AlignItems(ui.Center).Children(func() {
-			ui.Icon(c, icons.Get("sparkles")).Size(theme.IconSm, theme.IconSm).TextColor(t.Muted)
-			kit.Text(c, i18n.T("reader.ai.quick"), t.Text.Sm).TextColor(t.Muted)
-		})
-		for i, q := range st.quick.v {
-			kit.Pressable(c, kit.PressableOpts{Bordered: true, OnClick: func() { r.quickReply(m.ID, q) }}).Label(q.Preview).Gap(th.Space(2.5)).Padding(th.Space(2.5), th.Space(3)).Children(func() {
-				ui.Text(c, q.Preview).SingleLine().Grow(1).Shrink(1)
-				if i == 0 {
-					kit.Text(c, "Tab", t.Text.Sm).Font(theme.Mono).TextColor(t.Muted)
+	last, _ := r.last()
+	return ui.Column(c).Padding(th.Space(2.5), th.Space(7), th.Space(3)).Material(kit.Bar(t.Background)).
+		BorderWidth(theme.Hairline, 0, 0, 0).BorderColor(t.Border).Children(func() {
+		r.column(c).Gap(th.Space(2)).Children(func() {
+			if st := r.ai[last.ID]; st != nil && r.taskReady("") && r.p.a.settings.QuickReplies {
+				r.fetchErr(c, st.quick.err, st.quick.loading, func() { r.loadQuick(last.ID, true) })
+				if len(st.quick.v) > 0 {
+					ui.Row(c).Wrap().Gap(th.Space(1)).Role(ui.RoleGroup).Label(i18n.T("reader.ai.quick")).Children(func() {
+						for _, q := range st.quick.v {
+							chip := kit.Pressable(c, kit.PressableOpts{OnClick: func() { r.quickReply(last.ID, q) }}).
+								Height(th.Space(6)).PaddingX(th.Space(2)).Radius(t.Radius.Md).Background(t.Hover).Center().Label(q.Preview)
+							chip.Children(func() { kit.Text(c, quickLabel(q), t.Text.Sm).SingleLine() })
+							kit.TooltipLabelled(c, chip, q.Preview)
+						}
+					})
 				}
+			}
+			kit.InputGroup(c, kit.InputOpts{Flat: true}).Height(th.Space(10)).Padding(0, th.Space(1), 0, th.Space(3)).Gap(th.Space(1)).Children(func() {
+				name, _ := sender(last.From)
+				in := kit.Input(c, &r.replyAsk, kit.InputOpts{Bare: true, Placeholder: i18n.Tf("reader.reply_wit", name)}).Grow(1).Shrink(1).Label(i18n.T("reader.ask_wit"))
+				if in.Submitted() {
+					r.askReply()
+				}
+				kit.IconButton(c, "arrow-up", i18n.T("reader.ask_wit"), kit.ButtonOpts{Variant: kit.Ghost, Size: kit.SizeSm}).OnClick(r.askReply)
 			})
-		}
+		})
 	})
+}
+
+// quickLabel is a quick reply's short label: the model's, else (cached
+// before labels were asked for) the start of its text.
+func quickLabel(q core.QuickReply) string {
+	if q.Label != "" {
+		return q.Label
+	}
+	if p := []rune(q.Preview); len(p) > quickLabelRunes {
+		return string(p[:quickLabelRunes]) + "…"
+	}
+	return q.Preview
+}
+
+// quickLabelRunes is as much of a quick reply's text as stands in for its label.
+const quickLabelRunes = 12
+
+// askReply hands the reply bar's question to Wit, quoting the newest message.
+func (r *reader) askReply() {
+	q := strings.TrimSpace(r.replyAsk)
+	m, ok := r.last()
+	if q == "" || !ok {
+		return
+	}
+	r.replyAsk = ""
+	r.p.a.askWit(q, m)
 }
 
 // egressDialog asks before an action's plugin sends data out: the plugin

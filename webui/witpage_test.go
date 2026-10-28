@@ -917,10 +917,21 @@ func TestWitHandoffEmitsOnce(t *testing.T) {
 	// the page takes it once, by the event or, loading, after Load
 	q, err := f.p.TakeAsk(f.ctx())
 	require.NoError(t, err)
-	assert.Equal(t, "invoice", q)
+	assert.Equal(t, WitHandoff{Text: "invoice", Hits: []MailHit{}}, q)
 	q, err = f.p.TakeAsk(f.ctx())
 	require.NoError(t, err)
-	assert.Empty(t, q)
+	assert.Equal(t, WitHandoff{Hits: []MailHit{}}, q)
+}
+
+// A hand-off quoting mail gives the page its hits, so the question shows
+// them as its chips and asks with them.
+func TestWitHandoffQuotes(t *testing.T) {
+	f := newWitPageFixture(t)
+	at := time.Date(2026, 10, 27, 21, 3, 0, 0, time.UTC)
+	f.w.Handoff("say yes", core.MessageSummary{ID: 7, Subject: "Q4", From: "Lena <lena@x.example>", Date: at})
+	q, err := f.p.TakeAsk(f.ctx())
+	require.NoError(t, err)
+	assert.Equal(t, WitHandoff{Text: "say yes", Hits: []MailHit{{ID: 7, Subject: "Q4", From: "Lena <lena@x.example>", Date: at.UnixMilli()}}}, q)
 }
 
 // 本次对话都允许: DecideSession approves the draft and the conversation's

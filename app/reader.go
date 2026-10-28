@@ -64,6 +64,9 @@ type reader struct {
 	senderOpen  bool                     // the sender action popover shows
 	senderMsgID int64                    // which message's sender popover is open
 	moreOpen    bool                     // the toolbar's more menu (save, print) shows
+	barTop      float32                  // the floating toolbar's height as the last frame laid it out: the messages start under it
+	barBottom   float32                  // the reply bar's, likewise: the messages end above it
+	replyAsk    string                   // the reply bar's question to Wit, until it is asked
 
 	getThread  func(ctx context.Context, id int64) (core.Thread, error)                       // tests wrap it
 	getMessage func(ctx context.Context, id int64, remote bool) (core.Message, error)         // tests wrap it
@@ -786,10 +789,11 @@ func (r *reader) view(c *ui.Context) {
 	if c.Shortcut(ui.Cmd, ui.KeyP) {
 		r.printMail()
 	}
+	// The toolbar and the reply bar float over the messages, which scroll
+	// under them: one sheet, the bars frosted over it.
 	col.Children(func() {
-		r.toolbar(c)
-		ui.Scroll(c).Grow(1).TrackScroll(&r.scroll).Children(func() {
-			ui.Column(c).FillWidth().Padding(th.Space(5), th.Space(7)).Children(func() {
+		ui.Scroll(c).Grow(1).TrackScroll(&r.scroll).ScrollbarInsets(r.barTop, 0, r.barBottom).Children(func() {
+			ui.Column(c).FillWidth().Padding(r.barTop+th.Space(5), th.Space(7), r.barBottom+th.Space(5)).Children(func() {
 				ui.Column(c).FillWidth().Gap(th.Space(3.5)).Children(func() {
 					subject := cmp.Or(r.subject, i18n.T("mail.no_subject"))
 					r.column(c).Gap(th.Space(2)).Children(func() {
@@ -797,25 +801,44 @@ func (r *reader) view(c *ui.Context) {
 						ui.Row(c).FillWidth().Wrap().AlignItems(ui.Center).Gap(th.Space(1.5)).Children(func() {
 							tx := kit.Text(c, subject, t.Text.X2l).FontWeight(600).LineHeight(theme.LineSubject).Shrink(1).Selectable() // copied as often as read
 							if !r.hasTags() {
-								// shortcut: MyGo measures large semibold text too narrow in a row, so it wraps early; with no tag to follow it, take the row. Drop once MyGo measures it right.
+								// shortcut: MyGo measures large semibold text too narrow in a row, so it wraps early; with no tag to follow it, take the row. Drop it once MyGo measures it right.
 								tx.Grow(1)
 							}
 							r.tagChips(c)
 						})
 						r.labelRow(c)
 					})
+					if len(r.msgs) > 1 { // a thread's summary is the thread's: under its subject, not in a message
+						if m, ok := r.last(); ok {
+							r.column(c).Children(func() { r.summaryPanel(c, m) })
+						}
+					}
 					r.renderMessages(c)
 				})
 			})
 		})
+		r.barTop = r.measured(c, r.toolbar(c).Absolute().Left(0).Top(0).Right(0), r.barTop)
+		r.barBottom = r.measured(c, r.replyBar(c).Absolute().Left(0).Right(0).Bottom(0), r.barBottom)
 	})
 }
 
+// measured is e's height as the last frame laid it out, asking for another
+// frame when it differs from was: what floats over the messages keeps them
+// clear of itself.
+func (r *reader) measured(c *ui.Context, e ui.Element, was float32) float32 {
+	h := e.LayoutBounds().H
+	if h != was {
+		c.Invalidate()
+	}
+	return h
+}
+
 // toolbar: the reply group and the archive group as icon buttons, a menu
-// of the rarer save and print, then the AI buttons.
-func (r *reader) toolbar(c *ui.Context) {
+// of the rarer save and print, then the AI buttons, on a frosted bar the
+// messages scroll under.
+func (r *reader) toolbar(c *ui.Context) ui.Element {
 	t, th := theme.Of(c), c.Theme()
-	ui.Row(c).Wrap().Gap(th.Space(0.5)).AlignItems(ui.Center).Padding(th.Space(2), th.Space(3)).BorderWidth(0, 0, theme.Hairline, 0).BorderColor(t.Border).Children(func() {
+	return ui.Row(c).Wrap().Gap(th.Space(0.5)).AlignItems(ui.Center).Padding(th.Space(2), th.Space(5)).Material(kit.Bar(t.Background)).BorderWidth(0, 0, theme.Hairline, 0).BorderColor(t.Border).Children(func() {
 		kit.ButtonGroup(c,
 			kit.GroupItem{Icon: "reply", Tip: i18n.T("reader.reply"), OnClick: func() { r.draft("reply") }},
 			kit.GroupItem{Icon: "reply-all", Tip: i18n.T("reader.reply_all"), OnClick: func() { r.draft("reply_all") }},
@@ -878,9 +901,17 @@ func (r *reader) starred() bool {
 func (r *reader) renderMessages(c *ui.Context) {
 	st := r.p.a.settings
 	collapse := st.ThreadCollapse && len(r.msgs) >= st.ThreadCollapseThreshold
+	n := 0 // what was rendered: a hairline parts each from the one before
+	part := func() {
+		if n > 0 {
+			r.column(c).Children(func() { kit.Separator(c, false) })
+		}
+		n++
+	}
 	for i := 0; i < len(r.msgs); {
 		m := r.msgs[i]
 		if r.open[m.ID] {
+			part()
 			r.message(c, m)
 			i++
 			continue
@@ -891,10 +922,12 @@ func (r *reader) renderMessages(c *ui.Context) {
 		}
 		run := r.msgs[i:j]
 		if collapse && len(run) >= 2 {
+			part()
 			r.historyToggle(c, m.ID, len(run))
 		}
 		if !collapse || len(run) < 2 || r.historyOpen[m.ID] {
 			for _, f := range run {
+				part()
 				r.folded(c, f)
 			}
 		}
@@ -910,25 +943,33 @@ func (r *reader) historyToggle(c *ui.Context, first int64, n int) {
 	if r.historyOpen[first] {
 		label, rot = i18n.T("reader.thread.collapse"), 180
 	}
-	b := kit.Pressable(c, kit.PressableOpts{Bordered: true, OnClick: func() { r.historyOpen[first] = !r.historyOpen[first] }}).
-		FillWidth().MaxWidth(theme.ReaderMaxWidth).AlignSelf(ui.Center).Gap(th.Space(2.5)).Padding(th.Space(2), th.Space(3)).Justify(ui.Center)
+	b := kit.Pressable(c, kit.PressableOpts{OnClick: func() { r.historyOpen[first] = !r.historyOpen[first] }}).
+		FillWidth().MaxWidth(theme.ReaderMaxWidth).AlignSelf(ui.Center).Gap(th.Space(2.5)).Padding(th.Space(1.5), 0).Justify(ui.Center)
 	b.Children(func() {
 		ui.Icon(c, icons.Get("chevron-down")).Size(theme.IconSm, theme.IconSm).TextColor(t.Muted).Rotate(rot)
 		kit.Text(c, label, t.Text.Sm).FontWeight(500).TextColor(t.Foreground)
 	})
 }
 
-// folded is a message as one line: sender, the start of its text, time.
+// folded is a message as one line: avatar, sender, the start of its text,
+// time, and the chevron that expands it.
 func (r *reader) folded(c *ui.Context, m core.MessageSummary) {
 	t, th := theme.Of(c), c.Theme()
 	name, _ := sender(m.From)
-	kit.Pressable(c, kit.PressableOpts{Bordered: true, OnClick: func() { r.toggle(m.ID) }}).FillWidth().MaxWidth(theme.ReaderMaxWidth).AlignSelf(ui.Center).Gap(th.Space(3)).Padding(th.Space(2), th.Space(3)).Children(func() {
+	var avatar ui.ImageSource // the one read when it was open, else its initial
+	if b := r.bodies[m.ID]; b != nil {
+		avatar = b.avatar
+	}
+	kit.Pressable(c, kit.PressableOpts{OnClick: func() { r.toggle(m.ID) }}).FillWidth().MaxWidth(theme.ReaderMaxWidth).AlignSelf(ui.Center).
+		AlignItems(ui.Center).Gap(th.Space(2.5)).Padding(th.Space(1), 0).Children(func() {
+		kit.AvatarImage(c, name, avatar)
 		ui.Text(c, name).FontWeight(500).SingleLine().Shrink(0)
 		if r.isBlocked(m.From) {
 			kit.Badge(c, i18n.T("reader.blocked_badge"))
 		}
 		ui.Text(c, m.Snippet).TextColor(t.Muted).SingleLine().Grow(1).Shrink(1)
 		kit.Text(c, listTime(r.p.a.clock.Now(), m.Date), t.Text.Sm).TextColor(t.Muted).Shrink(0)
+		ui.Icon(c, icons.Get("chevron-down")).Size(theme.IconSm, theme.IconSm).TextColor(t.Muted).Shrink(0)
 	})
 }
 
@@ -962,9 +1003,9 @@ func (r *reader) recipients(m core.MessageSummary) string {
 	return strings.Join(out, i18n.T("mail.list_sep"))
 }
 
-// message is a message in full: who and when (a click folds it when the
-// thread has others), the AI area and plugin cards, the remote image
-// notice, the body (or its translation), the attachments and quick replies.
+// message is a message in full: who, to whom (with the remote images that
+// wait) and when, the fold button when the thread has others, the AI area
+// and plugin cards, the body (or its translation) and the attachments.
 func (r *reader) message(c *ui.Context, m core.MessageSummary) {
 	t, th := theme.Of(c), c.Theme()
 	b := r.bodies[m.ID]
@@ -973,52 +1014,51 @@ func (r *reader) message(c *ui.Context, m core.MessageSummary) {
 		head := r.column(c).Gap(th.Space(3.5))
 		var bodyReady bool
 		head.Children(func() {
-			var fold func() // only a thread of more than one message folds
-			if len(r.msgs) > 1 {
-				fold = func() { r.toggle(m.ID) }
+			// The sender, its avatar or name, opens its actions (block, copy,
+			// mail from them); it no longer folds.
+			target := cmp.Or(addr, m.From)
+			senderActions := func() {
+				if r.senderOpen && r.senderMsgID == m.ID {
+					r.senderOpen = false
+				} else {
+					r.senderOpen = true
+					r.senderMsgID = m.ID
+				}
 			}
-			ui.Row(c).Gap(th.Space(2)).AlignItems(ui.Center).Children(func() {
-				btn := kit.Pressable(c, kit.PressableOpts{OnClick: fold}).Gap(th.Space(2.5))
-				btn.Children(func() {
+			ui.Row(c).Gap(th.Space(2.5)).AlignItems(ui.Center).Children(func() {
+				kit.Pressable(c, kit.PressableOpts{OnClick: senderActions}).Shrink(0).Radius(t.Radius.Lg).Label(target).Children(func() {
 					// Until the avatar is fetched or refused, a pulse; then the image or the initial.
 					if b == nil || b.err == nil && !b.ready || b.avatarStop != nil {
 						kit.Skeleton(c, th.Space(8), th.Space(8)).Radius(t.Radius.Lg).Shrink(0).Label(name)
 					} else {
 						kit.AvatarImage(c, name, b.avatar)
 					}
-					ui.Column(c).Shrink(1).Children(func() {
-						ui.Row(c).Gap(th.Space(1)).AlignItems(ui.Center).Children(func() {
+				})
+				ui.Column(c).Shrink(1).Gap(th.Space(0.5)).Children(func() {
+					ui.Row(c).Wrap().Gap(th.Space(1.5)).AlignItems(ui.Center).Children(func() {
+						who := kit.Pressable(c, kit.PressableOpts{OnClick: senderActions}).Gap(th.Space(1.5)).AlignItems(ui.Center).Label(target)
+						who.Children(func() {
 							ui.Text(c, name).FontWeight(500).SingleLine()
 							if addr != "" && addr != name {
-								ui.Text(c, "<"+addr+">").TextColor(t.Muted).SingleLine()
-							}
-							if r.isBlocked(m.From) {
-								kit.Badge(c, i18n.T("reader.blocked_badge"))
+								ui.Box(c).Height(th.Space(5)).PaddingX(th.Space(1.5)).Radius(t.Radius.Sm).Background(t.Hover).Center().Children(func() {
+									kit.Text(c, addr, t.Text.Sm).TextColor(t.Muted).SingleLine()
+								})
 							}
 						})
-						when := senderDate(r.p.a.clock.Now(), m.Date)
-						kit.Text(c, i18n.Tf("reader.to", r.recipients(m), when), t.Text.Sm).TextColor(t.Muted)
-					})
-				})
-				target := cmp.Or(addr, m.From)
-				chev := kit.Pressable(c, kit.PressableOpts{
-					OnClick: func() {
 						if r.senderOpen && r.senderMsgID == m.ID {
-							r.senderOpen = false
-						} else {
-							r.senderOpen = true
-							r.senderMsgID = m.ID
+							kit.Popover(c, who, &r.senderOpen, func() {
+								r.senderPopover(c, addr, m.From)
+							})
 						}
-					},
-				}).Size(th.Space(6), th.Space(6)).Radius(t.Radius.Md).Center().Label(target)
-				chev.Children(func() {
-					ui.Icon(c, icons.Get("chevron-down")).Size(theme.IconXs, theme.IconXs).TextColor(t.Muted)
-				})
-				if r.senderOpen && r.senderMsgID == m.ID {
-					kit.Popover(c, chev, &r.senderOpen, func() {
-						r.senderPopover(c, addr, m.From)
+						if r.isBlocked(m.From) {
+							kit.Badge(c, i18n.T("reader.blocked_badge"))
+						}
 					})
-				}
+					ui.Row(c).Wrap().Gap(th.Space(1.5)).AlignItems(ui.Center).Children(func() {
+						kit.Text(c, i18n.Tf("reader.to", r.recipients(m)), t.Text.Sm).TextColor(t.Muted)
+						r.imagesNote(c, m, b, addr)
+					})
+				})
 				ui.Spacer(c)
 				if b != nil && b.unsub.Method != "" { // each message by its own headers
 					if b.unsubbing {
@@ -1027,6 +1067,15 @@ func (r *reader) message(c *ui.Context, m core.MessageSummary) {
 						kit.Button(c, i18n.T("reader.unsubscribe"), kit.ButtonOpts{Variant: kit.Ghost, Size: kit.SizeSm}).
 							OnClick(func() { r.unsubscribe(m.ID) })
 					}
+				}
+				kit.Text(c, senderDate(r.p.a.clock.Now(), m.Date), t.Text.Sm).TextColor(t.Muted).Shrink(0)
+				if len(r.msgs) > 1 { // only a thread of more than one message folds
+					fold := kit.Pressable(c, kit.PressableOpts{OnClick: func() { r.toggle(m.ID) }}).
+						Size(th.Space(7), th.Space(7)).Radius(t.Radius.Md).Center().Shrink(0).Label(i18n.T("reader.fold"))
+					fold.Children(func() {
+						ui.Icon(c, icons.Get("chevron-down")).Size(theme.IconSm, theme.IconSm).TextColor(t.Muted).Rotate(180)
+					})
+					kit.TooltipLabelled(c, fold, i18n.T("reader.fold"))
 				}
 			})
 			r.aiArea(c, m)
@@ -1044,30 +1093,10 @@ func (r *reader) message(c *ui.Context, m core.MessageSummary) {
 			}
 			bodyReady = true
 			bodyBlocked := b.msg.RemoteImagesBlocked > 0 && !b.remote && !b.trusted
-			avatarBlocked := addr != "" && b.avatarBlocked && !b.avatarAllow
-			switch {
-			case !bodyBlocked && !avatarBlocked:
-			case b.allowErr != nil:
+			if b.allowErr != nil && (bodyBlocked || addr != "" && b.avatarBlocked && !b.avatarAllow) {
 				kit.Alert(c, kit.Danger, humanize(b.allowErr), func() {
 					kit.Button(c, i18n.T("common.retry"), kit.ButtonOpts{Variant: kit.Ghost, Size: kit.SizeSm}).
 						OnClick(func() { r.allowImages(m.ID) })
-				})
-			default: // until the page has them; a slimmer notice than an Alert, at Base
-				ui.Row(c).Wrap().Gap(th.Space(3)).AlignItems(ui.Center).Padding(th.Space(2), th.Space(3)).Radius(t.Radius.Lg).
-					Background(t.WarningBg).Border(theme.Hairline, t.WarningBorder).Children(func() {
-					text := i18n.T("reader.avatar_blocked")
-					if bodyBlocked {
-						text = i18n.Tf("reader.remote_blocked", b.msg.RemoteImagesBlocked)
-					}
-					kit.Text(c, text, t.Text.Base).LineHeight(theme.LineCJK).TextColor(t.WarningText)
-					if bodyBlocked && b.allow {
-						kit.Spinner(c)
-						return
-					}
-					kit.TextLink(c, i18n.T("reader.load_images"), t.WarningText, t.Text.Base).OnClick(func() { r.allowImages(m.ID) })
-					if addr != "" && !b.loading && !b.msg.InJunk && r.p.a.settings.RemoteImages != "ask" { // core never trusts junk, and "ask" ignores trust
-						kit.TextLink(c, i18n.T("reader.trust_sender"), t.WarningText, t.Text.Base).OnClick(func() { r.trustSender(b.msg.From, addr) })
-					}
 				})
 			}
 			if b.imgFailed > 0 && !bodyBlocked {
@@ -1097,9 +1126,37 @@ func (r *reader) message(c *ui.Context, m core.MessageSummary) {
 				})
 			}
 			r.attachments(c, b.msg.Attachments)
-			r.quickReplies(c, m)
 		})
 	})
+}
+
+// imagesNote follows the recipients while remote images wait (the body's,
+// or the sender's avatar): how many, then 加载 and 信任发件人. A failed
+// load is an alert under the header instead.
+func (r *reader) imagesNote(c *ui.Context, m core.MessageSummary, b *msgBody, addr string) {
+	if b == nil || !b.ready || b.allowErr != nil {
+		return
+	}
+	t := theme.Of(c)
+	bodyBlocked := b.msg.RemoteImagesBlocked > 0 && !b.remote && !b.trusted
+	avatarBlocked := addr != "" && b.avatarBlocked && !b.avatarAllow
+	if !bodyBlocked && !avatarBlocked {
+		return
+	}
+	n, tip := b.msg.RemoteImagesBlocked, i18n.Tf("reader.remote_blocked", b.msg.RemoteImagesBlocked)
+	if !bodyBlocked { // only the avatar waits
+		n, tip = 1, i18n.T("reader.avatar_blocked")
+	}
+	kit.Text(c, "·", t.Text.Sm).TextColor(t.Muted)
+	kit.Tooltip(c, kit.Text(c, i18n.Tf("reader.images_not_loaded", n), t.Text.Sm).TextColor(t.Muted), tip)
+	if bodyBlocked && b.allow {
+		kit.Spinner(c)
+		return
+	}
+	kit.TextLink(c, i18n.T("reader.load"), t.Foreground, t.Text.Sm).OnClick(func() { r.allowImages(m.ID) })
+	if addr != "" && !b.loading && !b.msg.InJunk && r.p.a.settings.RemoteImages != "ask" { // core never trusts junk, and "ask" ignores trust
+		kit.TextLink(c, i18n.T("reader.trust"), t.Foreground, t.Text.Sm).OnClick(func() { r.trustSender(b.msg.From, addr) })
+	}
 }
 
 // column is the reading pane's centred column for all but a message's

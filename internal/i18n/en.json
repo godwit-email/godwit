@@ -786,19 +786,8 @@
   "reader_ai_show_original": "Show original",
   "reader_ai_summarize": "Summary",
   "reader_ai_summary": "Summary",
-  "reader_ai_summary_meta": "{arg1} · {arg2}",
-  "@reader_ai_summary_meta": {
-    "placeholders": {
-      "arg1": {
-        "type": "String"
-      },
-      "arg2": {
-        "type": "String"
-      }
-    }
-  },
   "reader_ai_translate": "Translate",
-  "reader_ai_translated": "Translated into {arg1} · translate · {arg2}",
+  "reader_ai_translated": "Translated into {arg1} · {arg2}",
   "@reader_ai_translated": {
     "placeholders": {
       "arg1": {
@@ -809,6 +798,7 @@
       }
     }
   },
+  "reader_ask_wit": "Ask Wit",
   "reader_avatar_blocked": "Blocked the sender avatar; loading may contact the sender''s website and Gravatar",
   "reader_body": "Message body",
   "reader_date": "{arg1} {arg2, number, ::group-off}",
@@ -846,9 +836,18 @@
     }
   },
   "reader_egress_title": "Let the plugin send data?",
+  "reader_fold": "Collapse",
   "reader_forward": "Forward",
   "reader_images_failed": "{arg1, number, ::group-off} images couldn''t load",
   "@reader_images_failed": {
+    "placeholders": {
+      "arg1": {
+        "type": "int"
+      }
+    }
+  },
+  "reader_images_not_loaded": "{arg1, plural, one {{arg1, number, ::group-off} image not loaded} other {{arg1, number, ::group-off} images not loaded}}",
+  "@reader_images_not_loaded": {
     "placeholders": {
       "arg1": {
         "type": "int"
@@ -889,6 +888,7 @@
   "reader_lang_tr": "Turkish",
   "reader_lang_vi": "Vietnamese",
   "reader_lang_zh": "Chinese",
+  "reader_load": "Load",
   "reader_load_images": "Load images",
   "reader_me": "me",
   "reader_month_1": "Jan",
@@ -916,16 +916,29 @@
   "reader_print": "Print email",
   "reader_reply": "Reply",
   "reader_reply_all": "Reply all",
-  "reader_save": "Save email",
-  "reader_save_as": "Save as…",
-  "reader_saved": "Email saved",
-  "reader_to": "To {arg1} · {arg2}",
-  "@reader_to": {
+  "reader_reply_wit": "Ask Wit to reply to {arg1}…",
+  "@reader_reply_wit": {
     "placeholders": {
       "arg1": {
         "type": "String"
-      },
-      "arg2": {
+      }
+    }
+  },
+  "reader_save": "Save email",
+  "reader_save_as": "Save as…",
+  "reader_saved": "Email saved",
+  "reader_thread_count": "{arg1, plural, one {{arg1, number, ::group-off} message} other {{arg1, number, ::group-off} messages}}",
+  "@reader_thread_count": {
+    "placeholders": {
+      "arg1": {
+        "type": "int"
+      }
+    }
+  },
+  "reader_to": "To {arg1}",
+  "@reader_to": {
+    "placeholders": {
+      "arg1": {
         "type": "String"
       }
     }
@@ -941,6 +954,7 @@
     }
   },
   "reader_truncated": "This message is too long; only the beginning is shown",
+  "reader_trust": "Trust sender",
   "reader_trust_sender": "Always trust this sender",
   "reader_unsubscribe": "Unsubscribe",
   "reader_unsubscribe_desc": "Godwit will send one unsubscribe request to this domain:",

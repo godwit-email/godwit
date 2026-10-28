@@ -86,8 +86,8 @@ func TestReaderAvatarLoadsWithoutLayoutJump(t *testing.T) {
 	if !ok || before.W != 32 || before.H != 32 {
 		t.Fatalf("initial avatar %+v", before)
 	}
-	h.see("已阻止发件人头像")
-	h.click("加载图片")
+	h.see("1 张图片未加载")
+	h.click("加载")
 	select {
 	case <-started:
 	case <-time.After(5 * time.Second):
@@ -142,11 +142,11 @@ func TestReaderAvatarPolicy(t *testing.T) {
 			h.seeBody(m.ID)
 			b := h.app.mail.reader.bodies[m.ID]
 			if tc.blocked {
-				h.see("已阻止发件人头像")
+				h.see("1 张图片未加载")
 				if hits.Load() != 0 || b.msg.RemoteImagesBlocked != 0 {
 					t.Fatalf("blocked: hits %d, body count %d", hits.Load(), b.msg.RemoteImagesBlocked)
 				}
-				h.click("加载图片")
+				h.click("加载")
 			}
 			h.until("avatar ready", func() bool { return b.avatar != nil })
 			if hits.Load() != 1 {
@@ -245,11 +245,11 @@ func TestReaderAvatarSettingsInvalidation(t *testing.T) {
 	}
 	h.until("setting saved", func() bool { st, _ := h.env.Svc.GetSettings(t.Context()); return st.RemoteImages == "ask" })
 	h.advance(refreshEvery)
-	h.see("已阻止发件人头像")
+	h.see("1 张图片未加载")
 	if b.avatar != nil || b.allow {
 		t.Fatal("automatic trust became manual permission")
 	}
-	h.click("加载图片")
+	h.click("加载")
 	h.until("explicitly allowed cached avatar", func() bool { return b.avatar != nil })
 	st.RemoteImages = "trusted"
 	h.app.changeSettings(st)
@@ -343,7 +343,7 @@ func TestReaderAvatarWaitsForSettingsSave(t *testing.T) {
 				t.Errorf("unsaved ask allowed new avatar: image %v, requests %d", b.avatar != nil, hits.Load())
 			}
 			if tc.manual {
-				h.click("加载图片")
+				h.click("加载")
 				h.until("explicit avatar while saving", func() bool { return b.avatar != nil })
 				if hits.Load() != 2 {
 					t.Errorf("explicit requests %d", hits.Load())
@@ -362,7 +362,7 @@ func TestReaderAvatarWaitsForSettingsSave(t *testing.T) {
 				if b.avatar != nil || hits.Load() != 1 {
 					t.Fatal("saved ask automatically loaded avatar")
 				}
-				h.click("加载图片")
+				h.click("加载")
 				h.until("manual avatar after save", func() bool { return b.avatar != nil })
 				if hits.Load() != 2 {
 					t.Errorf("manual requests %d", hits.Load())
@@ -383,7 +383,7 @@ func TestReaderAvatarManualPermissionSurvivesUnrelatedSettings(t *testing.T) {
 			m := h.deliverOne(acc, coretest.Msg("Bob <bob@example.com>", acc.Email, "Avatar", "plain"))
 			h.openThread(m.ThreadID)
 			h.seeBody(m.ID)
-			h.click("加载图片")
+			h.click("加载")
 			b := h.app.mail.reader.bodies[m.ID]
 			h.until("manual avatar", func() bool { return b.avatar != nil })
 			before := h.app.events
@@ -559,7 +559,7 @@ func TestReaderThreadCollapse(t *testing.T) {
 	h.click("bob@example.com")
 	h.until("the oldest expanded", func() bool { return r.open[msgs[0].ID] && h.countTexts("发给") == 2 })
 	h.seeBody(msgs[0].ID)
-	h.click("bob@example.com")
+	h.click("收起") // the oldest's; its sender opens the sender's actions now
 	h.until("the oldest collapsed", func() bool {
 		return !r.open[msgs[0].ID] && h.countTexts("发给") == 1 && h.plat.view(msgs[0].ID) == nil
 	})
@@ -1124,12 +1124,12 @@ func TestReaderAvatarMoveToJunk(t *testing.T) {
 		t.Fatal("automatic avatar remains displayed after same message moves to Junk")
 	}
 	b := r.bodies[m.ID]
-	h.see("已阻止发件人头像")
+	h.see("1 张图片未加载")
 	h.until("junk body metadata", func() bool { return b.msg.InJunk && !b.trusted && !b.loading })
 	if b.msg.RemoteImagesBlocked != 0 || h.tt.HasText("始终信任此发件人") {
 		t.Fatal("junk notice has stale body policy")
 	}
-	h.click("加载图片")
+	h.click("加载")
 	h.until("manual junk avatar", func() bool { return b.avatar != nil && b.avatarAllow && b.allow })
 	h.app.refresh(nil)
 	h.until("same-message refresh", func() bool { return !h.app.mail.loading })
@@ -1200,7 +1200,7 @@ func TestReaderAvatarMoveDropsOldBodyRead(t *testing.T) {
 	}
 	h.app.refresh(nil)
 	h.until("current junk policy", func() bool { return b.msg.InJunk && !b.loading && b.avatar == nil && b.avatarBlocked })
-	h.see("已阻止发件人头像")
+	h.see("1 张图片未加载")
 	release <- struct{}{}
 	<-finished
 	h.queued("old body callback", 1)

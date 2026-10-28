@@ -13,19 +13,21 @@ import (
 func TestQuickRepliesThree(t *testing.T) {
 	e := newSkillEnv(t)
 	long := strings.Repeat("é", 100)
-	e.srv.Script(testllm.Turn{Text: []string{"```json\n", `{"replies":[{"html":"<p>Yes, Friday works.</p>"},`,
-		`{"html":"<p>` + long + `</p>"},{"html":"<p>Can we do Monday?</p>"},{"html":"<p>Fourth</p>"}]}`, "\n```"}})
+	e.srv.Script(testllm.Turn{Text: []string{"```json\n", `{"replies":[{"label":"  Agree\n now ","html":"<p>Yes, Friday works.</p>"},`,
+		`{"label":"` + long + `","html":"<p>` + long + `</p>"},{"html":"<p>Can we do Monday?</p>"},{"html":"<p>Fourth</p>"}]}`, "\n```"}})
 	rs, err := e.s.QuickReplies(t.Context(), e.msg)
 	require.NoError(t, err)
 	require.Len(t, rs, 3)
-	assert.Equal(t, QuickReply{Preview: "Yes, Friday works.", HTML: "<p>Yes, Friday works.</p>"}, rs[0])
+	assert.Equal(t, QuickReply{Label: "Agree now", Preview: "Yes, Friday works.", HTML: "<p>Yes, Friday works.</p>"}, rs[0])
 	assert.Equal(t, strings.Repeat("é", 80), rs[1].Preview)
+	assert.Equal(t, strings.Repeat("é", 16), rs[1].Label)
 	assert.Equal(t, "Can we do Monday?", rs[2].Preview)
+	assert.Empty(t, rs[2].Label) // a label is optional
 	require.Len(t, e.srv.Requests(), 1)
 	var sys string
 	require.Len(t, e.srv.Requests(), 1)
 	require.NoError(t, json.Unmarshal(e.srv.Requests()[0].System, &sys))
-	assert.Contains(t, sys, `{"replies":[{"html":`)
+	assert.Contains(t, sys, `{"replies":[{"label":"...","html":`)
 
 	// cached: same answer, no second request
 	again, err := e.s.QuickReplies(t.Context(), e.msg)

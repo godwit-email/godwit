@@ -6,6 +6,7 @@ import {
   type Approval,
   WitPage as api,
   events,
+  type MailHit,
   type WitHistory,
   type WitOpenMsg,
   type WitPageState,
@@ -38,7 +39,7 @@ const skills = () => api.skills();
 export function WitPage() {
   const [st, setSt] = useState<WitPageState>();
   const [view, setView] = useState<{ history: WitHistory; tr: WitTransport; key: number }>();
-  const [handed, setHanded] = useState<{ text: string }>(); // a question native handed over
+  const [handed, setHanded] = useState<{ text: string; hits: MailHit[] }>(); // a question native handed over, with the mail it quotes
   const [mode, setMode] = useState<Theme["mode"]>();
   const witResume = useResume(view?.tr);
   const resetResume = useRef(witResume.reset);
@@ -119,7 +120,7 @@ export function WitPage() {
     // the page loaded, once it has.
     const take = () =>
       api.takeAsk().then(
-        (text) => live && text && setHanded({ text }),
+        (h) => live && h.text && setHanded({ text: h.text, hits: h.hits ?? [] }),
         (e) => live && toast.error(message(e)),
       );
     let pushed = false; // a witState came: newer than Load's state fields
@@ -213,7 +214,7 @@ function Conversation({
   pick: { current: { model: string; effort: string } };
   resume?: { run: number };
   decide: ReturnType<typeof useResume>["decide"];
-  handed?: { text: string };
+  handed?: { text: string; hits: MailHit[] };
   onAsked(): void;
   t: T;
 }) {

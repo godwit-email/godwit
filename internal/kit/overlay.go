@@ -153,6 +153,13 @@ func Frost(fill ui.Color) ui.Material {
 	return scrim{theme.BackdropBlur * 2, fill.Alpha(0.7)}
 }
 
+// Bar fills a bar the content scrolls under (the reader's toolbar and reply
+// bar) with fill over what is behind it blurred. A web view's page under it
+// shows through the tint unblurred: the blur cannot see a native view.
+func Bar(fill ui.Color) ui.Material {
+	return scrim{theme.BackdropBlur * 2, fill.Alpha(0.85)}
+}
+
 // PopoverAt is a panel anchored to anchor at (at, self) with topOffset while *open; a press outside or Escape closes it.
 func PopoverAt(c *ui.Context, anchor ui.Element, open *bool, at, self ui.Anchor, topOffset float32, body func()) {
 	t, th := theme.Of(c), c.Theme()

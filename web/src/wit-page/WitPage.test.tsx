@@ -18,6 +18,7 @@ const h = vi.hoisted(() => {
     state: new Set<(s: WitPageState) => void>(),
     ask: new Set<(q: string) => void>(),
     pending: "", // the question native holds until the page takes it
+    pendingHits: [] as { id: number; subject: string; from: string; date: number }[], // the mail it quotes
   };
 });
 vi.mock("@/mygo", () => ({
@@ -104,8 +105,9 @@ const send = <T,>(set: Set<(x: T) => void>, x: T) =>
     for (const f of [...set]) f(x);
   });
 // hand is native's hand-off: the question waits, and the event says so.
-const hand = (q: string) => {
+const hand = (q: string, hits: typeof h.pendingHits = []) => {
   h.pending = q;
+  h.pendingHits = hits;
   return send(h.ask, q);
 };
 const emit = (e: Partial<WitEvent>) => send(h.wit, ev(e));
@@ -117,9 +119,11 @@ beforeEach(() => {
   vi.clearAllMocks();
   vi.mocked(api.follow).mockImplementation(async (c) => hist(c));
   h.pending = "";
+  h.pendingHits = [];
   vi.mocked(api.takeAsk).mockImplementation(async () => {
-    const q = h.pending;
+    const q = { text: h.pending, hits: h.pendingHits };
     h.pending = "";
+    h.pendingHits = [];
     return q;
   });
 });
@@ -517,6 +521,20 @@ test("witAsk asks the handed question once, in the new conversation", async () =
   vi.mocked(api.follow).mockResolvedValueOnce(hist(4, "four"));
   open(4, 3);
   expect(await screen.findByText("four")).toBeInTheDocument();
+  expect(api.ask).toHaveBeenCalledTimes(1);
+});
+
+test("a handed question quoting mail asks with it", async () => {
+  vi.mocked(api.ask).mockResolvedValue({
+    run: 9,
+    conversation: 7,
+    revision: 0,
+    conflict: false,
+    turn: "1",
+  });
+  await start(0);
+  hand("say yes", [{ id: 7, subject: "Q4", from: "Lena <lena@x.example>", date: 0 }]);
+  await waitFor(() => expect(api.ask).toHaveBeenCalledWith(0, "say yes", [7], "", "", "", zone));
   expect(api.ask).toHaveBeenCalledTimes(1);
 });
 

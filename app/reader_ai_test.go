@@ -88,7 +88,7 @@ func TestSummaryStreams(t *testing.T) {
 	release := gateAfterFirstText(r)
 	t.Cleanup(release)
 	h.openThread(m.ThreadID)
-	h.see("summarize · m1")
+	h.see("m1")
 	h.see("第一点要点")
 	if h.tt.HasText("**") {
 		t.Fatalf("streaming summary shows Markdown markers: %q", h.tt.Texts())
@@ -223,7 +223,8 @@ func TestSummaryEveryExpanded(t *testing.T) {
 		}
 		return true
 	})
-	if n := h.countTexts("summarize · m1"); n != 2 {
+	// a thread's summary is its newest message's, once, under the subject
+	if n := h.countTexts("m1"); n != 1 {
 		t.Fatalf("%d summaries shown: %q", n, h.tt.Texts())
 	}
 }
@@ -266,12 +267,12 @@ func TestSummaryFollowsSettings(t *testing.T) {
 	r := h.app.mail.reader
 	h.openThread(m.ThreadID)
 	h.until("the summary done", func() bool { s := r.ai[m.ID]; return s != nil && s.summary != nil && s.summary.done })
-	h.see("summarize · m1")
+	h.see("m1")
 	n := llm.Requests()
 	h.setSettings(func(st *core.Settings) { st.Summary = false })
 	h.until("the summary hidden", func() bool { return !h.tt.HasText("summarize") })
 	h.click("总结")
-	h.see("summarize · m1")
+	h.see("m1")
 	if got := llm.Requests(); got != n {
 		t.Fatalf("requests %d, want %d: the summary ran again", got, n)
 	}
@@ -288,7 +289,7 @@ func TestSummaryOnDemand(t *testing.T) {
 		t.Fatal("a summary ran with Summary off")
 	}
 	h.click("总结")
-	h.see("summarize · m1")
+	h.see("m1")
 	h.until("one request", func() bool { return llm.Requests() == 1 })
 	h.click("总结")
 	h.until("hidden again", func() bool { return !h.tt.HasText("summarize") })
@@ -302,11 +303,11 @@ func TestTranslationFollowsLanguageAndModel(t *testing.T) {
 	h.openThread(m.ThreadID)
 	h.seeBody(m.ID)
 	h.click("翻译")
-	h.see("已翻译为中文 · translate · m1")
+	h.see("已翻译为中文 · m1")
 	h.seeTranslation(m.ID, "erste Übersetzung")
 	h.app.settings.DefaultModel = "test/m2" // a later model does not relabel the result
 	h.tt.Frame()
-	h.see("已翻译为中文 · translate · m1")
+	h.see("已翻译为中文 · m1")
 	h.app.settings.DefaultModel = "test/m1"
 	h.setSettings(func(st *core.Settings) { st.ReadingLanguage = "ja" })
 	v := h.seeBody(m.ID) // the original, not the other language's translation
@@ -314,7 +315,7 @@ func TestTranslationFollowsLanguageAndModel(t *testing.T) {
 		t.Fatalf("a translation into another language shown: %q", h.tt.Texts())
 	}
 	h.click("翻译")
-	h.see("已翻译为日文 · translate · m1")
+	h.see("已翻译为日文 · m1")
 	h.seeTranslation(m.ID, "二番目の翻訳")
 	if n := llm.Requests(); n != 2 {
 		t.Fatalf("%d requests, want 2", n)
@@ -420,7 +421,7 @@ func TestTranslateToggle(t *testing.T) {
 	h.openThread(m.ThreadID)
 	v := h.seeBody(m.ID)
 	h.click("翻译")
-	h.see("已翻译为中文 · translate · m1")
+	h.see("已翻译为中文 · m1")
 	h.seeTranslation(m.ID, "Welt")
 	if h.seeBody(m.ID) != v {
 		t.Fatal("translation replaced the mail's body view")
@@ -569,7 +570,7 @@ func TestSwitchingCancelsRun(t *testing.T) {
 	runCtx := func(id int64) context.Context { mu.Lock(); defer mu.Unlock(); return ctxs[id] }
 	h.openThread(m.ThreadID)
 	h.until("the summary started", func() bool { return runCtx(m.ID) != nil && llm.Requests() == 1 })
-	h.see("summarize")
+	h.see("m1") // its panel, labelled by its model
 	h.openThread(other.ThreadID)
 	h.seeBody(other.ID)
 	if runCtx(m.ID).Err() == nil {
@@ -610,8 +611,8 @@ func TestSkillModelLabel(t *testing.T) {
 	r := h.app.mail.reader
 	h.openThread(m.ThreadID)
 	h.until("the summary done", func() bool { s := r.ai[m.ID]; return s != nil && s.summary != nil && s.summary.done })
-	h.see("summarize · m2")
-	if h.tt.HasText("summarize · m1") {
+	h.see("m2")
+	if h.tt.HasText("m1") {
 		t.Fatal("labelled with the default model")
 	}
 }
@@ -634,7 +635,7 @@ func TestOnDemandSummaryCancelled(t *testing.T) {
 	}
 	h.click("总结") // one click starts it again
 	h.until("the summary done", func() bool { s := r.ai[m.ID]; return s != nil && s.summary != nil && s.summary.done })
-	h.see("summarize · m1")
+	h.see("m1")
 	if n := llm.Requests(); n != 2 {
 		t.Fatalf("%d requests, want 2", n)
 	}
@@ -658,7 +659,7 @@ func TestSummaryLabelFromRun(t *testing.T) {
 	r := h.app.mail.reader
 	h.openThread(m.ThreadID)
 	h.until("the summary done", func() bool { s := r.ai[m.ID]; return s != nil && s.summary != nil && s.summary.done })
-	h.see("summarize · m2")
+	h.see("m2")
 }
 
 // Final whole-branch review #3: with only a small-task model the reader's
@@ -671,7 +672,7 @@ func TestSmallModelOnlyReaderAI(t *testing.T) {
 	m := h.deliverOne(acc, coretest.Msg("bob@example.com", acc.Email, "Plan", "the plan body"))
 	h.openThread(m.ThreadID)
 	h.until("the summary done", func() bool { s := h.app.mail.reader.ai[m.ID]; return s != nil && s.summary != nil && s.summary.done })
-	h.see("summarize · m1")
+	h.see("m1")
 	h.see("翻译")
 	h.see("Reply one")
 	if h.tt.HasText("更多 skill") {
@@ -698,7 +699,7 @@ func TestSummaryBySkillModel(t *testing.T) {
 	r := h.app.mail.reader
 	h.openThread(m.ThreadID)
 	h.until("the summary done", func() bool { s := r.ai[m.ID]; return s != nil && s.summary != nil && s.summary.done })
-	h.see("summarize · m1")
+	h.see("m1")
 	if h.tt.HasText("翻译") {
 		t.Fatal("translate shown: it has no model")
 	}
@@ -786,7 +787,7 @@ func TestSummaryHeaderSplit(t *testing.T) {
 	llm.Script(coretest.Turn{Text: []string{"- 第一点要点\n"}})
 	m := h.deliverOne(acc, coretest.Msg("bob@example.com", acc.Email, "Plan", "the plan body"))
 	h.openThread(m.ThreadID)
-	h.see("summarize · m1")
+	h.see("m1")
 	if h.tt.HasText("总结 · summarize") {
 		t.Fatalf("one string: %q", h.tt.Texts())
 	}

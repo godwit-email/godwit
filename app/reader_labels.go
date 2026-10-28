@@ -13,12 +13,17 @@ import (
 	"github.com/godwit-email/godwit/internal/theme"
 )
 
-// labelRow is the thread's labels under its subject, each with ×, then the
-// button of the label menu. Changes apply to every message of the thread.
+// labelRow is under the subject: a thread's count of messages, then its
+// labels, each with ×, then the button of the label menu. Changes apply to
+// every message of the thread.
 func (r *reader) labelRow(c *ui.Context) {
 	a := r.p.a
 	t, th := theme.Of(c), c.Theme()
 	ui.Row(c).Wrap().Gap(th.Space(1)).AlignItems(ui.Center).Children(func() {
+		if len(r.msgs) > 1 {
+			kit.Text(c, i18n.Tf("reader.thread.count", len(r.msgs)), t.Text.Sm).TextColor(t.Muted)
+			ui.Box(c).Size(theme.Stroke, th.Space(3)).Margin(0, th.Space(1.5)).BorderWidth(0, 0, 0, theme.Hairline).BorderColor(t.Border)
+		}
 		for _, l := range r.labels {
 			id := l.LabelID
 			a.labelChip(c.Key(id), l, func() { r.labelMenu = true }, func() { r.setLabel(id, false) })
