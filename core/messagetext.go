@@ -36,7 +36,7 @@ func (s *Service) GetMessageText(ctx context.Context, id int64) (MessageText, er
 		Truncated: store.Int(r[14]) != 0}
 	body := Message{Text: store.Str(r[13])}
 	if raw := store.Str(r[15]); raw != "" {
-		body.HTML, _ = mail.Sanitize(raw, nil, false) // as mailForModel: the HTML the reader shows
+		body.HTML, _, _ = mail.Sanitize(raw, nil, false) // as mailForModel: the HTML the reader shows
 	}
 	m.Text = modelBody(body)
 	ar, err := s.db.Query(ctx, "SELECT id, filename, content_type, size, inline FROM attachments WHERE message_id = ? ORDER BY id", id)

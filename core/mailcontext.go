@@ -48,7 +48,7 @@ func (s *Service) mailForModel(ctx context.Context, id int64) (Message, error) {
 	r := rows.Values[0]
 	m := Message{MessageSummary: scanSummary(r), Text: store.Str(r[11]), Truncated: store.Int(r[13]) != 0}
 	if raw := store.Str(r[12]); raw != "" {
-		m.HTML, _ = gomail.Sanitize(raw, nil, false)
+		m.HTML, _, _ = gomail.Sanitize(raw, nil, false)
 	}
 	ar, err := s.db.Query(ctx, "SELECT id, filename, content_type, size FROM attachments WHERE message_id = ? ORDER BY id", id)
 	if err != nil {

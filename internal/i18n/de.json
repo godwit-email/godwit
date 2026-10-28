@@ -470,6 +470,7 @@
   "reader_today": "Heute",
   "reader_thread_collapse": "E-Mail-Verlauf einklappen",
   "reader_thread_expand": "{arg1, plural, one {E-Mail-Verlauf aufklappen ({arg1, number, ::group-off} E-Mail)} other {E-Mail-Verlauf aufklappen ({arg1, number, ::group-off} E-Mails)}}",
+  "reader_trackers_blocked": "{arg1, plural, one {{arg1, number, ::group-off} Tracker blockiert} other {{arg1, number, ::group-off} Tracker blockiert}}",
   "reader_truncated": "Diese Nachricht ist zu lang; es wird nur der Anfang angezeigt",
   "reader_trust_sender": "Diesem Absender immer vertrauen",
   "reader_unsubscribe": "Abmelden",

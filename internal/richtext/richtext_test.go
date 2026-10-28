@@ -16,7 +16,7 @@ import (
 
 func sanitized(t *testing.T, src string) string {
 	t.Helper()
-	safe, _ := mail.Sanitize(src, nil, false)
+	safe, _, _ := mail.Sanitize(src, nil, false)
 	return safe
 }
 
