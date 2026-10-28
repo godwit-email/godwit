@@ -641,6 +641,105 @@ func TestContextMenuMoveRoleOptions(t *testing.T) {
 	})
 }
 
+// TestContextMenuReplyForward verifies that right-clicking a single mail item in the list
+// offers Reply, Reply all, and Forward, which open compose windows with the appropriate draft modes,
+// and that multi-selection hides these single-message compose actions.
+func TestContextMenuReplyForward(t *testing.T) {
+	h, accs := mailHarness(t, nil, "alice@example.com")
+	base := h.clock.Now()
+	h.put(accs[0], "INBOX", coretest.Msg("bob@example.com", "alice@example.com", "first subject", "first body", at(base, 1)))
+	h.syncNow(accs[0])
+	h.waitMail("inbox mail", func() bool { return len(h.items()) == 1 })
+
+	replyAct := i18n.T("reader.reply")
+	replyAllAct := i18n.T("reader.reply_all")
+	forwardAct := i18n.T("reader.forward")
+
+	// 1. Right click single email: Reply
+	if err := h.tt.RightClick("first subject"); err != nil {
+		t.Fatal(err)
+	}
+	menu := h.tt.Menu()
+	for _, act := range []string{replyAct, replyAllAct, forwardAct} {
+		if !slices.Contains(menu, act) {
+			t.Fatalf("menu %v missing %q", menu, act)
+		}
+	}
+	if err := h.tt.ChooseMenuItem(replyAct); err != nil {
+		t.Fatal(err)
+	}
+	replyID := h.composeOpened(0)
+	dReply := h.draft(replyID)
+	if dReply.Mode != "reply" || dReply.Subject != "Re: first subject" {
+		t.Fatalf("unexpected reply draft: %+v", dReply)
+	}
+
+	// 2. Right click single email: Reply All
+	if err := h.tt.RightClick("first subject"); err != nil {
+		t.Fatal(err)
+	}
+	if err := h.tt.ChooseMenuItem(replyAllAct); err != nil {
+		t.Fatal(err)
+	}
+	replyAllID := h.composeOpened(replyID)
+	dReplyAll := h.draft(replyAllID)
+	if dReplyAll.Mode != "reply_all" || dReplyAll.Subject != "Re: first subject" {
+		t.Fatalf("unexpected reply all draft: %+v", dReplyAll)
+	}
+
+	// 3. Right click single email: Forward
+	if err := h.tt.RightClick("first subject"); err != nil {
+		t.Fatal(err)
+	}
+	if err := h.tt.ChooseMenuItem(forwardAct); err != nil {
+		t.Fatal(err)
+	}
+	forwardID := h.composeOpened(replyAllID)
+	dForward := h.draft(forwardID)
+	if dForward.Mode != "forward" || dForward.Subject != "Fwd: first subject" {
+		t.Fatalf("unexpected forward draft: %+v", dForward)
+	}
+
+	// 4. Multi-selection: add a second email and select both with Cmd+A
+	h.put(accs[0], "INBOX", coretest.Msg("carol@example.com", "alice@example.com", "second subject", "second body", at(base, 2)))
+	h.syncNow(accs[0])
+	h.waitMail("two items", func() bool { return len(h.items()) == 2 })
+
+	h.click("first subject")
+	h.tt.Key(ui.Cmd, ui.KeyA)
+	h.tt.Frame()
+	if n := h.app.mail.main.sel.Len(); n != 2 {
+		t.Fatalf("selection count %d, want 2", n)
+	}
+
+	// When multiple are selected, Reply, Reply All, Forward must NOT be offered
+	if err := h.tt.RightClick("first subject"); err != nil {
+		t.Fatal(err)
+	}
+	multiMenu := h.tt.Menu()
+	for _, act := range []string{replyAct, replyAllAct, forwardAct} {
+		if slices.Contains(multiMenu, act) {
+			t.Fatalf("multi-selection menu %v should not contain %q", multiMenu, act)
+		}
+	}
+
+	// 5. In Trash and Junk, Reply, Reply All, Forward must NOT be offered
+	if err := h.tt.ChooseMenuItem(i18n.T("mail.action.delete")); err != nil {
+		t.Fatal(err)
+	}
+	h.click(i18n.T("mail.folder.trash"))
+	h.waitMail("in trash", func() bool { return len(h.items()) >= 1 })
+	if err := h.tt.RightClick("first subject"); err != nil {
+		t.Fatal(err)
+	}
+	trashMenu := h.tt.Menu()
+	for _, act := range []string{replyAct, replyAllAct, forwardAct} {
+		if slices.Contains(trashMenu, act) {
+			t.Fatalf("trash menu %v should not contain %q", trashMenu, act)
+		}
+	}
+}
+
 func TestBatchAcrossAccounts(t *testing.T) {
 	h, accs := mailHarness(t, nil, "alice@example.com", "carol@example.com", "dave@example.com")
 	if err := h.env.IMAP(accs[2].ID).User.Delete("Archive"); err != nil {
