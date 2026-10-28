@@ -177,3 +177,26 @@ func TestPaletteMenuContactAttachment(t *testing.T) {
 	h.click("打开所在邮件")
 	routeTo(h, "Invoice 3")
 }
+
+// The menu names its row and shows each item's key; a key runs its item
+// while the menu shows and types nothing into the box.
+func TestPaletteMenuKeys(t *testing.T) {
+	h, accs := invoices(t)
+	h.typeText("Invoice 2")
+	h.see("邮件 · 1")
+	h.tt.Key(ui.Alt, ui.KeyEnter)
+	h.see("⇧R")
+	before := len(slices.DeleteFunc(h.tt.Texts(), func(s string) bool { return s != "Invoice 2" }))
+	h.tt.Key(0, ui.KeyEscape)
+	h.until("the menu closed", func() bool { return !h.tt.HasText("⇧R") })
+	if after := len(slices.DeleteFunc(h.tt.Texts(), func(s string) bool { return s != "Invoice 2" })); before != after+1 {
+		t.Fatalf("the menu does not name its row: %d then %d", before, after)
+	}
+	h.tt.Key(ui.Alt, ui.KeyEnter)
+	h.see("⇧R")
+	h.tt.TypeKey(0, ui.KeyE, "e")
+	h.until("archived", func() bool { return h.countIn(h.folderOf(accs[0], "archive")) == 1 })
+	if q := h.app.palette.query; q != "Invoice 2" {
+		t.Fatalf("query %q", q)
+	}
+}

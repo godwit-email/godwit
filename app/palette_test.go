@@ -12,11 +12,11 @@ import (
 	"github.com/godwit-email/godwit/internal/theme"
 )
 
-// A contact row shows how much mail they sent.
+// A contact row shows how much mail they sent (unselected: a selected row
+// shows its keys instead).
 func TestPaletteContactCount(t *testing.T) {
 	h, _ := invoices(t)
-	h.click("联系人")
-	h.typeText("bob")
+	h.typeText("bob") // under 全部 a mail is first
 	h.until("Bob's four mails", func() bool { return inPalette(h, "4 封邮件") })
 }
 

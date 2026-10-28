@@ -115,6 +115,9 @@ func (p *palette) view(c *ui.Context) {
 			{Label: i18n.T("palette.hint.wit"), Key: "Tab", OnClick: p.askWit},
 		},
 	}
+	if p.m.open {
+		o.Keys = p.menuShortcut
+	}
 	kit.Palette(c, &p.open, &p.query, o, func() {
 		for i, k := range paletteKinds {
 			kit.PaletteTab(c, kindLabel(k), i == p.kind).OnClick(func() { p.kind = i })
@@ -163,8 +166,8 @@ func (p *palette) view(c *ui.Context) {
 	p.menuFrame(c)
 }
 
-// row is rows[i], one line: its icon, title, the muted line after it, the
-// time and an unread dot.
+// row is rows[i], one line: its icon, title, the muted line after it, an
+// unread dot and the time; selected, the menu's button and ↵ in its place.
 func (p *palette) row(c *ui.Context, i int, it palItem) ui.Element {
 	t, th := theme.Of(c), c.Theme()
 	r := kit.PaletteRow(c, i == p.sel).Label(it.title).Gap(th.Space(2.5)).OnClick(func() { p.choose(i) })
@@ -178,18 +181,22 @@ func (p *palette) row(c *ui.Context, i int, it palItem) ui.Element {
 			marked(c, it.sub, p.hl).FontSize(t.Text.Sm).TextColor(t.Muted).SingleLine().Shrink(1)
 		}
 		ui.Spacer(c)
+		if it.unread {
+			ui.Box(c).Shrink(0).Size(th.Space(2), th.Space(2)).Radius(th.Space(1)).Background(t.Unread).Label(i18n.Tf("mail.row.unread", 1))
+		}
+		if i == p.sel { // what the keys do in place of the time
+			if it.acts != nil {
+				kit.IconButton(c, "ellipsis", i18n.T("palette.more"), kit.ButtonOpts{Variant: kit.Ghost, Size: kit.SizeSm}).OnClick(p.openMenu)
+			}
+			kit.Kbd(c, "↵").Shrink(0)
+			return
+		}
 		meta := it.meta
 		if meta == "" && !it.when.IsZero() {
 			meta = listTime(p.a.clock.Now(), it.when)
 		}
 		if meta != "" {
 			kit.Text(c, meta, t.Text.Xs).TextColor(t.Muted).Shrink(0)
-		}
-		if it.unread {
-			ui.Box(c).Shrink(0).Size(th.Space(2), th.Space(2)).Radius(th.Space(1)).Background(t.Unread).Label(i18n.Tf("mail.row.unread", 1))
-		}
-		if i == p.sel && it.acts != nil {
-			kit.IconButton(c, "ellipsis", i18n.T("palette.more"), kit.ButtonOpts{Variant: kit.Ghost, Size: kit.SizeSm}).OnClick(p.openMenu)
 		}
 		if it.kbd != "" {
 			kit.Kbd(c, it.kbd).Shrink(0)

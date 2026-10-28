@@ -9,10 +9,13 @@ import (
 // PaletteOpts name a Palette and its search box. OnKey sees the keys the
 // box types no text with (the arrows, Enter, Tab, those with Cmd or Ctrl)
 // before it does, as ui's OnTextKey: true takes the key. Chips, when set,
-// builds the PaletteChips before the box. Its panel is a dialog's (Glass).
+// builds the PaletteChips before the box. Keys, when set, holds the box:
+// it types no text, and Keys sees every key pressed first (a menu's
+// letters). Its panel is a dialog's (Glass).
 type PaletteOpts struct {
 	Label, Placeholder, Close string
 	OnKey                     func(k ui.TextKey) bool
+	Keys                      func(mods ui.Modifiers, key ui.Key) bool
 	Hints                     []PaletteHint
 	Chips                     func()
 }
@@ -27,6 +30,11 @@ type PaletteHint struct {
 // paletteSel is the selected PaletteRow built this frame, which the search
 // box names to assistive technology. UI thread only.
 var paletteSel ui.Element
+
+// paletteHeld is the key Keys took, which holds the box until it is up: its
+// text comes after the frame the key's item may have closed Keys in. UI
+// thread only.
+var paletteHeld ui.Key
 
 // Palette is a modal search panel near the top of the window: a search box
 // bound to query with a close button, head (the kind tabs) under it, body
@@ -53,6 +61,18 @@ func Palette(c *ui.Context, open *bool, query *string, o PaletteOpts, head, body
 			in = ui.TextInputBase(c, query).Placeholder(o.Placeholder).Label(o.Label).FocusRing(false).AutoFocus().Grow(1).FontSize(t.Text.Base)
 			if o.OnKey != nil {
 				in.OnTextKey(o.OnKey)
+			}
+			if o.Keys != nil || paletteHeld != 0 {
+				in.ReadOnly(true).HandleInput(func(ev ui.InputEvent) bool {
+					switch {
+					case ev.Kind == ui.InputKeyUp && ev.Key == paletteHeld:
+						paletteHeld = 0
+					case ev.Kind == ui.InputKeyDown && o.Keys != nil && o.Keys(ev.Mods, ev.Key):
+						paletteHeld = ev.Key
+						return true
+					}
+					return false
+				})
 			}
 			IconButton(c, "x", o.Close, ButtonOpts{Variant: Ghost, Size: SizeSm}).OnClick(func() { *open = false })
 		})
