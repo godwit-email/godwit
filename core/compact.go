@@ -19,6 +19,7 @@ import (
 
 	"github.com/egoist/mygo/plugins/sqlite"
 	"github.com/godwit-email/godwit/core/ai"
+	"github.com/godwit-email/godwit/core/ai/mask"
 	"github.com/godwit-email/godwit/core/store"
 )
 
@@ -271,7 +272,7 @@ func (s *Service) condense(ctx context.Context, id int64, model ai.ResolvedModel
 	if err != nil {
 		return "", err
 	}
-	events, wait := e.Run(ctx, ai.Request{Model: model, System: system, Prompt: prompt, MaxTurns: 1})
+	events, wait := e.Run(mask.Tag(ctx, featureCompact, nil), ai.Request{Model: model, System: system, Prompt: prompt, MaxTurns: 1})
 	var text strings.Builder
 	for ev := range events {
 		if ev.Kind == "text" {

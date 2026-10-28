@@ -23,6 +23,8 @@ export type Shown = {
   citations: Citation[];
   runs: number[];
   elapsed: number;
+  masked?: number;
+  warned?: number;
 };
 
 /** A history fixture written as messages and approvals (legacy). */
@@ -68,6 +70,8 @@ export const legacy = (h: Legacy): WitHistory => {
         citations: [],
         runs: [...m.runs],
         elapsed: 0,
+        masked: 0,
+        warned: 0,
         canAskAgain: false,
         asked: 0,
         answered: 0,
@@ -79,6 +83,8 @@ export const legacy = (h: Legacy): WitHistory => {
     t.reasoning = m.reasoning;
     t.citations = m.citations;
     t.elapsed = m.elapsed;
+    t.masked = m.masked ?? 0;
+    t.warned = m.warned ?? 0;
     t.runs = [...new Set([...t.runs, ...m.runs])];
     t.calls = m.calls.map((c) => ({
       call: c,

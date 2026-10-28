@@ -22,11 +22,13 @@ func ParseModelRef(s string) (ModelRef, error) {
 
 // ResolvedModel is a model reference resolved against a stored service, or
 // a plugin's model: Client, when set, is its own HTTP client, and the engine
-// does not check its version.
+// does not check its version. OnDevice: the model runs on this device (Apple
+// Intelligence), so what it is sent is not masked.
 type ResolvedModel struct {
 	ServiceID, Version           int64
 	Kind, BaseURL, Model, APIKey string
 	Client                       *http.Client
+	OnDevice                     bool
 }
 
 // Message is a conversation message for display; it is never used to resume.
@@ -89,6 +91,10 @@ const (
 	// CodeIncomplete: the service ended the reply abnormally (cut off at the
 	// output limit, filtered, failed part-way); nothing of it is kept.
 	CodeIncomplete Code = "incomplete"
+	// CodeBlocked: 脱敏 sent nothing, for the request held values of the
+	// categories Detail lists (mask's names, comma-separated) the user set
+	// to 拦截.
+	CodeBlocked Code = "blocked"
 )
 
 const DetailChatGPTUsage = "chatgpt_usage"
@@ -154,6 +160,10 @@ type Request struct {
 	Effort string
 	// Session, if set, keys the service's prompt cache for a conversation's runs.
 	Session string
+	// Raw: a one-off's reply comes as the model wrote it, its placeholders
+	// (脱敏) and all, for a caller that parses it (JSON) restores the values
+	// in what it parsed: a value with a quote or a line break would break it.
+	Raw bool
 }
 
 // Result is how a run ended. A successful run of a History is saved through

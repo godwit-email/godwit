@@ -25,7 +25,7 @@ func TestJudgeLive(t *testing.T) {
 			if key == "" {
 				t.Skip(tc.env + " not set")
 			}
-			j, err := NewJudge(&http.Client{Timeout: 30 * time.Second}, tc.format, tc.base, key, tc.model)
+			j, err := NewJudge(&http.Client{Timeout: 30 * time.Second}, nil, tc.format, tc.base, key, tc.model)
 			if err != nil {
 				t.Fatal(err)
 			}

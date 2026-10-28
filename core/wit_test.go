@@ -427,7 +427,7 @@ func TestAskHistoryBudget(t *testing.T) {
 	require.Eventually(t, func() bool {
 		sum, _, err := e.s.convSummary(t.Context(), conv.ID)
 		return err == nil && sum.Text == "SUMMARY-OF-Q1-Q2\n\n"+splitTurnNote+"\nSUMMARY-OF-Q3-SO-FAR"
-	}, 5*time.Second, 10*time.Millisecond, "compacted in the background")
+	}, 15*time.Second, 10*time.Millisecond, "compacted in the background") // masked too: slow under -race
 	reqs = e.srv.Requests()
 	turns, part := reqs[len(reqs)-2], reqs[len(reqs)-1]
 	assert.Contains(t, string(turns.System), "You condense the earlier part")

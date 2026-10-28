@@ -10,7 +10,7 @@ Wit 和其他 AI 功能改由 **pi** 运行：`pi-ai` 负责各家模型协议�
 
 ## 边界
 
-- **Go 继续负责**：存储（[0021](0021-conversations-in-sqlite-rows.md)）、审批与至多一次（[0004](0004-permission-gateway-taint.md)、[0006](0006-send-at-most-once.md)）、邮件工具、OAuth、日志脱敏，以及**所有 HTTP**。pi-ai 的每个 provider 都接受注入的 `fetch`，bundle 里的 `fetch` 交给 Go，用 Godwit 的模型客户端发出：不跟随重定向，插件模型照旧走插件客户端（[0020](0020-plugin-models-host-sdk.md)）。
+- **Go 继续负责**：存储（[0021](0021-conversations-in-sqlite-rows.md)）、审批与至多一次（[0004](0004-permission-gateway-taint.md)、[0006](0006-send-at-most-once.md)）、邮件工具、OAuth、日志抹除，以及**所有 HTTP**。pi-ai 的每个 provider 都接受注入的 `fetch`，bundle 里的 `fetch` 交给 Go，用 Godwit 的模型客户端发出：不跟随重定向，插件模型照旧走插件客户端（[0020](0020-plugin-models-host-sdk.md)）。
 - **`ai` 模块对外的类型不变**（迁移期间让一次运行走 pi 的 `ai.Request.Pi` 已随 Genkit 删除）。
 - **宿主只补标准 Web API 的形状**（`fetch`、`Response`、`Headers`、`ReadableStream`、`AbortController`、`URL` 等），不提供 Node 的 API，所以以后换 JS 引擎只需要重写宿主层。
 - **插件和 agent 不共用运行时**：每次运行各用一个 moejs 运行时，脚本插件也各用自己的，插件运行时默认不暴露这些全局对象。

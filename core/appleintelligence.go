@@ -768,7 +768,7 @@ func (d *DefaultAppleIntelligence) Judge(ctx context.Context, input string, qs [
 		}
 		return normalizeJudgeJSON(out), nil
 	}
-	judge := ai.NewGenJudge(gen)
+	judge := ai.NewGenJudge(gen, nil)
 	var out []ai.Answer
 	for _, batch := range judgeBatches(qs) {
 		// Cut the input, not the whole prompt: the batch's questions come after it.

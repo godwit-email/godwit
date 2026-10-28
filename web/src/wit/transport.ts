@@ -27,6 +27,9 @@ export type WitMeta = {
   canAskAgain?: boolean;
   /** An answer's runs' time at work, in milliseconds (core's; none while it streams). */
   elapsed?: number;
+  /** How many values 脱敏 masked in what an answer's runs sent, and sent as they are (仅警告). */
+  masked?: number;
+  warned?: number;
   /** When a question was asked, or an answer last answered, in Unix milliseconds. */
   time?: number;
 };
@@ -218,6 +221,8 @@ export function historyToMessages(
     if (parts.length === 0) continue;
     const meta: WitMeta = {};
     if (t.elapsed > 0) meta.elapsed = t.elapsed;
+    if (t.masked > 0) meta.masked = t.masked;
+    if (t.warned > 0) meta.warned = t.warned;
     if (t.answered > 0) meta.time = t.answered;
     out.push({
       id: answerId(t.id),

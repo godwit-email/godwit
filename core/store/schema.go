@@ -442,6 +442,19 @@ var Migrations = [][]string{{
 	// cache, and of a rewind's dropped runs (spent_input's).
 	`ALTER TABLE runs ADD COLUMN cached_tokens INTEGER NOT NULL DEFAULT 0`,
 	`ALTER TABLE conversations ADD COLUMN spent_cached INTEGER NOT NULL DEFAULT 0`,
+}, {
+	// 脱敏记录 (docs/adr/0025-mask-at-cloud-egress.md): each value a request
+	// to a service off this device held, by its first character and length,
+	// never the value; kept 30 days. A run keeps how many values its
+	// requests masked and sent as they are (仅警告), for its turn.
+	`CREATE TABLE mask_log (
+		id INTEGER PRIMARY KEY AUTOINCREMENT,
+		at INTEGER NOT NULL,
+		feature TEXT NOT NULL, kind TEXT NOT NULL, category TEXT NOT NULL,
+		first TEXT NOT NULL, len INTEGER NOT NULL, action TEXT NOT NULL)`,
+	`CREATE INDEX mask_log_at ON mask_log(at)`,
+	`ALTER TABLE runs ADD COLUMN masked INTEGER NOT NULL DEFAULT 0`,
+	`ALTER TABLE runs ADD COLUMN mask_warned INTEGER NOT NULL DEFAULT 0`,
 }}
 
 // HistoryRowsVersion is the schema version that keeps a conversation's

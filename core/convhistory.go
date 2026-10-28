@@ -44,10 +44,14 @@ func (s *Service) history(ctx context.Context, id int64) (*ai.History, error) {
 	if err != nil {
 		return nil, err
 	}
+	mk, _ := s.masker() // without it, nothing restores either
 	saved := make([]ai.StoredMessage, len(msgs.Values))
 	for i, m := range msgs.Values {
 		data, _ := m[1].([]byte)
 		saved[i] = ai.StoredMessage{Seq: store.Int(m[0]), Data: data}
+		if mk != nil {
+			mk.Learn(string(data)) // its values restore after a restart, when the masker forgot them
+		}
 	}
 	return ai.LoadHistory(saved, store.Int(r[0]))
 }

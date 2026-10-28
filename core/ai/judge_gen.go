@@ -8,6 +8,8 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/godwit-email/godwit/core/ai/mask"
 )
 
 // Generator is one plain text generation: no tools, one turn.
@@ -22,11 +24,12 @@ const genJudgeSystem = `You answer typed questions about the text in the user me
 
 // NewGenJudge answers with the generation model when no judge service is
 // configured. Its yes/no probabilities are 0 or 1 and its scores are integer
-// levels; the answers pass the same validation as the judge APIs'.
-func NewGenJudge(gen Generator) Judge {
+// levels; the answers pass the same validation as the judge APIs'. m, if
+// set, restores the answers: gen's run sends its reply raw (Request.Raw).
+func NewGenJudge(gen Generator, m *mask.Masker) Judge {
 	return judge{func(ctx context.Context, input string, qs []Question) ([]Answer, error) {
-		return genAsk(ctx, gen, input, qs)
-	}, 60 * time.Second}
+		return genAsk(ctx, gen, m, input, qs)
+	}, 60 * time.Second, m}
 }
 
 // GenJudgeQuestions is the questions as NewGenJudge's prompt carries them,
@@ -63,7 +66,7 @@ func GenJudgeQuestions(qs []Question) ([]byte, error) {
 	return json.Marshal(wire)
 }
 
-func genAsk(ctx context.Context, gen Generator, input string, qs []Question) ([]Answer, error) {
+func genAsk(ctx context.Context, gen Generator, m *mask.Masker, input string, qs []Question) ([]Answer, error) {
 	types := map[string]QuestionType{}
 	for _, q := range qs {
 		types[q.Name] = q.Type
@@ -106,8 +109,8 @@ func genAsk(ctx context.Context, gen Generator, input string, qs []Question) ([]
 	}
 	out := make([]Answer, 0, len(resp.Answers))
 	for _, a := range resp.Answers {
-		v := Answer{Name: a.Name}
-		switch t := types[a.Name]; {
+		v := Answer{Name: m.Restore(a.Name)} // a custom word can mask a name: the prompt is all text
+		switch t := types[v.Name]; {
 		case a.Refused:
 			v.Type = Refusal
 		case t == Predicate:

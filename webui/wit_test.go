@@ -419,7 +419,7 @@ func TestComposeWitTurns(t *testing.T) {
 			{ToolCall: ai.ToolCall{ID: "c1", Name: "search_mail", Args: json.RawMessage(`{}`)}, Result: &ai.ToolResult{CallID: "c1", Name: "search_mail", Output: json.RawMessage(`[1]`)}},
 			{ToolCall: ai.ToolCall{ID: "c2", Name: "update_draft", Args: json.RawMessage(`{}`)}, Approval: &pending}},
 		Cited: []core.Cited{{Citation: core.Citation{N: 1, MessageID: 7, Subject: "s7", Suspect: true}, CallIDs: []string{"c1"}}},
-		Runs:  []int64{1}, Elapsed: 6400 * time.Millisecond, CanAskAgain: true,
+		Runs:  []int64{1}, Elapsed: 6400 * time.Millisecond, Masked: 3, Warned: 1, CanAskAgain: true,
 	}, {ID: "5", Command: &ai.Command{Skill: "translate-draft", Lang: "fr"}, Approvals: []core.Approval{{ID: 6, CallID: "skill", Tool: "update_draft"}}, Runs: []int64{2}}}}
 	got := witTurns(c)
 	require.Len(t, got, 2)
@@ -428,6 +428,7 @@ func TestComposeWitTurns(t *testing.T) {
 	assert.Equal(t, []MailHit{{ID: 7, Subject: "s7"}}, q.Quoted)
 	assert.Equal(t, "a\n\nb", q.Text)
 	assert.Equal(t, int64(6400), q.Elapsed)
+	assert.Equal(t, [2]int{3, 1}, [2]int{q.Masked, q.Warned})
 	assert.True(t, q.CanAskAgain)
 	require.Len(t, q.Calls, 2)
 	assert.Equal(t, WitTurnCall{Call: WitCall{ID: "c1", Name: "search_mail", Args: "{}"}, Result: &WitResult{CallID: "c1", Name: "search_mail", Output: "[1]"}}, q.Calls[0])

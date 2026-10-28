@@ -26,7 +26,7 @@ func generate(t *testing.T, ctx context.Context, srv *testllm.Server, req Reques
 		req.API = "openai-completions"
 	}
 	var got []string
-	res, err := Generate(ctx, http.DefaultClient, req, func(kind, text string) { got = append(got, kind+":"+text) })
+	res, err := Generate(ctx, http.DefaultClient, req, Hooks{Emit: func(kind, text string) { got = append(got, kind+":"+text) }})
 	return res, err, got
 }
 
@@ -91,7 +91,7 @@ func TestGenerateReportsACutOffReply(t *testing.T) {
 }
 
 func TestGenerateReportsAnUnreachableService(t *testing.T) {
-	res, err := Generate(t.Context(), http.DefaultClient, Request{API: "openai-completions", BaseURL: "http://127.0.0.1:1", Model: "m", APIKey: "k", Prompt: "hi"}, func(string, string) {})
+	res, err := Generate(t.Context(), http.DefaultClient, Request{API: "openai-completions", BaseURL: "http://127.0.0.1:1", Model: "m", APIKey: "k", Prompt: "hi"}, Hooks{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -105,11 +105,11 @@ func TestGenerateEndsWithItsContext(t *testing.T) {
 	srv.Script(testllm.Turn{Text: []string{"partial"}, Hang: true})
 	ctx, cancel := context.WithCancel(t.Context())
 	start := time.Now()
-	_, err := Generate(ctx, http.DefaultClient, Request{API: "openai-completions", BaseURL: srv.URL, Model: "m", APIKey: "k", Prompt: "hi"}, func(kind, text string) {
+	_, err := Generate(ctx, http.DefaultClient, Request{API: "openai-completions", BaseURL: srv.URL, Model: "m", APIKey: "k", Prompt: "hi"}, Hooks{Emit: func(kind, text string) {
 		if text == "partial" {
 			cancel()
 		}
-	})
+	}})
 	if err != context.Canceled {
 		t.Errorf("err %v", err)
 	}
@@ -427,7 +427,7 @@ func TestGenerateCodex(t *testing.T) {
 	// The account ID's claim, in base64url with no padding, as a real token carries it.
 	tok := "h." + base64.RawURLEncoding.EncodeToString([]byte(`{"https://api.openai.com/auth":{"chatgpt_account_id":"acct~~"}}`)) + ".s"
 	codex := Request{API: "openai-codex-responses", BaseURL: srv.URL + "/backend-api/codex", Model: "m", APIKey: tok, Prompt: "hi", Effort: "low"}
-	res, err := Generate(t.Context(), http.DefaultClient, codex, func(string, string) {})
+	res, err := Generate(t.Context(), http.DefaultClient, codex, Hooks{})
 	if err != nil || res.StopReason != "stop" {
 		t.Fatalf("result %+v, %v", res, err)
 	}
@@ -445,7 +445,7 @@ func TestGenerateCodex(t *testing.T) {
 	}
 
 	srv.Script(testllm.Turn{Status: http.StatusBadRequest, Code: "usage_not_included"})
-	res, err = Generate(t.Context(), http.DefaultClient, codex, func(string, string) {})
+	res, err = Generate(t.Context(), http.DefaultClient, codex, Hooks{})
 	if err != nil || res.StopReason != "error" || res.Code != "usage_not_included" || res.Status != http.StatusBadRequest {
 		t.Errorf("result %+v, %v", res, err)
 	}
