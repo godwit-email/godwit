@@ -200,3 +200,22 @@ func TestPaletteMenuKeys(t *testing.T) {
 		t.Fatalf("query %q", q)
 	}
 }
+
+// A key that ran an item which closed the palette, released elsewhere, does
+// not hold the box of the palette opened next.
+func TestPaletteMenuKeyReleasedElsewhere(t *testing.T) {
+	h, _ := invoices(t)
+	h.typeText("Invoice 2")
+	h.see("邮件 · 1")
+	h.tt.Key(ui.Alt, ui.KeyEnter)
+	h.see("全部回复")
+	h.tt.KeyDown(ui.KeyR) // 回复: the palette closes for the compose window, R still down
+	h.until("the palette closed", func() bool { return !h.app.palette.open })
+	h.tt.Frame()
+	h.tt.Key(ui.Cmd, ui.KeyK)
+	h.until("the palette", func() bool { return paletteShown(h) })
+	h.typeText("bob")
+	if q := h.app.palette.query; q != "bob" {
+		t.Fatalf("query %q: the box is held", q)
+	}
+}

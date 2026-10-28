@@ -49,6 +49,9 @@ var paletteHeld ui.Key
 // button close it.
 func Palette(c *ui.Context, open *bool, query *string, o PaletteOpts, head, body func()) {
 	t, th := theme.Of(c), c.Theme()
+	if !*open {
+		paletteHeld = 0 // its key may come up elsewhere (an item that closed the palette): no box to hold
+	}
 	k := enter(c, open, theme.MotionBase)
 	ui.DialogBase(c, open, func(backdrop, panel ui.Element) {
 		dialogShown = true
