@@ -1,0 +1,27 @@
+name: Prune downloads
+
+# Removes all but the newest versions from the R2 bucket behind dl.godwit.email
+# (scripts/prune-downloads.sh). release.yml calls it once every platform is
+# uploaded; run it by hand to see what it would remove, or to remove it.
+on:
+  workflow_call:
+  workflow_dispatch:
+    inputs:
+      dry-run:
+        description: Only list what would be removed
+        type: boolean
+        default: true
+
+permissions:
+  contents: read
+
+jobs:
+  prune:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
+          DRY_RUN: ${{ inputs.dry-run && '1' || '' }}
+        run: scripts/prune-downloads.sh
