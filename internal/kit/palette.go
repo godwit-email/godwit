@@ -69,7 +69,7 @@ func Palette(c *ui.Context, open *bool, query *string, o PaletteOpts, head, body
 						in.OnTextKey(o.OnKey)
 					}
 					ui.Row(c).Justify(ui.End).Children(func() {
-						IconButton(c, "send", o.Send, ButtonOpts{Size: SizeSm, Disabled: strings.TrimSpace(*query) == ""}).OnClick(o.OnSend)
+						IconButton(c, "arrow-up", o.Send, ButtonOpts{Size: SizeSm, Disabled: strings.TrimSpace(*query) == ""}).OnClick(o.OnSend)
 					})
 				})
 			})
