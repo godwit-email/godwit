@@ -1165,3 +1165,18 @@ func TestWitPageAskModelHolds(t *testing.T) {
 	require.Len(t, reqs, 1)
 	assert.Equal(t, "m1", reqs[0].Model, "the run asked on its own model")
 }
+
+// A first question refused (the model's sign-in, a quote gone) leaves no
+// conversation and switches the page to none: it keeps the question, in
+// the new conversation it shows.
+func TestWitPageRefusedFirstQuestion(t *testing.T) {
+	f := newWitPageFixture(t)
+	_, err := f.p.Ask(f.ctx(), 0, "hi", []int64{999999}, "", "", "", "")
+	require.Error(t, err)
+	cs, err := f.e.Svc.ListConversations(t.Context(), "ask")
+	require.NoError(t, err)
+	assert.Empty(t, cs, "no empty conversation left")
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	assert.Empty(t, f.created, "the page is not switched to it")
+}

@@ -398,12 +398,16 @@ func (p *WitPage) Ask(ctx context.Context, conv int64, input string, quoted []in
 	} else {
 		ch, err = svc.AskWith(context.WithoutCancel(ctx), conv, input, quoted)
 	}
-	unlock()  // claimed, or refused
-	if made { // titled by now, unless Ask failed
-		p.w.created(conv, version)
+	unlock() // claimed, or refused
+	if err != nil {
+		if made { // refused (the model's sign-in, say): the page keeps the question, no empty conversation is left behind
+			_ = svc.DeleteConversation(context.WithoutCancel(ctx), conv)
+			return RunStart{}, keyed(err)
+		}
+		return RunStart{Conversation: conv}, keyed(err) // ErrRunActive: the active run goes on being followed
 	}
-	if err != nil { // ErrRunActive: the active run goes on being followed
-		return RunStart{Conversation: conv}, keyed(err)
+	if made { // titled by now
+		p.w.created(conv, version)
 	}
 	ev, _ := started(ch)
 	id := ev.RunID
