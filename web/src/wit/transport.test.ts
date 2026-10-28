@@ -61,6 +61,7 @@ const turn = (t: Partial<WitTurn> & Pick<WitTurn, "id">): WitTurn => {
     masked: 0,
     warned: 0,
     canAskAgain: false,
+    failed: "",
     asked: 0,
     answered: 0,
     ...t,

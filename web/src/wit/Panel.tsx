@@ -2440,9 +2440,11 @@ export function Panel({
       </MessageScroller>
     </MessageScrollerProvider>
   );
-  const error = chat.error && !running && (
+  // A question core kept unanswered (its run refused or failed): why, and 重试 asks it again.
+  const failed = chat.error ? undefined : chat.messages.at(-1)?.metadata?.failed;
+  const error = (chat.error || failed) && !running && (
     <Alert variant="destructive" className="border-0 bg-destructive/10">
-      <AlertDescription>{witError(chat.error.message, t)}</AlertDescription>
+      <AlertDescription>{witError(chat.error?.message ?? failed ?? "", t)}</AlertDescription>
       <AlertAction>
         <Button variant="ghost" size="sm" onClick={() => void chat.regenerate()}>
           {t("common.retry")}

@@ -559,3 +559,31 @@ test("a handed question is dropped when the open fails: not asked in a later con
   expect(await screen.findByText("four")).toBeInTheDocument();
   expect(api.ask).not.toHaveBeenCalled();
 });
+
+test("a question core kept unanswered shows with why, and 重试 asks it again", async () => {
+  vi.mocked(api.ask).mockResolvedValue({
+    run: 9,
+    conversation: 3,
+    revision: 0,
+    conflict: false,
+    turn: "1",
+  });
+  const h3 = hist(3);
+  h3.turns = [
+    {
+      ...hist(3, "x").turns[0],
+      id: "failed",
+      question: "invoice",
+      steps: [],
+      text: "",
+      runs: [],
+      failed: "settings.models.login.expired",
+    },
+  ];
+  vi.mocked(api.follow).mockResolvedValueOnce(h3);
+  await start(3);
+  expect(await screen.findByText("invoice")).toBeInTheDocument();
+  expect(screen.getByText("登录已失效，请重新登录")).toBeInTheDocument();
+  fireEvent.click(screen.getByRole("button", { name: "重试" }));
+  await waitFor(() => expect(api.ask).toHaveBeenCalledWith(3, "invoice", [], "", "", "", zone));
+});

@@ -455,6 +455,12 @@ var Migrations = [][]string{{
 	`CREATE INDEX mask_log_at ON mask_log(at)`,
 	`ALTER TABLE runs ADD COLUMN masked INTEGER NOT NULL DEFAULT 0`,
 	`ALTER TABLE runs ADD COLUMN mask_warned INTEGER NOT NULL DEFAULT 0`,
+}, {
+	// A question whose run answered nothing (refused, or failed before any
+	// reply): kept as the conversation's last turn with why (core.FailQuestion)
+	// until its next run is claimed.
+	`ALTER TABLE conversations ADD COLUMN failed_question TEXT NOT NULL DEFAULT ''`,
+	`ALTER TABLE conversations ADD COLUMN failed_reason TEXT NOT NULL DEFAULT ''`,
 }}
 
 // HistoryRowsVersion is the schema version that keeps a conversation's

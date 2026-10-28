@@ -73,6 +73,7 @@ export const legacy = (h: Legacy): WitHistory => {
         masked: 0,
         warned: 0,
         canAskAgain: false,
+        failed: "",
         asked: 0,
         answered: 0,
       });

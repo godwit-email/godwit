@@ -1006,11 +1006,15 @@ func TestWitPageModel(t *testing.T) {
 	require.Error(t, err, "a model that does not resolve")
 	cs, err := f.e.Svc.ListConversations(t.Context(), "ask")
 	require.NoError(t, err)
-	assert.Empty(t, cs, "no empty conversation left")
+	require.Len(t, cs, 1, "the question is kept in its conversation")
+	h, err := f.p.Follow(f.ctx(), cs[0].ID)
+	require.NoError(t, err)
+	require.Len(t, h.Turns, 1)
+	assert.Equal(t, "error.model_not_found", h.Turns[0].Failed)
 	rs, err := f.p.Ask(f.ctx(), 0, "hi", nil, "test/m1", "", "", "")
 	require.NoError(t, err)
 	f.waitKind(t, rs.Conversation, "done")
-	h, err := f.p.Follow(f.ctx(), rs.Conversation)
+	h, err = f.p.Follow(f.ctx(), rs.Conversation)
 	require.NoError(t, err)
 	assert.Equal(t, "test/m1", h.Model)
 
@@ -1166,17 +1170,33 @@ func TestWitPageAskModelHolds(t *testing.T) {
 	assert.Equal(t, "m1", reqs[0].Model, "the run asked on its own model")
 }
 
-// A first question refused (the model's sign-in, a quote gone) leaves no
-// conversation and switches the page to none: it keeps the question, in
-// the new conversation it shows.
+// A first question refused (the model's sign-in, a quote gone) is kept: its
+// conversation, titled by it, is the page's, the question its last turn
+// with why; the next question asked there takes its place.
 func TestWitPageRefusedFirstQuestion(t *testing.T) {
 	f := newWitPageFixture(t)
 	_, err := f.p.Ask(f.ctx(), 0, "hi", []int64{999999}, "", "", "", "")
 	require.Error(t, err)
 	cs, err := f.e.Svc.ListConversations(t.Context(), "ask")
 	require.NoError(t, err)
-	assert.Empty(t, cs, "no empty conversation left")
+	require.Len(t, cs, 1)
+	assert.Equal(t, "hi", cs[0].Title)
 	f.mu.Lock()
-	defer f.mu.Unlock()
-	assert.Empty(t, f.created, "the page is not switched to it")
+	created := slices.Clone(f.created)
+	f.mu.Unlock()
+	require.Len(t, created, 1, "the page is switched to it")
+	assert.Equal(t, cs[0].ID, created[0][0])
+	h, err := f.p.Follow(f.ctx(), cs[0].ID)
+	require.NoError(t, err)
+	require.Len(t, h.Turns, 1)
+	assert.Equal(t, "hi", h.Turns[0].Question)
+	assert.Equal(t, "error.unknown", h.Turns[0].Failed)
+
+	rs, err := f.p.Ask(f.ctx(), cs[0].ID, "hi", nil, "", "", "", "")
+	require.NoError(t, err)
+	f.waitKind(t, rs.Conversation, "done")
+	h, err = f.p.Follow(f.ctx(), cs[0].ID)
+	require.NoError(t, err)
+	require.Len(t, h.Turns, 1, "answered, it replaces the failed one")
+	assert.Empty(t, h.Turns[0].Failed)
 }

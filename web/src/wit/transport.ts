@@ -32,6 +32,8 @@ export type WitMeta = {
   warned?: number;
   /** When a question was asked, or an answer last answered, in Unix milliseconds. */
   time?: number;
+  /** Why a question was never answered (an i18n key): core kept it, with no answer after it. */
+  failed?: string;
 };
 /** Citations of the mail a run read; the approvals an interrupt waits on, or decided. */
 export type WitData = { citations: Citation[]; approvals: Approval[] };
@@ -194,6 +196,7 @@ export function historyToMessages(
   const out: WitUIMessage[] = [];
   for (const t of h.turns) {
     const metadata: WitMeta = { turn: t.id, canAskAgain: t.canAskAgain };
+    if (t.failed) metadata.failed = t.failed;
     if (t.asked > 0) metadata.time = t.asked;
     if (t.quoted.length)
       Object.assign(metadata, { quoted: t.quoted.map((h) => h.id), hits: t.quoted });

@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"log"
 	"net/url"
 	"slices"
 	"strings"
@@ -379,12 +380,23 @@ func (p *WitPage) Ask(ctx context.Context, conv int64, input string, quoted []in
 		}
 	}
 	defer unlock()
-	if err := svc.SetConversationModel(ctx, conv, model, effort); err != nil {
-		if made { // nothing was asked in it: no empty conversation is left behind
-			_ = svc.DeleteConversation(context.WithoutCancel(ctx), conv)
+	// refused keeps the question in conv with why (core FailQuestion), a new
+	// conv too, which the page is switched to: nothing typed is lost.
+	refused := func(err error) (RunStart, error) {
+		if key := errorKey(err); key != "" && rewind == "" && !errors.Is(err, core.ErrRunActive) {
+			if ferr := svc.FailQuestion(context.WithoutCancel(ctx), conv, input, key); ferr != nil {
+				log.Printf("wit: keeping a refused question: %v", ferr)
+			}
+		}
+		if made {
+			p.w.created(conv, version)
 			return RunStart{}, keyed(err)
 		}
-		return RunStart{Conversation: conv}, keyed(err)
+		return RunStart{Conversation: conv}, keyed(err) // ErrRunActive: the active run goes on being followed
+	}
+	if err := svc.SetConversationModel(ctx, conv, model, effort); err != nil {
+		unlock()
+		return refused(err)
 	}
 	if startHook != nil {
 		startHook()
@@ -400,11 +412,7 @@ func (p *WitPage) Ask(ctx context.Context, conv int64, input string, quoted []in
 	}
 	unlock() // claimed, or refused
 	if err != nil {
-		if made { // refused (the model's sign-in, say): the page keeps the question, no empty conversation is left behind
-			_ = svc.DeleteConversation(context.WithoutCancel(ctx), conv)
-			return RunStart{}, keyed(err)
-		}
-		return RunStart{Conversation: conv}, keyed(err) // ErrRunActive: the active run goes on being followed
+		return refused(err)
 	}
 	if made { // titled by now
 		p.w.created(conv, version)
