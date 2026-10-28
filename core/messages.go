@@ -250,6 +250,7 @@ func searchFilter(q SearchQuery) (string, []any) {
 		args = append(args, likeArg(from))
 	}
 	if addr := strings.ToLower(strings.TrimSpace(q.FromAddr)); addr != "" {
+		addr = gomail.FormatAddress("", addr) // as the header stores it: "a b"@x, quoted
 		// a bare address, or one in a display name's angle brackets
 		cond += ` AND (lower(m.from_addr) = ? OR lower(m.from_addr) LIKE ? ESCAPE '\')`
 		args = append(args, addr, "%<"+strings.NewReplacer(`\`, `\\`, "%", `\%`, "_", `\_`).Replace(addr)+">")

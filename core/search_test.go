@@ -41,6 +41,10 @@ func TestSearchWithFilters(t *testing.T) {
 	require.Equal(t, []int64{other, notbob, old}, ids(SearchQuery{From: "bob@x"}), "From is a substring")
 	require.Equal(t, []int64{other, old}, ids(SearchQuery{FromAddr: "BOB@x"}), "FromAddr is the address exactly, any case")
 	require.Equal(t, []int64{notbob}, ids(SearchQuery{FromAddr: "notbob@x"}), "a bare address too")
+	quoted := addMessage(t, s, "budget", `Bob <"a b"@x>`, "", "", day.AddDate(0, 0, 3).Unix())
+	require.Equal(t, []int64{quoted}, ids(SearchQuery{FromAddr: "a b@x"}), "a quoted local part, as a contact keys it (AddrKey)")
+	_, err = s.db.Execute(t.Context(), "DELETE FROM messages WHERE id = ?", quoted)
+	require.NoError(t, err)
 	_, err = s.db.Execute(t.Context(), "DELETE FROM messages WHERE id = ?", notbob) // the checks below count without it
 	require.NoError(t, err)
 	require.Equal(t, []int64{recent, other}, ids(SearchQuery{Since: day.AddDate(0, 0, 1)}))
