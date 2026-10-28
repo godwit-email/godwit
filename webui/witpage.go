@@ -384,7 +384,7 @@ func (p *WitPage) Ask(ctx context.Context, conv int64, input string, quoted []in
 	// conv too, which the page is switched to: nothing typed is lost.
 	refused := func(err error) (RunStart, error) {
 		if key := errorKey(err); key != "" && rewind == "" && !errors.Is(err, core.ErrRunActive) {
-			if ferr := svc.FailQuestion(context.WithoutCancel(ctx), conv, input, key); ferr != nil {
+			if ferr := svc.FailQuestion(context.WithoutCancel(ctx), conv, input, quoted, key); ferr != nil {
 				log.Printf("wit: keeping a refused question: %v", ferr)
 			}
 		}

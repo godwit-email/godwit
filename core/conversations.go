@@ -142,22 +142,46 @@ func (s *Service) conversation(ctx context.Context, id int64) (Conversation, err
 }
 
 // FailQuestion keeps question, which a run of conv never answered (refused,
-// or failed before any reply), as conv's last turn with reason, what the
-// user is shown (opaque here); an untitled conv takes its title from it. The
-// next run claimed in conv drops it.
-func (s *Service) FailQuestion(ctx context.Context, conv int64, question, reason string) error {
+// or failed before any reply), with the mail it quoted (message IDs) as
+// conv's last turn with reason, what the user is shown (opaque here); an
+// untitled conv takes its title from it. The next run claimed in conv drops it.
+func (s *Service) FailQuestion(ctx context.Context, conv int64, question string, quoted []int64, reason string) error {
 	ctx, end, err := s.begin(ctx, 0)
 	if err != nil {
 		return err
 	}
 	defer end()
-	return s.exec(ctx, failQuestion(conv, question, reason))
+	return s.exec(ctx, failQuestion(conv, question, quoted, reason))
 }
 
-func failQuestion(conv int64, question, reason string) sqlite.Statement {
-	return sqlite.Statement{SQL: `UPDATE conversations SET failed_question = ?, failed_reason = ?,
+func failQuestion(conv int64, question string, quoted []int64, reason string) sqlite.Statement {
+	ids, _ := json.Marshal(append([]int64{}, quoted...)) // [] for none
+	return sqlite.Statement{SQL: `UPDATE conversations SET failed_question = ?, failed_quoted = ?, failed_reason = ?,
 		title = CASE title WHEN '' THEN ? ELSE title END, updated_at = ? WHERE id = ?`,
-		Args: []any{question, reason, titleOf(question), time.Now().Unix(), conv}}
+		Args: []any{question, string(ids), reason, titleOf(question), time.Now().Unix(), conv}}
+}
+
+// failedQuoted is the mail a failed question quoted, as its turn shows it:
+// a message deleted since is Gone.
+func (s *Service) failedQuoted(ctx context.Context, raw string) ([]Citation, error) {
+	var ids []int64
+	if err := json.Unmarshal([]byte(raw), &ids); err != nil {
+		return nil, err
+	}
+	out := make([]Citation, 0, len(ids))
+	for _, id := range ids {
+		rows, err := s.db.Query(ctx, "SELECT COALESCE(subject, ''), COALESCE(from_addr, ''), COALESCE(date, 0) FROM messages WHERE id = ?", id)
+		if err != nil {
+			return nil, err
+		}
+		c := Citation{MessageID: id, Source: citeQuote, Gone: len(rows.Values) == 0}
+		if !c.Gone {
+			r := rows.Values[0]
+			c.Subject, c.From, c.Date = store.Str(r[0]), store.Str(r[1]), time.Unix(store.Int(r[2]), 0)
+		}
+		out = append(out, c)
+	}
+	return out, nil
 }
 
 // ListConversations returns the conversations of kind, most recent first.
@@ -288,12 +312,16 @@ func (s *Service) GetConversation(ctx context.Context, id int64) (Conversation, 
 	}
 	c.Turns = turnsOf(h, runs, as, cs, c.Kind == "ask" && c.ActiveRunID == 0, expand)
 	if c.ActiveRunID == 0 {
-		rows, err := s.db.Query(ctx, "SELECT failed_question, failed_reason FROM conversations WHERE id = ? AND failed_question != ''", id)
+		rows, err := s.db.Query(ctx, "SELECT failed_question, failed_reason, failed_quoted FROM conversations WHERE id = ? AND failed_question != ''", id)
 		if err != nil {
 			return Conversation{}, err
 		}
 		if len(rows.Values) > 0 {
-			c.Turns = append(c.Turns, Turn{ID: "failed", Question: store.Str(rows.Values[0][0]), Failed: store.Str(rows.Values[0][1])})
+			quoted, err := s.failedQuoted(ctx, store.Str(rows.Values[0][2]))
+			if err != nil {
+				return Conversation{}, err
+			}
+			c.Turns = append(c.Turns, Turn{ID: "failed", Question: store.Str(rows.Values[0][0]), Quoted: quoted, Failed: store.Str(rows.Values[0][1])})
 		}
 	}
 	rows, err := s.db.Query(ctx, `SELECT COALESCE(SUM(input_tokens), 0) + (SELECT spent_input FROM conversations WHERE id = ?),
@@ -1128,7 +1156,7 @@ func (s *Service) claimRun(ctx context.Context, conv Conversation, ref string, t
 		return nil, nil, ErrRunActive
 	}
 	// A question never answered (FailQuestion) gives way to the one this run asks.
-	err = s.exec(ctx, sqlite.Statement{SQL: "UPDATE conversations SET failed_question = '', failed_reason = '' WHERE id = ?", Args: []any{conv.ID}})
+	err = s.exec(ctx, sqlite.Statement{SQL: "UPDATE conversations SET failed_question = '', failed_reason = '', failed_quoted = '[]' WHERE id = ?", Args: []any{conv.ID}})
 	// Read the history only now: a previous run may have ended after the caller's read.
 	var h *ai.History
 	if err == nil {
@@ -1424,7 +1452,11 @@ func (s *Service) settleRun(ctx context.Context, job *runJob, req ai.Request, re
 			err = s.exec(ctx, runState(job.id, state))
 			// nothing of it was saved: the question stays, with why, unless the user stopped it
 			if err == nil && state == "failed" && job.conv.Kind == "ask" && job.rewind == nil && job.host == nil && job.question != "" {
-				err = s.exec(ctx, failQuestion(job.conv.ID, job.question, "ai:"+string(res.Err.Code)))
+				ids := make([]int64, 0, len(job.quoted))
+				for _, q := range job.quoted {
+					ids = append(ids, q.MessageID)
+				}
+				err = s.exec(ctx, failQuestion(job.conv.ID, job.question, ids, "ai:"+string(res.Err.Code)))
 			}
 		}
 		// a failed or cut-off call may still have taken tokens

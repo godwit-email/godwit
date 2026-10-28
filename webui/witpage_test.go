@@ -1175,7 +1175,8 @@ func TestWitPageAskModelHolds(t *testing.T) {
 // with why; the next question asked there takes its place.
 func TestWitPageRefusedFirstQuestion(t *testing.T) {
 	f := newWitPageFixture(t)
-	_, err := f.p.Ask(f.ctx(), 0, "hi", []int64{999999}, "", "", "", "")
+	m := f.deliverOne(t, coretest.Msg("lena@partner.example", f.acc.Email, "Q4 partnership", "November works"))
+	_, err := f.p.Ask(f.ctx(), 0, "hi", []int64{m.ID, 999999}, "", "", "", "")
 	require.Error(t, err)
 	cs, err := f.e.Svc.ListConversations(t.Context(), "ask")
 	require.NoError(t, err)
@@ -1191,6 +1192,9 @@ func TestWitPageRefusedFirstQuestion(t *testing.T) {
 	require.Len(t, h.Turns, 1)
 	assert.Equal(t, "hi", h.Turns[0].Question)
 	assert.Equal(t, "error.unknown", h.Turns[0].Failed)
+	require.Len(t, h.Turns[0].Quoted, 2, "a retry quotes the same mail")
+	assert.Equal(t, MailHit{ID: m.ID, Subject: m.Subject, From: m.From, Date: m.Date.UnixMilli()}, h.Turns[0].Quoted[0])
+	assert.Equal(t, int64(999999), h.Turns[0].Quoted[1].ID)
 
 	rs, err := f.p.Ask(f.ctx(), cs[0].ID, "hi", nil, "", "", "", "")
 	require.NoError(t, err)

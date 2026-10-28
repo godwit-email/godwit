@@ -461,6 +461,9 @@ var Migrations = [][]string{{
 	// until its next run is claimed.
 	`ALTER TABLE conversations ADD COLUMN failed_question TEXT NOT NULL DEFAULT ''`,
 	`ALTER TABLE conversations ADD COLUMN failed_reason TEXT NOT NULL DEFAULT ''`,
+}, {
+	// The mail that question quoted (message IDs, JSON): a retry quotes it again.
+	`ALTER TABLE conversations ADD COLUMN failed_quoted TEXT NOT NULL DEFAULT '[]'`,
 }}
 
 // HistoryRowsVersion is the schema version that keeps a conversation's
