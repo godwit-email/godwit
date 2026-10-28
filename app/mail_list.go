@@ -27,9 +27,10 @@ import (
 )
 
 const (
-	pageSize    = 50
-	maxPage     = 200 // the Service's largest page
-	searchLimit = 100 // the most results a search reads: a full answer may have more
+	pageSize = 50
+	maxPage  = 200 // the Service's largest page
+	// shortcut: core caps a search at 200 and the list has no paging past it ("200+"); page with a cursor if that bites.
+	searchLimit = 200 // the most results a search reads, as many as the palette shows
 )
 
 // mailItem is a row of the list: a thread, or a message (flat view, search).
@@ -419,7 +420,7 @@ func (p *mailPage) purgeDialog(c *ui.Context) {
 		return
 	}
 	kit.Dialog(c, &p.purgeAsk, i18n.T("mail.purge.title"),
-		kit.DialogOpts{Size: kit.DialogSm, Desc: i18n.T("mail.purge.desc"), Close: i18n.T("common.close")}, nil, func() {
+		kit.DialogOpts{Size: kit.DialogSm, Alert: true, Desc: i18n.T("mail.purge.desc"), Close: i18n.T("common.close")}, nil, func() {
 			kit.Button(c, i18n.T("common.cancel"), kit.ButtonOpts{Variant: kit.Outline}).OnClick(func() { p.purgeAsk = false })
 			kit.Button(c, i18n.T("common.delete"), kit.ButtonOpts{Variant: kit.Destructive}).OnClick(func() {
 				p.purgeAsk = false
@@ -610,7 +611,7 @@ func (p *mailPage) listHeader(c *ui.Context, head string) {
 		return
 	}
 	if c.Shortcut(ui.Cmd, ui.KeyF) {
-		p.searchOpen = true
+		p.a.openPalette()
 	}
 	ui.Row(c).AlignItems(ui.Center).Padding(th.Space(3), th.Space(4), th.Space(2), th.Space(4)).Gap(th.Space(2)).Children(func() {
 		kit.Text(c, head, t.Text.Base).FontWeight(500).TextColor(t.Muted)
@@ -618,7 +619,7 @@ func (p *mailPage) listHeader(c *ui.Context, head string) {
 		kit.Tabs(c, &p.filter, i18n.T("mail.filter.all"), i18n.T("mail.filter.unread"))
 		if p.a.sidebarHidden { // else the sidebar's header has it
 			kit.IconButton(c, "search", i18n.T("mail.search"), kit.ButtonOpts{Variant: kit.Ghost, Size: kit.SizeSm}).
-				OnClick(func() { p.searchOpen = true })
+				OnClick(p.a.openPalette)
 		}
 	})
 }
@@ -1231,6 +1232,12 @@ func (p *mailPage) closeSearch() {
 // only the messages in the view; an account without an archive (junk)
 // folder is skipped and named.
 func (p *mailPage) batch(act string, rows []mailItem) {
+	p.batchScoped(act, rows, p.searched) // a search's results are in view wherever they are
+}
+
+// batchScoped is batch whatever the list shows: with anywhere every message
+// counts as in view, as the palette's hits, which are in no view, need.
+func (p *mailPage) batchScoped(act string, rows []mailItem, anywhere bool) {
 	if len(rows) == 0 {
 		return
 	}
@@ -1253,7 +1260,7 @@ func (p *mailPage) batch(act string, rows []mailItem) {
 	for _, acc := range a.accounts {
 		names[acc.ID] = acc.Email
 	}
-	v, search := p.view, p.searched
+	v, search := p.view, anywhere
 	var labeled map[int64][]core.AppliedLabel // a label view's messages' labels
 	inView := func(m core.MessageSummary) bool {
 		switch {

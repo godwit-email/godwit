@@ -37,6 +37,7 @@ type witPageFixture struct {
 	created  [][2]int64
 	messages []int64
 	models   int
+	searches int
 	asks     []string
 	navs     []int
 	urls     []string
@@ -72,6 +73,7 @@ func newWitPageFixture(t *testing.T, setup ...func(*coretest.Env)) *witPageFixtu
 		OpenMessage:         func(id int64) { f.record(func() { f.messages = append(f.messages, id) }) },
 		OpenModels:          func() { f.record(func() { f.models++ }) },
 		Navigate:            func(dir int) { f.record(func() { f.navs = append(f.navs, dir) }) },
+		Search:              func() { f.record(func() { f.searches++ }) },
 		NewConversation:     func() { f.record(func() { f.navs = append(f.navs, 0) }) },
 		OnLink:              func(u string) { f.record(func() { f.urls = append(f.urls, u) }) },
 		OpenCompose:         func(id int64) { f.record(func() { f.composed = append(f.composed, id) }) },
@@ -216,6 +218,7 @@ func TestWitPageRoleRefused(t *testing.T) {
 		assert.ErrorIs(t, f.p.OpenLink(ctx, "https://example.com"), ErrWrongPage, name)
 		assert.ErrorIs(t, f.p.OpenModels(ctx), ErrWrongPage, name)
 		assert.ErrorIs(t, f.p.Navigate(ctx, -1), ErrWrongPage, name)
+		assert.ErrorIs(t, f.p.Search(ctx), ErrWrongPage, name)
 	}
 	// Another role's page.
 	pages := NewPages(func(ctx context.Context) any { return ctx.Value(pageKey{}) })
@@ -236,6 +239,7 @@ func TestWitPageRoleRefused(t *testing.T) {
 	assert.Empty(t, f.urls)
 	assert.Zero(t, f.models)
 	assert.Empty(t, f.navs)
+	assert.Zero(t, f.searches)
 	assert.Empty(t, f.events())
 }
 
@@ -247,6 +251,8 @@ func TestWitPageCallbacks(t *testing.T) {
 	assert.Error(t, f.p.Navigate(f.ctx(), 2))
 	assert.Equal(t, 1, f.models)
 	assert.Equal(t, []int{-1, 1}, f.navs)
+	require.NoError(t, f.p.Search(f.ctx()))
+	assert.Equal(t, 1, f.searches)
 
 	// links go to native, which handles them as mail's: http(s) after its dialog, mailto as a draft
 	require.NoError(t, f.p.OpenLink(f.ctx(), "https://example.com/a"))
@@ -901,12 +907,20 @@ func TestWitPageCreatedOnlyOnAdoption(t *testing.T) {
 	assert.False(t, f.opens[n-1].Created, "navigation to A is no creation")
 }
 
-// The hand-off sends the page the question once; an empty one is nothing.
+// The hand-off sends the page the question once, which it takes once; an
+// empty one is nothing.
 func TestWitHandoffEmitsOnce(t *testing.T) {
 	f := newWitPageFixture(t)
 	f.w.Handoff("invoice")
 	f.w.Handoff("  ")
 	assert.Equal(t, []string{"invoice"}, f.asks)
+	// the page takes it once, by the event or, loading, after Load
+	q, err := f.p.TakeAsk(f.ctx())
+	require.NoError(t, err)
+	assert.Equal(t, "invoice", q)
+	q, err = f.p.TakeAsk(f.ctx())
+	require.NoError(t, err)
+	assert.Empty(t, q)
 }
 
 // 本次对话都允许: DecideSession approves the draft and the conversation's
@@ -992,11 +1006,15 @@ func TestWitPageModel(t *testing.T) {
 	require.Error(t, err, "a model that does not resolve")
 	cs, err := f.e.Svc.ListConversations(t.Context(), "ask")
 	require.NoError(t, err)
-	assert.Empty(t, cs, "no empty conversation left")
+	require.Len(t, cs, 1, "the question is kept in its conversation")
+	h, err := f.p.Follow(f.ctx(), cs[0].ID)
+	require.NoError(t, err)
+	require.Len(t, h.Turns, 1)
+	assert.Equal(t, "error.model_not_found", h.Turns[0].Failed)
 	rs, err := f.p.Ask(f.ctx(), 0, "hi", nil, "test/m1", "", "", "")
 	require.NoError(t, err)
 	f.waitKind(t, rs.Conversation, "done")
-	h, err := f.p.Follow(f.ctx(), rs.Conversation)
+	h, err = f.p.Follow(f.ctx(), rs.Conversation)
 	require.NoError(t, err)
 	assert.Equal(t, "test/m1", h.Model)
 
@@ -1150,4 +1168,39 @@ func TestWitPageAskModelHolds(t *testing.T) {
 	reqs := f.llm.RequestLog()
 	require.Len(t, reqs, 1)
 	assert.Equal(t, "m1", reqs[0].Model, "the run asked on its own model")
+}
+
+// A first question refused (the model's sign-in, a quote gone) is kept: its
+// conversation, titled by it, is the page's, the question its last turn
+// with why; the next question asked there takes its place.
+func TestWitPageRefusedFirstQuestion(t *testing.T) {
+	f := newWitPageFixture(t)
+	m := f.deliverOne(t, coretest.Msg("lena@partner.example", f.acc.Email, "Q4 partnership", "November works"))
+	_, err := f.p.Ask(f.ctx(), 0, "hi", []int64{m.ID, 999999}, "", "", "", "")
+	require.Error(t, err)
+	cs, err := f.e.Svc.ListConversations(t.Context(), "ask")
+	require.NoError(t, err)
+	require.Len(t, cs, 1)
+	assert.Equal(t, "hi", cs[0].Title)
+	f.mu.Lock()
+	created := slices.Clone(f.created)
+	f.mu.Unlock()
+	require.Len(t, created, 1, "the page is switched to it")
+	assert.Equal(t, cs[0].ID, created[0][0])
+	h, err := f.p.Follow(f.ctx(), cs[0].ID)
+	require.NoError(t, err)
+	require.Len(t, h.Turns, 1)
+	assert.Equal(t, "hi", h.Turns[0].Question)
+	assert.Equal(t, "error.unknown", h.Turns[0].Failed)
+	require.Len(t, h.Turns[0].Quoted, 2, "a retry quotes the same mail")
+	assert.Equal(t, MailHit{ID: m.ID, Subject: m.Subject, From: m.From, Date: m.Date.UnixMilli()}, h.Turns[0].Quoted[0])
+	assert.Equal(t, int64(999999), h.Turns[0].Quoted[1].ID)
+
+	rs, err := f.p.Ask(f.ctx(), cs[0].ID, "hi", nil, "", "", "", "")
+	require.NoError(t, err)
+	f.waitKind(t, rs.Conversation, "done")
+	h, err = f.p.Follow(f.ctx(), cs[0].ID)
+	require.NoError(t, err)
+	require.Len(t, h.Turns, 1, "answered, it replaces the failed one")
+	assert.Empty(t, h.Turns[0].Failed)
 }

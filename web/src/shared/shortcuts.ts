@@ -1,5 +1,5 @@
 /**
- * Forwards ⌘[ / ⌘] to navigate(-1 / 1) (and ⌘F to search, ⌘S to save, ⌘P to print, when given): native shortcuts miss keys while an embedded page has the
+ * Forwards ⌘[ / ⌘] to navigate(-1 / 1) (and ⌘F or ⌘K to search, ⌘S to save, ⌘P to print, when given): native shortcuts miss keys while an embedded page has the
  * keyboard. Not while an IME composes. Listens on win (default this window; the reader also
  * passes its body's iframe window). Returns the remover.
  */
@@ -12,7 +12,7 @@ export function forwardShortcuts(
 ): () => void {
   const on = (e: KeyboardEvent) => {
     if (!e.metaKey || e.ctrlKey || e.altKey || e.shiftKey || e.isComposing) return;
-    if (search && e.key.toLowerCase() === "f") {
+    if (search && (e.key.toLowerCase() === "f" || e.key.toLowerCase() === "k")) {
       e.preventDefault();
       search().catch(() => {});
       return;

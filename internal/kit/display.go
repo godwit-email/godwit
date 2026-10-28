@@ -2,6 +2,7 @@ package kit
 
 import (
 	"hash/fnv"
+	"strings"
 	"unicode"
 	"unicode/utf8"
 
@@ -105,12 +106,34 @@ func Spinner(c *ui.Context) ui.Element {
 	return ui.Spinner(c).TextColor(theme.Of(c).Muted)
 }
 
-// Kbd shows a key or shortcut.
+// Kbd shows a key or shortcut, a keycap each key: ⇧⌘K is three, Esc one.
 func Kbd(c *ui.Context, text string) ui.Element {
 	t, th := theme.Of(c), c.Theme()
-	return ui.Box(c).Height(th.Space(5)).PaddingX(th.Space(1.25)).Radius(t.Radius.Sm).Border(theme.Hairline, t.Border).Background(t.Sidebar).Center().Children(func() {
-		ui.Text(c, text).Font(theme.Mono).FontSize(t.Text.Xs).LineHeight(theme.LineTight).TextColor(t.Muted)
+	return ui.Row(c).Gap(th.Space(1)).AlignItems(ui.Center).Children(func() {
+		for _, k := range kbdKeys(text) {
+			ui.Box(c).Height(th.Space(5)).MinWidth(th.Space(5)).PaddingX(th.Space(1.25)).Radius(t.Radius.Sm).Border(theme.Hairline, t.Border).Background(t.Sidebar).Center().Children(func() {
+				ui.Text(c, k).Font(theme.Mono).FontSize(t.Text.Xs).LineHeight(theme.LineTight).TextColor(t.Muted)
+			})
+		}
 	})
+}
+
+// kbdKeys splits a shortcut into its keys: each modifier and arrow is one,
+// the rest of the text the last.
+func kbdKeys(text string) []string {
+	var keys []string
+	rest := text
+	for len(rest) > 0 {
+		r, n := utf8.DecodeRuneInString(rest)
+		if !strings.ContainsRune("⌘⇧⌥⌃←→↑↓", r) {
+			break
+		}
+		keys, rest = append(keys, string(r)), rest[n:]
+	}
+	if rest != "" {
+		keys = append(keys, rest)
+	}
+	return keys
 }
 
 // initial is name's first rune upper-cased, "?" when name is empty.

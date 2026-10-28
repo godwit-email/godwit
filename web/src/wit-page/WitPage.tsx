@@ -115,10 +115,17 @@ export function WitPage() {
       if (creating && m.created) void creating.then(apply);
       else apply();
     };
+    // A question native handed over: taken once, as its event comes or, the event missed while
+    // the page loaded, once it has.
+    const take = () =>
+      api.takeAsk().then(
+        (text) => live && text && setHanded({ text }),
+        (e) => live && toast.error(message(e)),
+      );
     let pushed = false; // a witState came: newer than Load's state fields
     const offs = [
       events.witOpen.on(onOpen),
-      events.witAsk.on((text) => setHanded({ text })),
+      events.witAsk.on(take),
       events.witState.on((s) => {
         pushed = true;
         setSt(s);
@@ -130,6 +137,7 @@ export function WitPage() {
         if (!live) return;
         if (!pushed) setSt(s);
         onOpen(s);
+        void take();
       },
       (e) => live && toast.error(message(e)),
     );
@@ -140,7 +148,15 @@ export function WitPage() {
     };
   }, []);
 
-  useEffect(() => forwardShortcuts((dir) => api.navigate(dir)), []);
+  useEffect(
+    () =>
+      forwardShortcuts(
+        (dir) => api.navigate(dir),
+        window,
+        () => api.search(),
+      ),
+    [],
+  );
 
   const theme = st?.theme as Theme | undefined;
   useEffect(() => {

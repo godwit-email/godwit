@@ -5,6 +5,7 @@ import (
 	"image/color"
 	"os"
 	"slices"
+	"strings"
 	"testing"
 	"time"
 
@@ -550,6 +551,162 @@ func TestKitDialogCloseButton(t *testing.T) {
 	}
 	if open || tt.HasText("inside") {
 		t.Errorf("after Close open=%v, texts %q", open, tt.Texts())
+	}
+}
+
+// TestDialogScrims: as macOS, a dialog dims the window with black at 20% in
+// either appearance; an alert washes it with gray at 60%, light or dark.
+func TestDialogScrims(t *testing.T) {
+	for _, c := range []struct {
+		alert, dark bool
+		want        uint8 // over the near-black (#0a) column
+	}{
+		{false, false, 0x0a * 8 / 10}, {false, true, 0x0a * 8 / 10},
+		{true, false, 107}, {true, true, 18}, // 60% of #ab or #17 over #0a
+	} {
+		open := true
+		tt := ui.NewTester(themed(func(ctx *ui.Context) {
+			ui.Row(ctx).Fill().Children(func() {
+				ui.Box(ctx).Width(200).FillHeight().Background(theme.Light().Foreground) // #0a0a0a
+				ui.Box(ctx).Grow(1).FillHeight().Background(theme.Light().Background)    // #fff
+			})
+			Dialog(ctx, &open, "T", DialogOpts{Size: DialogSm, Close: "Close", Alert: c.alert}, nil, nil)
+		}), 800, 600)
+		tt.SetDark(c.dark)
+		tt.Advance(2 * theme.MotionBase)
+		img := tt.Image()
+		if p := img.RGBAAt(100, 580); diff(p.R, c.want) > 2 {
+			t.Errorf("alert %v dark %v: backdrop over black %v, want %d", c.alert, c.dark, p, c.want)
+		}
+		if p, want := img.RGBAAt(700, 580), uint8(204); !c.alert && diff(p.R, want) > 2 {
+			t.Errorf("dark %v: dialog backdrop over white %v, want %d", c.dark, p, want)
+		}
+	}
+}
+
+// A frosted panel's tint keeps to its rounded corners: just inside the
+// corner of its box the backdrop shows, not the panel's fill.
+func TestDialogGlassCorners(t *testing.T) {
+	Glass = true
+	t.Cleanup(func() { Glass = false })
+	open := true
+	tt := ui.NewTester(themed(func(c *ui.Context) {
+		ui.Box(c).Fill().Background(theme.Light().Background)
+		Dialog(c, &open, "Corner", DialogOpts{Size: DialogSm, Close: "Close"}, nil, nil)
+	}), 800, 600)
+	tt.Advance(2 * theme.MotionBase)
+	r, ok := tt.Find("Corner")
+	if !ok {
+		t.Fatalf("texts %q", tt.Texts())
+	}
+	// The title sits 16 in from the panel's top left; 2 in from that corner is outside its radius.
+	if p := tt.Image().RGBAAt(int(r.X)-16+2, int(r.Y)-16+2); diff(p.R, 204) > 3 {
+		t.Errorf("panel corner pixel %v, want the backdrop's 204", p)
+	}
+}
+
+// An alert asks one question: Cancel, Escape or the backdrop close it, no ×.
+func TestDialogAlertHasNoClose(t *testing.T) {
+	open := true
+	tt := ui.NewTester(themed(func(c *ui.Context) {
+		Dialog(c, &open, "Delete?", DialogOpts{Size: DialogSm, Close: "Close", Alert: true}, nil, func() { Button(c, "Cancel", ButtonOpts{}) })
+	}), 800, 600)
+	if !tt.HasText("Delete?") {
+		t.Fatalf("open alert shows %q", tt.Texts())
+	}
+	if err := tt.Click("Close"); err == nil {
+		t.Error("an alert has a close button")
+	}
+}
+
+// A dialog sits a little above the middle: its centre at 40% of the window.
+func TestDialogAboveCentre(t *testing.T) {
+	open := true
+	tt := ui.NewTester(themed(func(c *ui.Context) {
+		Dialog(c, &open, "Top", DialogOpts{Size: DialogSm, Close: "Close"}, func() { ui.Box(c).Height(200) }, func() { Button(c, "Bottom", ButtonOpts{}) })
+	}), 800, 1000)
+	tt.Advance(2 * theme.MotionBase)
+	top, ok1 := tt.Find("Top")
+	bottom, ok2 := tt.Find("Bottom")
+	if !ok1 || !ok2 {
+		t.Fatalf("texts %q", tt.Texts())
+	}
+	if mid := (top.Y + bottom.Y + bottom.H) / 2; mid < 380 || mid > 420 {
+		t.Errorf("panel centre near %v, want about 400 of 1000", mid)
+	}
+}
+
+// A dialog opens where it stays: its first frame already sits above centre,
+// not centred and then moved (the window's height is known before it opens).
+func TestDialogOpensInPlace(t *testing.T) {
+	open := false
+	tt := ui.NewTester(themed(func(c *ui.Context) {
+		ui.Box(c).Fill()
+		Dialog(c, &open, "Steady", DialogOpts{Size: DialogSm, Close: "Close", Alert: true}, nil, nil)
+	}), 800, 1000)
+	tt.SetPreferences(ui.Preferences{ReduceMotion: true}) // no fade or rise: only the placement moves it
+	tt.Frame()
+	open = true
+	tt.Frame()
+	first, ok := tt.Find("Steady")
+	if !ok {
+		t.Fatalf("texts %q", tt.Texts())
+	}
+	tt.Frame()
+	tt.Frame()
+	if then, _ := tt.Find("Steady"); then.Y != first.Y {
+		t.Errorf("the dialog opened at y %v and moved to %v", first.Y, then.Y)
+	}
+}
+
+// A Top dialog keeps its top 64 below the window's, whatever its height: a
+// form whose steps change it grows down instead of moving.
+func TestDialogTop(t *testing.T) {
+	for _, h := range []float32{100, 400} {
+		open := true
+		tt := ui.NewTester(themed(func(c *ui.Context) {
+			Dialog(c, &open, "Pinned", DialogOpts{Close: "Close", Top: true}, func() { ui.Box(c).Height(h) }, nil)
+		}), 800, 1000)
+		tt.SetPreferences(ui.Preferences{ReduceMotion: true})
+		tt.Frame()
+		tt.Frame()
+		r, ok := tt.Find("Pinned")
+		if !ok {
+			t.Fatalf("texts %q", tt.Texts())
+		}
+		if top := r.Y - 16; top < 62 || top > 66 { // the title sits 16 inside the panel
+			t.Errorf("body %v: panel top near %v, want 64", h, top)
+		}
+	}
+}
+
+// A selected palette row keeps the foreground for its text: its light tint
+// is no system selection, whose inverted (white) text would vanish on it.
+func TestPaletteRowSelectedText(t *testing.T) {
+	tt := ui.NewTester(themed(func(c *ui.Context) {
+		ui.Column(c).Fill().Padding(8).Background(theme.Of(c).Background).Children(func() {
+			PaletteRow(c, true).Children(func() { ui.Text(c, "Hit") })
+		})
+	}), 300, 100)
+	tt.Frame()
+	r, ok := tt.Find("Hit")
+	if !ok {
+		t.Fatalf("texts %q", tt.Texts())
+	}
+	img, darkest := tt.Image(), 255
+	for x := int(r.X); x < int(r.X+r.W); x++ {
+		for y := int(r.Y); y < int(r.Y+r.H); y++ {
+			darkest = min(darkest, int(img.RGBAAt(x, y).R))
+		}
+	}
+	if darkest > 80 {
+		t.Errorf("the selected row's text is no darker than %d: not the foreground", darkest)
+	}
+}
+
+func TestShadowX2l(t *testing.T) {
+	if len(theme.ShadowX2l) != 1 || theme.ShadowX2l[0] != (theme.ShadowLayer{Y: 25, Blur: 50, Spread: -12, Alpha: 0.25}) {
+		t.Errorf("ShadowX2l %v is not Tailwind's shadow-2xl", theme.ShadowX2l)
 	}
 }
 
@@ -1130,8 +1287,9 @@ func TestDialogWidths(t *testing.T) {
 			Dialog(c, &open, "T", DialogOpts{Size: size, Close: "Close"}, func() { ui.Text(c, "body") }, func() { ui.Text(c, "foot") })
 		}), 900, 600)
 		tt.Advance(2 * theme.MotionBase)
+		title, _ := tt.Find("T")
 		img, first, last := tt.Image(), -1, -1
-		y := 84 // below the panel's corners, in its white header
+		y := int(title.Y) - 4 // in the header's padding, above the title
 		for x := 0; x < 900; x++ {
 			if p := img.RGBAAt(x, y); p.R == 255 && p.G == 255 && p.B == 255 {
 				if first < 0 {
@@ -1147,7 +1305,9 @@ func TestDialogWidths(t *testing.T) {
 }
 
 // A disabled button paints the design's disabled colours, not mygo's
-// half-opacity dimming: a Default one on Hover, an Outline one's text Idle.
+// dimming of all it covers: a Default one its primary at half opacity, so it
+// stays a button on any surface (white, frosted, dark), an Outline one's
+// text Idle.
 func TestKitButtonDisabledColors(t *testing.T) {
 	tt := ui.NewTester(themed(func(c *ui.Context) {
 		ui.Column(c).Gap(8).Padding(8).Children(func() {
@@ -1171,7 +1331,9 @@ func TestKitButtonDisabledColors(t *testing.T) {
 			t.Errorf("%s = %v, want %v", name, got, want)
 		}
 	}
-	same("disabled Default background", at("Add", func(r ui.Rect) (int, int) { return int(r.X) + 3, int(r.Y) + 3 }), tok.Hover)
+	if got, want := at("Add", func(r ui.Rect) (int, int) { return int(r.X) + 3, int(r.Y) + 3 }), tok.Primary.Mix(tok.Background, 0.5); diff(got.R, want.R) > 2 {
+		t.Errorf("disabled Default background = %v, want primary at half over white %v", got, want)
+	}
 	// The darkest pixel of the Outline label is its text colour.
 	r, _ := tt.Find("Test")
 	dark := color.RGBA{255, 255, 255, 255}
@@ -1190,23 +1352,37 @@ func TestMain(m *testing.M) {
 	os.Exit(m.Run())
 }
 
-// TestDialogBackdropBlurs: behind a dialog, a hard edge in the window blurs.
-func TestDialogBackdropBlurs(t *testing.T) {
+// TestDialogGlass: a dialog's backdrop only tints the window, a hard edge
+// staying sharp; with Glass its panel frosts what is behind it, without it
+// the panel is opaque.
+func TestDialogGlass(t *testing.T) {
 	BackdropBlur = true
-	t.Cleanup(func() { BackdropBlur = false })
-	open := true
-	tt := ui.NewTester(themed(func(c *ui.Context) {
-		t := theme.Of(c)
-		ui.Row(c).Fill().Children(func() {
-			ui.Box(c).Width(200).FillHeight().Background(t.Foreground)
-			ui.Box(c).Grow(1).FillHeight().Background(t.Background)
-		})
-		Dialog(c, &open, "T", DialogOpts{Size: DialogSm, Close: "Close"}, nil, nil)
-	}), 800, 600)
-	tt.Advance(2 * theme.MotionBase)
-	// Just right of the black column, low in the window, well below the panel.
-	if p := tt.Image().RGBAAt(201, 500); p.R > 220 {
-		t.Errorf("edge pixel %v is not blurred", p)
+	t.Cleanup(func() { BackdropBlur, Glass = false, false })
+	for _, glass := range []bool{true, false} {
+		Glass = glass
+		open := true
+		tt := ui.NewTester(themed(func(c *ui.Context) {
+			t := theme.Of(c)
+			ui.Row(c).Fill().Children(func() {
+				ui.Box(c).Width(200).FillHeight().Background(t.Foreground)
+				ui.Box(c).Grow(1).FillHeight().Background(t.Background)
+			})
+			Dialog(c, &open, "T", DialogOpts{Size: DialogSm, Close: "Close"}, func() { ui.Box(c).Height(300) }, nil)
+		}), 800, 600)
+		tt.Advance(2 * theme.MotionBase)
+		img := tt.Image()
+		// Just right of the black column, low in the window, well below the panel: tinted, not blurred.
+		if p := img.RGBAAt(201, 560); p.R < 200 {
+			t.Errorf("glass %v: backdrop edge pixel %v is blurred", glass, p)
+		}
+		// The same edge inside the panel's empty body.
+		p := img.RGBAAt(201, 300)
+		if glass && p.R > 240 {
+			t.Errorf("glass: panel pixel %v does not frost the edge behind it", p)
+		}
+		if !glass && p.R < 250 {
+			t.Errorf("opaque: panel pixel %v shows what is behind it", p)
+		}
 	}
 }
 
@@ -1222,5 +1398,14 @@ func TestAvatarColorKeptPerNameNeverGray(t *testing.T) {
 	}
 	if len(seen) < 3 {
 		t.Errorf("%d colors for 8 names", len(seen))
+	}
+}
+
+// A shortcut is a keycap each key.
+func TestKbdKeys(t *testing.T) {
+	for in, want := range map[string]string{"⇧⌘K": "⇧ ⌘ K", "⌥↵": "⌥ ↵", "←→": "← →", "Esc": "Esc", "⌘,": "⌘ ,", "↵": "↵"} {
+		if got := strings.Join(kbdKeys(in), " "); got != want {
+			t.Errorf("%s: %q, want %q", in, got, want)
+		}
 	}
 }

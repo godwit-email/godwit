@@ -578,11 +578,14 @@ func (r *reader) act(op string) {
 // opens it in a compose window, even when the reader has moved on since:
 // the window does not cover it.
 func (r *reader) draft(mode string) {
-	m, ok := r.last()
-	if !ok {
-		return
+	if m, ok := r.last(); ok {
+		r.p.a.draft(m, r.account(), mode)
 	}
-	a, acc := r.p.a, r.account()
+}
+
+// draft starts a reply, reply-all or forward of m from account acc (0 to
+// look it up by m's folder) and opens it in a compose window.
+func (a *App) draft(m core.MessageSummary, acc int64, mode string) {
 	var id int64
 	a.do(func(ctx context.Context) (err error) {
 		if acc == 0 { // the folders have not loaded yet
@@ -667,8 +670,7 @@ var reserved = map[string]bool{"CON": true, "PRN": true, "AUX": true, "NUL": tru
 // directory in the platform's temporary one, and opens it with its
 // application: the cache's file has no extension to choose one by. Close
 // removes the copies.
-func (r *reader) openAttachment(att core.AttachmentInfo) {
-	a := r.p.a
+func (a *App) openAttachment(att core.AttachmentInfo) {
 	plat := a.plat
 	a.do(func(ctx context.Context) error {
 		src, _, err := a.svc.GetAttachment(ctx, att.ID)
@@ -688,8 +690,7 @@ func (r *reader) openAttachment(att core.AttachmentInfo) {
 }
 
 // saveAttachment copies the attachment where the user chooses.
-func (r *reader) saveAttachment(att core.AttachmentInfo) {
-	a := r.p.a
+func (a *App) saveAttachment(att core.AttachmentInfo) {
 	plat := a.plat
 	a.do(func(ctx context.Context) error {
 		dst, err := plat.SaveFile(fileName(att.Filename, "attachment"))
@@ -1071,7 +1072,7 @@ func (r *reader) message(c *ui.Context, m core.MessageSummary) {
 			return
 		}
 		if b.view != nil { // the body takes the pane's width; what frames it keeps to the column
-			ui.WebView(c, b.view).Height(max(float32(b.height), th.Space(6))) // a line until the page reports
+			kit.WebView(c, b.view).Height(max(float32(b.height), th.Space(6))) // a line until the page reports
 		}
 		r.column(c).Gap(th.Space(3.5)).Children(func() {
 			if b.cut {
@@ -1103,7 +1104,7 @@ func (r *reader) attachments(c *ui.Context, atts []core.AttachmentInfo) {
 				continue
 			}
 			ui.Row(c).Width(theme.AttachmentWidth).Gap(th.Space(1)).Padding(th.Space(2), th.Space(2.5)).Border(theme.Hairline, t.Border).Radius(t.Radius.Lg).Children(func() {
-				kit.Pressable(c, kit.PressableOpts{OnClick: func() { r.openAttachment(att) }}).Grow(1).Shrink(1).Gap(th.Space(2.5)).Children(func() {
+				kit.Pressable(c, kit.PressableOpts{OnClick: func() { r.p.a.openAttachment(att) }}).Grow(1).Shrink(1).Gap(th.Space(2.5)).Children(func() {
 					ui.Box(c).Size(th.Space(7), th.Space(8.5)).Radius(t.Radius.Sm).Background(t.Hover).Center().Shrink(0).Children(func() {
 						kit.Text(c, fileKind(att), t.Text.Xs).TextColor(t.Muted)
 					})
@@ -1113,7 +1114,7 @@ func (r *reader) attachments(c *ui.Context, atts []core.AttachmentInfo) {
 					})
 				})
 				kit.IconButton(c, "download", i18n.T("reader.save_as"), kit.ButtonOpts{Variant: kit.Ghost, Size: kit.SizeSm}).
-					OnClick(func() { r.saveAttachment(att) })
+					OnClick(func() { r.p.a.saveAttachment(att) })
 			})
 		}
 	})
@@ -1217,10 +1218,10 @@ func (a *App) BodyNavigate(view ui.NativeWebView, dir int) {
 	}
 }
 
-// BodySearch opens the mail list's search for a body's page (⌘F).
+// BodySearch opens the search palette for a body's page (⌘F, ⌘K).
 func (a *App) BodySearch(view ui.NativeWebView) {
 	if a.mail.reader.current(view) {
-		a.mail.searchOpen = true
+		a.openPalette()
 	}
 }
 
@@ -1346,7 +1347,7 @@ func (r *reader) unsubscribeDialog(c *ui.Context) {
 		return
 	}
 	t := theme.Of(c)
-	opts := kit.DialogOpts{Size: kit.DialogSm, Desc: i18n.T("reader.unsubscribe.desc"), Close: i18n.T("common.close")}
+	opts := kit.DialogOpts{Size: kit.DialogSm, Alert: true, Desc: i18n.T("reader.unsubscribe.desc"), Close: i18n.T("common.close")}
 	kit.Dialog(c, &r.unsubDlg, i18n.T("reader.unsubscribe.title"), opts, func() {
 		ui.Text(c, b.unsub.Host).FontWeight(600)
 		if b.unsub.List != "" {

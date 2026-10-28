@@ -76,7 +76,7 @@ func (p *askPage) Title() (string, string) {
 func (p *askPage) Sidebar(c *ui.Context) {
 	a := p.a
 	t, th := theme.Of(c), c.Theme()
-	ui.Row(c).Padding(0, sidebarInset(c), th.Space(3), 0).Children(func() { a.pageSwitch(c) })
+	a.sidebarHead(c)
 	newChat := kit.SidebarItem(c, kit.SidebarItemOpts{OnClick: func() { a.navigate(Route{Page: PageWit}) }}).Gap(th.Space(2.5)).Margin(0, sidebarInset(c), 0, 0)
 	newChat.Children(func() {
 		kit.SidebarIcon(c, newChat, "square-pen", false)
@@ -105,17 +105,16 @@ func (p *askPage) Sidebar(c *ui.Context) {
 				}).
 				ContextMenu(func(m *ui.Menu) {
 					if m.Item(i18n.T("ask.delete")).Chosen() {
-						p.remove(id)
+						p.a.deleteConversation(id)
 					}
 				})
 		}
 	})
 }
 
-// remove deletes a conversation; shown, a new one takes its place, and it
-// leaves the history.
-func (p *askPage) remove(id int64) {
-	a := p.a
+// deleteConversation deletes a conversation; shown, a new one takes its
+// place, and it leaves the history.
+func (a *App) deleteConversation(id int64) {
 	a.writes.Chain(convKey(id), func(ctx context.Context) error { return a.svc.DeleteConversation(ctx, id) }, func(err error) {
 		if err != nil {
 			a.toastErr(err)
@@ -127,7 +126,7 @@ func (p *askPage) remove(id int64) {
 			a.setRoute(Route{Page: PageWit})
 			return
 		}
-		p.load()
+		a.pages[PageWit].(*askPage).load()
 	})
 }
 
@@ -138,7 +137,7 @@ func (p *askPage) Content(c *ui.Context) {
 		return
 	}
 	if v := p.a.witView; v != nil {
-		ui.WebView(c, v).Grow(1) // transparent: the page draws its own panels
+		kit.WebView(c, v).Grow(1) // transparent: the page draws its own panels
 	}
 }
 
@@ -173,6 +172,10 @@ func (a *App) OpenModels() { a.navigate(Route{Page: PageSettings, Settings: "mod
 
 // NewConversation shows a new conversation, as the sidebar's 新对话 does.
 func (a *App) NewConversation() { a.navigate(Route{Page: PageWit}) }
+
+// Search opens the search palette, as ⌘K and ⌘F do: the Wit page forwards
+// them, as native shortcuts miss keys it has.
+func (a *App) Search() { a.openPalette() }
 
 // Navigate goes back (dir < 0) or forward (dir > 0), as ⌘[ and ⌘] do: the
 // Wit page forwards them, as native shortcuts miss keys it has.

@@ -297,7 +297,7 @@ test("area[data-href] in the iframe → openLink", async () => {
   expect(api.openLink).toHaveBeenCalledExactlyOnceWith("https://a.example/m");
 });
 
-test("⌘F in the iframe or the page → search()", async () => {
+test("⌘F or ⌘K in the iframe or the page → search()", async () => {
   const { doc, win } = await start(body(1, "<p>x</p>"));
   const e = new win.KeyboardEvent("keydown", {
     key: "f",
@@ -310,6 +310,8 @@ test("⌘F in the iframe or the page → search()", async () => {
   expect(api.search).toHaveBeenCalledOnce();
   window.dispatchEvent(new KeyboardEvent("keydown", { key: "f", metaKey: true, cancelable: true }));
   expect(api.search).toHaveBeenCalledTimes(2);
+  window.dispatchEvent(new KeyboardEvent("keydown", { key: "k", metaKey: true, cancelable: true }));
+  expect(api.search).toHaveBeenCalledTimes(3);
 });
 
 test("wheel in the iframe goes to Go once per frame", async () => {

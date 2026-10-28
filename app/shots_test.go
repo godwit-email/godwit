@@ -315,7 +315,7 @@ func TestShots(t *testing.T) {
 	t.Run("MainSearch", func(t *testing.T) {
 		s := shotMail(t, noAuto)
 		search := func(q string) {
-			s.tt.Key(ui.Cmd, ui.KeyF)
+			s.post(func() { s.app.mail.searchOpen = true }) // ⌘F opens the palette; the list's search is its 查看全部
 			s.tt.Key(ui.Cmd, ui.KeyA)
 			s.typeText(q)
 			s.tt.Key(0, ui.KeyEnter)

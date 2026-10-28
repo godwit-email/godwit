@@ -11,6 +11,7 @@ var RemixIcons = map[string]string{
 	"archive-fill":              "node_modules/remixicon/icons/Business/archive-fill.svg",
 	"arrow-left":                "node_modules/remixicon/icons/Arrows/arrow-left-line.svg",
 	"arrow-right":               "node_modules/remixicon/icons/Arrows/arrow-right-line.svg",
+	"arrow-up":                  "node_modules/remixicon/icons/Arrows/arrow-up-line.svg",
 	"arrow-up-right":            "node_modules/remixicon/icons/Arrows/arrow-right-up-line.svg",
 	"bold":                      "node_modules/remixicon/icons/Editor/bold.svg",
 	"check":                     "node_modules/remixicon/icons/System/check-line.svg",
@@ -130,6 +131,7 @@ var RemixIcons = map[string]string{
 	"trash-2-fill":              "node_modules/remixicon/icons/System/delete-bin-fill.svg",
 	"triangle-alert":            "node_modules/remixicon/icons/System/alert-line.svg",
 	"undo-2":                    "node_modules/remixicon/icons/Arrows/arrow-go-back-line.svg",
+	"user":                      "node_modules/remixicon/icons/User & Faces/user-line.svg",
 	"wand-sparkles":             "node_modules/remixicon/icons/Design/magic-line.svg",
 	"x":                         "node_modules/remixicon/icons/System/close-line.svg",
 }
@@ -151,6 +153,7 @@ var BrandIcons = map[string]string{
 //go:embed node_modules/remixicon/icons/Arrows/arrow-go-back-line.svg
 //go:embed node_modules/remixicon/icons/Arrows/arrow-left-line.svg
 //go:embed node_modules/remixicon/icons/Arrows/arrow-right-line.svg
+//go:embed node_modules/remixicon/icons/Arrows/arrow-up-line.svg
 //go:embed node_modules/remixicon/icons/Arrows/arrow-right-s-line.svg
 //go:embed node_modules/remixicon/icons/Arrows/arrow-right-up-line.svg
 //go:embed node_modules/remixicon/icons/Buildings/home-4-line.svg
@@ -266,6 +269,7 @@ var BrandIcons = map[string]string{
 //go:embed node_modules/remixicon/icons/System/star-fill.svg
 //go:embed node_modules/remixicon/icons/System/star-line.svg
 //go:embed "node_modules/remixicon/icons/User & Faces/team-line.svg"
+//go:embed "node_modules/remixicon/icons/User & Faces/user-line.svg"
 //go:embed node_modules/remixicon/icons/Weather/sparkling-fill.svg
 //go:embed node_modules/remixicon/icons/Weather/sparkling-line.svg
 var remix embed.FS

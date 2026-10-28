@@ -595,7 +595,7 @@ func (p *settingsPage) aboutView(c *ui.Context) {
 	ui.Column(c).FillWidth().AlignItems(ui.Center).Gap(th.Space(1)).Children(func() {
 		ui.Column(c).FillWidth().Height(theme.AboutBird).Center().Children(func() {
 			if p.birdView != nil {
-				ui.WebView(c, p.birdView).FillWidth().Height(theme.AboutBird) // on the panel's color (NewBirdView)
+				kit.WebView(c, p.birdView).FillWidth().Height(theme.AboutBird) // on the panel's color (NewBirdView)
 			} else { // while it is made, or without web views
 				ui.Icon(c, logo).Size(theme.Logo, theme.Logo).TextColor(t.Foreground)
 			}

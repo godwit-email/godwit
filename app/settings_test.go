@@ -194,12 +194,10 @@ func TestSettingsAccountIcon(t *testing.T) {
 
 	p.iconSelected = "label:shield-keyhole"
 	h.click("保存")
-	h.until("icon saved", func() bool {
-		return h.account(acc.ID).Icon == "label:shield-keyhole"
+	// The save is written before its result closes the dialog, a frame on: wait for both.
+	h.until("icon saved, the dialog closed", func() bool {
+		return h.account(acc.ID).Icon == "label:shield-keyhole" && !p.open
 	})
-	if p.open {
-		t.Fatalf("dialog stayed open")
-	}
 
 	p.openDialog("icon", h.account(acc.ID))
 	p.iconSelected = ""

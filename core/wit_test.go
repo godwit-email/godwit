@@ -1144,3 +1144,32 @@ func TestAskOnPi(t *testing.T) {
 	require.NoError(t, err)
 	require.Len(t, c.Turns, 2)
 }
+
+// A question whose run fails answering nothing stays, with why, as the
+// conversation's last turn, titling it; the next question asked takes its
+// place.
+func TestAskFailedQuestionKept(t *testing.T) {
+	e := newSkillEnv(t)
+	conv := e.askConv(t)
+	e.srv.Script(testllm.Turn{Status: 400}) // not retried
+	evs := e.ask(t, conv.ID, "When do we meet?")
+	require.Equal(t, "error", evs[len(evs)-1].Kind)
+	c, err := e.s.GetConversation(t.Context(), conv.ID)
+	require.NoError(t, err)
+	require.NotEmpty(t, c.Turns)
+	last := c.Turns[len(c.Turns)-1]
+	assert.Equal(t, "failed", last.ID)
+	assert.Equal(t, "When do we meet?", last.Question)
+	assert.True(t, strings.HasPrefix(last.Failed, "ai:"), last.Failed)
+	assert.Equal(t, "When do we meet?", c.Title)
+
+	e.srv.Script(testllm.Turn{Text: []string{"Friday."}})
+	evs = e.ask(t, conv.ID, "When do we meet?")
+	require.Equal(t, "done", evs[len(evs)-1].Kind)
+	c, err = e.s.GetConversation(t.Context(), conv.ID)
+	require.NoError(t, err)
+	for _, tn := range c.Turns {
+		assert.Empty(t, tn.Failed)
+	}
+	require.Len(t, c.Turns, 1)
+}

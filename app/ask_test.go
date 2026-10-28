@@ -192,7 +192,7 @@ func TestAskDeleteShown(t *testing.T) {
 	}
 	h.app.navigate(Route{Page: PageWit, ConversationID: c.ID})
 	h.until("listed", func() bool { h.tt.Frame(); return h.tt.HasText("未命名对话") })
-	h.ask().remove(c.ID)
+	h.app.deleteConversation(c.ID)
 	h.until("a new conversation", func() bool { return h.app.route == Route{Page: PageWit} })
 	if opens.convs[len(opens.convs)-1] != 0 {
 		t.Fatalf("the page was told %v", opens.convs)
@@ -200,4 +200,11 @@ func TestAskDeleteShown(t *testing.T) {
 	if slices.ContainsFunc(h.app.history, func(r Route) bool { return r.ConversationID == c.ID }) {
 		t.Fatalf("history keeps it: %+v", h.app.history)
 	}
+}
+
+// The Wit page's sidebar has the search button too: it opens the palette.
+func TestAskSidebarSearch(t *testing.T) {
+	h, _, _ := askHarness(t, true)
+	h.click("搜索")
+	h.until("the palette", func() bool { return paletteShown(h) })
 }

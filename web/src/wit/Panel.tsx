@@ -1810,9 +1810,14 @@ export function Panel({
   // biome-ignore lint/correctness/useExhaustiveDependencies: only a new handed question asks, once the panel takes one
   useEffect(() => {
     if (!handed || asked.current === handed || locked || running) return;
-    asked.current = handed;
-    onAsked?.();
-    ask(handed.text);
+    // After the mount settles: a question asked as the panel mounts is lost when StrictMode
+    // mounts it again, and the remount's own run would find it asked.
+    const timer = setTimeout(() => {
+      asked.current = handed;
+      onAsked?.();
+      ask(handed.text);
+    });
+    return () => clearTimeout(timer);
   }, [handed, locked, running]);
   // A question not asked after all goes back to the input, unless something was typed since: its
   // text, its quotes, and an edit still one (sent again, it still replaces the old question).
@@ -2440,9 +2445,11 @@ export function Panel({
       </MessageScroller>
     </MessageScrollerProvider>
   );
-  const error = chat.error && !running && (
+  // A question core kept unanswered (its run refused or failed): why, and 重试 asks it again.
+  const failed = chat.error ? undefined : chat.messages.at(-1)?.metadata?.failed;
+  const error = (chat.error || failed) && !running && (
     <Alert variant="destructive" className="border-0 bg-destructive/10">
-      <AlertDescription>{witError(chat.error.message, t)}</AlertDescription>
+      <AlertDescription>{witError(chat.error?.message ?? failed ?? "", t)}</AlertDescription>
       <AlertAction>
         <Button variant="ghost" size="sm" onClick={() => void chat.regenerate()}>
           {t("common.retry")}

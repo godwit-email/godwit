@@ -18,10 +18,14 @@ const (
 
 // DialogOpts are a dialog's size, the muted line under its title, the label
 // of its close button, and Danger, which tints the footer for a confirmation.
+// Alert makes it one question (confirm, delete, open a link): the alert
+// backdrop and no close button, Cancel, Escape or a click outside closing it.
+// Top keeps it near the window's top instead of above centre, for a form
+// whose height changes as it is used (steps, results): it grows down.
 type DialogOpts struct {
-	Size        DialogSize
-	Desc, Close string
-	Danger      bool
+	Size               DialogSize
+	Desc, Close        string
+	Danger, Alert, Top bool
 }
 
 // Dialog is a modal panel anchored near the top: a header with the title, the
@@ -38,15 +42,21 @@ func Dialog(c *ui.Context, open *bool, title string, o DialogOpts, body, footer 
 	case DialogLg:
 		width, maxH = theme.DialogWideWidth, theme.DialogWideMax
 	}
-	dim := float32(0.1)
-	if t.Dark { // a tenth barely darkens the dark window
-		dim = 0.4
+	scrim := t.Scrim
+	if o.Alert {
+		scrim = t.AlertScrim
 	}
 	ui.DialogBase(c, open, func(backdrop, panel ui.Element) {
 		dialogShown = true
-		backdrop.Material(scrim{theme.BackdropBlur * k, ink(t).Alpha(dim * k)}).Justify(ui.Start).Padding(th.Space(16), 0, 0, 0)
-		panel.Opacity(k).Margin(rise(k), 0, 0, 0).Width(width).MaxHeight(maxH).Radius(t.Radius.X2l).Clip().Background(t.Raised).Border(theme.Hairline, t.Border)
-		Elevate(c, panel, theme.ShadowSm)
+		backdrop.Background(scrim.Alpha(k)) // Alpha scales: the scrim fades with the panel
+		if o.Top {
+			backdrop.Justify(ui.Start).Padding(theme.DialogTop, 0, 0, 0)
+		} else {
+			aboveCentre(c, backdrop, panel)
+		}
+		panel.Opacity(k).Margin(rise(k), 0, 0, 0).Width(width).MaxHeight(maxH).Radius(t.Radius.X2l).Clip().Border(theme.Hairline, t.Border)
+		glassPanel(panel, t)
+		Elevate(c, panel, theme.ShadowX2l)
 		header := ui.Row(c).Shrink(0).AlignItems(ui.Start).Gap(th.Space(4)).Padding(th.Space(4))
 		if body != nil {
 			header.Padding(th.Space(4), th.Space(4), th.Space(4)-theme.RingWidth, th.Space(4))
@@ -58,8 +68,10 @@ func Dialog(c *ui.Context, open *bool, title string, o DialogOpts, body, footer 
 					ui.Text(c, o.Desc).LineHeight(theme.LineFor(o.Desc)).TextColor(t.Muted)
 				}
 			})
-			// Into the corner: the button's own padding keeps the glyph in line with the title.
-			IconButton(c, "x", o.Close, ButtonOpts{Variant: Ghost, Size: SizeSm}).Margin(-th.Space(2), -th.Space(2), 0, 0).OnClick(func() { *open = false })
+			if !o.Alert {
+				// Into the corner: the button's own padding keeps the glyph in line with the title.
+				IconButton(c, "x", o.Close, ButtonOpts{Variant: Ghost, Size: SizeSm}).Margin(-th.Space(2), -th.Space(2), 0, 0).OnClick(func() { *open = false })
+			}
 		})
 		if body != nil {
 			ui.Scroll(c).Shrink(1).Children(func() {
@@ -78,12 +90,23 @@ func Dialog(c *ui.Context, open *bool, title string, o DialogOpts, body, footer 
 	})
 }
 
+// aboveCentre sets panel a little above the middle of backdrop: its centre
+// at 40% of the window, yet at least 32 below the top. The window's height
+// is the root's last frame, known before the dialog opens, so its first
+// frame is already in place; a panel taller than the room for that is
+// measured a frame late.
+func aboveCentre(c *ui.Context, backdrop, panel ui.Element) {
+	h, p := c.Root().LayoutBounds().H, panel.LayoutBounds().H
+	lift := max(0, min(h*theme.DialogLift, h-p-2*theme.DialogMinTop))
+	backdrop.Padding(0, 0, lift, 0)
+}
+
 // dialogShown is whether a Dialog was built since DialogShown last said. UI thread only.
 var dialogShown bool
 
 // DialogShown reports whether a Dialog was built since it was last called,
 // and forgets it. A window on a transparent material paints itself opaque
-// under one: the backdrop's blur covers only what is opaque, and sharp text
+// under one: the panel's frost covers only what is opaque, and sharp text
 // on the material would show through it.
 func DialogShown() bool {
 	s := dialogShown
@@ -91,12 +114,27 @@ func DialogShown() bool {
 	return s
 }
 
-// BackdropBlur turns the dialogs' backdrop blur on. Tests turn it off: the
+// BackdropBlur turns the frosted panels' blur on. Tests turn it off: the
 // CPU renderer the Tester draws with blurs pixel by pixel, which under -race
 // runs every dialog test many times slower.
 var BackdropBlur = true
 
-// scrim is a dialog's backdrop: what is behind it blurred, then tinted.
+// Glass frosts the panels of dialogs and the search palette: set where the
+// window sits on a material (Deps.Vibrancy); elsewhere they are opaque. The
+// backdrop under them only tints the window.
+var Glass bool
+
+// glassPanel fills a dialog's panel: frosted glass under Glass, else opaque.
+func glassPanel(panel ui.Element, t theme.Tokens) {
+	if Glass {
+		frosted = true // web views under it show a screenshot it can blur (WebView)
+		panel.Material(scrim{theme.BackdropBlur * 4, t.Raised.Alpha(0.8)})
+	} else {
+		panel.Background(t.Raised)
+	}
+}
+
+// scrim is what is behind blurred, then tinted: a frosted surface.
 type scrim struct {
 	blur float32
 	tint ui.Color
@@ -106,7 +144,7 @@ func (s scrim) PaintMaterial(p *ui.Painter, box ui.Rect, radii [4]float32) {
 	if BackdropBlur {
 		glass.Blur{Radius: s.blur}.PaintMaterial(p, box, radii)
 	}
-	p.Fill(box, s.tint, 0)
+	p.Fill(box, s.tint, radii[0]) // its surfaces round every corner alike
 }
 
 // Frost fills a row with fill (the surface it sits on) over what is behind it
@@ -126,6 +164,38 @@ func PopoverAt(c *ui.Context, anchor ui.Element, open *bool, at, self ui.Anchor,
 		Elevate(c, panel, theme.ShadowMd)
 		body()
 	})
+}
+
+// MenuAt is a menu anchored as PopoverAt: a tight panel of MenuItems,
+// perhaps under a MenuLabel, labelled label.
+func MenuAt(c *ui.Context, anchor ui.Element, open *bool, at, self ui.Anchor, topOffset float32, label string, body func()) {
+	t, th := theme.Of(c), c.Theme()
+	k := enter(c, open, theme.MotionFast)
+	ui.PopoverBase(c, anchor, open, func(panel ui.Element) {
+		panel.AttachTo(anchor, at, self).Role(ui.RoleMenu).Label(label).
+			Opacity(k).Margin(topOffset+rise(k), 0, 0, 0).Padding(th.Space(1)).
+			Radius(t.Radius.Lg).Gap(th.Space(0.5)).Background(t.Background).Border(theme.Hairline, t.Border)
+		Elevate(c, panel, theme.ShadowMd)
+		body()
+	})
+}
+
+// MenuLabel is a muted heading over a menu's items.
+func MenuLabel(c *ui.Context, text string) ui.Element {
+	t, th := theme.Of(c), c.Theme()
+	return Text(c, text, t.Text.Xs).TextColor(t.Muted).SingleLine().Padding(th.Space(1.5), th.Space(2), th.Space(1), th.Space(2))
+}
+
+// MenuItem is an item of a menu, tinted while selected (the keys' choice);
+// give it its Label and Children.
+func MenuItem(c *ui.Context, selected bool) ui.Element {
+	t, th := theme.Of(c), c.Theme()
+	b := ui.ButtonBase(c).Role(ui.RoleMenuItem).Selected(selected).Justify(ui.Start).AlignItems(ui.Center).Gap(th.Space(2)).
+		Height(th.Space(8)).PaddingX(th.Space(2)).Radius(t.Radius.Md).TextColor(t.Foreground) // a tint, not the inverted text
+	if selected || b.Hovered() {
+		b.Background(t.HoverTint)
+	}
+	return b
 }
 
 // Popover is a panel below anchor while *open; a press outside or Escape closes it.

@@ -759,7 +759,7 @@ func (r *reader) egressDialog(c *ui.Context) {
 	}
 	ask := r.egress
 	t, th := theme.Of(c), c.Theme()
-	opts := kit.DialogOpts{Size: kit.DialogSm, Desc: i18n.Tf("reader.egress.body", ask.plugin), Close: i18n.T("common.close")}
+	opts := kit.DialogOpts{Size: kit.DialogSm, Alert: true, Desc: i18n.Tf("reader.egress.body", ask.plugin), Close: i18n.T("common.close")}
 	kit.Dialog(c, &r.egressDlg, i18n.T("reader.egress.title"), opts, func() {
 		ui.Column(c).Gap(th.Space(1)).Children(func() {
 			for _, h := range ask.hosts {
