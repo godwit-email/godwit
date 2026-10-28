@@ -416,6 +416,7 @@
   "reader_egress_title": "Consentire al plugin di inviare dati?",
   "reader_fold": "Comprimi",
   "reader_forward": "Inoltra",
+  "reader_gist": "Sintesi IA",
   "reader_images_failed": "Impossibile caricare {arg1, number, ::group-off} immagini",
   "reader_images_not_loaded": "{arg1, plural, one {{arg1, number, ::group-off} immagine non caricata} many {{arg1, number, ::group-off} immagini non caricate} other {{arg1, number, ::group-off} immagini non caricate}}",
   "reader_labels_add": "Etichetta",

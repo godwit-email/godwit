@@ -813,6 +813,7 @@
   "reader_egress_title": "Let the plugin send data?",
   "reader_fold": "Collapse",
   "reader_forward": "Forward",
+  "reader_gist": "AI gist",
   "reader_images_failed": "{arg1, number, ::group-off} images couldn''t load",
   "@reader_images_failed": {
     "placeholders": {

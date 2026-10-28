@@ -2,8 +2,10 @@ package app
 
 import (
 	"context"
+	"fmt"
 	"slices"
 	"strings"
+	"sync/atomic"
 	"testing"
 
 	"github.com/egoist/mygo/ui"
@@ -197,5 +199,40 @@ func TestReaderMessageAligned(t *testing.T) {
 	avatar, ok := h.tt.Find("bob@example.com") // the avatar first, its pressable labelled by the address
 	if !ok || avatar.X != subject.X {
 		t.Fatalf("avatar at x %v, subject at x %v", avatar.X, subject.X)
+	}
+}
+
+// A folded message shows its AI gist, marked, in place of the start of its
+// text; the open one shows none.
+func TestReaderFoldedGist(t *testing.T) {
+	h, acc, _ := aiHarness(t, true, noQuick)
+	msgs := h.thread2(acc)
+	r := h.app.mail.reader
+	r.gistFn = func(_ context.Context, id int64) (string, error) { return fmt.Sprint("gist of ", id), nil }
+	h.openThread(msgs[0].ThreadID)
+	h.until("the folded row's gist", func() bool { return h.tt.HasText(fmt.Sprint("gist of ", msgs[0].ID)) })
+	if _, ok := h.tt.Find("AI 要点"); !ok {
+		t.Fatal("the gist is not marked the AI's")
+	}
+	if h.tt.HasText("first words") {
+		t.Fatal("the row shows the start of its text beside its gist")
+	}
+	if h.tt.HasText(fmt.Sprint("gist of ", msgs[1].ID)) {
+		t.Fatal("the open message shows a gist")
+	}
+}
+
+// Without a model a folded row keeps the start of its text, unmarked, and
+// asks for no gist.
+func TestReaderFoldedGistNoModel(t *testing.T) {
+	h, acc, _ := aiHarness(t, false, nil)
+	msgs := h.thread2(acc)
+	r := h.app.mail.reader
+	var asked atomic.Bool // set off the UI thread
+	r.gistFn = func(context.Context, int64) (string, error) { asked.Store(true); return "x", nil }
+	h.openThread(msgs[0].ThreadID)
+	h.see("first words")
+	if _, ok := h.tt.Find("AI 要点"); ok || asked.Load() {
+		t.Fatalf("a gist without a model (asked %v)", asked.Load())
 	}
 }

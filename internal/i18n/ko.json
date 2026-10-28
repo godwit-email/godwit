@@ -416,6 +416,7 @@
   "reader_egress_title": "플러그인의 데이터 전송을 허용하시겠습니까?",
   "reader_fold": "접기",
   "reader_forward": "전달",
+  "reader_gist": "AI 요점",
   "reader_images_failed": "이미지 {arg1, number, ::group-off}개를 불러오지 못했습니다",
   "reader_images_not_loaded": "이미지 {arg1, number, ::group-off}개를 불러오지 않음",
   "reader_labels_add": "라벨",

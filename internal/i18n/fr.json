@@ -416,6 +416,7 @@
   "reader_egress_title": "Autoriser le plugin à envoyer des données ?",
   "reader_fold": "Réduire",
   "reader_forward": "Transférer",
+  "reader_gist": "L’essentiel par l’IA",
   "reader_images_failed": "Impossible de charger {arg1, number, ::group-off} images",
   "reader_images_not_loaded": "{arg1, plural, one {{arg1, number, ::group-off} image non chargée} many {{arg1, number, ::group-off} images non chargées} other {{arg1, number, ::group-off} images non chargées}}",
   "reader_labels_add": "Étiquette",

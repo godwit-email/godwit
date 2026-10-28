@@ -416,6 +416,7 @@
   "reader_egress_title": "允許外掛傳送資料？",
   "reader_fold": "收合",
   "reader_forward": "轉寄",
+  "reader_gist": "AI 要點",
   "reader_images_failed": "{arg1, number, ::group-off} 張圖片載入失敗",
   "reader_images_not_loaded": "{arg1, number, ::group-off} 張圖片未載入",
   "reader_labels_add": "標籤",

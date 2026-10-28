@@ -78,6 +78,7 @@ type reader struct {
 	cardsFn    func(ctx context.Context, messageID int64) ([]core.Card, error)                // tests wrap it
 	tagsFn     func(ctx context.Context, messageID int64) ([]core.Tag, error)
 	quickFn    func(ctx context.Context, messageID int64) ([]core.QuickReply, error) // tests wrap it
+	gistFn     func(ctx context.Context, messageID int64) (string, error)            // tests wrap it
 	skillsFn   func(ctx context.Context) ([]core.SkillInfo, error)                   // tests wrap it
 	actionsFn  func(ctx context.Context, kind string) ([]core.ActionInfo, error)     // tests wrap it
 }
@@ -124,7 +125,7 @@ type msgBody struct {
 func newReader(p *mailPage) *reader {
 	return &reader{p: p, open: map[int64]bool{}, bodies: map[int64]*msgBody{}, ai: map[int64]*msgAI{},
 		getThread: p.a.svc.GetThread, getMessage: p.a.svc.GetMessage, getAvatar: p.a.svc.SenderAvatar, runSkill: p.a.svc.RunSkill,
-		cardsFn: p.a.svc.PluginCards, tagsFn: p.a.svc.PluginTags, quickFn: p.a.svc.QuickReplies, skillsFn: p.a.svc.ListSkills, actionsFn: p.a.svc.ListActions}
+		cardsFn: p.a.svc.PluginCards, tagsFn: p.a.svc.PluginTags, quickFn: p.a.svc.QuickReplies, gistFn: p.a.svc.MessageGist, skillsFn: p.a.svc.ListSkills, actionsFn: p.a.svc.ListActions}
 }
 
 func isSeen(m core.MessageSummary) bool { return slices.Contains(m.Flags, `\Seen`) }
@@ -1038,7 +1039,17 @@ func (r *reader) folded(c *ui.Context, m core.MessageSummary) {
 			if r.isBlocked(m.From) {
 				kit.Badge(c, i18n.T("reader.blocked_badge"))
 			}
-			ui.Text(c, m.Snippet).TextColor(t.Muted).SingleLine().Grow(1).Shrink(1)
+			if g := r.gist(m.ID); g != "" { // a step darker than the text it stands for, and marked the AI's
+				ui.Row(c).Grow(1).Shrink(1).Gap(th.Space(1)).AlignItems(ui.Center).Children(func() {
+					ui.Text(c, g).TextColor(t.Foreground.Alpha(0.7)).SingleLine().Shrink(1)
+					mark := ui.Box(c).Shrink(0).Label(i18n.T("reader.gist")).Children(func() {
+						ui.Icon(c, icons.Get("sparkles")).Size(theme.IconXs, theme.IconXs).TextColor(t.Idle)
+					})
+					kit.TooltipLabelled(c, mark, i18n.T("reader.gist"))
+				})
+			} else {
+				ui.Text(c, m.Snippet).TextColor(t.Muted).SingleLine().Grow(1).Shrink(1)
+			}
 			kit.Text(c, listTime(r.p.a.clock.Now(), m.Date), t.Text.Sm).TextColor(t.Muted).Shrink(0)
 			// in a box as wide as an open message's fold button: the chevrons line up
 			ui.Box(c).Size(th.Space(7), th.Space(7)).Center().Shrink(0).Children(func() {

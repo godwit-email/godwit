@@ -416,6 +416,7 @@
   "reader_egress_title": "プラグインにデータの送信を許可しますか？",
   "reader_fold": "折りたたむ",
   "reader_forward": "転送",
+  "reader_gist": "AI の要点",
   "reader_images_failed": "{arg1, number, ::group-off} 件の画像を読み込めませんでした",
   "reader_images_not_loaded": "画像 {arg1, number, ::group-off} 件を読み込んでいません",
   "reader_labels_add": "ラベル",

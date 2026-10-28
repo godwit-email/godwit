@@ -95,6 +95,7 @@ type msgAI struct {
 	cards       fetch[[]core.Card]
 	tags        fetch[[]core.Tag]
 	quick       fetch[[]core.QuickReply]
+	gist        fetch[string]
 }
 
 // aiResult is the closable card of a skill or action run from the menu.
@@ -240,6 +241,18 @@ func (r *reader) reloadPluginParts() {
 		r.loadCards(id, true)
 		r.loadTags(id, true)
 	}
+}
+
+// gist is a folded message's one-line gist, asked for as its row shows (the
+// small model, under Settings.Summary): "" until it comes, and when it
+// fails or there is no model, so the row keeps the start of its text.
+func (r *reader) gist(id int64) string {
+	if !r.taskReady("") || !r.p.a.settings.Summary {
+		return ""
+	}
+	st, get := r.state(id), r.gistFn
+	fetchInto(r, &st.gist, false, func(ctx context.Context) (string, error) { return get(ctx, id) }, nil)
+	return st.gist.v
 }
 
 func (r *reader) loadQuick(id int64, force bool) {

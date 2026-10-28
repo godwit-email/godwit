@@ -416,6 +416,7 @@
   "reader_egress_title": "Cho phép plugin gửi dữ liệu?",
   "reader_fold": "Thu gọn",
   "reader_forward": "Chuyển tiếp",
+  "reader_gist": "Ý chính do AI",
   "reader_images_failed": "Không tải được {arg1, number, ::group-off} hình ảnh",
   "reader_images_not_loaded": "{arg1, number, ::group-off} hình ảnh chưa tải",
   "reader_labels_add": "Nhãn",

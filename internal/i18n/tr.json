@@ -416,6 +416,7 @@
   "reader_egress_title": "Eklentinin veri göndermesine izin verilsin mi?",
   "reader_fold": "Daralt",
   "reader_forward": "İlet",
+  "reader_gist": "Yapay zekâ özeti",
   "reader_images_failed": "{arg1, number, ::group-off} görsel yüklenemedi",
   "reader_images_not_loaded": "{arg1, number, ::group-off} görsel yüklenmedi",
   "reader_labels_add": "Etiket",

@@ -416,6 +416,7 @@
   "reader_egress_title": "Разрешить плагину отправку данных?",
   "reader_fold": "Свернуть",
   "reader_forward": "Переслать",
+  "reader_gist": "Суть от ИИ",
   "reader_images_failed": "Не удалось загрузить изображения: {arg1, number, ::group-off}",
   "reader_images_not_loaded": "{arg1, plural, one {{arg1, number, ::group-off} изображение не загружено} few {{arg1, number, ::group-off} изображения не загружены} many {{arg1, number, ::group-off} изображений не загружено} other {{arg1, number, ::group-off} изображения не загружены}}",
   "reader_labels_add": "Метка",

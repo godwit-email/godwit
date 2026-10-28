@@ -416,6 +416,7 @@
   "reader_egress_title": "允许插件发送数据？",
   "reader_fold": "收起",
   "reader_forward": "转发",
+  "reader_gist": "AI 要点",
   "reader_images_failed": "{arg1, number, ::group-off} 张图片加载失败",
   "reader_images_not_loaded": "{arg1, number, ::group-off} 张图片未加载",
   "reader_labels_add": "标签",

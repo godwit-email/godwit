@@ -416,6 +416,7 @@
   "reader_egress_title": "Permitir que o plugin envie dados?",
   "reader_fold": "Recolher",
   "reader_forward": "Encaminhar",
+  "reader_gist": "Resumo por IA",
   "reader_images_failed": "Não foi possível carregar {arg1, number, ::group-off} imagens",
   "reader_images_not_loaded": "{arg1, plural, one {{arg1, number, ::group-off} imagem não carregada} many {{arg1, number, ::group-off} imagens não carregadas} other {{arg1, number, ::group-off} imagens não carregadas}}",
   "reader_labels_add": "Marcador",

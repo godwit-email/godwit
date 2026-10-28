@@ -416,6 +416,7 @@
   "reader_egress_title": "¿Permitir que el plugin envíe datos?",
   "reader_fold": "Contraer",
   "reader_forward": "Reenviar",
+  "reader_gist": "Idea clave por IA",
   "reader_images_failed": "No se pudieron cargar {arg1, number, ::group-off} imágenes",
   "reader_images_not_loaded": "{arg1, plural, one {{arg1, number, ::group-off} imagen sin cargar} many {{arg1, number, ::group-off} imágenes sin cargar} other {{arg1, number, ::group-off} imágenes sin cargar}}",
   "reader_labels_add": "Etiqueta",

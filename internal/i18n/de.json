@@ -421,6 +421,7 @@
   "reader_egress_title": "Darf das Plugin Daten senden?",
   "reader_fold": "Einklappen",
   "reader_forward": "Weiterleiten",
+  "reader_gist": "KI-Kernaussage",
   "reader_images_failed": "{arg1, number, ::group-off} Bilder konnten nicht geladen werden",
   "reader_images_not_loaded": "{arg1, plural, one {{arg1, number, ::group-off} Bild nicht geladen} other {{arg1, number, ::group-off} Bilder nicht geladen}}",
   "reader_labels_add": "Label",
