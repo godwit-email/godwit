@@ -325,12 +325,13 @@ func TestKitSidebarItemHoverSoft(t *testing.T) {
 			tt.Frame()
 			tt.Advance(theme.MotionFast)
 
-			if dark {
-				selPx := tt.Image().RGBAAt(int(inbox.X)+100, int(inbox.Y+inbox.H/2))
-				hoverPx := tt.Image().RGBAAt(int(sent.X)+100, int(sent.Y+sent.H/2))
-				if hoverPx == selPx {
-					t.Errorf("hovered row %v is identical to selected row %v, want distinct contrast", hoverPx, selPx)
-				}
+			// The selected row is a step further from the background than the hovered one.
+			bg := tt.Image().RGBAAt(int(sent.X)+100, int(sent.Y+sent.H)+20)
+			selPx := tt.Image().RGBAAt(int(inbox.X)+100, int(inbox.Y+inbox.H/2))
+			hoverPx := tt.Image().RGBAAt(int(sent.X)+100, int(sent.Y+sent.H/2))
+			dist := func(p color.RGBA) int { return max(int(p.G), int(bg.G)) - min(int(p.G), int(bg.G)) }
+			if dh, ds := dist(hoverPx), dist(selPx); dh == 0 || ds <= dh {
+				t.Errorf("background %v, hovered %v, selected %v: want selected further from background than hovered", bg, hoverPx, selPx)
 			}
 		})
 	}
