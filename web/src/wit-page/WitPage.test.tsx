@@ -16,6 +16,7 @@ const h = vi.hoisted(() => {
     open: new Set<(m: WitOpenMsg) => void>(),
     state: new Set<(s: WitPageState) => void>(),
     ask: new Set<(q: string) => void>(),
+    pending: "", // the question native holds until the page takes it
   };
 });
 vi.mock("@/mygo", () => ({
@@ -33,6 +34,7 @@ vi.mock("@/mygo", () => ({
     models: vi.fn(),
     navigate: vi.fn(),
     search: vi.fn(),
+    takeAsk: vi.fn(),
   },
   events: {
     wit: { on: h.on(h.wit) },
@@ -100,6 +102,11 @@ const send = <T,>(set: Set<(x: T) => void>, x: T) =>
   act(() => {
     for (const f of [...set]) f(x);
   });
+// hand is native's hand-off: the question waits, and the event says so.
+const hand = (q: string) => {
+  h.pending = q;
+  return send(h.ask, q);
+};
 const emit = (e: Partial<WitEvent>) => send(h.wit, ev(e));
 const open = (conversation: number, version: number, created = false) =>
   send(h.open, { conversation, version, created });
@@ -108,6 +115,12 @@ const input = () => screen.getByRole("textbox", { name: "向 Wit 提问" });
 beforeEach(() => {
   vi.clearAllMocks();
   vi.mocked(api.follow).mockImplementation(async (c) => hist(c));
+  h.pending = "";
+  vi.mocked(api.takeAsk).mockImplementation(async () => {
+    const q = h.pending;
+    h.pending = "";
+    return q;
+  });
 });
 
 async function start(conv = 0, answer?: string) {
@@ -495,7 +508,7 @@ test("witAsk asks the handed question once, in the new conversation", async () =
   await start(3);
   vi.mocked(api.follow).mockResolvedValueOnce(hist(0));
   open(0, 2); // native navigates to a new conversation, then hands the question
-  send(h.ask, "invoice");
+  hand("invoice");
   await waitFor(() => expect(api.ask).toHaveBeenCalledWith(0, "invoice", [], "", "", "", zone));
   expect(api.ask).toHaveBeenCalledTimes(1);
   expect(await screen.findByText("invoice")).toBeInTheDocument();
@@ -503,6 +516,20 @@ test("witAsk asks the handed question once, in the new conversation", async () =
   vi.mocked(api.follow).mockResolvedValueOnce(hist(4, "four"));
   open(4, 3);
   expect(await screen.findByText("four")).toBeInTheDocument();
+  expect(api.ask).toHaveBeenCalledTimes(1);
+});
+
+test("a question handed before the page loaded is asked once it has", async () => {
+  vi.mocked(api.ask).mockResolvedValue({
+    run: 9,
+    conversation: 7,
+    revision: 0,
+    conflict: false,
+    turn: "1",
+  });
+  h.pending = "invoice"; // its event came before the listeners
+  await start(0);
+  await waitFor(() => expect(api.ask).toHaveBeenCalledWith(0, "invoice", [], "", "", "", zone));
   expect(api.ask).toHaveBeenCalledTimes(1);
 });
 
@@ -515,7 +542,7 @@ test("witAsk on the page already showing a new conversation asks at once", async
     turn: "1",
   });
   await start(0);
-  send(h.ask, "where is it");
+  hand("where is it");
   await waitFor(() => expect(api.ask).toHaveBeenCalledWith(0, "where is it", [], "", "", "", zone));
   expect(api.ask).toHaveBeenCalledTimes(1);
 });
@@ -524,7 +551,7 @@ test("a handed question is dropped when the open fails: not asked in a later con
   await start(3);
   vi.mocked(api.follow).mockRejectedValueOnce(new Error("boom"));
   open(0, 2);
-  send(h.ask, "lost"); // native hands it right after the open, before the open fails
+  hand("lost"); // native hands it right after the open, before the open fails
   await waitFor(() => expect(api.follow).toHaveBeenCalledWith(0));
   await act(async () => {});
   vi.mocked(api.follow).mockResolvedValueOnce(hist(4, "four"));

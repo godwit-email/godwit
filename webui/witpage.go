@@ -52,8 +52,9 @@ var (
 	// WitState tells the Wit page its model label, copy or theme changed
 	// (the settings did); the conversation and its stream stay.
 	WitState = mygo.NewEvent[WitPageState]("witState")
-	// WitAsk hands the Wit page a question native collected (a search that
-	// found nothing): the page asks it once, in the conversation it shows.
+	// WitAsk tells the Wit page native handed it a question (the palette's):
+	// the page takes it (TakeAsk) and asks it once, in the conversation it
+	// shows.
 	WitAsk = mygo.NewEvent[string]("witAsk")
 )
 
@@ -105,6 +106,7 @@ type Wit struct {
 	version int64          // bumped per SetConversation
 	sel     uint64         // bumped per selection (Follow, Ask): only the newest subscribes
 	f       *follow        // the page's subscription; nil for none
+	ask     string         // a question handed over, until the page takes it (TakeAsk)
 }
 
 // NewWit is the Wit page's state for the pages of role "wit"; SetService
@@ -161,10 +163,29 @@ func (w *Wit) open(id int64, created bool) int64 {
 // Handoff gives the page a question to ask (WitAsk): the page starts the run
 // through WitPage.Ask, so it follows it and Stop works. Native navigates to a
 // new conversation first.
+// The question waits until the page takes it: a page still loading misses
+// the event and takes it once it has loaded.
 func (w *Wit) Handoff(query string) {
-	if strings.TrimSpace(query) != "" {
-		w.d.Ask(query)
+	if strings.TrimSpace(query) == "" {
+		return
 	}
+	w.mu.Lock()
+	w.ask = query
+	w.mu.Unlock()
+	w.d.Ask(query)
+}
+
+// TakeAsk is the question native handed over and the page has not taken
+// yet, "" for none; taking it leaves none, so the page asks it once.
+func (p *WitPage) TakeAsk(ctx context.Context) (string, error) {
+	if _, _, err := p.w.caller(ctx); err != nil {
+		return "", err
+	}
+	p.w.mu.Lock()
+	defer p.w.mu.Unlock()
+	q := p.w.ask
+	p.w.ask = ""
+	return q, nil
 }
 
 // SettingsChanged sends the page its state for st (WitState).

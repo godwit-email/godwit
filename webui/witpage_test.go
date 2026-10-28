@@ -907,12 +907,20 @@ func TestWitPageCreatedOnlyOnAdoption(t *testing.T) {
 	assert.False(t, f.opens[n-1].Created, "navigation to A is no creation")
 }
 
-// The hand-off sends the page the question once; an empty one is nothing.
+// The hand-off sends the page the question once, which it takes once; an
+// empty one is nothing.
 func TestWitHandoffEmitsOnce(t *testing.T) {
 	f := newWitPageFixture(t)
 	f.w.Handoff("invoice")
 	f.w.Handoff("  ")
 	assert.Equal(t, []string{"invoice"}, f.asks)
+	// the page takes it once, by the event or, loading, after Load
+	q, err := f.p.TakeAsk(f.ctx())
+	require.NoError(t, err)
+	assert.Equal(t, "invoice", q)
+	q, err = f.p.TakeAsk(f.ctx())
+	require.NoError(t, err)
+	assert.Empty(t, q)
 }
 
 // 本次对话都允许: DecideSession approves the draft and the conversation's
