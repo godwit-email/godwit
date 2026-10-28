@@ -167,6 +167,7 @@ type SearchQuery struct {
 	AccountID      int64
 	Text           string
 	From           string    // a substring of the From header, any case
+	FromAddr       string    // the From header's address exactly, any case: one contact's mail
 	Since, Until   time.Time // the date from Since, before Until
 	HasAttachments bool
 	LabelID        int64 // mail with this label on
@@ -177,7 +178,7 @@ type SearchQuery struct {
 // Filtered reports whether a filter beyond the account is set: such a query
 // needs no text.
 func (q SearchQuery) Filtered() bool {
-	return strings.TrimSpace(q.From) != "" || !q.Since.IsZero() || !q.Until.IsZero() || q.HasAttachments || q.LabelID != 0 || q.Unread != nil || q.Starred != nil
+	return strings.TrimSpace(q.From) != "" || strings.TrimSpace(q.FromAddr) != "" || !q.Since.IsZero() || !q.Until.IsZero() || q.HasAttachments || q.LabelID != 0 || q.Unread != nil || q.Starred != nil
 }
 
 // Search finds synced messages; accountID 0 searches every account.
@@ -247,6 +248,11 @@ func searchFilter(q SearchQuery) (string, []any) {
 	if from := strings.TrimSpace(q.From); from != "" {
 		cond += ` AND m.from_addr LIKE ? ESCAPE '\'`
 		args = append(args, likeArg(from))
+	}
+	if addr := strings.ToLower(strings.TrimSpace(q.FromAddr)); addr != "" {
+		// a bare address, or one in a display name's angle brackets
+		cond += ` AND (lower(m.from_addr) = ? OR lower(m.from_addr) LIKE ? ESCAPE '\')`
+		args = append(args, addr, "%<"+strings.NewReplacer(`\`, `\\`, "%", `\%`, "_", `\_`).Replace(addr)+">")
 	}
 	if !q.Since.IsZero() {
 		cond += " AND m.date >= ?"

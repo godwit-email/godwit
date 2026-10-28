@@ -18,7 +18,8 @@ import (
 type searchFilters struct {
 	acc       int64 // the account chosen, once accSet; 0 is every account
 	accSet    bool
-	from      string // a substring of the sender
+	from      string // a substring of the sender; with fromExact, its address exactly
+	fromExact bool   // from is a contact the palette opened, not a typed part
 	span      int    // a searchSpans index; 0 is any time
 	attach    bool
 	labelID   int64  // a label the mail must have; 0 is any
@@ -67,6 +68,9 @@ func (p *mailPage) searchQuery() core.SearchQuery {
 func (f searchFilters) query(now time.Time, acc int64, text string) core.SearchQuery {
 	q := core.SearchQuery{AccountID: acc, Text: strings.TrimSpace(text), From: strings.TrimSpace(f.from),
 		Since: spanStart(now, f.span), HasAttachments: f.attach, LabelID: f.labelID}
+	if f.fromExact {
+		q.From, q.FromAddr = "", q.From
+	}
 	yes := true
 	if f.unread {
 		q.Unread = &yes
@@ -107,9 +111,9 @@ func (p *mailPage) filterChips(c *ui.Context) {
 			in := kit.Input(c, &p.sf.fromDraft, kit.InputOpts{Placeholder: i18n.T("mail.search.from_placeholder")}).Width(theme.FilterMenuMin).AutoFocus().Label(i18n.T("mail.search.from"))
 			if in.Submitted() {
 				d := strings.TrimSpace(p.sf.fromDraft)
-				p.setFilter(func(f *searchFilters) { f.from = d })
+				p.setFilter(func(f *searchFilters) { f.from, f.fromExact = d, false })
 			}
-			filterItem(c, i18n.T("mail.search.any_sender"), p.sf.from == "", func() { p.setFilter(func(f *searchFilters) { f.from = "" }) })
+			filterItem(c, i18n.T("mail.search.any_sender"), p.sf.from == "", func() { p.setFilter(func(f *searchFilters) { f.from, f.fromExact = "", false }) })
 		})
 
 		span := i18n.T("mail.search.time")

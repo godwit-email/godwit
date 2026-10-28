@@ -422,7 +422,7 @@ func (p *mailPage) firstDrafts() core.View {
 // mailFrom lists the synced mail from addr in every account: the list's
 // search, filtered by sender.
 func (p *mailPage) mailFrom(addr string) {
-	p.searchFor("", searchFilters{from: addr, accSet: true})
+	p.searchFor("", searchFilters{from: addr, fromExact: true, accSet: true})
 }
 
 // searchFor shows the mail page and opens the list's search afresh on query

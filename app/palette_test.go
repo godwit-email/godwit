@@ -307,6 +307,25 @@ func TestPaletteReopenKeepsGeneration(t *testing.T) {
 	})
 }
 
+// A contact's mail is from their address exactly: notbob@ is not bob@.
+func TestPaletteContactExactAddress(t *testing.T) {
+	h, accs := mailHarness(t, nil, "alice@example.com")
+	h.put(accs[0], "INBOX", coretest.Msg("Bob <bob@example.com>", "alice@example.com", "From Bob", "x"))
+	h.put(accs[0], "INBOX", coretest.Msg("notbob@example.com", "alice@example.com", "From notbob", "x"))
+	h.syncNow(accs[0])
+	h.waitMail("two threads", func() bool { return len(h.items()) == 2 })
+	h.tt.Key(ui.Cmd, ui.KeyK)
+	h.until("the palette", func() bool { return paletteShown(h) })
+	h.click("联系人")
+	h.typeText("bob@")
+	h.see("联系人 · 2")
+	h.post(func() { h.app.mail.mailFrom("bob@example.com") })
+	h.until("Bob's mail alone", func() bool {
+		p := h.app.mail
+		return p.searched && len(p.results) == 1 && p.results[0].Subject == "From Bob"
+	})
+}
+
 func TestPaletteContactShowsTheirMail(t *testing.T) {
 	h, _ := invoices(t)
 	h.click("联系人")
