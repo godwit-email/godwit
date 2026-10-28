@@ -457,6 +457,7 @@
   "reader_month_7": "Juli",
   "reader_month_8": "Aug.",
   "reader_month_9": "Sept.",
+  "reader_more": "Weitere Aktionen",
   "reader_open_in_browser": "Im Browser anzeigen",
   "reader_remote_blocked": "{arg1, number, ::group-off} externe Bilder blockiert, damit der Absender nicht erkennen kann, ob diese Nachricht geöffnet wurde",
   "reader_print": "E-Mail drucken",

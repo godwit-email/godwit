@@ -1220,12 +1220,18 @@ func TestReaderSaveAndPrint(t *testing.T) {
 	tmp := t.TempDir()
 	savePath := filepath.Join(tmp, "test-saved.eml")
 
-	// 1. Save button in toolbar
+	// 1. Save in the toolbar
 	h.plat.mu.Lock()
 	h.plat.savePath = savePath
 	h.plat.mu.Unlock()
 
-	h.click(i18n.T("reader.save"))
+	// Save and print sit in the toolbar's more menu.
+	choose := func(item string) {
+		t.Helper()
+		h.click(i18n.T("reader.more"))
+		h.click(item)
+	}
+	choose(i18n.T("reader.save"))
 	arg := h.callArg("SaveFile")
 	if !strings.HasSuffix(arg, ".eml") {
 		t.Fatalf("expected .eml default name, got %q", arg)
@@ -1235,8 +1241,8 @@ func TestReaderSaveAndPrint(t *testing.T) {
 		return err == nil && len(data) > 0
 	})
 
-	// 2. Print button in toolbar
-	h.click(i18n.T("reader.print"))
+	// 2. Print in the toolbar
+	choose(i18n.T("reader.print"))
 	printArg := h.callArg("Print")
 	if printArg != fmt.Sprint(m.ID) {
 		t.Fatalf("expected Print call for message %d, got %q", m.ID, printArg)

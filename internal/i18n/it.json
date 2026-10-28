@@ -452,6 +452,7 @@
   "reader_month_7": "lug",
   "reader_month_8": "ago",
   "reader_month_9": "set",
+  "reader_more": "Altre azioni",
   "reader_open_in_browser": "Visualizza nel browser",
   "reader_remote_blocked": "{arg1, number, ::group-off} immagini remote bloccate per impedire al mittente di sapere se hai aperto questo messaggio",
   "reader_print": "Stampa email",

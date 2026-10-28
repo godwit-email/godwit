@@ -234,11 +234,10 @@ const (
 	SkeletonShort                                    = 160            // a placeholder row's shorter line
 	OlderRowHeight                                   = 36             // the list's row while older mail loads from the server
 	EmptyIcon, EmptyDescMax                          = 40, 400        // an empty state's icon tile; its text's widest
-	GroupHeight, GroupSepHeight                      = 32, 16         // a button group; its separators
 	TabUnderline                                     = 2              // the selected underline tab's bottom border
 	Watermark                                        = 96             // the empty reader pane's bird
 	FormLabelWidth, ModelIDInputWidth                = 96, 132        // a dialog form's label column; the add-model-ID field
-	AIButtonHeight, SummaryIndent, CardTracking      = 30, 18, 3      // the reader's Summary/Translate buttons; a summary's bullets; a card value's letter spacing
+	SummaryIndent, CardTracking                      = 18, 3          // a summary's bullets; a card value's letter spacing
 	SummaryDot                                       = 5              // a summary point's disc
 )
 

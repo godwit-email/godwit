@@ -452,6 +452,7 @@
   "reader_month_7": "Thg 7",
   "reader_month_8": "Thg 8",
   "reader_month_9": "Thg 9",
+  "reader_more": "Thao tác khác",
   "reader_open_in_browser": "Xem trong trình duyệt",
   "reader_remote_blocked": "Đã chặn {arg1, number, ::group-off} hình ảnh từ xa để người gửi không biết bạn đã mở thư này hay chưa",
   "reader_print": "In email",
