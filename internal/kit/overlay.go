@@ -47,7 +47,7 @@ func Dialog(c *ui.Context, open *bool, title string, o DialogOpts, body, footer 
 	ui.DialogBase(c, open, func(backdrop, panel ui.Element) {
 		dialogShown = true
 		backdrop.Background(scrim.Alpha(k)) // Alpha scales: the scrim fades with the panel
-		aboveCentre(backdrop, panel)
+		aboveCentre(c, backdrop, panel)
 		panel.Opacity(k).Margin(rise(k), 0, 0, 0).Width(width).MaxHeight(maxH).Radius(t.Radius.X2l).Clip().Border(theme.Hairline, t.Border)
 		glassPanel(panel, t)
 		Elevate(c, panel, theme.ShadowX2l)
@@ -85,10 +85,12 @@ func Dialog(c *ui.Context, open *bool, title string, o DialogOpts, body, footer 
 }
 
 // aboveCentre sets panel a little above the middle of backdrop: its centre
-// at 40% of the window, yet at least 32 below the top. It reads the last
-// frame's sizes; the first frame, still transparent, centres the panel.
-func aboveCentre(backdrop, panel ui.Element) {
-	h, p := backdrop.LayoutBounds().H, panel.LayoutBounds().H
+// at 40% of the window, yet at least 32 below the top. The window's height
+// is the root's last frame, known before the dialog opens, so its first
+// frame is already in place; a panel taller than the room for that is
+// measured a frame late.
+func aboveCentre(c *ui.Context, backdrop, panel ui.Element) {
+	h, p := c.Root().LayoutBounds().H, panel.LayoutBounds().H
 	lift := max(0, min(h*theme.DialogLift, h-p-2*theme.DialogMinTop))
 	backdrop.Padding(0, 0, lift, 0)
 }

@@ -635,6 +635,29 @@ func TestDialogAboveCentre(t *testing.T) {
 	}
 }
 
+// A dialog opens where it stays: its first frame already sits above centre,
+// not centred and then moved (the window's height is known before it opens).
+func TestDialogOpensInPlace(t *testing.T) {
+	open := false
+	tt := ui.NewTester(themed(func(c *ui.Context) {
+		ui.Box(c).Fill()
+		Dialog(c, &open, "Steady", DialogOpts{Size: DialogSm, Close: "Close", Alert: true}, nil, nil)
+	}), 800, 1000)
+	tt.SetPreferences(ui.Preferences{ReduceMotion: true}) // no fade or rise: only the placement moves it
+	tt.Frame()
+	open = true
+	tt.Frame()
+	first, ok := tt.Find("Steady")
+	if !ok {
+		t.Fatalf("texts %q", tt.Texts())
+	}
+	tt.Frame()
+	tt.Frame()
+	if then, _ := tt.Find("Steady"); then.Y != first.Y {
+		t.Errorf("the dialog opened at y %v and moved to %v", first.Y, then.Y)
+	}
+}
+
 func TestShadowX2l(t *testing.T) {
 	if len(theme.ShadowX2l) != 1 || theme.ShadowX2l[0] != (theme.ShadowLayer{Y: 25, Blur: 50, Spread: -12, Alpha: 0.25}) {
 		t.Errorf("ShadowX2l %v is not Tailwind's shadow-2xl", theme.ShadowX2l)
