@@ -112,12 +112,7 @@ func sidebarFolders(acc int64, fs []core.Folder) []sideFolder {
 func (p *mailPage) Sidebar(c *ui.Context) {
 	a := p.a
 	th := c.Theme()
-	ui.Row(c).Padding(0, th.Space(1.5)+sidebarInset(c), th.Space(3), 0).Gap(th.Space(1)).Children(func() {
-		a.pageSwitch(c)
-		ui.Spacer(c)
-		kit.IconButton(c, "search", i18n.T("mail.search"), kit.ButtonOpts{Variant: kit.Ghost, Size: kit.SizeSm}).
-			OnClick(a.openPalette)
-	})
+	a.sidebarHead(c)
 	sidebarScroll(c, func() {
 		compose := kit.SidebarItem(c, kit.SidebarItemOpts{OnClick: p.compose}).Gap(th.Space(2.5))
 		compose.Children(func() {
@@ -286,5 +281,17 @@ func (p *mailPage) newDraft(then func(core.Draft)) {
 			return
 		}
 		then(d)
+	})
+}
+
+// sidebarHead is the top of either page's sidebar: the page switch and the
+// search button.
+func (a *App) sidebarHead(c *ui.Context) {
+	th := c.Theme()
+	ui.Row(c).Padding(0, th.Space(1.5)+sidebarInset(c), th.Space(3), 0).Gap(th.Space(1)).Children(func() {
+		a.pageSwitch(c)
+		ui.Spacer(c)
+		kit.IconButton(c, "search", i18n.T("mail.search"), kit.ButtonOpts{Variant: kit.Ghost, Size: kit.SizeSm}).
+			OnClick(a.openPalette)
 	})
 }

@@ -201,3 +201,10 @@ func TestAskDeleteShown(t *testing.T) {
 		t.Fatalf("history keeps it: %+v", h.app.history)
 	}
 }
+
+// The Wit page's sidebar has the search button too: it opens the palette.
+func TestAskSidebarSearch(t *testing.T) {
+	h, _, _ := askHarness(t, true)
+	h.click("搜索")
+	h.until("the palette", func() bool { return paletteShown(h) })
+}

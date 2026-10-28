@@ -76,7 +76,7 @@ func (p *askPage) Title() (string, string) {
 func (p *askPage) Sidebar(c *ui.Context) {
 	a := p.a
 	t, th := theme.Of(c), c.Theme()
-	ui.Row(c).Padding(0, sidebarInset(c), th.Space(3), 0).Children(func() { a.pageSwitch(c) })
+	a.sidebarHead(c)
 	newChat := kit.SidebarItem(c, kit.SidebarItemOpts{OnClick: func() { a.navigate(Route{Page: PageWit}) }}).Gap(th.Space(2.5)).Margin(0, sidebarInset(c), 0, 0)
 	newChat.Children(func() {
 		kit.SidebarIcon(c, newChat, "square-pen", false)
