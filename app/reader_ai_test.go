@@ -216,7 +216,7 @@ func TestSummaryNewestOnly(t *testing.T) {
 	h, acc, _ := aiHarness(t, true, noQuick)
 	msgs := h.thread2(acc)
 	r := h.app.mail.reader
-	h.openThread(msgs[0].ThreadID)
+	h.openThreadWith(msgs[0].ThreadID, msgs[0].ID)
 	h.until("the newest summary done", func() bool {
 		s := r.ai[msgs[1].ID]
 		return s != nil && s.summary != nil && s.summary.done

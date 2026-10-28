@@ -9,6 +9,7 @@ import (
 	"github.com/egoist/mygo/ui"
 	"github.com/godwit-email/godwit/core"
 	"github.com/godwit-email/godwit/core/coretest"
+	"github.com/godwit-email/godwit/internal/theme"
 )
 
 // A message read alone has no count of messages and no fold button; a
@@ -28,10 +29,10 @@ func TestReaderThreadHeader(t *testing.T) {
 	}
 
 	r := h.app.mail.reader
-	h.openThread(msgs[0].ThreadID)
+	h.openThreadWith(msgs[0].ThreadID, msgs[0].ID)
 	h.seeBody(msgs[1].ID)
 	h.see("2 封往来")
-	if !r.open[msgs[0].ID] { // both unread: both open
+	if !r.open[msgs[0].ID] { // the older opened too
 		t.Fatalf("open %v", r.open)
 	}
 	h.click("bob@example.com")
@@ -129,5 +130,72 @@ func TestQuickLabel(t *testing.T) {
 		if got := quickLabel(c.q); got != c.want {
 			t.Errorf("quickLabel(%+v) = %q, want %q", c.q, got, c.want)
 		}
+	}
+}
+
+// A folded message shows its own avatar, read while it was open, else one
+// the thread shows for its sender; none for another sender.
+func TestShownAvatar(t *testing.T) {
+	own, theirs := &ui.Bitmap{}, &ui.Bitmap{}
+	msg := func(id int64, from string) core.MessageSummary { return core.MessageSummary{ID: id, From: from} }
+	r := &reader{bodies: map[int64]*msgBody{
+		1: {msg: core.Message{MessageSummary: msg(1, "Google <no-reply@accounts.google.com>")}, avatar: theirs},
+		2: {msg: core.Message{MessageSummary: msg(2, "no-reply@accounts.google.com")}, avatar: own},
+	}}
+	if got := r.shownAvatar(msg(2, "no-reply@accounts.google.com")); got != own {
+		t.Error("not its own avatar")
+	}
+	if got := r.shownAvatar(msg(3, "Google <No-Reply@accounts.google.com>")); got != theirs && got != own {
+		t.Error("not its sender's avatar")
+	}
+	if got := r.shownAvatar(msg(4, "bob@example.com")); got != nil {
+		t.Error("another sender's avatar")
+	}
+}
+
+// A message's avatar stays where it is as the message folds and opens.
+func TestReaderAvatarStill(t *testing.T) {
+	h, acc, _ := aiHarness(t, false, noAuto)
+	msgs := h.thread2(acc)
+	r := h.app.mail.reader
+	h.openThreadWith(msgs[0].ThreadID, msgs[0].ID)
+	h.seeBody(msgs[1].ID)
+	initial := func() ui.Rect { // bob's: the first message's avatar
+		h.t.Helper()
+		box, ok := h.tt.Find("B")
+		if !ok {
+			t.Fatalf("no avatar: %q", h.tt.Texts())
+		}
+		return box
+	}
+	open := initial()
+	h.click("收起")
+	h.tt.Advance(2 * theme.MotionBase)
+	if r.open[msgs[0].ID] {
+		t.Fatal("not folded")
+	}
+	if folded := initial(); folded.X != open.X || folded.Y != open.Y {
+		t.Fatalf("avatar at %v folded, %v open", folded, open)
+	}
+	h.click("first words")
+	h.tt.Frame()
+	if opening := initial(); opening.X != open.X || opening.Y != open.Y {
+		t.Fatalf("avatar at %v opening, %v open", opening, open)
+	}
+}
+
+// A message's header keeps to the column its subject does: the avatar's
+// left edge under the subject's.
+func TestReaderMessageAligned(t *testing.T) {
+	h, accs := mailHarness(t, nil, "alice@example.com")
+	h.resize(2400, 900) // the pane wider than its column, which centers in it
+	m := h.deliverOne(accs[0], coretest.Msg("bob@example.com", accs[0].Email, "Plan", "body"))
+	h.openThread(m.ThreadID)
+	h.seeBody(m.ID)
+	h.tt.Advance(2 * theme.MotionBase)
+	subject, _ := h.tt.Find("Plan")
+	avatar, ok := h.tt.Find("bob@example.com") // the avatar first, its pressable labelled by the address
+	if !ok || avatar.X != subject.X {
+		t.Fatalf("avatar at x %v, subject at x %v", avatar.X, subject.X)
 	}
 }

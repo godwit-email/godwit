@@ -14,6 +14,7 @@ import (
 	"github.com/egoist/mygo/ui"
 	"github.com/godwit-email/godwit/core"
 	"github.com/godwit-email/godwit/core/coretest"
+	"github.com/godwit-email/godwit/internal/theme"
 )
 
 // viewBox is where the last frame shows v, as the pointer finds it (a
@@ -105,7 +106,7 @@ func TestReaderWebViewsLifecycle(t *testing.T) {
 	h, accs := mailHarness(t, nil, "alice@example.com")
 	thread, msgs := threeMessages(t, h, accs[0])
 	other := h.deliverOne(accs[0], coretest.Msg("erin@example.com", accs[0].Email, "Elsewhere", "other body"))
-	h.openThread(thread)
+	h.openThreadWith(thread, msgs[1].ID)
 	v1, v2 := h.seeBody(msgs[1].ID), h.seeBody(msgs[2].ID)
 	if h.plat.view(msgs[0].ID) != nil || h.plat.openViews() != 2 {
 		t.Fatalf("%d pages, the read one's %v", h.plat.openViews(), h.plat.view(msgs[0].ID))
@@ -179,7 +180,7 @@ func TestReaderFoldDuringLoad(t *testing.T) {
 	r := h.app.mail.reader
 	reading, release := gateBody(r, msgs[1].ID)
 	defer release()
-	h.openThread(thread)
+	h.openThreadWith(thread, msgs[1].ID)
 	h.until("the body being read", func() bool {
 		select {
 		case <-reading:
@@ -295,7 +296,7 @@ func TestReaderHeightApplied(t *testing.T) {
 		t.Fatalf("height %v before any report, want about a line", box.H)
 	}
 	h.app.BodyHeight(v, m.ID, 640)
-	h.tt.Frame()
+	h.tt.Advance(2 * theme.MotionBase) // the message grows to hold it
 	if box, _ := h.viewBox(v); box.H < 636 || box.H > 640 {
 		t.Fatalf("height %v, want 640", box.H)
 	}
@@ -364,10 +365,6 @@ func TestReaderRemoteImages(t *testing.T) {
 	h.openThread(m.ThreadID)
 	v := h.seeBody(m.ID)
 	h.see("1 张图片未加载")
-	// The plaintext message now has its own avatar load action; target
-	// this message's existing body-image action by folding the older one.
-	h.app.mail.reader.toggle(msgs[0].ID)
-	h.tt.Frame()
 	if h.hasCall("AllowImages") {
 		t.Fatal("allowed before 加载图片")
 	}
@@ -493,7 +490,7 @@ func TestReaderBodySearch(t *testing.T) {
 func TestReaderCloseClosesViews(t *testing.T) {
 	h, accs := mailHarness(t, nil, "alice@example.com")
 	thread, msgs := threeMessages(t, h, accs[0])
-	h.openThread(thread)
+	h.openThreadWith(thread, msgs[1].ID)
 	h.seeBody(msgs[1].ID)
 	h.seeBody(msgs[2].ID)
 	r := h.app.mail.reader
@@ -605,7 +602,7 @@ func TestReaderBodyGlass(t *testing.T) {
 	v := h.seeBody(m.ID)
 	r := h.app.mail.reader
 	h.app.BodyHeight(v, m.ID, 3000)
-	h.tt.Frame()
+	h.tt.Advance(2 * theme.MotionBase) // the message grows to hold it
 	glass := func() [2]int {
 		h.plat.mu.Lock()
 		defer h.plat.mu.Unlock()

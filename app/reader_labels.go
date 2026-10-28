@@ -36,6 +36,21 @@ func (r *reader) labelRow(c *ui.Context) {
 			kit.Text(c, i18n.T("reader.labels.add"), t.Text.Sm)
 		})
 		kit.Popover(c, add, &r.labelMenu, func() { r.labelMenuBody(c) })
+		// 退订, once a thread: it leaves the list, whichever message says how.
+		if id := r.unsubMessage(); id != 0 {
+			ui.Spacer(c)
+			if r.bodies[id].unsubbing {
+				kit.Spinner(c)
+			} else {
+				// as tall as the label chips beside it, on the secondary button's fill
+				b := kit.Pressable(c, kit.PressableOpts{OnClick: func() { r.unsubscribe(id) }}).Label(i18n.T("reader.unsubscribe")).
+					Height(theme.LabelChip).PaddingX(th.Space(1.5)).Gap(th.Space(1)).Radius(t.Radius.Sm).Background(t.Hover)
+				b.Children(func() {
+					ui.Icon(c, icons.Get("mail-forbid")).Size(theme.IconXs, theme.IconXs)
+					kit.Text(c, i18n.T("reader.unsubscribe"), t.Text.Sm)
+				})
+			}
+		}
 	})
 }
 

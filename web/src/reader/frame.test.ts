@@ -1,5 +1,5 @@
 import type { ReaderBody, Theme } from "@/mygo";
-import { buildSrcdoc, FRAME_CSP, frameScheme } from "./frame";
+import { buildSrcdoc, FRAME_CSP, frameScheme, isTextHTML } from "./frame";
 
 const theme = (over: Partial<Theme> = {}): Theme => ({
   mode: "light",
@@ -12,7 +12,8 @@ const theme = (over: Partial<Theme> = {}): Theme => ({
 const body = (over: Partial<ReaderBody> = {}): ReaderBody => ({
   message: 1,
   version: 1,
-  html: '<p>Hello <span data-href="https://example.com">there</span></p>',
+  // laid out (a table), not text in all but name (isTextHTML)
+  html: '<table><tr><td><p>Hello <span data-href="https://example.com">there</span></p></td></tr></table>',
   plain: "",
   remote: false,
   blocked: 0,
@@ -113,7 +114,7 @@ const render = (over: Partial<ReaderBody>, mode: Theme["mode"], systemDark = fal
   parse(buildSrcdoc(body(over), theme({ mode }), systemDark));
 const cls = (d: Document) => d.getElementById("godwit-body")?.className;
 const aware = {
-  html: '<style data-dark="">#godwit-body.godwit-dark .a{color:red}</style><p>x</p>',
+  html: '<style data-dark="">#godwit-body.godwit-dark .a{color:red}</style><table><tr><td>x</td></tr></table>',
 };
 
 test("html mail keeps author dark styles, otherwise starts from a hidden light baseline", () => {
@@ -161,6 +162,56 @@ test("plain text uses theme and body size, escaped and pre-wrapped", () => {
   expect(css).toContain("oklch(0.985 0 0)");
   expect(css).toContain("--godwit-plain-fg:oklch(0.985 0 0)");
   expect(css).toContain("color:var(--godwit-plain-fg,CanvasText)");
+});
+
+test("plain text links its web addresses and marks its quoted lines", () => {
+  const plain = body({
+    html: "",
+    plain:
+      'Visit https://github.com/contact.\n> see https://x.example/a?b=1&c="2"\nno javascript:alert(1)',
+  });
+  const wrap = parse(buildSrcdoc(plain, theme({ mode: "light" }))).getElementById("godwit-body");
+  const links = [...(wrap?.querySelectorAll("[data-href]") ?? [])].map((e) =>
+    e.getAttribute("data-href"),
+  );
+  expect(links).toEqual(["https://github.com/contact", "https://x.example/a?b=1&c="]);
+  expect(wrap?.querySelector(".godwit-quote")?.textContent).toBe(
+    '> see https://x.example/a?b=1&c="2"',
+  );
+  expect(wrap?.textContent).toBe(plain.plain);
+  expect(wrap?.querySelector("script,a")).toBeNull();
+});
+
+test("HTML of text and line breaks reads as plain text does", () => {
+  expect(isTextHTML("Your code: 07698E<br/><br/>\n  这是验证码")).toBe(true);
+  // a person's mail: its own type sizes, a list, a hidden tracking pixel, a mobile stylesheet
+  expect(
+    isTextHTML(
+      "<style>@media (max-width:600px){#godwit-body{width:100% !important}}</style>" +
+        '<div style="font-size: 13px"><p style="font-size: 13px; line-height: 16px">Hi</p>' +
+        '<ul><li><a data-href="https://x.example">a link</a></li></ul><font size="1">bye</font>' +
+        '<img style="height: 1px; width: 1px; display: none" alt=""/></div>',
+    ),
+  ).toBe(true);
+  // a GitHub notification: classes, a muted footer, a hidden message id
+  expect(
+    isTextHTML(
+      '<div class="email-fragment">Closed <a class="issue-link" data-href="https://github.com/o/r/pull/1">#1</a>.</div>' +
+        '<p style="font-size: small; color: #666">—<br/>Reply to this email directly.' +
+        '<span style="color: transparent; font-size: 0; display: none">Message ID: <span>x</span></span></p>',
+    ),
+  ).toBe(true);
+  expect(isTextHTML("<table><tr><td>x</td></tr></table>")).toBe(false);
+  expect(isTextHTML('<p style="background: #000">x</p>')).toBe(false);
+  expect(isTextHTML('<td bgcolor="#eee">x</td>')).toBe(false);
+  expect(isTextHTML("<style>.hero{background:url(x)}</style><p>x</p>")).toBe(false);
+  expect(isTextHTML('<img src="data:," width="600">')).toBe(false);
+  const text = parse(buildSrcdoc(body({ html: "a<br/>b" }), theme({ mode: "light" })));
+  expect(text.getElementById("godwit-body")?.className).toBe("godwit-light godwit-text");
+  const designed = parse(
+    buildSrcdoc(body({ html: "<table><tr><td>a</td></tr></table>" }), theme({ mode: "light" })),
+  );
+  expect(designed.getElementById("godwit-body")?.className).toBe("godwit-light");
 });
 
 test("plain text in system mode follows the appearance", () => {

@@ -801,31 +801,6 @@
   "reader_ask_wit": "Ask Wit",
   "reader_avatar_blocked": "Blocked the sender avatar; loading may contact the sender''s website and Gravatar",
   "reader_body": "Message body",
-  "reader_date": "{arg1} {arg2, number, ::group-off}",
-  "@reader_date": {
-    "placeholders": {
-      "arg1": {
-        "type": "String"
-      },
-      "arg2": {
-        "type": "int"
-      }
-    }
-  },
-  "reader_date_year": "{arg1} {arg2, number, ::group-off}, {arg3, number, ::group-off}",
-  "@reader_date_year": {
-    "placeholders": {
-      "arg1": {
-        "type": "String"
-      },
-      "arg2": {
-        "type": "int"
-      },
-      "arg3": {
-        "type": "int"
-      }
-    }
-  },
   "reader_egress_allow": "Allow once",
   "reader_egress_body": "Plugin {arg1} will send data to:",
   "@reader_egress_body": {
@@ -891,18 +866,6 @@
   "reader_load": "Load",
   "reader_load_images": "Load images",
   "reader_me": "me",
-  "reader_month_1": "Jan",
-  "reader_month_10": "Oct",
-  "reader_month_11": "Nov",
-  "reader_month_12": "Dec",
-  "reader_month_2": "Feb",
-  "reader_month_3": "Mar",
-  "reader_month_4": "Apr",
-  "reader_month_5": "May",
-  "reader_month_6": "Jun",
-  "reader_month_7": "Jul",
-  "reader_month_8": "Aug",
-  "reader_month_9": "Sep",
   "reader_more": "More actions",
   "reader_open_in_browser": "View in browser",
   "reader_remote_blocked": "Blocked {arg1, number, ::group-off} remote images so the sender can''t tell whether you opened this message",
@@ -2035,8 +1998,8 @@
   "settings_thread_view_help": "Group mail of the same conversation together",
   "settings_thread_collapse": "Collapse thread history",
   "settings_thread_collapse_help": "Group older messages in long conversations into an expandable card",
-  "settings_thread_collapse_threshold": "Collapse history from",
-  "settings_thread_collapse_threshold_help": "Minimum number of messages in a conversation (2–100, default: 5)",
+  "settings_thread_collapse_threshold": "Messages kept in sight",
+  "settings_thread_collapse_threshold_help": "In longer conversations, this many of the newest messages stay shown; older ones fold into a card (2–100, default: 5)",
   "settings_translator": "Translate with",
   "settings_translator_gone": "{arg1} (uninstalled)",
   "@settings_translator_gone": {
