@@ -1,6 +1,6 @@
-import { StrictMode } from "react";
 import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
+import { StrictMode } from "react";
 import type { WitEvent, WitHistory, WitOpenMsg, WitPageState } from "@/mygo";
 import { legacy } from "@/wit/fixtures";
 
