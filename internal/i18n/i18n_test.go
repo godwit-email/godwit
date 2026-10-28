@@ -152,6 +152,30 @@ func TestThreadExpandPlural(t *testing.T) {
 	}
 }
 
+func TestWitMaskedPlural(t *testing.T) {
+	t.Cleanup(func() { SetLanguage("zh-Hans") })
+	SetLanguage("de")
+	if got := Plural("wit.masked", 1); got != "1 Wert maskiert" {
+		t.Errorf("de one: %q", got)
+	}
+	if got := Plural("wit.masked", 2); got != "2 Werte maskiert" {
+		t.Errorf("de other: %q", got)
+	}
+	if got := Plural("wit.warned", 1); got != "1 Wert unmaskiert gesendet (nur Warnung)" {
+		t.Errorf("de warned one: %q", got)
+	}
+	if got := Tf("wit.masked_warned", 1, 1); got != "1 Wert maskiert, 1 unmaskiert gesendet (nur Warnung)" {
+		t.Errorf("de masked_warned: %q", got)
+	}
+	SetLanguage("en")
+	if got := Plural("wit.masked", 1); got != "Masked 1 value" {
+		t.Errorf("en one: %q", got)
+	}
+	if got := Plural("wit.masked", 2); got != "Masked 2 values" {
+		t.Errorf("en other: %q", got)
+	}
+}
+
 func TestFormatDate(t *testing.T) {
 	now := time.Date(2026, 10, 9, 12, 0, 0, 0, time.UTC)
 	sameYear := time.Date(2026, 10, 1, 10, 0, 0, 0, time.UTC)

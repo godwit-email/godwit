@@ -104,6 +104,10 @@
   --sidebar-accent-foreground: oklch(0.205 0 0);
   --sidebar-border: oklch(0.922 0 0);
   --sidebar-ring: oklch(0.708 0 0);
+  --glass-bg: oklch(1 0 0 / 70%);
+  --glass-border: oklch(0.145 0 0 / 12%);
+  --glass-ring: oklch(0.145 0 0 / 5%);
+  --glass-hover: oklch(0 0 0 / 6%);
 }
 
 .dark {
@@ -139,6 +143,10 @@
   --sidebar-accent-foreground: oklch(0.985 0 0);
   --sidebar-border: oklch(1 0 0 / 10%);
   --sidebar-ring: oklch(0.556 0 0);
+  --glass-bg: oklch(0.205 0 0 / 70%);
+  --glass-border: oklch(1 0 0 / 15%);
+  --glass-ring: oklch(1 0 0 / 6%);
+  --glass-hover: oklch(1 0 0 / 10%);
 }
 
 @layer base {
@@ -179,10 +187,40 @@ kbd {
   --app-region: no-drag;
 }
 
+@layer components {
+  /* Frosted liquid glass for popups, menus, dropdowns, and tooltips. */
+  .glass-popover,
+  [data-slot="popover-content"],
+  [data-slot="dropdown-menu-content"],
+  [data-slot="dropdown-menu-sub-content"],
+  [data-slot="select-content"],
+  [data-slot="hover-card-content"],
+  [data-slot="tooltip-content"] {
+    --popover: var(--glass-bg);
+    backdrop-filter: blur(24px);
+    -webkit-backdrop-filter: blur(24px);
+    border-radius: var(--radius-lg);
+    border: 1px solid var(--glass-border);
+    box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.25);
+    outline: 1px solid var(--glass-ring);
+  }
+
+  [data-slot="select-scroll-up-button"],
+  [data-slot="select-scroll-down-button"] {
+    --popover: var(--glass-bg);
+    backdrop-filter: blur(24px);
+    -webkit-backdrop-filter: blur(24px);
+  }
+}
+
 /* Wit's review marks: the native InsBg/InsText/DelBg/DelText, set by applyTheme (webui.ThemeVars). */
 @theme inline {
   --color-ins: var(--ins-bg);
   --color-ins-foreground: var(--ins-text);
   --color-del: var(--del-bg);
   --color-del-foreground: var(--del-text);
+  --color-glass-bg: var(--glass-bg);
+  --color-glass-border: var(--glass-border);
+  --color-glass-ring: var(--glass-ring);
+  --color-glass-hover: var(--glass-hover);
 }

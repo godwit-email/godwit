@@ -309,6 +309,7 @@ describe("Panel", () => {
   });
 
   it("an answer says how many values 脱敏 masked, and those it sent as they are", async () => {
+    const user = userEvent.setup();
     const answer = {
       id: "a0",
       role: "assistant",
@@ -322,7 +323,10 @@ describe("Panel", () => {
       elapsed: 0,
     };
     await setup({ history: hist({ ...empty, messages: [{ ...answer, masked: 2, warned: 1 }] }) });
-    expect(await screen.findByText("已脱敏 2 处，1 处仅警告未遮")).toBeInTheDocument();
+    const note = await screen.findByText("已脱敏 2 处，1 处仅警告未遮");
+    expect(note).toBeInTheDocument();
+    await user.hover(note);
+    expect(await screen.findByText(/敏感数据在发送给模型前已替换为占位符/)).toBeInTheDocument();
     cleanup();
     await setup({ history: hist({ ...empty, messages: [answer] }) });
     await screen.findByText("答案");

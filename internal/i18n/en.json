@@ -2231,9 +2231,34 @@
   "wit_mail_gone": "This email is no longer here.",
   "wit_mail_open": "View email",
   "wit_citations_count": "Cited {arg1} emails",
-  "wit_masked": "Masked {arg1} values",
-  "wit_masked_warned": "Masked {arg1} values, {arg2} sent as they are (warn only)",
-  "wit_warned": "{arg1} values sent as they are (warn only)",
+  "wit_masked": "{arg1, plural, one {Masked {arg1, number, ::group-off} value} other {Masked {arg1, number, ::group-off} values}}",
+  "@wit_masked": {
+    "placeholders": {
+      "arg1": {
+        "type": "int"
+      }
+    }
+  },
+  "wit_masked_warned": "{arg1, plural, one {Masked {arg1, number, ::group-off} value} other {Masked {arg1, number, ::group-off} values}}, {arg2, plural, one {{arg2, number, ::group-off} sent as is (warn only)} other {{arg2, number, ::group-off} sent as they are (warn only)}}",
+  "@wit_masked_warned": {
+    "placeholders": {
+      "arg1": {
+        "type": "int"
+      },
+      "arg2": {
+        "type": "int"
+      }
+    }
+  },
+  "wit_warned": "{arg1, plural, one {{arg1, number, ::group-off} value sent as is (warn only)} other {{arg1, number, ::group-off} values sent as they are (warn only)}}",
+  "@wit_warned": {
+    "placeholders": {
+      "arg1": {
+        "type": "int"
+      }
+    }
+  },
+  "wit_masked_help": "Sensitive data such as keys, numbers, or email addresses were replaced with placeholders before sending to the model and restored in the answer.",
   "wit_approval_count": "{arg1} actions await you",
   "wit_approval_reject_all": "Reject all",
   "wit_approval_pending": "Waiting",
