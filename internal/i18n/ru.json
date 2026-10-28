@@ -456,6 +456,7 @@
   "reader_today": "Сегодня",
   "reader_thread_collapse": "Свернуть историю переписки",
   "reader_thread_expand": "{arg1, plural, one {Развернуть историю переписки ({arg1, number, ::group-off} письмо)} few {Развернуть историю переписки ({arg1, number, ::group-off} письма)} many {Развернуть историю переписки ({arg1, number, ::group-off} писем)} other {Развернуть историю переписки ({arg1, number, ::group-off} писем)}}",
+  "reader_trackers_blocked": "{arg1, plural, one {Заблокирован {arg1, number, ::group-off} трекер} few {Заблокировано {arg1, number, ::group-off} трекера} many {Заблокировано {arg1, number, ::group-off} трекеров} other {Заблокировано трекеров: {arg1, number, ::group-off}}}",
   "reader_truncated": "Это письмо слишком длинное; показана только начальная часть",
   "reader_trust": "Доверять отправителю",
   "reader_trust_sender": "Всегда доверять этому отправителю",

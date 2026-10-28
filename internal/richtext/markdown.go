@@ -20,7 +20,7 @@ func FromMarkdown(src string) Doc {
 	if err := md.Convert([]byte(src), &buf); err != nil {
 		return Doc{}
 	}
-	safe, _ := mail.Sanitize(buf.String(), nil, false)
+	safe, _, _ := mail.Sanitize(buf.String(), nil, false)
 	d, _ := FromMailHTML(safe, DefaultLimits)
 	return d
 }

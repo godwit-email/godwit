@@ -1183,6 +1183,9 @@ func (r *reader) message(c *ui.Context, m core.MessageSummary) {
 				return
 			}
 			bodyReady = true
+			if n := b.msg.TrackersBlocked; n > 0 { // always blocked, so nothing to offer: a quiet note
+				kit.Text(c, i18n.Tf("reader.trackers_blocked", n), t.Text.Sm).TextColor(t.Muted)
+			}
 			bodyBlocked := b.msg.RemoteImagesBlocked > 0 && !b.remote && !b.trusted
 			if b.allowErr != nil && (bodyBlocked || addr != "" && b.avatarBlocked && !b.avatarAllow) {
 				kit.Alert(c, kit.Danger, humanize(b.allowErr), func() {

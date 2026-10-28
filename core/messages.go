@@ -44,6 +44,9 @@ type Message struct {
 	HTML, Text          string
 	Truncated           bool
 	RemoteImagesBlocked int
+	// TrackersBlocked counts the tracking pixels dropped from HTML, whatever
+	// the remote images setting or the sender's trust.
+	TrackersBlocked int
 	// InJunk: the folder is junk, detected or given (even where another
 	// folder holds the role), so its sender's images are never trusted.
 	InJunk      bool
@@ -387,7 +390,7 @@ func (s *Service) GetMessage(ctx context.Context, id int64, loadRemoteImages boo
 		}
 	}
 	if raw != "" {
-		msg.HTML, msg.RemoteImagesBlocked = gomail.Sanitize(raw, inline, loadRemoteImages)
+		msg.HTML, msg.RemoteImagesBlocked, msg.TrackersBlocked = gomail.Sanitize(raw, inline, loadRemoteImages)
 	}
 	return msg, nil
 }

@@ -456,6 +456,7 @@
   "reader_today": "今天",
   "reader_thread_collapse": "折叠历史邮件",
   "reader_thread_expand": "展开历史邮件（{arg1, number, ::group-off} 封）",
+  "reader_trackers_blocked": "已阻止 {arg1, number, ::group-off} 个跟踪器",
   "reader_truncated": "正文过长，只显示了开头",
   "reader_trust": "信任发件人",
   "reader_trust_sender": "始终信任此发件人",

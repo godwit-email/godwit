@@ -131,7 +131,7 @@ func (s *Service) prefetchImages(ctx context.Context, message int64) {
 	if err != nil || len(rows.Values) == 0 || store.Str(rows.Values[0][0]) == "" {
 		return
 	}
-	safe, _ := gomail.Sanitize(store.Str(rows.Values[0][0]), nil, true)
+	safe, _, _ := gomail.Sanitize(store.Str(rows.Values[0][0]), nil, true)
 	urls := gomail.RemoteImages(safe)
 	if len(urls) > prefetchImages {
 		urls = urls[:prefetchImages]

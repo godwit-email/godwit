@@ -456,6 +456,7 @@
   "reader_today": "今天",
   "reader_thread_collapse": "摺疊歷史郵件",
   "reader_thread_expand": "展開歷史郵件（{arg1, number, ::group-off} 封）",
+  "reader_trackers_blocked": "已阻擋 {arg1, number, ::group-off} 個追蹤器",
   "reader_truncated": "內文過長，只顯示了開頭",
   "reader_trust": "信任寄件者",
   "reader_trust_sender": "始終信任此寄件人",

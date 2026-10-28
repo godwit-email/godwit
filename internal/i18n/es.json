@@ -456,6 +456,7 @@
   "reader_today": "Hoy",
   "reader_thread_collapse": "Plegar historial de correos",
   "reader_thread_expand": "{arg1, plural, one {Desplegar historial de correos ({arg1, number, ::group-off} correo)} many {Desplegar historial de correos ({arg1, number, ::group-off} correos)} other {Desplegar historial de correos ({arg1, number, ::group-off} correos)}}",
+  "reader_trackers_blocked": "{arg1, plural, one {Se bloqueó {arg1, number, ::group-off} rastreador} many {Se bloquearon {arg1, number, ::group-off} rastreadores} other {Se bloquearon {arg1, number, ::group-off} rastreadores}}",
   "reader_truncated": "Este mensaje es demasiado largo; solo se muestra el principio",
   "reader_trust": "Confiar en el remitente",
   "reader_trust_sender": "Confiar siempre en este remitente",

@@ -456,6 +456,7 @@
   "reader_today": "Aujourd’hui",
   "reader_thread_collapse": "Réduire l’historique",
   "reader_thread_expand": "{arg1, plural, one {Afficher l’historique ({arg1, number, ::group-off} e-mail)} many {Afficher l’historique ({arg1, number, ::group-off} e-mails)} other {Afficher l’historique ({arg1, number, ::group-off} e-mails)}}",
+  "reader_trackers_blocked": "{arg1, plural, one {{arg1, number, ::group-off} traqueur bloqué} many {{arg1, number, ::group-off} traqueurs bloqués} other {{arg1, number, ::group-off} traqueurs bloqués}}",
   "reader_truncated": "Ce message est trop long ; seul le début est affiché",
   "reader_trust": "Faire confiance à l''expéditeur",
   "reader_trust_sender": "Toujours faire confiance à cet expéditeur",

@@ -533,6 +533,30 @@ func TestReaderTrustSender(t *testing.T) {
 	}
 }
 
+// Tracking pixels are noted apart from the remote images notice, and stay
+// blocked for a trusted sender, whose other images load without a notice.
+func TestReaderTrackersBlocked(t *testing.T) {
+	h, accs := mailHarness(t, nil, "alice@example.com")
+	remoteImages(t, h, "trusted")
+	acc := accs[0]
+	img := coretest.HTML(`<p>Hi</p><img src="https://img.example/p.png" width="2" height="2">` +
+		`<img src="https://t.example/o.gif" width="1" height="1"><img src="https://x.list-manage.com/track/open.php?u=1">`)
+	m := h.deliverOne(acc, coretest.Msg("Bob <bob@example.com>", acc.Email, "News", "text", img))
+	h.openThread(m.ThreadID)
+	h.seeBody(m.ID)
+	h.see("已阻止 2 个跟踪器")
+	h.see("已阻止 1 张远程图片")
+	h.click("始终信任此发件人")
+	h.until("allowed", func() bool { return h.countCalls(fmt.Sprint("AllowImages ", m.ID)) == 1 })
+	n := h.deliverOne(acc, coretest.Msg("bob@example.com", acc.Email, "More news", "text", img))
+	h.openThread(n.ThreadID)
+	h.seeBody(n.ID)
+	h.see("已阻止 2 个跟踪器")
+	if h.tt.HasText("张远程图片") || h.tt.HasText("加载图片") {
+		t.Fatal("a trusted sender's message shows the remote images notice")
+	}
+}
+
 // A quoted local part: core gets the From as sent, which parses.
 func TestReaderTrustQuotedSender(t *testing.T) {
 	h, accs := mailHarness(t, nil, "alice@example.com")

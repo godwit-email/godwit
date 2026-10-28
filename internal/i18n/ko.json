@@ -456,6 +456,7 @@
   "reader_today": "오늘",
   "reader_thread_collapse": "이메일 대화 내역 접기",
   "reader_thread_expand": "이메일 대화 내역 펼치기 ({arg1, number, ::group-off}개)",
+  "reader_trackers_blocked": "{arg1, plural, other {추적기 {arg1, number, ::group-off}개를 차단했습니다}}",
   "reader_truncated": "본문이 너무 길어 앞부분만 표시됩니다",
   "reader_trust": "보낸 사람 신뢰",
   "reader_trust_sender": "이 보낸 사람을 항상 신뢰",
