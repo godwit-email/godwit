@@ -293,6 +293,48 @@ func TestKitSidebarItem(t *testing.T) {
 	}
 }
 
+// TestKitSidebarItemHoverSoft verifies sidebar hover uses HoverTint and is distinct from Selected.
+func TestKitSidebarItemHoverSoft(t *testing.T) {
+	for _, dark := range []bool{false, true} {
+		mode := "light"
+		if dark {
+			mode = "dark"
+		}
+		t.Run(mode, func(t *testing.T) {
+			tt := ui.NewTester(func(c *ui.Context) {
+				tok := theme.FromSettings(core.Settings{Theme: mode, Density: "compact", FontSize: 14}, dark)
+				theme.Apply(c, tok)
+				ui.Column(c).Width(240).Children(func() {
+					SidebarItem(c, SidebarItemOpts{Selected: true}).Children(func() { ui.Text(c, "Inbox") })
+					SidebarItem(c, SidebarItemOpts{}).Children(func() { ui.Text(c, "Sent") })
+				})
+			}, 300, 200)
+
+			inbox, ok := tt.Find("Inbox")
+			if !ok {
+				t.Fatal("no Inbox")
+			}
+			sent, ok := tt.Find("Sent")
+			if !ok {
+				t.Fatal("no Sent")
+			}
+
+			// Hover over Sent:
+			tt.Move(sent.X+sent.W/2, sent.Y+sent.H/2)
+			tt.Frame()
+			tt.Advance(theme.MotionFast)
+
+			if dark {
+				selPx := tt.Image().RGBAAt(int(inbox.X)+100, int(inbox.Y+inbox.H/2))
+				hoverPx := tt.Image().RGBAAt(int(sent.X)+100, int(sent.Y+sent.H/2))
+				if hoverPx == selPx {
+					t.Errorf("hovered row %v is identical to selected row %v, want distinct contrast", hoverPx, selPx)
+				}
+			}
+		})
+	}
+}
+
 func TestKitButtonSizes(t *testing.T) {
 	for _, density := range []string{"compact", "comfortable"} {
 		var th *ui.Theme

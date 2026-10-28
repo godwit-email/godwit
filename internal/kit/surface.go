@@ -26,11 +26,14 @@ func SidebarItem(c *ui.Context, o SidebarItemOpts) ui.Element {
 	if o.Muted {
 		b.TextColor(t.Muted)
 	}
+	selBg := t.HoverTint.Alpha(1.75)
 	switch {
+	case o.Selected && b.Hovered():
+		b.Background(t.HoverTint.Alpha(2.25))
 	case o.Selected:
-		b.Background(t.SidebarSelected)
+		b.Background(selBg)
 	case b.Hovered():
-		b.Background(t.Hover)
+		b.Background(t.HoverTint)
 	}
 	if o.OnClick != nil && !o.Selected {
 		b.OnClick(o.OnClick)
