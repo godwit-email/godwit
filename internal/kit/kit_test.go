@@ -1280,7 +1280,9 @@ func TestDialogWidths(t *testing.T) {
 }
 
 // A disabled button paints the design's disabled colours, not mygo's
-// half-opacity dimming: a Default one on Hover, an Outline one's text Idle.
+// dimming of all it covers: a Default one its primary at half opacity, so it
+// stays a button on any surface (white, frosted, dark), an Outline one's
+// text Idle.
 func TestKitButtonDisabledColors(t *testing.T) {
 	tt := ui.NewTester(themed(func(c *ui.Context) {
 		ui.Column(c).Gap(8).Padding(8).Children(func() {
@@ -1304,7 +1306,9 @@ func TestKitButtonDisabledColors(t *testing.T) {
 			t.Errorf("%s = %v, want %v", name, got, want)
 		}
 	}
-	same("disabled Default background", at("Add", func(r ui.Rect) (int, int) { return int(r.X) + 3, int(r.Y) + 3 }), tok.Hover)
+	if got, want := at("Add", func(r ui.Rect) (int, int) { return int(r.X) + 3, int(r.Y) + 3 }), tok.Primary.Mix(tok.Background, 0.5); diff(got.R, want.R) > 2 {
+		t.Errorf("disabled Default background = %v, want primary at half over white %v", got, want)
+	}
 	// The darkest pixel of the Outline label is its text colour.
 	r, _ := tt.Find("Test")
 	dark := color.RGBA{255, 255, 255, 255}

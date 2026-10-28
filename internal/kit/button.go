@@ -126,8 +126,8 @@ func button(c *ui.Context, o ButtonOpts, square bool) ui.Element {
 	}
 	if o.Disabled {
 		b.TextColor(t.Idle)
-		if o.Variant == Default {
-			b.Background(t.Hover).TextColor(t.Muted)
+		if o.Variant == Default { // itself at half, as shadcn's opacity-50: a button on any surface, frosted or not
+			b.Background(t.Primary.Alpha(0.5)).TextColor(t.PrimaryText.Alpha(0.5))
 		}
 	}
 	return b
