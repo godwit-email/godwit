@@ -517,8 +517,8 @@ func (o *onboarding) Content(c *ui.Context) {
 
 // sheetView is the add-account dialog; closing it cancels the sign-in.
 func (o *onboarding) sheetView(c *ui.Context) {
-	opts := kit.DialogOpts{Close: i18n.T("common.close")}
-	if o.step == stepPick { // the dialog's header says what the pick step's heading would
+	opts := kit.DialogOpts{Close: i18n.T("common.close"), Top: true} // each step is its own height
+	if o.step == stepPick {                                          // the dialog's header says what the pick step's heading would
 		opts.Desc = i18n.T("onboarding.pick.sub")
 	}
 	kit.Dialog(c, &o.open, i18n.T("onboarding.sheet.title"), opts, func() {

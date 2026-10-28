@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 	"slices"
@@ -443,6 +444,7 @@ func TestComposeWitErrorKeys(t *testing.T) {
 	assert.Equal(t, "", errorKey(&ai.Error{Code: ai.CodeCanceled}))
 	assert.Equal(t, "error.ai.rate_limited", errorKey(&ai.Error{Code: ai.CodeRateLimited}))
 	assert.Equal(t, "error.run_active", errorKey(errors.Join(errors.New("x"), core.ErrRunActive)))
+	assert.Equal(t, "settings.models.login.expired", errorKey(fmt.Errorf("ask: %w", core.ErrModelReauth)), "a subscription to sign in to again")
 	assert.Equal(t, "error.unknown", errorKey(errors.New("boom")))
 	for _, k := range witErrorKeys {
 		assert.NotEqual(t, k.key, i18n.T(k.key))

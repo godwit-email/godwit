@@ -221,6 +221,7 @@ var witErrorKeys = []struct {
 	{core.ErrAINotConfigured, "error.ai_not_configured"},
 	{core.ErrModelNotFound, "error.model_not_found"},
 	{core.ErrModelAuth, "error.model_auth"},
+	{core.ErrModelReauth, "settings.models.login.expired"},
 	{core.ErrTooLarge, "error.too_large"},
 	{core.ErrKeychainUnavailable, "error.keychain"},
 	{core.ErrCompacting, "error.compacting"},

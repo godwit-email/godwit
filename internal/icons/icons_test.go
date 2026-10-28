@@ -2,7 +2,7 @@ package icons
 
 import "testing"
 
-var names = []string{"mail", "sparkles", "sliders-horizontal", "panel-left", "arrow-left", "arrow-right", "arrow-up-right",
+var names = []string{"mail", "user", "sparkles", "sliders-horizontal", "panel-left", "arrow-left", "arrow-right", "arrow-up", "arrow-up-right",
 	"square-pen", "reply", "reply-all", "forward", "archive", "trash-2", "star", "mail-open", "search", "inbox",
 	"folder", "send", "file-pen", "paperclip", "plus", "x", "check", "chevron-down", "chevron-right",
 	"triangle-alert", "loader", "copy", "external-link", "eye", "eye-off", "image-off", "bold", "italic", "link", "list",

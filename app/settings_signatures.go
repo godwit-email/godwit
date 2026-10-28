@@ -203,7 +203,7 @@ func (p *settingsPage) signatureView(c *ui.Context, sig core.Signature) {
 		case p.sigErr != nil:
 			settingBlock(c, func() { ui.Text(c, humanize(p.sigErr)).TextColor(t.Muted) })
 		case p.sigView != nil:
-			ui.WebView(c, p.sigView).FillWidth().Height(theme.SignatureEditorHeight) // the page draws its toolbar and editor
+			kit.WebView(c, p.sigView).FillWidth().Height(theme.SignatureEditorHeight) // the page draws its toolbar and editor
 		default:
 			ui.Box(c).FillWidth().Height(theme.SignatureEditorHeight)
 		}
@@ -271,7 +271,7 @@ func (p *settingsPage) deleteSignatureDialog(c *ui.Context, sig core.Signature, 
 	}
 	a := p.a
 	kit.Dialog(c, &p.sigDelete, i18n.Tf("settings.signature.delete.confirm", sig.Name),
-		kit.DialogOpts{Size: kit.DialogSm, Desc: deleteHint(users), Close: i18n.T("common.close")}, nil, func() {
+		kit.DialogOpts{Size: kit.DialogSm, Alert: true, Desc: deleteHint(users), Close: i18n.T("common.close")}, nil, func() {
 			kit.Button(c, i18n.T("common.cancel"), kit.ButtonOpts{Variant: kit.Outline}).OnClick(func() { p.sigDelete = false })
 			kit.Button(c, i18n.T("common.delete"), kit.ButtonOpts{Variant: kit.Destructive}).OnClick(func() {
 				p.sigDelete = false

@@ -44,6 +44,9 @@ type Turn struct {
 	Asked, Answered time.Time
 	// CanAskAgain: AskAgain takes it now.
 	CanAskAgain bool
+	// Failed is why the question was never answered (FailQuestion's reason);
+	// such a turn, ID "failed", is only ever the last.
+	Failed string
 }
 
 // TurnCall is a tool call of a turn's answer, with its result (nil: none

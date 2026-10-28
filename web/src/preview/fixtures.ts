@@ -171,6 +171,7 @@ const turn = (t: Partial<WitTurn> & Pick<WitTurn, "id" | "question" | "runs">): 
     masked: 0,
     warned: 0,
     canAskAgain: false,
+    failed: "",
     asked: Date.now() - 3_600_000, // an hour ago
     answered: Date.now() - 3_540_000,
     ...t,

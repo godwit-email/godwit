@@ -167,17 +167,20 @@ type SearchQuery struct {
 	AccountID      int64
 	Text           string
 	From           string    // a substring of the From header, any case
+	FromAddr       string    // the From header's address exactly, any case: one contact's mail
 	Since, Until   time.Time // the date from Since, before Until
 	HasAttachments bool
 	LabelID        int64 // mail with this label on
 	Unread         *bool // true for unread (\Seen absent), false for read (\Seen present)
 	Starred        *bool // true for starred (\Flagged present), false for unstarred
+
+	fromHeaders []string // the stored From headers of FromAddr (withSenders)
 }
 
 // Filtered reports whether a filter beyond the account is set: such a query
 // needs no text.
 func (q SearchQuery) Filtered() bool {
-	return strings.TrimSpace(q.From) != "" || !q.Since.IsZero() || !q.Until.IsZero() || q.HasAttachments || q.LabelID != 0 || q.Unread != nil || q.Starred != nil
+	return strings.TrimSpace(q.From) != "" || strings.TrimSpace(q.FromAddr) != "" || !q.Since.IsZero() || !q.Until.IsZero() || q.HasAttachments || q.LabelID != 0 || q.Unread != nil || q.Starred != nil
 }
 
 // Search finds synced messages; accountID 0 searches every account.
@@ -193,10 +196,61 @@ func likeArg(s string) string {
 // SearchWith finds synced messages matching q, newest first. A query with
 // neither text nor a filter finds nothing.
 func (s *Service) SearchWith(ctx context.Context, q SearchQuery, limit int) ([]MessageSummary, error) {
-	query := strings.TrimSpace(q.Text)
-	if query == "" && !q.Filtered() {
+	if strings.TrimSpace(q.Text) == "" && !q.Filtered() {
 		return nil, nil
 	}
+	q, err := s.withSenders(ctx, q)
+	if err != nil {
+		return nil, err
+	}
+	cond, args := searchText(q.Text)
+	fcond, fargs := searchFilter(q)
+	return s.searchMessages(ctx, cond+" AND "+fcond, append(args, fargs...), limit)
+}
+
+// withSenders resolves q.FromAddr to the From headers stored for it, as
+// AddrKey reads them: SQLite folds only ASCII case, and a header may quote
+// its local part ("a b"@x) or wrap it in a display name.
+func (s *Service) withSenders(ctx context.Context, q SearchQuery) (SearchQuery, error) {
+	key := strings.ToLower(strings.TrimSpace(q.FromAddr))
+	if key == "" {
+		return q, nil
+	}
+	cond, args := "1", []any(nil)
+	if at := strings.LastIndexByte(key, '@'); at >= 0 && strings.IndexFunc(key[at:], func(r rune) bool { return r >= utf8.RuneSelf }) < 0 {
+		cond, args = `from_addr LIKE ? ESCAPE '\'`, []any{likeArg(key[at:])} // narrowed by an ASCII domain, which LIKE folds
+	}
+	rows, err := s.db.Query(ctx, "SELECT DISTINCT from_addr FROM messages WHERE "+cond, args...)
+	if err != nil {
+		return q, err
+	}
+	q.fromHeaders = []string{}
+	for _, r := range rows.Values {
+		if h := store.Str(r[0]); gomail.AddrKey(h) == key {
+			q.fromHeaders = append(q.fromHeaders, h)
+		}
+	}
+	return q, nil
+}
+
+// searchMessages lists the messages (alias m) matching cond, newest first.
+func (s *Service) searchMessages(ctx context.Context, cond string, args []any, limit int) ([]MessageSummary, error) {
+	rows, err := s.db.Query(ctx, "SELECT "+msgCols+" FROM messages m WHERE "+cond+" ORDER BY m.date DESC, m.id DESC LIMIT ?",
+		append(args, clampLimit(limit))...)
+	if err != nil {
+		return nil, err
+	}
+	out := make([]MessageSummary, 0, len(rows.Values))
+	for _, r := range rows.Values {
+		out = append(out, scanSummary(r))
+	}
+	return out, nil
+}
+
+// searchText is the condition on messages alias m that text matches: "1"
+// for blank text.
+func searchText(text string) (string, []any) {
+	query := strings.TrimSpace(text)
 	cond, args := "1", []any(nil)
 	switch {
 	case query == "":
@@ -210,6 +264,13 @@ func (s *Service) SearchWith(ctx context.Context, q SearchQuery, limit int) ([]M
 		cond = `(m.id IN (SELECT rowid FROM messages_fts WHERE messages_fts MATCH ?) OR m.id IN (SELECT ml.message_id FROM message_labels ml JOIN labels l ON l.id = ml.label_id WHERE ml.active = 1 AND (l.name LIKE ? ESCAPE '\' OR l.slug LIKE ? ESCAPE '\')))`
 		args = []any{`"` + strings.ReplaceAll(query, `"`, `""`) + `"`, like, like}
 	}
+	return cond, args
+}
+
+// searchFilter is the condition on messages alias m for q's account and
+// filters, its text aside: "1" for none.
+func searchFilter(q SearchQuery) (string, []any) {
+	cond, args := "1", []any(nil)
 	if q.AccountID != 0 {
 		cond += " AND m.account_id = ?"
 		args = append(args, q.AccountID)
@@ -218,6 +279,11 @@ func (s *Service) SearchWith(ctx context.Context, q SearchQuery, limit int) ([]M
 	if from := strings.TrimSpace(q.From); from != "" {
 		cond += ` AND m.from_addr LIKE ? ESCAPE '\'`
 		args = append(args, likeArg(from))
+	}
+	if strings.TrimSpace(q.FromAddr) != "" { // resolved by withSenders: none stored matches nothing
+		cond += " AND m.from_addr IN (SELECT value FROM json_each(?))"
+		b, _ := json.Marshal(q.fromHeaders)
+		args = append(args, string(b))
 	}
 	if !q.Since.IsZero() {
 		cond += " AND m.date >= ?"
@@ -248,16 +314,7 @@ func (s *Service) SearchWith(ctx context.Context, q SearchQuery, limit int) ([]M
 			cond += ` AND instr(m.flags, '\Flagged') = 0`
 		}
 	}
-	rows, err := s.db.Query(ctx, "SELECT "+msgCols+" FROM messages m WHERE "+cond+" ORDER BY m.date DESC, m.id DESC LIMIT ?",
-		append(args, clampLimit(limit))...)
-	if err != nil {
-		return nil, err
-	}
-	out := make([]MessageSummary, 0, len(rows.Values))
-	for _, r := range rows.Values {
-		out = append(out, scanSummary(r))
-	}
-	return out, nil
+	return cond, args
 }
 
 // RebuildSearchIndex recreates the full-text index from the messages table in

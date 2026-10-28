@@ -1,7 +1,10 @@
 package webui
 
 import (
+	"strings"
+
 	"github.com/godwit-email/godwit/core"
+	"github.com/godwit-email/godwit/core/ai"
 )
 
 // WitHistory is a conversation as the Wit panel shows it.
@@ -65,6 +68,9 @@ type WitTurn struct {
 	Warned int `json:"warned"`
 	// CanAskAgain: Ask's rewind takes it now.
 	CanAskAgain bool `json:"canAskAgain"`
+	// Failed is why the question was never answered, an i18n key ("" for an
+	// answered one): its turn is the last, with no answer.
+	Failed string `json:"failed"`
 	// Asked and Answered are when it was asked and last answered, in Unix
 	// milliseconds (0: not known).
 	Asked    int64 `json:"asked"`
@@ -102,6 +108,9 @@ func witTurns(c core.Conversation) []WitTurn {
 		if t.Command != nil {
 			w.Command = &WitCommand{Skill: t.Command.Skill, Lang: t.Command.Lang}
 		}
+		if t.Failed != "" {
+			w.Failed = failedKey(t.Failed)
+		}
 		if !t.Asked.IsZero() {
 			w.Asked, w.Answered = t.Asked.UnixMilli(), t.Answered.UnixMilli()
 		}
@@ -135,4 +144,13 @@ func witTurns(c core.Conversation) []WitTurn {
 		out = append(out, w)
 	}
 	return out
+}
+
+// failedKey is the i18n key of a failed question's reason: a run's failure
+// is "ai:" and its code (core), a refusal its key already (WitPage.Ask).
+func failedKey(reason string) string {
+	if code, ok := strings.CutPrefix(reason, "ai:"); ok {
+		return errorKey(&ai.Error{Code: ai.Code(code)})
+	}
+	return reason
 }

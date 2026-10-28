@@ -6,6 +6,7 @@ import (
 	"strings"
 
 	"github.com/egoist/mygo/ui"
+	gomail "github.com/godwit-email/godwit/core/mail"
 	"github.com/godwit-email/godwit/internal/i18n"
 	"github.com/godwit-email/godwit/internal/kit"
 )
@@ -57,6 +58,30 @@ func (a *App) mailto(link string, acc int64) {
 	})
 }
 
+// composeTo starts a new draft from the default account to addr, a parsed
+// address (a contact's), and opens it. It skips mailto: links: one would
+// split a quoted local part at a comma, and its key lacks the quotes.
+func (a *App) composeTo(addr string) {
+	acc := a.defaultAccount()
+	var id int64
+	a.do(func(ctx context.Context) error {
+		d, err := a.svc.NewDraft(ctx, acc, "new", 0)
+		if err != nil {
+			return err
+		}
+		d.To = []string{gomail.FormatAddress("", addr)} // "a b"@x, quoted as a header needs
+		d, err = a.svc.SaveDraft(ctx, d)
+		id = d.ID
+		return err
+	}, func(err error) {
+		if err != nil {
+			a.toastErr(err)
+			return
+		}
+		a.plat.OpenCompose(id)
+	})
+}
+
 // defaultAccount is the default account's ID, else the first's; 0 for none.
 func (a *App) defaultAccount() int64 {
 	for _, acc := range a.accounts {
@@ -77,7 +102,7 @@ func (a *App) linkDialog(c *ui.Context) {
 		return
 	}
 	link := a.link
-	kit.Dialog(c, &a.linkOpen, i18n.T("link.title"), kit.DialogOpts{Size: kit.DialogSm, Close: i18n.T("common.close")}, func() {
+	kit.Dialog(c, &a.linkOpen, i18n.T("link.title"), kit.DialogOpts{Size: kit.DialogSm, Alert: true, Close: i18n.T("common.close")}, func() {
 		ui.RichText(c, linkSpans(link)...)
 	}, func() {
 		if kit.Button(c, i18n.T("common.cancel"), kit.ButtonOpts{Variant: kit.Outline}).Clicked() {

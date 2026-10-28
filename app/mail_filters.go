@@ -18,10 +18,13 @@ import (
 type searchFilters struct {
 	acc       int64 // the account chosen, once accSet; 0 is every account
 	accSet    bool
-	from      string // a substring of the sender
+	from      string // a substring of the sender; with fromExact, its address exactly
+	fromExact bool   // from is a contact the palette opened, not a typed part
 	span      int    // a searchSpans index; 0 is any time
 	attach    bool
 	labelID   int64  // a label the mail must have; 0 is any
+	unread    bool   // unread mail only (the palette's filters)
+	starred   bool   // starred mail only (the palette's filters)
 	fromDraft string // the sender box while its menu is open
 
 	accOpen, fromOpen, spanOpen, labelOpen bool
@@ -58,8 +61,24 @@ func (p *mailPage) searchAccount() int64 {
 
 // searchQuery is the box's text with the chips' filters.
 func (p *mailPage) searchQuery() core.SearchQuery {
-	return core.SearchQuery{AccountID: p.searchAccount(), Text: strings.TrimSpace(p.query), From: strings.TrimSpace(p.sf.from),
-		Since: spanStart(p.a.clock.Now(), p.sf.span), HasAttachments: p.sf.attach, LabelID: p.sf.labelID}
+	return p.sf.query(p.a.clock.Now(), p.searchAccount(), p.query)
+}
+
+// query is text in account acc (0 for every one) with the filters, as of now.
+func (f searchFilters) query(now time.Time, acc int64, text string) core.SearchQuery {
+	q := core.SearchQuery{AccountID: acc, Text: strings.TrimSpace(text), From: strings.TrimSpace(f.from),
+		Since: spanStart(now, f.span), HasAttachments: f.attach, LabelID: f.labelID}
+	if f.fromExact {
+		q.From, q.FromAddr = "", q.From
+	}
+	yes := true
+	if f.unread {
+		q.Unread = &yes
+	}
+	if f.starred {
+		q.Starred = &yes
+	}
+	return q
 }
 
 // filterChips is the row of filters under the search box; a change searches
@@ -92,9 +111,9 @@ func (p *mailPage) filterChips(c *ui.Context) {
 			in := kit.Input(c, &p.sf.fromDraft, kit.InputOpts{Placeholder: i18n.T("mail.search.from_placeholder")}).Width(theme.FilterMenuMin).AutoFocus().Label(i18n.T("mail.search.from"))
 			if in.Submitted() {
 				d := strings.TrimSpace(p.sf.fromDraft)
-				p.setFilter(func(f *searchFilters) { f.from = d })
+				p.setFilter(func(f *searchFilters) { f.from, f.fromExact = d, false })
 			}
-			filterItem(c, i18n.T("mail.search.any_sender"), p.sf.from == "", func() { p.setFilter(func(f *searchFilters) { f.from = "" }) })
+			filterItem(c, i18n.T("mail.search.any_sender"), p.sf.from == "", func() { p.setFilter(func(f *searchFilters) { f.from, f.fromExact = "", false }) })
 		})
 
 		span := i18n.T("mail.search.time")
@@ -111,6 +130,16 @@ func (p *mailPage) filterChips(c *ui.Context) {
 		filterChip(c, i18n.T("mail.search.has_attachments"), p.sf.attach, nil, func() {
 			p.setFilter(func(f *searchFilters) { f.attach = !f.attach })
 		}).Checked(p.sf.attach)
+		// The palette's filters, carried over by 查看全部: shown while set.
+		for _, x := range []struct {
+			on    *bool
+			label string
+		}{{&p.sf.unread, i18n.T("mail.filter.unread")}, {&p.sf.starred, i18n.T("palette.filter.starred")}} {
+			if *x.on {
+				filterChip(c.Key(x.label), x.label, true, nil, func() { p.setFilter(func(*searchFilters) { *x.on = false }) }).
+					Label(i18n.Tf("palette.filter.remove", x.label))
+			}
+		}
 		p.labelFilter(c)
 	})
 }

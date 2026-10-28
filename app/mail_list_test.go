@@ -413,7 +413,7 @@ func TestSearch(t *testing.T) {
 	h.put(accs[0], "INBOX", coretest.Msg("bob@example.com", "alice@example.com", "Lunch", "eat"))
 	h.syncNow(accs[0])
 	h.waitMail("two threads", func() bool { return len(h.items()) == 2 })
-	h.tt.Key(ui.Cmd, ui.KeyF)
+	openListSearch(h)
 	h.see("只搜索已同步到本机的邮件")
 	h.typeText("Invoice")
 	h.tt.Key(0, ui.KeyEnter)
@@ -426,8 +426,8 @@ func TestSearch(t *testing.T) {
 	if h.app.mail.searched || h.tt.HasText("只搜索已同步到本机的邮件") {
 		t.Fatal("Escape did not leave the search")
 	}
-	h.click("搜索")
-	h.see("只搜索已同步到本机的邮件")
+	h.click("搜索") // the sidebar's button opens the palette
+	h.until("the palette", func() bool { return paletteShown(h) })
 }
 
 // The empty search says which range was searched: the account's, the one
@@ -751,7 +751,7 @@ func TestSearchDropsStaleResults(t *testing.T) {
 	h.waitMail("two threads", func() bool { return len(h.items()) == 2 })
 	h.settle() // nothing else is posted from here on
 	p := h.app.mail
-	h.tt.Key(ui.Cmd, ui.KeyF)
+	openListSearch(h)
 	h.tt.Frame()
 	p.query = "Invoice"
 	p.runSearch() // A
@@ -813,7 +813,7 @@ func TestSelectionKeepsToMode(t *testing.T) {
 	if !overlap {
 		t.Fatalf("fixture: thread IDs %v and message IDs %v do not overlap", threads, msgs)
 	}
-	h.tt.Key(ui.Cmd, ui.KeyF)
+	openListSearch(h)
 	h.typeText("note")
 	h.tt.Key(0, ui.KeyEnter)
 	h.until("both found", func() bool { return p.searched && len(p.results) == 2 })

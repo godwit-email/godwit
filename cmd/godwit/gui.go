@@ -147,6 +147,7 @@ func gui(ctx context.Context, dataDir string) int {
 		OpenMessage:         func(id int64) { onApp(func(a *app.App) { a.OpenMessage(id) }) },
 		OpenModels:          func() { onApp((*app.App).OpenModels) },
 		Navigate:            func(dir int) { onApp(func(a *app.App) { a.Navigate(dir) }) },
+		Search:              func() { onApp((*app.App).Search) },
 		NewConversation:     func() { onApp((*app.App).NewConversation) },
 		ConversationCreated: func(id, v int64) { onApp(func(a *app.App) { a.ConversationCreated(id, v) }) },
 		OnLink:              func(u string) { onApp(func(a *app.App) { a.OpenLink(u) }) },

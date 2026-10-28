@@ -196,6 +196,7 @@ func (a *App) View(c *ui.Context) {
 	}
 	a.toasts, a.closeToasts = nil, nil
 	kit.DialogShown() // forget another window's
+	kit.NewFrame()
 
 	if c.Shortcut(ui.Cmd, ui.KeyBracketLeft) {
 		a.back()
@@ -217,8 +218,12 @@ func (a *App) View(c *ui.Context) {
 		bareBar(c, barH)
 		ui.Column(c).Grow(1).Children(func() { a.page().Content(c) })
 	default:
+		if c.Shortcut(ui.Cmd, ui.KeyK) {
+			a.openPalette()
+		}
 		a.titleBar(c, barH)
 		a.body(c)
+		a.palette.view(c)
 	}
 	if a.addAccount != nil {
 		a.addAccount.sheetView(c)
@@ -531,7 +536,7 @@ func (a *App) saveWidths() {
 // closeDialog asks, when a draft could not be saved before closing, whether
 // to close anyway and lose its last edits.
 func (a *App) closeDialog(c *ui.Context) {
-	kit.Dialog(c, &a.closeAsk, i18n.T("close.unsaved.title"), kit.DialogOpts{Size: kit.DialogSm, Desc: humanize(a.closeErr), Close: i18n.T("common.close")}, nil, func() {
+	kit.Dialog(c, &a.closeAsk, i18n.T("close.unsaved.title"), kit.DialogOpts{Size: kit.DialogSm, Alert: true, Desc: humanize(a.closeErr), Close: i18n.T("common.close")}, nil, func() {
 		kit.Button(c, i18n.T("close.unsaved.back"), kit.ButtonOpts{Variant: kit.Outline}).OnClick(func() { a.closeAsk = false })
 		kit.Button(c, i18n.T("close.unsaved.quit"), kit.ButtonOpts{Variant: kit.Destructive}).OnClick(func() {
 			a.closeAsk = false

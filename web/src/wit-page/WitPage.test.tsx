@@ -1,5 +1,6 @@
 import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
+import { StrictMode } from "react";
 import type { WitEvent, WitHistory, WitOpenMsg, WitPageState } from "@/mygo";
 import { legacy } from "@/wit/fixtures";
 
@@ -16,6 +17,7 @@ const h = vi.hoisted(() => {
     open: new Set<(m: WitOpenMsg) => void>(),
     state: new Set<(s: WitPageState) => void>(),
     ask: new Set<(q: string) => void>(),
+    pending: "", // the question native holds until the page takes it
   };
 });
 vi.mock("@/mygo", () => ({
@@ -32,6 +34,8 @@ vi.mock("@/mygo", () => ({
     openModels: vi.fn(),
     models: vi.fn(),
     navigate: vi.fn(),
+    search: vi.fn(),
+    takeAsk: vi.fn(),
   },
   events: {
     wit: { on: h.on(h.wit) },
@@ -99,6 +103,11 @@ const send = <T,>(set: Set<(x: T) => void>, x: T) =>
   act(() => {
     for (const f of [...set]) f(x);
   });
+// hand is native's hand-off: the question waits, and the event says so.
+const hand = (q: string) => {
+  h.pending = q;
+  return send(h.ask, q);
+};
 const emit = (e: Partial<WitEvent>) => send(h.wit, ev(e));
 const open = (conversation: number, version: number, created = false) =>
   send(h.open, { conversation, version, created });
@@ -107,6 +116,12 @@ const input = () => screen.getByRole("textbox", { name: "向 Wit 提问" });
 beforeEach(() => {
   vi.clearAllMocks();
   vi.mocked(api.follow).mockImplementation(async (c) => hist(c));
+  h.pending = "";
+  vi.mocked(api.takeAsk).mockImplementation(async () => {
+    const q = h.pending;
+    h.pending = "";
+    return q;
+  });
 });
 
 async function start(conv = 0, answer?: string) {
@@ -341,6 +356,14 @@ test("cmd-[ forwards", async () => {
   expect(api.navigate).toHaveBeenCalledTimes(2);
 });
 
+test("cmd-k and cmd-f open the search palette", async () => {
+  vi.mocked(api.search).mockResolvedValue(undefined);
+  await start(0);
+  fireEvent.keyDown(input(), { key: "k", metaKey: true });
+  fireEvent.keyDown(document.body, { key: "f", metaKey: true });
+  expect(api.search).toHaveBeenCalledTimes(2);
+});
+
 test("answer hardening holds through this page; links go straight to WitPage.openLink (native confirms)", async () => {
   const user = userEvent.setup();
   vi.mocked(api.openLink).mockResolvedValue(undefined);
@@ -486,7 +509,7 @@ test("witAsk asks the handed question once, in the new conversation", async () =
   await start(3);
   vi.mocked(api.follow).mockResolvedValueOnce(hist(0));
   open(0, 2); // native navigates to a new conversation, then hands the question
-  send(h.ask, "invoice");
+  hand("invoice");
   await waitFor(() => expect(api.ask).toHaveBeenCalledWith(0, "invoice", [], "", "", "", zone));
   expect(api.ask).toHaveBeenCalledTimes(1);
   expect(await screen.findByText("invoice")).toBeInTheDocument();
@@ -494,6 +517,20 @@ test("witAsk asks the handed question once, in the new conversation", async () =
   vi.mocked(api.follow).mockResolvedValueOnce(hist(4, "four"));
   open(4, 3);
   expect(await screen.findByText("four")).toBeInTheDocument();
+  expect(api.ask).toHaveBeenCalledTimes(1);
+});
+
+test("a question handed before the page loaded is asked once it has", async () => {
+  vi.mocked(api.ask).mockResolvedValue({
+    run: 9,
+    conversation: 7,
+    revision: 0,
+    conflict: false,
+    turn: "1",
+  });
+  h.pending = "invoice"; // its event came before the listeners
+  await start(0);
+  await waitFor(() => expect(api.ask).toHaveBeenCalledWith(0, "invoice", [], "", "", "", zone));
   expect(api.ask).toHaveBeenCalledTimes(1);
 });
 
@@ -506,7 +543,7 @@ test("witAsk on the page already showing a new conversation asks at once", async
     turn: "1",
   });
   await start(0);
-  send(h.ask, "where is it");
+  hand("where is it");
   await waitFor(() => expect(api.ask).toHaveBeenCalledWith(0, "where is it", [], "", "", "", zone));
   expect(api.ask).toHaveBeenCalledTimes(1);
 });
@@ -515,11 +552,61 @@ test("a handed question is dropped when the open fails: not asked in a later con
   await start(3);
   vi.mocked(api.follow).mockRejectedValueOnce(new Error("boom"));
   open(0, 2);
-  send(h.ask, "lost"); // native hands it right after the open, before the open fails
+  hand("lost"); // native hands it right after the open, before the open fails
   await waitFor(() => expect(api.follow).toHaveBeenCalledWith(0));
   await act(async () => {});
   vi.mocked(api.follow).mockResolvedValueOnce(hist(4, "four"));
   open(4, 3);
   expect(await screen.findByText("four")).toBeInTheDocument();
   expect(api.ask).not.toHaveBeenCalled();
+});
+
+test("a question core kept unanswered shows with why, and 重试 asks it again", async () => {
+  vi.mocked(api.ask).mockResolvedValue({
+    run: 9,
+    conversation: 3,
+    revision: 0,
+    conflict: false,
+    turn: "1",
+  });
+  const h3 = hist(3);
+  h3.turns = [
+    {
+      ...hist(3, "x").turns[0],
+      id: "failed",
+      question: "invoice",
+      steps: [],
+      text: "",
+      runs: [],
+      failed: "settings.models.login.expired",
+    },
+  ];
+  vi.mocked(api.follow).mockResolvedValueOnce(h3);
+  await start(3);
+  expect(await screen.findByText("invoice")).toBeInTheDocument();
+  expect(screen.getByText("登录已失效，请重新登录")).toBeInTheDocument();
+  fireEvent.click(screen.getByRole("button", { name: "重试" }));
+  await waitFor(() => expect(api.ask).toHaveBeenCalledWith(3, "invoice", [], "", "", "", zone));
+});
+
+// As the page runs (main.tsx): StrictMode mounts the panel twice, which must not lose the question.
+test("in StrictMode, a question handed before the page loaded is asked once", async () => {
+  vi.mocked(api.ask).mockResolvedValue({
+    run: 9,
+    conversation: 7,
+    revision: 0,
+    conflict: false,
+    turn: "1",
+  });
+  h.pending = "invoice";
+  vi.mocked(api.load).mockResolvedValue(state(0, 1));
+  render(
+    <StrictMode>
+      <WitPage />
+    </StrictMode>,
+  );
+  await screen.findByRole("textbox", { name: "向 Wit 提问" });
+  await waitFor(() => expect(api.ask).toHaveBeenCalledWith(0, "invoice", [], "", "", "", zone));
+  await act(async () => {});
+  expect(api.ask).toHaveBeenCalledTimes(1);
 });
