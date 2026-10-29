@@ -632,6 +632,7 @@
   "settings_masking_log_length": "{arg1, plural, one {{arg1, number, ::group-off} teken} other {{arg1, number, ::group-off} tekens}}",
   "settings_masking_log_unsent": "Niet verstuurd",
   "settings_masking_log_none": "Geen verzoek komt overeen",
+  "settings_masking_log_more": "Meer tonen",
   "settings_masking_log_short": "Van waarden van 3 tekens of minder wordt alleen de lengte vastgelegd.",
   "settings_masking_log_empty": "Niets in de afgelopen 30 dagen",
   "settings_masking_log_value": "{arg1}…, {arg2} tekens",

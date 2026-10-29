@@ -632,6 +632,7 @@
   "settings_masking_log_length": "{arg1, number, ::group-off} 文字",
   "settings_masking_log_unsent": "送信していません",
   "settings_masking_log_none": "条件に合うリクエストはありません",
+  "settings_masking_log_more": "さらに表示",
   "settings_masking_log_short": "3 文字以下の値は長さだけを記録します。",
   "settings_masking_log_empty": "過去 30 日間の記録はありません",
   "settings_masking_log_value": "{arg1}…、{arg2} 文字",

@@ -632,6 +632,7 @@
   "settings_masking_log_length": "{arg1, number, ::group-off} karakter",
   "settings_masking_log_unsent": "Gönderilmedi",
   "settings_masking_log_none": "Eşleşen istek yok",
+  "settings_masking_log_more": "Daha fazla göster",
   "settings_masking_log_short": "3 karakter veya daha kısa değerlerin yalnızca uzunluğu kaydedilir.",
   "settings_masking_log_empty": "Son 30 günde kayıt yok",
   "settings_masking_log_value": "{arg1}…, {arg2} karakter",

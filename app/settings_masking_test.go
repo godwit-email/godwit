@@ -1,7 +1,9 @@
 package app
 
 import (
+	"strconv"
 	"testing"
+	"time"
 
 	"github.com/godwit-email/godwit/core"
 	"github.com/godwit-email/godwit/core/coretest"
@@ -107,6 +109,32 @@ func TestMaskingLogShowsWhatWasSent(t *testing.T) {
 	}
 	h.click("被拦截的请求")
 	h.see("没有符合筛选条件的请求")
+}
+
+// A long log shows a page of requests at a time; the tiles count them all.
+func TestMaskingLogPages(t *testing.T) {
+	h, _ := withAccount(t)
+	h.resize(1440, 20000)
+	p := h.openSettings("masklog")
+	now := h.app.clock.Now()
+	n := maskLogPage + 10
+	h.post(func() {
+		p.maskLog = nil
+		for i := range n {
+			p.maskLog = append(p.maskLog, core.MaskRecord{At: now.Add(-time.Duration(i) * time.Minute), Request: int64(n - i), Feature: "wit", Kind: "EMAIL", Category: "emails", Len: 16, Action: core.MaskMask})
+		}
+	})
+	last := now.Add(-time.Duration(n-1) * time.Minute).In(now.Location()).Format("15:04")
+	h.see(strconv.Itoa(n))
+	h.see(i18n.T("settings.masking.log.more"))
+	if h.tt.HasText(last) {
+		t.Fatal("the oldest request shows on the first page")
+	}
+	h.click(i18n.T("settings.masking.log.more"))
+	h.see(last)
+	if h.tt.HasText(i18n.T("settings.masking.log.more")) {
+		t.Fatal("显示更多 stays with nothing more to show")
+	}
 }
 
 func TestMaskingCopy(t *testing.T) {

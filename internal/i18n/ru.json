@@ -632,6 +632,7 @@
   "settings_masking_log_length": "Символов: {arg1, number, ::group-off}",
   "settings_masking_log_unsent": "Не отправлено",
   "settings_masking_log_none": "Нет подходящих запросов",
+  "settings_masking_log_more": "Показать ещё",
   "settings_masking_log_short": "Для значений из 3 символов и короче записывается только длина.",
   "settings_masking_log_empty": "За последние 30 дней ничего нет",
   "settings_masking_log_value": "{arg1}…, символов: {arg2}",

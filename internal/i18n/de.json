@@ -637,6 +637,7 @@
   "settings_masking_log_length": "{arg1, plural, one {{arg1, number, ::group-off} Zeichen} other {{arg1, number, ::group-off} Zeichen}}",
   "settings_masking_log_unsent": "Nicht gesendet",
   "settings_masking_log_none": "Keine passende Anfrage",
+  "settings_masking_log_more": "Mehr anzeigen",
   "settings_masking_log_short": "Bei Werten mit höchstens 3 Zeichen wird nur die Länge protokolliert.",
   "settings_masking_log_empty": "Keine Einträge in den letzten 30 Tagen",
   "settings_masking_log_value": "{arg1}…, {arg2} Zeichen",

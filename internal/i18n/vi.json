@@ -632,6 +632,7 @@
   "settings_masking_log_length": "{arg1, number, ::group-off} ký tự",
   "settings_masking_log_unsent": "Không gửi",
   "settings_masking_log_none": "Không có yêu cầu phù hợp",
+  "settings_masking_log_more": "Hiển thị thêm",
   "settings_masking_log_short": "Với giá trị từ 3 ký tự trở xuống, chỉ ghi lại độ dài.",
   "settings_masking_log_empty": "Không có gì trong 30 ngày qua",
   "settings_masking_log_value": "{arg1}…, {arg2} ký tự",

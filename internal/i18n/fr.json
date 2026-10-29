@@ -632,6 +632,7 @@
   "settings_masking_log_length": "{arg1, plural, one {{arg1, number, ::group-off} caractère} many {{arg1, number, ::group-off} caractères} other {{arg1, number, ::group-off} caractères}}",
   "settings_masking_log_unsent": "Pas envoyée",
   "settings_masking_log_none": "Aucune requête ne correspond",
+  "settings_masking_log_more": "Afficher plus",
   "settings_masking_log_short": "Pour les valeurs de 3 caractères ou moins, seule la longueur est enregistrée.",
   "settings_masking_log_empty": "Rien ces 30 derniers jours",
   "settings_masking_log_value": "{arg1}…, {arg2} caractères",

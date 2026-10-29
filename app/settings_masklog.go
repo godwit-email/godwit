@@ -23,7 +23,11 @@ type maskLogFilter struct {
 	result, cat, feature string
 	open                 map[string]bool // the requests shown open, by maskRequest.key
 	clearing             bool            // 清空记录's confirmation is open
+	pages                int             // 显示更多 pressed: how many pages past the first are shown
 }
+
+// maskLogPage is how many requests show at a time; the tiles count them all.
+const maskLogPage = 50
 
 const (
 	maskAll = ""
@@ -230,12 +234,14 @@ func (p *settingsPage) maskLogPage(c *ui.Context) {
 		})
 		rows = nil
 	}
-	shown := 0
+	shown, limit := 0, maskLogPage*(f.pages+1)
 	for _, q := range reqs {
 		if !q.shows(*f) {
 			continue
 		}
-		shown++
+		if shown++; shown > limit {
+			continue
+		}
 		if d := maskLogDay(now, q.at); d != day {
 			flush()
 			day = d
@@ -243,6 +249,11 @@ func (p *settingsPage) maskLogPage(c *ui.Context) {
 		rows = append(rows, func() { p.maskRequestRow(c.Key(q.key), q) })
 	}
 	flush()
+	if shown > limit {
+		ui.Row(c).Justify(ui.Center).Children(func() {
+			kit.Button(c, i18n.T("settings.masking.log.more"), kit.ButtonOpts{Variant: kit.Outline}).OnClick(func() { f.pages++ })
+		})
+	}
 	if shown == 0 {
 		msg := i18n.T("settings.masking.log.empty")
 		if len(reqs) > 0 {

@@ -1286,6 +1286,7 @@
   },
   "settings_masking_log_unsent": "Not sent",
   "settings_masking_log_none": "No request matches",
+  "settings_masking_log_more": "Show more",
   "settings_masking_log_short": "Values of 3 characters or fewer are logged by their length only.",
   "settings_masking_log_empty": "Nothing in the last 30 days",
   "settings_masking_log_value": "{arg1}…, {arg2} characters",

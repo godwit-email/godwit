@@ -632,6 +632,7 @@
   "settings_masking_log_length": "{arg1, number, ::group-off} 个字符",
   "settings_masking_log_unsent": "没有发出",
   "settings_masking_log_none": "没有符合筛选条件的请求",
+  "settings_masking_log_more": "显示更多",
   "settings_masking_log_short": "3 个字符及以下的值只记长度，不记首字符。",
   "settings_masking_log_empty": "最近 30 天没有记录",
   "settings_masking_log_value": "{arg1}…，{arg2} 个字符",

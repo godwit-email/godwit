@@ -632,6 +632,7 @@
   "settings_masking_log_length": "{arg1, number, ::group-off}자",
   "settings_masking_log_unsent": "보내지 않음",
   "settings_masking_log_none": "조건에 맞는 요청이 없습니다",
+  "settings_masking_log_more": "더 보기",
   "settings_masking_log_short": "3자 이하의 값은 길이만 기록합니다.",
   "settings_masking_log_empty": "최근 30일 동안 기록이 없습니다",
   "settings_masking_log_value": "{arg1}…, {arg2}자",
