@@ -274,7 +274,7 @@ const FloatInsetBlur = 1
 // ShadowFloat is a floating input's edge and lift in the light appearance: a
 // 1 px ring of the ink at 4% (its outline), then two soft drops,
 // 0 0 0 1px #0000000a, 0 2px 8px #0000000a, 0 4px 80px 8px #00000006. The dark
-// appearance's is an inner edge, FloatInset (kit.Float).
+// appearance's is an inner edge, FloatInset.
 var ShadowFloat = Elevation{{0, 0, 1, 0x0a / 255.0}, {2, 8, 0, 0x0a / 255.0}, {4, 80, 8, 0x06 / 255.0}}
 
 // sized fills the size tokens from the font size.

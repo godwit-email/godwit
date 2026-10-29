@@ -188,30 +188,6 @@ func TestHostilePerformance(t *testing.T) {
 	assert.Less(t, time.Since(start), time.Second, "first frame")
 }
 
-func TestMarkdownTable(t *testing.T) {
-	d := FromMarkdown("# Title\n\n| a | b |\n|---|---|\n| 1 | ~~2~~ |\n")
-	require.Len(t, d.Blocks, 2)
-	assert.Equal(t, Block{Kind: Heading, Level: 1, Inlines: []Inline{{Text: "Title"}}}, d.Blocks[0])
-	assert.Equal(t, Block{Kind: Table, Header: true, Rows: [][]Cell{
-		{{Inlines: []Inline{{Text: "a"}}}, {Inlines: []Inline{{Text: "b"}}}},
-		{{Inlines: []Inline{{Text: "1"}}}, {Inlines: []Inline{{Text: "2", Strike: true}}}},
-	}}, d.Blocks[1])
-}
-
-func TestMarkdownLinksSurvive(t *testing.T) {
-	d := FromMarkdown("See [docs](https://docs.example/a?b=1&c=2), https://auto.example and [bad](javascript:alert(1)). <b>raw</b>")
-	require.Len(t, d.Blocks, 1)
-	var links []string
-	for _, in := range d.Blocks[0].Inlines {
-		if in.Link != "" {
-			links = append(links, in.Link)
-		}
-		assert.False(t, in.Bold, "raw HTML is not rendered")
-	}
-	assert.Equal(t, []string{"https://docs.example/a?b=1&c=2", "https://auto.example"}, links)
-	assert.Contains(t, d.PlainText(), "bad")
-}
-
 func TestRenderLinkActivation(t *testing.T) {
 	d, _ := FromMailHTML(`<p>Go to <a data-href="https://x.example/">the site</a> now</p>`, DefaultLimits)
 	var got []string

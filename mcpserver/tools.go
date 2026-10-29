@@ -8,7 +8,6 @@ import (
 	"html"
 	"strings"
 	"time"
-	"unicode/utf8"
 
 	"github.com/godwit-email/godwit/core"
 	"github.com/godwit-email/godwit/core/mail"
@@ -175,7 +174,7 @@ func getMessage(ctx context.Context, c *rpc.Client, args json.RawMessage) (strin
 		untrusted(&b, id, "attachment_name", at.Filename)
 		untrusted(&b, id, "attachment_type", at.ContentType)
 	}
-	body, cut := truncate(m.Text, maxBody)
+	body, cut := mail.CutUTF8(m.Text, maxBody)
 	untrusted(&b, id, "body", body)
 	if cut || m.Truncated {
 		b.WriteString("(body truncated)\n")
@@ -470,17 +469,6 @@ func paragraphs(text string) string {
 		}
 	}
 	return b.String()
-}
-
-// truncate cuts s to at most n bytes on a rune boundary.
-func truncate(s string, n int) (string, bool) {
-	if len(s) <= n {
-		return s, false
-	}
-	for n > 0 && !utf8.RuneStart(s[n]) {
-		n--
-	}
-	return s[:n], true
 }
 
 func stamp(t time.Time) string { return t.UTC().Format(time.RFC3339) }

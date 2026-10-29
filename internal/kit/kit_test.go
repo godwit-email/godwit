@@ -1114,30 +1114,6 @@ func TestKitSidebarIconFillsSelected(t *testing.T) {
 	}
 }
 
-func TestKitFloatDarkInnerEdge(t *testing.T) {
-	tt := ui.NewTester(themed(func(c *ui.Context) {
-		ui.Column(c).Fill().Padding(20).Background(theme.Of(c).Window).Children(func() {
-			Float(c, ui.Column(c).Width(200).Height(60).Radius(8).Background(theme.Of(c).Background)).Children(func() {})
-		})
-	}), 300, 200)
-	tt.SetDark(true)
-	tt.Frame()
-	img := tt.Image()
-	bg := theme.Dark().Background.SRGB()
-	// the box spans x 20..220, y 20..80: the edge row is brighter than the
-	// fill inside it, with no border painted.
-	edge, mid, inner := img.RGBAAt(120, 20), img.RGBAAt(120, 50), img.RGBAAt(120, 24)
-	if d := max(diff(mid.R, bg.R), diff(mid.G, bg.G), diff(mid.B, bg.B)); d > 2 {
-		t.Errorf("fill %v, want %v", mid, bg)
-	}
-	if edge.R < mid.R+4 {
-		t.Errorf("no inner edge: edge %v, fill %v", edge, mid)
-	}
-	if inner.R > mid.R+1 {
-		t.Errorf("the edge is wider than a hairline: %v", inner)
-	}
-}
-
 func TestEmptyLayout(t *testing.T) {
 	for _, dashed := range []bool{false, true} {
 		var tk theme.Tokens

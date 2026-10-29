@@ -82,12 +82,9 @@ func TestBudget(t *testing.T) {
 
 func TestDataURL(t *testing.T) {
 	pic := pngOf(t, 1, 1)
-	got, err := DataURL(Encode("png", pic))
+	got, err := DataURL("data:image/png;base64," + base64.StdEncoding.EncodeToString(pic))
 	if err != nil || !bytes.Equal(got, pic) {
 		t.Fatalf("round trip: %v", err)
-	}
-	if !strings.HasPrefix(Encode("webp", pic), "data:image/webp;base64,") {
-		t.Error("Encode's type")
 	}
 	big := "data:image/png;base64," + base64.StdEncoding.EncodeToString(make([]byte, MaxImageBytes+1))
 	if _, err := DataURL(big); !errors.Is(err, ErrTooLarge) {
