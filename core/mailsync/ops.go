@@ -1,10 +1,12 @@
 package mailsync
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
+	netmail "net/mail"
 	"slices"
 	"strings"
 
@@ -209,7 +211,7 @@ func pushOp(ctx context.Context, db *store.DB, c *imapclient.Client, o op) (prob
 		// alone is no proof (another client may have set it), so the copy must
 		// be in the destination too; fetch claims it there.
 		if !c.Caps().Has(imap.CapMove) && !purged && slices.Contains(got[0].Flags, imap.FlagDeleted) {
-			copied, err := inFolder(ctx, db, c, o.msg, dstName)
+			copied, err := copyIn(ctx, db, c, o.msg, dstName)
 			if err == nil {
 				err = reselect(c, srcName, srcValidity)
 			}
@@ -239,24 +241,50 @@ func pushOp(ctx context.Context, db *store.DB, c *imapclient.Client, o op) (prob
 	return "", moved(ctx, db, o, validity, dstUID)
 }
 
-// inFolder reports whether folder, examined, holds a message with msg's
-// Message-ID and size, as a claim matches it. A message without a Message-ID
-// is never found there.
-func inFolder(ctx context.Context, db *store.DB, c *imapclient.Client, msg int64, folder string) (bool, error) {
+// copyIn reports whether folder holds a message with msg's Message-ID and
+// size, as a claim matches it. A message without a Message-ID is never found.
+func copyIn(ctx context.Context, db *store.DB, c *imapclient.Client, msg int64, folder string) (bool, error) {
 	r, err := db.Query(ctx, "SELECT message_id, size FROM messages WHERE id = ?", msg)
-	if err != nil || len(r.Values) == 0 || store.Str(r.Values[0][0]) == "" {
+	if err != nil || len(r.Values) == 0 || store.Str(r.Values[0][0]) == "" || store.Int(r.Values[0][1]) <= 0 {
 		return false, err
 	}
-	size := store.Int(r.Values[0][1])
+	return InFolder(c, folder, store.Str(r.Values[0][0]), store.Int(r.Values[0][1]))
+}
+
+// InFolder reports whether folder, examined, holds a message whose Message-ID
+// is exactly messageID (without its angle brackets) and, when size > 0, of that
+// size. SEARCH HEADER matches substrings and ignores case, so each hit is checked.
+func InFolder(c *imapclient.Client, folder, messageID string, size int64) (bool, error) {
 	if _, err := c.Select(folder, &imap.SelectOptions{ReadOnly: true}).Wait(); err != nil {
 		return false, err
 	}
-	found, err := c.UIDSearch(&imap.SearchCriteria{Header: []imap.SearchCriteriaHeaderField{{Key: "Message-ID", Value: "<" + store.Str(r.Values[0][0]) + ">"}},
-		Larger: size - 1, Smaller: size + 1}, nil).Wait()
+	crit := &imap.SearchCriteria{Header: []imap.SearchCriteriaHeaderField{{Key: "Message-ID", Value: messageID}}}
+	if size > 0 {
+		crit.Larger, crit.Smaller = size-1, size+1
+	}
+	res, err := c.UIDSearch(crit, nil).Wait()
 	if err != nil {
 		return false, err
 	}
-	return len(found.AllUIDs()) > 0, nil
+	uids := res.AllUIDs()
+	if len(uids) == 0 {
+		return false, nil
+	}
+	sec := &imap.FetchItemBodySection{Specifier: imap.PartSpecifierHeader, HeaderFields: []string{"Message-ID"}, Peek: true}
+	msgs, err := c.Fetch(imap.UIDSetNum(uids...), &imap.FetchOptions{UID: true, BodySection: []*imap.FetchItemBodySection{sec}}).Collect()
+	if err != nil {
+		return false, err
+	}
+	for _, m := range msgs {
+		h, err := netmail.ReadMessage(bytes.NewReader(append(m.FindBodySection(sec), "\r\n\r\n"...)))
+		if err != nil {
+			continue
+		}
+		if strings.Trim(strings.TrimSpace(h.Header.Get("Message-Id")), "<>") == messageID {
+			return true, nil
+		}
+	}
+	return false, nil
 }
 
 // reselect selects folder again, read-write, as long as it is the generation validity.

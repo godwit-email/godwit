@@ -1,14 +1,11 @@
 package core
 
 import (
-	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
-	netmail "net/mail"
 	"os"
-	"strings"
 	"time"
 
 	"github.com/egoist/mygo/plugins/sqlite"
@@ -379,7 +376,7 @@ func (s *Service) processOutbox(ctx context.Context, c *imapclient.Client, accou
 			if err != nil || folder == "" {
 				continue // cannot check; the user decides
 			}
-			found, err := inFolder(c, folder, o.messageID)
+			found, err := mailsync.InFolder(c, folder, o.messageID, 0)
 			if err != nil {
 				_, err = s.setOutbox(wctx, o, "send_uncertain", err.Error())
 			} else if found {
@@ -486,7 +483,7 @@ func (s *Service) archiveItem(ctx, wctx context.Context, c *imapclient.Client, s
 		if err != nil || folder == "" {
 			return err
 		}
-		found, err := inFolder(c, folder, o.messageID)
+		found, err := mailsync.InFolder(c, folder, o.messageID, 0)
 		if err != nil || found {
 			return err
 		}
@@ -541,35 +538,4 @@ func (s *Service) finishOutbox(ctx context.Context, o outboxRow) error {
 	}
 	os.Remove(o.rawPath) // ponytail: a failed removal leaves an orphan .eml; sweep outbox/ if it matters
 	return nil
-}
-
-// inFolder reports whether folder holds a message whose Message-ID is exactly
-// messageID. SEARCH HEADER matches substrings, so each hit is checked.
-func inFolder(c *imapclient.Client, folder, messageID string) (bool, error) {
-	if _, err := c.Select(folder, &imap.SelectOptions{ReadOnly: true}).Wait(); err != nil {
-		return false, err
-	}
-	res, err := c.UIDSearch(&imap.SearchCriteria{Header: []imap.SearchCriteriaHeaderField{{Key: "Message-ID", Value: messageID}}}, nil).Wait()
-	if err != nil {
-		return false, err
-	}
-	uids := res.AllUIDs()
-	if len(uids) == 0 {
-		return false, nil
-	}
-	sec := &imap.FetchItemBodySection{Specifier: imap.PartSpecifierHeader, HeaderFields: []string{"Message-ID"}, Peek: true}
-	msgs, err := c.Fetch(imap.UIDSetNum(uids...), &imap.FetchOptions{UID: true, BodySection: []*imap.FetchItemBodySection{sec}}).Collect()
-	if err != nil {
-		return false, err
-	}
-	for _, m := range msgs {
-		h, err := netmail.ReadMessage(bytes.NewReader(append(m.FindBodySection(sec), "\r\n\r\n"...)))
-		if err != nil {
-			continue
-		}
-		if strings.Trim(strings.TrimSpace(h.Header.Get("Message-Id")), "<>") == messageID {
-			return true, nil
-		}
-	}
-	return false, nil
 }

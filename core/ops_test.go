@@ -322,12 +322,23 @@ func TestUncertainCopyMoveDeletedElsewhere(t *testing.T) {
 	assert.Equal(t, []string{"done"}, e.opStates(t))
 }
 
-// A destination message with the same Message-ID but another size is not the
-// copy: the retry copies the message rather than expunge its only one.
+// A destination message whose Message-ID only looks alike to SEARCH, or of
+// another size, is not the copy: the retry copies the message rather than
+// expunge its only one.
 func TestUncertainCopyMoveOtherSizeTwin(t *testing.T) {
+	for name, twin := range map[string]string{
+		"other size":    msg("m@x") + "a longer body\r\n",
+		"other case":    msg("M@x"),  // SEARCH ignores case
+		"longer, alike": msg("am@x"), // SEARCH matches substrings
+	} {
+		t.Run(name, func(t *testing.T) { uncertainCopyMoveWithTwin(t, twin) })
+	}
+}
+
+func uncertainCopyMoveWithTwin(t *testing.T, twin string) {
 	e := newSyncEnv(t, testmail.WithoutMove())
 	e.put(t, "INBOX", msg("m@x"))
-	e.put(t, "Archive", msg("m@x")+"a longer body\r\n")
+	e.put(t, "Archive", twin)
 	e.sync(t)
 	id := e.rows(t, "SELECT id FROM messages WHERE folder_id = ?", e.folderID(t, "INBOX"))[0][0].(int64)
 	require.NoError(t, e.s.Move(bg, []int64{id}, e.folderID(t, "Archive")))
