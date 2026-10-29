@@ -229,8 +229,8 @@ args = [
 ]
 command = """/old/
 Godwit"""
-env = { X = "1",
-  Y = "]" }
+tools = [ "a",
+  "]" ]
 
 [other]
 a = 1
@@ -239,8 +239,8 @@ a = 1
 	assert.Equal(t, `[mcp_servers.godwit]
 command = "/Applications/Godwit.app/Contents/MacOS/Godwit"
 args = ["mcp"]
-env = { X = "1",
-  Y = "]" }
+tools = [ "a",
+  "]" ]
 
 [other]
 a = 1
@@ -267,7 +267,6 @@ func TestCodexLeavesDottedKeys(t *testing.T) {
 		"mcp_servers.godwit.command = '/old/Godwit'\nmcp_servers.godwit.args = ['mcp']\n",
 		"[mcp_servers]\ngodwit.command = '/old/Godwit'\n",
 		"[mcp_servers]\ngodwit = { command = '/old/Godwit' }\n",
-		"mcp_servers = { files = { command = 'npx' } }\n",
 	} {
 		e := env(t)
 		path := filepath.Join(e.Home, ".codex", "config.toml")
@@ -277,6 +276,47 @@ func TestCodexLeavesDottedKeys(t *testing.T) {
 		assert.Error(t, e.Disconnect(Codex), text)
 		assert.Equal(t, text, read(t, path))
 	}
+	e := env(t) // mcp_servers as an inline table: no table can be added to it
+	path := filepath.Join(e.Home, ".codex", "config.toml")
+	text := "mcp_servers = { files = { command = 'npx' } }\n"
+	write(t, path, text)
+	assert.Equal(t, Off, state(t, e, Codex))
+	assert.Error(t, e.Connect(Codex, srv))
+	require.NoError(t, e.Disconnect(Codex))
+	assert.Equal(t, text, read(t, path))
+}
+
+// A godwit table this can't edit as text is read for what it is, and left
+// alone: one spelt with escapes, or a subtable after another server's
+// table, which taking the table away would leave behind.
+func TestCodexLeavesWhatItCantEdit(t *testing.T) {
+	e := env(t)
+	path := filepath.Join(e.Home, ".codex", "config.toml")
+	text := "[mcp_servers.\"godw\\u0069t\"]\ncommand = '/old/Godwit'\n"
+	write(t, path, text)
+	assert.Equal(t, Other, state(t, e, Codex))
+	assert.Error(t, e.Connect(Codex, srv))
+	assert.Error(t, e.Disconnect(Codex))
+	assert.Equal(t, text, read(t, path))
+
+	text = "[mcp_servers.godwit]\ncommand = '/old/Godwit'\n\n[mcp_servers.files]\ncommand = 'npx'\n\n[mcp_servers.godwit.env]\nX = '1'\n"
+	write(t, path, text)
+	require.NoError(t, e.Connect(Codex, srv), "the subtable stays where it is")
+	assert.Equal(t, On, state(t, e, Codex))
+	text = read(t, path)
+	assert.Error(t, e.Disconnect(Codex))
+	assert.Equal(t, text, read(t, path))
+}
+
+// A config that is not TOML is left as it was.
+func TestCodexLeavesBrokenTOML(t *testing.T) {
+	e := env(t)
+	path := filepath.Join(e.Home, ".codex", "config.toml")
+	write(t, path, "model = \n")
+	_, err := e.State(Codex, srv)
+	assert.Error(t, err)
+	assert.Error(t, e.Connect(Codex, srv))
+	assert.Equal(t, "model = \n", read(t, path))
 }
 
 // A header inside a multiline string is the string's text, not a table.

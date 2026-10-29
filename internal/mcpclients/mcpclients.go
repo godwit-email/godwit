@@ -11,9 +11,12 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"reflect"
 	"runtime"
 	"slices"
 	"strings"
+
+	"github.com/pelletier/go-toml/v2"
 )
 
 // Name is the server's name in each app's config.
@@ -91,13 +94,13 @@ func (e Env) State(app string, s Server) (State, error) {
 		if err != nil {
 			return Off, err
 		}
-		cmd, args, found := tomlServer(string(b))
+		cfg, err := codexConfig(b)
 		switch {
-		case codexElsewhere(strings.Split(string(b), "\n")):
-			return Other, nil
-		case !found:
+		case err != nil:
+			return Off, fmt.Errorf("config.toml: %w", err)
+		case cfg.godwit == nil:
 			return Off, nil
-		case same(cmd, args, s):
+		case same(cfg.command(), cfg.args(), s):
 			return On, nil
 		}
 		return Other, nil
@@ -415,9 +418,9 @@ func godwitTable(key []string) int {
 
 // codexSpan is where godwit's table is in lines: its header, the end of its
 // own keys (before a subtable of it), and its end with its subtables; -1 if
-// none. n is how many godwit tables there are: more than one is a file
-// Codex can't read either, and is left alone.
-func codexSpan(lines []string) (start, keys, end, n int) {
+// none. A file whose godwit tables this misreads (one spelt with escapes,
+// subtables apart from it) is caught by editCodex's check.
+func codexSpan(lines []string) (start, keys, end int) {
 	start, keys, end = -1, len(lines), len(lines)
 	for i, next := 0, 0; i < len(lines); i = next {
 		l := lines[i]
@@ -436,7 +439,6 @@ func codexSpan(lines []string) (start, keys, end, n int) {
 		}
 		switch godwitTable(key) {
 		case 0:
-			n++
 			if start < 0 {
 				start = i
 				continue
@@ -452,37 +454,9 @@ func codexSpan(lines []string) (start, keys, end, n int) {
 		}
 	}
 	if start < 0 {
-		return -1, -1, -1, 0
+		return -1, -1, -1
 	}
-	return start, min(keys, end), end, n // the blank lines before the next table go with it
-}
-
-// codexElsewhere is whether lines define godwit's server, or mcp_servers
-// whole, other than in godwit's own tables: with dotted keys
-// (mcp_servers.godwit.command = …) or an inline table (godwit = {…} under
-// [mcp_servers]). Godwit can't add a table there without breaking the file.
-func codexElsewhere(lines []string) bool {
-	var table []string
-	for i := 0; i < len(lines); {
-		if key, ok := tomlHeader(lines[i]); ok {
-			table = key
-			i++
-			continue
-		}
-		k, _, n := tomlEntry(lines, i)
-		i += n
-		if k == "" || godwitTable(table) >= 0 {
-			continue
-		}
-		raw, _, _ := strings.Cut(lines[i-n], "=")
-		full := append(slices.Clone(table), tomlKey(raw)...)
-		godwit := []string{"mcp_servers", Name}
-		m := min(len(full), len(godwit))
-		if slices.Equal(full[:m], godwit[:m]) {
-			return true
-		}
-	}
-	return false
+	return start, min(keys, end), end // the blank lines before the next table go with it
 }
 
 // tomlEntry reads lines[i] as key = value: the key (unquoted), the value's
@@ -539,40 +513,11 @@ func tomlValueEnds(v string) bool {
 	return q == "" && depth <= 0
 }
 
-// tomlServer reads godwit's command and args from a Codex config.
-func tomlServer(text string) (cmd string, args []string, found bool) {
-	lines := strings.Split(text, "\n")
-	start, keys, _, _ := codexSpan(lines)
-	if start < 0 {
-		return "", nil, false
-	}
-	for i := start + 1; i < keys; {
-		k, v, n := tomlEntry(lines, i)
-		switch k {
-		case "command":
-			cmd = tomlString(v)
-		case "args":
-			_ = json.Unmarshal([]byte(v), &args) // a one-line array of basic strings, as Godwit writes it; else another Godwit's
-		}
-		i += n
-	}
-	return cmd, args, true
-}
-
-// tomlString reads a basic ("…") or literal ('…') string.
-func tomlString(v string) string {
-	if strings.HasPrefix(v, "'") {
-		return strings.Trim(v, "'")
-	}
-	var s string
-	_ = json.Unmarshal([]byte(v), &s) // TOML's basic strings escape as JSON's do
-	return s
-}
-
 // editCodex sets godwit's table in Codex's config.toml to s, keeping any
 // other keys and subtables the user gave it, or takes it away if s is nil.
-// What it would write must hold one godwit table, or none: else the file
-// is left alone.
+// The file must be TOML, and what it would write must read back as the
+// same config with only godwit's command and args set, or godwit gone:
+// else the file is left alone.
 func (e Env) editCodex(s *Server) error {
 	dir := e.codexDir()
 	if s != nil && !isDir(dir) {
@@ -583,18 +528,19 @@ func (e Env) editCodex(s *Server) error {
 	if err != nil && !errors.Is(err, os.ErrNotExist) {
 		return err
 	}
+	before, err := codexConfig(b)
+	if err != nil {
+		return fmt.Errorf("%s is not valid TOML, so Godwit left it alone: %w", path, err)
+	}
+	if s == nil && before.godwit == nil {
+		return nil
+	}
 	lines := strings.Split(string(b), "\n")
-	start, keys, end, n := codexSpan(lines)
-	if n > 1 {
-		return fmt.Errorf("%s has %d [mcp_servers.%s] tables, so Godwit left it alone", path, n, Name)
-	}
-	if codexElsewhere(lines) {
-		return fmt.Errorf("%s sets mcp_servers.%s outside its own table, so Godwit left it alone", path, Name)
-	}
+	start, keys, end := codexSpan(lines)
 	var out []string
 	switch {
 	case s == nil && start < 0:
-		return nil
+		return fmt.Errorf("%s sets mcp_servers.%s outside its own table, so Godwit left it alone", path, Name)
 	case s == nil:
 		out = append(slices.Clone(lines[:start]), lines[end:]...)
 	default:
@@ -622,12 +568,75 @@ func (e Env) editCodex(s *Server) error {
 		out = append(out, kept...)
 		out = append(out, lines[keys:]...)
 	}
-	want := 1
-	if s == nil {
-		want = 0
-	}
-	if _, _, _, n := codexSpan(out); n != want {
+	text := []byte(strings.Join(out, "\n"))
+	if after, err := codexConfig(text); err != nil || !before.becomes(after, s) {
 		return fmt.Errorf("%s: Godwit could not edit its [mcp_servers.%s] table safely, so it left the file alone", path, Name)
 	}
-	return writeFile(path, []byte(strings.Join(out, "\n")))
+	return writeFile(path, text)
+}
+
+// codexCfg is config.toml as Codex reads it, godwit's server apart.
+type codexCfg struct {
+	rest   map[string]any
+	godwit map[string]any
+}
+
+func codexConfig(b []byte) (codexCfg, error) {
+	rest := map[string]any{} // stays empty for an empty file
+	if err := toml.Unmarshal(b, &rest); err != nil {
+		return codexCfg{}, err
+	}
+	c := codexCfg{rest: rest}
+	if servers, ok := rest["mcp_servers"].(map[string]any); ok {
+		c.godwit, _ = servers[Name].(map[string]any)
+		delete(servers, Name)
+		if len(servers) == 0 {
+			delete(rest, "mcp_servers")
+		}
+	}
+	return c, nil
+}
+
+func (c codexCfg) command() string {
+	cmd, _ := c.godwit["command"].(string)
+	return cmd
+}
+
+func (c codexCfg) args() []string {
+	list, _ := c.godwit["args"].([]any)
+	var args []string
+	for _, a := range list {
+		s, ok := a.(string)
+		if !ok {
+			return nil
+		}
+		args = append(args, s)
+	}
+	return args
+}
+
+// becomes is whether after is c with godwit's server running s, its other
+// fields kept, or with no godwit server if s is nil.
+func (c codexCfg) becomes(after codexCfg, s *Server) bool {
+	if !reflect.DeepEqual(c.rest, after.rest) {
+		return false
+	}
+	if s == nil {
+		return after.godwit == nil
+	}
+	if after.godwit == nil || !same(after.command(), after.args(), *s) {
+		return false
+	}
+	return reflect.DeepEqual(fields(c.godwit), fields(after.godwit))
+}
+
+// fields is a server's fields but its command and args.
+func fields(m map[string]any) map[string]any {
+	out := map[string]any{}
+	for k, v := range m {
+		if k != "command" && k != "args" {
+			out[k] = v
+		}
+	}
+	return out
 }
