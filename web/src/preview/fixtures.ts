@@ -72,7 +72,7 @@ export const compose = (mode: "light" | "dark", withBody: boolean): ComposeState
       { id: "longer", label: "更长", hint: "长度" },
       { id: "proofread", label: "校对", hint: "只改错字和语法" },
       { id: "format", label: "排版整理", hint: "仅整理段落与结构" },
-      { id: "humanize", label: "更有人情味", hint: "消除AI套话" },
+      { id: "humanize", label: "更自然", hint: "去掉 AI 套话" },
     ],
     languages: [
       { tag: "en", name: "English" },
