@@ -1,5 +1,23 @@
 # Changelog
 
+## [1.19.0](https://github.com/godwit-email/godwit/compare/v1.18.0...v1.19.0) (2026-10-29)
+
+
+### Features
+
+* **app:** reader redesign — one sheet, folded gists, thread digest ([#342](https://github.com/godwit-email/godwit/issues/342)) ([5c0684c](https://github.com/godwit-email/godwit/commit/5c0684c6588688a365cf63b4dc4726ee36cdcc8d))
+* count tracking pixels apart from remote images ([#333](https://github.com/godwit-email/godwit/issues/333)) ([40848a0](https://github.com/godwit-email/godwit/commit/40848a05d437d7ec399f6fd85167bc17970fba8b))
+* **kit,web:** frosted liquid glass for popovers, overlays, and controls ([#331](https://github.com/godwit-email/godwit/issues/331)) ([4eee858](https://github.com/godwit-email/godwit/commit/4eee8580763047d78f0b3e12059742c8a4f9c911))
+* **mail:** add reply, reply all, and forward actions to row context menu ([#343](https://github.com/godwit-email/godwit/issues/343)) ([3dc4a88](https://github.com/godwit-email/godwit/commit/3dc4a88608e5707c66038fbe5db29c79d2f232f5))
+* **settings:** give every setting one owner; 智能 page with one-click Claude and Codex; masking log by request ([#347](https://github.com/godwit-email/godwit/issues/347)) ([442791b](https://github.com/godwit-email/godwit/commit/442791bc0acdbd78c6eb9b2c0a8882588c620248))
+* **wit:** add frosted glass info tooltip and ICU pluralization to masking note ([#346](https://github.com/godwit-email/godwit/issues/346)) ([90ee371](https://github.com/godwit-email/godwit/commit/90ee371070a94d539fc17dbbb2e87d0301deaa8f))
+* **wit:** add humanize skill to remove AI writing patterns from drafts ([#344](https://github.com/godwit-email/godwit/issues/344)) ([fc8ebd5](https://github.com/godwit-email/godwit/commit/fc8ebd53282c16fd8e1517c6180398b724832fbc))
+
+
+### Bug Fixes
+
+* **assist:** convert plain text drafts into HTML paragraphs and line breaks ([#345](https://github.com/godwit-email/godwit/issues/345)) ([9b1eebc](https://github.com/godwit-email/godwit/commit/9b1eebce61ac46dd4ccd6a323365cbe2a22c81ca))
+
 ## [1.18.0](https://github.com/godwit-email/godwit/compare/v1.17.0...v1.18.0) (2026-10-28)
 
 
