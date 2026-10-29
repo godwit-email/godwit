@@ -73,18 +73,25 @@ func (s *Service) SenderAvatar(ctx context.Context, messageID int64, allowRemote
 		providerDomains = append(providerDomains, provider.Domains...)
 	}
 	if avatar.PersonalDomain(domain, providerDomains) {
+		var policyErr error
+		canFetch := func() bool {
+			var ok bool
+			ok, policyErr = allowed()
+			return ok && policyErr == nil
+		}
+		img, ok := avatar.FindBIMI(ctx, s.opts.LookupTXT, s.images, domain, canFetch)
+		if policyErr != nil {
+			return Avatar{}, policyErr
+		}
+		if ok {
+			return result(img, "bimi")
+		}
 		// Any site's cached icon first: an unreachable sender host (account.tiktok.com)
 		// must not hold up its organization's icon (tiktok.com) on every message.
 		for _, host := range sites {
 			if img, ok, _ := s.images.LookupAvatar(ctx, imagecache.AvatarKey("favicon", host)); ok {
 				return result(img, "favicon")
 			}
-		}
-		var policyErr error
-		canFetch := func() bool {
-			var ok bool
-			ok, policyErr = allowed()
-			return ok && policyErr == nil
 		}
 		for _, host := range sites {
 			if ok, err := allowed(); !ok || err != nil {
