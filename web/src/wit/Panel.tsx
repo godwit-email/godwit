@@ -1518,15 +1518,16 @@ function Answer({
             <Tooltip>
               <TooltipTrigger
                 render={
-                  <span className="inline-flex cursor-default items-center gap-1 px-1.5 text-muted-foreground text-xs" />
+                  <button
+                    type="button"
+                    className="inline-flex cursor-default items-center gap-1 px-1.5 text-muted-foreground text-xs"
+                  />
                 }
               >
                 <span>{masking}</span>
                 <RiInformationLine className="size-3 shrink-0 opacity-70 hover:opacity-100" />
               </TooltipTrigger>
-              <TooltipContent className="glass-popover max-w-xs text-xs leading-relaxed py-2 px-3">
-                {t("wit.masked_help")}
-              </TooltipContent>
+              <TooltipContent className="leading-relaxed">{t("wit.masked_help")}</TooltipContent>
             </Tooltip>
           )}
           {m.metadata?.time && !live && <MessageTime ms={m.metadata.time} className="ml-auto" />}

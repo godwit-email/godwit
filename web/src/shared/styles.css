@@ -188,14 +188,13 @@ kbd {
 }
 
 @layer components {
-  /* Frosted liquid glass for popups, menus, dropdowns, and tooltips. */
+  /* Frosted liquid glass for popups, menus and dropdowns. */
   .glass-popover,
   [data-slot="popover-content"],
   [data-slot="dropdown-menu-content"],
   [data-slot="dropdown-menu-sub-content"],
   [data-slot="select-content"],
-  [data-slot="hover-card-content"],
-  [data-slot="tooltip-content"] {
+  [data-slot="hover-card-content"] {
     --popover: var(--glass-bg);
     backdrop-filter: blur(24px);
     -webkit-backdrop-filter: blur(24px);
