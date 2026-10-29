@@ -36,7 +36,7 @@ func TestReaderTranslatesWithPlugin(t *testing.T) {
 	h.seeBody(m.ID)
 	h.click("翻译")
 	h.seeTranslation(m.ID, "[zh-CN] the original words")
-	h.see("已翻译为中文 · translate · dlx")
+	h.see("已翻译为中文 · dlx")
 }
 
 func TestReaderTranslatorOff(t *testing.T) {

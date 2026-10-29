@@ -66,6 +66,10 @@ type Platform interface {
 	// (加载图片). Call it after NewBodyView: it forgets once the last page
 	// of the message closes.
 	AllowImages(message int64)
+	// BodyGlass tells a body's page how much of it, in CSS pixels, the
+	// reader's bars cover from its top and from its bottom: the page blurs
+	// there. UI thread only.
+	BodyGlass(view ui.NativeWebView, top, bottom int)
 	// TranslateBody replaces only the body's text nodes; nil shows the original.
 	TranslateBody(message int64, texts map[string]string)
 	// Print prints the message's body page. UI thread only.
@@ -263,10 +267,10 @@ type App struct {
 	closeErr    error  // why
 	closeAnyway func() // closes after all
 
-	witView    ui.NativeWebView                 // the Wit page; nil before SetWitPage
-	witOpen    func(conv int64) (version int64) // tells the Wit page the route's conversation
-	witCreated func(conv int64) (version int64) // the same, for the conversation its Ask made
-	witAsk     func(query string)               // hands a question to the Wit page, which asks it
+	witView    ui.NativeWebView                                  // the Wit page; nil before SetWitPage
+	witOpen    func(conv int64) (version int64)                  // tells the Wit page the route's conversation
+	witCreated func(conv int64) (version int64)                  // the same, for the conversation its Ask made
+	witAsk     func(query string, quoted ...core.MessageSummary) // hands a question, quoting mail, to the Wit page, which asks it
 
 	link     string // the link waiting for confirmation
 	linkOpen bool   // the link dialog shows

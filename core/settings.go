@@ -29,7 +29,7 @@ type Settings struct {
 	NotifyNewMail, NotifySmartOnly, NotifyPreview    bool
 	QuickReplies, Summary, ThreadView                bool
 	ThreadCollapse                                   bool // collapse runs of folded messages into an expandable card
-	ThreadCollapseThreshold                          int  // a thread collapses from this many messages, MinThreadCollapse to MaxThreadCollapse
+	ThreadCollapseThreshold                          int  // a longer thread keeps its newest this many messages in sight and collapses the older; MinThreadCollapse to MaxThreadCollapse
 	DefaultModel, SmallModel                         string
 	// Translator is the reader's translation channel: "" the model, or
 	// "plugin/<name>" a plugin declaring translate (ListTranslators).

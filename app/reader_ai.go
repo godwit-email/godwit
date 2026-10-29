@@ -7,8 +7,10 @@ import (
 	"fmt"
 	"maps"
 	"slices"
+	"strconv"
 	"strings"
 	"time"
+	"unicode/utf8"
 
 	"github.com/egoist/mygo/ui"
 	"github.com/egoist/mygo/ui/markdown"
@@ -36,6 +38,7 @@ type aiRun struct {
 	translations      map[string]string
 	err               error
 	running, done     bool
+	target            core.Target // what it ran on
 }
 
 // fetch is a read for the reader: done once it succeeded; a failure keeps
@@ -95,6 +98,7 @@ type msgAI struct {
 	cards       fetch[[]core.Card]
 	tags        fetch[[]core.Tag]
 	quick       fetch[[]core.QuickReply]
+	gist        fetch[string]
 }
 
 // aiResult is the closable card of a skill or action run from the menu.
@@ -204,11 +208,12 @@ func (r *reader) stopAI() {
 }
 
 // startFor starts what an expanded message shows by itself: its summary
-// (Settings.Summary with a model) and its plugin cards. Each runs once.
+// (Settings.Summary with a model; the newest only, the one a thread shows)
+// and its plugin cards. Each runs once.
 func (r *reader) startFor(id int64) {
 	st := r.state(id)
-	if r.taskReady("summarize") && r.p.a.settings.Summary && st.summary == nil {
-		st.summary = r.stream(id, "summarize")
+	if last, _ := r.last(); id == last.ID && r.taskReady("summarize") && r.p.a.settings.Summary && st.summary == nil {
+		st.summary = r.summarize(id)
 	}
 	r.loadCards(id, false)
 	r.loadTags(id, false)
@@ -241,6 +246,18 @@ func (r *reader) reloadPluginParts() {
 	}
 }
 
+// gist is a folded message's one-line gist, asked for as its row shows (the
+// small model, under Settings.Summary): "" until it comes, and when it
+// fails or there is no model, so the row keeps the start of its text.
+func (r *reader) gist(id int64) string {
+	if !r.taskReady("") || !r.p.a.settings.Summary {
+		return ""
+	}
+	st, get := r.state(id), r.gistFn
+	fetchInto(r, &st.gist, false, func(ctx context.Context) (string, error) { return get(ctx, id) }, nil)
+	return st.gist.v
+}
+
 func (r *reader) loadQuick(id int64, force bool) {
 	get := r.quickFn
 	fetchInto(r, &r.state(id).quick, force, func(ctx context.Context) ([]core.QuickReply, error) { return get(ctx, id) }, nil)
@@ -252,6 +269,11 @@ func (r *reader) startAI() {
 	m, ok := r.last()
 	if !ok {
 		return
+	}
+	// A summary kept from the message read alone is not its thread's, nor the
+	// other way round: it runs again on what the reader shows now.
+	if st := r.ai[m.ID]; st != nil && st.summary != nil && st.summary.target != r.summaryTarget(m.ID) {
+		st.summary = nil
 	}
 	for id := range r.open {
 		r.startFor(id)
@@ -274,13 +296,30 @@ func (r *reader) startAI() {
 // stream runs skill on a message; its text streams into the run returned,
 // labelled with the model the run reports in its context event.
 func (r *reader) stream(id int64, skill string) *aiRun {
+	return r.streamOn(core.Target{Kind: "message", ID: id, PreserveHTML: skill == "translate"}, skill)
+}
+
+// summarize runs the summary the newest message id shows (summaryTarget).
+func (r *reader) summarize(id int64) *aiRun { return r.streamOn(r.summaryTarget(id), "summarize") }
+
+// summaryTarget is what the newest message id's summary is of: in a thread of
+// more than one, the thread (its digest, ParseThreadDigest), else the message.
+func (r *reader) summaryTarget(id int64) core.Target {
+	if len(r.msgs) > 1 {
+		return core.Target{Kind: "thread", ID: r.key[0]}
+	}
+	return core.Target{Kind: "message", ID: id}
+}
+
+// streamOn runs skill on t, its output streaming into the run it returns.
+func (r *reader) streamOn(t core.Target, skill string) *aiRun {
 	a, ctx, start := r.p.a, r.aiContext(), r.runSkill
-	run := &aiRun{running: true, lang: r.readingLang(), markdown: &markdown.Options{OnLink: a.openLink}}
+	run := &aiRun{running: true, lang: r.readingLang(), markdown: &markdown.Options{OnLink: a.openLink}, target: t}
 	if skill == "translate" {
 		run.markdown = nil
 	}
 	a.do(func(context.Context) error {
-		ch, err := start(ctx, skill, core.Target{Kind: "message", ID: id, PreserveHTML: skill == "translate"})
+		ch, err := start(ctx, skill, t)
 		if err != nil {
 			return err
 		}
@@ -323,7 +362,7 @@ func (r *reader) toggleSummary() {
 	on := !r.summaryShown(st)
 	st.sumShown = &on
 	if on && (st.summary == nil || st.summary.err != nil) {
-		st.summary = r.stream(m.ID, "summarize")
+		st.summary = r.summarize(m.ID)
 	}
 }
 
@@ -477,11 +516,8 @@ func (r *reader) aiArea(c *ui.Context, m core.MessageSummary) {
 		return
 	}
 	t, th := theme.Of(c), c.Theme()
-	if sum := st.summary; sum != nil && r.summaryShown(st) {
-		r.panel(c, i18n.T("reader.ai.summary"), modelLabel(i18n.Tf("reader.ai.summary.meta", "summarize", sum.model)), nil, func() {
-			r.output(c, sum)
-			r.runState(c, sum, func() { st.summary = r.stream(m.ID, "summarize") })
-		})
+	if len(r.msgs) == 1 { // a thread's shows under its subject (summaryPanel)
+		r.summaryPanel(c, m)
 	}
 	if res := st.result; res != nil {
 		r.panel(c, res.title, "", func() { st.result = nil }, func() {
@@ -496,6 +532,175 @@ func (r *reader) aiArea(c *ui.Context, m core.MessageSummary) {
 			kit.TextLink(c, i18n.T("reader.ai.show_original"), t.Foreground, t.Text.Sm).OnClick(func() { r.toggleTranslate(m.ID) })
 		})
 	}
+}
+
+// summaryPanel is m's summary while shown: under the sender of a message
+// read alone, under the subject of a thread (which summarizes its newest).
+func (r *reader) summaryPanel(c *ui.Context, m core.MessageSummary) {
+	st := r.ai[m.ID]
+	if st == nil {
+		return
+	}
+	if sum := st.summary; sum != nil && r.summaryShown(st) {
+		meta := sum.model
+		if len(r.msgs) > 1 {
+			meta = strings.Join(slices.DeleteFunc([]string{meta, i18n.Tf("reader.ai.based_on", i18n.Tf("reader.thread.count", len(r.msgs)))},
+				func(s string) bool { return s == "" }), " · ")
+		}
+		r.panel(c, i18n.T("reader.ai.summary"), meta, nil, func() {
+			switch {
+			case len(r.msgs) < 2:
+				r.output(c, sum)
+			case sum.done: // a digest, else (unreadable) its text as written
+				if d, ok := core.ParseThreadDigest(sum.text, r.threadIDs); ok {
+					r.digest(c, d)
+				} else {
+					r.output(c, sum)
+				}
+			}
+			r.runState(c, sum, func() { st.summary = r.summarize(m.ID) })
+		})
+	}
+}
+
+// digest is a thread's summary: its steps, numbered, citing their messages,
+// and below a hairline what waits on the user.
+func (r *reader) digest(c *ui.Context, d core.ThreadDigest) {
+	t, th := theme.Of(c), c.Theme()
+	ui.Column(c).Gap(th.Space(1.5)).Role(ui.RoleList).Children(func() {
+		for i, step := range d.Progress {
+			ui.Row(c.Key(i)).Gap(th.Space(2)).AlignItems(ui.Start).Role(ui.RoleListItem).Children(func() {
+				// the step's own size and line, and one width for every number: steps start in line
+				ui.Text(c, strconv.Itoa(i+1)+".").LineHeight(theme.LineReading).TextColor(t.Muted).MinWidth(th.Space(4)).Shrink(0)
+				r.digestLine(c, step)
+			})
+		}
+	})
+	if d.Todo != nil {
+		kit.Separator(c, false)
+		ui.Column(c).Gap(th.Space(1)).Children(func() {
+			kit.Text(c, i18n.T("reader.ai.todo"), t.Text.Sm).FontWeight(600)
+			r.digestLine(c, d.Todo)
+		})
+	}
+}
+
+// digestLine is a line of a digest, its cites inline as Wit's answers show
+// theirs: a chip with the message's place in the thread, which shows the
+// message's card on hover and opens it.
+//
+// A chip is an inline object it paints itself, centred on the text's middle
+// with even room around its number: a span's tint hugs its glyphs and hangs
+// below a small number's middle.
+func (r *reader) digestLine(c *ui.Context, l core.DigestLine) {
+	t, th := theme.Of(c), c.Theme()
+	type chip struct {
+		num    *ui.TextLayout
+		fg, bg ui.Color
+	}
+	chips := map[int]chip{} // by its object's rune in the line
+	font := ui.Font{Size: t.Text.Xs, Weight: 500, Features: "tnum"}
+	mid := textMiddle * t.FontSize // the chip's middle above the baseline, the text's
+	up, down := theme.CiteChip/2+mid, theme.CiteChip/2-mid
+	ui.RichText(c).LineHeight(theme.LineReading).TextColor(t.Foreground).Shrink(1).DrawObjects(func(p *ui.Painter, at int, box ui.Rect) {
+		ch, ok := chips[at]
+		if !ok {
+			return // a gap
+		}
+		p.Fill(box, ch.bg, t.Radius.Sm)
+		w, _ := ch.num.Size()
+		base := ch.num.Lines()[0].Baseline
+		p.TextLayout(ch.num, box.X+(box.W-w)/2, box.Y+box.H/2+textMiddle*font.Size-base, ch.fg)
+	}).Children(func() {
+		runes, cited := 0, false // runes so far; the run before was a cite
+		inline := func(spans ...ui.Span) {
+			for _, sp := range spans {
+				runes += utf8.RuneCountInString(sp.Text)
+			}
+			ui.RichText(c, spans...)
+		}
+		for _, run := range l {
+			n := slices.IndexFunc(r.msgs, func(m core.MessageSummary) bool { return m.ID == run.Message })
+			if run.Message == 0 || n < 0 {
+				inline(ui.Span{Text: run.Text})
+				cited = false
+				continue
+			}
+			m := r.msgs[n]
+			// a token from the text, half from a cite before it; word joiners keep the line from
+			// breaking around the gap: a cite stays with what it cites
+			gap := th.Space(1)
+			if cited {
+				gap = th.Space(0.5)
+			}
+			inline(ui.Span{Text: "\u2060"}, ui.Span{Text: "\ufffc", ObjectWidth: gap, ObjectHeight: theme.Stroke}, ui.Span{Text: "\u2060"})
+			cited = true
+			// a link without Link's hover underline, which would run under the chip
+			ch := chip{num: ui.ShapeText(strconv.Itoa(n+1), font, 0), fg: t.Muted, bg: t.Border} // a step darker than the summary's Card fill
+			w, _ := ch.num.Size()
+			at := runes
+			runes++
+			link := ui.RichText(c, ui.Span{Text: "\ufffc", ObjectWidth: max(theme.CiteChip, w+2*th.Space(1)), ObjectHeight: up, ObjectDescent: down}).
+				Role(ui.RoleLink).Label(r.sourceLabel(m)).Focusable().Cursor(ui.CursorPointer)
+			if link.Hovered() {
+				ch.fg, ch.bg = t.Foreground, t.DividerHover
+			}
+			chips[at] = ch
+			r.citeCard(c, link, m)
+			if link.Clicked() {
+				r.reveal(m.ID)
+			}
+		}
+	})
+}
+
+// textMiddle is how far above the baseline the middle of capitals and
+// ideographs is, in ems: where a chip in a line centres.
+const textMiddle = 0.36
+
+// citeCard shows message m by anchor on hover, as Wit's cites show theirs:
+// its sender, when, and the start of its text.
+func (r *reader) citeCard(c *ui.Context, anchor ui.Element, m core.MessageSummary) {
+	t, th := theme.Of(c), c.Theme()
+	name, addr := sender(m.From)
+	kit.HoverCard(c, anchor, theme.CiteCardWidth, func() {
+		ui.Row(c).Gap(th.Space(2.5)).AlignItems(ui.Center).Children(func() {
+			kit.AvatarImage(c, name, r.shownAvatar(m))
+			ui.Column(c).Grow(1).Shrink(1).Children(func() {
+				ui.Row(c).Gap(th.Space(2)).AlignItems(ui.Center).Children(func() { // when, on the name's line
+					ui.Text(c, name).FontWeight(500).SingleLine().Grow(1).Shrink(1)
+					kit.Text(c, senderDate(r.p.a.clock.Now(), m.Date), t.Text.Xs).TextColor(t.Muted).Shrink(0)
+				})
+				if addr != "" && addr != name {
+					kit.Text(c, addr, t.Text.Xs).TextColor(t.Muted).SingleLine()
+				}
+			})
+		})
+		if m.Snippet != "" {
+			kit.Text(c, m.Snippet, t.Text.Sm).TextColor(t.Muted).MaxLines(3)
+		}
+	})
+}
+
+// sourceLabel names a message a digest cites: its day and its
+// sender ("我" for the user's).
+func (r *reader) sourceLabel(m core.MessageSummary) string {
+	who, addr := sender(m.From)
+	for _, acc := range r.p.a.accounts {
+		if strings.EqualFold(acc.Email, addr) {
+			who = i18n.T("reader.me")
+		}
+	}
+	return listTime(r.p.a.clock.Now(), m.Date) + " · " + who
+}
+
+// reveal opens message id, from the history if it is there, and scrolls to it.
+func (r *reader) reveal(id int64) {
+	r.historyShown = true
+	if !r.open[id] {
+		r.toggle(id)
+	}
+	r.revealID = id
 }
 
 // translationState keeps the original body visible while translating or on failure.
@@ -721,33 +926,64 @@ func (r *reader) tagChips(c *ui.Context) {
 	}
 }
 
-// quickReplies are up to three one-line replies under the newest message;
-// Tab moves between them, a click or Enter opens one in a compose window.
-func (r *reader) quickReplies(c *ui.Context, m core.MessageSummary) {
-	last, _ := r.last()
-	st := r.ai[m.ID]
-	if m.ID != last.ID || st == nil || !r.taskReady("") || !r.p.a.settings.QuickReplies {
-		return
-	}
-	r.fetchErr(c, st.quick.err, st.quick.loading, func() { r.loadQuick(m.ID, true) })
-	if len(st.quick.v) == 0 {
-		return
-	}
+// replyBar floats at the reading pane's foot: the newest message's quick
+// replies as short labels, each a draft to edit, then a box that hands a
+// question about the thread, quoting that message, to Wit.
+func (r *reader) replyBar(c *ui.Context) ui.Element {
 	t, th := theme.Of(c), c.Theme()
-	ui.Column(c).Gap(th.Space(2)).Margin(th.Space(2), 0, 0, 0).Padding(th.Space(4), 0, 0, 0).BorderWidth(theme.Hairline, 0, 0, 0).BorderColor(t.Hover).Children(func() {
-		ui.Row(c).Gap(th.Space(1.5)).AlignItems(ui.Center).Children(func() {
-			ui.Icon(c, icons.Get("sparkles")).Size(theme.IconSm, theme.IconSm).TextColor(t.Muted)
-			kit.Text(c, i18n.T("reader.ai.quick"), t.Text.Sm).TextColor(t.Muted)
-		})
-		for i, q := range st.quick.v {
-			kit.Pressable(c, kit.PressableOpts{Bordered: true, OnClick: func() { r.quickReply(m.ID, q) }}).Label(q.Preview).Gap(th.Space(2.5)).Padding(th.Space(2.5), th.Space(3)).Children(func() {
-				ui.Text(c, q.Preview).SingleLine().Grow(1).Shrink(1)
-				if i == 0 {
-					kit.Text(c, "Tab", t.Text.Sm).Font(theme.Mono).TextColor(t.Muted)
+	last, _ := r.last()
+	return ui.Column(c).Padding(th.Space(2.5), th.Space(7), th.Space(3)).Material(kit.Bar(t.Background)).
+		BorderWidth(theme.Hairline, 0, 0, 0).BorderColor(t.Border).Children(func() {
+		r.column(c).Gap(th.Space(2)).Children(func() {
+			if st := r.ai[last.ID]; st != nil && r.taskReady("") && r.p.a.settings.QuickReplies {
+				r.fetchErr(c, st.quick.err, st.quick.loading, func() { r.loadQuick(last.ID, true) })
+				if len(st.quick.v) > 0 {
+					ui.Row(c).Wrap().Gap(th.Space(1)).Role(ui.RoleGroup).Label(i18n.T("reader.ai.quick")).Children(func() {
+						for _, q := range st.quick.v {
+							chip := kit.Pressable(c, kit.PressableOpts{OnClick: func() { r.quickReply(last.ID, q) }}).
+								Height(th.Space(6)).PaddingX(th.Space(2)).Radius(t.Radius.Md).Background(t.Hover).Center().Label(q.Preview)
+							chip.Children(func() { kit.Text(c, quickLabel(q), t.Text.Sm).SingleLine() })
+							kit.TooltipLabelled(c, chip, q.Preview)
+						}
+					})
 				}
+			}
+			kit.InputGroup(c, kit.InputOpts{Flat: true}).Height(th.Space(10)).Padding(0, th.Space(1), 0, th.Space(3)).Gap(th.Space(1)).Children(func() {
+				name, _ := sender(last.From)
+				in := kit.Input(c, &r.replyAsk, kit.InputOpts{Bare: true, Placeholder: i18n.Tf("reader.reply_wit", name)}).Grow(1).Shrink(1).Label(i18n.T("reader.ask_wit"))
+				if in.Submitted() {
+					r.askReply()
+				}
+				kit.IconButton(c, "arrow-up", i18n.T("reader.ask_wit"), kit.ButtonOpts{Variant: kit.Ghost, Size: kit.SizeSm}).OnClick(r.askReply)
 			})
-		}
+		})
 	})
+}
+
+// quickLabel is a quick reply's short label: the model's, else (cached
+// before labels were asked for) the start of its text.
+func quickLabel(q core.QuickReply) string {
+	if q.Label != "" {
+		return q.Label
+	}
+	if p := []rune(q.Preview); len(p) > quickLabelRunes {
+		return string(p[:quickLabelRunes]) + "…"
+	}
+	return q.Preview
+}
+
+// quickLabelRunes is as much of a quick reply's text as stands in for its label.
+const quickLabelRunes = 12
+
+// askReply hands the reply bar's question to Wit, quoting the newest message.
+func (r *reader) askReply() {
+	q := strings.TrimSpace(r.replyAsk)
+	m, ok := r.last()
+	if q == "" || !ok {
+		return
+	}
+	r.replyAsk = ""
+	r.p.a.askWit(q, m)
 }
 
 // egressDialog asks before an action's plugin sends data out: the plugin
