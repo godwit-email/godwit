@@ -268,6 +268,11 @@ func New(ctx context.Context, opts Options) (*Service, error) {
 		}
 	}
 	s.sweepAssets(ctx) // best effort: what is left is only disk space
+	// 保留 30 天 holds with masking or the AI off since, when nothing reads or writes the log.
+	if err := s.exec(ctx, pruneMaskLog()); err != nil {
+		db.Close()
+		return nil, fmt.Errorf("masking log: %w", err)
+	}
 	if err := s.startPlugins(ctx); err != nil {
 		s.Close() // stops dispatchers already started
 		return nil, err

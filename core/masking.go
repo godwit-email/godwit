@@ -41,31 +41,48 @@ const (
 const maskLogDays = 30
 
 // MaskRecord is a value a request to a model service or a translation
-// plugin held (脱敏记录): which feature sent it, its kind and category ("":
-// the user's own), its first character and length, never the value; and
-// what was done with it (MaskMask, MaskWarn or MaskBlock).
+// plugin held (脱敏记录): which request (the values of one share it; 0 for
+// records kept from before requests were told apart) and feature sent it,
+// its kind and category ("": the user's own), its first character and
+// length, never the value; and what was done with it (MaskMask, MaskWarn or
+// MaskBlock). A value of maskShortLen characters or fewer keeps no first
+// character: of a two-character name it would be half.
 type MaskRecord struct {
 	At                             time.Time
+	Request                        int64
 	Feature, Kind, Category, First string
 	Len                            int
 	Action                         string
 }
+
+const maskShortLen = 3
 
 // MaskingLog is the masking log of the last 30 days, newest first.
 func (s *Service) MaskingLog(ctx context.Context) ([]MaskRecord, error) {
 	if err := s.exec(ctx, pruneMaskLog()); err != nil {
 		return nil, err
 	}
-	rows, err := s.db.Query(ctx, "SELECT at, feature, kind, category, first, len, action FROM mask_log ORDER BY id DESC")
+	rows, err := s.db.Query(ctx, "SELECT at, feature, kind, category, first, len, action, request FROM mask_log ORDER BY id DESC")
 	if err != nil {
 		return nil, err
 	}
 	out := make([]MaskRecord, 0, len(rows.Values))
 	for _, r := range rows.Values {
 		out = append(out, MaskRecord{At: time.Unix(store.Int(r[0]), 0), Feature: store.Str(r[1]), Kind: store.Str(r[2]), Category: store.Str(r[3]),
-			First: store.Str(r[4]), Len: int(store.Int(r[5])), Action: store.Str(r[6])})
+			First: store.Str(r[4]), Len: int(store.Int(r[5])), Action: store.Str(r[6]), Request: store.Int(r[7])})
 	}
 	return out, nil
+}
+
+// ClearMaskingLog deletes the masking log (清空记录).
+func (s *Service) ClearMaskingLog(ctx context.Context) error {
+	ctx, end, err := s.begin(ctx, 0)
+	if err != nil {
+		return err
+	}
+	defer end()
+	_, err = s.db.Execute(ctx, "DELETE FROM mask_log")
+	return err
 }
 
 func pruneMaskLog() sqlite.Statement {
@@ -77,9 +94,17 @@ func pruneMaskLog() sqlite.Statement {
 func (s *Service) recordMasking(feature string, hits []mask.Hit) {
 	now := time.Now().Unix()
 	stmts := []sqlite.Statement{pruneMaskLog()}
-	for _, h := range hits {
-		stmts = append(stmts, sqlite.Statement{SQL: "INSERT INTO mask_log(at, feature, kind, category, first, len, action) VALUES (?, ?, ?, ?, ?, ?, ?)",
-			Args: []any{now, feature, h.Kind, h.Category, h.First, h.Len, h.Action}})
+	for i, h := range hits {
+		request := "(SELECT MAX(request) FROM mask_log)" // the one its first value began, in this transaction
+		if i == 0 {
+			request = "(SELECT COALESCE(MAX(request), 0) + 1 FROM mask_log)"
+		}
+		first := h.First
+		if h.Len <= maskShortLen {
+			first = ""
+		}
+		stmts = append(stmts, sqlite.Statement{SQL: "INSERT INTO mask_log(at, feature, kind, category, first, len, action, request) VALUES (?, ?, ?, ?, ?, ?, ?, " + request + ")",
+			Args: []any{now, feature, h.Kind, h.Category, first, h.Len, h.Action}})
 	}
 	if _, err := s.db.Transaction(context.Background(), stmts); err != nil {
 		slog.Default().Warn("could not record what masking found", "err", err)

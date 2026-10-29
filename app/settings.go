@@ -32,7 +32,8 @@ var logo = ui.MustParseSVG(assets.Logo)
 
 // settingsPage is the Settings section: the accounts and the app's pages,
 // chosen by Route.Settings ("account:<id>", "general", "signatures",
-// "signature:<id>", "models", "labels", "extensions", "privacy", "about").
+// "signature:<id>", "models", "labels", "extensions", "privacy", "masklog"
+// (脱敏记录, under privacy), "about").
 type settingsPage struct {
 	a *App
 
@@ -55,6 +56,9 @@ type settingsPage struct {
 	servers      serverForm                                                                     // the servers dialog's fields
 	reauth       map[int64]bool                                                                 // a browser sign-in runs for the account
 	update       func(ctx context.Context, id int64, p core.AccountPatch) (core.Account, error) // tests swap it
+
+	aiTab, privacyTab int           // the AI and 隐私与安全 pages' tabs
+	logFilter         maskLogFilter // what 脱敏记录 lists
 
 	// general
 	st, shown   core.Settings         // what the controls are bound to, and what they showed last frame
@@ -139,30 +143,30 @@ func (p *settingsPage) refresh(hints []events.Event) {
 			p.sigLink = nil
 			l.answer("", false)
 		}
+		if q := strings.ToLower(strings.TrimSpace(p.query)); q != "" { // a search opens the tab it found
+			p.aiTab = tabFor(aiTabs, q, p.aiTab)
+			p.privacyTab = tabFor(privacyTabs, q, p.privacyTab)
+		}
 	}
 	switch sec, acc := p.section(); {
 	case acc != nil:
 		p.readUsage(acc.ID)
 		p.readMailbox(acc.ID)
-	case sec == "models" && (hints == nil || slices.ContainsFunc(hints, func(ev events.Event) bool { return extChange(ev) || ev.Type == events.ModelsChanged })): // a plugin's models come and go with it
-		p.models.load()
-	case sec == "general" && (hints == nil || slices.ContainsFunc(hints, extChange)):
+	case sec == "models":
+		if hints == nil || slices.ContainsFunc(hints, func(ev events.Event) bool { return extChange(ev) || ev.Type == events.ModelsChanged }) { // a plugin's models come and go with it
+			p.models.load()
+		}
+		if hints != nil && !slices.ContainsFunc(hints, extChange) {
+			break
+		}
+		p.ext.load() // the MCP tab's servers, and the registry naming the translators
 		var list []core.TranslatorInfo
-		var registry core.RegistryView
-		a.query(func(ctx context.Context) (err error) {
-			registry, _ = a.svc.ListPluginRegistry(ctx) // Missing display names must not hide installed translators.
-			list, err = a.svc.ListTranslators(ctx)
-			return err
-		},
+		a.query(func(ctx context.Context) (err error) { list, err = a.svc.ListTranslators(ctx); return err },
 			func(err error) {
 				if err == nil {
 					p.translators = list
-					p.ext.reg = registry
 				}
 			})
-		if hints == nil {
-			p.readMaskLog()
-		}
 	case sec == "extensions" && (hints == nil || slices.ContainsFunc(hints, extChange)):
 		p.ext.load()
 		if hints == nil { // opened: the directory may have changed since
@@ -184,6 +188,9 @@ func (p *settingsPage) refresh(hints []events.Event) {
 		a.query(func(ctx context.Context) error { err = a.svc.KeychainStatus(ctx); return nil },
 			func(error) { p.keychain, p.keychainSet = err, true })
 		p.readImageCache()
+		p.readMaskLog()
+	case sec == "masklog" && hints == nil:
+		p.readMaskLog()
 	}
 }
 
@@ -195,8 +202,11 @@ func (p *settingsPage) Title() (string, string) {
 	if sig, ok := p.shownSignature(sec); ok {
 		return i18n.T("settings.heading"), i18n.T("settings.signatures") + " · " + sig.Name
 	}
-	if strings.HasPrefix(sec, "signature:") {
+	switch {
+	case strings.HasPrefix(sec, "signature:"):
 		sec = "signatures"
+	case sec == "masklog":
+		return i18n.T("settings.heading"), i18n.T("settings.privacy") + " · " + i18n.T("settings.masking.log")
 	}
 	return i18n.T("settings.heading"), i18n.T("settings." + sec)
 }
@@ -212,8 +222,11 @@ func (p *settingsPage) Sidebar(c *ui.Context) {
 	a := p.a
 	t, th := theme.Of(c), c.Theme()
 	cur, _ := p.section()
-	if strings.HasPrefix(cur, "signature:") {
+	switch {
+	case strings.HasPrefix(cur, "signature:"):
 		cur = "signatures" // a signature is a page of the list
+	case cur == "masklog":
+		cur = "privacy" // 脱敏记录 is a page of 隐私与安全
 	}
 	group := func(label string, top, bottom float32) {
 		kit.Text(c, label, t.Text.Sm).TextColor(t.Muted).Padding(top, th.Space(2), bottom, th.Space(2))
@@ -296,8 +309,10 @@ func (p *settingsPage) Content(c *ui.Context) {
 						}
 					case sec == "privacy":
 						p.privacyView(c)
+					case sec == "masklog":
+						p.maskLogPage(c)
 					case sec == "models":
-						p.models.view(c)
+						p.aiView(c)
 					case sec == "labels":
 						p.labels.view(c, p)
 					case sec == "extensions":
@@ -401,38 +416,78 @@ func settingSelect[T comparable](c *ui.Context, label string, sel *T, opts []kit
 	return kit.SelectWith(c, kit.SelectOpts{Radius: theme.Of(c).Radius.Lg, MinWidth: theme.SettingsSelectMin, MaxWidth: theme.SettingsSelectMax, Flat: true}, sel, opts).Label(label)
 }
 
+// privacyView is 隐私与安全, a tab each: masking with its log, remote
+// images with the senders trusted to load them, and the blocked senders;
+// the keychain's state stands by the title.
 func (p *settingsPage) privacyView(c *ui.Context) {
+	pageHeading(c, i18n.T("settings.privacy"), i18n.T("settings.privacy.sub"), func() { p.keychainState(c) })
+	kit.TabsUnderline(c, &p.privacyTab, i18n.T("settings.masking"), i18n.T("settings.remote_images"), i18n.T("settings.blocked"))
+	p.syncSettings()
+	defer p.syncSettings() // what the controls changed while building
+	switch p.privacyTab {
+	case 0:
+		p.maskingView(c)
+	case 1:
+		p.remoteImagesView(c)
+		p.trustedView(c)
+	default:
+		p.blockedView(c)
+	}
+}
+
+// keychainState is whether the system keychain holds the passwords: a dot
+// and a line, beside the privacy page's title.
+func (p *settingsPage) keychainState(c *ui.Context) {
 	t, th := theme.Of(c), c.Theme()
-	pageHeading(c, i18n.T("settings.privacy"), i18n.T("settings.privacy.sub"))
-	for _, k := range []string{"keychain", "local", "ai"} {
-		ui.Column(c).Gap(th.Space(1)).Children(func() {
-			ui.Text(c, i18n.T("onboarding.promise."+k)).FontWeight(500)
-			ui.Text(c, i18n.T("onboarding.promise."+k+".sub")).TextColor(t.Muted)
+	ui.Row(c).Gap(th.Space(2)).AlignItems(ui.Center).Children(func() {
+		switch {
+		case !p.keychainSet:
+			kit.Spinner(c)
+			kit.Text(c, i18n.T("settings.keychain.checking"), t.Text.Sm).TextColor(t.Muted)
+		case p.keychain != nil:
+			kit.StatusDot(c, kit.Error)
+			kit.Text(c, humanize(p.keychain), t.Text.Sm)
+		default:
+			kit.StatusDot(c, kit.OK)
+			kit.Text(c, i18n.T("settings.keychain.ok"), t.Text.Sm).TextColor(t.Muted)
+		}
+	})
+}
+
+// localAPIView is the Local API (本机 API) on the AI page's MCP tab: its
+// switch and what godwit mcp may send; while it runs, the MCP client config
+// and the socket to copy. What it can reach is the section's footnote.
+func (p *settingsPage) localAPIView(c *ui.Context) {
+	th, a := c.Theme(), p.a
+	p.syncSettings()
+	defer p.syncSettings() // what the switch changed while building
+	copied := func(text string) {
+		c.WriteClipboard(text)
+		a.toastAs(kit.ToastSuccess, i18n.T("settings.local_api.copied"))
+	}
+	rows := []func(){func() {
+		kit.SwitchRow(c, &p.st.LocalAPI, i18n.T("settings.local_api.on"), i18n.T("settings.local_api.help"))
+	}}
+	if err := a.localAPIErr; err != nil {
+		rows = append(rows, func() {
+			settingBlock(c, func() {
+				ui.Row(c).Gap(th.Space(2)).Children(func() {
+					kit.StatusDot(c, kit.Error)
+					ui.Text(c, humanize(err)).Selectable()
+				})
+			})
 		})
 	}
-	settingsSection(c, i18n.T("settings.keychain"), "", func() {
-		settingBlock(c, func() {
-			ui.Row(c).Gap(th.Space(2)).Children(func() {
-				switch {
-				case !p.keychainSet:
-					kit.Spinner(c)
-					ui.Text(c, i18n.T("settings.keychain.checking")).TextColor(t.Muted)
-				case p.keychain != nil:
-					kit.StatusDot(c, kit.Error)
-					ui.Text(c, humanize(p.keychain))
-				default:
-					kit.StatusDot(c, kit.OK)
-					ui.Text(c, i18n.T("settings.keychain.ok"))
+	if a.settings.LocalAPI && a.localAPIPath != "" {
+		rows = append(rows, func() {
+			settingRow(c, i18n.T("settings.local_api.connect"), i18n.T("settings.local_api.connect.help"), func() {
+				if settingButton(c, i18n.T("settings.local_api.copy"), kit.Outline, false).Clicked() {
+					copied(a.mcpConfig())
 				}
 			})
 		})
-	})
-	p.syncSettings()
-	defer p.syncSettings() // what the switch changed while building
-	a := p.a
-	rows := []func(){func() {
-		kit.SwitchRow(c, &p.st.LocalAPI, i18n.T("settings.local_api.on"), i18n.T("settings.local_api.help"))
-	}, func() {
+	}
+	rows = append(rows, func() {
 		settingRow(c, i18n.T("settings.local_api.send"), i18n.T("settings.local_api.send.help"), func() {
 			level := p.st.MCPSend
 			if level == "" {
@@ -448,34 +503,44 @@ func (p *settingsPage) privacyView(c *ui.Context) {
 		if p.st.MCPSend == core.MCPSendDirect {
 			settingBlock(c, func() { kit.Alert(c, kit.Warning, i18n.T("settings.local_api.send.risk"), nil) })
 		}
-	}}
-	if err := a.localAPIErr; err != nil {
+	})
+	if a.settings.LocalAPI && a.localAPIPath != "" {
 		rows = append(rows, func() {
-			settingBlock(c, func() {
-				ui.Row(c).Gap(th.Space(2)).Children(func() {
-					kit.StatusDot(c, kit.Error)
-					ui.Text(c, humanize(err)).Selectable()
+			t := theme.Of(c)
+			settingRow(c, i18n.T("settings.local_api.path"), "", func() {
+				ui.Row(c).Gap(th.Space(3)).AlignItems(ui.Center).Shrink(1).Children(func() {
+					kit.Text(c, a.localAPIPath, t.Text.Sm).Font(theme.Mono).TextColor(t.Muted).Selectable().Shrink(1)
+					if settingButton(c, i18n.T("settings.local_api.copy_path"), kit.Outline, false).Clicked() {
+						copied(a.localAPIPath)
+					}
 				})
 			})
 		})
 	}
-	if a.settings.LocalAPI && a.localAPIPath != "" {
-		rows = append(rows, func() {
-			settingBlock(c, func() {
-				ui.Text(c, i18n.Tf("settings.local_api.socket", a.localAPIPath)).Selectable()
-				kit.Text(c, i18n.T("settings.local_api.mcp"), t.Text.Sm).TextColor(t.Muted)
-				config := a.mcpConfig()
-				kit.Text(c, config, t.Text.Sm).Font(theme.Mono).Selectable()
-				if settingButton(c, i18n.T("settings.local_api.copy"), kit.Outline, false).AlignSelf(ui.Start).Clicked() {
-					c.WriteClipboard(config)
-				}
-			})
-		})
+	settingsSection(c, i18n.T("settings.local_api"), i18n.T("settings.local_api.foot"), rows...)
+}
+
+// aiView is the AI page, a tab each: the model services, the features and
+// languages that use them (aiFeaturesView), and MCP: the servers Wit uses
+// and the Local API other AI tools use.
+func (p *settingsPage) aiView(c *ui.Context) {
+	m := p.models
+	var add []func()
+	if p.aiTab == 0 && !m.empty() {
+		add = append(add, func() { settingButton(c, i18n.T("settings.models.add"), kit.Default, false).OnClick(m.add) })
 	}
-	settingsSection(c, i18n.T("settings.local_api"), "", rows...)
-	p.remoteImagesView(c)
-	p.trustedView(c)
-	p.blockedView(c)
+	pageHeading(c, i18n.T("settings.models"), i18n.T("settings.models.sub"), add...)
+	kit.TabsUnderline(c, &p.aiTab, i18n.T("settings.ai.tab.models"), i18n.T("settings.ai.tab.features"), i18n.Tf("settings.ext.tab.mcp", len(p.ext.servers)))
+	switch p.aiTab {
+	case 0:
+		m.view(c)
+	case 1:
+		p.aiFeaturesView(c)
+	default:
+		p.ext.mcpView(c)
+		p.localAPIView(c)
+		p.ext.confirmView(c)
+	}
 }
 
 // readImageCache reads the remote image cache's size for the privacy page.

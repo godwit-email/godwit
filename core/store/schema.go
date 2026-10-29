@@ -479,6 +479,10 @@ var Migrations = [][]string{{
 		WHERE key = 'app' AND json_valid(value)`,
 	`INSERT OR IGNORE INTO meta(key, value) SELECT key, value FROM settings WHERE key IN ('labels_seeded', 'model_aliases_v1', 'mask_key')`,
 	`DELETE FROM settings WHERE key IN ('labels_seeded', 'model_aliases_v1', 'mask_key')`,
+}, {
+	// Which request a masking record's value was in (core.MaskRecord.Request):
+	// the log lists requests, each with its values. 0 for the records before.
+	`ALTER TABLE mask_log ADD COLUMN request INTEGER NOT NULL DEFAULT 0`,
 }}
 
 // HistoryRowsVersion is the schema version that keeps a conversation's

@@ -245,8 +245,10 @@ func TestWarnedValuesGoAsTheyAreAndAreShown(t *testing.T) {
 	}
 	assert.Equal(t, []MaskRecord{
 		{Feature: "wit", Kind: "BANK_CARD", Category: mask.IDs, First: "4", Len: 19, Action: MaskMask, At: log[0].At},
-		{Feature: "wit", Kind: "EMAIL", Category: mask.Emails, First: "a", Len: 3, Action: MaskWarn, At: log[1].At},
-	}, []MaskRecord{log[1], log[0]}, "newest first")
+		{Feature: "wit", Kind: "EMAIL", Category: mask.Emails, First: "", Len: 3, Action: MaskWarn, At: log[1].At}, // short: no first character
+	}, []MaskRecord{withoutRequest(log[1]), withoutRequest(log[0])}, "newest first")
+	assert.NotZero(t, log[0].Request)
+	assert.Equal(t, log[0].Request, log[1].Request, "one request")
 	rows, err := e.s.db.Query(t.Context(), "SELECT * FROM mask_log")
 	require.NoError(t, err)
 	assert.NotContains(t, fmt.Sprint(rows.Values), "4111")
@@ -285,4 +287,29 @@ func TestTheMaskingLogKeepsThirtyDays(t *testing.T) {
 	require.NoError(t, err)
 	require.Len(t, log, 1)
 	assert.Equal(t, "summary", log[0].Feature)
+}
+
+func withoutRequest(r MaskRecord) MaskRecord { r.Request = 0; return r }
+
+// Each request's values share a number of their own, and 清空记录 deletes
+// them all.
+func TestTheMaskingLogTellsRequestsApart(t *testing.T) {
+	e := newApprovalEnv(t)
+	m, err := e.s.masker()
+	require.NoError(t, err)
+	ctx := mask.Tag(t.Context(), "summary", nil)
+	_, err = m.Request(ctx, "card 4111 1111 1111 1111, mail ann.lee@example.com")
+	require.NoError(t, err)
+	_, err = m.Request(ctx, "card 4111 1111 1111 1111")
+	require.NoError(t, err)
+	log, err := e.s.MaskingLog(t.Context())
+	require.NoError(t, err)
+	require.Len(t, log, 3)
+	assert.Equal(t, log[1].Request, log[2].Request, "the first request's two values")
+	assert.Greater(t, log[0].Request, log[1].Request, "the second request")
+
+	require.NoError(t, e.s.ClearMaskingLog(t.Context()))
+	log, err = e.s.MaskingLog(t.Context())
+	require.NoError(t, err)
+	assert.Empty(t, log)
 }

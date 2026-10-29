@@ -8,11 +8,11 @@ import (
 	"github.com/godwit-email/godwit/internal/i18n"
 )
 
-// masking opens General, tall enough to show its 隐私脱敏 sections whole.
+// masking opens 隐私与安全 on its 隐私脱敏 tab, tall enough to show it whole.
 func (h *harness) masking() {
 	h.t.Helper()
 	h.resize(1440, 3000)
-	h.openSettings("general")
+	h.openSettings("privacy")
 	h.see(i18n.T("settings.masking.foot"))
 }
 
@@ -85,7 +85,9 @@ func TestABlockedSummarySaysWhy(t *testing.T) {
 	}
 }
 
-// 脱敏记录 lists what was sent, by its first character and length.
+// 脱敏记录, a page of its own, lists the requests; one opens on what it
+// held, by first character and length (a short value by its length only),
+// and the tiles pick the requests by what was done.
 func TestMaskingLogShowsWhatWasSent(t *testing.T) {
 	h, acc, llm := aiHarness(t, true, func(st *core.Settings) { noQuick(st); st.MaskCategories.Emails.Action = core.MaskWarn })
 	llm.Script(coretest.Turn{Text: []string{"ok"}})
@@ -93,12 +95,18 @@ func TestMaskingLogShowsWhatWasSent(t *testing.T) {
 	h.openThread(m.ThreadID)
 	h.until("the summary done", func() bool { s := h.app.mail.reader.ai[m.ID]; return s != nil && s.summary != nil && s.summary.done })
 	h.masking()
-	h.see(i18n.T("settings.masking.log"))
+	h.see("最近 30 天：1 次请求，拦截 0 次，1 个值原样发出")
+	h.click("查看脱敏记录")
+	h.until("the log's page", func() bool { return h.app.route.Settings == "masklog" })
+	h.see("有值原样发出")
+	h.click(i18n.T("settings.masking.feature.skill"))
 	h.see("4…，19 个字符")
-	h.see("b…，3 个字符")
-	if h.tt.HasText("4111") {
-		t.Fatal("the log shows a value")
+	h.see("3 个字符") // bob: short, no first character
+	if h.tt.HasText("4111") || h.tt.HasText("b…，3 个字符") {
+		t.Fatal("the log shows too much of a value")
 	}
+	h.click("被拦截的请求")
+	h.see("没有符合筛选条件的请求")
 }
 
 func TestMaskingCopy(t *testing.T) {

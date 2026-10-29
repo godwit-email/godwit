@@ -100,9 +100,16 @@ func TestThemeThumbsFit(t *testing.T) {
 func TestSettingsGeneralCopy(t *testing.T) {
 	h, _ := withAccount(t)
 	h.openSettings("general")
-	for _, s := range []string{"主题", "跟随系统时随 macOS 的外观切换", "总结、翻译和 Wit 的回答用这种语言", "登录后在后台启动 Godwit"} {
+	for _, s := range []string{"主题", "跟随系统时随 macOS 的外观切换", "登录后在后台启动 Godwit"} {
 		h.see(s)
 	}
+	if _, ok := h.tt.Find("总结、翻译和 Wit 的回答用这种语言"); ok {
+		t.Fatal("阅读语言 is on General; it belongs to the AI page's 功能 tab")
+	}
+	h.openSettings("models")
+	h.click("功能")
+	h.see("总结、翻译和 Wit 的回答用这种语言")
+	h.see("为收到的邮件准备几条简短的回复")
 }
 
 // TestThemeThumbFocusTip: Tab focus shows the tooltip too.

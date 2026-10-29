@@ -199,7 +199,7 @@ func TestMCPSendConfirmWindowClose(t *testing.T) {
 // Picking 直接发送 shows its risk.
 func TestMCPSendSettingRisk(t *testing.T) {
 	h, _ := withAccount(t)
-	h.openSettings("privacy")
+	h.aiTab(aiMCP)
 	h.see("通过 MCP 发送")
 	risk := "选择后，它可以不经你确认就以你的名义发信"
 	if h.tt.HasText(risk) {

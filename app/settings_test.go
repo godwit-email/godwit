@@ -61,6 +61,22 @@ func (h *harness) openSettings(sec string) *settingsPage {
 	return h.app.pages[PageSettings].(*settingsPage)
 }
 
+// The AI page's tabs.
+const (
+	aiModels = iota
+	aiFeatures
+	aiMCP
+)
+
+// aiTab opens the AI page on tab.
+func (h *harness) aiTab(tab int) *settingsPage {
+	h.t.Helper()
+	p := h.openSettings("models")
+	p.aiTab = tab
+	h.tt.Frame()
+	return p
+}
+
 // openSignature makes a signature the account uses, opens it, and waits
 // for the signature page to show it.
 func (h *harness) openSignature(accountID int64, name string) core.Signature {
@@ -516,7 +532,6 @@ func TestSettingsSaveFailureReverts(t *testing.T) {
 func TestSettingsPrivacyAndAbout(t *testing.T) {
 	h, _ := withAccount(t)
 	h.openSettings("privacy")
-	h.see("密码只存在系统钥匙串")
 	h.see("系统钥匙串可用")
 	h.openSettings("about")
 	h.see("版本 " + Version)
@@ -841,7 +856,7 @@ func TestLocalAPIDefaultOff(t *testing.T) {
 	if h.app.settings.LocalAPI {
 		t.Fatal("the Local API is on by default")
 	}
-	h.openSettings("privacy")
+	h.aiTab(aiMCP)
 	h.see("启用本机 API")
 	for _, c := range h.plat.Calls() {
 		if strings.HasPrefix(c, "SetLocalAPI") {
@@ -855,7 +870,7 @@ func TestLocalAPIDefaultOff(t *testing.T) {
 
 func TestLocalAPISwitch(t *testing.T) {
 	h := localAPIHarness(t, "/tmp/gw/godwit.sock", nil, nil)
-	h.openSettings("privacy")
+	h.aiTab(aiMCP)
 	h.click("启用本机 API")
 	h.called("SetLocalAPI true")
 	h.see("/tmp/gw/godwit.sock")
@@ -865,10 +880,17 @@ func TestLocalAPISwitch(t *testing.T) {
 	}
 	q, _ := json.Marshal(exe)
 	config := `{"command": ` + string(q) + `, "args": ["mcp"]}`
-	h.see(config)
+	if h.tt.HasText(config) {
+		t.Fatal("the config shows; it is only copied")
+	}
 	h.click("复制配置")
 	if got := h.tt.Clipboard(); got != config {
 		t.Fatalf("clipboard %q, want %q", got, config)
+	}
+	h.see("已复制")
+	h.click("复制路径")
+	if got := h.tt.Clipboard(); got != "/tmp/gw/godwit.sock" {
+		t.Fatalf("clipboard %q, want the socket", got)
 	}
 	h.until("saved on", func() bool {
 		st, err := h.env.Svc.GetSettings(context.Background())
@@ -887,13 +909,13 @@ func TestLocalAPISwitch(t *testing.T) {
 func TestLocalAPIStartsOnLoad(t *testing.T) {
 	h := localAPIHarness(t, "/tmp/gw/godwit.sock", nil, func(st *core.Settings) { st.LocalAPI = true })
 	h.called("SetLocalAPI true")
-	h.openSettings("privacy")
+	h.aiTab(aiMCP)
 	h.see("/tmp/gw/godwit.sock")
 }
 
 func TestLocalAPIFailureReverts(t *testing.T) {
 	h := localAPIHarness(t, "", errors.New("socket path too long"), nil)
-	h.openSettings("privacy")
+	h.aiTab(aiMCP)
 	h.click("启用本机 API")
 	h.called("SetLocalAPI true")
 	h.see("socket path too long")
@@ -909,13 +931,13 @@ func TestLocalAPIFailureReverts(t *testing.T) {
 func TestLocalAPICopyWarnsFullAccess(t *testing.T) {
 	t.Cleanup(func() { i18n.SetLanguage("zh-CN") })
 	h := localAPIHarness(t, "", nil, nil)
-	h.openSettings("privacy")
+	h.aiTab(aiMCP)
 	h.see("完整的本机 API 能读取邮件、发送邮件、修改账户和设置")
-	h.see("可以读取邮件和写草稿，能否发送见下方设置")
+	h.see("只能读取邮件和写草稿，能否发信看「通过 MCP 发送」")
 	i18n.SetLanguage("en")
 	h.tt.Frame()
 	h.see("The full Local API can read mail, send mail, and change accounts and settings")
-	h.see("can read mail and write drafts, and the setting below decides whether they can send")
+	h.see("can only read mail and write drafts, and Send through MCP decides whether they can send")
 }
 
 // localAPIRace clicks the switch on, off and on while the first "on" blocks,
@@ -950,7 +972,7 @@ func localAPIRace(t *testing.T, last error) (*harness, func() bool) {
 		server = true
 		return "/tmp/gw/godwit.sock", nil
 	}
-	h.openSettings("privacy")
+	h.aiTab(aiMCP)
 	h.click("启用本机 API")
 	h.called("SetLocalAPI true")
 	h.click("启用本机 API")
@@ -994,7 +1016,7 @@ func TestLocalAPINewestFailureReverts(t *testing.T) {
 // The server stopping by itself turns the switch off with the reason.
 func TestLocalAPIServerStopped(t *testing.T) {
 	h := localAPIHarness(t, "/tmp/gw/godwit.sock", nil, func(st *core.Settings) { st.LocalAPI = true })
-	h.openSettings("privacy")
+	h.aiTab(aiMCP)
 	h.see("/tmp/gw/godwit.sock")
 	h.app.LocalAPIStopped(h.app.localAPIGen, errors.New("accept: too many open files"))
 	h.see("accept: too many open files")
@@ -1011,11 +1033,13 @@ func TestLocalAPIMCPConfigDataDir(t *testing.T) {
 	h.plat.mu.Lock()
 	h.plat.dataDir, h.plat.customDir = `/tmp/gw "x"`, true
 	h.plat.mu.Unlock()
-	h.openSettings("privacy")
+	h.aiTab(aiMCP)
 	exe, _ := os.Executable()
 	q, _ := json.Marshal(exe)
 	config := `{"command": ` + string(q) + `, "args": ["mcp","--data-dir","/tmp/gw \"x\""]}`
-	h.see(config)
+	if h.tt.HasText(config) {
+		t.Fatal("the config shows; it is only copied")
+	}
 	h.click("复制配置")
 	if got := h.tt.Clipboard(); got != config {
 		t.Fatalf("clipboard %q, want %q", got, config)
@@ -1028,7 +1052,7 @@ func TestLocalAPIStaleStopIgnored(t *testing.T) {
 	h.called("SetLocalAPI true")
 	h.until("on", func() bool { return h.app.writes.chains["local-api"] == nil })
 	old := h.app.localAPIGen
-	h.openSettings("privacy")
+	h.aiTab(aiMCP)
 	h.click("启用本机 API")
 	h.click("启用本机 API")
 	h.until("off and on again", func() bool {
@@ -1451,6 +1475,7 @@ func TestAccountDefaultSignature(t *testing.T) {
 func TestSettingsTrustedSenders(t *testing.T) {
 	h, _ := withAccount(t)
 	h.openSettings("privacy")
+	h.click("远程图片")
 	h.see("还没有信任的发件人")
 	if err := h.env.Svc.TrustImageSender(context.Background(), "Bob <bob@example.com>"); err != nil {
 		t.Fatal(err)
@@ -1567,6 +1592,7 @@ func TestLinkHref(t *testing.T) {
 func TestSettingsBlockedSenders(t *testing.T) {
 	h, _ := withAccount(t)
 	h.openSettings("privacy")
+	h.click("已屏蔽的发件人")
 	h.see("没有已屏蔽的发件人")
 	if err := h.env.Svc.BlockSender(context.Background(), "spammer@example.com"); err != nil {
 		t.Fatal(err)

@@ -267,7 +267,51 @@ func (p *settingsPage) generalView(c *ui.Context) {
 				opts = append(opts, kit.Option[string]{Value: l.tag, Label: p.langLabel(l)})
 			}
 			return settingSelect(c, i18n.T("settings.ui_language"), &st.UILanguage, opts)
-		}),
+		}))
+	settingsSection(c, i18n.T("settings.startup"), "",
+		sw(&st.LaunchAtLogin, i18n.T("settings.launch_at_login"), i18n.T("settings.launch_at_login.help")),
+		sw(&st.KeepInBackground, i18n.T("settings.keep_in_background"), i18n.T("settings.keep_in_background.help")),
+		sw(&st.UnreadOnAppIcon, i18n.T("settings.unread_on_app_icon"), ""),
+		sw(&st.UnreadInMenuBar, i18n.T("settings.unread_in_menu_bar"), ""))
+	settingsSection(c, i18n.T("settings.notifications"), "",
+		sw(&st.NotifyNewMail, i18n.T("settings.notify_new_mail"), ""),
+		sw(&st.NotifyPreview, i18n.T("settings.notify_preview"), i18n.T("settings.notify_preview.help")))
+	settingsSection(c, i18n.T("settings.mail"), "",
+		sw(&st.ThreadView, i18n.T("settings.thread_view"), i18n.T("settings.thread_view.help")),
+		sw(&st.ThreadCollapse, i18n.T("settings.thread_collapse"), i18n.T("settings.thread_collapse.help")),
+		func() {
+			if !st.ThreadCollapse {
+				return
+			}
+			t, th := theme.Of(c), c.Theme()
+			settingRow(c, i18n.T("settings.thread_collapse_threshold"), i18n.T("settings.thread_collapse_threshold.help"), func() {
+				n := float64(st.ThreadCollapseThreshold)
+				ui.Row(c).Width(theme.UsageSelectMin).Gap(th.Space(3)).AlignItems(ui.Center).Children(func() {
+					if ui.Slider(c, &n, core.MinThreadCollapse, core.MaxThreadCollapse).Step(1).Grow(1).Shrink(1).Label(i18n.T("settings.thread_collapse_threshold")).Changed() {
+						st.ThreadCollapseThreshold = int(math.Round(n))
+					}
+					kit.Text(c, strconv.Itoa(st.ThreadCollapseThreshold), t.Text.Sm).Width(th.Space(10)).TextAlign(ui.End).TextColor(t.Muted)
+				})
+			})
+		})
+}
+
+// aiFeaturesView is the AI page's 功能 tab: the reader's AI features, and
+// the languages and translation they use.
+func (p *settingsPage) aiFeaturesView(c *ui.Context) {
+	p.syncSettings()
+	defer p.syncSettings() // what handlers changed while building
+	st := &p.st
+	sel := func(label, desc string, control func() ui.Element) func() {
+		return func() { settingRow(c, label, desc, func() { control() }) }
+	}
+	sw := func(on *bool, label, help string) func() {
+		return func() { kit.SwitchRow(c, on, label, help) }
+	}
+	settingsSection(c, i18n.T("settings.ai"), "",
+		sw(&st.Summary, i18n.T("settings.summary"), i18n.T("settings.summary.help")),
+		sw(&st.QuickReplies, i18n.T("settings.quick_replies"), i18n.T("settings.quick_replies.help")))
+	settingsSection(c, i18n.T("settings.language"), "",
 		sel(i18n.T("settings.reading_language"), i18n.T("settings.reading_language.help"), func() ui.Element {
 			opts := []kit.Option[string]{{Value: "", Label: i18n.T("settings.reading_language.ui")}}
 			for _, l := range languages {
@@ -286,36 +330,6 @@ func (p *settingsPage) generalView(c *ui.Context) {
 		}),
 		func() {
 			settingRow(c, i18n.T("settings.no_translate"), i18n.T("settings.no_translate.help"), func() { p.noTranslate(c) })
-		})
-	settingsSection(c, i18n.T("settings.startup"), "",
-		sw(&st.LaunchAtLogin, i18n.T("settings.launch_at_login"), i18n.T("settings.launch_at_login.help")),
-		sw(&st.KeepInBackground, i18n.T("settings.keep_in_background"), i18n.T("settings.keep_in_background.help")),
-		sw(&st.UnreadOnAppIcon, i18n.T("settings.unread_on_app_icon"), ""),
-		sw(&st.UnreadInMenuBar, i18n.T("settings.unread_in_menu_bar"), ""))
-	settingsSection(c, i18n.T("settings.notifications"), "",
-		sw(&st.NotifyNewMail, i18n.T("settings.notify_new_mail"), ""),
-		sw(&st.NotifyPreview, i18n.T("settings.notify_preview"), i18n.T("settings.notify_preview.help")))
-	settingsSection(c, i18n.T("settings.ai"), "",
-		sw(&st.Summary, i18n.T("settings.summary"), i18n.T("settings.summary.help")),
-		sw(&st.QuickReplies, i18n.T("settings.quick_replies"), i18n.T("settings.quick_replies.help")))
-	p.maskingView(c)
-	settingsSection(c, i18n.T("settings.mail"), "",
-		sw(&st.ThreadView, i18n.T("settings.thread_view"), i18n.T("settings.thread_view.help")),
-		sw(&st.ThreadCollapse, i18n.T("settings.thread_collapse"), i18n.T("settings.thread_collapse.help")),
-		func() {
-			if !st.ThreadCollapse {
-				return
-			}
-			t, th := theme.Of(c), c.Theme()
-			settingRow(c, i18n.T("settings.thread_collapse_threshold"), i18n.T("settings.thread_collapse_threshold.help"), func() {
-				n := float64(st.ThreadCollapseThreshold)
-				ui.Row(c).Width(theme.UsageSelectMin).Gap(th.Space(3)).AlignItems(ui.Center).Children(func() {
-					if ui.Slider(c, &n, core.MinThreadCollapse, core.MaxThreadCollapse).Step(1).Grow(1).Shrink(1).Label(i18n.T("settings.thread_collapse_threshold")).Changed() {
-						st.ThreadCollapseThreshold = int(math.Round(n))
-					}
-					kit.Text(c, strconv.Itoa(st.ThreadCollapseThreshold), t.Text.Sm).Width(th.Space(10)).TextAlign(ui.End).TextColor(t.Muted)
-				})
-			})
 		})
 }
 
