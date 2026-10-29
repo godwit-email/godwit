@@ -119,7 +119,7 @@ func TestMCPSendDraft(t *testing.T) {
 		outbox, pending int
 	}{
 		// The texts are a contract: the draft view matches them (web/src/mcp/draft.ts).
-		{core.MCPSendOff, "sending through MCP is off; the user can turn it on in Godwit under Settings › Local API › Send through MCP", true, 0, 0},
+		{core.MCPSendOff, "sending through MCP is off; the user can turn it on in Godwit under Settings › Intelligence › AI apps › Send through MCP", true, 0, 0},
 		{core.MCPSendConfirm, "waiting for the user to confirm in Godwit; it is not sent yet", false, 0, 1},
 		{core.MCPSendDirect, "sent: the draft is in Godwit's outbox", false, 1, 0},
 	} {

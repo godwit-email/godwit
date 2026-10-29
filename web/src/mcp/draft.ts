@@ -48,7 +48,7 @@ function sendBar(r: Result, actions: Actions, rerender: (r: Result, note: string
     } else if (said.startsWith("sending through MCP is off")) {
       // 不允许, or confirm under --headless: the button stays off for this card.
       status.textContent =
-        "Send it in Godwit: sending through MCP is off (Settings › Local API › Send through MCP).";
+        "Send it in Godwit: sending through MCP is off (Settings › Intelligence › AI apps › Send through MCP).";
     } else if (said.startsWith("draft changed")) {
       const fresh = await actions.reload(Number(id)).catch(failed);
       rerender(fresh, "This draft changed; the card shows it as it is now.");
