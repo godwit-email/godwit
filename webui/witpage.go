@@ -107,7 +107,7 @@ type Wit struct {
 	version int64          // bumped per SetConversation
 	sel     uint64         // bumped per selection (Follow, Ask): only the newest subscribes
 	f       *follow        // the page's subscription; nil for none
-	ask     string         // a question handed over, until the page takes it (TakeAsk)
+	ask     WitHandoff     // a question handed over, until the page takes it (TakeAsk)
 }
 
 // NewWit is the Wit page's state for the pages of role "wit"; SetService
@@ -161,32 +161,50 @@ func (w *Wit) open(id int64, created bool) int64 {
 	return m.Version
 }
 
-// Handoff gives the page a question to ask (WitAsk): the page starts the run
-// through WitPage.Ask, so it follows it and Stop works. Native navigates to a
-// new conversation first.
+// WitHandoff is a question native handed over: its text and the mail it
+// quotes (the reader's 让 Wit 帮你回复 quotes the mail read).
+type WitHandoff struct {
+	Text string    `json:"text"`
+	Hits []MailHit `json:"hits"`
+}
+
+// Handoff gives the page a question to ask (WitAsk), quoting the mail
+// quoted: the page starts the run through WitPage.Ask, so it follows it and
+// Stop works. Native navigates to a new conversation first.
 // The question waits until the page takes it: a page still loading misses
 // the event and takes it once it has loaded.
-func (w *Wit) Handoff(query string) {
+func (w *Wit) Handoff(query string, quoted ...core.MessageSummary) {
 	if strings.TrimSpace(query) == "" {
 		return
 	}
+	h := WitHandoff{Text: query, Hits: []MailHit{}}
+	for _, m := range quoted {
+		hit := MailHit{ID: m.ID, Subject: m.Subject, From: m.From}
+		if !m.Date.IsZero() {
+			hit.Date = m.Date.UnixMilli()
+		}
+		h.Hits = append(h.Hits, hit)
+	}
 	w.mu.Lock()
-	w.ask = query
+	w.ask = h
 	w.mu.Unlock()
 	w.d.Ask(query)
 }
 
 // TakeAsk is the question native handed over and the page has not taken
-// yet, "" for none; taking it leaves none, so the page asks it once.
-func (p *WitPage) TakeAsk(ctx context.Context) (string, error) {
+// yet, an empty Text for none; taking it leaves none, so the page asks it once.
+func (p *WitPage) TakeAsk(ctx context.Context) (WitHandoff, error) {
 	if _, _, err := p.w.caller(ctx); err != nil {
-		return "", err
+		return WitHandoff{Hits: []MailHit{}}, err
 	}
 	p.w.mu.Lock()
 	defer p.w.mu.Unlock()
-	q := p.w.ask
-	p.w.ask = ""
-	return q, nil
+	h := p.w.ask
+	p.w.ask = WitHandoff{}
+	if h.Hits == nil {
+		h.Hits = []MailHit{}
+	}
+	return h, nil
 }
 
 // SettingsChanged sends the page its state for st (WitState).

@@ -58,6 +58,17 @@ type ReaderBody struct {
 // ReaderReload tells a reader page its body changed (加载图片, a retry).
 var ReaderReload = mygo.NewEvent[ReaderBody]("readerBody")
 
+// ReaderGlass is how much of a reader page, in CSS pixels, the reader's
+// bars cover: Top from its top, Bottom from its bottom. The page blurs there
+// itself, as the bars' blur cannot see a web view.
+type ReaderGlass struct {
+	Top    int `json:"top"`
+	Bottom int `json:"bottom"`
+}
+
+// ReaderGlassed tells a reader page what the bars cover, as it scrolls.
+var ReaderGlassed = mygo.NewEvent[ReaderGlass]("readerGlass")
+
 // ReaderDeps is what Reader needs from the platform. The callbacks post to
 // the UI thread themselves. Each names the page (its key) it is about, bound
 // as the call was made: by the time the post runs the page may be closed or

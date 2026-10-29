@@ -10,6 +10,49 @@ export const FRAME_CSP = "default-src 'none'; style-src 'unsafe-inline'; img-src
 
 const escapeText = (s: string) => s.replace(/[&<>"']/g, (c) => `&#${c.charCodeAt(0)};`);
 
+// A web address in plain text, with what may follow it (linkLength cuts that off).
+const URL_RE = /\bhttps?:\/\/[^\s<>"']+/g;
+
+/**
+ * How much of a matched address is the link, as core/maillinks.go's mailLinks has it: not the
+ * sentence punctuation after it, then not an unbalanced ")" ("text (url)"); a ")" that closes a
+ * "(" in it is its own, so "Go_(lang)" keeps it and "a!)" its "!".
+ */
+function linkLength(u: string): number {
+  let end = u.length;
+  const open = u.split("(").length - 1;
+  let closed = u.split(")").length - 1;
+  while (end > 0 && ".,;:!?]}".includes(u[end - 1])) end--;
+  while (end > 0 && u[end - 1] === ")" && open < closed) {
+    closed--;
+    end--;
+  }
+  return end;
+}
+
+/**
+ * Plain text as HTML: escaped, its web addresses links (data-href, as Go makes an HTML mail's)
+ * and its quoted lines ("> …") marked, which the style mutes.
+ */
+export function plainHTML(text: string): string {
+  return text
+    .split("\n")
+    .map((line) => {
+      let html = "";
+      let at = 0;
+      for (const m of line.matchAll(URL_RE)) {
+        const link = m[0].slice(0, linkLength(m[0]));
+        if (!/^https?:\/\/./.test(link)) continue; // nothing but the scheme
+        const url = escapeText(link);
+        html += `${escapeText(line.slice(at, m.index))}<span data-href="${url}">${url}</span>`;
+        at = m.index + link.length;
+      }
+      html += escapeText(line.slice(at));
+      return /^\s*>/.test(line) ? `<span class="godwit-quote">${html}</span>` : html;
+    })
+    .join("\n");
+}
+
 // A theme value goes into a <style> only if it can't leave its declaration.
 const color = (v: string | undefined) => (v && /^[#\w\s(),.%/+-]+$/.test(v) ? v : "");
 
@@ -33,6 +76,22 @@ const htmlCSS = (t: Theme, scheme: string) => {
 /** Whether the theme is the dark one; systemDark is the page's appearance, for "system". */
 export const isDark = (t: Theme, systemDark: boolean) =>
   t.mode === "dark" || (t.mode === "system" && systemDark);
+
+// What lays a mail out rather than writes it: a table or the like, or a painted background, in a
+// tag or in its stylesheet.
+const LAYOUT =
+  /<(?:table|center|iframe|video|svg)\b|<[^>]*(?:background|bgcolor)[^>]*>|<style\b[^>]*>[^<]*background/i;
+
+// A tracking pixel, hidden or a pixel wide, shows nothing.
+const shown = (img: string) => !/display:\s*none|(?:^|[\s;"'])width:\s*1px|\bwidth="1"/i.test(img);
+
+/**
+ * Whether an HTML body is text in all but name (a plain message sent as text/html, or one a person
+ * wrote: paragraphs, lists, links, its own type sizes, no layout and no picture shown): it reads as
+ * plain text does, in the reader's text column.
+ */
+export const isTextHTML = (html: string) =>
+  !LAYOUT.test(html) && ![...html.matchAll(/<img\b[^>]*>/gi)].some((m) => shown(m[0]));
 
 // Go marks a stylesheet with author-provided dark rules (core/mail).
 const hasDarkStyles = (b: ReaderBody) => b.html.startsWith('<style data-dark="">');
@@ -60,7 +119,7 @@ const plainCSS = (t: Theme, scheme: string) => {
 
 /**
  * The srcdoc of a body's iframe: the CSP meta first, then our style, then the body (already
- * sanitized by Go; plain text escaped here) in #godwit-body. The theme gives plain text its colour
+ * sanitized by Go; plain text escaped and linked here, plainHTML) in #godwit-body. The theme gives plain text its colour
  * and both kinds the body font size.
  */
 export function buildSrcdoc(b: ReaderBody, t: Theme, systemDark = false): string {
@@ -71,18 +130,19 @@ export function buildSrcdoc(b: ReaderBody, t: Theme, systemDark = false): string
     (html ? htmlCSS(t, frameScheme(b, t, systemDark)) : plainCSS(t, frameScheme(b, t)));
   const dark = isDark(t, systemDark);
   const auto = html && dark && !hasDarkStyles(b);
-  const cls = !html
-    ? "godwit-plain"
-    : dark
-      ? hasDarkStyles(b)
-        ? "godwit-dark"
-        : "godwit-light godwit-auto"
-      : "godwit-light";
+  const cls =
+    (!html
+      ? "godwit-plain"
+      : dark
+        ? hasDarkStyles(b)
+          ? "godwit-dark"
+          : "godwit-light godwit-auto"
+        : "godwit-light") + (html && isTextHTML(b.html) ? " godwit-text" : "");
   return (
     "<!doctype html><html><head>" +
     `<meta http-equiv="Content-Security-Policy" content="${FRAME_CSP}">` +
     '<meta charset="utf-8">' +
     `<style>${css}</style></head>` +
-    `<body><div id="godwit-body" class="${cls}"${auto ? " data-auto-dark" : ""}>${html ? b.html : escapeText(b.plain)}</div></body></html>`
+    `<body><div id="godwit-body" class="${cls}"${auto ? " data-auto-dark" : ""}>${html ? b.html : plainHTML(b.plain)}</div></body></html>`
   );
 }

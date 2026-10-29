@@ -232,7 +232,7 @@ func TestShots(t *testing.T) {
 		s.llm.Script(coretest.Turn{Text: []string{"- 对方发来 Q4 合作提案草稿（附件 PDF）。\n- 要点：11 月联合发布、一场联合网络研讨会。\n- 需要你在周五前确认时间安排是否可行。\n"}})
 		s.click("Q4 partnership proposal")
 		s.see("需要你在周五前确认")
-		s.llm.Script(coretest.Turn{Text: []string{`{"replies":[{"html":"<p>Hi Lena, thanks for the proposal. November works for us, happy to move ahead.</p>"},{"html":"<p>Hi Lena, November works, but could we move the webinar one week later?</p>"},{"html":"<p>Hi Lena, thanks! I will review it with the team and get back to you by Friday.</p>"}]}`}})
+		s.llm.Script(coretest.Turn{Text: []string{`{"replies":[{"label":"同意","html":"<p>Hi Lena, thanks for the proposal. November works for us, happy to move ahead.</p>"},{"label":"同意但调整","html":"<p>Hi Lena, November works, but could we move the webinar one week later?</p>"},{"label":"稍后答复","html":"<p>Hi Lena, thanks! I will review it with the team and get back to you by Friday.</p>"}]}`}})
 		quick(s)
 		s.see("Hi Lena, thanks! I will review it")
 	}
@@ -348,7 +348,7 @@ func TestShots(t *testing.T) {
 		shotPlugin(t, s.harness, "flight-cards", "NW 1858", `{ title: "航班 NW 1858 · 明天 14:20 起飞 · 登机口 [待定]", fields: [{ label: "", value: "PVG → CTU" }, { label: "座位", value: "[待选] · 行李额 [待确认]" }], buttons: [{ label: "在线值机", kind: "open-url", value: "https://northwind.example/checkin" }] }`)
 		s.click("值机提醒：NW 1858 上海 → 成都")
 		s.see("在线值机")
-		s.llm.Script(coretest.Turn{Text: []string{`{"replies":[{"html":"<p>Thanks, checked in. See you on board.</p>"},{"html":"<p>你好，我想把航班改到后一天，请问怎么操作？</p>"}]}`}})
+		s.llm.Script(coretest.Turn{Text: []string{`{"replies":[{"label":"确认","html":"<p>Thanks, checked in. See you on board.</p>"},{"label":"改签","html":"<p>你好，我想把航班改到后一天，请问怎么操作？</p>"}]}`}})
 		quick(s)
 		s.see("Thanks, checked in. See you on board.")
 		shot(s.harness, "MainFlight")

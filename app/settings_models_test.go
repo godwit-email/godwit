@@ -538,7 +538,7 @@ func TestSmallModelSetting(t *testing.T) {
 	h.app.navigate(Route{Page: PageMail})
 	h.openThread(m.ThreadID)
 	h.until("the summary done", func() bool { s := r.ai[m.ID]; return s != nil && s.summary != nil && s.summary.done })
-	h.see("summarize · m2")
+	h.see("m2")
 
 	h.editService("test")
 	h.click("m2") // untick the small model

@@ -1,7 +1,7 @@
 import { RiRefreshLine } from "@remixicon/react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
-import { ReaderPage as api, events, type ReaderBody, type Theme } from "@/mygo";
+import { ReaderPage as api, events, type ReaderBody, type ReaderGlass, type Theme } from "@/mygo";
 import { useT } from "@/shared/i18n";
 import { forwardShortcuts } from "@/shared/shortcuts";
 import { applyTheme, type Theme as PageTheme } from "@/shared/theme";
@@ -79,7 +79,36 @@ export function ReaderApp() {
   return (
     <main>
       <Body body={body} theme={theme} />
+      <Glass />
     </main>
+  );
+}
+
+// The blur of the native reader's frosted bars (kit.Bar: 2× theme.BackdropBlur), which cannot see
+// this page: what they cover of it blurs here, under their tint.
+const blur = { backdropFilter: "blur(8px)", WebkitBackdropFilter: "blur(8px)" };
+
+/** Blurs what the reader's bars cover of the page, from its top and its bottom, as Go tells it. */
+export function Glass() {
+  const [glass, setGlass] = useState<ReaderGlass>({ top: 0, bottom: 0 });
+  useEffect(() => events.readerGlass.on(setGlass), []);
+  return (
+    <>
+      {glass.top > 0 && (
+        <div
+          data-glass="top"
+          className="pointer-events-none fixed inset-x-0 top-0"
+          style={{ ...blur, height: glass.top }}
+        />
+      )}
+      {glass.bottom > 0 && (
+        <div
+          data-glass="bottom"
+          className="pointer-events-none fixed inset-x-0 bottom-0"
+          style={{ ...blur, height: glass.bottom }}
+        />
+      )}
+    </>
   );
 }
 

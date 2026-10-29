@@ -289,6 +289,14 @@ func loadAfterSetup(setup func(), load func() error, undo func()) error {
 // AllowImages lets message's reader pages load its remote images.
 func (p *platform) AllowImages(message int64) { p.reader.Allow(message) }
 
+func (p *platform) BodyGlass(view ui.NativeWebView, top, bottom int) {
+	if v, ok := view.(*mygo.WebView); ok {
+		if err := webui.ReaderGlassed.EmitPage(v.Page(), webui.ReaderGlass{Top: top, Bottom: bottom}); err != nil {
+			log.Printf("the glass to a reader page: %v", err)
+		}
+	}
+}
+
 func (p *platform) TranslateBody(message int64, texts map[string]string) {
 	p.reader.Translate(message, texts)
 }

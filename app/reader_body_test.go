@@ -14,6 +14,7 @@ import (
 	"github.com/egoist/mygo/ui"
 	"github.com/godwit-email/godwit/core"
 	"github.com/godwit-email/godwit/core/coretest"
+	"github.com/godwit-email/godwit/internal/theme"
 )
 
 // viewBox is where the last frame shows v, as the pointer finds it (a
@@ -105,7 +106,7 @@ func TestReaderWebViewsLifecycle(t *testing.T) {
 	h, accs := mailHarness(t, nil, "alice@example.com")
 	thread, msgs := threeMessages(t, h, accs[0])
 	other := h.deliverOne(accs[0], coretest.Msg("erin@example.com", accs[0].Email, "Elsewhere", "other body"))
-	h.openThread(thread)
+	h.openThreadWith(thread, msgs[1].ID)
 	v1, v2 := h.seeBody(msgs[1].ID), h.seeBody(msgs[2].ID)
 	if h.plat.view(msgs[0].ID) != nil || h.plat.openViews() != 2 {
 		t.Fatalf("%d pages, the read one's %v", h.plat.openViews(), h.plat.view(msgs[0].ID))
@@ -179,7 +180,7 @@ func TestReaderFoldDuringLoad(t *testing.T) {
 	r := h.app.mail.reader
 	reading, release := gateBody(r, msgs[1].ID)
 	defer release()
-	h.openThread(thread)
+	h.openThreadWith(thread, msgs[1].ID)
 	h.until("the body being read", func() bool {
 		select {
 		case <-reading:
@@ -295,7 +296,7 @@ func TestReaderHeightApplied(t *testing.T) {
 		t.Fatalf("height %v before any report, want about a line", box.H)
 	}
 	h.app.BodyHeight(v, m.ID, 640)
-	h.tt.Frame()
+	h.tt.Advance(2 * theme.MotionBase) // the message grows to hold it
 	if box, _ := h.viewBox(v); box.H < 636 || box.H > 640 {
 		t.Fatalf("height %v, want 640", box.H)
 	}
@@ -363,21 +364,17 @@ func TestReaderRemoteImages(t *testing.T) {
 	m := msgs[1]
 	h.openThread(m.ThreadID)
 	v := h.seeBody(m.ID)
-	h.see("已阻止 1 张远程图片，防止发件人追踪你是否打开了邮件")
-	// The plaintext message now has its own avatar load action; target
-	// this message's existing body-image action by folding the older one.
-	h.app.mail.reader.toggle(msgs[0].ID)
-	h.tt.Frame()
+	h.see("1 张图片未加载")
 	if h.hasCall("AllowImages") {
 		t.Fatal("allowed before 加载图片")
 	}
-	h.click("加载图片")
+	h.click("加载")
 	allow := fmt.Sprint("AllowImages ", m.ID)
 	if h.countCalls(allow) != 1 {
 		t.Fatalf("calls %q", h.plat.Calls())
 	}
 	h.tt.Frame()
-	if !h.tt.HasText("已阻止") || h.tt.HasText("加载图片") {
+	if _, link := h.tt.Find("加载"); !h.tt.HasText("张图片未加载") || link {
 		t.Fatalf("the notice did not wait for the page: %q", h.tt.Texts())
 	}
 	h.app.BodyFailed(v, m.ID, errors.New("images went away"))
@@ -388,11 +385,11 @@ func TestReaderRemoteImages(t *testing.T) {
 	}
 	h.app.BodyBuilt(v, m.ID, false, false) // an older body, without them
 	h.tt.Frame()
-	if !h.tt.HasText("已阻止") {
+	if !h.tt.HasText("张图片未加载") {
 		t.Fatal("the notice went before the page had the images")
 	}
 	h.app.BodyBuilt(v, m.ID, false, true)
-	h.until("the notice gone", func() bool { return !h.tt.HasText("已阻止") && !h.tt.HasText("images went away") })
+	h.until("the notice gone", func() bool { return !h.tt.HasText("张图片未加载") && !h.tt.HasText("images went away") })
 	r := h.app.mail.reader
 	r.toggle(m.ID)
 	r.toggle(m.ID)
@@ -493,7 +490,7 @@ func TestReaderBodySearch(t *testing.T) {
 func TestReaderCloseClosesViews(t *testing.T) {
 	h, accs := mailHarness(t, nil, "alice@example.com")
 	thread, msgs := threeMessages(t, h, accs[0])
-	h.openThread(thread)
+	h.openThreadWith(thread, msgs[1].ID)
 	h.seeBody(msgs[1].ID)
 	h.seeBody(msgs[2].ID)
 	r := h.app.mail.reader
@@ -520,8 +517,8 @@ func TestReaderTrustSender(t *testing.T) {
 	m := h.deliverOne(acc, coretest.Msg("Bob <Bob@Example.com>", acc.Email, "News", "text", img))
 	h.openThread(m.ThreadID)
 	h.seeBody(m.ID)
-	h.see("已阻止 1 张远程图片")
-	h.click("始终信任此发件人")
+	h.see("1 张图片未加载")
+	h.click("信任发件人")
 	h.until("allowed", func() bool { return h.countCalls(fmt.Sprint("AllowImages ", m.ID)) == 1 })
 	trusted, err := h.env.Svc.TrustedImageSenders(context.Background())
 	if err != nil || !slices.Equal(trusted, []string{"bob@example.com"}) {
@@ -531,7 +528,7 @@ func TestReaderTrustSender(t *testing.T) {
 	h.openThread(n.ThreadID)
 	h.seeBody(n.ID)
 	h.tt.Frame()
-	if h.tt.HasText("已阻止") {
+	if h.tt.HasText("张图片未加载") {
 		t.Fatal("a trusted sender's message shows the notice")
 	}
 }
@@ -542,22 +539,35 @@ func TestReaderTrackersBlocked(t *testing.T) {
 	h, accs := mailHarness(t, nil, "alice@example.com")
 	remoteImages(t, h, "trusted")
 	acc := accs[0]
-	img := coretest.HTML(`<p>Hi</p><img src="https://img.example/p.png" width="2" height="2">` +
-		`<img src="https://t.example/o.gif" width="1" height="1"><img src="https://x.list-manage.com/track/open.php?u=1">`)
-	m := h.deliverOne(acc, coretest.Msg("Bob <bob@example.com>", acc.Email, "News", "text", img))
-	h.openThread(m.ThreadID)
-	h.seeBody(m.ID)
-	h.see("已阻止 2 个跟踪器")
-	h.see("已阻止 1 张远程图片")
-	h.click("始终信任此发件人")
-	h.until("allowed", func() bool { return h.countCalls(fmt.Sprint("AllowImages ", m.ID)) == 1 })
-	n := h.deliverOne(acc, coretest.Msg("bob@example.com", acc.Email, "More news", "text", img))
-	h.openThread(n.ThreadID)
-	h.seeBody(n.ID)
-	h.see("已阻止 2 个跟踪器")
-	if h.tt.HasText("张远程图片") || h.tt.HasText("加载图片") {
-		t.Fatal("a trusted sender's message shows the remote images notice")
+	pixels := `<img src="https://t.example/o.gif" width="1" height="1"><img src="https://x.list-manage.com/track/open.php?u=1">`
+	// two, so the body's count tells them from the sender's avatar, one image of its own
+	photo := `<img src="https://img.example/p.png" width="2" height="2"><img src="https://img.example/q.png" width="2" height="2">`
+	// the header's second line: "发给 我", then the trackers, then the images
+	line := func(m core.MessageSummary, trackers, images bool) {
+		t.Helper()
+		h.openThread(m.ThreadID)
+		h.seeBody(m.ID)
+		h.see("发给 我")
+		if got := h.tt.HasText("已阻止 2 个跟踪器"); got != trackers {
+			t.Fatalf("%q: trackers shown %v, want %v: %q", m.Subject, got, trackers, h.tt.Texts())
+		}
+		if got := h.tt.HasText("2 张图片未加载"); got != images {
+			t.Fatalf("%q: images shown %v, want %v: %q", m.Subject, got, images, h.tt.Texts())
+		}
+		if h.tt.HasText("张远程图片") {
+			t.Fatalf("%q: a notice above the body: %q", m.Subject, h.tt.Texts())
+		}
 	}
+	line(h.deliverOne(acc, coretest.Msg("carol@example.com", acc.Email, "Neither", "text", coretest.HTML(`<p>Hi</p>`))), false, false)
+	line(h.deliverOne(acc, coretest.Msg("dave@example.com", acc.Email, "Trackers", "text", coretest.HTML(`<p>Hi</p>`+pixels))), true, false)
+	line(h.deliverOne(acc, coretest.Msg("erin@example.com", acc.Email, "Images", "text", coretest.HTML(`<p>Hi</p>`+photo))), false, true)
+	both := coretest.HTML(`<p>Hi</p>` + photo + pixels)
+	m := h.deliverOne(acc, coretest.Msg("Bob <bob@example.com>", acc.Email, "Both", "text", both))
+	line(m, true, true)
+	h.click("信任发件人")
+	h.until("allowed", func() bool { return h.countCalls(fmt.Sprint("AllowImages ", m.ID)) == 1 })
+	// trusted: the next one shows its trackers alone
+	line(h.deliverOne(acc, coretest.Msg("bob@example.com", acc.Email, "More", "text", both)), true, false)
 }
 
 // A quoted local part: core gets the From as sent, which parses.
@@ -569,7 +579,7 @@ func TestReaderTrustQuotedSender(t *testing.T) {
 	m := h.deliverOne(acc, coretest.Msg(`Bob <"bob smith"@example.com>`, acc.Email, "News", "text", img))
 	h.openThread(m.ThreadID)
 	h.seeBody(m.ID)
-	h.click("始终信任此发件人")
+	h.click("信任发件人")
 	h.until("allowed", func() bool { return h.countCalls(fmt.Sprint("AllowImages ", m.ID)) == 1 })
 }
 
@@ -595,7 +605,7 @@ func TestReaderTrustSkipsJunk(t *testing.T) {
 		}
 		h.seeBody(x.ID)
 	}
-	h.click("始终信任此发件人")
+	h.click("信任发件人")
 	h.until("allowed", func() bool { return h.countCalls(fmt.Sprint("AllowImages ", m.ID)) == 1 })
 	for _, x := range msgs {
 		if x.ID != m.ID && h.countCalls(fmt.Sprint("AllowImages ", x.ID)) != 0 {
@@ -615,5 +625,41 @@ func remoteImages(t *testing.T, h *harness, mode string) {
 	st.RemoteImages = mode
 	if _, err := h.env.Svc.SetSettings(context.Background(), st); err != nil {
 		t.Fatal(err)
+	}
+}
+
+// A body's page is told how much of it the bars cover, as it scrolls under
+// them: the reply bar its bottom at first, the toolbar its top once
+// scrolled; again once it reports, as a page drops what came before it
+// listened.
+func TestReaderBodyGlass(t *testing.T) {
+	h, accs := mailHarness(t, nil, "alice@example.com")
+	m := h.deliverOne(accs[0], coretest.Msg("bob@example.com", accs[0].Email, "Tall", "body"))
+	h.openThread(m.ThreadID)
+	v := h.seeBody(m.ID)
+	r := h.app.mail.reader
+	h.app.BodyHeight(v, m.ID, 3000)
+	h.tt.Advance(2 * theme.MotionBase) // the message grows to hold it
+	glass := func() [2]int {
+		h.plat.mu.Lock()
+		defer h.plat.mu.Unlock()
+		return v.glass
+	}
+	// a band runs from its edge of the page to the bar's, out of sight too
+	if g := glass(); g[0] != 0 || g[1] < int(r.barBottom) || g[1] >= 3000 {
+		t.Fatalf("glass %v at the top (reply bar %v): want only the bottom covered", g, r.barBottom)
+	}
+	r.scroll.Y = 1000
+	h.tt.Frame()
+	h.tt.Frame()
+	if g := glass(); g[0] < int(r.barTop) || g[1] < int(r.barBottom) {
+		t.Fatalf("glass %v scrolled (bars %v, %v): want both covered", g, r.barTop, r.barBottom)
+	}
+	r.bodies[m.ID].glass = [2]int{}
+	v.glass = [2]int{}
+	h.app.BodyHeight(v, m.ID, 3000)
+	h.tt.Frame()
+	if g := glass(); g == ([2]int{}) {
+		t.Fatal("not told again once the page reported")
 	}
 }

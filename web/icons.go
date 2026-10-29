@@ -94,6 +94,7 @@ var RemixIcons = map[string]string{
 	"lock":                      "node_modules/remixicon/icons/System/lock-line.svg",
 	"mail":                      "node_modules/remixicon/icons/Business/mail-line.svg",
 	"mail-fill":                 "node_modules/remixicon/icons/Business/mail-fill.svg",
+	"mail-forbid":               "node_modules/remixicon/icons/Business/mail-forbid-line.svg",
 	"mail-open":                 "node_modules/remixicon/icons/Business/mail-open-line.svg",
 	"monitor":                   "node_modules/remixicon/icons/Device/computer-line.svg",
 	"outbox":                    "node_modules/remixicon/icons/Business/inbox-unarchive-line.svg",
@@ -186,6 +187,7 @@ var BrandIcons = map[string]string{
 //go:embed node_modules/remixicon/icons/Business/inbox-unarchive-fill.svg
 //go:embed node_modules/remixicon/icons/Business/inbox-unarchive-line.svg
 //go:embed node_modules/remixicon/icons/Business/mail-fill.svg
+//go:embed node_modules/remixicon/icons/Business/mail-forbid-line.svg
 //go:embed node_modules/remixicon/icons/Business/mail-line.svg
 //go:embed node_modules/remixicon/icons/Business/mail-open-line.svg
 //go:embed node_modules/remixicon/icons/Business/printer-line.svg
