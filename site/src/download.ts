@@ -2,7 +2,7 @@
 // that the target's update manifest (update-<target>.json, which
 // `mygo build -upload` writes last) names, in the R2 bucket that
 // dl.godwit.email serves. The names are those `mygo build` gives the
-// installers (cmd/mygo dmg.go, nsis.go and deb.go in mygo v0.4.5); a new mygo
+// installers (cmd/mygo dmg.go, nsis.go and deb.go in mygo v0.7.2); a new mygo
 // that renames them breaks these links, which download.test.ts pins.
 
 /** The root of the R2 bucket of updates.s3 in mygo.config.ts, where `mygo build -upload` puts everything. */
@@ -16,14 +16,14 @@ export function isTarget(s: string): s is Target {
 	return (targets as readonly string[]).includes(s);
 }
 
-/** The file name of the target's installer for version, e.g. "Godwit 1.2.0 arm64.dmg". */
+/** The file name of the target's installer for version, e.g. "godwit-1.2.0-arm64.dmg". */
 export function installerName(t: Target, version: string): string {
 	const [os, arch] = t.split("-");
 	switch (os) {
 		case "darwin":
-			return `Godwit ${version} ${arch}.dmg`;
+			return `godwit-${version}-${arch}.dmg`;
 		case "windows":
-			return `Godwit Setup ${version} ${arch}.exe`;
+			return `godwit-setup-${version}-${arch}.exe`;
 		default:
 			return `godwit_${debVersion(version)}_${arch}.deb`;
 	}

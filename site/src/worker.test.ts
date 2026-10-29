@@ -89,7 +89,7 @@ test("the Simplified Chinese page has a Chinese date", async () => {
 test("downloads still redirect", async () => {
 	const res = await get("/download/darwin-arm64", env({ version: "1.2.0" }));
 	expect(res.status).toBe(302);
-	expect(res.headers.get("Location")).toBe("https://dl.godwit.email/Godwit%201.2.0%20arm64.dmg");
+	expect(res.headers.get("Location")).toBe("https://dl.godwit.email/godwit-1.2.0-arm64.dmg");
 });
 
 test("a download is counted, with the referrer's origin and no IP", async () => {
