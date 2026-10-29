@@ -229,7 +229,9 @@ func fetchNew(ctx context.Context, db *store.DB, c *imapclient.Client, a *accoun
 		}
 		return advance(ctx, db, f, uint32(top[0].UID))
 	}
-	var set imap.NumSet
+	// A first sync, or the reimport after a UIDVALIDITY reset (which clears
+	// synced), is not new mail, even if an earlier attempt stopped partway.
+	arrivals := f.synced
 	if f.lastUID == 0 && a.limit > 0 {
 		start := uint32(1)
 		if n > uint32(a.limit) {
@@ -237,19 +239,46 @@ func fetchNew(ctx context.Context, db *store.DB, c *imapclient.Client, a *accoun
 		}
 		var s imap.SeqSet
 		s.AddRange(start, 0)
-		set = s
-	} else {
-		var s imap.UIDSet
-		s.AddRange(imap.UID(f.lastUID+1), 0)
-		set = s
+		last, err := importAbove(ctx, db, c, a, f, s, arrivals, r)
+		if err != nil {
+			return err
+		}
+		return advance(ctx, db, f, last)
 	}
-	msgs, err := c.Fetch(set, importItems()).Collect()
+	// A page at a time: a folder that gains 50,000 messages at once (a bulk
+	// move in webmail) never sits in memory whole, and a dropped connection
+	// keeps the pages already imported.
+	var above imap.UIDSet
+	above.AddRange(imap.UID(f.lastUID+1), 0)
+	found, err := c.UIDSearch(&imap.SearchCriteria{UID: []imap.UIDSet{above}}, nil).Wait()
 	if err != nil {
 		return err
+	}
+	uids := slices.DeleteFunc(found.AllUIDs(), func(u imap.UID) bool { return uint32(u) <= f.lastUID }) // "n:*" includes n when nothing is new
+	slices.Sort(uids)
+	for page := range slices.Chunk(uids, BackfillPage) {
+		last, err := importAbove(ctx, db, c, a, f, imap.UIDSetNum(page...), arrivals, r)
+		if err != nil {
+			return err
+		}
+		if _, err := db.Execute(ctx, "UPDATE folders SET last_uid = ? WHERE id = ?", last, f.id); err != nil {
+			return err
+		}
+		f.lastUID = last
+	}
+	return advance(ctx, db, f, f.lastUID)
+}
+
+// importAbove imports the messages of set above last_uid that are not stored
+// yet, in UID order, and returns the highest UID set has above last_uid.
+func importAbove(ctx context.Context, db *store.DB, c *imapclient.Client, a *account, f *folder, set imap.NumSet, arrivals bool, r *result) (uint32, error) {
+	msgs, err := c.Fetch(set, importItems()).Collect()
+	if err != nil {
+		return 0, err
 	}
 	have, err := db.Query(ctx, "SELECT server_uid FROM messages WHERE server_folder_id = ? AND server_uid > ?", f.id, f.lastUID)
 	if err != nil {
-		return err
+		return 0, err
 	}
 	known := map[uint32]bool{}
 	for _, v := range have.Values {
@@ -258,7 +287,7 @@ func fetchNew(ctx context.Context, db *store.DB, c *imapclient.Client, a *accoun
 	last, todo := f.lastUID, msgs[:0]
 	for _, m := range msgs {
 		uid := uint32(m.UID)
-		if uid <= f.lastUID { // "n:*" returns the highest old UID when nothing is new
+		if uid <= f.lastUID {
 			continue
 		}
 		last = max(last, uid)
@@ -267,12 +296,7 @@ func fetchNew(ctx context.Context, db *store.DB, c *imapclient.Client, a *accoun
 		}
 	}
 	slices.SortFunc(todo, byUID)
-	// A first sync, or the reimport after a UIDVALIDITY reset (which clears
-	// synced), is not new mail, even if an earlier attempt stopped partway.
-	if err := importAll(ctx, db, c, a, f, todo, f.synced, r); err != nil {
-		return err
-	}
-	return advance(ctx, db, f, last)
+	return last, importAll(ctx, db, c, a, f, todo, arrivals, r)
 }
 
 // advance records a completed fetchNew: last_uid and synced in one write.

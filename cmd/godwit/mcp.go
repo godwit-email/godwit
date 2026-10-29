@@ -15,7 +15,7 @@ import (
 
 // mcpCmd runs `godwit mcp [--data-dir DIR]`: an MCP server on stdin and
 // stdout, bridged to the running Godwit as the mcp role, until stdin closes
-// or ctx ends. Without a running Godwit it exits 2.
+// or ctx ends. Without a running Godwit it exits 2; losing it, 1.
 func mcpCmd(ctx context.Context, args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 	fs := newFlagSet("godwit mcp", stderr)
 	dataDir := fs.String("data-dir", "", "")
@@ -37,7 +37,26 @@ func mcpCmd(ctx context.Context, args []string, stdin io.Reader, stdout, stderr 
 		return 2
 	}
 	defer c.Close()
-	err = mcpserver.New(c, app.Version).Run(ctx, &mcp.IOTransport{Reader: io.NopCloser(stdin), Writer: nopWriteCloser{stdout}})
+	// Godwit quit or restarted (an update): end, so the host shows this server
+	// stopped and can start it again, rather than every call failing.
+	rctx, cancel := context.WithCancel(ctx)
+	defer cancel()
+	go func() {
+		select {
+		case <-c.Done():
+			cancel()
+		case <-rctx.Done():
+		}
+	}()
+	err = mcpserver.New(c, app.Version).Run(rctx, &mcp.IOTransport{Reader: io.NopCloser(stdin), Writer: nopWriteCloser{stdout}})
+	select {
+	case <-c.Done():
+		if ctx.Err() == nil {
+			fmt.Fprintln(stderr, "godwit mcp: lost the connection to Godwit (it quit or restarted)")
+			return 1
+		}
+	default:
+	}
 	if err != nil && ctx.Err() == nil && !errors.Is(err, io.EOF) {
 		fmt.Fprintln(stderr, "godwit mcp:", err)
 		return 1

@@ -122,7 +122,8 @@ func (s *Service) modelCredential(ctx context.Context, m ModelService) (string, 
 	if m.clientID != "" {
 		cfg.ClientID = m.clientID
 	}
-	rctx, cancel := context.WithTimeout(ctx, refreshTimeout)
+	// Not the caller's: a refresh cut off after the server rotated the token would lose the new one.
+	rctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), refreshTimeout)
 	g, err := auth.RefreshForm(rctx, cfg, http.DefaultClient, rt)
 	cancel()
 	if errors.Is(err, auth.ErrInvalidGrant) {

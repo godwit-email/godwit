@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"slices"
 	"strings"
 
 	"github.com/egoist/mygo/plugins/sqlite"
@@ -188,20 +189,32 @@ func pushOp(ctx context.Context, db *store.DB, c *imapclient.Client, o op) (prob
 		}
 		return "", finish(ctx, db, o, "done", "")
 	}
+	// A purge of it that reached the server may have left \Deleted.
+	pr, err := db.Query(ctx, "SELECT 1 FROM ops WHERE message_id = ? AND kind = 'purge' AND attempts > 0", o.msg)
+	if err != nil {
+		return "", err
+	}
+	purged := len(pr.Values) > 0
 	if sent {
 		// The last attempt may have moved it before the connection dropped.
-		got, err := c.Fetch(set, &imap.FetchOptions{UID: true}).Collect()
+		got, err := c.Fetch(set, &imap.FetchOptions{UID: true, Flags: true}).Collect()
 		if err != nil {
 			return fail(ctx, db, o, err)
 		}
 		if len(got) == 0 {
 			return "", moved(ctx, db, o, 0, 0)
 		}
+		// Without MOVE, \Deleted it did not get from a purge means the COPY and
+		// STORE went through and only the EXPUNGE did not: copying again would
+		// leave two in the destination. Fetch claims the copy there.
+		if !c.Caps().Has(imap.CapMove) && !purged && slices.Contains(got[0].Flags, imap.FlagDeleted) {
+			if err := c.UIDExpunge(set).Close(); err != nil {
+				return fail(ctx, db, o, err)
+			}
+			return "", moved(ctx, db, o, 0, 0)
+		}
 	}
-	// A purge of it that reached the server may have left \Deleted: the rescued copy must not carry it.
-	if r, err := db.Query(ctx, "SELECT 1 FROM ops WHERE message_id = ? AND kind = 'purge' AND attempts > 0", o.msg); err != nil {
-		return "", err
-	} else if len(r.Values) > 0 {
+	if purged { // the rescued copy must not carry \Deleted
 		if err := undelete(c, uid); err != nil {
 			return fail(ctx, db, o, err)
 		}

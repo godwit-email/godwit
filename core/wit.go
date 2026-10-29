@@ -1,6 +1,7 @@
 package core
 
 import (
+	"bytes"
 	"cmp"
 	"context"
 	"encoding/json"
@@ -1004,42 +1005,46 @@ func (s *Service) applyBatchAction(ctx context.Context, a Approval) ([]sqlite.St
 		return nil, map[string]any{"applied": 0, "action": action}, nil, nil
 	}
 
+	// Accounts are applied one by one: one failing does not undo the others, so
+	// the result says what was applied and what failed, never "nothing" after some.
+	applied := 0
+	var errs []error
 	for _, msgIDs := range byAccount {
-		switch action {
-		case "move_to_trash":
-			if err := s.Delete(ctx, msgIDs); err != nil {
-				return nil, nil, nil, err
-			}
-		case "archive_mail":
-			if err := s.MoveToRole(ctx, msgIDs, "archive"); err != nil {
-				return nil, nil, nil, err
-			}
-		case "mark_as_spam":
-			if err := s.MoveToRole(ctx, msgIDs, "junk"); err != nil {
-				return nil, nil, nil, err
-			}
-		case "mark_as_read":
-			if err := s.SetFlags(ctx, msgIDs, []string{`\Seen`}, nil); err != nil {
-				return nil, nil, nil, err
-			}
-		case "mark_as_unread":
-			if err := s.SetFlags(ctx, msgIDs, nil, []string{`\Seen`}); err != nil {
-				return nil, nil, nil, err
-			}
-		case "star_mail":
-			if err := s.SetFlags(ctx, msgIDs, []string{`\Flagged`}, nil); err != nil {
-				return nil, nil, nil, err
-			}
-		case "unstar_mail":
-			if err := s.SetFlags(ctx, msgIDs, nil, []string{`\Flagged`}); err != nil {
-				return nil, nil, nil, err
-			}
-		default:
-			return nil, nil, nil, fmt.Errorf("unknown batch action %q", action)
+		if err := s.batchApply(ctx, action, msgIDs); err != nil {
+			errs = append(errs, err)
+			continue
 		}
+		applied += len(msgIDs)
 	}
+	if applied == 0 && len(errs) > 0 {
+		return nil, nil, nil, errors.Join(errs...)
+	}
+	res := map[string]any{"applied": applied, "action": action}
+	if len(errs) > 0 {
+		res["failed"], res["error"] = processedCount-applied, errors.Join(errs...).Error()
+	}
+	return nil, res, nil, nil
+}
 
-	return nil, map[string]any{"applied": processedCount, "action": action}, nil, nil
+// batchApply applies a batch action to msgIDs, all of one account.
+func (s *Service) batchApply(ctx context.Context, action string, msgIDs []int64) error {
+	switch action {
+	case "move_to_trash":
+		return s.Delete(ctx, msgIDs)
+	case "archive_mail":
+		return s.MoveToRole(ctx, msgIDs, "archive")
+	case "mark_as_spam":
+		return s.MoveToRole(ctx, msgIDs, "junk")
+	case "mark_as_read":
+		return s.SetFlags(ctx, msgIDs, []string{`\Seen`}, nil)
+	case "mark_as_unread":
+		return s.SetFlags(ctx, msgIDs, nil, []string{`\Seen`})
+	case "star_mail":
+		return s.SetFlags(ctx, msgIDs, []string{`\Flagged`}, nil)
+	case "unstar_mail":
+		return s.SetFlags(ctx, msgIDs, nil, []string{`\Flagged`})
+	}
+	return fmt.Errorf("unknown batch action %q", action)
 }
 
 type unsubArgs struct {
@@ -1185,7 +1190,13 @@ func (s *Service) getAllLinks(ctx context.Context, raw json.RawMessage) (any, er
 		}
 	}
 
-	return map[string]any{"mail_id": in.ID, "links": links}, nil
+	var b bytes.Buffer
+	enc := json.NewEncoder(&b)
+	enc.SetEscapeHTML(false)
+	_ = enc.Encode(links)
+	text := strings.TrimSpace(b.String())
+	// Anchor texts are the sender's words: inside the untrusted block, as every mail field is.
+	return map[string]any{"mail_id": in.ID, "links": ai.Untrusted(fmt.Sprintf("message:%d", in.ID), text, ai.SuspectInjection(text))}, nil
 }
 
 type openLinkArgs struct {
@@ -1269,7 +1280,7 @@ func (s *Service) prepareReplyMail(ctx context.Context, _ Conversation, raw json
 	if err != nil {
 		return prepared{}, err
 	}
-	bodyHTML := mail.StripMarkers(in.HTML) + d.HTML
+	bodyHTML := mail.StripMarkers(ensureHTML(in.HTML)) + d.HTML
 	sanitized, err := s.sanitizeDraft(ctx, bodyHTML)
 	if err != nil {
 		return prepared{}, err
@@ -1331,7 +1342,7 @@ func (s *Service) prepareForwardMail(ctx context.Context, _ Conversation, raw js
 	if err != nil {
 		return prepared{}, err
 	}
-	bodyHTML := mail.StripMarkers(in.HTML) + d.HTML
+	bodyHTML := mail.StripMarkers(ensureHTML(in.HTML)) + d.HTML
 	sanitized, err := s.sanitizeDraft(ctx, bodyHTML)
 	if err != nil {
 		return prepared{}, err

@@ -170,13 +170,14 @@ func Listen(dataDir string, svc *core.Service, version string) (*rpc.Server, err
 	})
 }
 
-// audit records full's Send and SendAcknowledged (by draft), ResolveOutbox
+// audit records full's Send, SendAcknowledged and their Revision forms (by draft), ResolveOutbox
 // "resend" (by outbox item) and Unsubscribe (by message), and mcp's NewDraft (by source
 // message) and SaveDraft (by draft); nothing else.
 func audit(svc *core.Service, role, method string, params []json.RawMessage) error {
 	source := ""
 	switch {
-	case role == rpc.RoleFull && (method == "Send" || method == "SendAcknowledged" || method == "ResolveOutbox" && isResend(params) || method == "Unsubscribe"):
+	case role == rpc.RoleFull && (method == "Send" || method == "SendAcknowledged" || method == "SendRevision" || method == "SendAcknowledgedRevision" ||
+		method == "ResolveOutbox" && isResend(params) || method == "Unsubscribe"):
 		source = core.AuditLocalAPI
 	case role == rpc.RoleMCP && (method == "NewDraft" || method == "SaveDraft"):
 		source = core.AuditMCP

@@ -594,15 +594,17 @@ func (s *Service) syncAccount(ctx context.Context, accountID int64, explicit boo
 	if err := mailsync.QueuePurge(ctx, s.db, c, accountID); err != nil {
 		return err
 	}
-	if err := s.pushOps(ctx, c, accountID, mailsync.PushOps); err != nil {
-		return err
-	}
+	// The outbox before the push: a bulk change (thousands of ops) or a failing
+	// op must not hold mail the user sent.
 	useSMTP, smtpErr := s.checkSMTP(ctx, accountID, explicit)
 	if useSMTP {
 		smtpErr = s.processOutbox(ctx, c, accountID)
 		if smtpErr != nil && !errors.Is(smtpErr, conn.ErrAuthFailed) {
 			return smtpErr
 		}
+	}
+	if err := s.pushOps(ctx, c, accountID, mailsync.PushOps); err != nil {
+		return err
 	}
 	more, err := mailsync.Fetch(ctx, s.db, c, accountID, s.bus)
 	s.notifyHooks() // rows committed before an error count too

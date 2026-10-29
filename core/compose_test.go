@@ -211,6 +211,22 @@ func TestArchiveUncertainNotDuplicated(t *testing.T) {
 	assert.Len(t, e.smtp.Messages(), 1)
 }
 
+// A sync sends before it pushes local changes: queued ops never hold the outbox.
+func TestOutboxBeforePush(t *testing.T) {
+	e := newSendEnv(t, false)
+	e.put(t, "INBOX", eml("m1@x", "bob@example.com", "alice@example.com", "t", "Mon, 05 Oct 2026 09:00:00 +0000", "1"))
+	e.sync(t)
+	msg := e.rows(t, "SELECT id FROM messages")[0][0].(int64)
+	e.sendNew(t)
+	require.NoError(t, e.s.SetFlags(bg, []int64{msg}, []string{`\Flagged`}, nil))
+	pending := -1
+	beforeOutboxItem = func(int64) { pending = int(e.count(t, "SELECT count(*) FROM ops WHERE state = 'pending'")) }
+	t.Cleanup(func() { beforeOutboxItem = nil })
+	e.sync(t)
+	assert.Equal(t, 1, pending, "the flag change was still queued when the mail went")
+	assert.Len(t, e.smtp.Messages(), 1)
+}
+
 // Rows written under another spelling of the data dir keep their files.
 func TestCleanOrphansOtherDataDirSpelling(t *testing.T) {
 	e := newSendEnv(t, false)
