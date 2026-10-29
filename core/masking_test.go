@@ -164,6 +164,32 @@ func TestAnInvalidMaskingRuleIsNotSaved(t *testing.T) {
 	require.Error(t, err)
 }
 
+// A rule stored under a built-in kind before they were refused still masks
+// and lets the rest of the settings save; a new one is refused.
+func TestAStoredRuleKeepsItsBuiltInKind(t *testing.T) {
+	e := newApprovalEnv(t)
+	_, err := e.s.db.Execute(t.Context(), "INSERT INTO settings(key, value) VALUES ('app', ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value",
+		`{"SettingsVersion":4,"Masking":true,"MaskRules":[{"Kind":"PHONE","Regex":"ext-\\d+"}]}`)
+	require.NoError(t, err)
+	m, err := e.s.masker()
+	require.NoError(t, err)
+	out, err := m.Text("call ext-42")
+	require.NoError(t, err)
+	assert.NotContains(t, out, "ext-42")
+	st, err := e.s.GetSettings(t.Context())
+	require.NoError(t, err)
+	st.Theme = "dark"
+	_, err = e.s.SetSettings(t.Context(), st)
+	require.NoError(t, err)
+
+	st.MaskRules = append(st.MaskRules, mask.Rule{Kind: "email", Regex: `x\d+`})
+	_, err = e.s.SetSettings(t.Context(), st)
+	var re *mask.RuleError
+	require.ErrorAs(t, err, &re)
+	assert.Equal(t, 1, re.Index)
+	assert.ErrorIs(t, err, mask.ErrReservedKind)
+}
+
 // Names are not masked unless the user turns them on; every other
 // category is.
 func TestMaskingCategoriesDefaults(t *testing.T) {

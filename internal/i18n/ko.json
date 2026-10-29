@@ -635,6 +635,7 @@
   "settings_masking_save": "저장",
   "settings_masking_rules_invalid": "{arg1}번째 줄의 패턴이 올바르지 않습니다: {arg2}",
   "settings_masking_rules_kind": "{arg1}번째 줄의 범주 이름은 영문자로 시작하고 영문자, 숫자, _만 써서 최대 24자여야 합니다",
+  "settings_masking_rules_reserved": "{arg1}번째 줄의 범주 이름이 기본 범주와 같습니다. 다른 이름을 쓰세요",
   "settings_masking_rules_empty": "{arg1}번째 줄의 패턴은 빈 텍스트와 일치해 모든 곳을 가리게 됩니다",
   "settings_masking_rules_too_many": "패턴은 최대 {arg1}개입니다",
   "settings_masking_allow_too_many": "허용 목록은 최대 {arg1}개입니다",

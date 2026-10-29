@@ -635,6 +635,7 @@
   "settings_masking_save": "儲存",
   "settings_masking_rules_invalid": "第 {arg1} 行的正規表示式無效：{arg2}",
   "settings_masking_rules_kind": "第 {arg1} 行的類別名須以字母開頭，只用字母、數字和 _，最多 24 個字元",
+  "settings_masking_rules_reserved": "第 {arg1} 行的類別名和內建類別重名，換一個名字",
   "settings_masking_rules_empty": "第 {arg1} 行的正規表示式能比對空文字，會把所有地方都遮住",
   "settings_masking_rules_too_many": "最多 {arg1} 條自訂正規表示式",
   "settings_masking_allow_too_many": "白名單最多 {arg1} 條",

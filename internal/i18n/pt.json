@@ -635,6 +635,7 @@
   "settings_masking_save": "Salvar",
   "settings_masking_rules_invalid": "O padrão da linha {arg1} não funciona: {arg2}",
   "settings_masking_rules_kind": "O nome de categoria da linha {arg1} deve começar com uma letra e ter só letras, dígitos e _, no máximo 24",
+  "settings_masking_rules_reserved": "O nome de categoria da linha {arg1} já é de uma categoria integrada; escolha outro nome",
   "settings_masking_rules_empty": "O padrão da linha {arg1} corresponde a texto vazio e mascararia tudo",
   "settings_masking_rules_too_many": "No máximo {arg1} padrões",
   "settings_masking_allow_too_many": "No máximo {arg1} valores permitidos",

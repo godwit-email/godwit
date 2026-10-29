@@ -635,6 +635,7 @@
   "settings_masking_save": "保存",
   "settings_masking_rules_invalid": "{arg1} 行目のパターンが無効です：{arg2}",
   "settings_masking_rules_kind": "{arg1} 行目のカテゴリ名は英字で始め、英字・数字・_ のみ、最大 24 文字にしてください",
+  "settings_masking_rules_reserved": "{arg1} 行目のカテゴリ名は組み込みのカテゴリと同じです。別の名前にしてください",
   "settings_masking_rules_empty": "{arg1} 行目のパターンは空の文字列に一致するため、あらゆる場所をマスクしてしまいます",
   "settings_masking_rules_too_many": "パターンは最大 {arg1} 件です",
   "settings_masking_allow_too_many": "許可リストは最大 {arg1} 件です",

@@ -635,6 +635,7 @@
   "settings_masking_save": "Guardar",
   "settings_masking_rules_invalid": "El patrón de la línea {arg1} no funciona: {arg2}",
   "settings_masking_rules_kind": "El nombre de categoría de la línea {arg1} debe empezar por una letra y tener solo letras, dígitos y _, como máximo 24",
+  "settings_masking_rules_reserved": "El nombre de categoría de la línea {arg1} ya es de una categoría integrada; elige otro nombre",
   "settings_masking_rules_empty": "El patrón de la línea {arg1} coincide con texto vacío y enmascararía en todas partes",
   "settings_masking_rules_too_many": "Como máximo {arg1} patrones",
   "settings_masking_allow_too_many": "Como máximo {arg1} valores permitidos",

@@ -113,6 +113,24 @@ func TestRefusesARuleThatCannotBeUsed(t *testing.T) {
 	assert.Error(t, m.Configure(mask.Config{Allow: make([]string, mask.MaxAllow+1)}))
 }
 
+// A rule may not take a built-in kind or TermKind, in any case: its values
+// would count as theirs. One kept from before still may, and Configure
+// still masks with it.
+func TestRefusesABuiltInKind(t *testing.T) {
+	ok := mask.Rule{Kind: "ORDER", Regex: `ORD-\d+`}
+	for _, kind := range []string{" phone ", "term"} {
+		r := mask.Rule{Kind: kind, Regex: `x\d+`}
+		err := mask.Check(mask.Config{Rules: []mask.Rule{ok, r}})
+		require.ErrorIs(t, err, mask.ErrReservedKind, kind)
+		var re *mask.RuleError
+		require.ErrorAs(t, err, &re)
+		assert.Equal(t, 1, re.Index)
+		assert.Equal(t, kind, re.Kind)
+		assert.NoError(t, mask.Check(mask.Config{Rules: []mask.Rule{ok, r}}, r), "kept")
+		assert.NoError(t, mask.New(key).Configure(mask.Config{Rules: []mask.Rule{r}}))
+	}
+}
+
 // A rule's kind is written as a placeholder's: upper case, and ok in lower.
 func TestARulesKindIsUpperCased(t *testing.T) {
 	m := configured(t, mask.Config{Rules: []mask.Rule{{Kind: " employee_id ", Regex: `E\d{6}`}}})
@@ -178,8 +196,8 @@ func TestALabeledSecretIsKnownWithoutItsLabel(t *testing.T) {
 	assert.Equal(t, "abcd1234efgh5678", m.Restore(out))
 }
 
-// The user's rule masks what it finds even under a built-in kind whose
-// category is off or set to 仅警告.
+// The user's rule, stored under a built-in kind before Check refused one,
+// masks what it finds even when that kind's category is off or set to 仅警告.
 func TestAUserRuleIgnoresItsKindsCategory(t *testing.T) {
 	rules := []mask.Rule{{Kind: "EMAIL", Regex: `customer-[0-9]+`}}
 	for _, c := range []mask.Config{{Off: []string{mask.Emails}, Rules: rules}, {Actions: map[string]string{mask.Emails: mask.Warn}, Rules: rules}} {

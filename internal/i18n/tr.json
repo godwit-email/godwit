@@ -635,6 +635,7 @@
   "settings_masking_save": "Kaydet",
   "settings_masking_rules_invalid": "{arg1}. satırdaki kalıp çalışmıyor: {arg2}",
   "settings_masking_rules_kind": "{arg1}. satırdaki kategori adı bir harfle başlamalı, yalnızca harf, rakam ve _ içermeli, en fazla 24 karakter olmalı",
+  "settings_masking_rules_reserved": "{arg1}. satırdaki kategori adı yerleşik bir kategorinin adı; başka bir ad seçin",
   "settings_masking_rules_empty": "{arg1}. satırdaki kalıp boş metinle eşleşiyor, her yeri maskeler",
   "settings_masking_rules_too_many": "En fazla {arg1} kalıp",
   "settings_masking_allow_too_many": "İzin listesinde en fazla {arg1} değer",

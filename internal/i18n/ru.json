@@ -635,6 +635,7 @@
   "settings_masking_save": "Сохранить",
   "settings_masking_rules_invalid": "Шаблон в строке {arg1} не работает: {arg2}",
   "settings_masking_rules_kind": "Имя категории в строке {arg1} должно начинаться с буквы и содержать только буквы, цифры и _, не больше 24",
+  "settings_masking_rules_reserved": "Имя категории в строке {arg1} совпадает со встроенной категорией; выберите другое имя",
   "settings_masking_rules_empty": "Шаблон в строке {arg1} совпадает с пустым текстом и скрыл бы всё",
   "settings_masking_rules_too_many": "Не больше {arg1} шаблонов",
   "settings_masking_allow_too_many": "Не больше {arg1} исключений",

@@ -635,6 +635,7 @@
   "settings_masking_save": "保存",
   "settings_masking_rules_invalid": "第 {arg1} 行的正则无效：{arg2}",
   "settings_masking_rules_kind": "第 {arg1} 行的类别名须以字母开头，只用字母、数字和 _，最多 24 个字符",
+  "settings_masking_rules_reserved": "第 {arg1} 行的类别名和内置类别重名，换一个名字",
   "settings_masking_rules_empty": "第 {arg1} 行的正则能匹配空文本，会把所有地方都遮住",
   "settings_masking_rules_too_many": "最多 {arg1} 条自定义正则",
   "settings_masking_allow_too_many": "白名单最多 {arg1} 条",
