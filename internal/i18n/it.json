@@ -1215,6 +1215,8 @@
   "wit_send": "Invia a Wit",
   "wit_skill_format": "Formatta",
   "wit_skill_format_hint": "Solo paragrafi e struttura",
+  "wit_skill_humanize": "Più umano",
+  "wit_skill_humanize_hint": "Rimuovi pattern di IA",
   "wit_skill_longer": "Più lungo",
   "wit_skill_longer_hint": "Lunghezza",
   "wit_skill_proofread": "Correggi bozza",

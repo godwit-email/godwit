@@ -1215,6 +1215,8 @@
   "wit_send": "Enviar ao Wit",
   "wit_skill_format": "Formatar",
   "wit_skill_format_hint": "Apenas parágrafos e estrutura",
+  "wit_skill_humanize": "Mais humano",
+  "wit_skill_humanize_hint": "Remover padrões de IA",
   "wit_skill_longer": "Mais longo",
   "wit_skill_longer_hint": "Tamanho",
   "wit_skill_proofread": "Revisar",

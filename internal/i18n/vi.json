@@ -1215,6 +1215,8 @@
   "wit_send": "Gửi cho Wit",
   "wit_skill_format": "Định dạng",
   "wit_skill_format_hint": "Chỉ định dạng đoạn văn và cấu trúc",
+  "wit_skill_humanize": "Tự nhiên hơn",
+  "wit_skill_humanize_hint": "Xóa giọng điệu AI",
   "wit_skill_longer": "Dài hơn",
   "wit_skill_longer_hint": "Độ dài",
   "wit_skill_proofread": "Sửa lỗi chính tả",

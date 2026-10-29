@@ -1222,6 +1222,8 @@
   "wit_send": "An Wit senden",
   "wit_skill_format": "Formatieren",
   "wit_skill_format_hint": "Nur Absätze und Struktur",
+  "wit_skill_humanize": "Menschlicher",
+  "wit_skill_humanize_hint": "KI-Muster entfernen",
   "wit_skill_longer": "Ausführlicher",
   "wit_skill_longer_hint": "Länge",
   "wit_skill_proofread": "Korrekturlesen",

@@ -1215,6 +1215,8 @@
   "wit_send": "Wit에게 보내기",
   "wit_skill_format": "서식 정리",
   "wit_skill_format_hint": "단락 및 구조만 정리",
+  "wit_skill_humanize": "더 자연스럽게",
+  "wit_skill_humanize_hint": "AI 말투 제거",
   "wit_skill_longer": "더 길게",
   "wit_skill_longer_hint": "길이",
   "wit_skill_proofread": "교정",

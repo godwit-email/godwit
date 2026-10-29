@@ -1215,6 +1215,8 @@
   "wit_send": "Wit に送信",
   "wit_skill_format": "段落・構成",
   "wit_skill_format_hint": "段落と構成のみ整理",
+  "wit_skill_humanize": "より人間らしく",
+  "wit_skill_humanize_hint": "AI特有の癖を除去",
   "wit_skill_longer": "長くする",
   "wit_skill_longer_hint": "長さ",
   "wit_skill_proofread": "校正",
