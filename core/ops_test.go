@@ -221,6 +221,24 @@ func TestClaimAmbiguity(t *testing.T) {
 	assert.Contains(t, changed[0].MessageIDs, orig)
 }
 
+// Two copies arriving on different pages of new mail are as ambiguous as two
+// on one: the move is not claimed by the first.
+func TestClaimAmbiguityAcrossPages(t *testing.T) {
+	defer func(n int) { mailsync.BackfillPage = n }(mailsync.BackfillPage)
+	mailsync.BackfillPage = 1
+	e := newSyncEnv(t, testmail.WithoutUIDPlus())
+	raw := msg("dup@x")
+	e.put(t, "INBOX", raw)
+	e.put(t, "Archive", msg("old@x"))
+	e.sync(t)
+	orig := e.idOf(t, "dup@x")
+	require.NoError(t, e.s.Move(bg, []int64{orig}, e.folderID(t, "Archive")))
+	e.put(t, "Archive", raw) // another client's copy, before the move lands
+	e.sync(t)
+	assert.Equal(t, []string{"conflict"}, e.opStates(t))
+	assert.Equal(t, 3, e.count(t, "SELECT count(*) FROM messages"), "both server copies stay separate local messages")
+}
+
 func TestMoveNotReimportedBeforePush(t *testing.T) {
 	e := newSyncEnv(t)
 	e.put(t, "INBOX", msg("m@x"))
