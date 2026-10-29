@@ -569,15 +569,16 @@ func TestReaderThreadCollapse(t *testing.T) {
 	}
 	h.see("bob@example.com") // the collapsed rows: sender, snippet
 	h.see("second words")
-	if n := h.countTexts("发给"); n != 1 {
+	heads := func() int { return h.countTexts("发给") / 2 } // an open header's recipients: a button, its label and its text
+	if n := heads(); n != 1 {
 		t.Fatalf("%d expanded headers, want 1: %q", n, h.tt.Texts())
 	}
 	h.click("bob@example.com")
-	h.until("the oldest expanded", func() bool { return r.open[msgs[0].ID] && h.countTexts("发给") == 2 })
+	h.until("the oldest expanded", func() bool { return r.open[msgs[0].ID] && heads() == 2 })
 	h.seeBody(msgs[0].ID)
 	h.click("收起") // the oldest's; its sender opens the sender's actions now
 	h.until("the oldest collapsed", func() bool {
-		return !r.open[msgs[0].ID] && h.countTexts("发给") == 1 && h.plat.view(msgs[0].ID) == nil
+		return !r.open[msgs[0].ID] && heads() == 1 && h.plat.view(msgs[0].ID) == nil
 	})
 }
 
@@ -1432,4 +1433,59 @@ func TestReaderPrintFocusedMessage(t *testing.T) {
 	print(msgs[1].ID, key) // the page that took ⌘P keeps the focus
 	r.toggle(msgs[1].ID)   // the focused one folded: the newest expanded
 	print(msgs[0].ID, key)
+}
+
+// The header names who a message went to: "我" with one account; with more,
+// the address that got it, the others (To and Cc) counted; under Cc when the
+// user is only Cc'd; To's first when the user is in neither; the account's
+// address when the message names no one.
+func TestReaderRecipients(t *testing.T) {
+	h, accs := mailHarness(t, nil, "me@baran.wang", "work@company.example")
+	h.waitMail("the folders", func() bool { return len(h.app.mail.folders[accs[0].ID]) > 0 })
+	inbox := h.app.mail.folders[accs[0].ID][0].ID
+	r := h.app.mail.reader
+	for _, c := range []struct {
+		to, cc []string
+		want   string
+	}{
+		{to: []string{"Baran <me@baran.wang>"}, want: "发给 me@baran.wang"},
+		{to: []string{"Baran <me@baran.wang>", "Mia <mia@partner.example>"}, cc: []string{"team@partner.example", "ops@partner.example"}, want: "发给 me@baran.wang 等 3 人"},
+		{to: []string{"Lena Park <lena@partner.example>", "mia@partner.example", "joe@partner.example"}, cc: []string{"Work <WORK@company.example>"}, want: "发给 Lena Park 等 2 人 · 抄送 WORK@company.example"},
+		{to: []string{"subscribers@rust.example"}, cc: []string{"x@rust.example"}, want: "发给 subscribers@rust.example 等 1 人"},
+		{cc: []string{"Team <team@partner.example>"}, want: "抄送 Team"},
+		{want: "发给 me@baran.wang"},
+	} {
+		if got := r.recipients(core.MessageSummary{FolderID: inbox, To: c.to, Cc: c.cc}); got != c.want {
+			t.Errorf("to %q cc %q: %q, want %q", c.to, c.cc, got, c.want)
+		}
+	}
+}
+
+// With one account the user is "我".
+func TestReaderRecipientsOneAccount(t *testing.T) {
+	h, _ := mailHarness(t, nil, "me@baran.wang")
+	if got := h.app.mail.reader.recipients(core.MessageSummary{To: []string{"Baran <me@baran.wang>"}, Cc: []string{"mia@partner.example"}}); got != "发给 我 等 1 人" {
+		t.Fatalf("one account: %q", got)
+	}
+}
+
+// The recipients' line opens the message's details: who sent it, to whom,
+// when; the account only with more than one.
+func TestReaderRecipientDetails(t *testing.T) {
+	h, accs := mailHarness(t, nil, "alice@example.com")
+	m := h.deliverOne(accs[0], coretest.Msg("Bob <bob@example.com>", accs[0].Email, "Plan", "body",
+		coretest.Date(time.Date(2026, 10, 5, 14, 30, 0, 0, time.Local))))
+	h.openThread(m.ThreadID)
+	h.seeBody(m.ID)
+	if h.tt.HasText("收件人") {
+		t.Fatal("the details show before the line is clicked")
+	}
+	h.click("发给 我")
+	h.see("发件人")
+	h.see("收件人")
+	h.see("日期")
+	h.see("2026/10/05 周一 14:30") // with the year and the weekday
+	if h.tt.HasText("收件账户") {
+		t.Fatal("the account shows with one account")
+	}
 }

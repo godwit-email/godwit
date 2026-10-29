@@ -66,6 +66,8 @@ type reader struct {
 	unsubDlg    bool                     // its dialog shows
 	senderOpen  bool                     // the sender action popover shows
 	senderMsgID int64                    // which message's sender popover is open
+	detailsOpen bool                     // the recipients' details popover shows
+	detailsID   int64                    // which message's details popover is open
 	moreOpen    bool                     // the toolbar's more menu (save, print) shows
 	barTop      float32                  // the floating toolbar's height as the last frame laid it out: the messages start under it
 	barBottom   float32                  // the reply bar's, likewise: the messages end above it
@@ -162,6 +164,7 @@ func (r *reader) reset(k [2]int64) {
 	r.key, r.loaded, r.subject, r.msgs, r.focus = k, false, "", nil, 0
 	r.threadIDs, r.labels, r.labelMenu, r.labelQuery = nil, nil, false, ""
 	r.senderOpen, r.senderMsgID, r.moreOpen, r.replyAsk = false, 0, false, "" // a question is for the thread it was typed in
+	r.detailsOpen, r.detailsID = false, 0
 	r.open, r.historyOpen, r.historyShown, r.revealID, r.bodies = map[int64]bool{}, map[int64]bool{}, false, 0, map[int64]*msgBody{}
 	r.scroll.X, r.scroll.Y = 0, 0
 	r.gen++
@@ -1102,26 +1105,183 @@ func sender(from string) (name, addr string) {
 	return from, ""
 }
 
-// recipients names who a message went to: "me" for the user's accounts.
+// recipients is the header's line of who a message went to: the user's
+// address that got it ("me" with one account) and how many others, To and Cc
+// together; when the user is only Cc'd, To's first and the user under Cc;
+// when neither (Bcc, a list), To's first; with no To or Cc, the account.
 func (r *reader) recipients(m core.MessageSummary) string {
-	mine := map[string]bool{}
-	for _, acc := range r.p.a.accounts {
-		mine[strings.ToLower(acc.Email)] = true
+	accounts := r.p.a.accounts
+	mine := func(addr string) bool {
+		return slices.ContainsFunc(accounts, func(a core.Account) bool { return strings.EqualFold(a.Email, addr) })
 	}
-	var out []string
-	me := false
-	for _, to := range m.To {
-		name, addr := sender(to)
-		if mine[strings.ToLower(addr)] {
-			me = true
-			continue
+	me := func(addr string) string {
+		if len(accounts) <= 1 {
+			return i18n.T("reader.me")
 		}
-		out = append(out, name)
+		return addr
 	}
-	if me {
-		out = append([]string{i18n.T("reader.me")}, out...)
+	type who struct{ name, addr string }
+	parse := func(list []string) []who {
+		var out []who
+		for _, s := range list {
+			name, addr := sender(s)
+			out = append(out, who{name, addr})
+		}
+		return out
 	}
-	return strings.Join(out, i18n.T("mail.list_sep"))
+	to, cc := parse(m.To), parse(m.Cc)
+	more := func(first string, others int) string {
+		if others == 0 {
+			return first
+		}
+		return i18n.Tf("reader.recipients_more", first, others)
+	}
+	isMine := func(w who) bool { return mine(w.addr) }
+	if i := slices.IndexFunc(to, isMine); i >= 0 {
+		return i18n.Tf("reader.to", more(me(to[i].addr), len(to)+len(cc)-1))
+	}
+	if i := slices.IndexFunc(cc, isMine); i >= 0 {
+		line := i18n.Tf("reader.cc", more(me(cc[i].addr), len(cc)-1))
+		if len(to) > 0 {
+			line = i18n.Tf("reader.to", more(to[0].name, len(to)-1)) + " · " + line
+		}
+		return line
+	}
+	switch {
+	case len(to) > 0:
+		return i18n.Tf("reader.to", more(to[0].name, len(to)+len(cc)-1))
+	case len(cc) > 0:
+		return i18n.Tf("reader.cc", more(cc[0].name, len(cc)-1))
+	}
+	return i18n.Tf("reader.to", me(r.accountOf(m)))
+}
+
+// accountOf is the address of the account message m is in.
+func (r *reader) accountOf(m core.MessageSummary) string {
+	if f, ok := r.p.folder(m.FolderID); ok {
+		for _, acc := range r.p.a.accounts {
+			if acc.ID == f.AccountID {
+				return acc.Email
+			}
+		}
+	}
+	return ""
+}
+
+// recipientsLine is recipients, which opens the message's details: every
+// address, its date and the account it is in.
+func (r *reader) recipientsLine(c *ui.Context, m core.MessageSummary, b *msgBody) {
+	t, th := theme.Of(c), c.Theme()
+	text := r.recipients(m)
+	open := r.detailsOpen && r.detailsID == m.ID
+	// Its hover clears the text by its padding; the margin keeps the text where it was.
+	e := kit.Pressable(c, kit.PressableOpts{OnClick: func() { r.detailsOpen, r.detailsID = !open, m.ID }}).
+		Gap(th.Space(0.5)).AlignItems(ui.Center).Padding(0, th.Space(1)).Margin(0, -th.Space(1)).Radius(t.Radius.Sm).
+		Label(text).Expanded(open).Shrink(1)
+	fg := t.Muted
+	if open {
+		e.Background(t.Hover)
+		fg = t.Foreground
+	}
+	e.Children(func() {
+		kit.Text(c, text, t.Text.Sm).TextColor(fg).Shrink(1)
+		chev := ui.Icon(c, icons.Get("chevron-down")).Size(theme.IconXs, theme.IconXs).TextColor(t.Muted).Shrink(0)
+		if open {
+			chev.Rotate(180)
+		}
+	})
+	if open {
+		r.details(c, e, m, b)
+	}
+}
+
+// details lists who sent message m and to whom, each address to copy or
+// write to, its reply-to, date and, with more than one account, the account.
+func (r *reader) details(c *ui.Context, anchor ui.Element, m core.MessageSummary, b *msgBody) {
+	t, th := theme.Of(c), c.Theme()
+	now := r.p.a.clock.Now()
+	var replyTo []string
+	if b != nil && b.msg.ReplyTo != "" {
+		replyTo = splitAddresses(b.msg.ReplyTo)
+	}
+	date := m.Date.In(now.Location())
+	kit.PopoverAt(c, anchor, &r.detailsOpen, ui.AnchorBottomLeft, ui.AnchorTopLeft, theme.PopupOffset, func() {
+		ui.Column(c).Width(theme.DetailsWidth).Gap(th.Space(2)).Label(i18n.T("reader.details")).Children(func() {
+			// each line as high as an address's, its buttons', so labels and values line up
+			line := func(body func()) ui.Element {
+				return ui.Row(c).Height(theme.DetailsRow).AlignItems(ui.Center).Children(body)
+			}
+			row := func(key int, label string, body func()) {
+				ui.Row(c.Key(key)).Gap(th.Space(3)).AlignItems(ui.Start).Children(func() {
+					line(func() { kit.Text(c, label, t.Text.Sm).TextColor(t.Muted) }).Width(theme.DetailsLabel).Shrink(0)
+					ui.Column(c).Grow(1).Shrink(1).Gap(th.Space(0.5)).Children(body)
+				})
+			}
+			addresses := func(key int, label string, list []string) {
+				if len(list) == 0 {
+					return
+				}
+				row(key, label, func() {
+					for i, s := range list {
+						r.detailsAddress(c.Key(i), s)
+					}
+				})
+			}
+			addresses(0, i18n.T("reader.details.from"), []string{m.From})
+			addresses(1, i18n.T("reader.details.to"), m.To)
+			addresses(2, i18n.T("reader.details.cc"), m.Cc)
+			addresses(3, i18n.T("reader.details.reply_to"), replyTo)
+			row(4, i18n.T("reader.details.date"), func() {
+				line(func() {
+					kit.Text(c, i18n.FullDate(date)+" "+i18n.T(fmt.Sprintf("mail.weekday.%d", date.Weekday()))+" "+date.Format("15:04"), t.Text.Sm)
+				})
+			})
+			if acc := r.accountOf(m); acc != "" && len(r.p.a.accounts) > 1 {
+				row(5, i18n.T("reader.details.account"), func() { line(func() { kit.Text(c, acc, t.Text.Sm) }) })
+			}
+		})
+	})
+}
+
+// detailsAddress is an address of details: Name <address>, and on hover its
+// buttons to copy it and to write to it.
+func (r *reader) detailsAddress(c *ui.Context, raw string) {
+	t, th := theme.Of(c), c.Theme()
+	name, addr := sender(raw)
+	line := ui.Row(c).Gap(th.Space(1)).AlignItems(ui.Center).Height(theme.DetailsRow)
+	line.Children(func() {
+		ui.Row(c).Gap(th.Space(1)).AlignItems(ui.Center).Grow(1).Shrink(1).Children(func() {
+			kit.Text(c, name, t.Text.Sm).SingleLine().Shrink(1)
+			if addr != "" && addr != name {
+				kit.Text(c, "<"+addr+">", t.Text.Sm).TextColor(t.Muted).SingleLine().Shrink(1)
+			}
+		})
+		if addr == "" || !line.Hovered() && !line.FocusWithin() {
+			return
+		}
+		kit.IconButton(c, "copy", i18n.T("reader.copy_address"), kit.ButtonOpts{Variant: kit.Ghost, Size: kit.SizeXs}).OnClick(func() {
+			c.WriteClipboard(addr)
+			r.p.a.toast(i18n.T("reader.address_copied"))
+		})
+		kit.IconButton(c, "square-pen", i18n.T("mail.compose"), kit.ButtonOpts{Variant: kit.Ghost, Size: kit.SizeXs}).OnClick(func() {
+			r.detailsOpen = false
+			r.p.a.composeTo(addr)
+		})
+	})
+}
+
+// splitAddresses is a header's list of addresses, or the header as one when
+// it does not parse.
+func splitAddresses(header string) []string {
+	list, err := mail.ParseAddressList(header)
+	if err != nil {
+		return []string{header}
+	}
+	out := make([]string, len(list))
+	for i, a := range list {
+		out[i] = a.String()
+	}
+	return out
 }
 
 // message is a message in full: who, to whom (with the remote images that
@@ -1162,7 +1322,8 @@ func (r *reader) message(c *ui.Context, m core.MessageSummary) {
 						kit.AvatarImage(c, name, b.avatar)
 					}
 				})
-				ui.Column(c).Shrink(1).Gap(th.Space(0.5)).Children(func() {
+				// The name's line tops the avatar, whose margin keeps it where its folded row had it.
+				ui.Column(c).Shrink(1).Gap(th.Space(0.5)).AlignSelf(ui.Start).Margin(th.Space(1.5), 0, 0, 0).Children(func() {
 					ui.Row(c).Wrap().Gap(th.Space(1.5)).AlignItems(ui.Center).Children(func() {
 						// Its hover clears the text by its padding; the margin keeps the text where it was.
 						who := kit.Pressable(c, kit.PressableOpts{OnClick: senderActions}).Gap(th.Space(1)).AlignItems(ui.Center).Label(target).
@@ -1181,16 +1342,18 @@ func (r *reader) message(c *ui.Context, m core.MessageSummary) {
 						}
 					})
 					ui.Row(c).Wrap().Gap(th.Space(1.5)).AlignItems(ui.Center).Children(func() {
-						kit.Text(c, i18n.Tf("reader.to", r.recipients(m)), t.Text.Sm).TextColor(t.Muted)
+						r.recipientsLine(c, m, b)
 						r.trackersNote(c, b)
 						r.imagesNote(c, m, b, addr)
 					})
 				})
 				ui.Spacer(c)
-				kit.Text(c, senderDate(r.p.a.clock.Now(), m.Date), t.Text.Sm).TextColor(t.Muted).Shrink(0)
+				// on the name's line: its middle, a smaller text's and the chevron's
+				kit.Text(c, senderDate(r.p.a.clock.Now(), m.Date), t.Text.Sm).TextColor(t.Muted).Shrink(0).AlignSelf(ui.Start).Margin(th.Space(2), 0, 0, 0)
 				if len(r.msgs) > 1 { // only a thread of more than one message folds
 					fold := kit.Pressable(c, kit.PressableOpts{OnClick: func() { r.toggle(m.ID) }}).
-						Size(th.Space(7), th.Space(7)).Radius(t.Radius.Md).Center().Shrink(0).Label(i18n.T("reader.fold"))
+						Size(th.Space(7), th.Space(7)).Radius(t.Radius.Md).Center().Shrink(0).Label(i18n.T("reader.fold")).
+						AlignSelf(ui.Start).Margin(th.Space(0.5), 0, 0, 0)
 					fold.Children(func() {
 						ui.Icon(c, icons.Get("chevron-down")).Size(theme.IconSm, theme.IconSm).TextColor(t.Muted).Rotate(180)
 					})

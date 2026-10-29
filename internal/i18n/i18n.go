@@ -74,6 +74,9 @@ func FormatDateIn(t, now time.Time, lang string) string {
 	return t.Format(l[1])
 }
 
+// FullDate is FullDateIn in the locale SetLanguage was given.
+func FullDate(t time.Time) string { return FullDateIn(t, locale.Load().(string)) }
+
 // FullDateIn is t's numeric date with the year in lang, in t's own zone.
 func FullDateIn(t time.Time, lang string) string { return t.Format(dateLayout(lang)[1]) }
 
