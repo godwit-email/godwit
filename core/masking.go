@@ -148,9 +148,10 @@ const (
 	MaxMaskAllow = mask.MaxAllow
 )
 
-// CheckMasking says what is wrong with rules and allow, as SetSettings would.
-func CheckMasking(rules []MaskRule, allow []string) error {
-	return mask.Check(mask.Config{Rules: rules, Allow: allow})
+// CheckMasking says what is wrong with rules and allow, as SetSettings would;
+// a rule in kept, the ones stored, may keep a built-in kind.
+func CheckMasking(rules []MaskRule, allow []string, kept ...MaskRule) error {
+	return mask.Check(mask.Config{Rules: rules, Allow: allow}, kept...)
 }
 
 // MaskCategory is one category of 脱敏: whether it is found, and what is

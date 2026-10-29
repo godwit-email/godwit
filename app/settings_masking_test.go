@@ -54,6 +54,24 @@ func TestMaskingRuleMayNotTakeABuiltInKind(t *testing.T) {
 	}
 }
 
+// A rule stored under a built-in kind before stays: the rest still saves,
+// and the preview masks with it rather than refusing.
+func TestMaskingKeepsAnOldReservedRule(t *testing.T) {
+	h, _ := withAccount(t)
+	h.masking()
+	p := h.app.pages[PageSettings].(*settingsPage)
+	h.post(func() { h.app.settingsOK.MaskRules = []core.MaskRule{{Kind: "PHONE", Regex: `ext-\d+`}} }) // as a build before stored it
+	h.typeUnder(i18n.T("settings.masking.rules"), "PHONE ext-\\d+")
+	h.typeUnder(i18n.T("settings.masking.allow"), "GitHub")
+	h.click(i18n.T("settings.masking.save"))
+	if h.tt.HasText("第 1 行的类别名和内置类别重名") || p.mask.err != "" {
+		t.Fatalf("the stored rule stops the save: %q", p.mask.err)
+	}
+	if st, _ := p.mask.edited(p.st); p.maskCheck(st, []int{1}) != "" {
+		t.Fatal("the preview refuses the stored rule")
+	}
+}
+
 // The preview shows a pasted text masked, with the words being edited, and
 // saves nothing.
 func TestMaskingPreview(t *testing.T) {

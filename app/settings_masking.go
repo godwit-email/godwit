@@ -140,7 +140,7 @@ func (p *settingsPage) maskCustom(c *ui.Context) {
 func (p *settingsPage) saveMasking() {
 	d := &p.mask
 	st, lines := d.edited(p.st)
-	if d.err = maskCheck(st, lines); d.err != "" {
+	if d.err = p.maskCheck(st, lines); d.err != "" {
 		return
 	}
 	p.st, d.editing = st, false
@@ -161,7 +161,7 @@ func (p *settingsPage) maskPreview(c *ui.Context) {
 	st, lines := d.edited(p.st)
 	if key := fmt.Sprintf("%q %+v %v %v %v %v", d.preview, st.MaskCategories, st.MaskWords, st.MaskWordsCase, st.MaskWordsWhole, st.MaskAllow) + ruleLines(st.MaskRules); key != d.shownFor {
 		d.shownFor = key
-		if msg := maskCheck(st, lines); msg != "" {
+		if msg := p.maskCheck(st, lines); msg != "" {
 			d.shown = msg
 		} else if out, err := p.a.svc.PreviewMasking(context.Background(), st, d.preview); err != nil {
 			d.shown = humanize(err)
@@ -220,9 +220,9 @@ func ruleLines(rules []core.MaskRule) string {
 }
 
 // maskCheck says why st's rules (on lines) or allowlist can't be saved; ""
-// if they can.
-func maskCheck(st core.Settings, lines []int) string {
-	err := core.CheckMasking(st.MaskRules, st.MaskAllow)
+// if they can. A rule stored under a built-in kind before can stay.
+func (p *settingsPage) maskCheck(st core.Settings, lines []int) string {
+	err := core.CheckMasking(st.MaskRules, st.MaskAllow, p.a.settingsOK.MaskRules...)
 	var re *core.MaskRuleError
 	switch {
 	case err == nil:
