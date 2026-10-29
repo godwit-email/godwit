@@ -204,14 +204,24 @@ func pushOp(ctx context.Context, db *store.DB, c *imapclient.Client, o op) (prob
 		if len(got) == 0 {
 			return "", moved(ctx, db, o, 0, 0)
 		}
-		// Without MOVE, \Deleted it did not get from a purge means the COPY and
-		// STORE went through and only the EXPUNGE did not: copying again would
-		// leave two in the destination. Fetch claims the copy there.
+		// Without MOVE, the last attempt may have got through COPY and STORE but
+		// not EXPUNGE: copying again would leave two in the destination. \Deleted
+		// alone is no proof (another client may have set it), so the copy must
+		// be in the destination too; fetch claims it there.
 		if !c.Caps().Has(imap.CapMove) && !purged && slices.Contains(got[0].Flags, imap.FlagDeleted) {
-			if err := c.UIDExpunge(set).Close(); err != nil {
+			copied, err := inFolder(ctx, db, c, o.msg, dstName)
+			if err == nil {
+				err = reselect(c, srcName, srcValidity)
+			}
+			if err != nil {
 				return fail(ctx, db, o, err)
 			}
-			return "", moved(ctx, db, o, 0, 0)
+			if copied {
+				if err := c.UIDExpunge(set).Close(); err != nil {
+					return fail(ctx, db, o, err)
+				}
+				return "", moved(ctx, db, o, 0, 0)
+			}
 		}
 	}
 	if purged { // the rescued copy must not carry \Deleted
@@ -227,6 +237,32 @@ func pushOp(ctx context.Context, db *store.DB, c *imapclient.Client, o op) (prob
 		dstUID = 0
 	}
 	return "", moved(ctx, db, o, validity, dstUID)
+}
+
+// inFolder reports whether folder, examined, holds a message with msg's
+// Message-ID. A message without one is never found there.
+func inFolder(ctx context.Context, db *store.DB, c *imapclient.Client, msg int64, folder string) (bool, error) {
+	r, err := db.Query(ctx, "SELECT message_id FROM messages WHERE id = ?", msg)
+	if err != nil || len(r.Values) == 0 || store.Str(r.Values[0][0]) == "" {
+		return false, err
+	}
+	if _, err := c.Select(folder, &imap.SelectOptions{ReadOnly: true}).Wait(); err != nil {
+		return false, err
+	}
+	found, err := c.UIDSearch(&imap.SearchCriteria{Header: []imap.SearchCriteriaHeaderField{{Key: "Message-ID", Value: "<" + store.Str(r.Values[0][0]) + ">"}}}, nil).Wait()
+	if err != nil {
+		return false, err
+	}
+	return len(found.AllUIDs()) > 0, nil
+}
+
+// reselect selects folder again, read-write, as long as it is the generation validity.
+func reselect(c *imapclient.Client, folder string, validity uint32) error {
+	sel, err := c.Select(folder, nil).Wait()
+	if err == nil && sel.UIDValidity != validity {
+		err = fmt.Errorf("folder %q was recreated on the server", folder)
+	}
+	return err
 }
 
 func storeFlags(c *imapclient.Client, set imap.UIDSet, p FlagsPayload) error {

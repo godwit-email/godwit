@@ -282,6 +282,28 @@ func TestUncertainCopyMoveNotDuplicated(t *testing.T) {
 	assert.Equal(t, []string{"done"}, e.opStates(t))
 }
 
+// \Deleted from another client is no proof an interrupted COPY went through:
+// with no copy in the destination, the retry copies it there.
+func TestUncertainCopyMoveDeletedElsewhere(t *testing.T) {
+	e := newSyncEnv(t, testmail.WithoutMove())
+	e.put(t, "INBOX", msg("m@x"))
+	e.sync(t)
+	id := e.idOf(t, "m@x")
+	require.NoError(t, e.s.Move(bg, []int64{id}, e.folderID(t, "Archive")))
+	// The last attempt failed before its COPY; another client then set \Deleted.
+	_, err := e.s.db.Execute(bg, "UPDATE ops SET attempts = 1")
+	require.NoError(t, err)
+	c := e.dial(t)
+	_, err = c.Select("INBOX", nil).Wait()
+	require.NoError(t, err)
+	require.NoError(t, c.Store(imap.UIDSetNum(1), &imap.StoreFlags{Op: imap.StoreFlagsAdd, Silent: true, Flags: []imap.Flag{imap.FlagDeleted}}, nil).Close())
+	e.sync(t)
+	e.sync(t)
+	assert.Equal(t, []string{`m@x \Deleted`}, e.onServer(t, "Archive"), "copied, not lost")
+	assert.Empty(t, e.onServer(t, "INBOX"))
+	assert.Equal(t, []string{"done"}, e.opStates(t))
+}
+
 func TestStaleUIDNeverReplayed(t *testing.T) {
 	e := newSyncEnv(t)
 	e.put(t, "Archive", msg("old@x"))
