@@ -153,11 +153,11 @@ func (p *settingsPage) syncSettings() {
 }
 
 // languages are offered by their own names, for the UI, reading and
-// no-translation settings alike.
+// no-translation settings alike, in the order of their tags.
 var languages = []struct{ tag, name string }{
-	{"de", "Deutsch"}, {"zh-Hans", "简体中文"}, {"zh-Hant", "繁體中文"}, {"en", "English"}, {"ja", "日本語"},
-	{"ko", "한국어"}, {"fr", "Français"}, {"es", "Español"}, {"pt", "Português"}, {"it", "Italiano"},
-	{"ru", "Русский"}, {"nl", "Nederlands"}, {"tr", "Türkçe"}, {"vi", "Tiếng Việt"},
+	{"de", "Deutsch"}, {"en", "English"}, {"es", "Español"}, {"fr", "Français"}, {"it", "Italiano"},
+	{"ja", "日本語"}, {"ko", "한국어"}, {"nl", "Nederlands"}, {"pt", "Português"}, {"ru", "Русский"},
+	{"tr", "Türkçe"}, {"vi", "Tiếng Việt"}, {"zh-Hans", "简体中文"}, {"zh-Hant", "繁體中文"},
 }
 
 func isZhTW(tag string) bool {

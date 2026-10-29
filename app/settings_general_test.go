@@ -2,6 +2,8 @@ package app
 
 import (
 	"math"
+	"slices"
+	"strings"
 	"testing"
 	"time"
 
@@ -130,4 +132,11 @@ func TestThemeThumbFocusTip(t *testing.T) {
 		}
 	}
 	t.Fatal("no tooltip after tabbing to the thumbnails")
+}
+
+// The languages are offered in the order of their tags.
+func TestLanguagesByTag(t *testing.T) {
+	if !slices.IsSortedFunc(languages, func(a, b struct{ tag, name string }) int { return strings.Compare(a.tag, b.tag) }) {
+		t.Fatalf("languages out of tag order: %v", languages)
+	}
 }
