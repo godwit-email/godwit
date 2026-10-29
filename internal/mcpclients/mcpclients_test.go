@@ -187,3 +187,62 @@ func TestCodexHome(t *testing.T) {
 	require.NoError(t, e.Connect(Codex, srv))
 	assert.Contains(t, read(t, filepath.Join(e.CodexHome, "config.toml")), "[mcp_servers.godwit]")
 }
+
+// A header with a comment after it, or spelt with quotes and spaces, is
+// godwit's table still: Connect updates it rather than adding a second.
+func TestCodexHeaderAsTOMLSpellsIt(t *testing.T) {
+	for _, header := range []string{`[mcp_servers.godwit] # local mail`, `[ mcp_servers . "godwit" ]`, `[mcp_servers.'godwit']`} {
+		e := env(t)
+		path := filepath.Join(e.Home, ".codex", "config.toml")
+		write(t, path, header+"\ncommand = \"/old/Godwit\"\n")
+		assert.Equal(t, Other, state(t, e, Codex), header)
+		require.NoError(t, e.Connect(Codex, srv), header)
+		got := read(t, path)
+		assert.Equal(t, 1, strings.Count(got, "godwit"+`]`)+strings.Count(got, `"godwit" ]`)+strings.Count(got, `'godwit']`), "%s: one table\n%s", header, got)
+		assert.True(t, strings.HasPrefix(got, header+"\n"), "the header kept as written:\n%s", got)
+		assert.Equal(t, On, state(t, e, Codex), header)
+	}
+}
+
+// A value over several lines goes whole, whether it is godwit's (replaced)
+// or the user's (kept).
+func TestCodexMultilineValues(t *testing.T) {
+	e := env(t)
+	path := filepath.Join(e.Home, ".codex", "config.toml")
+	write(t, path, `[mcp_servers.godwit]
+args = [
+  'mcp',
+  "--data-dir", # where
+]
+command = """/old/
+Godwit"""
+env = { X = "1",
+  Y = "]" }
+
+[other]
+a = 1
+`)
+	require.NoError(t, e.Connect(Codex, srv))
+	assert.Equal(t, `[mcp_servers.godwit]
+command = "/Applications/Godwit.app/Contents/MacOS/Godwit"
+args = ["mcp"]
+env = { X = "1",
+  Y = "]" }
+
+[other]
+a = 1
+`, read(t, path))
+	require.NoError(t, e.Disconnect(Codex))
+	assert.Equal(t, "[other]\na = 1\n", read(t, path))
+}
+
+// Two godwit tables are a file Codex can't read: it is left as it was.
+func TestCodexLeavesTwoTables(t *testing.T) {
+	e := env(t)
+	path := filepath.Join(e.Home, ".codex", "config.toml")
+	text := "[mcp_servers.godwit]\ncommand = \"a\"\n\n[mcp_servers.godwit]\ncommand = \"b\"\n"
+	write(t, path, text)
+	assert.Error(t, e.Connect(Codex, srv))
+	assert.Error(t, e.Disconnect(Codex))
+	assert.Equal(t, text, read(t, path))
+}

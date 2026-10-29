@@ -321,59 +321,194 @@ func writeFile(path string, data []byte) error {
 
 // Codex keeps its servers as tables of config.toml, [mcp_servers.<name>],
 // with subtables such as [mcp_servers.<name>.env]. The file is edited as
-// text, so its comments and order stay.
+// text, so its comments and order stay: a header is read as TOML spells it
+// (quoted keys, spaces around dots, a comment after it), and a key with its
+// whole value, which may run over several lines.
 
-var codexHeaders = []string{"[mcp_servers." + Name + "]", `[mcp_servers."` + Name + `"]`}
+const codexHeader = "[mcp_servers." + Name + "]"
+
+// tomlHeader reads a table header line, [a.b] or [[a.b]], a comment after
+// it allowed: its key, unquoted part by part; false for any other line.
+func tomlHeader(line string) (key []string, ok bool) {
+	t := strings.TrimSpace(line)
+	if !strings.HasPrefix(t, "[") {
+		return nil, false
+	}
+	open, shut := "[", "]"
+	if strings.HasPrefix(t, "[[") {
+		open, shut = "[[", "]]"
+	}
+	body := t[len(open):]
+	var q byte
+	for i := 0; i < len(body); i++ {
+		c := body[i]
+		switch {
+		case q == '"' && c == '\\':
+			i++
+		case q != 0:
+			if c == q {
+				q = 0
+			}
+		case c == '"' || c == '\'':
+			q = c
+		case strings.HasPrefix(body[i:], shut):
+			if rest := strings.TrimSpace(body[i+len(shut):]); rest != "" && !strings.HasPrefix(rest, "#") {
+				return nil, false
+			}
+			return tomlKey(body[:i]), true
+		}
+	}
+	return nil, false
+}
+
+// tomlKey splits a dotted key into its parts, each unquoted.
+func tomlKey(k string) []string {
+	var parts []string
+	var cur strings.Builder
+	var q byte
+	for i := 0; i < len(k); i++ {
+		c := k[i]
+		switch {
+		case q == '"' && c == '\\' && i+1 < len(k):
+			i++
+			cur.WriteByte(k[i])
+		case q != 0:
+			if c == q {
+				q = 0
+			} else {
+				cur.WriteByte(c)
+			}
+		case c == '"' || c == '\'':
+			q = c
+		case c == '.':
+			parts = append(parts, strings.TrimSpace(cur.String()))
+			cur.Reset()
+		case c != ' ' && c != '\t':
+			cur.WriteByte(c)
+		}
+	}
+	return append(parts, strings.TrimSpace(cur.String()))
+}
+
+// godwitTable is whether key names godwit's table (0), one of its
+// subtables (1), or neither (-1).
+func godwitTable(key []string) int {
+	if len(key) < 2 || key[0] != "mcp_servers" || key[1] != Name {
+		return -1
+	}
+	if len(key) == 2 {
+		return 0
+	}
+	return 1
+}
 
 // codexSpan is where godwit's table is in lines: its header, the end of its
-// own keys (before a subtable of it), and its end with its subtables; -1 if none.
-func codexSpan(lines []string) (start, keys, end int) {
-	start = -1
+// own keys (before a subtable of it), and its end with its subtables; -1 if
+// none. n is how many godwit tables there are: more than one is a file
+// Codex can't read either, and is left alone.
+func codexSpan(lines []string) (start, keys, end, n int) {
+	start, keys, end = -1, len(lines), len(lines)
 	for i, l := range lines {
-		if slices.Contains(codexHeaders, strings.TrimSpace(l)) {
-			start = i
-			break
+		key, ok := tomlHeader(l)
+		if !ok || strings.HasPrefix(strings.TrimSpace(l), "[[") {
+			if ok && start >= 0 && end == len(lines) {
+				end = i
+			}
+			continue
+		}
+		switch godwitTable(key) {
+		case 0:
+			n++
+			if start < 0 {
+				start = i
+				continue
+			}
+		case 1:
+			if start >= 0 && end == len(lines) {
+				keys = min(keys, i)
+			}
+			continue
+		}
+		if start >= 0 && end == len(lines) {
+			end = i
 		}
 	}
 	if start < 0 {
-		return -1, -1, -1
+		return -1, -1, -1, 0
 	}
-	keys, end = len(lines), len(lines)
-	for i := start + 1; i < len(lines); i++ {
-		t := strings.TrimSpace(lines[i])
-		if !strings.HasPrefix(t, "[") {
-			continue
-		}
-		name := strings.Trim(t, "[] ")
-		if strings.HasPrefix(name, "mcp_servers."+Name+".") || strings.HasPrefix(name, `mcp_servers."`+Name+`".`) {
-			keys = min(keys, i)
-			continue
-		}
-		end = i
-		break
+	return start, min(keys, end), end, n // the blank lines before the next table go with it
+}
+
+// tomlEntry reads lines[i] as key = value: the key (unquoted), the value's
+// text, and how many lines key and value span (1 for a line that is no
+// key: a comment, a blank).
+func tomlEntry(lines []string, i int) (key, value string, span int) {
+	k, v, ok := strings.Cut(lines[i], "=")
+	if !ok || strings.HasPrefix(strings.TrimSpace(k), "#") {
+		return "", "", 1
 	}
-	return start, min(keys, end), end // the blank lines before the next table go with it
+	key = strings.Join(tomlKey(k), ".")
+	text := v
+	span = 1
+	for !tomlValueEnds(text) && i+span < len(lines) {
+		text += "\n" + lines[i+span]
+		span++
+	}
+	return key, strings.TrimSpace(text), span
+}
+
+// tomlValueEnds is whether v is a whole value: no string, array or inline
+// table left open (a comment after it allowed).
+func tomlValueEnds(v string) bool {
+	depth := 0
+	var q string // the open string's delimiter
+	for i := 0; i < len(v); i++ {
+		switch {
+		case q != "":
+			if q == `"` || q == `"""` {
+				if v[i] == '\\' {
+					i++
+					continue
+				}
+			}
+			if strings.HasPrefix(v[i:], q) {
+				i += len(q) - 1
+				q = ""
+			}
+		case strings.HasPrefix(v[i:], `"""`), strings.HasPrefix(v[i:], "'''"):
+			q = v[i : i+3]
+			i += 2
+		case v[i] == '"' || v[i] == '\'':
+			q = string(v[i])
+		case v[i] == '#':
+			for i < len(v) && v[i] != '\n' { // to the line's end
+				i++
+			}
+		case v[i] == '[' || v[i] == '{':
+			depth++
+		case v[i] == ']' || v[i] == '}':
+			depth--
+		}
+	}
+	return q == "" && depth <= 0
 }
 
 // tomlServer reads godwit's command and args from a Codex config.
 func tomlServer(text string) (cmd string, args []string, found bool) {
 	lines := strings.Split(text, "\n")
-	start, keys, _ := codexSpan(lines)
+	start, keys, _, _ := codexSpan(lines)
 	if start < 0 {
 		return "", nil, false
 	}
-	for _, l := range lines[start+1 : keys] {
-		k, v, ok := strings.Cut(l, "=")
-		if !ok {
-			continue
-		}
-		v = strings.TrimSpace(v)
-		switch strings.TrimSpace(k) {
+	for i := start + 1; i < keys; {
+		k, v, n := tomlEntry(lines, i)
+		switch k {
 		case "command":
 			cmd = tomlString(v)
 		case "args":
-			_ = json.Unmarshal([]byte(v), &args) // a one-line array of basic strings, as Godwit writes it
+			_ = json.Unmarshal([]byte(v), &args) // a one-line array of basic strings, as Godwit writes it; else another Godwit's
 		}
+		i += n
 	}
 	return cmd, args, true
 }
@@ -390,6 +525,8 @@ func tomlString(v string) string {
 
 // editCodex sets godwit's table in Codex's config.toml to s, keeping any
 // other keys and subtables the user gave it, or takes it away if s is nil.
+// What it would write must hold one godwit table, or none: else the file
+// is left alone.
 func (e Env) editCodex(s *Server) error {
 	dir := e.codexDir()
 	if s != nil && !isDir(dir) {
@@ -401,7 +538,10 @@ func (e Env) editCodex(s *Server) error {
 		return err
 	}
 	lines := strings.Split(string(b), "\n")
-	start, keys, end := codexSpan(lines)
+	start, keys, end, n := codexSpan(lines)
+	if n > 1 {
+		return fmt.Errorf("%s has %d [mcp_servers.%s] tables, so Godwit left it alone", path, n, Name)
+	}
 	var out []string
 	switch {
 	case s == nil && start < 0:
@@ -417,19 +557,28 @@ func (e Env) editCodex(s *Server) error {
 			if text != "" {
 				text += "\n\n"
 			}
-			return writeFile(path, []byte(text+codexHeaders[0]+"\n"+strings.Join(ours, "\n")+"\n"))
+			out = strings.Split(text+codexHeader+"\n"+strings.Join(ours, "\n")+"\n", "\n")
+			break
 		}
-		var kept []string // the user's own keys in the table
-		for _, l := range lines[start+1 : keys] {
-			k, _, _ := strings.Cut(l, "=")
-			if k := strings.TrimSpace(k); k != "command" && k != "args" {
-				kept = append(kept, l)
+		var kept []string // the user's own keys in the table, each with all its lines
+		for i := start + 1; i < keys; {
+			k, _, n := tomlEntry(lines, i)
+			if k != "command" && k != "args" {
+				kept = append(kept, lines[i:i+n]...)
 			}
+			i += n
 		}
 		out = slices.Clone(lines[:start+1])
 		out = append(out, ours...)
 		out = append(out, kept...)
 		out = append(out, lines[keys:]...)
+	}
+	want := 1
+	if s == nil {
+		want = 0
+	}
+	if _, _, _, n := codexSpan(out); n != want {
+		return fmt.Errorf("%s: Godwit could not edit its [mcp_servers.%s] table safely, so it left the file alone", path, Name)
 	}
 	return writeFile(path, []byte(strings.Join(out, "\n")))
 }
