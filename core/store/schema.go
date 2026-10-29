@@ -482,7 +482,9 @@ var Migrations = [][]string{{
 }, {
 	// Which request a masking record's value was in (core.MaskRecord.Request):
 	// the log lists requests, each with its values. 0 for the records before.
+	// Indexed: each record looks up the newest request (MAX(request)).
 	`ALTER TABLE mask_log ADD COLUMN request INTEGER NOT NULL DEFAULT 0`,
+	`CREATE INDEX mask_log_request ON mask_log(request)`,
 }}
 
 // HistoryRowsVersion is the schema version that keeps a conversation's

@@ -520,3 +520,12 @@ func TestMigrationSettingsRowsOddApp(t *testing.T) {
 		db.Close()
 	}
 }
+
+// The newest request number is found through an index, not by reading the
+// whole masking log for each value recorded.
+func TestMaskLogRequestIndexed(t *testing.T) {
+	db := open(t)
+	rows, err := db.Query(ctx, "EXPLAIN QUERY PLAN SELECT MAX(request) FROM mask_log")
+	require.NoError(t, err)
+	assert.Contains(t, fmt.Sprint(rows.Values), "mask_log_request")
+}
