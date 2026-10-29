@@ -770,6 +770,14 @@ func (p *mailPage) listView(c *ui.Context) {
 			if ls.sel.Has(it.key()) {
 				on = p.chosen(rows)
 			}
+			if len(on) == 1 && p.canReply(on[0]) {
+				for _, mode := range []string{"reply", "reply_all", "forward"} {
+					if m.Item(i18n.T("reader." + mode)).Chosen() {
+						p.draft(on[0], mode)
+					}
+				}
+				m.Separator()
+			}
 			// as S and U: read/star when any of them is unread/unstarred
 			read, star := "unread", "unstar"
 			if slices.ContainsFunc(on, func(r mailItem) bool { return r.Unread > 0 }) {
@@ -1225,6 +1233,62 @@ func (p *mailPage) closeSearch() {
 	p.searchOpen, p.searched, p.query, p.results = false, false, "", nil
 	p.sf = searchFilters{}
 	p.found.reset()
+}
+
+// canReply reports whether replying to it is sensible: never in junk or trash.
+func (p *mailPage) canReply(it mailItem) bool {
+	if role := p.currentFolderRole(); role == "junk" || role == "trash" {
+		return false
+	}
+	if it.Msg.FolderID != 0 {
+		if f, ok := p.folder(it.Msg.FolderID); ok && (f.Role == "junk" || f.Role == "trash") {
+			return false
+		}
+	}
+	return true
+}
+
+// draft starts a reply, reply-all or forward of it and opens it in a compose window.
+func (p *mailPage) draft(it mailItem, mode string) {
+	if !it.Thread {
+		p.a.draft(it.Msg, p.accountOf(it.Msg.FolderID), mode)
+		return
+	}
+	if p.reader.key[0] == it.ID && p.reader.key[1] == 0 && p.reader.loaded {
+		if _, ok := p.reader.last(); ok {
+			p.reader.draft(mode)
+			return
+		}
+	}
+	var id int64
+	p.a.do(func(ctx context.Context) (err error) {
+		th, err := p.a.svc.GetThread(ctx, it.ID)
+		if err != nil {
+			return err
+		}
+		if len(th.Messages) == 0 {
+			return fmt.Errorf("thread %d has no messages", it.ID)
+		}
+		m := th.Messages[len(th.Messages)-1]
+		acc := p.accountOf(m.FolderID)
+		if acc == 0 {
+			if acc, err = folderAccount(ctx, p.a.svc, m.FolderID); err != nil {
+				return err
+			}
+		}
+		d, err := p.a.svc.NewDraft(ctx, acc, mode, m.ID)
+		if err != nil {
+			return err
+		}
+		id = d.ID
+		return nil
+	}, func(err error) {
+		if err != nil {
+			p.a.toastErr(err)
+			return
+		}
+		p.a.plat.OpenCompose(id)
+	})
 }
 
 // batch applies act to rows: threads become their messages (GetThread),

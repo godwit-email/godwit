@@ -1,18 +1,20 @@
 package app
 
 import (
+	"strconv"
 	"testing"
+	"time"
 
 	"github.com/godwit-email/godwit/core"
 	"github.com/godwit-email/godwit/core/coretest"
 	"github.com/godwit-email/godwit/internal/i18n"
 )
 
-// masking opens General, tall enough to show its 隐私脱敏 sections whole.
+// masking opens 隐私与安全 on its 隐私脱敏 tab, tall enough to show it whole.
 func (h *harness) masking() {
 	h.t.Helper()
 	h.resize(1440, 3000)
-	h.openSettings("general")
+	h.openSettings("privacy")
 	h.see(i18n.T("settings.masking.foot"))
 }
 
@@ -37,6 +39,37 @@ func TestMaskingRulesSaveOnlyWhenValid(t *testing.T) {
 		return len(st.MaskRules) == 1 && st.MaskRules[0] == core.MaskRule{Kind: "BAD", Regex: "(x)"} &&
 			len(st.MaskWords) == 1 && st.MaskWords[0] == "Falcon" && len(st.MaskAllow) == 1 && st.MaskAllow[0] == "GitHub"
 	})
+}
+
+// A rule under a built-in category's name is not saved, and the page says
+// which line.
+func TestMaskingRuleMayNotTakeABuiltInKind(t *testing.T) {
+	h, _ := withAccount(t)
+	h.masking()
+	h.typeUnder(i18n.T("settings.masking.rules"), "ORDER ORD-\\d+\nphone x\\d+")
+	h.click(i18n.T("settings.masking.save"))
+	h.see("第 2 行的类别名和内置类别重名")
+	if len(h.app.settings.MaskRules) != 0 {
+		t.Fatalf("a rule under a built-in kind was saved: %v", h.app.settings.MaskRules)
+	}
+}
+
+// A rule stored under a built-in kind before stays: the rest still saves,
+// and the preview masks with it rather than refusing.
+func TestMaskingKeepsAnOldReservedRule(t *testing.T) {
+	h, _ := withAccount(t)
+	h.masking()
+	p := h.app.pages[PageSettings].(*settingsPage)
+	h.post(func() { h.app.settingsOK.MaskRules = []core.MaskRule{{Kind: "PHONE", Regex: `ext-\d+`}} }) // as a build before stored it
+	h.typeUnder(i18n.T("settings.masking.rules"), "PHONE ext-\\d+")
+	h.typeUnder(i18n.T("settings.masking.allow"), "GitHub")
+	h.click(i18n.T("settings.masking.save"))
+	if h.tt.HasText("第 1 行的类别名和内置类别重名") || p.mask.err != "" {
+		t.Fatalf("the stored rule stops the save: %q", p.mask.err)
+	}
+	if st, _ := p.mask.edited(p.st); p.maskCheck(st, []int{1}) != "" {
+		t.Fatal("the preview refuses the stored rule")
+	}
 }
 
 // The preview shows a pasted text masked, with the words being edited, and
@@ -85,7 +118,9 @@ func TestABlockedSummarySaysWhy(t *testing.T) {
 	}
 }
 
-// 脱敏记录 lists what was sent, by its first character and length.
+// 脱敏记录, a page of its own, lists the requests; one opens on what it
+// held, by first character and length (a short value by its length only),
+// and the tiles pick the requests by what was done.
 func TestMaskingLogShowsWhatWasSent(t *testing.T) {
 	h, acc, llm := aiHarness(t, true, func(st *core.Settings) { noQuick(st); st.MaskCategories.Emails.Action = core.MaskWarn })
 	llm.Script(coretest.Turn{Text: []string{"ok"}})
@@ -93,11 +128,43 @@ func TestMaskingLogShowsWhatWasSent(t *testing.T) {
 	h.openThread(m.ThreadID)
 	h.until("the summary done", func() bool { s := h.app.mail.reader.ai[m.ID]; return s != nil && s.summary != nil && s.summary.done })
 	h.masking()
-	h.see(i18n.T("settings.masking.log"))
+	h.see("最近 30 天：1 次请求，拦截 0 次，1 个值原样发出")
+	h.click("查看脱敏记录")
+	h.until("the log's page", func() bool { return h.app.route.Settings == "masklog" })
+	h.see("有值原样发出")
+	h.click(i18n.T("settings.masking.feature.skill"))
 	h.see("4…，19 个字符")
-	h.see("b…，3 个字符")
-	if h.tt.HasText("4111") {
-		t.Fatal("the log shows a value")
+	h.see("3 个字符") // bob: short, no first character
+	if h.tt.HasText("4111") || h.tt.HasText("b…，3 个字符") {
+		t.Fatal("the log shows too much of a value")
+	}
+	h.click("被拦截的请求")
+	h.see("没有符合筛选条件的请求")
+}
+
+// A long log shows a page of requests at a time; the tiles count them all.
+func TestMaskingLogPages(t *testing.T) {
+	h, _ := withAccount(t)
+	h.resize(1440, 20000)
+	p := h.openSettings("masklog")
+	now := h.app.clock.Now()
+	n := maskLogPage + 10
+	h.post(func() {
+		p.maskLog = nil
+		for i := range n {
+			p.maskLog = append(p.maskLog, core.MaskRecord{At: now.Add(-time.Duration(i) * time.Minute), Request: int64(n - i), Feature: "wit", Kind: "EMAIL", Category: "emails", Len: 16, Action: core.MaskMask})
+		}
+	})
+	last := now.Add(-time.Duration(n-1) * time.Minute).In(now.Location()).Format("15:04")
+	h.see(strconv.Itoa(n))
+	h.see(i18n.T("settings.masking.log.more"))
+	if h.tt.HasText(last) {
+		t.Fatal("the oldest request shows on the first page")
+	}
+	h.click(i18n.T("settings.masking.log.more"))
+	h.see(last)
+	if h.tt.HasText(i18n.T("settings.masking.log.more")) {
+		t.Fatal("显示更多 stays with nothing more to show")
 	}
 }
 

@@ -21,7 +21,7 @@ import (
 // form replaced since leaves the new form alone.
 type extView struct {
 	a               *App
-	tab             int    // 0 skills, 1 plugins (the first shown), 2 MCP
+	tab             int    // 0 skills, 1 plugins (the first shown); MCP is on the Intelligence page
 	gen             uint64 // bumped per list read; only the newest applies
 	skills          []core.SkillInfo
 	plugins         []core.PluginInfo
@@ -139,15 +139,11 @@ func (e *extView) view(c *ui.Context) {
 		}
 		kit.Button(c, i18n.T("settings.ext.install"), kit.ButtonOpts{Disabled: e.installing != ""}).OnClick(e.install)
 	})
-	kit.TabsUnderline(c, &e.tab, i18n.Tf("settings.ext.tab.skills", len(e.skills)), i18n.Tf("settings.ext.tab.plugins", len(e.plugins)),
-		i18n.Tf("settings.ext.tab.mcp", len(e.servers)))
-	switch e.tab {
-	case 0:
+	kit.TabsUnderline(c, &e.tab, i18n.Tf("settings.ext.tab.skills", len(e.skills)), i18n.Tf("settings.ext.tab.plugins", len(e.plugins)))
+	if e.tab == 0 {
 		e.skillsView(c)
-	case 1:
+	} else {
 		e.pluginsView(c)
-	default:
-		e.mcpView(c)
 	}
 	e.confirmView(c)
 }

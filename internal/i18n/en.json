@@ -760,6 +760,14 @@
   "provider_qq_mark": "QQ",
   "provider_yahoo": "Yahoo Mail",
   "provider_yahoo_mark": "Y",
+  "reader_ai_based_on": "based on {arg1}",
+  "@reader_ai_based_on": {
+    "placeholders": {
+      "arg1": {
+        "type": "String"
+      }
+    }
+  },
   "reader_ai_card_from": "{arg1} · from plugin {arg2}",
   "@reader_ai_card_from": {
     "placeholders": {
@@ -786,19 +794,9 @@
   "reader_ai_show_original": "Show original",
   "reader_ai_summarize": "Summary",
   "reader_ai_summary": "Summary",
-  "reader_ai_summary_meta": "{arg1} · {arg2}",
-  "@reader_ai_summary_meta": {
-    "placeholders": {
-      "arg1": {
-        "type": "String"
-      },
-      "arg2": {
-        "type": "String"
-      }
-    }
-  },
+  "reader_ai_todo": "Waiting on you",
   "reader_ai_translate": "Translate",
-  "reader_ai_translated": "Translated into {arg1} · translate · {arg2}",
+  "reader_ai_translated": "Translated into {arg1} · {arg2}",
   "@reader_ai_translated": {
     "placeholders": {
       "arg1": {
@@ -809,33 +807,24 @@
       }
     }
   },
+  "reader_ask_wit": "Ask Wit",
   "reader_avatar_blocked": "Blocked the sender avatar; loading may contact the sender''s website and Gravatar",
   "reader_body": "Message body",
-  "reader_date": "{arg1} {arg2, number, ::group-off}",
-  "@reader_date": {
+  "reader_cc": "Cc {arg1}",
+  "@reader_cc": {
     "placeholders": {
       "arg1": {
         "type": "String"
-      },
-      "arg2": {
-        "type": "int"
       }
     }
   },
-  "reader_date_year": "{arg1} {arg2, number, ::group-off}, {arg3, number, ::group-off}",
-  "@reader_date_year": {
-    "placeholders": {
-      "arg1": {
-        "type": "String"
-      },
-      "arg2": {
-        "type": "int"
-      },
-      "arg3": {
-        "type": "int"
-      }
-    }
-  },
+  "reader_details": "Message details",
+  "reader_details_account": "Account",
+  "reader_details_cc": "Cc",
+  "reader_details_date": "Date",
+  "reader_details_from": "From",
+  "reader_details_reply_to": "Reply-To",
+  "reader_details_to": "To",
   "reader_egress_allow": "Allow once",
   "reader_egress_body": "Plugin {arg1} will send data to:",
   "@reader_egress_body": {
@@ -846,9 +835,19 @@
     }
   },
   "reader_egress_title": "Let the plugin send data?",
+  "reader_fold": "Collapse",
   "reader_forward": "Forward",
+  "reader_gist": "AI gist",
   "reader_images_failed": "{arg1, number, ::group-off} images couldn''t load",
   "@reader_images_failed": {
+    "placeholders": {
+      "arg1": {
+        "type": "int"
+      }
+    }
+  },
+  "reader_images_not_loaded": "{arg1, plural, one {{arg1, number, ::group-off} image not loaded} other {{arg1, number, ::group-off} images not loaded}}",
+  "@reader_images_not_loaded": {
     "placeholders": {
       "arg1": {
         "type": "int"
@@ -889,22 +888,22 @@
   "reader_lang_tr": "Turkish",
   "reader_lang_vi": "Vietnamese",
   "reader_lang_zh": "Chinese",
+  "reader_load": "Load",
   "reader_load_images": "Load images",
   "reader_me": "me",
-  "reader_month_1": "Jan",
-  "reader_month_10": "Oct",
-  "reader_month_11": "Nov",
-  "reader_month_12": "Dec",
-  "reader_month_2": "Feb",
-  "reader_month_3": "Mar",
-  "reader_month_4": "Apr",
-  "reader_month_5": "May",
-  "reader_month_6": "Jun",
-  "reader_month_7": "Jul",
-  "reader_month_8": "Aug",
-  "reader_month_9": "Sep",
   "reader_more": "More actions",
   "reader_open_in_browser": "View in browser",
+  "reader_recipients_more": "{arg2, plural, one {{arg1} and {arg2, number, ::group-off} other} other {{arg1} and {arg2, number, ::group-off} others}}",
+  "@reader_recipients_more": {
+    "placeholders": {
+      "arg1": {
+        "type": "String"
+      },
+      "arg2": {
+        "type": "int"
+      }
+    }
+  },
   "reader_remote_blocked": "Blocked {arg1, number, ::group-off} remote images so the sender can''t tell whether you opened this message",
   "@reader_remote_blocked": {
     "placeholders": {
@@ -916,16 +915,29 @@
   "reader_print": "Print email",
   "reader_reply": "Reply",
   "reader_reply_all": "Reply all",
-  "reader_save": "Save email",
-  "reader_save_as": "Save as…",
-  "reader_saved": "Email saved",
-  "reader_to": "To {arg1} · {arg2}",
-  "@reader_to": {
+  "reader_reply_wit": "Ask Wit to reply to {arg1}…",
+  "@reader_reply_wit": {
     "placeholders": {
       "arg1": {
         "type": "String"
-      },
-      "arg2": {
+      }
+    }
+  },
+  "reader_save": "Save email",
+  "reader_save_as": "Save as…",
+  "reader_saved": "Email saved",
+  "reader_thread_count": "{arg1, plural, one {{arg1, number, ::group-off} message} other {{arg1, number, ::group-off} messages}}",
+  "@reader_thread_count": {
+    "placeholders": {
+      "arg1": {
+        "type": "int"
+      }
+    }
+  },
+  "reader_to": "To {arg1}",
+  "@reader_to": {
+    "placeholders": {
+      "arg1": {
         "type": "String"
       }
     }
@@ -948,7 +960,9 @@
       }
     }
   },
+  "reader_trackers_tip": "Tracking pixels tell the sender when you open a message. Godwit always blocks them, even for senders you trust.",
   "reader_truncated": "This message is too long; only the beginning is shown",
+  "reader_trust": "Trust sender",
   "reader_trust_sender": "Always trust this sender",
   "reader_unsubscribe": "Unsubscribe",
   "reader_unsubscribe_desc": "Godwit will send one unsubscribe request to this domain:",
@@ -1205,7 +1219,10 @@
   "settings_account_usage_help": "Mail cache and attachments",
   "settings_accounts": "Accounts",
   "settings_add_account": "Add account",
-  "settings_ai": "AI",
+  "settings_ai": "AI features",
+  "settings_ai_tab_apps": "AI apps",
+  "settings_ai_tab_features": "Features",
+  "settings_ai_tab_models": "Models",
   "settings_masking": "Privacy masking",
   "settings_masking_on": "Mask before sending to the cloud",
   "settings_masking_on_help": "Keys, ID numbers and the like go to model services and translation plugins as placeholders, and come back as the real values. Apple Intelligence and system translation run on this device and are not masked.",
@@ -1229,6 +1246,48 @@
   "settings_masking_sep": ", ",
   "settings_masking_log": "Masking log",
   "settings_masking_log_foot": "What requests to services off this device held: only the category, first character and length, never the value. Kept for 30 days.",
+  "settings_masking_log_open": "View the masking log",
+  "settings_masking_log_summary": "Last 30 days: {arg1, plural, one {{arg1, number, ::group-off} request} other {{arg1, number, ::group-off} requests}}, {arg2, number, ::group-off} blocked, {arg3, plural, one {{arg3, number, ::group-off} value} other {{arg3, number, ::group-off} values}} sent as is",
+  "@settings_masking_log_summary": {
+    "placeholders": {
+      "arg1": {
+        "type": "int"
+      },
+      "arg2": {
+        "type": "int"
+      },
+      "arg3": {
+        "type": "int"
+      }
+    }
+  },
+  "settings_masking_log_clear": "Clear log",
+  "settings_masking_log_clear_title": "Clear the masking log?",
+  "settings_masking_log_clear_body": "Every record of the last 30 days is deleted from this computer.",
+  "settings_masking_log_all": "All requests",
+  "settings_masking_log_all_help": "Requests that held a value",
+  "settings_masking_log_blocked": "Blocked requests",
+  "settings_masking_log_blocked_help": "Not sent at all",
+  "settings_masking_log_warned": "Values sent as is",
+  "settings_masking_log_warned_help": "Sent to the service unmasked",
+  "settings_masking_log_masked": "Masked values",
+  "settings_masking_log_masked_help": "Sent as placeholders",
+  "settings_masking_log_cat_all": "All categories",
+  "settings_masking_log_feature_all": "All features",
+  "settings_masking_log_flag_blocked": "Blocked",
+  "settings_masking_log_flag_warned": "Sent a value as is",
+  "settings_masking_log_length": "{arg1, plural, one {{arg1, number, ::group-off} character} other {{arg1, number, ::group-off} characters}}",
+  "@settings_masking_log_length": {
+    "placeholders": {
+      "arg1": {
+        "type": "int"
+      }
+    }
+  },
+  "settings_masking_log_unsent": "Not sent",
+  "settings_masking_log_none": "No request matches",
+  "settings_masking_log_more": "Show more",
+  "settings_masking_log_short": "Values of 3 characters or fewer are logged by their length only.",
   "settings_masking_log_empty": "Nothing in the last 30 days",
   "settings_masking_log_value": "{arg1}…, {arg2} characters",
   "settings_masking_log_own": "Your own",
@@ -1255,6 +1314,7 @@
   "settings_masking_save": "Save",
   "settings_masking_rules_invalid": "The pattern on line {arg1} does not work: {arg2}",
   "settings_masking_rules_kind": "The category name on line {arg1} must start with a letter and have only letters, digits and _, at most 24",
+  "settings_masking_rules_reserved": "The category name on line {arg1} is a built-in category's; choose another name",
   "settings_masking_rules_empty": "The pattern on line {arg1} matches empty text, so it would mask everywhere",
   "settings_masking_rules_too_many": "At most {arg1} patterns",
   "settings_masking_allow_too_many": "At most {arg1} values on the allowlist",
@@ -1460,7 +1520,7 @@
   "settings_ext_status_error": "Error",
   "settings_ext_status_needs_grant": "Needs approval",
   "settings_ext_status_pending": "Pending approval",
-  "settings_ext_sub": "Skills are just prompts; script plugins run in a sandbox with only the permissions you approve, native plugins have all of Godwit''s; MCP gives Wit outside tools.",
+  "settings_ext_sub": "Skills are just prompts; script plugins run in a sandbox with only the permissions you approve, native plugins have all of Godwit''s. MCP servers are under AI.",
   "settings_ext_tab_mcp": "MCP · {arg1, number, ::group-off}",
   "@settings_ext_tab_mcp": {
     "placeholders": {
@@ -1499,7 +1559,7 @@
   "settings_extensions": "Extensions",
   "settings_font_size": "Font size",
   "settings_general": "General",
-  "settings_general_sub": "Appearance, language and app behavior.",
+  "settings_general_sub": "Appearance, interface language, startup, notifications and threads.",
   "settings_heading": "Settings",
   "settings_keep_in_background": "Keep running after the window closes",
   "settings_keep_in_background_help": "Keeps syncing and notifying; open it again from the menu bar icon",
@@ -1626,26 +1686,27 @@
   "settings_launch_at_login": "Open at login",
   "settings_launch_at_login_help": "Starts Godwit in the background after login",
   "settings_local_api": "Local API",
+  "settings_local_api_client_off": "Disconnected {arg1}.",
+  "settings_local_api_client_on": "Connected {arg1}. Restart it to use Godwit.",
+  "settings_local_api_client_on_session": "Connected {arg1}. A new session can use Godwit.",
+  "settings_local_api_client_other": "Connected to another Godwit; click to connect this one",
+  "settings_local_api_connect": "Apps",
+  "settings_local_api_connect_help": "The apps you pick can read your mail and draft replies. For any other app, copy the config and add it there.",
+  "settings_local_api_copied": "Copied",
   "settings_local_api_copy": "Copy configuration",
-  "settings_local_api_help": "When on, scripts and AI tools on this computer can reach Godwit through the Local API. The full Local API can read mail, send mail, and change accounts and settings; AI tools connected through MCP (`godwit mcp`) can read mail and write drafts, and the setting below decides whether they can send. Turn it on only if you trust the programs running on this computer.",
-  "settings_local_api_mcp": "MCP client configuration",
+  "settings_local_api_copy_path": "Copy path",
+  "settings_local_api_foot": "The full Local API can read mail, send mail, and change accounts and settings; AI tools connected over MCP can only read mail and write drafts, and Send through MCP decides whether they can send.",
+  "settings_local_api_help": "Lets scripts and AI tools on this computer use Godwit. Turn it on only if you trust what runs on this computer.",
   "settings_local_api_on": "Turn on the Local API",
+  "settings_local_api_path": "Socket",
   "settings_local_api_send": "Send through MCP",
   "settings_local_api_send_confirm": "Confirm each time",
   "settings_local_api_send_direct": "Send directly",
-  "settings_local_api_send_help": "What happens when an AI tool connected through MCP, such as Claude or ChatGPT, asks to send a draft. With “Confirm each time”, Godwit opens a confirmation window where you check the recipients and content before sending.",
+  "settings_local_api_send_help": "What happens when an AI tool such as Claude or ChatGPT asks over MCP to send a draft.",
   "settings_local_api_send_off": "Not allowed",
   "settings_local_api_send_risk": "Mail an AI tool has read may hide content that talks it into sending. With this level, it can send in your name without your confirmation, including to addresses you don’t know.",
-  "settings_local_api_socket": "Socket: {arg1}",
-  "@settings_local_api_socket": {
-    "placeholders": {
-      "arg1": {
-        "type": "String"
-      }
-    }
-  },
   "settings_mail": "Mail",
-  "settings_models": "Model services",
+  "settings_models": "Intelligence",
   "settings_models_account": "Account",
   "settings_models_add": "Add service",
   "settings_models_api_key": "API key",
@@ -1843,7 +1904,7 @@
   "settings_models_status_bad": "Key invalid",
   "settings_models_status_ok": "OK",
   "settings_models_status_untested": "Untested",
-  "settings_models_sub": "Generation writes; judging classifies and routes. One service can do both.",
+  "settings_models_sub": "Model services, the AI features that use them, and MCP.",
   "settings_models_test": "Test connection",
   "settings_models_test_busy": "Testing…",
   "settings_models_test_ok": "Connected · {arg1, number, ::group-off} ms",
@@ -2029,8 +2090,8 @@
   "settings_thread_view_help": "Group mail of the same conversation together",
   "settings_thread_collapse": "Collapse thread history",
   "settings_thread_collapse_help": "Group older messages in long conversations into an expandable card",
-  "settings_thread_collapse_threshold": "Collapse history from",
-  "settings_thread_collapse_threshold_help": "Minimum number of messages in a conversation (2–100, default: 5)",
+  "settings_thread_collapse_threshold": "Messages kept in sight",
+  "settings_thread_collapse_threshold_help": "In longer conversations, this many of the newest messages stay shown; older ones fold into a card (2–100, default: 5)",
   "settings_translator": "Translate with",
   "settings_translator_gone": "{arg1} (uninstalled)",
   "@settings_translator_gone": {
@@ -2280,6 +2341,8 @@
   "wit_send": "Send to Wit",
   "wit_skill_format": "Format",
   "wit_skill_format_hint": "Only paragraphs and structure",
+  "wit_skill_humanize": "Humanize",
+  "wit_skill_humanize_hint": "Remove AI patterns",
   "wit_skill_longer": "Longer",
   "wit_skill_longer_hint": "Length",
   "wit_skill_proofread": "Proofread",

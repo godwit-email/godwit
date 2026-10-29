@@ -29,7 +29,7 @@ import (
 // those of core/ai, core/auth and core/conn that core's methods return.
 var sentinels = map[string]error{
 	"ErrUseAssist": core.ErrUseAssist, "ErrStaleApproval": core.ErrStaleApproval,
-	"ErrTooLarge": core.ErrTooLarge, "ErrLinkRef": core.ErrLinkRef, "ErrPlaceholder": core.ErrPlaceholder, "ErrMaskKind": core.ErrMaskKind, "ErrMaskEmptyMatch": core.ErrMaskEmptyMatch, "ErrMaskTooManyRules": core.ErrMaskTooManyRules, "ErrMaskTooManyAllow": core.ErrMaskTooManyAllow, "ErrNotOnServerYet": core.ErrNotOnServerYet,
+	"ErrTooLarge": core.ErrTooLarge, "ErrLinkRef": core.ErrLinkRef, "ErrPlaceholder": core.ErrPlaceholder, "ErrMaskKind": core.ErrMaskKind, "ErrMaskReservedKind": core.ErrMaskReservedKind, "ErrMaskEmptyMatch": core.ErrMaskEmptyMatch, "ErrMaskTooManyRules": core.ErrMaskTooManyRules, "ErrMaskTooManyAllow": core.ErrMaskTooManyAllow, "ErrNotOnServerYet": core.ErrNotOnServerYet,
 	"ErrStaleDraft": core.ErrStaleDraft, "ErrRunActive": core.ErrRunActive, "ErrNotSynced": core.ErrNotSynced,
 	"ErrCompacting": core.ErrCompacting, "ErrNothingToCompact": core.ErrNothingToCompact, "ErrDraftGone": core.ErrDraftGone,
 	"ErrKeychainUnavailable": core.ErrKeychainUnavailable, "ErrWrongAccount": core.ErrWrongAccount,
@@ -230,7 +230,7 @@ func TestWireCodesPinned(t *testing.T) {
 	c := rpcbind.NewCodec()
 	pinned := map[string]error{
 		"use_assist": core.ErrUseAssist, "stale_approval": core.ErrStaleApproval, "too_large": core.ErrTooLarge, "link_ref": core.ErrLinkRef, "placeholder": core.ErrPlaceholder,
-		"mask_kind": core.ErrMaskKind, "mask_empty_match": core.ErrMaskEmptyMatch, "mask_too_many_rules": core.ErrMaskTooManyRules, "mask_too_many_allow": core.ErrMaskTooManyAllow,
+		"mask_kind": core.ErrMaskKind, "mask_reserved_kind": core.ErrMaskReservedKind, "mask_empty_match": core.ErrMaskEmptyMatch, "mask_too_many_rules": core.ErrMaskTooManyRules, "mask_too_many_allow": core.ErrMaskTooManyAllow,
 		"not_on_server_yet": core.ErrNotOnServerYet, "stale_draft": core.ErrStaleDraft, "run_active": core.ErrRunActive, "not_synced": core.ErrNotSynced,
 		"compacting": core.ErrCompacting, "nothing_to_compact": core.ErrNothingToCompact, "draft_gone": core.ErrDraftGone,
 		"keychain_unavailable": core.ErrKeychainUnavailable, "wrong_account": core.ErrWrongAccount,

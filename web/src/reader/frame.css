@@ -27,6 +27,20 @@ html {
   white-space: pre-wrap;
 }
 
+/* Plain text, and HTML that is text in all but name, keep to the reader's text column
+   (theme.ReaderMaxWidth), as its header does, at the reading line height. */
+#godwit-body.godwit-plain,
+#godwit-body.godwit-text {
+  max-width: 720px;
+  margin: 0 auto;
+  line-height: 1.5;
+}
+
+/* Quoted lines ("> …") step back from the message's own. */
+#godwit-body.godwit-plain .godwit-quote {
+  opacity: 0.6;
+}
+
 /* Keep theme defaults weaker than the email's own text colours. */
 :where(#godwit-body.godwit-light) {
   color: var(--godwit-fg-light, #0a0a0a);

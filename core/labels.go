@@ -222,7 +222,7 @@ var presetLabels = []presetLabel{
 // deleted stays gone. With no language known yet (a headless first start) it
 // waits for a start that knows one.
 func (s *Service) seedLabels(ctx context.Context) error {
-	rows, err := s.db.Query(ctx, "SELECT 1 FROM settings WHERE key = 'labels_seeded'")
+	rows, err := s.db.Query(ctx, "SELECT 1 FROM meta WHERE key = 'labels_seeded'")
 	if err != nil || len(rows.Values) > 0 {
 		return err
 	}
@@ -249,7 +249,7 @@ func (s *Service) seedLabels(ctx context.Context) error {
 		stmts = append(stmts, sqlite.Statement{SQL: `INSERT INTO labels(slug, name, description, color, icon, builtin, position)
 			VALUES (?, ?, ?, ?, ?, 1, ?)`, Args: []any{p.slug, name, desc, p.color, p.icon, i}})
 	}
-	stmts = append(stmts, sqlite.Statement{SQL: "INSERT INTO settings(key, value) VALUES ('labels_seeded', '1')"})
+	stmts = append(stmts, sqlite.Statement{SQL: "INSERT INTO meta(key, value) VALUES ('labels_seeded', '1')"})
 	_, err = s.db.Transaction(ctx, stmts)
 	return err
 }

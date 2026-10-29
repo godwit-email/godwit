@@ -187,8 +187,11 @@ const (
 	PortWidth             = 90 // port fields
 	SelectMinWidth        = 120
 	FilterMenuMin         = 200 // a search filter chip's menu
-	SenderMenuWidth       = 200 // the reader's sender actions menu
 	LabelMenuWidth        = 240 // the reader's label menu
+	CiteCardWidth         = 320 // the mail a summary's cite shows on hover, as Wit's
+	CiteChip              = 16  // a summary's cite: its height, and least width
+	DetailsWidth          = 400 // a message's details popover: who it went to, its date
+	DetailsLabel          = 72  // its labels' column
 	SyncMenuWidth         = 320 // the top bar's sync status list: compact, fitted popover
 	LabelSwatch           = 32  // a label color's button: a 24 dot, a 2 ring when chosen
 	LabelSwatchDot        = 24

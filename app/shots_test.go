@@ -232,7 +232,7 @@ func TestShots(t *testing.T) {
 		s.llm.Script(coretest.Turn{Text: []string{"- 对方发来 Q4 合作提案草稿（附件 PDF）。\n- 要点：11 月联合发布、一场联合网络研讨会。\n- 需要你在周五前确认时间安排是否可行。\n"}})
 		s.click("Q4 partnership proposal")
 		s.see("需要你在周五前确认")
-		s.llm.Script(coretest.Turn{Text: []string{`{"replies":[{"html":"<p>Hi Lena, thanks for the proposal. November works for us, happy to move ahead.</p>"},{"html":"<p>Hi Lena, November works, but could we move the webinar one week later?</p>"},{"html":"<p>Hi Lena, thanks! I will review it with the team and get back to you by Friday.</p>"}]}`}})
+		s.llm.Script(coretest.Turn{Text: []string{`{"replies":[{"label":"同意","html":"<p>Hi Lena, thanks for the proposal. November works for us, happy to move ahead.</p>"},{"label":"同意但调整","html":"<p>Hi Lena, November works, but could we move the webinar one week later?</p>"},{"label":"稍后答复","html":"<p>Hi Lena, thanks! I will review it with the team and get back to you by Friday.</p>"}]}`}})
 		quick(s)
 		s.see("Hi Lena, thanks! I will review it")
 	}
@@ -348,7 +348,7 @@ func TestShots(t *testing.T) {
 		shotPlugin(t, s.harness, "flight-cards", "NW 1858", `{ title: "航班 NW 1858 · 明天 14:20 起飞 · 登机口 [待定]", fields: [{ label: "", value: "PVG → CTU" }, { label: "座位", value: "[待选] · 行李额 [待确认]" }], buttons: [{ label: "在线值机", kind: "open-url", value: "https://northwind.example/checkin" }] }`)
 		s.click("值机提醒：NW 1858 上海 → 成都")
 		s.see("在线值机")
-		s.llm.Script(coretest.Turn{Text: []string{`{"replies":[{"html":"<p>Thanks, checked in. See you on board.</p>"},{"html":"<p>你好，我想把航班改到后一天，请问怎么操作？</p>"}]}`}})
+		s.llm.Script(coretest.Turn{Text: []string{`{"replies":[{"label":"确认","html":"<p>Thanks, checked in. See you on board.</p>"},{"label":"改签","html":"<p>你好，我想把航班改到后一天，请问怎么操作？</p>"}]}`}})
 		quick(s)
 		s.see("Thanks, checked in. See you on board.")
 		shot(s.harness, "MainFlight")
@@ -595,6 +595,55 @@ func TestShots(t *testing.T) {
 		s.see("deepl-translate")
 		s.see("attachment-check")
 		shot(s.harness, "SettingsExtensions")
+
+		p := s.aiTab(aiFeatures)
+		s.see("阅读语言")
+		shot(s.harness, "SettingsAIFeatures")
+		p.aiTab = aiMCP
+		s.see("添加服务器")
+		shot(s.harness, "SettingsAIMCP")
+		p.aiTab = aiApps
+		s.see("启用本机 API")
+		shot(s.harness, "SettingsAIApps")
+		e, _ := s.app.mcpEnv() // Claude connected, Codex there but not
+		if err := os.MkdirAll(filepath.Join(e.Home, ".codex"), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.MkdirAll(filepath.Join(e.Home, "Library", "Application Support", "Claude"), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := e.Connect("claude", s.app.mcpServer()); err != nil {
+			t.Fatal(err)
+		}
+		s.post(func() { // serving: the rows to connect a client show
+			s.app.settings.LocalAPI = true
+			s.app.localAPIPath = "/Users/you/Library/Application Support/Godwit/godwit.sock"
+		})
+		s.openSettings("general") // back: the AI apps are read again
+		s.openSettings("models")
+		s.see("Codex")
+		shot(s.harness, "SettingsAIAppsOn")
+		p.aiTab = aiModels
+		s.openSettings("privacy")
+		for i, name := range []string{"SettingsPrivacy", "SettingsPrivacyImages", "SettingsPrivacyBlocked"} {
+			p.privacyTab = i
+			s.tt.Frame()
+			shot(s.harness, name)
+		}
+		p.privacyTab = 0
+		s.openSettings("masklog")
+		s.post(func() { // the design's sample: two requests, one blocked
+			at := s.clock.Now().Add(-time.Hour)
+			p.maskLog = []core.MaskRecord{
+				{At: at, Request: 2, Feature: "skill", Kind: "EMAIL", Category: "emails", First: "h", Len: 16, Action: core.MaskMask},
+				{At: at, Request: 2, Feature: "skill", Kind: "ID_CARD", Category: "ids", First: "3", Len: 18, Action: core.MaskBlock},
+				{At: at.Add(-time.Hour), Request: 1, Feature: "wit", Kind: "NAME", Category: "names", Len: 2, Action: core.MaskMask},
+				{At: at.Add(-time.Hour), Request: 1, Feature: "wit", Kind: "PHONE", Category: "phones", First: "1", Len: 11, Action: core.MaskWarn},
+			}
+			p.logFilter.open = map[string]bool{"2": true}
+		})
+		s.see("被拦截的请求")
+		shot(s.harness, "SettingsMaskLog")
 	})
 	t.Run("Toasts", func(t *testing.T) {
 		s := shotMail(t, noQuick)

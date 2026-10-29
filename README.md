@@ -14,14 +14,14 @@ The name comes from the bar-tailed godwit, which holds the record for the longes
 
 - **Mail**: IMAP/SMTP accounts with sync, offline changes, conversations, full-text search, and HTML compose with reply, forward, CC/BCC and drafts. Setup is detected for Gmail, Outlook (sign in with Microsoft), iCloud, Yahoo, AOL, QQ Mail, 163/126 Mail, Tencent Exmail, Lark/Feishu and DingTalk Mail, and any other IMAP server.
 - **Wit**: an agent that answers questions about your mail, reads attachments (PDF, Office, CSV) and drafts replies. It never sends without your approval.
-- **AI actions**: summarize, translate, adjust tone and length, and quick replies, on a message, a selection or a draft. On macOS 26 and later, mail can also be translated on the Mac with the system's own translation, free and without a model (Settings › General › Translate with › System translation).
+- **AI actions**: summarize, translate, adjust tone and length, and quick replies, on a message, a selection or a draft. On macOS 26 and later, mail can also be translated on the Mac with the system's own translation, free and without a model (Settings › Intelligence › Features › Translate with › System translation).
 - **Your models**: any OpenAI-compatible (Chat Completions or Responses) or Anthropic-compatible service, including local ones like Ollama and LM Studio. API keys stay in the system keychain.
 - **Extensions**:
   - **Skills**: a `SKILL.md` ([Agent Skills](https://agentskills.io)) in the data directory's `skills/` folder becomes a Wit skill, or an action button with `godwit-action-*` metadata.
   - **Plugins**: TypeScript plugins with declared permissions add hooks, actions, cards and Wit tools. Types are in [`sdk/godwit.d.ts`](sdk/godwit.d.ts), published as `@godwit/sdk` (`npm i -D @godwit/sdk`). Plugins can read mail and write drafts; none can send.
   - **Native plugins**: a shared library behind a small C ABI ([`sdk/native/godwit_plugin.h`](sdk/native/godwit_plugin.h)), for what a sandbox cannot do. It runs with all of Godwit's rights, so Godwit shows the risk and asks you to allow that exact file; a changed file needs your permission again.
   - **MCP servers**: give Wit external tools. Each server is approved once, and each write call every time.
-- **For other agents**: `godwit mcp` is an MCP server that lets Claude, Cursor and other agents read your mail and create drafts, but never send. Turn on **Settings › Local API** and copy the client configuration from there.
+- **For other agents**: `godwit mcp` is an MCP server that lets Claude, Cursor and other agents read your mail and create drafts, but never send. Turn on the Local API under **Settings › Intelligence › AI apps** and copy the client configuration from there.
 - **Updates itself** from dl.godwit.email (the Microsoft Store version is updated by the Store).
 
 ## Install

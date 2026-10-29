@@ -22,6 +22,7 @@ import (
 	"github.com/godwit-email/godwit/core"
 	"github.com/godwit-email/godwit/core/coretest"
 	"github.com/godwit-email/godwit/internal/i18n"
+	"github.com/godwit-email/godwit/internal/theme"
 )
 
 var readerAvatarSVG = []byte(`<svg xmlns="http://www.w3.org/2000/svg" width="64" height="64"><rect width="64" height="64" fill="#ff0000"/></svg>`)
@@ -86,8 +87,8 @@ func TestReaderAvatarLoadsWithoutLayoutJump(t *testing.T) {
 	if !ok || before.W != 32 || before.H != 32 {
 		t.Fatalf("initial avatar %+v", before)
 	}
-	h.see("已阻止发件人头像")
-	h.click("加载图片")
+	h.see("1 张图片未加载")
+	h.click("加载")
 	select {
 	case <-started:
 	case <-time.After(5 * time.Second):
@@ -142,11 +143,11 @@ func TestReaderAvatarPolicy(t *testing.T) {
 			h.seeBody(m.ID)
 			b := h.app.mail.reader.bodies[m.ID]
 			if tc.blocked {
-				h.see("已阻止发件人头像")
+				h.see("1 张图片未加载")
 				if hits.Load() != 0 || b.msg.RemoteImagesBlocked != 0 {
 					t.Fatalf("blocked: hits %d, body count %d", hits.Load(), b.msg.RemoteImagesBlocked)
 				}
-				h.click("加载图片")
+				h.click("加载")
 			}
 			h.until("avatar ready", func() bool { return b.avatar != nil })
 			if hits.Load() != 1 {
@@ -245,11 +246,11 @@ func TestReaderAvatarSettingsInvalidation(t *testing.T) {
 	}
 	h.until("setting saved", func() bool { st, _ := h.env.Svc.GetSettings(t.Context()); return st.RemoteImages == "ask" })
 	h.advance(refreshEvery)
-	h.see("已阻止发件人头像")
+	h.see("1 张图片未加载")
 	if b.avatar != nil || b.allow {
 		t.Fatal("automatic trust became manual permission")
 	}
-	h.click("加载图片")
+	h.click("加载")
 	h.until("explicitly allowed cached avatar", func() bool { return b.avatar != nil })
 	st.RemoteImages = "trusted"
 	h.app.changeSettings(st)
@@ -343,7 +344,7 @@ func TestReaderAvatarWaitsForSettingsSave(t *testing.T) {
 				t.Errorf("unsaved ask allowed new avatar: image %v, requests %d", b.avatar != nil, hits.Load())
 			}
 			if tc.manual {
-				h.click("加载图片")
+				h.click("加载")
 				h.until("explicit avatar while saving", func() bool { return b.avatar != nil })
 				if hits.Load() != 2 {
 					t.Errorf("explicit requests %d", hits.Load())
@@ -362,7 +363,7 @@ func TestReaderAvatarWaitsForSettingsSave(t *testing.T) {
 				if b.avatar != nil || hits.Load() != 1 {
 					t.Fatal("saved ask automatically loaded avatar")
 				}
-				h.click("加载图片")
+				h.click("加载")
 				h.until("manual avatar after save", func() bool { return b.avatar != nil })
 				if hits.Load() != 2 {
 					t.Errorf("manual requests %d", hits.Load())
@@ -383,7 +384,7 @@ func TestReaderAvatarManualPermissionSurvivesUnrelatedSettings(t *testing.T) {
 			m := h.deliverOne(acc, coretest.Msg("Bob <bob@example.com>", acc.Email, "Avatar", "plain"))
 			h.openThread(m.ThreadID)
 			h.seeBody(m.ID)
-			h.click("加载图片")
+			h.click("加载")
 			b := h.app.mail.reader.bodies[m.ID]
 			h.until("manual avatar", func() bool { return b.avatar != nil })
 			before := h.app.events
@@ -485,6 +486,21 @@ func (h *harness) openThread(id int64) {
 	h.tt.Frame()
 }
 
+// openThreadWith opens thread, where only the newest message opens, and
+// opens the older messages ids too, as a click on their rows does.
+func (h *harness) openThreadWith(thread int64, ids ...int64) {
+	h.t.Helper()
+	h.openThread(thread)
+	r := h.app.mail.reader
+	h.until("the thread read", func() bool { return r.loaded && len(r.msgs) > 0 })
+	for _, id := range ids {
+		if !r.open[id] {
+			r.toggle(id)
+		}
+	}
+	h.tt.Frame()
+}
+
 func (h *harness) messages(threadID int64) []core.MessageSummary {
 	h.t.Helper()
 	th, err := h.env.Svc.GetThread(context.Background(), threadID)
@@ -553,15 +569,16 @@ func TestReaderThreadCollapse(t *testing.T) {
 	}
 	h.see("bob@example.com") // the collapsed rows: sender, snippet
 	h.see("second words")
-	if n := h.countTexts("发给"); n != 1 {
+	heads := func() int { return h.countTexts("发给") / 2 } // an open header's recipients: a button, its label and its text
+	if n := heads(); n != 1 {
 		t.Fatalf("%d expanded headers, want 1: %q", n, h.tt.Texts())
 	}
 	h.click("bob@example.com")
-	h.until("the oldest expanded", func() bool { return r.open[msgs[0].ID] && h.countTexts("发给") == 2 })
+	h.until("the oldest expanded", func() bool { return r.open[msgs[0].ID] && heads() == 2 })
 	h.seeBody(msgs[0].ID)
-	h.click("bob@example.com")
+	h.click("收起") // the oldest's; its sender opens the sender's actions now
 	h.until("the oldest collapsed", func() bool {
-		return !r.open[msgs[0].ID] && h.countTexts("发给") == 1 && h.plat.view(msgs[0].ID) == nil
+		return !r.open[msgs[0].ID] && heads() == 1 && h.plat.view(msgs[0].ID) == nil
 	})
 }
 
@@ -583,7 +600,7 @@ func TestReaderThreadHistoryCollapse(t *testing.T) {
 	if len(msgs) != 7 {
 		t.Fatalf("%d messages in the thread, want 7", len(msgs))
 	}
-	// all read but the fourth: it and the newest open, splitting the folded ones into runs of 3 and 2
+	// all read but the fourth, opened besides the newest
 	var seen []int64
 	for i, m := range msgs {
 		if i != 3 {
@@ -593,44 +610,126 @@ func TestReaderThreadHistoryCollapse(t *testing.T) {
 	if err := h.env.Svc.SetFlags(context.Background(), seen, []string{`\Seen`}, nil); err != nil {
 		t.Fatal(err)
 	}
-	h.openThread(thread)
+	h.openThreadWith(thread, msgs[3].ID)
 	h.seeBody(msgs[6].ID)
 	r := h.app.mail.reader
 	if !r.open[msgs[3].ID] || !r.open[msgs[6].ID] || r.open[msgs[0].ID] {
 		t.Fatalf("open %v; want the fourth and the newest", r.open)
 	}
-	h.until("each run is a card", func() bool {
-		return h.tt.HasText("展开历史邮件（3 封）") && h.tt.HasText("展开历史邮件（2 封）") && !h.tt.HasText("msg one") && !h.tt.HasText("msg five")
+	// the newest five kept in sight (the fourth open among them); the
+	// first and second fold into a card above them
+	h.until("the oldest a card", func() bool {
+		return h.tt.HasText("展开历史邮件（2 封）") && !h.tt.HasText("msg one") && !h.tt.HasText("msg two") &&
+			h.tt.HasText("msg three") && h.tt.HasText("msg five") && h.tt.HasText("msg six")
 	})
+	if card, _ := h.tt.Find("展开历史邮件（2 封）"); func() bool { three, _ := h.tt.Find("msg three"); return card.Y > three.Y }() {
+		t.Fatal("the card is not above the messages kept")
+	}
 
-	h.click("展开历史邮件（3 封）")
-	h.until("only the first run expanded", func() bool {
-		return h.tt.HasText("msg one") && h.tt.HasText("msg three") && h.countTexts("折叠历史邮件") == 1 &&
-			h.tt.HasText("展开历史邮件（2 封）") && !h.tt.HasText("msg five")
+	h.click("展开历史邮件（2 封）")
+	h.until("the oldest shown", func() bool {
+		return h.tt.HasText("msg one") && h.tt.HasText("msg two") && h.countTexts("折叠历史邮件") == 1
 	})
 	h.click("折叠历史邮件")
 	h.until("collapsed again", func() bool {
-		return h.tt.HasText("展开历史邮件（3 封）") && !h.tt.HasText("msg one")
+		return h.tt.HasText("展开历史邮件（2 封）") && !h.tt.HasText("msg one")
 	})
 
-	// the threshold counts the thread's messages: 7 collapses at 7, not at 8
+	// the threshold is how many stay in sight: 7 keeps all of 7
 	st := h.app.settings
-	st.ThreadCollapseThreshold = 8
-	h.app.changeSettings(st)
-	h.until("below the threshold", func() bool {
-		return !h.tt.HasText("展开历史邮件（3 封）") && h.tt.HasText("msg one") && h.tt.HasText("msg five")
-	})
 	st.ThreadCollapseThreshold = 7
 	h.app.changeSettings(st)
-	h.until("at the threshold", func() bool {
-		return h.tt.HasText("展开历史邮件（3 封）") && !h.tt.HasText("msg one")
+	h.until("all kept", func() bool {
+		return !h.tt.HasText("展开历史邮件（2 封）") && h.tt.HasText("msg one") && h.tt.HasText("msg two")
+	})
+	// 6 leaves one older: a single message needs no card
+	st.ThreadCollapseThreshold = 6
+	h.app.changeSettings(st)
+	h.tt.Advance(2 * theme.MotionBase)
+	if h.tt.HasText("展开历史邮件") || !h.tt.HasText("msg one") {
+		t.Fatalf("one message carded: %q", h.tt.Texts())
+	}
+	// 3 keeps the newest three; the open fourth ends the older run
+	st.ThreadCollapseThreshold = 3
+	h.app.changeSettings(st)
+	h.until("the older carded", func() bool {
+		return h.tt.HasText("展开历史邮件（3 封）") && !h.tt.HasText("msg one") && h.tt.HasText("msg five") && h.tt.HasText("msg six")
 	})
 
 	st.ThreadCollapse = false
 	h.app.changeSettings(st)
 	h.until("collapsing off", func() bool {
-		return !h.tt.HasText("展开历史邮件（3 封）") && h.tt.HasText("msg one") && h.tt.HasText("msg five")
+		return !h.tt.HasText("展开历史邮件") && h.tt.HasText("msg one") && h.tt.HasText("msg two")
 	})
+}
+
+// thread7 puts a thread of seven messages from bob, "msg one" to "msg
+// seven", all read: only the newest opens.
+func (h *harness) thread7(acc core.Account) []core.MessageSummary {
+	h.t.Helper()
+	base := h.clock.Now()
+	words := []string{"one", "two", "three", "four", "five", "six", "seven"}
+	for i, w := range words {
+		opts := []coretest.MsgOption{coretest.MessageID(w + "@x"), at(base, len(words)-i)}
+		if i > 0 {
+			opts = append(opts, coretest.InReplyTo(words[i-1]+"@x"))
+		}
+		h.put(acc, "INBOX", coretest.Msg("bob@example.com", acc.Email, "Plan", "msg "+w, opts...))
+	}
+	h.syncNow(acc)
+	page, _ := h.env.Svc.ListThreads(context.Background(), core.View{Unified: "inbox"}, "", 10)
+	msgs := h.messages(page.Items[0].ID)
+	ids := make([]int64, len(msgs))
+	for i, m := range msgs {
+		ids[i] = m.ID
+	}
+	if err := h.env.Svc.SetFlags(context.Background(), ids, []string{`\Seen`}, nil); err != nil {
+		h.t.Fatal(err)
+	}
+	return msgs
+}
+
+// A history card shows the whole history, one message opening in it or
+// not, and collapses it whole again, the opened one folding too; a message
+// the reader folds while it is collapsed stays in sight.
+func TestReaderHistoryKeepsShown(t *testing.T) {
+	h, accs := mailHarness(t, nil, "alice@example.com")
+	st := h.app.settings
+	st.ThreadCollapseThreshold = 2 // the newest two in sight
+	h.app.changeSettings(st)
+	msgs := h.thread7(accs[0])
+	r := h.app.mail.reader
+	h.openThread(msgs[0].ThreadID)
+	h.seeBody(msgs[6].ID)
+	h.until("the older a card", func() bool { return h.tt.HasText("展开历史邮件（5 封）") && h.tt.HasText("msg six") })
+	h.click("展开历史邮件（5 封）")
+	h.until("the older shown", func() bool { return h.tt.HasText("msg one") })
+	h.tt.Advance(2 * theme.MotionBase) // the rows in place before one is clicked
+	h.click("msg three")
+	h.until("the third open", func() bool { return r.open[msgs[2].ID] })
+	h.tt.Advance(2 * theme.MotionBase)
+	for _, w := range []string{"msg one", "msg two", "msg four", "msg five", "msg six"} {
+		if !h.tt.HasText(w) {
+			t.Fatalf("%q went back into the history: %q", w, h.tt.Texts())
+		}
+	}
+	if n := h.countTexts("折叠历史邮件"); n != 1 {
+		t.Fatalf("%d collapse cards", n)
+	}
+
+	h.click("折叠历史邮件")
+	h.tt.Advance(2 * theme.MotionBase)
+	if r.open[msgs[2].ID] || !h.tt.HasText("展开历史邮件（5 封）") || h.tt.HasText("msg one") || !h.tt.HasText("msg six") {
+		t.Fatalf("not collapsed whole (open %v): %q", r.open, h.tt.Texts())
+	}
+
+	r.expand(msgs[2].ID) // as an unread one opens
+	r.toggle(msgs[2].ID) // folded by the reader, the history collapsed
+	h.tt.Frame()
+	h.tt.Advance(2 * theme.MotionBase)
+	if !h.tt.HasText("msg three") || !h.tt.HasText("展开历史邮件（2 封）") {
+		t.Fatalf("a message folded went into the history: %q", h.tt.Texts())
+	}
 }
 
 func TestReaderMarksRead(t *testing.T) {
@@ -642,7 +741,7 @@ func TestReaderMarksRead(t *testing.T) {
 	thread := h.deliverOne(acc, coretest.Msg("bob@example.com", acc.Email, "Re: Plan", "three", coretest.MessageID("c@x"), coretest.InReplyTo("b@x"))).ThreadID
 	h.openThread(thread)
 	r := h.app.mail.reader
-	h.until("all three expanded", func() bool { return len(r.open) == 3 })
+	h.until("the newest alone expanded", func() bool { return len(r.open) == 1 })
 	h.until("all read", func() bool {
 		return !slices.ContainsFunc(h.messages(thread), func(m core.MessageSummary) bool { return !seen(m) })
 	})
@@ -712,7 +811,7 @@ func TestViewInBrowserHasCSP(t *testing.T) {
 	h.openThread(m.ThreadID)
 	v := h.seeBody(m.ID)
 	h.app.BodyBuilt(v, m.ID, true, false)
-	h.tt.Frame()
+	h.tt.Advance(2 * theme.MotionBase) // the message grows to hold the notice
 	h.click("在浏览器中查看")
 	u, err := url.Parse(h.callArg("OpenURL"))
 	if err != nil || u.Scheme != "file" {
@@ -969,7 +1068,7 @@ func TestRelativeSenderDate(t *testing.T) {
 		{time.Date(2026, 10, 14, 9, 41, 0, 0, time.UTC), "今天 09:41"},
 		{time.Date(2026, 10, 13, 18, 5, 0, 0, time.UTC), "昨天 18:05"},
 		{time.Date(2026, 10, 12, 7, 30, 0, 0, time.UTC), "周一 07:30"},
-		{time.Date(2026, 10, 2, 7, 30, 0, 0, time.UTC), "10 月 2 日"},
+		{time.Date(2026, 10, 2, 7, 30, 0, 0, time.UTC), "10/02 07:30"},
 	} {
 		if got := senderDate(now, c.t); got != c.want {
 			t.Errorf("senderDate(%v) = %q, want %q", c.t, got, c.want)
@@ -977,8 +1076,8 @@ func TestRelativeSenderDate(t *testing.T) {
 	}
 
 	diffYear := time.Date(2025, 10, 2, 7, 30, 0, 0, time.UTC)
-	if got := senderDate(now, diffYear); got != "2025 年 10 月 2 日" {
-		t.Errorf("senderDate diffYear = %q, want %q", got, "2025 年 10 月 2 日")
+	if got := senderDate(now, diffYear); got != "2025/10/02 07:30" {
+		t.Errorf("senderDate diffYear = %q, want %q", got, "2025/10/02 07:30")
 	}
 
 	t.Cleanup(func() { i18n.SetLanguage("zh-CN") })
@@ -990,8 +1089,8 @@ func TestRelativeSenderDate(t *testing.T) {
 		{time.Date(2026, 10, 14, 9, 41, 0, 0, time.UTC), "Heute 09:41"},
 		{time.Date(2026, 10, 13, 18, 5, 0, 0, time.UTC), "Gestern 18:05"},
 		{time.Date(2026, 10, 12, 7, 30, 0, 0, time.UTC), "Mo. 07:30"},
-		{time.Date(2026, 10, 2, 7, 30, 0, 0, time.UTC), "2. Okt."},
-		{diffYear, "2. Okt. 2025"},
+		{time.Date(2026, 10, 2, 7, 30, 0, 0, time.UTC), "02.10. 07:30"},
+		{diffYear, "02.10.2025 07:30"},
 	} {
 		if got := senderDate(now, c.t); got != c.want {
 			t.Errorf("de senderDate(%v) = %q, want %q", c.t, got, c.want)
@@ -1124,12 +1223,12 @@ func TestReaderAvatarMoveToJunk(t *testing.T) {
 		t.Fatal("automatic avatar remains displayed after same message moves to Junk")
 	}
 	b := r.bodies[m.ID]
-	h.see("已阻止发件人头像")
+	h.see("1 张图片未加载")
 	h.until("junk body metadata", func() bool { return b.msg.InJunk && !b.trusted && !b.loading })
 	if b.msg.RemoteImagesBlocked != 0 || h.tt.HasText("始终信任此发件人") {
 		t.Fatal("junk notice has stale body policy")
 	}
-	h.click("加载图片")
+	h.click("加载")
 	h.until("manual junk avatar", func() bool { return b.avatar != nil && b.avatarAllow && b.allow })
 	h.app.refresh(nil)
 	h.until("same-message refresh", func() bool { return !h.app.mail.loading })
@@ -1200,7 +1299,7 @@ func TestReaderAvatarMoveDropsOldBodyRead(t *testing.T) {
 	}
 	h.app.refresh(nil)
 	h.until("current junk policy", func() bool { return b.msg.InJunk && !b.loading && b.avatar == nil && b.avatarBlocked })
-	h.see("已阻止发件人头像")
+	h.see("1 张图片未加载")
 	release <- struct{}{}
 	<-finished
 	h.queued("old body callback", 1)
@@ -1334,4 +1433,85 @@ func TestReaderPrintFocusedMessage(t *testing.T) {
 	print(msgs[1].ID, key) // the page that took ⌘P keeps the focus
 	r.toggle(msgs[1].ID)   // the focused one folded: the newest expanded
 	print(msgs[0].ID, key)
+}
+
+// The header names who a message went to: "我" with one account; with more,
+// the address that got it, the others (To and Cc) counted; under Cc when the
+// user is only Cc'd; To's first when the user is in neither; the account's
+// address when the message names no one.
+func TestReaderRecipients(t *testing.T) {
+	h, accs := mailHarness(t, nil, "me@baran.wang", "work@company.example")
+	h.waitMail("the folders", func() bool { return len(h.app.mail.folders[accs[0].ID]) > 0 })
+	inbox := h.app.mail.folders[accs[0].ID][0].ID
+	r := h.app.mail.reader
+	for _, c := range []struct {
+		to, cc []string
+		want   string
+	}{
+		{to: []string{"Baran <me@baran.wang>"}, want: "发给 me@baran.wang"},
+		{to: []string{"Baran <me@baran.wang>", "Mia <mia@partner.example>"}, cc: []string{"team@partner.example", "ops@partner.example"}, want: "发给 me@baran.wang 等 3 人"},
+		{to: []string{"Lena Park <lena@partner.example>", "mia@partner.example", "joe@partner.example"}, cc: []string{"Work <WORK@company.example>"}, want: "发给 Lena Park 等 2 人 · 抄送 WORK@company.example"},
+		{to: []string{"subscribers@rust.example"}, cc: []string{"x@rust.example"}, want: "发给 subscribers@rust.example 等 1 人"},
+		{cc: []string{"Team <team@partner.example>"}, want: "抄送 Team"},
+		{want: "发给 me@baran.wang"},
+	} {
+		if got := r.recipients(core.MessageSummary{FolderID: inbox, To: c.to, Cc: c.cc}); got != c.want {
+			t.Errorf("to %q cc %q: %q, want %q", c.to, c.cc, got, c.want)
+		}
+	}
+}
+
+// With one account the user is "我".
+func TestReaderRecipientsOneAccount(t *testing.T) {
+	h, _ := mailHarness(t, nil, "me@baran.wang")
+	if got := h.app.mail.reader.recipients(core.MessageSummary{To: []string{"Baran <me@baran.wang>"}, Cc: []string{"mia@partner.example"}}); got != "发给 我 等 1 人" {
+		t.Fatalf("one account: %q", got)
+	}
+}
+
+// The recipients' line opens the message's details: who sent it, to whom,
+// when; the account only with more than one.
+func TestReaderRecipientDetails(t *testing.T) {
+	h, accs := mailHarness(t, nil, "alice@example.com")
+	m := h.deliverOne(accs[0], coretest.Msg("Bob <bob@example.com>", accs[0].Email, "Plan", "body",
+		coretest.Date(time.Date(2026, 10, 5, 14, 30, 0, 0, time.Local))))
+	h.openThread(m.ThreadID)
+	h.seeBody(m.ID)
+	if h.tt.HasText("收件人") {
+		t.Fatal("the details show before the line is clicked")
+	}
+	h.click("发给 我")
+	h.see("发件人")
+	h.see("收件人")
+	h.see("日期")
+	h.see("2026/10/05 周一 14:30") // with the year and the weekday
+	if h.tt.HasText("收件账户") {
+		t.Fatal("the account shows with one account")
+	}
+}
+
+// A value too long for the details is cut to one line: whole on hover, and
+// a selection of it copies it whole.
+func TestReaderRecipientDetailsLong(t *testing.T) {
+	h, accs := mailHarness(t, nil, "alice@example.com")
+	full := "godwit-email/godwit <reply+ACXF7WOQ23XZUOXFVFDM3ADLLACSDEVBNHHQAAAAAFTYZGXK@reply.github.com>"
+	m := h.deliverOne(accs[0], coretest.Msg("Bob <bob@example.com>", accs[0].Email, "Plan", "body", coretest.Header("Reply-To: "+full)))
+	h.openThread(m.ThreadID)
+	h.seeBody(m.ID)
+	h.click("发给 我")
+	h.see(full) // its text; it shows cut
+	e, _ := h.tt.Find(full)
+	h.tt.Move(e.X+e.W/2, e.Y+e.H/2)
+	h.tt.Advance(900 * time.Millisecond)
+	if n := h.countTexts(full); n != 2 {
+		t.Fatalf("%d texts of the value on hover, want it and its tooltip", n)
+	}
+	for range 3 { // a triple click selects its line, as much as shows
+		h.tt.ClickAt(e.X+e.W/4, e.Y+e.H/2)
+	}
+	h.tt.Key(ui.Cmd, ui.KeyC)
+	h.tt.Frame()
+	if got := h.tt.Clipboard(); got != full {
+		t.Fatalf("copied %q", got)
+	}
 }

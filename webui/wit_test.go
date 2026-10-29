@@ -91,7 +91,7 @@ func TestWitInfoSkillHints(t *testing.T) {
 	for _, s := range info.Skills {
 		hints[s.ID] = s.Hint
 	}
-	assert.Equal(t, map[string]string{"tone-formal": "语气", "tone-friendly": "语气", "shorter": "长度", "longer": "长度", "proofread": "只改错字和语法", "format": "仅整理段落与结构"}, hints)
+	assert.Equal(t, map[string]string{"tone-formal": "语气", "tone-friendly": "语气", "shorter": "长度", "longer": "长度", "proofread": "只改错字和语法", "format": "仅整理段落与结构", "humanize": "去掉 AI 套话"}, hints)
 }
 
 func TestComposeWitInfo(t *testing.T) {
@@ -116,7 +116,7 @@ func TestComposeWitInfo(t *testing.T) {
 	_, model, _ := strings.Cut(st.DefaultModel, "/")
 	assert.Equal(t, model, info.Model, "the model chip: its name, without the provider")
 	assert.NotEmpty(t, info.Model)
-	assert.Equal(t, []Skill{{"tone-formal", "更正式", "语气"}, {"tone-friendly", "更友好", "语气"}, {"shorter", "更短", "长度"}, {"longer", "更长", "长度"}, {"proofread", "校对", "只改错字和语法"}, {"format", "排版整理", "仅整理段落与结构"}}, info.Skills)
+	assert.Equal(t, []Skill{{"tone-formal", "更正式", "语气"}, {"tone-friendly", "更友好", "语气"}, {"shorter", "更短", "长度"}, {"longer", "更长", "长度"}, {"proofread", "校对", "只改错字和语法"}, {"format", "排版整理", "仅整理段落与结构"}, {"humanize", "更自然", "去掉 AI 套话"}}, info.Skills)
 	assert.Equal(t, []Language{
 		{"ja", "日本語"}, {"de", "Deutsch"}, {"zh-Hans", "简体中文"}, {"zh-Hant", "繁體中文"}, {"en", "English"},
 		{"ko", "한국어"}, {"fr", "Français"}, {"es", "Español"}, {"pt", "Português"}, {"it", "Italiano"},

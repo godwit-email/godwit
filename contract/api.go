@@ -38,8 +38,10 @@ type API interface {
 	CancelOutbox(ctx context.Context, id int64) error
 	GetSettings(ctx context.Context) (core.Settings, error)
 	SetSettings(ctx context.Context, st core.Settings) (core.Settings, error)
+	TrustedImageSenders(ctx context.Context) ([]string, error)
 	TrustImageSender(ctx context.Context, from string) error
 	UntrustImageSender(ctx context.Context, addr string) error
+	BlockedSenders(ctx context.Context) ([]string, error)
 	BlockSender(ctx context.Context, from string) error
 	UnblockSender(ctx context.Context, addr string) error
 	CheckModelService(ctx context.Context, id int64, in core.ModelServiceInput) (core.ServiceCheck, error)
@@ -251,6 +253,14 @@ func (r *Remote) GetSettings(ctx context.Context) (core.Settings, error) {
 
 func (r *Remote) SetSettings(ctx context.Context, st core.Settings) (core.Settings, error) {
 	return call[core.Settings](r, ctx, "SetSettings", st)
+}
+
+func (r *Remote) TrustedImageSenders(ctx context.Context) ([]string, error) {
+	return call[[]string](r, ctx, "TrustedImageSenders")
+}
+
+func (r *Remote) BlockedSenders(ctx context.Context) ([]string, error) {
+	return call[[]string](r, ctx, "BlockedSenders")
 }
 
 func (r *Remote) TrustImageSender(ctx context.Context, from string) error {

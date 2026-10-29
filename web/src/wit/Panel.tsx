@@ -1650,7 +1650,7 @@ export function Panel({
   /** The conversation's reasoning effort ("" for the model's default), picked beside the model. */
   effort?: { value: string; pick(value: string): void };
   /** A question the host hands over: asked once (by identity), then onAsked. */
-  ask?: { text: string };
+  ask?: { text: string; hits?: MailHit[] };
   onAsked?(): void;
   /** Searches mail for the quote picker (+ → 引用邮件, or @); without it, no quoting. */
   onSearch?(q: string): Promise<MailHit[]>;
@@ -1815,7 +1815,8 @@ export function Panel({
     const timer = setTimeout(() => {
       asked.current = handed;
       onAsked?.();
-      ask(handed.text);
+      const hits = handed.hits ?? [];
+      ask(handed.text, hits.length > 0 ? { quoted: hits.map((h) => h.id), hits } : undefined);
     });
     return () => clearTimeout(timer);
   }, [handed, locked, running]);

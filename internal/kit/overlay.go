@@ -173,6 +173,14 @@ func Frost(fill ui.Color) ui.Material {
 	return scrim{theme.BackdropBlur * 2, fill.Alpha(0.7)}
 }
 
+// Bar fills a bar the content scrolls under (the reader's toolbar and reply
+// bar) with fill over what is behind it blurred. The blur cannot see a
+// native view: a web view's page under it blurs itself (the reader's
+// BodyGlass).
+func Bar(fill ui.Color) ui.Material {
+	return scrim{theme.BackdropBlur * 2, fill.Alpha(0.85)}
+}
+
 // PopoverAt is a panel anchored to anchor at (at, self) with topOffset while *open; a press outside or Escape closes it.
 func PopoverAt(c *ui.Context, anchor ui.Element, open *bool, at, self ui.Anchor, topOffset float32, body func()) {
 	t, th := theme.Of(c), c.Theme()
@@ -243,5 +251,18 @@ func tooltip(c *ui.Context, anchor ui.Element, text string, describe bool) {
 	ui.TooltipBase(c, anchor, func(tip ui.Element) {
 		tip.Padding(th.Space(1), th.Space(2)).Radius(t.Radius.Md).Background(t.Primary).TextColor(t.PrimaryText).FontSize(t.Text.Xs)
 		tip.Children(func() { ui.Text(c, text) })
+	})
+}
+
+// HoverCard shows a card w wide below anchor, at its start, as Tooltip shows its
+// text: body fills it.
+func HoverCard(c *ui.Context, anchor ui.Element, w float32, body func()) {
+	t, th := theme.Of(c), c.Theme()
+	ui.TooltipBase(c, anchor, func(tip ui.Element) {
+		tip.AttachTo(anchor, ui.AnchorBottomStart, ui.AnchorTopStart).Margin(theme.PopupOffset, 0, 0, 0).
+			Width(w).Padding(th.Space(3)).Gap(th.Space(2)).Radius(t.Radius.Lg).
+			Background(t.Background).Border(theme.Hairline, t.Border).TextColor(t.Foreground)
+		Elevate(c, tip, theme.ShadowMd)
+		tip.Children(body)
 	})
 }

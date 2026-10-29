@@ -138,7 +138,7 @@ func searchEmpty(h *harness) {
 func TestSearchEmptyHandsToWit(t *testing.T) {
 	h, _, _ := askHarness(t, true)
 	var asks []string
-	h.app.SetWitAsk(func(q string) { asks = append(asks, q) })
+	h.app.SetWitAsk(func(q string, _ ...core.MessageSummary) { asks = append(asks, q) })
 	h.app.navigate(Route{Page: PageMail, View: core.View{Unified: "inbox"}})
 	h.tt.Frame()
 	searchEmpty(h)
@@ -153,7 +153,7 @@ func TestSearchEmptyHandsToWit(t *testing.T) {
 func TestSearchEmptyNoModelOnlyNavigates(t *testing.T) {
 	h, _, _ := askHarness(t, false)
 	var asks []string
-	h.app.SetWitAsk(func(q string) { asks = append(asks, q) })
+	h.app.SetWitAsk(func(q string, _ ...core.MessageSummary) { asks = append(asks, q) })
 	h.app.navigate(Route{Page: PageMail, View: core.View{Unified: "inbox"}})
 	h.tt.Frame()
 	searchEmpty(h)
@@ -170,7 +170,7 @@ func TestSearchHandoffRowAndHint(t *testing.T) {
 	h.syncNow(accs[0])
 	h.waitMail("a thread", func() bool { return len(h.items()) == 1 })
 	var asks []string
-	h.app.SetWitAsk(func(q string) { asks = append(asks, q) })
+	h.app.SetWitAsk(func(q string, _ ...core.MessageSummary) { asks = append(asks, q) })
 	openListSearch(h)
 	h.see("只搜索已同步到本机的邮件")
 	h.typeText("Invoice")
@@ -185,7 +185,7 @@ func TestSearchHandoffRowAndHint(t *testing.T) {
 func TestSearchEmptyUsesSearchedQuery(t *testing.T) {
 	h, _, _ := askHarness(t, true)
 	var asks []string
-	h.app.SetWitAsk(func(q string) { asks = append(asks, q) })
+	h.app.SetWitAsk(func(q string, _ ...core.MessageSummary) { asks = append(asks, q) })
 	h.app.navigate(Route{Page: PageMail, View: core.View{Unified: "inbox"}})
 	h.tt.Frame()
 	searchEmpty(h)

@@ -15,12 +15,14 @@ func TestBlockSender(t *testing.T) {
 	require.NoError(t, s.BlockSender(ctx, `"Spammer" <Spam@Example.COM>`))
 	require.NoError(t, s.BlockSender(ctx, "spam@example.com"), "again: no duplicate")
 	assert.Error(t, s.BlockSender(ctx, "not-an-address"))
+	l, err := s.BlockedSenders(ctx)
+	require.NoError(t, err)
+	assert.Equal(t, []string{"spam@example.com"}, l)
+
+	// Saving the settings leaves the list alone.
 	st, err := s.GetSettings(ctx)
 	require.NoError(t, err)
-	assert.Equal(t, []string{"spam@example.com"}, st.BlockedSenders)
-
-	// A settings page's full snapshot never drops or adds blocked senders.
-	st.Theme, st.BlockedSenders = "dark", []string{"other@x"}
+	st.Theme = "dark"
 	_, err = s.SetSettings(ctx, st)
 	require.NoError(t, err)
 	require.NoError(t, s.Close())
@@ -28,12 +30,14 @@ func TestBlockSender(t *testing.T) {
 	st, err = s.GetSettings(ctx)
 	require.NoError(t, err)
 	assert.Equal(t, "dark", st.Theme)
-	assert.Equal(t, []string{"spam@example.com"}, st.BlockedSenders, "persists")
+	l, err = s.BlockedSenders(ctx)
+	require.NoError(t, err)
+	assert.Equal(t, []string{"spam@example.com"}, l, "persists")
 
 	require.NoError(t, s.UnblockSender(ctx, "SPAM@example.com"))
-	st, err = s.GetSettings(ctx)
+	l, err = s.BlockedSenders(ctx)
 	require.NoError(t, err)
-	assert.Empty(t, st.BlockedSenders)
+	assert.Empty(t, l)
 }
 
 func TestBlockSenderCap(t *testing.T) {

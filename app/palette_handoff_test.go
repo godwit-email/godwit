@@ -22,7 +22,7 @@ func paletteOver(h *harness, q string) {
 func TestPaletteTabAsksWit(t *testing.T) {
 	h, _, _ := askHarness(t, true)
 	var asks []string
-	h.app.SetWitAsk(func(q string) { asks = append(asks, q) })
+	h.app.SetWitAsk(func(q string, _ ...core.MessageSummary) { asks = append(asks, q) })
 	paletteOver(h, "去年的发票")
 	h.tt.Key(0, ui.KeyTab)
 	h.until("the question box", func() bool { return !paletteShown(h) && h.tt.HasText("发送") && h.app.palette.open })
@@ -55,7 +55,7 @@ func TestPaletteTabAsksWit(t *testing.T) {
 func TestPaletteTabNoModelOnlyNavigates(t *testing.T) {
 	h, _, _ := askHarness(t, false)
 	var asks []string
-	h.app.SetWitAsk(func(q string) { asks = append(asks, q) })
+	h.app.SetWitAsk(func(q string, _ ...core.MessageSummary) { asks = append(asks, q) })
 	paletteOver(h, "发票")
 	h.tt.Key(0, ui.KeyTab)
 	h.until("the question box", func() bool { return !paletteShown(h) })
@@ -146,7 +146,7 @@ func TestPaletteViewAllRow(t *testing.T) {
 func TestPaletteAskKeepsSlash(t *testing.T) {
 	h, _, _ := askHarness(t, true)
 	var asks []string
-	h.app.SetWitAsk(func(q string) { asks = append(asks, q) })
+	h.app.SetWitAsk(func(q string, _ ...core.MessageSummary) { asks = append(asks, q) })
 	paletteOver(h, "总结")
 	h.tt.Key(0, ui.KeyTab)
 	h.until("the question box", func() bool { return !paletteShown(h) })
