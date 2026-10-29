@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 
@@ -104,6 +105,9 @@ func TestWriteKeepsALink(t *testing.T) {
 	require.NoError(t, err)
 	assert.NotZero(t, fi.Mode()&os.ModeSymlink, "still a link")
 	assert.Contains(t, read(t, real), "godwit")
+	if runtime.GOOS == "windows" {
+		return // no Unix mode there
+	}
 	fi, err = os.Stat(real)
 	require.NoError(t, err)
 	assert.Equal(t, os.FileMode(0o600), fi.Mode().Perm())
