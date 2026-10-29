@@ -166,7 +166,8 @@ func (s *Service) takeBack(ctx context.Context, id int64, state string) error {
 
 // ResolveOutbox decides an item in send_uncertain, archive_uncertain or failed:
 // confirm_sent treats it as sent (it is archived next), resend queues it again
-// for now (OutboxExpiry counts from then) and discard drops it; all three clear
+// for now (OutboxExpiry counts from then; never archive_uncertain, which the
+// server already accepted) and discard drops it; all three clear
 // its Failure, and confirm_sent and discard delete its draft. edit
 // takes a failed item back as CancelOutbox does. resend also retries a queued
 // item now, its undo window still kept.
@@ -203,7 +204,7 @@ func (s *Service) ResolveOutbox(ctx context.Context, id int64, action string) er
 		stmts = []sqlite.Statement{dropDraft, {SQL: "UPDATE outbox SET state = 'sent', last_error = NULL, failure = NULL WHERE " + decidable, Args: []any{id}}}
 	case "resend":
 		stmts = []sqlite.Statement{{SQL: `UPDATE outbox SET state = 'queued', attempts = 0, last_error = NULL, failure = NULL, send_after = ?,
-			next_attempt_at = NULL WHERE ` + decidable, Args: []any{s.clk().Now().UnixMilli(), id}}}
+			next_attempt_at = NULL WHERE id = ? AND state IN ('send_uncertain', 'failed')`, Args: []any{s.clk().Now().UnixMilli(), id}}}
 	case "discard":
 		stmts = []sqlite.Statement{dropDraft, {SQL: "DELETE FROM outbox WHERE " + decidable, Args: []any{id}}}
 	default:

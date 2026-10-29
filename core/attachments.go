@@ -119,8 +119,12 @@ func (s *Service) GetAttachment(ctx context.Context, attachmentID int64) (string
 	if err != nil {
 		return "", info, err
 	}
-	if data, err = mail.DecodePart(data, "", a.charset); err != nil { // transfer encoding was undone while streaming
-		return "", info, err
+	// Transfer encoding was undone while streaming. Only text has a charset:
+	// a PDF labelled charset=binary or latin-1 keeps its bytes.
+	if strings.HasPrefix(strings.ToLower(info.ContentType), "text/") {
+		if d, err := mail.DecodePart(data, "", a.charset); err == nil {
+			data = d
+		}
 	}
 	if int64(len(data)) > attachLimit {
 		return "", info, ErrTooLarge

@@ -529,3 +529,14 @@ func TestMaskLogRequestIndexed(t *testing.T) {
 	require.NoError(t, err)
 	assert.Contains(t, fmt.Sprint(rows.Values), "mask_log_request")
 }
+
+// A message's ops and attachments are found through an index: sync looks up
+// each message's pending ops, and deleting a message its children.
+func TestMessageChildrenIndexed(t *testing.T) {
+	db := open(t)
+	for table, index := range map[string]string{"ops": "ops_message", "attachments": "attachments_message"} {
+		rows, err := db.Query(ctx, "EXPLAIN QUERY PLAN SELECT 1 FROM "+table+" WHERE message_id = 1")
+		require.NoError(t, err)
+		assert.Contains(t, fmt.Sprint(rows.Values), index)
+	}
+}

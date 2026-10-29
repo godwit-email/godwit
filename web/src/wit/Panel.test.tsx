@@ -4,7 +4,7 @@ import { toast } from "sonner";
 import type { Approval, MailHit, WitEvent, WitHistory, WitInfo } from "@/mygo";
 import { makeT } from "@/shared/i18n";
 import { legacy as hist } from "./fixtures";
-import { elapsed, formRound, Panel, type PanelReview, thoughtTitle } from "./Panel";
+import { editableText, elapsed, formRound, Panel, type PanelReview, thoughtTitle } from "./Panel";
 import { WitTransport } from "./transport";
 
 vi.mock("@/mygo", () => ({ events: { wit: { on: () => () => {} } } }));
@@ -2910,4 +2910,12 @@ describe("an MCP server's form", () => {
     expect(screen.getByText("breakfast").nextElementSibling).toHaveTextContent("是");
     expect(screen.getByText("nights").nextElementSibling).toHaveTextContent("未回答");
   });
+});
+
+test("editableText keeps paragraphs and leaves the quote and signature to core", () => {
+  expect(
+    editableText(
+      '<p>Hi Bob,</p><p>Tuesday<br>works.</p><blockquote data-godwit="quote">old</blockquote><div data-godwit="signature"><p>Me</p></div>',
+    ),
+  ).toBe("Hi Bob,\n\nTuesday\nworks.");
 });

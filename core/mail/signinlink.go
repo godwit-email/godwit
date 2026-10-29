@@ -3,9 +3,12 @@ package mail
 import (
 	"net/url"
 	"regexp"
+	"strconv"
 	"strings"
+	"unicode/utf8"
 
 	"golang.org/x/net/html"
+	"golang.org/x/net/idna"
 )
 
 // The kinds of action link ActionLink finds.
@@ -205,5 +208,20 @@ func LinkHost(link string) string {
 	if err != nil {
 		return link
 	}
-	return strings.TrimPrefix(u.Hostname(), "www.")
+	return strings.TrimPrefix(ASCIIHost(u.Hostname()), "www.")
+}
+
+// ASCIIHost is host as shown before a link is followed: in punycode (xn--…)
+// when it has a non-ASCII letter, so a look-alike such as Cyrillic
+// "аpple.com" does not pass for apple.com.
+func ASCIIHost(host string) string {
+	for i := range len(host) {
+		if host[i] >= utf8.RuneSelf {
+			if a, err := idna.Punycode.ToASCII(host); err == nil {
+				return a
+			}
+			return strings.Trim(strconv.QuoteToASCII(host), `"`)
+		}
+	}
+	return host
 }

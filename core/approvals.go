@@ -14,6 +14,7 @@ import (
 	"github.com/godwit-email/godwit/core/ai"
 	"github.com/godwit-email/godwit/core/events"
 	"github.com/godwit-email/godwit/core/gateway"
+	"github.com/godwit-email/godwit/core/mail"
 	"github.com/godwit-email/godwit/core/store"
 )
 
@@ -389,6 +390,11 @@ func (s *Service) decideAs(ctx context.Context, id int64, accept bool, args json
 			return fmt.Errorf("tool %s is not available", a.Tool)
 		}
 	}
+	if accept && args != nil && (a.Tool == "create_draft" || a.Tool == "reply_to_mail" || a.Tool == "forward_mail") {
+		if args, err = s.editedDraftArgs(ctx, a.Args, args); err != nil {
+			return err
+		}
+	}
 	// ponytail: one lock for every run's approvals, starts and cancels; per run if it ever contends
 	s.runMu.Lock()
 	defer s.runMu.Unlock()
@@ -411,6 +417,37 @@ func (s *Service) decideAs(ctx context.Context, id int64, accept bool, args json
 		err = errors.Join(err, s.resumeRun(ctx, a.RunID))
 	}
 	return err
+}
+
+// editedDraftArgs is a draft proposal's recorded arguments with the user's
+// edit from the approval card: its subject, and its body as plain text in
+// place of the recorded editable part. The recorded quote and signature stay.
+func (s *Service) editedDraftArgs(ctx context.Context, recorded, edited json.RawMessage) (json.RawMessage, error) {
+	var rec map[string]json.RawMessage
+	var ed struct {
+		Subject *string `json:"subject"`
+		HTML    *string `json:"html"`
+	}
+	if err := json.Unmarshal(recorded, &rec); err != nil {
+		return nil, err
+	}
+	if err := json.Unmarshal(edited, &ed); err != nil {
+		return nil, err
+	}
+	if ed.Subject != nil {
+		rec["subject"], _ = json.Marshal(*ed.Subject)
+	}
+	if ed.HTML != nil {
+		var old string
+		_ = json.Unmarshal(rec["html"], &old)
+		_, quote, sig := mail.SplitDraft(old)
+		h, err := s.sanitizeDraft(ctx, mail.JoinDraft(textHTML(*ed.HTML), quote, sig))
+		if err != nil {
+			return nil, err
+		}
+		rec["html"], _ = json.Marshal(h)
+	}
+	return json.Marshal(rec)
 }
 
 // resumeRun resumes runID once nothing of it is left open; a run that cannot

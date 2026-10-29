@@ -222,11 +222,11 @@ func unsubscribeOf(listUnsubscribe, post, listID string) Unsubscribe {
 		switch strings.ToLower(u.Scheme) {
 		case "https":
 			if https.URL == "" && u.Hostname() != "" {
-				https = Unsubscribe{Method: UnsubscribeWeb, Host: u.Hostname(), URL: uri}
+				https = Unsubscribe{Method: UnsubscribeWeb, Host: mail.ASCIIHost(u.Hostname()), URL: uri}
 			}
 		case "http":
 			if plain.URL == "" && u.Hostname() != "" {
-				plain = Unsubscribe{Method: UnsubscribeWeb, Host: u.Hostname(), URL: uri}
+				plain = Unsubscribe{Method: UnsubscribeWeb, Host: mail.ASCIIHost(u.Hostname()), URL: uri}
 			}
 		case "mailto":
 			if m, err := mail.ParseMailto(uri); mailto.URL == "" && err == nil && len(m.To) > 0 {

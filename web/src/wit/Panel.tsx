@@ -485,6 +485,23 @@ function BatchApprovalCard({
 }
 
 /**
+ * A draft's editable part as plain text, paragraphs a blank line apart. The quote and signature are
+ * left out: core keeps the recorded ones when the edit is allowed.
+ */
+export function editableText(html: string): string {
+  const body = new DOMParser().parseFromString(html, "text/html").body;
+  for (const br of body.querySelectorAll("br")) br.replaceWith("\n");
+  return [...body.childNodes]
+    .filter((n) => {
+      const mark = n instanceof Element ? n.getAttribute("data-godwit") : null;
+      return mark !== "quote" && mark !== "signature";
+    })
+    .map((n) => n.textContent?.trim() ?? "")
+    .filter(Boolean)
+    .join("\n\n");
+}
+
+/**
  * A tool call waiting for the user (app/wit.go card): what Wit wants, the tool, its plugin and that
  * it waits; the call's recipients, subject and body; the hosts it sends data to; Reject, 本次对话
  * 都允许 (where offered) and Allow. A run's several calls get one header over them (Approvals).
@@ -521,8 +538,7 @@ function ToolCard({
   for (const k of ["html", "body", "text"]) {
     const v = args[k];
     if (typeof v !== "string" || !v.trim()) continue;
-    rawBody =
-      k === "html" ? (new DOMParser().parseFromString(v, "text/html").body.textContent ?? "") : v;
+    rawBody = k === "html" ? editableText(v) : v;
     break;
   }
   const [editBody, setEditBody] = useState(rawBody);
