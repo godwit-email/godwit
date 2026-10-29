@@ -59,6 +59,19 @@ func TestClaudeKeepsTheRest(t *testing.T) {
 	assert.Contains(t, got["mcpServers"], "files")
 }
 
+// null where an object goes is no object yet, not a crash.
+func TestClaudeNulls(t *testing.T) {
+	for _, text := range []string{`null`, `{"mcpServers": null}`, `{"mcpServers": {"godwit": null}}`} {
+		e := env(t)
+		path := filepath.Join(e.Home, "Library", "Application Support", "Claude", "claude_desktop_config.json")
+		write(t, path, text)
+		require.NoError(t, e.Connect(Claude, srv), text)
+		assert.Equal(t, On, state(t, e, Claude), text)
+		require.NoError(t, e.Disconnect(Claude), text)
+		assert.Equal(t, Off, state(t, e, Claude), text)
+	}
+}
+
 // A config that is not JSON is left as it was.
 func TestClaudeLeavesBrokenJSON(t *testing.T) {
 	e := env(t)
@@ -245,4 +258,23 @@ func TestCodexLeavesTwoTables(t *testing.T) {
 	assert.Error(t, e.Connect(Codex, srv))
 	assert.Error(t, e.Disconnect(Codex))
 	assert.Equal(t, text, read(t, path))
+}
+
+// godwit set with dotted keys or an inline table, outside its own table:
+// adding [mcp_servers.godwit] would break the file, so it is left as it was.
+func TestCodexLeavesDottedKeys(t *testing.T) {
+	for _, text := range []string{
+		"mcp_servers.godwit.command = '/old/Godwit'\nmcp_servers.godwit.args = ['mcp']\n",
+		"[mcp_servers]\ngodwit.command = '/old/Godwit'\n",
+		"[mcp_servers]\ngodwit = { command = '/old/Godwit' }\n",
+		"mcp_servers = { files = { command = 'npx' } }\n",
+	} {
+		e := env(t)
+		path := filepath.Join(e.Home, ".codex", "config.toml")
+		write(t, path, text)
+		assert.Equal(t, Other, state(t, e, Codex), text)
+		assert.Error(t, e.Connect(Codex, srv), text)
+		assert.Error(t, e.Disconnect(Codex), text)
+		assert.Equal(t, text, read(t, path))
+	}
 }

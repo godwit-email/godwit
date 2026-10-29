@@ -93,6 +93,8 @@ func (e Env) State(app string, s Server) (State, error) {
 		}
 		cmd, args, found := tomlServer(string(b))
 		switch {
+		case codexElsewhere(strings.Split(string(b), "\n")):
+			return Other, nil
 		case !found:
 			return Off, nil
 		case same(cmd, args, s):
@@ -251,17 +253,23 @@ func editJSONServer(path string, s *Server) error {
 	if err != nil && !errors.Is(err, os.ErrNotExist) {
 		return err
 	}
-	root := map[string]json.RawMessage{}
+	var root map[string]json.RawMessage
 	if len(strings.TrimSpace(string(b))) > 0 {
 		if err := json.Unmarshal(b, &root); err != nil {
 			return fmt.Errorf("%s is not valid JSON, so Godwit left it alone: %w", path, err)
 		}
 	}
-	servers := map[string]json.RawMessage{}
+	if root == nil { // an empty file, or null
+		root = map[string]json.RawMessage{}
+	}
+	var servers map[string]json.RawMessage
 	if raw, ok := root["mcpServers"]; ok {
 		if err := json.Unmarshal(raw, &servers); err != nil {
 			return fmt.Errorf("%s: mcpServers is not an object, so Godwit left it alone: %w", path, err)
 		}
+	}
+	if servers == nil { // none, or null
+		servers = map[string]json.RawMessage{}
 	}
 	if s == nil {
 		if _, ok := servers[Name]; !ok {
@@ -269,9 +277,12 @@ func editJSONServer(path string, s *Server) error {
 		}
 		delete(servers, Name)
 	} else {
-		entry := map[string]json.RawMessage{}
+		var entry map[string]json.RawMessage
 		if raw, ok := servers[Name]; ok {
 			_ = json.Unmarshal(raw, &entry) // the user's own fields stay
+		}
+		if entry == nil { // none, null, or not an object
+			entry = map[string]json.RawMessage{}
 		}
 		entry["command"], _ = json.Marshal(s.Command)
 		entry["args"], _ = json.Marshal(s.Args)
@@ -439,6 +450,34 @@ func codexSpan(lines []string) (start, keys, end, n int) {
 	return start, min(keys, end), end, n // the blank lines before the next table go with it
 }
 
+// codexElsewhere is whether lines define godwit's server, or mcp_servers
+// whole, other than in godwit's own tables: with dotted keys
+// (mcp_servers.godwit.command = …) or an inline table (godwit = {…} under
+// [mcp_servers]). Godwit can't add a table there without breaking the file.
+func codexElsewhere(lines []string) bool {
+	var table []string
+	for i := 0; i < len(lines); {
+		if key, ok := tomlHeader(lines[i]); ok {
+			table = key
+			i++
+			continue
+		}
+		k, _, n := tomlEntry(lines, i)
+		i += n
+		if k == "" || godwitTable(table) >= 0 {
+			continue
+		}
+		raw, _, _ := strings.Cut(lines[i-n], "=")
+		full := append(slices.Clone(table), tomlKey(raw)...)
+		godwit := []string{"mcp_servers", Name}
+		m := min(len(full), len(godwit))
+		if slices.Equal(full[:m], godwit[:m]) {
+			return true
+		}
+	}
+	return false
+}
+
 // tomlEntry reads lines[i] as key = value: the key (unquoted), the value's
 // text, and how many lines key and value span (1 for a line that is no
 // key: a comment, a blank).
@@ -541,6 +580,9 @@ func (e Env) editCodex(s *Server) error {
 	start, keys, end, n := codexSpan(lines)
 	if n > 1 {
 		return fmt.Errorf("%s has %d [mcp_servers.%s] tables, so Godwit left it alone", path, n, Name)
+	}
+	if codexElsewhere(lines) {
+		return fmt.Errorf("%s sets mcp_servers.%s outside its own table, so Godwit left it alone", path, Name)
 	}
 	var out []string
 	switch {
