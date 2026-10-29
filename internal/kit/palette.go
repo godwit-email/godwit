@@ -158,8 +158,9 @@ func PalettePreview(c *ui.Context, body func()) {
 	ui.Overlay(c, func() {
 		// The row stops the list's 8px padding short of the panel's edge.
 		card := ui.Column(c).AttachTo(row, ui.AnchorTopEnd, ui.AnchorTopStart).MarginStart(th.Space(4)).
-			Width(th.Space(72)).Gap(th.Space(2)).Padding(th.Space(4)).Radius(t.Radius.Xl).
-			Background(t.Background).Border(theme.Hairline, t.Border)
+			Width(th.Space(72)).Gap(th.Space(2)).Padding(th.Space(4)).Radius(t.Radius.Xl).Clip().
+			Material(LiquidGlass(t.GlassBg)).
+			Border(theme.Hairline, t.GlassBorder)
 		Elevate(c, card, theme.ShadowLg)
 		card.Children(body)
 	})

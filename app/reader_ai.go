@@ -789,7 +789,10 @@ func (r *reader) fetchErr(c *ui.Context, err error, loading bool, retry func()) 
 // panel is the AI's box: a sparkle, a title, an optional close button, the body.
 func (r *reader) panel(c *ui.Context, title, meta string, close func(), body func()) {
 	t, th := theme.Of(c), c.Theme()
-	ui.Column(c).Gap(th.Space(2)).Padding(th.Space(3), th.Space(3.5)).Radius(t.Radius.Xl).Background(t.Sidebar).Border(theme.Hairline, t.Border).Children(func() {
+	p := ui.Column(c).Gap(th.Space(2)).Padding(th.Space(3), th.Space(3.5)).Radius(t.Radius.Xl).Clip().
+		Background(t.GlassBg).
+		Border(theme.Hairline, t.GlassBorder)
+	kit.Elevate(c, p, theme.ShadowSm).Children(func() {
 		ui.Row(c).Gap(th.Space(2)).AlignItems(ui.Center).Children(func() {
 			ui.Icon(c, icons.Get("sparkles")).Size(theme.IconSm, theme.IconSm).TextColor(t.Foreground)
 			ui.Text(c, title).FontWeight(600).LineHeight(theme.LineCJK).Shrink(1)
@@ -812,7 +815,9 @@ func (r *reader) cards(c *ui.Context, m core.MessageSummary) {
 	t, th := theme.Of(c), c.Theme()
 	r.fetchErr(c, st.cards.err, st.cards.loading, func() { r.loadCards(m.ID, true) })
 	for _, card := range st.cards.v {
-		row := ui.Row(c).Gap(th.Space(4)).AlignItems(ui.Center).Padding(th.Space(3), th.Space(3.5)).Radius(t.Radius.Xl).Border(theme.Hairline, t.Border)
+		row := ui.Row(c).Gap(th.Space(4)).AlignItems(ui.Center).Padding(th.Space(3), th.Space(3.5)).Radius(t.Radius.Xl).Clip().
+			Background(t.GlassBg).
+			Border(theme.Hairline, t.GlassBorder)
 		kit.Elevate(c, row, theme.ShadowXs)
 		row.Children(func() {
 			ui.Column(c).Grow(1).Shrink(1).Gap(th.Space(0.5)).Children(func() {

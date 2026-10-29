@@ -11,16 +11,27 @@ type InputOpts struct {
 	Password, Mono, Invalid bool
 	Bare                    bool // raw Base geometry: the row around it draws the box
 	Flat                    bool // no shadow
+	Glass                   bool // frosted glass appearance with hairline border (no blur)
 }
 
 func inputFrame(c *ui.Context, e ui.Element, o InputOpts) ui.Element {
 	t := theme.Of(c)
-	e.Radius(t.Radius.Md).Border(theme.Stroke, t.Input).Background(t.Background)
-	if !o.Flat {
+	borderWidth := float32(theme.Stroke)
+	if o.Glass {
+		borderWidth = theme.Hairline
+		e.Radius(t.Radius.Lg).Clip().Background(t.GlassBg)
 		Elevate(c, e, theme.ShadowXs)
+	} else {
+		e.Radius(t.Radius.Md).Border(theme.Stroke, t.Input).Background(t.Background)
+		if !o.Flat {
+			Elevate(c, e, theme.ShadowXs)
+		}
 	}
 	e.FocusRing(false)
 	border, ring := t.Input, c.Theme().Focus.Alpha(0)
+	if o.Glass {
+		border = t.GlassBorder
+	}
 	if e.FocusWithin() && !e.IsDisabled() {
 		border, ring = t.Ring, c.Theme().Focus
 	}
@@ -28,7 +39,7 @@ func inputFrame(c *ui.Context, e ui.Element, o InputOpts) ui.Element {
 		border = t.Danger
 	}
 	a := ui.Animation{Duration: theme.MotionFast, Ease: ui.EaseOut}
-	e.Border(theme.Stroke, e.AnimateColor("input-border", border, a)).
+	e.Border(borderWidth, e.AnimateColor("input-border", border, a)).
 		Shadow(0, 0, 0, theme.RingWidth, e.AnimateColor("input-ring", ring, a))
 	return e
 }

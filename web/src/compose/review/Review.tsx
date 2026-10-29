@@ -222,7 +222,7 @@ export function Review({
               {active === s.k && (
                 // pt-1, not mt-1: the gap stays inside the change, so moving the mouse onto the buttons keeps them open.
                 <span ref={pop} className="absolute z-10 pt-1" style={at}>
-                  <span className="flex items-center gap-1 whitespace-nowrap rounded-lg border-[0.5px] bg-popover p-1 text-base shadow-md">
+                  <span className="flex items-center gap-1 whitespace-nowrap rounded-lg border border-glass-border bg-glass-bg p-1 text-base shadow-2xl backdrop-blur-2xl ring-1 ring-glass-ring">
                     {link && (
                       <span className="px-1 text-muted-foreground text-sm">
                         {t("wit.compose.link", link)}
