@@ -24,6 +24,9 @@ type Tokens struct {
 	Dark                                                            bool
 	Window, Sidebar, Background, Foreground, Muted, Border, Primary ui.Color
 	PrimaryText, SidebarSelected, Hover, Success                    ui.Color
+	// GlassBg, GlassBorder and GlassHover are the semantic tokens for frosted liquid glass surfaces
+	// (popovers, dropdowns, and floating menus).
+	GlassBg, GlassBorder, GlassHover ui.Color
 	// HoverTint is a tint of the foreground for what sits on the window's
 	// material (the page switch's track, the top bar's ghost buttons), which
 	// a solid gray would cover; over white it is Hover's gray.
@@ -158,6 +161,7 @@ const (
 	TopBarHeight        = 44   // the top bar's least height
 	DialogSmWidth       = 440  // confirmations
 	BackdropBlur        = 4    // a frosted panel blurs what is behind it 4× this much
+	GlassBlur           = 20   // DIPs of Gaussian blur behind floating glass popovers
 	DialogLift          = 0.2  // a dialog's backdrop pads its bottom by this share of its height: the panel centred at 40%
 	DialogMinTop        = 32   // yet a dialog stays at least this far below the window's top
 	DialogTop           = 64   // a Top dialog's distance from the window's top
@@ -183,8 +187,11 @@ const (
 	PortWidth             = 90 // port fields
 	SelectMinWidth        = 120
 	FilterMenuMin         = 200 // a search filter chip's menu
-	SenderMenuWidth       = 200 // the reader's sender actions menu
 	LabelMenuWidth        = 240 // the reader's label menu
+	CiteCardWidth         = 320 // the mail a summary's cite shows on hover, as Wit's
+	CiteChip              = 16  // a summary's cite: its height, and least width
+	DetailsWidth          = 400 // a message's details popover: who it went to, its date
+	DetailsLabel          = 72  // its labels' column
 	SyncMenuWidth         = 320 // the top bar's sync status list: compact, fitted popover
 	LabelSwatch           = 32  // a label color's button: a 24 dot, a 2 ring when chosen
 	LabelSwatchDot        = 24
@@ -358,7 +365,8 @@ func Light() Tokens {
 		Border: p.Neutral200.Color(), Input: p.Neutral200.Color(), Ring: p.Neutral400.Color(), Idle: p.Neutral400.Color(), Outline: p.Neutral950.Color().Alpha(0.05), DividerHover: p.Neutral300.Color(), MarkTile: p.White.Color(), OnSolid: p.White.Color(), Raised: p.White.Color(), Card: p.Neutral50.Color(), Scrim: p.Black.Color().Alpha(0.2), AlertScrim: p.MacAlertGray.Color().Alpha(0.6),
 		Primary: p.Neutral900.Color(), PrimaryText: p.White.Color(),
 		SidebarSelected: p.Neutral100.Color(), HoverTint: p.Neutral950.Color().Alpha(0.04),
-		Hover: p.Neutral100.Color(),
+		Hover:   p.Neutral100.Color(),
+		GlassBg: p.White.Color().Alpha(0.70), GlassBorder: p.Neutral950.Color().Alpha(0.12), GlassHover: p.Neutral100.Color().Alpha(0.80),
 	})
 }
 
@@ -371,7 +379,8 @@ func Dark() Tokens {
 		Border: p.White.Color().Alpha(0.1), Input: p.White.Color().Alpha(0.15), Ring: p.Neutral500.Color(), Idle: p.Neutral500.Color(), Outline: p.White.Color().Alpha(0.05), DividerHover: p.Neutral700.Color(), MarkTile: p.White.Color(), OnSolid: p.White.Color(), FloatInset: p.White.Color().Alpha(0.2), Raised: p.Neutral900.Color(), Card: p.Neutral900.Color(), Scrim: p.Black.Color().Alpha(0.2), AlertScrim: p.Neutral900.Color().Alpha(0.6),
 		Primary: p.Neutral200.Color(), PrimaryText: p.Neutral900.Color(),
 		SidebarSelected: p.Neutral800.Color(), HoverTint: p.White.Color().Alpha(0.08),
-		Hover: p.Neutral800.Color(),
+		Hover:   p.Neutral800.Color(),
+		GlassBg: p.Neutral900.Color().Alpha(0.70), GlassBorder: p.White.Color().Alpha(0.15), GlassHover: p.Neutral800.Color().Alpha(0.80),
 	})
 }
 

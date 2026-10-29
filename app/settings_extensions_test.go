@@ -166,8 +166,7 @@ func TestPluginDetailNoSend(t *testing.T) {
 func TestMCPAddAndTrust(t *testing.T) {
 	h, _ := withAccount(t)
 	cmd, _, env := coretest.MCPCommand(t)
-	p := h.openSettings("extensions")
-	h.click("MCP · 0")
+	p := h.aiTab(aiMCP)
 	h.click("添加服务器")
 	h.fill("名称", "lookup-server")
 	h.fill("命令", cmd)
@@ -244,8 +243,7 @@ func TestValuesVerbatim(t *testing.T) {
 func TestMCPEditDuringSave(t *testing.T) {
 	h, _ := withAccount(t)
 	cmd, _, _ := coretest.MCPCommand(t)
-	p := h.openSettings("extensions")
-	h.click("MCP · 0")
+	p := h.aiTab(aiMCP)
 	h.click("添加服务器")
 	h.fill("名称", "one")
 	h.fill("命令", cmd)

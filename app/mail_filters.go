@@ -149,7 +149,7 @@ func (p *mailPage) labelFilter(c *ui.Context) {
 	t, th := theme.Of(c), c.Theme()
 	cur, set := p.a.label(p.sf.labelID)
 	set = set && p.sf.labelID != 0
-	b := kit.Pressable(c, kit.PressableOpts{Bordered: true, OnClick: func() { p.sf.labelOpen = !p.sf.labelOpen }}).
+	b := kit.Pressable(c, kit.PressableOpts{Glass: true, Bordered: true, OnClick: func() { p.sf.labelOpen = !p.sf.labelOpen }}).
 		Label(i18n.T("mail.filter.label.name")).Expanded(p.sf.labelOpen).Height(th.Space(6)).PaddingX(th.Space(2)).Gap(th.Space(1)).Radius(t.Radius.Md)
 	if set {
 		b.Background(t.SidebarSelected)
@@ -206,7 +206,7 @@ func (p *mailPage) setFilter(change func(*searchFilters)) {
 // menu *open shows, its label the value chosen. on marks a filter set.
 func filterChip(c *ui.Context, label string, on bool, open *bool, click func()) ui.Element {
 	t, th := theme.Of(c), c.Theme()
-	b := kit.Pressable(c, kit.PressableOpts{Bordered: true, OnClick: func() {
+	b := kit.Pressable(c, kit.PressableOpts{Glass: true, Bordered: true, OnClick: func() {
 		if open != nil {
 			*open = !*open
 		}

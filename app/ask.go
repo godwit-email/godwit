@@ -213,16 +213,17 @@ func (a *App) SetWitPage(view ui.NativeWebView, open, created func(conv int64) (
 	a.witView, a.witOpen, a.witCreated = view, open, created
 }
 
-// SetWitAsk gives the App the hand-off of a question to the Wit page (the
-// page starts the run itself, so it follows it and Stop works). Call it
-// before Start.
-func (a *App) SetWitAsk(ask func(query string)) { a.witAsk = ask }
+// SetWitAsk gives the App the hand-off of a question, quoting mail, to the
+// Wit page (the page starts the run itself, so it follows it and Stop
+// works). Call it before Start.
+func (a *App) SetWitAsk(ask func(query string, quoted ...core.MessageSummary)) { a.witAsk = ask }
 
-// askWit shows the Wit page with query asked in a new conversation. Without
-// a default model it only navigates: the page says how to add one.
-func (a *App) askWit(query string) {
+// askWit shows the Wit page with query asked in a new conversation, quoting
+// quoted. Without a default model it only navigates: the page says how to
+// add one.
+func (a *App) askWit(query string, quoted ...core.MessageSummary) {
 	a.navigate(Route{Page: PageWit})
 	if a.settings.DefaultModel != "" && a.witAsk != nil && strings.TrimSpace(query) != "" {
-		a.witAsk(query)
+		a.witAsk(query, quoted...)
 	}
 }

@@ -1,5 +1,5 @@
 import { act, cleanup, render, screen, waitFor } from "@testing-library/react";
-import type { ReaderBody, Theme } from "@/mygo";
+import type { ReaderBody, ReaderGlass, Theme } from "@/mygo";
 
 const h = vi.hoisted(() => {
   const on =
@@ -12,6 +12,7 @@ const h = vi.hoisted(() => {
     on,
     body: new Set<(b: ReaderBody) => void>(),
     theme: new Set<(t: Theme) => void>(),
+    glass: new Set<(g: ReaderGlass) => void>(),
   };
 });
 vi.mock("@/mygo", () => ({
@@ -28,6 +29,7 @@ vi.mock("@/mygo", () => ({
   events: {
     readerBody: { on: h.on(h.body) },
     theme: { on: h.on(h.theme) },
+    readerGlass: { on: h.on(h.glass) },
   },
 }));
 
@@ -127,6 +129,23 @@ async function start(b: ReaderBody) {
   render(<ReaderApp />);
   return loaded();
 }
+
+test("what the bars cover blurs, from the top and the bottom, as Go tells it", async () => {
+  await start(body(1, "<p>hi</p>"));
+  const band = (at: string) => document.querySelector<HTMLElement>(`[data-glass="${at}"]`);
+  expect(band("top")).toBeNull();
+  expect(band("bottom")).toBeNull();
+  act(() => {
+    for (const f of h.glass) f({ top: 0, bottom: 120 });
+  });
+  expect(band("top")).toBeNull();
+  expect(band("bottom")?.style.height).toBe("120px");
+  act(() => {
+    for (const f of h.glass) f({ top: 40, bottom: 0 });
+  });
+  expect(band("top")?.style.height).toBe("40px");
+  expect(band("bottom")).toBeNull();
+});
 
 test("the iframe is sandboxed (scripts allowed for WebKit's listeners; the CSP forbids them), borderless and unscrolled", async () => {
   const { frame } = await start(body(1, "<p>x</p>"));

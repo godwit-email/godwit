@@ -15,12 +15,14 @@ func TestTrustImageSender(t *testing.T) {
 	require.NoError(t, s.TrustImageSender(ctx, `"Bob" <Bob@Example.COM>`))
 	require.NoError(t, s.TrustImageSender(ctx, "bob@example.com"), "again: no duplicate")
 	assert.Error(t, s.TrustImageSender(ctx, "not an address"))
+	l, err := s.TrustedImageSenders(ctx)
+	require.NoError(t, err)
+	assert.Equal(t, []string{"bob@example.com"}, l)
+
+	// Saving the settings leaves the list alone.
 	st, err := s.GetSettings(ctx)
 	require.NoError(t, err)
-	assert.Equal(t, []string{"bob@example.com"}, st.TrustedImageSenders)
-
-	// A settings page's full snapshot never drops or adds trusted senders.
-	st.Theme, st.TrustedImageSenders = "dark", []string{"evil@x"}
+	st.Theme = "dark"
 	_, err = s.SetSettings(ctx, st)
 	require.NoError(t, err)
 	require.NoError(t, s.Close())
@@ -28,12 +30,14 @@ func TestTrustImageSender(t *testing.T) {
 	st, err = s.GetSettings(ctx)
 	require.NoError(t, err)
 	assert.Equal(t, "dark", st.Theme)
-	assert.Equal(t, []string{"bob@example.com"}, st.TrustedImageSenders, "persists")
+	l, err = s.TrustedImageSenders(ctx)
+	require.NoError(t, err)
+	assert.Equal(t, []string{"bob@example.com"}, l, "persists")
 
 	require.NoError(t, s.UntrustImageSender(ctx, "BOB@example.com"))
-	st, err = s.GetSettings(ctx)
+	l, err = s.TrustedImageSenders(ctx)
 	require.NoError(t, err)
-	assert.Empty(t, st.TrustedImageSenders)
+	assert.Empty(t, l)
 }
 
 func TestTrustImageSenderCap(t *testing.T) {

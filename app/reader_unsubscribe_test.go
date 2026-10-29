@@ -87,8 +87,8 @@ func TestReaderMailtoUnsubscribeOpensDraft(t *testing.T) {
 	}
 }
 
-// Each message of a thread has 退订 by its own headers: a reply without
-// List-Unsubscribe has none beside the newsletter's.
+// A thread offers 退订 by its open messages' own headers: a reply without
+// List-Unsubscribe adds none beside the newsletter's.
 func TestReaderUnsubscribePerMessage(t *testing.T) {
 	h, _, _ := unsubHarness(t, http.StatusOK)
 	acc := h.app.accounts[0]
@@ -106,5 +106,31 @@ func TestReaderUnsubscribePerMessage(t *testing.T) {
 	h.see("退订")
 	if n := h.countTexts("退订"); n != 2 { // one button: its label and its text
 		t.Fatalf("%d 退订 texts for one newsletter and one reply", n)
+	}
+
+}
+
+// A thread offers 退订 once, under its subject, acting on its list's
+// newest open message, however many of the list's are open.
+func TestReaderUnsubscribeOncePerThread(t *testing.T) {
+	h, _, _ := unsubHarness(t, http.StatusOK)
+	acc := h.app.accounts[0]
+	unsub := coretest.Header("List-Unsubscribe: <mailto:leave@shop.example>")
+	news := h.deliverOne(acc, coretest.Msg("Shop <news@shop.example>", acc.Email, "Deals", "Hello.", coretest.MessageID("n@shop.example"), unsub))
+	next := h.deliverOne(acc, coretest.Msg("Shop <news@shop.example>", acc.Email, "Re: Deals", "More.", coretest.InReplyTo("n@shop.example"), unsub))
+	if next.ThreadID != news.ThreadID {
+		t.Fatalf("threads %d and %d", news.ThreadID, next.ThreadID)
+	}
+	h.openThread(news.ThreadID)
+	r := h.app.mail.reader
+	if !r.open[news.ID] {
+		r.toggle(news.ID)
+		h.tt.Frame()
+	}
+	h.seeBody(news.ID)
+	h.seeBody(next.ID)
+	h.see("退订")
+	if n := h.countTexts("退订"); n != 2 || r.unsubMessage() != next.ID { // one button: its label and its text
+		t.Fatalf("%d 退订 texts, on %d; want one button, on the newest %d", n, r.unsubMessage(), next.ID)
 	}
 }

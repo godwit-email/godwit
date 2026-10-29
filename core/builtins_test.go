@@ -68,7 +68,6 @@ func TestSignInCodesBuiltinPlugin(t *testing.T) {
 
 	st, err := e.s.GetSettings(bg)
 	require.NoError(t, err)
-	st.DisabledBuiltins = nil // a page's stale snapshot
 	_, err = e.s.SetSettings(bg, st)
 	require.NoError(t, err)
 	require.False(t, builtinOf().Enabled, "saving other settings keeps the switch")

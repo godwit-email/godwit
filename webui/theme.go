@@ -61,6 +61,9 @@ func ThemeVars(t theme.Tokens) map[string]string {
 		"--shadow-float": floatShadow(t),
 		"--window":       css(t.Window), "--shadow-xs": shadow(theme.ShadowXs),
 		"--window-material": windowMaterial(t),
+		"--glass-bg":        css(t.GlassBg),
+		"--glass-border":    css(t.GlassBorder),
+		"--glass-hover":     css(t.GlassHover),
 	}
 }
 

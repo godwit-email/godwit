@@ -1666,7 +1666,7 @@ export function Panel({
   /** The conversation's reasoning effort ("" for the model's default), picked beside the model. */
   effort?: { value: string; pick(value: string): void };
   /** A question the host hands over: asked once (by identity), then onAsked. */
-  ask?: { text: string };
+  ask?: { text: string; hits?: MailHit[] };
   onAsked?(): void;
   /** Searches mail for the quote picker (+ → 引用邮件, or @); without it, no quoting. */
   onSearch?(q: string): Promise<MailHit[]>;
@@ -1831,7 +1831,8 @@ export function Panel({
     const timer = setTimeout(() => {
       asked.current = handed;
       onAsked?.();
-      ask(handed.text);
+      const hits = handed.hits ?? [];
+      ask(handed.text, hits.length > 0 ? { quoted: hits.map((h) => h.id), hits } : undefined);
     });
     return () => clearTimeout(timer);
   }, [handed, locked, running]);
@@ -2406,7 +2407,7 @@ export function Panel({
             ))}
             {page && chat.messages.length === 0 && !running && !locked && (
               <div className="flex flex-col items-center gap-3 pt-[16vh] text-center">
-                <span className="flex size-12 items-center justify-center rounded-2xl border-[0.5px] bg-sidebar">
+                <span className="flex size-12 items-center justify-center rounded-2xl border border-glass-border bg-glass-bg shadow-xs ring-1 ring-glass-ring">
                   <RiSparkling2Line className="size-6" />
                 </span>
                 <h1 className="font-semibold text-xl">{t("wit.empty.title")}</h1>
@@ -2420,8 +2421,8 @@ export function Panel({
                     return (
                       <Button
                         key={n}
-                        variant="outline"
-                        className="h-auto rounded-full px-3.5 py-1.5 font-normal text-md"
+                        variant="ghost"
+                        className="h-auto rounded-full border border-glass-border bg-glass-bg px-3.5 py-1.5 font-normal text-md text-foreground shadow-xs ring-1 ring-glass-ring transition-all outline-none hover:bg-glass-hover focus-visible:ring-2 focus-visible:ring-ring dark:shadow-[0_1px_3px_rgba(0,0,0,0.3),inset_0_1px_0_rgba(255,255,255,0.08)]"
                         onClick={() => ask(q)}
                       >
                         {q}
@@ -2479,7 +2480,7 @@ export function Panel({
   // disabled control would grey the whole group.
   const idle = locked || !draft.trim() || running;
   const input = (
-    <InputGroup className="relative gap-2 rounded-2xl border-0 bg-background px-3 py-2.5 shadow-(--shadow-float)">
+    <InputGroup className="relative gap-2 rounded-2xl border border-glass-border bg-glass-bg px-3 py-2.5 shadow-xl ring-1 ring-glass-ring outline-none dark:shadow-[0_8px_32px_rgba(0,0,0,0.5),inset_0_1px_0_0_rgba(255,255,255,0.08)]">
       {editing && (
         <div className="-mx-3 -mt-2.5 mb-0.5 flex items-center gap-2 rounded-t-2xl bg-muted px-3 py-1.5 text-muted-foreground text-sm">
           <RiEditLine className="size-3.5 shrink-0" />
@@ -2799,9 +2800,9 @@ export function Panel({
   // 调整 / 翻译: quick actions above the input; locked, they do nothing but keep their look.
   const trayButton = (Icon: typeof RiEqualizerLine, label: string) => (
     <Button
-      variant="secondary"
+      variant="ghost"
       size="sm"
-      className="h-7 gap-1.5 rounded-full px-2.5 font-normal text-xs text-foreground/80 shadow-xs hover:bg-secondary/80 disabled:opacity-100"
+      className="h-7 gap-1.5 rounded-full border border-glass-border bg-glass-bg px-2.5 font-normal text-xs text-foreground shadow-xs ring-1 ring-glass-ring hover:bg-glass-hover disabled:opacity-100 dark:shadow-[0_1px_3px_rgba(0,0,0,0.3),inset_0_1px_0_rgba(255,255,255,0.08)] dark:hover:bg-glass-hover dark:aria-expanded:bg-glass-hover"
     >
       <Icon className="size-3.5 text-muted-foreground" />
       {label}
@@ -2833,7 +2834,12 @@ export function Panel({
         {info && (
           <div
             data-tray
-            className={cn("flex items-center gap-1.5", only ? "rounded-2xl bg-muted p-1" : "mb-2")}
+            className={cn(
+              "flex items-center gap-1.5",
+              only
+                ? "rounded-2xl border border-glass-border bg-glass-bg p-1 ring-1 ring-glass-ring"
+                : "mb-2",
+            )}
           >
             {!only && (
               <DropdownMenu>

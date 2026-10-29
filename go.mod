@@ -5,7 +5,7 @@ go 1.27.3
 require (
 	github.com/Calcium-Ion/moejs v0.1.0-alpha.10
 	github.com/ebitengine/purego v0.11.2
-	github.com/egoist/mygo v0.6.0
+	github.com/egoist/mygo v0.7.2
 	github.com/emersion/go-imap/v2 v2.0.0-beta.8
 	github.com/emersion/go-message v0.18.2
 	github.com/emersion/go-sasl v0.0.0-20241020182733-b788ff22d5a6
@@ -18,6 +18,7 @@ require (
 	github.com/gorilla/css v1.0.1
 	github.com/microcosm-cc/bluemonday v1.0.27
 	github.com/modelcontextprotocol/go-sdk v1.8.0
+	github.com/pelletier/go-toml/v2 v2.2.4
 	github.com/stretchr/testify v1.12.1
 	github.com/tdewolff/parse/v2 v2.8.20
 	github.com/yuin/goldmark v1.8.6

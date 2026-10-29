@@ -8,6 +8,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"html"
 	"log/slog"
 	"slices"
 	"strings"
@@ -139,10 +140,18 @@ func (s *Service) runSkill(ctx context.Context, end func(), name string, t Targe
 		system += "\n\nTarget language: " + lang + ". Languages that need no translation: " +
 			strings.Join(append([]string{lang}, keep...), ", ") + ". If the text is in one of them, reply exactly " + noTranslation + " and nothing else."
 	}
+	digest := name == "summarize" && t.Kind == "thread" // ParseThreadDigest reads it
+	if digest {
+		system += "\n\n" + threadDigestFormat
+	}
 
 	key := ""
 	if t.Kind == "message" || t.Kind == "thread" {
-		key = cacheKey(sk.Name, sk.Version, t.Kind, t.ID, members, model.ServiceID, model.Version, model.Model, lang, keep)
+		parts := []any{sk.Name, sk.Version, t.Kind, t.ID, members, model.ServiceID, model.Version, model.Model, lang, keep}
+		if digest { // apart from summaries cached before the format
+			parts = append(parts, threadDigestFormat)
+		}
+		key = cacheKey(parts...)
 		o, hit, err := s.cacheGet(ctx, key)
 		if err != nil {
 			return nil, err
@@ -295,14 +304,17 @@ func (s *Service) cleanAICache(ctx context.Context) error {
 	return err
 }
 
-// QuickReply is one suggested reply: sanitized HTML and a plain-text preview.
-type QuickReply struct{ Preview, HTML string }
+// QuickReply is one suggested reply: sanitized HTML, a plain-text preview,
+// and a short label naming its intent ("" from answers cached before it).
+type QuickReply struct{ Label, Preview, HTML string }
 
 const (
 	maxQuickReplies    = 3
 	quickPreviewRunes  = 80
+	quickLabelRunes    = 16
 	quickRepliesSystem = `Suggest up to three short, distinct replies the user could send to the email you are given, written as the user. ` +
-		`Answer with JSON only, exactly in this shape: {"replies":[{"html":"<p>...</p>"}]}. Use simple HTML (paragraphs, line breaks). ` +
+		`Answer with JSON only, exactly in this shape: {"replies":[{"label":"...","html":"<p>...</p>"}]}. Use simple HTML (paragraphs, line breaks). ` +
+		`Each label names the reply's intent in one to three words, in the replies' language (at most six characters in Chinese or Japanese). ` +
 		`No greeting placeholders, no signature, no quoted text.`
 )
 
@@ -398,7 +410,7 @@ func (s *Service) QuickReplies(ctx context.Context, messageID int64) ([]QuickRep
 	return rs, nil
 }
 
-// parseQuickReplies reads {"replies":[{"html":...}]}, optionally inside a
+// parseQuickReplies reads {"replies":[{"label":...,"html":...}]}, optionally inside a
 // markdown code fence, keeping the first three non-empty replies, their link
 // references expanded and sanitized.
 func parseQuickReplies(out string, expand func(string) string) ([]QuickReply, error) {
@@ -411,7 +423,8 @@ func parseQuickReplies(out string, expand func(string) string) ([]QuickReply, er
 	// array of objects with string html is an answer (an empty array is one).
 	var v struct {
 		Replies *[]*struct {
-			HTML *string `json:"html"`
+			Label string  `json:"label"`
+			HTML  *string `json:"html"`
 		} `json:"replies"`
 	}
 	if err := json.Unmarshal([]byte(out), &v); err != nil {
@@ -435,7 +448,11 @@ func parseQuickReplies(out string, expand func(string) string) ([]QuickReply, er
 		if runes := []rune(p); len(runes) > quickPreviewRunes {
 			p = string(runes[:quickPreviewRunes])
 		}
-		if rs = append(rs, QuickReply{Preview: p, HTML: h}); len(rs) == maxQuickReplies {
+		l := strings.Join(strings.Fields(mail.HTMLToText(expand(html.EscapeString(r.Label)))), " ") // expand restores HTML
+		if runes := []rune(l); len(runes) > quickLabelRunes {
+			l = string(runes[:quickLabelRunes])
+		}
+		if rs = append(rs, QuickReply{Label: l, Preview: p, HTML: h}); len(rs) == maxQuickReplies {
 			break
 		}
 	}

@@ -59,13 +59,13 @@ func (a *App) notify(acc int64, got *arrivals) {
 			logf("notify: account %d: reading new mail: %v", acc, err)
 			return nil
 		}
-		cur, err := svc.GetSettings(ctx) // the stored list: a block takes effect at once
+		blockedSenders, err := svc.BlockedSenders(ctx) // the stored list: a block takes effect at once
 		if err != nil {
 			logf("notify: account %d: reading blocked senders: %v", acc, err)
 		}
 		var junk []int64
 		msgs = slices.DeleteFunc(msgs, func(m core.MessageSummary) bool {
-			blocked := slices.Contains(cur.BlockedSenders, mail.AddrKey(m.From))
+			blocked := slices.Contains(blockedSenders, mail.AddrKey(m.From))
 			if blocked {
 				junk = append(junk, m.ID)
 			}

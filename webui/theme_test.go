@@ -29,6 +29,9 @@ func TestThemeVars(t *testing.T) {
 		"--shadow-float": "0 0px 0px 1px rgb(0 0 0 / 0.039), 0 2px 8px 0px rgb(0 0 0 / 0.039), 0 4px 80px 8px rgb(0 0 0 / 0.024)",
 		"--window":       css(l.Window), "--shadow-xs": "0 1px 2px 0px rgb(0 0 0 / 0.050)",
 		"--window-material": css(l.Window.Alpha(theme.MaterialTint)),
+		"--glass-bg":        css(l.GlassBg),
+		"--glass-border":    css(l.GlassBorder),
+		"--glass-hover":     css(l.GlassHover),
 	}
 	for k, w := range want {
 		if v[k] != w {

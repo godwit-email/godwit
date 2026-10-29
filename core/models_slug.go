@@ -181,19 +181,19 @@ func (s *Service) backfillSlugs(ctx context.Context) error {
 	return err
 }
 
-// captureAliases records, once (settings key model_aliases_v1), every
+// captureAliases records, once (meta key model_aliases_v1), every
 // service's name as its alias: skill files may say "name/model", and names no
 // longer resolve. A name that is a slug or already an alias is skipped. It
 // runs after backfillSlugs, in its own transaction, until it has run.
 func (s *Service) captureAliases(ctx context.Context) error {
-	done, err := s.db.Query(ctx, "SELECT 1 FROM settings WHERE key = 'model_aliases_v1'")
+	done, err := s.db.Query(ctx, "SELECT 1 FROM meta WHERE key = 'model_aliases_v1'")
 	if err != nil || len(done.Values) > 0 {
 		return err
 	}
 	_, err = s.db.Transaction(ctx, []sqlite.Statement{
 		{SQL: `INSERT OR IGNORE INTO model_service_aliases(name, service_id) SELECT name, id FROM model_services m
 			WHERE NOT EXISTS (SELECT 1 FROM model_services o WHERE o.slug = m.name)`},
-		{SQL: "INSERT INTO settings(key, value) VALUES ('model_aliases_v1', 'done')"},
+		{SQL: "INSERT INTO meta(key, value) VALUES ('model_aliases_v1', 'done')"},
 	})
 	return err
 }

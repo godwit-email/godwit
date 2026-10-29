@@ -249,7 +249,7 @@ func TestAppleIntelligenceSummarizeAdaptation(t *testing.T) {
 	assert.InDelta(t, 0.2, mock.recordedTemp, 0.001)
 
 	// Verify quick replies adaptation and format packaging
-	qrSys := `Suggest up to three short, distinct replies the user could send to the email you are given, written as the user. Answer with JSON only, exactly in this shape: {"replies":[{"html":"<p>...</p>"}]}. Use simple HTML (paragraphs, line breaks). No greeting placeholders, no signature, no quoted text.
+	qrSys := quickRepliesSystem + `
 
 ` + ai.UntrustedSystemNote + `
 

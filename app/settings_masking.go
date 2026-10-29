@@ -14,7 +14,7 @@ import (
 	"github.com/godwit-email/godwit/internal/theme"
 )
 
-// maskDraft is General › 隐私脱敏's text fields: the words, rules and
+// maskDraft is 隐私与安全 › 隐私脱敏's text fields: the words, rules and
 // allowlist as edited, one per line, until saved; and the preview.
 type maskDraft struct {
 	words, rules, allow string
@@ -24,9 +24,10 @@ type maskDraft struct {
 	shown, shownFor     string // the preview masked, and what it was masked for
 }
 
-// maskingView is 隐私脱敏 (docs/adr/0025-mask-at-cloud-egress.md), under
-// the AI section: the switch and the categories save as they change; the
-// words, rules and allowlist with their button, once checked.
+// maskingView is 隐私脱敏 (docs/adr/0025-mask-at-cloud-egress.md), the
+// privacy page's first tab: the switch and the categories save as they
+// change; the words, rules and allowlist with their button, once checked;
+// then the way into 脱敏记录.
 func (p *settingsPage) maskingView(c *ui.Context) {
 	st := &p.st
 	rows := []func(){func() {
@@ -42,44 +43,19 @@ func (p *settingsPage) maskingView(c *ui.Context) {
 		p.maskCustom(c)
 		p.maskPreview(c)
 	}
-	p.maskLogView(c)
+	p.maskLogEntry(c)
 }
 
-// maskLogShown is how many of the newest records 脱敏记录 shows.
-const maskLogShown = 100
-
-// readMaskLog reads 脱敏记录 for the General page.
+// readMaskLog reads 脱敏记录 for the privacy page's entry and the log's own page.
 func (p *settingsPage) readMaskLog() {
 	a := p.a
 	var log []core.MaskRecord
 	a.query(func(ctx context.Context) (err error) { log, err = a.svc.MaskingLog(ctx); return err },
 		func(err error) {
 			if err == nil {
-				p.maskLog = log[:min(len(log), maskLogShown)]
+				p.maskLog = log
 			}
 		})
-}
-
-// maskLogView is 脱敏记录: what the last 30 days' requests held, newest
-// first, each by its first character and length, never the value.
-func (p *settingsPage) maskLogView(c *ui.Context) {
-	t := theme.Of(c)
-	var rows []func()
-	for _, r := range p.maskLog {
-		rows = append(rows, func() {
-			label := i18n.T("settings.masking.feature."+cmp.Or(r.Feature, "other")) + " · " + maskCategoryName(r.Category)
-			help := i18n.Tf("settings.masking.log.value", r.First, r.Len) + " · " + listTime(p.a.clock.Now(), r.At)
-			settingRow(c, label, help, func() {
-				kit.Text(c, i18n.T("settings.masking.action."+r.Action), t.Text.Sm).TextColor(t.Muted)
-			})
-		})
-	}
-	if len(rows) == 0 {
-		rows = append(rows, func() {
-			settingBlock(c, func() { ui.Text(c, i18n.T("settings.masking.log.empty")).TextColor(t.Muted) })
-		})
-	}
-	settingsSection(c, i18n.T("settings.masking.log"), i18n.T("settings.masking.log.foot"), rows...)
 }
 
 // maskCategoryName is a category as the settings name it; "" is the user's own.
@@ -164,7 +140,7 @@ func (p *settingsPage) maskCustom(c *ui.Context) {
 func (p *settingsPage) saveMasking() {
 	d := &p.mask
 	st, lines := d.edited(p.st)
-	if d.err = maskCheck(st, lines); d.err != "" {
+	if d.err = p.maskCheck(st, lines); d.err != "" {
 		return
 	}
 	p.st, d.editing = st, false
@@ -185,7 +161,7 @@ func (p *settingsPage) maskPreview(c *ui.Context) {
 	st, lines := d.edited(p.st)
 	if key := fmt.Sprintf("%q %+v %v %v %v %v", d.preview, st.MaskCategories, st.MaskWords, st.MaskWordsCase, st.MaskWordsWhole, st.MaskAllow) + ruleLines(st.MaskRules); key != d.shownFor {
 		d.shownFor = key
-		if msg := maskCheck(st, lines); msg != "" {
+		if msg := p.maskCheck(st, lines); msg != "" {
 			d.shown = msg
 		} else if out, err := p.a.svc.PreviewMasking(context.Background(), st, d.preview); err != nil {
 			d.shown = humanize(err)
@@ -244,9 +220,9 @@ func ruleLines(rules []core.MaskRule) string {
 }
 
 // maskCheck says why st's rules (on lines) or allowlist can't be saved; ""
-// if they can.
-func maskCheck(st core.Settings, lines []int) string {
-	err := core.CheckMasking(st.MaskRules, st.MaskAllow)
+// if they can. A rule stored under a built-in kind before can stay.
+func (p *settingsPage) maskCheck(st core.Settings, lines []int) string {
+	err := core.CheckMasking(st.MaskRules, st.MaskAllow, p.a.settingsOK.MaskRules...)
 	var re *core.MaskRuleError
 	switch {
 	case err == nil:
@@ -259,6 +235,8 @@ func maskCheck(st core.Settings, lines []int) string {
 		return humanize(err)
 	case errors.Is(err, core.ErrMaskKind):
 		return i18n.Tf("settings.masking.rules.kind", lines[re.Index])
+	case errors.Is(err, core.ErrMaskReservedKind):
+		return i18n.Tf("settings.masking.rules.reserved", lines[re.Index])
 	case errors.Is(err, core.ErrMaskEmptyMatch):
 		return i18n.Tf("settings.masking.rules.empty", lines[re.Index])
 	}

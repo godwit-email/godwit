@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"html"
 	"log/slog"
+	"regexp"
 	"slices"
 	"strings"
 	"time"
@@ -87,13 +88,46 @@ type draftUndo struct {
 
 func isDraftEdit(tool string) bool { return tool == "update_draft" || tool == "update_selection" }
 
+var (
+	// Any tag, inline ones included: a one-line reply with only a link is still HTML.
+	htmlTag   = regexp.MustCompile(`(?i)</?[a-z][a-z0-9]*\b[^>]*>`)
+	paraBreak = regexp.MustCompile(`\n[ \t]*\n\s*`)
+)
+
+// ensureHTML converts plain text (with single or double line breaks) into
+// HTML paragraphs (<p>) and breaks (<br>) when it contains no tags at all.
+func ensureHTML(h string) string {
+	if h == "" || htmlTag.MatchString(h) {
+		return h
+	}
+	h = strings.ReplaceAll(h, "\r\n", "\n")
+	paras := paraBreak.Split(strings.TrimSpace(h), -1)
+	var b strings.Builder
+	for _, p := range paras {
+		p = strings.TrimSpace(p)
+		if p == "" {
+			continue
+		}
+		lines := strings.Split(p, "\n")
+		b.WriteString("<p>")
+		for i, line := range lines {
+			if i > 0 {
+				b.WriteString("<br>")
+			}
+			b.WriteString(html.EscapeString(line))
+		}
+		b.WriteString("</p>")
+	}
+	return b.String()
+}
+
 // cleanHTML is model (or GUI) HTML made safe for a draft: forged quote and
 // signature markers become plain content, then it is sanitized.
 func cleanHTML(h string) string { return mail.SanitizeCompose(mail.StripMarkers(h)) }
 
 var selectionSpec = ai.ToolSpec{Name: "update_selection",
 	Description: "Replace the selected part of the draft with html. The user reviews the change.",
-	Schema:      object(map[string]any{"html": stringProp}, "html")}
+	Schema:      object(map[string]any{"html": map[string]any{"type": "string", "description": "Replacement HTML (paragraphs in <p>, line breaks with <br>)."}}, "html")}
 
 // registerAssistTools offers the draft tools to Wit runs. update_selection
 // is prepared only by the run RewriteSelection starts, which knows the selection.
@@ -101,7 +135,7 @@ func (s *Service) registerAssistTools() {
 	s.mustRegister(toolDesc{Spec: ai.ToolSpec{Name: "update_draft",
 		Description: "Replace the editable part of the draft (everything but the quoted email and the signature) with html, and set or update the subject.",
 		Schema: object(map[string]any{
-			"html":    stringProp,
+			"html":    map[string]any{"type": "string", "description": "The draft body as HTML (paragraphs in <p>, line breaks with <br>)."},
 			"subject": map[string]any{"type": "string", "description": "Subject for the draft. Always provide this when drafting or when changes affect the subject; keep it consistent with the content."},
 		}, "html")},
 		Write: true, Exec: &executor{Prepare: s.prepareUpdate, Apply: s.applyUpdate}})
@@ -448,7 +482,7 @@ func (s *Service) prepareUpdate(ctx context.Context, conv Conversation, args jso
 	if err := json.Unmarshal(args, &in); err != nil {
 		return prepared{}, err
 	}
-	return s.proposeUpdateWithSubject(ctx, conv.DraftID, in.Subject, func(string, int64) (string, error) { return cleanHTML(in.HTML), nil })
+	return s.proposeUpdateWithSubject(ctx, conv.DraftID, in.Subject, func(string, int64) (string, error) { return cleanHTML(ensureHTML(in.HTML)), nil })
 }
 
 // applyUpdate writes the approved editable part between the draft's own quote
@@ -531,7 +565,7 @@ func (s *Service) ApplyEditedProposal(ctx context.Context, approvalID int64, edi
 	if err := json.Unmarshal(a.Args, &in); err != nil {
 		return err
 	}
-	in.HTML = cleanHTML(edited)
+	in.HTML = cleanHTML(ensureHTML(edited))
 	b, err := json.Marshal(in)
 	if err != nil {
 		return err
