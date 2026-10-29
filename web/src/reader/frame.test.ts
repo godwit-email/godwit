@@ -168,13 +168,19 @@ test("plain text links its web addresses and marks its quoted lines", () => {
   const plain = body({
     html: "",
     plain:
-      'Visit https://github.com/contact.\n> see https://x.example/a?b=1&c="2"\nno javascript:alert(1)',
+      'Visit https://github.com/contact.\n> see https://x.example/a?b=1&c="2"\nno javascript:alert(1)\n' +
+      "Go: https://en.wikipedia.org/wiki/Go_(programming_language). (or https://x.example/b)",
   });
   const wrap = parse(buildSrcdoc(plain, theme({ mode: "light" }))).getElementById("godwit-body");
   const links = [...(wrap?.querySelectorAll("[data-href]") ?? [])].map((e) =>
     e.getAttribute("data-href"),
   );
-  expect(links).toEqual(["https://github.com/contact", "https://x.example/a?b=1&c="]);
+  expect(links).toEqual([
+    "https://github.com/contact",
+    "https://x.example/a?b=1&c=",
+    "https://en.wikipedia.org/wiki/Go_(programming_language)", // its own ")", not the sentence's "."
+    "https://x.example/b", // not the ")" closing the text's "("
+  ]);
   expect(wrap?.querySelector(".godwit-quote")?.textContent).toBe(
     '> see https://x.example/a?b=1&c="2"',
   );

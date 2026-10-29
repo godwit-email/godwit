@@ -10,8 +10,25 @@ export const FRAME_CSP = "default-src 'none'; style-src 'unsafe-inline'; img-src
 
 const escapeText = (s: string) => s.replace(/[&<>"']/g, (c) => `&#${c.charCodeAt(0)};`);
 
-// A web address in plain text, up to its trailing punctuation.
-const URL_RE = /\bhttps?:\/\/[^\s<>"']*[^\s<>"'.,;:!?)\]}]/g;
+// A web address in plain text, with what may follow it (linkLength cuts that off).
+const URL_RE = /\bhttps?:\/\/[^\s<>"']+/g;
+
+/**
+ * How much of a matched address is the link, as core/maillinks.go's mailLinks has it: not the
+ * sentence punctuation after it, then not an unbalanced ")" ("text (url)"); a ")" that closes a
+ * "(" in it is its own, so "Go_(lang)" keeps it and "a!)" its "!".
+ */
+function linkLength(u: string): number {
+  let end = u.length;
+  const open = u.split("(").length - 1;
+  let closed = u.split(")").length - 1;
+  while (end > 0 && ".,;:!?]}".includes(u[end - 1])) end--;
+  while (end > 0 && u[end - 1] === ")" && open < closed) {
+    closed--;
+    end--;
+  }
+  return end;
+}
 
 /**
  * Plain text as HTML: escaped, its web addresses links (data-href, as Go makes an HTML mail's)
@@ -24,9 +41,11 @@ export function plainHTML(text: string): string {
       let html = "";
       let at = 0;
       for (const m of line.matchAll(URL_RE)) {
-        const url = escapeText(m[0]);
+        const link = m[0].slice(0, linkLength(m[0]));
+        if (!/^https?:\/\/./.test(link)) continue; // nothing but the scheme
+        const url = escapeText(link);
         html += `${escapeText(line.slice(at, m.index))}<span data-href="${url}">${url}</span>`;
-        at = m.index + m[0].length;
+        at = m.index + link.length;
       }
       html += escapeText(line.slice(at));
       return /^\s*>/.test(line) ? `<span class="godwit-quote">${html}</span>` : html;
