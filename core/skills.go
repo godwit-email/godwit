@@ -2,7 +2,6 @@ package core
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"path/filepath"
 	"slices"
@@ -48,12 +47,7 @@ func (s *Service) loadSkills() (ok map[string]skills.Skill, failed map[string]er
 }
 
 func (s *Service) disabledSkills(ctx context.Context) ([]string, error) {
-	rows, err := s.db.Query(ctx, "SELECT value FROM settings WHERE key = 'skills.disabled'")
-	if err != nil || len(rows.Values) == 0 {
-		return nil, err
-	}
-	var names []string
-	return names, json.Unmarshal([]byte(rows.Values[0][0].(string)), &names)
+	return s.readList(ctx, skillsOff)
 }
 
 // ListSkills lists built-in and user skills, including user skills that failed to load.
@@ -108,10 +102,7 @@ func (s *Service) SetSkillEnabled(ctx context.Context, name string, enabled bool
 	if !enabled {
 		off = append(off, name)
 	}
-	b, _ := json.Marshal(off)
-	_, err = s.db.Execute(ctx, `INSERT INTO settings(key, value) VALUES ('skills.disabled', ?)
-		ON CONFLICT(key) DO UPDATE SET value = excluded.value`, string(b))
-	return err
+	return s.writeList(ctx, skillsOff, off)
 }
 
 // skill returns an enabled, loadable skill.

@@ -1383,11 +1383,11 @@ func (r *reader) unsubscribeDialog(c *ui.Context) {
 
 // isBlocked is whether from (a From header or its address) is a blocked sender.
 func (r *reader) isBlocked(from string) bool {
-	return slices.Contains(r.p.a.settings.BlockedSenders, gomail.AddrKey(from))
+	return slices.Contains(r.p.a.blocked, gomail.AddrKey(from))
 }
 
 // setBlocked blocks or unblocks from's address, in core and then in the
-// settings shown, so the badge and lists change at once; done follows success.
+// list shown, so the badge and lists change at once; done follows success.
 func (a *App) setBlocked(from string, block bool, done func()) {
 	a.do(func(ctx context.Context) error {
 		if block {
@@ -1400,11 +1400,11 @@ func (a *App) setBlocked(from string, block bool, done func()) {
 			return
 		}
 		key := gomail.AddrKey(from)
-		l := slices.DeleteFunc(slices.Clone(a.settings.BlockedSenders), func(s string) bool { return s == key })
+		l := slices.DeleteFunc(slices.Clone(a.blocked), func(s string) bool { return s == key })
 		if block {
 			l = append(l, key)
 		}
-		a.settings.BlockedSenders = l
+		a.blocked = l
 		if done != nil {
 			done()
 		}

@@ -530,7 +530,7 @@ func (p *settingsPage) remoteImagesView(c *ui.Context) {
 func (p *settingsPage) trustedView(c *ui.Context) {
 	t, a := theme.Of(c), p.a
 	var rows []func()
-	for _, addr := range a.settings.TrustedImageSenders {
+	for _, addr := range a.trusted {
 		rows = append(rows, func() {
 			settingRow(c, addr, "", func() {
 				if settingButton(c, i18n.T("settings.trusted.remove"), kit.Outline, false).Label(i18n.Tf("settings.trusted.remove.label", addr)).Clicked() {
@@ -551,7 +551,7 @@ func (p *settingsPage) trustedView(c *ui.Context) {
 func (p *settingsPage) blockedView(c *ui.Context) {
 	t, a := theme.Of(c), p.a
 	var rows []func()
-	for _, addr := range a.settings.BlockedSenders {
+	for _, addr := range a.blocked {
 		rows = append(rows, func() {
 			settingRow(c, addr, "", func() {
 				if settingButton(c, i18n.T("settings.blocked.remove"), kit.Outline, false).Label(i18n.Tf("settings.blocked.remove.label", addr)).Clicked() {

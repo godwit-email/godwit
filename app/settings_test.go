@@ -1460,8 +1460,8 @@ func TestSettingsTrustedSenders(t *testing.T) {
 	h.see("bob@example.com")
 	h.click("移除 bob@example.com") // the button names whom it removes
 	h.until("untrusted", func() bool {
-		st, _ := h.env.Svc.GetSettings(context.Background())
-		return len(st.TrustedImageSenders) == 0
+		l, err := h.env.Svc.TrustedImageSenders(context.Background())
+		return err == nil && len(l) == 0
 	})
 	h.settle()
 	h.advance(refreshEvery)
@@ -1576,8 +1576,8 @@ func TestSettingsBlockedSenders(t *testing.T) {
 	h.see("spammer@example.com")
 	h.click("取消屏蔽 spammer@example.com")
 	h.until("unblocked", func() bool {
-		st, err := h.env.Svc.GetSettings(context.Background())
-		return err == nil && len(st.BlockedSenders) == 0
+		l, err := h.env.Svc.BlockedSenders(context.Background())
+		return err == nil && len(l) == 0
 	})
 	h.settle()
 	h.advance(refreshEvery)

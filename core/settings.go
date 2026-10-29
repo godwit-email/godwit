@@ -26,7 +26,7 @@ type Settings struct {
 	NoTranslate                                      []string
 	LaunchAtLogin, KeepInBackground, UnreadInMenuBar bool
 	UnreadOnAppIcon                                  bool
-	NotifyNewMail, NotifySmartOnly, NotifyPreview    bool
+	NotifyNewMail, NotifyPreview                     bool
 	QuickReplies, Summary, ThreadView                bool
 	ThreadCollapse                                   bool // collapse runs of folded messages into an expandable card
 	ThreadCollapseThreshold                          int  // a thread collapses from this many messages, MinThreadCollapse to MaxThreadCollapse
@@ -77,21 +77,10 @@ type Settings struct {
 	// ListWidth is the mail list's width in DIPs, the user's drag: 0 for the
 	// default, else 280 to 560.
 	ListWidth int
-	// TrustedImageSenders are the lower-cased From addresses whose remote
-	// images load at once (始终信任此发件人). Only TrustImageSender and
-	// UntrustImageSender change it; SetSettings keeps the stored list.
-	TrustedImageSenders []string
-	// BlockedSenders are the lower-cased From addresses the user blocked.
-	// Only BlockSender and UnblockSender change it; SetSettings keeps the stored list.
-	BlockedSenders []string
 	// RemoteImages is when a message's remote images and sender avatars load, through the image
 	// proxy: "auto" (default, "" too) at once, "trusted" for the trusted
 	// senders only, "ask" after 加载图片. Mail in Junk never loads them by itself.
 	RemoteImages string
-	// DisabledBuiltins are the built-in plugins the user switched off; every
-	// other one is on. Only SetPluginEnabled changes it; SetSettings keeps
-	// the stored list.
-	DisabledBuiltins []string
 	// SettingsVersion is 2 once the default text grew from 13 to 14 px and a
 	// stored FontSize was raised by one to keep its sizes; 3 once a stored
 	// BodyFontSize of 14, the old default, became 0 (follow FontSize); 4 once
@@ -259,18 +248,6 @@ func (s *Service) SetSettings(ctx context.Context, st Settings) (Settings, error
 	}
 	s.settingsMu.Lock()
 	defer s.settingsMu.Unlock()
-	stored, err := s.loadSettings(ctx)
-	if err != nil {
-		return Settings{}, err
-	}
-	st.TrustedImageSenders = stored.TrustedImageSenders // a page's stale snapshot must not undo a trust
-	st.BlockedSenders = stored.BlockedSenders           // nor a blocked sender
-	st.DisabledBuiltins = stored.DisabledBuiltins       // nor a plugin switch
-	return s.storeSettings(ctx, st)
-}
-
-// storeSettings writes st and announces settings.changed; the caller holds settingsMu.
-func (s *Service) storeSettings(ctx context.Context, st Settings) (Settings, error) {
 	st.SettingsVersion = settingsVersion // a client's 0 must not make the next load raise FontSize again
 	b, err := json.Marshal(st)
 	if err != nil {
@@ -332,8 +309,59 @@ func (s *Service) UntrustImageSender(ctx context.Context, addr string) error {
 	})
 }
 
-// editSenders changes the sender list that field picks, under settingsMu.
-func (s *Service) editSenders(ctx context.Context, field func(*Settings) *[]string, edit func([]string) ([]string, error)) error {
+// The lists kept beside Settings, a settings row each holding a JSON array:
+// only their own methods change them, so a page's stale Settings cannot
+// undo a trust, a block or a plugin switch.
+const (
+	trustedSenders = "senders.trusted"
+	blockedSenders = "senders.blocked"
+	builtinsOff    = "builtins.disabled"
+	skillsOff      = "skills.disabled"
+)
+
+// readList is the list stored under key; nil if none is.
+func (s *Service) readList(ctx context.Context, key string) ([]string, error) {
+	rows, err := s.db.Query(ctx, "SELECT value FROM settings WHERE key = ?", key)
+	if err != nil || len(rows.Values) == 0 {
+		return nil, err
+	}
+	var l []string
+	return l, json.Unmarshal([]byte(store.Str(rows.Values[0][0])), &l)
+}
+
+func (s *Service) writeList(ctx context.Context, key string, l []string) error {
+	b, err := json.Marshal(l)
+	if err != nil {
+		return err
+	}
+	_, err = s.db.Execute(ctx, `INSERT INTO settings(key, value) VALUES (?, ?)
+		ON CONFLICT(key) DO UPDATE SET value = excluded.value`, key, string(b))
+	return err
+}
+
+// TrustedImageSenders are the lower-cased From addresses whose remote
+// images load at once (始终信任此发件人).
+func (s *Service) TrustedImageSenders(ctx context.Context) ([]string, error) {
+	return s.list(ctx, trustedSenders)
+}
+
+// BlockedSenders are the addresses the user blocked, keyed as gomail.AddrKey.
+func (s *Service) BlockedSenders(ctx context.Context) ([]string, error) {
+	return s.list(ctx, blockedSenders)
+}
+
+func (s *Service) list(ctx context.Context, key string) ([]string, error) {
+	ctx, end, err := s.begin(ctx, 0)
+	if err != nil {
+		return nil, err
+	}
+	defer end()
+	return s.readList(ctx, key)
+}
+
+// editSenders changes the sender list under key, under settingsMu, then
+// announces settings.changed.
+func (s *Service) editSenders(ctx context.Context, key string, edit func([]string) ([]string, error)) error {
 	ctx, end, err := s.begin(ctx, 0)
 	if err != nil {
 		return err
@@ -341,21 +369,19 @@ func (s *Service) editSenders(ctx context.Context, field func(*Settings) *[]stri
 	defer end()
 	s.settingsMu.Lock()
 	defer s.settingsMu.Unlock()
-	st, err := s.loadSettings(ctx)
+	l, err := s.readList(ctx, key)
 	if err != nil {
 		return err
 	}
-	l, err := edit(slices.Clone(*field(&st)))
-	if err != nil {
+	if l, err = edit(l); err != nil {
 		return err
 	}
-	*field(&st) = l
-	_, err = s.storeSettings(ctx, st)
-	return err
+	if err := s.writeList(ctx, key, l); err != nil {
+		return err
+	}
+	s.bus.Publish(events.Event{Type: events.SettingsChanged})
+	return nil
 }
-
-func trustedSenders(st *Settings) *[]string { return &st.TrustedImageSenders }
-func blockedSenders(st *Settings) *[]string { return &st.BlockedSenders }
 
 const maxBlockedSenders = 1000
 
@@ -411,7 +437,11 @@ func (s *Service) ImagesAllowed(ctx context.Context, message int64) (bool, error
 		return true, nil
 	case "trusted":
 		a, err := mail.ParseAddress(store.Str(rows.Values[0][0]))
-		return err == nil && slices.Contains(st.TrustedImageSenders, strings.ToLower(a.Address)), nil
+		if err != nil {
+			return false, nil
+		}
+		trusted, err := s.readList(ctx, trustedSenders)
+		return slices.Contains(trusted, strings.ToLower(a.Address)), err
 	}
 	return false, nil
 }

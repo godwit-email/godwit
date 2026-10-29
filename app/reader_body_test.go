@@ -523,9 +523,9 @@ func TestReaderTrustSender(t *testing.T) {
 	h.see("已阻止 1 张远程图片")
 	h.click("始终信任此发件人")
 	h.until("allowed", func() bool { return h.countCalls(fmt.Sprint("AllowImages ", m.ID)) == 1 })
-	st, err := h.env.Svc.GetSettings(context.Background())
-	if err != nil || !slices.Equal(st.TrustedImageSenders, []string{"bob@example.com"}) {
-		t.Fatalf("trusted %q, %v", st.TrustedImageSenders, err)
+	trusted, err := h.env.Svc.TrustedImageSenders(context.Background())
+	if err != nil || !slices.Equal(trusted, []string{"bob@example.com"}) {
+		t.Fatalf("trusted %q, %v", trusted, err)
 	}
 	n := h.deliverOne(acc, coretest.Msg("bob@example.com", acc.Email, "More news", "text", img))
 	h.openThread(n.ThreadID)

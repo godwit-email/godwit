@@ -186,10 +186,10 @@ func (s *Service) masker() (*mask.Masker, error) {
 		return s.mask, nil
 	}
 	ctx := context.Background()
-	if _, err := s.db.Execute(ctx, "INSERT INTO settings(key, value) VALUES ('mask_key', ?) ON CONFLICT(key) DO NOTHING", rand.Text()); err != nil {
+	if _, err := s.db.Execute(ctx, "INSERT INTO meta(key, value) VALUES ('mask_key', ?) ON CONFLICT(key) DO NOTHING", rand.Text()); err != nil {
 		return nil, err
 	}
-	rows, err := s.db.Query(ctx, "SELECT value FROM settings WHERE key = 'mask_key'")
+	rows, err := s.db.Query(ctx, "SELECT value FROM meta WHERE key = 'mask_key'")
 	if err != nil {
 		return nil, err
 	}
