@@ -13,6 +13,7 @@ import (
 	"github.com/egoist/mygo/ui"
 	"github.com/godwit-email/godwit/core"
 	"github.com/godwit-email/godwit/core/coretest"
+	"github.com/godwit-email/godwit/internal/mcpclients"
 )
 
 // harness runs an App on a real coretest Service in a headless Tester. Posted
@@ -27,6 +28,7 @@ type harness struct {
 	clock *fakeClock
 	stop  context.CancelFunc // cancels the ctx the App was started with
 	size  [2]int             // the window's, once resize set it; else 1280×820
+	home  string             // where 接入 AI 应用 looks for the AI apps: never this computer's
 
 	mu    sync.Mutex
 	queue []func()
@@ -59,6 +61,10 @@ func newHarnessDev(t *testing.T, dev bool, opts []coretest.Option, setup ...func
 		s(h.env)
 	}
 	h.app = New(Deps{Svc: h.env.Svc, Platform: h.plat, Post: h.post, Clock: h.clock, SystemLanguage: "zh-CN", Logf: h.logf, Dev: dev})
+	h.home = t.TempDir()
+	h.app.mcpEnv = func() (mcpclients.Env, error) {
+		return mcpclients.Env{Home: h.home, OS: "darwin", Run: func(string, ...string) error { return nil }}, nil
+	}
 	h.tt = ui.NewTester(h.app.View, 1280, 820)
 	ctx, stop := context.WithCancel(context.Background())
 	h.stop = stop

@@ -163,12 +163,12 @@ func builtin(name string) *builtinPlugin {
 
 // builtinOn reports whether the built-in plugin is on: a missing setting is on.
 func (s *Service) builtinOn(ctx context.Context, name string) (bool, error) {
-	st, err := s.loadSettings(ctx)
-	return err == nil && !slices.Contains(st.DisabledBuiltins, name), err
+	off, err := s.readList(ctx, builtinsOff)
+	return err == nil && !slices.Contains(off, name), err
 }
 
 func (s *Service) builtinInfos(ctx context.Context) ([]PluginInfo, error) {
-	st, err := s.loadSettings(ctx)
+	off, err := s.readList(ctx, builtinsOff)
 	if err != nil {
 		return nil, err
 	}
@@ -178,26 +178,24 @@ func (s *Service) builtinInfos(ctx context.Context) ([]PluginInfo, error) {
 		if !s.builtinAvailable(b) {
 			continue
 		}
-		out = append(out, PluginInfo{Name: b.name, Title: b.title, Description: b.about, Builtin: true, Enabled: !slices.Contains(st.DisabledBuiltins, b.name)})
+		out = append(out, PluginInfo{Name: b.name, Title: b.title, Description: b.about, Builtin: true, Enabled: !slices.Contains(off, b.name)})
 	}
 	return out, nil
 }
 
-// setBuiltinEnabled records the switch in the settings, which announces
-// settings.changed; the caller announces plugins.changed.
+// setBuiltinEnabled records the switch; the caller announces plugins.changed.
 func (s *Service) setBuiltinEnabled(ctx context.Context, name string, on bool) error {
 	s.settingsMu.Lock()
 	defer s.settingsMu.Unlock()
-	st, err := s.loadSettings(ctx)
+	off, err := s.readList(ctx, builtinsOff)
 	if err != nil {
 		return err
 	}
-	st.DisabledBuiltins = slices.DeleteFunc(st.DisabledBuiltins, func(n string) bool { return n == name })
+	off = slices.DeleteFunc(off, func(n string) bool { return n == name })
 	if !on {
-		st.DisabledBuiltins = append(st.DisabledBuiltins, name)
+		off = append(off, name)
 	}
-	_, err = s.storeSettings(ctx, st)
-	return err
+	return s.writeList(ctx, builtinsOff, off)
 }
 
 // builtinTags are the tags of the built-in plugins that are on. They read

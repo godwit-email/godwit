@@ -32,7 +32,7 @@ func legacyService(t *testing.T, s *Service, id int64, name string, models ...st
 func upgrade(t *testing.T, s *Service) {
 	t.Helper()
 	require.NoError(t, s.backfillSlugs(t.Context()))
-	_, err := s.db.Execute(t.Context(), "DELETE FROM settings WHERE key = 'model_aliases_v1'")
+	_, err := s.db.Execute(t.Context(), "DELETE FROM meta WHERE key = 'model_aliases_v1'")
 	require.NoError(t, err)
 	require.NoError(t, s.captureAliases(t.Context()))
 }
@@ -281,7 +281,7 @@ func TestAliasesCapturedOnUpgradeOnce(t *testing.T) {
 	require.NoError(t, err)
 	_, err = s.db.Execute(bg, `INSERT INTO model_services(id, name, kind, base_url, models, slug) VALUES (1, 'OpenAI', 'openai', 'https://a.com', '["m1"]', 'openai')`)
 	require.NoError(t, err)
-	_, err = s.db.Execute(bg, "DELETE FROM settings WHERE key = 'model_aliases_v1'") // as before migration 13
+	_, err = s.db.Execute(bg, "DELETE FROM meta WHERE key = 'model_aliases_v1'") // as before migration 13
 	require.NoError(t, err)
 	s.Close()
 	restart := func() {

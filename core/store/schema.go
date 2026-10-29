@@ -464,6 +464,27 @@ var Migrations = [][]string{{
 }, {
 	// The mail that question quoted (message IDs, JSON): a retry quotes it again.
 	`ALTER TABLE conversations ADD COLUMN failed_quoted TEXT NOT NULL DEFAULT '[]'`,
+}, {
+	// The lists core.Settings no longer holds get a settings row each (a
+	// JSON array: senders.trusted, senders.blocked, builtins.disabled), and
+	// the run-once markers and the masking key, which are not settings, move
+	// to meta.
+	`INSERT OR IGNORE INTO settings(key, value) SELECT 'senders.trusted', json_extract(value, '$.TrustedImageSenders')
+		FROM (SELECT value FROM settings WHERE key = 'app' AND json_valid(value)) WHERE json_type(value, '$.TrustedImageSenders') = 'array'`,
+	`INSERT OR IGNORE INTO settings(key, value) SELECT 'senders.blocked', json_extract(value, '$.BlockedSenders')
+		FROM (SELECT value FROM settings WHERE key = 'app' AND json_valid(value)) WHERE json_type(value, '$.BlockedSenders') = 'array'`,
+	`INSERT OR IGNORE INTO settings(key, value) SELECT 'builtins.disabled', json_extract(value, '$.DisabledBuiltins')
+		FROM (SELECT value FROM settings WHERE key = 'app' AND json_valid(value)) WHERE json_type(value, '$.DisabledBuiltins') = 'array'`,
+	`UPDATE settings SET value = json_remove(value, '$.TrustedImageSenders', '$.BlockedSenders', '$.DisabledBuiltins', '$.NotifySmartOnly')
+		WHERE key = 'app' AND json_valid(value)`,
+	`INSERT OR IGNORE INTO meta(key, value) SELECT key, value FROM settings WHERE key IN ('labels_seeded', 'model_aliases_v1', 'mask_key')`,
+	`DELETE FROM settings WHERE key IN ('labels_seeded', 'model_aliases_v1', 'mask_key')`,
+}, {
+	// Which request a masking record's value was in (core.MaskRecord.Request):
+	// the log lists requests, each with its values. 0 for the records before.
+	// Indexed: each record looks up the newest request (MAX(request)).
+	`ALTER TABLE mask_log ADD COLUMN request INTEGER NOT NULL DEFAULT 0`,
+	`CREATE INDEX mask_log_request ON mask_log(request)`,
 }}
 
 // HistoryRowsVersion is the schema version that keeps a conversation's

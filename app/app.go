@@ -18,6 +18,7 @@ import (
 	"github.com/godwit-email/godwit/core/events"
 	"github.com/godwit-email/godwit/internal/i18n"
 	"github.com/godwit-email/godwit/internal/kit"
+	"github.com/godwit-email/godwit/internal/mcpclients"
 )
 
 // Platform is what the App needs from the operating system. OpenFiles,
@@ -202,6 +203,8 @@ type App struct {
 	accounts    []core.Account
 	labels      []core.Label     // in the user's order, as the last load read them
 	signatures  []core.Signature // oldest first, as the last load read them
+	trusted     []string         // the senders whose remote images load at once, as the last load read them
+	blocked     []string         // the blocked senders, as the last load read them or a block changed them
 	settings    core.Settings    // what the interface shows: the newest edit while one saves
 	taskModels  map[string]bool  // the reader's tasks ("summarize", "translate", "" quick replies) core has a model for, and "labels"
 	taskGen     uint64           // bumped per refreshTasks; only the newest answer counts
@@ -211,6 +214,7 @@ type App struct {
 	settingsVer      uint64                                                             // bumped per local settings change
 	settingsSavedVer uint64                                                             // the settingsVer whose save the Service confirmed (or reverted to)
 	saveSettings     func(ctx context.Context, st core.Settings) (core.Settings, error) // tests swap it
+	mcpEnv           func() (mcpclients.Env, error)                                     // where 接入 AI 应用 looks for the AI apps; tests swap it
 	setLanguage      func(string)
 	sysLang          string // Deps.SystemLanguage
 	accountsGen      uint64 // the load gen that read a.accounts
@@ -292,7 +296,7 @@ type App struct {
 
 // New builds an App; Start brings it up.
 func New(d Deps) *App {
-	a := &App{settings: d.Settings, settingsOK: d.Settings, setLanguage: d.SetLanguage, svc: d.Svc, plat: d.Platform, post: d.Post, clock: d.Clock, oauth: d.OAuth, sysLang: d.SystemLanguage, vibrancy: d.Vibrancy, appUnread: -1}
+	a := &App{settings: d.Settings, settingsOK: d.Settings, setLanguage: d.SetLanguage, svc: d.Svc, plat: d.Platform, post: d.Post, clock: d.Clock, oauth: d.OAuth, sysLang: d.SystemLanguage, vibrancy: d.Vibrancy, appUnread: -1, mcpEnv: mcpclients.Local}
 	kit.Glass = d.Vibrancy // dialogs frost their panels over a window on a material
 	if a.setLanguage == nil {
 		a.setLanguage = func(tag string) { i18n.SetLanguage(cmp.Or(tag, a.sysLang)) }
@@ -363,6 +367,8 @@ func (a *App) load() {
 	var unread map[int64]int
 	var labels []core.Label
 	var sigs []core.Signature
+	var trusted, blocked []string
+	listsRead := false
 	inbox := 0
 	fetch, ver := a.fetch, a.settingsVer
 	settled := ver == a.settingsSavedVer // no local change waits for its save
@@ -373,6 +379,12 @@ func (a *App) load() {
 		}
 		labels, _ = a.svc.ListLabels(ctx)   // chips only: a failure keeps the last ones
 		sigs, _ = a.svc.ListSignatures(ctx) // likewise
+		// The sender lists too: listsRead says whether to take them.
+		trusted, err = a.svc.TrustedImageSenders(ctx)
+		if err == nil {
+			blocked, err = a.svc.BlockedSenders(ctx)
+		}
+		listsRead = err == nil
 		unread = map[int64]int{}
 		for _, acc := range accs {
 			fs, err := a.svc.ListFolders(ctx, acc.ID)
@@ -425,6 +437,12 @@ func (a *App) load() {
 			}
 			a.finishBatch()
 		}
+		if listsRead {
+			if !slices.Equal(a.trusted, trusted) {
+				a.mail.reader.invalidateAvatars(true)
+			}
+			a.trusted, a.blocked = trusted, blocked
+		}
 		if sigs != nil {
 			a.signatures = sigs
 		}
@@ -435,7 +453,7 @@ func (a *App) load() {
 			}
 		}
 		if settled && ver == a.settingsVer && ver == a.settingsSavedVer { // else st may predate a local change
-			if a.settings.RemoteImages != st.RemoteImages || !slices.Equal(a.settings.TrustedImageSenders, st.TrustedImageSenders) {
+			if a.settings.RemoteImages != st.RemoteImages {
 				a.mail.reader.invalidateAvatars(true)
 			}
 			a.settings, a.settingsOK = st, st

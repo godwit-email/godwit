@@ -220,15 +220,12 @@ func TestSettings(t *testing.T) {
 		st := core.Settings{Theme: "dark", Density: "comfortable", FontSize: 15, BodyFontSize: 17,
 			UILanguage: "en", ReadingLanguage: "de", ReplyLanguage: "reading", NoTranslate: []string{"fr", "es"},
 			LaunchAtLogin: true, KeepInBackground: false, UnreadInMenuBar: true,
-			NotifyNewMail: false, NotifySmartOnly: true, NotifyPreview: false,
+			NotifyNewMail: false, NotifyPreview: false,
 			QuickReplies: true, Summary: true, ThreadView: false,
 			DefaultModel: "svc/big", SmallModel: "svc/small", JudgeService: "judge", JudgeThreshold: 0.85, Translator: "plugin/dlx", LocalAPI: true, SidebarWidth: 320, ListWidth: 400, SignatureDelimiter: true,
 			MaskCategories: core.MaskCategories{Names: core.MaskCategory{On: true, Action: core.MaskWarn}},
 			MaskWords:      []string{"Falcon"}, MaskWordsCase: true, MaskWordsWhole: true,
-			MaskRules: []mask.Rule{{Kind: "EMPLOYEE_ID", Regex: `E\d{6}`}}, MaskAllow: []string{"GitHub"},
-			TrustedImageSenders: []string{"bob@example.com"},      // only TrustImageSender sets it; SetSettings keeps it
-			BlockedSenders:      []string{"spammer@example.com"},  // only BlockSender sets it; SetSettings keeps it
-			DisabledBuiltins:    []string{core.SignInCodesPlugin}} // only SetPluginEnabled sets it; SetSettings keeps it
+			MaskRules: []mask.Rule{{Kind: "EMPLOYEE_ID", Regex: `E\d{6}`}}, MaskAllow: []string{"GitHub"}}
 		bv, sv := reflect.ValueOf(before), reflect.ValueOf(st)
 		for i := range sv.NumField() { // every field must make the round trip
 			if reflect.DeepEqual(bv.Field(i).Interface(), sv.Field(i).Interface()) {
@@ -240,14 +237,12 @@ func TestSettings(t *testing.T) {
 		require.NoError(t, env.Svc.SetPluginEnabled(ctx, core.SignInCodesPlugin, false))
 		out["set"] = res(api.SetSettings(ctx, st))
 		out["after"] = res(api.GetSettings(ctx))
+		out["trusted"] = res(api.TrustedImageSenders(ctx)) // saving the settings leaves the lists alone
+		out["blocked"] = res(api.BlockedSenders(ctx))
 		require.NoError(t, api.UntrustImageSender(ctx, "bob@example.com"))
 		require.NoError(t, api.UnblockSender(ctx, "spammer@example.com"))
-		unblocked, err := api.GetSettings(ctx)
-		require.NoError(t, err)
-		out["unblocked"] = unblocked.BlockedSenders
-		untrusted, err := api.GetSettings(ctx)
-		require.NoError(t, err)
-		out["untrusted"] = untrusted.TrustedImageSenders
+		out["untrusted"] = res(api.TrustedImageSenders(ctx))
+		out["unblocked"] = res(api.BlockedSenders(ctx))
 		bad := st
 		bad.Theme = "neon"
 		out["invalid"] = res(api.SetSettings(ctx, bad))

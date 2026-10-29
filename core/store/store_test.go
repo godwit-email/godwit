@@ -459,3 +459,73 @@ func TestMigrationKeepsEarlierBackup(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, "earlier", string(b))
 }
+
+// Migration 43 moves the lists out of the app settings row into rows of
+// their own, and the run-once markers and the masking key into meta.
+func TestMigrationSettingsRows(t *testing.T) {
+	const v = 43
+	path := filepath.Join(t.TempDir(), "godwit.db")
+	all := store.Migrations
+	store.Migrations = all[:v-1]
+	db, err := store.Open(ctx, path)
+	store.Migrations = all
+	require.NoError(t, err)
+	for _, kv := range [][2]string{
+		{"app", `{"Theme":"dark","TrustedImageSenders":["bob@example.com"],"BlockedSenders":["spam@example.com"],"DisabledBuiltins":["sign-in-codes"],"NotifySmartOnly":true}`},
+		{"labels_seeded", "1"}, {"model_aliases_v1", "done"}, {"mask_key", "k"},
+	} {
+		_, err = db.Execute(ctx, "INSERT INTO settings(key, value) VALUES (?, ?)", kv[0], kv[1])
+		require.NoError(t, err)
+	}
+	db.Close()
+
+	db, err = store.Open(ctx, path)
+	require.NoError(t, err)
+	defer db.Close()
+	read := func(table, key string) string {
+		rows, err := db.Query(ctx, "SELECT value FROM "+table+" WHERE key = ?", key)
+		require.NoError(t, err)
+		if len(rows.Values) == 0 {
+			return ""
+		}
+		return store.Str(rows.Values[0][0])
+	}
+	assert.JSONEq(t, `{"Theme":"dark"}`, read("settings", "app"))
+	assert.JSONEq(t, `["bob@example.com"]`, read("settings", "senders.trusted"))
+	assert.JSONEq(t, `["spam@example.com"]`, read("settings", "senders.blocked"))
+	assert.JSONEq(t, `["sign-in-codes"]`, read("settings", "builtins.disabled"))
+	for k, want := range map[string]string{"labels_seeded": "1", "model_aliases_v1": "done", "mask_key": "k"} {
+		assert.Equal(t, want, read("meta", k), k)
+		assert.Empty(t, read("settings", k), k)
+	}
+}
+
+// Migration 43 leaves an app row without lists, or not JSON at all, as it was.
+func TestMigrationSettingsRowsOddApp(t *testing.T) {
+	for _, app := range []string{`{"Theme":"dark"}`, `not json`} {
+		path := filepath.Join(t.TempDir(), "godwit.db")
+		all := store.Migrations
+		store.Migrations = all[:42]
+		db, err := store.Open(ctx, path)
+		store.Migrations = all
+		require.NoError(t, err)
+		_, err = db.Execute(ctx, "INSERT INTO settings(key, value) VALUES ('app', ?)", app)
+		require.NoError(t, err)
+		db.Close()
+		db, err = store.Open(ctx, path)
+		require.NoError(t, err, app)
+		rows, err := db.Query(ctx, "SELECT key, value FROM settings ORDER BY key")
+		require.NoError(t, err)
+		assert.Equal(t, [][]any{{"app", app}}, rows.Values, app)
+		db.Close()
+	}
+}
+
+// The newest request number is found through an index, not by reading the
+// whole masking log for each value recorded.
+func TestMaskLogRequestIndexed(t *testing.T) {
+	db := open(t)
+	rows, err := db.Query(ctx, "EXPLAIN QUERY PLAN SELECT MAX(request) FROM mask_log")
+	require.NoError(t, err)
+	assert.Contains(t, fmt.Sprint(rows.Values), "mask_log_request")
+}

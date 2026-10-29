@@ -2,6 +2,8 @@ package app
 
 import (
 	"math"
+	"slices"
+	"strings"
 	"testing"
 	"time"
 
@@ -100,9 +102,16 @@ func TestThemeThumbsFit(t *testing.T) {
 func TestSettingsGeneralCopy(t *testing.T) {
 	h, _ := withAccount(t)
 	h.openSettings("general")
-	for _, s := range []string{"主题", "跟随系统时随 macOS 的外观切换", "总结、翻译和 Wit 的回答用这种语言", "登录后在后台启动 Godwit"} {
+	for _, s := range []string{"主题", "跟随系统时随 macOS 的外观切换", "登录后在后台启动 Godwit"} {
 		h.see(s)
 	}
+	if _, ok := h.tt.Find("总结、翻译和 Wit 的回答用这种语言"); ok {
+		t.Fatal("阅读语言 is on General; it belongs to the Intelligence page's 功能 tab")
+	}
+	h.openSettings("models")
+	h.click("功能")
+	h.see("总结、翻译和 Wit 的回答用这种语言")
+	h.see("为收到的邮件准备几条简短的回复")
 }
 
 // TestThemeThumbFocusTip: Tab focus shows the tooltip too.
@@ -123,4 +132,11 @@ func TestThemeThumbFocusTip(t *testing.T) {
 		}
 	}
 	t.Fatal("no tooltip after tabbing to the thumbnails")
+}
+
+// The languages are offered in the order of their tags.
+func TestLanguagesByTag(t *testing.T) {
+	if !slices.IsSortedFunc(languages, func(a, b struct{ tag, name string }) int { return strings.Compare(a.tag, b.tag) }) {
+		t.Fatalf("languages out of tag order: %v", languages)
+	}
 }

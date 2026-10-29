@@ -89,7 +89,7 @@ func (s *Service) classifyBatch(ctx context.Context) (int, error) {
 	// New mail waits for the presets (a start with no language known seeds
 	// none yet), to be classified against them; a rescan, asked for, runs
 	// against the labels there are.
-	seeded, err := s.db.Query(ctx, "SELECT 1 FROM settings WHERE key = 'labels_seeded'")
+	seeded, err := s.db.Query(ctx, "SELECT 1 FROM meta WHERE key = 'labels_seeded'")
 	if err != nil {
 		return 0, err
 	}

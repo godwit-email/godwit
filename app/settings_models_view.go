@@ -15,14 +15,15 @@ import (
 	"github.com/godwit-email/godwit/internal/theme"
 )
 
+// empty is whether there is nothing to list: no service, and no plugin
+// with models (a plugin's are enough).
+func (m *modelsView) empty() bool {
+	return m.loaded && len(m.services) == 0 && !slices.ContainsFunc(m.plugins, func(p core.PluginModels) bool { return len(p.Models) > 0 })
+}
+
+// view is the Intelligence page's 模型 tab, under the page's heading (aiView).
 func (m *modelsView) view(c *ui.Context) {
-	empty := m.loaded && len(m.services) == 0 && !slices.ContainsFunc(m.plugins, func(p core.PluginModels) bool { return len(p.Models) > 0 }) // a plugin's models are enough
-	var add []func()
-	if !empty {
-		add = append(add, func() { settingButton(c, i18n.T("settings.models.add"), kit.Default, false).OnClick(m.add) })
-	}
-	pageHeading(c, i18n.T("settings.models"), i18n.T("settings.models.sub"), add...)
-	if empty {
+	if m.empty() {
 		kit.Empty(c, kit.EmptyOpts{Icon: "cpu", Title: i18n.T("settings.models.empty.title"), Desc: i18n.T("settings.models.empty.desc"), Dashed: true, Actions: func() {
 			kit.EmptyAction(c, i18n.T("settings.models.add"), kit.ButtonOpts{}).OnClick(m.add)
 			kit.EmptyAction(c, i18n.T("settings.models.local"), kit.ButtonOpts{Variant: kit.Outline}).OnClick(m.addLocal)

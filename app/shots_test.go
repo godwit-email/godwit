@@ -595,6 +595,55 @@ func TestShots(t *testing.T) {
 		s.see("deepl-translate")
 		s.see("attachment-check")
 		shot(s.harness, "SettingsExtensions")
+
+		p := s.aiTab(aiFeatures)
+		s.see("阅读语言")
+		shot(s.harness, "SettingsAIFeatures")
+		p.aiTab = aiMCP
+		s.see("添加服务器")
+		shot(s.harness, "SettingsAIMCP")
+		p.aiTab = aiApps
+		s.see("启用本机 API")
+		shot(s.harness, "SettingsAIApps")
+		e, _ := s.app.mcpEnv() // Claude connected, Codex there but not
+		if err := os.MkdirAll(filepath.Join(e.Home, ".codex"), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.MkdirAll(filepath.Join(e.Home, "Library", "Application Support", "Claude"), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := e.Connect("claude", s.app.mcpServer()); err != nil {
+			t.Fatal(err)
+		}
+		s.post(func() { // serving: the rows to connect a client show
+			s.app.settings.LocalAPI = true
+			s.app.localAPIPath = "/Users/you/Library/Application Support/Godwit/godwit.sock"
+		})
+		s.openSettings("general") // back: the AI apps are read again
+		s.openSettings("models")
+		s.see("Codex")
+		shot(s.harness, "SettingsAIAppsOn")
+		p.aiTab = aiModels
+		s.openSettings("privacy")
+		for i, name := range []string{"SettingsPrivacy", "SettingsPrivacyImages", "SettingsPrivacyBlocked"} {
+			p.privacyTab = i
+			s.tt.Frame()
+			shot(s.harness, name)
+		}
+		p.privacyTab = 0
+		s.openSettings("masklog")
+		s.post(func() { // the design's sample: two requests, one blocked
+			at := s.clock.Now().Add(-time.Hour)
+			p.maskLog = []core.MaskRecord{
+				{At: at, Request: 2, Feature: "skill", Kind: "EMAIL", Category: "emails", First: "h", Len: 16, Action: core.MaskMask},
+				{At: at, Request: 2, Feature: "skill", Kind: "ID_CARD", Category: "ids", First: "3", Len: 18, Action: core.MaskBlock},
+				{At: at.Add(-time.Hour), Request: 1, Feature: "wit", Kind: "NAME", Category: "names", Len: 2, Action: core.MaskMask},
+				{At: at.Add(-time.Hour), Request: 1, Feature: "wit", Kind: "PHONE", Category: "phones", First: "1", Len: 11, Action: core.MaskWarn},
+			}
+			p.logFilter.open = map[string]bool{"2": true}
+		})
+		s.see("被拦截的请求")
+		shot(s.harness, "SettingsMaskLog")
 	})
 	t.Run("Toasts", func(t *testing.T) {
 		s := shotMail(t, noQuick)

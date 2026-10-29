@@ -109,7 +109,7 @@ func result(text string, isError bool) *mcp.CallToolResult {
 const (
 	textSent    = "sent: the draft is in Godwit's outbox"
 	textWaiting = "waiting for the user to confirm in Godwit; it is not sent yet"
-	textSendOff = "sending through MCP is off; the user can turn it on in Godwit under Settings › Local API › Send through MCP"
+	textSendOff = "sending through MCP is off; the user can turn it on in Godwit under Settings › Intelligence › AI apps › Send through MCP"
 	textStale   = "draft changed, read it again"
 )
 

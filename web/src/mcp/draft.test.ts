@@ -84,7 +84,7 @@ test("with direct sending the card says the mail was sent", async () => {
 test("with sending through MCP off the button is unavailable and points to Godwit", async () => {
   const root = await sendWith(
     result(
-      "sending through MCP is off; the user can turn it on in Godwit under Settings › Local API › Send through MCP",
+      "sending through MCP is off; the user can turn it on in Godwit under Settings › Intelligence › AI apps › Send through MCP",
       true,
     ),
   );

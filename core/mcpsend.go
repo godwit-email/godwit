@@ -28,7 +28,7 @@ const maxMCPSends = 5
 
 var (
 	// ErrMCPSendOff: 通过 MCP 发送 is 不允许, or 每次确认 with no window to confirm in (--headless).
-	ErrMCPSendOff = errors.New("sending through MCP is off; the user can turn it on in Godwit under Settings › Local API › Send through MCP")
+	ErrMCPSendOff = errors.New("sending through MCP is off; the user can turn it on in Godwit under Settings › Intelligence › AI apps › Send through MCP")
 	// ErrMCPSendComposing: 直接发送 of a draft open in a compose window,
 	// which may hold edits not saved yet.
 	ErrMCPSendComposing = errors.New("the draft is open in a compose window in Godwit; the user can send it there")

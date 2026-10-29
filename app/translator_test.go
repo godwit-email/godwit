@@ -51,7 +51,7 @@ func TestReaderTranslatorOff(t *testing.T) {
 func TestTranslatorSetting(t *testing.T) {
 	h := newHarness(t, func(e *coretest.Env) { e.AddAccount(t, "alice@example.com") }, withNativeTranslator(t, true))
 	h.until("initial load", func() bool { return h.app.loaded })
-	h.openSettings("general")
+	h.aiTab(aiFeatures)
 	h.see("翻译方式")
 	h.click("模型（默认）")
 	h.click("dlx")
@@ -63,7 +63,7 @@ func TestTranslatorSetting(t *testing.T) {
 		t.Fatal(err)
 	}
 	h.openSettings("extensions")
-	h.openSettings("general")
+	h.aiTab(aiFeatures)
 	h.see("dlx（已停用）")
 }
 
@@ -79,7 +79,7 @@ func TestTranslatorSettingUsesRegistryTitle(t *testing.T) {
 	if _, err := h.env.Svc.InstallPluginFromRegistry(ctx, "dlx"); err != nil {
 		t.Fatal(err)
 	}
-	h.openSettings("general")
+	h.aiTab(aiFeatures)
 	h.click("模型（默认）")
 	h.click("DLX 翻译")
 	h.until("saved with the stable ID", func() bool {
@@ -90,7 +90,7 @@ func TestTranslatorSettingUsesRegistryTitle(t *testing.T) {
 		t.Fatal(err)
 	}
 	h.openSettings("extensions")
-	h.openSettings("general")
+	h.aiTab(aiFeatures)
 	h.see("DLX 翻译（已停用）")
 }
 
