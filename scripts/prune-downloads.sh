@@ -29,7 +29,8 @@ version() {
 	local re_target='(darwin|windows|linux)-(amd64|arm64)'
 	if [[ $1 =~ ^godwit-(.+)-to-(.+)-${re_target}\.delta$ ]]; then echo "${BASH_REMATCH[2]}"
 	elif [[ $1 =~ ^godwit-(.+)-${re_target}\.tar\.gz$ ]]; then echo "${BASH_REMATCH[1]}"
-	elif [[ $1 =~ ^Godwit\ (Setup\ )?([^ ]+)(\ (amd64|arm64))?\.(dmg|exe)$ ]]; then echo "${BASH_REMATCH[2]}"
+	elif [[ $1 =~ ^godwit-(setup-)?(.+)-(amd64|arm64)\.(dmg|exe)$ ]]; then echo "${BASH_REMATCH[2]}"
+	elif [[ $1 =~ ^Godwit\ (Setup\ )?([^ ]+)(\ (amd64|arm64))?\.(dmg|exe)$ ]]; then echo "${BASH_REMATCH[2]}" # before mygo 0.7
 	elif [[ $1 =~ ^godwit_([^_]+)_(amd64|arm64)\.deb$ ]]; then echo "deb:${BASH_REMATCH[1]}"
 	fi
 }

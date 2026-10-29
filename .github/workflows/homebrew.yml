@@ -27,7 +27,7 @@ jobs:
           TAG: ${{ inputs.tag }}
         run: |
           entry() { # entry ARCH: the url and sha256 of the disk image for ARCH, as `mygo build` names it
-            url="https://dl.godwit.email/Godwit%20${TAG#v}%20$1.dmg"
+            url="https://dl.godwit.email/godwit-${TAG#v}-$1.dmg"
             curl -fsSL "$url" -o "$1.dmg" || { echo "no $1 disk image at $url" >&2; exit 1; }
             printf '    url "%s"\n    sha256 "%s"\n' "$url" "$(sha256sum "$1.dmg" | cut -d' ' -f1)"
           }
