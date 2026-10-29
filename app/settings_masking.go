@@ -235,6 +235,8 @@ func maskCheck(st core.Settings, lines []int) string {
 		return humanize(err)
 	case errors.Is(err, core.ErrMaskKind):
 		return i18n.Tf("settings.masking.rules.kind", lines[re.Index])
+	case errors.Is(err, core.ErrMaskReservedKind):
+		return i18n.Tf("settings.masking.rules.reserved", lines[re.Index])
 	case errors.Is(err, core.ErrMaskEmptyMatch):
 		return i18n.Tf("settings.masking.rules.empty", lines[re.Index])
 	}

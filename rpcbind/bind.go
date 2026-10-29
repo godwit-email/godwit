@@ -26,6 +26,7 @@ var sentinels = []struct {
 	{"link_ref", core.ErrLinkRef},
 	{"placeholder", core.ErrPlaceholder},
 	{"mask_kind", core.ErrMaskKind},
+	{"mask_reserved_kind", core.ErrMaskReservedKind},
 	{"mask_empty_match", core.ErrMaskEmptyMatch},
 	{"mask_too_many_rules", core.ErrMaskTooManyRules},
 	{"mask_too_many_allow", core.ErrMaskTooManyAllow},

@@ -131,13 +131,14 @@ type (
 	// MaskRule is one of the user's patterns, masking what it finds as its kind.
 	MaskRule = mask.Rule
 	// MaskRuleError says which rule can't be used: ErrMaskKind,
-	// ErrMaskEmptyMatch, or the pattern RE2 can't compile.
+	// ErrMaskReservedKind, ErrMaskEmptyMatch, or the pattern RE2 can't compile.
 	MaskRuleError = mask.RuleError
 )
 
 var (
 	ErrMaskKind         = mask.ErrKind
 	ErrMaskEmptyMatch   = mask.ErrEmptyMatch
+	ErrMaskReservedKind = mask.ErrReservedKind
 	ErrMaskTooManyRules = mask.ErrTooManyRules
 	ErrMaskTooManyAllow = mask.ErrTooManyAllow
 )

@@ -660,6 +660,7 @@
   "settings_masking_save": "Enregistrer",
   "settings_masking_rules_invalid": "Le motif de la ligne {arg1} ne fonctionne pas : {arg2}",
   "settings_masking_rules_kind": "Le nom de catégorie de la ligne {arg1} doit commencer par une lettre et ne contenir que des lettres, chiffres et _, 24 au plus",
+  "settings_masking_rules_reserved": "Le nom de catégorie de la ligne {arg1} est celui d'une catégorie intégrée ; choisissez-en un autre",
   "settings_masking_rules_empty": "Le motif de la ligne {arg1} correspond à un texte vide et masquerait partout",
   "settings_masking_rules_too_many": "{arg1} motifs au plus",
   "settings_masking_allow_too_many": "{arg1} exceptions au plus",

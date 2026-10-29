@@ -1314,6 +1314,7 @@
   "settings_masking_save": "Save",
   "settings_masking_rules_invalid": "The pattern on line {arg1} does not work: {arg2}",
   "settings_masking_rules_kind": "The category name on line {arg1} must start with a letter and have only letters, digits and _, at most 24",
+  "settings_masking_rules_reserved": "The category name on line {arg1} is a built-in category's; choose another name",
   "settings_masking_rules_empty": "The pattern on line {arg1} matches empty text, so it would mask everywhere",
   "settings_masking_rules_too_many": "At most {arg1} patterns",
   "settings_masking_allow_too_many": "At most {arg1} values on the allowlist",

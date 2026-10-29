@@ -41,6 +41,19 @@ func TestMaskingRulesSaveOnlyWhenValid(t *testing.T) {
 	})
 }
 
+// A rule under a built-in category's name is not saved, and the page says
+// which line.
+func TestMaskingRuleMayNotTakeABuiltInKind(t *testing.T) {
+	h, _ := withAccount(t)
+	h.masking()
+	h.typeUnder(i18n.T("settings.masking.rules"), "ORDER ORD-\\d+\nphone x\\d+")
+	h.click(i18n.T("settings.masking.save"))
+	h.see("第 2 行的类别名和内置类别重名")
+	if len(h.app.settings.MaskRules) != 0 {
+		t.Fatalf("a rule under a built-in kind was saved: %v", h.app.settings.MaskRules)
+	}
+}
+
 // The preview shows a pasted text masked, with the words being edited, and
 // saves nothing.
 func TestMaskingPreview(t *testing.T) {

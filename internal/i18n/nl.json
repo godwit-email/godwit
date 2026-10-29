@@ -660,6 +660,7 @@
   "settings_masking_save": "Opslaan",
   "settings_masking_rules_invalid": "Het patroon op regel {arg1} werkt niet: {arg2}",
   "settings_masking_rules_kind": "De categorienaam op regel {arg1} moet met een letter beginnen en alleen letters, cijfers en _ bevatten, hoogstens 24",
+  "settings_masking_rules_reserved": "De categorienaam op regel {arg1} is al van een ingebouwde categorie; kies een andere naam",
   "settings_masking_rules_empty": "Het patroon op regel {arg1} past op lege tekst en zou overal maskeren",
   "settings_masking_rules_too_many": "Hoogstens {arg1} patronen",
   "settings_masking_allow_too_many": "Hoogstens {arg1} uitzonderingen",

@@ -660,6 +660,7 @@
   "settings_masking_save": "Salva",
   "settings_masking_rules_invalid": "Lo schema alla riga {arg1} non funziona: {arg2}",
   "settings_masking_rules_kind": "Il nome di categoria alla riga {arg1} deve iniziare con una lettera e contenere solo lettere, cifre e _, al massimo 24",
+  "settings_masking_rules_reserved": "Il nome di categoria alla riga {arg1} è già di una categoria integrata; scegline un altro",
   "settings_masking_rules_empty": "Lo schema alla riga {arg1} corrisponde al testo vuoto e maschererebbe ovunque",
   "settings_masking_rules_too_many": "Al massimo {arg1} schemi",
   "settings_masking_allow_too_many": "Al massimo {arg1} valori consentiti",

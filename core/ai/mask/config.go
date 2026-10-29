@@ -78,6 +78,7 @@ func (e *RuleError) Unwrap() error { return e.Err }
 var (
 	ErrKind         = errors.New("a kind is a letter, then letters, digits or _, at most 24")
 	ErrEmptyMatch   = errors.New("the pattern matches empty text")
+	ErrReservedKind = errors.New("the kind is a built-in one's")
 	ErrTooManyRules = fmt.Errorf("at most %d masking rules", MaxRules)
 	ErrTooManyAllow = fmt.Errorf("at most %d values may go unmasked", MaxAllow)
 )
@@ -98,17 +99,18 @@ type compiled struct {
 }
 
 // Check says what is wrong with c, if anything: a rule's pattern that does
-// not compile or matches empty text, a kind a placeholder can't name, too
-// many rules or allowed values.
-func Check(c Config) error {
-	_, err := compile(c)
+// not compile or matches empty text, a kind a placeholder can't name or
+// that is a built-in one's (or TermKind), too many rules or allowed values.
+// A rule in kept, saved before built-in kinds were refused, may keep one.
+func Check(c Config, kept ...Rule) error {
+	_, err := compile(c, kept)
 	return err
 }
 
 // Configure masks as c says from the next text on, names too unless
 // they are Off (SetNames); a c Check refuses leaves the masker as it was.
 func (m *Masker) Configure(c Config) error {
-	cc, err := compile(c)
+	cc, err := compile(c, c.Rules) // a rule stored under a built-in kind still masks, always (find)
 	if err == nil {
 		m.cfg.Store(cc)
 		m.SetNames(!cc.off[Names])
@@ -116,7 +118,8 @@ func (m *Masker) Configure(c Config) error {
 	return err
 }
 
-func compile(c Config) (*compiled, error) {
+// compile is c as find runs it; a rule not in kept may not take a built-in kind.
+func compile(c Config, kept []Rule) (*compiled, error) {
 	if len(c.Rules) > MaxRules {
 		return nil, ErrTooManyRules
 	}
@@ -136,6 +139,8 @@ func compile(c Config) (*compiled, error) {
 		switch {
 		case !kindRe.MatchString(kind):
 			err = ErrKind
+		case (categories[kind] != "" || kind == TermKind) && !slices.Contains(kept, r):
+			err = ErrReservedKind
 		case err == nil && re.MatchString(""):
 			err = ErrEmptyMatch
 		}

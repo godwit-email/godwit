@@ -660,6 +660,7 @@
   "settings_masking_save": "Lưu",
   "settings_masking_rules_invalid": "Mẫu ở dòng {arg1} không hợp lệ: {arg2}",
   "settings_masking_rules_kind": "Tên loại ở dòng {arg1} phải bắt đầu bằng chữ cái, chỉ gồm chữ cái, chữ số và _, tối đa 24 ký tự",
+  "settings_masking_rules_reserved": "Tên loại ở dòng {arg1} trùng với một loại có sẵn; hãy chọn tên khác",
   "settings_masking_rules_empty": "Mẫu ở dòng {arg1} khớp với văn bản rỗng nên sẽ che mọi chỗ",
   "settings_masking_rules_too_many": "Tối đa {arg1} mẫu",
   "settings_masking_allow_too_many": "Danh sách cho phép tối đa {arg1} giá trị",

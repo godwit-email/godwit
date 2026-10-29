@@ -130,7 +130,9 @@ func defaultSettings() Settings {
 
 var langRE = regexp.MustCompile(`^[A-Za-z]{2,3}(-[A-Za-z0-9]{2,8})*$`)
 
-func (st Settings) validate() error {
+// validate says what is wrong with st; a masking rule in kept, stored
+// before, may keep a built-in kind (mask.Check).
+func (st Settings) validate(kept []mask.Rule) error {
 	in := func(v string, ok ...string) bool {
 		for _, o := range ok {
 			if v == o {
@@ -171,7 +173,7 @@ func (st Settings) validate() error {
 			return fmt.Errorf("invalid masking action %q for %s", c.Action, name)
 		}
 	}
-	if err := mask.Check(st.maskConfig()); err != nil {
+	if err := mask.Check(st.maskConfig(), kept...); err != nil {
 		return err
 	}
 	if strings.Contains(st.JudgeService, "/") && !isPluginRef(st.JudgeService) {
@@ -243,11 +245,15 @@ func (s *Service) SetSettings(ctx context.Context, st Settings) (Settings, error
 		return Settings{}, err
 	}
 	defer end()
-	if err := st.validate(); err != nil {
-		return Settings{}, err
-	}
 	s.settingsMu.Lock()
 	defer s.settingsMu.Unlock()
+	stored, err := s.loadSettings(ctx)
+	if err != nil {
+		return Settings{}, err
+	}
+	if err := st.validate(stored.MaskRules); err != nil { // an old rule under a built-in kind must not stop saving the rest
+		return Settings{}, err
+	}
 	st.SettingsVersion = settingsVersion // a client's 0 must not make the next load raise FontSize again
 	b, err := json.Marshal(st)
 	if err != nil {

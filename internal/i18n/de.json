@@ -665,6 +665,7 @@
   "settings_masking_save": "Speichern",
   "settings_masking_rules_invalid": "Das Muster in Zeile {arg1} funktioniert nicht: {arg2}",
   "settings_masking_rules_kind": "Der Kategoriename in Zeile {arg1} muss mit einem Buchstaben beginnen und darf nur Buchstaben, Ziffern und _ enthalten, höchstens 24",
+  "settings_masking_rules_reserved": "Der Kategoriename in Zeile {arg1} gehört schon einer eingebauten Kategorie; wähle einen anderen Namen",
   "settings_masking_rules_empty": "Das Muster in Zeile {arg1} passt auf leeren Text und würde überall maskieren",
   "settings_masking_rules_too_many": "Höchstens {arg1} Muster",
   "settings_masking_allow_too_many": "Höchstens {arg1} Ausnahmen",
