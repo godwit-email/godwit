@@ -1,5 +1,6 @@
 import { RiChatQuoteLine, RiExternalLinkLine } from "@remixicon/react";
 import { cn } from "cn";
+import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import type { T } from "@/shared/i18n";
 import { citeDate } from "./Citations";
@@ -37,9 +38,11 @@ export function avatarTone(name: string): string {
  * A mail as a card: a small avatar on the sender line with the date, the subject and a snippet,
  * then 查看邮件 / 引用邮件 for the actions it is given: along its foot (in a popover), or, as a
  * card in an answer (card), framed, no wider than it needs, the actions taking the date's place
- * on its sender line on hover or focus.
+ * on its sender line on hover or focus. With messageId, the sender's avatar (godwit-img://a<id>,
+ * under the message's image policy) covers the initial once it loads.
  */
 export function MailCard({
+  messageId,
   from,
   date,
   subject,
@@ -50,6 +53,7 @@ export function MailCard({
   t,
   className,
 }: {
+  messageId?: number;
   from: string;
   /** Unix milliseconds; 0 for none. */
   date: number;
@@ -62,6 +66,7 @@ export function MailCard({
   className?: string;
 }) {
   const name = senderName(from);
+  const [avatar, setAvatar] = useState(false);
   const actions = (onOpen || onQuote) && (
     <div
       role="toolbar"
@@ -99,11 +104,22 @@ export function MailCard({
         <span
           aria-hidden="true"
           className={cn(
-            "flex size-5 shrink-0 items-center justify-center rounded-[5px] font-semibold text-xs",
+            "relative flex size-5 shrink-0 items-center justify-center overflow-hidden rounded-[5px] font-semibold text-xs",
             avatarTone(name),
           )}
         >
           {[...name][0]?.toUpperCase() ?? "?"}
+          {messageId !== undefined && (
+            <img
+              src={`godwit-img://a${messageId}`}
+              alt=""
+              onLoad={() => setAvatar(true)}
+              className={cn(
+                "absolute inset-0 size-full bg-background object-cover transition-opacity",
+                !avatar && "opacity-0",
+              )}
+            />
+          )}
         </span>
         <span className="min-w-0 flex-1 truncate font-medium">{name}</span>
         {card ? (

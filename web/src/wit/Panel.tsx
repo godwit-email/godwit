@@ -1323,6 +1323,7 @@ function Answer({
     return (
       <MailCard
         card={card}
+        messageId={c.gone ? undefined : c.messageId}
         from={c.from}
         date={c.date}
         subject={c.subject}
