@@ -1,5 +1,18 @@
 # Changelog
 
+## [1.20.0](https://github.com/godwit-email/godwit/compare/v1.19.0...v1.20.0) (2026-10-29)
+
+
+### Features
+
+* **avatar:** show BIMI logos published by DMARC-enforcing sender domains ([#351](https://github.com/godwit-email/godwit/issues/351)) ([feea547](https://github.com/godwit-email/godwit/commit/feea5476ec23aff8a138694d4abc284dbb140cb4))
+* **wit:** load sender avatars on cited mail cards ([#348](https://github.com/godwit-email/godwit/issues/348)) ([136cc01](https://github.com/godwit-email/godwit/commit/136cc01e378cdb59f3ad5f85ee2e708574d94e5f))
+
+
+### Bug Fixes
+
+* follow mygo 0.7's installer names in download links, the cask and pruning ([#349](https://github.com/godwit-email/godwit/issues/349)) ([d40f800](https://github.com/godwit-email/godwit/commit/d40f8009cb2b8565f9fed489a22ebb7df4cc0478))
+
 ## [1.19.0](https://github.com/godwit-email/godwit/compare/v1.18.0...v1.19.0) (2026-10-29)
 
 
