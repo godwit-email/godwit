@@ -10,6 +10,7 @@ import (
 	"strconv"
 	"strings"
 	"time"
+	"unicode/utf8"
 
 	"github.com/egoist/mygo/ui"
 	"github.com/egoist/mygo/ui/markdown"
@@ -553,42 +554,126 @@ func (r *reader) summaryPanel(c *ui.Context, m core.MessageSummary) {
 	}
 }
 
-// digest is a thread's summary: its steps, numbered, each with a link to
-// the message it comes from, and below a hairline what waits on the user.
+// digest is a thread's summary: its steps, numbered, citing their messages,
+// and below a hairline what waits on the user.
 func (r *reader) digest(c *ui.Context, d core.ThreadDigest) {
 	t, th := theme.Of(c), c.Theme()
 	ui.Column(c).Gap(th.Space(1.5)).Role(ui.RoleList).Children(func() {
 		for i, step := range d.Progress {
 			ui.Row(c.Key(i)).Gap(th.Space(2)).AlignItems(ui.Start).Role(ui.RoleListItem).Children(func() {
-				kit.Text(c, strconv.Itoa(i+1)+".", t.Text.Base).TextColor(t.Muted).Shrink(0)
-				ui.Row(c).Wrap().Gap(th.Space(1.5)).AlignItems(ui.Center).Shrink(1).Children(func() {
-					ui.Text(c, step.Text).LineHeight(theme.LineReading).Shrink(1)
-					if m, ok := r.byID(step.Message); ok {
-						kit.TextLink(c, r.sourceLabel(m), t.Muted, t.Text.Sm).OnClick(func() { r.reveal(m.ID) })
-					}
-				})
+				// the step's own size and line, and one width for every number: steps start in line
+				ui.Text(c, strconv.Itoa(i+1)+".").LineHeight(theme.LineReading).TextColor(t.Muted).MinWidth(th.Space(4)).Shrink(0)
+				r.digestLine(c, step)
 			})
 		}
 	})
-	if d.Todo != "" {
+	if d.Todo != nil {
 		kit.Separator(c, false)
 		ui.Column(c).Gap(th.Space(1)).Children(func() {
 			kit.Text(c, i18n.T("reader.ai.todo"), t.Text.Sm).FontWeight(600)
-			ui.Text(c, d.Todo).LineHeight(theme.LineReading)
+			r.digestLine(c, d.Todo)
 		})
 	}
 }
 
-// byID is the thread's message id, if the reader shows it.
-func (r *reader) byID(id int64) (core.MessageSummary, bool) {
-	i := slices.IndexFunc(r.msgs, func(m core.MessageSummary) bool { return m.ID == id })
-	if i < 0 {
-		return core.MessageSummary{}, false
+// digestLine is a line of a digest, its cites inline as Wit's answers show
+// theirs: a chip with the message's place in the thread, which shows the
+// message's card on hover and opens it.
+//
+// A chip is an inline object it paints itself, centred on the text's middle
+// with even room around its number: a span's tint hugs its glyphs and hangs
+// below a small number's middle.
+func (r *reader) digestLine(c *ui.Context, l core.DigestLine) {
+	t, th := theme.Of(c), c.Theme()
+	type chip struct {
+		num    *ui.TextLayout
+		fg, bg ui.Color
 	}
-	return r.msgs[i], true
+	chips := map[int]chip{} // by its object's rune in the line
+	font := ui.Font{Size: t.Text.Xs, Weight: 500, Features: "tnum"}
+	mid := textMiddle * t.FontSize // the chip's middle above the baseline, the text's
+	up, down := theme.CiteChip/2+mid, theme.CiteChip/2-mid
+	ui.RichText(c).LineHeight(theme.LineReading).TextColor(t.Foreground).Shrink(1).DrawObjects(func(p *ui.Painter, at int, box ui.Rect) {
+		ch, ok := chips[at]
+		if !ok {
+			return // a gap
+		}
+		p.Fill(box, ch.bg, t.Radius.Sm)
+		w, _ := ch.num.Size()
+		base := ch.num.Lines()[0].Baseline
+		p.TextLayout(ch.num, box.X+(box.W-w)/2, box.Y+box.H/2+textMiddle*font.Size-base, ch.fg)
+	}).Children(func() {
+		runes, cited := 0, false // runes so far; the run before was a cite
+		inline := func(spans ...ui.Span) {
+			for _, sp := range spans {
+				runes += utf8.RuneCountInString(sp.Text)
+			}
+			ui.RichText(c, spans...)
+		}
+		for _, run := range l {
+			n := slices.IndexFunc(r.msgs, func(m core.MessageSummary) bool { return m.ID == run.Message })
+			if run.Message == 0 || n < 0 {
+				inline(ui.Span{Text: run.Text})
+				cited = false
+				continue
+			}
+			m := r.msgs[n]
+			// a token from the text, half from a cite before it; word joiners keep the line from
+			// breaking around the gap: a cite stays with what it cites
+			gap := th.Space(1)
+			if cited {
+				gap = th.Space(0.5)
+			}
+			inline(ui.Span{Text: "\u2060"}, ui.Span{Text: "\ufffc", ObjectWidth: gap, ObjectHeight: theme.Stroke}, ui.Span{Text: "\u2060"})
+			cited = true
+			// a link without Link's hover underline, which would run under the chip
+			ch := chip{num: ui.ShapeText(strconv.Itoa(n+1), font, 0), fg: t.Muted, bg: t.Border} // a step darker than the summary's Card fill
+			w, _ := ch.num.Size()
+			at := runes
+			runes++
+			link := ui.RichText(c, ui.Span{Text: "\ufffc", ObjectWidth: max(theme.CiteChip, w+2*th.Space(1)), ObjectHeight: up, ObjectDescent: down}).
+				Role(ui.RoleLink).Label(r.sourceLabel(m)).Focusable().Cursor(ui.CursorPointer)
+			if link.Hovered() {
+				ch.fg, ch.bg = t.Foreground, t.DividerHover
+			}
+			chips[at] = ch
+			r.citeCard(c, link, m)
+			if link.Clicked() {
+				r.reveal(m.ID)
+			}
+		}
+	})
 }
 
-// sourceLabel names a message a digest's step comes from: its day and its
+// textMiddle is how far above the baseline the middle of capitals and
+// ideographs is, in ems: where a chip in a line centres.
+const textMiddle = 0.36
+
+// citeCard shows message m by anchor on hover, as Wit's cites show theirs:
+// its sender, when, and the start of its text.
+func (r *reader) citeCard(c *ui.Context, anchor ui.Element, m core.MessageSummary) {
+	t, th := theme.Of(c), c.Theme()
+	name, addr := sender(m.From)
+	kit.HoverCard(c, anchor, theme.CiteCardWidth, func() {
+		ui.Row(c).Gap(th.Space(2.5)).AlignItems(ui.Center).Children(func() {
+			kit.AvatarImage(c, name, r.shownAvatar(m))
+			ui.Column(c).Grow(1).Shrink(1).Children(func() {
+				ui.Row(c).Gap(th.Space(2)).AlignItems(ui.Center).Children(func() { // when, on the name's line
+					ui.Text(c, name).FontWeight(500).SingleLine().Grow(1).Shrink(1)
+					kit.Text(c, senderDate(r.p.a.clock.Now(), m.Date), t.Text.Xs).TextColor(t.Muted).Shrink(0)
+				})
+				if addr != "" && addr != name {
+					kit.Text(c, addr, t.Text.Xs).TextColor(t.Muted).SingleLine()
+				}
+			})
+		})
+		if m.Snippet != "" {
+			kit.Text(c, m.Snippet, t.Text.Sm).TextColor(t.Muted).MaxLines(3)
+		}
+	})
+}
+
+// sourceLabel names a message a digest cites: its day and its
 // sender ("我" for the user's).
 func (r *reader) sourceLabel(m core.MessageSummary) string {
 	who, addr := sender(m.From)

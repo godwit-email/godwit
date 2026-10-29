@@ -235,3 +235,16 @@ func tooltip(c *ui.Context, anchor ui.Element, text string, describe bool) {
 		tip.Children(func() { ui.Text(c, text) })
 	})
 }
+
+// HoverCard shows a card w wide below anchor, at its start, as Tooltip shows its
+// text: body fills it.
+func HoverCard(c *ui.Context, anchor ui.Element, w float32, body func()) {
+	t, th := theme.Of(c), c.Theme()
+	ui.TooltipBase(c, anchor, func(tip ui.Element) {
+		tip.AttachTo(anchor, ui.AnchorBottomStart, ui.AnchorTopStart).Margin(theme.PopupOffset, 0, 0, 0).
+			Width(w).Padding(th.Space(3)).Gap(th.Space(2)).Radius(t.Radius.Lg).
+			Background(t.Background).Border(theme.Hairline, t.Border).TextColor(t.Foreground)
+		Elevate(c, tip, theme.ShadowMd)
+		tip.Children(body)
+	})
+}

@@ -184,6 +184,8 @@ const (
 	SelectMinWidth        = 120
 	FilterMenuMin         = 200 // a search filter chip's menu
 	LabelMenuWidth        = 240 // the reader's label menu
+	CiteCardWidth         = 320 // the mail a summary's cite shows on hover, as Wit's
+	CiteChip              = 16  // a summary's cite: its height, and least width
 	SyncMenuWidth         = 320 // the top bar's sync status list: compact, fitted popover
 	LabelSwatch           = 32  // a label color's button: a 24 dot, a 2 ring when chosen
 	LabelSwatchDot        = 24

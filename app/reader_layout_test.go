@@ -8,6 +8,7 @@ import (
 	"sync"
 	"sync/atomic"
 	"testing"
+	"time"
 
 	"github.com/egoist/mygo/ui"
 	"github.com/godwit-email/godwit/core"
@@ -262,15 +263,16 @@ func digestSkill(r *reader, text func() string) (kinds func() []string) {
 	return func() []string { mu.Lock(); defer mu.Unlock(); return slices.Clone(seen) }
 }
 
-// A thread's summary shows its steps with their sources, a source not of the
-// thread dropped, and what waits on the user; a source opens its message.
+// A thread's summary shows its steps citing their messages by place in the
+// thread, a cite not of the thread dropped, and what waits on the user; a
+// cite shows its message's card on hover and opens it.
 func TestReaderThreadDigest(t *testing.T) {
 	h, acc, _ := aiHarness(t, true, noQuick)
 	msgs := h.thread2(acc)
 	r := h.app.mail.reader
 	r.gistFn = func(context.Context, int64) (string, error) { return "", nil }
 	digestSkill(r, func() string {
-		return fmt.Sprintf("PROGRESS\n- Bob proposed a plan [message:%d]\n- Carol replied [message:%d]\n- Lost [message:999]\nTODO: Reply to Carol\n",
+		return fmt.Sprintf("PROGRESS\n- Bob proposed a plan <mail id=\"%d\"/>\n- Carol replied <mail id=\"%d\"/>\n- Lost <mail id=\"999\"/>\nTODO: Reply to Carol\n",
 			msgs[0].ID, msgs[1].ID)
 	})
 	h.openThread(msgs[0].ThreadID)
@@ -278,12 +280,22 @@ func TestReaderThreadDigest(t *testing.T) {
 	h.see("等你处理")
 	h.see("Reply to Carol")
 	h.see("基于 2 封往来")
-	if h.tt.HasText("PROGRESS") || h.tt.HasText("999") {
+	if h.tt.HasText("PROGRESS") || h.tt.HasText("999") || h.tt.HasText("mail id") {
 		t.Fatalf("the digest shows as written: %q", h.tt.Texts())
 	}
 	if r.open[msgs[0].ID] {
 		t.Fatal("the older message opened before its source was clicked")
 	}
+	if h.tt.HasText("second words") {
+		t.Fatal("the newest message's card shows before its cite is hovered")
+	}
+	b, ok := h.tt.Find(r.sourceLabel(msgs[1]))
+	if !ok {
+		t.Fatalf("no cite of the newest message: %q", h.tt.Texts())
+	}
+	h.tt.Move(b.X+b.W/2, b.Y+b.H/2)
+	h.tt.Advance(900 * time.Millisecond)
+	h.see("second words") // its card: sender, when, the start of its text
 	h.click(r.sourceLabel(msgs[0]))
 	h.until("the source's message open", func() bool { return r.open[msgs[0].ID] })
 }
