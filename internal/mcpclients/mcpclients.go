@@ -419,10 +419,17 @@ func godwitTable(key []string) int {
 // Codex can't read either, and is left alone.
 func codexSpan(lines []string) (start, keys, end, n int) {
 	start, keys, end = -1, len(lines), len(lines)
-	for i, l := range lines {
+	for i, next := 0, 0; i < len(lines); i = next {
+		l := lines[i]
 		key, ok := tomlHeader(l)
-		if !ok || strings.HasPrefix(strings.TrimSpace(l), "[[") {
-			if ok && start >= 0 && end == len(lines) {
+		next = i + 1
+		if !ok {
+			_, _, span := tomlEntry(lines, i) // a value's lines are no headers
+			next = i + span
+			continue
+		}
+		if strings.HasPrefix(strings.TrimSpace(l), "[[") {
+			if start >= 0 && end == len(lines) {
 				end = i
 			}
 			continue

@@ -278,3 +278,17 @@ func TestCodexLeavesDottedKeys(t *testing.T) {
 		assert.Equal(t, text, read(t, path))
 	}
 }
+
+// A header inside a multiline string is the string's text, not a table.
+func TestCodexHeaderInAString(t *testing.T) {
+	e := env(t)
+	path := filepath.Join(e.Home, ".codex", "config.toml")
+	text := "developer_instructions = '''\n[mcp_servers.godwit]\ncommand = \"x\"\n'''\nmodel = \"gpt-5\"\n"
+	write(t, path, text)
+	assert.Equal(t, Off, state(t, e, Codex))
+	require.NoError(t, e.Disconnect(Codex))
+	assert.Equal(t, text, read(t, path))
+	require.NoError(t, e.Connect(Codex, srv))
+	assert.Equal(t, text+"\n"+codexHeader+"\ncommand = \""+srv.Command+"\"\nargs = [\"mcp\"]\n", read(t, path))
+	assert.Equal(t, On, state(t, e, Codex))
+}
