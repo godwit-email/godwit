@@ -100,13 +100,14 @@ func TestSettingsIndexCoversRows(t *testing.T) {
 // A search opens the AI and 隐私与安全 pages on the tab it found.
 func TestSettingsSearchOpensTab(t *testing.T) {
 	h, _ := withAccount(t)
-	p := h.openSettings("general")
+	p := h.openSettings("models") // the page open already: its tab changes still
 	p.query = "本机 API"
-	h.openSettings("models")
 	h.see("启用本机 API")
 	p.query = "屏蔽"
-	h.openSettings("privacy")
+	h.click(i18n.T("settings.privacy"))
 	h.see("没有已屏蔽的发件人。")
+	p.query = "远程图片" // on the page open
+	h.see(i18n.T("settings.remote_images.mode"))
 }
 
 func TestSettingsSearchFilter(t *testing.T) {

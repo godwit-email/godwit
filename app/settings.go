@@ -100,7 +100,8 @@ type settingsPage struct {
 	starred    bool   // the user starred Godwit, by gh
 	starring   bool   // StarRepo runs
 
-	query string // the sidebar's search
+	query    string // the sidebar's search
+	searched string // query, lowercased, when it last picked the tabs
 
 	models *modelsView
 	ext    *extView
@@ -144,10 +145,6 @@ func (p *settingsPage) refresh(hints []events.Event) {
 		if l := p.sigLink; l != nil {
 			p.sigLink = nil
 			l.answer("", false)
-		}
-		if q := strings.ToLower(strings.TrimSpace(p.query)); q != "" { // a search opens the tab it found
-			p.aiTab = tabFor(aiTabs, q, p.aiTab)
-			p.privacyTab = tabFor(privacyTabs, q, p.privacyTab)
 		}
 	}
 	switch sec, acc := p.section(); {

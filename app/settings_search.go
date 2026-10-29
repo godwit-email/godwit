@@ -123,6 +123,13 @@ func (p *settingsPage) searchField(c *ui.Context) {
 	box.Children(func() {
 		ui.Icon(c, icons.Get("search")).Size(theme.Icon, theme.Icon).TextColor(t.Muted)
 		in := kit.Input(c, &p.query, kit.InputOpts{Placeholder: i18n.T("settings.search"), Bare: true}).FocusRing(false).Label(i18n.T("settings.search")).Grow(1)
+		if q := strings.ToLower(strings.TrimSpace(p.query)); q != p.searched { // a search picks the tabs it finds, on the page open too
+			p.searched = q
+			if q != "" {
+				p.aiTab = tabFor(aiTabs, q, p.aiTab)
+				p.privacyTab = tabFor(privacyTabs, q, p.privacyTab)
+			}
+		}
 		if in.Submitted() {
 			m := p.matching(p.query)
 			switch {
