@@ -322,6 +322,27 @@ func TestUncertainCopyMoveDeletedElsewhere(t *testing.T) {
 	assert.Equal(t, []string{"done"}, e.opStates(t))
 }
 
+// A destination message with the same Message-ID but another size is not the
+// copy: the retry copies the message rather than expunge its only one.
+func TestUncertainCopyMoveOtherSizeTwin(t *testing.T) {
+	e := newSyncEnv(t, testmail.WithoutMove())
+	e.put(t, "INBOX", msg("m@x"))
+	e.put(t, "Archive", msg("m@x")+"a longer body\r\n")
+	e.sync(t)
+	id := e.rows(t, "SELECT id FROM messages WHERE folder_id = ?", e.folderID(t, "INBOX"))[0][0].(int64)
+	require.NoError(t, e.s.Move(bg, []int64{id}, e.folderID(t, "Archive")))
+	_, err := e.s.db.Execute(bg, "UPDATE ops SET attempts = 1")
+	require.NoError(t, err)
+	c := e.dial(t)
+	_, err = c.Select("INBOX", nil).Wait()
+	require.NoError(t, err)
+	require.NoError(t, c.Store(imap.UIDSetNum(1), &imap.StoreFlags{Op: imap.StoreFlagsAdd, Silent: true, Flags: []imap.Flag{imap.FlagDeleted}}, nil).Close())
+	e.sync(t)
+	e.sync(t)
+	assert.Len(t, e.onServer(t, "Archive"), 2, "copied, not lost")
+	assert.Empty(t, e.onServer(t, "INBOX"))
+}
+
 func TestStaleUIDNeverReplayed(t *testing.T) {
 	e := newSyncEnv(t)
 	e.put(t, "Archive", msg("old@x"))

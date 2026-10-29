@@ -240,16 +240,19 @@ func pushOp(ctx context.Context, db *store.DB, c *imapclient.Client, o op) (prob
 }
 
 // inFolder reports whether folder, examined, holds a message with msg's
-// Message-ID. A message without one is never found there.
+// Message-ID and size, as a claim matches it. A message without a Message-ID
+// is never found there.
 func inFolder(ctx context.Context, db *store.DB, c *imapclient.Client, msg int64, folder string) (bool, error) {
-	r, err := db.Query(ctx, "SELECT message_id FROM messages WHERE id = ?", msg)
+	r, err := db.Query(ctx, "SELECT message_id, size FROM messages WHERE id = ?", msg)
 	if err != nil || len(r.Values) == 0 || store.Str(r.Values[0][0]) == "" {
 		return false, err
 	}
+	size := store.Int(r.Values[0][1])
 	if _, err := c.Select(folder, &imap.SelectOptions{ReadOnly: true}).Wait(); err != nil {
 		return false, err
 	}
-	found, err := c.UIDSearch(&imap.SearchCriteria{Header: []imap.SearchCriteriaHeaderField{{Key: "Message-ID", Value: "<" + store.Str(r.Values[0][0]) + ">"}}}, nil).Wait()
+	found, err := c.UIDSearch(&imap.SearchCriteria{Header: []imap.SearchCriteriaHeaderField{{Key: "Message-ID", Value: "<" + store.Str(r.Values[0][0]) + ">"}},
+		Larger: size - 1, Smaller: size + 1}, nil).Wait()
 	if err != nil {
 		return false, err
 	}
