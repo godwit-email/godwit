@@ -1195,8 +1195,8 @@ func (r *reader) recipientsLine(c *ui.Context, m core.MessageSummary, b *msgBody
 	}
 }
 
-// details lists who sent message m and to whom, each address to copy or
-// write to, its reply-to, date and, with more than one account, the account.
+// details lists who sent message m and to whom, its reply-to, date and,
+// with more than one account, the account; the values select to copy.
 func (r *reader) details(c *ui.Context, anchor ui.Element, m core.MessageSummary, b *msgBody) {
 	t, th := theme.Of(c), c.Theme()
 	now := r.p.a.clock.Now()
@@ -1206,68 +1206,43 @@ func (r *reader) details(c *ui.Context, anchor ui.Element, m core.MessageSummary
 	}
 	date := m.Date.In(now.Location())
 	kit.PopoverAt(c, anchor, &r.detailsOpen, ui.AnchorBottomLeft, ui.AnchorTopLeft, theme.PopupOffset, func() {
-		ui.Column(c).Width(theme.DetailsWidth).Gap(th.Space(2)).Label(i18n.T("reader.details")).Children(func() {
-			// each line as high as an address's, its buttons', so labels and values line up
-			line := func(body func()) ui.Element {
-				return ui.Row(c).Height(theme.DetailsRow).AlignItems(ui.Center).Children(body)
-			}
-			row := func(key int, label string, body func()) {
-				ui.Row(c.Key(key)).Gap(th.Space(3)).AlignItems(ui.Start).Children(func() {
-					line(func() { kit.Text(c, label, t.Text.Sm).TextColor(t.Muted) }).Width(theme.DetailsLabel).Shrink(0)
-					ui.Column(c).Grow(1).Shrink(1).Gap(th.Space(0.5)).Children(body)
-				})
-			}
-			addresses := func(key int, label string, list []string) {
-				if len(list) == 0 {
+		ui.Column(c).Width(theme.DetailsWidth).Gap(th.Space(2)).Label(i18n.T("reader.details")).Selectable().Children(func() {
+			row := func(key int, label string, values []string) {
+				if len(values) == 0 {
 					return
 				}
-				row(key, label, func() {
-					for i, s := range list {
-						r.detailsAddress(c.Key(i), s)
-					}
+				ui.Row(c.Key(key)).Gap(th.Space(3)).AlignItems(ui.Start).Children(func() {
+					kit.Text(c, label, t.Text.Sm).TextColor(t.Muted).Width(theme.DetailsLabel).Shrink(0).Unselectable()
+					ui.Column(c).Grow(1).Shrink(1).Gap(th.Space(1)).Children(func() {
+						for i, v := range values {
+							r.detailsValue(c.Key(i), v)
+						}
+					})
 				})
 			}
-			addresses(0, i18n.T("reader.details.from"), []string{m.From})
-			addresses(1, i18n.T("reader.details.to"), m.To)
-			addresses(2, i18n.T("reader.details.cc"), m.Cc)
-			addresses(3, i18n.T("reader.details.reply_to"), replyTo)
-			row(4, i18n.T("reader.details.date"), func() {
-				line(func() {
-					kit.Text(c, i18n.FullDate(date)+" "+i18n.T(fmt.Sprintf("mail.weekday.%d", date.Weekday()))+" "+date.Format("15:04"), t.Text.Sm)
-				})
-			})
+			row(0, i18n.T("reader.details.from"), []string{m.From})
+			row(1, i18n.T("reader.details.to"), m.To)
+			row(2, i18n.T("reader.details.cc"), m.Cc)
+			row(3, i18n.T("reader.details.reply_to"), replyTo)
+			row(4, i18n.T("reader.details.date"), []string{i18n.FullDate(date) + " " + i18n.T(fmt.Sprintf("mail.weekday.%d", date.Weekday())) + " " + date.Format("15:04")})
 			if acc := r.accountOf(m); acc != "" && len(r.p.a.accounts) > 1 {
-				row(5, i18n.T("reader.details.account"), func() { line(func() { kit.Text(c, acc, t.Text.Sm) }) })
+				row(5, i18n.T("reader.details.account"), []string{acc})
 			}
 		})
 	})
 }
 
-// detailsAddress is an address of details: Name <address>, and on hover its
-// buttons to copy it and to write to it.
-func (r *reader) detailsAddress(c *ui.Context, raw string) {
-	t, th := theme.Of(c), c.Theme()
+// detailsValue is a value of details: an address as Name <address>, the
+// address quieter, in one paragraph so a triple click selects it whole;
+// anything else (the date) as it is.
+func (r *reader) detailsValue(c *ui.Context, raw string) {
+	t := theme.Of(c)
 	name, addr := sender(raw)
-	line := ui.Row(c).Gap(th.Space(1)).AlignItems(ui.Center).Height(theme.DetailsRow)
-	line.Children(func() {
-		ui.Row(c).Gap(th.Space(1)).AlignItems(ui.Center).Grow(1).Shrink(1).Children(func() {
-			kit.Text(c, name, t.Text.Sm).SingleLine().Shrink(1)
-			if addr != "" && addr != name {
-				kit.Text(c, "<"+addr+">", t.Text.Sm).TextColor(t.Muted).SingleLine().Shrink(1)
-			}
-		})
-		if addr == "" || !line.Hovered() && !line.FocusWithin() {
-			return
-		}
-		kit.IconButton(c, "copy", i18n.T("reader.copy_address"), kit.ButtonOpts{Variant: kit.Ghost, Size: kit.SizeXs}).OnClick(func() {
-			c.WriteClipboard(addr)
-			r.p.a.toast(i18n.T("reader.address_copied"))
-		})
-		kit.IconButton(c, "square-pen", i18n.T("mail.compose"), kit.ButtonOpts{Variant: kit.Ghost, Size: kit.SizeXs}).OnClick(func() {
-			r.detailsOpen = false
-			r.p.a.composeTo(addr)
-		})
-	})
+	spans := []ui.Span{{Text: name}}
+	if addr != "" && addr != name {
+		spans = append(spans, ui.Span{Text: " <" + addr + ">", Color: t.Muted})
+	}
+	ui.RichText(c, spans...).FontSize(t.Text.Sm).LineHeight(t.Text.Line(t.Text.Sm))
 }
 
 // splitAddresses is a header's list of addresses, or the header as one when
