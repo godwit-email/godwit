@@ -27,3 +27,18 @@ func TestMessageGist(t *testing.T) {
 	assert.Equal(t, strings.Repeat("é", gistRunes-1)+"…", gistLine(strings.Repeat("é", 100)))
 	assert.Equal(t, "Asks to move the call", gistLine("  Asks  to move\tthe call.  "))
 }
+
+// A gist that repeats a link of its message shows the link, not the
+// reference the model saw it by.
+func TestMessageGistExpandsLinks(t *testing.T) {
+	e := newSkillEnv(t)
+	url := "https://example.com/very/long/path/to/the/meeting/notes?ref=newsletter&id=1234567890"
+	id := addMessage(t, e.s, "Notes", "Bob <bob@x>", "Notes at "+url, "", 1_700_000_200)
+	ref := linkRefs(url, id)
+	require.NotEqual(t, url, ref, "the message's link reaches the model as a reference")
+	e.srv.Script(testllm.Turn{Text: []string{"笔记在 " + ref}})
+	g, err := e.s.MessageGist(t.Context(), id)
+	require.NoError(t, err)
+	assert.NotContains(t, g, linkRefPrefix)
+	assert.True(t, strings.HasPrefix(g, "笔记在 https://example.com/very/"), g) // cut to the gist's length after
+}

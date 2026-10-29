@@ -60,12 +60,13 @@ func (s *Service) MessageGist(ctx context.Context, messageID int64) (string, err
 	if err != nil {
 		return "", err
 	}
-	// Raw, then restored here: the line is cut after, never a placeholder.
+	// Raw, then restored and its link references expanded here: the line is
+	// cut after, never a placeholder or a reference.
 	text, err := s.runText(ctx, e, ai.Request{Model: model, System: system, Prompt: strings.Join(blocks, "\n\n"), MaxTurns: 1, Raw: true}, 4<<10)
 	if err != nil {
 		return "", err
 	}
-	g := gistLine(e.Masker.Restore(text))
+	g := gistLine(s.expandLinks(ctx, e.Masker.Restore(text)))
 	if g != "" {
 		s.cachePut(ctx, key, account, g, "gist")
 	}
