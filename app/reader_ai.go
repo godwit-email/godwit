@@ -38,6 +38,7 @@ type aiRun struct {
 	translations      map[string]string
 	err               error
 	running, done     bool
+	target            core.Target // what it ran on
 }
 
 // fetch is a read for the reader: done once it succeeded; a failure keeps
@@ -269,6 +270,11 @@ func (r *reader) startAI() {
 	if !ok {
 		return
 	}
+	// A summary kept from the message read alone is not its thread's, nor the
+	// other way round: it runs again on what the reader shows now.
+	if st := r.ai[m.ID]; st != nil && st.summary != nil && st.summary.target != r.summaryTarget(m.ID) {
+		st.summary = nil
+	}
 	for id := range r.open {
 		r.startFor(id)
 	}
@@ -293,19 +299,22 @@ func (r *reader) stream(id int64, skill string) *aiRun {
 	return r.streamOn(core.Target{Kind: "message", ID: id, PreserveHTML: skill == "translate"}, skill)
 }
 
-// summarize runs the summary the newest message id shows: in a thread of
-// more than one, the thread's (its digest, ParseThreadDigest), else its own.
-func (r *reader) summarize(id int64) *aiRun {
+// summarize runs the summary the newest message id shows (summaryTarget).
+func (r *reader) summarize(id int64) *aiRun { return r.streamOn(r.summaryTarget(id), "summarize") }
+
+// summaryTarget is what the newest message id's summary is of: in a thread of
+// more than one, the thread (its digest, ParseThreadDigest), else the message.
+func (r *reader) summaryTarget(id int64) core.Target {
 	if len(r.msgs) > 1 {
-		return r.streamOn(core.Target{Kind: "thread", ID: r.key[0]}, "summarize")
+		return core.Target{Kind: "thread", ID: r.key[0]}
 	}
-	return r.stream(id, "summarize")
+	return core.Target{Kind: "message", ID: id}
 }
 
 // streamOn runs skill on t, its output streaming into the run it returns.
 func (r *reader) streamOn(t core.Target, skill string) *aiRun {
 	a, ctx, start := r.p.a, r.aiContext(), r.runSkill
-	run := &aiRun{running: true, lang: r.readingLang(), markdown: &markdown.Options{OnLink: a.openLink}}
+	run := &aiRun{running: true, lang: r.readingLang(), markdown: &markdown.Options{OnLink: a.openLink}, target: t}
 	if skill == "translate" {
 		run.markdown = nil
 	}

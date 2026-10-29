@@ -318,3 +318,34 @@ func TestReaderThreadDigestFallback(t *testing.T) {
 		t.Fatalf("summaries ran on %q", got)
 	}
 }
+
+// A summary kept from the newest message read alone does not stand for its
+// thread's: opening the thread summarizes the thread.
+func TestReaderSummaryFollowsTarget(t *testing.T) {
+	h, acc, _ := aiHarness(t, true, noQuick)
+	msgs := h.thread2(acc)
+	r := h.app.mail.reader
+	r.gistFn = func(context.Context, int64) (string, error) { return "", nil }
+	var mu sync.Mutex
+	var kinds []string
+	r.runSkill = func(_ context.Context, name string, tg core.Target) (<-chan ai.Event, error) {
+		mu.Lock()
+		kinds = append(kinds, tg.Kind)
+		mu.Unlock()
+		out := make(chan ai.Event, 3)
+		out <- ai.Event{Kind: "context", Model: "x/m1"}
+		out <- ai.Event{Kind: "text", Text: "PROGRESS\n- Summary of the " + tg.Kind + "\n"}
+		out <- ai.Event{Kind: "done"}
+		close(out)
+		return out, nil
+	}
+	h.app.OpenMessage(msgs[1].ID)
+	h.see("PROGRESS") // a message's summary is no digest: as written
+	h.openThread(msgs[0].ThreadID)
+	h.see("Summary of the thread")
+	mu.Lock()
+	defer mu.Unlock()
+	if !slices.Equal(kinds, []string{"message", "thread"}) {
+		t.Fatalf("summaries ran on %q", kinds)
+	}
+}
