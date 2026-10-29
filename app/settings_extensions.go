@@ -21,7 +21,7 @@ import (
 // form replaced since leaves the new form alone.
 type extView struct {
 	a               *App
-	tab             int    // 0 skills, 1 plugins (the first shown); MCP is on the AI page
+	tab             int    // 0 skills, 1 plugins (the first shown); MCP is on the Intelligence page
 	gen             uint64 // bumped per list read; only the newest applies
 	skills          []core.SkillInfo
 	plugins         []core.PluginInfo

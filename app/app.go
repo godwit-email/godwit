@@ -18,6 +18,7 @@ import (
 	"github.com/godwit-email/godwit/core/events"
 	"github.com/godwit-email/godwit/internal/i18n"
 	"github.com/godwit-email/godwit/internal/kit"
+	"github.com/godwit-email/godwit/internal/mcpclients"
 )
 
 // Platform is what the App needs from the operating system. OpenFiles,
@@ -209,6 +210,7 @@ type App struct {
 	settingsVer      uint64                                                             // bumped per local settings change
 	settingsSavedVer uint64                                                             // the settingsVer whose save the Service confirmed (or reverted to)
 	saveSettings     func(ctx context.Context, st core.Settings) (core.Settings, error) // tests swap it
+	mcpEnv           func() (mcpclients.Env, error)                                     // where 接入 AI 应用 looks for the AI apps; tests swap it
 	setLanguage      func(string)
 	sysLang          string // Deps.SystemLanguage
 	accountsGen      uint64 // the load gen that read a.accounts
@@ -290,7 +292,7 @@ type App struct {
 
 // New builds an App; Start brings it up.
 func New(d Deps) *App {
-	a := &App{settings: d.Settings, settingsOK: d.Settings, setLanguage: d.SetLanguage, svc: d.Svc, plat: d.Platform, post: d.Post, clock: d.Clock, oauth: d.OAuth, sysLang: d.SystemLanguage, vibrancy: d.Vibrancy, appUnread: -1}
+	a := &App{settings: d.Settings, settingsOK: d.Settings, setLanguage: d.SetLanguage, svc: d.Svc, plat: d.Platform, post: d.Post, clock: d.Clock, oauth: d.OAuth, sysLang: d.SystemLanguage, vibrancy: d.Vibrancy, appUnread: -1, mcpEnv: mcpclients.Local}
 	kit.Glass = d.Vibrancy // dialogs frost their panels over a window on a material
 	if a.setLanguage == nil {
 		a.setLanguage = func(tag string) { i18n.SetLanguage(cmp.Or(tag, a.sysLang)) }

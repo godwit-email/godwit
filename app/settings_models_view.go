@@ -21,7 +21,7 @@ func (m *modelsView) empty() bool {
 	return m.loaded && len(m.services) == 0 && !slices.ContainsFunc(m.plugins, func(p core.PluginModels) bool { return len(p.Models) > 0 })
 }
 
-// view is the AI page's 模型 tab, under the page's heading (aiView).
+// view is the Intelligence page's 模型 tab, under the page's heading (aiView).
 func (m *modelsView) view(c *ui.Context) {
 	if m.empty() {
 		kit.Empty(c, kit.EmptyOpts{Icon: "cpu", Title: i18n.T("settings.models.empty.title"), Desc: i18n.T("settings.models.empty.desc"), Dashed: true, Actions: func() {

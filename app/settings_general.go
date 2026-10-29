@@ -296,7 +296,7 @@ func (p *settingsPage) generalView(c *ui.Context) {
 		})
 }
 
-// aiFeaturesView is the AI page's 功能 tab: the reader's AI features, and
+// aiFeaturesView is the Intelligence page's 功能 tab: the reader's AI features, and
 // the languages and translation they use.
 func (p *settingsPage) aiFeaturesView(c *ui.Context) {
 	p.syncSettings()

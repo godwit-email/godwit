@@ -72,7 +72,7 @@ func TestSettingsIndexCoversRows(t *testing.T) {
 		for _, k := range settingsIndex[sec] {
 			in[strings.ReplaceAll(k, ".", "_")] = true
 		}
-		for tab := range 3 { // every tab of a page that has them
+		for tab := range 4 { // every tab of a page that has them (the Intelligence page has 4)
 			if tabs == nil && tab > 0 {
 				break
 			}
@@ -116,7 +116,7 @@ func TestSettingsSearchFilter(t *testing.T) {
 	if len(all.apps) != len(appSections) || !all.accounts {
 		t.Fatalf("empty query hides sections: %+v", all)
 	}
-	if m := p.matching("语言"); !slices.Equal(m.apps, []string{"general", "models"}) || m.accounts { // 界面语言; 阅读语言 on the AI page
+	if m := p.matching("语言"); !slices.Equal(m.apps, []string{"general", "models"}) || m.accounts { // 界面语言; 阅读语言 on the Intelligence page
 		t.Errorf("语言: %+v", m)
 	}
 	if m := p.matching("签名"); !m.accounts || !slices.Equal(m.apps, []string{"signatures"}) {

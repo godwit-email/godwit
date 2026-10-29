@@ -61,14 +61,15 @@ func (h *harness) openSettings(sec string) *settingsPage {
 	return h.app.pages[PageSettings].(*settingsPage)
 }
 
-// The AI page's tabs.
+// The Intelligence page's tabs.
 const (
 	aiModels = iota
 	aiFeatures
-	aiMCP
+	aiMCP  // the MCP servers Wit uses
+	aiApps // 接入 AI 应用: the Local API
 )
 
-// aiTab opens the AI page on tab.
+// aiTab opens the Intelligence page on tab.
 func (h *harness) aiTab(tab int) *settingsPage {
 	h.t.Helper()
 	p := h.openSettings("models")
@@ -856,7 +857,7 @@ func TestLocalAPIDefaultOff(t *testing.T) {
 	if h.app.settings.LocalAPI {
 		t.Fatal("the Local API is on by default")
 	}
-	h.aiTab(aiMCP)
+	h.aiTab(aiApps)
 	h.see("启用本机 API")
 	for _, c := range h.plat.Calls() {
 		if strings.HasPrefix(c, "SetLocalAPI") {
@@ -870,7 +871,7 @@ func TestLocalAPIDefaultOff(t *testing.T) {
 
 func TestLocalAPISwitch(t *testing.T) {
 	h := localAPIHarness(t, "/tmp/gw/godwit.sock", nil, nil)
-	h.aiTab(aiMCP)
+	h.aiTab(aiApps)
 	h.click("启用本机 API")
 	h.called("SetLocalAPI true")
 	h.see("/tmp/gw/godwit.sock")
@@ -909,13 +910,13 @@ func TestLocalAPISwitch(t *testing.T) {
 func TestLocalAPIStartsOnLoad(t *testing.T) {
 	h := localAPIHarness(t, "/tmp/gw/godwit.sock", nil, func(st *core.Settings) { st.LocalAPI = true })
 	h.called("SetLocalAPI true")
-	h.aiTab(aiMCP)
+	h.aiTab(aiApps)
 	h.see("/tmp/gw/godwit.sock")
 }
 
 func TestLocalAPIFailureReverts(t *testing.T) {
 	h := localAPIHarness(t, "", errors.New("socket path too long"), nil)
-	h.aiTab(aiMCP)
+	h.aiTab(aiApps)
 	h.click("启用本机 API")
 	h.called("SetLocalAPI true")
 	h.see("socket path too long")
@@ -931,7 +932,7 @@ func TestLocalAPIFailureReverts(t *testing.T) {
 func TestLocalAPICopyWarnsFullAccess(t *testing.T) {
 	t.Cleanup(func() { i18n.SetLanguage("zh-CN") })
 	h := localAPIHarness(t, "", nil, nil)
-	h.aiTab(aiMCP)
+	h.aiTab(aiApps)
 	h.see("完整的本机 API 能读取邮件、发送邮件、修改账户和设置")
 	h.see("只能读取邮件和写草稿，能否发信看「通过 MCP 发送」")
 	i18n.SetLanguage("en")
@@ -972,7 +973,7 @@ func localAPIRace(t *testing.T, last error) (*harness, func() bool) {
 		server = true
 		return "/tmp/gw/godwit.sock", nil
 	}
-	h.aiTab(aiMCP)
+	h.aiTab(aiApps)
 	h.click("启用本机 API")
 	h.called("SetLocalAPI true")
 	h.click("启用本机 API")
@@ -1016,7 +1017,7 @@ func TestLocalAPINewestFailureReverts(t *testing.T) {
 // The server stopping by itself turns the switch off with the reason.
 func TestLocalAPIServerStopped(t *testing.T) {
 	h := localAPIHarness(t, "/tmp/gw/godwit.sock", nil, func(st *core.Settings) { st.LocalAPI = true })
-	h.aiTab(aiMCP)
+	h.aiTab(aiApps)
 	h.see("/tmp/gw/godwit.sock")
 	h.app.LocalAPIStopped(h.app.localAPIGen, errors.New("accept: too many open files"))
 	h.see("accept: too many open files")
@@ -1033,7 +1034,7 @@ func TestLocalAPIMCPConfigDataDir(t *testing.T) {
 	h.plat.mu.Lock()
 	h.plat.dataDir, h.plat.customDir = `/tmp/gw "x"`, true
 	h.plat.mu.Unlock()
-	h.aiTab(aiMCP)
+	h.aiTab(aiApps)
 	exe, _ := os.Executable()
 	q, _ := json.Marshal(exe)
 	config := `{"command": ` + string(q) + `, "args": ["mcp","--data-dir","/tmp/gw \"x\""]}`
@@ -1052,7 +1053,7 @@ func TestLocalAPIStaleStopIgnored(t *testing.T) {
 	h.called("SetLocalAPI true")
 	h.until("on", func() bool { return h.app.writes.chains["local-api"] == nil })
 	old := h.app.localAPIGen
-	h.aiTab(aiMCP)
+	h.aiTab(aiApps)
 	h.click("启用本机 API")
 	h.click("启用本机 API")
 	h.until("off and on again", func() bool {
@@ -1608,4 +1609,29 @@ func TestSettingsBlockedSenders(t *testing.T) {
 	h.settle()
 	h.advance(refreshEvery)
 	h.see("没有已屏蔽的发件人")
+}
+
+// 接入 AI 应用 offers the AI apps on this computer; a click writes godwit
+// mcp into one's config, another takes it out.
+func TestConnectAIApp(t *testing.T) {
+	h := localAPIHarness(t, "/tmp/gw/godwit.sock", nil, func(st *core.Settings) { st.LocalAPI = true })
+	config := filepath.Join(h.home, "Library", "Application Support", "Claude", "claude_desktop_config.json")
+	if err := os.MkdirAll(filepath.Dir(config), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	h.aiTab(aiApps)
+	h.see("选中的应用可以读取你的邮件、起草回复。其他应用请复制配置手动添加。")
+	h.see("Claude")
+	if h.tt.HasText("Codex") {
+		t.Fatal("Codex is offered, though it is not on this computer")
+	}
+	h.click("Claude")
+	h.see("已接入 Claude，重启它后生效。")
+	h.until("written", func() bool {
+		b, err := os.ReadFile(config)
+		return err == nil && strings.Contains(string(b), `"godwit"`) && strings.Contains(string(b), `"mcp"`)
+	})
+	h.click("Claude")
+	h.see("已断开 Claude。")
+	h.until("taken out", func() bool { b, _ := os.ReadFile(config); return !strings.Contains(string(b), `"godwit"`) })
 }

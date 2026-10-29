@@ -14,6 +14,8 @@ var RemixIcons = map[string]string{
 	"arrow-up":                  "node_modules/remixicon/icons/Arrows/arrow-up-line.svg",
 	"arrow-up-right":            "node_modules/remixicon/icons/Arrows/arrow-right-up-line.svg",
 	"bold":                      "node_modules/remixicon/icons/Editor/bold.svg",
+	"brain-4":                   "node_modules/remixicon/icons/Health & Medical/brain-4-line.svg",
+	"brain-4-fill":              "node_modules/remixicon/icons/Health & Medical/brain-4-fill.svg",
 	"check":                     "node_modules/remixicon/icons/System/check-line.svg",
 	"chevron-down":              "node_modules/remixicon/icons/Arrows/arrow-down-s-line.svg",
 	"chevron-right":             "node_modules/remixicon/icons/Arrows/arrow-right-s-line.svg",
@@ -136,11 +138,19 @@ var RemixIcons = map[string]string{
 	"x":                         "node_modules/remixicon/icons/System/close-line.svg",
 }
 
-// BrandIcons are the model providers' marks, from @lobehub/icons-static-svg
-// (MIT), by Godwit provider ID. Each value is the path under remix.
+// BrandIcons are the model providers' marks, and the AI apps' that godwit
+// mcp connects to (internal/mcpclients' IDs), from @lobehub/icons-static-svg
+// (MIT), by Godwit ID. Each value is the path under remix.
 var BrandIcons = map[string]string{
-	"chatgpt": "node_modules/@lobehub/icons-static-svg/icons/openai.svg",
-	"grok":    "node_modules/@lobehub/icons-static-svg/icons/grok.svg",
+	"chatgpt":     "node_modules/@lobehub/icons-static-svg/icons/openai.svg",
+	"grok":        "node_modules/@lobehub/icons-static-svg/icons/grok.svg",
+	"claude":      "node_modules/@lobehub/icons-static-svg/icons/claude-color.svg",
+	"claude-code": "node_modules/@lobehub/icons-static-svg/icons/claudecode-color.svg",
+	"codex":       "node_modules/@lobehub/icons-static-svg/icons/codex-color.svg",
+	// The same marks in one color, for an app not connected (tinted gray).
+	"claude-mono":      "node_modules/@lobehub/icons-static-svg/icons/claude.svg",
+	"claude-code-mono": "node_modules/@lobehub/icons-static-svg/icons/claudecode.svg",
+	"codex-mono":       "node_modules/@lobehub/icons-static-svg/icons/codex.svg",
 }
 
 // remix holds exactly the files of RemixIcons and BrandIcons, and the packages' licences.
@@ -148,8 +158,16 @@ var BrandIcons = map[string]string{
 //go:embed node_modules/remixicon/License
 //go:embed node_modules/@lobehub/icons-static-svg/icons/openai.svg
 //go:embed node_modules/@lobehub/icons-static-svg/icons/grok.svg
+//go:embed node_modules/@lobehub/icons-static-svg/icons/claude-color.svg
+//go:embed node_modules/@lobehub/icons-static-svg/icons/claudecode-color.svg
+//go:embed node_modules/@lobehub/icons-static-svg/icons/codex-color.svg
+//go:embed node_modules/@lobehub/icons-static-svg/icons/claude.svg
+//go:embed node_modules/@lobehub/icons-static-svg/icons/claudecode.svg
+//go:embed node_modules/@lobehub/icons-static-svg/icons/codex.svg
 //go:embed node_modules/remixicon/icons/Arrows/arrow-down-s-line.svg
 //go:embed node_modules/remixicon/icons/Development/code-s-slash-line.svg
+//go:embed "node_modules/remixicon/icons/Health & Medical/brain-4-line.svg"
+//go:embed "node_modules/remixicon/icons/Health & Medical/brain-4-fill.svg"
 //go:embed node_modules/remixicon/icons/Arrows/arrow-go-back-line.svg
 //go:embed node_modules/remixicon/icons/Arrows/arrow-left-line.svg
 //go:embed node_modules/remixicon/icons/Arrows/arrow-right-line.svg

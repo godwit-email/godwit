@@ -17,6 +17,7 @@ import (
 	"github.com/godwit-email/godwit/internal/i18n"
 	"github.com/godwit-email/godwit/internal/icons"
 	"github.com/godwit-email/godwit/internal/kit"
+	"github.com/godwit-email/godwit/internal/mcpclients"
 	"github.com/godwit-email/godwit/internal/theme"
 )
 
@@ -57,8 +58,9 @@ type settingsPage struct {
 	reauth       map[int64]bool                                                                 // a browser sign-in runs for the account
 	update       func(ctx context.Context, id int64, p core.AccountPatch) (core.Account, error) // tests swap it
 
-	aiTab, privacyTab int           // the AI and 隐私与安全 pages' tabs
-	logFilter         maskLogFilter // what 脱敏记录 lists
+	aiTab, privacyTab int                         // the AI and 隐私与安全 pages' tabs
+	clients           map[string]mcpclients.State // 接入 AI 应用: how each AI app stands, as last read
+	logFilter         maskLogFilter               // what 脱敏记录 lists
 
 	// general
 	st, shown   core.Settings         // what the controls are bound to, and what they showed last frame
@@ -160,6 +162,9 @@ func (p *settingsPage) refresh(hints []events.Event) {
 			break
 		}
 		p.ext.load() // the MCP tab's servers, and the registry naming the translators
+		if hints == nil {
+			p.readClients()
+		}
 		var list []core.TranslatorInfo
 		a.query(func(ctx context.Context) (err error) { list, err = a.svc.ListTranslators(ctx); return err },
 			func(err error) {
@@ -214,7 +219,7 @@ func (p *settingsPage) Title() (string, string) {
 var appSections = []string{"general", "signatures", "models", "labels", "extensions", "privacy", "about"}
 
 // sectionIcons are the app sections' sidebar icons.
-var sectionIcons = map[string]string{"general": "settings", "signatures": "quill-pen", "models": "cpu", "labels": "tag", "extensions": "puzzle", "privacy": "shield", "about": "info"}
+var sectionIcons = map[string]string{"general": "settings", "signatures": "quill-pen", "models": "brain-4", "labels": "tag", "extensions": "puzzle", "privacy": "shield", "about": "info"}
 
 // Sidebar: the accounts, each with its provider's mark and a status dot,
 // then Add account; then the app's pages.
@@ -454,7 +459,7 @@ func (p *settingsPage) keychainState(c *ui.Context) {
 	})
 }
 
-// localAPIView is the Local API (本机 API) on the AI page's MCP tab: its
+// localAPIView is the Local API (本机 API), the Intelligence page's 接入 AI 应用 tab: its
 // switch and what godwit mcp may send; while it runs, the MCP client config
 // and the socket to copy. What it can reach is the section's footnote.
 func (p *settingsPage) localAPIView(c *ui.Context) {
@@ -479,13 +484,7 @@ func (p *settingsPage) localAPIView(c *ui.Context) {
 		})
 	}
 	if a.settings.LocalAPI && a.localAPIPath != "" {
-		rows = append(rows, func() {
-			settingRow(c, i18n.T("settings.local_api.connect"), i18n.T("settings.local_api.connect.help"), func() {
-				if settingButton(c, i18n.T("settings.local_api.copy"), kit.Outline, false).Clicked() {
-					copied(a.mcpConfig())
-				}
-			})
-		})
+		rows = append(rows, func() { p.clientsRow(c, copied) })
 	}
 	rows = append(rows, func() {
 		settingRow(c, i18n.T("settings.local_api.send"), i18n.T("settings.local_api.send.help"), func() {
@@ -520,9 +519,9 @@ func (p *settingsPage) localAPIView(c *ui.Context) {
 	settingsSection(c, i18n.T("settings.local_api"), i18n.T("settings.local_api.foot"), rows...)
 }
 
-// aiView is the AI page, a tab each: the model services, the features and
-// languages that use them (aiFeaturesView), and MCP: the servers Wit uses
-// and the Local API other AI tools use.
+// aiView is the Intelligence page, a tab each: the model services, the features and
+// languages that use them (aiFeaturesView), the MCP servers Wit uses, and
+// the AI apps that use Godwit through the Local API (localAPIView).
 func (p *settingsPage) aiView(c *ui.Context) {
 	m := p.models
 	var add []func()
@@ -530,16 +529,18 @@ func (p *settingsPage) aiView(c *ui.Context) {
 		add = append(add, func() { settingButton(c, i18n.T("settings.models.add"), kit.Default, false).OnClick(m.add) })
 	}
 	pageHeading(c, i18n.T("settings.models"), i18n.T("settings.models.sub"), add...)
-	kit.TabsUnderline(c, &p.aiTab, i18n.T("settings.ai.tab.models"), i18n.T("settings.ai.tab.features"), i18n.Tf("settings.ext.tab.mcp", len(p.ext.servers)))
+	kit.TabsUnderline(c, &p.aiTab, i18n.T("settings.ai.tab.models"), i18n.T("settings.ai.tab.features"), i18n.Tf("settings.ext.tab.mcp", len(p.ext.servers)),
+		i18n.T("settings.ai.tab.apps"))
 	switch p.aiTab {
 	case 0:
 		m.view(c)
 	case 1:
 		p.aiFeaturesView(c)
-	default:
+	case 2:
 		p.ext.mcpView(c)
-		p.localAPIView(c)
 		p.ext.confirmView(c)
+	default:
+		p.localAPIView(c)
 	}
 }
 
@@ -643,14 +644,11 @@ var godwitExe = sync.OnceValue(func() string {
 })
 
 // mcpConfig is the MCP client entry that runs godwit mcp on this data
-// directory.
+// directory, for an app to copy (接入 AI 应用 writes it for the ones it knows).
 func (a *App) mcpConfig() string {
-	args := []string{"mcp"}
-	if dir, custom := a.plat.DataDir(); custom {
-		args = append(args, "--data-dir", dir)
-	}
-	exe, _ := json.Marshal(godwitExe())
-	as, _ := json.Marshal(args)
+	s := a.mcpServer()
+	exe, _ := json.Marshal(s.Command)
+	as, _ := json.Marshal(s.Args)
 	return `{"command": ` + string(exe) + `, "args": ` + string(as) + `}`
 }
 
