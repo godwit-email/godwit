@@ -1489,3 +1489,29 @@ func TestReaderRecipientDetails(t *testing.T) {
 		t.Fatal("the account shows with one account")
 	}
 }
+
+// A value too long for the details is cut to one line: whole on hover, and
+// a selection of it copies it whole.
+func TestReaderRecipientDetailsLong(t *testing.T) {
+	h, accs := mailHarness(t, nil, "alice@example.com")
+	full := "godwit-email/godwit <reply+ACXF7WOQ23XZUOXFVFDM3ADLLACSDEVBNHHQAAAAAFTYZGXK@reply.github.com>"
+	m := h.deliverOne(accs[0], coretest.Msg("Bob <bob@example.com>", accs[0].Email, "Plan", "body", coretest.Header("Reply-To: "+full)))
+	h.openThread(m.ThreadID)
+	h.seeBody(m.ID)
+	h.click("发给 我")
+	h.see(full) // its text; it shows cut
+	e, _ := h.tt.Find(full)
+	h.tt.Move(e.X+e.W/2, e.Y+e.H/2)
+	h.tt.Advance(900 * time.Millisecond)
+	if n := h.countTexts(full); n != 2 {
+		t.Fatalf("%d texts of the value on hover, want it and its tooltip", n)
+	}
+	for range 3 { // a triple click selects its line, as much as shows
+		h.tt.ClickAt(e.X+e.W/4, e.Y+e.H/2)
+	}
+	h.tt.Key(ui.Cmd, ui.KeyC)
+	h.tt.Frame()
+	if got := h.tt.Clipboard(); got != full {
+		t.Fatalf("copied %q", got)
+	}
+}

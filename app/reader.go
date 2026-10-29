@@ -18,6 +18,7 @@ import (
 	"time"
 	"unicode"
 
+	"github.com/egoist/mygo/transfer"
 	"github.com/egoist/mygo/ui"
 	"github.com/godwit-email/godwit/core"
 	"github.com/godwit-email/godwit/core/ai"
@@ -1206,7 +1207,20 @@ func (r *reader) details(c *ui.Context, anchor ui.Element, m core.MessageSummary
 	}
 	date := m.Date.In(now.Location())
 	kit.PopoverAt(c, anchor, &r.detailsOpen, ui.AnchorBottomLeft, ui.AnchorTopLeft, theme.PopupOffset, func() {
-		ui.Column(c).Width(theme.DetailsWidth).Gap(th.Space(2)).Label(i18n.T("reader.details")).Selectable().Children(func() {
+		cut := map[string]bool{} // values cut to fit, by their text
+		// A value cut to fit copies whole: a selection there holds only what shows.
+		copyWhole := func(parts []ui.SelectedText) transfer.Data {
+			var out []string
+			for _, p := range parts {
+				if cut[p.Text] {
+					out = append(out, p.Text)
+				} else {
+					out = append(out, string([]rune(p.Text)[p.Start:p.End]))
+				}
+			}
+			return transfer.TextData(strings.Join(out, "\n"))
+		}
+		ui.Column(c).Width(theme.DetailsWidth).Gap(th.Space(2)).Label(i18n.T("reader.details")).Selectable().CopyData(copyWhole).Children(func() {
 			row := func(key int, label string, values []string) {
 				if len(values) == 0 {
 					return
@@ -1215,7 +1229,7 @@ func (r *reader) details(c *ui.Context, anchor ui.Element, m core.MessageSummary
 					kit.Text(c, label, t.Text.Sm).TextColor(t.Muted).Width(theme.DetailsLabel).Shrink(0).Unselectable()
 					ui.Column(c).Grow(1).Shrink(1).Gap(th.Space(1)).Children(func() {
 						for i, v := range values {
-							r.detailsValue(c.Key(i), v)
+							r.detailsValue(c.Key(i), v, cut)
 						}
 					})
 				})
@@ -1233,16 +1247,25 @@ func (r *reader) details(c *ui.Context, anchor ui.Element, m core.MessageSummary
 }
 
 // detailsValue is a value of details: an address as Name <address>, the
-// address quieter, in one paragraph so a triple click selects it whole;
-// anything else (the date) as it is.
-func (r *reader) detailsValue(c *ui.Context, raw string) {
-	t := theme.Of(c)
+// address quieter, anything else (the date) as it is. One line, cut to fit
+// (noted in cut), whole on hover.
+func (r *reader) detailsValue(c *ui.Context, raw string, cut map[string]bool) {
+	t, th := theme.Of(c), c.Theme()
 	name, addr := sender(raw)
 	spans := []ui.Span{{Text: name}}
 	if addr != "" && addr != name {
 		spans = append(spans, ui.Span{Text: " <" + addr + ">", Color: t.Muted})
 	}
-	ui.RichText(c, spans...).FontSize(t.Text.Sm).LineHeight(t.Text.Line(t.Text.Sm))
+	e := ui.RichText(c, spans...).FontSize(t.Text.Sm).LineHeight(t.Text.Line(t.Text.Sm)).SingleLine()
+	text := ui.ShapeRichText(spans, ui.Font{Size: t.Text.Sm}, 0)
+	if w, _ := text.Size(); w > theme.DetailsWidth-theme.DetailsLabel-th.Space(3) {
+		var b strings.Builder
+		for _, sp := range spans {
+			b.WriteString(sp.Text)
+		}
+		cut[b.String()] = true
+		kit.Tooltip(c, e, b.String())
+	}
 }
 
 // splitAddresses is a header's list of addresses, or the header as one when
