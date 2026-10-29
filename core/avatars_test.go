@@ -132,6 +132,53 @@ func TestSenderAvatarSources(t *testing.T) {
 	}
 }
 
+// TestSenderAvatarBIMI: the organization's DNS logo comes before any favicon, even
+// a cached one, and is cached itself; without BIMI the favicon path runs as before.
+func TestSenderAvatarBIMI(t *testing.T) {
+	const logo = `<svg xmlns="http://www.w3.org/2000/svg" version="1.2" baseProfile="tiny-ps" viewBox="0 0 32 32"><title>Logo</title><path d="M0 0L32 0L32 32Z"/></svg>`
+	good := avatarPNG(t)
+	f := newAvatarFixture(t, func(w http.ResponseWriter, r *http.Request) {
+		switch r.Host + r.URL.Path {
+		case "example.com/bimi.svg":
+			w.Write([]byte(logo))
+		case "example.com/apple-touch-icon.png", "other.com/apple-touch-icon.png":
+			w.Write(good)
+		default:
+			http.NotFound(w, r)
+		}
+	})
+	var mu sync.Mutex
+	var lookups []string
+	f.s.opts.LookupTXT = func(_ context.Context, name string) ([]string, error) {
+		mu.Lock()
+		lookups = append(lookups, name)
+		mu.Unlock()
+		switch name {
+		case "default._bimi.example.com":
+			return []string{"v=BIMI1; l=https://example.com/bimi.svg"}, nil
+		case "_dmarc.example.com":
+			return []string{"v=DMARC1; p=reject"}, nil
+		}
+		return nil, &net.DNSError{Err: "no such host", Name: name, IsNotFound: true}
+	}
+	_, err := f.s.images.PutAvatar(t.Context(), imagecache.AvatarKey("favicon", "example.com"), good, "favicon", f.s.images.AvatarGeneration())
+	require.NoError(t, err)
+
+	for _, id := range []int64{addMessage(t, f.s, "b", "OpenAI <noreply@tm.example.com>", "plain", "", 2), addMessage(t, f.s, "c", "noreply@tm.example.com", "plain", "", 3)} {
+		got, err := f.s.SenderAvatar(t.Context(), id, false)
+		require.NoError(t, err)
+		assert.Equal(t, "bimi", got.Source)
+		assert.Equal(t, "svg", got.Format)
+		assert.Equal(t, []byte(logo), got.Data)
+	}
+	assert.Equal(t, []string{"example.com/bimi.svg"}, f.hits(), "one logo download, then cached")
+	assert.Equal(t, []string{"default._bimi.tm.example.com", "default._bimi.example.com", "_dmarc.example.com", "_dmarc.tm.example.com"}, lookups)
+
+	got, err := f.s.SenderAvatar(t.Context(), addMessage(t, f.s, "d", "bob@other.com", "plain", "", 4), false)
+	require.NoError(t, err)
+	assert.Equal(t, "favicon", got.Source)
+}
+
 // TestSenderAvatarCachedOrganizationFirst: with the organization's icon cached, a
 // sender host is not asked again, as account.tiktok.com, which never answers, was.
 func TestSenderAvatarCachedOrganizationFirst(t *testing.T) {

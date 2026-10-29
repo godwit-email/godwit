@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"io/fs"
 	"maps"
+	"net"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -25,6 +26,7 @@ import (
 	"github.com/godwit-email/godwit/core/mailsync"
 	"github.com/godwit-email/godwit/core/plugins"
 	"github.com/godwit-email/godwit/core/store"
+	"github.com/godwit-email/godwit/internal/avatar"
 	"github.com/godwit-email/godwit/internal/imagecache"
 	"github.com/godwit-email/godwit/internal/imagefetch"
 )
@@ -44,6 +46,9 @@ type Options struct {
 	// ImageClient downloads remote mail images; nil is imagefetch.NewClient(false)
 	// (public hosts only). Tests give one that reaches loopback.
 	ImageClient *http.Client
+	// LookupTXT finds sender logos (BIMI) in DNS; nil is the system resolver,
+	// unless ImageClient is set, which keeps tests off real DNS.
+	LookupTXT avatar.LookupTXT
 	// UnsubscribeClient sends one-click unsubscribes; nil is one dialing as
 	// ImageClient's default does (public hosts only). Core never lets it
 	// follow a redirect or keep cookies. Tests give one that reaches loopback.
@@ -218,6 +223,9 @@ func New(ctx context.Context, opts Options) (*Service, error) {
 	}
 	if opts.ImageClient == nil {
 		s.opts.ImageClient = imagefetch.NewClient(false)
+		if opts.LookupTXT == nil {
+			s.opts.LookupTXT = net.DefaultResolver.LookupTXT
+		}
 	}
 	if opts.UnsubscribeClient == nil {
 		s.opts.UnsubscribeClient = &http.Client{Transport: imagefetch.NewTransport(false), Timeout: imagefetch.Timeout}
