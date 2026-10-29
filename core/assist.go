@@ -88,16 +88,20 @@ type draftUndo struct {
 
 func isDraftEdit(tool string) bool { return tool == "update_draft" || tool == "update_selection" }
 
-var blockTag = regexp.MustCompile(`(?i)<(p|br|div|ul|ol|li|h[1-6]|blockquote|table|tr|td|th)\b`)
+var (
+	// Any tag, inline ones included: a one-line reply with only a link is still HTML.
+	htmlTag   = regexp.MustCompile(`(?i)</?[a-z][a-z0-9]*\b[^>]*>`)
+	paraBreak = regexp.MustCompile(`\n[ \t]*\n\s*`)
+)
 
 // ensureHTML converts plain text (with single or double line breaks) into
-// HTML paragraphs (<p>) and breaks (<br>) when it contains no block or break tags.
+// HTML paragraphs (<p>) and breaks (<br>) when it contains no tags at all.
 func ensureHTML(h string) string {
-	if h == "" || blockTag.MatchString(h) {
+	if h == "" || htmlTag.MatchString(h) {
 		return h
 	}
 	h = strings.ReplaceAll(h, "\r\n", "\n")
-	paras := regexp.MustCompile(`\n{2,}`).Split(strings.TrimSpace(h), -1)
+	paras := paraBreak.Split(strings.TrimSpace(h), -1)
 	var b strings.Builder
 	for _, p := range paras {
 		p = strings.TrimSpace(p)

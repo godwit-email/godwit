@@ -981,6 +981,10 @@ func TestEnsureHTML(t *testing.T) {
 	assert.Equal(t, "<p>Line 1<br>Line 2</p>", ensureHTML("Line 1\nLine 2"))
 	assert.Equal(t, "<p>Para 1<br>Line 1b</p><p>Para 2</p>", ensureHTML("Para 1\nLine 1b\n\nPara 2"))
 	assert.Equal(t, "<p>A &amp; B &lt; C</p>", ensureHTML("A & B < C"))
+	assert.Equal(t, "<p>Line 1</p><p>Line 2</p>", ensureHTML("Line 1\n  \nLine 2"))
+	// Inline-only HTML is left for the sanitizer, not escaped into visible tags.
+	assert.Equal(t, `See <a href="https://x.com">the doc</a>.`, ensureHTML(`See <a href="https://x.com">the doc</a>.`))
+	assert.Equal(t, "Hi <b>Ann</b>,\n\nThanks!", ensureHTML("Hi <b>Ann</b>,\n\nThanks!"))
 	// cleanHTML with ensureHTML should preserve paragraphs and line breaks
 	assert.Equal(t, "<p>Line 1</p><p>Line 2</p>", cleanHTML(ensureHTML("Line 1\n\nLine 2")))
 	assert.Equal(t, "<p>Line 1<br/>Line 2</p>", cleanHTML(ensureHTML("Line 1\nLine 2")))
