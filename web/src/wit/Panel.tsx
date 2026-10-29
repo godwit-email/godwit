@@ -18,6 +18,7 @@ import {
   RiExternalLinkLine,
   RiFileCopyLine,
   RiGlobalLine,
+  RiInformationLine,
   RiLoaderLine,
   RiMagicLine,
   RiMailLine,
@@ -94,6 +95,7 @@ import {
   QuestionnaireSubmit,
   QuestionnaireTitle,
 } from "@/components/ui/questionnaire";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import {
   TraceCollapsible,
   TraceCollapsibleContent,
@@ -1512,7 +1514,22 @@ function Answer({
               </Button>
             </>
           )}
-          {masking && <span className="px-1.5 text-muted-foreground text-xs">{masking}</span>}
+          {masking && (
+            <Tooltip>
+              <TooltipTrigger
+                render={
+                  <button
+                    type="button"
+                    className="inline-flex cursor-default items-center gap-1 px-1.5 text-muted-foreground text-xs"
+                  />
+                }
+              >
+                <span>{masking}</span>
+                <RiInformationLine className="size-3 shrink-0 opacity-70 hover:opacity-100" />
+              </TooltipTrigger>
+              <TooltipContent className="leading-relaxed">{t("wit.masked_help")}</TooltipContent>
+            </Tooltip>
+          )}
           {m.metadata?.time && !live && <MessageTime ms={m.metadata.time} className="ml-auto" />}
         </div>
       )}
