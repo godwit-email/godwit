@@ -232,7 +232,7 @@ func gui(ctx context.Context, dataDir string) int {
 		}
 		reg, err := registrySource()
 		if err == nil {
-			svc, err = core.New(ctx, core.Options{DataDir: dataDir, AutoSync: true, LabelMail: true, SystemLanguage: lang,
+			svc, err = core.New(ctx, core.Options{DataDir: dataDir, AutoSync: true, LabelMail: true, SecurityMail: true, SystemLanguage: lang,
 				Registry: reg, ModelsDev: ai.ModelsDevURL, AppVersion: app.Version, SystemTranslator: systemTranslator(), AppleIntelligence: appleIntelligence(),
 				ConfirmWindow: true, ComposeOpen: windows.IsOpen, OpenURL: mygo.Shell.OpenExternal})
 		}

@@ -42,6 +42,9 @@ type Options struct {
 	// LabelMail runs the label classifier in the background (the apps set it;
 	// tests call it by hand or leave it off so their scripted models stay theirs).
 	LabelMail bool
+	// SecurityMail runs the single background security worker. The apps enable
+	// it; deterministic tests may drive scanSecurityBatch explicitly.
+	SecurityMail bool
 	// SystemLanguage is the operating system language (BCP 47) the GUI passes in; empty means "en".
 	SystemLanguage string
 	// ImageClient downloads remote mail images; nil is imagefetch.NewClient(false)
@@ -151,25 +154,35 @@ type Service struct {
 	credMu  sync.Mutex
 	credVer map[int64]uint64 // bumped when the user gives an account new credentials
 
-	pluginsMu   sync.RWMutex               // writers: installs, updates, grants, enabling, uninstalls; readers: ListPlugins
-	running     map[string]*runningPlugin  // started plugins by name
-	assets      modelAssets                // plugin models' files (assets.go); nil is noModelAssets
-	pluginGen   uint64                     // last runningPlugin.gen handed out
-	hooksMu     sync.Mutex                 // plugin_cursors writes, events_log cleanup, hookWakes
-	hookWakes   map[chan struct{}]struct{} // each running dispatcher's wake-up
-	labelsMu    sync.Mutex                 // label writes: a name is checked and saved under it
-	sigMu       sync.Mutex                 // signature writes (read, images stored, HTML saved, unused images cleaned), and a draft taking a signature; before editMu
-	labelWake   chan struct{}              // wakes the label classifier
-	reclaimWake chan struct{}              // wakes the free-space reclaimer (reclaimSoon)
-	labelJudge  func(context.Context) (ai.Judge, error)
-	clock       Clock              // outbox timing and Wit's time note; nil is the real clock
-	hookClock   plugins.Clock      // hook backoff and polling; nil is the real clock
-	pluginNet   plugins.NetOptions // ctx.net.fetch's network; tests inject a resolver and dialer
-	pluginClock plugins.Clock      // plugin VM call limits; nil is the real clock
-	nativeCmd   []string           // a native plugin's process: this executable's plugin-host
-	nativeEnv   []string           // and its whole environment
-	registryMu  sync.Mutex         // registry cache writes; registryErr
-	registryErr string             // why the last registry refresh failed; "" it did not
+	pluginsMu         sync.RWMutex               // writers: installs, updates, grants, enabling, uninstalls; readers: ListPlugins
+	running           map[string]*runningPlugin  // started plugins by name
+	assets            modelAssets                // plugin models' files (assets.go); nil is noModelAssets
+	pluginGen         uint64                     // last runningPlugin.gen handed out
+	hooksMu           sync.Mutex                 // plugin_cursors writes, events_log cleanup, hookWakes
+	hookWakes         map[chan struct{}]struct{} // each running dispatcher's wake-up
+	labelsMu          sync.Mutex                 // label writes: a name is checked and saved under it
+	sigMu             sync.Mutex                 // signature writes (read, images stored, HTML saved, unused images cleaned), and a draft taking a signature; before editMu
+	labelWake         chan struct{}              // wakes the label classifier
+	securityMu        sync.Mutex                 // scan admission and progress scope
+	securityRunning   bool
+	securitySyncs     int
+	securitySince     int64
+	securityThrough   int64
+	securityTotal     int
+	securityWake      chan struct{} // wakes the security scanner
+	reclaimWake       chan struct{} // wakes the free-space reclaimer (reclaimSoon)
+	labelJudge        func(context.Context) (ai.Judge, error)
+	securityJudge     func(context.Context) (ai.Judge, error)
+	securityRaw       func(context.Context, int64) ([]byte, error)
+	securityLookupTXT func(context.Context, string) ([]string, error)
+	clock             Clock              // outbox timing and Wit's time note; nil is the real clock
+	hookClock         plugins.Clock      // hook backoff and polling; nil is the real clock
+	pluginNet         plugins.NetOptions // ctx.net.fetch's network; tests inject a resolver and dialer
+	pluginClock       plugins.Clock      // plugin VM call limits; nil is the real clock
+	nativeCmd         []string           // a native plugin's process: this executable's plugin-host
+	nativeEnv         []string           // and its whole environment
+	registryMu        sync.Mutex         // registry cache writes; registryErr
+	registryErr       string             // why the last registry refresh failed; "" it did not
 
 	catalog     atomic.Pointer[ai.ModelCatalog] // models.dev's (modelcatalog.go); nil knows none
 	catalogTry  atomic.Int64                    // when a fetch last started, Unix nanoseconds
@@ -202,13 +215,15 @@ func New(ctx context.Context, opts Options) (*Service, error) {
 		return nil, err
 	}
 	s := &Service{db: db, bus: events.New(), dataDir: opts.DataDir, opts: opts, installID: install, streamsEnd: make(chan struct{}),
-		clock: testClock, hookClock: testHookClock, pluginClock: testPluginClock, labelWake: make(chan struct{}, 1), reclaimWake: make(chan struct{}, 1)}
+		clock: testClock, hookClock: testHookClock, pluginClock: testPluginClock, labelWake: make(chan struct{}, 1), securityWake: make(chan struct{}, 1), reclaimWake: make(chan struct{}, 1)}
 	s.ledger = &runLedger{db: db, host: s}
 	if err := s.recoverOutbox(ctx); err != nil {
 		db.Close()
 		return nil, err
 	}
 	s.labelJudge = s.defaultLabelJudge
+	s.securityJudge = s.defaultSecurityJudge
+	s.securityRaw = s.GetRawMessage
 	s.assets = newModelAssets(s)
 	if exe, err := os.Executable(); err == nil {
 		s.nativeCmd = []string{exe, "plugin-host"}
@@ -293,6 +308,9 @@ func New(ctx context.Context, opts Options) (*Service, error) {
 	s.startReclaim()
 	if opts.LabelMail {
 		s.startLabeler()
+	}
+	if opts.SecurityMail {
+		s.startSecurityScanner()
 	}
 	s.startImagePrefetch()
 	if opts.Registry != nil {
@@ -514,6 +532,10 @@ func (s *Service) syncNow(ctx context.Context, accountID int64, explicit bool) e
 		return err
 	}
 	defer unlock()
+	s.securityMu.Lock()
+	s.securitySyncs++
+	s.securityMu.Unlock()
+	defer func() { s.securityMu.Lock(); s.securitySyncs--; s.securityMu.Unlock() }()
 	s.bus.Publish(events.Event{Type: events.SyncStarted, AccountID: accountID})
 	if err := s.syncAccount(ctx, accountID, explicit); err != nil {
 		if ctx.Err() == nil {

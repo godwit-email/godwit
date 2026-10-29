@@ -1635,3 +1635,87 @@ func TestConnectAIApp(t *testing.T) {
 	h.see("已断开 Claude。")
 	h.until("taken out", func() bool { b, _ := os.ReadFile(config); return !strings.Contains(string(b), `"godwit"`) })
 }
+
+func TestSettingsSecuritySection(t *testing.T) {
+	h, _ := withAccount(t)
+	h.openSettings("privacy")
+	h.click(i18n.T("settings.security"))
+	h.see(i18n.T("settings.security"))
+	h.see(i18n.T("settings.security.ai"))
+
+	if !h.app.settings.SecurityWarnings || !h.app.settings.VerifiedBadge || h.app.settings.SecurityAI {
+		t.Fatalf("defaults: SecurityWarnings=%v, VerifiedBadge=%v, SecurityAI=%v, want true, true, false",
+			h.app.settings.SecurityWarnings, h.app.settings.VerifiedBadge, h.app.settings.SecurityAI)
+	}
+
+	// While SecurityAI is OFF (default), sub-options and rescan are hidden
+	if h.tt.HasText(i18n.T("settings.security.warnings")) || h.tt.HasText(i18n.T("settings.security.verified")) || h.tt.HasText(i18n.T("settings.security.rescan")) {
+		t.Fatal("sub-options and rescan should be hidden when SecurityAI is off")
+	}
+
+	// Toggle SecurityAI ON
+	h.click(i18n.T("settings.security.ai"))
+	h.until("security AI toggled on", func() bool { return h.app.settings.SecurityAI })
+
+	// Now sub-options and rescan appear
+	h.see(i18n.T("settings.security.warnings"))
+	h.see(i18n.T("settings.security.verified"))
+	h.see(i18n.T("settings.security.rescan"))
+
+	h.click(i18n.T("settings.security.warnings"))
+	h.until("warnings toggled off", func() bool { return !h.app.settings.SecurityWarnings })
+
+	h.click(i18n.T("settings.security.verified"))
+	h.until("verified badge toggled off", func() bool { return !h.app.settings.VerifiedBadge })
+
+	// Toggle SecurityAI OFF again
+	h.click(i18n.T("settings.security.ai"))
+	h.until("security AI toggled off", func() bool { return !h.app.settings.SecurityAI })
+	h.until("sub-options hidden", func() bool { return !h.tt.HasText(i18n.T("settings.security.warnings")) })
+	if h.tt.HasText(i18n.T("settings.security.verified")) || h.tt.HasText(i18n.T("settings.security.rescan")) {
+		t.Fatal("sub-options and rescan should be hidden after toggling SecurityAI off")
+	}
+}
+
+func TestSettingsSecurityRescan(t *testing.T) {
+	var acc core.Account
+	h := newHarnessWith(t, []coretest.Option{coretest.WithoutAutoSync()}, func(e *coretest.Env) { acc = e.AddAccount(t, "alice@example.com") })
+	h.until("initial load", func() bool { return h.app.loaded })
+	for _, s := range []string{"a", "b", "c"} {
+		// A signed message with ambiguous authentication is queued even on the
+		// first import. The test drives no background worker/model itself.
+		raw := append([]byte("DKIM-Signature: v=1; d=example.com; s=test; b=invalid\r\n"), coretest.Msg("bob@example.com", acc.Email, s, s)...)
+		h.put(acc, "INBOX", raw)
+	}
+	h.syncNow(acc)
+	st := h.app.settings
+	st.SecurityAI = true
+	h.app.changeSettings(st)
+	p := h.openSettings("privacy")
+	h.click(i18n.T("settings.security"))
+	h.until("background security queue shown", func() bool { return p.secLoaded && p.secBusy })
+	h.see(i18n.T("settings.security.rescan.busy"))
+	p.startSecurityRescan() // the background queue must block even direct invocation
+	if p.secStarting {
+		t.Fatal("started another run during background analysis")
+	}
+	if err := h.env.Svc.StopSecurityRescan(t.Context()); err != nil {
+		t.Fatal(err)
+	}
+	p.readSecurityProgress()
+	h.until("rescan ready", func() bool { h.advance(time.Second); return !p.securityRescanBlocked() })
+	h.see(i18n.T("settings.security.rescan"))
+	h.click(i18n.T("settings.security.rescan.redo"))
+	h.click(i18n.T("settings.security.rescan.start"))
+	p.startSecurityRescan() // synchronous guard also covers a second rapid click
+	h.until("the progress shows", func() bool {
+		h.tt.Frame()
+		return h.tt.HasText(i18n.T("settings.security.rescan.stop"))
+	})
+	h.see(i18n.T("settings.security.rescan.progress"))
+	h.click(i18n.T("settings.security.rescan.stop"))
+	h.until("idle again", func() bool {
+		h.tt.Frame()
+		return h.tt.HasText(i18n.T("settings.security.rescan.start"))
+	})
+}

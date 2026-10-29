@@ -352,7 +352,7 @@ func TestHumanizeErrors(t *testing.T) {
 	wrap := func(err error) error { return fmt.Errorf("op: %w", err) }
 	seen := map[string]bool{}
 	for _, err := range []error{
-		core.ErrStaleDraft, core.ErrInvalidState, core.ErrNoOutboxDraft, core.ErrRunActive, core.ErrStaleApproval,
+		core.ErrStaleDraft, core.ErrInvalidState, core.ErrNoOutboxDraft, core.ErrRunActive, core.ErrSecurityScanBusy, core.ErrStaleApproval,
 		core.ErrNeedsGrant, core.ErrAINotConfigured, core.ErrModelNotFound, core.ErrTooLarge,
 		core.ErrKeychainUnavailable,
 		&core.CheckError{Report: core.CheckReport{Steps: []core.CheckStep{{Name: "imap", Detail: "login refused"}}}},

@@ -69,6 +69,8 @@ type reader struct {
 	senderMsgID int64                    // which message's sender popover is open
 	detailsOpen bool                     // the recipients' details popover shows
 	detailsID   int64                    // which message's details popover is open
+	secOpen     bool                     // the security explanation popover shows
+	secMsgID    int64                    // which message's security popover is open
 	moreOpen    bool                     // the toolbar's more menu (save, print) shows
 	barTop      float32                  // the floating toolbar's height as the last frame laid it out: the messages start under it
 	barBottom   float32                  // the reply bar's, likewise: the messages end above it
@@ -1064,6 +1066,23 @@ func (r *reader) folded(c *ui.Context, m core.MessageSummary) {
 			if r.isBlocked(m.From) {
 				kit.Badge(c, i18n.T("reader.blocked_badge"))
 			}
+			if icon, label, colr := secVisual(t, m.Security.Status); icon != "" {
+				showBadge := false
+				if r.p.a.settings.SecurityAI {
+					if (m.Security.Status == gomail.SecurityFraud || m.Security.Status == gomail.SecurityNeedsReview) && r.p.a.settings.SecurityWarnings {
+						showBadge = true
+					} else if (m.Security.Status == gomail.SecurityCertifiedBrand || m.Security.Status == gomail.SecurityVerifiedDomain || m.Security.Status == gomail.SecurityNeutral) && r.p.a.settings.VerifiedBadge {
+						showBadge = true
+					}
+				}
+				if showBadge {
+					secRow := ui.Row(c).Gap(th.Space(0.5)).AlignItems(ui.Center)
+					secRow.Children(func() {
+						ui.Icon(c, icons.Fill(icon)).Size(theme.IconXs, theme.IconXs).TextColor(colr)
+						kit.Text(c, label, t.Text.Sm).TextColor(colr)
+					})
+				}
+			}
 			if g := r.gist(m.ID); g != "" { // a step darker than the text it stands for, and marked the AI's
 				ui.Row(c).Grow(1).Shrink(1).Gap(th.Space(1)).AlignItems(ui.Center).Children(func() {
 					ui.Text(c, g).TextColor(t.Foreground.Alpha(0.7)).SingleLine().Shrink(1)
@@ -1293,6 +1312,12 @@ func splitAddresses(header string) []string {
 func (r *reader) message(c *ui.Context, m core.MessageSummary) {
 	t, th := theme.Of(c), c.Theme()
 	b := r.bodies[m.ID]
+	var sec gomail.SecurityReport
+	if b != nil && b.ready {
+		sec = b.msg.Security
+	} else {
+		sec = gomail.EvaluateSecurity(m.From, "")
+	}
 	ui.Column(c).FillWidth().Gap(th.Space(3.5)).Children(func() {
 		name, addr := sender(m.From)
 		head := r.column(c).Gap(th.Space(3.5))
@@ -1348,6 +1373,7 @@ func (r *reader) message(c *ui.Context, m core.MessageSummary) {
 						r.recipientsLine(c, m, b)
 						r.trackersNote(c, b)
 						r.imagesNote(c, m, b, addr)
+						r.securityBadge(c, m.ID, sec)
 					})
 				})
 				ui.Spacer(c)
@@ -1809,4 +1835,115 @@ func (r *reader) senderMenu(c *ui.Context, anchor ui.Element, addr, rawFrom stri
 			})
 		}
 	})
+}
+
+func secWarningText(sec gomail.SecurityReport) string {
+	switch sec.WarningKind {
+	case gomail.WarnDisplaySpoof:
+		return i18n.T("reader.security.spoof_brand")
+	case gomail.WarnEmailInName:
+		return i18n.T("reader.security.spoof_email")
+	case gomail.WarnAuthFailed:
+		return i18n.T("reader.security.auth_failed")
+	case gomail.WarnAIFraud:
+		return i18n.T("reader.security.ai_fraud")
+	default:
+		return i18n.T("reader.security.warning_generic")
+	}
+}
+
+func (r *reader) secExplanation(sec gomail.SecurityReport) string {
+	switch sec.Status {
+	case gomail.SecurityCertifiedBrand:
+		return i18n.T("reader.security.certified_desc")
+	case gomail.SecurityVerifiedDomain:
+		return i18n.T("reader.security.verified_desc")
+	case gomail.SecurityNeedsReview:
+		if sec.ActualDomain != "" && (sec.DMARCPass || sec.DKIMPass) {
+			return i18n.Tf("reader.security.review_authenticated_desc", sec.ActualDomain)
+		}
+		return i18n.T("reader.security.review_desc")
+	case gomail.SecurityFraud:
+		return secWarningText(sec)
+	case gomail.SecurityNeutral:
+		return i18n.T("reader.security.unverified_desc")
+	default:
+		return ""
+	}
+}
+
+func (r *reader) securityBadge(c *ui.Context, msgID int64, sec gomail.SecurityReport) {
+	if !r.p.a.settings.SecurityAI {
+		return
+	}
+	if (sec.Status == gomail.SecurityFraud || sec.Status == gomail.SecurityNeedsReview) && !r.p.a.settings.SecurityWarnings {
+		return
+	}
+	if (sec.Status == gomail.SecurityCertifiedBrand || sec.Status == gomail.SecurityVerifiedDomain || sec.Status == gomail.SecurityNeutral) && !r.p.a.settings.VerifiedBadge {
+		return
+	}
+
+	t, th := theme.Of(c), c.Theme()
+	iconName, label, color := secVisual(t, sec.Status)
+	if iconName == "" {
+		return
+	}
+
+	badge := kit.Pressable(c, kit.PressableOpts{
+		OnClick: func() {
+			if r.secOpen && r.secMsgID == msgID {
+				r.secOpen = false
+			} else {
+				r.secOpen = true
+				r.secMsgID = msgID
+			}
+		},
+	}).Label(label).
+		Radius(t.Radius.Sm).Padding(th.Space(0.5), th.Space(1.5)).
+		Margin(0, -th.Space(1.5), 0, 0).
+		AlignItems(ui.Center).Gap(th.Space(1))
+	badge.Children(func() {
+		ui.Icon(c, icons.Fill(iconName)).Size(theme.IconXs, theme.IconXs).TextColor(color)
+		kit.Text(c, label, t.Text.Sm).TextColor(color)
+	})
+
+	if r.secOpen && r.secMsgID == msgID {
+		kit.Popover(c, badge, &r.secOpen, func() {
+			r.securityPopover(c, sec)
+		})
+	}
+}
+
+func (r *reader) securityPopover(c *ui.Context, sec gomail.SecurityReport) {
+	t, th := theme.Of(c), c.Theme()
+	iconName, title, color := secVisual(t, sec.Status)
+	if iconName == "" {
+		return
+	}
+
+	ui.Column(c).Width(theme.SecurityPopoverWidth).Gap(th.Space(2)).Children(func() {
+		ui.Row(c).Gap(th.Space(1.5)).AlignItems(ui.Center).Children(func() {
+			ui.Icon(c, icons.Fill(iconName)).Size(theme.Icon, theme.Icon).TextColor(color)
+			kit.Text(c, title, t.Text.Base).FontWeight(600).TextColor(color)
+		})
+		kit.Text(c, r.secExplanation(sec), t.Text.Sm).LineHeight(theme.LineCJK).TextColor(t.Foreground)
+	})
+}
+
+// secVisual returns the icon, translated label, and theme color for a security status.
+func secVisual(t theme.Tokens, status gomail.SecurityStatus) (iconName string, label string, color ui.Color) {
+	switch status {
+	case gomail.SecurityCertifiedBrand:
+		return "vip-diamond-fill", i18n.T("reader.security.certified_badge"), t.Unread
+	case gomail.SecurityVerifiedDomain:
+		return "shield-check-fill", i18n.T("reader.security.verified_badge"), t.SuccessText
+	case gomail.SecurityNeedsReview:
+		return "triangle-alert-fill", i18n.T("reader.security.review_badge"), t.WarningText
+	case gomail.SecurityFraud:
+		return "skull-fill", i18n.T("reader.security.fraud_badge"), t.DangerText
+	case gomail.SecurityNeutral:
+		return "question-fill", i18n.T("reader.security.unverified_badge"), t.Muted
+	default:
+		return "", "", color
+	}
 }

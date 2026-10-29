@@ -14,6 +14,7 @@ import (
 type folder struct {
 	id                   int64
 	name                 string
+	role                 string
 	uidValidity, lastUID uint32
 	synced               bool   // a first sync at uidValidity completed
 	filled               *int64 // the cutoff a range backfill completed down to
@@ -166,11 +167,12 @@ func syncFolders(ctx context.Context, db *store.DB, c *imapclient.Client, accoun
 	return out, nil
 }
 
-const folderCols = "id, name, uidvalidity, last_uid, synced, filled_since"
+const folderCols = "id, name, uidvalidity, last_uid, synced, filled_since, role"
 
 func scanFolder(r []any) *folder {
 	f := &folder{id: store.Int(r[0]), name: store.Str(r[1]),
-		uidValidity: uint32(store.Int(r[2])), lastUID: uint32(store.Int(r[3])), synced: store.Int(r[4]) != 0}
+		uidValidity: uint32(store.Int(r[2])), lastUID: uint32(store.Int(r[3])), synced: store.Int(r[4]) != 0,
+		role: store.Str(r[6])}
 	if r[5] != nil {
 		v := store.Int(r[5])
 		f.filled = &v

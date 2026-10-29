@@ -333,7 +333,7 @@ func (v *labelsView) rescan(c *ui.Context) {
 				ui.Row(c).Gap(th.Space(6)).AlignItems(ui.Center).Children(func() {
 					ui.Column(c).Grow(1).Shrink(1).Gap(th.Space(1.5)).Children(func() {
 						kit.Text(c, i18n.Tf("settings.labels.rescan.running", done, v.total), t.Text.Sm)
-						ui.Row(c).FillWidth().Height(th.Space(1)).Radius(t.Radius.Full).Background(t.Background).Clip().
+						ui.Row(c).FillWidth().Height(th.Space(2)).Radius(t.Radius.Full).Background(t.Border).AlignItems(ui.Stretch).Clip().
 							Label(i18n.T("settings.labels.rescan.progress")).Children(func() {
 							ui.Box(c).Grow(float32(done)).Background(t.Primary)
 							ui.Box(c).Grow(float32(v.pending))
