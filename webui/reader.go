@@ -118,6 +118,7 @@ type Reader struct {
 
 	// Test seams.
 	getMessage func(ctx context.Context, svc *core.Service, id int64, remote bool) (core.Message, error)
+	getAvatar  func(ctx context.Context, svc *core.Service, id int64) (core.Avatar, error)
 
 	mu      sync.Mutex
 	svc     *core.Service
@@ -147,6 +148,9 @@ func NewReader(pages *Pages, d ReaderDeps) *Reader {
 	return &Reader{pages: pages, d: d, bound: map[any]int64{}, msgs: map[int64]*bodyOf{},
 		getMessage: func(ctx context.Context, svc *core.Service, id int64, remote bool) (core.Message, error) {
 			return svc.GetMessage(ctx, id, remote)
+		},
+		getAvatar: func(ctx context.Context, svc *core.Service, id int64) (core.Avatar, error) {
+			return svc.SenderAvatar(ctx, id, false)
 		}}
 }
 
@@ -522,7 +526,8 @@ func (p *ReaderPage) Print(ctx context.Context) error {
 }
 
 // ImageScheme is the URL scheme of a message's remote images in its body,
-// served by ImageHandler: godwit-img://m<message>/<token>.
+// served by ImageHandler: godwit-img://m<message>/<token>; and of its sender's
+// avatar: godwit-img://a<message>.
 const ImageScheme = "godwit-img"
 
 // ImageHandler is the image proxy the pages load remote images from. It
@@ -531,6 +536,10 @@ const ImageScheme = "godwit-img"
 // hosts only, no cookies, no Referer), kept on disk, shared by messages.
 func (r *Reader) ImageHandler() http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
+		if message, ok := parseAvatarURL(req.URL); ok {
+			r.serveAvatar(w, req, message)
+			return
+		}
 		message, token, ok := parseImageURL(req.URL)
 		if !ok {
 			http.NotFound(w, req)
@@ -560,13 +569,43 @@ func (r *Reader) ImageHandler() http.Handler {
 			http.Error(w, "the message's images have too many pixels", http.StatusForbidden)
 			return
 		}
-		h := w.Header()
-		h.Set("Content-Type", "image/"+img.Format)
-		h.Set("Content-Length", strconv.Itoa(len(img.Data)))
-		h.Set("Cache-Control", "no-store") // every body load comes through the checks above; the disk cache is the cache
-		h.Set("X-Content-Type-Options", "nosniff")
-		_, _ = w.Write(img.Data)
+		writeImage(w, img.Format, img.Data)
 	})
+}
+
+// serveAvatar serves message's sender avatar under the message's own
+// remote-image policy (core SenderAvatar), 404 when there is none.
+func (r *Reader) serveAvatar(w http.ResponseWriter, req *http.Request, message int64) {
+	r.mu.Lock()
+	svc := r.svc
+	r.mu.Unlock()
+	if svc == nil {
+		http.NotFound(w, req)
+		return
+	}
+	av, err := r.getAvatar(req.Context(), svc, message)
+	if err != nil && req.Context().Err() == nil {
+		log.Printf("avatar: message %d: %v", message, err)
+	}
+	if err != nil || len(av.Data) == 0 {
+		http.NotFound(w, req)
+		return
+	}
+	writeImage(w, av.Format, av.Data)
+}
+
+// writeImage answers with an image of format (imagecache's: png, jpeg, gif,
+// webp, svg).
+func writeImage(w http.ResponseWriter, format string, data []byte) {
+	if format == "svg" {
+		format = "svg+xml"
+	}
+	h := w.Header()
+	h.Set("Content-Type", "image/"+format)
+	h.Set("Content-Length", strconv.Itoa(len(data)))
+	h.Set("Cache-Control", "no-store") // every load comes through the checks above; the disk cache is the cache
+	h.Set("X-Content-Type-Options", "nosniff")
+	_, _ = w.Write(data)
 }
 
 // imageFailed counts token as one of message's images the proxy could not
@@ -606,6 +645,13 @@ func (r *Reader) chargePixels(message int64, token string, img imagecache.Image)
 	}
 	st.charged[token] = true
 	return true
+}
+
+// parseAvatarURL is the message of a godwit-img: avatar URL.
+func parseAvatarURL(u *url.URL) (message int64, ok bool) {
+	h, found := strings.CutPrefix(u.Host, "a")
+	message, err := strconv.ParseInt(h, 10, 64)
+	return message, found && err == nil && (u.Path == "" || u.Path == "/")
 }
 
 // parseImageURL is the message and token of a godwit-img: URL.

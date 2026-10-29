@@ -1,4 +1,4 @@
-import { render, screen } from "@testing-library/react";
+import { fireEvent, render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { describe, expect, it, vi } from "vitest";
 import { makeT } from "@/shared/i18n";
@@ -46,6 +46,19 @@ describe("MailCard", () => {
     expect(onOpen).toHaveBeenCalledOnce();
     await user.click(screen.getByRole("button", { name: "引用邮件" }));
     expect(onQuote).toHaveBeenCalledOnce();
+  });
+
+  it("covers the initial with the sender's avatar once it loads", () => {
+    const { container, rerender } = render(
+      <MailCard messageId={42} from="Bob" date={0} subject="Hi" snippet="" t={t} />,
+    );
+    const img = container.querySelector("img");
+    expect(img).toHaveAttribute("src", "godwit-img://a42");
+    expect(img).toHaveClass("opacity-0");
+    fireEvent.load(img as HTMLImageElement);
+    expect(img).not.toHaveClass("opacity-0");
+    rerender(<MailCard from="Bob" date={0} subject="Hi" snippet="" t={t} />);
+    expect(container.querySelector("img")).toBeNull();
   });
 
   it("offers only the actions it has", () => {

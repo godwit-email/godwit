@@ -598,6 +598,28 @@ func TestReaderImageFailureIs502(t *testing.T) {
 	f.record(func() { assert.Equal(t, []int{1, 1}, f.imgFails, "counted again after a retry") })
 }
 
+func TestReaderAvatar(t *testing.T) {
+	f := newReaderFixture(t)
+	m := f.remoteMail(t, "hi", "https://tracker.example/pixel.png")
+	assert.Equal(t, http.StatusNotFound, f.imageAt(t, fmt.Sprintf("godwit-img://a%d", m.ID)).Code,
+		"the message's policy (ask) blocks its avatar, with no page bound")
+
+	var asked []int64
+	f.r.getAvatar = func(_ context.Context, _ *core.Service, id int64) (core.Avatar, error) {
+		asked = append(asked, id)
+		return core.Avatar{Data: []byte("<svg/>"), Format: "svg"}, nil
+	}
+	rec := f.imageAt(t, fmt.Sprintf("godwit-img://a%d/", m.ID))
+	assert.Equal(t, http.StatusOK, rec.Code)
+	assert.Equal(t, "image/svg+xml", rec.Header().Get("Content-Type"))
+	assert.Equal(t, "no-store", rec.Header().Get("Cache-Control"))
+	assert.Equal(t, "<svg/>", rec.Body.String())
+	for _, u := range []string{"godwit-img://a", "godwit-img://ax", fmt.Sprintf("godwit-img://a%d/x", m.ID)} {
+		assert.Equal(t, http.StatusNotFound, f.imageAt(t, u).Code, u)
+	}
+	assert.Equal(t, []int64{m.ID}, asked)
+}
+
 func TestReaderPolicyLoadsImagesAtOnce(t *testing.T) {
 	pic := pngOf(t, 2, 2)
 	srv := newImageServer(t, func(w http.ResponseWriter, r *http.Request) { w.Write(pic) })
