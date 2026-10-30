@@ -255,6 +255,7 @@ func (s *Service) maskingChanged(st Settings) {
 	defer s.maskMu.Unlock()
 	if !st.Masking || !st.MaskModel {
 		s.guard = nil
+		s.maskModelErr.Store(nil)
 	}
 	if s.mask != nil {
 		_ = st.setMasker(s.mask, s.recognizer(st)) // SetSettings checked it; a failure keeps the last

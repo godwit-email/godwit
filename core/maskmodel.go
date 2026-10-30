@@ -112,18 +112,91 @@ func (s *Service) DownloadMaskModel(ctx context.Context, progress func(got, tota
 
 // recognizer is 识别模型 as st sets it, nil while it or masking is off:
 // Options.Recognizer, else AstrLink Guard, kept until it is turned off
-// (maskingChanged). Called with maskMu held.
+// (maskingChanged), either read through orRules. Called with maskMu held.
 func (s *Service) recognizer(st Settings) mask.Recognizer {
 	switch {
 	case !st.Masking || !st.MaskModel:
 		return nil
 	case s.opts.Recognizer != nil:
-		return s.opts.Recognizer
+		return orRules{s, s.opts.Recognizer}
 	}
 	if s.guard == nil {
 		s.guard = newGuardModel(s.maskModelDir())
 	}
-	return s.guard
+	return orRules{s, s.guard}
+}
+
+// orRules is 识别模型 as masking reads it: where it fails, it finds
+// nothing, so the rules alone mask that text and it goes out, the failure
+// kept for the settings (MaskModelError). A rule that fails still fails
+// it: this is ADR 0025's one exception (docs/adr/0028-local-model-for-masking.md).
+type orRules struct {
+	s *Service
+	mask.Recognizer
+}
+
+func (r orRules) Recognize(text string) ([]mask.Recognized, error) {
+	found, err := r.Recognizer.Recognize(text)
+	r.s.maskModelRead(err)
+	if err != nil {
+		return nil, nil
+	}
+	return found, nil
+}
+
+// maskModelRead keeps how 识别模型 last read, err nil for well. Failed for
+// want of its files, it downloads them again (redownloadMaskModel).
+func (s *Service) maskModelRead(err error) {
+	if err == nil {
+		s.maskModelErr.Store(nil)
+		return
+	}
+	if !s.MaskModelInstalled() {
+		err = ErrMaskModelMissing
+		s.redownloadMaskModel()
+	}
+	s.maskModelErr.Store(&err)
+}
+
+// MaskModelError is why 识别模型 last failed to read, nil once it reads
+// again or is turned off: meanwhile the rules alone mask. Files it lost
+// are ErrMaskModelMissing until they are downloaded again, or why that
+// download failed.
+func (s *Service) MaskModelError() error {
+	if err := s.maskModelErr.Load(); err != nil {
+		return *err
+	}
+	return nil
+}
+
+// redownloadMaskModel downloads 识别模型's lost files in the background,
+// unless that is under way; once they are here, the model is loaded
+// again from them. A download that fails is tried again by the next
+// request that misses them.
+func (s *Service) redownloadMaskModel() {
+	if !s.maskModelFetch.CompareAndSwap(false, true) {
+		return
+	}
+	ctx, end, err := s.begin(context.Background(), 0) // Close stops it
+	if err != nil {
+		s.maskModelFetch.Store(false)
+		return
+	}
+	go func() {
+		defer s.maskModelFetch.Store(false)
+		defer end()
+		if err := s.DownloadMaskModel(ctx, nil); err != nil {
+			s.maskModelErr.Store(&err)
+			return
+		}
+		s.maskModelErr.Store(nil)
+		s.maskMu.Lock()
+		s.guard = nil // its load failed without the files, and stays failed
+		s.maskMu.Unlock()
+		if st, err := s.loadSettings(ctx); err == nil {
+			s.maskingChanged(st)
+		}
+	}()
 }
 
 // MaskModelBackend is what reads 识别模型: CoreML on Device, or with
@@ -141,9 +214,9 @@ func (s *Service) MaskModelBackend(ctx context.Context) (*MaskModelBackend, erro
 		return nil, err
 	}
 	s.maskMu.Lock()
-	r := s.recognizer(st)
+	r, _ := s.recognizer(st).(orRules)
 	s.maskMu.Unlock()
-	b, ok := r.(interface {
+	b, ok := r.Recognizer.(interface {
 		Backend() (MaskModelBackend, error)
 	})
 	if !ok {
@@ -151,6 +224,7 @@ func (s *Service) MaskModelBackend(ctx context.Context) (*MaskModelBackend, erro
 	}
 	bk, err := b.Backend()
 	if err != nil {
+		s.maskModelRead(err) // the settings say why, as for a request
 		return nil, err
 	}
 	return &bk, nil
