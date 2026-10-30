@@ -1,5 +1,23 @@
 # Changelog
 
+## [1.21.0](https://github.com/godwit-email/godwit/compare/v1.20.2...v1.21.0) (2026-10-30)
+
+
+### Features
+
+* **ai,reader:** responsive single-line quick replies with universal intent extraction ([#373](https://github.com/godwit-email/godwit/issues/373)) ([dc8bd91](https://github.com/godwit-email/godwit/commit/dc8bd91ad871b37c998839f273e09adb24aa9a3c))
+* **mail:** add folder bulk actions for empty trash, empty spam, and mark all as read ([#377](https://github.com/godwit-email/godwit/issues/377)) ([f7cb1a0](https://github.com/godwit-email/godwit/commit/f7cb1a0d7f684acf6e7ac62a99c0da645ea1a76d))
+* **mail:** add per-account labels collapsible group to sidebar ([#360](https://github.com/godwit-email/godwit/issues/360)) ([d4d01f9](https://github.com/godwit-email/godwit/commit/d4d01f9814a4f8145d51a7d47579abae1c9fd60f))
+* **mask:** recognition model for masking (ADR 0028, [#363](https://github.com/godwit-email/godwit/issues/363)) ([#371](https://github.com/godwit-email/godwit/issues/371)) ([667b040](https://github.com/godwit-email/godwit/commit/667b0400b3b6df7a3492f0af54c7b2f665be2f82))
+* **palette:** add filter menu icons, fill styles, and hide floating preview ([#362](https://github.com/godwit-email/godwit/issues/362)) ([939b12b](https://github.com/godwit-email/godwit/commit/939b12b2d540b5d157b75236e4c88d863ae50905))
+* **reader:** display account sidebar name instead of generic 'me' in message recipients ([#375](https://github.com/godwit-email/godwit/issues/375)) ([3b094c0](https://github.com/godwit-email/godwit/commit/3b094c0ac99fea09e793d6b36c35e913241199fc))
+* **security:** add display-name spoofing protection, verification badges, and AI fraud classification ([#359](https://github.com/godwit-email/godwit/issues/359)) ([4b699a7](https://github.com/godwit-email/godwit/commit/4b699a76ddde92c02bd06cd4fb47afe73595df96))
+
+
+### Bug Fixes
+
+* **wit:** give the prompt input a soft shadow that deepens on focus ([#376](https://github.com/godwit-email/godwit/issues/376)) ([f79d7eb](https://github.com/godwit-email/godwit/commit/f79d7ebe186939aa907bf11d991cae19ecdd73a1))
+
 ## [1.20.2](https://github.com/godwit-email/godwit/compare/v1.20.1...v1.20.2) (2026-10-30)
 
 
