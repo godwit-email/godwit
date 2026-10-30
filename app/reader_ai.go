@@ -683,12 +683,12 @@ func (r *reader) citeCard(c *ui.Context, anchor ui.Element, m core.MessageSummar
 }
 
 // sourceLabel names a message a digest cites: its day and its
-// sender ("我" for the user's).
+// sender (its sidebar name for the user's).
 func (r *reader) sourceLabel(m core.MessageSummary) string {
 	who, addr := sender(m.From)
 	for _, acc := range r.p.a.accounts {
 		if strings.EqualFold(acc.Email, addr) {
-			who = i18n.T("reader.me")
+			who = accountName(acc)
 		}
 	}
 	return listTime(r.p.a.clock.Now(), m.Date) + " · " + who

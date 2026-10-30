@@ -1462,11 +1462,17 @@ func TestReaderRecipients(t *testing.T) {
 	}
 }
 
-// With one account the user is "我".
+// With one account the user is "我", or their sidebar name when an alias is set.
 func TestReaderRecipientsOneAccount(t *testing.T) {
-	h, _ := mailHarness(t, nil, "me@baran.wang")
+	h, accs := mailHarness(t, nil, "me@baran.wang")
 	if got := h.app.mail.reader.recipients(core.MessageSummary{To: []string{"Baran <me@baran.wang>"}, Cc: []string{"mia@partner.example"}}); got != "发给 我 等 1 人" {
-		t.Fatalf("one account: %q", got)
+		t.Fatalf("one account without alias: %q", got)
+	}
+	alias := "Peter"
+	accs[0].Alias = alias
+	h.app.accounts = accs
+	if got := h.app.mail.reader.recipients(core.MessageSummary{To: []string{"Baran <me@baran.wang>"}, Cc: []string{"mia@partner.example"}}); got != "发给 Peter 等 1 人" {
+		t.Fatalf("one account with alias: %q", got)
 	}
 }
 

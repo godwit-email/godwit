@@ -1111,16 +1111,28 @@ func sender(from string) (name, addr string) {
 	return from, ""
 }
 
-// recipients is the header's line of who a message went to: the user's
-// address that got it ("me" with one account) and how many others, To and Cc
-// together; when the user is only Cc'd, To's first and the user under Cc;
-// when neither (Bcc, a list), To's first; with no To or Cc, the account.
+// recipients is the header's line of who a message went to: the account's
+// sidebar name that got it and how many others, To and Cc together; when the
+// user is only Cc'd, To's first and the user under Cc; when neither (Bcc, a
+// list), To's first; with no To or Cc, the account.
 func (r *reader) recipients(m core.MessageSummary) string {
 	accounts := r.p.a.accounts
-	mine := func(addr string) bool {
-		return slices.ContainsFunc(accounts, func(a core.Account) bool { return strings.EqualFold(a.Email, addr) })
+	accountFor := func(addr string) (core.Account, bool) {
+		for _, a := range accounts {
+			if strings.EqualFold(a.Email, addr) {
+				return a, true
+			}
+		}
+		return core.Account{}, false
 	}
-	me := func(addr string) string {
+	mine := func(addr string) bool {
+		_, ok := accountFor(addr)
+		return ok
+	}
+	userAccount := func(addr string) string {
+		if acc, ok := accountFor(addr); ok && acc.Alias != "" {
+			return acc.Alias
+		}
 		if len(accounts) <= 1 {
 			return i18n.T("reader.me")
 		}
@@ -1144,10 +1156,10 @@ func (r *reader) recipients(m core.MessageSummary) string {
 	}
 	isMine := func(w who) bool { return mine(w.addr) }
 	if i := slices.IndexFunc(to, isMine); i >= 0 {
-		return i18n.Tf("reader.to", more(me(to[i].addr), len(to)+len(cc)-1))
+		return i18n.Tf("reader.to", more(userAccount(to[i].addr), len(to)+len(cc)-1))
 	}
 	if i := slices.IndexFunc(cc, isMine); i >= 0 {
-		line := i18n.Tf("reader.cc", more(me(cc[i].addr), len(cc)-1))
+		line := i18n.Tf("reader.cc", more(userAccount(cc[i].addr), len(cc)-1))
 		if len(to) > 0 {
 			line = i18n.Tf("reader.to", more(to[0].name, len(to)-1)) + " · " + line
 		}
@@ -1159,7 +1171,7 @@ func (r *reader) recipients(m core.MessageSummary) string {
 	case len(cc) > 0:
 		return i18n.Tf("reader.cc", more(cc[0].name, len(cc)-1))
 	}
-	return i18n.Tf("reader.to", me(r.accountOf(m)))
+	return i18n.Tf("reader.to", userAccount(r.accountOf(m)))
 }
 
 // accountOf is the address of the account message m is in.
