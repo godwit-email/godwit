@@ -281,8 +281,12 @@ func TestPaletteAccountOnlyNoViewAll(t *testing.T) {
 	h.tt.Key(0, ui.KeyRight) // 邮件: three hits would leave one out
 	h.typeText("/")
 	h.until("the filter list", func() bool { return filtersShown(h) })
-	h.click("账户：alice@example.com")
-	h.see("移除「账户：alice@example.com」")
+	for range 3 {
+		h.tt.Key(0, ui.KeyDown)
+	}
+	h.tt.Key(0, ui.KeyEnter)
+	h.drain()
+	h.see("移除「alice@example.com」")
 	if h.tt.HasText("在邮件列表中查看全部 4 封") {
 		t.Fatal("view-all offered for an account alone")
 	}

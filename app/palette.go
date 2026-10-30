@@ -117,6 +117,13 @@ func (p *palette) view(c *ui.Context) {
 			{Label: i18n.T("palette.hint.wit"), Key: "Tab", OnClick: p.toggleAsk},
 		},
 	}
+	if p.filtering { // ←→, / and ⌥↵ do nothing over the list
+		o.Hints = []kit.PaletteHint{
+			{Label: i18n.T("palette.hint.close"), Key: "Esc"},
+			{Label: i18n.T("palette.hint.select"), Key: "↑↓"},
+			{Label: i18n.T("palette.hint.add_filter"), Key: "↵"},
+		}
+	}
 	if p.asking {
 		o.Label, o.Placeholder, o.Send, o.OnSend, o.OnKey, o.Chips = i18n.T("wit.input"), i18n.T("wit.placeholder"), i18n.T("wit.send"), p.askWit, p.askKey, nil
 		o.Hints = []kit.PaletteHint{
@@ -155,7 +162,7 @@ func (p *palette) view(c *ui.Context) {
 			if g.total > 0 {
 				head += " · " + strconv.Itoa(g.total)
 			}
-			kit.Text(c, head, t.Text.Xs).FontWeight(500).TextColor(t.Muted).Padding(th.Space(2), th.Space(2.5), th.Space(1), th.Space(2.5))
+			palHead(c, head)
 			for _, it := range g.items {
 				if p.row(c, i, it).Hovered() {
 					hover = i
@@ -164,7 +171,7 @@ func (p *palette) view(c *ui.Context) {
 			}
 		}
 	})
-	if p.open && !p.asking && !p.m.open && p.sel < len(p.rows) && p.rows[p.sel].msg != nil { // the menu covers the card
+	if p.open && !p.asking && !p.filtering && !p.m.open && p.sel < len(p.rows) && p.rows[p.sel].msg != nil { // the menu covers the card
 		m := *p.rows[p.sel].msg
 		kit.PalettePreview(c, func() { p.preview(c, m) })
 	}
@@ -173,6 +180,12 @@ func (p *palette) view(c *ui.Context) {
 	}
 	p.hover, p.scroll = hover, false
 	p.menuFrame(c)
+}
+
+// palHead is the heading over a group of the palette's rows.
+func palHead(c *ui.Context, title string) {
+	t, th := theme.Of(c), c.Theme()
+	kit.Text(c, title, t.Text.Xs).FontWeight(500).TextColor(t.Muted).Padding(th.Space(2), th.Space(2.5), th.Space(1), th.Space(2.5))
 }
 
 // row is rows[i], one line: its icon, title, the muted line after it, an

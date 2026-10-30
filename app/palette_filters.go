@@ -1,18 +1,68 @@
 package app
 
 import (
+	"slices"
 	"strings"
 
 	"github.com/egoist/mygo/ui"
+	"github.com/godwit-email/godwit/core"
 	"github.com/godwit-email/godwit/internal/i18n"
+	"github.com/godwit-email/godwit/internal/icons"
 	"github.com/godwit-email/godwit/internal/kit"
+	"github.com/godwit-email/godwit/internal/theme"
 )
 
 // palFilter is a filter the palette offers, and once chosen its chip: set
 // puts it into searchFilters. A kind holds one filter at a time.
 type palFilter struct {
 	kind, label string
+	icon        string
+	iconColor   func(theme.Tokens) ui.Color
+	renderIcon  func(c *ui.Context, selected bool)
 	set         func(*searchFilters)
+}
+
+func labelIcon(icon string) string {
+	if slices.Contains(core.LabelIcons, icon) {
+		return "label-" + icon
+	}
+	return "tag"
+}
+
+func (p *palette) renderAccountIcon(c *ui.Context, acc core.Account, selected bool) {
+	if strings.HasPrefix(acc.Icon, "image:") {
+		if img := p.a.accountImage(acc); img != nil {
+			markTile(c, img, theme.IconSm)
+			return
+		}
+	}
+	if id, ok := strings.CutPrefix(acc.Icon, "brand:"); ok {
+		if b := icons.Brand(id); b != nil {
+			markTile(c, b, theme.IconSm)
+			return
+		}
+	}
+	prov := accountProvider(p.a, acc)
+	if acc.Icon == "" && prov.ID != "" && prov.ID != "other" {
+		if b := icons.Brand(prov.ID); b != nil {
+			markTile(c, b, theme.IconSm)
+			return
+		}
+	}
+	t := theme.Of(c)
+	if name, ok := strings.CutPrefix(acc.Icon, "label:"); ok && slices.Contains(core.LabelIcons, name) {
+		svg := icons.Get("label-" + name)
+		if selected {
+			svg = icons.FillOr("label-" + name)
+		}
+		ui.Icon(c, svg).Size(theme.IconSm, theme.IconSm).TextColor(t.Muted)
+		return
+	}
+	svg := icons.Get("at")
+	if selected {
+		svg = icons.FillOr("at")
+	}
+	ui.Icon(c, svg).Size(theme.IconSm, theme.IconSm).TextColor(t.Muted)
 }
 
 // sf is the chips as the list's search filters, which 查看全部 carries over.
@@ -28,23 +78,51 @@ func (p *palette) sf() searchFilters {
 func (p *palette) filterOpts() []palFilter {
 	a := p.a
 	out := []palFilter{
-		{"attach", i18n.T("mail.search.has_attachments"), func(f *searchFilters) { f.attach = true }},
-		{"unread", i18n.T("mail.filter.unread"), func(f *searchFilters) { f.unread = true }},
-		{"starred", i18n.T("palette.filter.starred"), func(f *searchFilters) { f.starred = true }},
+		{kind: "attach", label: i18n.T("mail.search.has_attachments"), icon: "paperclip", set: func(f *searchFilters) { f.attach = true }},
+		{kind: "unread", label: i18n.T("mail.filter.unread"), icon: "mail-unread", set: func(f *searchFilters) { f.unread = true }},
+		{kind: "starred", label: i18n.T("palette.filter.starred"), icon: "star", set: func(f *searchFilters) { f.starred = true }},
 	}
 	for _, acc := range a.accounts {
 		id := acc.ID
-		out = append(out, palFilter{"account", i18n.Tf("palette.filter.account", acc.Email), func(f *searchFilters) { f.acc, f.accSet = id, true }})
+		name := accountName(acc)
+		account := acc
+		out = append(out, palFilter{
+			kind:  "account",
+			label: name,
+			icon:  "at",
+			renderIcon: func(c *ui.Context, selected bool) {
+				p.renderAccountIcon(c, account, selected)
+			},
+			set: func(f *searchFilters) { f.acc, f.accSet = id, true },
+		})
 	}
 	for _, l := range a.labels {
 		id := l.ID
-		out = append(out, palFilter{"label", i18n.Tf("palette.filter.label", l.Name), func(f *searchFilters) { f.labelID = id }})
+		color := l.Color
+		out = append(out, palFilter{
+			kind:      "label",
+			label:     l.Name,
+			icon:      labelIcon(l.Icon),
+			iconColor: func(t theme.Tokens) ui.Color { return t.Label(color).Text },
+			set:       func(f *searchFilters) { f.labelID = id },
+		})
 	}
 	for i, key := range searchSpans[1:] {
-		out = append(out, palFilter{"span", i18n.Tf("palette.filter.time", i18n.T(key)), func(f *searchFilters) { f.span = i + 1 }})
+		span := i + 1
+		out = append(out, palFilter{
+			kind:  "span",
+			label: i18n.T(key),
+			icon:  "time",
+			set:   func(f *searchFilters) { f.span = span },
+		})
 	}
 	if from := strings.TrimSpace(p.query); from != "" {
-		out = append(out, palFilter{"from", i18n.Tf("palette.filter.from", from), func(f *searchFilters) { f.from = from }})
+		out = append(out, palFilter{
+			kind:  "from",
+			label: i18n.Tf("palette.filter.from", from),
+			icon:  "user",
+			set:   func(f *searchFilters) { f.from = from },
+		})
 	}
 	return out
 }
@@ -89,21 +167,40 @@ func slashed(was, now string) bool {
 }
 
 // filterKey is key while the filter list shows: ↑↓ choose, ↵ adds, Esc
-// closes the list only.
+// closes the list only; the kind tabs stay put behind it.
 func (p *palette) filterKey(k ui.TextKey) bool {
 	opts := p.filterOpts()
 	n := len(opts)
 	switch {
 	case k.Mods == 0 && (k.Key == ui.KeyDown || k.Key == ui.KeyUp):
-		p.fsel = wrapStep(p.fsel, n, k.Key == ui.KeyUp)
+		p.fsel, p.scroll = wrapStep(p.fsel, n, k.Key == ui.KeyUp), true
 	case k.Mods == 0 && k.Key == ui.KeyEnter:
 		p.addFilter(opts[min(p.fsel, n-1)], func() { k.SetText("") })
 	case k.Mods == 0 && k.Key == ui.KeyEscape:
 		p.filtering = false
+	case k.Mods == 0 && (k.Key == ui.KeyLeft || k.Key == ui.KeyRight) && k.Text() == "",
+		k.Key == ui.KeyTab && (k.Mods == ui.Ctrl || k.Mods == ui.Ctrl|ui.Shift):
+		// swallowed: switching the tabs behind the list reads as the list moving
 	default:
 		return false
 	}
 	return true
+}
+
+// filterGroup is the heading a filter of kind lists under; filterOpts keeps
+// each group's filters together.
+func filterGroup(kind string) string {
+	switch kind {
+	case "account":
+		return i18n.T("mail.accounts")
+	case "label":
+		return i18n.T("mail.labels")
+	case "span":
+		return i18n.T("mail.search.time")
+	case "from":
+		return i18n.T("mail.search.from")
+	}
+	return i18n.T("palette.filter.status")
 }
 
 // chips are the filters chosen, before the search box.
@@ -115,10 +212,34 @@ func (p *palette) chips(c *ui.Context) {
 
 // filterList is the palette's body while / shows the filters.
 func (p *palette) filterList(c *ui.Context) {
-	th := c.Theme()
+	t, th := theme.Of(c), c.Theme()
 	opts := p.filterOpts()
 	p.fsel = min(p.fsel, len(opts)-1)
 	for i, f := range opts {
-		kit.PaletteRow(c.Key(f.label), i == p.fsel).Label(f.label).Gap(th.Space(2.5)).OnClick(func() { p.addFilter(f, func() {}) }).Children(func() { ui.Text(c, f.label).SingleLine() })
+		if g := filterGroup(f.kind); i == 0 || g != filterGroup(opts[i-1].kind) {
+			palHead(c, g)
+		}
+		r := kit.PaletteRow(c.Key(f.kind+":"+f.label), i == p.fsel).Label(f.label).Gap(th.Space(2.5)).OnClick(func() { p.addFilter(f, func() {}) })
+		if i == p.fsel && p.scroll {
+			r.ScrollIntoView()
+		}
+		r.Children(func() {
+			if f.renderIcon != nil {
+				f.renderIcon(c, i == p.fsel)
+			} else if f.icon != "" {
+				svg, color := icons.Get(f.icon), t.Muted
+				if f.iconColor != nil {
+					color = f.iconColor(t)
+				} else if i == p.fsel {
+					color = t.Foreground
+				}
+				if i == p.fsel {
+					svg = icons.FillOr(f.icon)
+				}
+				ui.Icon(c, svg).Size(theme.IconSm, theme.IconSm).TextColor(color)
+			}
+			ui.Text(c, f.label).SingleLine()
+		})
 	}
+	p.scroll = false
 }

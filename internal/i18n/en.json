@@ -2795,6 +2795,7 @@
   "palette_action_add_account": "Add account",
   "palette_action_settings": "Open Settings",
   "palette_filter_starred": "Starred",
+  "palette_filter_status": "Status",
   "palette_filter_account": "Account: {arg1}",
   "@palette_filter_account": {
     "placeholders": {
@@ -2849,6 +2850,8 @@
   "palette_hint_kind": "Switch type",
   "palette_hint_close": "Close",
   "palette_hint_wit": "Ask Wit",
+  "palette_hint_select": "Select",
+  "palette_hint_add_filter": "Add filter",
   "palette_view_all": "View all {arg1} in the mail list",
   "palette_contact_mails": "{arg1, number, ::group-off} emails",
   "@palette_view_all": {
