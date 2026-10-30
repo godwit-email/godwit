@@ -49,7 +49,7 @@ func (c *compiled) recognizedSpans(s string, known func(string) []span) ([]span,
 	var out []span
 	for _, r := range found {
 		kind := recognizedKinds[r.Label]
-		a, b := trim(s, r.Start, r.End)
+		a, b := trim(s, r.Start, r.End, kind)
 		if kind == "" || r.Score < MinScore || a == b || kind == "SECRET" && !recognizedSecret(s[a:b]) {
 			continue
 		}
@@ -70,12 +70,15 @@ func recognizedSecret(v string) bool {
 	return utf8.RuneCountInString(v) >= 8 && strings.Trim(v, string(firstRune(v))) != "" && !(hex && slices.Contains([]int{3, 6, 8}, len(v)))
 }
 
-// trim is s[a:b] without the spaces and punctuation at its ends, which
-// its tokens take in: "Sarah," "(415".
-func trim(s string, a, b int) (int, int) {
-	v := strings.TrimLeftFunc(s[a:b], separator)
+// trim is s[a:b] of kind without the spaces and separators at its ends,
+// which its tokens take in: "Sarah," "(415". A secret loses only the
+// spaces: a symbol at its end is likely the secret's own (Abc12345!).
+func trim(s string, a, b int, kind string) (int, int) {
+	cut := func(r rune) bool { return unicode.IsSpace(r) || kind != "SECRET" && strings.ContainsRune(separators, r) }
+	v := strings.TrimLeftFunc(s[a:b], cut)
 	a = b - len(v)
-	return a, a + len(strings.TrimRightFunc(v, separator))
+	return a, a + len(strings.TrimRightFunc(v, cut))
 }
 
-func separator(r rune) bool { return unicode.IsSpace(r) || unicode.IsPunct(r) }
+// separators are the punctuation around a value in text, not of it.
+const separators = `"'“”‘’«»「」『』()（）[]【】<>《》,，、;；:：.。!！?？`

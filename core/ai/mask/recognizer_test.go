@@ -79,16 +79,15 @@ func TestTheModelsLabelsAndScore(t *testing.T) {
 // character over and over, nor 3, 6 or 8 hex digits: a colour, a short hash.
 func TestTheModelsSecretsThatAreNot(t *testing.T) {
 	for v, want := range map[string]string{
-		"Tq7#vLm2":    "<SECRET>",
-		"Tq7#vLm":     "Tq7#vLm",
-		"********":    "********",
-		"--------":    "--------", // trimmed away, as separators
-		"3fa9c1d2":    "3fa9c1d2",
-		"DEADBEEF":    "DEADBEEF",
-		"3fa9c1d2e":   "<SECRET>",
-		"#fff":        "#fff",
-		"#a1b2c3":     "#a1b2c3",
-		"\"zR8!kq2Lp": "\"<SECRET>",
+		"Tq7#vLm2":  "<SECRET>",
+		"Tq7#vLm":   "Tq7#vLm",
+		"********":  "********",
+		"--------":  "--------",
+		"3fa9c1d2":  "3fa9c1d2",
+		"DEADBEEF":  "DEADBEEF",
+		"3fa9c1d2e": "<SECRET>",
+		"#fff":      "#fff",
+		"#a1b2c3":   "#a1b2c3",
 	} {
 		m := modelMasker(t, model{{v, "common_secret", 0.95}})
 		out, err := m.Text("new: " + v + " ok")
@@ -177,6 +176,27 @@ func TestAFailingModelFailsTheText(t *testing.T) {
 type failing struct{}
 
 func (failing) Recognize(string) ([]mask.Recognized, error) { return nil, errors.New("out of memory") }
+
+// A secret's symbols at its ends are the secret's: only spaces are
+// trimmed from it, so none of it goes out in clear.
+func TestASecretKeepsTheSymbolsAtItsEnds(t *testing.T) {
+	for _, v := range []string{"Abc12345!", "#Tq7vLm2x", "\"zR8!kq2Lp"} {
+		m := modelMasker(t, model{{" " + v + " ", "common_secret", 0.95}})
+		out, err := m.Text("pw: " + v + " ok")
+		require.NoError(t, err)
+		assert.Equal(t, "pw: <SECRET> ok", shown(out), v)
+		assert.Equal(t, "pw: "+v+" ok", m.Restore(out))
+	}
+}
+
+// Other values lose the separators at their ends, but not a symbol that
+// is no separator: an account's "#".
+func TestAValueLosesTheSeparatorsAtItsEnds(t *testing.T) {
+	m := modelMasker(t, model{{"「Sarah Lee」;", "private_person", 0.9}, {"#octocat:", "account", 0.9}})
+	out, err := m.Text("「Sarah Lee」; #octocat:")
+	require.NoError(t, err)
+	assert.Equal(t, "「<NAME>」; <ACCOUNT>:", shown(out))
+}
 
 // The spaces and separators the model takes in at a value's ends stay
 // out of its placeholder; a value of nothing else is no value.
