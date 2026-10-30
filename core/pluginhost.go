@@ -227,25 +227,11 @@ func (h *pluginHost) LLMComplete(ctx context.Context, prompt string) (out string
 		if err := h.s.gateway().Record(ctx, gateway.Entry{Source: gateway.SourcePlugin, Extension: h.name, Tool: "plugin:" + h.name + ":llm.complete", Decision: "run"}); err != nil {
 			return err
 		}
-		e, err := h.s.aiEngine()
-		if err != nil {
-			return err
-		}
 		system := pluginLLMNote + "\n\n" + ai.UntrustedSystemNote + "\n\nAnswer in " + h.s.readingLanguage(ctx) + "."
-		events, wait := e.Run(mask.Tag(ctx, featurePlugin, nil), ai.Request{Model: model, System: system,
-			Prompt: ai.Untrusted("plugin:"+h.name, prompt, ai.SuspectInjection(prompt)), MaxTurns: 1})
-		var b strings.Builder
-		for ev := range events {
-			if ev.Kind == "text" && b.Len() <= plugins.MaxLLMBytes {
-				b.WriteString(ev.Text)
-			}
-		}
-		if r := wait(); r.Err != nil {
-			h.s.runRejected(model, r.Err)
-			return r.Err
-		}
-		out = b.String()
-		return nil
+		r, err := h.s.complete(ctx, featurePlugin, ai.Request{Model: model, System: system,
+			Prompt: ai.Untrusted("plugin:"+h.name, prompt, ai.SuspectInjection(prompt))}, plugins.MaxLLMBytes)
+		out = r.Text
+		return err
 	})
 	return out, err
 }

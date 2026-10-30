@@ -151,7 +151,7 @@ func TestAppleIntelligenceResolutionAndExecution(t *testing.T) {
 	require.NoError(t, err)
 	out, err := e.s.runText(t.Context(), engine, ai.Request{Model: m, Prompt: "Schreib eine Antwort", MaxTurns: 1}, 1000)
 	require.NoError(t, err)
-	assert.Equal(t, fake.genText, out)
+	assert.Equal(t, fake.genText, out.Text)
 	assert.Greater(t, fake.calls, 0)
 
 	// 2. Judge model resolution

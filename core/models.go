@@ -16,6 +16,7 @@ import (
 
 	"github.com/egoist/mygo/plugins/sqlite"
 	"github.com/godwit-email/godwit/core/ai"
+	"github.com/godwit-email/godwit/core/ai/mask"
 	"github.com/godwit-email/godwit/core/auth"
 	"github.com/godwit-email/godwit/core/store"
 	"github.com/zalando/go-keyring"
@@ -777,20 +778,52 @@ func capCode(err error) (string, int) {
 	return "unreachable", 0
 }
 
-// runText runs req and returns its text, cut at max bytes (0: none kept).
-func (s *Service) runText(ctx context.Context, e *ai.Engine, req ai.Request, max int) (string, error) {
+// reply is a one-off run's text (complete), and the tokens it took, failed
+// or not. A Raw run's text is as the model wrote it, placeholders (脱敏) and
+// all: restore what is parsed out of it, never the text before (ADR 0025).
+type reply struct {
+	Text  string
+	Usage ai.Usage
+	m     *mask.Masker
+}
+
+func (r reply) Restore(s string) string     { return r.m.Restore(s) }
+func (r reply) RestoreHTML(s string) string { return r.m.RestoreHTML(s) }
+
+// complete runs req once, with no tools, for feature (mask.Tag; "": ctx's
+// own) and returns its text, cut at max bytes (0: all of it). Each one-off
+// AI feature runs this way and audits its run itself (ADR 0026).
+func (s *Service) complete(ctx context.Context, feature string, req ai.Request, max int) (reply, error) {
+	e, err := s.aiEngine()
+	if err != nil {
+		return reply{}, err
+	}
+	if feature != "" {
+		ctx = mask.Tag(ctx, feature, nil)
+	}
+	req.MaxTurns = 1
+	return s.runText(ctx, e, req, max)
+}
+
+// runText is complete on engine e (a throwaway one tests a service).
+func (s *Service) runText(ctx context.Context, e *ai.Engine, req ai.Request, max int) (reply, error) {
 	events, wait := e.Run(ctx, req)
 	var b strings.Builder
 	for ev := range events {
-		if ev.Kind == "text" && b.Len() < max {
-			b.WriteString(ev.Text[:min(len(ev.Text), max-b.Len())])
+		if ev.Kind == "text" && (max == 0 || b.Len() < max) {
+			t := ev.Text
+			if max > 0 {
+				t = t[:min(len(t), max-b.Len())]
+			}
+			b.WriteString(t)
 		}
 	}
-	if r := wait(); r.Err != nil {
+	r := wait()
+	if r.Err != nil {
 		s.runRejected(req.Model, r.Err)
-		return "", r.Err
+		return reply{Usage: r.Usage}, r.Err
 	}
-	return b.String(), nil
+	return reply{Text: b.String(), Usage: r.Usage, m: e.Masker}, nil
 }
 
 // aiEngine creates the engine on first use. The engine redacts every model
@@ -982,13 +1015,15 @@ func (s *Service) resolveJudge(ctx context.Context) (j ai.Judge, label string, g
 	if err != nil {
 		return nil, "", false, err
 	}
-	e, err := s.aiEngine()
+	m, err := s.masker()
 	if err != nil {
 		return nil, "", false, err
 	}
 	return ai.NewGenJudge(func(ctx context.Context, system, prompt string) (string, error) {
-		return s.runText(ctx, e, ai.Request{Model: model, System: system, Prompt: prompt, MaxTurns: 1, Raw: true}, maxJudgeText)
-	}, e.Masker), ref, true, nil
+		// "": the judge's callers tag ctx (labels, a plugin's llm.decide); it restores the answers it parsed.
+		r, err := s.complete(ctx, "", ai.Request{Model: model, System: system, Prompt: prompt, Raw: true}, maxJudgeText)
+		return r.Text, err
+	}, m), ref, true, nil
 }
 
 // newJudge is ai.NewJudge with the Service's masker.

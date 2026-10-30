@@ -285,9 +285,7 @@ func TestUnauthorizedRunForgetsToken(t *testing.T) {
 	assert.Equal(t, 1, oa.TokenRequests())
 
 	llm.Script(testllm.Turn{Status: 401})
-	e, err := s.aiEngine()
-	require.NoError(t, err)
-	_, err = s.runText(bg, e, ai.Request{Model: m, Prompt: "hi", MaxTurns: 1}, 0)
+	_, err = s.complete(bg, "", ai.Request{Model: m, Prompt: "hi"}, 0)
 	require.Error(t, err)
 
 	m2, err := s.resolveModel(bg, ms.Slug+"/gpt-x")
