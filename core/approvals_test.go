@@ -151,8 +151,8 @@ func (e *approvalEnv) approval(t *testing.T, id int64) Approval {
 func (e *approvalEnv) waitRun(t *testing.T, runID int64, state string) {
 	t.Helper()
 	require.Eventually(t, func() bool {
-		rows, err := e.s.db.Query(context.Background(), "SELECT state FROM runs WHERE id = ?", runID)
-		return err == nil && store.Str(rows.Values[0][0]) == state
+		st, err := e.s.ledger.state(context.Background(), runID)
+		return err == nil && st == state
 	}, 10*time.Second, 5*time.Millisecond)
 }
 
@@ -394,10 +394,9 @@ func TestCrashWhileExecuting(t *testing.T) {
 	conv := e.newConv(t, "ask", 0)
 	in := e.interrupt(t, conv, testllm.Call{Name: "fake_draft", Args: `{"subject":"Hi"}`})
 	a := in.Approvals[0]
-	afterApprovalClaim = func() bool { return true }
-	t.Cleanup(func() { afterApprovalClaim = nil })
+	e.s.ledger.afterApprovalClaim = func() bool { return true }
 	require.Error(t, e.s.ResolveApproval(t.Context(), a.ID, true))
-	afterApprovalClaim = nil
+	e.s.ledger.afterApprovalClaim = nil
 	assert.Equal(t, "executing", e.approval(t, a.ID).State)
 
 	e.restart(t)
@@ -416,10 +415,9 @@ func TestCrashBeforeResume(t *testing.T) {
 	e := newApprovalEnv(t)
 	conv := e.newConv(t, "ask", 0)
 	in := e.interrupt(t, conv, testllm.Call{Name: "fake_draft", Args: `{"subject":"Hi"}`})
-	beforeResumeClaim = func() bool { return true }
-	t.Cleanup(func() { beforeResumeClaim = nil })
+	e.s.ledger.beforeResumeClaim = func() bool { return true }
 	require.NoError(t, e.s.ResolveApproval(t.Context(), in.Approvals[0].ID, true))
-	beforeResumeClaim = nil
+	e.s.ledger.beforeResumeClaim = nil
 	assert.Equal(t, "done", e.approval(t, in.Approvals[0].ID).State)
 	e.waitRun(t, in.RunID, "interrupted")
 
@@ -515,9 +513,9 @@ func TestCloseWaitsForResume(t *testing.T) {
 	// resuming (which the next start would turn into failed).
 
 	e.restart(t)
-	rows, err := e.s.db.Query(t.Context(), "SELECT state FROM runs WHERE id = ?", in.RunID)
+	st, err := e.s.ledger.state(t.Context(), in.RunID)
 	require.NoError(t, err)
-	assert.Equal(t, "cancelled", store.Str(rows.Values[0][0]))
+	assert.Equal(t, "cancelled", st)
 	// The conversation can go on: the approved call has its result.
 	e.srv.Release()
 	evs = e.start(t, conv, "next")
@@ -664,10 +662,9 @@ func TestStartupResumeFailureErrorsNew(t *testing.T) {
 	evs := e.start(t, conv, "do it")
 	in := evs[len(evs)-1]
 	require.Equal(t, "interrupted", in.Kind)
-	beforeResumeClaim = func() bool { return true }
-	t.Cleanup(func() { beforeResumeClaim = nil })
+	e.s.ledger.beforeResumeClaim = func() bool { return true }
 	require.NoError(t, e.s.ResolveApproval(t.Context(), in.Approvals[0].ID, true))
-	beforeResumeClaim = nil
+	e.s.ledger.beforeResumeClaim = nil
 	// The resume cannot start (its model is gone), and recording its failure fails too.
 	_, err := e.s.db.Execute(t.Context(), "UPDATE runs SET model = 'gone/m' WHERE id = ?", in.RunID)
 	require.NoError(t, err)
@@ -688,19 +685,18 @@ func TestCancelAfterRunHandOff(t *testing.T) {
 	conv := e.newConv(t, "ask", 0)
 	hold := make(chan struct{})
 	var first atomic.Bool
-	beforeUntrack = func(int64) {
+	e.s.ledger.beforeUntrack = func(int64) {
 		if first.CompareAndSwap(false, true) {
 			<-hold // the interrupted run's cleanup waits until its resume is running
 		}
 	}
-	t.Cleanup(func() { beforeUntrack = nil })
 	e.srv.Script(testllm.Turn{Calls: []testllm.Call{{Name: "fake_draft", Args: `{"subject":"Hi"}`}}}, testllm.Turn{Text: []string{"..."}, Hang: true})
 	evs := e.start(t, conv, "do it")
 	in := evs[len(evs)-1]
 	require.Equal(t, "interrupted", in.Kind)
-	e.s.runMu.Lock()
-	old := e.s.active[in.RunID] // the interrupted run, its cleanup held
-	e.s.runMu.Unlock()
+	e.s.ledger.mu.Lock()
+	old := e.s.ledger.active[in.RunID] // the interrupted run, its cleanup held
+	e.s.ledger.mu.Unlock()
 	require.NotNil(t, old)
 	require.NoError(t, e.s.ResolveApproval(t.Context(), in.Approvals[0].ID, true))
 	require.Eventually(t, func() bool { return len(e.srv.Requests()) == 2 }, 10*time.Second, 5*time.Millisecond)
@@ -719,13 +715,12 @@ func TestNewRunSeesFinishedHistory(t *testing.T) {
 	require.NoError(t, err)
 	<-ch // the first run is in flight
 	var once sync.Once
-	beforeRunClaim = func(context.Context) {
+	e.s.ledger.beforeClaim = func(context.Context) {
 		once.Do(func() { // the first run finishes after the second read the conversation
 			e.srv.Release()
 			drainWit(t, ch)
 		})
 	}
-	t.Cleanup(func() { beforeRunClaim = nil })
 	evs := e.start(t, conv, "second")
 	require.Equal(t, "done", evs[len(evs)-1].Kind)
 	reqs := e.srv.Requests()
@@ -792,10 +787,9 @@ func TestRecoveryFailureFailsRun(t *testing.T) {
 	evs := e.start(t, conv, "do it")
 	in := evs[len(evs)-1]
 	require.Equal(t, "interrupted", in.Kind)
-	beforeResumeClaim = func() bool { return true }
-	t.Cleanup(func() { beforeResumeClaim = nil })
+	e.s.ledger.beforeResumeClaim = func() bool { return true }
 	require.NoError(t, e.s.ResolveApproval(t.Context(), in.Approvals[0].ID, true))
-	beforeResumeClaim = nil
+	e.s.ledger.beforeResumeClaim = nil
 	// A run left resuming whose state cannot be closed, with an approval still pending.
 	other := e.newConv(t, "ask", 0)
 	in2 := e.interrupt(t, other, testllm.Call{Name: "fake_draft", Args: `{"subject":"C"}`})

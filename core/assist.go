@@ -521,7 +521,7 @@ func (s *Service) applyUpdate(ctx context.Context, a Approval) ([]sqlite.Stateme
 // write an empty draft (the first generation is written directly), those that
 // change nothing (audited no_change), and those a session grant covers (audited auto:session). It returns the
 // approvals as they are now, and whether any was decided; the caller then
-// resumes the run (resumeRun).
+// resumes the run (runLedger.resume).
 func (s *Service) applyInitial(ctx context.Context, as []Approval) ([]Approval, bool) {
 	applied := false
 	for i, a := range as {
@@ -844,9 +844,13 @@ func (s *Service) assistSkill(ctx context.Context, end func(), draftID int64, na
 		}
 	}
 
-	s.runMu.Lock()
-	defer s.runMu.Unlock()
-	job, h, err := s.claimRun(ctx, conv, ref, []string{})
+	var job *runJob
+	var h *ai.History
+	err = s.ledger.claim(ctx, conv, ref, []string{}, func() error { return s.checkWitDraft(ctx, conv.DraftID) }, func(j *runJob) (err error) {
+		job = j
+		h, err = s.claimed(ctx, j)
+		return err
+	})
 	if err != nil {
 		return nil, err
 	}

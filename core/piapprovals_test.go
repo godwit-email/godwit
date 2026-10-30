@@ -95,10 +95,9 @@ func TestPiCrashAfterApproval(t *testing.T) {
 	e := newPiApprovalEnv(t)
 	conv := e.newConv(t, "ask", 0)
 	in := e.interrupt(t, conv, testllm.Call{Name: "fake_draft", Args: `{"subject":"Hi"}`})
-	afterApprovalClaim = func() bool { return true }
-	t.Cleanup(func() { afterApprovalClaim = nil })
+	e.s.ledger.afterApprovalClaim = func() bool { return true }
 	require.Error(t, e.s.ResolveApproval(t.Context(), in.Approvals[0].ID, true))
-	afterApprovalClaim = nil
+	e.s.ledger.afterApprovalClaim = nil
 
 	e.restart(t)
 	e.waitRun(t, in.RunID, "done")
@@ -116,10 +115,9 @@ func TestPiCrashBeforeResume(t *testing.T) {
 	e := newPiApprovalEnv(t)
 	conv := e.newConv(t, "ask", 0)
 	in := e.interrupt(t, conv, testllm.Call{Name: "fake_draft", Args: `{"subject":"Hi"}`})
-	beforeResumeClaim = func() bool { return true }
-	t.Cleanup(func() { beforeResumeClaim = nil })
+	e.s.ledger.beforeResumeClaim = func() bool { return true }
 	require.NoError(t, e.s.ResolveApproval(t.Context(), in.Approvals[0].ID, true))
-	beforeResumeClaim = nil
+	e.s.ledger.beforeResumeClaim = nil
 	e.waitRun(t, in.RunID, "interrupted")
 
 	e.restart(t)

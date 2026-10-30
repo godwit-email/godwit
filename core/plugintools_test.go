@@ -498,8 +498,8 @@ func TestAssistResumeKeepsReadOnlyPolicy(t *testing.T) {
 	require.ErrorIs(t, e.s.ResolveApproval(t.Context(), in.Approvals[0].ID, true), ErrStaleApproval)
 	var state string
 	require.Eventually(t, func() bool {
-		rows, err := e.s.db.Query(bg, "SELECT state FROM runs WHERE id = ?", in.RunID)
-		state = store.Str(rows.Values[0][0])
+		var err error
+		state, err = e.s.ledger.state(bg, in.RunID)
 		return err == nil && state != "running" && state != "resuming"
 	}, 10*time.Second, 5*time.Millisecond)
 	assert.Equal(t, "done", state)

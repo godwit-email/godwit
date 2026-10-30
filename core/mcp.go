@@ -522,19 +522,13 @@ func (s *Service) staleMCPApprovals(ctx context.Context, id int64) error {
 	if err != nil || len(as) == 0 {
 		return err
 	}
-	s.runMu.Lock()
-	defer s.runMu.Unlock()
-	var errs []error
-	runs := map[int64]int64{}
+	err = s.ledger.stale(ctx, as)
+	convs := map[int64]bool{}
 	for _, a := range as {
-		_, err := s.db.Transaction(ctx, []sqlite.Statement{{SQL: "UPDATE approvals SET state = 'stale', result = ?, updated_at = ? WHERE id = ? AND state = 'pending'",
-			Args: []any{msgStale, time.Now().Unix(), a.ID}}, s.auditRow(a, "stale")})
-		errs = append(errs, err)
-		runs[a.RunID] = a.ConversationID
+		if !convs[a.ConversationID] {
+			convs[a.ConversationID] = true
+			s.bus.Publish(events.Event{Type: events.ApprovalsChanged, ConversationID: a.ConversationID})
+		}
 	}
-	for run, conv := range runs {
-		s.bus.Publish(events.Event{Type: events.ApprovalsChanged, ConversationID: conv})
-		errs = append(errs, s.resumeRun(ctx, run))
-	}
-	return errors.Join(errs...)
+	return err
 }

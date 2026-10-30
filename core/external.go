@@ -9,7 +9,6 @@ import (
 	"log/slog"
 	"time"
 
-	"github.com/egoist/mygo/plugins/sqlite"
 	"github.com/godwit-email/godwit/core/events"
 	"github.com/godwit-email/godwit/core/plugins"
 )
@@ -17,25 +16,14 @@ import (
 // externalTimeout bounds an external Run whose tool sets no Timeout.
 const externalTimeout = 60 * time.Second
 
-// extExec is an approval executing outside runMu; done closes when it ended.
+// extExec is an approval executing outside the ledger's lock; done closes when it ended.
 type extExec struct {
 	runID int64
 	done  chan struct{}
 }
 
-// externalOf is a done channel of one of runID's external executions in
-// flight, or nil. The caller holds runMu.
-func (s *Service) externalOf(runID int64) <-chan struct{} {
-	for _, x := range s.extRun {
-		if x.runID == runID {
-			return x.done
-		}
-	}
-	return nil
-}
-
 // decideExternal accepts a pending approval of an external tool: it claims it
-// (pending → executing, exec_mode external) under runMu, then runs it without
+// (pending → executing, exec_mode external) with the ledger, then runs it without
 // the lock, so other runs and approvals go on meanwhile, and records the
 // outcome with its audit row in one transaction. Run's context ends when the
 // Service closes or after the tool's timeout, not with the caller's. If the
@@ -48,45 +36,22 @@ func (s *Service) decideExternal(ctx context.Context, a approvalRow, d toolDesc,
 		return err
 	}
 	defer end()
-	s.runMu.Lock()
-	r, err := s.db.Execute(ctx, "UPDATE approvals SET state = 'executing', exec_mode = 'external', updated_at = ? WHERE id = ? AND state = 'pending'",
-		time.Now().Unix(), a.ID)
-	switch {
-	case err == nil && r.Changes == 0:
-		err = ErrInvalidState
-	case err == nil && afterApprovalClaim != nil && afterApprovalClaim():
-		err = errors.New("simulated crash")
-	}
+	done, err := s.ledger.claimExternal(ctx, a)
 	if err != nil {
-		s.runMu.Unlock()
 		return err
 	}
-	x := extExec{runID: a.RunID, done: make(chan struct{})}
-	if s.extRun == nil {
-		s.extRun = map[int64]extExec{}
-	}
-	s.extRun[a.ID] = x
-	s.runMu.Unlock()
 	s.bus.Publish(events.Event{Type: events.ApprovalsChanged, ConversationID: a.ConversationID})
 
 	err = s.runExternal(rctx, a, d)
 	s.bus.Publish(events.Event{Type: events.ApprovalsChanged, ConversationID: a.ConversationID})
-	s.runMu.Lock()
-	defer s.runMu.Unlock()
-	delete(s.extRun, a.ID)
-	close(x.done)
-	if resume {
-		err = errors.Join(err, s.resumeRun(context.WithoutCancel(rctx), a.RunID))
-	}
-	return err
+	return errors.Join(err, done(context.WithoutCancel(rctx), resume))
 }
 
 // runExternal checks the binding, runs the claimed approval and records the outcome.
 func (s *Service) runExternal(ctx context.Context, a approvalRow, d toolDesc) error {
 	db := context.WithoutCancel(ctx) // claimed: always try to record the outcome
 	record := func(state, result, decision string) error {
-		_, err := s.db.Transaction(db, []sqlite.Statement{{SQL: "UPDATE approvals SET state = ?, result = ?, updated_at = ? WHERE id = ? AND state = 'executing'",
-			Args: []any{state, result, time.Now().Unix(), a.ID}}, s.auditRow(a, decision)})
+		err := s.ledger.finish(db, a, state, result, nil, nil, decision)
 		if err != nil {
 			slog.Default().Warn("could not record an external approval's outcome", "approval", a.ID, "state", state, "err", err)
 		}

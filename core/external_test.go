@@ -318,8 +318,7 @@ func TestCancelWaitsForExternal(t *testing.T) {
 	require.NoError(t, <-cancelled)
 	assert.Equal(t, "done", e.approval(t, in.Approvals[0].ID).State)
 	require.Eventually(t, func() bool {
-		rows, err := e.s.db.Query(t.Context(), "SELECT state FROM runs WHERE id = ?", in.RunID)
-		st := store.Str(rows.Values[0][0])
+		st, err := e.s.ledger.state(t.Context(), in.RunID)
 		return err == nil && (st == "cancelled" || st == "done")
 	}, 10*time.Second, 5*time.Millisecond)
 
