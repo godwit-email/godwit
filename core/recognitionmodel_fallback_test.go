@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/godwit-email/godwit/core/ai/mask"
+	"github.com/godwit-email/godwit/core/internal/testclock"
 	"github.com/godwit-email/godwit/core/internal/testllm"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -153,4 +154,105 @@ func TestLostRecognitionModelFilesAreDownloadedAgain(t *testing.T) {
 	require.Eventually(t, e.s.RecognitionModelInstalled, 5*time.Second, 10*time.Millisecond)
 	require.Eventually(t, func() bool { return e.s.RecognitionModelError() == nil }, 5*time.Second, 10*time.Millisecond)
 	assert.NotContains(t, ask("陈晓雯回来了吗？"), "陈晓雯")
+}
+
+// asker asks Wit q in one conversation of e: the body the model service
+// got.
+func asker(t *testing.T, e *approvalEnv) func(q string) string {
+	conv := e.newConv(t, "ask", 0)
+	return func(q string) string {
+		t.Helper()
+		e.srv.Script(testllm.Turn{Text: []string{"ok"}})
+		evs := e.start(t, conv, q)
+		require.Equal(t, "done", evs[len(evs)-1].Kind, "%+v", evs[len(evs)-1].Err)
+		reqs := e.srv.Requests()
+		return string(reqs[len(reqs)-1].Body)
+	}
+}
+
+// A loaded 识别模型 reads on from memory when its files go, but they are
+// missed all the same: the rules alone mask, and they come down again.
+func TestLostFilesOfALoadedRecognitionModelAreDownloadedAgain(t *testing.T) {
+	e := newApprovalEnv(t)
+	files := recognitionModelContents()
+	src := serveRecognitionModel(t, files)
+	useRecognitionModelSources(t, e.s, files, src.URL)
+	require.NoError(t, e.s.DownloadRecognitionModel(t.Context(), nil))
+	e.s.opts.Recognizer = newFakeModel(map[string]string{"陈晓雯": "private_person", "李雷": "private_person"})
+	setRecognitionModel(t, e.s, true)
+	ask := asker(t, e)
+	assert.NotContains(t, ask("陈晓雯在吗？"), "陈晓雯")
+
+	require.NoError(t, os.RemoveAll(e.s.recognitionModelDir()))
+	asked := len(src.asked())
+	hold := make(chan struct{})
+	src.setHandle(func(w http.ResponseWriter, r *http.Request, body []byte) bool {
+		select {
+		case <-hold:
+		case <-r.Context().Done():
+		}
+		return false
+	})
+	assert.Contains(t, ask("李雷走了吗？"), "李雷走了吗？")
+	assert.ErrorIs(t, e.s.RecognitionModelError(), ErrRecognitionModelMissing)
+	require.Eventually(t, func() bool { return len(src.asked()) > asked }, 5*time.Second, 10*time.Millisecond)
+	close(hold)
+
+	require.Eventually(t, e.s.RecognitionModelInstalled, 5*time.Second, 10*time.Millisecond)
+	require.Eventually(t, func() bool { return e.s.RecognitionModelError() == nil }, 5*time.Second, 10*time.Millisecond)
+	assert.NotContains(t, ask("李雷回来了吗？"), "李雷")
+}
+
+// A re-download of lost files that fails says why in the settings, and
+// is not tried again by every request after it: offline, that would be a
+// download a request. It is tried again after redownloadBackoff, or once
+// the settings change.
+func TestAFailedRedownloadIsNotRetriedByEveryRequest(t *testing.T) {
+	e := newApprovalEnv(t)
+	clock := testclock.New(time.Now())
+	e.s.SetClockForTest(clock)
+	files := recognitionModelContents()
+	src := serveRecognitionModel(t, files)
+	useRecognitionModelSources(t, e.s, files, src.URL)
+	require.NoError(t, e.s.DownloadRecognitionModel(t.Context(), nil))
+	e.s.opts.Recognizer = onFiles{e.s, newFakeModel(map[string]string{"陈晓雯": "private_person"})}
+	setRecognitionModel(t, e.s, true)
+	ask := asker(t, e)
+
+	require.NoError(t, os.RemoveAll(e.s.recognitionModelDir()))
+	src.setHandle(func(w http.ResponseWriter, r *http.Request, body []byte) bool {
+		http.Error(w, "offline", http.StatusServiceUnavailable)
+		return true
+	})
+	failed := func() bool {
+		err := e.s.RecognitionModelError()
+		return err != nil && !errors.Is(err, ErrRecognitionModelMissing)
+	}
+	asked := len(src.asked())
+	ask("陈晓雯走了吗？")
+	require.Eventually(t, failed, 5*time.Second, 10*time.Millisecond)
+	tried := len(src.asked())
+	require.Greater(t, tried, asked)
+
+	ask("陈晓雯呢？")
+	assert.ErrorContains(t, e.s.RecognitionModelError(), "503", "the download's reason stands")
+	assert.Never(t, func() bool { return len(src.asked()) > tried }, 200*time.Millisecond, 10*time.Millisecond)
+
+	clock.Advance(redownloadBackoff)
+	ask("陈晓雯呢？")
+	require.Eventually(t, func() bool { return len(src.asked()) > tried }, 5*time.Second, 10*time.Millisecond)
+	require.Eventually(t, failed, 5*time.Second, 10*time.Millisecond)
+	tried = len(src.asked())
+
+	ask("陈晓雯呢？")
+	assert.Never(t, func() bool { return len(src.asked()) > tried }, 200*time.Millisecond, 10*time.Millisecond)
+	st, err := e.s.GetSettings(t.Context())
+	require.NoError(t, err)
+	st.MaskWordsCase = !st.MaskWordsCase
+	_, err = e.s.SetSettings(t.Context(), st)
+	require.NoError(t, err)
+	src.setHandle(nil)
+	ask("陈晓雯呢？")
+	require.Eventually(t, e.s.RecognitionModelInstalled, 5*time.Second, 10*time.Millisecond)
+	require.Eventually(t, func() bool { return e.s.RecognitionModelError() == nil }, 5*time.Second, 10*time.Millisecond)
 }

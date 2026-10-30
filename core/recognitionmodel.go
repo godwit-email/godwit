@@ -9,6 +9,7 @@ import (
 	"path/filepath"
 	"runtime"
 	"sync"
+	"time"
 
 	"github.com/godwit-email/godwit/core/ai/mask"
 	"github.com/godwit-email/godwit/core/ai/mask/guard"
@@ -140,6 +141,10 @@ type orRules struct {
 }
 
 func (r orRules) Recognize(text string) ([]mask.Recognized, error) {
+	if !r.s.RecognitionModelInstalled() { // a loaded model reads on from memory, but its files are gone all the same
+		r.s.redownloadRecognitionModel()
+		return nil, nil
+	}
 	found, err := r.Recognizer.Recognize(text)
 	r.s.recognitionModelRead(err)
 	if err != nil {
@@ -148,18 +153,28 @@ func (r orRules) Recognize(text string) ([]mask.Recognized, error) {
 	return found, nil
 }
 
-// recognitionModelRead keeps how 识别模型 last read, err nil for well. Failed for
-// want of its files, it downloads them again (redownloadRecognitionModel).
+// recognitionState is how 识别模型 last read, under mu: why it failed
+// (RecognitionModelError), whether its lost files are coming down again
+// (redownloadRecognitionModel), and until when, that having failed, they
+// are not tried again.
+type recognitionState struct {
+	mu       sync.Mutex
+	err      error
+	fetching bool
+	retryAt  time.Time
+}
+
+// recognitionModelRead keeps how 识别模型 last read, err nil for well.
+// Failed for want of its files, it downloads them again
+// (redownloadRecognitionModel).
 func (s *Service) recognitionModelRead(err error) {
-	if err == nil {
-		s.recognitionModelErr.Store(nil)
+	if err != nil && !s.RecognitionModelInstalled() {
+		s.redownloadRecognitionModel()
 		return
 	}
-	if !s.RecognitionModelInstalled() {
-		err = ErrRecognitionModelMissing
-		s.redownloadRecognitionModel()
-	}
-	s.recognitionModelErr.Store(&err)
+	s.recognition.mu.Lock()
+	s.recognition.err = err
+	s.recognition.mu.Unlock()
 }
 
 // RecognitionModelError is why 识别模型 last failed to read, nil once it reads
@@ -167,35 +182,46 @@ func (s *Service) recognitionModelRead(err error) {
 // are ErrRecognitionModelMissing until they are downloaded again, or why that
 // download failed.
 func (s *Service) RecognitionModelError() error {
-	if err := s.recognitionModelErr.Load(); err != nil {
-		return *err
-	}
-	return nil
+	s.recognition.mu.Lock()
+	defer s.recognition.mu.Unlock()
+	return s.recognition.err
 }
 
-// redownloadRecognitionModel downloads 识别模型's lost files in the background,
-// unless that is under way; once they are here, the model is loaded
-// again from them. A download that fails is tried again by the next
-// request that misses them.
+// redownloadBackoff is how long after a failed re-download of 识别模型's
+// lost files no request tries again, unless the settings change
+// (maskingChanged): offline, each request would download again.
+const redownloadBackoff = 5 * time.Minute
+
+// redownloadRecognitionModel downloads 识别模型's lost files in the
+// background, ErrRecognitionModelMissing meanwhile, unless that is under
+// way or failed less than redownloadBackoff ago: that failure stays the
+// reason. Once they are here, the model is loaded again from them.
 func (s *Service) redownloadRecognitionModel() {
-	if !s.recognitionModelFetch.CompareAndSwap(false, true) {
+	r := &s.recognition
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if r.fetching || s.clk().Now().Before(r.retryAt) {
 		return
 	}
 	ctx, end, err := s.begin(context.Background(), 0) // Close stops it
 	if err != nil {
-		s.recognitionModelFetch.Store(false)
 		return
 	}
+	r.err, r.fetching = ErrRecognitionModelMissing, true
 	go func() {
-		defer s.recognitionModelFetch.Store(false)
 		defer end()
-		if err := s.DownloadRecognitionModel(ctx, nil); err != nil {
-			s.recognitionModelErr.Store(&err)
+		err := s.DownloadRecognitionModel(ctx, nil)
+		r.mu.Lock()
+		r.err, r.fetching = err, false
+		if err != nil {
+			r.retryAt = s.clk().Now().Add(redownloadBackoff)
+		}
+		r.mu.Unlock()
+		if err != nil {
 			return
 		}
-		s.recognitionModelErr.Store(nil)
 		s.maskMu.Lock()
-		s.guard = nil // its load failed without the files, and stays failed
+		s.guard = nil // loaded without the files, it failed for good, or reads from what was deleted
 		s.maskMu.Unlock()
 		if st, err := s.loadSettings(ctx); err == nil {
 			s.maskingChanged(st)

@@ -75,7 +75,9 @@ func recognizedSecret(v string) bool {
 // which its tokens take in: "Sarah," "(415". A secret loses only the
 // spaces: a symbol at its end is likely the secret's own (Abc12345!).
 func trim(s string, a, b int, kind string) (int, int) {
-	cut := func(r rune) bool { return unicode.IsSpace(r) || kind != "SECRET" && strings.ContainsRune(separators, r) }
+	cut := func(r rune) bool {
+		return unicode.IsSpace(r) || kind != "SECRET" && strings.ContainsRune(separators, r)
+	}
 	v := strings.TrimLeftFunc(s[a:b], cut)
 	a = b - len(v)
 	return a, a + len(strings.TrimRightFunc(v, cut))

@@ -249,14 +249,18 @@ func (s *Service) masker() (*mask.Masker, error) {
 }
 
 // maskingChanged masks as st says from the next request on, once the
-// masker exists; 识别模型 turned off lets go of it.
+// masker exists; 识别模型 turned off lets go of it. Lost files of
+// 识别模型 that failed to come down again are tried again from then on.
 func (s *Service) maskingChanged(st Settings) {
 	s.maskMu.Lock()
 	defer s.maskMu.Unlock()
+	s.recognition.mu.Lock()
+	s.recognition.retryAt = time.Time{}
 	if !st.recognizes() {
 		s.guard = nil
-		s.recognitionModelErr.Store(nil)
+		s.recognition.err = nil
 	}
+	s.recognition.mu.Unlock()
 	if s.mask != nil {
 		_ = st.setMasker(s.mask, s.recognizer(st)) // SetSettings checked it; a failure keeps the last
 	}

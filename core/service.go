@@ -128,9 +128,8 @@ type Service struct {
 	mask   *mask.Masker // created on first use; see masker
 	guard  *guardModel  // 识别模型 while it is on; see recognizer
 
-	recognitionModelMu    sync.Mutex            // held while 识别模型's files download (DownloadRecognitionModel)
-	recognitionModelErr   atomic.Pointer[error] // why 识别模型 last failed to read (RecognitionModelError)
-	recognitionModelFetch atomic.Bool           // its lost files are downloading again (redownloadRecognitionModel)
+	recognitionModelMu sync.Mutex       // held while 识别模型's files download (DownloadRecognitionModel)
+	recognition        recognitionState // how 识别模型 last read
 
 	unsubMu   sync.Mutex
 	unsubbing map[int64]bool // messages whose one-click unsubscribe is under way
