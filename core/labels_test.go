@@ -250,6 +250,74 @@ func TestLabelView(t *testing.T) {
 	require.Error(t, err)
 }
 
+func TestAccountLabelsAndViews(t *testing.T) {
+	s := newLabelService(t, "", "zh-CN")
+	ctx := t.Context()
+	otp := labelIDs(t, s)["otp"]
+
+	// Set up second account
+	_, err := s.db.Execute(ctx, `INSERT INTO accounts(id, email) VALUES (2, 'acc2@example.com')`)
+	require.NoError(t, err)
+	_, err = s.db.Execute(ctx, `INSERT INTO folders(id, account_id, name, role) VALUES (2, 2, 'INBOX', 'inbox')`)
+	require.NoError(t, err)
+
+	// Add messages to account 1 and account 2
+	a := addMessage(t, s, "msg1", "a@x", "", "", 10)
+	b := addMessage(t, s, "msg2", "b@x", "", "", 20)
+	_, err = s.db.Execute(ctx, `UPDATE messages SET account_id = 2, folder_id = 2 WHERE id = ?`, b)
+	require.NoError(t, err)
+
+	// Give them threads
+	_, err = s.db.Execute(ctx, `INSERT INTO threads(id, account_id, subject, last_date) VALUES (1, 1, 'msg1', 10), (2, 2, 'msg2', 20)`)
+	require.NoError(t, err)
+	_, err = s.db.Execute(ctx, `UPDATE messages SET thread_id = 1 WHERE id = ?`, a)
+	require.NoError(t, err)
+	_, err = s.db.Execute(ctx, `UPDATE messages SET thread_id = 2 WHERE id = ?`, b)
+	require.NoError(t, err)
+
+	// Apply otp label to both
+	setRow(t, s, a, otp, "manual", 1)
+	setRow(t, s, b, otp, "manual", 1)
+
+	// Check ListAccountLabels
+	l1, err := s.ListAccountLabels(ctx, 1)
+	require.NoError(t, err)
+	require.Equal(t, 1, l1[0].Count)
+
+	l2, err := s.ListAccountLabels(ctx, 2)
+	require.NoError(t, err)
+	require.Equal(t, 1, l2[0].Count)
+
+	// Check AllAccountLabels
+	all, err := s.AllAccountLabels(ctx)
+	require.NoError(t, err)
+	require.Len(t, all, 2)
+	require.Equal(t, 1, all[1][0].Count)
+	require.Equal(t, 1, all[2][0].Count)
+
+	// Check ListMessages scoped to account
+	p1, err := s.ListMessages(ctx, View{AccountID: 1, LabelID: otp}, "", 10)
+	require.NoError(t, err)
+	require.Len(t, p1.Items, 1)
+	require.Equal(t, a, p1.Items[0].ID)
+
+	p2, err := s.ListMessages(ctx, View{AccountID: 2, LabelID: otp}, "", 10)
+	require.NoError(t, err)
+	require.Len(t, p2.Items, 1)
+	require.Equal(t, b, p2.Items[0].ID)
+
+	// Check ListThreads scoped to account
+	th1, err := s.ListThreads(ctx, View{AccountID: 1, LabelID: otp}, "", 10)
+	require.NoError(t, err)
+	require.Len(t, th1.Items, 1)
+	require.Equal(t, int64(1), th1.Items[0].ID)
+
+	th2, err := s.ListThreads(ctx, View{AccountID: 2, LabelID: otp}, "", 10)
+	require.NoError(t, err)
+	require.Len(t, th2.Items, 1)
+	require.Equal(t, int64(2), th2.Items[0].ID)
+}
+
 // TestSeedLabelsWaitsForLanguage: a first start that does not know the
 // language (headless) seeds nothing, so the GUI seeds in the user's.
 func TestSeedLabelsWaitsForLanguage(t *testing.T) {

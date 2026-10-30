@@ -282,6 +282,91 @@ func (s *Service) listLabels(ctx context.Context) ([]Label, error) {
 	return out, nil
 }
 
+// ListAccountLabels returns the labels with their counts and unread counts for one account.
+func (s *Service) ListAccountLabels(ctx context.Context, accountID int64) ([]Label, error) {
+	ctx, end, err := s.begin(ctx, 0)
+	if err != nil {
+		return nil, err
+	}
+	defer end()
+	return s.listAccountLabels(ctx, accountID)
+}
+
+func (s *Service) listAccountLabels(ctx context.Context, accountID int64) ([]Label, error) {
+	rows, err := s.db.Query(ctx, `SELECT l.id, l.slug, l.name, l.description, l.color, l.icon, l.builtin, l.position,
+		(SELECT count(*) FROM message_labels ml JOIN messages m ON m.id = ml.message_id
+			WHERE ml.label_id = l.id AND ml.active = 1 AND m.account_id = ?),
+		(SELECT count(*) FROM message_labels ml JOIN messages m ON m.id = ml.message_id
+			WHERE ml.label_id = l.id AND ml.active = 1 AND m.account_id = ? AND instr(m.flags, '\Seen') = 0)
+		FROM labels l ORDER BY l.position, l.id`, accountID, accountID)
+	if err != nil {
+		return nil, err
+	}
+	out := make([]Label, 0, len(rows.Values))
+	for _, r := range rows.Values {
+		out = append(out, Label{ID: store.Int(r[0]), Slug: store.Str(r[1]), Name: store.Str(r[2]), Description: store.Str(r[3]),
+			Color: store.Str(r[4]), Icon: store.Str(r[5]), Builtin: store.Int(r[6]) != 0, Position: int(store.Int(r[7])),
+			Count: int(store.Int(r[8])), Unread: int(store.Int(r[9]))})
+	}
+	return out, nil
+}
+
+// AllAccountLabels returns labels with their counts and unread counts grouped by account ID.
+func (s *Service) AllAccountLabels(ctx context.Context) (map[int64][]Label, error) {
+	ctx, end, err := s.begin(ctx, 0)
+	if err != nil {
+		return nil, err
+	}
+	defer end()
+	return s.allAccountLabels(ctx)
+}
+
+func (s *Service) allAccountLabels(ctx context.Context) (map[int64][]Label, error) {
+	labels, err := s.listLabels(ctx)
+	if err != nil {
+		return nil, err
+	}
+	rows, err := s.db.Query(ctx, `SELECT ml.label_id, m.account_id, count(*),
+		sum(case when instr(m.flags, '\Seen') = 0 then 1 else 0 end)
+		FROM message_labels ml
+		JOIN messages m ON m.id = ml.message_id
+		WHERE ml.active = 1
+		GROUP BY ml.label_id, m.account_id`)
+	if err != nil {
+		return nil, err
+	}
+	type accCount struct {
+		count, unread int
+	}
+	counts := map[int64]map[int64]accCount{}
+	for _, r := range rows.Values {
+		lid := store.Int(r[0])
+		aid := store.Int(r[1])
+		c := int(store.Int(r[2]))
+		u := int(store.Int(r[3]))
+		if counts[aid] == nil {
+			counts[aid] = map[int64]accCount{}
+		}
+		counts[aid][lid] = accCount{count: c, unread: u}
+	}
+	out := map[int64][]Label{}
+	accRows, err := s.db.Query(ctx, `SELECT id FROM accounts`)
+	if err != nil {
+		return nil, err
+	}
+	for _, ar := range accRows.Values {
+		aid := store.Int(ar[0])
+		list := make([]Label, len(labels))
+		for i, l := range labels {
+			l.Count = counts[aid][l.ID].count
+			l.Unread = counts[aid][l.ID].unread
+			list[i] = l
+		}
+		out[aid] = list
+	}
+	return out, nil
+}
+
 // clean trims in and checks it, and that no label but self (0 for none) has its name.
 // The caller holds labelsMu.
 func (s *Service) cleanLabel(ctx context.Context, in LabelInput, self int64) (LabelInput, error) {

@@ -132,3 +132,11 @@ func (a *App) goneLabel(r Route) bool {
 	_, ok := a.label(r.View.LabelID)
 	return !ok
 }
+
+// AccountLabels returns the labels for an account, with count and unread for that account.
+func (a *App) AccountLabels(accID int64) []core.Label {
+	if a.accountLabels != nil {
+		return a.accountLabels[accID]
+	}
+	return nil
+}

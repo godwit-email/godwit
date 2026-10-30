@@ -13,9 +13,10 @@ import (
 // View selects what a list shows: one folder, a unified view ("inbox",
 // "starred") or one label's mail across accounts. Exactly one is set.
 type View struct {
-	FolderID int64
-	Unified  string
-	LabelID  int64
+	FolderID  int64
+	Unified   string
+	LabelID   int64
+	AccountID int64
 }
 
 // ThreadSummary is a conversation as listed. Count, Unread and Flagged cover the whole thread.

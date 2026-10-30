@@ -110,6 +110,29 @@ func TestSidebarLabels(t *testing.T) {
 	}
 }
 
+func TestAccountSidebarLabels(t *testing.T) {
+	h, acc, m := labeledMail(t)
+	h.autoLabel(m.ID, "otp")
+
+	// Initially collapsed by default
+	if *h.app.mail.accountLabelsOpen(acc.ID) {
+		t.Fatal("account labels should be collapsed by default")
+	}
+
+	// Expand the account labels
+	*h.app.mail.accountLabelsOpen(acc.ID) = true
+	h.settle()
+
+	// Navigate to the account label view
+	targetView := core.View{AccountID: acc.ID, LabelID: h.labelID("otp")}
+	h.app.navigate(Route{Page: PageMail, View: targetView})
+	h.until("the account label view", func() bool { return h.app.route.View == targetView })
+
+	if title, _ := h.app.mail.Title(); title != "验证码" {
+		t.Errorf("title %q, want 验证码", title)
+	}
+}
+
 func TestLabelsRefreshOnEvent(t *testing.T) {
 	h, _, m := labeledMail(t)
 	if h.tt.HasText("账单") {
