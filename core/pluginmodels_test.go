@@ -149,7 +149,7 @@ func TestPluginHTTPModels(t *testing.T) {
 				require.NoError(t, err)
 				out, err := s.runText(t.Context(), e, ai.Request{Model: m, Prompt: "hi", MaxTurns: 1}, 100)
 				require.NoError(t, err)
-				assert.Equal(t, "hello there", out)
+				assert.Equal(t, "hello there", out.Text)
 				reqs := srv.Requests()
 				require.Len(t, reqs, 1)
 				assert.Equal(t, "upstream", reqs[0].Model, "the body the plugin changed")
@@ -235,7 +235,7 @@ func TestNativePluginHTTPModel(t *testing.T) {
 	require.NoError(t, err)
 	out, err := s.runText(t.Context(), e, ai.Request{Model: m, Prompt: "hi", MaxTurns: 1}, 100)
 	require.NoError(t, err)
-	assert.Equal(t, "from native", out)
+	assert.Equal(t, "from native", out.Text)
 	assert.Equal(t, "1", srv.Requests()[0].Header.Get("X-Native"), "models.prepare ran")
 }
 

@@ -5,7 +5,6 @@ import (
 	"strings"
 
 	"github.com/godwit-email/godwit/core/ai"
-	"github.com/godwit-email/godwit/core/ai/mask"
 	"github.com/godwit-email/godwit/core/gateway"
 )
 
@@ -27,7 +26,6 @@ func (s *Service) MessageGist(ctx context.Context, messageID int64) (string, err
 		return "", err
 	}
 	defer end()
-	ctx = mask.Tag(ctx, featureSkill, nil)
 	account, ids, members, err := s.mailTarget(ctx, "message", messageID)
 	if err != nil {
 		return "", err
@@ -56,17 +54,12 @@ func (s *Service) MessageGist(ctx context.Context, messageID int64) (string, err
 	if err := s.gateway().Record(ctx, gateway.Entry{Source: gateway.SourceSkill, Tool: "gist", TargetKind: "message", TargetID: messageID, Decision: "run"}); err != nil {
 		return "", err
 	}
-	e, err := s.aiEngine()
+	r, err := s.complete(ctx, featureSkill, ai.Request{Model: model, System: system, Prompt: strings.Join(blocks, "\n\n")}, 4<<10)
 	if err != nil {
 		return "", err
 	}
-	// Raw, then restored and its link references expanded here: the line is
-	// cut after, never a placeholder or a reference.
-	text, err := s.runText(ctx, e, ai.Request{Model: model, System: system, Prompt: strings.Join(blocks, "\n\n"), MaxTurns: 1, Raw: true}, 4<<10)
-	if err != nil {
-		return "", err
-	}
-	g := gistLine(s.expandLinks(ctx, e.Masker.Restore(text)))
+	// Its link references expanded here: the line is cut after, never a reference.
+	g := gistLine(s.expandLinks(ctx, r.Text))
 	if g != "" {
 		s.cachePut(ctx, key, account, g, "gist")
 	}

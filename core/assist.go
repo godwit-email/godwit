@@ -805,7 +805,8 @@ func (s *Service) assistSkill(ctx context.Context, end func(), draftID int64, na
 	ref := sk.Model
 	var run runFunc
 	var req ai.Request
-	if plugin, ok := strings.CutPrefix(st.Translator, translatorPrefix); ok && name == "translate-draft" {
+	plugin, byPlugin := strings.CutPrefix(st.Translator, translatorPrefix)
+	if byPlugin = byPlugin && name == "translate-draft"; byPlugin {
 		// The plugin translates instead of a model; the proposal, its decision and undo stay as they are.
 		if _, err := s.translatorFor(ctx, plugin); err != nil {
 			return nil, err
@@ -837,7 +838,7 @@ func (s *Service) assistSkill(ctx context.Context, end func(), draftID int64, na
 	if err := s.gateway().Record(ctx, gateway.Entry{Source: gateway.SourceSkill, Tool: "skill:" + name, TargetKind: "draft", TargetID: d.ID, Decision: "run"}); err != nil {
 		return nil, err
 	}
-	if plugin, ok := strings.CutPrefix(ref, translatorPrefix); ok { // the plugin gets the draft: the audit log says so
+	if byPlugin { // the plugin gets the draft: the audit log says so (not ref: a plugin model is "plugin/…" too)
 		if err := s.gateway().Record(ctx, gateway.Entry{Source: gateway.SourcePlugin, Extension: plugin, Tool: "plugin:" + plugin + "/translate",
 			TargetKind: "draft", TargetID: d.ID, Decision: "run"}); err != nil {
 			return nil, err

@@ -532,9 +532,6 @@ func (s *Service) TestPluginModel(ctx context.Context, ref string) (CapStatus, e
 	if err != nil {
 		return status(err)
 	}
-	e, err := s.aiEngine()
-	if err == nil {
-		_, err = s.runText(ctx, e, ai.Request{Model: rm, Prompt: "Reply with OK.", MaxTurns: 1}, 0)
-	}
+	_, err = s.complete(ctx, "", ai.Request{Model: rm, Prompt: "Reply with OK."}, 0)
 	return status(err)
 }

@@ -19,7 +19,6 @@ import (
 
 	"github.com/egoist/mygo/plugins/sqlite"
 	"github.com/godwit-email/godwit/core/ai"
-	"github.com/godwit-email/godwit/core/ai/mask"
 	"github.com/godwit-email/godwit/core/store"
 )
 
@@ -268,31 +267,19 @@ func (s *Service) condenseSplit(ctx context.Context, id int64, model ai.Resolved
 // condense has the model write what system asks of prompt (a summary); the
 // conversation takes its tokens, as a rewind's runs (spent_*).
 func (s *Service) condense(ctx context.Context, id int64, model ai.ResolvedModel, system, prompt string) (string, error) {
-	e, err := s.aiEngine()
-	if err != nil {
-		return "", err
-	}
-	events, wait := e.Run(mask.Tag(ctx, featureCompact, nil), ai.Request{Model: model, System: system, Prompt: prompt, MaxTurns: 1})
-	var text strings.Builder
-	for ev := range events {
-		if ev.Kind == "text" {
-			text.WriteString(ev.Text)
-		}
-	}
-	res := wait()
-	s.runRejected(model, res.Err)
+	r, err := s.complete(ctx, featureCompact, ai.Request{Model: model, System: system, Prompt: prompt}, 0)
 	spent := sqlite.Statement{SQL: `UPDATE conversations SET spent_input = spent_input + ?, spent_output = spent_output + ?, spent_cached = spent_cached + ? WHERE id = ?`,
-		Args: []any{res.Usage.Input, res.Usage.Output, res.Usage.Cached, id}}
-	if res.Err != nil {
-		return "", errors.Join(res.Err, s.exec(ctx, spent))
+		Args: []any{r.Usage.Input, r.Usage.Output, r.Usage.Cached, id}}
+	if err != nil {
+		return "", errors.Join(err, s.exec(ctx, spent))
 	}
 	if _, err := s.db.Transaction(ctx, []sqlite.Statement{spent}); err != nil {
 		return "", err
 	}
-	if strings.TrimSpace(text.String()) == "" {
+	if strings.TrimSpace(r.Text) == "" {
 		return "", errors.New("the model wrote no summary")
 	}
-	return strings.TrimSpace(text.String()), nil
+	return strings.TrimSpace(r.Text), nil
 }
 
 // saveSummary saves text as conversation id's summary through upto, unless its

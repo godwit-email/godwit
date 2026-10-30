@@ -14,6 +14,7 @@ import (
 
 	"github.com/godwit-email/godwit/core/ai"
 	"github.com/godwit-email/godwit/core/ai/mask"
+	"github.com/godwit-email/godwit/core/internal/testllm"
 	"github.com/godwit-email/godwit/core/plugins"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -425,6 +426,25 @@ func TestTranslateDraftAudited(t *testing.T) {
 	require.NoError(t, err)
 	require.Len(t, rows.Values, 1)
 	assert.Equal(t, "draft", rows.Values[0][0])
+}
+
+// A plugin model ("plugin/p/m1") translating is a model run, not a translator
+// plugin: no translator row is audited for it.
+func TestTranslateDraftByPluginModelNotAuditedAsTranslator(t *testing.T) {
+	e := newAssistEnv(t)
+	srv, host := modelServer(t, e.s, "openai")
+	startModelPlugin(t, e.s, "p", host, httpModelPlugin("openai-completions", host))
+	st, err := e.s.GetSettings(t.Context())
+	require.NoError(t, err)
+	st.DefaultModel = "plugin/p/m1"
+	_, err = e.s.SetSettings(t.Context(), st)
+	require.NoError(t, err)
+	srv.Script(testllm.Turn{Text: []string{"<p>Bonjour</p>"}})
+	d := e.replyDraft(t, `<p>Hi</p>`)
+	translateDraft(t, e, d, SkillOptions{TargetLanguage: "fr"})
+	rows, err := e.s.db.Query(t.Context(), "SELECT tool FROM audit_log WHERE tool LIKE '%/translate'")
+	require.NoError(t, err)
+	assert.Empty(t, rows.Values)
 }
 
 func TestTranslateDraftHTMLKeepsImagesAndCode(t *testing.T) {
