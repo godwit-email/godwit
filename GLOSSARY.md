@@ -147,3 +147,7 @@ _Avoid_: 脱敏（指这件事时）
 **本机 API**：
 拥有者在 `godwit.sock` 上提供的 JSON-RPC，按 `full` 或 `mcp` 角色限权。
 _Avoid_: 本地服务器、daemon
+
+**错误 code**：
+一个错误在本机 API 上稳定的名字（如 `stale_draft`），改名就是破坏 API。界面文案的 key 默认是 `error.<code>`，只在 `rpcbind` 的错误表里登记一次。
+_Avoid_: wire code、错误码（指数字的 JSON-RPC code 时）
