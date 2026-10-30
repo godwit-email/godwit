@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/godwit-email/godwit/core"
+	"github.com/godwit-email/godwit/core/ai/mask"
 	"github.com/godwit-email/godwit/core/ai/mask/guard"
 	"github.com/godwit-email/godwit/core/coretest"
 	"github.com/godwit-email/godwit/internal/i18n"
@@ -122,7 +123,18 @@ func TestMaskModelSwitch(t *testing.T) {
 		t.Fatal("turned on without its files")
 	}
 
-	dir := filepath.Join(h.env.DataDir, "cache", "guard", guard.Revision) // as a download leaves them
+	installMaskModel(t, h.env.DataDir)
+	h.openSettings("general")
+	h.masking()
+	h.see(i18n.T("settings.masking.model.help"))
+	h.click(i18n.T("settings.masking.model"))
+	h.until("on, with names", func() bool { st := h.app.settings; return st.MaskModel && st.MaskCategories.Names.On })
+}
+
+// installMaskModel puts 识别模型's files in dataDir as a download leaves them.
+func installMaskModel(t *testing.T, dataDir string) {
+	t.Helper()
+	dir := filepath.Join(dataDir, "cache", "guard", guard.Revision)
 	if err := os.MkdirAll(dir, 0o700); err != nil {
 		t.Fatal(err)
 	}
@@ -131,11 +143,36 @@ func TestMaskModelSwitch(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	h.openSettings("general")
-	h.masking()
-	h.see(i18n.T("settings.masking.model.help"))
-	h.click(i18n.T("settings.masking.model"))
-	h.until("on, with names", func() bool { st := h.app.settings; return st.MaskModel && st.MaskCategories.Names.On })
+}
+
+// backendModel is a 识别模型 that finds nothing and says what reads it.
+type backendModel struct{ backend core.MaskModelBackend }
+
+func (backendModel) Recognize(string) ([]mask.Recognized, error) { return nil, nil }
+
+func (b backendModel) Backend() (core.MaskModelBackend, error) { return b.backend, nil }
+
+// Once on, 识别模型's row says what reads it: CoreML and its device, or
+// the CPU, and why not CoreML where it says.
+func TestMaskModelSaysWhatReadsIt(t *testing.T) {
+	for backend, want := range map[core.MaskModelBackend]string{
+		{Device: "Neural Engine"}:                               "在 CoreML 上运行（Neural Engine）",
+		{NotCoreML: "CoreML failed: the Neural Engine is busy"}: "在 CPU 上运行，没有用 CoreML：CoreML failed: the Neural Engine is busy",
+		{}: "在 CPU 上运行。",
+	} {
+		t.Run(want, func(t *testing.T) {
+			h := newHarnessWith(t, []coretest.Option{coretest.WithRecognizer(backendModel{backend})},
+				func(e *coretest.Env) { e.AddAccount(t, "alice@example.com") })
+			h.until("initial load", func() bool { return h.app.loaded })
+			installMaskModel(t, h.env.DataDir)
+			h.masking()
+			h.until("its files seen", func() bool { return h.app.pages[PageSettings].(*settingsPage).maskModel })
+			h.click(i18n.T("settings.masking.model"))
+			h.until("on", func() bool { return h.app.settings.MaskModel })
+			h.advance(refreshEvery) // the page refreshes on settings.changed
+			h.see(want)
+		})
+	}
 }
 
 // A summary of mail a blocked category (拦截) holds is not asked: the

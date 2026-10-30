@@ -1230,6 +1230,23 @@
   "settings_masking_model": "Recognition model",
   "settings_masking_model_help": "A model that runs on this device, not a model service: it finds the names, phone numbers, email addresses, keys and card numbers the rules miss, each handled as its category says, and turns Names on with it. It makes mistakes, which the allowlist can fix; it reads Chinese and English only, and not the text in images.",
   "settings_masking_model_missing": "The recognition model's files are not on this device yet, so it can't be turned on.",
+  "settings_masking_model_coreml": "Runs on CoreML ({arg1}).",
+  "@settings_masking_model_coreml": {
+    "placeholders": {
+      "arg1": {
+        "type": "String"
+      }
+    }
+  },
+  "settings_masking_model_cpu": "Runs on the CPU.",
+  "settings_masking_model_cpu_why": "Runs on the CPU, not CoreML: {arg1}",
+  "@settings_masking_model_cpu_why": {
+    "placeholders": {
+      "arg1": {
+        "type": "String"
+      }
+    }
+  },
   "settings_masking_cat_secrets": "Keys",
   "settings_masking_cat_secrets_help": "API keys, tokens, private keys and passwords",
   "settings_masking_cat_ids": "ID and financial numbers",
