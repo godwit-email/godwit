@@ -28,8 +28,9 @@ const minScore = 0.8
 
 // modelKinds are the kinds of the model's labels that masking takes, as
 // magpie's: a date is nearly always a mail's own, a link the rules'
-// (LINK). Addresses and accounts wait for categories of their own.
-var modelKinds = map[string]string{"private_person": nameKind, "phone": "PHONE", "email": "EMAIL", "common_secret": "SECRET", "payment_card": "BANK_CARD"}
+// (LINK). An account is a user name or a bank account's number.
+var modelKinds = map[string]string{"private_person": nameKind, "phone": "PHONE", "email": "EMAIL", "common_secret": "SECRET", "payment_card": "BANK_CARD",
+	"private_address": "ADDRESS", "account": "ACCOUNT"}
 
 // modelSpans are what c's model finds in s, of the labels masking takes,
 // scored minScore or more, without the spaces and separators at their

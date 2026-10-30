@@ -65,8 +65,8 @@ func TestTheModelsLabelsAndScore(t *testing.T) {
 		{"10 月 3 日", "private_date", 0.99, "10 月 3 日"},
 		{"example.org/x", "url", 0.99, "example.org/x"},
 		{"10.0.0.8", "ip_address", 0.99, "10.0.0.8"},
-		{"上海市徐汇区漕溪北路 88 号", "private_address", 0.99, "上海市徐汇区漕溪北路 88 号"},
-		{"octocat", "account", 0.99, "octocat"},
+		{"上海市徐汇区漕溪北路 88 号", "private_address", 0.99, "<ADDRESS>"},
+		{"octocat", "account", 0.99, "<ACCOUNT>"},
 	} {
 		m := modelMasker(t, model{{c.v, c.label, c.score}})
 		out, err := m.Text("> " + c.v + " <")

@@ -109,6 +109,43 @@ func TestMaskingCategorySwitches(t *testing.T) {
 	h.see(i18n.T("settings.masking.action.mask"))
 }
 
+// 地址 and 账号 have rows of their own, on by default: 账号's switch turns
+// it off, and 地址's action can be set to 仅警告.
+func TestMaskingAddressAndAccountRows(t *testing.T) {
+	h, _ := withAccount(t)
+	h.masking()
+	for _, key := range []string{"settings.masking.cat.addresses", "settings.masking.cat.accounts"} {
+		for _, k := range []string{key, key + ".help"} {
+			if i18n.T(k) == k {
+				t.Fatalf("%s has no copy", k)
+			}
+			h.see(i18n.T(k))
+		}
+	}
+	if st := h.app.settings.MaskCategories; !st.Addresses.On || !st.Accounts.On {
+		t.Fatalf("not on by default: %+v", st)
+	}
+	save, _ := h.tt.Find(i18n.T("settings.masking.save"))
+	row := func(name string) float32 { // a row's middle
+		label, _ := h.tt.Find(i18n.T("settings.masking.cat." + name))
+		help, _ := h.tt.Find(i18n.T("settings.masking.cat." + name + ".help"))
+		return (label.Y + help.Y + help.H) / 2
+	}
+	h.tt.ClickAt(save.X+save.W-16, row("accounts"))
+	h.drain()
+	h.tt.Frame()
+	h.until("accounts off", func() bool { return !h.app.settings.MaskCategories.Accounts.On })
+
+	h.tt.ClickAt(save.X+save.W-120, row("addresses")) // its action, left of the switch
+	h.drain()
+	h.tt.Frame()
+	h.click(i18n.T("settings.masking.action.warn"))
+	h.until("addresses warned", func() bool { return h.app.settings.MaskCategories.Addresses.Action == core.MaskWarn })
+	if st := h.app.settings.MaskCategories; st.Names.Action != core.MaskMask || st.Accounts.Action != core.MaskMask {
+		t.Fatalf("another category changed: %+v", st)
+	}
+}
+
 // 识别模型 is off, and can't be turned on while its files are not here;
 // once they are, its switch turns it on, and names with it.
 func TestMaskModelSwitch(t *testing.T) {

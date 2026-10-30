@@ -162,7 +162,11 @@ type MaskCategory struct {
 }
 
 // MaskCategories are 脱敏's categories, as mask names them.
-type MaskCategories struct{ Secrets, IDs, Codes, Phones, Emails, Names MaskCategory }
+type MaskCategories struct {
+	Secrets, IDs, Codes, Phones, Emails, Names MaskCategory
+	// Addresses and Accounts only 识别模型 finds: off, they find nothing.
+	Addresses, Accounts MaskCategory
+}
 
 // All is each category by its mask name (mask.Secrets …), in the order the
 // settings show them, to read or change.
@@ -171,7 +175,8 @@ func (c *MaskCategories) All() iter.Seq2[string, *MaskCategory] {
 		for _, n := range []struct {
 			name string
 			c    *MaskCategory
-		}{{mask.Secrets, &c.Secrets}, {mask.IDs, &c.IDs}, {mask.Codes, &c.Codes}, {mask.Phones, &c.Phones}, {mask.Emails, &c.Emails}, {mask.Names, &c.Names}} {
+		}{{mask.Secrets, &c.Secrets}, {mask.IDs, &c.IDs}, {mask.Codes, &c.Codes}, {mask.Phones, &c.Phones}, {mask.Emails, &c.Emails}, {mask.Names, &c.Names},
+			{mask.Addresses, &c.Addresses}, {mask.Accounts, &c.Accounts}} {
 			if !yield(n.name, n.c) {
 				return
 			}

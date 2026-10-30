@@ -200,7 +200,7 @@ func TestMaskingCategoriesDefaults(t *testing.T) {
 		assert.Equal(t, MaskMask, c.Action, name)
 		n++
 	}
-	assert.Equal(t, 6, n)
+	assert.Equal(t, 8, n)
 }
 
 // The preview masks with the settings it is given and stores nothing: not
