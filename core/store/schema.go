@@ -493,7 +493,7 @@ var Migrations = [][]string{{
 	`CREATE INDEX attachments_message ON attachments(message_id)`,
 }, {
 	// What found a masking record's value (core.MaskRecord.Source): a rule,
-	// or 识别模型 (docs/adr/0028-local-model-for-masking.md). The records
+	// or 识别模型 (docs/adr/0028-recognition-model-for-masking.md). The records
 	// before were all the rules'.
 	`ALTER TABLE mask_log ADD COLUMN source TEXT NOT NULL DEFAULT 'rule'`,
 }}

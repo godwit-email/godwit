@@ -5,6 +5,7 @@ import (
 	"encoding/binary"
 	"encoding/json"
 	"fmt"
+	"github.com/godwit-email/godwit/core/ai/mask"
 	"math"
 	"os"
 	"path/filepath"
@@ -113,7 +114,7 @@ func TestFP32(t *testing.T) {
 		for _, min := range []float64{.6, .7, .75, .8, .85, .9} {
 			var both, onlyA, onlyF int
 			for i := range texts {
-				a, f := at08(all[name][i], min), at08(all["fp32"][i], MinScore)
+				a, f := at08(all[name][i], min), at08(all["fp32"][i], mask.MinScore)
 				for k := range a {
 					if f[k] {
 						both++
@@ -128,10 +129,10 @@ func TestFP32(t *testing.T) {
 				}
 			}
 			t.Logf("%-6s at %.2f vs fp32 at %.2f: %d the same, %d only %s's, %d only fp32's",
-				name, min, MinScore, both, onlyA, name, onlyF)
+				name, min, mask.MinScore, both, onlyA, name, onlyF)
 		}
 	}
-	// the eval's values, as each masks them at MinScore
+	// the eval's values, as each masks them at mask.MinScore
 	for _, name := range []string{"fp32", "Go", "CoreML"} {
 		if all[name] == nil {
 			continue
@@ -141,7 +142,7 @@ func TestFP32(t *testing.T) {
 		for i, c := range cases {
 			var spans []Span
 			for _, s := range all[name][i] {
-				if kept[s.Label] && s.Score >= MinScore {
+				if kept[s.Label] && s.Score >= mask.MinScore {
 					spans = append(spans, s)
 				}
 			}

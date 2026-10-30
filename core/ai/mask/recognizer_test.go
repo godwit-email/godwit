@@ -36,7 +36,7 @@ func (md model) Recognize(text string) ([]mask.Recognized, error) {
 // modelMasker masks with md, names on.
 func modelMasker(t *testing.T, md model) *mask.Masker {
 	m := mask.New(key)
-	require.NoError(t, m.Configure(mask.Config{Model: md}))
+	require.NoError(t, m.Configure(mask.Config{Recognizer: md}))
 	return m
 }
 
@@ -105,7 +105,7 @@ func TestARuleWinsOverTheModel(t *testing.T) {
 	const card = "4111 1111 1111 1111"
 	m := mask.New(key)
 	require.NoError(t, m.Configure(mask.Config{Words: []string{"Falcon"}, Actions: map[string]string{mask.Phones: mask.Block},
-		Model: model{{"到 ann.lee@example.com", "email", 0.99}, {"1111 1111 转 8", "phone", 0.99}, {"Falcon Lee", "private_person", 0.99}}}))
+		Recognizer: model{{"到 ann.lee@example.com", "email", 0.99}, {"1111 1111 转 8", "phone", 0.99}, {"Falcon Lee", "private_person", 0.99}}}))
 	out, err := m.Text("写信到 ann.lee@example.com，卡号 " + card + " 转 8，Falcon Lee 收")
 	require.NoError(t, err)
 	assert.Equal(t, "写信到 <EMAIL>@example.com，卡号 <BANK_CARD> 转 8，<TERM> Lee 收", shown(out))
@@ -116,7 +116,7 @@ func TestARuleWinsOverTheModel(t *testing.T) {
 func TestTheModelReadsWhatTheRulesDo(t *testing.T) {
 	m := mask.New(key)
 	require.NoError(t, m.Configure(mask.Config{Off: []string{mask.Phones}, Allow: []string{"bob stone"},
-		Model: model{{"Ann Lee", "private_person", 0.9}, {"Bob Stone", "private_person", 0.9}, {"415 555 0132", "phone", 0.9}}}))
+		Recognizer: model{{"Ann Lee", "private_person", 0.9}, {"Bob Stone", "private_person", 0.9}, {"415 555 0132", "phone", 0.9}}}))
 	out, err := m.Body(`{"model":"m","messages":[{"role":"user","content":"Ann Lee, Bob Stone: 415 555 0132"},` +
 		`{"role":"tool","tool_call_id":"c1","content":"{\"from\":\"Ann Lee\"}"}],` +
 		`"tools":[{"type":"function","function":{"name":"mail","description":"Mail as Ann Lee","parameters":{}}}]}`)
@@ -138,13 +138,13 @@ func TestTheModelsValuesAreKnownWhileItIsOn(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, "<NAME>, <NAME>, <NAME>, <ACCOUNT>, <NAME>", shown(first))
 
-	require.NoError(t, m.Configure(mask.Config{Model: model{}}))
+	require.NoError(t, m.Configure(mask.Config{Recognizer: model{}}))
 	out, err := m.Text("陈晓雯好, Sarah Leeds, Sarah Lee: Ann, octocat, ann.lee@example.com")
 	require.NoError(t, err)
 	assert.Equal(t, "<NAME>好, Sarah Leeds, <NAME>: Ann, octocat, <EMAIL>@example.com", shown(out))
 	assert.Equal(t, strings.SplitN(first, ",", 2)[0], strings.SplitN(out, "好", 2)[0], "the same placeholder")
 
-	require.NoError(t, m.Configure(mask.Config{Model: model{}, Allow: []string{"sarah lee"}}))
+	require.NoError(t, m.Configure(mask.Config{Recognizer: model{}, Allow: []string{"sarah lee"}}))
 	out, err = m.Text("Sarah Lee")
 	require.NoError(t, err)
 	assert.Equal(t, "Sarah Lee", out)
@@ -160,7 +160,7 @@ func TestTheModelsValuesAreKnownWhileItIsOn(t *testing.T) {
 func TestTheModelsValuesAreLearned(t *testing.T) {
 	m := modelMasker(t, model{{"Sarah Lee", "private_person", 0.9}})
 	m.Learn(`{"messages":[{"role":"user","content":"Sarah Lee"}]}`)
-	require.NoError(t, m.Configure(mask.Config{Model: model{}}))
+	require.NoError(t, m.Configure(mask.Config{Recognizer: model{}}))
 	out, err := m.Text("Hi Sarah Lee")
 	require.NoError(t, err)
 	assert.Equal(t, "Hi <NAME>", shown(out))
@@ -169,7 +169,7 @@ func TestTheModelsValuesAreLearned(t *testing.T) {
 // A model that fails fails the text.
 func TestAFailingModelFailsTheText(t *testing.T) {
 	m := mask.New(key)
-	require.NoError(t, m.Configure(mask.Config{Model: failing{}}))
+	require.NoError(t, m.Configure(mask.Config{Recognizer: failing{}}))
 	_, err := m.Text("陈晓雯下午到。")
 	assert.ErrorContains(t, err, "out of memory")
 }

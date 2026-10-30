@@ -226,7 +226,7 @@ func TestSettings(t *testing.T) {
 			DefaultModel: "svc/big", SmallModel: "svc/small", JudgeService: "judge", JudgeThreshold: 0.85, Translator: "plugin/dlx", LocalAPI: true, SidebarWidth: 320, ListWidth: 400, SignatureDelimiter: true,
 			MaskCategories: core.MaskCategories{Names: core.MaskCategory{On: true, Action: core.MaskWarn}},
 			MaskWords:      []string{"Falcon"}, MaskWordsCase: true, MaskWordsWhole: true,
-			MaskRules: []mask.Rule{{Kind: "EMPLOYEE_ID", Regex: `E\d{6}`}}, MaskAllow: []string{"GitHub"}, MaskModel: true}
+			MaskRules: []mask.Rule{{Kind: "EMPLOYEE_ID", Regex: `E\d{6}`}}, MaskAllow: []string{"GitHub"}, RecognitionModel: true}
 		// 识别模型 turns on only with its files here, as a download leaves them
 		models := filepath.Join(env.DataDir, "cache", "guard", guard.Revision)
 		require.NoError(t, os.MkdirAll(models, 0o700))

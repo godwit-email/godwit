@@ -26,8 +26,8 @@ const (
 
 // What found a masking record's value (MaskRecord.Source): a rule, or 识别模型.
 const (
-	MaskSourceRule  = mask.SourceRule
-	MaskSourceModel = mask.SourceModel
+	MaskSourceRule       = mask.SourceRule
+	MaskSourceRecognizer = mask.SourceRecognizer
 )
 
 // The features that send to a model service, as the masking log names
@@ -51,7 +51,7 @@ const maskLogDays = 30
 // records kept from before requests were told apart) and feature sent it,
 // its kind and category ("": the user's own), its first character and
 // length, never the value; what was done with it (MaskMask, MaskWarn or
-// MaskBlock); and what found it (MaskSourceRule or MaskSourceModel). A value
+// MaskBlock); and what found it (MaskSourceRule or MaskSourceRecognizer). A value
 // of maskShortLen characters or fewer keeps no first character: of a
 // two-character name it would be half.
 type MaskRecord struct {
@@ -249,25 +249,25 @@ func (s *Service) masker() (*mask.Masker, error) {
 }
 
 // maskingChanged masks as st says from the next request on, once the
-// masker exists; 识别模型 turned off lets go of its model.
+// masker exists; 识别模型 turned off lets go of it.
 func (s *Service) maskingChanged(st Settings) {
 	s.maskMu.Lock()
 	defer s.maskMu.Unlock()
-	if !st.Masking || !st.MaskModel {
+	if !st.recognizes() {
 		s.guard = nil
-		s.maskModelErr.Store(nil)
+		s.recognitionModelErr.Store(nil)
 	}
 	if s.mask != nil {
 		_ = st.setMasker(s.mask, s.recognizer(st)) // SetSettings checked it; a failure keeps the last
 	}
 }
 
-// setMasker masks with m as st says, with model as 识别模型: a config m
+// setMasker masks with m as st says, with r as 识别模型: a config m
 // refuses leaves its last.
-func (st Settings) setMasker(m *mask.Masker, model mask.Recognizer) error {
+func (st Settings) setMasker(m *mask.Masker, r mask.Recognizer) error {
 	m.SetOn(st.Masking)
 	c := st.maskConfig()
-	c.Model = model
+	c.Recognizer = r
 	return m.Configure(c)
 }
 
@@ -276,10 +276,10 @@ func (st Settings) setMasker(m *mask.Masker, model mask.Recognizer) error {
 // the Service's masker alone: its placeholders are a throwaway key's.
 func (s *Service) PreviewMasking(ctx context.Context, st Settings, text string) (string, error) {
 	s.maskMu.Lock()
-	model := s.recognizer(st)
+	r := s.recognizer(st)
 	s.maskMu.Unlock()
 	m := mask.New([]byte(rand.Text()))
-	if err := st.setMasker(m, model); err != nil {
+	if err := st.setMasker(m, r); err != nil {
 		return "", err
 	}
 	if !st.Masking {

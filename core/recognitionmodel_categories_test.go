@@ -24,8 +24,8 @@ func addressesAndAccounts() *fakeModel {
 // placeholders of their own.
 func TestWitMasksTheAddressesAndAccountsTheModelFinds(t *testing.T) {
 	e := newApprovalEnv(t)
-	installMaskModel(t, e.s, addressesAndAccounts())
-	setMaskModel(t, e.s, true)
+	installRecognitionModel(t, e.s, addressesAndAccounts())
+	setRecognitionModel(t, e.s, true)
 	conv := e.newConv(t, "ask", 0)
 	e.srv.Script(testllm.Turn{Text: []string{"ok"}})
 	e.start(t, conv, "寄到"+modelAddr+"，GitHub 上是 "+modelUser)
@@ -39,8 +39,8 @@ func TestWitMasksTheAddressesAndAccountsTheModelFinds(t *testing.T) {
 // as it is, uncounted.
 func TestAddressesWarnAndAccountsTurnOff(t *testing.T) {
 	e := newApprovalEnv(t)
-	installMaskModel(t, e.s, addressesAndAccounts())
-	setMaskModel(t, e.s, true)
+	installRecognitionModel(t, e.s, addressesAndAccounts())
+	setRecognitionModel(t, e.s, true)
 	st, err := e.s.GetSettings(t.Context())
 	require.NoError(t, err)
 	st.MaskCategories.Addresses.Action = MaskWarn
@@ -68,8 +68,8 @@ func TestAddressesWarnAndAccountsTurnOff(t *testing.T) {
 // mail the labeler then skips, is refused the same way.
 func TestABlockedAccountIsNotSent(t *testing.T) {
 	e := newApprovalEnv(t)
-	installMaskModel(t, e.s, addressesAndAccounts())
-	setMaskModel(t, e.s, true)
+	installRecognitionModel(t, e.s, addressesAndAccounts())
+	setRecognitionModel(t, e.s, true)
 	setMaskAction(t, e.s, map[string]string{mask.Accounts: MaskBlock})
 	conv := e.newConv(t, "ask", 0)
 	evs := e.start(t, conv, "GitHub 上是 "+modelUser)
@@ -80,8 +80,8 @@ func TestABlockedAccountIsNotSent(t *testing.T) {
 	assert.Empty(t, e.srv.Requests())
 
 	s := newMailContextService(t)
-	installMaskModel(t, s, addressesAndAccounts())
-	setMaskModel(t, s, true)
+	installRecognitionModel(t, s, addressesAndAccounts())
+	setRecognitionModel(t, s, true)
 	setMaskAction(t, s, map[string]string{mask.Accounts: MaskBlock})
 	record := usePluginJudge(t, s, nil, nil)
 	j, _, _, err := s.resolveJudge(t.Context())
@@ -106,12 +106,12 @@ func TestAddressesAndAccountsAreOnAfterAnUpgrade(t *testing.T) {
 	assert.Equal(t, MaskCategory{On: true, Action: MaskBlock}, st.MaskCategories.IDs, "the rest as stored")
 	assert.False(t, st.MaskCategories.Codes.On)
 
-	installMaskModel(t, e.s, addressesAndAccounts())
-	setMaskModel(t, e.s, true)
+	installRecognitionModel(t, e.s, addressesAndAccounts())
+	setRecognitionModel(t, e.s, true)
 	out, err := e.s.PreviewMasking(t.Context(), st, modelAddr+" "+modelUser)
 	require.NoError(t, err)
 	assert.Equal(t, modelAddr+" "+modelUser, out, "the settings given have the model off")
-	st.MaskModel = true
+	st.RecognitionModel = true
 	out, err = e.s.PreviewMasking(t.Context(), st, modelAddr+" "+modelUser)
 	require.NoError(t, err)
 	assert.Regexp(t, `^\{\{ADDRESS_[a-z2-7]{12}\}\} \{\{ACCOUNT_[a-z2-7]{12}\}\}$`, out)

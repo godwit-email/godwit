@@ -80,7 +80,7 @@ func TestEval(t *testing.T) {
 	cases := evalCases(t)
 	rules := mask.New([]byte("eval"))
 	type score struct{ hit, miss, wrong int }
-	for _, min := range []float64{Floor, MinScore} {
+	for _, min := range []float64{Floor, mask.MinScore} {
 		var r, md, both score
 		byKind := map[string]*[3]int{} // rules, model, both
 		var misses, wrongs []string
@@ -196,7 +196,7 @@ func TestMail(t *testing.T) {
 		var out [][]Span
 		for _, msg := range msgs {
 			t1 := time.Now()
-			out = append(out, modelSpans(m, msg.Text, MinScore))
+			out = append(out, modelSpans(m, msg.Text, mask.MinScore))
 			d := time.Since(t1)
 			total += d
 			ms = append(ms, int(d.Milliseconds()))

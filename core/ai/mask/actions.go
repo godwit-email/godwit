@@ -50,10 +50,10 @@ func (e *BlockedError) with(cats ...string) *BlockedError {
 }
 
 // What found a value (Hit.Source): a rule, the user's or a built-in one, or
-// a value known before; or 识别模型 (Config.Model).
+// a value known before; or 识别模型 (Config.Recognizer).
 const (
-	SourceRule  = "rule"
-	SourceModel = "model"
+	SourceRule       = "rule"
+	SourceRecognizer = "recognizer"
 )
 
 // Hit is a value masking found in a request, as it is recorded (脱敏记录):
@@ -70,8 +70,8 @@ type Hit struct {
 func (m *Masker) hit(sp span, v, action string) Hit {
 	r, _ := utf8.DecodeRuneInString(v)
 	source := SourceRule
-	if sp.model {
-		source = SourceModel
+	if sp.recognized {
+		source = SourceRecognizer
 	}
 	return Hit{Kind: sp.kind, Category: categories[sp.kind], First: string(r), Len: utf8.RuneCountInString(v), Action: action, Source: source, hash: m.hash(sp.kind, v)}
 }

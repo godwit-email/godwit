@@ -151,66 +151,66 @@ func TestMaskingAddressAndAccountRows(t *testing.T) {
 	}
 }
 
-// maskModelHarness is a harness whose Service downloads 识别模型's files
+// recognitionModelHarness is a harness whose Service downloads 识别模型's files
 // from serve.
-func maskModelHarness(t *testing.T, serve http.HandlerFunc) *harness {
+func recognitionModelHarness(t *testing.T, serve http.HandlerFunc) *harness {
 	t.Helper()
 	srv := httptest.NewServer(serve)
 	t.Cleanup(srv.Close)
-	h := newHarnessWith(t, []coretest.Option{coretest.WithMaskModelSources(srv.URL + "/")}, func(e *coretest.Env) { e.AddAccount(t, "alice@example.com") })
+	h := newHarnessWith(t, []coretest.Option{coretest.WithRecognitionModelSources(srv.URL + "/")}, func(e *coretest.Env) { e.AddAccount(t, "alice@example.com") })
 	h.until("initial load", func() bool { return h.app.loaded })
 	return h
 }
 
 // Turned on before its files are here, 识别模型 downloads them, saying how
 // far it has come; canceled, it is off.
-func TestMaskModelDownloadShowsProgressAndCancels(t *testing.T) {
-	h := maskModelHarness(t, func(w http.ResponseWriter, r *http.Request) {
+func TestRecognitionModelDownloadShowsProgressAndCancels(t *testing.T) {
+	h := recognitionModelHarness(t, func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Length", "330781")
 		w.Write(make([]byte, 1000))
 		w.(http.Flusher).Flush()
 		<-r.Context().Done()
 	})
 	h.masking()
-	h.see(i18n.T("settings.masking.model.missing"))
-	h.click(i18n.T("settings.masking.model"))
-	h.see(i18n.Tf("settings.masking.model.downloading", 0, formatBytes(330781+37124608+1502881)))
-	if h.app.settings.MaskModel {
+	h.see(i18n.T("settings.masking.recognition_model.missing"))
+	h.click(i18n.T("settings.masking.recognition_model"))
+	h.see(i18n.Tf("settings.masking.recognition_model.downloading", 0, formatBytes(330781+37124608+1502881)))
+	if h.app.settings.RecognitionModel {
 		t.Fatal("on before its files are here")
 	}
-	h.click(i18n.T("settings.masking.model.cancel"))
+	h.click(i18n.T("settings.masking.recognition_model.cancel"))
 	p := h.app.pages[PageSettings].(*settingsPage)
-	h.until("off again", func() bool { return p.maskDL == nil && !h.app.settings.MaskModel })
-	h.see(i18n.T("settings.masking.model.missing"))
+	h.until("off again", func() bool { return p.recognition.download == nil && !h.app.settings.RecognitionModel })
+	h.see(i18n.T("settings.masking.recognition_model.missing"))
 }
 
 // A download that fails leaves 识别模型 off, and says why.
-func TestMaskModelDownloadFailureSaysWhy(t *testing.T) {
-	h := maskModelHarness(t, func(w http.ResponseWriter, r *http.Request) {
+func TestRecognitionModelDownloadFailureSaysWhy(t *testing.T) {
+	h := recognitionModelHarness(t, func(w http.ResponseWriter, r *http.Request) {
 		w.Write(make([]byte, 330781)) // model_int8.onnx's size, not its contents
 	})
 	h.masking()
-	h.click(i18n.T("settings.masking.model"))
-	h.see(i18n.Tf("settings.masking.model.failed", i18n.T("error.mask_model_mismatch")))
-	if h.app.settings.MaskModel {
+	h.click(i18n.T("settings.masking.recognition_model"))
+	h.see(i18n.Tf("settings.masking.recognition_model.failed", i18n.T("error.recognition_model_mismatch")))
+	if h.app.settings.RecognitionModel {
 		t.Fatal("on with a file that does not match")
 	}
 }
 
 // Once 识别模型's files are here, its switch turns it on at once, and
 // names with it.
-func TestMaskModelSwitch(t *testing.T) {
+func TestRecognitionModelSwitch(t *testing.T) {
 	h, _ := withAccount(t)
-	installMaskModel(t, h.env.DataDir)
+	installRecognitionModel(t, h.env.DataDir)
 	h.openSettings("general")
 	h.masking()
-	h.see(i18n.T("settings.masking.model.help"))
-	h.click(i18n.T("settings.masking.model"))
-	h.until("on, with names", func() bool { st := h.app.settings; return st.MaskModel && st.MaskCategories.Names.On })
+	h.see(i18n.T("settings.masking.recognition_model.help"))
+	h.click(i18n.T("settings.masking.recognition_model"))
+	h.until("on, with names", func() bool { st := h.app.settings; return st.RecognitionModel && st.MaskCategories.Names.On })
 }
 
-// installMaskModel puts 识别模型's files in dataDir as a download leaves them.
-func installMaskModel(t *testing.T, dataDir string) {
+// installRecognitionModel puts 识别模型's files in dataDir as a download leaves them.
+func installRecognitionModel(t *testing.T, dataDir string) {
 	t.Helper()
 	dir := filepath.Join(dataDir, "cache", "guard", guard.Revision)
 	if err := os.MkdirAll(dir, 0o700); err != nil {
@@ -224,16 +224,16 @@ func installMaskModel(t *testing.T, dataDir string) {
 }
 
 // backendModel is a 识别模型 that finds nothing and says what reads it.
-type backendModel struct{ backend core.MaskModelBackend }
+type backendModel struct{ backend core.RecognitionModelBackend }
 
 func (backendModel) Recognize(string) ([]mask.Recognized, error) { return nil, nil }
 
-func (b backendModel) Backend() (core.MaskModelBackend, error) { return b.backend, nil }
+func (b backendModel) Backend() (core.RecognitionModelBackend, error) { return b.backend, nil }
 
 // Once on, 识别模型's row says what reads it: CoreML and its device, or
 // the CPU, and why not CoreML where it says.
-func TestMaskModelSaysWhatReadsIt(t *testing.T) {
-	for backend, want := range map[core.MaskModelBackend]string{
+func TestRecognitionModelSaysWhatReadsIt(t *testing.T) {
+	for backend, want := range map[core.RecognitionModelBackend]string{
 		{Device: "Neural Engine"}:                               "在 CoreML 上运行（Neural Engine）",
 		{NotCoreML: "CoreML failed: the Neural Engine is busy"}: "在 CPU 上运行，没有用 CoreML：CoreML failed: the Neural Engine is busy",
 		{}: "在 CPU 上运行。",
@@ -242,11 +242,11 @@ func TestMaskModelSaysWhatReadsIt(t *testing.T) {
 			h := newHarnessWith(t, []coretest.Option{coretest.WithRecognizer(backendModel{backend})},
 				func(e *coretest.Env) { e.AddAccount(t, "alice@example.com") })
 			h.until("initial load", func() bool { return h.app.loaded })
-			installMaskModel(t, h.env.DataDir)
+			installRecognitionModel(t, h.env.DataDir)
 			h.masking()
-			h.until("its files seen", func() bool { return h.app.pages[PageSettings].(*settingsPage).maskModel })
-			h.click(i18n.T("settings.masking.model"))
-			h.until("on", func() bool { return h.app.settings.MaskModel })
+			h.until("its files seen", func() bool { return h.app.pages[PageSettings].(*settingsPage).recognition.installed })
+			h.click(i18n.T("settings.masking.recognition_model"))
+			h.until("on", func() bool { return h.app.settings.RecognitionModel })
 			h.advance(refreshEvery) // the page refreshes on settings.changed
 			h.see(want)
 		})
@@ -265,43 +265,43 @@ func (f *failingModel) Recognize(string) ([]mask.Recognized, error) {
 
 // When 识别模型 fails, its row says why, and that the rules alone mask
 // meanwhile; once it reads again, that is gone.
-func TestMaskModelRowSaysWhyItFailed(t *testing.T) {
+func TestRecognitionModelRowSaysWhyItFailed(t *testing.T) {
 	md := &failingModel{}
 	err := errors.New("the model's session was closed")
 	md.err.Store(&err)
 	h := newHarnessWith(t, []coretest.Option{coretest.WithRecognizer(md)}, func(e *coretest.Env) { e.AddAccount(t, "alice@example.com") })
 	h.until("initial load", func() bool { return h.app.loaded })
-	installMaskModel(t, h.env.DataDir)
+	installRecognitionModel(t, h.env.DataDir)
 	h.masking()
-	h.until("its files seen", func() bool { return h.app.pages[PageSettings].(*settingsPage).maskModel })
-	h.click(i18n.T("settings.masking.model"))
-	h.until("on", func() bool { return h.app.settings.MaskModel })
+	h.until("its files seen", func() bool { return h.app.pages[PageSettings].(*settingsPage).recognition.installed })
+	h.click(i18n.T("settings.masking.recognition_model"))
+	h.until("on", func() bool { return h.app.settings.RecognitionModel })
 	r, _ := h.tt.Find(i18n.T("settings.masking.preview")) // the preview reads with it
 	h.tt.ClickAt(r.X+r.W/2, r.Y+r.H+40)
 	h.typeText("Sarah Thompson")
-	failed := i18n.Tf("settings.masking.model.error", humanize(err))
+	failed := i18n.Tf("settings.masking.recognition_model.error", humanize(err))
 	h.see(failed)
 
 	md.err.Store(nil)
 	h.typeText(" again")
 	h.until("the reason gone", func() bool { return !h.tt.HasText(failed) })
-	h.see(i18n.T("settings.masking.model.help"))
+	h.see(i18n.T("settings.masking.recognition_model.help"))
 }
 
 // When 识别模型 fails for want of its files, its row says they are coming
 // down again.
-func TestMaskModelRowSaysItsFilesAreComingDownAgain(t *testing.T) {
+func TestRecognitionModelRowSaysItsFilesAreComingDownAgain(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { <-r.Context().Done() }))
 	t.Cleanup(srv.Close)
 	md := &failingModel{}
-	h := newHarnessWith(t, []coretest.Option{coretest.WithRecognizer(md), coretest.WithMaskModelSources(srv.URL + "/")},
+	h := newHarnessWith(t, []coretest.Option{coretest.WithRecognizer(md), coretest.WithRecognitionModelSources(srv.URL + "/")},
 		func(e *coretest.Env) { e.AddAccount(t, "alice@example.com") })
 	h.until("initial load", func() bool { return h.app.loaded })
-	installMaskModel(t, h.env.DataDir)
+	installRecognitionModel(t, h.env.DataDir)
 	h.masking()
-	h.until("its files seen", func() bool { return h.app.pages[PageSettings].(*settingsPage).maskModel })
-	h.click(i18n.T("settings.masking.model"))
-	h.until("on", func() bool { return h.app.settings.MaskModel })
+	h.until("its files seen", func() bool { return h.app.pages[PageSettings].(*settingsPage).recognition.installed })
+	h.click(i18n.T("settings.masking.recognition_model"))
+	h.until("on", func() bool { return h.app.settings.RecognitionModel })
 	if err := os.RemoveAll(filepath.Join(h.env.DataDir, "cache", "guard")); err != nil {
 		t.Fatal(err)
 	}
@@ -310,7 +310,7 @@ func TestMaskModelRowSaysItsFilesAreComingDownAgain(t *testing.T) {
 	r, _ := h.tt.Find(i18n.T("settings.masking.preview"))
 	h.tt.ClickAt(r.X+r.W/2, r.Y+r.H+40)
 	h.typeText("Sarah Thompson")
-	h.see(i18n.T("settings.masking.model.redownloading"))
+	h.see(i18n.T("settings.masking.recognition_model.redownloading"))
 }
 
 // A summary of mail a blocked category (拦截) holds is not asked: the
@@ -382,7 +382,7 @@ func TestMaskingLogShowsWhatFoundEachValue(t *testing.T) {
 	now := h.app.clock.Now()
 	h.post(func() {
 		p.maskLog = []core.MaskRecord{
-			{At: now, Request: 1, Feature: "wit", Kind: "NAME", Category: "names", First: "陈", Len: 3, Action: core.MaskMask, Source: core.MaskSourceModel},
+			{At: now, Request: 1, Feature: "wit", Kind: "NAME", Category: "names", First: "陈", Len: 3, Action: core.MaskMask, Source: core.MaskSourceRecognizer},
 			{At: now, Request: 1, Feature: "wit", Kind: "BANK_CARD", Category: "ids", First: "4", Len: 19, Action: core.MaskMask, Source: core.MaskSourceRule},
 		}
 	})

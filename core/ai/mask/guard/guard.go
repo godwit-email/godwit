@@ -79,12 +79,9 @@ type Span struct {
 	Score      float64
 }
 
-// MinScore is the publisher's default threshold, under which masking
-// drops a span unless the user set another (internal/masking).
-const MinScore = 0.8
-
-// Floor is the probability under which Find drops a span: the lowest
-// threshold a user can set.
+// Floor is the probability under which Find drops a span: well under
+// masking's threshold (mask.MinScore), so an evaluation sees the spans
+// near it.
 const Floor = 0.5
 
 // window is how many tokens the model reads at once, besides <s> and
@@ -150,9 +147,8 @@ func (m *Model) coreML(ids []int) ([]float32, bool) {
 
 // Cores is how many cores the model reads on at most: half of them, and
 // never more than 4. It reads beside the agents and everything else on
-// the computer, and on all of them a long history unread kept every core
-// busy for as long as requests came (xinvxueyuan and shensmart on Discord,
-// 10-28: a 32-core Linux box spent 45 CPU seconds on each request).
+// the computer: on all of them, a long history kept every core busy for
+// as long as requests came.
 func Cores() int { return max(1, min(4, runtime.GOMAXPROCS(0)/2)) }
 
 // cores are the Cores() the model reads on, shared by every Find at once:

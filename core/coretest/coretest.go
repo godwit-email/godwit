@@ -77,18 +77,20 @@ type mailServers struct {
 }
 
 type config struct {
-	autoSync  bool
-	registry  *core.RegistrySource
-	sys       core.SystemTranslator
-	confirm   bool
-	unsub     *http.Client
-	model     mask.Recognizer
-	maskModel []string
+	autoSync         bool
+	registry         *core.RegistrySource
+	sys              core.SystemTranslator
+	confirm          bool
+	unsub            *http.Client
+	model            mask.Recognizer
+	recognitionModel []string
 }
 
-// WithMaskModelSources has the Service download 识别模型's files from urls
-// (core.Options.MaskModelSources), as httptest servers'.
-func WithMaskModelSources(urls ...string) Option { return func(c *config) { c.maskModel = urls } }
+// WithRecognitionModelSources has the Service download 识别模型's files from urls
+// (core.Options.RecognitionModelSources), as httptest servers'.
+func WithRecognitionModelSources(urls ...string) Option {
+	return func(c *config) { c.recognitionModel = urls }
+}
 
 type Option func(*config)
 
@@ -126,7 +128,7 @@ func New(t *testing.T, opts ...Option) *Env {
 	imageClient.Transport.(*imagefetch.Transport).DialContext = netOptions("").Dial
 	svc, err := core.New(context.Background(), core.Options{DataDir: dir, AutoSync: cfg.autoSync, SystemLanguage: "zh-CN", ImageClient: imageClient,
 		Registry: cfg.registry, AppVersion: "1.2.0", SystemTranslator: cfg.sys, ConfirmWindow: cfg.confirm, UnsubscribeClient: cfg.unsub, Recognizer: cfg.model,
-		MaskModelSources: cfg.maskModel, MaskModelClient: &http.Client{Transport: imageClient.Transport}})
+		RecognitionModelSources: cfg.recognitionModel, RecognitionModelClient: &http.Client{Transport: imageClient.Transport}})
 	if err != nil {
 		t.Fatal(err)
 	}

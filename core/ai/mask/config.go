@@ -13,8 +13,8 @@ import (
 )
 
 // The categories of values, as the user turns each on or off (设置 › AI ›
-// 隐私脱敏). Every kind a built-in rule or the recognition model finds is
-// in one (categories); only the model finds addresses and accounts.
+// 隐私脱敏). Every kind a built-in rule or 识别模型 finds is
+// in one (categories); only 识别模型 finds addresses and accounts.
 const (
 	Secrets   = "secrets"   // 密钥
 	IDs       = "ids"       // 证件与金融号码
@@ -54,7 +54,7 @@ type Rule struct{ Kind, Regex string }
 // with each category's values (Actions: Warn or Block, else Mask); their
 // Words, matched in any case unless WordsCase, inside other words unless
 // WordsWhole; their Rules; the values never masked (Allow, in any case);
-// and the recognition model, if on (Model).
+// and 识别模型, if on (Recognizer).
 type Config struct {
 	Off                   []string
 	Actions               map[string]string
@@ -62,7 +62,7 @@ type Config struct {
 	WordsCase, WordsWhole bool
 	Rules                 []Rule
 	Allow                 []string
-	Model                 Recognizer
+	Recognizer            Recognizer
 }
 
 // RuleError says why the user's rule at Index can't be used.
@@ -93,11 +93,11 @@ var kindRe = regexp.MustCompile(`^[A-Z][A-Z0-9_]{0,23}$`)
 
 // compiled is a Config as find runs it.
 type compiled struct {
-	off     map[string]bool
-	actions map[string]string // by category; the user's own kinds are always masked
-	own     []rule            // the user's rules and words, found before the built-in ones
-	allow   map[string]bool
-	model   Recognizer
+	off        map[string]bool
+	actions    map[string]string // by category; the user's own kinds are always masked
+	own        []rule            // the user's rules and words, found before the built-in ones
+	allow      map[string]bool
+	recognizer Recognizer
 
 	mu   sync.Mutex
 	seen map[string][]span // ruled's memo, of size bytes of text
@@ -132,7 +132,7 @@ func compile(c Config, kept []Rule) (*compiled, error) {
 	if len(c.Allow) > MaxAllow {
 		return nil, ErrTooManyAllow
 	}
-	cc := &compiled{off: map[string]bool{}, allow: map[string]bool{}, actions: c.Actions, model: c.Model}
+	cc := &compiled{off: map[string]bool{}, allow: map[string]bool{}, actions: c.Actions, recognizer: c.Recognizer}
 	for _, o := range c.Off {
 		cc.off[o] = true
 	}

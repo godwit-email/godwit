@@ -78,19 +78,19 @@ type Options struct {
 	// OpenURL opens an external URL in the user's default browser.
 	OpenURL func(url string) error
 	// Recognizer reads for 识别模型 while it is on; nil is AstrLink Guard
-	// from its files in the cache (maskModelDir). Tests give a fake.
+	// from its files in the cache (recognitionModelDir). Tests give a fake.
 	Recognizer mask.Recognizer
 	// GuardCoreML is the CoreML bridge AstrLink Guard reads with on a Mac
 	// (libgodwit-guard-coreml.dylib); "" leaves it on the CPU.
 	GuardCoreML string
-	// MaskModelSources are where 识别模型's files are downloaded from, in
+	// RecognitionModelSources are where 识别模型's files are downloaded from, in
 	// order, each a URL their paths follow; nil is Hugging Face, then its
 	// mirror. Tests give httptest servers'.
-	MaskModelSources []string
-	// MaskModelClient downloads them; nil is one through the system proxy
+	RecognitionModelSources []string
+	// RecognitionModelClient downloads them; nil is one through the system proxy
 	// (imagefetch.SystemProxy), to public hosts only. Tests give one that
 	// reaches loopback.
-	MaskModelClient *http.Client
+	RecognitionModelClient *http.Client
 }
 
 // Service owns the database and event bus of one Godwit data directory.
@@ -128,9 +128,9 @@ type Service struct {
 	mask   *mask.Masker // created on first use; see masker
 	guard  *guardModel  // 识别模型 while it is on; see recognizer
 
-	maskModelMu    sync.Mutex            // held while 识别模型's files download (DownloadMaskModel)
-	maskModelErr   atomic.Pointer[error] // why 识别模型 last failed to read (MaskModelError)
-	maskModelFetch atomic.Bool           // its lost files are downloading again (redownloadMaskModel)
+	recognitionModelMu    sync.Mutex            // held while 识别模型's files download (DownloadRecognitionModel)
+	recognitionModelErr   atomic.Pointer[error] // why 识别模型 last failed to read (RecognitionModelError)
+	recognitionModelFetch atomic.Bool           // its lost files are downloading again (redownloadRecognitionModel)
 
 	unsubMu   sync.Mutex
 	unsubbing map[int64]bool // messages whose one-click unsubscribe is under way
@@ -253,8 +253,8 @@ func New(ctx context.Context, opts Options) (*Service, error) {
 	if opts.UnsubscribeClient == nil {
 		s.opts.UnsubscribeClient = &http.Client{Transport: imagefetch.NewTransport(false), Timeout: imagefetch.Timeout}
 	}
-	if opts.MaskModelClient == nil {
-		s.opts.MaskModelClient = &http.Client{Transport: imagefetch.NewTransport(false)} // no overall limit: downloadFile stops a stalled one
+	if opts.RecognitionModelClient == nil {
+		s.opts.RecognitionModelClient = &http.Client{Transport: imagefetch.NewTransport(false)} // no overall limit: downloadFile stops a stalled one
 	}
 	if err := s.openImageCache(); err != nil {
 		db.Close()

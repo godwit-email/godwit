@@ -3,6 +3,7 @@ package guard
 import (
 	"encoding/json"
 	"fmt"
+	"github.com/godwit-email/godwit/core/ai/mask"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -34,8 +35,8 @@ func TestDecodeBIO(t *testing.T) {
 	if !reflect.DeepEqual(got, want) {
 		t.Fatalf("decode = %v, want %v", got, want)
 	}
-	// One under Floor is dropped; masking drops those under the
-	// threshold set, MinScore or the user's, from what is left.
+	// One under Floor is dropped; masking drops those under
+	// mask.MinScore from what is left.
 	prob[10] = Floor - .01
 	if got := decode(toks, lab, prob); !reflect.DeepEqual(got, want[:2]) {
 		t.Fatalf("under Floor: %v", got)
@@ -106,7 +107,7 @@ func TestModelFinds(t *testing.T) {
 	// to Floor (the module path is a common_secret at .79)
 	have := map[string]string{}
 	for _, s := range m.Find(text) {
-		if s.Score >= MinScore {
+		if s.Score >= mask.MinScore {
 			have[text[s.Start:s.End]] = s.Label
 		}
 	}

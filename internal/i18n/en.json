@@ -182,8 +182,8 @@
   "error_plugin_exited": "The plugin quit unexpectedly. Try again.",
   "error_plugin_timeout": "The plugin did not answer in time. Try again.",
   "error_registry_mismatch": "The downloaded file does not match the plugin directory; it was discarded.",
-  "error_mask_model_mismatch": "A downloaded file of the recognition model did not match its checksum; it was discarded.",
-  "error_mask_model_missing": "The recognition model's files are not on this device yet, so it can't be turned on.",
+  "error_recognition_model_mismatch": "A downloaded file of the recognition model did not match its checksum; it was discarded.",
+  "error_recognition_model_missing": "The recognition model's files are not on this device yet, so it can't be turned on.",
   "error_registry_signature": "The plugin directory''s signature is wrong; it was not used.",
   "error_run_active": "Wit is still responding. Wait for it or stop it first.",
   "error_compacting": "Wit is already compacting this conversation.",
@@ -1229,31 +1229,31 @@
   "settings_masking_on": "Mask before sending to the cloud",
   "settings_masking_on_help": "Keys, ID numbers and the like go to model services and translation plugins as placeholders, and come back as the real values. Apple Intelligence and system translation run on this device and are not masked.",
   "settings_masking_foot": "Masking does not cover godwit mcp, the Local API or the models a plugin calls itself. Its rules find values by their format: other people's names in a mail's text take the recognition model.",
-  "settings_masking_model": "Recognition model",
-  "settings_masking_model_help": "A model that runs on this device, not a model service: it finds the names, addresses, accounts, phone numbers, email addresses, keys and card numbers the rules miss, each handled as its category says, and turns Names on with it. It makes mistakes, which the allowlist can fix; it reads Chinese and English only, and not the text in images.",
-  "settings_masking_model_missing": "Turning it on first downloads its files (39 MB) from Hugging Face, or its mirror.",
-  "settings_masking_model_coreml": "Runs on CoreML ({arg1}).",
-  "@settings_masking_model_coreml": {
+  "settings_masking_recognition_model": "Recognition model",
+  "settings_masking_recognition_model_help": "A model that runs on this device, not a model service: it finds the names, addresses, accounts, phone numbers, email addresses, keys and card numbers the rules miss, each handled as its category says, and turns Names on with it. It makes mistakes, which the allowlist can fix; it reads Chinese and English only, and not the text in images.",
+  "settings_masking_recognition_model_missing": "Turning it on first downloads its files (39 MB) from Hugging Face, or its mirror.",
+  "settings_masking_recognition_model_coreml": "Runs on CoreML ({arg1}).",
+  "@settings_masking_recognition_model_coreml": {
     "placeholders": {
       "arg1": {
         "type": "String"
       }
     }
   },
-  "settings_masking_model_cpu": "Runs on the CPU.",
-  "settings_masking_model_cpu_why": "Runs on the CPU, not CoreML: {arg1}",
-  "@settings_masking_model_cpu_why": {
+  "settings_masking_recognition_model_cpu": "Runs on the CPU.",
+  "settings_masking_recognition_model_cpu_why": "Runs on the CPU, not CoreML: {arg1}",
+  "@settings_masking_recognition_model_cpu_why": {
     "placeholders": {
       "arg1": {
         "type": "String"
       }
     }
   },
-  "settings_masking_model_downloading": "Downloading the recognition model: {arg1, number}% of {arg2}",
-  "settings_masking_model_cancel": "Cancel download",
-  "settings_masking_model_failed": "The recognition model was not installed, so it stays off: {arg1}",
-  "settings_masking_model_error": "The recognition model failed, so the rules alone mask for now: {arg1}",
-  "settings_masking_model_redownloading": "The recognition model's files are gone; they are downloading again, and until then the rules alone mask.",
+  "settings_masking_recognition_model_downloading": "Downloading the recognition model: {arg1, number}% of {arg2}",
+  "settings_masking_recognition_model_cancel": "Cancel download",
+  "settings_masking_recognition_model_failed": "The recognition model was not installed, so it stays off: {arg1}",
+  "settings_masking_recognition_model_error": "The recognition model failed, so the rules alone mask for now: {arg1}",
+  "settings_masking_recognition_model_redownloading": "The recognition model's files are gone; they are downloading again, and until then the rules alone mask.",
   "settings_masking_cat_secrets": "Keys",
   "settings_masking_cat_secrets_help": "API keys, tokens, private keys and passwords",
   "settings_masking_cat_ids": "ID and financial numbers",
@@ -1323,7 +1323,7 @@
   "settings_masking_log_value": "{arg1}…, {arg2} characters",
   "settings_masking_log_own": "Your own",
   "settings_masking_log_source_rule": "Rule",
-  "settings_masking_log_source_model": "Recognition model",
+  "settings_masking_log_source_recognizer": "Recognition model",
   "settings_masking_feature_wit": "Wit",
   "settings_masking_feature_compose": "Writing help",
   "settings_masking_feature_skill": "Summary and skills",

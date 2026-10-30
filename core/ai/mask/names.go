@@ -103,14 +103,14 @@ func (m *Masker) nameSpans(s string) []span {
 	return out
 }
 
-// foundSpans are where s has a value the recognition model found before
-// (m.found), each as the model's.
+// foundSpans are where s has a value 识别模型 found before (m.found),
+// each as recognized.
 func (m *Masker) foundSpans(s string) []span {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
 	var out []span
 	for _, e := range m.found {
-		out = spansOf(s, e.value, span{kind: e.kind, model: true}, out)
+		out = spansOf(s, e.value, span{kind: e.kind, recognized: true}, out)
 	}
 	return out
 }

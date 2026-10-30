@@ -287,7 +287,7 @@ func TestModelAssetsMismatchDiscarded(t *testing.T) {
 }
 
 func TestModelAssetsStall(t *testing.T) {
-	core.SetAssetStallForTest(t, 200*time.Millisecond)
+	core.SetDownloadStallForTest(t, 200*time.Millisecond)
 	e := newAssetEnv(t)
 	hang := make(chan struct{})
 	t.Cleanup(func() { close(hang) })
