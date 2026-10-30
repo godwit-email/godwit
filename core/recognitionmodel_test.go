@@ -211,6 +211,26 @@ func TestAPluginJudgeGoesThroughTheRecognitionModel(t *testing.T) {
 	assert.Contains(t, calls[0], "{{NAME_")
 }
 
+// The auto-label worker's round sends a new mail to the judge with what
+// the model found in it as placeholders: masking is at the egress, in the
+// background too (ADR 0028).
+func TestAutoLabelingGoesThroughTheRecognitionModel(t *testing.T) {
+	s := newLabelService(t, "", "zh-CN")
+	installRecognitionModel(t, s, newFakeModel(map[string]string{"漕溪北路 88 号": "private_address"}))
+	setRecognitionModel(t, s, true)
+	record := usePluginJudge(t, s, nil, nil)
+	addMessage(t, s, "快递", "Courier <c@x>", "包裹已送到漕溪北路 88 号。", "", 1)
+	n, err := s.classifyBatch(t.Context())
+	require.NoError(t, err)
+	require.Equal(t, 1, n)
+	calls := recorded(t, record, "models.judge")
+	require.NotEmpty(t, calls)
+	for _, c := range calls {
+		assert.NotContains(t, c, "漕溪北路")
+	}
+	assert.Contains(t, calls[0], "{{ADDRESS_")
+}
+
 // A translation plugin gets what the model found as placeholders, and the
 // reader the names.
 func TestAPluginTranslatorGoesThroughTheRecognitionModel(t *testing.T) {
