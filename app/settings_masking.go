@@ -48,12 +48,16 @@ func (p *settingsPage) maskingView(c *ui.Context) {
 }
 
 // readMaskBackend reads what reads 识别模型, for its row: none while it is
-// off or can't be loaded.
+// off or can't be loaded; then why it last failed, loading it included.
 func (p *settingsPage) readMaskBackend() {
 	a := p.a
 	var b *core.MaskModelBackend
-	a.query(func(ctx context.Context) (err error) { b, err = a.svc.MaskModelBackend(ctx); return err },
-		func(error) { p.maskBackend = b })
+	var fault error
+	a.query(func(ctx context.Context) (err error) {
+		b, err = a.svc.MaskModelBackend(ctx)
+		fault = a.svc.MaskModelError()
+		return err
+	}, func(error) { p.maskBackend, p.maskFault = b, fault })
 }
 
 // maskBackendText says what reads 识别模型: CoreML and its device, or the
@@ -88,7 +92,13 @@ func (p *settingsPage) maskModelRow(c *ui.Context) {
 	case !p.maskModel && !st.MaskModel:
 		help += "\n" + i18n.T("settings.masking.model.missing")
 	}
-	if b := p.maskBackend; st.MaskModel && b != nil {
+	switch b, fault := p.maskBackend, p.maskFault; {
+	case !st.MaskModel:
+	case errors.Is(fault, core.ErrMaskModelMissing):
+		help += "\n" + i18n.T("settings.masking.model.redownloading")
+	case fault != nil: // what would read it is moot while the rules alone mask
+		help += "\n" + i18n.Tf("settings.masking.model.error", humanize(fault))
+	case b != nil:
 		help += "\n" + maskBackendText(*b)
 	}
 	if d != nil {
@@ -257,12 +267,17 @@ func (p *settingsPage) maskPreview(c *ui.Context) {
 			d.shown = msg
 		} else {
 			text, out := d.preview, ""
-			p.a.query(func(ctx context.Context) (err error) { out, err = p.a.svc.PreviewMasking(ctx, st, text); return err },
-				func(err error) {
-					if d.shownFor == key { // not since edited
-						d.shown = cmp.Or(humanize(err), out)
-					}
-				})
+			var fault error
+			p.a.query(func(ctx context.Context) (err error) {
+				out, err = p.a.svc.PreviewMasking(ctx, st, text)
+				fault = p.a.svc.MaskModelError() // 识别模型 read it, or failed to
+				return err
+			}, func(err error) {
+				p.maskFault = fault
+				if d.shownFor == key { // not since edited
+					d.shown = cmp.Or(humanize(err), out)
+				}
+			})
 		}
 	}
 	settingsSection(c, i18n.T("settings.masking.preview"), i18n.T("settings.masking.preview.help"), func() {

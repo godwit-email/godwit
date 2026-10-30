@@ -604,6 +604,8 @@
   "settings_masking_model_downloading": "正在下载识别模型：{arg1, number}%，共 {arg2}",
   "settings_masking_model_cancel": "取消下载",
   "settings_masking_model_failed": "识别模型没有装好，开关已关闭：{arg1}",
+  "settings_masking_model_error": "识别模型出错，暂时只用规则脱敏：{arg1}",
+  "settings_masking_model_redownloading": "识别模型的文件不见了，正在重新下载；下载完成前只用规则脱敏。",
   "settings_masking_cat_secrets": "密钥",
   "settings_masking_cat_secrets_help": "API 密钥、令牌、私钥和密码",
   "settings_masking_cat_ids": "证件与金融号码",

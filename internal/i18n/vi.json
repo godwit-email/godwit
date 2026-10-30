@@ -604,6 +604,8 @@
   "settings_masking_model_downloading": "Đang tải mô hình nhận dạng: {arg1, number}% / {arg2}",
   "settings_masking_model_cancel": "Hủy tải xuống",
   "settings_masking_model_failed": "Mô hình nhận dạng chưa được cài đặt nên vẫn tắt: {arg1}",
+  "settings_masking_model_error": "Mô hình nhận dạng gặp lỗi, tạm thời chỉ dùng quy tắc để che: {arg1}",
+  "settings_masking_model_redownloading": "Tệp của mô hình nhận dạng đã mất; đang tải lại, trong lúc đó chỉ dùng quy tắc để che.",
   "settings_masking_cat_secrets": "Khóa",
   "settings_masking_cat_secrets_help": "Khóa API, token, khóa riêng và mật khẩu",
   "settings_masking_cat_ids": "Số giấy tờ và tài chính",

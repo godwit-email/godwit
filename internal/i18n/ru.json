@@ -604,6 +604,8 @@
   "settings_masking_model_downloading": "Загрузка модели распознавания: {arg1, number}% из {arg2}",
   "settings_masking_model_cancel": "Отменить загрузку",
   "settings_masking_model_failed": "Модель распознавания не установлена и остаётся выключенной: {arg1}",
+  "settings_masking_model_error": "Модель распознавания дала сбой, пока маскируют только правила: {arg1}",
+  "settings_masking_model_redownloading": "Файлы модели распознавания пропали; они загружаются заново, а до тех пор маскируют только правила.",
   "settings_masking_cat_secrets": "Ключи",
   "settings_masking_cat_secrets_help": "API-ключи, токены, закрытые ключи и пароли",
   "settings_masking_cat_ids": "Номера документов и счетов",

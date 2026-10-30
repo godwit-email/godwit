@@ -604,6 +604,8 @@
   "settings_masking_model_downloading": "Tanıma modeli indiriliyor: %{arg1, number} / {arg2}",
   "settings_masking_model_cancel": "İndirmeyi iptal et",
   "settings_masking_model_failed": "Tanıma modeli kurulamadı, kapalı kalıyor: {arg1}",
+  "settings_masking_model_error": "Tanıma modeli hata verdi; şimdilik yalnızca kurallar maskeliyor: {arg1}",
+  "settings_masking_model_redownloading": "Tanıma modelinin dosyaları kayboldu; yeniden indiriliyor, o zamana kadar yalnızca kurallar maskeliyor.",
   "settings_masking_cat_secrets": "Anahtarlar",
   "settings_masking_cat_secrets_help": "API anahtarları, belirteçler, özel anahtarlar ve parolalar",
   "settings_masking_cat_ids": "Kimlik ve finans numaraları",

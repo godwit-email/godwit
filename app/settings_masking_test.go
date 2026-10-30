@@ -1,11 +1,13 @@
 package app
 
 import (
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"strconv"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -249,6 +251,66 @@ func TestMaskModelSaysWhatReadsIt(t *testing.T) {
 			h.see(want)
 		})
 	}
+}
+
+// failingModel is a 识别模型 that fails with err while it is set.
+type failingModel struct{ err atomic.Pointer[error] }
+
+func (f *failingModel) Recognize(string) ([]mask.Recognized, error) {
+	if err := f.err.Load(); err != nil {
+		return nil, *err
+	}
+	return nil, nil
+}
+
+// When 识别模型 fails, its row says why, and that the rules alone mask
+// meanwhile; once it reads again, that is gone.
+func TestMaskModelRowSaysWhyItFailed(t *testing.T) {
+	md := &failingModel{}
+	err := errors.New("the model's session was closed")
+	md.err.Store(&err)
+	h := newHarnessWith(t, []coretest.Option{coretest.WithRecognizer(md)}, func(e *coretest.Env) { e.AddAccount(t, "alice@example.com") })
+	h.until("initial load", func() bool { return h.app.loaded })
+	installMaskModel(t, h.env.DataDir)
+	h.masking()
+	h.until("its files seen", func() bool { return h.app.pages[PageSettings].(*settingsPage).maskModel })
+	h.click(i18n.T("settings.masking.model"))
+	h.until("on", func() bool { return h.app.settings.MaskModel })
+	r, _ := h.tt.Find(i18n.T("settings.masking.preview")) // the preview reads with it
+	h.tt.ClickAt(r.X+r.W/2, r.Y+r.H+40)
+	h.typeText("Sarah Thompson")
+	failed := i18n.Tf("settings.masking.model.error", humanize(err))
+	h.see(failed)
+
+	md.err.Store(nil)
+	h.typeText(" again")
+	h.until("the reason gone", func() bool { return !h.tt.HasText(failed) })
+	h.see(i18n.T("settings.masking.model.help"))
+}
+
+// When 识别模型 fails for want of its files, its row says they are coming
+// down again.
+func TestMaskModelRowSaysItsFilesAreComingDownAgain(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { <-r.Context().Done() }))
+	t.Cleanup(srv.Close)
+	md := &failingModel{}
+	h := newHarnessWith(t, []coretest.Option{coretest.WithRecognizer(md), coretest.WithMaskModelSources(srv.URL + "/")},
+		func(e *coretest.Env) { e.AddAccount(t, "alice@example.com") })
+	h.until("initial load", func() bool { return h.app.loaded })
+	installMaskModel(t, h.env.DataDir)
+	h.masking()
+	h.until("its files seen", func() bool { return h.app.pages[PageSettings].(*settingsPage).maskModel })
+	h.click(i18n.T("settings.masking.model"))
+	h.until("on", func() bool { return h.app.settings.MaskModel })
+	if err := os.RemoveAll(filepath.Join(h.env.DataDir, "cache", "guard")); err != nil {
+		t.Fatal(err)
+	}
+	err := errors.New("guard: no such file")
+	md.err.Store(&err)
+	r, _ := h.tt.Find(i18n.T("settings.masking.preview"))
+	h.tt.ClickAt(r.X+r.W/2, r.Y+r.H+40)
+	h.typeText("Sarah Thompson")
+	h.see(i18n.T("settings.masking.model.redownloading"))
 }
 
 // A summary of mail a blocked category (拦截) holds is not asked: the

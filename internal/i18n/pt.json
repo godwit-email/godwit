@@ -604,6 +604,8 @@
   "settings_masking_model_downloading": "Baixando o modelo de reconhecimento: {arg1, number}% de {arg2}",
   "settings_masking_model_cancel": "Cancelar download",
   "settings_masking_model_failed": "O modelo de reconhecimento não foi instalado e continua desativado: {arg1}",
+  "settings_masking_model_error": "O modelo de reconhecimento falhou; por enquanto só as regras mascaram: {arg1}",
+  "settings_masking_model_redownloading": "Os arquivos do modelo de reconhecimento sumiram; estão sendo baixados de novo e, até lá, só as regras mascaram.",
   "settings_masking_cat_secrets": "Chaves",
   "settings_masking_cat_secrets_help": "Chaves de API, tokens, chaves privadas e senhas",
   "settings_masking_cat_ids": "Números de documentos e financeiros",

@@ -1252,6 +1252,8 @@
   "settings_masking_model_downloading": "Downloading the recognition model: {arg1, number}% of {arg2}",
   "settings_masking_model_cancel": "Cancel download",
   "settings_masking_model_failed": "The recognition model was not installed, so it stays off: {arg1}",
+  "settings_masking_model_error": "The recognition model failed, so the rules alone mask for now: {arg1}",
+  "settings_masking_model_redownloading": "The recognition model's files are gone; they are downloading again, and until then the rules alone mask.",
   "settings_masking_cat_secrets": "Keys",
   "settings_masking_cat_secrets_help": "API keys, tokens, private keys and passwords",
   "settings_masking_cat_ids": "ID and financial numbers",

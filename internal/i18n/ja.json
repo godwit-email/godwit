@@ -604,6 +604,8 @@
   "settings_masking_model_downloading": "認識モデルをダウンロード中：{arg1, number}%（全 {arg2}）",
   "settings_masking_model_cancel": "ダウンロードをキャンセル",
   "settings_masking_model_failed": "認識モデルをインストールできなかったため、オフのままです：{arg1}",
+  "settings_masking_model_error": "認識モデルでエラーが起きたため、当面はルールだけでマスクします：{arg1}",
+  "settings_masking_model_redownloading": "認識モデルのファイルが見つかりません。再ダウンロード中で、完了するまではルールだけでマスクします。",
   "settings_masking_cat_secrets": "キー",
   "settings_masking_cat_secrets_help": "API キー、トークン、秘密鍵、パスワード",
   "settings_masking_cat_ids": "身分証・金融の番号",

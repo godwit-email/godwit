@@ -604,6 +604,8 @@
   "settings_masking_model_downloading": "인식 모델 다운로드 중: {arg2} 중 {arg1, number}%",
   "settings_masking_model_cancel": "다운로드 취소",
   "settings_masking_model_failed": "인식 모델이 설치되지 않아 꺼진 상태로 유지됩니다: {arg1}",
+  "settings_masking_model_error": "인식 모델에 오류가 발생해 당분간 규칙만으로 마스킹합니다: {arg1}",
+  "settings_masking_model_redownloading": "인식 모델 파일이 없어 다시 다운로드하는 중입니다. 완료될 때까지 규칙만으로 마스킹합니다.",
   "settings_masking_cat_secrets": "키",
   "settings_masking_cat_secrets_help": "API 키, 토큰, 개인 키, 비밀번호",
   "settings_masking_cat_ids": "신분증·금융 번호",

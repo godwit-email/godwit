@@ -72,6 +72,7 @@ type settingsPage struct {
 	maskBackend  *core.MaskModelBackend // what reads 识别模型, as last read; nil while off
 	maskDL       *maskModelDownload     // 识别模型's files coming down; nil when not
 	maskModelErr string                 // why 识别模型's last download failed
+	maskFault    error                  // why 识别模型 last failed to read (core.Service.MaskModelError)
 
 	keychain    error // the keychain probe's result
 	keychainSet bool  // the probe finished

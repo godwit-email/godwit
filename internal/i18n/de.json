@@ -609,6 +609,8 @@
   "settings_masking_model_downloading": "Erkennungsmodell wird heruntergeladen: {arg1, number}% von {arg2}",
   "settings_masking_model_cancel": "Download abbrechen",
   "settings_masking_model_failed": "Das Erkennungsmodell wurde nicht installiert und bleibt aus: {arg1}",
+  "settings_masking_model_error": "Das Erkennungsmodell ist ausgefallen; vorerst maskieren nur die Regeln: {arg1}",
+  "settings_masking_model_redownloading": "Die Dateien des Erkennungsmodells fehlen; sie werden neu heruntergeladen, bis dahin maskieren nur die Regeln.",
   "settings_masking_cat_secrets": "Schlüssel",
   "settings_masking_cat_secrets_help": "API-Schlüssel, Tokens, private Schlüssel und Passwörter",
   "settings_masking_cat_ids": "Ausweis- und Kontonummern",

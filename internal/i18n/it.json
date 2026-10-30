@@ -604,6 +604,8 @@
   "settings_masking_model_downloading": "Download del modello di riconoscimento: {arg1, number}% di {arg2}",
   "settings_masking_model_cancel": "Annulla download",
   "settings_masking_model_failed": "Il modello di riconoscimento non è stato installato e resta disattivato: {arg1}",
+  "settings_masking_model_error": "Il modello di riconoscimento ha dato errore; per ora mascherano solo le regole: {arg1}",
+  "settings_masking_model_redownloading": "I file del modello di riconoscimento non ci sono più; si stanno riscaricando e fino ad allora mascherano solo le regole.",
   "settings_masking_cat_secrets": "Chiavi",
   "settings_masking_cat_secrets_help": "Chiavi API, token, chiavi private e password",
   "settings_masking_cat_ids": "Numeri di documenti e finanziari",

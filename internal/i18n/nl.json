@@ -604,6 +604,8 @@
   "settings_masking_model_downloading": "Herkenningsmodel downloaden: {arg1, number}% van {arg2}",
   "settings_masking_model_cancel": "Download annuleren",
   "settings_masking_model_failed": "Het herkenningsmodel is niet geïnstalleerd en blijft uit: {arg1}",
+  "settings_masking_model_error": "Het herkenningsmodel gaf een fout; voorlopig maskeren alleen de regels: {arg1}",
+  "settings_masking_model_redownloading": "De bestanden van het herkenningsmodel zijn weg; ze worden opnieuw gedownload en tot die tijd maskeren alleen de regels.",
   "settings_masking_cat_secrets": "Sleutels",
   "settings_masking_cat_secrets_help": "API-sleutels, tokens, privésleutels en wachtwoorden",
   "settings_masking_cat_ids": "Identiteits- en financiële nummers",
