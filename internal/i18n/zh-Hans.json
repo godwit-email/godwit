@@ -1489,5 +1489,20 @@
   "reader_security_unverified_badge": "未验证",
   "reader_security_review_desc": "检测到异常特征。建议在互动前核实发件人及内容。",
   "reader_security_review_authenticated_desc": "域名 {arg1} 已通过技术验证，但存在需复核的异常特征。",
-  "reader_security_unverified_desc": "无加密身份验证凭证 (DKIM/DMARC)。未检测到明确的警告信号。"
+  "reader_security_unverified_desc": "无加密身份验证凭证 (DKIM/DMARC)。未检测到明确的警告信号。",
+  "mail_empty_trash": "清空废纸篓",
+  "mail_empty_trash_title": "清空废纸篓？",
+  "mail_empty_trash_desc": "确定要永久删除废纸篓中的所有邮件吗？此操作无法撤销。",
+  "mail_empty_spam": "清空垃圾邮件",
+  "mail_empty_spam_title": "清空垃圾邮件？",
+  "mail_empty_spam_desc": "确定要永久删除垃圾邮件中的所有邮件吗？此操作无法撤销。",
+  "mail_mark_all_read": "全部标为已读",
+  "mail_mark_all_read_toast": "已全部标为已读",
+  "mail_folder_empty": "文件夹已为空",
+  "mail_no_unread_messages": "没有未读邮件",
+  "palette_action_empty_trash": "清空废纸篓",
+  "palette_action_empty_spam": "清空垃圾邮件",
+  "palette_action_mark_all_read": "全部标为已读",
+  "mail_empty_trash_toast": "已清空废纸篓",
+  "mail_empty_spam_toast": "已清空垃圾邮件"
 }

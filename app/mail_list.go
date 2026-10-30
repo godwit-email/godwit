@@ -116,6 +116,14 @@ type mailPage struct {
 	purgeAsk  bool       // Delete in Trash awaits its confirmation
 	purgeRows []mailItem // what it deletes permanently
 
+	starredUnread      map[int64]int // unread starred count by account
+	starredUnreadTotal int           // total unread starred across all accounts
+
+	emptyFolderAsk  bool
+	emptyFolderID   int64
+	emptyFolderRole string
+	emptyFolderAcc  int64
+
 	exec    func(ctx context.Context, op string, ids []int64, folder int64) error // write; tests wrap it
 	fetched func()                                                                // tests: runs off the UI thread once a reload has read the list
 }
@@ -214,12 +222,14 @@ func (p *mailPage) reload() {
 	p.loading = true
 	hook := p.fetched
 	var (
-		folders = map[int64][]core.Folder{}
-		outbox  []outboxEntry
-		drafts  []core.Draft
-		items   []mailItem
-		cursor  string
-		threads bool
+		folders      = map[int64][]core.Folder{}
+		starredByAcc = map[int64]int{}
+		starredTotal int
+		outbox       []outboxEntry
+		drafts       []core.Draft
+		items        []mailItem
+		cursor       string
+		threads      bool
 	)
 	a.do(func(ctx context.Context) error {
 		accs, err := a.svc.ListAccounts(ctx)
@@ -237,6 +247,9 @@ func (p *mailPage) reload() {
 			for _, it := range ob {
 				outbox = append(outbox, outboxEntry{it, cmp.Or(acc.Alias, acc.Email)})
 			}
+		}
+		if starredByAcc, starredTotal, err = a.svc.StarredCounts(ctx); err != nil {
+			return err
 		}
 		st, err := a.svc.GetSettings(ctx)
 		if err != nil {
@@ -273,6 +286,7 @@ func (p *mailPage) reload() {
 			p.main.reset() // thread IDs and message IDs do not mix
 		}
 		p.folders, p.outbox, p.drafts, p.threads = folders, outbox, drafts, threads
+		p.starredUnread, p.starredUnreadTotal = starredByAcc, starredTotal
 		p.items, p.cursor, p.stalled = items, cursor, false
 		p.setDrafts()
 	})

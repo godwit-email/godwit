@@ -230,6 +230,7 @@ func (a *App) View(c *ui.Context) {
 	}
 	a.linkDialog(c)
 	a.closeDialog(c)
+	a.mail.emptyFolderDialog(c)
 	a.mail.reader.egressDialog(c)
 	a.mail.reader.unsubscribeDialog(c)
 	a.mcpSendDialog(c)

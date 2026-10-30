@@ -60,6 +60,7 @@ type Folder struct {
 	Name, Role    string
 	Delim         string // the server's hierarchy delimiter in Name, "" when flat
 	Unread        int
+	Total         int
 }
 
 // ServerSettings replaces an account's username and IMAP and SMTP servers. An

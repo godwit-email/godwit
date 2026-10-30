@@ -1489,5 +1489,20 @@
   "reader_security_unverified_badge": "No verificado",
   "reader_security_review_desc": "Se detectaron características inusuales. Se recomienda verificar el remitente y el contenido antes de interactuar.",
   "reader_security_review_authenticated_desc": "El dominio {arg1} está verificado técnicamente, pero existen anomalías que deben revisarse.",
-  "reader_security_unverified_desc": "Sin prueba de autenticación criptográfica (DKIM/DMARC). No se detectaron señales de alerta concretas."
+  "reader_security_unverified_desc": "Sin prueba de autenticación criptográfica (DKIM/DMARC). No se detectaron señales de alerta concretas.",
+  "mail_empty_trash": "Vaciar papelera",
+  "mail_empty_trash_title": "¿Vaciar papelera?",
+  "mail_empty_trash_desc": "¿Seguro que quieres eliminar definitivamente todos los mensajes de la papelera? Esta acción no se puede deshacer.",
+  "mail_empty_spam": "Vaciar spam",
+  "mail_empty_spam_title": "¿Vaciar spam?",
+  "mail_empty_spam_desc": "¿Seguro que quieres eliminar definitivamente todos los mensajes de spam? Esta acción no se puede deshacer.",
+  "mail_mark_all_read": "Marcar todo como leído",
+  "mail_mark_all_read_toast": "Se marcaron todos como leídos",
+  "mail_folder_empty": "La carpeta ya está vacía",
+  "mail_no_unread_messages": "No hay mensajes sin leer",
+  "palette_action_empty_trash": "Vaciar papelera",
+  "palette_action_empty_spam": "Vaciar spam",
+  "palette_action_mark_all_read": "Marcar todo como leído",
+  "mail_empty_trash_toast": "Papelera vaciada",
+  "mail_empty_spam_toast": "Spam vaciado"
 }

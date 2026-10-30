@@ -1489,5 +1489,20 @@
   "reader_security_unverified_badge": "未確認",
   "reader_security_review_desc": "不審な特徴が検出されました。操作を行う前に送信者と内容を確認することをお勧めします。",
   "reader_security_review_authenticated_desc": "ドメイン {arg1} は技術的に確認されていますが、確認が必要な不審点があります。",
-  "reader_security_unverified_desc": "暗号化認証（DKIM/DMARC）がありません。具体的な警告シグナルは検出されていません。"
+  "reader_security_unverified_desc": "暗号化認証（DKIM/DMARC）がありません。具体的な警告シグナルは検出されていません。",
+  "mail_empty_trash": "ごみ箱を空にする",
+  "mail_empty_trash_title": "ごみ箱を空にしますか？",
+  "mail_empty_trash_desc": "ごみ箱内のすべてのメールを完全に削除してもよろしいですか？この操作は元に戻せません。",
+  "mail_empty_spam": "迷惑メールを空にする",
+  "mail_empty_spam_title": "迷惑メールを空にしますか？",
+  "mail_empty_spam_desc": "迷惑メール内のすべてのメールを完全に削除してもよろしいですか？この操作は元に戻せません。",
+  "mail_mark_all_read": "すべて既読にする",
+  "mail_mark_all_read_toast": "すべて既読にしました",
+  "mail_folder_empty": "フォルダーは既に空です",
+  "mail_no_unread_messages": "未読メッセージはありません",
+  "palette_action_empty_trash": "ごみ箱を空にする",
+  "palette_action_empty_spam": "迷惑メールを空にする",
+  "palette_action_mark_all_read": "すべて既読にする",
+  "mail_empty_trash_toast": "ごみ箱を空にしました",
+  "mail_empty_spam_toast": "迷惑メールを空にしました"
 }

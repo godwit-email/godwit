@@ -1489,5 +1489,20 @@
   "reader_security_unverified_badge": "未驗證",
   "reader_security_review_desc": "檢測到異常特徵。建議在互動前核實寄件者及內容。",
   "reader_security_review_authenticated_desc": "網域 {arg1} 已通過技術驗證，但存在需複核的異常特徵。",
-  "reader_security_unverified_desc": "無加密身份驗證憑證 (DKIM/DMARC)。未檢測到明確的警告信號。"
+  "reader_security_unverified_desc": "無加密身份驗證憑證 (DKIM/DMARC)。未檢測到明確的警告信號。",
+  "mail_empty_trash": "清空垃圾桶",
+  "mail_empty_trash_title": "清空垃圾桶？",
+  "mail_empty_trash_desc": "確定要永久刪除垃圾桶中的所有郵件嗎？此動作無法復原。",
+  "mail_empty_spam": "清空垃圾郵件",
+  "mail_empty_spam_title": "清空垃圾郵件？",
+  "mail_empty_spam_desc": "確定要永久刪除垃圾郵件中的所有郵件嗎？此動作無法復原。",
+  "mail_mark_all_read": "全部標示為已讀",
+  "mail_mark_all_read_toast": "已全部標示為已讀",
+  "mail_folder_empty": "資料夾已為空",
+  "mail_no_unread_messages": "沒有未讀郵件",
+  "palette_action_empty_trash": "清空垃圾桶",
+  "palette_action_empty_spam": "清空垃圾郵件",
+  "palette_action_mark_all_read": "全部標示為已讀",
+  "mail_empty_trash_toast": "已清空垃圾桶",
+  "mail_empty_spam_toast": "已清空垃圾郵件"
 }

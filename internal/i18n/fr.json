@@ -1489,5 +1489,20 @@
   "reader_security_unverified_badge": "Non vérifié",
   "reader_security_review_desc": "Caractéristiques inhabituelles détectées. Il est recommandé de vérifier l expéditeur et le contenu avant toute interaction.",
   "reader_security_review_authenticated_desc": "Le domaine {arg1} est techniquement vérifié, mais des anomalies doivent être examinées.",
-  "reader_security_unverified_desc": "Aucune preuve d authentification cryptographique (DKIM/DMARC). Aucun signal d alerte concret détecté."
+  "reader_security_unverified_desc": "Aucune preuve d authentification cryptographique (DKIM/DMARC). Aucun signal d alerte concret détecté.",
+  "mail_empty_trash": "Vider la corbeille",
+  "mail_empty_trash_title": "Vider la corbeille ?",
+  "mail_empty_trash_desc": "Voulez-vous vraiment supprimer définitivement tous les messages de la corbeille ? Cette action est irréversible.",
+  "mail_empty_spam": "Vider les spams",
+  "mail_empty_spam_title": "Vider les spams ?",
+  "mail_empty_spam_desc": "Voulez-vous vraiment supprimer définitivement tous les messages indésirables ? Cette action est irréversible.",
+  "mail_mark_all_read": "Tout marquer comme lu",
+  "mail_mark_all_read_toast": "Tous les messages ont été marqués comme lus",
+  "mail_folder_empty": "Le dossier est déjà vide",
+  "mail_no_unread_messages": "Aucun message non lu",
+  "palette_action_empty_trash": "Vider la corbeille",
+  "palette_action_empty_spam": "Vider les spams",
+  "palette_action_mark_all_read": "Tout marquer comme lu",
+  "mail_empty_trash_toast": "Corbeille vidée",
+  "mail_empty_spam_toast": "Spams vidés"
 }
