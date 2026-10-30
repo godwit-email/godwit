@@ -11,6 +11,7 @@ import (
 	"github.com/godwit-email/godwit/core"
 	"github.com/godwit-email/godwit/core/ai"
 	"github.com/godwit-email/godwit/internal/i18n"
+	"github.com/godwit-email/godwit/rpcbind"
 )
 
 // WitStream carries Wit events to the window or page following them only
@@ -208,28 +209,6 @@ func approvalOf(a core.Approval) Approval {
 		Form: string(a.Form)}
 }
 
-// witErrorKeys are the core errors with a message of their own (app/errors.go).
-var witErrorKeys = []struct {
-	err error
-	key string
-}{
-	{core.ErrStaleDraft, "error.stale_draft"},
-	{core.ErrInvalidState, "error.invalid_state"},
-	{core.ErrRunActive, "error.run_active"},
-	{core.ErrStaleApproval, "error.stale_approval"},
-	{core.ErrNeedsGrant, "error.needs_grant"},
-	{core.ErrAINotConfigured, "error.ai_not_configured"},
-	{core.ErrModelNotFound, "error.model_not_found"},
-	{core.ErrModelAuth, "error.model_auth"},
-	{core.ErrModelReauth, "settings.models.login.expired"},
-	{core.ErrTooLarge, "error.too_large"},
-	{core.ErrKeychainUnavailable, "error.keychain"},
-	{core.ErrCompacting, "error.compacting"},
-	{core.ErrNothingToCompact, "error.nothing_to_compact"},
-	{ErrMailGone, "wit.mail.gone"},
-	{core.ErrDraftGone, "wit.draft.gone"},
-}
-
 // errorKey is the i18n key of what err means to the user, as app's
 // humanize: "" for a cancellation, which the user asked for.
 func errorKey(err error) string {
@@ -242,10 +221,11 @@ func errorKey(err error) string {
 			return key
 		}
 	}
-	for _, k := range witErrorKeys {
-		if errors.Is(err, k.err) {
-			return k.key
-		}
+	if errors.Is(err, ErrMailGone) {
+		return "wit.mail.gone"
+	}
+	if key := rpcbind.Key(err); key != "" && i18n.T(key) != key {
+		return key
 	}
 	return "error.unknown"
 }

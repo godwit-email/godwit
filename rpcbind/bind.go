@@ -1,96 +1,131 @@
 // Package rpcbind composes core with rpc: core's error codes, redaction and
 // the methods exposed over the Local API. core does not depend on rpc.
+//
+// Its error table is the only place an error's wire code and i18n key are
+// written; the native UI and the pages show errors by Key.
 package rpcbind
 
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"strings"
 
 	"github.com/godwit-email/godwit/core"
 	"github.com/godwit-email/godwit/core/ai"
 	"github.com/godwit-email/godwit/core/auth"
 	"github.com/godwit-email/godwit/core/conn"
+	"github.com/godwit-email/godwit/core/plugins"
 	"github.com/godwit-email/godwit/rpc"
 )
 
-// sentinels are core's exported errors (with those of core/ai, core/auth and
-// core/conn that its methods return, and the context ones) by stable wire code. Their messages are fixed English text.
-var sentinels = []struct {
-	code string
-	err  error
-}{
-	{"use_assist", core.ErrUseAssist},
-	{"stale_approval", core.ErrStaleApproval},
-	{"too_large", core.ErrTooLarge},
-	{"link_ref", core.ErrLinkRef},
-	{"placeholder", core.ErrPlaceholder},
-	{"mask_kind", core.ErrMaskKind},
-	{"mask_reserved_kind", core.ErrMaskReservedKind},
-	{"mask_empty_match", core.ErrMaskEmptyMatch},
-	{"mask_too_many_rules", core.ErrMaskTooManyRules},
-	{"mask_too_many_allow", core.ErrMaskTooManyAllow},
-	{"not_on_server_yet", core.ErrNotOnServerYet},
-	{"stale_draft", core.ErrStaleDraft},
-	{"not_synced", core.ErrNotSynced},
-	{"run_active", core.ErrRunActive},
-	{"compacting", core.ErrCompacting},
-	{"nothing_to_compact", core.ErrNothingToCompact},
-	{"draft_gone", core.ErrDraftGone},
-	{"keychain_unavailable", core.ErrKeychainUnavailable},
-	{"wrong_account", core.ErrWrongAccount},
-	{"account_not_found", core.ErrAccountNotFound},
-	{"provider_mismatch", core.ErrProviderMismatch},
-	{"needs_grant", core.ErrNeedsGrant},
-	{"plugin_not_found", core.ErrPluginNotFound},
-	{"translator_unavailable", core.ErrTranslatorUnavailable},
-	{"system_language_not_installed", core.ErrSystemLanguageNotInstalled},
-	{"system_language_unsupported", core.ErrSystemLanguageUnsupported},
-	{"model_unavailable", core.ErrModelUnavailable},
-	{"registry_off", core.ErrRegistryOff},
-	{"registry_signature", core.ErrRegistrySignature},
-	{"registry_stale", core.ErrRegistryStale},
-	{"registry_mismatch", core.ErrRegistryMismatch},
-	{"mcp_not_found", core.ErrMCPNotFound},
-	{"ai_not_configured", core.ErrAINotConfigured},
-	{"model_service_not_found", core.ErrModelServiceNotFound},
-	{"model_not_found", core.ErrModelNotFound},
-	{"model_auth", core.ErrModelAuth},
-	{"model_login", core.ErrModelLogin},
-	{"model_reauth", core.ErrModelReauth},
-	{"label_exists", core.ErrLabelExists},
-	{"base_url_invalid", core.ErrBaseURLInvalid},
-	{"base_url_scheme", core.ErrBaseURLScheme},
-	{"no_model_list", ai.ErrNoModelList},
-	{"model_forbidden", ai.ErrModelForbidden},
-	{"key_needs_confirm", core.ErrKeyNeedsConfirm},
-	{"unknown_flow", core.ErrUnknownFlow},
-	{"invalid_state", core.ErrInvalidState},
-	{"skill_disabled", core.ErrSkillDisabled},
-	{"skill_not_found", core.ErrSkillNotFound},
-	{"closed", core.ErrClosed},
-	{"signature_image", core.ErrSignatureImage},
-	{"signature_image_count", core.ErrSignatureImageCount},
-	{"signature_not_found", core.ErrSignatureNotFound},
-	{"signature_name", core.ErrSignatureName},
-	{"account_icon", core.ErrAccountIcon},
-	{"not_grantable", core.ErrNotGrantable},
-	{"needs_answer", core.ErrNeedsAnswer},
-	{"mcp_send_off", core.ErrMCPSendOff},
-	{"mcp_send_composing", core.ErrMCPSendComposing},
-	{"mcp_send_busy", core.ErrMCPSendBusy},
-	{"no_outbox_draft", core.ErrNoOutboxDraft},
-	{"no_unsubscribe", core.ErrNoUnsubscribe},
-	{"unsubscribe_web", core.ErrUnsubscribeWeb},
-	{"unsubscribing", core.ErrUnsubscribing},
-	{"canceled", context.Canceled},
-	{"deadline", context.DeadlineExceeded},
-	{"auth_failed", conn.ErrAuthFailed}, // also a failed account check's cause
-	{"oauth_not_configured", auth.ErrOAuthNotConfigured},
-	{"flow_expired", auth.ErrFlowExpired},
-	{"invalid_grant", auth.ErrInvalidGrant},
-	{"access_denied", auth.ErrAccessDenied},
-	{"scope_missing", auth.ErrScopeMissing},
+// table is the one list of an error's identity: core's exported errors (with
+// those of core/ai, core/auth and core/conn that its methods return, and the
+// context ones) by stable wire code, and the i18n key of what each means to the
+// user, "error.<code>" unless Key says otherwise. Their messages are fixed
+// English text. A row without a code has a message but does not cross the
+// Local API; the first row an error is wins.
+var table = []Error{
+	// A native plugin's failures: its stderr is the plugin's text, not the user's.
+	{Err: plugins.ErrNativeExited, Key: "error.plugin_exited"},
+	{Err: plugins.ErrTimeout, Key: "error.plugin_timeout"},
+	{Err: plugins.ErrNativeABI, Key: "error.plugin_abi"},
+	{Err: auth.ErrRedirectPortBusy, Key: "settings.models.login.port_busy"},
+	{Code: "use_assist", Err: core.ErrUseAssist},
+	{Code: "stale_approval", Err: core.ErrStaleApproval},
+	{Code: "too_large", Err: core.ErrTooLarge},
+	{Code: "link_ref", Err: core.ErrLinkRef},
+	{Code: "placeholder", Err: core.ErrPlaceholder},
+	{Code: "mask_kind", Err: core.ErrMaskKind},
+	{Code: "mask_reserved_kind", Err: core.ErrMaskReservedKind},
+	{Code: "mask_empty_match", Err: core.ErrMaskEmptyMatch},
+	{Code: "mask_too_many_rules", Err: core.ErrMaskTooManyRules},
+	{Code: "mask_too_many_allow", Err: core.ErrMaskTooManyAllow},
+	{Code: "not_on_server_yet", Err: core.ErrNotOnServerYet},
+	{Code: "stale_draft", Err: core.ErrStaleDraft},
+	{Code: "not_synced", Err: core.ErrNotSynced},
+	{Code: "run_active", Err: core.ErrRunActive},
+	{Code: "compacting", Err: core.ErrCompacting},
+	{Code: "nothing_to_compact", Err: core.ErrNothingToCompact},
+	{Code: "draft_gone", Err: core.ErrDraftGone, Key: "wit.draft.gone"},
+	{Code: "keychain_unavailable", Err: core.ErrKeychainUnavailable, Key: "error.keychain"},
+	{Code: "wrong_account", Err: core.ErrWrongAccount},
+	{Code: "account_not_found", Err: core.ErrAccountNotFound},
+	{Code: "provider_mismatch", Err: core.ErrProviderMismatch},
+	{Code: "needs_grant", Err: core.ErrNeedsGrant},
+	{Code: "plugin_not_found", Err: core.ErrPluginNotFound},
+	{Code: "translator_unavailable", Err: core.ErrTranslatorUnavailable},
+	{Code: "system_language_not_installed", Err: core.ErrSystemLanguageNotInstalled},
+	{Code: "system_language_unsupported", Err: core.ErrSystemLanguageUnsupported},
+	{Code: "model_unavailable", Err: core.ErrModelUnavailable},
+	{Code: "registry_off", Err: core.ErrRegistryOff},
+	{Code: "registry_signature", Err: core.ErrRegistrySignature},
+	{Code: "registry_stale", Err: core.ErrRegistryStale},
+	{Code: "registry_mismatch", Err: core.ErrRegistryMismatch},
+	{Code: "mcp_not_found", Err: core.ErrMCPNotFound},
+	{Code: "ai_not_configured", Err: core.ErrAINotConfigured},
+	{Code: "model_service_not_found", Err: core.ErrModelServiceNotFound},
+	{Code: "model_not_found", Err: core.ErrModelNotFound},
+	{Code: "model_auth", Err: core.ErrModelAuth},
+	{Code: "model_login", Err: core.ErrModelLogin},
+	{Code: "model_reauth", Err: core.ErrModelReauth, Key: "settings.models.login.expired"},
+	{Code: "label_exists", Err: core.ErrLabelExists},
+	{Code: "base_url_invalid", Err: core.ErrBaseURLInvalid},
+	{Code: "base_url_scheme", Err: core.ErrBaseURLScheme},
+	{Code: "no_model_list", Err: ai.ErrNoModelList},
+	{Code: "model_forbidden", Err: ai.ErrModelForbidden},
+	{Code: "key_needs_confirm", Err: core.ErrKeyNeedsConfirm, Key: "settings.models.key_moved"},
+	{Code: "unknown_flow", Err: core.ErrUnknownFlow},
+	{Code: "invalid_state", Err: core.ErrInvalidState},
+	{Code: "skill_disabled", Err: core.ErrSkillDisabled},
+	{Code: "skill_not_found", Err: core.ErrSkillNotFound},
+	{Code: "closed", Err: core.ErrClosed},
+	{Code: "signature_image", Err: core.ErrSignatureImage},
+	{Code: "signature_image_count", Err: core.ErrSignatureImageCount},
+	{Code: "signature_not_found", Err: core.ErrSignatureNotFound},
+	{Code: "signature_name", Err: core.ErrSignatureName},
+	{Code: "account_icon", Err: core.ErrAccountIcon},
+	{Code: "not_grantable", Err: core.ErrNotGrantable},
+	{Code: "needs_answer", Err: core.ErrNeedsAnswer},
+	{Code: "mcp_send_off", Err: core.ErrMCPSendOff},
+	{Code: "mcp_send_composing", Err: core.ErrMCPSendComposing},
+	{Code: "mcp_send_busy", Err: core.ErrMCPSendBusy},
+	{Code: "no_outbox_draft", Err: core.ErrNoOutboxDraft},
+	{Code: "no_unsubscribe", Err: core.ErrNoUnsubscribe},
+	{Code: "unsubscribe_web", Err: core.ErrUnsubscribeWeb},
+	{Code: "unsubscribing", Err: core.ErrUnsubscribing},
+	{Code: "canceled", Err: context.Canceled},
+	{Code: "deadline", Err: context.DeadlineExceeded},
+	{Code: "auth_failed", Err: conn.ErrAuthFailed}, // also a failed account check's cause
+	{Code: "oauth_not_configured", Err: auth.ErrOAuthNotConfigured},
+	{Code: "flow_expired", Err: auth.ErrFlowExpired},
+	{Code: "invalid_grant", Err: auth.ErrInvalidGrant},
+	{Code: "access_denied", Err: auth.ErrAccessDenied},
+	{Code: "scope_missing", Err: auth.ErrScopeMissing},
+}
+
+// Error is a row of the table.
+type Error struct {
+	Code string // "" when it does not cross the Local API
+	Err  error
+	Key  string // "" for "error." + Code
+}
+
+// All is every row of the table.
+func All() []Error { return table }
+
+// Key is the i18n key of what err means to the user, by the first row it is;
+// "" when it is none. The key may have no message in the catalog yet.
+func Key(err error) string {
+	for _, e := range table {
+		if errors.Is(err, e.Err) {
+			if e.Key != "" {
+				return e.Key
+			}
+			return "error." + e.Code
+		}
+	}
+	return ""
 }
 
 // NewCodec registers core's error types (tried first, so *ai.Error with Code
@@ -136,8 +171,10 @@ func NewCodec() *rpc.Codec {
 	rpc.RegisterType(c, "ai_error",
 		func(e *ai.Error) any { return ai.Error{Code: e.Code, Msg: e.Msg, Detail: e.Detail} },
 		rpc.DecodeDetail[ai.Error])
-	for _, s := range sentinels {
-		c.RegisterSentinel(s.code, s.err, s.err.Error())
+	for _, e := range table {
+		if e.Code != "" {
+			c.RegisterSentinel(e.Code, e.Err, e.Err.Error())
+		}
 	}
 	return c
 }

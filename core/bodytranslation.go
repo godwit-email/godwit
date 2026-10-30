@@ -74,13 +74,13 @@ func (s *Service) runBodyTranslation(ctx context.Context, end func(), sk skills.
 		if err != nil {
 			return nil, err
 		}
-		e, err := s.aiEngine()
+		m, err := s.masker()
 		if err != nil {
 			return nil, err
 		}
 		ref, version, byModel = modelRef, []any{model.ServiceID, model.Version}, true
-		if !model.OnDevice && e.Masker.On() {
-			masker = e.Masker
+		if !model.OnDevice && m.On() {
+			masker = m
 		}
 		system := sk.Body + "\n\n" + ai.UntrustedSystemNote + "\nTarget language: " + lang +
 			". Languages needing no translation: " + strings.Join(append([]string{lang}, keep...), ", ") +
@@ -88,16 +88,16 @@ func (s *Service) runBodyTranslation(ctx context.Context, end func(), sk skills.
 		call = func(ctx context.Context, req translateRequest) (translateResult, error) {
 			b, _ := json.Marshal(req.Texts)
 			prompt := ai.Untrusted(fmt.Sprintf("message:%d", t.ID), string(b), ai.InjectionQuote(strings.Join(req.Texts, "\n")) != "")
-			text, err := s.runText(ctx, e, ai.Request{Model: model, System: system, Prompt: prompt, MaxTurns: 1, Raw: true}, 128<<10)
+			r, err := s.complete(ctx, featureTranslate, ai.Request{Model: model, System: system, Prompt: prompt, Raw: true}, 128<<10)
 			if err != nil {
 				return translateResult{}, err
 			}
 			var res translateResult
-			if err := json.Unmarshal([]byte(text), &res); err != nil {
+			if err := json.Unmarshal([]byte(r.Text), &res); err != nil {
 				return res, fmt.Errorf("translation returned invalid JSON: %w", err)
 			}
 			for i, t := range res.Texts {
-				res.Texts[i] = e.Masker.Restore(t)
+				res.Texts[i] = r.Restore(t)
 			}
 			return res, nil
 		}

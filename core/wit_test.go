@@ -724,11 +724,10 @@ func TestAskRegisteredThenClosed(t *testing.T) {
 	e := newSkillEnv(t)
 	conv := e.askConv(t)
 	closed := make(chan error, 1)
-	beforeRunClaim = func(ctx context.Context) {
+	e.s.ledger.beforeClaim = func(ctx context.Context) {
 		go func() { closed <- e.s.Close() }()
 		<-ctx.Done() // Close has cancelled this registered call
 	}
-	t.Cleanup(func() { beforeRunClaim = nil })
 	_, err := e.s.Ask(context.Background(), conv.ID, "q")
 	require.ErrorIs(t, err, context.Canceled, "Ask had registered, so Close cancelled it")
 	select {
@@ -988,11 +987,10 @@ func TestAskAgainQuoteGone(t *testing.T) {
 	ch, err := e.s.AskWith(t.Context(), conv.ID, "first", nil)
 	require.NoError(t, err)
 	drainWit(t, ch)
-	beforeRunClaim = func(ctx context.Context) {
+	e.s.ledger.beforeClaim = func(ctx context.Context) {
 		_, err := e.s.db.Execute(ctx, "DELETE FROM messages WHERE id = ?", other)
 		require.NoError(t, err)
 	}
-	t.Cleanup(func() { beforeRunClaim = nil })
 	first, err := e.s.GetConversation(t.Context(), conv.ID)
 	require.NoError(t, err)
 	_, err = e.s.AskAgain(t.Context(), conv.ID, first.Turns[0].ID, "first, edited", []int64{other})

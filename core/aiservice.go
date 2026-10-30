@@ -328,7 +328,6 @@ func (s *Service) QuickReplies(ctx context.Context, messageID int64) ([]QuickRep
 		return nil, err
 	}
 	defer end()
-	ctx = mask.Tag(ctx, featureReplies, nil)
 	st, err := s.loadSettings(ctx)
 	if err != nil || !st.QuickReplies {
 		return nil, err
@@ -382,26 +381,13 @@ func (s *Service) QuickReplies(ctx context.Context, messageID int64) ([]QuickRep
 	if err := s.gateway().Record(ctx, gateway.Entry{Source: gateway.SourceSkill, Tool: "quick_replies", TargetKind: "message", TargetID: messageID, Decision: "run"}); err != nil {
 		return nil, err
 	}
-	e, err := s.aiEngine()
+	r, err := s.complete(ctx, featureReplies, ai.Request{Model: model, System: system, Prompt: strings.Join(blocks, "\n\n"), Raw: true}, 0)
 	if err != nil {
 		return nil, err
 	}
-	events, wait := e.Run(ctx, ai.Request{Model: model, System: system, Prompt: strings.Join(blocks, "\n\n"), MaxTurns: 1, Raw: true})
-	var text strings.Builder
-	for ev := range events {
-		switch ev.Kind {
-		case "text":
-			text.WriteString(ev.Text)
-			continue
-		case "error":
-			s.runRejected(model, wait().Err)
-			return nil, ev.Err
-		}
-		wait() // no tools: anything else is done
-	}
 
 	x := s.linkExpander()
-	rs, err := parseQuickReplies(text.String(), func(h string) string { return x.text(ctx, e.Masker.RestoreHTML(h)) })
+	rs, err := parseQuickReplies(r.Text, func(h string) string { return x.text(ctx, r.RestoreHTML(h)) })
 	if err != nil {
 		return nil, err
 	}

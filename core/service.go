@@ -129,9 +129,7 @@ type Service struct {
 
 	compacting sync.Map // conversation ID -> true while compactLater runs for it
 
-	runMu  sync.Mutex        // run starts, approval claims and execution, resume claims, cancels
-	active map[int64]*runJob // runs in flight, guarded by runMu
-	extRun map[int64]extExec // approvals executing outside runMu (external mode) by ID, guarded by runMu
+	ledger *runLedger // runs' and approvals' states, runs in flight
 
 	subsMu     sync.Mutex
 	subs       map[int64]map[*witStream]bool // SubscribeConversation streams by conversation
@@ -205,6 +203,7 @@ func New(ctx context.Context, opts Options) (*Service, error) {
 	}
 	s := &Service{db: db, bus: events.New(), dataDir: opts.DataDir, opts: opts, installID: install, streamsEnd: make(chan struct{}),
 		clock: testClock, hookClock: testHookClock, pluginClock: testPluginClock, labelWake: make(chan struct{}, 1), reclaimWake: make(chan struct{}, 1)}
+	s.ledger = &runLedger{db: db, host: s}
 	if err := s.recoverOutbox(ctx); err != nil {
 		db.Close()
 		return nil, err
@@ -311,7 +310,7 @@ func New(ctx context.Context, opts Options) (*Service, error) {
 	for _, a := range accs {
 		s.startWorker(a.ID)
 	}
-	if err := s.recoverRuns(ctx); err != nil {
+	if err := s.ledger.recover(ctx); err != nil {
 		s.Close()
 		return nil, err
 	}

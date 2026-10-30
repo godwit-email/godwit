@@ -69,13 +69,13 @@ func (s *Service) checkWritable(ctx context.Context, draftID int64) error {
 
 // checkWitDraft is ErrStaleDraft for Wit on a draft in the outbox: a run or
 // conversation there would outlive the draft once the message goes. A draftID
-// of 0 is no draft. A caller that starts a run holds runMu, which Send holds
+// of 0 is no draft. A caller that starts a run holds the run ledger, which Send holds
 // from stopping the draft's runs until it is queued.
 func (s *Service) checkWitDraft(ctx context.Context, draftID int64) error {
 	if draftID == 0 {
 		return nil
 	}
-	s.editMu.Lock() // runMu, if held, before editMu, as enqueue
+	s.editMu.Lock() // the run ledger, if held, before editMu, as enqueue
 	defer s.editMu.Unlock()
 	return s.checkWritable(ctx, draftID)
 }
@@ -594,10 +594,11 @@ func (s *Service) send(ctx context.Context, draftID, want int64) error {
 // the draft, read-only, and is sent once UndoSendWindow has passed; a draft
 // queued already is ErrStaleDraft.
 func (s *Service) enqueue(ctx context.Context, draftID, rev int64, checked []string) error {
-	if err := s.stopDraftRuns(ctx, draftID); err != nil { // Wit proposes nothing for the queued draft
+	release, err := s.stopDraftRuns(ctx, draftID) // Wit proposes nothing for the queued draft
+	if err != nil {
 		return err
 	}
-	defer s.runMu.Unlock()
+	defer release()
 	s.editMu.Lock() // enters the outbox once, with the draft as it is now
 	defer s.editMu.Unlock()
 	s.pluginsMu.RLock()

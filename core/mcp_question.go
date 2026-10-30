@@ -11,7 +11,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/egoist/mygo/plugins/sqlite"
 	"github.com/godwit-email/godwit/core/ai"
 	"github.com/godwit-email/godwit/core/gateway"
 	"github.com/godwit-email/godwit/core/store"
@@ -307,8 +306,7 @@ func (s *Service) askAgain(ctx context.Context, a approvalRow, in mcpInput) (ok 
 	if err != nil {
 		return false, err
 	}
-	if _, err = s.db.Transaction(ctx, []sqlite.Statement{{SQL: "UPDATE approvals SET state = 'pending', input = ?, updated_at = ? WHERE id = ? AND state = 'executing'",
-		Args: []any{string(b), time.Now().Unix(), a.ID}}, s.auditRow(a, "input_required")}); err != nil {
+	if err = s.ledger.reopen(ctx, a, string(b)); err != nil {
 		return false, err
 	}
 	if as, err := s.approvals(ctx, "a.id = ?", a.ID); err == nil && len(as) == 1 {

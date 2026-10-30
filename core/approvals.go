@@ -6,7 +6,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"log/slog"
 	"slices"
 	"time"
 
@@ -202,18 +201,9 @@ const (
 	msgUncertain = "the result is uncertain: it may have run"
 )
 
-// Test hooks, nil in production; true simulates a crash at that point.
-var afterApprovalClaim, beforeResumeClaim func() bool
-
-// More test hooks, nil in production: beforeRunClaim runs in startRun right
-// before it claims the run row, with the call's context, beforeUntrack when a finished run is about to
-// stop being tracked, beforeFollowRead in FollowConversation once it
-// subscribed and before it reads the conversation.
-var (
-	beforeRunClaim   func(ctx context.Context)
-	beforeUntrack    func(runID int64)
-	beforeFollowRead func()
-)
+// Test hook, nil in production: beforeFollowRead runs in FollowConversation
+// once it subscribed and before it reads the conversation.
+var beforeFollowRead func()
 
 // approvalRow is an approval with the columns only the Service uses.
 type approvalRow struct {
@@ -362,7 +352,7 @@ func (s *Service) resolveApproval(ctx context.Context, id int64, accept bool) er
 
 // decide claims and ends a pending approval. Accepted, it applies args when
 // set (an edited proposal) instead of the recorded arguments. With resume
-// false the caller resumes the run (resumeRun) afterwards.
+// false the caller resumes the run (runLedger.resume) afterwards.
 func (s *Service) decide(ctx context.Context, id int64, accept bool, args json.RawMessage, resume bool) error {
 	return s.decideAs(ctx, id, accept, args, resume, "executed")
 }
@@ -395,28 +385,13 @@ func (s *Service) decideAs(ctx context.Context, id int64, accept bool, args json
 			return err
 		}
 	}
-	// ponytail: one lock for every run's approvals, starts and cancels; per run if it ever contends
-	s.runMu.Lock()
-	defer s.runMu.Unlock()
-	r, err := s.db.Execute(ctx, "UPDATE approvals SET state = 'executing', updated_at = ? WHERE id = ? AND state = 'pending'", time.Now().Unix(), id)
-	if err != nil {
+	return s.ledger.execute(ctx, id, a.RunID, func(ctx context.Context) error {
+		start := time.Now()
+		err := s.execute(ctx, a, ex, args, decision)
+		s.worked(ctx, a.RunID, start)
+		s.bus.Publish(events.Event{Type: events.ApprovalsChanged, ConversationID: a.ConversationID})
 		return err
-	}
-	if r.Changes == 0 {
-		return ErrInvalidState
-	}
-	if afterApprovalClaim != nil && afterApprovalClaim() {
-		return errors.New("simulated crash")
-	}
-	ctx = context.WithoutCancel(ctx) // claimed: always reach an end state
-	start := time.Now()
-	err = s.execute(ctx, a, ex, args, decision)
-	s.worked(ctx, a.RunID, start)
-	s.bus.Publish(events.Event{Type: events.ApprovalsChanged, ConversationID: a.ConversationID})
-	if resume {
-		err = errors.Join(err, s.resumeRun(ctx, a.RunID))
-	}
-	return err
+	}, resume)
 }
 
 // editedDraftArgs is a draft proposal's recorded arguments with the user's
@@ -450,18 +425,6 @@ func (s *Service) editedDraftArgs(ctx context.Context, recorded, edited json.Raw
 	return json.Marshal(rec)
 }
 
-// resumeRun resumes runID once nothing of it is left open; a run that cannot
-// go on is failed, so it does not block the conversation. The caller holds runMu.
-func (s *Service) resumeRun(ctx context.Context, runID int64) error {
-	cerr := s.claimResume(ctx, runID)
-	if cerr == nil {
-		return nil
-	}
-	slog.Default().Warn("could not resume a run", "run", runID, "err", cerr)
-	_, ferr := s.failRun(ctx, runID, cerr)
-	return errors.Join(fmt.Errorf("resuming the run: %w", cerr), ferr)
-}
-
 // execute ends a claimed approval: rejected when ex is nil, else applied with
 // args, if set, in place of the recorded arguments (which done then records),
 // audited as decision.
@@ -471,10 +434,7 @@ func (s *Service) execute(ctx context.Context, a approvalRow, ex *executor, args
 		if state != "done" {
 			edited = nil
 		}
-		stmts = append(stmts, sqlite.Statement{SQL: "UPDATE approvals SET state = ?, args = COALESCE(?, args), result = ?, undo = ?, updated_at = ? WHERE id = ? AND state = 'executing'",
-			Args: []any{state, edited, result, undo, time.Now().Unix(), a.ID}}, s.auditRow(a, decision))
-		_, err := s.db.Transaction(ctx, stmts)
-		return err
+		return s.ledger.finish(ctx, a, state, result, edited, undo, decision, stmts...)
 	}
 	if ex == nil {
 		if a.Tool == askQuestionTool || a.input != "" {
@@ -524,40 +484,6 @@ func (s *Service) execute(ctx context.Context, a approvalRow, ex *executor, args
 	return nil
 }
 
-// claimResume resumes runID if it is interrupted with no approval left open.
-// Only the caller whose update changes the row resumes it. The caller holds runMu.
-func (s *Service) claimResume(ctx context.Context, runID int64) error {
-	if beforeResumeClaim != nil && beforeResumeClaim() {
-		return nil
-	}
-	r, err := s.db.Execute(ctx, `UPDATE runs SET state = 'resuming', updated_at = ? WHERE id = ? AND state = 'interrupted'
-		AND NOT EXISTS (SELECT 1 FROM approvals WHERE run_id = ? AND state IN ('pending', 'executing'))`, time.Now().Unix(), runID, runID)
-	if err != nil {
-		return err
-	}
-	if r.Changes == 1 {
-		return s.resume(runID)
-	}
-	return nil
-}
-
-// failRun ends runID as failed after cause stopped it: closed like a cancel
-// (pending approvals rejected with "recovery failed"), or, if that is not
-// possible, just marked failed with its pending approvals rejected, so it
-// never blocks the conversation. The error is only a database error from that.
-func (s *Service) failRun(ctx context.Context, runID int64, cause error) (int64, error) {
-	convID, err := s.closeRun(ctx, runID, "failed", msgRecovery)
-	if err == nil {
-		return convID, nil
-	}
-	slog.Default().Warn("could not close a failed run", "run", runID, "cause", cause, "err", err)
-	_, err = s.db.Transaction(ctx, []sqlite.Statement{
-		{SQL: "UPDATE approvals SET state = 'rejected', result = ?, updated_at = ? WHERE run_id = ? AND state = 'pending'",
-			Args: []any{msgRecovery, time.Now().Unix(), runID}},
-		runState(runID, "failed")})
-	return convID, err
-}
-
 // ResolveAll resolves the run's pending approvals one by one in seq order;
 // accepting leaves its questions pending: only AnswerQuestion accepts them.
 func (s *Service) ResolveAll(ctx context.Context, runID int64, accept bool) error {
@@ -597,150 +523,51 @@ func (s *Service) CancelRun(ctx context.Context, runID int64) error {
 		return err
 	}
 	defer end()
-	for {
-		s.runMu.Lock()
-		var wait <-chan struct{}
-		if job := s.active[runID]; job != nil {
-			job.cancel()
-			wait = job.done // it may end interrupted
-		} else {
-			wait = s.externalOf(runID) // an approved call still running: its real result goes into the history
-		}
-		if wait == nil {
-			break
-		}
-		s.runMu.Unlock()
-		select {
-		case <-wait: // look again
-		case <-ctx.Done():
-			return ctx.Err()
-		}
-	}
-	defer s.runMu.Unlock()
-	rows, err := s.db.Query(ctx, "SELECT state FROM runs WHERE id = ?", runID)
+	release, err := s.ledger.hold(ctx, func() ([]int64, error) { return []int64{runID}, nil })
 	if err != nil {
 		return err
 	}
-	if len(rows.Values) == 0 {
+	defer release()
+	state, err := s.ledger.state(ctx, runID)
+	if err != nil {
+		return err
+	}
+	if state == "" {
 		return fmt.Errorf("run %d not found", runID)
 	}
-	if store.Str(rows.Values[0][0]) != "interrupted" {
+	if state != "interrupted" {
 		return nil
 	}
-	convID, err := s.closeRun(ctx, runID, "cancelled", msgCancelled)
+	convID, err := s.ledger.close(ctx, runID, "cancelled", msgCancelled)
 	s.bus.Publish(events.Event{Type: events.ApprovalsChanged, ConversationID: convID})
 	return err
 }
 
-// closeRun ends runID as final without asking the model, in one transaction:
-// its pending approvals become rejected with pendingMsg, and every call of its
-// current interrupt gets its approval's result in the conversation state. If
-// the state cannot be closed nothing is written. No approval may be
-// executing: the caller holds runMu and no external execution of the run is
-// in flight (CancelRun waits for them), or none is left open. One left
-// executing anyway is an external run whose outcome could not be recorded.
-func (s *Service) closeRun(ctx context.Context, runID int64, final, pendingMsg string) (int64, error) {
-	rows, err := s.db.Query(ctx, "SELECT conversation_id, snapshot FROM runs WHERE id = ?", runID)
-	if err != nil {
-		return 0, err
-	}
-	if len(rows.Values) == 0 {
-		return 0, fmt.Errorf("run %d not found", runID)
-	}
-	convID := store.Int(rows.Values[0][0])
-	var snap snapshot
-	if err := json.Unmarshal([]byte(store.Str(rows.Values[0][1])), &snap); err != nil {
-		return convID, err
-	}
-	as, err := s.approvalRows(ctx, "a.run_id = ? AND a.seq >= ?", runID, snap.Round)
-	if err != nil {
-		return convID, err
-	}
+// closedHistory closes runID's calls in conversation convID with results,
+// for the ledger's close: a question asked again that ends this way replaces
+// nothing, and a host proposal left no call in the conversation.
+func (s *Service) closedHistory(ctx context.Context, convID, runID int64, snap snapshot, results []ai.ToolResult) ([]sqlite.Statement, func(), error) {
 	var stmts []sqlite.Statement
-	results := make([]ai.ToolResult, 0, len(as))
-	now := time.Now().Unix()
-	for _, a := range as {
-		switch a.State {
-		case "pending":
-			a.State, a.result = "rejected", pendingMsg
-			stmts = append(stmts, sqlite.Statement{SQL: "UPDATE approvals SET state = 'rejected', result = ?, updated_at = ? WHERE id = ? AND state = 'pending'",
-				Args: []any{pendingMsg, now, a.ID}}, s.auditRow(a, "rejected"))
-		case "executing": // an external run whose outcome could not be recorded
-			a.result = msgUncertain
-		}
-		results = append(results, a.toolResult())
-	}
 	if snap.ReadMail {
 		stmts = append(stmts, markConvReadMail(convID))
 	}
 	rw, err := s.runRewind(ctx, runID)
-	if err != nil {
-		return convID, err
-	}
 	switch {
-	case rw != nil: // a question asked again that ends this way replaces nothing
-		stmts = append(stmts, discardRewind(convID, runID, *rw)...)
-	case !snap.Host: // a host proposal left no call in the conversation
-		h, err := s.history(ctx, convID)
-		if err != nil {
-			return convID, err
-		}
-		closed, ch, err := h.Close(results)
-		if err != nil {
-			return convID, err
-		}
-		stmts = append(stmts, historyStmts(convID, ch)...)
-		stmts = append(stmts, sqlite.Statement{SQL: "UPDATE runs SET hist_to = ? WHERE id = ? AND hist_from IS NOT NULL", Args: []any{closed.Next(), runID}})
+	case err != nil:
+		return nil, nil, err
+	case rw != nil:
+		return append(stmts, discardRewind(convID, runID, *rw)...), func() { s.putGrantsBack(runID) }, nil
+	case snap.Host:
+		return stmts, nil, nil
 	}
-	stmts = append(stmts, runState(runID, final))
-	if _, err = s.db.Transaction(ctx, stmts); err == nil && rw != nil {
-		s.putGrantsBack(runID) // it replaced nothing
-	}
-	return convID, err
-}
-
-// recoverRuns runs at startup. A tx approval left executing never took effect
-// (its writes commit with done), so it failed; an external one may have run,
-// so it failed with an uncertain result (audited "uncertain") and is never run again. A run cut off while running
-// failed and keeps its last saved state; one cut off while resuming failed
-// with its calls answered. An interrupted run with nothing left open resumes.
-// A run that cannot be recovered fails (failRun) so the app still starts;
-// only a database error while recording that is returned.
-func (s *Service) recoverRuns(ctx context.Context) error {
-	cut, err := s.approvalRows(ctx, "a.state = 'executing' AND a.exec_mode = 'external'")
+	h, err := s.history(ctx, convID)
 	if err != nil {
-		return err
+		return nil, nil, err
 	}
-	stmts := []sqlite.Statement{{SQL: `UPDATE approvals SET state = 'failed', result = CASE exec_mode WHEN 'external' THEN ? ELSE ? END,
-		updated_at = ? WHERE state = 'executing'`, Args: []any{msgUncertain, msgQuit, time.Now().Unix()}}}
-	for _, a := range cut {
-		stmts = append(stmts, s.auditRow(a, "uncertain"))
-	}
-	if _, err := s.db.Transaction(ctx, stmts); err != nil {
-		return err
-	}
-	rows, err := s.db.Query(ctx, "SELECT id, state FROM runs WHERE state IN ('running', 'resuming', 'interrupted') ORDER BY id")
+	closed, ch, err := h.Close(results)
 	if err != nil {
-		return err
+		return nil, nil, err
 	}
-	s.runMu.Lock()
-	defer s.runMu.Unlock()
-	for _, r := range rows.Values {
-		id := store.Int(r[0])
-		switch store.Str(r[1]) {
-		case "running":
-			err = s.exec(ctx, runState(id, "failed"))
-		case "resuming":
-			_, err = s.closeRun(ctx, id, "failed", msgRecovery)
-		default:
-			err = s.claimResume(ctx, id)
-		}
-		if err != nil {
-			slog.Default().Warn("could not recover a run", "run", id, "err", err)
-			if _, err := s.failRun(ctx, id, err); err != nil {
-				return err
-			}
-		}
-	}
-	return nil
+	stmts = append(stmts, historyStmts(convID, ch)...)
+	return append(stmts, sqlite.Statement{SQL: "UPDATE runs SET hist_to = ? WHERE id = ? AND hist_from IS NOT NULL", Args: []any{closed.Next(), runID}}), nil, nil
 }

@@ -521,7 +521,7 @@ func (s *Service) applyUpdate(ctx context.Context, a Approval) ([]sqlite.Stateme
 // write an empty draft (the first generation is written directly), those that
 // change nothing (audited no_change), and those a session grant covers (audited auto:session). It returns the
 // approvals as they are now, and whether any was decided; the caller then
-// resumes the run (resumeRun).
+// resumes the run (runLedger.resume).
 func (s *Service) applyInitial(ctx context.Context, as []Approval) ([]Approval, bool) {
 	applied := false
 	for i, a := range as {
@@ -805,7 +805,8 @@ func (s *Service) assistSkill(ctx context.Context, end func(), draftID int64, na
 	ref := sk.Model
 	var run runFunc
 	var req ai.Request
-	if plugin, ok := strings.CutPrefix(st.Translator, translatorPrefix); ok && name == "translate-draft" {
+	plugin, byPlugin := strings.CutPrefix(st.Translator, translatorPrefix)
+	if byPlugin = byPlugin && name == "translate-draft"; byPlugin {
 		// The plugin translates instead of a model; the proposal, its decision and undo stay as they are.
 		if _, err := s.translatorFor(ctx, plugin); err != nil {
 			return nil, err
@@ -837,16 +838,20 @@ func (s *Service) assistSkill(ctx context.Context, end func(), draftID int64, na
 	if err := s.gateway().Record(ctx, gateway.Entry{Source: gateway.SourceSkill, Tool: "skill:" + name, TargetKind: "draft", TargetID: d.ID, Decision: "run"}); err != nil {
 		return nil, err
 	}
-	if plugin, ok := strings.CutPrefix(ref, translatorPrefix); ok { // the plugin gets the draft: the audit log says so
+	if byPlugin { // the plugin gets the draft: the audit log says so (not ref: a plugin model is "plugin/…" too)
 		if err := s.gateway().Record(ctx, gateway.Entry{Source: gateway.SourcePlugin, Extension: plugin, Tool: "plugin:" + plugin + "/translate",
 			TargetKind: "draft", TargetID: d.ID, Decision: "run"}); err != nil {
 			return nil, err
 		}
 	}
 
-	s.runMu.Lock()
-	defer s.runMu.Unlock()
-	job, h, err := s.claimRun(ctx, conv, ref, []string{})
+	var job *runJob
+	var h *ai.History
+	err = s.ledger.claim(ctx, conv, ref, []string{}, func() error { return s.checkWitDraft(ctx, conv.DraftID) }, func(j *runJob) (err error) {
+		job = j
+		h, err = s.claimed(ctx, j)
+		return err
+	})
 	if err != nil {
 		return nil, err
 	}

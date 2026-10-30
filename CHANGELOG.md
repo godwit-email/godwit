@@ -1,5 +1,13 @@
 # Changelog
 
+## [1.20.1](https://github.com/godwit-email/godwit/compare/v1.20.0...v1.20.1) (2026-10-30)
+
+
+### Bug Fixes
+
+* close audit findings in sending, sync, storage, attachments, Wit and plugins ([#352](https://github.com/godwit-email/godwit/issues/352)) ([58a7d62](https://github.com/godwit-email/godwit/commit/58a7d622494a71312c391b53fdbf7426f9a69baf))
+* **mailsync:** read envelope fields from headers, not ENVELOPE ([#358](https://github.com/godwit-email/godwit/issues/358)) ([0c03b24](https://github.com/godwit-email/godwit/commit/0c03b24cccea5748c7e36254630b384fdaf6dd95))
+
 ## [1.20.0](https://github.com/godwit-email/godwit/compare/v1.19.0...v1.20.0) (2026-10-29)
 
 
