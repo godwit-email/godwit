@@ -14,6 +14,7 @@ import (
 	"github.com/emersion/go-imap/v2"
 	"github.com/godwit-email/godwit/core"
 	"github.com/godwit-email/godwit/core/coretest"
+	gomail "github.com/godwit-email/godwit/core/mail"
 	"github.com/godwit-email/godwit/internal/i18n"
 )
 
@@ -839,6 +840,20 @@ func TestRowUnreadCount(t *testing.T) {
 	// The row no longer shows the thread's size (07a4d40); a bare see("3") matched the sidebar's stale unread count.
 	if n := h.items()[0].Count; n != 3 {
 		t.Fatalf("the row holds %d messages, want 3", n)
+	}
+}
+
+func TestMailListSecurityIcons(t *testing.T) {
+	h, accs := mailHarness(t, nil, "alice@example.com")
+	acc := accs[0]
+	// Deliver spoofed email claiming to be PayPal but sent from gmail.com
+	h.deliverOne(acc, coretest.Msg("\"PayPal Support\" <phisher@gmail.com>", acc.Email, "Urgent Notice", "Verify your account"))
+	h.waitMail("one thread", func() bool { return len(h.items()) == 1 })
+	if got := h.items()[0].Security.Status; got != gomail.SecurityWarning {
+		t.Fatalf("item security status = %v, want SecurityWarning", got)
+	}
+	if got := h.items()[0].Security.WarningKind; got != gomail.WarnDisplaySpoof {
+		t.Fatalf("item warning kind = %v, want WarnDisplaySpoof", got)
 	}
 }
 

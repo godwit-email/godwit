@@ -1064,6 +1064,7 @@ func (r *reader) folded(c *ui.Context, m core.MessageSummary) {
 			if r.isBlocked(m.From) {
 				kit.Badge(c, i18n.T("reader.blocked_badge"))
 			}
+			r.securityBadge(c, m.Security)
 			if g := r.gist(m.ID); g != "" { // a step darker than the text it stands for, and marked the AI's
 				ui.Row(c).Grow(1).Shrink(1).Gap(th.Space(1)).AlignItems(ui.Center).Children(func() {
 					ui.Text(c, g).TextColor(t.Foreground.Alpha(0.7)).SingleLine().Shrink(1)
@@ -1293,6 +1294,12 @@ func splitAddresses(header string) []string {
 func (r *reader) message(c *ui.Context, m core.MessageSummary) {
 	t, th := theme.Of(c), c.Theme()
 	b := r.bodies[m.ID]
+	var sec gomail.SecurityReport
+	if b != nil && b.ready {
+		sec = b.msg.Security
+	} else {
+		sec = gomail.EvaluateSecurity(m.From, "")
+	}
 	ui.Column(c).FillWidth().Gap(th.Space(3.5)).Children(func() {
 		name, addr := sender(m.From)
 		head := r.column(c).Gap(th.Space(3.5))
@@ -1343,6 +1350,7 @@ func (r *reader) message(c *ui.Context, m core.MessageSummary) {
 						if r.isBlocked(m.From) {
 							kit.Badge(c, i18n.T("reader.blocked_badge"))
 						}
+						r.securityBadge(c, sec)
 					})
 					ui.Row(c).Wrap().Gap(th.Space(1.5)).AlignItems(ui.Center).Children(func() {
 						r.recipientsLine(c, m, b)
@@ -1809,4 +1817,99 @@ func (r *reader) senderMenu(c *ui.Context, anchor ui.Element, addr, rawFrom stri
 			})
 		}
 	})
+}
+
+func secWarningText(sec gomail.SecurityReport) string {
+	switch sec.WarningKind {
+	case gomail.WarnDisplaySpoof:
+		return i18n.T("reader.security.spoof_brand")
+	case gomail.WarnEmailInName:
+		return i18n.T("reader.security.spoof_email")
+	case gomail.WarnAuthFailed:
+		return i18n.T("reader.security.auth_failed")
+	case gomail.WarnAIFraud:
+		return i18n.T("reader.security.ai_fraud")
+	default:
+		return i18n.T("reader.security.warning_generic")
+	}
+}
+
+func (r *reader) secExplanation(sec gomail.SecurityReport) string {
+	switch sec.Status {
+	case gomail.SecurityCertifiedBrand:
+		return i18n.T("reader.security.certified_desc")
+	case gomail.SecurityVerifiedDomain:
+		return i18n.T("reader.security.verified_desc")
+	case gomail.SecurityNeedsReview:
+		if sec.ActualDomain != "" && (sec.DMARCPass || sec.DKIMPass) {
+			return i18n.Tf("reader.security.review_authenticated_desc", sec.ActualDomain)
+		}
+		return i18n.T("reader.security.review_desc")
+	case gomail.SecurityFraud:
+		return secWarningText(sec)
+	case gomail.SecurityNeutral:
+		return i18n.T("reader.security.unverified_desc")
+	default:
+		return ""
+	}
+}
+
+// securityBadge is the sender's verdict as an icon by the name; hovering it
+// explains the verdict.
+func (r *reader) securityBadge(c *ui.Context, sec gomail.SecurityReport) {
+	if !showSecurity(r.p.a.settings, sec.Status) {
+		return
+	}
+	t, th := theme.Of(c), c.Theme()
+	iconName, label, color := secVisual(t, sec.Status)
+	mark := ui.Box(c).Shrink(0).Label(label).Children(func() {
+		ui.Icon(c, icons.Fill(iconName)).Size(theme.IconXs, theme.IconXs).TextColor(color)
+	})
+	kit.HoverCard(c, mark, theme.SecurityCardWidth, func() {
+		ui.Row(c).Gap(th.Space(1.5)).AlignItems(ui.Center).Children(func() {
+			ui.Icon(c, icons.Fill(iconName)).Size(theme.Icon, theme.Icon).TextColor(color)
+			kit.Text(c, label, t.Text.Base).FontWeight(600).TextColor(color)
+		})
+		kit.Text(c, r.secExplanation(sec), t.Text.Sm).LineHeight(theme.LineCJK).TextColor(t.Foreground)
+	})
+}
+
+// securityIcon is a mail list row's warning, after the sender's name. Verified
+// senders show theirs in the reader only: most rows would carry one.
+func securityIcon(c *ui.Context, st core.Settings, status gomail.SecurityStatus) {
+	if status != gomail.SecurityFraud && status != gomail.SecurityNeedsReview || !showSecurity(st, status) {
+		return
+	}
+	iconName, label, color := secVisual(theme.Of(c), status)
+	ui.Icon(c, icons.Fill(iconName)).Size(theme.IconXs, theme.IconXs).Shrink(0).TextColor(color).Label(label)
+}
+
+// showSecurity reports whether the settings show a sender verdict: warnings
+// and badges come from the native checks, so neither depends on SecurityAI.
+func showSecurity(st core.Settings, status gomail.SecurityStatus) bool {
+	switch status {
+	case gomail.SecurityFraud, gomail.SecurityNeedsReview:
+		return st.SecurityWarnings
+	case gomail.SecurityCertifiedBrand, gomail.SecurityVerifiedDomain:
+		return st.VerifiedBadge
+	}
+	return false // neutral is also the zero value of mail not yet checked: no badge
+}
+
+// secVisual returns the icon, translated label, and theme color for a security status.
+func secVisual(t theme.Tokens, status gomail.SecurityStatus) (iconName string, label string, color ui.Color) {
+	switch status {
+	case gomail.SecurityCertifiedBrand:
+		return "vip-diamond-fill", i18n.T("reader.security.certified_badge"), t.Unread
+	case gomail.SecurityVerifiedDomain:
+		return "shield-check-fill", i18n.T("reader.security.verified_badge"), t.SuccessText
+	case gomail.SecurityNeedsReview:
+		return "triangle-alert-fill", i18n.T("reader.security.review_badge"), t.WarningText
+	case gomail.SecurityFraud:
+		return "skull-fill", i18n.T("reader.security.fraud_badge"), t.DangerText
+	case gomail.SecurityNeutral:
+		return "question-fill", i18n.T("reader.security.unverified_badge"), t.Muted
+	default:
+		return "", "", color
+	}
 }

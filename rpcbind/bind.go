@@ -45,6 +45,8 @@ var table = []Error{
 	{Code: "stale_draft", Err: core.ErrStaleDraft},
 	{Code: "not_synced", Err: core.ErrNotSynced},
 	{Code: "run_active", Err: core.ErrRunActive},
+	{Code: "security_scan_busy", Err: core.ErrSecurityScanBusy, Key: "settings.security.rescan.busy"},
+	{Code: "security_scan_disabled", Err: core.ErrSecurityScanDisabled},
 	{Code: "compacting", Err: core.ErrCompacting},
 	{Code: "nothing_to_compact", Err: core.ErrNothingToCompact},
 	{Code: "draft_gone", Err: core.ErrDraftGone, Key: "wit.draft.gone"},

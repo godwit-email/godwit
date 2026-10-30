@@ -154,6 +154,9 @@ func syncFolder(ctx context.Context, db *store.DB, c *imapclient.Client, a *acco
 	if err := backfill(ctx, db, c, a, f, sel.NumMessages, r); err != nil {
 		return err
 	}
+	if err := refreshAuthenticationResults(ctx, db, c, a, f, r); err != nil {
+		return err
+	}
 	return syncFlags(ctx, db, c, a.id, f, r)
 }
 
@@ -206,7 +209,7 @@ func doomed(ctx context.Context, db *store.DB, where string, args ...any) (ids, 
 
 func headerSection() *imap.FetchItemBodySection {
 	return &imap.FetchItemBodySection{Specifier: imap.PartSpecifierHeader,
-		HeaderFields: []string{"MESSAGE-ID", "DATE", "SUBJECT", "FROM", "TO", "CC", "REFERENCES", "IN-REPLY-TO", "REPLY-TO", "LIST-UNSUBSCRIBE", "LIST-UNSUBSCRIBE-POST", "LIST-ID"}, Peek: true}
+		HeaderFields: []string{"MESSAGE-ID", "DATE", "SUBJECT", "FROM", "TO", "CC", "REFERENCES", "IN-REPLY-TO", "REPLY-TO", "LIST-UNSUBSCRIBE", "LIST-UNSUBSCRIBE-POST", "LIST-ID", "AUTHENTICATION-RESULTS", "DKIM-SIGNATURE", "RECEIVED", "MIME-VERSION", "CONTENT-TYPE"}, Peek: true}
 }
 
 // fetchNew imports messages above last_uid; the first sync of a count range
@@ -583,6 +586,7 @@ func toParsed(m *imapclient.FetchMessageBuffer, texts map[string][]byte) *mail.P
 		p.MessageID, p.Subject, p.Date, p.From, p.To, p.Cc = h.MessageID, h.Subject, h.Date, h.From, h.To, h.Cc
 		p.InReplyTo, p.References, p.ReplyTo = h.InReplyTo, h.References, h.ReplyTo
 		p.ListUnsubscribe, p.ListUnsubscribePost, p.ListID = h.ListUnsubscribe, h.ListUnsubscribePost, h.ListID
+		p.AuthenticationResults, p.AuthenticationTrace, p.DKIMSigned = h.AuthenticationResults, h.AuthenticationTrace, h.DKIMSigned
 	}
 	if p.Date.IsZero() {
 		p.Date = m.InternalDate

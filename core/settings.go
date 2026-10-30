@@ -68,6 +68,15 @@ type Settings struct {
 	MaskRules []mask.Rule
 	// MaskAllow are the values never masked (白名单), whatever their letter case; at most mask.MaxAllow.
 	MaskAllow []string
+	// SecurityWarnings shows potential spoofing and authentication failure warnings
+	// in the reader; on by default.
+	SecurityWarnings bool
+	// VerifiedBadge shows a verified badge for authenticated senders (DKIM/DMARC);
+	// on by default.
+	VerifiedBadge bool
+	// SecurityAI analyzes unverified email contents with the configured judge
+	// model, which may be remote, to detect fraud and phishing; off by default.
+	SecurityAI bool
 	// RecognitionModel is 识别模型 (docs/adr/0028-recognition-model-for-masking.md): a
 	// model on this device finds names, addresses, accounts, phone numbers,
 	// email addresses, secrets and card numbers the rules can't. Off by default; it turns on only once its
@@ -130,7 +139,8 @@ func defaultSettings() Settings {
 	return Settings{Theme: "system", Density: "compact", FontSize: 14, SettingsVersion: settingsVersion, ReplyLanguage: "match", RemoteImages: "auto",
 		KeepInBackground: true, UnreadOnAppIcon: true, NotifyNewMail: true, NotifyPreview: true, ThreadView: true,
 		ThreadCollapse: true, ThreadCollapseThreshold: DefaultThreadCollapse, AutoLabel: true, LabelDisplay: LabelDisplayBoth, JudgeThreshold: 0.8,
-		MCPSend: MCPSendConfirm, Masking: true, MaskCategories: defaultMaskCategories()}
+		MCPSend: MCPSendConfirm, Masking: true, MaskCategories: defaultMaskCategories(),
+		SecurityWarnings: true, VerifiedBadge: true, SecurityAI: false}
 }
 
 var langRE = regexp.MustCompile(`^[A-Za-z]{2,3}(-[A-Za-z0-9]{2,8})*$`)
@@ -275,6 +285,9 @@ func (s *Service) SetSettings(ctx context.Context, st Settings) (Settings, error
 		return Settings{}, err
 	}
 	s.maskingChanged(st)
+	if securityOn(st) && (!securityOn(stored) || st.SecurityAI && !stored.SecurityAI) {
+		s.wakeSecurityScanner()
+	}
 	s.bus.Publish(events.Event{Type: events.SettingsChanged})
 	return st, nil
 }

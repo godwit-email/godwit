@@ -9,6 +9,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/egoist/mygo/ui"
 	"github.com/godwit-email/godwit/assets"
@@ -107,11 +108,26 @@ type settingsPage struct {
 	models *modelsView
 	ext    *extView
 	labels *labelsView
+
+	// security rescan
+	secDays     int
+	secMode     int
+	secStarted  bool
+	secTotal    int
+	secPending  int
+	secPoll     func()
+	secLoaded   bool
+	secBusy     bool
+	secStarting bool
+	secStopping bool
+	secChecking bool
+	secRevision uint64
 }
 
 func newSettingsPage(a *App) *settingsPage {
 	return &settingsPage{a: a, forms: map[int64]*accountForm{}, usage: map[int64]int64{}, imgSize: -1, boxes: map[int64]*mailbox{}, reauth: map[int64]bool{}, sigDocs: map[int64]sigDoc{},
-		update: a.svc.UpdateAccount, models: &modelsView{a: a, checkService: a.svc.CheckModelService, testService: a.svc.TestCapability, testPlugin: a.svc.TestPluginModel, serviceAvatar: a.svc.ModelServiceAvatar}, ext: &extView{a: a, tab: 1}, labels: newLabelsView(a)}
+		secDays: 30,
+		update:  a.svc.UpdateAccount, models: &modelsView{a: a, checkService: a.svc.CheckModelService, testService: a.svc.TestCapability, testPlugin: a.svc.TestPluginModel, serviceAvatar: a.svc.ModelServiceAvatar}, ext: &extView{a: a, tab: 1}, labels: newLabelsView(a)}
 }
 
 // section is the page shown: an unknown or missing account falls back to
@@ -187,6 +203,7 @@ func (p *settingsPage) refresh(hints []events.Event) {
 		a.query(func(ctx context.Context) error { starred, ok = a.plat.RepoStarred(ctx); return nil },
 			func(error) { p.gh, p.starred = ok, starred })
 	case sec == "privacy" && hints == nil:
+		p.readSecurityProgress()
 		var err error
 		a.query(func(ctx context.Context) error { err = a.svc.KeychainStatus(ctx); return nil },
 			func(error) { p.keychain, p.keychainSet = err, true })
@@ -195,8 +212,11 @@ func (p *settingsPage) refresh(hints []events.Event) {
 		var here bool
 		a.query(func(context.Context) error { here = a.svc.RecognitionModelInstalled(); return nil }, func(error) { p.recognition.installed = here })
 		p.readRecognitionModel()
-	case sec == "privacy" && slices.ContainsFunc(hints, func(ev events.Event) bool { return ev.Type == events.SettingsChanged }):
-		p.readRecognitionModel() // 识别模型 may have been turned on or off
+	case sec == "privacy":
+		p.readSecurityProgress()
+		if slices.ContainsFunc(hints, func(ev events.Event) bool { return ev.Type == events.SettingsChanged }) {
+			p.readRecognitionModel() // 识别模型 may have been turned on or off
+		}
 	case sec == "masklog" && hints == nil:
 		p.readMaskLog()
 	}
@@ -429,13 +449,15 @@ func settingSelect[T comparable](c *ui.Context, label string, sel *T, opts []kit
 // the keychain's state stands by the title.
 func (p *settingsPage) privacyView(c *ui.Context) {
 	pageHeading(c, i18n.T("settings.privacy"), i18n.T("settings.privacy.sub"), func() { p.keychainState(c) })
-	kit.TabsUnderline(c, &p.privacyTab, i18n.T("settings.masking"), i18n.T("settings.remote_images"), i18n.T("settings.blocked"))
+	kit.TabsUnderline(c, &p.privacyTab, i18n.T("settings.masking"), i18n.T("settings.security"), i18n.T("settings.remote_images"), i18n.T("settings.blocked"))
 	p.syncSettings()
 	defer p.syncSettings() // what the controls changed while building
 	switch p.privacyTab {
 	case 0:
 		p.maskingView(c)
 	case 1:
+		p.securityView(c)
+	case 2:
 		p.remoteImagesView(c)
 		p.trustedView(c)
 	default:
@@ -545,6 +567,162 @@ func (p *settingsPage) aiView(c *ui.Context) {
 	default:
 		p.localAPIView(c)
 	}
+}
+
+func (p *settingsPage) securityView(c *ui.Context) {
+	settingsSection(c, i18n.T("settings.security"), "",
+		func() {
+			kit.SwitchRow(c, &p.st.SecurityWarnings, i18n.T("settings.security.warnings"), i18n.T("settings.security.warnings.help"))
+		},
+		func() {
+			kit.SwitchRow(c, &p.st.VerifiedBadge, i18n.T("settings.security.verified"), i18n.T("settings.security.verified.help"))
+		},
+		func() {
+			kit.SwitchRow(c, &p.st.SecurityAI, i18n.T("settings.security.ai"), i18n.T("settings.security.ai.help"))
+		},
+	)
+	if p.st.SecurityWarnings || p.st.VerifiedBadge || p.st.SecurityAI {
+		p.securityRescanView(c)
+	}
+}
+
+var secRescanDays = []int{7, 30, 90, 0}
+
+func (p *settingsPage) securityRescanView(c *ui.Context) {
+	t, th := theme.Of(c), c.Theme()
+	opts := make([]kit.Option[int], len(secRescanDays))
+	for i, d := range secRescanDays {
+		opts[i] = kit.Option[int]{Value: d, Label: i18n.Tf("settings.security.rescan.days", d)}
+		if d == 0 {
+			opts[i].Label = i18n.T("settings.security.rescan.all_range")
+		}
+	}
+	help := i18n.T("settings.security.rescan.redo.help")
+	if p.secMode == 1 {
+		help = i18n.T("settings.security.rescan.missing.help")
+	}
+	settingsSection(c, i18n.T("settings.security.rescan"), i18n.T("settings.security.rescan.sub"),
+		func() {
+			settingRow(c, i18n.T("settings.security.rescan.range"), "", func() {
+				settingSelect(c, i18n.T("settings.security.rescan.range"), &p.secDays, opts).Disabled(p.securityRescanBlocked())
+			})
+		},
+		func() {
+			settingRow(c, i18n.T("settings.security.rescan.mode"), help, func() {
+				kit.Tabs(c, &p.secMode, i18n.T("settings.security.rescan.redo"), i18n.T("settings.security.rescan.missing")).Disabled(p.securityRescanBlocked())
+			})
+		},
+		func() {
+			settingBlock(c, func() {
+				if !p.secStarted {
+					if p.securityRescanBlocked() {
+						key := "settings.security.rescan.busy"
+						if !p.secLoaded || p.secStarting {
+							key = "settings.security.rescan.checking"
+						}
+						kit.Text(c, i18n.T(key), t.Text.Sm).TextColor(t.Muted)
+					}
+					ui.Row(c).Gap(th.Space(6)).AlignItems(ui.Center).Children(func() {
+						ui.Spacer(c)
+						settingButton(c, i18n.T("settings.security.rescan.start"), kit.Default, p.securityRescanBlocked()).OnClick(p.startSecurityRescan)
+					})
+					return
+				}
+				done := p.secTotal - p.secPending
+				ui.Row(c).Gap(th.Space(6)).AlignItems(ui.Center).Children(func() {
+					ui.Column(c).Grow(1).Shrink(1).Gap(th.Space(1.5)).Children(func() {
+						kit.Text(c, i18n.Tf("settings.security.rescan.running", done, p.secTotal), t.Text.Sm)
+						ui.Row(c).FillWidth().Height(th.Space(2)).Radius(t.Radius.Full).Background(t.Border).AlignItems(ui.Stretch).Clip().
+							Label(i18n.T("settings.security.rescan.progress")).Children(func() {
+							ui.Box(c).Grow(float32(done)).Background(t.Primary)
+							ui.Box(c).Grow(float32(p.secPending))
+						})
+					})
+					settingButton(c, i18n.T("settings.security.rescan.stop"), kit.Outline, p.secStopping).OnClick(p.stopSecurityRescan)
+				})
+			})
+		},
+	)
+}
+
+func (p *settingsPage) securityRescanBlocked() bool {
+	return !p.secLoaded || p.secBusy || p.secStarted || p.secStarting || p.secStopping || len(p.a.syncing) > 0
+}
+
+func (p *settingsPage) startSecurityRescan() {
+	if p.securityRescanBlocked() {
+		return
+	}
+	a := p.a
+	days, all := p.secDays, p.secMode == 0
+	p.secStarting = true // synchronous: a second click cannot race the async write
+	p.secRevision++
+	p.secChecking = false
+	if p.secPoll != nil {
+		p.secPoll()
+	}
+	var n int
+	a.do(func(ctx context.Context) (err error) { n, err = a.svc.RescanSecurity(ctx, days, all); return err }, func(err error) {
+		p.secStarting = false
+		if err != nil {
+			a.toastErr(err)
+		} else if n > 0 {
+			p.secStarted, p.secBusy, p.secTotal, p.secPending = true, true, n, n
+		}
+		p.readSecurityProgress()
+	})
+}
+
+func (p *settingsPage) readSecurityProgress() {
+	if p.secChecking || p.secStarting || p.secStopping {
+		return
+	}
+	p.secChecking = true
+	revision := p.secRevision
+	var progress core.SecurityScanProgress
+	p.a.do(func(ctx context.Context) (err error) { progress, err = p.a.svc.SecurityProgress(ctx); return err }, func(err error) {
+		if revision != p.secRevision {
+			return
+		}
+		p.secChecking = false
+		p.secLoaded = err == nil // a failed status lookup must not enable Start
+		if err == nil {
+			p.secBusy = progress.Busy
+			p.secTotal, p.secPending = progress.Total, progress.Pending
+			p.secStarted = progress.Total > 0 && progress.Pending > 0
+		}
+		p.scheduleSecurityRescan()
+	})
+}
+
+func (p *settingsPage) scheduleSecurityRescan() {
+	if p.secPoll != nil {
+		p.secPoll()
+	}
+	p.secPoll = p.a.after(time.Second, func() {
+		if p.a.route.Page == PageSettings && p.a.route.Settings == "privacy" {
+			p.readSecurityProgress()
+		}
+	})
+}
+
+func (p *settingsPage) stopSecurityRescan() {
+	if p.secStopping || p.secStarting {
+		return
+	}
+	p.secStopping = true
+	p.secRevision++
+	p.secChecking = false
+	if p.secPoll != nil {
+		p.secPoll()
+	}
+	p.a.do(p.a.svc.StopSecurityRescan, func(err error) {
+		p.secStopping = false
+		if err != nil {
+			p.a.toastErr(err)
+		}
+		p.readSecurityProgress()
+	})
 }
 
 // readImageCache reads the remote image cache's size for the privacy page.

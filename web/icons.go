@@ -105,6 +105,8 @@ var RemixIcons = map[string]string{
 	"printer":                   "node_modules/remixicon/icons/Business/printer-line.svg",
 	"puzzle":                    "node_modules/remixicon/icons/Development/puzzle-line.svg",
 	"puzzle-fill":               "node_modules/remixicon/icons/Development/puzzle-fill.svg",
+	"question":                  "node_modules/remixicon/icons/System/question-line.svg",
+	"question-fill":             "node_modules/remixicon/icons/System/question-fill.svg",
 	"quill-pen":                 "node_modules/remixicon/icons/Design/quill-pen-line.svg",
 	"quill-pen-fill":            "node_modules/remixicon/icons/Design/quill-pen-fill.svg",
 	"quote":                     "node_modules/remixicon/icons/Editor/double-quotes-l.svg",
@@ -119,6 +121,10 @@ var RemixIcons = map[string]string{
 	"settings-fill":             "node_modules/remixicon/icons/System/settings-3-fill.svg",
 	"shield":                    "node_modules/remixicon/icons/System/shield-line.svg",
 	"shield-fill":               "node_modules/remixicon/icons/System/shield-fill.svg",
+	"shield-check":              "node_modules/remixicon/icons/System/shield-check-line.svg",
+	"shield-check-fill":         "node_modules/remixicon/icons/System/shield-check-fill.svg",
+	"skull":                     "node_modules/remixicon/icons/User & Faces/skull-line.svg",
+	"skull-fill":                "node_modules/remixicon/icons/User & Faces/skull-fill.svg",
 	"sliders-horizontal":        "node_modules/remixicon/icons/Media/equalizer-3-line.svg",
 	"sliders-horizontal-fill":   "node_modules/remixicon/icons/Media/equalizer-3-fill.svg",
 	"spam":                      "node_modules/remixicon/icons/System/spam-2-line.svg",
@@ -133,7 +139,10 @@ var RemixIcons = map[string]string{
 	"trash-2":                   "node_modules/remixicon/icons/System/delete-bin-line.svg",
 	"trash-2-fill":              "node_modules/remixicon/icons/System/delete-bin-fill.svg",
 	"triangle-alert":            "node_modules/remixicon/icons/System/alert-line.svg",
+	"triangle-alert-fill":       "node_modules/remixicon/icons/System/alert-fill.svg",
 	"undo-2":                    "node_modules/remixicon/icons/Arrows/arrow-go-back-line.svg",
+	"vip-diamond":               "node_modules/remixicon/icons/Finance/vip-diamond-line.svg",
+	"vip-diamond-fill":          "node_modules/remixicon/icons/Finance/vip-diamond-fill.svg",
 	"user":                      "node_modules/remixicon/icons/User & Faces/user-line.svg",
 	"wand-sparkles":             "node_modules/remixicon/icons/Design/magic-line.svg",
 	"x":                         "node_modules/remixicon/icons/System/close-line.svg",
@@ -236,6 +245,8 @@ var BrandIcons = map[string]string{
 //go:embed node_modules/remixicon/icons/Finance/price-tag-3-fill.svg
 //go:embed node_modules/remixicon/icons/Finance/price-tag-3-line.svg
 //go:embed node_modules/remixicon/icons/Finance/shopping-bag-3-line.svg
+//go:embed node_modules/remixicon/icons/Finance/vip-diamond-fill.svg
+//go:embed node_modules/remixicon/icons/Finance/vip-diamond-line.svg
 //go:embed "node_modules/remixicon/icons/Health & Medical/brain-line.svg"
 //go:embed "node_modules/remixicon/icons/Health & Medical/first-aid-kit-line.svg"
 //go:embed "node_modules/remixicon/icons/Health & Medical/flask-line.svg"
@@ -258,6 +269,7 @@ var BrandIcons = map[string]string{
 //go:embed node_modules/remixicon/icons/Others/scales-3-line.svg
 //go:embed node_modules/remixicon/icons/Others/seedling-line.svg
 //go:embed node_modules/remixicon/icons/System/add-line.svg
+//go:embed node_modules/remixicon/icons/System/alert-fill.svg
 //go:embed node_modules/remixicon/icons/System/alert-line.svg
 //go:embed node_modules/remixicon/icons/System/apps-2-fill.svg
 //go:embed node_modules/remixicon/icons/System/apps-2-line.svg
@@ -276,11 +288,15 @@ var BrandIcons = map[string]string{
 //go:embed node_modules/remixicon/icons/System/loader-4-line.svg
 //go:embed node_modules/remixicon/icons/System/lock-line.svg
 //go:embed node_modules/remixicon/icons/System/more-line.svg
+//go:embed node_modules/remixicon/icons/System/question-fill.svg
+//go:embed node_modules/remixicon/icons/System/question-line.svg
 //go:embed node_modules/remixicon/icons/System/refresh-line.svg
 //go:embed node_modules/remixicon/icons/System/search-line.svg
 //go:embed node_modules/remixicon/icons/System/settings-3-fill.svg
 //go:embed node_modules/remixicon/icons/System/settings-3-line.svg
 //go:embed node_modules/remixicon/icons/System/share-forward-line.svg
+//go:embed node_modules/remixicon/icons/System/shield-check-fill.svg
+//go:embed node_modules/remixicon/icons/System/shield-check-line.svg
 //go:embed node_modules/remixicon/icons/System/shield-fill.svg
 //go:embed node_modules/remixicon/icons/System/shield-keyhole-line.svg
 //go:embed node_modules/remixicon/icons/System/shield-line.svg
@@ -288,6 +304,8 @@ var BrandIcons = map[string]string{
 //go:embed node_modules/remixicon/icons/System/spam-2-line.svg
 //go:embed node_modules/remixicon/icons/System/star-fill.svg
 //go:embed node_modules/remixicon/icons/System/star-line.svg
+//go:embed "node_modules/remixicon/icons/User & Faces/skull-fill.svg"
+//go:embed "node_modules/remixicon/icons/User & Faces/skull-line.svg"
 //go:embed "node_modules/remixicon/icons/User & Faces/team-line.svg"
 //go:embed "node_modules/remixicon/icons/User & Faces/user-line.svg"
 //go:embed node_modules/remixicon/icons/Weather/sparkling-fill.svg

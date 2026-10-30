@@ -219,6 +219,7 @@ func TestSettings(t *testing.T) {
 		require.NoError(t, err)
 		out["before"] = before
 		st := core.Settings{Theme: "dark", Density: "comfortable", FontSize: 15, BodyFontSize: 17,
+			SecurityAI: true,
 			UILanguage: "en", ReadingLanguage: "de", ReplyLanguage: "reading", NoTranslate: []string{"fr", "es"},
 			LaunchAtLogin: true, KeepInBackground: false, UnreadInMenuBar: true,
 			NotifyNewMail: false, NotifyPreview: false,

@@ -43,16 +43,18 @@ type mailItem struct {
 	Attach                 bool
 	Msg                    core.MessageSummary // a message row's own summary
 	Labels                 []core.AppliedLabel
+	Security               gomail.SecurityReport
 }
 
 func threadItem(t core.ThreadSummary) mailItem {
 	return mailItem{ID: t.ID, Thread: true, Who: strings.Join(t.Participants, ", "), Subject: t.Subject, Snippet: t.Snippet,
-		Date: t.LastDate, Count: t.Count, Unread: t.Unread, Flagged: t.Flagged, Attach: t.HasAttachments}
+		Date: t.LastDate, Count: t.Count, Unread: t.Unread, Flagged: t.Flagged, Attach: t.HasAttachments,
+		Security: t.Security}
 }
 
 func messageItem(m core.MessageSummary) mailItem {
 	it := mailItem{ID: m.ID, Who: displayName(m.From), Subject: m.Subject, Snippet: m.Snippet, Date: m.Date,
-		Count: 1, Attach: m.HasAttachments, Msg: m}
+		Count: 1, Attach: m.HasAttachments, Msg: m, Security: m.Security}
 	if !slices.Contains(m.Flags, `\Seen`) {
 		it.Unread = 1
 	}
@@ -1034,7 +1036,9 @@ func (p *mailPage) resultRow(c *ui.Context, it mailItem) ui.Element {
 	col := ui.Column(c).Gap(th.Space(0.5)).Padding(th.Space(2), th.Space(3))
 	return col.Children(func() {
 		ui.Row(c).Gap(th.Space(1.5)).AlignItems(ui.Center).Children(func() {
-			ui.Text(c, p.resultWho(it)).SingleLine().Grow(1).Shrink(1)
+			ui.Text(c, p.resultWho(it)).SingleLine().Shrink(1)
+			securityIcon(c, p.a.settings, it.Security.Status)
+			ui.Spacer(c)
 			p.starButton(c, it, col.Hovered())
 			if it.Attach {
 				ui.Icon(c, icons.Get("paperclip")).Size(theme.IconXs, theme.IconXs).TextColor(t.Muted).Label(i18n.T("mail.attachment"))
@@ -1144,7 +1148,9 @@ func (p *mailPage) row(c *ui.Context, it mailItem) ui.Element {
 				Label(i18n.Tf("mail.row.unread", it.Unread))
 		}
 		ui.Row(c).Gap(th.Space(1.5)).AlignItems(ui.Center).Children(func() {
-			ui.Text(c, it.Who).FontWeight(weight).SingleLine().Grow(1).Shrink(1)
+			ui.Text(c, it.Who).FontWeight(weight).SingleLine().Shrink(1)
+			securityIcon(c, p.a.settings, it.Security.Status)
+			ui.Spacer(c)
 			p.starButton(c, it, col.Hovered())
 			if it.Attach {
 				ui.Icon(c, icons.Get("paperclip")).Size(theme.IconXs, theme.IconXs).TextColor(t.Muted).Label(i18n.T("mail.attachment"))

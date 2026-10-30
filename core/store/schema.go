@@ -496,6 +496,35 @@ var Migrations = [][]string{{
 	// or 识别模型 (docs/adr/0028-recognition-model-for-masking.md). The records
 	// before were all the rules'.
 	`ALTER TABLE mask_log ADD COLUMN source TEXT NOT NULL DEFAULT 'rule'`,
+}, {
+	// A message's Authentication-Results header as sent (core.SecurityReport reads it):
+	// '' the sync found none, NULL the message was synced before it was fetched.
+	`ALTER TABLE messages ADD COLUMN auth_results TEXT`,
+}, {
+	// Evaluated security verdict and timestamp: security_status ('warning',
+	// 'verified_domain', 'certified_brand', 'neutral'), security_reason
+	// (e.g. 'spoofing', 'auth_failed', 'ai_fraud', 'dmarc_pass', 'bimi_pass'),
+	// and security_scanned_at (0 queued for rescan, NULL unscanned, timestamp completed).
+	`ALTER TABLE messages ADD COLUMN security_status TEXT`,
+	`ALTER TABLE messages ADD COLUMN security_reason TEXT`,
+	`ALTER TABLE messages ADD COLUMN security_scanned_at INTEGER`,
+	`CREATE INDEX IF NOT EXISTS idx_messages_security ON messages(security_scanned_at, date DESC)`,
+}, {
+	`UPDATE messages SET security_status = NULL, security_reason = NULL, security_scanned_at = 0
+ WHERE security_status IN ('verified_domain', 'certified_brand') OR security_reason = 'auth_failed'`,
+}, {
+	// Old previews kept arbitrary individual headers. Refetch the reception trace
+	// through the existing IMAP connection before relying on those results again.
+	`UPDATE messages SET auth_results = NULL,
+ security_status = CASE WHEN security_status IN ('verified_domain','certified_brand') OR security_reason = 'auth_failed' THEN NULL ELSE security_status END,
+ security_reason = CASE WHEN security_status IN ('verified_domain','certified_brand') OR security_reason = 'auth_failed' THEN NULL ELSE security_reason END,
+ security_scanned_at = CASE WHEN security_status IN ('verified_domain','certified_brand') OR security_reason = 'auth_failed' THEN 0 ELSE security_scanned_at END`,
+}, {
+	`ALTER TABLE messages ADD COLUMN security_verify_dkim INTEGER NOT NULL DEFAULT 0`,
+	`UPDATE messages SET auth_results = NULL,
+ security_status = CASE WHEN security_status IN ('verified_domain','certified_brand') OR security_reason = 'auth_failed' THEN NULL ELSE security_status END,
+ security_reason = CASE WHEN security_status IN ('verified_domain','certified_brand') OR security_reason = 'auth_failed' THEN NULL ELSE security_reason END,
+ security_scanned_at = CASE WHEN security_status IN ('verified_domain','certified_brand') OR security_reason = 'auth_failed' THEN 0 ELSE security_scanned_at END`,
 }}
 
 // HistoryRowsVersion is the schema version that keeps a conversation's
