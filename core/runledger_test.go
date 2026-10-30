@@ -148,7 +148,9 @@ func TestLedgerResumeWaitsForEveryApproval(t *testing.T) {
 	ctx := t.Context()
 	job, as := e.interrupted(t, 2)
 	reject := func(a approvalRow) func(context.Context) error {
-		return func(ctx context.Context) error { return e.l.finish(ctx, a, "rejected", msgRejected, nil, nil, "rejected") }
+		return func(ctx context.Context) error {
+			return e.l.finish(ctx, a, "rejected", msgRejected, nil, nil, "rejected")
+		}
 	}
 	require.NoError(t, e.l.execute(ctx, as[0].ID, job.id, reject(as[0]), true))
 	assert.Equal(t, "interrupted", e.state(t, job.id), "one still pending")
