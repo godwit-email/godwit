@@ -126,20 +126,51 @@ func TestTheModelReadsWhatTheRulesDo(t *testing.T) {
 		`"tools":[{"type":"function","function":{"name":"mail","description":"Mail as Ann Lee","parameters":{}}}]}`, shown(out))
 }
 
-// What the model found is masked where it found it, and only there, until
-// it is known as names are (ADR 0028); a model that fails fails the text.
-func TestTheModelsValuesAreMaskedWhereFound(t *testing.T) {
-	md := model{{"陈晓雯", "private_person", 0.9}}
-	m := modelMasker(t, md)
-	_, err := m.Text("陈晓雯下午到。")
+// What the model found is known from then on, while it is on, as names
+// are (ADR 0028): masked where the model does not find it, as written and
+// not inside a longer word, unless a rule found something there. An
+// account, or a value as short as a name too short to know (Ann), is
+// masked only where it is found. Off, they go as they are, and restore.
+func TestTheModelsValuesAreKnownWhileItIsOn(t *testing.T) {
+	m := modelMasker(t, model{{"陈晓雯", "private_person", 0.9}, {"Sarah Lee", "private_person", 0.9}, {"Ann", "private_person", 0.9},
+		{"octocat", "account", 0.9}, {"ann.lee", "private_person", 0.9}})
+	first, err := m.Text("陈晓雯, Sarah Lee, Ann, octocat, ann.lee")
 	require.NoError(t, err)
+	assert.Equal(t, "<NAME>, <NAME>, <NAME>, <ACCOUNT>, <NAME>", shown(first))
+
+	require.NoError(t, m.Configure(mask.Config{Model: model{}}))
+	out, err := m.Text("陈晓雯好, Sarah Leeds, Sarah Lee: Ann, octocat, ann.lee@example.com")
+	require.NoError(t, err)
+	assert.Equal(t, "<NAME>好, Sarah Leeds, <NAME>: Ann, octocat, <EMAIL>@example.com", shown(out))
+	assert.Equal(t, strings.SplitN(first, ",", 2)[0], strings.SplitN(out, "好", 2)[0], "the same placeholder")
+
+	require.NoError(t, m.Configure(mask.Config{Model: model{}, Allow: []string{"sarah lee"}}))
+	out, err = m.Text("Sarah Lee")
+	require.NoError(t, err)
+	assert.Equal(t, "Sarah Lee", out)
+
 	require.NoError(t, m.Configure(mask.Config{}))
-	out, err := m.Text("陈晓雯下午到。")
+	out, err = m.Text("陈晓雯下午到。")
 	require.NoError(t, err)
 	assert.Equal(t, "陈晓雯下午到。", out)
+	assert.Equal(t, "陈晓雯, Sarah Lee, Ann, octocat, ann.lee", m.Restore(first))
+}
 
+// Learned again, as after a restart, what the model found is known again.
+func TestTheModelsValuesAreLearned(t *testing.T) {
+	m := modelMasker(t, model{{"Sarah Lee", "private_person", 0.9}})
+	m.Learn(`{"messages":[{"role":"user","content":"Sarah Lee"}]}`)
+	require.NoError(t, m.Configure(mask.Config{Model: model{}}))
+	out, err := m.Text("Hi Sarah Lee")
+	require.NoError(t, err)
+	assert.Equal(t, "Hi <NAME>", shown(out))
+}
+
+// A model that fails fails the text.
+func TestAFailingModelFailsTheText(t *testing.T) {
+	m := mask.New(key)
 	require.NoError(t, m.Configure(mask.Config{Model: failing{}}))
-	_, err = m.Text("陈晓雯下午到。")
+	_, err := m.Text("陈晓雯下午到。")
 	assert.ErrorContains(t, err, "out of memory")
 }
 
