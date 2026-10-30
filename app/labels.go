@@ -119,6 +119,11 @@ func (p *mailPage) labelNav(c *ui.Context) {
 					kit.Text(c, strconv.Itoa(l.Unread), t.Text.Sm).TextColor(t.Muted)
 				}
 			})
+			item.ContextMenu(func(m *ui.Menu) {
+				if m.Item(i18n.T("mail.mark_all_read")).Disabled(l.Unread == 0).Chosen() {
+					p.markViewAsRead(core.View{LabelID: l.ID})
+				}
+			})
 		}
 	})
 	ui.Box(c).Height(th.Space(2))

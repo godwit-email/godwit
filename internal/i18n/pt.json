@@ -1492,5 +1492,22 @@
   "reader_security_unverified_badge": "Não verificado",
   "reader_security_review_desc": "Características incomuns detectadas. Recomenda-se verificar o remetente e o conteúdo antes de interagir.",
   "reader_security_review_authenticated_desc": "O domínio {arg1} está tecnicamente verificado, mas há anomalias que devem ser revistas.",
-  "reader_security_unverified_desc": "Sem comprovação de autenticação criptográfica (DKIM/DMARC). Nenhum sinal concreto de alerta detectado."
+  "reader_security_unverified_desc": "Sem comprovação de autenticação criptográfica (DKIM/DMARC). Nenhum sinal concreto de alerta detectado.",
+  "mail_empty_trash": "Esvaziar lixeira",
+  "mail_empty_trash_title": "Esvaziar lixeira?",
+  "mail_empty_trash_desc": "Tem certeza de que deseja excluir permanentemente todas as mensagens da lixeira? Esta ação não pode ser desfeita.",
+  "mail_empty_spam": "Esvaziar spam",
+  "mail_empty_spam_title": "Esvaziar spam?",
+  "mail_empty_spam_desc": "Tem certeza de que deseja excluir permanentemente todas as mensagens de spam? Esta ação não pode ser desfeita.",
+  "mail_mark_all_read": "Marcar tudo como lido",
+  "mail_mark_all_read_toast": "Tudo marcado como lido",
+  "mail_account_sync": "Sincronizar {arg1}",
+  "mail_account_edit": "Editar {arg1}",
+  "mail_folder_empty": "A pasta já está vazia",
+  "mail_no_unread_messages": "Nenhuma mensagem não lida",
+  "palette_action_empty_trash": "Esvaziar lixeira",
+  "palette_action_empty_spam": "Esvaziar spam",
+  "palette_action_mark_all_read": "Marcar tudo como lido",
+  "mail_empty_trash_toast": "Lixeira esvaziada",
+  "mail_empty_spam_toast": "Spam esvaziado"
 }

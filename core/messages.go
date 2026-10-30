@@ -611,7 +611,7 @@ func (s *Service) Delete(ctx context.Context, ids []int64) error {
 }
 
 // DeleteForever queues a permanent delete of the messages in their account's
-// Trash; ones elsewhere stay. A move out of Trash before the push cancels it, and
+// Trash or Junk; ones elsewhere stay. A move out of Trash/Junk before the push cancels it, and
 // the fetch after the push drops the rows.
 func (s *Service) DeleteForever(ctx context.Context, ids []int64) error {
 	s.editMu.Lock()
@@ -620,21 +620,104 @@ func (s *Service) DeleteForever(ctx context.Context, ids []int64) error {
 	if err != nil || len(ts) == 0 {
 		return err
 	}
-	trash, err := s.roleFolder(ctx, acc, "trash")
-	if err != nil {
-		return err
+	trash, _ := s.roleFolder(ctx, acc, "trash")
+	junk, _ := s.roleFolder(ctx, acc, "junk")
+	if trash == 0 && junk == 0 {
+		return &ErrNoRoleFolder{Role: "trash"}
 	}
 	var purged []target
 	var stmts []sqlite.Statement
 	for _, m := range ts {
-		if m.folder != trash {
+		role := ""
+		if trash != 0 && m.folder == trash {
+			role = "trash"
+		} else if junk != 0 && m.folder == junk {
+			role = "junk"
+		} else {
 			continue
 		}
 		purged = append(purged, m)
 		stmts = append(stmts, sqlite.Statement{SQL: `INSERT INTO ops(account_id, message_id, kind, dst_folder_id, payload, depends_on, created_at)
-			VALUES (?, ?, 'purge', ?, ?, ` + latestOp + `, unixepoch())`, Args: []any{acc, m.id, trash, mailsync.PurgeNow, m.id}})
+			VALUES (?, ?, 'purge', ?, ?, ` + latestOp + `, unixepoch())`, Args: []any{acc, m.id, m.folder, mailsync.PurgeNowRole(role), m.id}})
 	}
 	return s.apply(ctx, acc, purged, stmts)
+}
+
+// EmptyFolder permanently expunges all messages in a trash or junk folder.
+func (s *Service) EmptyFolder(ctx context.Context, folderID int64) (int, error) {
+	s.editMu.Lock()
+	defer s.editMu.Unlock()
+	rows, err := s.db.Query(ctx, "SELECT account_id, role FROM folders WHERE id = ?", folderID)
+	if err != nil {
+		return 0, err
+	}
+	if len(rows.Values) == 0 {
+		return 0, fmt.Errorf("folder %d not found", folderID)
+	}
+	acc := store.Int(rows.Values[0][0])
+	role := store.Str(rows.Values[0][1])
+	if role != "trash" && role != "junk" {
+		return 0, fmt.Errorf("cannot empty folder with role %q", role)
+	}
+	msgRows, err := s.db.Query(ctx, "SELECT id, thread_id FROM messages WHERE folder_id = ?", folderID)
+	if err != nil {
+		return 0, err
+	}
+	if len(msgRows.Values) == 0 {
+		return 0, nil
+	}
+	payload := mailsync.PurgeNowRole(role)
+	var ts []target
+	var stmts []sqlite.Statement
+	for _, r := range msgRows.Values {
+		id, tid := store.Int(r[0]), store.Int(r[1])
+		ts = append(ts, target{id: id, thread: tid, folder: folderID})
+		stmts = append(stmts, sqlite.Statement{
+			SQL: `INSERT INTO ops(account_id, message_id, kind, dst_folder_id, payload, depends_on, created_at)
+				VALUES (?, ?, 'purge', ?, ?, ` + latestOp + `, unixepoch())`,
+			Args: []any{acc, id, folderID, payload, id},
+		})
+	}
+	const chunk = 200
+	for i := 0; i < len(ts); i += chunk {
+		end := min(i+chunk, len(ts))
+		if err := s.apply(ctx, acc, ts[i:end], stmts[i:end]); err != nil {
+			return i, err
+		}
+	}
+	return len(ts), nil
+}
+
+// MarkAllAsRead marks every unread message in view v as read. Returns the number of messages marked.
+func (s *Service) MarkAllAsRead(ctx context.Context, v View) (int, error) {
+	cond, args, err := viewCond(v)
+	if err != nil {
+		return 0, err
+	}
+	rows, err := s.db.Query(ctx, "SELECT m.id, m.account_id FROM messages m WHERE "+cond+" AND instr(m.flags, '\\Seen') = 0", args...)
+	if err != nil {
+		return 0, err
+	}
+	if len(rows.Values) == 0 {
+		return 0, nil
+	}
+	byAcc := map[int64][]int64{}
+	for _, r := range rows.Values {
+		id, acc := store.Int(r[0]), store.Int(r[1])
+		byAcc[acc] = append(byAcc[acc], id)
+	}
+	total := 0
+	const chunk = 200
+	for _, ids := range byAcc {
+		for i := 0; i < len(ids); i += chunk {
+			end := min(i+chunk, len(ids))
+			if err := s.SetFlags(ctx, ids[i:end], []string{`\Seen`}, nil); err != nil {
+				return total, err
+			}
+			total += end - i
+		}
+	}
+	return total, nil
 }
 
 // ErrNoRoleFolder is MoveToRole's error for an account without a folder of Role.

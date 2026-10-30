@@ -3,6 +3,7 @@ package app
 import (
 	"cmp"
 	"context"
+	"fmt"
 	"maps"
 	"slices"
 	"strconv"
@@ -41,6 +42,7 @@ type sideFolder struct {
 	depth       int    // 1 for role folders and top-level user folders
 	kids        bool
 	sum         int // unread in it and every folder under it
+	totalSum    int // total messages in it and every folder under it
 }
 
 // sidebarFolders are an account's folder rows: its role folders in roleOrder
@@ -67,7 +69,7 @@ func sidebarFolders(acc int64, fs []core.Folder) []sideFolder {
 	var out []sideFolder
 	for _, r := range roleOrder {
 		if f, ok := byRole[r]; ok {
-			out = append(out, sideFolder{Folder: f, name: folderName(f), depth: 1, sum: f.Unread})
+			out = append(out, sideFolder{Folder: f, name: folderName(f), depth: 1, sum: f.Unread, totalSum: f.Total})
 		}
 	}
 	nodes := map[string]*sideFolder{}
@@ -93,6 +95,7 @@ func sidebarFolders(acc int64, fs []core.Folder) []sideFolder {
 				nodes[key] = n
 			}
 			n.sum += f.Unread
+			n.totalSum += f.Total
 			if k == len(segs) {
 				n.Folder = f
 			} else {
@@ -156,6 +159,20 @@ func (p *mailPage) navItem(c *ui.Context, icon, label string, v core.View, count
 			kit.Text(c, strconv.Itoa(count), t.Text.Sm).TextColor(t.Muted)
 		}
 	})
+	if v.Unified == "inbox" || v.Unified == "starred" {
+		item.ContextMenu(func(m *ui.Menu) {
+			switch v.Unified {
+			case "inbox":
+				if m.Item(i18n.T("mail.mark_all_read")).Disabled(count == 0).Chosen() {
+					p.markViewAsRead(v)
+				}
+			case "starred":
+				if m.Item(i18n.T("mail.mark_all_read")).Disabled(p.starredUnreadTotal == 0).Chosen() {
+					p.markViewAsRead(v)
+				}
+			}
+		})
+	}
 }
 
 // viewShown is whether the mail page shows v; while results show, no view is.
@@ -168,7 +185,7 @@ func (p *mailPage) viewShown(v core.View) bool {
 func (p *mailPage) account(c *ui.Context, acc core.Account) {
 	t := theme.Of(c)
 	name := accountName(acc)
-	kit.SidebarCollapsible(c, p.accountOpen(acc.ID), false, func() {
+	row := kit.SidebarCollapsible(c, p.accountOpen(acc.ID), false, func() {
 		p.a.accountMark(c, acc) // as in the settings sidebar
 		ui.Text(c, name).SingleLine().Grow(1).Shrink(1).TextColor(t.Foreground)
 		if n := p.a.unread[acc.ID]; n > 0 {
@@ -191,6 +208,19 @@ func (p *mailPage) account(c *ui.Context, acc core.Account) {
 			p.folderRow(c, f, open)
 		}
 	})
+	row.ContextMenu(func(m *ui.Menu) { p.accountItems(m, acc) })
+}
+
+// accountItems are a sidebar menu's account entries: sync it now, or edit it
+// in settings.
+func (p *mailPage) accountItems(m *ui.Menu, acc core.Account) {
+	a, id, name := p.a, acc.ID, accountName(acc)
+	if m.Item(i18n.Tf("mail.account_sync", name)).Chosen() {
+		a.do(func(ctx context.Context) error { return a.svc.SyncNow(ctx, id) }, a.toastErr)
+	}
+	if m.Item(i18n.Tf("mail.account_edit", name)).Chosen() {
+		a.navigate(Route{Page: PageSettings, Settings: accountRoute(id)})
+	}
 }
 
 // folderKey names a user folder of an account by its path, folded or not.
@@ -237,6 +267,45 @@ func (p *mailPage) folderRow(c *ui.Context, f sideFolder, open *bool) {
 			if real { // the row opens the folder; the chevron folds it
 				ch.OnClick(toggle).Label(i18n.Tf(label, f.name))
 			}
+		}
+	})
+	item.ContextMenu(func(m *ui.Menu) {
+		if real && f.Role != "drafts" && f.Role != "sent" { // a path-only parent is no folder to act on
+			switch f.Role {
+			case "trash":
+				total := f.Total
+				if f.kids && !*open {
+					total = f.totalSum
+				}
+				if m.Item(i18n.T("mail.empty_trash")).Disabled(total == 0).Chosen() {
+					p.confirmEmptyFolder(f.ID, "trash", f.AccountID)
+				}
+			case "junk":
+				total := f.Total
+				if f.kids && !*open {
+					total = f.totalSum
+				}
+				if m.Item(i18n.T("mail.empty_spam")).Disabled(total == 0).Chosen() {
+					p.confirmEmptyFolder(f.ID, "junk", f.AccountID)
+				}
+			case "flagged":
+				unread := p.starredUnread[f.AccountID]
+				if m.Item(i18n.T("mail.mark_all_read")).Disabled(unread == 0).Chosen() {
+					p.markViewAsRead(core.View{Unified: fmt.Sprintf("starred:%d", f.AccountID)})
+				}
+			default:
+				unread := f.Unread
+				if f.kids && !*open {
+					unread = f.sum
+				}
+				if m.Item(i18n.T("mail.mark_all_read")).Disabled(unread == 0).Chosen() {
+					p.markViewAsRead(core.View{FolderID: f.ID})
+				}
+			}
+			m.Separator()
+		}
+		if acc, ok := p.a.accountByID(f.AccountID); ok {
+			p.accountItems(m, acc)
 		}
 	})
 }

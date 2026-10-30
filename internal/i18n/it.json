@@ -1492,5 +1492,22 @@
   "reader_security_unverified_badge": "Non verificato",
   "reader_security_review_desc": "Rilevate caratteristiche insolite. Si consiglia di verificare mittente e contenuto prima di interagire.",
   "reader_security_review_authenticated_desc": "Il dominio {arg1} è tecnicamente verificato, ma sono presenti anomalie da controllare.",
-  "reader_security_unverified_desc": "Nessuna prova di autenticazione crittografica (DKIM/DMARC). Nessun segnale di allarme concreto rilevato."
+  "reader_security_unverified_desc": "Nessuna prova di autenticazione crittografica (DKIM/DMARC). Nessun segnale di allarme concreto rilevato.",
+  "mail_empty_trash": "Svuota cestino",
+  "mail_empty_trash_title": "Svuotare il cestino?",
+  "mail_empty_trash_desc": "Vuoi davvero eliminare definitivamente tutti i messaggi nel cestino? Questa operazione non può essere annullata.",
+  "mail_empty_spam": "Svuota spam",
+  "mail_empty_spam_title": "Svuotare lo spam?",
+  "mail_empty_spam_desc": "Vuoi davvero eliminare definitivamente tutti i messaggi nello spam? Questa operazione non può essere annullata.",
+  "mail_mark_all_read": "Segna tutti come letti",
+  "mail_mark_all_read_toast": "Tutti i messaggi contrassegnati come letti",
+  "mail_account_sync": "Sincronizza {arg1}",
+  "mail_account_edit": "Modifica {arg1}",
+  "mail_folder_empty": "La cartella è già vuota",
+  "mail_no_unread_messages": "Nessun messaggio non letto",
+  "palette_action_empty_trash": "Svuota cestino",
+  "palette_action_empty_spam": "Svuota spam",
+  "palette_action_mark_all_read": "Segna tutti come letti",
+  "mail_empty_trash_toast": "Cestino svuotato",
+  "mail_empty_spam_toast": "Spam svuotato"
 }

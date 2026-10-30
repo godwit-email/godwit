@@ -22,9 +22,16 @@ type purgePayload struct {
 	Now  bool   `json:"now,omitempty"`
 }
 
+// PurgeNowRole is the payload of a purge op the user asked for: it expunges the
+// message from the specified role folder (trash, junk) at once, whatever the policy.
+func PurgeNowRole(role string) string {
+	b, _ := json.Marshal(purgePayload{Role: role, Now: true})
+	return string(b)
+}
+
 // PurgeNow is the payload of a purge op the user asked for: it expunges the
 // message from Trash at once, whatever the policy.
-var PurgeNow = func() string { b, _ := json.Marshal(purgePayload{Role: "trash", Now: true}); return string(b) }()
+var PurgeNow = PurgeNowRole("trash")
 
 // purgeable is the condition on message m (with policy p and its folder f joined)
 // that a purge may expunge it: shown and on the server in the role's folder at

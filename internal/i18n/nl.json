@@ -1492,5 +1492,22 @@
   "reader_security_unverified_badge": "Niet geverifieerd",
   "reader_security_review_desc": "Ongebruikelijke kenmerken gedetecteerd. Controleer de afzender en inhoud voor interactie.",
   "reader_security_review_authenticated_desc": "Domein {arg1} is technisch geverifieerd, maar er zijn opvallende zaken die controle vereisen.",
-  "reader_security_unverified_desc": "Geen cryptografisch authenticatiebewijs (DKIM/DMARC) aanwezig. Geen concrete waarschuwingssignalen gedetecteerd."
+  "reader_security_unverified_desc": "Geen cryptografisch authenticatiebewijs (DKIM/DMARC) aanwezig. Geen concrete waarschuwingssignalen gedetecteerd.",
+  "mail_empty_trash": "Prullenmand leegmaken",
+  "mail_empty_trash_title": "Prullenmand leegmaken?",
+  "mail_empty_trash_desc": "Weet je zeker dat je alle berichten in de prullenmand permanent wilt verwijderen? Dit kan niet ongedaan worden gemaakt.",
+  "mail_empty_spam": "Spam leegmaken",
+  "mail_empty_spam_title": "Spam leegmaken?",
+  "mail_empty_spam_desc": "Weet je zeker dat je alle berichten in spam permanent wilt verwijderen? Dit kan niet ongedaan worden gemaakt.",
+  "mail_mark_all_read": "Alles als gelezen markeren",
+  "mail_mark_all_read_toast": "Alles als gelezen gemarkeerd",
+  "mail_account_sync": "{arg1} synchroniseren",
+  "mail_account_edit": "{arg1} bewerken",
+  "mail_folder_empty": "Map is al leeg",
+  "mail_no_unread_messages": "Geen ongelezen berichten",
+  "palette_action_empty_trash": "Prullenmand leegmaken",
+  "palette_action_empty_spam": "Spam leegmaken",
+  "palette_action_mark_all_read": "Alles als gelezen markeren",
+  "mail_empty_trash_toast": "Prullenmand geleegd",
+  "mail_empty_spam_toast": "Spam geleegd"
 }

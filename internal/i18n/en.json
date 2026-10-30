@@ -2930,5 +2930,36 @@
       }
     }
   },
-  "reader_security_unverified_desc": "No cryptographic authentication (DKIM/DMARC) available. No concrete warning signals detected."
+  "reader_security_unverified_desc": "No cryptographic authentication (DKIM/DMARC) available. No concrete warning signals detected.",
+  "mail_empty_trash": "Empty Trash",
+  "mail_empty_trash_title": "Empty Trash?",
+  "mail_empty_trash_desc": "Are you sure you want to permanently delete all messages in the Trash? This cannot be undone.",
+  "mail_empty_spam": "Empty Spam",
+  "mail_empty_spam_title": "Empty Spam?",
+  "mail_empty_spam_desc": "Are you sure you want to permanently delete all messages in Spam? This cannot be undone.",
+  "mail_mark_all_read": "Mark all as read",
+  "mail_mark_all_read_toast": "Marked all as read",
+  "mail_account_sync": "Sync {arg1}",
+  "@mail_account_sync": {
+    "placeholders": {
+      "arg1": {
+        "type": "String"
+      }
+    }
+  },
+  "mail_account_edit": "Edit {arg1}",
+  "@mail_account_edit": {
+    "placeholders": {
+      "arg1": {
+        "type": "String"
+      }
+    }
+  },
+  "mail_folder_empty": "Folder is already empty",
+  "mail_no_unread_messages": "No unread messages",
+  "palette_action_empty_trash": "Empty Trash",
+  "palette_action_empty_spam": "Empty Spam",
+  "palette_action_mark_all_read": "Mark all as read",
+  "mail_empty_trash_toast": "Trash emptied",
+  "mail_empty_spam_toast": "Spam emptied"
 }

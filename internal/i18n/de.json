@@ -1492,5 +1492,22 @@
   "reader_security_verified_desc": "Authentifizierte Unternehmensdomain mit gültigem DMARC/DKIM (kein öffentlicher Freemail-Dienst).",
   "reader_security_review_desc": "Es liegen auffällige Merkmale vor. Eine Überprüfung von Absender und Inhalten vor einer Interaktion wird empfohlen.",
   "reader_security_review_authenticated_desc": "Domain {arg1} ist technisch bestätigt. Es liegen jedoch Auffälligkeiten vor, die vor einer Interaktion geprüft werden sollten.",
-  "reader_security_unverified_desc": "Kein kryptografischer Authentifizierungsnachweis (DKIM/DMARC) vorhanden. Keine konkreten Warnsignale erkannt."
+  "reader_security_unverified_desc": "Kein kryptografischer Authentifizierungsnachweis (DKIM/DMARC) vorhanden. Keine konkreten Warnsignale erkannt.",
+  "mail_empty_trash": "Papierkorb leeren",
+  "mail_empty_trash_title": "Papierkorb leeren?",
+  "mail_empty_trash_desc": "Möchtest du wirklich alle Nachrichten im Papierkorb endgültig löschen? Dies kann nicht rückgängig gemacht werden.",
+  "mail_empty_spam": "Spam leeren",
+  "mail_empty_spam_title": "Spam leeren?",
+  "mail_empty_spam_desc": "Möchtest du wirklich alle Nachrichten im Spam-Ordner endgültig löschen? Dies kann nicht rückgängig gemacht werden.",
+  "mail_mark_all_read": "Alle als gelesen markieren",
+  "mail_mark_all_read_toast": "Alle als gelesen markiert",
+  "mail_account_sync": "{arg1} synchronisieren",
+  "mail_account_edit": "{arg1} bearbeiten",
+  "mail_folder_empty": "Ordner ist bereits leer",
+  "mail_no_unread_messages": "Keine ungelesenen Nachrichten",
+  "palette_action_empty_trash": "Papierkorb leeren",
+  "palette_action_empty_spam": "Spam leeren",
+  "palette_action_mark_all_read": "Alle als gelesen markieren",
+  "mail_empty_trash_toast": "Papierkorb geleert",
+  "mail_empty_spam_toast": "Spam geleert"
 }

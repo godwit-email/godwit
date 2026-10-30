@@ -1492,5 +1492,22 @@
   "reader_security_unverified_badge": "Chưa xác minh",
   "reader_security_review_desc": "Phát hiện các đặc điểm bất thường. Nên kiểm tra người gửi và nội dung trước khi tương tác.",
   "reader_security_review_authenticated_desc": "Miền {arg1} đã được xác thực về mặt kỹ thuật, nhưng có các dấu hiệu bất thường cần kiểm tra.",
-  "reader_security_unverified_desc": "Không có bằng chứng xác thực mã hóa (DKIM/DMARC). Không phát hiện dấu hiệu cảnh báo cụ thể."
+  "reader_security_unverified_desc": "Không có bằng chứng xác thực mã hóa (DKIM/DMARC). Không phát hiện dấu hiệu cảnh báo cụ thể.",
+  "mail_empty_trash": "Dọn sạch thùng rác",
+  "mail_empty_trash_title": "Dọn sạch thùng rác?",
+  "mail_empty_trash_desc": "Bạn có chắc chắn muốn xóa vĩnh viễn tất cả thư trong thùng rác không? Thao tác này không thể hoàn tác.",
+  "mail_empty_spam": "Dọn sạch thư rác",
+  "mail_empty_spam_title": "Dọn sạch thư rác?",
+  "mail_empty_spam_desc": "Bạn có chắc chắn muốn xóa vĩnh viễn tất cả thư trong thư rác không? Thao tác này không thể hoàn tác.",
+  "mail_mark_all_read": "Đánh dấu tất cả là đã đọc",
+  "mail_mark_all_read_toast": "Đã đánh dấu tất cả là đã đọc",
+  "mail_account_sync": "Đồng bộ {arg1}",
+  "mail_account_edit": "Chỉnh sửa {arg1}",
+  "mail_folder_empty": "Thư mục đã trống",
+  "mail_no_unread_messages": "Không có thư chưa đọc",
+  "palette_action_empty_trash": "Dọn sạch thùng rác",
+  "palette_action_empty_spam": "Dọn sạch thư rác",
+  "palette_action_mark_all_read": "Đánh dấu tất cả là đã đọc",
+  "mail_empty_trash_toast": "Đã dọn sạch thùng rác",
+  "mail_empty_spam_toast": "Đã dọn sạch thư rác"
 }

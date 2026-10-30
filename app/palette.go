@@ -418,6 +418,9 @@ func (p *palette) actions() []palItem {
 		{icon: "square-pen", title: i18n.T("palette.action.compose"), open: a.Compose},
 		{icon: "sparkles", title: i18n.T("palette.action.new_conversation"), open: a.NewConversation},
 		{icon: "file-pen", title: i18n.T("palette.action.drafts"), open: func() { a.navigate(Route{Page: PageMail, View: a.mail.firstDrafts()}) }},
+		{icon: "check", title: i18n.T("palette.action.mark_all_read"), open: p.paletteMarkAllRead},
+		{icon: "trash-2", title: i18n.T("palette.action.empty_trash"), open: p.paletteEmptyTrash},
+		{icon: "spam", title: i18n.T("palette.action.empty_spam"), open: p.paletteEmptySpam},
 		{icon: "tag", title: i18n.T("palette.action.labels"), open: func() { a.navigate(Route{Page: PageSettings, Settings: "labels"}) }},
 		{icon: "plus", title: i18n.T("palette.action.add_account"), open: a.openAddAccount},
 		{icon: "settings", title: i18n.T("palette.action.settings"), open: a.OpenSettings},
@@ -431,6 +434,46 @@ func (p *palette) actions() []palItem {
 		}
 		return len(q) > 0
 	})
+}
+
+func (p *palette) paletteEmptyTrash() {
+	a := p.a
+	acc := a.mail.viewAccount(a.route.View)
+	f := a.mail.roleFolder(acc, "trash")
+	if f.ID == 0 {
+		return
+	}
+	if f.Total == 0 {
+		a.toast(i18n.T("mail.folder_empty"))
+		return
+	}
+	a.navigate(Route{Page: PageMail, View: core.View{FolderID: f.ID}})
+	a.mail.confirmEmptyFolder(f.ID, "trash", f.AccountID)
+}
+
+func (p *palette) paletteEmptySpam() {
+	a := p.a
+	acc := a.mail.viewAccount(a.route.View)
+	f := a.mail.roleFolder(acc, "junk")
+	if f.ID == 0 {
+		return
+	}
+	if f.Total == 0 {
+		a.toast(i18n.T("mail.folder_empty"))
+		return
+	}
+	a.navigate(Route{Page: PageMail, View: core.View{FolderID: f.ID}})
+	a.mail.confirmEmptyFolder(f.ID, "junk", f.AccountID)
+}
+
+func (p *palette) paletteMarkAllRead() {
+	a := p.a
+	v := a.route.View
+	if a.route.Page != PageMail {
+		v = core.View{Unified: "inbox"}
+		a.navigate(Route{Page: PageMail, View: v})
+	}
+	a.mail.markViewAsRead(v)
 }
 
 // firstDrafts is the first account's drafts, the local drafts where it has

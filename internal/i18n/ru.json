@@ -1492,5 +1492,22 @@
   "reader_security_unverified_badge": "Не подтверждено",
   "reader_security_review_desc": "Обнаружены подозрительные признаки. Рекомендуется проверить отправителя и содержимое перед взаимодействием.",
   "reader_security_review_authenticated_desc": "Домен {arg1} технически подтвержден, однако имеются особенности, требующие проверки.",
-  "reader_security_unverified_desc": "Криптографическое подтверждение подлинности (DKIM/DMARC) отсутствует. Конкретных сигналов угрозы не обнаружено."
+  "reader_security_unverified_desc": "Криптографическое подтверждение подлинности (DKIM/DMARC) отсутствует. Конкретных сигналов угрозы не обнаружено.",
+  "mail_empty_trash": "Очистить корзину",
+  "mail_empty_trash_title": "Очистить корзину?",
+  "mail_empty_trash_desc": "Вы действительно хотите навсегда удалить все сообщения из корзины? Это действие нельзя отменить.",
+  "mail_empty_spam": "Очистить спам",
+  "mail_empty_spam_title": "Очистить спам?",
+  "mail_empty_spam_desc": "Вы действительно хотите навсегда удалить все сообщения из спама? Это действие нельзя отменить.",
+  "mail_mark_all_read": "Пометить все как прочитанные",
+  "mail_mark_all_read_toast": "Все помечены как прочитанные",
+  "mail_account_sync": "Синхронизировать {arg1}",
+  "mail_account_edit": "Изменить {arg1}",
+  "mail_folder_empty": "Папка уже пуста",
+  "mail_no_unread_messages": "Нет непрочитанных сообщений",
+  "palette_action_empty_trash": "Очистить корзину",
+  "palette_action_empty_spam": "Очистить спам",
+  "palette_action_mark_all_read": "Пометить все как прочитанные",
+  "mail_empty_trash_toast": "Корзина очищена",
+  "mail_empty_spam_toast": "Спам очищен"
 }

@@ -476,3 +476,19 @@ func TestDeleteForeverNeedsUIDPlus(t *testing.T) {
 	assert.Equal(t, []string{"m@x"}, e.onServer(t, "Trash"))
 	assert.Equal(t, 1, e.count(t, "SELECT count(*) FROM ops WHERE kind = 'purge' AND state = 'failed'"), "a failure the user sees, not a silent cancel")
 }
+
+func TestEmptyFolder(t *testing.T) {
+	e := newSyncEnv(t)
+	e.put(t, "Trash", msg("trash1@x"))
+	e.put(t, "Trash", msg("trash2@x"))
+	e.put(t, "INBOX", msg("kept@x"))
+	e.sync(t)
+	trashID := e.folderID(t, "Trash")
+	n, err := e.s.EmptyFolder(bg, trashID)
+	require.NoError(t, err)
+	assert.Equal(t, 2, n)
+	e.sync(t)
+	assert.Equal(t, []string{}, e.onServer(t, "Trash"))
+	assert.Equal(t, []string{"kept@x"}, e.onServer(t, "INBOX"))
+	assert.Zero(t, e.count(t, "SELECT count(*) FROM messages WHERE folder_id = ?", trashID))
+}

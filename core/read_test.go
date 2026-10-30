@@ -471,3 +471,16 @@ func TestTruncatedMessageAndRawOriginal(t *testing.T) {
 	_, err = e.s.GetRawMessage(bg, big.ID)
 	assert.ErrorIs(t, err, ErrTooLarge)
 }
+
+func TestMarkAllAsRead(t *testing.T) {
+	e := newSyncEnv(t)
+	e.put(t, "INBOX", msg("m1@x"))
+	e.put(t, "INBOX", msg("m2@x"))
+	e.sync(t)
+	v := e.inboxView(t)
+	n, err := e.s.MarkAllAsRead(bg, v)
+	require.NoError(t, err)
+	assert.Equal(t, 2, n)
+	e.sync(t)
+	assert.Equal(t, []string{`m1@x \Seen`, `m2@x \Seen`}, e.onServer(t, "INBOX"))
+}
