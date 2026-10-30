@@ -73,7 +73,7 @@ type span struct {
 	start, end int
 	kind       string
 	own        bool // the user's rule or word: always masked, whatever its kind's category is set to
-	model      bool // the recognition model's: masked where found, not known from then on (placeholder)
+	model      bool // the recognition model's, or a value it found before (foundSpans)
 }
 
 // find is the values in s, in order, none overlapping: of the user's rules

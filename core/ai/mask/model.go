@@ -34,10 +34,11 @@ var modelKinds = map[string]string{"private_person": nameKind, "phone": "PHONE",
 
 // modelSpans are what c's model finds in s, of the labels masking takes,
 // scored minScore or more, without the spaces and separators at their
-// ends; of the secrets, those modelSecret takes. None overlaps what a
-// rule found in s, the user's or a built-in one: a rule's kind and bounds
-// are surer (an address's domain is kept), so the rule's go.
-func (c *compiled) modelSpans(s string) ([]span, error) {
+// ends; of the secrets, those modelSecret takes; then where s has what it
+// found before, known(s). None overlaps what a rule found in s, the
+// user's or a built-in one: a rule's kind and bounds are surer (an
+// address's domain is kept), so the rule's go.
+func (c *compiled) modelSpans(s string, known func(string) []span) ([]span, error) {
 	if c.model == nil {
 		return nil, nil
 	}
@@ -45,18 +46,19 @@ func (c *compiled) modelSpans(s string) ([]span, error) {
 	if err != nil {
 		return nil, fmt.Errorf("mask: the recognition model: %w", err)
 	}
-	ruled := c.ruled(s)
 	var out []span
 	for _, r := range found {
 		kind := modelKinds[r.Label]
 		a, b := trim(s, r.Start, r.End)
-		if kind == "" || r.Score < minScore || a == b || kind == "SECRET" && !modelSecret(s[a:b]) ||
-			slices.ContainsFunc(ruled, func(sp span) bool { return sp.start < b && a < sp.end }) {
+		if kind == "" || r.Score < minScore || a == b || kind == "SECRET" && !modelSecret(s[a:b]) {
 			continue
 		}
 		out = append(out, span{start: a, end: b, kind: kind, model: true})
 	}
-	return out, nil
+	ruled := c.ruled(s)
+	return slices.DeleteFunc(append(out, known(s)...), func(sp span) bool {
+		return slices.ContainsFunc(ruled, func(r span) bool { return r.start < sp.end && sp.start < r.end })
+	}), nil
 }
 
 // modelSecret is a secret the model found that is one, as the rules'

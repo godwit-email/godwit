@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"sync/atomic"
 	"testing"
@@ -279,6 +280,108 @@ func TestTheMaskingLogSaysWhatFoundEachValue(t *testing.T) {
 		source[r.Kind] = r.Source
 	}
 	assert.Equal(t, map[string]string{"NAME": MaskSourceModel, "BANK_CARD": MaskSourceRule}, source)
+}
+
+// askNew asks q in a new conversation, the model replying reply after "ok ",
+// and returns the request it sent and the run's events.
+func (e *approvalEnv) askNew(t *testing.T, q string, reply ...string) (string, []WitEvent) {
+	t.Helper()
+	e.srv.Script(testllm.Turn{Text: append([]string{"ok "}, reply...)})
+	evs := e.start(t, e.newConv(t, "ask", 0), q)
+	reqs := e.srv.Requests()
+	return string(reqs[len(reqs)-1].Body), evs
+}
+
+var nameRe = regexp.MustCompile(`\{\{NAME_[a-z2-7]{12}\}\}`)
+
+// learnFromTheMaskModel has the model find 陈晓雯, an address and an
+// account in one request, then go blind: it returns the name's placeholder.
+func learnFromTheMaskModel(t *testing.T, e *approvalEnv) string {
+	t.Helper()
+	installMaskModel(t, e.s, newFakeModel(map[string]string{"陈晓雯": "private_person", "上海市徐汇区漕溪北路88号": "private_address", "Godwit": "account"}))
+	setMaskModel(t, e.s, true)
+	body, _ := e.askNew(t, "陈晓雯住在上海市徐汇区漕溪北路88号，用 Godwit 吗？")
+	for _, v := range []string{"陈晓雯", "漕溪北路", "Godwit"} {
+		assert.NotContains(t, body, v)
+	}
+	installMaskModel(t, e.s, newFakeModel(nil))
+	setMaskModel(t, e.s, true)
+	p := nameRe.FindString(body)
+	require.NotEmpty(t, p)
+	return p
+}
+
+// A name or an address the model found once is masked in any later
+// request, where the model did not find it, under the same placeholder,
+// and the log says the model found it; an account is masked only where
+// the model found it.
+func TestWhatTheMaskModelFindsIsKnownFromThenOn(t *testing.T) {
+	e := newApprovalEnv(t)
+	p := learnFromTheMaskModel(t, e)
+	body, _ := e.askNew(t, "陈晓雯还在上海市徐汇区漕溪北路88号吗？Godwit 呢？")
+	assert.NotContains(t, body, "陈晓雯")
+	assert.NotContains(t, body, "漕溪北路")
+	assert.Contains(t, body, p+"还在")
+	assert.Contains(t, body, "Godwit 呢")
+	log, err := e.s.MaskingLog(t.Context())
+	require.NoError(t, err)
+	for _, r := range log {
+		assert.Equal(t, MaskSourceModel, r.Source, "%+v", r)
+	}
+}
+
+// A value the user allows goes as it is, though the model found it before.
+func TestTheAllowListWinsOverWhatTheMaskModelFound(t *testing.T) {
+	e := newApprovalEnv(t)
+	learnFromTheMaskModel(t, e)
+	st, err := e.s.GetSettings(t.Context())
+	require.NoError(t, err)
+	st.MaskAllow = []string{"陈晓雯"}
+	_, err = e.s.SetSettings(t.Context(), st)
+	require.NoError(t, err)
+	body, _ := e.askNew(t, "陈晓雯还在上海市徐汇区漕溪北路88号吗？")
+	assert.Contains(t, body, "陈晓雯还在")
+	assert.NotContains(t, body, "漕溪北路")
+}
+
+// 识别模型 off, what it found goes as it is from the next request on, and
+// a placeholder of it in the reply still restores.
+func TestTheMaskModelOffForgetsNothingItsRepliesNeed(t *testing.T) {
+	e := newApprovalEnv(t)
+	p := learnFromTheMaskModel(t, e)
+	setMaskModel(t, e.s, false)
+	body, evs := e.askNew(t, "陈晓雯还来吗？", "写给"+p)
+	assert.Contains(t, body, "陈晓雯还来吗？")
+	var text strings.Builder
+	for _, ev := range evs {
+		if ev.Kind == "text" {
+			text.WriteString(ev.Text)
+		}
+	}
+	assert.Equal(t, "ok 写给陈晓雯", text.String())
+}
+
+// After a restart, a conversation read again teaches the model's values
+// back: a later request masks them under the placeholders they had.
+func TestWhatTheMaskModelFoundIsLearnedAgainAfterARestart(t *testing.T) {
+	e := newApprovalEnv(t)
+	installMaskModel(t, e.s, newFakeModel(map[string]string{"陈晓雯": "private_person"}))
+	setMaskModel(t, e.s, true)
+	conv := e.newConv(t, "ask", 0)
+	e.srv.Script(testllm.Turn{Text: []string{"ok"}})
+	e.start(t, conv, "陈晓雯来吗？")
+	p := nameRe.FindString(string(e.srv.Requests()[0].Body))
+	require.NotEmpty(t, p)
+
+	e.restart(t)
+	installMaskModel(t, e.s, newFakeModel(map[string]string{"陈晓雯": "private_person"}))
+	setMaskModel(t, e.s, true)
+	_, err := e.s.GetConversation(t.Context(), conv.ID)
+	require.NoError(t, err)
+	installMaskModel(t, e.s, newFakeModel(nil))
+	setMaskModel(t, e.s, true)
+	body, _ := e.askNew(t, "陈晓雯到了吗？")
+	assert.Contains(t, body, p+"到了吗？")
 }
 
 // AstrLink Guard itself, from the files in GODWIT_GUARD_DIR as

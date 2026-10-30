@@ -39,6 +39,7 @@ type Masker struct {
 	learned map[[sha256.Size]byte]bool
 	names   []string // the values of NAME placeholders, longest first
 	secrets []entry  // the values of placeholders found by their label (secretSpans): secrets, passports
+	found   []entry  // the values the recognition model found but accounts, longest first: known while it is on (foundSpans)
 }
 
 type entry struct{ kind, value string }
@@ -73,7 +74,8 @@ func (m *Masker) hash(kind, v string) string {
 }
 
 // placeholder is v's placeholder, remembered for Restore; a name or a
-// labelled value is known from then on, unless the model found it.
+// labelled value is known from then on, and one the model found, but an
+// account or a short one (shortName), while the model is on.
 // shortcut: the table only grows, by each value masked; evict when it is seen to matter.
 func (m *Masker) placeholder(kind, v string, model bool) (string, error) {
 	hash := m.hash(kind, v)
@@ -84,7 +86,9 @@ func (m *Masker) placeholder(kind, v string, model bool) (string, error) {
 	}
 	n, lab := labeled[kind]
 	switch {
-	case model: // masked only where the model finds it
+	case model && kind != "ACCOUNT" && !shortName(v):
+		m.addFound(entry{kind, v})
+	case model: // masked only where the model finds it: a brand's or a project's name is often taken for an account
 	case kind == nameKind:
 		m.addName(v)
 	case lab && len(v) >= n && !slices.Contains(m.secrets, entry{kind, v}):
@@ -149,7 +153,7 @@ func (m *Masker) text(s string, defuse, read bool, f *Found) (out string, err er
 	view, at := unescaped(s)
 	known := append(m.nameSpans(view), m.secretSpans(view)...)
 	if read {
-		found, err := cc.modelSpans(view)
+		found, err := cc.modelSpans(view, m.foundSpans)
 		if err != nil {
 			return "", err
 		}
