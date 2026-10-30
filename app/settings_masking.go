@@ -34,14 +34,7 @@ func (p *settingsPage) maskingView(c *ui.Context) {
 		kit.SwitchRow(c, &st.Masking, i18n.T("settings.masking.on"), i18n.T("settings.masking.on.help"))
 	}}
 	if st.Masking {
-		rows = append(rows, func() {
-			missing := !p.maskModel && !st.MaskModel // it turns on only once its files are here
-			help := i18n.T("settings.masking.model.help")
-			if missing {
-				help += "\n" + i18n.T("settings.masking.model.missing")
-			}
-			kit.SwitchRow(c, &st.MaskModel, i18n.T("settings.masking.model"), help).Disabled(missing)
-		})
+		rows = append(rows, func() { p.maskModelRow(c) })
 		for name, cat := range st.MaskCategories.All() {
 			rows = append(rows, func() { maskCategoryRow(c, name, cat) })
 		}
@@ -52,6 +45,72 @@ func (p *settingsPage) maskingView(c *ui.Context) {
 		p.maskPreview(c)
 	}
 	p.maskLogEntry(c)
+}
+
+// maskModelDownload is 识别模型's files coming down, as its switch started.
+type maskModelDownload struct {
+	cancel     context.CancelFunc
+	got, total int64
+}
+
+// maskModelRow is 识别模型's switch. Turned on before its files are here,
+// it downloads them, saying how far it has come, and is on once they all
+// are; failed or canceled, it is off again, saying why it failed.
+func (p *settingsPage) maskModelRow(c *ui.Context) {
+	st, d, label := &p.st, p.maskDL, i18n.T("settings.masking.model")
+	help := i18n.T("settings.masking.model.help")
+	switch {
+	case d != nil:
+		help = i18n.Tf("settings.masking.model.downloading", d.got*100/max(d.total, 1), formatBytes(d.total))
+	case p.maskModelErr != "":
+		help += "\n" + p.maskModelErr
+	case !p.maskModel && !st.MaskModel:
+		help += "\n" + i18n.T("settings.masking.model.missing")
+	}
+	if d != nil {
+		settingRow(c, label, help, func() {
+			settingButton(c, i18n.T("settings.masking.model.cancel"), kit.Outline, false).OnClick(d.cancel)
+		})
+		return
+	}
+	on := st.MaskModel
+	kit.SwitchRow(c, &on, label, help)
+	if on && !st.MaskModel && !p.maskModel {
+		p.downloadMaskModel()
+	} else {
+		st.MaskModel = on
+	}
+}
+
+// downloadMaskModel downloads 识别模型's files and, once they are all here,
+// turns it on. It goes on when the page closes, until it ends or the user
+// cancels it.
+func (p *settingsPage) downloadMaskModel() {
+	a := p.a
+	ctx, cancel := context.WithCancel(a.ctx)
+	d := &maskModelDownload{cancel: cancel}
+	p.maskDL, p.maskModelErr = d, ""
+	a.do(func(context.Context) error {
+		last := int64(-1)
+		return a.svc.DownloadMaskModel(ctx, func(got, total int64) {
+			if pct := got * 100 / max(total, 1); pct != last { // a redraw per percent, not per read
+				last = pct
+				a.onUI(func() { d.got, d.total = got, total })
+			}
+		})
+	}, func(err error) {
+		cancel()
+		p.maskDL = nil
+		switch {
+		case err == nil:
+			p.maskModel = true
+			st := a.settings
+			st.MaskModel = true
+			a.changeSettings(st)
+		case !errors.Is(err, context.Canceled):
+			p.maskModelErr = i18n.Tf("settings.masking.model.failed", humanize(err))
+		}
+	})
 }
 
 // readMaskLog reads 脱敏记录 for the privacy page's entry and the log's own page.

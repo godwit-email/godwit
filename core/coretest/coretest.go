@@ -76,12 +76,17 @@ type mailServers struct {
 }
 
 type config struct {
-	autoSync bool
-	registry *core.RegistrySource
-	sys      core.SystemTranslator
-	confirm  bool
-	unsub    *http.Client
+	autoSync  bool
+	registry  *core.RegistrySource
+	sys       core.SystemTranslator
+	confirm   bool
+	unsub     *http.Client
+	maskModel []string
 }
+
+// WithMaskModelSources has the Service download 识别模型's files from urls
+// (core.Options.MaskModelSources), as httptest servers'.
+func WithMaskModelSources(urls ...string) Option { return func(c *config) { c.maskModel = urls } }
 
 type Option func(*config)
 
@@ -115,7 +120,8 @@ func New(t *testing.T, opts ...Option) *Env {
 	imageClient := imagefetch.NewClient(true)
 	imageClient.Transport.(*imagefetch.Transport).DialContext = netOptions("").Dial
 	svc, err := core.New(context.Background(), core.Options{DataDir: dir, AutoSync: cfg.autoSync, SystemLanguage: "zh-CN", ImageClient: imageClient,
-		Registry: cfg.registry, AppVersion: "1.2.0", SystemTranslator: cfg.sys, ConfirmWindow: cfg.confirm, UnsubscribeClient: cfg.unsub})
+		Registry: cfg.registry, AppVersion: "1.2.0", SystemTranslator: cfg.sys, ConfirmWindow: cfg.confirm, UnsubscribeClient: cfg.unsub,
+		MaskModelSources: cfg.maskModel, MaskModelClient: &http.Client{Transport: imageClient.Transport}})
 	if err != nil {
 		t.Fatal(err)
 	}

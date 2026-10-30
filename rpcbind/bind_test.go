@@ -237,6 +237,7 @@ func TestWireCodesPinned(t *testing.T) {
 		"translator_unavailable": core.ErrTranslatorUnavailable, "model_unavailable": core.ErrModelUnavailable,
 		"system_language_not_installed": core.ErrSystemLanguageNotInstalled, "system_language_unsupported": core.ErrSystemLanguageUnsupported,
 		"registry_stale": core.ErrRegistryStale, "registry_mismatch": core.ErrRegistryMismatch,
+		"mask_model_missing": core.ErrMaskModelMissing, "mask_model_mismatch": core.ErrMaskModelMismatch,
 		"ai_not_configured": core.ErrAINotConfigured, "model_service_not_found": core.ErrModelServiceNotFound,
 		"model_not_found": core.ErrModelNotFound, "model_auth": core.ErrModelAuth,
 		"model_login": core.ErrModelLogin, "model_reauth": core.ErrModelReauth, "label_exists": core.ErrLabelExists,
