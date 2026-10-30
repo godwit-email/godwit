@@ -792,7 +792,7 @@ func (r reply) RestoreHTML(s string) string { return r.m.RestoreHTML(s) }
 
 // complete runs req once, with no tools, for feature (mask.Tag; "": ctx's
 // own) and returns its text, cut at max bytes (0: all of it). Each one-off
-// AI feature runs this way and audits its run itself (ADR 0026).
+// AI feature runs this way and audits its run itself (ADR 0027).
 func (s *Service) complete(ctx context.Context, feature string, req ai.Request, max int) (reply, error) {
 	e, err := s.aiEngine()
 	if err != nil {
