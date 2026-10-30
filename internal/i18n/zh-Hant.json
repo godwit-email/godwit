@@ -1444,7 +1444,7 @@
   "reader_security_warning_generic": "檢測到可疑寄件者特徵。",
   "reader_security_verified_badge": "已驗證網域",
   "settings_security_ai": "使用 AI 掃描郵件內容中的詐騙與釣魚",
-  "settings_security_ai_help": "在背景使用分類模型檢測未驗證郵件中的詐騙特徵。",
+  "settings_security_ai_help": "用你設定的 AI 模型檢查未驗證郵件是否為詐騙。使用雲端模型時，郵件內容會傳送給該服務商。",
   "settings_security_rescan": "重新分析現有郵件",
   "settings_security_rescan_sub": "對已同步的郵件執行安全與內容檢查。",
   "settings_security_rescan_range": "範圍",

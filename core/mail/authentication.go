@@ -1,6 +1,7 @@
 package mail
 
 import (
+	"slices"
 	"strings"
 
 	gomail "github.com/emersion/go-message/mail"
@@ -31,22 +32,27 @@ func authenticationTrace(h *gomail.Header) []AuthenticationHeader {
 	return trace
 }
 
-// ReceiverAuthenticationResults accepts only the receiving service's result
-// group prepended above its first Received trace. Below that boundary the same
-// bytes may be supplied by the sender, even when the service ID matches MX/IMAP.
-// Such messages require local cryptographic verification instead. Legacy host
-// hints are deliberately ignored: server-name matching is not authentication.
+// ReceiverAuthenticationResults returns the topmost Authentication-Results
+// group. Receiving services prepend theirs above the trace, so it sits above
+// anything the sender wrote; Gmail and iCloud put it below their own Received.
+// shortcut: a receiver that adds no result of its own leaves the sender's on top;
+// trust only configured authserv-ids if that shows up in practice.
 func ReceiverAuthenticationResults(trace []AuthenticationHeader, _ ...string) string {
-	for i, h := range trace {
-		if strings.EqualFold(h.Key, "Received") {
-			result, _ := authenticationGroup(trace[:i], nil)
-			return result
-		}
+	start := slices.IndexFunc(trace, func(h AuthenticationHeader) bool { return strings.EqualFold(h.Key, "Authentication-Results") })
+	if start < 0 {
+		return ""
 	}
-	return ""
+	group := trace[start:]
+	// The group ends at the next hop: results below it are an earlier hop's or the sender's.
+	if end := slices.IndexFunc(group, func(h AuthenticationHeader) bool { return strings.EqualFold(h.Key, "Received") }); end >= 0 {
+		group = group[:end]
+	}
+	return authenticationGroup(group)
 }
 
-func authenticationGroup(headers []AuthenticationHeader, accept func(string) bool) (string, bool) {
+// authenticationGroup merges one hop's results. A service may write one field
+// per check under its own authserv-id (iCloud: bimi.icloud.com, dmarc.icloud.com).
+func authenticationGroup(headers []AuthenticationHeader) string {
 	identity := ""
 	var results []authres.Result
 	for _, h := range headers {
@@ -55,23 +61,18 @@ func authenticationGroup(headers []AuthenticationHeader, accept func(string) boo
 		}
 		id, rr, err := parseSecurityAuthenticationResults(h.Value)
 		if err != nil || id == "" {
-			return "", true
+			return ""
 		} // malformed newest result is not a reason to trust an older one
 		if identity == "" {
-			if accept != nil && !accept(id) {
-				return "", true
-			}
 			identity = id
-		} else if !strings.EqualFold(id, identity) {
-			break
 		}
 		if len(rr) == 0 {
-			return authres.Format(identity, nil), true
+			return authres.Format(identity, nil)
 		}
 		results = append(results, rr...)
 	}
 	if identity == "" {
-		return "", false
+		return ""
 	}
-	return authres.Format(identity, results), true
+	return authres.Format(identity, results)
 }

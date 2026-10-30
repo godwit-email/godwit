@@ -93,7 +93,7 @@ type brandEntry struct {
 var knownBrands = []brandEntry{
 	{name: "PayPal", pattern: regexp.MustCompile(`(?i)\bpaypal\b`), domains: []string{"paypal.com", "paypal.de", "paypal.fr", "paypal.co.uk", "paypal.it", "paypal.es", "paypal.at", "paypal.ch", "paypal.nl", "paypal.be"}},
 	{name: "Apple", pattern: regexp.MustCompile(`(?i)\b(apple|icloud)\b`), domains: []string{"apple.com", "icloud.com", "me.com", "mac.com"}},
-	{name: "Amazon", pattern: regexp.MustCompile(`(?i)\bamazon\b`), domains: []string{"amazon.com", "amazon.de", "amazon.co.uk", "amazon.fr", "amazon.it", "amazon.es", "amazon.co.jp", "amazon.ca", "amazon.at"}},
+	{name: "Amazon", pattern: regexp.MustCompile(`(?i)\bamazon\b`), domains: []string{"amazon.com", "amazon.de", "amazon.co.uk", "amazon.fr", "amazon.it", "amazon.es", "amazon.co.jp", "amazon.ca", "amazon.at", "amazonaws.com", "aws.com"}},
 	{name: "Google", pattern: regexp.MustCompile(`(?i)\b(google|gmail)\b`), domains: []string{"google.com", "googlemail.com", "gmail.com"}},
 	{name: "Microsoft", pattern: regexp.MustCompile(`(?i)\b(microsoft|office\s*365|outlook)\b`), domains: []string{"microsoft.com", "office.com", "office365.com", "outlook.com", "live.com", "hotmail.com"}},
 	{name: "Netflix", pattern: regexp.MustCompile(`(?i)\bnetflix\b`), domains: []string{"netflix.com"}},
@@ -111,7 +111,7 @@ var knownBrands = []brandEntry{
 	{name: "DPD", pattern: regexp.MustCompile(`(?i)\bdpd\b`), domains: []string{"dpd.com", "dpd.de"}},
 	{name: "GLS", pattern: regexp.MustCompile(`(?i)\bgls\b`), domains: []string{"gls-group.com", "gls-pakete.de"}},
 	{name: "Hermes", pattern: regexp.MustCompile(`(?i)\bhermes\b`), domains: []string{"myhermes.de", "hermesworld.com"}},
-	{name: "Meta", pattern: regexp.MustCompile(`(?i)\b(meta|facebook|instagram|whatsapp)\b`), domains: []string{"meta.com", "facebook.com", "facebookmail.com", "instagram.com", "mail.instagram.com", "whatsapp.com"}},
+	{name: "Meta", pattern: regexp.MustCompile(`(?i)\b(meta|facebook|instagram|whatsapp)\b`), domains: []string{"meta.com", "facebook.com", "facebookmail.com", "instagram.com", "mail.instagram.com", "whatsapp.com", "metamail.com"}},
 	{name: "LinkedIn", pattern: regexp.MustCompile(`(?i)\blinkedin\b`), domains: []string{"linkedin.com"}},
 	{name: "Dropbox", pattern: regexp.MustCompile(`(?i)\bdropbox\b`), domains: []string{"dropbox.com", "dropboxmail.com"}},
 	{name: "DocuSign", pattern: regexp.MustCompile(`(?i)\bdocusign\b`), domains: []string{"docusign.com", "docusign.net"}},
@@ -569,15 +569,12 @@ func EvaluateSecurity(from string, authResults string) SecurityReport {
 			}
 		}
 
-		// 2. Check for Display Name Spoofing with well-known brands
+		// 2. Check for Display Name Spoofing with well-known brands. The brand
+		// list is never complete, so a name alone only asks for review below.
 		for _, b := range knownBrands {
-			if b.pattern.MatchString(displayName) || b.pattern.MatchString(normName) {
-				if !domainMatches(domain, b.domains) {
-					report.Status = SecurityWarning
-					report.WarningKind = WarnDisplaySpoof
-					report.BrandName = b.name
-					return report
-				}
+			if (b.pattern.MatchString(displayName) || b.pattern.MatchString(normName)) && !domainMatches(domain, b.domains) {
+				report.BrandName = b.name
+				break
 			}
 		}
 
@@ -654,6 +651,17 @@ func EvaluateSecurity(from string, authResults string) SecurityReport {
 	// Only if the domain is NOT authenticated, or has an unresolved mismatch, it falls to NeedsReview (Gelb) or Warning (Rot).
 	isAuthDomain := (dmarcPass || dkimPass) && !IsFreemail(domain) && !hasSuspiciousDomain
 
+	// A brand name on an authenticated domain of its own may be a domain the
+	// list misses (amazonaws.com once): review, not fraud.
+	if report.BrandName != "" {
+		report.Status = SecurityFraud
+		if isAuthDomain {
+			report.Status = SecurityNeedsReview
+		}
+		report.WarningKind = WarnDisplaySpoof
+		return report
+	}
+
 	if (report.SuspiciousMismatch || hasZeroWidth || hasSuspiciousDomain) && !isAuthDomain {
 		if hasZeroWidth || hasSuspiciousDomain {
 			report.Status = SecurityWarning
@@ -709,7 +717,7 @@ func SecurityReportToDB(rep SecurityReport) (status string, reason string) {
 	case SecurityNeedsReview:
 		switch rep.WarningKind {
 		case WarnSuspicious:
-			return "needs_review", "ai_suspicious"
+			return "needs_review", "suspicious"
 		case WarnDisplaySpoof:
 			return "needs_review", "display_mismatch"
 		default:
@@ -747,8 +755,11 @@ func DBToSecurityReport(from, authResults, status, reason string) SecurityReport
 		rep.Status = SecurityVerifiedDomain
 	case "needs_review":
 		rep.Status = SecurityNeedsReview
-		if reason == "ai_suspicious" {
+		switch reason {
+		case "ai_suspicious", "suspicious":
 			rep.WarningKind = WarnSuspicious
+		case "display_mismatch":
+			rep.WarningKind = WarnDisplaySpoof
 		}
 	case "warning", "fraud":
 		rep.Status = SecurityFraud

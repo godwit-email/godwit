@@ -30,7 +30,7 @@ func TestSecurityDKIMFetchesAndChecksOriginalMessage(t *testing.T) {
 			if tc.tamper {
 				raw = bytes.Replace(raw, []byte("Original body."), []byte("Attack body."), 1)
 			}
-			raw = append([]byte("Received: from attacker.invalid by mx.receiver.test; Thu, 29 Oct 2026 00:00:00 +0000\r\nAuthentication-Results: mx.receiver.test; dmarc=pass header.from=paypal.com; bimi=pass\r\n"), raw...)
+			raw = append([]byte("Authentication-Results: mx.receiver.test; none\r\nReceived: from attacker.invalid by mx.receiver.test; Thu, 29 Oct 2026 00:00:00 +0000\r\nAuthentication-Results: mx.receiver.test; dmarc=pass header.from=paypal.com; bimi=pass\r\n"), raw...)
 			e.s.securityLookupTXT = fixture.LookupTXT
 			getter := e.s.securityRaw
 			var downloads atomic.Int64

@@ -1518,22 +1518,23 @@ func TestReaderRecipientDetailsLong(t *testing.T) {
 	}
 }
 
-func (h *harness) withSecurity() {
-	st := h.app.settings
-	st.SecurityAI = true
-	h.app.changeSettings(st)
+// hover rests the pointer on the element labelled label until its hover card shows.
+func (h *harness) hover(label string) {
+	h.t.Helper()
+	h.until(fmt.Sprintf("an element %q", label), func() bool { _, ok := h.tt.Find(label); return ok })
+	r, _ := h.tt.Find(label)
+	h.tt.Move(r.X+r.W/2, r.Y+r.H/2)
+	h.tt.Advance(900 * time.Millisecond)
 }
 
 func TestReaderSecuritySpoofingWarning(t *testing.T) {
 	h, accs := mailHarness(t, nil, "alice@example.com")
-	h.withSecurity()
 	acc := accs[0]
 	// Deliver spoofed email claiming to be PayPal but sent from gmail.com
 	m := h.deliverOne(acc, coretest.Msg("\"PayPal Support\" <phisher@gmail.com>", acc.Email, "Urgent Notice", "Verify your account"))
 	h.openThread(m.ThreadID)
 	h.seeBody(m.ID)
-	h.see(i18n.T("reader.security.fraud_badge"))
-	h.click(i18n.T("reader.security.fraud_badge"))
+	h.hover(i18n.T("reader.security.fraud_badge"))
 	h.see(i18n.T("reader.security.spoof_brand"))
 
 	// Switch off SecurityWarnings in settings: warning disappears
@@ -1547,34 +1548,31 @@ func TestReaderSecuritySpoofingWarning(t *testing.T) {
 	}
 }
 
-func TestReaderSecurityNeedsReviewPopover(t *testing.T) {
+func TestReaderSecurityNeedsReviewCard(t *testing.T) {
 	h, accs := mailHarness(t, nil, "alice@example.com")
-	h.withSecurity()
 	acc := accs[0]
 	m := h.deliverOne(acc, coretest.Msg("\"Billing Dept\" <billing@unknown-shop.com>", acc.Email, "Notice", "Payment notice"))
 	h.openThread(m.ThreadID)
 	h.seeBody(m.ID)
 	h.app.mail.reader.bodies[m.ID].msg.Security = gomail.SecurityReport{Status: gomail.SecurityNeedsReview, ActualDomain: "unknown-shop.com", DKIMPass: true}
-	h.see(i18n.T("reader.security.review_badge"))
-	h.click(i18n.T("reader.security.review_badge"))
+	h.hover(i18n.T("reader.security.review_badge"))
 	h.see(i18n.Tf("reader.security.review_authenticated_desc", "unknown-shop.com"))
 }
 
-func TestReaderSecurityNeutralPopover(t *testing.T) {
+// Unverified mail, and mail not checked yet, shows no badge at all.
+func TestReaderSecurityNeutralNoBadge(t *testing.T) {
 	h, accs := mailHarness(t, nil, "alice@example.com")
-	h.withSecurity()
 	acc := accs[0]
 	m := h.deliverOne(acc, coretest.Msg("\"Friend\" <friend@example.org>", acc.Email, "Hi", "Hello"))
 	h.openThread(m.ThreadID)
 	h.seeBody(m.ID)
-	h.see(i18n.T("reader.security.unverified_badge"))
-	h.click(i18n.T("reader.security.unverified_badge"))
-	h.see(i18n.T("reader.security.unverified_desc"))
+	if h.tt.HasText(i18n.T("reader.security.unverified_badge")) {
+		t.Fatal("neutral sender shows a badge")
+	}
 }
 
-func TestReaderSecurityCertifiedBrandPopover(t *testing.T) {
+func TestReaderSecurityCertifiedBrandCard(t *testing.T) {
 	h, accs := mailHarness(t, nil, "alice@example.com")
-	h.withSecurity()
 	acc := accs[0]
 	m := h.deliverOne(acc, coretest.Msg("\"Sparkasse\" <sicherheit@sparkasse.de>", acc.Email, "Kontoauszug", "Hier Ihr Auszug",
 		coretest.Header("Authentication-Results: mx.example.com; dkim=pass header.i=@sparkasse.de; dmarc=pass header.from=sparkasse.de; bimi=pass")))
@@ -1582,20 +1580,17 @@ func TestReaderSecurityCertifiedBrandPopover(t *testing.T) {
 	h.seeBody(m.ID)
 	// The badge UI consumes a validated verdict; arbitrary bimi=pass headers cannot create one.
 	h.app.mail.reader.bodies[m.ID].msg.Security = gomail.SecurityReport{Status: gomail.SecurityCertifiedBrand}
-	h.see(i18n.T("reader.security.certified_badge"))
-	h.click(i18n.T("reader.security.certified_badge"))
+	h.hover(i18n.T("reader.security.certified_badge"))
 	h.see(i18n.T("reader.security.certified_desc"))
 }
 
-func TestReaderSecurityVerifiedDomainPopover(t *testing.T) {
+func TestReaderSecurityVerifiedDomainCard(t *testing.T) {
 	h, accs := mailHarness(t, nil, "alice@example.com")
-	h.withSecurity()
 	acc := accs[0]
 	raw := append([]byte("Authentication-Results: mx.example.com; dkim=pass header.i=@sparkasse.de; dmarc=pass header.from=sparkasse.de\r\nReceived: from sender.invalid by mx.example.com; Thu, 29 Oct 2026 00:00:00 +0000\r\n"), coretest.Msg("\"Sparkasse\" <sicherheit@sparkasse.de>", acc.Email, "Kontoauszug", "Hier Ihr Auszug")...)
 	m := h.deliverOne(acc, raw)
 	h.openThread(m.ThreadID)
 	h.seeBody(m.ID)
-	h.see(i18n.T("reader.security.verified_badge"))
-	h.click(i18n.T("reader.security.verified_badge"))
+	h.hover(i18n.T("reader.security.verified_badge"))
 	h.see(i18n.T("reader.security.verified_desc"))
 }

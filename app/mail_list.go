@@ -1036,20 +1036,9 @@ func (p *mailPage) resultRow(c *ui.Context, it mailItem) ui.Element {
 	col := ui.Column(c).Gap(th.Space(0.5)).Padding(th.Space(2), th.Space(3))
 	return col.Children(func() {
 		ui.Row(c).Gap(th.Space(1.5)).AlignItems(ui.Center).Children(func() {
-			if icon, _, colr := secVisual(t, it.Security.Status); icon != "" {
-				showIcon := false
-				if p.a.settings.SecurityAI {
-					if (it.Security.Status == gomail.SecurityFraud || it.Security.Status == gomail.SecurityNeedsReview) && p.a.settings.SecurityWarnings {
-						showIcon = true
-					} else if (it.Security.Status == gomail.SecurityCertifiedBrand || it.Security.Status == gomail.SecurityVerifiedDomain || it.Security.Status == gomail.SecurityNeutral) && p.a.settings.VerifiedBadge {
-						showIcon = true
-					}
-				}
-				if showIcon {
-					ui.Icon(c, icons.Fill(icon)).Size(theme.IconXs, theme.IconXs).Shrink(0).TextColor(colr)
-				}
-			}
-			ui.Text(c, p.resultWho(it)).SingleLine().Grow(1).Shrink(1)
+			ui.Text(c, p.resultWho(it)).SingleLine().Shrink(1)
+			securityIcon(c, p.a.settings, it.Security.Status)
+			ui.Spacer(c)
 			p.starButton(c, it, col.Hovered())
 			if it.Attach {
 				ui.Icon(c, icons.Get("paperclip")).Size(theme.IconXs, theme.IconXs).TextColor(t.Muted).Label(i18n.T("mail.attachment"))
@@ -1159,20 +1148,9 @@ func (p *mailPage) row(c *ui.Context, it mailItem) ui.Element {
 				Label(i18n.Tf("mail.row.unread", it.Unread))
 		}
 		ui.Row(c).Gap(th.Space(1.5)).AlignItems(ui.Center).Children(func() {
-			if icon, _, colr := secVisual(t, it.Security.Status); icon != "" {
-				showIcon := false
-				if p.a.settings.SecurityAI {
-					if (it.Security.Status == gomail.SecurityFraud || it.Security.Status == gomail.SecurityNeedsReview) && p.a.settings.SecurityWarnings {
-						showIcon = true
-					} else if (it.Security.Status == gomail.SecurityCertifiedBrand || it.Security.Status == gomail.SecurityVerifiedDomain || it.Security.Status == gomail.SecurityNeutral) && p.a.settings.VerifiedBadge {
-						showIcon = true
-					}
-				}
-				if showIcon {
-					ui.Icon(c, icons.Fill(icon)).Size(theme.IconXs, theme.IconXs).Shrink(0).TextColor(colr)
-				}
-			}
-			ui.Text(c, it.Who).FontWeight(weight).SingleLine().Grow(1).Shrink(1)
+			ui.Text(c, it.Who).FontWeight(weight).SingleLine().Shrink(1)
+			securityIcon(c, p.a.settings, it.Security.Status)
+			ui.Spacer(c)
 			p.starButton(c, it, col.Hovered())
 			if it.Attach {
 				ui.Icon(c, icons.Get("paperclip")).Size(theme.IconXs, theme.IconXs).TextColor(t.Muted).Label(i18n.T("mail.attachment"))

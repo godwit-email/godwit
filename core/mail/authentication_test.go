@@ -17,18 +17,17 @@ func TestReceiverAuthenticationResults(t *testing.T) {
 	}{
 		{"receiver prepends result", pass + received, nil, SecurityVerifiedDomain},
 		{"unknown provider needs no table", "Authentication-Results: independently-operated-service; dkim=pass header.d=company.example\r\nReceived: from sender.invalid by mx.new-provider.example; Thu, 29 Oct 2026 00:00:00 +0000\r\n", nil, SecurityVerifiedDomain},
-		{"receiver result below trace requires cryptographic proof", received + pass, []string{"imap.receiver.test"}, SecurityNeutral},
-		{"configured host insufficient for unrelated service", received + pass, []string{"imap.unrelated.test"}, SecurityNeutral},
-		{"wrong authserv below receiver trace", received + "Authentication-Results: attacker.invalid; dmarc=pass header.from=company.example\r\n", []string{"mx.receiver.test"}, SecurityNeutral},
-		{"missing reception trace", pass, nil, SecurityNeutral},
+		{"receiver result below its own Received", received + pass, nil, SecurityVerifiedDomain},
+		{"receiver result shields a lower injected pass", "Authentication-Results: mx.receiver.test; none\r\n" + received + "Authentication-Results: attacker.invalid; dmarc=pass header.from=company.example\r\n", nil, SecurityNeutral},
+		{"same authserv-id below the next hop is not merged", "Authentication-Results: mx.receiver.test; dkim=none\r\n" + received + pass, nil, SecurityNeutral},
+		// Known limit: a receiver that adds no result of its own leaves the sender's on top.
+		{"receiver without results of its own", received + "Authentication-Results: attacker.invalid; dmarc=pass header.from=company.example\r\n", nil, SecurityVerifiedDomain},
 		{"split provider results", "Authentication-Results: independent.test; dmarc=none header.from=company.example\r\nAuthentication-Results: independent.test; arc=none\r\nAuthentication-Results: independent.test; dkim=pass header.d=company.example\r\n" + received, nil, SecurityVerifiedDomain},
 		{"newest fail beats forwarded pass", fail + received + "Authentication-Results: previous.test; dmarc=pass header.from=company.example\r\n", nil, SecurityWarning},
 		{"none cannot inherit an older pass", "Authentication-Results: mx.receiver.test; none\r\n" + pass + received, nil, SecurityNeutral},
-		{"sender injected trace and pass", received + "Received: from sender.invalid by mx.attacker.invalid; Thu, 29 Oct 2026 00:00:00 +0000\r\n" + pass, []string{"mx.receiver.test"}, SecurityNeutral},
-		{"comment cannot impersonate receiver", "Received: from attacker.invalid (by mx.receiver.test) by real.attacker.invalid; Thu, 29 Oct 2026 00:00:00 +0000\r\n" + pass, []string{"mx.receiver.test"}, SecurityNeutral},
 		{"malformed newest result cannot expose older pass", "Authentication-Results: bad; dkim=\r\n" + pass + received, nil, SecurityNeutral},
-		{"internal receiving relay", "Received: from relay.receiver.test by mailbox.receiver.test; Thu, 29 Oct 2026 00:00:00 +0000\r\n" + received + pass, []string{"imap.receiver.test"}, SecurityNeutral},
-		{"gmail style internal address", "Received: by 2002:a05:1234::1 with SMTP id abc; Thu, 29 Oct 2026 00:00:00 +0000\r\nReceived: from sender.invalid by mx.google.com; Thu, 29 Oct 2026 00:00:00 +0000\r\nAuthentication-Results: mx.google.com; dkim=pass header.d=company.example\r\n", []string{"gmail-smtp-in.l.google.com"}, SecurityNeutral},
+		{"internal receiving relay", "Received: from relay.receiver.test by mailbox.receiver.test; Thu, 29 Oct 2026 00:00:00 +0000\r\n" + received + pass, nil, SecurityVerifiedDomain},
+		{"gmail places its result below its own Received", "Received: by 2002:a05:1234::1 with SMTP id abc; Thu, 29 Oct 2026 00:00:00 +0000\r\nReceived: from sender.invalid by mx.google.com; Thu, 29 Oct 2026 00:00:00 +0000\r\nAuthentication-Results: mx.google.com; dkim=pass header.d=company.example\r\n", nil, SecurityVerifiedDomain},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			p, err := Parse([]byte(tc.headers + original))

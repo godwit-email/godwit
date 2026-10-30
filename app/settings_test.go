@@ -1648,16 +1648,7 @@ func TestSettingsSecuritySection(t *testing.T) {
 			h.app.settings.SecurityWarnings, h.app.settings.VerifiedBadge, h.app.settings.SecurityAI)
 	}
 
-	// While SecurityAI is OFF (default), sub-options and rescan are hidden
-	if h.tt.HasText(i18n.T("settings.security.warnings")) || h.tt.HasText(i18n.T("settings.security.verified")) || h.tt.HasText(i18n.T("settings.security.rescan")) {
-		t.Fatal("sub-options and rescan should be hidden when SecurityAI is off")
-	}
-
-	// Toggle SecurityAI ON
-	h.click(i18n.T("settings.security.ai"))
-	h.until("security AI toggled on", func() bool { return h.app.settings.SecurityAI })
-
-	// Now sub-options and rescan appear
+	// Warnings, badges and rescan come from the native checks: shown with AI off.
 	h.see(i18n.T("settings.security.warnings"))
 	h.see(i18n.T("settings.security.verified"))
 	h.see(i18n.T("settings.security.rescan"))
@@ -1668,13 +1659,12 @@ func TestSettingsSecuritySection(t *testing.T) {
 	h.click(i18n.T("settings.security.verified"))
 	h.until("verified badge toggled off", func() bool { return !h.app.settings.VerifiedBadge })
 
-	// Toggle SecurityAI OFF again
+	// With every feature off there is nothing to rescan.
+	h.until("rescan hidden", func() bool { return !h.tt.HasText(i18n.T("settings.security.rescan")) })
+
 	h.click(i18n.T("settings.security.ai"))
-	h.until("security AI toggled off", func() bool { return !h.app.settings.SecurityAI })
-	h.until("sub-options hidden", func() bool { return !h.tt.HasText(i18n.T("settings.security.warnings")) })
-	if h.tt.HasText(i18n.T("settings.security.verified")) || h.tt.HasText(i18n.T("settings.security.rescan")) {
-		t.Fatal("sub-options and rescan should be hidden after toggling SecurityAI off")
-	}
+	h.until("security AI toggled on", func() bool { return h.app.settings.SecurityAI })
+	h.see(i18n.T("settings.security.rescan"))
 }
 
 func TestSettingsSecurityRescan(t *testing.T) {

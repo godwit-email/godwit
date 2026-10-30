@@ -564,23 +564,18 @@ func (p *settingsPage) aiView(c *ui.Context) {
 }
 
 func (p *settingsPage) securityView(c *ui.Context) {
-	rows := []func(){
+	settingsSection(c, i18n.T("settings.security"), "",
+		func() {
+			kit.SwitchRow(c, &p.st.SecurityWarnings, i18n.T("settings.security.warnings"), i18n.T("settings.security.warnings.help"))
+		},
+		func() {
+			kit.SwitchRow(c, &p.st.VerifiedBadge, i18n.T("settings.security.verified"), i18n.T("settings.security.verified.help"))
+		},
 		func() {
 			kit.SwitchRow(c, &p.st.SecurityAI, i18n.T("settings.security.ai"), i18n.T("settings.security.ai.help"))
 		},
-	}
-	if p.st.SecurityAI {
-		rows = append(rows,
-			func() {
-				kit.SwitchRow(c, &p.st.SecurityWarnings, i18n.T("settings.security.warnings"), i18n.T("settings.security.warnings.help"))
-			},
-			func() {
-				kit.SwitchRow(c, &p.st.VerifiedBadge, i18n.T("settings.security.verified"), i18n.T("settings.security.verified.help"))
-			},
-		)
-	}
-	settingsSection(c, i18n.T("settings.security"), "", rows...)
-	if p.st.SecurityAI {
+	)
+	if p.st.SecurityWarnings || p.st.VerifiedBadge || p.st.SecurityAI {
 		p.securityRescanView(c)
 	}
 }

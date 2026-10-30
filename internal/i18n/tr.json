@@ -1444,7 +1444,7 @@
   "reader_security_warning_generic": "Şüpheli gönderen özellikleri tespit edildi.",
   "reader_security_verified_badge": "Doğrulandı",
   "settings_security_ai": "İçeriği dolandırıcılık ve kimlik avı için tara (YZ)",
-  "settings_security_ai_help": "Doğrulanmamış e-postaları arka planda sınıflandırma modeliyle dolandırıcılık kalıplarına karşı tarar.",
+  "settings_security_ai_help": "Doğrulanmamış e-postaları YZ modelinizle dolandırıcılığa karşı tarar. Bulut modelinde içerik o sağlayıcıya gönderilir.",
   "settings_security_rescan": "Mevcut e-postaları yeniden tara",
   "settings_security_rescan_sub": "Zaten senkronize edilmiş e-postalarda güvenlik ve içerik denetimleri çalıştırır.",
   "settings_security_rescan_range": "Aralık",

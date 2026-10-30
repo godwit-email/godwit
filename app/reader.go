@@ -69,8 +69,6 @@ type reader struct {
 	senderMsgID int64                    // which message's sender popover is open
 	detailsOpen bool                     // the recipients' details popover shows
 	detailsID   int64                    // which message's details popover is open
-	secOpen     bool                     // the security explanation popover shows
-	secMsgID    int64                    // which message's security popover is open
 	moreOpen    bool                     // the toolbar's more menu (save, print) shows
 	barTop      float32                  // the floating toolbar's height as the last frame laid it out: the messages start under it
 	barBottom   float32                  // the reply bar's, likewise: the messages end above it
@@ -1066,23 +1064,7 @@ func (r *reader) folded(c *ui.Context, m core.MessageSummary) {
 			if r.isBlocked(m.From) {
 				kit.Badge(c, i18n.T("reader.blocked_badge"))
 			}
-			if icon, label, colr := secVisual(t, m.Security.Status); icon != "" {
-				showBadge := false
-				if r.p.a.settings.SecurityAI {
-					if (m.Security.Status == gomail.SecurityFraud || m.Security.Status == gomail.SecurityNeedsReview) && r.p.a.settings.SecurityWarnings {
-						showBadge = true
-					} else if (m.Security.Status == gomail.SecurityCertifiedBrand || m.Security.Status == gomail.SecurityVerifiedDomain || m.Security.Status == gomail.SecurityNeutral) && r.p.a.settings.VerifiedBadge {
-						showBadge = true
-					}
-				}
-				if showBadge {
-					secRow := ui.Row(c).Gap(th.Space(0.5)).AlignItems(ui.Center)
-					secRow.Children(func() {
-						ui.Icon(c, icons.Fill(icon)).Size(theme.IconXs, theme.IconXs).TextColor(colr)
-						kit.Text(c, label, t.Text.Sm).TextColor(colr)
-					})
-				}
-			}
+			r.securityBadge(c, m.Security)
 			if g := r.gist(m.ID); g != "" { // a step darker than the text it stands for, and marked the AI's
 				ui.Row(c).Grow(1).Shrink(1).Gap(th.Space(1)).AlignItems(ui.Center).Children(func() {
 					ui.Text(c, g).TextColor(t.Foreground.Alpha(0.7)).SingleLine().Shrink(1)
@@ -1368,12 +1350,12 @@ func (r *reader) message(c *ui.Context, m core.MessageSummary) {
 						if r.isBlocked(m.From) {
 							kit.Badge(c, i18n.T("reader.blocked_badge"))
 						}
+						r.securityBadge(c, sec)
 					})
 					ui.Row(c).Wrap().Gap(th.Space(1.5)).AlignItems(ui.Center).Children(func() {
 						r.recipientsLine(c, m, b)
 						r.trackersNote(c, b)
 						r.imagesNote(c, m, b, addr)
-						r.securityBadge(c, m.ID, sec)
 					})
 				})
 				ui.Spacer(c)
@@ -1872,62 +1854,46 @@ func (r *reader) secExplanation(sec gomail.SecurityReport) string {
 	}
 }
 
-func (r *reader) securityBadge(c *ui.Context, msgID int64, sec gomail.SecurityReport) {
-	if !r.p.a.settings.SecurityAI {
+// securityBadge is the sender's verdict as an icon by the name; hovering it
+// explains the verdict.
+func (r *reader) securityBadge(c *ui.Context, sec gomail.SecurityReport) {
+	if !showSecurity(r.p.a.settings, sec.Status) {
 		return
 	}
-	if (sec.Status == gomail.SecurityFraud || sec.Status == gomail.SecurityNeedsReview) && !r.p.a.settings.SecurityWarnings {
-		return
-	}
-	if (sec.Status == gomail.SecurityCertifiedBrand || sec.Status == gomail.SecurityVerifiedDomain || sec.Status == gomail.SecurityNeutral) && !r.p.a.settings.VerifiedBadge {
-		return
-	}
-
 	t, th := theme.Of(c), c.Theme()
 	iconName, label, color := secVisual(t, sec.Status)
-	if iconName == "" {
-		return
-	}
-
-	badge := kit.Pressable(c, kit.PressableOpts{
-		OnClick: func() {
-			if r.secOpen && r.secMsgID == msgID {
-				r.secOpen = false
-			} else {
-				r.secOpen = true
-				r.secMsgID = msgID
-			}
-		},
-	}).Label(label).
-		Radius(t.Radius.Sm).Padding(th.Space(0.5), th.Space(1.5)).
-		Margin(0, -th.Space(1.5), 0, 0).
-		AlignItems(ui.Center).Gap(th.Space(1))
-	badge.Children(func() {
+	mark := ui.Box(c).Shrink(0).Label(label).Children(func() {
 		ui.Icon(c, icons.Fill(iconName)).Size(theme.IconXs, theme.IconXs).TextColor(color)
-		kit.Text(c, label, t.Text.Sm).TextColor(color)
 	})
-
-	if r.secOpen && r.secMsgID == msgID {
-		kit.Popover(c, badge, &r.secOpen, func() {
-			r.securityPopover(c, sec)
-		})
-	}
-}
-
-func (r *reader) securityPopover(c *ui.Context, sec gomail.SecurityReport) {
-	t, th := theme.Of(c), c.Theme()
-	iconName, title, color := secVisual(t, sec.Status)
-	if iconName == "" {
-		return
-	}
-
-	ui.Column(c).Width(theme.SecurityPopoverWidth).Gap(th.Space(2)).Children(func() {
+	kit.HoverCard(c, mark, theme.SecurityCardWidth, func() {
 		ui.Row(c).Gap(th.Space(1.5)).AlignItems(ui.Center).Children(func() {
 			ui.Icon(c, icons.Fill(iconName)).Size(theme.Icon, theme.Icon).TextColor(color)
-			kit.Text(c, title, t.Text.Base).FontWeight(600).TextColor(color)
+			kit.Text(c, label, t.Text.Base).FontWeight(600).TextColor(color)
 		})
 		kit.Text(c, r.secExplanation(sec), t.Text.Sm).LineHeight(theme.LineCJK).TextColor(t.Foreground)
 	})
+}
+
+// securityIcon is a mail list row's warning, after the sender's name. Verified
+// senders show theirs in the reader only: most rows would carry one.
+func securityIcon(c *ui.Context, st core.Settings, status gomail.SecurityStatus) {
+	if status != gomail.SecurityFraud && status != gomail.SecurityNeedsReview || !showSecurity(st, status) {
+		return
+	}
+	iconName, label, color := secVisual(theme.Of(c), status)
+	ui.Icon(c, icons.Fill(iconName)).Size(theme.IconXs, theme.IconXs).Shrink(0).TextColor(color).Label(label)
+}
+
+// showSecurity reports whether the settings show a sender verdict: warnings
+// and badges come from the native checks, so neither depends on SecurityAI.
+func showSecurity(st core.Settings, status gomail.SecurityStatus) bool {
+	switch status {
+	case gomail.SecurityFraud, gomail.SecurityNeedsReview:
+		return st.SecurityWarnings
+	case gomail.SecurityCertifiedBrand, gomail.SecurityVerifiedDomain:
+		return st.VerifiedBadge
+	}
+	return false // neutral is also the zero value of mail not yet checked: no badge
 }
 
 // secVisual returns the icon, translated label, and theme color for a security status.

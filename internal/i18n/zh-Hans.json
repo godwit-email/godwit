@@ -1444,7 +1444,7 @@
   "reader_security_warning_generic": "检测到可疑发件人特征。",
   "reader_security_verified_badge": "已验证域名",
   "settings_security_ai": "使用 AI 扫描邮件内容中的诈骗与钓鱼",
-  "settings_security_ai_help": "在后台使用分类模型检测未验证邮件中的诈骗特征。",
+  "settings_security_ai_help": "用你配置的 AI 模型检查未验证邮件是否为诈骗。使用云端模型时，邮件内容会发送给该服务商。",
   "settings_security_rescan": "重新分析已有邮件",
   "settings_security_rescan_sub": "对已同步的邮件运行安全与内容检查。",
   "settings_security_rescan_range": "范围",

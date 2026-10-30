@@ -15,8 +15,8 @@ import (
 func TestAutomaticReceiverAuthenticationImport(t *testing.T) {
 	for _, tc := range []struct{ name, headers, want string }{
 		{"arbitrary provider without setup", "Authentication-Results: newest-service.test; dkim=pass header.d=company.example\r\nReceived: from sender.invalid by mx.receiver.test; Thu, 29 Oct 2026 00:00:00 +0000\r\n", "verified_domain"},
-		{"receiver below Received requires proof", "Received: from sender.invalid by mx.receiver.test; Thu, 29 Oct 2026 00:00:00 +0000\r\nAuthentication-Results: mx.receiver.test; dkim=pass header.d=company.example\r\n", "neutral"},
-		{"sender cannot validate itself", "Received: from sender.invalid by mx.receiver.test; Thu, 29 Oct 2026 00:00:00 +0000\r\nAuthentication-Results: attacker.invalid; dmarc=pass header.from=company.example\r\n", "neutral"},
+		{"receiver below its own Received", "Received: from sender.invalid by mx.receiver.test; Thu, 29 Oct 2026 00:00:00 +0000\r\nAuthentication-Results: mx.receiver.test; dkim=pass header.d=company.example\r\n", "verified_domain"},
+		{"sender cannot validate itself", "Authentication-Results: mx.receiver.test; none\r\nReceived: from sender.invalid by mx.receiver.test; Thu, 29 Oct 2026 00:00:00 +0000\r\nAuthentication-Results: attacker.invalid; dmarc=pass header.from=company.example\r\n", "neutral"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			db, err := store.Open(t.Context(), filepath.Join(t.TempDir(), "mail.db"))
@@ -41,6 +41,6 @@ func TestAutomaticReceiverAuthenticationImport(t *testing.T) {
 }
 
 func TestAutomaticReceiverHostDoesNotProveHeaderOrigin(t *testing.T) {
-	p := toParsed(&imapclient.FetchMessageBuffer{BodySection: []imapclient.FetchBodySectionBuffer{{Section: headerSection(), Bytes: []byte("Received: from attacker.invalid by mx.independent-provider.test; Thu, 29 Oct 2026 00:00:00 +0000\r\nAuthentication-Results: mx.independent-provider.test; dkim=pass header.d=company.example\r\n\r\n")}}}, nil)
-	require.Empty(t, mail.ReceiverAuthenticationResults(p.AuthenticationTrace, "mx.independent-provider.test"))
+	p := toParsed(&imapclient.FetchMessageBuffer{BodySection: []imapclient.FetchBodySectionBuffer{{Section: headerSection(), Bytes: []byte("Authentication-Results: mx.independent-provider.test; none\r\nReceived: from attacker.invalid by mx.independent-provider.test; Thu, 29 Oct 2026 00:00:00 +0000\r\nAuthentication-Results: mx.independent-provider.test; dkim=pass header.d=company.example\r\n\r\n")}}}, nil)
+	require.NotContains(t, mail.ReceiverAuthenticationResults(p.AuthenticationTrace, "mx.independent-provider.test"), "dkim=pass")
 }

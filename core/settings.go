@@ -74,8 +74,8 @@ type Settings struct {
 	// VerifiedBadge shows a verified badge for authenticated senders (DKIM/DMARC);
 	// on by default.
 	VerifiedBadge bool
-	// SecurityAI analyzes unverified email contents with the classifier model
-	// to detect fraud and phishing; off by default.
+	// SecurityAI analyzes unverified email contents with the configured judge
+	// model, which may be remote, to detect fraud and phishing; off by default.
 	SecurityAI bool
 	// LabelDisplay is how label chips show: LabelDisplayBoth (the default;
 	// "" too), LabelDisplayIcon or LabelDisplayText.
@@ -274,7 +274,7 @@ func (s *Service) SetSettings(ctx context.Context, st Settings) (Settings, error
 		return Settings{}, err
 	}
 	s.maskingChanged(st)
-	if st.SecurityAI && !stored.SecurityAI {
+	if securityOn(st) && (!securityOn(stored) || st.SecurityAI && !stored.SecurityAI) {
 		s.wakeSecurityScanner()
 	}
 	s.bus.Publish(events.Event{Type: events.SettingsChanged})

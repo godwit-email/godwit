@@ -1444,7 +1444,7 @@
   "reader_security_warning_generic": "Phát hiện các đặc điểm người gửi đáng ngờ.",
   "reader_security_verified_badge": "Đã xác minh",
   "settings_security_ai": "Quét nội dung để tìm lừa đảo và giả mạo (AI)",
-  "settings_security_ai_help": "Quét các email chưa xác minh trong nền bằng mô hình phân loại để tìm mẫu lừa đảo.",
+  "settings_security_ai_help": "Kiểm tra email chưa xác minh bằng mô hình AI của bạn. Với mô hình đám mây, nội dung sẽ được gửi tới nhà cung cấp đó.",
   "settings_security_rescan": "Quét lại các email hiện có",
   "settings_security_rescan_sub": "Chạy kiểm tra bảo mật và nội dung trên các email đã được đồng bộ hóa.",
   "settings_security_rescan_range": "Phạm vi",

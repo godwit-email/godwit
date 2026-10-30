@@ -1444,7 +1444,7 @@
   "reader_security_warning_generic": "Verdachte afzenderkenmerken gedetecteerd.",
   "reader_security_verified_badge": "Geverifieerd",
   "settings_security_ai": "Inhoud scannen op fraude en phishing (AI)",
-  "settings_security_ai_help": "Scant niet-geverifieerde e-mails op de achtergrond met het classificatiemodel.",
+  "settings_security_ai_help": "Controleert niet-geverifieerde e-mails met je AI-model op fraude. Bij een cloudmodel wordt de inhoud naar die aanbieder gestuurd.",
   "settings_security_rescan": "Bestaande e-mails opnieuw scannen",
   "settings_security_rescan_sub": "Voert beveiligings- en inhoudscontroles uit op reeds gesynchroniseerde e-mails.",
   "settings_security_rescan_range": "Bereik",

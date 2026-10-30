@@ -193,7 +193,7 @@ const (
 	DetailsWidth          = 400 // a message's details popover: who it went to, its date
 	DetailsLabel          = 72  // its labels' column
 	SyncMenuWidth         = 320 // the top bar's sync status list: compact, fitted popover
-	SecurityPopoverWidth  = 320 // the reader's security explanation popover
+	SecurityCardWidth     = 320 // the reader's security explanation card
 	LabelSwatch           = 32  // a label color's button: a 24 dot, a 2 ring when chosen
 	LabelSwatchDot        = 24
 	LabelSwatchRing       = 2

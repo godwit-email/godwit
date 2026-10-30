@@ -131,8 +131,8 @@ func TestAuthenticationNamelessResultPreservesValidChecks(t *testing.T) {
 			if got.Status != SecurityVerifiedDomain || !got.DKIMPass || got.DMARCPass != strings.Contains(header, "dmarc=pass") {
 				t.Fatalf("combined %q: %+v", parsed.AuthenticationResults, got)
 			}
-			// The same results below the reception boundary remain untrusted.
-			raw = "Received: from sender.invalid by receiver.test; now\r\nAuthentication-Results: " + header + "\r\nFrom: GitHub <notifications@github.com>\r\n\r\nhello"
+			// The same results below the receiver's own result remain untrusted.
+			raw = "Authentication-Results: receiver.test; none\r\nReceived: from sender.invalid by receiver.test; now\r\nAuthentication-Results: " + header + "\r\nFrom: GitHub <notifications@github.com>\r\n\r\nhello"
 			parsed, err = Parse([]byte(raw))
 			if err != nil {
 				t.Fatal(err)

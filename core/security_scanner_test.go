@@ -114,44 +114,48 @@ func TestSecurityRescanAndBatch(t *testing.T) {
 	require.Equal(t, gomail.WarnDisplaySpoof, msg1.Security.WarningKind)
 }
 
-func TestSecurityRescanWithAIOff(t *testing.T) {
+func TestSecurityNativeScanWithoutAI(t *testing.T) {
 	ctx := t.Context()
 	s := newLabelService(t, "", "de")
-
-	// Set SecurityAI = false
-	st, err := s.loadSettings(ctx)
-	require.NoError(t, err)
-	st.SecurityAI = false
-	_, err = s.SetSettings(ctx, st)
-	require.NoError(t, err)
+	j := &fakeJudge{p: map[string]float64{"phishing_fraud": 1}}
+	s.securityJudge = func(context.Context) (ai.Judge, error) { return j, nil }
 
 	now := time.Now().Unix()
-	id := addMessage(t, s, "Erbschaft", "\"Richard M. Kenny\" <richardalakpe277@yahoo.com>", "Erbschaft 18.7M", "", now-100)
-	_, err = s.db.Execute(ctx, "UPDATE messages SET auth_results = 'mx.example.com; dkim=pass header.i=@yahoo.com' WHERE id = ?", id)
+	verified := addMessage(t, s, "Rechnung", "Shop <billing@shop.example>", "Ihre Rechnung", "", now-100)
+	_, err := s.db.Execute(ctx, "UPDATE messages SET auth_results = 'mx.example.com; dmarc=pass header.from=shop.example; dkim=pass header.d=shop.example' WHERE id = ?", verified)
 	require.NoError(t, err)
 
-	_, err = s.RescanSecurity(ctx, 0, true)
-	require.ErrorIs(t, err, ErrSecurityScanDisabled)
-
-	n, err := s.scanSecurityBatch(ctx)
-	require.NoError(t, err)
-	require.Equal(t, 0, n)
-
-	// Now turn SecurityAI ON:
-	st.SecurityAI = true
-	_, err = s.SetSettings(ctx, st)
-	require.NoError(t, err)
-	s.securityJudge = func(context.Context) (ai.Judge, error) {
-		return &fakeJudge{p: map[string]float64{}}, nil
-	}
-
+	// Warnings and badges are on by default and need no model.
 	queued, err := s.RescanSecurity(ctx, 0, true)
 	require.NoError(t, err)
 	require.Equal(t, 1, queued)
+	n, err := s.scanSecurityBatch(ctx)
+	require.NoError(t, err)
+	require.Equal(t, 1, n)
+	require.Zero(t, j.calls)
+	msg, err := s.GetMessage(ctx, verified, false)
+	require.NoError(t, err)
+	require.Equal(t, gomail.SecurityVerifiedDomain, msg.Security.Status)
 
+	// AI on without a configured model still records the native verdict.
+	st, err := s.loadSettings(ctx)
+	require.NoError(t, err)
+	st.SecurityAI = true
+	_, err = s.SetSettings(ctx, st)
+	require.NoError(t, err)
+	s.securityJudge = func(context.Context) (ai.Judge, error) { return nil, nil }
+	_, err = s.RescanSecurity(ctx, 0, true)
+	require.NoError(t, err)
 	n, err = s.scanSecurityBatch(ctx)
 	require.NoError(t, err)
 	require.Equal(t, 1, n)
+
+	// With every security feature off there is nothing to scan.
+	st.SecurityAI, st.SecurityWarnings, st.VerifiedBadge = false, false, false
+	_, err = s.SetSettings(ctx, st)
+	require.NoError(t, err)
+	_, err = s.RescanSecurity(ctx, 0, true)
+	require.ErrorIs(t, err, ErrSecurityScanDisabled)
 }
 
 func TestSecurityAINeverDowngradesNativeWarning(t *testing.T) {
@@ -327,12 +331,11 @@ func TestSecurityFiveStatesScanner(t *testing.T) {
 	_, err = s.db.Execute(ctx, "UPDATE messages SET auth_results = 'mx.example.com; dmarc=pass header.from=toeverything.info; dkim=pass header.d=toeverything.info' WHERE id = ?", idAffine)
 	require.NoError(t, err)
 
-	// 2. Confirmed domain with unconfirmed discrepancy (prob 0.60: 50% - 74%) -> Gelb (SecurityNeedsReview / ai_suspicious)
+	// 2. Unauthenticated discrepancy (prob 0.60: 50% - 74%) -> Gelb (SecurityNeedsReview / ai_suspicious)
 	idSuspicious := addMessage(t, s, "Important Project Update", "Partner <colleague@partner-company.com>", "Please review the updated agreement on the external server.", "", now-20)
-	_, err = s.db.Execute(ctx, "UPDATE messages SET auth_results = 'mx.example.com; dmarc=pass header.from=partner-company.com; dkim=pass header.d=partner-company.com' WHERE id = ?", idSuspicious)
 	require.NoError(t, err)
 
-	// 3. Sparkasse imitation with signed attacker domain -> Rot (SecurityFraud / spoofing)
+	// 3. Sparkasse imitation with signed attacker domain -> Gelb natively, Rot once the model agrees
 	idSparkasse := addMessage(t, s, "Konto gesperrt: Sofort handeln", "Sparkasse Team <service@attacker-control-center.de>", "Ihr Konto wurde gesperrt. Klicken Sie hier zur Entsperrung.", "", now-30)
 	_, err = s.db.Execute(ctx, "UPDATE messages SET auth_results = 'mx.example.com; dmarc=pass header.from=attacker-control-center.de; dkim=pass header.d=attacker-control-center.de' WHERE id = ?", idSparkasse)
 	require.NoError(t, err)
@@ -350,7 +353,8 @@ func TestSecurityFiveStatesScanner(t *testing.T) {
 			fn: func(state string) float64 {
 				switch {
 				case strings.Contains(state, "AFFiNE"):
-					return 0.85 // >= 0.75, but routine auth on authenticated domain -> stays verified
+					t.Error("authenticated mail was sent to the model")
+					return 1
 				case strings.Contains(state, "Important Project Update"):
 					return 0.60 // 50% - 74% -> Gelb (SecurityNeedsReview)
 				case strings.Contains(state, "Sparkasse"):
@@ -382,10 +386,11 @@ func TestSecurityFiveStatesScanner(t *testing.T) {
 	require.Equal(t, gomail.SecurityNeedsReview, msgSuspicious.Security.Status)
 	require.Equal(t, gomail.WarnSuspicious, msgSuspicious.Security.WarningKind)
 
-	// 3. Sparkasse imitation becomes Rot (SecurityFraud)
+	// 3. Sparkasse imitation: native review, escalated by the model
 	msgSparkasse, err := s.GetMessage(ctx, idSparkasse, false)
 	require.NoError(t, err)
 	require.Equal(t, gomail.SecurityFraud, msgSparkasse.Security.Status)
+	require.Equal(t, gomail.WarnAIFraud, msgSparkasse.Security.WarningKind)
 
 	// 4. Unauthenticated scam email becomes Rot (SecurityFraud)
 	msgScam, err := s.GetMessage(ctx, idScam, false)

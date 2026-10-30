@@ -1444,7 +1444,7 @@
   "reader_security_warning_generic": "의심스러운 발신자 특성이 감지되었습니다.",
   "reader_security_verified_badge": "인증됨",
   "settings_security_ai": "사기 및 피싱 콘텐츠 검사(AI)",
-  "settings_security_ai_help": "분류 모델을 사용하여 확인되지 않은 이메일의 사기 패턴을 백그라운드에서 검사합니다.",
+  "settings_security_ai_help": "확인되지 않은 이메일을 설정한 AI 모델로 사기 여부를 검사합니다. 클라우드 모델을 쓰면 내용이 해당 제공업체로 전송됩니다.",
   "settings_security_rescan": "기존 이메일 재검사",
   "settings_security_rescan_sub": "이미 동기화된 이메일에 대해 보안 및 콘텐츠 검사를 실행합니다.",
   "settings_security_rescan_range": "범위",

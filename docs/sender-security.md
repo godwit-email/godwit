@@ -48,9 +48,12 @@ cannot grant blue. The certificate cache expires within an hour and never beyond
 certificate validity. CRL/OCSP and Certificate Transparency are not implemented.
 Authentication is not a guarantee that the sender or content is harmless.
 
-Display-name spoofing detection operates independently. AI content scanning is
-off by default and uses the configured judge, which may be remote. Errors and
-refusals remain unscanned; AI cannot clear native warnings. Sent/draft/trash are
+Display-name spoofing detection operates independently. The native checks above
+run whenever warnings or badges are on and never need a model. AI content
+scanning is off by default, uses the configured judge, which may be remote, and
+only reads unverified mail; without a configured model the native verdicts still
+land. Errors and refusals remain unscanned; AI cannot change native verdicts.
+Sent/draft/trash are
 excluded. Queued/stopped rescans preserve existing verdicts, and stopped scans
 cannot publish stale results.
 

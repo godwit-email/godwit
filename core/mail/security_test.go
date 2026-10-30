@@ -139,7 +139,7 @@ func TestEvaluateSecurity(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			trace := []AuthenticationHeader{{Key: "Authentication-Results", Value: tc.authResults}, {Key: "Received", Value: "from sender.invalid by mx.google.com; Thu, 29 Oct 2026 00:00:00 +0000"}}
 			if tc.untrusted {
-				trace[0], trace[1] = trace[1], trace[0]
+				trace = []AuthenticationHeader{{Key: "Authentication-Results", Value: "mx.google.com; none"}, trace[1], trace[0]}
 			}
 			rep := EvaluateSecurity(tc.from, ReceiverAuthenticationResults(trace, "mx.google.com"))
 			if rep.Status != tc.wantStatus {
@@ -173,8 +173,8 @@ func TestSecurityDBConversions(t *testing.T) {
 	// Test NeedsReview (Gelb)
 	repReview := SecurityReport{Status: SecurityNeedsReview, WarningKind: WarnSuspicious}
 	sReview, rReview := SecurityReportToDB(repReview)
-	if sReview != "needs_review" || rReview != "ai_suspicious" {
-		t.Fatalf("SecurityReportToDB review = (%q, %q), want (needs_review, ai_suspicious)", sReview, rReview)
+	if sReview != "needs_review" || rReview != "suspicious" {
+		t.Fatalf("SecurityReportToDB review = (%q, %q), want (needs_review, suspicious)", sReview, rReview)
 	}
 	restoredReview := DBToSecurityReport("User <user@example.com>", "mx.example.com; dmarc=pass header.from=example.com", sReview, rReview)
 	if restoredReview.Status != SecurityNeedsReview || restoredReview.WarningKind != WarnSuspicious || !restoredReview.DMARCPass {
@@ -198,11 +198,22 @@ func TestSecurityFiveStatesAndPriority(t *testing.T) {
 		t.Fatalf("AFFiNE should be SecurityVerifiedDomain (Grün), got %v", repAffine.Status)
 	}
 
-	// 3. Case: Sparkasse brand imitation on arbitrary domain -> Rot (SecurityFraud) even with valid DKIM
-	sparkasseHeader := "mx.receiver.test; dkim=pass header.d=\"attacker2939439239.de\"; dmarc=pass header.from=\"attacker2939439239.de\""
-	repSparkasse := EvaluateSecurity("Sparkasse Team <buchhaltung@attacker2939439239.de>", sparkasseHeader)
+	// 3. Case: Sparkasse brand name on an authenticated unrelated domain -> Gelb: the
+	// brand list cannot prove the domain is not the brand's; unauthenticated stays Rot.
+	sparkasseHeader := "mx.receiver.test; dkim=pass header.d=\"sparkasse-kundenservice.de\"; dmarc=pass header.from=\"sparkasse-kundenservice.de\""
+	repSparkasse := EvaluateSecurity("Sparkasse Team <buchhaltung@sparkasse-kundenservice.de>", sparkasseHeader)
+	if repSparkasse.Status != SecurityNeedsReview || repSparkasse.WarningKind != WarnDisplaySpoof {
+		t.Fatalf("authenticated Sparkasse imitation must be SecurityNeedsReview (Gelb), got status=%v warn=%v", repSparkasse.Status, repSparkasse.WarningKind)
+	}
+	repSparkasse = EvaluateSecurity("Sparkasse Team <buchhaltung@sparkasse-kundenservice.de>", "")
 	if repSparkasse.Status != SecurityFraud || repSparkasse.WarningKind != WarnDisplaySpoof {
-		t.Fatalf("Sparkasse imitation must be SecurityFraud (Rot), got status=%v warn=%v", repSparkasse.Status, repSparkasse.WarningKind)
+		t.Fatalf("unauthenticated Sparkasse imitation must be SecurityFraud (Rot), got status=%v warn=%v", repSparkasse.Status, repSparkasse.WarningKind)
+	}
+
+	// AWS sends from amazonaws.com: a real AWS notice is no spoof.
+	repAWS := EvaluateSecurity("Amazon Web Services <no-reply@amazonaws.com>", "mx.receiver.test; dkim=pass header.d=amazonaws.com")
+	if repAWS.Status != SecurityVerifiedDomain {
+		t.Fatalf("AWS notice must be SecurityVerifiedDomain, got status=%v warn=%v", repAWS.Status, repAWS.WarningKind)
 	}
 
 	// 4. Case: Unauthenticated generic company name mismatch -> Gelb (SecurityNeedsReview)

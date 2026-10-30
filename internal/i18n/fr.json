@@ -1444,7 +1444,7 @@
   "reader_security_warning_generic": "Caractéristiques d'expéditeur suspectes détectées.",
   "reader_security_verified_badge": "Vérifié",
   "settings_security_ai": "Analyser le contenu pour détecter la fraude et le phishing (IA)",
-  "settings_security_ai_help": "Analyse les e-mails non vérifiés en arrière-plan avec le modèle de classification.",
+  "settings_security_ai_help": "Analyse les e-mails non vérifiés avec votre modèle d'IA. Avec un modèle cloud, leur contenu est envoyé à ce fournisseur.",
   "settings_security_rescan": "Réanalyser les e-mails existants",
   "settings_security_rescan_sub": "Effectue des contrôles de sécurité et de contenu sur les e-mails déjà synchronisés.",
   "settings_security_rescan_range": "Période",
