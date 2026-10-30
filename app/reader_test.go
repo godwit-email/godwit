@@ -1462,17 +1462,29 @@ func TestReaderRecipients(t *testing.T) {
 	}
 }
 
-// With one account the user is "我", or their sidebar name when an alias is set.
+// With one account the user is "我", or their sidebar name when an alias is
+// set; a digest's citation names the user's own mail the same way.
 func TestReaderRecipientsOneAccount(t *testing.T) {
 	h, accs := mailHarness(t, nil, "me@baran.wang")
-	if got := h.app.mail.reader.recipients(core.MessageSummary{To: []string{"Baran <me@baran.wang>"}, Cc: []string{"mia@partner.example"}}); got != "发给 我 等 1 人" {
-		t.Fatalf("one account without alias: %q", got)
+	r := h.app.mail.reader
+	got := core.MessageSummary{To: []string{"Baran <me@baran.wang>"}, Cc: []string{"mia@partner.example"}}
+	sent := core.MessageSummary{From: "Baran <me@baran.wang>", Date: h.app.clock.Now()}
+	if s := r.recipients(got); s != "发给 我 等 1 人" {
+		t.Fatalf("one account without alias: %q", s)
+	}
+	if s := r.sourceLabel(sent); !strings.HasSuffix(s, " · 我") {
+		t.Fatalf("source without alias: %q", s)
 	}
 	alias := "Peter"
-	accs[0].Alias = alias
-	h.app.accounts = accs
-	if got := h.app.mail.reader.recipients(core.MessageSummary{To: []string{"Baran <me@baran.wang>"}, Cc: []string{"mia@partner.example"}}); got != "发给 Peter 等 1 人" {
-		t.Fatalf("one account with alias: %q", got)
+	if _, err := h.env.Svc.UpdateAccount(context.Background(), accs[0].ID, core.AccountPatch{Alias: &alias}); err != nil {
+		t.Fatal(err)
+	}
+	h.waitMail("the alias", func() bool { return h.app.accounts[0].Alias == alias })
+	if s := r.recipients(got); s != "发给 Peter 等 1 人" {
+		t.Fatalf("one account with alias: %q", s)
+	}
+	if s := r.sourceLabel(sent); !strings.HasSuffix(s, " · Peter") {
+		t.Fatalf("source with alias: %q", s)
 	}
 }
 
