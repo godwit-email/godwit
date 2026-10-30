@@ -35,18 +35,38 @@ const Revision = "7216b6a3b897ef903d4b1ba367ae6fb95b0fa5e4"
 type Model struct {
 	tok *tokenizer
 	net *net
-	ml  *mlModel // nil where CoreML isn't, or couldn't be made
-	// MLErr is why CoreML isn't used.
-	MLErr error
+
+	mu       sync.Mutex
+	ml       coreML // nil where CoreML isn't, couldn't be made, or failed
+	mlDevice string // CoreML's plan's device, while ml is there
+	mlErr    error  // why CoreML isn't used
 }
 
-// Device is what reads the model: CoreML's plan's device ("Neural
-// Engine", "GPU", "CPU", or why it can't say), or "Go" on the CPU.
-func (m *Model) Device() string {
+// coreML is the network as CoreML reads it: an *mlModel, or a test's.
+type coreML interface {
+	logits(nt *net, ids []int) ([]float32, error)
+}
+
+// CoreML is the device CoreML reads the model on ("Neural Engine", "GPU",
+// "CPU", or why its plan can't say), "" while the CPU reads it in Go;
+// then why is why CoreML doesn't: it isn't on this computer, couldn't be
+// made, or failed.
+func (m *Model) CoreML() (device string, why error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
 	if m.ml == nil {
-		return "Go"
+		return "", m.mlErr
 	}
-	return "CoreML " + m.ml.Device
+	return m.mlDevice, nil
+}
+
+// Device is what reads the model: "CoreML " and its device, or "Go" on
+// the CPU.
+func (m *Model) Device() string {
+	if dev, _ := m.CoreML(); dev != "" {
+		return "CoreML " + dev
+	}
+	return "Go"
 }
 
 // Span is what the model found: text[Start:End], a Label of its (email,
@@ -89,20 +109,43 @@ func Load(dir string) (*Model, error) {
 		return nil, fmt.Errorf("model: %d labels, not %d", nt.labels, len(labels))
 	}
 	m := &Model{tok: tok, net: nt}
-	m.ml, m.MLErr = openCoreML(dir, nt)
+	if ml, err := openCoreML(dir, nt); err != nil {
+		m.mlErr = err
+	} else {
+		m.ml, m.mlDevice = ml, ml.Device
+	}
 	return m, nil
 }
 
 // logits are the network's scores for ids, from CoreML when it is there
 // and the window is long enough to gain by it, else over procs cores.
 func (m *Model) logits(ids []int, procs int) []float32 {
-	if m.ml != nil && len(ids) >= coremlMin {
-		// shortcut: a failed CoreML read goes to the CPU unsaid; say why before it ships
-		if lg, err := coremlLogits(m.ml, m.net, ids); err == nil {
-			return lg
-		}
+	if lg, ok := m.coreML(ids); ok {
+		return lg
 	}
 	return m.net.logits(ids, procs)
+}
+
+// coreML is CoreML's logits for ids, false where it doesn't read them. A
+// read that fails leaves CoreML for good, saying why (CoreML): it fails
+// again as a rule, as on a revision the program wasn't made for.
+func (m *Model) coreML(ids []int) ([]float32, bool) {
+	m.mu.Lock()
+	ml := m.ml
+	m.mu.Unlock()
+	if ml == nil || len(ids) < coremlMin {
+		return nil, false
+	}
+	lg, err := ml.logits(m.net, ids)
+	if err == nil {
+		return lg, true
+	}
+	m.mu.Lock()
+	if m.ml != nil {
+		m.ml, m.mlErr = nil, fmt.Errorf("CoreML failed: %w", err)
+	}
+	m.mu.Unlock()
+	return nil, false
 }
 
 // Cores is how many cores the model reads on at most: half of them, and
@@ -212,7 +255,10 @@ func (m *Model) find(text string, read func(ids [][]int) [][]float32) []Span {
 // on the CPU at once, as Find says.
 func (m *Model) read(ids [][]int) [][]float32 {
 	lgs := make([][]float32, len(ids))
-	if m.ml != nil {
+	m.mu.Lock()
+	onML := m.ml != nil
+	m.mu.Unlock()
+	if onML {
 		for w := range ids {
 			procs := take(Cores())
 			lgs[w] = m.logits(ids[w], procs)

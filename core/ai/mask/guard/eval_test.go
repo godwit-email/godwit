@@ -167,7 +167,7 @@ func TestMail(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	t.Logf("load %v, on %s (CoreML: %v)", time.Since(t0), m.Device(), m.MLErr)
+	t.Logf("load %v, on %s (CoreML: %v)", time.Since(t0), m.Device(), m.mlErr)
 	b, err := os.ReadFile(path)
 	if err != nil {
 		t.Fatal(err)
