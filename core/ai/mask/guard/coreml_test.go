@@ -54,7 +54,7 @@ func TestCoreMLMatchesGo(t *testing.T) {
 		t.Fatal(err)
 	}
 	if m.ml == nil {
-		t.Fatalf("CoreML didn't open: %v", m.MLErr)
+		t.Fatalf("CoreML didn't open: %v", m.mlErr)
 	}
 	t.Logf("loaded in %v", time.Since(t0))
 	text := strings.Repeat("联系人：张三，电话 13800138000，邮箱 zhangsan@example.com。The host 10.20.30.40 logs in as deploy with key sk-proj-AbCdEf0123456789xyz.\n", 12)
@@ -66,7 +66,7 @@ func TestCoreMLMatchesGo(t *testing.T) {
 	ids = append(ids, 2)
 	want := m.net.logits(ids, Cores())
 	t1 := time.Now()
-	got, err := coremlLogits(m.ml, m.net, ids)
+	got, err := m.ml.logits(m.net, ids)
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -40,6 +40,9 @@ func (p *settingsPage) maskingView(c *ui.Context) {
 			if missing {
 				help += "\n" + i18n.T("settings.masking.model.missing")
 			}
+			if b := p.maskBackend; st.MaskModel && b != nil {
+				help += "\n" + maskBackendText(*b)
+			}
 			kit.SwitchRow(c, &st.MaskModel, i18n.T("settings.masking.model"), help).Disabled(missing)
 		})
 		for name, cat := range st.MaskCategories.All() {
@@ -52,6 +55,27 @@ func (p *settingsPage) maskingView(c *ui.Context) {
 		p.maskPreview(c)
 	}
 	p.maskLogEntry(c)
+}
+
+// readMaskBackend reads what reads 识别模型, for its row: none while it is
+// off or can't be loaded.
+func (p *settingsPage) readMaskBackend() {
+	a := p.a
+	var b *core.MaskModelBackend
+	a.query(func(ctx context.Context) (err error) { b, err = a.svc.MaskModelBackend(ctx); return err },
+		func(error) { p.maskBackend = b })
+}
+
+// maskBackendText says what reads 识别模型: CoreML and its device, or the
+// CPU and, on a Mac, why not CoreML.
+func maskBackendText(b core.MaskModelBackend) string {
+	switch {
+	case b.Device != "":
+		return i18n.Tf("settings.masking.model.coreml", b.Device)
+	case b.NotCoreML != "":
+		return i18n.Tf("settings.masking.model.cpu_why", b.NotCoreML)
+	}
+	return i18n.T("settings.masking.model.cpu")
 }
 
 // readMaskLog reads 脱敏记录 for the privacy page's entry and the log's own page.

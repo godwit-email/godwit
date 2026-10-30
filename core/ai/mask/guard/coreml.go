@@ -218,8 +218,8 @@ func half(f float32) uint16 {
 	return sign | uint16(h)
 }
 
-// coremlLogits are nt.logits(ids), from m.
-func coremlLogits(m *mlModel, nt *net, ids []int) ([]float32, error) {
+// logits are nt.logits(ids), from m.
+func (m *mlModel) logits(nt *net, ids []int) ([]float32, error) {
 	n := len(ids)
 	if n > maxPos {
 		return nil, errors.New("more tokens than a window")

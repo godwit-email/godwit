@@ -1,10 +1,12 @@
 package core
 
 import (
+	"context"
 	"crypto/sha256"
 	"errors"
 	"os"
 	"path/filepath"
+	"runtime"
 	"sync"
 
 	"github.com/godwit-email/godwit/core/ai/mask"
@@ -47,6 +49,49 @@ func (s *Service) recognizer(st Settings) mask.Recognizer {
 		s.guard = newGuardModel(s.maskModelDir())
 	}
 	return s.guard
+}
+
+// MaskModelBackend is what reads 识别模型: CoreML on Device, or with
+// Device "" the CPU, NotCoreML saying why not CoreML on a Mac.
+type MaskModelBackend struct {
+	Device    string
+	NotCoreML string
+}
+
+// MaskModelBackend is what reads 识别模型 now, loading it if need be: nil
+// while it is off, or for an Options.Recognizer that doesn't say.
+func (s *Service) MaskModelBackend(ctx context.Context) (*MaskModelBackend, error) {
+	st, err := s.loadSettings(ctx)
+	if err != nil {
+		return nil, err
+	}
+	s.maskMu.Lock()
+	r := s.recognizer(st)
+	s.maskMu.Unlock()
+	b, ok := r.(interface {
+		Backend() (MaskModelBackend, error)
+	})
+	if !ok {
+		return nil, nil
+	}
+	bk, err := b.Backend()
+	if err != nil {
+		return nil, err
+	}
+	return &bk, nil
+}
+
+func (g *guardModel) Backend() (MaskModelBackend, error) {
+	m, err := g.load()
+	if err != nil {
+		return MaskModelBackend{}, err
+	}
+	dev, why := m.CoreML()
+	b := MaskModelBackend{Device: dev}
+	if why != nil && runtime.GOOS == "darwin" { // elsewhere there is no CoreML to miss
+		b.NotCoreML = why.Error()
+	}
+	return b, nil
 }
 
 // guardModel is AstrLink Guard (core/ai/mask/guard) from its files in a
