@@ -15,6 +15,8 @@ import (
 	"github.com/godwit-email/godwit/core/ai"
 	"github.com/godwit-email/godwit/core/coretest"
 	"github.com/godwit-email/godwit/internal/theme"
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 // A message read alone has no count of messages and no fold button; a
@@ -85,7 +87,9 @@ func TestReaderSummaryPlace(t *testing.T) {
 // the newest message.
 func TestReaderReplyBar(t *testing.T) {
 	h, acc, llm := aiHarness(t, true, noSummary)
-	llm.Script(coretest.Turn{Text: []string{`{"replies":[{"label":"同意","html":"<p>Yes, Friday works.</p>"},{"html":"<p>Can we do Monday instead?</p>"}]}`}})
+	llm.Script(
+		coretest.Turn{Text: []string{`{"replies":[{"label":"同意","html":"<p>Yes, Friday works.</p>"},{"html":"<p>Can we do Monday?</p>"}]}`}},
+	)
 	m := h.deliverOne(acc, coretest.Msg("Bob <bob@example.com>", acc.Email, "Question", "can you?"))
 	var asks []string
 	var quoted [][]int64
@@ -99,7 +103,7 @@ func TestReaderReplyBar(t *testing.T) {
 	})
 	h.openThread(m.ThreadID)
 	h.see("同意")
-	h.see("Can we do Mo…")
+	h.see("Can we do Monday?")
 	h.click("同意")
 	d, err := h.env.Svc.GetDraft(context.Background(), h.composeOpened(0))
 	if err != nil {
@@ -121,8 +125,8 @@ func TestReaderReplyBar(t *testing.T) {
 	}
 }
 
-// A quick reply cached before labels were asked for shows the start of its
-// text.
+// A quick reply without an explicit label shows the extracted core clause of
+// its preview text.
 func TestQuickLabel(t *testing.T) {
 	for _, c := range []struct {
 		q    core.QuickReply
@@ -130,12 +134,66 @@ func TestQuickLabel(t *testing.T) {
 	}{
 		{core.QuickReply{Label: "同意", Preview: "Yes, Friday works."}, "同意"},
 		{core.QuickReply{Preview: "OK"}, "OK"},
-		{core.QuickReply{Preview: "Can we do Monday instead?"}, "Can we do Mo…"},
+		{core.QuickReply{Preview: "Can we do Monday?"}, "Can we do Monday?"},
+		{core.QuickReply{Preview: "I can't sign in, could you please reset my password?"}, "I can't sign in"},
 	} {
 		if got := quickLabel(c.q); got != c.want {
 			t.Errorf("quickLabel(%+v) = %q, want %q", c.q, got, c.want)
 		}
 	}
+}
+
+func TestFitQuickLabels(t *testing.T) {
+	tt := ui.NewTester(func(c *ui.Context) {
+		replies := []core.QuickReply{
+			{Preview: "Accept now"},                // 10 chars
+			{Preview: "Review changes carefully?"}, // 25 chars
+			{Preview: "Send details"},              // 12 chars
+		}
+
+		// When space is ample, all are shown in full (zero truncation)
+		wide := fitQuickLabels(c, replies, 1200)
+		require.Len(t, wide, 3)
+		assert.Equal(t, "Accept now", wide[0])
+		assert.Equal(t, "Review changes carefully?", wide[1])
+		assert.Equal(t, "Send details", wide[2])
+
+		// Dynamically compute constrained width based on actual shaped text metrics,
+		// ensuring test assertions are reliable across all OS font renderers.
+		t0, th := theme.Of(c), c.Theme()
+		f := ui.Font{Size: t0.Text.Sm}
+		w0, _ := ui.ShapeText("Accept now", f, 0).Size()
+		w1, _ := ui.ShapeText("Review changes carefully?", f, 0).Size()
+		w2, _ := ui.ShapeText("Send details", f, 0).Size()
+		overhead := float32(3)*2*th.Space(2) + float32(2)*th.Space(1)
+
+		// Constrain space so reply 1 (25 runes) must truncate, while short replies
+		// reply 0 (10 runes) and reply 2 (12 runes) stay whole.
+		narrowW := overhead + w0 + w2 + w1*0.6
+		narrow := fitQuickLabels(c, replies, narrowW)
+		require.Len(t, narrow, 3)
+		assert.Equal(t, "Accept now", narrow[0], "short reply 1 is NOT truncated")
+		assert.True(t, strings.HasSuffix(narrow[1], "…"), "longest reply 2 is truncated with ellipsis: %s", narrow[1])
+		assert.Equal(t, "Send details", narrow[2], "short reply 3 is NOT truncated")
+
+		// Independent allocation: two replies of equal length (18 and 18 runes).
+		// When space is slightly tight, only one shrinks, the other remains full.
+		pairReplies := []core.QuickReply{
+			{Preview: "Short text"},         // 10 chars
+			{Preview: "Review changes now"}, // 18 chars
+			{Preview: "Submit details now"}, // 18 chars
+		}
+		wp0, _ := ui.ShapeText("Short text", f, 0).Size()
+		wp1, _ := ui.ShapeText("Review changes now", f, 0).Size()
+		wp2, _ := ui.ShapeText("Submit details now", f, 0).Size()
+		medW := overhead + wp0 + wp1 + wp2 - 15
+		med := fitQuickLabels(c, pairReplies, medW)
+		require.Len(t, med, 3)
+		assert.Equal(t, "Short text", med[0])
+		assert.True(t, med[1] == "Review changes now" || med[2] == "Submit details now", "one of the two long replies stays full")
+		assert.True(t, med[1] != med[2], "independent allocation: equal length replies do not share uniform cap")
+	}, 800, 600)
+	tt.Frame()
 }
 
 // A folded message shows its own avatar, read while it was open, else one

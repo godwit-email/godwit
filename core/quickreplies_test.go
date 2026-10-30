@@ -20,12 +20,11 @@ func TestQuickRepliesThree(t *testing.T) {
 	require.Len(t, rs, 3)
 	assert.Equal(t, QuickReply{Label: "Agree now", Preview: "Yes, Friday works.", HTML: "<p>Yes, Friday works.</p>"}, rs[0])
 	assert.Equal(t, strings.Repeat("é", 80), rs[1].Preview)
-	assert.Equal(t, strings.Repeat("é", 16), rs[1].Label)
+	assert.Equal(t, "É"+strings.Repeat("é", 30)+"…", rs[1].Label)
 	assert.Equal(t, "Can we do Monday?", rs[2].Preview)
-	assert.Empty(t, rs[2].Label) // a label is optional
-	require.Len(t, e.srv.Requests(), 1)
+	assert.Equal(t, "Can we do Monday?", rs[2].Label) // omitted label populated directly by ExtractQuickLabel
+	require.Len(t, e.srv.Requests(), 1, "only 1 LLM request, zero extra classifier calls")
 	var sys string
-	require.Len(t, e.srv.Requests(), 1)
 	require.NoError(t, json.Unmarshal(e.srv.Requests()[0].System, &sys))
 	assert.Contains(t, sys, `{"replies":[{"label":"...","html":`)
 
@@ -43,8 +42,58 @@ func TestQuickRepliesThree(t *testing.T) {
 	e.srv.Script(testllm.Turn{Text: []string{`{"replies":[{"html":"<p>OK</p>"}]}`}})
 	rs, err = e.s.QuickReplies(t.Context(), e.msg)
 	require.NoError(t, err)
-	assert.Equal(t, []QuickReply{{Preview: "OK", HTML: "<p>OK</p>"}}, rs)
+	assert.Equal(t, []QuickReply{{Label: "OK", Preview: "OK", HTML: "<p>OK</p>"}}, rs)
 	assert.Len(t, e.srv.Requests(), 2)
+}
+
+func TestExtractQuickLabel(t *testing.T) {
+	t.Run("DirectExtractionNoExtraLLM", func(t *testing.T) {
+		e := newSkillEnv(t)
+		e.srv.Script(
+			testllm.Turn{Text: []string{`{"replies":[{"html":"<p>Sure, that works for me.</p>"},{"html":"<p>Sorry, I cannot attend.</p>"},{"html":"<p>Can we reschedule?</p>"}]}`}},
+		)
+		rs, err := e.s.QuickReplies(t.Context(), e.msg)
+		require.NoError(t, err)
+		require.Len(t, rs, 3)
+		assert.Equal(t, "Sure, that works for me", rs[0].Label)
+		assert.Equal(t, "Sorry, I cannot attend", rs[1].Label)
+		assert.Equal(t, "Can we reschedule?", rs[2].Label)
+		require.Len(t, e.srv.Requests(), 1, "single LLM call produces all labels deterministically")
+	})
+
+	t.Run("ClauseDelimitersAndQuestions", func(t *testing.T) {
+		assert.Equal(t, "Can we do Monday instead?", ExtractQuickLabel("Can we do Monday instead?"))
+		assert.Equal(t, "Can we do Monday instead?", ExtractQuickLabel("Can we do Monday instead? I have another meeting on Friday."))
+		assert.Equal(t, "I can't sign in", ExtractQuickLabel("I can't sign in, could you please reset my password?"))
+		assert.Equal(t, "What should I do?", ExtractQuickLabel("What should I do? Please advise."))
+		assert.Equal(t, "Thank you for the offer", ExtractQuickLabel("Hello Alex,\nThank you for the offer. We would love to accept."))
+		assert.Equal(t, "Redeem coupon", ExtractQuickLabel("Redeem coupon - click here to place order now"))
+		assert.Equal(t, "I can't sign in", ExtractQuickLabel("I can't sign in—what are the next steps for generating a new key?"))
+		assert.Equal(t, "Next steps", ExtractQuickLabel("Next steps: please verify your email address first."))
+		assert.Equal(t, "Reschedule meeting", ExtractQuickLabel("Reschedule meeting"))
+		assert.Equal(t, "OK", ExtractQuickLabel("OK"))
+		assert.Equal(t, "Yes, absolutely!", ExtractQuickLabel("Yes, absolutely!"))
+	})
+
+	t.Run("CJKDelimiters", func(t *testing.T) {
+		assert.Equal(t, "我们可以改到周一吗？", ExtractQuickLabel("我们可以改到周一吗？周五我有其他会议。"))
+		assert.Equal(t, "月曜日に変更できますか？", ExtractQuickLabel("月曜日に変更できますか？金曜日は都合が悪いです。"))
+	})
+
+	t.Run("WordBoundaryTruncation", func(t *testing.T) {
+		// Does not cut mid-word, bounded to QuickLabelMaxRunes
+		res := ExtractQuickLabel(strings.Repeat("Schedule meeting with engineering team ", 3))
+		assert.True(t, len([]rune(res)) <= QuickLabelMaxRunes, "len %d <= %d", len([]rune(res)), QuickLabelMaxRunes)
+		assert.True(t, strings.HasSuffix(res, "…"), "ends with ellipsis: %s", res)
+	})
+}
+
+func TestFormatQuickLabel(t *testing.T) {
+	assert.Equal(t, "Agree now", FormatQuickLabel("  Agree now  "))
+	assert.Equal(t, "Reschedule meeting", FormatQuickLabel("reschedule meeting"))
+	res := FormatQuickLabel(strings.Repeat("Schedule meeting with engineering team ", 3))
+	assert.True(t, len([]rune(res)) <= QuickLabelMaxRunes)
+	assert.True(t, strings.HasSuffix(res, "…"))
 }
 
 // A value with a quote restores after the model's JSON is parsed: restored

@@ -943,11 +943,17 @@ func (r *reader) replyBar(c *ui.Context) ui.Element {
 			if st := r.ai[last.ID]; st != nil && r.taskReady("") && r.p.a.settings.QuickReplies {
 				r.fetchErr(c, st.quick.err, st.quick.loading, func() { r.loadQuick(last.ID, true) })
 				if len(st.quick.v) > 0 {
-					ui.Row(c).Wrap().Gap(th.Space(1)).Role(ui.RoleGroup).Label(i18n.T("reader.ai.quick")).Children(func() {
-						for _, q := range st.quick.v {
+					availW := float32(theme.ReaderMaxWidth)
+					if r.pane.W > 0 {
+						availW = min(theme.ReaderMaxWidth, r.pane.W-2*th.Space(7))
+					}
+					labels := fitQuickLabels(c, st.quick.v, availW)
+					ui.Row(c).Gap(th.Space(1)).Role(ui.RoleGroup).Label(i18n.T("reader.ai.quick")).Children(func() {
+						for i, q := range st.quick.v {
+							lbl := labels[i]
 							chip := kit.Pressable(c, kit.PressableOpts{OnClick: func() { r.quickReply(last.ID, q) }}).
-								Height(th.Space(6)).PaddingX(th.Space(2)).Radius(t.Radius.Md).Background(t.Hover).Center().Label(q.Preview)
-							chip.Children(func() { kit.Text(c, quickLabel(q), t.Text.Sm).SingleLine() })
+								Height(th.Space(6)).PaddingX(th.Space(2)).Radius(t.Radius.Md).Background(t.Hover).Center().Shrink(1).MinWidth(0).Label(q.Preview)
+							chip.Children(func() { kit.Text(c, lbl, t.Text.Sm).SingleLine().Shrink(1) })
 							kit.TooltipLabelled(c, chip, q.Preview)
 						}
 					})
@@ -965,20 +971,126 @@ func (r *reader) replyBar(c *ui.Context) ui.Element {
 	})
 }
 
-// quickLabel is a quick reply's short label: the model's, else (cached
-// before labels were asked for) the start of its text.
+// quickLabel is a quick reply's short label: the model's, else the extracted
+// core clause from its preview text.
 func quickLabel(q core.QuickReply) string {
-	if q.Label != "" {
+	if q.Label != "" && len([]rune(q.Label)) <= core.QuickLabelMaxRunes && q.Label != q.Preview {
 		return q.Label
 	}
-	if p := []rune(q.Preview); len(p) > quickLabelRunes {
-		return string(p[:quickLabelRunes]) + "…"
-	}
-	return q.Preview
+	return core.ExtractQuickLabel(q.Preview)
 }
 
-// quickLabelRunes is as much of a quick reply's text as stands in for its label.
-const quickLabelRunes = 12
+// fitQuickLabels finds the optimal per-reply cap allocation such that all quick reply
+// chips fit into availWidth in a single row without wrapping.
+// If all replies fit naturally, none are truncated. When space is constrained, each reply's
+// cap is adjusted individually (independent water-filling) rather than forcing a single
+// global uniform cap. This ensures that when space changes, replies expand or shrink
+// independently, utilizing every available pixel without holding other replies back.
+func fitQuickLabels(c *ui.Context, replies []core.QuickReply, availWidth float32) []string {
+	if len(replies) == 0 {
+		return nil
+	}
+	t, th := theme.Of(c), c.Theme()
+	f := ui.Font{Size: t.Text.Sm}
+
+	textW := func(s string) float32 {
+		w, _ := ui.ShapeText(s, f, 0).Size()
+		return w
+	}
+
+	n := len(replies)
+	baseLabels := make([]string, n)
+	baseLengths := make([]int, n)
+	caps := make([]int, n)
+	for i, q := range replies {
+		l := quickLabel(q)
+		baseLabels[i] = l
+		baseLengths[i] = len([]rune(l))
+		caps[i] = baseLengths[i]
+	}
+
+	// Each chip has PaddingX(th.Space(2)) on left and right, plus gap th.Space(1) between chips.
+	overhead := float32(n)*2*th.Space(2) + float32(max(0, n-1))*th.Space(1)
+	netW := availWidth - overhead
+	if netW <= 0 {
+		netW = 200
+	}
+
+	// Precompute lookup table for each reply and cap k in [minK, baseLength]
+	type entry struct {
+		label string
+		width float32
+	}
+	table := make([]map[int]entry, n)
+	for i := range baseLabels {
+		table[i] = make(map[int]entry)
+		minK := min(4, baseLengths[i])
+		for k := minK; k <= baseLengths[i]; k++ {
+			lbl := applyQuickLabelCap(baseLabels[i], k)
+			table[i][k] = entry{label: lbl, width: textW(lbl)}
+		}
+	}
+
+	calcTotalW := func() float32 {
+		var sum float32
+		for i := 0; i < n; i++ {
+			sum += table[i][caps[i]].width
+		}
+		return sum
+	}
+
+	// Check if all fit at full length without any truncation
+	if calcTotalW() <= netW {
+		res := make([]string, n)
+		for i := 0; i < n; i++ {
+			res[i] = baseLabels[i]
+		}
+		return res
+	}
+
+	// Individually decrement caps starting from the current longest reply.
+	// On ties, shrink from right to left, allowing left-hand replies to expand/stay full first.
+	for calcTotalW() > netW {
+		maxCap := -1
+		bestIdx := -1
+		for i := 0; i < n; i++ {
+			minK := min(4, baseLengths[i])
+			if caps[i] > minK {
+				if caps[i] >= maxCap {
+					maxCap = caps[i]
+					bestIdx = i
+				}
+			}
+		}
+		if bestIdx == -1 {
+			break
+		}
+		caps[bestIdx]--
+	}
+
+	res := make([]string, n)
+	for i := 0; i < n; i++ {
+		res[i] = table[i][caps[i]].label
+	}
+	return res
+}
+
+func applyQuickLabelCap(s string, k int) string {
+	runes := []rune(s)
+	if len(runes) <= k {
+		return s
+	}
+	if k <= 1 {
+		return "…"
+	}
+	cut := k - 1
+	sub := string(runes[:cut])
+	if lastSpace := strings.LastIndex(sub, " "); lastSpace >= 3 {
+		sub = sub[:lastSpace]
+	}
+	sub = strings.TrimRight(sub, ",-—:;.")
+	return sub + "…"
+}
 
 // askReply hands the reply bar's question to Wit, quoting the newest message.
 func (r *reader) askReply() {
