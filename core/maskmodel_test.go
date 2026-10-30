@@ -241,6 +241,29 @@ func TestTheMaskingPreviewUsesTheMaskModel(t *testing.T) {
 	assert.Regexp(t, `^\{\{NAME_[a-z2-7]{12}\}\}下午到$`, out)
 }
 
+// backendModel is a fake 识别模型 that says what reads it.
+type backendModel struct {
+	fakeModel
+	backend MaskModelBackend
+}
+
+func (b *backendModel) Backend() (MaskModelBackend, error) { return b.backend, nil }
+
+// The settings learn what reads 识别模型 while it is on, and nothing
+// while it is off.
+func TestTheMaskModelSaysWhatReadsIt(t *testing.T) {
+	e := newApprovalEnv(t)
+	cpu := MaskModelBackend{NotCoreML: "CoreML failed: the Neural Engine is busy"}
+	installMaskModel(t, e.s, &backendModel{backend: cpu})
+	b, err := e.s.MaskModelBackend(t.Context())
+	require.NoError(t, err)
+	assert.Nil(t, b, "off")
+	setMaskModel(t, e.s, true)
+	b, err = e.s.MaskModelBackend(t.Context())
+	require.NoError(t, err)
+	assert.Equal(t, &cpu, b)
+}
+
 // The masking log says what found each value: the model the name it found,
 // a rule the card.
 func TestTheMaskingLogSaysWhatFoundEachValue(t *testing.T) {
@@ -362,12 +385,14 @@ func TestWhatTheMaskModelFoundIsLearnedAgainAfterARestart(t *testing.T) {
 }
 
 // AstrLink Guard itself, from the files in GODWIT_GUARD_DIR as
-// core/ai/mask/guard's tests read them, finds a name and a phone.
+// core/ai/mask/guard's tests read them, finds a name and a phone, and
+// reads on CoreML when GODWIT_GUARD_COREML is the bridge's path.
 func TestTheMaskModelReadsWithAstrLinkGuard(t *testing.T) {
 	src := os.Getenv("GODWIT_GUARD_DIR")
 	if src == "" {
 		t.Skip("GODWIT_GUARD_DIR is not set")
 	}
+	guard.CoreMLLibrary = os.Getenv("GODWIT_GUARD_COREML")
 	e := newApprovalEnv(t)
 	require.NoError(t, os.MkdirAll(e.s.maskModelDir(), 0o700))
 	for _, f := range guard.Files {
@@ -378,5 +403,11 @@ func TestTheMaskModelReadsWithAstrLinkGuard(t *testing.T) {
 		out, err := e.s.PreviewMasking(t.Context(), st, "Hi, I'm Sarah Thompson, call me at (415) 555-0132.")
 		require.NoError(t, err)
 		assert.Regexp(t, `^Hi, I'm \{\{NAME_[a-z2-7]{12}\}\}, call me at \(?\{\{PHONE_[a-z2-7]{12}\}\}\.$`, out)
+	}
+	b, err := e.s.MaskModelBackend(t.Context())
+	require.NoError(t, err)
+	t.Logf("read on %+v", *b)
+	if guard.CoreMLLibrary != "" {
+		assert.NotEmpty(t, b.Device, b.NotCoreML)
 	}
 }

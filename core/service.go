@@ -22,6 +22,7 @@ import (
 	"github.com/emersion/go-imap/v2/imapclient"
 	"github.com/godwit-email/godwit/core/ai"
 	"github.com/godwit-email/godwit/core/ai/mask"
+	"github.com/godwit-email/godwit/core/ai/mask/guard"
 	"github.com/godwit-email/godwit/core/conn"
 	"github.com/godwit-email/godwit/core/events"
 	"github.com/godwit-email/godwit/core/mailsync"
@@ -79,6 +80,9 @@ type Options struct {
 	// Recognizer reads for 识别模型 while it is on; nil is AstrLink Guard
 	// from its files in the cache (maskModelDir). Tests give a fake.
 	Recognizer mask.Recognizer
+	// GuardCoreML is the CoreML bridge AstrLink Guard reads with on a Mac
+	// (libgodwit-guard-coreml.dylib); "" leaves it on the CPU.
+	GuardCoreML string
 }
 
 // Service owns the database and event bus of one Godwit data directory.
@@ -193,6 +197,9 @@ type Service struct {
 
 // New creates DataDir if needed and opens DataDir/godwit.db.
 func New(ctx context.Context, opts Options) (*Service, error) {
+	if opts.GuardCoreML != "" {
+		guard.CoreMLLibrary = opts.GuardCoreML // before the model's first Load
+	}
 	if err := os.MkdirAll(opts.DataDir, 0o700); err != nil {
 		return nil, err
 	}

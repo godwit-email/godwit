@@ -115,6 +115,9 @@ jobs:
       - name: Build the Apple Intelligence helper
         if: matrix.name == 'macOS' && hashFiles('scripts/build-apple-intelligence.sh') != ''
         run: scripts/build-apple-intelligence.sh
+      - name: Build the recognition model's CoreML bridge
+        if: matrix.name == 'macOS' && hashFiles('scripts/build-guard-coreml.sh') != ''
+        run: scripts/build-guard-coreml.sh
       # Uploads to the R2 bucket of updates.s3 in mygo.config.ts, each
       # platform's manifest last: that is what publishes its update.
       - name: Build and upload
