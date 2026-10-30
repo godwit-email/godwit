@@ -72,18 +72,22 @@ func (m *Masker) hash(kind, v string) string {
 	return strings.ToLower(b32.EncodeToString(h.Sum(nil))[:hashLen])
 }
 
-// placeholder is v's placeholder, remembered for Restore.
+// placeholder is v's placeholder, remembered for Restore; a name or a
+// labelled value is known from then on, unless the model found it.
 // shortcut: the table only grows, by each value masked; evict when it is seen to matter.
-func (m *Masker) placeholder(kind, v string) (string, error) {
+func (m *Masker) placeholder(kind, v string, model bool) (string, error) {
 	hash := m.hash(kind, v)
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	if e, ok := m.values[hash]; ok && e != (entry{kind, v}) {
 		return "", errCollision
 	}
-	if _, ok := m.values[hash]; !ok && kind == nameKind {
+	n, lab := labeled[kind]
+	switch {
+	case model: // masked only where the model finds it
+	case kind == nameKind:
 		m.addName(v)
-	} else if n, lab := labeled[kind]; !ok && lab && len(v) >= n {
+	case lab && len(v) >= n && !slices.Contains(m.secrets, entry{kind, v}):
 		m.secrets = append(m.secrets, entry{kind, v})
 	}
 	m.values[hash] = entry{kind, v}
@@ -100,7 +104,7 @@ func (m *Masker) textTo(s string, f *Found) (string, error) {
 	if err := m.learnNames(s); err != nil {
 		return "", err
 	}
-	out, err := m.text(s, true, f)
+	out, err := m.text(s, true, true, f)
 	if err != nil {
 		return "", err
 	}
@@ -122,12 +126,14 @@ func (m *Masker) Learn(text string) {
 	}
 }
 
-// text masks s; defuse says it is not the model's own. A rule that fails
-// fails it: what it would have found must not go out. Each value found is
+// text masks s; defuse says it is not the model's own, read that the
+// recognition model reads it too, as it does all but what a request
+// defines (its tools). A rule or the recognition model that fails fails
+// it: what it would have found must not go out. Each value found is
 // added to f; one of a category set to Block fails it (*BlockedError), even
 // where another value overlapped it, but only once all of s is masked.
 // Learning (f.learn) masks every value, whatever its category's action.
-func (m *Masker) text(s string, defuse bool, f *Found) (out string, err error) {
+func (m *Masker) text(s string, defuse, read bool, f *Found) (out string, err error) {
 	defer func() {
 		if r := recover(); r != nil {
 			out, err = "", fmt.Errorf("mask: %v", r)
@@ -141,7 +147,15 @@ func (m *Masker) text(s string, defuse bool, f *Found) (out string, err error) {
 	last := 0
 	cc := m.cfg.Load()
 	view, at := unescaped(s)
-	spans, over := cc.find(view, append(m.nameSpans(view), m.secretSpans(view)...))
+	known := append(m.nameSpans(view), m.secretSpans(view)...)
+	if read {
+		found, err := cc.modelSpans(view)
+		if err != nil {
+			return "", err
+		}
+		known = append(known, found...)
+	}
+	spans, over := cc.find(view, known)
 	spans, over = m.outside(view, spans), m.outside(view, over)
 	for _, sp := range over {
 		if !sp.own && cc.action(sp.kind) == Block && !f.learning() {
@@ -165,7 +179,7 @@ func (m *Masker) text(s string, defuse bool, f *Found) (out string, err error) {
 			block = block.with(categories[sp.kind])
 			continue
 		}
-		p, err := m.placeholder(sp.kind, v)
+		p, err := m.placeholder(sp.kind, v, sp.model)
 		if err != nil {
 			return "", err
 		}
@@ -348,7 +362,7 @@ func (m *Masker) secretSpans(s string) []span {
 			if a > 0 && alnumRune(lastRune(s[:a])) || b < len(s) && alnumRune(firstRune(s[b:])) {
 				continue
 			}
-			out = append(out, span{a, b, e.kind, false})
+			out = append(out, span{start: a, end: b, kind: e.kind})
 		}
 	}
 	return out

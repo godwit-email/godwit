@@ -68,6 +68,11 @@ type Settings struct {
 	MaskRules []mask.Rule
 	// MaskAllow are the values never masked (白名单), whatever their letter case; at most mask.MaxAllow.
 	MaskAllow []string
+	// MaskModel is 识别模型 (docs/adr/0028-local-model-for-masking.md): a
+	// model on this device finds names, phone numbers, email addresses,
+	// secrets and card numbers the rules can't. Off by default; it turns on only once its
+	// files are here (ErrMaskModelMissing), and turns names on with it.
+	MaskModel bool
 	// LabelDisplay is how label chips show: LabelDisplayBoth (the default;
 	// "" too), LabelDisplayIcon or LabelDisplayText.
 	LabelDisplay string
@@ -253,6 +258,12 @@ func (s *Service) SetSettings(ctx context.Context, st Settings) (Settings, error
 	}
 	if err := st.validate(stored.MaskRules); err != nil { // an old rule under a built-in kind must not stop saving the rest
 		return Settings{}, err
+	}
+	if st.MaskModel && !stored.MaskModel {
+		if !s.MaskModelInstalled() {
+			return Settings{}, ErrMaskModelMissing
+		}
+		st.MaskCategories.Names.On = true // the names it finds are why it is on; off, names stay as they are
 	}
 	st.SettingsVersion = settingsVersion // a client's 0 must not make the next load raise FontSize again
 	b, err := json.Marshal(st)

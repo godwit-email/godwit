@@ -76,6 +76,9 @@ type Options struct {
 	ComposeOpen func(draftID int64) bool
 	// OpenURL opens an external URL in the user's default browser.
 	OpenURL func(url string) error
+	// Recognizer reads for 识别模型 while it is on; nil is AstrLink Guard
+	// from its files in the cache (maskModelDir). Tests give a fake.
+	Recognizer mask.Recognizer
 }
 
 // Service owns the database and event bus of one Godwit data directory.
@@ -111,6 +114,7 @@ type Service struct {
 
 	maskMu sync.Mutex
 	mask   *mask.Masker // created on first use; see masker
+	guard  *guardModel  // 识别模型 while it is on; see recognizer
 
 	unsubMu   sync.Mutex
 	unsubbing map[int64]bool // messages whose one-click unsubscribe is under way
@@ -451,11 +455,12 @@ func (s *Service) cleanOrphans(ctx context.Context) error {
 			keep[p] = true
 		}
 	}
-	imagesDir := filepath.Join(dataDir, "cache", "images")
+	imagesDir, guardDir := filepath.Join(dataDir, "cache", "images"), filepath.Join(dataDir, "cache", "guard")
 	for _, sub := range []string{"cache", "drafts", "outbox"} {
 		err := store.CleanOrphans(filepath.Join(dataDir, sub), func(p string) bool {
 			p, err := filepath.Abs(p)
-			return err != nil || keep[p] || strings.HasPrefix(p, imagesDir+string(filepath.Separator)) // the image cache owns its files
+			// the image cache and 识别模型 own their files
+			return err != nil || keep[p] || strings.HasPrefix(p, imagesDir+string(filepath.Separator)) || strings.HasPrefix(p, guardDir+string(filepath.Separator))
 		})
 		if err != nil && !errors.Is(err, fs.ErrNotExist) {
 			return err

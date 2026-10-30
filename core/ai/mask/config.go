@@ -50,7 +50,8 @@ type Rule struct{ Kind, Regex string }
 // Config is what the user set: the categories turned Off; what is done
 // with each category's values (Actions: Warn or Block, else Mask); their
 // Words, matched in any case unless WordsCase, inside other words unless
-// WordsWhole; their Rules; and the values never masked (Allow, in any case).
+// WordsWhole; their Rules; the values never masked (Allow, in any case);
+// and the recognition model, if on (Model).
 type Config struct {
 	Off                   []string
 	Actions               map[string]string
@@ -58,6 +59,7 @@ type Config struct {
 	WordsCase, WordsWhole bool
 	Rules                 []Rule
 	Allow                 []string
+	Model                 Recognizer
 }
 
 // RuleError says why the user's rule at Index can't be used.
@@ -92,6 +94,7 @@ type compiled struct {
 	actions map[string]string // by category; the user's own kinds are always masked
 	own     []rule            // the user's rules and words, found before the built-in ones
 	allow   map[string]bool
+	model   Recognizer
 
 	mu   sync.Mutex
 	seen map[string][]span // ruled's memo, of size bytes of text
@@ -126,7 +129,7 @@ func compile(c Config, kept []Rule) (*compiled, error) {
 	if len(c.Allow) > MaxAllow {
 		return nil, ErrTooManyAllow
 	}
-	cc := &compiled{off: map[string]bool{}, allow: map[string]bool{}, actions: c.Actions}
+	cc := &compiled{off: map[string]bool{}, allow: map[string]bool{}, actions: c.Actions, model: c.Model}
 	for _, o := range c.Off {
 		cc.off[o] = true
 	}

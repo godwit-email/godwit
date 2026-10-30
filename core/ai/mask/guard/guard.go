@@ -28,6 +28,9 @@ var labels = []string{"O",
 // Files are the model's files Load reads, in its folder.
 var Files = []string{"model_int8.onnx", "model_int8.onnx_data", "tokenizer.json"}
 
+// Revision is the model's commit on Hugging Face that Files are of.
+const Revision = "7216b6a3b897ef903d4b1ba367ae6fb95b0fa5e4"
+
 // Model is the model, loaded.
 type Model struct {
 	tok *tokenizer

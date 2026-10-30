@@ -33,7 +33,7 @@ func (m *Masker) learnNames(s string) error {
 		as, _ := mail.ParseAddressList(strings.TrimSpace(sm[1]))
 		for _, a := range as {
 			if n := strings.TrimSpace(a.Name); !shortName(n) && !strings.Contains(n, "@") {
-				if _, err := m.placeholder(nameKind, n); err != nil {
+				if _, err := m.placeholder(nameKind, n, false); err != nil {
 					return err
 				}
 			}
@@ -100,7 +100,7 @@ func (m *Masker) nameSpans(s string) []span {
 			if word(n, true) && a > 0 && alnumRune(lastRune(s[:a])) || word(n, false) && b < len(s) && alnumRune(firstRune(s[b:])) {
 				continue
 			}
-			out = append(out, span{a, b, nameKind, false})
+			out = append(out, span{start: a, end: b, kind: nameKind})
 		}
 	}
 	return out

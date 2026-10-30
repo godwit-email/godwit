@@ -73,6 +73,7 @@ type span struct {
 	start, end int
 	kind       string
 	own        bool // the user's rule or word: always masked, whatever its kind's category is set to
+	model      bool // the recognition model's: masked where found, not known from then on (placeholder)
 }
 
 // find is the values in s, in order, none overlapping: of the user's rules
@@ -148,7 +149,7 @@ func (c *compiled) scan(s string) []span {
 				r.word && !wholeWord(s, a, b) || c.allow[strings.ToLower(s[a:b])] {
 				continue
 			}
-			found = append(found, span{a, b, r.kind, own})
+			found = append(found, span{start: a, end: b, kind: r.kind, own: own})
 		}
 	}
 	return found

@@ -229,7 +229,7 @@ func (s *Service) masker() (*mask.Masker, error) {
 	}
 	m := mask.New([]byte(store.Str(rows.Values[0][0])))
 	m.Record = s.recordMasking
-	if err := st.setMasker(m); err != nil { // a rule stored by hand: nothing goes out unmasked
+	if err := st.setMasker(m, s.recognizer(st)); err != nil { // a rule stored by hand: nothing goes out unmasked
 		return nil, err
 	}
 	s.mask = m
@@ -237,27 +237,36 @@ func (s *Service) masker() (*mask.Masker, error) {
 }
 
 // maskingChanged masks as st says from the next request on, once the
-// masker exists.
+// masker exists; 识别模型 turned off lets go of its model.
 func (s *Service) maskingChanged(st Settings) {
 	s.maskMu.Lock()
 	defer s.maskMu.Unlock()
+	if !st.Masking || !st.MaskModel {
+		s.guard = nil
+	}
 	if s.mask != nil {
-		_ = st.setMasker(s.mask) // SetSettings checked it; a failure keeps the last
+		_ = st.setMasker(s.mask, s.recognizer(st)) // SetSettings checked it; a failure keeps the last
 	}
 }
 
-// setMasker masks with m as st says: a config m refuses leaves its last.
-func (st Settings) setMasker(m *mask.Masker) error {
+// setMasker masks with m as st says, with model as 识别模型: a config m
+// refuses leaves its last.
+func (st Settings) setMasker(m *mask.Masker, model mask.Recognizer) error {
 	m.SetOn(st.Masking)
-	return m.Configure(st.maskConfig())
+	c := st.maskConfig()
+	c.Model = model
+	return m.Configure(c)
 }
 
 // PreviewMasking is text as it would go to a model off this device under
 // st's 脱敏 settings, saved or not (实时预览). It stores nothing and leaves
 // the Service's masker alone: its placeholders are a throwaway key's.
 func (s *Service) PreviewMasking(ctx context.Context, st Settings, text string) (string, error) {
+	s.maskMu.Lock()
+	model := s.recognizer(st)
+	s.maskMu.Unlock()
 	m := mask.New([]byte(rand.Text()))
-	if err := m.Configure(st.maskConfig()); err != nil {
+	if err := st.setMasker(m, model); err != nil {
 		return "", err
 	}
 	if !st.Masking {
