@@ -34,6 +34,14 @@ func (p *settingsPage) maskingView(c *ui.Context) {
 		kit.SwitchRow(c, &st.Masking, i18n.T("settings.masking.on"), i18n.T("settings.masking.on.help"))
 	}}
 	if st.Masking {
+		rows = append(rows, func() {
+			missing := !p.maskModel && !st.MaskModel // it turns on only once its files are here
+			help := i18n.T("settings.masking.model.help")
+			if missing {
+				help += "\n" + i18n.T("settings.masking.model.missing")
+			}
+			kit.SwitchRow(c, &st.MaskModel, i18n.T("settings.masking.model"), help).Disabled(missing)
+		})
 		for name, cat := range st.MaskCategories.All() {
 			rows = append(rows, func() { maskCategoryRow(c, name, cat) })
 		}
@@ -155,18 +163,23 @@ func (d *maskDraft) edited(st core.Settings) (core.Settings, []int) {
 }
 
 // maskPreview masks the pasted text as the page's settings say, the fields
-// being edited too, and saves nothing.
+// being edited too, and saves nothing. It masks off the UI thread: 识别模型
+// may take a while, the first time most.
 func (p *settingsPage) maskPreview(c *ui.Context) {
 	d, t, th := &p.mask, theme.Of(c), c.Theme()
 	st, lines := d.edited(p.st)
-	if key := fmt.Sprintf("%q %+v %v %v %v %v", d.preview, st.MaskCategories, st.MaskWords, st.MaskWordsCase, st.MaskWordsWhole, st.MaskAllow) + ruleLines(st.MaskRules); key != d.shownFor {
+	if key := fmt.Sprintf("%q %+v %v %v %v %v %v", d.preview, st.MaskCategories, st.MaskWords, st.MaskWordsCase, st.MaskWordsWhole, st.MaskAllow, st.MaskModel) + ruleLines(st.MaskRules); key != d.shownFor {
 		d.shownFor = key
 		if msg := p.maskCheck(st, lines); msg != "" {
 			d.shown = msg
-		} else if out, err := p.a.svc.PreviewMasking(context.Background(), st, d.preview); err != nil {
-			d.shown = humanize(err)
 		} else {
-			d.shown = out
+			text, out := d.preview, ""
+			p.a.query(func(ctx context.Context) (err error) { out, err = p.a.svc.PreviewMasking(ctx, st, text); return err },
+				func(err error) {
+					if d.shownFor == key { // not since edited
+						d.shown = cmp.Or(humanize(err), out)
+					}
+				})
 		}
 	}
 	settingsSection(c, i18n.T("settings.masking.preview"), i18n.T("settings.masking.preview.help"), func() {

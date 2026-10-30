@@ -1,11 +1,14 @@
 package app
 
 import (
+	"os"
+	"path/filepath"
 	"strconv"
 	"testing"
 	"time"
 
 	"github.com/godwit-email/godwit/core"
+	"github.com/godwit-email/godwit/core/ai/mask/guard"
 	"github.com/godwit-email/godwit/core/coretest"
 	"github.com/godwit-email/godwit/internal/i18n"
 )
@@ -106,6 +109,35 @@ func TestMaskingCategorySwitches(t *testing.T) {
 	h.see(i18n.T("settings.masking.action.mask"))
 }
 
+// 识别模型 is off, and can't be turned on while its files are not here;
+// once they are, its switch turns it on, and names with it.
+func TestMaskModelSwitch(t *testing.T) {
+	h, _ := withAccount(t)
+	h.masking()
+	h.see(i18n.T("settings.masking.model.missing"))
+	h.click(i18n.T("settings.masking.model"))
+	h.drain()
+	h.tt.Frame()
+	if h.app.settings.MaskModel {
+		t.Fatal("turned on without its files")
+	}
+
+	dir := filepath.Join(h.env.DataDir, "cache", "guard", guard.Revision) // as a download leaves them
+	if err := os.MkdirAll(dir, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	for _, f := range guard.Files {
+		if err := os.WriteFile(filepath.Join(dir, f), nil, 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	h.openSettings("general")
+	h.masking()
+	h.see(i18n.T("settings.masking.model.help"))
+	h.click(i18n.T("settings.masking.model"))
+	h.until("on, with names", func() bool { st := h.app.settings; return st.MaskModel && st.MaskCategories.Names.On })
+}
+
 // A summary of mail a blocked category (拦截) holds is not asked: the
 // reader says which category held it back.
 func TestABlockedSummarySaysWhy(t *testing.T) {
@@ -171,7 +203,7 @@ func TestMaskingLogPages(t *testing.T) {
 func TestMaskingCopy(t *testing.T) {
 	h, _ := withAccount(t)
 	h.masking()
-	for _, s := range []string{"隐私脱敏", "godwit mcp", "第三方的人名和地址"} {
+	for _, s := range []string{"隐私脱敏", "godwit mcp", "第三方的人名要靠识别模型", "只支持中文和英文"} {
 		h.see(s)
 	}
 }
