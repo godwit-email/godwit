@@ -15,10 +15,11 @@ import (
 // Wit runs of its conversations first. A draft in the outbox stays
 // (ErrStaleDraft).
 func (s *Service) DeleteDraft(ctx context.Context, id int64) error {
-	if err := s.stopDraftRuns(ctx, id); err != nil {
+	release, err := s.stopDraftRuns(ctx, id)
+	if err != nil {
 		return err
 	}
-	defer s.runMu.Unlock()
+	defer release()
 	s.editMu.Lock() // never while Send queues it
 	defer s.editMu.Unlock()
 	if err := s.checkWritable(ctx, id); err != nil {
@@ -28,37 +29,22 @@ func (s *Service) DeleteDraft(ctx context.Context, id int64) error {
 }
 
 // stopDraftRuns cancels the runs in flight of draftID's conversations and
-// waits for them, and for their approvals executing outside runMu, to end, so
-// none settles into a deleted draft. It returns holding runMu (unless it
-// fails), so none starts until the caller has deleted the draft and unlocks.
-// runMu is taken before editMu, as decide.
-func (s *Service) stopDraftRuns(ctx context.Context, draftID int64) error {
-	for {
-		s.runMu.Lock()
+// waits for them, and for their approvals executing outside the ledger's lock, to end, so
+// none settles into a deleted draft. It returns holding the ledger
+// (runLedger.hold), so none starts until the caller has deleted the draft and
+// releases it.
+func (s *Service) stopDraftRuns(ctx context.Context, draftID int64) (release func(), err error) {
+	return s.ledger.hold(ctx, func() ([]int64, error) {
 		rows, err := s.db.Query(ctx, "SELECT r.id FROM runs r JOIN conversations c ON c.id = r.conversation_id WHERE c.draft_id = ?", draftID)
 		if err != nil {
-			s.runMu.Unlock()
-			return err
+			return nil, err
 		}
-		var wait <-chan struct{}
+		ids := make([]int64, 0, len(rows.Values))
 		for _, r := range rows.Values {
-			if job := s.active[store.Int(r[0])]; job != nil {
-				job.cancel()
-				wait = job.done
-			} else if x := s.externalOf(store.Int(r[0])); x != nil {
-				wait = x
-			}
+			ids = append(ids, store.Int(r[0]))
 		}
-		if wait == nil {
-			return nil
-		}
-		s.runMu.Unlock()
-		select {
-		case <-wait: // look again: a run may resume
-		case <-ctx.Done():
-			return ctx.Err()
-		}
-	}
+		return ids, nil
+	})
 }
 
 // SetDraftAccount moves the draft to accountID: the body's signature becomes
@@ -130,8 +116,11 @@ func (s *Service) SendAcknowledgedRevision(ctx context.Context, draftID, revisio
 // in use, never empty; one in the outbox is ErrStaleDraft. deleted reports
 // whether it went.
 func (s *Service) DeleteDraftIfEmpty(ctx context.Context, id, revision int64) (deleted bool, err error) {
-	s.runMu.Lock() // no run starts or approval appears until the delete: runMu before editMu, as decide
-	defer s.runMu.Unlock()
+	release, err := s.ledger.hold(ctx, nil) // no run starts or approval appears until the delete
+	if err != nil {
+		return false, err
+	}
+	defer release()
 	s.editMu.Lock()
 	defer s.editMu.Unlock()
 	d, err := s.GetDraft(ctx, id)

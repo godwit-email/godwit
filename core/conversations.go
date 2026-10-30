@@ -1021,26 +1021,6 @@ func (s *Service) request(ctx context.Context, job *runJob, model ai.ResolvedMod
 		Args:    s.linkExpander().toolArgs}, nil // link references expanded before a call is validated, gated, prepared or run
 }
 
-// track registers a run in flight. The caller holds runMu.
-func (s *Service) track(ctx context.Context, id int64, conv Conversation, scope *gateway.Scope, round int) *runJob {
-	ctx, cancel := context.WithCancel(ctx)
-	job := &runJob{id: id, conv: conv, scope: scope, round: round, ctx: ctx, cancel: cancel, done: make(chan struct{})}
-	if s.active == nil {
-		s.active = map[int64]*runJob{}
-	}
-	s.active[id] = job
-	return job
-}
-
-// untrack ends tracking job. The caller holds runMu.
-func (s *Service) untrack(job *runJob) {
-	if s.active[job.id] == job { // a resume may already track this run ID
-		delete(s.active, job.id)
-	}
-	job.cancel()
-	close(job.done)
-}
-
 // startRun runs prompt in conv with tools. Its events also go to the
 // conversation's subscribers; the channel ends with done, error or interrupted
 // (then the run waits for its approvals and resumes in the background).
@@ -1084,95 +1064,69 @@ func (s *Service) launch(ctx context.Context, end func(), conv Conversation, pro
 		names = append(names, t.Spec.Name)
 	}
 
-	if beforeRunClaim != nil {
-		beforeRunClaim(ctx)
-	}
-	s.runMu.Lock()
-	defer s.runMu.Unlock()
-	job, h, err := s.claimRun(ctx, conv, ref, names)
-	if err != nil {
-		return nil, err
-	}
-	if at > 0 {
-		var sum ai.Summary
-		var ch ai.HistoryChanges
-		var kept *ai.History
-		if sum, _, err = s.convSummary(ctx, conv.ID); err == nil {
-			kept, ch, err = h.Rewind(at, sum)
+	var out *witStream
+	err = s.ledger.claim(ctx, conv, ref, names, func() error { return s.checkWitDraft(ctx, conv.DraftID) }, func(job *runJob) error {
+		h, err := s.claimed(ctx, job)
+		if err == nil && at > 0 {
+			var sum ai.Summary
+			var ch ai.HistoryChanges
+			var kept *ai.History
+			if sum, _, err = s.convSummary(ctx, conv.ID); err == nil {
+				kept, ch, err = h.Rewind(at, sum)
+			}
+			if err == nil {
+				job.rewind = &pendingRewind{from: at, to: h.Next(), dropSummary: ch.DropSummary, first: kept.Len() == 0}
+				h = kept
+				err = s.keptRefs(ctx, job, at)
+			}
 		}
+		var req ai.Request
 		if err == nil {
-			job.rewind = &pendingRewind{from: at, to: h.Next(), dropSummary: ch.DropSummary, first: kept.Len() == 0}
-			h = kept
-			err = s.keptRefs(ctx, job, at)
+			req, err = s.request(ctx, job, model, h, tools)
 		}
-	}
-	var req ai.Request
-	if err == nil {
-		req, err = s.request(ctx, job, model, h, tools)
-	}
-	var note, quote string
-	if err == nil && (conv.Kind == "ask" || conv.Kind == "assist") {
-		note = timeNote(req.History.Contexts(), s.userNow(ctx))
-	}
-	if err == nil && len(quoted) > 0 {
-		quote, err = s.quote(ctx, job, quoted)
-	}
-	if err == nil && job.rewind != nil {
-		if err = s.exec(ctx, claimRewind(job.id, *job.rewind)); err == nil { // claimed: only then are they set aside
-			s.setGrantsAside(conv.ID, job.id)
+		var note, quote string
+		if err == nil && (conv.Kind == "ask" || conv.Kind == "assist") {
+			note = timeNote(req.History.Contexts(), s.userNow(ctx))
 		}
-	} else if err == nil && len(claimed) > 0 {
-		_, err = s.db.Transaction(ctx, claimed)
-	}
-	if err != nil {
-		s.untrack(job)
-		return nil, errors.Join(err, s.exec(context.WithoutCancel(ctx), runState(job.id, "failed")))
-	}
-	job.question = prompt
-	req.History = req.History.Ask(prompt, strings.Join(slices.DeleteFunc([]string{note, quote}, func(c string) bool { return c == "" }), "\n\n"))
-	out := s.newStream()
-	go s.drive(job, end, e.Run, req, out)
-	return out, nil
+		if err == nil && len(quoted) > 0 {
+			quote, err = s.quote(ctx, job, quoted)
+		}
+		if err == nil && job.rewind != nil {
+			if err = s.exec(ctx, claimRewind(job.id, *job.rewind)); err == nil { // claimed: only then are they set aside
+				s.setGrantsAside(conv.ID, job.id)
+			}
+		} else if err == nil && len(claimed) > 0 {
+			_, err = s.db.Transaction(ctx, claimed)
+		}
+		if err != nil {
+			return err
+		}
+		job.question = prompt
+		req.History = req.History.Ask(prompt, strings.Join(slices.DeleteFunc([]string{note, quote}, func(c string) bool { return c == "" }), "\n\n"))
+		out = s.newStream()
+		go s.drive(job, end, e.Run, req, out)
+		return nil
+	})
+	return out, err
 }
 
-// claimRun records a running run of conv unless the conversation has an
-// active one (ErrRunActive) and tracks it; h is the conversation's history
-// as of the claim. A draft in the outbox gets none (ErrStaleDraft). The caller
-// holds runMu.
-func (s *Service) claimRun(ctx context.Context, conv Conversation, ref string, tools []string) (*runJob, *ai.History, error) {
-	if err := s.checkWitDraft(ctx, conv.DraftID); err != nil {
-		return nil, nil, err
-	}
-	toolsJSON, _ := json.Marshal(tools)
-	snap, _ := json.Marshal(snapshot{MailIDs: true})
-	now := time.Now().Unix()
-	r, err := s.db.Execute(ctx, `INSERT INTO runs(conversation_id, state, model, tools, snapshot, created_at, updated_at)
-		SELECT ?, 'running', ?, ?, ?, ?, ? WHERE NOT EXISTS (SELECT 1 FROM runs WHERE conversation_id = ?
-		AND state IN ('running', 'interrupted', 'resuming'))`, conv.ID, ref, string(toolsJSON), snap, now, now, conv.ID)
-	if err != nil {
-		return nil, nil, err
-	}
-	if r.Changes == 0 {
-		return nil, nil, ErrRunActive
-	}
-	// A question never answered (FailQuestion) gives way to the one this run asks.
-	err = s.exec(ctx, sqlite.Statement{SQL: "UPDATE conversations SET failed_question = '', failed_reason = '', failed_quoted = '[]' WHERE id = ?", Args: []any{conv.ID}})
+// claimed readies job, just claimed (runLedger.claim) with no other run of
+// its conversation active: a question never answered (FailQuestion) gives
+// way to the one it asks; h is the conversation's history as of the claim.
+func (s *Service) claimed(ctx context.Context, job *runJob) (*ai.History, error) {
+	err := s.exec(ctx, sqlite.Statement{SQL: "UPDATE conversations SET failed_question = '', failed_reason = '', failed_quoted = '[]' WHERE id = ?", Args: []any{job.conv.ID}})
 	// Read the history only now: a previous run may have ended after the caller's read.
 	var h *ai.History
 	if err == nil {
-		h, err = s.history(ctx, conv.ID)
+		h, err = s.history(ctx, job.conv.ID)
 	}
 	if err == nil { // no run is active: open calls are left by one that failed
-		h, err = s.closeOrphans(ctx, conv.ID, h)
+		h, err = s.closeOrphans(ctx, job.conv.ID, h)
 	}
-	var scope *gateway.Scope
 	if err == nil {
-		scope, err = s.convScope(ctx, conv.ID, false)
+		job.scope, err = s.convScope(ctx, job.conv.ID, false)
 	}
-	if err != nil {
-		return nil, nil, errors.Join(err, s.exec(context.WithoutCancel(ctx), runState(r.LastInsertID, "failed")))
-	}
-	return s.track(ctx, r.LastInsertID, conv, scope, 0), h, nil
+	return h, err
 }
 
 // closeOrphans closes the open calls h ends with, which a run that failed
@@ -1313,14 +1267,7 @@ func (s *Service) drive(job *runJob, end func(), run runFunc, req ai.Request, ou
 		s.bus.Publish(events.Event{Type: events.RunsChanged, ConversationID: job.conv.ID})
 		defer s.bus.Publish(events.Event{Type: events.RunsChanged, ConversationID: job.conv.ID})
 	}
-	defer func() {
-		if beforeUntrack != nil {
-			beforeUntrack(job.id)
-		}
-		s.runMu.Lock()
-		s.untrack(job)
-		s.runMu.Unlock()
-	}()
+	defer s.ledger.release(job)
 	if job.turn == "" { // the question the run asks takes the next seq
 		job.turn = strconv.FormatInt(job.base.Next(), 10)
 	}
@@ -1390,8 +1337,7 @@ func (s *Service) drive(job *runJob, end func(), run runFunc, req ai.Request, ou
 		fin.Approvals, applied = s.applyInitial(ctx, fin.Approvals)
 	}
 	if err != nil {
-		if _, ferr := s.db.Execute(ctx, "UPDATE runs SET state = 'failed', updated_at = ? WHERE id = ? AND state IN ('running', 'resuming')",
-			time.Now().Unix(), job.id); ferr != nil {
+		if ferr := s.ledger.abort(ctx, job.id); ferr != nil {
 			slog.Default().Warn("could not record a run's failure", "run", job.id, "err", ferr)
 		}
 		fin = WitEvent{Event: ai.Event{Kind: "error", Err: &ai.Error{Code: ai.CodeInternal, Msg: "could not save the run: " + err.Error()}}}
@@ -1402,11 +1348,9 @@ func (s *Service) drive(job *runJob, end func(), run runFunc, req ai.Request, ou
 		out.close()
 	}
 	if applied { // after the interrupt is out, so the resume's events follow it
-		s.runMu.Lock()
-		if err := s.resumeRun(ctx, job.id); err != nil {
+		if err := s.ledger.resume(ctx, job.id); err != nil {
 			slog.Default().Warn("could not resume after a first generation", "run", job.id, "err", err)
 		}
-		s.runMu.Unlock()
 	}
 }
 
@@ -1420,10 +1364,6 @@ func (s *Service) exec(ctx context.Context, st sqlite.Statement) error {
 func runSpan(runID, from, to int64) sqlite.Statement {
 	return sqlite.Statement{SQL: "UPDATE runs SET hist_from = COALESCE(hist_from, ?), hist_to = ? WHERE id = ?",
 		Args: []any{from, to, runID}}
-}
-
-func runState(runID int64, state string) sqlite.Statement {
-	return sqlite.Statement{SQL: "UPDATE runs SET state = ?, updated_at = ? WHERE id = ?", Args: []any{state, time.Now().Unix(), runID}}
 }
 
 // settleRun records res: done saves the state; interrupted saves it with one
@@ -1447,9 +1387,9 @@ func (s *Service) settleRun(ctx context.Context, job *runJob, req ai.Request, re
 		}
 		var err error
 		if len(req.Responses) > 0 {
-			_, err = s.closeRun(ctx, job.id, state, msgCancelled)
+			_, err = s.ledger.close(ctx, job.id, state, msgCancelled)
 		} else {
-			err = s.exec(ctx, runState(job.id, state))
+			err = s.ledger.settle(ctx, job.id, state)
 			// nothing of it was saved: the question stays, with why, unless the user stopped it
 			if err == nil && state == "failed" && job.conv.Kind == "ask" && job.rewind == nil && job.host == nil && job.question != "" {
 				ids := make([]int64, 0, len(job.quoted))
@@ -1463,39 +1403,29 @@ func (s *Service) settleRun(ctx context.Context, job *runJob, req ai.Request, re
 		err = errors.Join(err, s.exec(ctx, runUsage(job.id, res.Usage)))
 		return WitEvent{Event: ai.Event{Kind: "error", Err: res.Err}}, err
 	case len(res.Interrupts) == 0:
-		stmts := append(historyStmts(job.conv.ID, job.changes), runState(job.id, "done"),
-			runSpan(job.id, job.base.Next(), job.after.Next()), runUsage(job.id, res.Usage))
+		stmts := append(historyStmts(job.conv.ID, job.changes), runSpan(job.id, job.base.Next(), job.after.Next()), runUsage(job.id, res.Usage))
 		if job.rewind != nil {
 			stmts = append(stmts, commitRewind(job.conv.ID, job.id, *job.rewind, questionOf(job.after, job.rewind.to))...)
 		}
-		_, err := s.db.Transaction(ctx, stmts)
+		err := s.ledger.settle(ctx, job.id, "done", stmts...)
 		if err == nil {
 			s.forgetGrants(job.id)
 			s.compactLater(job.conv.ID, req.Model, job.after)
 		}
 		return WitEvent{Event: ai.Event{Kind: "done"}}, err
 	}
-	now := time.Now().Unix()
 	snap, _ := json.Marshal(snapshot{ReadMail: job.scope.ReadMail(), Round: job.round, Host: job.host != nil, Effort: req.Effort, Summary: job.summary, MailIDs: !job.oldIDs})
 	stmts := append(historyStmts(job.conv.ID, job.changes), runSpan(job.id, job.base.Next(), job.after.Next()), runUsage(job.id, res.Usage),
-		sqlite.Statement{SQL: "UPDATE runs SET state = 'interrupted', snapshot = ?, updated_at = ? WHERE id = ?", Args: []any{snap, now, job.id}})
+		sqlite.Statement{SQL: "UPDATE runs SET snapshot = ? WHERE id = ?", Args: []any{snap, job.id}})
+	ps := make([]prepared, len(res.Interrupts))
 	for i, c := range res.Interrupts {
 		v, ok := job.prepared.Load(c.ID)
 		if !ok {
 			return WitEvent{}, fmt.Errorf("tool call %s was not prepared", c.Name)
 		}
-		p := v.(prepared)
-		dests := []byte("[]")
-		if len(p.Destinations) > 0 {
-			dests, _ = json.Marshal(p.Destinations)
-		}
-		stmts = append(stmts, sqlite.Statement{SQL: `INSERT INTO approvals(run_id, seq, call_id, tool, args, summary, target_kind,
-			target_id, target_version, state, destinations, binding, source, extension, input, created_at, updated_at)
-			VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending', ?, ?, ?, ?, ?, ?, ?)`,
-			Args: []any{job.id, job.round + i, c.ID, c.Name, string(p.Args), p.Summary, p.TargetKind, nullID(p.TargetID), p.TargetVersion,
-				string(dests), p.Binding, cmp.Or(p.source, gateway.SourceWit), p.extension, nullText(p.Input), now, now}})
+		ps[i] = v.(prepared)
 	}
-	if _, err := s.db.Transaction(ctx, stmts); err != nil {
+	if err := s.ledger.interrupt(ctx, job.id, job.round, res.Interrupts, ps, stmts...); err != nil {
 		return WitEvent{}, err
 	}
 	s.bus.Publish(events.Event{Type: events.ApprovalsChanged, ConversationID: job.conv.ID})
@@ -1503,20 +1433,19 @@ func (s *Service) settleRun(ctx context.Context, job *runJob, req ai.Request, re
 	return WitEvent{Event: ai.Event{Kind: "interrupted", Interrupts: res.Interrupts}, Approvals: as}, err
 }
 
-// resume continues runID, which the caller claimed (interrupted → resuming)
-// holding runMu, answering its calls with the approvals' results by seq. It
+// resume continues runID, which the ledger claimed (interrupted → resuming)
+// holding its lock, answering its calls with the approvals' results by seq. It
 // runs in the background, registered with begin: Close cancels and waits.
-// A resume that cannot start fails the run (failRun); the error is only a
+// A resume that cannot start fails the run (runLedger.fail); the error is only a
 // database error from recording that.
 func (s *Service) resume(runID int64) error {
 	ctx, end, err := s.begin(context.Background(), 0)
 	if err != nil { // closing: the next start resumes it
-		_, err := s.db.Execute(context.Background(), "UPDATE runs SET state = 'interrupted' WHERE id = ? AND state = 'resuming'", runID)
-		return err
+		return s.ledger.unclaim(context.Background(), runID)
 	}
 	if err := s.startResume(ctx, end, runID); err != nil {
 		turn := s.runTurn(ctx, runID)
-		convID, ferr := s.failRun(ctx, runID, err)
+		convID, ferr := s.ledger.fail(ctx, runID, err)
 		end()
 		s.publishWit(convID, WitEvent{ConversationID: convID, RunID: runID, Turn: turn, Ends: true,
 			Event: ai.Event{Kind: "error", Err: &ai.Error{Code: ai.CodeInternal, Msg: err.Error()}}})
@@ -1540,7 +1469,7 @@ func (s *Service) startResume(ctx context.Context, end func(), runID int64) erro
 		return err
 	}
 	if snap.Host { // decided: the proposal was the whole run
-		if err := s.exec(ctx, runState(runID, "done")); err != nil {
+		if err := s.ledger.settle(ctx, runID, "done"); err != nil {
 			return err
 		}
 		end()
@@ -1566,8 +1495,8 @@ func (s *Service) startResume(ctx context.Context, end func(), runID int64) erro
 	if err != nil {
 		return err
 	}
-	if rw == nil && draftEditsOnly(as) { // decided: the edit was the whole answer; closeRun keeps the results in the history
-		convID, err := s.closeRun(ctx, runID, "done", "")
+	if rw == nil && draftEditsOnly(as) { // decided: the edit was the whole answer; close keeps the results in the history
+		convID, err := s.ledger.close(ctx, runID, "done", "")
 		if err != nil {
 			return err
 		}
@@ -1597,11 +1526,11 @@ func (s *Service) startResume(ctx context.Context, end func(), runID int64) erro
 	if err != nil {
 		return err
 	}
-	job := s.track(ctx, runID, conv, scope, snap.Round+len(as))
-	job.resumed, job.rewind, job.turn, job.summary, job.oldIDs = true, rw, s.runTurn(ctx, runID), snap.Summary, !snap.MailIDs
+	job := s.ledger.track(ctx, runID, conv, snap.Round+len(as))
+	job.scope, job.resumed, job.rewind, job.turn, job.summary, job.oldIDs = scope, true, rw, s.runTurn(ctx, runID), snap.Summary, !snap.MailIDs
 	req, err := s.request(ctx, job, model, h, offered(conv.Kind, s.registered(names...)))
 	if err != nil {
-		s.untrack(job)
+		s.ledger.untrack(job)
 		return err
 	}
 	req.Responses = results
