@@ -1113,15 +1113,19 @@ func sender(from string) (name, addr string) {
 }
 
 // recipients is the header's line of who a message went to: the user's
-// address that got it ("me" with one account) and how many others, To and Cc
-// together; when the user is only Cc'd, To's first and the user under Cc;
-// when neither (Bcc, a list), To's first; with no To or Cc, the account.
+// address that got it (its sidebar name, else "me" with one account) and how
+// many others, To and Cc together; when the user is only Cc'd, To's first and
+// the user under Cc; when neither (Bcc, a list), To's first; with no To or Cc,
+// the account.
 func (r *reader) recipients(m core.MessageSummary) string {
 	accounts := r.p.a.accounts
 	mine := func(addr string) bool {
 		return slices.ContainsFunc(accounts, func(a core.Account) bool { return strings.EqualFold(a.Email, addr) })
 	}
 	me := func(addr string) string {
+		if alias := r.alias(addr); alias != "" {
+			return alias
+		}
 		if len(accounts) <= 1 {
 			return i18n.T("reader.me")
 		}
@@ -1161,6 +1165,16 @@ func (r *reader) recipients(m core.MessageSummary) string {
 		return i18n.Tf("reader.cc", more(cc[0].name, len(cc)-1))
 	}
 	return i18n.Tf("reader.to", me(r.accountOf(m)))
+}
+
+// alias is the sidebar name of the user's account at addr; "" when unset or not the user's.
+func (r *reader) alias(addr string) string {
+	for _, acc := range r.p.a.accounts {
+		if strings.EqualFold(acc.Email, addr) {
+			return acc.Alias
+		}
+	}
+	return ""
 }
 
 // accountOf is the address of the account message m is in.
