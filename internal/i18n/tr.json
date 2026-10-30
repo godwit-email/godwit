@@ -1498,6 +1498,8 @@
   "mail_empty_spam_desc": "Spam klasöründeki tüm iletileri kalıcı olarak silmek istediğinizden emin misiniz? Bu işlem geri alınamaz.",
   "mail_mark_all_read": "Tümünü okundu olarak işaretle",
   "mail_mark_all_read_toast": "Tümü okundu olarak işaretlendi",
+  "mail_account_sync": "Eşitle: {arg1}",
+  "mail_account_edit": "Düzenle: {arg1}",
   "mail_folder_empty": "Klasör zaten boş",
   "mail_no_unread_messages": "Okunmamış ileti yok",
   "palette_action_empty_trash": "Çöpü Boşalt",

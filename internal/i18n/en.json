@@ -2936,6 +2936,22 @@
   "mail_empty_spam_desc": "Are you sure you want to permanently delete all messages in Spam? This cannot be undone.",
   "mail_mark_all_read": "Mark all as read",
   "mail_mark_all_read_toast": "Marked all as read",
+  "mail_account_sync": "Sync {arg1}",
+  "@mail_account_sync": {
+    "placeholders": {
+      "arg1": {
+        "type": "String"
+      }
+    }
+  },
+  "mail_account_edit": "Edit {arg1}",
+  "@mail_account_edit": {
+    "placeholders": {
+      "arg1": {
+        "type": "String"
+      }
+    }
+  },
   "mail_folder_empty": "Folder is already empty",
   "mail_no_unread_messages": "No unread messages",
   "palette_action_empty_trash": "Empty Trash",

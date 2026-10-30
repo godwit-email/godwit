@@ -185,7 +185,7 @@ func (p *mailPage) viewShown(v core.View) bool {
 func (p *mailPage) account(c *ui.Context, acc core.Account) {
 	t := theme.Of(c)
 	name := accountName(acc)
-	kit.SidebarCollapsible(c, p.accountOpen(acc.ID), false, func() {
+	row := kit.SidebarCollapsible(c, p.accountOpen(acc.ID), false, func() {
 		p.a.accountMark(c, acc) // as in the settings sidebar
 		ui.Text(c, name).SingleLine().Grow(1).Shrink(1).TextColor(t.Foreground)
 		if n := p.a.unread[acc.ID]; n > 0 {
@@ -205,6 +205,19 @@ func (p *mailPage) account(c *ui.Context, acc core.Account) {
 			p.folderRow(c, f, open)
 		}
 	})
+	row.ContextMenu(func(m *ui.Menu) { p.accountItems(m, acc) })
+}
+
+// accountItems are a sidebar menu's account entries: sync it now, or edit it
+// in settings.
+func (p *mailPage) accountItems(m *ui.Menu, acc core.Account) {
+	a, id, name := p.a, acc.ID, accountName(acc)
+	if m.Item(i18n.Tf("mail.account_sync", name)).Chosen() {
+		a.do(func(ctx context.Context) error { return a.svc.SyncNow(ctx, id) }, a.toastErr)
+	}
+	if m.Item(i18n.Tf("mail.account_edit", name)).Chosen() {
+		a.navigate(Route{Page: PageSettings, Settings: accountRoute(id)})
+	}
 }
 
 // folderKey names a user folder of an account by its path, folded or not.
@@ -253,8 +266,8 @@ func (p *mailPage) folderRow(c *ui.Context, f sideFolder, open *bool) {
 			}
 		}
 	})
-	if f.Role != "drafts" && f.Role != "sent" {
-		item.ContextMenu(func(m *ui.Menu) {
+	item.ContextMenu(func(m *ui.Menu) {
+		if real && f.Role != "drafts" && f.Role != "sent" { // a path-only parent is no folder to act on
 			switch f.Role {
 			case "trash":
 				total := f.Total
@@ -286,8 +299,12 @@ func (p *mailPage) folderRow(c *ui.Context, f sideFolder, open *bool) {
 					p.markViewAsRead(core.View{FolderID: f.ID})
 				}
 			}
-		})
-	}
+			m.Separator()
+		}
+		if acc, ok := p.a.accountByID(f.AccountID); ok {
+			p.accountItems(m, acc)
+		}
+	})
 }
 
 // accountOpen is whether an account's folders show in the sidebar; at first

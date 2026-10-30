@@ -1498,6 +1498,8 @@
   "mail_empty_spam_desc": "Вы действительно хотите навсегда удалить все сообщения из спама? Это действие нельзя отменить.",
   "mail_mark_all_read": "Пометить все как прочитанные",
   "mail_mark_all_read_toast": "Все помечены как прочитанные",
+  "mail_account_sync": "Синхронизировать {arg1}",
+  "mail_account_edit": "Изменить {arg1}",
   "mail_folder_empty": "Папка уже пуста",
   "mail_no_unread_messages": "Нет непрочитанных сообщений",
   "palette_action_empty_trash": "Очистить корзину",

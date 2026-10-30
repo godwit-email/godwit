@@ -1498,6 +1498,8 @@
   "mail_empty_spam_desc": "確定要永久刪除垃圾郵件中的所有郵件嗎？此動作無法復原。",
   "mail_mark_all_read": "全部標示為已讀",
   "mail_mark_all_read_toast": "已全部標示為已讀",
+  "mail_account_sync": "同步 {arg1}",
+  "mail_account_edit": "編輯 {arg1}",
   "mail_folder_empty": "資料夾已為空",
   "mail_no_unread_messages": "沒有未讀郵件",
   "palette_action_empty_trash": "清空垃圾桶",

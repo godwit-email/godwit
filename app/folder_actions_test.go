@@ -119,8 +119,24 @@ func TestSidebarContextMenuMarkAllRead(t *testing.T) {
 	assert.Equal(t, 0, h.app.mail.inboxUnread())
 }
 
+func TestSidebarContextMenuAccountItems(t *testing.T) {
+	h, accs := mailHarness(t, nil, "alice@example.com")
+	h.waitMail("loaded", func() bool { return len(h.items()) == 0 && h.app.mail.inboxUnread() == 0 })
+	name := accountName(accs[0])
+
+	require.NoError(t, h.tt.RightClick(i18n.T("mail.folder.trash")))
+	menu := h.tt.Menu()
+	require.Contains(t, menu, i18n.Tf("mail.account_sync", name))
+	require.Contains(t, menu, i18n.Tf("mail.account_edit", name))
+
+	require.NoError(t, h.tt.ChooseMenuItem(i18n.Tf("mail.account_edit", name)))
+	h.until("account settings open", func() bool {
+		return h.app.route.Page == PageSettings && h.app.route.Settings == accountRoute(accs[0].ID)
+	})
+}
+
 func TestSidebarContextMenuDisabledStates(t *testing.T) {
-	h, _ := mailHarness(t, nil, "alice@example.com")
+	h, accs := mailHarness(t, nil, "alice@example.com")
 	h.waitMail("loaded", func() bool { return len(h.items()) == 0 && h.app.mail.inboxUnread() == 0 })
 
 	// Right click on Unified Inbox in sidebar: Mark all as read should be disabled
@@ -144,11 +160,12 @@ func TestSidebarContextMenuDisabledStates(t *testing.T) {
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "disabled")
 
-	// Right click on Sent: should have no context menu
+	// Right click on Sent: only the account's own entries
 	h.tt.CloseMenu()
 	sentName := i18n.T("mail.folder.sent")
 	require.NoError(t, h.tt.RightClick(sentName))
-	assert.Empty(t, h.tt.Menu(), "Sent folder should have no context menu")
+	name := accountName(accs[0])
+	assert.Equal(t, []string{i18n.Tf("mail.account_sync", name), i18n.Tf("mail.account_edit", name)}, h.tt.Menu())
 }
 
 func TestPaletteCommandsFolderActions(t *testing.T) {

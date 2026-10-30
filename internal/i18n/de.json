@@ -1498,6 +1498,8 @@
   "mail_empty_spam_desc": "Möchtest du wirklich alle Nachrichten im Spam-Ordner endgültig löschen? Dies kann nicht rückgängig gemacht werden.",
   "mail_mark_all_read": "Alle als gelesen markieren",
   "mail_mark_all_read_toast": "Alle als gelesen markiert",
+  "mail_account_sync": "{arg1} synchronisieren",
+  "mail_account_edit": "{arg1} bearbeiten",
   "mail_folder_empty": "Ordner ist bereits leer",
   "mail_no_unread_messages": "Keine ungelesenen Nachrichten",
   "palette_action_empty_trash": "Papierkorb leeren",

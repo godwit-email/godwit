@@ -1498,6 +1498,8 @@
   "mail_empty_spam_desc": "Vuoi davvero eliminare definitivamente tutti i messaggi nello spam? Questa operazione non può essere annullata.",
   "mail_mark_all_read": "Segna tutti come letti",
   "mail_mark_all_read_toast": "Tutti i messaggi contrassegnati come letti",
+  "mail_account_sync": "Sincronizza {arg1}",
+  "mail_account_edit": "Modifica {arg1}",
   "mail_folder_empty": "La cartella è già vuota",
   "mail_no_unread_messages": "Nessun messaggio non letto",
   "palette_action_empty_trash": "Svuota cestino",
