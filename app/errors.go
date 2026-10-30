@@ -6,45 +6,15 @@ import (
 
 	"github.com/godwit-email/godwit/core"
 	"github.com/godwit-email/godwit/core/ai"
-	"github.com/godwit-email/godwit/core/auth"
-	"github.com/godwit-email/godwit/core/plugins"
 	"github.com/godwit-email/godwit/internal/i18n"
+	"github.com/godwit-email/godwit/rpcbind"
 )
 
-// errorKeys are the core errors with a message of their own.
+// errorKeys are the app's own errors with a message; core's are rpcbind.Key's.
 var errorKeys = []struct {
 	err error
 	key string
 }{
-	{core.ErrStaleDraft, "error.stale_draft"},
-	{core.ErrAccountIcon, "error.account_icon"},
-	{core.ErrInvalidState, "error.invalid_state"},
-	{core.ErrNoOutboxDraft, "error.no_outbox_draft"},
-	{core.ErrRunActive, "error.run_active"},
-	{core.ErrStaleApproval, "error.stale_approval"},
-	{core.ErrNeedsGrant, "error.needs_grant"},
-	{core.ErrTranslatorUnavailable, "error.translator_unavailable"},
-	{core.ErrSystemLanguageNotInstalled, "error.system_language_not_installed"},
-	{core.ErrSystemLanguageUnsupported, "error.system_language_unsupported"},
-	{core.ErrModelUnavailable, "error.model_unavailable"},
-	// A native plugin's failures: its stderr is the plugin's text, not the user's.
-	{plugins.ErrNativeExited, "error.plugin_exited"},
-	{plugins.ErrTimeout, "error.plugin_timeout"},
-	{plugins.ErrNativeABI, "error.plugin_abi"},
-	{core.ErrRegistryMismatch, "error.registry_mismatch"},
-	{core.ErrRegistrySignature, "error.registry_signature"},
-	{core.ErrAINotConfigured, "error.ai_not_configured"},
-	{core.ErrModelNotFound, "error.model_not_found"},
-	{core.ErrModelAuth, "error.model_auth"},
-	{core.ErrModelReauth, "settings.models.login.expired"},
-	{auth.ErrRedirectPortBusy, "settings.models.login.port_busy"},
-	{core.ErrKeyNeedsConfirm, "settings.models.key_moved"},
-	{core.ErrBaseURLInvalid, "error.base_url_invalid"},
-	{core.ErrBaseURLScheme, "error.base_url_scheme"},
-	{core.ErrTooLarge, "error.too_large"},
-	{core.ErrLinkRef, "error.link_ref"},
-	{core.ErrPlaceholder, "error.placeholder"},
-	{core.ErrKeychainUnavailable, "error.keychain"},
 	{errFlushSlow, "error.flush_slow"},
 	{errSignatureUnsaved, "error.signature_unsaved"},
 }
@@ -83,6 +53,9 @@ func humanize(err error) string {
 		if errors.Is(err, k.err) {
 			return i18n.T(k.key)
 		}
+	}
+	if key := rpcbind.Key(err); key != "" && i18n.T(key) != key {
+		return i18n.T(key)
 	}
 	return i18n.Tf("error.unknown", err.Error())
 }

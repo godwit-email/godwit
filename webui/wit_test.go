@@ -16,6 +16,7 @@ import (
 	"github.com/godwit-email/godwit/core/ai"
 	"github.com/godwit-email/godwit/core/coretest"
 	"github.com/godwit-email/godwit/core/mail"
+	"github.com/godwit-email/godwit/core/plugins"
 	"github.com/godwit-email/godwit/internal/i18n"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -446,9 +447,12 @@ func TestComposeWitErrorKeys(t *testing.T) {
 	assert.Equal(t, "error.run_active", errorKey(errors.Join(errors.New("x"), core.ErrRunActive)))
 	assert.Equal(t, "settings.models.login.expired", errorKey(fmt.Errorf("ask: %w", core.ErrModelReauth)), "a subscription to sign in to again")
 	assert.Equal(t, "error.unknown", errorKey(errors.New("boom")))
-	for _, k := range witErrorKeys {
-		assert.NotEqual(t, k.key, i18n.T(k.key))
-	}
+	assert.Equal(t, "error.translator_unavailable", errorKey(core.ErrTranslatorUnavailable), "rpcbind's table, as the native UI")
+	assert.Equal(t, "error.model_unavailable", errorKey(core.ErrModelUnavailable))
+	assert.Equal(t, "error.plugin_timeout", errorKey(fmt.Errorf("tool: %w", plugins.ErrTimeout)))
+	assert.Equal(t, "wit.draft.gone", errorKey(core.ErrDraftGone))
+	assert.Equal(t, "wit.mail.gone", errorKey(ErrMailGone))
+	assert.Equal(t, "error.unknown", errorKey(core.ErrLabelExists), "a code without a message yet")
 	for _, code := range []ai.Code{ai.CodeUnauthorized, ai.CodeRateLimited, ai.CodeUnavailable, ai.CodeBadResponse, ai.CodeInternal, ai.CodeStale, ai.CodeIncomplete} {
 		assert.NotEqual(t, "error.ai."+string(code), i18n.T("error.ai."+string(code)))
 	}

@@ -8,6 +8,7 @@ import (
 	"go/ast"
 	"go/parser"
 	"go/token"
+	"os"
 	"path/filepath"
 	"reflect"
 	"strings"
@@ -17,6 +18,8 @@ import (
 	"github.com/godwit-email/godwit/core/ai"
 	"github.com/godwit-email/godwit/core/auth"
 	"github.com/godwit-email/godwit/core/conn"
+	"github.com/godwit-email/godwit/core/plugins"
+	"github.com/godwit-email/godwit/internal/i18n"
 	"github.com/godwit-email/godwit/rpc"
 	"github.com/godwit-email/godwit/rpcbind"
 	"github.com/stretchr/testify/assert"
@@ -24,44 +27,15 @@ import (
 	"github.com/zalando/go-keyring"
 )
 
-// sentinels is every exported error variable of package core
-// (TestAllCoreErrorsRegistered keeps it complete) plus the context errors and
-// those of core/ai, core/auth and core/conn that core's methods return.
-var sentinels = map[string]error{
-	"ErrUseAssist": core.ErrUseAssist, "ErrStaleApproval": core.ErrStaleApproval,
-	"ErrTooLarge": core.ErrTooLarge, "ErrLinkRef": core.ErrLinkRef, "ErrPlaceholder": core.ErrPlaceholder, "ErrMaskKind": core.ErrMaskKind, "ErrMaskReservedKind": core.ErrMaskReservedKind, "ErrMaskEmptyMatch": core.ErrMaskEmptyMatch, "ErrMaskTooManyRules": core.ErrMaskTooManyRules, "ErrMaskTooManyAllow": core.ErrMaskTooManyAllow, "ErrNotOnServerYet": core.ErrNotOnServerYet,
-	"ErrStaleDraft": core.ErrStaleDraft, "ErrRunActive": core.ErrRunActive, "ErrNotSynced": core.ErrNotSynced,
-	"ErrCompacting": core.ErrCompacting, "ErrNothingToCompact": core.ErrNothingToCompact, "ErrDraftGone": core.ErrDraftGone,
-	"ErrKeychainUnavailable": core.ErrKeychainUnavailable, "ErrWrongAccount": core.ErrWrongAccount,
-	"ErrAccountNotFound":  core.ErrAccountNotFound,
-	"ErrProviderMismatch": core.ErrProviderMismatch, "ErrNeedsGrant": core.ErrNeedsGrant,
-	"ErrPluginNotFound": core.ErrPluginNotFound, "ErrMCPNotFound": core.ErrMCPNotFound,
-	"ErrRegistryOff": core.ErrRegistryOff, "ErrRegistrySignature": core.ErrRegistrySignature,
-	"ErrTranslatorUnavailable":      core.ErrTranslatorUnavailable,
-	"ErrSystemLanguageNotInstalled": core.ErrSystemLanguageNotInstalled,
-	"ErrSystemLanguageUnsupported":  core.ErrSystemLanguageUnsupported,
-	"ErrModelUnavailable":           core.ErrModelUnavailable,
-	"ErrRegistryStale":              core.ErrRegistryStale, "ErrRegistryMismatch": core.ErrRegistryMismatch,
-	"ErrAINotConfigured": core.ErrAINotConfigured, "ErrModelServiceNotFound": core.ErrModelServiceNotFound,
-	"ErrModelNotFound": core.ErrModelNotFound, "ErrModelAuth": core.ErrModelAuth,
-	"ErrModelLogin": core.ErrModelLogin, "ErrModelReauth": core.ErrModelReauth, "ErrLabelExists": core.ErrLabelExists,
-	"ErrBaseURLInvalid": core.ErrBaseURLInvalid, "ErrBaseURLScheme": core.ErrBaseURLScheme,
-	"ErrKeyNeedsConfirm": core.ErrKeyNeedsConfirm, "ErrUnknownFlow": core.ErrUnknownFlow,
-	"ErrInvalidState": core.ErrInvalidState, "ErrSkillDisabled": core.ErrSkillDisabled,
-	"ErrSkillNotFound": core.ErrSkillNotFound, "ErrClosed": core.ErrClosed,
-	"ErrSignatureImage": core.ErrSignatureImage, "ErrSignatureImageCount": core.ErrSignatureImageCount,
-	"ErrSignatureNotFound": core.ErrSignatureNotFound, "ErrSignatureName": core.ErrSignatureName,
-	"ErrAccountIcon":  core.ErrAccountIcon,
-	"ErrNotGrantable": core.ErrNotGrantable,
-	"ErrNeedsAnswer":  core.ErrNeedsAnswer,
-	"ErrMCPSendOff":   core.ErrMCPSendOff, "ErrMCPSendComposing": core.ErrMCPSendComposing, "ErrMCPSendBusy": core.ErrMCPSendBusy,
-	"ErrNoOutboxDraft": core.ErrNoOutboxDraft,
-	"ErrNoUnsubscribe": core.ErrNoUnsubscribe, "ErrUnsubscribeWeb": core.ErrUnsubscribeWeb, "ErrUnsubscribing": core.ErrUnsubscribing,
-	"context.Canceled": context.Canceled, "context.DeadlineExceeded": context.DeadlineExceeded,
-	"ai.ErrNoModelList": ai.ErrNoModelList, "ai.ErrModelForbidden": ai.ErrModelForbidden, "conn.ErrAuthFailed": conn.ErrAuthFailed,
-	"auth.ErrOAuthNotConfigured": auth.ErrOAuthNotConfigured, "auth.ErrFlowExpired": auth.ErrFlowExpired,
-	"auth.ErrInvalidGrant": auth.ErrInvalidGrant, "auth.ErrAccessDenied": auth.ErrAccessDenied,
-	"auth.ErrScopeMissing": auth.ErrScopeMissing,
+// sentinels are the table's rows that cross the Local API.
+func sentinels() []rpcbind.Error {
+	var out []rpcbind.Error
+	for _, e := range rpcbind.All() {
+		if e.Code != "" {
+			out = append(out, e)
+		}
+	}
+	return out
 }
 
 func wire(t *testing.T, c *rpc.Codec, err error, redact func(string) string) (*rpc.WireError, string, error) {
@@ -76,17 +50,15 @@ func wire(t *testing.T, c *rpc.Codec, err error, redact func(string) string) (*r
 
 func TestErrorRoundTrip(t *testing.T) {
 	c := rpcbind.NewCodec()
-	codes := map[string]bool{}
-	for name, s := range sentinels {
-		for _, err := range []error{s, fmt.Errorf("op with private text: %w", s)} {
+	for _, e := range sentinels() {
+		for _, err := range []error{e.Err, fmt.Errorf("op with private text: %w", e.Err)} {
 			we, raw, got := wire(t, c, err, nil)
-			assert.True(t, got == s, name)               // the same value
-			assert.Equal(t, s.Error(), we.Message, name) // the fixed message
-			assert.NotContains(t, raw, "private text", name)
+			assert.True(t, got == e.Err, e.Code)               // the same value
+			assert.Equal(t, e.Err.Error(), we.Message, e.Code) // the fixed message
+			assert.Equal(t, e.Code, we.Data.Code)
+			assert.NotContains(t, raw, "private text", e.Code)
 		}
-		codes[c.Encode(s, nil).Data.Code] = true
 	}
-	assert.Len(t, codes, len(sentinels), "stable codes are distinct")
 	assert.Equal(t, "canceled", c.Encode(context.Canceled, nil).Data.Code)
 	assert.Equal(t, "deadline", c.Encode(context.DeadlineExceeded, nil).Data.Code)
 
@@ -163,8 +135,8 @@ func TestErrorsCarryNoSecrets(t *testing.T) {
 	}
 }
 
-// Every exported error variable of package core is in sentinels, so
-// TestErrorRoundTrip proves it is registered.
+// Every exported error variable of package core is a row of the table with a
+// code, so TestErrorRoundTrip proves it is registered.
 func TestAllCoreErrorsRegistered(t *testing.T) {
 	files, err := filepath.Glob("../core/*.go")
 	require.NoError(t, err)
@@ -190,10 +162,34 @@ func TestAllCoreErrorsRegistered(t *testing.T) {
 		}
 	}
 	require.NotEmpty(t, names)
+	src, err := os.ReadFile("bind.go")
+	require.NoError(t, err)
 	for _, n := range names {
-		assert.Contains(t, sentinels, n, "core.%s is not in the registered list", n)
+		assert.Regexp(t, `\{Code: "\w+", Err: core\.`+n+`[,}]`, string(src), "core.%s is not in the table", n)
 	}
 	t.Logf("%d core sentinels", len(names))
+}
+
+// One row per error and per code, and every key a row names has a message.
+func TestErrorTable(t *testing.T) {
+	codes, errs := map[string]bool{}, map[error]bool{}
+	for _, e := range rpcbind.All() {
+		assert.False(t, errs[e.Err], "%v twice", e.Err)
+		errs[e.Err] = true
+		if e.Code != "" {
+			assert.False(t, codes[e.Code], "%s twice", e.Code)
+			codes[e.Code] = true
+		} else {
+			assert.NotEmpty(t, e.Key, "%v: a row without a code needs a key", e.Err)
+		}
+		if e.Key != "" {
+			assert.NotEqual(t, e.Key, i18n.T(e.Key), "%v: no message", e.Err)
+		}
+	}
+	assert.Equal(t, "error.stale_draft", rpcbind.Key(fmt.Errorf("save: %w", core.ErrStaleDraft)), "error.<code> by default")
+	assert.Equal(t, "error.keychain", rpcbind.Key(core.ErrKeychainUnavailable))
+	assert.Equal(t, "error.plugin_timeout", rpcbind.Key(plugins.ErrTimeout))
+	assert.Equal(t, "", rpcbind.Key(errors.New("boom")))
 }
 
 func newService(t *testing.T) *core.Service {
@@ -268,7 +264,7 @@ func TestWireCodesPinned(t *testing.T) {
 		"no_role_folder":           &core.ErrNoRoleFolder{Role: "junk"},
 		"model_error":              &core.ModelError{Code: "model_not_ready"},
 	}
-	assert.Len(t, pinned, len(sentinels)+7, "every registration is pinned")
+	assert.Len(t, pinned, len(sentinels())+7, "every registration is pinned")
 	for code, err := range pinned {
 		we := c.Encode(err, nil)
 		assert.Equal(t, rpc.CodeApp, we.Code, code)
