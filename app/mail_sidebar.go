@@ -177,6 +177,9 @@ func (p *mailPage) account(c *ui.Context, acc core.Account) {
 	}, func() {
 		hide := "" // the subtree of a folded folder
 		for _, f := range sidebarFolders(acc.ID, p.folders[acc.ID]) {
+			if f.Role == "drafts" {
+				p.accountLabelsNav(c, acc.ID)
+			}
 			if hide != "" && strings.HasPrefix(f.key, hide) {
 				continue
 			}
@@ -242,6 +245,52 @@ func (p *mailPage) folderRow(c *ui.Context, f sideFolder, open *bool) {
 // only the first account's do.
 func (p *mailPage) accountOpen(id int64) *bool {
 	return boolAt(p.accOpen, id, len(p.a.accounts) > 0 && p.a.accounts[0].ID == id)
+}
+
+// accountLabelsOpen is whether an account's labels show in the sidebar; default false.
+func (p *mailPage) accountLabelsOpen(id int64) *bool {
+	return boolAt(p.accLabelsOpen, id, false)
+}
+
+// accountLabelsNav is an account's foldable label group in the sidebar, placed
+// between flagged and drafts.
+func (p *mailPage) accountLabelsNav(c *ui.Context, accID int64) {
+	labels := p.a.AccountLabels(accID)
+	hasLabels := slices.ContainsFunc(labels, func(l core.Label) bool { return l.Count > 0 })
+	viewInAccount := p.a.route.Page == PageMail && p.a.route.View.AccountID == accID && p.a.route.View.LabelID != 0
+	if !hasLabels && !viewInAccount {
+		return
+	}
+	t, th := theme.Of(c), c.Theme()
+	open := p.accountLabelsOpen(accID)
+	totalUnread := 0
+	for _, l := range labels {
+		totalUnread += l.Unread
+	}
+	tr := kit.SidebarCollapsible(c, open, false, func() {
+		ui.Icon(c, icons.Get("tag")).Size(theme.Icon, theme.Icon).Shrink(0).TextColor(t.Muted)
+		ui.Text(c, i18n.T("mail.labels")).SingleLine().Grow(1).Shrink(1)
+		if !*open && totalUnread > 0 {
+			kit.Text(c, strconv.Itoa(totalUnread), t.Text.Sm).TextColor(t.Muted)
+		}
+	}, func() {
+		for _, l := range labels {
+			if l.Count == 0 {
+				continue
+			}
+			v := core.View{AccountID: accID, LabelID: l.ID}
+			on := p.viewShown(v)
+			item := kit.SidebarItem(c, kit.SidebarItemOpts{Selected: on, Indent: 8, OnClick: func() { p.a.navigate(Route{Page: PageMail, View: v}) }})
+			item.Children(func() {
+				ui.Icon(c, icons.Get("label-"+l.Icon)).Size(theme.Icon, theme.Icon).TextColor(t.Label(l.Color).Text)
+				ui.Text(c, l.Name).SingleLine().Grow(1).Shrink(1)
+				if l.Unread > 0 {
+					kit.Text(c, strconv.Itoa(l.Unread), t.Text.Sm).TextColor(t.Muted)
+				}
+			})
+		}
+	})
+	tr.Padding(0, th.Space(2), 0, th.Space(6))
 }
 
 // boolAt is m[k], first set to def: a pointer that outlives the frame, as kit.Collapsible needs.

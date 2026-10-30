@@ -201,7 +201,8 @@ type App struct {
 	loadErr     error // the newest load's error; nil once a load succeeds
 	loadFailing bool  // loads have failed since the last success: toast once per streak
 	accounts    []core.Account
-	labels      []core.Label     // in the user's order, as the last load read them
+	labels        []core.Label           // in the user's order, as the last load read them
+	accountLabels map[int64][]core.Label // labels with counts scoped to each account
 	signatures  []core.Signature // oldest first, as the last load read them
 	trusted     []string         // the senders whose remote images load at once, as the last load read them
 	blocked     []string         // the blocked senders, as the last load read them or a block changed them
@@ -366,6 +367,7 @@ func (a *App) load() {
 	var st core.Settings
 	var unread map[int64]int
 	var labels []core.Label
+	var accLabels map[int64][]core.Label
 	var sigs []core.Signature
 	var trusted, blocked []string
 	listsRead := false
@@ -378,6 +380,7 @@ func (a *App) load() {
 			return err
 		}
 		labels, _ = a.svc.ListLabels(ctx)   // chips only: a failure keeps the last ones
+		accLabels, _ = a.svc.AllAccountLabels(ctx)
 		sigs, _ = a.svc.ListSignatures(ctx) // likewise
 		// The sender lists too: listsRead says whether to take them.
 		trusted, err = a.svc.TrustedImageSenders(ctx)
@@ -451,6 +454,9 @@ func (a *App) load() {
 			if a.mail != nil {
 				a.mail.labelsLoaded()
 			}
+		}
+		if accLabels != nil {
+			a.accountLabels = accLabels
 		}
 		if settled && ver == a.settingsVer && ver == a.settingsSavedVer { // else st may predate a local change
 			if a.settings.RemoteImages != st.RemoteImages {

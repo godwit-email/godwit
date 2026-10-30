@@ -116,6 +116,9 @@ func viewCond(v View) (string, []any, error) {
 	switch {
 	case set != 1:
 	case v.LabelID != 0:
+		if v.AccountID != 0 {
+			return `m.account_id = ? AND ` + labelCond, []any{v.AccountID, v.LabelID}, nil
+		}
 		return labelCond, []any{v.LabelID}, nil
 	case v.Unified == "inbox" && v.FolderID == 0:
 		return "m.folder_id IN (SELECT id FROM folders WHERE role = 'inbox')", nil, nil
@@ -127,6 +130,16 @@ func viewCond(v View) (string, []any, error) {
 			return "", nil, fmt.Errorf("invalid starred account view: %w", err)
 		}
 		return `m.account_id = ? AND instr(m.flags, '\Flagged') > 0`, []any{accID}, nil
+	case strings.HasPrefix(v.Unified, "label:") && v.FolderID == 0:
+		parts := strings.Split(strings.TrimPrefix(v.Unified, "label:"), ":")
+		if len(parts) == 2 {
+			accID, err1 := strconv.ParseInt(parts[0], 10, 64)
+			labelID, err2 := strconv.ParseInt(parts[1], 10, 64)
+			if err1 == nil && err2 == nil {
+				return `m.account_id = ? AND ` + labelCond, []any{accID, labelID}, nil
+			}
+		}
+		return "", nil, errors.New("invalid account label view")
 	case v.Unified == "" && v.FolderID != 0:
 		return "m.folder_id = ?", []any{v.FolderID}, nil
 	}

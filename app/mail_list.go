@@ -99,6 +99,7 @@ type mailPage struct {
 	draftView                map[int64]draftInfo     // by draft, made when the drafts load
 	sending                  draftSend               // the pane's send in flight, or awaiting warnings' acknowledgement
 	accOpen                  map[int64]*bool         // account groups unfolded in the sidebar, by account
+	accLabelsOpen            map[int64]*bool         // account labels unfolded in the sidebar, by account
 	folderOpen               map[folderKey]*bool     // user folders unfolded in the sidebar
 	labelsOpen, accountsOpen bool                    // the sidebar's groups unfolded
 
@@ -137,7 +138,7 @@ func (it mailItem) key() string {
 }
 
 func newMailPage(a *App) *mailPage {
-	p := &mailPage{a: a, folders: map[int64][]core.Folder{}, accOpen: map[int64]*bool{}, folderOpen: map[folderKey]*bool{}, labelsOpen: true, accountsOpen: true, draftList: &ui.ListState{}}
+	p := &mailPage{a: a, folders: map[int64][]core.Folder{}, accOpen: map[int64]*bool{}, accLabelsOpen: map[int64]*bool{}, folderOpen: map[folderKey]*bool{}, labelsOpen: true, accountsOpen: true, draftList: &ui.ListState{}}
 	p.main.reset()
 	p.found.reset()
 	p.exec = p.write
@@ -468,6 +469,9 @@ func (p *mailPage) viewAccount(v core.View) int64 {
 	if acc, ok := starredOf(v); ok {
 		return acc
 	}
+	if v.AccountID != 0 {
+		return v.AccountID
+	}
 	f, _ := p.folder(v.FolderID)
 	return f.AccountID
 }
@@ -506,7 +510,11 @@ func unreadSub(n int) string {
 func (p *mailPage) Title() (string, string) {
 	v := p.a.route.View
 	if l, ok := p.a.label(v.LabelID); ok && v.LabelID != 0 {
-		return l.Name, unreadSub(l.Unread)
+		unread := l.Unread
+		if v.AccountID != 0 {
+			unread = p.accountLabelUnread(v.AccountID, v.LabelID)
+		}
+		return l.Name, unreadSub(unread)
 	}
 	switch {
 	case v.Unified == "inbox":
@@ -524,6 +532,15 @@ func (p *mailPage) Title() (string, string) {
 		}
 	}
 	return "", ""
+}
+
+func (p *mailPage) accountLabelUnread(accID, labelID int64) int {
+	for _, l := range p.a.AccountLabels(accID) {
+		if l.ID == labelID {
+			return l.Unread
+		}
+	}
+	return 0
 }
 
 // listTime is a row's time: HH:mm today, then yesterday, a weekday within
@@ -1331,6 +1348,9 @@ func (p *mailPage) batchScoped(act string, rows []mailItem, anywhere bool) {
 		case search:
 			return true
 		case v.LabelID != 0:
+			if v.AccountID != 0 && acctOf[m.FolderID] != v.AccountID {
+				return false
+			}
 			return slices.ContainsFunc(labeled[m.ID], func(l core.AppliedLabel) bool { return l.LabelID == v.LabelID })
 		case v.Unified == "inbox":
 			return role[m.FolderID] == "inbox"
