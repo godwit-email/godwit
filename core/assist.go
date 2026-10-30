@@ -100,6 +100,11 @@ func ensureHTML(h string) string {
 	if h == "" || htmlTag.MatchString(h) {
 		return h
 	}
+	return textHTML(h)
+}
+
+// textHTML is plain text as HTML paragraphs (<p>) and breaks (<br>), escaped.
+func textHTML(h string) string {
 	h = strings.ReplaceAll(h, "\r\n", "\n")
 	paras := paraBreak.Split(strings.TrimSpace(h), -1)
 	var b strings.Builder

@@ -667,7 +667,7 @@ func fileURL(path string) string {
 // (CON, COM1.txt…) gets a _ in front. Empty, it is fallback.
 func fileName(s, fallback string) string {
 	s = strings.Trim(strings.Map(func(r rune) rune {
-		if unicode.IsControl(r) || strings.ContainsRune(`/\:*?"<>|`, r) {
+		if unicode.IsControl(r) || unicode.Is(unicode.Cf, r) || strings.ContainsRune(`/\:*?"<>|`, r) { // Cf: U+202E turns "fdp.exe" into "exe.pdf"
 			return '_'
 		}
 		return r
@@ -720,6 +720,7 @@ func (a *App) saveAttachment(att core.AttachmentInfo) {
 	}, a.toastErr)
 }
 
+// copyFile copies an attachment out of the cache, marked as from the internet.
 func copyFile(src, dst string) error {
 	in, err := os.Open(src)
 	if err != nil {
@@ -734,7 +735,11 @@ func copyFile(src, dst string) error {
 		out.Close()
 		return err
 	}
-	return out.Close()
+	if err := out.Close(); err != nil {
+		return err
+	}
+	_ = markFromInternet(dst) // best effort, as browsers do: a volume without the mark (FAT) still gets the file
+	return nil
 }
 
 // saveMail saves the target message to an .eml file.
@@ -1478,7 +1483,7 @@ func (r *reader) attachments(c *ui.Context, atts []core.AttachmentInfo) {
 						kit.Text(c, fileKind(att), t.Text.Xs).TextColor(t.Muted)
 					})
 					ui.Column(c).Shrink(1).Children(func() {
-						ui.Text(c, att.Filename).SingleLine()
+						ui.Text(c, fileName(att.Filename, "attachment")).SingleLine() // the name it opens and saves under
 						kit.Text(c, byteSize(att.Size), t.Text.Sm).TextColor(t.Muted)
 					})
 				})

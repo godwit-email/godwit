@@ -136,6 +136,7 @@ func (n *NativeProcess) proc() (p *nativeProc, fresh bool, err error) {
 	args := append(append([]string{}, n.o.Command[1:]...), "--library", n.o.Library, "--sha256", n.o.SHA256)
 	cmd := exec.Command(n.o.Command[0], args...)
 	cmd.Env = n.o.Env
+	cmd.WaitDelay = nativeGrace // a helper left holding stderr cannot hold Wait
 	setNativeGroup(cmd)
 	p = &nativeProc{cmd: cmd, dead: make(chan struct{}), pending: map[int64]chan nativeLine{}, stderr: &stderrTail{}, ready: make(chan struct{})}
 	cmd.Stderr = p.stderr

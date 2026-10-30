@@ -92,7 +92,9 @@ func (p *mailPage) outboxActions(it core.OutboxItem, now time.Time) []outboxActi
 		add("discard", kit.Destructive, resolve("discard", nil))
 	case "send_uncertain", "archive_uncertain":
 		add("confirm_sent", kit.Outline, resolve("confirm_sent", nil))
-		add("resend", kit.Outline, resolve("resend", nil))
+		if it.State == "send_uncertain" { // archive_uncertain was accepted: sending again delivers it twice
+			add("resend", kit.Outline, resolve("resend", nil))
+		}
 		add("discard", kit.Destructive, resolve("discard", nil))
 	}
 	return acts

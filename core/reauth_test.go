@@ -376,7 +376,7 @@ func TestBackfillResumesAfterDrop(t *testing.T) {
 	lim = 60 // the backfill of 58 takes two text batches
 	_, err = e.s.UpdateAccount(bg, e.acc.ID, AccountPatch{Sync: &SyncRange{Limit: lim}})
 	require.NoError(t, err)
-	e.im.DropFetchAfter(3) // the round's 4th FETCH: the second text batch (checked below)
+	e.im.DropFetchAfter(2) // the round's 3rd FETCH (new mail is found by UID SEARCH): the second text batch (checked below)
 	require.Error(t, e.s.SyncNow(bg, e.acc.ID))
 	require.Equal(t, 2+50, e.count(t, "SELECT count(*) FROM messages"), "dropped in the second batch")
 

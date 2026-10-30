@@ -485,6 +485,12 @@ var Migrations = [][]string{{
 	// Indexed: each record looks up the newest request (MAX(request)).
 	`ALTER TABLE mask_log ADD COLUMN request INTEGER NOT NULL DEFAULT 0`,
 	`CREATE INDEX mask_log_request ON mask_log(request)`,
+}, {
+	// ops only grows, and every sync round looks up each message's pending
+	// flags op; deleting a message looks up its ops and attachments for the
+	// foreign keys. Without these, each is a scan of the whole table.
+	`CREATE INDEX ops_message ON ops(message_id)`,
+	`CREATE INDEX attachments_message ON attachments(message_id)`,
 }}
 
 // HistoryRowsVersion is the schema version that keeps a conversation's

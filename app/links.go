@@ -131,5 +131,5 @@ func linkSpans(link string) []ui.Span {
 		return []ui.Span{{Text: link}}
 	}
 	j := i + len(u.Host)
-	return []ui.Span{{Text: link[:i]}, {Text: u.Host, Weight: 600}, {Text: link[j:]}}
+	return []ui.Span{{Text: link[:i]}, {Text: gomail.ASCIIHost(u.Host), Weight: 600}, {Text: link[j:]}}
 }

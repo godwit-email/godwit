@@ -261,6 +261,22 @@ func TestGetAttachmentLazy(t *testing.T) {
 	assert.Equal(t, path, path2)
 }
 
+// A charset on a binary attachment leaves its bytes alone.
+func TestGetAttachmentBinaryCharset(t *testing.T) {
+	e := newSyncEnv(t)
+	for _, cs := range []string{"binary", "iso-8859-1"} {
+		e.put(t, "INBOX", strings.Replace(withAttachments(cs+"@x", "hi", 1), "application/pdf", "application/pdf; charset="+cs, 1))
+	}
+	e.sync(t)
+	for _, r := range e.rows(t, "SELECT id FROM attachments") {
+		path, _, err := e.s.GetAttachment(bg, r[0].(int64))
+		require.NoError(t, err)
+		b, err := os.ReadFile(path)
+		require.NoError(t, err)
+		assert.Equal(t, "%PDF-1.4\n", string(b))
+	}
+}
+
 func TestGetAttachmentNotOnServerAndEvict(t *testing.T) {
 	e := newSyncEnv(t)
 	e.put(t, "INBOX", withAttachments("a1@x", "hi", 2))

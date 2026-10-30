@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"io/fs"
+	"log/slog"
 	"maps"
 	"net"
 	"net/http"
@@ -423,6 +424,10 @@ func (s *Service) stopCalls(match func(accountID int64) bool) {
 // cleanOrphans removes files under cache/, drafts/ and outbox/ that no row refers
 // to: leftovers of crashes and failed removals. It runs before any worker starts.
 func (s *Service) cleanOrphans(ctx context.Context) error {
+	dataDir, err := filepath.Abs(s.dataDir)
+	if err != nil {
+		return err
+	}
 	keep := map[string]bool{}
 	for _, q := range []string{
 		"SELECT cache_path FROM attachments WHERE cache_path IS NOT NULL",
@@ -434,17 +439,22 @@ func (s *Service) cleanOrphans(ctx context.Context) error {
 			return err
 		}
 		for _, r := range rows.Values {
-			if p, err := filepath.Abs(store.Str(r[0])); err == nil {
-				keep[p] = true
+			p, err := filepath.Abs(store.Str(r[0]))
+			if err != nil {
+				continue
 			}
+			// Rows keep absolute paths: under another spelling of the data dir
+			// (a symlink, a case, a moved home) every live file would look orphaned.
+			if !strings.HasPrefix(p, dataDir+string(filepath.Separator)) {
+				slog.Warn("orphan sweep skipped: a stored path is outside the data dir", "path", p, "dataDir", dataDir)
+				return nil
+			}
+			keep[p] = true
 		}
 	}
-	imagesDir, err := filepath.Abs(filepath.Join(s.dataDir, "cache", "images"))
-	if err != nil {
-		return err
-	}
+	imagesDir := filepath.Join(dataDir, "cache", "images")
 	for _, sub := range []string{"cache", "drafts", "outbox"} {
-		err := store.CleanOrphans(filepath.Join(s.dataDir, sub), func(p string) bool {
+		err := store.CleanOrphans(filepath.Join(dataDir, sub), func(p string) bool {
 			p, err := filepath.Abs(p)
 			return err != nil || keep[p] || strings.HasPrefix(p, imagesDir+string(filepath.Separator)) // the image cache owns its files
 		})
@@ -584,15 +594,17 @@ func (s *Service) syncAccount(ctx context.Context, accountID int64, explicit boo
 	if err := mailsync.QueuePurge(ctx, s.db, c, accountID); err != nil {
 		return err
 	}
-	if err := s.pushOps(ctx, c, accountID, mailsync.PushOps); err != nil {
-		return err
-	}
+	// The outbox before the push: a bulk change (thousands of ops) or a failing
+	// op must not hold mail the user sent.
 	useSMTP, smtpErr := s.checkSMTP(ctx, accountID, explicit)
 	if useSMTP {
 		smtpErr = s.processOutbox(ctx, c, accountID)
 		if smtpErr != nil && !errors.Is(smtpErr, conn.ErrAuthFailed) {
 			return smtpErr
 		}
+	}
+	if err := s.pushOps(ctx, c, accountID, mailsync.PushOps); err != nil {
+		return err
 	}
 	more, err := mailsync.Fetch(ctx, s.db, c, accountID, s.bus)
 	s.notifyHooks() // rows committed before an error count too

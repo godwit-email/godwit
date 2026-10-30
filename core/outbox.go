@@ -1,14 +1,11 @@
 package core
 
 import (
-	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
-	netmail "net/mail"
 	"os"
-	"strings"
 	"time"
 
 	"github.com/egoist/mygo/plugins/sqlite"
@@ -166,7 +163,8 @@ func (s *Service) takeBack(ctx context.Context, id int64, state string) error {
 
 // ResolveOutbox decides an item in send_uncertain, archive_uncertain or failed:
 // confirm_sent treats it as sent (it is archived next), resend queues it again
-// for now (OutboxExpiry counts from then) and discard drops it; all three clear
+// for now (OutboxExpiry counts from then; never archive_uncertain, which the
+// server already accepted) and discard drops it; all three clear
 // its Failure, and confirm_sent and discard delete its draft. edit
 // takes a failed item back as CancelOutbox does. resend also retries a queued
 // item now, its undo window still kept.
@@ -203,7 +201,7 @@ func (s *Service) ResolveOutbox(ctx context.Context, id int64, action string) er
 		stmts = []sqlite.Statement{dropDraft, {SQL: "UPDATE outbox SET state = 'sent', last_error = NULL, failure = NULL WHERE " + decidable, Args: []any{id}}}
 	case "resend":
 		stmts = []sqlite.Statement{{SQL: `UPDATE outbox SET state = 'queued', attempts = 0, last_error = NULL, failure = NULL, send_after = ?,
-			next_attempt_at = NULL WHERE ` + decidable, Args: []any{s.clk().Now().UnixMilli(), id}}}
+			next_attempt_at = NULL WHERE id = ? AND state IN ('send_uncertain', 'failed')`, Args: []any{s.clk().Now().UnixMilli(), id}}}
 	case "discard":
 		stmts = []sqlite.Statement{dropDraft, {SQL: "DELETE FROM outbox WHERE " + decidable, Args: []any{id}}}
 	default:
@@ -378,7 +376,7 @@ func (s *Service) processOutbox(ctx context.Context, c *imapclient.Client, accou
 			if err != nil || folder == "" {
 				continue // cannot check; the user decides
 			}
-			found, err := inFolder(c, folder, o.messageID)
+			found, err := mailsync.InFolder(c, folder, o.messageID, 0)
 			if err != nil {
 				_, err = s.setOutbox(wctx, o, "send_uncertain", err.Error())
 			} else if found {
@@ -485,7 +483,7 @@ func (s *Service) archiveItem(ctx, wctx context.Context, c *imapclient.Client, s
 		if err != nil || folder == "" {
 			return err
 		}
-		found, err := inFolder(c, folder, o.messageID)
+		found, err := mailsync.InFolder(c, folder, o.messageID, 0)
 		if err != nil || found {
 			return err
 		}
@@ -540,35 +538,4 @@ func (s *Service) finishOutbox(ctx context.Context, o outboxRow) error {
 	}
 	os.Remove(o.rawPath) // ponytail: a failed removal leaves an orphan .eml; sweep outbox/ if it matters
 	return nil
-}
-
-// inFolder reports whether folder holds a message whose Message-ID is exactly
-// messageID. SEARCH HEADER matches substrings, so each hit is checked.
-func inFolder(c *imapclient.Client, folder, messageID string) (bool, error) {
-	if _, err := c.Select(folder, &imap.SelectOptions{ReadOnly: true}).Wait(); err != nil {
-		return false, err
-	}
-	res, err := c.UIDSearch(&imap.SearchCriteria{Header: []imap.SearchCriteriaHeaderField{{Key: "Message-ID", Value: messageID}}}, nil).Wait()
-	if err != nil {
-		return false, err
-	}
-	uids := res.AllUIDs()
-	if len(uids) == 0 {
-		return false, nil
-	}
-	sec := &imap.FetchItemBodySection{Specifier: imap.PartSpecifierHeader, HeaderFields: []string{"Message-ID"}, Peek: true}
-	msgs, err := c.Fetch(imap.UIDSetNum(uids...), &imap.FetchOptions{UID: true, BodySection: []*imap.FetchItemBodySection{sec}}).Collect()
-	if err != nil {
-		return false, err
-	}
-	for _, m := range msgs {
-		h, err := netmail.ReadMessage(bytes.NewReader(append(m.FindBodySection(sec), "\r\n\r\n"...)))
-		if err != nil {
-			continue
-		}
-		if strings.Trim(strings.TrimSpace(h.Header.Get("Message-Id")), "<>") == messageID {
-			return true, nil
-		}
-	}
-	return false, nil
 }

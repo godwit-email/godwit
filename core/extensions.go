@@ -720,7 +720,10 @@ func (s *Service) configureNative(ctx context.Context, name string, rp *runningP
 		return err
 	}
 	rp.cfg.Store(&cfg)
-	if _, err = rp.native.Call(ctx, "configure", map[string]any{"config": cfg}); err == nil {
+	// Bounded as a start's configure is: the caller holds pluginsMu, which every send check waits on.
+	cctx, cancel := context.WithTimeout(ctx, nativeStart)
+	defer cancel()
+	if _, err = rp.native.Call(cctx, "configure", map[string]any{"config": cfg}); err == nil {
 		rp.acked.Store(&cfg)
 	}
 	return err

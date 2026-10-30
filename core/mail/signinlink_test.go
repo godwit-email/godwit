@@ -98,3 +98,17 @@ func TestActionLinkBadCases(t *testing.T) {
 		})
 	}
 }
+
+// A look-alike host shows as punycode, however the link spells it.
+func TestLinkHostLookAlike(t *testing.T) {
+	for link, want := range map[string]string{
+		"https://www.apple.com/x":      "apple.com",
+		"https://аpple.com/login":      "xn--pple-43d.com",
+		"https://%D0%B0pple.com/login": "xn--pple-43d.com",
+		"https://例子.测试/a":              "xn--fsqu00a.xn--0zwm56d",
+	} {
+		if got := mail.LinkHost(link); got != want {
+			t.Errorf("LinkHost(%q) = %q, want %q", link, got, want)
+		}
+	}
+}

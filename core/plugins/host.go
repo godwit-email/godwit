@@ -12,11 +12,11 @@ import (
 	"slices"
 	"sort"
 	"strings"
-	"unicode/utf8"
 
 	"github.com/Calcium-Ion/moejs"
 	"github.com/Calcium-Ion/moejs/engine"
 	"github.com/godwit-email/godwit/core/ai"
+	gomail "github.com/godwit-email/godwit/core/mail"
 )
 
 // Host is what the core gives a plugin's ctx. Permissions are checked before
@@ -249,8 +249,8 @@ func truthy(v any) bool {
 // pluginMail is m as a plugin gets it: bodies cut to MaxBodyBytes, no nil lists.
 func pluginMail(m MailMessage) MailMessage {
 	var t1, t2 bool
-	m.Text, t1 = cut(m.Text, MaxBodyBytes)
-	m.HTML, t2 = cut(m.HTML, MaxBodyBytes)
+	m.Text, t1 = gomail.CutUTF8(m.Text, MaxBodyBytes)
+	m.HTML, t2 = gomail.CutUTF8(m.HTML, MaxBodyBytes)
 	m.Truncated = m.Truncated || t1 || t2
 	m.To, m.Cc = nonNil(m.To), nonNil(m.Cc)
 	if m.Attachments == nil {
@@ -320,17 +320,6 @@ func jsonData(v any) (any, error) {
 	}
 	var out any
 	return out, json.Unmarshal(b, &out)
-}
-
-// cut keeps at most n bytes of s, at a rune boundary.
-func cut(s string, n int) (string, bool) {
-	if len(s) <= n {
-		return s, false
-	}
-	for n > 0 && !utf8.RuneStart(s[n]) {
-		n--
-	}
-	return s[:n], true
 }
 
 // egressHost is the URL's host as manifests write it: lowercased, with the
@@ -513,7 +502,7 @@ func (p *Plugin) newCtx(c *CallScope) (moejs.Value, error) {
 			}
 			return c.AsyncJSON(func(ctx context.Context) (any, error) {
 				out, err := p.h.LLMComplete(ctx, prompt)
-				out, _ = cut(out, MaxLLMBytes)
+				out, _ = gomail.CutUTF8(out, MaxLLMBytes)
 				return out, err
 			}), nil
 		}),

@@ -508,8 +508,3 @@ func DataURL(src string) ([]byte, error) {
 	}
 	return data, nil
 }
-
-// Encode is data, an image of format (as Config names it), as a data: URL.
-func Encode(format string, data []byte) string {
-	return "data:image/" + format + ";base64," + base64.StdEncoding.EncodeToString(data)
-}

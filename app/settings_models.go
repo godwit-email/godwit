@@ -1229,13 +1229,7 @@ func avatarImage(av core.Avatar) (ui.ImageSource, error) {
 	return ui.DecodeBitmap(av.Data)
 }
 
-// listCard is a bordered list of rows.
-func listCard(c *ui.Context, rows func()) {
-	t := theme.Of(c)
-	ui.Column(c).Radius(t.Radius.Xl).Border(theme.Hairline, t.Border).Background(t.Background).Clip().Children(rows)
-}
-
-// listRow is a clickable row of a listCard; i > 0 draws a divider above it.
+// listRow is a clickable row of a bordered list; i > 0 draws a divider above it.
 // Selected (on), it does not click.
 func listRow(c *ui.Context, i int, on bool, onClick func(), children func()) ui.Element {
 	t, th := theme.Of(c), c.Theme()

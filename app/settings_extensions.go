@@ -226,18 +226,6 @@ func (e *extView) install() {
 	})
 }
 
-func pluginStatus(p core.PluginInfo) string {
-	switch {
-	case p.Error != "":
-		return i18n.T("settings.ext.status.error")
-	case p.NeedsGrant:
-		return i18n.T("settings.ext.status.needs_grant")
-	case p.Enabled:
-		return i18n.T("settings.ext.status.enabled")
-	}
-	return i18n.T("settings.ext.status.disabled")
-}
-
 // pluginExcluded is the 不包含 line: what the plugin did not ask for. Sending
 // is always named: no plugin can send.
 func pluginExcluded(pm plugins.Permissions) string {

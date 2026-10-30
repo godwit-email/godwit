@@ -249,3 +249,16 @@ func TestValidText(t *testing.T) {
 		assert.True(t, utf8.Valid(got) && !strings.ContainsFunc(string(got), func(r rune) bool { return unicode.Is(unicode.Han, r) }), "%s labelled utf-8: %q", name, got)
 	}
 }
+
+func TestCutUTF8(t *testing.T) {
+	for _, tt := range []struct {
+		s    string
+		n    int
+		want string
+		cut  bool
+	}{{"short", 10, "short", false}, {"日本語", 4, "日", true}, {"日本語", 2, "", true}, {"abc", -1, "", true}} {
+		got, cut := mail.CutUTF8(tt.s, tt.n)
+		assert.Equal(t, tt.want, got, "%q %d", tt.s, tt.n)
+		assert.Equal(t, tt.cut, cut, "%q %d", tt.s, tt.n)
+	}
+}

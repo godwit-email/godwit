@@ -47,3 +47,14 @@ func TestTakeStdoutNotInherited(t *testing.T) {
 	assert.Equal(t, "done\n", string(b))
 	assert.Less(t, time.Since(start), 2*time.Second, "EOF waited for the helper")
 }
+
+// A helper left holding the host's stderr cannot keep the process from
+// counting as ended: a call returns, and nothing waits for the helper.
+func TestNativeExitWithHelperHoldingStderr(t *testing.T) {
+	n := NewNativeProcess(NativeOptions{Command: []string{"sh", "-c", "sleep 10 >/dev/null & exit 0"}, Timeout: 30 * time.Second})
+	t.Cleanup(n.Close)
+	start := time.Now()
+	_, err := n.Call(context.Background(), "describe", struct{}{})
+	assert.ErrorIs(t, err, ErrNativeExited)
+	assert.Less(t, time.Since(start), 5*time.Second, "Wait waited for the helper")
+}

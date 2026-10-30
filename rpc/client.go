@@ -67,6 +67,9 @@ func NewClient(conn io.ReadWriteCloser) *Client {
 	return c
 }
 
+// Done is closed once the connection is gone.
+func (c *Client) Done() <-chan struct{} { return c.done }
+
 // Close closes the connection; pending calls and streams end with ErrClosed.
 func (c *Client) Close() error { return c.conn.Close() }
 

@@ -57,3 +57,32 @@ func TestMCPOverStdio(t *testing.T) {
 		t.Fatal("godwit mcp did not exit when stdin closed")
 	}
 }
+
+// godwit mcp exits when Godwit goes away, so its host sees the server stop.
+func TestMCPExitsWhenGodwitStops(t *testing.T) {
+	dir := shortDir(t)
+	_, _, stop := startHeadless(t, dir)
+	inR, inW := io.Pipe()
+	outR, outW := io.Pipe()
+	stderr := &syncBuf{}
+	done := make(chan int, 1)
+	go func() {
+		done <- run(context.Background(), []string{"mcp", "--data-dir", dir}, inR, outW, stderr)
+		outW.Close()
+	}()
+	cs, err := mcp.NewClient(&mcp.Implementation{Name: "test", Version: "1"}, nil).
+		Connect(t.Context(), &mcp.IOTransport{Reader: outR, Writer: inW}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer cs.Close()
+	stop()
+	select {
+	case code := <-done:
+		if code != 1 || !strings.Contains(stderr.String(), "lost the connection to Godwit") {
+			t.Errorf("exit code %d, stderr %q", code, stderr.String())
+		}
+	case <-time.After(10 * time.Second):
+		t.Fatal("godwit mcp kept running after Godwit stopped")
+	}
+}

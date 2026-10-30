@@ -272,6 +272,20 @@ func TestAuditExternal(t *testing.T) {
 	assert.NotContains(t, string(b), "body text")
 }
 
+// SendRevision sends as Send does, so it is audited as Send is.
+func TestAuditSendRevision(t *testing.T) {
+	e := coretest.New(t, coretest.WithoutAutoSync())
+	ctx := t.Context()
+	acc := e.AddAccount(t, "alice@example.com")
+	full := dial(t, listen(t, e.Svc), rpc.RoleFull)
+	var d core.Draft
+	require.NoError(t, full.Call(ctx, "NewDraft", &d, acc.ID, "new", 0))
+	d.To, d.Subject = []string{"dave@example.com"}, "hi"
+	require.NoError(t, full.Call(ctx, "SaveDraft", &d, d))
+	require.NoError(t, full.Call(ctx, "SendRevision", nil, d.ID, d.Revision))
+	assert.Equal(t, [][]any{{"local_api", "SendRevision", d.ID, ""}}, auditRows(t, e.DataDir))
+}
+
 func TestDialFull(t *testing.T) {
 	e := coretest.New(t, coretest.WithoutAutoSync())
 	acc := e.AddAccount(t, "alice@example.com")

@@ -5,6 +5,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/godwit-email/godwit/core/events"
 	"github.com/godwit-email/godwit/core/mailsync"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -51,4 +52,25 @@ func TestWorkerContinuesBackfill(t *testing.T) {
 	_, err = e.s.UpdateAccount(bg, e.acc.ID, AccountPatch{Sync: &all})
 	require.NoError(t, err)
 	require.Eventually(t, func() bool { return len(e.stored(t, "Archive")) == 7 }, 5*time.Second, 20*time.Millisecond)
+}
+
+// New mail above last_uid comes a page at a time, all of it new mail.
+func TestFetchNewPaged(t *testing.T) {
+	defer func(n int) { mailsync.BackfillPage = n }(mailsync.BackfillPage)
+	mailsync.BackfillPage = 2
+	e := newSyncEnv(t)
+	e.sync(t)
+	for i := range 5 {
+		e.put(t, "INBOX", msg(fmt.Sprintf("n%d@x", i)))
+	}
+	ch, stop := e.s.Subscribe()
+	defer stop()
+	e.sync(t)
+	assert.Len(t, e.stored(t, "INBOX"), 5)
+	var got []int64
+	for _, ev := range ofType(collect(ch), events.MessageReceived) {
+		got = append(got, ev.MessageIDs...)
+	}
+	assert.Len(t, got, 5)
+	assert.Equal(t, 1, e.count(t, "SELECT count(*) FROM folders WHERE name = 'INBOX' AND last_uid = 5 AND synced = 1"))
 }

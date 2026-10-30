@@ -88,5 +88,5 @@ func FetchOlder(ctx context.Context, db *store.DB, c *imapclient.Client, account
 		return false, err
 	}
 	slices.SortFunc(msgs, func(x, y *imapclient.FetchMessageBuffer) int { return byUID(y, x) })
-	return more, importAll(ctx, db, c, a, f, msgs, false, &r) // older mail, not new arrivals
+	return more, importAll(ctx, db, c, a, f, msgs, false, nil, &r) // older mail, not new arrivals
 }

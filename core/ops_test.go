@@ -221,6 +221,24 @@ func TestClaimAmbiguity(t *testing.T) {
 	assert.Contains(t, changed[0].MessageIDs, orig)
 }
 
+// Two copies arriving on different pages of new mail are as ambiguous as two
+// on one: the move is not claimed by the first.
+func TestClaimAmbiguityAcrossPages(t *testing.T) {
+	defer func(n int) { mailsync.BackfillPage = n }(mailsync.BackfillPage)
+	mailsync.BackfillPage = 1
+	e := newSyncEnv(t, testmail.WithoutUIDPlus())
+	raw := msg("dup@x")
+	e.put(t, "INBOX", raw)
+	e.put(t, "Archive", msg("old@x"))
+	e.sync(t)
+	orig := e.idOf(t, "dup@x")
+	require.NoError(t, e.s.Move(bg, []int64{orig}, e.folderID(t, "Archive")))
+	e.put(t, "Archive", raw) // another client's copy, before the move lands
+	e.sync(t)
+	assert.Equal(t, []string{"conflict"}, e.opStates(t))
+	assert.Equal(t, 3, e.count(t, "SELECT count(*) FROM messages"), "both server copies stay separate local messages")
+}
+
 func TestMoveNotReimportedBeforePush(t *testing.T) {
 	e := newSyncEnv(t)
 	e.put(t, "INBOX", msg("m@x"))
@@ -262,6 +280,78 @@ func TestUncertainMoveNotRepeated(t *testing.T) {
 	assert.Equal(t, [][]any{{id}}, e.rows(t, "SELECT id FROM messages"))
 	assert.Equal(t, []string{"done"}, e.opStates(t))
 	assert.Equal(t, before, e.im.MovesAndCopies(), "the MOVE is not sent again")
+}
+
+// Without MOVE, a retry after COPY and STORE went through but UID EXPUNGE did
+// not finishes the move: it does not COPY a second time.
+func TestUncertainCopyMoveNotDuplicated(t *testing.T) {
+	e := newSyncEnv(t, testmail.WithoutMove())
+	e.put(t, "INBOX", msg("m@x"))
+	e.sync(t)
+	id := e.idOf(t, "m@x")
+	require.NoError(t, e.s.Move(bg, []int64{id}, e.folderID(t, "Archive")))
+	e.im.DropOnNextUIDExpunge()
+	_ = e.s.SyncNow(bg, e.acc.ID) // the connection drops before the EXPUNGE
+	e.sync(t)
+	e.sync(t) // the destination's copy is claimed
+	assert.Equal(t, []string{"m@x"}, e.onServer(t, "Archive"))
+	assert.Empty(t, e.onServer(t, "INBOX"))
+	assert.Equal(t, [][]any{{id}}, e.rows(t, "SELECT id FROM messages"))
+	assert.Equal(t, []string{"done"}, e.opStates(t))
+}
+
+// \Deleted from another client is no proof an interrupted COPY went through:
+// with no copy in the destination, the retry copies it there.
+func TestUncertainCopyMoveDeletedElsewhere(t *testing.T) {
+	e := newSyncEnv(t, testmail.WithoutMove())
+	e.put(t, "INBOX", msg("m@x"))
+	e.sync(t)
+	id := e.idOf(t, "m@x")
+	require.NoError(t, e.s.Move(bg, []int64{id}, e.folderID(t, "Archive")))
+	// The last attempt failed before its COPY; another client then set \Deleted.
+	_, err := e.s.db.Execute(bg, "UPDATE ops SET attempts = 1")
+	require.NoError(t, err)
+	c := e.dial(t)
+	_, err = c.Select("INBOX", nil).Wait()
+	require.NoError(t, err)
+	require.NoError(t, c.Store(imap.UIDSetNum(1), &imap.StoreFlags{Op: imap.StoreFlagsAdd, Silent: true, Flags: []imap.Flag{imap.FlagDeleted}}, nil).Close())
+	e.sync(t)
+	e.sync(t)
+	assert.Equal(t, []string{`m@x \Deleted`}, e.onServer(t, "Archive"), "copied, not lost")
+	assert.Empty(t, e.onServer(t, "INBOX"))
+	assert.Equal(t, []string{"done"}, e.opStates(t))
+}
+
+// A destination message whose Message-ID only looks alike to SEARCH, or of
+// another size, is not the copy: the retry copies the message rather than
+// expunge its only one.
+func TestUncertainCopyMoveOtherSizeTwin(t *testing.T) {
+	for name, twin := range map[string]string{
+		"other size":    msg("m@x") + "a longer body\r\n",
+		"other case":    msg("M@x"),  // SEARCH ignores case
+		"longer, alike": msg("am@x"), // SEARCH matches substrings
+	} {
+		t.Run(name, func(t *testing.T) { uncertainCopyMoveWithTwin(t, twin) })
+	}
+}
+
+func uncertainCopyMoveWithTwin(t *testing.T, twin string) {
+	e := newSyncEnv(t, testmail.WithoutMove())
+	e.put(t, "INBOX", msg("m@x"))
+	e.put(t, "Archive", twin)
+	e.sync(t)
+	id := e.rows(t, "SELECT id FROM messages WHERE folder_id = ?", e.folderID(t, "INBOX"))[0][0].(int64)
+	require.NoError(t, e.s.Move(bg, []int64{id}, e.folderID(t, "Archive")))
+	_, err := e.s.db.Execute(bg, "UPDATE ops SET attempts = 1")
+	require.NoError(t, err)
+	c := e.dial(t)
+	_, err = c.Select("INBOX", nil).Wait()
+	require.NoError(t, err)
+	require.NoError(t, c.Store(imap.UIDSetNum(1), &imap.StoreFlags{Op: imap.StoreFlagsAdd, Silent: true, Flags: []imap.Flag{imap.FlagDeleted}}, nil).Close())
+	e.sync(t)
+	e.sync(t)
+	assert.Len(t, e.onServer(t, "Archive"), 2, "copied, not lost")
+	assert.Empty(t, e.onServer(t, "INBOX"))
 }
 
 func TestStaleUIDNeverReplayed(t *testing.T) {

@@ -1,10 +1,13 @@
 package mailsync
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
+	netmail "net/mail"
+	"slices"
 	"strings"
 
 	"github.com/egoist/mygo/plugins/sqlite"
@@ -188,20 +191,42 @@ func pushOp(ctx context.Context, db *store.DB, c *imapclient.Client, o op) (prob
 		}
 		return "", finish(ctx, db, o, "done", "")
 	}
+	// A purge of it that reached the server may have left \Deleted.
+	pr, err := db.Query(ctx, "SELECT 1 FROM ops WHERE message_id = ? AND kind = 'purge' AND attempts > 0", o.msg)
+	if err != nil {
+		return "", err
+	}
+	purged := len(pr.Values) > 0
 	if sent {
 		// The last attempt may have moved it before the connection dropped.
-		got, err := c.Fetch(set, &imap.FetchOptions{UID: true}).Collect()
+		got, err := c.Fetch(set, &imap.FetchOptions{UID: true, Flags: true}).Collect()
 		if err != nil {
 			return fail(ctx, db, o, err)
 		}
 		if len(got) == 0 {
 			return "", moved(ctx, db, o, 0, 0)
 		}
+		// Without MOVE, the last attempt may have got through COPY and STORE but
+		// not EXPUNGE: copying again would leave two in the destination. \Deleted
+		// alone is no proof (another client may have set it), so the copy must
+		// be in the destination too; fetch claims it there.
+		if !c.Caps().Has(imap.CapMove) && !purged && slices.Contains(got[0].Flags, imap.FlagDeleted) {
+			copied, err := copyIn(ctx, db, c, o.msg, dstName)
+			if err == nil {
+				err = reselect(c, srcName, srcValidity)
+			}
+			if err != nil {
+				return fail(ctx, db, o, err)
+			}
+			if copied {
+				if err := c.UIDExpunge(set).Close(); err != nil {
+					return fail(ctx, db, o, err)
+				}
+				return "", moved(ctx, db, o, 0, 0)
+			}
+		}
 	}
-	// A purge of it that reached the server may have left \Deleted: the rescued copy must not carry it.
-	if r, err := db.Query(ctx, "SELECT 1 FROM ops WHERE message_id = ? AND kind = 'purge' AND attempts > 0", o.msg); err != nil {
-		return "", err
-	} else if len(r.Values) > 0 {
+	if purged { // the rescued copy must not carry \Deleted
 		if err := undelete(c, uid); err != nil {
 			return fail(ctx, db, o, err)
 		}
@@ -214,6 +239,61 @@ func pushOp(ctx context.Context, db *store.DB, c *imapclient.Client, o op) (prob
 		dstUID = 0
 	}
 	return "", moved(ctx, db, o, validity, dstUID)
+}
+
+// copyIn reports whether folder holds a message with msg's Message-ID and
+// size, as a claim matches it. A message without a Message-ID is never found.
+func copyIn(ctx context.Context, db *store.DB, c *imapclient.Client, msg int64, folder string) (bool, error) {
+	r, err := db.Query(ctx, "SELECT message_id, size FROM messages WHERE id = ?", msg)
+	if err != nil || len(r.Values) == 0 || store.Str(r.Values[0][0]) == "" || store.Int(r.Values[0][1]) <= 0 {
+		return false, err
+	}
+	return InFolder(c, folder, store.Str(r.Values[0][0]), store.Int(r.Values[0][1]))
+}
+
+// InFolder reports whether folder, examined, holds a message whose Message-ID
+// is exactly messageID (without its angle brackets) and, when size > 0, of that
+// size. SEARCH HEADER matches substrings and ignores case, so each hit is checked.
+func InFolder(c *imapclient.Client, folder, messageID string, size int64) (bool, error) {
+	if _, err := c.Select(folder, &imap.SelectOptions{ReadOnly: true}).Wait(); err != nil {
+		return false, err
+	}
+	crit := &imap.SearchCriteria{Header: []imap.SearchCriteriaHeaderField{{Key: "Message-ID", Value: messageID}}}
+	if size > 0 {
+		crit.Larger, crit.Smaller = size-1, size+1
+	}
+	res, err := c.UIDSearch(crit, nil).Wait()
+	if err != nil {
+		return false, err
+	}
+	uids := res.AllUIDs()
+	if len(uids) == 0 {
+		return false, nil
+	}
+	sec := &imap.FetchItemBodySection{Specifier: imap.PartSpecifierHeader, HeaderFields: []string{"Message-ID"}, Peek: true}
+	msgs, err := c.Fetch(imap.UIDSetNum(uids...), &imap.FetchOptions{UID: true, BodySection: []*imap.FetchItemBodySection{sec}}).Collect()
+	if err != nil {
+		return false, err
+	}
+	for _, m := range msgs {
+		h, err := netmail.ReadMessage(bytes.NewReader(append(m.FindBodySection(sec), "\r\n\r\n"...)))
+		if err != nil {
+			continue
+		}
+		if strings.Trim(strings.TrimSpace(h.Header.Get("Message-Id")), "<>") == messageID {
+			return true, nil
+		}
+	}
+	return false, nil
+}
+
+// reselect selects folder again, read-write, as long as it is the generation validity.
+func reselect(c *imapclient.Client, folder string, validity uint32) error {
+	sel, err := c.Select(folder, nil).Wait()
+	if err == nil && sel.UIDValidity != validity {
+		err = fmt.Errorf("folder %q was recreated on the server", folder)
+	}
+	return err
 }
 
 func storeFlags(c *imapclient.Client, set imap.UIDSet, p FlagsPayload) error {

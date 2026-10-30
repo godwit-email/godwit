@@ -187,6 +187,27 @@ func (e skillEnv) draft(t *testing.T) int64 {
 	return d.ID
 }
 
+// An edit on the approval card replaces only the editable part: plain text,
+// its paragraphs kept, its brackets text; the signature stays.
+func TestAskCreateDraftEditedKeepsSignature(t *testing.T) {
+	e := newSkillEnv(t)
+	_, err := e.s.UpdateAccount(t.Context(), 1, AccountPatch{Signature: new("Me")})
+	require.NoError(t, err)
+	conv := e.askConv(t)
+	e.srv.Script(testllm.Turn{Calls: []testllm.Call{{Name: "create_draft", Args: `{"to":["carol@y"],"subject":"Hi","html":"<p>Hello</p>"}`}}},
+		testllm.Turn{Text: []string{"Drafted."}})
+	evs := e.ask(t, conv.ID, "Draft a hello to Carol")
+	a := evs[len(evs)-1].Approvals[0]
+	edited := `{"to":["x@evil"],"subject":"Hi there","html":"Line one\n\nBob <bob@x.com>"}`
+	require.NoError(t, e.s.ResolveApprovalWithArgs(t.Context(), a.ID, true, json.RawMessage(edited)))
+	r, err := e.s.db.Query(t.Context(), "SELECT subject, body_html, to_addrs FROM drafts")
+	require.NoError(t, err)
+	require.Len(t, r.Values, 1)
+	assert.Equal(t, "Hi there", r.Values[0][0])
+	assert.Equal(t, `<p>Line one</p><p>Bob &lt;bob@x.com&gt;</p><div data-godwit="signature"><p>Me</p></div>`, r.Values[0][1])
+	assert.Equal(t, `["carol@y"]`, r.Values[0][2], "only the subject and body are editable")
+}
+
 func TestAskCreateDraftNeedsApproval(t *testing.T) {
 	e := newSkillEnv(t)
 	_, err := e.s.UpdateAccount(t.Context(), 1, AccountPatch{Signature: new("Me")})

@@ -1001,18 +1001,19 @@ func TestReaderBodyRetry(t *testing.T) {
 
 func TestFileName(t *testing.T) {
 	for in, want := range map[string]string{
-		"report.pdf":   "report.pdf",
-		"../../x":      "_.._x",
-		"..":           "attachment",
-		"":             "attachment",
-		"  ":           "attachment",
-		"a/b\\c.txt":   "a_b_c.txt",
-		"tab\there":    "tab_here",
-		"CON":          "_CON",
-		"con.txt":      "_con.txt",
-		"COM1.log":     "_COM1.log",
-		"console.txt":  "console.txt",
-		"trailing. . ": "trailing",
+		"report.pdf":           "report.pdf",
+		"../../x":              "_.._x",
+		"..":                   "attachment",
+		"":                     "attachment",
+		"  ":                   "attachment",
+		"a/b\\c.txt":           "a_b_c.txt",
+		"tab\there":            "tab_here",
+		"CON":                  "_CON",
+		"con.txt":              "_con.txt",
+		"COM1.log":             "_COM1.log",
+		"console.txt":          "console.txt",
+		"trailing. . ":         "trailing",
+		"invoice\u202efdp.exe": "invoice_fdp.exe",
 	} {
 		if got := fileName(in, "attachment"); got != want {
 			t.Errorf("fileName(%q) = %q, want %q", in, got, want)

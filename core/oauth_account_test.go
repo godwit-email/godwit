@@ -1,6 +1,7 @@
 package core
 
 import (
+	"context"
 	"errors"
 	"strings"
 	"sync"
@@ -207,6 +208,26 @@ func TestRefreshIsSingleFlight(t *testing.T) {
 		assert.NoError(t, err)
 	}
 	assert.Equal(t, n+1, e.oa.TokenRequests())
+}
+
+// A caller that gives up mid-refresh does not lose the refresh token the
+// server rotated meanwhile.
+func TestRefreshOutlivesCancelledCaller(t *testing.T) {
+	e := newOAuthEnv(t, false)
+	e.add(t)
+	e.oa.RotateRefresh(true)
+	first := e.keychain(t)
+	release := e.oa.Hang(t)
+	e.expire(t)
+	ctx, cancel := context.WithCancel(bg)
+	done := make(chan error, 1)
+	go func() { _, _, _, err := e.s.credentials(ctx, e.acc, ""); done <- err }()
+	time.Sleep(100 * time.Millisecond)
+	cancel()
+	time.Sleep(100 * time.Millisecond)
+	release()
+	require.NoError(t, <-done)
+	assert.NotEqual(t, first, e.keychain(t), "the rotated refresh token is saved")
 }
 
 func TestRefreshRotationPersisted(t *testing.T) {

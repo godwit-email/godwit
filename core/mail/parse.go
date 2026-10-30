@@ -240,6 +240,18 @@ func (p *Parsed) addBody(isHTML bool, r io.Reader, path string) {
 
 // DecodePart decodes a separately fetched MIME part body using its recorded
 // transfer encoding and (for text) charset.
+// CutUTF8 keeps at most n bytes of s, at a rune boundary, and reports whether it cut.
+func CutUTF8(s string, n int) (string, bool) {
+	if len(s) <= n {
+		return s, false
+	}
+	n = max(n, 0)
+	for n > 0 && !utf8.RuneStart(s[n]) {
+		n--
+	}
+	return s[:n], true
+}
+
 func DecodePart(data []byte, encoding, cs string) ([]byte, error) {
 	switch strings.ToLower(strings.TrimSpace(encoding)) {
 	case "base64":

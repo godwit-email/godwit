@@ -15,9 +15,9 @@ import (
 	"strings"
 	"sync"
 	"time"
-	"unicode/utf8"
 
 	"github.com/godwit-email/godwit/core/ai"
+	"github.com/godwit-email/godwit/core/mail"
 	"github.com/godwit-email/godwit/core/plugins"
 	"github.com/godwit-email/godwit/core/skills"
 )
@@ -681,14 +681,8 @@ func builtinSkillBody(name string) string {
 
 // truncateForContext cuts s to at most n bytes on a rune boundary.
 func truncateForContext(s string, n int) string {
-	if len(s) <= n {
-		return s
-	}
-	cut := max(n, 0)
-	for cut > 0 && !utf8.RuneStart(s[cut]) {
-		cut--
-	}
-	return s[:cut]
+	s, _ = mail.CutUTF8(s, n)
+	return s
 }
 
 // judgeFramingBytes is room for what ai.NewGenJudge wraps around the input

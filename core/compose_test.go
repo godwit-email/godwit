@@ -211,14 +211,47 @@ func TestArchiveUncertainNotDuplicated(t *testing.T) {
 	assert.Len(t, e.smtp.Messages(), 1)
 }
 
+// A sync sends before it pushes local changes: queued ops never hold the outbox.
+func TestOutboxBeforePush(t *testing.T) {
+	e := newSendEnv(t, false)
+	e.put(t, "INBOX", eml("m1@x", "bob@example.com", "alice@example.com", "t", "Mon, 05 Oct 2026 09:00:00 +0000", "1"))
+	e.sync(t)
+	msg := e.rows(t, "SELECT id FROM messages")[0][0].(int64)
+	e.sendNew(t)
+	require.NoError(t, e.s.SetFlags(bg, []int64{msg}, []string{`\Flagged`}, nil))
+	pending := -1
+	beforeOutboxItem = func(int64) { pending = int(e.count(t, "SELECT count(*) FROM ops WHERE state = 'pending'")) }
+	t.Cleanup(func() { beforeOutboxItem = nil })
+	e.sync(t)
+	assert.Equal(t, 1, pending, "the flag change was still queued when the mail went")
+	assert.Len(t, e.smtp.Messages(), 1)
+}
+
+// Rows written under another spelling of the data dir keep their files.
+func TestCleanOrphansOtherDataDirSpelling(t *testing.T) {
+	e := newSendEnv(t, false)
+	e.sendNew(t) // queued: its .eml is live
+	link := filepath.Join(t.TempDir(), "link")
+	if err := os.Symlink(e.dir, link); err != nil {
+		t.Skip(err)
+	}
+	e.s.dataDir = link
+	require.NoError(t, e.s.cleanOrphans(bg))
+	entries, _ := os.ReadDir(filepath.Join(e.dir, "outbox"))
+	assert.Len(t, entries, 1)
+}
+
 func TestResolveOnlyUncertainOrFailed(t *testing.T) {
 	e := newSendEnv(t, false)
-	for _, st := range []string{"queued", "sending", "sent", "archiving", "done"} {
+	for _, st := range []string{"queued", "sending", "sent", "archiving", "done", "archive_uncertain"} {
 		r, err := e.s.db.Execute(bg, "INSERT INTO outbox(account_id, state) VALUES (?, ?)", e.acc.ID, st)
 		require.NoError(t, err)
 		for _, a := range []string{"confirm_sent", "resend", "discard", "edit"} {
 			if st == "queued" && a == "resend" {
 				continue // retry now
+			}
+			if st == "archive_uncertain" && a != "resend" {
+				continue // decidable, but never sent again
 			}
 			assert.ErrorIs(t, e.s.ResolveOutbox(bg, r.LastInsertID, a), ErrInvalidState, st+" "+a)
 		}
@@ -442,8 +475,7 @@ func TestOutboxSkipsChangedItem(t *testing.T) {
 	e.im.DropAfterNextAppend()
 	_ = e.s.SyncNow(bg, e.acc.ID)
 	require.Equal(t, "archive_uncertain", e.state(t))
-	require.NoError(t, e.s.ResolveOutbox(bg, 1, "resend")) // queued again
-	_, err := e.s.db.Execute(bg, "UPDATE outbox SET state = 'archive_uncertain'")
+	_, err := e.s.db.Execute(bg, "UPDATE outbox SET attempts = 0, next_attempt_at = NULL") // due now
 	require.NoError(t, err)
 	beforeOutboxItem = func(id int64) {
 		beforeOutboxItem = nil
