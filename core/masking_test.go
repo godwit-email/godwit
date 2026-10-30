@@ -277,7 +277,7 @@ func TestWarnedValuesGoAsTheyAreAndAreShown(t *testing.T) {
 	assert.Equal(t, log[0].Request, log[1].Request, "one request")
 	rows, err := e.s.db.Query(t.Context(), "SELECT * FROM mask_log")
 	require.NoError(t, err)
-	assert.NotContains(t, fmt.Sprint(rows.Values), "4111")
+	assert.NotContains(t, fmt.Sprint(rows.Values), "4111 1111") // not 4111 alone: a row's Unix time may hold it
 	assert.NotContains(t, fmt.Sprint(rows.Values), "ann")
 }
 
