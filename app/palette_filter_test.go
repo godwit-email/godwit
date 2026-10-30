@@ -195,3 +195,17 @@ func TestPaletteFilterKeepsKind(t *testing.T) {
 		t.Fatalf("kind %d after the list closed, want 1", k)
 	}
 }
+
+// Over the filter list the hints are the list's keys, not the palette's.
+func TestPaletteFilterHints(t *testing.T) {
+	h, _ := invoices(t)
+	h.see("切换类型")
+	h.typeText("/")
+	h.until("the filter list", func() bool { return filtersShown(h) })
+	h.see("添加筛选")
+	if h.tt.HasText("切换类型") || h.tt.HasText("问 Wit") {
+		t.Fatal("the palette's hints over the filter list")
+	}
+	h.tt.Key(0, ui.KeyEscape)
+	h.see("切换类型")
+}

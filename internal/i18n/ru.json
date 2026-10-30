@@ -1450,6 +1450,8 @@
   "palette_hint_kind": "Сменить тип",
   "palette_hint_close": "Закрыть",
   "palette_hint_wit": "Спросить Wit",
+  "palette_hint_select": "Выбрать",
+  "palette_hint_add_filter": "Добавить фильтр",
   "palette_view_all": "Показать все ({arg1}) в списке писем",
   "palette_contact_mails": "Писем: {arg1, number, ::group-off}",
   "settings_security": "Безопасность отправителя",

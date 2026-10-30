@@ -1450,6 +1450,8 @@
   "palette_hint_kind": "Type wisselen",
   "palette_hint_close": "Sluiten",
   "palette_hint_wit": "Vraag Wit",
+  "palette_hint_select": "Selecteren",
+  "palette_hint_add_filter": "Filter toevoegen",
   "palette_view_all": "Alle {arg1} bekijken in de maillijst",
   "palette_contact_mails": "{arg1, number, ::group-off} e-mails",
   "settings_security": "Afzenderbeveiliging",

@@ -1450,6 +1450,8 @@
   "palette_hint_kind": "切換類型",
   "palette_hint_close": "關閉",
   "palette_hint_wit": "問 Wit",
+  "palette_hint_select": "選擇",
+  "palette_hint_add_filter": "加入篩選",
   "palette_view_all": "在郵件列表中檢視全部 {arg1} 封",
   "palette_contact_mails": "{arg1, number, ::group-off} 封郵件",
   "settings_security": "寄件者安全性",

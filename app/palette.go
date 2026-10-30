@@ -117,6 +117,13 @@ func (p *palette) view(c *ui.Context) {
 			{Label: i18n.T("palette.hint.wit"), Key: "Tab", OnClick: p.toggleAsk},
 		},
 	}
+	if p.filtering { // ←→, / and ⌥↵ do nothing over the list
+		o.Hints = []kit.PaletteHint{
+			{Label: i18n.T("palette.hint.close"), Key: "Esc"},
+			{Label: i18n.T("palette.hint.select"), Key: "↑↓"},
+			{Label: i18n.T("palette.hint.add_filter"), Key: "↵"},
+		}
+	}
 	if p.asking {
 		o.Label, o.Placeholder, o.Send, o.OnSend, o.OnKey, o.Chips = i18n.T("wit.input"), i18n.T("wit.placeholder"), i18n.T("wit.send"), p.askWit, p.askKey, nil
 		o.Hints = []kit.PaletteHint{

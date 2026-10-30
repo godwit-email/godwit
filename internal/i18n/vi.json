@@ -1450,6 +1450,8 @@
   "palette_hint_kind": "Đổi loại",
   "palette_hint_close": "Đóng",
   "palette_hint_wit": "Hỏi Wit",
+  "palette_hint_select": "Chọn",
+  "palette_hint_add_filter": "Thêm bộ lọc",
   "palette_view_all": "Xem tất cả {arg1} thư trong danh sách",
   "palette_contact_mails": "{arg1, number, ::group-off} thư",
   "settings_security": "Bảo mật người gửi",
