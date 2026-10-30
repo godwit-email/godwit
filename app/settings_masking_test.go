@@ -111,6 +111,43 @@ func TestMaskingCategorySwitches(t *testing.T) {
 	h.see(i18n.T("settings.masking.action.mask"))
 }
 
+// 地址 and 账号 have rows of their own, on by default: 账号's switch turns
+// it off, and 地址's action can be set to 仅警告.
+func TestMaskingAddressAndAccountRows(t *testing.T) {
+	h, _ := withAccount(t)
+	h.masking()
+	for _, key := range []string{"settings.masking.cat.addresses", "settings.masking.cat.accounts"} {
+		for _, k := range []string{key, key + ".help"} {
+			if i18n.T(k) == k {
+				t.Fatalf("%s has no copy", k)
+			}
+			h.see(i18n.T(k))
+		}
+	}
+	if st := h.app.settings.MaskCategories; !st.Addresses.On || !st.Accounts.On {
+		t.Fatalf("not on by default: %+v", st)
+	}
+	save, _ := h.tt.Find(i18n.T("settings.masking.save"))
+	row := func(name string) float32 { // a row's middle
+		label, _ := h.tt.Find(i18n.T("settings.masking.cat." + name))
+		help, _ := h.tt.Find(i18n.T("settings.masking.cat." + name + ".help"))
+		return (label.Y + help.Y + help.H) / 2
+	}
+	h.tt.ClickAt(save.X+save.W-16, row("accounts"))
+	h.drain()
+	h.tt.Frame()
+	h.until("accounts off", func() bool { return !h.app.settings.MaskCategories.Accounts.On })
+
+	h.tt.ClickAt(save.X+save.W-120, row("addresses")) // its action, left of the switch
+	h.drain()
+	h.tt.Frame()
+	h.click(i18n.T("settings.masking.action.warn"))
+	h.until("addresses warned", func() bool { return h.app.settings.MaskCategories.Addresses.Action == core.MaskWarn })
+	if st := h.app.settings.MaskCategories; st.Names.Action != core.MaskMask || st.Accounts.Action != core.MaskMask {
+		t.Fatalf("another category changed: %+v", st)
+	}
+}
+
 // maskModelHarness is a harness whose Service downloads 识别模型's files
 // from serve.
 func maskModelHarness(t *testing.T, serve http.HandlerFunc) *harness {
@@ -223,7 +260,7 @@ func TestMaskingLogPages(t *testing.T) {
 	h.post(func() {
 		p.maskLog = nil
 		for i := range n {
-			p.maskLog = append(p.maskLog, core.MaskRecord{At: now.Add(-time.Duration(i) * time.Minute), Request: int64(n - i), Feature: "wit", Kind: "EMAIL", Category: "emails", Len: 16, Action: core.MaskMask})
+			p.maskLog = append(p.maskLog, core.MaskRecord{At: now.Add(-time.Duration(i) * time.Minute), Request: int64(n - i), Feature: "wit", Kind: "EMAIL", Category: "emails", Len: 16, Action: core.MaskMask, Source: core.MaskSourceRule})
 		}
 	})
 	last := now.Add(-time.Duration(n-1) * time.Minute).In(now.Location()).Format("15:04")
@@ -237,6 +274,22 @@ func TestMaskingLogPages(t *testing.T) {
 	if h.tt.HasText(i18n.T("settings.masking.log.more")) {
 		t.Fatal("显示更多 stays with nothing more to show")
 	}
+}
+
+// A request's values each say what found them: a rule or 识别模型.
+func TestMaskingLogShowsWhatFoundEachValue(t *testing.T) {
+	h, _ := withAccount(t)
+	p := h.openSettings("masklog")
+	now := h.app.clock.Now()
+	h.post(func() {
+		p.maskLog = []core.MaskRecord{
+			{At: now, Request: 1, Feature: "wit", Kind: "NAME", Category: "names", First: "陈", Len: 3, Action: core.MaskMask, Source: core.MaskSourceModel},
+			{At: now, Request: 1, Feature: "wit", Kind: "BANK_CARD", Category: "ids", First: "4", Len: 19, Action: core.MaskMask, Source: core.MaskSourceRule},
+		}
+	})
+	h.click(i18n.T("settings.masking.feature.wit"))
+	h.see("识别模型")
+	h.see("规则")
 }
 
 func TestMaskingCopy(t *testing.T) {

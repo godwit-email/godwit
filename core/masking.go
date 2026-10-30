@@ -24,6 +24,12 @@ const (
 	MaskBlock = mask.Block
 )
 
+// What found a masking record's value (MaskRecord.Source): a rule, or 识别模型.
+const (
+	MaskSourceRule  = mask.SourceRule
+	MaskSourceModel = mask.SourceModel
+)
+
 // The features that send to a model service, as the masking log names
 // them (MaskRecord.Feature).
 const (
@@ -44,15 +50,16 @@ const maskLogDays = 30
 // plugin held (脱敏记录): which request (the values of one share it; 0 for
 // records kept from before requests were told apart) and feature sent it,
 // its kind and category ("": the user's own), its first character and
-// length, never the value; and what was done with it (MaskMask, MaskWarn or
-// MaskBlock). A value of maskShortLen characters or fewer keeps no first
-// character: of a two-character name it would be half.
+// length, never the value; what was done with it (MaskMask, MaskWarn or
+// MaskBlock); and what found it (MaskSourceRule or MaskSourceModel). A value
+// of maskShortLen characters or fewer keeps no first character: of a
+// two-character name it would be half.
 type MaskRecord struct {
 	At                             time.Time
 	Request                        int64
 	Feature, Kind, Category, First string
 	Len                            int
-	Action                         string
+	Action, Source                 string
 }
 
 const maskShortLen = 3
@@ -62,14 +69,14 @@ func (s *Service) MaskingLog(ctx context.Context) ([]MaskRecord, error) {
 	if err := s.exec(ctx, pruneMaskLog()); err != nil {
 		return nil, err
 	}
-	rows, err := s.db.Query(ctx, "SELECT at, feature, kind, category, first, len, action, request FROM mask_log ORDER BY id DESC")
+	rows, err := s.db.Query(ctx, "SELECT at, feature, kind, category, first, len, action, request, source FROM mask_log ORDER BY id DESC")
 	if err != nil {
 		return nil, err
 	}
 	out := make([]MaskRecord, 0, len(rows.Values))
 	for _, r := range rows.Values {
 		out = append(out, MaskRecord{At: time.Unix(store.Int(r[0]), 0), Feature: store.Str(r[1]), Kind: store.Str(r[2]), Category: store.Str(r[3]),
-			First: store.Str(r[4]), Len: int(store.Int(r[5])), Action: store.Str(r[6]), Request: store.Int(r[7])})
+			First: store.Str(r[4]), Len: int(store.Int(r[5])), Action: store.Str(r[6]), Request: store.Int(r[7]), Source: store.Str(r[8])})
 	}
 	return out, nil
 }
@@ -103,8 +110,8 @@ func (s *Service) recordMasking(feature string, hits []mask.Hit) {
 		if h.Len <= maskShortLen {
 			first = ""
 		}
-		stmts = append(stmts, sqlite.Statement{SQL: "INSERT INTO mask_log(at, feature, kind, category, first, len, action, request) VALUES (?, ?, ?, ?, ?, ?, ?, " + request + ")",
-			Args: []any{now, feature, h.Kind, h.Category, first, h.Len, h.Action}})
+		stmts = append(stmts, sqlite.Statement{SQL: "INSERT INTO mask_log(at, feature, kind, category, first, len, action, source, request) VALUES (?, ?, ?, ?, ?, ?, ?, ?, " + request + ")",
+			Args: []any{now, feature, h.Kind, h.Category, first, h.Len, h.Action, h.Source}})
 	}
 	if _, err := s.db.Transaction(context.Background(), stmts); err != nil {
 		slog.Default().Warn("could not record what masking found", "err", err)
@@ -162,7 +169,11 @@ type MaskCategory struct {
 }
 
 // MaskCategories are 脱敏's categories, as mask names them.
-type MaskCategories struct{ Secrets, IDs, Codes, Phones, Emails, Names MaskCategory }
+type MaskCategories struct {
+	Secrets, IDs, Codes, Phones, Emails, Names MaskCategory
+	// Addresses and Accounts only 识别模型 finds: off, they find nothing.
+	Addresses, Accounts MaskCategory
+}
 
 // All is each category by its mask name (mask.Secrets …), in the order the
 // settings show them, to read or change.
@@ -171,7 +182,8 @@ func (c *MaskCategories) All() iter.Seq2[string, *MaskCategory] {
 		for _, n := range []struct {
 			name string
 			c    *MaskCategory
-		}{{mask.Secrets, &c.Secrets}, {mask.IDs, &c.IDs}, {mask.Codes, &c.Codes}, {mask.Phones, &c.Phones}, {mask.Emails, &c.Emails}, {mask.Names, &c.Names}} {
+		}{{mask.Secrets, &c.Secrets}, {mask.IDs, &c.IDs}, {mask.Codes, &c.Codes}, {mask.Phones, &c.Phones}, {mask.Emails, &c.Emails}, {mask.Names, &c.Names},
+			{mask.Addresses, &c.Addresses}, {mask.Accounts, &c.Accounts}} {
 			if !yield(n.name, n.c) {
 				return
 			}

@@ -13,14 +13,17 @@ import (
 )
 
 // The categories of values, as the user turns each on or off (设置 › AI ›
-// 隐私脱敏). Every kind a built-in rule finds is in one (categories).
+// 隐私脱敏). Every kind a built-in rule or the recognition model finds is
+// in one (categories); only the model finds addresses and accounts.
 const (
-	Secrets = "secrets" // 密钥
-	IDs     = "ids"     // 证件与金融号码
-	Codes   = "codes"   // 验证码与一次性链接
-	Phones  = "phones"  // 电话
-	Emails  = "emails"  // 邮箱
-	Names   = "names"   // 人名
+	Secrets   = "secrets"   // 密钥
+	IDs       = "ids"       // 证件与金融号码
+	Codes     = "codes"     // 验证码与一次性链接
+	Phones    = "phones"    // 电话
+	Emails    = "emails"    // 邮箱
+	Names     = "names"     // 人名
+	Addresses = "addresses" // 地址
+	Accounts  = "accounts"  // 账号
 )
 
 // categories are the built-in kinds' categories.
@@ -28,7 +31,7 @@ var categories = map[string]string{
 	"PRIVATE_KEY": Secrets, "API_KEY": Secrets, "TOKEN": Secrets, "PASSWORD": Secrets, "SECRET": Secrets,
 	"ID_CARD": IDs, "BANK_CARD": IDs, "PASSPORT": IDs, "IBAN": IDs,
 	"CODE": Codes, "LINK": Codes, "PHONE": Phones, "EMAIL": Emails,
-	nameKind: Names,
+	nameKind: Names, "ADDRESS": Addresses, "ACCOUNT": Accounts,
 }
 
 // Category is the category of a built-in kind; "" for the user's own.

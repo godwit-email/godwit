@@ -159,7 +159,7 @@ func (m *Masker) text(s string, defuse, read bool, f *Found) (out string, err er
 	spans, over = m.outside(view, spans), m.outside(view, over)
 	for _, sp := range over {
 		if !sp.own && cc.action(sp.kind) == Block && !f.learning() {
-			f.add(m.hit(sp.kind, view[sp.start:sp.end], Block))
+			f.add(m.hit(sp, view[sp.start:sp.end], Block))
 			block = block.with(categories[sp.kind])
 		}
 	}
@@ -171,7 +171,7 @@ func (m *Masker) text(s string, defuse, read bool, f *Found) (out string, err er
 		if at != nil {
 			sp.start, sp.end = at[sp.start], at[sp.end]
 		}
-		f.add(m.hit(sp.kind, v, act))
+		f.add(m.hit(sp, v, act))
 		switch act {
 		case Warn:
 			continue

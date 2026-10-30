@@ -69,8 +69,8 @@ type Settings struct {
 	// MaskAllow are the values never masked (白名单), whatever their letter case; at most mask.MaxAllow.
 	MaskAllow []string
 	// MaskModel is 识别模型 (docs/adr/0028-local-model-for-masking.md): a
-	// model on this device finds names, phone numbers, email addresses,
-	// secrets and card numbers the rules can't. Off by default; it turns on only once its
+	// model on this device finds names, addresses, accounts, phone numbers,
+	// email addresses, secrets and card numbers the rules can't. Off by default; it turns on only once its
 	// files are here (ErrMaskModelMissing), and turns names on with it.
 	MaskModel bool
 	// LabelDisplay is how label chips show: LabelDisplayBoth (the default;

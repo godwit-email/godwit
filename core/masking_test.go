@@ -200,7 +200,7 @@ func TestMaskingCategoriesDefaults(t *testing.T) {
 		assert.Equal(t, MaskMask, c.Action, name)
 		n++
 	}
-	assert.Equal(t, 6, n)
+	assert.Equal(t, 8, n)
 }
 
 // The preview masks with the settings it is given and stores nothing: not
@@ -270,8 +270,8 @@ func TestWarnedValuesGoAsTheyAreAndAreShown(t *testing.T) {
 		assert.WithinDuration(t, time.Now(), r.At, time.Minute)
 	}
 	assert.Equal(t, []MaskRecord{
-		{Feature: "wit", Kind: "BANK_CARD", Category: mask.IDs, First: "4", Len: 19, Action: MaskMask, At: log[0].At},
-		{Feature: "wit", Kind: "EMAIL", Category: mask.Emails, First: "", Len: 3, Action: MaskWarn, At: log[1].At}, // short: no first character
+		{Feature: "wit", Kind: "BANK_CARD", Category: mask.IDs, First: "4", Len: 19, Action: MaskMask, Source: MaskSourceRule, At: log[0].At},
+		{Feature: "wit", Kind: "EMAIL", Category: mask.Emails, First: "", Len: 3, Action: MaskWarn, Source: MaskSourceRule, At: log[1].At}, // short: no first character
 	}, []MaskRecord{withoutRequest(log[1]), withoutRequest(log[0])}, "newest first")
 	assert.NotZero(t, log[0].Request)
 	assert.Equal(t, log[0].Request, log[1].Request, "one request")
