@@ -640,6 +640,8 @@
   "settings_masking_log_empty": "Không có gì trong 30 ngày qua",
   "settings_masking_log_value": "{arg1}…, {arg2} ký tự",
   "settings_masking_log_own": "Tùy chỉnh",
+  "settings_masking_log_source_rule": "Quy tắc",
+  "settings_masking_log_source_model": "Mô hình nhận dạng",
   "settings_masking_feature_wit": "Wit",
   "settings_masking_feature_compose": "Hỗ trợ soạn thư",
   "settings_masking_feature_skill": "Tóm tắt và kỹ năng",

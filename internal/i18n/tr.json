@@ -640,6 +640,8 @@
   "settings_masking_log_empty": "Son 30 günde kayıt yok",
   "settings_masking_log_value": "{arg1}…, {arg2} karakter",
   "settings_masking_log_own": "Özel",
+  "settings_masking_log_source_rule": "Kural",
+  "settings_masking_log_source_model": "Tanıma modeli",
   "settings_masking_feature_wit": "Wit",
   "settings_masking_feature_compose": "Yazma yardımı",
   "settings_masking_feature_skill": "Özet ve beceriler",

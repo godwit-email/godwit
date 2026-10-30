@@ -640,6 +640,8 @@
   "settings_masking_log_empty": "За последние 30 дней ничего нет",
   "settings_masking_log_value": "{arg1}…, символов: {arg2}",
   "settings_masking_log_own": "Свои",
+  "settings_masking_log_source_rule": "Правило",
+  "settings_masking_log_source_model": "Модель распознавания",
   "settings_masking_feature_wit": "Wit",
   "settings_masking_feature_compose": "Помощь в письме",
   "settings_masking_feature_skill": "Сводка и навыки",

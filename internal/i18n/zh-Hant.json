@@ -640,6 +640,8 @@
   "settings_masking_log_empty": "最近 30 天沒有記錄",
   "settings_masking_log_value": "{arg1}…，{arg2} 個字元",
   "settings_masking_log_own": "自訂",
+  "settings_masking_log_source_rule": "規則",
+  "settings_masking_log_source_model": "識別模型",
   "settings_masking_feature_wit": "Wit",
   "settings_masking_feature_compose": "撰寫輔助",
   "settings_masking_feature_skill": "摘要與技能",

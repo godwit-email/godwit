@@ -645,6 +645,8 @@
   "settings_masking_log_empty": "Keine Einträge in den letzten 30 Tagen",
   "settings_masking_log_value": "{arg1}…, {arg2} Zeichen",
   "settings_masking_log_own": "Eigene",
+  "settings_masking_log_source_rule": "Regel",
+  "settings_masking_log_source_model": "Erkennungsmodell",
   "settings_masking_feature_wit": "Wit",
   "settings_masking_feature_compose": "Schreibhilfe",
   "settings_masking_feature_skill": "Zusammenfassung und Skills",

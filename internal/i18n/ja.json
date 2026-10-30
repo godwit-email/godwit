@@ -640,6 +640,8 @@
   "settings_masking_log_empty": "過去 30 日間の記録はありません",
   "settings_masking_log_value": "{arg1}…、{arg2} 文字",
   "settings_masking_log_own": "カスタム",
+  "settings_masking_log_source_rule": "ルール",
+  "settings_masking_log_source_model": "認識モデル",
   "settings_masking_feature_wit": "Wit",
   "settings_masking_feature_compose": "作成アシスト",
   "settings_masking_feature_skill": "要約とスキル",

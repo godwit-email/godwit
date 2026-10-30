@@ -184,7 +184,7 @@ func TestMaskingLogPages(t *testing.T) {
 	h.post(func() {
 		p.maskLog = nil
 		for i := range n {
-			p.maskLog = append(p.maskLog, core.MaskRecord{At: now.Add(-time.Duration(i) * time.Minute), Request: int64(n - i), Feature: "wit", Kind: "EMAIL", Category: "emails", Len: 16, Action: core.MaskMask})
+			p.maskLog = append(p.maskLog, core.MaskRecord{At: now.Add(-time.Duration(i) * time.Minute), Request: int64(n - i), Feature: "wit", Kind: "EMAIL", Category: "emails", Len: 16, Action: core.MaskMask, Source: core.MaskSourceRule})
 		}
 	})
 	last := now.Add(-time.Duration(n-1) * time.Minute).In(now.Location()).Format("15:04")
@@ -198,6 +198,22 @@ func TestMaskingLogPages(t *testing.T) {
 	if h.tt.HasText(i18n.T("settings.masking.log.more")) {
 		t.Fatal("显示更多 stays with nothing more to show")
 	}
+}
+
+// A request's values each say what found them: a rule or 识别模型.
+func TestMaskingLogShowsWhatFoundEachValue(t *testing.T) {
+	h, _ := withAccount(t)
+	p := h.openSettings("masklog")
+	now := h.app.clock.Now()
+	h.post(func() {
+		p.maskLog = []core.MaskRecord{
+			{At: now, Request: 1, Feature: "wit", Kind: "NAME", Category: "names", First: "陈", Len: 3, Action: core.MaskMask, Source: core.MaskSourceModel},
+			{At: now, Request: 1, Feature: "wit", Kind: "BANK_CARD", Category: "ids", First: "4", Len: 19, Action: core.MaskMask, Source: core.MaskSourceRule},
+		}
+	})
+	h.click(i18n.T("settings.masking.feature.wit"))
+	h.see("识别模型")
+	h.see("规则")
 }
 
 func TestMaskingCopy(t *testing.T) {

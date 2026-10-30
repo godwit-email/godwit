@@ -640,6 +640,8 @@
   "settings_masking_log_empty": "최근 30일 동안 기록이 없습니다",
   "settings_masking_log_value": "{arg1}…, {arg2}자",
   "settings_masking_log_own": "사용자 지정",
+  "settings_masking_log_source_rule": "규칙",
+  "settings_masking_log_source_model": "인식 모델",
   "settings_masking_feature_wit": "Wit",
   "settings_masking_feature_compose": "작성 도움",
   "settings_masking_feature_skill": "요약 및 스킬",
