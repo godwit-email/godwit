@@ -33,7 +33,7 @@ func (m *Masker) learnNames(s string) error {
 		as, _ := mail.ParseAddressList(strings.TrimSpace(sm[1]))
 		for _, a := range as {
 			if n := strings.TrimSpace(a.Name); !shortName(n) && !strings.Contains(n, "@") {
-				if _, err := m.placeholder(nameKind, n); err != nil {
+				if _, err := m.placeholder(nameKind, n, false); err != nil {
 					return err
 				}
 			}
@@ -79,9 +79,17 @@ func (m *Masker) addName(n string) {
 	}
 }
 
-// nameSpans are where s has a known name, when names are on: as written,
-// and, where it starts or ends with a letter or digit that isn't Chinese,
-// Japanese or Korean, not touching another (Mark Lee, not Mark Leeds).
+// addFound keeps e in m.found, longest first; called with mu held.
+func (m *Masker) addFound(e entry) {
+	i, found := slices.BinarySearchFunc(m.found, e, func(a, b entry) int {
+		return cmp.Or(len(b.value)-len(a.value), strings.Compare(a.value, b.value), strings.Compare(a.kind, b.kind))
+	})
+	if !found {
+		m.found = slices.Insert(m.found, i, e)
+	}
+}
+
+// nameSpans are where s has a known name, when names are on.
 func (m *Masker) nameSpans(s string) []span {
 	if !m.namesOn.Load() {
 		return nil
@@ -90,20 +98,40 @@ func (m *Masker) nameSpans(s string) []span {
 	defer m.mu.RUnlock()
 	var out []span
 	for _, n := range m.names {
-		for at := 0; ; {
-			i := strings.Index(s[at:], n)
-			if i < 0 {
-				break
-			}
-			a, b := at+i, at+i+len(n)
-			at = a + 1
-			if word(n, true) && a > 0 && alnumRune(lastRune(s[:a])) || word(n, false) && b < len(s) && alnumRune(firstRune(s[b:])) {
-				continue
-			}
-			out = append(out, span{a, b, nameKind, false})
-		}
+		out = spansOf(s, n, span{kind: nameKind}, out)
 	}
 	return out
+}
+
+// foundSpans are where s has a value 识别模型 found before (m.found),
+// each as recognized.
+func (m *Masker) foundSpans(s string) []span {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	var out []span
+	for _, e := range m.found {
+		out = spansOf(s, e.value, span{kind: e.kind, recognized: true}, out)
+	}
+	return out
+}
+
+// spansOf is out with where s has the known value n, as sp: as written,
+// and, where it starts or ends with a letter or digit that isn't Chinese,
+// Japanese or Korean, not touching another (Mark Lee, not Mark Leeds).
+func spansOf(s, n string, sp span, out []span) []span {
+	for at := 0; ; {
+		i := strings.Index(s[at:], n)
+		if i < 0 {
+			return out
+		}
+		a, b := at+i, at+i+len(n)
+		at = a + 1
+		if word(n, true) && a > 0 && alnumRune(lastRune(s[:a])) || word(n, false) && b < len(s) && alnumRune(firstRune(s[b:])) {
+			continue
+		}
+		sp.start, sp.end = a, b
+		out = append(out, sp)
+	}
 }
 
 // word says n's first (or last) character is one that a word goes on from.

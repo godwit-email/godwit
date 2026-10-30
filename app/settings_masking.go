@@ -34,6 +34,7 @@ func (p *settingsPage) maskingView(c *ui.Context) {
 		kit.SwitchRow(c, &st.Masking, i18n.T("settings.masking.on"), i18n.T("settings.masking.on.help"))
 	}}
 	if st.Masking {
+		rows = append(rows, func() { p.recognitionModelRow(c) })
 		for name, cat := range st.MaskCategories.All() {
 			rows = append(rows, func() { maskCategoryRow(c, name, cat) })
 		}
@@ -44,6 +45,115 @@ func (p *settingsPage) maskingView(c *ui.Context) {
 		p.maskPreview(c)
 	}
 	p.maskLogEntry(c)
+}
+
+// readRecognitionModel reads what reads 识别模型, for its row: none while it is
+// off or can't be loaded; then why it last failed, loading it included.
+func (p *settingsPage) readRecognitionModel() {
+	a := p.a
+	var b *core.RecognitionModelBackend
+	var fault error
+	a.query(func(ctx context.Context) (err error) {
+		b, err = a.svc.RecognitionModelBackend(ctx)
+		fault = a.svc.RecognitionModelError()
+		return err
+	}, func(error) { p.recognition.backend, p.recognition.fault = b, fault })
+}
+
+// recognitionBackendText says what reads 识别模型: CoreML and its device, or the
+// CPU and, on a Mac, why not CoreML.
+func recognitionBackendText(b core.RecognitionModelBackend) string {
+	switch {
+	case b.Device != "":
+		return i18n.Tf("settings.masking.recognition_model.coreml", b.Device)
+	case b.NotCoreML != "":
+		return i18n.Tf("settings.masking.recognition_model.cpu_why", b.NotCoreML)
+	}
+	return i18n.T("settings.masking.recognition_model.cpu")
+}
+
+// recognitionModelState is 识别模型's row, as last read.
+type recognitionModelState struct {
+	installed   bool                          // its files are here, as last looked
+	backend     *core.RecognitionModelBackend // what reads it; nil while off
+	download    *recognitionModelDownload     // its files coming down; nil when not
+	downloadErr string                        // why its last download failed
+	fault       error                         // why it last failed to read (core.Service.RecognitionModelError)
+}
+
+// recognitionModelDownload is 识别模型's files coming down, as its switch started.
+type recognitionModelDownload struct {
+	cancel     context.CancelFunc
+	got, total int64
+}
+
+// recognitionModelRow is 识别模型's switch. Turned on before its files are here,
+// it downloads them, saying how far it has come, and is on once they all
+// are; failed or canceled, it is off again, saying why it failed.
+func (p *settingsPage) recognitionModelRow(c *ui.Context) {
+	st, d, label := &p.st, p.recognition.download, i18n.T("settings.masking.recognition_model")
+	help := i18n.T("settings.masking.recognition_model.help")
+	switch {
+	case d != nil:
+		help = i18n.Tf("settings.masking.recognition_model.downloading", d.got*100/max(d.total, 1), formatBytes(d.total))
+	case p.recognition.downloadErr != "":
+		help += "\n" + p.recognition.downloadErr
+	case !p.recognition.installed && !st.RecognitionModel:
+		help += "\n" + i18n.T("settings.masking.recognition_model.missing")
+	}
+	switch b, fault := p.recognition.backend, p.recognition.fault; {
+	case !st.RecognitionModel:
+	case errors.Is(fault, core.ErrRecognitionModelMissing):
+		help += "\n" + i18n.T("settings.masking.recognition_model.redownloading")
+	case fault != nil: // what would read it is moot while the rules alone mask
+		help += "\n" + i18n.Tf("settings.masking.recognition_model.error", humanize(fault))
+	case b != nil:
+		help += "\n" + recognitionBackendText(*b)
+	}
+	if d != nil {
+		settingRow(c, label, help, func() {
+			settingButton(c, i18n.T("settings.masking.recognition_model.cancel"), kit.Outline, false).OnClick(d.cancel)
+		})
+		return
+	}
+	on := st.RecognitionModel
+	kit.SwitchRow(c, &on, label, help)
+	if on && !st.RecognitionModel && !p.recognition.installed {
+		p.downloadRecognitionModel()
+	} else {
+		st.RecognitionModel = on
+	}
+}
+
+// downloadRecognitionModel downloads 识别模型's files and, once they are all here,
+// turns it on. It goes on when the page closes, until it ends or the user
+// cancels it.
+func (p *settingsPage) downloadRecognitionModel() {
+	a := p.a
+	ctx, cancel := context.WithCancel(a.ctx)
+	d := &recognitionModelDownload{cancel: cancel}
+	p.recognition.download, p.recognition.downloadErr = d, ""
+	a.do(func(context.Context) error {
+		last := int64(-1)
+		return a.svc.DownloadRecognitionModel(ctx, func(got, total int64) {
+			if pct := got * 100 / max(total, 1); pct != last { // a redraw per percent, not per read
+				last = pct
+				a.onUI(func() { d.got, d.total = got, total })
+			}
+		})
+	}, func(err error) {
+		cancel()
+		p.recognition.download = nil
+		switch {
+		case err == nil:
+			p.recognition.installed = true
+			st := a.settings
+			st.RecognitionModel = true
+			a.changeSettings(st)
+		case !errors.Is(err, context.Canceled):
+			p.recognition.downloadErr = i18n.Tf("settings.masking.recognition_model.failed", humanize(err))
+		}
+	})
 }
 
 // readMaskLog reads 脱敏记录 for the privacy page's entry and the log's own page.
@@ -155,18 +265,28 @@ func (d *maskDraft) edited(st core.Settings) (core.Settings, []int) {
 }
 
 // maskPreview masks the pasted text as the page's settings say, the fields
-// being edited too, and saves nothing.
+// being edited too, and saves nothing. It masks off the UI thread: 识别模型
+// may take a while, the first time most.
 func (p *settingsPage) maskPreview(c *ui.Context) {
 	d, t, th := &p.mask, theme.Of(c), c.Theme()
 	st, lines := d.edited(p.st)
-	if key := fmt.Sprintf("%q %+v %v %v %v %v", d.preview, st.MaskCategories, st.MaskWords, st.MaskWordsCase, st.MaskWordsWhole, st.MaskAllow) + ruleLines(st.MaskRules); key != d.shownFor {
+	if key := fmt.Sprintf("%q %+v %v %v %v %v %v", d.preview, st.MaskCategories, st.MaskWords, st.MaskWordsCase, st.MaskWordsWhole, st.MaskAllow, st.RecognitionModel) + ruleLines(st.MaskRules); key != d.shownFor {
 		d.shownFor = key
 		if msg := p.maskCheck(st, lines); msg != "" {
 			d.shown = msg
-		} else if out, err := p.a.svc.PreviewMasking(context.Background(), st, d.preview); err != nil {
-			d.shown = humanize(err)
 		} else {
-			d.shown = out
+			text, out := d.preview, ""
+			var fault error
+			p.a.query(func(ctx context.Context) (err error) {
+				out, err = p.a.svc.PreviewMasking(ctx, st, text)
+				fault = p.a.svc.RecognitionModelError() // 识别模型 read it, or failed to
+				return err
+			}, func(err error) {
+				p.recognition.fault = fault
+				if d.shownFor == key { // not since edited
+					d.shown = cmp.Or(humanize(err), out)
+				}
+			})
 		}
 	}
 	settingsSection(c, i18n.T("settings.masking.preview"), i18n.T("settings.masking.preview.help"), func() {

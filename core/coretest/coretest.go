@@ -29,6 +29,7 @@ import (
 
 	"github.com/emersion/go-imap/v2"
 	"github.com/godwit-email/godwit/core"
+	"github.com/godwit-email/godwit/core/ai/mask"
 	"github.com/godwit-email/godwit/core/internal/testclock"
 	"github.com/godwit-email/godwit/core/internal/testllm"
 	"github.com/godwit-email/godwit/core/internal/testmail"
@@ -76,11 +77,19 @@ type mailServers struct {
 }
 
 type config struct {
-	autoSync bool
-	registry *core.RegistrySource
-	sys      core.SystemTranslator
-	confirm  bool
-	unsub    *http.Client
+	autoSync         bool
+	registry         *core.RegistrySource
+	sys              core.SystemTranslator
+	confirm          bool
+	unsub            *http.Client
+	model            mask.Recognizer
+	recognitionModel []string
+}
+
+// WithRecognitionModelSources has the Service download 识别模型's files from urls
+// (core.Options.RecognitionModelSources), as httptest servers'.
+func WithRecognitionModelSources(urls ...string) Option {
+	return func(c *config) { c.recognitionModel = urls }
 }
 
 type Option func(*config)
@@ -97,6 +106,9 @@ func WithConfirmWindow() Option { return func(c *config) { c.confirm = true } }
 
 // WithUnsubscribeClient sends one-click unsubscribes with c, as one reaching an httptest server.
 func WithUnsubscribeClient(c *http.Client) Option { return func(cfg *config) { cfg.unsub = c } }
+
+// WithRecognizer reads for 识别模型 with r (core.Options.Recognizer).
+func WithRecognizer(r mask.Recognizer) Option { return func(c *config) { c.model = r } }
 
 // WithoutAutoSync starts no background sync; Deliver still syncs.
 func WithoutAutoSync() Option { return func(c *config) { c.autoSync = false } }
@@ -115,7 +127,8 @@ func New(t *testing.T, opts ...Option) *Env {
 	imageClient := imagefetch.NewClient(true)
 	imageClient.Transport.(*imagefetch.Transport).DialContext = netOptions("").Dial
 	svc, err := core.New(context.Background(), core.Options{DataDir: dir, AutoSync: cfg.autoSync, SystemLanguage: "zh-CN", ImageClient: imageClient,
-		Registry: cfg.registry, AppVersion: "1.2.0", SystemTranslator: cfg.sys, ConfirmWindow: cfg.confirm, UnsubscribeClient: cfg.unsub})
+		Registry: cfg.registry, AppVersion: "1.2.0", SystemTranslator: cfg.sys, ConfirmWindow: cfg.confirm, UnsubscribeClient: cfg.unsub, Recognizer: cfg.model,
+		RecognitionModelSources: cfg.recognitionModel, RecognitionModelClient: &http.Client{Transport: imageClient.Transport}})
 	if err != nil {
 		t.Fatal(err)
 	}

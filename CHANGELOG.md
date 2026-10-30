@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.20.2](https://github.com/godwit-email/godwit/compare/v1.20.1...v1.20.2) (2026-10-30)
+
+
+### Bug Fixes
+
+* **kit:** glass popovers stand a web view's screenshot in for it ([#361](https://github.com/godwit-email/godwit/issues/361)) ([d69396f](https://github.com/godwit-email/godwit/commit/d69396f00346c4bec0414e687ce942d2f2b401f7))
+
 ## [1.20.1](https://github.com/godwit-email/godwit/compare/v1.20.0...v1.20.1) (2026-10-30)
 
 

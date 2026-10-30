@@ -18,6 +18,7 @@ import (
 	"github.com/godwit-email/godwit/contract"
 	"github.com/godwit-email/godwit/core"
 	"github.com/godwit-email/godwit/core/ai/mask"
+	"github.com/godwit-email/godwit/core/ai/mask/guard"
 	"github.com/godwit-email/godwit/core/auth"
 	"github.com/godwit-email/godwit/core/coretest"
 	"github.com/godwit-email/godwit/core/events"
@@ -226,7 +227,13 @@ func TestSettings(t *testing.T) {
 			DefaultModel: "svc/big", SmallModel: "svc/small", JudgeService: "judge", JudgeThreshold: 0.85, Translator: "plugin/dlx", LocalAPI: true, SidebarWidth: 320, ListWidth: 400, SignatureDelimiter: true,
 			MaskCategories: core.MaskCategories{Names: core.MaskCategory{On: true, Action: core.MaskWarn}},
 			MaskWords:      []string{"Falcon"}, MaskWordsCase: true, MaskWordsWhole: true,
-			MaskRules: []mask.Rule{{Kind: "EMPLOYEE_ID", Regex: `E\d{6}`}}, MaskAllow: []string{"GitHub"}}
+			MaskRules: []mask.Rule{{Kind: "EMPLOYEE_ID", Regex: `E\d{6}`}}, MaskAllow: []string{"GitHub"}, RecognitionModel: true}
+		// 识别模型 turns on only with its files here, as a download leaves them
+		models := filepath.Join(env.DataDir, "cache", "guard", guard.Revision)
+		require.NoError(t, os.MkdirAll(models, 0o700))
+		for _, f := range guard.Files {
+			require.NoError(t, os.WriteFile(filepath.Join(models, f), nil, 0o600))
+		}
 		bv, sv := reflect.ValueOf(before), reflect.ValueOf(st)
 		for i := range sv.NumField() { // every field must make the round trip
 			if reflect.DeepEqual(bv.Field(i).Interface(), sv.Field(i).Interface()) {

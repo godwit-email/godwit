@@ -24,6 +24,12 @@ const (
 	MaskBlock = mask.Block
 )
 
+// What found a masking record's value (MaskRecord.Source): a rule, or 识别模型.
+const (
+	MaskSourceRule       = mask.SourceRule
+	MaskSourceRecognizer = mask.SourceRecognizer
+)
+
 // The features that send to a model service, as the masking log names
 // them (MaskRecord.Feature).
 const (
@@ -44,15 +50,16 @@ const maskLogDays = 30
 // plugin held (脱敏记录): which request (the values of one share it; 0 for
 // records kept from before requests were told apart) and feature sent it,
 // its kind and category ("": the user's own), its first character and
-// length, never the value; and what was done with it (MaskMask, MaskWarn or
-// MaskBlock). A value of maskShortLen characters or fewer keeps no first
-// character: of a two-character name it would be half.
+// length, never the value; what was done with it (MaskMask, MaskWarn or
+// MaskBlock); and what found it (MaskSourceRule or MaskSourceRecognizer). A value
+// of maskShortLen characters or fewer keeps no first character: of a
+// two-character name it would be half.
 type MaskRecord struct {
 	At                             time.Time
 	Request                        int64
 	Feature, Kind, Category, First string
 	Len                            int
-	Action                         string
+	Action, Source                 string
 }
 
 const maskShortLen = 3
@@ -62,14 +69,14 @@ func (s *Service) MaskingLog(ctx context.Context) ([]MaskRecord, error) {
 	if err := s.exec(ctx, pruneMaskLog()); err != nil {
 		return nil, err
 	}
-	rows, err := s.db.Query(ctx, "SELECT at, feature, kind, category, first, len, action, request FROM mask_log ORDER BY id DESC")
+	rows, err := s.db.Query(ctx, "SELECT at, feature, kind, category, first, len, action, request, source FROM mask_log ORDER BY id DESC")
 	if err != nil {
 		return nil, err
 	}
 	out := make([]MaskRecord, 0, len(rows.Values))
 	for _, r := range rows.Values {
 		out = append(out, MaskRecord{At: time.Unix(store.Int(r[0]), 0), Feature: store.Str(r[1]), Kind: store.Str(r[2]), Category: store.Str(r[3]),
-			First: store.Str(r[4]), Len: int(store.Int(r[5])), Action: store.Str(r[6]), Request: store.Int(r[7])})
+			First: store.Str(r[4]), Len: int(store.Int(r[5])), Action: store.Str(r[6]), Request: store.Int(r[7]), Source: store.Str(r[8])})
 	}
 	return out, nil
 }
@@ -103,8 +110,8 @@ func (s *Service) recordMasking(feature string, hits []mask.Hit) {
 		if h.Len <= maskShortLen {
 			first = ""
 		}
-		stmts = append(stmts, sqlite.Statement{SQL: "INSERT INTO mask_log(at, feature, kind, category, first, len, action, request) VALUES (?, ?, ?, ?, ?, ?, ?, " + request + ")",
-			Args: []any{now, feature, h.Kind, h.Category, first, h.Len, h.Action}})
+		stmts = append(stmts, sqlite.Statement{SQL: "INSERT INTO mask_log(at, feature, kind, category, first, len, action, source, request) VALUES (?, ?, ?, ?, ?, ?, ?, ?, " + request + ")",
+			Args: []any{now, feature, h.Kind, h.Category, first, h.Len, h.Action, h.Source}})
 	}
 	if _, err := s.db.Transaction(context.Background(), stmts); err != nil {
 		slog.Default().Warn("could not record what masking found", "err", err)
@@ -162,7 +169,11 @@ type MaskCategory struct {
 }
 
 // MaskCategories are 脱敏's categories, as mask names them.
-type MaskCategories struct{ Secrets, IDs, Codes, Phones, Emails, Names MaskCategory }
+type MaskCategories struct {
+	Secrets, IDs, Codes, Phones, Emails, Names MaskCategory
+	// Addresses and Accounts only 识别模型 finds: off, they find nothing.
+	Addresses, Accounts MaskCategory
+}
 
 // All is each category by its mask name (mask.Secrets …), in the order the
 // settings show them, to read or change.
@@ -171,7 +182,8 @@ func (c *MaskCategories) All() iter.Seq2[string, *MaskCategory] {
 		for _, n := range []struct {
 			name string
 			c    *MaskCategory
-		}{{mask.Secrets, &c.Secrets}, {mask.IDs, &c.IDs}, {mask.Codes, &c.Codes}, {mask.Phones, &c.Phones}, {mask.Emails, &c.Emails}, {mask.Names, &c.Names}} {
+		}{{mask.Secrets, &c.Secrets}, {mask.IDs, &c.IDs}, {mask.Codes, &c.Codes}, {mask.Phones, &c.Phones}, {mask.Emails, &c.Emails}, {mask.Names, &c.Names},
+			{mask.Addresses, &c.Addresses}, {mask.Accounts, &c.Accounts}} {
 			if !yield(n.name, n.c) {
 				return
 			}
@@ -229,7 +241,7 @@ func (s *Service) masker() (*mask.Masker, error) {
 	}
 	m := mask.New([]byte(store.Str(rows.Values[0][0])))
 	m.Record = s.recordMasking
-	if err := st.setMasker(m); err != nil { // a rule stored by hand: nothing goes out unmasked
+	if err := st.setMasker(m, s.recognizer(st)); err != nil { // a rule stored by hand: nothing goes out unmasked
 		return nil, err
 	}
 	s.mask = m
@@ -237,27 +249,41 @@ func (s *Service) masker() (*mask.Masker, error) {
 }
 
 // maskingChanged masks as st says from the next request on, once the
-// masker exists.
+// masker exists; 识别模型 turned off lets go of it. Lost files of
+// 识别模型 that failed to come down again are tried again from then on.
 func (s *Service) maskingChanged(st Settings) {
 	s.maskMu.Lock()
 	defer s.maskMu.Unlock()
+	s.recognition.mu.Lock()
+	s.recognition.retryAt = time.Time{}
+	if !st.recognizes() {
+		s.guard = nil
+		s.recognition.err = nil
+	}
+	s.recognition.mu.Unlock()
 	if s.mask != nil {
-		_ = st.setMasker(s.mask) // SetSettings checked it; a failure keeps the last
+		_ = st.setMasker(s.mask, s.recognizer(st)) // SetSettings checked it; a failure keeps the last
 	}
 }
 
-// setMasker masks with m as st says: a config m refuses leaves its last.
-func (st Settings) setMasker(m *mask.Masker) error {
+// setMasker masks with m as st says, with r as 识别模型: a config m
+// refuses leaves its last.
+func (st Settings) setMasker(m *mask.Masker, r mask.Recognizer) error {
 	m.SetOn(st.Masking)
-	return m.Configure(st.maskConfig())
+	c := st.maskConfig()
+	c.Recognizer = r
+	return m.Configure(c)
 }
 
 // PreviewMasking is text as it would go to a model off this device under
 // st's 脱敏 settings, saved or not (实时预览). It stores nothing and leaves
 // the Service's masker alone: its placeholders are a throwaway key's.
 func (s *Service) PreviewMasking(ctx context.Context, st Settings, text string) (string, error) {
+	s.maskMu.Lock()
+	r := s.recognizer(st)
+	s.maskMu.Unlock()
 	m := mask.New([]byte(rand.Text()))
-	if err := m.Configure(st.maskConfig()); err != nil {
+	if err := st.setMasker(m, r); err != nil {
 		return "", err
 	}
 	if !st.Masking {

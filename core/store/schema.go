@@ -492,6 +492,11 @@ var Migrations = [][]string{{
 	`CREATE INDEX ops_message ON ops(message_id)`,
 	`CREATE INDEX attachments_message ON attachments(message_id)`,
 }, {
+	// What found a masking record's value (core.MaskRecord.Source): a rule,
+	// or 识别模型 (docs/adr/0028-recognition-model-for-masking.md). The records
+	// before were all the rules'.
+	`ALTER TABLE mask_log ADD COLUMN source TEXT NOT NULL DEFAULT 'rule'`,
+}, {
 	// A message's Authentication-Results header as sent (core.SecurityReport reads it):
 	// '' the sync found none, NULL the message was synced before it was fetched.
 	`ALTER TABLE messages ADD COLUMN auth_results TEXT`,

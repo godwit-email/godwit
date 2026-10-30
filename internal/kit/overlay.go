@@ -162,8 +162,9 @@ func (g GlassMaterial) PaintMaterial(p *ui.Painter, box ui.Rect, radii [4]float3
 }
 
 // LiquidGlass creates the unified Liquid Glass material: true Gaussian backdrop blur
-// tinted with the surface color.
+// tinted with the surface color. Call it while building the panel.
 func LiquidGlass(tint ui.Color) ui.Material {
+	frosted = true // web views under it show a screenshot it can blur (WebView)
 	return GlassMaterial{Blur: theme.GlassBlur, Tint: tint}
 }
 

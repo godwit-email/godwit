@@ -332,8 +332,9 @@ func (p *settingsPage) maskRequestRow(c *ui.Context, q maskRequest) {
 }
 
 // maskValueRow is a value a request held: its category and kind, its shape
-// (first character and length; only the length when short) and what was
-// done with it. In a blocked request the values not blocked were not sent.
+// (first character and length; only the length when short), what found it
+// (a rule or 识别模型) and what was done with it. In a blocked request the
+// values not blocked were not sent.
 func (p *settingsPage) maskValueRow(c *ui.Context, r core.MaskRecord, blocked bool) {
 	t, th := theme.Of(c), c.Theme()
 	shape := i18n.Tf("settings.masking.log.length", r.Len)
@@ -353,6 +354,7 @@ func (p *settingsPage) maskValueRow(c *ui.Context, r core.MaskRecord, blocked bo
 		kit.Text(c, maskCategoryName(r.Category), t.Text.Base).FontWeight(500).Shrink(0)
 		kit.Text(c, r.Kind, t.Text.Sm).Font(theme.Mono).TextColor(t.Muted).Shrink(0)
 		kit.Text(c, shape, t.Text.Sm).TextColor(t.Muted).Grow(1).Shrink(1)
+		kit.Text(c, i18n.T("settings.masking.log.source."+r.Source), t.Text.Sm).TextColor(t.Muted).Shrink(0)
 		kit.Text(c, act, t.Text.Sm).TextColor(color).Shrink(0)
 	})
 }
