@@ -644,6 +644,8 @@
   "settings_masking_log_empty": "Nada en los últimos 30 días",
   "settings_masking_log_value": "{arg1}…, {arg2} caracteres",
   "settings_masking_log_own": "Propio",
+  "settings_masking_log_source_rule": "Regla",
+  "settings_masking_log_source_model": "Modelo de reconocimiento",
   "settings_masking_feature_wit": "Wit",
   "settings_masking_feature_compose": "Ayuda de redacción",
   "settings_masking_feature_skill": "Resumen y habilidades",

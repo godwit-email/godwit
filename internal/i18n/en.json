@@ -1298,6 +1298,8 @@
   "settings_masking_log_empty": "Nothing in the last 30 days",
   "settings_masking_log_value": "{arg1}…, {arg2} characters",
   "settings_masking_log_own": "Your own",
+  "settings_masking_log_source_rule": "Rule",
+  "settings_masking_log_source_model": "Recognition model",
   "settings_masking_feature_wit": "Wit",
   "settings_masking_feature_compose": "Writing help",
   "settings_masking_feature_skill": "Summary and skills",

@@ -49,19 +49,31 @@ func (e *BlockedError) with(cats ...string) *BlockedError {
 	return out
 }
 
+// What found a value (Hit.Source): a rule, the user's or a built-in one, or
+// a value known before; or 识别模型 (Config.Model).
+const (
+	SourceRule  = "rule"
+	SourceModel = "model"
+)
+
 // Hit is a value masking found in a request, as it is recorded (脱敏记录):
 // its kind and category, its first character and its length in characters,
-// never the value itself; and Action, what was done with it.
+// never the value itself; Action, what was done with it; and Source, what
+// found it.
 type Hit struct {
 	Kind, Category, First string
 	Len                   int
-	Action                string
+	Action, Source        string
 	hash                  string // which value: Found counts each once
 }
 
-func (m *Masker) hit(kind, v, action string) Hit {
+func (m *Masker) hit(sp span, v, action string) Hit {
 	r, _ := utf8.DecodeRuneInString(v)
-	return Hit{Kind: kind, Category: categories[kind], First: string(r), Len: utf8.RuneCountInString(v), Action: action, hash: m.hash(kind, v)}
+	source := SourceRule
+	if sp.model {
+		source = SourceModel
+	}
+	return Hit{Kind: sp.kind, Category: categories[sp.kind], First: string(r), Len: utf8.RuneCountInString(v), Action: action, Source: source, hash: m.hash(sp.kind, v)}
 }
 
 // Found gathers hits, each value once for each action, in the order they

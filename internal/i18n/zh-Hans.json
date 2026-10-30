@@ -644,6 +644,8 @@
   "settings_masking_log_empty": "最近 30 天没有记录",
   "settings_masking_log_value": "{arg1}…，{arg2} 个字符",
   "settings_masking_log_own": "自定义",
+  "settings_masking_log_source_rule": "规则",
+  "settings_masking_log_source_model": "识别模型",
   "settings_masking_feature_wit": "Wit",
   "settings_masking_feature_compose": "撰写辅助",
   "settings_masking_feature_skill": "总结与技能",
