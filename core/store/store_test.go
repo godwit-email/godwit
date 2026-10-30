@@ -530,6 +530,28 @@ func TestMaskLogRequestIndexed(t *testing.T) {
 	assert.Contains(t, fmt.Sprint(rows.Values), "mask_log_request")
 }
 
+// Migration 46 records what found each masking record's value; the records
+// from before it were all the rules'.
+func TestMigrationMaskLogSource(t *testing.T) {
+	const v = 46
+	path := filepath.Join(t.TempDir(), "godwit.db")
+	all := store.Migrations
+	store.Migrations = all[:v-1]
+	db, err := store.Open(ctx, path)
+	store.Migrations = all
+	require.NoError(t, err)
+	_, err = db.Execute(ctx, "INSERT INTO mask_log(at, feature, kind, category, first, len, action) VALUES (1, 'wit', 'PHONE', 'phones', '1', 11, 'mask')")
+	require.NoError(t, err)
+	db.Close()
+
+	db, err = store.Open(ctx, path)
+	require.NoError(t, err)
+	defer db.Close()
+	rows, err := db.Query(ctx, "SELECT source FROM mask_log")
+	require.NoError(t, err)
+	assert.Equal(t, [][]any{{"rule"}}, rows.Values)
+}
+
 // A message's ops and attachments are found through an index: sync looks up
 // each message's pending ops, and deleting a message its children.
 func TestMessageChildrenIndexed(t *testing.T) {

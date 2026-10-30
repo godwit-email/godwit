@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"slices"
 	"strings"
+	"time"
 
 	"github.com/egoist/mygo/plugins/sqlite"
 	"github.com/emersion/go-imap/v2"
@@ -33,16 +34,34 @@ func importMessage(ctx context.Context, db *store.DB, a *account, f *folder, m *
 		return err
 	}
 	ids, _ := mail.ThreadKeys(p)
+	rep := mail.EvaluateSecurity(p.From, p.AuthenticationResults)
+	secStatus, secReason := mail.SecurityReportToDB(rep)
+	verifyDKIM := mail.NeedsDKIMVerification(p.From, p.AuthenticationResults, p.DKIMSigned)
+	var secScanned any = nil
+
+	if f.role == "sent" || f.role == "drafts" {
+		secStatus = "neutral"
+		secReason = "unverified"
+		secScanned = time.Now().Unix()
+		verifyDKIM = false
+	} else if rep.Status == mail.SecurityVerifiedDomain && rep.DMARCPass {
+		secScanned = 0 // The visible green verdict can be upgraded after asynchronous VMC validation.
+	} else if rep.Status != mail.SecurityNeutral {
+		secScanned = time.Now().Unix()
+	} else if arrival || rep.SuspiciousMismatch || verifyDKIM {
+		secScanned = 0
+	}
+
 	args := append([]any{a.id, f.id, f.id, f.uidValidity, uid}, plan.args...)
 	args = append(args, nullable(p.MessageID), nullable(p.InReplyTo), nullable(strings.Join(p.References, " ")), p.Subject, p.From,
 		jsonList(p.To), jsonList(p.Cc), nullable(p.ReplyTo), p.Date.Unix(), flagString(m.Flags), m.RFC822Size,
 		mail.Snippet(p.Text), p.Text, nullable(p.HTML), p.Truncated, len(p.Attachments) > 0, nullable(labelFP(p, m.RFC822Size)),
-		p.ListUnsubscribe, p.ListUnsubscribePost, p.ListID)
+		p.ListUnsubscribe, p.ListUnsubscribePost, p.ListID, p.AuthenticationResults, secStatus, secReason, secScanned, verifyDKIM)
 	stmts := append(plan.pre, sqlite.Statement{
 		SQL: `INSERT INTO messages(account_id, folder_id, server_folder_id, server_uidvalidity, server_uid, thread_id,
 			message_id, in_reply_to, refs, subject, from_addr, to_addrs, cc_addrs, reply_to, date, flags, size,
-			snippet, body_text, body_html, body_truncated, has_attachments, label_fp, list_unsubscribe, list_unsubscribe_post, list_id, entered_at)
-			VALUES (?, ?, ?, ?, ?, ` + plan.expr + `, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, unixepoch())`,
+			snippet, body_text, body_html, body_truncated, has_attachments, label_fp, list_unsubscribe, list_unsubscribe_post, list_id, auth_results, security_status, security_reason, security_scanned_at, security_verify_dkim, entered_at)
+			VALUES (?, ?, ?, ?, ?, ` + plan.expr + `, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, unixepoch())`,
 		Args: args,
 	})
 	msgAt := len(stmts) - 1

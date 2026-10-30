@@ -13,9 +13,10 @@ import (
 // View selects what a list shows: one folder, a unified view ("inbox",
 // "starred") or one label's mail across accounts. Exactly one is set.
 type View struct {
-	FolderID int64
-	Unified  string
-	LabelID  int64
+	FolderID  int64
+	Unified   string
+	LabelID   int64
+	AccountID int64
 }
 
 // ThreadSummary is a conversation as listed. Count, Unread and Flagged cover the whole thread.
@@ -27,6 +28,7 @@ type ThreadSummary struct {
 	Flagged          int // messages starred
 	LastDate         time.Time
 	HasAttachments   bool
+	Security         gomail.SecurityReport
 }
 
 // ThreadPage is one page of threads.
@@ -80,7 +82,7 @@ func (s *Service) ListThreads(ctx context.Context, v View, cursor string, limit 
 	if len(ids) == 0 {
 		return page, nil
 	}
-	ms, err := s.db.Query(ctx, `SELECT thread_id, from_addr, snippet, flags, has_attachments FROM messages
+	ms, err := s.db.Query(ctx, `SELECT thread_id, from_addr, snippet, flags, has_attachments, auth_results, security_status, security_reason, security_scanned_at FROM messages
 		WHERE thread_id IN (`+strings.TrimSuffix(strings.Repeat("?,", len(ids)), ",")+`) ORDER BY date DESC, id DESC`, ids...)
 	if err != nil {
 		return ThreadPage{}, err
@@ -99,7 +101,20 @@ func (s *Service) ListThreads(ctx context.Context, v View, cursor string, limit 
 			t.Flagged++
 		}
 		t.HasAttachments = t.HasAttachments || store.Int(r[4]) != 0
-		name := displayName(store.Str(r[1]))
+		fromAddr := store.Str(r[1])
+		secStatus := store.Str(r[6])
+		secReason := store.Str(r[7])
+		secScanned := store.Int(r[8])
+		var sec gomail.SecurityReport
+		if secStatus != "" {
+			sec = gomail.DBToSecurityReport(fromAddr, store.Str(r[5]), secStatus, secReason)
+		} else if secScanned > 0 {
+			sec = gomail.EvaluateSecurity(fromAddr, store.Str(r[5]))
+		}
+		if gomail.SecurityRank(sec.Status) > gomail.SecurityRank(t.Security.Status) {
+			t.Security = sec
+		}
+		name := displayName(fromAddr)
 		if k := fmt.Sprint(t.ID, "\x00", name); !seen[k] {
 			seen[k] = true
 			t.Participants = append(t.Participants, name)

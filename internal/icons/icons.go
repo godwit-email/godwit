@@ -6,6 +6,8 @@
 package icons
 
 import (
+	"strings"
+
 	"github.com/egoist/mygo/ui"
 
 	"github.com/godwit-email/godwit/web"
@@ -31,7 +33,12 @@ func Get(name string) *ui.SVG {
 
 // Fill returns the fill style of a name's icon, as "mail"; one without a fill
 // style panics.
-func Fill(name string) *ui.SVG { return Get(name + "-fill") }
+func Fill(name string) *ui.SVG {
+	if strings.HasSuffix(name, "-fill") {
+		return Get(name)
+	}
+	return Get(name + "-fill")
+}
 
 // FillOr returns the fill style of a name's icon if one exists, otherwise the line icon.
 func FillOr(name string) *ui.SVG {

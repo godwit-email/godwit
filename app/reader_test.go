@@ -21,6 +21,7 @@ import (
 	"github.com/egoist/mygo/ui"
 	"github.com/godwit-email/godwit/core"
 	"github.com/godwit-email/godwit/core/coretest"
+	gomail "github.com/godwit-email/godwit/core/mail"
 	"github.com/godwit-email/godwit/internal/i18n"
 	"github.com/godwit-email/godwit/internal/theme"
 )
@@ -1462,11 +1463,29 @@ func TestReaderRecipients(t *testing.T) {
 	}
 }
 
-// With one account the user is "我".
+// With one account the user is "我", or their sidebar name when an alias is
+// set; a digest's citation names the user's own mail the same way.
 func TestReaderRecipientsOneAccount(t *testing.T) {
-	h, _ := mailHarness(t, nil, "me@baran.wang")
-	if got := h.app.mail.reader.recipients(core.MessageSummary{To: []string{"Baran <me@baran.wang>"}, Cc: []string{"mia@partner.example"}}); got != "发给 我 等 1 人" {
-		t.Fatalf("one account: %q", got)
+	h, accs := mailHarness(t, nil, "me@baran.wang")
+	r := h.app.mail.reader
+	got := core.MessageSummary{To: []string{"Baran <me@baran.wang>"}, Cc: []string{"mia@partner.example"}}
+	sent := core.MessageSummary{From: "Baran <me@baran.wang>", Date: h.app.clock.Now()}
+	if s := r.recipients(got); s != "发给 我 等 1 人" {
+		t.Fatalf("one account without alias: %q", s)
+	}
+	if s := r.sourceLabel(sent); !strings.HasSuffix(s, " · 我") {
+		t.Fatalf("source without alias: %q", s)
+	}
+	alias := "Peter"
+	if _, err := h.env.Svc.UpdateAccount(context.Background(), accs[0].ID, core.AccountPatch{Alias: &alias}); err != nil {
+		t.Fatal(err)
+	}
+	h.waitMail("the alias", func() bool { return h.app.accounts[0].Alias == alias })
+	if s := r.recipients(got); s != "发给 Peter 等 1 人" {
+		t.Fatalf("one account with alias: %q", s)
+	}
+	if s := r.sourceLabel(sent); !strings.HasSuffix(s, " · Peter") {
+		t.Fatalf("source with alias: %q", s)
 	}
 }
 
@@ -1515,4 +1534,81 @@ func TestReaderRecipientDetailsLong(t *testing.T) {
 	if got := h.tt.Clipboard(); got != full {
 		t.Fatalf("copied %q", got)
 	}
+}
+
+// hover rests the pointer on the element labelled label until its hover card shows.
+func (h *harness) hover(label string) {
+	h.t.Helper()
+	h.until(fmt.Sprintf("an element %q", label), func() bool { _, ok := h.tt.Find(label); return ok })
+	r, _ := h.tt.Find(label)
+	h.tt.Move(r.X+r.W/2, r.Y+r.H/2)
+	h.tt.Advance(900 * time.Millisecond)
+}
+
+func TestReaderSecuritySpoofingWarning(t *testing.T) {
+	h, accs := mailHarness(t, nil, "alice@example.com")
+	acc := accs[0]
+	// Deliver spoofed email claiming to be PayPal but sent from gmail.com
+	m := h.deliverOne(acc, coretest.Msg("\"PayPal Support\" <phisher@gmail.com>", acc.Email, "Urgent Notice", "Verify your account"))
+	h.openThread(m.ThreadID)
+	h.seeBody(m.ID)
+	h.hover(i18n.T("reader.security.fraud_badge"))
+	h.see(i18n.T("reader.security.spoof_brand"))
+
+	// Switch off SecurityWarnings in settings: warning disappears
+	st := h.app.settings
+	st.SecurityWarnings = false
+	h.app.changeSettings(st)
+	h.until("warnings disabled", func() bool { return !h.app.settings.SecurityWarnings })
+	h.openThread(m.ThreadID)
+	if _, ok := h.tt.Find(i18n.T("reader.security.fraud_badge")); ok {
+		t.Fatal("warning badge should be hidden when SecurityWarnings is off")
+	}
+}
+
+func TestReaderSecurityNeedsReviewCard(t *testing.T) {
+	h, accs := mailHarness(t, nil, "alice@example.com")
+	acc := accs[0]
+	m := h.deliverOne(acc, coretest.Msg("\"Billing Dept\" <billing@unknown-shop.com>", acc.Email, "Notice", "Payment notice"))
+	h.openThread(m.ThreadID)
+	h.seeBody(m.ID)
+	h.app.mail.reader.bodies[m.ID].msg.Security = gomail.SecurityReport{Status: gomail.SecurityNeedsReview, ActualDomain: "unknown-shop.com", DKIMPass: true}
+	h.hover(i18n.T("reader.security.review_badge"))
+	h.see(i18n.Tf("reader.security.review_authenticated_desc", "unknown-shop.com"))
+}
+
+// Unverified mail, and mail not checked yet, shows no badge at all.
+func TestReaderSecurityNeutralNoBadge(t *testing.T) {
+	h, accs := mailHarness(t, nil, "alice@example.com")
+	acc := accs[0]
+	m := h.deliverOne(acc, coretest.Msg("\"Friend\" <friend@example.org>", acc.Email, "Hi", "Hello"))
+	h.openThread(m.ThreadID)
+	h.seeBody(m.ID)
+	if h.tt.HasText(i18n.T("reader.security.unverified_badge")) {
+		t.Fatal("neutral sender shows a badge")
+	}
+}
+
+func TestReaderSecurityCertifiedBrandCard(t *testing.T) {
+	h, accs := mailHarness(t, nil, "alice@example.com")
+	acc := accs[0]
+	m := h.deliverOne(acc, coretest.Msg("\"Sparkasse\" <sicherheit@sparkasse.de>", acc.Email, "Kontoauszug", "Hier Ihr Auszug",
+		coretest.Header("Authentication-Results: mx.example.com; dkim=pass header.i=@sparkasse.de; dmarc=pass header.from=sparkasse.de; bimi=pass")))
+	h.openThread(m.ThreadID)
+	h.seeBody(m.ID)
+	// The badge UI consumes a validated verdict; arbitrary bimi=pass headers cannot create one.
+	h.app.mail.reader.bodies[m.ID].msg.Security = gomail.SecurityReport{Status: gomail.SecurityCertifiedBrand}
+	h.hover(i18n.T("reader.security.certified_badge"))
+	h.see(i18n.T("reader.security.certified_desc"))
+}
+
+func TestReaderSecurityVerifiedDomainCard(t *testing.T) {
+	h, accs := mailHarness(t, nil, "alice@example.com")
+	acc := accs[0]
+	raw := append([]byte("Authentication-Results: mx.example.com; dkim=pass header.i=@sparkasse.de; dmarc=pass header.from=sparkasse.de\r\nReceived: from sender.invalid by mx.example.com; Thu, 29 Oct 2026 00:00:00 +0000\r\n"), coretest.Msg("\"Sparkasse\" <sicherheit@sparkasse.de>", acc.Email, "Kontoauszug", "Hier Ihr Auszug")...)
+	m := h.deliverOne(acc, raw)
+	h.openThread(m.ThreadID)
+	h.seeBody(m.ID)
+	h.hover(i18n.T("reader.security.verified_badge"))
+	h.see(i18n.T("reader.security.verified_desc"))
 }

@@ -26,9 +26,9 @@ import (
 	"github.com/godwit-email/godwit/core/plugins"
 )
 
-// assetStall ends a download that has received nothing for that long; a
+// downloadStall ends a download that has received nothing for that long; a
 // model download has no overall time limit.
-var assetStall = 30 * time.Second
+var downloadStall = 30 * time.Second
 
 // physicalMemory is the machine's memory in bytes (0 unknown); tests replace it.
 var physicalMemory = sysPhysicalMemory
@@ -477,21 +477,40 @@ func (h *hostedAssets) download(ctx context.Context, n assetNeed, f plugins.Asse
 	if !strings.HasPrefix(f.URL, "https://") {
 		return fmt.Errorf("plugin asset: %s is not https", f.URL)
 	}
-	part := h.partial(n, f)
+	err := downloadFile(ctx, src.Client, remoteFile{f.URL, f.Size, f.SHA256}, h.partial(n, f), dst, got.Store)
+	if errors.Is(err, errDownloadMismatch) {
+		return ErrRegistryMismatch
+	}
+	return err
+}
+
+// remoteFile is a file to download: from URL, exactly Size bytes of the
+// SHA256 given.
+type remoteFile struct {
+	URL    string
+	Size   int64
+	SHA256 string
+}
+
+// downloadFile downloads f from f.URL with c (nil: a bare client),
+// resuming what part has, checks it is exactly f and moves it to dst;
+// onBytes gets f's bytes so far. errDownloadMismatch: it was not f, and part
+// is gone.
+func downloadFile(ctx context.Context, c *http.Client, f remoteFile, part, dst string, onBytes func(int64)) error {
 	// shortcut: no free-space check before a GB download; a full disk fails the write and drops the partial file. Check up front if users hit it.
 	if err := os.MkdirAll(filepath.Dir(part), 0o700); err != nil {
 		return err
 	}
 	// Twice at most: a server that will not resume (416, a wrong range) starts over once.
 	for attempt := 0; ; attempt++ {
-		err := h.downloadOnce(ctx, src, f, part, got)
-		if err == errAssetRestart && attempt == 0 {
+		err := downloadOnce(ctx, c, f, part, onBytes)
+		if err == errDownloadRestart && attempt == 0 {
 			os.Remove(part)
 			continue
 		}
 		if err != nil {
-			if errors.Is(err, ErrRegistryMismatch) || errors.Is(err, errAssetWrite) {
-				os.Remove(part) // not worth resuming: not the registry's file, or no room for it
+			if errors.Is(err, errDownloadMismatch) || errors.Is(err, errDownloadWrite) {
+				os.Remove(part) // not worth resuming: not the file, or no room for it
 			}
 			return err
 		}
@@ -503,7 +522,7 @@ func (h *hostedAssets) download(ctx context.Context, n assetNeed, f plugins.Asse
 	}
 	if sum != f.SHA256 {
 		os.Remove(part)
-		return ErrRegistryMismatch
+		return errDownloadMismatch
 	}
 	if err := os.MkdirAll(filepath.Dir(dst), 0o700); err != nil {
 		return err
@@ -516,12 +535,13 @@ func (h *hostedAssets) download(ctx context.Context, n assetNeed, f plugins.Asse
 }
 
 var (
-	errAssetRestart = errors.New("plugin asset: the server cannot resume this download")
-	errAssetStalled = errors.New("plugin asset: the download stopped receiving data")
-	errAssetWrite   = errors.New("plugin asset: cannot write the download")
+	errDownloadRestart  = errors.New("download: the server cannot resume this download")
+	errDownloadStalled  = errors.New("download: the download stopped receiving data")
+	errDownloadWrite    = errors.New("download: cannot write the download")
+	errDownloadMismatch = errors.New("download: the file is not the one expected")
 )
 
-func (h *hostedAssets) downloadOnce(ctx context.Context, src *RegistrySource, f plugins.AssetFile, part string, got *atomic.Int64) error {
+func downloadOnce(ctx context.Context, c *http.Client, f remoteFile, part string, onBytes func(int64)) error {
 	out, err := os.OpenFile(part, os.O_RDWR|os.O_CREATE, 0o600)
 	if err != nil {
 		return err
@@ -532,15 +552,15 @@ func (h *hostedAssets) downloadOnce(ctx context.Context, src *RegistrySource, f 
 		return err
 	}
 	if have > f.Size {
-		return errAssetRestart
+		return errDownloadRestart
 	}
-	got.Store(have)
+	onBytes(have)
 	if have == f.Size {
 		return nil
 	}
 	ctx, cancel := context.WithCancelCause(ctx)
 	defer cancel(nil)
-	stall := time.AfterFunc(assetStall, func() { cancel(errAssetStalled) })
+	stall := time.AfterFunc(downloadStall, func() { cancel(errDownloadStalled) })
 	defer stall.Stop()
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, f.URL, nil)
 	if err != nil {
@@ -549,19 +569,18 @@ func (h *hostedAssets) downloadOnce(ctx context.Context, src *RegistrySource, f 
 	if have > 0 {
 		req.Header.Set("Range", "bytes="+strconv.FormatInt(have, 10)+"-")
 	}
-	c := src.Client
 	if c == nil {
 		c = &http.Client{}
 	}
 	resp, err := c.Do(req)
 	if err != nil {
-		return errors.Join(context.Cause(ctx), fmt.Errorf("plugin asset: %w", err))
+		return errors.Join(context.Cause(ctx), fmt.Errorf("download: %w", err))
 	}
 	defer resp.Body.Close()
 	switch {
 	case resp.StatusCode == http.StatusPartialContent && have > 0:
 		if resp.Header.Get("Content-Range") != fmt.Sprintf("bytes %d-%d/%d", have, f.Size-1, f.Size) {
-			return errAssetRestart
+			return errDownloadRestart
 		}
 	case resp.StatusCode == http.StatusOK:
 		if err := out.Truncate(0); err != nil {
@@ -571,35 +590,35 @@ func (h *hostedAssets) downloadOnce(ctx context.Context, src *RegistrySource, f 
 			return err
 		}
 		have = 0
-		got.Store(0)
+		onBytes(0)
 	case resp.StatusCode == http.StatusRequestedRangeNotSatisfiable:
-		return errAssetRestart
+		return errDownloadRestart
 	default:
-		return fmt.Errorf("plugin asset: %s answered %s", f.URL, resp.Status)
+		return fmt.Errorf("download: %s answered %s", f.URL, resp.Status)
 	}
 	buf := make([]byte, 256<<10)
 	for {
 		k, rerr := resp.Body.Read(buf)
 		if k > 0 {
-			stall.Reset(assetStall)
+			stall.Reset(downloadStall)
 			if have+int64(k) > f.Size {
-				return ErrRegistryMismatch // larger than the registry says
+				return errDownloadMismatch // larger than f says
 			}
 			if _, err := out.Write(buf[:k]); err != nil {
-				return errors.Join(errAssetWrite, err)
+				return errors.Join(errDownloadWrite, err)
 			}
 			have += int64(k)
-			got.Store(have)
+			onBytes(have)
 		}
 		if rerr == io.EOF {
 			break
 		}
 		if rerr != nil {
-			return errors.Join(context.Cause(ctx), fmt.Errorf("plugin asset: %w", rerr))
+			return errors.Join(context.Cause(ctx), fmt.Errorf("download: %w", rerr))
 		}
 	}
 	if have != f.Size {
-		return fmt.Errorf("plugin asset: %s ended after %d of %d bytes", f.URL, have, f.Size)
+		return fmt.Errorf("download: %s ended after %d of %d bytes", f.URL, have, f.Size)
 	}
 	return nil
 }

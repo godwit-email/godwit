@@ -182,6 +182,8 @@
   "error_plugin_exited": "The plugin quit unexpectedly. Try again.",
   "error_plugin_timeout": "The plugin did not answer in time. Try again.",
   "error_registry_mismatch": "The downloaded file does not match the plugin directory; it was discarded.",
+  "error_recognition_model_mismatch": "A downloaded file of the recognition model did not match its checksum; it was discarded.",
+  "error_recognition_model_missing": "The recognition model's files are not on this device yet, so it can't be turned on.",
   "error_registry_signature": "The plugin directory''s signature is wrong; it was not used.",
   "error_run_active": "Wit is still responding. Wait for it or stop it first.",
   "error_compacting": "Wit is already compacting this conversation.",
@@ -1226,7 +1228,32 @@
   "settings_masking": "Privacy masking",
   "settings_masking_on": "Mask before sending to the cloud",
   "settings_masking_on_help": "Keys, ID numbers and the like go to model services and translation plugins as placeholders, and come back as the real values. Apple Intelligence and system translation run on this device and are not masked.",
-  "settings_masking_foot": "Masking does not cover godwit mcp, the Local API or the models a plugin calls itself, and it does not find the names and addresses of other people in a mail's text.",
+  "settings_masking_foot": "Masking does not cover godwit mcp, the Local API or the models a plugin calls itself. Its rules find values by their format: other people's names in a mail's text take the recognition model.",
+  "settings_masking_recognition_model": "Recognition model",
+  "settings_masking_recognition_model_help": "A model that runs on this device, not a model service: it finds the names, addresses, accounts, phone numbers, email addresses, keys and card numbers the rules miss, each handled as its category says, and turns Names on with it. It makes mistakes, which the allowlist can fix; it reads Chinese and English only, and not the text in images.",
+  "settings_masking_recognition_model_missing": "Turning it on first downloads its files (39 MB) from Hugging Face, or its mirror.",
+  "settings_masking_recognition_model_coreml": "Runs on CoreML ({arg1}).",
+  "@settings_masking_recognition_model_coreml": {
+    "placeholders": {
+      "arg1": {
+        "type": "String"
+      }
+    }
+  },
+  "settings_masking_recognition_model_cpu": "Runs on the CPU.",
+  "settings_masking_recognition_model_cpu_why": "Runs on the CPU, not CoreML: {arg1}",
+  "@settings_masking_recognition_model_cpu_why": {
+    "placeholders": {
+      "arg1": {
+        "type": "String"
+      }
+    }
+  },
+  "settings_masking_recognition_model_downloading": "Downloading the recognition model: {arg1, number}% of {arg2}",
+  "settings_masking_recognition_model_cancel": "Cancel download",
+  "settings_masking_recognition_model_failed": "The recognition model was not installed, so it stays off: {arg1}",
+  "settings_masking_recognition_model_error": "The recognition model failed, so the rules alone mask for now: {arg1}",
+  "settings_masking_recognition_model_redownloading": "The recognition model's files are gone; they are downloading again, and until then the rules alone mask.",
   "settings_masking_cat_secrets": "Keys",
   "settings_masking_cat_secrets_help": "API keys, tokens, private keys and passwords",
   "settings_masking_cat_ids": "ID and financial numbers",
@@ -1238,7 +1265,11 @@
   "settings_masking_cat_emails": "Email addresses",
   "settings_masking_cat_emails_help": "Only the name before the @: the domain stays, for labels and sorting",
   "settings_masking_cat_names": "Names",
-  "settings_masking_cat_names_help": "The display names in From, To and Cc, wherever the text has them. Off by default: a display name is often a brand's",
+  "settings_masking_cat_names_help": "The display names in From, To and Cc, wherever the text has them, and the names the recognition model finds. Off by default: a display name is often a brand's",
+  "settings_masking_cat_addresses": "Addresses",
+  "settings_masking_cat_addresses_help": "Home and office addresses in signatures, delivery and appointment notices. Only the recognition model finds them",
+  "settings_masking_cat_accounts": "Accounts",
+  "settings_masking_cat_accounts_help": "User names, bank account numbers and IP addresses. Only the recognition model finds them",
   "settings_masking_action": "When found",
   "settings_masking_action_mask": "Mask",
   "settings_masking_action_warn": "Warn only",
@@ -1291,6 +1322,8 @@
   "settings_masking_log_empty": "Nothing in the last 30 days",
   "settings_masking_log_value": "{arg1}…, {arg2} characters",
   "settings_masking_log_own": "Your own",
+  "settings_masking_log_source_rule": "Rule",
+  "settings_masking_log_source_recognizer": "Recognition model",
   "settings_masking_feature_wit": "Wit",
   "settings_masking_feature_compose": "Writing help",
   "settings_masking_feature_skill": "Summary and skills",
@@ -2832,5 +2865,68 @@
         "type": "int"
       }
     }
-  }
+  },
+  "settings_security": "Sender Security",
+  "settings_security_warnings": "Fraud & Spoofing Warnings",
+  "settings_security_warnings_help": "Shows red and yellow warning badges when sender names are forged or the AI detects fraud patterns.",
+  "settings_security_verified": "Authenticity Badges",
+  "settings_security_verified_help": "Shows checkmarks for cryptographically verified senders (DKIM/DMARC) and indicators for unverified addresses.",
+  "reader_security_warning_badge": "Potential Spoofing",
+  "reader_security_fraud_badge": "High Fraud Risk",
+  "reader_security_review_badge": "Review Recommended",
+  "reader_security_unverified_badge": "Unverified",
+  "reader_security_spoof_brand": "Sender name differs from the actual domain.",
+  "reader_security_spoof_email": "Sender name impersonates a different email address.",
+  "reader_security_auth_failed": "Sender authentication failed.",
+  "reader_security_warning_generic": "Suspicious sender characteristics detected.",
+  "reader_security_verified_badge": "Verified Domain",
+  "settings_security_ai": "Scan content for fraud & phishing (AI)",
+  "settings_security_ai_help": "Checks unverified emails for fraud with your AI model. With a cloud model, their content is sent to that provider.",
+  "settings_security_rescan": "Analyze Existing Emails",
+  "settings_security_rescan_sub": "Applies security and content checks to already synchronized emails.",
+  "settings_security_rescan_range": "Time Range",
+  "settings_security_rescan_all_range": "All in Inbox",
+  "settings_security_rescan_mode": "Mode",
+  "settings_security_rescan_missing": "Unchecked emails only",
+  "settings_security_rescan_missing_help": "Only checks emails that have not yet undergone a security scan.",
+  "settings_security_rescan_redo": "Re-evaluate all",
+  "settings_security_rescan_redo_help": "Resets previous verdicts and re-evaluates all emails in the selected range.",
+  "settings_security_rescan_busy": "Synchronization or security analysis is already running. Please wait.",
+  "settings_security_rescan_checking": "Checking scan status…",
+  "settings_security_rescan_start": "Analyze Now",
+  "settings_security_rescan_stop": "Stop",
+  "settings_security_rescan_running": "Scanning · {arg1, number, ::group-off} of {arg2, number, ::group-off}",
+  "settings_security_rescan_progress": "Security scan progress",
+  "reader_security_certified_badge": "Certified Brand",
+  "reader_security_ai_fraud": "Classified as suspected fraud or phishing by AI content scan.",
+  "@settings_security_rescan_running": {
+    "placeholders": {
+      "arg1": {
+        "type": "int"
+      },
+      "arg2": {
+        "type": "int"
+      }
+    }
+  },
+  "settings_security_rescan_days": "Last {arg1, number, ::group-off} days",
+  "@settings_security_rescan_days": {
+    "placeholders": {
+      "arg1": {
+        "type": "int"
+      }
+    }
+  },
+  "reader_security_certified_desc": "Officially certified brand with valid DMARC and verified mark certificate (BIMI/VMC).",
+  "reader_security_verified_desc": "Authenticated organization domain with valid DMARC/DKIM (not a public webmail provider).",
+  "reader_security_review_desc": "Unusual characteristics detected. Sender and content verification is recommended before interacting.",
+  "reader_security_review_authenticated_desc": "Domain {arg1} is technically verified, but unusual content or signals require review before interacting.",
+  "@reader_security_review_authenticated_desc": {
+    "placeholders": {
+      "arg1": {
+        "type": "String"
+      }
+    }
+  },
+  "reader_security_unverified_desc": "No cryptographic authentication (DKIM/DMARC) available. No concrete warning signals detected."
 }

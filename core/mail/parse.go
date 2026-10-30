@@ -41,6 +41,10 @@ type Parsed struct {
 	// The List-Unsubscribe, List-Unsubscribe-Post and List-Id headers as
 	// sent, unfolded and trimmed; "" when absent or over MaxListHeaderBytes.
 	ListUnsubscribe, ListUnsubscribePost, ListID string
+	// AuthenticationResults contains only the selected receiving service's results.
+	AuthenticationResults string
+	AuthenticationTrace   []AuthenticationHeader
+	DKIMSigned            bool
 }
 
 // MaxListHeaderBytes is the longest List-* header kept; a longer one counts as absent.
@@ -144,6 +148,17 @@ func Parse(raw []byte) (*Parsed, error) {
 	}
 	p.References, _ = h.MsgIDList("References")
 	p.ListUnsubscribe, p.ListUnsubscribePost, p.ListID = listHeader(&h, "List-Unsubscribe"), listHeader(&h, "List-Unsubscribe-Post"), listHeader(&h, "List-Id")
+	p.AuthenticationTrace = authenticationTrace(&h)
+	p.AuthenticationResults = ReceiverAuthenticationResults(p.AuthenticationTrace)
+	p.DKIMSigned = strings.TrimSpace(h.Get("DKIM-Signature")) != ""
+	fromFields := h.FieldsByKey("From")
+	fromCount := 0
+	for fromFields.Next() {
+		fromCount++
+	}
+	if fromCount != 1 || len(addrs(&h, "From")) != 1 {
+		p.AuthenticationResults = ""
+	}
 	if err != nil {
 		p.warn("header: %v", err)
 	}

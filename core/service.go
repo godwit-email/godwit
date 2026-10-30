@@ -22,6 +22,7 @@ import (
 	"github.com/emersion/go-imap/v2/imapclient"
 	"github.com/godwit-email/godwit/core/ai"
 	"github.com/godwit-email/godwit/core/ai/mask"
+	"github.com/godwit-email/godwit/core/ai/mask/guard"
 	"github.com/godwit-email/godwit/core/conn"
 	"github.com/godwit-email/godwit/core/events"
 	"github.com/godwit-email/godwit/core/mailsync"
@@ -42,6 +43,9 @@ type Options struct {
 	// LabelMail runs the label classifier in the background (the apps set it;
 	// tests call it by hand or leave it off so their scripted models stay theirs).
 	LabelMail bool
+	// SecurityMail runs the single background security worker. The apps enable
+	// it; deterministic tests may drive scanSecurityBatch explicitly.
+	SecurityMail bool
 	// SystemLanguage is the operating system language (BCP 47) the GUI passes in; empty means "en".
 	SystemLanguage string
 	// ImageClient downloads remote mail images; nil is imagefetch.NewClient(false)
@@ -76,6 +80,20 @@ type Options struct {
 	ComposeOpen func(draftID int64) bool
 	// OpenURL opens an external URL in the user's default browser.
 	OpenURL func(url string) error
+	// Recognizer reads for 识别模型 while it is on; nil is AstrLink Guard
+	// from its files in the cache (recognitionModelDir). Tests give a fake.
+	Recognizer mask.Recognizer
+	// GuardCoreML is the CoreML bridge AstrLink Guard reads with on a Mac
+	// (libgodwit-guard-coreml.dylib); "" leaves it on the CPU.
+	GuardCoreML string
+	// RecognitionModelSources are where 识别模型's files are downloaded from, in
+	// order, each a URL their paths follow; nil is Hugging Face, then its
+	// mirror. Tests give httptest servers'.
+	RecognitionModelSources []string
+	// RecognitionModelClient downloads them; nil is one through the system proxy
+	// (imagefetch.SystemProxy), to public hosts only. Tests give one that
+	// reaches loopback.
+	RecognitionModelClient *http.Client
 }
 
 // Service owns the database and event bus of one Godwit data directory.
@@ -111,6 +129,10 @@ type Service struct {
 
 	maskMu sync.Mutex
 	mask   *mask.Masker // created on first use; see masker
+	guard  *guardModel  // 识别模型 while it is on; see recognizer
+
+	recognitionModelMu sync.Mutex       // held while 识别模型's files download (DownloadRecognitionModel)
+	recognition        recognitionState // how 识别模型 last read
 
 	unsubMu   sync.Mutex
 	unsubbing map[int64]bool // messages whose one-click unsubscribe is under way
@@ -151,25 +173,35 @@ type Service struct {
 	credMu  sync.Mutex
 	credVer map[int64]uint64 // bumped when the user gives an account new credentials
 
-	pluginsMu   sync.RWMutex               // writers: installs, updates, grants, enabling, uninstalls; readers: ListPlugins
-	running     map[string]*runningPlugin  // started plugins by name
-	assets      modelAssets                // plugin models' files (assets.go); nil is noModelAssets
-	pluginGen   uint64                     // last runningPlugin.gen handed out
-	hooksMu     sync.Mutex                 // plugin_cursors writes, events_log cleanup, hookWakes
-	hookWakes   map[chan struct{}]struct{} // each running dispatcher's wake-up
-	labelsMu    sync.Mutex                 // label writes: a name is checked and saved under it
-	sigMu       sync.Mutex                 // signature writes (read, images stored, HTML saved, unused images cleaned), and a draft taking a signature; before editMu
-	labelWake   chan struct{}              // wakes the label classifier
-	reclaimWake chan struct{}              // wakes the free-space reclaimer (reclaimSoon)
-	labelJudge  func(context.Context) (ai.Judge, error)
-	clock       Clock              // outbox timing and Wit's time note; nil is the real clock
-	hookClock   plugins.Clock      // hook backoff and polling; nil is the real clock
-	pluginNet   plugins.NetOptions // ctx.net.fetch's network; tests inject a resolver and dialer
-	pluginClock plugins.Clock      // plugin VM call limits; nil is the real clock
-	nativeCmd   []string           // a native plugin's process: this executable's plugin-host
-	nativeEnv   []string           // and its whole environment
-	registryMu  sync.Mutex         // registry cache writes; registryErr
-	registryErr string             // why the last registry refresh failed; "" it did not
+	pluginsMu         sync.RWMutex               // writers: installs, updates, grants, enabling, uninstalls; readers: ListPlugins
+	running           map[string]*runningPlugin  // started plugins by name
+	assets            modelAssets                // plugin models' files (assets.go); nil is noModelAssets
+	pluginGen         uint64                     // last runningPlugin.gen handed out
+	hooksMu           sync.Mutex                 // plugin_cursors writes, events_log cleanup, hookWakes
+	hookWakes         map[chan struct{}]struct{} // each running dispatcher's wake-up
+	labelsMu          sync.Mutex                 // label writes: a name is checked and saved under it
+	sigMu             sync.Mutex                 // signature writes (read, images stored, HTML saved, unused images cleaned), and a draft taking a signature; before editMu
+	labelWake         chan struct{}              // wakes the label classifier
+	securityMu        sync.Mutex                 // scan admission and progress scope
+	securityRunning   bool
+	securitySyncs     int
+	securitySince     int64
+	securityThrough   int64
+	securityTotal     int
+	securityWake      chan struct{} // wakes the security scanner
+	reclaimWake       chan struct{} // wakes the free-space reclaimer (reclaimSoon)
+	labelJudge        func(context.Context) (ai.Judge, error)
+	securityJudge     func(context.Context) (ai.Judge, error)
+	securityRaw       func(context.Context, int64) ([]byte, error)
+	securityLookupTXT func(context.Context, string) ([]string, error)
+	clock             Clock              // outbox timing and Wit's time note; nil is the real clock
+	hookClock         plugins.Clock      // hook backoff and polling; nil is the real clock
+	pluginNet         plugins.NetOptions // ctx.net.fetch's network; tests inject a resolver and dialer
+	pluginClock       plugins.Clock      // plugin VM call limits; nil is the real clock
+	nativeCmd         []string           // a native plugin's process: this executable's plugin-host
+	nativeEnv         []string           // and its whole environment
+	registryMu        sync.Mutex         // registry cache writes; registryErr
+	registryErr       string             // why the last registry refresh failed; "" it did not
 
 	catalog     atomic.Pointer[ai.ModelCatalog] // models.dev's (modelcatalog.go); nil knows none
 	catalogTry  atomic.Int64                    // when a fetch last started, Unix nanoseconds
@@ -189,6 +221,9 @@ type Service struct {
 
 // New creates DataDir if needed and opens DataDir/godwit.db.
 func New(ctx context.Context, opts Options) (*Service, error) {
+	if opts.GuardCoreML != "" {
+		guard.CoreMLLibrary = opts.GuardCoreML // before the model's first Load
+	}
 	if err := os.MkdirAll(opts.DataDir, 0o700); err != nil {
 		return nil, err
 	}
@@ -202,13 +237,15 @@ func New(ctx context.Context, opts Options) (*Service, error) {
 		return nil, err
 	}
 	s := &Service{db: db, bus: events.New(), dataDir: opts.DataDir, opts: opts, installID: install, streamsEnd: make(chan struct{}),
-		clock: testClock, hookClock: testHookClock, pluginClock: testPluginClock, labelWake: make(chan struct{}, 1), reclaimWake: make(chan struct{}, 1)}
+		clock: testClock, hookClock: testHookClock, pluginClock: testPluginClock, labelWake: make(chan struct{}, 1), securityWake: make(chan struct{}, 1), reclaimWake: make(chan struct{}, 1)}
 	s.ledger = &runLedger{db: db, host: s}
 	if err := s.recoverOutbox(ctx); err != nil {
 		db.Close()
 		return nil, err
 	}
 	s.labelJudge = s.defaultLabelJudge
+	s.securityJudge = s.defaultSecurityJudge
+	s.securityRaw = s.GetRawMessage
 	s.assets = newModelAssets(s)
 	if exe, err := os.Executable(); err == nil {
 		s.nativeCmd = []string{exe, "plugin-host"}
@@ -229,6 +266,9 @@ func New(ctx context.Context, opts Options) (*Service, error) {
 	}
 	if opts.UnsubscribeClient == nil {
 		s.opts.UnsubscribeClient = &http.Client{Transport: imagefetch.NewTransport(false), Timeout: imagefetch.Timeout}
+	}
+	if opts.RecognitionModelClient == nil {
+		s.opts.RecognitionModelClient = &http.Client{Transport: imagefetch.NewTransport(false)} // no overall limit: downloadFile stops a stalled one
 	}
 	if err := s.openImageCache(); err != nil {
 		db.Close()
@@ -293,6 +333,9 @@ func New(ctx context.Context, opts Options) (*Service, error) {
 	s.startReclaim()
 	if opts.LabelMail {
 		s.startLabeler()
+	}
+	if opts.SecurityMail {
+		s.startSecurityScanner()
 	}
 	s.startImagePrefetch()
 	if opts.Registry != nil {
@@ -451,11 +494,12 @@ func (s *Service) cleanOrphans(ctx context.Context) error {
 			keep[p] = true
 		}
 	}
-	imagesDir := filepath.Join(dataDir, "cache", "images")
+	imagesDir, guardDir := filepath.Join(dataDir, "cache", "images"), filepath.Join(dataDir, "cache", "guard")
 	for _, sub := range []string{"cache", "drafts", "outbox"} {
 		err := store.CleanOrphans(filepath.Join(dataDir, sub), func(p string) bool {
 			p, err := filepath.Abs(p)
-			return err != nil || keep[p] || strings.HasPrefix(p, imagesDir+string(filepath.Separator)) // the image cache owns its files
+			// the image cache and 识别模型 own their files
+			return err != nil || keep[p] || strings.HasPrefix(p, imagesDir+string(filepath.Separator)) || strings.HasPrefix(p, guardDir+string(filepath.Separator))
 		})
 		if err != nil && !errors.Is(err, fs.ErrNotExist) {
 			return err
@@ -514,6 +558,10 @@ func (s *Service) syncNow(ctx context.Context, accountID int64, explicit bool) e
 		return err
 	}
 	defer unlock()
+	s.securityMu.Lock()
+	s.securitySyncs++
+	s.securityMu.Unlock()
+	defer func() { s.securityMu.Lock(); s.securitySyncs--; s.securityMu.Unlock() }()
 	s.bus.Publish(events.Event{Type: events.SyncStarted, AccountID: accountID})
 	if err := s.syncAccount(ctx, accountID, explicit); err != nil {
 		if ctx.Err() == nil {

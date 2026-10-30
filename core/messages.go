@@ -28,6 +28,8 @@ type MessageSummary struct {
 	Date                   time.Time
 	Flags                  []string
 	HasAttachments         bool
+	AuthResults            string
+	Security               gomail.SecurityReport
 }
 
 // MessagePage is one page of a flat message list.
@@ -51,6 +53,8 @@ type Message struct {
 	// folder holds the role), so its sender's images are never trusted.
 	InJunk      bool
 	Attachments []AttachmentInfo
+	AuthResults string
+	Security    gomail.SecurityReport
 }
 
 // AttachmentInfo describes one attachment; its bytes are fetched lazily.
@@ -61,13 +65,25 @@ type AttachmentInfo struct {
 	Inline                bool
 }
 
-const msgCols = `m.id, m.thread_id, m.folder_id, m.subject, m.from_addr, m.snippet, m.to_addrs, m.cc_addrs, m.date, m.flags, m.has_attachments`
+const msgCols = `m.id, m.thread_id, m.folder_id, m.subject, m.from_addr, m.snippet, m.to_addrs, m.cc_addrs, m.date, m.flags, m.has_attachments, m.auth_results, m.security_status, m.security_reason, m.security_scanned_at`
 
 func scanSummary(r []any) MessageSummary {
+	from := store.Str(r[4])
+	authRes := store.Str(r[11])
+	secStatus := store.Str(r[12])
+	secReason := store.Str(r[13])
+	secScanned := store.Int(r[14])
+	var sec gomail.SecurityReport
+	if secStatus != "" {
+		sec = gomail.DBToSecurityReport(from, authRes, secStatus, secReason)
+	} else if secScanned > 0 {
+		sec = gomail.EvaluateSecurity(from, authRes)
+	}
 	return MessageSummary{ID: store.Int(r[0]), ThreadID: store.Int(r[1]), FolderID: store.Int(r[2]),
-		Subject: store.Str(r[3]), From: store.Str(r[4]), Snippet: gomail.Snippet(store.Str(r[5])), // clean of what an older sync kept
+		Subject: store.Str(r[3]), From: from, Snippet: gomail.Snippet(store.Str(r[5])), // clean of what an older sync kept
 		To: jsonList(store.Str(r[6])), Cc: jsonList(store.Str(r[7])), Date: time.Unix(store.Int(r[8]), 0),
-		Flags: strings.Fields(store.Str(r[9])), HasAttachments: store.Int(r[10]) != 0}
+		Flags: strings.Fields(store.Str(r[9])), HasAttachments: store.Int(r[10]) != 0,
+		AuthResults: authRes, Security: sec}
 }
 
 func jsonList(s string) []string {
@@ -116,6 +132,9 @@ func viewCond(v View) (string, []any, error) {
 	switch {
 	case set != 1:
 	case v.LabelID != 0:
+		if v.AccountID != 0 {
+			return `m.account_id = ? AND ` + labelCond, []any{v.AccountID, v.LabelID}, nil
+		}
 		return labelCond, []any{v.LabelID}, nil
 	case v.Unified == "inbox" && v.FolderID == 0:
 		return "m.folder_id IN (SELECT id FROM folders WHERE role = 'inbox')", nil, nil
@@ -127,6 +146,16 @@ func viewCond(v View) (string, []any, error) {
 			return "", nil, fmt.Errorf("invalid starred account view: %w", err)
 		}
 		return `m.account_id = ? AND instr(m.flags, '\Flagged') > 0`, []any{accID}, nil
+	case strings.HasPrefix(v.Unified, "label:") && v.FolderID == 0:
+		parts := strings.Split(strings.TrimPrefix(v.Unified, "label:"), ":")
+		if len(parts) == 2 {
+			accID, err1 := strconv.ParseInt(parts[0], 10, 64)
+			labelID, err2 := strconv.ParseInt(parts[1], 10, 64)
+			if err1 == nil && err2 == nil {
+				return `m.account_id = ? AND ` + labelCond, []any{accID, labelID}, nil
+			}
+		}
+		return "", nil, errors.New("invalid account label view")
 	case v.Unified == "" && v.FolderID != 0:
 		return "m.folder_id = ?", []any{v.FolderID}, nil
 	}
@@ -363,8 +392,9 @@ func (s *Service) GetMessage(ctx context.Context, id int64, loadRemoteImages boo
 		return Message{}, fmt.Errorf("message %d not found", id)
 	}
 	r := rows.Values[0]
-	msg := Message{MessageSummary: scanSummary(r), ReplyTo: store.Str(r[11]), Text: store.Str(r[12]), Truncated: store.Int(r[14]) != 0, InJunk: store.Int(r[15]) != 0}
-	raw := store.Str(r[13])
+	summary := scanSummary(r)
+	msg := Message{MessageSummary: summary, ReplyTo: store.Str(r[15]), Text: store.Str(r[16]), Truncated: store.Int(r[18]) != 0, InJunk: store.Int(r[19]) != 0, AuthResults: summary.AuthResults, Security: summary.Security}
+	raw := store.Str(r[17])
 	ar, err := s.db.Query(ctx, "SELECT id, filename, content_type, size, inline, content_id FROM attachments WHERE message_id = ? ORDER BY id", id)
 	if err != nil {
 		return Message{}, err

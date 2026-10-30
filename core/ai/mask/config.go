@@ -13,14 +13,17 @@ import (
 )
 
 // The categories of values, as the user turns each on or off (设置 › AI ›
-// 隐私脱敏). Every kind a built-in rule finds is in one (categories).
+// 隐私脱敏). Every kind a built-in rule or 识别模型 finds is
+// in one (categories); only 识别模型 finds addresses and accounts.
 const (
-	Secrets = "secrets" // 密钥
-	IDs     = "ids"     // 证件与金融号码
-	Codes   = "codes"   // 验证码与一次性链接
-	Phones  = "phones"  // 电话
-	Emails  = "emails"  // 邮箱
-	Names   = "names"   // 人名
+	Secrets   = "secrets"   // 密钥
+	IDs       = "ids"       // 证件与金融号码
+	Codes     = "codes"     // 验证码与一次性链接
+	Phones    = "phones"    // 电话
+	Emails    = "emails"    // 邮箱
+	Names     = "names"     // 人名
+	Addresses = "addresses" // 地址
+	Accounts  = "accounts"  // 账号
 )
 
 // categories are the built-in kinds' categories.
@@ -28,7 +31,7 @@ var categories = map[string]string{
 	"PRIVATE_KEY": Secrets, "API_KEY": Secrets, "TOKEN": Secrets, "PASSWORD": Secrets, "SECRET": Secrets,
 	"ID_CARD": IDs, "BANK_CARD": IDs, "PASSPORT": IDs, "IBAN": IDs,
 	"CODE": Codes, "LINK": Codes, "PHONE": Phones, "EMAIL": Emails,
-	nameKind: Names,
+	nameKind: Names, "ADDRESS": Addresses, "ACCOUNT": Accounts,
 }
 
 // Category is the category of a built-in kind; "" for the user's own.
@@ -50,7 +53,8 @@ type Rule struct{ Kind, Regex string }
 // Config is what the user set: the categories turned Off; what is done
 // with each category's values (Actions: Warn or Block, else Mask); their
 // Words, matched in any case unless WordsCase, inside other words unless
-// WordsWhole; their Rules; and the values never masked (Allow, in any case).
+// WordsWhole; their Rules; the values never masked (Allow, in any case);
+// and 识别模型, if on (Recognizer).
 type Config struct {
 	Off                   []string
 	Actions               map[string]string
@@ -58,6 +62,7 @@ type Config struct {
 	WordsCase, WordsWhole bool
 	Rules                 []Rule
 	Allow                 []string
+	Recognizer            Recognizer
 }
 
 // RuleError says why the user's rule at Index can't be used.
@@ -88,10 +93,11 @@ var kindRe = regexp.MustCompile(`^[A-Z][A-Z0-9_]{0,23}$`)
 
 // compiled is a Config as find runs it.
 type compiled struct {
-	off     map[string]bool
-	actions map[string]string // by category; the user's own kinds are always masked
-	own     []rule            // the user's rules and words, found before the built-in ones
-	allow   map[string]bool
+	off        map[string]bool
+	actions    map[string]string // by category; the user's own kinds are always masked
+	own        []rule            // the user's rules and words, found before the built-in ones
+	allow      map[string]bool
+	recognizer Recognizer
 
 	mu   sync.Mutex
 	seen map[string][]span // ruled's memo, of size bytes of text
@@ -126,7 +132,7 @@ func compile(c Config, kept []Rule) (*compiled, error) {
 	if len(c.Allow) > MaxAllow {
 		return nil, ErrTooManyAllow
 	}
-	cc := &compiled{off: map[string]bool{}, allow: map[string]bool{}, actions: c.Actions}
+	cc := &compiled{off: map[string]bool{}, allow: map[string]bool{}, actions: c.Actions, recognizer: c.Recognizer}
 	for _, o := range c.Off {
 		cc.off[o] = true
 	}

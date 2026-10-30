@@ -32,10 +32,10 @@ func (s *Service) GetMessageText(ctx context.Context, id int64) (MessageText, er
 		return MessageText{}, fmt.Errorf("message %d not found", id)
 	}
 	r := rows.Values[0]
-	m := MessageText{MessageSummary: scanSummary(r), AccountID: store.Int(r[11]), ReplyTo: store.Str(r[12]),
-		Truncated: store.Int(r[14]) != 0}
-	body := Message{Text: store.Str(r[13])}
-	if raw := store.Str(r[15]); raw != "" {
+	m := MessageText{MessageSummary: scanSummary(r), AccountID: store.Int(r[15]), ReplyTo: store.Str(r[16]),
+		Truncated: store.Int(r[18]) != 0}
+	body := Message{Text: store.Str(r[17])}
+	if raw := store.Str(r[19]); raw != "" {
 		body.HTML, _, _ = mail.Sanitize(raw, nil, false) // as mailForModel: the HTML the reader shows
 	}
 	m.Text = modelBody(body)

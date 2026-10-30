@@ -149,6 +149,8 @@ var RemixIcons = map[string]string{
 	"printer":                        "node_modules/remixicon/icons/Business/printer-line.svg",
 	"puzzle":                         "node_modules/remixicon/icons/Development/puzzle-line.svg",
 	"puzzle-fill":                    "node_modules/remixicon/icons/Development/puzzle-fill.svg",
+	"question":                       "node_modules/remixicon/icons/System/question-line.svg",
+	"question-fill":                  "node_modules/remixicon/icons/System/question-fill.svg",
 	"quill-pen":                      "node_modules/remixicon/icons/Design/quill-pen-line.svg",
 	"quill-pen-fill":                 "node_modules/remixicon/icons/Design/quill-pen-fill.svg",
 	"quote":                          "node_modules/remixicon/icons/Editor/double-quotes-l.svg",
@@ -162,7 +164,11 @@ var RemixIcons = map[string]string{
 	"settings":                       "node_modules/remixicon/icons/System/settings-3-line.svg",
 	"settings-fill":                  "node_modules/remixicon/icons/System/settings-3-fill.svg",
 	"shield":                         "node_modules/remixicon/icons/System/shield-line.svg",
+	"shield-check":                   "node_modules/remixicon/icons/System/shield-check-line.svg",
+	"shield-check-fill":              "node_modules/remixicon/icons/System/shield-check-fill.svg",
 	"shield-fill":                    "node_modules/remixicon/icons/System/shield-fill.svg",
+	"skull":                          "node_modules/remixicon/icons/User & Faces/skull-line.svg",
+	"skull-fill":                     "node_modules/remixicon/icons/User & Faces/skull-fill.svg",
 	"sliders-horizontal":             "node_modules/remixicon/icons/Media/equalizer-3-line.svg",
 	"sliders-horizontal-fill":        "node_modules/remixicon/icons/Media/equalizer-3-fill.svg",
 	"spam":                           "node_modules/remixicon/icons/System/spam-2-line.svg",
@@ -179,9 +185,12 @@ var RemixIcons = map[string]string{
 	"trash-2":                        "node_modules/remixicon/icons/System/delete-bin-line.svg",
 	"trash-2-fill":                   "node_modules/remixicon/icons/System/delete-bin-fill.svg",
 	"triangle-alert":                 "node_modules/remixicon/icons/System/alert-line.svg",
+	"triangle-alert-fill":            "node_modules/remixicon/icons/System/alert-fill.svg",
 	"undo-2":                         "node_modules/remixicon/icons/Arrows/arrow-go-back-line.svg",
 	"user":                           "node_modules/remixicon/icons/User & Faces/user-line.svg",
 	"user-fill":                      "node_modules/remixicon/icons/User & Faces/user-fill.svg",
+	"vip-diamond":                    "node_modules/remixicon/icons/Finance/vip-diamond-line.svg",
+	"vip-diamond-fill":               "node_modules/remixicon/icons/Finance/vip-diamond-fill.svg",
 	"wand-sparkles":                  "node_modules/remixicon/icons/Design/magic-line.svg",
 	"x":                              "node_modules/remixicon/icons/System/close-line.svg",
 }
@@ -213,25 +222,21 @@ var BrandIcons = map[string]string{
 //go:embed node_modules/@lobehub/icons-static-svg/icons/claudecode.svg
 //go:embed node_modules/@lobehub/icons-static-svg/icons/codex.svg
 //go:embed node_modules/remixicon/icons/Arrows/arrow-down-s-line.svg
+//go:embed node_modules/remixicon/icons/Development/code-s-slash-line.svg
+//go:embed "node_modules/remixicon/icons/Health & Medical/brain-4-line.svg"
+//go:embed "node_modules/remixicon/icons/Health & Medical/brain-4-fill.svg"
 //go:embed node_modules/remixicon/icons/Arrows/arrow-go-back-line.svg
 //go:embed node_modules/remixicon/icons/Arrows/arrow-left-line.svg
 //go:embed node_modules/remixicon/icons/Arrows/arrow-right-line.svg
+//go:embed node_modules/remixicon/icons/Arrows/arrow-up-line.svg
 //go:embed node_modules/remixicon/icons/Arrows/arrow-right-s-line.svg
 //go:embed node_modules/remixicon/icons/Arrows/arrow-right-up-line.svg
-//go:embed node_modules/remixicon/icons/Arrows/arrow-up-line.svg
-//go:embed node_modules/remixicon/icons/Buildings/home-4-fill.svg
 //go:embed node_modules/remixicon/icons/Buildings/home-4-line.svg
 //go:embed node_modules/remixicon/icons/Business/archive-fill.svg
 //go:embed node_modules/remixicon/icons/Business/archive-line.svg
-//go:embed node_modules/remixicon/icons/Business/at-fill.svg
-//go:embed node_modules/remixicon/icons/Business/at-line.svg
-//go:embed node_modules/remixicon/icons/Business/bar-chart-box-fill.svg
 //go:embed node_modules/remixicon/icons/Business/bar-chart-box-line.svg
-//go:embed node_modules/remixicon/icons/Business/briefcase-4-fill.svg
 //go:embed node_modules/remixicon/icons/Business/briefcase-4-line.svg
-//go:embed node_modules/remixicon/icons/Business/calendar-event-fill.svg
 //go:embed node_modules/remixicon/icons/Business/calendar-event-line.svg
-//go:embed node_modules/remixicon/icons/Business/global-fill.svg
 //go:embed node_modules/remixicon/icons/Business/global-line.svg
 //go:embed node_modules/remixicon/icons/Business/inbox-fill.svg
 //go:embed node_modules/remixicon/icons/Business/inbox-line.svg
@@ -241,53 +246,38 @@ var BrandIcons = map[string]string{
 //go:embed node_modules/remixicon/icons/Business/mail-forbid-line.svg
 //go:embed node_modules/remixicon/icons/Business/mail-line.svg
 //go:embed node_modules/remixicon/icons/Business/mail-open-line.svg
-//go:embed node_modules/remixicon/icons/Business/mail-unread-fill.svg
-//go:embed node_modules/remixicon/icons/Business/mail-unread-line.svg
 //go:embed node_modules/remixicon/icons/Business/printer-line.svg
 //go:embed node_modules/remixicon/icons/Business/reply-all-line.svg
 //go:embed node_modules/remixicon/icons/Business/reply-line.svg
 //go:embed node_modules/remixicon/icons/Business/send-plane-fill.svg
 //go:embed node_modules/remixicon/icons/Business/send-plane-line.svg
-//go:embed node_modules/remixicon/icons/Communication/chat-3-fill.svg
 //go:embed node_modules/remixicon/icons/Communication/chat-3-line.svg
 //go:embed node_modules/remixicon/icons/Design/edit-box-line.svg
-//go:embed node_modules/remixicon/icons/Design/hammer-fill.svg
 //go:embed node_modules/remixicon/icons/Design/hammer-line.svg
 //go:embed node_modules/remixicon/icons/Design/layout-left-line.svg
 //go:embed node_modules/remixicon/icons/Design/magic-line.svg
-//go:embed node_modules/remixicon/icons/Design/palette-fill.svg
 //go:embed node_modules/remixicon/icons/Design/palette-line.svg
-//go:embed node_modules/remixicon/icons/Design/pencil-fill.svg
 //go:embed node_modules/remixicon/icons/Design/pencil-line.svg
 //go:embed node_modules/remixicon/icons/Design/quill-pen-fill.svg
 //go:embed node_modules/remixicon/icons/Design/quill-pen-line.svg
-//go:embed node_modules/remixicon/icons/Design/tools-fill.svg
 //go:embed node_modules/remixicon/icons/Design/tools-line.svg
-//go:embed node_modules/remixicon/icons/Development/braces-fill.svg
 //go:embed node_modules/remixicon/icons/Development/braces-line.svg
-//go:embed node_modules/remixicon/icons/Development/code-s-slash-line.svg
 //go:embed node_modules/remixicon/icons/Development/puzzle-fill.svg
 //go:embed node_modules/remixicon/icons/Development/puzzle-line.svg
-//go:embed node_modules/remixicon/icons/Development/terminal-box-fill.svg
 //go:embed node_modules/remixicon/icons/Development/terminal-box-line.svg
 //go:embed node_modules/remixicon/icons/Device/computer-line.svg
 //go:embed node_modules/remixicon/icons/Device/cpu-fill.svg
 //go:embed node_modules/remixicon/icons/Device/cpu-line.svg
 //go:embed node_modules/remixicon/icons/Device/save-line.svg
-//go:embed node_modules/remixicon/icons/Document/bill-fill.svg
 //go:embed node_modules/remixicon/icons/Document/bill-line.svg
-//go:embed node_modules/remixicon/icons/Document/book-2-fill.svg
 //go:embed node_modules/remixicon/icons/Document/book-2-line.svg
 //go:embed node_modules/remixicon/icons/Document/draft-fill.svg
 //go:embed node_modules/remixicon/icons/Document/draft-line.svg
 //go:embed node_modules/remixicon/icons/Document/file-copy-line.svg
 //go:embed node_modules/remixicon/icons/Document/file-text-line.svg
-//go:embed node_modules/remixicon/icons/Document/folder-3-fill.svg
 //go:embed node_modules/remixicon/icons/Document/folder-3-line.svg
 //go:embed node_modules/remixicon/icons/Document/folder-open-fill.svg
-//go:embed node_modules/remixicon/icons/Document/newspaper-fill.svg
 //go:embed node_modules/remixicon/icons/Document/newspaper-line.svg
-//go:embed node_modules/remixicon/icons/Document/sticky-note-fill.svg
 //go:embed node_modules/remixicon/icons/Document/sticky-note-line.svg
 //go:embed node_modules/remixicon/icons/Editor/attachment-2.svg
 //go:embed node_modules/remixicon/icons/Editor/bold.svg
@@ -298,54 +288,35 @@ var BrandIcons = map[string]string{
 //go:embed node_modules/remixicon/icons/Editor/list-ordered.svg
 //go:embed node_modules/remixicon/icons/Editor/list-unordered.svg
 //go:embed node_modules/remixicon/icons/Editor/translate-2.svg
-//go:embed node_modules/remixicon/icons/Finance/money-dollar-circle-fill.svg
 //go:embed node_modules/remixicon/icons/Finance/money-dollar-circle-line.svg
 //go:embed node_modules/remixicon/icons/Finance/price-tag-3-fill.svg
 //go:embed node_modules/remixicon/icons/Finance/price-tag-3-line.svg
-//go:embed node_modules/remixicon/icons/Finance/shopping-bag-3-fill.svg
 //go:embed node_modules/remixicon/icons/Finance/shopping-bag-3-line.svg
-//go:embed "node_modules/remixicon/icons/Health & Medical/brain-4-fill.svg"
-//go:embed "node_modules/remixicon/icons/Health & Medical/brain-4-line.svg"
-//go:embed "node_modules/remixicon/icons/Health & Medical/brain-fill.svg"
+//go:embed node_modules/remixicon/icons/Finance/vip-diamond-fill.svg
+//go:embed node_modules/remixicon/icons/Finance/vip-diamond-line.svg
 //go:embed "node_modules/remixicon/icons/Health & Medical/brain-line.svg"
-//go:embed "node_modules/remixicon/icons/Health & Medical/first-aid-kit-fill.svg"
 //go:embed "node_modules/remixicon/icons/Health & Medical/first-aid-kit-line.svg"
-//go:embed "node_modules/remixicon/icons/Health & Medical/flask-fill.svg"
 //go:embed "node_modules/remixicon/icons/Health & Medical/flask-line.svg"
-//go:embed "node_modules/remixicon/icons/Health & Medical/heart-3-fill.svg"
 //go:embed "node_modules/remixicon/icons/Health & Medical/heart-3-line.svg"
-//go:embed "node_modules/remixicon/icons/Health & Medical/stethoscope-fill.svg"
 //go:embed "node_modules/remixicon/icons/Health & Medical/stethoscope-line.svg"
-//go:embed node_modules/remixicon/icons/Map/earth-fill.svg
 //go:embed node_modules/remixicon/icons/Map/earth-line.svg
-//go:embed node_modules/remixicon/icons/Map/footprint-fill.svg
 //go:embed node_modules/remixicon/icons/Map/footprint-line.svg
-//go:embed node_modules/remixicon/icons/Map/plane-fill.svg
 //go:embed node_modules/remixicon/icons/Map/plane-line.svg
-//go:embed node_modules/remixicon/icons/Map/run-fill.svg
 //go:embed node_modules/remixicon/icons/Map/run-line.svg
-//go:embed node_modules/remixicon/icons/Map/truck-fill.svg
 //go:embed node_modules/remixicon/icons/Map/truck-line.svg
 //go:embed node_modules/remixicon/icons/Media/equalizer-3-fill.svg
 //go:embed node_modules/remixicon/icons/Media/equalizer-3-line.svg
 //go:embed node_modules/remixicon/icons/Media/image-line.svg
-//go:embed node_modules/remixicon/icons/Media/movie-2-fill.svg
 //go:embed node_modules/remixicon/icons/Media/movie-2-line.svg
-//go:embed node_modules/remixicon/icons/Media/music-2-fill.svg
 //go:embed node_modules/remixicon/icons/Media/music-2-line.svg
-//go:embed node_modules/remixicon/icons/Media/notification-3-fill.svg
 //go:embed node_modules/remixicon/icons/Media/notification-3-line.svg
-//go:embed node_modules/remixicon/icons/Others/graduation-cap-fill.svg
 //go:embed node_modules/remixicon/icons/Others/graduation-cap-line.svg
-//go:embed node_modules/remixicon/icons/Others/key-2-fill.svg
 //go:embed node_modules/remixicon/icons/Others/key-2-line.svg
-//go:embed node_modules/remixicon/icons/Others/plant-fill.svg
 //go:embed node_modules/remixicon/icons/Others/plant-line.svg
-//go:embed node_modules/remixicon/icons/Others/scales-3-fill.svg
 //go:embed node_modules/remixicon/icons/Others/scales-3-line.svg
-//go:embed node_modules/remixicon/icons/Others/seedling-fill.svg
 //go:embed node_modules/remixicon/icons/Others/seedling-line.svg
 //go:embed node_modules/remixicon/icons/System/add-line.svg
+//go:embed node_modules/remixicon/icons/System/alert-fill.svg
 //go:embed node_modules/remixicon/icons/System/alert-line.svg
 //go:embed node_modules/remixicon/icons/System/apps-2-fill.svg
 //go:embed node_modules/remixicon/icons/System/apps-2-line.svg
@@ -364,27 +335,74 @@ var BrandIcons = map[string]string{
 //go:embed node_modules/remixicon/icons/System/loader-4-line.svg
 //go:embed node_modules/remixicon/icons/System/lock-line.svg
 //go:embed node_modules/remixicon/icons/System/more-line.svg
+//go:embed node_modules/remixicon/icons/System/question-fill.svg
+//go:embed node_modules/remixicon/icons/System/question-line.svg
 //go:embed node_modules/remixicon/icons/System/refresh-line.svg
 //go:embed node_modules/remixicon/icons/System/search-line.svg
 //go:embed node_modules/remixicon/icons/System/settings-3-fill.svg
 //go:embed node_modules/remixicon/icons/System/settings-3-line.svg
 //go:embed node_modules/remixicon/icons/System/share-forward-line.svg
+//go:embed node_modules/remixicon/icons/System/shield-check-fill.svg
+//go:embed node_modules/remixicon/icons/System/shield-check-line.svg
 //go:embed node_modules/remixicon/icons/System/shield-fill.svg
-//go:embed node_modules/remixicon/icons/System/shield-keyhole-fill.svg
 //go:embed node_modules/remixicon/icons/System/shield-keyhole-line.svg
 //go:embed node_modules/remixicon/icons/System/shield-line.svg
 //go:embed node_modules/remixicon/icons/System/spam-2-fill.svg
 //go:embed node_modules/remixicon/icons/System/spam-2-line.svg
 //go:embed node_modules/remixicon/icons/System/star-fill.svg
 //go:embed node_modules/remixicon/icons/System/star-line.svg
-//go:embed node_modules/remixicon/icons/System/time-fill.svg
-//go:embed node_modules/remixicon/icons/System/time-line.svg
-//go:embed "node_modules/remixicon/icons/User & Faces/team-fill.svg"
+//go:embed "node_modules/remixicon/icons/User & Faces/skull-fill.svg"
+//go:embed "node_modules/remixicon/icons/User & Faces/skull-line.svg"
 //go:embed "node_modules/remixicon/icons/User & Faces/team-line.svg"
-//go:embed "node_modules/remixicon/icons/User & Faces/user-fill.svg"
 //go:embed "node_modules/remixicon/icons/User & Faces/user-line.svg"
 //go:embed node_modules/remixicon/icons/Weather/sparkling-fill.svg
 //go:embed node_modules/remixicon/icons/Weather/sparkling-line.svg
+//go:embed node_modules/remixicon/icons/Buildings/home-4-fill.svg
+//go:embed node_modules/remixicon/icons/Business/at-fill.svg
+//go:embed node_modules/remixicon/icons/Business/at-line.svg
+//go:embed node_modules/remixicon/icons/Business/bar-chart-box-fill.svg
+//go:embed node_modules/remixicon/icons/Business/briefcase-4-fill.svg
+//go:embed node_modules/remixicon/icons/Business/calendar-event-fill.svg
+//go:embed node_modules/remixicon/icons/Business/global-fill.svg
+//go:embed node_modules/remixicon/icons/Business/mail-unread-fill.svg
+//go:embed node_modules/remixicon/icons/Business/mail-unread-line.svg
+//go:embed node_modules/remixicon/icons/Communication/chat-3-fill.svg
+//go:embed node_modules/remixicon/icons/Design/hammer-fill.svg
+//go:embed node_modules/remixicon/icons/Design/palette-fill.svg
+//go:embed node_modules/remixicon/icons/Design/pencil-fill.svg
+//go:embed node_modules/remixicon/icons/Design/tools-fill.svg
+//go:embed node_modules/remixicon/icons/Development/braces-fill.svg
+//go:embed node_modules/remixicon/icons/Development/terminal-box-fill.svg
+//go:embed node_modules/remixicon/icons/Document/bill-fill.svg
+//go:embed node_modules/remixicon/icons/Document/book-2-fill.svg
+//go:embed node_modules/remixicon/icons/Document/folder-3-fill.svg
+//go:embed node_modules/remixicon/icons/Document/newspaper-fill.svg
+//go:embed node_modules/remixicon/icons/Document/sticky-note-fill.svg
+//go:embed node_modules/remixicon/icons/Finance/money-dollar-circle-fill.svg
+//go:embed node_modules/remixicon/icons/Finance/shopping-bag-3-fill.svg
+//go:embed "node_modules/remixicon/icons/Health & Medical/brain-fill.svg"
+//go:embed "node_modules/remixicon/icons/Health & Medical/first-aid-kit-fill.svg"
+//go:embed "node_modules/remixicon/icons/Health & Medical/flask-fill.svg"
+//go:embed "node_modules/remixicon/icons/Health & Medical/heart-3-fill.svg"
+//go:embed "node_modules/remixicon/icons/Health & Medical/stethoscope-fill.svg"
+//go:embed node_modules/remixicon/icons/Map/earth-fill.svg
+//go:embed node_modules/remixicon/icons/Map/footprint-fill.svg
+//go:embed node_modules/remixicon/icons/Map/plane-fill.svg
+//go:embed node_modules/remixicon/icons/Map/run-fill.svg
+//go:embed node_modules/remixicon/icons/Map/truck-fill.svg
+//go:embed node_modules/remixicon/icons/Media/movie-2-fill.svg
+//go:embed node_modules/remixicon/icons/Media/music-2-fill.svg
+//go:embed node_modules/remixicon/icons/Media/notification-3-fill.svg
+//go:embed node_modules/remixicon/icons/Others/graduation-cap-fill.svg
+//go:embed node_modules/remixicon/icons/Others/key-2-fill.svg
+//go:embed node_modules/remixicon/icons/Others/plant-fill.svg
+//go:embed node_modules/remixicon/icons/Others/scales-3-fill.svg
+//go:embed node_modules/remixicon/icons/Others/seedling-fill.svg
+//go:embed node_modules/remixicon/icons/System/shield-keyhole-fill.svg
+//go:embed node_modules/remixicon/icons/System/time-fill.svg
+//go:embed node_modules/remixicon/icons/System/time-line.svg
+//go:embed "node_modules/remixicon/icons/User & Faces/team-fill.svg"
+//go:embed "node_modules/remixicon/icons/User & Faces/user-fill.svg"
 var remix embed.FS
 
 // RemixIcon returns the SVG of a Godwit icon name, as "trash-2".
