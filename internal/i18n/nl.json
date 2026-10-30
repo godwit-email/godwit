@@ -643,6 +643,8 @@
   "settings_masking_log_empty": "Niets in de afgelopen 30 dagen",
   "settings_masking_log_value": "{arg1}…, {arg2} tekens",
   "settings_masking_log_own": "Eigen",
+  "settings_masking_log_source_rule": "Regel",
+  "settings_masking_log_source_model": "Herkenningsmodel",
   "settings_masking_feature_wit": "Wit",
   "settings_masking_feature_compose": "Schrijfhulp",
   "settings_masking_feature_skill": "Samenvatting en skills",

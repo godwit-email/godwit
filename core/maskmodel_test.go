@@ -263,6 +263,24 @@ func TestTheMaskModelSaysWhatReadsIt(t *testing.T) {
 	assert.Equal(t, &cpu, b)
 }
 
+// The masking log says what found each value: the model the name it found,
+// a rule the card.
+func TestTheMaskingLogSaysWhatFoundEachValue(t *testing.T) {
+	e := newApprovalEnv(t)
+	installMaskModel(t, e.s, newFakeModel(map[string]string{"陈晓雯": "private_person"}))
+	setMaskModel(t, e.s, true)
+	conv := e.newConv(t, "ask", 0)
+	e.srv.Script(testllm.Turn{Text: []string{"ok"}})
+	e.start(t, conv, "陈晓雯的卡是 4111 1111 1111 1111 吗？")
+	log, err := e.s.MaskingLog(t.Context())
+	require.NoError(t, err)
+	source := map[string]string{}
+	for _, r := range log {
+		source[r.Kind] = r.Source
+	}
+	assert.Equal(t, map[string]string{"NAME": MaskSourceModel, "BANK_CARD": MaskSourceRule}, source)
+}
+
 // AstrLink Guard itself, from the files in GODWIT_GUARD_DIR as
 // core/ai/mask/guard's tests read them, finds a name and a phone, and
 // reads on CoreML when GODWIT_GUARD_COREML is the bridge's path.

@@ -491,6 +491,11 @@ var Migrations = [][]string{{
 	// foreign keys. Without these, each is a scan of the whole table.
 	`CREATE INDEX ops_message ON ops(message_id)`,
 	`CREATE INDEX attachments_message ON attachments(message_id)`,
+}, {
+	// What found a masking record's value (core.MaskRecord.Source): a rule,
+	// or 识别模型 (docs/adr/0028-local-model-for-masking.md). The records
+	// before were all the rules'.
+	`ALTER TABLE mask_log ADD COLUMN source TEXT NOT NULL DEFAULT 'rule'`,
 }}
 
 // HistoryRowsVersion is the schema version that keeps a conversation's
