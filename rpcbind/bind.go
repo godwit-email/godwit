@@ -41,6 +41,7 @@ var table = []Error{
 	{Code: "mask_empty_match", Err: core.ErrMaskEmptyMatch},
 	{Code: "mask_too_many_rules", Err: core.ErrMaskTooManyRules},
 	{Code: "mask_too_many_allow", Err: core.ErrMaskTooManyAllow},
+	{Code: "mask_model_missing", Err: core.ErrMaskModelMissing, Key: "settings.masking.model_missing"},
 	{Code: "not_on_server_yet", Err: core.ErrNotOnServerYet},
 	{Code: "stale_draft", Err: core.ErrStaleDraft},
 	{Code: "not_synced", Err: core.ErrNotSynced},

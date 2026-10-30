@@ -226,7 +226,7 @@ func TestWireCodesPinned(t *testing.T) {
 	c := rpcbind.NewCodec()
 	pinned := map[string]error{
 		"use_assist": core.ErrUseAssist, "stale_approval": core.ErrStaleApproval, "too_large": core.ErrTooLarge, "link_ref": core.ErrLinkRef, "placeholder": core.ErrPlaceholder,
-		"mask_kind": core.ErrMaskKind, "mask_reserved_kind": core.ErrMaskReservedKind, "mask_empty_match": core.ErrMaskEmptyMatch, "mask_too_many_rules": core.ErrMaskTooManyRules, "mask_too_many_allow": core.ErrMaskTooManyAllow,
+		"mask_kind": core.ErrMaskKind, "mask_reserved_kind": core.ErrMaskReservedKind, "mask_empty_match": core.ErrMaskEmptyMatch, "mask_too_many_rules": core.ErrMaskTooManyRules, "mask_too_many_allow": core.ErrMaskTooManyAllow, "mask_model_missing": core.ErrMaskModelMissing,
 		"not_on_server_yet": core.ErrNotOnServerYet, "stale_draft": core.ErrStaleDraft, "run_active": core.ErrRunActive, "not_synced": core.ErrNotSynced,
 		"compacting": core.ErrCompacting, "nothing_to_compact": core.ErrNothingToCompact, "draft_gone": core.ErrDraftGone,
 		"keychain_unavailable": core.ErrKeychainUnavailable, "wrong_account": core.ErrWrongAccount,
