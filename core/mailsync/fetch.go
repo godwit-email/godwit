@@ -206,7 +206,7 @@ func doomed(ctx context.Context, db *store.DB, where string, args ...any) (ids, 
 
 func headerSection() *imap.FetchItemBodySection {
 	return &imap.FetchItemBodySection{Specifier: imap.PartSpecifierHeader,
-		HeaderFields: []string{"REFERENCES", "IN-REPLY-TO", "REPLY-TO", "LIST-UNSUBSCRIBE", "LIST-UNSUBSCRIBE-POST", "LIST-ID"}, Peek: true}
+		HeaderFields: []string{"MESSAGE-ID", "DATE", "SUBJECT", "FROM", "TO", "CC", "REFERENCES", "IN-REPLY-TO", "REPLY-TO", "LIST-UNSUBSCRIBE", "LIST-UNSUBSCRIBE-POST", "LIST-ID"}, Peek: true}
 }
 
 // fetchNew imports messages above last_uid; the first sync of a count range
@@ -283,7 +283,8 @@ func arrivalTwins(ctx context.Context, db *store.DB, c *imapclient.Client, a *ac
 	if err != nil || len(w.Values) == 0 {
 		return nil, err
 	}
-	msgs, err := c.Fetch(imap.UIDSetNum(uids...), &imap.FetchOptions{UID: true, RFC822Size: true, Envelope: true}).Collect()
+	msgs, err := c.Fetch(imap.UIDSetNum(uids...), &imap.FetchOptions{UID: true, RFC822Size: true,
+		BodySection: []*imap.FetchItemBodySection{headerSection()}}).Collect()
 	if err != nil {
 		return nil, err
 	}
@@ -338,7 +339,7 @@ func advance(ctx context.Context, db *store.DB, f *folder, last uint32) error {
 
 // importItems is what a sync fetches of each message before its text parts.
 func importItems() *imap.FetchOptions {
-	return &imap.FetchOptions{UID: true, Flags: true, RFC822Size: true, Envelope: true, InternalDate: true,
+	return &imap.FetchOptions{UID: true, Flags: true, RFC822Size: true, InternalDate: true,
 		BodyStructure: &imap.FetchItemBodyStructure{Extended: true}, BodySection: []*imap.FetchItemBodySection{headerSection()}}
 }
 
@@ -472,10 +473,11 @@ func backfillRange(ctx context.Context, db *store.DB, c *imapclient.Client, a *a
 func byUID(x, y *imapclient.FetchMessageBuffer) int { return cmp.Compare(x.UID, y.UID) }
 
 func twinKey(m *imapclient.FetchMessageBuffer) string {
-	if m.Envelope == nil {
+	h, err := mail.Parse(m.FindBodySection(headerSection()))
+	if err != nil {
 		return ""
 	}
-	return m.Envelope.MessageID + "\x00" + strconv.FormatInt(m.RFC822Size, 10)
+	return h.MessageID + "\x00" + strconv.FormatInt(m.RFC822Size, 10)
 }
 
 // textParts returns the text parts of m that a sync downloads: in order, until
@@ -572,23 +574,15 @@ func partPath(p string) []int {
 	return out
 }
 
-// toParsed assembles a message from ENVELOPE, the fetched header fields and the
-// decoded text parts.
+// toParsed assembles a message from the fetched header fields and the decoded
+// text parts. It reads no ENVELOPE: go-imap fails the whole FETCH on a server's
+// malformed one, so one bad message would stop the folder's sync.
 func toParsed(m *imapclient.FetchMessageBuffer, texts map[string][]byte) *mail.Parsed {
 	p := &mail.Parsed{}
 	if h, err := mail.Parse(m.FindBodySection(headerSection())); err == nil {
+		p.MessageID, p.Subject, p.Date, p.From, p.To, p.Cc = h.MessageID, h.Subject, h.Date, h.From, h.To, h.Cc
 		p.InReplyTo, p.References, p.ReplyTo = h.InReplyTo, h.References, h.ReplyTo
 		p.ListUnsubscribe, p.ListUnsubscribePost, p.ListID = h.ListUnsubscribe, h.ListUnsubscribePost, h.ListID
-	}
-	if env := m.Envelope; env != nil {
-		p.MessageID, p.Subject, p.Date = env.MessageID, env.Subject, env.Date
-		if from := addrs(env.From); len(from) > 0 {
-			p.From = from[0]
-		}
-		p.To, p.Cc = addrs(env.To), addrs(env.Cc)
-		if p.InReplyTo == "" && len(env.InReplyTo) > 0 {
-			p.InReplyTo = env.InReplyTo[0]
-		}
 	}
 	if p.Date.IsZero() {
 		p.Date = m.InternalDate
@@ -634,18 +628,6 @@ func appendCapped(dst *string, b []byte) bool {
 	}
 	*dst += string(b[:cut])
 	return true
-}
-
-func addrs(l []imap.Address) []string {
-	var out []string
-	for _, a := range l {
-		switch addr := a.Addr(); {
-		case addr == "": // group syntax marker
-		default:
-			out = append(out, mail.FormatAddress(a.Name, addr))
-		}
-	}
-	return out
 }
 
 func flagString(fl []imap.Flag) string {

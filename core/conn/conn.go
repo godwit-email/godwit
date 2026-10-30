@@ -134,7 +134,7 @@ func DialIMAPAbortable(ctx context.Context, e Endpoint, h *imapclient.Unilateral
 	}
 	opts := &imapclient.Options{
 		TLSConfig:   &tls.Config{ServerName: e.Host},
-		WordDecoder: &mime.WordDecoder{CharsetReader: charset.Reader}, // GBK/Big5 subjects in ENVELOPE
+		WordDecoder: &mime.WordDecoder{CharsetReader: charset.Reader}, // GBK/Big5 words in BODYSTRUCTURE
 
 		UnilateralDataHandler: h,
 	}
