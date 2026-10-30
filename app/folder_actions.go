@@ -67,21 +67,19 @@ func (p *mailPage) doEmptyFolder(folderID int64, role string, accID int64) {
 // markViewAsRead marks all unread messages in view v as read.
 func (p *mailPage) markViewAsRead(v core.View) {
 	a := p.a
-	a.do(func(ctx context.Context) error {
-		n, err := a.svc.MarkAllAsRead(ctx, v)
+	var n int
+	a.do(func(ctx context.Context) (err error) {
+		n, err = a.svc.MarkAllAsRead(ctx, v)
+		return err
+	}, func(err error) {
 		if err != nil {
-			return err
+			a.toastErr(err)
+			return
 		}
 		if n > 0 {
 			a.toast(i18n.T("mail.mark_all_read.toast"))
 		} else {
 			a.toast(i18n.T("mail.no_unread_messages"))
-		}
-		return nil
-	}, func(err error) {
-		if err != nil {
-			a.toastErr(err)
-			return
 		}
 		p.reload()
 	})
