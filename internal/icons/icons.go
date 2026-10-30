@@ -32,3 +32,11 @@ func Get(name string) *ui.SVG {
 // Fill returns the fill style of a name's icon, as "mail"; one without a fill
 // style panics.
 func Fill(name string) *ui.SVG { return Get(name + "-fill") }
+
+// FillOr returns the fill style of a name's icon if one exists, otherwise the line icon.
+func FillOr(name string) *ui.SVG {
+	if s, ok := all[name+"-fill"]; ok {
+		return s
+	}
+	return Get(name)
+}

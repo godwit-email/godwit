@@ -164,7 +164,7 @@ func (p *palette) view(c *ui.Context) {
 			}
 		}
 	})
-	if p.open && !p.asking && !p.m.open && p.sel < len(p.rows) && p.rows[p.sel].msg != nil { // the menu covers the card
+	if p.open && !p.asking && !p.filtering && !p.m.open && p.sel < len(p.rows) && p.rows[p.sel].msg != nil { // the menu covers the card
 		m := *p.rows[p.sel].msg
 		kit.PalettePreview(c, func() { p.preview(c, m) })
 	}

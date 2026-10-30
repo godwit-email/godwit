@@ -1,9 +1,12 @@
 package app
 
 import (
+	"strings"
 	"testing"
 
 	"github.com/egoist/mygo/ui"
+	"github.com/godwit-email/godwit/core"
+	"github.com/godwit-email/godwit/internal/theme"
 )
 
 // filtersShown is whether the palette lists its filters.
@@ -79,4 +82,76 @@ func TestPaletteSlashLeavesNoSlash(t *testing.T) {
 	if after.X != before.X || h.app.palette.query != "a " {
 		t.Fatalf("caret %v, was %v; query %q", after.X, before.X, h.app.palette.query)
 	}
+}
+
+// Each filter option has an icon, and label/time options have no "Label:" or "Time:" prefixes.
+func TestPaletteFilterOptionIconsAndLabels(t *testing.T) {
+	h, _ := invoices(t)
+	p := h.app.palette
+	opts := p.filterOpts()
+	if len(opts) == 0 {
+		t.Fatal("no filter options")
+	}
+	for _, opt := range opts {
+		if opt.icon == "" {
+			t.Errorf("filter %q (kind %s) has no icon", opt.label, opt.kind)
+		}
+		if opt.kind == "account" {
+			if opt.icon != "at" {
+				t.Errorf("account filter %q icon = %q, want at", opt.label, opt.icon)
+			}
+			if strings.HasPrefix(opt.label, "Account:") || strings.HasPrefix(opt.label, "Konto:") || strings.HasPrefix(opt.label, "账户：") {
+				t.Errorf("account filter %q has redundant prefix", opt.label)
+			}
+		}
+		if opt.kind == "label" && (strings.HasPrefix(opt.label, "Label:") || strings.HasPrefix(opt.label, "标签：")) {
+			t.Errorf("label filter %q has redundant prefix", opt.label)
+		}
+		if opt.kind == "span" && (strings.HasPrefix(opt.label, "Time:") || strings.HasPrefix(opt.label, "时间：")) {
+			t.Errorf("span filter %q has redundant prefix", opt.label)
+		}
+	}
+}
+
+// Labels preserve their color when selected and use fill icons; account icons support custom icons gracefully.
+func TestPaletteFilterLabelAndAccountIconSelected(t *testing.T) {
+	h, _ := invoices(t)
+	p := h.app.palette
+	opts := p.filterOpts()
+
+	var labelOpt, accountOpt palFilter
+	for _, opt := range opts {
+		if opt.kind == "label" && labelOpt.kind == "" {
+			labelOpt = opt
+		}
+		if opt.kind == "account" && accountOpt.kind == "" {
+			accountOpt = opt
+		}
+	}
+	if labelOpt.kind == "" || accountOpt.kind == "" {
+		t.Fatalf("missing label or account options: label=%+v account=%+v", labelOpt, accountOpt)
+	}
+
+	// Label icon color is preserved
+	th := theme.Dark()
+	if labelOpt.iconColor == nil {
+		t.Fatal("label option has no iconColor func")
+	}
+	clr := labelOpt.iconColor(th)
+	if clr == th.Foreground {
+		t.Errorf("label color should not be foreground, got %v", clr)
+	}
+
+	// Account renderIcon doesn't panic and renders for various icon types
+	tt := ui.NewTester(func(c *ui.Context) {
+		p.renderAccountIcon(c, core.Account{ID: 1, Icon: "image:1"}, false)
+		p.renderAccountIcon(c, core.Account{ID: 1, Icon: "image:1"}, true)
+		p.renderAccountIcon(c, core.Account{ID: 2, Icon: "brand:google"}, false)
+		p.renderAccountIcon(c, core.Account{ID: 2, Icon: "brand:google"}, true)
+		p.renderAccountIcon(c, core.Account{ID: 3, Icon: "label:star"}, false)
+		p.renderAccountIcon(c, core.Account{ID: 3, Icon: "label:star"}, true)
+		p.renderAccountIcon(c, core.Account{ID: 4, Icon: ""}, false)
+		p.renderAccountIcon(c, core.Account{ID: 4, Icon: ""}, true)
+	}, 200, 200)
+	tt.Frame()
 }

@@ -45,6 +45,26 @@ func TestPalettePreview(t *testing.T) {
 	h.until("no card on a command", func() bool { return !inPalette(h, "The numbers for review are attached.") })
 }
 
+// Opening the filter list with / hides the preview card.
+func TestPalettePreviewHiddenWhileFiltering(t *testing.T) {
+	h, accs := mailHarness(t, nil, "alice@example.com")
+	h.put(accs[0], "INBOX", coretest.Msg("Bob <bob@example.com>", "alice@example.com", "Quarterly report", "The numbers for review are attached."))
+	h.syncNow(accs[0])
+	h.waitMail("a thread", func() bool { return len(h.items()) == 1 })
+	h.tt.Key(ui.Cmd, ui.KeyK)
+	h.until("the palette", func() bool { return paletteShown(h) })
+	h.until("the preview card", func() bool { return inPalette(h, "The numbers for review are attached.") })
+
+	h.typeText("/")
+	h.until("the filter list", func() bool { return filtersShown(h) })
+	if inPalette(h, "The numbers for review are attached.") {
+		t.Fatal("preview card still shown while filter list is open")
+	}
+
+	h.tt.Key(0, ui.KeyEscape)
+	h.until("the card restored once filters close", func() bool { return inPalette(h, "The numbers for review are attached.") })
+}
+
 // The card's avatar keeps to the remote-image setting: none is fetched
 // while remote images are asked for, the initial shows instead.
 func TestPalettePreviewAvatarPolicy(t *testing.T) {

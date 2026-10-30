@@ -7,7 +7,7 @@ var names = []string{"mail", "user", "sparkles", "sliders-horizontal", "panel-le
 	"folder", "send", "file-pen", "paperclip", "plus", "x", "check", "chevron-down", "chevron-right",
 	"triangle-alert", "loader", "copy", "external-link", "eye", "eye-off", "image-off", "bold", "italic", "link", "list",
 	"list-ordered", "quote", "undo-2", "refresh-cw", "circle-check", "circle-x", "shield", "puzzle", "lock", "monitor",
-	"globe", "languages", "file-text", "wand-sparkles", "download", "ellipsis", "component", "spam", "outbox", "settings", "cpu", "brain-4", "info", "tag", "grip", "quill-pen", "code", "save", "printer"}
+	"globe", "languages", "file-text", "wand-sparkles", "download", "ellipsis", "component", "spam", "outbox", "settings", "cpu", "brain-4", "info", "tag", "grip", "quill-pen", "code", "save", "printer", "mail-unread", "time", "at"}
 
 // labelIcons are the label picker's icons, embedded as "label-<name>".
 var labelIcons = []string{"shield-keyhole", "bill", "truck", "plane", "calendar-event", "notification-3", "newspaper", "shopping-bag-3",
@@ -18,7 +18,8 @@ var labelIcons = []string{"shield-keyhole", "bill", "truck", "plane", "calendar-
 
 // filled are the names with a fill style too: the rail's and the sidebars'.
 var filled = []string{"mail", "sparkles", "sliders-horizontal", "component", "inbox", "star", "send", "file-pen", "trash-2",
-	"archive", "spam", "folder", "outbox", "settings", "cpu", "brain-4", "puzzle", "shield", "info", "tag", "quill-pen"}
+	"archive", "spam", "folder", "outbox", "settings", "cpu", "brain-4", "puzzle", "shield", "info", "tag", "quill-pen",
+	"mail-unread", "at", "time", "user"}
 
 func TestIconsParse(t *testing.T) {
 	for _, n := range names {
@@ -36,9 +37,12 @@ func TestIconsParse(t *testing.T) {
 		if w, h := Get("label-" + n).Size(); w != 24 || h != 24 {
 			t.Errorf("label-%s is %vx%v, want 24x24", n, w, h)
 		}
+		if w, h := Fill("label-" + n).Size(); w != 24 || h != 24 {
+			t.Errorf("label-%s fill is %vx%v, want 24x24", n, w, h)
+		}
 	}
-	if len(all) != len(names)+len(filled)+len(labelIcons) {
-		t.Errorf("%d icons embedded, want %d", len(all), len(names)+len(filled)+len(labelIcons))
+	if len(all) != len(names)+len(filled)+2*len(labelIcons) {
+		t.Errorf("%d icons embedded, want %d", len(all), len(names)+len(filled)+2*len(labelIcons))
 	}
 	defer func() {
 		if recover() == nil {
