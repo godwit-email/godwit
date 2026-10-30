@@ -1,6 +1,6 @@
 {
   "name": "@godwit/sdk",
-  "version": "1.20.1",
+  "version": "1.20.2",
   "description": "Types for Godwit plugins",
   "license": "Apache-2.0",
   "repository": {
