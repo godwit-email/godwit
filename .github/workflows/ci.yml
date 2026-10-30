@@ -182,6 +182,7 @@ jobs:
           mise run web:install
           mise run native:translate
           mise run native:apple-intelligence
+          mise run native:guard-coreml
           go tool mygo build -platform darwin/arm64,darwin/amd64
       - uses: actions/upload-artifact@v7
         if: runner.os == 'macOS' && inputs.signed_macos

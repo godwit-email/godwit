@@ -635,10 +635,10 @@ func TestShots(t *testing.T) {
 		s.post(func() { // the design's sample: two requests, one blocked
 			at := s.clock.Now().Add(-time.Hour)
 			p.maskLog = []core.MaskRecord{
-				{At: at, Request: 2, Feature: "skill", Kind: "EMAIL", Category: "emails", First: "h", Len: 16, Action: core.MaskMask},
-				{At: at, Request: 2, Feature: "skill", Kind: "ID_CARD", Category: "ids", First: "3", Len: 18, Action: core.MaskBlock},
-				{At: at.Add(-time.Hour), Request: 1, Feature: "wit", Kind: "NAME", Category: "names", Len: 2, Action: core.MaskMask},
-				{At: at.Add(-time.Hour), Request: 1, Feature: "wit", Kind: "PHONE", Category: "phones", First: "1", Len: 11, Action: core.MaskWarn},
+				{At: at, Request: 2, Feature: "skill", Kind: "EMAIL", Category: "emails", First: "h", Len: 16, Action: core.MaskMask, Source: core.MaskSourceRule},
+				{At: at, Request: 2, Feature: "skill", Kind: "ID_CARD", Category: "ids", First: "3", Len: 18, Action: core.MaskBlock, Source: core.MaskSourceRule},
+				{At: at.Add(-time.Hour), Request: 1, Feature: "wit", Kind: "NAME", Category: "names", Len: 2, Action: core.MaskMask, Source: core.MaskSourceRecognizer},
+				{At: at.Add(-time.Hour), Request: 1, Feature: "wit", Kind: "PHONE", Category: "phones", First: "1", Len: 11, Action: core.MaskWarn, Source: core.MaskSourceRule},
 			}
 			p.logFilter.open = map[string]bool{"2": true}
 		})

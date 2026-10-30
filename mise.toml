@@ -16,13 +16,18 @@ run_windows = "echo the system-translation bridge is macOS only"
 run = "scripts/build-apple-intelligence.sh"
 run_windows = "echo the Apple Intelligence helper is macOS only"
 
+# The CoreML bridge 识别模型 reads with on a Mac (native/guardcoreml).
+[tasks."native:guard-coreml"]
+run = "scripts/build-guard-coreml.sh"
+run_windows = "echo the recognition model's CoreML bridge is macOS only"
+
 # The pi bundle the AI engine embeds (core/ai/pi/engine.js, committed); CI checks it is current.
 [tasks."ai:bundle"]
 dir = "core/ai/pi/js"
 run = "bun install --frozen-lockfile --ignore-scripts && bun run build"
 
 [tasks.dev]
-depends = ["web:install", "native:translate", "native:apple-intelligence"]
+depends = ["web:install", "native:translate", "native:apple-intelligence", "native:guard-coreml"]
 run = "go tool mygo dev"
 
 [tasks."dev:sync-db"]
@@ -31,7 +36,7 @@ depends = ["generate"]
 run = "go run ./cmd/godwit dev-sync-db"
 
 [tasks.build]
-depends = ["web:install", "native:translate", "native:apple-intelligence"]
+depends = ["web:install", "native:translate", "native:apple-intelligence", "native:guard-coreml"]
 run = "go tool mygo build -skip-dmg -skip-notarize"
 
 [tasks.generate]

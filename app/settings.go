@@ -68,6 +68,7 @@ type settingsPage struct {
 	translators []core.TranslatorInfo // the 翻译方式 choices, read on opening General
 	mask        maskDraft             // 隐私脱敏's text fields
 	maskLog     []core.MaskRecord     // 脱敏记录, newest first, as last read
+	recognition recognitionModelState // 识别模型's row
 
 	keychain    error // the keychain probe's result
 	keychainSet bool  // the probe finished
@@ -191,6 +192,11 @@ func (p *settingsPage) refresh(hints []events.Event) {
 			func(error) { p.keychain, p.keychainSet = err, true })
 		p.readImageCache()
 		p.readMaskLog()
+		var here bool
+		a.query(func(context.Context) error { here = a.svc.RecognitionModelInstalled(); return nil }, func(error) { p.recognition.installed = here })
+		p.readRecognitionModel()
+	case sec == "privacy" && slices.ContainsFunc(hints, func(ev events.Event) bool { return ev.Type == events.SettingsChanged }):
+		p.readRecognitionModel() // 识别模型 may have been turned on or off
 	case sec == "masklog" && hints == nil:
 		p.readMaskLog()
 	}

@@ -62,6 +62,8 @@ var table = []Error{
 	{Code: "registry_signature", Err: core.ErrRegistrySignature},
 	{Code: "registry_stale", Err: core.ErrRegistryStale},
 	{Code: "registry_mismatch", Err: core.ErrRegistryMismatch},
+	{Code: "recognition_model_missing", Err: core.ErrRecognitionModelMissing},
+	{Code: "recognition_model_mismatch", Err: core.ErrRecognitionModelMismatch},
 	{Code: "mcp_not_found", Err: core.ErrMCPNotFound},
 	{Code: "ai_not_configured", Err: core.ErrAINotConfigured},
 	{Code: "model_service_not_found", Err: core.ErrModelServiceNotFound},
@@ -186,7 +188,7 @@ func NewCodec() *rpc.Codec {
 func Expose(method string) bool {
 	return method != "Close" && method != "Redact" && method != "AuditExternal" && method != "SenderAvatar" && method != "ModelServiceAvatar" &&
 		method != "FollowConversation" &&
-		method != "InstallPluginFromRegistryWithProgress" && method != "PrepareModelWithProgress" && !strings.HasSuffix(method, "ForTest")
+		method != "InstallPluginFromRegistryWithProgress" && method != "PrepareModelWithProgress" && method != "DownloadRecognitionModel" && !strings.HasSuffix(method, "ForTest")
 }
 
 // Listen serves svc's exposed methods on <dataDir>/godwit.sock (see

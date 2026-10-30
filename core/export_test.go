@@ -188,11 +188,11 @@ func SetPhysicalMemoryForTest(t interface{ Cleanup(func()) }, gb float64) {
 	t.Cleanup(func() { physicalMemory = old })
 }
 
-// SetAssetStallForTest shortens how long a download may receive nothing.
-func SetAssetStallForTest(t interface{ Cleanup(func()) }, d time.Duration) {
-	old := assetStall
-	assetStall = d
-	t.Cleanup(func() { assetStall = old })
+// SetDownloadStallForTest shortens how long a download may receive nothing.
+func SetDownloadStallForTest(t interface{ Cleanup(func()) }, d time.Duration) {
+	old := downloadStall
+	downloadStall = d
+	t.Cleanup(func() { downloadStall = old })
 }
 
 // ModelErrorCode is err's *ModelError code, "" if it has none.

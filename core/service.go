@@ -22,6 +22,7 @@ import (
 	"github.com/emersion/go-imap/v2/imapclient"
 	"github.com/godwit-email/godwit/core/ai"
 	"github.com/godwit-email/godwit/core/ai/mask"
+	"github.com/godwit-email/godwit/core/ai/mask/guard"
 	"github.com/godwit-email/godwit/core/conn"
 	"github.com/godwit-email/godwit/core/events"
 	"github.com/godwit-email/godwit/core/mailsync"
@@ -76,6 +77,20 @@ type Options struct {
 	ComposeOpen func(draftID int64) bool
 	// OpenURL opens an external URL in the user's default browser.
 	OpenURL func(url string) error
+	// Recognizer reads for 识别模型 while it is on; nil is AstrLink Guard
+	// from its files in the cache (recognitionModelDir). Tests give a fake.
+	Recognizer mask.Recognizer
+	// GuardCoreML is the CoreML bridge AstrLink Guard reads with on a Mac
+	// (libgodwit-guard-coreml.dylib); "" leaves it on the CPU.
+	GuardCoreML string
+	// RecognitionModelSources are where 识别模型's files are downloaded from, in
+	// order, each a URL their paths follow; nil is Hugging Face, then its
+	// mirror. Tests give httptest servers'.
+	RecognitionModelSources []string
+	// RecognitionModelClient downloads them; nil is one through the system proxy
+	// (imagefetch.SystemProxy), to public hosts only. Tests give one that
+	// reaches loopback.
+	RecognitionModelClient *http.Client
 }
 
 // Service owns the database and event bus of one Godwit data directory.
@@ -111,6 +126,10 @@ type Service struct {
 
 	maskMu sync.Mutex
 	mask   *mask.Masker // created on first use; see masker
+	guard  *guardModel  // 识别模型 while it is on; see recognizer
+
+	recognitionModelMu sync.Mutex       // held while 识别模型's files download (DownloadRecognitionModel)
+	recognition        recognitionState // how 识别模型 last read
 
 	unsubMu   sync.Mutex
 	unsubbing map[int64]bool // messages whose one-click unsubscribe is under way
@@ -189,6 +208,9 @@ type Service struct {
 
 // New creates DataDir if needed and opens DataDir/godwit.db.
 func New(ctx context.Context, opts Options) (*Service, error) {
+	if opts.GuardCoreML != "" {
+		guard.CoreMLLibrary = opts.GuardCoreML // before the model's first Load
+	}
 	if err := os.MkdirAll(opts.DataDir, 0o700); err != nil {
 		return nil, err
 	}
@@ -229,6 +251,9 @@ func New(ctx context.Context, opts Options) (*Service, error) {
 	}
 	if opts.UnsubscribeClient == nil {
 		s.opts.UnsubscribeClient = &http.Client{Transport: imagefetch.NewTransport(false), Timeout: imagefetch.Timeout}
+	}
+	if opts.RecognitionModelClient == nil {
+		s.opts.RecognitionModelClient = &http.Client{Transport: imagefetch.NewTransport(false)} // no overall limit: downloadFile stops a stalled one
 	}
 	if err := s.openImageCache(); err != nil {
 		db.Close()
@@ -451,11 +476,12 @@ func (s *Service) cleanOrphans(ctx context.Context) error {
 			keep[p] = true
 		}
 	}
-	imagesDir := filepath.Join(dataDir, "cache", "images")
+	imagesDir, guardDir := filepath.Join(dataDir, "cache", "images"), filepath.Join(dataDir, "cache", "guard")
 	for _, sub := range []string{"cache", "drafts", "outbox"} {
 		err := store.CleanOrphans(filepath.Join(dataDir, sub), func(p string) bool {
 			p, err := filepath.Abs(p)
-			return err != nil || keep[p] || strings.HasPrefix(p, imagesDir+string(filepath.Separator)) // the image cache owns its files
+			// the image cache and 识别模型 own their files
+			return err != nil || keep[p] || strings.HasPrefix(p, imagesDir+string(filepath.Separator)) || strings.HasPrefix(p, guardDir+string(filepath.Separator))
 		})
 		if err != nil && !errors.Is(err, fs.ErrNotExist) {
 			return err
