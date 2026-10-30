@@ -530,7 +530,7 @@ func TestRunSkillSummarizeOnPi(t *testing.T) {
 	// Translation and quick replies run on pi too (#230).
 	e.srv.Script(testllm.Turn{Text: []string{"译文"}},
 		testllm.Turn{Text: []string{`{"texts":["周五见"],"source":"en"}`}},
-		testllm.Turn{Text: []string{`{"replies":[{"html":"<p>好</p>"}]}`}})
+		testllm.Turn{Text: []string{`{"replies":[{"label":"好","html":"<p>好</p>"}]}`}})
 	assert.Equal(t, []string{"译文"}, texts(e.run(t, "translate", Target{Kind: "message", ID: e.msg})))
 	require.NotEmpty(t, e.run(t, "translate", Target{Kind: "message", ID: e.msg, PreserveHTML: true})[1].Translations)
 	rs, err := e.s.QuickReplies(t.Context(), e.msg)

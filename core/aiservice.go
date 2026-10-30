@@ -13,6 +13,7 @@ import (
 	"slices"
 	"strings"
 	"time"
+	"unicode"
 	"unicode/utf8"
 
 	"github.com/godwit-email/godwit/core/ai"
@@ -311,10 +312,11 @@ type QuickReply struct{ Label, Preview, HTML string }
 const (
 	maxQuickReplies    = 3
 	quickPreviewRunes  = 80
-	quickLabelRunes    = 16
+	QuickLabelMaxRunes = 32
+	quickLabelMinRunes = 6
 	quickRepliesSystem = `Suggest up to three short, distinct replies the user could send to the email you are given, written as the user. ` +
 		`Answer with JSON only, exactly in this shape: {"replies":[{"label":"...","html":"<p>...</p>"}]}. Use simple HTML (paragraphs, line breaks). ` +
-		`Each label names the reply's intent in one to three words, in the replies' language (at most six characters in Chinese or Japanese). ` +
+		`Each label names the reply's intent in one to three words, capitalized, in the replies' language (at most 25 characters; at most eight characters in Chinese or Japanese). ` +
 		`No greeting placeholders, no signature, no quoted text.`
 )
 
@@ -366,6 +368,20 @@ func (s *Service) QuickReplies(ctx context.Context, messageID int64) ([]QuickRep
 		var rs []QuickReply
 		if hit {
 			err = json.Unmarshal([]byte(o), &rs)
+			if err == nil {
+				changed := false
+				for i := range rs {
+					if rs[i].Label == "" || len([]rune(rs[i].Label)) > QuickLabelMaxRunes || rs[i].Label == rs[i].Preview {
+						rs[i].Label = ExtractQuickLabel(rs[i].Preview)
+						changed = true
+					}
+				}
+				if changed {
+					if b, mErr := json.Marshal(rs); mErr == nil {
+						s.cachePut(ctx, key, account, string(b), "quick_replies")
+					}
+				}
+			}
 		}
 		return rs, err
 	}
@@ -435,14 +451,177 @@ func parseQuickReplies(out string, expand func(string) string) ([]QuickReply, er
 			p = string(runes[:quickPreviewRunes])
 		}
 		l := strings.Join(strings.Fields(mail.HTMLToText(expand(html.EscapeString(r.Label)))), " ") // expand restores HTML
-		if runes := []rune(l); len(runes) > quickLabelRunes {
-			l = string(runes[:quickLabelRunes])
+		if l != "" && l != p && len([]rune(l)) <= QuickLabelMaxRunes {
+			l = FormatQuickLabel(l)
+		} else {
+			l = ExtractQuickLabel(p)
 		}
 		if rs = append(rs, QuickReply{Label: l, Preview: p, HTML: h}); len(rs) == maxQuickReplies {
 			break
 		}
 	}
 	return rs, nil
+}
+
+// ExtractQuickLabel extracts a concise intent clause directly from a reply's preview text
+// (Superhuman style, 0 latency). It isolates the core action/question using universal
+// punctuation delimiters (?, !, ., —, comma) and word boundaries, completely language-agnostic.
+func ExtractQuickLabel(text string) string {
+	text = strings.TrimSpace(text)
+	if text == "" {
+		return ""
+	}
+
+	// If the text starts with a short greeting line ending in newline or comma/colon/exclamation,
+	// followed by the actual body, skip that leading line.
+	if nl := strings.IndexByte(text, '\n'); nl > 0 && nl <= 35 {
+		firstLine := strings.TrimSpace(text[:nl])
+		rest := strings.TrimSpace(text[nl+1:])
+		if rest != "" && (strings.HasSuffix(firstLine, ",") || strings.HasSuffix(firstLine, "!") || strings.HasSuffix(firstLine, ":")) {
+			text = rest
+		}
+	}
+
+	text = strings.Join(strings.Fields(text), " ")
+	runes := []rune(text)
+	if len(runes) == 0 {
+		return ""
+	}
+
+	// Look for natural clause (sentence end, dash, or comma break within QuickLabelMaxRunes)
+	if clause, ok := findNaturalClause(text, QuickLabelMaxRunes); ok {
+		return cleanAndCapitalizeLabel(clause)
+	}
+
+	if len(runes) <= QuickLabelMaxRunes {
+		return cleanAndCapitalizeLabel(text)
+	}
+
+	return truncateAtWordBoundary(text, QuickLabelMaxRunes)
+}
+
+// FormatQuickLabel cleans, capitalizes and bounds an explicit label provided by the model.
+func FormatQuickLabel(s string) string {
+	s = strings.TrimSpace(s)
+	s = strings.Trim(s, `"'“„”[](){}.:;,-_`)
+	s = strings.Join(strings.Fields(s), " ")
+	if s == "" {
+		return ""
+	}
+	r := []rune(s)
+	r[0] = unicode.ToUpper(r[0])
+	s = string(r)
+	if len(r) > QuickLabelMaxRunes {
+		s = truncateAtWordBoundary(s, QuickLabelMaxRunes)
+	}
+	return s
+}
+
+func cleanAndCapitalizeLabel(s string) string {
+	s = strings.TrimSpace(s)
+	s = strings.Trim(s, `"'“„”[](){}`)
+	s = strings.Join(strings.Fields(s), " ")
+	if s == "" {
+		return ""
+	}
+
+	endsInQuestion := strings.HasSuffix(s, "?") || strings.HasSuffix(s, "？")
+	endsInExclamation := strings.HasSuffix(s, "!") || strings.HasSuffix(s, "！")
+	s = strings.TrimRight(s, ",-—:;.")
+	s = strings.TrimSpace(s)
+
+	if endsInQuestion && !strings.HasSuffix(s, "?") && !strings.HasSuffix(s, "？") {
+		s += "?"
+	} else if endsInExclamation && !strings.HasSuffix(s, "!") && !strings.HasSuffix(s, "！") {
+		s += "!"
+	}
+
+	r := []rune(s)
+	if len(r) > 0 {
+		r[0] = unicode.ToUpper(r[0])
+	}
+	return string(r)
+}
+
+func truncateAtWordBoundary(s string, maxRunes int) string {
+	runes := []rune(s)
+	if len(runes) <= maxRunes {
+		return cleanAndCapitalizeLabel(s)
+	}
+
+	target := maxRunes - 1
+	sub := string(runes[:target])
+	if lastSpace := strings.LastIndex(sub, " "); lastSpace >= quickLabelMinRunes {
+		cut := strings.TrimRight(sub[:lastSpace], ",-—:;.?!…")
+		return cleanAndCapitalizeLabel(cut) + "…"
+	}
+
+	return cleanAndCapitalizeLabel(string(runes[:target])) + "…"
+}
+
+func findNaturalClause(text string, maxRunes int) (string, bool) {
+	runes := []rune(text)
+	// 1. Sentence ends: '?', '!', '\n', '？', '！', '.', '。'
+	for i, r := range runes {
+		if i+1 > maxRunes {
+			break
+		}
+		if r == '?' || r == '!' || r == '\n' || r == '？' || r == '！' {
+			clause := strings.TrimSpace(string(runes[:i+1]))
+			if len([]rune(clause)) >= quickLabelMinRunes {
+				return clause, true
+			}
+		}
+		if (r == '.' || r == '。') && (i+1 == len(runes) || unicode.IsSpace(runes[i+1]) || runes[i+1] == '"' || runes[i+1] == '”' || r == '。') {
+			clause := strings.TrimSpace(string(runes[:i]))
+			if len([]rune(clause)) >= quickLabelMinRunes {
+				return clause, true
+			}
+		}
+	}
+
+	// 2. Strong punctuation breaks: '—', '--', ' - ', ';', ':'
+	for i, r := range runes {
+		if i+1 > maxRunes {
+			break
+		}
+		if r == ';' || r == ':' || r == '—' {
+			clause := strings.TrimSpace(string(runes[:i]))
+			if len([]rune(clause)) >= quickLabelMinRunes {
+				return clause, true
+			}
+		}
+	}
+	for _, dash := range []string{" -- ", " - "} {
+		if idx := strings.Index(text, dash); idx > 0 {
+			clause := strings.TrimSpace(text[:idx])
+			if len([]rune(clause)) >= quickLabelMinRunes && len([]rune(clause)) <= maxRunes {
+				return clause, true
+			}
+		}
+	}
+
+	// 3. Clause comma breaks: ', ', '，', '、'
+	commaSeparators := []string{", ", "，", "、"}
+	earliestIdx := -1
+	for _, sep := range commaSeparators {
+		idx := strings.Index(text, sep)
+		if idx > 0 {
+			clause := strings.TrimSpace(text[:idx])
+			cRunes := len([]rune(clause))
+			if cRunes >= quickLabelMinRunes && cRunes <= maxRunes {
+				if earliestIdx == -1 || idx < earliestIdx {
+					earliestIdx = idx
+				}
+			}
+		}
+	}
+	if earliestIdx != -1 {
+		clause := strings.TrimSpace(text[:earliestIdx])
+		return clause, true
+	}
+
+	return "", false
 }
 
 // DraftFromQuickReply starts a reply draft to messageID with r's HTML,

@@ -34,7 +34,9 @@ func TestAICacheExpires(t *testing.T) {
 		{"summarize", func(n int) string { return []string{"old", "new"}[n] }, func(t *testing.T, e skillEnv) any {
 			return texts(e.run(t, "summarize", Target{Kind: "message", ID: e.msg}))
 		}},
-		{"quick replies", func(n int) string { return `{"replies":[{"html":"<p>` + []string{"old", "new"}[n] + `</p>"}]}` }, func(t *testing.T, e skillEnv) any {
+		{"quick replies", func(n int) string {
+			return `{"replies":[{"label":"` + []string{"old", "new"}[n] + `","html":"<p>` + []string{"old", "new"}[n] + `</p>"}]}`
+		}, func(t *testing.T, e skillEnv) any {
 			rs, err := e.s.QuickReplies(t.Context(), e.msg)
 			require.NoError(t, err)
 			return rs

@@ -464,7 +464,8 @@ func cleanAppleIntelligenceSummary(s string) string {
 }
 
 type quickReplyItem struct {
-	HTML string `json:"html"`
+	Label string `json:"label,omitempty"`
+	HTML  string `json:"html"`
 }
 
 type quickRepliesResp struct {
@@ -533,8 +534,10 @@ func formatQuickRepliesJSON(raw string) string {
 	replies := extractQuickReplies(raw)
 	items := make([]quickReplyItem, 0, len(replies))
 	for _, r := range replies {
+		label, body := extractLineLabel(r)
 		items = append(items, quickReplyItem{
-			HTML: "<p>" + html.EscapeString(r) + "</p>",
+			Label: label,
+			HTML:  "<p>" + html.EscapeString(body) + "</p>",
 		})
 	}
 
@@ -543,6 +546,19 @@ func formatQuickRepliesJSON(raw string) string {
 	}
 	b, _ := json.Marshal(resp)
 	return string(b)
+}
+
+var bracketLabelRegex = regexp.MustCompile(`^\[([^\]]{1,32})\]\s*`)
+var colonLabelRegex = regexp.MustCompile(`^([A-Za-z\p{Han}\p{Hiragana}\p{Katakana}\s]{1,16}):\s+`)
+
+func extractLineLabel(r string) (string, string) {
+	if m := bracketLabelRegex.FindStringSubmatch(r); len(m) > 1 {
+		return strings.TrimSpace(m[1]), strings.TrimSpace(r[len(m[0]):])
+	}
+	if m := colonLabelRegex.FindStringSubmatch(r); len(m) > 1 {
+		return strings.TrimSpace(m[1]), strings.TrimSpace(r[len(m[0]):])
+	}
+	return "", r
 }
 
 // DefaultAppleIntelligence is the built-in Apple Intelligence implementation:
