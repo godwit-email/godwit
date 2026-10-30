@@ -1418,6 +1418,7 @@
   "palette_action_add_account": "添加账户",
   "palette_action_settings": "打开设置",
   "palette_filter_starred": "已标星",
+  "palette_filter_status": "状态",
   "palette_filter_account": "账户：{arg1}",
   "palette_filter_label": "标签：{arg1}",
   "palette_filter_time": "时间：{arg1}",

@@ -1,6 +1,7 @@
 package app
 
 import (
+	"slices"
 	"strings"
 	"testing"
 
@@ -154,4 +155,43 @@ func TestPaletteFilterLabelAndAccountIconSelected(t *testing.T) {
 		p.renderAccountIcon(c, core.Account{ID: 4, Icon: ""}, true)
 	}, 200, 200)
 	tt.Frame()
+}
+
+// The filters list under a heading per group, which ↑↓ pass over: three
+// steps from 有附件 land on the account, the first after 状态's three.
+func TestPaletteFilterGroups(t *testing.T) {
+	h, _ := invoices(t)
+	h.typeText("/")
+	h.until("the filter list", func() bool { return filtersShown(h) })
+	texts := h.tt.Texts()
+	texts = texts[slices.Index(texts, "联系人"):] // the palette's, not the sidebar's
+	at := func(s string) int { return slices.Index(texts, s) }
+	if !(at("状态") >= 0 && at("状态") < at("有附件") && at("已标星") < at("账户") && at("账户") < at("alice@example.com") && at("alice@example.com") < at("时间")) {
+		t.Fatalf("groups out of order: %q", texts)
+	}
+	for range 3 {
+		h.tt.Key(0, ui.KeyDown)
+	}
+	h.tt.Key(0, ui.KeyEnter)
+	h.see("移除「alice@example.com」")
+}
+
+// ←→ and ⌃Tab leave the kind tabs alone while the filter list shows, and
+// switch them once it is closed.
+func TestPaletteFilterKeepsKind(t *testing.T) {
+	h, _ := invoices(t)
+	h.typeText("/")
+	h.until("the filter list", func() bool { return filtersShown(h) })
+	h.tt.Key(0, ui.KeyRight)
+	h.tt.Key(ui.Ctrl, ui.KeyTab)
+	h.drain()
+	if k := h.app.palette.kind; k != 0 || !filtersShown(h) {
+		t.Fatalf("kind %d, filters shown %v", k, filtersShown(h))
+	}
+	h.tt.Key(0, ui.KeyEscape)
+	h.tt.Key(0, ui.KeyRight)
+	h.drain()
+	if k := h.app.palette.kind; k != 1 {
+		t.Fatalf("kind %d after the list closed, want 1", k)
+	}
 }

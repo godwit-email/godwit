@@ -1418,6 +1418,7 @@
   "palette_action_add_account": "Добавить аккаунт",
   "palette_action_settings": "Открыть настройки",
   "palette_filter_starred": "Помеченные",
+  "palette_filter_status": "Статус",
   "palette_filter_account": "Аккаунт: {arg1}",
   "palette_filter_label": "Метка: {arg1}",
   "palette_filter_time": "Время: {arg1}",

@@ -1418,6 +1418,7 @@
   "palette_action_add_account": "Añadir cuenta",
   "palette_action_settings": "Abrir Ajustes",
   "palette_filter_starred": "Destacados",
+  "palette_filter_status": "Estado",
   "palette_filter_account": "Cuenta: {arg1}",
   "palette_filter_label": "Etiqueta: {arg1}",
   "palette_filter_time": "Fecha: {arg1}",

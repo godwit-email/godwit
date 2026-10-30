@@ -2762,6 +2762,7 @@
   "palette_action_add_account": "Add account",
   "palette_action_settings": "Open Settings",
   "palette_filter_starred": "Starred",
+  "palette_filter_status": "Status",
   "palette_filter_account": "Account: {arg1}",
   "@palette_filter_account": {
     "placeholders": {

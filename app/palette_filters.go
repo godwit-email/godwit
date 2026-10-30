@@ -167,7 +167,7 @@ func slashed(was, now string) bool {
 }
 
 // filterKey is key while the filter list shows: ↑↓ choose, ↵ adds, Esc
-// closes the list only.
+// closes the list only; the kind tabs stay put behind it.
 func (p *palette) filterKey(k ui.TextKey) bool {
 	opts := p.filterOpts()
 	n := len(opts)
@@ -178,10 +178,29 @@ func (p *palette) filterKey(k ui.TextKey) bool {
 		p.addFilter(opts[min(p.fsel, n-1)], func() { k.SetText("") })
 	case k.Mods == 0 && k.Key == ui.KeyEscape:
 		p.filtering = false
+	case k.Mods == 0 && (k.Key == ui.KeyLeft || k.Key == ui.KeyRight) && k.Text() == "",
+		k.Key == ui.KeyTab && (k.Mods == ui.Ctrl || k.Mods == ui.Ctrl|ui.Shift):
+		// swallowed: switching the tabs behind the list reads as the list moving
 	default:
 		return false
 	}
 	return true
+}
+
+// filterGroup is the heading a filter of kind lists under; filterOpts keeps
+// each group's filters together.
+func filterGroup(kind string) string {
+	switch kind {
+	case "account":
+		return i18n.T("mail.accounts")
+	case "label":
+		return i18n.T("mail.labels")
+	case "span":
+		return i18n.T("mail.search.time")
+	case "from":
+		return i18n.T("mail.search.from")
+	}
+	return i18n.T("palette.filter.status")
 }
 
 // chips are the filters chosen, before the search box.
@@ -197,6 +216,9 @@ func (p *palette) filterList(c *ui.Context) {
 	opts := p.filterOpts()
 	p.fsel = min(p.fsel, len(opts)-1)
 	for i, f := range opts {
+		if g := filterGroup(f.kind); i == 0 || g != filterGroup(opts[i-1].kind) {
+			palHead(c, g)
+		}
 		r := kit.PaletteRow(c.Key(f.kind+":"+f.label), i == p.fsel).Label(f.label).Gap(th.Space(2.5)).OnClick(func() { p.addFilter(f, func() {}) })
 		if i == p.fsel && p.scroll {
 			r.ScrollIntoView()

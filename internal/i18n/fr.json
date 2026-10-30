@@ -1418,6 +1418,7 @@
   "palette_action_add_account": "Ajouter un compte",
   "palette_action_settings": "Ouvrir les réglages",
   "palette_filter_starred": "Suivis",
+  "palette_filter_status": "Statut",
   "palette_filter_account": "Compte : {arg1}",
   "palette_filter_label": "Étiquette : {arg1}",
   "palette_filter_time": "Date : {arg1}",

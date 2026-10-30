@@ -1418,6 +1418,7 @@
   "palette_action_add_account": "アカウントを追加",
   "palette_action_settings": "設定を開く",
   "palette_filter_starred": "スター付き",
+  "palette_filter_status": "ステータス",
   "palette_filter_account": "アカウント：{arg1}",
   "palette_filter_label": "ラベル：{arg1}",
   "palette_filter_time": "期間：{arg1}",

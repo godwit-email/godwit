@@ -1418,6 +1418,7 @@
   "palette_action_add_account": "Thêm tài khoản",
   "palette_action_settings": "Mở Cài đặt",
   "palette_filter_starred": "Có gắn sao",
+  "palette_filter_status": "Trạng thái",
   "palette_filter_account": "Tài khoản: {arg1}",
   "palette_filter_label": "Nhãn: {arg1}",
   "palette_filter_time": "Thời gian: {arg1}",

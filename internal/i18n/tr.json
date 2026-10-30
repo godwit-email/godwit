@@ -1418,6 +1418,7 @@
   "palette_action_add_account": "Hesap ekle",
   "palette_action_settings": "Ayarları aç",
   "palette_filter_starred": "Yıldızlı",
+  "palette_filter_status": "Durum",
   "palette_filter_account": "Hesap: {arg1}",
   "palette_filter_label": "Etiket: {arg1}",
   "palette_filter_time": "Zaman: {arg1}",

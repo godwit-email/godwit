@@ -1418,6 +1418,7 @@
   "palette_action_add_account": "Adicionar conta",
   "palette_action_settings": "Abrir Configurações",
   "palette_filter_starred": "Com estrela",
+  "palette_filter_status": "Estado",
   "palette_filter_account": "Conta: {arg1}",
   "palette_filter_label": "Etiqueta: {arg1}",
   "palette_filter_time": "Data: {arg1}",

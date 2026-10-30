@@ -1418,6 +1418,7 @@
   "palette_action_add_account": "Account toevoegen",
   "palette_action_settings": "Instellingen openen",
   "palette_filter_starred": "Met ster",
+  "palette_filter_status": "Status",
   "palette_filter_account": "Account: {arg1}",
   "palette_filter_label": "Label: {arg1}",
   "palette_filter_time": "Tijd: {arg1}",

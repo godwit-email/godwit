@@ -1418,6 +1418,7 @@
   "palette_action_add_account": "新增帳戶",
   "palette_action_settings": "開啟設定",
   "palette_filter_starred": "已加星號",
+  "palette_filter_status": "狀態",
   "palette_filter_account": "帳號：{arg1}",
   "palette_filter_label": "標籤：{arg1}",
   "palette_filter_time": "時間：{arg1}",

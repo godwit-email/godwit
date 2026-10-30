@@ -1418,6 +1418,7 @@
   "palette_action_add_account": "Konto hinzufügen",
   "palette_action_settings": "Einstellungen öffnen",
   "palette_filter_starred": "Markiert",
+  "palette_filter_status": "Status",
   "palette_filter_account": "Konto: {arg1}",
   "palette_filter_label": "Label: {arg1}",
   "palette_filter_time": "Zeit: {arg1}",

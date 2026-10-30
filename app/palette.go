@@ -155,7 +155,7 @@ func (p *palette) view(c *ui.Context) {
 			if g.total > 0 {
 				head += " · " + strconv.Itoa(g.total)
 			}
-			kit.Text(c, head, t.Text.Xs).FontWeight(500).TextColor(t.Muted).Padding(th.Space(2), th.Space(2.5), th.Space(1), th.Space(2.5))
+			palHead(c, head)
 			for _, it := range g.items {
 				if p.row(c, i, it).Hovered() {
 					hover = i
@@ -173,6 +173,12 @@ func (p *palette) view(c *ui.Context) {
 	}
 	p.hover, p.scroll = hover, false
 	p.menuFrame(c)
+}
+
+// palHead is the heading over a group of the palette's rows.
+func palHead(c *ui.Context, title string) {
+	t, th := theme.Of(c), c.Theme()
+	kit.Text(c, title, t.Text.Xs).FontWeight(500).TextColor(t.Muted).Padding(th.Space(2), th.Space(2.5), th.Space(1), th.Space(2.5))
 }
 
 // row is rows[i], one line: its icon, title, the muted line after it, an
