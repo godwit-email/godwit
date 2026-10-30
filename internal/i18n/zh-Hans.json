@@ -621,7 +621,7 @@
   "settings_masking_cat_addresses": "地址",
   "settings_masking_cat_addresses_help": "邮件落款、快递和预约通知里的住址和公司地址。只有识别模型能找到",
   "settings_masking_cat_accounts": "账号",
-  "settings_masking_cat_accounts_help": "用户名和银行账号。只有识别模型能找到",
+  "settings_masking_cat_accounts_help": "用户名、银行账号和 IP 地址。只有识别模型能找到",
   "settings_masking_action": "处理方式",
   "settings_masking_action_mask": "遮住",
   "settings_masking_action_warn": "仅警告",

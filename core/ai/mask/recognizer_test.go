@@ -48,9 +48,9 @@ func TestMasksWhatTheModelFinds(t *testing.T) {
 	assert.Equal(t, "陈晓雯下午到。", m.Restore(out))
 }
 
-// Each label goes as the kind its category has, if masking takes it; a
-// date, a link, an address or an account (until their categories), or a
-// score under 0.8, goes as it is.
+// Each label goes as the kind its category has, if masking takes it, an
+// IP address as an account; a date, a link, or a score under 0.8, goes
+// as it is.
 func TestTheModelsLabelsAndScore(t *testing.T) {
 	for _, c := range []struct {
 		v, label string
@@ -64,7 +64,7 @@ func TestTheModelsLabelsAndScore(t *testing.T) {
 		{"Sarah Thompson", "private_person", 0.79, "Sarah Thompson"},
 		{"10 月 3 日", "private_date", 0.99, "10 月 3 日"},
 		{"example.org/x", "url", 0.99, "example.org/x"},
-		{"10.0.0.8", "ip_address", 0.99, "10.0.0.8"},
+		{"10.0.0.8", "ip_address", 0.99, "<ACCOUNT>"},
 		{"上海市徐汇区漕溪北路 88 号", "private_address", 0.99, "<ADDRESS>"},
 		{"octocat", "account", 0.99, "<ACCOUNT>"},
 	} {
@@ -128,19 +128,19 @@ func TestTheModelReadsWhatTheRulesDo(t *testing.T) {
 // What the model found is known from then on, while it is on, as names
 // are (ADR 0028): masked where the model does not find it, as written and
 // not inside a longer word, unless a rule found something there. An
-// account, or a value as short as a name too short to know (Ann), is
+// account (an IP address is one), or a value as short as a name too short to know (Ann), is
 // masked only where it is found. Off, they go as they are, and restore.
 func TestTheModelsValuesAreKnownWhileItIsOn(t *testing.T) {
 	m := modelMasker(t, model{{"陈晓雯", "private_person", 0.9}, {"Sarah Lee", "private_person", 0.9}, {"Ann", "private_person", 0.9},
-		{"octocat", "account", 0.9}, {"ann.lee", "private_person", 0.9}})
-	first, err := m.Text("陈晓雯, Sarah Lee, Ann, octocat, ann.lee")
+		{"octocat", "account", 0.9}, {"10.0.0.8", "ip_address", 0.9}, {"ann.lee", "private_person", 0.9}})
+	first, err := m.Text("陈晓雯, Sarah Lee, Ann, octocat, 10.0.0.8, ann.lee")
 	require.NoError(t, err)
-	assert.Equal(t, "<NAME>, <NAME>, <NAME>, <ACCOUNT>, <NAME>", shown(first))
+	assert.Equal(t, "<NAME>, <NAME>, <NAME>, <ACCOUNT>, <ACCOUNT>, <NAME>", shown(first))
 
 	require.NoError(t, m.Configure(mask.Config{Recognizer: model{}}))
-	out, err := m.Text("陈晓雯好, Sarah Leeds, Sarah Lee: Ann, octocat, ann.lee@example.com")
+	out, err := m.Text("陈晓雯好, Sarah Leeds, Sarah Lee: Ann, octocat, 10.0.0.8, ann.lee@example.com")
 	require.NoError(t, err)
-	assert.Equal(t, "<NAME>好, Sarah Leeds, <NAME>: Ann, octocat, <EMAIL>@example.com", shown(out))
+	assert.Equal(t, "<NAME>好, Sarah Leeds, <NAME>: Ann, octocat, 10.0.0.8, <EMAIL>@example.com", shown(out))
 	assert.Equal(t, strings.SplitN(first, ",", 2)[0], strings.SplitN(out, "好", 2)[0], "the same placeholder")
 
 	require.NoError(t, m.Configure(mask.Config{Recognizer: model{}, Allow: []string{"sarah lee"}}))
@@ -152,7 +152,7 @@ func TestTheModelsValuesAreKnownWhileItIsOn(t *testing.T) {
 	out, err = m.Text("陈晓雯下午到。")
 	require.NoError(t, err)
 	assert.Equal(t, "陈晓雯下午到。", out)
-	assert.Equal(t, "陈晓雯, Sarah Lee, Ann, octocat, ann.lee", m.Restore(first))
+	assert.Equal(t, "陈晓雯, Sarah Lee, Ann, octocat, 10.0.0.8, ann.lee", m.Restore(first))
 }
 
 // Learned again, as after a restart, what the model found is known again.

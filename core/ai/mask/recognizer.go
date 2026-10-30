@@ -28,9 +28,10 @@ const MinScore = 0.8
 
 // recognizedKinds are the kinds of AstrLink Guard's labels that masking
 // takes, as magpie's: a date is nearly always a mail's own, a link the
-// rules' (LINK). An account is a user name or a bank account's number.
+// rules' (LINK). An account is a user name, a bank account's number or
+// an IP address.
 var recognizedKinds = map[string]string{"private_person": nameKind, "phone": "PHONE", "email": "EMAIL", "common_secret": "SECRET", "payment_card": "BANK_CARD",
-	"private_address": "ADDRESS", "account": "ACCOUNT"}
+	"private_address": "ADDRESS", "account": "ACCOUNT", "ip_address": "ACCOUNT"}
 
 // recognizedSpans are what c's Recognizer finds in s, of the labels
 // masking takes, scored MinScore or more, without the spaces and

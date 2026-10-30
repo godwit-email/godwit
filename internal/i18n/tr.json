@@ -621,7 +621,7 @@
   "settings_masking_cat_addresses": "Adresler",
   "settings_masking_cat_addresses_help": "İmzalardaki, teslimat ve randevu bildirimlerindeki ev ve iş adresleri. Yalnızca tanıma modeli bulur",
   "settings_masking_cat_accounts": "Hesaplar",
-  "settings_masking_cat_accounts_help": "Kullanıcı adları ve banka hesap numaraları. Yalnızca tanıma modeli bulur",
+  "settings_masking_cat_accounts_help": "Kullanıcı adları, banka hesap numaraları ve IP adresleri. Yalnızca tanıma modeli bulur",
   "settings_masking_action": "Bulunduğunda",
   "settings_masking_action_mask": "Maskele",
   "settings_masking_action_warn": "Yalnızca uyar",

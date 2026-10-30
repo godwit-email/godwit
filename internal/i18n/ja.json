@@ -621,7 +621,7 @@
   "settings_masking_cat_addresses": "住所",
   "settings_masking_cat_addresses_help": "署名、配送や予約の通知にある自宅や会社の住所。認識モデルだけが見つけます",
   "settings_masking_cat_accounts": "アカウント",
-  "settings_masking_cat_accounts_help": "ユーザー名と銀行口座番号。認識モデルだけが見つけます",
+  "settings_masking_cat_accounts_help": "ユーザー名、銀行口座番号、IP アドレス。認識モデルだけが見つけます",
   "settings_masking_action": "見つかったとき",
   "settings_masking_action_mask": "マスク",
   "settings_masking_action_warn": "警告のみ",

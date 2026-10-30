@@ -621,7 +621,7 @@
   "settings_masking_cat_addresses": "Adressen",
   "settings_masking_cat_addresses_help": "Woon- en kantooradressen in handtekeningen, bezorg- en afspraakberichten. Alleen het herkenningsmodel vindt ze",
   "settings_masking_cat_accounts": "Accounts",
-  "settings_masking_cat_accounts_help": "Gebruikersnamen en bankrekeningnummers. Alleen het herkenningsmodel vindt ze",
+  "settings_masking_cat_accounts_help": "Gebruikersnamen, bankrekeningnummers en IP-adressen. Alleen het herkenningsmodel vindt ze",
   "settings_masking_action": "Bij een treffer",
   "settings_masking_action_mask": "Maskeren",
   "settings_masking_action_warn": "Alleen waarschuwen",

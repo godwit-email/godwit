@@ -621,7 +621,7 @@
   "settings_masking_cat_addresses": "Indirizzi postali",
   "settings_masking_cat_addresses_help": "Indirizzi di casa e d’ufficio in firme, avvisi di consegna e di appuntamento. Li trova solo il modello di riconoscimento",
   "settings_masking_cat_accounts": "Account",
-  "settings_masking_cat_accounts_help": "Nomi utente e numeri di conto bancario. Li trova solo il modello di riconoscimento",
+  "settings_masking_cat_accounts_help": "Nomi utente, numeri di conto bancario e indirizzi IP. Li trova solo il modello di riconoscimento",
   "settings_masking_action": "Se trovato",
   "settings_masking_action_mask": "Maschera",
   "settings_masking_action_warn": "Solo avviso",

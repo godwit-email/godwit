@@ -621,7 +621,7 @@
   "settings_masking_cat_addresses": "Adresses postales",
   "settings_masking_cat_addresses_help": "Adresses personnelles et professionnelles dans les signatures, avis de livraison et de rendez-vous. Seul le modèle de reconnaissance les trouve",
   "settings_masking_cat_accounts": "Comptes",
-  "settings_masking_cat_accounts_help": "Noms d’utilisateur et numéros de compte bancaire. Seul le modèle de reconnaissance les trouve",
+  "settings_masking_cat_accounts_help": "Noms d’utilisateur, numéros de compte bancaire et adresses IP. Seul le modèle de reconnaissance les trouve",
   "settings_masking_action": "Si trouvé",
   "settings_masking_action_mask": "Masquer",
   "settings_masking_action_warn": "Avertir seulement",

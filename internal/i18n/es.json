@@ -621,7 +621,7 @@
   "settings_masking_cat_addresses": "Direcciones postales",
   "settings_masking_cat_addresses_help": "Direcciones de casa y de oficina en firmas, avisos de entrega y de citas. Solo las encuentra el modelo de reconocimiento",
   "settings_masking_cat_accounts": "Cuentas",
-  "settings_masking_cat_accounts_help": "Nombres de usuario y números de cuenta bancaria. Solo los encuentra el modelo de reconocimiento",
+  "settings_masking_cat_accounts_help": "Nombres de usuario, números de cuenta bancaria y direcciones IP. Solo los encuentra el modelo de reconocimiento",
   "settings_masking_action": "Al encontrarlo",
   "settings_masking_action_mask": "Enmascarar",
   "settings_masking_action_warn": "Solo avisar",

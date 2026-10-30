@@ -1269,7 +1269,7 @@
   "settings_masking_cat_addresses": "Addresses",
   "settings_masking_cat_addresses_help": "Home and office addresses in signatures, delivery and appointment notices. Only the recognition model finds them",
   "settings_masking_cat_accounts": "Accounts",
-  "settings_masking_cat_accounts_help": "User names and bank account numbers. Only the recognition model finds them",
+  "settings_masking_cat_accounts_help": "User names, bank account numbers and IP addresses. Only the recognition model finds them",
   "settings_masking_action": "When found",
   "settings_masking_action_mask": "Mask",
   "settings_masking_action_warn": "Warn only",

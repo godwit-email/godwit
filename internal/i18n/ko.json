@@ -621,7 +621,7 @@
   "settings_masking_cat_addresses": "주소",
   "settings_masking_cat_addresses_help": "서명, 배송·예약 알림 속 집과 회사 주소. 인식 모델만 찾습니다",
   "settings_masking_cat_accounts": "계정",
-  "settings_masking_cat_accounts_help": "사용자 이름과 은행 계좌 번호. 인식 모델만 찾습니다",
+  "settings_masking_cat_accounts_help": "사용자 이름, 은행 계좌 번호, IP 주소. 인식 모델만 찾습니다",
   "settings_masking_action": "발견 시",
   "settings_masking_action_mask": "가리기",
   "settings_masking_action_warn": "경고만",

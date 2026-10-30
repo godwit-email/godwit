@@ -626,7 +626,7 @@
   "settings_masking_cat_addresses": "Anschriften",
   "settings_masking_cat_addresses_help": "Wohn- und Büroanschriften in Signaturen, Liefer- und Terminbenachrichtigungen. Nur das Erkennungsmodell findet sie",
   "settings_masking_cat_accounts": "Konten",
-  "settings_masking_cat_accounts_help": "Benutzernamen und Kontonummern. Nur das Erkennungsmodell findet sie",
+  "settings_masking_cat_accounts_help": "Benutzernamen, Kontonummern und IP-Adressen. Nur das Erkennungsmodell findet sie",
   "settings_masking_action": "Bei Treffer",
   "settings_masking_action_mask": "Maskieren",
   "settings_masking_action_warn": "Nur warnen",

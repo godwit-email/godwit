@@ -621,7 +621,7 @@
   "settings_masking_cat_addresses": "Địa chỉ",
   "settings_masking_cat_addresses_help": "Địa chỉ nhà và công ty trong chữ ký, thông báo giao hàng và lịch hẹn. Chỉ mô hình nhận dạng tìm thấy",
   "settings_masking_cat_accounts": "Tài khoản",
-  "settings_masking_cat_accounts_help": "Tên người dùng và số tài khoản ngân hàng. Chỉ mô hình nhận dạng tìm thấy",
+  "settings_masking_cat_accounts_help": "Tên người dùng, số tài khoản ngân hàng và địa chỉ IP. Chỉ mô hình nhận dạng tìm thấy",
   "settings_masking_action": "Khi phát hiện",
   "settings_masking_action_mask": "Che giấu",
   "settings_masking_action_warn": "Chỉ cảnh báo",

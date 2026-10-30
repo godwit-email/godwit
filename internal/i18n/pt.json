@@ -621,7 +621,7 @@
   "settings_masking_cat_addresses": "Endereços postais",
   "settings_masking_cat_addresses_help": "Endereços residenciais e comerciais em assinaturas, avisos de entrega e de agendamento. Só o modelo de reconhecimento os encontra",
   "settings_masking_cat_accounts": "Contas",
-  "settings_masking_cat_accounts_help": "Nomes de usuário e números de conta bancária. Só o modelo de reconhecimento os encontra",
+  "settings_masking_cat_accounts_help": "Nomes de usuário, números de conta bancária e endereços IP. Só o modelo de reconhecimento os encontra",
   "settings_masking_action": "Ao encontrar",
   "settings_masking_action_mask": "Mascarar",
   "settings_masking_action_warn": "Só avisar",
