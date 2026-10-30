@@ -2498,7 +2498,7 @@ export function Panel({
   // disabled control would grey the whole group.
   const idle = locked || !draft.trim() || running;
   const input = (
-    <InputGroup className="relative gap-2 rounded-2xl border border-glass-border bg-glass-bg px-3 py-2.5 shadow-xl ring-1 ring-glass-ring outline-none dark:shadow-[0_8px_32px_rgba(0,0,0,0.5),inset_0_1px_0_0_rgba(255,255,255,0.08)]">
+    <InputGroup className="relative gap-2 rounded-2xl border-[0.5px] border-glass-border bg-glass-bg px-3 py-2.5 shadow-[0_4px_20px_rgba(0,0,0,0.035)] outline-none transition-[border-color,box-shadow] focus-within:shadow-[0_4px_20px_rgba(0,0,0,0.075)] has-[[data-slot=input-group-control]:focus-visible]:border-glass-border has-[[data-slot=input-group-control]:focus-visible]:ring-0 dark:shadow-[0_4px_20px_rgba(0,0,0,0.3),inset_0_1px_0_0_rgba(255,255,255,0.08)] dark:focus-within:shadow-[0_4px_20px_rgba(0,0,0,0.5),inset_0_1px_0_0_rgba(255,255,255,0.08)]">
       {editing && (
         <div className="-mx-3 -mt-2.5 mb-0.5 flex items-center gap-2 rounded-t-2xl bg-muted px-3 py-1.5 text-muted-foreground text-sm">
           <RiEditLine className="size-3.5 shrink-0" />
