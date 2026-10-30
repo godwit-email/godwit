@@ -45,4 +45,9 @@ func TestCompleteMasksTagsAndRestores(t *testing.T) {
 	r, err = e.s.complete(t.Context(), featureSkill, ai.Request{Model: model, Prompt: "hi"}, 4)
 	require.NoError(t, err)
 	assert.Equal(t, "abcd", r.Text, "cut at max bytes")
+
+	e.srv.Script(testllm.Turn{Text: []string{"ab", "周五", "x"}})
+	r, err = e.s.complete(t.Context(), featureSkill, ai.Request{Model: model, Prompt: "hi"}, 4)
+	require.NoError(t, err)
+	assert.Equal(t, "ab", r.Text, "never half a rune, nor text after the cut")
 }

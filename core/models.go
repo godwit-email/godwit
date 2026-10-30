@@ -18,6 +18,7 @@ import (
 	"github.com/godwit-email/godwit/core/ai"
 	"github.com/godwit-email/godwit/core/ai/mask"
 	"github.com/godwit-email/godwit/core/auth"
+	"github.com/godwit-email/godwit/core/mail"
 	"github.com/godwit-email/godwit/core/store"
 	"github.com/zalando/go-keyring"
 )
@@ -791,8 +792,9 @@ func (r reply) Restore(s string) string     { return r.m.Restore(s) }
 func (r reply) RestoreHTML(s string) string { return r.m.RestoreHTML(s) }
 
 // complete runs req once, with no tools, for feature (mask.Tag; "": ctx's
-// own) and returns its text, cut at max bytes (0: all of it). Each one-off
-// AI feature runs this way and audits its run itself (ADR 0027).
+// own) and returns its text, cut at a rune boundary to at most max bytes
+// (0: all of it). Each one-off AI feature runs this way and audits its run
+// itself (ADR 0027).
 func (s *Service) complete(ctx context.Context, feature string, req ai.Request, max int) (reply, error) {
 	e, err := s.aiEngine()
 	if err != nil {
@@ -809,11 +811,12 @@ func (s *Service) complete(ctx context.Context, feature string, req ai.Request, 
 func (s *Service) runText(ctx context.Context, e *ai.Engine, req ai.Request, max int) (reply, error) {
 	events, wait := e.Run(ctx, req)
 	var b strings.Builder
+	cut := false
 	for ev := range events {
-		if ev.Kind == "text" && (max == 0 || b.Len() < max) {
+		if ev.Kind == "text" && !cut {
 			t := ev.Text
-			if max > 0 {
-				t = t[:min(len(t), max-b.Len())]
+			if max > 0 { // at a rune boundary: callers hand the text on as it is
+				t, cut = mail.CutUTF8(t, max-b.Len())
 			}
 			b.WriteString(t)
 		}
