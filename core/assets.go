@@ -477,21 +477,32 @@ func (h *hostedAssets) download(ctx context.Context, n assetNeed, f plugins.Asse
 	if !strings.HasPrefix(f.URL, "https://") {
 		return fmt.Errorf("plugin asset: %s is not https", f.URL)
 	}
-	part := h.partial(n, f)
+	err := downloadFile(ctx, src.Client, f, h.partial(n, f), dst, got.Store)
+	if errors.Is(err, errAssetMismatch) {
+		return ErrRegistryMismatch
+	}
+	return err
+}
+
+// downloadFile downloads f from f.URL with c (nil: a bare client),
+// resuming what part has, checks it is exactly f and moves it to dst;
+// onBytes gets f's bytes so far. errAssetMismatch: it was not f, and part
+// is gone.
+func downloadFile(ctx context.Context, c *http.Client, f plugins.AssetFile, part, dst string, onBytes func(int64)) error {
 	// shortcut: no free-space check before a GB download; a full disk fails the write and drops the partial file. Check up front if users hit it.
 	if err := os.MkdirAll(filepath.Dir(part), 0o700); err != nil {
 		return err
 	}
 	// Twice at most: a server that will not resume (416, a wrong range) starts over once.
 	for attempt := 0; ; attempt++ {
-		err := h.downloadOnce(ctx, src, f, part, got)
+		err := downloadOnce(ctx, c, f, part, onBytes)
 		if err == errAssetRestart && attempt == 0 {
 			os.Remove(part)
 			continue
 		}
 		if err != nil {
-			if errors.Is(err, ErrRegistryMismatch) || errors.Is(err, errAssetWrite) {
-				os.Remove(part) // not worth resuming: not the registry's file, or no room for it
+			if errors.Is(err, errAssetMismatch) || errors.Is(err, errAssetWrite) {
+				os.Remove(part) // not worth resuming: not the file, or no room for it
 			}
 			return err
 		}
@@ -503,7 +514,7 @@ func (h *hostedAssets) download(ctx context.Context, n assetNeed, f plugins.Asse
 	}
 	if sum != f.SHA256 {
 		os.Remove(part)
-		return ErrRegistryMismatch
+		return errAssetMismatch
 	}
 	if err := os.MkdirAll(filepath.Dir(dst), 0o700); err != nil {
 		return err
@@ -516,12 +527,13 @@ func (h *hostedAssets) download(ctx context.Context, n assetNeed, f plugins.Asse
 }
 
 var (
-	errAssetRestart = errors.New("plugin asset: the server cannot resume this download")
-	errAssetStalled = errors.New("plugin asset: the download stopped receiving data")
-	errAssetWrite   = errors.New("plugin asset: cannot write the download")
+	errAssetRestart  = errors.New("download: the server cannot resume this download")
+	errAssetStalled  = errors.New("download: the download stopped receiving data")
+	errAssetWrite    = errors.New("download: cannot write the download")
+	errAssetMismatch = errors.New("download: the file is not the one expected")
 )
 
-func (h *hostedAssets) downloadOnce(ctx context.Context, src *RegistrySource, f plugins.AssetFile, part string, got *atomic.Int64) error {
+func downloadOnce(ctx context.Context, c *http.Client, f plugins.AssetFile, part string, onBytes func(int64)) error {
 	out, err := os.OpenFile(part, os.O_RDWR|os.O_CREATE, 0o600)
 	if err != nil {
 		return err
@@ -534,7 +546,7 @@ func (h *hostedAssets) downloadOnce(ctx context.Context, src *RegistrySource, f 
 	if have > f.Size {
 		return errAssetRestart
 	}
-	got.Store(have)
+	onBytes(have)
 	if have == f.Size {
 		return nil
 	}
@@ -549,13 +561,12 @@ func (h *hostedAssets) downloadOnce(ctx context.Context, src *RegistrySource, f 
 	if have > 0 {
 		req.Header.Set("Range", "bytes="+strconv.FormatInt(have, 10)+"-")
 	}
-	c := src.Client
 	if c == nil {
 		c = &http.Client{}
 	}
 	resp, err := c.Do(req)
 	if err != nil {
-		return errors.Join(context.Cause(ctx), fmt.Errorf("plugin asset: %w", err))
+		return errors.Join(context.Cause(ctx), fmt.Errorf("download: %w", err))
 	}
 	defer resp.Body.Close()
 	switch {
@@ -571,11 +582,11 @@ func (h *hostedAssets) downloadOnce(ctx context.Context, src *RegistrySource, f 
 			return err
 		}
 		have = 0
-		got.Store(0)
+		onBytes(0)
 	case resp.StatusCode == http.StatusRequestedRangeNotSatisfiable:
 		return errAssetRestart
 	default:
-		return fmt.Errorf("plugin asset: %s answered %s", f.URL, resp.Status)
+		return fmt.Errorf("download: %s answered %s", f.URL, resp.Status)
 	}
 	buf := make([]byte, 256<<10)
 	for {
@@ -583,23 +594,23 @@ func (h *hostedAssets) downloadOnce(ctx context.Context, src *RegistrySource, f 
 		if k > 0 {
 			stall.Reset(assetStall)
 			if have+int64(k) > f.Size {
-				return ErrRegistryMismatch // larger than the registry says
+				return errAssetMismatch // larger than f says
 			}
 			if _, err := out.Write(buf[:k]); err != nil {
 				return errors.Join(errAssetWrite, err)
 			}
 			have += int64(k)
-			got.Store(have)
+			onBytes(have)
 		}
 		if rerr == io.EOF {
 			break
 		}
 		if rerr != nil {
-			return errors.Join(context.Cause(ctx), fmt.Errorf("plugin asset: %w", rerr))
+			return errors.Join(context.Cause(ctx), fmt.Errorf("download: %w", rerr))
 		}
 	}
 	if have != f.Size {
-		return fmt.Errorf("plugin asset: %s ended after %d of %d bytes", f.URL, have, f.Size)
+		return fmt.Errorf("download: %s ended after %d of %d bytes", f.URL, have, f.Size)
 	}
 	return nil
 }

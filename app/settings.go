@@ -63,13 +63,15 @@ type settingsPage struct {
 	logFilter         maskLogFilter               // what 脱敏记录 lists
 
 	// general
-	st, shown   core.Settings          // what the controls are bound to, and what they showed last frame
-	noTrans     bool                   // the no-translate language list is open
-	translators []core.TranslatorInfo  // the 翻译方式 choices, read on opening General
-	mask        maskDraft              // 隐私脱敏's text fields
-	maskLog     []core.MaskRecord      // 脱敏记录, newest first, as last read
-	maskModel   bool                   // 识别模型's files are here, as last looked
-	maskBackend *core.MaskModelBackend // what reads 识别模型, as last read; nil while off
+	st, shown    core.Settings          // what the controls are bound to, and what they showed last frame
+	noTrans      bool                   // the no-translate language list is open
+	translators  []core.TranslatorInfo  // the 翻译方式 choices, read on opening General
+	mask         maskDraft              // 隐私脱敏's text fields
+	maskLog      []core.MaskRecord      // 脱敏记录, newest first, as last read
+	maskModel    bool                   // 识别模型's files are here, as last looked
+	maskBackend  *core.MaskModelBackend // what reads 识别模型, as last read; nil while off
+	maskDL       *maskModelDownload     // 识别模型's files coming down; nil when not
+	maskModelErr string                 // why 识别模型's last download failed
 
 	keychain    error // the keychain probe's result
 	keychainSet bool  // the probe finished

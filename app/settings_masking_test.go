@@ -1,6 +1,8 @@
 package app
 
 import (
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -147,19 +149,56 @@ func TestMaskingAddressAndAccountRows(t *testing.T) {
 	}
 }
 
-// 识别模型 is off, and can't be turned on while its files are not here;
-// once they are, its switch turns it on, and names with it.
-func TestMaskModelSwitch(t *testing.T) {
-	h, _ := withAccount(t)
+// maskModelHarness is a harness whose Service downloads 识别模型's files
+// from serve.
+func maskModelHarness(t *testing.T, serve http.HandlerFunc) *harness {
+	t.Helper()
+	srv := httptest.NewServer(serve)
+	t.Cleanup(srv.Close)
+	h := newHarnessWith(t, []coretest.Option{coretest.WithMaskModelSources(srv.URL + "/")}, func(e *coretest.Env) { e.AddAccount(t, "alice@example.com") })
+	h.until("initial load", func() bool { return h.app.loaded })
+	return h
+}
+
+// Turned on before its files are here, 识别模型 downloads them, saying how
+// far it has come; canceled, it is off.
+func TestMaskModelDownloadShowsProgressAndCancels(t *testing.T) {
+	h := maskModelHarness(t, func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Length", "330781")
+		w.Write(make([]byte, 1000))
+		w.(http.Flusher).Flush()
+		<-r.Context().Done()
+	})
 	h.masking()
 	h.see(i18n.T("settings.masking.model.missing"))
 	h.click(i18n.T("settings.masking.model"))
-	h.drain()
-	h.tt.Frame()
+	h.see(i18n.Tf("settings.masking.model.downloading", 0, formatBytes(330781+37124608+1502881)))
 	if h.app.settings.MaskModel {
-		t.Fatal("turned on without its files")
+		t.Fatal("on before its files are here")
 	}
+	h.click(i18n.T("settings.masking.model.cancel"))
+	p := h.app.pages[PageSettings].(*settingsPage)
+	h.until("off again", func() bool { return p.maskDL == nil && !h.app.settings.MaskModel })
+	h.see(i18n.T("settings.masking.model.missing"))
+}
 
+// A download that fails leaves 识别模型 off, and says why.
+func TestMaskModelDownloadFailureSaysWhy(t *testing.T) {
+	h := maskModelHarness(t, func(w http.ResponseWriter, r *http.Request) {
+		w.Write(make([]byte, 330781)) // model_int8.onnx's size, not its contents
+	})
+	h.masking()
+	h.click(i18n.T("settings.masking.model"))
+	h.see(i18n.Tf("settings.masking.model.failed", i18n.T("error.mask_model_mismatch")))
+	if h.app.settings.MaskModel {
+		t.Fatal("on with a file that does not match")
+	}
+}
+
+// Once 识别模型's files are here, its switch turns it on at once, and
+// names with it.
+func TestMaskModelSwitch(t *testing.T) {
+	h, _ := withAccount(t)
 	installMaskModel(t, h.env.DataDir)
 	h.openSettings("general")
 	h.masking()

@@ -41,7 +41,6 @@ var table = []Error{
 	{Code: "mask_empty_match", Err: core.ErrMaskEmptyMatch},
 	{Code: "mask_too_many_rules", Err: core.ErrMaskTooManyRules},
 	{Code: "mask_too_many_allow", Err: core.ErrMaskTooManyAllow},
-	{Code: "mask_model_missing", Err: core.ErrMaskModelMissing, Key: "settings.masking.model_missing"},
 	{Code: "not_on_server_yet", Err: core.ErrNotOnServerYet},
 	{Code: "stale_draft", Err: core.ErrStaleDraft},
 	{Code: "not_synced", Err: core.ErrNotSynced},
@@ -63,6 +62,8 @@ var table = []Error{
 	{Code: "registry_signature", Err: core.ErrRegistrySignature},
 	{Code: "registry_stale", Err: core.ErrRegistryStale},
 	{Code: "registry_mismatch", Err: core.ErrRegistryMismatch},
+	{Code: "mask_model_missing", Err: core.ErrMaskModelMissing},
+	{Code: "mask_model_mismatch", Err: core.ErrMaskModelMismatch},
 	{Code: "mcp_not_found", Err: core.ErrMCPNotFound},
 	{Code: "ai_not_configured", Err: core.ErrAINotConfigured},
 	{Code: "model_service_not_found", Err: core.ErrModelServiceNotFound},
@@ -187,7 +188,7 @@ func NewCodec() *rpc.Codec {
 func Expose(method string) bool {
 	return method != "Close" && method != "Redact" && method != "AuditExternal" && method != "SenderAvatar" && method != "ModelServiceAvatar" &&
 		method != "FollowConversation" &&
-		method != "InstallPluginFromRegistryWithProgress" && method != "PrepareModelWithProgress" && !strings.HasSuffix(method, "ForTest")
+		method != "InstallPluginFromRegistryWithProgress" && method != "PrepareModelWithProgress" && method != "DownloadMaskModel" && !strings.HasSuffix(method, "ForTest")
 }
 
 // Listen serves svc's exposed methods on <dataDir>/godwit.sock (see

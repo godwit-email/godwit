@@ -11,6 +11,7 @@ import (
 
 	"github.com/godwit-email/godwit/core/ai/mask"
 	"github.com/godwit-email/godwit/core/ai/mask/guard"
+	"github.com/godwit-email/godwit/core/plugins"
 )
 
 // ErrMaskModelMissing refuses to turn 识别模型 on: its files are not in
@@ -33,6 +34,80 @@ func (s *Service) MaskModelInstalled() bool {
 		}
 	}
 	return true
+}
+
+// ErrMaskModelMismatch: a downloaded file of 识别模型 was not the one its
+// revision has, and was discarded.
+var ErrMaskModelMismatch = errors.New("a downloaded file of the recognition model does not match its checksum; it was discarded")
+
+// maskModelFiles are guard.Files as Hugging Face has them at
+// guard.Revision, by path under a source (maskModelSources). Tests replace them.
+var maskModelFiles = []plugins.AssetFile{
+	{Name: "model_int8.onnx", URL: "int8/model_int8.onnx", Size: 330781, SHA256: "0a070d3113615e33ba3b84d6bd486f663a377c04c4b056e7381732179f51832a"},
+	{Name: "model_int8.onnx_data", URL: "int8/model_int8.onnx_data", Size: 37124608, SHA256: "0ba34216ceead01e0ae2dfd8e46d52b67e7aee80b04f722d9b758613a91c0067"},
+	{Name: "tokenizer.json", URL: "int8/tokenizer.json", Size: 1502881, SHA256: "0cf3b235ef125658015a6c8026a5fe6f28088bf825101a990ec18a10200feef4"},
+}
+
+// maskModelSources are where maskModelFiles are downloaded from, in order:
+// Hugging Face, then its mirror for where it can't be reached.
+var maskModelSources = []string{
+	"https://huggingface.co/QuantumNous/astrlink-guard/resolve/" + guard.Revision + "/",
+	"https://hf-mirror.com/QuantumNous/astrlink-guard/resolve/" + guard.Revision + "/",
+}
+
+// DownloadMaskModel downloads 识别模型's files into maskModelDir, each
+// checked against its SHA-256 (ErrMaskModelMismatch), from the first of
+// its sources that serves it (Options.MaskModelSources): a source that
+// fails is not asked for the rest. What an earlier download left is
+// resumed; a file already here is checked, not downloaded again. progress
+// (nil: none) gets the bytes so far of all of them. Turning 识别模型 on is
+// the caller's, once this succeeds.
+func (s *Service) DownloadMaskModel(ctx context.Context, progress func(got, total int64)) error {
+	if progress == nil {
+		progress = func(int64, int64) {}
+	}
+	s.maskModelMu.Lock() // one download writes the files at a time
+	defer s.maskModelMu.Unlock()
+	sources := s.opts.MaskModelSources
+	if sources == nil {
+		sources = maskModelSources
+	}
+	var total, done int64
+	for _, f := range maskModelFiles {
+		total += f.Size
+	}
+	src := 0
+	for _, f := range maskModelFiles {
+		dst := filepath.Join(s.maskModelDir(), f.Name)
+		if present(dst, f.Size) {
+			sum, err := fileSHA256(ctx, dst)
+			if err != nil {
+				return err
+			}
+			if sum == f.SHA256 {
+				done += f.Size
+				progress(done, total)
+				continue
+			}
+		}
+		for {
+			from := f
+			from.URL = sources[src] + f.URL
+			err := downloadFile(ctx, s.opts.MaskModelClient, from, dst+".partial", dst, func(got int64) { progress(done+got, total) })
+			if errors.Is(err, errAssetMismatch) {
+				err = ErrMaskModelMismatch
+			}
+			if err == nil {
+				break
+			}
+			if ctx.Err() != nil || src == len(sources)-1 {
+				return err
+			}
+			src++
+		}
+		done += f.Size
+	}
+	return nil
 }
 
 // recognizer is 识别模型 as st sets it, nil while it or masking is off:
