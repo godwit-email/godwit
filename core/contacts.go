@@ -364,8 +364,11 @@ func (s *Service) ArchiveSender(ctx context.Context, addr string) (SenderArchive
 }
 
 // UndoArchive moves a's messages back to the folders they left, those still
-// where it put them; ones moved since or gone stay.
+// where it put them; ones moved since or gone stay. The check and the move
+// hold the edit lock together, so a move elsewhere meanwhile wins.
 func (s *Service) UndoArchive(ctx context.Context, a SenderArchive) error {
+	s.editMu.Lock()
+	defer s.editMu.Unlock()
 	back := map[ArchivedMessage][]any{} // by From and To, ID 0
 	for _, m := range a.Moved {
 		back[ArchivedMessage{From: m.From, To: m.To}] = append(back[ArchivedMessage{From: m.From, To: m.To}], m.ID)
@@ -380,7 +383,11 @@ func (s *Service) UndoArchive(ctx context.Context, a SenderArchive) error {
 			for _, r := range rows.Values {
 				still = append(still, store.Int(r[0]))
 			}
-			if err := s.Move(ctx, still, k.From); err != nil {
+			acc, ts, err := s.targets(ctx, still)
+			if err != nil {
+				return err
+			}
+			if err := s.move(ctx, acc, ts, k.From); err != nil {
 				return err
 			}
 		}
