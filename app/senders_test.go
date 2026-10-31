@@ -2,9 +2,11 @@ package app
 
 import (
 	"context"
+	"errors"
 	"slices"
 	"testing"
 
+	"github.com/godwit-email/godwit/core"
 	"github.com/godwit-email/godwit/core/coretest"
 )
 
@@ -46,6 +48,30 @@ func TestSendersView(t *testing.T) {
 	h.click("退订")
 	d := h.draft(h.composeOpened(0))
 	if len(d.To) != 1 || d.To[0] != "leave@shop.example" || d.Subject != "unsubscribe" {
+		t.Fatalf("draft %+v", d)
+	}
+}
+
+// 退订 again after its message failed to load loads it again, then unsubscribes.
+func TestSendersUnsubscribeRetriesFailedLoad(t *testing.T) {
+	h, accs := mailHarness(t, nil, "alice@example.com")
+	acc := accs[0]
+	m := h.deliverOne(acc, coretest.Msg("Shop <news@shop.example>", acc.Email, "Deals", "Hello.",
+		coretest.Header("List-Unsubscribe: <mailto:leave@shop.example>")))
+	r := h.app.mail.reader
+	real, fail := r.getMessage, true
+	r.getMessage = func(ctx context.Context, id int64, remote bool) (core.Message, error) {
+		if fail {
+			return core.Message{}, errors.New("offline")
+		}
+		return real(ctx, id, remote)
+	}
+	h.click("发件人与订阅")
+	h.click("退订")
+	h.until("the failed load", func() bool { b := r.bodies[m.ID]; return b != nil && b.err != nil && !b.loading })
+	fail = false
+	h.click("退订")
+	if d := h.draft(h.composeOpened(0)); len(d.To) != 1 || d.To[0] != "leave@shop.example" {
 		t.Fatalf("draft %+v", d)
 	}
 }

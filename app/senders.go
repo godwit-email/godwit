@@ -54,15 +54,25 @@ func (p *mailPage) sendersView(c *ui.Context) {
 }
 
 // unsubscribeSender opens s's newest list message beside the list and
-// unsubscribes from it the reader's way, once the reader knows how.
+// unsubscribes from it the reader's way, once the reader knows how. Shown
+// already, what failed to load (the thread, the body, the way) is tried again.
 func (p *mailPage) unsubscribeSender(s core.Sender) {
 	r, id := p.reader, s.ListMessage
+	same := r.key == [2]int64{s.ListThread, id}
 	p.a.route.ThreadID, p.a.route.MessageID = s.ListThread, id
 	r.sync(false)
-	if b := r.bodies[id]; b != nil && b.unsub.Method != "" {
+	r.unsubNext = id
+	switch b := r.bodies[id]; {
+	case b != nil && b.unsub.Method != "":
+		r.unsubNext = 0
 		r.unsubscribe(id)
-	} else {
-		r.unsubNext = id
+	case !same: // just opened: its load leads to loadUnsubscribe
+	case !r.loaded:
+		r.load()
+	case b == nil || !b.ready:
+		r.loadBody(id)
+	default:
+		r.loadUnsubscribe(id)
 	}
 }
 
