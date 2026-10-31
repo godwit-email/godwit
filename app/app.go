@@ -161,6 +161,7 @@ const (
 	PageSettings
 	PageOnboarding
 	PageKit // dev builds only
+	PageContacts
 )
 
 // Route is where the App is.
@@ -169,6 +170,7 @@ type Route struct {
 	View                                core.View
 	ThreadID, MessageID, ConversationID int64
 	Settings                            string
+	Contact                             string // the contact the contacts page shows, by address
 }
 
 // syncBatch is a Sync All in flight: it counts as a sync only once every account finished without failing.
@@ -320,7 +322,7 @@ func New(d Deps) *App {
 	a.saveSettings = a.svc.SetSettings
 	a.writes = newWriteQueue(a)
 	a.mail = newMailPage(a)
-	a.pages = map[Page]pageView{PageMail: a.mail, PageWit: newAskPage(a), PageSettings: newSettingsPage(a)}
+	a.pages = map[Page]pageView{PageMail: a.mail, PageWit: newAskPage(a), PageSettings: newSettingsPage(a), PageContacts: newContactsPage(a)}
 	a.pages[PageOnboarding] = newOnboarding(a, false)
 	a.pages[PageKit] = &kitPage{}
 	a.dev = d.Dev
