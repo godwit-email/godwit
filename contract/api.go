@@ -54,7 +54,7 @@ type API interface {
 	ListApprovals(ctx context.Context, conversationID int64) ([]core.Approval, error)
 	Subscribe() (<-chan events.Event, func())
 	RunAction(ctx context.Context, id string, t core.Target, opts core.RunActionOptions) (core.ActionResult, error)
-	BeginOAuth(ctx context.Context, providerID, loginHint string) (flowID, authURL string, err error)
+	BeginOAuth(ctx context.Context, providerID, loginHint string, client core.OAuthClient) (flowID, authURL string, err error)
 	CancelOAuth(flowID string)
 }
 
@@ -319,8 +319,8 @@ func (r *Remote) RunAction(ctx context.Context, id string, t core.Target, opts c
 	return call[core.ActionResult](r, ctx, "RunAction", id, t, opts)
 }
 
-func (r *Remote) BeginOAuth(ctx context.Context, providerID, loginHint string) (string, string, error) {
-	return call2[string, string](r, ctx, "BeginOAuth", providerID, loginHint)
+func (r *Remote) BeginOAuth(ctx context.Context, providerID, loginHint string, client core.OAuthClient) (string, string, error) {
+	return call2[string, string](r, ctx, "BeginOAuth", providerID, loginHint, client)
 }
 
 // CancelOAuth has no result to fail with; a failed call is recorded.

@@ -711,4 +711,14 @@ func TestShots(t *testing.T) {
 		h.see("已在浏览器中打开登录页")
 		shot(h, "OnboardingOAuth")
 	})
+	t.Run("OnboardingOwnOAuthClient", func(t *testing.T) {
+		h := onboarding(t)
+		h.click("Gmail")
+		h.see("应用专用密码")
+		shot(h, "OnboardingGmail")
+		h.click("管理员禁用了应用专用密码？用组织自己的 OAuth 客户端登录")
+		h.fill("邮箱地址", "me@company.com")
+		h.fill("客户端 ID", "123456789012-abc.apps.googleusercontent.com")
+		shot(h, "OnboardingOwnOAuthClient")
+	})
 }

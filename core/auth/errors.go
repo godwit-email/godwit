@@ -10,6 +10,8 @@ var (
 	ErrFlowExpired = errors.New("oauth: sign-in timed out")
 	// ErrInvalidGrant: the token endpoint answered invalid_grant (revoked, expired or used).
 	ErrInvalidGrant = errors.New("oauth: the authorization is no longer valid")
+	// ErrInvalidClient: the token endpoint answered invalid_client (an unknown client, or a wrong secret).
+	ErrInvalidClient = errors.New("oauth: the token endpoint does not accept this client (invalid_client)")
 )
 
 // ErrAccessDenied: the user declined at the provider.

@@ -338,11 +338,13 @@ type fakeOAuth struct {
 	mu       sync.Mutex
 	canceled []string
 	flows    map[string]chan flowResult
+	clients  []core.OAuthClient // each Begin's
 }
 
-func (f *fakeOAuth) Begin(_ context.Context, provider, hint string) (string, string, error) {
+func (f *fakeOAuth) Begin(_ context.Context, provider, hint string, client core.OAuthClient) (string, string, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
+	f.clients = append(f.clients, client)
 	n := strconv.Itoa(len(f.flows) + 1)
 	f.flows["f"+n] = make(chan flowResult, 1)
 	return "f" + n, "https://login.example/authorize?n=" + n, nil
@@ -432,6 +434,52 @@ func TestOnboardingOAuth(t *testing.T) {
 		t.Fatal("sheet still open")
 	}
 	h.until("Cancel f2", func() bool { return slices.Equal(fo.Canceled(), []string{"f1", "f2"}) })
+}
+
+// A Workspace admin who blocked app passwords: Gmail signs in with their own OAuth client.
+func TestOnboardingOwnOAuthClient(t *testing.T) {
+	h, _ := withAccount(t)
+	fo := &fakeOAuth{flows: map[string]chan flowResult{}}
+	h.app.oauth = fo
+	h.app.openAddAccount()
+	h.click("Gmail")
+	h.see("应用专用密码")
+	offer := "管理员禁用了应用专用密码？用组织自己的 OAuth 客户端登录"
+	h.fill("邮箱地址", "me@gmail.com")
+	if _, ok := h.tt.Find(offer); ok {
+		t.Fatal("an organization's client is offered for a consumer address")
+	}
+	h.fill("邮箱地址", "me@company.com")
+	h.click(offer)
+	h.fill("客户端 ID", " 123.apps.googleusercontent.com ")
+	h.fill("客户端密钥", "GOCSPX-s3cret")
+	h.click("在浏览器中登录")
+	h.see("需要在浏览器里登录 Google 账户")
+	h.until("OpenURL of the sign-in page", func() bool {
+		return slices.Contains(h.plat.Calls(), "OpenURL https://login.example/authorize?n=1")
+	})
+	fo.mu.Lock()
+	got := fo.clients
+	fo.mu.Unlock()
+	if want := []core.OAuthClient{{ID: "123.apps.googleusercontent.com", Secret: "GOCSPX-s3cret"}}; !slices.Equal(got, want) {
+		t.Fatalf("clients %+v, want %+v", got, want)
+	}
+	fo.finish("f1", "me@company.com")
+	o := h.app.addAccount
+	h.until("the check", func() bool { return o.step == stepChecking })
+	if in := o.input(); in.OAuthFlowID != "f1" || in.Password != "" {
+		t.Fatalf("input %+v signs in with neither the flow nor only it", in)
+	}
+	h.see("连接失败") // the fake flow left no grant in the Service
+	h.click("重新登录")
+	h.until("the second flow, with the same client", func() bool {
+		fo.mu.Lock()
+		defer fo.mu.Unlock()
+		return len(fo.clients) == 2 && fo.clients[1] == fo.clients[0]
+	})
+	h.click("← 换一个邮箱")
+	h.click("Gmail")
+	h.see("应用专用密码") // a fresh pick starts with the app password again
 }
 
 func TestAddAccountSheet(t *testing.T) {

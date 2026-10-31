@@ -58,7 +58,7 @@ type Flow struct {
 }
 
 func config(cfg OAuthConfig) oauth2.Config {
-	return oauth2.Config{ClientID: cfg.ClientID, Scopes: cfg.Scopes,
+	return oauth2.Config{ClientID: cfg.ClientID, ClientSecret: cfg.ClientSecret, Scopes: cfg.Scopes,
 		Endpoint: oauth2.Endpoint{AuthURL: cfg.AuthURL, TokenURL: cfg.TokenURL, AuthStyle: oauth2.AuthStyleInParams}}
 }
 
@@ -306,7 +306,6 @@ func emailFromIDToken(idToken string) string {
 // tokenMessages are the fixed texts for token endpoint error codes. Nothing from
 // the response body reaches an error: it may echo the code, a token or the verifier.
 var tokenMessages = map[string]string{
-	"invalid_client":      "oauth: the token endpoint does not accept this client (invalid_client)",
 	"invalid_request":     "oauth: the token endpoint rejected the request (invalid_request)",
 	"unauthorized_client": "oauth: this client may not use this grant (unauthorized_client)",
 	"invalid_scope":       "oauth: the token endpoint rejected the scopes (invalid_scope)",
@@ -337,6 +336,8 @@ func tokenCodeError(code string) error {
 	switch code {
 	case "invalid_grant":
 		return ErrInvalidGrant
+	case "invalid_client":
+		return ErrInvalidClient
 	case "access_denied":
 		return ErrAccessDenied
 	}

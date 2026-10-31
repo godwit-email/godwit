@@ -45,6 +45,7 @@ type Server struct {
 	noExpiry           bool             // token responses omit expires_in
 	dynamic            bool             // Dynamic: accept DynamicClientID and issue IssuedClientID
 	reqParam, reqValue string           // Require: extra parameter required at /authorize, /device/code and /token
+	secret             string           // Secret: client_secret required at /token
 	scope              string           // GrantScope: scope field in token responses
 	deviceCode         string           // active device_code issued by /device/code
 	deviceEmail        string           // Approve: email for device-code grant
@@ -112,6 +113,9 @@ func (s *Server) Require(param, value string) {
 	s.reqParam, s.reqValue = param, value
 	s.mu.Unlock()
 }
+
+// Secret makes /token reject requests whose client_secret is not secret.
+func (s *Server) Secret(secret string) { s.mu.Lock(); s.secret = secret; s.mu.Unlock() }
 
 // GrantScope sets the scope string returned in token responses when non-empty.
 func (s *Server) GrantScope(scope string) { s.mu.Lock(); s.scope = scope; s.mu.Unlock() }
@@ -318,7 +322,7 @@ func (s *Server) token(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	cid := r.PostForm.Get("client_id")
-	if cid != ClientID && (!s.dynamic || cid != IssuedClientID) {
+	if cid != ClientID && (!s.dynamic || cid != IssuedClientID) || s.secret != "" && r.PostForm.Get("client_secret") != s.secret {
 		oauthError(w, "invalid_client")
 		return
 	}

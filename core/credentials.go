@@ -210,7 +210,8 @@ func (t oauthToken) fresh() bool {
 // refused a token someone already replaced, use the cached one. A
 // rotated refresh token is saved before the new access token is used; if that
 // fails the old one stays in the keychain. A revoked grant is reauth_required
-// (token_revoked); other failures change no status, so the worker backs off.
+// (token_revoked), and so is a user's own client the provider refuses
+// (client_rejected); other failures change no status, so the worker backs off.
 // Every new token is a new credential version, returned with it.
 func (s *Service) accessToken(ctx context.Context, acc Account, rejected string) (string, uint64, error) {
 	s.tokMu.Lock()
@@ -246,6 +247,20 @@ func (s *Service) accessToken(ctx context.Context, acc Account, rejected string)
 	if err != nil {
 		return "", 0, err
 	}
+	if acc.OAuthClientID != "" {
+		c, err := s.resolveClient(ctx, OAuthClient{Account: acc.ID})
+		switch {
+		case errors.Is(err, keyring.ErrNotFound):
+			return "", 0, errors.Join(err, s.ifCurrent(acc.ID, ver, func() error {
+				return s.setStatus(ctx, acc.ID, "reauth_required", "credentials_missing")
+			}))
+		case err != nil:
+			return "", 0, errors.Join(err, s.setStatus(ctx, acc.ID, "error", "keychain_unavailable"))
+		}
+		if c.ID != "" { // acc may predate a Reauthorize back to Godwit's client
+			cfg.ClientID, cfg.ClientSecret = c.ID, c.Secret
+		}
+	}
 	// Not the caller's: a refresh cut off after the server rotated the token would lose the new one.
 	rctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), refreshTimeout)
 	g, err := auth.Refresh(rctx, cfg, http.DefaultClient, rt)
@@ -253,6 +268,11 @@ func (s *Service) accessToken(ctx context.Context, acc Account, rejected string)
 	if errors.Is(err, auth.ErrInvalidGrant) {
 		return "", 0, errors.Join(err, s.ifCurrent(acc.ID, ver, func() error {
 			return s.setStatus(ctx, acc.ID, "reauth_required", "token_revoked")
+		}))
+	}
+	if errors.Is(err, auth.ErrInvalidClient) && acc.OAuthClientID != "" { // the user's own client: its secret was rotated or the client deleted
+		return "", 0, errors.Join(err, s.ifCurrent(acc.ID, ver, func() error {
+			return s.setStatus(ctx, acc.ID, "reauth_required", "client_rejected")
 		}))
 	}
 	if err != nil {

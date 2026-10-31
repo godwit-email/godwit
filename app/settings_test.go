@@ -1709,3 +1709,43 @@ func TestSettingsSecurityRescan(t *testing.T) {
 		return h.tt.HasText(i18n.T("settings.security.rescan.start"))
 	})
 }
+
+// Signing in again with the user's own OAuth client asks for it, the saved ID
+// filled in: a blank secret keeps the saved one, a new one replaces it.
+func TestSettingsReauthOwnClient(t *testing.T) {
+	h, acc := withAccount(t)
+	fo := &fakeOAuth{flows: map[string]chan flowResult{}}
+	h.app.oauth = fo
+	fetch := h.app.fetch
+	h.app.fetch = func(ctx context.Context) (core.Settings, []core.Account, error) {
+		st, accs, err := fetch(ctx)
+		for i := range accs {
+			accs[i].Provider, accs[i].AuthType, accs[i].OAuthClientID = "gmail", "oauth", "id.apps.googleusercontent.com"
+		}
+		return st, accs, err
+	}
+	h.app.load()
+	h.until("the account signs in with OAuth", func() bool { a, _ := h.app.accountByID(acc.ID); return a.AuthType == "oauth" })
+	p := h.openSettings(accountRoute(acc.ID))
+
+	h.click("重新登录")
+	h.see("客户端 ID")
+	if p.clientID != "id.apps.googleusercontent.com" {
+		t.Fatalf("client ID %q, want the saved one", p.clientID)
+	}
+	h.click("在浏览器中登录")
+	h.until("the sign-in page opens", func() bool { return len(fo.clients) == 1 })
+	if got := fo.clients[0]; got != (core.OAuthClient{Account: acc.ID}) {
+		t.Fatalf("client %+v, want the saved one", got)
+	}
+	fo.fail("f1", context.Canceled)
+	h.until("the wait ends", func() bool { return !p.reauth[acc.ID] })
+
+	h.click("重新登录")
+	h.fill("客户端密钥", " n3w ")
+	h.click("在浏览器中登录")
+	h.until("the sign-in page opens again", func() bool { return len(fo.clients) == 2 })
+	if got, want := fo.clients[1], (core.OAuthClient{ID: "id.apps.googleusercontent.com", Secret: "n3w"}); got != want {
+		t.Fatalf("client %+v, want %+v", got, want)
+	}
+}

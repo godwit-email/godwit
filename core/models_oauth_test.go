@@ -33,7 +33,7 @@ func oauthLLM(t *testing.T, p string) (*testoauth.Server, *testllm.Server) {
 // signIn runs a flow for provider p to its grant and returns the flow ID.
 func signIn(t *testing.T, s *Service, oa *testoauth.Server, p, email string) string {
 	t.Helper()
-	id, authURL, err := s.BeginOAuth(t.Context(), p, "")
+	id, authURL, err := s.BeginOAuth(t.Context(), p, "", OAuthClient{})
 	require.NoError(t, err)
 	done := make(chan error, 1)
 	go func() { _, err := s.AwaitOAuth(t.Context(), id); done <- err }()
@@ -149,7 +149,7 @@ func TestChatGPTReloginUsesIssuedClient(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, testoauth.IssuedClientID, got.clientID)
 
-	id2, authURL, err := s.BeginOAuth(bg, ProviderChatGPT, "alice@example.com")
+	id2, authURL, err := s.BeginOAuth(bg, ProviderChatGPT, "alice@example.com", OAuthClient{})
 	require.NoError(t, err)
 	t.Cleanup(func() { s.CancelOAuth(id2) })
 	u, err := url.Parse(authURL)
