@@ -195,7 +195,7 @@ func (p *contactsPage) current() (core.Contact, bool) {
 
 // Sidebar: the page switch and search, then the categories with their counts.
 func (p *contactsPage) Sidebar(c *ui.Context) {
-	t, th := theme.Of(c), c.Theme()
+	t := theme.Of(c)
 	p.a.sidebarHead(c)
 	sidebarScroll(c, func() {
 		for i, cat := range contactCats {
@@ -215,7 +215,6 @@ func (p *contactsPage) Sidebar(c *ui.Context) {
 				}
 			})
 		}
-		kit.Text(c, i18n.T("contacts.note"), t.Text.Sm).TextColor(t.Muted).Padding(th.Space(3), th.Space(2), 0, th.Space(2))
 	})
 }
 

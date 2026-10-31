@@ -2968,7 +2968,6 @@
   "contacts_cat_people": "Corresponded",
   "contacts_cat_subscriptions": "Subscriptions",
   "contacts_cat_blocked": "Blocked",
-  "contacts_note": "Gathered from the mail synced to this device; read-only.",
   "contacts_filter": "Filter by name or address",
   "contacts_no_match": "No matching contacts",
   "contacts_empty": "No contacts yet",
