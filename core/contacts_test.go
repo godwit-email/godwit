@@ -153,3 +153,24 @@ func TestContactNameMostUsed(t *testing.T) {
 	}
 	assert.Equal(t, map[string]string{"notifications@github.com": "GitHub", "carol@x": "Caroline"}, names)
 }
+
+// Mail to a contact counts and lists alike: past a page of near misses of
+// their address, with nothing repeated on the next, and for an address JSON
+// escapes (& is \u0026 in the stored recipients).
+func TestContactMailPagesPastNearMisses(t *testing.T) {
+	e := newSyncEnv(t)
+	e.put(t, "Sent", eml("near1@x", "alice@example.com", "notbob@example.com", "a", "Fri, 09 Oct 2026 09:00:00 +0000", "b"))
+	e.put(t, "Sent", eml("near2@x", "alice@example.com", "notbob@example.com", "b", "Thu, 08 Oct 2026 09:00:00 +0000", "b"))
+	e.put(t, "Sent", eml("bob@x", "alice@example.com", "bob@example.com", "c", "Wed, 07 Oct 2026 09:00:00 +0000", "b"))
+	e.put(t, "Sent", eml("amp@x", "alice@example.com", "a&b@example.com", "d", day, "b"))
+	e.sync(t)
+
+	page, err := e.s.ContactMail(bg, "bob@example.com", "", 2)
+	require.NoError(t, err)
+	assert.Equal(t, []int64{e.idOf(t, "bob@x")}, msgIDs(page.Items))
+	assert.Empty(t, page.NextCursor, "the last page")
+
+	page, err = e.s.ContactMail(bg, "a&b@example.com", "", 0)
+	require.NoError(t, err)
+	assert.Equal(t, []int64{e.idOf(t, "amp@x")}, msgIDs(page.Items))
+}

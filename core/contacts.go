@@ -248,14 +248,11 @@ func (s *Service) ContactMail(ctx context.Context, addr, cursor string, limit in
 	headers, _ := json.Marshal(append([]string{}, q.fromHeaders...)) // [] when none: theirs is no mail
 	cond := "(m.from_addr IN (SELECT value FROM json_each(?)) AND m.folder_id NOT IN (" + placeholders(len(left)) + ")) OR (m.folder_id IN (" + placeholders(len(sent)) + ")"
 	args := slices.Concat([]any{string(headers)}, left, sent)
-	ascii := func(s string) bool { return strings.IndexFunc(s, func(r rune) bool { return r >= utf8.RuneSelf }) < 0 }
-	if at := strings.LastIndexByte(key, '@'); at >= 0 && ascii(key[at:]) {
-		like := key[at:]
-		if ascii(key) {
-			like = key
-		}
-		cond += ` AND (m.to_addrs LIKE ? ESCAPE '\' OR m.cc_addrs LIKE ? ESCAPE '\')` // narrowed, as LIKE folds ASCII; AddrKey decides below
-		args = append(args, likeArg(like), likeArg(like))
+	// Narrowed by an ASCII domain, which LIKE folds and JSON never escapes
+	// (a local part's & is \u0026 in the stored list); AddrKey decides below.
+	if at := strings.LastIndexByte(key, '@'); at >= 0 && strings.IndexFunc(key[at:], func(r rune) bool { return r >= utf8.RuneSelf }) < 0 {
+		cond += ` AND (m.to_addrs LIKE ? ESCAPE '\' OR m.cc_addrs LIKE ? ESCAPE '\')`
+		args = append(args, likeArg(key[at:]), likeArg(key[at:]))
 	}
 	cond = "(" + cond + "))"
 	isSent := func(m MessageSummary) bool { return slices.Contains(sent, any(m.FolderID)) }
@@ -283,6 +280,7 @@ func (s *Service) ContactMail(ctx context.Context, addr, cursor string, limit in
 			}
 		}
 		if len(rows.Values) <= limit {
+			page.NextCursor = "" // a batch of near misses before may have set it
 			return page, nil
 		}
 		page.NextCursor = cursor
