@@ -106,20 +106,25 @@ type NavItem struct {
 	OnClick     func()
 }
 
+// navPill is the raised background of the page a NavSwitch shows: one
+// identity, so it slides from the page left to the page picked.
+type navPill struct{}
+
 // NavSwitch is a segmented row of page links on the window material: the
 // page shown raised on the background in the fill icon with its name, the
-// others muted icons named by a tooltip.
+// others muted icons named by a tooltip. Picking another slides the raised
+// background over and widens it to the name as it comes in.
 func NavSwitch(c *ui.Context, items ...NavItem) ui.Element {
 	t, th := theme.Of(c), c.Theme()
-	return ui.Row(c).Padding(th.Space(0.5)).Gap(th.Space(0.5)).Radius(t.Radius.Lg).Background(t.HoverTint).Children(func() {
+	move := ui.ElementTransition{Duration: theme.MotionBase}
+	return ui.Row(c).Padding(th.Space(0.5)).Gap(th.Space(0.5)).Radius(t.Radius.Lg).Background(t.HoverTint).Clip().Children(func() { // the pill stays in the track as both resize
 		for _, it := range items {
 			b := ui.ButtonBase(c).Height(th.Space(7)).Radius(t.Radius.Md).Center().
-				FontSize(t.Text.Base).TextColor(t.Muted).Label(it.Label).Transition(colors(theme.MotionFast))
+				FontSize(t.Text.Base).TextColor(t.Muted).Label(it.Label).Transition(move) // its width and place, as names come and go
 			svg := icons.Get(it.Icon)
 			switch {
 			case it.Selected:
-				Elevate(c, b.Background(t.Background).TextColor(t.Foreground), theme.ShadowXs)
-				b.Padding(0, th.Space(2.5), 0, th.Space(1.5)).Gap(th.Space(1.5))
+				b.TextColor(t.Foreground).Padding(0, th.Space(2.5), 0, th.Space(1.5))
 				svg = icons.Fill(it.Icon)
 			default:
 				b.Width(th.Space(7))
@@ -131,11 +136,23 @@ func NavSwitch(c *ui.Context, items ...NavItem) ui.Element {
 			if it.OnClick != nil && !it.Selected {
 				b.OnClick(it.OnClick)
 			}
+			content := func(e ui.Element) {
+				e.Children(func() {
+					ui.Icon(c, svg).Size(theme.Icon, theme.Icon)
+					if it.Selected {
+						ui.Text(c, it.Label).SingleLine().Transition(ui.ElementTransition{Duration: theme.MotionBase, Enter: &ui.Motion{}}) // fades in
+					}
+				})
+			}
 			b.Children(func() {
-				ui.Icon(c, svg).Size(theme.Icon, theme.Icon)
+				// Absolute elements paint over their siblings, the later over the earlier: the
+				// button is sized by its content unseen, then the pill, then the content over it.
+				content(ui.Row(c).Gap(th.Space(1.5)).AlignItems(ui.Center).Opacity(0))
 				if it.Selected {
-					ui.Text(c, it.Label)
+					pill := ui.Box(c).Absolute().Left(0).Top(0).Right(0).Bottom(0).Radius(t.Radius.Md).Background(t.Background).PassThrough()
+					Elevate(c, pill, theme.ShadowXs).Transition(ui.ElementTransition{Duration: theme.MotionBase, Match: navPill{}})
 				}
+				content(ui.Row(c).Absolute().Left(0).Top(0).Right(0).Bottom(0).Center().Gap(th.Space(1.5)).Clip().PassThrough()) // clipped while the button widens
 			})
 		}
 	})
