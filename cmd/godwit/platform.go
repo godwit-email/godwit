@@ -249,9 +249,20 @@ func (p *platform) NewBirdView() (ui.NativeWebView, func(), error) {
 	return v, v.Destroy, nil
 }
 
-func (*platform) CanCheckForUpdates() bool { return !packaged() } // as the app menu: a dev build says why it cannot
-func (*platform) CheckForUpdates()         { updater.CheckForUpdates() }
+func (p *platform) CheckForUpdates() {
+	if !packaged() {
+		updater.CheckForUpdates() // a dev build says why it cannot
+		return
+	}
+	// The Store updates the MSIX: its page shows and installs a newer version.
+	if err := p.OpenURL("ms-windows-store://pdp/?ProductId=" + storeProduct); err != nil {
+		log.Printf("open the Store: %v", err)
+	}
+}
 func (*platform) LatestVersion(ctx context.Context) (string, error) {
+	if packaged() {
+		return storeLatest(ctx)
+	}
 	u, err := mygo.Updater.Check(ctx)
 	if err != nil || u == nil {
 		return "", err

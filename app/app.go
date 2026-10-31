@@ -85,15 +85,12 @@ type Platform interface {
 	// NewBirdView makes the About page's 3D bird in the main window; close
 	// destroys it. UI thread only.
 	NewBirdView() (view ui.NativeWebView, close func(), err error)
-	// CanCheckForUpdates reports whether the app updates itself: not the
-	// Store's package, which the Store updates.
-	CanCheckForUpdates() bool
 	// CheckForUpdates checks now; the updater's own window shows the result
-	// and installs a newer version.
+	// and installs a newer version. The Store's package opens its Store page.
 	CheckForUpdates()
-	// LatestVersion asks the update feed for a version newer than this
-	// one, without a window: "" when up to date. Blocks: call off the UI
-	// thread.
+	// LatestVersion asks the update feed (the Store's catalog for the
+	// Store's package) for a version newer than this one, without a
+	// window: "" when up to date. Blocks: call off the UI thread.
 	LatestVersion(ctx context.Context) (string, error)
 	// RepoStarred asks the GitHub CLI whether the user starred Godwit's
 	// repository: ok is false without gh signed in. Blocks.

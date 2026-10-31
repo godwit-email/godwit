@@ -124,6 +124,7 @@ func TestSidebarContextMenuAccountItems(t *testing.T) {
 	h.waitMail("loaded", func() bool { return len(h.items()) == 0 && h.app.mail.inboxUnread() == 0 })
 	name := accountName(accs[0])
 
+	h.until("trash in the sidebar", func() bool { _, ok := h.tt.Find(i18n.T("mail.folder.trash")); return ok }) // the folder list loads after the inbox
 	require.NoError(t, h.tt.RightClick(i18n.T("mail.folder.trash")))
 	menu := h.tt.Menu()
 	require.Contains(t, menu, i18n.Tf("mail.account_sync", name))

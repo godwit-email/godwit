@@ -512,8 +512,7 @@ func (p *fakePlatform) NewBirdView() (ui.NativeWebView, func(), error) {
 	p.record("NewBirdView")
 	return nil, nil, errors.New("no web views here") // the About page shows the logo
 }
-func (p *fakePlatform) CanCheckForUpdates() bool { return true }
-func (p *fakePlatform) CheckForUpdates()         { p.record("CheckForUpdates") }
+func (p *fakePlatform) CheckForUpdates() { p.record("CheckForUpdates") }
 func (p *fakePlatform) RepoStarred(context.Context) (bool, bool) {
 	p.mu.Lock()
 	defer p.mu.Unlock()

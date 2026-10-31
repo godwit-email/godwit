@@ -861,10 +861,7 @@ func (p *settingsPage) aboutView(c *ui.Context) {
 		settingRow(c, i18n.T("settings.about.build"), "", func() {
 			ui.Row(c).Gap(th.Space(2)).AlignItems(ui.Center).Children(func() {
 				ui.Text(c, "Godwit "+Version+" ("+runtime.GOOS+"/"+runtime.GOARCH+")").TextColor(t.Muted).Selectable()
-				if !a.plat.CanCheckForUpdates() {
-					return
-				}
-				// Either opens the updater's window: up to date, or the newer version to install.
+				// Either opens the updater's window (the Store's page): up to date, or the newer version to install.
 				label, v := i18n.T("settings.about.updates.check"), kit.Outline
 				if p.latest != "" {
 					label, v = i18n.Tf("settings.about.upgrade", p.latest), kit.Default
