@@ -1521,6 +1521,8 @@
   "contacts_no_match": "一致する連絡先はありません",
   "contacts_empty": "連絡先はまだありません",
   "contacts_archive_all": "すべてアーカイブ",
+  "contacts_block": "ブロック",
+  "contacts_unblock": "ブロック解除",
   "contacts_archive_n": "{arg1, number, ::group-off} 通をすべてアーカイブ",
   "contacts_archive_tip_kept": "スター付きまたは返信済みの会話の {arg1, number, ::group-off} 通はスキップします。あとで取り消せます",
   "contacts_archive_tip_undo": "あとで取り消せます",

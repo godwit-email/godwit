@@ -1521,6 +1521,8 @@
   "contacts_no_match": "Нет подходящих контактов",
   "contacts_empty": "Контактов пока нет",
   "contacts_archive_all": "Архивировать все",
+  "contacts_block": "Заблокировать",
+  "contacts_unblock": "Разблокировать",
   "contacts_archive_n": "Архивировать все ({arg1, number, ::group-off})",
   "contacts_archive_tip_kept": "Пропустит писем: {arg1, number, ::group-off} в помеченных или отвеченных беседах; можно отменить",
   "contacts_archive_tip_undo": "Можно отменить",

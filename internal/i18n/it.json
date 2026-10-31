@@ -1521,6 +1521,8 @@
   "contacts_no_match": "Nessun contatto corrispondente",
   "contacts_empty": "Ancora nessun contatto",
   "contacts_archive_all": "Archivia tutto",
+  "contacts_block": "Blocca",
+  "contacts_unblock": "Sblocca",
   "contacts_archive_n": "{arg1, plural, one {Archivia {arg1, number, ::group-off} messaggio} many {Archivia tutti e {arg1, number, ::group-off}} other {Archivia tutti e {arg1, number, ::group-off}}}",
   "contacts_archive_tip_kept": "Salta {arg1, number, ::group-off} nelle conversazioni speciali o con risposta; annullabile",
   "contacts_archive_tip_undo": "Annullabile",

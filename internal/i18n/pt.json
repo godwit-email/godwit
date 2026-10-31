@@ -1521,6 +1521,8 @@
   "contacts_no_match": "Nenhum contato corresponde",
   "contacts_empty": "Ainda não há contatos",
   "contacts_archive_all": "Arquivar tudo",
+  "contacts_block": "Bloquear",
+  "contacts_unblock": "Desbloquear",
   "contacts_archive_n": "{arg1, plural, one {Arquivar {arg1, number, ::group-off} mensagem} many {Arquivar todas as {arg1, number, ::group-off}} other {Arquivar todas as {arg1, number, ::group-off}}}",
   "contacts_archive_tip_kept": "Ignora {arg1, number, ::group-off} em conversas com estrela ou respondidas; pode ser desfeito",
   "contacts_archive_tip_undo": "Pode ser desfeito",

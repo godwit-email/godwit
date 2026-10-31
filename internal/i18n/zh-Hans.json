@@ -1521,6 +1521,8 @@
   "contacts_no_match": "没有匹配的联系人",
   "contacts_empty": "还没有联系人",
   "contacts_archive_all": "全部归档",
+  "contacts_block": "屏蔽",
+  "contacts_unblock": "取消屏蔽",
   "contacts_archive_n": "全部归档 {arg1, number, ::group-off} 封",
   "contacts_archive_tip_kept": "会跳过标过星或回复过的会话里的 {arg1, number, ::group-off} 封，之后可以撤销",
   "contacts_archive_tip_undo": "之后可以撤销",

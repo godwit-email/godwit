@@ -1521,6 +1521,8 @@
   "contacts_no_match": "Geen overeenkomende contacten",
   "contacts_empty": "Nog geen contacten",
   "contacts_archive_all": "Alles archiveren",
+  "contacts_block": "Blokkeren",
+  "contacts_unblock": "Deblokkeren",
   "contacts_archive_n": "{arg1, plural, one {{arg1, number, ::group-off} bericht archiveren} other {Alle {arg1, number, ::group-off} archiveren}}",
   "contacts_archive_tip_kept": "Slaat {arg1, number, ::group-off} over in gesprekken met ster of beantwoord; ongedaan te maken",
   "contacts_archive_tip_undo": "Ongedaan te maken",

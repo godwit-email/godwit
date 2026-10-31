@@ -336,58 +336,58 @@ func (p *contactsPage) detailView(c *ui.Context) {
 			column().Children(func() { p.mailRow(c, mail[i-1]) })
 			return
 		}
-		column().Padding(th.Space(9), th.Space(10), th.Space(1), th.Space(10)).Gap(th.Space(6)).Children(func() {
-			ui.Row(c).Gap(th.Space(4)).AlignItems(ui.Center).Children(func() {
+		column().Padding(th.Space(10), th.Space(10), th.Space(1), th.Space(10)).Gap(th.Space(6)).Children(func() {
+			// who, centered: the avatar, the name and the address each on a line, then the actions
+			ui.Column(c).FillWidth().AlignItems(ui.Center).Gap(th.Space(4)).Children(func() {
 				p.bigAvatar(c, ct, name)
-				ui.Column(c).Grow(1).Shrink(1).MinWidth(0).Gap(th.Space(1)).Children(func() {
-					ui.Row(c).Wrap().Gap(th.Space(2)).AlignItems(ui.Center).Children(func() {
-						kit.Text(c, name, t.Text.X2l).FontWeight(600)
-						if ct.ListMessage != 0 {
-							kit.Badge(c, i18n.T("contacts.subscription"))
-						}
-						if blocked {
-							kit.Badge(c, i18n.T("reader.blocked_badge"))
-						}
-					})
-					kit.Text(c, ct.Address, t.Text.Base).TextColor(t.Muted)
+				ui.Column(c).MaxWidth(theme.ReaderMaxWidth).AlignItems(ui.Center).Gap(th.Space(0.5)).Children(func() {
+					kit.Text(c, name, t.Text.X2l).FontWeight(600).TextAlign(ui.Center)
+					kit.Text(c, ct.Address, t.Text.Base).TextColor(t.Muted).TextAlign(ui.Center)
+					if ct.ListMessage != 0 || blocked {
+						ui.Row(c).Wrap().Gap(th.Space(1.5)).Padding(th.Space(1.5), 0, 0, 0).Children(func() {
+							if ct.ListMessage != 0 {
+								kit.Badge(c, i18n.T("contacts.subscription"))
+							}
+							if blocked {
+								kit.Badge(c, i18n.T("reader.blocked_badge"))
+							}
+						})
+					}
 				})
-				// the actions as icons right of the name, each named by its tooltip
-				ui.Row(c).Gap(th.Space(0.5)).Shrink(0).Children(func() {
-					ghost := kit.ButtonOpts{Variant: kit.Ghost}
+				ui.Row(c).Gap(th.Space(2)).Children(func() {
 					if ct.ListMessage != 0 {
-						kit.IconButton(c, "mail-forbid", i18n.T("reader.unsubscribe"), ghost).OnClick(func() { p.unsubscribe(ct) })
+						kit.RoundAction(c, "mail-forbid", i18n.T("reader.unsubscribe"), "", false, false).OnClick(func() { p.unsubscribe(ct) })
 					} else {
-						kit.IconButton(c, "square-pen", i18n.T("palette.action.compose"), ghost).OnClick(func() { a.composeTo(ct.Address) })
+						kit.RoundAction(c, "square-pen", i18n.T("palette.action.compose"), "", false, false).OnClick(func() { a.composeTo(ct.Address) })
 					}
-					arch := ghost
-					arch.Disabled = d.Archivable == 0
-					kit.IconButton(c, "archive", archiveLabel(d, ready), arch).OnClick(func() { p.archive(ct.Address) })
-					blockLabel := i18n.T("reader.block_sender")
+					kit.RoundAction(c, "archive", i18n.T("contacts.archive_all"), archiveLabel(d, ready), d.Archivable == 0, false).OnClick(func() { p.archive(ct.Address) })
+					short, long := i18n.T("contacts.block"), i18n.T("reader.block_sender")
 					if blocked {
-						blockLabel = i18n.T("reader.unblock_sender")
+						short, long = i18n.T("contacts.unblock"), i18n.T("reader.unblock_sender")
 					}
-					kit.IconButton(c, "spam", blockLabel, ghost).OnClick(func() { p.block(ct.Address, !blocked) })
+					kit.RoundAction(c, "spam", short, long, false, blocked).OnClick(func() { p.block(ct.Address, !blocked) })
 				})
 			})
-			ui.Row(c).Gap(th.Space(4)).Padding(th.Space(4), th.Space(5)).Radius(t.Radius.Xl).Background(t.Sidebar).Border(theme.Hairline, t.Border).Children(func() {
-				for _, st := range []struct {
-					label, value string
-					date         bool
-				}{
-					{i18n.T("contacts.stat.received"), strconv.Itoa(ct.Received), false},
-					{i18n.T("contacts.stat.sent"), strconv.Itoa(ct.Sent), false},
-					{i18n.T("mail.filter.unread"), strconv.Itoa(ct.Unread), false},
-					{i18n.T("contacts.stat.last"), listTime(a.clock.Now(), ct.Last), true},
-				} {
-					ui.Column(c).Grow(1).Basis(0).MinWidth(0).Gap(th.Space(0.5)).Children(func() {
-						kit.Text(c, st.label, t.Text.Sm).TextColor(t.Muted)
-						size := t.Text.Xl
-						if st.date {
-							size = t.Text.Body
+			// the counts in a row between hairlines, each centered
+			ui.Column(c).FillWidth().Children(func() {
+				kit.Separator(c, false)
+				ui.Row(c).Padding(th.Space(3.5), 0).Children(func() {
+					for i, st := range [][2]string{
+						{i18n.T("contacts.stat.received"), strconv.Itoa(ct.Received)},
+						{i18n.T("contacts.stat.sent"), strconv.Itoa(ct.Sent)},
+						{i18n.T("mail.filter.unread"), strconv.Itoa(ct.Unread)},
+						{i18n.T("contacts.stat.last"), listTime(a.clock.Now(), ct.Last)},
+					} {
+						if i > 0 {
+							kit.Separator(c, true)
 						}
-						kit.Text(c, st.value, size).FontWeight(600).SingleLine()
-					})
-				}
+						ui.Column(c).Grow(1).Basis(0).MinWidth(0).AlignItems(ui.Center).Gap(th.Space(0.5)).Padding(0, th.Space(3)).Children(func() {
+							kit.Text(c, st[0], t.Text.Sm).TextColor(t.Muted).SingleLine()
+							kit.Text(c, st[1], t.Text.Xl).FontWeight(600).SingleLine()
+						})
+					}
+				})
+				kit.Separator(c, false)
 			})
 			kit.Text(c, i18n.Tf("contacts.mail", ct.Messages), t.Text.Base).FontWeight(500).TextColor(t.Muted).Padding(0, th.Space(3))
 		})
@@ -564,15 +564,15 @@ func (p *contactsPage) avatar(ct core.Contact) ui.ImageSource {
 	return nil
 }
 
-// bigAvatar is the detail's avatar: ct's image, else their initial, 56 px.
+// bigAvatar is the detail's avatar: ct's image, else their initial, 72 px.
 func (p *contactsPage) bigAvatar(c *ui.Context, ct core.Contact, name string) {
 	t, th := theme.Of(c), c.Theme()
-	size := th.Space(14)
+	size := th.Space(18)
 	if img := p.avatar(ct); img != nil {
-		ui.Box(c).Size(size, size).Shrink(0).Radius(t.Radius.Xl).Clip().Label(name).Children(func() {
+		ui.Box(c).Size(size, size).Shrink(0).Radius(t.Radius.X2l).Clip().Label(name).Children(func() {
 			ui.Image(c, img).Size(size, size).Fit(ui.Cover)
 		})
 		return
 	}
-	kit.Avatar(c, name).Size(size, size).Radius(t.Radius.Xl)
+	kit.AvatarSized(c, name, size).Radius(t.Radius.X2l)
 }

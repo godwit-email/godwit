@@ -1521,6 +1521,8 @@
   "contacts_no_match": "Eşleşen kişi yok",
   "contacts_empty": "Henüz kişi yok",
   "contacts_archive_all": "Tümünü arşivle",
+  "contacts_block": "Engelle",
+  "contacts_unblock": "Engeli kaldır",
   "contacts_archive_n": "{arg1, number, ::group-off} iletiyi arşivle",
   "contacts_archive_tip_kept": "Yıldızlı veya yanıtlanmış yazışmalardaki {arg1, number, ::group-off} ileti atlanır; geri alınabilir",
   "contacts_archive_tip_undo": "Geri alınabilir",

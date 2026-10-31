@@ -2973,6 +2973,8 @@
   "contacts_no_match": "No matching contacts",
   "contacts_empty": "No contacts yet",
   "contacts_archive_all": "Archive All",
+  "contacts_block": "Block",
+  "contacts_unblock": "Unblock",
   "contacts_archive_n": "{arg1, plural, one {Archive {arg1, number, ::group-off} Message} other {Archive All {arg1, number, ::group-off}}}",
   "contacts_archive_tip_kept": "{arg1, plural, one {Skips {arg1, number, ::group-off} message in threads you starred or replied to; can be undone} other {Skips {arg1, number, ::group-off} messages in threads you starred or replied to; can be undone}}",
   "contacts_archive_tip_undo": "Can be undone",

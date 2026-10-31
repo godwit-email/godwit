@@ -1521,6 +1521,8 @@
   "contacts_no_match": "沒有符合的聯絡人",
   "contacts_empty": "還沒有聯絡人",
   "contacts_archive_all": "全部封存",
+  "contacts_block": "封鎖",
+  "contacts_unblock": "取消封鎖",
   "contacts_archive_n": "全部封存 {arg1, number, ::group-off} 封",
   "contacts_archive_tip_kept": "會略過加過星號或回覆過的會話中的 {arg1, number, ::group-off} 封，之後可以復原",
   "contacts_archive_tip_undo": "之後可以復原",

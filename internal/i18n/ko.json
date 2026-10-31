@@ -1521,6 +1521,8 @@
   "contacts_no_match": "일치하는 연락처가 없습니다",
   "contacts_empty": "아직 연락처가 없습니다",
   "contacts_archive_all": "모두 보관",
+  "contacts_block": "차단",
+  "contacts_unblock": "차단 해제",
   "contacts_archive_n": "{arg1, number, ::group-off}통 모두 보관",
   "contacts_archive_tip_kept": "별표했거나 답장한 대화의 {arg1, number, ::group-off}통은 건너뜁니다. 나중에 실행 취소할 수 있습니다",
   "contacts_archive_tip_undo": "나중에 실행 취소할 수 있습니다",

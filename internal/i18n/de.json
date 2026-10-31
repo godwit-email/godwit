@@ -1521,6 +1521,8 @@
   "contacts_no_match": "Keine passenden Kontakte",
   "contacts_empty": "Noch keine Kontakte",
   "contacts_archive_all": "Alle archivieren",
+  "contacts_block": "Blockieren",
+  "contacts_unblock": "Entsperren",
   "contacts_archive_n": "{arg1, plural, one {{arg1, number, ::group-off} Nachricht archivieren} other {Alle {arg1, number, ::group-off} archivieren}}",
   "contacts_archive_tip_kept": "Überspringt {arg1, number, ::group-off} in markierten oder beantworteten Konversationen; rückgängig machbar",
   "contacts_archive_tip_undo": "Rückgängig machbar",

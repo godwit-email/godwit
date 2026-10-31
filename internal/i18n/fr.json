@@ -1521,6 +1521,8 @@
   "contacts_no_match": "Aucun contact correspondant",
   "contacts_empty": "Aucun contact pour l’instant",
   "contacts_archive_all": "Tout archiver",
+  "contacts_block": "Bloquer",
+  "contacts_unblock": "Débloquer",
   "contacts_archive_n": "{arg1, plural, one {Archiver {arg1, number, ::group-off} message} many {Archiver les {arg1, number, ::group-off}} other {Archiver les {arg1, number, ::group-off}}}",
   "contacts_archive_tip_kept": "Ignore {arg1, number, ::group-off} message(s) des conversations suivies ou répondues ; annulable",
   "contacts_archive_tip_undo": "Annulable",

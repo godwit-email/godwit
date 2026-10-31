@@ -1521,6 +1521,8 @@
   "contacts_no_match": "Không có liên hệ phù hợp",
   "contacts_empty": "Chưa có liên hệ",
   "contacts_archive_all": "Lưu trữ tất cả",
+  "contacts_block": "Chặn",
+  "contacts_unblock": "Bỏ chặn",
   "contacts_archive_n": "Lưu trữ {arg1, number, ::group-off} thư",
   "contacts_archive_tip_kept": "Bỏ qua {arg1, number, ::group-off} thư trong các cuộc hội thoại đã gắn sao hoặc đã trả lời; có thể hoàn tác",
   "contacts_archive_tip_undo": "Có thể hoàn tác",
