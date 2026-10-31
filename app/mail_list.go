@@ -97,7 +97,7 @@ type mailPage struct {
 	outbox                   []outboxEntry           // every account's
 	drafts                   []core.Draft            // the drafts folder's account's, when it shows
 	senders                  []core.Sender           // when the senders view shows
-	senderList               *ui.ListState
+	senderList               *ui.ListState           // the senders view's rows
 	draftList                *ui.ListState           // replaced, never zeroed: the last frame's tree still points at the old one
 	draftSel                 int64                   // the draft the pane shows; 0 for none
 	draftView                map[int64]draftInfo     // by draft, made when the drafts load
