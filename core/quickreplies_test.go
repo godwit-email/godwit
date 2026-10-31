@@ -313,6 +313,33 @@ func TestQuickRepliesCacheFollowsThread(t *testing.T) {
 	require.NoError(t, err)
 	_, err = e.s.QuickReplies(t.Context(), e.msg)
 	require.NoError(t, err)
-	require.Len(t, e.srv.Requests(), 2, "a new message in the thread is a cache miss")
-	assert.Contains(t, promptOf(t, e.srv.Requests()[1]), "Or Saturday?")
+	require.Len(t, e.srv.Requests(), 1, "mail after the message answered changes nothing")
+
+	earlier := addMessage(t, e.s, "Plans", "Me <me@x>", "Harbour or station?", "", 1_700_000_000) // synced late
+	_, err = e.s.db.Execute(t.Context(), "UPDATE messages SET thread_id = 1 WHERE id = ?", earlier)
+	require.NoError(t, err)
+	_, err = e.s.QuickReplies(t.Context(), e.msg)
+	require.NoError(t, err)
+	require.Len(t, e.srv.Requests(), 2, "a new message before it is a cache miss")
+	p := promptOf(t, e.srv.Requests()[1])
+	assert.Contains(t, p, "Harbour or station?")
+	assert.NotContains(t, p, "Or Saturday?")
+}
+
+// The message answered is the newest one sent, so a long later message cannot
+// spend the budget its body needs.
+func TestQuickRepliesKeepsAnsweredBody(t *testing.T) {
+	e := newSkillEnv(t)
+	for i := range 2 {
+		long := addMessage(t, e.s, "Re: Plans", "Bob <bob@x>", strings.Repeat("x", defaultMailBudget.PerMessage), "", int64(1_700_000_200+i))
+		_, err := e.s.db.Execute(t.Context(), "UPDATE messages SET thread_id = 1 WHERE id = ?", long)
+		require.NoError(t, err)
+	}
+	e.srv.Script(testllm.Turn{Text: []string{`{"replies":[]}`}})
+	_, err := e.s.QuickReplies(t.Context(), e.msg)
+	require.NoError(t, err)
+	require.Len(t, e.srv.Requests(), 1)
+	p := promptOf(t, e.srv.Requests()[0])
+	assert.Contains(t, p, "Meet on Friday at the harbour.")
+	assert.NotContains(t, p, "xxxx")
 }
