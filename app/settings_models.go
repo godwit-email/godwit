@@ -936,7 +936,8 @@ type usage struct {
 // deriveUsage is the 用途 card for st, the services and the running plugins' models.
 func deriveUsage(st core.Settings, services []core.ModelService, plugins []core.PluginModels, pluginStatus map[string]core.CapStatus) usage {
 	u := usage{pluginJudge: isPluginRef(st.JudgeService)}
-	var genModel, plugGen, plugJudge, plugSmall string // the defaults' labels when a plugin's model
+	var genModel, smallModel string          // the default and small models' labels
+	var plugGen, plugJudge, plugSmall string // the defaults' labels when a plugin's model
 	var genPlug, smallPlug, judgePlug []kit.Option[string]
 	for _, p := range plugins {
 		for _, mod := range p.Models {
@@ -979,7 +980,7 @@ func deriveUsage(st core.Settings, services []core.ModelService, plugins []core.
 					u.genSvc, genModel = &services[i], u.genOpts[len(u.genOpts)-1].Label
 				}
 				if ref == st.SmallModel {
-					u.smallSvc = &services[i]
+					u.smallSvc, smallModel = &services[i], u.genOpts[len(u.genOpts)-1].Label
 				}
 			}
 		}
@@ -1062,12 +1063,14 @@ func deriveUsage(st core.Settings, services []core.ModelService, plugins []core.
 		u.gen = plugLine(plugGen, pluginStatus, st.DefaultModel)
 	}
 	smallLine()
+	// With no judge, core asks the small model, else (unset or gone) the default.
+	judgeBy := cmp.Or(smallModel, plugSmall, genModel)
 	if judgeLine(); u.judgeSvc == nil && !u.pluginJudge {
-		u.judge, u.suggest = line{i18n.Tf("settings.models.use.judge.slow", genModel), lookSlow}, true
+		u.judge, u.suggest = line{i18n.Tf("settings.models.use.judge.slow", judgeBy), lookSlow}, true
 	}
 	if u.gen.look == lookFail && u.genSvc != nil { // a plugin's failed test says so on its line
 		end := i18n.T("settings.models.use.alert.end")
-		if u.judge.look == lookFail || u.judgeSvc == nil && !u.pluginJudge {
+		if u.judge.look == lookFail || u.judgeSvc == nil && !u.pluginJudge && judgeBy == genModel {
 			end = i18n.T("settings.models.use.alert.judge_too")
 		}
 		u.alert = i18n.Tf("settings.models.use.alert", u.genSvc.Name, failReason(u.genSvc.Status[core.CapGen])) + end
