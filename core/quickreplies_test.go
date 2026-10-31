@@ -263,3 +263,56 @@ func TestDraftFromQuickReply(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, d.HTML, got.HTML, "saved")
 }
+
+func TestQuickRepliesThreadContext(t *testing.T) {
+	e := newSkillEnv(t)
+	mine := addMessage(t, e.s, "Re: Plans", "Me <me@x>", "Friday or Saturday?", "", 1_700_000_000)
+	_, err := e.s.db.Execute(t.Context(), "UPDATE messages SET thread_id = 1 WHERE id = ?", mine)
+	require.NoError(t, err)
+	_, err = e.s.UpdateAccount(t.Context(), 1, AccountPatch{Signature: new("Me, Inc.")})
+	require.NoError(t, err)
+	e.srv.Script(testllm.Turn{Text: []string{`{"replies":[]}`}})
+	_, err = e.s.QuickReplies(t.Context(), e.msg)
+	require.NoError(t, err)
+	require.Len(t, e.srv.Requests(), 1)
+	p := promptOf(t, e.srv.Requests()[0])
+	assert.Contains(t, p, `<untrusted_email source="message:`+itoa(mine)+`"`)
+	assert.Contains(t, p, "Friday or Saturday?")
+	assert.Contains(t, p, "Meet on Friday at the harbour.")
+	assert.Contains(t, p, "Reply to message:"+itoa(e.msg)+".")
+	assert.Contains(t, p, "without a sign-off")
+}
+
+func TestQuickRepliesSkipNoticeMail(t *testing.T) {
+	for _, slug := range []string{"newsletter", "notice", "otp"} {
+		t.Run(slug, func(t *testing.T) {
+			e := newSkillEnv(t)
+			l, err := e.s.db.Execute(t.Context(), "INSERT INTO labels(slug, name, description, color, icon, builtin, position) VALUES (?, ?, '', 'gray', '', 1, 0)", slug, slug)
+			require.NoError(t, err)
+			_, err = e.s.db.Execute(t.Context(), "INSERT INTO message_labels(message_id, label_id, source, active) VALUES (?, ?, 'auto', 1)", e.msg, l.LastInsertID)
+			require.NoError(t, err)
+			rs, err := e.s.QuickReplies(t.Context(), e.msg)
+			require.NoError(t, err)
+			assert.Empty(t, rs)
+			assert.Empty(t, e.srv.Requests())
+		})
+	}
+}
+
+func TestQuickRepliesCacheFollowsThread(t *testing.T) {
+	e := newSkillEnv(t)
+	e.srv.Script(testllm.Turn{Text: []string{`{"replies":[]}`}}, testllm.Turn{Text: []string{`{"replies":[]}`}})
+	_, err := e.s.QuickReplies(t.Context(), e.msg)
+	require.NoError(t, err)
+	_, err = e.s.QuickReplies(t.Context(), e.msg)
+	require.NoError(t, err)
+	require.Len(t, e.srv.Requests(), 1, "cached")
+
+	later := addMessage(t, e.s, "Re: Plans", "Bob <bob@x>", "Or Saturday?", "", 1_700_000_200)
+	_, err = e.s.db.Execute(t.Context(), "UPDATE messages SET thread_id = 1 WHERE id = ?", later)
+	require.NoError(t, err)
+	_, err = e.s.QuickReplies(t.Context(), e.msg)
+	require.NoError(t, err)
+	require.Len(t, e.srv.Requests(), 2, "a new message in the thread is a cache miss")
+	assert.Contains(t, promptOf(t, e.srv.Requests()[1]), "Or Saturday?")
+}
