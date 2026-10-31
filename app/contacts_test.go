@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"net/http"
 	"slices"
+	"sync/atomic"
 	"testing"
 
 	"github.com/egoist/mygo/ui"
@@ -128,4 +129,35 @@ func TestContactsMailReadsOn(t *testing.T) {
 		h.tt.Frame()
 		return len(p.mail) == n && p.cursor == ""
 	})
+}
+
+// Contacts show their avatars as the reader does, under the remote-image
+// setting: none is fetched while remote images are asked for, the initial
+// shows instead.
+func TestContactsAvatarPolicy(t *testing.T) {
+	for _, tc := range []struct {
+		mode    string
+		fetched bool
+	}{{"ask", false}, {"auto", true}} {
+		t.Run(tc.mode, func(t *testing.T) {
+			var hits atomic.Int64
+			h, acc := avatarHarness(t, tc.mode, func(w http.ResponseWriter, req *http.Request) { hits.Add(1); w.Write(readerAvatarSVG) })
+			h.deliverOne(acc, coretest.Msg("Bob <bob@example.com>", acc.Email, "Avatar", "plain body"))
+			h.click("联系人")
+			h.see("bob@example.com")
+			initial := func() bool { return slices.Contains(h.tt.Texts(), "B") }
+			if tc.fetched {
+				h.until("the avatar", func() bool { h.drain(); h.tt.Frame(); return hits.Load() > 0 && !initial() })
+				return
+			}
+			h.until("the initial", initial)
+			for range 5 {
+				h.tt.Frame()
+				h.drain()
+			}
+			if hits.Load() != 0 {
+				t.Fatalf("fetched %d avatars", hits.Load())
+			}
+		})
+	}
 }

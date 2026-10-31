@@ -21,7 +21,8 @@ import (
 // triggered its latest), else the one the user wrote to them.
 // Received counts their mail outside Sent, Drafts, Trash and Junk, Sent the
 // user's mail in Sent to or copying them, Messages both. Unread and Inbox
-// count within Received; ListMessage is their newest received message with a
+// count within Received; Latest is their newest received message (0 none,
+// whose sender avatar is theirs), ListMessage the newest with a
 // List-Unsubscribe header (0 none); Blocked is whether they are a blocked
 // sender.
 type Contact struct {
@@ -29,7 +30,7 @@ type Contact struct {
 	Messages                      int
 	Last                          time.Time
 	Received, Sent, Unread, Inbox int
-	ListMessage                   int64
+	Latest, ListMessage           int64
 	Blocked                       bool
 }
 
@@ -108,12 +109,12 @@ func (s *Service) contacts(ctx context.Context, accountID int64) ([]Contact, map
 	from := " FROM messages m JOIN folders f ON f.id = m.folder_id WHERE m.folder_id NOT IN (" + placeholders(len(left)) + ")" + acc
 	args := append(slices.Clone(left), accArgs...)
 	// shortcut: gathers every contact in Go on each call; keep a contacts table if large stores get slow.
-	rows, err := s.db.Query(ctx, `SELECT m.from_addr, count(*), sum(instr(m.flags, '\Seen') = 0), sum(f.role = 'inbox'), max(m.date)`+
+	// A bare column beside max() (m.id here and below) comes from the row holding the max.
+	rows, err := s.db.Query(ctx, `SELECT m.from_addr, count(*), sum(instr(m.flags, '\Seen') = 0), sum(f.role = 'inbox'), max(m.date), m.id`+
 		from+" GROUP BY m.from_addr ORDER BY 5, 1", args...)
 	if err != nil {
 		return nil, nil, err
 	}
-	// A bare column beside max() comes from the row holding the max.
 	lists, err := s.db.Query(ctx, "SELECT m.from_addr, max(m.date), m.id"+from+" AND m.list_unsubscribe <> '' GROUP BY m.from_addr", args...)
 	if err != nil {
 		return nil, nil, err
@@ -165,7 +166,7 @@ func (s *Service) contacts(ctx context.Context, accountID int64) ([]Contact, map
 		c.Received += int(store.Int(r[1]))
 		c.Unread += int(store.Int(r[2]))
 		c.Inbox += int(store.Int(r[3]))
-		c.Last = time.Unix(store.Int(r[4]), 0)
+		c.Last, c.Latest = time.Unix(store.Int(r[4]), 0), store.Int(r[5]) // rows come oldest first
 	}
 	listDate := map[string]int64{}
 	for _, r := range lists.Values {

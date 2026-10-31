@@ -33,9 +33,9 @@ func TestContacts(t *testing.T) {
 	require.Equal(t, []string{"bob@example.com", "news@shop.example", "chen@corp.example"}, addrs, "most mail, then the latest; the user and Trash left out")
 	bob, shop, chen := got[0], got[1], got[2]
 	assert.Equal(t, Contact{Name: "Bob", Address: "bob@example.com", Messages: 3, Received: 1, Sent: 2, Unread: 1, Inbox: 1,
-		Last: time.Date(2026, 10, 9, 9, 0, 0, 0, time.UTC).Local()}, bob, "sent to and copied, once per message")
+		Last: time.Date(2026, 10, 9, 9, 0, 0, 0, time.UTC).Local(), Latest: e.idOf(t, "b1@x")}, bob, "sent to and copied, once per message")
 	assert.Equal(t, Contact{Name: "Shop News", Address: "news@shop.example", Messages: 3, Received: 3, Unread: 2, Inbox: 2,
-		Last: time.Date(2026, 10, 6, 9, 0, 0, 0, time.UTC).Local(), ListMessage: e.idOf(t, "s1@x"), Blocked: true}, shop,
+		Last: time.Date(2026, 10, 6, 9, 0, 0, 0, time.UTC).Local(), Latest: e.idOf(t, "s2@x"), ListMessage: e.idOf(t, "s1@x"), Blocked: true}, shop,
 		"the latest name; the newest with List-Unsubscribe outside Trash")
 	assert.Equal(t, Contact{Name: "Chen Jing", Address: "chen@corp.example", Messages: 1, Sent: 1,
 		Last: time.Date(2026, 10, 9, 9, 0, 0, 0, time.UTC).Local()}, chen, "only written to: the name the user wrote")

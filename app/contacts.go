@@ -40,7 +40,14 @@ type contactsPage struct {
 	unsub    core.Unsubscribe // a one-click unsubscribe from unsubID, waiting to be confirmed
 	unsubID  int64
 	unsubDlg bool
+
+	avatars    map[int64]*contactAvatar // by the message read for, as settingsSavedVer was
+	avatarsVer uint64
 }
+
+// contactAvatar is a contact's sender avatar once read; nil while it is read,
+// or when there is none.
+type contactAvatar struct{ img ui.ImageSource }
 
 // contactCats are the sidebar's categories: every contact, those the user
 // wrote to, those with a List-Unsubscribe, those blocked (as App.blocked).
@@ -276,7 +283,7 @@ func (p *contactsPage) row(c *ui.Context, ct core.Contact) ui.Element {
 			ui.Box(c).Absolute().Left(th.Space(1.5)).Top(th.Space(5.5)).Size(th.Space(2), th.Space(2)).Radius(th.Space(1)).Background(t.Unread).
 				Label(i18n.Tf("mail.row.unread", ct.Unread))
 		}
-		kit.Avatar(c, name)
+		kit.AvatarImage(c, name, p.avatar(ct))
 		ui.Column(c).Grow(1).Shrink(1).MinWidth(0).Gap(th.Space(0.5)).Children(func() {
 			ui.Row(c).Gap(th.Space(1.5)).AlignItems(ui.Center).Children(func() {
 				ui.Text(c, name).FontWeight(weight).SingleLine().Shrink(1)
@@ -331,7 +338,7 @@ func (p *contactsPage) detailView(c *ui.Context) {
 		}
 		column().Padding(th.Space(9), th.Space(10), th.Space(1), th.Space(10)).Gap(th.Space(6)).Children(func() {
 			ui.Row(c).Gap(th.Space(4)).AlignItems(ui.Center).Children(func() {
-				kit.Avatar(c, name).Size(th.Space(14), th.Space(14)).Radius(t.Radius.Xl)
+				p.bigAvatar(c, ct, name)
 				ui.Column(c).Shrink(1).MinWidth(0).Gap(th.Space(1)).Children(func() {
 					ui.Row(c).Wrap().Gap(th.Space(2)).AlignItems(ui.Center).Children(func() {
 						kit.Text(c, name, t.Text.X2l).FontWeight(600)
@@ -521,3 +528,54 @@ func (p *contactsPage) block(addr string, on bool) {
 
 // contacts is the contacts page.
 func (a *App) contacts() *contactsPage { return a.pages[PageContacts].(*contactsPage) }
+
+// avatar is ct's sender avatar the reader's way: core's SenderAvatar of their
+// latest message, under the remote-image setting, read off the UI thread the
+// first time it shows and again once that setting is saved changed; nil until
+// read, or for none (one only written to has none).
+func (p *contactsPage) avatar(ct core.Contact) ui.ImageSource {
+	a, id := p.a, ct.Latest
+	if id == 0 {
+		return nil
+	}
+	if p.avatarsVer != a.settingsSavedVer {
+		p.avatars, p.avatarsVer = nil, a.settingsSavedVer
+	}
+	if av := p.avatars[id]; av != nil {
+		return av.img
+	}
+	if a.settingsVer != a.settingsSavedVer {
+		return nil // as the reader, none while settings are unsaved
+	}
+	if p.avatars == nil {
+		p.avatars = map[int64]*contactAvatar{}
+	}
+	av := &contactAvatar{}
+	p.avatars[id] = av
+	var img ui.ImageSource
+	a.do(func(ctx context.Context) error {
+		got, err := a.svc.SenderAvatar(ctx, id, false)
+		if err != nil || len(got.Data) == 0 {
+			return err
+		}
+		img, err = avatarImage(got)
+		return err
+	}, func(error) {
+		// shortcut: a failed read leaves the initial until the setting changes; retry if users miss avatars.
+		av.img = img
+	})
+	return nil
+}
+
+// bigAvatar is the detail's avatar: ct's image, else their initial, 56 px.
+func (p *contactsPage) bigAvatar(c *ui.Context, ct core.Contact, name string) {
+	t, th := theme.Of(c), c.Theme()
+	size := th.Space(14)
+	if img := p.avatar(ct); img != nil {
+		ui.Box(c).Size(size, size).Shrink(0).Radius(t.Radius.Xl).Clip().Label(name).Children(func() {
+			ui.Image(c, img).Size(size, size).Fit(ui.Cover)
+		})
+		return
+	}
+	kit.Avatar(c, name).Size(size, size).Radius(t.Radius.Xl)
+}
