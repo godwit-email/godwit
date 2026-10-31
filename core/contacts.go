@@ -335,9 +335,12 @@ func (s *Service) archivePlan(ctx context.Context, addr string) (archiving, erro
 
 // ArchiveSender moves the inbox mail from addr (a From header or its
 // address) to each account's archive, as archivePlan says. An account
-// without an archive folder fails before anything moves.
+// without an archive folder fails before anything moves. The plan and the
+// moves hold the edit lock together, so a change meanwhile is planned with.
 func (s *Service) ArchiveSender(ctx context.Context, addr string) (SenderArchive, error) {
 	var res SenderArchive
+	s.editMu.Lock()
+	defer s.editMu.Unlock()
 	p, err := s.archivePlan(ctx, gomail.AddrKey(addr))
 	if err != nil {
 		return res, err
@@ -354,7 +357,11 @@ func (s *Service) ArchiveSender(ctx context.Context, addr string) (SenderArchive
 			ms[i].To = archive[acc]
 		}
 		for c := range slices.Chunk(ms, 200) {
-			if err := s.Move(ctx, archivedIDs(c), archive[acc]); err != nil {
+			acc, ts, err := s.targets(ctx, archivedIDs(c))
+			if err != nil {
+				return res, err
+			}
+			if err := s.move(ctx, acc, ts, archive[acc]); err != nil {
 				return res, err
 			}
 			res.Moved = append(res.Moved, c...)
