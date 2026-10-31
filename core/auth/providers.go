@@ -47,8 +47,8 @@ func table() []Provider {
 		{ID: "gmail", Name: "Gmail", Domains: []string{"gmail.com", "googlemail.com"},
 			IMAP: tls("imap.gmail.com"), SMTP: smtps("smtp.gmail.com"), Login: "app_password",
 			HelpURL: "https://support.google.com/accounts/answer/185833",
-			// No client of Godwit's (mail.google.com is a restricted scope): a Workspace
-			// admin's own Internal client signs in, for those who cannot use app passwords.
+			// No client of Godwit's (mail.google.com is a restricted scope): the user's own
+			// client signs in, for those who cannot or will not use app passwords.
 			OAuth: &OAuthConfig{
 				AuthURL:  "https://accounts.google.com/o/oauth2/v2/auth",
 				TokenURL: "https://oauth2.googleapis.com/token",

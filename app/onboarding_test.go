@@ -436,7 +436,7 @@ func TestOnboardingOAuth(t *testing.T) {
 	h.until("Cancel f2", func() bool { return slices.Equal(fo.Canceled(), []string{"f1", "f2"}) })
 }
 
-// A Workspace admin who blocked app passwords: Gmail signs in with their own OAuth client.
+// Without an app password, Gmail signs in with the user's own OAuth client.
 func TestOnboardingOwnOAuthClient(t *testing.T) {
 	h, _ := withAccount(t)
 	fo := &fakeOAuth{flows: map[string]chan flowResult{}}
@@ -444,13 +444,8 @@ func TestOnboardingOwnOAuthClient(t *testing.T) {
 	h.app.openAddAccount()
 	h.click("Gmail")
 	h.see("应用专用密码")
-	offer := "管理员禁用了应用专用密码？用组织自己的 OAuth 客户端登录"
 	h.fill("邮箱地址", "me@gmail.com")
-	if _, ok := h.tt.Find(offer); ok {
-		t.Fatal("an organization's client is offered for a consumer address")
-	}
-	h.fill("邮箱地址", "me@company.com")
-	h.click(offer)
+	h.click("改用自己的 OAuth 客户端登录")
 	h.fill("客户端 ID", " 123.apps.googleusercontent.com ")
 	h.fill("客户端密钥", "GOCSPX-s3cret")
 	h.click("在浏览器中登录")
@@ -464,7 +459,7 @@ func TestOnboardingOwnOAuthClient(t *testing.T) {
 	if want := []core.OAuthClient{{ID: "123.apps.googleusercontent.com", Secret: "GOCSPX-s3cret"}}; !slices.Equal(got, want) {
 		t.Fatalf("clients %+v, want %+v", got, want)
 	}
-	fo.finish("f1", "me@company.com")
+	fo.finish("f1", "me@gmail.com")
 	o := h.app.addAccount
 	h.until("the check", func() bool { return o.step == stepChecking })
 	if in := o.input(); in.OAuthFlowID != "f1" || in.Password != "" {

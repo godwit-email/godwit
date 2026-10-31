@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"net/mail"
-	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -795,21 +794,14 @@ func (o *onboarding) passwordView(c *ui.Context) {
 	secretWhitespaceHint(c, &o.secret)
 	primary(c, i18n.T("onboarding.connect"), o.secret == "" || !validEmail(o.email)).OnClick(o.connect)
 	o.manualView(c)
-	if ownClientOffered(o.prov) && !o.consumerAddress() {
+	if ownClientOffered(o.prov) {
 		link(c, i18n.T("onboarding.own_client.offer"), func() { o.ownClient, o.showSecret = true, false })
 	}
 }
 
 // ownClientOffered: the provider has no OAuth client of Godwit's but signs in
-// with the user's own (Gmail, for Workspace admins who blocked app passwords).
+// with the user's own (Gmail, for anyone who cannot or will not use an app password).
 func ownClientOffered(p auth.Provider) bool { return p.OAuth != nil && p.OAuth.ClientID == "" }
-
-// consumerAddress: the address is on one of the provider's own domains
-// (@gmail.com), which an organization's Internal client never signs in.
-func (o *onboarding) consumerAddress() bool {
-	_, domain, ok := strings.Cut(strings.TrimSpace(o.email), "@")
-	return ok && validEmail(o.email) && slices.Contains(o.prov.Domains, strings.ToLower(domain))
-}
 
 // oauth: the sign-in is in the browser, with the provider's client or the user's own.
 func (o *onboarding) oauth() bool { return o.prov.Login == "oauth" || o.ownClient }
