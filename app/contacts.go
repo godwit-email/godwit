@@ -19,18 +19,23 @@ import (
 
 // contactsPage lists everyone the user exchanged synced mail with, by
 // category and filter, beside the chosen contact (Route.Contact): what they
-// add up to, their latest mail either way, and the ways to clean up after
-// them. Contacts are read only.
+// add up to, the ways to clean up after them, and all the mail between them
+// and the user, a page at a time. Contacts are read only.
 type contactsPage struct {
-	a       *App
-	all     []core.Contact
-	detail  core.ContactDetail // of the route's contact, as the last load read it
-	cat     int                // contactCats index
-	query   string
-	list    *ui.ListState
-	cur     int // the row chosen, as the list keeps it; -1 none
-	loading bool
-	gen     uint64 // bumped per load; older results are dropped
+	a        *App
+	all      []core.Contact
+	detail   core.ContactDetail    // of detailOf, as the last load read it
+	mail     []core.MessageSummary // the mail between detailOf and the user read so far, newest first
+	cursor   string                // where mail's next page starts; "" once all is read
+	more     bool                  // a next page is being read
+	mailList *ui.ListState
+	detailOf string // the address detail and mail are of: until it is the route's, neither shows
+	cat      int    // contactCats index
+	query    string
+	list     *ui.ListState
+	cur      int // the row chosen, as the list keeps it; -1 none
+	loading  bool
+	gen      uint64 // bumped per load; older results are dropped
 
 	unsub    core.Unsubscribe // a one-click unsubscribe from unsubID, waiting to be confirmed
 	unsubID  int64
@@ -52,7 +57,7 @@ var contactCats = []struct {
 var _ pageView = (*contactsPage)(nil)
 
 func newContactsPage(a *App) *contactsPage {
-	return &contactsPage{a: a, list: &ui.ListState{}, cur: -1}
+	return &contactsPage{a: a, list: &ui.ListState{}, mailList: &ui.ListState{}, cur: -1}
 }
 
 // openContact shows addr (a From header or its address) on the contacts page.
@@ -69,16 +74,26 @@ func (p *contactsPage) Title() (string, string) {
 
 func (p *contactsPage) refresh([]events.Event) { p.load() }
 
-// load reads the contacts and the route's contact's detail; with none
-// chosen, the first contact is.
+// contactMailPage is how much of a contact's mail one read takes.
+const contactMailPage = 50
+
+// load reads the contacts and the route's contact's detail and mail, with
+// none chosen the first contact's; for the contact shown, as much mail as
+// was read before.
 func (p *contactsPage) load() {
 	a := p.a
 	p.gen++
 	gen, addr := p.gen, a.route.Contact
+	want := 0
+	if addr == p.detailOf {
+		want = len(p.mail)
+	}
 	p.loading = true
 	var (
-		all []core.Contact
-		d   core.ContactDetail
+		all    []core.Contact
+		d      core.ContactDetail
+		mail   []core.MessageSummary
+		cursor string
 	)
 	a.do(func(ctx context.Context) (err error) {
 		if all, err = a.svc.Contacts(ctx); err != nil {
@@ -87,10 +102,20 @@ func (p *contactsPage) load() {
 		if addr == "" && len(all) > 0 {
 			addr = all[0].Address
 		}
-		if addr != "" {
-			d, err = a.svc.ContactDetail(ctx, addr)
+		if addr == "" {
+			return nil
 		}
-		return err
+		if d, err = a.svc.ContactDetail(ctx, addr); err != nil {
+			return err
+		}
+		for first := true; first || cursor != "" && len(mail) < want; first = false {
+			page, err := a.svc.ContactMail(ctx, addr, cursor, contactMailPage)
+			if err != nil {
+				return err
+			}
+			mail, cursor = append(mail, page.Items...), page.NextCursor
+		}
+		return nil
 	}, func(err error) {
 		if gen != p.gen {
 			return
@@ -103,7 +128,36 @@ func (p *contactsPage) load() {
 		if a.route.Page == PageContacts && a.route.Contact == "" {
 			a.route.Contact = addr // the first shown, not a step in the history
 		}
-		p.all, p.detail = all, d
+		if addr != p.detailOf {
+			p.mailList = &ui.ListState{} // another's mail starts at its top
+		}
+		p.all, p.detail, p.detailOf, p.mail, p.cursor, p.more = all, d, addr, mail, cursor, false
+	})
+}
+
+// loadMore reads the next page of the contact's mail, one read at a time.
+func (p *contactsPage) loadMore() {
+	if p.more || p.cursor == "" || p.loading {
+		return
+	}
+	a := p.a
+	gen, addr, cursor := p.gen, p.detailOf, p.cursor
+	p.more = true
+	var page core.MessagePage
+	a.do(func(ctx context.Context) (err error) {
+		page, err = a.svc.ContactMail(ctx, addr, cursor, contactMailPage)
+		return err
+	}, func(err error) {
+		if gen != p.gen {
+			return
+		}
+		p.more = false
+		if err != nil {
+			a.toastErr(err)
+			p.cursor = "" // no more pages until a refresh
+			return
+		}
+		p.mail, p.cursor = append(p.mail, page.Items...), page.NextCursor
 	})
 }
 
@@ -242,7 +296,8 @@ func (p *contactsPage) row(c *ui.Context, ct core.Contact) ui.Element {
 }
 
 // detailView is the route's contact: who, the ways to clean up after them,
-// what they add up to, and their latest mail either way.
+// what they add up to, then all their mail with the user, newest first, read
+// on as it scrolls.
 func (p *contactsPage) detailView(c *ui.Context) {
 	a := p.a
 	t, th := theme.Of(c), c.Theme()
@@ -253,10 +308,28 @@ func (p *contactsPage) detailView(c *ui.Context) {
 		}
 		return
 	}
-	d, name := p.detail, cmp.Or(ct.Name, ct.Address)
+	d, mail, name := p.detail, p.mail, cmp.Or(ct.Name, ct.Address)
+	ready := p.detailOf == ct.Address // another's while this one's loads, or failed to
+	if !ready {
+		d, mail = core.ContactDetail{}, nil
+	}
 	blocked := slices.Contains(a.blocked, ct.Address)
-	ui.Scroll(c).Grow(1).Children(func() {
-		ui.Column(c).FillWidth().MaxWidth(theme.ReaderMaxWidth).AlignSelf(ui.Center).Padding(th.Space(9), th.Space(10), th.Space(8), th.Space(10)).Gap(th.Space(6)).Children(func() {
+	// one column as wide as the reader's, centered: the head, then a row per message
+	column := func() ui.Element {
+		return ui.Column(c).FillWidth().MaxWidth(theme.ReaderMaxWidth).AlignSelf(ui.Center).Padding(0, th.Space(10))
+	}
+	p.mailList.Key = func(i int) any {
+		if i == 0 {
+			return "head"
+		}
+		return mail[i-1].ID
+	}
+	kit.List(c, p.mailList, 1+len(mail), func(i int) {
+		if i > 0 {
+			column().Children(func() { p.mailRow(c, mail[i-1]) })
+			return
+		}
+		column().Padding(th.Space(9), th.Space(10), th.Space(1), th.Space(10)).Gap(th.Space(6)).Children(func() {
 			ui.Row(c).Gap(th.Space(4)).AlignItems(ui.Center).Children(func() {
 				kit.Avatar(c, name).Size(th.Space(14), th.Space(14)).Radius(t.Radius.Xl)
 				ui.Column(c).Shrink(1).MinWidth(0).Gap(th.Space(1)).Children(func() {
@@ -287,7 +360,9 @@ func (p *contactsPage) detailView(c *ui.Context) {
 					label = i18n.Tf("contacts.archive_n", d.Archivable)
 				}
 				arch := kit.Button(c, label, outline).OnClick(func() { p.archive(ct.Address) })
-				kit.Tooltip(c, arch, archiveTip(d))
+				if ready {
+					kit.Tooltip(c, arch, archiveTip(d))
+				}
 				ghost := kit.ButtonOpts{Variant: kit.Ghost, Icon: "spam"}
 				blockLabel := i18n.T("reader.block_sender")
 				if blocked {
@@ -315,27 +390,18 @@ func (p *contactsPage) detailView(c *ui.Context) {
 					})
 				}
 			})
-			ui.Column(c).Gap(th.Space(1)).Children(func() {
-				ui.Row(c).AlignItems(ui.Center).Padding(0, th.Space(3), th.Space(1), th.Space(3)).Children(func() {
-					kit.Text(c, i18n.T("contacts.recent"), t.Text.Base).FontWeight(500).TextColor(t.Muted)
-					ui.Spacer(c)
-					if ct.Received > 0 {
-						kit.Button(c, i18n.T("palette.act.contact_mail"), kit.ButtonOpts{Variant: kit.Ghost, Size: kit.SizeSm}).
-							OnClick(func() { a.mail.mailFrom(ct.Address) })
-					}
-				})
-				for _, m := range d.Recent {
-					p.recentRow(c.Key(m.ID), m)
-				}
-			})
+			kit.Text(c, i18n.Tf("contacts.mail", ct.Messages), t.Text.Base).FontWeight(500).TextColor(t.Muted).Padding(0, th.Space(3))
 		})
-	})
+	}).Grow(1)
+	if _, last := p.mailList.Visible(); ready && last >= len(mail)-5 {
+		p.loadMore()
+	}
 }
 
-// recentRow is one of the contact's latest messages: its subject and start,
-// whether the user starred or answered it, its folder and time; a click
-// opens it.
-func (p *contactsPage) recentRow(c *ui.Context, m core.MessageSummary) {
+// mailRow is a message between the contact and the user: its subject and
+// start, whether the user starred or answered it, its folder and time; a
+// click opens it in the reader.
+func (p *contactsPage) mailRow(c *ui.Context, m core.MessageSummary) {
 	a := p.a
 	t, th := theme.Of(c), c.Theme()
 	id := m.ID

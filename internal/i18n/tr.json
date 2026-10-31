@@ -1532,7 +1532,7 @@
   "contacts_stat_received": "Alınan",
   "contacts_stat_sent": "Gönderilen",
   "contacts_stat_last": "Son yazışma",
-  "contacts_recent": "Son iletiler",
+  "contacts_mail": "Yazışmalar · {arg1, number, ::group-off}",
   "contacts_replied": "Yanıtlandı",
   "reader_view_contact": "Kişiyi görüntüle"
 }

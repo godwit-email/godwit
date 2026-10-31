@@ -33,16 +33,11 @@ type Contact struct {
 	Blocked                       bool
 }
 
-// ContactDetail is what the contacts page shows of one contact beside the
-// list: Recent, their newest mail either way, and what ArchiveSender would do
+// ContactDetail is what ArchiveSender would do with a contact's inbox mail
 // now: move Archivable messages, leave Kept in the inbox.
 type ContactDetail struct {
-	Recent           []MessageSummary
 	Archivable, Kept int
 }
-
-// contactRecent is how many messages ContactDetail.Recent holds at most.
-const contactRecent = 8
 
 // SenderArchive is what ArchiveSender moved, each message with the folder
 // it left and the one it went to, and how many it left in the inbox.
@@ -216,12 +211,10 @@ func (s *Service) contacts(ctx context.Context, accountID int64) ([]Contact, map
 	return all, names, nil
 }
 
-// ContactDetail is addr's newest mail either way and what ArchiveSender
-// would do with their inbox mail now.
+// ContactDetail is what ArchiveSender would do with addr's inbox mail now.
 func (s *Service) ContactDetail(ctx context.Context, addr string) (ContactDetail, error) {
 	var d ContactDetail
-	key := gomail.AddrKey(addr)
-	plan, err := s.archivePlan(ctx, key)
+	plan, err := s.archivePlan(ctx, gomail.AddrKey(addr))
 	if err != nil {
 		return d, err
 	}
@@ -229,34 +222,72 @@ func (s *Service) ContactDetail(ctx context.Context, addr string) (ContactDetail
 		d.Archivable += len(ms)
 	}
 	d.Kept = plan.kept
-	if len(plan.headers) > 0 {
-		b, _ := json.Marshal(plan.headers)
-		if d.Recent, err = s.searchMessages(ctx, "m.from_addr IN (SELECT value FROM json_each(?))", []any{string(b)}, contactRecent); err != nil {
-			return d, err
-		}
+	return d, nil
+}
+
+// ContactMail is a page of the mail between the user and addr, newest
+// first: theirs as Contact.Received counts it and the user's to them as
+// Contact.Sent does, so a contact's pages hold Contact.Messages in all.
+// cursor "" starts; NextCursor is "" past the last page. A page may hold
+// fewer than limit with more to come.
+func (s *Service) ContactMail(ctx context.Context, addr, cursor string, limit int) (MessagePage, error) {
+	var page MessagePage
+	key := gomail.AddrKey(addr)
+	q, err := s.withSenders(ctx, SearchQuery{FromAddr: key})
+	if err != nil {
+		return page, err
+	}
+	left, err := s.roleFolderIDs(ctx, "sent", "drafts", "trash", "junk")
+	if err != nil {
+		return page, err
 	}
 	sent, err := s.roleFolderIDs(ctx, "sent")
-	if err != nil || len(sent) == 0 {
-		return d, err
-	}
-	cond, args := "m.folder_id IN ("+placeholders(len(sent))+")", sent
-	if at := strings.LastIndexByte(key, '@'); at >= 0 && strings.IndexFunc(key[at:], func(r rune) bool { return r >= utf8.RuneSelf }) < 0 {
-		cond += ` AND (m.to_addrs LIKE ? ESCAPE '\' OR m.cc_addrs LIKE ? ESCAPE '\')` // narrowed by an ASCII domain, which LIKE folds
-		args = append(args, likeArg(key[at:]), likeArg(key[at:]))
-	}
-	// shortcut: reads the newest 200 sent to the domain; one written to among many more of its domain's may be missed.
-	out, err := s.searchMessages(ctx, cond, args, 200)
 	if err != nil {
-		return d, err
+		return page, err
 	}
-	for _, m := range out {
-		if slices.ContainsFunc(slices.Concat(m.To, m.Cc), func(h string) bool { return gomail.AddrKey(h) == key }) {
-			d.Recent = append(d.Recent, m)
+	headers, _ := json.Marshal(append([]string{}, q.fromHeaders...)) // [] when none: theirs is no mail
+	cond := "(m.from_addr IN (SELECT value FROM json_each(?)) AND m.folder_id NOT IN (" + placeholders(len(left)) + ")) OR (m.folder_id IN (" + placeholders(len(sent)) + ")"
+	args := slices.Concat([]any{string(headers)}, left, sent)
+	ascii := func(s string) bool { return strings.IndexFunc(s, func(r rune) bool { return r >= utf8.RuneSelf }) < 0 }
+	if at := strings.LastIndexByte(key, '@'); at >= 0 && ascii(key[at:]) {
+		like := key[at:]
+		if ascii(key) {
+			like = key
 		}
+		cond += ` AND (m.to_addrs LIKE ? ESCAPE '\' OR m.cc_addrs LIKE ? ESCAPE '\')` // narrowed, as LIKE folds ASCII; AddrKey decides below
+		args = append(args, likeArg(like), likeArg(like))
 	}
-	slices.SortFunc(d.Recent, func(a, b MessageSummary) int { return cmp.Or(b.Date.Compare(a.Date), cmp.Compare(b.ID, a.ID)) })
-	d.Recent = d.Recent[:min(len(d.Recent), contactRecent)]
-	return d, nil
+	cond = "(" + cond + "))"
+	isSent := func(m MessageSummary) bool { return slices.Contains(sent, any(m.FolderID)) }
+	limit = clampLimit(limit)
+	for len(page.Items) == 0 { // a batch of only near misses reads on
+		c, a := cond, args
+		if cursor != "" {
+			d, id, err := decodeCursor(cursor)
+			if err != nil {
+				return page, err
+			}
+			c, a = c+" AND (m.date < ? OR (m.date = ? AND m.id < ?))", append(slices.Clone(args), d, d, id)
+		}
+		rows, err := s.db.Query(ctx, "SELECT "+msgCols+" FROM messages m WHERE "+c+" ORDER BY m.date DESC, m.id DESC LIMIT ?", append(a, limit+1)...)
+		if err != nil {
+			return page, err
+		}
+		for i, r := range rows.Values[:min(len(rows.Values), limit)] {
+			m := scanSummary(r)
+			if !isSent(m) || slices.ContainsFunc(slices.Concat(m.To, m.Cc), func(h string) bool { return gomail.AddrKey(h) == key }) {
+				page.Items = append(page.Items, m)
+			}
+			if i == limit-1 {
+				cursor = encodeCursor(m.Date.Unix(), m.ID)
+			}
+		}
+		if len(rows.Values) <= limit {
+			return page, nil
+		}
+		page.NextCursor = cursor
+	}
+	return page, nil
 }
 
 // archiving is the inbox mail from a contact that ArchiveSender would move,

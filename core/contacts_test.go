@@ -40,14 +40,28 @@ func TestContacts(t *testing.T) {
 	assert.Equal(t, Contact{Name: "Chen Jing", Address: "chen@corp.example", Messages: 1, Sent: 1,
 		Last: time.Date(2026, 10, 9, 9, 0, 0, 0, time.UTC).Local()}, chen, "only written to: the name the user wrote")
 
-	d, err := e.s.ContactDetail(bg, "Bob <bob@example.com>")
+	page, err := e.s.ContactMail(bg, "Bob <bob@example.com>", "", 0)
 	require.NoError(t, err)
-	assert.Equal(t, []int64{e.idOf(t, "c1@x"), e.idOf(t, "b1@x"), e.idOf(t, "me@x")}, msgIDs(d.Recent), "either way, newest first")
-	assert.Equal(t, 1, d.Archivable)
-	d, err = e.s.ContactDetail(bg, "news@shop.example")
+	assert.Equal(t, []int64{e.idOf(t, "c1@x"), e.idOf(t, "b1@x"), e.idOf(t, "me@x")}, msgIDs(page.Items), "either way, newest first")
+	assert.Empty(t, page.NextCursor)
+
+	// Page by page to the end: the mail Received and Sent count, Trash's left out.
+	var all []int64
+	cursor := ""
+	for {
+		page, err := e.s.ContactMail(bg, "news@shop.example", cursor, 1)
+		require.NoError(t, err)
+		all = append(all, msgIDs(page.Items)...)
+		if cursor = page.NextCursor; cursor == "" {
+			break
+		}
+	}
+	assert.Equal(t, []int64{e.idOf(t, "s2@x"), e.idOf(t, "s1@x"), e.idOf(t, "s3@x")}, all)
+	assert.Len(t, all, shop.Messages)
+
+	d, err := e.s.ContactDetail(bg, "news@shop.example")
 	require.NoError(t, err)
-	assert.Equal(t, []int64{e.idOf(t, "s4@x"), e.idOf(t, "s2@x"), e.idOf(t, "s1@x"), e.idOf(t, "s3@x")}, msgIDs(d.Recent))
-	assert.Equal(t, ContactDetail{Recent: d.Recent, Archivable: 2}, d)
+	assert.Equal(t, ContactDetail{Archivable: 2}, d)
 }
 
 func TestArchiveSenderSkipsStarredAndRepliedAndUndoes(t *testing.T) {

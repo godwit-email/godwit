@@ -1532,7 +1532,7 @@
   "contacts_stat_received": "Ontvangen",
   "contacts_stat_sent": "Verzonden",
   "contacts_stat_last": "Laatst gecorrespondeerd",
-  "contacts_recent": "Recente e-mail",
+  "contacts_mail": "Uitgewisselde e-mail · {arg1, number, ::group-off}",
   "contacts_replied": "Beantwoord",
   "reader_view_contact": "Contact weergeven"
 }

@@ -1532,7 +1532,7 @@
   "contacts_stat_received": "受信",
   "contacts_stat_sent": "送信",
   "contacts_stat_last": "最近のやり取り",
-  "contacts_recent": "最近のメール",
+  "contacts_mail": "やり取りしたメール · {arg1, number, ::group-off} 通",
   "contacts_replied": "返信済み",
   "reader_view_contact": "連絡先を表示"
 }

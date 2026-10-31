@@ -2984,7 +2984,7 @@
   "contacts_stat_received": "Received",
   "contacts_stat_sent": "Sent",
   "contacts_stat_last": "Last Exchanged",
-  "contacts_recent": "Recent Mail",
+  "contacts_mail": "Mail Exchanged · {arg1, number, ::group-off}",
   "contacts_replied": "Replied",
   "reader_view_contact": "View Contact"
 }

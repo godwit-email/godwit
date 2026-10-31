@@ -1532,7 +1532,7 @@
   "contacts_stat_received": "Đã nhận",
   "contacts_stat_sent": "Đã gửi",
   "contacts_stat_last": "Trao đổi gần nhất",
-  "contacts_recent": "Thư gần đây",
+  "contacts_mail": "Thư đã trao đổi · {arg1, number, ::group-off}",
   "contacts_replied": "Đã trả lời",
   "reader_view_contact": "Xem liên hệ"
 }

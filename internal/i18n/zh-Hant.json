@@ -1532,7 +1532,7 @@
   "contacts_stat_received": "收到",
   "contacts_stat_sent": "已傳送",
   "contacts_stat_last": "最近往來",
-  "contacts_recent": "最近的往來",
+  "contacts_mail": "往來郵件 · {arg1, number, ::group-off} 封",
   "contacts_replied": "已回覆",
   "reader_view_contact": "查看聯絡人"
 }

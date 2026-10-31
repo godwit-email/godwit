@@ -1532,7 +1532,7 @@
   "contacts_stat_received": "Reçus",
   "contacts_stat_sent": "Envoyés",
   "contacts_stat_last": "Dernier échange",
-  "contacts_recent": "E-mails récents",
+  "contacts_mail": "E-mails échangés · {arg1, number, ::group-off}",
   "contacts_replied": "Répondu",
   "reader_view_contact": "Voir le contact"
 }

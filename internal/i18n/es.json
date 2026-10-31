@@ -1532,7 +1532,7 @@
   "contacts_stat_received": "Recibidos",
   "contacts_stat_sent": "Enviados",
   "contacts_stat_last": "Último intercambio",
-  "contacts_recent": "Correo reciente",
+  "contacts_mail": "Correo intercambiado · {arg1, number, ::group-off}",
   "contacts_replied": "Respondido",
   "reader_view_contact": "Ver contacto"
 }

@@ -1532,7 +1532,7 @@
   "contacts_stat_received": "Получено",
   "contacts_stat_sent": "Отправлено",
   "contacts_stat_last": "Последняя переписка",
-  "contacts_recent": "Недавние письма",
+  "contacts_mail": "Переписка · {arg1, number, ::group-off}",
   "contacts_replied": "Отвечено",
   "reader_view_contact": "Открыть контакт"
 }

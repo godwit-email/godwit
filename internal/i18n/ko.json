@@ -1532,7 +1532,7 @@
   "contacts_stat_received": "받음",
   "contacts_stat_sent": "보냄",
   "contacts_stat_last": "최근 주고받음",
-  "contacts_recent": "최근 메일",
+  "contacts_mail": "주고받은 메일 · {arg1, number, ::group-off}통",
   "contacts_replied": "답장함",
   "reader_view_contact": "연락처 보기"
 }
