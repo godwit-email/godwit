@@ -237,6 +237,21 @@ func TestShots(t *testing.T) {
 		s.see("Hi Lena, thanks! I will review it")
 	}
 	noQuick := func(st *core.Settings) { st.QuickReplies = false }
+	t.Run("Contacts", func(t *testing.T) {
+		s := shotMail(t, noAuto)
+		unsub := coretest.Header("List-Unsubscribe: <https://news.northwind.example/u?t=1>")
+		for i, subj := range []string{"本周特价机票", "会员积分即将过期", "秋季目的地推荐"} {
+			s.put(s.you, "INBOX", coretest.Msg("Northwind Airlines <news@northwind.example>", s.you.Email, subj, "精选优惠。",
+				coretest.MessageID(fmt.Sprint("nw", i, "@x")), coretest.Date(day(10, 9-i, 7, 30)), unsub))
+		}
+		s.syncNow(s.you)
+		s.click("联系人")
+		s.see("news@northwind.example")
+		shot(s.harness, "Contacts")
+		s.app.contacts().choose("lena@partner.example")
+		s.see("最近往来")
+		shot(s.harness, "ContactsPerson")
+	})
 	noAuto := func(st *core.Settings) { st.QuickReplies, st.Summary = false, false }
 
 	t.Run("Main", func(t *testing.T) {

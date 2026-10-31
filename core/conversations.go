@@ -845,9 +845,10 @@ func (s *Service) publishWit(convID int64, ev WitEvent) {
 
 // toolDesc is a tool Wit runs can offer. Every call goes through the gateway
 // as Source (empty: wit) and Extension, with Egress(scope) as its
-// destinations. A call that needs no approval runs in the run (Spec.Run). A
-// call that does (Write, Spec.NeedsApproval or egress after mail was read)
-// becomes an approval, prepared and, once accepted, executed by Mode:
+// destinations; an approval's Prepare adds those its arguments name. A call
+// that needs no approval runs in the run (Spec.Run). A call that does (Write,
+// Spec.NeedsApproval or egress after mail was read) becomes an approval,
+// prepared and, once accepted, executed by Mode:
 //   - tx (empty): Exec, whose statements commit with the approval (plan 3);
 //   - external: Prepare, then Run outside the approval lock within Timeout
 //     (default externalTimeout), its outcome recorded afterwards. Binding,
@@ -1229,8 +1230,8 @@ func (s *Service) specs(job *runJob, tools []toolDesc) []ai.ToolSpec {
 			if err != nil {
 				return ai.Deny, err
 			}
-			p.Binding, p.source, p.extension, p.Destinations = binding, t.Source, t.Extension, nil
-			if t.Egress != nil {
+			p.Binding, p.source, p.extension = binding, t.Source, t.Extension
+			if t.Egress != nil { // after the hosts Prepare named from the call's own arguments
 				for _, h := range t.Egress(job.scope) {
 					p.Destinations = append(p.Destinations, gateway.Host(h))
 				}

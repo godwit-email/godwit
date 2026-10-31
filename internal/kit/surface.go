@@ -1,6 +1,8 @@
 package kit
 
 import (
+	"slices"
+
 	"github.com/egoist/mygo/ui"
 	"github.com/godwit-email/godwit/internal/icons"
 	"github.com/godwit-email/godwit/internal/theme"
@@ -106,30 +108,82 @@ type NavItem struct {
 	OnClick     func()
 }
 
+// navPill is the raised background of the page a NavSwitch shows: one
+// identity, so it slides from the page left to the page picked.
+type navPill struct{}
+
+// navContent is the icon and name of a NavSwitch's i-th page, which slide
+// from where they were as the pill does.
+type navContent int
+
 // NavSwitch is a segmented row of page links on the window material: the
-// page shown raised on the background in the fill icon, the others muted.
+// page shown raised on the background in the fill icon with its name, the
+// others muted icons named by a tooltip. Picking another slides the raised
+// background over and widens it to the name, which it uncovers.
+//
+// The buttons take their new widths at once, so that what slides heads for
+// where it ends: a pill chasing a button still on its way overshoots it. The
+// icons and names are a row of their own over the buttons, as an absolute
+// element paints over its siblings and the pill would cover those before it.
 func NavSwitch(c *ui.Context, items ...NavItem) ui.Element {
 	t, th := theme.Of(c), c.Theme()
-	return ui.Row(c).Padding(th.Space(0.5)).Gap(th.Space(0.5)).Radius(t.Radius.Lg).Background(t.HoverTint).Children(func() {
-		for _, it := range items {
-			b := ui.ButtonBase(c).Height(th.Space(7)).Padding(0, th.Space(2.5), 0, th.Space(1.5)).Gap(th.Space(1.5)).Radius(t.Radius.Md).
-				FontSize(t.Text.Base).TextColor(t.Muted).Label(it.Label).Transition(colors(theme.MotionFast))
-			svg := icons.Get(it.Icon)
-			switch {
-			case it.Selected:
-				Elevate(c, b.Background(t.Background).TextColor(t.Foreground), theme.ShadowXs)
-				svg = icons.Fill(it.Icon)
-			case b.Hovered():
-				b.TextColor(t.Foreground)
-			}
-			if it.OnClick != nil && !it.Selected {
-				b.OnClick(it.OnClick)
-			}
-			b.Children(func() {
-				ui.Icon(c, svg).Size(theme.Icon, theme.Icon)
-				ui.Text(c, it.Label)
-			})
+	shown := slices.IndexFunc(items, func(it NavItem) bool { return it.Selected })
+	hovered := make([]bool, len(items))
+	// segment sizes a page's button and its icon and name alike, the icon where
+	// it is with or without the name.
+	segment := func(e ui.Element, it NavItem) ui.Element {
+		e.Height(th.Space(7)).AlignItems(ui.Center).Gap(th.Space(1.5)).Padding(0, 0, 0, th.Space(1.5))
+		if it.Selected {
+			return e.Padding(0, th.Space(2.5), 0, th.Space(1.5))
 		}
+		return e.Width(th.Space(7))
+	}
+	content := func(e ui.Element, it NavItem) {
+		svg := icons.Get(it.Icon)
+		if it.Selected {
+			svg = icons.Fill(it.Icon)
+		}
+		e.Children(func() {
+			ui.Icon(c, svg).Size(theme.Icon, theme.Icon).PassThrough() // the buttons under them take the pointer
+			if it.Selected {
+				ui.Text(c, it.Label).SingleLine().Shrink(0).PassThrough()
+			}
+		})
+	}
+	track := func(e ui.Element) ui.Element { return e.Padding(th.Space(0.5)).Gap(th.Space(0.5)) }
+	return ui.Box(c).Radius(t.Radius.Lg).Background(t.HoverTint).Clip().
+		Transition(ui.ElementTransition{Duration: theme.MotionBase, Size: true}).Children(func() {
+		track(ui.Row(c)).Children(func() {
+			for i, it := range items {
+				b := segment(ui.ButtonBase(c).Radius(t.Radius.Md).Label(it.Label), it)
+				hovered[i] = b.Hovered()
+				if !it.Selected {
+					Tooltip(c, b, it.Label)
+					if it.OnClick != nil {
+						b.OnClick(it.OnClick)
+					}
+				}
+				b.Children(func() {
+					content(ui.Row(c).Gap(th.Space(1.5)).AlignItems(ui.Center).Opacity(0), it) // sizes the button unseen
+					if it.Selected {
+						pill := ui.Box(c).Absolute().Left(0).Top(0).Right(0).Bottom(0).Radius(t.Radius.Md).Background(t.Background).PassThrough()
+						Elevate(c, pill, theme.ShadowXs).Transition(ui.ElementTransition{Duration: theme.MotionBase, Match: navPill{}})
+					}
+				})
+			}
+		})
+		track(ui.Row(c).Absolute().Left(0).Top(0).Bottom(0)).PassThrough().Children(func() {
+			for i, it := range items {
+				// Keyed by the page shown, so that a new one appears and slides from where its
+				// Match was, clipping the name as it widens.
+				e := segment(ui.Row(c).Key([2]int{shown, i}), it).FontSize(t.Text.Base).TextColor(t.Muted).Clip().PassThrough().
+					Transition(ui.ElementTransition{Duration: theme.MotionBase, Match: navContent(i)})
+				if it.Selected || hovered[i] {
+					e.TextColor(t.Foreground)
+				}
+				content(e, it)
+			}
+		})
 	})
 }
 

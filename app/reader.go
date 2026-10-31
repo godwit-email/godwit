@@ -1722,19 +1722,26 @@ func (r *reader) sendUnsubscribe(id int64) {
 		return err
 	}, func(err error) {
 		b.unsubbing = false
-		switch {
-		case err != nil:
-			a.toastErr(err)
-		case res.DraftID != 0:
-			a.plat.OpenCompose(res.DraftID)
-		case res.Failure == "":
-			a.toastAs(kit.ToastSuccess, i18n.Tf("reader.unsubscribe.sent", res.Host))
-		default:
-			msg := i18n.Tf("reader.unsubscribe.failed."+res.Failure, res.Host, strconv.Itoa(res.Status))
-			a.toasts = append(a.toasts, ui.Toast{ID: msg, Title: msg, Type: kit.ToastError,
-				Action: i18n.T("reader.unsubscribe.open"), OnAction: func() { a.openLink(u.URL) }})
-		}
+		a.unsubscribed(u, res, err)
 	})
+}
+
+// unsubscribed tells what core's Unsubscribe by u did: a one-click result
+// toasts (a failure offers the page in the browser), a draft opens in a
+// compose window, never sent.
+func (a *App) unsubscribed(u core.Unsubscribe, res core.UnsubscribeResult, err error) {
+	switch {
+	case err != nil:
+		a.toastErr(err)
+	case res.DraftID != 0:
+		a.plat.OpenCompose(res.DraftID)
+	case res.Failure == "":
+		a.toastAs(kit.ToastSuccess, i18n.Tf("reader.unsubscribe.sent", res.Host))
+	default:
+		msg := i18n.Tf("reader.unsubscribe.failed."+res.Failure, res.Host, strconv.Itoa(res.Status))
+		a.toasts = append(a.toasts, ui.Toast{ID: msg, Title: msg, Type: kit.ToastError,
+			Action: i18n.T("reader.unsubscribe.open"), OnAction: func() { a.openLink(u.URL) }})
+	}
 }
 
 // unsubscribeDialog confirms a one-click unsubscribe: the host the request
@@ -1748,20 +1755,26 @@ func (r *reader) unsubscribeDialog(c *ui.Context) {
 		r.unsubDlg = false
 		return
 	}
+	unsubscribeDialog(c, &r.unsubDlg, b.unsub, func() { r.sendUnsubscribe(id) })
+}
+
+// unsubscribeDialog confirms a one-click unsubscribe by u while open: the
+// host the request goes to in bold, and the list's name; 退订 runs send.
+func unsubscribeDialog(c *ui.Context, open *bool, u core.Unsubscribe, send func()) {
 	t := theme.Of(c)
 	opts := kit.DialogOpts{Size: kit.DialogSm, Alert: true, Desc: i18n.T("reader.unsubscribe.desc"), Close: i18n.T("common.close")}
-	kit.Dialog(c, &r.unsubDlg, i18n.T("reader.unsubscribe.title"), opts, func() {
-		ui.Text(c, b.unsub.Host).FontWeight(600)
-		if b.unsub.List != "" {
-			kit.Text(c, i18n.Tf("reader.unsubscribe.list", b.unsub.List), t.Text.Sm).TextColor(t.Muted)
+	kit.Dialog(c, open, i18n.T("reader.unsubscribe.title"), opts, func() {
+		ui.Text(c, u.Host).FontWeight(600)
+		if u.List != "" {
+			kit.Text(c, i18n.Tf("reader.unsubscribe.list", u.List), t.Text.Sm).TextColor(t.Muted)
 		}
 	}, func() {
 		if kit.Button(c, i18n.T("common.cancel"), kit.ButtonOpts{Variant: kit.Outline}).Clicked() {
-			r.unsubDlg = false
+			*open = false
 		}
 		if kit.Button(c, i18n.T("reader.unsubscribe"), kit.ButtonOpts{}).AutoFocus().Clicked() {
-			r.unsubDlg = false
-			r.sendUnsubscribe(id)
+			*open = false
+			send()
 		}
 	})
 }
@@ -1797,7 +1810,8 @@ func (a *App) setBlocked(from string, block bool, done func()) {
 }
 
 // senderMenu is the sender's actions under anchor, the reader's menu as its
-// toolbar's more menu is: copy the address, block or unblock the sender.
+// toolbar's more menu is: view them in contacts, copy the address, block or
+// unblock the sender.
 func (r *reader) senderMenu(c *ui.Context, anchor ui.Element, addr, rawFrom string) {
 	target := cmp.Or(addr, rawFrom)
 	if target == "" {
@@ -1817,6 +1831,9 @@ func (r *reader) senderMenu(c *ui.Context, anchor ui.Element, addr, rawFrom stri
 		})
 	}
 	kit.MenuAt(c, anchor, &r.senderOpen, ui.AnchorBottomLeft, ui.AnchorTopLeft, theme.PopupOffset, target, func() {
+		if addr != "" {
+			item(2, i18n.T("reader.view_contact"), "contacts", false, func() { r.p.a.openContact(addr) })
+		}
 		item(0, i18n.T("reader.copy_address"), "copy", false, func() {
 			c.WriteClipboard(target)
 			r.p.a.toast(i18n.T("reader.address_copied"))

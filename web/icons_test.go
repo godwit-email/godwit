@@ -12,7 +12,7 @@ func TestRemixIconsEmbedded(t *testing.T) {
 			t.Errorf("%s (%s) not embedded", name, path)
 		}
 	}
-	if len(RemixIcons) != 186 {
-		t.Errorf("%d icons, want the 186 internal/icons has today", len(RemixIcons))
+	if len(RemixIcons) != 188 {
+		t.Errorf("%d icons, want the 188 internal/icons has today", len(RemixIcons))
 	}
 }
