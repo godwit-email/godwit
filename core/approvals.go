@@ -18,7 +18,8 @@ import (
 )
 
 // prepared is a call's final arguments, fixed before the approval is
-// recorded. The Service fills Destinations, Binding and the tool's source.
+// recorded. The Service fills Binding and the tool's source, and adds the
+// tool's Egress to the Destinations Prepare named.
 type prepared struct {
 	Args                    json.RawMessage
 	Summary, TargetKind     string

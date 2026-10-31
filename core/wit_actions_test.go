@@ -223,6 +223,7 @@ func TestWitLinksAndOpenBrowser(t *testing.T) {
 	p, err := e.s.prepareOpenLink(ctx, Conversation{}, openArgs)
 	require.NoError(t, err)
 	assert.Equal(t, "Open https://example.com/test", p.Summary)
+	assert.Equal(t, []string{"example.com"}, p.Destinations, "the approval names where the link goes")
 	assert.Nil(t, openedURL.Load(), "nothing opens before approval")
 
 	_, res, _, err := e.s.applyOpenLink(ctx, Approval{ID: 1, Tool: "open_link_in_browser", Args: p.Args})
@@ -311,16 +312,28 @@ func TestWitUnsubscribe(t *testing.T) {
 	// Prepare unsubscribe
 	prep, err := e.s.prepareUnsubscribe(runCtx, Conversation{ID: c.ID}, []byte(`{"id":1}`))
 	require.NoError(t, err)
-	assert.Contains(t, prep.Summary, "Unsubscribe from list.example.com")
+	host := "127.0.0.1" // the host, without srv's port, as the user's own one-click audits it
+	// The card and the approval name the destination, not only the List-Id (ADR 0004).
+	assert.Equal(t, "Unsubscribe from list.example.com ("+host+")", prep.Summary)
+	assert.Equal(t, []string{host}, prep.Destinations)
+
+	// A host other than the one approved is never POSTed to.
+	_, _, _, err = e.s.applyUnsubscribe(ctx, Approval{ID: 19, Tool: "unsubscribe", Args: prep.Args, Destinations: []string{"other.example"}})
+	require.ErrorIs(t, err, ErrUnsubscribeChanged)
+	assert.Zero(t, receivedPost.Load())
 
 	// Apply unsubscribe
-	appr := Approval{ID: 20, Tool: "unsubscribe", Args: prep.Args}
+	appr := Approval{ID: 20, Tool: "unsubscribe", Args: prep.Args, Destinations: prep.Destinations}
 	_, applyRes, _, err := e.s.applyUnsubscribe(ctx, appr)
 	require.NoError(t, err)
 	m := applyRes.(map[string]any)
 	assert.True(t, m["unsubscribed"].(bool))
 	assert.Equal(t, "one_click", m["method"])
 	assert.Equal(t, 1, int(receivedPost.Load()))
+	// The approval audits the POST as Wit's; it is not recorded again as the user's.
+	rows, err := e.s.db.Query(ctx, "SELECT COUNT(*) FROM audit_log WHERE source = 'user' AND tool = 'unsubscribe'")
+	require.NoError(t, err)
+	assert.Zero(t, store.Int(rows.Values[0][0]))
 }
 
 func TestWitSearchMailWithLabelAndDates(t *testing.T) {

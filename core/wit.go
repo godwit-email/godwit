@@ -1074,8 +1074,14 @@ func (s *Service) prepareUnsubscribe(ctx context.Context, _ Conversation, raw js
 	if u.Method == "" {
 		return prepared{}, errors.New("this email does not provide an unsubscribe header")
 	}
-	target := cmp.Or(u.List, u.Host, "mailing list")
-	summary := "Unsubscribe from " + target
+	summary := "Unsubscribe from " + cmp.Or(u.List, u.Host, "mailing list")
+	if u.Host != "" && u.List != "" && u.List != u.Host { // the card names where it goes (ADR 0004), not only the list
+		summary += " (" + u.Host + ")"
+	}
+	var dests []string
+	if u.Method == UnsubscribeOneClick { // the only method that sends anything from Godwit
+		dests = []string{u.Host}
+	}
 	arg := unsubArgs{
 		ID:     in.ID,
 		MsgID:  msgID,
@@ -1089,10 +1095,11 @@ func (s *Service) prepareUnsubscribe(ctx context.Context, _ Conversation, raw js
 		return prepared{}, err
 	}
 	return prepared{
-		Args:       b,
-		Summary:    summary,
-		TargetKind: "message",
-		TargetID:   msgID,
+		Args:         b,
+		Summary:      summary,
+		TargetKind:   "message",
+		TargetID:     msgID,
+		Destinations: dests,
 	}, nil
 }
 
@@ -1101,7 +1108,11 @@ func (s *Service) applyUnsubscribe(ctx context.Context, a Approval) ([]sqlite.St
 	if err := json.Unmarshal(a.Args, &in); err != nil {
 		return nil, nil, nil, err
 	}
-	res, err := s.Unsubscribe(ctx, in.MsgID)
+	approved := a.Destinations
+	if approved == nil {
+		approved = []string{} // the approval audited it: never again as the user's own click
+	}
+	res, err := s.unsubscribe(ctx, in.MsgID, approved)
 	if errors.Is(err, ErrUnsubscribeWeb) {
 		return nil, map[string]any{"unsubscribed": false, "method": "web", "url": in.URL, "message": "Please open the unsubscribe link in your browser"}, nil, nil
 	}
@@ -1221,7 +1232,7 @@ func (s *Service) prepareOpenLink(_ context.Context, _ Conversation, raw json.Ra
 	if err != nil {
 		return prepared{}, err
 	}
-	return prepared{Args: b, Summary: "Open " + u.String(), TargetKind: "url"}, nil
+	return prepared{Args: b, Summary: "Open " + u.String(), TargetKind: "url", Destinations: []string{u.Host}}, nil
 }
 
 func (s *Service) applyOpenLink(_ context.Context, a Approval) ([]sqlite.Statement, any, any, error) {
