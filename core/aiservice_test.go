@@ -432,6 +432,21 @@ func TestQuickRepliesUseSmallModel(t *testing.T) {
 	assert.Equal(t, "m2", e.lastModel(t))
 }
 
+// With no judge service, judge questions go to the small model, not the default.
+func TestGenJudgeUsesSmallModel(t *testing.T) {
+	e := newSkillEnv(t)
+	e.withSmall(t, "x/m2")
+	_, label, gen, err := e.s.resolveJudge(t.Context())
+	require.NoError(t, err)
+	assert.True(t, gen)
+	assert.Equal(t, "x/m2", label)
+
+	e.withSmall(t, "x/gone")
+	_, label, _, err = e.s.resolveJudge(t.Context())
+	require.NoError(t, err)
+	assert.Equal(t, "x/m1", label, "a gone small model falls back to the default")
+}
+
 func TestSmallModelFallback(t *testing.T) {
 	e := newSkillEnv(t)
 	e.withSmall(t, "x/gone")
