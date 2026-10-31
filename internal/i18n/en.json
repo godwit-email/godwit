@@ -2961,5 +2961,10 @@
   "palette_action_empty_spam": "Empty Spam",
   "palette_action_mark_all_read": "Mark all as read",
   "mail_empty_trash_toast": "Trash emptied",
-  "mail_empty_spam_toast": "Spam emptied"
+  "mail_empty_spam_toast": "Spam emptied",
+  "mail_senders": "Senders & Subscriptions",
+  "mail_senders_counts": "{arg1, plural, one {{arg1, number, ::group-off} message} other {{arg1, number, ::group-off} messages}}, {arg2, number, ::group-off} unread",
+  "mail_senders_archive_all": "Archive All",
+  "mail_senders_archived": "{arg1, plural, one {Archived {arg1, number, ::group-off} message} other {Archived {arg1, number, ::group-off} messages}}",
+  "mail_senders_skipped": "Left {arg1, number, ::group-off} in the inbox: starred or replied to"
 }

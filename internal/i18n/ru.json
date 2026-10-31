@@ -1509,5 +1509,10 @@
   "palette_action_empty_spam": "Очистить спам",
   "palette_action_mark_all_read": "Пометить все как прочитанные",
   "mail_empty_trash_toast": "Корзина очищена",
-  "mail_empty_spam_toast": "Спам очищен"
+  "mail_empty_spam_toast": "Спам очищен",
+  "mail_senders": "Отправители и подписки",
+  "mail_senders_counts": "Писем: {arg1, number, ::group-off}, непрочит.: {arg2, number, ::group-off}",
+  "mail_senders_archive_all": "Архивировать все",
+  "mail_senders_archived": "Архивировано писем: {arg1, number, ::group-off}",
+  "mail_senders_skipped": "Оставлено во «Входящих»: {arg1, number, ::group-off} (помечены или с ответом)"
 }

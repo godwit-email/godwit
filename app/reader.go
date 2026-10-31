@@ -65,6 +65,7 @@ type reader struct {
 	egressDlg   bool                     // its dialog shows
 	unsubAsk    int64                    // the message whose one-click unsubscribe waits to be confirmed
 	unsubDlg    bool                     // its dialog shows
+	unsubNext   int64                    // the message to unsubscribe from once its way is known (the senders view's 退订)
 	senderOpen  bool                     // the sender action popover shows
 	senderMsgID int64                    // which message's sender popover is open
 	detailsOpen bool                     // the recipients' details popover shows
@@ -165,7 +166,7 @@ func (r *reader) reset(k [2]int64) {
 	r.key, r.loaded, r.subject, r.msgs, r.focus = k, false, "", nil, 0
 	r.threadIDs, r.labels, r.labelMenu, r.labelQuery = nil, nil, false, ""
 	r.senderOpen, r.senderMsgID, r.moreOpen, r.replyAsk = false, 0, false, "" // a question is for the thread it was typed in
-	r.detailsOpen, r.detailsID = false, 0
+	r.detailsOpen, r.detailsID, r.unsubNext = false, 0, 0
 	r.open, r.historyOpen, r.historyShown, r.revealID, r.bodies = map[int64]bool{}, map[int64]bool{}, false, 0, map[int64]*msgBody{}
 	r.scroll.X, r.scroll.Y = 0, 0
 	r.gen++
@@ -350,6 +351,10 @@ func (r *reader) loadUnsubscribe(id int64) {
 	}, func(err error) {
 		if err == nil && gen == r.gen && r.bodies[id] == b {
 			b.unsub = u
+			if r.unsubNext == id {
+				r.unsubNext = 0
+				r.unsubscribe(id)
+			}
 		}
 	})
 }

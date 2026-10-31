@@ -1509,5 +1509,10 @@
   "palette_action_empty_spam": "迷惑メールを空にする",
   "palette_action_mark_all_read": "すべて既読にする",
   "mail_empty_trash_toast": "ゴミ箱を空にしました",
-  "mail_empty_spam_toast": "迷惑メールを空にしました"
+  "mail_empty_spam_toast": "迷惑メールを空にしました",
+  "mail_senders": "送信者と購読",
+  "mail_senders_counts": "{arg1, number, ::group-off} 通、未読 {arg2, number, ::group-off} 通",
+  "mail_senders_archive_all": "すべてアーカイブ",
+  "mail_senders_archived": "{arg1, number, ::group-off} 通をアーカイブしました",
+  "mail_senders_skipped": "スター付きまたは返信済みの {arg1, number, ::group-off} 通は受信トレイに残しました"
 }
