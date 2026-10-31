@@ -9,6 +9,7 @@ import (
 	"net"
 	"net/http"
 	"net/url"
+	"slices"
 	"strings"
 
 	"github.com/emersion/go-imap/v2"
@@ -59,6 +60,10 @@ var (
 	ErrUnsubscribing  = errors.New("already unsubscribing from this message")
 )
 
+// errUnsubscribeChanged: the one-click host is not the one a Wit approval
+// listed. It goes to the model only, never over RPC.
+var errUnsubscribeChanged = errors.New("the unsubscribe address changed since it was approved: ask again")
+
 // oneClickBody is RFC 8058's request body, the only one sent.
 const oneClickBody = "List-Unsubscribe=One-Click"
 
@@ -81,6 +86,13 @@ func (s *Service) UnsubscribeMethod(ctx context.Context, messageID int64) (Unsub
 // sent. A web one is ErrUnsubscribeWeb, none ErrNoUnsubscribe; a second
 // one-click call while one is under way is ErrUnsubscribing.
 func (s *Service) Unsubscribe(ctx context.Context, messageID int64) (UnsubscribeResult, error) {
+	return s.unsubscribe(ctx, messageID, nil)
+}
+
+// unsubscribe is Unsubscribe for the user's click (approved nil), or for a
+// Wit approval: a one-click one then POSTs only to a host it approved, and
+// is audited as its call.
+func (s *Service) unsubscribe(ctx context.Context, messageID int64, approved *Approval) (UnsubscribeResult, error) {
 	ctx, end, err := s.begin(ctx, 0)
 	if err != nil {
 		return UnsubscribeResult{}, err
@@ -93,7 +105,7 @@ func (s *Service) Unsubscribe(ctx context.Context, messageID int64) (Unsubscribe
 	res := UnsubscribeResult{Method: u.Method, Host: u.Host}
 	switch u.Method {
 	case UnsubscribeOneClick:
-		return s.oneClick(ctx, messageID, u)
+		return s.oneClick(ctx, messageID, u, approved)
 	case UnsubscribeMail:
 		rows, err := s.db.Query(ctx, "SELECT account_id FROM messages WHERE id = ?", messageID)
 		if err != nil {
@@ -263,9 +275,10 @@ func listName(listID string) string {
 	return strings.TrimSpace(strings.TrimSuffix(strings.TrimSpace(id), ">"))
 }
 
-// oneClick POSTs RFC 8058's request to u.URL once, after auditing its host;
-// a call for message while another is under way is ErrUnsubscribing.
-func (s *Service) oneClick(ctx context.Context, messageID int64, u Unsubscribe) (UnsubscribeResult, error) {
+// oneClick POSTs RFC 8058's request to u.URL once, after auditing its host
+// (as approved's call, which must list it, if set); a call for message while
+// another is under way is ErrUnsubscribing.
+func (s *Service) oneClick(ctx context.Context, messageID int64, u Unsubscribe, approved *Approval) (UnsubscribeResult, error) {
 	res := UnsubscribeResult{Method: u.Method, Host: u.Host}
 	s.unsubMu.Lock()
 	if s.unsubbing[messageID] {
@@ -282,8 +295,16 @@ func (s *Service) oneClick(ctx context.Context, messageID int64, u Unsubscribe) 
 		delete(s.unsubbing, messageID)
 		s.unsubMu.Unlock()
 	}()
-	if err := s.gateway().Record(ctx, gateway.Entry{Source: gateway.SourceUser, Tool: "unsubscribe", TargetKind: "message",
-		TargetID: messageID, Destinations: []string{u.Host}, Decision: "allow"}); err != nil {
+	e := gateway.Entry{Source: gateway.SourceUser, Tool: "unsubscribe", TargetKind: "message",
+		TargetID: messageID, Destinations: []string{u.Host}, Decision: "allow"}
+	if approved != nil {
+		if !slices.Contains(approved.Destinations, u.Host) {
+			return res, errUnsubscribeChanged
+		}
+		// before the POST: the approval's own audit row is written only once it finishes
+		e.Source, e.CallID = gateway.SourceWit, approved.CallID
+	}
+	if err := s.gateway().Record(ctx, e); err != nil {
 		return res, err
 	}
 	res.Failure, res.Status = s.postOneClick(ctx, u.URL)
