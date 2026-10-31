@@ -1108,11 +1108,7 @@ func (s *Service) applyUnsubscribe(ctx context.Context, a Approval) ([]sqlite.St
 	if err := json.Unmarshal(a.Args, &in); err != nil {
 		return nil, nil, nil, err
 	}
-	approved := a.Destinations
-	if approved == nil {
-		approved = []string{} // the approval audited it: never again as the user's own click
-	}
-	res, err := s.unsubscribe(ctx, in.MsgID, approved)
+	res, err := s.unsubscribe(ctx, in.MsgID, &a)
 	if errors.Is(err, ErrUnsubscribeWeb) {
 		return nil, map[string]any{"unsubscribed": false, "method": "web", "url": in.URL, "message": "Please open the unsubscribe link in your browser"}, nil, nil
 	}

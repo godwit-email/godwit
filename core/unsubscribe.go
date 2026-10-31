@@ -88,9 +88,9 @@ func (s *Service) Unsubscribe(ctx context.Context, messageID int64) (Unsubscribe
 }
 
 // unsubscribe is Unsubscribe for the user's click (approved nil), or for a
-// Wit approval, which audited the hosts in approved: a one-click one then
-// POSTs only to one of them and is not audited again.
-func (s *Service) unsubscribe(ctx context.Context, messageID int64, approved []string) (UnsubscribeResult, error) {
+// Wit approval: a one-click one then POSTs only to a host it approved, and
+// is audited as its call.
+func (s *Service) unsubscribe(ctx context.Context, messageID int64, approved *Approval) (UnsubscribeResult, error) {
 	ctx, end, err := s.begin(ctx, 0)
 	if err != nil {
 		return UnsubscribeResult{}, err
@@ -274,9 +274,9 @@ func listName(listID string) string {
 }
 
 // oneClick POSTs RFC 8058's request to u.URL once, after auditing its host
-// (approved nil) or checking it is one approved; a call for message while
+// (as approved's call, which must list it, if set); a call for message while
 // another is under way is ErrUnsubscribing.
-func (s *Service) oneClick(ctx context.Context, messageID int64, u Unsubscribe, approved []string) (UnsubscribeResult, error) {
+func (s *Service) oneClick(ctx context.Context, messageID int64, u Unsubscribe, approved *Approval) (UnsubscribeResult, error) {
 	res := UnsubscribeResult{Method: u.Method, Host: u.Host}
 	s.unsubMu.Lock()
 	if s.unsubbing[messageID] {
@@ -293,12 +293,16 @@ func (s *Service) oneClick(ctx context.Context, messageID int64, u Unsubscribe, 
 		delete(s.unsubbing, messageID)
 		s.unsubMu.Unlock()
 	}()
+	e := gateway.Entry{Source: gateway.SourceUser, Tool: "unsubscribe", TargetKind: "message",
+		TargetID: messageID, Destinations: []string{u.Host}, Decision: "allow"}
 	if approved != nil {
-		if !slices.Contains(approved, u.Host) {
+		if !slices.Contains(approved.Destinations, u.Host) {
 			return res, ErrUnsubscribeChanged
 		}
-	} else if err := s.gateway().Record(ctx, gateway.Entry{Source: gateway.SourceUser, Tool: "unsubscribe", TargetKind: "message",
-		TargetID: messageID, Destinations: []string{u.Host}, Decision: "allow"}); err != nil {
+		// before the POST: the approval's own audit row is written only once it finishes
+		e.Source, e.CallID = gateway.SourceWit, approved.CallID
+	}
+	if err := s.gateway().Record(ctx, e); err != nil {
 		return res, err
 	}
 	res.Failure, res.Status = s.postOneClick(ctx, u.URL)

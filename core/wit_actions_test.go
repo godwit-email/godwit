@@ -323,17 +323,18 @@ func TestWitUnsubscribe(t *testing.T) {
 	assert.Zero(t, receivedPost.Load())
 
 	// Apply unsubscribe
-	appr := Approval{ID: 20, Tool: "unsubscribe", Args: prep.Args, Destinations: prep.Destinations}
+	appr := Approval{ID: 20, CallID: "call-20", Tool: "unsubscribe", Args: prep.Args, Destinations: prep.Destinations}
 	_, applyRes, _, err := e.s.applyUnsubscribe(ctx, appr)
 	require.NoError(t, err)
 	m := applyRes.(map[string]any)
 	assert.True(t, m["unsubscribed"].(bool))
 	assert.Equal(t, "one_click", m["method"])
 	assert.Equal(t, 1, int(receivedPost.Load()))
-	// The approval audits the POST as Wit's; it is not recorded again as the user's.
-	rows, err := e.s.db.Query(ctx, "SELECT COUNT(*) FROM audit_log WHERE source = 'user' AND tool = 'unsubscribe'")
+	// The POST is audited before it is sent, as the Wit call, never as the user's own click.
+	rows, err := e.s.db.Query(ctx, "SELECT source, call_id, destination FROM audit_log WHERE tool = 'unsubscribe' AND decision = 'allow'")
 	require.NoError(t, err)
-	assert.Zero(t, store.Int(rows.Values[0][0]))
+	require.Len(t, rows.Values, 1)
+	assert.Equal(t, []string{"wit", "call-20", host}, []string{store.Str(rows.Values[0][0]), store.Str(rows.Values[0][1]), store.Str(rows.Values[0][2])})
 }
 
 func TestWitSearchMailWithLabelAndDates(t *testing.T) {
