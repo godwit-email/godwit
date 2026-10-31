@@ -1,5 +1,18 @@
 # Changelog
 
+## [1.22.0](https://github.com/godwit-email/godwit/compare/v1.21.0...v1.22.0) (2026-10-31)
+
+
+### Features
+
+* **ai:** answer judge questions with the small model when no judge is set ([#380](https://github.com/godwit-email/godwit/issues/380)) ([8fbdf20](https://github.com/godwit-email/godwit/commit/8fbdf20c0a410de65a428cf3f813aecc52f33259))
+* **windows:** check for updates in the Microsoft Store version ([#378](https://github.com/godwit-email/godwit/issues/378)) ([67eeeb9](https://github.com/godwit-email/godwit/commit/67eeeb98a9966f4e0ba590fa0bd3ab8913684c02))
+
+
+### Bug Fixes
+
+* **ai:** name the destination on Wit's unsubscribe and open-link approvals ([#384](https://github.com/godwit-email/godwit/issues/384)) ([05f537c](https://github.com/godwit-email/godwit/commit/05f537c1533a8a08815279262125199951783f92))
+
 ## [1.21.0](https://github.com/godwit-email/godwit/compare/v1.20.2...v1.21.0) (2026-10-30)
 
 
