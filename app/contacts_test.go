@@ -49,7 +49,7 @@ func TestContactsPage(t *testing.T) {
 		t.Fatalf("%d posts", n)
 	}
 
-	h.click("全部归档 2 封")
+	h.click("全部归档 2 封 · 之后可以撤销")
 	h.see("已归档 2 封")
 	h.until("archived", func() bool { return folderOf(first.ID) == archive })
 	h.click("撤销")

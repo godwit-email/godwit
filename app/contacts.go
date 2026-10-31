@@ -339,7 +339,7 @@ func (p *contactsPage) detailView(c *ui.Context) {
 		column().Padding(th.Space(9), th.Space(10), th.Space(1), th.Space(10)).Gap(th.Space(6)).Children(func() {
 			ui.Row(c).Gap(th.Space(4)).AlignItems(ui.Center).Children(func() {
 				p.bigAvatar(c, ct, name)
-				ui.Column(c).Shrink(1).MinWidth(0).Gap(th.Space(1)).Children(func() {
+				ui.Column(c).Grow(1).Shrink(1).MinWidth(0).Gap(th.Space(1)).Children(func() {
 					ui.Row(c).Wrap().Gap(th.Space(2)).AlignItems(ui.Center).Children(func() {
 						kit.Text(c, name, t.Text.X2l).FontWeight(600)
 						if ct.ListMessage != 0 {
@@ -351,31 +351,23 @@ func (p *contactsPage) detailView(c *ui.Context) {
 					})
 					kit.Text(c, ct.Address, t.Text.Base).TextColor(t.Muted)
 				})
-			})
-			ui.Row(c).Wrap().Gap(th.Space(2)).Children(func() {
-				outline := kit.ButtonOpts{Variant: kit.Outline}
-				if ct.ListMessage != 0 {
-					outline.Icon = "mail-forbid"
-					kit.Button(c, i18n.T("reader.unsubscribe"), outline).OnClick(func() { p.unsubscribe(ct) })
-				} else {
-					outline.Icon = "square-pen"
-					kit.Button(c, i18n.T("palette.action.compose"), outline).OnClick(func() { a.composeTo(ct.Address) })
-				}
-				outline.Icon, outline.Disabled = "archive", d.Archivable == 0
-				label := i18n.T("contacts.archive_all")
-				if d.Archivable > 0 {
-					label = i18n.Tf("contacts.archive_n", d.Archivable)
-				}
-				arch := kit.Button(c, label, outline).OnClick(func() { p.archive(ct.Address) })
-				if ready {
-					kit.Tooltip(c, arch, archiveTip(d))
-				}
-				ghost := kit.ButtonOpts{Variant: kit.Ghost, Icon: "spam"}
-				blockLabel := i18n.T("reader.block_sender")
-				if blocked {
-					blockLabel = i18n.T("reader.unblock_sender")
-				}
-				kit.Button(c, blockLabel, ghost).OnClick(func() { p.block(ct.Address, !blocked) })
+				// the actions as icons right of the name, each named by its tooltip
+				ui.Row(c).Gap(th.Space(0.5)).Shrink(0).Children(func() {
+					ghost := kit.ButtonOpts{Variant: kit.Ghost}
+					if ct.ListMessage != 0 {
+						kit.IconButton(c, "mail-forbid", i18n.T("reader.unsubscribe"), ghost).OnClick(func() { p.unsubscribe(ct) })
+					} else {
+						kit.IconButton(c, "square-pen", i18n.T("palette.action.compose"), ghost).OnClick(func() { a.composeTo(ct.Address) })
+					}
+					arch := ghost
+					arch.Disabled = d.Archivable == 0
+					kit.IconButton(c, "archive", archiveLabel(d, ready), arch).OnClick(func() { p.archive(ct.Address) })
+					blockLabel := i18n.T("reader.block_sender")
+					if blocked {
+						blockLabel = i18n.T("reader.unblock_sender")
+					}
+					kit.IconButton(c, "spam", blockLabel, ghost).OnClick(func() { p.block(ct.Address, !blocked) })
+				})
 			})
 			ui.Row(c).Gap(th.Space(4)).Padding(th.Space(4), th.Space(5)).Radius(t.Radius.Xl).Background(t.Sidebar).Border(theme.Hairline, t.Border).Children(func() {
 				for _, st := range []struct {
@@ -436,17 +428,22 @@ func (p *contactsPage) mailRow(c *ui.Context, m core.MessageSummary) {
 	})
 }
 
-// archiveTip says what 全部归档 does with the contact's inbox mail now.
-func archiveTip(d core.ContactDetail) string {
+// archiveLabel names 全部归档 by what it does with the contact's inbox mail
+// now: how many it moves and keeps, or why it moves none; while the detail
+// is another's, just its name.
+func archiveLabel(d core.ContactDetail, ready bool) string {
+	all := i18n.T("contacts.archive_all")
 	switch {
+	case !ready:
+		return all
 	case d.Archivable > 0 && d.Kept > 0:
-		return i18n.Tf("contacts.archive.tip_kept", d.Kept)
+		return i18n.Tf("contacts.archive_n", d.Archivable) + " · " + i18n.Tf("contacts.archive.tip_kept", d.Kept)
 	case d.Archivable > 0:
-		return i18n.T("contacts.archive.tip_undo")
+		return i18n.Tf("contacts.archive_n", d.Archivable) + " · " + i18n.T("contacts.archive.tip_undo")
 	case d.Kept > 0:
-		return i18n.Tf("contacts.archive.tip_all_kept", d.Kept)
+		return all + " · " + i18n.Tf("contacts.archive.tip_all_kept", d.Kept)
 	}
-	return i18n.T("contacts.archive.tip_none")
+	return all + " · " + i18n.T("contacts.archive.tip_none")
 }
 
 // unsubscribe unsubscribes from the contact's newest list message by its
