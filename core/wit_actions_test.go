@@ -319,7 +319,7 @@ func TestWitUnsubscribe(t *testing.T) {
 
 	// A host other than the one approved is never POSTed to.
 	_, _, _, err = e.s.applyUnsubscribe(ctx, Approval{ID: 19, Tool: "unsubscribe", Args: prep.Args, Destinations: []string{"other.example"}})
-	require.ErrorIs(t, err, ErrUnsubscribeChanged)
+	require.ErrorIs(t, err, errUnsubscribeChanged)
 	assert.Zero(t, receivedPost.Load())
 
 	// Apply unsubscribe

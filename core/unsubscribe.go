@@ -58,9 +58,11 @@ var (
 	ErrNoUnsubscribe  = errors.New("message has no unsubscribe header")
 	ErrUnsubscribeWeb = errors.New("this unsubscribe is a web page: open it in the browser")
 	ErrUnsubscribing  = errors.New("already unsubscribing from this message")
-	// ErrUnsubscribeChanged: the one-click host is not the one approved.
-	ErrUnsubscribeChanged = errors.New("the unsubscribe address changed since it was approved: ask again")
 )
+
+// errUnsubscribeChanged: the one-click host is not the one a Wit approval
+// listed. It goes to the model only, never over RPC.
+var errUnsubscribeChanged = errors.New("the unsubscribe address changed since it was approved: ask again")
 
 // oneClickBody is RFC 8058's request body, the only one sent.
 const oneClickBody = "List-Unsubscribe=One-Click"
@@ -297,7 +299,7 @@ func (s *Service) oneClick(ctx context.Context, messageID int64, u Unsubscribe, 
 		TargetID: messageID, Destinations: []string{u.Host}, Decision: "allow"}
 	if approved != nil {
 		if !slices.Contains(approved.Destinations, u.Host) {
-			return res, ErrUnsubscribeChanged
+			return res, errUnsubscribeChanged
 		}
 		// before the POST: the approval's own audit row is written only once it finishes
 		e.Source, e.CallID = gateway.SourceWit, approved.CallID
