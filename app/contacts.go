@@ -284,12 +284,12 @@ func (p *contactsPage) row(c *ui.Context, ct core.Contact) ui.Element {
 					kit.Badge(c, i18n.T("reader.blocked_badge"))
 				}
 				ui.Spacer(c)
-				kit.Text(c, listTime(p.a.clock.Now(), ct.Last), small).TextColor(t.Muted)
+				kit.Text(c, listTime(p.a.clock.Now(), ct.Last), small).TextColor(t.Muted).SingleLine().Shrink(0)
 			})
 			ui.Row(c).Gap(th.Space(2)).AlignItems(ui.Center).Children(func() {
 				kit.Text(c, ct.Address, small).TextColor(t.Muted).SingleLine().Shrink(1)
 				ui.Spacer(c)
-				kit.Text(c, i18n.Tf("palette.contact.mails", ct.Messages), small).TextColor(t.Muted).SingleLine()
+				kit.Text(c, i18n.Tf("palette.contact.mails", ct.Messages), small).TextColor(t.Muted).SingleLine().Shrink(0) // the name and address give way first
 			})
 		})
 	})
