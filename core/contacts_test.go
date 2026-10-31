@@ -121,3 +121,21 @@ func TestContactsFollowChosenRoleFolders(t *testing.T) {
 	assert.Equal(t, 1, res.Skipped, "replied to from the chosen Sent")
 	assert.Equal(t, []ArchivedMessage{{e.idOf(t, "old@x"), e.folderID(t, "INBOX"), e.folderID(t, "Archive")}}, res.Moved)
 }
+
+// A contact goes by the name their mail used most, the latest of a tie: a
+// notifier's own, not whoever set off its latest.
+func TestContactNameMostUsed(t *testing.T) {
+	s := newMailContextService(t)
+	addMessage(t, s, "a", "GitHub <notifications@github.com>", "", "", 100)
+	addMessage(t, s, "b", "GitHub <notifications@github.com>", "", "", 200)
+	addMessage(t, s, "c", "Baran <notifications@github.com>", "", "", 300)
+	addMessage(t, s, "d", "Carol <carol@x>", "", "", 100)
+	addMessage(t, s, "e", "Caroline <carol@x>", "", "", 200)
+	got, err := s.Contacts(t.Context())
+	require.NoError(t, err)
+	names := map[string]string{}
+	for _, c := range got {
+		names[c.Address] = c.Name
+	}
+	assert.Equal(t, map[string]string{"notifications@github.com": "GitHub", "carol@x": "Caroline"}, names)
+}

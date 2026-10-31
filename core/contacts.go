@@ -16,7 +16,9 @@ import (
 )
 
 // Contact is someone the user exchanged synced mail with, by address
-// (gomail.AddrKey) across accounts; the user's own accounts are none.
+// (gomail.AddrKey) across accounts; the user's own accounts are none. Name is
+// the display name their mail used most (a notifier's own, not whoever
+// triggered its latest), else the one the user wrote to them.
 // Received counts their mail outside Sent, Drafts, Trash and Junk, Sent the
 // user's mail in Sent to or copying them, Messages both. Unread and Inbox
 // count within Received; ListMessage is their newest received message with a
@@ -127,6 +129,20 @@ func (s *Service) contacts(ctx context.Context, accountID int64) ([]Contact, map
 		return nil, nil, err
 	}
 	byAddr, names := map[string]*Contact{}, map[string][]string{}
+	// how often and how lately each name came, by address: in their mail, and in the user's to them
+	type use struct{ n, last int64 }
+	theirs, ours := map[string]map[string]use{}, map[string]map[string]use{}
+	tally := func(m map[string]map[string]use, addr, h string, n, date int64) {
+		a, err := mail.ParseAddress(h)
+		if err != nil || a.Name == "" {
+			return
+		}
+		if m[addr] == nil {
+			m[addr] = map[string]use{}
+		}
+		u := m[addr][a.Name]
+		m[addr][a.Name] = use{u.n + n, max(u.last, date)}
+	}
 	get := func(h string) *Contact {
 		addr := gomail.AddrKey(h)
 		if addr == "" || skip[addr] {
@@ -150,9 +166,7 @@ func (s *Service) contacts(ctx context.Context, accountID int64) ([]Contact, map
 		if c == nil {
 			continue
 		}
-		if a, err := mail.ParseAddress(h); err == nil && a.Name != "" {
-			c.Name = a.Name // rows come oldest first: the latest name wins
-		}
+		tally(theirs, c.Address, h, store.Int(r[1]), store.Int(r[4]))
 		c.Received += int(store.Int(r[1]))
 		c.Unread += int(store.Int(r[2]))
 		c.Inbox += int(store.Int(r[3]))
@@ -174,9 +188,7 @@ func (s *Service) contacts(ctx context.Context, accountID int64) ([]Contact, map
 			}
 			seen[c] = true
 			c.Sent++
-			if a, err := mail.ParseAddress(h); err == nil && a.Name != "" && c.Received == 0 {
-				c.Name = a.Name // one never heard from goes by the name the user wrote
-			}
+			tally(ours, c.Address, h, 1, store.Int(r[2]))
 			if d := time.Unix(store.Int(r[2]), 0); d.After(c.Last) {
 				c.Last = d
 			}
@@ -185,6 +197,17 @@ func (s *Service) contacts(ctx context.Context, accountID int64) ([]Contact, map
 	all := make([]Contact, 0, len(byAddr))
 	for _, c := range byAddr {
 		c.Messages = c.Received + c.Sent
+		// the name used most, the latest of a tie; one never heard from goes by the name the user wrote
+		var best use
+		used := theirs[c.Address]
+		if len(used) == 0 {
+			used = ours[c.Address]
+		}
+		for name, u := range used {
+			if u.n > best.n || u.n == best.n && (u.last > best.last || u.last == best.last && name < c.Name) {
+				c.Name, best = name, u
+			}
+		}
 		all = append(all, *c)
 	}
 	slices.SortFunc(all, func(a, b Contact) int {
