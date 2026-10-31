@@ -1509,5 +1509,10 @@
   "palette_action_empty_spam": "Spam leeren",
   "palette_action_mark_all_read": "Alle als gelesen markieren",
   "mail_empty_trash_toast": "Papierkorb geleert",
-  "mail_empty_spam_toast": "Spam geleert"
+  "mail_empty_spam_toast": "Spam geleert",
+  "mail_senders": "Absender & Abos",
+  "mail_senders_counts": "{arg1, plural, one {{arg1, number, ::group-off} Nachricht} other {{arg1, number, ::group-off} Nachrichten}}, {arg2, number, ::group-off} ungelesen",
+  "mail_senders_archive_all": "Alle archivieren",
+  "mail_senders_archived": "{arg1, plural, one {{arg1, number, ::group-off} Nachricht archiviert} other {{arg1, number, ::group-off} Nachrichten archiviert}}",
+  "mail_senders_skipped": "{arg1, number, ::group-off} im Posteingang belassen: markiert oder beantwortet"
 }

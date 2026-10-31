@@ -1509,5 +1509,10 @@
   "palette_action_empty_spam": "Dọn sạch thư rác",
   "palette_action_mark_all_read": "Đánh dấu tất cả là đã đọc",
   "mail_empty_trash_toast": "Đã dọn sạch thùng rác",
-  "mail_empty_spam_toast": "Đã dọn sạch thư rác"
+  "mail_empty_spam_toast": "Đã dọn sạch thư rác",
+  "mail_senders": "Người gửi và đăng ký",
+  "mail_senders_counts": "{arg1, number, ::group-off} thư, {arg2, number, ::group-off} chưa đọc",
+  "mail_senders_archive_all": "Lưu trữ tất cả",
+  "mail_senders_archived": "Đã lưu trữ {arg1, number, ::group-off} thư",
+  "mail_senders_skipped": "Giữ lại {arg1, number, ::group-off} thư trong hộp thư đến: đã gắn sao hoặc đã trả lời"
 }

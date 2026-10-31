@@ -1509,5 +1509,10 @@
   "palette_action_empty_spam": "Esvaziar spam",
   "palette_action_mark_all_read": "Marcar tudo como lido",
   "mail_empty_trash_toast": "Lixeira esvaziada",
-  "mail_empty_spam_toast": "Spam esvaziado"
+  "mail_empty_spam_toast": "Spam esvaziado",
+  "mail_senders": "Remetentes e assinaturas",
+  "mail_senders_counts": "{arg1, plural, one {{arg1, number, ::group-off} mensagem} many {{arg1, number, ::group-off} mensagens} other {{arg1, number, ::group-off} mensagens}}, {arg2, number, ::group-off} não lido(s)",
+  "mail_senders_archive_all": "Arquivar tudo",
+  "mail_senders_archived": "{arg1, plural, one {{arg1, number, ::group-off} mensagem arquivada} many {{arg1, number, ::group-off} mensagens arquivadas} other {{arg1, number, ::group-off} mensagens arquivadas}}",
+  "mail_senders_skipped": "{arg1, number, ::group-off} ficaram na caixa de entrada: com estrela ou respondidas"
 }

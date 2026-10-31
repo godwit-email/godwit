@@ -1509,5 +1509,10 @@
   "palette_action_empty_spam": "Spamı Boşalt",
   "palette_action_mark_all_read": "Tümünü okundu olarak işaretle",
   "mail_empty_trash_toast": "Çöp kutusu boşaltıldı",
-  "mail_empty_spam_toast": "Spam boşaltıldı"
+  "mail_empty_spam_toast": "Spam boşaltıldı",
+  "mail_senders": "Gönderenler ve abonelikler",
+  "mail_senders_counts": "{arg1, number, ::group-off} ileti, {arg2, number, ::group-off} okunmamış",
+  "mail_senders_archive_all": "Tümünü arşivle",
+  "mail_senders_archived": "{arg1, number, ::group-off} ileti arşivlendi",
+  "mail_senders_skipped": "{arg1, number, ::group-off} ileti gelen kutusunda bırakıldı: yıldızlı veya yanıtlanmış"
 }

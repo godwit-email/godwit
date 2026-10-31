@@ -1509,5 +1509,10 @@
   "palette_action_empty_spam": "Vaciar spam",
   "palette_action_mark_all_read": "Marcar todo como leído",
   "mail_empty_trash_toast": "Papelera vaciada",
-  "mail_empty_spam_toast": "Spam vaciado"
+  "mail_empty_spam_toast": "Spam vaciado",
+  "mail_senders": "Remitentes y suscripciones",
+  "mail_senders_counts": "{arg1, plural, one {{arg1, number, ::group-off} mensaje} many {{arg1, number, ::group-off} mensajes} other {{arg1, number, ::group-off} mensajes}}, {arg2, number, ::group-off} sin leer",
+  "mail_senders_archive_all": "Archivar todo",
+  "mail_senders_archived": "{arg1, plural, one {{arg1, number, ::group-off} mensaje archivado} many {{arg1, number, ::group-off} mensajes archivados} other {{arg1, number, ::group-off} mensajes archivados}}",
+  "mail_senders_skipped": "{arg1, number, ::group-off} se quedan en la bandeja de entrada: destacados o respondidos"
 }

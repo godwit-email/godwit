@@ -1509,5 +1509,10 @@
   "palette_action_empty_spam": "Spam leegmaken",
   "palette_action_mark_all_read": "Alles als gelezen markeren",
   "mail_empty_trash_toast": "Prullenmand geleegd",
-  "mail_empty_spam_toast": "Spam geleegd"
+  "mail_empty_spam_toast": "Spam geleegd",
+  "mail_senders": "Afzenders en abonnementen",
+  "mail_senders_counts": "{arg1, plural, one {{arg1, number, ::group-off} bericht} other {{arg1, number, ::group-off} berichten}}, {arg2, number, ::group-off} ongelezen",
+  "mail_senders_archive_all": "Alles archiveren",
+  "mail_senders_archived": "{arg1, plural, one {{arg1, number, ::group-off} bericht gearchiveerd} other {{arg1, number, ::group-off} berichten gearchiveerd}}",
+  "mail_senders_skipped": "{arg1, number, ::group-off} in Postvak IN gelaten: met ster of beantwoord"
 }

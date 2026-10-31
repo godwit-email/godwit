@@ -1509,5 +1509,10 @@
   "palette_action_empty_spam": "清空垃圾郵件",
   "palette_action_mark_all_read": "全部標示為已讀",
   "mail_empty_trash_toast": "已清空垃圾桶",
-  "mail_empty_spam_toast": "已清空垃圾郵件"
+  "mail_empty_spam_toast": "已清空垃圾郵件",
+  "mail_senders": "寄件者與訂閱",
+  "mail_senders_counts": "{arg1, number, ::group-off} 封，{arg2, number, ::group-off} 封未讀",
+  "mail_senders_archive_all": "全部封存",
+  "mail_senders_archived": "已封存 {arg1, number, ::group-off} 封",
+  "mail_senders_skipped": "{arg1, number, ::group-off} 封已加星號或回覆過，留在收件匣"
 }

@@ -1509,5 +1509,10 @@
   "palette_action_empty_spam": "스팸함 비우기",
   "palette_action_mark_all_read": "모두 읽음으로 표시",
   "mail_empty_trash_toast": "휴지통을 비웠습니다",
-  "mail_empty_spam_toast": "스팸함을 비웠습니다"
+  "mail_empty_spam_toast": "스팸함을 비웠습니다",
+  "mail_senders": "보낸 사람 및 구독",
+  "mail_senders_counts": "{arg1, number, ::group-off}통, {arg2, number, ::group-off}통 안 읽음",
+  "mail_senders_archive_all": "모두 보관",
+  "mail_senders_archived": "{arg1, number, ::group-off}통을 보관했습니다",
+  "mail_senders_skipped": "별표했거나 답장한 {arg1, number, ::group-off}통은 받은편지함에 남겼습니다"
 }
