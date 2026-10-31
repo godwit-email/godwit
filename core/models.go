@@ -993,8 +993,8 @@ func (s *Service) serviceByRef(ctx context.Context, name string) (ModelService, 
 }
 
 // resolveJudge is the judge Settings.JudgeService names, and its "slug/model"
-// label. When that is unset, gone or has judge off, the default generation
-// model answers instead (ai.NewGenJudge, gen true), as SmallModel falls back to it.
+// label. When that is unset, gone or has judge off, the small-task model
+// answers instead (ai.NewGenJudge, gen true), falling back as resolveTask does.
 func (s *Service) resolveJudge(ctx context.Context) (j ai.Judge, label string, gen bool, err error) {
 	st, err := s.loadSettings(ctx)
 	if err != nil {
@@ -1014,7 +1014,7 @@ func (s *Service) resolveJudge(ctx context.Context) (j ai.Judge, label string, g
 			return j, m.Slug + "/" + m.JudgeModel, false, err
 		}
 	}
-	model, ref, err := s.resolveRef(ctx, "")
+	model, ref, err := s.resolveTask(ctx, "", true)
 	if err != nil {
 		return nil, "", false, err
 	}
