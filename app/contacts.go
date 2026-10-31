@@ -256,7 +256,7 @@ func (p *contactsPage) detailView(c *ui.Context) {
 	d, name := p.detail, cmp.Or(ct.Name, ct.Address)
 	blocked := slices.Contains(a.blocked, ct.Address)
 	ui.Scroll(c).Grow(1).Children(func() {
-		ui.Column(c).FillWidth().MaxWidth(theme.ReaderMaxWidth).Padding(th.Space(9), th.Space(10), th.Space(8), th.Space(10)).Gap(th.Space(6)).Children(func() {
+		ui.Column(c).FillWidth().MaxWidth(theme.ReaderMaxWidth).AlignSelf(ui.Center).Padding(th.Space(9), th.Space(10), th.Space(8), th.Space(10)).Gap(th.Space(6)).Children(func() {
 			ui.Row(c).Gap(th.Space(4)).AlignItems(ui.Center).Children(func() {
 				kit.Avatar(c, name).Size(th.Space(14), th.Space(14)).Radius(t.Radius.Xl)
 				ui.Column(c).Shrink(1).MinWidth(0).Gap(th.Space(1)).Children(func() {
