@@ -164,7 +164,7 @@ func TestPaletteFilterGroups(t *testing.T) {
 	h.typeText("/")
 	h.until("the filter list", func() bool { return filtersShown(h) })
 	texts := h.tt.Texts()
-	texts = texts[slices.Index(texts, "联系人"):] // the palette's, not the sidebar's
+	texts = texts[slices.Index(texts, "对话"):] // the palette's tabs, not the page switch's 联系人
 	at := func(s string) int { return slices.Index(texts, s) }
 	if !(at("状态") >= 0 && at("状态") < at("有附件") && at("已标星") < at("账户") && at("账户") < at("alice@example.com") && at("alice@example.com") < at("时间")) {
 		t.Fatalf("groups out of order: %q", texts)

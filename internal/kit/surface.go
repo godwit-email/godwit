@@ -107,27 +107,35 @@ type NavItem struct {
 }
 
 // NavSwitch is a segmented row of page links on the window material: the
-// page shown raised on the background in the fill icon, the others muted.
+// page shown raised on the background in the fill icon with its name, the
+// others muted icons named by a tooltip.
 func NavSwitch(c *ui.Context, items ...NavItem) ui.Element {
 	t, th := theme.Of(c), c.Theme()
 	return ui.Row(c).Padding(th.Space(0.5)).Gap(th.Space(0.5)).Radius(t.Radius.Lg).Background(t.HoverTint).Children(func() {
 		for _, it := range items {
-			b := ui.ButtonBase(c).Height(th.Space(7)).Padding(0, th.Space(2.5), 0, th.Space(1.5)).Gap(th.Space(1.5)).Radius(t.Radius.Md).
+			b := ui.ButtonBase(c).Height(th.Space(7)).Radius(t.Radius.Md).Center().
 				FontSize(t.Text.Base).TextColor(t.Muted).Label(it.Label).Transition(colors(theme.MotionFast))
 			svg := icons.Get(it.Icon)
 			switch {
 			case it.Selected:
 				Elevate(c, b.Background(t.Background).TextColor(t.Foreground), theme.ShadowXs)
+				b.Padding(0, th.Space(2.5), 0, th.Space(1.5)).Gap(th.Space(1.5))
 				svg = icons.Fill(it.Icon)
-			case b.Hovered():
-				b.TextColor(t.Foreground)
+			default:
+				b.Width(th.Space(7))
+				if b.Hovered() {
+					b.TextColor(t.Foreground)
+				}
+				Tooltip(c, b, it.Label)
 			}
 			if it.OnClick != nil && !it.Selected {
 				b.OnClick(it.OnClick)
 			}
 			b.Children(func() {
 				ui.Icon(c, svg).Size(theme.Icon, theme.Icon)
-				ui.Text(c, it.Label)
+				if it.Selected {
+					ui.Text(c, it.Label)
+				}
 			})
 		}
 	})

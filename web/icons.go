@@ -26,6 +26,8 @@ var RemixIcons = map[string]string{
 	"code":                           "node_modules/remixicon/icons/Development/code-s-slash-line.svg",
 	"component":                      "node_modules/remixicon/icons/System/apps-2-line.svg",
 	"component-fill":                 "node_modules/remixicon/icons/System/apps-2-fill.svg",
+	"contacts":                       "node_modules/remixicon/icons/Document/contacts-book-3-line.svg",
+	"contacts-fill":                  "node_modules/remixicon/icons/Document/contacts-book-3-fill.svg",
 	"copy":                           "node_modules/remixicon/icons/Document/file-copy-line.svg",
 	"cpu":                            "node_modules/remixicon/icons/Device/cpu-line.svg",
 	"cpu-fill":                       "node_modules/remixicon/icons/Device/cpu-fill.svg",
@@ -222,6 +224,8 @@ var BrandIcons = map[string]string{
 //go:embed node_modules/@lobehub/icons-static-svg/icons/claudecode.svg
 //go:embed node_modules/@lobehub/icons-static-svg/icons/codex.svg
 //go:embed node_modules/remixicon/icons/Arrows/arrow-down-s-line.svg
+//go:embed node_modules/remixicon/icons/Document/contacts-book-3-line.svg
+//go:embed node_modules/remixicon/icons/Document/contacts-book-3-fill.svg
 //go:embed node_modules/remixicon/icons/Development/code-s-slash-line.svg
 //go:embed "node_modules/remixicon/icons/Health & Medical/brain-4-line.svg"
 //go:embed "node_modules/remixicon/icons/Health & Medical/brain-4-fill.svg"

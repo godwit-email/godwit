@@ -348,7 +348,7 @@ func (a *App) body(c *ui.Context) {
 			return
 		}
 		top := th.Space(3)
-		if a.route.Page == PageMail || a.route.Page == PageWit {
+		if a.route.Page == PageMail || a.route.Page == PageWit || a.route.Page == PageContacts {
 			top = 0 // the page switch sits right under the title bar
 		}
 		// Keep the sidebar's layout at its full width while it slides out of the clipped pane.
@@ -434,10 +434,11 @@ func panelRadius(c *ui.Context) float32 {
 	return r
 }
 
-// pageSwitch is the Mail / Wit switch at the top of their sidebars.
+// pageSwitch is the Mail / Contacts / Wit switch at the top of their sidebars.
 func (a *App) pageSwitch(c *ui.Context) ui.Element {
 	return kit.NavSwitch(c,
 		kit.NavItem{Icon: "mail", Label: i18n.T("shell.nav.mail"), Selected: a.route.Page == PageMail, OnClick: func() { a.navigate(Route{Page: PageMail, View: core.View{Unified: "inbox"}}) }},
+		kit.NavItem{Icon: "contacts", Label: i18n.T("shell.nav.contacts"), Selected: a.route.Page == PageContacts, OnClick: func() { a.navigate(Route{Page: PageContacts}) }},
 		kit.NavItem{Icon: "sparkles", Label: i18n.T("shell.nav.wit"), Selected: a.route.Page == PageWit, OnClick: func() { a.navigate(Route{Page: PageWit}) }})
 }
 
@@ -469,8 +470,11 @@ func (a *App) sidebarFoot(c *ui.Context) {
 	if a.route.Page == PageSettings {
 		r := a.leaveSettings()
 		name := i18n.T("shell.nav.mail")
-		if r.Page == PageWit {
+		switch r.Page {
+		case PageWit:
 			name = i18n.T("shell.nav.wit")
+		case PageContacts:
+			name = i18n.T("shell.nav.contacts")
 		}
 		item("arrow-left", i18n.Tf("shell.nav.back_to", name), r)
 		return
@@ -485,7 +489,7 @@ func (a *App) sidebarFoot(c *ui.Context) {
 // settings in the history, else the inbox.
 func (a *App) leaveSettings() Route {
 	for i := len(a.history) - 1; i >= 0; i-- {
-		if r := a.history[i]; r.Page == PageMail || r.Page == PageWit {
+		if r := a.history[i]; r.Page == PageMail || r.Page == PageWit || r.Page == PageContacts {
 			return r
 		}
 	}

@@ -27,7 +27,7 @@ func TestPalettePreview(t *testing.T) {
 	})
 	h.see("Quarterly report")
 	att, _ := h.tt.Find("q3.xlsx") // only the card has it
-	tab, _ := h.tt.Find("联系人")
+	tab, _ := h.tt.Find("对话")
 	if att.X < 1280/2+640/2+8 || att.Y < tab.Y {
 		t.Fatalf("the card at %+v is not right of the panel, below its tabs at %+v", att, tab)
 	}

@@ -96,8 +96,6 @@ type mailPage struct {
 	folders                  map[int64][]core.Folder // by account
 	outbox                   []outboxEntry           // every account's
 	drafts                   []core.Draft            // the drafts folder's account's, when it shows
-	senders                  []core.Sender           // when the senders view shows
-	senderList               *ui.ListState           // the senders view's rows
 	draftList                *ui.ListState           // replaced, never zeroed: the last frame's tree still points at the old one
 	draftSel                 int64                   // the draft the pane shows; 0 for none
 	draftView                map[int64]draftInfo     // by draft, made when the drafts load
@@ -150,7 +148,7 @@ func (it mailItem) key() string {
 }
 
 func newMailPage(a *App) *mailPage {
-	p := &mailPage{a: a, folders: map[int64][]core.Folder{}, accOpen: map[int64]*bool{}, accLabelsOpen: map[int64]*bool{}, folderOpen: map[folderKey]*bool{}, labelsOpen: true, accountsOpen: true, draftList: &ui.ListState{}, senderList: &ui.ListState{}}
+	p := &mailPage{a: a, folders: map[int64][]core.Folder{}, accOpen: map[int64]*bool{}, accLabelsOpen: map[int64]*bool{}, folderOpen: map[folderKey]*bool{}, labelsOpen: true, accountsOpen: true, draftList: &ui.ListState{}}
 	p.main.reset()
 	p.found.reset()
 	p.exec = p.write
@@ -230,7 +228,6 @@ func (p *mailPage) reload() {
 		starredTotal int
 		outbox       []outboxEntry
 		drafts       []core.Draft
-		senders      []core.Sender
 		items        []mailItem
 		cursor       string
 		threads      bool
@@ -263,8 +260,6 @@ func (p *mailPage) reload() {
 		draftsAcc, isDrafts := draftsOf(folders, v)
 		switch {
 		case v.Unified == "outbox" || v == (core.View{}):
-		case v.Unified == "senders":
-			senders, err = a.svc.Senders(ctx)
 		case isDrafts:
 			drafts, err = a.svc.ListDrafts(ctx, draftsAcc)
 			for i := range drafts { // shown, never saved: signature images as data: (richtext's only kind)
@@ -291,7 +286,7 @@ func (p *mailPage) reload() {
 		if threads != p.threads {
 			p.main.reset() // thread IDs and message IDs do not mix
 		}
-		p.folders, p.outbox, p.drafts, p.senders, p.threads = folders, outbox, drafts, senders, threads
+		p.folders, p.outbox, p.drafts, p.threads = folders, outbox, drafts, threads
 		p.starredUnread, p.starredUnreadTotal = starredByAcc, starredTotal
 		p.items, p.cursor, p.stalled = items, cursor, false
 		p.setDrafts()
@@ -544,8 +539,6 @@ func (p *mailPage) Title() (string, string) {
 		return i18n.T("mail.unified.starred"), ""
 	case v.Unified == "outbox":
 		return i18n.T("mail.outbox"), ""
-	case v.Unified == "senders":
-		return i18n.T("mail.senders"), ""
 	default:
 		if _, ok := draftsOf(p.folders, v); ok && v.FolderID == 0 {
 			return i18n.T("mail.folder.drafts"), ""
@@ -594,8 +587,6 @@ func (p *mailPage) Content(c *ui.Context) {
 			switch {
 			case p.view.Unified == "outbox":
 				p.outboxView(c)
-			case p.view.Unified == "senders":
-				p.sendersView(c)
 			case isDrafts:
 				p.draftsView(c)
 			default:

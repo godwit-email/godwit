@@ -393,9 +393,9 @@ func (p *palette) contactItems(cs []core.Contact) []palItem {
 	out := make([]palItem, 0, len(cs))
 	for _, ct := range cs {
 		addr := ct.Address
-		open := func() { p.a.mail.mailFrom(addr) }
+		open := func() { p.a.openContact(addr) }
 		out = append(out, palItem{icon: "user", title: cmp.Or(ct.Name, addr), sub: addr, when: ct.Last, meta: i18n.Tf("palette.contact.mails", ct.Messages),
-			open: open, acts: p.contactActs(addr, open)})
+			open: open, acts: p.contactActs(addr)})
 	}
 	return out
 }
@@ -502,7 +502,7 @@ func (p *mailPage) mailFrom(addr string) {
 // the Outbox, none yet), where it is the unified inbox.
 func (p *mailPage) searchFor(query string, sf searchFilters) {
 	v := p.view
-	if _, drafts := draftsOf(p.folders, v); drafts || v.Unified == "outbox" || v.Unified == "senders" || v == (core.View{}) {
+	if _, drafts := draftsOf(p.folders, v); drafts || v.Unified == "outbox" || v == (core.View{}) {
 		v = core.View{Unified: "inbox"}
 	}
 	p.a.navigate(Route{Page: PageMail, View: v})

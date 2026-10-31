@@ -61,14 +61,14 @@ func TestFindContactsAreSendersByAddressLatestFirst(t *testing.T) {
 	got, err := s.Find(t.Context(), FindQuery{SearchQuery: SearchQuery{Text: "bob"}})
 	require.NoError(t, err)
 	require.Equal(t, []Contact{
-		{Name: "Bobby", Address: "bobby@y", Messages: 1, Last: time.Unix(400, 0)},
-		{Name: "Robert B", Address: "bob@x", Messages: 3, Last: time.Unix(300, 0)},
+		{Name: "Bobby", Address: "bobby@y", Messages: 1, Last: time.Unix(400, 0), Received: 1, Unread: 1, Inbox: 1},
+		{Name: "Robert B", Address: "bob@x", Messages: 3, Last: time.Unix(300, 0), Received: 3, Unread: 3, Inbox: 3},
 	}, got.Contacts.Items)
 	require.Equal(t, 2, got.Contacts.Total)
 
 	got, err = s.Find(t.Context(), FindQuery{SearchQuery: SearchQuery{Text: "robert"}})
 	require.NoError(t, err)
-	require.Equal(t, []Contact{{Name: "Robert B", Address: "bob@x", Messages: 3, Last: time.Unix(300, 0)}}, got.Contacts.Items, "any name it used")
+	require.Equal(t, []Contact{{Name: "Robert B", Address: "bob@x", Messages: 3, Last: time.Unix(300, 0), Received: 3, Unread: 3, Inbox: 3}}, got.Contacts.Items, "any name it used")
 
 	got, err = s.Find(t.Context(), FindQuery{SearchQuery: SearchQuery{Text: "me@"}})
 	require.NoError(t, err)
@@ -136,7 +136,7 @@ func TestFindKindFindsOnlyThatGroup(t *testing.T) {
 
 	got, err := s.Find(t.Context(), FindQuery{SearchQuery: q, Kind: "contact"})
 	require.NoError(t, err)
-	require.Equal(t, FindResult{Contacts: FindGroup[Contact]{Items: []Contact{{Name: "Reporter", Address: "rep@x", Messages: 1, Last: time.Unix(100, 0)}}, Total: 1}}, got)
+	require.Equal(t, FindResult{Contacts: FindGroup[Contact]{Items: []Contact{{Name: "Reporter", Address: "rep@x", Messages: 1, Last: time.Unix(100, 0), Received: 1, Unread: 1, Inbox: 1}}, Total: 1}}, got)
 
 	got, err = s.Find(t.Context(), FindQuery{SearchQuery: q, Kind: "mail"})
 	require.NoError(t, err)
@@ -177,8 +177,8 @@ func TestFindNothingShowsWhatIsRecent(t *testing.T) {
 	require.Equal(t, []int64{c, b, a}, msgIDs(got.Mail.Items))
 	require.Equal(t, []int64{later, conv}, convIDs(got.Conversations.Items))
 	require.Equal(t, []Contact{
-		{Name: "Bob", Address: "bob@x", Messages: 2, Last: time.Unix(200, 0)},
-		{Name: "Carol", Address: "carol@x", Messages: 1, Last: time.Unix(300, 0)},
+		{Name: "Bob", Address: "bob@x", Messages: 2, Last: time.Unix(200, 0), Received: 2, Unread: 2, Inbox: 2},
+		{Name: "Carol", Address: "carol@x", Messages: 1, Last: time.Unix(300, 0), Received: 1, Unread: 1, Inbox: 1},
 	}, got.Contacts.Items, "most mail first")
 	require.Len(t, got.Attachments.Items, 2)
 	require.Equal(t, []int64{newer, att}, []int64{got.Attachments.Items[0].ID, got.Attachments.Items[1].ID})
