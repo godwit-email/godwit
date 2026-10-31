@@ -25,7 +25,7 @@ export const policy: Record<Lang, Policy> = {
 	"zh-Hans": {
 		title: "Godwit隐私政策",
 		description: "Godwit在你的电脑上保存什么、会连接哪些服务，以及哪些数据永远不会到我们手里。",
-		updated: "最后更新：2026年10月21日",
+		updated: "最后更新：2026年10月31日",
 		back: "返回首页",
 		home: "/zh-hans/",
 		sections: [
@@ -52,7 +52,7 @@ export const policy: Record<Lang, Policy> = {
 					"远程图片和发件人头像：默认自动加载。Godwit替你下载，不带Cookie和Referer；新邮件到达时就提前下载，所以发件人看不出你何时阅读，但他们仍会看到这台电脑的IP地址。旧邮件、缓存未命中或过期、手动加载时，读信时仍可能发起请求，对方可能因此推测阅读时间。头像可能向发件人的网站和Gravatar请求，向Gravatar查询时用的是发件人邮箱的SHA-256哈希，不是邮箱本身。垃圾邮件里的图片不会自动加载。可以在设置的「远程图片」里改成「仅可信发件人」或「每次询问」。",
 					"插件和MCP：插件只能连接它声明过、并且你批准过的域名。MCP服务器是你自己添加的：stdio类型会在你的电脑上作为程序运行，只带PATH和你填写的环境变量；http类型连接你填的地址。每个服务器要先批准一次，每次写操作都要你确认。",
 					"本地API：默认关闭，打开后只在本机监听，本机上的脚本和AI工具可以通过它访问Godwit。完整的本地API能读信、发信、修改账号和设置；通过godwit mcp接入的AI工具只能读邮件、创建草稿，不能发送。",
-					"检查更新：从dl.godwit.email获取新版本信息和安装包，不上传任何东西。通过Microsoft Store安装的版本由商店更新，Godwit自己不检查更新。",
+					"检查更新：从dl.godwit.email获取新版本信息和安装包，不上传任何东西。通过Microsoft Store安装的版本由商店更新：打开「关于」时，Godwit向Microsoft Store的公开目录（displaycatalog.mp.microsoft.com）查询最新版本号，不带任何账号信息。",
 				],
 			},
 			{
@@ -93,7 +93,7 @@ export const policy: Record<Lang, Policy> = {
 	en: {
 		title: "Godwit Privacy Policy",
 		description: "What Godwit keeps on your computer, which services it connects to, and what never reaches us.",
-		updated: "Last updated: October 21, 2026",
+		updated: "Last updated: October 31, 2026",
 		back: "Back to home",
 		home: "/en/",
 		sections: [
@@ -120,7 +120,7 @@ export const policy: Record<Lang, Policy> = {
 					"Remote images and sender avatars: loaded automatically by default. Godwit downloads them for you, without cookies or a referrer, and fetches them as new mail arrives, so senders cannot tell when you read a message, but they still see this computer's IP address. For old messages, cache misses or expired entries, and manual loading, requests may still happen while you read, and senders may infer your reading time. Avatars may be requested from the sender's website and from Gravatar, which is queried with a SHA-256 hash of the sender's address, not the address itself. Images in Junk never load by themselves. In Settings › Remote images you can switch to trusted senders only, or ask each time.",
 					"Plugins and MCP: a plugin reaches only the hosts it declared and you approved. MCP servers are ones you add: a stdio server runs as a program on your computer with only PATH and the environment variables you set; an http server connects to the address you enter. Each server is approved once, and every write call asks you first.",
 					"Local API: off by default. When on, it listens only on this computer, and scripts and AI tools here can reach Godwit through it. The full Local API can read and send mail and change accounts and settings; AI tools connected through godwit mcp can only read mail and create drafts, never send.",
-					"Update checks: new version information and installers come from dl.godwit.email; nothing is uploaded. A version installed from the Microsoft Store is updated by the Store, and Godwit does not check for updates itself.",
+					"Update checks: new version information and installers come from dl.godwit.email; nothing is uploaded. A version installed from the Microsoft Store is updated by the Store; when About opens, Godwit asks the Store's public catalog (displaycatalog.mp.microsoft.com) for the latest version number, without any account information.",
 				],
 			},
 			{
