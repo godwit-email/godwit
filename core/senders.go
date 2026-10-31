@@ -9,6 +9,7 @@ import (
 	"time"
 
 	gomail "github.com/godwit-email/godwit/core/mail"
+	"github.com/godwit-email/godwit/core/mailsync"
 	"github.com/godwit-email/godwit/core/store"
 )
 
@@ -32,8 +33,28 @@ type SenderArchive struct {
 // ArchivedMessage is a message ArchiveSender moved From a folder To another.
 type ArchivedMessage struct{ ID, From, To int64 }
 
-// folderRole is folders alias f's role as RoleFolder resolves it.
-const folderRole = "CASE WHEN f.role_override = '' THEN f.role ELSE f.role_override END"
+// roleFolderIDs are every account's folders of roles, one per role as
+// RoleFolder resolves it (a folder detected with a role the user moved
+// elsewhere is not one).
+func (s *Service) roleFolderIDs(ctx context.Context, roles ...string) ([]any, error) {
+	accs, err := s.db.Query(ctx, "SELECT id FROM accounts")
+	if err != nil {
+		return nil, err
+	}
+	var ids []any
+	for _, r := range accs.Values {
+		for _, role := range roles {
+			id, _, err := mailsync.RoleFolder(ctx, s.db, store.Int(r[0]), role)
+			if err != nil {
+				return nil, err
+			}
+			if id != 0 {
+				ids = append(ids, id)
+			}
+		}
+	}
+	return ids, nil
+}
 
 // Senders counts every sender's synced mail outside Sent, Drafts, Trash and
 // Junk, the user's own accounts left out, most mail first.
@@ -46,16 +67,20 @@ func (s *Service) Senders(ctx context.Context) ([]Sender, error) {
 	for _, r := range own.Values {
 		skip[gomail.AddrKey(store.Str(r[0]))] = true
 	}
-	from := " FROM messages m JOIN folders f ON f.id = m.folder_id WHERE " + folderRole + " NOT IN ('sent', 'drafts', 'trash', 'junk')"
+	left, err := s.roleFolderIDs(ctx, "sent", "drafts", "trash", "junk")
+	if err != nil {
+		return nil, err
+	}
+	from := " FROM messages m JOIN folders f ON f.id = m.folder_id WHERE m.folder_id NOT IN (" + placeholders(len(left)) + ")"
 	// shortcut: groups every sender in Go on each load; keep a senders table if large stores get slow.
 	rows, err := s.db.Query(ctx, `SELECT m.from_addr, count(*), sum(instr(m.flags, '\Seen') = 0), sum(f.role = 'inbox'), max(m.date)`+
-		from+" GROUP BY m.from_addr ORDER BY 5, 1")
+		from+" GROUP BY m.from_addr ORDER BY 5, 1", left...)
 	if err != nil {
 		return nil, err
 	}
 	// A bare column beside max() comes from the row holding the max.
 	lists, err := s.db.Query(ctx, "SELECT m.from_addr, max(m.date), m.id, m.thread_id"+from+
-		" AND m.list_unsubscribe <> '' GROUP BY m.from_addr")
+		" AND m.list_unsubscribe <> '' GROUP BY m.from_addr", left...)
 	if err != nil {
 		return nil, err
 	}
@@ -108,14 +133,18 @@ func (s *Service) ArchiveSender(ctx context.Context, addr string) (SenderArchive
 	if err != nil || len(q.fromHeaders) == 0 {
 		return res, err
 	}
-	args := make([]any, len(q.fromHeaders))
-	for i, h := range q.fromHeaders {
-		args[i] = h
+	sent, err := s.roleFolderIDs(ctx, "sent")
+	if err != nil {
+		return res, err
 	}
-	kept := `instr(t.flags, '\Flagged') > 0 OR instr(t.flags, '\Answered') > 0 OR t.folder_id IN (SELECT f.id FROM folders f WHERE ` + folderRole + ` = 'sent')`
+	args := sent
+	for _, h := range q.fromHeaders {
+		args = append(args, h)
+	}
+	kept := `instr(t.flags, '\Flagged') > 0 OR instr(t.flags, '\Answered') > 0 OR t.folder_id IN (` + placeholders(len(sent)) + `)`
 	rows, err := s.db.Query(ctx, `SELECT m.id, m.account_id, m.folder_id, EXISTS (SELECT 1 FROM messages t WHERE (t.id = m.id OR t.thread_id = m.thread_id) AND (`+kept+`))
 		FROM messages m WHERE m.folder_id IN (SELECT id FROM folders WHERE role = 'inbox') AND m.from_addr IN (`+
-		strings.TrimSuffix(strings.Repeat("?,", len(args)), ",")+") ORDER BY m.id", args...)
+		placeholders(len(q.fromHeaders))+") ORDER BY m.id", args...)
 	if err != nil {
 		return res, err
 	}
@@ -153,8 +182,7 @@ func (s *Service) UndoArchive(ctx context.Context, a SenderArchive) error {
 	}
 	for k, ids := range back {
 		for c := range slices.Chunk(ids, 200) {
-			rows, err := s.db.Query(ctx, "SELECT id FROM messages WHERE folder_id = ? AND id IN ("+
-				strings.TrimSuffix(strings.Repeat("?,", len(c)), ",")+")", append([]any{k.To}, c...)...)
+			rows, err := s.db.Query(ctx, "SELECT id FROM messages WHERE folder_id = ? AND id IN ("+placeholders(len(c))+")", append([]any{k.To}, c...)...)
 			if err != nil {
 				return err
 			}

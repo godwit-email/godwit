@@ -79,3 +79,27 @@ func TestArchiveSenderNeedsArchiveFolder(t *testing.T) {
 	require.ErrorAs(t, err, &nf)
 	assert.Equal(t, 1, e.count(t, "SELECT count(*) FROM messages WHERE folder_id = ?", e.folderID(t, "INBOX")))
 }
+
+// A role the user moved to another folder leaves the detected one ordinary:
+// its mail counts, and a message there is no reply.
+func TestSendersFollowChosenRoleFolders(t *testing.T) {
+	e := newSyncEnv(t)
+	require.NoError(t, e.im.User.Create("Outgoing", nil))
+	shop := "Shop <news@shop.example>"
+	e.put(t, "INBOX", eml("old@x", shop, "alice@example.com", "old", day, "b"))
+	e.put(t, "Sent", eml("oldre@x", shop, "alice@example.com", "Re: old", day, "b", "In-Reply-To: <old@x>"))
+	e.put(t, "INBOX", eml("new@x", shop, "alice@example.com", "new", day, "b"))
+	e.put(t, "Outgoing", eml("newre@x", "alice@example.com", "news@shop.example", "Re: new", day, "b", "In-Reply-To: <new@x>"))
+	e.sync(t)
+	require.NoError(t, e.s.SetRoleFolder(bg, e.acc.ID, "sent", e.folderID(t, "Outgoing")))
+
+	got, err := e.s.Senders(bg)
+	require.NoError(t, err)
+	require.Len(t, got, 1)
+	assert.Equal(t, 3, got[0].Messages, "the old Sent is an ordinary folder now")
+
+	res, err := e.s.ArchiveSender(bg, "news@shop.example")
+	require.NoError(t, err)
+	assert.Equal(t, 1, res.Skipped, "replied to from the chosen Sent")
+	assert.Equal(t, []ArchivedMessage{{e.idOf(t, "old@x"), e.folderID(t, "INBOX"), e.folderID(t, "Archive")}}, res.Moved)
+}
