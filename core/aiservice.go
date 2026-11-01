@@ -315,15 +315,24 @@ const (
 	QuickLabelMaxRunes = 32
 	quickLabelMinRunes = 6
 	quickRepliesSystem = `Suggest up to three short, distinct replies the user could send to the email you are given, written as the user. ` +
+		`You may get the thread up to the email: the request names the message to reply to, and the others are earlier context. ` +
 		`Answer with JSON only, exactly in this shape: {"replies":[{"label":"...","html":"<p>...</p>"}]}. Use simple HTML (paragraphs, line breaks). ` +
 		`Each label names the reply's intent in one to three words, capitalized, in the replies' language (at most 25 characters; at most eight characters in Chinese or Japanese). ` +
+		`Do not restate or summarize the email. If it asks several things, answer them in order. ` +
 		`No greeting placeholders, no signature, no quoted text.`
 )
 
-// QuickReplies suggests up to three replies to a message with the default
-// model. It returns none, without asking the model, when Settings.QuickReplies
-// is off or the message is from the account itself. Results are cached like
-// RunSkill's; an answer that is not the requested JSON is an error.
+// quickReplySkip: message m is a newsletter, notice or code mail, which
+// nobody answers.
+const quickReplySkip = `EXISTS (SELECT 1 FROM message_labels ml JOIN labels l ON l.id = ml.label_id
+	WHERE ml.message_id = m.id AND ml.active = 1 AND l.slug IN ('newsletter', 'notice', 'otp'))`
+
+// QuickReplies suggests up to three replies to a message with the small
+// model, which reads the message's thread up to it. It returns none, without
+// asking the model, when Settings.QuickReplies is off, the message is from the
+// account itself or under the Newsletters, Notices or Codes label. Results are
+// cached like RunSkill's, by the thread's content; an answer that is not the
+// requested JSON is an error.
 func (s *Service) QuickReplies(ctx context.Context, messageID int64) ([]QuickReply, error) {
 	ctx, end, err := s.begin(ctx, 0)
 	if err != nil {
@@ -334,10 +343,26 @@ func (s *Service) QuickReplies(ctx context.Context, messageID int64) ([]QuickRep
 	if err != nil || !st.QuickReplies {
 		return nil, err
 	}
-	account, ids, members, err := s.mailTarget(ctx, "message", messageID)
+	rows, err := s.db.Query(ctx, "SELECT m.from_addr, m.thread_id, "+quickReplySkip+" FROM messages m WHERE m.id = ?", messageID)
 	if err != nil {
 		return nil, err
 	}
+	if len(rows.Values) == 0 {
+		return nil, fmt.Errorf("message %d not found", messageID)
+	}
+	r0 := rows.Values[0]
+	kind, target := "message", messageID
+	if tid := store.Int(r0[1]); tid != 0 {
+		kind, target = "thread", tid
+	}
+	account, ids, members, err := s.mailTarget(ctx, kind, target)
+	if err != nil {
+		return nil, err
+	}
+	// Up to the message answered: as the newest, it keeps its body under
+	// mailContext's and truncateMail's budgets, and later mail is not a new key.
+	ids = ids[:slices.Index(ids, messageID)+1]
+	members = slices.DeleteFunc(members, func(m contentMember) bool { return !slices.Contains(ids, m.ID) })
 	if err := s.bind(ctx, account); err != nil {
 		return nil, err
 	}
@@ -345,11 +370,7 @@ func (s *Service) QuickReplies(ctx context.Context, messageID int64) ([]QuickRep
 	if err != nil {
 		return nil, err
 	}
-	rows, err := s.db.Query(ctx, "SELECT from_addr FROM messages WHERE id = ?", messageID)
-	if err != nil {
-		return nil, err
-	}
-	if len(rows.Values) > 0 && mail.AddrKey(store.Str(rows.Values[0][0])) == mail.AddrKey(acc.Email) {
+	if store.Int(r0[2]) != 0 || mail.AddrKey(store.Str(r0[0])) == mail.AddrKey(acc.Email) {
 		return nil, nil
 	}
 	model, _, err := s.resolveTask(ctx, "", true)
@@ -363,7 +384,13 @@ func (s *Service) QuickReplies(ctx context.Context, messageID int64) ([]QuickRep
 	} else {
 		system += "Write the replies in the language of the email."
 	}
-	key := cacheKey("quick-replies", messageID, members, model.ServiceID, model.Version, model.Model, st.ReplyLanguage, system)
+	// Outside the untrusted blocks: which one to answer, and whose the rest are.
+	tail := fmt.Sprintf("Reply to message:%d. Messages from %s are the user's own.", messageID, acc.Email)
+	if acc.Signature != "" {
+		tail += " The user's signature is added below the reply, so end it without a sign-off or name."
+	}
+	// members is the thread's content up to the message: new mail in it is a new key.
+	key := cacheKey("quick-replies", messageID, members, model.ServiceID, model.Version, model.Model, st.ReplyLanguage, system, tail)
 	if o, hit, err := s.cacheGet(ctx, key); err != nil || hit {
 		var rs []QuickReply
 		if hit {
@@ -394,6 +421,7 @@ func (s *Service) QuickReplies(ctx context.Context, messageID int64) ([]QuickRep
 	for _, it := range items {
 		blocks = append(blocks, it.Block)
 	}
+	blocks = append(blocks, tail)
 	if err := s.gateway().Record(ctx, gateway.Entry{Source: gateway.SourceSkill, Tool: "quick_replies", TargetKind: "message", TargetID: messageID, Decision: "run"}); err != nil {
 		return nil, err
 	}
