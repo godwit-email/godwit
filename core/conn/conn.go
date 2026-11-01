@@ -231,19 +231,28 @@ func DialSMTP(ctx context.Context, e Endpoint) (*smtp.Client, error) {
 	return c, nil
 }
 
-// imapConn inserts the space some servers (Strato / Open-Xchange) omit after
-// an empty literal: "{0}\r\nUID 42" instead of "{0}\r\n UID 42". It tracks
-// every "{N}\r\n" so literal contents (message bodies) pass through untouched.
-// Only the TLS and plain paths use it: STARTTLS upgrades the raw conn inside
-// imapclient, below which this would see ciphertext.
+// imapConn works around non-conforming servers below go-imap:
+//   - it inserts the space some servers (Strato / Open-Xchange) omit after an
+//     empty literal: "{0}\r\nUID 42" instead of "{0}\r\n UID 42";
+//   - it repairs Tencent Exmail's charset parameter (charsetFix) and unquotes
+//     the HEADER.FIELDS names Tencent Exmail cannot match (headerFieldsFix).
+//
+// It tracks every "{N}\r\n" so literal contents (message bodies) pass through
+// untouched. Only the TLS and plain paths use it: STARTTLS upgrades the raw
+// conn inside imapclient, below which this would see ciphertext.
 type imapConn struct {
 	net.Conn
-	state int    // 0 scanning, 1 in "{N", 2 after "}", 3 after "}\r"
-	n     int64  // literal size being parsed
-	skip  int64  // literal bytes left to pass through
-	empty bool   // the previous byte ended an empty literal
-	extra []byte // leftover bytes when an inserted ' ' overflowed p
-	err   error
+	state int   // 0 scanning, 1 in "{N", 2 after "}", 3 after "}\r"
+	n     int64 // literal size being parsed
+	skip  int64 // literal bytes left to pass through
+	empty bool  // the previous byte ended an empty literal
+	fix   charsetFix
+	buf   []byte // rewritten bytes not yet returned
+	extra []byte // the unread part of buf
+	err   error  // read error to return once extra is drained
+
+	wfix headerFieldsFix
+	wbuf []byte
 }
 
 // step consumes one byte and reports whether a space must go before it.
@@ -275,40 +284,51 @@ func (c *imapConn) Read(p []byte) (int, error) {
 	if len(p) == 0 {
 		return 0, nil
 	}
-	if len(c.extra) > 0 {
-		n := copy(p, c.extra)
-		c.extra = c.extra[n:]
-		var err error
-		if len(c.extra) == 0 {
-			err, c.err = c.err, nil
+	// A candidate charset group may be withheld whole, so read until there is
+	// something to return.
+	for len(c.extra) == 0 && c.err == nil {
+		n, err := c.Conn.Read(p)
+		if len(c.fix.hold) == 0 && int64(n) <= c.skip {
+			c.skip -= int64(n)
+			return n, err
 		}
-		return n, err
-	}
-	n, err := c.Conn.Read(p)
-	if int64(n) <= c.skip {
-		c.skip -= int64(n)
-		return n, err
-	}
-	var out []byte
-	for i, b := range p[:n] {
-		if c.step(b) {
-			if out == nil {
-				out = append(make([]byte, 0, n+4), p[:i]...)
+		out := c.buf[:0]
+		for _, b := range p[:n] {
+			if c.skip > 0 { // literal data; nothing is held when one starts
+				c.skip--
+				out = append(out, b)
+				continue
 			}
-			out = append(out, ' ')
+			if c.step(b) {
+				out = c.fix.feed(out, ' ')
+			}
+			out = c.fix.feed(out, b)
 		}
-		if out != nil {
-			out = append(out, b)
+		if err != nil {
+			out = c.fix.flush(out)
+			c.err = err
+		}
+		c.buf, c.extra = out, out
+	}
+	n := copy(p, c.extra)
+	c.extra = c.extra[n:]
+	if len(c.extra) > 0 {
+		return n, nil
+	}
+	err := c.err
+	c.err = nil
+	return n, err
+}
+
+// Write sends p with headerFieldsFix applied. A HEADER.FIELDS list split
+// across writes is sent with the write that completes it.
+func (c *imapConn) Write(p []byte) (int, error) {
+	out := c.wfix.feed(c.wbuf[:0], p)
+	c.wbuf = out
+	if len(out) > 0 {
+		if _, err := c.Conn.Write(out); err != nil {
+			return 0, err
 		}
 	}
-	if out == nil {
-		return n, err
-	}
-	copied := copy(p, out)
-	if copied < len(out) {
-		c.extra = append(c.extra[:0], out[copied:]...)
-		c.err = err
-		return copied, nil
-	}
-	return copied, err
+	return len(p), nil
 }
