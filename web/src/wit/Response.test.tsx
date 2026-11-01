@@ -166,6 +166,57 @@ describe("answer hardening", () => {
     expect(onLink).toHaveBeenCalledWith(url);
   });
 
+  it("a bare URL ends at CJK punctuation", async () => {
+    const user = userEvent.setup();
+    const onLink = vi.fn();
+    const { container } = render(
+      <Response
+        text="链接：https://vishnuai.in/mediakit，并留下电话。见 www.ok.org”"
+        onLink={onLink}
+        confirm={false}
+        t={t}
+      />,
+    );
+    const links = await screen.findAllByRole("link");
+    expect(links.map((l) => l.textContent)).toEqual(["https://vishnuai.in/mediakit", "www.ok.org"]);
+    expect(container.textContent).toContain("，并留下电话。见 www.ok.org”");
+    await user.click(links[0]);
+    await user.click(links[1]);
+    expect(onLink.mock.calls).toEqual([["https://vishnuai.in/mediakit"], ["http://www.ok.org/"]]);
+  });
+
+  it("a bare URL goes on through letters beyond ASCII and dashes", async () => {
+    render(
+      <Response text="https://a.in/ｶﾀｶﾅ と https://a.in/1990–91（续）" onLink={() => {}} t={t} />,
+    );
+    const links = await screen.findAllByRole("link");
+    expect(links.map((l) => l.textContent)).toEqual(["https://a.in/ｶﾀｶﾅ", "https://a.in/1990–91"]);
+  });
+
+  it("a written link keeps its URL, CJK punctuation and all", async () => {
+    const user = userEvent.setup();
+    const onLink = vi.fn();
+    render(
+      <Response
+        text="[https://a.org/文档，下载](https://a.org/文档，下载) 和 <https://b.org/x，y>"
+        onLink={onLink}
+        confirm={false}
+        t={t}
+      />,
+    );
+    const links = await screen.findAllByRole("link");
+    expect(links.map((l) => l.textContent)).toEqual([
+      "https://a.org/文档，下载",
+      "https://b.org/x，y",
+    ]);
+    await user.click(links[0]);
+    await user.click(links[1]);
+    expect(onLink.mock.calls).toEqual([
+      [new URL("https://a.org/文档，下载").href],
+      [new URL("https://b.org/x，y").href],
+    ]);
+  });
+
   it("bolds the link's host", async () => {
     const user = userEvent.setup();
     render(<Response text="[b](https://ok.org/p)" onLink={() => {}} t={t} />);

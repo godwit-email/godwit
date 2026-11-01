@@ -23,12 +23,53 @@ import { Button } from "@/components/ui/button";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import type { T } from "@/shared/i18n";
 
-type Node = { type: string; value?: string; url?: string; children?: Node[] };
+type Node = {
+  type: string;
+  value?: string;
+  url?: string;
+  children?: Node[];
+  position?: { start: { offset?: number }; end: { offset?: number } };
+};
 /** Raw HTML in the Markdown shows as its text: no element is ever made of it. */
 const htmlAsText = () => (tree: Node) => {
   const walk = (n: Node) => {
     if (n.type === "html") n.type = "text";
     n.children?.forEach(walk);
+  };
+  walk(tree);
+};
+/**
+ * Punctuation and spaces beyond ASCII (the CJK ，。, curly quotes), as mygo ends autolinks at:
+ * never part of a bare URL. Dashes and connectors go on, as letters do (ｶﾀｶﾅ, IDN hosts).
+ */
+const URL_STOP = /(?=\P{ASCII})(?![\p{Pd}\p{Pc}])[\p{P}\s]/u;
+/**
+ * A bare URL (gfm autolink literal: its source is just its text) ends before URL_STOP: GFM runs
+ * one to the next space, so "https://a.in/kit，并留下" would take the Chinese after it in. A
+ * [text](url) or <url> keeps the URL it was given.
+ */
+const autolinkEnd = () => (tree: Node) => {
+  const walk = (n: Node) => {
+    n.children = n.children?.flatMap((c): Node[] => {
+      const text = c.type === "link" && c.children?.length === 1 ? c.children[0] : undefined;
+      const value = text?.type === "text" ? (text.value ?? "") : "";
+      const i = value.search(URL_STOP);
+      const { start, end } = c.position ?? { start: {}, end: {} };
+      const bare = end.offset !== undefined && end.offset - (start.offset ?? 0) === value.length;
+      if (!text || i <= 0 || !bare || !c.url?.endsWith(value)) {
+        walk(c);
+        return [c];
+      }
+      const head = value.slice(0, i);
+      return [
+        {
+          ...c,
+          url: c.url.slice(0, c.url.length - value.length) + head,
+          children: [{ ...text, value: head }],
+        },
+        { type: "text", value: value.slice(i) },
+      ];
+    });
   };
   walk(tree);
 };
@@ -71,7 +112,7 @@ const citeLinks = () => (tree: Node) => {
 // Model output is untrusted. Set explicitly, never Streamdown's defaults (rehype-raw and a harden
 // that allows every protocol): raw HTML as text (and skipHtml, no rehype-raw), sanitized, no
 // images, and links only for http, https and mailto, each through the confirmation below.
-const remarkPlugins = [...Object.values(defaultRemarkPlugins), htmlAsText, cardLinks];
+const remarkPlugins = [...Object.values(defaultRemarkPlugins), autolinkEnd, htmlAsText, cardLinks];
 // An answer that cites by tag: a plain "[n]" in it is text, not a citation.
 const legacyPlugins = [...remarkPlugins, citeLinks];
 
