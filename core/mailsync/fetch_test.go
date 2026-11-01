@@ -1,11 +1,16 @@
 package mailsync
 
 import (
+	"bufio"
+	"fmt"
+	"net"
+	"strings"
 	"testing"
 	"unicode/utf8"
 
 	"github.com/emersion/go-imap/v2"
 	"github.com/emersion/go-imap/v2/imapclient"
+	"github.com/godwit-email/godwit/core/mail"
 )
 
 // A body claiming UTF-8 but holding other bytes (GBK here) still parses to
@@ -36,5 +41,44 @@ func TestToParsedFromHeaders(t *testing.T) {
 	}
 	if k := twinKey(m); k != "a@x\x009" {
 		t.Fatalf("twinKey %q", k)
+	}
+}
+
+// A body structure the server sends malformed (Gmail's empty multipart, #389)
+// leaves the connection up, and fillStructures builds it from the whole message.
+func TestFillStructuresMalformed(t *testing.T) {
+	raw := "Content-Type: multipart/mixed; boundary=b\r\n\r\n--b\r\nContent-Type: text/plain\r\n\r\nhi\r\n" +
+		"--b\r\nContent-Type: application/pdf\r\nContent-Disposition: attachment; filename=a.pdf\r\n\r\n%PDF\r\n--b--\r\n"
+	cc, sc := net.Pipe()
+	go func() {
+		r := bufio.NewReader(sc)
+		fmt.Fprint(sc, "* OK hi\r\n")
+		for {
+			line, err := r.ReadString('\n')
+			if err != nil {
+				return
+			}
+			tag := strings.Fields(line)[0]
+			switch {
+			case strings.Contains(line, "BODYSTRUCTURE"):
+				fmt.Fprint(sc, `* 1 FETCH (UID 7 BODYSTRUCTURE (("ALTERNATIVE" ("BOUNDARY" "e7") NIL NIL)("APPLICATION" "PDF" NIL NIL NIL "BASE64" 4 NIL ("ATTACHMENT" ("FILENAME" "a.pdf")) NIL) "MIXED" ("BOUNDARY" "b") NIL NIL))`+"\r\n")
+			case strings.Contains(line, "BODY.PEEK[]"):
+				fmt.Fprintf(sc, "* 1 FETCH (UID 7 BODY[] {%d}\r\n%s)\r\n", len(raw), raw)
+			}
+			fmt.Fprintf(sc, "%s OK done\r\n", tag)
+		}
+	}()
+	c := imapclient.New(cc, nil)
+	defer c.Close()
+	msgs, err := c.Fetch(imap.UIDSetNum(7), &imap.FetchOptions{UID: true, BodyStructure: &imap.FetchItemBodyStructure{Extended: true}}).Collect()
+	if err != nil || len(msgs) != 1 || msgs[0].BodyStructure != nil {
+		t.Fatalf("fetch: %v, %d messages", err, len(msgs))
+	}
+	if err := fillStructures(c, msgs); err != nil {
+		t.Fatal(err)
+	}
+	parts, atts := mail.ParseStructure(msgs[0].BodyStructure)
+	if len(parts) != 1 || parts[0].Part != "1" || len(atts) != 1 || atts[0].Part != "2" || atts[0].Filename != "a.pdf" {
+		t.Fatalf("parts %+v, attachments %+v", parts, atts)
 	}
 }
