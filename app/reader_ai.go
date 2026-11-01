@@ -11,6 +11,7 @@ import (
 	"strconv"
 	"strings"
 	"time"
+	"unicode"
 	"unicode/utf8"
 
 	"github.com/egoist/mygo/ui"
@@ -751,8 +752,8 @@ func (r *reader) output(c *ui.Context, run *aiRun) {
 // bareURL is a bare http(s) URL as GFM reads one: to the next space.
 var bareURL = regexp.MustCompile(`https?://[^\s<>]+`)
 
-// endAutolinks puts each bare URL that runs into CJK or fullwidth
-// punctuation in <…>, so it ends there: mygo's parser, as GFM, takes
+// endAutolinks puts each bare URL that runs into punctuation beyond ASCII
+// (the CJK ，。, curly quotes) in <…>, so it ends there: mygo's parser, as GFM, takes
 // "https://a.in/kit，并留下" to the next space.
 // shortcut: rewrites URLs in code too; delete once mygo ends autolinks there (#402).
 func endAutolinks(s string) string {
@@ -761,7 +762,8 @@ func endAutolinks(s string) string {
 	for _, m := range bareURL.FindAllStringIndex(s, -1) {
 		url := s[m[0]:m[1]]
 		i := strings.IndexFunc(url, func(r rune) bool {
-			return r >= 0x2018 && r <= 0x201f || r >= 0x3000 && r <= 0x303f || r >= 0xff00 && r <= 0xffef
+			// as egoist/mygo#981: punctuation but dashes and connectors, and spaces
+			return r >= utf8.RuneSelf && (unicode.IsSpace(r) || unicode.IsPunct(r) && !unicode.In(r, unicode.Pd, unicode.Pc))
 		})
 		// a written link's text or destination, [x](…), or already <…>
 		if i <= 0 || m[0] > 0 && strings.IndexByte("[(<", s[m[0]-1]) >= 0 {

@@ -185,6 +185,14 @@ describe("answer hardening", () => {
     expect(onLink.mock.calls).toEqual([["https://vishnuai.in/mediakit"], ["http://www.ok.org/"]]);
   });
 
+  it("a bare URL goes on through letters beyond ASCII and dashes", async () => {
+    render(
+      <Response text="https://a.in/ｶﾀｶﾅ と https://a.in/1990–91（续）" onLink={() => {}} t={t} />,
+    );
+    const links = await screen.findAllByRole("link");
+    expect(links.map((l) => l.textContent)).toEqual(["https://a.in/ｶﾀｶﾅ", "https://a.in/1990–91"]);
+  });
+
   it("a written link keeps its URL, CJK punctuation and all", async () => {
     const user = userEvent.setup();
     const onLink = vi.fn();

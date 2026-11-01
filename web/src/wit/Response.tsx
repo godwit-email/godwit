@@ -38,8 +38,11 @@ const htmlAsText = () => (tree: Node) => {
   };
   walk(tree);
 };
-/** CJK and fullwidth punctuation, and curly quotes: never part of a bare URL. */
-const URL_STOP = /[‘-‟　-〿＀-￯]/;
+/**
+ * Punctuation and spaces beyond ASCII (the CJK ，。, curly quotes), as mygo ends autolinks at:
+ * never part of a bare URL. Dashes and connectors go on, as letters do (ｶﾀｶﾅ, IDN hosts).
+ */
+const URL_STOP = /(?=\P{ASCII})(?![\p{Pd}\p{Pc}])[\p{P}\s]/u;
 /**
  * A bare URL (gfm autolink literal: its source is just its text) ends before URL_STOP: GFM runs
  * one to the next space, so "https://a.in/kit，并留下" would take the Chinese after it in. A
