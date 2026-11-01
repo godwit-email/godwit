@@ -326,3 +326,63 @@ func TestIMAPEmptyLiteralWithoutSpace(t *testing.T) {
 	assert.Equal(t, imap.UID(43), msgs[1].UID)
 	assert.Equal(t, "{0}\r\nFoo", string(msgs[1].FindBodySection(sec)))
 }
+
+// TestIMAPTencentExmail fakes imap.exmail.qq.com: a broken charset parameter in
+// BODYSTRUCTURE (#387) and an empty section for a quoted HEADER.FIELDS list (#388).
+func TestIMAPTencentExmail(t *testing.T) {
+	e := fake(t, func(c net.Conn) {
+		c.Write([]byte("* OK [CAPABILITY IMAP4rev1] hi\r\n"))
+		r := bufio.NewReader(c)
+		for {
+			line, err := r.ReadString('\n')
+			if err != nil {
+				return
+			}
+			f := strings.Fields(line)
+			if len(f) < 2 {
+				return
+			}
+			switch strings.ToUpper(f[1]) {
+			case "LOGIN":
+				c.Write([]byte(f[0] + " OK [CAPABILITY IMAP4rev1] logged in\r\n"))
+			case "SELECT":
+				c.Write([]byte("* 1 EXISTS\r\n* OK [UIDVALIDITY 1] ok\r\n" + f[0] + " OK [READ-ONLY] selected\r\n"))
+			case "FETCH", "UID":
+				hdr := "\r\n"
+				if strings.Contains(line, "HEADER.FIELDS (SUBJECT FROM)") {
+					hdr = "Subject: hi\r\nFrom: a@example.com\r\n\r\n"
+				}
+				resp := `* 1 FETCH (UID 7 BODYSTRUCTURE (("TEXT" "PLAIN" ("charset " " "utf-8"") NIL NIL "8BIT" 588 44 NIL NIL NIL)("TEXT" "HTML" ("charset " " "utf-8"") NIL NIL "8BIT" 2670 54 NIL NIL NIL) "ALTERNATIVE" ("BOUNDARY" "b1") NIL NIL) ` +
+					"BODY[HEADER.FIELDS (SUBJECT FROM)] {" + strconv.Itoa(len(hdr)) + "}\r\n" + hdr + ")\r\n" + f[0] + " OK FETCH Completed\r\n"
+				for i := range len(resp) { // byte by byte, to split the groups across reads
+					c.Write([]byte{resp[i]})
+				}
+			case "LOGOUT":
+				c.Write([]byte("* BYE\r\n" + f[0] + " OK bye\r\n"))
+				return
+			default:
+				c.Write([]byte(f[0] + " OK done\r\n"))
+			}
+		}
+	})
+	c, err := conn.DialIMAP(context.Background(), e)
+	require.NoError(t, err)
+	defer c.Close()
+	_, err = c.Select("INBOX", &imap.SelectOptions{ReadOnly: true}).Wait()
+	require.NoError(t, err)
+	sec := &imap.FetchItemBodySection{Specifier: imap.PartSpecifierHeader, HeaderFields: []string{"SUBJECT", "FROM"}, Peek: true}
+	msgs, err := c.Fetch(imap.SeqSetNum(1), &imap.FetchOptions{
+		UID:           true,
+		BodyStructure: &imap.FetchItemBodyStructure{Extended: true},
+		BodySection:   []*imap.FetchItemBodySection{sec},
+	}).Collect()
+	require.NoError(t, err)
+	require.Len(t, msgs, 1)
+	mp, ok := msgs[0].BodyStructure.(*imap.BodyStructureMultiPart)
+	require.True(t, ok)
+	require.Len(t, mp.Children, 2)
+	for _, ch := range mp.Children {
+		assert.Equal(t, "utf-8", ch.(*imap.BodyStructureSinglePart).Params["charset"])
+	}
+	assert.Equal(t, "Subject: hi\r\nFrom: a@example.com\r\n\r\n", string(msgs[0].FindBodySection(sec)))
+}
