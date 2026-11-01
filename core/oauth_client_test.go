@@ -1,6 +1,7 @@
 package core
 
 import (
+	"errors"
 	"testing"
 
 	"github.com/godwit-email/godwit/core/auth"
@@ -107,4 +108,28 @@ func TestReauthorizeWithGodwitsClient(t *testing.T) {
 	assert.Empty(t, acc.OAuthClientID)
 	_, err = keyring.Get(keyringService, e.s.oauthClientUser(acc.ID))
 	assert.ErrorIs(t, err, keyring.ErrNotFound, "no secret left behind")
+}
+
+// A reauthorization that fails to save its refresh token keeps the client the
+// account had, whose secret still pairs with the refresh token it kept.
+func TestReauthorizeKeepsClientOnFailure(t *testing.T) {
+	e := newOwnClientEnv(t)
+	acc, err := e.s.AddAccount(bg, e.input(t, "alice@example.com", e.signInWith(t, "alice@example.com", ownClient)))
+	require.NoError(t, err)
+	e.oa.Secret("n3w")
+	flow := e.signInWith(t, acc.Email, OAuthClient{ID: testoauth.ClientID, Secret: "n3w"})
+	set := keyringSet
+	setFor(t, &keyringSet, func(svc, user, v string) error {
+		if user == e.s.keyringUser(acc.ID) {
+			return errors.New("keychain locked")
+		}
+		return set(svc, user, v)
+	})
+	require.Error(t, e.s.Reauthorize(bg, acc.ID, flow))
+	got, err := e.s.account(bg, acc.ID)
+	require.NoError(t, err)
+	assert.Equal(t, testoauth.ClientID, got.OAuthClientID)
+	secret, err := keyring.Get(keyringService, e.s.oauthClientUser(acc.ID))
+	require.NoError(t, err)
+	assert.Equal(t, "s3cret", secret)
 }
