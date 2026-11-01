@@ -613,7 +613,8 @@ func (p *settingsPage) authButton(c *ui.Context, acc core.Account, prov auth.Pro
 func (p *settingsPage) openDialog(kind string, acc core.Account) {
 	p.dialog, p.open, p.busy, p.dlgErr, p.dlgAcc = kind, true, false, nil, acc.ID
 	p.dlgGen++
-	p.secret, p.clientID = "", acc.OAuthClientID
+	p.secret = ""
+	p.client = clientForm{id: acc.OAuthClientID, savedID: acc.OAuthClientID, manual: true}
 	p.showSecret = false
 	p.iconSelected, p.iconUpload, p.iconPreview = acc.Icon, nil, nil
 	p.servers = serverForm{imapHost: acc.IMAPHost, imapPort: strconv.Itoa(acc.IMAPPort), smtpHost: acc.SMTPHost,
@@ -689,13 +690,8 @@ func (p *settingsPage) dialogView(c *ui.Context) {
 		}
 	case "client":
 		title, label = i18n.T("settings.account.client.title"), i18n.T("onboarding.own_client.signin")
-		body = func() {
-			ui.Field(c, i18n.T("onboarding.own_client.id"), func() { kit.Input(c, &p.clientID, kit.InputOpts{}) })
-			name := i18n.T("onboarding.own_client.secret")
-			ui.Field(c, name, func() { secretInput(c, &p.secret, &p.showSecret, name) }).
-				Description(i18n.T("settings.account.client.secret_help"))
-		}
-		client := core.OAuthClient{ID: strings.TrimSpace(p.clientID), Secret: strings.TrimSpace(p.secret)}
+		body = func() { p.client.view(c, a, i18n.T("settings.account.client.secret_help")) }
+		client := p.client.client()
 		incomplete = client.ID == "" || client.Secret == "" && client.ID != acc.OAuthClientID // a new client needs its secret
 		if client.Secret == "" && client.ID == acc.OAuthClientID {
 			client = core.OAuthClient{Account: id} // the saved secret

@@ -57,28 +57,28 @@ type onboarding struct {
 	detectedFor     string // the address detected is for
 	detectStop      func()
 
-	prov                   auth.Provider
-	askEmail               bool // the provider was picked before an address was typed
-	focusEmail             bool // place the caret before a newly prefilled domain once
-	secret, username       string
-	showSecret             bool
-	tab                    int // ownClientOffered's tabs: 0 the secret, 1 the browser with the user's own OAuth client
-	clientID, clientSecret string
-	manual                 bool
-	imapHost, imapPort     string
-	smtpHost, smtpPort     string
-	imapSec, smtpSec       core.Security
-	flowID, authURL        string
-	oauthErr               error
-	report                 core.CheckReport
-	checking, adding       bool
-	confetti               *burst // thrown as the check passes, dropped once it lands
-	invalid, invalidNext   string // the form's own settings-step failure, in words
-	name                   string
-	sync                   core.SyncRange
-	again                  bool  // finish starts over for another account
-	addedID                int64 // the account added
-	saveErr                error
+	prov                 auth.Provider
+	askEmail             bool // the provider was picked before an address was typed
+	focusEmail           bool // place the caret before a newly prefilled domain once
+	secret, username     string
+	showSecret           bool
+	tab                  int        // ownClientOffered's tabs: 0 the secret, 1 the browser with the user's own OAuth client
+	client               clientForm // the browser tab's own OAuth client
+	manual               bool
+	imapHost, imapPort   string
+	smtpHost, smtpPort   string
+	imapSec, smtpSec     core.Security
+	flowID, authURL      string
+	oauthErr             error
+	report               core.CheckReport
+	checking, adding     bool
+	confetti             *burst // thrown as the check passes, dropped once it lands
+	invalid, invalidNext string // the form's own settings-step failure, in words
+	name                 string
+	sync                 core.SyncRange
+	again                bool  // finish starts over for another account
+	addedID              int64 // the account added
+	saveErr              error
 
 	// add saves the account: the Service's, swapped by tests.
 	add func(context.Context, core.AccountInput) (core.Account, error)
@@ -287,7 +287,7 @@ func (o *onboarding) startOAuth() {
 	oauth, plat, prov, hint := a.oauth, a.plat, o.prov.ID, strings.TrimSpace(o.email)
 	var client core.OAuthClient
 	if o.ownClient() {
-		client = core.OAuthClient{ID: strings.TrimSpace(o.clientID), Secret: strings.TrimSpace(o.clientSecret)}
+		client = o.client.client()
 	}
 	var id, url string
 	var openErr error
@@ -817,14 +817,9 @@ func (o *onboarding) oauth() bool { return o.prov.Login == "oauth" || o.ownClien
 func (o *onboarding) ownClientView(c *ui.Context) {
 	o.hintBox(c, i18n.T("onboarding.own_client.title"), i18n.T("onboarding.own_client.steps"), i18n.T("onboarding.own_client.note"),
 		i18n.T("onboarding.own_client.help"), ownClientHelpURL)
-	ui.Field(c, i18n.T("onboarding.own_client.id"), func() {
-		kit.Input(c, &o.clientID, kit.InputOpts{Placeholder: "….apps.googleusercontent.com"}).Height(inputHeight(c))
-	})
-	label := i18n.T("onboarding.own_client.secret")
-	ui.Field(c, label, func() {
-		secretInput(c, &o.clientSecret, &o.showSecret, label)
-	}).Description(i18n.T("onboarding.secret.help"))
-	primary(c, i18n.T("onboarding.own_client.signin"), strings.TrimSpace(o.clientID) == "" || strings.TrimSpace(o.clientSecret) == "").OnClick(o.startOAuth)
+	o.client.view(c, o.a, i18n.T("onboarding.secret.help"))
+	cl := o.client.client()
+	primary(c, i18n.T("onboarding.own_client.signin"), cl.ID == "" || cl.Secret == "").OnClick(o.startOAuth)
 }
 
 // ownClientHelpURL is Google's guide to creating an OAuth client ID.

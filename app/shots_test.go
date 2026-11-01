@@ -718,7 +718,7 @@ func TestShots(t *testing.T) {
 		shot(h, "OnboardingGmail")
 		h.fill("邮箱地址", "me@gmail.com")
 		h.click("浏览器登录")
-		h.fill("客户端 ID", "123456789012-abc.apps.googleusercontent.com")
+		h.see("把下载的 client_secret_….json 拖到这里")
 		shot(h, "OnboardingOwnOAuthClient")
 	})
 }

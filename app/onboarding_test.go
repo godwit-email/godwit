@@ -3,6 +3,8 @@ package app
 import (
 	"context"
 	"errors"
+	"os"
+	"path/filepath"
 	"slices"
 	"strconv"
 	"strings"
@@ -449,9 +451,10 @@ func TestOnboardingOwnOAuthClient(t *testing.T) {
 	o := h.app.addAccount
 	o.secret = "abcd" // the field shares its label with its tab
 	h.click("浏览器登录")
+	h.click("手动填写客户端 ID 和密钥")
 	h.fill("客户端 ID", " 123.apps.googleusercontent.com ")
-	h.fill("客户端密钥", "GOCSPX-s3cret")
-	o.tab = 0 // back to the app password and over again: each tab keeps what was typed in it
+	o.client.secret = "GOCSPX-s3cret" // below the sheet's fold
+	o.tab = 0                         // back to the app password and over again: each tab keeps what was typed in it
 	h.tt.Frame()
 	if o.secret != "abcd" {
 		t.Fatalf("app password %q after switching tabs", o.secret)
@@ -486,6 +489,63 @@ func TestOnboardingOwnOAuthClient(t *testing.T) {
 	if o.tab != 0 {
 		t.Fatal("a fresh pick starts on the browser sign-in, not the app password")
 	}
+}
+
+// The client_secret_….json Google Cloud offers fills the own client in, chosen or dropped.
+func TestOnboardingClientFile(t *testing.T) {
+	h, _ := withAccount(t)
+	fo := &fakeOAuth{flows: map[string]chan flowResult{}}
+	h.app.oauth = fo
+	dir := t.TempDir()
+	file := func(name, body string) string {
+		path := filepath.Join(dir, name)
+		if err := os.WriteFile(path, []byte(body), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		return path
+	}
+	desktop := file("client_secret_123.json", `{"installed":{"client_id":"123-abc.apps.googleusercontent.com","client_secret":"GOCSPX-s3cret"}}`)
+	web := file("client_secret_web.json", `{"web":{"client_id":"9-web.apps.googleusercontent.com","client_secret":"GOCSPX-web"}}`)
+	other := file("notes.txt", "hello")
+
+	h.app.openAddAccount()
+	h.click("Gmail")
+	h.fill("邮箱地址", "me@company.com")
+	h.click("浏览器登录")
+	drop := "把下载的 client_secret_….json 拖到这里"
+	h.see(drop)
+	dropOn := func(path string) {
+		h.t.Helper()
+		r, _ := h.tt.Find(drop)
+		if !h.tt.DropFiles(r.X+r.W/2, r.Y+r.H/2, path) {
+			t.Fatal("the drop row took no file")
+		}
+		h.drain()
+		h.tt.Frame()
+	}
+
+	dropOn(web)
+	h.see("这是「Web 应用」客户端，要用「桌面应用」")
+	h.click("换一个")
+	dropOn(other)
+	h.see("这不是 OAuth 客户端文件")
+	h.click("换一个")
+
+	h.plat.mu.Lock()
+	h.plat.files = []string{desktop}
+	h.plat.mu.Unlock()
+	h.click("选择文件…")
+	h.see("已导入")
+	h.click("换一个")
+	h.see(drop)
+	h.click("选择文件…")
+	h.see("123-abc.apps.googleusercontent.com")
+	h.click("在浏览器中登录")
+	h.until("the sign-in, with the file's client", func() bool {
+		fo.mu.Lock()
+		defer fo.mu.Unlock()
+		return len(fo.clients) == 1 && fo.clients[0] == core.OAuthClient{ID: "123-abc.apps.googleusercontent.com", Secret: "GOCSPX-s3cret"}
+	})
 }
 
 func TestAddAccountSheet(t *testing.T) {

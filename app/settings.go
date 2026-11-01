@@ -50,8 +50,8 @@ type settingsPage struct {
 	open         bool               // the dialog shows; Escape or a click outside clears it
 	busy         bool               // the dialog's action runs
 	dlgErr       error              // the dialog action's failure
-	secret       string             // the password dialog's field, or the client dialog's secret
-	clientID     string             // the client dialog's OAuth client ID
+	secret       string             // the password dialog's field
+	client       clientForm         // the client dialog's OAuth client
 	showSecret   bool
 	iconSelected string                                                                         // the icon dialog's chosen icon: '' or label:<name>
 	iconUpload   []byte                                                                         // the icon dialog's uploaded image, over iconSelected

@@ -1730,8 +1730,8 @@ func TestSettingsReauthOwnClient(t *testing.T) {
 
 	h.click("重新登录")
 	h.see("客户端 ID")
-	if p.clientID != "id.apps.googleusercontent.com" {
-		t.Fatalf("client ID %q, want the saved one", p.clientID)
+	if p.client.id != "id.apps.googleusercontent.com" {
+		t.Fatalf("client ID %q, want the saved one", p.client.id)
 	}
 	h.click("在浏览器中登录")
 	h.until("the sign-in page opens", func() bool { return len(fo.clients) == 1 })
@@ -1746,6 +1746,24 @@ func TestSettingsReauthOwnClient(t *testing.T) {
 	h.click("在浏览器中登录")
 	h.until("the sign-in page opens again", func() bool { return len(fo.clients) == 2 })
 	if got, want := fo.clients[1], (core.OAuthClient{ID: "id.apps.googleusercontent.com", Secret: "n3w"}); got != want {
+		t.Fatalf("client %+v, want %+v", got, want)
+	}
+	fo.fail("f2", context.Canceled)
+	h.until("the second wait ends", func() bool { return !p.reauth[acc.ID] })
+
+	path := filepath.Join(t.TempDir(), "client_secret_9.json")
+	if err := os.WriteFile(path, []byte(`{"installed":{"client_id":"9-new.apps.googleusercontent.com","client_secret":"GOCSPX-9"}}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	h.plat.mu.Lock()
+	h.plat.files = []string{path}
+	h.plat.mu.Unlock()
+	h.click("重新登录")
+	h.click("选择文件…")
+	h.see("已导入")
+	h.click("在浏览器中登录")
+	h.until("the sign-in with the file's client", func() bool { return len(fo.clients) == 3 })
+	if got, want := fo.clients[2], (core.OAuthClient{ID: "9-new.apps.googleusercontent.com", Secret: "GOCSPX-9"}); got != want {
 		t.Fatalf("client %+v, want %+v", got, want)
 	}
 }
