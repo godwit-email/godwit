@@ -128,6 +128,23 @@ func DialIMAP(ctx context.Context, e Endpoint) (*imapclient.Client, error) {
 // being read, so it can cut off a download. h, if not nil, receives unsolicited
 // server updates (IDLE).
 func DialIMAPAbortable(ctx context.Context, e Endpoint, h *imapclient.UnilateralDataHandler) (*imapclient.Client, func(), error) {
+	c, abort, err := dialIMAP(ctx, e, h)
+	if plaintextOnTLS(e, err) {
+		e.Security = StartTLS
+		c, abort, err = dialIMAP(ctx, e, h)
+	}
+	return c, abort, err
+}
+
+// plaintextOnTLS reports whether e asked for implicit TLS but the server greeted
+// in plaintext: a STARTTLS port (587, 143) set to SSL/TLS. Like Apple Mail, the
+// dial is retried with STARTTLS, which still fails rather than run unencrypted.
+func plaintextOnTLS(e Endpoint, err error) bool {
+	var rh tls.RecordHeaderError
+	return e.Security == TLS && errors.As(err, &rh)
+}
+
+func dialIMAP(ctx context.Context, e Endpoint, h *imapclient.UnilateralDataHandler) (*imapclient.Client, func(), error) {
 	nc, cctx, release, err := e.open(ctx, e.Security == TLS)
 	if err != nil {
 		return nil, nil, fmt.Errorf("imap connect %s: %w", e.addr(), err)
@@ -202,6 +219,15 @@ func smtpAuth(c *smtp.Client, e Endpoint) error {
 // DialSMTP connects to e and authenticates with PLAIN, or XOAUTH2 when e has an
 // AccessToken.
 func DialSMTP(ctx context.Context, e Endpoint) (*smtp.Client, error) {
+	c, err := dialSMTP(ctx, e)
+	if plaintextOnTLS(e, err) {
+		e.Security = StartTLS
+		c, err = dialSMTP(ctx, e)
+	}
+	return c, err
+}
+
+func dialSMTP(ctx context.Context, e Endpoint) (*smtp.Client, error) {
 	nc, cctx, release, err := e.open(ctx, e.Security == TLS)
 	if err != nil {
 		return nil, fmt.Errorf("smtp connect %s: %w", e.addr(), err)
