@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.23.1](https://github.com/godwit-email/godwit/compare/v1.23.0...v1.23.1) (2026-11-01)
+
+
+### Bug Fixes
+
+* **conn:** retry with STARTTLS when an SSL/TLS port greets in plaintext ([#407](https://github.com/godwit-email/godwit/issues/407)) ([698952e](https://github.com/godwit-email/godwit/commit/698952ee3ff5060cdaedb195977d6fa09d401787)), closes [#406](https://github.com/godwit-email/godwit/issues/406)
+
 ## [1.23.0](https://github.com/godwit-email/godwit/compare/v1.22.0...v1.23.0) (2026-11-01)
 
 
