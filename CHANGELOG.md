@@ -1,5 +1,18 @@
 # Changelog
 
+## [1.23.0](https://github.com/godwit-email/godwit/compare/v1.22.0...v1.23.0) (2026-11-01)
+
+
+### Features
+
+* **reader:** show the system's file type icon on attachment tiles ([#405](https://github.com/godwit-email/godwit/issues/405)) ([4d774a6](https://github.com/godwit-email/godwit/commit/4d774a65ebe46ceaacc08c65ad0e72c23e657f69))
+
+
+### Bug Fixes
+
+* **assist:** one-click and selection rewrites follow the sending account ([#400](https://github.com/godwit-email/godwit/issues/400)) ([b27392e](https://github.com/godwit-email/godwit/commit/b27392e12618f2875f887f484d5c8127d0c0e612))
+* **reader:** bare links in AI output end at CJK punctuation ([#403](https://github.com/godwit-email/godwit/issues/403)) ([1fede1a](https://github.com/godwit-email/godwit/commit/1fede1a03f232b9907fdbe02d11ccfa029a8457e))
+
 ## [1.22.0](https://github.com/godwit-email/godwit/compare/v1.21.0...v1.22.0) (2026-11-01)
 
 
