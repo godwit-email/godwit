@@ -41,6 +41,10 @@ type Platform interface {
 	ShowWindow()                      // shows the window, in front
 	SetThemeSource(theme string)
 	TempDir() string
+	// TypeIcon is the icon the file manager shows for files with extension
+	// ext (no dot), as a size by size pixel PNG. Blocks: call it off the UI
+	// thread.
+	TypeIcon(ext string, size int) ([]byte, error)
 	// SetLocalAPI starts (on) or stops the Local API server for request
 	// gen, returning its socket's path while on. Off when it fails. Blocks:
 	// call off the UI thread.
@@ -281,7 +285,8 @@ type App struct {
 
 	mcpSend mcpSendState // godwit mcp's send request waiting for the user (mcpsend.go)
 
-	customIcons map[int64]accountImage // by account id: its uploaded icon (accountImage)
+	customIcons map[int64]accountImage    // by account id: its uploaded icon (accountImage)
+	typeIcons   map[string]ui.ImageSource // by extension: the file manager's icon (typeIcon)
 
 	tempMu   sync.Mutex
 	tempDirs []string // made by tempDir; Close removes them
