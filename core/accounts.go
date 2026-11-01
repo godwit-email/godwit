@@ -474,7 +474,8 @@ func (s *Service) Reauthorize(ctx context.Context, id int64, flowID string) erro
 	// the old one only with the old client: a failure below puts that back.
 	old := OAuthClient{ID: acc.OAuthClientID}
 	if old.ID != "" {
-		if old.Secret, err = keychainGet(s.oauthClientUser(id)); err != nil {
+		// A lost secret (credentials_missing) stays lost on a rollback; this sign-in is its fix.
+		if old.Secret, err = keychainGet(s.oauthClientUser(id)); err != nil && !errors.Is(err, keyring.ErrNotFound) {
 			return fmt.Errorf("read the OAuth client secret from the keychain: %w", err)
 		}
 	}
@@ -488,11 +489,12 @@ func (s *Service) Reauthorize(ctx context.Context, id int64, flowID string) erro
 	return s.credentialsUpdated(ctx, id, &g.Grant)
 }
 
-// saveClient makes c the account's OAuth client: its secret in the keychain,
-// or none for the provider's own client, and its ID on the account.
+// saveClient makes c the account's OAuth client: its ID on the account and its
+// secret in the keychain; with no secret (the provider's own client, or one
+// whose secret was lost) the keychain keeps none.
 func (s *Service) saveClient(ctx context.Context, id int64, c OAuthClient) error {
 	var err error
-	if c.ID != "" {
+	if c.Secret != "" {
 		err = keychainSet(s.oauthClientUser(id), c.Secret)
 	} else if err = keychainDelete(s.oauthClientUser(id)); errors.Is(err, keyring.ErrNotFound) {
 		err = nil

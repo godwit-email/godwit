@@ -92,6 +92,12 @@ func TestRotatedClientSecret(t *testing.T) {
 	st, detail = e.status(t)
 	assert.Equal(t, "reauth_required", st)
 	assert.Equal(t, "credentials_missing", detail)
+
+	// a lost secret is not one to keep: signing in again with the client brings the account back
+	flow = e.signInWith(t, acc.Email, OAuthClient{ID: testoauth.ClientID, Secret: "n3w"})
+	require.NoError(t, e.s.Reauthorize(bg, acc.ID, flow))
+	st, _ = e.status(t)
+	assert.Equal(t, "ok", st)
 }
 
 func TestReauthorizeWithGodwitsClient(t *testing.T) {
