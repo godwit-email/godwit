@@ -1,5 +1,23 @@
 # Changelog
 
+## [1.22.0](https://github.com/godwit-email/godwit/compare/v1.21.0...v1.22.0) (2026-11-01)
+
+
+### Features
+
+* **ai:** answer judge questions with the small model when no judge is set ([#380](https://github.com/godwit-email/godwit/issues/380)) ([8fbdf20](https://github.com/godwit-email/godwit/commit/8fbdf20c0a410de65a428cf3f813aecc52f33259))
+* **ai:** give quick replies the whole thread ([#382](https://github.com/godwit-email/godwit/issues/382)) ([6536505](https://github.com/godwit-email/godwit/commit/65365051ce39a631dbc87014d10c213b4b8897e6))
+* **auth:** sign in to Gmail with OAuth (own client, client_secret import, Thunderbird's public client) ([#395](https://github.com/godwit-email/godwit/issues/395)) ([72d3462](https://github.com/godwit-email/godwit/commit/72d3462d18d25b10a77e490300a16eef98ade156))
+* **contacts:** contacts page beside Mail and Wit, with unsubscribe, undoable archive all and block ([#383](https://github.com/godwit-email/godwit/issues/383)) ([f2a02ab](https://github.com/godwit-email/godwit/commit/f2a02ab47ed0e3caca280c4c92bdfc55d25f14ca))
+* **windows:** check for updates in the Microsoft Store version ([#378](https://github.com/godwit-email/godwit/issues/378)) ([67eeeb9](https://github.com/godwit-email/godwit/commit/67eeeb98a9966f4e0ba590fa0bd3ab8913684c02))
+
+
+### Bug Fixes
+
+* **ai:** name the destination on Wit's unsubscribe and open-link approvals ([#384](https://github.com/godwit-email/godwit/issues/384)) ([05f537c](https://github.com/godwit-email/godwit/commit/05f537c1533a8a08815279262125199951783f92))
+* **imap:** work around Tencent Exmail's BODYSTRUCTURE and HEADER.FIELDS quirks ([#394](https://github.com/godwit-email/godwit/issues/394)) ([66e7967](https://github.com/godwit-email/godwit/commit/66e7967602e792011d0f7a89a6d83146ef762062)), closes [#387](https://github.com/godwit-email/godwit/issues/387) [#388](https://github.com/godwit-email/godwit/issues/388)
+* **sync:** import Gmail messages whose BODYSTRUCTURE go-imap rejects ([#396](https://github.com/godwit-email/godwit/issues/396)) ([d53c836](https://github.com/godwit-email/godwit/commit/d53c836793d03cef43a1e41d9caa7a98e8bfb10f))
+
 ## [1.21.0](https://github.com/godwit-email/godwit/compare/v1.20.2...v1.21.0) (2026-10-30)
 
 
