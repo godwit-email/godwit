@@ -765,8 +765,9 @@ func endAutolinks(s string) string {
 			// as egoist/mygo#981: punctuation but dashes and connectors, and spaces
 			return r >= utf8.RuneSelf && (unicode.IsSpace(r) || unicode.IsPunct(r) && !unicode.In(r, unicode.Pd, unicode.Pc))
 		})
-		// a written link's text or destination, [x](…), or already <…>
-		if i <= 0 || m[0] > 0 && strings.IndexByte("[(<", s[m[0]-1]) >= 0 {
+		// a written link's text or destination, [x](…) or [x]( …), or already <…>
+		before := strings.TrimRight(s[:m[0]], " \t\n")
+		if i <= 0 || before != "" && strings.IndexByte("[(<", before[len(before)-1]) >= 0 {
 			continue
 		}
 		b.WriteString(s[last:m[0]])

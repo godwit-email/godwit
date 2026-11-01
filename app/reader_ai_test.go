@@ -810,6 +810,7 @@ func TestEndAutolinks(t *testing.T) {
 		"见“https://a.in/x”和 https://b.in/y。":        "见“<https://a.in/x>”和 <https://b.in/y>。",
 		"https://a.in/ｶﾀｶﾅ と https://ｅｘａｍｐｌｅ.org/x": "https://a.in/ｶﾀｶﾅ と https://ｅｘａｍｐｌｅ.org/x",
 		"https://a.in/1990–91（续）":                   "<https://a.in/1990–91>（续）",
+		"[下载]( https://a.in/文档，下载)":                 "[下载]( https://a.in/文档，下载)",
 		"plain https://a.in/x, done":                "plain https://a.in/x, done",
 		"[资料](https://a.in/x)，以及 <https://b.in/y>，": "[资料](https://a.in/x)，以及 <https://b.in/y>，",
 		"[https://a.in/文档，下载](https://a.in/文档，下载)":  "[https://a.in/文档，下载](https://a.in/文档，下载)",
