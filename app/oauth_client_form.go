@@ -32,7 +32,7 @@ type clientForm struct {
 
 // client is pub when chosen, else the typed or imported client, trimmed.
 func (f *clientForm) client(pub *auth.PublicClient) core.OAuthClient {
-	if pub != nil && f.public {
+	if !f.ownChosen(pub) {
 		return core.OAuthClient{ID: pub.ID, Secret: pub.Secret}
 	}
 	return core.OAuthClient{ID: strings.TrimSpace(f.id), Secret: strings.TrimSpace(f.secret)}
@@ -62,10 +62,14 @@ func (f *clientForm) choice(c *ui.Context, pub *auth.PublicClient) {
 	})
 }
 
-// change drops the file, or its failure, for another.
+// change drops the imported file, or a failed one's message, for another;
+// what was typed stays.
 func (f *clientForm) change() {
 	f.gen++
-	f.id, f.secret, f.imported, f.err = f.savedID, "", false, nil
+	if f.imported {
+		f.id, f.secret, f.imported = f.savedID, "", false
+	}
+	f.err = nil
 }
 
 // clientFileMax bounds a client file read: Google's are well under 1 KB.
@@ -106,7 +110,7 @@ func (f *clientForm) importFile(a *App, path string) {
 	})
 }
 
-// view is pub's notice when chosen, else the file's row and, until a file is
+// view is pub's notice when chosen, else the file's row and, unless a file is
 // imported, the typed-in fields under a disclosure.
 func (f *clientForm) view(c *ui.Context, a *App, secretHelp string, pub *auth.PublicClient) {
 	t, th := theme.Of(c), c.Theme()
@@ -149,6 +153,8 @@ func (f *clientForm) view(c *ui.Context, a *App, secretHelp string, pub *auth.Pu
 			kit.Text(c, i18n.T("onboarding.own_client.file.drop"), t.Text.Sm).TextColor(t.Muted).Grow(1).Shrink(1)
 			kit.Button(c, i18n.T("onboarding.own_client.file.choose"), kit.ButtonOpts{Variant: kit.Outline, Size: kit.SizeSm}).OnClick(func() { f.importFile(a, "") })
 		})
+	}
+	if !f.imported {
 		// Pulled left by its padding, so the chevron lines up with the fields (as manualView).
 		kit.Collapsible(c, &f.manual, func() { lineText(c, i18n.T("onboarding.own_client.manual"), t.Text.Base) }, func() {
 			ui.Column(c).Gap(th.Space(4)).Children(func() {

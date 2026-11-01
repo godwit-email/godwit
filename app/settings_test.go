@@ -1733,8 +1733,8 @@ func TestSettingsReauthPublicClient(t *testing.T) {
 	h.click("重新登录")
 	h.see("使用前请知悉")
 	h.click("在浏览器中登录")
-	h.until("the sign-in page opens", func() bool { return len(fo.clients) == 1 })
-	if got, want := fo.clients[0], (core.OAuthClient{ID: pub.ID, Secret: pub.Secret}); got != want {
+	h.until("the sign-in page opens", func() bool { return len(fo.began()) == 1 })
+	if got, want := fo.began()[0], (core.OAuthClient{ID: pub.ID, Secret: pub.Secret}); got != want {
 		t.Fatalf("client %+v, want Thunderbird's", got)
 	}
 	fo.fail("f1", context.Canceled)
@@ -1748,8 +1748,8 @@ func TestSettingsReauthPublicClient(t *testing.T) {
 	h.fill("客户端 ID", "9-own.apps.googleusercontent.com")
 	p.client.secret = "GOCSPX-9"
 	h.click("在浏览器中登录")
-	h.until("the sign-in with the own client", func() bool { return len(fo.clients) == 2 })
-	if got, want := fo.clients[1], (core.OAuthClient{ID: "9-own.apps.googleusercontent.com", Secret: "GOCSPX-9"}); got != want {
+	h.until("the sign-in with the own client", func() bool { return len(fo.began()) == 2 })
+	if got, want := fo.began()[1], (core.OAuthClient{ID: "9-own.apps.googleusercontent.com", Secret: "GOCSPX-9"}); got != want {
 		t.Fatalf("client %+v, want %+v", got, want)
 	}
 }
@@ -1778,8 +1778,8 @@ func TestSettingsReauthOwnClient(t *testing.T) {
 		t.Fatalf("client ID %q, want the saved one", p.client.id)
 	}
 	h.click("在浏览器中登录")
-	h.until("the sign-in page opens", func() bool { return len(fo.clients) == 1 })
-	if got := fo.clients[0]; got != (core.OAuthClient{Account: acc.ID}) {
+	h.until("the sign-in page opens", func() bool { return len(fo.began()) == 1 })
+	if got := fo.began()[0]; got != (core.OAuthClient{Account: acc.ID}) {
 		t.Fatalf("client %+v, want the saved one", got)
 	}
 	fo.fail("f1", context.Canceled)
@@ -1788,8 +1788,8 @@ func TestSettingsReauthOwnClient(t *testing.T) {
 	h.click("重新登录")
 	h.fill("客户端密钥", " n3w ")
 	h.click("在浏览器中登录")
-	h.until("the sign-in page opens again", func() bool { return len(fo.clients) == 2 })
-	if got, want := fo.clients[1], (core.OAuthClient{ID: "id.apps.googleusercontent.com", Secret: "n3w"}); got != want {
+	h.until("the sign-in page opens again", func() bool { return len(fo.began()) == 2 })
+	if got, want := fo.began()[1], (core.OAuthClient{ID: "id.apps.googleusercontent.com", Secret: "n3w"}); got != want {
 		t.Fatalf("client %+v, want %+v", got, want)
 	}
 	fo.fail("f2", context.Canceled)
@@ -1806,8 +1806,8 @@ func TestSettingsReauthOwnClient(t *testing.T) {
 	h.click("选择文件…")
 	h.see("已导入")
 	h.click("在浏览器中登录")
-	h.until("the sign-in with the file's client", func() bool { return len(fo.clients) == 3 })
-	if got, want := fo.clients[2], (core.OAuthClient{ID: "9-new.apps.googleusercontent.com", Secret: "GOCSPX-9"}); got != want {
+	h.until("the sign-in with the file's client", func() bool { return len(fo.began()) == 3 })
+	if got, want := fo.began()[2], (core.OAuthClient{ID: "9-new.apps.googleusercontent.com", Secret: "GOCSPX-9"}); got != want {
 		t.Fatalf("client %+v, want %+v", got, want)
 	}
 }

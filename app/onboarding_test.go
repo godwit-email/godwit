@@ -389,6 +389,13 @@ func (f *fakeOAuth) Cancel(flowID string) {
 	}
 }
 
+// began is each Begin's client so far.
+func (f *fakeOAuth) began() []core.OAuthClient {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return slices.Clone(f.clients)
+}
+
 func (f *fakeOAuth) Canceled() []string {
 	f.mu.Lock()
 	defer f.mu.Unlock()
@@ -524,9 +531,15 @@ func TestOnboardingClientFile(t *testing.T) {
 		h.tt.Frame()
 	}
 
+	o := h.app.addAccount
+	o.client.id = "typed.apps.googleusercontent.com"
 	dropOn(web)
 	h.see("这是「Web 应用」客户端，要用「桌面应用」")
+	h.see("手动填写客户端 ID 和密钥") // what was typed stays in sight
 	h.click("换一个")
+	if o.client.id != "typed.apps.googleusercontent.com" {
+		t.Fatalf("client ID %q: a failed file dropped what was typed", o.client.id)
+	}
 	dropOn(other)
 	h.see("这不是 OAuth 客户端文件")
 	h.click("换一个")
@@ -534,6 +547,14 @@ func TestOnboardingClientFile(t *testing.T) {
 	h.plat.mu.Lock()
 	h.plat.files = []string{desktop}
 	h.plat.mu.Unlock()
+	h.click("选择文件…")
+	h.see("已导入")
+	h.click("← 换一个邮箱")
+	h.click("QQ 邮箱")
+	h.click("← 换一个邮箱")
+	h.click("Gmail")
+	h.click("浏览器登录")
+	h.see(drop) // another provider in between drops the import
 	h.click("选择文件…")
 	h.see("已导入")
 	h.click("换一个")

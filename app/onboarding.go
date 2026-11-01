@@ -258,6 +258,9 @@ func (o *onboarding) choose(p auth.Provider) {
 	if feishuOrLark(p) && o.detectedFor == o.email && feishuOrLark(o.detected) {
 		p = o.detected // the 飞书/Lark tile for an address already found
 	}
+	if p.ID != o.prov.ID { // what was typed or imported is for the provider it was given to
+		o.secret, o.client = "", clientForm{}
+	}
 	o.prov, o.tab = p, 0
 	o.imapHost, o.imapPort, o.imapSec = p.IMAP.Host, strconv.Itoa(p.IMAP.Port), p.IMAP.Security
 	o.smtpHost, o.smtpPort, o.smtpSec = p.SMTP.Host, strconv.Itoa(p.SMTP.Port), p.SMTP.Security
