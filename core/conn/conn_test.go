@@ -6,6 +6,7 @@ import (
 	"net"
 	"strconv"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -156,6 +157,53 @@ func TestTLSHandshakeFailureIsNotReportedAsCancel(t *testing.T) {
 		require.Error(t, err, name)
 		assert.NotErrorIs(t, err, context.Canceled, name)
 		assert.NotErrorIs(t, err, context.DeadlineExceeded, name)
+	}
+}
+
+// A STARTTLS port set to SSL/TLS (#406) is retried with STARTTLS, never in plaintext.
+func TestTLSOnPlaintextPortRetriesStartTLS(t *testing.T) {
+	for _, proto := range []string{"imap", "smtp"} {
+		var dials atomic.Int32
+		var mu sync.Mutex
+		var seen strings.Builder
+		e := fake(t, func(c net.Conn) {
+			dials.Add(1)
+			if proto == "imap" {
+				c.Write([]byte("* OK hi\r\n"))
+			} else {
+				c.Write([]byte("220 hi\r\n"))
+			}
+			r := bufio.NewReader(c)
+			for {
+				l, err := r.ReadString('\n')
+				if err != nil {
+					return
+				}
+				mu.Lock()
+				seen.WriteString(l)
+				mu.Unlock()
+				if f := strings.Fields(l); proto == "imap" && len(f) > 0 {
+					c.Write([]byte(f[0] + " NO no TLS here\r\n"))
+				} else {
+					c.Write([]byte("250 hi\r\n")) // no STARTTLS offered
+				}
+			}
+		})
+		e.Security = conn.TLS
+		var err error
+		if proto == "imap" {
+			_, err = conn.DialIMAP(context.Background(), e)
+		} else {
+			_, err = conn.DialSMTP(context.Background(), e)
+		}
+		require.Error(t, err, proto)
+		assert.EqualValues(t, 2, dials.Load(), proto)
+		mu.Lock()
+		joined := seen.String()
+		mu.Unlock()
+		assert.NotContains(t, joined, "hunter2", proto)
+		assert.NotContains(t, joined, "AUTH", proto)
+		assert.NotContains(t, joined, "LOGIN", proto)
 	}
 }
 
