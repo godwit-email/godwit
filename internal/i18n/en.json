@@ -211,6 +211,7 @@
   "error_model_unavailable": "The plugin offering this model is not running or no longer offers it. Enable it in Settings › Extensions, or pick another model.",
   "error_unexpected": "An unexpected error occurred.",
   "error_unknown": "Something went wrong: {arg1}",
+  "error_report": "Report",
   "@error_unknown": {
     "placeholders": {
       "arg1": {

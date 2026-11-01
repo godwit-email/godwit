@@ -119,6 +119,7 @@
   "error_model_unavailable": "Bu modeli sunan eklenti çalışmıyor veya artık bu modeli sunmuyor. Ayarlar › Uzantılar bölümünden etkinleştirin veya başka bir model seçin.",
   "error_unexpected": "Beklenmeyen bir hata oluştu.",
   "error_unknown": "Bir sorun oluştu: {arg1}",
+  "error_report": "Bildir",
   "label_color_amber": "Kehribar",
   "label_color_blue": "Mavi",
   "label_color_gray": "Gri",

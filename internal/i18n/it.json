@@ -119,6 +119,7 @@
   "error_model_unavailable": "Il plugin che fornisce questo modello non è in esecuzione o non lo offre più. Abilitalo in Impostazioni › Estensioni oppure scegli un altro modello.",
   "error_unexpected": "Si è verificato un errore imprevisto.",
   "error_unknown": "Qualcosa è andato storto: {arg1}",
+  "error_report": "Segnala",
   "label_color_amber": "Ambra",
   "label_color_blue": "Blu",
   "label_color_gray": "Grigio",

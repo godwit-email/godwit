@@ -119,6 +119,7 @@
   "error_model_unavailable": "이 모델을 제공하는 플러그인이 실행 중이지 않거나 더 이상 모델을 제공하지 않습니다. 설정 › 확장 프로그램에서 활성화하거나 다른 모델을 선택하세요.",
   "error_unexpected": "예기치 않은 오류가 발생했습니다.",
   "error_unknown": "오류가 발생했습니다: {arg1}",
+  "error_report": "신고",
   "label_color_amber": "호박색",
   "label_color_blue": "파란색",
   "label_color_gray": "회색",

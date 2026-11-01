@@ -119,6 +119,7 @@
   "error_model_unavailable": "Plugin cung cấp mô hình này hiện không chạy hoặc không còn cung cấp mô hình này nữa. Hãy bật trong Cài đặt › Tiện ích mở rộng, hoặc chọn một mô hình khác.",
   "error_unexpected": "Đã xảy ra lỗi không mong đợi.",
   "error_unknown": "Đã xảy ra lỗi: {arg1}",
+  "error_report": "Báo lỗi",
   "label_color_amber": "Hổ phách",
   "label_color_blue": "Xanh dương",
   "label_color_gray": "Xám",

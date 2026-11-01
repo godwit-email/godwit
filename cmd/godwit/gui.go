@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"errors"
+	"io"
 	"io/fs"
 	"log"
 	"os"
@@ -60,6 +61,7 @@ func uiLocale(preference, system string) string {
 // dataDir (ownerlock) before opening it; if another process does, it says so
 // in an error dialog and exits 2.
 func gui(ctx context.Context, dataDir string) int {
+	log.SetOutput(io.MultiWriter(os.Stderr, app.RecentLog)) // and slog, while its default is unset; an error report carries the recent lines
 	mygo.App.SetName("Godwit")
 	if !packaged() { // the Microsoft Store updates the MSIX
 		mygo.Use(updater.Plugin) // checks GitHub releases daily; a no-op in dev builds

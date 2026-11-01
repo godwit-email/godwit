@@ -119,6 +119,7 @@
   "error_model_unavailable": "このモデルを提供するプラグインが実行されていないか、提供を終了しています。「設定 › 拡張機能」で有効にするか、別のモデルを選択してください。",
   "error_unexpected": "予期しないエラーが発生しました。",
   "error_unknown": "エラーが発生しました：{arg1}",
+  "error_report": "報告",
   "label_color_amber": "アンバー",
   "label_color_blue": "ブルー",
   "label_color_gray": "グレー",

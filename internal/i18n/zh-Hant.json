@@ -119,6 +119,7 @@
   "error_model_unavailable": "提供這個模型的外掛沒有執行，或不再提供它。到設定 › 擴充功能裡啟用它，或換一個模型。",
   "error_unexpected": "發生了意外錯誤。",
   "error_unknown": "出錯了：{arg1}",
+  "error_report": "回報問題",
   "label_color_amber": "琥珀",
   "label_color_blue": "藍",
   "label_color_gray": "灰",
