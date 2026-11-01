@@ -31,6 +31,7 @@ type Inbox struct {
 	rejectAuth bool
 	password   string                  // alice's; "" means secret
 	xoauth2    func(token string) bool // nil = XOAUTH2 not offered
+	loginOnly  bool
 	auths      int
 	block      chan struct{} // closed by the BlockData release func
 	entered    chan struct{}
@@ -127,6 +128,9 @@ type SMTPOption = Option
 // folder, as providers that auto-save sent mail do.
 func SaveToSent(im *IMAP) SMTPOption { return func(c *config) { c.sent = im } }
 
+// LoginOnly makes the SMTP server offer AUTH LOGIN and not PLAIN, as Exchange does.
+func LoginOnly() SMTPOption { return func(c *config) { c.loginOnly = true } }
+
 // Messages returns a copy of the received messages.
 func (in *Inbox) Messages() []Received {
 	in.mu.Lock()
@@ -160,6 +164,9 @@ type smtpSession struct {
 }
 
 func (s *smtpSession) AuthMechanisms() []string {
+	if s.in.loginOnly {
+		return []string{sasl.Login}
+	}
 	if s.in.xoauth2 != nil {
 		return []string{sasl.Plain, "XOAUTH2"}
 	}
@@ -179,12 +186,31 @@ func (s *smtpSession) Auth(mech string) (sasl.Server, error) {
 		return nil
 	}
 	switch {
-	case mech == sasl.Plain:
+	case mech == sasl.Login && s.in.loginOnly:
+		return &loginServer{login: login}, nil
+	case mech == sasl.Plain && !s.in.loginOnly:
 		return sasl.NewPlainServer(func(_, user, pass string) error { return login(user, pass) }), nil
 	case mech == "XOAUTH2" && s.in.xoauth2 != nil:
 		return &xoauth2Server{valid: s.in.xoauth2, login: func(user string) error { return login(user, password) }}, nil
 	}
 	return nil, errors.New("unsupported mechanism")
+}
+
+// loginServer checks a SASL LOGIN exchange; go-sasl has only the client.
+type loginServer struct {
+	login func(user, pass string) error
+	user  []byte
+}
+
+func (l *loginServer) Next(resp []byte) ([]byte, bool, error) {
+	switch {
+	case resp == nil:
+		return []byte("Username:"), false, nil
+	case l.user == nil:
+		l.user = resp
+		return []byte("Password:"), false, nil
+	}
+	return nil, true, l.login(string(l.user), string(resp))
 }
 
 func (s *smtpSession) Reset()        { s.cur = Received{} }
@@ -254,7 +280,7 @@ func StartSMTP(t *testing.T, opts ...SMTPOption) (addr string, in *Inbox) {
 	for _, o := range opts {
 		o(&cfg)
 	}
-	in = &Inbox{sent: cfg.sent, xoauth2: cfg.xoauth2}
+	in = &Inbox{sent: cfg.sent, xoauth2: cfg.xoauth2, loginOnly: cfg.loginOnly}
 	srv := smtp.NewServer(backend{in})
 	srv.Domain = "localhost"
 	srv.AllowInsecureAuth = true

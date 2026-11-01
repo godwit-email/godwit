@@ -204,6 +204,9 @@ func imapLogin(c *imapclient.Client, e Endpoint) error {
 
 func smtpAuth(c *smtp.Client, e Endpoint) error {
 	if e.AccessToken == "" {
+		if !c.SupportsAuth(sasl.Plain) && c.SupportsAuth(sasl.Login) {
+			return c.Auth(sasl.NewLoginClient(e.Username, e.Password)) // Exchange (#406)
+		}
 		return c.Auth(sasl.NewPlainClient("", e.Username, e.Password))
 	}
 	if !c.SupportsAuth("XOAUTH2") {
