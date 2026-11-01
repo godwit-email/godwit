@@ -185,6 +185,30 @@ describe("answer hardening", () => {
     expect(onLink.mock.calls).toEqual([["https://vishnuai.in/mediakit"], ["http://www.ok.org/"]]);
   });
 
+  it("a written link keeps its URL, CJK punctuation and all", async () => {
+    const user = userEvent.setup();
+    const onLink = vi.fn();
+    render(
+      <Response
+        text="[https://a.org/文档，下载](https://a.org/文档，下载) 和 <https://b.org/x，y>"
+        onLink={onLink}
+        confirm={false}
+        t={t}
+      />,
+    );
+    const links = await screen.findAllByRole("link");
+    expect(links.map((l) => l.textContent)).toEqual([
+      "https://a.org/文档，下载",
+      "https://b.org/x，y",
+    ]);
+    await user.click(links[0]);
+    await user.click(links[1]);
+    expect(onLink.mock.calls).toEqual([
+      [new URL("https://a.org/文档，下载").href],
+      [new URL("https://b.org/x，y").href],
+    ]);
+  });
+
   it("bolds the link's host", async () => {
     const user = userEvent.setup();
     render(<Response text="[b](https://ok.org/p)" onLink={() => {}} t={t} />);

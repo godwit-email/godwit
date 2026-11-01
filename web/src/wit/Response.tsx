@@ -23,7 +23,13 @@ import { Button } from "@/components/ui/button";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import type { T } from "@/shared/i18n";
 
-type Node = { type: string; value?: string; url?: string; children?: Node[] };
+type Node = {
+  type: string;
+  value?: string;
+  url?: string;
+  children?: Node[];
+  position?: { start: { offset?: number }; end: { offset?: number } };
+};
 /** Raw HTML in the Markdown shows as its text: no element is ever made of it. */
 const htmlAsText = () => (tree: Node) => {
   const walk = (n: Node) => {
@@ -35,8 +41,9 @@ const htmlAsText = () => (tree: Node) => {
 /** CJK and fullwidth punctuation, and curly quotes: never part of a bare URL. */
 const URL_STOP = /[‘-‟　-〿＀-￯]/;
 /**
- * A bare URL (gfm autolink literal, its text the URL) ends before URL_STOP: GFM runs one to the
- * next space, so "https://a.in/kit，并留下" would take the Chinese after it in.
+ * A bare URL (gfm autolink literal: its source is just its text) ends before URL_STOP: GFM runs
+ * one to the next space, so "https://a.in/kit，并留下" would take the Chinese after it in. A
+ * [text](url) or <url> keeps the URL it was given.
  */
 const autolinkEnd = () => (tree: Node) => {
   const walk = (n: Node) => {
@@ -44,7 +51,9 @@ const autolinkEnd = () => (tree: Node) => {
       const text = c.type === "link" && c.children?.length === 1 ? c.children[0] : undefined;
       const value = text?.type === "text" ? (text.value ?? "") : "";
       const i = value.search(URL_STOP);
-      if (!text || i <= 0 || !c.url?.endsWith(value)) {
+      const { start, end } = c.position ?? { start: {}, end: {} };
+      const bare = end.offset !== undefined && end.offset - (start.offset ?? 0) === value.length;
+      if (!text || i <= 0 || !bare || !c.url?.endsWith(value)) {
         walk(c);
         return [c];
       }

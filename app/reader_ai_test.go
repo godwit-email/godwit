@@ -810,6 +810,7 @@ func TestEndAutolinks(t *testing.T) {
 		"见“https://a.in/x”和 https://b.in/y。":        "见“<https://a.in/x>”和 <https://b.in/y>。",
 		"plain https://a.in/x, done":                "plain https://a.in/x, done",
 		"[资料](https://a.in/x)，以及 <https://b.in/y>，": "[资料](https://a.in/x)，以及 <https://b.in/y>，",
+		"[https://a.in/文档，下载](https://a.in/文档，下载)":  "[https://a.in/文档，下载](https://a.in/文档，下载)",
 	} {
 		if got := endAutolinks(in); got != want {
 			t.Errorf("endAutolinks(%q) = %q, want %q", in, got, want)

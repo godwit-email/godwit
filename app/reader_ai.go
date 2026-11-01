@@ -763,8 +763,8 @@ func endAutolinks(s string) string {
 		i := strings.IndexFunc(url, func(r rune) bool {
 			return r >= 0x2018 && r <= 0x201f || r >= 0x3000 && r <= 0x303f || r >= 0xff00 && r <= 0xffef
 		})
-		// a link's destination, [x](…), or already <…>
-		if i <= 0 || m[0] > 0 && (s[m[0]-1] == '(' || s[m[0]-1] == '<') {
+		// a written link's text or destination, [x](…), or already <…>
+		if i <= 0 || m[0] > 0 && strings.IndexByte("[(<", s[m[0]-1]) >= 0 {
 			continue
 		}
 		b.WriteString(s[last:m[0]])
