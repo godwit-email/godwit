@@ -907,7 +907,7 @@ func (o *onboarding) oauthView(c *ui.Context) {
 			})
 			return
 		}
-		ui.Box(c).Size(theme.PendingDot, theme.PendingDot).Radius(t.Radius.Full).Background(t.Ring)
+		kit.Spinner(c).Size(theme.IconMd, theme.IconMd).Label(i18n.T("settings.account.reauth.waiting"))
 		title := i18n.T("onboarding.oauth.opening")
 		if o.authURL != "" {
 			title = i18n.T("onboarding.oauth.opened")

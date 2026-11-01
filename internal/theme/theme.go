@@ -236,7 +236,7 @@ const (
 	StatusBadge, StatusBadgeRing                     = 9, 1.5         // a status dot on a mark's corner: the 6 dot in a ring of the background
 	SwitchWidth, SwitchHeight, SwitchThumb           = 32, 18, 14     // a switch's track and thumb
 	SwitchInset                                      = (SwitchHeight - SwitchThumb) / 2
-	StepDot, PendingDot, DoneBadge                   = 20, 10, 36     // onboarding's check steps, OAuth wait, done mark
+	StepDot, DoneBadge                               = 20, 36         // onboarding's check steps, done mark
 	ThemeTileWidth, ThemeTileHeight, ThemeTileGap    = 76, 48, 10     // settings' theme pictures and the space between them
 	TileRail, TileSide, TileInset, TileGap, TileLine = 8, 18, 6, 4, 3 // the parts of a theme picture
 	SkeletonShort                                    = 160            // a placeholder row's shorter line
