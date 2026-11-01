@@ -58,3 +58,5 @@ require (
 ignore ./web/node_modules
 
 tool github.com/egoist/mygo/cmd/mygo
+
+replace github.com/emersion/go-imap/v2 => github.com/godwit-email/go-imap/v2 v2.0.0-beta.8.0.20261101010639-3928c672d700

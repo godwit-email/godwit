@@ -17,6 +17,7 @@ import (
 	"github.com/egoist/mygo/plugins/sqlite"
 	"github.com/emersion/go-imap/v2"
 	"github.com/emersion/go-imap/v2/imapclient"
+	"github.com/emersion/go-imap/v2/imapserver"
 	"github.com/godwit-email/godwit/core/events"
 	"github.com/godwit-email/godwit/core/mail"
 	"github.com/godwit-email/godwit/core/store"
@@ -356,6 +357,9 @@ func importAll(ctx context.Context, db *store.DB, c *imapclient.Client, a *accou
 			twins[twinKey(m)]++
 		}
 	}
+	if err := fillStructures(c, msgs); err != nil {
+		return err
+	}
 	for _, batch := range textBatches(msgs) {
 		texts, err := fetchTexts(c, batch)
 		if err != nil {
@@ -365,6 +369,26 @@ func importAll(ctx context.Context, db *store.DB, c *imapclient.Client, a *accou
 			if err := importMessage(ctx, db, a, f, m, texts[m.UID], twins[twinKey(m)], arrivals, r); err != nil {
 				return err
 			}
+		}
+	}
+	return nil
+}
+
+// fillStructures gives each of msgs whose body structure the server sent
+// malformed (Gmail, #389; go-imap leaves it nil) one built from the whole
+// message, downloaded once, so its text and attachments still import.
+func fillStructures(c *imapclient.Client, msgs []*imapclient.FetchMessageBuffer) error {
+	whole := &imap.FetchItemBodySection{Peek: true}
+	for _, m := range msgs {
+		if m.BodyStructure != nil {
+			continue
+		}
+		bufs, err := c.Fetch(imap.UIDSetNum(m.UID), &imap.FetchOptions{UID: true, BodySection: []*imap.FetchItemBodySection{whole}}).Collect()
+		if err != nil {
+			return err
+		}
+		if len(bufs) == 1 { // none: expunged meanwhile, it imports without parts
+			m.BodyStructure = imapserver.ExtractBodyStructure(bytes.NewReader(bufs[0].FindBodySection(whole)))
 		}
 	}
 	return nil
