@@ -11,7 +11,7 @@ if (Boolean(provisioningProfile) !== Boolean(entitlements)) {
 export default {
   name: "Godwit",
   identifier: "email.godwit.app",
-  version: "1.23.1", // x-release-please-version
+  version: "1.24.0", // x-release-please-version
   copyright: "© 2026 The Godwit Authors",
   icon: "assets/icon.png",
   main: "./cmd/godwit",

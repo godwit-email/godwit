@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.24.0](https://github.com/godwit-email/godwit/compare/v1.23.1...v1.24.0) (2026-11-01)
+
+
+### Features
+
+* **app:** report an unknown error as a GitHub issue ([#409](https://github.com/godwit-email/godwit/issues/409)) ([198a137](https://github.com/godwit-email/godwit/commit/198a137eccad0203c196d6e0d9d43946a22c89fd))
+
 ## [1.23.1](https://github.com/godwit-email/godwit/compare/v1.23.0...v1.23.1) (2026-11-01)
 
 
