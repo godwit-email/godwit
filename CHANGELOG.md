@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.24.1](https://github.com/godwit-email/godwit/compare/v1.24.0...v1.24.1) (2026-11-01)
+
+
+### Bug Fixes
+
+* **conn:** sign in to SMTP with AUTH LOGIN when PLAIN isn't offered ([#414](https://github.com/godwit-email/godwit/issues/414)) ([63dab24](https://github.com/godwit-email/godwit/commit/63dab241d5ab8e6bf3d01904250317c5721033f2)), closes [#406](https://github.com/godwit-email/godwit/issues/406)
+
 ## [1.24.0](https://github.com/godwit-email/godwit/compare/v1.23.1...v1.24.0) (2026-11-01)
 
 
