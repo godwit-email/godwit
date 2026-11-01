@@ -32,6 +32,35 @@ const htmlAsText = () => (tree: Node) => {
   };
   walk(tree);
 };
+/** CJK and fullwidth punctuation, and curly quotes: never part of a bare URL. */
+const URL_STOP = /[‘-‟　-〿＀-￯]/;
+/**
+ * A bare URL (gfm autolink literal, its text the URL) ends before URL_STOP: GFM runs one to the
+ * next space, so "https://a.in/kit，并留下" would take the Chinese after it in.
+ */
+const autolinkEnd = () => (tree: Node) => {
+  const walk = (n: Node) => {
+    n.children = n.children?.flatMap((c): Node[] => {
+      const text = c.type === "link" && c.children?.length === 1 ? c.children[0] : undefined;
+      const value = text?.type === "text" ? (text.value ?? "") : "";
+      const i = value.search(URL_STOP);
+      if (!text || i <= 0 || !c.url?.endsWith(value)) {
+        walk(c);
+        return [c];
+      }
+      const head = value.slice(0, i);
+      return [
+        {
+          ...c,
+          url: c.url.slice(0, c.url.length - value.length) + head,
+          children: [{ ...text, value: head }],
+        },
+        { type: "text", value: value.slice(i) },
+      ];
+    });
+  };
+  walk(tree);
+};
 const CITE = "#cite-";
 const CARD = "#card-";
 /** A paragraph of "[[n]]" alone becomes a link to CARD+n: a mail card, before citeLinks sees it. */
@@ -71,7 +100,7 @@ const citeLinks = () => (tree: Node) => {
 // Model output is untrusted. Set explicitly, never Streamdown's defaults (rehype-raw and a harden
 // that allows every protocol): raw HTML as text (and skipHtml, no rehype-raw), sanitized, no
 // images, and links only for http, https and mailto, each through the confirmation below.
-const remarkPlugins = [...Object.values(defaultRemarkPlugins), htmlAsText, cardLinks];
+const remarkPlugins = [...Object.values(defaultRemarkPlugins), autolinkEnd, htmlAsText, cardLinks];
 // An answer that cites by tag: a plain "[n]" in it is text, not a citation.
 const legacyPlugins = [...remarkPlugins, citeLinks];
 

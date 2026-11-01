@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/egoist/mygo/ui"
+	"github.com/egoist/mygo/ui/markdown/parser"
 	"github.com/godwit-email/godwit/core"
 	"github.com/godwit-email/godwit/core/ai"
 	"github.com/godwit-email/godwit/core/coretest"
@@ -800,5 +801,28 @@ func TestCardHint(t *testing.T) {
 	got := cardHint([]core.CardField{{Label: "座位", Value: "[待选]"}, {Value: "10 分钟内有效"}})
 	if want := "座位 [待选] · 10 分钟内有效"; got != want {
 		t.Errorf("cardHint = %q, want %q", got, want)
+	}
+}
+
+func TestEndAutolinks(t *testing.T) {
+	for in, want := range map[string]string{
+		"链接：https://vishnuai.in/mediakit，并留下电话。":    "链接：<https://vishnuai.in/mediakit>，并留下电话。",
+		"见“https://a.in/x”和 https://b.in/y。":        "见“<https://a.in/x>”和 <https://b.in/y>。",
+		"plain https://a.in/x, done":                "plain https://a.in/x, done",
+		"[资料](https://a.in/x)，以及 <https://b.in/y>，": "[资料](https://a.in/x)，以及 <https://b.in/y>，",
+	} {
+		if got := endAutolinks(in); got != want {
+			t.Errorf("endAutolinks(%q) = %q, want %q", in, got, want)
+		}
+	}
+	// what the summary card renders: the link ends at the comma
+	var dests []string
+	for _, in := range parser.Parse(endAutolinks("链接：https://vishnuai.in/mediakit，并留下电话。")).Inlines(1) { // block 0 is the root
+		if in.Kind == parser.Link {
+			dests = append(dests, in.Dest)
+		}
+	}
+	if !slices.Equal(dests, []string{"https://vishnuai.in/mediakit"}) {
+		t.Errorf("links = %q", dests)
 	}
 }

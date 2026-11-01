@@ -166,6 +166,25 @@ describe("answer hardening", () => {
     expect(onLink).toHaveBeenCalledWith(url);
   });
 
+  it("a bare URL ends at CJK punctuation", async () => {
+    const user = userEvent.setup();
+    const onLink = vi.fn();
+    const { container } = render(
+      <Response
+        text="链接：https://vishnuai.in/mediakit，并留下电话。见 www.ok.org”"
+        onLink={onLink}
+        confirm={false}
+        t={t}
+      />,
+    );
+    const links = await screen.findAllByRole("link");
+    expect(links.map((l) => l.textContent)).toEqual(["https://vishnuai.in/mediakit", "www.ok.org"]);
+    expect(container.textContent).toContain("，并留下电话。见 www.ok.org”");
+    await user.click(links[0]);
+    await user.click(links[1]);
+    expect(onLink.mock.calls).toEqual([["https://vishnuai.in/mediakit"], ["http://www.ok.org/"]]);
+  });
+
   it("bolds the link's host", async () => {
     const user = userEvent.setup();
     render(<Response text="[b](https://ok.org/p)" onLink={() => {}} t={t} />);
