@@ -4,6 +4,8 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"net/url"
+	"os"
 	"slices"
 	"strings"
 	"testing"
@@ -394,6 +396,32 @@ func TestToasts(t *testing.T) {
 	h.tt.Frame()
 	h.see("已保存")
 	h.see(humanize(core.ErrTooLarge))
+	if _, ok := h.tt.Find("报告问题"); ok {
+		t.Fatal("a known error offers a report")
+	}
+}
+
+func TestReportUnknownError(t *testing.T) {
+	h, _ := withAccount(t)
+	home, _ := os.UserHomeDir()
+	fmt.Fprintln(RecentLog, "sync bob@acme.io: EOF")
+	h.app.toastErr(errors.New("dial tcp: lookup imap.acme.io: no such host for me@acme.io at " + home + "/x"))
+	h.click("报告问题")
+	u, err := url.Parse(h.callArg("OpenURL"))
+	if err != nil || u.Host != "github.com" || u.Path != "/godwit-email/godwit/issues/new" {
+		t.Fatalf("opened %v (%v)", u, err)
+	}
+	body := u.Query().Get("body")
+	if strings.Contains(body, "acme") || strings.Contains(body, home) ||
+		!strings.Contains(body, "lookup <host>: no such host for <email> at ~/x") || !strings.Contains(body, "Godwit "+Version) ||
+		!strings.Contains(body, "sync <email>: EOF") {
+		t.Fatalf("body %q", body)
+	}
+	log := strings.Repeat("旧\n", 3000) + "newest"
+	long, _ := url.Parse(issueURL(strings.Repeat("错", 5000), log))
+	if n := len(long.String()); n > issueURLMax || !strings.Contains(long.Query().Get("body"), "newest") {
+		t.Fatalf("link of %d bytes without the newest log line", n)
+	}
 }
 
 func TestTitleBarInset(t *testing.T) {

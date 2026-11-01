@@ -119,6 +119,7 @@
   "error_model_unavailable": "De plug-in die dit model aanbiedt is niet actief of biedt het niet meer aan. Schakel deze in via Instellingen › Extensies, of kies een ander model.",
   "error_unexpected": "Er is een onverwachte fout opgetreden.",
   "error_unknown": "Er is iets misgegaan: {arg1}",
+  "error_report": "Melden",
   "label_color_amber": "Amber",
   "label_color_blue": "Blauw",
   "label_color_gray": "Grijs",

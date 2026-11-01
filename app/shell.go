@@ -2,6 +2,7 @@ package app
 
 import (
 	"cmp"
+	"context"
 	"math"
 	"runtime"
 	"time"
@@ -169,9 +170,18 @@ func (a *App) toastAs(kind, msg string) {
 	a.toasts = append(a.toasts, ui.Toast{ID: msg, Title: msg, Type: kind})
 }
 
-// toastErr shows err in words; a cancellation shows nothing.
+// toastErr shows err in words; a cancellation shows nothing. An error
+// humanize has no words for offers to report it as a GitHub issue, which
+// the user reads and submits in the browser.
 func (a *App) toastErr(err error) {
-	if msg := humanize(err); msg != "" {
+	msg := humanize(err)
+	switch {
+	case msg == "":
+	case msg == i18n.Tf("error.unknown", err.Error()):
+		u := issueURL(a.svc.Redact(err.Error()), a.svc.Redact(RecentLog.String()))
+		a.toasts = append(a.toasts, ui.Toast{ID: msg, Title: msg, Type: kit.ToastError,
+			Action: i18n.T("error.report"), OnAction: func() { a.do(func(context.Context) error { return a.plat.OpenURL(u) }, a.toastErr) }})
+	default:
 		a.toastAs(kit.ToastError, msg)
 	}
 }

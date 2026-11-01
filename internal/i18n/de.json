@@ -124,6 +124,7 @@
   "error_model_unavailable": "Das Plugin, das dieses Modell bereitstellt, läuft nicht oder bietet es nicht mehr an. Aktiviere es in Einstellungen › Erweiterungen oder wähle ein anderes Modell.",
   "error_unexpected": "Ein unerwarteter Fehler ist aufgetreten.",
   "error_unknown": "Etwas ist schiefgelaufen: {arg1}",
+  "error_report": "Melden",
   "label_color_amber": "Bernstein",
   "label_color_blue": "Blau",
   "label_color_gray": "Grau",
