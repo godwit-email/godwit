@@ -207,6 +207,19 @@ func TestTLSOnPlaintextPortRetriesStartTLS(t *testing.T) {
 	}
 }
 
+func TestSMTPLoginWhenPlainNotOffered(t *testing.T) {
+	addr, in := testmail.StartSMTP(t, testmail.LoginOnly())
+	e := endpoint(t, addr)
+	c, err := conn.DialSMTP(context.Background(), e)
+	require.NoError(t, err)
+	c.Close()
+
+	e.Password = "wrong"
+	_, err = conn.DialSMTP(context.Background(), e)
+	require.ErrorIs(t, err, conn.ErrAuthFailed)
+	assert.Equal(t, 2, in.AuthAttempts())
+}
+
 func endpoint(t *testing.T, addr string) conn.Endpoint {
 	t.Helper()
 	host, port, err := net.SplitHostPort(addr)
