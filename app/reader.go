@@ -1501,9 +1501,13 @@ func (r *reader) attachments(c *ui.Context, atts []core.AttachmentInfo) {
 			}
 			ui.Row(c).Width(theme.AttachmentWidth).Gap(th.Space(1)).Padding(th.Space(2), th.Space(2.5)).Border(theme.Hairline, t.Border).Radius(t.Radius.Lg).Children(func() {
 				kit.Pressable(c, kit.PressableOpts{OnClick: func() { r.p.a.openAttachment(att) }}).Grow(1).Shrink(1).Gap(th.Space(2.5)).Children(func() {
-					ui.Box(c).Size(th.Space(7), th.Space(8.5)).Radius(t.Radius.Sm).Background(t.Hover).Center().Shrink(0).Children(func() {
-						kit.Text(c, fileKind(att), t.Text.Xs).TextColor(t.Muted)
-					})
+					if img := r.p.a.typeIcon(iconExt(att.Filename)); img != nil {
+						ui.Image(c, img).Size(th.Space(8.5), th.Space(8.5)).Fit(ui.Contain).Shrink(0)
+					} else {
+						ui.Box(c).Size(th.Space(7), th.Space(8.5)).Radius(t.Radius.Sm).Background(t.Hover).Center().Shrink(0).Children(func() {
+							kit.Text(c, fileKind(att), t.Text.Xs).TextColor(t.Muted)
+						})
+					}
 					ui.Column(c).Shrink(1).Children(func() {
 						ui.Text(c, fileName(att.Filename, "attachment")).SingleLine() // the name it opens and saves under
 						kit.Text(c, byteSize(att.Size), t.Text.Sm).TextColor(t.Muted)
@@ -1524,6 +1528,46 @@ func fileKind(att core.AttachmentInfo) string {
 	}
 	_, sub, _ := strings.Cut(att.ContentType, "/")
 	return strings.ToUpper(cmp.Or(sub, "FILE"))
+}
+
+// typeIconPx is the size typeIcon asks for: sharp at up to 4x for the
+// attachment tile, as ui does not say the display's scale.
+const typeIconPx = 136
+
+// typeIcon is the file manager's icon for files with extension ext, nil
+// while it loads, for no ext, or when the platform has none.
+func (a *App) typeIcon(ext string) ui.ImageSource {
+	if ext == "" {
+		return nil
+	}
+	if img, ok := a.typeIcons[ext]; ok {
+		return img
+	}
+	if a.typeIcons == nil {
+		a.typeIcons = map[string]ui.ImageSource{}
+	}
+	a.typeIcons[ext] = nil
+	plat := a.plat
+	var img ui.ImageSource
+	a.do(func(context.Context) error {
+		png, err := plat.TypeIcon(ext, typeIconPx)
+		if err == nil {
+			img = decodeIcon("image/png", png)
+		}
+		return nil // without one the tile keeps fileKind's label
+	}, func(error) { a.typeIcons[ext] = img })
+	return nil
+}
+
+// iconExt is name's extension for typeIcon, lower case without the dot:
+// "" unless it is 1 to 10 ASCII letters and digits, as it names a file the
+// platform writes.
+func iconExt(name string) string {
+	ext := strings.ToLower(strings.TrimPrefix(filepath.Ext(name), "."))
+	if len(ext) > 10 || strings.ContainsFunc(ext, func(r rune) bool { return (r < 'a' || r > 'z') && (r < '0' || r > '9') }) {
+		return ""
+	}
+	return ext
 }
 
 // byteSize is a size in B, KB or MB.

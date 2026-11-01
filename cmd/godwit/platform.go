@@ -8,6 +8,8 @@ import (
 	"image/png"
 	"log"
 	"net/url"
+	"os"
+	"path/filepath"
 	"runtime"
 	"slices"
 	"strconv"
@@ -332,6 +334,23 @@ func (p *platform) SettingsChanged(st core.Settings) {
 		p.wit.SettingsChanged(st)
 	}
 }
+
+// TypeIcon draws an empty file's icon, in a directory it then removes.
+// shortcut: Shell.FileIcon needs a file that exists; switch to mygo's
+// type icon API once it has one (#404).
+func (p *platform) TypeIcon(ext string, size int) ([]byte, error) {
+	dir, err := os.MkdirTemp(p.TempDir(), "godwit-icon-")
+	if err != nil {
+		return nil, err
+	}
+	defer os.RemoveAll(dir)
+	path := filepath.Join(dir, "file."+ext)
+	if err := os.WriteFile(path, nil, 0o600); err != nil {
+		return nil, err
+	}
+	return mygo.Shell.FileIcon(path, size)
+}
+
 func (*platform) TempDir() string {
 	dir, err := mygo.App.Path(mygo.PathTemp)
 	if err != nil {

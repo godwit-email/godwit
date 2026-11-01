@@ -472,6 +472,9 @@ func (p *fakePlatform) Calls() []string {
 
 func (p *fakePlatform) OpenURL(url string) error   { p.record("OpenURL", url); return nil }
 func (p *fakePlatform) OpenPath(path string) error { p.record("OpenPath", path); return nil }
+func (p *fakePlatform) TypeIcon(string, int) ([]byte, error) {
+	return nil, errors.New("no type icons")
+}
 func (p *fakePlatform) OpenFiles(multiple bool) ([]string, error) {
 	p.record("OpenFiles", multiple)
 	p.mu.Lock()

@@ -1022,6 +1022,25 @@ func TestFileName(t *testing.T) {
 	}
 }
 
+func TestIconExt(t *testing.T) {
+	for in, want := range map[string]string{
+		"Statement.PDF":       "pdf",
+		"archive.tar.gz":      "gz",
+		"noext":               "",
+		"x.":                  "",
+		"x.../../a":           "",
+		"x.p d f":             "",
+		"x.pdf\u202e":         "",
+		"x.abcdefghijk":       "",
+		"x.docx":              "docx",
+		"photo.\u00e9t\u00e9": "",
+	} {
+		if got := iconExt(in); got != want {
+			t.Errorf("iconExt(%q) = %q, want %q", in, got, want)
+		}
+	}
+}
+
 func TestSingleMessageHeadDoesNotCollapse(t *testing.T) {
 	h, accs := mailHarness(t, nil, "alice@example.com")
 	acc := accs[0]
