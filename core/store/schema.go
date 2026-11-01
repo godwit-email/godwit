@@ -118,7 +118,7 @@ var Migrations = [][]string{{
 	`ALTER TABLE accounts ADD COLUMN smtp_reauth INTEGER NOT NULL DEFAULT 0`,
 }, {
 	`ALTER TABLE accounts ADD COLUMN provider TEXT NOT NULL DEFAULT ''`,
-	// Why status is not ok: credentials_missing, keychain_unavailable or auth_rejected.
+	// Why status is not ok: credentials_missing, keychain_unavailable, auth_rejected, token_revoked or client_rejected.
 	`ALTER TABLE accounts ADD COLUMN status_detail TEXT NOT NULL DEFAULT ''`,
 }, {
 	`CREATE TABLE settings (key TEXT PRIMARY KEY, value TEXT NOT NULL)`,
@@ -525,6 +525,10 @@ var Migrations = [][]string{{
  security_status = CASE WHEN security_status IN ('verified_domain','certified_brand') OR security_reason = 'auth_failed' THEN NULL ELSE security_status END,
  security_reason = CASE WHEN security_status IN ('verified_domain','certified_brand') OR security_reason = 'auth_failed' THEN NULL ELSE security_reason END,
  security_scanned_at = CASE WHEN security_status IN ('verified_domain','certified_brand') OR security_reason = 'auth_failed' THEN 0 ELSE security_scanned_at END`,
+}, {
+	// The user's own OAuth client an account signed in with ('' the provider's);
+	// its secret is in the keychain (oauthClientUser).
+	`ALTER TABLE accounts ADD COLUMN oauth_client_id TEXT NOT NULL DEFAULT ''`,
 }}
 
 // HistoryRowsVersion is the schema version that keeps a conversation's

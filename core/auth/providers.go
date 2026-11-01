@@ -12,6 +12,7 @@ type Server struct {
 // OAuthConfig describes a provider's OAuth 2.0 endpoints (flow lives elsewhere).
 type OAuthConfig struct {
 	ClientID, AuthURL, TokenURL string
+	ClientSecret                string // a user's own client only (Google's desktop clients need one); never log it
 	Scopes                      []string
 	RedirectHost, RedirectPath  string            // "" = "localhost", "/callback"
 	RedirectPort                int               // 0 = any free port; a client registered with one fixed port needs it
@@ -21,7 +22,13 @@ type OAuthConfig struct {
 	Nonce                       bool              // send a random nonce on authorize
 	RequireScope                string            // non-empty: token response scope must include it
 	DeviceURL                   string            // non-empty: device-code flow
+	Public                      *PublicClient     // with no ClientID: another app's verified client, offered beside the user's own
 }
+
+// PublicClient is a desktop client another app registered and the provider
+// verified, whose ID and secret that app publishes; signing in with it, the
+// consent page names that app, not Godwit.
+type PublicClient struct{ ID, Secret string }
 
 type Provider struct {
 	ID, Name   string
@@ -45,7 +52,18 @@ func table() []Provider {
 	return []Provider{
 		{ID: "gmail", Name: "Gmail", Domains: []string{"gmail.com", "googlemail.com"},
 			IMAP: tls("imap.gmail.com"), SMTP: smtps("smtp.gmail.com"), Login: "app_password",
-			HelpURL: "https://support.google.com/accounts/answer/185833"},
+			HelpURL: "https://support.google.com/accounts/answer/185833",
+			// No client of Godwit's (mail.google.com is a restricted scope): the user's own
+			// client signs in, for those who cannot or will not use app passwords.
+			OAuth: &OAuthConfig{
+				AuthURL:  "https://accounts.google.com/o/oauth2/v2/auth",
+				TokenURL: "https://oauth2.googleapis.com/token",
+				Scopes:   []string{"openid", "email", "https://mail.google.com/"},
+				// offline: a refresh token; consent: one again on every sign-in, not only the first
+				AuthParams: map[string]string{"access_type": "offline", "prompt": "select_account consent"},
+				// Mozilla's for Thunderbird (comm-central's OAuth2Providers.sys.mjs), verified for mail.google.com.
+				Public: &PublicClient{ID: "406964657835-aq8lmia8j95dhl1a2bvharmfk3t1hgqj.apps.googleusercontent.com", Secret: "kSmqreRr0qwBWJgbf5Y-PjSU"},
+			}},
 		{ID: "outlook", Name: "Outlook", Domains: []string{"outlook.com", "hotmail.com", "live.com", "live.cn", "msn.com", "hotmail.co.uk", "outlook.jp"},
 			IMAP: tls("outlook.office365.com"), SMTP: Server{"smtp-mail.outlook.com", 587, conn.StartTLS}, Login: "oauth",
 			// Personal accounts only. consumers, not common: common rejects personal accounts for our

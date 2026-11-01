@@ -26,16 +26,28 @@ var oauthConfig = func(providerID string) (auth.OAuthConfig, error) {
 	return *p.OAuth, nil
 }
 
-// BeginOAuth starts an authorization flow for the provider and returns its ID
-// and the URL to open in the browser. The flow ends after auth.FlowTimeout.
-func (s *Service) BeginOAuth(ctx context.Context, providerID, loginHint string) (flowID, authURL string, err error) {
+// OAuthClient is the user's own OAuth client for a mail provider without one of
+// Godwit's (Gmail: a Workspace admin's Internal client). The zero value is the provider's.
+type OAuthClient struct {
+	ID, Secret string
+	Account    int64 // reauthorizing: the client that account was added with, if any
+}
+
+// BeginOAuth starts an authorization flow for the provider, with client when it
+// is not zero, and returns its ID and the URL to open in the browser. The flow
+// ends after auth.FlowTimeout.
+func (s *Service) BeginOAuth(ctx context.Context, providerID, loginHint string, client OAuthClient) (flowID, authURL string, err error) {
 	ctx, end, err := s.begin(ctx, 0)
 	if err != nil {
 		return "", "", err
 	}
 	defer end() // Close waits for this, then closes the flow added below
 	cfg, err := oauthConfig(providerID)
-	if err != nil {
+	if err == nil {
+		if client, err = s.resolveClient(ctx, client); err == nil && client.ID != "" {
+			cfg.ClientID, cfg.ClientSecret = client.ID, client.Secret
+		}
+	} else {
 		cfg, err = s.modelOAuthConfig(ctx, providerID, loginHint)
 	}
 	if err != nil {
@@ -55,7 +67,7 @@ func (s *Service) BeginOAuth(ctx context.Context, providerID, loginHint string) 
 	if s.flows == nil {
 		s.flows = map[string]oauthFlow{}
 	}
-	s.flows[flowID] = oauthFlow{f, providerID}
+	s.flows[flowID] = oauthFlow{f, providerID, client}
 	s.oauthMu.Unlock()
 	// The flow closes itself at auth.FlowTimeout; forget it then too, so a result
 	// nobody awaits does not stay in memory. A pending AwaitOAuth gets ErrFlowExpired.
@@ -106,7 +118,7 @@ func (s *Service) AwaitOAuth(ctx context.Context, flowID string) (email string, 
 	if s.grants == nil {
 		s.grants = map[string]oauthGrant{}
 	}
-	s.grants[flowID] = oauthGrant{g, of.provider}
+	s.grants[flowID] = oauthGrant{g, of.provider, of.client}
 	time.AfterFunc(grantTTL, func() {
 		s.oauthMu.Lock()
 		delete(s.grants, flowID)
@@ -134,16 +146,34 @@ type flow interface {
 	Close()
 }
 
-// oauthFlow is a flow begun for a provider.
+// oauthFlow is a flow begun for a provider, with the user's own client or not.
 type oauthFlow struct {
 	flow
 	provider string
+	client   OAuthClient // Account resolved
 }
 
-// oauthGrant is a finished flow's grant and the provider it was signed in with.
+// oauthGrant is a finished flow's grant and the provider and client it was signed in with.
 type oauthGrant struct {
 	auth.Grant
 	provider string
+	client   OAuthClient
+}
+
+// resolveClient replaces c.Account with the client that account was added with.
+func (s *Service) resolveClient(ctx context.Context, c OAuthClient) (OAuthClient, error) {
+	if c.Account == 0 {
+		return c, nil
+	}
+	acc, err := s.account(ctx, c.Account)
+	if err != nil || acc.OAuthClientID == "" {
+		return OAuthClient{}, err
+	}
+	secret, err := keychainGet(s.oauthClientUser(acc.ID))
+	if err != nil {
+		return OAuthClient{}, fmt.Errorf("read the OAuth client secret from the keychain: %w", err)
+	}
+	return OAuthClient{ID: acc.OAuthClientID, Secret: secret}, nil
 }
 
 // takeGrant removes and returns a finished flow's grant.

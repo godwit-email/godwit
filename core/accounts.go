@@ -38,6 +38,20 @@ func (s *Service) keyringUser(id int64) string {
 	return s.installID + "/account:" + strconv.FormatInt(id, 10)
 }
 
+// oauthClientUser is the keychain entry of the account's own OAuth client secret.
+func (s *Service) oauthClientUser(id int64) string { return s.keyringUser(id) + "/oauth-client" }
+
+// deleteCredentials removes the account's keychain entries; missing ones are fine.
+func (s *Service) deleteCredentials(id int64) error {
+	var errs []error
+	for _, u := range []string{s.keyringUser(id), s.oauthClientUser(id)} {
+		if err := keychainDelete(u); err != nil && !errors.Is(err, keyring.ErrNotFound) {
+			errs = append(errs, err)
+		}
+	}
+	return errors.Join(errs...)
+}
+
 // loadInstallID returns the data directory's random id, creating it on first use.
 func loadInstallID(ctx context.Context, db *store.DB) (string, error) {
 	b := make([]byte, 16)
@@ -155,6 +169,7 @@ func (s *Service) AddAccount(ctx context.Context, in AccountInput) (Account, err
 			return Account{}, ErrUnknownFlow
 		}
 		authType, secret, in.Username, in.Provider = "oauth", g.RefreshToken, g.Email, g.provider
+		in.oauthClientID = g.client.ID
 	}
 	if rest, ok := strings.CutPrefix(in.Signature, SignatureHTMLPrefix); ok {
 		if _, _, err := signatureAssets(0, rest, nil); err != nil { // its images, before anything is saved
@@ -190,10 +205,10 @@ func (s *Service) AddAccount(ctx context.Context, in AccountInput) (Account, err
 	}
 	stmts = append(stmts, sqlite.Statement{
 		SQL: `INSERT INTO accounts(email, name, alias, is_default, sync_limit, sync_since_months, auth_type, status, username,
-			imap_host, imap_port, imap_security, smtp_host, smtp_port, smtp_security, created_at, provider, position)
-			VALUES (?, ?, ?, ?, ?, ?, ?, 'ok', ?, ?, ?, ?, ?, ?, ?, ?, ?, (SELECT COALESCE(MAX(position) + 1, 0) FROM accounts))`,
+			imap_host, imap_port, imap_security, smtp_host, smtp_port, smtp_security, created_at, provider, oauth_client_id, position)
+			VALUES (?, ?, ?, ?, ?, ?, ?, 'ok', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, (SELECT COALESCE(MAX(position) + 1, 0) FROM accounts))`,
 		Args: []any{in.Email, in.Name, in.Alias, b2i(isDefault), sync.Limit, sync.Months, authType, in.username(),
-			in.IMAPHost, in.IMAPPort, string(in.IMAPSecurity), in.SMTPHost, in.SMTPPort, string(in.SMTPSecurity), time.Now().Unix(), in.Provider},
+			in.IMAPHost, in.IMAPPort, string(in.IMAPSecurity), in.SMTPHost, in.SMTPPort, string(in.SMTPSecurity), time.Now().Unix(), in.Provider, in.oauthClientID},
 	})
 	res, err := s.db.Transaction(ctx, stmts)
 	if err != nil {
@@ -228,9 +243,17 @@ func (s *Service) AddAccount(ctx context.Context, in AccountInput) (Account, err
 	if err := keychainSet(s.keyringUser(id), secret); err != nil {
 		return Account{}, fmt.Errorf("save credentials to keychain: %w", undo(err))
 	}
+	if g.client.ID != "" {
+		if err := keychainSet(s.oauthClientUser(id), g.client.Secret); err != nil {
+			if kerr := s.deleteCredentials(id); kerr != nil {
+				err = errors.Join(err, kerr)
+			}
+			return Account{}, fmt.Errorf("save the OAuth client secret to keychain: %w", undo(err))
+		}
+	}
 	if in.Signature != "" { // its images checked above: only the database can fail it now
 		if _, err := s.UpdateAccount(ctx, id, AccountPatch{Signature: &in.Signature}); err != nil {
-			if kerr := keychainDelete(s.keyringUser(id)); kerr != nil {
+			if kerr := s.deleteCredentials(id); kerr != nil {
 				err = errors.Join(err, kerr)
 			}
 			return Account{}, fmt.Errorf("save the signature: %w", undo(err))
@@ -260,7 +283,7 @@ func b2i(b bool) int {
 
 const accountCols = `id, email, name, alias, COALESCE((SELECT html FROM signatures WHERE id = signature_id), ''), username, is_default, sync_limit, auth_type, status,
 	imap_host, imap_port, imap_security, smtp_host, smtp_port, smtp_security, smtp_reauth, provider, status_detail,
-	sync_since_months, (SELECT count(*) FROM folders WHERE account_id = accounts.id), signature_id, icon, ai_instructions`
+	sync_since_months, (SELECT count(*) FROM folders WHERE account_id = accounts.id), signature_id, icon, ai_instructions, oauth_client_id`
 
 // ErrAccountNotFound is returned for an account id that does not exist.
 var ErrAccountNotFound = errors.New("account not found")
@@ -284,7 +307,7 @@ func scanAccount(r []any) Account {
 		IMAPHost: store.Str(r[10]), IMAPPort: int(store.Int(r[11])), IMAPSecurity: Security(store.Str(r[12])),
 		SMTPHost: store.Str(r[13]), SMTPPort: int(store.Int(r[14])), SMTPSecurity: Security(store.Str(r[15])),
 		Provider: store.Str(r[17]), StatusDetail: store.Str(r[18]), SignatureID: store.Int(r[21]), Icon: store.Str(r[22]),
-		AIInstructions: store.Str(r[23]),
+		AIInstructions: store.Str(r[23]), OAuthClientID: store.Str(r[24]),
 	}
 	// SMTP refuses the password: the user is asked for it the same way. status and
 	// status_detail are IMAP's and the keychain's, and they take precedence.
@@ -365,7 +388,7 @@ func (s *Service) RemoveAccount(ctx context.Context, id int64) error {
 	s.credMu.Lock()
 	delete(s.credVer, id)
 	s.credMu.Unlock()
-	if err := keychainDelete(s.keyringUser(id)); err != nil && !errors.Is(err, keyring.ErrNotFound) {
+	if err := s.deleteCredentials(id); err != nil {
 		return err
 	}
 	return os.RemoveAll(filepath.Join(s.dataDir, "cache", strconv.FormatInt(id, 10)))
@@ -413,8 +436,9 @@ func (s *Service) UpdatePassword(ctx context.Context, id int64, password string)
 
 // Reauthorize gives an OAuth account the tokens of a finished flow, which must
 // have signed in to the account's address with its provider (ErrWrongAccount,
-// ErrProviderMismatch; the old tokens stay). It clears reauth_required and a
-// paused outbox; the worker resumes.
+// ErrProviderMismatch; the old tokens stay), and the flow's OAuth client, which
+// may be another one than before (a rotated secret). It clears reauth_required
+// and a paused outbox; the worker resumes.
 func (s *Service) Reauthorize(ctx context.Context, id int64, flowID string) error {
 	ctx, end, err := s.begin(ctx, id)
 	if err != nil {
@@ -446,10 +470,40 @@ func (s *Service) Reauthorize(ctx context.Context, id int64, flowID string) erro
 	if _, ok := s.takeGrant(flowID); !ok {
 		return ErrUnknownFlow
 	}
+	// The new refresh token refreshes only with the client that granted it, and
+	// the old one only with the old client: a failure below puts that back.
+	old := OAuthClient{ID: acc.OAuthClientID}
+	if old.ID != "" {
+		// A lost secret (credentials_missing) stays lost on a rollback; this sign-in is its fix.
+		if old.Secret, err = keychainGet(s.oauthClientUser(id)); err != nil && !errors.Is(err, keyring.ErrNotFound) {
+			return fmt.Errorf("read the OAuth client secret from the keychain: %w", err)
+		}
+	}
+	if err := s.saveClient(ctx, id, g.client); err != nil {
+		return errors.Join(err, s.saveClient(context.WithoutCancel(ctx), id, old))
+	}
 	if err := keychainSet(s.keyringUser(id), g.RefreshToken); err != nil {
-		return fmt.Errorf("save credentials to keychain: %w", err)
+		err = fmt.Errorf("save credentials to keychain: %w", err)
+		return errors.Join(err, s.saveClient(context.WithoutCancel(ctx), id, old))
 	}
 	return s.credentialsUpdated(ctx, id, &g.Grant)
+}
+
+// saveClient makes c the account's OAuth client: its ID on the account and its
+// secret in the keychain; with no secret (the provider's own client, or one
+// whose secret was lost) the keychain keeps none.
+func (s *Service) saveClient(ctx context.Context, id int64, c OAuthClient) error {
+	var err error
+	if c.Secret != "" {
+		err = keychainSet(s.oauthClientUser(id), c.Secret)
+	} else if err = keychainDelete(s.oauthClientUser(id)); errors.Is(err, keyring.ErrNotFound) {
+		err = nil
+	}
+	if err != nil {
+		return fmt.Errorf("save the OAuth client secret to keychain: %w", err)
+	}
+	_, err = s.db.Execute(ctx, "UPDATE accounts SET oauth_client_id = ? WHERE id = ?", c.ID, id)
+	return err
 }
 
 func (a Account) servers() ServerSettings {

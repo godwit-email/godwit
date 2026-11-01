@@ -3,6 +3,8 @@ package app
 import (
 	"context"
 	"errors"
+	"os"
+	"path/filepath"
 	"slices"
 	"strconv"
 	"strings"
@@ -338,11 +340,13 @@ type fakeOAuth struct {
 	mu       sync.Mutex
 	canceled []string
 	flows    map[string]chan flowResult
+	clients  []core.OAuthClient // each Begin's
 }
 
-func (f *fakeOAuth) Begin(_ context.Context, provider, hint string) (string, string, error) {
+func (f *fakeOAuth) Begin(_ context.Context, provider, hint string, client core.OAuthClient) (string, string, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
+	f.clients = append(f.clients, client)
 	n := strconv.Itoa(len(f.flows) + 1)
 	f.flows["f"+n] = make(chan flowResult, 1)
 	return "f" + n, "https://login.example/authorize?n=" + n, nil
@@ -383,6 +387,13 @@ func (f *fakeOAuth) Cancel(flowID string) {
 		default:
 		}
 	}
+}
+
+// began is each Begin's client so far.
+func (f *fakeOAuth) began() []core.OAuthClient {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return slices.Clone(f.clients)
 }
 
 func (f *fakeOAuth) Canceled() []string {
@@ -432,6 +443,158 @@ func TestOnboardingOAuth(t *testing.T) {
 		t.Fatal("sheet still open")
 	}
 	h.until("Cancel f2", func() bool { return slices.Equal(fo.Canceled(), []string{"f1", "f2"}) })
+}
+
+// Without an app password, Gmail signs in with the user's own OAuth client.
+func TestOnboardingOwnOAuthClient(t *testing.T) {
+	h, _ := withAccount(t)
+	fo := &fakeOAuth{flows: map[string]chan flowResult{}}
+	h.app.oauth = fo
+	h.app.openAddAccount()
+	h.click("Gmail")
+	h.see("应用专用密码")
+	h.see("没开两步验证、加入了高级保护计划，或者管理员禁用了应用专用密码，就生成不了，改用浏览器登录。")
+	h.fill("邮箱地址", "me@gmail.com")
+	o := h.app.addAccount
+	o.secret = "abcd" // the field shares its label with its tab
+	h.click("浏览器登录")
+	h.click("手动填写客户端 ID 和密钥")
+	h.fill("客户端 ID", " 123.apps.googleusercontent.com ")
+	o.client.secret = "GOCSPX-s3cret" // below the sheet's fold
+	o.tab = 0                         // back to the app password and over again: each tab keeps what was typed in it
+	h.tt.Frame()
+	if o.secret != "abcd" {
+		t.Fatalf("app password %q after switching tabs", o.secret)
+	}
+	h.click("浏览器登录")
+	h.click("在浏览器中登录")
+	h.see("需要在浏览器里登录 Google 账户")
+	h.until("OpenURL of the sign-in page", func() bool {
+		return slices.Contains(h.plat.Calls(), "OpenURL https://login.example/authorize?n=1")
+	})
+	fo.mu.Lock()
+	got := fo.clients
+	fo.mu.Unlock()
+	if want := []core.OAuthClient{{ID: "123.apps.googleusercontent.com", Secret: "GOCSPX-s3cret"}}; !slices.Equal(got, want) {
+		t.Fatalf("clients %+v, want %+v", got, want)
+	}
+	fo.finish("f1", "me@gmail.com")
+	h.until("the check", func() bool { return o.step == stepChecking })
+	if in := o.input(); in.OAuthFlowID != "f1" || in.Password != "" {
+		t.Fatalf("input %+v signs in with neither the flow nor only it", in)
+	}
+	h.see("连接失败") // the fake flow left no grant in the Service
+	h.click("重新登录")
+	h.until("the second flow, with the same client", func() bool {
+		fo.mu.Lock()
+		defer fo.mu.Unlock()
+		return len(fo.clients) == 2 && fo.clients[1] == fo.clients[0]
+	})
+	h.click("← 换一个邮箱")
+	h.click("Gmail")
+	h.see("应用专用密码")
+	if o.tab != 0 {
+		t.Fatal("a fresh pick starts on the browser sign-in, not the app password")
+	}
+}
+
+// The client_secret_….json Google Cloud offers fills the own client in, chosen or dropped.
+func TestOnboardingClientFile(t *testing.T) {
+	h, _ := withAccount(t)
+	fo := &fakeOAuth{flows: map[string]chan flowResult{}}
+	h.app.oauth = fo
+	dir := t.TempDir()
+	file := func(name, body string) string {
+		path := filepath.Join(dir, name)
+		if err := os.WriteFile(path, []byte(body), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		return path
+	}
+	desktop := file("client_secret_123.json", `{"installed":{"client_id":"123-abc.apps.googleusercontent.com","client_secret":"GOCSPX-s3cret"}}`)
+	web := file("client_secret_web.json", `{"web":{"client_id":"9-web.apps.googleusercontent.com","client_secret":"GOCSPX-web"}}`)
+	other := file("notes.txt", "hello")
+
+	h.app.openAddAccount()
+	h.click("Gmail")
+	h.fill("邮箱地址", "me@company.com")
+	h.click("浏览器登录")
+	drop := "把下载的 client_secret_….json 拖到这里"
+	h.see(drop)
+	dropOn := func(path string) {
+		h.t.Helper()
+		r, _ := h.tt.Find(drop)
+		if !h.tt.DropFiles(r.X+r.W/2, r.Y+r.H/2, path) {
+			t.Fatal("the drop row took no file")
+		}
+		h.drain()
+		h.tt.Frame()
+	}
+
+	o := h.app.addAccount
+	o.client.id = "typed.apps.googleusercontent.com"
+	dropOn(web)
+	h.see("这是「Web 应用」客户端，要用「桌面应用」")
+	h.see("手动填写客户端 ID 和密钥") // what was typed stays in sight
+	h.click("换一个")
+	if o.client.id != "typed.apps.googleusercontent.com" {
+		t.Fatalf("client ID %q: a failed file dropped what was typed", o.client.id)
+	}
+	dropOn(other)
+	h.see("这不是 OAuth 客户端文件")
+	h.click("换一个")
+
+	h.plat.mu.Lock()
+	h.plat.files = []string{desktop}
+	h.plat.mu.Unlock()
+	h.click("选择文件…")
+	h.see("已导入")
+	h.click("← 换一个邮箱")
+	h.click("QQ 邮箱")
+	h.click("← 换一个邮箱")
+	h.click("Gmail")
+	h.click("浏览器登录")
+	h.see(drop) // another provider in between drops the import
+	h.click("选择文件…")
+	h.see("已导入")
+	h.click("换一个")
+	h.see(drop)
+	h.click("选择文件…")
+	h.see("123-abc.apps.googleusercontent.com")
+	h.click("在浏览器中登录")
+	h.until("the sign-in, with the file's client", func() bool {
+		fo.mu.Lock()
+		defer fo.mu.Unlock()
+		return len(fo.clients) == 1 && fo.clients[0] == core.OAuthClient{ID: "123-abc.apps.googleusercontent.com", Secret: "GOCSPX-s3cret"}
+	})
+}
+
+// Thunderbird's verified client signs Gmail in with nothing to fill in, under a notice of what it means.
+func TestOnboardingPublicClient(t *testing.T) {
+	h, _ := withAccount(t)
+	fo := &fakeOAuth{flows: map[string]chan flowResult{}}
+	h.app.oauth = fo
+	gmail, _ := auth.ByID("gmail")
+	pub := gmail.OAuth.Public
+	if pub == nil {
+		t.Fatal("Gmail offers no public client")
+	}
+	h.app.openAddAccount()
+	h.click("Gmail")
+	h.fill("邮箱地址", "me@gmail.com")
+	h.click("浏览器登录")
+	h.click("Thunderbird 的公开客户端")
+	h.see("使用前请知悉")
+	h.see("Godwit 与 Mozilla 没有关联")
+	if h.tt.HasText("把下载的 client_secret_….json 拖到这里") {
+		t.Fatal("the own client's file row shows for Thunderbird's client")
+	}
+	h.click("在浏览器中登录")
+	h.until("the sign-in, with Thunderbird's client", func() bool {
+		fo.mu.Lock()
+		defer fo.mu.Unlock()
+		return len(fo.clients) == 1 && fo.clients[0] == core.OAuthClient{ID: pub.ID, Secret: pub.Secret}
+	})
 }
 
 func TestAddAccountSheet(t *testing.T) {

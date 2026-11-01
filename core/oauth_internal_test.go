@@ -71,7 +71,7 @@ func requireLoopbackClosed(t *testing.T, authURL string) {
 
 func TestOAuthServiceFlow(t *testing.T) {
 	s, srv := oauthEnv(t)
-	id, authURL, err := s.BeginOAuth(context.Background(), "outlook", "alice@outlook.com")
+	id, authURL, err := s.BeginOAuth(context.Background(), "outlook", "alice@outlook.com", OAuthClient{})
 	require.NoError(t, err)
 	require.NotEmpty(t, id)
 	assert.Equal(t, "alice@outlook.com", must(url.Parse(authURL)).Query().Get("login_hint"))
@@ -96,7 +96,7 @@ func TestOAuthServiceFlow(t *testing.T) {
 func TestOAuthGrantDiscarded(t *testing.T) {
 	setFor(t, &grantTTL, 50*time.Millisecond)
 	s, srv := oauthEnv(t)
-	id, authURL, err := s.BeginOAuth(context.Background(), "outlook", "")
+	id, authURL, err := s.BeginOAuth(context.Background(), "outlook", "", OAuthClient{})
 	require.NoError(t, err)
 	ch := await(s, id)
 	srv.Browse(t, authURL, "alice@outlook.com")
@@ -113,7 +113,7 @@ func TestOAuthGrantDiscarded(t *testing.T) {
 func TestOAuthFlowExpires(t *testing.T) {
 	setFor(t, &auth.FlowTimeout, 100*time.Millisecond)
 	s, _ := oauthEnv(t)
-	id, authURL, err := s.BeginOAuth(context.Background(), "outlook", "")
+	id, authURL, err := s.BeginOAuth(context.Background(), "outlook", "", OAuthClient{})
 	require.NoError(t, err)
 	require.ErrorIs(t, recvAwait(t, await(s, id)).err, auth.ErrFlowExpired)
 	requireLoopbackClosed(t, authURL)
@@ -121,7 +121,7 @@ func TestOAuthFlowExpires(t *testing.T) {
 
 func TestCancelOAuth(t *testing.T) {
 	s, srv := oauthEnv(t)
-	id, authURL, err := s.BeginOAuth(context.Background(), "outlook", "")
+	id, authURL, err := s.BeginOAuth(context.Background(), "outlook", "", OAuthClient{})
 	require.NoError(t, err)
 	ch := await(s, id)
 	time.Sleep(50 * time.Millisecond)
@@ -132,7 +132,7 @@ func TestCancelOAuth(t *testing.T) {
 	s.CancelOAuth(id) // unknown now: no-op
 
 	// A finished flow's grant is dropped by CancelOAuth too.
-	id, authURL, err = s.BeginOAuth(context.Background(), "outlook", "")
+	id, authURL, err = s.BeginOAuth(context.Background(), "outlook", "", OAuthClient{})
 	require.NoError(t, err)
 	ch = await(s, id)
 	srv.Browse(t, authURL, "alice@outlook.com")
@@ -144,11 +144,11 @@ func TestCancelOAuth(t *testing.T) {
 
 func TestCloseEndsOAuthFlows(t *testing.T) {
 	s, srv := oauthEnv(t)
-	waiting, waitingURL, err := s.BeginOAuth(context.Background(), "outlook", "")
+	waiting, waitingURL, err := s.BeginOAuth(context.Background(), "outlook", "", OAuthClient{})
 	require.NoError(t, err)
-	_, idleURL, err := s.BeginOAuth(context.Background(), "outlook", "")
+	_, idleURL, err := s.BeginOAuth(context.Background(), "outlook", "", OAuthClient{})
 	require.NoError(t, err)
-	done, doneURL, err := s.BeginOAuth(context.Background(), "outlook", "")
+	done, doneURL, err := s.BeginOAuth(context.Background(), "outlook", "", OAuthClient{})
 	require.NoError(t, err)
 	dch := await(s, done)
 	srv.Browse(t, doneURL, "alice@outlook.com")
@@ -162,7 +162,7 @@ func TestCloseEndsOAuthFlows(t *testing.T) {
 	requireLoopbackClosed(t, idleURL)
 	_, ok := s.takeGrant(done)
 	assert.False(t, ok, "Close drops finished grants")
-	_, _, err = s.BeginOAuth(context.Background(), "outlook", "")
+	_, _, err = s.BeginOAuth(context.Background(), "outlook", "", OAuthClient{})
 	require.ErrorIs(t, err, ErrClosed)
 }
 
@@ -175,7 +175,7 @@ func must[T any](v T, err error) T {
 
 func TestCancelBetweenWaitAndCommit(t *testing.T) {
 	s, srv := oauthEnv(t)
-	id, authURL, err := s.BeginOAuth(context.Background(), "outlook", "")
+	id, authURL, err := s.BeginOAuth(context.Background(), "outlook", "", OAuthClient{})
 	require.NoError(t, err)
 	setFor(t, &afterOAuthWait, func(string) { s.CancelOAuth(id) })
 	ch := await(s, id)
@@ -187,7 +187,7 @@ func TestCancelBetweenWaitAndCommit(t *testing.T) {
 
 func TestConcurrentAwaitOneWins(t *testing.T) {
 	s, srv := oauthEnv(t)
-	id, authURL, err := s.BeginOAuth(context.Background(), "outlook", "")
+	id, authURL, err := s.BeginOAuth(context.Background(), "outlook", "", OAuthClient{})
 	require.NoError(t, err)
 	var both sync.WaitGroup
 	both.Add(2)
@@ -208,7 +208,7 @@ func TestConcurrentAwaitOneWins(t *testing.T) {
 func TestUnclaimedFlowPurged(t *testing.T) {
 	setFor(t, &auth.FlowTimeout, 300*time.Millisecond)
 	s, srv := oauthEnv(t)
-	id, authURL, err := s.BeginOAuth(context.Background(), "outlook", "")
+	id, authURL, err := s.BeginOAuth(context.Background(), "outlook", "", OAuthClient{})
 	require.NoError(t, err)
 	srv.Browse(t, authURL, "alice@outlook.com")
 	requireLoopbackClosed(t, authURL) // the callback was handled: no Wait needed

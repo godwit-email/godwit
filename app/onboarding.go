@@ -62,6 +62,8 @@ type onboarding struct {
 	focusEmail           bool // place the caret before a newly prefilled domain once
 	secret, username     string
 	showSecret           bool
+	tab                  int        // ownClientOffered's tabs: 0 the secret, 1 the browser with the user's own OAuth client
+	client               clientForm // the browser tab's own OAuth client
 	manual               bool
 	imapHost, imapPort   string
 	smtpHost, smtpPort   string
@@ -256,7 +258,10 @@ func (o *onboarding) choose(p auth.Provider) {
 	if feishuOrLark(p) && o.detectedFor == o.email && feishuOrLark(o.detected) {
 		p = o.detected // the 飞书/Lark tile for an address already found
 	}
-	o.prov = p
+	if p.ID != o.prov.ID { // what was typed or imported is for the provider it was given to
+		o.secret, o.client = "", clientForm{}
+	}
+	o.prov, o.tab = p, 0
 	o.imapHost, o.imapPort, o.imapSec = p.IMAP.Host, strconv.Itoa(p.IMAP.Port), p.IMAP.Security
 	o.smtpHost, o.smtpPort, o.smtpSec = p.SMTP.Host, strconv.Itoa(p.SMTP.Port), p.SMTP.Security
 	if p.IMAP.Host == "" {
@@ -283,11 +288,15 @@ func (o *onboarding) startOAuth() {
 	o.step, o.oauthErr = stepOAuth, nil
 	gen, a := o.gen, o.a
 	oauth, plat, prov, hint := a.oauth, a.plat, o.prov.ID, strings.TrimSpace(o.email)
+	var client core.OAuthClient
+	if o.ownClient() {
+		client = o.client.client(publicClient(o.prov))
+	}
 	var id, url string
 	var openErr error
 	a.do(func(ctx context.Context) error {
 		var err error
-		if id, url, err = oauth.Begin(ctx, prov, hint); err != nil {
+		if id, url, err = oauth.Begin(ctx, prov, hint, client); err != nil {
 			return err
 		}
 		openErr = plat.OpenURL(url)
@@ -338,7 +347,7 @@ func (o *onboarding) input() core.AccountInput {
 	in := core.AccountInput{Email: strings.TrimSpace(o.email), Name: strings.TrimSpace(o.name), Username: strings.TrimSpace(o.username),
 		IMAPHost: strings.TrimSpace(o.imapHost), IMAPPort: ip, IMAPSecurity: o.imapSec,
 		SMTPHost: strings.TrimSpace(o.smtpHost), SMTPPort: sp, SMTPSecurity: o.smtpSec, Provider: o.prov.ID}
-	if o.prov.Login == "oauth" {
+	if o.oauth() {
 		in.OAuthFlowID = o.flowID
 	} else {
 		in.Password = o.secret
@@ -400,7 +409,7 @@ func (o *onboarding) validate() (reason, next string) {
 	if !validEmail(o.email) {
 		return i18n.T("onboarding.invalid.email"), i18n.T("onboarding.next.email")
 	}
-	if o.prov.Login == "oauth" {
+	if o.oauth() {
 		return "", ""
 	}
 	for _, sv := range []struct{ proto, host, port string }{{"IMAP", o.imapHost, o.imapPort}, {"SMTP", o.smtpHost, o.smtpPort}} {
@@ -419,7 +428,7 @@ func (o *onboarding) validate() (reason, next string) {
 
 // retry goes back to the sign-in after a failed check, keeping what was typed.
 func (o *onboarding) retry(manual bool) {
-	if o.prov.Login == "oauth" {
+	if o.oauth() {
 		o.startOAuth()
 		return
 	}
@@ -742,7 +751,6 @@ func secretWhitespaceHint(c *ui.Context, secret *string) {
 }
 
 func (o *onboarding) passwordView(c *ui.Context) {
-	t, th := theme.Of(c), c.Theme()
 	o.backLink(c)
 	sub := strings.TrimSpace(o.email)
 	if o.askEmail {
@@ -765,30 +773,28 @@ func (o *onboarding) passwordView(c *ui.Context) {
 			}
 		})
 	}
+	if ownClientOffered(o.prov) {
+		tab := o.tab
+		kit.TabsFill(c, &o.tab, o.secretName(), i18n.T("onboarding.tab.browser"))
+		if o.tab != tab {
+			o.showSecret = false
+		}
+	}
+	if o.ownClient() {
+		o.ownClientView(c)
+		return
+	}
 	name, login := o.provName(), o.prov.Login
 	hint := tr("onboarding.hint." + o.prov.ID)
 	if hint == "" && tr("onboarding.hint."+login) != "" {
 		hint = i18n.Tf("onboarding.hint."+login, name)
 	}
 	if hint != "" {
-		ui.Column(c).Gap(th.Space(2.5)).Padding(th.Space(3.5), th.Space(4)).Radius(t.Radius.Xl).Background(t.Sidebar).Border(theme.Hairline, t.Hover).Children(func() {
-			lineText(c, hint, t.Text.Body).FontWeight(500)
-			steps := tr("onboarding.steps." + o.prov.ID)
-			if steps == "" {
-				steps = tr("onboarding.steps." + login)
-			}
-			ui.Column(c).Gap(th.Space(1)).Padding(0, 0, 0, th.Space(1.5)).Children(func() {
-				for i, line := range strings.Split(steps, "\n") {
-					ui.Text(c, strconv.Itoa(i+1)+". "+line).TextColor(t.Foreground.Mix(t.Background, 0.25)).LineHeight(theme.LineProse)
-				}
-			})
-			if u := o.prov.HelpURL; u != "" {
-				help := i18n.Tf("onboarding.open_help", name)
-				kit.Pressable(c, kit.PressableOpts{Bare: true, OnClick: func() { o.openURL(u) }}).Label(help).AlignSelf(ui.Start).Children(func() {
-					lineText(c, help, t.Text.Base).Underline()
-				})
-			}
-		})
+		steps := tr("onboarding.steps." + o.prov.ID)
+		if steps == "" {
+			steps = tr("onboarding.steps." + login)
+		}
+		o.hintBox(c, hint, steps, tr("onboarding.note."+o.prov.ID), i18n.Tf("onboarding.open_help", name), o.prov.HelpURL)
 	}
 	ui.Field(c, o.secretName(), func() {
 		if secretInput(c, &o.secret, &o.showSecret, o.secretName()).Submitted() && o.secret != "" {
@@ -798,6 +804,54 @@ func (o *onboarding) passwordView(c *ui.Context) {
 	secretWhitespaceHint(c, &o.secret)
 	primary(c, i18n.T("onboarding.connect"), o.secret == "" || !validEmail(o.email)).OnClick(o.connect)
 	o.manualView(c)
+}
+
+// ownClientOffered: the provider has no OAuth client of Godwit's but signs in
+// with the user's own (Gmail, for anyone who cannot or will not use an app password).
+func ownClientOffered(p auth.Provider) bool { return p.OAuth != nil && p.OAuth.ClientID == "" }
+
+// ownClient: the browser tab is chosen, for the user's own OAuth client.
+func (o *onboarding) ownClient() bool { return ownClientOffered(o.prov) && o.tab == 1 }
+
+// oauth: the sign-in is in the browser, with the provider's client or the user's own.
+func (o *onboarding) oauth() bool { return o.prov.Login == "oauth" || o.ownClient() }
+
+// ownClientView asks for the user's own OAuth client in place of the password.
+func (o *onboarding) ownClientView(c *ui.Context) {
+	pub := publicClient(o.prov)
+	o.client.choice(c, pub)
+	if o.client.ownChosen(pub) {
+		o.hintBox(c, i18n.T("onboarding.own_client.title"), i18n.T("onboarding.own_client.steps"), i18n.T("onboarding.own_client.note"),
+			i18n.T("onboarding.own_client.help"), ownClientHelpURL)
+	}
+	o.client.view(c, o.a, i18n.T("onboarding.secret.help"), pub)
+	cl := o.client.client(pub)
+	primary(c, i18n.T("onboarding.own_client.signin"), cl.ID == "" || cl.Secret == "").OnClick(o.startOAuth)
+}
+
+// ownClientHelpURL is Google's guide to creating an OAuth client ID.
+const ownClientHelpURL = "https://developers.google.com/workspace/guides/create-credentials#oauth-client-id"
+
+// hintBox is the sign-in hint: a headline, numbered steps (one per line), an
+// optional note under them and a help link.
+func (o *onboarding) hintBox(c *ui.Context, hint, steps, note, help, helpURL string) {
+	t, th := theme.Of(c), c.Theme()
+	ui.Column(c).Gap(th.Space(2.5)).Padding(th.Space(3.5), th.Space(4)).Radius(t.Radius.Xl).Background(t.Sidebar).Border(theme.Hairline, t.Hover).Children(func() {
+		lineText(c, hint, t.Text.Body).FontWeight(500)
+		ui.Column(c).Gap(th.Space(1)).Padding(0, 0, 0, th.Space(1.5)).Children(func() {
+			for i, line := range strings.Split(steps, "\n") {
+				ui.Text(c, strconv.Itoa(i+1)+". "+line).TextColor(t.Foreground.Mix(t.Background, 0.25)).LineHeight(theme.LineProse)
+			}
+		})
+		if note != "" {
+			kit.Text(c, note, t.Text.Sm).TextColor(t.Muted).LineHeight(theme.LineProse)
+		}
+		if helpURL != "" {
+			kit.Pressable(c, kit.PressableOpts{Bare: true, OnClick: func() { o.openURL(helpURL) }}).Label(help).AlignSelf(ui.Start).Children(func() {
+				lineText(c, help, t.Text.Base).Underline()
+			})
+		}
+	})
 }
 
 var securities = []kit.Option[core.Security]{
@@ -841,7 +895,11 @@ func (o *onboarding) serversForm(c *ui.Context) {
 func (o *onboarding) oauthView(c *ui.Context) {
 	t, th := theme.Of(c), c.Theme()
 	o.backLink(c)
-	o.providerHeader(c, i18n.T("onboarding.oauth.sub"))
+	sub := tr("onboarding.oauth.sub." + o.prov.ID)
+	if sub == "" {
+		sub = i18n.T("onboarding.oauth.sub")
+	}
+	o.providerHeader(c, sub)
 	ui.Column(c).Gap(th.Space(3)).Padding(th.Space(5)).Radius(t.Radius.Xl).Border(theme.Hairline, t.Border).BorderStyle(ui.BorderDashed).AlignItems(ui.Center).Children(func() {
 		if o.oauthErr != nil {
 			kit.Alert(c, kit.Danger, humanize(o.oauthErr), func() {
@@ -849,7 +907,7 @@ func (o *onboarding) oauthView(c *ui.Context) {
 			})
 			return
 		}
-		ui.Box(c).Size(theme.PendingDot, theme.PendingDot).Radius(t.Radius.Full).Background(t.Ring)
+		kit.Spinner(c).Size(theme.IconMd, theme.IconMd).Label(i18n.T("settings.account.reauth.waiting"))
 		title := i18n.T("onboarding.oauth.opening")
 		if o.authURL != "" {
 			title = i18n.T("onboarding.oauth.opened")
@@ -890,10 +948,10 @@ func (o *onboarding) checkRow(st core.CheckStep) (text, detail string, status in
 	}
 	switch kind := string(st.Kind); kind {
 	case "auth":
-		switch login := o.prov.Login; login {
-		case "oauth":
+		switch login := o.prov.Login; {
+		case o.oauth():
 			reason, next = i18n.T("onboarding.reason.oauth"), i18n.T("onboarding.next.oauth")
-		case "authorization_code", "app_password":
+		case login == "authorization_code" || login == "app_password":
 			reason, next = i18n.Tf("onboarding.reason.auth", o.secretName()), i18n.Tf("onboarding.next.regenerate", providerName(o.prov))
 		default:
 			reason, next = i18n.Tf("onboarding.reason.auth", o.secretName()), i18n.T("onboarding.next.password")
@@ -934,7 +992,7 @@ func (o *onboarding) settingsNext() string {
 	switch {
 	case o.invalid != "":
 		return o.invalidNext
-	case o.prov.Login == "oauth":
+	case o.oauth():
 		return i18n.T("onboarding.next.oauth")
 	}
 	return i18n.T("onboarding.next.server")
@@ -982,7 +1040,7 @@ func (o *onboarding) checkView(c *ui.Context) {
 	})
 	if failed {
 		ui.Row(c).Gap(th.Space(2)).Children(func() {
-			if o.prov.Login == "oauth" {
+			if o.oauth() {
 				kit.Button(c, i18n.T("onboarding.relogin"), kit.ButtonOpts{Size: kit.SizeLg}).PaddingX(th.Space(3.5)).OnClick(func() { o.retry(false) })
 				return
 			}

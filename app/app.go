@@ -109,15 +109,15 @@ type Notification struct {
 
 // OAuthFlow signs in with an OAuth provider; the default wraps the Service.
 type OAuthFlow interface {
-	Begin(ctx context.Context, provider, loginHint string) (flowID, authURL string, err error)
+	Begin(ctx context.Context, provider, loginHint string, client core.OAuthClient) (flowID, authURL string, err error)
 	Await(ctx context.Context, flowID string) (email string, err error)
 	Cancel(flowID string)
 }
 
 type serviceOAuth struct{ svc *core.Service }
 
-func (o serviceOAuth) Begin(ctx context.Context, provider, loginHint string) (string, string, error) {
-	return o.svc.BeginOAuth(ctx, provider, loginHint)
+func (o serviceOAuth) Begin(ctx context.Context, provider, loginHint string, client core.OAuthClient) (string, string, error) {
+	return o.svc.BeginOAuth(ctx, provider, loginHint, client)
 }
 func (o serviceOAuth) Await(ctx context.Context, flowID string) (string, error) {
 	return o.svc.AwaitOAuth(ctx, flowID)

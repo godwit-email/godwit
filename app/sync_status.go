@@ -109,7 +109,7 @@ func failCause(kind, host string) string {
 func (a *App) signInButton(acc core.Account) syncButton {
 	p := a.pages[PageSettings].(*settingsPage)
 	if acc.AuthType == "oauth" {
-		return syncButton{label: i18n.T("onboarding.relogin"), primary: true, do: func() { p.startReauth(acc) }}
+		return syncButton{label: i18n.T("onboarding.relogin"), primary: true, do: func() { p.reauthorize(acc) }}
 	}
 	return syncButton{label: i18n.Tf("settings.account.login.update", secretName(accountProvider(a, acc))), primary: true, do: func() {
 		a.navigate(Route{Page: PageSettings, Settings: accountRoute(acc.ID)})

@@ -408,7 +408,7 @@ func TestOAuth(t *testing.T) {
 	runContract(t, func(t *testing.T, api contract.API, env *coretest.Env) any {
 		ctx := t.Context()
 		out := map[string]any{}
-		flowID, authURL, err := api.BeginOAuth(ctx, "outlook", "a@outlook.com")
+		flowID, authURL, err := api.BeginOAuth(ctx, "outlook", "a@outlook.com", core.OAuthClient{})
 		require.NoError(t, err)
 		u, err := url.Parse(authURL)
 		require.NoError(t, err)
@@ -442,11 +442,11 @@ func TestOAuth(t *testing.T) {
 		api.CancelOAuth(flowID)
 		require.Eventually(t, func() bool { return !listening() }, 5*time.Second, 10*time.Millisecond)
 
-		second, _, err := api.BeginOAuth(ctx, "outlook", "")
+		second, _, err := api.BeginOAuth(ctx, "outlook", "", core.OAuthClient{})
 		require.NoError(t, err)
 		out["second"] = map[string]any{"flowID": opaque(flowFormat, second), "err": errInfo(err)}
 		api.CancelOAuth(second)
-		out["notOAuth"] = res2(api.BeginOAuth(ctx, "gmail", ""))
+		out["notOAuth"] = res2(api.BeginOAuth(ctx, "gmail", "", core.OAuthClient{}))
 		return out
 	})
 }
@@ -456,6 +456,6 @@ func TestOAuthNotConfigured(t *testing.T) {
 	auth.MicrosoftClientID = "" // before any Env starts, so no goroutine races it
 	defer func() { auth.MicrosoftClientID = old }()
 	runContract(t, func(t *testing.T, api contract.API, env *coretest.Env) any {
-		return res2(api.BeginOAuth(t.Context(), "outlook", ""))
+		return res2(api.BeginOAuth(t.Context(), "outlook", "", core.OAuthClient{}))
 	})
 }

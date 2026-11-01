@@ -541,7 +541,7 @@ func (m *modelsView) login(f *modelForm) {
 	var openErr error
 	a.do(func(ctx context.Context) error {
 		var err error
-		if id, url, err = oauth.Begin(ctx, prov, hint); err != nil {
+		if id, url, err = oauth.Begin(ctx, prov, hint, core.OAuthClient{}); err != nil {
 			return err
 		}
 		openErr = plat.OpenURL(url)

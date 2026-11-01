@@ -65,7 +65,7 @@ func newOAuthEnv(t *testing.T, autoSync bool) *oauthAccEnv {
 // signIn runs a flow to the end as email and returns its ID.
 func (e *oauthAccEnv) signIn(t *testing.T, email string) string {
 	t.Helper()
-	id, authURL, err := e.s.BeginOAuth(bg, "outlook", email)
+	id, authURL, err := e.s.BeginOAuth(bg, "outlook", email, OAuthClient{})
 	require.NoError(t, err)
 	ch := await(e.s, id)
 	e.oa.Browse(t, authURL, email)

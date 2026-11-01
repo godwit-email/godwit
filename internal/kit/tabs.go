@@ -5,14 +5,27 @@ import (
 	"github.com/godwit-email/godwit/internal/theme"
 )
 
-// Tabs is a segmented tab list choosing *sel.
+// Tabs is a segmented tab list choosing *sel, each tab as wide as its label.
 func Tabs(c *ui.Context, sel *int, labels ...string) ui.Element {
+	return segmented(c, sel, false, labels)
+}
+
+// TabsFill is Tabs across its row, every tab the same width: a choice
+// between whole views, as Gmail's 应用专用密码 | 浏览器登录.
+func TabsFill(c *ui.Context, sel *int, labels ...string) ui.Element {
+	return segmented(c, sel, true, labels)
+}
+
+func segmented(c *ui.Context, sel *int, fill bool, labels []string) ui.Element {
 	t, th := theme.Of(c), c.Theme()
 	tabs := ui.TabsBase(c, sel, len(labels))
 	return tabs.List.Padding(th.Space(0.5)).Radius(t.Radius.Lg).Background(t.Hover).Gap(th.Space(0.5)).Children(func() {
 		for i, l := range labels {
 			// ponytail: backgrounds fade; a sliding indicator needs the tabs' rects from the last frame
 			tab := tabs.Tab(i).Height(th.Space(6.5)).PaddingX(th.Space(2.5)).Radius(t.Radius.Md).FontSize(t.Text.Sm).FontWeight(400).TextColor(t.Muted).Transition(colors(theme.MotionFast))
+			if fill {
+				tab.Grow(1).Basis(0).Justify(ui.Center)
+			}
 			if i == *sel {
 				Elevate(c, tab.Background(t.Background).TextColor(t.Foreground), theme.ShadowSm)
 			}

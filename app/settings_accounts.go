@@ -312,10 +312,21 @@ func (p *settingsPage) syncNow(id int64) {
 	a.do(func(ctx context.Context) error { return a.svc.SyncNow(ctx, id) }, a.toastErr)
 }
 
-// startReauth signs in again in the browser, then gives the account the
-// new tokens after its earlier writes. ponytail: the wait has no cancel
-// button; closing the app cancels it.
-func (p *settingsPage) startReauth(acc core.Account) {
+// reauthorize signs in again in the browser; with the user's own OAuth
+// client, once they confirm it on the account's page.
+func (p *settingsPage) reauthorize(acc core.Account) {
+	if acc.OAuthClientID == "" {
+		p.startReauth(acc, core.OAuthClient{Account: acc.ID})
+		return
+	}
+	p.a.navigate(Route{Page: PageSettings, Settings: accountRoute(acc.ID)})
+	p.openDialog("client", acc) // after navigate, whose refresh closes dialogs
+}
+
+// startReauth signs in again in the browser with client, then gives the
+// account the new tokens after its earlier writes. ponytail: the wait has no
+// cancel button; closing the app cancels it.
+func (p *settingsPage) startReauth(acc core.Account, client core.OAuthClient) {
 	a := p.a
 	id, oauth, plat := acc.ID, a.oauth, a.plat
 	p.reauth[id] = true
@@ -323,7 +334,7 @@ func (p *settingsPage) startReauth(acc core.Account) {
 	a.do(func(ctx context.Context) error {
 		var url string
 		var err error
-		if flow, url, err = oauth.Begin(ctx, acc.Provider, acc.Email); err != nil {
+		if flow, url, err = oauth.Begin(ctx, acc.Provider, acc.Email, client); err != nil {
 			return err
 		}
 		if err := plat.OpenURL(url); err != nil {
@@ -593,16 +604,22 @@ func (p *settingsPage) authButton(c *ui.Context, acc core.Account, prov auth.Pro
 		label, o.Disabled = i18n.T("settings.account.reauth.waiting"), true
 	}
 	if banner && !o.Disabled {
-		kit.AlertAction(c, kit.Warning, label, func() { p.startReauth(acc) })
+		kit.AlertAction(c, kit.Warning, label, func() { p.reauthorize(acc) })
 		return
 	}
-	kit.Button(c, label, o).OnClick(func() { p.startReauth(acc) })
+	kit.Button(c, label, o).OnClick(func() { p.reauthorize(acc) })
 }
 
 func (p *settingsPage) openDialog(kind string, acc core.Account) {
 	p.dialog, p.open, p.busy, p.dlgErr, p.dlgAcc = kind, true, false, nil, acc.ID
 	p.dlgGen++
 	p.secret = ""
+	saved, pub := acc.OAuthClientID, publicClient(accountProvider(p.a, acc))
+	public := pub != nil && saved == pub.ID
+	if public {
+		saved = "" // not the own client's to start from
+	}
+	p.client = clientForm{id: saved, savedID: saved, manual: true, public: public}
 	p.showSecret = false
 	p.iconSelected, p.iconUpload, p.iconPreview = acc.Icon, nil, nil
 	p.servers = serverForm{imapHost: acc.IMAPHost, imapPort: strconv.Itoa(acc.IMAPPort), smtpHost: acc.SMTPHost,
@@ -659,8 +676,10 @@ func (p *settingsPage) dialogView(c *ui.Context) {
 	var body, confirm func()
 	size := kit.DialogSm
 	label, variant := i18n.T("common.save"), kit.Default
+	incomplete := false // the confirm button waits for the fields
 	switch p.dialog {
 	case "password":
+		incomplete = p.secret == ""
 		title = i18n.Tf("settings.account.login.update", secretName(prov))
 		body = func() {
 			ui.Field(c, secretName(prov), func() { secretInput(c, &p.secret, &p.showSecret, secretName(prov)) }).
@@ -673,6 +692,22 @@ func (p *settingsPage) dialogView(c *ui.Context) {
 				func(bool) {
 					a.toastAs(kit.ToastSuccess, i18n.Tf("settings.account.password.updated", secretName(prov)))
 				})
+		}
+	case "client":
+		title, label = i18n.T("settings.account.client.title"), i18n.T("onboarding.own_client.signin")
+		pub := publicClient(prov)
+		body = func() {
+			p.client.choice(c, pub)
+			p.client.view(c, a, i18n.T("settings.account.client.secret_help"), pub)
+		}
+		client := p.client.client(pub)
+		incomplete = client.ID == "" || client.Secret == "" && client.ID != acc.OAuthClientID // a new client needs its secret
+		if client.Secret == "" && client.ID == acc.OAuthClientID {
+			client = core.OAuthClient{Account: id} // the saved secret
+		}
+		confirm = func() {
+			p.closeDialog()
+			p.startReauth(acc, client)
 		}
 	case "servers":
 		title, size = i18n.T("settings.account.servers"), kit.DialogMd
@@ -776,7 +811,7 @@ func (p *settingsPage) dialogView(c *ui.Context) {
 	}
 	kit.Dialog(c, &p.open, title, kit.DialogOpts{Size: size, Desc: desc, Close: i18n.T("common.close")}, content, func() {
 		kit.Button(c, i18n.T("common.cancel"), kit.ButtonOpts{Variant: kit.Outline}).OnClick(p.closeDialog)
-		kit.Button(c, label, kit.ButtonOpts{Variant: variant, Disabled: p.busy || p.dialog == "password" && p.secret == ""}).OnClick(confirm)
+		kit.Button(c, label, kit.ButtonOpts{Variant: variant, Disabled: p.busy || incomplete}).OnClick(confirm)
 	})
 }
 

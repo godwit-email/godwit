@@ -44,13 +44,14 @@ type settingsPage struct {
 	forms        map[int64]*accountForm
 	usage        map[int64]int64    // attachment cache bytes per account; absent until read
 	boxes        map[int64]*mailbox // 邮箱行为 per account; absent until read
-	dialog       string             // the open dialog: "password", "servers", "remove", "cache"; "" none
+	dialog       string             // the open dialog: "password", "client", "servers", "remove", "cache"; "" none
 	dlgAcc       int64              // the account the dialog is about
 	dlgGen       uint64             // bumped per dialog opened; an older dialog's result leaves it alone
 	open         bool               // the dialog shows; Escape or a click outside clears it
 	busy         bool               // the dialog's action runs
 	dlgErr       error              // the dialog action's failure
 	secret       string             // the password dialog's field
+	client       clientForm         // the client dialog's OAuth client
 	showSecret   bool
 	iconSelected string                                                                         // the icon dialog's chosen icon: '' or label:<name>
 	iconUpload   []byte                                                                         // the icon dialog's uploaded image, over iconSelected

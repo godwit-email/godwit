@@ -1,15 +1,21 @@
 package store_test
 
 import (
+	"path/filepath"
+	"slices"
+	"strings"
+	"testing"
+
 	"github.com/godwit-email/godwit/core/store"
 	"github.com/stretchr/testify/require"
-	"path/filepath"
-	"testing"
 )
 
 func TestMigrationSecurityTrustInvalidatesOldBadges(t *testing.T) {
 	all := store.Migrations
-	store.Migrations = all[:len(all)-1]
+	// Up to the migration under test, which need not stay the last one.
+	i := slices.IndexFunc(all, func(m []string) bool { return strings.Contains(strings.Join(m, "\n"), "security_verify_dkim") })
+	require.Positive(t, i)
+	store.Migrations = all[:i]
 	defer func() { store.Migrations = all }()
 	path := filepath.Join(t.TempDir(), "security.db")
 	db, err := store.Open(t.Context(), path)

@@ -726,4 +726,17 @@ func TestShots(t *testing.T) {
 		h.see("已在浏览器中打开登录页")
 		shot(h, "OnboardingOAuth")
 	})
+	t.Run("OnboardingOwnOAuthClient", func(t *testing.T) {
+		h := onboarding(t)
+		h.click("Gmail")
+		h.see("应用专用密码")
+		shot(h, "OnboardingGmail")
+		h.fill("邮箱地址", "me@gmail.com")
+		h.click("浏览器登录")
+		h.see("把下载的 client_secret_….json 拖到这里")
+		shot(h, "OnboardingOwnOAuthClient")
+		h.click("Thunderbird 的公开客户端")
+		h.see("Godwit 与 Mozilla 没有关联")
+		shot(h, "OnboardingPublicOAuthClient")
+	})
 }
