@@ -444,10 +444,19 @@ func TestOnboardingOwnOAuthClient(t *testing.T) {
 	h.app.openAddAccount()
 	h.click("Gmail")
 	h.see("应用专用密码")
+	h.see("没开两步验证、加入了高级保护计划，或者管理员禁用了应用专用密码，就生成不了，改用浏览器登录。")
 	h.fill("邮箱地址", "me@gmail.com")
-	h.click("改用自己的 OAuth 客户端登录")
+	o := h.app.addAccount
+	o.secret = "abcd" // the field shares its label with its tab
+	h.click("浏览器登录")
 	h.fill("客户端 ID", " 123.apps.googleusercontent.com ")
 	h.fill("客户端密钥", "GOCSPX-s3cret")
+	o.tab = 0 // back to the app password and over again: each tab keeps what was typed in it
+	h.tt.Frame()
+	if o.secret != "abcd" {
+		t.Fatalf("app password %q after switching tabs", o.secret)
+	}
+	h.click("浏览器登录")
 	h.click("在浏览器中登录")
 	h.see("需要在浏览器里登录 Google 账户")
 	h.until("OpenURL of the sign-in page", func() bool {
@@ -460,7 +469,6 @@ func TestOnboardingOwnOAuthClient(t *testing.T) {
 		t.Fatalf("clients %+v, want %+v", got, want)
 	}
 	fo.finish("f1", "me@gmail.com")
-	o := h.app.addAccount
 	h.until("the check", func() bool { return o.step == stepChecking })
 	if in := o.input(); in.OAuthFlowID != "f1" || in.Password != "" {
 		t.Fatalf("input %+v signs in with neither the flow nor only it", in)
@@ -474,7 +482,10 @@ func TestOnboardingOwnOAuthClient(t *testing.T) {
 	})
 	h.click("← 换一个邮箱")
 	h.click("Gmail")
-	h.see("应用专用密码") // a fresh pick starts with the app password again
+	h.see("应用专用密码")
+	if o.tab != 0 {
+		t.Fatal("a fresh pick starts on the browser sign-in, not the app password")
+	}
 }
 
 func TestAddAccountSheet(t *testing.T) {

@@ -62,7 +62,7 @@ type onboarding struct {
 	focusEmail             bool // place the caret before a newly prefilled domain once
 	secret, username       string
 	showSecret             bool
-	ownClient              bool // the user's own OAuth client signs in (ownClientOffered), not secret
+	tab                    int // ownClientOffered's tabs: 0 the secret, 1 the browser with the user's own OAuth client
 	clientID, clientSecret string
 	manual                 bool
 	imapHost, imapPort     string
@@ -258,7 +258,7 @@ func (o *onboarding) choose(p auth.Provider) {
 	if feishuOrLark(p) && o.detectedFor == o.email && feishuOrLark(o.detected) {
 		p = o.detected // the 飞书/Lark tile for an address already found
 	}
-	o.prov, o.ownClient = p, false
+	o.prov, o.tab = p, 0
 	o.imapHost, o.imapPort, o.imapSec = p.IMAP.Host, strconv.Itoa(p.IMAP.Port), p.IMAP.Security
 	o.smtpHost, o.smtpPort, o.smtpSec = p.SMTP.Host, strconv.Itoa(p.SMTP.Port), p.SMTP.Security
 	if p.IMAP.Host == "" {
@@ -286,7 +286,7 @@ func (o *onboarding) startOAuth() {
 	gen, a := o.gen, o.a
 	oauth, plat, prov, hint := a.oauth, a.plat, o.prov.ID, strings.TrimSpace(o.email)
 	var client core.OAuthClient
-	if o.ownClient {
+	if o.ownClient() {
 		client = core.OAuthClient{ID: strings.TrimSpace(o.clientID), Secret: strings.TrimSpace(o.clientSecret)}
 	}
 	var id, url string
@@ -770,7 +770,14 @@ func (o *onboarding) passwordView(c *ui.Context) {
 			}
 		})
 	}
-	if o.ownClient {
+	if ownClientOffered(o.prov) {
+		tab := o.tab
+		kit.Tabs(c, &o.tab, o.secretName(), i18n.T("onboarding.tab.browser"))
+		if o.tab != tab {
+			o.showSecret = false
+		}
+	}
+	if o.ownClient() {
 		o.ownClientView(c)
 		return
 	}
@@ -784,7 +791,7 @@ func (o *onboarding) passwordView(c *ui.Context) {
 		if steps == "" {
 			steps = tr("onboarding.steps." + login)
 		}
-		o.hintBox(c, hint, steps, i18n.Tf("onboarding.open_help", name), o.prov.HelpURL)
+		o.hintBox(c, hint, steps, tr("onboarding.note."+o.prov.ID), i18n.Tf("onboarding.open_help", name), o.prov.HelpURL)
 	}
 	ui.Field(c, o.secretName(), func() {
 		if secretInput(c, &o.secret, &o.showSecret, o.secretName()).Submitted() && o.secret != "" {
@@ -794,21 +801,21 @@ func (o *onboarding) passwordView(c *ui.Context) {
 	secretWhitespaceHint(c, &o.secret)
 	primary(c, i18n.T("onboarding.connect"), o.secret == "" || !validEmail(o.email)).OnClick(o.connect)
 	o.manualView(c)
-	if ownClientOffered(o.prov) {
-		link(c, i18n.T("onboarding.own_client.offer"), func() { o.ownClient, o.showSecret = true, false })
-	}
 }
 
 // ownClientOffered: the provider has no OAuth client of Godwit's but signs in
 // with the user's own (Gmail, for anyone who cannot or will not use an app password).
 func ownClientOffered(p auth.Provider) bool { return p.OAuth != nil && p.OAuth.ClientID == "" }
 
+// ownClient: the browser tab is chosen, for the user's own OAuth client.
+func (o *onboarding) ownClient() bool { return ownClientOffered(o.prov) && o.tab == 1 }
+
 // oauth: the sign-in is in the browser, with the provider's client or the user's own.
-func (o *onboarding) oauth() bool { return o.prov.Login == "oauth" || o.ownClient }
+func (o *onboarding) oauth() bool { return o.prov.Login == "oauth" || o.ownClient() }
 
 // ownClientView asks for the user's own OAuth client in place of the password.
 func (o *onboarding) ownClientView(c *ui.Context) {
-	o.hintBox(c, i18n.T("onboarding.own_client.title"), i18n.T("onboarding.own_client.steps"),
+	o.hintBox(c, i18n.T("onboarding.own_client.title"), i18n.T("onboarding.own_client.steps"), i18n.T("onboarding.own_client.note"),
 		i18n.T("onboarding.own_client.help"), ownClientHelpURL)
 	ui.Field(c, i18n.T("onboarding.own_client.id"), func() {
 		kit.Input(c, &o.clientID, kit.InputOpts{Placeholder: "….apps.googleusercontent.com"}).Height(inputHeight(c))
@@ -818,14 +825,14 @@ func (o *onboarding) ownClientView(c *ui.Context) {
 		secretInput(c, &o.clientSecret, &o.showSecret, label)
 	}).Description(i18n.T("onboarding.secret.help"))
 	primary(c, i18n.T("onboarding.own_client.signin"), strings.TrimSpace(o.clientID) == "" || strings.TrimSpace(o.clientSecret) == "").OnClick(o.startOAuth)
-	link(c, i18n.T("onboarding.own_client.back"), func() { o.ownClient, o.showSecret = false, false })
 }
 
 // ownClientHelpURL is Google's guide to creating an OAuth client ID.
 const ownClientHelpURL = "https://developers.google.com/workspace/guides/create-credentials#oauth-client-id"
 
-// hintBox is the sign-in hint: a headline, numbered steps (one per line) and a help link.
-func (o *onboarding) hintBox(c *ui.Context, hint, steps, help, helpURL string) {
+// hintBox is the sign-in hint: a headline, numbered steps (one per line), an
+// optional note under them and a help link.
+func (o *onboarding) hintBox(c *ui.Context, hint, steps, note, help, helpURL string) {
 	t, th := theme.Of(c), c.Theme()
 	ui.Column(c).Gap(th.Space(2.5)).Padding(th.Space(3.5), th.Space(4)).Radius(t.Radius.Xl).Background(t.Sidebar).Border(theme.Hairline, t.Hover).Children(func() {
 		lineText(c, hint, t.Text.Body).FontWeight(500)
@@ -834,17 +841,15 @@ func (o *onboarding) hintBox(c *ui.Context, hint, steps, help, helpURL string) {
 				ui.Text(c, strconv.Itoa(i+1)+". "+line).TextColor(t.Foreground.Mix(t.Background, 0.25)).LineHeight(theme.LineProse)
 			}
 		})
+		if note != "" {
+			kit.Text(c, note, t.Text.Sm).TextColor(t.Muted).LineHeight(theme.LineProse)
+		}
 		if helpURL != "" {
 			kit.Pressable(c, kit.PressableOpts{Bare: true, OnClick: func() { o.openURL(helpURL) }}).Label(help).AlignSelf(ui.Start).Children(func() {
 				lineText(c, help, t.Text.Base).Underline()
 			})
 		}
 	})
-}
-
-// link is a text button on its own line, starting at the left.
-func link(c *ui.Context, label string, onClick func()) {
-	kit.Button(c, label, kit.ButtonOpts{Variant: kit.Link}).LineHeight(theme.LineFor(label)).AlignSelf(ui.Start).OnClick(onClick)
 }
 
 var securities = []kit.Option[core.Security]{
