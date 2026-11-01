@@ -103,8 +103,8 @@ func issueURL(errText, logText string) string {
 	lines := strings.Split(maskReport(strings.TrimSpace(logText)), "\n")
 	for {
 		body := "```\n" + errText + "\n```\n\n"
-		if len(lines) > 0 && lines[0] != "" {
-			body += "<details><summary>Log</summary>\n\n```\n" + strings.Join(lines, "\n") + "\n```\n</details>\n\n"
+		if log := strings.TrimSpace(strings.Join(lines, "\n")); log != "" {
+			body += "<details><summary>Log</summary>\n\n```\n" + log + "\n```\n</details>\n\n"
 		}
 		u := "https://github.com/godwit-email/godwit/issues/new?" + url.Values{"title": {title}, "body": {body + "Godwit " + Version + " (" + runtime.GOOS + "/" + runtime.GOARCH + ")\n"}}.Encode()
 		if len(u) <= issueURLMax || len(lines) == 0 {

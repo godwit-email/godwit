@@ -417,7 +417,7 @@ func TestReportUnknownError(t *testing.T) {
 		!strings.Contains(body, "sync <email>: EOF") {
 		t.Fatalf("body %q", body)
 	}
-	log := strings.Repeat("旧\n", 3000) + "newest"
+	log := strings.Repeat("旧", 3000) + "\n\nnewest" // dropping the oversized line leaves a blank one first
 	long, _ := url.Parse(issueURL(strings.Repeat("错", 5000), log))
 	if n := len(long.String()); n > issueURLMax || !strings.Contains(long.Query().Get("body"), "newest") {
 		t.Fatalf("link of %d bytes without the newest log line", n)
