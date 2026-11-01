@@ -21,6 +21,7 @@ import (
 	"time"
 
 	"github.com/godwit-email/godwit/core"
+	"github.com/godwit-email/godwit/core/auth"
 	"github.com/godwit-email/godwit/core/coretest"
 	"github.com/godwit-email/godwit/core/events"
 	"github.com/godwit-email/godwit/internal/i18n"
@@ -1708,6 +1709,49 @@ func TestSettingsSecurityRescan(t *testing.T) {
 		h.tt.Frame()
 		return h.tt.HasText(i18n.T("settings.security.rescan.start"))
 	})
+}
+
+// An account on Thunderbird's client signs in again with it, or moves to an own client.
+func TestSettingsReauthPublicClient(t *testing.T) {
+	h, acc := withAccount(t)
+	fo := &fakeOAuth{flows: map[string]chan flowResult{}}
+	h.app.oauth = fo
+	gmail, _ := auth.ByID("gmail")
+	pub := gmail.OAuth.Public
+	fetch := h.app.fetch
+	h.app.fetch = func(ctx context.Context) (core.Settings, []core.Account, error) {
+		st, accs, err := fetch(ctx)
+		for i := range accs {
+			accs[i].Provider, accs[i].AuthType, accs[i].OAuthClientID = "gmail", "oauth", pub.ID
+		}
+		return st, accs, err
+	}
+	h.app.load()
+	h.until("the account signs in with OAuth", func() bool { a, _ := h.app.accountByID(acc.ID); return a.AuthType == "oauth" })
+	p := h.openSettings(accountRoute(acc.ID))
+
+	h.click("重新登录")
+	h.see("使用前请知悉")
+	h.click("在浏览器中登录")
+	h.until("the sign-in page opens", func() bool { return len(fo.clients) == 1 })
+	if got, want := fo.clients[0], (core.OAuthClient{ID: pub.ID, Secret: pub.Secret}); got != want {
+		t.Fatalf("client %+v, want Thunderbird's", got)
+	}
+	fo.fail("f1", context.Canceled)
+	h.until("the wait ends", func() bool { return !p.reauth[acc.ID] })
+
+	h.click("重新登录")
+	h.click("自己创建的")
+	if p.client.id != "" {
+		t.Fatalf("own client ID %q: Thunderbird's must not fill it", p.client.id)
+	}
+	h.fill("客户端 ID", "9-own.apps.googleusercontent.com")
+	p.client.secret = "GOCSPX-9"
+	h.click("在浏览器中登录")
+	h.until("the sign-in with the own client", func() bool { return len(fo.clients) == 2 })
+	if got, want := fo.clients[1], (core.OAuthClient{ID: "9-own.apps.googleusercontent.com", Secret: "GOCSPX-9"}); got != want {
+		t.Fatalf("client %+v, want %+v", got, want)
+	}
 }
 
 // Signing in again with the user's own OAuth client asks for it, the saved ID

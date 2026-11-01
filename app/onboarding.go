@@ -287,7 +287,7 @@ func (o *onboarding) startOAuth() {
 	oauth, plat, prov, hint := a.oauth, a.plat, o.prov.ID, strings.TrimSpace(o.email)
 	var client core.OAuthClient
 	if o.ownClient() {
-		client = o.client.client()
+		client = o.client.client(publicClient(o.prov))
 	}
 	var id, url string
 	var openErr error
@@ -815,10 +815,14 @@ func (o *onboarding) oauth() bool { return o.prov.Login == "oauth" || o.ownClien
 
 // ownClientView asks for the user's own OAuth client in place of the password.
 func (o *onboarding) ownClientView(c *ui.Context) {
-	o.hintBox(c, i18n.T("onboarding.own_client.title"), i18n.T("onboarding.own_client.steps"), i18n.T("onboarding.own_client.note"),
-		i18n.T("onboarding.own_client.help"), ownClientHelpURL)
-	o.client.view(c, o.a, i18n.T("onboarding.secret.help"))
-	cl := o.client.client()
+	pub := publicClient(o.prov)
+	o.client.choice(c, pub)
+	if o.client.ownChosen(pub) {
+		o.hintBox(c, i18n.T("onboarding.own_client.title"), i18n.T("onboarding.own_client.steps"), i18n.T("onboarding.own_client.note"),
+			i18n.T("onboarding.own_client.help"), ownClientHelpURL)
+	}
+	o.client.view(c, o.a, i18n.T("onboarding.secret.help"), pub)
+	cl := o.client.client(pub)
 	primary(c, i18n.T("onboarding.own_client.signin"), cl.ID == "" || cl.Secret == "").OnClick(o.startOAuth)
 }
 

@@ -25,13 +25,41 @@ type clientForm struct {
 	imported   bool   // id and secret came from a file
 	err        error  // the last file's failure
 	manual     bool   // the typed-in fields show
+	public     bool   // the provider's public client (auth.PublicClient) instead
 	showSecret bool
 	gen        uint64 // bumped per import: a read finishing after another started is dropped
 }
 
-// client is the typed or imported client, trimmed.
-func (f *clientForm) client() core.OAuthClient {
+// client is pub when chosen, else the typed or imported client, trimmed.
+func (f *clientForm) client(pub *auth.PublicClient) core.OAuthClient {
+	if pub != nil && f.public {
+		return core.OAuthClient{ID: pub.ID, Secret: pub.Secret}
+	}
 	return core.OAuthClient{ID: strings.TrimSpace(f.id), Secret: strings.TrimSpace(f.secret)}
+}
+
+// ownChosen: the user's own client is asked for, pub not chosen.
+func (f *clientForm) ownChosen(pub *auth.PublicClient) bool { return pub == nil || !f.public }
+
+// publicClient is p's public client, or nil.
+func publicClient(p auth.Provider) *auth.PublicClient {
+	if p.OAuth == nil {
+		return nil
+	}
+	return p.OAuth.Public
+}
+
+// choice picks the user's own client or pub; nothing without pub.
+func (f *clientForm) choice(c *ui.Context, pub *auth.PublicClient) {
+	if pub == nil {
+		return
+	}
+	t, th := theme.Of(c), c.Theme()
+	ui.Row(c).Gap(th.Space(4)).AlignItems(ui.Center).Wrap().Children(func() {
+		kit.Text(c, i18n.T("onboarding.own_client.choice"), t.Text.Base).TextColor(t.Muted)
+		kit.Radio(c.Key("own"), &f.public, false, i18n.T("onboarding.own_client.choice.own"))
+		kit.Radio(c.Key("public"), &f.public, true, i18n.T("onboarding.own_client.choice.public"))
+	})
 }
 
 // change drops the file, or its failure, for another.
@@ -78,10 +106,14 @@ func (f *clientForm) importFile(a *App, path string) {
 	})
 }
 
-// view is the file's row and, until a file is imported, the typed-in fields
-// under a disclosure.
-func (f *clientForm) view(c *ui.Context, a *App, secretHelp string) {
+// view is pub's notice when chosen, else the file's row and, until a file is
+// imported, the typed-in fields under a disclosure.
+func (f *clientForm) view(c *ui.Context, a *App, secretHelp string, pub *auth.PublicClient) {
 	t, th := theme.Of(c), c.Theme()
+	if !f.ownChosen(pub) {
+		kit.Alert(c, kit.Warning, i18n.T("onboarding.own_client.public.notice"), nil)
+		return
+	}
 	change := func() {
 		kit.Button(c, i18n.T("onboarding.own_client.file.change"), kit.ButtonOpts{Variant: kit.Outline, Size: kit.SizeSm}).OnClick(f.change)
 	}

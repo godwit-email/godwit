@@ -22,7 +22,13 @@ type OAuthConfig struct {
 	Nonce                       bool              // send a random nonce on authorize
 	RequireScope                string            // non-empty: token response scope must include it
 	DeviceURL                   string            // non-empty: device-code flow
+	Public                      *PublicClient     // with no ClientID: another app's verified client, offered beside the user's own
 }
+
+// PublicClient is a desktop client another app registered and the provider
+// verified, whose ID and secret that app publishes; signing in with it, the
+// consent page names that app, not Godwit.
+type PublicClient struct{ ID, Secret string }
 
 type Provider struct {
 	ID, Name   string
@@ -55,6 +61,8 @@ func table() []Provider {
 				Scopes:   []string{"openid", "email", "https://mail.google.com/"},
 				// offline: a refresh token; consent: one again on every sign-in, not only the first
 				AuthParams: map[string]string{"access_type": "offline", "prompt": "select_account consent"},
+				// Mozilla's for Thunderbird (comm-central's OAuth2Providers.sys.mjs), verified for mail.google.com.
+				Public: &PublicClient{ID: "406964657835-aq8lmia8j95dhl1a2bvharmfk3t1hgqj.apps.googleusercontent.com", Secret: "kSmqreRr0qwBWJgbf5Y-PjSU"},
 			}},
 		{ID: "outlook", Name: "Outlook", Domains: []string{"outlook.com", "hotmail.com", "live.com", "live.cn", "msn.com", "hotmail.co.uk", "outlook.jp"},
 			IMAP: tls("outlook.office365.com"), SMTP: Server{"smtp-mail.outlook.com", 587, conn.StartTLS}, Login: "oauth",

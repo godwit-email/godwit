@@ -548,6 +548,34 @@ func TestOnboardingClientFile(t *testing.T) {
 	})
 }
 
+// Thunderbird's verified client signs Gmail in with nothing to fill in, under a notice of what it means.
+func TestOnboardingPublicClient(t *testing.T) {
+	h, _ := withAccount(t)
+	fo := &fakeOAuth{flows: map[string]chan flowResult{}}
+	h.app.oauth = fo
+	gmail, _ := auth.ByID("gmail")
+	pub := gmail.OAuth.Public
+	if pub == nil {
+		t.Fatal("Gmail offers no public client")
+	}
+	h.app.openAddAccount()
+	h.click("Gmail")
+	h.fill("邮箱地址", "me@gmail.com")
+	h.click("浏览器登录")
+	h.click("Thunderbird 的公开客户端")
+	h.see("使用前请知悉")
+	h.see("Godwit 与 Mozilla 没有关联")
+	if h.tt.HasText("把下载的 client_secret_….json 拖到这里") {
+		t.Fatal("the own client's file row shows for Thunderbird's client")
+	}
+	h.click("在浏览器中登录")
+	h.until("the sign-in, with Thunderbird's client", func() bool {
+		fo.mu.Lock()
+		defer fo.mu.Unlock()
+		return len(fo.clients) == 1 && fo.clients[0] == core.OAuthClient{ID: pub.ID, Secret: pub.Secret}
+	})
+}
+
 func TestAddAccountSheet(t *testing.T) {
 	plaintext(t)
 	h, _ := withAccount(t)

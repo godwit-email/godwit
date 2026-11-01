@@ -614,7 +614,12 @@ func (p *settingsPage) openDialog(kind string, acc core.Account) {
 	p.dialog, p.open, p.busy, p.dlgErr, p.dlgAcc = kind, true, false, nil, acc.ID
 	p.dlgGen++
 	p.secret = ""
-	p.client = clientForm{id: acc.OAuthClientID, savedID: acc.OAuthClientID, manual: true}
+	saved, pub := acc.OAuthClientID, publicClient(accountProvider(p.a, acc))
+	public := pub != nil && saved == pub.ID
+	if public {
+		saved = "" // not the own client's to start from
+	}
+	p.client = clientForm{id: saved, savedID: saved, manual: true, public: public}
 	p.showSecret = false
 	p.iconSelected, p.iconUpload, p.iconPreview = acc.Icon, nil, nil
 	p.servers = serverForm{imapHost: acc.IMAPHost, imapPort: strconv.Itoa(acc.IMAPPort), smtpHost: acc.SMTPHost,
@@ -690,8 +695,12 @@ func (p *settingsPage) dialogView(c *ui.Context) {
 		}
 	case "client":
 		title, label = i18n.T("settings.account.client.title"), i18n.T("onboarding.own_client.signin")
-		body = func() { p.client.view(c, a, i18n.T("settings.account.client.secret_help")) }
-		client := p.client.client()
+		pub := publicClient(prov)
+		body = func() {
+			p.client.choice(c, pub)
+			p.client.view(c, a, i18n.T("settings.account.client.secret_help"), pub)
+		}
+		client := p.client.client(pub)
 		incomplete = client.ID == "" || client.Secret == "" && client.ID != acc.OAuthClientID // a new client needs its secret
 		if client.Secret == "" && client.ID == acc.OAuthClientID {
 			client = core.OAuthClient{Account: id} // the saved secret

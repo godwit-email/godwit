@@ -660,6 +660,9 @@
     }
   },
   "onboarding_or_pick": "or pick a provider",
+  "onboarding_own_client_choice": "Client",
+  "onboarding_own_client_choice_own": "Your own",
+  "onboarding_own_client_choice_public": "Thunderbird''s public client",
   "onboarding_own_client_file_change": "Change",
   "onboarding_own_client_file_choose": "Choose file…",
   "onboarding_own_client_file_drop": "Drop the downloaded client_secret_….json here",
@@ -672,6 +675,7 @@
   "onboarding_own_client_id": "Client ID",
   "onboarding_own_client_manual": "Enter the client ID and secret manually",
   "onboarding_own_client_note": "As Google has not reviewed the project, it warns “Google hasn''t verified this app” when you sign in: click Advanced to continue. Google lets such a project sign in at most 100 accounts. Internal projects have neither limit.",
+  "onboarding_own_client_public_notice": "Before you use it\n• Mozilla registered this client for Thunderbird and Google verified it: no project to create, and no 7-day expiry or 100-account cap\n• Google''s consent page names “Thunderbird”, while Godwit is what reads and writes your mail\n• Mozilla manages it, and Mozilla or Google may disable it at any time; then sign in again with your own client\n• Godwit is not affiliated with Mozilla",
   "onboarding_own_client_secret": "Client secret",
   "onboarding_own_client_signin": "Sign in in the browser",
   "onboarding_own_client_steps": "In the Google Cloud console, create a project and set the OAuth consent screen''s user type to External (Google Workspace accounts can also choose Internal)\nOn the Audience page, click Publish app. This only ends testing and does not submit the app for Google''s review; unpublished, Google''s sign-in expires after 7 days\nCreate an OAuth client of type Desktop app and download its JSON file",
