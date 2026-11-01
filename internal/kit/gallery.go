@@ -87,7 +87,10 @@ func Gallery(c *ui.Context, g *GalleryState) {
 				Switch(c, &g.Switch).Label("Bare switch")
 				SwitchRow(c, &g.Switch2, "Switch row", "Help under the row")
 			})
-			section("Tabs", func() { Tabs(c, &g.Tabs, "Tab A", "Tab B", "Tab C") })
+			section("Tabs", func() {
+				Tabs(c, &g.Tabs, "Tab A", "Tab B", "Tab C")
+				TabsFill(c, &g.Tabs, "Fill A", "Fill B", "Fill C")
+			})
 			section("ToggleGroup", func() {
 				ToggleGroup(c, "Gallery toggles", func() {
 					for i, l := range []string{"Left", "Middle", "Right"} {

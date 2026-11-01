@@ -775,7 +775,7 @@ func (o *onboarding) passwordView(c *ui.Context) {
 	}
 	if ownClientOffered(o.prov) {
 		tab := o.tab
-		kit.Tabs(c, &o.tab, o.secretName(), i18n.T("onboarding.tab.browser"))
+		kit.TabsFill(c, &o.tab, o.secretName(), i18n.T("onboarding.tab.browser"))
 		if o.tab != tab {
 			o.showSecret = false
 		}

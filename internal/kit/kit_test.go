@@ -1182,6 +1182,29 @@ func TestButtonGroupTooltips(t *testing.T) {
 	}
 }
 
+// TabsFill's tabs share the row evenly, whatever their labels' lengths.
+func TestTabsFill(t *testing.T) {
+	sel := 0
+	tt := ui.NewTester(themed(func(c *ui.Context) {
+		ui.Column(c).Width(300).Children(func() { TabsFill(c, &sel, "One", "A much longer label") })
+	}), 400, 100)
+	tt.Frame()
+	if err := tt.Click("A much longer label"); err != nil {
+		t.Fatal(err)
+	}
+	tt.Frame()
+	if sel != 1 {
+		t.Fatalf("sel = %d", sel)
+	}
+	// Labels centred in two even halves of the 300 row sit about 150 apart, at 75 and 225.
+	one, _ := tt.Find("One")
+	two, _ := tt.Find("A much longer label")
+	c1, c2 := one.X+one.W/2, two.X+two.W/2
+	if d := c2 - c1; d < 146 || d > 154 || c1 < 70 || c1 > 80 {
+		t.Errorf("label centres %v and %v: the tabs do not split the row evenly", c1, c2)
+	}
+}
+
 func TestTabsUnderline(t *testing.T) {
 	sel := 0
 	var tk theme.Tokens
