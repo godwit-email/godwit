@@ -94,9 +94,10 @@ func TestOnboardingPasswordFlow(t *testing.T) {
 func TestOnboardingProxyFailures(t *testing.T) {
 	o := &onboarding{}
 	for st, want := range map[core.CheckStep]string{
-		{Name: "imap", Kind: "proxy_unreachable"}: "IMAP 登录失败：连不上代理服务器",
-		{Name: "imap", Kind: "proxy_refused"}:     "IMAP 登录失败：代理拒绝了连接",
-		{Name: "smtp", Kind: "proxy_auth"}:        "SMTP 认证失败：代理认证失败",
+		{Name: "imap", Kind: "proxy_unreachable"}: "IMAP 连接失败：连不上代理服务器",
+		{Name: "imap", Kind: "proxy_refused"}:     "IMAP 连接失败：代理拒绝了连接",
+		{Name: "smtp", Kind: "proxy_auth"}:        "SMTP 连接失败：代理认证失败",
+		{Name: "imap", Kind: "proxy_refused", Detail: "dial imap.example:993: proxy refused the tunnel: 403 Forbidden"}: "IMAP 连接失败：代理拒绝了连接：403",
 	} {
 		text, next, status := o.checkRow(st)
 		if text != want || next != "检查代理设置" || status != 2 {

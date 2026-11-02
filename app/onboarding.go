@@ -16,6 +16,7 @@ import (
 	"github.com/godwit-email/godwit/internal/i18n"
 	"github.com/godwit-email/godwit/internal/icons"
 	"github.com/godwit-email/godwit/internal/kit"
+	"github.com/godwit-email/godwit/internal/sysproxy"
 	"github.com/godwit-email/godwit/internal/theme"
 )
 
@@ -959,7 +960,15 @@ func (o *onboarding) checkRow(st core.CheckStep) (text, detail string, status in
 	case "dns", "connect", "timeout", "tls", "protocol":
 		reason, next = i18n.T("onboarding.reason."+kind), i18n.T("onboarding.next.server")
 	case "proxy_unreachable", "proxy_refused", "proxy_auth":
-		reason, next = i18n.T("onboarding.reason."+kind), i18n.T("onboarding.next.proxy")
+		reason = i18n.T("onboarding.reason." + kind)
+		// an HTTP proxy's refusal carries its status: "proxy refused the tunnel: 403 Forbidden"
+		if _, status, ok := strings.Cut(st.Detail, sysproxy.ErrRefused.Error()+": "); ok && kind == "proxy_refused" {
+			if code, _, _ := strings.Cut(status, " "); len(code) == 3 {
+				reason = i18n.Tf("onboarding.reason.proxy_refused_status", code)
+			}
+		}
+		// the connection failed, not the sign-in: the heading must not point at the mail password
+		return i18n.Tf(k+".proxy", reason), i18n.T("onboarding.next.proxy"), 2
 	}
 	return i18n.Tf(k+".failed", reason), next, 2
 }

@@ -706,6 +706,30 @@
   "onboarding_reason_tls": "the encrypted connection failed",
   "onboarding_reason_proxy_unreachable": "can''t reach the proxy",
   "onboarding_reason_proxy_refused": "the proxy refused the connection",
+  "onboarding_check_imap_proxy": "IMAP connection failed: {arg1}",
+  "@onboarding_check_imap_proxy": {
+    "placeholders": {
+      "arg1": {
+        "type": "String"
+      }
+    }
+  },
+  "onboarding_check_smtp_proxy": "SMTP connection failed: {arg1}",
+  "@onboarding_check_smtp_proxy": {
+    "placeholders": {
+      "arg1": {
+        "type": "String"
+      }
+    }
+  },
+  "onboarding_reason_proxy_refused_status": "the proxy refused the connection: {arg1}",
+  "@onboarding_reason_proxy_refused_status": {
+    "placeholders": {
+      "arg1": {
+        "type": "String"
+      }
+    }
+  },
   "onboarding_reason_proxy_auth": "proxy authentication failed",
   "onboarding_next_proxy": "Check the proxy settings",
   "onboarding_relogin": "Sign in again",
