@@ -6,6 +6,7 @@
 ### Features
 
 * **conn:** dial IMAP and SMTP through the system proxy ([#422](https://github.com/godwit-email/godwit/issues/422)) ([ca7c025](https://github.com/godwit-email/godwit/commit/ca7c0257d9ff8a7df5d1e582d9cb26e7e1ed70df))
+* **settings:** a Godwit proxy setting — follow the system, custom, or off ([#432](https://github.com/godwit-email/godwit/issues/432)) ([759c106](https://github.com/godwit-email/godwit/commit/759c1066d7bb46a0ccea18f179d5fac55c91b496))
 
 
 ### Bug Fixes
