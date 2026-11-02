@@ -6,7 +6,6 @@
 package imagefetch
 
 import (
-	"bufio"
 	"bytes"
 	"context"
 	"encoding/base64"
@@ -26,8 +25,8 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/godwit-email/godwit/internal/sysproxy"
 	_ "golang.org/x/image/webp" // Config
-	xproxy "golang.org/x/net/proxy"
 )
 
 // The budget of one message's images (global constraints).
@@ -238,62 +237,12 @@ func onThisComputer(proxy *url.URL) bool {
 	return h == "localhost" || err == nil && ip.Unmap().IsLoopback()
 }
 
-// dialProxy opens a tunnel to target (host:port) through proxy: an http://
-// one by CONNECT, a socks5:// one by SOCKS5.
+// dialProxy opens a tunnel to target through proxy (sysproxy.Dial), in Timeout.
 // shortcut: plain http:// images go through CONNECT too; send them as absolute-URI requests if a proxy refuses CONNECT to port 80.
 func dialProxy(ctx context.Context, proxy *url.URL, target string) (net.Conn, error) {
-	d := &net.Dialer{Timeout: Timeout}
-	addr := proxy.Host
-	if proxy.Port() == "" { // the scheme's default port
-		addr = net.JoinHostPort(proxy.Hostname(), map[string]string{"http": "80", "socks5": "1080"}[proxy.Scheme])
-	}
-	switch proxy.Scheme {
-	case "socks5":
-		var auth *xproxy.Auth
-		if u := proxy.User; u != nil {
-			pass, _ := u.Password()
-			auth = &xproxy.Auth{User: u.Username(), Password: pass}
-		}
-		s, err := xproxy.SOCKS5("tcp", addr, auth, d)
-		if err != nil {
-			return nil, err
-		}
-		return s.(xproxy.ContextDialer).DialContext(ctx, "tcp", target)
-	case "http":
-		c, err := d.DialContext(ctx, "tcp", addr)
-		if err != nil {
-			return nil, err
-		}
-		deadline := time.Now().Add(Timeout)
-		if dl, ok := ctx.Deadline(); ok && dl.Before(deadline) {
-			deadline = dl
-		}
-		c.SetDeadline(deadline)
-		br := bufio.NewReader(c)
-		var resp *http.Response
-		authz := ""
-		if u := proxy.User; u != nil {
-			pass, _ := u.Password()
-			authz = "Proxy-Authorization: Basic " + base64.StdEncoding.EncodeToString([]byte(u.Username()+":"+pass)) + "\r\n"
-		}
-		if _, err = fmt.Fprintf(c, "CONNECT %s HTTP/1.1\r\nHost: %s\r\n%s\r\n", target, target, authz); err == nil {
-			resp, err = http.ReadResponse(br, &http.Request{Method: http.MethodConnect})
-		}
-		switch {
-		case err != nil:
-		case resp.StatusCode != http.StatusOK:
-			err = fmt.Errorf("proxy refused the tunnel: %s", resp.Status)
-		case br.Buffered() > 0:
-			err = errors.New("proxy sent data before the tunnel opened")
-		}
-		if err != nil {
-			c.Close()
-			return nil, err
-		}
-		c.SetDeadline(time.Time{})
-		return c, nil
-	}
-	return nil, fmt.Errorf("unsupported proxy %q", proxy.Scheme)
+	ctx, cancel := context.WithTimeout(ctx, Timeout)
+	defer cancel()
+	return sysproxy.Dial(ctx, proxy, target)
 }
 
 // notGlobal are ranges that are not public hosts although IsPrivate and the
