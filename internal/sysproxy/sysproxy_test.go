@@ -1,6 +1,10 @@
 package sysproxy
 
 import (
+	"bufio"
+	"io"
+	"net"
+	"net/http"
 	"net/url"
 	"testing"
 )
@@ -53,5 +57,32 @@ func TestForEnvironment(t *testing.T) {
 	u, _ = url.Parse("https://cdn.corp.example/a.png")
 	if p := For(u); p != nil {
 		t.Errorf("NO_PROXY: %v", p)
+	}
+}
+
+func TestDialKeepsDataAfterConnect(t *testing.T) {
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer ln.Close()
+	go func() {
+		c, err := ln.Accept()
+		if err != nil {
+			return
+		}
+		defer c.Close()
+		http.ReadRequest(bufio.NewReader(c))
+		io.WriteString(c, "HTTP/1.1 200 OK\r\n\r\n* OK ready\r\n") // the greeting in the same write
+		c.Read(make([]byte, 1))                                    // hold the tunnel open until the client closes
+	}()
+	c, err := Dial(t.Context(), &url.URL{Scheme: "http", Host: ln.Addr().String()}, "imap.example:143")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer c.Close()
+	line, err := bufio.NewReader(c).ReadString('\n')
+	if err != nil || line != "* OK ready\r\n" {
+		t.Errorf("greeting: %q, %v", line, err)
 	}
 }

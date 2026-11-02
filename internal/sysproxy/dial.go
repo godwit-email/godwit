@@ -4,7 +4,6 @@ import (
 	"bufio"
 	"context"
 	"encoding/base64"
-	"errors"
 	"fmt"
 	"net"
 	"net/http"
@@ -60,15 +59,24 @@ func Dial(ctx context.Context, proxy *url.URL, target string) (net.Conn, error) 
 		case err != nil:
 		case resp.StatusCode != http.StatusOK:
 			err = fmt.Errorf("proxy refused the tunnel: %s", resp.Status)
-		case br.Buffered() > 0:
-			err = errors.New("proxy sent data before the tunnel opened")
 		}
 		if err != nil {
 			c.Close()
 			return nil, err
 		}
 		c.SetDeadline(time.Time{})
+		if br.Buffered() > 0 { // the target spoke first (a mail greeting) in the same read as the proxy's 200
+			return bufConn{c, br}, nil
+		}
 		return c, nil
 	}
 	return nil, fmt.Errorf("unsupported proxy %q", proxy.Scheme)
 }
+
+// bufConn reads what was buffered past the CONNECT reply before the socket.
+type bufConn struct {
+	net.Conn
+	r *bufio.Reader
+}
+
+func (c bufConn) Read(p []byte) (int, error) { return c.r.Read(p) }
