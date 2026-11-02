@@ -97,8 +97,13 @@ type Settings struct {
 	RemoteImages string
 	// ProxyMode is what mail, remote images, unsubscribes and the update
 	// check connect through (网络代理, Service.Proxy): ProxySystem (the
-	// default; "" too) or ProxyOff. Only the user sets it: a proxy reroutes mail.
+	// default; "" too), ProxyCustom or ProxyOff. Only the user sets it: a
+	// proxy reroutes mail.
 	ProxyMode string
+	// ProxyURL is 自定义's proxy, http://host:port or socks5://host:port
+	// (ParseProxyURL), with no credentials. Checked only in ProxyCustom: the
+	// other modes keep it as it is, so switching back loses nothing.
+	ProxyURL string
 	// SettingsVersion is 2 once the default text grew from 13 to 14 px and a
 	// stored FontSize was raised by one to keep its sizes; 3 once a stored
 	// BodyFontSize of 14, the old default, became 0 (follow FontSize); 4 once
@@ -169,8 +174,15 @@ func (st Settings) validate(kept []mask.Rule) error {
 		return fmt.Errorf("invalid remote images mode %q", st.RemoteImages)
 	case !in(st.MCPSend, "", MCPSendOff, MCPSendConfirm, MCPSendDirect):
 		return fmt.Errorf("invalid MCP send level %q", st.MCPSend)
-	case !in(st.ProxyMode, "", ProxySystem, ProxyOff):
+	case !in(st.ProxyMode, "", ProxySystem, ProxyCustom, ProxyOff):
 		return fmt.Errorf("invalid proxy mode %q", st.ProxyMode)
+	}
+	if st.ProxyMode == ProxyCustom {
+		if _, err := ParseProxyURL(st.ProxyURL); err != nil {
+			return fmt.Errorf("invalid custom proxy: %w", err)
+		}
+	}
+	switch {
 	case !in(st.ReplyLanguage, "match", "reading"):
 		return fmt.Errorf("invalid reply language mode %q", st.ReplyLanguage)
 	case !in(st.LabelDisplay, "", LabelDisplayBoth, LabelDisplayIcon, LabelDisplayText):
