@@ -39,6 +39,7 @@ func gh(ctx context.Context, args ...string) (stderr string, err error) {
 	var buf bytes.Buffer
 	cmd := exec.CommandContext(ctx, p, append([]string{"api"}, args...)...)
 	cmd.Stderr = &buf
+	noConsole(cmd)
 	err = cmd.Run()
 	return buf.String(), err
 }

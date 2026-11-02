@@ -354,6 +354,8 @@ func gui(ctx context.Context, dataDir string) int {
 		} else if plat.tray, err = mygo.NewTray(mygo.TrayOptions{Icon: icon, IconIsTemplate: true, ToolTip: "Godwit",
 			Menu: trayMenu()}); err != nil {
 			log.Print(err) // no tray here (Linux without an indicator host)
+		} else if runtime.GOOS == "windows" {
+			plat.tray.OnClick(plat.ShowWindow) // Windows opens the app on a left click; the menu stays on the right
 		}
 		mygo.App.OnLocaleChanged(func(locale string) {
 			i18n.SetLanguage(locale)
