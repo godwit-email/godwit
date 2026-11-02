@@ -111,3 +111,74 @@ func TestDialCancelWhileProxyStalls(t *testing.T) {
 		return err
 	})
 }
+
+// rejecting starts a proxy that turns every tunnel down: an http one answers
+// status; a socks5 one fails the password check for 407, else replies
+// "connection not allowed by ruleset".
+func rejecting(t *testing.T, scheme string, status int) *url.URL {
+	t.Helper()
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	require.NoError(t, err)
+	t.Cleanup(func() { ln.Close() })
+	go func() {
+		for {
+			c, err := ln.Accept()
+			if err != nil {
+				return
+			}
+			go func() {
+				defer c.Close()
+				br := bufio.NewReader(c)
+				if scheme == "http" {
+					http.ReadRequest(br)
+					io.WriteString(c, "HTTP/1.1 "+strconv.Itoa(status)+" "+http.StatusText(status)+"\r\n\r\n")
+					return
+				}
+				hdr := make([]byte, 2)
+				io.ReadFull(br, hdr)
+				io.ReadFull(br, make([]byte, hdr[1]))
+				if status == http.StatusProxyAuthRequired {
+					c.Write([]byte{5, 2}) // username/password: ver, ulen, user, plen, pass
+					b := make([]byte, 2)
+					io.ReadFull(br, b)
+					io.ReadFull(br, make([]byte, b[1]))
+					io.ReadFull(br, b[:1])
+					io.ReadFull(br, make([]byte, b[0]))
+					c.Write([]byte{1, 1})
+					return
+				}
+				c.Write([]byte{5, 0})
+				req := make([]byte, 5)
+				io.ReadFull(br, req)
+				io.ReadFull(br, make([]byte, req[4]+2))
+				c.Write([]byte{5, 2, 0, 1, 0, 0, 0, 0, 0, 0})
+			}()
+		}
+	}()
+	return &url.URL{Scheme: scheme, Host: ln.Addr().String(), User: url.UserPassword("u", "p")}
+}
+
+func TestClassifyProxyFailures(t *testing.T) {
+	l, err := net.Listen("tcp", "127.0.0.1:0")
+	require.NoError(t, err)
+	closed := l.Addr().String()
+	l.Close()
+	defer func() { conn.SystemProxy = sysproxy.For }()
+	for _, scheme := range []string{"http", "socks5"} {
+		for name, tc := range map[string]struct {
+			proxy *url.URL
+			want  conn.FailureKind
+		}{
+			"unreachable": {&url.URL{Scheme: scheme, Host: closed}, conn.FailureProxyUnreachable},
+			"refused":     {rejecting(t, scheme, http.StatusForbidden), conn.FailureProxyRefused},
+			"auth":        {rejecting(t, scheme, http.StatusProxyAuthRequired), conn.FailureProxyAuth},
+		} {
+			t.Run(scheme+"/"+name, func(t *testing.T) {
+				conn.SystemProxy = func(*url.URL) *url.URL { return tc.proxy }
+				_, err := conn.DialIMAP(context.Background(), endpoint(t, "imap.example:143"))
+				assert.Equal(t, tc.want, conn.Classify(err), "%v", err)
+				assert.NotErrorIs(t, err, conn.ErrAuthFailed)
+			})
+		}
+	}
+}

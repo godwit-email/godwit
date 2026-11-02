@@ -8,6 +8,8 @@ import (
 	"net"
 	"strings"
 	"syscall"
+
+	"github.com/godwit-email/godwit/internal/sysproxy"
 )
 
 // FailureKind is the broad cause of a failed dial, for diagnostics.
@@ -20,6 +22,10 @@ const (
 	FailureTLS      FailureKind = "tls"
 	FailureAuth     FailureKind = "auth"
 	FailureProtocol FailureKind = "protocol"
+
+	FailureProxyUnreachable FailureKind = "proxy_unreachable"
+	FailureProxyRefused     FailureKind = "proxy_refused"
+	FailureProxyAuth        FailureKind = "proxy_auth" // the proxy's credentials, never the account's
 )
 
 // Windows reports refused/unreachable connects as WinSock codes, which are not
@@ -40,6 +46,13 @@ func Classify(err error) FailureKind {
 	switch {
 	case err == nil:
 		return ""
+	// before connect and timeout: a dial to the proxy fails with those too
+	case errors.Is(err, sysproxy.ErrUnreachable):
+		return FailureProxyUnreachable
+	case errors.Is(err, sysproxy.ErrRefused):
+		return FailureProxyRefused
+	case errors.Is(err, sysproxy.ErrAuth):
+		return FailureProxyAuth
 	case errors.Is(err, ErrAuthFailed):
 		return FailureAuth
 	case errors.As(err, &dnsErr):
