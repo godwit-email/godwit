@@ -521,6 +521,12 @@ type AppliedLabel struct {
 // SetLabel puts the label on the messages (on) or takes it off, by hand: the
 // classifier leaves these rows alone from then on. All or none are written.
 func (s *Service) SetLabel(ctx context.Context, messageIDs []int64, labelID int64, on bool) error {
+	return s.SetLabelWithSource(ctx, messageIDs, labelID, on, "manual")
+}
+
+// SetLabelWithSource sets or unsets a label, recording the provenance/source (e.g. "manual" or "workflow:123").
+// A re-assignment of an already active label does not generate a new trigger event.
+func (s *Service) SetLabelWithSource(ctx context.Context, messageIDs []int64, labelID int64, on bool, source string) error {
 	ctx, end, err := s.begin(ctx, 0)
 	if err != nil {
 		return err
@@ -536,10 +542,27 @@ func (s *Service) SetLabel(ctx context.Context, messageIDs []int64, labelID int6
 	if int(store.Int(rows.Values[0][0])) != len(slices.Compact(slices.Sorted(slices.Values(messageIDs)))) {
 		return errors.New("some messages no longer exist")
 	}
+
+	// Track existing active status: eine erneute Zuweisung eines bereits aktiven Labels erzeugt kein neues Ereignis
+	alreadyActive := make(map[int64]bool)
+	if on {
+		chkRows, err := s.db.Query(ctx, "SELECT message_id FROM message_labels WHERE label_id = ? AND active = 1 AND message_id IN ("+placeholders(len(messageIDs))+")",
+			append([]any{labelID}, int64Args(messageIDs)...)...)
+		if err == nil {
+			for _, r := range chkRows.Values {
+				alreadyActive[store.Int(r[0])] = true
+			}
+		}
+	}
+
+	if source == "" {
+		source = "manual"
+	}
+
 	stmts := make([]sqlite.Statement, 0, len(messageIDs)+1)
 	for _, id := range messageIDs {
-		stmts = append(stmts, sqlite.Statement{SQL: `INSERT INTO message_labels(message_id, label_id, source, active) VALUES (?, ?, 'manual', ?)
-			ON CONFLICT(message_id, label_id) DO UPDATE SET source = 'manual', active = excluded.active`, Args: []any{id, labelID, b2i(on)}})
+		stmts = append(stmts, sqlite.Statement{SQL: `INSERT INTO message_labels(message_id, label_id, source, active) VALUES (?, ?, ?, ?)
+			ON CONFLICT(message_id, label_id) DO UPDATE SET source = ?, active = excluded.active`, Args: []any{id, labelID, source, b2i(on), source}})
 	}
 	// A copy that turns up later takes this choice, not one stashed before it:
 	// a message with a stash has every hand-set choice in it.
@@ -551,6 +574,18 @@ func (s *Service) SetLabel(ctx context.Context, messageIDs []int64, labelID int6
 		return err
 	}
 	s.bus.Publish(events.Event{Type: events.LabelsChanged})
+	if on {
+		for _, mid := range messageIDs {
+			// Nur neu zugewiesene Labels lösen Workflows aus
+			if alreadyActive[mid] {
+				continue
+			}
+			accRows, _ := s.db.Query(ctx, "SELECT account_id FROM messages WHERE id = ?", mid)
+			if len(accRows.Values) > 0 {
+				_ = s.EvaluateWorkflows(ctx, store.Int(accRows.Values[0][0]), WorkflowTriggerLabel, mid)
+			}
+		}
+	}
 	return nil
 }
 

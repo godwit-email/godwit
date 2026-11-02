@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -561,4 +562,66 @@ func TestMessageChildrenIndexed(t *testing.T) {
 		require.NoError(t, err)
 		assert.Contains(t, fmt.Sprint(rows.Values), index)
 	}
+}
+
+// TestMigrationWorkflowRunsOpIDRestrict verifies that an existing database upgraded
+// to the purge linkage migration applies it with PRAGMA foreign_keys = ON,
+// enforces ON DELETE RESTRICT on workflow_runs.op_id, and activates idx_ops_unique_active_purge.
+func TestMigrationWorkflowRunsOpIDRestrict(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "godwit.db")
+	all := store.Migrations
+	// Up to the migration under test
+	i := slices.IndexFunc(all, func(m []string) bool { return strings.Contains(strings.Join(m, "\n"), "idx_ops_unique_active_purge") })
+	require.Positive(t, i)
+	store.Migrations = all[:i]
+	db, err := store.Open(ctx, path)
+	store.Migrations = all
+	require.NoError(t, err)
+
+	// In the previous schema version, insert account, workflow, and op
+	_, err = db.Execute(ctx, "INSERT INTO accounts(id, email) VALUES (1, 'user@example.com')")
+	require.NoError(t, err)
+	_, err = db.Execute(ctx, "INSERT INTO workflows(id, account_id, kind, name, trigger, action, config, created_at, updated_at) VALUES (1, 1, 'custom', 'Purge Trash', 'daily', 'purge', '{}', 100, 100)")
+	require.NoError(t, err)
+	_, err = db.Execute(ctx, "INSERT INTO ops(id, account_id, kind, state, created_at) VALUES (42, 1, 'purge', 'pending', 100)")
+	require.NoError(t, err)
+	db.Close()
+
+	// Re-open with all migrations: upgrades to current schema version (54)
+	db, err = store.Open(ctx, path)
+	require.NoError(t, err)
+	defer db.Close()
+
+	rows, err := db.Query(ctx, "PRAGMA user_version")
+	require.NoError(t, err)
+	assert.Equal(t, int64(len(store.Migrations)), store.Int(rows.Values[0][0]))
+
+	// Insert workflow_runs linking to op 42
+	_, err = db.Execute(ctx, "INSERT INTO workflow_runs(id, workflow_id, account_id, message_id, action, ran_at, op_id) VALUES (1, 1, 1, 10, 'purge', 100, 42)")
+	require.NoError(t, err)
+
+	// 1. ON DELETE RESTRICT check: Attempting to delete the referenced op MUST fail
+	_, err = db.Execute(ctx, "DELETE FROM ops WHERE id = 42")
+	require.Error(t, err, "deleting referenced op must be restricted while workflow_run references it")
+	assert.Contains(t, err.Error(), "FOREIGN KEY constraint failed")
+
+	// 2. Retention / cleanup order semantics:
+	// Referencing workflow_runs audit row must be cleaned up first (retention period expiration).
+	// Once the reference is removed, deleting the op succeeds.
+	_, err = db.Execute(ctx, "DELETE FROM workflow_runs WHERE id = 1")
+	require.NoError(t, err)
+	_, err = db.Execute(ctx, "DELETE FROM ops WHERE id = 42")
+	require.NoError(t, err, "deleting op succeeds once referencing workflow_run is removed")
+
+	// 3. Partial unique index check: idx_ops_unique_active_purge prevents duplicate active purges
+	_, err = db.Execute(ctx, "INSERT INTO folders(id, account_id, name) VALUES (1, 1, 'Trash')")
+	require.NoError(t, err)
+	_, err = db.Execute(ctx, "INSERT INTO messages(id, account_id, folder_id, subject, from_addr) VALUES (999, 1, 1, 'test', 'a@b.c')")
+	require.NoError(t, err)
+
+	_, err = db.Execute(ctx, "INSERT INTO ops(id, account_id, message_id, kind, state, created_at) VALUES (101, 1, 999, 'purge', 'pending', 100)")
+	require.NoError(t, err)
+	_, err = db.Execute(ctx, "INSERT INTO ops(id, account_id, message_id, kind, state, created_at) VALUES (102, 1, 999, 'purge', 'running', 100)")
+	require.Error(t, err, "duplicate active purge for same message must fail unique index constraint")
+	assert.Contains(t, err.Error(), "UNIQUE constraint failed")
 }

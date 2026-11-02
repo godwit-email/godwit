@@ -6,8 +6,10 @@ import (
 	"errors"
 	"time"
 
+	"github.com/egoist/mygo/plugins/sqlite"
 	"github.com/godwit-email/godwit/core/ai"
 	"github.com/godwit-email/godwit/core/gateway"
+	"github.com/godwit-email/godwit/core/store"
 )
 
 // registerExecutorForTest offers a write tool named name whose calls become
@@ -81,6 +83,10 @@ func SetPluginHookForTest(f func(stage, name string) error) func() {
 func (s *Service) ExecForTest(q string) error {
 	_, err := s.db.Execute(context.Background(), q)
 	return err
+}
+
+func (s *Service) QueryForTest(q string, args ...any) (sqlite.Rows, error) {
+	return s.db.Query(context.Background(), q, args...)
 }
 
 // PluginConfigForTest is pluginConfig.
@@ -208,4 +214,14 @@ func ModelErrorCode(err error) string {
 func (s *Service) JudgeForTest(ctx context.Context) (ai.Judge, error) {
 	j, _, _, err := s.resolveJudge(ctx)
 	return j, err
+}
+
+// QueueWorkflowPurgeForTest exposes queueWorkflowPurge for tests.
+func (s *Service) QueueWorkflowPurgeForTest(ctx context.Context, accountID, messageID int64) (int64, bool, error) {
+	return s.queueWorkflowPurge(ctx, accountID, messageID)
+}
+
+// DBForTest exposes the database for tests.
+func (s *Service) DBForTest() *store.DB {
+	return s.db
 }

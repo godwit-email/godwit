@@ -529,6 +529,44 @@ var Migrations = [][]string{{
 	// The user's own OAuth client an account signed in with ('' the provider's);
 	// its secret is in the keychain (oauthClientUser).
 	`ALTER TABLE accounts ADD COLUMN oauth_client_id TEXT NOT NULL DEFAULT ''`,
+}, {
+	// Automated mail workflows (custom rules and native presets per account)
+	`CREATE TABLE workflows (
+		id INTEGER PRIMARY KEY AUTOINCREMENT,
+		account_id INTEGER NOT NULL REFERENCES accounts(id) ON DELETE CASCADE,
+		kind TEXT NOT NULL,
+		preset_id TEXT NOT NULL DEFAULT '',
+		name TEXT NOT NULL,
+		trigger TEXT NOT NULL,
+		action TEXT NOT NULL,
+		config TEXT NOT NULL,
+		enabled INTEGER NOT NULL DEFAULT 1,
+		created_at INTEGER NOT NULL,
+		updated_at INTEGER NOT NULL
+	)`,
+	`CREATE INDEX idx_workflows_account ON workflows(account_id)`,
+	`CREATE TABLE workflow_runs (
+		id INTEGER PRIMARY KEY AUTOINCREMENT,
+		workflow_id INTEGER NOT NULL REFERENCES workflows(id) ON DELETE CASCADE,
+		account_id INTEGER NOT NULL,
+		message_id INTEGER NOT NULL,
+		action TEXT NOT NULL,
+		ran_at INTEGER NOT NULL
+	)`,
+	`CREATE INDEX idx_workflow_runs_msg ON workflow_runs(workflow_id, message_id)`,
+}, {
+	// Detailed workflow execution tracking: version, status, and details; idempotency
+	`ALTER TABLE workflow_runs ADD COLUMN workflow_version INTEGER NOT NULL DEFAULT 0`,
+	`ALTER TABLE workflow_runs ADD COLUMN status TEXT NOT NULL DEFAULT 'success'`,
+	`ALTER TABLE workflow_runs ADD COLUMN details TEXT NOT NULL DEFAULT ''`,
+	`ALTER TABLE workflows ADD COLUMN idempotency_key TEXT NOT NULL DEFAULT ''`,
+	`CREATE UNIQUE INDEX idx_workflows_idempotency ON workflows(account_id, idempotency_key) WHERE idempotency_key != ''`,
+	`ALTER TABLE workflows ADD COLUMN version INTEGER NOT NULL DEFAULT 1`,
+	`ALTER TABLE workflows ADD COLUMN execution_state TEXT NOT NULL DEFAULT 'active'`,
+}, {
+	// Purge operation linkage and atomic deduplication index
+	`ALTER TABLE workflow_runs ADD COLUMN op_id INTEGER REFERENCES ops(id) ON DELETE RESTRICT`,
+	`CREATE UNIQUE INDEX IF NOT EXISTS idx_ops_unique_active_purge ON ops(message_id) WHERE kind = 'purge' AND state IN ('pending', 'running', 'awaiting_claim')`,
 }}
 
 // HistoryRowsVersion is the schema version that keeps a conversation's

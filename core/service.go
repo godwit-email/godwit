@@ -672,6 +672,7 @@ func (s *Service) syncAccount(ctx context.Context, accountID int64, explicit boo
 	more, err := mailsync.Fetch(ctx, s.db, c, accountID, s.bus)
 	s.notifyHooks() // rows committed before an error count too
 	s.wakeLabeler()
+	_, _ = s.RunDailyWorkflows(ctx, accountID)
 	if more {
 		s.wakeWorker(accountID) // the backfill yielded: the worker's next round goes on with it
 	}

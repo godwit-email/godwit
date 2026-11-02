@@ -150,6 +150,28 @@ func New(t *testing.T, opts ...Option) *Env {
 // come due.
 func (e *Env) AdvanceClock(d time.Duration) { e.clock.Advance(d) }
 
+// Restart closes the current Service and reopens a new one on the exact same DataDir,
+// ensuring clean test verification across database and service restarts without in-memory state.
+func (e *Env) Restart(t *testing.T) {
+	t.Helper()
+	if e.Svc != nil {
+		if err := e.Svc.Close(); err != nil {
+			t.Fatalf("close service for restart: %v", err)
+		}
+	}
+	newSvc, err := core.New(context.Background(), core.Options{
+		DataDir:        e.DataDir,
+		AutoSync:       false,
+		SystemLanguage: "zh-CN",
+	})
+	if err != nil {
+		t.Fatalf("reopen service on restart: %v", err)
+	}
+	newSvc.SetClockForTest(e.clock)
+	t.Cleanup(func() { newSvc.Close() })
+	e.Svc = newSvc
+}
+
 var live atomic.Bool // an Env is running
 
 // claimEnv fails tb if another Env is still running, else marks one running

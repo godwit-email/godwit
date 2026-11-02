@@ -8,6 +8,7 @@ import (
 	"os"
 	"path/filepath"
 	"slices"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -349,9 +350,10 @@ func TestAskNoSendTool(t *testing.T) {
 	names := toolNames(t, reqs[0])
 	assert.Equal(t, []string{
 		"archive_mail", "ask_user_question", "classify_mail", "create_draft", "delete_draft", "forward_mail",
-		"get_account_profile", "get_all_links", "get_message", "get_thread", "list_skills", "mark_as_read",
-		"mark_as_spam", "mark_as_unread", "move_to_trash", "open_link_in_browser", "read_attachment",
-		"read_skill_file", "reply_to_mail", "search_mail", "star_mail", "unstar_mail", "unsubscribe", "use_skill",
+		"get_account_profile", "get_all_links", "get_message", "get_thread", "list_skills", "list_workflows",
+		"manage_workflow", "mark_as_read", "mark_as_spam", "mark_as_unread", "move_to_trash",
+		"open_link_in_browser", "preview_workflow", "read_attachment", "read_skill_file", "reply_to_mail", "search_mail",
+		"star_mail", "unstar_mail", "unsubscribe", "use_skill",
 	}, names)
 	for _, n := range names {
 		assert.NotContains(t, n, "send")
@@ -1191,4 +1193,258 @@ func TestAskFailedQuestionKept(t *testing.T) {
 		assert.Empty(t, tn.Failed)
 	}
 	require.Len(t, c.Turns, 1)
+}
+
+func TestWitWorkflowTools(t *testing.T) {
+	e := newSkillEnv(t)
+	accs, err := e.s.ListAccounts(t.Context())
+	require.NoError(t, err)
+	require.NotEmpty(t, accs)
+	accID := accs[0].ID
+
+	// 1. list_workflows via Wit tool
+	raw, err := e.s.witListWorkflows(t.Context(), []byte(`{}`))
+	require.NoError(t, err)
+	wfs, ok := raw.([]Workflow)
+	require.True(t, ok)
+	require.Len(t, wfs, 3) // 3 native presets seeded
+
+	// 2. create workflow via Wit manage_workflow tool
+	createPayload := []byte(`{
+		"action": "create",
+		"account_id": ` + strconv.FormatInt(accID, 10) + `,
+		"name": "Auto-archive old newsletters",
+		"trigger": "daily",
+		"action_type": "archive",
+		"days": 14,
+		"folder_role": "inbox"
+	}`)
+	res, err := e.s.witManageWorkflow(t.Context(), createPayload)
+	require.NoError(t, err)
+	createdWf, ok := res.(Workflow)
+	require.True(t, ok)
+	assert.Equal(t, "Auto-archive old newsletters", createdWf.Name)
+	assert.Equal(t, 14, createdWf.Config.Days)
+	assert.Equal(t, "inbox", createdWf.Config.FolderRole)
+	assert.True(t, createdWf.Enabled)
+
+	// 3. toggle workflow
+	togglePayload := []byte(`{
+		"action": "toggle",
+		"workflow_id": ` + strconv.FormatInt(createdWf.ID, 10) + `,
+		"enabled": false
+	}`)
+	_, err = e.s.witManageWorkflow(t.Context(), togglePayload)
+	require.NoError(t, err)
+	wf, err := e.s.GetWorkflow(t.Context(), createdWf.ID)
+	require.NoError(t, err)
+	assert.False(t, wf.Enabled)
+
+	// 4. delete workflow
+	deletePayload := []byte(`{
+		"action": "delete",
+		"workflow_id": ` + strconv.FormatInt(createdWf.ID, 10) + `
+	}`)
+	_, err = e.s.witManageWorkflow(t.Context(), deletePayload)
+	require.NoError(t, err)
+	_, err = e.s.GetWorkflow(t.Context(), createdWf.ID)
+	assert.Error(t, err)
+}
+
+func TestWitWorkflowOptimizations(t *testing.T) {
+	e := newSkillEnv(t)
+	accs, err := e.s.ListAccounts(t.Context())
+	require.NoError(t, err)
+	accID := accs[0].ID
+
+	// 1. Structured preview_workflow tool
+	prevRaw, err := e.s.witPreviewWorkflow(t.Context(), []byte(`{
+		"account_id": `+strconv.FormatInt(accID, 10)+`,
+		"name": "Preview Newsletter Rule",
+		"trigger": "on_receive",
+		"filters": {
+			"from_pattern": "newsletter@brand.com",
+			"has_attachments": false
+		},
+		"actions": [
+			{"type": "mark_read"},
+			{"type": "archive"}
+		]
+	}`))
+	require.NoError(t, err)
+	prev, ok := prevRaw.(WorkflowPreview)
+	require.True(t, ok)
+	assert.True(t, prev.Valid)
+	assert.True(t, prev.IsEventTrigger)
+	assert.NotEmpty(t, prev.SimulationNote)
+	assert.False(t, prev.IsIrreversible)
+	assert.Contains(t, prev.ConfirmationMessage, "archiviert")
+
+	// 2. Reject contradictory action_type vs actions
+	badRaw, err := e.s.witManageWorkflow(t.Context(), []byte(`{
+		"action": "create",
+		"account_id": `+strconv.FormatInt(accID, 10)+`,
+		"name": "Contradictory",
+		"trigger": "daily",
+		"folder_role": "inbox",
+		"days": 10,
+		"action_type": "archive",
+		"actions": [{"type": "junk"}]
+	}`))
+	require.NoError(t, err)
+	badMap, ok := badRaw.(map[string]any)
+	require.True(t, ok)
+	errObj, ok := badMap["error"].(map[string]any)
+	require.True(t, ok)
+	assert.Equal(t, "ERR_CONTRADICTORY_ACTIONS", errObj["code"])
+
+	// 3. Purge requires explicit confirm_purge: true
+	purgeRaw, err := e.s.witManageWorkflow(t.Context(), []byte(`{
+		"action": "create",
+		"account_id": `+strconv.FormatInt(accID, 10)+`,
+		"name": "Unconfirmed Purge",
+		"trigger": "daily",
+		"folder_role": "trash",
+		"days": 30,
+		"actions": [{"type": "purge"}]
+	}`))
+	require.NoError(t, err)
+	purgeMap := purgeRaw.(map[string]any)
+	pErrObj := purgeMap["error"].(map[string]any)
+	assert.Equal(t, "ERR_CONFIRM_PURGE_REQUIRED", pErrObj["code"])
+
+	// 4. Idempotency key on create
+	createWithKey := []byte(`{
+		"action": "create",
+		"account_id": ` + strconv.FormatInt(accID, 10) + `,
+		"name": "Idempotent Rule",
+		"trigger": "daily",
+		"folder_role": "inbox",
+		"days": 30,
+		"actions": [{"type": "archive"}],
+		"idempotency_key": "req-unique-123"
+	}`)
+	res1, err := e.s.witManageWorkflow(t.Context(), createWithKey)
+	require.NoError(t, err)
+	wf1 := res1.(Workflow)
+
+	// Repeat exact same request with same idempotency_key
+	res2, err := e.s.witManageWorkflow(t.Context(), createWithKey)
+	require.NoError(t, err)
+	wf2 := res2.(Workflow)
+	assert.Equal(t, wf1.ID, wf2.ID, "idempotency key must prevent duplicate rule creation")
+
+	// 5. Optimistic locking on update with expected_version
+	staleUpdate := []byte(`{
+		"action": "update",
+		"workflow_id": ` + strconv.FormatInt(wf1.ID, 10) + `,
+		"name": "Updated Idempotent Rule",
+		"trigger": "daily",
+		"folder_role": "inbox",
+		"days": 45,
+		"actions": [{"type": "archive"}],
+		"expected_version": 9999999
+	}`)
+	staleRes, err := e.s.witManageWorkflow(t.Context(), staleUpdate)
+	require.NoError(t, err)
+	staleMap := staleRes.(map[string]any)
+	staleErr := staleMap["error"].(map[string]any)
+	assert.Equal(t, "ERR_VERSION_CONFLICT", staleErr["code"])
+}
+
+func TestWitBoundaryUnauthorizedPurgeAndResume(t *testing.T) {
+	e := newSkillEnv(t)
+	accs, err := e.s.ListAccounts(t.Context())
+	require.NoError(t, err)
+	require.NotEmpty(t, accs)
+	accID := accs[0].ID
+
+	// 1. Wit attempts to create a purge rule with confirm_purge: true.
+	// Since Wit execution context is NOT an authenticated human session, it MUST fail with ERR_PURGE_CONFIRMATION_REQUIRED!
+	createPurgePayload := []byte(`{
+		"action": "create",
+		"account_id": ` + strconv.FormatInt(accID, 10) + `,
+		"name": "LLM Self-Authorized Purge",
+		"trigger": "daily",
+		"action_type": "purge",
+		"days": 30,
+		"folder_role": "trash",
+		"confirm_purge": true
+	}`)
+	res, err := e.s.witManageWorkflow(t.Context(), createPurgePayload)
+	require.NoError(t, err)
+	resMap, ok := res.(map[string]any)
+	require.True(t, ok)
+	errObj, ok := resMap["error"].(map[string]any)
+	require.True(t, ok, "must return structured error response")
+	assert.Equal(t, "ERR_PURGE_CONFIRMATION_REQUIRED", errObj["code"])
+
+	// 2. Wit attempts to create a purge rule with a forged or fake proof string.
+	// Must fail with ERR_PURGE_CONFIRMATION_PROOF_INVALID!
+	fakeProofPayload := []byte(`{
+		"action": "create",
+		"account_id": ` + strconv.FormatInt(accID, 10) + `,
+		"name": "LLM Fake Proof Purge",
+		"trigger": "daily",
+		"action_type": "purge",
+		"days": 30,
+		"folder_role": "trash",
+		"confirm_purge": true,
+		"purge_proof": "fake-hmac-proof-generated-by-llm"
+	}`)
+	resFake, err := e.s.witManageWorkflow(t.Context(), fakeProofPayload)
+	require.NoError(t, err)
+	resFakeMap := resFake.(map[string]any)
+	errFakeObj := resFakeMap["error"].(map[string]any)
+	assert.Equal(t, "ERR_PURGE_CONFIRMATION_PROOF_INVALID", errFakeObj["code"])
+
+	// 3. Create a workflow and pause it via safety limit
+	wf, err := e.s.CreateWorkflow(t.Context(), WorkflowInput{
+		AccountID: accID,
+		Name:      "Safety Paused Rule",
+		Trigger:   WorkflowTriggerDaily,
+		Config: WorkflowConfig{
+			FolderRole:  "inbox",
+			FromPattern: "promo@store.com",
+			SafetyLimit: 5,
+			Actions:     []WorkflowActionItem{{Type: WorkflowActionArchive}},
+		},
+		Enabled: true,
+	})
+	require.NoError(t, err)
+
+	// Persist paused_safety_limit state in DB
+	_, err = e.s.db.Execute(t.Context(), "UPDATE workflows SET execution_state = 'paused_safety_limit', version = version + 1 WHERE id = ?", wf.ID)
+	require.NoError(t, err)
+
+	pausedWf, err := e.s.GetWorkflow(t.Context(), wf.ID)
+	require.NoError(t, err)
+	require.Equal(t, "paused_safety_limit", pausedWf.ExecutionState)
+
+	// 4. Wit tool call attempts to unpause the rule via reset_safety_pause: true
+	// Since Wit context lacks human authentication, this backdoor MUST fail with ERR_UNAUTHORIZED_RESUME!
+	witUnpausePayload := []byte(`{
+		"action": "update",
+		"account_id": ` + strconv.FormatInt(accID, 10) + `,
+		"workflow_id": ` + strconv.FormatInt(wf.ID, 10) + `,
+		"name": "Safety Paused Rule",
+		"trigger": "daily",
+		"reset_safety_pause": true,
+		"expected_version": ` + strconv.FormatInt(pausedWf.Version, 10) + `,
+		"folder_role": "inbox",
+		"from_pattern": "promo@store.com",
+		"actions": [{"type": "archive"}]
+	}`)
+	unpauseRes, err := e.s.witManageWorkflow(t.Context(), witUnpausePayload)
+	require.NoError(t, err)
+	unpauseMap, ok := unpauseRes.(map[string]any)
+	require.True(t, ok)
+	unpauseErrObj, ok := unpauseMap["error"].(map[string]any)
+	require.True(t, ok)
+	assert.Equal(t, "ERR_UNAUTHORIZED_RESUME", unpauseErrObj["code"])
+
+	// Verify workflow remains in paused_safety_limit state in DB
+	reloaded, err := e.s.GetWorkflow(t.Context(), wf.ID)
+	require.NoError(t, err)
+	assert.Equal(t, "paused_safety_limit", reloaded.ExecutionState, "rule must remain paused_safety_limit after rejected Wit tool call")
 }

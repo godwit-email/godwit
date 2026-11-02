@@ -34,10 +34,36 @@ var askTools = []string{
 	"move_to_trash", "archive_mail", "mark_as_spam", "mark_as_read", "mark_as_unread",
 	"star_mail", "unstar_mail", "unsubscribe", "get_all_links", "open_link_in_browser",
 	"reply_to_mail", "forward_mail", "delete_draft", askQuestionTool,
+	"list_workflows", "manage_workflow", "preview_workflow",
 }
 
 const (
 	askSystem = `You are Wit, the assistant of the Godwit mail app. Use tools to search, read and manage the user's mail, and to use skills. ` +
+		`You can also inspect, create, update, preview, set status and delete automated email workflows (rules) for the user's mailbox using list_workflows, manage_workflow and preview_workflow. ` +
+		`Godwit automations follow the 5-stage architecture: Auslöser (Trigger) -> Geltungsbereich (Scope) -> Filter -> Aktionen (Actions) -> Vorschau und Aktivierung. ` +
+		`A message is processed only when: Geltungsbereich passt UND Filter passen UND Sicherheitsregeln sind erfüllt. ` +
+		`Triggers: ` +
+		`1. 'daily' (Zeitgesteuert): runs daily at a set time (default 03:00 in account timezone). Requires a concrete folder as scope (Geltungsbereich). ` +
+		`2. 'on_receive' (Bei E-Mail-Eingang): processes incoming messages as soon as data needed for conditions is available. The scope is not naively limited to inbox (default is all folders or user-selected folder). ` +
+		`3. 'on_label' (Bei Label-Zuweisung): processes a message when the selected trigger label is newly assigned to it. The trigger label is a mandatory parameter of the trigger, NOT a regular filter condition, and does NOT participate in AND/OR filter logic. Re-assigning an already present label generates no new trigger event. Automated label events carry origin tracking to stop loops. An additional filter label can be tested separately in the Filter stage. ` +
+		`4. 'on_security' (Bei Bedrohungsbewertung / Sicherheits-Scan): processes a message when the security scanner assigns a threat verdict ('warning'/'malicious', 'suspicious', 'clean'). The threat assessment is a mandatory parameter of the trigger. ` +
+		`Scope (Geltungsbereich): defines which messages are fundamentally eligible and CANNOT be bypassed by OR filters. ` +
+		`Filters: narrow down messages within that scope: ` +
+		`sender from_pattern (exact email address or wildcard like *@domain.com, never matches display name; catch-all wildcards like '*' or '*@*' are not effective restrictions), ` +
+		`subject_pattern with subject_op ('contains', 'equals', 'starts_with'), ` +
+		`additional label (label_name / label_id), attachments (has_attachments true/false), age in days, ` +
+		`threat_assessment ('warning', 'suspicious', 'clean'), and domain_auth ('verified', 'failed', 'unverified'). ` +
+		`Threat assessment and domain authentication are strictly separate: a verified domain does not mean safe content, and pending/missing security scans are never treated as clean. ` +
+		`Protection against unintended mass modifications: Daily inbox rules that archive, trash, or junk messages are blocked unless they contain an effective limiting filter (e.g. age limit, specific sender/subject filter, or security scan). Catch-all wildcards or empty fields are rejected. Large runs pause when exceeding the batch limit. ` +
+		`Condition logic ('and'/'or') applies strictly to the filters; if no filters are active, the rule applies to the whole scope. ` +
+		`Actions: ` +
+		`Function categories: Status (mark_read, mark_unread, star, unstar), External actions (unsubscribe, forward), File exports (export_eml, export_pdf, export_attachments with case folder bundling), Wit AI (wit_draft, wit_extract), Labels (apply_label, remove_label), Destination actions (archive, trash, junk), Permanent deletion (purge). ` +
+		`Execution order is strictly defined: External actions (unsubscribe, forward) -> Status (mark_read, mark_unread, star, unstar) -> Wit AI -> File exports -> Labels -> Destination actions -> Purge. ` +
+		`Exclusions: Read and unread cannot be combined in the same rule. Star and unstar cannot be combined in the same rule. Only one destination action is permitted. The same label cannot be both added and removed. Duplicate actions with identical parameters are prohibited (multiple different labels can be added/removed). ` +
+		`Purge (permanent deletion): Standalone action only; requires trigger 'daily', folder strictly 'trash' or 'junk', and a mandatory retention period in days based on residence time in folder. Purging permanently removes messages locally and from the connected mail server (IMAP). It requires explicit user authorization and confirmation (confirm_purge: true). ` +
+		`Preview & Simulation: Always propose previewing or simulation with preview_workflow or manage_workflow(action='preview') before activating impactful rules. Note that simulating event-based rules on existing mail demonstrates the filter criteria but does not predict future mail arrivals. ` +
+		`Tool conventions: Use 'actions' array as the authoritative action list. For updates or status changes, specify expected_version for optimistic concurrency locking. For rule creation, use idempotency_key to prevent duplicate submissions. ` +
+		`When the user asks about creating, listing or managing email automations or workflows, use list_workflows to inspect their current rules, explain these five stages, and preview/create/update the requested workflow via preview_workflow or manage_workflow. ` +
 		`You cannot send mail: drafts and triage actions require user approval in the UI. ` +
 		`When asked to act on emails (archive, trash, spam, read, star, unsubscribe), call the tool directly without asking confirmation first; execute only the requested action. ` +
 		`Before writing a draft, call get_account_profile for the account it goes from: sign with its name, follow its guidelines; never invent contact details. ` +
@@ -273,6 +299,110 @@ func (s *Service) registerAskTools() {
 	read("list_skills", "List the skills you can use, with what each is for.", object(map[string]any{}), s.listSkills)
 	read("use_skill", "Load a skill's instructions and the list of its reference files.",
 		object(map[string]any{"name": stringProp}, "name"), s.useSkill)
+	read("list_workflows", "List automated mail workflow rules for the account. Returns active and disabled rules, versions, and full configurations.",
+		object(map[string]any{"account_id": intProp}), s.witListWorkflows)
+	read("preview_workflow", "Preview and simulate an automated mail workflow rule before activating it. Returns candidate match count, simulation samples, and safety notes.",
+		object(map[string]any{
+			"account_id":     intProp,
+			"name":           stringProp,
+			"trigger":        map[string]any{"type": "string", "enum": []string{"daily", "on_receive", "on_label", "on_security"}},
+			"trigger_params": object(map[string]any{"trigger_label_id": intProp, "trigger_label_name": stringProp, "threat_assessment": stringProp}),
+			"scope":          object(map[string]any{"folder_role": map[string]any{"type": "string", "enum": []string{"inbox", "trash", "junk"}}, "folder_id": intProp}),
+			"filters": object(map[string]any{
+				"days":              intProp,
+				"label_id":          intProp,
+				"label_name":        stringProp,
+				"threat_assessment": map[string]any{"type": "string", "enum": []string{"warning", "suspicious", "clean"}},
+				"domain_auth":       map[string]any{"type": "string", "enum": []string{"verified", "failed", "unverified"}},
+				"has_attachments":   map[string]any{"type": "boolean"},
+				"from_pattern":      stringProp,
+				"subject_pattern":   stringProp,
+				"subject_op":        map[string]any{"type": "string", "enum": []string{"contains", "equals", "starts_with"}},
+				"condition_logic":   map[string]any{"type": "string", "enum": []string{"and", "or"}},
+				"batch_limit":       intProp,
+			}),
+			"actions": map[string]any{"type": "array", "items": object(map[string]any{
+				"type":             stringProp,
+				"label_id":         intProp,
+				"label_name":       stringProp,
+				"forward_to":       stringProp,
+				"target_directory": stringProp,
+				"bundle_subfolder": map[string]any{"type": "boolean"},
+				"instructions":     stringProp,
+				"extract_template": stringProp,
+			}, "type")},
+			"action_type":      map[string]any{"type": "string", "enum": []string{"archive", "junk", "trash", "delete", "mark_read", "mark_unread", "star", "unstar", "apply_label", "remove_label", "unsubscribe", "purge", "forward", "export_eml", "export_pdf", "export_attachments", "wit_draft", "wit_extract"}},
+			"folder_role":      map[string]any{"type": "string", "enum": []string{"inbox", "trash", "junk"}},
+			"days":             intProp,
+			"from_pattern":     stringProp,
+			"subject_pattern":  stringProp,
+			"subject_op":       map[string]any{"type": "string", "enum": []string{"contains", "equals", "starts_with"}},
+			"forward_to":       stringProp,
+			"target_directory": stringProp,
+			"bundle_subfolder": map[string]any{"type": "boolean"},
+			"instructions":     stringProp,
+			"extract_template": stringProp,
+			"all_accounts":     map[string]any{"type": "boolean"},
+			"account_ids":      listProp,
+		}), s.witPreviewWorkflow)
+	read("manage_workflow", "Create, update, toggle or delete an automated mail workflow rule. action is 'create', 'update', 'set_enabled', 'toggle', 'delete', or 'preview'.",
+		object(map[string]any{
+			"action":         map[string]any{"type": "string", "enum": []string{"create", "update", "set_enabled", "toggle", "delete", "preview"}},
+			"account_id":     intProp,
+			"workflow_id":    intProp,
+			"name":           stringProp,
+			"trigger":        map[string]any{"type": "string", "enum": []string{"daily", "on_receive", "on_label", "on_security"}},
+			"trigger_params": object(map[string]any{"trigger_label_id": intProp, "trigger_label_name": stringProp, "threat_assessment": stringProp}),
+			"scope":          object(map[string]any{"folder_role": map[string]any{"type": "string", "enum": []string{"inbox", "trash", "junk"}}, "folder_id": intProp}),
+			"filters": object(map[string]any{
+				"days":              intProp,
+				"label_id":          intProp,
+				"label_name":        stringProp,
+				"threat_assessment": map[string]any{"type": "string", "enum": []string{"warning", "suspicious", "clean"}},
+				"domain_auth":       map[string]any{"type": "string", "enum": []string{"verified", "failed", "unverified"}},
+				"has_attachments":   map[string]any{"type": "boolean"},
+				"from_pattern":      stringProp,
+				"subject_pattern":   stringProp,
+				"subject_op":        map[string]any{"type": "string", "enum": []string{"contains", "equals", "starts_with"}},
+				"condition_logic":   map[string]any{"type": "string", "enum": []string{"and", "or"}},
+				"batch_limit":       intProp,
+			}),
+			"actions": map[string]any{"type": "array", "items": object(map[string]any{
+				"type":             stringProp,
+				"label_id":         intProp,
+				"label_name":       stringProp,
+				"forward_to":       stringProp,
+				"target_directory": stringProp,
+				"bundle_subfolder": map[string]any{"type": "boolean"},
+				"instructions":     stringProp,
+				"extract_template": stringProp,
+			}, "type")},
+			"action_type":       map[string]any{"type": "string", "enum": []string{"archive", "junk", "trash", "delete", "mark_read", "mark_unread", "star", "unstar", "apply_label", "remove_label", "unsubscribe", "purge", "forward", "export_eml", "export_pdf", "export_attachments", "wit_draft", "wit_extract"}},
+			"expected_version":  intProp,
+			"idempotency_key":   stringProp,
+			"confirm_purge":     map[string]any{"type": "boolean"},
+			"enabled":           map[string]any{"type": "boolean"},
+			"set_enabled":       map[string]any{"type": "boolean"},
+			"days":              intProp,
+			"folder_role":       map[string]any{"type": "string", "enum": []string{"inbox", "trash", "junk"}},
+			"label_name":        stringProp,
+			"label_id":          intProp,
+			"threat_assessment": map[string]any{"type": "string", "enum": []string{"warning", "suspicious", "clean"}},
+			"domain_auth":       map[string]any{"type": "string", "enum": []string{"verified", "failed", "unverified"}},
+			"security_status":   stringProp,
+			"has_attachments":   map[string]any{"type": "boolean"},
+			"from_pattern":      stringProp,
+			"subject_pattern":   stringProp,
+			"subject_op":        map[string]any{"type": "string", "enum": []string{"contains", "equals", "starts_with"}},
+			"condition_logic":   map[string]any{"type": "string", "enum": []string{"and", "or"}},
+			"forward_to":        stringProp,
+			"target_directory":  stringProp,
+			"bundle_subfolder":  map[string]any{"type": "boolean"},
+			"instructions":      stringProp,
+			"extract_template":  stringProp,
+			"all_accounts":      map[string]any{"type": "boolean"},
+			"account_ids":       listProp,
+		}, "action"), s.witManageWorkflow)
 	read("read_skill_file", "Read a file of a skill, under references/ or assets/.",
 		object(map[string]any{"name": stringProp, "path": stringProp}, "name", "path"), s.readSkillFile)
 	s.mustRegister(toolDesc{Spec: ai.ToolSpec{Name: "create_draft",
@@ -1435,4 +1565,546 @@ func (s *Service) applyDeleteDraft(ctx context.Context, a Approval) ([]sqlite.St
 		return nil, nil, nil, err
 	}
 	return nil, map[string]any{"deleted": true, "draft_id": in.DraftID}, nil, nil
+}
+
+func (s *Service) witListWorkflows(ctx context.Context, raw json.RawMessage) (any, error) {
+	var in struct {
+		AccountID int64 `json:"account_id"`
+	}
+	_ = json.Unmarshal(raw, &in)
+	if in.AccountID == 0 {
+		accs, err := s.ListAccounts(ctx)
+		if err != nil || len(accs) == 0 {
+			return nil, errors.New("no accounts found")
+		}
+		in.AccountID = accs[0].ID
+	}
+	return s.ListWorkflows(ctx, in.AccountID)
+}
+
+type witManageWorkflowInput struct {
+	Action           string `json:"action"`
+	AccountID        int64  `json:"account_id"`
+	WorkflowID       int64  `json:"workflow_id"`
+	Name             string `json:"name"`
+	Trigger          string `json:"trigger"`
+	TriggerLabelName string `json:"trigger_label_name"`
+	TriggerLabelID   int64  `json:"trigger_label_id"`
+	ActionType       string `json:"action_type"`
+	Actions          []struct {
+		Type            string `json:"type"`
+		LabelID         int64  `json:"label_id"`
+		LabelName       string `json:"label_name"`
+		ForwardTo       string `json:"forward_to"`
+		TargetDirectory string `json:"target_directory"`
+		BundleSubfolder *bool  `json:"bundle_subfolder"`
+		ExtractTemplate string `json:"extract_template"`
+		Instructions    string `json:"instructions"`
+	} `json:"actions"`
+	TargetDirectory  string  `json:"target_directory"`
+	BundleSubfolder  *bool   `json:"bundle_subfolder"`
+	ForwardTo        string  `json:"forward_to"`
+	Instructions     string  `json:"instructions"`
+	ExtractTemplate  string  `json:"extract_template"`
+	Days             int     `json:"days"`
+	FolderRole       string  `json:"folder_role"`
+	FolderID         int64   `json:"folder_id"`
+	LabelID          int64   `json:"label_id"`
+	LabelName        string  `json:"label_name"`
+	ThreatAssessment string  `json:"threat_assessment"`
+	DomainAuth       string  `json:"domain_auth"`
+	SecurityStatus   string  `json:"security_status"`
+	HasAttachments   *bool   `json:"has_attachments"`
+	FromPattern      string  `json:"from_pattern"`
+	SubjectPattern   string  `json:"subject_pattern"`
+	SubjectOp        string  `json:"subject_op"`
+	ConditionLogic   string  `json:"condition_logic"`
+	BatchLimit       int     `json:"batch_limit"`
+	SafetyLimit      int     `json:"safety_limit"`
+	BatchSize        int     `json:"batch_size"`
+	Enabled          *bool   `json:"enabled"`
+	SetEnabled       *bool   `json:"set_enabled"`
+	ExpectedVersion  int64   `json:"expected_version"`
+	IdempotencyKey   string  `json:"idempotency_key"`
+	ConfirmPurge     bool    `json:"confirm_purge"`
+	PurgeProof       string  `json:"purge_proof"`
+	ResetSafetyPause bool    `json:"reset_safety_pause"`
+	AllAccounts      bool    `json:"all_accounts"`
+	AccountIDs       []int64 `json:"account_ids"`
+
+	TriggerParams *struct {
+		TriggerLabelID   int64  `json:"trigger_label_id"`
+		TriggerLabelName string `json:"trigger_label_name"`
+		ThreatAssessment string `json:"threat_assessment"`
+	} `json:"trigger_params"`
+	Scope *struct {
+		FolderRole string `json:"folder_role"`
+		FolderID   int64  `json:"folder_id"`
+	} `json:"scope"`
+	Filters *struct {
+		Days             int    `json:"days"`
+		LabelID          int64  `json:"label_id"`
+		LabelName        string `json:"label_name"`
+		ThreatAssessment string `json:"threat_assessment"`
+		DomainAuth       string `json:"domain_auth"`
+		HasAttachments   *bool  `json:"has_attachments"`
+		FromPattern      string `json:"from_pattern"`
+		SubjectPattern   string `json:"subject_pattern"`
+		SubjectOp        string `json:"subject_op"`
+		ConditionLogic   string `json:"condition_logic"`
+		BatchLimit       int    `json:"batch_limit"`
+		SafetyLimit      int    `json:"safety_limit"`
+		BatchSize        int    `json:"batch_size"`
+	} `json:"filters"`
+}
+
+func (s *Service) parseWitWorkflowInput(ctx context.Context, in *witManageWorkflowInput) (WorkflowInput, *ValidationError) {
+	if in.TriggerParams != nil {
+		if in.TriggerParams.TriggerLabelID != 0 {
+			in.TriggerLabelID = in.TriggerParams.TriggerLabelID
+		}
+		if in.TriggerParams.TriggerLabelName != "" {
+			in.TriggerLabelName = in.TriggerParams.TriggerLabelName
+		}
+		if in.TriggerParams.ThreatAssessment != "" {
+			in.ThreatAssessment = in.TriggerParams.ThreatAssessment
+		}
+	}
+	if in.Scope != nil {
+		if in.Scope.FolderRole != "" {
+			in.FolderRole = in.Scope.FolderRole
+		}
+		if in.Scope.FolderID != 0 {
+			in.FolderID = in.Scope.FolderID
+		}
+	}
+	if in.Filters != nil {
+		if in.Filters.Days != 0 {
+			in.Days = in.Filters.Days
+		}
+		if in.Filters.LabelID != 0 {
+			in.LabelID = in.Filters.LabelID
+		}
+		if in.Filters.LabelName != "" {
+			in.LabelName = in.Filters.LabelName
+		}
+		if in.Filters.ThreatAssessment != "" {
+			in.ThreatAssessment = in.Filters.ThreatAssessment
+		}
+		if in.Filters.DomainAuth != "" {
+			in.DomainAuth = in.Filters.DomainAuth
+		}
+		if in.Filters.HasAttachments != nil {
+			in.HasAttachments = in.Filters.HasAttachments
+		}
+		if in.Filters.FromPattern != "" {
+			in.FromPattern = in.Filters.FromPattern
+		}
+		if in.Filters.SubjectPattern != "" {
+			in.SubjectPattern = in.Filters.SubjectPattern
+		}
+		if in.Filters.SubjectOp != "" {
+			in.SubjectOp = in.Filters.SubjectOp
+		}
+		if in.Filters.ConditionLogic != "" {
+			in.ConditionLogic = in.Filters.ConditionLogic
+		}
+		if in.Filters.BatchLimit != 0 {
+			in.BatchLimit = in.Filters.BatchLimit
+		}
+		if in.Filters.SafetyLimit != 0 {
+			in.SafetyLimit = in.Filters.SafetyLimit
+		}
+		if in.Filters.BatchSize != 0 {
+			in.BatchSize = in.Filters.BatchSize
+		}
+	}
+	if in.SetEnabled != nil {
+		in.Enabled = in.SetEnabled
+	}
+
+	// Reject contradictory action_type vs actions
+	if in.ActionType != "" && len(in.Actions) > 0 {
+		var actTypes []string
+		for _, a := range in.Actions {
+			actTypes = append(actTypes, a.Type)
+		}
+		if in.Actions[0].Type != in.ActionType && strings.Join(actTypes, "+") != in.ActionType {
+			return WorkflowInput{}, &ValidationError{
+				Code:       "ERR_CONTRADICTORY_ACTIONS",
+				Field:      "actions",
+				Message:    fmt.Sprintf("Widersprüchliche Aktionsangaben: 'action_type' (%s) und 'actions' (%s) stimmen nicht überein.", in.ActionType, strings.Join(actTypes, ", ")),
+				Resolution: "Verwenden Sie ausschließlich das 'actions'-Array als maßgebliche Aktionsliste.",
+			}
+		}
+	}
+
+	resolveLabel := func(name string, id int64) (int64, string, *ValidationError) {
+		if id != 0 {
+			labels, _ := s.ListLabels(ctx)
+			for _, l := range labels {
+				if l.ID == id {
+					return l.ID, l.Name, nil
+				}
+			}
+			return id, name, nil
+		}
+		if name == "" {
+			return 0, "", nil
+		}
+		labels, _ := s.ListLabels(ctx)
+		var matches []Label
+		for _, l := range labels {
+			if strings.EqualFold(l.Name, name) || strings.EqualFold(l.Slug, name) {
+				matches = append(matches, l)
+			}
+		}
+		if len(matches) > 1 {
+			return 0, name, &ValidationError{
+				Code:       "ERR_AMBIGUOUS_LABEL",
+				Field:      "label_name",
+				Message:    fmt.Sprintf("Mehrere Labels entsprechen dem Namen %q. Bitte geben Sie die eindeutige label_id an.", name),
+				Resolution: "Geben Sie die genaue label_id aus der Kontokonfiguration an.",
+			}
+		}
+		if len(matches) == 1 {
+			return matches[0].ID, matches[0].Name, nil
+		}
+		return 0, name, nil
+	}
+
+	var trigLabelID int64
+	var trigLabelName string
+	if in.Trigger == WorkflowTriggerLabel {
+		var err *ValidationError
+		if in.TriggerLabelID != 0 {
+			trigLabelID, trigLabelName, err = resolveLabel("", in.TriggerLabelID)
+		} else if in.TriggerLabelName != "" {
+			trigLabelID, trigLabelName, err = resolveLabel(in.TriggerLabelName, 0)
+		} else if in.LabelName != "" {
+			trigLabelID, trigLabelName, err = resolveLabel(in.LabelName, in.LabelID)
+		}
+		if err != nil {
+			return WorkflowInput{}, err
+		}
+	}
+
+	condLabelID, condLabelName, err := resolveLabel(in.LabelName, in.LabelID)
+	if err != nil {
+		return WorkflowInput{}, err
+	}
+	if in.Trigger == WorkflowTriggerLabel && condLabelID == trigLabelID && condLabelID != 0 {
+		condLabelID = 0
+		condLabelName = ""
+	}
+
+	var actions []WorkflowActionItem
+	for _, a := range in.Actions {
+		actLabelID, actLabelName, aErr := resolveLabel(a.LabelName, a.LabelID)
+		if aErr != nil {
+			return WorkflowInput{}, aErr
+		}
+		actions = append(actions, WorkflowActionItem{
+			Type:            a.Type,
+			LabelID:         actLabelID,
+			LabelName:       actLabelName,
+			ForwardTo:       a.ForwardTo,
+			TargetDirectory: a.TargetDirectory,
+			BundleSubfolder: a.BundleSubfolder,
+			ExtractTemplate: a.ExtractTemplate,
+			Instructions:    a.Instructions,
+		})
+	}
+
+	primaryAction := in.ActionType
+	if len(actions) == 0 && primaryAction != "" {
+		actLabelID, actLabelName := condLabelID, condLabelName
+		if actLabelID == 0 {
+			actLabelID, actLabelName = trigLabelID, trigLabelName
+		}
+		actions = []WorkflowActionItem{{
+			Type:      primaryAction,
+			LabelID:   actLabelID,
+			LabelName: actLabelName,
+		}}
+	}
+	actions = SortActions(actions)
+	if len(actions) > 0 {
+		var actNames []string
+		for _, a := range actions {
+			actNames = append(actNames, a.Type)
+		}
+		primaryAction = strings.Join(actNames, "+")
+	}
+
+	condLogic := in.ConditionLogic
+	if condLogic == "" {
+		condLogic = "and"
+	}
+	threat := in.ThreatAssessment
+	if threat == "" {
+		threat = in.SecurityStatus
+	}
+
+	en := true
+	if in.Enabled != nil {
+		en = *in.Enabled
+	}
+
+	return WorkflowInput{
+		AccountID: in.AccountID,
+		Name:      in.Name,
+		Trigger:   in.Trigger,
+		Action:    primaryAction,
+		Config: WorkflowConfig{
+			Days:             in.Days,
+			FolderRole:       in.FolderRole,
+			FolderID:         in.FolderID,
+			TriggerLabelID:   trigLabelID,
+			TriggerLabelName: trigLabelName,
+			LabelID:          condLabelID,
+			LabelName:        condLabelName,
+			ThreatAssessment: threat,
+			DomainAuth:       in.DomainAuth,
+			SecurityStatus:   threat,
+			HasAttachments:   in.HasAttachments,
+			FromPattern:      in.FromPattern,
+			SubjectPattern:   in.SubjectPattern,
+			SubjectOp:        in.SubjectOp,
+			CondLogic:        condLogic,
+			BatchLimit:       in.BatchLimit,
+			SafetyLimit:      in.SafetyLimit,
+			BatchSize:        in.BatchSize,
+			PurgeProof:       in.PurgeProof,
+			TargetDirectory:  in.TargetDirectory,
+			BundleSubfolder:  in.BundleSubfolder,
+			ForwardTo:        in.ForwardTo,
+			Instructions:     in.Instructions,
+			ExtractTemplate:  in.ExtractTemplate,
+			Actions:          actions,
+		},
+		Enabled:          en,
+		IdempotencyKey:   in.IdempotencyKey,
+		ExpectedVersion:  in.ExpectedVersion,
+		ConfirmPurge:     in.ConfirmPurge,
+		PurgeProof:       in.PurgeProof,
+		ResetSafetyPause: in.ResetSafetyPause,
+	}, nil
+}
+
+func (s *Service) witPreviewWorkflow(ctx context.Context, raw json.RawMessage) (any, error) {
+	var in witManageWorkflowInput
+	if err := json.Unmarshal(raw, &in); err != nil {
+		return nil, err
+	}
+	if in.AccountID == 0 {
+		accs, err := s.ListAccounts(ctx)
+		if err != nil || len(accs) == 0 {
+			return nil, errors.New("no accounts found")
+		}
+		in.AccountID = accs[0].ID
+	}
+	wfInput, valErr := s.parseWitWorkflowInput(ctx, &in)
+	if valErr != nil {
+		return map[string]any{
+			"error": map[string]any{
+				"code":       valErr.Code,
+				"field":      valErr.Field,
+				"message":    valErr.Message,
+				"resolution": valErr.Resolution,
+			},
+		}, nil
+	}
+	preview, pErr := s.PreviewWorkflow(ctx, wfInput)
+	if pErr != nil {
+		if vErr, ok := pErr.(*ValidationError); ok {
+			return map[string]any{
+				"error": map[string]any{
+					"code":       vErr.Code,
+					"field":      vErr.Field,
+					"message":    vErr.Message,
+					"resolution": vErr.Resolution,
+				},
+			}, nil
+		}
+		return map[string]any{
+			"error": map[string]any{
+				"code":       "ERR_PREVIEW_FAILED",
+				"message":    pErr.Error(),
+				"resolution": "Überprüfen Sie die Workflow-Definition.",
+			},
+		}, nil
+	}
+	return preview, nil
+}
+
+func (s *Service) witManageWorkflow(ctx context.Context, raw json.RawMessage) (any, error) {
+	var in witManageWorkflowInput
+	if err := json.Unmarshal(raw, &in); err != nil {
+		return nil, err
+	}
+	if in.AccountID == 0 {
+		accs, err := s.ListAccounts(ctx)
+		if err != nil || len(accs) == 0 {
+			return nil, errors.New("no accounts found")
+		}
+		in.AccountID = accs[0].ID
+	}
+
+	wfInput, valErr := s.parseWitWorkflowInput(ctx, &in)
+	if valErr != nil {
+		return map[string]any{
+			"error": map[string]any{
+				"code":       valErr.Code,
+				"field":      valErr.Field,
+				"message":    valErr.Message,
+				"resolution": valErr.Resolution,
+			},
+		}, nil
+	}
+
+	switch in.Action {
+	case "preview":
+		preview, err := s.PreviewWorkflow(ctx, wfInput)
+		if err != nil {
+			if vErr, ok := err.(*ValidationError); ok {
+				return map[string]any{
+					"error": map[string]any{
+						"code":       vErr.Code,
+						"field":      vErr.Field,
+						"message":    vErr.Message,
+						"resolution": vErr.Resolution,
+					},
+				}, nil
+			}
+			return nil, err
+		}
+		return preview, nil
+
+	case "create":
+		if in.AllAccounts || len(in.AccountIDs) > 1 {
+			accs, _ := s.ListAccounts(ctx)
+			targetIDs := in.AccountIDs
+			if in.AllAccounts || len(targetIDs) == 0 {
+				targetIDs = nil
+				for _, a := range accs {
+					targetIDs = append(targetIDs, a.ID)
+				}
+			}
+			var createdList []Workflow
+			for _, accID := range targetIDs {
+				inp := wfInput
+				inp.AccountID = accID
+				created, err := s.CreateWorkflow(ctx, inp)
+				if err == nil {
+					createdList = append(createdList, created)
+				}
+			}
+			return map[string]any{"success": true, "workflows": createdList, "count": len(createdList)}, nil
+		}
+		created, err := s.CreateWorkflow(ctx, wfInput)
+		if err != nil {
+			if vErr, ok := err.(*ValidationError); ok {
+				return map[string]any{
+					"error": map[string]any{
+						"code":       vErr.Code,
+						"field":      vErr.Field,
+						"message":    vErr.Message,
+						"resolution": vErr.Resolution,
+					},
+				}, nil
+			}
+			return nil, err
+		}
+		return created, nil
+
+	case "set_enabled", "toggle":
+		if in.WorkflowID == 0 {
+			return map[string]any{
+				"error": map[string]any{
+					"code":       "ERR_WORKFLOW_ID_REQUIRED",
+					"field":      "workflow_id",
+					"message":    "workflow_id ist erforderlich.",
+					"resolution": "Geben Sie die ID der zu ändernden Regel an.",
+				},
+			}, nil
+		}
+		en := true
+		if in.Enabled != nil {
+			en = *in.Enabled
+		}
+		if err := s.SetWorkflowEnabledWithVersion(ctx, in.WorkflowID, en, in.ExpectedVersion); err != nil {
+			if vErr, ok := err.(*ValidationError); ok {
+				return map[string]any{
+					"error": map[string]any{
+						"code":       vErr.Code,
+						"field":      vErr.Field,
+						"message":    vErr.Message,
+						"resolution": vErr.Resolution,
+					},
+				}, nil
+			}
+			return nil, err
+		}
+		return map[string]any{"success": true, "workflow_id": in.WorkflowID, "enabled": en}, nil
+
+	case "delete":
+		if in.WorkflowID == 0 {
+			return map[string]any{
+				"error": map[string]any{
+					"code":       "ERR_WORKFLOW_ID_REQUIRED",
+					"field":      "workflow_id",
+					"message":    "workflow_id ist erforderlich.",
+					"resolution": "Geben Sie die ID der zu löschenden Regel an.",
+				},
+			}, nil
+		}
+		if err := s.DeleteWorkflow(ctx, in.WorkflowID); err != nil {
+			return map[string]any{
+				"error": map[string]any{
+					"code":       "ERR_DELETE_FAILED",
+					"message":    err.Error(),
+					"resolution": "Native Preset-Regeln können nicht gelöscht werden.",
+				},
+			}, nil
+		}
+		return map[string]any{"success": true, "deleted_id": in.WorkflowID}, nil
+
+	case "update":
+		if in.WorkflowID == 0 {
+			return map[string]any{
+				"error": map[string]any{
+					"code":       "ERR_WORKFLOW_ID_REQUIRED",
+					"field":      "workflow_id",
+					"message":    "workflow_id ist erforderlich.",
+					"resolution": "Geben Sie die ID der zu aktualisierenden Regel an.",
+				},
+			}, nil
+		}
+		updated, err := s.UpdateWorkflow(ctx, in.WorkflowID, wfInput)
+		if err != nil {
+			if vErr, ok := err.(*ValidationError); ok {
+				return map[string]any{
+					"error": map[string]any{
+						"code":       vErr.Code,
+						"field":      vErr.Field,
+						"message":    vErr.Message,
+						"resolution": vErr.Resolution,
+					},
+				}, nil
+			}
+			return nil, err
+		}
+		return updated, nil
+
+	default:
+		return map[string]any{
+			"error": map[string]any{
+				"code":       "ERR_UNKNOWN_ACTION",
+				"field":      "action",
+				"message":    fmt.Sprintf("Unbekannte Aktion %q.", in.Action),
+				"resolution": "Wählen Sie eine der Aktionen: 'create', 'update', 'set_enabled', 'delete', 'preview'.",
+			},
+		}, nil
+	}
 }
