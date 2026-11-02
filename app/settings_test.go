@@ -1085,6 +1085,11 @@ func (h *harness) fillRow(label, value string) {
 	if !ok {
 		h.t.Fatalf("no row %q", label)
 	}
+	if r.Y < 0 || r.Y+r.H > 820-8 { // below the window where fonts set the page taller (Linux): scroll it in, as click does
+		h.tt.Scroll(900, 400, 0, r.Y-400)
+		h.tt.Frame()
+		r, _ = h.tt.Find(label)
+	}
 	h.tt.ClickAt(r.X+r.W+theme.SettingsInputWidth/2, r.Y+r.H/2)
 	h.tt.Command("selectAll")
 	h.typeText(value)
