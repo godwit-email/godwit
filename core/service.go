@@ -268,8 +268,9 @@ func New(ctx context.Context, opts Options) (*Service, error) {
 		s.opts.SystemProxy = sysproxy.For
 	}
 	if err := s.loadProxy(ctx); err != nil {
-		db.Close()
-		return nil, fmt.Errorf("proxy settings: %w", err)
+		// an unreadable settings row must not keep mail from starting; the default, 跟随系统, stands until a save
+		slog.Warn("proxy settings unreadable, following the system proxy", "err", err)
+		s.setProxy(defaultSettings(), "")
 	}
 	// the hooks are package-wide: the last Service started owns them
 	conn.SystemProxy, imagefetch.SystemProxy = s.Proxy, s.Proxy
