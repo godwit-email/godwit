@@ -31,6 +31,12 @@ import (
 // so a mail server by host name can be checked without plaintext.
 func connectProxy(t *testing.T) (*url.URL, func() []string) {
 	t.Helper()
+	return standInProxy(t, "http")
+}
+
+// standInProxy is connectProxy speaking scheme: http (CONNECT) or socks5.
+func standInProxy(t *testing.T, scheme string) (*url.URL, func() []string) {
+	t.Helper()
 	srv := httptest.NewTLSServer(nil)
 	srv.Close() // only its certificate is wanted
 	conn.TLSRoots = x509.NewCertPool()
@@ -50,19 +56,38 @@ func connectProxy(t *testing.T) (*url.URL, func() []string) {
 			go func() {
 				defer c.Close()
 				br := bufio.NewReader(c)
-				req, err := http.ReadRequest(br)
-				if err != nil || req.Method != http.MethodConnect {
-					return
+				var target string
+				if scheme == "http" {
+					req, err := http.ReadRequest(br)
+					if err != nil || req.Method != http.MethodConnect {
+						return
+					}
+					target = req.Host
+				} else {
+					// greeting: ver, nmethods, methods; request: ver, cmd, rsv, atyp=3, len, name, port
+					hdr := make([]byte, 2)
+					io.ReadFull(br, hdr)
+					io.ReadFull(br, make([]byte, hdr[1]))
+					c.Write([]byte{5, 0})
+					req := make([]byte, 5)
+					io.ReadFull(br, req)
+					name := make([]byte, int(req[4])+2)
+					io.ReadFull(br, name)
+					target = net.JoinHostPort(string(name[:req[4]]), strconv.Itoa(int(name[req[4]])<<8|int(name[req[4]+1])))
 				}
 				mu.Lock()
-				asked = append(asked, req.Host)
+				asked = append(asked, target)
 				mu.Unlock()
-				_, port, _ := net.SplitHostPort(req.Host)
+				_, port, _ := net.SplitHostPort(target)
 				up, err := net.Dial("tcp", net.JoinHostPort("127.0.0.1", port))
 				if err != nil {
 					return
 				}
-				io.WriteString(c, "HTTP/1.1 200 OK\r\n\r\n")
+				if scheme == "http" {
+					io.WriteString(c, "HTTP/1.1 200 OK\r\n\r\n")
+				} else {
+					c.Write([]byte{5, 0, 0, 1, 0, 0, 0, 0, 0, 0})
+				}
 				if br.Buffered() > 0 {
 					return // the client spoke before the tunnel was up
 				}
@@ -73,7 +98,7 @@ func connectProxy(t *testing.T) (*url.URL, func() []string) {
 			}()
 		}
 	}()
-	return &url.URL{Scheme: "http", Host: ln.Addr().String()}, func() []string {
+	return &url.URL{Scheme: scheme, Host: ln.Addr().String()}, func() []string {
 		mu.Lock()
 		defer mu.Unlock()
 		return append([]string(nil), asked...)
@@ -185,4 +210,46 @@ func TestProxyModeOff(t *testing.T) {
 	via.IMAPSecurity, via.SMTPSecurity = core.SecurityTLS, core.SecurityTLS
 	require.NoError(t, s.TestAccount(ctx, via))
 	assert.NotEmpty(t, asked(), "system goes through the system proxy")
+}
+
+// customProxy saves 自定义 with proxy as the custom proxy.
+func customProxy(t *testing.T, s *core.Service, proxy *url.URL) {
+	t.Helper()
+	st, err := s.GetSettings(ctx)
+	require.NoError(t, err)
+	st.ProxyMode, st.ProxyURL = core.ProxyCustom, proxy.String()
+	_, err = s.SetSettings(ctx, st)
+	require.NoError(t, err)
+}
+
+// 自定义 sends mail through the user's HTTP or SOCKS5 proxy, not the system's,
+// and asks it for the server's host name.
+func TestAccountThroughCustomProxy(t *testing.T) {
+	for _, scheme := range []string{"http", "socks5"} {
+		t.Run(scheme, func(t *testing.T) {
+			system, systemAsked := connectProxy(t)
+			s := proxiedService(t, system)
+			proxy, asked := standInProxy(t, scheme)
+			customProxy(t, s, proxy)
+			im, smtpAddr := servers(t)
+			in := input(t, im.Addr, smtpAddr, "secret")
+			in.IMAPHost, in.SMTPHost = "example.com", "example.com"
+			in.IMAPSecurity, in.SMTPSecurity = core.SecurityTLS, core.SecurityTLS
+			require.NoError(t, s.TestAccount(ctx, in))
+			_, ip := hostPort(t, im.Addr)
+			_, sp := hostPort(t, smtpAddr)
+			assert.Contains(t, asked(), net.JoinHostPort("example.com", strconv.Itoa(ip)), "IMAP asked the custom proxy for the host name")
+			assert.Contains(t, asked(), net.JoinHostPort("example.com", strconv.Itoa(sp)), "SMTP asked the custom proxy for the host name")
+			assert.Empty(t, systemAsked(), "the system proxy is not used")
+		})
+	}
+}
+
+func TestLoopbackAccountSkipsCustomProxy(t *testing.T) {
+	s := proxiedService(t, nil)
+	proxy, asked := standInProxy(t, "socks5")
+	customProxy(t, s, proxy)
+	im, smtpAddr := servers(t)
+	require.NoError(t, s.TestAccount(ctx, input(t, im.Addr, smtpAddr, "secret")))
+	assert.Empty(t, asked(), "a server on this computer connects direct")
 }

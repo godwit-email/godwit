@@ -4,6 +4,8 @@ import (
 	"cmp"
 	"context"
 	"math"
+	"net"
+	"net/url"
 	"reflect"
 	"slices"
 	"strconv"
@@ -295,20 +297,83 @@ func (p *settingsPage) generalView(c *ui.Context) {
 				})
 			})
 		})
+	p.proxySection(c)
+}
+
+// proxyDraft is 网络代理 as shown: the custom fields save once they make a
+// usable address, so 自定义 waits for one, and they outlast other modes.
+type proxyDraft struct {
+	mode, scheme, host, port string
+	hostErr, portErr         string // why the fields don't make an address yet
+	from                     string // the settings' mode and URL the draft last matched
+}
+
+func (p *settingsPage) proxySection(c *ui.Context) {
+	st, d, t := &p.st, &p.proxy, theme.Of(c)
+	if key := st.ProxyMode + " " + st.ProxyURL; key != d.from {
+		d.from, d.mode = key, cmp.Or(st.ProxyMode, core.ProxySystem)
+		d.scheme, d.host, d.port = "socks5", "", ""
+		if u, err := url.Parse(st.ProxyURL); err == nil && u.Scheme != "" {
+			d.scheme, d.host, d.port = u.Scheme, u.Hostname(), u.Port()
+		}
+	}
 	source := "" // where 跟随系统 finds the proxy
-	if st.ProxyMode != core.ProxyOff {
+	if d.mode == core.ProxySystem {
 		source = i18n.T("settings.proxy.system.settings")
 		if sysproxy.FromEnvironment() {
 			source = i18n.T("settings.proxy.system.env")
 		}
 	}
-	settingsSection(c, i18n.T("settings.proxy"), i18n.T("settings.proxy.foot"),
-		sel(i18n.T("settings.proxy.mode"), source, func() ui.Element {
-			return settingSelect(c, i18n.T("settings.proxy.mode"), &st.ProxyMode, []kit.Option[string]{
+	input := func(label, msg string, v *string, w float32) func() {
+		return func() {
+			settingRow(c, label, msg, func() {
+				kit.Input(c, v, kit.InputOpts{Invalid: msg != ""}).Width(w).Radius(t.Radius.Lg).Label(label)
+			})
+		}
+	}
+	rows := []func(){func() {
+		settingRow(c, i18n.T("settings.proxy.mode"), source, func() {
+			settingSelect(c, i18n.T("settings.proxy.mode"), &d.mode, []kit.Option[string]{
 				{Value: core.ProxySystem, Label: i18n.T("settings.proxy.system")},
+				{Value: core.ProxyCustom, Label: i18n.T("settings.proxy.custom")},
 				{Value: core.ProxyOff, Label: i18n.T("settings.proxy.off")},
 			})
-		}))
+		})
+	}}
+	if d.mode == core.ProxyCustom {
+		rows = append(rows, func() {
+			settingRow(c, i18n.T("settings.proxy.type"), i18n.T("settings.proxy.type.help"), func() {
+				settingSelect(c, i18n.T("settings.proxy.type"), &d.scheme, []kit.Option[string]{
+					{Value: "socks5", Label: "SOCKS5"}, {Value: "http", Label: "HTTP"},
+				})
+			})
+		},
+			input(i18n.T("settings.proxy.host"), d.hostErr, &d.host, theme.SettingsInputWidth),
+			input(i18n.T("settings.proxy.port"), d.portErr, &d.port, theme.PortWidth))
+	}
+	settingsSection(c, i18n.T("settings.proxy"), i18n.T("settings.proxy.foot"), rows...)
+
+	// what the controls changed goes to the settings once it can be saved
+	d.hostErr, d.portErr = "", ""
+	host := strings.TrimSpace(d.host)
+	switch port, err := strconv.Atoi(strings.TrimSpace(d.port)); {
+	case d.mode != core.ProxyCustom:
+		if d.mode != cmp.Or(st.ProxyMode, core.ProxySystem) {
+			st.ProxyMode = d.mode
+		}
+	case host == "":
+		d.hostErr = i18n.T("settings.proxy.host.empty")
+	case err != nil || port < 1 || port > 65535:
+		d.portErr = i18n.T("settings.proxy.port.invalid")
+	default:
+		u, err := core.ParseProxyURL(d.scheme + "://" + net.JoinHostPort(host, strconv.Itoa(port)))
+		if err != nil {
+			d.hostErr = i18n.T("settings.proxy.host.invalid")
+			break
+		}
+		st.ProxyMode, st.ProxyURL = core.ProxyCustom, u.String()
+	}
+	d.from = st.ProxyMode + " " + st.ProxyURL
 }
 
 // aiFeaturesView is the Intelligence page's 功能 tab: the reader's AI features, and

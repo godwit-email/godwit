@@ -146,6 +146,32 @@ func TestSettingsValidation(t *testing.T) {
 	assert.Equal(t, base, got)
 }
 
+// 自定义 needs a usable address; the other modes keep whatever was typed.
+func TestSettingsProxyURL(t *testing.T) {
+	s := settingsService(t, t.TempDir(), "")
+	st, _ := s.GetSettings(t.Context())
+	st.ProxyMode = ProxyCustom
+	for _, ok := range []string{"socks5://127.0.0.1:7890", "http://proxy.example:8080", "socks5://[::1]:1080"} {
+		st.ProxyURL = ok
+		_, err := s.SetSettings(t.Context(), st)
+		assert.NoError(t, err, ok)
+	}
+	for _, bad := range []string{"", "socks5://:1080", "socks5://h", "socks5://h:0", "socks5://h:65536", "socks5://h:1080/x",
+		"socks5://u:p@h:1080", "https://h:443", "socks4://h:1080", "h:1080", "socks5://h:1080?a", "socks5://[a:b]:1080"} {
+		in := st
+		in.ProxyURL = bad
+		_, err := s.SetSettings(t.Context(), in)
+		assert.Error(t, err, bad)
+		for _, mode := range []string{ProxySystem, ProxyOff} {
+			in.ProxyMode = mode
+			got, err := s.SetSettings(t.Context(), in)
+			if assert.NoError(t, err, "%s %q", mode, bad) {
+				assert.Equal(t, bad, got.ProxyURL, "kept in %s", mode)
+			}
+		}
+	}
+}
+
 func TestReadingLanguageFallback(t *testing.T) {
 	s := settingsService(t, t.TempDir(), "")
 	assert.Equal(t, "en", s.readingLanguage(t.Context()))
