@@ -7,12 +7,14 @@ import (
 	"crypto/rand"
 	"crypto/tls"
 	"crypto/x509"
+	"encoding/base64"
 	"io"
 	"math/big"
 	"net"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"slices"
 	"strconv"
 	"sync"
 	"testing"
@@ -36,6 +38,12 @@ func connectProxy(t *testing.T) (*url.URL, func() []string) {
 
 // standInProxy is connectProxy speaking scheme: http (CONNECT) or socks5.
 func standInProxy(t *testing.T, scheme string) (*url.URL, func() []string) {
+	t.Helper()
+	return authProxy(t, scheme, "", "")
+}
+
+// authProxy is standInProxy refusing a tunnel without user and pass, when user is set.
+func authProxy(t *testing.T, scheme, user, pass string) (*url.URL, func() []string) {
 	t.Helper()
 	srv := httptest.NewTLSServer(nil)
 	srv.Close() // only its certificate is wanted
@@ -62,13 +70,39 @@ func standInProxy(t *testing.T, scheme string) (*url.URL, func() []string) {
 					if err != nil || req.Method != http.MethodConnect {
 						return
 					}
+					if user != "" && req.Header.Get("Proxy-Authorization") != "Basic "+base64.StdEncoding.EncodeToString([]byte(user+":"+pass)) {
+						io.WriteString(c, "HTTP/1.1 407 Proxy Authentication Required\r\n\r\n")
+						return
+					}
 					target = req.Host
 				} else {
 					// greeting: ver, nmethods, methods; request: ver, cmd, rsv, atyp=3, len, name, port
 					hdr := make([]byte, 2)
 					io.ReadFull(br, hdr)
-					io.ReadFull(br, make([]byte, hdr[1]))
-					c.Write([]byte{5, 0})
+					methods := make([]byte, hdr[1])
+					io.ReadFull(br, methods)
+					if user == "" {
+						c.Write([]byte{5, 0})
+					} else {
+						if !slices.Contains(methods, 2) {
+							c.Write([]byte{5, 0xff})
+							return
+						}
+						// RFC 1929: ver, ulen, user, plen, pass
+						c.Write([]byte{5, 2})
+						b := make([]byte, 2)
+						io.ReadFull(br, b)
+						u := make([]byte, b[1])
+						io.ReadFull(br, u)
+						io.ReadFull(br, b[:1])
+						pw := make([]byte, b[0])
+						io.ReadFull(br, pw)
+						if string(u) != user || string(pw) != pass {
+							c.Write([]byte{1, 1})
+							return
+						}
+						c.Write([]byte{1, 0})
+					}
 					req := make([]byte, 5)
 					io.ReadFull(br, req)
 					name := make([]byte, int(req[4])+2)
@@ -277,4 +311,33 @@ func TestCustomProxyBypass(t *testing.T) {
 	via.IMAPSecurity, via.SMTPSecurity = core.SecurityTLS, core.SecurityTLS
 	require.NoError(t, s.TestAccount(ctx, via))
 	assert.NotEmpty(t, asked(), "a server not in the list goes through the custom proxy")
+}
+
+// 自定义 with a username and password: the HTTP and SOCKS5 proxies receive
+// them; without them the proxy refuses.
+func TestAccountThroughCustomProxyWithCredentials(t *testing.T) {
+	for _, scheme := range []string{"http", "socks5"} {
+		t.Run(scheme, func(t *testing.T) {
+			s := proxiedService(t, nil)
+			proxy, asked := authProxy(t, scheme, "alice", "pr0xy-pass")
+			im, smtpAddr := servers(t)
+			in := input(t, im.Addr, smtpAddr, "secret")
+			in.IMAPHost, in.SMTPHost = "example.com", "example.com"
+			in.IMAPSecurity, in.SMTPSecurity = core.SecurityTLS, core.SecurityTLS
+
+			customProxy(t, s, proxy)
+			require.Error(t, s.TestAccount(ctx, in), "no credentials, refused")
+			assert.Empty(t, asked())
+
+			st, err := s.GetSettings(ctx)
+			require.NoError(t, err)
+			st.ProxyUser, st.ProxyPassword = "alice", "pr0xy-pass"
+			saved, err := s.SetSettings(ctx, st)
+			require.NoError(t, err)
+			assert.Empty(t, saved.ProxyPassword, "the password is not handed back")
+			assert.True(t, saved.ProxyPasswordSet)
+			require.NoError(t, s.TestAccount(ctx, in))
+			assert.NotEmpty(t, asked())
+		})
+	}
 }
