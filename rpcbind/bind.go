@@ -184,11 +184,12 @@ func NewCodec() *rpc.Codec {
 }
 
 // Expose picks the *core.Service methods callable over RPC: every exported
-// one but Close, Redact, AuditExternal, the avatars, the progress callbacks,
+// one but Close, Redact, AuditExternal, Proxy (a custom proxy's URL carries its
+// password), the avatars, the progress callbacks,
 // FollowConversation (a channel and a stop func; RPC clients have
 // SubscribeConversation) and the test hooks.
 func Expose(method string) bool {
-	return method != "Close" && method != "Redact" && method != "AuditExternal" && method != "SenderAvatar" && method != "ModelServiceAvatar" &&
+	return method != "Close" && method != "Redact" && method != "AuditExternal" && method != "Proxy" && method != "SenderAvatar" && method != "ModelServiceAvatar" &&
 		method != "FollowConversation" &&
 		method != "InstallPluginFromRegistryWithProgress" && method != "PrepareModelWithProgress" && method != "DownloadRecognitionModel" && !strings.HasSuffix(method, "ForTest")
 }

@@ -26,8 +26,8 @@ func TestBypassed(t *testing.T) {
 		"CORP.EXAMPLE.":         true,
 		"169.254.10.1.nip.io.x": false,
 	} {
-		if got := bypassed(host, list); got != want {
-			t.Errorf("bypassed(%q) = %v", host, got)
+		if got := Bypassed(host, list); got != want {
+			t.Errorf("Bypassed(%q) = %v", host, got)
 		}
 	}
 }

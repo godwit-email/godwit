@@ -26,7 +26,7 @@ func For(u *url.URL) *url.URL {
 		return p
 	}
 	s := system()
-	if bypassed(u.Hostname(), s.bypass) {
+	if Bypassed(u.Hostname(), s.bypass) {
 		return nil
 	}
 	if u.Scheme == "https" && s.https != nil {
@@ -45,10 +45,10 @@ type settings struct {
 	bypass             []string
 }
 
-// bypassed is whether host is in the bypass list: a name, a *-pattern, a
+// Bypassed is whether host is in the bypass list: a name, a *-pattern, a
 // .suffix, an address or CIDR range ("169.254/16" as macOS writes it), or
 // <local> (a name without a dot, as Windows means it).
-func bypassed(host string, list []string) bool {
+func Bypassed(host string, list []string) bool {
 	host = strings.ToLower(strings.TrimSuffix(host, "."))
 	ip, ipErr := netip.ParseAddr(host)
 	for _, e := range list {
