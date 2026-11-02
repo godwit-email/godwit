@@ -113,7 +113,9 @@ type Settings struct {
 	// ProxyPassword is write-only: a SetSettings with one puts it in the
 	// keychain (proxyKeyringUser); it is never stored here nor handed back.
 	// ProxyPasswordSet says the keychain has one; a save turning it off
-	// deletes it, and an empty ProxyPassword keeps it as it is.
+	// deletes it, and an empty ProxyPassword keeps it as it is. So a client
+	// must send back the ProxyPasswordSet it loaded: a zero one clears the
+	// password.
 	ProxyPassword    string `json:",omitempty"`
 	ProxyPasswordSet bool
 	// SettingsVersion is 2 once the default text grew from 13 to 14 px and a
@@ -309,18 +311,32 @@ func (s *Service) SetSettings(ctx context.Context, st Settings) (Settings, error
 		}
 		st.MaskCategories.Names.On = true // the names it finds are why it is on; off, names stay as they are
 	}
-	if err := s.saveProxyPassword(&st, stored); err != nil {
-		return Settings{}, err
-	}
+	password := st.ProxyPassword
+	st.ProxyPassword, st.ProxyPasswordSet = "", password != "" || st.ProxyPasswordSet && stored.ProxyPasswordSet
 	st.SettingsVersion = settingsVersion // a client's 0 must not make the next load raise FontSize again
-	b, err := json.Marshal(st)
-	if err != nil {
+	write := func(st Settings) error {
+		b, err := json.Marshal(st)
+		if err != nil {
+			return err
+		}
+		_, err = s.db.Execute(ctx, `INSERT INTO settings(key, value) VALUES ('app', ?)
+		ON CONFLICT(key) DO UPDATE SET value = excluded.value`, string(b))
+		return err
+	}
+	if err := write(st); err != nil {
 		return Settings{}, err
 	}
-	if _, err := s.db.Execute(ctx, `INSERT INTO settings(key, value) VALUES ('app', ?)
-		ON CONFLICT(key) DO UPDATE SET value = excluded.value`, string(b)); err != nil {
+	// the keychain after the row, which goes back if it fails, so the two never disagree
+	if err := s.saveProxyPassword(password, st, stored); err != nil {
+		if rerr := write(stored); rerr != nil {
+			err = errors.Join(err, rerr)
+		}
 		return Settings{}, err
 	}
+	if password == "" && st.ProxyPasswordSet {
+		password = s.proxy.Load().password // kept as it is
+	}
+	s.setProxy(st, password)
 	s.maskingChanged(st)
 	if securityOn(st) && (!securityOn(stored) || st.SecurityAI && !stored.SecurityAI) {
 		s.wakeSecurityScanner()

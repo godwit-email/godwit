@@ -32,6 +32,29 @@ func TestBypassed(t *testing.T) {
 	}
 }
 
+func TestOnThisComputer(t *testing.T) {
+	for host, want := range map[string]bool{
+		"localhost":         true,
+		"localhost.":        true,
+		"LOCALHOST.":        true,
+		"foo.localhost":     true,
+		"bridge.LocalHost.": true,
+		"127.0.0.1":         true,
+		"127.8.9.10":        true,
+		"::1":               true,
+		"::ffff:127.0.0.1":  true,
+		"example.com":       false,
+		"localhost.example": false,
+		"notlocalhost":      false,
+		"10.0.0.1":          false,
+		"":                  false,
+	} {
+		if got := OnThisComputer(host); got != want {
+			t.Errorf("OnThisComputer(%q) = %v", host, got)
+		}
+	}
+}
+
 func TestParseWindows(t *testing.T) {
 	s := parseWindows("127.0.0.1:7890", "localhost;*.lan;<local>")
 	if s.http.String() != "http://127.0.0.1:7890" || s.https != s.http || s.socks != nil || len(s.bypass) != 3 {

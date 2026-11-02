@@ -114,8 +114,9 @@ type Service struct {
 	locksMu sync.Mutex
 	locks   map[int64]chan struct{} // per-account 1-slot semaphore: sync and op pushing never overlap
 
-	settingsMu sync.Mutex // settings read then written (SetSettings, the trusted senders)
-	editMu     sync.Mutex // local changes (SetFlags, Move, Delete, drafts, Send) read then write
+	settingsMu sync.Mutex                  // settings read then written (SetSettings, the trusted senders)
+	proxy      atomic.Pointer[proxyConfig] // the saved proxy (loadProxy, SetSettings), read by Proxy
+	editMu     sync.Mutex                  // local changes (SetFlags, Move, Delete, drafts, Send) read then write
 
 	workersMu sync.Mutex
 	workers   map[int64]*worker
@@ -265,6 +266,10 @@ func New(ctx context.Context, opts Options) (*Service, error) {
 	}
 	if opts.SystemProxy == nil {
 		s.opts.SystemProxy = sysproxy.For
+	}
+	if err := s.loadProxy(ctx); err != nil {
+		db.Close()
+		return nil, fmt.Errorf("proxy settings: %w", err)
 	}
 	// the hooks are package-wide: the last Service started owns them
 	conn.SystemProxy, imagefetch.SystemProxy = s.Proxy, s.Proxy
