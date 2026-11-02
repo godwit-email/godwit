@@ -1594,5 +1594,21 @@
   "contacts_stat_last": "Zuletzt",
   "contacts_mail": "Ausgetauschte E-Mails · {arg1, number, ::group-off}",
   "contacts_replied": "Beantwortet",
-  "reader_view_contact": "Kontakt anzeigen"
+  "reader_view_contact": "Kontakt anzeigen",
+  "mail_menu_labels": "Etiketten",
+  "mail_menu_security": "Sicherheitsbewertung",
+  "mail_security_mark_safe": "Als sicher / unbedenklich einstufen",
+  "mail_security_mark_suspicious": "Als verdächtig einstufen",
+  "mail_security_mark_warning": "Als Bedrohung / Phishing einstufen",
+  "mail_security_reset": "Automatische Bewertung wiederherstellen",
+  "reader_security_edit_title": "Sicherheitsbewertung anpassen",
+  "reader_security_click_to_edit": "Klicken zum Anpassen",
+  "reader_security_manual_safe_badge": "Manuell freigegeben",
+  "reader_security_manual_warning_badge": "Manuell als Bedrohung markiert",
+  "reader_security_manual_suspicious_badge": "Manuell als verdächtig markiert",
+  "reader_security_manual_safe_desc": "Diese E-Mail wurde manuell als sicher und unbedenklich eingestuft.",
+  "reader_security_manual_warning_desc": "Diese E-Mail wurde manuell als Sicherheitsbedrohung oder Phishing markiert.",
+  "reader_security_manual_suspicious_desc": "Diese E-Mail wurde manuell zur Überprüfung als verdächtig markiert.",
+  "reader_security_updated": "Sicherheitsbewertung aktualisiert",
+  "reader_message_labels": "Etiketten anpassen…"
 }

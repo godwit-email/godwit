@@ -56,24 +56,26 @@ type reader struct {
 	bodies       map[int64]*msgBody
 	scroll       ui.ScrollState // the messages' scrolling; a body's page hands on the wheels it does not use
 
-	ai          map[int64]*msgAI         // by message; kept across switches so a summary runs once
-	aiCtx       context.Context          // the AI work of the key shown; nil until some starts
-	aiStop      context.CancelFunc       // cancels aiCtx
-	skills      fetch[[]core.SkillInfo]  // the skill menu: skills on messages but summarize and translate
-	actions     fetch[[]core.ActionInfo] // and plugin actions on messages
-	egress      egressAsk                // the action waiting for egress approval
-	egressDlg   bool                     // its dialog shows
-	unsubAsk    int64                    // the message whose one-click unsubscribe waits to be confirmed
-	unsubDlg    bool                     // its dialog shows
-	senderOpen  bool                     // the sender action popover shows
-	senderMsgID int64                    // which message's sender popover is open
-	detailsOpen bool                     // the recipients' details popover shows
-	detailsID   int64                    // which message's details popover is open
-	moreOpen    bool                     // the toolbar's more menu (save, print) shows
-	barTop      float32                  // the floating toolbar's height as the last frame laid it out: the messages start under it
-	barBottom   float32                  // the reply bar's, likewise: the messages end above it
-	pane        ui.Rect                  // the messages' scroll box as the last frame laid it out, in the window: the bars float at its top and bottom
-	replyAsk    string                   // the reply bar's question to Wit, until it is asked
+	ai           map[int64]*msgAI         // by message; kept across switches so a summary runs once
+	aiCtx        context.Context          // the AI work of the key shown; nil until some starts
+	aiStop       context.CancelFunc       // cancels aiCtx
+	skills       fetch[[]core.SkillInfo]  // the skill menu: skills on messages but summarize and translate
+	actions      fetch[[]core.ActionInfo] // and plugin actions on messages
+	egress       egressAsk                // the action waiting for egress approval
+	egressDlg    bool                     // its dialog shows
+	unsubAsk     int64                    // the message whose one-click unsubscribe waits to be confirmed
+	unsubDlg     bool                     // its dialog shows
+	senderOpen   bool                     // the sender action popover shows
+	senderMsgID  int64                    // which message's sender popover is open
+	secMenuOpen  bool                     // the security verdict edit popover shows
+	secMenuMsgID int64                    // which message's security popover is open
+	detailsOpen  bool                     // the recipients' details popover shows
+	detailsID    int64                    // which message's details popover is open
+	moreOpen     bool                     // the toolbar's more menu (save, print) shows
+	barTop       float32                  // the floating toolbar's height as the last frame laid it out: the messages start under it
+	barBottom    float32                  // the reply bar's, likewise: the messages end above it
+	pane         ui.Rect                  // the messages' scroll box as the last frame laid it out, in the window: the bars float at its top and bottom
+	replyAsk     string                   // the reply bar's question to Wit, until it is asked
 
 	getThread  func(ctx context.Context, id int64) (core.Thread, error)                       // tests wrap it
 	getMessage func(ctx context.Context, id int64, remote bool) (core.Message, error)         // tests wrap it
@@ -164,7 +166,7 @@ func (r *reader) reset(k [2]int64) {
 	r.stopAI()
 	r.key, r.loaded, r.subject, r.msgs, r.focus = k, false, "", nil, 0
 	r.threadIDs, r.labels, r.labelMenu, r.labelQuery = nil, nil, false, ""
-	r.senderOpen, r.senderMsgID, r.moreOpen, r.replyAsk = false, 0, false, "" // a question is for the thread it was typed in
+	r.senderOpen, r.senderMsgID, r.secMenuOpen, r.secMenuMsgID, r.moreOpen, r.replyAsk = false, 0, false, 0, false, "" // a question is for the thread it was typed in
 	r.detailsOpen, r.detailsID = false, 0
 	r.open, r.historyOpen, r.historyShown, r.revealID, r.bodies = map[int64]bool{}, map[int64]bool{}, false, 0, map[int64]*msgBody{}
 	r.scroll.X, r.scroll.Y = 0, 0
@@ -1064,7 +1066,7 @@ func (r *reader) folded(c *ui.Context, m core.MessageSummary) {
 			if r.isBlocked(m.From) {
 				kit.Badge(c, i18n.T("reader.blocked_badge"))
 			}
-			r.securityBadge(c, m.Security)
+			r.securityBadge(c, m.ID, m.Security)
 			if g := r.gist(m.ID); g != "" { // a step darker than the text it stands for, and marked the AI's
 				ui.Row(c).Grow(1).Shrink(1).Gap(th.Space(1)).AlignItems(ui.Center).Children(func() {
 					ui.Text(c, g).TextColor(t.Foreground.Alpha(0.7)).SingleLine().Shrink(1)
@@ -1359,12 +1361,12 @@ func (r *reader) message(c *ui.Context, m core.MessageSummary) {
 							}
 						})
 						if r.senderOpen && r.senderMsgID == m.ID {
-							r.senderMenu(c, who, addr, m.From)
+							r.senderMenu(c, who, addr, m.From, m.ID, sec)
 						}
 						if r.isBlocked(m.From) {
 							kit.Badge(c, i18n.T("reader.blocked_badge"))
 						}
-						r.securityBadge(c, sec)
+						r.securityBadge(c, m.ID, sec)
 					})
 					ui.Row(c).Wrap().Gap(th.Space(1.5)).AlignItems(ui.Center).Children(func() {
 						r.recipientsLine(c, m, b)
@@ -1855,8 +1857,8 @@ func (a *App) setBlocked(from string, block bool, done func()) {
 
 // senderMenu is the sender's actions under anchor, the reader's menu as its
 // toolbar's more menu is: view them in contacts, copy the address, block or
-// unblock the sender.
-func (r *reader) senderMenu(c *ui.Context, anchor ui.Element, addr, rawFrom string) {
+// unblock the sender, edit labels, or adjust security classification.
+func (r *reader) senderMenu(c *ui.Context, anchor ui.Element, addr, rawFrom string, msgID int64, sec gomail.SecurityReport) {
 	target := cmp.Or(addr, rawFrom)
 	if target == "" {
 		return
@@ -1891,6 +1893,14 @@ func (r *reader) senderMenu(c *ui.Context, anchor ui.Element, addr, rawFrom stri
 				r.p.a.setBlocked(target, true, func() { r.p.a.toast(i18n.T("reader.sender_blocked")) })
 			})
 		}
+		kit.Separator(c, false)
+		item(10, i18n.T("reader.message.labels"), "tag", false, func() {
+			r.labelMenu = true
+		})
+		item(11, i18n.T("reader.security.edit_title"), "shield-check", false, func() {
+			r.secMenuOpen = true
+			r.secMenuMsgID = msgID
+		})
 	})
 }
 
@@ -1910,6 +1920,14 @@ func secWarningText(sec gomail.SecurityReport) string {
 }
 
 func (r *reader) secExplanation(sec gomail.SecurityReport) string {
+	switch sec.Reason {
+	case "manual_safe":
+		return i18n.T("reader.security.manual_safe_desc")
+	case "manual_suspicious":
+		return i18n.T("reader.security.manual_suspicious_desc")
+	case "manual_warning":
+		return i18n.T("reader.security.manual_warning_desc")
+	}
 	switch sec.Status {
 	case gomail.SecurityCertifiedBrand:
 		return i18n.T("reader.security.certified_desc")
@@ -1929,33 +1947,140 @@ func (r *reader) secExplanation(sec gomail.SecurityReport) string {
 	}
 }
 
+// applySecurity updates the security classification for a message.
+func (r *reader) applySecurity(msgID int64, status, reason string) {
+	a := r.p.a
+	// Optimistically update the message's security in the reader for instant feedback
+	sec := gomail.DBToSecurityReport("", "", status, reason)
+	for i := range r.msgs {
+		if r.msgs[i].ID == msgID {
+			r.msgs[i].Security = sec
+		}
+	}
+	if b, ok := r.bodies[msgID]; ok && b != nil {
+		b.msg.Security = sec
+	}
+	a.writes.Chain("security", func(ctx context.Context) error {
+		return a.svc.SetMessageSecurity(ctx, []int64{msgID}, status, reason)
+	}, func(err error) {
+		if err != nil {
+			a.toastErr(err)
+		} else {
+			a.toast(i18n.T("reader.security.updated"))
+		}
+	})
+}
+
+// securityPopoverBody renders the classification options popover.
+func (r *reader) securityPopoverBody(c *ui.Context, msgID int64, sec gomail.SecurityReport) {
+	t, th := theme.Of(c), c.Theme()
+	ui.Column(c).Width(theme.SecurityCardWidth).Gap(th.Space(2)).Children(func() {
+		kit.Text(c, i18n.T("reader.security.edit_title"), t.Text.Base).FontWeight(600)
+		iconName, label, color := secVisual(t, sec)
+		if iconName != "" {
+			ui.Row(c).Gap(th.Space(1.5)).AlignItems(ui.Center).Children(func() {
+				ui.Icon(c, icons.Fill(iconName)).Size(theme.IconSm, theme.IconSm).TextColor(color)
+				kit.Text(c, label, t.Text.Sm).FontWeight(600).TextColor(color)
+			})
+		}
+		if exp := r.secExplanation(sec); exp != "" {
+			kit.Text(c, exp, t.Text.Sm).LineHeight(theme.LineCJK).TextColor(t.Muted)
+		}
+		kit.Separator(c, false)
+
+		optButton := func(key int, label, icon string, active bool, danger bool, onClick func()) {
+			color := t.Foreground
+			if danger {
+				color = t.DangerText
+			}
+			b := kit.Pressable(c.Key(key), kit.PressableOpts{OnClick: onClick}).AlignSelf(ui.Stretch).
+				Height(th.Space(8)).Padding(0, th.Space(2)).Gap(th.Space(2)).AlignItems(ui.Center).Radius(t.Radius.Md)
+			if active {
+				b.Background(t.Hover)
+			}
+			b.Children(func() {
+				ui.Icon(c, icons.Get(icon)).Size(theme.IconSm, theme.IconSm).TextColor(color)
+				kit.Text(c, label, t.Text.Sm).TextColor(color).Grow(1)
+				if active {
+					ui.Icon(c, icons.Get("check")).Size(theme.IconSm, theme.IconSm).TextColor(t.Muted)
+				}
+			})
+		}
+
+		optButton(1, i18n.T("mail.security.mark_safe"), "shield-check", sec.Reason == "manual_safe", false, func() {
+			r.secMenuOpen = false
+			r.secMenuMsgID = 0
+			r.applySecurity(msgID, "manual_safe", "manual_safe")
+		})
+		optButton(2, i18n.T("mail.security.mark_suspicious"), "triangle-alert", sec.Reason == "manual_suspicious", false, func() {
+			r.secMenuOpen = false
+			r.secMenuMsgID = 0
+			r.applySecurity(msgID, "manual_suspicious", "manual_suspicious")
+		})
+		optButton(3, i18n.T("mail.security.mark_warning"), "skull", sec.Reason == "manual_warning", true, func() {
+			r.secMenuOpen = false
+			r.secMenuMsgID = 0
+			r.applySecurity(msgID, "manual_warning", "manual_warning")
+		})
+		kit.Separator(c, false)
+		optButton(4, i18n.T("mail.security.reset"), "refresh-cw", sec.Reason == "", false, func() {
+			r.secMenuOpen = false
+			r.secMenuMsgID = 0
+			r.applySecurity(msgID, "", "")
+		})
+	})
+}
+
 // securityBadge is the sender's verdict as an icon by the name; hovering it
-// explains the verdict.
-func (r *reader) securityBadge(c *ui.Context, sec gomail.SecurityReport) {
-	if !showSecurity(r.p.a.settings, sec.Status) {
+// explains the verdict, and clicking it opens a popover to adjust the classification.
+func (r *reader) securityBadge(c *ui.Context, msgID int64, sec gomail.SecurityReport) {
+	isManual := sec.Reason == "manual_safe" || sec.Reason == "manual_suspicious" || sec.Reason == "manual_warning"
+	open := r.secMenuOpen && r.secMenuMsgID == msgID
+	if !isManual && !showSecurity(r.p.a.settings, sec.Status) && !open {
 		return
 	}
 	t, th := theme.Of(c), c.Theme()
-	iconName, label, color := secVisual(t, sec.Status)
-	mark := ui.Box(c).Shrink(0).Label(label).Children(func() {
+	iconName, label, color := secVisual(t, sec)
+	mark := kit.Pressable(c, kit.PressableOpts{OnClick: func() {
+		if r.secMenuOpen && r.secMenuMsgID == msgID {
+			r.secMenuOpen = false
+			r.secMenuMsgID = 0
+		} else {
+			r.open[msgID] = true
+			r.secMenuOpen = true
+			r.secMenuMsgID = msgID
+		}
+	}}).Shrink(0).Label(label).Radius(t.Radius.Sm).Padding(th.Space(0.5), th.Space(1))
+	mark.Children(func() {
 		ui.Icon(c, icons.Fill(iconName)).Size(theme.IconXs, theme.IconXs).TextColor(color)
 	})
-	kit.HoverCard(c, mark, theme.SecurityCardWidth, func() {
-		ui.Row(c).Gap(th.Space(1.5)).AlignItems(ui.Center).Children(func() {
-			ui.Icon(c, icons.Fill(iconName)).Size(theme.Icon, theme.Icon).TextColor(color)
-			kit.Text(c, label, t.Text.Base).FontWeight(600).TextColor(color)
+	if !open {
+		kit.HoverCard(c, mark, theme.SecurityCardWidth, func() {
+			ui.Row(c).Gap(th.Space(1.5)).AlignItems(ui.Center).Children(func() {
+				ui.Icon(c, icons.Fill(iconName)).Size(theme.Icon, theme.Icon).TextColor(color)
+				kit.Text(c, label, t.Text.Base).FontWeight(600).TextColor(color)
+			})
+			kit.Text(c, r.secExplanation(sec), t.Text.Sm).LineHeight(theme.LineCJK).TextColor(t.Foreground)
+			kit.Separator(c, false)
+			kit.Text(c, i18n.T("reader.security.click_to_edit"), t.Text.Xs).TextColor(t.Muted)
 		})
-		kit.Text(c, r.secExplanation(sec), t.Text.Sm).LineHeight(theme.LineCJK).TextColor(t.Foreground)
-	})
+	}
+	if open {
+		kit.PopoverAt(c, mark, &r.secMenuOpen, ui.AnchorBottomLeft, ui.AnchorTopLeft, theme.PopupOffset, func() {
+			r.securityPopoverBody(c, msgID, sec)
+		})
+	}
 }
 
 // securityIcon is a mail list row's warning, after the sender's name. Verified
 // senders show theirs in the reader only: most rows would carry one.
-func securityIcon(c *ui.Context, st core.Settings, status gomail.SecurityStatus) {
-	if status != gomail.SecurityFraud && status != gomail.SecurityNeedsReview || !showSecurity(st, status) {
+func securityIcon(c *ui.Context, st core.Settings, sec gomail.SecurityReport) {
+	status := sec.Status
+	isManual := sec.Reason == "manual_warning" || sec.Reason == "manual_suspicious"
+	if !isManual && (status != gomail.SecurityFraud && status != gomail.SecurityNeedsReview || !showSecurity(st, status)) {
 		return
 	}
-	iconName, label, color := secVisual(theme.Of(c), status)
+	iconName, label, color := secVisual(theme.Of(c), sec)
 	ui.Icon(c, icons.Fill(iconName)).Size(theme.IconXs, theme.IconXs).Shrink(0).TextColor(color).Label(label)
 }
 
@@ -1971,9 +2096,17 @@ func showSecurity(st core.Settings, status gomail.SecurityStatus) bool {
 	return false // neutral is also the zero value of mail not yet checked: no badge
 }
 
-// secVisual returns the icon, translated label, and theme color for a security status.
-func secVisual(t theme.Tokens, status gomail.SecurityStatus) (iconName string, label string, color ui.Color) {
-	switch status {
+// secVisual returns the icon, translated label, and theme color for a security status or manual classification.
+func secVisual(t theme.Tokens, sec gomail.SecurityReport) (iconName string, label string, color ui.Color) {
+	switch sec.Reason {
+	case "manual_safe":
+		return "shield-check-fill", i18n.T("reader.security.manual_safe_badge"), t.SuccessText
+	case "manual_suspicious":
+		return "triangle-alert-fill", i18n.T("reader.security.manual_suspicious_badge"), t.WarningText
+	case "manual_warning":
+		return "skull-fill", i18n.T("reader.security.manual_warning_badge"), t.DangerText
+	}
+	switch sec.Status {
 	case gomail.SecurityCertifiedBrand:
 		return "vip-diamond-fill", i18n.T("reader.security.certified_badge"), t.Unread
 	case gomail.SecurityVerifiedDomain:
@@ -1985,6 +2118,6 @@ func secVisual(t theme.Tokens, status gomail.SecurityStatus) (iconName string, l
 	case gomail.SecurityNeutral:
 		return "question-fill", i18n.T("reader.security.unverified_badge"), t.Muted
 	default:
-		return "", "", color
+		return "question-fill", i18n.T("reader.security.unverified_badge"), t.Muted
 	}
 }

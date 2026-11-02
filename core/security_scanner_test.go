@@ -417,3 +417,42 @@ func TestSecurityFiveStatesScanner(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, "ai_fraud", store.Str(row.Values[0][0]))
 }
+
+func TestSetMessageSecurity(t *testing.T) {
+	ctx := t.Context()
+	s := newLabelService(t, "", "de")
+	now := time.Now().Unix()
+
+	id := addMessage(t, s, "Spam Alert", "phish@attacker.com", "Suspicious body", "", now-100)
+
+	// 1. Manually mark as warning / threat
+	require.NoError(t, s.SetMessageSecurity(ctx, []int64{id}, "warning", "manual_warning"))
+
+	msg, err := s.GetMessage(ctx, id, false)
+	require.NoError(t, err)
+	require.Equal(t, gomail.SecurityFraud, msg.Security.Status)
+	require.Equal(t, "manual_warning", msg.Security.Reason)
+
+	// 2. Override: user corrects false alarm -> mark as safe
+	require.NoError(t, s.SetMessageSecurity(ctx, []int64{id}, "verified_domain", "manual_safe"))
+
+	msg, err = s.GetMessage(ctx, id, false)
+	require.NoError(t, err)
+	require.Equal(t, gomail.SecurityVerifiedDomain, msg.Security.Status)
+	require.Equal(t, "manual_safe", msg.Security.Reason)
+
+	// 3. Mark as suspicious / needs review
+	require.NoError(t, s.SetMessageSecurity(ctx, []int64{id}, "needs_review", "manual_suspicious"))
+
+	msg, err = s.GetMessage(ctx, id, false)
+	require.NoError(t, err)
+	require.Equal(t, gomail.SecurityNeedsReview, msg.Security.Status)
+	require.Equal(t, "manual_suspicious", msg.Security.Reason)
+
+	// 4. Reset to automatic scan
+	require.NoError(t, s.SetMessageSecurity(ctx, []int64{id}, "", ""))
+
+	rows, err := s.db.Query(ctx, "SELECT security_status, security_scanned_at FROM messages WHERE id = ?", id)
+	require.NoError(t, err)
+	require.Equal(t, int64(0), store.Int(rows.Values[0][1]))
+}

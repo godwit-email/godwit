@@ -547,6 +547,35 @@ func flagSet(fl []string) []string {
 	return out
 }
 
+// SetMessageSecurity updates the security classification and reason for one or more messages.
+// If status is empty (""), it resets security_status and security_reason to NULL and security_scanned_at to 0 (queuing for re-scan).
+// Otherwise, it sets security_status, security_reason, and marks security_scanned_at with the current timestamp.
+// Publishes events.MessagesChanged on the event bus so the UI updates immediately.
+func (s *Service) SetMessageSecurity(ctx context.Context, messageIDs []int64, status, reason string) error {
+	if len(messageIDs) == 0 {
+		return nil
+	}
+	var err error
+	if status == "" {
+		for _, id := range messageIDs {
+			_, err = s.db.Execute(ctx, "UPDATE messages SET security_status = NULL, security_reason = NULL, security_scanned_at = 0 WHERE id = ?", id)
+			if err != nil {
+				return fmt.Errorf("reset message security %d: %w", id, err)
+			}
+		}
+	} else {
+		now := time.Now().Unix()
+		for _, id := range messageIDs {
+			_, err = s.db.Execute(ctx, "UPDATE messages SET security_status = ?, security_reason = ?, security_scanned_at = ? WHERE id = ?", status, reason, now, id)
+			if err != nil {
+				return fmt.Errorf("set message security %d: %w", id, err)
+			}
+		}
+	}
+	s.bus.Publish(events.Event{Type: events.MessagesChanged})
+	return nil
+}
+
 // SetFlags adds then removes flags on the messages locally and queues the change
 // for the server.
 func (s *Service) SetFlags(ctx context.Context, ids []int64, add, remove []string) error {

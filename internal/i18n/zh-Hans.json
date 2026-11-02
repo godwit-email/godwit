@@ -1594,5 +1594,21 @@
   "contacts_stat_last": "最近往来",
   "contacts_mail": "往来邮件 · {arg1, number, ::group-off} 封",
   "contacts_replied": "已回复",
-  "reader_view_contact": "查看联系人"
+  "reader_view_contact": "查看联系人",
+  "mail_menu_labels": "标签",
+  "mail_menu_security": "安全评估",
+  "mail_security_mark_safe": "标记为安全/可信",
+  "mail_security_mark_suspicious": "标记为可疑",
+  "mail_security_mark_warning": "标记为威胁/钓鱼",
+  "mail_security_reset": "恢复自动扫描",
+  "reader_security_edit_title": "调整安全评估",
+  "reader_security_click_to_edit": "点击调整",
+  "reader_security_manual_safe_badge": "手动放行",
+  "reader_security_manual_warning_badge": "手动标记威胁",
+  "reader_security_manual_suspicious_badge": "手动标记可疑",
+  "reader_security_manual_safe_desc": "此邮件已被手动标记为安全可信。",
+  "reader_security_manual_warning_desc": "此邮件已被手动标记为安全威胁或钓鱼诈骗。",
+  "reader_security_manual_suspicious_desc": "此邮件已被手动标记为待审核的可疑邮件。",
+  "reader_security_updated": "安全评估已更新",
+  "reader_message_labels": "调整标签…"
 }

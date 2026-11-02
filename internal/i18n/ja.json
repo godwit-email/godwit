@@ -1594,5 +1594,21 @@
   "contacts_stat_last": "最近のやり取り",
   "contacts_mail": "やり取りしたメール · {arg1, number, ::group-off} 通",
   "contacts_replied": "返信済み",
-  "reader_view_contact": "連絡先を表示"
+  "reader_view_contact": "連絡先を表示",
+  "mail_menu_labels": "ラベル",
+  "mail_menu_security": "セキュリティ評価",
+  "mail_security_mark_safe": "安全・正当としてマーク",
+  "mail_security_mark_suspicious": "不審としてマーク",
+  "mail_security_mark_warning": "脅威・フィッシングとしてマーク",
+  "mail_security_reset": "自動スキャンに戻す",
+  "reader_security_edit_title": "セキュリティ評価を変更",
+  "reader_security_click_to_edit": "クリックして変更",
+  "reader_security_manual_safe_badge": "手動で承認済み",
+  "reader_security_manual_warning_badge": "手動で脅威とマーク",
+  "reader_security_manual_suspicious_badge": "手動で不審とマーク",
+  "reader_security_manual_safe_desc": "このメールは手動で安全かつ正当と判断されました。",
+  "reader_security_manual_warning_desc": "このメールは手動でセキュリティ上の脅威またはフィッシングとしてマークされました。",
+  "reader_security_manual_suspicious_desc": "このメールは手動で確認が必要な不審メールとしてマークされました。",
+  "reader_security_updated": "セキュリティ評価を更新しました",
+  "reader_message_labels": "ラベルを変更…"
 }

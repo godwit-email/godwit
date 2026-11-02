@@ -1594,5 +1594,21 @@
   "contacts_stat_last": "最近往來",
   "contacts_mail": "往來郵件 · {arg1, number, ::group-off} 封",
   "contacts_replied": "已回覆",
-  "reader_view_contact": "查看聯絡人"
+  "reader_view_contact": "查看聯絡人",
+  "mail_menu_labels": "標籤",
+  "mail_menu_security": "安全評估",
+  "mail_security_mark_safe": "標記為安全/可信",
+  "mail_security_mark_suspicious": "標記為可疑",
+  "mail_security_mark_warning": "標記為威脅/釣魚",
+  "mail_security_reset": "恢復自動掃描",
+  "reader_security_edit_title": "調整安全評估",
+  "reader_security_click_to_edit": "點擊調整",
+  "reader_security_manual_safe_badge": "手動放行",
+  "reader_security_manual_warning_badge": "手動標記威脅",
+  "reader_security_manual_suspicious_badge": "手動標記可疑",
+  "reader_security_manual_safe_desc": "此郵件已被手動標記為安全可信。",
+  "reader_security_manual_warning_desc": "此郵件已被手動標記為安全威脅或釣魚詐騙。",
+  "reader_security_manual_suspicious_desc": "此郵件已被手動標記為待審核的可疑郵件。",
+  "reader_security_updated": "安全評估已更新",
+  "reader_message_labels": "調整標籤…"
 }

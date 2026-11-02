@@ -1594,5 +1594,21 @@
   "contacts_stat_last": "Último intercambio",
   "contacts_mail": "Correo intercambiado · {arg1, number, ::group-off}",
   "contacts_replied": "Respondido",
-  "reader_view_contact": "Ver contacto"
+  "reader_view_contact": "Ver contacto",
+  "mail_menu_labels": "Etiquetas",
+  "mail_menu_security": "Evaluación de seguridad",
+  "mail_security_mark_safe": "Marcar como seguro / legítimo",
+  "mail_security_mark_suspicious": "Marcar como sospechoso",
+  "mail_security_mark_warning": "Marcar como amenaza / suplantación",
+  "mail_security_reset": "Restaurar análisis automático",
+  "reader_security_edit_title": "Ajustar evaluación de seguridad",
+  "reader_security_click_to_edit": "Haz clic para ajustar",
+  "reader_security_manual_safe_badge": "Verificado manualmente",
+  "reader_security_manual_warning_badge": "Amenaza marcada manualmente",
+  "reader_security_manual_suspicious_badge": "Sospechoso marcado manualmente",
+  "reader_security_manual_safe_desc": "Este correo fue marcado manualmente como seguro y legítimo.",
+  "reader_security_manual_warning_desc": "Este correo fue marcado manualmente como una amenaza de seguridad o intento de suplantación.",
+  "reader_security_manual_suspicious_desc": "Este correo fue marcado manualmente como sospechoso para revisión.",
+  "reader_security_updated": "Evaluación de seguridad actualizada",
+  "reader_message_labels": "Ajustar etiquetas…"
 }

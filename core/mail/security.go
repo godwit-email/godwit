@@ -75,6 +75,7 @@ const (
 type SecurityReport struct {
 	Status             SecurityStatus
 	WarningKind        WarningKind
+	Reason             string
 	BrandName          string
 	ActualDomain       string
 	DKIMPass           bool
@@ -745,21 +746,27 @@ func SecurityReportToDB(rep SecurityReport) (status string, reason string) {
 func DBToSecurityReport(from, authResults, status, reason string) SecurityReport {
 	if status == "neutral" {
 		rep := EvaluateSecurity(from, "")
-		return SecurityReport{Status: SecurityNeutral, ActualDomain: rep.ActualDomain}
+		return SecurityReport{Status: SecurityNeutral, Reason: reason, ActualDomain: rep.ActualDomain}
 	}
 	rep := EvaluateSecurity(from, authResults)
+	rep.Reason = reason
 	switch status {
 	case "certified_brand":
 		rep.Status = SecurityCertifiedBrand
 	case "verified_domain":
 		rep.Status = SecurityVerifiedDomain
+		if reason == "manual_safe" {
+			rep.WarningKind = WarnNone
+		}
 	case "needs_review":
 		rep.Status = SecurityNeedsReview
 		switch reason {
-		case "ai_suspicious", "suspicious":
+		case "ai_suspicious", "suspicious", "manual_suspicious":
 			rep.WarningKind = WarnSuspicious
 		case "display_mismatch":
 			rep.WarningKind = WarnDisplaySpoof
+		default:
+			rep.WarningKind = WarnSuspicious
 		}
 	case "warning", "fraud":
 		rep.Status = SecurityFraud
@@ -770,7 +777,9 @@ func DBToSecurityReport(from, authResults, status, reason string) SecurityReport
 			rep.WarningKind = WarnEmailInName
 		case "auth_failed":
 			rep.WarningKind = WarnAuthFailed
-		case "ai_fraud":
+		case "ai_fraud", "manual_warning":
+			rep.WarningKind = WarnAIFraud
+		default:
 			rep.WarningKind = WarnAIFraud
 		}
 	}

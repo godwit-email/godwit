@@ -1594,5 +1594,21 @@
   "contacts_stat_last": "Ultimo scambio",
   "contacts_mail": "Posta scambiata · {arg1, number, ::group-off}",
   "contacts_replied": "Risposto",
-  "reader_view_contact": "Mostra contatto"
+  "reader_view_contact": "Mostra contatto",
+  "mail_menu_labels": "Etichette",
+  "mail_menu_security": "Valutazione di sicurezza",
+  "mail_security_mark_safe": "Contrassegna come sicuro / legittimo",
+  "mail_security_mark_suspicious": "Contrassegna come sospetto",
+  "mail_security_mark_warning": "Contrassegna come minaccia / phishing",
+  "mail_security_reset": "Ripristina scansione automatica",
+  "reader_security_edit_title": "Regola valutazione di sicurezza",
+  "reader_security_click_to_edit": "Fai clic per regolare",
+  "reader_security_manual_safe_badge": "Verificato manualmente",
+  "reader_security_manual_warning_badge": "Minaccia contrassegnata manualmente",
+  "reader_security_manual_suspicious_badge": "Sospetto contrassegnato manualmente",
+  "reader_security_manual_safe_desc": "Questa email è stata contrassegnata manualmente come sicura e legittima.",
+  "reader_security_manual_warning_desc": "Questa email è stata contrassegnata manualmente come minaccia di sicurezza o tentativo di phishing.",
+  "reader_security_manual_suspicious_desc": "Questa email è stata contrassegnata manualmente come sospetta da verificare.",
+  "reader_security_updated": "Valutazione di sicurezza aggiornata",
+  "reader_message_labels": "Regola etichette…"
 }

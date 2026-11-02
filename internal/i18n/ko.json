@@ -1594,5 +1594,21 @@
   "contacts_stat_last": "최근 주고받음",
   "contacts_mail": "주고받은 메일 · {arg1, number, ::group-off}통",
   "contacts_replied": "답장함",
-  "reader_view_contact": "연락처 보기"
+  "reader_view_contact": "연락처 보기",
+  "mail_menu_labels": "라벨",
+  "mail_menu_security": "보안 평가",
+  "mail_security_mark_safe": "안전/정상 메일로 표시",
+  "mail_security_mark_suspicious": "의심스러운 메일로 표시",
+  "mail_security_mark_warning": "위협/피싱으로 표시",
+  "mail_security_reset": "자동 검사 복원",
+  "reader_security_edit_title": "보안 평가 조정",
+  "reader_security_click_to_edit": "클릭하여 조정",
+  "reader_security_manual_safe_badge": "수동 승인됨",
+  "reader_security_manual_warning_badge": "수동으로 위협 표시됨",
+  "reader_security_manual_suspicious_badge": "수동으로 의심 표시됨",
+  "reader_security_manual_safe_desc": "이 이메일은 수동으로 안전하고 정상적인 메일로 지정되었습니다.",
+  "reader_security_manual_warning_desc": "이 이메일은 수동으로 보안 위협 또는 피싱 시도로 표시되었습니다.",
+  "reader_security_manual_suspicious_desc": "이 이메일은 수동으로 검토가 필요한 의심 메일로 표시되었습니다.",
+  "reader_security_updated": "보안 평가가 업데이트되었습니다",
+  "reader_message_labels": "라벨 조정…"
 }

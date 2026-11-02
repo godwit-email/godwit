@@ -1594,5 +1594,21 @@
   "contacts_stat_last": "Trao đổi gần nhất",
   "contacts_mail": "Thư đã trao đổi · {arg1, number, ::group-off}",
   "contacts_replied": "Đã trả lời",
-  "reader_view_contact": "Xem liên hệ"
+  "reader_view_contact": "Xem liên hệ",
+  "mail_menu_labels": "Nhãn",
+  "mail_menu_security": "Đánh giá bảo mật",
+  "mail_security_mark_safe": "Đánh dấu là an toàn / hợp lệ",
+  "mail_security_mark_suspicious": "Đánh dấu là đáng ngờ",
+  "mail_security_mark_warning": "Đánh dấu là mối đe dọa / lừa đảo",
+  "mail_security_reset": "Khôi phục quét tự động",
+  "reader_security_edit_title": "Điều chỉnh đánh giá bảo mật",
+  "reader_security_click_to_edit": "Nhấp để điều chỉnh",
+  "reader_security_manual_safe_badge": "Đã xác minh thủ công",
+  "reader_security_manual_warning_badge": "Mối đe dọa được đánh dấu thủ công",
+  "reader_security_manual_suspicious_badge": "Được đánh dấu đáng ngờ thủ công",
+  "reader_security_manual_safe_desc": "Email này đã được đánh dấu thủ công là an toàn và hợp lệ.",
+  "reader_security_manual_warning_desc": "Email này đã được đánh dấu thủ công là mối đe dọa bảo mật hoặc nỗ lực lừa đảo.",
+  "reader_security_manual_suspicious_desc": "Email này đã được đánh dấu thủ công là đáng ngờ để xem xét.",
+  "reader_security_updated": "Đã cập nhật đánh giá bảo mật",
+  "reader_message_labels": "Điều chỉnh nhãn…"
 }

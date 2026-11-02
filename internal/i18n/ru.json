@@ -1594,5 +1594,21 @@
   "contacts_stat_last": "Последняя переписка",
   "contacts_mail": "Переписка · {arg1, number, ::group-off}",
   "contacts_replied": "Отвечено",
-  "reader_view_contact": "Открыть контакт"
+  "reader_view_contact": "Открыть контакт",
+  "mail_menu_labels": "Метки",
+  "mail_menu_security": "Оценка безопасности",
+  "mail_security_mark_safe": "Отметить как безопасное / подлинное",
+  "mail_security_mark_suspicious": "Отметить как подозрительное",
+  "mail_security_mark_warning": "Отметить как угрозу / фишинг",
+  "mail_security_reset": "Восстановить автопроверку",
+  "reader_security_edit_title": "Изменить оценку безопасности",
+  "reader_security_click_to_edit": "Нажмите, чтобы изменить",
+  "reader_security_manual_safe_badge": "Подтверждено вручную",
+  "reader_security_manual_warning_badge": "Угроза отмечена вручную",
+  "reader_security_manual_suspicious_badge": "Подозрительно (вручную)",
+  "reader_security_manual_safe_desc": "Это письмо было вручную отмечено как безопасное и подлинное.",
+  "reader_security_manual_warning_desc": "Это письмо было вручную отмечено как угроза безопасности или фишинг.",
+  "reader_security_manual_suspicious_desc": "Это письмо было вручную отмечено как подозрительное для проверки.",
+  "reader_security_updated": "Оценка безопасности обновлена",
+  "reader_message_labels": "Изменить метки…"
 }

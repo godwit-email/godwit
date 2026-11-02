@@ -1594,5 +1594,21 @@
   "contacts_stat_last": "Laatst gecorrespondeerd",
   "contacts_mail": "Uitgewisselde e-mail · {arg1, number, ::group-off}",
   "contacts_replied": "Beantwoord",
-  "reader_view_contact": "Contact weergeven"
+  "reader_view_contact": "Contact weergeven",
+  "mail_menu_labels": "Labels",
+  "mail_menu_security": "Beveiligingsbeoordeling",
+  "mail_security_mark_safe": "Als veilig / legitiem markeren",
+  "mail_security_mark_suspicious": "Als verdacht markeren",
+  "mail_security_mark_warning": "Als dreiging / phishing markeren",
+  "mail_security_reset": "Automatische scan herstellen",
+  "reader_security_edit_title": "Beveiligingsbeoordeling aanpassen",
+  "reader_security_click_to_edit": "Klik om aan te passen",
+  "reader_security_manual_safe_badge": "Handmatig goedgekeurd",
+  "reader_security_manual_warning_badge": "Handmatig als dreiging gemarkeerd",
+  "reader_security_manual_suspicious_badge": "Handmatig als verdacht gemarkeerd",
+  "reader_security_manual_safe_desc": "Deze e-mail is handmatig als veilig en legitiem gemarkeerd.",
+  "reader_security_manual_warning_desc": "Deze e-mail is handmatig gemarkeerd als een beveiligingsdreiging of phishingpoging.",
+  "reader_security_manual_suspicious_desc": "Deze e-mail is handmatig als verdacht gemarkeerd voor controle.",
+  "reader_security_updated": "Beveiligingsbeoordeling bijgewerkt",
+  "reader_message_labels": "Labels aanpassen…"
 }

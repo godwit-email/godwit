@@ -835,6 +835,35 @@ func (p *mailPage) listView(c *ui.Context) {
 					act, target = k, on
 				}
 			}
+			m.Separator()
+			if len(p.a.labels) > 0 {
+				m.Submenu(i18n.T("mail.menu.labels"), func(sm *ui.Menu) {
+					for _, l := range p.a.labels {
+						lid := l.ID
+						has := slices.ContainsFunc(on, func(item mailItem) bool {
+							return slices.ContainsFunc(item.Labels, func(al core.AppliedLabel) bool { return al.LabelID == lid })
+						})
+						if sm.Item(l.Name).Checked(has).Chosen() {
+							p.toggleLabel(on, lid, !has)
+						}
+					}
+				})
+			}
+			m.Submenu(i18n.T("mail.menu.security"), func(sm *ui.Menu) {
+				if sm.Item(i18n.T("mail.security.mark_safe")).Chosen() {
+					p.applySecurity(on, "manual_safe", "manual_safe")
+				}
+				if sm.Item(i18n.T("mail.security.mark_suspicious")).Chosen() {
+					p.applySecurity(on, "manual_suspicious", "manual_suspicious")
+				}
+				if sm.Item(i18n.T("mail.security.mark_warning")).Chosen() {
+					p.applySecurity(on, "manual_warning", "manual_warning")
+				}
+				sm.Separator()
+				if sm.Item(i18n.T("mail.security.reset")).Chosen() {
+					p.applySecurity(on, "", "")
+				}
+			})
 			if p.a.dev { // dev builds: the message's original HTML, for debugging the renderer
 				m.Separator()
 				if m.Item("复制 HTML 路径（dev）").Chosen() {
@@ -1068,7 +1097,7 @@ func (p *mailPage) resultRow(c *ui.Context, it mailItem) ui.Element {
 	return col.Children(func() {
 		ui.Row(c).Gap(th.Space(1.5)).AlignItems(ui.Center).Children(func() {
 			ui.Text(c, p.resultWho(it)).SingleLine().Shrink(1)
-			securityIcon(c, p.a.settings, it.Security.Status)
+			securityIcon(c, p.a.settings, it.Security)
 			ui.Spacer(c)
 			p.starButton(c, it, col.Hovered())
 			if it.Attach {
@@ -1180,7 +1209,7 @@ func (p *mailPage) row(c *ui.Context, it mailItem) ui.Element {
 		}
 		ui.Row(c).Gap(th.Space(1.5)).AlignItems(ui.Center).Children(func() {
 			ui.Text(c, it.Who).FontWeight(weight).SingleLine().Shrink(1)
-			securityIcon(c, p.a.settings, it.Security.Status)
+			securityIcon(c, p.a.settings, it.Security)
 			ui.Spacer(c)
 			p.starButton(c, it, col.Hovered())
 			if it.Attach {
@@ -1325,6 +1354,80 @@ func (p *mailPage) draft(it mailItem, mode string) {
 			return
 		}
 		p.a.plat.OpenCompose(id)
+	})
+}
+
+// rowMessageIDs resolves rows into their underlying message IDs, expanding threads.
+func (p *mailPage) rowMessageIDs(ctx context.Context, rows []mailItem) ([]int64, error) {
+	var ids []int64
+	for _, it := range rows {
+		if !it.Thread {
+			ids = append(ids, it.ID)
+			continue
+		}
+		th, err := p.a.svc.GetThread(ctx, it.ID)
+		if err != nil {
+			return nil, err
+		}
+		for _, m := range th.Messages {
+			ids = append(ids, m.ID)
+		}
+	}
+	return ids, nil
+}
+
+// toggleLabel adds or removes a label on the given rows.
+func (p *mailPage) toggleLabel(rows []mailItem, labelID int64, on bool) {
+	if len(rows) == 0 {
+		return
+	}
+	for i := range p.items {
+		for _, it := range rows {
+			if p.items[i].ID == it.ID && p.items[i].Thread == it.Thread {
+				if on {
+					if !slices.ContainsFunc(p.items[i].Labels, func(l core.AppliedLabel) bool { return l.LabelID == labelID }) {
+						p.items[i].Labels = append(p.items[i].Labels, core.AppliedLabel{LabelID: labelID})
+					}
+				} else {
+					p.items[i].Labels = slices.DeleteFunc(p.items[i].Labels, func(l core.AppliedLabel) bool { return l.LabelID == labelID })
+				}
+			}
+		}
+	}
+	p.a.writes.Chain("labels", func(ctx context.Context) error {
+		ids, err := p.rowMessageIDs(ctx, rows)
+		if err != nil {
+			return err
+		}
+		return p.a.svc.SetLabel(ctx, ids, labelID, on)
+	}, p.a.toastErr)
+}
+
+// applySecurity sets or resets the manual security classification on the given rows.
+func (p *mailPage) applySecurity(rows []mailItem, status, reason string) {
+	if len(rows) == 0 {
+		return
+	}
+	sec := gomail.DBToSecurityReport("", "", status, reason)
+	for i := range p.items {
+		for _, it := range rows {
+			if p.items[i].ID == it.ID && p.items[i].Thread == it.Thread {
+				p.items[i].Security = sec
+			}
+		}
+	}
+	p.a.writes.Chain("security", func(ctx context.Context) error {
+		ids, err := p.rowMessageIDs(ctx, rows)
+		if err != nil {
+			return err
+		}
+		return p.a.svc.SetMessageSecurity(ctx, ids, status, reason)
+	}, func(err error) {
+		if err != nil {
+			p.a.toastErr(err)
+		} else {
+			p.a.toast(i18n.T("reader.security.updated"))
+		}
 	})
 }
 

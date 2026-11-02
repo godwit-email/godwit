@@ -3088,5 +3088,21 @@
   "contacts_stat_last": "Last Exchanged",
   "contacts_mail": "Mail Exchanged · {arg1, number, ::group-off}",
   "contacts_replied": "Replied",
-  "reader_view_contact": "View Contact"
+  "reader_view_contact": "View Contact",
+  "mail_menu_labels": "Labels",
+  "mail_menu_security": "Security Assessment",
+  "mail_security_mark_safe": "Mark as safe / legitimate",
+  "mail_security_mark_suspicious": "Mark as suspicious",
+  "mail_security_mark_warning": "Mark as threat / phishing",
+  "mail_security_reset": "Restore automatic scan",
+  "reader_security_edit_title": "Adjust security assessment",
+  "reader_security_click_to_edit": "Click to adjust",
+  "reader_security_manual_safe_badge": "Manually verified",
+  "reader_security_manual_warning_badge": "Manually flagged threat",
+  "reader_security_manual_suspicious_badge": "Manually flagged suspicious",
+  "reader_security_manual_safe_desc": "This email was manually marked as safe and legitimate.",
+  "reader_security_manual_warning_desc": "This email was manually flagged as a security threat or phishing attempt.",
+  "reader_security_manual_suspicious_desc": "This email was manually flagged as suspicious for review.",
+  "reader_security_updated": "Security assessment updated",
+  "reader_message_labels": "Adjust labels…"
 }
