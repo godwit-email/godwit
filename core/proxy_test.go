@@ -2,14 +2,11 @@ package core_test
 
 import (
 	"bufio"
-	"crypto/ecdsa"
-	"crypto/elliptic"
-	"crypto/rand"
 	"crypto/tls"
 	"crypto/x509"
 	"encoding/base64"
+	"errors"
 	"io"
-	"math/big"
 	"net"
 	"net/http"
 	"net/http/httptest"
@@ -18,7 +15,6 @@ import (
 	"strconv"
 	"sync"
 	"testing"
-	"time"
 
 	"github.com/godwit-email/godwit/core"
 	"github.com/godwit-email/godwit/core/conn"
@@ -175,47 +171,9 @@ func TestProxyDecision(t *testing.T) {
 	proxy := &url.URL{Scheme: "socks5", Host: "127.0.0.1:1080"}
 	s := proxiedService(t, proxy)
 	assert.Equal(t, proxy, s.Proxy(&url.URL{Scheme: "https", Host: "example.com"}))
-	for _, h := range []string{"localhost:8080", "127.0.0.1", "[::1]:443"} {
+	for _, h := range []string{"localhost:8080", "127.0.0.1", "[::1]:443", "localhost.:993", "LOCALHOST.", "bridge.localhost:1143"} {
 		assert.Nil(t, s.Proxy(&url.URL{Scheme: "https", Host: h}), h)
 	}
-}
-
-// tlsFront serves TLS as localhost in front of the plaintext server at addr,
-// and conn trusts it meanwhile (after connectProxy, which sets TLSRoots).
-// Asked for as "localhost." it is reached by name, out of the loopback rule,
-// so the proxy setting decides the route; its port is returned.
-func tlsFront(t *testing.T, addr string) int {
-	t.Helper()
-	key, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
-	require.NoError(t, err)
-	der, err := x509.CreateCertificate(rand.Reader, &x509.Certificate{SerialNumber: big.NewInt(1), DNSNames: []string{"localhost"},
-		NotAfter: time.Now().Add(time.Hour), ExtKeyUsage: []x509.ExtKeyUsage{x509.ExtKeyUsageServerAuth}},
-		&x509.Certificate{SerialNumber: big.NewInt(1), DNSNames: []string{"localhost"}, NotAfter: time.Now().Add(time.Hour)}, &key.PublicKey, key)
-	require.NoError(t, err)
-	cert, err := x509.ParseCertificate(der)
-	require.NoError(t, err)
-	conn.TLSRoots.AddCert(cert)
-	ln, err := tls.Listen("tcp", "127.0.0.1:0", &tls.Config{Certificates: []tls.Certificate{{Certificate: [][]byte{der}, PrivateKey: key}}})
-	require.NoError(t, err)
-	t.Cleanup(func() { ln.Close() })
-	go func() {
-		for {
-			c, err := ln.Accept()
-			if err != nil {
-				return
-			}
-			go func() {
-				defer c.Close()
-				up, err := net.Dial("tcp", addr)
-				if err != nil {
-					return
-				}
-				go func() { io.Copy(up, c); up.Close() }()
-				io.Copy(c, up)
-			}()
-		}
-	}()
-	return ln.Addr().(*net.TCPAddr).Port
 }
 
 // 不使用代理 connects direct although the system has a proxy; switching back
@@ -229,12 +187,7 @@ func TestProxyModeOff(t *testing.T) {
 	st.ProxyMode = core.ProxyOff
 	_, err = s.SetSettings(ctx, st)
 	require.NoError(t, err)
-	direct := input(t, im.Addr, smtpAddr, "secret")
-	direct.IMAPHost, direct.SMTPHost = "localhost.", "localhost."
-	direct.IMAPPort, direct.SMTPPort = tlsFront(t, im.Addr), tlsFront(t, smtpAddr)
-	direct.IMAPSecurity, direct.SMTPSecurity = core.SecurityTLS, core.SecurityTLS
-	require.NoError(t, s.TestAccount(ctx, direct))
-	assert.Empty(t, asked(), "off connects direct")
+	assert.Nil(t, s.Proxy(&url.URL{Scheme: "https", Host: "example.com:993"}), "off connects direct")
 
 	st.ProxyMode = core.ProxySystem
 	_, err = s.SetSettings(ctx, st)
@@ -295,16 +248,11 @@ func TestCustomProxyBypass(t *testing.T) {
 	proxy, asked := standInProxy(t, "socks5")
 	st, err := s.GetSettings(ctx)
 	require.NoError(t, err)
-	st.ProxyMode, st.ProxyURL, st.ProxyBypass = core.ProxyCustom, proxy.String(), []string{"*.corp.example", "localhost"}
+	st.ProxyMode, st.ProxyURL, st.ProxyBypass = core.ProxyCustom, proxy.String(), []string{"*.corp.example"}
 	_, err = s.SetSettings(ctx, st)
 	require.NoError(t, err)
+	assert.Nil(t, s.Proxy(&url.URL{Scheme: "https", Host: "mail.corp.example:993"}), "a server in the bypass list connects direct")
 	im, smtpAddr := servers(t)
-	direct := input(t, im.Addr, smtpAddr, "secret")
-	direct.IMAPHost, direct.SMTPHost = "localhost.", "localhost." // by name, so only the list keeps it direct
-	direct.IMAPPort, direct.SMTPPort = tlsFront(t, im.Addr), tlsFront(t, smtpAddr)
-	direct.IMAPSecurity, direct.SMTPSecurity = core.SecurityTLS, core.SecurityTLS
-	require.NoError(t, s.TestAccount(ctx, direct))
-	assert.Empty(t, asked(), "a server in the bypass list connects direct")
 
 	via := input(t, im.Addr, smtpAddr, "secret")
 	via.IMAPHost, via.SMTPHost = "example.com", "example.com"
@@ -340,4 +288,42 @@ func TestAccountThroughCustomProxyWithCredentials(t *testing.T) {
 			assert.NotEmpty(t, asked())
 		})
 	}
+}
+
+// A dial takes the saved custom proxy from memory: the keychain is read
+// when the password is saved, not on every connection.
+func TestProxyKeepsSavedCredentials(t *testing.T) {
+	s := proxiedService(t, nil)
+	customProxy(t, s, &url.URL{Scheme: "socks5", Host: "127.0.0.1:1080"})
+	st, err := s.GetSettings(ctx)
+	require.NoError(t, err)
+	st.ProxyUser, st.ProxyPassword = "alice", "pr0xy-pass"
+	_, err = s.SetSettings(ctx, st)
+	require.NoError(t, err)
+	keyring.MockInitWithError(errors.New("locked"))
+	t.Cleanup(keyring.MockInit)
+	p := s.Proxy(&url.URL{Scheme: "https", Host: "example.com:993"})
+	require.NotNil(t, p)
+	pw, _ := p.User.Password()
+	assert.Equal(t, "alice", p.User.Username())
+	assert.Equal(t, "pr0xy-pass", pw)
+}
+
+// A password the keychain refuses leaves the saved settings, and the proxy
+// in use, as they were.
+func TestProxyPasswordKeychainFailure(t *testing.T) {
+	s := proxiedService(t, nil)
+	customProxy(t, s, &url.URL{Scheme: "socks5", Host: "127.0.0.1:1080"})
+	st, err := s.GetSettings(ctx)
+	require.NoError(t, err)
+	keyring.MockInitWithError(errors.New("boom"))
+	t.Cleanup(keyring.MockInit)
+	st.ProxyUser, st.ProxyPassword = "alice", "pr0xy-pass"
+	_, err = s.SetSettings(ctx, st)
+	require.ErrorContains(t, err, "boom")
+	got, err := s.GetSettings(ctx)
+	require.NoError(t, err)
+	assert.Empty(t, got.ProxyUser)
+	assert.False(t, got.ProxyPasswordSet)
+	assert.Nil(t, s.Proxy(&url.URL{Scheme: "https", Host: "example.com:993"}).User)
 }

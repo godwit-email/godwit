@@ -121,7 +121,7 @@ func NewTransport(allowLoopback bool) *Transport {
 			return dialPinned(ctx, network, addrs, port, func(ip netip.Addr) bool { return PublicIP(ip) || fake && fakeIP.Contains(ip) })
 		case !fake:
 			return dialProxy(ctx, proxy, net.JoinHostPort(addrs[0].String(), port))
-		case onThisComputer(proxy):
+		case sysproxy.OnThisComputer(proxy.Hostname()):
 			return dialProxy(ctx, proxy, address) // the fake address means nothing to the proxy; the name does
 		}
 		return nil, ErrHost // a proxy elsewhere has no idea what our fake-ip resolver meant
@@ -228,13 +228,6 @@ func dialPinned(ctx context.Context, network string, addrs []netip.Addr, port st
 		}
 	}
 	return nil, err
-}
-
-// onThisComputer is whether proxy listens on this computer.
-func onThisComputer(proxy *url.URL) bool {
-	h := strings.ToLower(proxy.Hostname())
-	ip, err := netip.ParseAddr(h)
-	return h == "localhost" || err == nil && ip.Unmap().IsLoopback()
 }
 
 // dialProxy opens a tunnel to target through proxy (sysproxy.Dial), in Timeout.

@@ -308,13 +308,13 @@ type proxyDraft struct {
 	bypass                   string // 不使用代理的主机, comma-separated
 	hostErr, portErr         string // why the fields don't make an address yet
 	bypassErr                string
-	from                     string // the settings' mode and URL the draft last matched
+	from                     string // the settings the draft last matched (proxyKey)
 	pass, sent               string // the password typed, never the stored one; and what of it went to the settings
 }
 
 func (p *settingsPage) proxySection(c *ui.Context) {
 	st, d, t := &p.st, &p.proxy, theme.Of(c)
-	if key := st.ProxyMode + " " + st.ProxyURL + " " + strings.Join(st.ProxyBypass, ","); key != d.from {
+	if key := proxyKey(st); key != d.from {
 		d.from, d.mode = key, cmp.Or(st.ProxyMode, core.ProxySystem)
 		d.scheme, d.host, d.port = "socks5", "", ""
 		d.bypass = strings.Join(st.ProxyBypass, ", ")
@@ -403,7 +403,12 @@ func (p *settingsPage) proxySection(c *ui.Context) {
 		}
 		st.ProxyMode, st.ProxyURL, st.ProxyBypass = core.ProxyCustom, u.String(), bypass
 	}
-	d.from = st.ProxyMode + " " + st.ProxyURL + " " + strings.Join(st.ProxyBypass, ",")
+	d.from = proxyKey(st)
+}
+
+// proxyKey is what of st proxyDraft follows (proxyDraft.from).
+func proxyKey(st *core.Settings) string {
+	return st.ProxyMode + " " + st.ProxyURL + " " + strings.Join(st.ProxyBypass, ",")
 }
 
 // aiFeaturesView is the Intelligence page's 功能 tab: the reader's AI features, and

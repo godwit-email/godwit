@@ -52,6 +52,15 @@ type settings struct {
 	bypass             []string
 }
 
+// OnThisComputer is whether host is this computer: localhost or a name
+// under it (RFC 6761), with or without the trailing dot, in any case, or
+// a loopback address. Such a host never goes through a proxy.
+func OnThisComputer(host string) bool {
+	host = strings.ToLower(strings.TrimSuffix(host, "."))
+	ip, err := netip.ParseAddr(host)
+	return host == "localhost" || strings.HasSuffix(host, ".localhost") || err == nil && ip.Unmap().IsLoopback()
+}
+
 // Bypassed is whether host is in the bypass list: a name, a *-pattern, a
 // .suffix, an address or CIDR range ("169.254/16" as macOS writes it), or
 // <local> (a name without a dot, as Windows means it).

@@ -10,7 +10,6 @@ import (
 	"io"
 	"mime"
 	"net"
-	"net/netip"
 	"net/url"
 	"strconv"
 	"time"
@@ -66,7 +65,7 @@ func (e Endpoint) addr() string { return net.JoinHostPort(e.Host, strconv.Itoa(e
 // the certificate against e.Host.
 func (e Endpoint) dial(ctx context.Context) (net.Conn, error) {
 	// a server on this computer (a bridge such as Proton's) never goes through the proxy
-	if ip, err := netip.ParseAddr(e.Host); e.Host != "localhost" && (err != nil || !ip.IsLoopback()) {
+	if !sysproxy.OnThisComputer(e.Host) {
 		// https: mail is a tunnel to a non-web port, which is what the https proxy carries
 		if p := SystemProxy(&url.URL{Scheme: "https", Host: e.addr()}); p != nil {
 			return sysproxy.Dial(ctx, p, e.addr())
