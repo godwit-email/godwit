@@ -14,6 +14,7 @@ import (
 	"github.com/godwit-email/godwit/internal/i18n"
 	"github.com/godwit-email/godwit/internal/icons"
 	"github.com/godwit-email/godwit/internal/kit"
+	"github.com/godwit-email/godwit/internal/sysproxy"
 	"github.com/godwit-email/godwit/internal/theme"
 )
 
@@ -294,6 +295,20 @@ func (p *settingsPage) generalView(c *ui.Context) {
 				})
 			})
 		})
+	source := "" // where 跟随系统 finds the proxy
+	if st.ProxyMode != core.ProxyOff {
+		source = i18n.T("settings.proxy.system.settings")
+		if sysproxy.FromEnvironment() {
+			source = i18n.T("settings.proxy.system.env")
+		}
+	}
+	settingsSection(c, i18n.T("settings.proxy"), i18n.T("settings.proxy.foot"),
+		sel(i18n.T("settings.proxy.mode"), source, func() ui.Element {
+			return settingSelect(c, i18n.T("settings.proxy.mode"), &st.ProxyMode, []kit.Option[string]{
+				{Value: core.ProxySystem, Label: i18n.T("settings.proxy.system")},
+				{Value: core.ProxyOff, Label: i18n.T("settings.proxy.off")},
+			})
+		}))
 }
 
 // aiFeaturesView is the Intelligence page's 功能 tab: the reader's AI features, and

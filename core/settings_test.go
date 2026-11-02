@@ -27,7 +27,7 @@ func TestSettingsDefaults(t *testing.T) {
 	assert.Equal(t, Settings{Theme: "system", Density: "compact", FontSize: 14, SettingsVersion: 4, ReplyLanguage: "match",
 		KeepInBackground: true, UnreadOnAppIcon: true, NotifyNewMail: true, NotifyPreview: true, ThreadView: true, ThreadCollapse: true, ThreadCollapseThreshold: 5, RemoteImages: "auto", AutoLabel: true, LabelDisplay: "both", JudgeThreshold: 0.8,
 		MCPSend: "confirm", Masking: true, MaskCategories: defaultMaskCategories(),
-		SecurityWarnings: true, VerifiedBadge: true}, got)
+		SecurityWarnings: true, VerifiedBadge: true, ProxyMode: "system"}, got)
 }
 
 func TestSettingsRoundTrip(t *testing.T) {
@@ -39,6 +39,7 @@ func TestSettingsRoundTrip(t *testing.T) {
 	in.Theme, in.UILanguage, in.NoTranslate, in.DefaultModel = "dark", "zh-Hans", []string{"en", "fr"}, "svc/m"
 	in.UnreadOnAppIcon = false
 	in.JudgeThreshold = 0.83
+	in.ProxyMode = ProxyOff
 	_, err := s.SetSettings(t.Context(), in)
 	require.NoError(t, err)
 	select {
@@ -63,6 +64,7 @@ func TestSettingsRoundTrip(t *testing.T) {
 	assert.Equal(t, 14, got.FontSize)
 	assert.True(t, got.UnreadOnAppIcon, "older settings default to showing the app badge")
 	assert.Equal(t, 0.8, got.JudgeThreshold, "settings with no threshold use the default")
+	assert.Equal(t, ProxySystem, got.ProxyMode, "settings stored before the proxy setting follow the system")
 }
 
 func TestSettingsJudgeThresholdBounds(t *testing.T) {
@@ -120,6 +122,7 @@ func TestSettingsValidation(t *testing.T) {
 		"density":        func(x *Settings) { x.Density = "tiny" },
 		"reply":          func(x *Settings) { x.ReplyLanguage = "other" },
 		"labeldisplay":   func(x *Settings) { x.LabelDisplay = "invalid" },
+		"proxy":          func(x *Settings) { x.ProxyMode = "socks" },
 		"font":           func(x *Settings) { x.FontSize = 9 },
 		"bodyfont":       func(x *Settings) { x.BodyFontSize = 33 },
 		"lang":           func(x *Settings) { x.UILanguage = "zh_CN!" },
