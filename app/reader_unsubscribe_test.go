@@ -5,6 +5,7 @@ import (
 	"net/http/httptest"
 	"sync/atomic"
 	"testing"
+	"time"
 
 	"github.com/egoist/mygo/ui"
 	"github.com/godwit-email/godwit/core/coretest"
@@ -116,7 +117,8 @@ func TestReaderUnsubscribeOncePerThread(t *testing.T) {
 	h, _, _ := unsubHarness(t, http.StatusOK)
 	acc := h.app.accounts[0]
 	unsub := coretest.Header("List-Unsubscribe: <mailto:leave@shop.example>")
-	news := h.deliverOne(acc, coretest.Msg("Shop <news@shop.example>", acc.Email, "Deals", "Hello.", coretest.MessageID("n@shop.example"), unsub))
+	news := h.deliverOne(acc, coretest.Msg("Shop <news@shop.example>", acc.Email, "Deals", "Hello.", coretest.MessageID("n@shop.example"), unsub,
+		coretest.Date(time.Now().Add(-time.Hour)))) // Date has whole seconds: two sent now could tie
 	next := h.deliverOne(acc, coretest.Msg("Shop <news@shop.example>", acc.Email, "Re: Deals", "More.", coretest.InReplyTo("n@shop.example"), unsub))
 	if next.ThreadID != news.ThreadID {
 		t.Fatalf("threads %d and %d", news.ThreadID, next.ThreadID)
