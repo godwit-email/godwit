@@ -939,6 +939,7 @@
   "settings_proxy_user": "Usuario",
   "settings_proxy_password": "Contraseña",
   "settings_proxy_password_kept": "Guardada · escribe una nueva para reemplazarla",
+  "settings_proxy_password_clear": "Borrar",
   "settings_models": "Inteligencia",
   "settings_models_account": "Cuenta",
   "settings_models_add": "Añadir servicio",

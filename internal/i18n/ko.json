@@ -939,6 +939,7 @@
   "settings_proxy_user": "사용자 이름",
   "settings_proxy_password": "비밀번호",
   "settings_proxy_password_kept": "저장됨 · 새 비밀번호를 입력하면 바뀝니다",
+  "settings_proxy_password_clear": "지우기",
   "settings_models": "인텔리전스",
   "settings_models_account": "계정",
   "settings_models_add": "서비스 추가",

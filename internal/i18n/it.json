@@ -939,6 +939,7 @@
   "settings_proxy_user": "Nome utente",
   "settings_proxy_password": "Password",
   "settings_proxy_password_kept": "Salvata · digitane una nuova per sostituirla",
+  "settings_proxy_password_clear": "Cancella",
   "settings_models": "Intelligenza",
   "settings_models_account": "Account",
   "settings_models_add": "Aggiungi servizio",

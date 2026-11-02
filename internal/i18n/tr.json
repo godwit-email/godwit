@@ -939,6 +939,7 @@
   "settings_proxy_user": "Kullanıcı adı",
   "settings_proxy_password": "Parola",
   "settings_proxy_password_kept": "Kaydedildi · değiştirmek için yeni parola yazın",
+  "settings_proxy_password_clear": "Temizle",
   "settings_models": "Zekâ",
   "settings_models_account": "Hesap",
   "settings_models_add": "Servis ekle",

@@ -939,6 +939,7 @@
   "settings_proxy_user": "Gebruikersnaam",
   "settings_proxy_password": "Wachtwoord",
   "settings_proxy_password_kept": "Opgeslagen · typ een nieuw wachtwoord om het te vervangen",
+  "settings_proxy_password_clear": "Wissen",
   "settings_models": "Intelligentie",
   "settings_models_account": "Account",
   "settings_models_add": "Dienst toevoegen",

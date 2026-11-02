@@ -939,6 +939,7 @@
   "settings_proxy_user": "用户名",
   "settings_proxy_password": "密码",
   "settings_proxy_password_kept": "已保存 · 输入新密码可替换",
+  "settings_proxy_password_clear": "清除",
   "settings_models": "智能",
   "settings_models_account": "账户",
   "settings_models_add": "添加服务",

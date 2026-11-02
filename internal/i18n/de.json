@@ -944,6 +944,7 @@
   "settings_proxy_user": "Benutzername",
   "settings_proxy_password": "Passwort",
   "settings_proxy_password_kept": "Gespeichert · neues Passwort eingeben, um es zu ersetzen",
+  "settings_proxy_password_clear": "Löschen",
   "settings_models": "Intelligenz",
   "settings_models_account": "Konto",
   "settings_models_add": "Dienst hinzufügen",

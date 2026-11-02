@@ -939,6 +939,7 @@
   "settings_proxy_user": "Имя пользователя",
   "settings_proxy_password": "Пароль",
   "settings_proxy_password_kept": "Сохранён · введите новый, чтобы заменить",
+  "settings_proxy_password_clear": "Очистить",
   "settings_models": "Интеллект",
   "settings_models_account": "Аккаунт",
   "settings_models_add": "Добавить сервис",

@@ -367,7 +367,12 @@ func (p *settingsPage) proxySection(c *ui.Context) {
 					ph = i18n.T("settings.proxy.password.kept")
 				}
 				settingRow(c, i18n.T("settings.proxy.password"), "", func() {
-					kit.Input(c, &d.pass, kit.InputOpts{Password: true, Placeholder: ph}).Width(theme.SettingsInputWidth).Radius(t.Radius.Lg).Label(i18n.T("settings.proxy.password"))
+					ui.Row(c).Gap(c.Theme().Space(3)).AlignItems(ui.Center).Children(func() {
+						kit.Input(c, &d.pass, kit.InputOpts{Password: true, Placeholder: ph}).Width(theme.SettingsInputWidth).Radius(t.Radius.Lg).Label(i18n.T("settings.proxy.password"))
+						if st.ProxyPasswordSet && d.pass == "" { // a saved one shows only as the placeholder, so erasing can't reach it
+							settingButton(c, i18n.T("settings.proxy.password.clear"), kit.Outline, false).OnClick(func() { st.ProxyPasswordSet = false })
+						}
+					})
 				})
 			})
 	}

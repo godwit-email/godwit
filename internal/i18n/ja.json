@@ -939,6 +939,7 @@
   "settings_proxy_user": "ユーザー名",
   "settings_proxy_password": "パスワード",
   "settings_proxy_password_kept": "保存済み · 新しいパスワードを入力すると置き換わります",
+  "settings_proxy_password_clear": "消去",
   "settings_models": "インテリジェンス",
   "settings_models_account": "アカウント",
   "settings_models_add": "サービスを追加",

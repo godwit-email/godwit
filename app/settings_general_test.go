@@ -260,6 +260,12 @@ func TestSettingsProxyMode(t *testing.T) {
 	if p.proxy.pass != "" || !h.app.settings.ProxyPasswordSet {
 		t.Errorf("the password field shows %q, kept %v; want empty, kept", p.proxy.pass, h.app.settings.ProxyPasswordSet)
 	}
+	// a saved password, shown only as the placeholder, clears with 清除
+	h.click("清除")
+	h.until("saved password cleared", func() bool { return proxyUser() == "alice" && !h.app.settings.ProxyPasswordSet })
+	if h.tt.HasText("清除") {
+		t.Error("清除 shows with no password saved")
+	}
 	// erasing what was typed removes it
 	h.fillRow("密码", "x")
 	h.until("replaced", func() bool { return proxyUser() == "alice:x" })

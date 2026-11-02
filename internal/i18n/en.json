@@ -1815,6 +1815,7 @@
   "settings_proxy_user": "Username",
   "settings_proxy_password": "Password",
   "settings_proxy_password_kept": "Saved · type a new password to replace it",
+  "settings_proxy_password_clear": "Clear",
   "settings_models": "Intelligence",
   "settings_models_account": "Account",
   "settings_models_add": "Add service",
