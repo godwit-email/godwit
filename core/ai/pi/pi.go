@@ -20,8 +20,8 @@ import (
 	"time"
 	"unicode/utf8"
 
-	"github.com/Calcium-Ion/moejs"
-	"github.com/Calcium-Ion/moejs/eventloop"
+	"github.com/MoeForge/moejs"
+	"github.com/MoeForge/moejs/eventloop"
 )
 
 //go:embed engine.js

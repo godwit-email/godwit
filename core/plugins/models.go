@@ -12,7 +12,7 @@ import (
 	"slices"
 	"strings"
 
-	"github.com/Calcium-Ion/moejs"
+	"github.com/MoeForge/moejs"
 )
 
 // Protocols of HTTP models: the first three generate, the last two judge.

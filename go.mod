@@ -3,7 +3,7 @@ module github.com/godwit-email/godwit
 go 1.27.3
 
 require (
-	github.com/Calcium-Ion/moejs v0.1.0-alpha.10
+	github.com/MoeForge/moejs v0.1.0-alpha.11
 	github.com/clipperhouse/uax29/v2 v2.2.0
 	github.com/ebitengine/purego v0.11.2
 	github.com/egoist/mygo v0.7.2

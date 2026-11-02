@@ -13,8 +13,8 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/Calcium-Ion/moejs"
-	"github.com/Calcium-Ion/moejs/engine"
+	"github.com/MoeForge/moejs"
+	"github.com/MoeForge/moejs/engine"
 	"github.com/godwit-email/godwit/core/ai"
 	gomail "github.com/godwit-email/godwit/core/mail"
 )

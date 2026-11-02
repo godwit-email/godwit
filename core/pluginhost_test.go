@@ -5,7 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"github.com/Calcium-Ion/moejs"
+	"github.com/MoeForge/moejs"
 	"net"
 	"net/http"
 	"net/http/httptest"
