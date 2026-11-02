@@ -1,5 +1,17 @@
 # Changelog
 
+## [1.25.0](https://github.com/godwit-email/godwit/compare/v1.24.1...v1.25.0) (2026-11-02)
+
+
+### Features
+
+* **conn:** dial IMAP and SMTP through the system proxy ([#422](https://github.com/godwit-email/godwit/issues/422)) ([ca7c025](https://github.com/godwit-email/godwit/commit/ca7c0257d9ff8a7df5d1e582d9cb26e7e1ed70df))
+
+
+### Bug Fixes
+
+* **windows:** open the window on a tray click, and run gh without a console ([#423](https://github.com/godwit-email/godwit/issues/423)) ([019c9f8](https://github.com/godwit-email/godwit/commit/019c9f876ed6ba16aef33be6f14ea244e2573205))
+
 ## [1.24.1](https://github.com/godwit-email/godwit/compare/v1.24.0...v1.24.1) (2026-11-01)
 
 
