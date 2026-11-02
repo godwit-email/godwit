@@ -704,6 +704,10 @@
   "onboarding_reason_protocol": "the server''s reply was not understood",
   "onboarding_reason_timeout": "timed out",
   "onboarding_reason_tls": "the encrypted connection failed",
+  "onboarding_reason_proxy_unreachable": "can''t reach the proxy",
+  "onboarding_reason_proxy_refused": "the proxy refused the connection",
+  "onboarding_reason_proxy_auth": "proxy authentication failed",
+  "onboarding_next_proxy": "Check the proxy settings",
   "onboarding_relogin": "Sign in again",
   "onboarding_retype": "Re-enter the {arg1}",
   "@onboarding_retype": {
@@ -2679,6 +2683,30 @@
   },
   "shell_sync_cause_other": "Something went wrong talking to {arg1}",
   "@shell_sync_cause_other": {
+    "placeholders": {
+      "arg1": {
+        "type": "String"
+      }
+    }
+  },
+  "shell_sync_cause_proxy_unreachable": "Cannot reach the proxy needed to sync {arg1}",
+  "@shell_sync_cause_proxy_unreachable": {
+    "placeholders": {
+      "arg1": {
+        "type": "String"
+      }
+    }
+  },
+  "shell_sync_cause_proxy_refused": "The proxy refused the connection to {arg1}",
+  "@shell_sync_cause_proxy_refused": {
+    "placeholders": {
+      "arg1": {
+        "type": "String"
+      }
+    }
+  },
+  "shell_sync_cause_proxy_auth": "Proxy authentication failed; cannot connect to {arg1}",
+  "@shell_sync_cause_proxy_auth": {
     "placeholders": {
       "arg1": {
         "type": "String"

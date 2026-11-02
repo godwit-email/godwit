@@ -958,6 +958,8 @@ func (o *onboarding) checkRow(st core.CheckStep) (text, detail string, status in
 		}
 	case "dns", "connect", "timeout", "tls", "protocol":
 		reason, next = i18n.T("onboarding.reason."+kind), i18n.T("onboarding.next.server")
+	case "proxy_unreachable", "proxy_refused", "proxy_auth":
+		reason, next = i18n.T("onboarding.reason."+kind), i18n.T("onboarding.next.proxy")
 	}
 	return i18n.Tf(k+".failed", reason), next, 2
 }
