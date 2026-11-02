@@ -104,6 +104,9 @@ type Settings struct {
 	// (ParseProxyURL), with no credentials. Checked only in ProxyCustom: the
 	// other modes keep it as it is, so switching back loses nothing.
 	ProxyURL string
+	// ProxyBypass is 自定义's 不使用代理的主机: names, *-patterns, .suffixes,
+	// addresses and CIDR ranges (sysproxy.Bypassed), at most MaxProxyBypass.
+	ProxyBypass []string
 	// SettingsVersion is 2 once the default text grew from 13 to 14 px and a
 	// stored FontSize was raised by one to keep its sizes; 3 once a stored
 	// BodyFontSize of 14, the old default, became 0 (follow FontSize); 4 once
@@ -176,6 +179,8 @@ func (st Settings) validate(kept []mask.Rule) error {
 		return fmt.Errorf("invalid MCP send level %q", st.MCPSend)
 	case !in(st.ProxyMode, "", ProxySystem, ProxyCustom, ProxyOff):
 		return fmt.Errorf("invalid proxy mode %q", st.ProxyMode)
+	case len(st.ProxyBypass) > MaxProxyBypass:
+		return fmt.Errorf("at most %d hosts can skip the proxy", MaxProxyBypass)
 	}
 	if st.ProxyMode == ProxyCustom {
 		if _, err := ParseProxyURL(st.ProxyURL); err != nil {

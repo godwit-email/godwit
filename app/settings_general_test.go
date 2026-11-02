@@ -227,6 +227,17 @@ func TestSettingsProxyMode(t *testing.T) {
 	if st.ProxyMode != "custom" || st.ProxyURL != "socks5://127.0.0.1:7890" {
 		t.Errorf("stored %q %q, want custom socks5://127.0.0.1:7890", st.ProxyMode, st.ProxyURL)
 	}
+	// 不使用代理的主机: comma-separated, saved as entries
+	h.see("不使用代理的主机")
+	h.fillRow("不使用代理的主机", "*.corp.example, 10.0.0.0/8 mail.lan")
+	h.until("bypass saved", func() bool {
+		return slices.Equal(h.app.settings.ProxyBypass, []string{"*.corp.example", "10.0.0.0/8", "mail.lan"})
+	})
+	pick("不使用代理")
+	h.until("proxy mode off once more", func() bool { return h.app.settings.ProxyMode == "off" })
+	if h.tt.HasText("不使用代理的主机") {
+		t.Error("the bypass field shows with 不使用代理")
+	}
 	for _, q := range []string{"代理", "proxy"} {
 		if m := p.matching(q); !slices.Contains(m.apps, "general") {
 			t.Errorf("%s: %+v, want general", q, m)

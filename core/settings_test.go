@@ -172,6 +172,25 @@ func TestSettingsProxyURL(t *testing.T) {
 	}
 }
 
+// 不使用代理的主机 round-trips, up to MaxProxyBypass entries.
+func TestSettingsProxyBypass(t *testing.T) {
+	s := settingsService(t, t.TempDir(), "")
+	st, _ := s.GetSettings(t.Context())
+	st.ProxyBypass = []string{"*.corp.example", ".lan", "mail.home", "10.0.0.0/8", "192.168.1.5"}
+	_, err := s.SetSettings(t.Context(), st)
+	require.NoError(t, err)
+	got, err := s.GetSettings(t.Context())
+	require.NoError(t, err)
+	assert.Equal(t, st.ProxyBypass, got.ProxyBypass)
+
+	st.ProxyBypass = make([]string, 201)
+	for i := range st.ProxyBypass {
+		st.ProxyBypass[i] = "h.example"
+	}
+	_, err = s.SetSettings(t.Context(), st)
+	assert.Error(t, err, "an over-long list")
+}
+
 func TestReadingLanguageFallback(t *testing.T) {
 	s := settingsService(t, t.TempDir(), "")
 	assert.Equal(t, "en", s.readingLanguage(t.Context()))

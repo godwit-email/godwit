@@ -7,6 +7,8 @@ import (
 	"net/url"
 	"strconv"
 	"strings"
+
+	"github.com/godwit-email/godwit/internal/sysproxy"
 )
 
 // Proxy modes (Settings.ProxyMode): the system's proxy, the user's own
@@ -16,6 +18,9 @@ const (
 	ProxyCustom = "custom"
 	ProxyOff    = "off"
 )
+
+// MaxProxyBypass caps Settings.ProxyBypass.
+const MaxProxyBypass = 200
 
 // ParseProxyURL checks a custom proxy (Settings.ProxyURL): http or socks5, a
 // host, a port from 1 to 65535, and nothing else.
@@ -57,6 +62,9 @@ func (s *Service) Proxy(u *url.URL) *url.URL {
 	case ProxyOff:
 		return nil
 	case ProxyCustom:
+		if sysproxy.Bypassed(h, st.ProxyBypass) {
+			return nil
+		}
 		p, _ := ParseProxyURL(st.ProxyURL) // checked when saved
 		return p
 	}
