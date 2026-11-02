@@ -2,9 +2,13 @@ package core_test
 
 import (
 	"bufio"
+	"crypto/ecdsa"
+	"crypto/elliptic"
+	"crypto/rand"
 	"crypto/tls"
 	"crypto/x509"
 	"io"
+	"math/big"
 	"net"
 	"net/http"
 	"net/http/httptest"
@@ -12,6 +16,7 @@ import (
 	"strconv"
 	"sync"
 	"testing"
+	"time"
 
 	"github.com/godwit-email/godwit/core"
 	"github.com/godwit-email/godwit/core/conn"
@@ -114,4 +119,70 @@ func TestProxyDecision(t *testing.T) {
 	for _, h := range []string{"localhost:8080", "127.0.0.1", "[::1]:443"} {
 		assert.Nil(t, s.Proxy(&url.URL{Scheme: "https", Host: h}), h)
 	}
+}
+
+// tlsFront serves TLS as localhost in front of the plaintext server at addr,
+// and conn trusts it meanwhile (after connectProxy, which sets TLSRoots).
+// Asked for as "localhost." it is reached by name, out of the loopback rule,
+// so the proxy setting decides the route; its port is returned.
+func tlsFront(t *testing.T, addr string) int {
+	t.Helper()
+	key, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
+	require.NoError(t, err)
+	der, err := x509.CreateCertificate(rand.Reader, &x509.Certificate{SerialNumber: big.NewInt(1), DNSNames: []string{"localhost"},
+		NotAfter: time.Now().Add(time.Hour), ExtKeyUsage: []x509.ExtKeyUsage{x509.ExtKeyUsageServerAuth}},
+		&x509.Certificate{SerialNumber: big.NewInt(1), DNSNames: []string{"localhost"}, NotAfter: time.Now().Add(time.Hour)}, &key.PublicKey, key)
+	require.NoError(t, err)
+	cert, err := x509.ParseCertificate(der)
+	require.NoError(t, err)
+	conn.TLSRoots.AddCert(cert)
+	ln, err := tls.Listen("tcp", "127.0.0.1:0", &tls.Config{Certificates: []tls.Certificate{{Certificate: [][]byte{der}, PrivateKey: key}}})
+	require.NoError(t, err)
+	t.Cleanup(func() { ln.Close() })
+	go func() {
+		for {
+			c, err := ln.Accept()
+			if err != nil {
+				return
+			}
+			go func() {
+				defer c.Close()
+				up, err := net.Dial("tcp", addr)
+				if err != nil {
+					return
+				}
+				go func() { io.Copy(up, c); up.Close() }()
+				io.Copy(c, up)
+			}()
+		}
+	}()
+	return ln.Addr().(*net.TCPAddr).Port
+}
+
+// 不使用代理 connects direct although the system has a proxy; switching back
+// to 跟随系统 applies to the next connection.
+func TestProxyModeOff(t *testing.T) {
+	proxy, asked := connectProxy(t)
+	s := proxiedService(t, proxy)
+	im, smtpAddr := servers(t)
+	st, err := s.GetSettings(ctx)
+	require.NoError(t, err)
+	st.ProxyMode = core.ProxyOff
+	_, err = s.SetSettings(ctx, st)
+	require.NoError(t, err)
+	direct := input(t, im.Addr, smtpAddr, "secret")
+	direct.IMAPHost, direct.SMTPHost = "localhost.", "localhost."
+	direct.IMAPPort, direct.SMTPPort = tlsFront(t, im.Addr), tlsFront(t, smtpAddr)
+	direct.IMAPSecurity, direct.SMTPSecurity = core.SecurityTLS, core.SecurityTLS
+	require.NoError(t, s.TestAccount(ctx, direct))
+	assert.Empty(t, asked(), "off connects direct")
+
+	st.ProxyMode = core.ProxySystem
+	_, err = s.SetSettings(ctx, st)
+	require.NoError(t, err)
+	via := input(t, im.Addr, smtpAddr, "secret")
+	via.IMAPHost, via.SMTPHost = "example.com", "example.com"
+	via.IMAPSecurity, via.SMTPSecurity = core.SecurityTLS, core.SecurityTLS
+	require.NoError(t, s.TestAccount(ctx, via))
+	assert.NotEmpty(t, asked(), "system goes through the system proxy")
 }

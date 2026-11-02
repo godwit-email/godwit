@@ -18,8 +18,8 @@ import (
 // For is the proxy for a request to u (http or https), nil for none. Only
 // http:// and socks5:// proxies are given.
 func For(u *url.URL) *url.URL {
-	if env := httpproxy.FromEnvironment(); env.HTTPProxy != "" || env.HTTPSProxy != "" {
-		p, err := env.ProxyFunc()(u)
+	if FromEnvironment() {
+		p, err := httpproxy.FromEnvironment().ProxyFunc()(u)
 		if err != nil {
 			return nil
 		}
@@ -36,6 +36,13 @@ func For(u *url.URL) *url.URL {
 		return s.http
 	}
 	return s.socks
+}
+
+// FromEnvironment is whether the *_PROXY variables give the proxy, in
+// place of the system's settings.
+func FromEnvironment() bool {
+	env := httpproxy.FromEnvironment()
+	return env.HTTPProxy != "" || env.HTTPSProxy != ""
 }
 
 // settings are the system's proxies by the scheme they serve, and the hosts

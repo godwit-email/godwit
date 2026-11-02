@@ -1,6 +1,7 @@
 package app
 
 import (
+	"context"
 	"math"
 	"slices"
 	"strings"
@@ -138,5 +139,47 @@ func TestThemeThumbFocusTip(t *testing.T) {
 func TestLanguagesByTag(t *testing.T) {
 	if !slices.IsSortedFunc(languages, func(a, b struct{ tag, name string }) int { return strings.Compare(a.tag, b.tag) }) {
 		t.Fatalf("languages out of tag order: %v", languages)
+	}
+}
+
+// TestSettingsProxyMode: 网络代理 offers both modes, says where the system
+// proxy comes from, saves the chosen mode, and a search for 代理 or proxy finds it.
+func TestSettingsProxyMode(t *testing.T) {
+	for _, v := range []string{"HTTPS_PROXY", "https_proxy", "HTTP_PROXY", "http_proxy"} {
+		t.Setenv(v, "")
+	}
+	h, _ := withAccount(t)
+	p := h.openSettings("general")
+	h.resize(1280, 1600) // the group sits at the page's end; ClickAt needs it in the window
+	h.see("网络代理")
+	h.see("使用系统网络设置中的代理")
+	t.Setenv("HTTPS_PROXY", "http://127.0.0.1:7890")
+	h.tt.Frame()
+	h.see("使用环境变量 HTTPS_PROXY、HTTP_PROXY 中的代理")
+	// the select shows 跟随系统, which a theme tile shows first: click it by
+	// place, at the row's middle and the tiles' right edge, where controls end
+	lab, _ := h.tt.Find("代理方式")
+	src, _ := h.tt.Find("使用环境变量 HTTPS_PROXY、HTTP_PROXY 中的代理")
+	dark, _ := h.tt.Find("深色")
+	h.tt.ClickAt(dark.X+dark.W-8, (lab.Y+src.Y+src.H)/2)
+	h.drain()
+	h.tt.Frame()
+	h.see("不使用代理")
+	h.click("不使用代理")
+	h.until("proxy mode off", func() bool { return h.app.settings.ProxyMode == "off" })
+	st, err := h.env.Svc.GetSettings(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if st.ProxyMode != "off" {
+		t.Errorf("stored ProxyMode %q, want off", st.ProxyMode)
+	}
+	if h.tt.HasText("中的代理") {
+		t.Error("the system proxy's source shows with 不使用代理")
+	}
+	for _, q := range []string{"代理", "proxy"} {
+		if m := p.matching(q); !slices.Contains(m.apps, "general") {
+			t.Errorf("%s: %+v, want general", q, m)
+		}
 	}
 }
