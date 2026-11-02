@@ -3,6 +3,7 @@ package app
 import (
 	"context"
 	"math"
+	"net/url"
 	"slices"
 	"strings"
 	"testing"
@@ -227,6 +228,31 @@ func TestSettingsProxyMode(t *testing.T) {
 	if st.ProxyMode != "custom" || st.ProxyURL != "socks5://127.0.0.1:7890" {
 		t.Errorf("stored %q %q, want custom socks5://127.0.0.1:7890", st.ProxyMode, st.ProxyURL)
 	}
+
+	// the username and password save; the password goes to the keychain and never shows back
+	proxyUser := func() string {
+		if u := h.env.Svc.Proxy(&url.URL{Scheme: "https", Host: "example.com:993"}); u != nil && u.User != nil {
+			return u.User.String()
+		}
+		return ""
+	}
+	h.fillRow("用户名", "alice")
+	h.fillRow("密码", "pr0xy-pass")
+	h.until("credentials saved", func() bool { return proxyUser() == "alice:pr0xy-pass" })
+	if h.app.settings.ProxyUser != "alice" || h.app.settings.ProxyPassword != "" {
+		t.Errorf("settings %q %q, want alice and no password", h.app.settings.ProxyUser, h.app.settings.ProxyPassword)
+	}
+	p.proxy = proxyDraft{} // the page as shown afresh
+	h.tt.Frame()
+	if p.proxy.pass != "" || !h.app.settings.ProxyPasswordSet {
+		t.Errorf("the password field shows %q, kept %v; want empty, kept", p.proxy.pass, h.app.settings.ProxyPasswordSet)
+	}
+	// erasing what was typed removes it
+	h.fillRow("密码", "x")
+	h.until("replaced", func() bool { return proxyUser() == "alice:x" })
+	h.tt.Command("selectAll")
+	h.tt.Key(0, ui.KeyBackspace)
+	h.until("password removed", func() bool { return proxyUser() == "alice" })
 	for _, q := range []string{"代理", "proxy"} {
 		if m := p.matching(q); !slices.Contains(m.apps, "general") {
 			t.Errorf("%s: %+v, want general", q, m)

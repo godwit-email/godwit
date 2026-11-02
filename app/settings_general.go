@@ -306,6 +306,7 @@ type proxyDraft struct {
 	mode, scheme, host, port string
 	hostErr, portErr         string // why the fields don't make an address yet
 	from                     string // the settings' mode and URL the draft last matched
+	pass, sent               string // the password typed, never the stored one; and what of it went to the settings
 }
 
 func (p *settingsPage) proxySection(c *ui.Context) {
@@ -349,7 +350,21 @@ func (p *settingsPage) proxySection(c *ui.Context) {
 			})
 		},
 			input(i18n.T("settings.proxy.host"), d.hostErr, &d.host, theme.SettingsInputWidth),
-			input(i18n.T("settings.proxy.port"), d.portErr, &d.port, theme.PortWidth))
+			input(i18n.T("settings.proxy.port"), d.portErr, &d.port, theme.PortWidth),
+			input(i18n.T("settings.proxy.user"), "", &st.ProxyUser, theme.SettingsInputWidth),
+			func() {
+				ph := ""
+				if st.ProxyPasswordSet {
+					ph = i18n.T("settings.proxy.password.kept")
+				}
+				settingRow(c, i18n.T("settings.proxy.password"), "", func() {
+					kit.Input(c, &d.pass, kit.InputOpts{Password: true, Placeholder: ph}).Width(theme.SettingsInputWidth).Radius(t.Radius.Lg).Label(i18n.T("settings.proxy.password"))
+				})
+			})
+	}
+	// a typed password saves; erasing it removes the stored one
+	if d.pass != d.sent {
+		st.ProxyPassword, st.ProxyPasswordSet, d.sent = d.pass, d.pass != "", d.pass
 	}
 	settingsSection(c, i18n.T("settings.proxy"), i18n.T("settings.proxy.foot"), rows...)
 

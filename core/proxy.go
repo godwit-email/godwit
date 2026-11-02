@@ -3,10 +3,13 @@ package core
 import (
 	"context"
 	"errors"
+	"fmt"
 	"net/netip"
 	"net/url"
 	"strconv"
 	"strings"
+
+	"github.com/zalando/go-keyring"
 )
 
 // Proxy modes (Settings.ProxyMode): the system's proxy, the user's own
@@ -58,7 +61,37 @@ func (s *Service) Proxy(u *url.URL) *url.URL {
 		return nil
 	case ProxyCustom:
 		p, _ := ParseProxyURL(st.ProxyURL) // checked when saved
+		if p != nil && (st.ProxyUser != "" || st.ProxyPasswordSet) {
+			p.User = url.User(st.ProxyUser)
+			if st.ProxyPasswordSet {
+				pw, _ := keychainGet(s.proxyKeyringUser()) // a lost one: the proxy says so (FailureProxyAuth)
+				p.User = url.UserPassword(st.ProxyUser, pw)
+			}
+		}
 		return p
 	}
 	return s.opts.SystemProxy(u)
+}
+
+// proxyKeyringUser is the keychain entry of 自定义's proxy password.
+func (s *Service) proxyKeyringUser() string { return s.installID + "/proxy" }
+
+// saveProxyPassword puts st's new proxy password in the keychain, or
+// deletes the stored one when st turns ProxyPasswordSet off, and takes the
+// password out of st.
+func (s *Service) saveProxyPassword(st *Settings, stored Settings) error {
+	var err error
+	switch {
+	case st.ProxyPassword != "":
+		err, st.ProxyPasswordSet = keychainSet(s.proxyKeyringUser(), st.ProxyPassword), true
+	case stored.ProxyPasswordSet && !st.ProxyPasswordSet:
+		if err = keychainDelete(s.proxyKeyringUser()); errors.Is(err, keyring.ErrNotFound) {
+			err = nil
+		}
+	}
+	st.ProxyPassword = ""
+	if err != nil {
+		return fmt.Errorf("save the proxy password to keychain: %w", err)
+	}
+	return nil
 }

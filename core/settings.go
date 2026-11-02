@@ -3,6 +3,7 @@ package core
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/mail"
 	"regexp"
@@ -104,6 +105,14 @@ type Settings struct {
 	// (ParseProxyURL), with no credentials. Checked only in ProxyCustom: the
 	// other modes keep it as it is, so switching back loses nothing.
 	ProxyURL string
+	// ProxyUser is 自定义's username, "" for none.
+	ProxyUser string
+	// ProxyPassword is write-only: a SetSettings with one puts it in the
+	// keychain (proxyKeyringUser); it is never stored here nor handed back.
+	// ProxyPasswordSet says the keychain has one; a save turning it off
+	// deletes it, and an empty ProxyPassword keeps it as it is.
+	ProxyPassword    string `json:",omitempty"`
+	ProxyPasswordSet bool
 	// SettingsVersion is 2 once the default text grew from 13 to 14 px and a
 	// stored FontSize was raised by one to keep its sizes; 3 once a stored
 	// BodyFontSize of 14, the old default, became 0 (follow FontSize); 4 once
@@ -176,6 +185,8 @@ func (st Settings) validate(kept []mask.Rule) error {
 		return fmt.Errorf("invalid MCP send level %q", st.MCPSend)
 	case !in(st.ProxyMode, "", ProxySystem, ProxyCustom, ProxyOff):
 		return fmt.Errorf("invalid proxy mode %q", st.ProxyMode)
+	case len(st.ProxyUser) > 255 || len(st.ProxyPassword) > 255: // SOCKS5's limit (RFC 1929)
+		return errors.New("proxy username and password must be at most 255 bytes")
 	}
 	if st.ProxyMode == ProxyCustom {
 		if _, err := ParseProxyURL(st.ProxyURL); err != nil {
@@ -292,6 +303,9 @@ func (s *Service) SetSettings(ctx context.Context, st Settings) (Settings, error
 			return Settings{}, ErrRecognitionModelMissing
 		}
 		st.MaskCategories.Names.On = true // the names it finds are why it is on; off, names stay as they are
+	}
+	if err := s.saveProxyPassword(&st, stored); err != nil {
+		return Settings{}, err
 	}
 	st.SettingsVersion = settingsVersion // a client's 0 must not make the next load raise FontSize again
 	b, err := json.Marshal(st)
