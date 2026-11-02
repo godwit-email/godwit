@@ -4,20 +4,29 @@ import (
 	"bufio"
 	"context"
 	"encoding/base64"
+	"errors"
 	"fmt"
 	"net"
 	"net/http"
 	"net/url"
+	"strings"
 	"time"
 
 	xproxy "golang.org/x/net/proxy"
+)
+
+// Errors from Dial wrap one of these when the proxy step itself failed.
+var (
+	ErrUnreachable = errors.New("proxy unreachable")
+	ErrRefused     = errors.New("proxy refused the tunnel")
+	ErrAuth        = errors.New("proxy authentication failed")
 )
 
 // Dial opens a tunnel to target (host:port) through proxy: an http:// one
 // by CONNECT, a socks5:// one by SOCKS5, with the proxy's credentials when
 // it has some. ctx bounds the whole of it.
 func Dial(ctx context.Context, proxy *url.URL, target string) (net.Conn, error) {
-	d := &net.Dialer{}
+	d := proxyDialer{&net.Dialer{}}
 	addr := proxy.Host
 	if proxy.Port() == "" { // the scheme's default port
 		addr = net.JoinHostPort(proxy.Hostname(), map[string]string{"http": "80", "socks5": "1080"}[proxy.Scheme])
@@ -33,7 +42,16 @@ func Dial(ctx context.Context, proxy *url.URL, target string) (net.Conn, error) 
 		if err != nil {
 			return nil, err
 		}
-		return s.(xproxy.ContextDialer).DialContext(ctx, "tcp", target)
+		c, err := s.(xproxy.ContextDialer).DialContext(ctx, "tcp", target)
+		// x/net's SOCKS errors are plain strings; a failed reply is "unknown error <reply>"
+		switch {
+		case err == nil, errors.Is(err, ErrUnreachable):
+		case strings.Contains(err.Error(), "authentication"):
+			err = fmt.Errorf("%w: %w", ErrAuth, err)
+		case strings.Contains(err.Error(), "unknown error "):
+			err = fmt.Errorf("%w: %w", ErrRefused, err)
+		}
+		return c, err
 	case "http":
 		c, err := d.DialContext(ctx, "tcp", addr)
 		if err != nil {
@@ -57,8 +75,10 @@ func Dial(ctx context.Context, proxy *url.URL, target string) (net.Conn, error) 
 		case !stop():
 			err = ctx.Err()
 		case err != nil:
+		case resp.StatusCode == http.StatusProxyAuthRequired:
+			err = fmt.Errorf("%w: %s", ErrAuth, resp.Status)
 		case resp.StatusCode != http.StatusOK:
-			err = fmt.Errorf("proxy refused the tunnel: %s", resp.Status)
+			err = fmt.Errorf("%w: %s", ErrRefused, resp.Status)
 		}
 		if err != nil {
 			c.Close()
@@ -71,6 +91,21 @@ func Dial(ctx context.Context, proxy *url.URL, target string) (net.Conn, error) 
 		return c, nil
 	}
 	return nil, fmt.Errorf("unsupported proxy %q", proxy.Scheme)
+}
+
+// proxyDialer connects to the proxy itself; a failure wraps ErrUnreachable.
+type proxyDialer struct{ d *net.Dialer }
+
+func (p proxyDialer) Dial(network, addr string) (net.Conn, error) {
+	return p.DialContext(context.Background(), network, addr)
+}
+
+func (p proxyDialer) DialContext(ctx context.Context, network, addr string) (net.Conn, error) {
+	c, err := p.d.DialContext(ctx, network, addr)
+	if err != nil {
+		err = fmt.Errorf("%w: %w", ErrUnreachable, err)
+	}
+	return c, err
 }
 
 // bufConn reads what was buffered past the CONNECT reply before the socket.

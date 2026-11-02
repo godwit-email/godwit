@@ -1,12 +1,17 @@
 package core_test
 
 import (
+	"bufio"
 	"errors"
+	"io"
 	"net"
+	"net/http"
+	"net/url"
 	"testing"
 
 	"github.com/godwit-email/godwit/core"
 	"github.com/godwit-email/godwit/core/conn"
+	"github.com/godwit-email/godwit/internal/sysproxy"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -42,6 +47,37 @@ func TestCheckSMTPDown(t *testing.T) {
 	r, _ := s.CheckAccount(ctx, input(t, im.Addr, addr, "secret"))
 	assert.True(t, r.Steps[1].OK)
 	assert.Equal(t, conn.FailureConnect, r.Steps[2].Kind)
+}
+
+func TestCheckThroughRefusingProxy(t *testing.T) {
+	s := newTestService(t)
+	im, smtpAddr := servers(t)
+	l, err := net.Listen("tcp", "127.0.0.1:0")
+	require.NoError(t, err)
+	t.Cleanup(func() { l.Close() })
+	go func() {
+		for {
+			c, err := l.Accept()
+			if err != nil {
+				return
+			}
+			go func() {
+				defer c.Close()
+				http.ReadRequest(bufio.NewReader(c))
+				io.WriteString(c, "HTTP/1.1 403 Forbidden\r\n\r\n")
+			}()
+		}
+	}()
+	conn.SystemProxy = func(*url.URL) *url.URL { return &url.URL{Scheme: "http", Host: l.Addr().String()} }
+	t.Cleanup(func() { conn.SystemProxy = sysproxy.For })
+	in := input(t, im.Addr, smtpAddr, "secret")
+	in.IMAPHost, in.IMAPSecurity = "imap.example", core.SecurityStartTLS // loopback skips the proxy
+	_, err = s.AddAccount(ctx, in)
+	var ce *core.CheckError
+	require.True(t, errors.As(err, &ce), "%v", err)
+	assert.Equal(t, conn.FailureProxyRefused, ce.Report.Steps[1].Kind)
+	assert.Contains(t, ce.Report.Steps[1].Detail, "403")
+	assert.NotErrorIs(t, err, conn.ErrAuthFailed)
 }
 
 func TestCheckInvalidSettings(t *testing.T) {
