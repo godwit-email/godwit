@@ -253,3 +253,28 @@ func TestLoopbackAccountSkipsCustomProxy(t *testing.T) {
 	require.NoError(t, s.TestAccount(ctx, input(t, im.Addr, smtpAddr, "secret")))
 	assert.Empty(t, asked(), "a server on this computer connects direct")
 }
+
+// 自定义's bypass list sends a matching server direct; others still go
+// through the custom proxy.
+func TestCustomProxyBypass(t *testing.T) {
+	s := proxiedService(t, nil)
+	proxy, asked := standInProxy(t, "socks5")
+	st, err := s.GetSettings(ctx)
+	require.NoError(t, err)
+	st.ProxyMode, st.ProxyURL, st.ProxyBypass = core.ProxyCustom, proxy.String(), []string{"*.corp.example", "localhost"}
+	_, err = s.SetSettings(ctx, st)
+	require.NoError(t, err)
+	im, smtpAddr := servers(t)
+	direct := input(t, im.Addr, smtpAddr, "secret")
+	direct.IMAPHost, direct.SMTPHost = "localhost.", "localhost." // by name, so only the list keeps it direct
+	direct.IMAPPort, direct.SMTPPort = tlsFront(t, im.Addr), tlsFront(t, smtpAddr)
+	direct.IMAPSecurity, direct.SMTPSecurity = core.SecurityTLS, core.SecurityTLS
+	require.NoError(t, s.TestAccount(ctx, direct))
+	assert.Empty(t, asked(), "a server in the bypass list connects direct")
+
+	via := input(t, im.Addr, smtpAddr, "secret")
+	via.IMAPHost, via.SMTPHost = "example.com", "example.com"
+	via.IMAPSecurity, via.SMTPSecurity = core.SecurityTLS, core.SecurityTLS
+	require.NoError(t, s.TestAccount(ctx, via))
+	assert.NotEmpty(t, asked(), "a server not in the list goes through the custom proxy")
+}

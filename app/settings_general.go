@@ -10,6 +10,7 @@ import (
 	"slices"
 	"strconv"
 	"strings"
+	"unicode"
 
 	"github.com/egoist/mygo/ui"
 	"github.com/godwit-email/godwit/core"
@@ -304,15 +305,18 @@ func (p *settingsPage) generalView(c *ui.Context) {
 // usable address, so 自定义 waits for one, and they outlast other modes.
 type proxyDraft struct {
 	mode, scheme, host, port string
+	bypass                   string // 不使用代理的主机, comma-separated
 	hostErr, portErr         string // why the fields don't make an address yet
+	bypassErr                string
 	from                     string // the settings' mode and URL the draft last matched
 }
 
 func (p *settingsPage) proxySection(c *ui.Context) {
 	st, d, t := &p.st, &p.proxy, theme.Of(c)
-	if key := st.ProxyMode + " " + st.ProxyURL; key != d.from {
+	if key := st.ProxyMode + " " + st.ProxyURL + " " + strings.Join(st.ProxyBypass, ","); key != d.from {
 		d.from, d.mode = key, cmp.Or(st.ProxyMode, core.ProxySystem)
 		d.scheme, d.host, d.port = "socks5", "", ""
+		d.bypass = strings.Join(st.ProxyBypass, ", ")
 		if u, err := url.Parse(st.ProxyURL); err == nil && u.Scheme != "" {
 			d.scheme, d.host, d.port = u.Scheme, u.Hostname(), u.Port()
 		}
@@ -349,13 +353,22 @@ func (p *settingsPage) proxySection(c *ui.Context) {
 			})
 		},
 			input(i18n.T("settings.proxy.host"), d.hostErr, &d.host, theme.SettingsInputWidth),
-			input(i18n.T("settings.proxy.port"), d.portErr, &d.port, theme.PortWidth))
+			input(i18n.T("settings.proxy.port"), d.portErr, &d.port, theme.PortWidth),
+			func() {
+				settingRow(c, i18n.T("settings.proxy.bypass"), cmp.Or(d.bypassErr, i18n.T("settings.proxy.bypass.help")), func() {
+					kit.Input(c, &d.bypass, kit.InputOpts{Invalid: d.bypassErr != ""}).Width(theme.SettingsInputWidth).Radius(t.Radius.Lg).Label(i18n.T("settings.proxy.bypass"))
+				})
+			})
 	}
 	settingsSection(c, i18n.T("settings.proxy"), i18n.T("settings.proxy.foot"), rows...)
 
 	// what the controls changed goes to the settings once it can be saved
-	d.hostErr, d.portErr = "", ""
+	d.hostErr, d.portErr, d.bypassErr = "", "", ""
 	host := strings.TrimSpace(d.host)
+	bypass := strings.FieldsFunc(d.bypass, func(r rune) bool { return r == ',' || unicode.IsSpace(r) })
+	if len(bypass) == 0 {
+		bypass = nil // as an empty list loads
+	}
 	switch port, err := strconv.Atoi(strings.TrimSpace(d.port)); {
 	case d.mode != core.ProxyCustom:
 		if d.mode != cmp.Or(st.ProxyMode, core.ProxySystem) {
@@ -365,15 +378,17 @@ func (p *settingsPage) proxySection(c *ui.Context) {
 		d.hostErr = i18n.T("settings.proxy.host.empty")
 	case err != nil || port < 1 || port > 65535:
 		d.portErr = i18n.T("settings.proxy.port.invalid")
+	case len(bypass) > core.MaxProxyBypass:
+		d.bypassErr = i18n.Tf("settings.proxy.bypass.too_many", core.MaxProxyBypass)
 	default:
 		u, err := core.ParseProxyURL(d.scheme + "://" + net.JoinHostPort(host, strconv.Itoa(port)))
 		if err != nil {
 			d.hostErr = i18n.T("settings.proxy.host.invalid")
 			break
 		}
-		st.ProxyMode, st.ProxyURL = core.ProxyCustom, u.String()
+		st.ProxyMode, st.ProxyURL, st.ProxyBypass = core.ProxyCustom, u.String(), bypass
 	}
-	d.from = st.ProxyMode + " " + st.ProxyURL
+	d.from = st.ProxyMode + " " + st.ProxyURL + " " + strings.Join(st.ProxyBypass, ",")
 }
 
 // aiFeaturesView is the Intelligence page's 功能 tab: the reader's AI features, and
