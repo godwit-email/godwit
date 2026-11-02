@@ -261,9 +261,9 @@ func (p *platform) CheckForUpdates() {
 		log.Printf("open the Store: %v", err)
 	}
 }
-func (*platform) LatestVersion(ctx context.Context) (string, error) {
+func (p *platform) LatestVersion(ctx context.Context) (string, error) {
 	if packaged() {
-		return storeLatest(ctx)
+		return storeLatest(ctx, p.svc.Proxy)
 	}
 	u, err := mygo.Updater.Check(ctx)
 	if err != nil || u == nil {
