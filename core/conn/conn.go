@@ -9,6 +9,7 @@ import (
 	"io"
 	"mime"
 	"net"
+	"net/netip"
 	"net/url"
 	"strconv"
 	"time"
@@ -39,9 +40,9 @@ var ErrAuthFailed = errors.New("authentication failed")
 // ClientVersion is sent in the IMAP ID command; release builds set it.
 var ClientVersion = "dev"
 
-// SystemProxy is the proxy for a request to u, nil for none (only http://
-// and socks5:// ones are used); the app sets it to the user's (sysproxy).
-var SystemProxy func(u *url.URL) *url.URL
+// SystemProxy is the proxy for a request to u, nil for none: the user's;
+// tests stand in for it.
+var SystemProxy = sysproxy.For
 
 // Endpoint describes one server and the credentials to use on it. A non-empty
 // AccessToken selects XOAUTH2 and Password is ignored.
@@ -59,7 +60,8 @@ func (e Endpoint) addr() string { return net.JoinHostPort(e.Host, strconv.Itoa(e
 // gets the host name, not an address, so it resolves it; TLS still checks
 // the certificate against e.Host.
 func (e Endpoint) dial(ctx context.Context) (net.Conn, error) {
-	if SystemProxy != nil {
+	// a server on this computer (a bridge such as Proton's) never goes through the proxy
+	if ip, err := netip.ParseAddr(e.Host); e.Host != "localhost" && (err != nil || !ip.IsLoopback()) {
 		// https: mail is a tunnel to a non-web port, which is what the https proxy carries
 		if p := SystemProxy(&url.URL{Scheme: "https", Host: e.addr()}); p != nil {
 			return sysproxy.Dial(ctx, p, e.addr())

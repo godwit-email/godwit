@@ -14,6 +14,7 @@ import (
 
 	"github.com/godwit-email/godwit/core/conn"
 	"github.com/godwit-email/godwit/core/internal/testmail"
+	"github.com/godwit-email/godwit/internal/sysproxy"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -76,7 +77,7 @@ func TestDialThroughSystemProxy(t *testing.T) {
 			proxy, asked := tunnel(t, scheme, im.Addr)
 			var got *url.URL
 			conn.SystemProxy = func(u *url.URL) *url.URL { got = u; return proxy }
-			defer func() { conn.SystemProxy = nil }()
+			defer func() { conn.SystemProxy = sysproxy.For }()
 
 			// an unresolvable name: only a proxy that is handed the name can reach it
 			e := endpoint(t, im.Addr)
@@ -90,10 +91,10 @@ func TestDialThroughSystemProxy(t *testing.T) {
 	}
 }
 
-func TestDialDirectWithoutProxy(t *testing.T) {
+func TestDialLoopbackDirect(t *testing.T) {
 	im := testmail.StartIMAP(t)
-	conn.SystemProxy = func(*url.URL) *url.URL { return nil } // bypassed, or none set
-	defer func() { conn.SystemProxy = nil }()
+	conn.SystemProxy = func(*url.URL) *url.URL { return &url.URL{Scheme: "socks5", Host: "127.0.0.1:1"} }
+	defer func() { conn.SystemProxy = sysproxy.For }()
 	c, err := conn.DialIMAP(context.Background(), endpoint(t, im.Addr))
 	require.NoError(t, err)
 	c.Close()
@@ -104,9 +105,9 @@ func TestDialCancelWhileProxyStalls(t *testing.T) {
 	conn.SystemProxy = func(*url.URL) *url.URL {
 		return &url.URL{Scheme: "http", Host: net.JoinHostPort(stalled.Host, strconv.Itoa(stalled.Port))}
 	}
-	defer func() { conn.SystemProxy = nil }()
+	defer func() { conn.SystemProxy = sysproxy.For }()
 	returnsPromptly(t, func(ctx context.Context) error {
-		_, err := conn.DialIMAP(ctx, endpoint(t, "127.0.0.1:1"))
+		_, err := conn.DialIMAP(ctx, endpoint(t, "imap.example:143"))
 		return err
 	})
 }
