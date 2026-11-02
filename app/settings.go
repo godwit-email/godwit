@@ -72,6 +72,7 @@ type settingsPage struct {
 	proxy       proxyDraft            // 网络代理's mode and custom fields
 	maskLog     []core.MaskRecord     // 脱敏记录, newest first, as last read
 	recognition recognitionModelState // 识别模型's row
+	automations *automationsView
 
 	keychain    error // the keychain probe's result
 	keychainSet bool  // the probe finished
@@ -129,7 +130,7 @@ type settingsPage struct {
 func newSettingsPage(a *App) *settingsPage {
 	return &settingsPage{a: a, forms: map[int64]*accountForm{}, usage: map[int64]int64{}, imgSize: -1, boxes: map[int64]*mailbox{}, reauth: map[int64]bool{}, sigDocs: map[int64]sigDoc{},
 		secDays: 30,
-		update:  a.svc.UpdateAccount, models: &modelsView{a: a, checkService: a.svc.CheckModelService, testService: a.svc.TestCapability, testPlugin: a.svc.TestPluginModel, serviceAvatar: a.svc.ModelServiceAvatar}, ext: &extView{a: a, tab: 1}, labels: newLabelsView(a)}
+		update:  a.svc.UpdateAccount, models: &modelsView{a: a, checkService: a.svc.CheckModelService, testService: a.svc.TestCapability, testPlugin: a.svc.TestPluginModel, serviceAvatar: a.svc.ModelServiceAvatar}, ext: &extView{a: a, tab: 1}, labels: newLabelsView(a), automations: newAutomationsView(a)}
 }
 
 // section is the page shown: an unknown or missing account falls back to
@@ -193,6 +194,8 @@ func (p *settingsPage) refresh(hints []events.Event) {
 		if hints == nil { // opened: the directory may have changed since
 			p.ext.refreshRegistry()
 		}
+	case sec == "automations" && hints == nil:
+		p.automations.load()
 	case sec == "about" && hints == nil:
 		var v string
 		a.query(func(ctx context.Context) (err error) { v, err = a.plat.LatestVersion(ctx); return err },
@@ -241,10 +244,10 @@ func (p *settingsPage) Title() (string, string) {
 	return i18n.T("settings.heading"), i18n.T("settings." + sec)
 }
 
-var appSections = []string{"general", "signatures", "models", "labels", "extensions", "privacy", "about"}
+var appSections = []string{"general", "signatures", "automations", "models", "labels", "extensions", "privacy", "about"}
 
 // sectionIcons are the app sections' sidebar icons.
-var sectionIcons = map[string]string{"general": "settings", "signatures": "quill-pen", "models": "brain-4", "labels": "tag", "extensions": "puzzle", "privacy": "shield", "about": "info"}
+var sectionIcons = map[string]string{"general": "settings", "signatures": "quill-pen", "automations": "sparkles", "models": "brain-4", "labels": "tag", "extensions": "puzzle", "privacy": "shield", "about": "info"}
 
 // Sidebar: the accounts, each with its provider's mark and a status dot,
 // then Add account; then the app's pages.
@@ -341,6 +344,8 @@ func (p *settingsPage) Content(c *ui.Context) {
 						p.privacyView(c)
 					case sec == "masklog":
 						p.maskLogPage(c)
+					case sec == "automations":
+						p.automations.view(c, p)
 					case sec == "models":
 						p.aiView(c)
 					case sec == "labels":
