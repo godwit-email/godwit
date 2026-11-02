@@ -106,7 +106,7 @@ func (s *Service) scanSecurityBatch(ctx context.Context) (int, error) {
 		return 0, err
 	}
 
-	rows, err := s.db.Query(ctx, `SELECT m.id, m.from_addr, m.auth_results, m.security_verify_dkim FROM messages m
+	rows, err := s.db.Query(ctx, `SELECT m.id, m.from_addr, m.auth_results, m.security_verify_dkim, m.account_id, m.date, COALESCE(m.entered_at, 0) FROM messages m
 		WHERE m.security_scanned_at = 0
 		  AND m.folder_id NOT IN (SELECT id FROM folders WHERE role IN ('sent', 'drafts', 'trash'))
 		ORDER BY m.date DESC, m.id DESC LIMIT ?`, securityBatch)
@@ -154,6 +154,7 @@ func (s *Service) scanSecurityBatch(ctx context.Context) (int, error) {
 
 		fromAddr := store.Str(r[1])
 		authResults := store.Str(r[2])
+		accID := store.Int(r[4])
 
 		parsedAddr, err := netmail.ParseAddress(fromAddr)
 		isOwnEmail := false
@@ -239,6 +240,12 @@ func (s *Service) scanSecurityBatch(ctx context.Context) (int, error) {
 		if result.Changes > 0 {
 			completed++
 			s.bus.Publish(events.Event{Type: events.MessagesChanged})
+			mDate := store.Int(r[5])
+			mEnteredAt := store.Int(r[6])
+			nowUnix := time.Now().Unix()
+			if nowUnix-mDate < 900 || (mEnteredAt > 0 && nowUnix-mEnteredAt < 900) {
+				_ = s.EvaluateWorkflows(ctx, accID, WorkflowTriggerSecurity, id)
+			}
 		}
 	}
 	return completed, scanErr
