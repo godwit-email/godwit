@@ -379,3 +379,26 @@ func TestRuleAIActionsSkipTheDailyRun(t *testing.T) {
 	assert.Empty(t, srv.Requests())
 	assert.Zero(t, e.count(t, "SELECT count(*) FROM drafts"))
 }
+
+// Undo puts back only local actions: a run whose done action is a reply
+// draft has nothing to put back, so it stays failed, to retry, and keeps
+// its draft.
+func TestRuleUndoLeavesADraftReplyRun(t *testing.T) {
+	e := newSyncedEnv(t)
+	srv := e.aiRules(t, true)
+	srv.Script(testllm.Turn{Text: []string{"<p>Thanks.</p>"}})
+	d := draftReplyRule()
+	d.Actions = append(d.Actions, RuleAction{Kind: ActionJunk}) // no Junk folder: it fails
+	e.saveRule(t, d, true)
+	e.put(t, "INBOX", eml("c@x", "bob@example.com", "alice@example.com", "Your card", day, "x"))
+	e.sync(t)
+	e.waitRuns(t, 1)
+	run := e.runOf(t, "c@x")
+	require.Equal(t, []string{"draft_reply done", "junk failed"}, e.results(t, run))
+	assert.False(t, RuleUndoable(ActionDraftReply))
+	kept, err := e.s.UndoRuleRun(bg, run)
+	require.NoError(t, err)
+	assert.Zero(t, kept)
+	assert.Equal(t, [][]any{{RuleRunFailed}}, e.rows(t, "SELECT state FROM rule_runs WHERE id = ?", run))
+	assert.Equal(t, 1, e.count(t, "SELECT count(*) FROM drafts"))
+}

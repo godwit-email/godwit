@@ -1163,6 +1163,14 @@ func (s *Service) RuleHits(ctx context.Context, ruleID int64) ([]RuleHit, error)
 	return out, nil
 }
 
+// ruleUndoable are the actions an undo puts back: the local ones. A forward
+// has gone, files written and drafts made stay, and a stop changed nothing.
+var ruleUndoable = []string{ActionLabel, ActionUnlabel, ActionRead, ActionStar, ActionArchive, ActionJunk, ActionTrash}
+
+// RuleUndoable reports whether UndoRuleRun puts back an action of kind, for
+// the hit history's 撤销, which shows only for a run with one done.
+func RuleUndoable(kind string) bool { return slices.Contains(ruleUndoable, kind) }
+
 // RetryRuleRun runs a failed run again from the action that failed, in the
 // same run, with the actions as the run started and the rule's settings
 // (confirmed recipients) as they are now. A disabled rule's run is not retried.
@@ -1218,11 +1226,17 @@ func (s *Service) UndoRuleRun(ctx context.Context, runID int64) (kept int, err e
 	defer s.ruleRunMu.Unlock()
 	s.editMu.Lock()
 	defer s.editMu.Unlock()
+	args := []any{runID, RuleActionDone}
+	for _, k := range ruleUndoable {
+		args = append(args, k)
+	}
 	rows, err := s.db.Query(ctx, `SELECT a.idx, a.kind, a.prior, r.message_id FROM rule_runs r JOIN rule_action_results a ON a.run_id = r.id
-		WHERE r.id = ? AND a.state = ? AND a.kind NOT IN (?, ?, ?, ?, ?, ?, ?) ORDER BY a.idx DESC`, runID, RuleActionDone,
-		ActionStop, ActionForward, ActionPDF, ActionEML, ActionAttachments, ActionDraftReply, ActionKeyPoints)
+		WHERE r.id = ? AND a.state = ? AND a.kind IN (`+placeholders(len(ruleUndoable))+`) ORDER BY a.idx DESC`, args...)
 	if err != nil {
 		return 0, err
+	}
+	if len(rows.Values) == 0 { // nothing it can put back: the run stays as it is, a failed one retryable
+		return 0, nil
 	}
 	for _, v := range rows.Values {
 		var p rulePrior

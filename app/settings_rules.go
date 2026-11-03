@@ -439,7 +439,7 @@ func (v *rulesView) hit(c *ui.Context, r core.Rule, h core.RuleHit, now time.Tim
 			return
 		}
 		if slices.ContainsFunc(h.Actions, func(x core.RuleActionResult) bool {
-			return x.State == core.RuleActionDone && x.Kind != core.ActionStop && x.Kind != core.ActionForward && !fileAction(x.Kind) // a forward has gone, files written stay
+			return x.State == core.RuleActionDone && core.RuleUndoable(x.Kind)
 		}) {
 			kit.Button(c, i18n.T("settings.rules.hits.undo"), kit.ButtonOpts{Variant: kit.Outline, Size: kit.SizeSm, Icon: "undo-2"}).Shrink(0).
 				OnClick(func() { v.undo(h.RunID) })
