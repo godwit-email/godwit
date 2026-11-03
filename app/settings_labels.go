@@ -129,7 +129,7 @@ func (v *labelsView) row(c *ui.Context, l core.Label) {
 			kit.Badge(c, i18n.T("settings.labels.builtin")).Background(t.Background)
 		}
 		kit.Text(c, i18n.Tf("settings.labels.count", l.Count), t.Text.Sm).TextColor(t.Muted)
-		kit.IconButton(c, "file-pen", i18n.Tf("settings.labels.edit", l.Name), kit.ButtonOpts{Variant: kit.Ghost, Size: kit.SizeSm}).
+		kit.IconButton(c, "pen-line", i18n.Tf("settings.labels.edit", l.Name), kit.ButtonOpts{Variant: kit.Ghost, Size: kit.SizeSm}).
 			OnClick(func() { v.open(l) })
 	})
 }

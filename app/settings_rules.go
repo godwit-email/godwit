@@ -309,7 +309,7 @@ func (v *rulesView) row(c *ui.Context, r core.Rule) {
 				hits = i18n.Tf("settings.rules.hits.count", v.counts[r.ID])
 			}
 			kit.Text(c, hits, t.Text.Sm).TextColor(t.Muted).SingleLine().Shrink(0)
-			kit.IconButton(c, "file-pen", i18n.Tf("settings.rules.edit", name), kit.ButtonOpts{Variant: kit.Ghost, Size: kit.SizeSm}).
+			kit.IconButton(c, "pen-line", i18n.Tf("settings.rules.edit", name), kit.ButtonOpts{Variant: kit.Ghost, Size: kit.SizeSm}).
 				OnClick(func() { v.openEditor(r) })
 			chev, label := "chevron-right", i18n.T("settings.rules.hits.show")
 			if open {

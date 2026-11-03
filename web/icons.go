@@ -151,6 +151,7 @@ var RemixIcons = map[string]string{
 	"outbox-fill":                    "node_modules/remixicon/icons/Business/inbox-unarchive-fill.svg",
 	"panel-left":                     "node_modules/remixicon/icons/Design/layout-left-line.svg",
 	"paperclip":                      "node_modules/remixicon/icons/Editor/attachment-2.svg",
+	"pen-line":                       "node_modules/remixicon/icons/Design/edit-line.svg",
 	"plus":                           "node_modules/remixicon/icons/System/add-line.svg",
 	"printer":                        "node_modules/remixicon/icons/Business/printer-line.svg",
 	"puzzle":                         "node_modules/remixicon/icons/Development/puzzle-line.svg",
@@ -264,6 +265,7 @@ var BrandIcons = map[string]string{
 //go:embed node_modules/remixicon/icons/Business/send-plane-line.svg
 //go:embed node_modules/remixicon/icons/Communication/chat-3-line.svg
 //go:embed node_modules/remixicon/icons/Design/edit-box-line.svg
+//go:embed node_modules/remixicon/icons/Design/edit-line.svg
 //go:embed node_modules/remixicon/icons/Design/hammer-line.svg
 //go:embed node_modules/remixicon/icons/Design/layout-left-line.svg
 //go:embed node_modules/remixicon/icons/Design/magic-line.svg
