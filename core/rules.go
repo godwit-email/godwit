@@ -607,14 +607,14 @@ func addrValues(s string) []string {
 	return out
 }
 
-// startRules runs the rule consumer until Close, and resumes the runs over
-// existing mail a close or a crash left unfinished.
+// startRules runs the rule consumer until Close, and resumes the runs a
+// close or a crash left unfinished.
 func (s *Service) startRules(ctx context.Context) error {
 	if rctx, end, err := s.begin(context.Background(), 0); err == nil {
 		go func() {
 			defer end()
-			if err := s.resumeExisting(rctx); err != nil && rctx.Err() == nil {
-				log.Printf("rules: resuming runs over existing mail: %v", err)
+			if err := s.resumeRuns(rctx); err != nil && rctx.Err() == nil {
+				log.Printf("rules: resuming unfinished runs: %v", err)
 			}
 		}()
 	}
@@ -727,22 +727,23 @@ func (s *Service) runDaily(ctx context.Context) error {
 	return nil
 }
 
-// resumeExisting resumes the runs over existing mail left running: no event
-// brings them back, as one does a new mail's. Each goes on from its saved
-// actions, whether its message still matches or not.
-func (s *Service) resumeExisting(ctx context.Context) error {
-	rows, err := s.db.Query(ctx, "SELECT rule_id, message_id FROM rule_runs WHERE state = ? AND trigger = ? AND message_id IS NOT NULL ORDER BY id",
-		RuleRunRunning, TriggerExisting)
+// resumeRuns resumes the enabled rules' runs left running. No event brings
+// back a run over existing mail or a retry, which ran outside the consumer
+// (a retry's event is long past); a new mail's the consumer may resume too,
+// which then finds it done (one run at a time). Each goes on from its saved
+// actions with its own trigger, whether its message still matches or not.
+func (s *Service) resumeRuns(ctx context.Context) error {
+	rows, err := s.db.Query(ctx, "SELECT rule_id, message_id, trigger FROM rule_runs WHERE state = ? AND message_id IS NOT NULL ORDER BY id", RuleRunRunning)
 	if err != nil || len(rows.Values) == 0 {
 		return err
 	}
-	rules, err := s.rules(ctx, false)
+	rules, err := s.rules(ctx, true)
 	if err != nil {
 		return err
 	}
 	for _, v := range rows.Values {
 		if i := slices.IndexFunc(rules, func(r Rule) bool { return r.ID == store.Int(v[0]) }); i >= 0 {
-			if err := s.runRule(ctx, rules[i], store.Int(v[1]), TriggerExisting); err != nil {
+			if err := s.runRule(ctx, rules[i], store.Int(v[1]), store.Str(v[2])); err != nil {
 				return err
 			}
 		}

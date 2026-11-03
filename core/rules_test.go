@@ -827,3 +827,29 @@ func TestRuleUndoWaitsForTheRun(t *testing.T) {
 	assert.Empty(t, e.flagsOf(t, "a@x"))
 	assert.Equal(t, [][]any{{RuleRunUndone}}, e.rows(t, "SELECT state FROM rule_runs WHERE id = ?", run))
 }
+
+// A retry cut off between two actions goes on when Godwit opens again: it
+// ran outside the consumer, whose event for the mail is long past.
+func TestRuleRetryResumes(t *testing.T) {
+	e := newRulesEnv(t)
+	e.saveRule(t, rule(RuleAction{Kind: ActionJunk}, RuleAction{Kind: ActionStar}), true)
+	e.bill(t, "a@x", "billing@aws.example", "Invoice")
+	e.sync(t)
+	e.waitRuns(t, 1)
+	e.rulesIdle(t)
+	run := e.runOf(t, "a@x")
+	require.Equal(t, []string{"junk failed", "star not_run"}, e.results(t, run))
+	require.NoError(t, e.im.User.Create("Junk", nil))
+	e.sync(t)
+	e.rulesIdle(t)
+	stopRulesAt(t, "rules.action")
+	require.Error(t, e.s.RetryRuleRun(bg, run), "cut off after the junk")
+	rulesHook = nil
+	require.Equal(t, [][]any{{RuleRunRunning}}, e.rows(t, "SELECT state FROM rule_runs WHERE id = ?", run))
+	e.reopen(t)
+	require.Eventually(t, func() bool {
+		return e.count(t, "SELECT count(*) FROM rule_runs WHERE id = ? AND state = ?", run, RuleRunDone) == 1
+	},
+		5*time.Second, 10*time.Millisecond)
+	assert.Equal(t, []string{"junk done", "star done"}, e.results(t, run))
+}
