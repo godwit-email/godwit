@@ -3111,6 +3111,117 @@
   "settings_rules_empty_desc": "For example, label bills as soon as they arrive.",
   "settings_rules_list": "My rules",
   "settings_rules_list_foot": "Rules run from top to bottom",
+  "mail_menu_rule": "Create Rule for Similar Mail…",
+  "settings_rules_group_organize": "Organize",
+  "settings_rules_group_forward": "Forward",
+  "settings_rules_group_files": "Save to This Computer",
+  "settings_rules_group_wit": "Wit",
+  "settings_rules_hits_count": "Last 7 days: {arg1, number, ::group-off}",
+  "@settings_rules_hits_count": {
+    "placeholders": {
+      "arg1": {
+        "type": "int"
+      }
+    }
+  },
+  "settings_rules_off": "Off",
+  "settings_rules_templates": "Start from a template",
+  "settings_rules_templates_foot": "Opens the editor with conditions and actions filled in; change them, then save. Godwit never turns a rule on by itself.",
+  "settings_rules_template_use": "Use",
+  "settings_rules_template_use_label": "Use template “{arg1}”",
+  "@settings_rules_template_use_label": {
+    "placeholders": {
+      "arg1": {
+        "type": "String"
+      }
+    }
+  },
+  "settings_rules_template_bill": "File bills",
+  "settings_rules_template_bill_desc": "Subject contains invoice and has attachments: apply the Bills label and archive",
+  "settings_rules_template_newsletter": "Keep newsletters out of the inbox",
+  "settings_rules_template_newsletter_desc": "When labeled Newsletter: mark as read and archive",
+  "settings_rules_template_suspicious": "Move suspicious mail to Junk",
+  "settings_rules_template_suspicious_desc": "When the security check flags it suspicious or dangerous, move it to Junk",
+  "settings_rules_from_mail_name": "Mail from {arg1}",
+  "@settings_rules_from_mail_name": {
+    "placeholders": {
+      "arg1": {
+        "type": "String"
+      }
+    }
+  },
+  "settings_rules_from_mail_banner": "Sender filled in from “{arg1}”. Also match on these?",
+  "@settings_rules_from_mail_banner": {
+    "placeholders": {
+      "arg1": {
+        "type": "String"
+      }
+    }
+  },
+  "settings_rules_preview": "Existing mail",
+  "settings_rules_preview_foot": "Last {arg1, number, ::group-off} days",
+  "@settings_rules_preview_foot": {
+    "placeholders": {
+      "arg1": {
+        "type": "int"
+      }
+    }
+  },
+  "settings_rules_preview_wait": "Looking for matching mail…",
+  "settings_rules_preview_incomplete": "Fill in every condition to see which mail matches.",
+  "settings_rules_preview_none": "No mail matches. Are the conditions too strict?",
+  "settings_rules_preview_count": "{arg1, number, ::group-off} match. When you save, you can choose to handle them too.",
+  "@settings_rules_preview_count": {
+    "placeholders": {
+      "arg1": {
+        "type": "int"
+      }
+    }
+  },
+  "settings_rules_sep": ", ",
+  "settings_rules_save_title": "Save “{arg1}”",
+  "@settings_rules_save_title": {
+    "placeholders": {
+      "arg1": {
+        "type": "String"
+      }
+    }
+  },
+  "settings_rules_save_desc": "From now on, matching mail is handled as the rule says.",
+  "settings_rules_save_existing": "Also handle the {arg1, number, ::group-off} existing messages",
+  "@settings_rules_save_existing": {
+    "placeholders": {
+      "arg1": {
+        "type": "int"
+      }
+    }
+  },
+  "settings_rules_save_existing_only": "Runs only: {arg1}.",
+  "@settings_rules_save_existing_only": {
+    "placeholders": {
+      "arg1": {
+        "type": "String"
+      }
+    }
+  },
+  "settings_rules_save_existing_later": "{arg1}: only for mail that arrives from now on.",
+  "@settings_rules_save_existing_later": {
+    "placeholders": {
+      "arg1": {
+        "type": "String"
+      }
+    }
+  },
+  "settings_rules_save_existing_nothing": "This rule has no action that can run on existing mail.",
+  "settings_rules_save_confirm": "Save Rule",
+  "settings_rules_save_ran": "Handled {arg1, number, ::group-off} existing messages",
+  "@settings_rules_save_ran": {
+    "placeholders": {
+      "arg1": {
+        "type": "int"
+      }
+    }
+  },
   "settings_rules_enable": "Enable “{arg1}”",
   "@settings_rules_enable": {
     "placeholders": {

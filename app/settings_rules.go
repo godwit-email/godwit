@@ -2,6 +2,8 @@ package app
 
 import (
 	"context"
+	"encoding/json"
+	"net/mail"
 	"slices"
 	"strings"
 	"time"
@@ -23,14 +25,63 @@ type rulesView struct {
 	open int64          // the rule whose hits show, 0 none
 	hits []core.RuleHit // open's
 
+	counts map[int64]int // each rule's hits of the last week
+
 	editing bool
 	edit    core.Rule // the rule in the editor; ID 0 a new one
 	any     int       // the editor's match: 0 all, 1 any
+	menu    bool      // the add-action menu is open
+
+	from    string               // the subject of the mail the editor was opened from
+	suggest []core.RuleCondition // conditions offered for it
+
+	pending *core.MessageSummary // the mail to open the editor from, once the page shows
+
+	prevKey    string            // the trigger and conditions prev is for
+	prev       *core.RulePreview // the existing mail they match; nil not known
+	prevStop   func()            // the debounce before the next preview
+	prevCancel func()            // the preview under way
+
+	saveAsk     bool // the save dialog is open
+	runExisting bool // its 同时处理现有的邮件
 }
 
-// ruleActions are the actions the editor offers, in its order.
-var ruleActions = []string{core.ActionLabel, core.ActionUnlabel, core.ActionRead, core.ActionStar,
-	core.ActionArchive, core.ActionJunk, core.ActionTrash, core.ActionStop}
+// ruleActionGroup is a group of the add-action menu.
+type ruleActionGroup struct {
+	key   string   // its title is settings.rules.group.<key>
+	kinds []string // its actions, in order; none hides the group
+}
+
+// ruleActionGroups are the actions the editor offers, by group, in order.
+// A new action registers by appending its kind to its group.
+var ruleActionGroups = []ruleActionGroup{
+	{"organize", []string{core.ActionLabel, core.ActionUnlabel, core.ActionRead, core.ActionStar,
+		core.ActionArchive, core.ActionJunk, core.ActionTrash, core.ActionStop}},
+	{"forward", nil},
+	{"files", nil},
+	{"wit", nil},
+}
+
+// ruleTemplates open the editor filled in; nothing is saved or turned on
+// until the user saves. A label a template names that is gone becomes the first.
+var ruleTemplates = []struct {
+	key string // settings.rules.template.<key> and .<key>.desc
+	doc core.RuleDoc
+}{
+	{"bill", core.RuleDoc{Trigger: core.TriggerReceive, Match: core.MatchAll,
+		Conditions: []core.RuleCondition{{Field: core.FieldSubject, Op: core.OpContains, Value: "invoice"}, {Field: core.FieldAttachments, Op: core.OpIs, Value: core.RuleYes}},
+		Actions:    []core.RuleAction{{Kind: core.ActionLabel, Label: "bill"}, {Kind: core.ActionArchive}}}},
+	{"newsletter", core.RuleDoc{Trigger: core.TriggerLabel, TriggerArg: "newsletter", Match: core.MatchAll,
+		Actions: []core.RuleAction{{Kind: core.ActionRead}, {Kind: core.ActionArchive}}}},
+	{"suspicious", core.RuleDoc{Trigger: core.TriggerSecurity, TriggerArg: core.SecuritySuspicious, Match: core.MatchAll,
+		Actions: []core.RuleAction{{Kind: core.ActionJunk}}}},
+}
+
+// ruleSuggestWords are the subject words create-from-mail offers to match on.
+var ruleSuggestWords = []string{"invoice", "receipt", "order", "statement", "newsletter", "发票", "账单", "订单", "收据"}
+
+// rulePreviewShown is how many matching messages the editor lists.
+const rulePreviewShown = 6
 
 // ruleRoles are the folders a folder condition offers, by role.
 var ruleRoles = []string{"inbox", "archive", "junk", "trash"}
@@ -38,12 +89,18 @@ var ruleRoles = []string{"inbox", "archive", "junk", "trash"}
 func (v *rulesView) load() {
 	a := v.a
 	var rules []core.Rule
-	a.query(func(ctx context.Context) (err error) { rules, err = a.svc.Rules(ctx); return err },
-		func(err error) {
-			if err == nil {
-				v.rules = rules
-			}
-		})
+	var counts map[int64]int
+	a.query(func(ctx context.Context) (err error) {
+		if rules, err = a.svc.Rules(ctx); err != nil {
+			return err
+		}
+		counts, err = a.svc.RuleHitCounts(ctx)
+		return err
+	}, func(err error) {
+		if err == nil {
+			v.rules, v.counts = rules, counts
+		}
+	})
 	if v.open != 0 {
 		v.loadHits()
 	}
@@ -82,6 +139,17 @@ func (v *rulesView) view(c *ui.Context) {
 		}
 		settingsSection(c, i18n.T("settings.rules.list"), i18n.T("settings.rules.list.foot"), rows...)
 	}
+	tpls := make([]func(), len(ruleTemplates))
+	for i, tp := range ruleTemplates {
+		tpls[i] = func() {
+			name := i18n.T("settings.rules.template." + tp.key)
+			settingRow(c.Key(tp.key), name, i18n.T("settings.rules.template."+tp.key+".desc"), func() {
+				settingButton(c, i18n.T("settings.rules.template.use"), kit.Outline, false).Label(i18n.Tf("settings.rules.template.use.label", name)).
+					OnClick(func() { v.fromTemplate(tp.doc, name) })
+			})
+		}
+	}
+	settingsSection(c, i18n.T("settings.rules.templates"), i18n.T("settings.rules.templates.foot"), tpls...)
 	// Emptying Trash and Junk is not a rule: it stays with the account's mailboxes.
 	if len(a.accounts) > 0 {
 		id := a.accounts[0].ID
@@ -115,6 +183,11 @@ func (v *rulesView) row(c *ui.Context, r core.Rule) {
 				})
 				kit.Text(c, v.summary(r.Doc), t.Text.Sm).TextColor(t.Muted).SingleLine()
 			})
+			hits := i18n.T("settings.rules.off")
+			if r.Enabled {
+				hits = i18n.Tf("settings.rules.hits.count", v.counts[r.ID])
+			}
+			kit.Text(c, hits, t.Text.Sm).TextColor(t.Muted).SingleLine().Shrink(0)
 			kit.IconButton(c, "file-pen", i18n.Tf("settings.rules.edit", name), kit.ButtonOpts{Variant: kit.Ghost, Size: kit.SizeSm}).
 				OnClick(func() { v.openEditor(r) })
 			chev, label := "chevron-right", i18n.T("settings.rules.hits.show")
@@ -312,10 +385,136 @@ func (v *rulesView) create() {
 func (v *rulesView) openEditor(r core.Rule) {
 	r.Doc.Conditions = slices.Clone(r.Doc.Conditions)
 	r.Doc.Actions = slices.Clone(r.Doc.Actions)
+	v.closeEditor()
 	v.editing, v.edit, v.any = true, r, 0
 	if r.Doc.Match == core.MatchAny {
 		v.any = 1
 	}
+}
+
+// closeEditor leaves the editor, stopping its preview.
+func (v *rulesView) closeEditor() {
+	v.stopPreview()
+	v.editing, v.menu, v.saveAsk, v.runExisting = false, false, false, false
+	v.from, v.suggest, v.prevKey, v.prev = "", nil, "", nil
+}
+
+// fromTemplate opens the editor on a new rule filled in from a template.
+func (v *rulesView) fromTemplate(d core.RuleDoc, name string) {
+	d.Version, d.Name = core.RuleVersion, name
+	d.Conditions, d.Actions = slices.Clone(d.Conditions), slices.Clone(d.Actions)
+	if d.Trigger == core.TriggerLabel && !v.hasLabel(d.TriggerArg) {
+		d.TriggerArg = v.firstLabel()
+	}
+	for i, ac := range d.Actions {
+		if ac.Label != "" && !v.hasLabel(ac.Label) {
+			d.Actions[i].Label = v.firstLabel()
+		}
+	}
+	v.openEditor(core.Rule{Enabled: true, Doc: d})
+}
+
+func (v *rulesView) hasLabel(slug string) bool {
+	return slices.ContainsFunc(v.a.labels, func(l core.Label) bool { return l.Slug == slug })
+}
+
+// fromMail opens the editor on a new rule for mail like m: its sender, and
+// the subject's known words and its attachments offered as conditions.
+func (v *rulesView) fromMail(m core.MessageSummary) {
+	addr := m.From
+	if p, err := mail.ParseAddress(m.From); err == nil {
+		addr = p.Address
+	}
+	v.openEditor(core.Rule{Enabled: true, Doc: core.RuleDoc{Version: core.RuleVersion, Name: i18n.Tf("settings.rules.from_mail.name", displayName(m.From)),
+		Trigger: core.TriggerReceive, Match: core.MatchAll,
+		Conditions: []core.RuleCondition{{Field: core.FieldFrom, Op: core.OpContains, Value: addr}},
+		Actions:    []core.RuleAction{{Kind: core.ActionLabel, Label: v.firstLabel()}}}})
+	v.from = m.Subject
+	subject := strings.ToLower(m.Subject)
+	for _, w := range ruleSuggestWords {
+		if strings.Contains(subject, w) {
+			v.suggest = append(v.suggest, core.RuleCondition{Field: core.FieldSubject, Op: core.OpContains, Value: w})
+		}
+	}
+	if m.HasAttachments {
+		v.suggest = append(v.suggest, core.RuleCondition{Field: core.FieldAttachments, Op: core.OpIs, Value: core.RuleYes})
+	}
+}
+
+// schedulePreview reads, once typing pauses, the existing mail the editor's
+// trigger and conditions match; a change meanwhile cancels the read under way.
+func (v *rulesView) schedulePreview() {
+	d := v.edit.Doc
+	d.Conditions = slices.Clone(d.Conditions) // the editor writes its own while the read runs
+	b, _ := json.Marshal([]any{d.Trigger, d.TriggerArg, d.Match, d.Conditions})
+	if string(b) == v.prevKey {
+		return
+	}
+	v.stopPreview()
+	v.prevKey, v.prev = string(b), nil
+	if slices.ContainsFunc(d.Conditions, func(cd core.RuleCondition) bool { return strings.TrimSpace(cd.Value) == "" }) ||
+		d.Trigger == core.TriggerLabel && d.TriggerArg == "" {
+		return
+	}
+	a, key := v.a, v.prevKey
+	v.prevStop = a.after(debounce, func() {
+		v.prevStop = nil
+		ctx, cancel := context.WithCancel(a.ctx)
+		v.prevCancel = cancel
+		var p core.RulePreview
+		a.query(func(context.Context) (err error) { p, err = a.svc.PreviewRule(ctx, d, rulePreviewShown); return err }, func(err error) {
+			cancel()
+			if key != v.prevKey {
+				return // a newer one is coming
+			}
+			v.prevCancel = nil
+			if err == nil {
+				v.prev = &p
+			}
+		})
+	})
+}
+
+func (v *rulesView) stopPreview() {
+	if v.prevStop != nil {
+		v.prevStop()
+		v.prevStop = nil
+	}
+	if v.prevCancel != nil {
+		v.prevCancel()
+		v.prevCancel = nil
+	}
+}
+
+// preview is the existing mail the rule matches, of the last 30 days.
+func (v *rulesView) preview(c *ui.Context) {
+	t, th := theme.Of(c), c.Theme()
+	settingsSection(c, i18n.T("settings.rules.preview"), i18n.Tf("settings.rules.preview.foot", core.RulePreviewDays), func() {
+		settingBlock(c, func() {
+			p := v.prev
+			switch {
+			case p == nil:
+				msg := "settings.rules.preview.incomplete"
+				if v.prevStop != nil || v.prevCancel != nil {
+					msg = "settings.rules.preview.wait"
+				}
+				kit.Text(c, i18n.T(msg), t.Text.Sm).TextColor(t.Muted)
+				return
+			case p.Count == 0:
+				kit.Text(c, i18n.T("settings.rules.preview.none"), t.Text.Sm).TextColor(t.Muted)
+				return
+			}
+			kit.Text(c, i18n.Tf("settings.rules.preview.count", p.Count), t.Text.Sm).TextColor(t.Muted)
+			now := time.Now()
+			for _, m := range p.Messages {
+				ui.Row(c.Key(m.ID)).FillWidth().Gap(th.Space(3)).Children(func() {
+					kit.Text(c, displayName(m.From), t.Text.Body).FontWeight(500).Shrink(0)
+					kit.Text(c, m.Subject, t.Text.Body).SingleLine().Shrink(1).Grow(1)
+					kit.Text(c, listTime(now, m.Date), t.Text.Sm).TextColor(t.Muted).Shrink(0)
+				})
+			}
+		})
+	})
 }
 
 // textField reports whether a condition on f compares typed text.
@@ -355,10 +554,22 @@ func (v *rulesView) editor(c *ui.Context) {
 		!slices.ContainsFunc(d.Conditions, func(cd core.RuleCondition) bool { return strings.TrimSpace(cd.Value) == "" })
 	pageHeading(c, title, sub, func() {
 		ui.Row(c).Gap(th.Space(2)).Children(func() {
-			settingButton(c, i18n.T("common.cancel"), kit.Outline, false).OnClick(func() { v.editing = false })
+			settingButton(c, i18n.T("common.cancel"), kit.Outline, false).OnClick(v.closeEditor)
 			settingButton(c, i18n.T("common.save"), kit.Default, !ready).OnClick(v.save)
 		})
 	})
+	v.schedulePreview()
+	v.saveDialog(c)
+	if v.from != "" {
+		kit.Alert(c, kit.Info, i18n.Tf("settings.rules.from_mail.banner", v.from), func() {
+			for i, cd := range v.suggest {
+				kit.AlertAction(c.Key(i), kit.Info, "+ "+v.condText(cd), func() {
+					d.Conditions = append(d.Conditions, cd)
+					v.suggest = slices.Delete(slices.Clone(v.suggest), i, i+1)
+				})
+			}
+		})
+	}
 	settingsSection(c, i18n.T("settings.rules.name"), "", func() {
 		settingBlock(c, func() {
 			kit.Input(c, &d.Name, kit.InputOpts{Placeholder: i18n.T("settings.rules.name.placeholder")}).Label(i18n.T("settings.rules.name"))
@@ -456,9 +667,11 @@ func (v *rulesView) editor(c *ui.Context) {
 		})
 	})
 	settingsSection(c, i18n.T("settings.rules.if"), "", conds...)
-	kinds := make([]kit.Option[string], len(ruleActions))
-	for i, k := range ruleActions {
-		kinds[i] = kit.Option[string]{Value: k, Label: i18n.T("settings.rules.action." + k)}
+	var kinds []kit.Option[string]
+	for _, g := range ruleActionGroups {
+		for _, k := range g.kinds {
+			kinds = append(kinds, kit.Option[string]{Value: k, Label: i18n.T("settings.rules.action." + k)})
+		}
 	}
 	acts := make([]func(), 0, len(d.Actions)+1)
 	for i := range d.Actions {
@@ -489,12 +702,31 @@ func (v *rulesView) editor(c *ui.Context) {
 	acts = append(acts, func() {
 		settingBlock(c, func() {
 			ui.Row(c).Children(func() {
-				settingButton(c, i18n.T("settings.rules.action.add"), kit.Outline, len(d.Actions) >= core.MaxRuleActions).
-					OnClick(func() { d.Actions = append(d.Actions, core.RuleAction{Kind: core.ActionRead}) })
+				add := settingButton(c, i18n.T("settings.rules.action.add"), kit.Outline, len(d.Actions) >= core.MaxRuleActions).
+					OnClick(func() { v.menu = !v.menu })
+				if !v.menu {
+					return
+				}
+				kit.MenuAt(c, add, &v.menu, ui.AnchorBottomLeft, ui.AnchorTopLeft, theme.PopupOffset, i18n.T("settings.rules.action.add"), func() {
+					for _, g := range ruleActionGroups {
+						if len(g.kinds) == 0 {
+							continue
+						}
+						kit.MenuLabel(c.Key(g.key), i18n.T("settings.rules.group."+g.key))
+						for _, k := range g.kinds {
+							label := i18n.T("settings.rules.action." + k)
+							kit.MenuItem(c.Key(k), false).Label(label).Children(func() { ui.Text(c, label).SingleLine() }).OnClick(func() {
+								v.menu = false
+								d.Actions = append(d.Actions, core.RuleAction{Kind: k})
+							})
+						}
+					}
+				})
 			})
 		})
 	})
 	settingsSection(c, i18n.T("settings.rules.then"), "", acts...)
+	v.preview(c)
 	run := func(bg bool, key string) func() {
 		return func() {
 			settingBlock(c, func() {
@@ -506,11 +738,68 @@ func (v *rulesView) editor(c *ui.Context) {
 	settingsSection(c, i18n.T("settings.rules.run"), "", run(false, "window"), run(true, "background"))
 }
 
+// save stores the rule; with existing mail it matches, it asks first
+// whether to run it over that mail too.
 func (v *rulesView) save() {
+	if v.prev != nil && v.prev.Count > 0 && !v.saveAsk {
+		v.saveAsk = true
+		return
+	}
 	a := v.a
-	r := v.edit
-	v.editing = false
-	a.writes.Chain("rules", func(ctx context.Context) error { _, err := a.svc.SaveRule(ctx, r); return err }, v.saved)
+	r, existing := v.edit, v.saveAsk && v.runExisting
+	v.closeEditor()
+	var n int
+	a.writes.Chain("rules", func(ctx context.Context) error {
+		id, err := a.svc.SaveRule(ctx, r)
+		if err != nil || !existing {
+			return err
+		}
+		n, err = a.svc.RunRuleOnExisting(ctx, id)
+		return err
+	}, func(err error) {
+		if err == nil && n > 0 {
+			a.toast(i18n.Tf("settings.rules.save.ran", n))
+		}
+		v.saved(err)
+	})
+}
+
+// saveDialog asks, before a save, whether the rule also runs once over the
+// existing mail it matches; only the actions that can run on it then do.
+func (v *rulesView) saveDialog(c *ui.Context) {
+	if !v.saveAsk || v.prev == nil {
+		return
+	}
+	t, th := theme.Of(c), c.Theme()
+	d := v.edit.Doc
+	var now, later []string
+	for _, ac := range d.Actions {
+		switch {
+		case ac.Kind == core.ActionStop:
+		case core.RunsOnExisting(ac.Kind):
+			now = append(now, v.actionText(ac))
+		default:
+			later = append(later, v.actionText(ac))
+		}
+	}
+	sep := i18n.T("settings.rules.sep")
+	kit.Dialog(c, &v.saveAsk, i18n.Tf("settings.rules.save.title", ruleName(d)), kit.DialogOpts{Size: kit.DialogSm, Desc: i18n.T("settings.rules.save.desc"), Close: i18n.T("common.close")}, func() {
+		ui.Column(c).Gap(th.Space(1)).Children(func() {
+			if len(now) == 0 {
+				v.runExisting = false
+				kit.Text(c, i18n.T("settings.rules.save.existing.nothing"), t.Text.Sm).TextColor(t.Muted)
+			} else {
+				kit.Checkbox(c, &v.runExisting, i18n.Tf("settings.rules.save.existing", v.prev.Count))
+				kit.Text(c, i18n.Tf("settings.rules.save.existing.only", strings.Join(now, sep)), t.Text.Sm).TextColor(t.Muted)
+			}
+			if len(later) > 0 {
+				kit.Text(c, i18n.Tf("settings.rules.save.existing.later", strings.Join(later, sep)), t.Text.Sm).TextColor(t.Muted)
+			}
+		})
+	}, func() {
+		kit.Button(c, i18n.T("common.cancel"), kit.ButtonOpts{Variant: kit.Outline}).OnClick(func() { v.saveAsk = false })
+		kit.Button(c, i18n.T("settings.rules.save.confirm"), kit.ButtonOpts{}).OnClick(v.save)
+	})
 }
 
 // saved shows a write's error and reads the rules again.

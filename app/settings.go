@@ -223,8 +223,14 @@ func (p *settingsPage) refresh(hints []events.Event) {
 	case sec == "masklog" && hints == nil:
 		p.readMaskLog()
 	case sec == "rules" && hints == nil:
-		p.rules.editing = false
+		p.rules.closeEditor()
 		p.rules.load()
+		if m := p.rules.pending; m != nil { // 为类似邮件创建规则
+			p.rules.pending = nil
+			p.rules.fromMail(*m)
+		}
+	case sec == "rules" && slices.ContainsFunc(hints, func(ev events.Event) bool { return ev.Type == events.LabelsChanged }):
+		p.rules.load() // a run publishes it: the hit counts
 	}
 }
 

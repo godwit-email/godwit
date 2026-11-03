@@ -864,6 +864,12 @@ func (p *mailPage) listView(c *ui.Context) {
 					p.applySecurity(on, "")
 				}
 			})
+			if len(on) == 1 {
+				m.Separator()
+				if m.Item(i18n.T("mail.menu.rule")).Chosen() {
+					p.ruleFrom(on[0])
+				}
+			}
 			if p.a.dev { // dev builds: the message's original HTML, for debugging the renderer
 				m.Separator()
 				if m.Item("复制 HTML 路径（dev）").Chosen() {
@@ -1315,6 +1321,37 @@ func (p *mailPage) canReply(it mailItem) bool {
 }
 
 // draft starts a reply, reply-all or forward of it and opens it in a compose window.
+// ruleFrom opens the rules editor on a rule for mail like it (a thread's
+// first message).
+func (p *mailPage) ruleFrom(it mailItem) {
+	a := p.a
+	open := func(m core.MessageSummary) {
+		a.pages[PageSettings].(*settingsPage).rules.pending = &m
+		a.navigate(Route{Page: PageSettings, Settings: "rules"})
+	}
+	if !it.Thread {
+		open(it.Msg)
+		return
+	}
+	var m core.MessageSummary
+	a.do(func(ctx context.Context) error {
+		th, err := a.svc.GetThread(ctx, it.ID)
+		if err == nil && len(th.Messages) == 0 {
+			err = fmt.Errorf("thread %d has no messages", it.ID)
+		}
+		if err == nil {
+			m = th.Messages[0]
+		}
+		return err
+	}, func(err error) {
+		if err != nil {
+			a.toastErr(err)
+			return
+		}
+		open(m)
+	})
+}
+
 func (p *mailPage) draft(it mailItem, mode string) {
 	if !it.Thread {
 		p.a.draft(it.Msg, p.accountOf(it.Msg.FolderID), mode)
