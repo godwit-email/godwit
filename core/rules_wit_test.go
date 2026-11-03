@@ -312,3 +312,18 @@ func TestListRules(t *testing.T) {
 	assert.NotNil(t, got.Labels)
 	assert.Len(t, e.savedRules(t), 2)
 }
+
+// does says what a rule does in words, the labels named, no ids left.
+func TestRuleDoes(t *testing.T) {
+	labels := map[string]string{"bill": "账单"}
+	assert.Equal(t, `When new mail arrives, if the subject contains "invoice" and it has attachments: label it 账单, then archive it.`,
+		ruleDoes(RuleDoc{Trigger: TriggerReceive, Match: MatchAll,
+			Conditions: []RuleCondition{{Field: FieldSubject, Op: OpContains, Value: "invoice"}, {Field: FieldAttachments, Op: OpIs, Value: RuleYes}},
+			Actions:    []RuleAction{{Kind: ActionLabel, Label: "bill"}, {Kind: ActionArchive}}}, labels, ""))
+	assert.Equal(t, "When the security check flags mail as suspicious or dangerous in Work: move it to Junk.",
+		ruleDoes(RuleDoc{Trigger: TriggerSecurity, TriggerArg: SecuritySuspicious, Match: MatchAll, Actions: []RuleAction{{Kind: ActionJunk}}}, labels, "Work"))
+	assert.Equal(t, `When new mail arrives, if the body contains "1" or it is older than 30 days: star it, then mark it read.`,
+		ruleDoes(RuleDoc{Trigger: TriggerReceive, Match: MatchAny,
+			Conditions: []RuleCondition{{Field: FieldBody, Op: OpContains, Value: "1"}, {Field: FieldAge, Op: OpOlderThan, Value: "30"}},
+			Actions:    []RuleAction{{Kind: ActionStar}, {Kind: ActionRead}}}, labels, ""))
+}

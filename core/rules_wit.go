@@ -1,6 +1,7 @@
 package core
 
 import (
+	"cmp"
 	"context"
 	"encoding/json"
 	"errors"
@@ -99,8 +100,10 @@ func (s *Service) registerRuleTool() {
 func (s *Service) registerListRulesTool() {
 	s.mustRegister(toolDesc{Spec: ai.ToolSpec{Name: listRulesTool,
 		Description: "List the user's mail rules, as 设置 › 规则 shows them, in the order they run (top first; a stop action skips the rules below): " +
-			"each one's id, name, whether it is on, whether it runs in the background, its rule (trigger, account, conditions, actions, in propose_rule's terms) " +
+			"each one's id, name, whether it is on, whether it runs in the background, does (what it does, in plain words, with the labels' and account's names), " +
+			"its rule (trigger, account, conditions, actions, in propose_rule's terms) " +
 			"and how many mails it handled in the last " + strconv.Itoa(RuleHitDays) + " days. labels names each label slug they use; account_name the account a rule is kept to. " +
+			"Tell the user what a rule does from does, in their language; never show them the rule's ids (receive, archive, a label slug). " +
 			"It changes nothing: to change a rule, the user edits it in 设置 › 规则; propose_rule proposes a new one.",
 		Schema: object(map[string]any{}), Run: s.listRules}})
 }
@@ -127,6 +130,7 @@ func (s *Service) listRules(ctx context.Context, _ json.RawMessage) (any, error)
 		ID          int64   `json:"id"`
 		Enabled     bool    `json:"enabled"`
 		Background  bool    `json:"background"`
+		Does        string  `json:"does"`
 		Rule        RuleDoc `json:"rule"`
 		AccountName string  `json:"account_name,omitempty"`
 		Handled     int     `json:"handled_last_days"`
@@ -139,9 +143,102 @@ func (s *Service) listRules(ctx context.Context, _ json.RawMessage) (any, error)
 				l.AccountName = accountLabel(acc)
 			}
 		}
+		l.Does = ruleDoes(r.Doc, labels, l.AccountName)
 		out = append(out, l)
 	}
 	return map[string]any{"rules": out, "labels": labels}, nil
+}
+
+// ruleDoes says what rule d does, in English the model puts in the user's
+// language: "When new mail arrives, if the subject contains "invoice" and it
+// has attachments: label it 账单, then archive it." labels names the slugs.
+func ruleDoes(d RuleDoc, labels map[string]string, account string) string {
+	label := func(slug string) string { return cmp.Or(labels[slug], slug) }
+	var when string
+	switch d.Trigger {
+	case TriggerLabel:
+		when = "When mail is labeled " + label(d.TriggerArg)
+	case TriggerSecurity:
+		when = "When the security check flags mail as dangerous"
+		if d.TriggerArg == SecuritySuspicious {
+			when = "When the security check flags mail as suspicious or dangerous"
+		}
+	case TriggerDaily:
+		when = "Once a day, at the day's first sync, for each mail"
+	default:
+		when = "When new mail arrives"
+	}
+	if account != "" {
+		when += " in " + account
+	}
+	conds := make([]string, len(d.Conditions))
+	for i, c := range d.Conditions {
+		switch c.Field {
+		case FieldAttachments:
+			conds[i] = "it has attachments"
+			if c.Value == RuleNo {
+				conds[i] = "it has no attachments"
+			}
+		case FieldAge:
+			conds[i] = "it is older than " + c.Value + " days"
+		case FieldLabel, FieldFolder:
+			what := "labeled " + label(c.Value)
+			if c.Field == FieldFolder {
+				what = "in " + folderWords(c.Value)
+			}
+			conds[i] = "it is " + what
+			if c.Op == OpNotContains {
+				conds[i] = "it is not " + what
+			}
+		default:
+			field := map[string]string{FieldFrom: "the sender", FieldTo: "a recipient (To or Cc)", FieldSubject: "the subject", FieldBody: "the body"}[c.Field]
+			op := map[string]string{OpContains: "contains", OpNotContains: "does not contain", OpIs: "is"}[c.Op]
+			conds[i] = fmt.Sprintf("%s %s %q", cmp.Or(field, c.Field), cmp.Or(op, c.Op), c.Value)
+		}
+	}
+	acts := make([]string, len(d.Actions))
+	for i, a := range d.Actions {
+		switch a.Kind {
+		case ActionLabel:
+			acts[i] = "label it " + label(a.Label)
+		case ActionUnlabel:
+			acts[i] = "take the label " + label(a.Label) + " off"
+		case ActionForward:
+			acts[i] = "forward it to " + a.To
+		case ActionPDF, ActionEML, ActionAttachments:
+			what := map[string]string{ActionPDF: "save it as a PDF", ActionEML: "save the original .eml", ActionAttachments: "save its attachments"}[a.Kind]
+			acts[i] = what + " into the folder " + a.Dir
+			if a.Subfolder {
+				acts[i] += ", one subfolder per mail"
+			}
+		default:
+			acts[i] = cmp.Or(map[string]string{
+				ActionRead: "mark it read", ActionStar: "star it", ActionArchive: "archive it", ActionJunk: "move it to Junk",
+				ActionTrash: "move it to Trash", ActionStop: "skip the rules below it",
+				ActionDraftReply: "have Wit draft a reply (never sent)", ActionKeyPoints: "have Wit write its key points",
+			}[a.Kind], a.Kind)
+		}
+		if a.Kind == ActionKeyPoints && a.Dir != "" {
+			acts[i] += " into the folder " + a.Dir
+		}
+	}
+	join := " and "
+	if d.Match == MatchAny {
+		join = " or "
+	}
+	if len(conds) == 0 {
+		return when + ": " + strings.Join(acts, ", then ") + "."
+	}
+	return when + ", if " + strings.Join(conds, join) + ": " + strings.Join(acts, ", then ") + "."
+}
+
+// folderWords names a folder condition's value: a role, or a folder by id.
+// shortcut: a folder by id is not named; name it if rules come to use them.
+func folderWords(v string) string {
+	if r := map[string]string{"inbox": "the inbox", "archive": "the archive", "junk": "Junk", "trash": "Trash"}[v]; r != "" {
+		return r
+	}
+	return "folder " + v
 }
 
 // prepareRule checks the proposed rule as SaveRule would, and records it
