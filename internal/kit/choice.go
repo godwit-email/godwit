@@ -60,15 +60,43 @@ func Checkbox(c *ui.Context, on *bool, label string) ui.Element {
 
 // Radio is a radio button choosing v into *sel.
 func Radio[T comparable](c *ui.Context, sel *T, v T, label string) ui.Element {
-	t, th := theme.Of(c), c.Theme()
+	th := c.Theme()
 	return ui.RadioBase(c, sel, v).Gap(th.Space(2)).Children(func() {
-		dot := ui.Box(c).Size(theme.Control, theme.Control).Radius(t.Radius.Full).Border(theme.Stroke, t.Input).Background(t.Background).Center()
-		Elevate(c, dot, theme.ShadowXs)
-		if *sel == v {
-			dot.Border(theme.Stroke, t.Primary).Children(func() { ui.Box(c).Size(theme.RadioDot, theme.RadioDot).Radius(t.Radius.Full).Background(t.Primary) })
-		}
+		radioDot(c, *sel == v)
 		ui.Text(c, label)
 	})
+}
+
+// RadioCard is a radio whose whole card clicks: the dot, label and help
+// under it, bordered while it is the choice.
+func RadioCard[T comparable](c *ui.Context, sel *T, v T, label, help string) ui.Element {
+	t, th := theme.Of(c), c.Theme()
+	on := *sel == v
+	card := ui.RadioBase(c, sel, v).FillWidth().AlignItems(ui.Start).Gap(th.Space(2)).Padding(th.Space(2)).
+		Radius(t.Radius.Lg).Label(label).Transition(colors(theme.MotionFast))
+	edge, fill := t.Border.Alpha(0), t.Card
+	switch {
+	case on:
+		edge, fill = t.Foreground, t.Hover.Mix(t.Card, 0.5)
+	case card.Hovered():
+		fill = t.Hover.Mix(t.Card, 0.5)
+	}
+	return card.Background(fill).Border(theme.Hairline, edge).Children(func() {
+		radioDot(c, on)
+		ui.Column(c).Grow(1).Shrink(1).Gap(th.Space(0.5)).Children(func() {
+			ui.Text(c, label)
+			Text(c, help, t.Text.Sm).TextColor(t.Muted)
+		})
+	})
+}
+
+func radioDot(c *ui.Context, on bool) {
+	t := theme.Of(c)
+	dot := ui.Box(c).Size(theme.Control, theme.Control).Radius(t.Radius.Full).Border(theme.Stroke, t.Input).Background(t.Background).Center().Shrink(0)
+	Elevate(c, dot, theme.ShadowXs)
+	if on {
+		dot.Border(theme.Stroke, t.Primary).Children(func() { ui.Box(c).Size(theme.RadioDot, theme.RadioDot).Radius(t.Radius.Full).Background(t.Primary) })
+	}
 }
 
 // Option is one choice of a Select.

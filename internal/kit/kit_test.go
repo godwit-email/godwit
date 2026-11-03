@@ -1506,3 +1506,25 @@ func TestFrostRoundsOneSide(t *testing.T) {
 		}
 	}
 }
+
+// A RadioCard is chosen by a click anywhere on it, its help included.
+func TestRadioCardClicks(t *testing.T) {
+	bg := false
+	tt := ui.NewTester(themed(func(c *ui.Context) {
+		ui.Column(c).Fill().Padding(10).Gap(8).Children(func() {
+			RadioCard(c, &bg, false, "Window", "Only while the window is open.")
+			RadioCard(c, &bg, true, "Background", "Keeps running after the window closes.")
+		})
+	}), 320, 200)
+	r, ok := tt.Find("Keeps running after the window closes.")
+	if !ok {
+		t.Fatalf("no help text: %q", tt.Texts())
+	}
+	tt.Move(r.X+r.W-4, r.Y+r.H/2)
+	tt.Press(r.X+r.W-4, r.Y+r.H/2)
+	tt.Release(r.X+r.W-4, r.Y+r.H/2)
+	tt.Frame()
+	if !bg {
+		t.Fatal("a click on the help did not choose the card")
+	}
+}

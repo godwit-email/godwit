@@ -497,6 +497,16 @@ func (v *rulesView) addAction(c *ui.Context) {
 // and the notes on forwarding and on Wit's actions.
 func (v *rulesView) aside(c *ui.Context) {
 	t, th := theme.Of(c), c.Theme()
+	// 运行方式 first: a choice of the rule's, over the preview that only shows.
+	ui.Column(c).FillWidth().Gap(th.Space(2)).Padding(th.Space(3)).Radius(t.Radius.Xl).Background(t.Card).Border(theme.Hairline, t.Border).Children(func() {
+		kit.Text(c, i18n.T("settings.rules.run"), t.Text.Body).FontWeight(600).PaddingX(th.Space(1))
+		for _, o := range []struct {
+			bg  bool
+			key string
+		}{{false, "window"}, {true, "background"}} {
+			kit.RadioCard(c.Key(o.key), &v.edit.Background, o.bg, i18n.T("settings.rules.run."+o.key), i18n.T("settings.rules.run."+o.key+".help"))
+		}
+	})
 	ui.Column(c).FillWidth().Gap(th.Space(2)).Padding(th.Space(3)).Radius(t.Radius.Xl).Background(t.Hover).Children(func() {
 		ui.Row(c).FillWidth().AlignItems(ui.Baseline).Gap(th.Space(2)).PaddingX(th.Space(1)).Children(func() {
 			kit.Text(c, i18n.T("settings.rules.preview"), t.Text.Body).FontWeight(600).Grow(1)
@@ -530,23 +540,6 @@ func (v *rulesView) aside(c *ui.Context) {
 						kit.Text(c, m.Subject, t.Text.Sm).SingleLine()
 					})
 				}
-			})
-		}
-	})
-	ui.Column(c).FillWidth().Gap(th.Space(2)).Padding(th.Space(3)).Radius(t.Radius.Xl).Background(t.Card).Border(theme.Hairline, t.Border).Children(func() {
-		kit.Text(c, i18n.T("settings.rules.run"), t.Text.Body).FontWeight(600).PaddingX(th.Space(1))
-		for _, o := range []struct {
-			bg  bool
-			key string
-		}{{false, "window"}, {true, "background"}} {
-			on := v.edit.Background == o.bg
-			edge, fill := t.Border.Alpha(0), t.Card
-			if on {
-				edge, fill = t.Foreground, t.Hover.Mix(t.Card, 0.5)
-			}
-			ui.Column(c.Key(o.key)).FillWidth().Gap(th.Space(0.5)).Padding(th.Space(2)).Radius(t.Radius.Lg).Background(fill).Border(theme.Hairline, edge).Children(func() {
-				kit.Radio(c, &v.edit.Background, o.bg, i18n.T("settings.rules.run."+o.key))
-				kit.Text(c, i18n.T("settings.rules.run."+o.key+".help"), t.Text.Sm).TextColor(t.Muted).PaddingX(th.Space(6))
 			})
 		}
 	})
