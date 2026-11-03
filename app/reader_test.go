@@ -1016,8 +1016,8 @@ func TestFileName(t *testing.T) {
 		"trailing. . ":         "trailing",
 		"invoice\u202efdp.exe": "invoice_fdp.exe",
 	} {
-		if got := fileName(in, "attachment"); got != want {
-			t.Errorf("fileName(%q) = %q, want %q", in, got, want)
+		if got := core.FileName(in, "attachment"); got != want {
+			t.Errorf("FileName(%q) = %q, want %q", in, got, want)
 		}
 	}
 }
