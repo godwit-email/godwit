@@ -65,7 +65,7 @@ func TestSettingsIndexCoversRows(t *testing.T) {
 	for _, txt := range h.tt.Texts() {
 		chrome[txt] = true
 	}
-	for sec, route := range map[string]string{"account": accountRoute(acc.ID), "general": "general", "models": "models", "extensions": "extensions", "privacy": "privacy", "about": "about", "labels": "labels", "signatures": "signatures"} {
+	for sec, route := range map[string]string{"account": accountRoute(acc.ID), "general": "general", "models": "models", "extensions": "extensions", "privacy": "privacy", "about": "about", "labels": "labels", "rules": "rules", "signatures": "signatures"} {
 		p := h.openSettings(route)
 		if sec == "general" { // 自定义's rows show only in that mode
 			p.proxy.mode, p.proxy.addr = core.ProxyCustom, "socks5://127.0.0.1:1080"

@@ -40,6 +40,8 @@ var RemixIcons = map[string]string{
 	"file-pen":                       "node_modules/remixicon/icons/Document/draft-line.svg",
 	"file-pen-fill":                  "node_modules/remixicon/icons/Document/draft-fill.svg",
 	"file-text":                      "node_modules/remixicon/icons/Document/file-text-line.svg",
+	"filter":                         "node_modules/remixicon/icons/System/filter-3-line.svg",
+	"filter-fill":                    "node_modules/remixicon/icons/System/filter-3-fill.svg",
 	"folder":                         "node_modules/remixicon/icons/Document/folder-3-line.svg",
 	"folder-fill":                    "node_modules/remixicon/icons/Document/folder-open-fill.svg",
 	"forward":                        "node_modules/remixicon/icons/System/share-forward-line.svg",
@@ -282,6 +284,8 @@ var BrandIcons = map[string]string{
 //go:embed node_modules/remixicon/icons/Document/draft-line.svg
 //go:embed node_modules/remixicon/icons/Document/file-copy-line.svg
 //go:embed node_modules/remixicon/icons/Document/file-text-line.svg
+//go:embed node_modules/remixicon/icons/System/filter-3-line.svg
+//go:embed node_modules/remixicon/icons/System/filter-3-fill.svg
 //go:embed node_modules/remixicon/icons/Document/folder-3-line.svg
 //go:embed node_modules/remixicon/icons/Document/folder-open-fill.svg
 //go:embed node_modules/remixicon/icons/Document/newspaper-line.svg

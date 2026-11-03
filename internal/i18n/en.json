@@ -3102,5 +3102,122 @@
   "reader_security_manual_warning_desc": "This email was manually flagged as a security threat or phishing attempt.",
   "reader_security_manual_suspicious_desc": "This email was manually flagged as suspicious for review.",
   "reader_security_updated": "Security assessment updated",
-  "reader_message_labels": "Adjust labels…"
+  "reader_message_labels": "Adjust labels…",
+  "settings_rules": "Rules",
+  "settings_rules_sub": "Sort mail automatically as it arrives, by conditions you set. Rules run on this computer.",
+  "settings_rules_new": "New rule",
+  "settings_rules_empty": "No rules yet",
+  "settings_rules_empty_desc": "For example, label bills as soon as they arrive.",
+  "settings_rules_list": "My rules",
+  "settings_rules_list_foot": "Rules run from top to bottom",
+  "settings_rules_enable": "Enable “{arg1}”",
+  "@settings_rules_enable": {
+    "placeholders": {
+      "arg1": {
+        "type": "String"
+      }
+    }
+  },
+  "settings_rules_edit": "Edit “{arg1}”",
+  "@settings_rules_edit": {
+    "placeholders": {
+      "arg1": {
+        "type": "String"
+      }
+    }
+  },
+  "settings_rules_untitled": "Untitled rule",
+  "settings_rules_cond": "{arg1} {arg2} {arg3}",
+  "@settings_rules_cond": {
+    "placeholders": {
+      "arg1": {
+        "type": "String"
+      },
+      "arg2": {
+        "type": "String"
+      },
+      "arg3": {
+        "type": "String"
+      }
+    }
+  },
+  "settings_rules_field_from": "Sender",
+  "settings_rules_field_subject": "Subject",
+  "settings_rules_op_contains": "contains",
+  "settings_rules_op_not_contains": "doesn’t contain",
+  "settings_rules_op_is": "is",
+  "settings_rules_action_label_summary": "Label “{arg1}”",
+  "@settings_rules_action_label_summary": {
+    "placeholders": {
+      "arg1": {
+        "type": "String"
+      }
+    }
+  },
+  "settings_rules_trigger_receive": "New mail arrives",
+  "settings_rules_summary_always": "{arg1} → {arg2}",
+  "@settings_rules_summary_always": {
+    "placeholders": {
+      "arg1": {
+        "type": "String"
+      },
+      "arg2": {
+        "type": "String"
+      }
+    }
+  },
+  "settings_rules_summary": "{arg1} · {arg2} → {arg3}",
+  "@settings_rules_summary": {
+    "placeholders": {
+      "arg1": {
+        "type": "String"
+      },
+      "arg2": {
+        "type": "String"
+      },
+      "arg3": {
+        "type": "String"
+      }
+    }
+  },
+  "settings_rules_join_all": "{arg1} and {arg2}",
+  "@settings_rules_join_all": {
+    "placeholders": {
+      "arg1": {
+        "type": "String"
+      },
+      "arg2": {
+        "type": "String"
+      }
+    }
+  },
+  "settings_rules_join_any": "{arg1} or {arg2}",
+  "@settings_rules_join_any": {
+    "placeholders": {
+      "arg1": {
+        "type": "String"
+      },
+      "arg2": {
+        "type": "String"
+      }
+    }
+  },
+  "settings_rules_editor_sub": "Set the trigger, conditions and action. Nothing happens until you save.",
+  "settings_rules_name": "Name",
+  "settings_rules_name_placeholder": "Name this rule",
+  "settings_rules_when": "When",
+  "settings_rules_trigger": "Trigger",
+  "settings_rules_match": "Conditions",
+  "settings_rules_match_all": "All match",
+  "settings_rules_match_any": "Any matches",
+  "settings_rules_field": "Field",
+  "settings_rules_op": "Comparison",
+  "settings_rules_value": "Value",
+  "settings_rules_condition_remove": "Remove this condition",
+  "settings_rules_condition_add": "Add condition",
+  "settings_rules_no_conditions": "No conditions: every mail that triggers the rule gets the action below.",
+  "settings_rules_if": "If",
+  "settings_rules_then": "Then",
+  "settings_rules_action_label": "Apply label",
+  "settings_rules_label": "Label"
 }

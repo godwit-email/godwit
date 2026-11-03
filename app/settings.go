@@ -110,6 +110,7 @@ type settingsPage struct {
 	models *modelsView
 	ext    *extView
 	labels *labelsView
+	rules  *rulesView
 
 	// security rescan
 	secDays     int
@@ -129,7 +130,7 @@ type settingsPage struct {
 func newSettingsPage(a *App) *settingsPage {
 	return &settingsPage{a: a, forms: map[int64]*accountForm{}, usage: map[int64]int64{}, imgSize: -1, boxes: map[int64]*mailbox{}, reauth: map[int64]bool{}, sigDocs: map[int64]sigDoc{},
 		secDays: 30,
-		update:  a.svc.UpdateAccount, models: &modelsView{a: a, checkService: a.svc.CheckModelService, testService: a.svc.TestCapability, testPlugin: a.svc.TestPluginModel, serviceAvatar: a.svc.ModelServiceAvatar}, ext: &extView{a: a, tab: 1}, labels: newLabelsView(a)}
+		update:  a.svc.UpdateAccount, models: &modelsView{a: a, checkService: a.svc.CheckModelService, testService: a.svc.TestCapability, testPlugin: a.svc.TestPluginModel, serviceAvatar: a.svc.ModelServiceAvatar}, ext: &extView{a: a, tab: 1}, labels: newLabelsView(a), rules: &rulesView{a: a}}
 }
 
 // section is the page shown: an unknown or missing account falls back to
@@ -221,6 +222,9 @@ func (p *settingsPage) refresh(hints []events.Event) {
 		}
 	case sec == "masklog" && hints == nil:
 		p.readMaskLog()
+	case sec == "rules" && hints == nil:
+		p.rules.editing = false
+		p.rules.load()
 	}
 }
 
@@ -241,10 +245,10 @@ func (p *settingsPage) Title() (string, string) {
 	return i18n.T("settings.heading"), i18n.T("settings." + sec)
 }
 
-var appSections = []string{"general", "signatures", "models", "labels", "extensions", "privacy", "about"}
+var appSections = []string{"general", "signatures", "models", "labels", "rules", "extensions", "privacy", "about"}
 
 // sectionIcons are the app sections' sidebar icons.
-var sectionIcons = map[string]string{"general": "settings", "signatures": "quill-pen", "models": "brain-4", "labels": "tag", "extensions": "puzzle", "privacy": "shield", "about": "info"}
+var sectionIcons = map[string]string{"general": "settings", "signatures": "quill-pen", "models": "brain-4", "labels": "tag", "rules": "filter", "extensions": "puzzle", "privacy": "shield", "about": "info"}
 
 // Sidebar: the accounts, each with its provider's mark and a status dot,
 // then Add account; then the app's pages.
@@ -345,6 +349,8 @@ func (p *settingsPage) Content(c *ui.Context) {
 						p.aiView(c)
 					case sec == "labels":
 						p.labels.view(c, p)
+					case sec == "rules":
+						p.rules.view(c)
 					case sec == "extensions":
 						p.ext.view(c)
 					case sec == "about":
