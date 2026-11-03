@@ -6,6 +6,8 @@ import (
 	"errors"
 	"fmt"
 	"net/mail"
+	"slices"
+	"strconv"
 	"strings"
 	"time"
 	"unicode/utf8"
@@ -32,15 +34,56 @@ const (
 	MatchAll = "all"
 	MatchAny = "any"
 
-	FieldFrom    = "from"
-	FieldSubject = "subject"
+	FieldFrom        = "from"
+	FieldTo          = "to" // To and Cc
+	FieldSubject     = "subject"
+	FieldBody        = "body"
+	FieldAttachments = "attachments" // is RuleYes or RuleNo
+	FieldLabel       = "label"       // is or not_contains a label's slug
+	FieldFolder      = "folder"      // is or not_contains a folder role or a folder's id
 
 	OpContains    = "contains"
 	OpNotContains = "not_contains"
 	OpIs          = "is"
 
-	ActionLabel = "label"
+	RuleYes = "yes"
+	RuleNo  = "no"
+
+	// The move actions are named after the role of the folder they move to.
+	ActionLabel   = "label"
+	ActionUnlabel = "unlabel"
+	ActionRead    = "read"
+	ActionStar    = "star"
+	ActionArchive = "archive"
+	ActionJunk    = "junk"
+	ActionTrash   = "trash"
+	ActionStop    = "stop" // later rules do not run on the message
 )
+
+// Run and action states, and why an action failed.
+const (
+	RuleRunRunning = "running"
+	RuleRunDone    = "done"
+	RuleRunFailed  = "failed"
+	RuleRunUndone  = "undone"
+
+	RuleActionDone   = "done"
+	RuleActionFailed = "failed"
+	RuleActionNotRun = "not_run" // after a failed one
+	RuleActionUndone = "undone"
+	RuleActionKept   = "kept" // not undone: its target changed since
+
+	RuleFailNoFolder = "no_folder"
+	RuleFailNoLabel  = "no_label"
+	RuleFailGone     = "gone" // the message
+	RuleFailUnknown  = "unknown"
+)
+
+// ruleFolderRoles are the roles a folder condition may name.
+var ruleFolderRoles = []string{"inbox", "archive", "junk", "trash"}
+
+// ruleFlags are the flag each flag action sets.
+var ruleFlags = map[string]string{ActionRead: `\Seen`, ActionStar: `\Flagged`}
 
 // Rule limits: the document stays a list of choices, not a language.
 const (
@@ -106,15 +149,8 @@ func (s *Service) validRule(ctx context.Context, d RuleDoc) error {
 		return invalidRule("more than %d conditions", MaxRuleConditions)
 	}
 	for _, c := range d.Conditions {
-		switch {
-		case c.Field != FieldFrom && c.Field != FieldSubject:
-			return invalidRule("field %q", c.Field)
-		case c.Op != OpContains && c.Op != OpNotContains && c.Op != OpIs:
-			return invalidRule("op %q", c.Op)
-		case strings.TrimSpace(c.Value) == "":
-			return invalidRule("empty value")
-		case utf8.RuneCountInString(c.Value) > MaxRuleValue:
-			return invalidRule("value longer than %d", MaxRuleValue)
+		if err := s.validCondition(ctx, c); err != nil {
+			return err
 		}
 	}
 	if len(d.Actions) == 0 || len(d.Actions) > MaxRuleActions {
@@ -122,17 +158,69 @@ func (s *Service) validRule(ctx context.Context, d RuleDoc) error {
 	}
 	for _, a := range d.Actions {
 		switch a.Kind {
-		case ActionLabel:
-			rows, err := s.db.Query(ctx, "SELECT 1 FROM labels WHERE slug = ?", a.Label)
-			if err != nil {
+		case ActionLabel, ActionUnlabel:
+			if err := s.validLabel(ctx, a.Label); err != nil {
 				return err
 			}
-			if len(rows.Values) == 0 {
-				return invalidRule("label %q", a.Label)
-			}
+		case ActionRead, ActionStar, ActionArchive, ActionJunk, ActionTrash, ActionStop:
 		default:
 			return invalidRule("action %q", a.Kind)
 		}
+	}
+	return nil
+}
+
+func (s *Service) validCondition(ctx context.Context, c RuleCondition) error {
+	switch {
+	case strings.TrimSpace(c.Value) == "":
+		return invalidRule("empty value")
+	case utf8.RuneCountInString(c.Value) > MaxRuleValue:
+		return invalidRule("value longer than %d", MaxRuleValue)
+	}
+	switch c.Field {
+	case FieldFrom, FieldTo, FieldSubject, FieldBody:
+		if c.Op != OpContains && c.Op != OpNotContains && c.Op != OpIs {
+			return invalidRule("op %q", c.Op)
+		}
+		return nil
+	case FieldAttachments:
+		if c.Op != OpIs || (c.Value != RuleYes && c.Value != RuleNo) {
+			return invalidRule("attachments %s %q", c.Op, c.Value)
+		}
+		return nil
+	case FieldLabel, FieldFolder:
+		if c.Op != OpIs && c.Op != OpNotContains {
+			return invalidRule("%s op %q", c.Field, c.Op)
+		}
+		if c.Field == FieldLabel {
+			return s.validLabel(ctx, c.Value)
+		}
+		if slices.Contains(ruleFolderRoles, c.Value) {
+			return nil
+		}
+		id, err := strconv.ParseInt(c.Value, 10, 64)
+		if err != nil {
+			return invalidRule("folder %q", c.Value)
+		}
+		rows, err := s.db.Query(ctx, "SELECT 1 FROM folders WHERE id = ?", id)
+		if err != nil {
+			return err
+		}
+		if len(rows.Values) == 0 {
+			return invalidRule("folder %q", c.Value)
+		}
+		return nil
+	}
+	return invalidRule("field %q", c.Field)
+}
+
+func (s *Service) validLabel(ctx context.Context, slug string) error {
+	rows, err := s.db.Query(ctx, "SELECT 1 FROM labels WHERE slug = ?", slug)
+	if err != nil {
+		return err
+	}
+	if len(rows.Values) == 0 {
+		return invalidRule("label %q", slug)
 	}
 	return nil
 }
@@ -209,7 +297,28 @@ func (s *Service) SetRuleEnabled(ctx context.Context, id int64, on bool) error {
 }
 
 // ruleMail is what conditions read of a message.
-type ruleMail struct{ from, subject string }
+type ruleMail struct {
+	from, subject, body string
+	to                  []string // To and Cc
+	attachments         bool
+	labels              []string // the slugs of the labels on it
+	folderID            int64
+	folderRole          string
+}
+
+// ruleMail reads the message as it is now; ok is false when it is gone.
+func (s *Service) ruleMail(ctx context.Context, id int64) (m ruleMail, ok bool, err error) {
+	rows, err := s.db.Query(ctx, `SELECT m.from_addr, m.subject, m.body_text, m.to_addrs, m.cc_addrs, m.has_attachments, m.folder_id, COALESCE(f.role, ''),
+		(SELECT json_group_array(l.slug) FROM message_labels ml JOIN labels l ON l.id = ml.label_id WHERE ml.message_id = m.id AND ml.active = 1)
+		FROM messages m JOIN folders f ON f.id = m.folder_id WHERE m.id = ?`, id)
+	if err != nil || len(rows.Values) == 0 {
+		return m, false, err
+	}
+	v := rows.Values[0]
+	return ruleMail{from: store.Str(v[0]), subject: store.Str(v[1]), body: store.Str(v[2]),
+		to: append(jsonList(store.Str(v[3])), jsonList(store.Str(v[4]))...), attachments: store.Int(v[5]) != 0,
+		folderID: store.Int(v[6]), folderRole: store.Str(v[7]), labels: jsonList(store.Str(v[8]))}, true, nil
+}
 
 // matches evaluates the conditions; none matches every message. Text is
 // compared without case.
@@ -227,29 +336,42 @@ func (d RuleDoc) matches(m ruleMail) bool {
 
 func (c RuleCondition) matches(m ruleMail) bool {
 	want := strings.ToLower(strings.TrimSpace(c.Value))
-	var got []string // the field's values; "is" holds when one equals want
+	var got []string // the field's values; the op holds on one of them
 	switch c.Field {
 	case FieldFrom:
-		got = []string{strings.ToLower(m.from)}
-		if a, err := mail.ParseAddress(m.from); err == nil {
-			got = append(got, strings.ToLower(a.Address))
+		got = addrValues(m.from)
+	case FieldTo:
+		for _, a := range m.to {
+			got = append(got, addrValues(a)...)
 		}
 	case FieldSubject:
 		got = []string{strings.ToLower(m.subject)}
+	case FieldBody:
+		got = []string{strings.ToLower(m.body)}
+	case FieldAttachments:
+		return m.attachments == (c.Value == RuleYes)
+	case FieldLabel:
+		return slices.Contains(m.labels, c.Value) != (c.Op == OpNotContains)
+	case FieldFolder:
+		in := c.Value == m.folderRole || c.Value == strconv.FormatInt(m.folderID, 10)
+		return in != (c.Op == OpNotContains)
 	}
-	switch c.Op {
-	case OpContains:
-		return strings.Contains(got[0], want)
-	case OpNotContains:
-		return !strings.Contains(got[0], want)
-	case OpIs:
-		for _, g := range got {
-			if strings.TrimSpace(g) == want {
-				return true
-			}
+	hit := slices.ContainsFunc(got, func(g string) bool {
+		if c.Op == OpIs {
+			return strings.TrimSpace(g) == want
 		}
+		return strings.Contains(g, want)
+	})
+	return hit != (c.Op == OpNotContains)
+}
+
+// addrValues is an address and its bare address, lower-cased, so "is" holds on either.
+func addrValues(s string) []string {
+	out := []string{strings.ToLower(s)}
+	if a, err := mail.ParseAddress(s); err == nil {
+		out = append(out, strings.ToLower(a.Address))
 	}
-	return false
+	return out
 }
 
 // startRules runs the rule consumer until Close.
@@ -272,32 +394,53 @@ func (s *Service) startRules(ctx context.Context) error {
 var rulesHook func(stage string) error
 
 // runRules runs the enabled receive rules, in order, on a new message. Mail
-// that lands in Sent or Drafts is not received mail.
+// that lands in Sent or Drafts is not received mail. Each rule reads the
+// message as the rules before it left it; one already run on it resumes.
 func (s *Service) runRules(ctx context.Context, ev hookEvent) error {
 	if ev.deleted {
 		return nil
 	}
-	rows, err := s.db.Query(ctx, `SELECT COALESCE(f.role, '') FROM messages m JOIN folders f ON f.id = m.folder_id WHERE m.id = ?`, ev.messageID)
-	if err != nil || len(rows.Values) == 0 {
+	m, ok, err := s.ruleMail(ctx, ev.messageID)
+	if err != nil || !ok || m.folderRole == "sent" || m.folderRole == "drafts" {
 		return err
-	}
-	if role := store.Str(rows.Values[0][0]); role == "sent" || role == "drafts" {
-		return nil
 	}
 	rules, err := s.rules(ctx, true)
 	if err != nil {
 		return err
 	}
-	m := ruleMail{from: ev.from, subject: ev.subject}
 	for _, r := range rules {
-		if r.Doc.Trigger != TriggerReceive || !r.Doc.matches(m) {
+		if r.Doc.Trigger != TriggerReceive {
+			continue
+		}
+		ran, _, err := s.ruleRun(ctx, r.ID, ev.messageID)
+		if err != nil {
+			return err
+		}
+		if !ran && !r.Doc.matches(m) {
 			continue
 		}
 		if err := s.runRule(ctx, r, ev.messageID, TriggerReceive); err != nil {
 			return err
 		}
+		if _, stopped, err := s.ruleRun(ctx, r.ID, ev.messageID); err != nil || stopped {
+			return err
+		}
+		if m, ok, err = s.ruleMail(ctx, ev.messageID); err != nil || !ok {
+			return err
+		}
 	}
 	return nil
+}
+
+// ruleRun reports whether the rule has a run on the message, and whether
+// its stop action ran.
+func (s *Service) ruleRun(ctx context.Context, ruleID, msgID int64) (ran, stopped bool, err error) {
+	rows, err := s.db.Query(ctx, `SELECT EXISTS(SELECT 1 FROM rule_action_results WHERE run_id = r.id AND kind = ? AND state = ?)
+		FROM rule_runs r WHERE rule_id = ? AND message_id = ?`, ActionStop, RuleActionDone, ruleID, msgID)
+	if err != nil || len(rows.Values) == 0 {
+		return false, false, err
+	}
+	return true, store.Int(rows.Values[0][0]) != 0, nil
 }
 
 // runRule writes the run, if there is none yet, then runs its actions not
@@ -314,27 +457,23 @@ func (s *Service) runRule(ctx context.Context, r Rule, msgID int64, trigger stri
 		return err
 	}
 	runID, from := store.Int(rows.Values[0][0]), int(store.Int(rows.Values[0][2]))
-	if store.Str(rows.Values[0][1]) != "running" {
+	if store.Str(rows.Values[0][1]) != RuleRunRunning {
 		return nil
 	}
-	state := "done"
+	state := RuleRunDone
 	for i := from; i < len(r.Doc.Actions); i++ {
-		a := r.Doc.Actions[i]
-		stmts, failure, err := s.ruleAction(ctx, a, msgID)
+		s.editMu.Lock() // the action reads the message and writes it, as an edit does
+		failed, err := s.runAction(ctx, runID, r.Doc.Actions, i, msgID)
+		s.editMu.Unlock()
 		if err != nil {
 			return err
 		}
-		result := sqlite.Statement{SQL: `INSERT OR REPLACE INTO rule_action_results(run_id, idx, kind, state, prior, result, at)
-			VALUES (?, ?, ?, ?, ?, ?, ?)`, Args: []any{runID, i, a.Kind, "done", stmts.prior, nil, time.Now().Unix()}}
-		if failure != "" {
-			result.Args[3], result.Args[5] = "failed", failure
-		}
-		if _, err := s.db.Transaction(ctx, append(stmts.writes, result)); err != nil {
-			return err
-		}
-		if failure != "" {
-			state = "failed"
+		if failed {
+			state = RuleRunFailed
 			break
+		}
+		if rulesHook != nil && rulesHook("rules.action") != nil {
+			return errStopConsumer // tests: a crash between two actions
 		}
 	}
 	if err := s.exec(ctx, sqlite.Statement{SQL: "UPDATE rule_runs SET state = ? WHERE id = ?", Args: []any{state, runID}}); err != nil {
@@ -344,35 +483,289 @@ func (s *Service) runRule(ctx context.Context, r Rule, msgID int64, trigger stri
 	return nil
 }
 
-// actionWrites is an action's statements and the prior state they change
-// (JSON, for undo).
-type actionWrites struct {
-	writes []sqlite.Statement
-	prior  any
+// runAction runs acts[i] on the message, its result written in the same
+// transaction; a failure also writes the actions after it as not run.
+func (s *Service) runAction(ctx context.Context, runID int64, acts []RuleAction, i int, msgID int64) (failed bool, err error) {
+	acc, t, ok, err := s.ruleTarget(ctx, msgID)
+	if err != nil {
+		return false, err
+	}
+	w, failure := actionWrites{}, RuleFailGone
+	if ok {
+		if w, failure, err = s.ruleAction(ctx, acts[i], acc, t); err != nil {
+			return false, err
+		}
+	}
+	result := func(j int, state string, prior, failure any) sqlite.Statement {
+		return sqlite.Statement{SQL: `INSERT OR REPLACE INTO rule_action_results(run_id, idx, kind, state, prior, result, at)
+			VALUES (?, ?, ?, ?, ?, ?, ?)`, Args: []any{runID, j, acts[j].Kind, state, prior, failure, time.Now().Unix()}}
+	}
+	stmts := w.writes
+	if failure == "" {
+		prior, err := json.Marshal(w.prior)
+		if err != nil {
+			return false, err
+		}
+		stmts = append(stmts, result(i, RuleActionDone, string(prior), nil))
+	} else {
+		stmts = append(stmts, result(i, RuleActionFailed, nil, failure))
+		for j := i + 1; j < len(acts); j++ {
+			stmts = append(stmts, result(j, RuleActionNotRun, nil, nil))
+		}
+	}
+	if !ok {
+		_, err := s.db.Transaction(ctx, stmts)
+		return true, err
+	}
+	return failure != "", s.apply(ctx, acc, []target{t}, stmts)
 }
 
-// ruleAction prepares a; failure is why it cannot run (the run stops there).
-func (s *Service) ruleAction(ctx context.Context, a RuleAction, msgID int64) (actionWrites, string, error) {
+// ruleTarget loads the message an action works on; ok is false when it is gone.
+func (s *Service) ruleTarget(ctx context.Context, id int64) (acc int64, t target, ok bool, err error) {
+	rows, err := s.db.Query(ctx, "SELECT account_id, thread_id, folder_id, flags FROM messages WHERE id = ?", id)
+	if err != nil || len(rows.Values) == 0 {
+		return 0, t, false, err
+	}
+	v := rows.Values[0]
+	return store.Int(v[0]), target{id: id, thread: store.Int(v[1]), folder: store.Int(v[2]), flags: store.Str(v[3])}, true, nil
+}
+
+// actionWrites is an action's statements and the prior state they change.
+type actionWrites struct {
+	writes []sqlite.Statement
+	prior  rulePrior
+}
+
+// rulePrior is what an action found, for undo (JSON in rule_action_results):
+// the label's row (Source "" for none), whether the flag was set, the folder
+// it moved the message from and to.
+type rulePrior struct {
+	LabelID int64  `json:"label_id,omitempty"`
+	Source  string `json:"source,omitempty"`
+	Active  bool   `json:"active,omitempty"`
+	Had     bool   `json:"had,omitempty"`
+	From    int64  `json:"from,omitempty"`
+	To      int64  `json:"to,omitempty"`
+}
+
+func hasFlag(flags, f string) bool {
+	return slices.ContainsFunc(strings.Fields(flags), func(g string) bool { return strings.EqualFold(g, f) })
+}
+
+// ruleAction prepares a on the message; failure, a RuleFail id, is why it
+// cannot run (the run stops there).
+func (s *Service) ruleAction(ctx context.Context, a RuleAction, acc int64, t target) (actionWrites, string, error) {
 	switch a.Kind {
-	case ActionLabel:
+	case ActionLabel, ActionUnlabel:
 		rows, err := s.db.Query(ctx, `SELECT l.id, ml.source, ml.active FROM labels l
-			LEFT JOIN message_labels ml ON ml.label_id = l.id AND ml.message_id = ? WHERE l.slug = ?`, msgID, a.Label)
+			LEFT JOIN message_labels ml ON ml.label_id = l.id AND ml.message_id = ? WHERE l.slug = ?`, t.id, a.Label)
 		if err != nil {
 			return actionWrites{}, "", err
 		}
 		if len(rows.Values) == 0 {
-			return actionWrites{}, "label not found", nil
+			return actionWrites{}, RuleFailNoLabel, nil
 		}
 		v := rows.Values[0]
-		prior := "null" // no row
+		p := rulePrior{LabelID: store.Int(v[0])}
 		if v[1] != nil {
-			b, _ := json.Marshal(map[string]any{"source": store.Str(v[1]), "active": store.Int(v[2]) != 0})
-			prior = string(b)
+			p.Source, p.Active = store.Str(v[1]), store.Int(v[2]) != 0
 		}
 		// A hand-set row wins, a label taken off by hand included (ADR 0014).
-		return actionWrites{prior: prior, writes: []sqlite.Statement{{SQL: `INSERT INTO message_labels(message_id, label_id, source, active)
-			VALUES (?, ?, 'rule', 1) ON CONFLICT(message_id, label_id) DO UPDATE SET source = 'rule', active = 1 WHERE source != 'manual'`,
-			Args: []any{msgID, store.Int(v[0])}}}}, "", nil
+		sql := `INSERT INTO message_labels(message_id, label_id, source, active)
+			VALUES (?, ?, 'rule', 1) ON CONFLICT(message_id, label_id) DO UPDATE SET source = 'rule', active = 1 WHERE source != 'manual'`
+		if a.Kind == ActionUnlabel {
+			sql = "UPDATE message_labels SET source = 'rule', active = 0 WHERE message_id = ? AND label_id = ? AND active = 1 AND source != 'manual'"
+		}
+		return actionWrites{prior: p, writes: []sqlite.Statement{{SQL: sql, Args: []any{t.id, p.LabelID}}}}, "", nil
+	case ActionRead, ActionStar:
+		p := rulePrior{Had: hasFlag(t.flags, ruleFlags[a.Kind])}
+		if p.Had {
+			return actionWrites{prior: p}, "", nil
+		}
+		stmts, err := flagWrites(acc, []target{t}, []string{ruleFlags[a.Kind]}, nil)
+		return actionWrites{prior: p, writes: stmts}, "", err
+	case ActionArchive, ActionJunk, ActionTrash:
+		to, err := s.roleFolder(ctx, acc, a.Kind)
+		if _, none := errors.AsType[*ErrNoRoleFolder](err); none {
+			return actionWrites{}, RuleFailNoFolder, nil
+		}
+		if err != nil {
+			return actionWrites{}, "", err
+		}
+		_, stmts := moveWrites(acc, []target{t}, to)
+		return actionWrites{prior: rulePrior{From: t.folder, To: to}, writes: stmts}, "", nil
+	case ActionStop:
+		return actionWrites{}, "", nil
 	}
-	return actionWrites{}, "unknown action", nil
+	return actionWrites{}, RuleFailUnknown, nil
+}
+
+// RuleHitDays is how far back RuleHits looks.
+const RuleHitDays = 7
+
+// RuleHit is a rule's run on a message, its actions' results in order.
+type RuleHit struct {
+	RunID     int64
+	MessageID int64 // 0: the message is gone
+	From      string
+	Subject   string
+	At        time.Time
+	State     string // a RuleRun state
+	Actions   []RuleActionResult
+}
+
+// RuleActionResult is an action's outcome; Failure (a RuleFail id) is why it failed.
+type RuleActionResult struct {
+	Kind, State, Failure string
+}
+
+// RuleHits returns the rule's runs of the last RuleHitDays days, newest first.
+func (s *Service) RuleHits(ctx context.Context, ruleID int64) ([]RuleHit, error) {
+	ctx, end, err := s.begin(ctx, 0)
+	if err != nil {
+		return nil, err
+	}
+	defer end()
+	rows, err := s.db.Query(ctx, `SELECT r.id, r.message_id, m.from_addr, m.subject, r.at, r.state, a.kind, a.state, a.result
+		FROM rule_runs r LEFT JOIN messages m ON m.id = r.message_id LEFT JOIN rule_action_results a ON a.run_id = r.id
+		WHERE r.rule_id = ? AND r.at >= ? ORDER BY r.at DESC, r.id DESC, a.idx`, ruleID, time.Now().AddDate(0, 0, -RuleHitDays).Unix())
+	if err != nil {
+		return nil, err
+	}
+	var out []RuleHit
+	for _, v := range rows.Values {
+		if id := store.Int(v[0]); len(out) == 0 || out[len(out)-1].RunID != id {
+			out = append(out, RuleHit{RunID: id, MessageID: store.Int(v[1]), From: store.Str(v[2]), Subject: store.Str(v[3]),
+				At: time.Unix(store.Int(v[4]), 0), State: store.Str(v[5])})
+		}
+		if v[6] != nil {
+			h := &out[len(out)-1]
+			h.Actions = append(h.Actions, RuleActionResult{Kind: store.Str(v[6]), State: store.Str(v[7]), Failure: store.Str(v[8])})
+		}
+	}
+	return out, nil
+}
+
+// RetryRuleRun runs a failed run again from the action that failed, in the
+// same run, with the rule as it is now.
+func (s *Service) RetryRuleRun(ctx context.Context, runID int64) error {
+	ctx, end, err := s.begin(ctx, 0)
+	if err != nil {
+		return err
+	}
+	defer end()
+	rows, err := s.db.Query(ctx, `SELECT r.rule_id, r.message_id, r.trigger, ru.doc FROM rule_runs r JOIN rules ru ON ru.id = r.rule_id
+		WHERE r.id = ? AND r.state = ? AND r.message_id IS NOT NULL`, runID, RuleRunFailed)
+	if err != nil {
+		return err
+	}
+	if len(rows.Values) == 0 {
+		return fmt.Errorf("rule run %d: nothing to retry", runID)
+	}
+	v := rows.Values[0]
+	r := Rule{ID: store.Int(v[0])}
+	if err := json.Unmarshal([]byte(store.Str(v[3])), &r.Doc); err != nil {
+		return fmt.Errorf("rule %d: %w", r.ID, err)
+	}
+	if err := s.exec(ctx, sqlite.Statement{SQL: "UPDATE rule_runs SET state = ? WHERE id = ?", Args: []any{RuleRunRunning, runID}}); err != nil {
+		return err
+	}
+	return s.runRule(ctx, r, store.Int(v[1]), store.Str(v[2]))
+}
+
+// UndoRuleRun puts back what the run's local actions changed, last first.
+// One whose target changed since (moved on, the flag or label changed by
+// hand) is kept as it is; kept counts them. The checks and the writes hold
+// the edit lock together, as UndoArchive's do.
+func (s *Service) UndoRuleRun(ctx context.Context, runID int64) (kept int, err error) {
+	ctx, end, err := s.begin(ctx, 0)
+	if err != nil {
+		return 0, err
+	}
+	defer end()
+	s.editMu.Lock()
+	defer s.editMu.Unlock()
+	rows, err := s.db.Query(ctx, `SELECT a.idx, a.kind, a.prior, r.message_id FROM rule_runs r JOIN rule_action_results a ON a.run_id = r.id
+		WHERE r.id = ? AND a.state = ? AND a.kind != ? ORDER BY a.idx DESC`, runID, RuleActionDone, ActionStop)
+	if err != nil {
+		return 0, err
+	}
+	for _, v := range rows.Values {
+		var p rulePrior
+		if err := json.Unmarshal([]byte(store.Str(v[2])), &p); err != nil {
+			return kept, err
+		}
+		undone, err := s.undoAction(ctx, runID, int(store.Int(v[0])), store.Str(v[1]), p, store.Int(v[3]))
+		if err != nil {
+			return kept, err
+		}
+		if !undone {
+			kept++
+		}
+	}
+	if err := s.exec(ctx, sqlite.Statement{SQL: "UPDATE rule_runs SET state = ? WHERE id = ?", Args: []any{RuleRunUndone, runID}}); err != nil {
+		return kept, err
+	}
+	s.bus.Publish(events.Event{Type: events.LabelsChanged})
+	return kept, nil
+}
+
+// undoAction undoes the action at idx, if its target is still as it left it.
+func (s *Service) undoAction(ctx context.Context, runID int64, idx int, kind string, p rulePrior, msgID int64) (bool, error) {
+	mark := func(state string) sqlite.Statement {
+		return sqlite.Statement{SQL: "UPDATE rule_action_results SET state = ? WHERE run_id = ? AND idx = ?", Args: []any{state, runID, idx}}
+	}
+	acc, t, ok, err := s.ruleTarget(ctx, msgID)
+	if err != nil {
+		return false, err
+	}
+	if !ok {
+		return false, s.exec(ctx, mark(RuleActionKept))
+	}
+	var stmts []sqlite.Statement
+	switch kind {
+	case ActionLabel, ActionUnlabel:
+		on := kind == ActionLabel
+		if p.Source == "manual" || (on && p.Source == "rule" && p.Active) || (!on && (p.Source == "" || !p.Active)) {
+			break // the action changed nothing
+		}
+		rows, err := s.db.Query(ctx, "SELECT 1 FROM message_labels WHERE message_id = ? AND label_id = ? AND source = 'rule' AND active = ?", t.id, p.LabelID, b2i(on))
+		if err != nil {
+			return false, err
+		}
+		if ok = len(rows.Values) > 0; !ok {
+			break
+		}
+		if p.Source == "" {
+			stmts = append(stmts, sqlite.Statement{SQL: "DELETE FROM message_labels WHERE message_id = ? AND label_id = ?", Args: []any{t.id, p.LabelID}})
+		} else {
+			stmts = append(stmts, sqlite.Statement{SQL: "UPDATE message_labels SET source = ?, active = ? WHERE message_id = ? AND label_id = ?",
+				Args: []any{p.Source, b2i(p.Active), t.id, p.LabelID}})
+		}
+	case ActionRead, ActionStar:
+		if p.Had {
+			break
+		}
+		if ok = hasFlag(t.flags, ruleFlags[kind]); ok {
+			if stmts, err = flagWrites(acc, []target{t}, nil, []string{ruleFlags[kind]}); err != nil {
+				return false, err
+			}
+		}
+	case ActionArchive, ActionJunk, ActionTrash:
+		if p.From == p.To {
+			break
+		}
+		rows, err := s.db.Query(ctx, "SELECT 1 FROM folders WHERE id = ?", p.From)
+		if err != nil {
+			return false, err
+		}
+		if ok = t.folder == p.To && len(rows.Values) > 0; ok {
+			_, stmts = moveWrites(acc, []target{t}, p.From)
+		}
+	}
+	state := RuleActionUndone
+	if !ok {
+		state = RuleActionKept
+	}
+	return ok, s.apply(ctx, acc, []target{t}, append(stmts, mark(state)))
 }

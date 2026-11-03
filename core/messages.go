@@ -586,15 +586,24 @@ func (s *Service) SetFlags(ctx context.Context, ids []int64, add, remove []strin
 	if len(add)+len(remove) == 0 {
 		return nil
 	}
-	payload, err := json.Marshal(mailsync.FlagsPayload{Add: add, Remove: remove})
-	if err != nil {
-		return err
-	}
 	s.editMu.Lock()
 	defer s.editMu.Unlock()
 	acc, ts, err := s.targets(ctx, ids)
 	if err != nil {
 		return err
+	}
+	stmts, err := flagWrites(acc, ts, add, remove)
+	if err != nil {
+		return err
+	}
+	return s.apply(ctx, acc, ts, stmts)
+}
+
+// flagWrites adds then removes the (canonical) flags on ts and queues the change.
+func flagWrites(acc int64, ts []target, add, remove []string) ([]sqlite.Statement, error) {
+	payload, err := json.Marshal(mailsync.FlagsPayload{Add: add, Remove: remove})
+	if err != nil {
+		return nil, err
 	}
 	var stmts []sqlite.Statement
 	for _, m := range ts {
@@ -607,7 +616,7 @@ func (s *Service) SetFlags(ctx context.Context, ids []int64, add, remove []strin
 			sqlite.Statement{SQL: `INSERT INTO ops(account_id, message_id, kind, payload, depends_on, created_at)
 				VALUES (?, ?, 'flags', ?, ` + latestOp + `, unixepoch())`, Args: []any{acc, m.id, string(payload), m.id}})
 	}
-	return s.apply(ctx, acc, ts, stmts)
+	return stmts, nil
 }
 
 // Move moves the messages to folderID, which must belong to their account. The
@@ -783,6 +792,12 @@ func (s *Service) roleFolder(ctx context.Context, acc int64, role string) (int64
 // move sets the desired folder of the messages not already in folderID and queues
 // the moves; their server location changes only when the move is pushed.
 func (s *Service) move(ctx context.Context, accountID int64, ts []target, folderID int64) error {
+	moved, stmts := moveWrites(accountID, ts, folderID)
+	return s.apply(ctx, accountID, moved, stmts)
+}
+
+// moveWrites are move's statements and the messages they move.
+func moveWrites(accountID int64, ts []target, folderID int64) ([]target, []sqlite.Statement) {
 	var moved []target
 	var stmts []sqlite.Statement
 	for _, m := range ts {
@@ -797,5 +812,5 @@ func (s *Service) move(ctx context.Context, accountID int64, ts []target, folder
 			sqlite.Statement{SQL: `INSERT INTO ops(account_id, message_id, kind, dst_folder_id, depends_on, created_at)
 				VALUES (?, ?, 'move', ?, ` + latestOp + `, unixepoch())`, Args: []any{accountID, m.id, folderID, m.id}})
 	}
-	return s.apply(ctx, accountID, moved, stmts)
+	return moved, stmts
 }

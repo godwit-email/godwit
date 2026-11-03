@@ -1,6 +1,7 @@
 package core
 
 import (
+	"slices"
 	"testing"
 	"time"
 
@@ -243,4 +244,240 @@ func TestRuleStoresStableIDs(t *testing.T) {
 		_, err := e.s.SaveRule(bg, Rule{Doc: d})
 		assert.ErrorIs(t, err, ErrInvalidRule)
 	}
+}
+
+func TestRuleConditions(t *testing.T) {
+	m := ruleMail{from: "AWS <billing@aws.example>", subject: "Your Invoice", to: []string{"Alice <alice@example.com>", "team@example.com"},
+		body: "Amount due: $12", attachments: true, labels: []string{"u1"}, folderID: 7, folderRole: "inbox"}
+	for _, tc := range []struct {
+		field, op, value string
+		want             bool
+	}{
+		{FieldFrom, OpContains, "BILLING@", true},
+		{FieldFrom, OpNotContains, "billing@", false},
+		{FieldFrom, OpIs, "billing@aws.example", true},
+		{FieldFrom, OpIs, "aws", false},
+		{FieldTo, OpContains, "team@", true},
+		{FieldTo, OpIs, "alice@example.com", true},
+		{FieldTo, OpNotContains, "bob@", true},
+		{FieldSubject, OpContains, "invoice", true},
+		{FieldSubject, OpIs, "your invoice", true},
+		{FieldSubject, OpNotContains, "invoice", false},
+		{FieldBody, OpContains, "amount due", true},
+		{FieldBody, OpNotContains, "refund", true},
+		{FieldBody, OpIs, "amount", false},
+		{FieldAttachments, OpIs, RuleYes, true},
+		{FieldAttachments, OpIs, RuleNo, false},
+		{FieldLabel, OpIs, "u1", true},
+		{FieldLabel, OpIs, "u2", false},
+		{FieldLabel, OpNotContains, "u1", false},
+		{FieldFolder, OpIs, "inbox", true},
+		{FieldFolder, OpIs, "7", true},
+		{FieldFolder, OpIs, "archive", false},
+		{FieldFolder, OpNotContains, "archive", true},
+	} {
+		c := RuleCondition{Field: tc.field, Op: tc.op, Value: tc.value}
+		assert.Equal(t, tc.want, c.matches(m), "%s %s %q", tc.field, tc.op, tc.value)
+	}
+	hit, miss := RuleCondition{Field: FieldSubject, Op: OpContains, Value: "invoice"}, RuleCondition{Field: FieldSubject, Op: OpContains, Value: "receipt"}
+	for _, tc := range []struct {
+		match string
+		conds []RuleCondition
+		want  bool
+	}{
+		{MatchAll, []RuleCondition{hit, hit}, true},
+		{MatchAll, []RuleCondition{hit, miss}, false},
+		{MatchAny, []RuleCondition{miss, hit}, true},
+		{MatchAny, []RuleCondition{miss, miss}, false},
+		{MatchAll, nil, true},
+		{MatchAny, nil, true},
+	} {
+		assert.Equal(t, tc.want, RuleDoc{Match: tc.match, Conditions: tc.conds}.matches(m), "%s %v", tc.match, tc.conds)
+	}
+}
+
+// rule is a receive rule on mail from billing@ doing acts.
+func rule(acts ...RuleAction) RuleDoc {
+	return RuleDoc{Version: RuleVersion, Name: "R", Trigger: TriggerReceive, Match: MatchAll,
+		Conditions: []RuleCondition{{Field: FieldFrom, Op: OpContains, Value: "billing@"}}, Actions: acts}
+}
+
+// results lists the run's action results as "kind state".
+func (e *syncEnv) results(t *testing.T, runID int64) []string {
+	t.Helper()
+	var out []string
+	for _, v := range e.rows(t, "SELECT kind, state FROM rule_action_results WHERE run_id = ? ORDER BY idx", runID) {
+		out = append(out, store.Str(v[0])+" "+store.Str(v[1]))
+	}
+	return out
+}
+
+func (e *syncEnv) runOf(t *testing.T, mid string) int64 {
+	t.Helper()
+	return store.Int(e.rows(t, "SELECT id FROM rule_runs WHERE message_id = ?", e.idOf(t, mid))[0][0])
+}
+
+func (e *syncEnv) flagsOf(t *testing.T, mid string) string {
+	t.Helper()
+	return store.Str(e.rows(t, "SELECT flags FROM messages WHERE id = ?", e.idOf(t, mid))[0][0])
+}
+
+func (e *syncEnv) folderOf(t *testing.T, mid string) int64 {
+	t.Helper()
+	return store.Int(e.rows(t, "SELECT folder_id FROM messages WHERE id = ?", e.idOf(t, mid))[0][0])
+}
+
+// The fields a condition reads come from the stored message.
+func TestRuleMatchesStoredMessage(t *testing.T) {
+	e := newRulesEnv(t)
+	e.saveRule(t, RuleDoc{Version: RuleVersion, Trigger: TriggerReceive, Match: MatchAll, Conditions: []RuleCondition{
+		{Field: FieldTo, Op: OpIs, Value: "alice@example.com"}, {Field: FieldBody, Op: OpContains, Value: "due"},
+		{Field: FieldAttachments, Op: OpIs, Value: RuleNo}, {Field: FieldFolder, Op: OpIs, Value: "inbox"},
+		{Field: FieldLabel, Op: OpNotContains, Value: "u1"},
+	}, Actions: []RuleAction{{Kind: ActionLabel, Label: "u1"}}}, true)
+	e.put(t, "INBOX", eml("hit@x", "bob@example.com", "alice@example.com", "s", day, "amount due"))
+	e.put(t, "INBOX", eml("miss@x", "bob@example.com", "alice@example.com", "s", day, "paid"))
+	e.sync(t)
+	e.rulesIdle(t)
+	assert.Equal(t, "rule", e.labelOn(t, e.idOf(t, "hit@x")))
+	assert.Empty(t, e.labelOn(t, e.idOf(t, "miss@x")))
+}
+
+// Each local action changes the message here, and its op takes the change to the server.
+func TestRuleLocalActions(t *testing.T) {
+	e := newRulesEnv(t)
+	e.saveRule(t, rule(RuleAction{Kind: ActionLabel, Label: "u1"}, RuleAction{Kind: ActionRead}, RuleAction{Kind: ActionStar}, RuleAction{Kind: ActionArchive}), true)
+	e.saveRule(t, RuleDoc{Version: RuleVersion, Trigger: TriggerReceive, Match: MatchAll,
+		Conditions: []RuleCondition{{Field: FieldSubject, Op: OpIs, Value: "spam"}}, Actions: []RuleAction{{Kind: ActionTrash}}}, true)
+	e.bill(t, "a@x", "billing@aws.example", "Invoice")
+	e.bill(t, "b@x", "bob@example.com", "spam")
+	e.sync(t)
+	e.waitRuns(t, 2)
+	e.sync(t) // pushes the ops
+	assert.Equal(t, "rule", e.labelOn(t, e.idOf(t, "a@x")))
+	assert.Equal(t, []string{`a@x \Flagged \Seen`}, e.onServer(t, "Archive"))
+	assert.Equal(t, []string{"b@x"}, e.onServer(t, "Trash"))
+}
+
+func TestRuleUnlabelAndJunk(t *testing.T) {
+	e := newRulesEnv(t)
+	require.NoError(t, e.im.User.Create("Junk", nil))
+	e.sync(t)
+	e.saveRule(t, rule(RuleAction{Kind: ActionLabel, Label: "u1"}), true)
+	e.saveRule(t, rule(RuleAction{Kind: ActionUnlabel, Label: "u1"}, RuleAction{Kind: ActionJunk}), true)
+	e.bill(t, "a@x", "billing@aws.example", "Invoice")
+	e.sync(t)
+	e.waitRuns(t, 2)
+	e.sync(t)
+	assert.Empty(t, e.labelOn(t, e.idOf(t, "a@x")))
+	assert.Equal(t, []string{"a@x"}, e.onServer(t, "Junk"))
+}
+
+// Rules run in list order; a stop action keeps the later ones off the message.
+func TestRuleStopsLaterRules(t *testing.T) {
+	e := newRulesEnv(t)
+	first := e.saveRule(t, rule(RuleAction{Kind: ActionStar}, RuleAction{Kind: ActionStop}), true)
+	e.saveRule(t, rule(RuleAction{Kind: ActionLabel, Label: "u1"}), true)
+	e.bill(t, "a@x", "billing@aws.example", "Invoice")
+	e.sync(t)
+	e.rulesIdle(t)
+	assert.Equal(t, [][]any{{first}}, e.rows(t, "SELECT rule_id FROM rule_runs"))
+	assert.Empty(t, e.labelOn(t, e.idOf(t, "a@x")))
+	assert.Equal(t, `\Flagged`, e.flagsOf(t, "a@x"))
+}
+
+// A failed action stops the rule and the rest are not run; a retry finishes
+// them in the same run without doing the done ones again.
+func TestRuleFailureAndRetry(t *testing.T) {
+	e := newRulesEnv(t)
+	id := e.saveRule(t, rule(RuleAction{Kind: ActionStar}, RuleAction{Kind: ActionJunk}, RuleAction{Kind: ActionRead}), true)
+	e.bill(t, "a@x", "billing@aws.example", "Invoice")
+	e.sync(t)
+	e.waitRuns(t, 1)
+	run := e.runOf(t, "a@x")
+	assert.Equal(t, []string{"star done", "junk failed", "read not_run"}, e.results(t, run))
+	hits, err := e.s.RuleHits(bg, id)
+	require.NoError(t, err)
+	require.Len(t, hits, 1)
+	assert.Equal(t, RuleRunFailed, hits[0].State)
+	assert.Equal(t, RuleFailNoFolder, hits[0].Actions[1].Failure)
+
+	require.NoError(t, e.im.User.Create("Junk", nil))
+	e.sync(t)
+	require.NoError(t, e.s.RetryRuleRun(bg, run))
+	assert.Equal(t, []string{"star done", "junk done", "read done"}, e.results(t, run))
+	assert.Equal(t, [][]any{{run, "done"}}, e.rows(t, "SELECT id, state FROM rule_runs"))
+	assert.Equal(t, 2, e.count(t, "SELECT count(*) FROM ops WHERE kind = 'flags'"))
+	e.sync(t)
+	assert.Equal(t, []string{`a@x \Flagged \Seen`}, e.onServer(t, "Junk"))
+}
+
+// A crash between two actions resumes with the unfinished one only.
+func TestRuleResumesAfterCrashBetweenActions(t *testing.T) {
+	e := newRulesEnv(t)
+	e.saveRule(t, rule(RuleAction{Kind: ActionStar}, RuleAction{Kind: ActionRead}), true)
+	stopped := stopRulesAt(t, "rules.action")
+	e.bill(t, "a@x", "billing@aws.example", "Invoice")
+	e.sync(t)
+	<-stopped
+	rulesHook = nil
+	assert.Equal(t, []string{"star done"}, e.results(t, e.runOf(t, "a@x")))
+	e.reopen(t)
+	e.waitRuns(t, 1)
+	assert.Equal(t, []string{"star done", "read done"}, e.results(t, e.runOf(t, "a@x")))
+	assert.Equal(t, 2, e.count(t, "SELECT count(*) FROM ops WHERE kind = 'flags'"))
+}
+
+// Undo restores what each local action changed; one whose target changed
+// since is kept as it is.
+func TestRuleUndo(t *testing.T) {
+	e := newRulesEnv(t)
+	e.saveRule(t, rule(RuleAction{Kind: ActionLabel, Label: "u1"}, RuleAction{Kind: ActionRead}, RuleAction{Kind: ActionStar}, RuleAction{Kind: ActionArchive}), true)
+	e.bill(t, "a@x", "billing@aws.example", "Invoice")
+	e.bill(t, "b@x", "billing@aws.example", "Invoice 2")
+	e.sync(t)
+	e.waitRuns(t, 2)
+
+	kept, err := e.s.UndoRuleRun(bg, e.runOf(t, "a@x"))
+	require.NoError(t, err)
+	assert.Zero(t, kept)
+	assert.Empty(t, e.labelOn(t, e.idOf(t, "a@x")))
+	assert.Empty(t, e.flagsOf(t, "a@x"))
+	assert.Equal(t, e.folderID(t, "INBOX"), e.folderOf(t, "a@x"))
+	assert.Equal(t, []string{"label undone", "read undone", "star undone", "archive undone"}, e.results(t, e.runOf(t, "a@x")))
+
+	b := e.idOf(t, "b@x")
+	require.NoError(t, e.s.MoveToRole(bg, []int64{b}, "trash"))
+	require.NoError(t, e.s.SetFlags(bg, []int64{b}, nil, []string{`\Flagged`}))
+	kept, err = e.s.UndoRuleRun(bg, e.runOf(t, "b@x"))
+	require.NoError(t, err)
+	assert.Equal(t, 2, kept)
+	assert.Equal(t, []string{"label undone", "read undone", "star kept", "archive kept"}, e.results(t, e.runOf(t, "b@x")))
+	assert.Equal(t, e.folderID(t, "Trash"), e.folderOf(t, "b@x"))
+	e.sync(t)
+	assert.Equal(t, []string{"b@x"}, e.onServer(t, "Trash"))
+	inbox := e.onServer(t, "INBOX")
+	slices.Sort(inbox)
+	assert.Equal(t, []string{"a@x", "old@x"}, inbox)
+}
+
+// History is the last 7 days of hits, newest first.
+func TestRuleHits(t *testing.T) {
+	e := newRulesEnv(t)
+	id := e.saveRule(t, rule(RuleAction{Kind: ActionStar}), true)
+	for i, mid := range []string{"a@x", "b@x", "c@x"} {
+		e.bill(t, mid, "billing@aws.example", "Invoice "+mid)
+		e.sync(t)
+		e.waitRuns(t, i+1)
+	}
+	_, err := e.s.db.Execute(bg, "UPDATE rule_runs SET at = at - 8 * 86400 WHERE message_id = ?", e.idOf(t, "a@x"))
+	require.NoError(t, err)
+	_, err = e.s.db.Execute(bg, "UPDATE rule_runs SET at = at - 60 WHERE message_id = ?", e.idOf(t, "b@x"))
+	require.NoError(t, err)
+	hits, err := e.s.RuleHits(bg, id)
+	require.NoError(t, err)
+	require.Len(t, hits, 2)
+	assert.Equal(t, "Invoice c@x", hits[0].Subject)
+	assert.Equal(t, "Invoice b@x", hits[1].Subject)
+	assert.Equal(t, []RuleActionResult{{Kind: ActionStar, State: RuleActionDone}}, hits[0].Actions)
 }
