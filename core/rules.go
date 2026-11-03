@@ -574,6 +574,9 @@ func (s *Service) ruleRun(ctx context.Context, ruleID, msgID int64) (ran, stoppe
 // done yet, stopping at the first that fails. An error is the database's:
 // the event is delivered again and the run resumes.
 func (s *Service) runRule(ctx context.Context, r Rule, msgID int64, trigger string) error {
+	if trigger == TriggerExisting { // retries too: never a forward or Wit action
+		r.Doc.Actions = slices.DeleteFunc(slices.Clone(r.Doc.Actions), func(a RuleAction) bool { return !RunsOnExisting(a.Kind) })
+	}
 	if _, err := s.db.Execute(ctx, `INSERT INTO rule_runs(rule_id, message_id, trigger, state, at) VALUES (?, ?, ?, 'running', ?)
 		ON CONFLICT(rule_id, message_id) DO NOTHING`, r.ID, msgID, trigger, time.Now().Unix()); err != nil {
 		return err
