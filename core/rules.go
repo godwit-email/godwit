@@ -1236,19 +1236,23 @@ func (s *Service) undoAction(ctx context.Context, runID int64, idx int, kind str
 		if p.Source == "manual" || (on && p.Source == "rule" && p.Active) || (!on && (p.Source == "" || !p.Active)) {
 			break // the action changed nothing
 		}
-		rows, err := s.db.Query(ctx, "SELECT 1 FROM message_labels WHERE message_id = ? AND label_id = ? AND source = 'rule' AND active = ?", t.id, p.LabelID, b2i(on))
+		// Only while the row is still as the rule left it, checked by the write
+		// itself: SetLabel takes no lock an undo holds, and a label set by hand
+		// in between is the user's, kept. The result follows what it changed.
+		still := " WHERE message_id = ? AND label_id = ? AND source = 'rule' AND active = ?"
+		w := sqlite.Statement{SQL: "DELETE FROM message_labels" + still, Args: []any{t.id, p.LabelID, b2i(on)}}
+		if p.Source != "" {
+			w = sqlite.Statement{SQL: "UPDATE message_labels SET source = ?, active = ?" + still, Args: []any{p.Source, b2i(p.Active), t.id, p.LabelID, b2i(on)}}
+		}
+		if err := s.apply(ctx, acc, []target{t}, []sqlite.Statement{w, {SQL: "UPDATE rule_action_results SET state = CASE WHEN changes() > 0 THEN ? ELSE ? END WHERE run_id = ? AND idx = ?",
+			Args: []any{RuleActionUndone, RuleActionKept, runID, idx}}}); err != nil {
+			return false, err
+		}
+		rows, err := s.db.Query(ctx, "SELECT state FROM rule_action_results WHERE run_id = ? AND idx = ?", runID, idx)
 		if err != nil {
 			return false, err
 		}
-		if ok = len(rows.Values) > 0; !ok {
-			break
-		}
-		if p.Source == "" {
-			stmts = append(stmts, sqlite.Statement{SQL: "DELETE FROM message_labels WHERE message_id = ? AND label_id = ?", Args: []any{t.id, p.LabelID}})
-		} else {
-			stmts = append(stmts, sqlite.Statement{SQL: "UPDATE message_labels SET source = ?, active = ? WHERE message_id = ? AND label_id = ?",
-				Args: []any{p.Source, b2i(p.Active), t.id, p.LabelID}})
-		}
+		return len(rows.Values) > 0 && store.Str(rows.Values[0][0]) == RuleActionUndone, nil
 	case ActionRead, ActionStar:
 		if p.Had {
 			break

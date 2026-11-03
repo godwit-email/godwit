@@ -853,3 +853,25 @@ func TestRuleRetryResumes(t *testing.T) {
 		5*time.Second, 10*time.Millisecond)
 	assert.Equal(t, []string{"junk done", "star done"}, e.results(t, run))
 }
+
+// A label the user set by hand after the rule's stays: undo checks the row
+// in its own write, and counts the label as kept.
+func TestRuleUndoKeepsALabelSetByHand(t *testing.T) {
+	e := newRulesEnv(t)
+	e.saveRule(t, rule(RuleAction{Kind: ActionLabel, Label: "u1"}), true)
+	e.bill(t, "a@x", "billing@aws.example", "Invoice")
+	e.sync(t)
+	e.waitRuns(t, 1)
+	id := e.idOf(t, "a@x")
+	require.Equal(t, "rule", e.labelOn(t, id))
+	bills := store.Int(e.rows(t, "SELECT id FROM labels WHERE slug = 'u1'")[0][0])
+	require.NoError(t, e.s.SetLabel(bg, []int64{id}, bills, true))
+	require.Equal(t, "manual", e.labelOn(t, id))
+
+	run := e.runOf(t, "a@x")
+	kept, err := e.s.UndoRuleRun(bg, run)
+	require.NoError(t, err)
+	assert.Equal(t, 1, kept)
+	assert.Equal(t, "manual", e.labelOn(t, id))
+	assert.Equal(t, []string{"label kept"}, e.results(t, run))
+}
