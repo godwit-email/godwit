@@ -529,6 +529,9 @@ var Migrations = [][]string{{
 	// The user's own OAuth client an account signed in with ('' the provider's);
 	// its secret is in the keychain (oauthClientUser).
 	`ALTER TABLE accounts ADD COLUMN oauth_client_id TEXT NOT NULL DEFAULT ''`,
+}, {
+	// Built-in consumers' events_log cursors, apart from plugin_cursors so no plugin name collides.
+	`CREATE TABLE event_cursors (consumer TEXT PRIMARY KEY, seq INTEGER NOT NULL)`,
 }}
 
 // HistoryRowsVersion is the schema version that keeps a conversation's

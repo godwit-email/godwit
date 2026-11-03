@@ -183,7 +183,7 @@ type Service struct {
 	running           map[string]*runningPlugin  // started plugins by name
 	assets            modelAssets                // plugin models' files (assets.go); nil is noModelAssets
 	pluginGen         uint64                     // last runningPlugin.gen handed out
-	hooksMu           sync.Mutex                 // plugin_cursors writes, events_log cleanup, hookWakes
+	hooksMu           sync.Mutex                 // cursor writes, events_log cleanup, hookWakes
 	hookWakes         map[chan struct{}]struct{} // each running dispatcher's wake-up
 	labelsMu          sync.Mutex                 // label writes: a name is checked and saved under it
 	sigMu             sync.Mutex                 // signature writes (read, images stored, HTML saved, unused images cleaned), and a draft taking a signature; before editMu
