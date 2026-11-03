@@ -67,3 +67,33 @@ func TestParseTemplate(t *testing.T) {
 		t.Fatalf("format = %q", s)
 	}
 }
+
+// The field is as high as an Input while its tokens fit one line, and the
+// tokens sit in its middle, level with the text input.
+func TestTemplateFieldHeight(t *testing.T) {
+	value := "{date} {subject}"
+	var gap float32 // the field's column gap
+	tt := ui.NewTester(themed(func(c *ui.Context) {
+		gap = c.Theme().Space(1.5)
+		ui.Column(c).Fill().Padding(10).Gap(10).Children(func() {
+			Input(c, new(string), InputOpts{Flat: true}).Label("plain")
+			TemplateField(c, &value, TemplateOpts{Label: "Naming", Insert: "Insert", Remove: func(l string) string { return "Remove " + l },
+				Tokens: []TemplateToken{{ID: "date", Label: "Date"}, {ID: "subject", Label: "Subject"}, {ID: "from", Label: "Sender"}}})
+		})
+	}), 480, 240)
+	plain, _ := tt.Find("plain")
+	insert, _ := tt.Find("Sender") // a button in the row under the field
+	top := plain.Y + plain.H + 10
+	field := ui.Rect{Y: top, H: insert.Y - gap - top}
+	chip, _ := tt.Find("Remove Date")
+	input, _ := tt.Find("Naming")
+	if field.H != plain.H {
+		t.Errorf("field is %v high, an Input %v", field.H, plain.H)
+	}
+	mid := field.Y + field.H/2
+	for name, r := range map[string]ui.Rect{"token": chip, "input": input} {
+		if d := r.Y + r.H/2 - mid; d > 0.5 || d < -0.5 {
+			t.Errorf("%s's middle is %v off the field's", name, d)
+		}
+	}
+}

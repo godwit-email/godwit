@@ -42,7 +42,8 @@ func TemplateField(c *ui.Context, value *string, o TemplateOpts) ui.Element {
 		return o.Tokens[i].Label
 	}
 	return ui.Column(c).FillWidth().Gap(th.Space(1.5)).Children(func() {
-		box := ui.Row(c).FillWidth().Wrap().AlignItems(ui.Center).Gap(th.Space(1)).MinHeight(th.Space(9)).Padding(th.Space(1), th.Space(2))
+		// A line of tokens is 24 high, so one line (with the border) makes the box an Input's 32.
+		box := ui.Row(c).FillWidth().Wrap().AlignItems(ui.Center).Gap(th.Space(1)).MinHeight(th.Space(8)).Padding(th.Space(1)-theme.Stroke, th.Space(2))
 		inputFrame(c, box, InputOpts{Invalid: o.Error != "", Flat: true}).Children(func() {
 			for i, s := range segs {
 				if s.id == "" {
@@ -50,7 +51,7 @@ func TemplateField(c *ui.Context, value *string, o TemplateOpts) ui.Element {
 					continue
 				}
 				l := label(s.id)
-				ui.Row(c.Key(i)).AlignItems(ui.Center).Gap(th.Space(0.5)).Padding(th.Space(0.5), th.Space(1), th.Space(0.5), th.Space(2)).
+				ui.Row(c.Key(i)).Height(th.Space(6)).AlignItems(ui.Center).Gap(th.Space(0.5)).Padding(0, th.Space(1), 0, th.Space(2)).
 					Radius(t.Radius.Sm).Background(t.Hover).Children(func() {
 					Text(c, l, t.Text.Sm).TextColor(t.Foreground)
 					IconButton(c, "x", o.Remove(l), ButtonOpts{Variant: Ghost, Size: SizeXs}).
@@ -61,7 +62,7 @@ func TemplateField(c *ui.Context, value *string, o TemplateOpts) ui.Element {
 			if len(segs) == 0 {
 				ph = o.Placeholder
 			}
-			ui.TextInputBase(c.Key("input"), &tail).Label(o.Label).Placeholder(ph).FocusRing(false).Grow(1).MinWidth(th.Space(16)).
+			ui.TextInputBase(c.Key("input"), &tail).Label(o.Label).Placeholder(ph).FocusRing(false).Grow(1).MinWidth(th.Space(16)).Height(th.Space(6)).
 				Font(theme.Mono).FontSize(t.Text.Sm).
 				OnChange(func() { *value = head + tail }).
 				OnTextKey(func(k ui.TextKey) bool {
