@@ -244,6 +244,9 @@ func TestRuleStoresStableIDs(t *testing.T) {
 	for _, d := range []RuleDoc{
 		{Version: RuleVersion, Trigger: "收到新邮件", Match: MatchAll, Actions: []RuleAction{{Kind: ActionLabel, Label: "u1"}}},
 		{Version: RuleVersion, Trigger: TriggerReceive, Match: MatchAll, Actions: []RuleAction{{Kind: ActionLabel, Label: "Bills"}}},
+		{Version: RuleVersion, Trigger: TriggerReceive, Match: MatchAll, Conditions: []RuleCondition{{FieldAge, OpOlderThan, "1.5"}}, Actions: []RuleAction{{Kind: ActionRead}}},
+		{Version: RuleVersion, Trigger: TriggerReceive, Match: MatchAll, Conditions: []RuleCondition{{FieldAge, OpOlderThan, "0"}}, Actions: []RuleAction{{Kind: ActionRead}}},
+		{Version: RuleVersion, Trigger: TriggerReceive, Match: MatchAll, Conditions: []RuleCondition{{FieldAge, OpContains, "3"}}, Actions: []RuleAction{{Kind: ActionRead}}},
 	} {
 		_, err := e.s.SaveRule(bg, Rule{Doc: d})
 		assert.ErrorIs(t, err, ErrInvalidRule)
@@ -252,7 +255,8 @@ func TestRuleStoresStableIDs(t *testing.T) {
 
 func TestRuleConditions(t *testing.T) {
 	m := ruleMail{from: "AWS <billing@aws.example>", subject: "Your Invoice", to: []string{"Alice <alice@example.com>", "team@example.com"},
-		body: "Amount due: $12", attachments: true, labels: []string{"u1"}, folderID: 7, folderRole: "inbox"}
+		body: "Amount due: $12", attachments: true, labels: []string{"u1"}, folderID: 7, folderRole: "inbox",
+		date: time.Now().AddDate(0, 0, -10).Unix(), now: time.Now().Unix()}
 	for _, tc := range []struct {
 		field, op, value string
 		want             bool
@@ -279,6 +283,8 @@ func TestRuleConditions(t *testing.T) {
 		{FieldFolder, OpIs, "7", true},
 		{FieldFolder, OpIs, "archive", false},
 		{FieldFolder, OpNotContains, "archive", true},
+		{FieldAge, OpOlderThan, "7", true},
+		{FieldAge, OpOlderThan, "30", false},
 	} {
 		c := RuleCondition{Field: tc.field, Op: tc.op, Value: tc.value}
 		assert.Equal(t, tc.want, c.matches(m), "%s %s %q", tc.field, tc.op, tc.value)

@@ -58,6 +58,7 @@ function ruleText(p: Proposal, t: T) {
         : t(`settings.rules.trigger.${r.trigger}`);
   const cond = (c: Cond) => {
     if (c.field === "attachments") return t(`settings.rules.attachments.${c.value}`);
+    if (c.field === "age") return t("settings.rules.cond.age", Number(c.value));
     const v =
       c.field === "label"
         ? label(c.value)

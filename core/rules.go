@@ -50,10 +50,12 @@ const (
 	FieldAttachments = "attachments" // is RuleYes or RuleNo
 	FieldLabel       = "label"       // is or not_contains a label's slug
 	FieldFolder      = "folder"      // is or not_contains a folder role or a folder's id
+	FieldAge         = "age"         // older_than a number of whole days, by the message's date
 
 	OpContains    = "contains"
 	OpNotContains = "not_contains"
 	OpIs          = "is"
+	OpOlderThan   = "older_than"
 
 	RuleYes = "yes"
 	RuleNo  = "no"
@@ -280,6 +282,11 @@ func (s *Service) validCondition(ctx context.Context, c RuleCondition) error {
 			return invalidRule("attachments %s %q", c.Op, c.Value)
 		}
 		return nil
+	case FieldAge:
+		if n, err := strconv.Atoi(c.Value); c.Op != OpOlderThan || err != nil || n < 1 {
+			return invalidRule("age %s %q", c.Op, c.Value)
+		}
+		return nil
 	case FieldLabel, FieldFolder:
 		if c.Op != OpIs && c.Op != OpNotContains {
 			return invalidRule("%s op %q", c.Field, c.Op)
@@ -463,12 +470,13 @@ type ruleMail struct {
 	labels              []string // the slugs of the labels on it
 	folderID            int64
 	folderRole          string
+	date, now           int64 // unix seconds: the message's date, and when it was read
 }
 
 // ruleMail reads the message as it is now; ok is false when it is gone.
 func (s *Service) ruleMail(ctx context.Context, id int64) (m ruleMail, ok bool, err error) {
 	rows, err := s.db.Query(ctx, `SELECT m.from_addr, m.subject, m.body_text, m.to_addrs, m.cc_addrs, m.has_attachments, m.folder_id, COALESCE(f.role, ''),
-		(SELECT json_group_array(l.slug) FROM message_labels ml JOIN labels l ON l.id = ml.label_id WHERE ml.message_id = m.id AND ml.active = 1)
+		(SELECT json_group_array(l.slug) FROM message_labels ml JOIN labels l ON l.id = ml.label_id WHERE ml.message_id = m.id AND ml.active = 1), m.date
 		FROM messages m JOIN folders f ON f.id = m.folder_id WHERE m.id = ?`, id)
 	if err != nil || len(rows.Values) == 0 {
 		return m, false, err
@@ -476,7 +484,8 @@ func (s *Service) ruleMail(ctx context.Context, id int64) (m ruleMail, ok bool, 
 	v := rows.Values[0]
 	return ruleMail{from: store.Str(v[0]), subject: store.Str(v[1]), body: store.Str(v[2]),
 		to: append(jsonList(store.Str(v[3])), jsonList(store.Str(v[4]))...), attachments: store.Int(v[5]) != 0,
-		folderID: store.Int(v[6]), folderRole: store.Str(v[7]), labels: jsonList(store.Str(v[8]))}, true, nil
+		folderID: store.Int(v[6]), folderRole: store.Str(v[7]), labels: jsonList(store.Str(v[8])),
+		date: store.Int(v[9]), now: s.clk().Now().Unix()}, true, nil
 }
 
 // matches evaluates the conditions; none matches every message. Text is
@@ -514,6 +523,9 @@ func (c RuleCondition) matches(m ruleMail) bool {
 	case FieldFolder:
 		in := c.Value == m.folderRole || c.Value == strconv.FormatInt(m.folderID, 10)
 		return in != (c.Op == OpNotContains)
+	case FieldAge:
+		n, _ := strconv.Atoi(c.Value)
+		return m.date < m.now-int64(n)*86400
 	}
 	hit := slices.ContainsFunc(got, func(g string) bool {
 		if c.Op == OpIs {

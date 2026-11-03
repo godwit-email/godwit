@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"path/filepath"
 	"slices"
+	"strconv"
 	"strings"
 	"time"
 
@@ -357,6 +358,9 @@ func (v *rulesView) condText(cd core.RuleCondition) string {
 	switch cd.Field {
 	case core.FieldAttachments:
 		return i18n.T("settings.rules.attachments." + cd.Value)
+	case core.FieldAge:
+		n, _ := strconv.Atoi(cd.Value)
+		return i18n.Tf("settings.rules.cond.age", n)
 	case core.FieldLabel:
 		val = v.labelName(cd.Value)
 	case core.FieldFolder:
@@ -553,6 +557,8 @@ func (v *rulesView) fieldChanged(cd *core.RuleCondition, was string) {
 		cd.Op, cd.Value = core.OpIs, v.firstLabel()
 	case cd.Field == core.FieldFolder:
 		cd.Op, cd.Value = core.OpIs, ruleRoles[0]
+	case cd.Field == core.FieldAge:
+		cd.Op, cd.Value = core.OpOlderThan, "30"
 	}
 }
 
@@ -634,7 +640,7 @@ func (v *rulesView) editor(c *ui.Context) {
 		})
 	}}
 	var fields []kit.Option[string]
-	for _, f := range []string{core.FieldFrom, core.FieldTo, core.FieldSubject, core.FieldBody, core.FieldAttachments, core.FieldLabel, core.FieldFolder} {
+	for _, f := range []string{core.FieldFrom, core.FieldTo, core.FieldSubject, core.FieldBody, core.FieldAttachments, core.FieldLabel, core.FieldFolder, core.FieldAge} {
 		fields = append(fields, kit.Option[string]{Value: f, Label: i18n.T("settings.rules.field." + f)})
 	}
 	ops := []kit.Option[string]{{Value: core.OpContains, Label: i18n.T("settings.rules.op.contains")},
@@ -664,6 +670,10 @@ func (v *rulesView) editor(c *ui.Context) {
 					case core.FieldFolder:
 						settingSelect(c, i18n.T("settings.rules.op"), &cd.Op, setOps)
 						settingSelect(c, i18n.T("settings.rules.folder"), &cd.Value, roles)
+					case core.FieldAge:
+						kit.Text(c, i18n.T("settings.rules.op.older_than"), t.Text.Sm)
+						kit.Input(c, &cd.Value, kit.InputOpts{Placeholder: "30"}).Label(i18n.T("settings.rules.days")).Width(th.Space(16))
+						kit.Text(c, i18n.T("settings.rules.days_ago"), t.Text.Sm)
 					default:
 						settingSelect(c, i18n.T("settings.rules.op"), &cd.Op, ops)
 						kit.Input(c, &cd.Value, kit.InputOpts{Placeholder: i18n.T("settings.rules.value")}).Label(i18n.T("settings.rules.value")).Grow(1).Shrink(1)

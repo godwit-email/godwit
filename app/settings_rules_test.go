@@ -59,6 +59,22 @@ func TestSettingsRulesCreate(t *testing.T) {
 	h.until("the rule off", func() bool { return !h.rules()[0].Enabled })
 }
 
+// The editor offers a condition on the mail's age in whole days.
+func TestSettingsRulesAgeCondition(t *testing.T) {
+	h, _ := withAccount(t)
+	h.openSettings("rules")
+	h.click("新建规则")
+	h.click("字段")
+	h.click("邮件时间")
+	h.see("天数")
+	h.click("保存")
+	h.see("早于 30 天前")
+	rs := h.rules()
+	if len(rs) != 1 || rs[0].Doc.Conditions[0] != (core.RuleCondition{Field: core.FieldAge, Op: core.OpOlderThan, Value: "30"}) {
+		t.Fatalf("rules %+v", rs)
+	}
+}
+
 // A rule set to 后台运行 is tagged in the list and, while enabled, keeps
 // Godwit running when the window closes with 后台常驻 off.
 func TestSettingsRulesBackground(t *testing.T) {

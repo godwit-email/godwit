@@ -3,6 +3,7 @@ package core
 import (
 	"context"
 	"fmt"
+	"strconv"
 	"strings"
 	"time"
 	"unicode/utf8"
@@ -129,7 +130,7 @@ func (s *Service) RuleHitCounts(ctx context.Context) (map[int64]int, error) {
 
 // existingSQL is the condition on messages m for the existing mail d runs on.
 func (s *Service) existingSQL(d RuleDoc) (string, []any) {
-	cond, args := ruleSQL(d)
+	cond, args := ruleSQL(d, s.clk().Now().Unix())
 	return cond + " AND m.date >= ? AND m.folder_id NOT IN (SELECT id FROM folders WHERE role IN ('sent', 'drafts'))",
 		append(args, s.clk().Now().AddDate(0, 0, -RulePreviewDays).Unix())
 }
@@ -138,10 +139,10 @@ func (s *Service) existingSQL(d RuleDoc) (string, []any) {
 // where RuleDoc.matches is, and firesOn for a label or security trigger.
 // shortcut: SQLite's lower() folds ASCII only, the evaluator all of Unicode;
 // they differ on a non-ASCII capital in an "is" or a short "contains".
-func ruleSQL(d RuleDoc) (string, []any) {
+func ruleSQL(d RuleDoc, now int64) (string, []any) {
 	parts, args := make([]string, 0, len(d.Conditions)), []any(nil)
 	for _, c := range d.Conditions {
-		sql, a := c.sql()
+		sql, a := c.sql(now)
 		parts, args = append(parts, sql), append(args, a...)
 	}
 	cond := "1"
@@ -168,7 +169,7 @@ func ruleSQL(d RuleDoc) (string, []any) {
 
 const labelSlugSQL = "EXISTS (SELECT 1 FROM message_labels ml JOIN labels l ON l.id = ml.label_id WHERE ml.message_id = m.id AND ml.active = 1 AND l.slug = ?)"
 
-func (c RuleCondition) sql() (string, []any) {
+func (c RuleCondition) sql(now int64) (string, []any) {
 	want := strings.ToLower(strings.TrimSpace(c.Value))
 	var sql string
 	var args []any
@@ -186,6 +187,9 @@ func (c RuleCondition) sql() (string, []any) {
 		return "COALESCE(m.has_attachments, 0) = ?", []any{b2i(c.Value == RuleYes)}
 	case FieldLabel:
 		sql, args = labelSlugSQL, []any{c.Value}
+	case FieldAge:
+		n, _ := strconv.Atoi(c.Value)
+		return "COALESCE(m.date, 0) < ?", []any{now - int64(n)*86400}
 	case FieldFolder:
 		sql, args = "(COALESCE((SELECT role FROM folders WHERE id = m.folder_id), '') = ? OR CAST(m.folder_id AS TEXT) = ?)", []any{c.Value, c.Value}
 	default:

@@ -28,7 +28,7 @@ func newPreviewEnv(t *testing.T) *syncEnv {
 	e.put(t, "INBOX", eml("stripe@x", "invoice@stripe.com", "Alice <alice@example.com>", "Receipt #1234", recent, "Thanks for paying"))
 	e.put(t, "Archive", eml("news@x", "Substack <news@substack.com>", "alice@example.com", "The Weekly Digest", recent, "invoice tips inside"))
 	e.put(t, "INBOX", att("cn@x", "王律师 <lawyer@client.example>", "合同终稿，请查收", "附件是合同"))
-	e.put(t, "INBOX", eml("short@x", "ab@cd.example", "alice@example.com", "Hi", recent, "ok"))
+	e.put(t, "INBOX", eml("short@x", "ab@cd.example", "alice@example.com", "Hi", time.Now().AddDate(0, 0, -2).Format(time.RFC1123Z), "ok"))
 	e.put(t, "Sent", eml("sent@x", "billing@aws.example", "bob@example.com", "Invoice", recent, "b"))
 	e.put(t, "INBOX", eml("old@x", "billing@aws.example", "alice@example.com", "Invoice", time.Now().AddDate(0, 0, -RulePreviewDays-5).Format(time.RFC1123Z), "b"))
 	e.sync(t)
@@ -89,6 +89,7 @@ func TestRulePreviewAgreesWithEvaluator(t *testing.T) {
 		{FieldAttachments, OpIs, RuleYes}, {FieldAttachments, OpIs, RuleNo},
 		{FieldLabel, OpIs, "u1"}, {FieldLabel, OpNotContains, "u1"},
 		{FieldFolder, OpIs, "inbox"}, {FieldFolder, OpIs, "archive"}, {FieldFolder, OpIs, archive}, {FieldFolder, OpNotContains, "inbox"},
+		{FieldAge, OpOlderThan, "1"}, {FieldAge, OpOlderThan, "3"},
 	}
 	some := 0
 	for _, c := range conds {

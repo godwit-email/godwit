@@ -3253,6 +3253,18 @@
       }
     }
   },
+  "settings_rules_field_age": "Age",
+  "settings_rules_op_older_than": "older than",
+  "settings_rules_days": "Days",
+  "settings_rules_days_ago": "days",
+  "settings_rules_cond_age": "{arg1, plural, one {older than {arg1, number, ::group-off} day} other {older than {arg1, number, ::group-off} days}}",
+  "@settings_rules_cond_age": {
+    "placeholders": {
+      "arg1": {
+        "type": "int"
+      }
+    }
+  },
   "settings_rules_field_from": "Sender",
   "settings_rules_field_subject": "Subject",
   "settings_rules_op_contains": "contains",

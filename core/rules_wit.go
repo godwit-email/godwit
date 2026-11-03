@@ -60,7 +60,7 @@ func (s *Service) registerRuleTool() {
 			"a forward's recipient is confirmed by the user in Godwit, never by you. " +
 			"trigger: receive (new mail), label (trigger_arg: a label slug), security (trigger_arg: suspicious or dangerous), daily. " +
 			"conditions (match all or any; none matches all mail): field from, to, subject or body with op contains, not_contains or is; " +
-			"attachments is yes or no; label (a slug) or folder (inbox, archive, junk or trash) with op is or not_contains. " +
+			"attachments is yes or no; label (a slug) or folder (inbox, archive, junk or trash) with op is or not_contains; age with op older_than (value: whole days, from 1). " +
 			"actions: label or unlabel (label: a slug), read, star, archive, junk, trash, stop (later rules skip the mail), forward (to: one address), " +
 			"draft_reply (Wit drafts a reply; never sent), key_points (Wit writes the mail's key points to dir, an absolute folder path). " +
 			"draft_reply and key_points need the user's 「智能」 switch for rules. background keeps the rule running after the window closes.",
