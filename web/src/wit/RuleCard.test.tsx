@@ -77,6 +77,15 @@ test("reject and edit decide nothing else", async () => {
   expect(decide).toHaveBeenLastCalledWith(true);
 });
 
+test("a file action shows its whole folder path", () => {
+  const a = proposal(
+    [{ kind: "pdf", dir: "/Users/me/Documents/Bills", naming: "{date} {subject}" }],
+    [],
+  );
+  render(<RuleCard a={a} busy={false} decide={vi.fn()} t={t} />);
+  expect(screen.getByText("导出 PDF 到「/Users/me/Documents/Bills」")).toBeTruthy();
+});
+
 test("a proposal taken to the editor says so", () => {
   const a = {
     ...proposal([{ kind: "archive" }], []),

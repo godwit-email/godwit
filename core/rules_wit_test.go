@@ -49,6 +49,26 @@ func TestProposeRuleSavesNothing(t *testing.T) {
 	assert.Equal(t, "Stripe", p.Rule.Name)
 }
 
+// propose_rule says all it takes: the file actions, with their folder,
+// subfolder and naming, and its schema has those fields.
+func TestProposeRuleNamesEverythingItTakes(t *testing.T) {
+	e := newApprovalEnv(t)
+	spec := e.s.tools[proposeRuleTool].Spec
+	for _, w := range []string{"pdf", "eml", "attachments", "key_points", "dir", "subfolder", "naming", "{subject}", "age", "older_than"} {
+		assert.Contains(t, spec.Description, w)
+	}
+	item := spec.Schema["properties"].(map[string]any)["actions"].(map[string]any)["items"].(map[string]any)["properties"].(map[string]any)
+	for _, k := range []string{"dir", "subfolder", "naming"} {
+		assert.Contains(t, item, k)
+	}
+	a := e.propose(t, `{"name":"Bills","trigger":"receive","match":"all","actions":[{"kind":"pdf","dir":"`+t.TempDir()+`","subfolder":true,"naming":"{from}/{date} {subject}"}]}`)
+	require.NoError(t, e.s.ResolveApproval(t.Context(), a.ID, true))
+	rs := e.savedRules(t)
+	require.Len(t, rs, 1)
+	assert.True(t, rs[0].Doc.Actions[0].Subfolder)
+	assert.Equal(t, "{from}/{date} {subject}", rs[0].Doc.Actions[0].Naming)
+}
+
 // The user's 保存规则 saves the rule as proposed, turned on.
 func TestAcceptingAProposalSavesTheRule(t *testing.T) {
 	e := newApprovalEnv(t)

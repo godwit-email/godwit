@@ -82,10 +82,7 @@ function ruleText(p: Proposal, t: T) {
       : a.kind === "forward" && a.to
         ? t("settings.rules.action.forward.summary", a.to)
         : FILE_KINDS.includes(a.kind) && a.dir
-          ? t(
-              `settings.rules.action.${a.kind}.summary`,
-              a.dir.split(/[\\/]/).filter(Boolean).pop() ?? a.dir,
-            )
+          ? t(`settings.rules.action.${a.kind}.summary`, a.dir)
           : t(`settings.rules.action.${a.kind}`);
   return { when, ifs, thens: (r.actions ?? []).map(act) };
 }

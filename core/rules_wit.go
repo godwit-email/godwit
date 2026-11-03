@@ -62,8 +62,14 @@ func (s *Service) registerRuleTool() {
 			"conditions (match all or any; none matches all mail): field from, to, subject or body with op contains, not_contains or is; " +
 			"attachments is yes or no; label (a slug) or folder (inbox, archive, junk or trash) with op is or not_contains; age with op older_than (value: whole days, from 1). " +
 			"actions: label or unlabel (label: a slug), read, star, archive, junk, trash, stop (later rules skip the mail), forward (to: one address), " +
-			"draft_reply (Wit drafts a reply; never sent), key_points (Wit writes the mail's key points to dir, an absolute folder path). " +
-			"draft_reply and key_points need the user's 「智能」 switch for rules. background keeps the rule running after the window closes.",
+			"pdf (saves the mail as a PDF), eml (saves the original .eml), attachments (saves its attachments), " +
+			"draft_reply (Wit drafts a reply; never sent), key_points (Wit writes the mail's key points as Markdown). " +
+			"pdf, eml, attachments and key_points write into dir, an absolute folder path, and only create files, never replace one; " +
+			"naming names the files, a template of text and the tokens {date} {subject} {from} {domain} {year} {month} {account} " +
+			"(at least one; each / in it makes a folder level); subfolder true puts each mail's files in a folder of its own, named by naming. " +
+			"Actions with one dir share naming and subfolder. " +
+			"draft_reply and key_points send the mail to the user's model service and need the user's 「智能」 switch for rules. " +
+			"background keeps the rule running after the window closes.",
 		Schema: object(map[string]any{
 			"name":        stringProp,
 			"trigger":     map[string]any{"type": "string", "enum": []string{TriggerReceive, TriggerLabel, TriggerSecurity, TriggerDaily}},
@@ -74,6 +80,7 @@ func (s *Service) registerRuleTool() {
 			}, "field", "op", "value")},
 			"actions": map[string]any{"type": "array", "minItems": 1, "maxItems": MaxRuleActions, "items": object(map[string]any{
 				"kind": stringProp, "label": stringProp, "to": stringProp, "dir": stringProp,
+				"subfolder": map[string]any{"type": "boolean"}, "naming": stringProp,
 			}, "kind")},
 			"background": map[string]any{"type": "boolean"},
 		}, "name", "trigger", "match", "actions")},
