@@ -416,6 +416,39 @@ func TestRuleFailureAndRetry(t *testing.T) {
 	assert.Equal(t, []string{`a@x \Flagged \Seen`}, e.onServer(t, "Junk"))
 }
 
+// A disabled rule's failed run is not retried.
+func TestRuleRetryNotWhenDisabled(t *testing.T) {
+	e := newRulesEnv(t)
+	id := e.saveRule(t, rule(RuleAction{Kind: ActionJunk}, RuleAction{Kind: ActionRead}), true)
+	e.bill(t, "a@x", "billing@aws.example", "Invoice")
+	e.sync(t)
+	e.waitRuns(t, 1)
+	require.NoError(t, e.im.User.Create("Junk", nil))
+	e.sync(t)
+	require.NoError(t, e.s.SetRuleEnabled(bg, id, false))
+	run := e.runOf(t, "a@x")
+	assert.Error(t, e.s.RetryRuleRun(bg, run))
+	assert.Equal(t, []string{"junk failed", "read not_run"}, e.results(t, run))
+}
+
+// A run resumed after a crash goes on with the actions the rule had when
+// it started, though they were reordered meanwhile.
+func TestRuleResumesWithRuleAsItStarted(t *testing.T) {
+	e := newRulesEnv(t)
+	id := e.saveRule(t, rule(RuleAction{Kind: ActionStar}, RuleAction{Kind: ActionRead}, RuleAction{Kind: ActionLabel, Label: "u1"}), true)
+	stopped := stopRulesAt(t, "rules.action")
+	e.bill(t, "a@x", "billing@aws.example", "Invoice")
+	e.sync(t)
+	<-stopped
+	rulesHook = nil
+	_, err := e.s.SaveRule(bg, Rule{ID: id, Enabled: true, Doc: rule(RuleAction{Kind: ActionLabel, Label: "u1"}, RuleAction{Kind: ActionRead}, RuleAction{Kind: ActionStar})})
+	require.NoError(t, err)
+	e.reopen(t)
+	e.waitRuns(t, 1)
+	assert.Equal(t, []string{"star done", "read done", "label done"}, e.results(t, e.runOf(t, "a@x")))
+	assert.Equal(t, "rule", e.labelOn(t, e.idOf(t, "a@x")))
+}
+
 // A crash between two actions resumes with the unfinished one only.
 func TestRuleResumesAfterCrashBetweenActions(t *testing.T) {
 	e := newRulesEnv(t)

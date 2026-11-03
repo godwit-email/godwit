@@ -76,6 +76,22 @@ func TestRuleForwardSends(t *testing.T) {
 		e.rows(t, "SELECT source, tool, target_kind, target_id, destination FROM audit_log WHERE source = ?", AuditRule))
 }
 
+// Retrying a failed run forwards to the recipient the rule confirmed.
+func TestRuleRetryForwards(t *testing.T) {
+	e := newForwardEnv(t)
+	e.saveForward(t, rule(RuleAction{Kind: ActionJunk}, RuleAction{Kind: ActionForward, To: carol}), carol)
+	e.put(t, "INBOX", billWithPDF("bill@x"))
+	e.sync(t)
+	e.waitRuns(t, 1)
+	run := e.runOf(t, "bill@x")
+	require.Equal(t, []string{"junk failed", "forward not_run"}, e.results(t, run))
+	require.NoError(t, e.im.User.Create("Junk", nil))
+	e.sync(t)
+	require.NoError(t, e.s.RetryRuleRun(bg, run))
+	assert.Equal(t, []string{"junk done", "forward done"}, e.results(t, run))
+	assert.Len(t, e.release(t), 1)
+}
+
 // A forward to a recipient not confirmed, saved so or edited into the
 // stored rule, sends nothing and its hit says why.
 func TestRuleForwardUnconfirmedNeverSends(t *testing.T) {

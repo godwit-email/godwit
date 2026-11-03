@@ -582,6 +582,11 @@ var Migrations = [][]string{{
 	// The subfolder a run's file actions write to, by destination, kept
 	// before it is made so a retry or a resumed run writes into it again.
 	`ALTER TABLE rule_runs ADD COLUMN dirs TEXT NOT NULL DEFAULT '{}'`,
+}, {
+	// The rule document as the run started, so a resumed or retried run
+	// goes on with its actions though the rule was edited since (NULL: a
+	// run from before, which goes on with the rule as it is).
+	`ALTER TABLE rule_runs ADD COLUMN doc TEXT`,
 }}
 
 // HistoryRowsVersion is the schema version that keeps a conversation's

@@ -698,11 +698,15 @@ func (s *Service) runRule(ctx context.Context, r Rule, msgID int64, trigger stri
 	if trigger == TriggerExisting { // retries too: never a forward or Wit action
 		r.Doc.Actions = slices.DeleteFunc(slices.Clone(r.Doc.Actions), func(a RuleAction) bool { return !RunsOnExisting(a.Kind) })
 	}
-	if _, err := s.db.Execute(ctx, `INSERT INTO rule_runs(rule_id, message_id, trigger, state, at) VALUES (?, ?, ?, 'running', ?)
-		ON CONFLICT(rule_id, message_id) DO NOTHING`, r.ID, msgID, trigger, time.Now().Unix()); err != nil {
+	doc, err := json.Marshal(r.Doc)
+	if err != nil {
 		return err
 	}
-	rows, err := s.db.Query(ctx, `SELECT id, state, (SELECT COALESCE(MAX(idx) + 1, 0) FROM rule_action_results WHERE run_id = rule_runs.id AND state = 'done')
+	if _, err := s.db.Execute(ctx, `INSERT INTO rule_runs(rule_id, message_id, trigger, state, at, doc) VALUES (?, ?, ?, 'running', ?, ?)
+		ON CONFLICT(rule_id, message_id) DO NOTHING`, r.ID, msgID, trigger, time.Now().Unix(), string(doc)); err != nil {
+		return err
+	}
+	rows, err := s.db.Query(ctx, `SELECT id, state, (SELECT COALESCE(MAX(idx) + 1, 0) FROM rule_action_results WHERE run_id = rule_runs.id AND state = 'done'), doc
 		FROM rule_runs WHERE rule_id = ? AND message_id = ?`, r.ID, msgID)
 	if err != nil || len(rows.Values) == 0 {
 		return err
@@ -710,6 +714,12 @@ func (s *Service) runRule(ctx context.Context, r Rule, msgID int64, trigger stri
 	runID, from := store.Int(rows.Values[0][0]), int(store.Int(rows.Values[0][2]))
 	if store.Str(rows.Values[0][1]) != RuleRunRunning {
 		return nil
+	}
+	if v := rows.Values[0][3]; v != nil { // the result indexes are into the actions as the run started
+		r.Doc = RuleDoc{}
+		if err := json.Unmarshal([]byte(store.Str(v)), &r.Doc); err != nil {
+			return fmt.Errorf("rule run %d: %w", runID, err)
+		}
 	}
 	state := RuleRunDone
 	for i := from; i < len(r.Doc.Actions); i++ {
@@ -1008,14 +1018,15 @@ func (s *Service) RuleHits(ctx context.Context, ruleID int64) ([]RuleHit, error)
 }
 
 // RetryRuleRun runs a failed run again from the action that failed, in the
-// same run, with the rule as it is now.
+// same run, with the actions as the run started and the rule's settings
+// (confirmed recipients) as they are now. A disabled rule's run is not retried.
 func (s *Service) RetryRuleRun(ctx context.Context, runID int64) error {
 	ctx, end, err := s.begin(ctx, 0)
 	if err != nil {
 		return err
 	}
 	defer end()
-	rows, err := s.db.Query(ctx, `SELECT r.rule_id, r.message_id, r.trigger, ru.doc FROM rule_runs r JOIN rules ru ON ru.id = r.rule_id
+	rows, err := s.db.Query(ctx, `SELECT r.rule_id, r.message_id, r.trigger FROM rule_runs r
 		WHERE r.id = ? AND r.state = ? AND r.message_id IS NOT NULL`, runID, RuleRunFailed)
 	if err != nil {
 		return err
@@ -1024,10 +1035,15 @@ func (s *Service) RetryRuleRun(ctx context.Context, runID int64) error {
 		return fmt.Errorf("rule run %d: nothing to retry", runID)
 	}
 	v := rows.Values[0]
-	r := Rule{ID: store.Int(v[0])}
-	if err := json.Unmarshal([]byte(store.Str(v[3])), &r.Doc); err != nil {
-		return fmt.Errorf("rule %d: %w", r.ID, err)
+	rules, err := s.rules(ctx, true)
+	if err != nil {
+		return err
 	}
+	i := slices.IndexFunc(rules, func(r Rule) bool { return r.ID == store.Int(v[0]) })
+	if i < 0 {
+		return fmt.Errorf("rule run %d: its rule is off", runID)
+	}
+	r := rules[i]
 	if err := s.exec(ctx, sqlite.Statement{SQL: "UPDATE rule_runs SET state = ? WHERE id = ?", Args: []any{RuleRunRunning, runID}}); err != nil {
 		return err
 	}
