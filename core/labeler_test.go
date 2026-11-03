@@ -165,6 +165,22 @@ func TestClassifySkipsManual(t *testing.T) {
 	require.Equal(t, 1, on)
 }
 
+// A label a rule set is the rule's: the classifier neither asks about nor removes it.
+func TestClassifySkipsRule(t *testing.T) {
+	s := newLabelService(t, "", "zh-CN")
+	l := labelIDs(t, s)
+	j := &fakeJudge{p: map[string]float64{"bill": 0.1}}
+	useLabelJudge(s, j)
+	a := addMessage(t, s, "a", "a@x", "", "", 1)
+	setRow(t, s, a, l["bill"], "rule", 1)
+	_, err := s.classifyBatch(t.Context())
+	require.NoError(t, err)
+	require.NotContains(t, qNames(j.qs[0]), "bill")
+	src, on := labelRow(t, s, a, l["bill"])
+	require.Equal(t, "rule", src)
+	require.Equal(t, 1, on)
+}
+
 func TestClassifyOnlyInbox(t *testing.T) {
 	s := newLabelService(t, "", "zh-CN")
 	j := &fakeJudge{}

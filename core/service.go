@@ -347,6 +347,10 @@ func New(ctx context.Context, opts Options) (*Service, error) {
 	}
 	s.startJanitor()
 	s.startReclaim()
+	if err := s.startRules(ctx); err != nil {
+		s.Close()
+		return nil, err
+	}
 	if opts.LabelMail {
 		s.startLabeler()
 	}

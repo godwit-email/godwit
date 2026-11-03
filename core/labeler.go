@@ -165,7 +165,7 @@ func unanswerable(err error) bool {
 }
 
 // labelQuestions returns the labels to ask about for a message, those it has
-// no hand-set row for, their questions (named by slug), and the newest label's
+// no hand-set or rule row for, their questions (named by slug), and the newest label's
 // id then, so a label added while the model answers is noticed.
 func (s *Service) labelQuestions(ctx context.Context, id int64) ([]Label, []ai.Question, int64, error) {
 	top, err := s.db.Query(ctx, "SELECT COALESCE(MAX(id), 0) FROM labels")
@@ -174,7 +174,7 @@ func (s *Service) labelQuestions(ctx context.Context, id int64) ([]Label, []ai.Q
 	}
 	newest := store.Int(top.Values[0][0])
 	rows, err := s.db.Query(ctx, `SELECT id, slug, name, description FROM labels l
-		WHERE NOT EXISTS (SELECT 1 FROM message_labels ml WHERE ml.message_id = ? AND ml.label_id = l.id AND ml.source = 'manual')
+		WHERE NOT EXISTS (SELECT 1 FROM message_labels ml WHERE ml.message_id = ? AND ml.label_id = l.id AND ml.source IN ('manual', 'rule'))
 		ORDER BY position, id`, id)
 	if err != nil {
 		return nil, nil, 0, err
