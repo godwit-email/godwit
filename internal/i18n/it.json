@@ -1801,7 +1801,6 @@
   "settings_rules_failure_ai_off": "le regole non possono usare Wit (disattivato in Intelligenza)",
   "settings_rules_failure_model": "il modello non ha risposto",
   "settings_rules_empty_wit": "Dire a Wit come organizzare",
-  "settings_rules_edit_rule": "Modifica regola",
   "settings_rules_delete": "Elimina regola",
   "settings_rules_delete_title": "Eliminare «{arg1}»?",
   "settings_rules_delete_desc": "La regola e la sua cronologia vengono eliminate insieme. Le email già inoltrate e i file già salvati restano come sono.",

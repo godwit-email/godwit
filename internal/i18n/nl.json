@@ -1801,7 +1801,6 @@
   "settings_rules_failure_ai_off": "regels mogen Wit niet gebruiken (uit in Intelligentie)",
   "settings_rules_failure_model": "het model gaf geen antwoord",
   "settings_rules_empty_wit": "Wit vertellen hoe je wilt sorteren",
-  "settings_rules_edit_rule": "Regel bewerken",
   "settings_rules_delete": "Regel verwijderen",
   "settings_rules_delete_title": "‘{arg1}’ verwijderen?",
   "settings_rules_delete_desc": "De regel en de geschiedenis ervan worden samen verwijderd. Al doorgestuurde e-mail en opgeslagen bestanden blijven zoals ze zijn.",

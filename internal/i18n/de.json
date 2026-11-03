@@ -1801,7 +1801,6 @@
   "settings_rules_failure_ai_off": "Regeln dürfen Wit nicht nutzen (aus unter Intelligenz)",
   "settings_rules_failure_model": "das Modell hat nicht geantwortet",
   "settings_rules_empty_wit": "Wit sagen, wie du sortieren willst",
-  "settings_rules_edit_rule": "Regel bearbeiten",
   "settings_rules_delete": "Regel löschen",
   "settings_rules_delete_title": "„{arg1}“ löschen?",
   "settings_rules_delete_desc": "Die Regel und ihr Verlauf werden zusammen gelöscht. Bereits weitergeleitete E-Mails und gespeicherte Dateien bleiben, wie sie sind.",

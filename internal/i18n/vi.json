@@ -1801,7 +1801,6 @@
   "settings_rules_failure_ai_off": "quy tắc không được dùng Wit (đang tắt trong Trí tuệ)",
   "settings_rules_failure_model": "mô hình không phản hồi",
   "settings_rules_empty_wit": "Cho Wit biết bạn muốn sắp xếp thế nào",
-  "settings_rules_edit_rule": "Sửa quy tắc",
   "settings_rules_delete": "Xóa quy tắc",
   "settings_rules_delete_title": "Xóa “{arg1}”?",
   "settings_rules_delete_desc": "Quy tắc và lịch sử của nó bị xóa cùng nhau. Thư đã chuyển tiếp và tệp đã lưu vẫn giữ nguyên.",

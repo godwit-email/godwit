@@ -252,7 +252,7 @@ func (v *rulesView) list(c *ui.Context) {
 }
 
 // row is a rule: grip, switch, name and summary (which expand it), edit,
-// and expanded, its hits, 编辑规则 and 删除规则.
+// and expanded, its hits and 删除规则.
 func (v *rulesView) row(c *ui.Context, r core.Rule) {
 	a := v.a
 	t, th := theme.Of(c), c.Theme()
@@ -348,8 +348,7 @@ func (v *rulesView) badges(c *ui.Context, r core.Rule) {
 }
 
 // hitList is the open rule's hits of the last week, newest first, in a box
-// about two and a half rows tall that scrolls past them, then 编辑规则 and
-// 删除规则.
+// about two and a half rows tall that scrolls past them, then 删除规则.
 func (v *rulesView) hitList(c *ui.Context, r core.Rule) {
 	t, th := theme.Of(c), c.Theme()
 	ui.Column(c).FillWidth().Gap(th.Space(2)).Padding(0, th.Space(4), th.Space(3), th.Space(4)+th.Space(11.5)).Children(func() {
@@ -374,11 +373,8 @@ func (v *rulesView) hitList(c *ui.Context, r core.Rule) {
 				})
 			})
 		}
-		ui.Row(c).Gap(th.Space(2)).Children(func() {
-			kit.Button(c, i18n.T("settings.rules.edit_rule"), kit.ButtonOpts{Variant: kit.Outline, Size: kit.SizeSm}).OnClick(func() { v.openEditor(r) })
-			kit.Button(c, i18n.T("settings.rules.delete"), kit.ButtonOpts{Variant: kit.Ghost, Size: kit.SizeSm}).TextColor(t.Danger).
-				OnClick(func() { v.deleting = &r })
-		})
+		kit.Button(c, i18n.T("settings.rules.delete"), kit.ButtonOpts{Variant: kit.Ghost, Size: kit.SizeSm}).TextColor(t.Danger).AlignSelf(ui.Start).
+			OnClick(func() { v.deleting = &r })
 	})
 }
 

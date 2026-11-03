@@ -1801,7 +1801,6 @@
   "settings_rules_failure_ai_off": "правилам нельзя использовать Wit (выключено в разделе Интеллект)",
   "settings_rules_failure_model": "модель не ответила",
   "settings_rules_empty_wit": "Сказать Wit, как разбирать почту",
-  "settings_rules_edit_rule": "Изменить правило",
   "settings_rules_delete": "Удалить правило",
   "settings_rules_delete_title": "Удалить «{arg1}»?",
   "settings_rules_delete_desc": "Правило удаляется вместе с историей срабатываний. Уже пересланные письма и сохранённые файлы остаются.",

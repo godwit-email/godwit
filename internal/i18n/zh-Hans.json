@@ -1801,7 +1801,6 @@
   "settings_rules_failure_ai_off": "「智能」里没有允许规则使用 Wit",
   "settings_rules_failure_model": "模型没有回应",
   "settings_rules_empty_wit": "告诉 Wit 你想怎么整理",
-  "settings_rules_edit_rule": "编辑规则",
   "settings_rules_delete": "删除规则",
   "settings_rules_delete_title": "删除「{arg1}」？",
   "settings_rules_delete_desc": "规则和它的命中记录会一起删除。已经转发的邮件和存下的文件不受影响。",

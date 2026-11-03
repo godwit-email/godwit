@@ -3550,7 +3550,6 @@
   "settings_rules_failure_ai_off": "rules can’t use Wit (off in Intelligence)",
   "settings_rules_failure_model": "the model didn’t answer",
   "settings_rules_empty_wit": "Tell Wit how you want it sorted",
-  "settings_rules_edit_rule": "Edit Rule",
   "settings_rules_delete": "Delete Rule",
   "settings_rules_delete_title": "Delete “{arg1}”?",
   "settings_rules_delete_desc": "The rule and its history are deleted together. Mail already forwarded and files already saved stay as they are.",

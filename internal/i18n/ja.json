@@ -1801,7 +1801,6 @@
   "settings_rules_failure_ai_off": "インテリジェンスでルールの Wit 利用がオフです",
   "settings_rules_failure_model": "モデルが応答しませんでした",
   "settings_rules_empty_wit": "整理のしかたを Wit に伝える",
-  "settings_rules_edit_rule": "ルールを編集",
   "settings_rules_delete": "ルールを削除",
   "settings_rules_delete_title": "「{arg1}」を削除しますか？",
   "settings_rules_delete_desc": "ルールとその実行履歴がまとめて削除されます。転送済みのメールと保存済みのファイルはそのまま残ります。",

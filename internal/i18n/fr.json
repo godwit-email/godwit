@@ -1801,7 +1801,6 @@
   "settings_rules_failure_ai_off": "les règles ne peuvent pas utiliser Wit (désactivé dans Intelligence)",
   "settings_rules_failure_model": "le modèle n’a pas répondu",
   "settings_rules_empty_wit": "Dire à Wit comment trier",
-  "settings_rules_edit_rule": "Modifier la règle",
   "settings_rules_delete": "Supprimer la règle",
   "settings_rules_delete_title": "Supprimer « {arg1} » ?",
   "settings_rules_delete_desc": "La règle et son historique sont supprimés ensemble. Les e-mails déjà transférés et les fichiers déjà enregistrés restent tels quels.",

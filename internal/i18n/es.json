@@ -1801,7 +1801,6 @@
   "settings_rules_failure_ai_off": "las reglas no pueden usar Wit (desactivado en Inteligencia)",
   "settings_rules_failure_model": "el modelo no respondió",
   "settings_rules_empty_wit": "Decirle a Wit cómo organizar",
-  "settings_rules_edit_rule": "Editar regla",
   "settings_rules_delete": "Eliminar regla",
   "settings_rules_delete_title": "¿Eliminar «{arg1}»?",
   "settings_rules_delete_desc": "La regla y su historial se eliminan juntos. Los correos ya reenviados y los archivos ya guardados no cambian.",
