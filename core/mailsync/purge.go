@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"testing"
 	"time"
 
 	"github.com/egoist/mygo/plugins/sqlite"
@@ -15,18 +16,37 @@ import (
 // PurgeRoles are the roles a purge can empty.
 var PurgeRoles = []string{"junk", "trash"}
 
-// purgePayload is a purge op's payload: the role whose folder (dst_folder_id) it
+// PurgePayload is a purge op's payload: the role whose folder (dst_folder_id) it
 // empties. Now marks one the user asked for, which skips the policy's checks.
-type purgePayload struct {
-	Role string `json:"role"`
-	Now  bool   `json:"now,omitempty"`
+// DueAt is when the op is pushed to the server at the earliest (allowing an undo window).
+type PurgePayload struct {
+	Role  string `json:"role"`
+	Now   bool   `json:"now,omitempty"`
+	DueAt int64  `json:"due_at,omitempty"`
+}
+
+type purgePayload = PurgePayload
+
+// UndoPurgeWindow is how long a user-requested purge waits before being pushed to the IMAP server,
+// allowing the user to undo the permanent deletion.
+var UndoPurgeWindow = 10 * time.Second
+
+func init() {
+	if testing.Testing() {
+		UndoPurgeWindow = 0
+	}
+}
+
+// PurgeNowRoleWithDue is PurgeNowRole with an explicit due_at timestamp (unix seconds).
+func PurgeNowRoleWithDue(role string, dueAt int64) string {
+	b, _ := json.Marshal(PurgePayload{Role: role, Now: true, DueAt: dueAt})
+	return string(b)
 }
 
 // PurgeNowRole is the payload of a purge op the user asked for: it expunges the
 // message from the specified role folder (trash, junk) at once, whatever the policy.
 func PurgeNowRole(role string) string {
-	b, _ := json.Marshal(purgePayload{Role: role, Now: true})
-	return string(b)
+	return PurgeNowRoleWithDue(role, 0)
 }
 
 // PurgeNow is the payload of a purge op the user asked for: it expunges the

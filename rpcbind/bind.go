@@ -100,6 +100,8 @@ var table = []Error{
 	{Code: "no_unsubscribe", Err: core.ErrNoUnsubscribe},
 	{Code: "unsubscribe_web", Err: core.ErrUnsubscribeWeb},
 	{Code: "unsubscribing", Err: core.ErrUnsubscribing},
+	{Code: "purge_too_late", Err: core.ErrPurgeTooLate, Key: "mail.purge.too_late"},
+	{Code: "folder_empty_too_late", Err: core.ErrFolderEmptyTooLate, Key: "mail.purge.too_late"},
 	{Code: "canceled", Err: context.Canceled},
 	{Code: "deadline", Err: context.DeadlineExceeded},
 	{Code: "auth_failed", Err: conn.ErrAuthFailed}, // also a failed account check's cause

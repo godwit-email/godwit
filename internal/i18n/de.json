@@ -1857,5 +1857,8 @@
   "wit_rule_then_next": "Dann: {arg1}",
   "wit_rule_new_only_forward": "Vorhandene Mails werden nicht weitergeleitet: Die Regel behandelt nur Mails, die nach dem Speichern eintreffen.",
   "wit_rule_confirm_desc": "Nach dem Speichern werden passende neue Mails automatisch weitergeleitet, ohne jedes Mal zu fragen.",
-  "wit_rule_confirm_again": "Eine spätere Änderung des Empfängers muss erneut bestätigt werden"
+  "wit_rule_confirm_again": "Eine spätere Änderung des Empfängers muss erneut bestätigt werden",
+  "mail_purge_toast": "{arg1, plural, one {{arg1, number, ::group-off} Nachricht endgültig gelöscht} other {{arg1, number, ::group-off} Nachrichten endgültig gelöscht}}",
+  "mail_purge_undone": "Löschen rückgängig gemacht",
+  "mail_purge_too_late": "Zu spät: Die Nachricht wurde bereits endgültig gelöscht."
 }

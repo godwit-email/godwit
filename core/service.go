@@ -4,6 +4,7 @@ package core
 import (
 	"cmp"
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io/fs"
@@ -662,6 +663,7 @@ func (s *Service) syncAccount(ctx context.Context, accountID int64, explicit boo
 	}
 	defer release()
 	defer func() { conn.LogTrace(c, err) }() // a response go-imap could not parse goes in the error report
+	defer s.wakeForPurge(ctx, accountID)
 	// Queued first, so this round's push expunges and its fetch drops the rows.
 	if err := mailsync.QueuePurge(ctx, s.db, c, accountID); err != nil {
 		return err
@@ -772,8 +774,8 @@ func (s *Service) setStatus(ctx context.Context, accountID int64, status, detail
 // Gmail's Starred (flagged) are detected only.
 func (s *Service) ListFolders(ctx context.Context, accountID int64) ([]Folder, error) {
 	rows, err := s.db.Query(ctx, `SELECT f.id, f.account_id, f.name, CASE WHEN f.role IN ('inbox', 'flagged') THEN f.role ELSE '' END,
-		(SELECT count(*) FROM messages m WHERE m.folder_id = f.id AND instr(m.flags, '\Seen') = 0), f.delim,
-		(SELECT count(*) FROM messages m WHERE m.folder_id = f.id)
+		(SELECT count(*) FROM messages m WHERE m.folder_id = f.id AND instr(m.flags, '\Seen') = 0 AND `+notPendingPurgeCond+`), f.delim,
+		(SELECT count(*) FROM messages m WHERE m.folder_id = f.id AND `+notPendingPurgeCond+`)
 		FROM folders f WHERE f.account_id = ? ORDER BY f.id`, accountID)
 	if err != nil {
 		return nil, err
@@ -799,8 +801,8 @@ func (s *Service) ListFolders(ctx context.Context, accountID int64) ([]Folder, e
 
 // StarredCounts returns the unread count of starred messages by account ID, and total unread across all accounts.
 func (s *Service) StarredCounts(ctx context.Context) (map[int64]int, int, error) {
-	rows, err := s.db.Query(ctx, `SELECT account_id, count(*) FROM messages
-		WHERE instr(flags, '\Flagged') > 0 AND instr(flags, '\Seen') = 0 GROUP BY account_id`)
+	rows, err := s.db.Query(ctx, `SELECT account_id, count(*) FROM messages m
+		WHERE instr(flags, '\Flagged') > 0 AND instr(flags, '\Seen') = 0 AND `+notPendingPurgeCond+` GROUP BY account_id`)
 	if err != nil {
 		return nil, 0, err
 	}
@@ -812,4 +814,26 @@ func (s *Service) StarredCounts(ctx context.Context) (map[int64]int, int, error)
 		total += n
 	}
 	return byAcc, total, nil
+}
+
+// wakeForPurge has the account's worker sync again when the earliest pending purge op
+// comes due, in place of any timer set before.
+func (s *Service) wakeForPurge(ctx context.Context, accountID int64) {
+	rows, err := s.db.Query(ctx, `SELECT payload FROM ops WHERE account_id = ? AND kind = 'purge' AND state = 'pending'`, accountID)
+	if err != nil || len(rows.Values) == 0 {
+		return
+	}
+	now := s.clk().Now().Unix()
+	var earliest int64
+	for _, r := range rows.Values {
+		var p mailsync.PurgePayload
+		if json.Unmarshal([]byte(store.Str(r[0])), &p) == nil && p.DueAt > now {
+			if earliest == 0 || p.DueAt < earliest {
+				earliest = p.DueAt
+			}
+		}
+	}
+	if earliest > 0 {
+		s.wakeWorkerAt(accountID, time.Unix(earliest, 0))
+	}
 }

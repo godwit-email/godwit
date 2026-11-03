@@ -442,6 +442,10 @@ func (p *mailPage) purgeDialog(c *ui.Context) {
 			kit.Button(c, i18n.T("common.delete"), kit.ButtonOpts{Variant: kit.Destructive}).OnClick(func() {
 				p.purgeAsk = false
 				p.batch("purge", p.purgeRows)
+				if p.a.route.ThreadID != 0 {
+					p.a.route.ThreadID, p.a.route.MessageID = 0, 0
+					p.reader.sync(false)
+				}
 			})
 		})
 }
@@ -1588,6 +1592,7 @@ func (p *mailPage) batchScoped(act string, rows []mailItem, anywhere bool) {
 	}, func(error) {
 		var skipped []string
 		pending := 0
+		var allIDs []int64
 		finish := func() {
 			if failed > 0 {
 				a.toastAs(kit.ToastError, i18n.Tf("mail.failed", failed))
@@ -1598,9 +1603,23 @@ func (p *mailPage) batchScoped(act string, rows []mailItem, anywhere bool) {
 			if removes(op) {
 				l.sel.Clear()
 			}
+			if op == "purge" && failed == 0 && len(allIDs) > 0 {
+				purgedIDs := slices.Clone(allIDs)
+				toast := ui.Toast{
+					ID:      fmt.Sprintf("purge-%d", a.clock.Now().UnixNano()),
+					Title:   i18n.Tf("mail.purge.toast", len(purgedIDs)),
+					Timeout: 10 * time.Second,
+					Action:  i18n.T("compose.undo"),
+					OnAction: func() {
+						p.undoPurge(purgedIDs)
+					},
+				}
+				a.toasts = append(a.toasts, toast)
+			}
 		}
 		for _, acc := range slices.Sorted(maps.Keys(byAcc)) {
 			ids := byAcc[acc]
+			allIDs = append(allIDs, ids...)
 			if op == "archive" && archive[acc] == 0 || op == "junk" && !junk[acc] {
 				skipped = append(skipped, names[acc])
 				continue
@@ -1620,6 +1639,25 @@ func (p *mailPage) batchScoped(act string, rows []mailItem, anywhere bool) {
 		}
 		if pending == 0 {
 			finish()
+		}
+	})
+}
+
+// undoPurge cancels pending permanent deletes and restores the messages.
+func (p *mailPage) undoPurge(ids []int64) {
+	a := p.a
+	a.do(func(ctx context.Context) error {
+		return a.svc.UndoPurge(ctx, ids)
+	}, func(err error) {
+		if errors.Is(err, core.ErrPurgeTooLate) {
+			a.toastAs(kit.ToastWarning, i18n.T("mail.purge.too_late"))
+			return
+		}
+		if err != nil {
+			a.toastErr(err)
+		} else {
+			a.toast(i18n.T("mail.purge.undone"))
+			p.reload()
 		}
 	})
 }

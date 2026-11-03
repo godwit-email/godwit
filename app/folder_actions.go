@@ -2,8 +2,10 @@ package app
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"slices"
+	"time"
 
 	"github.com/egoist/mygo/ui"
 	"github.com/godwit-email/godwit/core"
@@ -55,11 +57,33 @@ func (p *mailPage) doEmptyFolder(folderID int64, role string, accID int64) {
 			a.toastErr(err)
 			return
 		}
-		if role == "trash" {
-			a.toast(i18n.T("mail.empty_trash.toast"))
-		} else {
-			a.toast(i18n.T("mail.empty_spam.toast"))
+		toastMsg := i18n.T("mail.empty_trash.toast")
+		if role != "trash" {
+			toastMsg = i18n.T("mail.empty_spam.toast")
 		}
+		toast := ui.Toast{
+			ID:      fmt.Sprintf("empty-folder-%d", a.clock.Now().UnixNano()),
+			Title:   toastMsg,
+			Timeout: 10 * time.Second,
+			Action:  i18n.T("compose.undo"),
+			OnAction: func() {
+				a.do(func(ctx context.Context) error {
+					return a.svc.UndoEmptyFolder(ctx, folderID)
+				}, func(err error) {
+					if errors.Is(err, core.ErrFolderEmptyTooLate) || errors.Is(err, core.ErrPurgeTooLate) {
+						a.toastAs(kit.ToastWarning, i18n.T("mail.purge.too_late"))
+						return
+					}
+					if err != nil {
+						a.toastErr(err)
+					} else {
+						a.toast(i18n.T("mail.purge.undone"))
+						p.reload()
+					}
+				})
+			},
+		}
+		a.toasts = append(a.toasts, toast)
 		p.reload()
 	})
 }

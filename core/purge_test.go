@@ -3,6 +3,7 @@ package core
 import (
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/godwit-email/godwit/core/internal/testmail"
 	"github.com/godwit-email/godwit/core/mailsync"
@@ -491,4 +492,98 @@ func TestEmptyFolder(t *testing.T) {
 	assert.Equal(t, []string{}, e.onServer(t, "Trash"))
 	assert.Equal(t, []string{"kept@x"}, e.onServer(t, "INBOX"))
 	assert.Zero(t, e.count(t, "SELECT count(*) FROM messages WHERE folder_id = ?", trashID))
+}
+
+func TestDeleteForeverOptimisticAndUndo(t *testing.T) {
+	e := newSyncEnv(t)
+	e.put(t, "Trash", msg("trash@x"))
+	e.sync(t)
+	trashID := e.folderID(t, "Trash")
+	id := e.idOf(t, "trash@x")
+
+	// Set undo window so sync does not immediately expunge
+	defer func(orig time.Duration) { mailsync.UndoPurgeWindow = orig }(mailsync.UndoPurgeWindow)
+	mailsync.UndoPurgeWindow = 5 * time.Second
+
+	// Pre-delete: message is in list and folder total is 1
+	page, err := e.s.ListMessages(bg, View{FolderID: trashID}, "", 10)
+	require.NoError(t, err)
+	assert.Len(t, page.Items, 1)
+
+	// DeleteForever queues purge
+	require.NoError(t, e.s.DeleteForever(bg, []int64{id}))
+
+	// Optimistic: message is immediately hidden from user views and folder counts before server sync
+	page, err = e.s.ListMessages(bg, View{FolderID: trashID}, "", 10)
+	require.NoError(t, err)
+	assert.Empty(t, page.Items, "message must be hidden immediately")
+
+	folders, err := e.s.ListFolders(bg, e.acc.ID)
+	require.NoError(t, err)
+	for _, f := range folders {
+		if f.ID == trashID {
+			assert.Equal(t, 0, f.Total, "trash folder count must be 0 immediately")
+		}
+	}
+
+	// Sync while still in undo window: must NOT expunge on server!
+	e.sync(t)
+	assert.Equal(t, []string{"trash@x"}, e.onServer(t, "Trash"), "must remain on server during undo window")
+
+	// UndoPurge restores message immediately
+	require.NoError(t, e.s.UndoPurge(bg, []int64{id}))
+	page, err = e.s.ListMessages(bg, View{FolderID: trashID}, "", 10)
+	require.NoError(t, err)
+	assert.Len(t, page.Items, 1, "message must reappear after undo")
+
+	// Sync again: op was cancelled, so message stays on server
+	e.sync(t)
+	assert.Equal(t, []string{"trash@x"}, e.onServer(t, "Trash"))
+
+	// Now with UndoPurgeWindow = 0 (window expired), DeleteForever and sync expunges immediately
+	mailsync.UndoPurgeWindow = 0
+	require.NoError(t, e.s.DeleteForever(bg, []int64{id}))
+	e.sync(t)
+	assert.Equal(t, []string{}, e.onServer(t, "Trash"))
+
+	// Undo now fails with ErrPurgeTooLate
+	assert.ErrorIs(t, e.s.UndoPurge(bg, []int64{id}), ErrPurgeTooLate, "undo must fail once expunged")
+}
+
+func TestEmptyFolderOptimisticAndUndo(t *testing.T) {
+	e := newSyncEnv(t)
+	e.put(t, "Trash", msg("t1@x"))
+	e.put(t, "Trash", msg("t2@x"))
+	e.sync(t)
+	trashID := e.folderID(t, "Trash")
+
+	defer func(orig time.Duration) { mailsync.UndoPurgeWindow = orig }(mailsync.UndoPurgeWindow)
+	mailsync.UndoPurgeWindow = 5 * time.Second
+
+	n, err := e.s.EmptyFolder(bg, trashID)
+	require.NoError(t, err)
+	assert.Equal(t, 2, n)
+
+	// Optimistic: list is immediately empty
+	page, err := e.s.ListMessages(bg, View{FolderID: trashID}, "", 10)
+	require.NoError(t, err)
+	assert.Empty(t, page.Items)
+
+	// Sync while in undo window: must remain on server
+	e.sync(t)
+	assert.Len(t, e.onServer(t, "Trash"), 2)
+
+	// UndoEmptyFolder restores all messages
+	require.NoError(t, e.s.UndoEmptyFolder(bg, trashID))
+	page, err = e.s.ListMessages(bg, View{FolderID: trashID}, "", 10)
+	require.NoError(t, err)
+	assert.Len(t, page.Items, 2)
+
+	// Window expired: empty and expunge
+	mailsync.UndoPurgeWindow = 0
+	_, err = e.s.EmptyFolder(bg, trashID)
+	require.NoError(t, err)
+	e.sync(t)
+	assert.Empty(t, e.onServer(t, "Trash"))
+	assert.ErrorIs(t, e.s.UndoEmptyFolder(bg, trashID), ErrFolderEmptyTooLate)
 }

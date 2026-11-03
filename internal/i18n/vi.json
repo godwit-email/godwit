@@ -1857,5 +1857,8 @@
   "wit_rule_then_next": "Sau đó: {arg1}",
   "wit_rule_new_only_forward": "Thư hiện có sẽ không được chuyển tiếp: quy tắc chỉ xử lý thư đến sau khi bạn lưu.",
   "wit_rule_confirm_desc": "Sau khi lưu, thư mới khớp sẽ được tự động chuyển tiếp mà không hỏi từng thư.",
-  "wit_rule_confirm_again": "Nếu sau này đổi người nhận, bạn cần xác nhận lại"
+  "wit_rule_confirm_again": "Nếu sau này đổi người nhận, bạn cần xác nhận lại",
+  "mail_purge_toast": "Đã xóa vĩnh viễn {arg1, number, ::group-off} thư",
+  "mail_purge_undone": "Đã hoàn tác việc xóa",
+  "mail_purge_too_late": "Quá trễ: thư đã bị xóa vĩnh viễn."
 }

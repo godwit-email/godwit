@@ -1857,5 +1857,8 @@
   "wit_rule_then_next": "Daarna: {arg1}",
   "wit_rule_new_only_forward": "Bestaande mail wordt niet doorgestuurd: de regel verwerkt alleen mail die na het opslaan binnenkomt.",
   "wit_rule_confirm_desc": "Na het opslaan wordt passende nieuwe mail automatisch doorgestuurd, zonder elke keer te vragen.",
-  "wit_rule_confirm_again": "Als je de ontvanger later wijzigt, moet je opnieuw bevestigen"
+  "wit_rule_confirm_again": "Als je de ontvanger later wijzigt, moet je opnieuw bevestigen",
+  "mail_purge_toast": "{arg1, plural, one {{arg1, number, ::group-off} bericht definitief verwijderd} other {{arg1, number, ::group-off} berichten definitief verwijderd}}",
+  "mail_purge_undone": "Verwijderen ongedaan gemaakt",
+  "mail_purge_too_late": "Te laat: het bericht is al definitief verwijderd."
 }

@@ -1857,5 +1857,8 @@
   "wit_rule_then_next": "Ardından: {arg1}",
   "wit_rule_new_only_forward": "Mevcut postalar iletilmez: kural yalnızca kaydettikten sonra gelen postaları işler.",
   "wit_rule_confirm_desc": "Kaydedildikten sonra eşleşen yeni postalar her seferinde sorulmadan otomatik olarak iletilir.",
-  "wit_rule_confirm_again": "Alıcıyı daha sonra değiştirirseniz yeniden onaylamanız gerekir"
+  "wit_rule_confirm_again": "Alıcıyı daha sonra değiştirirseniz yeniden onaylamanız gerekir",
+  "mail_purge_toast": "{arg1, number, ::group-off} ileti kalıcı olarak silindi",
+  "mail_purge_undone": "Silme işlemi geri alındı",
+  "mail_purge_too_late": "Çok geç: ileti kalıcı olarak silindi."
 }

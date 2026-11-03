@@ -1857,5 +1857,8 @@
   "wit_rule_then_next": "然後{arg1}",
   "wit_rule_new_only_forward": "現有郵件不會被轉寄，規則只處理儲存之後收到的新郵件。",
   "wit_rule_confirm_desc": "儲存後，符合條件的新郵件會自動轉寄出去，不再逐封詢問。",
-  "wit_rule_confirm_again": "以後修改收件人，需要再次確認"
+  "wit_rule_confirm_again": "以後修改收件人，需要再次確認",
+  "mail_purge_toast": "已永久刪除 {arg1, number, ::group-off} 封",
+  "mail_purge_undone": "已復原刪除",
+  "mail_purge_too_late": "已超時：郵件已被永久刪除。"
 }

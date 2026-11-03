@@ -1857,5 +1857,8 @@
   "wit_rule_then_next": "然后{arg1}",
   "wit_rule_new_only_forward": "现有邮件不会被转发，规则只处理保存之后收到的新邮件。",
   "wit_rule_confirm_desc": "保存后，符合条件的新邮件会自动转发出去，不再逐封询问。",
-  "wit_rule_confirm_again": "以后修改收件人，需要再次确认"
+  "wit_rule_confirm_again": "以后修改收件人，需要再次确认",
+  "mail_purge_toast": "已永久删除 {arg1, number, ::group-off} 封",
+  "mail_purge_undone": "已撤销删除",
+  "mail_purge_too_late": "已超时：邮件已被永久删除。"
 }

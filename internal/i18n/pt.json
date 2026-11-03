@@ -1857,5 +1857,8 @@
   "wit_rule_then_next": "Depois: {arg1}",
   "wit_rule_new_only_forward": "Os e-mails existentes não são reencaminhados: a regra trata só os que chegarem depois de salvar.",
   "wit_rule_confirm_desc": "Depois de salvar, os e-mails novos correspondentes são reencaminhados automaticamente, sem perguntar a cada vez.",
-  "wit_rule_confirm_again": "Se mudar o destinatário mais tarde, será preciso confirmar de novo"
+  "wit_rule_confirm_again": "Se mudar o destinatário mais tarde, será preciso confirmar de novo",
+  "mail_purge_toast": "{arg1, plural, one {{arg1, number, ::group-off} mensagem excluída permanentemente} many {{arg1, number, ::group-off} mensagens excluídas permanentemente} other {{arg1, number, ::group-off} mensagens excluídas permanentemente}}",
+  "mail_purge_undone": "Exclusão desfeita",
+  "mail_purge_too_late": "Tarde demais: a mensagem já foi excluída permanentemente."
 }

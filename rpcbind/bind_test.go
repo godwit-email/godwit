@@ -256,6 +256,7 @@ func TestWireCodesPinned(t *testing.T) {
 		"mcp_send_off": core.ErrMCPSendOff, "mcp_send_composing": core.ErrMCPSendComposing, "mcp_send_busy": core.ErrMCPSendBusy,
 		"no_outbox_draft": core.ErrNoOutboxDraft,
 		"no_unsubscribe":  core.ErrNoUnsubscribe, "unsubscribe_web": core.ErrUnsubscribeWeb, "unsubscribing": core.ErrUnsubscribing,
+		"purge_too_late": core.ErrPurgeTooLate, "folder_empty_too_late": core.ErrFolderEmptyTooLate,
 		"auth_failed": conn.ErrAuthFailed, "oauth_not_configured": auth.ErrOAuthNotConfigured,
 		"flow_expired": auth.ErrFlowExpired, "invalid_grant": auth.ErrInvalidGrant, "access_denied": auth.ErrAccessDenied,
 		"scope_missing":            auth.ErrScopeMissing,

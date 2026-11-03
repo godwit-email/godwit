@@ -9,6 +9,7 @@ import (
 	netmail "net/mail"
 	"slices"
 	"strings"
+	"time"
 
 	"github.com/egoist/mygo/plugins/sqlite"
 	"github.com/emersion/go-imap/v2"
@@ -88,6 +89,12 @@ func push(ctx context.Context, db *store.DB, c *imapclient.Client, accountID int
 	for _, v := range rows.Values {
 		o := op{id: store.Int(v[0]), kind: store.Str(v[1]), msg: store.Int(v[2]), dst: store.Int(v[3]),
 			payload: store.Str(v[4]), dep: store.Int(v[5]), attempts: int(store.Int(v[6]))}
+		if o.kind == "purge" {
+			var p PurgePayload
+			if json.Unmarshal([]byte(o.payload), &p) == nil && p.DueAt > 0 && time.Now().Unix() < p.DueAt {
+				continue
+			}
+		}
 		problem, err := pushOp(ctx, db, c, o)
 		if o.kind == "purge" && err == nil && problem == "" {
 			if r, qerr := db.Query(ctx, "SELECT 1 FROM ops WHERE id = ? AND state = 'done'", o.id); qerr == nil && len(r.Values) > 0 {

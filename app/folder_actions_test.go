@@ -3,9 +3,11 @@ package app
 import (
 	"slices"
 	"testing"
+	"time"
 
 	"github.com/egoist/mygo/ui"
 	"github.com/godwit-email/godwit/core/coretest"
+	"github.com/godwit-email/godwit/core/mailsync"
 	"github.com/godwit-email/godwit/internal/i18n"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -49,6 +51,50 @@ func TestSidebarContextMenuEmptyTrash(t *testing.T) {
 		return !h.app.mail.emptyFolderAsk && h.app.mail.roleFolder(accs[0].ID, "trash").Total == 0
 	})
 	assert.Equal(t, 0, h.app.mail.roleFolder(accs[0].ID, "trash").Total)
+}
+
+func TestSidebarContextMenuEmptyTrashUndo(t *testing.T) {
+	defer func(orig time.Duration) { mailsync.UndoPurgeWindow = orig }(mailsync.UndoPurgeWindow)
+	mailsync.UndoPurgeWindow = 5 * time.Second
+
+	h, accs := mailHarness(t, []coretest.Option{coretest.WithoutAutoSync()}, "alice@example.com")
+	base := h.clock.Now()
+	h.put(accs[0], "INBOX", coretest.Msg("bob@example.com", "alice@example.com", "to empty", "body", at(base, 1)))
+	h.syncNow(accs[0])
+	h.waitMail("inbox mail", func() bool { return len(h.items()) == 1 })
+
+	// Move to trash
+	msgID := h.items()[0].ID
+	require.NoError(t, h.app.svc.Delete(t.Context(), []int64{msgID}))
+	h.post(func() { h.app.mail.reload() })
+	h.waitMail("trash folder has mail", func() bool {
+		return h.app.mail.roleFolder(accs[0].ID, "trash").Total == 1
+	})
+
+	trashName := i18n.T("mail.folder.trash")
+	emptyTrashAct := i18n.T("mail.empty_trash")
+
+	// Right click on Trash and choose Empty Trash
+	require.NoError(t, h.tt.RightClick(trashName))
+	require.NoError(t, h.tt.ChooseMenuItem(emptyTrashAct))
+	h.until("dialog shows", func() bool { return h.app.mail.emptyFolderAsk })
+
+	// Confirm dialog
+	h.click(i18n.T("mail.empty_trash"))
+
+	// Optimistically empty immediately without syncNow!
+	h.waitMail("trash immediately empty", func() bool {
+		return !h.app.mail.emptyFolderAsk && h.app.mail.roleFolder(accs[0].ID, "trash").Total == 0
+	})
+
+	// Click undo on toast
+	h.until("undo toast shown", func() bool { return h.tt.HasText(i18n.T("compose.undo")) })
+	h.click(i18n.T("compose.undo"))
+
+	// Restored!
+	h.waitMail("trash restored after undo", func() bool {
+		return h.app.mail.roleFolder(accs[0].ID, "trash").Total == 1
+	})
 }
 
 func TestSidebarContextMenuEmptySpam(t *testing.T) {

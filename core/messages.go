@@ -121,8 +121,20 @@ func decodeCursor(c string) (date, id int64, err error) {
 	return date, id, nil
 }
 
+// notPendingPurgeCond matches messages alias m that do not have an active permanent delete (purge) queued.
+// Messages pending purge are optimistically excluded from user views and counts.
+const notPendingPurgeCond = "NOT EXISTS (SELECT 1 FROM ops o WHERE o.message_id = m.id AND o.kind = 'purge' AND o.state IN ('pending', 'running', 'awaiting_claim'))"
+
 // viewCond returns a SQL condition on messages alias m selecting the view.
 func viewCond(v View) (string, []any, error) {
+	cond, args, err := rawViewCond(v)
+	if err != nil {
+		return "", nil, err
+	}
+	return cond + " AND " + notPendingPurgeCond, args, nil
+}
+
+func rawViewCond(v View) (string, []any, error) {
 	set := 0
 	for _, on := range []bool{v.FolderID != 0, v.Unified != "", v.LabelID != 0} {
 		if on {
@@ -302,7 +314,7 @@ func searchText(text string) (string, []any) {
 // searchFilter is the condition on messages alias m for q's account and
 // filters, its text aside: "1" for none.
 func searchFilter(q SearchQuery) (string, []any) {
-	cond, args := "1", []any(nil)
+	cond, args := notPendingPurgeCond, []any(nil)
 	if q.AccountID != 0 {
 		cond += " AND m.account_id = ?"
 		args = append(args, q.AccountID)
@@ -646,6 +658,14 @@ func (s *Service) Delete(ctx context.Context, ids []int64) error {
 	return s.MoveToRole(ctx, ids, "trash")
 }
 
+// ErrPurgeTooLate is returned when an undo cannot be performed because messages
+// have already been permanently deleted on the server.
+var ErrPurgeTooLate = errors.New("cannot undo: messages already permanently deleted")
+
+// ErrFolderEmptyTooLate is returned when an undo cannot be performed because the
+// folder has already been emptied on the server.
+var ErrFolderEmptyTooLate = errors.New("cannot undo: folder already emptied")
+
 // DeleteForever queues a permanent delete of the messages in their account's
 // Trash or Junk; ones elsewhere stay. A move out of Trash/Junk before the push cancels it, and
 // the fetch after the push drops the rows.
@@ -661,6 +681,10 @@ func (s *Service) DeleteForever(ctx context.Context, ids []int64) error {
 	if trash == 0 && junk == 0 {
 		return &ErrNoRoleFolder{Role: "trash"}
 	}
+	var dueAt int64
+	if mailsync.UndoPurgeWindow > 0 {
+		dueAt = s.clk().Now().Add(mailsync.UndoPurgeWindow).Unix()
+	}
 	var purged []target
 	var stmts []sqlite.Statement
 	for _, m := range ts {
@@ -673,10 +697,17 @@ func (s *Service) DeleteForever(ctx context.Context, ids []int64) error {
 			continue
 		}
 		purged = append(purged, m)
+		payload := mailsync.PurgeNowRoleWithDue(role, dueAt)
 		stmts = append(stmts, sqlite.Statement{SQL: `INSERT INTO ops(account_id, message_id, kind, dst_folder_id, payload, depends_on, created_at)
-			VALUES (?, ?, 'purge', ?, ?, ` + latestOp + `, unixepoch())`, Args: []any{acc, m.id, m.folder, mailsync.PurgeNowRole(role), m.id}})
+			VALUES (?, ?, 'purge', ?, ?, ` + latestOp + `, unixepoch())`, Args: []any{acc, m.id, m.folder, payload, m.id}})
 	}
-	return s.apply(ctx, acc, purged, stmts)
+	if err := s.apply(ctx, acc, purged, stmts); err != nil {
+		return err
+	}
+	if mailsync.UndoPurgeWindow > 0 {
+		s.wakeWorkerAt(acc, s.clk().Now().Add(mailsync.UndoPurgeWindow))
+	}
+	return nil
 }
 
 // EmptyFolder permanently expunges all messages in a trash or junk folder.
@@ -702,7 +733,11 @@ func (s *Service) EmptyFolder(ctx context.Context, folderID int64) (int, error) 
 	if len(msgRows.Values) == 0 {
 		return 0, nil
 	}
-	payload := mailsync.PurgeNowRole(role)
+	var dueAt int64
+	if mailsync.UndoPurgeWindow > 0 {
+		dueAt = s.clk().Now().Add(mailsync.UndoPurgeWindow).Unix()
+	}
+	payload := mailsync.PurgeNowRoleWithDue(role, dueAt)
 	var ts []target
 	var stmts []sqlite.Statement
 	for _, r := range msgRows.Values {
@@ -721,7 +756,81 @@ func (s *Service) EmptyFolder(ctx context.Context, folderID int64) (int, error) 
 			return i, err
 		}
 	}
+	if mailsync.UndoPurgeWindow > 0 {
+		s.wakeWorkerAt(acc, s.clk().Now().Add(mailsync.UndoPurgeWindow))
+	}
 	return len(ts), nil
+}
+
+// UndoPurge cancels pending purge operations for the given message IDs, restoring
+// them optimistically to their folder if they have not yet been expunged on the server.
+func (s *Service) UndoPurge(ctx context.Context, ids []int64) error {
+	s.editMu.Lock()
+	defer s.editMu.Unlock()
+	if len(ids) == 0 {
+		return nil
+	}
+	marks := strings.TrimSuffix(strings.Repeat("?,", len(ids)), ",")
+	args := make([]any, len(ids))
+	for i, id := range ids {
+		args[i] = id
+	}
+	rows, err := s.db.Query(ctx, "SELECT DISTINCT account_id, thread_id FROM messages WHERE id IN ("+marks+")", args...)
+	if err != nil {
+		return err
+	}
+	res, err := s.db.Execute(ctx, "UPDATE ops SET state = 'cancelled' WHERE message_id IN ("+marks+") AND kind = 'purge' AND state = 'pending'", args...)
+	if err != nil {
+		return err
+	}
+	if res.Changes == 0 {
+		return ErrPurgeTooLate
+	}
+	accs := map[int64][]int64{}
+	for _, r := range rows.Values {
+		accID, tid := store.Int(r[0]), store.Int(r[1])
+		if tid != 0 {
+			accs[accID] = append(accs[accID], tid)
+		} else if _, ok := accs[accID]; !ok {
+			accs[accID] = nil
+		}
+	}
+	for accID, tids := range accs {
+		s.bus.Publish(events.Event{
+			Type:       events.MessagesChanged,
+			AccountID:  accID,
+			MessageIDs: ids,
+			ThreadIDs:  slices.Compact(slices.Sorted(slices.Values(tids))),
+		})
+	}
+	return nil
+}
+
+// UndoEmptyFolder cancels pending purge operations for the given folder, restoring
+// messages optimistically if they have not yet been expunged on the server.
+func (s *Service) UndoEmptyFolder(ctx context.Context, folderID int64) error {
+	s.editMu.Lock()
+	defer s.editMu.Unlock()
+	rows, err := s.db.Query(ctx, "SELECT account_id FROM folders WHERE id = ?", folderID)
+	if err != nil {
+		return err
+	}
+	if len(rows.Values) == 0 {
+		return fmt.Errorf("folder %d not found", folderID)
+	}
+	accID := store.Int(rows.Values[0][0])
+	res, err := s.db.Execute(ctx, "UPDATE ops SET state = 'cancelled' WHERE dst_folder_id = ? AND kind = 'purge' AND state = 'pending'", folderID)
+	if err != nil {
+		return err
+	}
+	if res.Changes == 0 {
+		return ErrFolderEmptyTooLate
+	}
+	s.bus.Publish(events.Event{
+		Type:      events.MessagesChanged,
+		AccountID: accID,
+	})
+	return nil
 }
 
 // MarkAllAsRead marks every unread message in view v as read. Returns the number of messages marked.

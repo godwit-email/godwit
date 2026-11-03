@@ -3606,5 +3606,8 @@
   "wit_rule_then_next": "Then: {arg1}",
   "wit_rule_new_only_forward": "Existing mail is not forwarded: the rule handles only mail that arrives after you save it.",
   "wit_rule_confirm_desc": "Once saved, matching new mail is forwarded automatically, without asking each time.",
-  "wit_rule_confirm_again": "Changing the recipient later needs confirming again"
+  "wit_rule_confirm_again": "Changing the recipient later needs confirming again",
+  "mail_purge_toast": "{arg1, plural, one {Permanently deleted {arg1, number, ::group-off} message} other {Permanently deleted {arg1, number, ::group-off} messages}}",
+  "mail_purge_undone": "Deletion undone",
+  "mail_purge_too_late": "Too late: message has already been permanently deleted."
 }

@@ -15,6 +15,7 @@ import (
 	"github.com/godwit-email/godwit/core"
 	"github.com/godwit-email/godwit/core/coretest"
 	gomail "github.com/godwit-email/godwit/core/mail"
+	"github.com/godwit-email/godwit/core/mailsync"
 	"github.com/godwit-email/godwit/internal/i18n"
 )
 
@@ -639,6 +640,53 @@ func TestContextMenuMoveRoleOptions(t *testing.T) {
 	h.waitMail("trash empty after the permanent delete", func() bool {
 		h.syncNow(accs[0])
 		return h.countIn(trash) == 0 && len(h.items()) == 0
+	})
+}
+
+func TestDeletePermanentlyOptimisticAndUndo(t *testing.T) {
+	defer func(orig time.Duration) { mailsync.UndoPurgeWindow = orig }(mailsync.UndoPurgeWindow)
+	mailsync.UndoPurgeWindow = 5 * time.Second
+
+	h, accs := mailHarness(t, []coretest.Option{coretest.WithoutAutoSync()}, "alice@example.com")
+	base := h.clock.Now()
+	h.put(accs[0], "INBOX", coretest.Msg("bob@example.com", "alice@example.com", "to be purged", "content", at(base, 1)))
+	h.syncNow(accs[0])
+	h.waitMail("inbox mail", func() bool { return len(h.items()) == 1 })
+
+	// Move to trash
+	if err := h.tt.RightClick("to be purged"); err != nil {
+		t.Fatal(err)
+	}
+	deleteAct := i18n.T("mail.action.delete")
+	if err := h.tt.ChooseMenuItem(deleteAct); err != nil {
+		t.Fatal(err)
+	}
+	h.waitMail("inbox empty after delete", func() bool { return len(h.items()) == 0 })
+	h.click(i18n.T("mail.folder.trash"))
+	h.waitMail("in trash", func() bool { return len(h.items()) == 1 })
+
+	// Delete in trash -> opens purge dialog
+	if err := h.tt.RightClick("to be purged"); err != nil {
+		t.Fatal(err)
+	}
+	if err := h.tt.ChooseMenuItem(deleteAct); err != nil {
+		t.Fatal(err)
+	}
+	h.until("the confirmation", func() bool { return h.app.mail.purgeAsk })
+	h.post(func() { h.app.navigate(Route{Page: PageMail, View: h.app.route.View}) })
+	h.until("the reader closed", func() bool { return h.app.route.ThreadID == 0 && h.app.mail.purgeAsk })
+	h.click(i18n.T("common.delete"))
+
+	// Optimistic: message disappears immediately from the list without sync!
+	h.waitMail("immediately hidden from trash without syncNow", func() bool {
+		return len(h.items()) == 0
+	})
+
+	// Click undo on toast
+	h.until("undo toast shown", func() bool { return h.tt.HasText(i18n.T("compose.undo")) })
+	h.click(i18n.T("compose.undo"))
+	h.waitMail("message restored to trash after undo", func() bool {
+		return len(h.items()) == 1
 	})
 }
 

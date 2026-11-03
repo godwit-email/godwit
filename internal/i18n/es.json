@@ -1857,5 +1857,8 @@
   "wit_rule_then_next": "Luego: {arg1}",
   "wit_rule_new_only_forward": "El correo existente no se reenvía: la regla solo trata el que llegue después de guardarla.",
   "wit_rule_confirm_desc": "Una vez guardada, el correo nuevo que coincida se reenvía automáticamente, sin preguntar cada vez.",
-  "wit_rule_confirm_again": "Si cambias el destinatario más adelante, habrá que confirmarlo de nuevo"
+  "wit_rule_confirm_again": "Si cambias el destinatario más adelante, habrá que confirmarlo de nuevo",
+  "mail_purge_toast": "{arg1, plural, one {{arg1, number, ::group-off} mensaje eliminado definitivamente} many {{arg1, number, ::group-off} mensajes eliminados definitivamente} other {{arg1, number, ::group-off} mensajes eliminados definitivamente}}",
+  "mail_purge_undone": "Eliminación deshecha",
+  "mail_purge_too_late": "Demasiado tarde: el mensaje ya se eliminó de forma permanente."
 }

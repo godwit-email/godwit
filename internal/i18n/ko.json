@@ -1857,5 +1857,8 @@
   "wit_rule_then_next": "이어서 {arg1}",
   "wit_rule_new_only_forward": "기존 메일은 전달되지 않습니다. 규칙은 저장한 뒤 도착한 메일만 처리합니다.",
   "wit_rule_confirm_desc": "저장하면 조건에 맞는 새 메일이 매번 묻지 않고 자동으로 전달됩니다.",
-  "wit_rule_confirm_again": "나중에 받는 사람을 바꾸면 다시 확인해야 합니다"
+  "wit_rule_confirm_again": "나중에 받는 사람을 바꾸면 다시 확인해야 합니다",
+  "mail_purge_toast": "{arg1, number, ::group-off}통을 완전히 삭제했습니다",
+  "mail_purge_undone": "삭제가 취소되었습니다",
+  "mail_purge_too_late": "너무 늦었습니다: 메시지가 이미 완전히 삭제되었습니다."
 }
