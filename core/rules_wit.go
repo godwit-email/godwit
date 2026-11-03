@@ -88,7 +88,8 @@ func (s *Service) registerRuleTool() {
 }
 
 // prepareRule checks the proposed rule as SaveRule would, and records it
-// with what its card shows. Its destinations are the forward recipients.
+// with what its card shows. Its destinations are the forward recipients and,
+// with a Wit action, the host of the model service it sends mail to.
 func (s *Service) prepareRule(ctx context.Context, _ Conversation, raw json.RawMessage) (prepared, error) {
 	var in struct {
 		RuleDoc
@@ -129,7 +130,13 @@ func (s *Service) prepareRule(ctx context.Context, _ Conversation, raw json.RawM
 	if err != nil {
 		return prepared{}, err
 	}
-	return prepared{Args: b, Summary: "Create rule: " + d.Name, TargetKind: "rule", Destinations: rcpts}, nil
+	dests := rcpts
+	if slices.ContainsFunc(d.Actions, func(a RuleAction) bool { return slices.Contains(RuleAIActions, a.Kind) }) {
+		if h := s.ruleAIHost(ctx); h != "" {
+			dests = append(slices.Clone(rcpts), h)
+		}
+	}
+	return prepared{Args: b, Summary: "Create rule: " + d.Name, TargetKind: "rule", Destinations: dests}, nil
 }
 
 // confirmedRuleArgs is a proposal's recorded arguments with the recipients
@@ -218,8 +225,19 @@ func (s *Service) ruleAIOn(ctx context.Context) (bool, error) {
 	return st.RuleAI, err
 }
 
+// ruleAIHost is the host[:port] the rule AI actions send mail to: the
+// default model service's; "" for none, or one on the device.
+func (s *Service) ruleAIHost(ctx context.Context) string {
+	m, _, err := s.resolveTask(ctx, "", false)
+	if err != nil || m.OnDevice {
+		return ""
+	}
+	return gateway.Host(m.BaseURL)
+}
+
 // ruleAsk sends the message to the default model, masked, for a rule's AI
-// action kind, and returns the reply; failure is why it could not.
+// action kind, and returns the reply; failure is why it could not. Its
+// audit names the model service's host.
 func (s *Service) ruleAsk(ctx context.Context, kind, system string, msgID int64) (reply, string, error) {
 	model, _, err := s.resolveTask(ctx, "", false)
 	if err != nil {
@@ -229,7 +247,11 @@ func (s *Service) ruleAsk(ctx context.Context, kind, system string, msgID int64)
 	if err != nil || len(items) == 0 {
 		return reply{}, RuleFailGone, err
 	}
-	if err := s.gateway().Record(ctx, gateway.Entry{Source: AuditRule, Tool: kind, TargetKind: "message", TargetID: msgID, Decision: "run"}); err != nil {
+	var dests []string
+	if !model.OnDevice {
+		dests = []string{model.BaseURL}
+	}
+	if err := s.gateway().Record(ctx, gateway.Entry{Source: AuditRule, Tool: kind, TargetKind: "message", TargetID: msgID, Destinations: dests, Decision: "run"}); err != nil {
 		return reply{}, "", err
 	}
 	system += "\n\n" + ai.UntrustedSystemNote + "\n\nWrite in the language of the email."

@@ -57,7 +57,10 @@ const (
 	AuditMCP      = "local_mcp"
 )
 
-// AuditRule is the audit source of a rule's forward (target: the rule).
+// AuditRule is the audit source of what a rule sends off the machine: a
+// forward (target: the rule; destination: the recipient's domain) and a Wit
+// action, draft_reply or key_points (target: the message; destination: the
+// model service's host).
 const AuditRule = "rule"
 
 // AuditExternal writes an audit_log row for a call made from outside the

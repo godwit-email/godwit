@@ -2,6 +2,7 @@ package core
 
 import (
 	"encoding/json"
+	"net/url"
 	"os"
 	"path/filepath"
 	"testing"
@@ -116,6 +117,21 @@ func TestRejectingAProposalSavesNothing(t *testing.T) {
 
 // 在编辑器里修改 hands the proposed rule to the editor and ends the card
 // unsaved: the rule is saved only if the user saves it there.
+// A proposal with a Wit action names, besides the forward recipients, the
+// host of the model service its actions would send mail to.
+func TestAProposalWithWitActionsNamesTheModelHost(t *testing.T) {
+	e := newApprovalEnv(t)
+	st, err := e.s.GetSettings(t.Context())
+	require.NoError(t, err)
+	st.RuleAI = true
+	_, err = e.s.SetSettings(t.Context(), st)
+	require.NoError(t, err)
+	u, err := url.Parse(e.srv.URL)
+	require.NoError(t, err)
+	a := e.propose(t, `{"name":"Reply","trigger":"receive","match":"all","actions":[{"kind":"draft_reply"},{"kind":"forward","to":"Acct <acct@company.example>"}]}`)
+	assert.Equal(t, []string{"acct@company.example", u.Host}, a.Destinations)
+}
+
 func TestEditingAProposalHandsItToTheEditor(t *testing.T) {
 	e := newApprovalEnv(t)
 	a := e.propose(t, forwardProposal)
@@ -219,6 +235,10 @@ func TestRuleDraftReplyOnlyDrafts(t *testing.T) {
 	assert.Contains(t, drafts[0][3], "Thanks, noted.")
 	assert.Zero(t, e.outboxLen(t))
 	assert.Empty(t, e.smtp.Messages())
+	u, err := url.Parse(srv.URL)
+	require.NoError(t, err)
+	assert.Equal(t, [][]any{{u.Host}}, e.rows(t, "SELECT destination FROM audit_log WHERE source = ? AND tool = 'draft_reply'", AuditRule),
+		"the audit names the model service's host")
 }
 
 // 让 Wit 提取要点 writes the key points the model gave into the folder, as

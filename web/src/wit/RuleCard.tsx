@@ -89,7 +89,8 @@ function ruleText(p: Proposal, t: T) {
 
 /**
  * Wit's rule proposal waiting for the user (ADR 0030): the rule as 名称 / 当 / 如果 / 就 / 运行方式, its
- * forward recipients (first-time ones flagged) and the existing mail it matches; 拒绝, 在编辑器里修改
+ * forward recipients (first-time ones flagged), the model host its Wit actions send mail to and the
+ * existing mail it matches; 拒绝, 在编辑器里修改
  * and 保存规则. A rule that forwards saves only through the recipient confirmation here.
  */
 export function RuleCard({
@@ -109,7 +110,9 @@ export function RuleCard({
   const p = proposalOf(a);
   if (!p) return null;
   const { when, ifs, thens } = ruleText(p, t);
-  const rcpts = a.destinations;
+  // Forward recipients are addresses; any other destination is the model host a Wit action sends mail to.
+  const rcpts = a.destinations.filter((d) => d.includes("@"));
+  const hosts = a.destinations.filter((d) => !d.includes("@"));
   const first = (to: string) =>
     (p.first_time ?? []).some((f) => f.toLowerCase() === to.toLowerCase());
   const row = (k: string, v: React.ReactNode) => (
@@ -140,7 +143,9 @@ export function RuleCard({
         <span className="font-semibold">{t("wit.approval.wants", t("wit.tool.propose_rule"))}</span>
         <span className="font-mono text-muted-foreground text-sm">{a.tool}</span>
         <span className="ml-auto flex gap-1.5">
-          {rcpts.length > 0 && <Badge variant="secondary">{t("settings.rules.egress")}</Badge>}
+          {a.destinations.length > 0 && (
+            <Badge variant="secondary">{t("settings.rules.egress")}</Badge>
+          )}
           <Badge
             variant="outline"
             className="border-(--warning-border) bg-(--warning-bg) text-(--warning-text)"
@@ -177,6 +182,7 @@ export function RuleCard({
               })}
             </span>,
           )}
+          {hosts.length > 0 && row(t("wit.approval.sends_to"), hosts.join(", "))}
           {row(
             t("settings.rules.run"),
             t(p.background ? "settings.rules.run.background" : "settings.rules.run.window"),

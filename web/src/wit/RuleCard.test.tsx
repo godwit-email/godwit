@@ -86,6 +86,16 @@ test("a file action shows its whole folder path", () => {
   expect(screen.getByText("导出 PDF 到「/Users/me/Documents/Bills」")).toBeTruthy();
 });
 
+test("a Wit action names the model's host, which needs no confirming", async () => {
+  const decide = vi.fn();
+  const a = proposal([{ kind: "draft_reply" }], ["api.openai.com"]);
+  render(<RuleCard a={a} busy={false} decide={decide} t={t} />);
+  expect(screen.getByText("外发")).toBeTruthy();
+  expect(screen.getByText("api.openai.com")).toBeTruthy();
+  await userEvent.click(screen.getByRole("button", { name: "保存规则" }));
+  expect(decide).toHaveBeenCalledWith(true);
+});
+
 test("a proposal taken to the editor says so", () => {
   const a = {
     ...proposal([{ kind: "archive" }], []),
