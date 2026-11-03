@@ -3,7 +3,9 @@ package conn_test
 import (
 	"bufio"
 	"context"
+	"log"
 	"net"
+	"os"
 	"strconv"
 	"strings"
 	"sync"
@@ -446,4 +448,52 @@ func TestIMAPTencentExmail(t *testing.T) {
 		assert.Equal(t, "utf-8", ch.(*imap.BodyStructureSinglePart).Params["charset"])
 	}
 	assert.Equal(t, "Subject: hi\r\nFrom: a@example.com\r\n\r\n", string(msgs[0].FindBodySection(sec)))
+}
+
+// TestLogTraceOnParseError fakes the #450 failure, a "* (" line where a
+// response type belongs: the log gets the masked traffic before it, without
+// the login or the mail's words.
+func TestLogTraceOnParseError(t *testing.T) {
+	e := fake(t, func(c net.Conn) {
+		c.Write([]byte("* OK [CAPABILITY IMAP4rev1] hi\r\n"))
+		r := bufio.NewReader(c)
+		for {
+			line, err := r.ReadString('\n')
+			if err != nil {
+				return
+			}
+			f := strings.Fields(line)
+			if len(f) < 2 {
+				return
+			}
+			switch strings.ToUpper(f[1]) {
+			case "LOGIN":
+				c.Write([]byte(f[0] + " OK [CAPABILITY IMAP4rev1] logged in as alice\r\n"))
+			case "FETCH":
+				c.Write([]byte("* 1 FETCH (UID 42 BODY[TEXT] {14}\r\nSecret\r\nplans!)\r\n* (Seen)\r\n"))
+			default:
+				c.Write([]byte(f[0] + " OK done\r\n"))
+			}
+		}
+	})
+	c, err := conn.DialIMAP(context.Background(), e)
+	require.NoError(t, err)
+	defer c.Close()
+	_, err = c.Fetch(imap.SeqSetNum(1), &imap.FetchOptions{UID: true,
+		BodySection: []*imap.FetchItemBodySection{{Specifier: imap.PartSpecifierText}}}).Collect()
+	require.ErrorContains(t, err, `expected atom, got "("`)
+
+	var buf strings.Builder
+	log.SetOutput(&buf)
+	t.Cleanup(func() { log.SetOutput(os.Stderr) })
+	conn.LogTrace(c, err)
+	got := buf.String()
+	assert.Contains(t, got, "* 1 FETCH (UID 42 BODY[TEXT] {14}\n… 8 bytes in 1 lines of text\nxxxxx.)\n* (xxxx)")
+	for _, s := range []string{"hunter2", "alice", "Secret", "plans"} {
+		assert.NotContains(t, got, s)
+	}
+
+	buf.Reset()
+	conn.LogTrace(c, &imap.Error{Type: imap.StatusResponseTypeNo, Text: "in response"})
+	assert.Empty(t, buf.String(), "a NO from the server is not a parse error")
 }

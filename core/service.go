@@ -647,12 +647,13 @@ func (s *Service) dialAccount(ctx context.Context, accountID int64, h *imapclien
 
 // syncAccount runs one sync. An SMTP login failure skips the outbox but not the
 // rest; it is returned at the end, so a worker round ends and parks.
-func (s *Service) syncAccount(ctx context.Context, accountID int64, explicit bool) error {
+func (s *Service) syncAccount(ctx context.Context, accountID int64, explicit bool) (err error) {
 	c, release, _, err := s.dialAccount(ctx, accountID, nil)
 	if err != nil {
 		return err
 	}
 	defer release()
+	defer func() { conn.LogTrace(c, err) }() // a response go-imap could not parse goes in the error report
 	// Queued first, so this round's push expunges and its fetch drops the rows.
 	if err := mailsync.QueuePurge(ctx, s.db, c, accountID); err != nil {
 		return err

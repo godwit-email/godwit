@@ -174,9 +174,11 @@ func dialIMAP(ctx context.Context, e Endpoint, h *imapclient.UnilateralDataHandl
 	if err != nil {
 		return nil, nil, fmt.Errorf("imap connect %s: %w", e.addr(), err)
 	}
+	tr := &trace{}
 	opts := &imapclient.Options{
 		TLSConfig:   &tls.Config{ServerName: e.Host, RootCAs: TLSRoots},
 		WordDecoder: &mime.WordDecoder{CharsetReader: charset.Reader}, // GBK/Big5 words in BODYSTRUCTURE
+		DebugWriter: tr,                                               // armed after login; see LogTrace
 
 		UnilateralDataHandler: h,
 	}
@@ -210,6 +212,8 @@ func dialIMAP(ctx context.Context, e Endpoint, h *imapclient.UnilateralDataHandl
 		return nil, nil, err
 	}
 	release()
+	tr.arm()
+	addTrace(c, tr)
 	return c, func() { nc.Close() }, nil
 }
 
