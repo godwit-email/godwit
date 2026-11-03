@@ -88,6 +88,7 @@
   "error_check_smtp": "SMTP-controle mislukt: {arg1}",
   "error_flush_slow": "Een concept wordt na 3 seconden nog steeds opgeslagen",
   "error_generic": "Er is iets misgegaan. Probeer het later opnieuw.",
+  "error_invalid_rule": "Deze regel kan niet worden opgeslagen. Controleer de voorwaarden en acties.",
   "error_invalid_state": "Dit item is gewijzigd. Vernieuw en probeer het opnieuw.",
   "error_no_outbox_draft": "Dit bericht heeft geen concept om terug te halen.",
   "error_keychain": "De systeemsleutelhanger is niet beschikbaar.",

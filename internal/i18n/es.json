@@ -88,6 +88,7 @@
   "error_check_smtp": "Error al comprobar SMTP: {arg1}",
   "error_flush_slow": "Un borrador sigue guardándose después de 3 segundos",
   "error_generic": "Algo salió mal. Inténtalo de nuevo más tarde.",
+  "error_invalid_rule": "No se puede guardar esta regla. Revisa sus condiciones y acciones.",
   "error_invalid_state": "Este elemento ha cambiado. Actualiza e inténtalo de nuevo.",
   "error_no_outbox_draft": "Este mensaje no tiene un borrador que recuperar.",
   "error_keychain": "El llavero del sistema no está disponible.",

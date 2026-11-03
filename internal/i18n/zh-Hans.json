@@ -88,6 +88,7 @@
   "error_check_smtp": "SMTP 检查未通过：{arg1}",
   "error_flush_slow": "草稿 3 秒内还没保存完",
   "error_generic": "出错了，请稍后重试。",
+  "error_invalid_rule": "无法保存这条规则，请检查它的条件和动作。",
   "error_invalid_state": "这一项的状态已经变了，请刷新后再试。",
   "error_no_outbox_draft": "这封邮件没有可以恢复的草稿。",
   "error_keychain": "无法访问系统钥匙串。",

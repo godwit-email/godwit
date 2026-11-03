@@ -88,6 +88,7 @@
   "error_check_smtp": "SMTP kontrolü başarısız oldu: {arg1}",
   "error_flush_slow": "Bir taslak 3 saniye sonra hâlâ kaydediliyor",
   "error_generic": "Bir sorun oluştu. Lütfen daha sonra tekrar deneyin.",
+  "error_invalid_rule": "Bu kural kaydedilemiyor. Koşullarını ve eylemlerini kontrol edin.",
   "error_invalid_state": "Bu öğe değişti. Yenileyip tekrar deneyin.",
   "error_no_outbox_draft": "Bu iletinin geri getirilecek bir taslağı yok.",
   "error_keychain": "Sistem anahtar zinciri kullanılamıyor.",

@@ -88,6 +88,7 @@
   "error_check_smtp": "Échec de la vérification SMTP : {arg1}",
   "error_flush_slow": "Un brouillon est toujours en cours d’enregistrement après 3 secondes",
   "error_generic": "Une erreur s’est produite. Veuillez réessayer plus tard.",
+  "error_invalid_rule": "Impossible d’enregistrer cette règle. Vérifiez ses conditions et ses actions.",
   "error_invalid_state": "Cet élément a changé. Actualisez et réessayez.",
   "error_no_outbox_draft": "Ce message n’a pas de brouillon à récupérer.",
   "error_keychain": "Le trousseau système est indisponible.",

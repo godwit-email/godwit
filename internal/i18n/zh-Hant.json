@@ -88,6 +88,7 @@
   "error_check_smtp": "SMTP 檢查未通過：{arg1}",
   "error_flush_slow": "草稿 3 秒內還沒儲存完",
   "error_generic": "出錯了，請稍後重試。",
+  "error_invalid_rule": "無法儲存這條規則，請檢查它的條件和動作。",
   "error_invalid_state": "這一項的狀態已經變了，請重新整理後再試。",
   "error_no_outbox_draft": "這封郵件沒有可以復原的草稿。",
   "error_keychain": "無法存取系統鑰匙圈。",

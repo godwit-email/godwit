@@ -88,6 +88,7 @@
   "error_check_smtp": "Falha na verificação SMTP: {arg1}",
   "error_flush_slow": "Um rascunho ainda está sendo salvo após 3 segundos",
   "error_generic": "Algo deu errado. Tente novamente mais tarde.",
+  "error_invalid_rule": "Não é possível salvar esta regra. Verifique as condições e ações.",
   "error_invalid_state": "Este item foi alterado. Atualize e tente novamente.",
   "error_no_outbox_draft": "Esta mensagem não tem um rascunho para recuperar.",
   "error_keychain": "As chaves do sistema não estão disponíveis.",

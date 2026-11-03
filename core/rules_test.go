@@ -155,6 +155,7 @@ func TestRuleSkipsDisabledAndSent(t *testing.T) {
 	off := e.saveRule(t, billsRule(), false)
 	e.bill(t, "a@x", "billing@aws.example", "Invoice 1")
 	e.sync(t)
+	e.rulesIdle(t) // a@x is handled before the enabled rule exists
 	e.saveRule(t, billsRule(), true)
 	e.put(t, "Sent", eml("sent@x", "billing@aws.example", "bob@example.com", "Invoice 2", day, "b"))
 	e.bill(t, "b@x", "billing@aws.example", "Invoice 3")

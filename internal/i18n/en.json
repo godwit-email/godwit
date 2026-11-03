@@ -170,6 +170,7 @@
   },
   "error_flush_slow": "A draft is still saving after 3 seconds",
   "error_generic": "Something went wrong. Please try again later.",
+  "error_invalid_rule": "This rule can't be saved. Check its conditions and actions.",
   "error_invalid_state": "This item has changed. Refresh and try again.",
   "error_no_outbox_draft": "This message has no draft to bring back.",
   "error_keychain": "The system keychain is unavailable.",

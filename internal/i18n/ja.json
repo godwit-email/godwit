@@ -88,6 +88,7 @@
   "error_check_smtp": "SMTP チェックに失敗しました：{arg1}",
   "error_flush_slow": "下書きの保存に 3 秒以上かかっています",
   "error_generic": "問題が発生しました。しばらくしてから再試行してください。",
+  "error_invalid_rule": "このルールは保存できません。条件とアクションを確認してください。",
   "error_invalid_state": "この項目の状態が変更されました。更新してから再試行してください。",
   "error_no_outbox_draft": "このメールには戻せる下書きがありません。",
   "error_keychain": "システムキーチェーンにアクセスできません。",

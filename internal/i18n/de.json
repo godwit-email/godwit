@@ -93,6 +93,7 @@
   "error_check_smtp": "SMTP-Prüfung fehlgeschlagen: {arg1}",
   "error_flush_slow": "Ein Entwurf wird nach 3 Sekunden immer noch gespeichert",
   "error_generic": "Etwas ist schiefgelaufen. Bitte versuche es später erneut.",
+  "error_invalid_rule": "Diese Regel kann nicht gespeichert werden. Prüfe ihre Bedingungen und Aktionen.",
   "error_invalid_state": "Dieses Element hat sich geändert. Bitte aktualisieren und erneut versuchen.",
   "error_no_outbox_draft": "Zu dieser Nachricht gibt es keinen Entwurf, der zurückgeholt werden kann.",
   "error_keychain": "Der System-Schlüsselbund ist nicht verfügbar.",

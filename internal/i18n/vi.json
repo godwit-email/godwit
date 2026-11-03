@@ -88,6 +88,7 @@
   "error_check_smtp": "Kiểm tra SMTP thất bại: {arg1}",
   "error_flush_slow": "Một thư nháp vẫn đang được lưu sau 3 giây",
   "error_generic": "Đã xảy ra lỗi. Vui lòng thử lại sau.",
+  "error_invalid_rule": "Không thể lưu quy tắc này. Hãy kiểm tra điều kiện và hành động.",
   "error_invalid_state": "Mục này đã thay đổi. Hãy làm mới và thử lại.",
   "error_no_outbox_draft": "Thư này không có bản nháp để lấy lại.",
   "error_keychain": "Chuỗi khóa hệ thống không khả dụng.",

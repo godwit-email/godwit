@@ -88,6 +88,7 @@ var table = []Error{
 	{Code: "signature_image_count", Err: core.ErrSignatureImageCount},
 	{Code: "signature_not_found", Err: core.ErrSignatureNotFound},
 	{Code: "signature_name", Err: core.ErrSignatureName},
+	{Code: "invalid_rule", Err: core.ErrInvalidRule},
 	{Code: "account_icon", Err: core.ErrAccountIcon},
 	{Code: "not_grantable", Err: core.ErrNotGrantable},
 	{Code: "needs_answer", Err: core.ErrNeedsAnswer},

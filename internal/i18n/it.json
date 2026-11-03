@@ -88,6 +88,7 @@
   "error_check_smtp": "Verifica SMTP non riuscita: {arg1}",
   "error_flush_slow": "Salvataggio di una bozza ancora in corso dopo 3 secondi",
   "error_generic": "Qualcosa è andato storto. Riprova più tardi.",
+  "error_invalid_rule": "Impossibile salvare questa regola. Controlla condizioni e azioni.",
   "error_invalid_state": "Questo elemento è cambiato. Aggiorna e riprova.",
   "error_no_outbox_draft": "Questo messaggio non ha una bozza da recuperare.",
   "error_keychain": "Il portachiavi di sistema non è disponibile.",
