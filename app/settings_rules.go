@@ -29,7 +29,8 @@ type rulesView struct {
 
 	counts map[int64]int // each rule's hits of the last week
 
-	deleting *core.Rule // the rule whose 删除规则 asks to confirm
+	deleting *core.Rule   // the rule whose 删除规则 asks to confirm
+	order    ui.ListState // the rules' list, its rows dragged to reorder them
 
 	editing bool
 	edit    core.Rule // the rule in the editor; ID 0 a new one
@@ -186,11 +187,7 @@ func (v *rulesView) view(c *ui.Context) {
 				kit.EmptyAction(c, i18n.T("settings.rules.empty.wit"), kit.ButtonOpts{Variant: kit.Outline, Icon: "sparkles"}).OnClick(a.NewConversation)
 			}})
 	} else {
-		rows := make([]func(), len(v.rules))
-		for i, r := range v.rules {
-			rows[i] = func() { v.row(c.Key(r.ID), r) }
-		}
-		settingsSection(c, i18n.T("settings.rules.list"), i18n.T("settings.rules.list.foot"), rows...)
+		settingsSection(c, i18n.T("settings.rules.list"), i18n.T("settings.rules.list.foot"), func() { v.list(c) })
 	}
 	ui.Column(c).Gap(theme.SectionGap).Children(func() {
 		ui.Column(c).Gap(th.Space(0.5)).Children(func() {
@@ -243,13 +240,19 @@ func ruleTag(c *ui.Context, text string, fill, fg ui.Color, icon string) ui.Elem
 	})
 }
 
-// ruleDrag is the rule a row of the list drags, by ID.
-type ruleDrag int64
+// list is the rules, one row each, in a List as the labels' is: dragging
+// a row shows where it would go and moves it there (ListState.Reorder).
+// The List is as tall as its rows, an open one's hits included.
+func (v *rulesView) list(c *ui.Context) {
+	v.order.Key = func(i int) any { return v.rules[i].ID }
+	v.order.Label = func(i int) string { return ruleName(v.rules[i].Doc) }
+	v.order.Reorder = func(rows []int, to int) { v.move(rows[0], to) }
+	n := len(v.rules)
+	kit.List(c, &v.order, n, func(i int) { cardListRow(c, i, n, func() { v.row(c, v.rules[i]) }) }).FillWidth()
+}
 
 // row is a rule: grip, switch, name and summary (which expand it), edit,
-// and expanded, its hits, 编辑规则 and 删除规则. Its bar drags it, and a
-// rule dropped on it goes after it going down, before it going up, as the
-// line drawn while it is over shows.
+// and expanded, its hits, 编辑规则 and 删除规则.
 func (v *rulesView) row(c *ui.Context, r core.Rule) {
 	a := v.a
 	t, th := theme.Of(c), c.Theme()
@@ -263,70 +266,57 @@ func (v *rulesView) row(c *ui.Context, r core.Rule) {
 		}
 		v.loadHits()
 	}
-	at := slices.IndexFunc(v.rules, func(x core.Rule) bool { return x.ID == r.ID })
-	col := ui.Column(c).FillWidth()
-	if id, ok := ui.Drop[ruleDrag](col); ok {
-		v.move(slices.IndexFunc(v.rules, func(x core.Rule) bool { return x.ID == int64(id) }), at)
-	}
-	if id, ok := ui.DragOver[ruleDrag](col); ok && int64(id) != r.ID {
-		below := slices.IndexFunc(v.rules, func(x core.Rule) bool { return x.ID == int64(id) }) < at
-		accent, w := t.Primary, th.Space(0.5)
-		col.DrawOver(func(p *ui.Painter, b ui.Rect) {
-			y := b.Y
-			if below {
-				y = b.Y + b.H - w
-			}
-			p.Fill(ui.Rect{X: b.X, Y: y, W: b.W, H: w}, accent, 0)
-		})
-	}
-	col.Children(func() {
+	ui.Column(c).FillWidth().Children(func() {
 		ui.Row(c).FillWidth().Gap(th.Space(3)).Padding(th.Space(2), th.Space(4), th.Space(2), th.Space(2)).MinHeight(th.Space(12)).AlignItems(ui.Center).
-			Drag(ruleDrag(r.ID)).Children(func() {
-			ui.Icon(c, icons.Get("grip")).Size(theme.Icon, theme.Icon).TextColor(t.Idle).Shrink(0)
-			on := r.Enabled
-			kit.Switch(c, &on).Label(i18n.Tf("settings.rules.enable", name))
-			if on != r.Enabled {
-				id := r.ID
-				v.rules = slices.Clone(v.rules)
-				v.rules[slices.IndexFunc(v.rules, func(x core.Rule) bool { return x.ID == id })].Enabled = on // at once; load reads them again
-				a.writes.Chain("rules", func(ctx context.Context) error { return a.svc.SetRuleEnabled(ctx, id, on) }, v.saved)
-			}
-			fg := t.Foreground
-			if !r.Enabled {
-				fg = t.Muted
-			}
-			kit.Pressable(c, kit.PressableOpts{Bare: true, OnClick: toggle}).Label(name).Grow(1).Shrink(1).Children(func() {
-				ui.Column(c).Grow(1).Shrink(1).Gap(th.Space(0.5)).Children(func() {
-					ui.Row(c).Gap(th.Space(2)).AlignItems(ui.Center).Children(func() {
-						kit.Text(c, name, t.Text.Body).FontWeight(500).TextColor(fg).SingleLine().Shrink(1)
-						v.badges(c, r)
+			Children(func() {
+				ui.Icon(c, icons.Get("grip")).Size(theme.Icon, theme.Icon).TextColor(t.Idle).Shrink(0)
+				on := r.Enabled
+				kit.Switch(c, &on).Label(i18n.Tf("settings.rules.enable", name))
+				if on != r.Enabled {
+					id := r.ID
+					v.rules = slices.Clone(v.rules)
+					v.rules[slices.IndexFunc(v.rules, func(x core.Rule) bool { return x.ID == id })].Enabled = on // at once; load reads them again
+					a.writes.Chain("rules", func(ctx context.Context) error { return a.svc.SetRuleEnabled(ctx, id, on) }, v.saved)
+				}
+				fg := t.Foreground
+				if !r.Enabled {
+					fg = t.Muted
+				}
+				kit.Pressable(c, kit.PressableOpts{Bare: true, OnClick: toggle}).Label(name).Grow(1).Shrink(1).Children(func() {
+					ui.Column(c).Grow(1).Shrink(1).Gap(th.Space(0.5)).Children(func() {
+						ui.Row(c).Gap(th.Space(2)).AlignItems(ui.Center).Children(func() {
+							kit.Text(c, name, t.Text.Body).FontWeight(500).TextColor(fg).SingleLine().Shrink(1)
+							v.badges(c, r)
+						})
+						kit.Text(c, v.summary(r.Doc), t.Text.Sm).TextColor(t.Muted).SingleLine()
 					})
-					kit.Text(c, v.summary(r.Doc), t.Text.Sm).TextColor(t.Muted).SingleLine()
 				})
+				hits := i18n.T("settings.rules.off")
+				if r.Enabled {
+					hits = i18n.Tf("settings.rules.hits.count", v.counts[r.ID])
+				}
+				kit.Text(c, hits, t.Text.Sm).TextColor(t.Muted).SingleLine().Shrink(0)
+				kit.IconButton(c, "pen-line", i18n.Tf("settings.rules.edit", name), kit.ButtonOpts{Variant: kit.Ghost, Size: kit.SizeSm}).
+					OnClick(func() { v.openEditor(r) })
+				chev, label := "chevron-right", i18n.T("settings.rules.hits.show")
+				if open {
+					chev, label = "chevron-down", i18n.T("settings.rules.hits.hide")
+				}
+				kit.IconButton(c, chev, label, kit.ButtonOpts{Variant: kit.Ghost, Size: kit.SizeSm}).OnClick(toggle)
 			})
-			hits := i18n.T("settings.rules.off")
-			if r.Enabled {
-				hits = i18n.Tf("settings.rules.hits.count", v.counts[r.ID])
-			}
-			kit.Text(c, hits, t.Text.Sm).TextColor(t.Muted).SingleLine().Shrink(0)
-			kit.IconButton(c, "pen-line", i18n.Tf("settings.rules.edit", name), kit.ButtonOpts{Variant: kit.Ghost, Size: kit.SizeSm}).
-				OnClick(func() { v.openEditor(r) })
-			chev, label := "chevron-right", i18n.T("settings.rules.hits.show")
-			if open {
-				chev, label = "chevron-down", i18n.T("settings.rules.hits.hide")
-			}
-			kit.IconButton(c, chev, label, kit.ButtonOpts{Variant: kit.Ghost, Size: kit.SizeSm}).OnClick(toggle)
-		})
 		if open {
 			v.hitList(c, r)
 		}
 	})
 }
 
-// move puts the rule at i where the one at to is, the others in order:
-// rules run top to bottom.
+// move puts the rule at i before the one at to (len for the end), the
+// others in order: rules run top to bottom.
 func (v *rulesView) move(i, to int) {
-	if i < 0 || to < 0 || i == to {
+	if to > i {
+		to-- // i is taken out first
+	}
+	if to == i {
 		return
 	}
 	a := v.a

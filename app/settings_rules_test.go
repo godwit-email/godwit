@@ -364,8 +364,8 @@ func TestSettingsRulesTemplates(t *testing.T) {
 	h.see("Wit 的动作会把邮件发给模型，默认关闭。在 智能 › 功能 里打开「规则可以使用 Wit」后才能选。")
 }
 
-// Dragging a rule's bar onto another rule moves it there: after it going
-// down, before it going up. The order is the one the rules run in.
+// Dragging a rule's row moves it where the list shows, as the labels' do.
+// The order is the one the rules run in.
 func TestSettingsRulesReorder(t *testing.T) {
 	h, _ := withAccount(t)
 	for _, name := range []string{"A", "B", "C"} {
@@ -384,21 +384,22 @@ func TestSettingsRulesReorder(t *testing.T) {
 		}
 		return s
 	}
-	drag := func(from, to string) {
+	first, _ := h.tt.Find("编辑「A」")
+	second, _ := h.tt.Find("编辑「B」")
+	row := second.Y - first.Y
+	// drag moves the row at from by rows rows, as the labels' test does.
+	drag := func(from int, rows float32) {
 		h.t.Helper()
-		a, _ := h.tt.Find(from)
-		b, _ := h.tt.Find(to)
-		x, y := a.X+a.W/2, a.Y+a.H/2
+		x, y := first.X-row*4, first.Y+first.H/2+row*float32(from) // on the row, left of its buttons
+		h.tt.Move(x, y)
 		h.tt.Press(x, y)
-		for i := 1; i <= 8; i++ {
-			h.tt.Move(x, y+(b.Y+b.H/2-y)*float32(i)/8)
-			h.tt.Frame()
-		}
-		h.tt.Release(x, b.Y+b.H/2)
-		h.tt.Frame()
+		h.tt.Move(x, y+row*rows/2)
+		h.tt.Move(x, y+row*rows)
+		h.tt.Release(x, y+row*rows)
+		h.drain()
 	}
-	drag("A", "C")
+	drag(0, 2)
 	h.until("A moved after C", func() bool { return names() == "BCA" })
-	drag("A", "B")
+	drag(2, -2.4) // past the top row's middle
 	h.until("A moved before B", func() bool { return names() == "ABC" })
 }

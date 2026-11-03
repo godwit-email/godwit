@@ -101,14 +101,7 @@ func (v *labelsView) list(c *ui.Context) {
 	// the list scrolls itself, so both its edges fit on screen to drag toward.
 	_, wh := c.Size()
 	h = min(h, wh/2)
-	kit.List(c, &v.order, n, func(i int) {
-		ui.Column(c).FillWidth().Material(kit.Frost(theme.Of(c).Card)).Children(func() {
-			if i > 0 {
-				hairline(c)
-			}
-			v.row(c, a.labels[i])
-		})
-	}).FillWidth().Height(h)
+	kit.List(c, &v.order, n, func(i int) { cardListRow(c, i, n, func() { v.row(c, a.labels[i]) }) }).FillWidth().Height(h)
 }
 
 // row is a label: grip, chip, description, built-in mark, count, edit.

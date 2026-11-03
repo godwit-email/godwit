@@ -1484,3 +1484,24 @@ func TestGlassMaterialAndTokens(t *testing.T) {
 		t.Errorf("glass tint = %v, want %v", mat.Tint, l.GlassBg)
 	}
 }
+
+// A frosted row round on top only fills its square bottom corners, and not
+// its round top ones; the one round below the other way.
+func TestFrostRoundsOneSide(t *testing.T) {
+	fill := ui.RGB(200, 0, 0)
+	tt := ui.NewTester(themed(func(c *ui.Context) {
+		ui.Column(c).Fill().Background(ui.RGB(255, 255, 255)).Padding(10).Gap(10).Children(func() {
+			ui.Column(c).Width(100).Height(40).Radius(16, 16, 0, 0).Material(Frost(fill)).Label("top")
+			ui.Column(c).Width(100).Height(40).Radius(0, 0, 16, 16).Material(Frost(fill)).Label("bottom")
+		})
+	}), 140, 120)
+	img := tt.Image()
+	filled := func(x, y float32) bool { p := img.RGBAAt(int(x), int(y)); return p.G < 200 }
+	for name, round := range map[string]bool{"top": true, "bottom": false} {
+		r, _ := tt.Find(name)
+		top, bottom := filled(r.X+1, r.Y+1), filled(r.X+1, r.Y+r.H-2)
+		if top == round || bottom != round {
+			t.Errorf("%s: top-left corner filled %v, bottom-left %v", name, top, bottom)
+		}
+	}
+}
