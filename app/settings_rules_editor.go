@@ -265,7 +265,7 @@ func (v *rulesView) whenCard(c *ui.Context, labels []kit.Option[string]) {
 			for _, tr := range []string{core.TriggerReceive, core.TriggerLabel, core.TriggerSecurity, core.TriggerDaily} {
 				triggers = append(triggers, kit.Option[string]{Value: tr, Label: i18n.T("settings.rules.trigger." + tr)})
 			}
-			settingSelect(c, i18n.T("settings.rules.trigger"), &d.Trigger, triggers)
+			triggerSelect(c, i18n.T("settings.rules.trigger"), &d.Trigger, triggers)
 			if d.Trigger != was {
 				d.TriggerArg = map[string]string{core.TriggerSecurity: core.SecuritySuspicious}[d.Trigger]
 				if d.Trigger == core.TriggerLabel && len(labels) > 0 {
@@ -274,9 +274,9 @@ func (v *rulesView) whenCard(c *ui.Context, labels []kit.Option[string]) {
 			}
 			switch d.Trigger {
 			case core.TriggerLabel:
-				settingSelect(c, i18n.T("settings.rules.trigger.label.which"), &d.TriggerArg, labels)
+				triggerSelect(c, i18n.T("settings.rules.trigger.label.which"), &d.TriggerArg, labels)
 			case core.TriggerSecurity:
-				settingSelect(c, i18n.T("settings.rules.trigger.security.which"), &d.TriggerArg, []kit.Option[string]{
+				triggerSelect(c, i18n.T("settings.rules.trigger.security.which"), &d.TriggerArg, []kit.Option[string]{
 					{Value: core.SecuritySuspicious, Label: i18n.T("settings.rules.security.suspicious")},
 					{Value: core.SecurityDangerous, Label: i18n.T("settings.rules.security.dangerous")}})
 			}
@@ -285,7 +285,7 @@ func (v *rulesView) whenCard(c *ui.Context, labels []kit.Option[string]) {
 			for _, acc := range a.accounts {
 				accts = append(accts, kit.Option[int64]{Value: acc.ID, Label: accountName(acc)})
 			}
-			settingSelect(c, i18n.T("settings.rules.account"), &d.Account, accts)
+			triggerSelect(c, i18n.T("settings.rules.account"), &d.Account, accts)
 		})
 		kit.Text(c, i18n.T("settings.rules.trigger."+d.Trigger+".help"), t.Text.Sm).TextColor(t.Muted)
 	})
@@ -320,32 +320,34 @@ func (v *rulesView) ifCard(c *ui.Context, labels []kit.Option[string]) {
 			ui.Row(c.Key(i)).FillWidth().Gap(th.Space(2)).AlignItems(ui.Center).Children(func() {
 				cd := &d.Conditions[i]
 				was := cd.Field
-				settingSelect(c, i18n.T("settings.rules.field"), &cd.Field, fields)
+				ruleSelect(c, i18n.T("settings.rules.field"), &cd.Field, fields, theme.RuleFieldWidth)
 				if cd.Field != was {
 					v.fieldChanged(cd, was)
 				}
 				switch cd.Field {
 				case core.FieldAttachments:
-					settingSelect(c, i18n.T("settings.rules.value"), &cd.Value, yesNo)
+					ruleSelect(c, i18n.T("settings.rules.value"), &cd.Value, yesNo, 0)
 				case core.FieldLabel:
-					settingSelect(c, i18n.T("settings.rules.op"), &cd.Op, setOps)
-					settingSelect(c, i18n.T("settings.rules.label"), &cd.Value, labels)
+					ruleSelect(c, i18n.T("settings.rules.op"), &cd.Op, setOps, theme.RuleOpWidth)
+					ruleSelect(c, i18n.T("settings.rules.label"), &cd.Value, labels, 0)
 				case core.FieldFolder:
-					settingSelect(c, i18n.T("settings.rules.op"), &cd.Op, setOps)
-					settingSelect(c, i18n.T("settings.rules.folder"), &cd.Value, roles)
+					ruleSelect(c, i18n.T("settings.rules.op"), &cd.Op, setOps, theme.RuleOpWidth)
+					ruleSelect(c, i18n.T("settings.rules.folder"), &cd.Value, roles, 0)
 				case core.FieldAge:
 					kit.Text(c, i18n.T("settings.rules.op.older_than"), t.Text.Sm)
 					kit.Input(c, &cd.Value, kit.InputOpts{Placeholder: "30"}).Label(i18n.T("settings.rules.days")).Width(th.Space(16))
 					kit.Text(c, i18n.T("settings.rules.days_ago"), t.Text.Sm)
 				default:
-					settingSelect(c, i18n.T("settings.rules.op"), &cd.Op, ops)
+					ruleSelect(c, i18n.T("settings.rules.op"), &cd.Op, ops, theme.RuleOpWidth)
 					ph := "settings.rules.value.text"
 					if cd.Field == core.FieldFrom || cd.Field == core.FieldTo {
 						ph = "settings.rules.value.addr"
 					}
-					kit.Input(c, &cd.Value, kit.InputOpts{Placeholder: i18n.T(ph)}).Label(i18n.T("settings.rules.value")).Grow(1).Shrink(1)
+					kit.Input(c, &cd.Value, kit.InputOpts{Placeholder: i18n.T(ph)}).Label(i18n.T("settings.rules.value")).Grow(1).Shrink(1).Basis(0).MinWidth(0)
 				}
-				ui.Row(c).Grow(1)
+				if cd.Field == core.FieldAge {
+					ui.Row(c).Grow(1)
+				}
 				kit.IconButton(c, "x", i18n.T("settings.rules.condition.remove"), kit.ButtonOpts{Variant: kit.Ghost, Size: kit.SizeSm}).
 					OnClick(func() { d.Conditions = slices.Delete(d.Conditions, i, i+1) })
 			})
@@ -356,6 +358,21 @@ func (v *rulesView) ifCard(c *ui.Context, labels []kit.Option[string]) {
 				d.Conditions = append(d.Conditions, core.RuleCondition{Field: core.FieldSubject, Op: core.OpContains})
 			})
 	})
+}
+
+// triggerSelect is a select on the 当 card, as wide as its choice.
+func triggerSelect[T comparable](c *ui.Context, label string, sel *T, opts []kit.Option[T]) ui.Element {
+	return kit.SelectWith(c, kit.SelectOpts{Radius: theme.Of(c).Radius.Lg, Flat: true, MaxWidth: theme.SettingsSelectMax}, sel, opts).Label(label)
+}
+
+// ruleSelect is a select in a rule card's row: w wide (a longer language
+// may widen it a little), or filling what the row leaves when w is 0.
+func ruleSelect[T comparable](c *ui.Context, label string, sel *T, opts []kit.Option[T], w float32) ui.Element {
+	o := kit.SelectOpts{Radius: theme.Of(c).Radius.Lg, Flat: true, MinWidth: w, MaxWidth: w * 1.5}
+	if w == 0 {
+		return kit.SelectWith(c, o, sel, opts).Label(label).Grow(1).Shrink(1).Basis(0).MinWidth(0)
+	}
+	return kit.SelectWith(c, o, sel, opts).Label(label).Shrink(0)
 }
 
 // aiOff reports whether an action of kind is a Wit one that 「智能」 does
@@ -399,17 +416,17 @@ func (v *rulesView) actionCard(c *ui.Context, i int, labels []kit.Option[string]
 				OnClick(func() { d.Actions = slices.Delete(d.Actions, i, i+1) })
 		})
 		ui.Row(c).FillWidth().Gap(th.Space(2)).AlignItems(ui.Center).Children(func() {
-			settingSelect(c, i18n.Tf("settings.rules.action.n", i+1), &ac.Kind, kinds)
+			ruleSelect(c, i18n.Tf("settings.rules.action.n", i+1), &ac.Kind, kinds, theme.RuleActionWidth)
 			if ac.Kind == core.ActionLabel || ac.Kind == core.ActionUnlabel {
 				if ac.Label == "" {
 					ac.Label = v.firstLabel()
 				}
-				settingSelect(c, i18n.T("settings.rules.label"), &ac.Label, labels)
+				ruleSelect(c, i18n.T("settings.rules.label"), &ac.Label, labels, 0)
 			} else {
 				ac.Label = ""
 			}
 			if ac.Kind == core.ActionForward {
-				kit.Input(c, &ac.To, kit.InputOpts{Placeholder: i18n.T("settings.rules.forward.to")}).Label(i18n.T("settings.rules.forward.to")).Grow(1).Shrink(1)
+				kit.Input(c, &ac.To, kit.InputOpts{Placeholder: i18n.T("settings.rules.forward.to")}).Label(i18n.T("settings.rules.forward.to")).Grow(1).Shrink(1).Basis(0).MinWidth(0)
 			} else {
 				ac.To = ""
 			}

@@ -98,7 +98,7 @@ func (v *rulesView) fileDir(c *ui.Context, d *core.RuleDoc, i int) {
 	if label == "" {
 		label = i18n.T("settings.rules.files.choose")
 	}
-	kit.Button(c, label, kit.ButtonOpts{Variant: kit.Outline, Icon: "folder"}).Label(i18n.T("settings.rules.files.choose")).Shrink(1).
+	kit.Button(c, label, kit.ButtonOpts{Variant: kit.Outline, Icon: "folder"}).Label(i18n.T("settings.rules.files.choose")).Grow(1).Shrink(1).Basis(0).MinWidth(0).
 		OnClick(func() { v.pickDir(d, i) })
 }
 
