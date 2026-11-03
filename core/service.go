@@ -99,6 +99,9 @@ type Options struct {
 	// (imagefetch.SystemProxy), to public hosts only. Tests give one that
 	// reaches loopback.
 	RecognitionModelClient *http.Client
+	// PrintPDF lays out an HTML document as a PDF, for rules that export
+	// one; the GUI sets it. nil fails those actions (RuleFailNoPDF).
+	PrintPDF func(ctx context.Context, html string) ([]byte, error)
 }
 
 // Service owns the database and event bus of one Godwit data directory.

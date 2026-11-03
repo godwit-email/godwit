@@ -20,7 +20,8 @@ const TriggerExisting = "existing"
 // ones, and writing files. Any other kind (a forward, a Wit action) only
 // ever runs on new mail, so a kind not listed here waits for it.
 var existingActions = map[string]bool{ActionLabel: true, ActionUnlabel: true, ActionRead: true, ActionStar: true,
-	ActionArchive: true, ActionJunk: true, ActionTrash: true, ActionStop: true}
+	ActionArchive: true, ActionJunk: true, ActionTrash: true, ActionStop: true,
+	ActionPDF: true, ActionEML: true, ActionAttachments: true}
 
 // RunsOnExisting reports whether an action of kind runs over existing mail.
 func RunsOnExisting(kind string) bool { return existingActions[kind] }

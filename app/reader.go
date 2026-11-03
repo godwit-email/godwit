@@ -16,7 +16,6 @@ import (
 	"strconv"
 	"strings"
 	"time"
-	"unicode"
 
 	"github.com/egoist/mygo/transfer"
 	"github.com/egoist/mygo/ui"
@@ -664,25 +663,6 @@ func fileURL(path string) string {
 	return (&url.URL{Scheme: "file", Path: p}).String()
 }
 
-// fileName makes s a file name: separators and control characters become
-// _, leading and trailing dots and spaces go, and a name Windows reserves
-// (CON, COM1.txt…) gets a _ in front. Empty, it is fallback.
-func fileName(s, fallback string) string {
-	s = strings.Trim(strings.Map(func(r rune) rune {
-		if unicode.IsControl(r) || unicode.Is(unicode.Cf, r) || strings.ContainsRune(`/\:*?"<>|`, r) { // Cf: U+202E turns "fdp.exe" into "exe.pdf"
-			return '_'
-		}
-		return r
-	}, s), ". ")
-	stem, _, _ := strings.Cut(strings.ToUpper(s), ".")
-	if reserved[stem] || len(stem) == 4 && (strings.HasPrefix(stem, "COM") || strings.HasPrefix(stem, "LPT")) && stem[3] >= '1' && stem[3] <= '9' {
-		s = "_" + s
-	}
-	return cmp.Or(s, fallback)
-}
-
-var reserved = map[string]bool{"CON": true, "PRN": true, "AUX": true, "NUL": true}
-
 // openAttachment copies the attachment, under its own name, to a new
 // directory in the platform's temporary one, and opens it with its
 // application: the cache's file has no extension to choose one by. Close
@@ -698,7 +678,7 @@ func (a *App) openAttachment(att core.AttachmentInfo) {
 		if err != nil {
 			return err
 		}
-		dst := filepath.Join(dir, fileName(att.Filename, "attachment"))
+		dst := filepath.Join(dir, core.FileName(att.Filename, "attachment"))
 		if err := copyFile(src, dst); err != nil {
 			return err
 		}
@@ -710,7 +690,7 @@ func (a *App) openAttachment(att core.AttachmentInfo) {
 func (a *App) saveAttachment(att core.AttachmentInfo) {
 	plat := a.plat
 	a.do(func(ctx context.Context) error {
-		dst, err := plat.SaveFile(fileName(att.Filename, "attachment"))
+		dst, err := plat.SaveFile(core.FileName(att.Filename, "attachment"))
 		if err != nil || dst == "" {
 			return err
 		}
@@ -755,7 +735,7 @@ func (r *reader) saveMail() {
 	a.do(func(ctx context.Context) error {
 		stem := []rune(m.Subject)
 		stem = stem[:min(len(stem), 100)] // file systems cap names near 255 bytes
-		dst, err := plat.SaveFile(fileName(string(stem), "email") + ".eml")
+		dst, err := plat.SaveFile(core.FileName(string(stem), "email") + ".eml")
 		if err != nil || dst == "" {
 			return err
 		}
@@ -1511,7 +1491,7 @@ func (r *reader) attachments(c *ui.Context, atts []core.AttachmentInfo) {
 						})
 					}
 					ui.Column(c).Shrink(1).Children(func() {
-						ui.Text(c, fileName(att.Filename, "attachment")).SingleLine() // the name it opens and saves under
+						ui.Text(c, core.FileName(att.Filename, "attachment")).SingleLine() // the name it opens and saves under
 						kit.Text(c, byteSize(att.Size), t.Text.Sm).TextColor(t.Muted)
 					})
 				})

@@ -3,6 +3,7 @@ package app
 import (
 	"context"
 	"encoding/json"
+	"path/filepath"
 	"slices"
 	"strings"
 	"time"
@@ -35,7 +36,8 @@ type rulesView struct {
 	// The confirmation of forward recipients not confirmed yet, before saving.
 	confirming  bool
 	unconfirmed []string
-	firstTime   []string // of unconfirmed, the ones no account has written to
+	firstTime   []string        // of unconfirmed, the ones no account has written to
+	custom      map[string]bool // the folders whose naming is 自定义…, in the token field
 
 	from    string               // the subject of the mail the editor was opened from
 	suggest []core.RuleCondition // conditions offered for it
@@ -63,7 +65,7 @@ var ruleActionGroups = []ruleActionGroup{
 	{"organize", []string{core.ActionLabel, core.ActionUnlabel, core.ActionRead, core.ActionStar,
 		core.ActionArchive, core.ActionJunk, core.ActionTrash, core.ActionStop}},
 	{"forward", []string{core.ActionForward}},
-	{"files", nil},
+	{"files", []string{core.ActionPDF, core.ActionEML, core.ActionAttachments}},
 	{"wit", nil},
 }
 
@@ -266,7 +268,7 @@ func (v *rulesView) hit(c *ui.Context, r core.Rule, h core.RuleHit, now time.Tim
 			return
 		}
 		if slices.ContainsFunc(h.Actions, func(x core.RuleActionResult) bool {
-			return x.State == core.RuleActionDone && x.Kind != core.ActionStop && x.Kind != core.ActionForward // a forward has gone
+			return x.State == core.RuleActionDone && x.Kind != core.ActionStop && x.Kind != core.ActionForward && !fileAction(x.Kind) // a forward has gone, files written stay
 		}) {
 			kit.Button(c, i18n.T("settings.rules.hits.undo"), kit.ButtonOpts{Variant: kit.Outline, Size: kit.SizeSm, Icon: "undo-2"}).Shrink(0).
 				OnClick(func() { v.undo(h.RunID) })
@@ -370,6 +372,9 @@ func (v *rulesView) actionText(ac core.RuleAction) string {
 	if ac.Kind == core.ActionForward && ac.To != "" {
 		return i18n.Tf("settings.rules.action.forward.summary", ac.To)
 	}
+	if fileAction(ac.Kind) && ac.Dir != "" {
+		return i18n.Tf("settings.rules.action."+ac.Kind+".summary", filepath.Base(ac.Dir))
+	}
 	return i18n.T("settings.rules.action." + ac.Kind)
 }
 
@@ -400,7 +405,7 @@ func (v *rulesView) openEditor(r core.Rule) {
 	r.Doc.Actions = slices.Clone(r.Doc.Actions)
 	r.Confirmed = slices.Clone(r.Confirmed)
 	v.closeEditor()
-	v.editing, v.edit, v.any = true, r, 0
+	v.editing, v.edit, v.any, v.custom = true, r, 0, nil
 	if r.Doc.Match == core.MatchAny {
 		v.any = 1
 	}
@@ -563,7 +568,7 @@ func (v *rulesView) editor(c *ui.Context) {
 			return (ac.Kind == core.ActionLabel || ac.Kind == core.ActionUnlabel) && ac.Label == "" ||
 				ac.Kind == core.ActionForward && strings.TrimSpace(ac.To) == ""
 		}) && (d.Trigger != core.TriggerLabel || d.TriggerArg != "") &&
-		!slices.ContainsFunc(d.Conditions, func(cd core.RuleCondition) bool { return strings.TrimSpace(cd.Value) == "" })
+		!slices.ContainsFunc(d.Conditions, func(cd core.RuleCondition) bool { return strings.TrimSpace(cd.Value) == "" }) && fileReady(d)
 	pageHeading(c, title, sub, func() {
 		ui.Row(c).Gap(th.Space(2)).Children(func() {
 			settingButton(c, i18n.T("common.cancel"), kit.Outline, false).OnClick(v.closeEditor)
@@ -705,6 +710,12 @@ func (v *rulesView) editor(c *ui.Context) {
 					} else {
 						ac.To = ""
 					}
+					if fileAction(ac.Kind) {
+						fileKindChanged(d, i)
+						v.fileDir(c, d, i)
+					} else {
+						ac.Dir, ac.Subfolder, ac.Naming = "", false, ""
+					}
 					ui.Row(c).Grow(1)
 					kit.IconButton(c, "arrow-up", i18n.T("settings.rules.action.up"), kit.ButtonOpts{Variant: kit.Ghost, Size: kit.SizeSm, Disabled: i == 0}).
 						OnClick(func() { d.Actions[i-1], d.Actions[i] = d.Actions[i], d.Actions[i-1] })
@@ -713,6 +724,9 @@ func (v *rulesView) editor(c *ui.Context) {
 					kit.IconButton(c, "x", i18n.T("settings.rules.action.remove"), kit.ButtonOpts{Variant: kit.Ghost, Size: kit.SizeSm, Disabled: len(d.Actions) == 1}).
 						OnClick(func() { d.Actions = slices.Delete(d.Actions, i, i+1) })
 				})
+				if fileAction(d.Actions[i].Kind) {
+					v.fileOptions(c, d, i)
+				}
 			})
 		})
 	}

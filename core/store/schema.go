@@ -578,6 +578,10 @@ var Migrations = [][]string{{
 	// marks mail a rule forwarded (mail.RuleHeader), which no rule forwards.
 	`ALTER TABLE rules ADD COLUMN confirmed_rcpts TEXT NOT NULL DEFAULT '[]'`,
 	`ALTER TABLE messages ADD COLUMN rule_sent INTEGER NOT NULL DEFAULT 0`,
+}, {
+	// The subfolder a run's file actions write to, by destination, kept
+	// before it is made so a retry or a resumed run writes into it again.
+	`ALTER TABLE rule_runs ADD COLUMN dirs TEXT NOT NULL DEFAULT '{}'`,
 }}
 
 // HistoryRowsVersion is the schema version that keeps a conversation's

@@ -69,6 +69,11 @@ const (
 	// ActionForward forwards the message to RuleAction.To once the user
 	// confirmed it (Rule.Confirmed); egress, so new mail only (forwardTriggers).
 	ActionForward = "forward"
+
+	// The file actions write to Dir (rulefiles.go); they cannot be undone.
+	ActionPDF         = "pdf"
+	ActionEML         = "eml"
+	ActionAttachments = "attachments"
 )
 
 // Run and action states, and why an action failed.
@@ -94,6 +99,12 @@ const (
 	RuleFailUnconfirmed = "unconfirmed" // the forward's recipient is not in Rule.Confirmed
 	RuleFailSendCheck   = "send_check"  // a plugin warned about or blocked the forward
 	RuleFailSend        = "send"        // the forward could not be queued
+
+	RuleFailNoDestination = "no_destination" // the file action's folder is not there
+	RuleFailNoPDF         = "no_pdf"         // nothing renders PDFs here (headless)
+	RuleFailUnavailable   = "unavailable"    // the mail could not be read from the server
+	RuleFailTooLarge      = "too_large"
+	RuleFailWrite         = "write_failed"
 )
 
 // forwardTriggers are the triggers a forward runs on: new mail, or a
@@ -134,11 +145,17 @@ type RuleCondition struct {
 }
 
 // RuleAction is one step; Label is a label's slug (ActionLabel), To an
-// address (ActionForward).
+// address (ActionForward). A file action writes to Dir, an absolute path,
+// into a subfolder per message when Subfolder is set; Naming, a 命名模板,
+// names that subfolder and the PDF or EML. File actions with one Dir share
+// Subfolder and Naming.
 type RuleAction struct {
-	Kind  string `json:"kind"`
-	Label string `json:"label,omitempty"`
-	To    string `json:"to,omitempty"`
+	Kind      string `json:"kind"`
+	Label     string `json:"label,omitempty"`
+	To        string `json:"to,omitempty"`
+	Dir       string `json:"dir,omitempty"`
+	Subfolder bool   `json:"subfolder,omitempty"`
+	Naming    string `json:"naming,omitempty"`
 }
 
 // Rule is a stored rule, in the order rules run. Background keeps Godwit
@@ -218,6 +235,10 @@ func (s *Service) validRule(ctx context.Context, d RuleDoc) error {
 				return invalidRule("forward to %q", a.To)
 			}
 		case ActionRead, ActionStar, ActionArchive, ActionJunk, ActionTrash, ActionStop:
+		case ActionPDF, ActionEML, ActionAttachments:
+			if err := validFileAction(d.Actions, a); err != nil {
+				return err
+			}
 		default:
 			return invalidRule("action %q", a.Kind)
 		}
@@ -658,9 +679,12 @@ func (s *Service) runRule(ctx context.Context, r Rule, msgID int64, trigger stri
 	state := RuleRunDone
 	for i := from; i < len(r.Doc.Actions); i++ {
 		var failed bool
-		if r.Doc.Actions[i].Kind == ActionForward {
+		switch kind := r.Doc.Actions[i].Kind; {
+		case kind == ActionForward:
 			failed, err = s.runForward(ctx, r, runID, i, msgID, trigger) // sending takes the edit lock itself
-		} else {
+		case slices.Contains(RuleFileActions, kind):
+			failed, err = s.runAction(ctx, runID, r.Doc.Actions, i, msgID) // it only reads the message, maybe from the server
+		default:
 			s.editMu.Lock() // the action reads the message and writes it, as an edit does
 			failed, err = s.runAction(ctx, runID, r.Doc.Actions, i, msgID)
 			s.editMu.Unlock()
@@ -691,7 +715,19 @@ func (s *Service) runAction(ctx context.Context, runID int64, acts []RuleAction,
 		return false, err
 	}
 	w, failure := actionWrites{}, RuleFailGone
-	if ok {
+	var written any // the paths a file action wrote, as JSON
+	switch {
+	case ok && slices.Contains(RuleFileActions, acts[i].Kind):
+		var paths []string
+		if paths, failure, err = s.ruleFiles(ctx, runID, acts[i], msgID); err != nil {
+			return false, err
+		}
+		b, err := json.Marshal(append([]string{}, paths...))
+		if err != nil {
+			return false, err
+		}
+		written = string(b)
+	case ok:
 		if w, failure, err = s.ruleAction(ctx, acts[i], acc, t); err != nil {
 			return false, err
 		}
@@ -702,7 +738,7 @@ func (s *Service) runAction(ctx context.Context, runID int64, acts []RuleAction,
 		if err != nil {
 			return false, err
 		}
-		stmts = append(stmts, ruleResult(runID, acts, i, RuleActionDone, string(prior), nil))
+		stmts = append(stmts, ruleResult(runID, acts, i, RuleActionDone, string(prior), written))
 	} else {
 		stmts = append(stmts, failedResults(runID, acts, i, failure)...)
 	}
@@ -882,9 +918,11 @@ type RuleHit struct {
 	Actions   []RuleActionResult
 }
 
-// RuleActionResult is an action's outcome; Failure (a RuleFail id) is why it failed.
+// RuleActionResult is an action's outcome; Failure (a RuleFail id) is why it
+// failed, Paths the files a file action wrote.
 type RuleActionResult struct {
 	Kind, State, Failure string
+	Paths                []string
 }
 
 // RuleHits returns the rule's runs of the last RuleHitDays days, newest first.
@@ -908,7 +946,13 @@ func (s *Service) RuleHits(ctx context.Context, ruleID int64) ([]RuleHit, error)
 		}
 		if v[6] != nil {
 			h := &out[len(out)-1]
-			h.Actions = append(h.Actions, RuleActionResult{Kind: store.Str(v[6]), State: store.Str(v[7]), Failure: store.Str(v[8])})
+			res := RuleActionResult{Kind: store.Str(v[6]), State: store.Str(v[7])}
+			if res.State == RuleActionFailed {
+				res.Failure = store.Str(v[8])
+			} else if v[8] != nil {
+				_ = json.Unmarshal([]byte(store.Str(v[8])), &res.Paths) // only file actions have one
+			}
+			h.Actions = append(h.Actions, res)
 		}
 	}
 	return out, nil
@@ -954,7 +998,7 @@ func (s *Service) UndoRuleRun(ctx context.Context, runID int64) (kept int, err e
 	s.editMu.Lock()
 	defer s.editMu.Unlock()
 	rows, err := s.db.Query(ctx, `SELECT a.idx, a.kind, a.prior, r.message_id FROM rule_runs r JOIN rule_action_results a ON a.run_id = r.id
-		WHERE r.id = ? AND a.state = ? AND a.kind NOT IN (?, ?) ORDER BY a.idx DESC`, runID, RuleActionDone, ActionStop, ActionForward)
+		WHERE r.id = ? AND a.state = ? AND a.kind NOT IN (?, ?, ?, ?, ?) ORDER BY a.idx DESC`, runID, RuleActionDone, ActionStop, ActionForward, ActionPDF, ActionEML, ActionAttachments)
 	if err != nil {
 		return 0, err
 	}
