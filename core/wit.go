@@ -28,12 +28,15 @@ import (
 
 // askTools are the built-in tools of an Ask run, which also offers every
 // running plugin's tools and the enabled MCP servers' tools. None of them sends mail.
+// propose_rule only proposes a rule: the user saves it from its card or the
+// editor, and a rule that forwards (egress later, unattended) is saved only
+// with each recipient confirmed by the user in Godwit, never by Wit.
 var askTools = []string{
 	"search_mail", "get_message", "get_thread", "read_attachment", "classify_mail",
 	"list_skills", "use_skill", "read_skill_file", "get_account_profile", "create_draft",
 	"move_to_trash", "archive_mail", "mark_as_spam", "mark_as_read", "mark_as_unread",
 	"star_mail", "unstar_mail", "unsubscribe", "get_all_links", "open_link_in_browser",
-	"reply_to_mail", "forward_mail", "delete_draft", askQuestionTool,
+	"reply_to_mail", "forward_mail", "delete_draft", proposeRuleTool, askQuestionTool,
 }
 
 const (
@@ -336,6 +339,7 @@ func (s *Service) registerAskTools() {
 		Description: "Propose deleting a draft. The user approves it before the draft is deleted. draft_id is the draft's id.",
 		Schema:      object(map[string]any{"draft_id": intProp}, "draft_id"),
 	}, Write: true, Exec: &executor{Prepare: s.prepareDeleteDraft, Apply: s.applyDeleteDraft}})
+	s.registerRuleTool()
 }
 
 type searchMailInput struct {

@@ -1,6 +1,7 @@
 package core
 
 import (
+	"cmp"
 	"context"
 	"encoding/json"
 	"errors"
@@ -74,6 +75,13 @@ const (
 	ActionPDF         = "pdf"
 	ActionEML         = "eml"
 	ActionAttachments = "attachments"
+
+	// The AI actions send the message to the model, masked, and only while
+	// Settings.RuleAI is on; new mail only (existingActions). draft_reply
+	// saves a reply draft, never sent; key_points writes a file as the file
+	// actions do.
+	ActionDraftReply = "draft_reply"
+	ActionKeyPoints  = "key_points"
 )
 
 // Run and action states, and why an action failed.
@@ -105,6 +113,8 @@ const (
 	RuleFailUnavailable   = "unavailable"    // the mail could not be read from the server
 	RuleFailTooLarge      = "too_large"
 	RuleFailWrite         = "write_failed"
+	RuleFailAIOff         = "ai_off" // Settings.RuleAI is off
+	RuleFailModel         = "model"  // no model, or it did not answer
 )
 
 // forwardTriggers are the triggers a forward runs on: new mail, or a
@@ -224,6 +234,11 @@ func (s *Service) validRule(ctx context.Context, d RuleDoc) error {
 	if len(d.Actions) == 0 || len(d.Actions) > MaxRuleActions {
 		return invalidRule("%d actions", len(d.Actions))
 	}
+	if slices.ContainsFunc(d.Actions, func(a RuleAction) bool { return slices.Contains(RuleAIActions, a.Kind) }) {
+		if on, err := s.ruleAIOn(ctx); err != nil || !on {
+			return cmp.Or(err, invalidRule("AI actions are turned off"))
+		}
+	}
 	for _, a := range d.Actions {
 		switch a.Kind {
 		case ActionLabel, ActionUnlabel:
@@ -235,10 +250,11 @@ func (s *Service) validRule(ctx context.Context, d RuleDoc) error {
 				return invalidRule("forward to %q", a.To)
 			}
 		case ActionRead, ActionStar, ActionArchive, ActionJunk, ActionTrash, ActionStop:
-		case ActionPDF, ActionEML, ActionAttachments:
+		case ActionPDF, ActionEML, ActionAttachments, ActionKeyPoints:
 			if err := validFileAction(d.Actions, a); err != nil {
 				return err
 			}
+		case ActionDraftReply:
 		default:
 			return invalidRule("action %q", a.Kind)
 		}
@@ -337,39 +353,58 @@ func (s *Service) SaveRule(ctx context.Context, r Rule) (int64, error) {
 		return 0, err
 	}
 	defer end()
-	r.Doc.Name = strings.TrimSpace(r.Doc.Name)
-	if err := s.validRule(ctx, r.Doc); err != nil {
-		return 0, err
-	}
-	doc, err := json.Marshal(r.Doc)
+	st, err := s.ruleWrite(ctx, r)
 	if err != nil {
 		return 0, err
 	}
-	confirmed := []string{}
-	for _, a := range r.Doc.Actions {
-		k := rcptKey(a.To)
-		if a.Kind == ActionForward && !slices.Contains(confirmed, k) && slices.ContainsFunc(r.Confirmed, func(c string) bool { return rcptKey(c) == k }) {
-			confirmed = append(confirmed, k)
-		}
+	res, err := s.db.Execute(ctx, st.SQL, st.Args...)
+	if err != nil {
+		return 0, err
 	}
-	now := time.Now().Unix()
 	if r.ID == 0 {
-		res, err := s.db.Execute(ctx, `INSERT INTO rules(position, enabled, background, doc, confirmed_rcpts, created_at, updated_at)
-			SELECT COALESCE(MAX(position), -1) + 1, ?, ?, ?, ?, ?, ? FROM rules`, b2i(r.Enabled), b2i(r.Background), string(doc), encodeList(confirmed), now, now)
-		if err != nil {
-			return 0, err
-		}
 		return res.LastInsertID, nil
-	}
-	res, err := s.db.Execute(ctx, "UPDATE rules SET enabled = ?, background = ?, doc = ?, confirmed_rcpts = ?, updated_at = ? WHERE id = ?",
-		b2i(r.Enabled), b2i(r.Background), string(doc), encodeList(confirmed), now, r.ID)
-	if err != nil {
-		return 0, err
 	}
 	if res.Changes == 0 {
 		return 0, fmt.Errorf("rule %d not found", r.ID)
 	}
 	return r.ID, nil
+}
+
+// ruleWrite is SaveRule's statement for r, validated.
+func (s *Service) ruleWrite(ctx context.Context, r Rule) (sqlite.Statement, error) {
+	r.Doc.Name = strings.TrimSpace(r.Doc.Name)
+	if err := s.validRule(ctx, r.Doc); err != nil {
+		return sqlite.Statement{}, err
+	}
+	doc, err := json.Marshal(r.Doc)
+	if err != nil {
+		return sqlite.Statement{}, err
+	}
+	confirmed := []string{}
+	for _, k := range forwardRecipients(r.Doc) {
+		if slices.ContainsFunc(r.Confirmed, func(c string) bool { return rcptKey(c) == k }) {
+			confirmed = append(confirmed, k)
+		}
+	}
+	now := time.Now().Unix()
+	if r.ID == 0 {
+		return sqlite.Statement{SQL: `INSERT INTO rules(position, enabled, background, doc, confirmed_rcpts, created_at, updated_at)
+			SELECT COALESCE(MAX(position), -1) + 1, ?, ?, ?, ?, ?, ? FROM rules`,
+			Args: []any{b2i(r.Enabled), b2i(r.Background), string(doc), encodeList(confirmed), now, now}}, nil
+	}
+	return sqlite.Statement{SQL: "UPDATE rules SET enabled = ?, background = ?, doc = ?, confirmed_rcpts = ?, updated_at = ? WHERE id = ?",
+		Args: []any{b2i(r.Enabled), b2i(r.Background), string(doc), encodeList(confirmed), now, r.ID}}, nil
+}
+
+// forwardRecipients are the addresses d forwards to, as Rule.Confirmed holds them.
+func forwardRecipients(d RuleDoc) []string {
+	var out []string
+	for _, a := range d.Actions {
+		if k := rcptKey(a.To); a.Kind == ActionForward && !slices.Contains(out, k) {
+			out = append(out, k)
+		}
+	}
+	return out
 }
 
 // SetRuleEnabled turns a rule on or off; an off rule keeps its setup and runs on nothing.
@@ -682,8 +717,8 @@ func (s *Service) runRule(ctx context.Context, r Rule, msgID int64, trigger stri
 		switch kind := r.Doc.Actions[i].Kind; {
 		case kind == ActionForward:
 			failed, err = s.runForward(ctx, r, runID, i, msgID, trigger) // sending takes the edit lock itself
-		case slices.Contains(RuleFileActions, kind):
-			failed, err = s.runAction(ctx, runID, r.Doc.Actions, i, msgID) // it only reads the message, maybe from the server
+		case slices.Contains(RuleFileActions, kind), kind == ActionDraftReply:
+			failed, err = s.runAction(ctx, runID, r.Doc.Actions, i, msgID) // it only reads the message, maybe from the server or a model
 		default:
 			s.editMu.Lock() // the action reads the message and writes it, as an edit does
 			failed, err = s.runAction(ctx, runID, r.Doc.Actions, i, msgID)
@@ -716,7 +751,21 @@ func (s *Service) runAction(ctx context.Context, runID int64, acts []RuleAction,
 	}
 	w, failure := actionWrites{}, RuleFailGone
 	var written any // the paths a file action wrote, as JSON
+	aiOff := false
+	if ok && slices.Contains(RuleAIActions, acts[i].Kind) {
+		on, err := s.ruleAIOn(ctx)
+		if err != nil {
+			return false, err
+		}
+		aiOff = !on
+	}
 	switch {
+	case aiOff:
+		failure = RuleFailAIOff
+	case ok && acts[i].Kind == ActionDraftReply:
+		if failure, err = s.ruleDraftReply(ctx, acc, msgID); err != nil {
+			return false, err
+		}
 	case ok && slices.Contains(RuleFileActions, acts[i].Kind):
 		var paths []string
 		if paths, failure, err = s.ruleFiles(ctx, runID, acts[i], msgID); err != nil {
@@ -998,7 +1047,8 @@ func (s *Service) UndoRuleRun(ctx context.Context, runID int64) (kept int, err e
 	s.editMu.Lock()
 	defer s.editMu.Unlock()
 	rows, err := s.db.Query(ctx, `SELECT a.idx, a.kind, a.prior, r.message_id FROM rule_runs r JOIN rule_action_results a ON a.run_id = r.id
-		WHERE r.id = ? AND a.state = ? AND a.kind NOT IN (?, ?, ?, ?, ?) ORDER BY a.idx DESC`, runID, RuleActionDone, ActionStop, ActionForward, ActionPDF, ActionEML, ActionAttachments)
+		WHERE r.id = ? AND a.state = ? AND a.kind NOT IN (?, ?, ?, ?, ?, ?, ?) ORDER BY a.idx DESC`, runID, RuleActionDone,
+		ActionStop, ActionForward, ActionPDF, ActionEML, ActionAttachments, ActionDraftReply, ActionKeyPoints)
 	if err != nil {
 		return 0, err
 	}

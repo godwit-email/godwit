@@ -43,6 +43,8 @@ type rulesView struct {
 	suggest []core.RuleCondition // conditions offered for it
 
 	pending *core.MessageSummary // the mail to open the editor from, once the page shows
+	witRule *core.Rule           // Wit's proposal to open the editor on, once the page shows
+	wit     bool                 // the editor holds Wit's proposal
 
 	prevKey    string            // the trigger and conditions prev is for
 	prev       *core.RulePreview // the existing mail they match; nil not known
@@ -66,7 +68,7 @@ var ruleActionGroups = []ruleActionGroup{
 		core.ActionArchive, core.ActionJunk, core.ActionTrash, core.ActionStop}},
 	{"forward", []string{core.ActionForward}},
 	{"files", []string{core.ActionPDF, core.ActionEML, core.ActionAttachments}},
-	{"wit", nil},
+	{"wit", core.RuleAIActions},
 }
 
 // ruleTemplates open the editor filled in; nothing is saved or turned on
@@ -414,7 +416,7 @@ func (v *rulesView) openEditor(r core.Rule) {
 // closeEditor leaves the editor, stopping its preview.
 func (v *rulesView) closeEditor() {
 	v.stopPreview()
-	v.editing, v.menu, v.saveAsk, v.runExisting = false, false, false, false
+	v.editing, v.menu, v.saveAsk, v.runExisting, v.wit = false, false, false, false, false
 	v.from, v.suggest, v.prevKey, v.prev = "", nil, "", nil
 }
 
@@ -587,6 +589,9 @@ func (v *rulesView) editor(c *ui.Context) {
 			}
 		})
 	}
+	if v.wit {
+		kit.Alert(c, kit.Info, i18n.T("settings.rules.from_wit.banner"), nil)
+	}
 	settingsSection(c, i18n.T("settings.rules.name"), "", func() {
 		settingBlock(c, func() {
 			kit.Input(c, &d.Name, kit.InputOpts{Placeholder: i18n.T("settings.rules.name.placeholder")}).Label(i18n.T("settings.rules.name"))
@@ -684,11 +689,18 @@ func (v *rulesView) editor(c *ui.Context) {
 		})
 	})
 	settingsSection(c, i18n.T("settings.rules.if"), "", conds...)
-	var kinds []kit.Option[string]
-	for _, g := range ruleActionGroups {
-		for _, k := range g.kinds {
-			kinds = append(kinds, kit.Option[string]{Value: k, Label: i18n.T("settings.rules.action." + k)})
+	// Wit's actions are chosen only once 「智能」 lets rules use Wit (an action that has one keeps it).
+	aiOff := func(k string) bool { return !a.settings.RuleAI && slices.Contains(core.RuleAIActions, k) }
+	kindsFor := func(cur string) []kit.Option[string] {
+		var kinds []kit.Option[string]
+		for _, g := range ruleActionGroups {
+			for _, k := range g.kinds {
+				if k == cur || !aiOff(k) {
+					kinds = append(kinds, kit.Option[string]{Value: k, Label: i18n.T("settings.rules.action." + k)})
+				}
+			}
 		}
+		return kinds
 	}
 	acts := make([]func(), 0, len(d.Actions)+1)
 	for i := range d.Actions {
@@ -696,7 +708,7 @@ func (v *rulesView) editor(c *ui.Context) {
 			settingBlock(c, func() {
 				ui.Row(c.Key(i)).FillWidth().Gap(th.Space(2)).AlignItems(ui.Center).Children(func() {
 					ac := &d.Actions[i]
-					settingSelect(c, i18n.Tf("settings.rules.action.n", i+1), &ac.Kind, kinds)
+					settingSelect(c, i18n.Tf("settings.rules.action.n", i+1), &ac.Kind, kindsFor(ac.Kind))
 					if ac.Kind == core.ActionLabel || ac.Kind == core.ActionUnlabel {
 						if ac.Label == "" {
 							ac.Label = v.firstLabel()
@@ -745,8 +757,13 @@ func (v *rulesView) editor(c *ui.Context) {
 						}
 						kit.MenuLabel(c.Key("group:"+g.key), i18n.T("settings.rules.group."+g.key))
 						for _, k := range g.kinds {
-							label := i18n.T("settings.rules.action." + k)
-							kit.MenuItem(c.Key(k), false).Label(label).Children(func() { ui.Text(c, label).SingleLine() }).OnClick(func() {
+							label, off := i18n.T("settings.rules.action."+k), aiOff(k)
+							kit.MenuItem(c.Key(k), false).Label(label).Disabled(off).Children(func() {
+								ui.Text(c, label).SingleLine()
+								if off {
+									kit.Text(c, i18n.T("settings.rules.ai_off.hint"), t.Text.Sm).TextColor(t.Muted)
+								}
+							}).OnClick(func() {
 								v.menu = false
 								d.Actions = append(d.Actions, core.RuleAction{Kind: k})
 							})
@@ -759,6 +776,9 @@ func (v *rulesView) editor(c *ui.Context) {
 	foot := ""
 	if forwards(*d) {
 		foot = i18n.T("settings.rules.forward.foot")
+	}
+	if !a.settings.RuleAI {
+		foot = strings.TrimSpace(i18n.T("settings.rules.ai_off.note") + " " + foot)
 	}
 	settingsSection(c, i18n.T("settings.rules.then"), foot, acts...)
 	v.preview(c)

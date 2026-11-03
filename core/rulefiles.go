@@ -129,7 +129,7 @@ func FileName(s, fallback string) string {
 var reservedNames = map[string]bool{"CON": true, "PRN": true, "AUX": true, "NUL": true}
 
 // RuleFileActions are the actions that write files.
-var RuleFileActions = []string{ActionPDF, ActionEML, ActionAttachments}
+var RuleFileActions = []string{ActionPDF, ActionEML, ActionAttachments, ActionKeyPoints}
 
 // namingSample fills a template to check it at save, as any message would.
 var namingSample = map[string]string{"date": "2026-11-03", "subject": "s", "from": "f", "domain": "d", "year": "2026", "month": "11", "account": "a"}
@@ -201,6 +201,12 @@ func (s *Service) ruleFiles(ctx context.Context, runID int64, a RuleAction, msgI
 			return nil, RuleFailWrite, nil
 		}
 		failure = write(name+".pdf", pdf)
+	case ActionKeyPoints:
+		points, f, err := s.ruleKeyPoints(ctx, msgID)
+		if err != nil || f != "" {
+			return nil, f, err
+		}
+		failure = write(name+".md", []byte(points))
 	case ActionAttachments:
 		// Images the body shows inline are part of it, not attachments.
 		rows, err := s.db.Query(ctx, `SELECT id, filename FROM attachments WHERE message_id = ?

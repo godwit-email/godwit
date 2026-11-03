@@ -409,7 +409,8 @@ func (p *settingsPage) aiFeaturesView(c *ui.Context) {
 	}
 	settingsSection(c, i18n.T("settings.ai"), "",
 		sw(&st.Summary, i18n.T("settings.summary"), i18n.T("settings.summary.help")),
-		sw(&st.QuickReplies, i18n.T("settings.quick_replies"), i18n.T("settings.quick_replies.help")))
+		sw(&st.QuickReplies, i18n.T("settings.quick_replies"), i18n.T("settings.quick_replies.help")),
+		sw(&st.RuleAI, i18n.T("settings.rule_ai"), i18n.T("settings.rule_ai.help")))
 	settingsSection(c, i18n.T("settings.language"), "",
 		sel(i18n.T("settings.reading_language"), i18n.T("settings.reading_language.help"), func() ui.Element {
 			opts := []kit.Option[string]{{Value: "", Label: i18n.T("settings.reading_language.ui")}}

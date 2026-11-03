@@ -42,6 +42,7 @@ type witPageFixture struct {
 	navs     []int
 	urls     []string
 	composed []int64
+	rules    []core.Rule
 }
 
 func newWitPageFixture(t *testing.T, setup ...func(*coretest.Env)) *witPageFixture {
@@ -77,6 +78,7 @@ func newWitPageFixture(t *testing.T, setup ...func(*coretest.Env)) *witPageFixtu
 		NewConversation:     func() { f.record(func() { f.navs = append(f.navs, 0) }) },
 		OnLink:              func(u string) { f.record(func() { f.urls = append(f.urls, u) }) },
 		OpenCompose:         func(id int64) { f.record(func() { f.composed = append(f.composed, id) }) },
+		EditRule:            func(r core.Rule) { f.record(func() { f.rules = append(f.rules, r) }) },
 	})
 	f.w.SetService(f.e.Svc)
 	f.p = NewWitPage(f.w)
@@ -1214,4 +1216,23 @@ func TestWitPageRefusedFirstQuestion(t *testing.T) {
 	require.NoError(t, err)
 	require.Len(t, h.Turns, 1, "answered, it replaces the failed one")
 	assert.Empty(t, h.Turns[0].Failed)
+}
+
+// 在编辑器里修改 hands Wit's proposed rule to the editor, saving nothing,
+// and the run goes on.
+func TestWitPageEditRule(t *testing.T) {
+	f := newWitPageFixture(t)
+	f.llm.Script(coretest.Turn{Calls: []coretest.Call{{Name: "propose_rule", Args: `{"name":"Stripe","trigger":"receive","match":"all","actions":[{"kind":"archive"}]}`}}},
+		coretest.Turn{Text: []string{"好的。"}})
+	conv, ev := f.interrupted(t, "建一条规则")
+	require.Len(t, ev.Approvals, 1)
+	require.NoError(t, f.p.EditRule(f.ctx(), ev.Approvals[0].ID))
+	f.waitKind(t, conv, "done")
+	f.mu.Lock()
+	require.Len(t, f.rules, 1)
+	assert.Equal(t, "Stripe", f.rules[0].Doc.Name)
+	f.mu.Unlock()
+	rs, err := f.e.Svc.Rules(t.Context())
+	require.NoError(t, err)
+	assert.Empty(t, rs)
 }

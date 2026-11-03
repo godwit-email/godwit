@@ -78,6 +78,10 @@ type Settings struct {
 	// SecurityAI analyzes unverified email contents with the configured judge
 	// model, which may be remote, to detect fraud and phishing; off by default.
 	SecurityAI bool
+	// RuleAI lets rules take AI actions (让 Wit 起草回复, 让 Wit 提取要点),
+	// which send the mail to the default model, masked, unattended
+	// (docs/adr/0030-mail-rules.md); off by default (ADR 0010).
+	RuleAI bool
 	// RecognitionModel is 识别模型 (docs/adr/0028-recognition-model-for-masking.md): a
 	// model on this device finds names, addresses, accounts, phone numbers,
 	// email addresses, secrets and card numbers the rules can't. Off by default; it turns on only once its

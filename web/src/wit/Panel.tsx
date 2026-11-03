@@ -120,6 +120,7 @@ import { type Command, CommandPicker } from "./Commands";
 import { MailCard, senderName } from "./MailCard";
 import { type PickerKeys, QuoteChips, QuotePicker } from "./Quote";
 import { Cite, citedNumbers, plainCites, Response } from "./Response";
+import { PROPOSE_RULE_TOOL, RuleCard, ruleSettled } from "./RuleCard";
 import {
   historyToMessages,
   questionId,
@@ -904,6 +905,7 @@ function Settled({ a, onDraft, t }: { a: Approval; onDraft?(id: number): Promise
       )
     );
   }
+  const rule = a.tool === PROPOSE_RULE_TOOL ? ruleSettled(a, t) : "";
   const [Icon, key, tone] =
     a.state === "done"
       ? [RiCheckboxCircleLine, "wit.approval.allowed", "text-green-600"]
@@ -921,7 +923,7 @@ function Settled({ a, onDraft, t }: { a: Approval; onDraft?(id: number): Promise
     <>
       <span className="flex items-center gap-2 text-muted-foreground text-sm">
         <Icon className={cn("size-3.5 shrink-0", tone)} />
-        <span>{t(key, label)}</span>
+        <span>{rule || t(key, label)}</span>
         {label !== a.tool && <span className="font-mono text-muted-foreground/70">{a.tool}</span>}
       </span>
       {(a.tool === "create_draft" || a.tool === "reply_to_mail" || a.tool === "forward_mail") &&
@@ -1641,6 +1643,7 @@ export function Panel({
   onCite,
   onCheckCited,
   onDraft,
+  onEditRule,
   transport,
   t,
   layout = "panel",
@@ -1670,6 +1673,8 @@ export function Panel({
   onCheckCited?(id: number): Promise<void>;
   /** Opens the draft an allowed create_draft made (its approval), where the host can. */
   onDraft?(approval: number): Promise<void>;
+  /** Takes rule proposal a to the rules editor unsaved (在编辑器里修改), where the host can. */
+  onEditRule?(a: Approval): Promise<void>;
   transport: WitTransport;
   t: T;
   layout?: "panel" | "page";
@@ -2146,6 +2151,29 @@ export function Panel({
               a={a}
               busy={busy}
               answer={onAnswer && ((answers) => answerAs(a, answers))}
+              t={t}
+            />
+          ) : a.tool === PROPOSE_RULE_TOOL ? (
+            <RuleCard
+              key={a.id}
+              a={a}
+              busy={busy}
+              decide={(accept, editedArgs) => decideAs(a, accept, false, editedArgs)}
+              onEdit={
+                onEditRule &&
+                (async () => {
+                  if (deciding.length > 0) return;
+                  setDeciding([a.id]);
+                  try {
+                    await onEditRule(a);
+                    setDecided((d) => [...d, decisionKey(a)]);
+                  } catch {
+                    // the host said why
+                  } finally {
+                    setDeciding([]);
+                  }
+                })
+              }
               t={t}
             />
           ) : isBatchAction(a) ? (

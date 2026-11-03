@@ -381,6 +381,11 @@ func (s *Service) decideAs(ctx context.Context, id int64, accept bool, args json
 			return fmt.Errorf("tool %s is not available", a.Tool)
 		}
 	}
+	if accept && a.Tool == proposeRuleTool { // before the claim: unconfirmed, it stays pending
+		if args, err = confirmedRuleArgs(a.Args, args); err != nil {
+			return err
+		}
+	}
 	if accept && args != nil && (a.Tool == "create_draft" || a.Tool == "reply_to_mail" || a.Tool == "forward_mail") {
 		if args, err = s.editedDraftArgs(ctx, a.Args, args); err != nil {
 			return err

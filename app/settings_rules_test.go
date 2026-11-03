@@ -225,3 +225,33 @@ func TestSettingsRulesFromMail(t *testing.T) {
 		t.Fatalf("rule %+v", d)
 	}
 }
+
+// Wit's 在编辑器里修改 opens the editor filled in with its proposal; it is
+// saved only from there, its forward recipient confirmed as any other's.
+func TestSettingsRulesFromWit(t *testing.T) {
+	h, _ := withAccount(t)
+	h.app.EditRule(core.Rule{Enabled: true, Doc: core.RuleDoc{Version: core.RuleVersion, Name: "Stripe 发票转给会计", Trigger: core.TriggerReceive, Match: core.MatchAll,
+		Conditions: []core.RuleCondition{{Field: core.FieldFrom, Op: core.OpContains, Value: "stripe.com"}},
+		Actions:    []core.RuleAction{{Kind: core.ActionForward, To: "acct@company.example"}}}})
+	h.see("已按 Wit 的提议填好。检查后保存，规则才会生效。")
+	if rs := h.rules(); len(rs) != 0 {
+		t.Fatalf("saved before the user did: %+v", rs)
+	}
+	h.click("保存")
+	h.see("确认转发收件人")
+	h.click("确认收件人")
+	h.until("the rule saved", func() bool { return len(h.rules()) == 1 })
+	if r := h.rules()[0]; r.Doc.Conditions[0].Value != "stripe.com" || len(r.Confirmed) != 1 {
+		t.Fatalf("rule %+v", r)
+	}
+}
+
+// Wit's actions are offered only once 「智能」's 规则可以使用 Wit is on.
+func TestSettingsRulesWitActionsNeedTheSwitch(t *testing.T) {
+	h, _ := withAccount(t)
+	h.openSettings("rules")
+	h.click("新建规则")
+	h.see("Wit 的动作会把邮件发给模型，默认关闭。在 智能 › 功能 里打开「规则可以使用 Wit」后才能选。")
+	h.click("添加动作")
+	h.see("需在「智能」里打开")
+}

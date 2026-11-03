@@ -229,6 +229,11 @@ func (p *settingsPage) refresh(hints []events.Event) {
 			p.rules.pending = nil
 			p.rules.fromMail(*m)
 		}
+		if r := p.rules.witRule; r != nil { // Wit's 在编辑器里修改
+			p.rules.witRule = nil
+			p.rules.openEditor(*r)
+			p.rules.wit = true
+		}
 	case sec == "rules" && slices.ContainsFunc(hints, func(ev events.Event) bool { return ev.Type == events.LabelsChanged }):
 		p.rules.load() // a run publishes it: the hit counts
 	}

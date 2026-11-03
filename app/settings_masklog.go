@@ -367,7 +367,7 @@ func dangerPill(c *ui.Context, text string) {
 
 // maskFeatures are the features the masking log names (core's
 // MaskRecord.Feature), in the order the filter offers them.
-var maskFeatures = []string{"wit", "compose", "skill", "quick_replies", "translate", "labels", "compact", "plugin"}
+var maskFeatures = []string{"wit", "compose", "skill", "quick_replies", "translate", "labels", "compact", "plugin", "rules"}
 
 func maskFeatureName(feature string) string {
 	if !slices.Contains(maskFeatures, feature) {

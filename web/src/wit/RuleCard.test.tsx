@@ -1,0 +1,88 @@
+import { cleanup, render, screen } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
+import { afterEach, expect, test, vi } from "vitest";
+import type { Approval } from "@/mygo";
+import { makeT } from "@/shared/i18n";
+import { RuleCard, ruleSettled } from "./RuleCard";
+
+afterEach(cleanup);
+
+const t = makeT("zh-Hans");
+
+const proposal = (actions: object[], destinations: string[]): Approval => ({
+  id: 1,
+  run: 10,
+  callId: "c1",
+  tool: "propose_rule",
+  summary: "Create rule: Stripe",
+  state: "pending",
+  error: "",
+  destinations,
+  args: JSON.stringify({
+    rule: {
+      version: 1,
+      name: "Stripe 发票转给会计",
+      trigger: "receive",
+      match: "all",
+      conditions: [{ field: "from", op: "contains", value: "stripe.com" }],
+      actions,
+    },
+    background: false,
+    first_time: destinations,
+    matches: 2,
+    mail: [{ id: 5, from: "Stripe <s@stripe.com>", subject: "Invoice #1234", date: "" }],
+    labels: {},
+  }),
+  sessionAllow: false,
+  draft: 0,
+  draftEdit: false,
+});
+
+test("a forward is saved only through the recipient confirmation", async () => {
+  const decide = vi.fn();
+  const a = proposal(
+    [{ kind: "forward", to: "acct@company.example" }, { kind: "archive" }],
+    ["acct@company.example"],
+  );
+  render(<RuleCard a={a} busy={false} decide={decide} onEdit={vi.fn()} t={t} />);
+  expect(screen.getByText("发件人包含 stripe.com")).toBeTruthy();
+  expect(screen.getByText("外发")).toBeTruthy();
+  await userEvent.click(screen.getByRole("button", { name: "保存规则" }));
+  expect(decide).not.toHaveBeenCalled();
+  expect(screen.getByText("确认转发收件人")).toBeTruthy();
+  await userEvent.click(screen.getByRole("button", { name: "确认收件人并保存" }));
+  expect(decide).toHaveBeenCalledWith(
+    true,
+    JSON.stringify({ confirmed: ["acct@company.example"] }),
+  );
+});
+
+test("reject and edit decide nothing else", async () => {
+  const decide = vi.fn();
+  const onEdit = vi.fn();
+  render(
+    <RuleCard
+      a={proposal([{ kind: "archive" }], [])}
+      busy={false}
+      decide={decide}
+      onEdit={onEdit}
+      t={t}
+    />,
+  );
+  await userEvent.click(screen.getByRole("button", { name: "在编辑器里修改" }));
+  expect(onEdit).toHaveBeenCalled();
+  await userEvent.click(screen.getByRole("button", { name: "拒绝" }));
+  expect(decide).toHaveBeenCalledWith(false);
+  await userEvent.click(screen.getByRole("button", { name: "保存规则" }));
+  expect(decide).toHaveBeenLastCalledWith(true);
+});
+
+test("a proposal taken to the editor says so", () => {
+  const a = {
+    ...proposal([{ kind: "archive" }], []),
+    state: "rejected",
+    error: "the user opened the rule in the editor; it is saved only if they save it there",
+  };
+  expect(ruleSettled(a, t)).toBe("已在编辑器里打开，在那里保存后才会生效。");
+  expect(ruleSettled({ ...a, error: "rejected by the user" }, t)).toBe("已拒绝，没有创建规则。");
+});
