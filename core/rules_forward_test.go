@@ -199,6 +199,34 @@ func TestRuleExistingRunLeavesNewMail(t *testing.T) {
 	assert.Len(t, e.release(t), 1)
 }
 
+// A rule turned off while an earlier rule's run on the mail is going starts
+// no run when its turn comes: it is read as it is then, not as it was.
+func TestRuleTurnedOffMidwayRunsNot(t *testing.T) {
+	held, release := make(chan struct{}), make(chan struct{})
+	var armed atomic.Bool
+	var once sync.Once
+	setRulesHook(t, func(stage string) error {
+		if stage == "rules.action" && armed.Load() {
+			once.Do(func() { close(held); <-release }) // the first rule's slow action, a PDF say
+		}
+		return nil
+	})
+	e := newForwardEnv(t)
+	e.saveForward(t, rule(RuleAction{Kind: ActionStar}))
+	later := e.saveForward(t, forwardRule(carol), carol)
+	e.rulesIdle(t)
+	armed.Store(true)
+	e.put(t, "INBOX", billWithPDF("bill@x"))
+	e.sync(t)
+	<-held
+	require.NoError(t, e.s.SetRuleEnabled(bg, later, false))
+	close(release)
+	e.rulesIdle(t)
+	assert.Equal(t, 1, e.count(t, "SELECT count(*) FROM rule_runs"), "the first rule's only")
+	assert.Zero(t, e.count(t, "SELECT count(*) FROM rule_runs WHERE rule_id = ?", later))
+	assert.Empty(t, e.release(t))
+}
+
 // A forward to a recipient not confirmed, saved so or edited into the
 // stored rule, sends nothing and its hit says why.
 func TestRuleForwardUnconfirmedNeverSends(t *testing.T) {

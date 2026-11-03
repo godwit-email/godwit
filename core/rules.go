@@ -835,8 +835,11 @@ func (s *Service) runRule(ctx context.Context, r Rule, msgID int64, trigger stri
 	if err != nil {
 		return err
 	}
-	if _, err := s.db.Execute(ctx, `INSERT INTO rule_runs(rule_id, message_id, trigger, state, at, doc) VALUES (?, ?, ?, 'running', ?, ?)
-		ON CONFLICT(rule_id, message_id) DO NOTHING`, r.ID, msgID, trigger, time.Now().Unix(), string(doc)); err != nil {
+	// A new run only while the rule is on as it is now, not as the caller read
+	// it: one turned off while an earlier rule's run was going starts none.
+	if _, err := s.db.Execute(ctx, `INSERT INTO rule_runs(rule_id, message_id, trigger, state, at, doc)
+		SELECT ?, ?, ?, 'running', ?, ? WHERE EXISTS (SELECT 1 FROM rules WHERE id = ? AND enabled = 1)
+		ON CONFLICT(rule_id, message_id) DO NOTHING`, r.ID, msgID, trigger, time.Now().Unix(), string(doc), r.ID); err != nil {
 		return err
 	}
 	rows, err := s.db.Query(ctx, `SELECT id, state, (SELECT COALESCE(MAX(idx) + 1, 0) FROM rule_action_results WHERE run_id = rule_runs.id AND state = 'done'), doc
