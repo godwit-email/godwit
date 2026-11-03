@@ -1843,6 +1843,7 @@
   "wit_tool_list_rules": "규칙 보기",
   "wit_rule_matches": "{arg1, number, ::group-off}개 일치",
   "wit_rule_new_only": "기존 메일은 그대로 둡니다. 규칙은 저장한 뒤 도착한 메일만 처리합니다.",
+  "wit_rule_existing": "기존 메일",
   "wit_rule_hint": "저장해야 적용됩니다. Wit이 대신 저장할 수는 없습니다.",
   "wit_rule_edit": "편집기에서 수정",
   "wit_rule_confirm_save": "받는 사람 확인 후 저장",

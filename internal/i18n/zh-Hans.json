@@ -1843,6 +1843,7 @@
   "wit_tool_list_rules": "查看规则",
   "wit_rule_matches": "有 {arg1, number, ::group-off} 封符合",
   "wit_rule_new_only": "现有邮件不会被处理，规则只处理保存之后收到的新邮件。",
+  "wit_rule_existing": "现有邮件",
   "wit_rule_hint": "保存后才会生效，Wit 不能替你保存",
   "wit_rule_edit": "在编辑器里修改",
   "wit_rule_confirm_save": "确认收件人并保存",

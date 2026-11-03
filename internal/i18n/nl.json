@@ -1843,6 +1843,7 @@
   "wit_tool_list_rules": "Regels bekijken",
   "wit_rule_matches": "Passend: {arg1, number, ::group-off}",
   "wit_rule_new_only": "Bestaande mail blijft zoals hij is: de regel verwerkt alleen mail die na het opslaan binnenkomt.",
+  "wit_rule_existing": "Bestaande e-mail",
   "wit_rule_hint": "Werkt pas als je opslaat. Wit kan niet voor je opslaan.",
   "wit_rule_edit": "Bewerken in de editor",
   "wit_rule_confirm_save": "Ontvanger bevestigen en opslaan",

@@ -1843,6 +1843,7 @@
   "wit_tool_list_rules": "Ver regras",
   "wit_rule_matches": "Correspondentes: {arg1, number, ::group-off}",
   "wit_rule_new_only": "Os e-mails existentes ficam como estão: a regra trata só os que chegarem depois de salvar.",
+  "wit_rule_existing": "E-mails existentes",
   "wit_rule_hint": "Só vale depois que você salvar. O Wit não pode salvar por você.",
   "wit_rule_edit": "Editar no editor",
   "wit_rule_confirm_save": "Confirmar destinatário e salvar",

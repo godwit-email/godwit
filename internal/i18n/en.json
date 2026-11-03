@@ -3592,6 +3592,7 @@
   "wit_tool_list_rules": "View rules",
   "wit_rule_matches": "Matching: {arg1, number, ::group-off}",
   "wit_rule_new_only": "Existing mail is left as it is: the rule handles only mail that arrives after you save it.",
+  "wit_rule_existing": "Existing mail",
   "wit_rule_hint": "Takes effect only once you save it. Wit can’t save it for you.",
   "wit_rule_edit": "Edit in the Editor",
   "wit_rule_confirm_save": "Confirm Recipient and Save",

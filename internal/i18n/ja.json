@@ -1843,6 +1843,7 @@
   "wit_tool_list_rules": "ルールを確認",
   "wit_rule_matches": "{arg1, number, ::group-off} 件が一致",
   "wit_rule_new_only": "既存のメールはそのままです。ルールは保存後に届いたメールだけを処理します。",
+  "wit_rule_existing": "既存のメール",
   "wit_rule_hint": "保存すると有効になります。Wit が代わりに保存することはできません。",
   "wit_rule_edit": "エディタで編集",
   "wit_rule_confirm_save": "転送先を確認して保存",

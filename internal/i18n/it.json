@@ -1843,6 +1843,7 @@
   "wit_tool_list_rules": "Vedi regole",
   "wit_rule_matches": "Corrispondenti: {arg1, number, ::group-off}",
   "wit_rule_new_only": "La posta esistente resta com’è: la regola gestisce solo quella che arriva dopo il salvataggio.",
+  "wit_rule_existing": "Email esistenti",
   "wit_rule_hint": "Vale solo quando la salvi. Wit non può salvarla al posto tuo.",
   "wit_rule_edit": "Modifica nell’editor",
   "wit_rule_confirm_save": "Conferma destinatario e salva",

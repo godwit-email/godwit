@@ -1843,6 +1843,7 @@
   "wit_tool_list_rules": "Voir les règles",
   "wit_rule_matches": "Correspondants : {arg1, number, ::group-off}",
   "wit_rule_new_only": "Les e-mails existants restent tels quels : la règle ne traite que ceux reçus après l’enregistrement.",
+  "wit_rule_existing": "E-mails existants",
   "wit_rule_hint": "Ne s’applique qu’une fois enregistrée. Wit ne peut pas l’enregistrer à votre place.",
   "wit_rule_edit": "Modifier dans l’éditeur",
   "wit_rule_confirm_save": "Confirmer le destinataire et enregistrer",

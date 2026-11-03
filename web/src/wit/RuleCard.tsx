@@ -176,7 +176,7 @@ export function RuleCard({
   const hosts = a.destinations.filter((d) => !d.includes("@"));
   const first = (to: string) =>
     (p.first_time ?? []).some((f) => f.toLowerCase() === to.toLowerCase());
-  const k = (s: string) => <span className="text-muted-foreground">{s}</span>;
+  const k = (s: string) => <span className="whitespace-nowrap text-muted-foreground">{s}</span>;
   const firstBadge = (to?: string) =>
     to &&
     first(to) && (
@@ -205,7 +205,7 @@ export function RuleCard({
           </Badge>
         </span>
       </div>
-      <div className="grid grid-cols-[4.5rem_minmax(0,1fr)] gap-x-3 gap-y-2 px-3.5 py-3 text-md">
+      <div className="grid grid-cols-[minmax(4.5rem,auto)_minmax(0,1fr)] gap-x-3 gap-y-2 px-3.5 py-3 text-md">
         {k(t("settings.rules.name"))}
         <span className="font-medium">{p.rule.name || t("settings.rules.untitled")}</span>
         {k(t("settings.rules.when"))}
@@ -264,7 +264,7 @@ export function RuleCard({
         <span>
           {t(p.background ? "settings.rules.run.background" : "settings.rules.run.window")}
         </span>
-        {k(t("settings.rules.preview"))}
+        {k(t("wit.rule.existing"))}
         <span className="flex flex-col gap-1.5">
           {p.matches > 0 ? (
             <Button

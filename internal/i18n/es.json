@@ -1843,6 +1843,7 @@
   "wit_tool_list_rules": "Ver reglas",
   "wit_rule_matches": "Coinciden: {arg1, number, ::group-off}",
   "wit_rule_new_only": "El correo existente se queda como está: la regla solo trata el que llegue después de guardarla.",
+  "wit_rule_existing": "Correo existente",
   "wit_rule_hint": "Solo se aplica cuando la guardas. Wit no puede guardarla por ti.",
   "wit_rule_edit": "Editar en el editor",
   "wit_rule_confirm_save": "Confirmar destinatario y guardar",
