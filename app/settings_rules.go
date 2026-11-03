@@ -8,6 +8,7 @@ import (
 
 	"github.com/egoist/mygo/ui"
 	"github.com/godwit-email/godwit/core"
+	"github.com/godwit-email/godwit/core/mail"
 	"github.com/godwit-email/godwit/internal/i18n"
 	"github.com/godwit-email/godwit/internal/kit"
 	"github.com/godwit-email/godwit/internal/theme"
@@ -26,11 +27,16 @@ type rulesView struct {
 	editing bool
 	edit    core.Rule // the rule in the editor; ID 0 a new one
 	any     int       // the editor's match: 0 all, 1 any
+
+	// The confirmation of forward recipients not confirmed yet, before saving.
+	confirming  bool
+	unconfirmed []string
+	firstTime   []string // of unconfirmed, the ones no account has written to
 }
 
 // ruleActions are the actions the editor offers, in its order.
 var ruleActions = []string{core.ActionLabel, core.ActionUnlabel, core.ActionRead, core.ActionStar,
-	core.ActionArchive, core.ActionJunk, core.ActionTrash, core.ActionStop}
+	core.ActionArchive, core.ActionJunk, core.ActionTrash, core.ActionStop, core.ActionForward}
 
 // ruleRoles are the folders a folder condition offers, by role.
 var ruleRoles = []string{"inbox", "archive", "junk", "trash"}
@@ -112,6 +118,9 @@ func (v *rulesView) row(c *ui.Context, r core.Rule) {
 					if r.Background {
 						kit.Badge(c, i18n.T("settings.rules.run.background"))
 					}
+					if forwards(r.Doc) {
+						kit.Badge(c, i18n.T("settings.rules.egress"))
+					}
 				})
 				kit.Text(c, v.summary(r.Doc), t.Text.Sm).TextColor(t.Muted).SingleLine()
 			})
@@ -184,7 +193,9 @@ func (v *rulesView) hit(c *ui.Context, r core.Rule, h core.RuleHit, now time.Tim
 			kit.Text(c, i18n.T("settings.rules.hits.undone"), t.Text.Sm).TextColor(t.Muted).Shrink(0)
 			return
 		}
-		if slices.ContainsFunc(h.Actions, func(x core.RuleActionResult) bool { return x.State == core.RuleActionDone && x.Kind != core.ActionStop }) {
+		if slices.ContainsFunc(h.Actions, func(x core.RuleActionResult) bool {
+			return x.State == core.RuleActionDone && x.Kind != core.ActionStop && x.Kind != core.ActionForward // a forward has gone
+		}) {
 			kit.Button(c, i18n.T("settings.rules.hits.undo"), kit.ButtonOpts{Variant: kit.Outline, Size: kit.SizeSm, Icon: "undo-2"}).Shrink(0).
 				OnClick(func() { v.undo(h.RunID) })
 		}
@@ -205,7 +216,7 @@ func (v *rulesView) result(r core.Rule, i int, res core.RuleActionResult) string
 	switch res.State {
 	case core.RuleActionFailed:
 		return i18n.Tf("settings.rules.result.failed", s, i18n.T("settings.rules.failure."+res.Failure))
-	case core.RuleActionNotRun, core.RuleActionUndone, core.RuleActionKept:
+	case core.RuleActionNotRun, core.RuleActionUndone, core.RuleActionKept, core.RuleActionSkipped:
 		return i18n.Tf("settings.rules.result."+res.State, s)
 	}
 	return s
@@ -284,6 +295,9 @@ func (v *rulesView) actionText(ac core.RuleAction) string {
 	if ac.Kind == core.ActionLabel || ac.Kind == core.ActionUnlabel {
 		return i18n.Tf("settings.rules.action."+ac.Kind+".summary", v.labelName(ac.Label))
 	}
+	if ac.Kind == core.ActionForward && ac.To != "" {
+		return i18n.Tf("settings.rules.action.forward.summary", ac.To)
+	}
 	return i18n.T("settings.rules.action." + ac.Kind)
 }
 
@@ -312,6 +326,7 @@ func (v *rulesView) create() {
 func (v *rulesView) openEditor(r core.Rule) {
 	r.Doc.Conditions = slices.Clone(r.Doc.Conditions)
 	r.Doc.Actions = slices.Clone(r.Doc.Actions)
+	r.Confirmed = slices.Clone(r.Confirmed)
 	v.editing, v.edit, v.any = true, r, 0
 	if r.Doc.Match == core.MatchAny {
 		v.any = 1
@@ -350,7 +365,8 @@ func (v *rulesView) editor(c *ui.Context) {
 	}
 	ready := len(d.Actions) > 0 &&
 		!slices.ContainsFunc(d.Actions, func(ac core.RuleAction) bool {
-			return (ac.Kind == core.ActionLabel || ac.Kind == core.ActionUnlabel) && ac.Label == ""
+			return (ac.Kind == core.ActionLabel || ac.Kind == core.ActionUnlabel) && ac.Label == "" ||
+				ac.Kind == core.ActionForward && strings.TrimSpace(ac.To) == ""
 		}) && (d.Trigger != core.TriggerLabel || d.TriggerArg != "") &&
 		!slices.ContainsFunc(d.Conditions, func(cd core.RuleCondition) bool { return strings.TrimSpace(cd.Value) == "" })
 	pageHeading(c, title, sub, func() {
@@ -475,6 +491,11 @@ func (v *rulesView) editor(c *ui.Context) {
 					} else {
 						ac.Label = ""
 					}
+					if ac.Kind == core.ActionForward {
+						kit.Input(c, &ac.To, kit.InputOpts{Placeholder: i18n.T("settings.rules.forward.to")}).Label(i18n.T("settings.rules.forward.to")).Grow(1).Shrink(1)
+					} else {
+						ac.To = ""
+					}
 					ui.Row(c).Grow(1)
 					kit.IconButton(c, "arrow-up", i18n.T("settings.rules.action.up"), kit.ButtonOpts{Variant: kit.Ghost, Size: kit.SizeSm, Disabled: i == 0}).
 						OnClick(func() { d.Actions[i-1], d.Actions[i] = d.Actions[i], d.Actions[i-1] })
@@ -494,7 +515,11 @@ func (v *rulesView) editor(c *ui.Context) {
 			})
 		})
 	})
-	settingsSection(c, i18n.T("settings.rules.then"), "", acts...)
+	foot := ""
+	if forwards(*d) {
+		foot = i18n.T("settings.rules.forward.foot")
+	}
+	settingsSection(c, i18n.T("settings.rules.then"), foot, acts...)
 	run := func(bg bool, key string) func() {
 		return func() {
 			settingBlock(c, func() {
@@ -504,13 +529,75 @@ func (v *rulesView) editor(c *ui.Context) {
 		}
 	}
 	settingsSection(c, i18n.T("settings.rules.run"), "", run(false, "window"), run(true, "background"))
+	v.confirmDialog(c)
 }
 
+// forwards reports whether the rule forwards mail (外发).
+func forwards(d core.RuleDoc) bool {
+	return slices.ContainsFunc(d.Actions, func(ac core.RuleAction) bool { return ac.Kind == core.ActionForward })
+}
+
+// save saves the rule, first asking to confirm forward recipients it has
+// not confirmed: a new one, or one changed since.
 func (v *rulesView) save() {
+	a := v.a
+	var todo []string
+	for _, ac := range v.edit.Doc.Actions {
+		k := mail.AddrKey(ac.To)
+		if ac.Kind == core.ActionForward && !slices.Contains(v.edit.Confirmed, k) && !slices.ContainsFunc(todo, func(x string) bool { return mail.AddrKey(x) == k }) {
+			todo = append(todo, strings.TrimSpace(ac.To))
+		}
+	}
+	if len(todo) == 0 {
+		v.commit()
+		return
+	}
+	var first []string
+	a.query(func(ctx context.Context) (err error) { first, err = a.svc.FirstTimeRecipients(ctx, todo); return err }, func(err error) {
+		a.toastErr(err)
+		if err == nil {
+			v.confirming, v.unconfirmed, v.firstTime = true, todo, first
+		}
+	})
+}
+
+func (v *rulesView) commit() {
 	a := v.a
 	r := v.edit
 	v.editing = false
 	a.writes.Chain("rules", func(ctx context.Context) error { _, err := a.svc.SaveRule(ctx, r); return err }, v.saved)
+}
+
+// confirmDialog names the forward recipients to confirm, the ones never
+// written to flagged; going back to edit saves nothing.
+func (v *rulesView) confirmDialog(c *ui.Context) {
+	t, th := theme.Of(c), c.Theme()
+	kit.Dialog(c, &v.confirming, i18n.T("settings.rules.confirm.title"), kit.DialogOpts{Size: kit.DialogSm, Alert: true,
+		Desc: i18n.Tf("settings.rules.confirm.desc", ruleName(v.edit.Doc)), Close: i18n.T("common.close")}, func() {
+		ui.Column(c).Gap(th.Space(1)).Children(func() {
+			kit.Text(c, i18n.T("settings.rules.confirm.to"), t.Text.Sm).TextColor(t.Muted)
+			for _, to := range v.unconfirmed {
+				ui.Row(c).Gap(th.Space(2)).AlignItems(ui.Center).Children(func() {
+					ui.Text(c, to).FontWeight(600).Selectable()
+					if slices.ContainsFunc(v.firstTime, func(f string) bool { return mail.AddrKey(f) == mail.AddrKey(to) }) {
+						kit.Badge(c, i18n.T("mcp_send.first"))
+					}
+				})
+			}
+		})
+		for _, k := range []string{"outbox", "new_only", "again"} {
+			kit.Text(c, i18n.T("settings.rules.confirm."+k), t.Text.Sm).TextColor(t.Muted)
+		}
+	}, func() {
+		kit.Button(c, i18n.T("settings.rules.confirm.back"), kit.ButtonOpts{Variant: kit.Outline}).OnClick(func() { v.confirming = false })
+		kit.Button(c, i18n.T("settings.rules.confirm.ok"), kit.ButtonOpts{}).OnClick(func() {
+			v.confirming = false
+			for _, to := range v.unconfirmed {
+				v.edit.Confirmed = append(v.edit.Confirmed, mail.AddrKey(to))
+			}
+			v.commit()
+		})
+	})
 }
 
 // saved shows a write's error and reads the rules again.
