@@ -33,6 +33,7 @@ type rulesView struct {
 	deleting *core.Rule        // the rule whose 删除规则 asks to confirm
 	order    ui.ListState      // the rules' list, its rows dragged to reorder them
 	heights  map[int64]float32 // each rule's row as last laid out, which the list is as tall as
+	shape    [2]int64          // the open rule and its hits' count the rows were built with
 
 	editing bool
 	edit    core.Rule // the rule in the editor; ID 0 a new one
@@ -254,6 +255,12 @@ func (v *rulesView) list(c *ui.Context) {
 	v.order.Reorder = func(rows []int, to int) { v.move(rows[0], to) }
 	if v.heights == nil {
 		v.heights = map[int64]float32{}
+	}
+	// A row opened, closed or filled is measured once laid out, in a frame
+	// nothing else may ask for: ask for it.
+	if shape := [2]int64{v.open, int64(len(v.hits))}; shape != v.shape {
+		v.shape = shape
+		c.Invalidate()
 	}
 	n := len(v.rules)
 	var h float32
