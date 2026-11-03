@@ -538,12 +538,12 @@ func (s *Service) Send(ctx context.Context, draftID int64) error {
 		return err
 	}
 	defer end()
-	return s.send(ctx, draftID, -1)
+	return s.send(ctx, draftID, -1, nil)
 }
 
 // send is Send inside a begun call. A want >= 0 sends only that revision:
-// any other is ErrStaleDraft.
-func (s *Service) send(ctx context.Context, draftID, want int64) error {
+// any other is ErrStaleDraft. rs is a rule's send, nil for the user's.
+func (s *Service) send(ctx context.Context, draftID, want int64, rs *ruleSend) error {
 	for changes := 0; ; {
 		cs := s.sendCheckers()
 		rev := want // no checks: the draft as it is when queued (want < 0), or that revision
@@ -578,7 +578,7 @@ func (s *Service) send(ctx context.Context, draftID, want int64) error {
 			}
 			rev = d.Revision
 		}
-		err := s.enqueue(ctx, draftID, rev, checkerIDs(cs))
+		err := s.enqueue(ctx, draftID, rev, checkerIDs(cs), rs)
 		if !errors.Is(err, errSendChanged) {
 			return err
 		}
@@ -592,8 +592,9 @@ func (s *Service) send(ctx context.Context, draftID, want int64) error {
 // and the checking plugins are still checked, else errSendChanged. Plugin
 // changes wait from the comparison until the draft is queued. The item holds
 // the draft, read-only, and is sent once UndoSendWindow has passed; a draft
-// queued already is ErrStaleDraft.
-func (s *Service) enqueue(ctx context.Context, draftID, rev int64, checked []string) error {
+// queued already is ErrStaleDraft. A rule's send (rs) carries its marker
+// header and writes rs.stmts with the item, in one transaction.
+func (s *Service) enqueue(ctx context.Context, draftID, rev int64, checked []string, rs *ruleSend) error {
 	release, err := s.stopDraftRuns(ctx, draftID) // Wit proposes nothing for the queued draft
 	if err != nil {
 		return err
@@ -648,6 +649,10 @@ func (s *Service) enqueue(ctx context.Context, draftID, rev int64, checked []str
 	}
 	o := mail.Outgoing{From: (&netmail.Address{Name: acc.Name, Address: acc.Email}).String(), ReplyTo: d.ReplyTo,
 		To: d.To, Cc: d.Cc, Bcc: d.Bcc, Subject: d.Subject, HTML: d.HTML, Related: related}
+	var stmts []sqlite.Statement
+	if rs != nil {
+		o.Header, stmts = map[string]string{mail.RuleHeader: strconv.FormatInt(rs.ruleID, 10)}, rs.stmts
+	}
 	if d.SourceMessageID != 0 && (d.Mode == "reply" || d.Mode == "reply_all") {
 		rows, err := s.db.Query(ctx, "SELECT message_id, refs FROM messages WHERE id = ?", d.SourceMessageID)
 		if err != nil {
@@ -683,10 +688,10 @@ func (s *Service) enqueue(ctx context.Context, draftID, rev int64, checked []str
 	if err := store.WriteFileAtomic(rawPath, raw); err != nil {
 		return err
 	}
-	if _, err := s.db.Execute(ctx, `INSERT INTO outbox(account_id, message_id_hdr, raw_path, rcpts, state, subject, created_at,
+	if _, err := s.db.Transaction(ctx, append([]sqlite.Statement{{SQL: `INSERT INTO outbox(account_id, message_id_hdr, raw_path, rcpts, state, subject, created_at,
 		draft_id, send_after) VALUES (?, ?, ?, ?, 'queued', ?, ?, ?, ?)`,
-		d.AccountID, messageID, rawPath, encodeList(rcpts), d.Subject, s.clk().Now().Unix(), draftID,
-		s.clk().Now().Add(UndoSendWindow).UnixMilli()); err != nil {
+		Args: []any{d.AccountID, messageID, rawPath, encodeList(rcpts), d.Subject, s.clk().Now().Unix(), draftID,
+			s.clk().Now().Add(UndoSendWindow).UnixMilli()}}}, stmts...)); err != nil {
 		os.Remove(rawPath)
 		return err
 	}

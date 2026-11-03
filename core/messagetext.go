@@ -57,6 +57,9 @@ const (
 	AuditMCP      = "local_mcp"
 )
 
+// AuditRule is the audit source of a rule's forward (target: the rule).
+const AuditRule = "rule"
+
 // AuditExternal writes an audit_log row for a call made from outside the
 // app: source (AuditLocalAPI or AuditMCP), the method as action, and the
 // target's ID (0 = none). No content is stored.

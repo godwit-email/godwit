@@ -115,3 +115,33 @@ func TestSettingsRulesHistoryUndo(t *testing.T) {
 		t.Fatalf("hits %+v %v", hs, err)
 	}
 }
+
+// Saving a forward asks to confirm its recipient: going back saves nothing,
+// confirming saves the rule with the recipient confirmed, tagged 外发.
+func TestSettingsRulesForwardConfirm(t *testing.T) {
+	h, _ := withAccount(t)
+	h.openSettings("rules")
+	h.click("新建规则")
+	h.click("值")
+	h.typeText("billing@")
+	h.click("动作 1")
+	h.click("转发给")
+	h.click("收件人邮箱")
+	h.typeText("carol@example.com")
+	h.click("保存")
+	h.see("确认转发收件人")
+	h.see("首次发送")
+	h.click("返回修改")
+	if rs := h.rules(); len(rs) != 0 {
+		t.Fatalf("saved without confirming: %+v", rs)
+	}
+
+	h.click("保存")
+	h.click("确认收件人")
+	h.until("the rule saved", func() bool { return len(h.rules()) == 1 })
+	if r := h.rules()[0]; len(r.Confirmed) != 1 || r.Confirmed[0] != "carol@example.com" || r.Doc.Actions[0].To != "carol@example.com" {
+		t.Fatalf("rule %+v", r)
+	}
+	h.see("外发")
+	h.see("转发给 carol@example.com")
+}

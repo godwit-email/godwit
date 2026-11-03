@@ -3349,6 +3349,44 @@
   "settings_rules_failure_no_label": "the label is gone",
   "settings_rules_failure_gone": "the message is gone",
   "settings_rules_failure_unknown": "unknown action",
+  "settings_rules_action_forward": "Forward to",
+  "settings_rules_action_forward_summary": "Forward to {arg1}",
+  "@settings_rules_action_forward_summary": {
+    "placeholders": {
+      "arg1": {
+        "type": "String"
+      }
+    }
+  },
+  "settings_rules_forward_to": "Recipient’s address",
+  "settings_rules_forward_foot": "Forwarding asks you to confirm the recipient when you save, and forwards only mail that arrives after that.",
+  "settings_rules_egress": "Sends out",
+  "settings_rules_confirm_title": "Confirm the forward recipient",
+  "settings_rules_confirm_desc": "Once saved, new mail matching “{arg1}” is forwarded automatically, without asking you each time.",
+  "@settings_rules_confirm_desc": {
+    "placeholders": {
+      "arg1": {
+        "type": "String"
+      }
+    }
+  },
+  "settings_rules_confirm_to": "Forwards to",
+  "settings_rules_confirm_outbox": "Sent from the account that received it; each goes to the Outbox first and can be undone for 10 seconds",
+  "settings_rules_confirm_new_only": "Only mail that arrives after saving is forwarded; existing mail is not",
+  "settings_rules_confirm_again": "If you change the recipient later, you’ll be asked again",
+  "settings_rules_confirm_back": "Go back and edit",
+  "settings_rules_confirm_ok": "Confirm recipient",
+  "settings_rules_result_skipped": "Skipped: {arg1} (new mail only)",
+  "@settings_rules_result_skipped": {
+    "placeholders": {
+      "arg1": {
+        "type": "String"
+      }
+    }
+  },
+  "settings_rules_failure_unconfirmed": "the recipient isn’t confirmed",
+  "settings_rules_failure_send_check": "a plugin warned about the message",
+  "settings_rules_failure_send": "it couldn’t be put in the Outbox",
   "settings_rules_empty_trash": "Emptying Trash and Junk isn’t a rule: set it in the account’s settings ›",
   "settings_rules_action_pdf": "Export PDF to",
   "settings_rules_action_eml": "Export original email to",

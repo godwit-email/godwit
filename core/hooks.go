@@ -600,7 +600,7 @@ func (s *Service) sendAcknowledged(ctx context.Context, draftID, want int64, dig
 	}
 	defer end()
 	if c, ok := s.sendCheck(digest); ok && c.DraftID == draftID && (want < 0 || c.Revision == want) {
-		err := s.enqueue(ctx, draftID, c.Revision, c.Plugins)
+		err := s.enqueue(ctx, draftID, c.Revision, c.Plugins, nil)
 		if !errors.Is(err, errSendChanged) {
 			if err == nil {
 				s.dropSendCheck(digest)
@@ -608,5 +608,5 @@ func (s *Service) sendAcknowledged(ctx context.Context, draftID, want int64, dig
 			return err
 		}
 	}
-	return s.send(ctx, draftID, want)
+	return s.send(ctx, draftID, want, nil)
 }
