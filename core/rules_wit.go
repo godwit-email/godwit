@@ -31,8 +31,8 @@ const listRulesTool = "list_rules"
 // the user confirmed each recipient in Godwit (ResolveApprovalWithArgs).
 var ErrRecipientUnconfirmed = errors.New("the forward recipient is not confirmed")
 
-// msgToEditor is what the model is told when the user took its proposal to
-// the editor (EditProposedRule).
+// msgToEditor is what the model was told when opening the editor ended a
+// proposal; the web card still names past ones by it.
 const msgToEditor = "the user opened the rule in the editor; it is saved only if they save it there"
 
 // proposalShown is how many matching messages a proposal's card lists.
@@ -339,9 +339,11 @@ func (s *Service) applyRule(ctx context.Context, a Approval) ([]sqlite.Statement
 	return []sqlite.Statement{st}, map[string]any{"saved": true, "name": p.Rule.Name}, nil, nil
 }
 
-// EditProposedRule ends pending propose_rule approval id unsaved and returns
-// its rule for the editor (在编辑器里修改), turned on: the rule is saved
-// only if the user saves it there, confirming any forward recipient.
+// EditProposedRule returns pending propose_rule approval id's rule for the
+// editor (在编辑器里修改), turned on. The proposal stays pending, its card
+// in the conversation too: the rule is saved only if the user saves it in
+// the editor, confirming any forward recipient (ProposedRuleSaved), or
+// back in the conversation from its card.
 func (s *Service) EditProposedRule(ctx context.Context, id int64) (Rule, error) {
 	ctx, end, err := s.begin(ctx, 0)
 	if err != nil {
@@ -352,22 +354,58 @@ func (s *Service) EditProposedRule(ctx context.Context, id int64) (Rule, error) 
 	if err != nil {
 		return Rule{}, err
 	}
-	var p ruleProposal
 	if a.Tool != proposeRuleTool {
 		return Rule{}, fmt.Errorf("approval %d is not a rule proposal", id)
 	}
+	if a.State != "pending" {
+		return Rule{}, ErrInvalidState
+	}
+	var p ruleProposal
 	if err := json.Unmarshal(a.Args, &p); err != nil {
 		return Rule{}, err
 	}
+	return Rule{Enabled: true, Background: p.Background, Doc: p.Rule}, nil
+}
+
+// ProposedRuleSaved ends pending propose_rule approval id as saved, with r,
+// the rule the user saved for it in the editor (SaveRule): its card shows r
+// saved, and the model is told. A proposal no longer pending, saved from
+// its card meanwhile, say, is left as it is.
+func (s *Service) ProposedRuleSaved(ctx context.Context, id int64, r Rule) error {
+	ctx, end, err := s.begin(ctx, 0)
+	if err != nil {
+		return err
+	}
+	defer end()
+	a, err := s.approvalRow(ctx, id)
+	if err != nil {
+		return err
+	}
+	if a.Tool != proposeRuleTool {
+		return fmt.Errorf("approval %d is not a rule proposal", id)
+	}
+	var p ruleProposal
+	if err := json.Unmarshal(a.Args, &p); err != nil {
+		return err
+	}
+	p.Rule, p.Background, p.Confirmed = r.Doc, r.Background, r.Confirmed
+	args, err := json.Marshal(p)
+	if err != nil {
+		return err
+	}
+	res, err := json.Marshal(map[string]any{"saved": true, "name": r.Doc.Name, "edited_in_editor": true})
+	if err != nil {
+		return err
+	}
 	err = s.ledger.execute(ctx, id, a.RunID, func(ctx context.Context) error {
-		err := s.ledger.finish(ctx, a, "rejected", msgToEditor, nil, nil, "rejected")
+		err := s.ledger.finish(ctx, a, "done", string(res), string(args), nil, "executed")
 		s.bus.Publish(events.Event{Type: events.ApprovalsChanged, ConversationID: a.ConversationID})
 		return err
 	}, true)
-	if err != nil {
-		return Rule{}, s.cleanError(err)
+	if errors.Is(err, ErrInvalidState) {
+		return nil
 	}
-	return Rule{Enabled: true, Background: p.Background, Doc: p.Rule}, nil
+	return s.cleanError(err)
 }
 
 // RuleAIActions are the rule actions Wit does: they send the message to the

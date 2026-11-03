@@ -145,6 +145,9 @@ func TestAProposalWithWitActionsNamesTheModelHost(t *testing.T) {
 	assert.Equal(t, []string{"acct@company.example", u.Host}, a.Destinations)
 }
 
+// Opening a proposal in the editor leaves its card pending: back in the
+// conversation it can still be saved there. Saved from the editor, the
+// card shows the rule as saved there.
 func TestEditingAProposalHandsItToTheEditor(t *testing.T) {
 	e := newApprovalEnv(t)
 	a := e.propose(t, forwardProposal)
@@ -153,13 +156,26 @@ func TestEditingAProposalHandsItToTheEditor(t *testing.T) {
 	assert.Equal(t, "To accounting", d.Doc.Name)
 	assert.Equal(t, "acct@company.example", d.Doc.Actions[0].To)
 	assert.Empty(t, d.Confirmed)
-	got := e.approval(t, a.ID)
-	assert.Equal(t, "rejected", got.State)
-	assert.Equal(t, msgToEditor, got.Error)
+	assert.Equal(t, "pending", e.approval(t, a.ID).State)
 	assert.Empty(t, e.savedRules(t))
-
 	_, err = e.s.EditProposedRule(t.Context(), a.ID)
-	require.Error(t, err, "once")
+	require.NoError(t, err, "again, after going back")
+
+	d.Doc.Name = "Invoices to accounting"
+	d.Confirmed = []string{"acct@company.example"}
+	_, err = e.s.SaveRule(t.Context(), d)
+	require.NoError(t, err)
+	require.NoError(t, e.s.ProposedRuleSaved(t.Context(), a.ID, d))
+	got := e.approval(t, a.ID)
+	assert.Equal(t, "done", got.State)
+	var p ruleProposal
+	require.NoError(t, json.Unmarshal(got.Args, &p))
+	assert.Equal(t, "Invoices to accounting", p.Rule.Name)
+	assert.Len(t, e.savedRules(t), 1, "the editor saved it, the card did not again")
+
+	require.NoError(t, e.s.ProposedRuleSaved(t.Context(), a.ID, d), "no longer pending: left as it is")
+	_, err = e.s.EditProposedRule(t.Context(), a.ID)
+	require.Error(t, err, "a decided proposal")
 }
 
 // An invalid rule goes back to Wit as an error, with no card.

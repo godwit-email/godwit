@@ -87,8 +87,8 @@ type WitPageDeps struct {
 	OnLink      func(url string)
 	OpenCompose func(draftID int64)
 	// EditRule opens the rules editor on a rule Wit proposed in conversation
-	// conv, for the question ask (在编辑器里修改).
-	EditRule func(r core.Rule, conv int64, ask string)
+	// conv as approval, for the question ask (在编辑器里修改).
+	EditRule func(r core.Rule, conv, approval int64, ask string)
 }
 
 // Wit keeps the Wit page's state: the route's conversation as a versioned
@@ -537,13 +537,14 @@ func (p *WitPage) DecideSession(ctx context.Context, approval int64) error {
 
 // EditRule takes rule proposal approval, one of the conversation the page
 // follows, to the rules editor unsaved (在编辑器里修改; core
-// EditProposedRule): the rule is saved only from there. As Decide.
+// EditProposedRule): its card stays pending until the user saves it, there
+// or from the card. As Decide.
 func (p *WitPage) EditRule(ctx context.Context, approval int64) error {
 	return p.decide(ctx, func(a core.Approval) bool { return a.ID == approval }, func(svc *core.Service) error {
 		r, err := svc.EditProposedRule(context.WithoutCancel(ctx), approval)
 		if err == nil {
 			conv := p.w.followed()
-			p.w.d.EditRule(r, conv, proposalAsk(ctx, svc, conv, approval))
+			p.w.d.EditRule(r, conv, approval, proposalAsk(ctx, svc, conv, approval))
 		}
 		return err
 	})

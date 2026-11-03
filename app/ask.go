@@ -171,14 +171,14 @@ func (a *App) OpenSettings() { a.navigate(Route{Page: PageSettings}) }
 func (a *App) OpenModels() { a.navigate(Route{Page: PageSettings, Settings: "models"}) }
 
 // EditRule opens the rules editor on r, a rule Wit proposed in conversation
-// conv when the user asked ask (在编辑器里修改): nothing is saved until the
-// user saves it there.
-func (a *App) EditRule(r core.Rule, conv int64, ask string) {
+// conv as approval when the user asked ask (在编辑器里修改): nothing is
+// saved until the user saves it there, which ends the proposal as saved.
+func (a *App) EditRule(r core.Rule, conv, approval int64, ask string) {
 	p, ok := a.pages[PageSettings].(*settingsPage)
 	if !ok {
 		return
 	}
-	p.rules.witRule = &witProposal{rule: r, conv: conv, ask: ask}
+	p.rules.witRule = &witProposal{rule: r, conv: conv, approval: approval, ask: ask}
 	a.navigate(Route{Page: PageSettings, Settings: "rules"})
 }
 

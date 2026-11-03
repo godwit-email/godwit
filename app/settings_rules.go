@@ -68,9 +68,10 @@ type rulesView struct {
 // witProposal is a rule Wit proposed, taken to the editor: the conversation
 // it was proposed in (回到对话) and what the user asked there.
 type witProposal struct {
-	rule core.Rule
-	conv int64
-	ask  string
+	rule     core.Rule
+	conv     int64
+	approval int64 // the proposal's, which saving the rule ends
+	ask      string
 }
 
 // ruleActionGroup is a group of the add-action menu.

@@ -265,7 +265,7 @@ func TestSettingsRulesFromWit(t *testing.T) {
 	h, _ := withAccount(t)
 	h.app.EditRule(core.Rule{Enabled: true, Doc: core.RuleDoc{Version: core.RuleVersion, Name: "Stripe 发票转给会计", Trigger: core.TriggerReceive, Match: core.MatchAll,
 		Conditions: []core.RuleCondition{{Field: core.FieldFrom, Op: core.OpContains, Value: "stripe.com"}},
-		Actions:    []core.RuleAction{{Kind: core.ActionForward, To: "acct@company.example"}}}}, 7, "Stripe 的发票转给会计")
+		Actions:    []core.RuleAction{{Kind: core.ActionForward, To: "acct@company.example"}}}}, 7, 0, "Stripe 的发票转给会计")
 	h.see("Wit 按你说的填好了这条规则，检查后点「保存」才会生效。")
 	h.see("“Stripe 的发票转给会计”")
 	h.see("回到对话")
@@ -288,7 +288,7 @@ func TestEditRuleWithoutSettingsPage(t *testing.T) {
 	settings := h.app.pages[PageSettings]
 	delete(h.app.pages, PageSettings)
 	t.Cleanup(func() { h.app.pages[PageSettings] = settings })
-	h.app.EditRule(core.Rule{}, 0, "")
+	h.app.EditRule(core.Rule{}, 0, 0, "")
 }
 
 // Wit's actions are listed but not chosen until 「智能」's 规则可以使用 Wit

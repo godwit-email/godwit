@@ -2165,8 +2165,7 @@ export function Panel({
                   if (deciding.length > 0) return;
                   setDeciding([a.id]);
                   try {
-                    await onEditRule(a);
-                    setDecided((d) => [...d, decisionKey(a)]);
+                    await onEditRule(a); // not a decision: the card waits for the user to come back
                   } catch {
                     // the host said why
                   } finally {

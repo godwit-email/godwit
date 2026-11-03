@@ -3,6 +3,7 @@ package app
 import (
 	"context"
 	"encoding/json"
+	"log"
 	"slices"
 	"strings"
 	"time"
@@ -584,14 +585,22 @@ func (v *rulesView) commit() {
 		return
 	}
 	a := v.a
-	r, name := v.edit, ruleName(v.edit.Doc)
+	r, name, wit := v.edit, ruleName(v.edit.Doc), v.wit
 	n := 0
 	if v.prev != nil && v.runExisting {
 		n = v.prev.Count
 	}
 	v.closeEditor()
 	var id int64
-	a.writes.Chain("rules", func(ctx context.Context) (err error) { id, err = a.svc.SaveRule(ctx, r); return err }, func(err error) {
+	a.writes.Chain("rules", func(ctx context.Context) (err error) {
+		if id, err = a.svc.SaveRule(ctx, r); err == nil && wit != nil && wit.approval != 0 {
+			// Its card shows it saved; the rule is saved either way (its conversation may be gone).
+			if err := a.svc.ProposedRuleSaved(ctx, wit.approval, r); err != nil {
+				log.Printf("rule proposal %d: %v", wit.approval, err)
+			}
+		}
+		return err
+	}, func(err error) {
 		v.saved(err)
 		if err != nil {
 			return
