@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 	"strconv"
 	"testing"
+	"time"
 
 	"github.com/godwit-email/godwit/core/internal/testllm"
 	"github.com/stretchr/testify/assert"
@@ -268,6 +269,22 @@ func TestRuleDraftReplyOnlyDrafts(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, [][]any{{u.Host}}, e.rows(t, "SELECT destination FROM audit_log WHERE source = ? AND tool = 'draft_reply'", AuditRule),
 		"the audit names the model service's host")
+}
+
+// A model that never answers fails the AI action once ruleAITimeout passes,
+// so the rules (and an undo waiting on them) go on; the hit can be retried.
+func TestRuleAIActionTimesOut(t *testing.T) {
+	setFor(t, &ruleAITimeout, 200*time.Millisecond)
+	e := newSyncedEnv(t)
+	srv := e.aiRules(t, true)
+	srv.Script(testllm.Turn{Text: []string{"<p>Tha"}, Hang: true})
+	t.Cleanup(srv.Release)
+	e.saveRule(t, draftReplyRule(), true)
+	e.put(t, "INBOX", eml("c@x", "bob@example.com", "alice@example.com", "Your card", day, "It is "+cardNumber))
+	e.sync(t)
+	e.waitRuns(t, 1)
+	assert.Equal(t, [][]any{{"draft_reply", "failed", RuleFailModel}}, e.rows(t, "SELECT kind, state, result FROM rule_action_results"))
+	assert.Zero(t, e.count(t, "SELECT count(*) FROM drafts"))
 }
 
 // 让 Wit 提取要点 writes the key points the model gave into the folder, as

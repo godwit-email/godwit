@@ -454,12 +454,22 @@ func (s *Service) ruleAsk(ctx context.Context, kind, system string, msgID int64)
 		return reply{}, "", err
 	}
 	system += "\n\n" + ai.UntrustedSystemNote + "\n\nWrite in the language of the email."
-	r, err := s.complete(ctx, featureRules, ai.Request{Model: model, System: system, Prompt: items[0].Block, Raw: true}, 0)
+	// A model that never answers would hold the rules (ruleRunMu) and an undo
+	// waiting on them: past ruleAITimeout the action fails, to retry.
+	mctx, cancel := context.WithTimeout(ctx, ruleAITimeout)
+	defer cancel()
+	r, err := s.complete(mctx, featureRules, ai.Request{Model: model, System: system, Prompt: items[0].Block, Raw: true}, 0)
+	if ctx.Err() != nil { // closing, not the model: the run resumes
+		return reply{}, "", ctx.Err()
+	}
 	if err != nil || strings.TrimSpace(r.Text) == "" {
 		return reply{}, RuleFailModel, nil
 	}
 	return r, "", nil
 }
+
+// ruleAITimeout bounds a rule's ask of the model (a var for tests).
+var ruleAITimeout = 2 * time.Minute
 
 // ruleDraftReply saves a reply draft to the message with the model's text:
 // a draft only, which the user sends or not.
