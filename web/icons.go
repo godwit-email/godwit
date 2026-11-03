@@ -9,6 +9,7 @@ import "embed"
 var RemixIcons = map[string]string{
 	"archive":                        "node_modules/remixicon/icons/Business/archive-line.svg",
 	"archive-fill":                   "node_modules/remixicon/icons/Business/archive-fill.svg",
+	"arrow-down":                     "node_modules/remixicon/icons/Arrows/arrow-down-line.svg",
 	"arrow-left":                     "node_modules/remixicon/icons/Arrows/arrow-left-line.svg",
 	"arrow-right":                    "node_modules/remixicon/icons/Arrows/arrow-right-line.svg",
 	"arrow-up":                       "node_modules/remixicon/icons/Arrows/arrow-up-line.svg",
@@ -235,6 +236,7 @@ var BrandIcons = map[string]string{
 //go:embed "node_modules/remixicon/icons/Health & Medical/brain-4-line.svg"
 //go:embed "node_modules/remixicon/icons/Health & Medical/brain-4-fill.svg"
 //go:embed node_modules/remixicon/icons/Arrows/arrow-go-back-line.svg
+//go:embed node_modules/remixicon/icons/Arrows/arrow-down-line.svg
 //go:embed node_modules/remixicon/icons/Arrows/arrow-left-line.svg
 //go:embed node_modules/remixicon/icons/Arrows/arrow-right-line.svg
 //go:embed node_modules/remixicon/icons/Arrows/arrow-up-line.svg

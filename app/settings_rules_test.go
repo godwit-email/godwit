@@ -57,3 +57,32 @@ func TestSettingsRulesCreate(t *testing.T) {
 	h.click("启用「未命名规则」")
 	h.until("the rule off", func() bool { return !h.rules()[0].Enabled })
 }
+
+// An action added in the editor runs after the first; the rule's history
+// shows the hit with each result, and undo puts the message back.
+func TestSettingsRulesHistoryUndo(t *testing.T) {
+	h, acc := withAccount(t)
+	h.openSettings("rules")
+	h.click("新建规则")
+	h.click("值")
+	h.typeText("billing@")
+	h.click("添加动作")
+	h.click("保存")
+	h.see("收到新邮件 · 发件人包含 billing@ → 打标签「验证码」 → 标为已读")
+
+	h.env.Deliver(t, acc.ID, "INBOX", coretest.Msg("billing@shop.example", acc.Email, "Your bill", "x"))
+	id := h.rules()[0].ID
+	h.until("the hit", func() bool {
+		hs, err := h.env.Svc.RuleHits(context.Background(), id)
+		return err == nil && len(hs) == 1 && hs[0].State == core.RuleRunDone
+	})
+	h.click("展开最近命中")
+	h.see("Your bill")
+	h.see("标为已读")
+	h.click("撤销")
+	h.see("已撤销")
+	hs, err := h.env.Svc.RuleHits(context.Background(), id)
+	if err != nil || hs[0].Actions[1].State != core.RuleActionUndone {
+		t.Fatalf("hits %+v %v", hs, err)
+	}
+}

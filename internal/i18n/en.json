@@ -3219,5 +3219,102 @@
   "settings_rules_if": "If",
   "settings_rules_then": "Then",
   "settings_rules_action_label": "Apply label",
-  "settings_rules_label": "Label"
+  "settings_rules_label": "Label",
+  "settings_rules_field_to": "Recipient",
+  "settings_rules_field_body": "Body",
+  "settings_rules_field_attachments": "Attachments",
+  "settings_rules_field_label": "Label",
+  "settings_rules_field_folder": "Folder",
+  "settings_rules_attachments_yes": "Has attachments",
+  "settings_rules_attachments_no": "No attachments",
+  "settings_rules_folder": "Folder",
+  "settings_rules_action_unlabel": "Remove label",
+  "settings_rules_action_read": "Mark as read",
+  "settings_rules_action_star": "Star",
+  "settings_rules_action_archive": "Archive",
+  "settings_rules_action_junk": "Move to Junk",
+  "settings_rules_action_trash": "Move to Trash",
+  "settings_rules_action_stop": "Stop processing later rules",
+  "settings_rules_action_unlabel_summary": "Remove label “{arg1}”",
+  "@settings_rules_action_unlabel_summary": {
+    "placeholders": {
+      "arg1": {
+        "type": "String"
+      }
+    }
+  },
+  "settings_rules_action_n": "Action {arg1, number, ::group-off}",
+  "@settings_rules_action_n": {
+    "placeholders": {
+      "arg1": {
+        "type": "int"
+      }
+    }
+  },
+  "settings_rules_action_add": "Add action",
+  "settings_rules_action_up": "Move up",
+  "settings_rules_action_down": "Move down",
+  "settings_rules_action_remove": "Remove this action",
+  "settings_rules_hits_show": "Show recent hits",
+  "settings_rules_hits_hide": "Hide recent hits",
+  "settings_rules_hits_head": "Last 7 days: {arg1, number, ::group-off}. Local actions can be undone.",
+  "@settings_rules_hits_head": {
+    "placeholders": {
+      "arg1": {
+        "type": "int"
+      }
+    }
+  },
+  "settings_rules_hits_none": "No mail matched in the last 7 days",
+  "settings_rules_hits_undo": "Undo",
+  "settings_rules_hits_undone": "Undone",
+  "settings_rules_hits_gone": "Message deleted",
+  "settings_rules_hits_kept": "Left as they are, changed since: {arg1, number, ::group-off}",
+  "@settings_rules_hits_kept": {
+    "placeholders": {
+      "arg1": {
+        "type": "int"
+      }
+    }
+  },
+  "settings_rules_result_failed": "{arg1} failed: {arg2}",
+  "@settings_rules_result_failed": {
+    "placeholders": {
+      "arg1": {
+        "type": "String"
+      },
+      "arg2": {
+        "type": "String"
+      }
+    }
+  },
+  "settings_rules_result_not_run": "Not run: {arg1}",
+  "@settings_rules_result_not_run": {
+    "placeholders": {
+      "arg1": {
+        "type": "String"
+      }
+    }
+  },
+  "settings_rules_result_undone": "Undone: {arg1}",
+  "@settings_rules_result_undone": {
+    "placeholders": {
+      "arg1": {
+        "type": "String"
+      }
+    }
+  },
+  "settings_rules_result_kept": "Not undone: {arg1}",
+  "@settings_rules_result_kept": {
+    "placeholders": {
+      "arg1": {
+        "type": "String"
+      }
+    }
+  },
+  "settings_rules_failure_no_folder": "the account has no such folder",
+  "settings_rules_failure_no_label": "the label is gone",
+  "settings_rules_failure_gone": "the message is gone",
+  "settings_rules_failure_unknown": "unknown action",
+  "settings_rules_empty_trash": "Emptying Trash and Junk isn’t a rule: set it in the account’s settings ›"
 }
