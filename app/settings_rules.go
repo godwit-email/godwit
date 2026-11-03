@@ -1,6 +1,7 @@
 package app
 
 import (
+	"cmp"
 	"context"
 	"path/filepath"
 	"slices"
@@ -29,8 +30,9 @@ type rulesView struct {
 
 	counts map[int64]int // each rule's hits of the last week
 
-	deleting *core.Rule   // the rule whose 删除规则 asks to confirm
-	order    ui.ListState // the rules' list, its rows dragged to reorder them
+	deleting *core.Rule        // the rule whose 删除规则 asks to confirm
+	order    ui.ListState      // the rules' list, its rows dragged to reorder them
+	heights  map[int64]float32 // each rule's row as last laid out, which the list is as tall as
 
 	editing bool
 	edit    core.Rule // the rule in the editor; ID 0 a new one
@@ -242,13 +244,30 @@ func ruleTag(c *ui.Context, text string, fill, fg ui.Color, icon string) ui.Elem
 
 // list is the rules, one row each, in a List as the labels' is: dragging
 // a row shows where it would go and moves it there (ListState.Reorder).
-// The List is as tall as its rows, an open one's hits included.
+// The List is as tall as its rows, an open one's hits included, as they
+// were last laid out: a List left to fit its rows grows with them but does
+// not shrink back as a row closes.
 func (v *rulesView) list(c *ui.Context) {
+	th := c.Theme()
 	v.order.Key = func(i int) any { return v.rules[i].ID }
 	v.order.Label = func(i int) string { return ruleName(v.rules[i].Doc) }
 	v.order.Reorder = func(rows []int, to int) { v.move(rows[0], to) }
+	if v.heights == nil {
+		v.heights = map[int64]float32{}
+	}
 	n := len(v.rules)
-	kit.List(c, &v.order, n, func(i int) { cardListRow(c, i, n, func() { v.row(c, v.rules[i]) }) }).FillWidth()
+	var h float32
+	for _, r := range v.rules {
+		h += cmp.Or(v.heights[r.ID], th.Space(14)) // a row not laid out yet: one closed
+	}
+	kit.List(c, &v.order, n, func(i int) {
+		id := v.rules[i].ID
+		row := cardListRow(c, i, n, func() { v.row(c, v.rules[i]) })
+		if b := row.LayoutBounds(); b.H > 0 && b.H != v.heights[id] {
+			v.heights[id] = b.H
+			c.Invalidate() // the list's height follows in the next frame
+		}
+	}).FillWidth().Height(h)
 }
 
 // row is a rule: grip, switch, name and summary (which expand it), edit,

@@ -9,6 +9,7 @@ import (
 	"github.com/egoist/mygo/ui"
 	"github.com/godwit-email/godwit/core"
 	"github.com/godwit-email/godwit/core/coretest"
+	"github.com/godwit-email/godwit/internal/i18n"
 )
 
 // saveRule saves the rule in the editor through the save sheet.
@@ -402,4 +403,34 @@ func TestSettingsRulesReorder(t *testing.T) {
 	h.until("A moved after C", func() bool { return names() == "BCA" })
 	drag(2, -2.4) // past the top row's middle
 	h.until("A moved before B", func() bool { return names() == "ABC" })
+}
+
+// Opening a rule's hits grows the list, and closing them takes it back to
+// as tall as it was, in the next frame.
+func TestSettingsRulesListHeight(t *testing.T) {
+	h, _ := withAccount(t)
+	for _, name := range []string{"A", "B", "C"} {
+		doc := core.RuleDoc{Version: core.RuleVersion, Name: name, Trigger: core.TriggerReceive, Match: core.MatchAll,
+			Actions: []core.RuleAction{{Kind: core.ActionStar}}}
+		if _, err := h.env.Svc.SaveRule(context.Background(), core.Rule{Doc: doc, Enabled: true}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	h.openSettings("rules")
+	h.see("C")
+	h.tt.Frame()
+	foot := func() float32 { r, _ := h.tt.Find(i18n.T("settings.rules.list.foot")); return r.Y }
+	closed := foot()
+	h.click("展开最近命中")
+	h.see("删除规则")
+	h.tt.Frame()
+	if open := foot(); open <= closed {
+		t.Fatalf("the list did not grow: %v, closed %v", open, closed)
+	}
+	h.click("收起")
+	h.tt.Frame()
+	h.tt.Frame()
+	if got := foot(); got != closed {
+		t.Fatalf("the list is %v from its closed place", got-closed)
+	}
 }

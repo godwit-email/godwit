@@ -434,7 +434,7 @@ func settingsCard(c *ui.Context, rows ...func()) {
 // cardListRow is row i of a settings card's List of n: the card's fill,
 // frosted as a drag lifts the row over the others. That material is not
 // clipped to the card's corners, so the first and last rows round their own.
-func cardListRow(c *ui.Context, i, n int, row func()) {
+func cardListRow(c *ui.Context, i, n int, row func()) ui.Element {
 	t := theme.Of(c)
 	var top, bottom float32
 	if i == 0 {
@@ -443,7 +443,7 @@ func cardListRow(c *ui.Context, i, n int, row func()) {
 	if i == n-1 {
 		bottom = t.Radius.Xl - theme.Hairline
 	}
-	ui.Column(c).FillWidth().Radius(top, top, bottom, bottom).Material(kit.Frost(t.Card)).Children(func() {
+	return ui.Column(c).FillWidth().Radius(top, top, bottom, bottom).Material(kit.Frost(t.Card)).Children(func() {
 		if i > 0 {
 			hairline(c)
 		}
