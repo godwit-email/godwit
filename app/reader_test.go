@@ -1640,7 +1640,7 @@ func TestReaderSecurityManualAdjustment(t *testing.T) {
 	h.seeBody(m.ID)
 
 	// 1. Manually mark safe
-	h.app.mail.reader.applySecurity(m.ID, "manual_safe", "manual_safe")
+	h.app.mail.reader.applySecurity(m.ID, "manual_safe")
 	h.until("manual safe applied", func() bool {
 		return h.app.mail.reader.msgs[0].Security.Reason == "manual_safe"
 	})
@@ -1648,7 +1648,7 @@ func TestReaderSecurityManualAdjustment(t *testing.T) {
 	h.see(i18n.T("reader.security.manual_safe_desc"))
 
 	// 2. Manually mark warning / threat
-	h.app.mail.reader.applySecurity(m.ID, "manual_warning", "manual_warning")
+	h.app.mail.reader.applySecurity(m.ID, "manual_warning")
 	h.until("manual warning applied", func() bool {
 		return h.app.mail.reader.msgs[0].Security.Reason == "manual_warning"
 	})
@@ -1656,7 +1656,7 @@ func TestReaderSecurityManualAdjustment(t *testing.T) {
 	h.see(i18n.T("reader.security.manual_warning_desc"))
 
 	// 3. Reset security classification
-	h.app.mail.reader.applySecurity(m.ID, "", "")
+	h.app.mail.reader.applySecurity(m.ID, "")
 	h.until("security reset", func() bool {
 		return h.app.mail.reader.msgs[0].Security.Reason == ""
 	})
@@ -1673,7 +1673,7 @@ func TestReaderSecurityManualAdjustment(t *testing.T) {
 		return err == nil && len(lbs[m.ID]) > 0 && lbs[m.ID][0].LabelID == lbl.ID
 	})
 
-	h.app.mail.applySecurity([]mailItem{item}, "manual_suspicious", "manual_suspicious")
+	h.app.mail.applySecurity([]mailItem{item}, "manual_suspicious")
 	h.until("mailPage applySecurity", func() bool {
 		th, err := h.app.svc.GetThread(t.Context(), m.ThreadID)
 		return err == nil && len(th.Messages) > 0 && th.Messages[0].Security.Reason == "manual_suspicious"

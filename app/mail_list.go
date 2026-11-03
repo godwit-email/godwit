@@ -851,17 +851,17 @@ func (p *mailPage) listView(c *ui.Context) {
 			}
 			m.Submenu(i18n.T("mail.menu.security"), func(sm *ui.Menu) {
 				if sm.Item(i18n.T("mail.security.mark_safe")).Chosen() {
-					p.applySecurity(on, "manual_safe", "manual_safe")
+					p.applySecurity(on, "manual_safe")
 				}
 				if sm.Item(i18n.T("mail.security.mark_suspicious")).Chosen() {
-					p.applySecurity(on, "manual_suspicious", "manual_suspicious")
+					p.applySecurity(on, "manual_suspicious")
 				}
 				if sm.Item(i18n.T("mail.security.mark_warning")).Chosen() {
-					p.applySecurity(on, "manual_warning", "manual_warning")
+					p.applySecurity(on, "manual_warning")
 				}
 				sm.Separator()
 				if sm.Item(i18n.T("mail.security.reset")).Chosen() {
-					p.applySecurity(on, "", "")
+					p.applySecurity(on, "")
 				}
 			})
 			if p.a.dev { // dev builds: the message's original HTML, for debugging the renderer
@@ -1404,10 +1404,11 @@ func (p *mailPage) toggleLabel(rows []mailItem, labelID int64, on bool) {
 }
 
 // applySecurity sets or resets the manual security classification on the given rows.
-func (p *mailPage) applySecurity(rows []mailItem, status, reason string) {
+func (p *mailPage) applySecurity(rows []mailItem, reason string) {
 	if len(rows) == 0 {
 		return
 	}
+	status, _ := gomail.ManualSecurityStatus(reason)
 	sec := gomail.DBToSecurityReport("", "", status, reason)
 	for i := range p.items {
 		for _, it := range rows {
@@ -1421,7 +1422,7 @@ func (p *mailPage) applySecurity(rows []mailItem, status, reason string) {
 		if err != nil {
 			return err
 		}
-		return p.a.svc.SetMessageSecurity(ctx, ids, status, reason)
+		return p.a.svc.SetMessageSecurity(ctx, ids, reason)
 	}, func(err error) {
 		if err != nil {
 			p.a.toastErr(err)

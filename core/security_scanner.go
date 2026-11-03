@@ -315,7 +315,8 @@ func (s *Service) RescanSecurity(ctx context.Context, days int, all bool) (int, 
 		return 0, err
 	}
 	through := store.Int(row.Values[0][0])
-	target := "date >= ? AND id <= ? AND " + securityEligible
+	// a user's classification outlives a rescan; only resetting it requeues the message
+	target := "date >= ? AND id <= ? AND COALESCE(security_reason, '') NOT IN " + gomail.ManualSecuritySQL + " AND " + securityEligible
 	if !all {
 		target += " AND security_scanned_at IS NULL"
 	}

@@ -742,6 +742,32 @@ func SecurityReportToDB(rep SecurityReport) (status string, reason string) {
 	}
 }
 
+// ManualSecurityStatus is the security_status a user's classification (the
+// reason manual_safe, manual_suspicious or manual_warning) is stored under, so
+// every reader of the column ranks it like a scanned verdict. A safe mark is
+// neutral: it never claims a verified domain the headers did not prove.
+func ManualSecurityStatus(reason string) (status string, ok bool) {
+	switch reason {
+	case "manual_safe":
+		return "neutral", true
+	case "manual_suspicious":
+		return "needs_review", true
+	case "manual_warning":
+		return "warning", true
+	}
+	return "", false
+}
+
+// ManualSecuritySQL is the SQL list of the manual reasons, for the scans and
+// syncs that must leave a user's classification alone.
+const ManualSecuritySQL = "('manual_safe', 'manual_suspicious', 'manual_warning')"
+
+// IsManualSecurity reports whether reason is a user's classification.
+func IsManualSecurity(reason string) bool {
+	_, ok := ManualSecurityStatus(reason)
+	return ok
+}
+
 // DBToSecurityReport restores a SecurityReport from stored DB values and raw header info.
 func DBToSecurityReport(from, authResults, status, reason string) SecurityReport {
 	if status == "neutral" {
@@ -755,9 +781,6 @@ func DBToSecurityReport(from, authResults, status, reason string) SecurityReport
 		rep.Status = SecurityCertifiedBrand
 	case "verified_domain":
 		rep.Status = SecurityVerifiedDomain
-		if reason == "manual_safe" {
-			rep.WarningKind = WarnNone
-		}
 	case "needs_review":
 		rep.Status = SecurityNeedsReview
 		switch reason {

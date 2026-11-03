@@ -1948,9 +1948,10 @@ func (r *reader) secExplanation(sec gomail.SecurityReport) string {
 }
 
 // applySecurity updates the security classification for a message.
-func (r *reader) applySecurity(msgID int64, status, reason string) {
+func (r *reader) applySecurity(msgID int64, reason string) {
 	a := r.p.a
 	// Optimistically update the message's security in the reader for instant feedback
+	status, _ := gomail.ManualSecurityStatus(reason)
 	sec := gomail.DBToSecurityReport("", "", status, reason)
 	for i := range r.msgs {
 		if r.msgs[i].ID == msgID {
@@ -1961,7 +1962,7 @@ func (r *reader) applySecurity(msgID int64, status, reason string) {
 		b.msg.Security = sec
 	}
 	a.writes.Chain("security", func(ctx context.Context) error {
-		return a.svc.SetMessageSecurity(ctx, []int64{msgID}, status, reason)
+		return a.svc.SetMessageSecurity(ctx, []int64{msgID}, reason)
 	}, func(err error) {
 		if err != nil {
 			a.toastErr(err)
@@ -2007,26 +2008,26 @@ func (r *reader) securityPopoverBody(c *ui.Context, msgID int64, sec gomail.Secu
 			})
 		}
 
-		optButton(1, i18n.T("mail.security.mark_safe"), "shield-check", sec.Reason == "manual_safe", false, func() {
+		optButton(1, i18n.T("mail.security.mark_safe"), "circle-check", sec.Reason == "manual_safe", false, func() {
 			r.secMenuOpen = false
 			r.secMenuMsgID = 0
-			r.applySecurity(msgID, "manual_safe", "manual_safe")
+			r.applySecurity(msgID, "manual_safe")
 		})
 		optButton(2, i18n.T("mail.security.mark_suspicious"), "triangle-alert", sec.Reason == "manual_suspicious", false, func() {
 			r.secMenuOpen = false
 			r.secMenuMsgID = 0
-			r.applySecurity(msgID, "manual_suspicious", "manual_suspicious")
+			r.applySecurity(msgID, "manual_suspicious")
 		})
 		optButton(3, i18n.T("mail.security.mark_warning"), "skull", sec.Reason == "manual_warning", true, func() {
 			r.secMenuOpen = false
 			r.secMenuMsgID = 0
-			r.applySecurity(msgID, "manual_warning", "manual_warning")
+			r.applySecurity(msgID, "manual_warning")
 		})
 		kit.Separator(c, false)
 		optButton(4, i18n.T("mail.security.reset"), "refresh-cw", sec.Reason == "", false, func() {
 			r.secMenuOpen = false
 			r.secMenuMsgID = 0
-			r.applySecurity(msgID, "", "")
+			r.applySecurity(msgID, "")
 		})
 	})
 }
@@ -2034,7 +2035,7 @@ func (r *reader) securityPopoverBody(c *ui.Context, msgID int64, sec gomail.Secu
 // securityBadge is the sender's verdict as an icon by the name; hovering it
 // explains the verdict, and clicking it opens a popover to adjust the classification.
 func (r *reader) securityBadge(c *ui.Context, msgID int64, sec gomail.SecurityReport) {
-	isManual := sec.Reason == "manual_safe" || sec.Reason == "manual_suspicious" || sec.Reason == "manual_warning"
+	isManual := gomail.IsManualSecurity(sec.Reason)
 	open := r.secMenuOpen && r.secMenuMsgID == msgID
 	if !isManual && !showSecurity(r.p.a.settings, sec.Status) && !open {
 		return
@@ -2100,7 +2101,7 @@ func showSecurity(st core.Settings, status gomail.SecurityStatus) bool {
 func secVisual(t theme.Tokens, sec gomail.SecurityReport) (iconName string, label string, color ui.Color) {
 	switch sec.Reason {
 	case "manual_safe":
-		return "shield-check-fill", i18n.T("reader.security.manual_safe_badge"), t.SuccessText
+		return "circle-check-fill", i18n.T("reader.security.manual_safe_badge"), t.Muted
 	case "manual_suspicious":
 		return "triangle-alert-fill", i18n.T("reader.security.manual_suspicious_badge"), t.WarningText
 	case "manual_warning":

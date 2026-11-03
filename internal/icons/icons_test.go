@@ -19,7 +19,7 @@ var labelIcons = []string{"shield-keyhole", "bill", "truck", "plane", "calendar-
 
 // filled are the names with a fill style too: the rail's and the sidebars'.
 var filled = []string{"mail", "sparkles", "sliders-horizontal", "component", "inbox", "star", "send", "file-pen", "trash-2",
-	"archive", "spam", "folder", "outbox", "settings", "cpu", "brain-4", "puzzle", "shield", "shield-check", "triangle-alert", "info", "tag", "quill-pen",
+	"archive", "spam", "folder", "outbox", "settings", "cpu", "brain-4", "puzzle", "shield", "shield-check", "circle-check", "triangle-alert", "info", "tag", "quill-pen",
 	"vip-diamond", "question", "skull", "mail-unread", "at", "time", "user", "contacts"}
 
 func TestIconsParse(t *testing.T) {

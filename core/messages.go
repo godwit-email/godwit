@@ -547,29 +547,27 @@ func flagSet(fl []string) []string {
 	return out
 }
 
-// SetMessageSecurity updates the security classification and reason for one or more messages.
-// If status is empty (""), it resets security_status and security_reason to NULL and security_scanned_at to 0 (queuing for re-scan).
-// Otherwise, it sets security_status, security_reason, and marks security_scanned_at with the current timestamp.
-// Publishes events.MessagesChanged on the event bus so the UI updates immediately.
-func (s *Service) SetMessageSecurity(ctx context.Context, messageIDs []int64, status, reason string) error {
+// SetMessageSecurity sets the user's classification of the messages: reason is
+// manual_safe, manual_suspicious or manual_warning, stored under the status
+// gomail.ManualSecurityStatus maps it to and kept from later scans; "" drops it
+// and queues the messages for a fresh scan.
+func (s *Service) SetMessageSecurity(ctx context.Context, messageIDs []int64, reason string) error {
 	if len(messageIDs) == 0 {
 		return nil
 	}
-	var err error
-	if status == "" {
-		for _, id := range messageIDs {
+	status, ok := gomail.ManualSecurityStatus(reason)
+	if !ok && reason != "" {
+		return fmt.Errorf("set message security: unknown classification %q", reason)
+	}
+	for _, id := range messageIDs {
+		var err error
+		if reason == "" {
 			_, err = s.db.Execute(ctx, "UPDATE messages SET security_status = NULL, security_reason = NULL, security_scanned_at = 0 WHERE id = ?", id)
-			if err != nil {
-				return fmt.Errorf("reset message security %d: %w", id, err)
-			}
+		} else {
+			_, err = s.db.Execute(ctx, "UPDATE messages SET security_status = ?, security_reason = ?, security_scanned_at = ? WHERE id = ?", status, reason, time.Now().Unix(), id)
 		}
-	} else {
-		now := time.Now().Unix()
-		for _, id := range messageIDs {
-			_, err = s.db.Execute(ctx, "UPDATE messages SET security_status = ?, security_reason = ?, security_scanned_at = ? WHERE id = ?", status, reason, now, id)
-			if err != nil {
-				return fmt.Errorf("set message security %d: %w", id, err)
-			}
+		if err != nil {
+			return fmt.Errorf("set message security %d: %w", id, err)
 		}
 	}
 	s.bus.Publish(events.Event{Type: events.MessagesChanged})

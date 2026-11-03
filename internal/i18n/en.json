@@ -3097,7 +3097,7 @@
   "mail_security_reset": "Restore automatic scan",
   "reader_security_edit_title": "Adjust security assessment",
   "reader_security_click_to_edit": "Click to adjust",
-  "reader_security_manual_safe_badge": "Manually verified",
+  "reader_security_manual_safe_badge": "Marked safe by you",
   "reader_security_manual_warning_badge": "Manually flagged threat",
   "reader_security_manual_suspicious_badge": "Manually flagged suspicious",
   "reader_security_manual_safe_desc": "This email was manually marked as safe and legitimate.",

@@ -22,6 +22,7 @@ var RemixIcons = map[string]string{
 	"chevron-down":                   "node_modules/remixicon/icons/Arrows/arrow-down-s-line.svg",
 	"chevron-right":                  "node_modules/remixicon/icons/Arrows/arrow-right-s-line.svg",
 	"circle-check":                   "node_modules/remixicon/icons/System/checkbox-circle-line.svg",
+	"circle-check-fill":              "node_modules/remixicon/icons/System/checkbox-circle-fill.svg",
 	"circle-x":                       "node_modules/remixicon/icons/System/close-circle-line.svg",
 	"code":                           "node_modules/remixicon/icons/Development/code-s-slash-line.svg",
 	"component":                      "node_modules/remixicon/icons/System/apps-2-line.svg",
@@ -326,6 +327,7 @@ var BrandIcons = map[string]string{
 //go:embed node_modules/remixicon/icons/System/apps-2-line.svg
 //go:embed node_modules/remixicon/icons/System/check-line.svg
 //go:embed node_modules/remixicon/icons/System/checkbox-circle-line.svg
+//go:embed node_modules/remixicon/icons/System/checkbox-circle-fill.svg
 //go:embed node_modules/remixicon/icons/System/close-circle-line.svg
 //go:embed node_modules/remixicon/icons/System/close-line.svg
 //go:embed node_modules/remixicon/icons/System/delete-bin-fill.svg
