@@ -41,18 +41,26 @@ func hookBackoff(n int) time.Duration {
 
 type hookEvent struct {
 	seq, accountID, messageID int64
-	subject, from             string
+	typ, subject, from        string
+	detail                    string // label.applied: the slug; security.verdict: the status
 	date                      int64
 	deleted                   bool
 }
 
 // eventCursor is a consumer's cursor row: a plugin's in plugin_cursors (gone
 // with the plugin), a built-in consumer's in event_cursors, so no plugin name
-// collides with a built-in one.
-type eventCursor struct{ table, key, name string }
+// collides with a built-in one. types are the event types it reads.
+type eventCursor struct {
+	table, key, name string
+	types            []string
+}
 
-func pluginCursor(name string) eventCursor  { return eventCursor{"plugin_cursors", "plugin", name} }
-func builtinCursor(name string) eventCursor { return eventCursor{"event_cursors", "consumer", name} }
+func pluginCursor(name string) eventCursor {
+	return eventCursor{"plugin_cursors", "plugin", name, []string{"message.received"}}
+}
+func builtinCursor(name string, types []string) eventCursor {
+	return eventCursor{"event_cursors", "consumer", name, types}
+}
 
 // errStopConsumer from a deliver ends its consumer without moving the cursor.
 var errStopConsumer = errors.New("consumer stopped")
@@ -86,11 +94,11 @@ func (s *Service) addWake() (chan struct{}, func()) {
 	}
 }
 
-// startConsumer runs a built-in consumer of message.received until Close:
+// startConsumer runs a built-in consumer of the event types until Close:
 // deliver gets each event after the consumer's cursor, in order, at least
 // once, and an error is tried again after hookBackoff.
-func (s *Service) startConsumer(ctx context.Context, name string, deliver func(context.Context, hookEvent) error) error {
-	c := builtinCursor(name)
+func (s *Service) startConsumer(ctx context.Context, name string, types []string, deliver func(context.Context, hookEvent) error) error {
+	c := builtinCursor(name, types)
 	if err := s.subscribeCursor(ctx, c); err != nil {
 		return err
 	}
@@ -247,18 +255,24 @@ func (s *Service) hookWait(ctx context.Context, d time.Duration, wake <-chan str
 // hookEvents is the next batch after c, with each event's snapshot and
 // whether its message has been deleted since.
 func (s *Service) hookEvents(ctx context.Context, c eventCursor) ([]hookEvent, error) {
+	var args []any
+	for _, t := range c.types {
+		args = append(args, t)
+	}
+	args = append(args, c.name, hookBatch)
 	rows, err := s.db.Query(ctx, `SELECT e.seq, COALESCE(e.account_id, 0), COALESCE(e.message_id, 0), COALESCE(e.subject, ''),
-			COALESCE(e.from_addr, ''), COALESCE(e.msg_date, 0), m.id IS NULL
+			COALESCE(e.from_addr, ''), COALESCE(e.msg_date, 0), m.id IS NULL, e.type, COALESCE(e.detail, '')
 		FROM events_log e LEFT JOIN messages m ON m.id = e.message_id
-		WHERE e.type = 'message.received' AND e.seq > (SELECT seq FROM `+c.table+` WHERE `+c.key+` = ?)
-		ORDER BY e.seq LIMIT ?`, c.name, hookBatch)
+		WHERE e.type IN (`+placeholders(len(c.types))+`) AND e.seq > (SELECT seq FROM `+c.table+` WHERE `+c.key+` = ?)
+		ORDER BY e.seq LIMIT ?`, args...)
 	if err != nil {
 		return nil, err
 	}
 	out := make([]hookEvent, 0, len(rows.Values))
 	for _, v := range rows.Values {
 		out = append(out, hookEvent{seq: store.Int(v[0]), accountID: store.Int(v[1]), messageID: store.Int(v[2]),
-			subject: store.Str(v[3]), from: store.Str(v[4]), date: store.Int(v[5]), deleted: store.Int(v[6]) != 0})
+			subject: store.Str(v[3]), from: store.Str(v[4]), date: store.Int(v[5]), deleted: store.Int(v[6]) != 0,
+			typ: store.Str(v[7]), detail: store.Str(v[8])})
 	}
 	return out, nil
 }

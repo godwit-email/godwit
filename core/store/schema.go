@@ -566,6 +566,12 @@ var Migrations = [][]string{{
 		INSERT OR REPLACE INTO message_labels(message_id, label_id, source, active)
 			SELECT new.id, label_id, source, active FROM label_keep WHERE account_id = new.account_id AND fp = new.label_fp;
 	END`,
+}, {
+	// Rule triggers besides new mail are logged too: detail is the label's
+	// slug (label.applied) or the verdict (security.verdict). A background
+	// rule keeps Godwit running after the window closes.
+	`ALTER TABLE events_log ADD COLUMN detail TEXT`,
+	`ALTER TABLE rules ADD COLUMN background INTEGER NOT NULL DEFAULT 0`,
 }}
 
 // HistoryRowsVersion is the schema version that keeps a conversation's

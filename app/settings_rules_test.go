@@ -58,6 +58,35 @@ func TestSettingsRulesCreate(t *testing.T) {
 	h.until("the rule off", func() bool { return !h.rules()[0].Enabled })
 }
 
+// A rule set to 后台运行 is tagged in the list and, while enabled, keeps
+// Godwit running when the window closes with 后台常驻 off.
+func TestSettingsRulesBackground(t *testing.T) {
+	h, _ := notifyHarness(t, func(st *core.Settings) { st.KeepInBackground = false })
+	if h.app.KeepInBackground() {
+		t.Fatal("后台常驻 on")
+	}
+	h.openSettings("rules")
+	h.click("新建规则")
+	h.click("值")
+	h.typeText("billing@")
+	h.click("保存")
+	h.see("收到新邮件 · 发件人包含 billing@")
+	if h.tt.HasText("后台运行") || h.app.KeepInBackground() {
+		t.Fatal("a rule not set to 后台运行 is tagged or keeps Godwit running")
+	}
+
+	h.click("编辑「未命名规则」")
+	h.click("后台运行")
+	h.click("保存")
+	h.until("the rule in the background", func() bool { rs := h.rules(); return len(rs) == 1 && rs[0].Background })
+	h.see("后台运行")
+	if !h.app.KeepInBackground() {
+		t.Error("closing the window would quit")
+	}
+	h.click("启用「未命名规则」")
+	h.until("the rule off", func() bool { return !h.app.KeepInBackground() })
+}
+
 // An action added in the editor runs after the first; the rule's history
 // shows the hit with each result, and undo puts the message back.
 func TestSettingsRulesHistoryUndo(t *testing.T) {
