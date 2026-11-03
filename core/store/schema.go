@@ -572,6 +572,12 @@ var Migrations = [][]string{{
 	// rule keeps Godwit running after the window closes.
 	`ALTER TABLE events_log ADD COLUMN detail TEXT`,
 	`ALTER TABLE rules ADD COLUMN background INTEGER NOT NULL DEFAULT 0`,
+}, {
+	// A rule forwards only to recipients the user confirmed in Godwit
+	// (JSON list), never to one only the rule document names. rule_sent
+	// marks mail a rule forwarded (mail.RuleHeader), which no rule forwards.
+	`ALTER TABLE rules ADD COLUMN confirmed_rcpts TEXT NOT NULL DEFAULT '[]'`,
+	`ALTER TABLE messages ADD COLUMN rule_sent INTEGER NOT NULL DEFAULT 0`,
 }}
 
 // HistoryRowsVersion is the schema version that keeps a conversation's
