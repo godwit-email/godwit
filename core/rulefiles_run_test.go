@@ -81,6 +81,27 @@ func TestRuleSavesFilesInSubfolders(t *testing.T) {
 		e.rows(t, "SELECT result FROM rule_action_results WHERE run_id = ? AND idx = 0", run))
 }
 
+// A subfolder level that is a symlink, or a file, inside the destination
+// fails the action: nothing is written through it, outside the destination.
+func TestRuleFilesRefuseALinkedLevel(t *testing.T) {
+	e := newRulesEnv(t)
+	dest, outside := t.TempDir(), t.TempDir()
+	if err := os.Symlink(outside, filepath.Join(dest, "Stripe")); err != nil {
+		t.Skip("no symlinks here:", err)
+	}
+	require.NoError(t, os.WriteFile(filepath.Join(dest, "Bob"), []byte("x"), 0o644))
+	d := rule(RuleAction{Kind: ActionEML, Dir: dest, Subfolder: true, Naming: "{from}/{subject}"})
+	d.Conditions = []RuleCondition{}
+	e.saveRule(t, d, true)
+	e.put(t, "INBOX", invoiceMail("a@x", "Invoice", "first"))
+	e.put(t, "INBOX", eml("b@x", "Bob <bob@example.com>", "alice@example.com", "Hi", day, "b"))
+	e.sync(t)
+	e.waitRuns(t, 2)
+
+	assert.Empty(t, tree(t, outside))
+	assert.Equal(t, [][]any{{RuleFailUnsafeFolder}, {RuleFailUnsafeFolder}}, e.rows(t, "SELECT result FROM rule_action_results ORDER BY run_id"))
+}
+
 // A crash after a file was written resumes into the same folder and keeps
 // that file rather than writing a numbered copy.
 func TestRuleFilesResumeAfterCrash(t *testing.T) {

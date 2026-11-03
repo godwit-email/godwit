@@ -115,6 +115,7 @@ const (
 	RuleFailUnavailable   = "unavailable"    // the mail could not be read from the server
 	RuleFailTooLarge      = "too_large"
 	RuleFailWrite         = "write_failed"
+	RuleFailUnsafeFolder  = "unsafe_folder" // a subfolder level in the destination is a symlink or not a folder
 	RuleFailAIOff         = "ai_off" // Settings.RuleAI is off
 	RuleFailModel         = "model"  // no model, or it did not answer
 )

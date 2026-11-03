@@ -3522,6 +3522,7 @@
   "settings_rules_failure_unavailable": "the email could not be read from the server",
   "settings_rules_failure_too_large": "the email is too large",
   "settings_rules_failure_write_failed": "the file could not be written",
+  "settings_rules_failure_unsafe_folder": "a folder inside the destination is a link or not a folder",
   "settings_rules_files_choose": "Choose folder…",
   "settings_rules_files_note": "Writes to the folder you chose. Existing files are never overwritten; a name already taken gets a number. Images inside the body are not saved.",
   "settings_rules_files_subfolder": "Put each email in its own folder",

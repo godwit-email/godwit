@@ -1773,6 +1773,7 @@
   "settings_rules_failure_unavailable": "no se pudo leer el correo del servidor",
   "settings_rules_failure_too_large": "el correo es demasiado grande",
   "settings_rules_failure_write_failed": "no se pudo escribir el archivo",
+  "settings_rules_failure_unsafe_folder": "una carpeta dentro del destino es un enlace o no es una carpeta",
   "settings_rules_files_choose": "Elegir carpeta…",
   "settings_rules_files_note": "Escribe en la carpeta que elegiste. Nunca sobrescribe archivos; un nombre ya usado recibe un número. Las imágenes dentro del cuerpo no se guardan.",
   "settings_rules_files_subfolder": "Poner cada correo en su propia carpeta",

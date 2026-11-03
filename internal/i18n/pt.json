@@ -1773,6 +1773,7 @@
   "settings_rules_failure_unavailable": "não foi possível ler o e-mail do servidor",
   "settings_rules_failure_too_large": "o e-mail é grande demais",
   "settings_rules_failure_write_failed": "não foi possível gravar o arquivo",
+  "settings_rules_failure_unsafe_folder": "uma pasta dentro do destino é um atalho ou não é uma pasta",
   "settings_rules_files_choose": "Escolher pasta…",
   "settings_rules_files_note": "Grava na pasta que você escolheu. Arquivos existentes nunca são substituídos; um nome já usado ganha um número. Imagens no corpo não são salvas.",
   "settings_rules_files_subfolder": "Colocar cada e-mail em uma pasta própria",

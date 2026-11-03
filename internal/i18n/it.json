@@ -1773,6 +1773,7 @@
   "settings_rules_failure_unavailable": "impossibile leggere l’email dal server",
   "settings_rules_failure_too_large": "l’email è troppo grande",
   "settings_rules_failure_write_failed": "impossibile scrivere il file",
+  "settings_rules_failure_unsafe_folder": "una cartella nella destinazione è un collegamento o non è una cartella",
   "settings_rules_files_choose": "Scegli cartella…",
   "settings_rules_files_note": "Scrive nella cartella scelta. I file esistenti non vengono mai sovrascritti; a un nome già usato si aggiunge un numero. Le immagini nel corpo non vengono salvate.",
   "settings_rules_files_subfolder": "Metti ogni email nella sua cartella",

@@ -1773,6 +1773,7 @@
   "settings_rules_failure_unavailable": "không đọc được email từ máy chủ",
   "settings_rules_failure_too_large": "email quá lớn",
   "settings_rules_failure_write_failed": "không ghi được tệp",
+  "settings_rules_failure_unsafe_folder": "một thư mục trong thư mục đích là liên kết hoặc không phải thư mục",
   "settings_rules_files_choose": "Chọn thư mục…",
   "settings_rules_files_note": "Ghi vào thư mục bạn chọn. Không bao giờ ghi đè tệp có sẵn; tên đã có sẽ được thêm số. Ảnh trong nội dung không được lưu.",
   "settings_rules_files_subfolder": "Mỗi email một thư mục riêng",

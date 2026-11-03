@@ -279,18 +279,19 @@ func (s *Service) ruleDir(ctx context.Context, runID int64, dest string, levels 
 		return "", "", err
 	}
 	if dir = dirs[dest]; dir != "" {
-		if err := os.MkdirAll(dir, 0o755); err != nil {
-			return "", RuleFailWrite, nil
+		rel, err := filepath.Rel(dest, dir)
+		if err != nil || !filepath.IsLocal(rel) {
+			return "", RuleFailUnknown, nil
 		}
-		return dir, "", nil
+		dir, failure = mkdirIn(dest, strings.Split(rel, string(filepath.Separator)))
+		return dir, failure, nil
 	}
-	rel := filepath.Join(levels...)
-	if !filepath.IsLocal(rel) {
+	if !filepath.IsLocal(filepath.Join(levels...)) {
 		return "", RuleFailUnknown, nil // FillNaming keeps it inside; this is the backstop
 	}
-	parent := filepath.Join(dest, filepath.Dir(rel))
-	if err := os.MkdirAll(parent, 0o755); err != nil {
-		return "", RuleFailWrite, nil
+	parent, failure := mkdirIn(dest, levels[:len(levels)-1])
+	if failure != "" {
+		return "", failure, nil
 	}
 	for n := 1; n <= maxNumbered; n++ {
 		dir = filepath.Join(parent, numberedName(levels[len(levels)-1], n))
@@ -312,6 +313,29 @@ func (s *Service) ruleDir(ctx context.Context, runID int64, dest string, levels 
 		}
 	}
 	return "", RuleFailWrite, nil
+}
+
+// mkdirIn makes each level under dest in turn and returns the last. A level
+// there already as a symlink or not a folder is RuleFailUnsafeFolder: a
+// rule never writes outside dest through a link in it.
+// shortcut: a level swapped for a link between the check and the write is
+// not caught; open each level relative to the last (os.Root) if that matters.
+func mkdirIn(dest string, levels []string) (dir, failure string) {
+	dir = dest
+	for _, l := range levels {
+		dir = filepath.Join(dir, l)
+		if err := os.Mkdir(dir, 0o755); err != nil && !errors.Is(err, fs.ErrExist) {
+			return "", RuleFailWrite
+		}
+		st, err := os.Lstat(dir)
+		if err != nil {
+			return "", RuleFailWrite
+		}
+		if !st.IsDir() {
+			return "", RuleFailUnsafeFolder
+		}
+	}
+	return dir, ""
 }
 
 // maxNumbered bounds the " (n)" candidates tried for one name.

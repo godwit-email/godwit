@@ -1773,6 +1773,7 @@
   "settings_rules_failure_unavailable": "l’e-mail n’a pas pu être lu sur le serveur",
   "settings_rules_failure_too_large": "l’e-mail est trop volumineux",
   "settings_rules_failure_write_failed": "le fichier n’a pas pu être écrit",
+  "settings_rules_failure_unsafe_folder": "un dossier dans la destination est un lien ou n’est pas un dossier",
   "settings_rules_files_choose": "Choisir un dossier…",
   "settings_rules_files_note": "Écrit dans le dossier choisi. Les fichiers existants ne sont jamais écrasés ; un nom déjà pris reçoit un numéro. Les images du corps ne sont pas enregistrées.",
   "settings_rules_files_subfolder": "Mettre chaque e-mail dans son propre dossier",
