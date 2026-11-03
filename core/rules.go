@@ -436,6 +436,21 @@ func (s *Service) SetRuleEnabled(ctx context.Context, id int64, on bool) error {
 	return s.exec(ctx, sqlite.Statement{SQL: "UPDATE rules SET enabled = ?, updated_at = ? WHERE id = ?", Args: []any{b2i(on), time.Now().Unix(), id}})
 }
 
+// DeleteRule deletes a rule with its hits (rule_runs cascade); files it
+// wrote and mail it forwarded stay.
+func (s *Service) DeleteRule(ctx context.Context, id int64) error {
+	ctx, end, err := s.begin(ctx, 0)
+	if err != nil {
+		return err
+	}
+	defer end()
+	res, err := s.db.Execute(ctx, "DELETE FROM rules WHERE id = ?", id)
+	if err == nil && res.Changes == 0 {
+		err = fmt.Errorf("rule %d not found", id)
+	}
+	return err
+}
+
 // FirstTimeRecipients are the addresses none of the accounts has written
 // to, for the confirmation a rule's forward recipient needs.
 func (s *Service) FirstTimeRecipients(ctx context.Context, addrs []string) ([]string, error) {

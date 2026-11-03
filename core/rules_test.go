@@ -547,6 +547,20 @@ func TestRuleHits(t *testing.T) {
 	assert.Equal(t, []RuleActionResult{{Kind: ActionStar, State: RuleActionDone}}, hits[0].Actions)
 }
 
+// Deleting a rule deletes its hits too.
+func TestDeleteRule(t *testing.T) {
+	e := newRulesEnv(t)
+	id := e.saveRule(t, rule(RuleAction{Kind: ActionStar}), true)
+	e.bill(t, "a@x", "billing@aws.example", "Invoice")
+	e.sync(t)
+	e.waitRuns(t, 1)
+	require.NoError(t, e.s.DeleteRule(bg, id))
+	assert.Zero(t, e.count(t, "SELECT count(*) FROM rules"))
+	assert.Zero(t, e.count(t, "SELECT count(*) FROM rule_runs"))
+	assert.Zero(t, e.count(t, "SELECT count(*) FROM rule_action_results"))
+	assert.Error(t, e.s.DeleteRule(bg, id))
+}
+
 // paidRule puts Paid (u2) on the mail its trigger fires for.
 func paidRule(trigger, arg string) RuleDoc {
 	return RuleDoc{Version: RuleVersion, Name: "Paid", Trigger: trigger, TriggerArg: arg, Match: MatchAll,
