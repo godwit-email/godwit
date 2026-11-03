@@ -1177,13 +1177,17 @@ func (s *Service) RetryRuleRun(ctx context.Context, runID int64) error {
 // UndoRuleRun puts back what the run's local actions changed, last first.
 // One whose target changed since (moved on, the flag or label changed by
 // hand) is kept as it is; kept counts them. The checks and the writes hold
-// the edit lock together, as UndoArchive's do.
+// the edit lock together, as UndoArchive's do. It waits for a run still
+// going (one at a time, ruleRunMu): undone in the middle, the actions after
+// would still be applied.
 func (s *Service) UndoRuleRun(ctx context.Context, runID int64) (kept int, err error) {
 	ctx, end, err := s.begin(ctx, 0)
 	if err != nil {
 		return 0, err
 	}
 	defer end()
+	s.ruleRunMu.Lock() // before editMu, as runRule takes them
+	defer s.ruleRunMu.Unlock()
 	s.editMu.Lock()
 	defer s.editMu.Unlock()
 	rows, err := s.db.Query(ctx, `SELECT a.idx, a.kind, a.prior, r.message_id FROM rule_runs r JOIN rule_action_results a ON a.run_id = r.id

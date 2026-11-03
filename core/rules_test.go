@@ -794,3 +794,36 @@ func TestRuleDailyResumes(t *testing.T) {
 	e.waitRuns(t, 1)
 	assert.Equal(t, []string{"archive done", "star done"}, e.results(t, run))
 }
+
+// Undo pressed while the run is still going waits for it: undone in the
+// middle, the actions after would still be applied.
+func TestRuleUndoWaitsForTheRun(t *testing.T) {
+	e := newRulesEnv(t)
+	e.saveRule(t, rule(RuleAction{Kind: ActionStar}, RuleAction{Kind: ActionRead}), true)
+	e.rulesIdle(t)
+	held, release := make(chan struct{}), make(chan struct{})
+	var once sync.Once
+	setRulesHook(t, func(stage string) error {
+		if stage == "rules.action" {
+			once.Do(func() { close(held); <-release }) // after the star, before the read
+		}
+		return nil
+	})
+	e.bill(t, "a@x", "billing@aws.example", "Invoice")
+	e.sync(t)
+	<-held
+	run := e.runOf(t, "a@x")
+	undone := make(chan error, 1)
+	go func() { _, err := e.s.UndoRuleRun(bg, run); undone <- err }()
+	select {
+	case err := <-undone:
+		close(release) // let the run end, or Close waits on it
+		t.Fatalf("undo did not wait for the run: %v", err)
+	case <-time.After(100 * time.Millisecond):
+	}
+	close(release)
+	require.NoError(t, <-undone)
+	assert.Equal(t, []string{"star undone", "read undone"}, e.results(t, run))
+	assert.Empty(t, e.flagsOf(t, "a@x"))
+	assert.Equal(t, [][]any{{RuleRunUndone}}, e.rows(t, "SELECT state FROM rule_runs WHERE id = ?", run))
+}
