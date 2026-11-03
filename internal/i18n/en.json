@@ -3589,12 +3589,18 @@
   "settings_masking_feature_rules": "Rules",
   "error_recipient_unconfirmed": "Confirm the forward recipient before saving the rule.",
   "wit_tool_propose_rule": "Create a rule",
-  "wit_rule_matches": "Existing mail matching: {arg1, number, ::group-off} (listed: the last 30 days)",
+  "wit_rule_matches": "Matching: {arg1, number, ::group-off}",
   "wit_rule_new_only": "Existing mail is left as it is: the rule handles only mail that arrives after you save it.",
   "wit_rule_hint": "Takes effect only once you save it. Wit can’t save it for you.",
   "wit_rule_edit": "Edit in the Editor",
   "wit_rule_confirm_save": "Confirm Recipient and Save",
   "wit_rule_saved": "Rule saved and turned on · {arg1}",
   "wit_rule_rejected": "Rejected: no rule was created",
-  "wit_rule_edited": "Opened in the editor: saved only if you save it there"
+  "wit_rule_edited": "Opened in the editor: saved only if you save it there",
+  "wit_rule_save": "Save Rule",
+  "wit_rule_when_account": "{arg1} · {arg2}",
+  "wit_rule_then_next": "Then: {arg1}",
+  "wit_rule_new_only_forward": "Existing mail is not forwarded: the rule handles only mail that arrives after you save it.",
+  "wit_rule_confirm_desc": "Once saved, matching new mail is forwarded automatically, without asking each time.",
+  "wit_rule_confirm_again": "Changing the recipient later needs confirming again"
 }

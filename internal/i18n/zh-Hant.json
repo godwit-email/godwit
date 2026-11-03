@@ -1840,12 +1840,18 @@
   "settings_masking_feature_rules": "規則",
   "error_recipient_unconfirmed": "請先確認轉寄收件人，再儲存規則。",
   "wit_tool_propose_rule": "建立規則",
-  "wit_rule_matches": "現有郵件裡有 {arg1, number, ::group-off} 封符合（下面列出最近 30 天的）",
+  "wit_rule_matches": "有 {arg1, number, ::group-off} 封符合",
   "wit_rule_new_only": "現有郵件不會被處理，規則只處理儲存之後收到的新郵件。",
   "wit_rule_hint": "儲存後才會生效，Wit 不能替你儲存",
   "wit_rule_edit": "在編輯器裡修改",
   "wit_rule_confirm_save": "確認收件人並儲存",
   "wit_rule_saved": "已儲存並啟用規則 · {arg1}",
   "wit_rule_rejected": "已拒絕，沒有建立規則。",
-  "wit_rule_edited": "已在編輯器裡開啟，在那裡儲存後才會生效。"
+  "wit_rule_edited": "已在編輯器裡開啟，在那裡儲存後才會生效。",
+  "wit_rule_save": "儲存規則",
+  "wit_rule_when_account": "在 {arg2} {arg1}",
+  "wit_rule_then_next": "然後{arg1}",
+  "wit_rule_new_only_forward": "現有郵件不會被轉寄，規則只處理儲存之後收到的新郵件。",
+  "wit_rule_confirm_desc": "儲存後，符合條件的新郵件會自動轉寄出去，不再逐封詢問。",
+  "wit_rule_confirm_again": "以後修改收件人，需要再次確認"
 }

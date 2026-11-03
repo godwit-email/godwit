@@ -1840,12 +1840,18 @@
   "settings_masking_feature_rules": "规则",
   "error_recipient_unconfirmed": "请先确认转发收件人，再保存规则。",
   "wit_tool_propose_rule": "创建规则",
-  "wit_rule_matches": "现有邮件里有 {arg1, number, ::group-off} 封符合（下面列出最近 30 天的）",
+  "wit_rule_matches": "有 {arg1, number, ::group-off} 封符合",
   "wit_rule_new_only": "现有邮件不会被处理，规则只处理保存之后收到的新邮件。",
   "wit_rule_hint": "保存后才会生效，Wit 不能替你保存",
   "wit_rule_edit": "在编辑器里修改",
   "wit_rule_confirm_save": "确认收件人并保存",
   "wit_rule_saved": "已保存并启用规则 · {arg1}",
   "wit_rule_rejected": "已拒绝，没有创建规则。",
-  "wit_rule_edited": "已在编辑器里打开，在那里保存后才会生效。"
+  "wit_rule_edited": "已在编辑器里打开，在那里保存后才会生效。",
+  "wit_rule_save": "保存规则",
+  "wit_rule_when_account": "在 {arg2} {arg1}",
+  "wit_rule_then_next": "然后{arg1}",
+  "wit_rule_new_only_forward": "现有邮件不会被转发，规则只处理保存之后收到的新邮件。",
+  "wit_rule_confirm_desc": "保存后，符合条件的新邮件会自动转发出去，不再逐封询问。",
+  "wit_rule_confirm_again": "以后修改收件人，需要再次确认"
 }

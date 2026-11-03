@@ -45,11 +45,19 @@ test("a forward is saved only through the recipient confirmation", async () => {
     ["acct@company.example"],
   );
   render(<RuleCard a={a} busy={false} decide={decide} onEdit={vi.fn()} t={t} />);
-  expect(screen.getByText("发件人包含 stripe.com")).toBeTruthy();
+  expect(screen.getByText("收到新邮件 · 所有账户")).toBeTruthy();
+  expect(screen.getByText("stripe.com").className).toContain("font-mono");
   expect(screen.getByText("外发")).toBeTruthy();
+  expect(screen.getByText("现有邮件不会被转发，规则只处理保存之后收到的新邮件。")).toBeTruthy();
   await userEvent.click(screen.getByRole("button", { name: "保存规则" }));
   expect(decide).not.toHaveBeenCalled();
-  expect(screen.getByText("确认转发收件人")).toBeTruthy();
+  // the footer turns into the confirmation; the rule stays in view
+  expect(screen.getByRole("group", { name: "确认转发收件人" })).toBeTruthy();
+  expect(screen.getByText("Stripe 发票转给会计")).toBeTruthy();
+  expect(screen.queryByRole("button", { name: "拒绝" })).toBeNull();
+  expect(screen.getByText("· 以后修改收件人，需要再次确认")).toBeTruthy();
+  await userEvent.click(screen.getByRole("button", { name: "返回" }));
+  await userEvent.click(screen.getByRole("button", { name: "保存规则" }));
   await userEvent.click(screen.getByRole("button", { name: "确认收件人并保存" }));
   expect(decide).toHaveBeenCalledWith(
     true,
@@ -75,6 +83,17 @@ test("reject and edit decide nothing else", async () => {
   expect(decide).toHaveBeenCalledWith(false);
   await userEvent.click(screen.getByRole("button", { name: "保存规则" }));
   expect(decide).toHaveBeenLastCalledWith(true);
+});
+
+test("a rule for one account says so, and its matches open on a click", async () => {
+  const a = proposal([{ kind: "archive" }], []);
+  a.args = JSON.stringify({ ...JSON.parse(a.args), account_name: "Work" });
+  render(<RuleCard a={a} busy={false} decide={vi.fn()} t={t} />);
+  expect(screen.getByText("在 Work 收到新邮件")).toBeTruthy();
+  expect(screen.queryByText("Invoice #1234")).toBeNull();
+  await userEvent.click(screen.getByRole("button", { name: "有 2 封符合" }));
+  expect(screen.getByText("Invoice #1234")).toBeTruthy();
+  expect(screen.getByText("Stripe")).toBeTruthy();
 });
 
 test("a file action shows its whole folder path", () => {

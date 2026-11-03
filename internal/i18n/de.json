@@ -1840,12 +1840,18 @@
   "settings_masking_feature_rules": "Regeln",
   "error_recipient_unconfirmed": "Bestätige den Weiterleitungsempfänger, bevor du die Regel speicherst.",
   "wit_tool_propose_rule": "Regel anlegen",
-  "wit_rule_matches": "Passende vorhandene Mails: {arg1, number, ::group-off} (Liste: letzte 30 Tage)",
+  "wit_rule_matches": "Passend: {arg1, number, ::group-off}",
   "wit_rule_new_only": "Vorhandene Mails bleiben, wie sie sind: Die Regel behandelt nur Mails, die nach dem Speichern eintreffen.",
   "wit_rule_hint": "Gilt erst, wenn du speicherst. Wit kann nicht für dich speichern.",
   "wit_rule_edit": "Im Editor bearbeiten",
   "wit_rule_confirm_save": "Empfänger bestätigen und speichern",
   "wit_rule_saved": "Regel gespeichert und eingeschaltet · {arg1}",
   "wit_rule_rejected": "Abgelehnt: Es wurde keine Regel angelegt",
-  "wit_rule_edited": "Im Editor geöffnet: gilt erst, wenn du dort speicherst"
+  "wit_rule_edited": "Im Editor geöffnet: gilt erst, wenn du dort speicherst",
+  "wit_rule_save": "Regel speichern",
+  "wit_rule_when_account": "{arg1} · {arg2}",
+  "wit_rule_then_next": "Dann: {arg1}",
+  "wit_rule_new_only_forward": "Vorhandene Mails werden nicht weitergeleitet: Die Regel behandelt nur Mails, die nach dem Speichern eintreffen.",
+  "wit_rule_confirm_desc": "Nach dem Speichern werden passende neue Mails automatisch weitergeleitet, ohne jedes Mal zu fragen.",
+  "wit_rule_confirm_again": "Eine spätere Änderung des Empfängers muss erneut bestätigt werden"
 }

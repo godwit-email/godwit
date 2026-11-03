@@ -1840,12 +1840,18 @@
   "settings_masking_feature_rules": "Regole",
   "error_recipient_unconfirmed": "Conferma il destinatario dell’inoltro prima di salvare la regola.",
   "wit_tool_propose_rule": "Crea una regola",
-  "wit_rule_matches": "Posta esistente corrispondente: {arg1, number, ::group-off} (elenco: ultimi 30 giorni)",
+  "wit_rule_matches": "Corrispondenti: {arg1, number, ::group-off}",
   "wit_rule_new_only": "La posta esistente resta com’è: la regola gestisce solo quella che arriva dopo il salvataggio.",
   "wit_rule_hint": "Vale solo quando la salvi. Wit non può salvarla al posto tuo.",
   "wit_rule_edit": "Modifica nell’editor",
   "wit_rule_confirm_save": "Conferma destinatario e salva",
   "wit_rule_saved": "Regola salvata e attivata · {arg1}",
   "wit_rule_rejected": "Rifiutato: nessuna regola creata",
-  "wit_rule_edited": "Aperta nell’editor: vale solo se la salvi lì"
+  "wit_rule_edited": "Aperta nell’editor: vale solo se la salvi lì",
+  "wit_rule_save": "Salva regola",
+  "wit_rule_when_account": "{arg1} · {arg2}",
+  "wit_rule_then_next": "Poi: {arg1}",
+  "wit_rule_new_only_forward": "La posta esistente non viene inoltrata: la regola gestisce solo quella che arriva dopo il salvataggio.",
+  "wit_rule_confirm_desc": "Una volta salvata, la nuova posta corrispondente viene inoltrata automaticamente, senza chiedere ogni volta.",
+  "wit_rule_confirm_again": "Se cambi il destinatario in seguito, dovrai confermarlo di nuovo"
 }

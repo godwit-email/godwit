@@ -1840,12 +1840,18 @@
   "settings_masking_feature_rules": "Reglas",
   "error_recipient_unconfirmed": "Confirma el destinatario del reenvío antes de guardar la regla.",
   "wit_tool_propose_rule": "Crear una regla",
-  "wit_rule_matches": "Correo existente que coincide: {arg1, number, ::group-off} (lista: últimos 30 días)",
+  "wit_rule_matches": "Coinciden: {arg1, number, ::group-off}",
   "wit_rule_new_only": "El correo existente se queda como está: la regla solo trata el que llegue después de guardarla.",
   "wit_rule_hint": "Solo se aplica cuando la guardas. Wit no puede guardarla por ti.",
   "wit_rule_edit": "Editar en el editor",
   "wit_rule_confirm_save": "Confirmar destinatario y guardar",
   "wit_rule_saved": "Regla guardada y activada · {arg1}",
   "wit_rule_rejected": "Rechazado: no se creó ninguna regla",
-  "wit_rule_edited": "Abierta en el editor: solo se aplica si la guardas allí"
+  "wit_rule_edited": "Abierta en el editor: solo se aplica si la guardas allí",
+  "wit_rule_save": "Guardar regla",
+  "wit_rule_when_account": "{arg1} · {arg2}",
+  "wit_rule_then_next": "Luego: {arg1}",
+  "wit_rule_new_only_forward": "El correo existente no se reenvía: la regla solo trata el que llegue después de guardarla.",
+  "wit_rule_confirm_desc": "Una vez guardada, el correo nuevo que coincida se reenvía automáticamente, sin preguntar cada vez.",
+  "wit_rule_confirm_again": "Si cambias el destinatario más adelante, habrá que confirmarlo de nuevo"
 }

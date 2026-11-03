@@ -1840,12 +1840,18 @@
   "settings_masking_feature_rules": "규칙",
   "error_recipient_unconfirmed": "규칙을 저장하기 전에 전달 받는 사람을 확인하세요.",
   "wit_tool_propose_rule": "규칙 만들기",
-  "wit_rule_matches": "기존 메일 중 {arg1, number, ::group-off}개 일치 (목록은 최근 30일)",
+  "wit_rule_matches": "{arg1, number, ::group-off}개 일치",
   "wit_rule_new_only": "기존 메일은 그대로 둡니다. 규칙은 저장한 뒤 도착한 메일만 처리합니다.",
   "wit_rule_hint": "저장해야 적용됩니다. Wit이 대신 저장할 수는 없습니다.",
   "wit_rule_edit": "편집기에서 수정",
   "wit_rule_confirm_save": "받는 사람 확인 후 저장",
   "wit_rule_saved": "규칙을 저장하고 켰습니다 · {arg1}",
   "wit_rule_rejected": "거부했습니다. 규칙이 만들어지지 않았습니다.",
-  "wit_rule_edited": "편집기에서 열었습니다. 거기서 저장해야 적용됩니다."
+  "wit_rule_edited": "편집기에서 열었습니다. 거기서 저장해야 적용됩니다.",
+  "wit_rule_save": "규칙 저장",
+  "wit_rule_when_account": "{arg1} · {arg2}",
+  "wit_rule_then_next": "이어서 {arg1}",
+  "wit_rule_new_only_forward": "기존 메일은 전달되지 않습니다. 규칙은 저장한 뒤 도착한 메일만 처리합니다.",
+  "wit_rule_confirm_desc": "저장하면 조건에 맞는 새 메일이 매번 묻지 않고 자동으로 전달됩니다.",
+  "wit_rule_confirm_again": "나중에 받는 사람을 바꾸면 다시 확인해야 합니다"
 }

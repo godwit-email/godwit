@@ -1840,12 +1840,18 @@
   "settings_masking_feature_rules": "Regels",
   "error_recipient_unconfirmed": "Bevestig de ontvanger van het doorsturen voordat je de regel opslaat.",
   "wit_tool_propose_rule": "Regel maken",
-  "wit_rule_matches": "Bestaande mail die overeenkomt: {arg1, number, ::group-off} (lijst: laatste 30 dagen)",
+  "wit_rule_matches": "Passend: {arg1, number, ::group-off}",
   "wit_rule_new_only": "Bestaande mail blijft zoals hij is: de regel verwerkt alleen mail die na het opslaan binnenkomt.",
   "wit_rule_hint": "Werkt pas als je opslaat. Wit kan niet voor je opslaan.",
   "wit_rule_edit": "Bewerken in de editor",
   "wit_rule_confirm_save": "Ontvanger bevestigen en opslaan",
   "wit_rule_saved": "Regel opgeslagen en aangezet · {arg1}",
   "wit_rule_rejected": "Geweigerd: er is geen regel gemaakt",
-  "wit_rule_edited": "Geopend in de editor: werkt pas als je daar opslaat"
+  "wit_rule_edited": "Geopend in de editor: werkt pas als je daar opslaat",
+  "wit_rule_save": "Regel opslaan",
+  "wit_rule_when_account": "{arg1} · {arg2}",
+  "wit_rule_then_next": "Daarna: {arg1}",
+  "wit_rule_new_only_forward": "Bestaande mail wordt niet doorgestuurd: de regel verwerkt alleen mail die na het opslaan binnenkomt.",
+  "wit_rule_confirm_desc": "Na het opslaan wordt passende nieuwe mail automatisch doorgestuurd, zonder elke keer te vragen.",
+  "wit_rule_confirm_again": "Als je de ontvanger later wijzigt, moet je opnieuw bevestigen"
 }

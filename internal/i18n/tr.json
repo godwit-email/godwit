@@ -1840,12 +1840,18 @@
   "settings_masking_feature_rules": "Kurallar",
   "error_recipient_unconfirmed": "Kuralı kaydetmeden önce yönlendirme alıcısını onaylayın.",
   "wit_tool_propose_rule": "Kural oluştur",
-  "wit_rule_matches": "Eşleşen mevcut posta: {arg1, number, ::group-off} (liste: son 30 gün)",
+  "wit_rule_matches": "Eşleşen: {arg1, number, ::group-off}",
   "wit_rule_new_only": "Mevcut postalar olduğu gibi kalır: kural yalnızca kaydettikten sonra gelen postaları işler.",
   "wit_rule_hint": "Ancak siz kaydedince geçerli olur. Wit sizin yerinize kaydedemez.",
   "wit_rule_edit": "Düzenleyicide değiştir",
   "wit_rule_confirm_save": "Alıcıyı onayla ve kaydet",
   "wit_rule_saved": "Kural kaydedildi ve açıldı · {arg1}",
   "wit_rule_rejected": "Reddedildi: kural oluşturulmadı",
-  "wit_rule_edited": "Düzenleyicide açıldı: ancak orada kaydederseniz geçerli olur"
+  "wit_rule_edited": "Düzenleyicide açıldı: ancak orada kaydederseniz geçerli olur",
+  "wit_rule_save": "Kuralı kaydet",
+  "wit_rule_when_account": "{arg1} · {arg2}",
+  "wit_rule_then_next": "Ardından: {arg1}",
+  "wit_rule_new_only_forward": "Mevcut postalar iletilmez: kural yalnızca kaydettikten sonra gelen postaları işler.",
+  "wit_rule_confirm_desc": "Kaydedildikten sonra eşleşen yeni postalar her seferinde sorulmadan otomatik olarak iletilir.",
+  "wit_rule_confirm_again": "Alıcıyı daha sonra değiştirirseniz yeniden onaylamanız gerekir"
 }

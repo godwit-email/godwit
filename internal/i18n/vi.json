@@ -1840,12 +1840,18 @@
   "settings_masking_feature_rules": "Quy tắc",
   "error_recipient_unconfirmed": "Hãy xác nhận người nhận chuyển tiếp trước khi lưu quy tắc.",
   "wit_tool_propose_rule": "Tạo quy tắc",
-  "wit_rule_matches": "Thư hiện có khớp: {arg1, number, ::group-off} (danh sách: 30 ngày qua)",
+  "wit_rule_matches": "Khớp: {arg1, number, ::group-off}",
   "wit_rule_new_only": "Thư hiện có giữ nguyên: quy tắc chỉ xử lý thư đến sau khi bạn lưu.",
   "wit_rule_hint": "Chỉ có hiệu lực khi bạn lưu. Wit không thể lưu thay bạn.",
   "wit_rule_edit": "Sửa trong trình chỉnh sửa",
   "wit_rule_confirm_save": "Xác nhận người nhận và lưu",
   "wit_rule_saved": "Đã lưu và bật quy tắc · {arg1}",
   "wit_rule_rejected": "Đã từ chối: không tạo quy tắc nào",
-  "wit_rule_edited": "Đã mở trong trình chỉnh sửa: chỉ có hiệu lực khi bạn lưu ở đó"
+  "wit_rule_edited": "Đã mở trong trình chỉnh sửa: chỉ có hiệu lực khi bạn lưu ở đó",
+  "wit_rule_save": "Lưu quy tắc",
+  "wit_rule_when_account": "{arg1} · {arg2}",
+  "wit_rule_then_next": "Sau đó: {arg1}",
+  "wit_rule_new_only_forward": "Thư hiện có sẽ không được chuyển tiếp: quy tắc chỉ xử lý thư đến sau khi bạn lưu.",
+  "wit_rule_confirm_desc": "Sau khi lưu, thư mới khớp sẽ được tự động chuyển tiếp mà không hỏi từng thư.",
+  "wit_rule_confirm_again": "Nếu sau này đổi người nhận, bạn cần xác nhận lại"
 }

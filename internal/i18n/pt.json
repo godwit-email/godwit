@@ -1840,12 +1840,18 @@
   "settings_masking_feature_rules": "Regras",
   "error_recipient_unconfirmed": "Confirme o destinatário do encaminhamento antes de salvar a regra.",
   "wit_tool_propose_rule": "Criar uma regra",
-  "wit_rule_matches": "E-mails existentes correspondentes: {arg1, number, ::group-off} (lista: últimos 30 dias)",
+  "wit_rule_matches": "Correspondentes: {arg1, number, ::group-off}",
   "wit_rule_new_only": "Os e-mails existentes ficam como estão: a regra trata só os que chegarem depois de salvar.",
   "wit_rule_hint": "Só vale depois que você salvar. O Wit não pode salvar por você.",
   "wit_rule_edit": "Editar no editor",
   "wit_rule_confirm_save": "Confirmar destinatário e salvar",
   "wit_rule_saved": "Regra salva e ativada · {arg1}",
   "wit_rule_rejected": "Recusado: nenhuma regra foi criada",
-  "wit_rule_edited": "Aberta no editor: só vale se você salvar lá"
+  "wit_rule_edited": "Aberta no editor: só vale se você salvar lá",
+  "wit_rule_save": "Guardar regra",
+  "wit_rule_when_account": "{arg1} · {arg2}",
+  "wit_rule_then_next": "Depois: {arg1}",
+  "wit_rule_new_only_forward": "Os e-mails existentes não são reencaminhados: a regra trata só os que chegarem depois de salvar.",
+  "wit_rule_confirm_desc": "Depois de salvar, os e-mails novos correspondentes são reencaminhados automaticamente, sem perguntar a cada vez.",
+  "wit_rule_confirm_again": "Se mudar o destinatário mais tarde, será preciso confirmar de novo"
 }

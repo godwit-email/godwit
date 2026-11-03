@@ -1840,12 +1840,18 @@
   "settings_masking_feature_rules": "ルール",
   "error_recipient_unconfirmed": "ルールを保存する前に転送先を確認してください。",
   "wit_tool_propose_rule": "ルールを作成",
-  "wit_rule_matches": "既存のメールで {arg1, number, ::group-off} 件が一致（一覧は直近 30 日分）",
+  "wit_rule_matches": "{arg1, number, ::group-off} 件が一致",
   "wit_rule_new_only": "既存のメールはそのままです。ルールは保存後に届いたメールだけを処理します。",
   "wit_rule_hint": "保存すると有効になります。Wit が代わりに保存することはできません。",
   "wit_rule_edit": "エディタで編集",
   "wit_rule_confirm_save": "転送先を確認して保存",
   "wit_rule_saved": "ルールを保存してオンにしました · {arg1}",
   "wit_rule_rejected": "拒否しました。ルールは作成されていません。",
-  "wit_rule_edited": "エディタで開きました。そこで保存すると有効になります。"
+  "wit_rule_edited": "エディタで開きました。そこで保存すると有効になります。",
+  "wit_rule_save": "ルールを保存",
+  "wit_rule_when_account": "{arg1} · {arg2}",
+  "wit_rule_then_next": "続けて{arg1}",
+  "wit_rule_new_only_forward": "既存のメールは転送されません。ルールは保存後に届いたメールだけを処理します。",
+  "wit_rule_confirm_desc": "保存すると、条件に合う新着メールは毎回確認せずに自動で転送されます。",
+  "wit_rule_confirm_again": "あとで宛先を変更すると、もう一度確認が必要です"
 }
