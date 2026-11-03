@@ -116,8 +116,8 @@ const (
 	RuleFailTooLarge      = "too_large"
 	RuleFailWrite         = "write_failed"
 	RuleFailUnsafeFolder  = "unsafe_folder" // a subfolder level in the destination is a symlink or not a folder
-	RuleFailAIOff         = "ai_off" // Settings.RuleAI is off
-	RuleFailModel         = "model"  // no model, or it did not answer
+	RuleFailAIOff         = "ai_off"        // Settings.RuleAI is off
+	RuleFailModel         = "model"         // no model, or it did not answer
 )
 
 // forwardTriggers are the triggers a forward runs on: new mail, or a
