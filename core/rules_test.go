@@ -645,3 +645,35 @@ func TestRulesInBackground(t *testing.T) {
 	require.NoError(t, e.s.SetRuleEnabled(bg, id, false))
 	assert.False(t, inBackground())
 }
+
+// classify has the classifier answer for all Inbox mail (as a re-classify does).
+func (e *syncEnv) classify(t *testing.T) {
+	t.Helper()
+	_, err := e.s.db.Execute(bg, "UPDATE messages SET labeled_at = 0 WHERE labeled_at IS NULL")
+	require.NoError(t, err)
+	_, err = e.s.classifyBatch(bg)
+	require.NoError(t, err)
+}
+
+// The classifier labelling mail of the first sync runs no label rule; it
+// labelling new mail does.
+func TestRuleLabelTriggerNotOnInitialSync(t *testing.T) {
+	e := newSyncEnv(t)
+	_, err := e.s.CreateLabel(bg, LabelInput{Name: "Bills", Color: "gray", Icon: "folder-3"})
+	require.NoError(t, err)
+	e.addPaid(t)
+	e.saveRule(t, paidRule(TriggerLabel, "u1"), true)
+	useLabelJudge(e.s, &fakeJudge{p: map[string]float64{"u1": 1}})
+	e.bill(t, "old@x", "billing@aws.example", "Invoice 0")
+	e.sync(t)
+	e.classify(t)
+	require.Equal(t, "auto", e.labelOn(t, e.idOf(t, "old@x")))
+
+	e.bill(t, "new@x", "billing@aws.example", "Invoice 1")
+	e.sync(t)
+	e.classify(t)
+	e.waitRuns(t, 1)
+	e.rulesIdle(t)
+	assert.Equal(t, [][]any{{e.idOf(t, "new@x"), "label"}}, e.rows(t, "SELECT message_id, trigger FROM rule_runs"))
+	assert.False(t, e.paidOn(t, e.idOf(t, "old@x")))
+}
