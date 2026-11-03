@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"log"
 	"log/slog"
 	"net/mail"
 	"slices"
@@ -606,8 +607,17 @@ func addrValues(s string) []string {
 	return out
 }
 
-// startRules runs the rule consumer until Close.
+// startRules runs the rule consumer until Close, and resumes the runs over
+// existing mail a close or a crash left unfinished.
 func (s *Service) startRules(ctx context.Context) error {
+	if rctx, end, err := s.begin(context.Background(), 0); err == nil {
+		go func() {
+			defer end()
+			if err := s.resumeExisting(rctx); err != nil && rctx.Err() == nil {
+				log.Printf("rules: resuming runs over existing mail: %v", err)
+			}
+		}()
+	}
 	return s.startConsumer(ctx, "rules", ruleEvents, func(ctx context.Context, ev hookEvent) error {
 		if rulesHook != nil && rulesHook("rules.deliver") != nil {
 			return errStopConsumer // tests: a crash before the rules run
@@ -691,17 +701,48 @@ func (s *Service) runDaily(ctx context.Context) error {
 			if stopped[id] {
 				continue
 			}
-			m, ok, err := s.ruleMail(ctx, id)
+			// A run there is resumes from its saved actions, as runRules does: the
+			// ones done may have moved the mail off the conditions.
+			ran, _, err := s.ruleRun(ctx, r.ID, id)
 			if err != nil {
 				return err
 			}
-			if !ok || !r.Doc.matches(m) {
-				continue
+			if !ran {
+				m, ok, err := s.ruleMail(ctx, id)
+				if err != nil {
+					return err
+				}
+				if !ok || !r.Doc.matches(m) {
+					continue
+				}
 			}
 			if err := s.runRule(ctx, r, id, TriggerDaily); err != nil {
 				return err
 			}
 			if _, stopped[id], err = s.ruleRun(ctx, r.ID, id); err != nil {
+				return err
+			}
+		}
+	}
+	return nil
+}
+
+// resumeExisting resumes the runs over existing mail left running: no event
+// brings them back, as one does a new mail's. Each goes on from its saved
+// actions, whether its message still matches or not.
+func (s *Service) resumeExisting(ctx context.Context) error {
+	rows, err := s.db.Query(ctx, "SELECT rule_id, message_id FROM rule_runs WHERE state = ? AND trigger = ? AND message_id IS NOT NULL ORDER BY id",
+		RuleRunRunning, TriggerExisting)
+	if err != nil || len(rows.Values) == 0 {
+		return err
+	}
+	rules, err := s.rules(ctx, false)
+	if err != nil {
+		return err
+	}
+	for _, v := range rows.Values {
+		if i := slices.IndexFunc(rules, func(r Rule) bool { return r.ID == store.Int(v[0]) }); i >= 0 {
+			if err := s.runRule(ctx, rules[i], store.Int(v[1]), TriggerExisting); err != nil {
 				return err
 			}
 		}
@@ -766,8 +807,12 @@ func (s *Service) ruleRun(ctx context.Context, ruleID, msgID int64) (ran, stoppe
 
 // runRule writes the run, if there is none yet, then runs its actions not
 // done yet, stopping at the first that fails. An error is the database's:
-// the event is delivered again and the run resumes.
+// the event is delivered again and the run resumes. One runs at a time, so
+// a run the consumer, a retry and a run over existing mail all reach does
+// each action once.
 func (s *Service) runRule(ctx context.Context, r Rule, msgID int64, trigger string) error {
+	s.ruleRunMu.Lock()
+	defer s.ruleRunMu.Unlock()
 	if trigger == TriggerExisting { // retries too: never a forward or Wit action
 		r.Doc.Actions = slices.DeleteFunc(slices.Clone(r.Doc.Actions), func(a RuleAction) bool { return !RunsOnExisting(a.Kind) })
 	}
@@ -1117,8 +1162,14 @@ func (s *Service) RetryRuleRun(ctx context.Context, runID int64) error {
 		return fmt.Errorf("rule run %d: its rule is off", runID)
 	}
 	r := rules[i]
-	if err := s.exec(ctx, sqlite.Statement{SQL: "UPDATE rule_runs SET state = ? WHERE id = ?", Args: []any{RuleRunRunning, runID}}); err != nil {
+	// Claimed failed → running: of two retries at once (a double click), only
+	// the one that claimed it runs the actions, a forward among them.
+	res, err := s.db.Execute(ctx, "UPDATE rule_runs SET state = ? WHERE id = ? AND state = ?", RuleRunRunning, runID, RuleRunFailed)
+	if err != nil {
 		return err
+	}
+	if res.Changes == 0 {
+		return fmt.Errorf("rule run %d: nothing to retry", runID)
 	}
 	return s.runRule(ctx, r, store.Int(v[1]), store.Str(v[2]))
 }

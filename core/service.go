@@ -120,6 +120,7 @@ type Service struct {
 	settingsMu sync.Mutex                  // settings read then written (SetSettings, the trusted senders)
 	proxy      atomic.Pointer[proxyConfig] // the saved proxy (loadProxy, SetSettings), read by Proxy
 	editMu     sync.Mutex                  // local changes (SetFlags, Move, Delete, drafts, Send) read then write
+	ruleRunMu  sync.Mutex                  // one rule run at a time (runRule): the consumer, a retry, a run over existing mail
 
 	workersMu sync.Mutex
 	workers   map[int64]*worker

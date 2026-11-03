@@ -770,3 +770,27 @@ func TestRuleLabelTriggerNotOnInitialSync(t *testing.T) {
 	assert.Equal(t, [][]any{{e.idOf(t, "new@x"), "label"}}, e.rows(t, "SELECT message_id, trigger FROM rule_runs"))
 	assert.False(t, e.paidOn(t, e.idOf(t, "old@x")))
 }
+
+// A daily run cut off after an action that took the mail off its
+// conditions (archived, out of the inbox) goes on with the rest the next
+// time: the run there is resumes before the conditions are read again.
+func TestRuleDailyResumes(t *testing.T) {
+	clock := &dayClock{now: time.Date(2026, 11, 2, 8, 0, 0, 0, time.Local)}
+	setFor(t, &testClock, Clock(clock))
+	e := newRulesEnv(t)
+	d := paidRule(TriggerDaily, "")
+	d.Conditions = []RuleCondition{{Field: FieldFolder, Op: OpIs, Value: "inbox"}, {Field: FieldSubject, Op: OpContains, Value: "invoice"}}
+	d.Actions = []RuleAction{{Kind: ActionArchive}, {Kind: ActionStar}}
+	e.saveRule(t, d, true)
+	e.bill(t, "a@x", "billing@aws.example", "Invoice 1")
+	stopped := stopRulesAt(t, "rules.action")
+	clock.set(time.Date(2026, 11, 3, 0, 0, 0, 0, time.Local))
+	e.sync(t)
+	<-stopped
+	rulesHook = nil
+	run := e.runOf(t, "a@x")
+	require.Equal(t, []string{"archive done"}, e.results(t, run))
+	e.reopen(t)
+	e.waitRuns(t, 1)
+	assert.Equal(t, []string{"archive done", "star done"}, e.results(t, run))
+}

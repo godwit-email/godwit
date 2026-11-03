@@ -161,3 +161,24 @@ func TestRuleActionsOnExisting(t *testing.T) {
 	}
 	assert.False(t, RunsOnExisting(ActionForward))
 }
+
+// A run over existing mail cut off between two actions goes on when Godwit
+// opens again: no event brings it back as one does a new mail's.
+func TestRuleRunOnExistingResumes(t *testing.T) {
+	e := newPreviewEnv(t)
+	id, err := e.s.SaveRule(bg, Rule{Enabled: true, Doc: rule(RuleAction{Kind: ActionStar}, RuleAction{Kind: ActionRead})})
+	require.NoError(t, err)
+	e.rulesIdle(t) // the consumer past the synced mail before the hook is set
+	stopRulesAt(t, "rules.action")
+	_, err = e.s.RunRuleOnExisting(bg, id)
+	require.Error(t, err, "cut off")
+	rulesHook = nil
+	run := store.Int(e.rows(t, "SELECT id FROM rule_runs")[0][0])
+	require.Equal(t, []string{"star done"}, e.results(t, run))
+	e.reopen(t)
+	require.Eventually(t, func() bool {
+		return e.count(t, "SELECT count(*) FROM rule_runs WHERE id = ? AND state = ?", run, RuleRunDone) == 1
+	},
+		5*time.Second, 10*time.Millisecond)
+	assert.Equal(t, []string{"star done", "read done"}, e.results(t, run))
+}

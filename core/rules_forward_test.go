@@ -92,6 +92,32 @@ func TestRuleRetryForwards(t *testing.T) {
 	assert.Len(t, e.release(t), 1)
 }
 
+// Two retries of one failed run at once (a double click) run it once: one
+// claims it, the other finds nothing to retry, and one mail is forwarded.
+func TestRuleRetryOnce(t *testing.T) {
+	e := newForwardEnv(t)
+	e.saveForward(t, rule(RuleAction{Kind: ActionJunk}, RuleAction{Kind: ActionForward, To: carol}), carol)
+	e.put(t, "INBOX", billWithPDF("bill@x"))
+	e.sync(t)
+	e.waitRuns(t, 1)
+	run := e.runOf(t, "bill@x")
+	require.NoError(t, e.im.User.Create("Junk", nil))
+	e.sync(t)
+	errs := make(chan error, 2)
+	for range 2 {
+		go func() { errs <- e.s.RetryRuleRun(bg, run) }()
+	}
+	failed := 0
+	for range 2 {
+		if <-errs != nil {
+			failed++
+		}
+	}
+	assert.Equal(t, 1, failed, "one of the two finds nothing to retry")
+	assert.Equal(t, []string{"junk done", "forward done"}, e.results(t, run))
+	assert.Len(t, e.release(t), 1)
+}
+
 // A forward to a recipient not confirmed, saved so or edited into the
 // stored rule, sends nothing and its hit says why.
 func TestRuleForwardUnconfirmedNeverSends(t *testing.T) {
