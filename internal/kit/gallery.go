@@ -74,7 +74,7 @@ func Gallery(c *ui.Context, g *GalleryState) {
 				})
 			})
 			section("Select", func() {
-				Select(c, &g.Select, []Option[int]{{0, "First"}, {1, "Second"}}).Label("Gallery select")
+				Select(c, &g.Select, []Option[int]{{Value: 0, Label: "First"}, {Value: 1, Label: "Second"}}).Label("Gallery select")
 			})
 			section("Checkbox", func() { Checkbox(c, &g.Check, "Checkbox") })
 			section("Radio", func() {

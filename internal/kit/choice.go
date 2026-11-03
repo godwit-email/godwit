@@ -73,8 +73,9 @@ func Radio[T comparable](c *ui.Context, sel *T, v T, label string) ui.Element {
 
 // Option is one choice of a Select.
 type Option[T comparable] struct {
-	Value T
-	Label string
+	Value    T
+	Label    string
+	Disabled bool // listed, muted, and not chosen
 }
 
 // SelectOpts style a SelectWith: zero Radius is Md, zero MinWidth the
@@ -122,6 +123,9 @@ func SelectWith[T comparable](c *ui.Context, o SelectOpts, sel *T, opts []Option
 		Elevate(c, panel, theme.ShadowMd)
 		for _, o := range opts {
 			item := s.Item(o.Value).Height(th.Space(8)).PaddingX(th.Space(2)).Gap(th.Space(2)).Radius(t.Radius.Md)
+			if o.Disabled {
+				item.Disabled(true).TextColor(t.Muted)
+			}
 			if item.Highlighted() {
 				item.Background(t.Hover)
 			}

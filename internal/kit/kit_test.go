@@ -136,7 +136,7 @@ func TestKitSwitchToggles(t *testing.T) {
 
 func TestKitSelectChooses(t *testing.T) {
 	sel := 1
-	opts := []Option[int]{{1, "Alpha"}, {2, "Beta"}, {3, "Gamma"}}
+	opts := []Option[int]{{Value: 1, Label: "Alpha"}, {Value: 2, Label: "Beta"}, {Value: 3, Label: "Gamma"}}
 	tt := ui.NewTester(themed(func(c *ui.Context) {
 		Select(c, &sel, opts).Label("Letter")
 	}), 300, 300)
@@ -214,7 +214,7 @@ func TestKitDensityScales(t *testing.T) {
 	sel, s := 1, ""
 	body := func(c *ui.Context) {
 		IconButton(c, "archive", "Archive", ButtonOpts{Variant: Ghost})
-		Select(c, &sel, []Option[int]{{1, "Alpha"}}).Label("Letter")
+		Select(c, &sel, []Option[int]{{Value: 1, Label: "Alpha"}}).Label("Letter")
 		Input(c, &s, InputOpts{}).Label("Name")
 		Card(c, func() {}).Label("Box")
 	}
@@ -1313,7 +1313,7 @@ func TestSelectWith(t *testing.T) {
 	width := func(o SelectOpts, label string) float32 {
 		v := 1
 		tt := ui.NewTester(themed(func(c *ui.Context) {
-			SelectWith(c, o, &v, []Option[int]{{1, label}}).Label("sel")
+			SelectWith(c, o, &v, []Option[int]{{Value: 1, Label: label}}).Label("sel")
 		}), 600, 100)
 		r, ok := tt.Find("sel")
 		if !ok {
@@ -1332,7 +1332,7 @@ func TestSelectWith(t *testing.T) {
 		v := 1
 		tt := ui.NewTester(themed(func(c *ui.Context) {
 			ui.Column(c).Padding(20).Children(func() {
-				SelectWith(c, SelectOpts{Flat: flat}, &v, []Option[int]{{1, "a"}}).Label("sel")
+				SelectWith(c, SelectOpts{Flat: flat}, &v, []Option[int]{{Value: 1, Label: "a"}}).Label("sel")
 			})
 		}), 300, 100)
 		r, _ := tt.Find("sel")

@@ -14,13 +14,14 @@ type TemplateToken struct{ ID, Label string }
 
 // TemplateOpts name a TemplateField and what it offers.
 type TemplateOpts struct {
-	Label       string          // the field's name, for its input
-	Tokens      []TemplateToken // the tokens, in the order their buttons show
-	Insert      string          // the heading before the token buttons
-	Remove      func(label string) string
-	Placeholder string
-	Error       string // in place of Preview; the box turns red
-	Preview     string // what the value gives, as an example
+	Label        string          // the field's name, for its input
+	Tokens       []TemplateToken // the tokens, in the order their buttons show
+	Insert       string          // the heading before the token buttons
+	Remove       func(label string) string
+	Placeholder  string
+	Error        string // in place of Preview; the box turns red
+	Preview      string // what the value gives, as an example
+	PreviewLabel string // before Preview, as 示例
 }
 
 // TemplateField edits *value, a template of literal text and {id} tokens
@@ -82,7 +83,12 @@ func TemplateField(c *ui.Context, value *string, o TemplateOpts) ui.Element {
 		case o.Error != "":
 			Text(c, o.Error, t.Text.Sm).TextColor(t.Danger)
 		case o.Preview != "":
-			Text(c, o.Preview, t.Text.Sm).TextColor(t.Muted).Font(theme.Mono).SingleLine()
+			ui.Row(c).FillWidth().AlignItems(ui.Center).Gap(th.Space(1.5)).Children(func() {
+				if o.PreviewLabel != "" {
+					Text(c, o.PreviewLabel, t.Text.Sm).TextColor(t.Muted).Shrink(0)
+				}
+				Text(c, o.Preview, t.Text.Sm).TextColor(t.Muted).Font(theme.Mono).SingleLine().Shrink(1)
+			})
 		}
 	})
 }
