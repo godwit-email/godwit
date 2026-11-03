@@ -864,10 +864,19 @@ func (p *mailPage) listView(c *ui.Context) {
 					p.applySecurity(on, "")
 				}
 			})
-			if len(on) == 1 {
+			if len(on) == 1 { // for mail like this one: a rule, or blocking its sender
 				m.Separator()
 				if m.Item(i18n.T("mail.menu.rule")).Chosen() {
 					p.ruleFrom(on[0])
+				}
+				if from := on[0].Msg.From; !on[0].Thread && gomail.AddrKey(from) != "" { // a thread row has no one sender at hand
+					if slices.Contains(p.a.blocked, gomail.AddrKey(from)) {
+						if m.Item(i18n.T("reader.unblock_sender")).Chosen() {
+							p.a.setBlocked(from, false, func() { p.a.toast(i18n.T("reader.sender_unblocked")) })
+						}
+					} else if m.Item(i18n.T("reader.block_sender")).Chosen() {
+						p.a.setBlocked(from, true, func() { p.a.toast(i18n.T("reader.sender_blocked")) })
+					}
 				}
 			}
 			if p.a.dev { // dev builds: the message's original HTML, for debugging the renderer
