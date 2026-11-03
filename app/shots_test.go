@@ -636,7 +636,7 @@ func TestShots(t *testing.T) {
 		})
 		s.openSettings("general") // back: the AI apps are read again
 		s.openSettings("models")
-		s.see("Codex")
+		s.see("ChatGPT (Codex)")
 		shot(s.harness, "SettingsAIAppsOn")
 		p.aiTab = aiModels
 		s.openSettings("privacy")

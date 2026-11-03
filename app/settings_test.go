@@ -1629,7 +1629,7 @@ func TestConnectAIApp(t *testing.T) {
 	h.aiTab(aiApps)
 	h.see("选中的应用可以读取你的邮件、起草回复。其他应用请复制配置手动添加。")
 	h.see("Claude Code")
-	if h.tt.HasText("Codex") {
+	if h.tt.HasText("ChatGPT (Codex)") {
 		t.Fatal("Codex is offered, though it is not on this computer")
 	}
 	h.click("Claude Code")

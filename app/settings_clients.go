@@ -15,7 +15,7 @@ import (
 
 // clientNames are the AI apps' names, as they name themselves.
 var clientNames = map[string]string{
-	mcpclients.Claude: "Claude", mcpclients.ClaudeCode: "Claude Code", mcpclients.Codex: "Codex",
+	mcpclients.Claude: "Claude", mcpclients.ClaudeCode: "Claude Code", mcpclients.Codex: "ChatGPT (Codex)",
 	mcpclients.Antigravity: "Antigravity", mcpclients.Grok: "Grok",
 }
 
