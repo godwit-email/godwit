@@ -272,3 +272,43 @@ func TestRuleKeyPointsWritesTheFolder(t *testing.T) {
 	assert.Equal(t, "- Meet on Friday\n", string(b))
 	assert.Equal(t, [][]any{{"key_points", "done"}}, e.rows(t, "SELECT kind, state FROM rule_action_results"))
 }
+
+// list_rules reads the rules in the order they run, with the name of the
+// account one is kept to; it is a read tool, and changes none.
+func TestListRules(t *testing.T) {
+	e := newApprovalEnv(t)
+	assert.False(t, e.s.tools[listRulesTool].Write)
+	res, err := e.s.db.Execute(t.Context(), "INSERT INTO accounts(email, alias) VALUES ('work@company.example', 'Work')")
+	require.NoError(t, err)
+	label := RuleDoc{Version: RuleVersion, Name: "Codes", Trigger: TriggerReceive, Match: MatchAll, Actions: []RuleAction{{Kind: ActionStar}}}
+	work := RuleDoc{Version: RuleVersion, Name: "Work", Trigger: TriggerReceive, Account: res.LastInsertID, Match: MatchAll, Actions: []RuleAction{{Kind: ActionArchive}}}
+	a, err := e.s.SaveRule(t.Context(), Rule{Doc: label, Enabled: true})
+	require.NoError(t, err)
+	b, err := e.s.SaveRule(t.Context(), Rule{Doc: work, Background: true})
+	require.NoError(t, err)
+	require.NoError(t, e.s.ReorderRules(t.Context(), []int64{b, a}))
+
+	out, err := e.s.listRules(t.Context(), nil)
+	require.NoError(t, err)
+	raw, err := json.Marshal(out)
+	require.NoError(t, err)
+	var got struct {
+		Rules []struct {
+			ID          int64   `json:"id"`
+			Enabled     bool    `json:"enabled"`
+			Background  bool    `json:"background"`
+			Rule        RuleDoc `json:"rule"`
+			AccountName string  `json:"account_name"`
+		} `json:"rules"`
+		Labels map[string]string `json:"labels"`
+	}
+	require.NoError(t, json.Unmarshal(raw, &got))
+	require.Len(t, got.Rules, 2)
+	assert.Equal(t, b, got.Rules[0].ID)
+	assert.Equal(t, "Work", got.Rules[0].AccountName)
+	assert.True(t, got.Rules[0].Background)
+	assert.False(t, got.Rules[0].Enabled)
+	assert.Equal(t, "Codes", got.Rules[1].Rule.Name)
+	assert.NotNil(t, got.Labels)
+	assert.Len(t, e.savedRules(t), 2)
+}

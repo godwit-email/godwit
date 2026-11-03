@@ -1840,6 +1840,7 @@
   "settings_masking_feature_rules": "ルール",
   "error_recipient_unconfirmed": "ルールを保存する前に転送先を確認してください。",
   "wit_tool_propose_rule": "ルールを作成",
+  "wit_tool_list_rules": "ルールを確認",
   "wit_rule_matches": "{arg1, number, ::group-off} 件が一致",
   "wit_rule_new_only": "既存のメールはそのままです。ルールは保存後に届いたメールだけを処理します。",
   "wit_rule_hint": "保存すると有効になります。Wit が代わりに保存することはできません。",

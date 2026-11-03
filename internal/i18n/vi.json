@@ -1840,6 +1840,7 @@
   "settings_masking_feature_rules": "Quy tắc",
   "error_recipient_unconfirmed": "Hãy xác nhận người nhận chuyển tiếp trước khi lưu quy tắc.",
   "wit_tool_propose_rule": "Tạo quy tắc",
+  "wit_tool_list_rules": "Xem quy tắc",
   "wit_rule_matches": "Khớp: {arg1, number, ::group-off}",
   "wit_rule_new_only": "Thư hiện có giữ nguyên: quy tắc chỉ xử lý thư đến sau khi bạn lưu.",
   "wit_rule_hint": "Chỉ có hiệu lực khi bạn lưu. Wit không thể lưu thay bạn.",

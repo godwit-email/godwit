@@ -1840,6 +1840,7 @@
   "settings_masking_feature_rules": "Regras",
   "error_recipient_unconfirmed": "Confirme o destinatário do encaminhamento antes de salvar a regra.",
   "wit_tool_propose_rule": "Criar uma regra",
+  "wit_tool_list_rules": "Ver regras",
   "wit_rule_matches": "Correspondentes: {arg1, number, ::group-off}",
   "wit_rule_new_only": "Os e-mails existentes ficam como estão: a regra trata só os que chegarem depois de salvar.",
   "wit_rule_hint": "Só vale depois que você salvar. O Wit não pode salvar por você.",

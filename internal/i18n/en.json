@@ -3589,6 +3589,7 @@
   "settings_masking_feature_rules": "Rules",
   "error_recipient_unconfirmed": "Confirm the forward recipient before saving the rule.",
   "wit_tool_propose_rule": "Create a rule",
+  "wit_tool_list_rules": "View rules",
   "wit_rule_matches": "Matching: {arg1, number, ::group-off}",
   "wit_rule_new_only": "Existing mail is left as it is: the rule handles only mail that arrives after you save it.",
   "wit_rule_hint": "Takes effect only once you save it. Wit can’t save it for you.",

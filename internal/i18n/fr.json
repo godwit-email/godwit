@@ -1840,6 +1840,7 @@
   "settings_masking_feature_rules": "Règles",
   "error_recipient_unconfirmed": "Confirmez le destinataire du transfert avant d’enregistrer la règle.",
   "wit_tool_propose_rule": "Créer une règle",
+  "wit_tool_list_rules": "Voir les règles",
   "wit_rule_matches": "Correspondants : {arg1, number, ::group-off}",
   "wit_rule_new_only": "Les e-mails existants restent tels quels : la règle ne traite que ceux reçus après l’enregistrement.",
   "wit_rule_hint": "Ne s’applique qu’une fois enregistrée. Wit ne peut pas l’enregistrer à votre place.",

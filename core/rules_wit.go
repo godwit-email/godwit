@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"slices"
+	"strconv"
 	"strings"
 	"time"
 
@@ -20,6 +21,10 @@ import (
 // approval is the preview card, and the rule is saved by the user's 保存规则
 // on it, with a forward's recipient confirmed there, or from the editor.
 const proposeRuleTool = "propose_rule"
+
+// listRulesTool reads the user's rules, as 设置 › 规则 lists them; it
+// changes none.
+const listRulesTool = "list_rules"
 
 // ErrRecipientUnconfirmed: a rule proposal that forwards is saved only once
 // the user confirmed each recipient in Godwit (ResolveApprovalWithArgs).
@@ -89,6 +94,54 @@ func (s *Service) registerRuleTool() {
 			"background": map[string]any{"type": "boolean"},
 		}, "name", "trigger", "match", "actions")},
 		Write: true, Exec: &executor{Prepare: s.prepareRule, Apply: s.applyRule}})
+}
+
+func (s *Service) registerListRulesTool() {
+	s.mustRegister(toolDesc{Spec: ai.ToolSpec{Name: listRulesTool,
+		Description: "List the user's mail rules, as 设置 › 规则 shows them, in the order they run (top first; a stop action skips the rules below): " +
+			"each one's id, name, whether it is on, whether it runs in the background, its rule (trigger, account, conditions, actions, in propose_rule's terms) " +
+			"and how many mails it handled in the last " + strconv.Itoa(RuleHitDays) + " days. labels names each label slug they use; account_name the account a rule is kept to. " +
+			"It changes nothing: to change a rule, the user edits it in 设置 › 规则; propose_rule proposes a new one.",
+		Schema: object(map[string]any{}), Run: s.listRules}})
+}
+
+// listRules is list_rules: every rule, with the names its card would show.
+func (s *Service) listRules(ctx context.Context, _ json.RawMessage) (any, error) {
+	rs, err := s.Rules(ctx)
+	if err != nil {
+		return nil, err
+	}
+	counts, err := s.RuleHitCounts(ctx)
+	if err != nil {
+		return nil, err
+	}
+	ls, err := s.listLabels(ctx)
+	if err != nil {
+		return nil, err
+	}
+	labels := map[string]string{}
+	for _, l := range ls {
+		labels[l.Slug] = l.Name
+	}
+	type listed struct {
+		ID          int64   `json:"id"`
+		Enabled     bool    `json:"enabled"`
+		Background  bool    `json:"background"`
+		Rule        RuleDoc `json:"rule"`
+		AccountName string  `json:"account_name,omitempty"`
+		Handled     int     `json:"handled_last_days"`
+	}
+	out := make([]listed, 0, len(rs))
+	for _, r := range rs {
+		l := listed{ID: r.ID, Enabled: r.Enabled, Background: r.Background, Rule: r.Doc, Handled: counts[r.ID]}
+		if r.Doc.Account != 0 {
+			if acc, err := s.account(ctx, r.Doc.Account); err == nil {
+				l.AccountName = accountLabel(acc)
+			}
+		}
+		out = append(out, l)
+	}
+	return map[string]any{"rules": out, "labels": labels}, nil
 }
 
 // prepareRule checks the proposed rule as SaveRule would, and records it

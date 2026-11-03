@@ -1840,6 +1840,7 @@
   "settings_masking_feature_rules": "규칙",
   "error_recipient_unconfirmed": "규칙을 저장하기 전에 전달 받는 사람을 확인하세요.",
   "wit_tool_propose_rule": "규칙 만들기",
+  "wit_tool_list_rules": "규칙 보기",
   "wit_rule_matches": "{arg1, number, ::group-off}개 일치",
   "wit_rule_new_only": "기존 메일은 그대로 둡니다. 규칙은 저장한 뒤 도착한 메일만 처리합니다.",
   "wit_rule_hint": "저장해야 적용됩니다. Wit이 대신 저장할 수는 없습니다.",

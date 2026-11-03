@@ -1840,6 +1840,7 @@
   "settings_masking_feature_rules": "Kurallar",
   "error_recipient_unconfirmed": "Kuralı kaydetmeden önce yönlendirme alıcısını onaylayın.",
   "wit_tool_propose_rule": "Kural oluştur",
+  "wit_tool_list_rules": "Kuralları görüntüle",
   "wit_rule_matches": "Eşleşen: {arg1, number, ::group-off}",
   "wit_rule_new_only": "Mevcut postalar olduğu gibi kalır: kural yalnızca kaydettikten sonra gelen postaları işler.",
   "wit_rule_hint": "Ancak siz kaydedince geçerli olur. Wit sizin yerinize kaydedemez.",
