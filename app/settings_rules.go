@@ -71,7 +71,12 @@ func (v *rulesView) row(c *ui.Context, r core.Rule) {
 			a.writes.Chain("rules", func(ctx context.Context) error { return a.svc.SetRuleEnabled(ctx, id, on) }, v.saved)
 		}
 		ui.Column(c).Grow(1).Shrink(1).Gap(th.Space(0.5)).Children(func() {
-			kit.Text(c, name, t.Text.Body).FontWeight(500).SingleLine()
+			ui.Row(c).Gap(th.Space(2)).AlignItems(ui.Center).Children(func() {
+				kit.Text(c, name, t.Text.Body).FontWeight(500).SingleLine().Shrink(1)
+				if r.Background {
+					kit.Badge(c, i18n.T("settings.rules.run.background"))
+				}
+			})
 			kit.Text(c, v.summary(r.Doc), t.Text.Sm).TextColor(t.Muted).SingleLine()
 		})
 		kit.IconButton(c, "file-pen", i18n.Tf("settings.rules.edit", name), kit.ButtonOpts{Variant: kit.Ghost, Size: kit.SizeSm}).
@@ -101,6 +106,12 @@ func (v *rulesView) summary(d core.RuleDoc) string {
 		acts[i] = i18n.Tf("settings.rules.action.label.summary", v.labelName(ac.Label))
 	}
 	trigger, then := i18n.T("settings.rules.trigger."+d.Trigger), strings.Join(acts, " → ")
+	switch d.Trigger {
+	case core.TriggerLabel:
+		trigger = i18n.Tf("settings.rules.trigger.label.summary", v.labelName(d.TriggerArg))
+	case core.TriggerSecurity:
+		trigger = i18n.Tf("settings.rules.trigger.security.summary", i18n.T("settings.rules.security."+d.TriggerArg))
+	}
 	if conds == "" {
 		return i18n.Tf("settings.rules.summary.always", trigger, then)
 	}
@@ -144,7 +155,7 @@ func (v *rulesView) editor(c *ui.Context) {
 	if v.edit.ID != 0 {
 		title, sub = ruleName(*d), v.summary(*d)
 	}
-	ready := len(d.Actions) > 0 && d.Actions[0].Label != "" && !slices.ContainsFunc(d.Conditions, func(cd core.RuleCondition) bool { return strings.TrimSpace(cd.Value) == "" })
+	ready := len(d.Actions) > 0 && d.Actions[0].Label != "" && (d.Trigger != core.TriggerLabel || d.TriggerArg != "") && !slices.ContainsFunc(d.Conditions, func(cd core.RuleCondition) bool { return strings.TrimSpace(cd.Value) == "" })
 	pageHeading(c, title, sub, func() {
 		ui.Row(c).Gap(th.Space(2)).Children(func() {
 			settingButton(c, i18n.T("common.cancel"), kit.Outline, false).OnClick(func() { v.editing = false })
@@ -156,9 +167,34 @@ func (v *rulesView) editor(c *ui.Context) {
 			kit.Input(c, &d.Name, kit.InputOpts{Placeholder: i18n.T("settings.rules.name.placeholder")}).Label(i18n.T("settings.rules.name"))
 		})
 	})
+	labels := make([]kit.Option[string], len(a.labels))
+	for i, l := range a.labels {
+		labels[i] = kit.Option[string]{Value: l.Slug, Label: l.Name}
+	}
 	settingsSection(c, i18n.T("settings.rules.when"), "", func() {
-		settingRow(c, i18n.T("settings.rules.trigger"), "", func() {
-			settingSelect(c, i18n.T("settings.rules.trigger"), &d.Trigger, []kit.Option[string]{{Value: core.TriggerReceive, Label: i18n.T("settings.rules.trigger.receive")}})
+		settingRow(c, i18n.T("settings.rules.trigger"), i18n.T("settings.rules.trigger."+d.Trigger+".help"), func() {
+			ui.Row(c).Gap(th.Space(2)).Children(func() {
+				was := d.Trigger
+				triggers := []kit.Option[string]{}
+				for _, tr := range []string{core.TriggerReceive, core.TriggerLabel, core.TriggerSecurity, core.TriggerDaily} {
+					triggers = append(triggers, kit.Option[string]{Value: tr, Label: i18n.T("settings.rules.trigger." + tr)})
+				}
+				settingSelect(c, i18n.T("settings.rules.trigger"), &d.Trigger, triggers)
+				if d.Trigger != was {
+					d.TriggerArg = map[string]string{core.TriggerSecurity: core.SecuritySuspicious}[d.Trigger]
+					if d.Trigger == core.TriggerLabel && len(labels) > 0 {
+						d.TriggerArg = labels[0].Value
+					}
+				}
+				switch d.Trigger {
+				case core.TriggerLabel:
+					settingSelect(c, i18n.T("settings.rules.trigger.label.which"), &d.TriggerArg, labels)
+				case core.TriggerSecurity:
+					settingSelect(c, i18n.T("settings.rules.trigger.security.which"), &d.TriggerArg, []kit.Option[string]{
+						{Value: core.SecuritySuspicious, Label: i18n.T("settings.rules.security.suspicious")},
+						{Value: core.SecurityDangerous, Label: i18n.T("settings.rules.security.dangerous")}})
+				}
+			})
 		})
 	})
 	conds := []func(){func() {
@@ -198,15 +234,20 @@ func (v *rulesView) editor(c *ui.Context) {
 		})
 	})
 	settingsSection(c, i18n.T("settings.rules.if"), "", conds...)
-	labels := make([]kit.Option[string], len(a.labels))
-	for i, l := range a.labels {
-		labels[i] = kit.Option[string]{Value: l.Slug, Label: l.Name}
-	}
 	settingsSection(c, i18n.T("settings.rules.then"), "", func() {
 		settingRow(c, i18n.T("settings.rules.action.label"), "", func() {
 			settingSelect(c, i18n.T("settings.rules.label"), &d.Actions[0].Label, labels)
 		})
 	})
+	run := func(bg bool, key string) func() {
+		return func() {
+			settingBlock(c, func() {
+				kit.Radio(c.Key(key), &v.edit.Background, bg, i18n.T("settings.rules.run."+key))
+				kit.Text(c, i18n.T("settings.rules.run."+key+".help"), t.Text.Sm).TextColor(t.Muted)
+			})
+		}
+	}
+	settingsSection(c, i18n.T("settings.rules.run"), "", run(false, "window"), run(true, "background"))
 }
 
 func (v *rulesView) save() {

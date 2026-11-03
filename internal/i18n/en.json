@@ -3155,6 +3155,38 @@
     }
   },
   "settings_rules_trigger_receive": "New mail arrives",
+  "settings_rules_trigger_label": "A label is applied",
+  "settings_rules_trigger_security": "The security check flags it",
+  "settings_rules_trigger_daily": "First sync of the day",
+  "settings_rules_trigger_receive_help": "Runs when new mail syncs. Mail that arrived while Godwit was quit is handled at the next sync.",
+  "settings_rules_trigger_label_help": "Runs when you or the model apply this label. Labels applied by rules don’t trigger rules.",
+  "settings_rules_trigger_security_help": "Runs once the security check gives new mail a verdict. Re-checking older mail doesn’t trigger it.",
+  "settings_rules_trigger_daily_help": "Runs once over matching mail after the first sync of each day. Suits conditions like “older than N days”.",
+  "settings_rules_trigger_label_which": "Which label",
+  "settings_rules_trigger_security_which": "Verdict",
+  "settings_rules_trigger_label_summary": "Labeled “{arg1}”",
+  "@settings_rules_trigger_label_summary": {
+    "placeholders": {
+      "arg1": {
+        "type": "String"
+      }
+    }
+  },
+  "settings_rules_trigger_security_summary": "Flagged {arg1}",
+  "@settings_rules_trigger_security_summary": {
+    "placeholders": {
+      "arg1": {
+        "type": "String"
+      }
+    }
+  },
+  "settings_rules_security_suspicious": "suspicious or dangerous",
+  "settings_rules_security_dangerous": "dangerous",
+  "settings_rules_run": "How it runs",
+  "settings_rules_run_window": "Only while the window is open",
+  "settings_rules_run_window_help": "Mail that arrives while the window is closed is handled when you open it again.",
+  "settings_rules_run_background": "In the background",
+  "settings_rules_run_background_help": "After the window closes, Godwit stays in the menu bar, keeps syncing and runs this rule.",
   "settings_rules_summary_always": "{arg1} → {arg2}",
   "@settings_rules_summary_always": {
     "placeholders": {

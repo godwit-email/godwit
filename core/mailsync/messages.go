@@ -80,6 +80,14 @@ func importMessage(ctx context.Context, db *store.DB, a *account, f *folder, m *
 					AND server_uidvalidity = ? AND server_uid = ?), ?, ?, ?, unixepoch())`,
 			Args: []any{a.id, a.id, f.id, f.uidValidity, uid, p.Subject, p.From, p.Date.Unix()},
 		})
+		if _, final := secScanned.(int64); final { // a verdict now, not the scanner's later: security rules run on it
+			stmts = append(stmts, sqlite.Statement{
+				SQL: `INSERT INTO events_log(type, account_id, message_id, subject, from_addr, msg_date, detail, created_at)
+					VALUES ('security.verdict', ?, (SELECT id FROM messages WHERE account_id = ? AND server_folder_id = ?
+						AND server_uidvalidity = ? AND server_uid = ?), ?, ?, ?, ?, unixepoch())`,
+				Args: []any{a.id, a.id, f.id, f.uidValidity, uid, p.Subject, p.From, p.Date.Unix(), secStatus},
+			})
+		}
 	}
 	res, err := db.Transaction(ctx, stmts)
 	if err != nil {

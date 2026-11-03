@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"net/mail"
+	"slices"
 	"strings"
 	"time"
 	"unicode/utf8"
@@ -27,7 +28,13 @@ const RuleVersion = 1
 
 // Rule document ids.
 const (
-	TriggerReceive = "receive"
+	TriggerReceive  = "receive"
+	TriggerLabel    = "label"    // TriggerArg is the label's slug
+	TriggerSecurity = "security" // TriggerArg is SecuritySuspicious or SecurityDangerous
+	TriggerDaily    = "daily"
+
+	SecuritySuspicious = "suspicious" // needs_review or warning
+	SecurityDangerous  = "dangerous"  // warning
 
 	MatchAll = "all"
 	MatchAny = "any"
@@ -56,6 +63,7 @@ type RuleDoc struct {
 	Version    int             `json:"version"`
 	Name       string          `json:"name"`
 	Trigger    string          `json:"trigger"`
+	TriggerArg string          `json:"trigger_arg,omitempty"`
 	Match      string          `json:"match"`
 	Conditions []RuleCondition `json:"conditions"`
 	Actions    []RuleAction    `json:"actions"`
@@ -74,11 +82,13 @@ type RuleAction struct {
 	Label string `json:"label,omitempty"`
 }
 
-// Rule is a stored rule, in the order rules run.
+// Rule is a stored rule, in the order rules run. Background keeps Godwit
+// running after the window closes (运行方式 后台运行).
 type Rule struct {
-	ID      int64
-	Enabled bool
-	Doc     RuleDoc
+	ID         int64
+	Enabled    bool
+	Background bool
+	Doc        RuleDoc
 }
 
 // ErrInvalidRule is a rule document SaveRule refuses.
@@ -96,7 +106,20 @@ func (s *Service) validRule(ctx context.Context, d RuleDoc) error {
 	if utf8.RuneCountInString(d.Name) > MaxRuleName {
 		return invalidRule("name longer than %d", MaxRuleName)
 	}
-	if d.Trigger != TriggerReceive {
+	switch d.Trigger {
+	case TriggerReceive, TriggerDaily:
+		if d.TriggerArg != "" {
+			return invalidRule("trigger_arg %q", d.TriggerArg)
+		}
+	case TriggerLabel:
+		if err := s.labelExists(ctx, d.TriggerArg); err != nil {
+			return err
+		}
+	case TriggerSecurity:
+		if d.TriggerArg != SecuritySuspicious && d.TriggerArg != SecurityDangerous {
+			return invalidRule("trigger_arg %q", d.TriggerArg)
+		}
+	default:
 		return invalidRule("trigger %q", d.Trigger)
 	}
 	if d.Match != MatchAll && d.Match != MatchAny {
@@ -123,16 +146,23 @@ func (s *Service) validRule(ctx context.Context, d RuleDoc) error {
 	for _, a := range d.Actions {
 		switch a.Kind {
 		case ActionLabel:
-			rows, err := s.db.Query(ctx, "SELECT 1 FROM labels WHERE slug = ?", a.Label)
-			if err != nil {
+			if err := s.labelExists(ctx, a.Label); err != nil {
 				return err
-			}
-			if len(rows.Values) == 0 {
-				return invalidRule("label %q", a.Label)
 			}
 		default:
 			return invalidRule("action %q", a.Kind)
 		}
+	}
+	return nil
+}
+
+func (s *Service) labelExists(ctx context.Context, slug string) error {
+	rows, err := s.db.Query(ctx, "SELECT 1 FROM labels WHERE slug = ?", slug)
+	if err != nil {
+		return err
+	}
+	if len(rows.Values) == 0 {
+		return invalidRule("label %q", slug)
 	}
 	return nil
 }
@@ -148,13 +178,13 @@ func (s *Service) Rules(ctx context.Context) ([]Rule, error) {
 }
 
 func (s *Service) rules(ctx context.Context, enabledOnly bool) ([]Rule, error) {
-	rows, err := s.db.Query(ctx, "SELECT id, enabled, doc FROM rules WHERE enabled >= ? ORDER BY position, id", b2i(enabledOnly))
+	rows, err := s.db.Query(ctx, "SELECT id, enabled, doc, background FROM rules WHERE enabled >= ? ORDER BY position, id", b2i(enabledOnly))
 	if err != nil {
 		return nil, err
 	}
 	out := make([]Rule, 0, len(rows.Values))
 	for _, v := range rows.Values {
-		r := Rule{ID: store.Int(v[0]), Enabled: store.Int(v[1]) != 0}
+		r := Rule{ID: store.Int(v[0]), Enabled: store.Int(v[1]) != 0, Background: store.Int(v[3]) != 0}
 		if err := json.Unmarshal([]byte(store.Str(v[2])), &r.Doc); err != nil {
 			return nil, fmt.Errorf("rule %d: %w", r.ID, err)
 		}
@@ -181,14 +211,15 @@ func (s *Service) SaveRule(ctx context.Context, r Rule) (int64, error) {
 	}
 	now := time.Now().Unix()
 	if r.ID == 0 {
-		res, err := s.db.Execute(ctx, `INSERT INTO rules(position, enabled, doc, created_at, updated_at)
-			SELECT COALESCE(MAX(position), -1) + 1, ?, ?, ?, ? FROM rules`, b2i(r.Enabled), string(doc), now, now)
+		res, err := s.db.Execute(ctx, `INSERT INTO rules(position, enabled, background, doc, created_at, updated_at)
+			SELECT COALESCE(MAX(position), -1) + 1, ?, ?, ?, ?, ? FROM rules`, b2i(r.Enabled), b2i(r.Background), string(doc), now, now)
 		if err != nil {
 			return 0, err
 		}
 		return res.LastInsertID, nil
 	}
-	res, err := s.db.Execute(ctx, "UPDATE rules SET enabled = ?, doc = ?, updated_at = ? WHERE id = ?", b2i(r.Enabled), string(doc), now, r.ID)
+	res, err := s.db.Execute(ctx, "UPDATE rules SET enabled = ?, background = ?, doc = ?, updated_at = ? WHERE id = ?",
+		b2i(r.Enabled), b2i(r.Background), string(doc), now, r.ID)
 	if err != nil {
 		return 0, err
 	}
@@ -206,6 +237,21 @@ func (s *Service) SetRuleEnabled(ctx context.Context, id int64, on bool) error {
 	}
 	defer end()
 	return s.exec(ctx, sqlite.Statement{SQL: "UPDATE rules SET enabled = ?, updated_at = ? WHERE id = ?", Args: []any{b2i(on), time.Now().Unix(), id}})
+}
+
+// RulesInBackground reports whether an enabled rule runs in the background,
+// so closing the window keeps Godwit running.
+func (s *Service) RulesInBackground(ctx context.Context) (bool, error) {
+	ctx, end, err := s.begin(ctx, 0)
+	if err != nil {
+		return false, err
+	}
+	defer end()
+	rows, err := s.db.Query(ctx, "SELECT 1 FROM rules WHERE enabled = 1 AND background = 1 LIMIT 1")
+	if err != nil {
+		return false, err
+	}
+	return len(rows.Values) > 0, nil
 }
 
 // ruleMail is what conditions read of a message.
@@ -254,7 +300,7 @@ func (c RuleCondition) matches(m ruleMail) bool {
 
 // startRules runs the rule consumer until Close.
 func (s *Service) startRules(ctx context.Context) error {
-	return s.startConsumer(ctx, "rules", func(ctx context.Context, ev hookEvent) error {
+	return s.startConsumer(ctx, "rules", ruleEvents, func(ctx context.Context, ev hookEvent) error {
 		if rulesHook != nil && rulesHook("rules.deliver") != nil {
 			return errStopConsumer // tests: a crash before the rules run
 		}
@@ -271,9 +317,82 @@ func (s *Service) startRules(ctx context.Context) error {
 // rulesHook, if set, is called at each stage of a delivery (tests); an error stops the consumer there.
 var rulesHook func(stage string) error
 
-// runRules runs the enabled receive rules, in order, on a new message. Mail
-// that lands in Sent or Drafts is not received mail.
+// The events rules run on, logged in the transaction that makes them true:
+// new mail at import, a label put on by hand (SetLabel) or by the classifier
+// (labelWrites; never by a rule, so a label rule fires one level deep), the
+// first verdict on new mail (import or scanner; never a re-scan), and the
+// day's first sync (logDaily).
+const (
+	eventLabelApplied    = "label.applied"
+	eventSecurityVerdict = "security.verdict"
+	eventDaily           = "rules.daily"
+)
+
+var ruleEvents = []string{"message.received", eventLabelApplied, eventSecurityVerdict, eventDaily}
+
+// eventTrigger is the trigger each event runs.
+var eventTrigger = map[string]string{"message.received": TriggerReceive, eventLabelApplied: TriggerLabel, eventSecurityVerdict: TriggerSecurity}
+
+// firesOn reports whether the rule's trigger takes the event's detail.
+func (d RuleDoc) firesOn(detail string) bool {
+	switch d.Trigger {
+	case TriggerLabel:
+		return d.TriggerArg == detail
+	case TriggerSecurity:
+		return detail == "warning" || detail == "needs_review" && d.TriggerArg == SecuritySuspicious
+	}
+	return true
+}
+
+// logDaily logs the day's rules.daily event on its first sync (local day)
+// with an enabled daily rule, keeping the day in meta in the same transaction.
+func (s *Service) logDaily(ctx context.Context) error {
+	today := s.clk().Now().Format(time.DateOnly)
+	due := `EXISTS (SELECT 1 FROM rules WHERE enabled = 1 AND json_extract(doc, '$.trigger') = 'daily')
+		AND NOT EXISTS (SELECT 1 FROM meta WHERE key = 'rules_daily' AND value = ?)`
+	_, err := s.db.Transaction(ctx, []sqlite.Statement{
+		{SQL: "INSERT INTO events_log(type, created_at) SELECT ?, unixepoch() WHERE " + due, Args: []any{eventDaily, today}},
+		{SQL: "INSERT INTO meta(key, value) SELECT 'rules_daily', ? WHERE " + due + " ON CONFLICT(key) DO UPDATE SET value = excluded.value",
+			Args: []any{today, today}},
+	})
+	return err
+}
+
+// runDaily runs the enabled daily rules, in order, over the mail there is.
+// shortcut: reads every message's sender and subject into memory; compile
+// conditions to SQL (as the editor preview will) once mailboxes are large.
+func (s *Service) runDaily(ctx context.Context) error {
+	rules, err := s.rules(ctx, true)
+	if err != nil {
+		return err
+	}
+	rules = slices.DeleteFunc(rules, func(r Rule) bool { return r.Doc.Trigger != TriggerDaily })
+	if len(rules) == 0 {
+		return nil
+	}
+	rows, err := s.db.Query(ctx, `SELECT m.id, m.from_addr, m.subject FROM messages m JOIN folders f ON f.id = m.folder_id
+		WHERE COALESCE(f.role, '') NOT IN ('sent', 'drafts') ORDER BY m.id`)
+	if err != nil {
+		return err
+	}
+	for _, r := range rules {
+		for _, v := range rows.Values {
+			if r.Doc.matches(ruleMail{from: store.Str(v[1]), subject: store.Str(v[2])}) {
+				if err := s.runRule(ctx, r, store.Int(v[0]), TriggerDaily); err != nil {
+					return err
+				}
+			}
+		}
+	}
+	return nil
+}
+
+// runRules runs the enabled rules of the event's trigger, in order, on its
+// message. Mail that lands in Sent or Drafts is not received mail.
 func (s *Service) runRules(ctx context.Context, ev hookEvent) error {
+	if ev.typ == eventDaily {
+		return s.runDaily(ctx)
+	}
 	if ev.deleted {
 		return nil
 	}
@@ -288,12 +407,12 @@ func (s *Service) runRules(ctx context.Context, ev hookEvent) error {
 	if err != nil {
 		return err
 	}
-	m := ruleMail{from: ev.from, subject: ev.subject}
+	m, trigger := ruleMail{from: ev.from, subject: ev.subject}, eventTrigger[ev.typ]
 	for _, r := range rules {
-		if r.Doc.Trigger != TriggerReceive || !r.Doc.matches(m) {
+		if r.Doc.Trigger != trigger || !r.Doc.firesOn(ev.detail) || !r.Doc.matches(m) {
 			continue
 		}
-		if err := s.runRule(ctx, r, ev.messageID, TriggerReceive); err != nil {
+		if err := s.runRule(ctx, r, ev.messageID, trigger); err != nil {
 			return err
 		}
 	}
