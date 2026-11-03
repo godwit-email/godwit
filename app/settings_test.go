@@ -1847,3 +1847,29 @@ func TestSettingsReauthOwnClient(t *testing.T) {
 		t.Fatalf("client %+v, want %+v", got, want)
 	}
 }
+
+// TestUpdateCard: a newer version shows in the sidebar a minute after launch
+// and every check after; it opens the updater, and once it installed itself
+// asks for a relaunch.
+func TestUpdateCard(t *testing.T) {
+	h, _ := withAccount(t)
+	h.plat.mu.Lock()
+	h.plat.latest = "9.0.0"
+	h.plat.mu.Unlock()
+	if h.advance(latestFirst - time.Second); h.tt.HasText("有新版本") {
+		t.Fatal("the card shows before the updater's own check had its head start")
+	}
+	h.advance(time.Second)
+	h.click("有新版本 v9.0.0")
+	h.called("CheckForUpdates")
+	h.plat.mu.Lock()
+	h.plat.autoUpdates = true
+	h.plat.mu.Unlock()
+	h.advance(latestEvery)
+	h.see("重启以更新")
+	h.plat.mu.Lock()
+	h.plat.latest = "" // relaunched elsewhere, or the feed took it back
+	h.plat.mu.Unlock()
+	h.advance(latestEvery)
+	h.until("the card gone", func() bool { h.tt.Frame(); return !h.tt.HasText("重启以更新") })
+}

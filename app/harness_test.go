@@ -256,6 +256,7 @@ type fakePlatform struct {
 	codeBanners  []core.SignInCode
 	noCodeBanner bool
 	latest       string // LatestVersion's answer
+	autoUpdates  bool   // UpdatesInstallThemselves' answer
 	gh           bool   // the GitHub CLI is signed in
 	starred      bool
 	files        []string // OpenFiles
@@ -532,6 +533,11 @@ func (p *fakePlatform) LatestVersion(context.Context) (string, error) {
 	p.mu.Lock()
 	defer p.mu.Unlock()
 	return p.latest, nil
+}
+func (p *fakePlatform) UpdatesInstallThemselves() bool {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	return p.autoUpdates
 }
 func (p *fakePlatform) ShowSignInCode(code *core.SignInCode) {
 	if code != nil {

@@ -1184,6 +1184,8 @@
   "shell_nav_back_to": "Zurück zu {arg1}",
   "shell_nav_mail": "E-Mail",
   "shell_nav_settings": "Einstellungen",
+  "shell_update_available": "Update verfügbar",
+  "shell_update_relaunch": "Neu starten zum Aktualisieren",
   "shell_nav_wit": "Wit",
   "shell_resize": "Größe anpassen",
   "shell_sidebar_collapse": "Seitenleiste einklappen",

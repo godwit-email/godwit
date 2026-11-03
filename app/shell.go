@@ -11,6 +11,7 @@ import (
 	"github.com/godwit-email/godwit/core"
 	"github.com/godwit-email/godwit/core/events"
 	"github.com/godwit-email/godwit/internal/i18n"
+	"github.com/godwit-email/godwit/internal/icons"
 	"github.com/godwit-email/godwit/internal/kit"
 	"github.com/godwit-email/godwit/internal/theme"
 )
@@ -470,6 +471,7 @@ func sidebarScroll(c *ui.Context, children func()) {
 // in the same spot.
 func (a *App) sidebarFoot(c *ui.Context) {
 	th := c.Theme()
+	a.updateCard(c)
 	item := func(icon, label string, r Route) {
 		b := kit.SidebarItem(c, kit.SidebarItemOpts{OnClick: func() { a.navigate(r) }}).Gap(th.Space(2.5))
 		b.Children(func() {
@@ -493,6 +495,41 @@ func (a *App) sidebarFoot(c *ui.Context) {
 		item("component", "Kit", Route{Page: PageKit})
 	}
 	item("sliders-horizontal", i18n.T("shell.nav.settings"), Route{Page: PageSettings})
+}
+
+// updateCard offers the newer version the update feed has, above Settings:
+// 重启以更新 when it installed itself, else 有新版本. Either opens the
+// updater's window (the Store's page), which relaunches or installs.
+func (a *App) updateCard(c *ui.Context) {
+	if a.latest == "" {
+		return
+	}
+	t, th := theme.Of(c), c.Theme()
+	title := i18n.T("shell.update.available")
+	if a.latestInstalls {
+		title = i18n.T("shell.update.relaunch")
+	}
+	ver := "v" + a.latest
+	b := kit.Pressable(c, kit.PressableOpts{Bare: true, OnClick: a.plat.CheckForUpdates}).Label(title+" "+ver).
+		Padding(th.Space(2.5), th.Space(3)).Gap(th.Space(2)).Margin(0, 0, th.Space(1.5), 0).
+		Radius(t.Radius.Xl).Border(theme.Hairline, t.Border)
+	if t.Dark { // Background is darker than the window material there: a step lighter and a stronger edge, as a shadow would not show
+		b.Background(t.HoverTint).Border(theme.Hairline, t.Input)
+	} else {
+		kit.Elevate(c, b.Background(t.Background), theme.ShadowSm)
+	}
+	arrow := t.Muted
+	if b.Hovered() {
+		arrow = t.Foreground
+	}
+	b.Children(func() {
+		ui.Icon(c, logo).Size(theme.IconXl, theme.IconXl).TextColor(t.Foreground).Role(ui.RoleNone)
+		ui.Column(c).Grow(1).Shrink(1).MinWidth(0).Children(func() {
+			ui.Text(c, title).FontWeight(500).SingleLine().Role(ui.RoleNone)
+			kit.Text(c, ver, t.Text.Sm).TextColor(t.Muted).Role(ui.RoleNone)
+		})
+		ui.Icon(c, icons.Get("arrow-right")).Size(theme.Icon, theme.Icon).TextColor(arrow)
+	})
 }
 
 // leaveSettings is where settings' way back goes: the last page before

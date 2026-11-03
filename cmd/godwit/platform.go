@@ -272,6 +272,10 @@ func (p *platform) LatestVersion(ctx context.Context) (string, error) {
 	return u.Version, nil
 }
 
+func (p *platform) UpdatesInstallThemselves() bool {
+	return !packaged() && updater.AutomaticDownloads() // the Store's package: the Store's page installs it
+}
+
 // bodyView is the web view of the reader page page, while it is open as
 // one: in bodies, registered as "reader", and bound (to message). UI
 // thread.

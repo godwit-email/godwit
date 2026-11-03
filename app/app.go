@@ -96,6 +96,10 @@ type Platform interface {
 	// Store's package) for a version newer than this one, without a
 	// window: "" when up to date. Blocks: call off the UI thread.
 	LatestVersion(ctx context.Context) (string, error)
+	// UpdatesInstallThemselves says whether a newer version installs without
+	// asking (the updater's automatic downloads): it waits for a relaunch.
+	// It may read a file: call off the UI thread.
+	UpdatesInstallThemselves() bool
 	// RepoStarred asks the GitHub CLI whether the user starred Godwit's
 	// repository: ok is false without gh signed in. Blocks.
 	RepoStarred(ctx context.Context) (starred, ok bool)
@@ -253,6 +257,8 @@ type App struct {
 	sidebarW                     float32 // the sidebars' width as dragged, shared by every page; 0 until the first panel
 	listW                        float32 // the mail list's width as dragged; 0 until the mail page shows
 	sidebarSave                  func()  // stops the pending save of a dragged width
+	latest                       string  // a newer version the update feed offers (watchLatest); "" none
+	latestInstalls               bool    // it installs itself and waits for a relaunch
 
 	dirty             []events.Event // events since the last refresh
 	refreshStop       func()         // the pending throttled refresh; nil when none
@@ -360,6 +366,33 @@ func (a *App) Start(ctx context.Context) {
 		}
 	}()
 	a.load()
+	a.after(latestFirst, a.watchLatest)
+}
+
+// latestFirst leaves the updater's own check at launch, which may start
+// installing, its head start; latestEvery spaces the checks after it.
+const latestFirst, latestEvery = time.Minute, 6 * time.Hour
+
+// watchLatest reads the newer version now and every latestEvery after.
+func (a *App) watchLatest() {
+	a.readLatest()
+	a.after(latestEvery, a.watchLatest)
+}
+
+// readLatest asks the update feed for a newer version, for the sidebar's
+// update card and About's button.
+func (a *App) readLatest() {
+	var v string
+	var auto bool
+	a.do(func(ctx context.Context) (err error) {
+		v, err = a.plat.LatestVersion(ctx)
+		auto = a.plat.UpdatesInstallThemselves()
+		return err
+	}, func(err error) {
+		if err == nil {
+			a.latest, a.latestInstalls = v, auto
+		} // a dev build, offline: Check for Updates says why
+	})
 }
 
 // load re-reads accounts, settings and unread counts; only the newest

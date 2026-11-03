@@ -1179,6 +1179,8 @@
   "shell_nav_back_to": "{arg1} görünümüne dön",
   "shell_nav_mail": "E-posta",
   "shell_nav_settings": "Ayarlar",
+  "shell_update_available": "Güncelleme mevcut",
+  "shell_update_relaunch": "Güncellemek için yeniden başlat",
   "shell_nav_wit": "Wit",
   "shell_resize": "Boyutlandır",
   "shell_sidebar_collapse": "Kenar çubuğunu daralt",

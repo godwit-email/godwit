@@ -1179,6 +1179,8 @@
   "shell_nav_back_to": "Назад к {arg1}",
   "shell_nav_mail": "Почта",
   "shell_nav_settings": "Настройки",
+  "shell_update_available": "Доступно обновление",
+  "shell_update_relaunch": "Перезапустить для обновления",
   "shell_nav_wit": "Wit",
   "shell_resize": "Изменить размер",
   "shell_sidebar_collapse": "Свернуть боковую панель",

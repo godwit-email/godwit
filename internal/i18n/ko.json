@@ -1179,6 +1179,8 @@
   "shell_nav_back_to": "{arg1}(으)로 돌아가기",
   "shell_nav_mail": "메일",
   "shell_nav_settings": "설정",
+  "shell_update_available": "업데이트 가능",
+  "shell_update_relaunch": "다시 시작하여 업데이트",
   "shell_nav_wit": "Wit",
   "shell_resize": "크기 조절",
   "shell_sidebar_collapse": "사이드바 접기",

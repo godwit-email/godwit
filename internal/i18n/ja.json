@@ -1179,6 +1179,8 @@
   "shell_nav_back_to": "{arg1}に戻る",
   "shell_nav_mail": "メール",
   "shell_nav_settings": "設定",
+  "shell_update_available": "アップデートがあります",
+  "shell_update_relaunch": "再起動してアップデート",
   "shell_nav_wit": "Wit",
   "shell_resize": "サイズを変更",
   "shell_sidebar_collapse": "サイドバーを折りたたむ",

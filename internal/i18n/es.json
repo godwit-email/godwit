@@ -1179,6 +1179,8 @@
   "shell_nav_back_to": "Volver a {arg1}",
   "shell_nav_mail": "Correo",
   "shell_nav_settings": "Ajustes",
+  "shell_update_available": "Actualización disponible",
+  "shell_update_relaunch": "Reiniciar para actualizar",
   "shell_nav_wit": "Wit",
   "shell_resize": "Cambiar tamaño",
   "shell_sidebar_collapse": "Contraer barra lateral",

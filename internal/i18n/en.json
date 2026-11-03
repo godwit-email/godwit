@@ -2254,6 +2254,8 @@
   },
   "shell_nav_mail": "Mail",
   "shell_nav_settings": "Settings",
+  "shell_update_available": "Update Available",
+  "shell_update_relaunch": "Relaunch to Update",
   "shell_nav_wit": "Wit",
   "shell_resize": "Resize",
   "shell_sidebar_collapse": "Collapse sidebar",

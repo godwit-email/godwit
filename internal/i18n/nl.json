@@ -1179,6 +1179,8 @@
   "shell_nav_back_to": "Terug naar {arg1}",
   "shell_nav_mail": "E-mail",
   "shell_nav_settings": "Instellingen",
+  "shell_update_available": "Update beschikbaar",
+  "shell_update_relaunch": "Herstart om bij te werken",
   "shell_nav_wit": "Wit",
   "shell_resize": "Grootte aanpassen",
   "shell_sidebar_collapse": "Zijbalk inklappen",

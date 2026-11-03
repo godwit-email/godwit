@@ -99,10 +99,9 @@ type settingsPage struct {
 	birdClose  func()
 	birdErr    error
 	birdPosted bool
-	latest     string // a newer version the update feed offers, read as About opens; "" none
-	gh         bool   // the GitHub CLI is signed in: the star button stars, else it opens the repository
-	starred    bool   // the user starred Godwit, by gh
-	starring   bool   // StarRepo runs
+	gh         bool // the GitHub CLI is signed in: the star button stars, else it opens the repository
+	starred    bool // the user starred Godwit, by gh
+	starring   bool // StarRepo runs
 
 	query    string // the sidebar's search
 	searched string // query, lowercased, when it last picked the tabs
@@ -194,13 +193,7 @@ func (p *settingsPage) refresh(hints []events.Event) {
 			p.ext.refreshRegistry()
 		}
 	case sec == "about" && hints == nil:
-		var v string
-		a.query(func(ctx context.Context) (err error) { v, err = a.plat.LatestVersion(ctx); return err },
-			func(err error) {
-				if err == nil {
-					p.latest = v
-				} // a dev build, offline: Check for Updates says why
-			})
+		a.readLatest()
 		var starred, ok bool
 		a.query(func(ctx context.Context) error { starred, ok = a.plat.RepoStarred(ctx); return nil },
 			func(error) { p.gh, p.starred = ok, starred })
@@ -865,8 +858,8 @@ func (p *settingsPage) aboutView(c *ui.Context) {
 				ui.Text(c, "Godwit "+Version+" ("+runtime.GOOS+"/"+runtime.GOARCH+")").TextColor(t.Muted).Selectable()
 				// Either opens the updater's window (the Store's page): up to date, or the newer version to install.
 				label, v := i18n.T("settings.about.updates.check"), kit.Outline
-				if p.latest != "" {
-					label, v = i18n.Tf("settings.about.upgrade", p.latest), kit.Default
+				if a.latest != "" {
+					label, v = i18n.Tf("settings.about.upgrade", a.latest), kit.Default
 				}
 				if settingButton(c, label, v, false).Clicked() {
 					a.plat.CheckForUpdates()

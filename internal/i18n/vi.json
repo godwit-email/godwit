@@ -1179,6 +1179,8 @@
   "shell_nav_back_to": "Quay lại {arg1}",
   "shell_nav_mail": "Thư",
   "shell_nav_settings": "Cài đặt",
+  "shell_update_available": "Có bản cập nhật",
+  "shell_update_relaunch": "Khởi động lại để cập nhật",
   "shell_nav_wit": "Wit",
   "shell_resize": "Thay đổi kích thước",
   "shell_sidebar_collapse": "Thu gọn thanh bên",

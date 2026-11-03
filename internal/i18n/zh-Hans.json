@@ -1179,6 +1179,8 @@
   "shell_nav_back_to": "返回{arg1}",
   "shell_nav_mail": "邮件",
   "shell_nav_settings": "设置",
+  "shell_update_available": "有新版本",
+  "shell_update_relaunch": "重启以更新",
   "shell_nav_wit": "Wit",
   "shell_resize": "调整大小",
   "shell_sidebar_collapse": "收起侧栏",
