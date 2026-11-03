@@ -1616,7 +1616,7 @@
   "settings_rules_empty": "还没有规则",
   "settings_rules_empty_desc": "比如让账单自动打标签并归档，让订阅邮件不进收件箱。也可以在邮件上点右键，选「为类似邮件创建规则」。",
   "settings_rules_list": "我的规则",
-  "settings_rules_list_foot": "从上到下依次执行",
+  "settings_rules_list_foot": "从上到下依次执行，拖动调整顺序",
   "mail_menu_rule": "为类似邮件创建规则…",
   "settings_rules_group_organize": "整理",
   "settings_rules_group_forward": "转发",

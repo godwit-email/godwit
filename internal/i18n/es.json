@@ -1616,7 +1616,7 @@
   "settings_rules_empty": "Aún no hay reglas",
   "settings_rules_empty_desc": "Por ejemplo, etiquetar y archivar facturas automáticamente o mantener los boletines fuera de la bandeja de entrada. También puedes hacer clic derecho en un correo y elegir «Crear regla para correos similares».",
   "settings_rules_list": "Mis reglas",
-  "settings_rules_list_foot": "Las reglas se ejecutan de arriba abajo",
+  "settings_rules_list_foot": "Las reglas se ejecutan de arriba abajo; arrastra para reordenar",
   "mail_menu_rule": "Crear regla para correos similares…",
   "settings_rules_group_organize": "Organizar",
   "settings_rules_group_forward": "Reenviar",

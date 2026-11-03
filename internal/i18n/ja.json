@@ -1616,7 +1616,7 @@
   "settings_rules_empty": "ルールはまだありません",
   "settings_rules_empty_desc": "たとえば、請求書に自動でラベルを付けてアーカイブしたり、ニュースレターを受信トレイに入れないようにしたりできます。メールを右クリックして「似たメールのルールを作成」を選ぶこともできます。",
   "settings_rules_list": "マイルール",
-  "settings_rules_list_foot": "上から順に実行されます",
+  "settings_rules_list_foot": "上から順に実行されます。ドラッグで並べ替え",
   "mail_menu_rule": "類似メールのルールを作成…",
   "settings_rules_group_organize": "整理",
   "settings_rules_group_forward": "転送",

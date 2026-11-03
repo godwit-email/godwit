@@ -1616,7 +1616,7 @@
   "settings_rules_empty": "還沒有規則",
   "settings_rules_empty_desc": "比如讓帳單自動加標籤並封存，讓訂閱郵件不進收件匣。也可以在郵件上按右鍵，選「為類似郵件建立規則」。",
   "settings_rules_list": "我的規則",
-  "settings_rules_list_foot": "從上到下依序執行",
+  "settings_rules_list_foot": "由上到下依序執行，拖曳調整順序",
   "mail_menu_rule": "為類似郵件建立規則…",
   "settings_rules_group_organize": "整理",
   "settings_rules_group_forward": "轉寄",

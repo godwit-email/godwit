@@ -436,6 +436,36 @@ func (s *Service) SetRuleEnabled(ctx context.Context, id int64, on bool) error {
 	return s.exec(ctx, sqlite.Statement{SQL: "UPDATE rules SET enabled = ?, updated_at = ? WHERE id = ?", Args: []any{b2i(on), time.Now().Unix(), id}})
 }
 
+// ReorderRules puts the rules in the order of ids, which names every rule
+// once: rules run top to bottom, and a stop action skips those below.
+func (s *Service) ReorderRules(ctx context.Context, ids []int64) error {
+	ctx, end, err := s.begin(ctx, 0)
+	if err != nil {
+		return err
+	}
+	defer end()
+	rows, err := s.db.Query(ctx, "SELECT id FROM rules")
+	if err != nil {
+		return err
+	}
+	have := make([]int64, len(rows.Values))
+	for i, v := range rows.Values {
+		have[i] = store.Int(v[0])
+	}
+	want := slices.Clone(ids)
+	slices.Sort(have)
+	slices.Sort(want)
+	if !slices.Equal(have, want) {
+		return errors.New("the new order must name every rule once")
+	}
+	stmts := make([]sqlite.Statement, len(ids))
+	for i, id := range ids {
+		stmts[i] = sqlite.Statement{SQL: "UPDATE rules SET position = ? WHERE id = ?", Args: []any{i, id}}
+	}
+	_, err = s.db.Transaction(ctx, stmts)
+	return err
+}
+
 // DeleteRule deletes a rule with its hits (rule_runs cascade); files it
 // wrote and mail it forwarded stay.
 func (s *Service) DeleteRule(ctx context.Context, id int64) error {

@@ -1616,7 +1616,7 @@
   "settings_rules_empty": "Ancora nessuna regola",
   "settings_rules_empty_desc": "Ad esempio, etichettare e archiviare automaticamente le fatture o tenere le newsletter fuori dalla posta in arrivo. Puoi anche fare clic destro su un’email e scegliere «Crea regola per email simili».",
   "settings_rules_list": "Le mie regole",
-  "settings_rules_list_foot": "Le regole vengono eseguite dall’alto verso il basso",
+  "settings_rules_list_foot": "Le regole vengono eseguite dall’alto in basso; trascina per riordinare",
   "mail_menu_rule": "Crea regola per email simili…",
   "settings_rules_group_organize": "Organizza",
   "settings_rules_group_forward": "Inoltra",

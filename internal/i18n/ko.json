@@ -1616,7 +1616,7 @@
   "settings_rules_empty": "아직 규칙이 없습니다",
   "settings_rules_empty_desc": "예를 들어 청구서에 자동으로 라벨을 붙여 보관하거나, 뉴스레터가 받은편지함에 들어오지 않게 할 수 있습니다. 메일을 오른쪽 클릭해 「비슷한 메일로 규칙 만들기」를 선택할 수도 있습니다.",
   "settings_rules_list": "내 규칙",
-  "settings_rules_list_foot": "위에서 아래로 차례대로 실행됩니다",
+  "settings_rules_list_foot": "위에서부터 차례로 실행됩니다. 드래그해 순서 변경",
   "mail_menu_rule": "비슷한 메일에 대한 규칙 만들기…",
   "settings_rules_group_organize": "정리",
   "settings_rules_group_forward": "전달",

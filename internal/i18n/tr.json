@@ -1616,7 +1616,7 @@
   "settings_rules_empty": "Henüz kural yok",
   "settings_rules_empty_desc": "Örneğin faturaları otomatik etiketleyip arşivleyin ya da bültenleri gelen kutusunun dışında tutun. Bir iletiye sağ tıklayıp “Benzer postalar için kural oluştur”u da seçebilirsiniz.",
   "settings_rules_list": "Kurallarım",
-  "settings_rules_list_foot": "Kurallar yukarıdan aşağıya çalışır",
+  "settings_rules_list_foot": "Kurallar yukarıdan aşağı çalışır; sıralamak için sürükleyin",
   "mail_menu_rule": "Benzer e-postalar için kural oluştur…",
   "settings_rules_group_organize": "Düzenle",
   "settings_rules_group_forward": "İlet",

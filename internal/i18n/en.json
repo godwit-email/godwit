@@ -3110,7 +3110,7 @@
   "settings_rules_empty": "No rules yet",
   "settings_rules_empty_desc": "For example, label and archive bills automatically, or keep newsletters out of the inbox. You can also right-click a message and choose “Create Rule for Similar Mail”.",
   "settings_rules_list": "My rules",
-  "settings_rules_list_foot": "Rules run from top to bottom",
+  "settings_rules_list_foot": "Rules run from top to bottom; drag to reorder",
   "mail_menu_rule": "Create Rule for Similar Mail…",
   "settings_rules_group_organize": "Organize",
   "settings_rules_group_forward": "Forward",

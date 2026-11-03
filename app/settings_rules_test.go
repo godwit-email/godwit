@@ -363,3 +363,42 @@ func TestSettingsRulesTemplates(t *testing.T) {
 	h.click("使用模板「客户来信先起草回复」")
 	h.see("Wit 的动作会把邮件发给模型，默认关闭。在 智能 › 功能 里打开「规则可以使用 Wit」后才能选。")
 }
+
+// Dragging a rule's bar onto another rule moves it there: after it going
+// down, before it going up. The order is the one the rules run in.
+func TestSettingsRulesReorder(t *testing.T) {
+	h, _ := withAccount(t)
+	for _, name := range []string{"A", "B", "C"} {
+		doc := core.RuleDoc{Version: core.RuleVersion, Name: name, Trigger: core.TriggerReceive, Match: core.MatchAll,
+			Actions: []core.RuleAction{{Kind: core.ActionStar}}}
+		if _, err := h.env.Svc.SaveRule(context.Background(), core.Rule{Doc: doc, Enabled: true}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	h.openSettings("rules")
+	h.see("C")
+	names := func() string {
+		var s string
+		for _, r := range h.rules() {
+			s += r.Doc.Name
+		}
+		return s
+	}
+	drag := func(from, to string) {
+		h.t.Helper()
+		a, _ := h.tt.Find(from)
+		b, _ := h.tt.Find(to)
+		x, y := a.X+a.W/2, a.Y+a.H/2
+		h.tt.Press(x, y)
+		for i := 1; i <= 8; i++ {
+			h.tt.Move(x, y+(b.Y+b.H/2-y)*float32(i)/8)
+			h.tt.Frame()
+		}
+		h.tt.Release(x, b.Y+b.H/2)
+		h.tt.Frame()
+	}
+	drag("A", "C")
+	h.until("A moved after C", func() bool { return names() == "BCA" })
+	drag("A", "B")
+	h.until("A moved before B", func() bool { return names() == "ABC" })
+}

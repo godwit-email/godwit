@@ -1616,7 +1616,7 @@
   "settings_rules_empty": "Aucune règle pour l’instant",
   "settings_rules_empty_desc": "Par exemple, étiqueter et archiver automatiquement les factures, ou garder les newsletters hors de la boîte de réception. Vous pouvez aussi faire un clic droit sur un e-mail et choisir « Créer une règle pour des e-mails similaires ».",
   "settings_rules_list": "Mes règles",
-  "settings_rules_list_foot": "Les règles s’exécutent de haut en bas",
+  "settings_rules_list_foot": "Les règles s’exécutent de haut en bas ; faites glisser pour réordonner",
   "mail_menu_rule": "Créer une règle pour les e-mails similaires…",
   "settings_rules_group_organize": "Ranger",
   "settings_rules_group_forward": "Transférer",

@@ -243,8 +243,13 @@ func ruleTag(c *ui.Context, text string, fill, fg ui.Color, icon string) ui.Elem
 	})
 }
 
-// row is a rule: its switch, name and summary (which expand it), edit, and
-// expanded, its hits, 编辑规则 and 删除规则.
+// ruleDrag is the rule a row of the list drags, by ID.
+type ruleDrag int64
+
+// row is a rule: grip, switch, name and summary (which expand it), edit,
+// and expanded, its hits, 编辑规则 and 删除规则. Its bar drags it, and a
+// rule dropped on it goes after it going down, before it going up, as the
+// line drawn while it is over shows.
 func (v *rulesView) row(c *ui.Context, r core.Rule) {
 	a := v.a
 	t, th := theme.Of(c), c.Theme()
@@ -258,8 +263,26 @@ func (v *rulesView) row(c *ui.Context, r core.Rule) {
 		}
 		v.loadHits()
 	}
-	ui.Column(c).FillWidth().Children(func() {
-		ui.Row(c).FillWidth().Gap(th.Space(3)).Padding(th.Space(2), th.Space(4)).MinHeight(th.Space(12)).AlignItems(ui.Center).Children(func() {
+	at := slices.IndexFunc(v.rules, func(x core.Rule) bool { return x.ID == r.ID })
+	col := ui.Column(c).FillWidth()
+	if id, ok := ui.Drop[ruleDrag](col); ok {
+		v.move(slices.IndexFunc(v.rules, func(x core.Rule) bool { return x.ID == int64(id) }), at)
+	}
+	if id, ok := ui.DragOver[ruleDrag](col); ok && int64(id) != r.ID {
+		below := slices.IndexFunc(v.rules, func(x core.Rule) bool { return x.ID == int64(id) }) < at
+		accent, w := t.Primary, th.Space(0.5)
+		col.DrawOver(func(p *ui.Painter, b ui.Rect) {
+			y := b.Y
+			if below {
+				y = b.Y + b.H - w
+			}
+			p.Fill(ui.Rect{X: b.X, Y: y, W: b.W, H: w}, accent, 0)
+		})
+	}
+	col.Children(func() {
+		ui.Row(c).FillWidth().Gap(th.Space(3)).Padding(th.Space(2), th.Space(4), th.Space(2), th.Space(2)).MinHeight(th.Space(12)).AlignItems(ui.Center).
+			Drag(ruleDrag(r.ID)).Children(func() {
+			ui.Icon(c, icons.Get("grip")).Size(theme.Icon, theme.Icon).TextColor(t.Idle).Shrink(0)
 			on := r.Enabled
 			kit.Switch(c, &on).Label(i18n.Tf("settings.rules.enable", name))
 			if on != r.Enabled {
@@ -298,6 +321,23 @@ func (v *rulesView) row(c *ui.Context, r core.Rule) {
 			v.hitList(c, r)
 		}
 	})
+}
+
+// move puts the rule at i where the one at to is, the others in order:
+// rules run top to bottom.
+func (v *rulesView) move(i, to int) {
+	if i < 0 || to < 0 || i == to {
+		return
+	}
+	a := v.a
+	moved := slices.Clone(v.rules) // at once; load reads them again
+	r := moved[i]
+	v.rules = slices.Insert(slices.Delete(moved, i, i+1), to, r)
+	ids := make([]int64, len(v.rules))
+	for k, x := range v.rules {
+		ids[k] = x.ID
+	}
+	a.writes.Chain("rules", func(ctx context.Context) error { return a.svc.ReorderRules(ctx, ids) }, v.saved)
 }
 
 // badges are a rule's kinds as the list tags them: 外发, AI, 后台运行.

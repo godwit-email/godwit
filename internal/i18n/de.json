@@ -1616,7 +1616,7 @@
   "settings_rules_empty": "Noch keine Regeln",
   "settings_rules_empty_desc": "Zum Beispiel Rechnungen automatisch mit einem Label versehen und archivieren oder Newsletter aus dem Posteingang fernhalten. Du kannst auch mit der rechten Maustaste auf eine E-Mail klicken und „Regel für ähnliche E-Mails erstellen“ wählen.",
   "settings_rules_list": "Meine Regeln",
-  "settings_rules_list_foot": "Regeln laufen von oben nach unten",
+  "settings_rules_list_foot": "Regeln laufen von oben nach unten; ziehen, um sie umzusortieren",
   "mail_menu_rule": "Regel für ähnliche E-Mails erstellen…",
   "settings_rules_group_organize": "Ordnen",
   "settings_rules_group_forward": "Weiterleiten",

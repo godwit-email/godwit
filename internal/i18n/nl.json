@@ -1616,7 +1616,7 @@
   "settings_rules_empty": "Nog geen regels",
   "settings_rules_empty_desc": "Bijvoorbeeld rekeningen automatisch labelen en archiveren, of nieuwsbrieven uit je inbox houden. Je kunt ook met rechts op een e-mail klikken en ‘Regel maken voor vergelijkbare e-mail’ kiezen.",
   "settings_rules_list": "Mijn regels",
-  "settings_rules_list_foot": "Regels draaien van boven naar beneden",
+  "settings_rules_list_foot": "Regels lopen van boven naar beneden; sleep om te herschikken",
   "mail_menu_rule": "Regel maken voor vergelijkbare e-mail…",
   "settings_rules_group_organize": "Ordenen",
   "settings_rules_group_forward": "Doorsturen",

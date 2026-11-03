@@ -561,6 +561,24 @@ func TestDeleteRule(t *testing.T) {
 	assert.Error(t, e.s.DeleteRule(bg, id))
 }
 
+// Rules come in the order the user put them in, which names each once.
+func TestReorderRules(t *testing.T) {
+	e := newRulesEnv(t)
+	a := e.saveRule(t, rule(RuleAction{Kind: ActionStar}), true)
+	b := e.saveRule(t, rule(RuleAction{Kind: ActionRead}), true)
+	c := e.saveRule(t, rule(RuleAction{Kind: ActionArchive}), true)
+	require.NoError(t, e.s.ReorderRules(bg, []int64{c, a, b}))
+	rs, err := e.s.Rules(bg)
+	require.NoError(t, err)
+	var ids []int64
+	for _, r := range rs {
+		ids = append(ids, r.ID)
+	}
+	assert.Equal(t, []int64{c, a, b}, ids)
+	assert.Error(t, e.s.ReorderRules(bg, []int64{a, b}))
+	assert.Error(t, e.s.ReorderRules(bg, []int64{a, a, b}))
+}
+
 // paidRule puts Paid (u2) on the mail its trigger fires for.
 func paidRule(trigger, arg string) RuleDoc {
 	return RuleDoc{Version: RuleVersion, Name: "Paid", Trigger: trigger, TriggerArg: arg, Match: MatchAll,

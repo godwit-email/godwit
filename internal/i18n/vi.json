@@ -1616,7 +1616,7 @@
   "settings_rules_empty": "Chưa có quy tắc nào",
   "settings_rules_empty_desc": "Ví dụ: tự động gắn nhãn và lưu trữ hóa đơn, hoặc không để bản tin vào hộp thư đến. Bạn cũng có thể nhấp chuột phải vào thư và chọn “Tạo quy tắc cho thư tương tự”.",
   "settings_rules_list": "Quy tắc của tôi",
-  "settings_rules_list_foot": "Quy tắc chạy lần lượt từ trên xuống",
+  "settings_rules_list_foot": "Quy tắc chạy từ trên xuống; kéo để sắp xếp lại",
   "mail_menu_rule": "Tạo quy tắc cho thư tương tự…",
   "settings_rules_group_organize": "Sắp xếp",
   "settings_rules_group_forward": "Chuyển tiếp",

@@ -1616,7 +1616,7 @@
   "settings_rules_empty": "Ainda não há regras",
   "settings_rules_empty_desc": "Por exemplo, etiquetar e arquivar faturas automaticamente ou manter newsletters fora da caixa de entrada. Você também pode clicar com o botão direito num e-mail e escolher «Criar regra para e-mails semelhantes».",
   "settings_rules_list": "As minhas regras",
-  "settings_rules_list_foot": "As regras são executadas de cima para baixo",
+  "settings_rules_list_foot": "As regras são executadas de cima para baixo; arraste para reordenar",
   "mail_menu_rule": "Criar regra para e-mails semelhantes…",
   "settings_rules_group_organize": "Organizar",
   "settings_rules_group_forward": "Encaminhar",
