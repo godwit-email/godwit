@@ -265,6 +265,15 @@ func TestSettingsRulesFromWit(t *testing.T) {
 	}
 }
 
+// EditRule with no settings page to open does nothing rather than panic.
+func TestEditRuleWithoutSettingsPage(t *testing.T) {
+	h, _ := withAccount(t)
+	settings := h.app.pages[PageSettings]
+	delete(h.app.pages, PageSettings)
+	t.Cleanup(func() { h.app.pages[PageSettings] = settings })
+	h.app.EditRule(core.Rule{})
+}
+
 // Wit's actions are offered only once 「智能」's 规则可以使用 Wit is on.
 func TestSettingsRulesWitActionsNeedTheSwitch(t *testing.T) {
 	h, _ := withAccount(t)

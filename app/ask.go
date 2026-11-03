@@ -173,7 +173,11 @@ func (a *App) OpenModels() { a.navigate(Route{Page: PageSettings, Settings: "mod
 // EditRule opens the rules editor on r, a rule Wit proposed (在编辑器里修改):
 // nothing is saved until the user saves it there.
 func (a *App) EditRule(r core.Rule) {
-	a.pages[PageSettings].(*settingsPage).rules.witRule = &r
+	p, ok := a.pages[PageSettings].(*settingsPage)
+	if !ok {
+		return
+	}
+	p.rules.witRule = &r
 	a.navigate(Route{Page: PageSettings, Settings: "rules"})
 }
 
