@@ -2,6 +2,8 @@ package core
 
 import (
 	"strings"
+	"sync"
+	"sync/atomic"
 	"testing"
 
 	"github.com/godwit-email/godwit/core/mail"
@@ -116,6 +118,64 @@ func TestRuleRetryOnce(t *testing.T) {
 	assert.Equal(t, 1, failed, "one of the two finds nothing to retry")
 	assert.Equal(t, []string{"junk done", "forward done"}, e.results(t, run))
 	assert.Len(t, e.release(t), 1)
+}
+
+// holdRules installs, before the env starts its consumer (rulesHook is
+// read there), a hook that holds the next delivery once armed, as a slow
+// model's run would; held is closed then, release lets it go.
+func holdRules(t *testing.T) (arm func(), held, release chan struct{}) {
+	t.Helper()
+	held, release = make(chan struct{}), make(chan struct{})
+	var armed atomic.Bool
+	var once sync.Once
+	setRulesHook(t, func(stage string) error {
+		if stage == "rules.deliver" && armed.Load() {
+			once.Do(func() { close(held); <-release })
+		}
+		return nil
+	})
+	return func() { armed.Store(true) }, held, release
+}
+
+// A rule saved while the consumer is behind runs only on mail logged after
+// it: a bill that came before, still in the backlog, is not forwarded, as
+// the confirmation says; one that comes after is.
+func TestRuleForwardsOnlyMailAfterSaving(t *testing.T) {
+	arm, held, release := holdRules(t)
+	e := newForwardEnv(t)
+	e.rulesIdle(t)
+	arm()
+	e.put(t, "INBOX", billWithPDF("before@x"))
+	e.sync(t)
+	<-held
+	e.saveForward(t, forwardRule(carol), carol)
+	close(release)
+	e.rulesIdle(t)
+	assert.Zero(t, e.count(t, "SELECT count(*) FROM rule_runs"), "the backlog's bill came before the rule")
+
+	e.put(t, "INBOX", billWithPDF("after@x"))
+	e.sync(t)
+	e.waitRuns(t, 1)
+	assert.Equal(t, []string{"forward done"}, e.results(t, e.runOf(t, "after@x")))
+	assert.Len(t, e.release(t), 1)
+}
+
+// Turned off and on, a rule runs on what comes after, not on mail that came
+// while it was off.
+func TestRuleTurnedOnRunsOnLaterMail(t *testing.T) {
+	arm, held, release := holdRules(t)
+	e := newForwardEnv(t)
+	id := e.saveForward(t, forwardRule(carol), carol)
+	require.NoError(t, e.s.SetRuleEnabled(bg, id, false))
+	e.rulesIdle(t)
+	arm()
+	e.put(t, "INBOX", billWithPDF("off@x"))
+	e.sync(t)
+	<-held
+	require.NoError(t, e.s.SetRuleEnabled(bg, id, true))
+	close(release)
+	e.rulesIdle(t)
+	assert.Zero(t, e.count(t, "SELECT count(*) FROM rule_runs"))
 }
 
 // A forward to a recipient not confirmed, saved so or edited into the

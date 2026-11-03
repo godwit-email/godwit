@@ -186,6 +186,7 @@ type Rule struct {
 	Background bool
 	Doc        RuleDoc
 	Confirmed  []string
+	since      int64 // the events_log seq it was saved or turned on at: it starts runs on later events only
 }
 
 // rcptKey is a forward recipient as Rule.Confirmed holds it, "" if invalid.
@@ -350,13 +351,13 @@ func (s *Service) Rules(ctx context.Context) ([]Rule, error) {
 }
 
 func (s *Service) rules(ctx context.Context, enabledOnly bool) ([]Rule, error) {
-	rows, err := s.db.Query(ctx, "SELECT id, enabled, doc, background, confirmed_rcpts FROM rules WHERE enabled >= ? ORDER BY position, id", b2i(enabledOnly))
+	rows, err := s.db.Query(ctx, "SELECT id, enabled, doc, background, confirmed_rcpts, since_seq FROM rules WHERE enabled >= ? ORDER BY position, id", b2i(enabledOnly))
 	if err != nil {
 		return nil, err
 	}
 	out := make([]Rule, 0, len(rows.Values))
 	for _, v := range rows.Values {
-		r := Rule{ID: store.Int(v[0]), Enabled: store.Int(v[1]) != 0, Background: store.Int(v[3]) != 0, Confirmed: jsonList(store.Str(v[4]))}
+		r := Rule{ID: store.Int(v[0]), Enabled: store.Int(v[1]) != 0, Background: store.Int(v[3]) != 0, Confirmed: jsonList(store.Str(v[4])), since: store.Int(v[5])}
 		if err := json.Unmarshal([]byte(store.Str(v[2])), &r.Doc); err != nil {
 			return nil, fmt.Errorf("rule %d: %w", r.ID, err)
 		}
@@ -409,14 +410,18 @@ func (s *Service) ruleWrite(ctx context.Context, r Rule) (sqlite.Statement, erro
 		}
 	}
 	now := time.Now().Unix()
+	// Saved, it runs on what comes after: not on mail still in the backlog.
 	if r.ID == 0 {
-		return sqlite.Statement{SQL: `INSERT INTO rules(position, enabled, background, doc, confirmed_rcpts, created_at, updated_at)
-			SELECT COALESCE(MAX(position), -1) + 1, ?, ?, ?, ?, ?, ? FROM rules`,
+		return sqlite.Statement{SQL: `INSERT INTO rules(position, enabled, background, doc, confirmed_rcpts, created_at, updated_at, since_seq)
+			SELECT COALESCE(MAX(position), -1) + 1, ?, ?, ?, ?, ?, ?, ` + lastSeq + ` FROM rules`,
 			Args: []any{b2i(r.Enabled), b2i(r.Background), string(doc), encodeList(confirmed), now, now}}, nil
 	}
-	return sqlite.Statement{SQL: "UPDATE rules SET enabled = ?, background = ?, doc = ?, confirmed_rcpts = ?, updated_at = ? WHERE id = ?",
+	return sqlite.Statement{SQL: "UPDATE rules SET enabled = ?, background = ?, doc = ?, confirmed_rcpts = ?, updated_at = ?, since_seq = " + lastSeq + " WHERE id = ?",
 		Args: []any{b2i(r.Enabled), b2i(r.Background), string(doc), encodeList(confirmed), now, r.ID}}, nil
 }
+
+// lastSeq is the newest event's seq, a rule's since_seq as it is saved.
+const lastSeq = "(SELECT COALESCE(MAX(seq), 0) FROM events_log)"
 
 // forwardRecipients are the addresses d forwards to, as Rule.Confirmed holds them.
 func forwardRecipients(d RuleDoc) []string {
@@ -436,7 +441,9 @@ func (s *Service) SetRuleEnabled(ctx context.Context, id int64, on bool) error {
 		return err
 	}
 	defer end()
-	return s.exec(ctx, sqlite.Statement{SQL: "UPDATE rules SET enabled = ?, updated_at = ? WHERE id = ?", Args: []any{b2i(on), time.Now().Unix(), id}})
+	// Turned on, it runs on what comes after, not on mail that came while it was off.
+	return s.exec(ctx, sqlite.Statement{SQL: "UPDATE rules SET since_seq = CASE WHEN ? AND enabled = 0 THEN " + lastSeq + " ELSE since_seq END, enabled = ?, updated_at = ? WHERE id = ?",
+		Args: []any{b2i(on), b2i(on), time.Now().Unix(), id}})
 }
 
 // ReorderRules puts the rules in the order of ids, which names every rule
@@ -682,7 +689,7 @@ func (s *Service) logDaily(ctx context.Context) error {
 // a stop keeps the later ones off that message.
 // shortcut: reads every message once per rule; compile conditions to SQL
 // (as the editor preview will) once mailboxes are large.
-func (s *Service) runDaily(ctx context.Context) error {
+func (s *Service) runDaily(ctx context.Context, seq int64) error {
 	rules, err := s.rules(ctx, true)
 	if err != nil {
 		return err
@@ -710,6 +717,9 @@ func (s *Service) runDaily(ctx context.Context) error {
 				return err
 			}
 			if !ran {
+				if seq <= r.since { // the day's event came before the rule was saved
+					continue
+				}
 				m, ok, err := s.ruleMail(ctx, id)
 				if err != nil {
 					return err
@@ -759,7 +769,7 @@ func (s *Service) resumeRuns(ctx context.Context) error {
 // resumes.
 func (s *Service) runRules(ctx context.Context, ev hookEvent) error {
 	if ev.typ == eventDaily {
-		return s.runDaily(ctx)
+		return s.runDaily(ctx, ev.seq)
 	}
 	if ev.deleted {
 		return nil
@@ -781,7 +791,9 @@ func (s *Service) runRules(ctx context.Context, ev hookEvent) error {
 		if err != nil {
 			return err
 		}
-		if !ran && !r.Doc.matches(m) {
+		// A new run only on an event after the rule was saved or turned on: mail
+		// that came before it, still in the backlog, is not run on (nor forwarded).
+		if !ran && (ev.seq <= r.since || !r.Doc.matches(m)) {
 			continue
 		}
 		if err := s.runRule(ctx, r, ev.messageID, trigger); err != nil {

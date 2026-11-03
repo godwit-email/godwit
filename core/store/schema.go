@@ -587,6 +587,11 @@ var Migrations = [][]string{{
 	// goes on with its actions though the rule was edited since (NULL: a
 	// run from before, which goes on with the rule as it is).
 	`ALTER TABLE rule_runs ADD COLUMN doc TEXT`,
+}, {
+	// The events_log seq a rule was saved or turned on at: a new run starts
+	// only on a later event, so mail that came before, still in the
+	// consumer's backlog, is not forwarded (0: every event).
+	`ALTER TABLE rules ADD COLUMN since_seq INTEGER NOT NULL DEFAULT 0`,
 }}
 
 // HistoryRowsVersion is the schema version that keeps a conversation's
