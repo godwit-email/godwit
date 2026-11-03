@@ -86,8 +86,9 @@ type WitPageDeps struct {
 	// a compose window.
 	OnLink      func(url string)
 	OpenCompose func(draftID int64)
-	// EditRule opens the rules editor on a rule Wit proposed (在编辑器里修改).
-	EditRule func(r core.Rule)
+	// EditRule opens the rules editor on a rule Wit proposed in conversation
+	// conv, for the question ask (在编辑器里修改).
+	EditRule func(r core.Rule, conv int64, ask string)
 }
 
 // Wit keeps the Wit page's state: the route's conversation as a versioned
@@ -541,10 +542,26 @@ func (p *WitPage) EditRule(ctx context.Context, approval int64) error {
 	return p.decide(ctx, func(a core.Approval) bool { return a.ID == approval }, func(svc *core.Service) error {
 		r, err := svc.EditProposedRule(context.WithoutCancel(ctx), approval)
 		if err == nil {
-			p.w.d.EditRule(r)
+			conv := p.w.followed()
+			p.w.d.EditRule(r, conv, proposalAsk(ctx, svc, conv, approval))
 		}
 		return err
 	})
+}
+
+// proposalAsk is the question of conv whose turn holds approval, for the
+// editor's banner; "" when it cannot be read.
+func proposalAsk(ctx context.Context, svc *core.Service, conv, approval int64) string {
+	c, err := svc.GetConversation(ctx, conv)
+	if err != nil {
+		return ""
+	}
+	for _, t := range c.Turns {
+		if slices.ContainsFunc(t.Calls, func(tc core.TurnCall) bool { return tc.Approval != nil && tc.Approval.ID == approval }) {
+			return t.Question
+		}
+	}
+	return ""
 }
 
 // Answer answers question approval, one of the conversation the page follows,

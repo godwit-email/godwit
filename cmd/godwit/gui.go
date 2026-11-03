@@ -154,7 +154,7 @@ func gui(ctx context.Context, dataDir string) int {
 		ConversationCreated: func(id, v int64) { onApp(func(a *app.App) { a.ConversationCreated(id, v) }) },
 		OnLink:              func(u string) { onApp(func(a *app.App) { a.OpenLink(u) }) },
 		OpenCompose:         func(id int64) { onApp(func(a *app.App) { a.OpenDraft(id) }) }, // a draft Wit made may be in the outbox
-		EditRule:            func(r core.Rule) { onApp(func(a *app.App) { a.EditRule(r) }) },
+		EditRule:            func(r core.Rule, conv int64, ask string) { onApp(func(a *app.App) { a.EditRule(r, conv, ask) }) },
 	})
 	mygo.Bind(webui.NewWitPage(wit))
 	// The reader pages, one per expanded message in the main window, each

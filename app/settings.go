@@ -229,10 +229,9 @@ func (p *settingsPage) refresh(hints []events.Event) {
 			p.rules.pending = nil
 			p.rules.fromMail(*m)
 		}
-		if r := p.rules.witRule; r != nil { // Wit's 在编辑器里修改
+		if w := p.rules.witRule; w != nil { // Wit's 在编辑器里修改
 			p.rules.witRule = nil
-			p.rules.openEditor(*r)
-			p.rules.wit = true
+			p.rules.fromWit(*w)
 		}
 	case sec == "rules" && slices.ContainsFunc(hints, func(ev events.Event) bool { return ev.Type == events.LabelsChanged }):
 		p.rules.load() // a run publishes it: the hit counts
@@ -338,9 +337,15 @@ func (p *settingsPage) Content(c *ui.Context) {
 	th := c.Theme()
 	sec, acc := p.section()
 	kit.Panel(c, panelRadius(c)).Grow(1).Children(func() {
-		ui.Scroll(c).Grow(1).Children(func() {
+		scroll := ui.Scroll(c).Grow(1)
+		p.rules.viewTop = scroll.LayoutBounds().Y
+		scroll.Children(func() {
 			ui.Column(c).FillWidth().Padding(th.Space(8)).Children(func() {
-				ui.Column(c).FillWidth().MaxWidth(theme.SettingsMaxWidth).AlignSelf(ui.Center).Gap(th.Space(8)).Children(func() {
+				width := float32(theme.SettingsMaxWidth)
+				if sec == "rules" && p.rules.editing { // the rule editor's two columns
+					width = theme.ContentMaxWidth
+				}
+				ui.Column(c).FillWidth().MaxWidth(width).AlignSelf(ui.Center).Gap(th.Space(8)).Children(func() {
 					switch {
 					case acc != nil:
 						p.accountView(c, *acc)

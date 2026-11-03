@@ -9,6 +9,7 @@ import (
 	"github.com/egoist/mygo/ui"
 	"github.com/godwit-email/godwit/core"
 	"github.com/godwit-email/godwit/internal/i18n"
+	"github.com/godwit-email/godwit/internal/icons"
 	"github.com/godwit-email/godwit/internal/kit"
 	"github.com/godwit-email/godwit/internal/theme"
 )
@@ -17,7 +18,7 @@ import (
 const namingCustom = "custom"
 
 // namingSample is the example mail the path preview fills the naming with.
-var namingSample = map[string]string{"date": "2026-11-03", "subject": "Invoice #1234", "from": "Stripe", "domain": "stripe.com",
+var namingSample = map[string]string{"date": "2026-11-03", "subject": "Invoice #1234 from Acme Inc", "from": "Stripe", "domain": "stripe.com",
 	"year": "2026", "month": "11", "account": "you@example.com"}
 
 func fileAction(kind string) bool { return slices.Contains(core.RuleFileActions, kind) }
@@ -53,9 +54,35 @@ func namingError(tpl string) string {
 		return i18n.T("settings.rules.files.no_token")
 	}
 	if _, err := core.FillNaming(tpl, namingSample); err != nil {
-		return i18n.T("settings.rules.files.bad_level")
+		if slices.ContainsFunc(strings.Split(tpl, "/"), func(l string) bool { return strings.TrimSpace(l) == "" }) {
+			return i18n.T("settings.rules.files.bad_slash")
+		}
+		return i18n.T("settings.rules.files.bad_dot")
 	}
 	return ""
+}
+
+// namingExts are the extension of the file each file action writes, named by the naming.
+var namingExts = map[string]string{core.ActionPDF: ".pdf", core.ActionEML: ".eml", core.ActionKeyPoints: ".md"}
+
+// filePreview is where action ac writes the example mail's file: in its
+// folder, the naming's subfolder (with a subfolder per message), the file
+// named as the last level, or an attachment's own name; "" for a naming
+// that cannot be saved.
+func filePreview(ac core.RuleAction) string {
+	levels, err := core.FillNaming(ac.Naming, namingSample)
+	if err != nil {
+		return ""
+	}
+	parts := []string{cmpDir(ac.Dir)}
+	if ac.Subfolder {
+		parts = append(parts, levels...)
+	}
+	name := levels[len(levels)-1] + namingExts[ac.Kind]
+	if ac.Kind == core.ActionAttachments {
+		name = "invoice.pdf"
+	}
+	return filepath.Join(append(parts, name)...)
 }
 
 // fileReady reports whether the editor's file actions can be saved.
@@ -92,19 +119,26 @@ func (v *rulesView) pickDir(d *core.RuleDoc, i int) {
 	})
 }
 
-// fileOptions are action i's note and, on the first action to its folder,
-// the subfolder switch, its naming and the path it gives; the others to
-// that folder follow it.
+// fileOptions are, on the first action to action i's folder, the
+// subfolder switch and its naming; the others to that folder follow it.
+// Each shows the path its file gets.
 func (v *rulesView) fileOptions(c *ui.Context, d *core.RuleDoc, i int) {
-	t := theme.Of(c)
-	kit.Text(c, i18n.T("settings.rules.files.note"), t.Text.Sm).TextColor(t.Muted)
+	t, th := theme.Of(c), c.Theme()
 	ac := &d.Actions[i]
+	pathRow := func() {
+		ui.Row(c).FillWidth().AlignItems(ui.Center).Gap(th.Space(1.5)).TextColor(t.Muted).Children(func() {
+			ui.Icon(c, icons.Get("folder")).Size(theme.IconSm, theme.IconSm).Shrink(0)
+			kit.Text(c, filePreview(*ac), t.Text.Sm).Font(theme.Mono).SingleLine().Shrink(1)
+		})
+	}
 	if l := leader(d, i); l != i {
 		ac.Subfolder, ac.Naming = d.Actions[l].Subfolder, d.Actions[l].Naming
+		pathRow()
 		return
 	}
 	kit.Checkbox(c, &ac.Subfolder, i18n.T("settings.rules.files.subfolder"))
 	if !ac.Subfolder {
+		pathRow()
 		return
 	}
 	if v.custom == nil {
@@ -126,21 +160,21 @@ func (v *rulesView) fileOptions(c *ui.Context, d *core.RuleDoc, i int) {
 			ac.Naming = sel
 		}
 	}
-	preview := ""
-	if levels, err := core.FillNaming(ac.Naming, namingSample); err == nil {
-		preview = filepath.Join(append([]string{cmpDir(ac.Dir)}, levels...)...) + "/"
-	}
 	if sel != namingCustom {
-		kit.Text(c, preview, t.Text.Sm).TextColor(t.Muted).Font(theme.Mono).SingleLine()
+		pathRow()
 		return
 	}
-	tokens := make([]kit.TemplateToken, len(core.NamingTokens))
-	for j, id := range core.NamingTokens {
-		tokens[j] = kit.TemplateToken{ID: id, Label: i18n.T("settings.rules.files.token." + id)}
+	// {account} is offered only to a naming that has it already, as the design's tokens leave it out.
+	var tokens []kit.TemplateToken
+	for _, id := range core.NamingTokens {
+		if id != "account" || strings.Contains(ac.Naming, "{account}") {
+			tokens = append(tokens, kit.TemplateToken{ID: id, Label: i18n.T("settings.rules.files.token." + id)})
+		}
 	}
 	kit.TemplateField(c, &ac.Naming, kit.TemplateOpts{Label: i18n.T("settings.rules.files.naming"), Tokens: tokens,
 		Insert: i18n.T("settings.rules.files.insert"), Remove: func(l string) string { return i18n.Tf("settings.rules.files.remove", l) },
-		Placeholder: i18n.T("settings.rules.files.placeholder"), Error: namingError(ac.Naming), Preview: preview})
+		Placeholder: i18n.T("settings.rules.files.placeholder"), Error: namingError(ac.Naming),
+		PreviewLabel: i18n.T("settings.rules.files.example"), Preview: filePreview(*ac)})
 }
 
 // cmpDir is dir, or where the preview stands for a folder not picked yet.

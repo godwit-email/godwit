@@ -43,6 +43,7 @@ type witPageFixture struct {
 	urls     []string
 	composed []int64
 	rules    []core.Rule
+	ruleAsks []string // what the user asked each rule for
 }
 
 func newWitPageFixture(t *testing.T, setup ...func(*coretest.Env)) *witPageFixture {
@@ -78,7 +79,9 @@ func newWitPageFixture(t *testing.T, setup ...func(*coretest.Env)) *witPageFixtu
 		NewConversation:     func() { f.record(func() { f.navs = append(f.navs, 0) }) },
 		OnLink:              func(u string) { f.record(func() { f.urls = append(f.urls, u) }) },
 		OpenCompose:         func(id int64) { f.record(func() { f.composed = append(f.composed, id) }) },
-		EditRule:            func(r core.Rule) { f.record(func() { f.rules = append(f.rules, r) }) },
+		EditRule: func(r core.Rule, _ int64, ask string) {
+			f.record(func() { f.rules, f.ruleAsks = append(f.rules, r), append(f.ruleAsks, ask) })
+		},
 	})
 	f.w.SetService(f.e.Svc)
 	f.p = NewWitPage(f.w)
@@ -1231,6 +1234,7 @@ func TestWitPageEditRule(t *testing.T) {
 	f.mu.Lock()
 	require.Len(t, f.rules, 1)
 	assert.Equal(t, "Stripe", f.rules[0].Doc.Name)
+	assert.Equal(t, []string{"建一条规则"}, f.ruleAsks, "the editor quotes what was asked")
 	f.mu.Unlock()
 	rs, err := f.e.Svc.Rules(t.Context())
 	require.NoError(t, err)

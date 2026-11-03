@@ -2,7 +2,6 @@ package app
 
 import (
 	"context"
-	"encoding/json"
 	"path/filepath"
 	"slices"
 	"strconv"
@@ -13,6 +12,7 @@ import (
 	"github.com/godwit-email/godwit/core"
 	"github.com/godwit-email/godwit/core/mail"
 	"github.com/godwit-email/godwit/internal/i18n"
+	"github.com/godwit-email/godwit/internal/icons"
 	"github.com/godwit-email/godwit/internal/kit"
 	"github.com/godwit-email/godwit/internal/theme"
 )
@@ -29,6 +29,8 @@ type rulesView struct {
 
 	counts map[int64]int // each rule's hits of the last week
 
+	deleting *core.Rule // the rule whose 删除规则 asks to confirm
+
 	editing bool
 	edit    core.Rule // the rule in the editor; ID 0 a new one
 	any     int       // the editor's match: 0 all, 1 any
@@ -44,8 +46,8 @@ type rulesView struct {
 	suggest []core.RuleCondition // conditions offered for it
 
 	pending *core.MessageSummary // the mail to open the editor from, once the page shows
-	witRule *core.Rule           // Wit's proposal to open the editor on, once the page shows
-	wit     bool                 // the editor holds Wit's proposal
+	witRule *witProposal         // Wit's proposal to open the editor on, once the page shows
+	wit     *witProposal         // the proposal the editor holds, nil none
 
 	prevKey    string            // the trigger and conditions prev is for
 	prev       *core.RulePreview // the existing mail they match; nil not known
@@ -54,6 +56,17 @@ type rulesView struct {
 
 	saveAsk     bool // the save dialog is open
 	runExisting bool // its 同时处理现有的邮件
+
+	viewTop  float32 // the settings page's scroller's top, last frame (window coordinates)
+	asideTop float32 // how far the editor's side panel moved down to stay in view
+}
+
+// witProposal is a rule Wit proposed, taken to the editor: the conversation
+// it was proposed in (回到对话) and what the user asked there.
+type witProposal struct {
+	rule core.Rule
+	conv int64
+	ask  string
 }
 
 // ruleActionGroup is a group of the add-action menu.
@@ -63,7 +76,8 @@ type ruleActionGroup struct {
 }
 
 // ruleActionGroups are the actions the editor offers, by group, in order.
-// A new action registers by appending its kind to its group.
+// A new action registers by appending its kind to its group, and its icon
+// to ruleActionIcons.
 var ruleActionGroups = []ruleActionGroup{
 	{"organize", []string{core.ActionLabel, core.ActionUnlabel, core.ActionRead, core.ActionStar,
 		core.ActionArchive, core.ActionJunk, core.ActionTrash, core.ActionStop}},
@@ -72,19 +86,45 @@ var ruleActionGroups = []ruleActionGroup{
 	{"wit", core.RuleAIActions},
 }
 
+// ruleActionIcons are each action's icon, on its card, in the menu and on its results.
+var ruleActionIcons = map[string]string{
+	core.ActionLabel: "tag", core.ActionUnlabel: "tag", core.ActionRead: "mail-open", core.ActionStar: "star",
+	core.ActionArchive: "archive", core.ActionJunk: "spam", core.ActionTrash: "trash-2", core.ActionStop: "circle-x",
+	core.ActionForward: "forward", core.ActionPDF: "file-text", core.ActionEML: "mail", core.ActionAttachments: "paperclip",
+	core.ActionDraftReply: "quill-pen", core.ActionKeyPoints: "file-text",
+}
+
+func actionIcon(kind string) string {
+	if i, ok := ruleActionIcons[kind]; ok {
+		return i
+	}
+	return "check"
+}
+
 // ruleTemplates open the editor filled in; nothing is saved or turned on
-// until the user saves. A label a template names that is gone becomes the first.
+// until the user saves. A label a template names that is gone becomes the
+// first; a folder, sender or recipient left empty is for the user to fill.
 var ruleTemplates = []struct {
-	key string // settings.rules.template.<key> and .<key>.desc
-	doc core.RuleDoc
+	key  string // settings.rules.template.<key> and .<key>.desc
+	icon string
+	doc  core.RuleDoc
 }{
-	{"bill", core.RuleDoc{Trigger: core.TriggerReceive, Match: core.MatchAll,
+	{"bill", "tag", core.RuleDoc{Trigger: core.TriggerReceive, Match: core.MatchAll,
 		Conditions: []core.RuleCondition{{Field: core.FieldSubject, Op: core.OpContains, Value: "invoice"}, {Field: core.FieldAttachments, Op: core.OpIs, Value: core.RuleYes}},
-		Actions:    []core.RuleAction{{Kind: core.ActionLabel, Label: "bill"}, {Kind: core.ActionArchive}}}},
-	{"newsletter", core.RuleDoc{Trigger: core.TriggerLabel, TriggerArg: "newsletter", Match: core.MatchAll,
+		Actions:    []core.RuleAction{{Kind: core.ActionLabel, Label: "bill"}, {Kind: core.ActionPDF}, {Kind: core.ActionArchive}}}},
+	{"newsletter", "mail-open", core.RuleDoc{Trigger: core.TriggerLabel, TriggerArg: "newsletter", Match: core.MatchAll,
 		Actions: []core.RuleAction{{Kind: core.ActionRead}, {Kind: core.ActionArchive}}}},
-	{"suspicious", core.RuleDoc{Trigger: core.TriggerSecurity, TriggerArg: core.SecuritySuspicious, Match: core.MatchAll,
+	{"suspicious", "shield-check", core.RuleDoc{Trigger: core.TriggerSecurity, TriggerArg: core.SecuritySuspicious, Match: core.MatchAll,
 		Actions: []core.RuleAction{{Kind: core.ActionJunk}}}},
+	{"forward", "forward", core.RuleDoc{Trigger: core.TriggerReceive, Match: core.MatchAll,
+		Conditions: []core.RuleCondition{{Field: core.FieldFrom, Op: core.OpContains}, {Field: core.FieldSubject, Op: core.OpContains, Value: "invoice"}},
+		Actions:    []core.RuleAction{{Kind: core.ActionForward}, {Kind: core.ActionArchive}}}},
+	{"contract", "paperclip", core.RuleDoc{Trigger: core.TriggerReceive, Match: core.MatchAll,
+		Conditions: []core.RuleCondition{{Field: core.FieldSubject, Op: core.OpContains, Value: "合同"}, {Field: core.FieldAttachments, Op: core.OpIs, Value: core.RuleYes}},
+		Actions:    []core.RuleAction{{Kind: core.ActionAttachments}}}},
+	{"reply", "quill-pen", core.RuleDoc{Trigger: core.TriggerReceive, Match: core.MatchAll,
+		Conditions: []core.RuleCondition{{Field: core.FieldFrom, Op: core.OpContains}},
+		Actions:    []core.RuleAction{{Kind: core.ActionStar}, {Kind: core.ActionDraftReply}}}},
 }
 
 // ruleSuggestWords are the subject words create-from-mail offers to match on.
@@ -136,12 +176,15 @@ func (v *rulesView) view(c *ui.Context) {
 	t, th := theme.Of(c), c.Theme()
 	pageHeading(c, i18n.T("settings.rules"), i18n.T("settings.rules.sub"), func() {
 		if len(v.rules) > 0 {
-			settingButton(c, i18n.T("settings.rules.new"), kit.Outline, false).OnClick(v.create)
+			kit.Button(c, i18n.T("settings.rules.new"), kit.ButtonOpts{Icon: "plus"}).PaddingX(th.Space(3)).OnClick(v.create)
 		}
 	})
 	if len(v.rules) == 0 {
 		kit.Empty(c, kit.EmptyOpts{Icon: "filter", Title: i18n.T("settings.rules.empty"), Desc: i18n.T("settings.rules.empty.desc"), Dashed: true,
-			Actions: func() { kit.EmptyAction(c, i18n.T("settings.rules.new"), kit.ButtonOpts{}).OnClick(v.create) }})
+			Actions: func() {
+				kit.EmptyAction(c, i18n.T("settings.rules.new"), kit.ButtonOpts{}).OnClick(v.create)
+				kit.EmptyAction(c, i18n.T("settings.rules.empty.wit"), kit.ButtonOpts{Variant: kit.Outline, Icon: "sparkles"}).OnClick(a.NewConversation)
+			}})
 	} else {
 		rows := make([]func(), len(v.rules))
 		for i, r := range v.rules {
@@ -149,31 +192,72 @@ func (v *rulesView) view(c *ui.Context) {
 		}
 		settingsSection(c, i18n.T("settings.rules.list"), i18n.T("settings.rules.list.foot"), rows...)
 	}
-	tpls := make([]func(), len(ruleTemplates))
-	for i, tp := range ruleTemplates {
-		tpls[i] = func() {
-			name := i18n.T("settings.rules.template." + tp.key)
-			settingRow(c.Key(tp.key), name, i18n.T("settings.rules.template."+tp.key+".desc"), func() {
-				settingButton(c, i18n.T("settings.rules.template.use"), kit.Outline, false).Label(i18n.Tf("settings.rules.template.use.label", name)).
-					OnClick(func() { v.fromTemplate(tp.doc, name) })
+	ui.Column(c).Gap(theme.SectionGap).Children(func() {
+		ui.Column(c).Gap(th.Space(0.5)).Children(func() {
+			sectionTitle(c, i18n.T("settings.rules.templates"))
+			kit.Text(c, i18n.T("settings.rules.templates.foot"), t.Text.Sm).TextColor(t.Muted).PaddingX(th.Space(4))
+		})
+		for i := 0; i < len(ruleTemplates); i += 2 {
+			ui.Row(c.Key(i)).FillWidth().Gap(th.Space(2)).AlignItems(ui.Stretch).Children(func() {
+				for _, tp := range ruleTemplates[i:min(i+2, len(ruleTemplates))] {
+					v.templateCard(c.Key(tp.key), tp.key, tp.icon, tp.doc)
+				}
 			})
 		}
-	}
-	settingsSection(c, i18n.T("settings.rules.templates"), i18n.T("settings.rules.templates.foot"), tpls...)
-	// Emptying Trash and Junk is not a rule: it stays with the account's mailboxes.
-	if len(a.accounts) > 0 {
-		id := a.accounts[0].ID
-		kit.TextLink(c, i18n.T("settings.rules.empty_trash"), t.Muted, t.Text.Sm).PaddingX(th.Space(4)).
-			OnClick(func() { a.navigate(Route{Page: PageSettings, Settings: accountRoute(id)}) })
-	}
+		// Emptying Trash and Junk is not a rule: it stays with the account's mailboxes.
+		if len(a.accounts) > 0 {
+			id := a.accounts[0].ID
+			kit.TextLink(c, i18n.T("settings.rules.empty_trash"), t.Muted, t.Text.Sm).PaddingX(th.Space(4)).AlignSelf(ui.Start).
+				OnClick(func() { a.navigate(Route{Page: PageSettings, Settings: accountRoute(id)}) })
+		}
+	})
+	v.deleteDialog(c)
 }
 
-// row is a rule: its switch, name and summary, edit, and its hits to expand.
+// templateCard is a template: its icon, name and what it does; it opens the editor.
+func (v *rulesView) templateCard(c *ui.Context, key, icon string, d core.RuleDoc) {
+	t, th := theme.Of(c), c.Theme()
+	name := i18n.T("settings.rules.template." + key)
+	kit.Pressable(c, kit.PressableOpts{Bordered: true, OnClick: func() { v.fromTemplate(d, name) }}).
+		Label(i18n.Tf("settings.rules.template.use.label", name)).Grow(1).Basis(0).Shrink(1).
+		AlignItems(ui.Start).Gap(th.Space(3)).Padding(th.Space(3), th.Space(3.5)).Radius(t.Radius.Xl).Children(func() {
+		ui.Box(c).Size(th.Space(8), th.Space(8)).Radius(t.Radius.Lg).Background(t.Hover).Center().Shrink(0).Children(func() {
+			ui.Icon(c, icons.Get(icon)).Size(theme.Icon, theme.Icon).TextColor(t.Foreground)
+		})
+		ui.Column(c).Grow(1).Shrink(1).Gap(th.Space(0.5)).Children(func() {
+			kit.Text(c, name, t.Text.Body).FontWeight(500)
+			kit.Text(c, i18n.T("settings.rules.template."+key+".desc"), t.Text.Sm).TextColor(t.Muted)
+		})
+	})
+}
+
+// ruleTag is a small tinted label: a rule's or an action's kind, a hit's result.
+func ruleTag(c *ui.Context, text string, fill, fg ui.Color, icon string) ui.Element {
+	t, th := theme.Of(c), c.Theme()
+	return ui.Row(c).AlignItems(ui.Center).Gap(th.Space(1)).Padding(th.Space(0.5), th.Space(1.5)).Radius(t.Radius.Sm).
+		Background(fill).TextColor(fg).Shrink(0).Children(func() {
+		if icon != "" {
+			ui.Icon(c, icons.Get(icon)).Size(theme.IconSm, theme.IconSm)
+		}
+		kit.Text(c, text, t.Text.Sm).SingleLine()
+	})
+}
+
+// row is a rule: its switch, name and summary (which expand it), edit, and
+// expanded, its hits, 编辑规则 and 删除规则.
 func (v *rulesView) row(c *ui.Context, r core.Rule) {
 	a := v.a
 	t, th := theme.Of(c), c.Theme()
 	name := ruleName(r.Doc)
 	open := v.open == r.ID
+	toggle := func() {
+		v.hits = nil
+		if v.open = r.ID; open {
+			v.open = 0
+			return
+		}
+		v.loadHits()
+	}
 	ui.Column(c).FillWidth().Children(func() {
 		ui.Row(c).FillWidth().Gap(th.Space(3)).Padding(th.Space(2), th.Space(4)).MinHeight(th.Space(12)).AlignItems(ui.Center).Children(func() {
 			on := r.Enabled
@@ -184,17 +268,18 @@ func (v *rulesView) row(c *ui.Context, r core.Rule) {
 				v.rules[slices.IndexFunc(v.rules, func(x core.Rule) bool { return x.ID == id })].Enabled = on // at once; load reads them again
 				a.writes.Chain("rules", func(ctx context.Context) error { return a.svc.SetRuleEnabled(ctx, id, on) }, v.saved)
 			}
-			ui.Column(c).Grow(1).Shrink(1).Gap(th.Space(0.5)).Children(func() {
-				ui.Row(c).Gap(th.Space(2)).AlignItems(ui.Center).Children(func() {
-					kit.Text(c, name, t.Text.Body).FontWeight(500).SingleLine().Shrink(1)
-					if r.Background {
-						kit.Badge(c, i18n.T("settings.rules.run.background"))
-					}
-					if forwards(r.Doc) {
-						kit.Badge(c, i18n.T("settings.rules.egress"))
-					}
+			fg := t.Foreground
+			if !r.Enabled {
+				fg = t.Muted
+			}
+			kit.Pressable(c, kit.PressableOpts{Bare: true, OnClick: toggle}).Label(name).Grow(1).Shrink(1).Children(func() {
+				ui.Column(c).Grow(1).Shrink(1).Gap(th.Space(0.5)).Children(func() {
+					ui.Row(c).Gap(th.Space(2)).AlignItems(ui.Center).Children(func() {
+						kit.Text(c, name, t.Text.Body).FontWeight(500).TextColor(fg).SingleLine().Shrink(1)
+						v.badges(c, r)
+					})
+					kit.Text(c, v.summary(r.Doc), t.Text.Sm).TextColor(t.Muted).SingleLine()
 				})
-				kit.Text(c, v.summary(r.Doc), t.Text.Sm).TextColor(t.Muted).SingleLine()
 			})
 			hits := i18n.T("settings.rules.off")
 			if r.Enabled {
@@ -207,14 +292,7 @@ func (v *rulesView) row(c *ui.Context, r core.Rule) {
 			if open {
 				chev, label = "chevron-down", i18n.T("settings.rules.hits.hide")
 			}
-			kit.IconButton(c, chev, label, kit.ButtonOpts{Variant: kit.Ghost, Size: kit.SizeSm}).OnClick(func() {
-				v.hits = nil
-				if v.open = r.ID; open {
-					v.open = 0
-					return
-				}
-				v.loadHits()
-			})
+			kit.IconButton(c, chev, label, kit.ButtonOpts{Variant: kit.Ghost, Size: kit.SizeSm}).OnClick(toggle)
 		})
 		if open {
 			v.hitList(c, r)
@@ -222,26 +300,54 @@ func (v *rulesView) row(c *ui.Context, r core.Rule) {
 	})
 }
 
+// badges are a rule's kinds as the list tags them: 外发, AI, 后台运行.
+func (v *rulesView) badges(c *ui.Context, r core.Rule) {
+	t := theme.Of(c)
+	if forwards(r.Doc) {
+		amber := t.Label("amber")
+		ruleTag(c, i18n.T("settings.rules.egress"), amber.Fill, amber.Text, "")
+	}
+	if usesAI(r.Doc) {
+		violet := t.Label("violet")
+		ruleTag(c, i18n.T("settings.rules.kind.ai"), violet.Fill, violet.Text, "")
+	}
+	if r.Background {
+		blue := t.Label("blue")
+		ruleTag(c, i18n.T("settings.rules.run.background"), blue.Fill, blue.Text, "")
+	}
+}
+
 // hitList is the open rule's hits of the last week, newest first, in a box
-// about two and a half rows tall that scrolls past them.
+// about two and a half rows tall that scrolls past them, then 编辑规则 and
+// 删除规则.
 func (v *rulesView) hitList(c *ui.Context, r core.Rule) {
 	t, th := theme.Of(c), c.Theme()
-	ui.Column(c).FillWidth().Gap(th.Space(2)).Padding(0, th.Space(4), th.Space(3), th.Space(4)).Children(func() {
-		if len(v.hits) == 0 {
-			kit.Text(c, i18n.T("settings.rules.hits.none"), t.Text.Sm).TextColor(t.Muted)
-			return
+	ui.Column(c).FillWidth().Gap(th.Space(2)).Padding(0, th.Space(4), th.Space(3), th.Space(4)+th.Space(11.5)).Children(func() {
+		box := func() ui.Element {
+			return ui.Column(c).FillWidth().MaxHeight(th.Space(42)).Radius(t.Radius.Lg).Background(t.Background).Border(theme.Hairline, t.Border).Clip()
 		}
-		kit.Text(c, i18n.Tf("settings.rules.hits.head", len(v.hits)), t.Text.Sm).TextColor(t.Muted)
-		ui.Column(c).FillWidth().MaxHeight(th.Space(42)).Radius(t.Radius.Lg).Border(theme.Hairline, t.Border).Clip().Children(func() {
-			ui.Scroll(c).Shrink(1).Children(func() {
-				now := time.Now()
-				for i, h := range v.hits {
-					if i > 0 {
-						kit.Separator(c, false)
-					}
-					v.hit(c.Key(h.RunID), r, h, now)
-				}
+		if len(v.hits) == 0 {
+			box().Padding(th.Space(4), th.Space(3)).AlignItems(ui.Center).Children(func() {
+				kit.Text(c, i18n.T("settings.rules.hits.none"), t.Text.Sm).TextColor(t.Muted)
 			})
+		} else {
+			kit.Text(c, i18n.Tf("settings.rules.hits.head", len(v.hits)), t.Text.Sm).TextColor(t.Muted)
+			box().Children(func() {
+				ui.Scroll(c).Shrink(1).Children(func() {
+					now := time.Now()
+					for i, h := range v.hits {
+						if i > 0 {
+							kit.Separator(c, false)
+						}
+						v.hit(c.Key(h.RunID), r, h, now)
+					}
+				})
+			})
+		}
+		ui.Row(c).Gap(th.Space(2)).Children(func() {
+			kit.Button(c, i18n.T("settings.rules.edit_rule"), kit.ButtonOpts{Variant: kit.Outline, Size: kit.SizeSm}).OnClick(func() { v.openEditor(r) })
+			kit.Button(c, i18n.T("settings.rules.delete"), kit.ButtonOpts{Variant: kit.Ghost, Size: kit.SizeSm}).TextColor(t.Danger).
+				OnClick(func() { v.deleting = &r })
 		})
 	})
 }
@@ -262,7 +368,14 @@ func (v *rulesView) hit(c *ui.Context, r core.Rule, h core.RuleHit, now time.Tim
 			})
 			ui.Row(c).Wrap().Gap(th.Space(1.5)).Children(func() {
 				for i, res := range h.Actions {
-					kit.Badge(c, v.result(r, i, res))
+					fill, fg, icon := t.Hover, t.Muted, actionIcon(res.Kind)
+					switch res.State {
+					case core.RuleActionDone:
+						fill, fg = t.SuccessBg, t.SuccessText
+					case core.RuleActionFailed:
+						fill, fg, icon = t.DangerBg, t.DangerText, "triangle-alert"
+					}
+					ruleTag(c.Key(i), v.result(r, i, res), fill, fg, icon)
 				}
 			})
 		})
@@ -319,6 +432,35 @@ func (v *rulesView) retry(runID int64) {
 	})
 }
 
+// deleteDialog asks before 删除规则 deletes a rule and its hits.
+func (v *rulesView) deleteDialog(c *ui.Context) {
+	if v.deleting == nil {
+		return
+	}
+	a, r := v.a, *v.deleting
+	name := ruleName(r.Doc)
+	open := true
+	kit.Dialog(c, &open, i18n.Tf("settings.rules.delete.title", name),
+		kit.DialogOpts{Size: kit.DialogSm, Alert: true, Desc: i18n.T("settings.rules.delete.desc"), Close: i18n.T("common.close")}, nil, func() {
+			kit.Button(c, i18n.T("common.cancel"), kit.ButtonOpts{Variant: kit.Outline}).OnClick(func() { v.deleting = nil })
+			kit.Button(c, i18n.T("common.delete"), kit.ButtonOpts{Variant: kit.Destructive}).OnClick(func() {
+				v.deleting = nil
+				if v.open == r.ID {
+					v.open, v.hits = 0, nil
+				}
+				a.writes.Chain("rules", func(ctx context.Context) error { return a.svc.DeleteRule(ctx, r.ID) }, func(err error) {
+					if err == nil {
+						a.toast(i18n.Tf("settings.rules.deleted", name))
+					}
+					v.saved(err)
+				})
+			})
+		})
+	if !open {
+		v.deleting = nil
+	}
+}
+
 func ruleName(d core.RuleDoc) string {
 	if d.Name != "" {
 		return d.Name
@@ -347,10 +489,21 @@ func (v *rulesView) summary(d core.RuleDoc) string {
 	case core.TriggerSecurity:
 		trigger = i18n.Tf("settings.rules.trigger.security.summary", i18n.T("settings.rules.security."+d.TriggerArg))
 	}
+	if acc, ok := v.account(d.Account); ok {
+		trigger = i18n.Tf("settings.rules.trigger.account", trigger, accountName(acc))
+	}
 	if conds == "" {
 		return i18n.Tf("settings.rules.summary.always", trigger, then)
 	}
 	return i18n.Tf("settings.rules.summary", trigger, conds, then)
+}
+
+// account is the account a rule is for; false for every account, or one gone.
+func (v *rulesView) account(id int64) (core.Account, bool) {
+	if i := slices.IndexFunc(v.a.accounts, func(acc core.Account) bool { return acc.ID == id }); id != 0 && i >= 0 {
+		return v.a.accounts[i], true
+	}
+	return core.Account{}, false
 }
 
 func (v *rulesView) condText(cd core.RuleCondition) string {
@@ -369,6 +522,14 @@ func (v *rulesView) condText(cd core.RuleCondition) string {
 		}
 	}
 	return i18n.Tf("settings.rules.cond", i18n.T("settings.rules.field."+cd.Field), i18n.T("settings.rules.op."+cd.Op), val)
+}
+
+// chipText is a condition create-from-mail offers, as its chip says it.
+func (v *rulesView) chipText(cd core.RuleCondition) string {
+	if textField(cd.Field) && cd.Op == core.OpContains {
+		return i18n.Tf("settings.rules.suggest", i18n.T("settings.rules.field."+cd.Field), cd.Value)
+	}
+	return v.condText(cd)
 }
 
 func (v *rulesView) actionText(ac core.RuleAction) string {
@@ -420,11 +581,13 @@ func (v *rulesView) openEditor(r core.Rule) {
 // closeEditor leaves the editor, stopping its preview.
 func (v *rulesView) closeEditor() {
 	v.stopPreview()
-	v.editing, v.menu, v.saveAsk, v.runExisting, v.wit = false, false, false, false, false
+	v.editing, v.menu, v.saveAsk, v.runExisting, v.wit, v.asideTop = false, false, false, false, nil, 0
 	v.from, v.suggest, v.prevKey, v.prev = "", nil, "", nil
 }
 
 // fromTemplate opens the editor on a new rule filled in from a template.
+// Without 「智能」's switch for rules its Wit actions are left out, and the
+// add-action menu opens to say why.
 func (v *rulesView) fromTemplate(d core.RuleDoc, name string) {
 	d.Version, d.Name = core.RuleVersion, name
 	d.Conditions, d.Actions = slices.Clone(d.Conditions), slices.Clone(d.Actions)
@@ -436,7 +599,12 @@ func (v *rulesView) fromTemplate(d core.RuleDoc, name string) {
 			d.Actions[i].Label = v.firstLabel()
 		}
 	}
+	aiOff := !v.a.settings.RuleAI && usesAI(d)
+	if aiOff {
+		d.Actions = slices.DeleteFunc(d.Actions, func(ac core.RuleAction) bool { return slices.Contains(core.RuleAIActions, ac.Kind) })
+	}
 	v.openEditor(core.Rule{Enabled: true, Doc: d})
+	v.menu = aiOff
 }
 
 func (v *rulesView) hasLabel(slug string) bool {
@@ -463,346 +631,10 @@ func (v *rulesView) fromMail(m core.MessageSummary) {
 	}
 }
 
-// schedulePreview reads, once typing pauses, the existing mail the editor's
-// trigger and conditions match; a change meanwhile cancels the read under way.
-func (v *rulesView) schedulePreview() {
-	d := v.edit.Doc
-	d.Conditions = slices.Clone(d.Conditions) // the editor writes its own while the read runs
-	b, _ := json.Marshal([]any{d.Trigger, d.TriggerArg, d.Match, d.Conditions})
-	if string(b) == v.prevKey {
-		return
-	}
-	v.stopPreview()
-	v.prevKey, v.prev = string(b), nil
-	if slices.ContainsFunc(d.Conditions, func(cd core.RuleCondition) bool { return strings.TrimSpace(cd.Value) == "" }) ||
-		d.Trigger == core.TriggerLabel && d.TriggerArg == "" {
-		return
-	}
-	a, key := v.a, v.prevKey
-	v.prevStop = a.after(debounce, func() {
-		v.prevStop = nil
-		ctx, cancel := context.WithCancel(a.ctx)
-		v.prevCancel = cancel
-		var p core.RulePreview
-		a.query(func(context.Context) (err error) { p, err = a.svc.PreviewRule(ctx, d, rulePreviewShown); return err }, func(err error) {
-			cancel()
-			if key != v.prevKey {
-				return // a newer one is coming
-			}
-			v.prevCancel = nil
-			if err == nil {
-				v.prev = &p
-			}
-		})
-	})
-}
-
-func (v *rulesView) stopPreview() {
-	if v.prevStop != nil {
-		v.prevStop()
-		v.prevStop = nil
-	}
-	if v.prevCancel != nil {
-		v.prevCancel()
-		v.prevCancel = nil
-	}
-}
-
-// preview is how much existing mail the rule matches, all of it, and the
-// newest of the last 30 days.
-func (v *rulesView) preview(c *ui.Context) {
-	t, th := theme.Of(c), c.Theme()
-	settingsSection(c, i18n.T("settings.rules.preview"), i18n.Tf("settings.rules.preview.foot", core.RulePreviewDays), func() {
-		settingBlock(c, func() {
-			p := v.prev
-			switch {
-			case p == nil:
-				msg := "settings.rules.preview.incomplete"
-				if v.prevStop != nil || v.prevCancel != nil {
-					msg = "settings.rules.preview.wait"
-				}
-				kit.Text(c, i18n.T(msg), t.Text.Sm).TextColor(t.Muted)
-				return
-			case p.Count == 0:
-				kit.Text(c, i18n.T("settings.rules.preview.none"), t.Text.Sm).TextColor(t.Muted)
-				return
-			}
-			kit.Text(c, i18n.Tf("settings.rules.preview.count", p.Count), t.Text.Sm).TextColor(t.Muted)
-			now := time.Now()
-			for _, m := range p.Messages {
-				ui.Row(c.Key(m.ID)).FillWidth().Gap(th.Space(3)).Children(func() {
-					kit.Text(c, displayName(m.From), t.Text.Body).FontWeight(500).Shrink(0)
-					kit.Text(c, m.Subject, t.Text.Body).SingleLine().Shrink(1).Grow(1)
-					kit.Text(c, listTime(now, m.Date), t.Text.Sm).TextColor(t.Muted).Shrink(0)
-				})
-			}
-		})
-	})
-}
-
-// textField reports whether a condition on f compares typed text.
-func textField(f string) bool {
-	return f == core.FieldFrom || f == core.FieldTo || f == core.FieldSubject || f == core.FieldBody
-}
-
-// fieldChanged resets cd's comparison and value for its new field, keeping
-// typed text between text fields.
-func (v *rulesView) fieldChanged(cd *core.RuleCondition, was string) {
-	switch {
-	case textField(cd.Field) && textField(was):
-	case textField(cd.Field):
-		cd.Op, cd.Value = core.OpContains, ""
-	case cd.Field == core.FieldAttachments:
-		cd.Op, cd.Value = core.OpIs, core.RuleYes
-	case cd.Field == core.FieldLabel:
-		cd.Op, cd.Value = core.OpIs, v.firstLabel()
-	case cd.Field == core.FieldFolder:
-		cd.Op, cd.Value = core.OpIs, ruleRoles[0]
-	case cd.Field == core.FieldAge:
-		cd.Op, cd.Value = core.OpOlderThan, "30"
-	}
-}
-
-// editor is the rule's name, then when, if and then, each a section.
-func (v *rulesView) editor(c *ui.Context) {
-	a := v.a
-	t, th := theme.Of(c), c.Theme()
-	d := &v.edit.Doc
-	title, sub := i18n.T("settings.rules.new"), i18n.T("settings.rules.editor.sub")
-	if v.edit.ID != 0 {
-		title, sub = ruleName(*d), v.summary(*d)
-	}
-	ready := len(d.Actions) > 0 &&
-		!slices.ContainsFunc(d.Actions, func(ac core.RuleAction) bool {
-			return (ac.Kind == core.ActionLabel || ac.Kind == core.ActionUnlabel) && ac.Label == "" ||
-				ac.Kind == core.ActionForward && strings.TrimSpace(ac.To) == ""
-		}) && (d.Trigger != core.TriggerLabel || d.TriggerArg != "") &&
-		!slices.ContainsFunc(d.Conditions, func(cd core.RuleCondition) bool { return strings.TrimSpace(cd.Value) == "" }) && fileReady(d)
-	pageHeading(c, title, sub, func() {
-		ui.Row(c).Gap(th.Space(2)).Children(func() {
-			settingButton(c, i18n.T("common.cancel"), kit.Outline, false).OnClick(v.closeEditor)
-			settingButton(c, i18n.T("common.save"), kit.Default, !ready).OnClick(v.save)
-		})
-	})
-	v.schedulePreview()
-	v.saveDialog(c)
-	if v.from != "" {
-		kit.Alert(c, kit.Info, i18n.Tf("settings.rules.from_mail.banner", v.from), func() {
-			for i, cd := range v.suggest {
-				kit.AlertAction(c.Key(i), kit.Info, "+ "+v.condText(cd), func() {
-					d.Conditions = append(d.Conditions, cd)
-					v.suggest = slices.Delete(slices.Clone(v.suggest), i, i+1)
-				})
-			}
-		})
-	}
-	if v.wit {
-		kit.Alert(c, kit.Info, i18n.T("settings.rules.from_wit.banner"), nil)
-	}
-	settingsSection(c, i18n.T("settings.rules.name"), "", func() {
-		settingBlock(c, func() {
-			kit.Input(c, &d.Name, kit.InputOpts{Placeholder: i18n.T("settings.rules.name.placeholder")}).Label(i18n.T("settings.rules.name"))
-		})
-	})
-	labels := make([]kit.Option[string], len(a.labels))
-	for i, l := range a.labels {
-		labels[i] = kit.Option[string]{Value: l.Slug, Label: l.Name}
-	}
-	settingsSection(c, i18n.T("settings.rules.when"), "", func() {
-		settingRow(c, i18n.T("settings.rules.trigger"), i18n.T("settings.rules.trigger."+d.Trigger+".help"), func() {
-			ui.Row(c).Gap(th.Space(2)).Children(func() {
-				was := d.Trigger
-				triggers := []kit.Option[string]{}
-				for _, tr := range []string{core.TriggerReceive, core.TriggerLabel, core.TriggerSecurity, core.TriggerDaily} {
-					triggers = append(triggers, kit.Option[string]{Value: tr, Label: i18n.T("settings.rules.trigger." + tr)})
-				}
-				settingSelect(c, i18n.T("settings.rules.trigger"), &d.Trigger, triggers)
-				if d.Trigger != was {
-					d.TriggerArg = map[string]string{core.TriggerSecurity: core.SecuritySuspicious}[d.Trigger]
-					if d.Trigger == core.TriggerLabel && len(labels) > 0 {
-						d.TriggerArg = labels[0].Value
-					}
-				}
-				switch d.Trigger {
-				case core.TriggerLabel:
-					settingSelect(c, i18n.T("settings.rules.trigger.label.which"), &d.TriggerArg, labels)
-				case core.TriggerSecurity:
-					settingSelect(c, i18n.T("settings.rules.trigger.security.which"), &d.TriggerArg, []kit.Option[string]{
-						{Value: core.SecuritySuspicious, Label: i18n.T("settings.rules.security.suspicious")},
-						{Value: core.SecurityDangerous, Label: i18n.T("settings.rules.security.dangerous")}})
-				}
-			})
-		})
-	})
-	conds := []func(){func() {
-		settingRow(c, i18n.T("settings.rules.match"), "", func() {
-			kit.Tabs(c, &v.any, i18n.T("settings.rules.match.all"), i18n.T("settings.rules.match.any"))
-			d.Match = []string{core.MatchAll, core.MatchAny}[v.any]
-		})
-	}}
-	var fields []kit.Option[string]
-	for _, f := range []string{core.FieldFrom, core.FieldTo, core.FieldSubject, core.FieldBody, core.FieldAttachments, core.FieldLabel, core.FieldFolder, core.FieldAge} {
-		fields = append(fields, kit.Option[string]{Value: f, Label: i18n.T("settings.rules.field." + f)})
-	}
-	ops := []kit.Option[string]{{Value: core.OpContains, Label: i18n.T("settings.rules.op.contains")},
-		{Value: core.OpNotContains, Label: i18n.T("settings.rules.op.not_contains")}, {Value: core.OpIs, Label: i18n.T("settings.rules.op.is")}}
-	setOps := []kit.Option[string]{ops[2], ops[1]} // a label or folder is or is not the message's
-	yesNo := []kit.Option[string]{{Value: core.RuleYes, Label: i18n.T("settings.rules.attachments.yes")}, {Value: core.RuleNo, Label: i18n.T("settings.rules.attachments.no")}}
-	roles := make([]kit.Option[string], len(ruleRoles))
-	for i, r := range ruleRoles {
-		roles[i] = kit.Option[string]{Value: r, Label: i18n.T("mail.folder." + r)}
-	}
-	for i := range d.Conditions {
-		conds = append(conds, func() {
-			settingBlock(c, func() {
-				ui.Row(c.Key(i)).FillWidth().Gap(th.Space(2)).AlignItems(ui.Center).Children(func() {
-					cd := &d.Conditions[i]
-					was := cd.Field
-					settingSelect(c, i18n.T("settings.rules.field"), &cd.Field, fields)
-					if cd.Field != was {
-						v.fieldChanged(cd, was)
-					}
-					switch cd.Field {
-					case core.FieldAttachments:
-						settingSelect(c, i18n.T("settings.rules.value"), &cd.Value, yesNo)
-					case core.FieldLabel:
-						settingSelect(c, i18n.T("settings.rules.op"), &cd.Op, setOps)
-						settingSelect(c, i18n.T("settings.rules.label"), &cd.Value, labels)
-					case core.FieldFolder:
-						settingSelect(c, i18n.T("settings.rules.op"), &cd.Op, setOps)
-						settingSelect(c, i18n.T("settings.rules.folder"), &cd.Value, roles)
-					case core.FieldAge:
-						kit.Text(c, i18n.T("settings.rules.op.older_than"), t.Text.Sm)
-						kit.Input(c, &cd.Value, kit.InputOpts{Placeholder: "30"}).Label(i18n.T("settings.rules.days")).Width(th.Space(16))
-						kit.Text(c, i18n.T("settings.rules.days_ago"), t.Text.Sm)
-					default:
-						settingSelect(c, i18n.T("settings.rules.op"), &cd.Op, ops)
-						kit.Input(c, &cd.Value, kit.InputOpts{Placeholder: i18n.T("settings.rules.value")}).Label(i18n.T("settings.rules.value")).Grow(1).Shrink(1)
-					}
-					ui.Row(c).Grow(1)
-					kit.IconButton(c, "x", i18n.T("settings.rules.condition.remove"), kit.ButtonOpts{Variant: kit.Ghost, Size: kit.SizeSm}).
-						OnClick(func() { d.Conditions = slices.Delete(d.Conditions, i, i+1) })
-				})
-			})
-		})
-	}
-	conds = append(conds, func() {
-		settingBlock(c, func() {
-			if len(d.Conditions) == 0 {
-				kit.Text(c, i18n.T("settings.rules.no_conditions"), t.Text.Sm).TextColor(t.Muted)
-			}
-			ui.Row(c).Children(func() {
-				settingButton(c, i18n.T("settings.rules.condition.add"), kit.Outline, len(d.Conditions) >= core.MaxRuleConditions).
-					OnClick(func() {
-						d.Conditions = append(d.Conditions, core.RuleCondition{Field: core.FieldSubject, Op: core.OpContains})
-					})
-			})
-		})
-	})
-	settingsSection(c, i18n.T("settings.rules.if"), "", conds...)
-	// Wit's actions are chosen only once 「智能」 lets rules use Wit (an action that has one keeps it).
-	aiOff := func(k string) bool { return !a.settings.RuleAI && slices.Contains(core.RuleAIActions, k) }
-	kindsFor := func(cur string) []kit.Option[string] {
-		var kinds []kit.Option[string]
-		for _, g := range ruleActionGroups {
-			for _, k := range g.kinds {
-				if k == cur || !aiOff(k) {
-					kinds = append(kinds, kit.Option[string]{Value: k, Label: i18n.T("settings.rules.action." + k)})
-				}
-			}
-		}
-		return kinds
-	}
-	acts := make([]func(), 0, len(d.Actions)+1)
-	for i := range d.Actions {
-		acts = append(acts, func() {
-			settingBlock(c, func() {
-				ui.Row(c.Key(i)).FillWidth().Gap(th.Space(2)).AlignItems(ui.Center).Children(func() {
-					ac := &d.Actions[i]
-					settingSelect(c, i18n.Tf("settings.rules.action.n", i+1), &ac.Kind, kindsFor(ac.Kind))
-					if ac.Kind == core.ActionLabel || ac.Kind == core.ActionUnlabel {
-						if ac.Label == "" {
-							ac.Label = v.firstLabel()
-						}
-						settingSelect(c, i18n.T("settings.rules.label"), &ac.Label, labels)
-					} else {
-						ac.Label = ""
-					}
-					if ac.Kind == core.ActionForward {
-						kit.Input(c, &ac.To, kit.InputOpts{Placeholder: i18n.T("settings.rules.forward.to")}).Label(i18n.T("settings.rules.forward.to")).Grow(1).Shrink(1)
-					} else {
-						ac.To = ""
-					}
-					if fileAction(ac.Kind) {
-						fileKindChanged(d, i)
-						v.fileDir(c, d, i)
-					} else {
-						ac.Dir, ac.Subfolder, ac.Naming = "", false, ""
-					}
-					ui.Row(c).Grow(1)
-					kit.IconButton(c, "arrow-up", i18n.T("settings.rules.action.up"), kit.ButtonOpts{Variant: kit.Ghost, Size: kit.SizeSm, Disabled: i == 0}).
-						OnClick(func() { d.Actions[i-1], d.Actions[i] = d.Actions[i], d.Actions[i-1] })
-					kit.IconButton(c, "arrow-down", i18n.T("settings.rules.action.down"), kit.ButtonOpts{Variant: kit.Ghost, Size: kit.SizeSm, Disabled: i == len(d.Actions)-1}).
-						OnClick(func() { d.Actions[i], d.Actions[i+1] = d.Actions[i+1], d.Actions[i] })
-					kit.IconButton(c, "x", i18n.T("settings.rules.action.remove"), kit.ButtonOpts{Variant: kit.Ghost, Size: kit.SizeSm, Disabled: len(d.Actions) == 1}).
-						OnClick(func() { d.Actions = slices.Delete(d.Actions, i, i+1) })
-				})
-				if fileAction(d.Actions[i].Kind) {
-					v.fileOptions(c, d, i)
-				}
-			})
-		})
-	}
-	acts = append(acts, func() {
-		settingBlock(c, func() {
-			ui.Row(c).Children(func() {
-				add := settingButton(c, i18n.T("settings.rules.action.add"), kit.Outline, len(d.Actions) >= core.MaxRuleActions).
-					OnClick(func() { v.menu = !v.menu })
-				if !v.menu {
-					return
-				}
-				kit.MenuAt(c, add, &v.menu, ui.AnchorBottomLeft, ui.AnchorTopLeft, theme.PopupOffset, i18n.T("settings.rules.action.add"), func() {
-					for _, g := range ruleActionGroups {
-						if len(g.kinds) == 0 {
-							continue
-						}
-						kit.MenuLabel(c.Key("group:"+g.key), i18n.T("settings.rules.group."+g.key))
-						for _, k := range g.kinds {
-							label, off := i18n.T("settings.rules.action."+k), aiOff(k)
-							kit.MenuItem(c.Key(k), false).Label(label).Disabled(off).Children(func() {
-								ui.Text(c, label).SingleLine()
-								if off {
-									kit.Text(c, i18n.T("settings.rules.ai_off.hint"), t.Text.Sm).TextColor(t.Muted)
-								}
-							}).OnClick(func() {
-								v.menu = false
-								d.Actions = append(d.Actions, core.RuleAction{Kind: k})
-							})
-						}
-					}
-				})
-			})
-		})
-	})
-	foot := ""
-	if forwards(*d) {
-		foot = i18n.T("settings.rules.forward.foot")
-	}
-	if !a.settings.RuleAI {
-		foot = strings.TrimSpace(i18n.T("settings.rules.ai_off.note") + " " + foot)
-	}
-	settingsSection(c, i18n.T("settings.rules.then"), foot, acts...)
-	v.preview(c)
-	run := func(bg bool, key string) func() {
-		return func() {
-			settingBlock(c, func() {
-				kit.Radio(c.Key(key), &v.edit.Background, bg, i18n.T("settings.rules.run."+key))
-				kit.Text(c, i18n.T("settings.rules.run."+key+".help"), t.Text.Sm).TextColor(t.Muted)
-			})
-		}
-	}
-	settingsSection(c, i18n.T("settings.rules.run"), "", run(false, "window"), run(true, "background"))
-	v.confirmDialog(c)
+// fromWit opens the editor on Wit's proposal (在编辑器里修改).
+func (v *rulesView) fromWit(p witProposal) {
+	v.openEditor(p.rule)
+	v.wit = &p
 }
 
 // forwards reports whether the rule forwards mail (外发).
@@ -810,124 +642,9 @@ func forwards(d core.RuleDoc) bool {
 	return slices.ContainsFunc(d.Actions, func(ac core.RuleAction) bool { return ac.Kind == core.ActionForward })
 }
 
-// save saves the rule, first asking to confirm forward recipients it has
-// not confirmed: a new one, or one changed since.
-func (v *rulesView) save() {
-	a := v.a
-	var todo []string
-	for _, ac := range v.edit.Doc.Actions {
-		k := mail.AddrKey(ac.To)
-		if ac.Kind == core.ActionForward && !slices.Contains(v.edit.Confirmed, k) && !slices.ContainsFunc(todo, func(x string) bool { return mail.AddrKey(x) == k }) {
-			todo = append(todo, strings.TrimSpace(ac.To))
-		}
-	}
-	if len(todo) == 0 {
-		v.commit()
-		return
-	}
-	var first []string
-	a.query(func(ctx context.Context) (err error) { first, err = a.svc.FirstTimeRecipients(ctx, todo); return err }, func(err error) {
-		a.toastErr(err)
-		if err == nil {
-			v.confirming, v.unconfirmed, v.firstTime = true, todo, first
-		}
-	})
-}
-
-// commit stores the rule; with existing mail it matches, it asks first
-// whether to run it over that mail too.
-func (v *rulesView) commit() {
-	if v.prev != nil && v.prev.Count > 0 && !v.saveAsk {
-		v.saveAsk = true
-		return
-	}
-	a := v.a
-	r, existing := v.edit, v.saveAsk && v.runExisting
-	v.closeEditor()
-	var n int
-	a.writes.Chain("rules", func(ctx context.Context) error {
-		id, err := a.svc.SaveRule(ctx, r)
-		if err != nil || !existing {
-			return err
-		}
-		n, err = a.svc.RunRuleOnExisting(ctx, id)
-		return err
-	}, func(err error) {
-		if err == nil && n > 0 {
-			a.toast(i18n.Tf("settings.rules.save.ran", n))
-		}
-		v.saved(err)
-	})
-}
-
-// saveDialog asks, before a save, whether the rule also runs once over the
-// existing mail it matches; only the actions that can run on it then do.
-func (v *rulesView) saveDialog(c *ui.Context) {
-	if !v.saveAsk || v.prev == nil {
-		return
-	}
-	t, th := theme.Of(c), c.Theme()
-	d := v.edit.Doc
-	var now, later []string
-	for _, ac := range d.Actions {
-		switch {
-		case ac.Kind == core.ActionStop:
-		case core.RunsOnExisting(ac.Kind):
-			now = append(now, v.actionText(ac))
-		default:
-			later = append(later, v.actionText(ac))
-		}
-	}
-	sep := i18n.T("settings.rules.sep")
-	kit.Dialog(c, &v.saveAsk, i18n.Tf("settings.rules.save.title", ruleName(d)), kit.DialogOpts{Size: kit.DialogSm, Desc: i18n.T("settings.rules.save.desc"), Close: i18n.T("common.close")}, func() {
-		ui.Column(c).Gap(th.Space(1)).Children(func() {
-			if len(now) == 0 {
-				v.runExisting = false
-				kit.Text(c, i18n.T("settings.rules.save.existing.nothing"), t.Text.Sm).TextColor(t.Muted)
-			} else {
-				kit.Checkbox(c, &v.runExisting, i18n.Tf("settings.rules.save.existing", v.prev.Count))
-				kit.Text(c, i18n.Tf("settings.rules.save.existing.only", strings.Join(now, sep)), t.Text.Sm).TextColor(t.Muted)
-			}
-			if len(later) > 0 {
-				kit.Text(c, i18n.Tf("settings.rules.save.existing.later", strings.Join(later, sep)), t.Text.Sm).TextColor(t.Muted)
-			}
-		})
-	}, func() {
-		kit.Button(c, i18n.T("common.cancel"), kit.ButtonOpts{Variant: kit.Outline}).OnClick(func() { v.saveAsk = false })
-		kit.Button(c, i18n.T("settings.rules.save.confirm"), kit.ButtonOpts{}).OnClick(v.commit)
-	})
-}
-
-// confirmDialog names the forward recipients to confirm, the ones never
-// written to flagged; going back to edit saves nothing.
-func (v *rulesView) confirmDialog(c *ui.Context) {
-	t, th := theme.Of(c), c.Theme()
-	kit.Dialog(c, &v.confirming, i18n.T("settings.rules.confirm.title"), kit.DialogOpts{Size: kit.DialogSm, Alert: true,
-		Desc: i18n.Tf("settings.rules.confirm.desc", ruleName(v.edit.Doc)), Close: i18n.T("common.close")}, func() {
-		ui.Column(c).Gap(th.Space(1)).Children(func() {
-			kit.Text(c, i18n.T("settings.rules.confirm.to"), t.Text.Sm).TextColor(t.Muted)
-			for _, to := range v.unconfirmed {
-				ui.Row(c).Gap(th.Space(2)).AlignItems(ui.Center).Children(func() {
-					ui.Text(c, to).FontWeight(600).Selectable()
-					if slices.ContainsFunc(v.firstTime, func(f string) bool { return mail.AddrKey(f) == mail.AddrKey(to) }) {
-						kit.Badge(c, i18n.T("mcp_send.first"))
-					}
-				})
-			}
-		})
-		for _, k := range []string{"outbox", "new_only", "again"} {
-			kit.Text(c, i18n.T("settings.rules.confirm."+k), t.Text.Sm).TextColor(t.Muted)
-		}
-	}, func() {
-		kit.Button(c, i18n.T("settings.rules.confirm.back"), kit.ButtonOpts{Variant: kit.Outline}).OnClick(func() { v.confirming = false })
-		kit.Button(c, i18n.T("settings.rules.confirm.ok"), kit.ButtonOpts{}).OnClick(func() {
-			v.confirming = false
-			for _, to := range v.unconfirmed {
-				v.edit.Confirmed = append(v.edit.Confirmed, mail.AddrKey(to))
-			}
-			v.commit()
-		})
-	})
+// usesAI reports whether the rule has a Wit action (AI).
+func usesAI(d core.RuleDoc) bool {
+	return slices.ContainsFunc(d.Actions, func(ac core.RuleAction) bool { return slices.Contains(core.RuleAIActions, ac.Kind) })
 }
 
 // saved shows a write's error and reads the rules again.

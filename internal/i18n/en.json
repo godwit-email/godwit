@@ -3108,7 +3108,7 @@
   "settings_rules_sub": "Sort mail automatically as it arrives, by conditions you set. Rules run on this computer.",
   "settings_rules_new": "New rule",
   "settings_rules_empty": "No rules yet",
-  "settings_rules_empty_desc": "For example, label bills as soon as they arrive.",
+  "settings_rules_empty_desc": "For example, label and archive bills automatically, or keep newsletters out of the inbox. You can also right-click a message and choose “Create Rule for Similar Mail”.",
   "settings_rules_list": "My rules",
   "settings_rules_list_foot": "Rules run from top to bottom",
   "mail_menu_rule": "Create Rule for Similar Mail…",
@@ -3127,7 +3127,6 @@
   "settings_rules_off": "Off",
   "settings_rules_templates": "Start from a template",
   "settings_rules_templates_foot": "Opens the editor with conditions and actions filled in; change them, then save. Godwit never turns a rule on by itself.",
-  "settings_rules_template_use": "Use",
   "settings_rules_template_use_label": "Use template “{arg1}”",
   "@settings_rules_template_use_label": {
     "placeholders": {
@@ -3137,7 +3136,7 @@
     }
   },
   "settings_rules_template_bill": "File bills",
-  "settings_rules_template_bill_desc": "Subject contains invoice and has attachments: apply the Bills label and archive",
+  "settings_rules_template_bill_desc": "Subject contains invoice and has attachments: apply the Bills label, save a PDF, archive",
   "settings_rules_template_newsletter": "Keep newsletters out of the inbox",
   "settings_rules_template_newsletter_desc": "When labeled Newsletter: mark as read and archive",
   "settings_rules_template_suspicious": "Move suspicious mail to Junk",
@@ -3159,7 +3158,6 @@
     }
   },
   "settings_rules_preview": "Existing mail",
-  "settings_rules_preview_foot": "The list shows mail from the last {arg1, number, ::group-off} days",
   "@settings_rules_preview_foot": {
     "placeholders": {
       "arg1": {
@@ -3187,7 +3185,7 @@
       }
     }
   },
-  "settings_rules_save_desc": "From now on, matching mail is handled as the rule says.",
+  "settings_rules_save_desc": "From now on, it runs on matching mail as it arrives.",
   "settings_rules_save_existing": "Also handle the {arg1, number, ::group-off} existing messages",
   "@settings_rules_save_existing": {
     "placeholders": {
@@ -3213,8 +3211,7 @@
     }
   },
   "settings_rules_save_existing_nothing": "This rule has no action that can run on existing mail.",
-  "settings_rules_save_confirm": "Save Rule",
-  "settings_rules_save_ran": "Handled {arg1, number, ::group-off} existing messages",
+  "settings_rules_save_confirm": "Save and Turn On",
   "@settings_rules_save_ran": {
     "placeholders": {
       "arg1": {
@@ -3413,7 +3410,7 @@
   "settings_rules_action_remove": "Remove this action",
   "settings_rules_hits_show": "Show recent hits",
   "settings_rules_hits_hide": "Hide recent hits",
-  "settings_rules_hits_head": "Last 7 days: {arg1, number, ::group-off}. Local actions can be undone.",
+  "settings_rules_hits_head": "Last 7 days: {arg1, number, ::group-off}. Local actions can be undone; forwards and exports have already happened and can only be viewed.",
   "@settings_rules_hits_head": {
     "placeholders": {
       "arg1": {
@@ -3482,7 +3479,6 @@
     }
   },
   "settings_rules_forward_to": "Recipient’s address",
-  "settings_rules_forward_foot": "Forwarding asks you to confirm the recipient when you save, and forwards only mail that arrives after that.",
   "settings_rules_egress": "Sends out",
   "settings_rules_confirm_title": "Confirm the forward recipient",
   "settings_rules_confirm_desc": "Once saved, new mail matching “{arg1}” is forwarded automatically, without asking you each time.",
@@ -3510,7 +3506,7 @@
   "settings_rules_failure_unconfirmed": "the recipient isn’t confirmed",
   "settings_rules_failure_send_check": "a plugin warned about the message",
   "settings_rules_failure_send": "it couldn’t be put in the Outbox",
-  "settings_rules_empty_trash": "Emptying Trash and Junk isn’t a rule: set it in the account’s settings ›",
+  "settings_rules_empty_trash": "Emptying Trash and Junk on a schedule isn’t a rule: set it in Accounts › Mailboxes ›",
   "settings_rules_action_pdf": "Export PDF to",
   "settings_rules_action_eml": "Export original email to",
   "settings_rules_action_attachments": "Save attachments to",
@@ -3529,10 +3525,9 @@
   "settings_rules_files_naming": "Folder naming",
   "settings_rules_files_custom": "Custom…",
   "settings_rules_files_insert": "Insert",
-  "settings_rules_files_remove": "Remove “{arg1}”",
+  "settings_rules_files_remove": "Delete “{arg1}”",
   "settings_rules_files_placeholder": "Type text, or insert a token below",
   "settings_rules_files_no_token": "Insert at least one token, or every email lands in the same folder.",
-  "settings_rules_files_bad_level": "Both sides of “/” need something, and a folder can’t be named “.” or “..”.",
   "settings_rules_files_preset_date": "Date Subject",
   "settings_rules_files_preset_sender": "Sender / Date Subject",
   "settings_rules_files_preset_year": "Year / Month / Date Subject",
@@ -3550,9 +3545,47 @@
   "settings_rules_action_key_points_summary": "Have Wit save key points to “{arg1}”",
   "settings_rules_ai_off_note": "Wit’s actions send mail to the model and are off by default. Turn on “Let rules use Wit” in Intelligence › Features to choose them.",
   "settings_rules_ai_off_hint": "Turn on in Intelligence first",
-  "settings_rules_from_wit_banner": "Filled in from Wit’s proposal. Check it, then save: the rule takes effect only once you do.",
+  "settings_rules_from_wit_banner": "Wit filled in this rule from what you said. Check it, then click Save: it takes effect only then.",
   "settings_rules_failure_ai_off": "rules can’t use Wit (off in Intelligence)",
   "settings_rules_failure_model": "the model didn’t answer",
+  "settings_rules_empty_wit": "Tell Wit how you want it sorted",
+  "settings_rules_edit_rule": "Edit Rule",
+  "settings_rules_delete": "Delete Rule",
+  "settings_rules_delete_title": "Delete “{arg1}”?",
+  "settings_rules_delete_desc": "The rule and its history are deleted together. Mail already forwarded and files already saved stay as they are.",
+  "settings_rules_deleted": "Deleted “{arg1}”",
+  "settings_rules_kind_ai": "AI",
+  "settings_rules_kind_local_write": "Writes to this computer",
+  "settings_rules_template_forward": "Forward invoices to your accountant",
+  "settings_rules_template_forward_desc": "Invoices from a sender you choose are forwarded; you confirm the recipient before saving",
+  "settings_rules_template_contract": "Save contract attachments",
+  "settings_rules_template_contract_desc": "Attachments of mail whose subject contains “合同” (contract), saved into folders by date",
+  "settings_rules_template_reply": "Draft replies to clients",
+  "settings_rules_template_reply_desc": "Star it and have Wit draft a reply into Drafts",
+  "settings_rules_suggest": "{arg1} contains {arg2}",
+  "settings_rules_from_wit_quote": "“{arg1}”",
+  "settings_rules_from_wit_back": "Back to Conversation",
+  "settings_rules_preview_recent": "Last {arg1, number, ::group-off} days",
+  "settings_rules_value_addr": "Address or domain, like stripe.com",
+  "settings_rules_value_text": "Text to look for",
+  "settings_rules_account": "Receiving account",
+  "settings_rules_account_all": "All Accounts",
+  "settings_rules_in": "in",
+  "settings_rules_trigger_account": "{arg1} in {arg2}",
+  "settings_rules_then_next": "Next",
+  "settings_rules_forward_note": "You’ll confirm this recipient when you save. Only mail that arrives afterwards is forwarded.",
+  "settings_rules_forward_confirmed": "Recipient confirmed.",
+  "settings_rules_forward_aside": "Forwards mail: you confirm the recipient before saving. Forwards go to the Outbox and can be undone for 10 seconds.",
+  "settings_rules_ai_note": "Sends the mail to the model (masked first). What it writes only goes into Drafts.",
+  "settings_rules_ai_off_option": "{arg1} (turn on in Intelligence first)",
+  "settings_rules_save_saved": "Saved “{arg1}”",
+  "settings_rules_save_saved_existing": "Saved “{arg1}”; handling the existing {arg2, number, ::group-off} emails",
+  "settings_rules_confirm_first": "First time to this address",
+  "settings_rules_confirm_outbox_from": "Sent from {arg1}; each goes to the Outbox first and can be undone for 10 seconds",
+  "settings_rules_files_bad_slash": "Put something on both sides of each “/”.",
+  "settings_rules_files_bad_dot": "A folder can’t be named “.” or “..”.",
+  "settings_rules_files_example": "Example",
+  "settings_rules_aside": "Preview",
   "settings_masking_feature_rules": "Rules",
   "error_recipient_unconfirmed": "Confirm the forward recipient before saving the rule.",
   "wit_tool_propose_rule": "Create a rule",

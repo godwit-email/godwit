@@ -172,6 +172,8 @@ const (
 	AsideWidth          = 440  // onboarding's left panel
 	FormMaxWidth        = 520  // onboarding's form column
 	ContentMaxWidth     = 1040 // settings pages
+	RuleAsideWidth      = 340  // the rule editor's side panel
+	RuleConnector       = 20   // the line between the rule editor's cards
 	ControlWidth        = 220  // settings' wide buttons
 	SettingsMaxWidth    = 760  // a settings page's column
 	SettingsSelectMin   = 200  // a select in a settings row

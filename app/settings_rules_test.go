@@ -6,9 +6,17 @@ import (
 	"testing"
 	"time"
 
+	"github.com/egoist/mygo/ui"
 	"github.com/godwit-email/godwit/core"
 	"github.com/godwit-email/godwit/core/coretest"
 )
+
+// saveRule saves the rule in the editor through the save sheet.
+func (h *harness) saveRule() {
+	h.t.Helper()
+	h.click("保存")
+	h.click("保存并启用")
+}
 
 func (h *harness) rules() []core.Rule {
 	h.t.Helper()
@@ -28,7 +36,8 @@ func TestSettingsRulesCreate(t *testing.T) {
 	h.click("新建规则")
 	h.click("值")
 	h.typeText("billing@")
-	h.click("保存")
+	h.saveRule()
+	h.see("已保存「未命名规则」")
 	h.see("收到新邮件 · 发件人包含 billing@ → 打标签「验证码」")
 	rs := h.rules()
 	if len(rs) != 1 || !rs[0].Enabled || rs[0].Doc.Conditions[0].Value != "billing@" || rs[0].Doc.Actions[0].Label != "otp" {
@@ -68,7 +77,7 @@ func TestSettingsRulesAgeCondition(t *testing.T) {
 	h.click("字段")
 	h.click("邮件时间")
 	h.see("天数")
-	h.click("保存")
+	h.saveRule()
 	h.see("早于 30 天前")
 	rs := h.rules()
 	if len(rs) != 1 || rs[0].Doc.Conditions[0] != (core.RuleCondition{Field: core.FieldAge, Op: core.OpOlderThan, Value: "30"}) {
@@ -87,7 +96,7 @@ func TestSettingsRulesBackground(t *testing.T) {
 	h.click("新建规则")
 	h.click("值")
 	h.typeText("billing@")
-	h.click("保存")
+	h.saveRule()
 	h.see("收到新邮件 · 发件人包含 billing@")
 	if h.tt.HasText("后台运行") || h.app.KeepInBackground() {
 		t.Fatal("a rule not set to 后台运行 is tagged or keeps Godwit running")
@@ -95,7 +104,7 @@ func TestSettingsRulesBackground(t *testing.T) {
 
 	h.click("编辑「未命名规则」")
 	h.click("后台运行")
-	h.click("保存")
+	h.saveRule()
 	h.until("the rule in the background", func() bool { rs := h.rules(); return len(rs) == 1 && rs[0].Background })
 	h.see("后台运行")
 	if !h.app.KeepInBackground() {
@@ -116,7 +125,7 @@ func TestSettingsRulesHistoryUndo(t *testing.T) {
 	h.click("添加动作")
 	h.see("整理")
 	h.click("标为已读")
-	h.click("保存")
+	h.saveRule()
 	h.see("收到新邮件 · 发件人包含 billing@ → 打标签「验证码」 → 标为已读")
 
 	h.env.Deliver(t, acc.ID, "INBOX", coretest.Msg("billing@shop.example", acc.Email, "Your bill", "x"))
@@ -151,7 +160,7 @@ func TestSettingsRulesForwardConfirm(t *testing.T) {
 	h.typeText("carol@example.com")
 	h.click("保存")
 	h.see("确认转发收件人")
-	h.see("首次发送")
+	h.see("第一次发往这个地址")
 	h.click("返回修改")
 	if rs := h.rules(); len(rs) != 0 {
 		t.Fatalf("saved without confirming: %+v", rs)
@@ -159,6 +168,7 @@ func TestSettingsRulesForwardConfirm(t *testing.T) {
 
 	h.click("保存")
 	h.click("确认收件人")
+	h.click("保存并启用")
 	h.until("the rule saved", func() bool { return len(h.rules()) == 1 })
 	if r := h.rules()[0]; len(r.Confirmed) != 1 || r.Confirmed[0] != "carol@example.com" || r.Doc.Actions[0].To != "carol@example.com" {
 		t.Fatalf("rule %+v", r)
@@ -180,7 +190,7 @@ func TestSettingsRulesPreviewRunsOnExisting(t *testing.T) {
 	h.typeText("billing@")
 	h.advance(debounce)
 	h.see("有 2 封符合")
-	h.see("下面只列出最近 30 天的邮件")
+	h.see("最近 30 天")
 	h.see("Your bill")
 	if h.tt.HasText("Hello") || h.tt.HasText("Old bill") {
 		t.Error("other mail, or mail older than 30 days, is listed")
@@ -189,7 +199,8 @@ func TestSettingsRulesPreviewRunsOnExisting(t *testing.T) {
 	h.see("保存「未命名规则」")
 	h.see("只执行：打标签「验证码」。")
 	h.click("同时处理现有的 2 封邮件")
-	h.click("保存规则")
+	h.click("保存并启用")
+	h.see("已保存「未命名规则」，正在处理现有的 2 封邮件")
 	h.until("both bills labeled by the one-time run", func() bool {
 		rs := h.rules()
 		if len(rs) != 1 {
@@ -233,9 +244,9 @@ func TestSettingsRulesFromMail(t *testing.T) {
 		t.Fatal(err)
 	}
 	h.see("按「Your AWS invoice is available」填好了发件人。还想按这些匹配吗？")
-	h.click("+ 主题包含 invoice")
-	h.click("+ 有附件")
-	h.click("保存")
+	h.click("＋ 主题含 invoice")
+	h.click("＋ 有附件")
+	h.saveRule()
 	h.until("the rule saved", func() bool { return len(h.rules()) == 1 })
 	d := h.rules()[0].Doc
 	want := []core.RuleCondition{{Field: core.FieldFrom, Op: core.OpContains, Value: "billing@aws.example"},
@@ -245,20 +256,24 @@ func TestSettingsRulesFromMail(t *testing.T) {
 	}
 }
 
-// Wit's 在编辑器里修改 opens the editor filled in with its proposal; it is
-// saved only from there, its forward recipient confirmed as any other's.
+// Wit's 在编辑器里修改 opens the editor filled in with its proposal, quoting
+// what was asked; it is saved only from there, its forward recipient
+// confirmed as any other's.
 func TestSettingsRulesFromWit(t *testing.T) {
 	h, _ := withAccount(t)
 	h.app.EditRule(core.Rule{Enabled: true, Doc: core.RuleDoc{Version: core.RuleVersion, Name: "Stripe 发票转给会计", Trigger: core.TriggerReceive, Match: core.MatchAll,
 		Conditions: []core.RuleCondition{{Field: core.FieldFrom, Op: core.OpContains, Value: "stripe.com"}},
-		Actions:    []core.RuleAction{{Kind: core.ActionForward, To: "acct@company.example"}}}})
-	h.see("已按 Wit 的提议填好。检查后保存，规则才会生效。")
+		Actions:    []core.RuleAction{{Kind: core.ActionForward, To: "acct@company.example"}}}}, 7, "Stripe 的发票转给会计")
+	h.see("Wit 按你说的填好了这条规则，检查后点「保存」才会生效。")
+	h.see("“Stripe 的发票转给会计”")
+	h.see("回到对话")
 	if rs := h.rules(); len(rs) != 0 {
 		t.Fatalf("saved before the user did: %+v", rs)
 	}
 	h.click("保存")
 	h.see("确认转发收件人")
 	h.click("确认收件人")
+	h.click("保存并启用")
 	h.until("the rule saved", func() bool { return len(h.rules()) == 1 })
 	if r := h.rules()[0]; r.Doc.Conditions[0].Value != "stripe.com" || len(r.Confirmed) != 1 {
 		t.Fatalf("rule %+v", r)
@@ -271,15 +286,80 @@ func TestEditRuleWithoutSettingsPage(t *testing.T) {
 	settings := h.app.pages[PageSettings]
 	delete(h.app.pages, PageSettings)
 	t.Cleanup(func() { h.app.pages[PageSettings] = settings })
-	h.app.EditRule(core.Rule{})
+	h.app.EditRule(core.Rule{}, 0, "")
 }
 
-// Wit's actions are offered only once 「智能」's 规则可以使用 Wit is on.
+// Wit's actions are listed but not chosen until 「智能」's 规则可以使用 Wit
+// is on; the note on why shows while the add-action menu is open.
 func TestSettingsRulesWitActionsNeedTheSwitch(t *testing.T) {
 	h, _ := withAccount(t)
 	h.openSettings("rules")
 	h.click("新建规则")
-	h.see("Wit 的动作会把邮件发给模型，默认关闭。在 智能 › 功能 里打开「规则可以使用 Wit」后才能选。")
+	note := "Wit 的动作会把邮件发给模型，默认关闭。在 智能 › 功能 里打开「规则可以使用 Wit」后才能选。"
+	if h.tt.HasText(note) {
+		t.Error("the note shows with the menu closed")
+	}
 	h.click("添加动作")
+	h.see(note)
 	h.see("需在「智能」里打开")
+}
+
+// 删除规则 asks first, then deletes the rule and its hits.
+func TestSettingsRulesDelete(t *testing.T) {
+	h, _ := withAccount(t)
+	h.openSettings("rules")
+	h.click("新建规则")
+	h.click("值")
+	h.typeText("billing@")
+	h.saveRule()
+	h.until("the rule saved", func() bool { return len(h.rules()) == 1 })
+	h.click("展开最近命中")
+	h.click("删除规则")
+	h.see("删除「未命名规则」？")
+	h.click("取消")
+	if len(h.rules()) != 1 {
+		t.Fatal("cancel deleted the rule")
+	}
+	h.click("删除规则")
+	h.click("删除")
+	h.until("the rule deleted", func() bool { return len(h.rules()) == 0 })
+	h.see("已删除「未命名规则」")
+	h.see("还没有规则")
+}
+
+// The trigger can be kept to one account; the rule stores its id, and the
+// list says which.
+func TestSettingsRulesAccountScope(t *testing.T) {
+	h, acc := withAccount(t)
+	h.openSettings("rules")
+	h.click("新建规则")
+	h.see("所有账户")
+	h.click("值")
+	h.typeText("billing@")
+	h.click("收信账户")
+	h.see(accountName(acc)) // the option; the sidebar has the name too, so the keys choose it
+	h.tt.Key(0, ui.KeyDown)
+	h.tt.Key(0, ui.KeyEnter)
+	h.tt.Frame()
+	h.saveRule()
+	h.until("the rule saved", func() bool { return len(h.rules()) == 1 })
+	if d := h.rules()[0].Doc; d.Account != acc.ID {
+		t.Fatalf("rule %+v", d)
+	}
+	h.see("在 " + accountName(acc) + " 收到新邮件 · 发件人包含 billing@")
+}
+
+// The templates are the design's six.
+func TestSettingsRulesTemplates(t *testing.T) {
+	h, _ := withAccount(t)
+	h.openSettings("rules")
+	for _, name := range []string{"账单归档", "订阅邮件不进收件箱", "可疑邮件移到垃圾邮件", "发票转给会计", "合同附件存到本机", "客户来信先起草回复"} {
+		h.see(name)
+	}
+	h.click("使用模板「账单归档」")
+	h.see("导出 PDF 到")
+	h.click("取消")
+	// Without 「智能」's switch the reply template leaves out Wit's action and says why.
+	h.click("使用模板「客户来信先起草回复」")
+	h.see("Wit 的动作会把邮件发给模型，默认关闭。在 智能 › 功能 里打开「规则可以使用 Wit」后才能选。")
 }
