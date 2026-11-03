@@ -71,7 +71,7 @@ const (
 	ActionTrash   = "trash"
 	ActionStop    = "stop" // later rules do not run on the message
 	// ActionForward forwards the message to RuleAction.To once the user
-	// confirmed it (Rule.Confirmed); egress, so new mail only (forwardTriggers).
+	// confirmed it (Rule.Confirmed); egress, so new mail only (newMailTriggers).
 	ActionForward = "forward"
 
 	// The file actions write to Dir (rulefiles.go); they cannot be undone.
@@ -121,9 +121,11 @@ const (
 	RuleFailModel         = "model"         // no model, or it did not answer
 )
 
-// forwardTriggers are the triggers a forward runs on: new mail, or a
-// message just labeled or judged.
-var forwardTriggers = []string{TriggerReceive, TriggerLabel, TriggerSecurity}
+// newMailTriggers are the triggers a forward and a Wit action run on: new
+// mail, or a message just labeled or judged. On a daily run's or an
+// existing-mail run's older mail they are skipped: neither sends old mail
+// out unasked.
+var newMailTriggers = []string{TriggerReceive, TriggerLabel, TriggerSecurity}
 
 // ruleFolderRoles are the roles a folder condition may name.
 var ruleFolderRoles = []string{"inbox", "archive", "junk", "trash"}
@@ -846,6 +848,8 @@ func (s *Service) runRule(ctx context.Context, r Rule, msgID int64, trigger stri
 		switch kind := r.Doc.Actions[i].Kind; {
 		case kind == ActionForward:
 			failed, err = s.runForward(ctx, r, runID, i, msgID, trigger) // sending takes the edit lock itself
+		case slices.Contains(RuleAIActions, kind) && !slices.Contains(newMailTriggers, trigger): // it would send old mail to the model
+			err = s.exec(ctx, ruleResult(runID, r.Doc.Actions, i, RuleActionSkipped, nil, nil))
 		case slices.Contains(RuleFileActions, kind), kind == ActionDraftReply:
 			failed, err = s.runAction(ctx, runID, r.Doc.Actions, i, msgID) // it only reads the message, maybe from the server or a model
 		default:
@@ -968,7 +972,7 @@ func (s *Service) runForward(ctx context.Context, r Rule, runID int64, i int, ms
 	switch {
 	case len(rows.Values) == 0:
 		return fail(RuleFailGone)
-	case !slices.Contains(forwardTriggers, trigger) || store.Int(rows.Values[0][1]) != 0:
+	case !slices.Contains(newMailTriggers, trigger) || store.Int(rows.Values[0][1]) != 0:
 		return false, s.exec(ctx, ruleResult(runID, acts, i, RuleActionSkipped, nil, nil))
 	case !slices.Contains(r.Confirmed, rcptKey(to)):
 		return fail(RuleFailUnconfirmed)

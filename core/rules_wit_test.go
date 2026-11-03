@@ -360,3 +360,22 @@ func TestRuleDoes(t *testing.T) {
 			Conditions: []RuleCondition{{Field: FieldBody, Op: OpContains, Value: "1"}, {Field: FieldAge, Op: OpOlderThan, Value: "30"}},
 			Actions:    []RuleAction{{Kind: ActionStar}, {Kind: ActionRead}}}, labels, ""))
 }
+
+// A daily rule's Wit action is skipped: it would send old mail to the
+// model, as a forward would send it out.
+func TestRuleAIActionsSkipTheDailyRun(t *testing.T) {
+	clock := &dayClock{now: time.Date(2026, 11, 2, 8, 0, 0, 0, time.Local)}
+	setFor(t, &testClock, Clock(clock))
+	e := newSyncedEnv(t)
+	srv := e.aiRules(t, true)
+	d := draftReplyRule()
+	d.Trigger = TriggerDaily
+	e.saveRule(t, d, true)
+	e.put(t, "INBOX", eml("c@x", "bob@example.com", "alice@example.com", "Your card", day, "It is "+cardNumber))
+	clock.set(time.Date(2026, 11, 3, 0, 0, 0, 0, time.Local))
+	e.sync(t) // the first sync today
+	e.waitRuns(t, 1)
+	assert.Equal(t, [][]any{{"draft_reply", RuleActionSkipped}}, e.rows(t, "SELECT kind, state FROM rule_action_results"))
+	assert.Empty(t, srv.Requests())
+	assert.Zero(t, e.count(t, "SELECT count(*) FROM drafts"))
+}
