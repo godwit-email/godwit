@@ -5,6 +5,7 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"strconv"
 	"testing"
 
 	"github.com/godwit-email/godwit/core/internal/testllm"
@@ -48,6 +49,18 @@ func TestProposeRuleSavesNothing(t *testing.T) {
 	require.NoError(t, json.Unmarshal(a.Args, &p))
 	assert.Equal(t, RuleVersion, p.Rule.Version)
 	assert.Equal(t, "Stripe", p.Rule.Name)
+}
+
+// A proposal for one account names it for the card.
+func TestProposeRuleNamesItsAccount(t *testing.T) {
+	e := newApprovalEnv(t)
+	res, err := e.s.db.Execute(t.Context(), "INSERT INTO accounts(email, alias) VALUES ('work@company.example', 'Work')")
+	require.NoError(t, err)
+	a := e.propose(t, `{"name":"Stripe","trigger":"receive","account":`+strconv.FormatInt(res.LastInsertID, 10)+`,"match":"all","actions":[{"kind":"archive"}]}`)
+	var p ruleProposal
+	require.NoError(t, json.Unmarshal(a.Args, &p))
+	assert.Equal(t, res.LastInsertID, p.Rule.Account)
+	assert.Equal(t, "Work", p.AccountName)
 }
 
 // propose_rule says all it takes: the file actions, with their folder,

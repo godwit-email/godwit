@@ -138,13 +138,15 @@ const (
 	MaxRuleValue      = 500
 )
 
-// RuleDoc is a rule as stored: when (Trigger), if (Match of Conditions; none
-// matches every message), then (Actions, in order).
+// RuleDoc is a rule as stored: when (Trigger, on mail of Account, an
+// account's id; 0 every account), if (Match of Conditions; none matches
+// every message), then (Actions, in order).
 type RuleDoc struct {
 	Version    int             `json:"version"`
 	Name       string          `json:"name"`
 	Trigger    string          `json:"trigger"`
 	TriggerArg string          `json:"trigger_arg,omitempty"`
+	Account    int64           `json:"account,omitempty"`
 	Match      string          `json:"match"`
 	Conditions []RuleCondition `json:"conditions"`
 	Actions    []RuleAction    `json:"actions"`
@@ -225,6 +227,15 @@ func (s *Service) validRule(ctx context.Context, d RuleDoc) error {
 	}
 	if d.Match != MatchAll && d.Match != MatchAny {
 		return invalidRule("match %q", d.Match)
+	}
+	if d.Account != 0 {
+		rows, err := s.db.Query(ctx, "SELECT 1 FROM accounts WHERE id = ?", d.Account)
+		if err != nil {
+			return err
+		}
+		if len(rows.Values) == 0 {
+			return invalidRule("account %d", d.Account)
+		}
 	}
 	if len(d.Conditions) > MaxRuleConditions {
 		return invalidRule("more than %d conditions", MaxRuleConditions)
@@ -466,6 +477,7 @@ func (s *Service) RulesInBackground(ctx context.Context) (bool, error) {
 // ruleMail is what conditions read of a message.
 type ruleMail struct {
 	from, subject, body string
+	account             int64
 	to                  []string // To and Cc
 	attachments         bool
 	labels              []string // the slugs of the labels on it
@@ -477,7 +489,7 @@ type ruleMail struct {
 // ruleMail reads the message as it is now; ok is false when it is gone.
 func (s *Service) ruleMail(ctx context.Context, id int64) (m ruleMail, ok bool, err error) {
 	rows, err := s.db.Query(ctx, `SELECT m.from_addr, m.subject, m.body_text, m.to_addrs, m.cc_addrs, m.has_attachments, m.folder_id, COALESCE(f.role, ''),
-		(SELECT json_group_array(l.slug) FROM message_labels ml JOIN labels l ON l.id = ml.label_id WHERE ml.message_id = m.id AND ml.active = 1), m.date
+		(SELECT json_group_array(l.slug) FROM message_labels ml JOIN labels l ON l.id = ml.label_id WHERE ml.message_id = m.id AND ml.active = 1), m.date, m.account_id
 		FROM messages m JOIN folders f ON f.id = m.folder_id WHERE m.id = ?`, id)
 	if err != nil || len(rows.Values) == 0 {
 		return m, false, err
@@ -486,12 +498,15 @@ func (s *Service) ruleMail(ctx context.Context, id int64) (m ruleMail, ok bool, 
 	return ruleMail{from: store.Str(v[0]), subject: store.Str(v[1]), body: store.Str(v[2]),
 		to: append(jsonList(store.Str(v[3])), jsonList(store.Str(v[4]))...), attachments: store.Int(v[5]) != 0,
 		folderID: store.Int(v[6]), folderRole: store.Str(v[7]), labels: jsonList(store.Str(v[8])),
-		date: store.Int(v[9]), now: s.clk().Now().Unix()}, true, nil
+		date: store.Int(v[9]), account: store.Int(v[10]), now: s.clk().Now().Unix()}, true, nil
 }
 
-// matches evaluates the conditions; none matches every message. Text is
-// compared without case.
+// matches evaluates the account and the conditions; none matches every
+// message. Text is compared without case.
 func (d RuleDoc) matches(m ruleMail) bool {
+	if d.Account != 0 && m.account != d.Account {
+		return false
+	}
 	if len(d.Conditions) == 0 {
 		return true
 	}

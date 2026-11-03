@@ -137,7 +137,7 @@ func (s *Service) existingSQL(d RuleDoc) (string, []any) {
 	return cond + " AND m.folder_id NOT IN (SELECT id FROM folders WHERE role IN ('sent', 'drafts'))", args
 }
 
-// ruleSQL is d's trigger and conditions as a condition on messages m, true
+// ruleSQL is d's account, trigger and conditions as a condition on messages m, true
 // where RuleDoc.matches is, and firesOn for a label or security trigger.
 // shortcut: SQLite's lower() folds ASCII only, the evaluator all of Unicode;
 // they differ on a non-ASCII capital in an "is" or a short "contains".
@@ -154,6 +154,10 @@ func ruleSQL(d RuleDoc, now int64) (string, []any) {
 			join = " OR "
 		}
 		cond = "(" + strings.Join(parts, join) + ")"
+	}
+	if d.Account != 0 {
+		cond += " AND m.account_id = ?"
+		args = append(args, d.Account)
 	}
 	switch d.Trigger {
 	case TriggerLabel:

@@ -253,6 +253,28 @@ func TestRuleStoresStableIDs(t *testing.T) {
 	}
 }
 
+// A rule for one account runs on that account's mail only; one naming an
+// account there is not is refused.
+func TestRuleAccountScope(t *testing.T) {
+	e := newRulesEnv(t)
+	res, err := e.s.db.Execute(bg, "INSERT INTO accounts(email) VALUES ('other@example.com')")
+	require.NoError(t, err)
+	mine, other := billsRule(), rule(RuleAction{Kind: ActionStar})
+	mine.Account, other.Account = e.acc.ID, res.LastInsertID
+	e.saveRule(t, mine, true)
+	e.saveRule(t, other, true)
+	e.bill(t, "hit@x", "AWS <billing@aws.example>", "Your invoice is ready")
+	e.sync(t)
+	e.waitRuns(t, 1)
+	assert.Equal(t, "rule", e.labelOn(t, e.idOf(t, "hit@x")))
+	assert.Equal(t, 1, e.count(t, "SELECT count(*) FROM rule_runs"), "the other account's rule did not run")
+
+	bad := billsRule()
+	bad.Account = res.LastInsertID + 1
+	_, err = e.s.SaveRule(bg, Rule{Doc: bad})
+	assert.ErrorIs(t, err, ErrInvalidRule)
+}
+
 func TestRuleConditions(t *testing.T) {
 	m := ruleMail{from: "AWS <billing@aws.example>", subject: "Your Invoice", to: []string{"Alice <alice@example.com>", "team@example.com"},
 		body: "Amount due: $12", attachments: true, labels: []string{"u1"}, folderID: 7, folderRole: "inbox",

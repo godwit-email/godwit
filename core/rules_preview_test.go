@@ -113,6 +113,9 @@ func TestRulePreviewAgreesWithEvaluator(t *testing.T) {
 		assert.Equal(t, e.evaluated(t, d), e.previewed(t, d), "%s %v", d.Match, d.Conditions)
 	}
 	assert.Len(t, e.previewed(t, RuleDoc{Trigger: TriggerReceive, Match: MatchAny}), 5, "Sent and older mail are not listed")
+	// An account rule runs on that account's mail only.
+	assert.Equal(t, e.evaluated(t, RuleDoc{Trigger: TriggerReceive, Match: MatchAll, Account: e.acc.ID}), e.previewed(t, RuleDoc{Trigger: TriggerReceive, Match: MatchAll, Account: e.acc.ID}))
+	assert.Empty(t, e.previewed(t, RuleDoc{Trigger: TriggerReceive, Match: MatchAll, Account: e.acc.ID + 1}))
 	// A label rule runs on mail with that label on.
 	assert.Equal(t, []int64{e.idOf(t, "news@x")}, e.previewed(t, RuleDoc{Trigger: TriggerLabel, TriggerArg: "u1", Match: MatchAll}))
 

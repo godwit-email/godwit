@@ -34,16 +34,18 @@ const proposalShown = 3
 
 // ruleProposal is propose_rule's recorded arguments: the rule, and what its
 // card shows: the forward recipients no account has written to, the
-// existing mail it matches and the names of the labels it names. Confirmed
+// existing mail it matches, the names of the labels it names and the
+// display name of the account it is for ("" every account). Confirmed
 // comes only from the user's decision (confirmedRuleArgs), never from Wit.
 type ruleProposal struct {
-	Rule       RuleDoc           `json:"rule"`
-	Background bool              `json:"background"`
-	FirstTime  []string          `json:"first_time"`
-	Matches    int               `json:"matches"`
-	Mail       []proposedMail    `json:"mail"`
-	Labels     map[string]string `json:"labels"`
-	Confirmed  []string          `json:"confirmed,omitempty"`
+	Rule        RuleDoc           `json:"rule"`
+	Background  bool              `json:"background"`
+	FirstTime   []string          `json:"first_time"`
+	Matches     int               `json:"matches"`
+	Mail        []proposedMail    `json:"mail"`
+	Labels      map[string]string `json:"labels"`
+	AccountName string            `json:"account_name,omitempty"`
+	Confirmed   []string          `json:"confirmed,omitempty"`
 }
 
 type proposedMail struct {
@@ -59,6 +61,7 @@ func (s *Service) registerRuleTool() {
 			"It saves nothing: the user sees it as a preview card and saves it themselves, or opens it in the rule editor; " +
 			"a forward's recipient is confirmed by the user in Godwit, never by you. " +
 			"trigger: receive (new mail), label (trigger_arg: a label slug), security (trigger_arg: suspicious or dangerous), daily. " +
+			"account: an account_id to run on that account's mail only; leave it out for every account. " +
 			"conditions (match all or any; none matches all mail): field from, to, subject or body with op contains, not_contains or is; " +
 			"attachments is yes or no; label (a slug) or folder (inbox, archive, junk or trash) with op is or not_contains; age with op older_than (value: whole days, from 1). " +
 			"actions: label or unlabel (label: a slug), read, star, archive, junk, trash, stop (later rules skip the mail), forward (to: one address), " +
@@ -74,6 +77,7 @@ func (s *Service) registerRuleTool() {
 			"name":        stringProp,
 			"trigger":     map[string]any{"type": "string", "enum": []string{TriggerReceive, TriggerLabel, TriggerSecurity, TriggerDaily}},
 			"trigger_arg": stringProp,
+			"account":     intProp,
 			"match":       map[string]any{"type": "string", "enum": []string{MatchAll, MatchAny}},
 			"conditions": map[string]any{"type": "array", "maxItems": MaxRuleConditions, "items": object(map[string]any{
 				"field": stringProp, "op": stringProp, "value": stringProp,
@@ -125,6 +129,13 @@ func (s *Service) prepareRule(ctx context.Context, _ Conversation, raw json.RawM
 	}
 	for _, l := range ls {
 		p.Labels[l.Slug] = l.Name
+	}
+	if d.Account != 0 {
+		acc, err := s.account(ctx, d.Account)
+		if err != nil {
+			return prepared{}, err
+		}
+		p.AccountName = accountLabel(acc)
 	}
 	b, err := json.Marshal(p)
 	if err != nil {
