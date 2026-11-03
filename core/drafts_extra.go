@@ -98,7 +98,7 @@ func (s *Service) SendRevision(ctx context.Context, draftID, revision int64) err
 		return err
 	}
 	defer end()
-	return s.send(ctx, draftID, max(revision, 0)) // a negative one would mean any
+	return s.send(ctx, draftID, max(revision, 0), nil) // a negative one would mean any
 }
 
 // SendAcknowledgedRevision is SendAcknowledged for exactly that revision of

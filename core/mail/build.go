@@ -24,7 +24,12 @@ type Outgoing struct {
 	// Related are images the HTML may show as cid:<ContentID> (the account's
 	// signature images): sent inline, in multipart/related, when it does.
 	Related []Attachment
+	Header  map[string]string // more header fields, such as RuleHeader
 }
+
+// RuleHeader marks mail a Godwit rule forwarded; mail carrying it is never
+// forwarded by a rule again, so two rules can't forward in a loop.
+const RuleHeader = "X-Godwit-Rule"
 
 func addrList(in []string) ([]*gomail.Address, error) {
 	var out []*gomail.Address
@@ -72,6 +77,9 @@ func Build(o Outgoing, now time.Time) (raw []byte, messageID string, err error) 
 		if len(l) > 0 {
 			h.SetAddressList(f.key, l)
 		}
+	}
+	for k, v := range o.Header {
+		h.Set(k, v)
 	}
 	if o.InReplyTo != "" {
 		h.SetMsgIDList("In-Reply-To", []string{cleanID(o.InReplyTo)})

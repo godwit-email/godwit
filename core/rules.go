@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"log/slog"
 	"net/mail"
 	"slices"
 	"strconv"
@@ -14,6 +15,7 @@ import (
 
 	"github.com/egoist/mygo/plugins/sqlite"
 	"github.com/godwit-email/godwit/core/events"
+	"github.com/godwit-email/godwit/core/gateway"
 	"github.com/godwit-email/godwit/core/store"
 )
 
@@ -64,6 +66,9 @@ const (
 	ActionJunk    = "junk"
 	ActionTrash   = "trash"
 	ActionStop    = "stop" // later rules do not run on the message
+	// ActionForward forwards the message to RuleAction.To once the user
+	// confirmed it (Rule.Confirmed); egress, so new mail only (forwardTriggers).
+	ActionForward = "forward"
 )
 
 // Run and action states, and why an action failed.
@@ -78,12 +83,22 @@ const (
 	RuleActionNotRun = "not_run" // after a failed one
 	RuleActionUndone = "undone"
 	RuleActionKept   = "kept" // not undone: its target changed since
+	// RuleActionSkipped is a forward on mail it never forwards: not new
+	// (a daily or one-time run), or forwarded by a rule (mail.RuleHeader).
+	RuleActionSkipped = "skipped"
 
-	RuleFailNoFolder = "no_folder"
-	RuleFailNoLabel  = "no_label"
-	RuleFailGone     = "gone" // the message
-	RuleFailUnknown  = "unknown"
+	RuleFailNoFolder    = "no_folder"
+	RuleFailNoLabel     = "no_label"
+	RuleFailGone        = "gone" // the message
+	RuleFailUnknown     = "unknown"
+	RuleFailUnconfirmed = "unconfirmed" // the forward's recipient is not in Rule.Confirmed
+	RuleFailSendCheck   = "send_check"  // a plugin warned about or blocked the forward
+	RuleFailSend        = "send"        // the forward could not be queued
 )
+
+// forwardTriggers are the triggers a forward runs on: new mail, or a
+// message just labeled or judged.
+var forwardTriggers = []string{TriggerReceive, TriggerLabel, TriggerSecurity}
 
 // ruleFolderRoles are the roles a folder condition may name.
 var ruleFolderRoles = []string{"inbox", "archive", "junk", "trash"}
@@ -118,19 +133,33 @@ type RuleCondition struct {
 	Value string `json:"value"`
 }
 
-// RuleAction is one step; Label is a label's slug (ActionLabel).
+// RuleAction is one step; Label is a label's slug (ActionLabel), To an
+// address (ActionForward).
 type RuleAction struct {
 	Kind  string `json:"kind"`
 	Label string `json:"label,omitempty"`
+	To    string `json:"to,omitempty"`
 }
 
 // Rule is a stored rule, in the order rules run. Background keeps Godwit
-// running after the window closes (运行方式 后台运行).
+// running after the window closes (运行方式 后台运行). Confirmed are the
+// forward recipients the user confirmed in Godwit, lower-cased bare
+// addresses, kept apart from Doc: a forward to any other does not send.
 type Rule struct {
 	ID         int64
 	Enabled    bool
 	Background bool
 	Doc        RuleDoc
+	Confirmed  []string
+}
+
+// rcptKey is a forward recipient as Rule.Confirmed holds it, "" if invalid.
+func rcptKey(s string) string {
+	a, err := mail.ParseAddress(s)
+	if err != nil {
+		return ""
+	}
+	return strings.ToLower(a.Address)
 }
 
 // ErrInvalidRule is a rule document SaveRule refuses.
@@ -183,6 +212,10 @@ func (s *Service) validRule(ctx context.Context, d RuleDoc) error {
 		case ActionLabel, ActionUnlabel:
 			if err := s.labelExists(ctx, a.Label); err != nil {
 				return err
+			}
+		case ActionForward:
+			if rcptKey(a.To) == "" {
+				return invalidRule("forward to %q", a.To)
 			}
 		case ActionRead, ActionStar, ActionArchive, ActionJunk, ActionTrash, ActionStop:
 		default:
@@ -258,13 +291,13 @@ func (s *Service) Rules(ctx context.Context) ([]Rule, error) {
 }
 
 func (s *Service) rules(ctx context.Context, enabledOnly bool) ([]Rule, error) {
-	rows, err := s.db.Query(ctx, "SELECT id, enabled, doc, background FROM rules WHERE enabled >= ? ORDER BY position, id", b2i(enabledOnly))
+	rows, err := s.db.Query(ctx, "SELECT id, enabled, doc, background, confirmed_rcpts FROM rules WHERE enabled >= ? ORDER BY position, id", b2i(enabledOnly))
 	if err != nil {
 		return nil, err
 	}
 	out := make([]Rule, 0, len(rows.Values))
 	for _, v := range rows.Values {
-		r := Rule{ID: store.Int(v[0]), Enabled: store.Int(v[1]) != 0, Background: store.Int(v[3]) != 0}
+		r := Rule{ID: store.Int(v[0]), Enabled: store.Int(v[1]) != 0, Background: store.Int(v[3]) != 0, Confirmed: jsonList(store.Str(v[4]))}
 		if err := json.Unmarshal([]byte(store.Str(v[2])), &r.Doc); err != nil {
 			return nil, fmt.Errorf("rule %d: %w", r.ID, err)
 		}
@@ -274,6 +307,8 @@ func (s *Service) rules(ctx context.Context, enabledOnly bool) ([]Rule, error) {
 }
 
 // SaveRule validates r and stores it: a new one (ID 0) after the others.
+// Of r.Confirmed it keeps the recipients the rule forwards to: the caller
+// passes only those the user confirmed in Godwit, with the address shown.
 // It returns the rule's id.
 func (s *Service) SaveRule(ctx context.Context, r Rule) (int64, error) {
 	ctx, end, err := s.begin(ctx, 0)
@@ -289,17 +324,24 @@ func (s *Service) SaveRule(ctx context.Context, r Rule) (int64, error) {
 	if err != nil {
 		return 0, err
 	}
+	confirmed := []string{}
+	for _, a := range r.Doc.Actions {
+		k := rcptKey(a.To)
+		if a.Kind == ActionForward && !slices.Contains(confirmed, k) && slices.ContainsFunc(r.Confirmed, func(c string) bool { return rcptKey(c) == k }) {
+			confirmed = append(confirmed, k)
+		}
+	}
 	now := time.Now().Unix()
 	if r.ID == 0 {
-		res, err := s.db.Execute(ctx, `INSERT INTO rules(position, enabled, background, doc, created_at, updated_at)
-			SELECT COALESCE(MAX(position), -1) + 1, ?, ?, ?, ?, ? FROM rules`, b2i(r.Enabled), b2i(r.Background), string(doc), now, now)
+		res, err := s.db.Execute(ctx, `INSERT INTO rules(position, enabled, background, doc, confirmed_rcpts, created_at, updated_at)
+			SELECT COALESCE(MAX(position), -1) + 1, ?, ?, ?, ?, ?, ? FROM rules`, b2i(r.Enabled), b2i(r.Background), string(doc), encodeList(confirmed), now, now)
 		if err != nil {
 			return 0, err
 		}
 		return res.LastInsertID, nil
 	}
-	res, err := s.db.Execute(ctx, "UPDATE rules SET enabled = ?, background = ?, doc = ?, updated_at = ? WHERE id = ?",
-		b2i(r.Enabled), b2i(r.Background), string(doc), now, r.ID)
+	res, err := s.db.Execute(ctx, "UPDATE rules SET enabled = ?, background = ?, doc = ?, confirmed_rcpts = ?, updated_at = ? WHERE id = ?",
+		b2i(r.Enabled), b2i(r.Background), string(doc), encodeList(confirmed), now, r.ID)
 	if err != nil {
 		return 0, err
 	}
@@ -317,6 +359,29 @@ func (s *Service) SetRuleEnabled(ctx context.Context, id int64, on bool) error {
 	}
 	defer end()
 	return s.exec(ctx, sqlite.Statement{SQL: "UPDATE rules SET enabled = ?, updated_at = ? WHERE id = ?", Args: []any{b2i(on), time.Now().Unix(), id}})
+}
+
+// FirstTimeRecipients are the addresses none of the accounts has written
+// to, for the confirmation a rule's forward recipient needs.
+func (s *Service) FirstTimeRecipients(ctx context.Context, addrs []string) ([]string, error) {
+	ctx, end, err := s.begin(ctx, 0)
+	if err != nil {
+		return nil, err
+	}
+	defer end()
+	accs, err := s.ListAccounts(ctx)
+	if err != nil {
+		return nil, err
+	}
+	for _, acc := range accs {
+		if len(addrs) == 0 {
+			break
+		}
+		if addrs, err = s.firstTime(ctx, acc, Draft{To: addrs}); err != nil {
+			return nil, err
+		}
+	}
+	return addrs, nil
 }
 
 // RulesInBackground reports whether an enabled rule runs in the background,
@@ -592,9 +657,14 @@ func (s *Service) runRule(ctx context.Context, r Rule, msgID int64, trigger stri
 	}
 	state := RuleRunDone
 	for i := from; i < len(r.Doc.Actions); i++ {
-		s.editMu.Lock() // the action reads the message and writes it, as an edit does
-		failed, err := s.runAction(ctx, runID, r.Doc.Actions, i, msgID)
-		s.editMu.Unlock()
+		var failed bool
+		if r.Doc.Actions[i].Kind == ActionForward {
+			failed, err = s.runForward(ctx, r, runID, i, msgID, trigger) // sending takes the edit lock itself
+		} else {
+			s.editMu.Lock() // the action reads the message and writes it, as an edit does
+			failed, err = s.runAction(ctx, runID, r.Doc.Actions, i, msgID)
+			s.editMu.Unlock()
+		}
 		if err != nil {
 			return err
 		}
@@ -626,28 +696,96 @@ func (s *Service) runAction(ctx context.Context, runID int64, acts []RuleAction,
 			return false, err
 		}
 	}
-	result := func(j int, state string, prior, failure any) sqlite.Statement {
-		return sqlite.Statement{SQL: `INSERT OR REPLACE INTO rule_action_results(run_id, idx, kind, state, prior, result, at)
-			VALUES (?, ?, ?, ?, ?, ?, ?)`, Args: []any{runID, j, acts[j].Kind, state, prior, failure, time.Now().Unix()}}
-	}
 	stmts := w.writes
 	if failure == "" {
 		prior, err := json.Marshal(w.prior)
 		if err != nil {
 			return false, err
 		}
-		stmts = append(stmts, result(i, RuleActionDone, string(prior), nil))
+		stmts = append(stmts, ruleResult(runID, acts, i, RuleActionDone, string(prior), nil))
 	} else {
-		stmts = append(stmts, result(i, RuleActionFailed, nil, failure))
-		for j := i + 1; j < len(acts); j++ {
-			stmts = append(stmts, result(j, RuleActionNotRun, nil, nil))
-		}
+		stmts = append(stmts, failedResults(runID, acts, i, failure)...)
 	}
 	if !ok {
 		_, err := s.db.Transaction(ctx, stmts)
 		return true, err
 	}
 	return failure != "", s.apply(ctx, acc, []target{t}, stmts)
+}
+
+// ruleResult writes acts[j]'s result.
+func ruleResult(runID int64, acts []RuleAction, j int, state string, prior, failure any) sqlite.Statement {
+	return sqlite.Statement{SQL: `INSERT OR REPLACE INTO rule_action_results(run_id, idx, kind, state, prior, result, at)
+		VALUES (?, ?, ?, ?, ?, ?, ?)`, Args: []any{runID, j, acts[j].Kind, state, prior, failure, time.Now().Unix()}}
+}
+
+// failedResults writes acts[i] as failed for failure and the actions after it as not run.
+func failedResults(runID int64, acts []RuleAction, i int, failure string) []sqlite.Statement {
+	stmts := []sqlite.Statement{ruleResult(runID, acts, i, RuleActionFailed, nil, failure)}
+	for j := i + 1; j < len(acts); j++ {
+		stmts = append(stmts, ruleResult(runID, acts, j, RuleActionNotRun, nil, nil))
+	}
+	return stmts
+}
+
+// ruleSend is a rule's forward for enqueue: the marker header names the
+// rule, and stmts (its result and audit) are written with the outbox item.
+type ruleSend struct {
+	ruleID int64
+	stmts  []sqlite.Statement
+}
+
+// runForward forwards the message, with its attachments, to the action's
+// recipient through the outbox, as a send of the user's would go. The
+// result and the audit row are written with the outbox item, so a crash
+// leaves all or none of them and the run resumed forwards at most once. A
+// recipient not confirmed, or any plugin warning (nobody is there to read
+// it), fails the action instead.
+func (s *Service) runForward(ctx context.Context, r Rule, runID int64, i int, msgID int64, trigger string) (failed bool, err error) {
+	acts, to := r.Doc.Actions, r.Doc.Actions[i].To
+	fail := func(failure string) (bool, error) {
+		_, err := s.db.Transaction(ctx, failedResults(runID, acts, i, failure))
+		return true, err
+	}
+	rows, err := s.db.Query(ctx, "SELECT account_id, rule_sent FROM messages WHERE id = ?", msgID)
+	if err != nil {
+		return false, err
+	}
+	switch {
+	case len(rows.Values) == 0:
+		return fail(RuleFailGone)
+	case !slices.Contains(forwardTriggers, trigger) || store.Int(rows.Values[0][1]) != 0:
+		return false, s.exec(ctx, ruleResult(runID, acts, i, RuleActionSkipped, nil, nil))
+	case !slices.Contains(r.Confirmed, rcptKey(to)):
+		return fail(RuleFailUnconfirmed)
+	}
+	d, err := s.NewDraft(ctx, store.Int(rows.Values[0][0]), "forward", msgID)
+	if err == nil {
+		d.To = []string{to}
+		if d, err = s.SaveDraft(ctx, d); err != nil {
+			err = errors.Join(err, s.deleteDraft(context.WithoutCancel(ctx), d.ID))
+		}
+	}
+	if err == nil {
+		audit := gateway.Audit(gateway.Entry{Source: AuditRule, Tool: ActionForward, TargetKind: "rule", TargetID: r.ID,
+			Destinations: []string{to}, Decision: "allow"}, s.secrets.Redact)
+		rs := &ruleSend{ruleID: r.ID, stmts: []sqlite.Statement{ruleResult(runID, acts, i, RuleActionDone, "{}", nil), audit}}
+		if err = s.send(ctx, d.ID, -1, rs); err != nil {
+			err = errors.Join(err, s.deleteDraft(context.WithoutCancel(ctx), d.ID))
+		}
+	}
+	var warned *SendWarningsError
+	var blocked *SendBlockedError
+	switch {
+	case err == nil:
+		return false, nil
+	case ctx.Err() != nil:
+		return false, err // closing: the run resumes
+	case errors.As(err, &warned), errors.As(err, &blocked):
+		return fail(RuleFailSendCheck)
+	}
+	slog.Warn("rules: forward not queued", "rule", r.ID, "err", err)
+	return fail(RuleFailSend)
 }
 
 // ruleTarget loads the message an action works on; ok is false when it is gone.
@@ -816,7 +954,7 @@ func (s *Service) UndoRuleRun(ctx context.Context, runID int64) (kept int, err e
 	s.editMu.Lock()
 	defer s.editMu.Unlock()
 	rows, err := s.db.Query(ctx, `SELECT a.idx, a.kind, a.prior, r.message_id FROM rule_runs r JOIN rule_action_results a ON a.run_id = r.id
-		WHERE r.id = ? AND a.state = ? AND a.kind != ? ORDER BY a.idx DESC`, runID, RuleActionDone, ActionStop)
+		WHERE r.id = ? AND a.state = ? AND a.kind NOT IN (?, ?) ORDER BY a.idx DESC`, runID, RuleActionDone, ActionStop, ActionForward)
 	if err != nil {
 		return 0, err
 	}

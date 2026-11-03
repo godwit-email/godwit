@@ -45,6 +45,7 @@ type Parsed struct {
 	AuthenticationResults string
 	AuthenticationTrace   []AuthenticationHeader
 	DKIMSigned            bool
+	RuleSent              bool // it has RuleHeader: a Godwit rule forwarded it
 }
 
 // MaxListHeaderBytes is the longest List-* header kept; a longer one counts as absent.
@@ -151,6 +152,7 @@ func Parse(raw []byte) (*Parsed, error) {
 	p.AuthenticationTrace = authenticationTrace(&h)
 	p.AuthenticationResults = ReceiverAuthenticationResults(p.AuthenticationTrace)
 	p.DKIMSigned = strings.TrimSpace(h.Get("DKIM-Signature")) != ""
+	p.RuleSent = h.Get(RuleHeader) != ""
 	fromFields := h.FieldsByKey("From")
 	fromCount := 0
 	for fromFields.Next() {

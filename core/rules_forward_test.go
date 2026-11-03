@@ -1,0 +1,181 @@
+package core
+
+import (
+	"strings"
+	"testing"
+
+	"github.com/godwit-email/godwit/core/mail"
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
+)
+
+const carol = "carol@example.com"
+
+// newForwardEnv is a sendEnv whose INBOX synced once, so later mail is new.
+func newForwardEnv(t *testing.T) *sendEnv {
+	t.Helper()
+	e := newSendEnv(t, false)
+	e.newMail(t, "old@x", "before")
+	e.sync(t)
+	return e
+}
+
+// forwardRule forwards mail from billing@ to to.
+func forwardRule(to string, more ...RuleAction) RuleDoc {
+	return rule(append([]RuleAction{{Kind: ActionForward, To: to}}, more...)...)
+}
+
+func (e *sendEnv) saveForward(t *testing.T, d RuleDoc, confirmed ...string) int64 {
+	t.Helper()
+	id, err := e.s.SaveRule(bg, Rule{Enabled: true, Doc: d, Confirmed: confirmed})
+	require.NoError(t, err)
+	return id
+}
+
+// billWithPDF is mail from billing@ with the attachment f0.pdf; hdr are extra header lines.
+func billWithPDF(id string, hdr ...string) string {
+	raw := strings.Replace(withAttachments(id, "your bill", 1), "From: bob@example.com", "From: billing@shop.example", 1)
+	for _, h := range hdr {
+		raw = h + "\r\n" + raw
+	}
+	return raw
+}
+
+// release lets the undo window pass and syncs, sending what is queued.
+func (e *sendEnv) release(t *testing.T) []mail.Parsed {
+	t.Helper()
+	e.clock.Advance(UndoSendWindow)
+	e.sync(t)
+	var out []mail.Parsed
+	for _, m := range e.smtp.Messages() {
+		p, err := mail.Parse(m.Data)
+		require.NoError(t, err)
+		out = append(out, *p)
+	}
+	return out
+}
+
+// A forward goes through the outbox, with the attachments, to the confirmed
+// recipient, marked as a rule's and audited as the rule's send.
+func TestRuleForwardSends(t *testing.T) {
+	e := newForwardEnv(t)
+	id := e.saveForward(t, forwardRule(carol), carol)
+	e.put(t, "INBOX", billWithPDF("bill@x"))
+	e.sync(t)
+	e.waitRuns(t, 1)
+
+	assert.Equal(t, []string{"forward done"}, e.results(t, e.runOf(t, "bill@x")))
+	assert.Equal(t, 1, e.outboxLen(t), "in the outbox, undoable")
+	got := e.release(t)
+	require.Len(t, got, 1)
+	assert.Equal(t, []string{carol}, got[0].To)
+	assert.True(t, got[0].RuleSent)
+	require.Len(t, got[0].Attachments, 1)
+	assert.Equal(t, "f0.pdf", got[0].Attachments[0].Filename)
+	assert.Equal(t, [][]any{{AuditRule, "forward", "rule", id, "example.com"}},
+		e.rows(t, "SELECT source, tool, target_kind, target_id, destination FROM audit_log WHERE source = ?", AuditRule))
+}
+
+// A forward to a recipient not confirmed, saved so or edited into the
+// stored rule, sends nothing and its hit says why.
+func TestRuleForwardUnconfirmedNeverSends(t *testing.T) {
+	e := newForwardEnv(t)
+	e.saveForward(t, forwardRule(carol, RuleAction{Kind: ActionRead}))
+	e.put(t, "INBOX", billWithPDF("a@x"))
+	e.sync(t)
+	e.waitRuns(t, 1)
+	assert.Equal(t, []string{"forward failed", "read not_run"}, e.results(t, e.runOf(t, "a@x")))
+
+	id := e.saveForward(t, forwardRule(carol), carol)
+	_, err := e.s.db.Execute(bg, `UPDATE rules SET doc = json_set(doc, '$.actions[0].to', 'mallory@evil.example') WHERE id = ?`, id)
+	require.NoError(t, err)
+	e.put(t, "INBOX", billWithPDF("b@x"))
+	e.sync(t)
+	e.waitRuns(t, 3)
+	assert.Equal(t, 3, e.count(t, "SELECT count(*) FROM rule_action_results WHERE kind = 'forward' AND result = ?", RuleFailUnconfirmed))
+	assert.Zero(t, e.outboxLen(t))
+	assert.Empty(t, e.release(t))
+	assert.Zero(t, e.count(t, "SELECT count(*) FROM drafts"))
+}
+
+// SaveRule keeps only the confirmed recipients the rule forwards to.
+func TestSaveRuleKeepsConfirmedForwardRecipients(t *testing.T) {
+	e := newForwardEnv(t)
+	e.saveForward(t, forwardRule("Carol <Carol@Example.com>"), carol, "dave@example.com")
+	rs, err := e.s.Rules(bg)
+	require.NoError(t, err)
+	require.Len(t, rs, 1)
+	assert.Equal(t, []string{carol}, rs[0].Confirmed)
+	_, err = e.s.SaveRule(bg, Rule{Doc: forwardRule("not an address")})
+	assert.ErrorIs(t, err, ErrInvalidRule)
+}
+
+// The confirmation flags a recipient no account has written to.
+func TestFirstTimeRecipients(t *testing.T) {
+	e := newForwardEnv(t)
+	e.put(t, "Sent", eml("s@x", "alice@example.com", "Bob <bob@example.com>", "hi", day, "b"))
+	e.sync(t)
+	got, err := e.s.FirstTimeRecipients(bg, []string{"BOB@example.com", carol})
+	require.NoError(t, err)
+	assert.Equal(t, []string{carol}, got)
+}
+
+// A crash after the forward was queued, before the run finished, resumes
+// without forwarding again.
+func TestRuleForwardOnceAcrossCrash(t *testing.T) {
+	e := newForwardEnv(t)
+	e.saveForward(t, forwardRule(carol, RuleAction{Kind: ActionRead}), carol)
+	stopped := stopRulesAt(t, "rules.action")
+	e.put(t, "INBOX", billWithPDF("bill@x"))
+	e.sync(t)
+	<-stopped
+	rulesHook = nil
+	e.reopen(t)
+	e.waitRuns(t, 1)
+
+	assert.Equal(t, []string{"forward done", "read done"}, e.results(t, e.runOf(t, "bill@x")))
+	assert.Len(t, e.release(t), 1)
+	assert.Equal(t, 1, e.count(t, "SELECT count(*) FROM audit_log WHERE source = ?", AuditRule))
+}
+
+// Mail a rule forwarded carries the marker, and no rule forwards it again:
+// two rules can't forward to each other in a loop.
+func TestRuleNeverForwardsMarkedMail(t *testing.T) {
+	e := newForwardEnv(t)
+	e.saveForward(t, forwardRule(carol, RuleAction{Kind: ActionRead}), carol)
+	e.put(t, "INBOX", billWithPDF("fwd@x", mail.RuleHeader+": 7"))
+	e.sync(t)
+	e.waitRuns(t, 1)
+	assert.Equal(t, []string{"forward skipped", "read done"}, e.results(t, e.runOf(t, "fwd@x")))
+	assert.Zero(t, e.outboxLen(t))
+	assert.Empty(t, e.release(t))
+}
+
+// A run over the mail there is (here the daily one) never forwards.
+func TestRuleForwardNotOverExistingMail(t *testing.T) {
+	e := newForwardEnv(t)
+	e.put(t, "INBOX", billWithPDF("bill@x"))
+	e.sync(t)
+	d := forwardRule(carol)
+	d.Trigger = TriggerDaily
+	e.saveForward(t, d, carol)
+	e.sync(t)
+	e.waitRuns(t, 1)
+	assert.Equal(t, []string{"forward skipped"}, e.results(t, e.runOf(t, "bill@x")))
+	assert.Zero(t, e.outboxLen(t))
+	assert.Empty(t, e.release(t))
+}
+
+// Nobody is there to read a plugin's send warning: the forward fails with
+// the reason, and its draft is gone.
+func TestRuleForwardFailsOnSendWarning(t *testing.T) {
+	e := newForwardEnv(t)
+	startTestPlugin(t, e.s, "warner", sendPerms, checker(`d => ({ warn: "external recipient" })`))
+	e.saveForward(t, forwardRule(carol), carol)
+	e.put(t, "INBOX", billWithPDF("bill@x"))
+	e.sync(t)
+	e.waitRuns(t, 1)
+	assert.Equal(t, [][]any{{RuleActionFailed, RuleFailSendCheck}}, e.rows(t, "SELECT state, result FROM rule_action_results"))
+	assert.Zero(t, e.outboxLen(t))
+	assert.Zero(t, e.count(t, "SELECT count(*) FROM drafts"))
+}

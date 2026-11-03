@@ -6,6 +6,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/godwit-email/godwit/core/store"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -120,11 +121,12 @@ func TestRulePreviewAgreesWithEvaluator(t *testing.T) {
 }
 
 // The one-time run puts the rule's local actions on the existing mail it
-// matches, once; the hit counts show it.
+// matches, once, and never forwards; the hit counts show it.
 func TestRuleRunOnExisting(t *testing.T) {
 	e := newPreviewEnv(t)
-	d := rule(RuleAction{Kind: ActionLabel, Label: "u1"}, RuleAction{Kind: ActionRead})
-	id := e.saveRule(t, d, true)
+	d := rule(RuleAction{Kind: ActionForward, To: carol}, RuleAction{Kind: ActionLabel, Label: "u1"}, RuleAction{Kind: ActionRead})
+	id, err := e.s.SaveRule(bg, Rule{Enabled: true, Doc: d, Confirmed: []string{carol}})
+	require.NoError(t, err)
 	n, err := e.s.RunRuleOnExisting(bg, id)
 	require.NoError(t, err)
 	assert.Equal(t, 1, n)
@@ -132,6 +134,8 @@ func TestRuleRunOnExisting(t *testing.T) {
 	assert.Contains(t, e.flagsOf(t, "aws@x"), `\Seen`)
 	assert.Empty(t, e.labelOn(t, e.idOf(t, "old@x")))
 	assert.Equal(t, [][]any{{e.idOf(t, "aws@x"), TriggerExisting, RuleRunDone}}, e.rows(t, "SELECT message_id, trigger, state FROM rule_runs"))
+	assert.Equal(t, []string{"label done", "read done"}, e.results(t, store.Int(e.rows(t, "SELECT id FROM rule_runs")[0][0])))
+	assert.Zero(t, e.count(t, "SELECT count(*) FROM outbox"))
 
 	n, err = e.s.RunRuleOnExisting(bg, id)
 	require.NoError(t, err)
@@ -147,5 +151,5 @@ func TestRuleActionsOnExisting(t *testing.T) {
 	for _, k := range []string{ActionLabel, ActionUnlabel, ActionRead, ActionStar, ActionArchive, ActionJunk, ActionTrash, ActionStop} {
 		assert.True(t, RunsOnExisting(k), k)
 	}
-	assert.False(t, RunsOnExisting("forward"))
+	assert.False(t, RunsOnExisting(ActionForward))
 }
