@@ -103,7 +103,8 @@ func TestSettingsRulesBackground(t *testing.T) {
 		t.Fatal("a rule not set to 后台运行 is tagged or keeps Godwit running")
 	}
 
-	h.click("编辑「未命名规则」")
+	h.click("展开最近命中")
+	h.click("编辑规则")
 	h.click("后台运行")
 	h.saveRule()
 	h.until("the rule in the background", func() bool { rs := h.rules(); return len(rs) == 1 && rs[0].Background })
@@ -385,13 +386,13 @@ func TestSettingsRulesReorder(t *testing.T) {
 		}
 		return s
 	}
-	first, _ := h.tt.Find("编辑「A」")
-	second, _ := h.tt.Find("编辑「B」")
+	first, _ := h.tt.Find("启用「A」")
+	second, _ := h.tt.Find("启用「B」")
 	row := second.Y - first.Y
 	// drag moves the row at from by rows rows, as the labels' test does.
 	drag := func(from int, rows float32) {
 		h.t.Helper()
-		x, y := first.X-row*4, first.Y+first.H/2+row*float32(from) // on the row, left of its buttons
+		x, y := first.X+first.W+row*2, first.Y+first.H/2+row*float32(from) // on the row, right of its switch
 		h.tt.Move(x, y)
 		h.tt.Press(x, y)
 		h.tt.Move(x, y+row*rows/2)
