@@ -179,7 +179,7 @@ func TestSettingsProxyMode(t *testing.T) {
 		t.Error("the system proxy's source shows with 不使用代理")
 	}
 
-	// 自定义: its fields show, and save once they make a usable address
+	// 自定义: its address shows, and saves once it is usable
 	pick := func(mode string) {
 		lab, _ := h.tt.Find("代理方式")
 		h.tt.ClickAt(dark.X+dark.W-8, lab.Y+lab.H/2)
@@ -187,36 +187,30 @@ func TestSettingsProxyMode(t *testing.T) {
 		h.tt.Frame()
 		h.click(mode)
 	}
-	if h.tt.HasText("代理服务器") {
+	if h.tt.HasText("代理地址") {
 		t.Error("the custom fields show with 不使用代理")
 	}
 	pick("自定义")
-	h.see("代理服务器")
-	h.see("推荐 SOCKS5")
-	h.see("请填写代理服务器")
-	h.fillRow("代理服务器", "127.0.0.1")
-	port := func(v string) { // narrower than fillRow's input: past the row's gap (Space(6)), at its middle
-		r, _ := h.tt.Find("端口")
-		h.tt.ClickAt(r.X+r.W+24+theme.PortWidth/2, r.Y+r.H/2)
-		h.tt.Command("selectAll")
-		h.typeText(v)
-	}
-	port("70000")
-	h.see("端口应在 1 到 65535 之间")
+	h.see("代理地址")
+	h.see("支持 SOCKS5 和 HTTP")
+	h.fillRow("代理地址", "socks5://127.0.0.1:70000")
+	h.see("代理地址无效")
 	if h.app.settings.ProxyMode != "off" {
 		t.Errorf("an invalid address saved mode %q", h.app.settings.ProxyMode)
 	}
-	port("7890")
+	h.fillRow("代理地址", "socks5://alice:x@127.0.0.1:7890")
+	h.see("代理地址无效") // credentials go in their own fields
+	h.fillRow("代理地址", "SOCKS5://127.0.0.1:7890/")
 	h.until("custom proxy saved", func() bool {
 		return h.app.settings.ProxyMode == "custom" && h.app.settings.ProxyURL == "socks5://127.0.0.1:7890"
 	})
-	if h.tt.HasText("端口应在 1 到 65535 之间") {
-		t.Error("the port error stays once it is valid")
+	if h.tt.HasText("代理地址无效") {
+		t.Error("the address error stays once it is valid")
 	}
 	// the values outlast another mode
 	pick("不使用代理")
 	h.until("proxy mode off again", func() bool { return h.app.settings.ProxyMode == "off" })
-	if h.tt.HasText("代理服务器") {
+	if h.tt.HasText("代理地址") {
 		t.Error("the custom fields show with 不使用代理")
 	}
 	pick("自定义")

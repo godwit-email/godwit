@@ -4,8 +4,6 @@ import (
 	"cmp"
 	"context"
 	"math"
-	"net"
-	"net/url"
 	"reflect"
 	"slices"
 	"strconv"
@@ -301,26 +299,21 @@ func (p *settingsPage) generalView(c *ui.Context) {
 	p.proxySection(c)
 }
 
-// proxyDraft is 网络代理 as shown: the custom fields save once they make a
-// usable address, so 自定义 waits for one, and they outlast other modes.
+// proxyDraft is 网络代理 as shown: the custom address saves once it is
+// usable, so 自定义 waits for one, and it outlasts other modes.
 type proxyDraft struct {
-	mode, scheme, host, port string
-	bypass                   string // 不使用代理的主机, comma-separated
-	hostErr, portErr         string // why the fields don't make an address yet
-	bypassErr                string
-	from                     string // the settings the draft last matched (proxyKey)
-	pass, sent               string // the password typed, never the stored one; and what of it went to the settings
+	mode, addr         string // addr is scheme://host:port
+	bypass             string // 不使用代理的主机, comma-separated
+	addrErr, bypassErr string // why the fields can't be saved yet
+	from               string // the settings the draft last matched (proxyKey)
+	pass, sent         string // the password typed, never the stored one; and what of it went to the settings
 }
 
 func (p *settingsPage) proxySection(c *ui.Context) {
 	st, d, t := &p.st, &p.proxy, theme.Of(c)
 	if key := proxyKey(st); key != d.from {
-		d.from, d.mode = key, cmp.Or(st.ProxyMode, core.ProxySystem)
-		d.scheme, d.host, d.port = "socks5", "", ""
+		d.from, d.mode, d.addr = key, cmp.Or(st.ProxyMode, core.ProxySystem), st.ProxyURL
 		d.bypass = strings.Join(st.ProxyBypass, ", ")
-		if u, err := url.Parse(st.ProxyURL); err == nil && u.Scheme != "" {
-			d.scheme, d.host, d.port = u.Scheme, u.Hostname(), u.Port()
-		}
 	}
 	source := "" // where 跟随系统 finds the proxy
 	if d.mode == core.ProxySystem {
@@ -329,10 +322,10 @@ func (p *settingsPage) proxySection(c *ui.Context) {
 			source = i18n.T("settings.proxy.system.env")
 		}
 	}
-	input := func(label, msg string, v *string, w float32) func() {
+	input := func(label, msg string, v *string, opts kit.InputOpts) func() {
 		return func() {
 			settingRow(c, label, msg, func() {
-				kit.Input(c, v, kit.InputOpts{Invalid: msg != ""}).Width(w).Radius(t.Radius.Lg).Label(label)
+				kit.Input(c, v, opts).Width(theme.SettingsInputWidth).Radius(t.Radius.Lg).Label(label)
 			})
 		}
 	}
@@ -346,23 +339,12 @@ func (p *settingsPage) proxySection(c *ui.Context) {
 		})
 	}}
 	if d.mode == core.ProxyCustom {
-		rows = append(rows, func() {
-			settingRow(c, i18n.T("settings.proxy.type"), i18n.T("settings.proxy.type.help"), func() {
-				settingSelect(c, i18n.T("settings.proxy.type"), &d.scheme, []kit.Option[string]{
-					{Value: "socks5", Label: "SOCKS5"}, {Value: "http", Label: "HTTP"},
-				})
-			})
-		},
-			input(i18n.T("settings.proxy.host"), d.hostErr, &d.host, theme.SettingsInputWidth),
-			input(i18n.T("settings.proxy.port"), d.portErr, &d.port, theme.PortWidth),
+		rows = append(rows,
+			input(i18n.T("settings.proxy.url"), cmp.Or(d.addrErr, i18n.T("settings.proxy.url.help")), &d.addr,
+				kit.InputOpts{Invalid: d.addrErr != "", Placeholder: "socks5://127.0.0.1:1080"}),
+			input(i18n.T("settings.proxy.user"), "", &st.ProxyUser, kit.InputOpts{Placeholder: i18n.T("settings.proxy.optional")}),
 			func() {
-				settingRow(c, i18n.T("settings.proxy.bypass"), cmp.Or(d.bypassErr, i18n.T("settings.proxy.bypass.help")), func() {
-					kit.Input(c, &d.bypass, kit.InputOpts{Invalid: d.bypassErr != ""}).Width(theme.SettingsInputWidth).Radius(t.Radius.Lg).Label(i18n.T("settings.proxy.bypass"))
-				})
-			},
-			input(i18n.T("settings.proxy.user"), "", &st.ProxyUser, theme.SettingsInputWidth),
-			func() {
-				ph := ""
+				ph := i18n.T("settings.proxy.optional")
 				if st.ProxyPasswordSet {
 					ph = i18n.T("settings.proxy.password.kept")
 				}
@@ -374,7 +356,9 @@ func (p *settingsPage) proxySection(c *ui.Context) {
 						}
 					})
 				})
-			})
+			},
+			input(i18n.T("settings.proxy.bypass"), d.bypassErr, &d.bypass,
+				kit.InputOpts{Invalid: d.bypassErr != "", Placeholder: "*.corp.example, .lan, 10.0.0.0/8"}))
 	}
 	// a typed password saves; erasing it removes the stored one
 	if d.pass != d.sent {
@@ -383,29 +367,24 @@ func (p *settingsPage) proxySection(c *ui.Context) {
 	settingsSection(c, i18n.T("settings.proxy"), i18n.T("settings.proxy.foot"), rows...)
 
 	// what the controls changed goes to the settings once it can be saved
-	d.hostErr, d.portErr, d.bypassErr = "", "", ""
-	host := strings.TrimSpace(d.host)
+	d.addrErr, d.bypassErr = "", ""
 	bypass := strings.FieldsFunc(d.bypass, func(r rune) bool { return r == ',' || unicode.IsSpace(r) })
 	if len(bypass) == 0 {
 		bypass = nil // as an empty list loads
 	}
-	switch port, err := strconv.Atoi(strings.TrimSpace(d.port)); {
+	addr := strings.TrimSuffix(strings.TrimSpace(d.addr), "/")
+	u, err := core.ParseProxyURL(addr)
+	switch {
 	case d.mode != core.ProxyCustom:
 		if d.mode != cmp.Or(st.ProxyMode, core.ProxySystem) {
 			st.ProxyMode = d.mode
 		}
-	case host == "":
-		d.hostErr = i18n.T("settings.proxy.host.empty")
-	case err != nil || port < 1 || port > 65535:
-		d.portErr = i18n.T("settings.proxy.port.invalid")
+	case addr == "": // nothing to save yet; the help says what goes here
+	case err != nil:
+		d.addrErr = i18n.T("settings.proxy.url.invalid")
 	case len(bypass) > core.MaxProxyBypass:
 		d.bypassErr = i18n.Tf("settings.proxy.bypass.too_many", core.MaxProxyBypass)
 	default:
-		u, err := core.ParseProxyURL(d.scheme + "://" + net.JoinHostPort(host, strconv.Itoa(port)))
-		if err != nil {
-			d.hostErr = i18n.T("settings.proxy.host.invalid")
-			break
-		}
 		st.ProxyMode, st.ProxyURL, st.ProxyBypass = core.ProxyCustom, u.String(), bypass
 	}
 	d.from = proxyKey(st)
