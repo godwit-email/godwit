@@ -756,10 +756,19 @@ func TestRulesInBackground(t *testing.T) {
 	assert.False(t, inBackground())
 }
 
-// classify has the classifier answer for all Inbox mail (as a re-classify does).
+// classify has the classifier answer for the Inbox mail it has not yet.
 func (e *syncEnv) classify(t *testing.T) {
 	t.Helper()
-	_, err := e.s.db.Execute(bg, "UPDATE messages SET labeled_at = 0 WHERE labeled_at IS NULL")
+	// As new mail is classified (labeled_at NULL): auto-labelling on, the labels
+	// seeded. A rescan's target (labeled_at 0) runs no label rule.
+	st, err := e.s.GetSettings(bg)
+	require.NoError(t, err)
+	if !st.AutoLabel {
+		st.AutoLabel = true
+		_, err = e.s.SetSettings(bg, st)
+		require.NoError(t, err)
+	}
+	_, err = e.s.db.Execute(bg, "INSERT OR IGNORE INTO meta(key, value) VALUES ('labels_seeded', '1')")
 	require.NoError(t, err)
 	_, err = e.s.classifyBatch(bg)
 	require.NoError(t, err)

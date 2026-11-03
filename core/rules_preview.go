@@ -89,8 +89,12 @@ func (s *Service) RunRuleOnExisting(ctx context.Context, ruleID int64) (int, err
 		return 0, nil
 	}
 	cond, args := s.existingSQL(r.Doc)
+	// Mail that arrived after the rule was saved is new mail, which the
+	// consumer runs it on with every action (a forward too), not this run.
 	rows, err := s.db.Query(ctx, "SELECT m.id FROM messages m WHERE "+cond+
-		" AND NOT EXISTS (SELECT 1 FROM rule_runs WHERE rule_id = ? AND message_id = m.id) ORDER BY m.id", append(args, ruleID)...)
+		" AND NOT EXISTS (SELECT 1 FROM rule_runs WHERE rule_id = ? AND message_id = m.id)"+
+		" AND NOT EXISTS (SELECT 1 FROM events_log WHERE type = 'message.received' AND message_id = m.id AND seq > ?) ORDER BY m.id",
+		append(args, ruleID, r.since)...)
 	if err != nil {
 		return 0, err
 	}

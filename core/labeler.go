@@ -225,9 +225,9 @@ func labelWrites(id int64, at any, newest int64, labels []Label, yes map[string]
 	var stmts []sqlite.Statement
 	if answered { // unanswered: only the guarded labeled_at update, so an edited label is still asked again
 		for _, l := range labels {
-			if yes[l.Slug] { // a label new on new mail runs label rules (labelQuestions left out hand-set and rule rows); old mail, synced or re-classified, does not
+			if yes[l.Slug] { // a label new on new mail runs label rules (labelQuestions left out hand-set and rule rows); old mail, synced or re-classified (RescanLabels' labeled_at 0), does not
 				stmts = append(stmts, sqlite.Statement{SQL: `INSERT INTO events_log(type, account_id, message_id, subject, from_addr, msg_date, detail, created_at)
-					SELECT ?, account_id, id, subject, from_addr, date, ?, unixepoch() FROM messages WHERE id = ? AND ` + guard + `
+					SELECT ?, account_id, id, subject, from_addr, date, ?, unixepoch() FROM messages WHERE id = ? AND labeled_at IS NULL AND ` + guard + `
 					AND EXISTS (SELECT 1 FROM events_log WHERE type = 'message.received' AND message_id = ?)
 					AND NOT EXISTS (SELECT 1 FROM message_labels WHERE message_id = ? AND label_id = ?)`,
 					Args: append(append([]any{eventLabelApplied, l.Slug, id}, guardArgs...), id, id, l.ID)})

@@ -178,6 +178,27 @@ func TestRuleTurnedOnRunsOnLaterMail(t *testing.T) {
 	assert.Zero(t, e.count(t, "SELECT count(*) FROM rule_runs"))
 }
 
+// The run over existing mail leaves out mail that came after saving, still
+// in the consumer's backlog: that is new mail, which the consumer then runs
+// with every action, the forward too.
+func TestRuleExistingRunLeavesNewMail(t *testing.T) {
+	arm, held, release := holdRules(t)
+	e := newForwardEnv(t)
+	e.rulesIdle(t)
+	id := e.saveForward(t, forwardRule(carol, RuleAction{Kind: ActionStar}), carol)
+	arm()
+	e.put(t, "INBOX", billWithPDF("new@x"))
+	e.sync(t)
+	<-held
+	n, err := e.s.RunRuleOnExisting(bg, id)
+	require.NoError(t, err)
+	assert.Zero(t, n, "the bill came after saving")
+	close(release)
+	e.waitRuns(t, 1)
+	assert.Equal(t, []string{"forward done", "star done"}, e.results(t, e.runOf(t, "new@x")))
+	assert.Len(t, e.release(t), 1)
+}
+
 // A forward to a recipient not confirmed, saved so or edited into the
 // stored rule, sends nothing and its hit says why.
 func TestRuleForwardUnconfirmedNeverSends(t *testing.T) {
