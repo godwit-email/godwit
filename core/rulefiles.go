@@ -40,10 +40,10 @@ const (
 
 var namingToken = regexp.MustCompile(`\{([a-z]+)\}`)
 
-// fillNaming fills tpl with vals and returns its folder levels, each a safe
+// FillNaming fills tpl with vals (by token id) and returns its folder levels, each a safe
 // file name. It refuses a template with no token (every message would land
 // in one folder) and an empty, "." or ".." level.
-func fillNaming(tpl string, vals map[string]string) ([]string, error) {
+func FillNaming(tpl string, vals map[string]string) ([]string, error) {
 	known := false
 	filled := namingToken.ReplaceAllStringFunc(tpl, func(m string) string {
 		id := m[1 : len(m)-1]
@@ -140,7 +140,7 @@ func validFileAction(acts []RuleAction, a RuleAction) error {
 	if !filepath.IsAbs(a.Dir) || utf8.RuneCountInString(a.Dir) > MaxRuleValue {
 		return invalidRule("dir %q", a.Dir)
 	}
-	if _, err := fillNaming(a.Naming, namingSample); err != nil {
+	if _, err := FillNaming(a.Naming, namingSample); err != nil {
 		return err
 	}
 	for _, b := range acts {
@@ -165,7 +165,7 @@ func (s *Service) ruleFiles(ctx context.Context, runID int64, a RuleAction, msgI
 	if err != nil {
 		return nil, "", err
 	}
-	levels, err := fillNaming(a.Naming, vals)
+	levels, err := FillNaming(a.Naming, vals)
 	if err != nil {
 		return nil, RuleFailUnknown, nil // SaveRule checked it
 	}
@@ -280,7 +280,7 @@ func (s *Service) ruleDir(ctx context.Context, runID int64, dest string, levels 
 	}
 	rel := filepath.Join(levels...)
 	if !filepath.IsLocal(rel) {
-		return "", RuleFailUnknown, nil // fillNaming keeps it inside; this is the backstop
+		return "", RuleFailUnknown, nil // FillNaming keeps it inside; this is the backstop
 	}
 	parent := filepath.Join(dest, filepath.Dir(rel))
 	if err := os.MkdirAll(parent, 0o755); err != nil {

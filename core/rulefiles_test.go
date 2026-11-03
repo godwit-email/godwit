@@ -47,7 +47,7 @@ func TestFillNaming(t *testing.T) {
 		{"backslash in literal text", `a\{date}`, vals, []string{"a_2026-11-03"}},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			got, err := fillNaming(tc.tpl, tc.vals)
+			got, err := FillNaming(tc.tpl, tc.vals)
 			if tc.want == nil {
 				assert.True(t, errors.Is(err, ErrInvalidRule), "err = %v, got %q", err, got)
 				return

@@ -2,6 +2,7 @@ package app
 
 import (
 	"context"
+	"path/filepath"
 	"slices"
 	"strings"
 	"time"
@@ -24,13 +25,14 @@ type rulesView struct {
 	hits []core.RuleHit // open's
 
 	editing bool
-	edit    core.Rule // the rule in the editor; ID 0 a new one
-	any     int       // the editor's match: 0 all, 1 any
+	edit    core.Rule       // the rule in the editor; ID 0 a new one
+	any     int             // the editor's match: 0 all, 1 any
+	custom  map[string]bool // the folders whose naming is 自定义…, in the token field
 }
 
 // ruleActions are the actions the editor offers, in its order.
 var ruleActions = []string{core.ActionLabel, core.ActionUnlabel, core.ActionRead, core.ActionStar,
-	core.ActionArchive, core.ActionJunk, core.ActionTrash, core.ActionStop}
+	core.ActionArchive, core.ActionJunk, core.ActionTrash, core.ActionStop, core.ActionPDF, core.ActionEML, core.ActionAttachments}
 
 // ruleRoles are the folders a folder condition offers, by role.
 var ruleRoles = []string{"inbox", "archive", "junk", "trash"}
@@ -184,7 +186,9 @@ func (v *rulesView) hit(c *ui.Context, r core.Rule, h core.RuleHit, now time.Tim
 			kit.Text(c, i18n.T("settings.rules.hits.undone"), t.Text.Sm).TextColor(t.Muted).Shrink(0)
 			return
 		}
-		if slices.ContainsFunc(h.Actions, func(x core.RuleActionResult) bool { return x.State == core.RuleActionDone && x.Kind != core.ActionStop }) {
+		if slices.ContainsFunc(h.Actions, func(x core.RuleActionResult) bool {
+			return x.State == core.RuleActionDone && x.Kind != core.ActionStop && !fileAction(x.Kind) // files written stay
+		}) {
 			kit.Button(c, i18n.T("settings.rules.hits.undo"), kit.ButtonOpts{Variant: kit.Outline, Size: kit.SizeSm, Icon: "undo-2"}).Shrink(0).
 				OnClick(func() { v.undo(h.RunID) })
 		}
@@ -284,6 +288,9 @@ func (v *rulesView) actionText(ac core.RuleAction) string {
 	if ac.Kind == core.ActionLabel || ac.Kind == core.ActionUnlabel {
 		return i18n.Tf("settings.rules.action."+ac.Kind+".summary", v.labelName(ac.Label))
 	}
+	if fileAction(ac.Kind) && ac.Dir != "" {
+		return i18n.Tf("settings.rules.action."+ac.Kind+".summary", filepath.Base(ac.Dir))
+	}
 	return i18n.T("settings.rules.action." + ac.Kind)
 }
 
@@ -312,7 +319,7 @@ func (v *rulesView) create() {
 func (v *rulesView) openEditor(r core.Rule) {
 	r.Doc.Conditions = slices.Clone(r.Doc.Conditions)
 	r.Doc.Actions = slices.Clone(r.Doc.Actions)
-	v.editing, v.edit, v.any = true, r, 0
+	v.editing, v.edit, v.any, v.custom = true, r, 0, nil
 	if r.Doc.Match == core.MatchAny {
 		v.any = 1
 	}
@@ -352,7 +359,7 @@ func (v *rulesView) editor(c *ui.Context) {
 		!slices.ContainsFunc(d.Actions, func(ac core.RuleAction) bool {
 			return (ac.Kind == core.ActionLabel || ac.Kind == core.ActionUnlabel) && ac.Label == ""
 		}) && (d.Trigger != core.TriggerLabel || d.TriggerArg != "") &&
-		!slices.ContainsFunc(d.Conditions, func(cd core.RuleCondition) bool { return strings.TrimSpace(cd.Value) == "" })
+		!slices.ContainsFunc(d.Conditions, func(cd core.RuleCondition) bool { return strings.TrimSpace(cd.Value) == "" }) && fileReady(d)
 	pageHeading(c, title, sub, func() {
 		ui.Row(c).Gap(th.Space(2)).Children(func() {
 			settingButton(c, i18n.T("common.cancel"), kit.Outline, false).OnClick(func() { v.editing = false })
@@ -475,6 +482,12 @@ func (v *rulesView) editor(c *ui.Context) {
 					} else {
 						ac.Label = ""
 					}
+					if fileAction(ac.Kind) {
+						fileKindChanged(d, i)
+						v.fileDir(c, d, i)
+					} else {
+						ac.Dir, ac.Subfolder, ac.Naming = "", false, ""
+					}
 					ui.Row(c).Grow(1)
 					kit.IconButton(c, "arrow-up", i18n.T("settings.rules.action.up"), kit.ButtonOpts{Variant: kit.Ghost, Size: kit.SizeSm, Disabled: i == 0}).
 						OnClick(func() { d.Actions[i-1], d.Actions[i] = d.Actions[i], d.Actions[i-1] })
@@ -483,6 +496,9 @@ func (v *rulesView) editor(c *ui.Context) {
 					kit.IconButton(c, "x", i18n.T("settings.rules.action.remove"), kit.ButtonOpts{Variant: kit.Ghost, Size: kit.SizeSm, Disabled: len(d.Actions) == 1}).
 						OnClick(func() { d.Actions = slices.Delete(d.Actions, i, i+1) })
 				})
+				if fileAction(d.Actions[i].Kind) {
+					v.fileOptions(c, d, i)
+				}
 			})
 		})
 	}
