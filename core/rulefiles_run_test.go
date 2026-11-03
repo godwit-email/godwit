@@ -3,6 +3,7 @@ package core
 import (
 	"context"
 	"encoding/base64"
+	"encoding/json"
 	"io/fs"
 	"os"
 	"path/filepath"
@@ -74,7 +75,9 @@ func TestRuleSavesFilesInSubfolders(t *testing.T) {
 	assert.Contains(t, string(raw), "Message-ID: <a@x>")
 	run := e.runOf(t, "a@x")
 	assert.Equal(t, []string{"attachments done", "eml done"}, e.results(t, run))
-	assert.Equal(t, [][]any{{`["` + filepath.Join(dest, "2026-10-05 Invoice (2)", "invoice.pdf") + `"]`}},
+	want, err := json.Marshal([]string{filepath.Join(dest, "2026-10-05 Invoice (2)", "invoice.pdf")}) // escapes Windows backslashes
+	require.NoError(t, err)
+	assert.Equal(t, [][]any{{string(want)}},
 		e.rows(t, "SELECT result FROM rule_action_results WHERE run_id = ? AND idx = 0", run))
 }
 
