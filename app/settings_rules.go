@@ -451,11 +451,16 @@ func (v *rulesView) hit(c *ui.Context, r core.Rule, h core.RuleHit, now time.Tim
 	})
 }
 
-// result is an action's outcome in a hit, named as the rule names it.
+// result is an action's outcome in a hit, named as the action was when the
+// run started (an edit since, of a recipient or a label, leaves it as it
+// was); a run from before runs kept it is named from the rule as it is.
 func (v *rulesView) result(r core.Rule, i int, res core.RuleActionResult) string {
-	ac := core.RuleAction{Kind: res.Kind}
-	if i < len(r.Doc.Actions) && r.Doc.Actions[i].Kind == res.Kind {
-		ac = r.Doc.Actions[i]
+	ac := res.Action
+	if ac.Kind == "" {
+		ac = core.RuleAction{Kind: res.Kind}
+		if i < len(r.Doc.Actions) && r.Doc.Actions[i].Kind == res.Kind {
+			ac = r.Doc.Actions[i]
+		}
 	}
 	s := v.actionText(ac)
 	switch res.State {

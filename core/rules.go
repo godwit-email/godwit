@@ -1097,10 +1097,13 @@ type RuleHit struct {
 }
 
 // RuleActionResult is an action's outcome; Failure (a RuleFail id) is why it
-// failed, Paths the files a file action wrote.
+// failed, Paths the files a file action wrote. Action is the action as the
+// run started (its recipient, label, folder), the rule since edited or not;
+// zero for a run from before runs kept it.
 type RuleActionResult struct {
 	Kind, State, Failure string
 	Paths                []string
+	Action               RuleAction
 }
 
 // RuleHits returns the rule's runs of the last RuleHitDays days, newest first.
@@ -1110,21 +1113,29 @@ func (s *Service) RuleHits(ctx context.Context, ruleID int64) ([]RuleHit, error)
 		return nil, err
 	}
 	defer end()
-	rows, err := s.db.Query(ctx, `SELECT r.id, r.message_id, m.from_addr, m.subject, r.at, r.state, a.kind, a.state, a.result
+	rows, err := s.db.Query(ctx, `SELECT r.id, r.message_id, m.from_addr, m.subject, r.at, r.state, a.kind, a.state, a.result, a.idx, r.doc
 		FROM rule_runs r LEFT JOIN messages m ON m.id = r.message_id LEFT JOIN rule_action_results a ON a.run_id = r.id
 		WHERE r.rule_id = ? AND r.at >= ? ORDER BY r.at DESC, r.id DESC, a.idx`, ruleID, time.Now().AddDate(0, 0, -RuleHitDays).Unix())
 	if err != nil {
 		return nil, err
 	}
 	var out []RuleHit
+	var doc RuleDoc // the run's, as it started
 	for _, v := range rows.Values {
 		if id := store.Int(v[0]); len(out) == 0 || out[len(out)-1].RunID != id {
 			out = append(out, RuleHit{RunID: id, MessageID: store.Int(v[1]), From: store.Str(v[2]), Subject: store.Str(v[3]),
 				At: time.Unix(store.Int(v[4]), 0), State: store.Str(v[5])})
+			doc = RuleDoc{}
+			if v[10] != nil {
+				_ = json.Unmarshal([]byte(store.Str(v[10])), &doc) // one that does not read names the action by its kind
+			}
 		}
 		if v[6] != nil {
 			h := &out[len(out)-1]
 			res := RuleActionResult{Kind: store.Str(v[6]), State: store.Str(v[7])}
+			if i := int(store.Int(v[9])); i < len(doc.Actions) && doc.Actions[i].Kind == res.Kind {
+				res.Action = doc.Actions[i]
+			}
 			if res.State == RuleActionFailed {
 				res.Failure = store.Str(v[8])
 			} else if v[8] != nil {

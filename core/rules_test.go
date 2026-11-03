@@ -544,7 +544,24 @@ func TestRuleHits(t *testing.T) {
 	require.Len(t, hits, 2)
 	assert.Equal(t, "Invoice c@x", hits[0].Subject)
 	assert.Equal(t, "Invoice b@x", hits[1].Subject)
-	assert.Equal(t, []RuleActionResult{{Kind: ActionStar, State: RuleActionDone}}, hits[0].Actions)
+	assert.Equal(t, []RuleActionResult{{Kind: ActionStar, State: RuleActionDone, Action: RuleAction{Kind: ActionStar}}}, hits[0].Actions)
+}
+
+// A hit names its action as the run had it: the rule's label changed since,
+// the hit still says the one it put on.
+func TestRuleHitsKeepTheirActions(t *testing.T) {
+	e := newRulesEnv(t)
+	e.addPaid(t)
+	id := e.saveRule(t, rule(RuleAction{Kind: ActionLabel, Label: "u1"}), true)
+	e.bill(t, "a@x", "billing@aws.example", "Invoice")
+	e.sync(t)
+	e.waitRuns(t, 1)
+	_, err := e.s.SaveRule(bg, Rule{ID: id, Enabled: true, Doc: rule(RuleAction{Kind: ActionLabel, Label: "u2"})})
+	require.NoError(t, err)
+	hits, err := e.s.RuleHits(bg, id)
+	require.NoError(t, err)
+	require.Len(t, hits, 1)
+	assert.Equal(t, "u1", hits[0].Actions[0].Action.Label)
 }
 
 // Deleting a rule deletes its hits too.
