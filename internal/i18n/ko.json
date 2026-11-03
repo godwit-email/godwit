@@ -1771,6 +1771,7 @@
   "settings_rules_failure_write_failed": "파일을 쓸 수 없습니다",
   "settings_rules_failure_unsafe_folder": "대상 폴더 안의 폴더가 링크이거나 폴더가 아닙니다",
   "settings_rules_files_choose": "폴더 선택…",
+  "settings_rules_files_change": "선택…",
   "settings_rules_files_note": "선택한 폴더에 씁니다. 기존 파일은 덮어쓰지 않으며, 같은 이름에는 번호가 붙습니다. 본문 속 이미지는 저장하지 않습니다.",
   "settings_rules_files_subfolder": "메일마다 별도 폴더에 넣기",
   "settings_rules_files_naming": "폴더 이름",

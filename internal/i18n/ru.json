@@ -1771,6 +1771,7 @@
   "settings_rules_failure_write_failed": "не удалось записать файл",
   "settings_rules_failure_unsafe_folder": "папка внутри места назначения — ссылка или не папка",
   "settings_rules_files_choose": "Выбрать папку…",
+  "settings_rules_files_change": "Выбрать…",
   "settings_rules_files_note": "Записывает в выбранную папку. Существующие файлы никогда не перезаписываются; к занятому имени добавляется номер. Изображения внутри текста не сохраняются.",
   "settings_rules_files_subfolder": "Каждое письмо в отдельную папку",
   "settings_rules_files_naming": "Имя папки",

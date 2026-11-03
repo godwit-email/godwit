@@ -1771,6 +1771,7 @@
   "settings_rules_failure_write_failed": "het bestand kon niet worden geschreven",
   "settings_rules_failure_unsafe_folder": "een map in de bestemming is een koppeling of geen map",
   "settings_rules_files_choose": "Map kiezen…",
+  "settings_rules_files_change": "Kiezen…",
   "settings_rules_files_note": "Schrijft naar de map die je koos. Bestaande bestanden worden nooit overschreven; een bezette naam krijgt een nummer. Afbeeldingen in de tekst worden niet bewaard.",
   "settings_rules_files_subfolder": "Elke e-mail in een eigen map",
   "settings_rules_files_naming": "Mapnaam",

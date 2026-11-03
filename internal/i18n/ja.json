@@ -1771,6 +1771,7 @@
   "settings_rules_failure_write_failed": "ファイルを書き込めませんでした",
   "settings_rules_failure_unsafe_folder": "保存先の中のフォルダがリンクか、フォルダではありません",
   "settings_rules_files_choose": "フォルダを選択…",
+  "settings_rules_files_change": "選択…",
   "settings_rules_files_note": "選んだフォルダに書き込みます。既存のファイルは上書きせず、同じ名前には番号を付けます。本文内の画像は保存しません。",
   "settings_rules_files_subfolder": "メールごとに別のフォルダに入れる",
   "settings_rules_files_naming": "フォルダ名",

@@ -1771,6 +1771,7 @@
   "settings_rules_failure_write_failed": "寫入檔案失敗",
   "settings_rules_failure_unsafe_folder": "目標檔案夾裡有一層是連結或不是檔案夾",
   "settings_rules_files_choose": "選擇資料夾…",
+  "settings_rules_files_change": "選擇…",
   "settings_rules_files_note": "寫到你選的資料夾。不覆寫已有檔案，同名的自動編號；內文裡的內嵌圖片不儲存。",
   "settings_rules_files_subfolder": "每封郵件放進單獨的資料夾",
   "settings_rules_files_naming": "資料夾命名",

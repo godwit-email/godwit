@@ -94,12 +94,20 @@ func fileReady(d *core.RuleDoc) bool {
 
 // fileDir is action i's folder, a button that picks another.
 func (v *rulesView) fileDir(c *ui.Context, d *core.RuleDoc, i int) {
-	label := d.Actions[i].Dir
-	if label == "" {
-		label = i18n.T("settings.rules.files.choose")
-	}
-	kit.Button(c, label, kit.ButtonOpts{Variant: kit.Outline, Icon: "folder"}).Label(i18n.T("settings.rules.files.choose")).Grow(1).Shrink(1).Basis(0).MinWidth(0).
-		OnClick(func() { v.pickDir(d, i) })
+	t, th := theme.Of(c), c.Theme()
+	dir := d.Actions[i].Dir
+	b := kit.Pressable(c, kit.PressableOpts{Bordered: true, OnClick: func() { v.pickDir(d, i) }}).
+		Label(i18n.T("settings.rules.files.choose")).Height(th.Space(8)).PaddingX(th.Space(2.5)).Gap(th.Space(1.5)).
+		Radius(t.Radius.Lg).AlignItems(ui.Center).Grow(1).Shrink(1).Basis(0).MinWidth(0)
+	b.Children(func() {
+		ui.Icon(c, icons.Get("folder")).Size(theme.Icon, theme.Icon).TextColor(t.Muted).Shrink(0)
+		if dir == "" {
+			kit.Text(c, i18n.T("settings.rules.files.choose"), t.Text.Sm).TextColor(t.Muted).SingleLine().Grow(1).Shrink(1).MinWidth(0)
+			return
+		}
+		kit.Text(c, dir, t.Text.Xs).Font(theme.Mono).SingleLine().Grow(1).Shrink(1).MinWidth(0)
+		kit.Text(c, i18n.T("settings.rules.files.change"), t.Text.Xs).TextColor(t.Muted).Shrink(0)
+	})
 }
 
 // pickDir asks for action i's folder off the UI thread; a folder another
