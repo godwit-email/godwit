@@ -205,11 +205,10 @@ var BrandIcons = map[string]string{
 	"grok":        "node_modules/@lobehub/icons-static-svg/icons/grok.svg",
 	"claude":      "node_modules/@lobehub/icons-static-svg/icons/claude-color.svg",
 	"claude-code": "node_modules/@lobehub/icons-static-svg/icons/claudecode-color.svg",
-	"codex":       "node_modules/@lobehub/icons-static-svg/icons/codex-color.svg",
 	// The same marks in one color, for an app not connected (tinted gray).
 	"claude-mono":      "node_modules/@lobehub/icons-static-svg/icons/claude.svg",
 	"claude-code-mono": "node_modules/@lobehub/icons-static-svg/icons/claudecode.svg",
-	"codex-mono":       "node_modules/@lobehub/icons-static-svg/icons/codex.svg",
+	"codex-mono":       "node_modules/@lobehub/icons-static-svg/icons/openai.svg", // shown as ChatGPT's
 	"antigravity":      "node_modules/@lobehub/icons-static-svg/icons/antigravity-color.svg",
 	"antigravity-mono": "node_modules/@lobehub/icons-static-svg/icons/antigravity.svg",
 	"grok-mono":        "node_modules/@lobehub/icons-static-svg/icons/grok.svg",
@@ -222,10 +221,8 @@ var BrandIcons = map[string]string{
 //go:embed node_modules/@lobehub/icons-static-svg/icons/grok.svg
 //go:embed node_modules/@lobehub/icons-static-svg/icons/claude-color.svg
 //go:embed node_modules/@lobehub/icons-static-svg/icons/claudecode-color.svg
-//go:embed node_modules/@lobehub/icons-static-svg/icons/codex-color.svg
 //go:embed node_modules/@lobehub/icons-static-svg/icons/claude.svg
 //go:embed node_modules/@lobehub/icons-static-svg/icons/claudecode.svg
-//go:embed node_modules/@lobehub/icons-static-svg/icons/codex.svg
 //go:embed node_modules/@lobehub/icons-static-svg/icons/antigravity-color.svg
 //go:embed node_modules/@lobehub/icons-static-svg/icons/antigravity.svg
 //go:embed node_modules/remixicon/icons/Arrows/arrow-down-s-line.svg

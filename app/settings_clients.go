@@ -122,7 +122,7 @@ func (p *settingsPage) clientsRow(c *ui.Context, copied func(string)) {
 				}
 				b.Children(func() {
 					// connected: the app's own colors; else its mark and name in gray
-					if on && id == mcpclients.Grok { // its mark has no colors
+					if on && (id == mcpclients.Codex || id == mcpclients.Grok) { // marks with no colors
 						ui.Icon(c, icons.BrandIcon(id+"-mono")).Size(theme.Icon, theme.Icon).TextColor(t.Foreground)
 						kit.Text(c, clientNames[id], t.Text.Base)
 					} else if on {
