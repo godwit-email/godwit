@@ -4,6 +4,7 @@ import (
 	"context"
 	"slices"
 	"testing"
+	"time"
 
 	"github.com/godwit-email/godwit/core"
 	"github.com/godwit-email/godwit/core/coretest"
@@ -172,28 +173,30 @@ func TestSettingsRulesPreviewRunsOnExisting(t *testing.T) {
 	h, acc := withAccount(t)
 	h.env.Deliver(t, acc.ID, "INBOX", coretest.Msg("billing@shop.example", acc.Email, "Your bill", "x"))
 	h.env.Deliver(t, acc.ID, "INBOX", coretest.Msg("bob@example.com", acc.Email, "Hello", "x"))
+	h.env.Deliver(t, acc.ID, "INBOX", coretest.Msg("billing@shop.example", acc.Email, "Old bill", "x", coretest.Date(time.Now().AddDate(0, 0, -90))))
 	h.openSettings("rules")
 	h.click("新建规则")
 	h.click("值")
 	h.typeText("billing@")
 	h.advance(debounce)
-	h.see("有 1 封符合")
+	h.see("有 2 封符合")
+	h.see("下面只列出最近 30 天的邮件")
 	h.see("Your bill")
-	if h.tt.HasText("Hello") {
-		t.Error("the other mail is listed")
+	if h.tt.HasText("Hello") || h.tt.HasText("Old bill") {
+		t.Error("other mail, or mail older than 30 days, is listed")
 	}
 	h.click("保存")
 	h.see("保存「未命名规则」")
 	h.see("只执行：打标签「验证码」。")
-	h.click("同时处理现有的 1 封邮件")
+	h.click("同时处理现有的 2 封邮件")
 	h.click("保存规则")
-	h.until("the bill labeled by the one-time run", func() bool {
+	h.until("both bills labeled by the one-time run", func() bool {
 		rs := h.rules()
 		if len(rs) != 1 {
 			return false
 		}
 		hs, err := h.env.Svc.RuleHits(context.Background(), rs[0].ID)
-		return err == nil && len(hs) == 1 && hs[0].Subject == "Your bill" && hs[0].State == core.RuleRunDone
+		return err == nil && len(hs) == 2 && hs[0].State == core.RuleRunDone && hs[1].State == core.RuleRunDone
 	})
 }
 

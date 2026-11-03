@@ -508,7 +508,8 @@ func (v *rulesView) stopPreview() {
 	}
 }
 
-// preview is the existing mail the rule matches, of the last 30 days.
+// preview is how much existing mail the rule matches, all of it, and the
+// newest of the last 30 days.
 func (v *rulesView) preview(c *ui.Context) {
 	t, th := theme.Of(c), c.Theme()
 	settingsSection(c, i18n.T("settings.rules.preview"), i18n.Tf("settings.rules.preview.foot", core.RulePreviewDays), func() {

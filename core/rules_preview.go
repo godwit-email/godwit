@@ -11,7 +11,7 @@ import (
 	"github.com/godwit-email/godwit/core/store"
 )
 
-// RulePreviewDays is how far back PreviewRule and RunRuleOnExisting look.
+// RulePreviewDays is how far back the mail PreviewRule lists goes.
 const RulePreviewDays = 30
 
 // TriggerExisting is the trigger of a run RunRuleOnExisting made; never a rule's.
@@ -27,16 +27,18 @@ var existingActions = map[string]bool{ActionLabel: true, ActionUnlabel: true, Ac
 // RunsOnExisting reports whether an action of kind runs over existing mail.
 func RunsOnExisting(kind string) bool { return existingActions[kind] }
 
-// RulePreview is the existing mail a rule matches: how many, and the newest.
+// RulePreview is the existing mail a rule matches: how many, and the newest
+// of the last RulePreviewDays days.
 type RulePreview struct {
 	Count    int
 	Messages []MessageSummary
 }
 
-// PreviewRule is the mail of the last RulePreviewDays days, Sent and Drafts
-// aside, that d's trigger and conditions match, with the newest limit of it.
-// It gives what the rule's evaluator does, read with SQL and the full-text
-// index, so a cancelled ctx stops it.
+// PreviewRule is the existing mail, Sent and Drafts aside, that d's trigger
+// and conditions match: how many (all of it, as RunRuleOnExisting runs on),
+// and the newest limit of it of the last RulePreviewDays days. It gives what
+// the rule's evaluator does, read with SQL and the full-text index, so a
+// cancelled ctx stops it.
 func (s *Service) PreviewRule(ctx context.Context, d RuleDoc, limit int) (RulePreview, error) {
 	ctx, end, err := s.begin(ctx, 0)
 	if err != nil {
@@ -54,14 +56,15 @@ func (s *Service) PreviewRule(ctx context.Context, d RuleDoc, limit int) (RulePr
 		return RulePreview{}, err
 	}
 	p := RulePreview{Count: int(store.Int(rows.Values[0][0]))}
-	if p.Messages, err = s.searchMessages(ctx, cond, args, limit); err != nil {
+	recent := cond + " AND m.date >= ?"
+	if p.Messages, err = s.searchMessages(ctx, recent, append(args, s.clk().Now().AddDate(0, 0, -RulePreviewDays).Unix()), limit); err != nil {
 		return RulePreview{}, err
 	}
 	return p, nil
 }
 
 // RunRuleOnExisting runs the stored rule once over the mail PreviewRule
-// shows for it, with only the actions that RunsOnExisting, and returns how
+// counts for it, with only the actions that RunsOnExisting, and returns how
 // many messages it ran on. A message the rule already ran on is skipped.
 func (s *Service) RunRuleOnExisting(ctx context.Context, ruleID int64) (int, error) {
 	ctx, end, err := s.begin(ctx, 0)
@@ -131,8 +134,7 @@ func (s *Service) RuleHitCounts(ctx context.Context) (map[int64]int, error) {
 // existingSQL is the condition on messages m for the existing mail d runs on.
 func (s *Service) existingSQL(d RuleDoc) (string, []any) {
 	cond, args := ruleSQL(d, s.clk().Now().Unix())
-	return cond + " AND m.date >= ? AND m.folder_id NOT IN (SELECT id FROM folders WHERE role IN ('sent', 'drafts'))",
-		append(args, s.clk().Now().AddDate(0, 0, -RulePreviewDays).Unix())
+	return cond + " AND m.folder_id NOT IN (SELECT id FROM folders WHERE role IN ('sent', 'drafts'))", args
 }
 
 // ruleSQL is d's trigger and conditions as a condition on messages m, true

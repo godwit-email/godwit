@@ -3159,7 +3159,7 @@
     }
   },
   "settings_rules_preview": "Existing mail",
-  "settings_rules_preview_foot": "Last {arg1, number, ::group-off} days",
+  "settings_rules_preview_foot": "The list shows mail from the last {arg1, number, ::group-off} days",
   "@settings_rules_preview_foot": {
     "placeholders": {
       "arg1": {
@@ -3555,7 +3555,7 @@
   "settings_masking_feature_rules": "Rules",
   "error_recipient_unconfirmed": "Confirm the forward recipient before saving the rule.",
   "wit_tool_propose_rule": "Create a rule",
-  "wit_rule_matches": "Matching in the last 30 days: {arg1, number, ::group-off}",
+  "wit_rule_matches": "Existing mail matching: {arg1, number, ::group-off} (listed: the last 30 days)",
   "wit_rule_new_only": "Existing mail is left as it is: the rule handles only mail that arrives after you save it.",
   "wit_rule_hint": "Takes effect only once you save it. Wit can’t save it for you.",
   "wit_rule_edit": "Edit in the Editor",

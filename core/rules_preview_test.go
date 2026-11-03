@@ -43,11 +43,12 @@ func (e *syncEnv) labelID(t *testing.T, slug string) int64 {
 	return e.rows(t, "SELECT id FROM labels WHERE slug = ?", slug)[0][0].(int64)
 }
 
-// evaluated is what the in-memory evaluator matches of the previewable mail.
-func (e *syncEnv) evaluated(t *testing.T, d RuleDoc) []int64 {
+// evaluated is what the in-memory evaluator matches of the mail of the last
+// 30 days, and with old@x too.
+func (e *syncEnv) evaluated(t *testing.T, d RuleDoc, old ...string) []int64 {
 	t.Helper()
 	var out []int64
-	for _, mid := range []string{"aws@x", "stripe@x", "news@x", "cn@x", "short@x"} {
+	for _, mid := range append([]string{"aws@x", "stripe@x", "news@x", "cn@x", "short@x"}, old...) {
 		m, ok, err := e.s.ruleMail(bg, e.idOf(t, mid))
 		require.NoError(t, err)
 		if ok && d.matches(m) {
@@ -67,7 +68,9 @@ func (e *syncEnv) previewed(t *testing.T, d RuleDoc) []int64 {
 		out = append(out, m.ID)
 	}
 	slices.Sort(out)
-	assert.Equal(t, len(out), p.Count)
+	if d.Trigger == TriggerReceive { // the evaluator reads no trigger
+		assert.Equal(t, len(e.evaluated(t, d, "old@x")), p.Count, "the count is of all the existing mail")
+	}
 	return out
 }
 
@@ -109,13 +112,13 @@ func TestRulePreviewAgreesWithEvaluator(t *testing.T) {
 	} {
 		assert.Equal(t, e.evaluated(t, d), e.previewed(t, d), "%s %v", d.Match, d.Conditions)
 	}
-	assert.Len(t, e.previewed(t, RuleDoc{Trigger: TriggerReceive, Match: MatchAny}), 5, "Sent and older mail are left out")
+	assert.Len(t, e.previewed(t, RuleDoc{Trigger: TriggerReceive, Match: MatchAny}), 5, "Sent and older mail are not listed")
 	// A label rule runs on mail with that label on.
 	assert.Equal(t, []int64{e.idOf(t, "news@x")}, e.previewed(t, RuleDoc{Trigger: TriggerLabel, TriggerArg: "u1", Match: MatchAll}))
 
 	p, err := e.s.PreviewRule(bg, RuleDoc{Trigger: TriggerReceive, Match: MatchAll}, 2)
 	require.NoError(t, err)
-	assert.Equal(t, 5, p.Count)
+	assert.Equal(t, 6, p.Count, "older mail counts, Sent does not")
 	assert.Len(t, p.Messages, 2)
 	_, err = e.s.PreviewRule(bg, RuleDoc{Trigger: TriggerReceive, Match: MatchAll, Conditions: []RuleCondition{{FieldSubject, OpContains, " "}}}, 2)
 	assert.ErrorIs(t, err, ErrInvalidRule)
@@ -130,11 +133,12 @@ func TestRuleRunOnExisting(t *testing.T) {
 	require.NoError(t, err)
 	n, err := e.s.RunRuleOnExisting(bg, id)
 	require.NoError(t, err)
-	assert.Equal(t, 1, n)
+	assert.Equal(t, 2, n, "all the existing mail, not only the last 30 days; Sent left out")
 	assert.Equal(t, "rule", e.labelOn(t, e.idOf(t, "aws@x")))
 	assert.Contains(t, e.flagsOf(t, "aws@x"), `\Seen`)
-	assert.Empty(t, e.labelOn(t, e.idOf(t, "old@x")))
-	assert.Equal(t, [][]any{{e.idOf(t, "aws@x"), TriggerExisting, RuleRunDone}}, e.rows(t, "SELECT message_id, trigger, state FROM rule_runs"))
+	assert.Equal(t, "rule", e.labelOn(t, e.idOf(t, "old@x")))
+	assert.Equal(t, [][]any{{e.idOf(t, "aws@x"), TriggerExisting, RuleRunDone}, {e.idOf(t, "old@x"), TriggerExisting, RuleRunDone}},
+		e.rows(t, "SELECT message_id, trigger, state FROM rule_runs ORDER BY message_id"))
 	assert.Equal(t, []string{"label done", "read done"}, e.results(t, store.Int(e.rows(t, "SELECT id FROM rule_runs")[0][0])))
 	assert.Zero(t, e.count(t, "SELECT count(*) FROM outbox"))
 
@@ -143,7 +147,7 @@ func TestRuleRunOnExisting(t *testing.T) {
 	assert.Zero(t, n, "a message the rule ran on is not run again")
 	counts, err := e.s.RuleHitCounts(bg)
 	require.NoError(t, err)
-	assert.Equal(t, map[int64]int{id: 1}, counts)
+	assert.Equal(t, map[int64]int{id: 2}, counts)
 }
 
 // Only local actions run on existing mail; any other kind (forward, Wit)
