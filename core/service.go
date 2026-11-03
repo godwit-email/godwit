@@ -674,6 +674,9 @@ func (s *Service) syncAccount(ctx context.Context, accountID int64, explicit boo
 		return err
 	}
 	more, err := mailsync.Fetch(ctx, s.db, c, accountID, s.bus)
+	if err == nil {
+		err = s.logDaily(ctx) // daily rules run after the day's first complete sync
+	}
 	s.notifyHooks() // rows committed before an error count too
 	s.wakeLabeler()
 	if more {

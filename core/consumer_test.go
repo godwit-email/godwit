@@ -41,7 +41,7 @@ func (r *subjects) wait(t *testing.T, n int) []string {
 func TestConsumerAtLeastOnceAcrossRestart(t *testing.T) {
 	e := newSyncedEnv(t)
 	var rec subjects
-	require.NoError(t, e.s.startConsumer(bg, "test", func(ctx context.Context, ev hookEvent) error {
+	require.NoError(t, e.s.startConsumer(bg, "test", []string{"message.received"}, func(ctx context.Context, ev hookEvent) error {
 		rec.add(ev.subject)
 		<-ctx.Done() // stuck until Close: the cursor never moves
 		return ctx.Err()
@@ -52,7 +52,7 @@ func TestConsumerAtLeastOnceAcrossRestart(t *testing.T) {
 	rec.wait(t, 1)
 	e.reopen(t)
 
-	require.NoError(t, e.s.startConsumer(bg, "test", func(_ context.Context, ev hookEvent) error {
+	require.NoError(t, e.s.startConsumer(bg, "test", []string{"message.received"}, func(_ context.Context, ev hookEvent) error {
 		rec.add(ev.subject)
 		return nil
 	}))
@@ -68,7 +68,7 @@ func TestConsumerRetriesFailure(t *testing.T) {
 	e := newSyncedEnv(t)
 	var rec subjects
 	failed := false
-	require.NoError(t, e.s.startConsumer(bg, "test", func(_ context.Context, ev hookEvent) error {
+	require.NoError(t, e.s.startConsumer(bg, "test", []string{"message.received"}, func(_ context.Context, ev hookEvent) error {
 		rec.add(ev.subject)
 		if !failed {
 			failed = true
@@ -88,7 +88,7 @@ func TestConsumerNameApartFromPlugins(t *testing.T) {
 	e := newSyncedEnv(t)
 	startTestPlugin(t, e.s, "test", hookPerms, recorder)
 	var rec subjects
-	require.NoError(t, e.s.startConsumer(bg, "test", func(_ context.Context, ev hookEvent) error {
+	require.NoError(t, e.s.startConsumer(bg, "test", []string{"message.received"}, func(_ context.Context, ev hookEvent) error {
 		rec.add(ev.subject)
 		return nil
 	}))
@@ -101,7 +101,7 @@ func TestConsumerNameApartFromPlugins(t *testing.T) {
 // Cleanup keeps old events a built-in consumer has not passed.
 func TestCleanupKeepsConsumerEvents(t *testing.T) {
 	s := newMailContextService(t)
-	require.NoError(t, s.startConsumer(bg, "test", func(ctx context.Context, _ hookEvent) error {
+	require.NoError(t, s.startConsumer(bg, "test", []string{"message.received"}, func(ctx context.Context, _ hookEvent) error {
 		<-ctx.Done()
 		return ctx.Err()
 	}))

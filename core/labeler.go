@@ -148,6 +148,7 @@ func (s *Service) classifyBatch(ctx context.Context) (int, error) {
 		if _, err := s.db.Transaction(ctx, labelWrites(id, at, newest, labels, yes, answered)); err != nil {
 			return done, err
 		}
+		s.notifyHooks()
 		done++
 	}
 	return done, nil
@@ -224,7 +225,11 @@ func labelWrites(id int64, at any, newest int64, labels []Label, yes map[string]
 	var stmts []sqlite.Statement
 	if answered { // unanswered: only the guarded labeled_at update, so an edited label is still asked again
 		for _, l := range labels {
-			if yes[l.Slug] {
+			if yes[l.Slug] { // a label new on the message runs label rules (labelQuestions left out hand-set and rule rows)
+				stmts = append(stmts, sqlite.Statement{SQL: `INSERT INTO events_log(type, account_id, message_id, subject, from_addr, msg_date, detail, created_at)
+					SELECT ?, account_id, id, subject, from_addr, date, ?, unixepoch() FROM messages WHERE id = ? AND ` + guard + `
+					AND NOT EXISTS (SELECT 1 FROM message_labels WHERE message_id = ? AND label_id = ?)`,
+					Args: append(append([]any{eventLabelApplied, l.Slug, id}, guardArgs...), id, l.ID)})
 				stmts = append(stmts, sqlite.Statement{SQL: `INSERT INTO message_labels(message_id, label_id, source, active)
 					SELECT ?, ?, 'auto', 1 WHERE ` + guard + ` AND EXISTS (SELECT 1 FROM labels WHERE id = ?)
 					ON CONFLICT(message_id, label_id) DO UPDATE SET active = 1 WHERE source = 'auto'`,
