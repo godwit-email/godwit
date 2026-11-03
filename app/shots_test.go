@@ -620,16 +620,16 @@ func TestShots(t *testing.T) {
 		p.aiTab = aiApps
 		s.see("启用本机 API")
 		shot(s.harness, "SettingsAIApps")
-		e, _ := s.app.mcpEnv() // Claude connected, Codex there but not
-		if err := os.MkdirAll(filepath.Join(e.Home, ".codex"), 0o755); err != nil {
-			t.Fatal(err)
+		e, _ := s.app.mcpEnv() // Claude connected, Codex, Antigravity and Grok there but not
+		for _, dir := range []string{".codex", ".gemini/antigravity", ".grok"} {
+			if err := os.MkdirAll(filepath.Join(e.Home, dir), 0o755); err != nil {
+				t.Fatal(err)
+			}
 		}
 		if err := os.MkdirAll(filepath.Join(e.Home, "Library", "Application Support", "Claude"), 0o755); err != nil {
 			t.Fatal(err)
 		}
-		if err := e.Connect("claude", s.app.mcpServer()); err != nil {
-			t.Fatal(err)
-		}
+		installClaudeExtension(t, e.Home, s.app.mcpServer())
 		s.post(func() { // serving: the rows to connect a client show
 			s.app.settings.LocalAPI = true
 			s.app.localAPIPath = "/Users/you/Library/Application Support/Godwit/godwit.sock"

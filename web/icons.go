@@ -210,6 +210,9 @@ var BrandIcons = map[string]string{
 	"claude-mono":      "node_modules/@lobehub/icons-static-svg/icons/claude.svg",
 	"claude-code-mono": "node_modules/@lobehub/icons-static-svg/icons/claudecode.svg",
 	"codex-mono":       "node_modules/@lobehub/icons-static-svg/icons/codex.svg",
+	"antigravity":      "node_modules/@lobehub/icons-static-svg/icons/antigravity-color.svg",
+	"antigravity-mono": "node_modules/@lobehub/icons-static-svg/icons/antigravity.svg",
+	"grok-mono":        "node_modules/@lobehub/icons-static-svg/icons/grok.svg",
 }
 
 // remix holds exactly the files of RemixIcons and BrandIcons, and the packages' licences.
@@ -223,6 +226,8 @@ var BrandIcons = map[string]string{
 //go:embed node_modules/@lobehub/icons-static-svg/icons/claude.svg
 //go:embed node_modules/@lobehub/icons-static-svg/icons/claudecode.svg
 //go:embed node_modules/@lobehub/icons-static-svg/icons/codex.svg
+//go:embed node_modules/@lobehub/icons-static-svg/icons/antigravity-color.svg
+//go:embed node_modules/@lobehub/icons-static-svg/icons/antigravity.svg
 //go:embed node_modules/remixicon/icons/Arrows/arrow-down-s-line.svg
 //go:embed node_modules/remixicon/icons/Document/contacts-book-3-line.svg
 //go:embed node_modules/remixicon/icons/Document/contacts-book-3-fill.svg

@@ -25,6 +25,7 @@ import (
 	"github.com/godwit-email/godwit/core/coretest"
 	"github.com/godwit-email/godwit/core/events"
 	"github.com/godwit-email/godwit/internal/i18n"
+	"github.com/godwit-email/godwit/internal/mcpclients"
 	"github.com/godwit-email/godwit/internal/theme"
 )
 
@@ -1621,25 +1622,55 @@ func TestSettingsBlockedSenders(t *testing.T) {
 // mcp into one's config, another takes it out.
 func TestConnectAIApp(t *testing.T) {
 	h := localAPIHarness(t, "/tmp/gw/godwit.sock", nil, func(st *core.Settings) { st.LocalAPI = true })
-	config := filepath.Join(h.home, "Library", "Application Support", "Claude", "claude_desktop_config.json")
-	if err := os.MkdirAll(filepath.Dir(config), 0o755); err != nil {
+	config := filepath.Join(h.home, ".claude.json")
+	if err := os.MkdirAll(filepath.Join(h.home, ".claude"), 0o755); err != nil {
 		t.Fatal(err)
 	}
 	h.aiTab(aiApps)
 	h.see("选中的应用可以读取你的邮件、起草回复。其他应用请复制配置手动添加。")
-	h.see("Claude")
+	h.see("Claude Code")
 	if h.tt.HasText("Codex") {
 		t.Fatal("Codex is offered, though it is not on this computer")
 	}
-	h.click("Claude")
-	h.see("已接入 Claude，重启它后生效。")
+	h.click("Claude Code")
+	h.see("已接入 Claude Code，新开一个会话后生效。")
 	h.until("written", func() bool {
 		b, err := os.ReadFile(config)
 		return err == nil && strings.Contains(string(b), `"godwit"`) && strings.Contains(string(b), `"mcp"`)
 	})
-	h.click("Claude")
-	h.see("已断开 Claude。")
+	h.click("Claude Code")
+	h.see("已断开 Claude Code。")
 	h.until("taken out", func() bool { b, _ := os.ReadFile(config); return !strings.Contains(string(b), `"godwit"`) })
+}
+
+// Claude (the desktop app) is opened with Godwit's extension to install;
+// installed, only Claude can take it out.
+func TestConnectClaudeExtension(t *testing.T) {
+	h := localAPIHarness(t, "/tmp/gw/godwit.sock", nil, func(st *core.Settings) { st.LocalAPI = true })
+	if err := os.MkdirAll(filepath.Join(h.home, "Library", "Application Support", "Claude"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	h.aiTab(aiApps)
+	h.click("Claude")
+	h.see("已在 Claude 中打开，在弹窗里点安装即可。")
+	h.until("bundled", func() bool { _, err := os.Stat(filepath.Join(h.home, "Godwit.mcpb")); return err == nil })
+	installClaudeExtension(t, h.home, h.app.mcpServer())
+	h.openSettings("general") // back: the AI apps are read again
+	h.aiTab(aiApps)
+	h.click("Claude")
+	h.see("请在 Claude 的设置 › 扩展中移除 Godwit。")
+}
+
+// installClaudeExtension puts Godwit's extension where Claude installs it.
+func installClaudeExtension(t *testing.T, home string, s mcpclients.Server) {
+	dir := filepath.Join(home, "Library", "Application Support", "Claude", "Claude Extensions", "local.mcpb.godwit.godwit")
+	b, _ := json.Marshal(map[string]any{"server": map[string]any{"mcp_config": map[string]any{"command": s.Command, "args": s.Args}}})
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "manifest.json"), b, 0o644); err != nil {
+		t.Fatal(err)
+	}
 }
 
 func TestSettingsSecuritySection(t *testing.T) {

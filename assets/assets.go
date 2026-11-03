@@ -7,3 +7,8 @@ import _ "embed"
 //
 //go:embed logo.svg
 var Logo []byte
+
+// Icon is the app icon, 1024px PNG.
+//
+//go:embed icon.png
+var Icon []byte

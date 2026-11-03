@@ -1,10 +1,13 @@
 // Package mcpclients connects godwit mcp to the AI apps that read MCP
-// servers from a config file of their own: Claude (the desktop app), Claude
-// Code and Codex. It changes only the server named godwit in each, and
-// leaves everything else in those files as it was.
+// servers from a config file of their own: Claude Code, Codex, Antigravity
+// and Grok. It changes only the server named godwit in each, and leaves
+// everything else in those files as it was. Claude (the desktop app) is
+// handed an extension to install instead, on macOS and Windows.
 package mcpclients
 
 import (
+	"archive/zip"
+	"bytes"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -16,6 +19,7 @@ import (
 	"slices"
 	"strings"
 
+	"github.com/godwit-email/godwit/assets"
 	"github.com/pelletier/go-toml/v2"
 )
 
@@ -24,18 +28,25 @@ const Name = "godwit"
 
 // The apps, by ID.
 const (
-	Claude     = "claude"      // the desktop app: claude_desktop_config.json
-	ClaudeCode = "claude-code" // through its own CLI, claude mcp
-	Codex      = "codex"       // ~/.codex/config.toml
+	Claude      = "claude"      // the desktop app: its extension, else claude_desktop_config.json
+	ClaudeCode  = "claude-code" // ~/.claude.json
+	Codex       = "codex"       // ~/.codex/config.toml
+	Antigravity = "antigravity" // ~/.gemini/config/mcp_config.json
+	Grok        = "grok"        // ~/.grok/config.toml
 )
 
 // IDs are the apps in the order they are offered.
-var IDs = []string{Claude, ClaudeCode, Codex}
+var IDs = []string{Claude, ClaudeCode, Codex, Antigravity, Grok}
+
+// ErrRemoveInClaude is Disconnect's answer for Claude's extension, which
+// only Claude can uninstall: Settings › Extensions.
+var ErrRemoveInClaude = errors.New("remove Godwit in Claude's Settings › Extensions")
 
 // Server is how an app runs godwit mcp.
 type Server struct {
 	Command string
 	Args    []string
+	Version string // the extension's version that Claude shows; not compared
 }
 
 // State is how an app stands with godwit mcp.
@@ -56,25 +67,34 @@ type Env struct {
 	AppData string
 	// CodexHome is $CODEX_HOME, if set.
 	CodexHome string
-	// Run runs Claude Code's CLI; nil runs it.
+	// Temp is where Claude's extension is written for it to open.
+	Temp string
+	// Run runs the command that opens the extension in Claude; nil runs it.
 	Run func(name string, args ...string) error
 }
 
 // Local is this computer's Env.
 func Local() (Env, error) {
 	home, err := os.UserHomeDir()
-	return Env{Home: home, OS: runtime.GOOS, AppData: os.Getenv("APPDATA"), CodexHome: os.Getenv("CODEX_HOME")}, err
+	return Env{Home: home, OS: runtime.GOOS, AppData: os.Getenv("APPDATA"), CodexHome: os.Getenv("CODEX_HOME"), Temp: os.TempDir()}, err
 }
 
 // State says how app stands with s.
 func (e Env) State(app string, s Server) (State, error) {
 	switch app {
-	case Claude, ClaudeCode:
+	case Claude, ClaudeCode, Antigravity:
 		path, ok := e.jsonFile(app)
 		if !ok {
 			return Absent, nil
 		}
-		entry, err := readJSONServer(path)
+		var entry *jsonServer
+		var err error
+		if app == Claude {
+			entry, err = readExtension(e.extensionDir())
+		}
+		if entry == nil && err == nil {
+			entry, err = readJSONServer(path)
+		}
 		if err != nil || entry == nil {
 			return Off, err
 		}
@@ -82,8 +102,8 @@ func (e Env) State(app string, s Server) (State, error) {
 			return On, nil
 		}
 		return Other, nil
-	case Codex:
-		dir := e.codexDir()
+	case Codex, Grok:
+		dir := e.tomlDir(app)
 		if !isDir(dir) {
 			return Absent, nil
 		}
@@ -110,45 +130,55 @@ func (e Env) State(app string, s Server) (State, error) {
 
 // Connect gives app a godwit server that runs s, in place of any it had.
 // The server's other fields there (an env the user gave it) are kept.
+// Claude, on macOS and Windows, is opened with an extension that runs s,
+// and is connected once the user installs it there.
 func (e Env) Connect(app string, s Server) error {
 	switch app {
-	case Claude:
+	case Claude, ClaudeCode, Antigravity:
 		path, ok := e.jsonFile(app)
 		if !ok {
-			return errors.New("Claude is not on this computer")
+			return fmt.Errorf("%s is not on this computer", app)
 		}
-		return editJSONServer(path, &s)
-	case ClaudeCode:
-		cli, ok := e.claudeCLI()
-		if !ok {
-			return errors.New("Claude Code is not on this computer")
+		if !e.OpensExtension(app) {
+			return editJSONServer(path, &s)
 		}
-		entry, _ := json.Marshal(map[string]any{"type": "stdio", "command": s.Command, "args": s.Args})
-		_ = e.run(cli, "mcp", "remove", "--scope", "user", Name) // none yet is fine
-		return e.run(cli, "mcp", "add-json", "--scope", "user", Name, string(entry))
-	case Codex:
-		return e.editCodex(&s)
+		if err := editJSONServer(path, nil); err != nil { // the extension stands in for it, not beside it
+			return err
+		}
+		return e.openExtension(s)
+	case Codex, Grok:
+		return e.editTOML(app, &s)
 	}
 	return fmt.Errorf("unknown app %q", app)
 }
 
-// Disconnect takes app's godwit server away.
+// OpensExtension is whether Connect opens app with an extension to install,
+// rather than connecting it.
+func (e Env) OpensExtension(app string) bool {
+	return app == Claude && (e.OS == "darwin" || e.OS == "windows")
+}
+
+// Disconnect takes app's godwit server away. Claude's extension stays, with
+// ErrRemoveInClaude.
 func (e Env) Disconnect(app string) error {
 	switch app {
-	case Claude:
+	case Claude, ClaudeCode, Antigravity:
 		path, ok := e.jsonFile(app)
 		if !ok {
 			return nil
 		}
-		return editJSONServer(path, nil)
-	case ClaudeCode:
-		cli, ok := e.claudeCLI()
-		if !ok {
+		if err := editJSONServer(path, nil); err != nil {
+			return err
+		}
+		if app != Claude {
 			return nil
 		}
-		return e.run(cli, "mcp", "remove", "--scope", "user", Name)
-	case Codex:
-		return e.editCodex(nil)
+		if ext, _ := readExtension(e.extensionDir()); ext != nil {
+			return ErrRemoveInClaude
+		}
+		return nil
+	case Codex, Grok:
+		return e.editTOML(app, nil)
 	}
 	return fmt.Errorf("unknown app %q", app)
 }
@@ -163,44 +193,103 @@ func isDir(p string) bool {
 }
 
 // jsonFile is the JSON file app keeps its MCP servers in, and whether app
-// is on this computer: Claude's folder, or Claude Code's CLI.
+// is on this computer: the folder it keeps its settings in.
 func (e Env) jsonFile(app string) (string, bool) {
-	if app == ClaudeCode {
-		_, ok := e.claudeCLI()
-		return filepath.Join(e.Home, ".claude.json"), ok
+	switch app {
+	case ClaudeCode:
+		return filepath.Join(e.Home, ".claude.json"), isDir(filepath.Join(e.Home, ".claude"))
+	case Antigravity:
+		gemini := filepath.Join(e.Home, ".gemini") // shared with Gemini CLI: antigravity/ is the app's own
+		return filepath.Join(gemini, "config", "mcp_config.json"), isDir(filepath.Join(gemini, "antigravity"))
 	}
-	var dir string
-	switch e.OS {
-	case "darwin":
-		dir = filepath.Join(e.Home, "Library", "Application Support", "Claude")
-	case "windows":
-		dir = filepath.Join(e.AppData, "Claude")
-	default:
-		dir = filepath.Join(e.Home, ".config", "Claude")
-	}
+	dir := e.claudeDir()
 	return filepath.Join(dir, "claude_desktop_config.json"), isDir(dir)
 }
 
-// claudeCLI finds Claude Code's claude: where its installers put it, as a
-// GUI app's PATH holds none of these.
-func (e Env) claudeCLI() (string, bool) {
-	exe := "claude"
-	if e.OS == "windows" {
-		exe = "claude.exe"
+func (e Env) claudeDir() string {
+	switch e.OS {
+	case "darwin":
+		return filepath.Join(e.Home, "Library", "Application Support", "Claude")
+	case "windows":
+		return filepath.Join(e.AppData, "Claude")
 	}
-	places := []string{filepath.Join(e.Home, ".local", "bin", exe), filepath.Join(e.Home, ".claude", "local", exe)}
-	if e.Run == nil { // this computer's, not a test's folder
-		places = append(places, filepath.Join("/opt/homebrew/bin", exe), filepath.Join("/usr/local/bin", exe))
-		if p, err := exec.LookPath(exe); err == nil {
-			places = append(places, p)
+	return filepath.Join(e.Home, ".config", "Claude")
+}
+
+// extensionDir is where Claude keeps the extension openExtension hands it:
+// local.mcpb.<author>.<name>, from its manifest.
+func (e Env) extensionDir() string {
+	return filepath.Join(e.claudeDir(), "Claude Extensions", "local.mcpb."+Name+"."+Name)
+}
+
+// claudeBundleID is Claude's on macOS, so the extension opens in Claude
+// even where another app also opens .mcpb files.
+const claudeBundleID = "com.anthropic.claudefordesktop"
+
+// openExtension writes Godwit.mcpb, a Claude extension that runs s, and
+// opens it in Claude, which asks the user to install it.
+func (e Env) openExtension(s Server) error {
+	manifest, _ := json.MarshalIndent(map[string]any{
+		"manifest_version": "0.3",
+		"name":             Name,
+		"display_name":     "Godwit",
+		"version":          s.Version,
+		"description":      "Search and read your Godwit mail, and write drafts.",
+		"author":           map[string]any{"name": "Godwit", "url": "https://github.com/godwit-email/godwit"},
+		"icon":             "icon.png",
+		"server": map[string]any{
+			"type":        "binary",
+			"entry_point": s.Command, // outside the bundle: Claude runs mcp_config as it is
+			"mcp_config":  map[string]any{"command": s.Command, "args": s.Args},
+		},
+	}, "", "  ")
+	var buf bytes.Buffer
+	z := zip.NewWriter(&buf)
+	for _, f := range []struct {
+		name string
+		data []byte
+	}{{"manifest.json", manifest}, {"icon.png", assets.Icon}} {
+		w, err := z.Create(f.name)
+		if err == nil {
+			_, err = w.Write(f.data)
+		}
+		if err != nil {
+			return err
 		}
 	}
-	for _, p := range places {
-		if fi, err := os.Stat(p); err == nil && !fi.IsDir() {
-			return p, true
-		}
+	if err := z.Close(); err != nil {
+		return err
 	}
-	return "", false
+	path := filepath.Join(e.Temp, "Godwit.mcpb")
+	if err := os.WriteFile(path, buf.Bytes(), 0o644); err != nil {
+		return err
+	}
+	if e.OS == "darwin" {
+		return e.run("open", "-b", claudeBundleID, path)
+	}
+	// shortcut: Windows opens it with whichever app took .mcpb, Claude unless another did; find Claude.exe if that bites.
+	return e.run("rundll32", "url.dll,FileProtocolHandler", path)
+}
+
+// readExtension is how the installed extension in dir runs godwit mcp; nil
+// if there is none.
+func readExtension(dir string) (*jsonServer, error) {
+	b, err := os.ReadFile(filepath.Join(dir, "manifest.json"))
+	if errors.Is(err, os.ErrNotExist) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	var m struct {
+		Server struct {
+			MCPConfig jsonServer `json:"mcp_config"`
+		} `json:"server"`
+	}
+	if err := json.Unmarshal(b, &m); err != nil {
+		return nil, fmt.Errorf("Claude's Godwit extension: %w", err)
+	}
+	return &m.Server.MCPConfig, nil
 }
 
 func (e Env) run(name string, args ...string) error {
@@ -214,8 +303,12 @@ func (e Env) run(name string, args ...string) error {
 	return nil
 }
 
-func (e Env) codexDir() string {
-	if e.CodexHome != "" {
+// tomlDir is the folder of app's config.toml: Codex's or Grok's.
+func (e Env) tomlDir(app string) string {
+	switch {
+	case app == Grok:
+		return filepath.Join(e.Home, ".grok")
+	case e.CodexHome != "":
 		return e.CodexHome
 	}
 	return filepath.Join(e.Home, ".codex")
@@ -302,6 +395,9 @@ func editJSONServer(path string, s *Server) error {
 // writeFile replaces path's content at once, through a link to where it
 // points (a dotfiles folder's), keeping its mode.
 func writeFile(path string, data []byte) error {
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		return err
+	}
 	mode := os.FileMode(0o644)
 	if real, err := filepath.EvalSymlinks(path); err == nil {
 		path = real
@@ -333,7 +429,7 @@ func writeFile(path string, data []byte) error {
 	return err
 }
 
-// Codex keeps its servers as tables of config.toml, [mcp_servers.<name>],
+// Codex and Grok keep their servers as tables of config.toml, [mcp_servers.<name>],
 // with subtables such as [mcp_servers.<name>.env]. The file is edited as
 // text, so its comments and order stay: a header is read as TOML spells it
 // (quoted keys, spaces around dots, a comment after it), and a key with its
@@ -419,7 +515,7 @@ func godwitTable(key []string) int {
 // codexSpan is where godwit's table is in lines: its header, the end of its
 // own keys (before a subtable of it), and its end with its subtables; -1 if
 // none. A file whose godwit tables this misreads (one spelt with escapes,
-// subtables apart from it) is caught by editCodex's check.
+// subtables apart from it) is caught by editTOML's check.
 func codexSpan(lines []string) (start, keys, end int) {
 	start, keys, end = -1, len(lines), len(lines)
 	for i, next := 0, 0; i < len(lines); i = next {
@@ -513,15 +609,15 @@ func tomlValueEnds(v string) bool {
 	return q == "" && depth <= 0
 }
 
-// editCodex sets godwit's table in Codex's config.toml to s, keeping any
+// editTOML sets godwit's table in app's config.toml to s, keeping any
 // other keys and subtables the user gave it, or takes it away if s is nil.
 // The file must be TOML, and what it would write must read back as the
 // same config with only godwit's command and args set, or godwit gone:
 // else the file is left alone.
-func (e Env) editCodex(s *Server) error {
-	dir := e.codexDir()
+func (e Env) editTOML(app string, s *Server) error {
+	dir := e.tomlDir(app)
 	if s != nil && !isDir(dir) {
-		return errors.New("Codex is not on this computer")
+		return fmt.Errorf("%s is not on this computer", app)
 	}
 	path := filepath.Join(dir, "config.toml")
 	b, err := os.ReadFile(path)
