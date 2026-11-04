@@ -257,9 +257,9 @@ func (s *Service) mailTarget(ctx context.Context, kind string, id int64) (int64,
 	}
 	var ids []int64
 	var members []contentMember
-	keep := copyKeep(rows.Values, 0, 5) // a message in several folders is read once
+	of := copyOf(rows.Values, 0, 5) // a message in several folders is read once
 	for i, r := range rows.Values {
-		if !keep[i] {
+		if of[i] != i {
 			continue
 		}
 		ids = append(ids, store.Int(r[0]))

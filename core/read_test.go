@@ -173,6 +173,15 @@ func TestThreadCopiesShowOnce(t *testing.T) {
 	assert.Equal(t, 2, p.Items[0].Unread)
 	assert.Equal(t, []string{"Dan", "Bob"}, p.Items[0].Participants)
 
+	work := th.Messages[1].ID
+	allMail := msgIDs(th.Copies)
+	require.NoError(t, e.s.SetFlags(bg, []int64{allMail[len(allMail)-1]}, []string{`\Flagged`}, nil))
+	require.NoError(t, e.s.SetFlags(bg, []int64{th.Messages[0].ID, work}, []string{`\Seen`}, nil))
+	p, err = e.s.ListThreads(bg, e.inboxView(t), "", 50)
+	require.NoError(t, err)
+	assert.Equal(t, 1, p.Items[0].Flagged, "a copy's star is its message's")
+	assert.Equal(t, 2, p.Items[0].Unread, "unread while a copy is")
+
 	other := e.second(t) // the same mail in another account's inbox is that account's own
 	other.put(t, "INBOX", first)
 	other.sync(t)

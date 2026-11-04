@@ -52,18 +52,19 @@ type Thread struct {
 // All is every message of the thread, Messages then Copies.
 func (t Thread) All() []MessageSummary { return append(slices.Clip(t.Messages), t.Copies...) }
 
-// copyCols are the columns, on messages alias m, that copyKeep reads: the
+// copyCols are the columns, on messages alias m, that copyOf reads: the
 // thread, the Message-ID and how much the copy's folder is preferred. The
 // inbox copy shows, so acting on what is shown acts in the inbox; All Mail's
 // last, as it holds a copy of every message.
 const copyCols = `m.thread_id, m.message_id, CASE (SELECT f.role FROM folders f WHERE f.id = m.folder_id) WHEN 'inbox' THEN 0 WHEN 'all' THEN 2 ELSE 1 END`
 
-// copyKeep reports, for rows each holding copyCols at col, whether a row is
-// the copy of its message to show: of a thread's rows sharing a Message-ID,
-// the one of the preferred folder, then lowest id (idCol). Copies are only
+// copyOf gives, for rows each holding copyCols at col, the index of the row
+// that shows each row's message, its own index for that row: of a thread's
+// rows sharing a Message-ID, the one of the preferred folder, then lowest id
+// (idCol). Copies are only
 // ever within a thread, so the same mail in two accounts' threads stays in
 // both; a row without a Message-ID is always its own message.
-func copyKeep(rows [][]any, idCol, col int) []bool {
+func copyOf(rows [][]any, idCol, col int) []int {
 	key := func(r []any) string {
 		if mid := store.Str(r[col+1]); mid != "" {
 			return fmt.Sprint(store.Int(r[col]), "\x00", mid)
@@ -80,12 +81,15 @@ func copyKeep(rows [][]any, idCol, col int) []bool {
 			best[k] = i
 		}
 	}
-	keep := make([]bool, len(rows))
+	of := make([]int, len(rows))
 	for i, r := range rows {
-		j, ok := best[key(r)]
-		keep[i] = !ok || j == i
+		if j, ok := best[key(r)]; ok {
+			of[i] = j
+		} else {
+			of[i] = i
+		}
 	}
-	return keep
+	return of
 }
 
 func copyLess(a, b []any, idCol, col int) bool {
@@ -139,9 +143,14 @@ func (s *Service) ListThreads(ctx context.Context, v View, cursor string, limit 
 		return ThreadPage{}, err
 	}
 	seen := map[string]bool{}
-	keep := copyKeep(ms.Values, 9, 10)
+	of := copyOf(ms.Values, 9, 10)
+	unread, flagged := map[int]bool{}, map[int]bool{} // a message is unread or starred if any copy is
 	for i, r := range ms.Values {
-		if !keep[i] {
+		unread[of[i]] = unread[of[i]] || !strings.Contains(store.Str(r[3]), `\Seen`)
+		flagged[of[i]] = flagged[of[i]] || strings.Contains(store.Str(r[3]), `\Flagged`)
+	}
+	for i, r := range ms.Values {
+		if of[i] != i {
 			continue
 		}
 		t := &page.Items[idx[store.Int(r[0])]]
@@ -149,10 +158,10 @@ func (s *Service) ListThreads(ctx context.Context, v View, cursor string, limit 
 			t.Snippet = gomail.Snippet(store.Str(r[2])) // newest first; clean of what an older sync kept
 		}
 		t.Count++
-		if !strings.Contains(store.Str(r[3]), `\Seen`) {
+		if unread[i] {
 			t.Unread++
 		}
-		if strings.Contains(store.Str(r[3]), `\Flagged`) {
+		if flagged[i] {
 			t.Flagged++
 		}
 		t.HasAttachments = t.HasAttachments || store.Int(r[4]) != 0
@@ -192,9 +201,9 @@ func (s *Service) GetThread(ctx context.Context, id int64) (Thread, error) {
 	if err != nil {
 		return Thread{}, err
 	}
-	keep := copyKeep(ms.Values, 0, msgColCount)
+	of := copyOf(ms.Values, 0, msgColCount)
 	for i, r := range ms.Values {
-		if keep[i] {
+		if of[i] == i {
 			t.Messages = append(t.Messages, scanSummary(r))
 		} else {
 			t.Copies = append(t.Copies, scanSummary(r))
