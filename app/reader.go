@@ -42,7 +42,8 @@ type reader struct {
 	subject string
 	msgs    []core.MessageSummary // oldest first
 	// threadIDs are every message of the thread, msgs or not (a route to one
-	// message shows only it): what label changes apply to.
+	// message shows only it, and a message in several folders shows once):
+	// what label changes apply to.
 	threadIDs    []int64
 	labels       []core.AppliedLabel // the thread's
 	labelMenu    bool
@@ -192,12 +193,12 @@ func (r *reader) load() {
 			return
 		}
 		r.threadIDs, r.labels = nil, labels[k[0]]
-		for _, m := range th.Messages { // before the cut below, which reuses the array
+		for _, m := range th.All() { // every copy: a label goes on each
 			r.threadIDs = append(r.threadIDs, m.ID)
 		}
 		msgs := th.Messages
-		if k[1] != 0 {
-			msgs = slices.DeleteFunc(msgs, func(m core.MessageSummary) bool { return m.ID != k[1] })
+		if k[1] != 0 { // the copy asked for, though another one shows in the thread
+			msgs = slices.DeleteFunc(th.All(), func(m core.MessageSummary) bool { return m.ID != k[1] })
 		}
 		known := map[int64]int64{} // messages shown before keep their state
 		for _, m := range r.msgs {

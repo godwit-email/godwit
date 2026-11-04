@@ -3,6 +3,7 @@ package core
 import (
 	"context"
 	"fmt"
+	"slices"
 	"strings"
 	"time"
 
@@ -37,11 +38,55 @@ type ThreadPage struct {
 	NextCursor string
 }
 
-// Thread is a conversation with its messages, oldest first.
+// Thread is a conversation with its messages, oldest first. A message the
+// server keeps in several folders (Gmail's INBOX, labels and All Mail) is in
+// Messages once; Copies holds its other copies, which an action on the whole
+// thread still covers.
 type Thread struct {
 	ID       int64
 	Subject  string
 	Messages []MessageSummary
+	Copies   []MessageSummary
+}
+
+// All is every message of the thread, Messages then Copies.
+func (t Thread) All() []MessageSummary { return append(slices.Clip(t.Messages), t.Copies...) }
+
+// copyCols are the columns, on messages alias m, that copyKeep reads: the
+// Message-ID and how much the copy's folder is preferred. The inbox copy
+// shows, so acting on what is shown acts in the inbox; All Mail's last, as it
+// holds a copy of every message.
+const copyCols = `m.message_id, CASE (SELECT f.role FROM folders f WHERE f.id = m.folder_id) WHEN 'inbox' THEN 0 WHEN 'all' THEN 2 ELSE 1 END`
+
+// copyKeep reports, for rows of one account each holding copyCols at col,
+// whether a row is the copy of its message to show: of the rows sharing a
+// Message-ID, the one of the preferred folder, then lowest id (idCol). A row
+// without a Message-ID is always its own message.
+func copyKeep(rows [][]any, idCol, col int) []bool {
+	best := map[string]int{}
+	for i, r := range rows {
+		mid := store.Str(r[col])
+		if mid == "" {
+			continue
+		}
+		j, ok := best[mid]
+		if !ok || copyLess(r, rows[j], idCol, col) {
+			best[mid] = i
+		}
+	}
+	keep := make([]bool, len(rows))
+	for i, r := range rows {
+		j, ok := best[store.Str(r[col])]
+		keep[i] = !ok || j == i
+	}
+	return keep
+}
+
+func copyLess(a, b []any, idCol, col int) bool {
+	if ra, rb := store.Int(a[col+1]), store.Int(b[col+1]); ra != rb {
+		return ra < rb
+	}
+	return store.Int(a[idCol]) < store.Int(b[idCol])
 }
 
 // ListThreads lists threads with at least one message in the view, newest first.
@@ -82,13 +127,17 @@ func (s *Service) ListThreads(ctx context.Context, v View, cursor string, limit 
 	if len(ids) == 0 {
 		return page, nil
 	}
-	ms, err := s.db.Query(ctx, `SELECT thread_id, from_addr, snippet, flags, has_attachments, auth_results, security_status, security_reason, security_scanned_at FROM messages m
+	ms, err := s.db.Query(ctx, `SELECT thread_id, from_addr, snippet, flags, has_attachments, auth_results, security_status, security_reason, security_scanned_at, m.id, `+copyCols+` FROM messages m
 		WHERE thread_id IN (`+strings.TrimSuffix(strings.Repeat("?,", len(ids)), ",")+`) AND `+notPurgedCond+` ORDER BY date DESC, id DESC`, ids...)
 	if err != nil {
 		return ThreadPage{}, err
 	}
 	seen := map[string]bool{}
-	for _, r := range ms.Values {
+	keep := copyKeep(ms.Values, 9, 10) // a thread is one account's, so its copies are among its rows
+	for i, r := range ms.Values {
+		if !keep[i] {
+			continue
+		}
 		t := &page.Items[idx[store.Int(r[0])]]
 		if t.Count == 0 {
 			t.Snippet = gomail.Snippet(store.Str(r[2])) // newest first; clean of what an older sync kept
@@ -123,7 +172,7 @@ func (s *Service) ListThreads(ctx context.Context, v View, cursor string, limit 
 	return page, nil
 }
 
-// GetThread returns the thread's messages by date ascending.
+// GetThread returns the thread's messages by date ascending, each once.
 func (s *Service) GetThread(ctx context.Context, id int64) (Thread, error) {
 	rows, err := s.db.Query(ctx, "SELECT subject FROM threads WHERE id = ?", id)
 	if err != nil {
@@ -133,12 +182,17 @@ func (s *Service) GetThread(ctx context.Context, id int64) (Thread, error) {
 		return Thread{}, fmt.Errorf("thread %d not found", id)
 	}
 	t := Thread{ID: id, Subject: store.Str(rows.Values[0][0])}
-	ms, err := s.db.Query(ctx, "SELECT "+msgCols+" FROM messages m WHERE m.thread_id = ? AND "+notPurgedCond+" ORDER BY m.date, m.id", id)
+	ms, err := s.db.Query(ctx, "SELECT "+msgCols+", "+copyCols+" FROM messages m WHERE m.thread_id = ? AND "+notPurgedCond+" ORDER BY m.date, m.id", id)
 	if err != nil {
 		return Thread{}, err
 	}
-	for _, r := range ms.Values {
-		t.Messages = append(t.Messages, scanSummary(r))
+	keep := copyKeep(ms.Values, 0, msgColCount)
+	for i, r := range ms.Values {
+		if keep[i] {
+			t.Messages = append(t.Messages, scanSummary(r))
+		} else {
+			t.Copies = append(t.Copies, scanSummary(r))
+		}
 	}
 	return t, nil
 }

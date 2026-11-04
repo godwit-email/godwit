@@ -1415,7 +1415,7 @@ func (p *mailPage) rowMessageIDs(ctx context.Context, rows []mailItem) ([]int64,
 		if err != nil {
 			return nil, err
 		}
-		for _, m := range th.Messages {
+		for _, m := range th.All() {
 			ids = append(ids, m.ID)
 		}
 	}
@@ -1549,7 +1549,7 @@ func (p *mailPage) batchScoped(act string, rows []mailItem, anywhere bool) {
 				failed += it.Count
 				continue
 			}
-			msgs = append(msgs, th.Messages...)
+			msgs = append(msgs, th.All()...) // every copy, so the view's own is acted on
 		}
 		if v.LabelID != 0 && !search {
 			ids := make([]int64, len(msgs))

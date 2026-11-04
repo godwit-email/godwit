@@ -67,6 +67,8 @@ type AttachmentInfo struct {
 
 const msgCols = `m.id, m.thread_id, m.folder_id, m.subject, m.from_addr, m.snippet, m.to_addrs, m.cc_addrs, m.date, m.flags, m.has_attachments, m.auth_results, m.security_status, m.security_reason, m.security_scanned_at`
 
+var msgColCount = strings.Count(msgCols, ",") + 1
+
 func scanSummary(r []any) MessageSummary {
 	from := store.Str(r[4])
 	authRes := store.Str(r[11])

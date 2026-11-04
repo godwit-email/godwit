@@ -240,14 +240,15 @@ type contentMember struct {
 	Hash string // sha256 of subject and bodies
 }
 
-// mailTarget loads a message or thread: its account, member IDs by date, and
+// mailTarget loads a message or thread: its account, member IDs by date (a
+// message in several folders once), and
 // its content version (members sorted by ID). It also proves the target exists.
 func (s *Service) mailTarget(ctx context.Context, kind string, id int64) (int64, []int64, []contentMember, error) {
 	where := "id = ?"
 	if kind == "thread" {
 		where = "thread_id = ?"
 	}
-	rows, err := s.db.Query(ctx, "SELECT id, account_id, subject, body_text, body_html FROM messages WHERE "+where+" ORDER BY date, id", id)
+	rows, err := s.db.Query(ctx, "SELECT m.id, m.account_id, m.subject, m.body_text, m.body_html, "+copyCols+" FROM messages m WHERE m."+where+" ORDER BY m.date, m.id", id)
 	if err != nil {
 		return 0, nil, nil, err
 	}
@@ -256,7 +257,11 @@ func (s *Service) mailTarget(ctx context.Context, kind string, id int64) (int64,
 	}
 	var ids []int64
 	var members []contentMember
-	for _, r := range rows.Values {
+	keep := copyKeep(rows.Values, 0, 5) // a message in several folders is read once
+	for i, r := range rows.Values {
+		if !keep[i] {
+			continue
+		}
 		ids = append(ids, store.Int(r[0]))
 		sum := sha256.Sum256([]byte(store.Str(r[2]) + "\x00" + store.Str(r[3]) + "\x00" + store.Str(r[4])))
 		members = append(members, contentMember{store.Int(r[0]), hex.EncodeToString(sum[:])})
