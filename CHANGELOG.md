@@ -1,5 +1,13 @@
 # Changelog
 
+## [1.26.2](https://github.com/godwit-email/godwit/compare/v1.26.1...v1.26.2) (2026-11-04)
+
+
+### Bug Fixes
+
+* **mail:** recover messages with invalid UTF-8 headers ([#470](https://github.com/godwit-email/godwit/issues/470)) ([4c47412](https://github.com/godwit-email/godwit/commit/4c474129c4dd95e6cda53d10f97bea0d0ae00cb6))
+* **mail:** replace non-UTF-8 bytes in attachment metadata ([#469](https://github.com/godwit-email/godwit/issues/469)) ([69fdb94](https://github.com/godwit-email/godwit/commit/69fdb9476aae693ad69134f482f156731e24b2cb)), closes [#467](https://github.com/godwit-email/godwit/issues/467)
+
 ## [1.26.1](https://github.com/godwit-email/godwit/compare/v1.26.0...v1.26.1) (2026-11-04)
 
 
