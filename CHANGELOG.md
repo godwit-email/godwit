@@ -1,5 +1,23 @@
 # Changelog
 
+## [1.26.0](https://github.com/godwit-email/godwit/compare/v1.25.0...v1.26.0) (2026-11-04)
+
+
+### Features
+
+* **mail:** allow editing labels and security classifications per email ([#435](https://github.com/godwit-email/godwit/issues/435)) ([ceb5917](https://github.com/godwit-email/godwit/commit/ceb5917173a5ae7596a444773956be30b7d87c84))
+* **mail:** hide purged mail optimistically and provide undo action ([#449](https://github.com/godwit-email/godwit/issues/449)) ([ea1a1a5](https://github.com/godwit-email/godwit/commit/ea1a1a5a074e7ac410267035db599f8ea30f524e))
+* **rules:** mail rules ([#448](https://github.com/godwit-email/godwit/issues/448)) ([f770df7](https://github.com/godwit-email/godwit/commit/f770df78c904328f3286ad7bd2ba32603acafa9d))
+* **settings:** install Godwit into Claude as an extension, and connect Antigravity and Grok ([#437](https://github.com/godwit-email/godwit/issues/437)) ([c1a5722](https://github.com/godwit-email/godwit/commit/c1a572210d805f6b07a6eb74d42f8dd59ff785c8))
+* **shell:** offer a newer version in a card above Settings ([#452](https://github.com/godwit-email/godwit/issues/452)) ([23069de](https://github.com/godwit-email/godwit/commit/23069de625c58e8a4af6f71ec3d2a634984ec3bc))
+* **sync:** put the masked IMAP traffic before a parse error in the error report ([#451](https://github.com/godwit-email/godwit/issues/451)) ([f23aa6d](https://github.com/godwit-email/godwit/commit/f23aa6dfe20f5f71e38c2a43ba5e506197609456)), closes [#450](https://github.com/godwit-email/godwit/issues/450)
+
+
+### Bug Fixes
+
+* **mail:** decode a quoted-printable part that carries a NUL ([#457](https://github.com/godwit-email/godwit/issues/457)) ([25d74bf](https://github.com/godwit-email/godwit/commit/25d74bf48752cae2ec5527e4764ed6d0fc51425b))
+* **rpcbind:** audit full calls that make a rule forward mail ([#462](https://github.com/godwit-email/godwit/issues/462)) ([c3e0fc9](https://github.com/godwit-email/godwit/commit/c3e0fc9b5ae28caad39415dd8ba10083ee608d40))
+
 ## [1.25.0](https://github.com/godwit-email/godwit/compare/v1.24.1...v1.25.0) (2026-11-02)
 
 
