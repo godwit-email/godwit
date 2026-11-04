@@ -1,5 +1,14 @@
 # Changelog
 
+## [1.26.1](https://github.com/godwit-email/godwit/compare/v1.26.0...v1.26.1) (2026-11-04)
+
+
+### Bug Fixes
+
+* **imap:** accept Alibaba Mail's cut-down HEADER.FIELDS echo ([#463](https://github.com/godwit-email/godwit/issues/463)) ([7d1d081](https://github.com/godwit-email/godwit/commit/7d1d081ab6c8fc3137173c28985d555684d1ee91)), closes [#458](https://github.com/godwit-email/godwit/issues/458)
+* **mail:** show a Gmail message once across INBOX, labels and All Mail ([#464](https://github.com/godwit-email/godwit/issues/464)) ([d8b8c98](https://github.com/godwit-email/godwit/commit/d8b8c988beb42f9540fd7dc22dc3f3511f3fd084)), closes [#454](https://github.com/godwit-email/godwit/issues/454)
+* **sync:** pace rounds when the server keeps ending IDLE at once ([#465](https://github.com/godwit-email/godwit/issues/465)) ([1f8a1ad](https://github.com/godwit-email/godwit/commit/1f8a1ad60548db5ee2fb89cd1de44637e3a184fb)), closes [#453](https://github.com/godwit-email/godwit/issues/453)
+
 ## [1.26.0](https://github.com/godwit-email/godwit/compare/v1.25.0...v1.26.0) (2026-11-04)
 
 
