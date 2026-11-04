@@ -18,7 +18,6 @@ import (
 	"github.com/emersion/go-imap/v2"
 	"github.com/emersion/go-imap/v2/imapclient"
 	"github.com/emersion/go-imap/v2/imapserver"
-	"github.com/godwit-email/godwit/core/conn"
 	"github.com/godwit-email/godwit/core/events"
 	"github.com/godwit-email/godwit/core/mail"
 	"github.com/godwit-email/godwit/core/store"
@@ -501,7 +500,7 @@ func backfillRange(ctx context.Context, db *store.DB, c *imapclient.Client, a *a
 func byUID(x, y *imapclient.FetchMessageBuffer) int { return cmp.Compare(x.UID, y.UID) }
 
 func twinKey(m *imapclient.FetchMessageBuffer) string {
-	h, err := mail.Parse(conn.FindBodySection(m, headerSection()))
+	h, err := mail.Parse(m.FindBodySection(headerSection()))
 	if err != nil {
 		return ""
 	}
@@ -607,7 +606,7 @@ func partPath(p string) []int {
 // malformed one, so one bad message would stop the folder's sync.
 func toParsed(m *imapclient.FetchMessageBuffer, texts map[string][]byte) *mail.Parsed {
 	p := &mail.Parsed{}
-	if h, err := mail.Parse(conn.FindBodySection(m, headerSection())); err == nil {
+	if h, err := mail.Parse(m.FindBodySection(headerSection())); err == nil {
 		p.MessageID, p.Subject, p.Date, p.From, p.To, p.Cc = h.MessageID, h.Subject, h.Date, h.From, h.To, h.Cc
 		p.InReplyTo, p.References, p.ReplyTo = h.InReplyTo, h.References, h.ReplyTo
 		p.ListUnsubscribe, p.ListUnsubscribePost, p.ListID = h.ListUnsubscribe, h.ListUnsubscribePost, h.ListID

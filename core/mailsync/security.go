@@ -6,7 +6,6 @@ import (
 	"github.com/egoist/mygo/plugins/sqlite"
 	"github.com/emersion/go-imap/v2"
 	"github.com/emersion/go-imap/v2/imapclient"
-	"github.com/godwit-email/godwit/core/conn"
 	"github.com/godwit-email/godwit/core/mail"
 	"github.com/godwit-email/godwit/core/store"
 )
@@ -39,7 +38,7 @@ func refreshAuthenticationResults(ctx context.Context, db *store.DB, c *imapclie
 		if !ok {
 			continue
 		}
-		p, err := mail.Parse(conn.FindBodySection(m, headerSection()))
+		p, err := mail.Parse(m.FindBodySection(headerSection()))
 		if err != nil {
 			continue
 		}

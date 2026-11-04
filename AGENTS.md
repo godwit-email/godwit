@@ -21,3 +21,7 @@ When adding or widening anything a model or extension can call (a Wit tool, a pl
 - **Egress goes through an approval** whose card names the recipients or destination host. A built-in tool declares its hosts in `toolDesc.Egress`, so the approval and audit carry them. 本次对话都允许 (`sessionTools`) grants only tools with no destination.
 - **`full` gets every new `core.Service` method.** An exported method is callable by the user's programs unless `hidden` in `rpcbind/bind.go` keeps it off the wire; `rpcbind/testdata/full_methods.txt` pins the result so the choice shows in review. A method that sends or egresses also goes into `audit` there (ADR 0003).
 - **Sending stays with the user.** Wit and plugins write drafts; `godwit mcp` sends only through `RequestMCPSend`, under the user's 通过 MCP 发送 setting.
+
+## IMAP server quirks
+
+Fix an IMAP server's non-standard behavior in the go-imap fork ([godwit-email/go-imap](https://github.com/godwit-email/go-imap), branch `godwit`), not with a wrapper or workaround in Godwit: a fix in the library covers every caller and STARTTLS connections, and new code cannot miss it. Push the fork commit to `godwit`, then point the `replace` in `go.mod` at it (its pseudo-version is fine; a tag is not required). Keep a Godwit-side test that reproduces the server's behavior (e.g. `TestToParsedReducedHeaderEcho` in `core/mailsync`), so a later bump that loses the patch fails here.

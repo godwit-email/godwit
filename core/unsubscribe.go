@@ -13,7 +13,6 @@ import (
 	"strings"
 
 	"github.com/emersion/go-imap/v2"
-	"github.com/godwit-email/godwit/core/conn"
 	"github.com/godwit-email/godwit/core/gateway"
 	"github.com/godwit-email/godwit/core/mail"
 	"github.com/godwit-email/godwit/core/store"
@@ -203,7 +202,7 @@ func (s *Service) fetchListHeaders(ctx context.Context, accountID, messageID int
 	if err != nil || len(msgs) == 0 {
 		return nil, false
 	}
-	h, err := mail.Parse(conn.FindBodySection(msgs[0], sec))
+	h, err := mail.Parse(msgs[0].FindBodySection(sec))
 	if err != nil {
 		return nil, false
 	}
