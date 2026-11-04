@@ -18,6 +18,11 @@ var (
 	pollInterval = 5 * time.Minute // wait between syncs when the server lacks IDLE
 	backoffMin   = 2 * time.Second // first wait after a failure, doubled per failure
 	backoffMax   = 5 * time.Minute
+	// chatterWithin: a server update that ends IDLE sooner than this after it
+	// began is chatter. A run of chatter waits between rounds as failures do, so a
+	// server that keeps reporting changes (or one the sync itself sets off) cannot
+	// spin the worker through back-to-back full syncs (#453).
+	chatterWithin = 10 * time.Second
 )
 
 // Test hooks, nil in production: beforeWorkerExit runs as a worker exits (tests
@@ -160,28 +165,49 @@ func (s *Service) armWorker(id int64, w *worker) {
 }
 
 func (s *Service) runWorker(ctx context.Context, id int64, wake chan struct{}) {
-	var delay time.Duration
+	var delay, pace time.Duration
 	for {
 		if !s.awaitCredentials(ctx, id, wake) {
 			return
 		}
-		err := s.syncRound(ctx, id, wake)
+		chatter, err := s.syncRound(ctx, id, wake)
 		if ctx.Err() != nil {
 			return
 		}
 		if err == nil {
 			delay = 0
+			if !chatter {
+				pace = 0
+				continue
+			}
+			// The first chatter goes on at once (it may be real mail); a run of it
+			// waits 2 s, 4 s, ... up to backoffMax. A local change cuts the wait short.
+			p := pace
+			pace = min(max(2*pace, backoffMin), backoffMax)
+			if p > 0 && !waitOrWake(ctx, p, wake) {
+				return
+			}
 			continue
 		}
 		delay = min(max(2*delay, backoffMin), backoffMax)
-		t := time.NewTimer(delay) // a wake stays pending until the backoff is over
-		select {
-		case <-t.C:
-		case <-ctx.Done():
-			t.Stop()
+		if !waitOrWake(ctx, delay, nil) { // a wake stays pending until the backoff is over
 			return
 		}
 	}
+}
+
+// waitOrWake waits d, or until wake fires (a nil wake never does). It reports
+// false when ctx ends.
+func waitOrWake(ctx context.Context, d time.Duration, wake <-chan struct{}) bool {
+	t := time.NewTimer(d)
+	defer t.Stop()
+	select {
+	case <-t.C:
+	case <-wake:
+	case <-ctx.Done():
+		return false
+	}
+	return true
 }
 
 // awaitCredentials parks the worker while IMAP refuses the password or the
@@ -209,8 +235,9 @@ func (s *Service) awaitCredentials(ctx context.Context, id int64, wake chan stru
 
 // syncRound runs SyncNow and then waits for a reason to sync again. With IDLE,
 // INBOX is selected on a second connection before SyncNow, so mail that lands
-// during or after the sync ends the IDLE that follows.
-func (s *Service) syncRound(ctx context.Context, id int64, wake chan struct{}) error {
+// during or after the sync ends the IDLE that follows. chatter reports that a
+// server update ended IDLE within chatterWithin of its start.
+func (s *Service) syncRound(ctx context.Context, id int64, wake chan struct{}) (chatter bool, err error) {
 	updates := make(chan struct{}, 1)
 	notify := func() {
 		select {
@@ -220,29 +247,35 @@ func (s *Service) syncRound(ctx context.Context, id int64, wake chan struct{}) e
 	}
 	c, release, _, err := s.dialAccount(ctx, id, &imapclient.UnilateralDataHandler{
 		Expunge: func(uint32) { notify() },
-		Mailbox: func(*imapclient.UnilateralDataMailbox) { notify() },
-		Fetch:   func(*imapclient.FetchMessageData) { notify() },
+		Mailbox: func(d *imapclient.UnilateralDataMailbox) {
+			if d.NumMessages != nil { // FLAGS and PERMANENTFLAGS change no message
+				notify()
+			}
+		},
+		Fetch: func(*imapclient.FetchMessageData) { notify() },
 	})
 	if err != nil {
-		return s.workerFailed(ctx, id, err)
+		return false, s.workerFailed(ctx, id, err)
 	}
 	defer release()
 	idle := c.Caps().Has(imap.CapIdle)
 	if idle {
 		if _, err := c.Select("INBOX", nil).Wait(); err != nil {
-			return s.workerFailed(ctx, id, err)
+			return false, s.workerFailed(ctx, id, err)
 		}
 	} else {
 		release() // only needed for IDLE; a second release is harmless
 	}
 	if err := s.syncNow(ctx, id, false); err != nil {
-		return err // syncNow announced it
+		return false, err // syncNow announced it
 	}
 	if idle {
-		if err := mailsync.Idle(ctx, c, updates, wake, idleMax); err != nil {
-			return s.workerFailed(ctx, id, err)
+		start := time.Now()
+		byServer, err := mailsync.Idle(ctx, c, updates, wake, idleMax)
+		if err != nil {
+			return false, s.workerFailed(ctx, id, err)
 		}
-		return nil
+		return byServer && time.Since(start) < chatterWithin, nil
 	}
 	t := time.NewTimer(pollInterval)
 	defer t.Stop()
@@ -251,7 +284,7 @@ func (s *Service) syncRound(ctx context.Context, id int64, wake chan struct{}) e
 	case <-wake:
 	case <-ctx.Done():
 	}
-	return nil
+	return false, nil
 }
 
 // workerFailed announces a failure outside SyncNow, unless the worker is stopping.

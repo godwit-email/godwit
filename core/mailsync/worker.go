@@ -12,27 +12,29 @@ import (
 // signal on updates), wake fires, max passes or ctx ends. A NOOP first collects
 // changes the server queued since SELECT, so mail that arrived before IDLE began
 // still ends the wait. When ctx ends the caller closes c, which also stops IDLE.
-func Idle(ctx context.Context, c *imapclient.Client, updates, wake <-chan struct{}, max time.Duration) error {
+// byServer reports that a server update ended the wait.
+func Idle(ctx context.Context, c *imapclient.Client, updates, wake <-chan struct{}, max time.Duration) (byServer bool, err error) {
 	if err := c.Noop().Wait(); err != nil {
-		return err
+		return false, err
 	}
 	cmd, err := c.Idle()
 	if err != nil {
-		return err
+		return false, err
 	}
 	t := time.NewTimer(max)
 	defer t.Stop()
 	select {
 	case <-updates:
+		byServer = true
 	case <-wake:
 	case <-t.C:
 	case <-c.Closed():
-		return errors.New("imap: connection lost during IDLE")
+		return false, errors.New("imap: connection lost during IDLE")
 	case <-ctx.Done():
-		return ctx.Err()
+		return false, ctx.Err()
 	}
 	if err := cmd.Close(); err != nil {
-		return err
+		return byServer, err
 	}
-	return cmd.Wait()
+	return byServer, cmd.Wait()
 }
