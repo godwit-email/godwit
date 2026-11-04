@@ -283,10 +283,16 @@ func DecodePart(data []byte, encoding, cs string) ([]byte, error) {
 			return nil, err
 		}
 	case "quoted-printable":
-		var err error
-		if data, err = io.ReadAll(quotedprintable.NewReader(bytes.NewReader(data))); err != nil {
+		// A NUL is not a legal quoted-printable byte, but senders and servers do
+		// emit one (some append it after the final CRLF). Dropping it keeps the
+		// decoder going, where a NUL failed the part and its whole body with it.
+		clean := bytes.ReplaceAll(data, []byte{0}, nil)
+		out, err := io.ReadAll(quotedprintable.NewReader(bytes.NewReader(clean)))
+		if err != nil {
 			return nil, err
 		}
+		// An "=00" escape decodes to the same NUL, which no text field can hold.
+		data = bytes.ReplaceAll(out, []byte{0}, nil)
 	}
 	if cs = strings.ToLower(cs); cs == "" || cs == "utf-8" || cs == "us-ascii" {
 		return data, nil

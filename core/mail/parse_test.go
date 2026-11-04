@@ -262,3 +262,18 @@ func TestCutUTF8(t *testing.T) {
 		assert.Equal(t, tt.cut, cut, "%q %d", tt.s, tt.n)
 	}
 }
+
+// A NUL is not a legal quoted-printable byte, yet some servers append one after
+// the final CRLF. It used to fail the part, and the sync then stored the raw
+// "=0A" text: the message read as garbage. It is dropped instead.
+func TestDecodePartQuotedPrintableDropsNUL(t *testing.T) {
+	got, err := mail.DecodePart([]byte("=E9=AA=8C=E8=AF=81=E7=A0=81=0A\r\n\x00"), "quoted-printable", "UTF-8")
+	require.NoError(t, err)
+	assert.Equal(t, "验证码\n\r\n", string(got))
+
+	// Written as the escape it decodes to the same byte, which must not reach the
+	// text either: SQLite ends a TEXT value at its first NUL.
+	got, err = mail.DecodePart([]byte("=E9=AA=8C=E8=AF=81=E7=A0=81=00"), "quoted-printable", "UTF-8")
+	require.NoError(t, err)
+	assert.Equal(t, "验证码", string(got))
+}
