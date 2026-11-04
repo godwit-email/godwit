@@ -1550,7 +1550,7 @@ func (p *mailPage) batchScoped(act string, rows []mailItem, anywhere bool) {
 				continue
 			}
 			msgs = append(msgs, th.All()...) // every copy, so the view's own is acted on
-			shown = append(shown, th.Messages...)
+			shown = append(shown, th.Merged()...)
 		}
 		if v.LabelID != 0 && !search {
 			ids := make([]int64, len(msgs))

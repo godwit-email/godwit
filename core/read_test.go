@@ -164,6 +164,8 @@ func TestThreadCopiesShowOnce(t *testing.T) {
 	assert.Equal(t, e.folderID(t, "INBOX"), th.Messages[0].FolderID, "the inbox copy shows")
 	assert.Equal(t, e.folderID(t, "Work"), th.Messages[1].FolderID, "a label's copy before All Mail's")
 	assert.Len(t, th.Copies, 3)
+	assert.Len(t, th.CopiesOf(th.Messages[0].ID), 2)
+	assert.Len(t, th.CopiesOf(th.Messages[1].ID), 1)
 	assert.Len(t, th.All(), 5)
 
 	p, err := e.s.ListThreads(bg, e.inboxView(t), "", 50)
@@ -183,8 +185,10 @@ func TestThreadCopiesShowOnce(t *testing.T) {
 	assert.Equal(t, 2, p.Items[0].Unread, "unread while a copy is")
 	th2, err := e.s.GetThread(bg, tid)
 	require.NoError(t, err)
-	assert.NotContains(t, th2.Messages[0].Flags, `\Seen`, "GetThread agrees with the list")
-	assert.Contains(t, th2.Messages[1].Flags, `\Flagged`)
+	merged := th2.Merged()
+	assert.NotContains(t, merged[0].Flags, `\Seen`, "Merged agrees with the list")
+	assert.Contains(t, merged[1].Flags, `\Flagged`)
+	assert.NotContains(t, th2.Messages[1].Flags, `\Flagged`, "each copy keeps its own flags")
 
 	other := e.second(t) // the same mail in another account's inbox is that account's own
 	other.put(t, "INBOX", first)

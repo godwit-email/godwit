@@ -41,16 +41,46 @@ type ThreadPage struct {
 // Thread is a conversation with its messages, oldest first. A message the
 // server keeps in several folders (Gmail's INBOX, labels and All Mail) is in
 // Messages once; Copies holds its other copies, which an action on the whole
-// thread still covers.
+// thread still covers, and CopyOf, for each, the ID of the one in Messages.
 type Thread struct {
 	ID       int64
 	Subject  string
 	Messages []MessageSummary
 	Copies   []MessageSummary
+	CopyOf   []int64
 }
 
 // All is every message of the thread, Messages then Copies.
 func (t Thread) All() []MessageSummary { return append(slices.Clip(t.Messages), t.Copies...) }
+
+// CopiesOf are the other copies of the message id.
+func (t Thread) CopiesOf(id int64) []MessageSummary {
+	var out []MessageSummary
+	for i, c := range t.Copies {
+		if t.CopyOf[i] == id {
+			out = append(out, c)
+		}
+	}
+	return out
+}
+
+// Merged is Messages, each with its copies' flags as ListThreads counts them:
+// unread while a copy is, starred while one is.
+func (t Thread) Merged() []MessageSummary {
+	out := slices.Clone(t.Messages)
+	for i := range out {
+		m := &out[i]
+		for _, c := range t.CopiesOf(m.ID) {
+			if !slices.Contains(c.Flags, `\Seen`) && slices.Contains(m.Flags, `\Seen`) {
+				m.Flags = slices.DeleteFunc(slices.Clone(m.Flags), func(f string) bool { return f == `\Seen` })
+			}
+			if slices.Contains(c.Flags, `\Flagged`) && !slices.Contains(m.Flags, `\Flagged`) {
+				m.Flags = append(slices.Clone(m.Flags), `\Flagged`)
+			}
+		}
+	}
+	return out
+}
 
 // copyCols are the columns, on messages alias m, that copyOf reads: the
 // thread, the Message-ID and how much the copy's folder is preferred. The
@@ -187,8 +217,7 @@ func (s *Service) ListThreads(ctx context.Context, v View, cursor string, limit 
 	return page, nil
 }
 
-// GetThread returns the thread's messages by date ascending, each once, its
-// flags those of all its copies: unread while one is, starred while one is.
+// GetThread returns the thread's messages by date ascending, each once.
 func (s *Service) GetThread(ctx context.Context, id int64) (Thread, error) {
 	rows, err := s.db.Query(ctx, "SELECT subject FROM threads WHERE id = ?", id)
 	if err != nil {
@@ -203,25 +232,12 @@ func (s *Service) GetThread(ctx context.Context, id int64) (Thread, error) {
 		return Thread{}, err
 	}
 	of := copyOf(ms.Values, 0, msgColCount)
-	shown := map[int]int{} // row → its index in Messages
 	for i, r := range ms.Values {
 		if of[i] == i {
-			shown[i] = len(t.Messages)
 			t.Messages = append(t.Messages, scanSummary(r))
-		}
-	}
-	for i, r := range ms.Values {
-		if of[i] == i {
-			continue
-		}
-		c := scanSummary(r)
-		t.Copies = append(t.Copies, c)
-		m := &t.Messages[shown[of[i]]] // unread or starred while any copy is, as ListThreads counts it
-		if !slices.Contains(c.Flags, `\Seen`) && slices.Contains(m.Flags, `\Seen`) {
-			m.Flags = slices.DeleteFunc(slices.Clone(m.Flags), func(f string) bool { return f == `\Seen` })
-		}
-		if slices.Contains(c.Flags, `\Flagged`) && !slices.Contains(m.Flags, `\Flagged`) {
-			m.Flags = append(slices.Clone(m.Flags), `\Flagged`)
+		} else {
+			t.Copies = append(t.Copies, scanSummary(r))
+			t.CopyOf = append(t.CopyOf, store.Int(ms.Values[of[i]][0]))
 		}
 	}
 	return t, nil

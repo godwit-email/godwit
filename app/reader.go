@@ -196,8 +196,10 @@ func (r *reader) load() {
 		for _, m := range th.All() { // every copy: a label goes on each
 			r.threadIDs = append(r.threadIDs, m.ID)
 		}
-		msgs := th.Messages
-		if k[1] != 0 { // the copy asked for, though another one shows in the thread
+		// A thread's actions cover every copy, so it shows their flags; a route
+		// to one copy shows it as it is, though another one shows in the thread.
+		msgs := th.Merged()
+		if k[1] != 0 {
 			msgs = slices.DeleteFunc(th.All(), func(m core.MessageSummary) bool { return m.ID != k[1] })
 		}
 		known := map[int64]int64{} // messages shown before keep their state
@@ -235,11 +237,9 @@ func (r *reader) load() {
 				r.expand(m.ID)
 			}
 		}
-		if k[1] == 0 && len(known) == 0 { // as the thread opens, its copies read with what shows, so no folder keeps them unread
-			for _, m := range th.Copies {
-				if !isSeen(m) {
-					unread = append(unread, m)
-				}
+		if k[1] == 0 { // a message's copies read with it, so no folder keeps them unread
+			for _, m := range slices.Clone(unread) {
+				unread = append(unread, slices.DeleteFunc(th.CopiesOf(m.ID), isSeen)...)
 			}
 		}
 		r.markRead(unread)
