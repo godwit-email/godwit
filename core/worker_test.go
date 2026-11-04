@@ -6,10 +6,12 @@ import (
 	"os"
 	"path/filepath"
 	"strconv"
+	"strings"
 	"sync"
 	"testing"
 	"time"
 
+	"github.com/emersion/go-imap/v2"
 	"github.com/godwit-email/godwit/core/conn"
 	"github.com/godwit-email/godwit/core/events"
 	"github.com/godwit-email/godwit/core/internal/testmail"
@@ -584,4 +586,36 @@ func TestSyncNowConcurrentWithIncomingMail(t *testing.T) {
 
 	workerResumed(t, e, "concurrent@x")
 	assert.Equal(t, 1, e.count(t, "SELECT count(*) FROM messages WHERE message_id = 'concurrent@x'"))
+}
+
+// A server that keeps reporting changes ends IDLE as soon as it starts. Rounds
+// then back off as failures do instead of running back to back (#453).
+func TestWorkerPacesServerChatter(t *testing.T) {
+	e, ch := newWorkerEnv(t)
+	e.put(t, "INBOX", msg("c@x"))
+	waitEvent(t, ch, events.MessageReceived, 5*time.Second)
+	c := e.dial(t)
+	_, err := c.Select("INBOX", nil).Wait()
+	require.NoError(t, err)
+	collect(ch)
+	var all imap.UIDSet
+	all.AddRange(1, 0)
+	deadline := time.Now().Add(time.Second)
+	for i := 0; time.Now().Before(deadline); i++ { // a flag change every 5ms
+		op := imap.StoreFlagsAdd
+		if i%2 == 1 {
+			op = imap.StoreFlagsDel
+		}
+		require.NoError(t, c.Store(all, &imap.StoreFlags{Op: op, Silent: true, Flags: []imap.Flag{imap.FlagFlagged}}, nil).Close())
+		time.Sleep(5 * time.Millisecond)
+	}
+	// backoff 20ms doubling to 200ms: about 8 rounds in the second, not one per change
+	assert.LessOrEqual(t, len(ofType(collect(ch), events.SyncStarted)), 12)
+
+	// A local change still goes out at once.
+	require.NoError(t, e.s.SetFlags(bg, []int64{e.idOf(t, "c@x")}, []string{"\\Seen"}, nil))
+	require.Eventually(t, func() bool {
+		got := e.onServer(t, "INBOX")
+		return len(got) == 1 && strings.Contains(got[0], "\\Seen")
+	}, 5*time.Second, 20*time.Millisecond)
 }
