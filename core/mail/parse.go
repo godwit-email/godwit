@@ -99,7 +99,9 @@ func quote(s string) string {
 	return `"` + strings.NewReplacer(`\`, `\\`, `"`, `\"`).Replace(s) + `"`
 }
 
-func fmtAddr(a *gomail.Address) string { return FormatAddress(a.Name, a.Address) }
+func fmtAddr(a *gomail.Address) string {
+	return FormatAddress(strings.ToValidUTF8(a.Name, "\uFFFD"), a.Address) // as Subject in Parse
+}
 
 func addrs(h *gomail.Header, key string) []string {
 	l, _ := h.AddressList(key) // partial lists are still useful
@@ -128,13 +130,14 @@ func classify(ct, disp, filename, cid string) (body, inline bool) {
 
 // Parse parses a full RFC 5322 message.
 func Parse(raw []byte) (*Parsed, error) {
-	e, err := message.Read(bytes.NewReader(raw))
+	e, err := message.Read(bytes.NewReader(validHeader(raw)))
 	if err != nil && !recoverable(err) {
 		return nil, err
 	}
 	h := gomail.Header{Header: e.Header}
 	p := &Parsed{}
 	p.Subject, _ = h.Subject()
+	p.Subject = strings.ToValidUTF8(p.Subject, "\uFFFD") // a utf-8 encoded word is not validated when decoded
 	p.MessageID, _ = h.MessageID()
 	p.Date, _ = h.Date()
 	p.To, p.Cc = addrs(&h, "To"), addrs(&h, "Cc")
@@ -166,6 +169,23 @@ func Parse(raw []byte) (*Parsed, error) {
 	}
 	p.walk(e, "", 0)
 	return p, nil
+}
+
+// validHeader replaces bytes that are not UTF-8 in raw's header block with
+// U+FFFD, as ValidText does for bodies: a raw 8-bit header (#468) must neither
+// fail the folder's sync in SQLite nor lose the whole address list. The body is
+// left to its declared charset.
+func validHeader(raw []byte) []byte {
+	end := len(raw)
+	for _, sep := range []string{"\n\n", "\n\r\n"} {
+		if i := bytes.Index(raw, []byte(sep)); i >= 0 && i < end {
+			end = i
+		}
+	}
+	if utf8.Valid(raw[:end]) {
+		return raw
+	}
+	return append(bytes.ToValidUTF8(raw[:end], []byte("\uFFFD")), raw[end:]...)
 }
 
 // recoverable: go-message still returns a readable entity (raw body) for these.

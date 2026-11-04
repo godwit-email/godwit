@@ -154,6 +154,24 @@ func TestParseDamagedBase64(t *testing.T) {
 	assert.Equal(t, "a.pdf", p.Attachments[0].Filename)
 }
 
+func TestParseInvalidUTF8Headers(t *testing.T) {
+	// unencoded GBK (#468), and a utf-8 encoded word with bad bytes
+	p, err := mail.Parse([]byte("Subject: \xb1\xa8\xcf\xfa\r\nFrom: \"\xd5\xc5\xc8\xfd\" <a@example.com>\r\nTo: =?utf-8?B?/w==?= <b@example.com>\r\nMessage-ID: <\xff@example.com>\r\n\r\nbody\r\n"))
+	require.NoError(t, err)
+	for _, s := range append([]string{p.Subject, p.From, p.MessageID}, p.To...) {
+		assert.True(t, utf8.ValidString(s), "%q", s)
+	}
+	assert.Contains(t, p.Subject, "\uFFFD")
+	assert.Contains(t, p.From, "a@example.com")
+	require.Len(t, p.To, 1)
+	assert.Contains(t, p.To[0], "b@example.com")
+
+	// the body keeps its declared charset
+	p, err = mail.Parse([]byte("Subject: \xb1\xa8\r\nContent-Type: text/plain; charset=gbk\r\n\r\n\xb1\xa8\xcf\xfa\r\n"))
+	require.NoError(t, err)
+	assert.Contains(t, p.Text, "报销")
+}
+
 func TestParseBrokenBoundary(t *testing.T) {
 	// no closing boundary: the first part is recovered and the damage is reported
 	p, err := mail.Parse([]byte("Subject: x\r\nContent-Type: multipart/mixed; boundary=b\r\n\r\n--b\r\nContent-Type: text/plain\r\n\r\nhello\r\n"))
