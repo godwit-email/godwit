@@ -155,7 +155,7 @@ func TestThreadCopiesShowOnce(t *testing.T) {
 	e.sync(t)
 	_, err := e.s.db.Execute(bg, "UPDATE folders SET role = 'all' WHERE name = 'All Mail'")
 	require.NoError(t, err)
-	tid := store.Int(e.rows(t, "SELECT DISTINCT thread_id FROM messages WHERE message_id = 'o@x'")[0][0])
+	tid := store.Int(e.rows(t, "SELECT DISTINCT thread_id FROM messages WHERE message_id = 'o@x'")[0][0]) // before the second account
 	require.Equal(t, 5, e.count(t, "SELECT count(*) FROM messages WHERE thread_id = ?", tid), "every copy is one thread's")
 
 	th, err := e.s.GetThread(bg, tid)
@@ -172,6 +172,17 @@ func TestThreadCopiesShowOnce(t *testing.T) {
 	assert.Equal(t, 2, p.Items[0].Count)
 	assert.Equal(t, 2, p.Items[0].Unread)
 	assert.Equal(t, []string{"Dan", "Bob"}, p.Items[0].Participants)
+
+	other := e.second(t) // the same mail in another account's inbox is that account's own
+	other.put(t, "INBOX", first)
+	other.sync(t)
+	u, err := e.s.ListThreads(bg, View{Unified: "inbox"}, "", 50)
+	require.NoError(t, err)
+	require.Len(t, u.Items, 2)
+	for _, it := range u.Items {
+		assert.Equal(t, "Bob", it.Participants[len(it.Participants)-1], "each account's thread keeps its copy")
+		assert.NotZero(t, it.Count)
+	}
 
 	_, ids, members, err := e.s.mailTarget(bg, "thread", tid)
 	require.NoError(t, err)

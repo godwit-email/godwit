@@ -235,6 +235,13 @@ func (r *reader) load() {
 				r.expand(m.ID)
 			}
 		}
+		if k[1] == 0 && len(known) == 0 { // as the thread opens, its copies read with what shows, so no folder keeps them unread
+			for _, m := range th.Copies {
+				if !isSeen(m) {
+					unread = append(unread, m)
+				}
+			}
+		}
 		r.markRead(unread)
 		r.startAI()
 	})

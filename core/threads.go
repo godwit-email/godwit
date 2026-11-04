@@ -53,37 +53,43 @@ type Thread struct {
 func (t Thread) All() []MessageSummary { return append(slices.Clip(t.Messages), t.Copies...) }
 
 // copyCols are the columns, on messages alias m, that copyKeep reads: the
-// Message-ID and how much the copy's folder is preferred. The inbox copy
-// shows, so acting on what is shown acts in the inbox; All Mail's last, as it
-// holds a copy of every message.
-const copyCols = `m.message_id, CASE (SELECT f.role FROM folders f WHERE f.id = m.folder_id) WHEN 'inbox' THEN 0 WHEN 'all' THEN 2 ELSE 1 END`
+// thread, the Message-ID and how much the copy's folder is preferred. The
+// inbox copy shows, so acting on what is shown acts in the inbox; All Mail's
+// last, as it holds a copy of every message.
+const copyCols = `m.thread_id, m.message_id, CASE (SELECT f.role FROM folders f WHERE f.id = m.folder_id) WHEN 'inbox' THEN 0 WHEN 'all' THEN 2 ELSE 1 END`
 
-// copyKeep reports, for rows of one account each holding copyCols at col,
-// whether a row is the copy of its message to show: of the rows sharing a
-// Message-ID, the one of the preferred folder, then lowest id (idCol). A row
-// without a Message-ID is always its own message.
+// copyKeep reports, for rows each holding copyCols at col, whether a row is
+// the copy of its message to show: of a thread's rows sharing a Message-ID,
+// the one of the preferred folder, then lowest id (idCol). Copies are only
+// ever within a thread, so the same mail in two accounts' threads stays in
+// both; a row without a Message-ID is always its own message.
 func copyKeep(rows [][]any, idCol, col int) []bool {
+	key := func(r []any) string {
+		if mid := store.Str(r[col+1]); mid != "" {
+			return fmt.Sprint(store.Int(r[col]), "\x00", mid)
+		}
+		return ""
+	}
 	best := map[string]int{}
 	for i, r := range rows {
-		mid := store.Str(r[col])
-		if mid == "" {
+		k := key(r)
+		if k == "" {
 			continue
 		}
-		j, ok := best[mid]
-		if !ok || copyLess(r, rows[j], idCol, col) {
-			best[mid] = i
+		if j, ok := best[k]; !ok || copyLess(r, rows[j], idCol, col) {
+			best[k] = i
 		}
 	}
 	keep := make([]bool, len(rows))
 	for i, r := range rows {
-		j, ok := best[store.Str(r[col])]
+		j, ok := best[key(r)]
 		keep[i] = !ok || j == i
 	}
 	return keep
 }
 
 func copyLess(a, b []any, idCol, col int) bool {
-	if ra, rb := store.Int(a[col+1]), store.Int(b[col+1]); ra != rb {
+	if ra, rb := store.Int(a[col+2]), store.Int(b[col+2]); ra != rb {
 		return ra < rb
 	}
 	return store.Int(a[idCol]) < store.Int(b[idCol])
@@ -133,7 +139,7 @@ func (s *Service) ListThreads(ctx context.Context, v View, cursor string, limit 
 		return ThreadPage{}, err
 	}
 	seen := map[string]bool{}
-	keep := copyKeep(ms.Values, 9, 10) // a thread is one account's, so its copies are among its rows
+	keep := copyKeep(ms.Values, 9, 10)
 	for i, r := range ms.Values {
 		if !keep[i] {
 			continue
