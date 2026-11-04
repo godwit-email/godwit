@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"testing"
 	"time"
 
 	"github.com/egoist/mygo/plugins/sqlite"
@@ -16,42 +15,37 @@ import (
 // PurgeRoles are the roles a purge can empty.
 var PurgeRoles = []string{"junk", "trash"}
 
-// PurgePayload is a purge op's payload: the role whose folder (dst_folder_id) it
+// purgePayload is a purge op's payload: the role whose folder (dst_folder_id) it
 // empties. Now marks one the user asked for, which skips the policy's checks.
-// DueAt is when the op is pushed to the server at the earliest (allowing an undo window).
-type PurgePayload struct {
+// DueAt (unix milliseconds) ends the undo window of one the user asked for: the
+// push leaves it until then.
+type purgePayload struct {
 	Role  string `json:"role"`
 	Now   bool   `json:"now,omitempty"`
 	DueAt int64  `json:"due_at,omitempty"`
 }
 
-type purgePayload = PurgePayload
-
-// UndoPurgeWindow is how long a user-requested purge waits before being pushed to the IMAP server,
-// allowing the user to undo the permanent deletion.
-var UndoPurgeWindow = 10 * time.Second
-
-func init() {
-	if testing.Testing() {
-		UndoPurgeWindow = 0
-	}
-}
-
-// PurgeNowRoleWithDue is PurgeNowRole with an explicit due_at timestamp (unix seconds).
-func PurgeNowRoleWithDue(role string, dueAt int64) string {
-	b, _ := json.Marshal(PurgePayload{Role: role, Now: true, DueAt: dueAt})
+// PurgeNowRole is the payload of a purge op the user asked for: it expunges the
+// message from the role's folder (trash, junk) at due, whatever the policy.
+func PurgeNowRole(role string, due time.Time) string {
+	b, _ := json.Marshal(purgePayload{Role: role, Now: true, DueAt: due.UnixMilli()})
 	return string(b)
 }
 
-// PurgeNowRole is the payload of a purge op the user asked for: it expunges the
-// message from the specified role folder (trash, junk) at once, whatever the policy.
-func PurgeNowRole(role string) string {
-	return PurgeNowRoleWithDue(role, 0)
-}
+// purgeDue is the time an ops row may be pushed at, in unix milliseconds: a
+// purge's DueAt, else 0.
+const purgeDue = "CASE WHEN kind = 'purge' THEN IFNULL(json_extract(payload, '$.due_at'), 0) ELSE 0 END"
 
-// PurgeNow is the payload of a purge op the user asked for: it expunges the
-// message from Trash at once, whatever the policy.
-var PurgeNow = PurgeNowRole("trash")
+// NextPurgeDue is when the account's first purge still in its undo window after
+// t comes due; zero for none.
+func NextPurgeDue(ctx context.Context, db *store.DB, accountID int64, t time.Time) (time.Time, error) {
+	rows, err := db.Query(ctx, `SELECT MIN(`+purgeDue+`) FROM ops
+		WHERE account_id = ? AND kind = 'purge' AND state = 'pending' AND `+purgeDue+` > ?`, accountID, t.UnixMilli())
+	if err != nil || len(rows.Values) == 0 || rows.Values[0][0] == nil {
+		return time.Time{}, err
+	}
+	return time.UnixMilli(store.Int(rows.Values[0][0])), nil
+}
 
 // purgeable is the condition on message m (with policy p and its folder f joined)
 // that a purge may expunge it: shown and on the server in the role's folder at

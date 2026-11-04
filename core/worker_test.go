@@ -426,6 +426,39 @@ func TestWorkerDeliversSend(t *testing.T) {
 	}, 5*time.Second, 20*time.Millisecond)
 }
 
+// A send's undo window and a permanent delete's each wake the worker at their
+// own time: neither puts off the other.
+func TestWorkerKeepsSendAndPurgeTimes(t *testing.T) {
+	e, ch := newWorkerEnv(t)
+	e.put(t, "Trash", msg("bin@x"))
+	e.sync(t)
+	// change makes a local change and waits for the worker's round after it, so
+	// the clock moves only once that round set its times.
+	change := func(f func() error) {
+		t.Helper()
+		for len(ch) > 0 {
+			<-ch
+		}
+		require.NoError(t, f())
+		waitEvent(t, ch, events.SyncFinished, 5*time.Second)
+	}
+	d, err := e.s.NewDraft(bg, e.acc.ID, "new", 0)
+	require.NoError(t, err)
+	d.To, d.Subject, d.HTML = []string{"bob@example.com"}, "hello", "<p>hi</p>"
+	d, err = e.s.SaveDraft(bg, d)
+	require.NoError(t, err)
+	change(func() error { return e.s.Send(bg, d.ID) })
+	e.clock.Advance(UndoSendWindow / 2)
+	change(func() error { return e.s.DeleteForever(bg, []int64{e.idOf(t, "bin@x")}) }) // due after the send
+	e.clock.Advance(UndoSendWindow / 2)
+	require.Eventually(t, func() bool { return len(e.smtp.Messages()) == 1 }, 5*time.Second, 20*time.Millisecond,
+		"the send goes when its window ends, not the purge's")
+	assert.Equal(t, []string{"bin@x"}, e.onServer(t, "Trash"), "still in its undo window")
+	e.clock.Advance(UndoPurgeWindow - UndoSendWindow/2)
+	require.Eventually(t, func() bool { return len(e.onServer(t, "Trash")) == 0 }, 5*time.Second, 20*time.Millisecond,
+		"the purge goes when its window ends, with no sync asked for")
+}
+
 func TestLoginClearsReauthSetAfterDialReadStatus(t *testing.T) {
 	e := newSyncEnv(t) // no worker: the hook below is only called by this test's SyncNow
 	setFor(t, &afterAccountRead, func(id int64) {

@@ -441,6 +441,7 @@ func TestPurgeRacingRescue(t *testing.T) {
 }
 
 func TestDeleteForeverExpungesFromTrashOnly(t *testing.T) {
+	clock := useTestClock(t)
 	e := newSyncEnv(t)
 	e.put(t, "Trash", msg("gone@x"))
 	e.putFlagged(t, "Trash", msg("other-client@x"), `\Deleted`)
@@ -449,6 +450,7 @@ func TestDeleteForeverExpungesFromTrashOnly(t *testing.T) {
 	require.NoError(t, e.s.SetFlags(bg, []int64{e.idOf(t, "gone@x")}, []string{`\Seen`}, nil))
 	require.NoError(t, e.s.DeleteForever(bg, []int64{e.idOf(t, "gone@x")}))
 	require.NoError(t, e.s.DeleteForever(bg, []int64{e.idOf(t, "kept@x")}))
+	clock.Advance(UndoPurgeWindow)
 	e.sync(t)
 	assert.Equal(t, []string{`other-client@x \Deleted`}, e.onServer(t, "Trash"), "UID EXPUNGE, after the pending flags change")
 	assert.Equal(t, []string{"kept@x"}, e.onServer(t, "INBOX"), "mail outside Trash is not purged")
@@ -457,133 +459,133 @@ func TestDeleteForeverExpungesFromTrashOnly(t *testing.T) {
 }
 
 func TestDeleteForeverRescued(t *testing.T) {
+	clock := useTestClock(t)
 	e := newSyncEnv(t)
 	e.put(t, "Trash", msg("m@x"))
 	e.sync(t)
 	id := e.idOf(t, "m@x")
 	require.NoError(t, e.s.DeleteForever(bg, []int64{id}))
 	require.NoError(t, e.s.Move(bg, []int64{id}, e.folderID(t, "INBOX")))
+	clock.Advance(UndoPurgeWindow)
 	e.sync(t)
 	assert.Equal(t, []string{"m@x"}, e.onServer(t, "INBOX"))
 	assert.Equal(t, []string{}, e.onServer(t, "Trash"))
 }
 
 func TestDeleteForeverNeedsUIDPlus(t *testing.T) {
+	clock := useTestClock(t)
 	e := newSyncEnv(t, testmail.WithoutUIDPlus())
 	e.put(t, "Trash", msg("m@x"))
 	e.sync(t)
 	require.NoError(t, e.s.DeleteForever(bg, []int64{e.idOf(t, "m@x")}))
+	clock.Advance(UndoPurgeWindow)
 	_ = e.s.SyncNow(bg, e.acc.ID) // reports the failed op
 	assert.Equal(t, []string{"m@x"}, e.onServer(t, "Trash"))
 	assert.Equal(t, 1, e.count(t, "SELECT count(*) FROM ops WHERE kind = 'purge' AND state = 'failed'"), "a failure the user sees, not a silent cancel")
 }
 
 func TestEmptyFolder(t *testing.T) {
+	clock := useTestClock(t)
 	e := newSyncEnv(t)
 	e.put(t, "Trash", msg("trash1@x"))
 	e.put(t, "Trash", msg("trash2@x"))
 	e.put(t, "INBOX", msg("kept@x"))
 	e.sync(t)
 	trashID := e.folderID(t, "Trash")
-	n, err := e.s.EmptyFolder(bg, trashID)
+	ids, err := e.s.EmptyFolder(bg, trashID)
 	require.NoError(t, err)
-	assert.Equal(t, 2, n)
+	assert.ElementsMatch(t, []int64{e.idOf(t, "trash1@x"), e.idOf(t, "trash2@x")}, ids)
+	clock.Advance(UndoPurgeWindow)
 	e.sync(t)
 	assert.Equal(t, []string{}, e.onServer(t, "Trash"))
 	assert.Equal(t, []string{"kept@x"}, e.onServer(t, "INBOX"))
 	assert.Zero(t, e.count(t, "SELECT count(*) FROM messages WHERE folder_id = ?", trashID))
 }
 
-func TestDeleteForeverOptimisticAndUndo(t *testing.T) {
-	e := newSyncEnv(t)
-	e.put(t, "Trash", msg("trash@x"))
-	e.sync(t)
-	trashID := e.folderID(t, "Trash")
-	id := e.idOf(t, "trash@x")
-
-	// Set undo window so sync does not immediately expunge
-	defer func(orig time.Duration) { mailsync.UndoPurgeWindow = orig }(mailsync.UndoPurgeWindow)
-	mailsync.UndoPurgeWindow = 5 * time.Second
-
-	// Pre-delete: message is in list and folder total is 1
-	page, err := e.s.ListMessages(bg, View{FolderID: trashID}, "", 10)
+// trashShown is what the Trash shows: its list, its folder count and a search.
+func (e *syncEnv) trashShown(t *testing.T) (listed, total, found int) {
+	t.Helper()
+	trash := e.folderID(t, "Trash")
+	page, err := e.s.ListMessages(bg, View{FolderID: trash}, "", 10)
 	require.NoError(t, err)
-	assert.Len(t, page.Items, 1)
-
-	// DeleteForever queues purge
-	require.NoError(t, e.s.DeleteForever(bg, []int64{id}))
-
-	// Optimistic: message is immediately hidden from user views and folder counts before server sync
-	page, err = e.s.ListMessages(bg, View{FolderID: trashID}, "", 10)
+	fs, err := e.s.ListFolders(bg, e.acc.ID)
 	require.NoError(t, err)
-	assert.Empty(t, page.Items, "message must be hidden immediately")
-
-	folders, err := e.s.ListFolders(bg, e.acc.ID)
-	require.NoError(t, err)
-	for _, f := range folders {
-		if f.ID == trashID {
-			assert.Equal(t, 0, f.Total, "trash folder count must be 0 immediately")
+	for _, f := range fs {
+		if f.ID == trash {
+			total = f.Total
 		}
 	}
-
-	// Sync while still in undo window: must NOT expunge on server!
-	e.sync(t)
-	assert.Equal(t, []string{"trash@x"}, e.onServer(t, "Trash"), "must remain on server during undo window")
-
-	// UndoPurge restores message immediately
-	require.NoError(t, e.s.UndoPurge(bg, []int64{id}))
-	page, err = e.s.ListMessages(bg, View{FolderID: trashID}, "", 10)
+	hits, err := e.s.Search(bg, 0, "body", 10)
 	require.NoError(t, err)
-	assert.Len(t, page.Items, 1, "message must reappear after undo")
-
-	// Sync again: op was cancelled, so message stays on server
-	e.sync(t)
-	assert.Equal(t, []string{"trash@x"}, e.onServer(t, "Trash"))
-
-	// Now with UndoPurgeWindow = 0 (window expired), DeleteForever and sync expunges immediately
-	mailsync.UndoPurgeWindow = 0
-	require.NoError(t, e.s.DeleteForever(bg, []int64{id}))
-	e.sync(t)
-	assert.Equal(t, []string{}, e.onServer(t, "Trash"))
-
-	// Undo now fails with ErrPurgeTooLate
-	assert.ErrorIs(t, e.s.UndoPurge(bg, []int64{id}), ErrPurgeTooLate, "undo must fail once expunged")
+	return len(page.Items), total, len(hits)
 }
 
-func TestEmptyFolderOptimisticAndUndo(t *testing.T) {
+func TestDeleteForeverWaitsForUndo(t *testing.T) {
+	clock := useTestClock(t)
 	e := newSyncEnv(t)
-	e.put(t, "Trash", msg("t1@x"))
-	e.put(t, "Trash", msg("t2@x"))
+	e.put(t, "Trash", msg("m@x"))
 	e.sync(t)
-	trashID := e.folderID(t, "Trash")
+	id := e.idOf(t, "m@x")
+	require.NoError(t, e.s.DeleteForever(bg, []int64{id}))
+	l, n, f := e.trashShown(t)
+	assert.Equal(t, [3]int{0, 0, 0}, [3]int{l, n, f}, "gone from the list, the count and search at once")
 
-	defer func(orig time.Duration) { mailsync.UndoPurgeWindow = orig }(mailsync.UndoPurgeWindow)
-	mailsync.UndoPurgeWindow = 5 * time.Second
-
-	n, err := e.s.EmptyFolder(bg, trashID)
-	require.NoError(t, err)
-	assert.Equal(t, 2, n)
-
-	// Optimistic: list is immediately empty
-	page, err := e.s.ListMessages(bg, View{FolderID: trashID}, "", 10)
-	require.NoError(t, err)
-	assert.Empty(t, page.Items)
-
-	// Sync while in undo window: must remain on server
+	clock.Advance(UndoPurgeWindow - time.Millisecond)
 	e.sync(t)
-	assert.Len(t, e.onServer(t, "Trash"), 2)
-
-	// UndoEmptyFolder restores all messages
-	require.NoError(t, e.s.UndoEmptyFolder(bg, trashID))
-	page, err = e.s.ListMessages(bg, View{FolderID: trashID}, "", 10)
+	assert.Equal(t, []string{"m@x"}, e.onServer(t, "Trash"), "the undo window is still open")
+	gone, err := e.s.UndoPurge(bg, []int64{id})
 	require.NoError(t, err)
-	assert.Len(t, page.Items, 2)
-
-	// Window expired: empty and expunge
-	mailsync.UndoPurgeWindow = 0
-	_, err = e.s.EmptyFolder(bg, trashID)
-	require.NoError(t, err)
+	assert.Zero(t, gone)
+	l, n, f = e.trashShown(t)
+	assert.Equal(t, [3]int{1, 1, 1}, [3]int{l, n, f}, "back after the undo")
+	clock.Advance(UndoPurgeWindow)
 	e.sync(t)
-	assert.Empty(t, e.onServer(t, "Trash"))
-	assert.ErrorIs(t, e.s.UndoEmptyFolder(bg, trashID), ErrFolderEmptyTooLate)
+	assert.Equal(t, []string{"m@x"}, e.onServer(t, "Trash"), "an undone purge never runs")
+
+	require.NoError(t, e.s.DeleteForever(bg, []int64{id}))
+	clock.Advance(UndoPurgeWindow)
+	e.sync(t)
+	assert.Equal(t, []string{}, e.onServer(t, "Trash"))
+	_, err = e.s.UndoPurge(bg, []int64{id})
+	assert.ErrorIs(t, err, ErrPurgeTooLate)
+}
+
+func TestUndoPurgeCountsWhatIsGone(t *testing.T) {
+	clock := useTestClock(t)
+	e := newSyncEnv(t)
+	e.put(t, "Trash", msg("early@x"))
+	e.put(t, "Trash", msg("late@x"))
+	e.sync(t)
+	early, late := e.idOf(t, "early@x"), e.idOf(t, "late@x")
+	require.NoError(t, e.s.DeleteForever(bg, []int64{early}))
+	clock.Advance(UndoPurgeWindow / 2)
+	require.NoError(t, e.s.DeleteForever(bg, []int64{late}))
+	clock.Advance(UndoPurgeWindow / 2)
+	require.NoError(t, e.s.SyncNow(bg, e.acc.ID)) // pushes early's purge; its fetch drops the row
+	require.Equal(t, []string{"late@x"}, e.onServer(t, "Trash"))
+
+	gone, err := e.s.UndoPurge(bg, []int64{early, late})
+	require.NoError(t, err)
+	assert.Equal(t, 1, gone, "early was expunged before the undo")
+	l, _, _ := e.trashShown(t)
+	assert.Equal(t, 1, l, "late is back")
+}
+
+func TestUndoEmptyFolderKeepsEarlierDelete(t *testing.T) {
+	clock := useTestClock(t)
+	e := newSyncEnv(t)
+	e.put(t, "Trash", msg("deleted@x"))
+	e.put(t, "Trash", msg("emptied@x"))
+	e.sync(t)
+	require.NoError(t, e.s.DeleteForever(bg, []int64{e.idOf(t, "deleted@x")}))
+	ids, err := e.s.EmptyFolder(bg, e.folderID(t, "Trash"))
+	require.NoError(t, err)
+	assert.Equal(t, []int64{e.idOf(t, "emptied@x")}, ids, "mail already being deleted is not queued again")
+
+	gone, err := e.s.UndoPurge(bg, ids)
+	require.NoError(t, err)
+	assert.Zero(t, gone)
+	clock.Advance(UndoPurgeWindow)
+	e.sync(t)
+	assert.Equal(t, []string{"emptied@x"}, e.onServer(t, "Trash"), "the undo takes back the emptying, not the delete before it")
 }

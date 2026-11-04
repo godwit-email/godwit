@@ -1860,5 +1860,6 @@
   "wit_rule_confirm_again": "あとで宛先を変更すると、もう一度確認が必要です",
   "mail_purge_toast": "{arg1, number, ::group-off} 通を完全に削除しました",
   "mail_purge_undone": "削除を取り消しました",
-  "mail_purge_too_late": "時間が経過しました: メッセージはすでに完全に削除されました。"
+  "mail_purge_too_late": "時間が経過しました: メッセージはすでに完全に削除されました。",
+  "mail_purge_partly_undone": "残りを元に戻しました。{arg1, number, ::group-off} 通はすでに完全に削除されていました"
 }

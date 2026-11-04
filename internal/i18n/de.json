@@ -1860,5 +1860,6 @@
   "wit_rule_confirm_again": "Eine spätere Änderung des Empfängers muss erneut bestätigt werden",
   "mail_purge_toast": "{arg1, plural, one {{arg1, number, ::group-off} Nachricht endgültig gelöscht} other {{arg1, number, ::group-off} Nachrichten endgültig gelöscht}}",
   "mail_purge_undone": "Löschen rückgängig gemacht",
-  "mail_purge_too_late": "Zu spät: Die Nachricht wurde bereits endgültig gelöscht."
+  "mail_purge_too_late": "Zu spät: Die Nachricht wurde bereits endgültig gelöscht.",
+  "mail_purge_partly_undone": "{arg1, plural, one {Der Rest wurde wiederhergestellt; {arg1, number, ::group-off} Nachricht war bereits endgültig gelöscht} other {Der Rest wurde wiederhergestellt; {arg1, number, ::group-off} Nachrichten waren bereits endgültig gelöscht}}"
 }

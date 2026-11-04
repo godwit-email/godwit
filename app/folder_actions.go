@@ -2,10 +2,8 @@ package app
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"slices"
-	"time"
 
 	"github.com/egoist/mygo/ui"
 	"github.com/godwit-email/godwit/core"
@@ -46,44 +44,28 @@ func (p *mailPage) emptyFolderDialog(c *ui.Context) {
 		})
 }
 
-// doEmptyFolder permanently purges the folder.
+// doEmptyFolder permanently purges the folder, with an undo while it waits.
 func (p *mailPage) doEmptyFolder(folderID int64, role string, accID int64) {
 	a := p.a
-	a.writes.Chain(fmt.Sprintf("account:%d", accID), func(ctx context.Context) error {
-		_, err := a.svc.EmptyFolder(ctx, folderID)
+	start := a.clock.Now() // the purge's undo window starts after this
+	var ids []int64
+	a.writes.Chain(fmt.Sprintf("account:%d", accID), func(ctx context.Context) (err error) {
+		ids, err = a.svc.EmptyFolder(ctx, folderID)
 		return err
 	}, func(err error) {
 		if err != nil {
 			a.toastErr(err)
-			return
 		}
-		toastMsg := i18n.T("mail.empty_trash.toast")
+		title := i18n.T("mail.empty_trash.toast")
 		if role != "trash" {
-			toastMsg = i18n.T("mail.empty_spam.toast")
+			title = i18n.T("mail.empty_spam.toast")
 		}
-		toast := ui.Toast{
-			ID:      fmt.Sprintf("empty-folder-%d", a.clock.Now().UnixNano()),
-			Title:   toastMsg,
-			Timeout: 10 * time.Second,
-			Action:  i18n.T("compose.undo"),
-			OnAction: func() {
-				a.do(func(ctx context.Context) error {
-					return a.svc.UndoEmptyFolder(ctx, folderID)
-				}, func(err error) {
-					if errors.Is(err, core.ErrFolderEmptyTooLate) || errors.Is(err, core.ErrPurgeTooLate) {
-						a.toastAs(kit.ToastWarning, i18n.T("mail.purge.too_late"))
-						return
-					}
-					if err != nil {
-						a.toastErr(err)
-					} else {
-						a.toast(i18n.T("mail.purge.undone"))
-						p.reload()
-					}
-				})
-			},
+		switch {
+		case len(ids) > 0:
+			p.offerUndoPurge(title, ids, start)
+		case err == nil:
+			a.toast(title)
 		}
-		a.toasts = append(a.toasts, toast)
 		p.reload()
 	})
 }

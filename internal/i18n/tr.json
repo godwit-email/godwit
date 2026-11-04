@@ -1860,5 +1860,6 @@
   "wit_rule_confirm_again": "Alıcıyı daha sonra değiştirirseniz yeniden onaylamanız gerekir",
   "mail_purge_toast": "{arg1, number, ::group-off} ileti kalıcı olarak silindi",
   "mail_purge_undone": "Silme işlemi geri alındı",
-  "mail_purge_too_late": "Çok geç: ileti kalıcı olarak silindi."
+  "mail_purge_too_late": "Çok geç: ileti kalıcı olarak silindi.",
+  "mail_purge_partly_undone": "Kalanlar geri yüklendi; {arg1, number, ::group-off} ileti zaten kalıcı olarak silinmişti"
 }

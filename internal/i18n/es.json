@@ -1860,5 +1860,6 @@
   "wit_rule_confirm_again": "Si cambias el destinatario más adelante, habrá que confirmarlo de nuevo",
   "mail_purge_toast": "{arg1, plural, one {{arg1, number, ::group-off} mensaje eliminado definitivamente} many {{arg1, number, ::group-off} mensajes eliminados definitivamente} other {{arg1, number, ::group-off} mensajes eliminados definitivamente}}",
   "mail_purge_undone": "Eliminación deshecha",
-  "mail_purge_too_late": "Demasiado tarde: el mensaje ya se eliminó de forma permanente."
+  "mail_purge_too_late": "Demasiado tarde: el mensaje ya se eliminó de forma permanente.",
+  "mail_purge_partly_undone": "{arg1, plural, one {Se restauró el resto; {arg1, number, ::group-off} mensaje ya se había eliminado definitivamente} many {Se restauró el resto; {arg1, number, ::group-off} mensajes ya se habían eliminado definitivamente} other {Se restauró el resto; {arg1, number, ::group-off} mensajes ya se habían eliminado definitivamente}}"
 }

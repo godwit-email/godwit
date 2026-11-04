@@ -1860,5 +1860,6 @@
   "wit_rule_confirm_again": "Changer le destinataire plus tard demandera une nouvelle confirmation",
   "mail_purge_toast": "{arg1, plural, one {{arg1, number, ::group-off} message définitivement supprimé} many {{arg1, number, ::group-off} messages définitivement supprimés} other {{arg1, number, ::group-off} messages définitivement supprimés}}",
   "mail_purge_undone": "Suppression annulée",
-  "mail_purge_too_late": "Trop tard : le message a déjà été supprimé définitivement."
+  "mail_purge_too_late": "Trop tard : le message a déjà été supprimé définitivement.",
+  "mail_purge_partly_undone": "{arg1, plural, one {Le reste a été restauré ; {arg1, number, ::group-off} message était déjà supprimé définitivement} many {Le reste a été restauré ; {arg1, number, ::group-off} messages étaient déjà supprimés définitivement} other {Le reste a été restauré ; {arg1, number, ::group-off} messages étaient déjà supprimés définitivement}}"
 }

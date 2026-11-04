@@ -1860,5 +1860,6 @@
   "wit_rule_confirm_again": "나중에 받는 사람을 바꾸면 다시 확인해야 합니다",
   "mail_purge_toast": "{arg1, number, ::group-off}통을 완전히 삭제했습니다",
   "mail_purge_undone": "삭제가 취소되었습니다",
-  "mail_purge_too_late": "너무 늦었습니다: 메시지가 이미 완전히 삭제되었습니다."
+  "mail_purge_too_late": "너무 늦었습니다: 메시지가 이미 완전히 삭제되었습니다.",
+  "mail_purge_partly_undone": "나머지를 복원했습니다. {arg1, number, ::group-off}통은 이미 완전히 삭제되었습니다"
 }

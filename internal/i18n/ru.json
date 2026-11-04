@@ -1860,5 +1860,6 @@
   "wit_rule_confirm_again": "Если позже изменить получателя, его нужно будет подтвердить снова",
   "mail_purge_toast": "Удалено навсегда писем: {arg1, number, ::group-off}",
   "mail_purge_undone": "Удаление отменено",
-  "mail_purge_too_late": "Слишком поздно: сообщение уже удалено навсегда."
+  "mail_purge_too_late": "Слишком поздно: сообщение уже удалено навсегда.",
+  "mail_purge_partly_undone": "Остальные восстановлены; уже удалено навсегда писем: {arg1, number, ::group-off}"
 }

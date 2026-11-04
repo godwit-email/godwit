@@ -45,21 +45,22 @@ type op struct {
 
 // PushOps sends the account's pending ops to the server in id order. Ops whose
 // message has no server location yet, or whose dependency is still pending or
-// awaiting its claim, wait for a later round; once the dependency failed or
-// conflicted the op is re-based (depends_on cleared) and runs from the message's
-// current server location. Problems with single ops come back as *OpsError; any
-// other error means the connection is unusable and the push stopped.
-func PushOps(ctx context.Context, db *store.DB, c *imapclient.Client, accountID int64) error {
-	return push(ctx, db, c, accountID, "")
+// awaiting its claim, wait for a later round, as do purges whose undo window is
+// still open at now; once the dependency failed or conflicted the op is re-based
+// (depends_on cleared) and runs from the message's current server location.
+// Problems with single ops come back as *OpsError; any other error means the
+// connection is unusable and the push stopped.
+func PushOps(ctx context.Context, db *store.DB, c *imapclient.Client, accountID int64, now time.Time) error {
+	return push(ctx, db, c, accountID, now, "")
 }
 
 // PushNewOps is PushOps limited to ops never attempted, for a second round after
 // a fetch claimed moves: ops that were waiting run, ones that failed are not retried.
-func PushNewOps(ctx context.Context, db *store.DB, c *imapclient.Client, accountID int64) error {
-	return push(ctx, db, c, accountID, " AND attempts = 0")
+func PushNewOps(ctx context.Context, db *store.DB, c *imapclient.Client, accountID int64, now time.Time) error {
+	return push(ctx, db, c, accountID, now, " AND attempts = 0")
 }
 
-func push(ctx context.Context, db *store.DB, c *imapclient.Client, accountID int64, filter string) (rerr error) {
+func push(ctx context.Context, db *store.DB, c *imapclient.Client, accountID int64, now time.Time, filter string) (rerr error) {
 	var problems []string
 	var changed []int64
 	// A purge of a message already gone has nothing left to do.
@@ -82,19 +83,13 @@ func push(ctx context.Context, db *store.DB, c *imapclient.Client, accountID int
 		problems = append(problems, fmt.Sprintf("%d change(s) not applied: the message no longer exists", res.Changes))
 	}
 	rows, err := db.Query(ctx, `SELECT id, kind, message_id, dst_folder_id, payload, depends_on, attempts FROM ops
-		WHERE account_id = ? AND state = 'pending'`+filter+` ORDER BY id`, accountID)
+		WHERE account_id = ? AND state = 'pending' AND `+purgeDue+` <= ?`+filter+` ORDER BY id`, accountID, now.UnixMilli())
 	if err != nil {
 		return err
 	}
 	for _, v := range rows.Values {
 		o := op{id: store.Int(v[0]), kind: store.Str(v[1]), msg: store.Int(v[2]), dst: store.Int(v[3]),
 			payload: store.Str(v[4]), dep: store.Int(v[5]), attempts: int(store.Int(v[6]))}
-		if o.kind == "purge" {
-			var p PurgePayload
-			if json.Unmarshal([]byte(o.payload), &p) == nil && p.DueAt > 0 && time.Now().Unix() < p.DueAt {
-				continue
-			}
-		}
 		problem, err := pushOp(ctx, db, c, o)
 		if o.kind == "purge" && err == nil && problem == "" {
 			if r, qerr := db.Query(ctx, "SELECT 1 FROM ops WHERE id = ? AND state = 'done'", o.id); qerr == nil && len(r.Values) > 0 {

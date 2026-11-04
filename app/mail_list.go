@@ -442,10 +442,6 @@ func (p *mailPage) purgeDialog(c *ui.Context) {
 			kit.Button(c, i18n.T("common.delete"), kit.ButtonOpts{Variant: kit.Destructive}).OnClick(func() {
 				p.purgeAsk = false
 				p.batch("purge", p.purgeRows)
-				if p.a.route.ThreadID != 0 {
-					p.a.route.ThreadID, p.a.route.MessageID = 0, 0
-					p.reader.sync(false)
-				}
 			})
 		})
 }
@@ -1539,6 +1535,7 @@ func (p *mailPage) batchScoped(act string, rows []mailItem, anywhere bool) {
 	l, exec := p.ls(), p.exec
 	var op string
 	failed, byAcc := 0, map[int64][]int64{}
+	start := a.clock.Now() // a purge's undo window starts after this
 	// Expansions run in the order asked, so the writes they chain do too.
 	a.writes.Chain("mail:expand", func(ctx context.Context) error {
 		var msgs []core.MessageSummary
@@ -1592,7 +1589,7 @@ func (p *mailPage) batchScoped(act string, rows []mailItem, anywhere bool) {
 	}, func(error) {
 		var skipped []string
 		pending := 0
-		var allIDs []int64
+		var purged []int64
 		finish := func() {
 			if failed > 0 {
 				a.toastAs(kit.ToastError, i18n.Tf("mail.failed", failed))
@@ -1603,23 +1600,12 @@ func (p *mailPage) batchScoped(act string, rows []mailItem, anywhere bool) {
 			if removes(op) {
 				l.sel.Clear()
 			}
-			if op == "purge" && failed == 0 && len(allIDs) > 0 {
-				purgedIDs := slices.Clone(allIDs)
-				toast := ui.Toast{
-					ID:      fmt.Sprintf("purge-%d", a.clock.Now().UnixNano()),
-					Title:   i18n.Tf("mail.purge.toast", len(purgedIDs)),
-					Timeout: 10 * time.Second,
-					Action:  i18n.T("compose.undo"),
-					OnAction: func() {
-						p.undoPurge(purgedIDs)
-					},
-				}
-				a.toasts = append(a.toasts, toast)
+			if op == "purge" && len(purged) > 0 {
+				p.offerUndoPurge(i18n.Tf("mail.purge.toast", len(purged)), purged, start)
 			}
 		}
 		for _, acc := range slices.Sorted(maps.Keys(byAcc)) {
 			ids := byAcc[acc]
-			allIDs = append(allIDs, ids...)
 			if op == "archive" && archive[acc] == 0 || op == "junk" && !junk[acc] {
 				skipped = append(skipped, names[acc])
 				continue
@@ -1631,6 +1617,8 @@ func (p *mailPage) batchScoped(act string, rows []mailItem, anywhere bool) {
 			}, func(err error) {
 				if err != nil {
 					failed += len(ids)
+				} else if op == "purge" {
+					purged = append(purged, ids...)
 				}
 				if pending--; pending == 0 {
 					finish()
@@ -1643,22 +1631,57 @@ func (p *mailPage) batchScoped(act string, rows []mailItem, anywhere bool) {
 	})
 }
 
-// undoPurge cancels pending permanent deletes and restores the messages.
+// offerUndoPurge follows a permanent delete of ids queued after start: the
+// reader closes if it showed only them, and a toast titled title offers to undo
+// it for what is left of its window.
+func (p *mailPage) offerUndoPurge(title string, ids []int64, start time.Time) {
+	a := p.a
+	p.closeReaderOf(ids)
+	left := start.Add(core.UndoPurgeWindow).Sub(a.clock.Now())
+	if left <= 0 {
+		a.toast(title)
+		return
+	}
+	a.toasts = append(a.toasts, ui.Toast{ID: fmt.Sprintf("purge-%d-%d", start.UnixNano(), ids[0]), Title: title,
+		Action: i18n.T("compose.undo"), OnAction: func() { p.undoPurge(ids) }, Timeout: left})
+}
+
+// closeReaderOf closes the reader when what it shows is all among ids: the
+// message it opened, else every message of its thread.
+func (p *mailPage) closeReaderOf(ids []int64) {
+	a := p.a
+	if a.route.Page != PageMail || a.route.ThreadID == 0 {
+		return
+	}
+	shown := p.reader.threadIDs
+	if a.route.MessageID != 0 {
+		shown = []int64{a.route.MessageID}
+	}
+	if len(shown) == 0 || slices.ContainsFunc(shown, func(id int64) bool { return !slices.Contains(ids, id) }) {
+		return
+	}
+	a.setRoute(Route{Page: PageMail, View: a.route.View}) // in place: back must not reopen it
+}
+
+// undoPurge takes back the permanent delete of ids.
 func (p *mailPage) undoPurge(ids []int64) {
 	a := p.a
-	a.do(func(ctx context.Context) error {
-		return a.svc.UndoPurge(ctx, ids)
+	var gone int
+	a.do(func(ctx context.Context) (err error) {
+		gone, err = a.svc.UndoPurge(ctx, ids)
+		return err
 	}, func(err error) {
-		if errors.Is(err, core.ErrPurgeTooLate) {
+		switch {
+		case errors.Is(err, core.ErrPurgeTooLate):
 			a.toastAs(kit.ToastWarning, i18n.T("mail.purge.too_late"))
-			return
-		}
-		if err != nil {
+		case err != nil:
 			a.toastErr(err)
-		} else {
+		case gone > 0:
+			a.toastAs(kit.ToastWarning, i18n.Tf("mail.purge.partly_undone", gone))
+		default:
 			a.toast(i18n.T("mail.purge.undone"))
-			p.reload()
 		}
+		p.reload()
 	})
 }
 

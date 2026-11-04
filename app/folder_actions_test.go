@@ -3,11 +3,10 @@ package app
 import (
 	"slices"
 	"testing"
-	"time"
 
 	"github.com/egoist/mygo/ui"
+	"github.com/godwit-email/godwit/core"
 	"github.com/godwit-email/godwit/core/coretest"
-	"github.com/godwit-email/godwit/core/mailsync"
 	"github.com/godwit-email/godwit/internal/i18n"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -54,9 +53,6 @@ func TestSidebarContextMenuEmptyTrash(t *testing.T) {
 }
 
 func TestSidebarContextMenuEmptyTrashUndo(t *testing.T) {
-	defer func(orig time.Duration) { mailsync.UndoPurgeWindow = orig }(mailsync.UndoPurgeWindow)
-	mailsync.UndoPurgeWindow = 5 * time.Second
-
 	h, accs := mailHarness(t, []coretest.Option{coretest.WithoutAutoSync()}, "alice@example.com")
 	base := h.clock.Now()
 	h.put(accs[0], "INBOX", coretest.Msg("bob@example.com", "alice@example.com", "to empty", "body", at(base, 1)))
@@ -91,8 +87,13 @@ func TestSidebarContextMenuEmptyTrashUndo(t *testing.T) {
 	h.until("undo toast shown", func() bool { return h.tt.HasText(i18n.T("compose.undo")) })
 	h.click(i18n.T("compose.undo"))
 
-	// Restored!
+	// Restored, and the window's end empties nothing.
 	h.waitMail("trash restored after undo", func() bool {
+		return h.app.mail.roleFolder(accs[0].ID, "trash").Total == 1
+	})
+	h.env.AdvanceClock(core.UndoPurgeWindow)
+	h.syncNow(accs[0])
+	h.waitMail("trash kept after the window", func() bool {
 		return h.app.mail.roleFolder(accs[0].ID, "trash").Total == 1
 	})
 }

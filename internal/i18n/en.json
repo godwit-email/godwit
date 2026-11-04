@@ -3609,5 +3609,6 @@
   "wit_rule_confirm_again": "Changing the recipient later needs confirming again",
   "mail_purge_toast": "{arg1, plural, one {Permanently deleted {arg1, number, ::group-off} message} other {Permanently deleted {arg1, number, ::group-off} messages}}",
   "mail_purge_undone": "Deletion undone",
-  "mail_purge_too_late": "Too late: message has already been permanently deleted."
+  "mail_purge_too_late": "Too late: message has already been permanently deleted.",
+  "mail_purge_partly_undone": "{arg1, plural, one {Restored the rest; {arg1, number, ::group-off} message was already permanently deleted} other {Restored the rest; {arg1, number, ::group-off} messages were already permanently deleted}}"
 }

@@ -1860,5 +1860,6 @@
   "wit_rule_confirm_again": "Se mudar o destinatário mais tarde, será preciso confirmar de novo",
   "mail_purge_toast": "{arg1, plural, one {{arg1, number, ::group-off} mensagem excluída permanentemente} many {{arg1, number, ::group-off} mensagens excluídas permanentemente} other {{arg1, number, ::group-off} mensagens excluídas permanentemente}}",
   "mail_purge_undone": "Exclusão desfeita",
-  "mail_purge_too_late": "Tarde demais: a mensagem já foi excluída permanentemente."
+  "mail_purge_too_late": "Tarde demais: a mensagem já foi excluída permanentemente.",
+  "mail_purge_partly_undone": "{arg1, plural, one {O restante foi restaurado; {arg1, number, ::group-off} mensagem já havia sido excluída permanentemente} many {O restante foi restaurado; {arg1, number, ::group-off} mensagens já haviam sido excluídas permanentemente} other {O restante foi restaurado; {arg1, number, ::group-off} mensagens já haviam sido excluídas permanentemente}}"
 }

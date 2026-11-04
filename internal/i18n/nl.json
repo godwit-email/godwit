@@ -1860,5 +1860,6 @@
   "wit_rule_confirm_again": "Als je de ontvanger later wijzigt, moet je opnieuw bevestigen",
   "mail_purge_toast": "{arg1, plural, one {{arg1, number, ::group-off} bericht definitief verwijderd} other {{arg1, number, ::group-off} berichten definitief verwijderd}}",
   "mail_purge_undone": "Verwijderen ongedaan gemaakt",
-  "mail_purge_too_late": "Te laat: het bericht is al definitief verwijderd."
+  "mail_purge_too_late": "Te laat: het bericht is al definitief verwijderd.",
+  "mail_purge_partly_undone": "{arg1, plural, one {De rest is hersteld; {arg1, number, ::group-off} bericht was al definitief verwijderd} other {De rest is hersteld; {arg1, number, ::group-off} berichten waren al definitief verwijderd}}"
 }

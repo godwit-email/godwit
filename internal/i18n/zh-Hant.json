@@ -1860,5 +1860,6 @@
   "wit_rule_confirm_again": "以後修改收件人，需要再次確認",
   "mail_purge_toast": "已永久刪除 {arg1, number, ::group-off} 封",
   "mail_purge_undone": "已復原刪除",
-  "mail_purge_too_late": "已超時：郵件已被永久刪除。"
+  "mail_purge_too_late": "已超時：郵件已被永久刪除。",
+  "mail_purge_partly_undone": "已復原其餘郵件，{arg1, number, ::group-off} 封已被永久刪除"
 }
