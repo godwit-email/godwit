@@ -181,6 +181,10 @@ func TestThreadCopiesShowOnce(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, 1, p.Items[0].Flagged, "a copy's star is its message's")
 	assert.Equal(t, 2, p.Items[0].Unread, "unread while a copy is")
+	th2, err := e.s.GetThread(bg, tid)
+	require.NoError(t, err)
+	assert.NotContains(t, th2.Messages[0].Flags, `\Seen`, "GetThread agrees with the list")
+	assert.Contains(t, th2.Messages[1].Flags, `\Flagged`)
 
 	other := e.second(t) // the same mail in another account's inbox is that account's own
 	other.put(t, "INBOX", first)
@@ -197,6 +201,9 @@ func TestThreadCopiesShowOnce(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, msgIDs(th.Messages), ids, "AI reads each message once")
 	assert.Len(t, members, 2)
+	_, ids, _, err = e.s.mailTarget(bg, "thread", tid, allMail[0]) // a quick reply to a copy opened on its own
+	require.NoError(t, err)
+	assert.Equal(t, []int64{allMail[0], th.Messages[1].ID}, ids)
 }
 
 func TestGetMessageSanitized(t *testing.T) {

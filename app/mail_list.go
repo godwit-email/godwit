@@ -1538,10 +1538,10 @@ func (p *mailPage) batchScoped(act string, rows []mailItem, anywhere bool) {
 	start := a.clock.Now() // a purge's undo window starts after this
 	// Expansions run in the order asked, so the writes they chain do too.
 	a.writes.Chain("mail:expand", func(ctx context.Context) error {
-		var msgs []core.MessageSummary
+		var msgs, shown []core.MessageSummary // shown: what a toggle reads, its copies' flags in each
 		for _, it := range rows {
 			if !it.Thread {
-				msgs = append(msgs, it.Msg)
+				msgs, shown = append(msgs, it.Msg), append(shown, it.Msg)
 				continue
 			}
 			th, err := a.svc.GetThread(ctx, it.ID)
@@ -1550,6 +1550,7 @@ func (p *mailPage) batchScoped(act string, rows []mailItem, anywhere bool) {
 				continue
 			}
 			msgs = append(msgs, th.All()...) // every copy, so the view's own is acted on
+			shown = append(shown, th.Messages...)
 		}
 		if v.LabelID != 0 && !search {
 			ids := make([]int64, len(msgs))
@@ -1565,12 +1566,12 @@ func (p *mailPage) batchScoped(act string, rows []mailItem, anywhere bool) {
 		switch act {
 		case "toggle_read":
 			op = "unread"
-			if slices.ContainsFunc(msgs, func(m core.MessageSummary) bool { return !slices.Contains(m.Flags, `\Seen`) }) {
+			if slices.ContainsFunc(shown, func(m core.MessageSummary) bool { return !slices.Contains(m.Flags, `\Seen`) }) {
 				op = "read"
 			}
 		case "toggle_star":
 			op = "unstar"
-			if slices.ContainsFunc(msgs, func(m core.MessageSummary) bool { return !slices.Contains(m.Flags, `\Flagged`) }) {
+			if slices.ContainsFunc(shown, func(m core.MessageSummary) bool { return !slices.Contains(m.Flags, `\Flagged`) }) {
 				op = "star"
 			}
 		}

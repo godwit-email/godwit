@@ -187,7 +187,8 @@ func (s *Service) ListThreads(ctx context.Context, v View, cursor string, limit 
 	return page, nil
 }
 
-// GetThread returns the thread's messages by date ascending, each once.
+// GetThread returns the thread's messages by date ascending, each once, its
+// flags those of all its copies: unread while one is, starred while one is.
 func (s *Service) GetThread(ctx context.Context, id int64) (Thread, error) {
 	rows, err := s.db.Query(ctx, "SELECT subject FROM threads WHERE id = ?", id)
 	if err != nil {
@@ -202,11 +203,25 @@ func (s *Service) GetThread(ctx context.Context, id int64) (Thread, error) {
 		return Thread{}, err
 	}
 	of := copyOf(ms.Values, 0, msgColCount)
+	shown := map[int]int{} // row → its index in Messages
 	for i, r := range ms.Values {
 		if of[i] == i {
+			shown[i] = len(t.Messages)
 			t.Messages = append(t.Messages, scanSummary(r))
-		} else {
-			t.Copies = append(t.Copies, scanSummary(r))
+		}
+	}
+	for i, r := range ms.Values {
+		if of[i] == i {
+			continue
+		}
+		c := scanSummary(r)
+		t.Copies = append(t.Copies, c)
+		m := &t.Messages[shown[of[i]]] // unread or starred while any copy is, as ListThreads counts it
+		if !slices.Contains(c.Flags, `\Seen`) && slices.Contains(m.Flags, `\Seen`) {
+			m.Flags = slices.DeleteFunc(slices.Clone(m.Flags), func(f string) bool { return f == `\Seen` })
+		}
+		if slices.Contains(c.Flags, `\Flagged`) && !slices.Contains(m.Flags, `\Flagged`) {
+			m.Flags = append(slices.Clone(m.Flags), `\Flagged`)
 		}
 	}
 	return t, nil

@@ -241,9 +241,10 @@ type contentMember struct {
 }
 
 // mailTarget loads a message or thread: its account, member IDs by date (a
-// message in several folders once), and
-// its content version (members sorted by ID). It also proves the target exists.
-func (s *Service) mailTarget(ctx context.Context, kind string, id int64) (int64, []int64, []contentMember, error) {
+// message in several folders once, as the copy prefer names when it is one),
+// and its content version (members sorted by ID). It also proves the target
+// exists.
+func (s *Service) mailTarget(ctx context.Context, kind string, id int64, prefer ...int64) (int64, []int64, []contentMember, error) {
 	where := "id = ?"
 	if kind == "thread" {
 		where = "thread_id = ?"
@@ -258,6 +259,16 @@ func (s *Service) mailTarget(ctx context.Context, kind string, id int64) (int64,
 	var ids []int64
 	var members []contentMember
 	of := copyOf(rows.Values, 0, 5) // a message in several folders is read once
+	for p, r := range rows.Values {
+		if slices.Contains(prefer, store.Int(r[0])) && of[p] != p {
+			shown := of[p]
+			for i := range of {
+				if of[i] == shown {
+					of[i] = p
+				}
+			}
+		}
+	}
 	for i, r := range rows.Values {
 		if of[i] != i {
 			continue
@@ -360,7 +371,7 @@ func (s *Service) QuickReplies(ctx context.Context, messageID int64) ([]QuickRep
 	if tid := store.Int(r0[1]); tid != 0 {
 		kind, target = "thread", tid
 	}
-	account, ids, members, err := s.mailTarget(ctx, kind, target)
+	account, ids, members, err := s.mailTarget(ctx, kind, target, messageID) // the copy answered, though another shows
 	if err != nil {
 		return nil, err
 	}
