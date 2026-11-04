@@ -98,6 +98,13 @@ func TestParseStructure(t *testing.T) {
 	assert.Equal(t, "2", atts[0].Part)
 	assert.Equal(t, "a.pdf", atts[0].Filename)
 
+	// a raw CP1252 byte from the server becomes U+FFFD, or SQLite rejects the row (#467)
+	_, atts = mail.ParseStructure(&imap.BodyStructureSinglePart{Type: "image", Subtype: "jpeg", ID: "<1\x92021@example.net>",
+		Params: map[string]string{"name": "logo\x92.jpg"}})
+	require.Len(t, atts, 1)
+	assert.Equal(t, "1\uFFFD021@example.net", atts[0].ContentID)
+	assert.Equal(t, "logo\uFFFD.jpg", atts[0].Filename)
+
 	// single-part message body is part "1"
 	text, _ = mail.ParseStructure(&imap.BodyStructureSinglePart{Type: "text", Subtype: "plain"})
 	require.Len(t, text, 1)

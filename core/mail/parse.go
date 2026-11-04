@@ -117,6 +117,11 @@ func listHeader(h *gomail.Header, k string) string {
 	return ""
 }
 
+// validUTF8 replaces bad bytes in a header or BODYSTRUCTURE string with U+FFFD:
+// servers pass them through raw (#467), and SQLite rejects non-UTF-8 text,
+// which would fail the whole folder's sync.
+func validUTF8(s string) string { return strings.ToValidUTF8(s, "\uFFFD") }
+
 func cleanID(s string) string { return strings.TrimSpace(strings.Trim(strings.TrimSpace(s), "<>")) }
 
 // classify decides whether a leaf is a displayable body and whether it is inline.
@@ -223,8 +228,8 @@ func (p *Parsed) walk(e *message.Entity, path string, depth int) {
 			p.warn("part %s: %v", path, err)
 		}
 		p.Attachments = append(p.Attachments, Attachment{
-			Part: path, Encoding: strings.ToLower(strings.TrimSpace(e.Header.Get("Content-Transfer-Encoding"))),
-			Charset: params["charset"], Filename: filename, ContentType: ct, ContentID: cid,
+			Part: path, Encoding: validUTF8(strings.ToLower(strings.TrimSpace(e.Header.Get("Content-Transfer-Encoding")))),
+			Charset: validUTF8(params["charset"]), Filename: validUTF8(filename), ContentType: validUTF8(ct), ContentID: validUTF8(cid),
 			Inline: inline, Size: len(data), Data: data,
 		})
 	}
@@ -391,8 +396,8 @@ func ParseStructure(bs imap.BodyStructure) (textParts []Attachment, atts []Attac
 			cid := cleanID(b.ID)
 			body, inline := classify(ct, disp, filename, cid)
 			a := Attachment{
-				Part: path, Encoding: strings.ToLower(b.Encoding), Charset: b.Params["charset"],
-				Filename: filename, ContentType: ct, ContentID: cid, Inline: inline, Size: int(b.Size),
+				Part: path, Encoding: validUTF8(strings.ToLower(b.Encoding)), Charset: validUTF8(b.Params["charset"]),
+				Filename: validUTF8(filename), ContentType: validUTF8(ct), ContentID: validUTF8(cid), Inline: inline, Size: int(b.Size),
 			}
 			if body {
 				textParts = append(textParts, a)
