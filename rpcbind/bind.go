@@ -9,6 +9,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"net/mail"
 	"strings"
 
 	"github.com/godwit-email/godwit/core"
@@ -212,8 +213,8 @@ func Expose(method string) bool {
 // Listen serves svc's exposed methods on <dataDir>/godwit.sock (see
 // rpc.Listen; the caller holds the owner lock). Errors go out through
 // NewCodec; the API token and svc's secrets are redacted from them and from
-// the log. Sends by the full role and drafts by the mcp role are audited
-// before they are dispatched.
+// the log. Sends and forwarding rules by the full role and drafts by the mcp
+// role are audited before they are dispatched.
 func Listen(dataDir string, svc *core.Service, version string) (*rpc.Server, error) {
 	d, err := rpc.NewDispatcher(svc, Expose)
 	if err != nil {
@@ -228,9 +229,19 @@ func Listen(dataDir string, svc *core.Service, version string) (*rpc.Server, err
 }
 
 // audit records full's Send, SendAcknowledged and their Revision forms (by draft), ResolveOutbox
-// "resend" (by outbox item) and Unsubscribe (by message), and mcp's NewDraft (by source
-// message) and SaveDraft (by draft); nothing else.
+// "resend" (by outbox item), Unsubscribe (by message) and the rule calls that
+// make a rule forward (ruleForward), and mcp's NewDraft (by source message) and
+// SaveDraft (by draft); nothing else. A row it cannot write stops the call.
 func audit(svc *core.Service, role, method string, params []json.RawMessage) error {
+	if role == rpc.RoleFull {
+		target, dests, ok, err := ruleForward(svc, method, params)
+		if err != nil {
+			return err
+		}
+		if ok {
+			return svc.AuditExternal(context.Background(), core.AuditLocalAPI, method, target, dests...)
+		}
+	}
 	source := ""
 	switch {
 	case role == rpc.RoleFull && (method == "Send" || method == "SendAcknowledged" || method == "SendRevision" || method == "SendAcknowledgedRevision" ||
@@ -253,6 +264,66 @@ func audit(svc *core.Service, role, method string, params []json.RawMessage) err
 		json.Unmarshal(params[0], &target)
 	}
 	return svc.AuditExternal(context.Background(), source, method, target)
+}
+
+// ruleForward reports whether a full call leaves a rule that forwards mail
+// later, unattended, which ADR 0003 counts as egress; target and dests are
+// what its audit row records. They are SaveRule of a rule with a forward
+// (target: its id, 0 for a new one, whose id does not exist before the call
+// runs; dests: its recipients, which name it in the log), SetRuleEnabled
+// turning such a rule on (target: the rule), and every RetryRuleRun (target:
+// the run): a retry may forward now, and which actions it reruns is known
+// only inside it. RunRuleOnExisting drops forwards and ProposedRuleSaved only
+// closes an approval, so neither is here. Params that do not decode are not
+// audited: the dispatcher decodes them the same way and refuses the call.
+func ruleForward(svc *core.Service, method string, params []json.RawMessage) (target int64, dests []string, ok bool, err error) {
+	switch method {
+	case "SaveRule":
+		var r core.Rule
+		if len(params) != 1 || json.Unmarshal(params[0], &r) != nil {
+			return 0, nil, false, nil
+		}
+		dests = forwards(r.Doc)
+		return r.ID, dests, len(dests) > 0, nil
+	case "SetRuleEnabled":
+		var id int64
+		var on bool
+		if len(params) != 2 || json.Unmarshal(params[0], &id) != nil || json.Unmarshal(params[1], &on) != nil || !on {
+			return 0, nil, false, nil
+		}
+		rules, err := svc.Rules(context.Background())
+		if err != nil {
+			return 0, nil, false, err
+		}
+		for _, r := range rules {
+			if r.ID == id {
+				dests = forwards(r.Doc)
+			}
+		}
+		return id, dests, len(dests) > 0, nil
+	case "RetryRuleRun":
+		if len(params) != 1 || json.Unmarshal(params[0], &target) != nil {
+			return 0, nil, false, nil
+		}
+		return target, nil, true, nil
+	}
+	return 0, nil, false, nil
+}
+
+// forwards are the bare addresses d forwards to.
+func forwards(d core.RuleDoc) []string {
+	var out []string
+	for _, a := range d.Actions {
+		if a.Kind != core.ActionForward {
+			continue
+		}
+		if p, err := mail.ParseAddress(a.To); err == nil {
+			out = append(out, p.Address)
+		} else {
+			out = append(out, a.To)
+		}
+	}
+	return out
 }
 
 // isResend: ResolveOutbox's params ask to send the item again.

@@ -434,6 +434,47 @@ func TestAuditResend(t *testing.T) {
 	assert.Equal(t, [][]any{{"local_api", "ResolveOutbox", resend, ""}}, auditRows(t, e.DataDir))
 }
 
+// A rule that forwards is mail leaving later, unattended (ADR 0003): full's
+// calls that save it, turn it on or rerun it are audited with its recipients'
+// domains; a rule without a forward and turning one off are not, and mcp
+// cannot reach any of them.
+func TestAuditRuleForward(t *testing.T) {
+	e := coretest.New(t, coretest.WithoutAutoSync())
+	ctx := t.Context()
+	dir := listen(t, e.Svc)
+	full, mcp := dial(t, dir, rpc.RoleFull), dial(t, dir, rpc.RoleMCP)
+	doc := func(acts ...core.RuleAction) core.RuleDoc {
+		return core.RuleDoc{Version: core.RuleVersion, Name: "R", Trigger: core.TriggerReceive, Match: core.MatchAll,
+			Conditions: []core.RuleCondition{{Field: core.FieldFrom, Op: core.OpContains, Value: "billing@"}}, Actions: acts}
+	}
+	fwd := core.Rule{Enabled: true, Doc: doc(core.RuleAction{Kind: core.ActionRead}, core.RuleAction{Kind: core.ActionForward, To: "Carol <carol@example.org>"}),
+		Confirmed: []string{"carol@example.org"}}
+	local := core.Rule{Enabled: true, Doc: doc(core.RuleAction{Kind: core.ActionRead})}
+
+	var fwdID, localID int64
+	require.NoError(t, full.Call(ctx, "SaveRule", &fwdID, fwd))
+	require.NoError(t, full.Call(ctx, "SaveRule", &localID, local))
+	fwd.ID = fwdID
+	require.NoError(t, full.Call(ctx, "SaveRule", nil, fwd))
+	require.NoError(t, full.Call(ctx, "SetRuleEnabled", nil, fwdID, false))
+	require.NoError(t, full.Call(ctx, "SetRuleEnabled", nil, fwdID, true))
+	require.NoError(t, full.Call(ctx, "SetRuleEnabled", nil, localID, true))
+	assert.Error(t, full.Call(ctx, "RetryRuleRun", nil, 7)) // audited all the same
+	require.NoError(t, full.Call(ctx, "RunRuleOnExisting", nil, fwdID))
+
+	for _, m := range []string{"SaveRule", "SetRuleEnabled", "RetryRuleRun", "RunRuleOnExisting", "ProposedRuleSaved"} {
+		var we *rpc.WireError
+		require.ErrorAs(t, mcp.Call(ctx, m, nil), &we, m)
+		assert.Equal(t, rpc.CodeForbidden, we.Code, m)
+	}
+	assert.Equal(t, [][]any{
+		{"local_api", "SaveRule", nil, "example.org"}, // new: no id yet
+		{"local_api", "SaveRule", fwdID, "example.org"},
+		{"local_api", "SetRuleEnabled", fwdID, "example.org"},
+		{"local_api", "RetryRuleRun", int64(7), ""},
+	}, auditRows(t, e.DataDir))
+}
+
 // A resend whose audit cannot be written re-queues nothing.
 func TestAuditResendFailureStopsCall(t *testing.T) {
 	logs(t)

@@ -64,11 +64,12 @@ const (
 const AuditRule = "rule"
 
 // AuditExternal writes an audit_log row for a call made from outside the
-// app: source (AuditLocalAPI or AuditMCP), the method as action, and the
-// target's ID (0 = none). No content is stored.
-func (s *Service) AuditExternal(ctx context.Context, source, action string, target int64) error {
+// app: source (AuditLocalAPI or AuditMCP), the method as action, the
+// target's ID (0 = none) and the destinations the call sets up, which are
+// stored as their domains. No content is stored.
+func (s *Service) AuditExternal(ctx context.Context, source, action string, target int64, dests ...string) error {
 	if source != AuditLocalAPI && source != AuditMCP {
 		return fmt.Errorf("audit: unknown external source %q", source)
 	}
-	return s.gateway().Record(ctx, gateway.Entry{Source: source, Tool: action, TargetID: target, Decision: "allow"})
+	return s.gateway().Record(ctx, gateway.Entry{Source: source, Tool: action, TargetID: target, Destinations: dests, Decision: "allow"})
 }
