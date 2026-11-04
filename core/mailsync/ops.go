@@ -14,6 +14,7 @@ import (
 	"github.com/egoist/mygo/plugins/sqlite"
 	"github.com/emersion/go-imap/v2"
 	"github.com/emersion/go-imap/v2/imapclient"
+	"github.com/godwit-email/godwit/core/conn"
 	"github.com/godwit-email/godwit/core/store"
 )
 
@@ -278,7 +279,7 @@ func InFolder(c *imapclient.Client, folder, messageID string, size int64) (bool,
 		return false, err
 	}
 	for _, m := range msgs {
-		h, err := netmail.ReadMessage(bytes.NewReader(append(m.FindBodySection(sec), "\r\n\r\n"...)))
+		h, err := netmail.ReadMessage(bytes.NewReader(append(conn.FindBodySection(m, sec), "\r\n\r\n"...)))
 		if err != nil {
 			continue
 		}

@@ -44,6 +44,22 @@ func TestToParsedFromHeaders(t *testing.T) {
 	}
 }
 
+// Alibaba Mail echoes the header list it was asked for cut down and reordered
+// (#458); the headers it sent still fill the message, and its twin key.
+func TestToParsedReducedHeaderEcho(t *testing.T) {
+	raw := "From: Ann <ann@x>\r\nSubject: hi\r\nDate: Mon, 02 Jan 2006 15:04:05 +0000\r\nMessage-ID: <a@x>\r\n\r\n"
+	echo := &imap.FetchItemBodySection{Specifier: imap.PartSpecifierHeader,
+		HeaderFields: []string{"FROM", "TO", "CC", "SUBJECT", "DATE", "MESSAGE-ID", "REFERENCES", "IN-REPLY-TO", "CONTENT-TYPE", "RECEIVED"}}
+	m := &imapclient.FetchMessageBuffer{RFC822Size: 9, BodySection: []imapclient.FetchBodySectionBuffer{{Section: echo, Bytes: []byte(raw)}}}
+	p := toParsed(m, nil)
+	if p.MessageID != "a@x" || p.Subject != "hi" || p.From != "Ann <ann@x>" || p.Date.Year() != 2006 {
+		t.Fatalf("got %+v", p)
+	}
+	if k := twinKey(m); k != "a@x\x009" {
+		t.Fatalf("twinKey %q", k)
+	}
+}
+
 // A body structure the server sends malformed (Gmail's empty multipart, #389)
 // leaves the connection up, and fillStructures builds it from the whole message.
 func TestFillStructuresMalformed(t *testing.T) {
