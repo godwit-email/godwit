@@ -41,6 +41,10 @@ type Platform interface {
 	ShowWindow()                      // shows the window, in front
 	SetThemeSource(theme string)
 	TempDir() string
+	// TypeIcon is the icon the file manager shows for files with extension
+	// ext (no dot), as a size by size pixel PNG. Blocks: call it off the UI
+	// thread.
+	TypeIcon(ext string, size int) ([]byte, error)
 	// SetLocalAPI starts (on) or stops the Local API server for request
 	// gen, returning its socket's path while on. Off when it fails. Blocks:
 	// call off the UI thread.
@@ -92,6 +96,10 @@ type Platform interface {
 	// Store's package) for a version newer than this one, without a
 	// window: "" when up to date. Blocks: call off the UI thread.
 	LatestVersion(ctx context.Context) (string, error)
+	// UpdatesInstallThemselves says whether a newer version installs without
+	// asking (the updater's automatic downloads): it waits for a relaunch.
+	// It may read a file: call off the UI thread.
+	UpdatesInstallThemselves() bool
 	// RepoStarred asks the GitHub CLI whether the user starred Godwit's
 	// repository: ok is false without gh signed in. Blocks.
 	RepoStarred(ctx context.Context) (starred, ok bool)
@@ -161,6 +169,7 @@ const (
 	PageSettings
 	PageOnboarding
 	PageKit // dev builds only
+	PageContacts
 )
 
 // Route is where the App is.
@@ -169,6 +178,7 @@ type Route struct {
 	View                                core.View
 	ThreadID, MessageID, ConversationID int64
 	Settings                            string
+	Contact                             string // the contact the contacts page shows, by address
 }
 
 // syncBatch is a Sync All in flight: it counts as a sync only once every account finished without failing.
@@ -247,6 +257,8 @@ type App struct {
 	sidebarW                     float32 // the sidebars' width as dragged, shared by every page; 0 until the first panel
 	listW                        float32 // the mail list's width as dragged; 0 until the mail page shows
 	sidebarSave                  func()  // stops the pending save of a dragged width
+	latest                       string  // a newer version the update feed offers (watchLatest); "" none
+	latestInstalls               bool    // it installs itself and waits for a relaunch
 
 	dirty             []events.Event // events since the last refresh
 	refreshStop       func()         // the pending throttled refresh; nil when none
@@ -279,7 +291,8 @@ type App struct {
 
 	mcpSend mcpSendState // godwit mcp's send request waiting for the user (mcpsend.go)
 
-	customIcons map[int64]accountImage // by account id: its uploaded icon (accountImage)
+	customIcons map[int64]accountImage    // by account id: its uploaded icon (accountImage)
+	typeIcons   map[string]ui.ImageSource // by extension: the file manager's icon (typeIcon)
 
 	tempMu   sync.Mutex
 	tempDirs []string // made by tempDir; Close removes them
@@ -320,7 +333,7 @@ func New(d Deps) *App {
 	a.saveSettings = a.svc.SetSettings
 	a.writes = newWriteQueue(a)
 	a.mail = newMailPage(a)
-	a.pages = map[Page]pageView{PageMail: a.mail, PageWit: newAskPage(a), PageSettings: newSettingsPage(a)}
+	a.pages = map[Page]pageView{PageMail: a.mail, PageWit: newAskPage(a), PageSettings: newSettingsPage(a), PageContacts: newContactsPage(a)}
 	a.pages[PageOnboarding] = newOnboarding(a, false)
 	a.pages[PageKit] = &kitPage{}
 	a.dev = d.Dev
@@ -353,6 +366,33 @@ func (a *App) Start(ctx context.Context) {
 		}
 	}()
 	a.load()
+	a.after(latestFirst, a.watchLatest)
+}
+
+// latestFirst leaves the updater's own check at launch, which may start
+// installing, its head start; latestEvery spaces the checks after it.
+const latestFirst, latestEvery = time.Minute, 6 * time.Hour
+
+// watchLatest reads the newer version now and every latestEvery after.
+func (a *App) watchLatest() {
+	a.readLatest()
+	a.after(latestEvery, a.watchLatest)
+}
+
+// readLatest asks the update feed for a newer version, for the sidebar's
+// update card and About's button.
+func (a *App) readLatest() {
+	var v string
+	var auto bool
+	a.do(func(ctx context.Context) (err error) {
+		v, err = a.plat.LatestVersion(ctx)
+		auto = a.plat.UpdatesInstallThemselves()
+		return err
+	}, func(err error) {
+		if err == nil {
+			a.latest, a.latestInstalls = v, auto
+		} // a dev build, offline: Check for Updates says why
+	})
 }
 
 // load re-reads accounts, settings and unread counts; only the newest

@@ -286,6 +286,12 @@ function Conversation({
           throw e;
         })
       }
+      onEditRule={(a) =>
+        decide(a.run, () => api.editRule(a.id)).catch((e) => {
+          fail(e);
+          throw e;
+        })
+      }
       ask={handed}
       onAsked={onAsked}
       t={t}

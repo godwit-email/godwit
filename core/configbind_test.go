@@ -2,7 +2,7 @@ package core
 
 import (
 	"encoding/json"
-	"github.com/Calcium-Ion/moejs"
+	"github.com/MoeForge/moejs"
 	"sync"
 	"testing"
 	"time"

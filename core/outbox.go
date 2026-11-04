@@ -400,7 +400,7 @@ func (s *Service) wakeForOutbox(ctx context.Context, accountID, start int64) {
 	if err == nil && len(rows.Values) > 0 && rows.Values[0][0] != nil {
 		next = time.UnixMilli(store.Int(rows.Values[0][0]))
 	}
-	s.wakeWorkerAt(accountID, next)
+	s.wakeWorkerAt(accountID, wakeOutbox, next)
 }
 
 // smtpEndpoint returns the account's SMTP server with its credentials, its

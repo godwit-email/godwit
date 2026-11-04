@@ -3,9 +3,12 @@ package conn_test
 import (
 	"bufio"
 	"context"
+	"log"
 	"net"
+	"os"
 	"strconv"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -157,6 +160,66 @@ func TestTLSHandshakeFailureIsNotReportedAsCancel(t *testing.T) {
 		assert.NotErrorIs(t, err, context.Canceled, name)
 		assert.NotErrorIs(t, err, context.DeadlineExceeded, name)
 	}
+}
+
+// A STARTTLS port set to SSL/TLS (#406) is retried with STARTTLS, never in plaintext.
+func TestTLSOnPlaintextPortRetriesStartTLS(t *testing.T) {
+	for _, proto := range []string{"imap", "smtp"} {
+		var dials atomic.Int32
+		var mu sync.Mutex
+		var seen strings.Builder
+		e := fake(t, func(c net.Conn) {
+			dials.Add(1)
+			if proto == "imap" {
+				c.Write([]byte("* OK hi\r\n"))
+			} else {
+				c.Write([]byte("220 hi\r\n"))
+			}
+			r := bufio.NewReader(c)
+			for {
+				l, err := r.ReadString('\n')
+				if err != nil {
+					return
+				}
+				mu.Lock()
+				seen.WriteString(l)
+				mu.Unlock()
+				if f := strings.Fields(l); proto == "imap" && len(f) > 0 {
+					c.Write([]byte(f[0] + " NO no TLS here\r\n"))
+				} else {
+					c.Write([]byte("250 hi\r\n")) // no STARTTLS offered
+				}
+			}
+		})
+		e.Security = conn.TLS
+		var err error
+		if proto == "imap" {
+			_, err = conn.DialIMAP(context.Background(), e)
+		} else {
+			_, err = conn.DialSMTP(context.Background(), e)
+		}
+		require.Error(t, err, proto)
+		assert.EqualValues(t, 2, dials.Load(), proto)
+		mu.Lock()
+		joined := seen.String()
+		mu.Unlock()
+		assert.NotContains(t, joined, "hunter2", proto)
+		assert.NotContains(t, joined, "AUTH", proto)
+		assert.NotContains(t, joined, "LOGIN", proto)
+	}
+}
+
+func TestSMTPLoginWhenPlainNotOffered(t *testing.T) {
+	addr, in := testmail.StartSMTP(t, testmail.LoginOnly())
+	e := endpoint(t, addr)
+	c, err := conn.DialSMTP(context.Background(), e)
+	require.NoError(t, err)
+	c.Close()
+
+	e.Password = "wrong"
+	_, err = conn.DialSMTP(context.Background(), e)
+	require.ErrorIs(t, err, conn.ErrAuthFailed)
+	assert.Equal(t, 2, in.AuthAttempts())
 }
 
 func endpoint(t *testing.T, addr string) conn.Endpoint {
@@ -325,4 +388,112 @@ func TestIMAPEmptyLiteralWithoutSpace(t *testing.T) {
 	assert.Equal(t, imap.UID(42), msgs[0].UID)
 	assert.Equal(t, imap.UID(43), msgs[1].UID)
 	assert.Equal(t, "{0}\r\nFoo", string(msgs[1].FindBodySection(sec)))
+}
+
+// TestIMAPTencentExmail fakes imap.exmail.qq.com: a broken charset parameter in
+// BODYSTRUCTURE (#387) and an empty section for a quoted HEADER.FIELDS list (#388).
+func TestIMAPTencentExmail(t *testing.T) {
+	e := fake(t, func(c net.Conn) {
+		c.Write([]byte("* OK [CAPABILITY IMAP4rev1] hi\r\n"))
+		r := bufio.NewReader(c)
+		for {
+			line, err := r.ReadString('\n')
+			if err != nil {
+				return
+			}
+			f := strings.Fields(line)
+			if len(f) < 2 {
+				return
+			}
+			switch strings.ToUpper(f[1]) {
+			case "LOGIN":
+				c.Write([]byte(f[0] + " OK [CAPABILITY IMAP4rev1] logged in\r\n"))
+			case "SELECT":
+				c.Write([]byte("* 1 EXISTS\r\n* OK [UIDVALIDITY 1] ok\r\n" + f[0] + " OK [READ-ONLY] selected\r\n"))
+			case "FETCH", "UID":
+				hdr := "\r\n"
+				if strings.Contains(line, "HEADER.FIELDS (SUBJECT FROM)") {
+					hdr = "Subject: hi\r\nFrom: a@example.com\r\n\r\n"
+				}
+				resp := `* 1 FETCH (UID 7 BODYSTRUCTURE (("TEXT" "PLAIN" ("charset " " "utf-8"") NIL NIL "8BIT" 588 44 NIL NIL NIL)("TEXT" "HTML" ("charset " " "utf-8"") NIL NIL "8BIT" 2670 54 NIL NIL NIL) "ALTERNATIVE" ("BOUNDARY" "b1") NIL NIL) ` +
+					"BODY[HEADER.FIELDS (SUBJECT FROM)] {" + strconv.Itoa(len(hdr)) + "}\r\n" + hdr + ")\r\n" + f[0] + " OK FETCH Completed\r\n"
+				for i := range len(resp) { // byte by byte, to split the groups across reads
+					c.Write([]byte{resp[i]})
+				}
+			case "LOGOUT":
+				c.Write([]byte("* BYE\r\n" + f[0] + " OK bye\r\n"))
+				return
+			default:
+				c.Write([]byte(f[0] + " OK done\r\n"))
+			}
+		}
+	})
+	c, err := conn.DialIMAP(context.Background(), e)
+	require.NoError(t, err)
+	defer c.Close()
+	_, err = c.Select("INBOX", &imap.SelectOptions{ReadOnly: true}).Wait()
+	require.NoError(t, err)
+	sec := &imap.FetchItemBodySection{Specifier: imap.PartSpecifierHeader, HeaderFields: []string{"SUBJECT", "FROM"}, Peek: true}
+	msgs, err := c.Fetch(imap.SeqSetNum(1), &imap.FetchOptions{
+		UID:           true,
+		BodyStructure: &imap.FetchItemBodyStructure{Extended: true},
+		BodySection:   []*imap.FetchItemBodySection{sec},
+	}).Collect()
+	require.NoError(t, err)
+	require.Len(t, msgs, 1)
+	mp, ok := msgs[0].BodyStructure.(*imap.BodyStructureMultiPart)
+	require.True(t, ok)
+	require.Len(t, mp.Children, 2)
+	for _, ch := range mp.Children {
+		assert.Equal(t, "utf-8", ch.(*imap.BodyStructureSinglePart).Params["charset"])
+	}
+	assert.Equal(t, "Subject: hi\r\nFrom: a@example.com\r\n\r\n", string(msgs[0].FindBodySection(sec)))
+}
+
+// TestLogTraceOnParseError fakes the #450 failure, a "* (" line where a
+// response type belongs: the log gets the masked traffic before it, without
+// the login or the mail's words.
+func TestLogTraceOnParseError(t *testing.T) {
+	e := fake(t, func(c net.Conn) {
+		c.Write([]byte("* OK [CAPABILITY IMAP4rev1] hi\r\n"))
+		r := bufio.NewReader(c)
+		for {
+			line, err := r.ReadString('\n')
+			if err != nil {
+				return
+			}
+			f := strings.Fields(line)
+			if len(f) < 2 {
+				return
+			}
+			switch strings.ToUpper(f[1]) {
+			case "LOGIN":
+				c.Write([]byte(f[0] + " OK [CAPABILITY IMAP4rev1] logged in as alice\r\n"))
+			case "FETCH":
+				c.Write([]byte("* 1 FETCH (UID 42 BODY[TEXT] {14}\r\nSecret\r\nplans!)\r\n* (Seen)\r\n"))
+			default:
+				c.Write([]byte(f[0] + " OK done\r\n"))
+			}
+		}
+	})
+	c, err := conn.DialIMAP(context.Background(), e)
+	require.NoError(t, err)
+	defer c.Close()
+	_, err = c.Fetch(imap.SeqSetNum(1), &imap.FetchOptions{UID: true,
+		BodySection: []*imap.FetchItemBodySection{{Specifier: imap.PartSpecifierText}}}).Collect()
+	require.ErrorContains(t, err, `expected atom, got "("`)
+
+	var buf strings.Builder
+	log.SetOutput(&buf)
+	t.Cleanup(func() { log.SetOutput(os.Stderr) })
+	conn.LogTrace(c, err)
+	got := buf.String()
+	assert.Contains(t, got, "* 1 FETCH (UID 42 BODY[TEXT] {14}\n… 8 bytes in 1 lines of text\nxxxxx.)\n* (xxxx)")
+	for _, s := range []string{"hunter2", "alice", "Secret", "plans"} {
+		assert.NotContains(t, got, s)
+	}
+
+	buf.Reset()
+	conn.LogTrace(c, &imap.Error{Type: imap.StatusResponseTypeNo, Text: "in response"})
+	assert.Empty(t, buf.String(), "a NO from the server is not a parse error")
 }

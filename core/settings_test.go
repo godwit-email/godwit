@@ -27,7 +27,7 @@ func TestSettingsDefaults(t *testing.T) {
 	assert.Equal(t, Settings{Theme: "system", Density: "compact", FontSize: 14, SettingsVersion: 4, ReplyLanguage: "match",
 		KeepInBackground: true, UnreadOnAppIcon: true, NotifyNewMail: true, NotifyPreview: true, ThreadView: true, ThreadCollapse: true, ThreadCollapseThreshold: 5, RemoteImages: "auto", AutoLabel: true, LabelDisplay: "both", JudgeThreshold: 0.8,
 		MCPSend: "confirm", Masking: true, MaskCategories: defaultMaskCategories(),
-		SecurityWarnings: true, VerifiedBadge: true}, got)
+		SecurityWarnings: true, VerifiedBadge: true, ProxyMode: "system"}, got)
 }
 
 func TestSettingsRoundTrip(t *testing.T) {
@@ -39,6 +39,7 @@ func TestSettingsRoundTrip(t *testing.T) {
 	in.Theme, in.UILanguage, in.NoTranslate, in.DefaultModel = "dark", "zh-Hans", []string{"en", "fr"}, "svc/m"
 	in.UnreadOnAppIcon = false
 	in.JudgeThreshold = 0.83
+	in.ProxyMode = ProxyOff
 	_, err := s.SetSettings(t.Context(), in)
 	require.NoError(t, err)
 	select {
@@ -63,6 +64,7 @@ func TestSettingsRoundTrip(t *testing.T) {
 	assert.Equal(t, 14, got.FontSize)
 	assert.True(t, got.UnreadOnAppIcon, "older settings default to showing the app badge")
 	assert.Equal(t, 0.8, got.JudgeThreshold, "settings with no threshold use the default")
+	assert.Equal(t, ProxySystem, got.ProxyMode, "settings stored before the proxy setting follow the system")
 }
 
 func TestSettingsJudgeThresholdBounds(t *testing.T) {
@@ -120,6 +122,7 @@ func TestSettingsValidation(t *testing.T) {
 		"density":        func(x *Settings) { x.Density = "tiny" },
 		"reply":          func(x *Settings) { x.ReplyLanguage = "other" },
 		"labeldisplay":   func(x *Settings) { x.LabelDisplay = "invalid" },
+		"proxy":          func(x *Settings) { x.ProxyMode = "socks" },
 		"font":           func(x *Settings) { x.FontSize = 9 },
 		"bodyfont":       func(x *Settings) { x.BodyFontSize = 33 },
 		"lang":           func(x *Settings) { x.UILanguage = "zh_CN!" },
@@ -141,6 +144,51 @@ func TestSettingsValidation(t *testing.T) {
 	got, err := s.GetSettings(t.Context())
 	require.NoError(t, err)
 	assert.Equal(t, base, got)
+}
+
+// 自定义 needs a usable address; the other modes keep whatever was typed.
+func TestSettingsProxyURL(t *testing.T) {
+	s := settingsService(t, t.TempDir(), "")
+	st, _ := s.GetSettings(t.Context())
+	st.ProxyMode = ProxyCustom
+	for _, ok := range []string{"socks5://127.0.0.1:7890", "http://proxy.example:8080", "socks5://[::1]:1080"} {
+		st.ProxyURL = ok
+		_, err := s.SetSettings(t.Context(), st)
+		assert.NoError(t, err, ok)
+	}
+	for _, bad := range []string{"", "socks5://:1080", "socks5://h", "socks5://h:0", "socks5://h:65536", "socks5://h:1080/x",
+		"socks5://u:p@h:1080", "https://h:443", "socks4://h:1080", "h:1080", "socks5://h:1080?a", "socks5://[a:b]:1080"} {
+		in := st
+		in.ProxyURL = bad
+		_, err := s.SetSettings(t.Context(), in)
+		assert.Error(t, err, bad)
+		for _, mode := range []string{ProxySystem, ProxyOff} {
+			in.ProxyMode = mode
+			got, err := s.SetSettings(t.Context(), in)
+			if assert.NoError(t, err, "%s %q", mode, bad) {
+				assert.Equal(t, bad, got.ProxyURL, "kept in %s", mode)
+			}
+		}
+	}
+}
+
+// 不使用代理的主机 round-trips, up to MaxProxyBypass entries.
+func TestSettingsProxyBypass(t *testing.T) {
+	s := settingsService(t, t.TempDir(), "")
+	st, _ := s.GetSettings(t.Context())
+	st.ProxyBypass = []string{"*.corp.example", ".lan", "mail.home", "10.0.0.0/8", "192.168.1.5"}
+	_, err := s.SetSettings(t.Context(), st)
+	require.NoError(t, err)
+	got, err := s.GetSettings(t.Context())
+	require.NoError(t, err)
+	assert.Equal(t, st.ProxyBypass, got.ProxyBypass)
+
+	st.ProxyBypass = make([]string, 201)
+	for i := range st.ProxyBypass {
+		st.ProxyBypass[i] = "h.example"
+	}
+	_, err = s.SetSettings(t.Context(), st)
+	assert.Error(t, err, "an over-long list")
 }
 
 func TestReadingLanguageFallback(t *testing.T) {

@@ -4,11 +4,13 @@ package conn
 import (
 	"context"
 	"crypto/tls"
+	"crypto/x509"
 	"errors"
 	"fmt"
 	"io"
 	"mime"
 	"net"
+	"net/url"
 	"strconv"
 	"time"
 
@@ -17,6 +19,7 @@ import (
 	"github.com/emersion/go-message/charset"
 	"github.com/emersion/go-sasl"
 	"github.com/emersion/go-smtp"
+	"github.com/godwit-email/godwit/internal/sysproxy"
 )
 
 // Security selects the transport protection of a connection.
@@ -37,6 +40,14 @@ var ErrAuthFailed = errors.New("authentication failed")
 // ClientVersion is sent in the IMAP ID command; release builds set it.
 var ClientVersion = "dev"
 
+// SystemProxy is the proxy for a request to u, nil for none: the user's;
+// tests stand in for it.
+var SystemProxy = sysproxy.For
+
+// TLSRoots verifies servers' certificates, nil for the system's; tests
+// stand in for it.
+var TLSRoots *x509.CertPool
+
 // Endpoint describes one server and the credentials to use on it. A non-empty
 // AccessToken selects XOAUTH2 and Password is ignored.
 type Endpoint struct {
@@ -49,12 +60,26 @@ type Endpoint struct {
 
 func (e Endpoint) addr() string { return net.JoinHostPort(e.Host, strconv.Itoa(e.Port)) }
 
+// dial connects to e, through the system proxy when it names one. The proxy
+// gets the host name, not an address, so it resolves it; TLS still checks
+// the certificate against e.Host.
+func (e Endpoint) dial(ctx context.Context) (net.Conn, error) {
+	// a server on this computer (a bridge such as Proton's) never goes through the proxy
+	if !sysproxy.OnThisComputer(e.Host) {
+		// https: mail is a tunnel to a non-web port, which is what the https proxy carries
+		if p := SystemProxy(&url.URL{Scheme: "https", Host: e.addr()}); p != nil {
+			return sysproxy.Dial(ctx, p, e.addr())
+		}
+	}
+	return (&net.Dialer{}).DialContext(ctx, "tcp", e.addr())
+}
+
 // open dials e and returns the raw connection plus a bound context. Everything
 // until the returned release func runs (dial, TLS, greeting, auth) is limited to
 // 30 seconds or ctx, whichever ends first; cancellation closes the connection.
 func (e Endpoint) open(ctx context.Context, implicitTLS bool) (net.Conn, context.Context, func(), error) {
 	ctx2, cancel := context.WithTimeout(ctx, timeout)
-	raw, err := (&net.Dialer{}).DialContext(ctx2, "tcp", e.addr())
+	raw, err := e.dial(ctx2)
 	if err != nil {
 		cancel()
 		return nil, nil, nil, err
@@ -66,7 +91,7 @@ func (e Endpoint) open(ctx context.Context, implicitTLS bool) (net.Conn, context
 	stop := context.AfterFunc(ctx2, func() { raw.Close() })
 	var nc net.Conn = raw
 	if implicitTLS {
-		tc := tls.Client(raw, &tls.Config{ServerName: e.Host})
+		tc := tls.Client(raw, &tls.Config{ServerName: e.Host, RootCAs: TLSRoots})
 		if err := tc.HandshakeContext(ctx2); err != nil {
 			err = ctxErr(ctx2, err) // before cancel(), which would make every failure look cancelled
 			stop()
@@ -128,20 +153,39 @@ func DialIMAP(ctx context.Context, e Endpoint) (*imapclient.Client, error) {
 // being read, so it can cut off a download. h, if not nil, receives unsolicited
 // server updates (IDLE).
 func DialIMAPAbortable(ctx context.Context, e Endpoint, h *imapclient.UnilateralDataHandler) (*imapclient.Client, func(), error) {
+	c, abort, err := dialIMAP(ctx, e, h)
+	if plaintextOnTLS(e, err) {
+		e.Security = StartTLS
+		c, abort, err = dialIMAP(ctx, e, h)
+	}
+	return c, abort, err
+}
+
+// plaintextOnTLS reports whether e asked for implicit TLS but the server greeted
+// in plaintext: a STARTTLS port (587, 143) set to SSL/TLS. Like Apple Mail, the
+// dial is retried with STARTTLS, which still fails rather than run unencrypted.
+func plaintextOnTLS(e Endpoint, err error) bool {
+	var rh tls.RecordHeaderError
+	return e.Security == TLS && errors.As(err, &rh)
+}
+
+func dialIMAP(ctx context.Context, e Endpoint, h *imapclient.UnilateralDataHandler) (*imapclient.Client, func(), error) {
 	nc, cctx, release, err := e.open(ctx, e.Security == TLS)
 	if err != nil {
 		return nil, nil, fmt.Errorf("imap connect %s: %w", e.addr(), err)
 	}
+	tr := &trace{}
 	opts := &imapclient.Options{
-		TLSConfig:   &tls.Config{ServerName: e.Host},
+		TLSConfig:   &tls.Config{ServerName: e.Host, RootCAs: TLSRoots},
 		WordDecoder: &mime.WordDecoder{CharsetReader: charset.Reader}, // GBK/Big5 words in BODYSTRUCTURE
+		DebugWriter: tr,                                               // armed after login; see LogTrace
 
 		UnilateralDataHandler: h,
 	}
 	var c *imapclient.Client
 	switch e.Security {
 	case TLS, None:
-		c = imapclient.New(&imapConn{Conn: nc}, opts)
+		c = imapclient.New(nc, opts)
 		err = c.WaitGreeting()
 	case StartTLS:
 		c, err = imapclient.NewStartTLS(nc, opts)
@@ -168,6 +212,8 @@ func DialIMAPAbortable(ctx context.Context, e Endpoint, h *imapclient.Unilateral
 		return nil, nil, err
 	}
 	release()
+	tr.arm()
+	addTrace(c, tr)
 	return c, func() { nc.Close() }, nil
 }
 
@@ -187,6 +233,9 @@ func imapLogin(c *imapclient.Client, e Endpoint) error {
 
 func smtpAuth(c *smtp.Client, e Endpoint) error {
 	if e.AccessToken == "" {
+		if !c.SupportsAuth(sasl.Plain) && c.SupportsAuth(sasl.Login) {
+			return c.Auth(sasl.NewLoginClient(e.Username, e.Password)) // Exchange (#406)
+		}
 		return c.Auth(sasl.NewPlainClient("", e.Username, e.Password))
 	}
 	if !c.SupportsAuth("XOAUTH2") {
@@ -202,6 +251,15 @@ func smtpAuth(c *smtp.Client, e Endpoint) error {
 // DialSMTP connects to e and authenticates with PLAIN, or XOAUTH2 when e has an
 // AccessToken.
 func DialSMTP(ctx context.Context, e Endpoint) (*smtp.Client, error) {
+	c, err := dialSMTP(ctx, e)
+	if plaintextOnTLS(e, err) {
+		e.Security = StartTLS
+		c, err = dialSMTP(ctx, e)
+	}
+	return c, err
+}
+
+func dialSMTP(ctx context.Context, e Endpoint) (*smtp.Client, error) {
 	nc, cctx, release, err := e.open(ctx, e.Security == TLS)
 	if err != nil {
 		return nil, fmt.Errorf("smtp connect %s: %w", e.addr(), err)
@@ -211,7 +269,7 @@ func DialSMTP(ctx context.Context, e Endpoint) (*smtp.Client, error) {
 	case TLS, None:
 		c = smtp.NewClient(nc)
 	case StartTLS:
-		c, err = smtp.NewClientStartTLS(nc, &tls.Config{ServerName: e.Host})
+		c, err = smtp.NewClientStartTLS(nc, &tls.Config{ServerName: e.Host, RootCAs: TLSRoots})
 	default:
 		err = fmt.Errorf("conn: unknown security %q", e.Security)
 	}
@@ -229,86 +287,4 @@ func DialSMTP(ctx context.Context, e Endpoint) (*smtp.Client, error) {
 	}
 	release()
 	return c, nil
-}
-
-// imapConn inserts the space some servers (Strato / Open-Xchange) omit after
-// an empty literal: "{0}\r\nUID 42" instead of "{0}\r\n UID 42". It tracks
-// every "{N}\r\n" so literal contents (message bodies) pass through untouched.
-// Only the TLS and plain paths use it: STARTTLS upgrades the raw conn inside
-// imapclient, below which this would see ciphertext.
-type imapConn struct {
-	net.Conn
-	state int    // 0 scanning, 1 in "{N", 2 after "}", 3 after "}\r"
-	n     int64  // literal size being parsed
-	skip  int64  // literal bytes left to pass through
-	empty bool   // the previous byte ended an empty literal
-	extra []byte // leftover bytes when an inserted ' ' overflowed p
-	err   error
-}
-
-// step consumes one byte and reports whether a space must go before it.
-func (c *imapConn) step(b byte) bool {
-	if c.skip > 0 {
-		c.skip--
-		return false
-	}
-	space := c.empty && b >= 'A' && b <= 'Z'
-	c.empty = false
-	switch {
-	case c.state == 1 && b >= '0' && b <= '9' && c.n < 1<<40:
-		c.n = c.n*10 + int64(b-'0')
-	case c.state == 1 && b == '}':
-		c.state = 2
-	case c.state == 2 && b == '\r':
-		c.state = 3
-	case c.state == 3 && b == '\n':
-		c.state, c.skip, c.empty = 0, c.n, c.n == 0
-	case b == '{':
-		c.state, c.n = 1, 0
-	default:
-		c.state = 0
-	}
-	return space
-}
-
-func (c *imapConn) Read(p []byte) (int, error) {
-	if len(p) == 0 {
-		return 0, nil
-	}
-	if len(c.extra) > 0 {
-		n := copy(p, c.extra)
-		c.extra = c.extra[n:]
-		var err error
-		if len(c.extra) == 0 {
-			err, c.err = c.err, nil
-		}
-		return n, err
-	}
-	n, err := c.Conn.Read(p)
-	if int64(n) <= c.skip {
-		c.skip -= int64(n)
-		return n, err
-	}
-	var out []byte
-	for i, b := range p[:n] {
-		if c.step(b) {
-			if out == nil {
-				out = append(make([]byte, 0, n+4), p[:i]...)
-			}
-			out = append(out, ' ')
-		}
-		if out != nil {
-			out = append(out, b)
-		}
-	}
-	if out == nil {
-		return n, err
-	}
-	copied := copy(p, out)
-	if copied < len(out) {
-		c.extra = append(c.extra[:0], out[copied:]...)
-		c.err = err
-		return copied, nil
-	}
-	return copied, err
 }

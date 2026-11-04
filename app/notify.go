@@ -262,5 +262,12 @@ func (a *App) finishBatch() {
 // batchPending reports whether the Sync All in flight still waits on the account.
 func (a *App) batchPending(id int64) bool { return a.syncBatch != nil && a.syncBatch.pending[id] }
 
-// KeepInBackground reports whether closing the window only hides it.
-func (a *App) KeepInBackground() bool { return a.settings.KeepInBackground }
+// KeepInBackground reports whether closing the window only hides it: 后台常驻
+// is on, or an enabled rule runs in the background.
+func (a *App) KeepInBackground() bool {
+	if a.settings.KeepInBackground {
+		return true
+	}
+	on, _ := a.svc.RulesInBackground(context.Background()) // an error quits, as with no such rule
+	return on
+}

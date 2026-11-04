@@ -27,13 +27,25 @@ var (
 	onParked         func(id int64)
 )
 
+// wakeSource is what a time set with wakeWorkerAt is for. Each source keeps its
+// own time, so one does not drop another's.
+type wakeSource int
+
+const (
+	wakeOutbox wakeSource = iota // the next queued outbox item comes due
+	wakePurge                    // the next purge's undo window ends
+	wakeSources
+)
+
 // worker is one account's background sync goroutine.
 type worker struct {
 	ctx    context.Context
 	cancel context.CancelFunc
 	done   chan struct{}
 	wake   chan struct{} // buffered 1: a local change asks for a sync
-	// stopTimer stops the timer wakeWorkerAt set, nil if none. Under workersMu.
+	// due is when each source wants a sync, zero for none; stopTimer stops the
+	// timer set for the earliest, nil if none. Under workersMu.
+	due       [wakeSources]time.Time
 	stopTimer func() bool
 }
 
@@ -99,23 +111,52 @@ func (s *Service) wakeWorker(id int64) {
 	}
 }
 
-// wakeWorkerAt has the account's worker sync at t (on the Service's clock), in
-// place of the time set before; a zero t sets none.
-func (s *Service) wakeWorkerAt(id int64, t time.Time) {
+// wakeWorkerAt has the account's worker sync at t (on the Service's clock) for
+// src, in place of the time src set before; a zero t sets none. The worker
+// wakes at the earliest time of any source.
+func (s *Service) wakeWorkerAt(id int64, src wakeSource, t time.Time) {
 	s.workersMu.Lock()
 	defer s.workersMu.Unlock()
 	w := s.workers[id]
 	if w == nil || w.ctx.Err() != nil {
 		return
 	}
+	w.due[src] = t
+	s.armWorker(id, w)
+}
+
+// armWorker sets w's timer for the earliest time a source wants. When it fires,
+// the times it reached are spent, the timer is set for the rest and the worker
+// syncs. Under workersMu.
+func (s *Service) armWorker(id int64, w *worker) {
 	if w.stopTimer != nil {
 		w.stopTimer()
 		w.stopTimer = nil
 	}
-	if !t.IsZero() {
-		c := s.clk()
-		w.stopTimer = c.AfterFunc(t.Sub(c.Now()), func() { s.wakeWorker(id) })
+	var next time.Time
+	for _, t := range w.due {
+		if !t.IsZero() && (next.IsZero() || t.Before(next)) {
+			next = t
+		}
 	}
+	if next.IsZero() {
+		return
+	}
+	c := s.clk()
+	w.stopTimer = c.AfterFunc(next.Sub(c.Now()), func() {
+		s.workersMu.Lock()
+		if w.ctx.Err() == nil {
+			now := c.Now()
+			for i, t := range w.due {
+				if !t.After(now) {
+					w.due[i] = time.Time{}
+				}
+			}
+			s.armWorker(id, w)
+		}
+		s.workersMu.Unlock()
+		s.wakeWorker(id)
+	})
 }
 
 func (s *Service) runWorker(ctx context.Context, id int64, wake chan struct{}) {

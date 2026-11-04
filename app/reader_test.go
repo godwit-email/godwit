@@ -1016,8 +1016,27 @@ func TestFileName(t *testing.T) {
 		"trailing. . ":         "trailing",
 		"invoice\u202efdp.exe": "invoice_fdp.exe",
 	} {
-		if got := fileName(in, "attachment"); got != want {
-			t.Errorf("fileName(%q) = %q, want %q", in, got, want)
+		if got := core.FileName(in, "attachment"); got != want {
+			t.Errorf("FileName(%q) = %q, want %q", in, got, want)
+		}
+	}
+}
+
+func TestIconExt(t *testing.T) {
+	for in, want := range map[string]string{
+		"Statement.PDF":       "pdf",
+		"archive.tar.gz":      "gz",
+		"noext":               "",
+		"x.":                  "",
+		"x.../../a":           "",
+		"x.p d f":             "",
+		"x.pdf\u202e":         "",
+		"x.abcdefghijk":       "",
+		"x.docx":              "docx",
+		"photo.\u00e9t\u00e9": "",
+	} {
+		if got := iconExt(in); got != want {
+			t.Errorf("iconExt(%q) = %q, want %q", in, got, want)
 		}
 	}
 }
@@ -1611,4 +1630,72 @@ func TestReaderSecurityVerifiedDomainCard(t *testing.T) {
 	h.seeBody(m.ID)
 	h.hover(i18n.T("reader.security.verified_badge"))
 	h.see(i18n.T("reader.security.verified_desc"))
+}
+
+func TestReaderSecurityManualAdjustment(t *testing.T) {
+	h, accs := mailHarness(t, nil, "alice@example.com")
+	acc := accs[0]
+	m := h.deliverOne(acc, coretest.Msg("\"Example Shop\" <shop@example.com>", acc.Email, "Order Confirmation", "Thank you for your order"))
+	h.openThread(m.ThreadID)
+	h.seeBody(m.ID)
+
+	// 1. Manually mark safe
+	h.app.mail.reader.applySecurity(m.ID, "manual_safe")
+	h.until("manual safe applied", func() bool {
+		return h.app.mail.reader.msgs[0].Security.Reason == "manual_safe"
+	})
+	h.hover(i18n.T("reader.security.manual_safe_badge"))
+	h.see(i18n.T("reader.security.manual_safe_desc"))
+
+	// 2. Manually mark warning / threat
+	h.app.mail.reader.applySecurity(m.ID, "manual_warning")
+	h.until("manual warning applied", func() bool {
+		return h.app.mail.reader.msgs[0].Security.Reason == "manual_warning"
+	})
+	h.hover(i18n.T("reader.security.manual_warning_badge"))
+	h.see(i18n.T("reader.security.manual_warning_desc"))
+
+	// 3. Reset security classification
+	h.app.mail.reader.applySecurity(m.ID, "")
+	h.until("security reset", func() bool {
+		return h.app.mail.reader.msgs[0].Security.Reason == ""
+	})
+
+	// 4. Test mailPage toggleLabel and applySecurity
+	lbl, err := h.app.svc.CreateLabel(t.Context(), core.LabelInput{Name: "Finance", Color: "green", Icon: "money-dollar-circle"})
+	if err != nil {
+		t.Fatalf("CreateLabel: %v", err)
+	}
+	item := mailItem{ID: m.ID, Thread: false}
+	h.app.mail.toggleLabel([]mailItem{item}, lbl.ID, true)
+	h.until("label applied", func() bool {
+		lbs, err := h.app.svc.MessageLabels(t.Context(), []int64{m.ID})
+		return err == nil && len(lbs[m.ID]) > 0 && lbs[m.ID][0].LabelID == lbl.ID
+	})
+
+	h.app.mail.applySecurity([]mailItem{item}, "manual_suspicious")
+	h.until("mailPage applySecurity", func() bool {
+		th, err := h.app.svc.GetThread(t.Context(), m.ThreadID)
+		return err == nil && len(th.Messages) > 0 && th.Messages[0].Security.Reason == "manual_suspicious"
+	})
+
+	// 5. Test security popover body rendering
+	r := h.app.mail.reader
+	r.secMenuOpen = true
+	r.secMenuMsgID = m.ID
+	h.tt.Frame()
+	h.see(i18n.T("reader.security.edit_title"))
+	h.see(i18n.T("mail.security.mark_safe"))
+	h.see(i18n.T("mail.security.mark_warning"))
+	h.see(i18n.T("mail.security.reset"))
+	r.secMenuOpen = false
+
+	// 6. Test sender menu options for security and labels
+	r.senderOpen = true
+	r.senderMsgID = m.ID
+	h.tt.Frame()
+	h.see(i18n.T("reader.message.labels"))
+	h.see(i18n.T("reader.security.edit_title"))
+	r.senderOpen = false
+	h.tt.Frame()
 }

@@ -88,6 +88,8 @@ var table = []Error{
 	{Code: "signature_image_count", Err: core.ErrSignatureImageCount},
 	{Code: "signature_not_found", Err: core.ErrSignatureNotFound},
 	{Code: "signature_name", Err: core.ErrSignatureName},
+	{Code: "invalid_rule", Err: core.ErrInvalidRule},
+	{Code: "recipient_unconfirmed", Err: core.ErrRecipientUnconfirmed},
 	{Code: "account_icon", Err: core.ErrAccountIcon},
 	{Code: "not_grantable", Err: core.ErrNotGrantable},
 	{Code: "needs_answer", Err: core.ErrNeedsAnswer},
@@ -98,6 +100,7 @@ var table = []Error{
 	{Code: "no_unsubscribe", Err: core.ErrNoUnsubscribe},
 	{Code: "unsubscribe_web", Err: core.ErrUnsubscribeWeb},
 	{Code: "unsubscribing", Err: core.ErrUnsubscribing},
+	{Code: "purge_too_late", Err: core.ErrPurgeTooLate, Key: "mail.purge.too_late"},
 	{Code: "canceled", Err: context.Canceled},
 	{Code: "deadline", Err: context.DeadlineExceeded},
 	{Code: "auth_failed", Err: conn.ErrAuthFailed}, // also a failed account check's cause
@@ -191,6 +194,7 @@ var hidden = map[string]bool{
 	"Close":         true, // the owner's lifetime, not a client's
 	"Redact":        true, // a client could test guesses of the owner's secrets against it
 	"AuditExternal": true, // writes audit rows; only the owner records what clients did
+	"Proxy":         true, // a custom proxy's URL carries its password
 	// They fetch images from remote hosts for the native UI.
 	"SenderAvatar": true, "ModelServiceAvatar": true,
 	// A channel and a stop func; RPC clients have SubscribeConversation.

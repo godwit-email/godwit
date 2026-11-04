@@ -148,10 +148,15 @@ func initial(name string) string {
 // Avatar is a rounded square with the initial of name, labelled name, in a
 // label color the name picks, so each sender keeps theirs.
 func Avatar(c *ui.Context, name string) ui.Element {
+	return AvatarSized(c, name, c.Theme().Space(8))
+}
+
+// AvatarSized is Avatar size wide, its initial grown in step.
+func AvatarSized(c *ui.Context, name string, size float32) ui.Element {
 	t, th := theme.Of(c), c.Theme()
 	col := avatarColor(t, name)
-	return ui.Box(c).Size(th.Space(8), th.Space(8)).Shrink(0).Radius(t.Radius.Lg).Background(col.Fill).Center().Label(name).Children(func() {
-		ui.Text(c, initial(name)).FontWeight(600).FontSize(t.Text.Base).LineHeight(theme.LineTight).TextColor(col.Text)
+	return ui.Box(c).Size(size, size).Shrink(0).Radius(t.Radius.Lg).Background(col.Fill).Center().Label(name).Children(func() {
+		ui.Text(c, initial(name)).FontWeight(600).FontSize(t.Text.Base * size / th.Space(8)).LineHeight(theme.LineTight).TextColor(col.Text)
 	})
 }
 

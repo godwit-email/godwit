@@ -41,6 +41,7 @@ const (
 	featureLabels    = "labels"
 	featureCompact   = "compact"
 	featurePlugin    = "plugin"
+	featureRules     = "rules" // a rule's AI action
 )
 
 // maskLogDays is how long the masking log keeps a request's record.

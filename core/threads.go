@@ -82,8 +82,8 @@ func (s *Service) ListThreads(ctx context.Context, v View, cursor string, limit 
 	if len(ids) == 0 {
 		return page, nil
 	}
-	ms, err := s.db.Query(ctx, `SELECT thread_id, from_addr, snippet, flags, has_attachments, auth_results, security_status, security_reason, security_scanned_at FROM messages
-		WHERE thread_id IN (`+strings.TrimSuffix(strings.Repeat("?,", len(ids)), ",")+`) ORDER BY date DESC, id DESC`, ids...)
+	ms, err := s.db.Query(ctx, `SELECT thread_id, from_addr, snippet, flags, has_attachments, auth_results, security_status, security_reason, security_scanned_at FROM messages m
+		WHERE thread_id IN (`+strings.TrimSuffix(strings.Repeat("?,", len(ids)), ",")+`) AND `+notPurgedCond+` ORDER BY date DESC, id DESC`, ids...)
 	if err != nil {
 		return ThreadPage{}, err
 	}
@@ -133,7 +133,7 @@ func (s *Service) GetThread(ctx context.Context, id int64) (Thread, error) {
 		return Thread{}, fmt.Errorf("thread %d not found", id)
 	}
 	t := Thread{ID: id, Subject: store.Str(rows.Values[0][0])}
-	ms, err := s.db.Query(ctx, "SELECT "+msgCols+" FROM messages m WHERE m.thread_id = ? ORDER BY m.date, m.id", id)
+	ms, err := s.db.Query(ctx, "SELECT "+msgCols+" FROM messages m WHERE m.thread_id = ? AND "+notPurgedCond+" ORDER BY m.date, m.id", id)
 	if err != nil {
 		return Thread{}, err
 	}

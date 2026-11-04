@@ -226,6 +226,14 @@ test("first ask creates and keeps the conversation", async () => {
   // no switch (it would have dropped the answer): 7's only read is the end's reconcile
   await waitFor(() => expect(api.follow).toHaveBeenLastCalledWith(7));
   expect(vi.mocked(api.follow).mock.calls.filter(([c]) => c === 7)).toHaveLength(1);
+  // a new turn, as the host gives: the SDK updates a streamed answer whose ID it already has
+  vi.mocked(api.ask).mockResolvedValueOnce({
+    run: 10,
+    conversation: 7,
+    revision: 1,
+    conflict: false,
+    turn: "2",
+  });
   await user.type(input(), "second{Enter}");
   await waitFor(() => expect(api.ask).toHaveBeenLastCalledWith(7, "second", [], "", "", "", zone));
   expect(screen.getByText("made")).toBeInTheDocument();

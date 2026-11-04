@@ -165,6 +165,22 @@ func TestClassifySkipsManual(t *testing.T) {
 	require.Equal(t, 1, on)
 }
 
+// A label a rule set is the rule's: the classifier neither asks about nor removes it.
+func TestClassifySkipsRule(t *testing.T) {
+	s := newLabelService(t, "", "zh-CN")
+	l := labelIDs(t, s)
+	j := &fakeJudge{p: map[string]float64{"bill": 0.1}}
+	useLabelJudge(s, j)
+	a := addMessage(t, s, "a", "a@x", "", "", 1)
+	setRow(t, s, a, l["bill"], "rule", 1)
+	_, err := s.classifyBatch(t.Context())
+	require.NoError(t, err)
+	require.NotContains(t, qNames(j.qs[0]), "bill")
+	src, on := labelRow(t, s, a, l["bill"])
+	require.Equal(t, "rule", src)
+	require.Equal(t, 1, on)
+}
+
 func TestClassifyOnlyInbox(t *testing.T) {
 	s := newLabelService(t, "", "zh-CN")
 	j := &fakeJudge{}
@@ -644,4 +660,47 @@ func TestRescanBeforePresets(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, []AppliedLabel{{LabelID: l.ID, Auto: true}}, got[a])
 	require.Nil(t, labeledAt(t, s, fresh), "new mail still waits for the presets")
+}
+
+// A label the judge puts on new mail logs label.applied, for the label
+// rules; one a rescan puts on old mail does not, so a rule saved since
+// forwards none of it.
+func TestRescanLogsNoLabelApplied(t *testing.T) {
+	s := newLabelService(t, "", "zh-CN")
+	judge := &fakeJudge{p: map[string]float64{"otp": 0.99}}
+	useLabelJudge(s, judge)
+	now := time.Now().Unix()
+	logged := func(id int64) int {
+		rows, err := s.db.Query(t.Context(), "SELECT count(*) FROM events_log WHERE type = ? AND message_id = ?", eventLabelApplied, id)
+		require.NoError(t, err)
+		return int(store.Int(rows.Values[0][0]))
+	}
+	received := func(id int64) {
+		_, err := s.db.Execute(t.Context(), "INSERT INTO events_log(type, account_id, message_id, created_at) VALUES ('message.received', 1, ?, unixepoch())", id)
+		require.NoError(t, err)
+	}
+	a := addMessage(t, s, "new", "a@x", "", "", now)
+	received(a)
+	_, err := s.classifyBatch(t.Context())
+	require.NoError(t, err)
+	require.Equal(t, 1, logged(a), "new mail")
+
+	judge.mu.Lock()
+	judge.p = map[string]float64{}
+	judge.mu.Unlock()
+	b := addMessage(t, s, "old", "b@x", "", "", now)
+	received(b)
+	_, err = s.classifyBatch(t.Context())
+	require.NoError(t, err)
+	require.Zero(t, logged(b))
+	judge.mu.Lock()
+	judge.p = map[string]float64{"otp": 0.99}
+	judge.mu.Unlock()
+	_, err = s.RescanLabels(t.Context(), 30, true)
+	require.NoError(t, err)
+	_, err = s.classifyBatch(t.Context())
+	require.NoError(t, err)
+	_, on := labelRow(t, s, b, labelIDs(t, s)["otp"])
+	require.Equal(t, 1, on, "the rescan put the label on")
+	require.Zero(t, logged(b), "but logged no label.applied")
 }

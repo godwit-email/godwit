@@ -220,11 +220,11 @@ func (p *palette) convActs(id int64, open func()) func() []palAct {
 
 // contactActs are a contact's: write to them, list their mail, copy the
 // address.
-func (p *palette) contactActs(addr string, open func()) func() []palAct {
+func (p *palette) contactActs(addr string) func() []palAct {
 	return func() []palAct {
 		return []palAct{
 			{title: i18n.T("palette.action.compose"), run: func() { p.open = false; p.a.composeTo(addr) }},
-			{title: i18n.T("palette.act.contact_mail"), run: func() { p.open = false; open() }},
+			{title: i18n.T("palette.act.contact_mail"), run: func() { p.open = false; p.a.mail.mailFrom(addr) }},
 			{i18n.T("palette.act.copy_address"), func() { p.m.clip = addr }, ui.Cmd, ui.KeyC},
 		}
 	}

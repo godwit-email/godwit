@@ -90,6 +90,32 @@ func TestOnboardingPasswordFlow(t *testing.T) {
 	}
 }
 
+// TestOnboardingProxyFailures: a proxy failure names the proxy, never the password.
+func TestOnboardingProxyFailures(t *testing.T) {
+	o := &onboarding{}
+	for st, want := range map[core.CheckStep]string{
+		{Name: "imap", Kind: "proxy_unreachable"}: "IMAP 连接失败：连不上代理服务器",
+		{Name: "imap", Kind: "proxy_refused"}:     "IMAP 连接失败：代理拒绝了连接",
+		{Name: "smtp", Kind: "proxy_auth"}:        "SMTP 连接失败：代理认证失败",
+		{Name: "imap", Kind: "proxy_refused", Detail: "dial imap.example:993: proxy refused the tunnel: 403 Forbidden"}: "IMAP 连接失败：代理拒绝了连接：403",
+	} {
+		text, next, status := o.checkRow(st)
+		if text != want || next != "检查代理设置" || status != 2 {
+			t.Errorf("%s: %q, %q, %d", st.Kind, text, next, status)
+		}
+	}
+	// the sync status says the same of a failing sync
+	for kind, want := range map[string]string{
+		"proxy_unreachable": "连不上代理服务器，同步 imap.example 需要它",
+		"proxy_refused":     "代理拒绝了到 imap.example 的连接",
+		"proxy_auth":        "代理认证失败，无法连接 imap.example",
+	} {
+		if got := failCause(kind, "imap.example"); got != want {
+			t.Errorf("failCause(%s) = %q", kind, got)
+		}
+	}
+}
+
 func TestOnboardingProviderEmail(t *testing.T) {
 	for _, p := range append(auth.ListProviders(), otherProvider) {
 		if p.Login == "oauth" || !listed(p) {

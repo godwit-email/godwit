@@ -1,5 +1,70 @@
 # Changelog
 
+## [1.25.0](https://github.com/godwit-email/godwit/compare/v1.24.1...v1.25.0) (2026-11-02)
+
+
+### Features
+
+* **conn:** dial IMAP and SMTP through the system proxy ([#422](https://github.com/godwit-email/godwit/issues/422)) ([ca7c025](https://github.com/godwit-email/godwit/commit/ca7c0257d9ff8a7df5d1e582d9cb26e7e1ed70df))
+* **settings:** a Godwit proxy setting — follow the system, custom, or off ([#432](https://github.com/godwit-email/godwit/issues/432)) ([759c106](https://github.com/godwit-email/godwit/commit/759c1066d7bb46a0ccea18f179d5fac55c91b496))
+
+
+### Bug Fixes
+
+* **windows:** open the window on a tray click, and run gh without a console ([#423](https://github.com/godwit-email/godwit/issues/423)) ([019c9f8](https://github.com/godwit-email/godwit/commit/019c9f876ed6ba16aef33be6f14ea244e2573205))
+
+## [1.24.1](https://github.com/godwit-email/godwit/compare/v1.24.0...v1.24.1) (2026-11-01)
+
+
+### Bug Fixes
+
+* **conn:** sign in to SMTP with AUTH LOGIN when PLAIN isn't offered ([#414](https://github.com/godwit-email/godwit/issues/414)) ([63dab24](https://github.com/godwit-email/godwit/commit/63dab241d5ab8e6bf3d01904250317c5721033f2)), closes [#406](https://github.com/godwit-email/godwit/issues/406)
+
+## [1.24.0](https://github.com/godwit-email/godwit/compare/v1.23.1...v1.24.0) (2026-11-01)
+
+
+### Features
+
+* **app:** report an unknown error as a GitHub issue ([#409](https://github.com/godwit-email/godwit/issues/409)) ([198a137](https://github.com/godwit-email/godwit/commit/198a137eccad0203c196d6e0d9d43946a22c89fd))
+
+## [1.23.1](https://github.com/godwit-email/godwit/compare/v1.23.0...v1.23.1) (2026-11-01)
+
+
+### Bug Fixes
+
+* **conn:** retry with STARTTLS when an SSL/TLS port greets in plaintext ([#407](https://github.com/godwit-email/godwit/issues/407)) ([698952e](https://github.com/godwit-email/godwit/commit/698952ee3ff5060cdaedb195977d6fa09d401787)), closes [#406](https://github.com/godwit-email/godwit/issues/406)
+
+## [1.23.0](https://github.com/godwit-email/godwit/compare/v1.22.0...v1.23.0) (2026-11-01)
+
+
+### Features
+
+* **reader:** show the system's file type icon on attachment tiles ([#405](https://github.com/godwit-email/godwit/issues/405)) ([4d774a6](https://github.com/godwit-email/godwit/commit/4d774a65ebe46ceaacc08c65ad0e72c23e657f69))
+
+
+### Bug Fixes
+
+* **assist:** one-click and selection rewrites follow the sending account ([#400](https://github.com/godwit-email/godwit/issues/400)) ([b27392e](https://github.com/godwit-email/godwit/commit/b27392e12618f2875f887f484d5c8127d0c0e612))
+* **reader:** bare links in AI output end at CJK punctuation ([#403](https://github.com/godwit-email/godwit/issues/403)) ([1fede1a](https://github.com/godwit-email/godwit/commit/1fede1a03f232b9907fdbe02d11ccfa029a8457e))
+
+## [1.22.0](https://github.com/godwit-email/godwit/compare/v1.21.0...v1.22.0) (2026-11-01)
+
+
+### Features
+
+* **ai:** answer judge questions with the small model when no judge is set ([#380](https://github.com/godwit-email/godwit/issues/380)) ([8fbdf20](https://github.com/godwit-email/godwit/commit/8fbdf20c0a410de65a428cf3f813aecc52f33259))
+* **ai:** give quick replies the whole thread ([#382](https://github.com/godwit-email/godwit/issues/382)) ([6536505](https://github.com/godwit-email/godwit/commit/65365051ce39a631dbc87014d10c213b4b8897e6))
+* **auth:** sign in to Gmail with OAuth (own client, client_secret import, Thunderbird's public client) ([#395](https://github.com/godwit-email/godwit/issues/395)) ([72d3462](https://github.com/godwit-email/godwit/commit/72d3462d18d25b10a77e490300a16eef98ade156))
+* **contacts:** contacts page beside Mail and Wit, with unsubscribe, undoable archive all and block ([#383](https://github.com/godwit-email/godwit/issues/383)) ([f2a02ab](https://github.com/godwit-email/godwit/commit/f2a02ab47ed0e3caca280c4c92bdfc55d25f14ca))
+* **windows:** check for updates in the Microsoft Store version ([#378](https://github.com/godwit-email/godwit/issues/378)) ([67eeeb9](https://github.com/godwit-email/godwit/commit/67eeeb98a9966f4e0ba590fa0bd3ab8913684c02))
+
+
+### Bug Fixes
+
+* **ai:** name the destination on Wit's unsubscribe and open-link approvals ([#384](https://github.com/godwit-email/godwit/issues/384)) ([05f537c](https://github.com/godwit-email/godwit/commit/05f537c1533a8a08815279262125199951783f92))
+* **imap:** work around Tencent Exmail's BODYSTRUCTURE and HEADER.FIELDS quirks ([#394](https://github.com/godwit-email/godwit/issues/394)) ([66e7967](https://github.com/godwit-email/godwit/commit/66e7967602e792011d0f7a89a6d83146ef762062)), closes [#387](https://github.com/godwit-email/godwit/issues/387) [#388](https://github.com/godwit-email/godwit/issues/388)
+* **sync:** import Gmail messages whose BODYSTRUCTURE go-imap rejects ([#396](https://github.com/godwit-email/godwit/issues/396)) ([d53c836](https://github.com/godwit-email/godwit/commit/d53c836793d03cef43a1e41d9caa7a98e8bfb10f))
+
 ## [1.21.0](https://github.com/godwit-email/godwit/compare/v1.20.2...v1.21.0) (2026-10-30)
 
 

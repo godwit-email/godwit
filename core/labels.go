@@ -536,7 +536,14 @@ func (s *Service) SetLabel(ctx context.Context, messageIDs []int64, labelID int6
 	if int(store.Int(rows.Values[0][0])) != len(slices.Compact(slices.Sorted(slices.Values(messageIDs)))) {
 		return errors.New("some messages no longer exist")
 	}
-	stmts := make([]sqlite.Statement, 0, len(messageIDs)+1)
+	stmts := make([]sqlite.Statement, 0, len(messageIDs)+2)
+	if on { // label rules run on messages that did not have it on
+		stmts = append(stmts, sqlite.Statement{SQL: `INSERT INTO events_log(type, account_id, message_id, subject, from_addr, msg_date, detail, created_at)
+			SELECT ?, m.account_id, m.id, m.subject, m.from_addr, m.date, (SELECT slug FROM labels WHERE id = ?), unixepoch() FROM messages m
+			WHERE m.id IN (` + placeholders(len(messageIDs)) + `)
+			AND NOT EXISTS (SELECT 1 FROM message_labels WHERE message_id = m.id AND label_id = ? AND active = 1)`,
+			Args: append(append([]any{eventLabelApplied, labelID}, int64Args(messageIDs)...), labelID)})
+	}
 	for _, id := range messageIDs {
 		stmts = append(stmts, sqlite.Statement{SQL: `INSERT INTO message_labels(message_id, label_id, source, active) VALUES (?, ?, 'manual', ?)
 			ON CONFLICT(message_id, label_id) DO UPDATE SET source = 'manual', active = excluded.active`, Args: []any{id, labelID, b2i(on)}})
@@ -550,6 +557,7 @@ func (s *Service) SetLabel(ctx context.Context, messageIDs []int64, labelID int6
 	if _, err := s.db.Transaction(ctx, stmts); err != nil {
 		return err
 	}
+	s.notifyHooks()
 	s.bus.Publish(events.Event{Type: events.LabelsChanged})
 	return nil
 }

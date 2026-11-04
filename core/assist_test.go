@@ -200,6 +200,36 @@ func TestAssistContextSender(t *testing.T) {
 	assert.Equal(t, 1, strings.Count(sys, "</sender>"))
 }
 
+// #399: a one-click rewrite and a selection rewrite follow the draft account's
+// name and instructions too, as Assist does.
+func TestRewriteSender(t *testing.T) {
+	e := newAssistEnv(t)
+	_, err := e.s.UpdateAccount(t.Context(), 1, AccountPatch{Name: new("Alice"), AIInstructions: new("Say du, never Sie.")})
+	require.NoError(t, err)
+	d := e.replyDraft(t, "<p>Hello Bob, the meeting is on Friday.</p>")
+
+	e.srv.Script(testllm.Turn{Text: []string{"<p>Dear Bob, the meeting is on Friday.</p>"}})
+	ch, err := e.s.AssistSkill(t.Context(), d.ID, "tone-formal", SkillOptions{})
+	require.NoError(t, err)
+	evs := drainWit(t, ch)
+	require.Equal(t, "interrupted", evs[len(evs)-1].Kind, "%+v", evs[len(evs)-1].Err)
+
+	e.srv.Script(testllm.Turn{Calls: []testllm.Call{{Name: "update_selection", Args: `{"html":"next Friday"}`}}}, testllm.Turn{Text: []string{"Done."}})
+	ch, err = e.s.RewriteSelection(t.Context(), d.ID, selectionOf(t, d, "on Friday"), "say next Friday")
+	require.NoError(t, err)
+	evs = drainWit(t, ch)
+	require.Equal(t, "interrupted", evs[len(evs)-1].Kind, "%+v", evs[len(evs)-1].Err)
+
+	reqs := e.srv.Requests()
+	require.Len(t, reqs, 2)
+	for _, r := range reqs {
+		sys := string(r.System)
+		assert.Contains(t, sys, "the request wins where they conflict")
+		assert.Contains(t, sys, "Alice")
+		assert.Contains(t, sys, "Say du, never Sie.")
+	}
+}
+
 // The assist context names its mail by id, as the read tools do: get_message
 // reads the email a reply answers by the id its context shows, and the
 // context's citations carry that number.

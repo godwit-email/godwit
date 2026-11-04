@@ -44,21 +44,27 @@ func (p *mailPage) emptyFolderDialog(c *ui.Context) {
 		})
 }
 
-// doEmptyFolder permanently purges the folder.
+// doEmptyFolder permanently purges the folder, with an undo while it waits.
 func (p *mailPage) doEmptyFolder(folderID int64, role string, accID int64) {
 	a := p.a
-	a.writes.Chain(fmt.Sprintf("account:%d", accID), func(ctx context.Context) error {
-		_, err := a.svc.EmptyFolder(ctx, folderID)
+	start := a.clock.Now() // the purge's undo window starts after this
+	var ids []int64
+	a.writes.Chain(fmt.Sprintf("account:%d", accID), func(ctx context.Context) (err error) {
+		ids, err = a.svc.EmptyFolder(ctx, folderID)
 		return err
 	}, func(err error) {
 		if err != nil {
 			a.toastErr(err)
-			return
 		}
-		if role == "trash" {
-			a.toast(i18n.T("mail.empty_trash.toast"))
-		} else {
-			a.toast(i18n.T("mail.empty_spam.toast"))
+		title := i18n.T("mail.empty_trash.toast")
+		if role != "trash" {
+			title = i18n.T("mail.empty_spam.toast")
+		}
+		switch {
+		case len(ids) > 0:
+			p.offerUndoPurge(title, ids, start)
+		case err == nil:
+			a.toast(title)
 		}
 		p.reload()
 	})

@@ -47,6 +47,11 @@ const (
 	selectionSystem = `You are Wit, rewriting a part of the user's draft they selected. Call update_selection once with the HTML ` +
 		`that replaces the selection, and nothing before or after it: the text around it is read-only context. ` +
 		`Keep the language of the selection unless the instruction asks for another.`
+	// rewriteSender introduces senderBlock to a rewrite (a skill's or a selection's):
+	// the account's style applies, but the rewrite never gains a signature or contact details.
+	rewriteSender = `<sender> is the user writing from the draft's account. Follow the wording and style guidelines in its instructions ` +
+		`where the rewrite request leaves room; the request wins where they conflict. ` +
+		`Do not add its name, contact details or a signature that the text does not have.`
 
 	// What update_draft's Summary says about a change, for the GUI.
 	kindInitial   = "initial"   // the editable part was empty: applied at once
@@ -272,7 +277,7 @@ func (s *Service) newAssistConversation(ctx context.Context, draftID int64, titl
 
 // assistSystemPrompt is an assist conversation's system prompt, built for
 // every request of a run, started or resumed, from the draft as it is then.
-// A selection run gets no draft context: its prompt carries the selection.
+// A selection run gets no draft context, only the sender: its prompt carries the selection.
 func (s *Service) assistSystemPrompt(ctx context.Context, job *runJob, tools []toolDesc) (string, error) {
 	d, err := s.GetDraft(ctx, job.conv.DraftID)
 	if err != nil {
@@ -280,7 +285,11 @@ func (s *Service) assistSystemPrompt(ctx context.Context, job *runJob, tools []t
 	}
 	answer := "Answer the user in " + s.readingLanguage(ctx) + ". "
 	if slices.ContainsFunc(tools, func(t toolDesc) bool { return t.Spec.Name == "update_selection" }) {
-		return selectionSystem + "\n\n" + answer, nil
+		acc, err := s.account(ctx, d.AccountID)
+		if err != nil {
+			return "", err
+		}
+		return selectionSystem + "\n\n" + answer + "\n\n" + rewriteSender + "\n\n" + senderBlock(acc), nil
 	}
 	target, err := s.draftLanguage(ctx, d)
 	if err != nil {
@@ -735,7 +744,8 @@ func (s *Service) rewriteSelection(ctx context.Context, end func(), draftID int6
 
 // AssistSkill runs a replace-draft skill (tone, length, proofreading,
 // translate-draft) on the draft's editable part, or on opts.Selection of it if
-// the skill runs on selections; the model sees that and nothing else. The skill has no tools, as every skill: the host turns its
+// the skill runs on selections; the model sees that and the draft account's
+// sender block, nothing else. The skill has no tools, as every skill: the host turns its
 // output into an update_draft proposal in the draft's assist conversation,
 // which the user decides like any other (an empty draft's is applied at
 // once). The conversation's history is left as it is. The channel streams
@@ -828,7 +838,11 @@ func (s *Service) assistSkill(ctx context.Context, end func(), draftID int64, na
 		if err != nil {
 			return nil, err
 		}
-		system := sk.Body + "\n\n" + ai.UntrustedSystemNote
+		acc, err := s.account(ctx, d.AccountID)
+		if err != nil {
+			return nil, err
+		}
+		system := sk.Body + "\n\n" + ai.UntrustedSystemNote + "\n\n" + rewriteSender + "\n\n" + senderBlock(acc)
 		if name == "translate-draft" { // never "the original's language": the skill does not see it
 			system += "\n\nTarget language: " + target + "."
 		}

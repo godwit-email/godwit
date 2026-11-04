@@ -529,6 +529,69 @@ var Migrations = [][]string{{
 	// The user's own OAuth client an account signed in with ('' the provider's);
 	// its secret is in the keychain (oauthClientUser).
 	`ALTER TABLE accounts ADD COLUMN oauth_client_id TEXT NOT NULL DEFAULT ''`,
+}, {
+	// Built-in consumers' events_log cursors, apart from plugin_cursors so no plugin name collides.
+	`CREATE TABLE event_cursors (consumer TEXT PRIMARY KEY, seq INTEGER NOT NULL)`,
+}, {
+	// Mail rules (docs/adr/0030-mail-rules.md): doc is the versioned rule JSON.
+	// A run is written once per (rule, message) before its actions, each
+	// action's result next to it with the prior state undo needs.
+	`CREATE TABLE rules (id INTEGER PRIMARY KEY AUTOINCREMENT, position INTEGER NOT NULL, enabled INTEGER NOT NULL,
+		doc TEXT NOT NULL, created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL)`,
+	`CREATE TABLE rule_runs (id INTEGER PRIMARY KEY AUTOINCREMENT, rule_id INTEGER NOT NULL REFERENCES rules(id) ON DELETE CASCADE,
+		message_id INTEGER REFERENCES messages(id) ON DELETE SET NULL, trigger TEXT NOT NULL, state TEXT NOT NULL,
+		at INTEGER NOT NULL, UNIQUE(rule_id, message_id))`,
+	`CREATE TABLE rule_action_results (run_id INTEGER NOT NULL REFERENCES rule_runs(id) ON DELETE CASCADE, idx INTEGER NOT NULL,
+		kind TEXT NOT NULL, state TEXT NOT NULL, prior TEXT, result TEXT, at INTEGER NOT NULL, PRIMARY KEY(run_id, idx))`,
+	// Labels a rule set (source 'rule') outlive re-imports as hand-set ones do,
+	// keeping their source; a hand-set row or stash is never replaced by a rule's.
+	`ALTER TABLE label_keep ADD COLUMN source TEXT NOT NULL DEFAULT 'manual'`,
+	`DROP TRIGGER messages_label_stash`,
+	`DROP TRIGGER messages_label_keep`,
+	`CREATE TRIGGER messages_label_stash BEFORE DELETE ON messages
+		WHEN old.label_fp IS NOT NULL AND EXISTS (SELECT 1 FROM message_labels WHERE message_id = old.id AND source IN ('manual', 'rule'))
+			AND EXISTS (SELECT 1 FROM accounts WHERE id = old.account_id) BEGIN
+		INSERT INTO label_keep(account_id, fp, label_id, active, source)
+			SELECT old.account_id, old.label_fp, label_id, active, source FROM message_labels WHERE message_id = old.id AND source IN ('manual', 'rule')
+			ON CONFLICT(account_id, fp, label_id) DO UPDATE SET active = excluded.active, source = excluded.source
+			WHERE excluded.source = 'manual' OR label_keep.source != 'manual';
+		INSERT INTO message_labels(message_id, label_id, source, active)
+			SELECT m.id, ml.label_id, ml.source, ml.active FROM messages m JOIN message_labels ml ON ml.message_id = old.id AND ml.source IN ('manual', 'rule')
+			WHERE m.account_id = old.account_id AND m.label_fp = old.label_fp AND m.id != old.id
+			ON CONFLICT(message_id, label_id) DO UPDATE SET source = excluded.source, active = excluded.active
+			WHERE excluded.source = 'manual' OR message_labels.source != 'manual';
+	END`,
+	`CREATE TRIGGER messages_label_keep AFTER INSERT ON messages
+		WHEN new.label_fp IS NOT NULL AND EXISTS (SELECT 1 FROM label_keep WHERE account_id = new.account_id AND fp = new.label_fp) BEGIN
+		INSERT OR REPLACE INTO message_labels(message_id, label_id, source, active)
+			SELECT new.id, label_id, source, active FROM label_keep WHERE account_id = new.account_id AND fp = new.label_fp;
+	END`,
+}, {
+	// Rule triggers besides new mail are logged too: detail is the label's
+	// slug (label.applied) or the verdict (security.verdict). A background
+	// rule keeps Godwit running after the window closes.
+	`ALTER TABLE events_log ADD COLUMN detail TEXT`,
+	`ALTER TABLE rules ADD COLUMN background INTEGER NOT NULL DEFAULT 0`,
+}, {
+	// A rule forwards only to recipients the user confirmed in Godwit
+	// (JSON list), never to one only the rule document names. rule_sent
+	// marks mail a rule forwarded (mail.RuleHeader), which no rule forwards.
+	`ALTER TABLE rules ADD COLUMN confirmed_rcpts TEXT NOT NULL DEFAULT '[]'`,
+	`ALTER TABLE messages ADD COLUMN rule_sent INTEGER NOT NULL DEFAULT 0`,
+}, {
+	// The subfolder a run's file actions write to, by destination, kept
+	// before it is made so a retry or a resumed run writes into it again.
+	`ALTER TABLE rule_runs ADD COLUMN dirs TEXT NOT NULL DEFAULT '{}'`,
+}, {
+	// The rule document as the run started, so a resumed or retried run
+	// goes on with its actions though the rule was edited since (NULL: a
+	// run from before, which goes on with the rule as it is).
+	`ALTER TABLE rule_runs ADD COLUMN doc TEXT`,
+}, {
+	// The events_log seq a rule was saved or turned on at: a new run starts
+	// only on a later event, so mail that came before, still in the
+	// consumer's backlog, is not forwarded (0: every event).
+	`ALTER TABLE rules ADD COLUMN since_seq INTEGER NOT NULL DEFAULT 0`,
 }}
 
 // HistoryRowsVersion is the schema version that keeps a conversation's

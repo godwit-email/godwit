@@ -3,6 +3,11 @@ package app
 import (
 	"context"
 	"errors"
+	"net/url"
+	"os"
+	"regexp"
+	"runtime"
+	"strings"
 
 	"github.com/godwit-email/godwit/core"
 	"github.com/godwit-email/godwit/core/ai"
@@ -58,4 +63,53 @@ func humanize(err error) string {
 		return i18n.T(key)
 	}
 	return i18n.Tf("error.unknown", err.Error())
+}
+
+// issueTextMax caps the error in a report link, in UTF-8 bytes: escaped,
+// each takes up to 3, and the link must stay under issueURLMax.
+const issueTextMax = 2000
+
+// issueURLMax is about what GitHub takes of a new-issue link; the log's
+// oldest lines go first to fit.
+const issueURLMax = 8000
+
+// emailRE and hostRE find what in an error or the log names the user: their
+// addresses and their mail servers. Filenames like godwit.db go too, a small loss.
+var (
+	emailRE = regexp.MustCompile(`[\w.+-]+@[\w-]+(\.[\w-]+)+`)
+	hostRE  = regexp.MustCompile(`(?i)\b([a-z0-9]([a-z0-9-]*[a-z0-9])?\.)+[a-z]{2,}\b`)
+)
+
+// maskReport hides the home folder, addresses and hosts in text already rid of
+// secrets: a report link is in the browser's history and the issue is public.
+func maskReport(text string) string {
+	if home, _ := os.UserHomeDir(); home != "" {
+		text = strings.ReplaceAll(text, home, "~")
+	}
+	return hostRE.ReplaceAllString(emailRE.ReplaceAllString(text, "<email>"), "<host>")
+}
+
+// issueURL is a GitHub new-issue link reporting an error with the log's
+// recent lines, both rid of secrets; the user reads it before submitting.
+func issueURL(errText, logText string) string {
+	errText = maskReport(errText)
+	if len(errText) > issueTextMax {
+		errText = strings.ToValidUTF8(errText[:issueTextMax], "") + "…"
+	}
+	title, _, _ := strings.Cut(errText, "\n")
+	if r := []rune(title); len(r) > 80 {
+		title = string(r[:80]) + "…"
+	}
+	lines := strings.Split(maskReport(strings.TrimSpace(logText)), "\n")
+	for {
+		body := "```\n" + errText + "\n```\n\n"
+		if log := strings.TrimSpace(strings.Join(lines, "\n")); log != "" {
+			body += "<details><summary>Log</summary>\n\n```\n" + log + "\n```\n</details>\n\n"
+		}
+		u := "https://github.com/godwit-email/godwit/issues/new?" + url.Values{"title": {title}, "body": {body + "Godwit " + Version + " (" + runtime.GOOS + "/" + runtime.GOARCH + ")\n"}}.Encode()
+		if len(u) <= issueURLMax || len(lines) == 0 {
+			return u
+		}
+		lines = lines[1:]
+	}
 }

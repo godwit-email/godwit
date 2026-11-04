@@ -16,7 +16,6 @@ import (
 	"strconv"
 	"strings"
 	"time"
-	"unicode"
 
 	"github.com/egoist/mygo/transfer"
 	"github.com/egoist/mygo/ui"
@@ -56,24 +55,26 @@ type reader struct {
 	bodies       map[int64]*msgBody
 	scroll       ui.ScrollState // the messages' scrolling; a body's page hands on the wheels it does not use
 
-	ai          map[int64]*msgAI         // by message; kept across switches so a summary runs once
-	aiCtx       context.Context          // the AI work of the key shown; nil until some starts
-	aiStop      context.CancelFunc       // cancels aiCtx
-	skills      fetch[[]core.SkillInfo]  // the skill menu: skills on messages but summarize and translate
-	actions     fetch[[]core.ActionInfo] // and plugin actions on messages
-	egress      egressAsk                // the action waiting for egress approval
-	egressDlg   bool                     // its dialog shows
-	unsubAsk    int64                    // the message whose one-click unsubscribe waits to be confirmed
-	unsubDlg    bool                     // its dialog shows
-	senderOpen  bool                     // the sender action popover shows
-	senderMsgID int64                    // which message's sender popover is open
-	detailsOpen bool                     // the recipients' details popover shows
-	detailsID   int64                    // which message's details popover is open
-	moreOpen    bool                     // the toolbar's more menu (save, print) shows
-	barTop      float32                  // the floating toolbar's height as the last frame laid it out: the messages start under it
-	barBottom   float32                  // the reply bar's, likewise: the messages end above it
-	pane        ui.Rect                  // the messages' scroll box as the last frame laid it out, in the window: the bars float at its top and bottom
-	replyAsk    string                   // the reply bar's question to Wit, until it is asked
+	ai           map[int64]*msgAI         // by message; kept across switches so a summary runs once
+	aiCtx        context.Context          // the AI work of the key shown; nil until some starts
+	aiStop       context.CancelFunc       // cancels aiCtx
+	skills       fetch[[]core.SkillInfo]  // the skill menu: skills on messages but summarize and translate
+	actions      fetch[[]core.ActionInfo] // and plugin actions on messages
+	egress       egressAsk                // the action waiting for egress approval
+	egressDlg    bool                     // its dialog shows
+	unsubAsk     int64                    // the message whose one-click unsubscribe waits to be confirmed
+	unsubDlg     bool                     // its dialog shows
+	senderOpen   bool                     // the sender action popover shows
+	senderMsgID  int64                    // which message's sender popover is open
+	secMenuOpen  bool                     // the security verdict edit popover shows
+	secMenuMsgID int64                    // which message's security popover is open
+	detailsOpen  bool                     // the recipients' details popover shows
+	detailsID    int64                    // which message's details popover is open
+	moreOpen     bool                     // the toolbar's more menu (save, print) shows
+	barTop       float32                  // the floating toolbar's height as the last frame laid it out: the messages start under it
+	barBottom    float32                  // the reply bar's, likewise: the messages end above it
+	pane         ui.Rect                  // the messages' scroll box as the last frame laid it out, in the window: the bars float at its top and bottom
+	replyAsk     string                   // the reply bar's question to Wit, until it is asked
 
 	getThread  func(ctx context.Context, id int64) (core.Thread, error)                       // tests wrap it
 	getMessage func(ctx context.Context, id int64, remote bool) (core.Message, error)         // tests wrap it
@@ -164,7 +165,7 @@ func (r *reader) reset(k [2]int64) {
 	r.stopAI()
 	r.key, r.loaded, r.subject, r.msgs, r.focus = k, false, "", nil, 0
 	r.threadIDs, r.labels, r.labelMenu, r.labelQuery = nil, nil, false, ""
-	r.senderOpen, r.senderMsgID, r.moreOpen, r.replyAsk = false, 0, false, "" // a question is for the thread it was typed in
+	r.senderOpen, r.senderMsgID, r.secMenuOpen, r.secMenuMsgID, r.moreOpen, r.replyAsk = false, 0, false, 0, false, "" // a question is for the thread it was typed in
 	r.detailsOpen, r.detailsID = false, 0
 	r.open, r.historyOpen, r.historyShown, r.revealID, r.bodies = map[int64]bool{}, map[int64]bool{}, false, 0, map[int64]*msgBody{}
 	r.scroll.X, r.scroll.Y = 0, 0
@@ -662,25 +663,6 @@ func fileURL(path string) string {
 	return (&url.URL{Scheme: "file", Path: p}).String()
 }
 
-// fileName makes s a file name: separators and control characters become
-// _, leading and trailing dots and spaces go, and a name Windows reserves
-// (CON, COM1.txt…) gets a _ in front. Empty, it is fallback.
-func fileName(s, fallback string) string {
-	s = strings.Trim(strings.Map(func(r rune) rune {
-		if unicode.IsControl(r) || unicode.Is(unicode.Cf, r) || strings.ContainsRune(`/\:*?"<>|`, r) { // Cf: U+202E turns "fdp.exe" into "exe.pdf"
-			return '_'
-		}
-		return r
-	}, s), ". ")
-	stem, _, _ := strings.Cut(strings.ToUpper(s), ".")
-	if reserved[stem] || len(stem) == 4 && (strings.HasPrefix(stem, "COM") || strings.HasPrefix(stem, "LPT")) && stem[3] >= '1' && stem[3] <= '9' {
-		s = "_" + s
-	}
-	return cmp.Or(s, fallback)
-}
-
-var reserved = map[string]bool{"CON": true, "PRN": true, "AUX": true, "NUL": true}
-
 // openAttachment copies the attachment, under its own name, to a new
 // directory in the platform's temporary one, and opens it with its
 // application: the cache's file has no extension to choose one by. Close
@@ -696,7 +678,7 @@ func (a *App) openAttachment(att core.AttachmentInfo) {
 		if err != nil {
 			return err
 		}
-		dst := filepath.Join(dir, fileName(att.Filename, "attachment"))
+		dst := filepath.Join(dir, core.FileName(att.Filename, "attachment"))
 		if err := copyFile(src, dst); err != nil {
 			return err
 		}
@@ -708,7 +690,7 @@ func (a *App) openAttachment(att core.AttachmentInfo) {
 func (a *App) saveAttachment(att core.AttachmentInfo) {
 	plat := a.plat
 	a.do(func(ctx context.Context) error {
-		dst, err := plat.SaveFile(fileName(att.Filename, "attachment"))
+		dst, err := plat.SaveFile(core.FileName(att.Filename, "attachment"))
 		if err != nil || dst == "" {
 			return err
 		}
@@ -753,7 +735,7 @@ func (r *reader) saveMail() {
 	a.do(func(ctx context.Context) error {
 		stem := []rune(m.Subject)
 		stem = stem[:min(len(stem), 100)] // file systems cap names near 255 bytes
-		dst, err := plat.SaveFile(fileName(string(stem), "email") + ".eml")
+		dst, err := plat.SaveFile(core.FileName(string(stem), "email") + ".eml")
 		if err != nil || dst == "" {
 			return err
 		}
@@ -1064,7 +1046,7 @@ func (r *reader) folded(c *ui.Context, m core.MessageSummary) {
 			if r.isBlocked(m.From) {
 				kit.Badge(c, i18n.T("reader.blocked_badge"))
 			}
-			r.securityBadge(c, m.Security)
+			r.securityBadge(c, m.ID, m.Security)
 			if g := r.gist(m.ID); g != "" { // a step darker than the text it stands for, and marked the AI's
 				ui.Row(c).Grow(1).Shrink(1).Gap(th.Space(1)).AlignItems(ui.Center).Children(func() {
 					ui.Text(c, g).TextColor(t.Foreground.Alpha(0.7)).SingleLine().Shrink(1)
@@ -1359,12 +1341,12 @@ func (r *reader) message(c *ui.Context, m core.MessageSummary) {
 							}
 						})
 						if r.senderOpen && r.senderMsgID == m.ID {
-							r.senderMenu(c, who, addr, m.From)
+							r.senderMenu(c, who, addr, m.From, m.ID, sec)
 						}
 						if r.isBlocked(m.From) {
 							kit.Badge(c, i18n.T("reader.blocked_badge"))
 						}
-						r.securityBadge(c, sec)
+						r.securityBadge(c, m.ID, sec)
 					})
 					ui.Row(c).Wrap().Gap(th.Space(1.5)).AlignItems(ui.Center).Children(func() {
 						r.recipientsLine(c, m, b)
@@ -1501,11 +1483,15 @@ func (r *reader) attachments(c *ui.Context, atts []core.AttachmentInfo) {
 			}
 			ui.Row(c).Width(theme.AttachmentWidth).Gap(th.Space(1)).Padding(th.Space(2), th.Space(2.5)).Border(theme.Hairline, t.Border).Radius(t.Radius.Lg).Children(func() {
 				kit.Pressable(c, kit.PressableOpts{OnClick: func() { r.p.a.openAttachment(att) }}).Grow(1).Shrink(1).Gap(th.Space(2.5)).Children(func() {
-					ui.Box(c).Size(th.Space(7), th.Space(8.5)).Radius(t.Radius.Sm).Background(t.Hover).Center().Shrink(0).Children(func() {
-						kit.Text(c, fileKind(att), t.Text.Xs).TextColor(t.Muted)
-					})
+					if img := r.p.a.typeIcon(iconExt(att.Filename)); img != nil {
+						ui.Image(c, img).Size(th.Space(8.5), th.Space(8.5)).Fit(ui.Contain).Shrink(0)
+					} else {
+						ui.Box(c).Size(th.Space(7), th.Space(8.5)).Radius(t.Radius.Sm).Background(t.Hover).Center().Shrink(0).Children(func() {
+							kit.Text(c, fileKind(att), t.Text.Xs).TextColor(t.Muted)
+						})
+					}
 					ui.Column(c).Shrink(1).Children(func() {
-						ui.Text(c, fileName(att.Filename, "attachment")).SingleLine() // the name it opens and saves under
+						ui.Text(c, core.FileName(att.Filename, "attachment")).SingleLine() // the name it opens and saves under
 						kit.Text(c, byteSize(att.Size), t.Text.Sm).TextColor(t.Muted)
 					})
 				})
@@ -1524,6 +1510,46 @@ func fileKind(att core.AttachmentInfo) string {
 	}
 	_, sub, _ := strings.Cut(att.ContentType, "/")
 	return strings.ToUpper(cmp.Or(sub, "FILE"))
+}
+
+// typeIconPx is the size typeIcon asks for: sharp at up to 4x for the
+// attachment tile, as ui does not say the display's scale.
+const typeIconPx = 136
+
+// typeIcon is the file manager's icon for files with extension ext, nil
+// while it loads, for no ext, or when the platform has none.
+func (a *App) typeIcon(ext string) ui.ImageSource {
+	if ext == "" {
+		return nil
+	}
+	if img, ok := a.typeIcons[ext]; ok {
+		return img
+	}
+	if a.typeIcons == nil {
+		a.typeIcons = map[string]ui.ImageSource{}
+	}
+	a.typeIcons[ext] = nil
+	plat := a.plat
+	var img ui.ImageSource
+	a.do(func(context.Context) error {
+		png, err := plat.TypeIcon(ext, typeIconPx)
+		if err == nil {
+			img = decodeIcon("image/png", png)
+		}
+		return nil // without one the tile keeps fileKind's label
+	}, func(error) { a.typeIcons[ext] = img })
+	return nil
+}
+
+// iconExt is name's extension for typeIcon, lower case without the dot:
+// "" unless it is 1 to 10 ASCII letters and digits, as it names a file the
+// platform writes.
+func iconExt(name string) string {
+	ext := strings.ToLower(strings.TrimPrefix(filepath.Ext(name), "."))
+	if len(ext) > 10 || strings.ContainsFunc(ext, func(r rune) bool { return (r < 'a' || r > 'z') && (r < '0' || r > '9') }) {
+		return ""
+	}
+	return ext
 }
 
 // byteSize is a size in B, KB or MB.
@@ -1722,19 +1748,26 @@ func (r *reader) sendUnsubscribe(id int64) {
 		return err
 	}, func(err error) {
 		b.unsubbing = false
-		switch {
-		case err != nil:
-			a.toastErr(err)
-		case res.DraftID != 0:
-			a.plat.OpenCompose(res.DraftID)
-		case res.Failure == "":
-			a.toastAs(kit.ToastSuccess, i18n.Tf("reader.unsubscribe.sent", res.Host))
-		default:
-			msg := i18n.Tf("reader.unsubscribe.failed."+res.Failure, res.Host, strconv.Itoa(res.Status))
-			a.toasts = append(a.toasts, ui.Toast{ID: msg, Title: msg, Type: kit.ToastError,
-				Action: i18n.T("reader.unsubscribe.open"), OnAction: func() { a.openLink(u.URL) }})
-		}
+		a.unsubscribed(u, res, err)
 	})
+}
+
+// unsubscribed tells what core's Unsubscribe by u did: a one-click result
+// toasts (a failure offers the page in the browser), a draft opens in a
+// compose window, never sent.
+func (a *App) unsubscribed(u core.Unsubscribe, res core.UnsubscribeResult, err error) {
+	switch {
+	case err != nil:
+		a.toastErr(err)
+	case res.DraftID != 0:
+		a.plat.OpenCompose(res.DraftID)
+	case res.Failure == "":
+		a.toastAs(kit.ToastSuccess, i18n.Tf("reader.unsubscribe.sent", res.Host))
+	default:
+		msg := i18n.Tf("reader.unsubscribe.failed."+res.Failure, res.Host, strconv.Itoa(res.Status))
+		a.toasts = append(a.toasts, ui.Toast{ID: msg, Title: msg, Type: kit.ToastError,
+			Action: i18n.T("reader.unsubscribe.open"), OnAction: func() { a.openLink(u.URL) }})
+	}
 }
 
 // unsubscribeDialog confirms a one-click unsubscribe: the host the request
@@ -1748,20 +1781,26 @@ func (r *reader) unsubscribeDialog(c *ui.Context) {
 		r.unsubDlg = false
 		return
 	}
+	unsubscribeDialog(c, &r.unsubDlg, b.unsub, func() { r.sendUnsubscribe(id) })
+}
+
+// unsubscribeDialog confirms a one-click unsubscribe by u while open: the
+// host the request goes to in bold, and the list's name; 退订 runs send.
+func unsubscribeDialog(c *ui.Context, open *bool, u core.Unsubscribe, send func()) {
 	t := theme.Of(c)
 	opts := kit.DialogOpts{Size: kit.DialogSm, Alert: true, Desc: i18n.T("reader.unsubscribe.desc"), Close: i18n.T("common.close")}
-	kit.Dialog(c, &r.unsubDlg, i18n.T("reader.unsubscribe.title"), opts, func() {
-		ui.Text(c, b.unsub.Host).FontWeight(600)
-		if b.unsub.List != "" {
-			kit.Text(c, i18n.Tf("reader.unsubscribe.list", b.unsub.List), t.Text.Sm).TextColor(t.Muted)
+	kit.Dialog(c, open, i18n.T("reader.unsubscribe.title"), opts, func() {
+		ui.Text(c, u.Host).FontWeight(600)
+		if u.List != "" {
+			kit.Text(c, i18n.Tf("reader.unsubscribe.list", u.List), t.Text.Sm).TextColor(t.Muted)
 		}
 	}, func() {
 		if kit.Button(c, i18n.T("common.cancel"), kit.ButtonOpts{Variant: kit.Outline}).Clicked() {
-			r.unsubDlg = false
+			*open = false
 		}
 		if kit.Button(c, i18n.T("reader.unsubscribe"), kit.ButtonOpts{}).AutoFocus().Clicked() {
-			r.unsubDlg = false
-			r.sendUnsubscribe(id)
+			*open = false
+			send()
 		}
 	})
 }
@@ -1797,8 +1836,9 @@ func (a *App) setBlocked(from string, block bool, done func()) {
 }
 
 // senderMenu is the sender's actions under anchor, the reader's menu as its
-// toolbar's more menu is: copy the address, block or unblock the sender.
-func (r *reader) senderMenu(c *ui.Context, anchor ui.Element, addr, rawFrom string) {
+// toolbar's more menu is: view them in contacts, copy the address, block or
+// unblock the sender, edit labels, or adjust security classification.
+func (r *reader) senderMenu(c *ui.Context, anchor ui.Element, addr, rawFrom string, msgID int64, sec gomail.SecurityReport) {
 	target := cmp.Or(addr, rawFrom)
 	if target == "" {
 		return
@@ -1817,6 +1857,9 @@ func (r *reader) senderMenu(c *ui.Context, anchor ui.Element, addr, rawFrom stri
 		})
 	}
 	kit.MenuAt(c, anchor, &r.senderOpen, ui.AnchorBottomLeft, ui.AnchorTopLeft, theme.PopupOffset, target, func() {
+		if addr != "" {
+			item(2, i18n.T("reader.view_contact"), "contacts", false, func() { r.p.a.openContact(addr) })
+		}
 		item(0, i18n.T("reader.copy_address"), "copy", false, func() {
 			c.WriteClipboard(target)
 			r.p.a.toast(i18n.T("reader.address_copied"))
@@ -1830,6 +1873,14 @@ func (r *reader) senderMenu(c *ui.Context, anchor ui.Element, addr, rawFrom stri
 				r.p.a.setBlocked(target, true, func() { r.p.a.toast(i18n.T("reader.sender_blocked")) })
 			})
 		}
+		kit.Separator(c, false)
+		item(10, i18n.T("reader.message.labels"), "tag", false, func() {
+			r.labelMenu = true
+		})
+		item(11, i18n.T("reader.security.edit_title"), "shield-check", false, func() {
+			r.secMenuOpen = true
+			r.secMenuMsgID = msgID
+		})
 	})
 }
 
@@ -1849,6 +1900,14 @@ func secWarningText(sec gomail.SecurityReport) string {
 }
 
 func (r *reader) secExplanation(sec gomail.SecurityReport) string {
+	switch sec.Reason {
+	case "manual_safe":
+		return i18n.T("reader.security.manual_safe_desc")
+	case "manual_suspicious":
+		return i18n.T("reader.security.manual_suspicious_desc")
+	case "manual_warning":
+		return i18n.T("reader.security.manual_warning_desc")
+	}
 	switch sec.Status {
 	case gomail.SecurityCertifiedBrand:
 		return i18n.T("reader.security.certified_desc")
@@ -1868,33 +1927,141 @@ func (r *reader) secExplanation(sec gomail.SecurityReport) string {
 	}
 }
 
+// applySecurity updates the security classification for a message.
+func (r *reader) applySecurity(msgID int64, reason string) {
+	a := r.p.a
+	// Optimistically update the message's security in the reader for instant feedback
+	status, _ := gomail.ManualSecurityStatus(reason)
+	sec := gomail.DBToSecurityReport("", "", status, reason)
+	for i := range r.msgs {
+		if r.msgs[i].ID == msgID {
+			r.msgs[i].Security = sec
+		}
+	}
+	if b, ok := r.bodies[msgID]; ok && b != nil {
+		b.msg.Security = sec
+	}
+	a.writes.Chain("security", func(ctx context.Context) error {
+		return a.svc.SetMessageSecurity(ctx, []int64{msgID}, reason)
+	}, func(err error) {
+		if err != nil {
+			a.toastErr(err)
+		} else {
+			a.toast(i18n.T("reader.security.updated"))
+		}
+	})
+}
+
+// securityPopoverBody renders the classification options popover.
+func (r *reader) securityPopoverBody(c *ui.Context, msgID int64, sec gomail.SecurityReport) {
+	t, th := theme.Of(c), c.Theme()
+	ui.Column(c).Width(theme.SecurityCardWidth).Gap(th.Space(2)).Children(func() {
+		kit.Text(c, i18n.T("reader.security.edit_title"), t.Text.Base).FontWeight(600)
+		iconName, label, color := secVisual(t, sec)
+		if iconName != "" {
+			ui.Row(c).Gap(th.Space(1.5)).AlignItems(ui.Center).Children(func() {
+				ui.Icon(c, icons.Fill(iconName)).Size(theme.IconSm, theme.IconSm).TextColor(color)
+				kit.Text(c, label, t.Text.Sm).FontWeight(600).TextColor(color)
+			})
+		}
+		if exp := r.secExplanation(sec); exp != "" {
+			kit.Text(c, exp, t.Text.Sm).LineHeight(theme.LineCJK).TextColor(t.Muted)
+		}
+		kit.Separator(c, false)
+
+		optButton := func(key int, label, icon string, active bool, danger bool, onClick func()) {
+			color := t.Foreground
+			if danger {
+				color = t.DangerText
+			}
+			b := kit.Pressable(c.Key(key), kit.PressableOpts{OnClick: onClick}).AlignSelf(ui.Stretch).
+				Height(th.Space(8)).Padding(0, th.Space(2)).Gap(th.Space(2)).AlignItems(ui.Center).Radius(t.Radius.Md)
+			if active {
+				b.Background(t.Hover)
+			}
+			b.Children(func() {
+				ui.Icon(c, icons.Get(icon)).Size(theme.IconSm, theme.IconSm).TextColor(color)
+				kit.Text(c, label, t.Text.Sm).TextColor(color).Grow(1)
+				if active {
+					ui.Icon(c, icons.Get("check")).Size(theme.IconSm, theme.IconSm).TextColor(t.Muted)
+				}
+			})
+		}
+
+		optButton(1, i18n.T("mail.security.mark_safe"), "circle-check", sec.Reason == "manual_safe", false, func() {
+			r.secMenuOpen = false
+			r.secMenuMsgID = 0
+			r.applySecurity(msgID, "manual_safe")
+		})
+		optButton(2, i18n.T("mail.security.mark_suspicious"), "triangle-alert", sec.Reason == "manual_suspicious", false, func() {
+			r.secMenuOpen = false
+			r.secMenuMsgID = 0
+			r.applySecurity(msgID, "manual_suspicious")
+		})
+		optButton(3, i18n.T("mail.security.mark_warning"), "skull", sec.Reason == "manual_warning", true, func() {
+			r.secMenuOpen = false
+			r.secMenuMsgID = 0
+			r.applySecurity(msgID, "manual_warning")
+		})
+		kit.Separator(c, false)
+		optButton(4, i18n.T("mail.security.reset"), "refresh-cw", sec.Reason == "", false, func() {
+			r.secMenuOpen = false
+			r.secMenuMsgID = 0
+			r.applySecurity(msgID, "")
+		})
+	})
+}
+
 // securityBadge is the sender's verdict as an icon by the name; hovering it
-// explains the verdict.
-func (r *reader) securityBadge(c *ui.Context, sec gomail.SecurityReport) {
-	if !showSecurity(r.p.a.settings, sec.Status) {
+// explains the verdict, and clicking it opens a popover to adjust the classification.
+func (r *reader) securityBadge(c *ui.Context, msgID int64, sec gomail.SecurityReport) {
+	isManual := gomail.IsManualSecurity(sec.Reason)
+	open := r.secMenuOpen && r.secMenuMsgID == msgID
+	if !isManual && !showSecurity(r.p.a.settings, sec.Status) && !open {
 		return
 	}
 	t, th := theme.Of(c), c.Theme()
-	iconName, label, color := secVisual(t, sec.Status)
-	mark := ui.Box(c).Shrink(0).Label(label).Children(func() {
+	iconName, label, color := secVisual(t, sec)
+	mark := kit.Pressable(c, kit.PressableOpts{OnClick: func() {
+		if r.secMenuOpen && r.secMenuMsgID == msgID {
+			r.secMenuOpen = false
+			r.secMenuMsgID = 0
+		} else {
+			r.open[msgID] = true
+			r.secMenuOpen = true
+			r.secMenuMsgID = msgID
+		}
+	}}).Shrink(0).Label(label).Radius(t.Radius.Sm).Padding(th.Space(0.5), th.Space(1))
+	mark.Children(func() {
 		ui.Icon(c, icons.Fill(iconName)).Size(theme.IconXs, theme.IconXs).TextColor(color)
 	})
-	kit.HoverCard(c, mark, theme.SecurityCardWidth, func() {
-		ui.Row(c).Gap(th.Space(1.5)).AlignItems(ui.Center).Children(func() {
-			ui.Icon(c, icons.Fill(iconName)).Size(theme.Icon, theme.Icon).TextColor(color)
-			kit.Text(c, label, t.Text.Base).FontWeight(600).TextColor(color)
+	if !open {
+		kit.HoverCard(c, mark, theme.SecurityCardWidth, func() {
+			ui.Row(c).Gap(th.Space(1.5)).AlignItems(ui.Center).Children(func() {
+				ui.Icon(c, icons.Fill(iconName)).Size(theme.Icon, theme.Icon).TextColor(color)
+				kit.Text(c, label, t.Text.Base).FontWeight(600).TextColor(color)
+			})
+			kit.Text(c, r.secExplanation(sec), t.Text.Sm).LineHeight(theme.LineCJK).TextColor(t.Foreground)
+			kit.Separator(c, false)
+			kit.Text(c, i18n.T("reader.security.click_to_edit"), t.Text.Xs).TextColor(t.Muted)
 		})
-		kit.Text(c, r.secExplanation(sec), t.Text.Sm).LineHeight(theme.LineCJK).TextColor(t.Foreground)
-	})
+	}
+	if open {
+		kit.PopoverAt(c, mark, &r.secMenuOpen, ui.AnchorBottomLeft, ui.AnchorTopLeft, theme.PopupOffset, func() {
+			r.securityPopoverBody(c, msgID, sec)
+		})
+	}
 }
 
 // securityIcon is a mail list row's warning, after the sender's name. Verified
 // senders show theirs in the reader only: most rows would carry one.
-func securityIcon(c *ui.Context, st core.Settings, status gomail.SecurityStatus) {
-	if status != gomail.SecurityFraud && status != gomail.SecurityNeedsReview || !showSecurity(st, status) {
+func securityIcon(c *ui.Context, st core.Settings, sec gomail.SecurityReport) {
+	status := sec.Status
+	isManual := sec.Reason == "manual_warning" || sec.Reason == "manual_suspicious"
+	if !isManual && (status != gomail.SecurityFraud && status != gomail.SecurityNeedsReview || !showSecurity(st, status)) {
 		return
 	}
-	iconName, label, color := secVisual(theme.Of(c), status)
+	iconName, label, color := secVisual(theme.Of(c), sec)
 	ui.Icon(c, icons.Fill(iconName)).Size(theme.IconXs, theme.IconXs).Shrink(0).TextColor(color).Label(label)
 }
 
@@ -1910,9 +2077,17 @@ func showSecurity(st core.Settings, status gomail.SecurityStatus) bool {
 	return false // neutral is also the zero value of mail not yet checked: no badge
 }
 
-// secVisual returns the icon, translated label, and theme color for a security status.
-func secVisual(t theme.Tokens, status gomail.SecurityStatus) (iconName string, label string, color ui.Color) {
-	switch status {
+// secVisual returns the icon, translated label, and theme color for a security status or manual classification.
+func secVisual(t theme.Tokens, sec gomail.SecurityReport) (iconName string, label string, color ui.Color) {
+	switch sec.Reason {
+	case "manual_safe":
+		return "circle-check-fill", i18n.T("reader.security.manual_safe_badge"), t.Muted
+	case "manual_suspicious":
+		return "triangle-alert-fill", i18n.T("reader.security.manual_suspicious_badge"), t.WarningText
+	case "manual_warning":
+		return "skull-fill", i18n.T("reader.security.manual_warning_badge"), t.DangerText
+	}
+	switch sec.Status {
 	case gomail.SecurityCertifiedBrand:
 		return "vip-diamond-fill", i18n.T("reader.security.certified_badge"), t.Unread
 	case gomail.SecurityVerifiedDomain:
@@ -1924,6 +2099,6 @@ func secVisual(t theme.Tokens, status gomail.SecurityStatus) (iconName string, l
 	case gomail.SecurityNeutral:
 		return "question-fill", i18n.T("reader.security.unverified_badge"), t.Muted
 	default:
-		return "", "", color
+		return "question-fill", i18n.T("reader.security.unverified_badge"), t.Muted
 	}
 }

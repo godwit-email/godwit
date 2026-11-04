@@ -1,6 +1,8 @@
 package kit
 
 import (
+	"cmp"
+
 	"github.com/egoist/mygo/ui"
 	"github.com/godwit-email/godwit/internal/icons"
 	"github.com/godwit-email/godwit/internal/theme"
@@ -205,5 +207,32 @@ func IconButton(c *ui.Context, icon, label string, o ButtonOpts) ui.Element {
 func TextLink(c *ui.Context, label string, color ui.Color, size float32) ui.Element {
 	return ui.ButtonBase(c).Label(label).Children(func() {
 		Text(c, label, size).TextColor(color).Underline()
+	})
+}
+
+// RoundAction is an action named under its icon, as a contact's under their
+// name: the icon in a round tint, then name; tip, if set, is its label and
+// tooltip, saying more than name. On is a state the action turns off, as
+// being blocked.
+func RoundAction(c *ui.Context, icon, name, tip string, disabled, on bool) ui.Element {
+	t, th := theme.Of(c), c.Theme()
+	b := ui.ButtonBase(c).Label(cmp.Or(tip, name)).Width(th.Space(18)).Disabled(disabled)
+	if tip != "" {
+		tooltip(c, b, tip, false)
+	}
+	return b.Children(func() {
+		fg, tint := t.Foreground, t.Hover
+		switch {
+		case disabled:
+			fg = t.Idle
+		case on || b.Hovered():
+			tint = t.Border
+		}
+		ui.Column(c).FillWidth().AlignItems(ui.Center).Gap(th.Space(1.5)).TextColor(fg).Children(func() {
+			ui.Box(c).Size(th.Space(10), th.Space(10)).Radius(t.Radius.Full).Background(tint).Center().Children(func() {
+				ui.Icon(c, icons.Get(icon)).Size(theme.IconMd, theme.IconMd)
+			})
+			Text(c, name, t.Text.Sm).TextAlign(ui.Center)
+		})
 	})
 }

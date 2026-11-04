@@ -6,10 +6,12 @@ import (
 	"errors"
 	"fmt"
 	"maps"
+	"regexp"
 	"slices"
 	"strconv"
 	"strings"
 	"time"
+	"unicode"
 	"unicode/utf8"
 
 	"github.com/egoist/mygo/ui"
@@ -738,13 +740,44 @@ func (r *reader) output(c *ui.Context, run *aiRun) {
 	} else if run.markdown != nil && run.text != "" {
 		run.markdown.Theme = &markdown.Theme{FontSize: theme.Of(c).BodyFontSize, CodeFont: theme.Mono, LineHeight: theme.LineReading}
 		if run.running {
-			markdown.Stream(c, run.text, run.markdown)
+			markdown.Stream(c, endAutolinks(run.text), run.markdown)
 		} else {
-			markdown.View(c, run.text, run.markdown)
+			markdown.View(c, endAutolinks(run.text), run.markdown)
 		}
 	} else if run.text != "" {
 		ui.Text(c, run.text).LineHeight(theme.LineReading)
 	}
+}
+
+// bareURL is a bare http(s) URL as GFM reads one: to the next space.
+var bareURL = regexp.MustCompile(`https?://[^\s<>]+`)
+
+// endAutolinks puts each bare URL that runs into punctuation beyond ASCII
+// (the CJK ，。, curly quotes) in <…>, so it ends there: mygo's parser, as GFM, takes
+// "https://a.in/kit，并留下" to the next space.
+// shortcut: rewrites URLs in code too; delete once mygo ends autolinks there (#402).
+func endAutolinks(s string) string {
+	var b strings.Builder
+	last := 0
+	for _, m := range bareURL.FindAllStringIndex(s, -1) {
+		url := s[m[0]:m[1]]
+		i := strings.IndexFunc(url, func(r rune) bool {
+			// as egoist/mygo#981: punctuation but dashes and connectors, and spaces
+			return r >= utf8.RuneSelf && (unicode.IsSpace(r) || unicode.IsPunct(r) && !unicode.In(r, unicode.Pd, unicode.Pc))
+		})
+		// a written link's text or destination, [x](…) or [x]( …), or already <…>
+		before := strings.TrimRight(s[:m[0]], " \t\n")
+		if i <= 0 || before != "" && strings.IndexByte("[(<", before[len(before)-1]) >= 0 {
+			continue
+		}
+		b.WriteString(s[last:m[0]])
+		b.WriteString("<" + url[:i] + ">")
+		last = m[0] + i
+	}
+	if last == 0 {
+		return s
+	}
+	return b.String() + s[last:]
 }
 
 const chatGPTUsageURL = "https://chatgpt.com/settings/usage"

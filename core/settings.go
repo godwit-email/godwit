@@ -3,6 +3,7 @@ package core
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/mail"
 	"regexp"
@@ -77,6 +78,10 @@ type Settings struct {
 	// SecurityAI analyzes unverified email contents with the configured judge
 	// model, which may be remote, to detect fraud and phishing; off by default.
 	SecurityAI bool
+	// RuleAI lets rules take AI actions (让 Wit 起草回复, 让 Wit 提取要点),
+	// which send the mail to the default model, masked, unattended
+	// (docs/adr/0030-mail-rules.md); off by default (ADR 0010).
+	RuleAI bool
 	// RecognitionModel is 识别模型 (docs/adr/0028-recognition-model-for-masking.md): a
 	// model on this device finds names, addresses, accounts, phone numbers,
 	// email addresses, secrets and card numbers the rules can't. Off by default; it turns on only once its
@@ -95,6 +100,28 @@ type Settings struct {
 	// proxy: "auto" (default, "" too) at once, "trusted" for the trusted
 	// senders only, "ask" after 加载图片. Mail in Junk never loads them by itself.
 	RemoteImages string
+	// ProxyMode is what mail, remote images, unsubscribes and the update
+	// check connect through (网络代理, Service.Proxy): ProxySystem (the
+	// default; "" too), ProxyCustom or ProxyOff. Only the user sets it: a
+	// proxy reroutes mail.
+	ProxyMode string
+	// ProxyURL is 自定义's proxy, http://host:port or socks5://host:port
+	// (ParseProxyURL), with no credentials. Checked only in ProxyCustom: the
+	// other modes keep it as it is, so switching back loses nothing.
+	ProxyURL string
+	// ProxyBypass is 自定义's 不使用代理的主机: names, *-patterns, .suffixes,
+	// addresses and CIDR ranges (sysproxy.Bypassed), at most MaxProxyBypass.
+	ProxyBypass []string
+	// ProxyUser is 自定义's username, "" for none.
+	ProxyUser string
+	// ProxyPassword is write-only: a SetSettings with one puts it in the
+	// keychain (proxyKeyringUser); it is never stored here nor handed back.
+	// ProxyPasswordSet says the keychain has one; a save turning it off
+	// deletes it, and an empty ProxyPassword keeps it as it is. So a client
+	// must send back the ProxyPasswordSet it loaded: a zero one clears the
+	// password.
+	ProxyPassword    string `json:",omitempty"`
+	ProxyPasswordSet bool
 	// SettingsVersion is 2 once the default text grew from 13 to 14 px and a
 	// stored FontSize was raised by one to keep its sizes; 3 once a stored
 	// BodyFontSize of 14, the old default, became 0 (follow FontSize); 4 once
@@ -140,7 +167,7 @@ func defaultSettings() Settings {
 		KeepInBackground: true, UnreadOnAppIcon: true, NotifyNewMail: true, NotifyPreview: true, ThreadView: true,
 		ThreadCollapse: true, ThreadCollapseThreshold: DefaultThreadCollapse, AutoLabel: true, LabelDisplay: LabelDisplayBoth, JudgeThreshold: 0.8,
 		MCPSend: MCPSendConfirm, Masking: true, MaskCategories: defaultMaskCategories(),
-		SecurityWarnings: true, VerifiedBadge: true, SecurityAI: false}
+		SecurityWarnings: true, VerifiedBadge: true, SecurityAI: false, ProxyMode: ProxySystem}
 }
 
 var langRE = regexp.MustCompile(`^[A-Za-z]{2,3}(-[A-Za-z0-9]{2,8})*$`)
@@ -165,6 +192,19 @@ func (st Settings) validate(kept []mask.Rule) error {
 		return fmt.Errorf("invalid remote images mode %q", st.RemoteImages)
 	case !in(st.MCPSend, "", MCPSendOff, MCPSendConfirm, MCPSendDirect):
 		return fmt.Errorf("invalid MCP send level %q", st.MCPSend)
+	case !in(st.ProxyMode, "", ProxySystem, ProxyCustom, ProxyOff):
+		return fmt.Errorf("invalid proxy mode %q", st.ProxyMode)
+	case len(st.ProxyBypass) > MaxProxyBypass:
+		return fmt.Errorf("at most %d hosts can skip the proxy", MaxProxyBypass)
+	case len(st.ProxyUser) > 255 || len(st.ProxyPassword) > 255: // SOCKS5's limit (RFC 1929)
+		return errors.New("proxy username and password must be at most 255 bytes")
+	}
+	if st.ProxyMode == ProxyCustom {
+		if _, err := ParseProxyURL(st.ProxyURL); err != nil {
+			return fmt.Errorf("invalid custom proxy: %w", err)
+		}
+	}
+	switch {
 	case !in(st.ReplyLanguage, "match", "reading"):
 		return fmt.Errorf("invalid reply language mode %q", st.ReplyLanguage)
 	case !in(st.LabelDisplay, "", LabelDisplayBoth, LabelDisplayIcon, LabelDisplayText):
@@ -275,15 +315,32 @@ func (s *Service) SetSettings(ctx context.Context, st Settings) (Settings, error
 		}
 		st.MaskCategories.Names.On = true // the names it finds are why it is on; off, names stay as they are
 	}
+	password := st.ProxyPassword
+	st.ProxyPassword, st.ProxyPasswordSet = "", password != "" || st.ProxyPasswordSet && stored.ProxyPasswordSet
 	st.SettingsVersion = settingsVersion // a client's 0 must not make the next load raise FontSize again
-	b, err := json.Marshal(st)
-	if err != nil {
+	write := func(st Settings) error {
+		b, err := json.Marshal(st)
+		if err != nil {
+			return err
+		}
+		_, err = s.db.Execute(ctx, `INSERT INTO settings(key, value) VALUES ('app', ?)
+		ON CONFLICT(key) DO UPDATE SET value = excluded.value`, string(b))
+		return err
+	}
+	if err := write(st); err != nil {
 		return Settings{}, err
 	}
-	if _, err := s.db.Execute(ctx, `INSERT INTO settings(key, value) VALUES ('app', ?)
-		ON CONFLICT(key) DO UPDATE SET value = excluded.value`, string(b)); err != nil {
+	// the keychain after the row, which goes back if it fails, so the two never disagree
+	if err := s.saveProxyPassword(password, st, stored); err != nil {
+		if rerr := write(stored); rerr != nil {
+			err = errors.Join(err, rerr)
+		}
 		return Settings{}, err
 	}
+	if password == "" && st.ProxyPasswordSet {
+		password = s.proxy.Load().password // kept as it is
+	}
+	s.setProxy(st, password)
 	s.maskingChanged(st)
 	if securityOn(st) && (!securityOn(stored) || st.SecurityAI && !stored.SecurityAI) {
 		s.wakeSecurityScanner()

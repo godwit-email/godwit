@@ -8,12 +8,14 @@ import (
 	"slices"
 	"strconv"
 	"strings"
+	"unicode"
 
 	"github.com/egoist/mygo/ui"
 	"github.com/godwit-email/godwit/core"
 	"github.com/godwit-email/godwit/internal/i18n"
 	"github.com/godwit-email/godwit/internal/icons"
 	"github.com/godwit-email/godwit/internal/kit"
+	"github.com/godwit-email/godwit/internal/sysproxy"
 	"github.com/godwit-email/godwit/internal/theme"
 )
 
@@ -294,6 +296,103 @@ func (p *settingsPage) generalView(c *ui.Context) {
 				})
 			})
 		})
+	p.proxySection(c)
+}
+
+// proxyDraft is 网络代理 as shown: the custom address saves once it is
+// usable, so 自定义 waits for one, and it outlasts other modes.
+type proxyDraft struct {
+	mode, addr         string // addr is scheme://host:port
+	bypass             string // 不使用代理的主机, comma-separated
+	addrErr, bypassErr string // why the fields can't be saved yet
+	from               string // the settings the draft last matched (proxyKey)
+	pass, sent         string // the password typed, never the stored one; and what of it went to the settings
+}
+
+func (p *settingsPage) proxySection(c *ui.Context) {
+	st, d, t := &p.st, &p.proxy, theme.Of(c)
+	if key := proxyKey(st); key != d.from {
+		d.from, d.mode, d.addr = key, cmp.Or(st.ProxyMode, core.ProxySystem), st.ProxyURL
+		d.bypass = strings.Join(st.ProxyBypass, ", ")
+	}
+	source := "" // where 跟随系统 finds the proxy
+	if d.mode == core.ProxySystem {
+		source = i18n.T("settings.proxy.system.settings")
+		if sysproxy.FromEnvironment() {
+			source = i18n.T("settings.proxy.system.env")
+		}
+	}
+	input := func(label, msg string, v *string, opts kit.InputOpts) func() {
+		return func() {
+			settingRow(c, label, msg, func() {
+				kit.Input(c, v, opts).Width(theme.SettingsInputWidth).Radius(t.Radius.Lg).Label(label)
+			})
+		}
+	}
+	rows := []func(){func() {
+		settingRow(c, i18n.T("settings.proxy.mode"), source, func() {
+			settingSelect(c, i18n.T("settings.proxy.mode"), &d.mode, []kit.Option[string]{
+				{Value: core.ProxySystem, Label: i18n.T("settings.proxy.system")},
+				{Value: core.ProxyCustom, Label: i18n.T("settings.proxy.custom")},
+				{Value: core.ProxyOff, Label: i18n.T("settings.proxy.off")},
+			})
+		})
+	}}
+	if d.mode == core.ProxyCustom {
+		rows = append(rows,
+			input(i18n.T("settings.proxy.url"), cmp.Or(d.addrErr, i18n.T("settings.proxy.url.help")), &d.addr,
+				kit.InputOpts{Invalid: d.addrErr != "", Placeholder: "socks5://127.0.0.1:1080"}),
+			input(i18n.T("settings.proxy.user"), "", &st.ProxyUser, kit.InputOpts{Placeholder: i18n.T("settings.proxy.optional")}),
+			func() {
+				ph := i18n.T("settings.proxy.optional")
+				if st.ProxyPasswordSet {
+					ph = i18n.T("settings.proxy.password.kept")
+				}
+				settingRow(c, i18n.T("settings.proxy.password"), "", func() {
+					ui.Row(c).Gap(c.Theme().Space(3)).AlignItems(ui.Center).Children(func() {
+						kit.Input(c, &d.pass, kit.InputOpts{Password: true, Placeholder: ph}).Width(theme.SettingsInputWidth).Radius(t.Radius.Lg).Label(i18n.T("settings.proxy.password"))
+						if st.ProxyPasswordSet && d.pass == "" { // a saved one shows only as the placeholder, so erasing can't reach it
+							settingButton(c, i18n.T("settings.proxy.password.clear"), kit.Outline, false).OnClick(func() { st.ProxyPasswordSet = false })
+						}
+					})
+				})
+			},
+			input(i18n.T("settings.proxy.bypass"), d.bypassErr, &d.bypass,
+				kit.InputOpts{Invalid: d.bypassErr != "", Placeholder: "*.corp.example, .lan, 10.0.0.0/8"}))
+	}
+	// a typed password saves; erasing it removes the stored one
+	if d.pass != d.sent {
+		st.ProxyPassword, st.ProxyPasswordSet, d.sent = d.pass, d.pass != "", d.pass
+	}
+	settingsSection(c, i18n.T("settings.proxy"), i18n.T("settings.proxy.foot"), rows...)
+
+	// what the controls changed goes to the settings once it can be saved
+	d.addrErr, d.bypassErr = "", ""
+	bypass := strings.FieldsFunc(d.bypass, func(r rune) bool { return r == ',' || unicode.IsSpace(r) })
+	if len(bypass) == 0 {
+		bypass = nil // as an empty list loads
+	}
+	addr := strings.TrimSuffix(strings.TrimSpace(d.addr), "/")
+	u, err := core.ParseProxyURL(addr)
+	switch {
+	case d.mode != core.ProxyCustom:
+		if d.mode != cmp.Or(st.ProxyMode, core.ProxySystem) {
+			st.ProxyMode = d.mode
+		}
+	case addr == "": // nothing to save yet; the help says what goes here
+	case err != nil:
+		d.addrErr = i18n.T("settings.proxy.url.invalid")
+	case len(bypass) > core.MaxProxyBypass:
+		d.bypassErr = i18n.Tf("settings.proxy.bypass.too_many", core.MaxProxyBypass)
+	default:
+		st.ProxyMode, st.ProxyURL, st.ProxyBypass = core.ProxyCustom, u.String(), bypass
+	}
+	d.from = proxyKey(st)
+}
+
+// proxyKey is what of st proxyDraft follows (proxyDraft.from).
+func proxyKey(st *core.Settings) string {
+	return st.ProxyMode + " " + st.ProxyURL + " " + strings.Join(st.ProxyBypass, ",")
 }
 
 // aiFeaturesView is the Intelligence page's 功能 tab: the reader's AI features, and
@@ -310,7 +409,8 @@ func (p *settingsPage) aiFeaturesView(c *ui.Context) {
 	}
 	settingsSection(c, i18n.T("settings.ai"), "",
 		sw(&st.Summary, i18n.T("settings.summary"), i18n.T("settings.summary.help")),
-		sw(&st.QuickReplies, i18n.T("settings.quick_replies"), i18n.T("settings.quick_replies.help")))
+		sw(&st.QuickReplies, i18n.T("settings.quick_replies"), i18n.T("settings.quick_replies.help")),
+		sw(&st.RuleAI, i18n.T("settings.rule_ai"), i18n.T("settings.rule_ai.help")))
 	settingsSection(c, i18n.T("settings.language"), "",
 		sel(i18n.T("settings.reading_language"), i18n.T("settings.reading_language.help"), func() ui.Element {
 			opts := []kit.Option[string]{{Value: "", Label: i18n.T("settings.reading_language.ui")}}

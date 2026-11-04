@@ -2,6 +2,7 @@ package app
 
 import (
 	"context"
+	"errors"
 	"slices"
 
 	"github.com/egoist/mygo/ui"
@@ -13,7 +14,10 @@ import (
 )
 
 // clientNames are the AI apps' names, as they name themselves.
-var clientNames = map[string]string{mcpclients.Claude: "Claude", mcpclients.ClaudeCode: "Claude Code", mcpclients.Codex: "Codex"}
+var clientNames = map[string]string{
+	mcpclients.Claude: "Claude", mcpclients.ClaudeCode: "Claude Code", mcpclients.Codex: "ChatGPT (Codex)",
+	mcpclients.Antigravity: "Antigravity", mcpclients.Grok: "Grok",
+}
 
 // mcpServer is how an AI app runs godwit mcp on this data directory.
 func (a *App) mcpServer() mcpclients.Server {
@@ -21,7 +25,11 @@ func (a *App) mcpServer() mcpclients.Server {
 	if dir, custom := a.plat.DataDir(); custom {
 		args = append(args, "--data-dir", dir)
 	}
-	return mcpclients.Server{Command: godwitExe(), Args: args}
+	v := Version
+	if v == "dev" {
+		v = "0.0.0" // Claude's extensions take a semver
+	}
+	return mcpclients.Server{Command: godwitExe(), Args: args, Version: v}
 }
 
 // readClients reads how each AI app stands with godwit mcp; an app not
@@ -55,6 +63,7 @@ func (p *settingsPage) toggleClient(id string) {
 	a := p.a
 	env, s, on := a.mcpEnv, a.mcpServer(), p.clients[id] == mcpclients.On
 	name := clientNames[id]
+	var opened bool // Claude, to install the extension it was opened with
 	a.do(func(context.Context) error {
 		e, err := env()
 		if err != nil {
@@ -63,11 +72,16 @@ func (p *settingsPage) toggleClient(id string) {
 		if on {
 			return e.Disconnect(id)
 		}
+		opened = e.OpensExtension(id)
 		return e.Connect(id, s)
 	}, func(err error) {
 		switch {
+		case errors.Is(err, mcpclients.ErrRemoveInClaude):
+			a.toastAs(kit.ToastWarning, i18n.Tf("settings.local_api.client.remove", name))
 		case err != nil:
 			a.toastErr(err)
+		case opened:
+			a.toastAs(kit.ToastSuccess, i18n.Tf("settings.local_api.client.opened", name))
 		case on:
 			a.toastAs(kit.ToastSuccess, i18n.Tf("settings.local_api.client.off", name))
 		case id == mcpclients.ClaudeCode: // a new session reads it
@@ -108,7 +122,10 @@ func (p *settingsPage) clientsRow(c *ui.Context, copied func(string)) {
 				}
 				b.Children(func() {
 					// connected: the app's own colors; else its mark and name in gray
-					if on {
+					if on && (id == mcpclients.Codex || id == mcpclients.Grok) { // marks with no colors
+						ui.Icon(c, icons.BrandIcon(id+"-mono")).Size(theme.Icon, theme.Icon).TextColor(t.Foreground)
+						kit.Text(c, clientNames[id], t.Text.Base)
+					} else if on {
 						ui.Image(c, icons.BrandIcon(id)).Size(theme.Icon, theme.Icon)
 						kit.Text(c, clientNames[id], t.Text.Base)
 					} else {

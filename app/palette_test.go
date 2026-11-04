@@ -52,12 +52,23 @@ func TestPaletteHighlightsHits(t *testing.T) {
 }
 
 // paletteShown is whether the palette's kind tabs show.
-func paletteShown(h *harness) bool { return h.tt.HasText("联系人") && h.tt.HasText("附件") }
+func paletteShown(h *harness) bool { return h.tt.HasText("对话") && h.tt.HasText("附件") }
+
+// paletteContacts moves the just opened palette from 全部 to its 联系人
+// kind, three to the right (the page switch's 联系人 shares the name).
+func (h *harness) paletteContacts() {
+	h.t.Helper()
+	h.until("the palette", func() bool { return paletteShown(h) })
+	for range 3 {
+		h.tt.Key(0, ui.KeyRight)
+	}
+	h.until("the contacts kind", func() bool { return inPalette(h, "联系人") && !inPalette(h, "邮件 · ") })
+}
 
 // inPalette is whether the palette, built over the page, shows text s.
 func inPalette(h *harness, s string) bool {
 	texts := h.tt.Texts()
-	i := slices.Index(texts, "联系人")
+	i := slices.IndexFunc(texts, func(t string) bool { return t == "对话" }) // the palette's kind tabs; the page switch has 联系人 too
 	return i >= 0 && slices.Contains(texts[i:], s)
 }
 
@@ -264,10 +275,11 @@ func TestPaletteContactSearchesEveryAccount(t *testing.T) {
 	h.waitMail("alice's inbox", func() bool { return len(h.items()) == 1 })
 	h.tt.Key(ui.Cmd, ui.KeyK)
 	h.until("the palette", func() bool { return paletteShown(h) })
-	h.click("联系人")
+	h.paletteContacts()
 	h.typeText("bob")
 	h.see("联系人 · 1")
-	h.tt.Key(0, ui.KeyEnter)
+	h.tt.Key(ui.Alt, ui.KeyEnter)
+	h.click("查看往来邮件")
 	h.until("Bob's mail from both accounts", func() bool {
 		p := h.app.mail
 		return !paletteShown(h) && p.searched && len(p.results) == 2
@@ -320,7 +332,7 @@ func TestPaletteContactExactAddress(t *testing.T) {
 	h.waitMail("two threads", func() bool { return len(h.items()) == 2 })
 	h.tt.Key(ui.Cmd, ui.KeyK)
 	h.until("the palette", func() bool { return paletteShown(h) })
-	h.click("联系人")
+	h.paletteContacts()
 	h.typeText("bob@")
 	h.see("联系人 · 2")
 	h.post(func() { h.app.mail.mailFrom("bob@example.com") })
@@ -330,14 +342,26 @@ func TestPaletteContactExactAddress(t *testing.T) {
 	})
 }
 
-func TestPaletteContactShowsTheirMail(t *testing.T) {
+// A contact's menu lists their mail; ↵ on a contact opens them on the
+// contacts page.
+func TestPaletteContactOpensContact(t *testing.T) {
 	h, _ := invoices(t)
-	h.click("联系人")
+	h.paletteContacts()
 	h.typeText("bob")
 	h.see("联系人 · 1")
-	h.tt.Key(0, ui.KeyEnter)
+	h.tt.Key(ui.Alt, ui.KeyEnter)
+	h.click("查看往来邮件")
 	h.until("Bob's mail in the list", func() bool {
 		p := h.app.mail
 		return !paletteShown(h) && p.searched && p.sf.from == "bob@example.com" && len(p.results) == 4
+	})
+
+	h.tt.Key(ui.Cmd, ui.KeyK)
+	h.paletteContacts()
+	h.typeText("bob")
+	h.see("联系人 · 1")
+	h.tt.Key(0, ui.KeyEnter)
+	h.until("Bob on the contacts page", func() bool {
+		return !paletteShown(h) && h.app.route.Page == PageContacts && h.app.route.Contact == "bob@example.com"
 	})
 }

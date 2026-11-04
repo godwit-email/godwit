@@ -17,21 +17,35 @@ var PurgeRoles = []string{"junk", "trash"}
 
 // purgePayload is a purge op's payload: the role whose folder (dst_folder_id) it
 // empties. Now marks one the user asked for, which skips the policy's checks.
+// DueAt (unix milliseconds) ends the undo window of one the user asked for: the
+// push leaves it until then.
 type purgePayload struct {
-	Role string `json:"role"`
-	Now  bool   `json:"now,omitempty"`
+	Role  string `json:"role"`
+	Now   bool   `json:"now,omitempty"`
+	DueAt int64  `json:"due_at,omitempty"`
 }
 
 // PurgeNowRole is the payload of a purge op the user asked for: it expunges the
-// message from the specified role folder (trash, junk) at once, whatever the policy.
-func PurgeNowRole(role string) string {
-	b, _ := json.Marshal(purgePayload{Role: role, Now: true})
+// message from the role's folder (trash, junk) at due, whatever the policy.
+func PurgeNowRole(role string, due time.Time) string {
+	b, _ := json.Marshal(purgePayload{Role: role, Now: true, DueAt: due.UnixMilli()})
 	return string(b)
 }
 
-// PurgeNow is the payload of a purge op the user asked for: it expunges the
-// message from Trash at once, whatever the policy.
-var PurgeNow = PurgeNowRole("trash")
+// purgeDue is the time an ops row may be pushed at, in unix milliseconds: a
+// purge's DueAt, else 0.
+const purgeDue = "CASE WHEN kind = 'purge' THEN IFNULL(json_extract(payload, '$.due_at'), 0) ELSE 0 END"
+
+// NextPurgeDue is when the account's first purge still in its undo window after
+// t comes due; zero for none.
+func NextPurgeDue(ctx context.Context, db *store.DB, accountID int64, t time.Time) (time.Time, error) {
+	rows, err := db.Query(ctx, `SELECT MIN(`+purgeDue+`) FROM ops
+		WHERE account_id = ? AND kind = 'purge' AND state = 'pending' AND `+purgeDue+` > ?`, accountID, t.UnixMilli())
+	if err != nil || len(rows.Values) == 0 || rows.Values[0][0] == nil {
+		return time.Time{}, err
+	}
+	return time.UnixMilli(store.Int(rows.Values[0][0])), nil
+}
 
 // purgeable is the condition on message m (with policy p and its folder f joined)
 // that a purge may expunge it: shown and on the server in the role's folder at

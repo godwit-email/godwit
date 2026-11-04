@@ -2,6 +2,7 @@ package app
 
 import (
 	"cmp"
+	"context"
 	"math"
 	"runtime"
 	"time"
@@ -10,6 +11,7 @@ import (
 	"github.com/godwit-email/godwit/core"
 	"github.com/godwit-email/godwit/core/events"
 	"github.com/godwit-email/godwit/internal/i18n"
+	"github.com/godwit-email/godwit/internal/icons"
 	"github.com/godwit-email/godwit/internal/kit"
 	"github.com/godwit-email/godwit/internal/theme"
 )
@@ -169,9 +171,18 @@ func (a *App) toastAs(kind, msg string) {
 	a.toasts = append(a.toasts, ui.Toast{ID: msg, Title: msg, Type: kind})
 }
 
-// toastErr shows err in words; a cancellation shows nothing.
+// toastErr shows err in words; a cancellation shows nothing. An error
+// humanize has no words for offers to report it as a GitHub issue, which
+// the user reads and submits in the browser.
 func (a *App) toastErr(err error) {
-	if msg := humanize(err); msg != "" {
+	msg := humanize(err)
+	switch {
+	case msg == "":
+	case msg == i18n.Tf("error.unknown", err.Error()):
+		u := issueURL(a.svc.Redact(err.Error()), a.svc.Redact(RecentLog.String()))
+		a.toasts = append(a.toasts, ui.Toast{ID: msg, Title: msg, Type: kit.ToastError,
+			Action: i18n.T("error.report"), OnAction: func() { a.do(func(context.Context) error { return a.plat.OpenURL(u) }, a.toastErr) }})
+	default:
 		a.toastAs(kit.ToastError, msg)
 	}
 }
@@ -348,7 +359,7 @@ func (a *App) body(c *ui.Context) {
 			return
 		}
 		top := th.Space(3)
-		if a.route.Page == PageMail || a.route.Page == PageWit {
+		if a.route.Page == PageMail || a.route.Page == PageWit || a.route.Page == PageContacts {
 			top = 0 // the page switch sits right under the title bar
 		}
 		// Keep the sidebar's layout at its full width while it slides out of the clipped pane.
@@ -434,10 +445,11 @@ func panelRadius(c *ui.Context) float32 {
 	return r
 }
 
-// pageSwitch is the Mail / Wit switch at the top of their sidebars.
+// pageSwitch is the Mail / Contacts / Wit switch at the top of their sidebars.
 func (a *App) pageSwitch(c *ui.Context) ui.Element {
 	return kit.NavSwitch(c,
 		kit.NavItem{Icon: "mail", Label: i18n.T("shell.nav.mail"), Selected: a.route.Page == PageMail, OnClick: func() { a.navigate(Route{Page: PageMail, View: core.View{Unified: "inbox"}}) }},
+		kit.NavItem{Icon: "contacts", Label: i18n.T("shell.nav.contacts"), Selected: a.route.Page == PageContacts, OnClick: func() { a.navigate(Route{Page: PageContacts}) }},
 		kit.NavItem{Icon: "sparkles", Label: i18n.T("shell.nav.wit"), Selected: a.route.Page == PageWit, OnClick: func() { a.navigate(Route{Page: PageWit}) }})
 }
 
@@ -459,6 +471,7 @@ func sidebarScroll(c *ui.Context, children func()) {
 // in the same spot.
 func (a *App) sidebarFoot(c *ui.Context) {
 	th := c.Theme()
+	a.updateCard(c)
 	item := func(icon, label string, r Route) {
 		b := kit.SidebarItem(c, kit.SidebarItemOpts{OnClick: func() { a.navigate(r) }}).Gap(th.Space(2.5))
 		b.Children(func() {
@@ -469,8 +482,11 @@ func (a *App) sidebarFoot(c *ui.Context) {
 	if a.route.Page == PageSettings {
 		r := a.leaveSettings()
 		name := i18n.T("shell.nav.mail")
-		if r.Page == PageWit {
+		switch r.Page {
+		case PageWit:
 			name = i18n.T("shell.nav.wit")
+		case PageContacts:
+			name = i18n.T("shell.nav.contacts")
 		}
 		item("arrow-left", i18n.Tf("shell.nav.back_to", name), r)
 		return
@@ -481,11 +497,46 @@ func (a *App) sidebarFoot(c *ui.Context) {
 	item("sliders-horizontal", i18n.T("shell.nav.settings"), Route{Page: PageSettings})
 }
 
+// updateCard offers the newer version the update feed has, above Settings:
+// 重启以更新 when it installed itself, else 有新版本. Either opens the
+// updater's window (the Store's page), which relaunches or installs.
+func (a *App) updateCard(c *ui.Context) {
+	if a.latest == "" {
+		return
+	}
+	t, th := theme.Of(c), c.Theme()
+	title := i18n.T("shell.update.available")
+	if a.latestInstalls {
+		title = i18n.T("shell.update.relaunch")
+	}
+	ver := "v" + a.latest
+	b := kit.Pressable(c, kit.PressableOpts{Bare: true, OnClick: a.plat.CheckForUpdates}).Label(title+" "+ver).
+		Padding(th.Space(2.5), th.Space(3)).Gap(th.Space(2)).Margin(0, 0, th.Space(1.5), 0).
+		Radius(t.Radius.Xl).Border(theme.Hairline, t.Border)
+	if t.Dark { // Background is darker than the window material there: a step lighter and a stronger edge, as a shadow would not show
+		b.Background(t.HoverTint).Border(theme.Hairline, t.Input)
+	} else {
+		kit.Elevate(c, b.Background(t.Background), theme.ShadowSm)
+	}
+	arrow := t.Muted
+	if b.Hovered() {
+		arrow = t.Foreground
+	}
+	b.Children(func() {
+		ui.Icon(c, logo).Size(theme.IconXl, theme.IconXl).TextColor(t.Foreground).Role(ui.RoleNone)
+		ui.Column(c).Grow(1).Shrink(1).MinWidth(0).Children(func() {
+			ui.Text(c, title).FontWeight(500).SingleLine().Role(ui.RoleNone)
+			kit.Text(c, ver, t.Text.Sm).TextColor(t.Muted).Role(ui.RoleNone)
+		})
+		ui.Icon(c, icons.Get("arrow-right")).Size(theme.Icon, theme.Icon).TextColor(arrow)
+	})
+}
+
 // leaveSettings is where settings' way back goes: the last page before
 // settings in the history, else the inbox.
 func (a *App) leaveSettings() Route {
 	for i := len(a.history) - 1; i >= 0; i-- {
-		if r := a.history[i]; r.Page == PageMail || r.Page == PageWit {
+		if r := a.history[i]; r.Page == PageMail || r.Page == PageWit || r.Page == PageContacts {
 			return r
 		}
 	}

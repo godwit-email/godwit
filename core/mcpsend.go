@@ -87,7 +87,7 @@ func (s *Service) RequestMCPSend(ctx context.Context, draftID, revision int64) (
 		if s.opts.ComposeOpen != nil && s.opts.ComposeOpen(draftID) {
 			return false, ErrMCPSendComposing
 		}
-		if err := s.send(ctx, draftID, revision); err != nil {
+		if err := s.send(ctx, draftID, revision, nil); err != nil {
 			return false, err
 		}
 		if err := s.auditMCPSend(ctx, draftID, "direct"); err != nil { // the mail is queued: still sent
@@ -225,7 +225,7 @@ func (s *Service) ResolveMCPSend(ctx context.Context, id int64, accept bool) err
 	if r == nil {
 		return ErrInvalidState
 	}
-	return s.sendMCP(ctx, id, r, func() error { return s.send(ctx, r.draftID, r.revision) })
+	return s.sendMCP(ctx, id, r, func() error { return s.send(ctx, r.draftID, r.revision, nil) })
 }
 
 // ResolveMCPSendAcknowledged answers the warnings ResolveMCPSend returned for

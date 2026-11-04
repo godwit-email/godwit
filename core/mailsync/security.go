@@ -30,6 +30,8 @@ func refreshAuthenticationResults(ctx context.Context, db *store.DB, c *imapclie
 	if err != nil {
 		return err
 	}
+	// a scanned fraud verdict and a user's classification both outlive late headers
+	keep := "(security_status='warning' OR COALESCE(security_reason, '') IN " + mail.ManualSecuritySQL + ")"
 	var stmts []sqlite.Statement
 	for _, m := range fetched {
 		id, ok := ids[m.UID]
@@ -49,9 +51,9 @@ func refreshAuthenticationResults(ctx context.Context, db *store.DB, c *imapclie
 		}
 		stmts = append(stmts, sqlite.Statement{SQL: `UPDATE messages SET auth_results=?,
    security_verify_dkim=?,
-   security_status=CASE WHEN security_status='warning' THEN security_status ELSE ? END,
-   security_reason=CASE WHEN security_status='warning' THEN security_reason ELSE ? END,
-   security_scanned_at=CASE WHEN security_status='warning' THEN security_scanned_at ELSE 0 END
+   security_status=CASE WHEN ` + keep + ` THEN security_status ELSE ? END,
+   security_reason=CASE WHEN ` + keep + ` THEN security_reason ELSE ? END,
+   security_scanned_at=CASE WHEN ` + keep + ` THEN security_scanned_at ELSE 0 END
    WHERE id=? AND server_folder_id=? AND server_uidvalidity=? AND server_uid=? AND auth_results IS NULL`, Args: []any{result, verifyDKIM, status, reason, id, f.id, f.uidValidity, uint32(m.UID)}})
 		r.changed = append(r.changed, id)
 	}

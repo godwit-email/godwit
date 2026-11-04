@@ -170,6 +170,7 @@
   },
   "error_flush_slow": "A draft is still saving after 3 seconds",
   "error_generic": "Something went wrong. Please try again later.",
+  "error_invalid_rule": "This rule can't be saved. Check its conditions and actions.",
   "error_invalid_state": "This item has changed. Refresh and try again.",
   "error_no_outbox_draft": "This message has no draft to bring back.",
   "error_keychain": "The system keychain is unavailable.",
@@ -211,6 +212,7 @@
   "error_model_unavailable": "The plugin offering this model is not running or no longer offers it. Enable it in Settings › Extensions, or pick another model.",
   "error_unexpected": "An unexpected error occurred.",
   "error_unknown": "Something went wrong: {arg1}",
+  "error_report": "Report",
   "@error_unknown": {
     "placeholders": {
       "arg1": {
@@ -703,6 +705,34 @@
   "onboarding_reason_protocol": "the server''s reply was not understood",
   "onboarding_reason_timeout": "timed out",
   "onboarding_reason_tls": "the encrypted connection failed",
+  "onboarding_reason_proxy_unreachable": "can''t reach the proxy",
+  "onboarding_reason_proxy_refused": "the proxy refused the connection",
+  "onboarding_check_imap_proxy": "IMAP connection failed: {arg1}",
+  "@onboarding_check_imap_proxy": {
+    "placeholders": {
+      "arg1": {
+        "type": "String"
+      }
+    }
+  },
+  "onboarding_check_smtp_proxy": "SMTP connection failed: {arg1}",
+  "@onboarding_check_smtp_proxy": {
+    "placeholders": {
+      "arg1": {
+        "type": "String"
+      }
+    }
+  },
+  "onboarding_reason_proxy_refused_status": "the proxy refused the connection: {arg1}",
+  "@onboarding_reason_proxy_refused_status": {
+    "placeholders": {
+      "arg1": {
+        "type": "String"
+      }
+    }
+  },
+  "onboarding_reason_proxy_auth": "proxy authentication failed",
+  "onboarding_next_proxy": "Check the proxy settings",
   "onboarding_relogin": "Sign in again",
   "onboarding_retype": "Re-enter the {arg1}",
   "@onboarding_retype": {
@@ -1748,7 +1778,9 @@
   "settings_local_api_client_off": "Disconnected {arg1}.",
   "settings_local_api_client_on": "Connected {arg1}. Restart it to use Godwit.",
   "settings_local_api_client_on_session": "Connected {arg1}. A new session can use Godwit.",
+  "settings_local_api_client_opened": "Opened {arg1}. Click Install there to finish.",
   "settings_local_api_client_other": "Connected to another Godwit; click to connect this one",
+  "settings_local_api_client_remove": "Remove Godwit in {arg1}'s Settings › Extensions.",
   "settings_local_api_connect": "Apps",
   "settings_local_api_connect_help": "The apps you pick can read your mail and draft replies. For any other app, copy the config and add it there.",
   "settings_local_api_copied": "Copied",
@@ -1765,6 +1797,24 @@
   "settings_local_api_send_off": "Not allowed",
   "settings_local_api_send_risk": "Mail an AI tool has read may hide content that talks it into sending. With this level, it can send in your name without your confirmation, including to addresses you don’t know.",
   "settings_mail": "Mail",
+  "settings_proxy": "Network proxy",
+  "settings_proxy_foot": "Your mail passes through the proxy. Only use a proxy you trust.",
+  "settings_proxy_mode": "Proxy",
+  "settings_proxy_system": "Follow system",
+  "settings_proxy_off": "No proxy",
+  "settings_proxy_system_settings": "Uses the proxy in the system’s network settings",
+  "settings_proxy_system_env": "Uses the proxy in the HTTPS_PROXY and HTTP_PROXY environment variables",
+  "settings_proxy_custom": "Custom",
+  "settings_proxy_url": "Proxy address",
+  "settings_proxy_url_help": "Supports SOCKS5 and HTTP; SOCKS5 is recommended",
+  "settings_proxy_url_invalid": "The proxy address is invalid, e.g. socks5://127.0.0.1:1080",
+  "settings_proxy_bypass": "Bypass proxy for",
+  "settings_proxy_bypass_too_many": "At most {arg1, number, ::group-off} hosts",
+  "settings_proxy_user": "Username",
+  "settings_proxy_password": "Password",
+  "settings_proxy_password_kept": "Saved · type a new password to replace it",
+  "settings_proxy_password_clear": "Clear",
+  "settings_proxy_optional": "Optional",
   "settings_models": "Intelligence",
   "settings_models_account": "Account",
   "settings_models_add": "Add service",
@@ -2205,6 +2255,8 @@
   },
   "shell_nav_mail": "Mail",
   "shell_nav_settings": "Settings",
+  "shell_update_available": "Update Available",
+  "shell_update_relaunch": "Relaunch to Update",
   "shell_nav_wit": "Wit",
   "shell_resize": "Resize",
   "shell_sidebar_collapse": "Collapse sidebar",
@@ -2677,6 +2729,30 @@
       }
     }
   },
+  "shell_sync_cause_proxy_unreachable": "Cannot reach the proxy needed to sync {arg1}",
+  "@shell_sync_cause_proxy_unreachable": {
+    "placeholders": {
+      "arg1": {
+        "type": "String"
+      }
+    }
+  },
+  "shell_sync_cause_proxy_refused": "The proxy refused the connection to {arg1}",
+  "@shell_sync_cause_proxy_refused": {
+    "placeholders": {
+      "arg1": {
+        "type": "String"
+      }
+    }
+  },
+  "shell_sync_cause_proxy_auth": "Proxy authentication failed; cannot connect to {arg1}",
+  "@shell_sync_cause_proxy_auth": {
+    "placeholders": {
+      "arg1": {
+        "type": "String"
+      }
+    }
+  },
   "codes_recent": "Recent sign-in codes",
   "codes_empty": "No codes in the last 15 minutes",
   "codes_copy_failed": "Copy failed",
@@ -2987,5 +3063,552 @@
   "palette_action_empty_spam": "Empty Spam",
   "palette_action_mark_all_read": "Mark all as read",
   "mail_empty_trash_toast": "Trash emptied",
-  "mail_empty_spam_toast": "Spam emptied"
+  "mail_empty_spam_toast": "Spam emptied",
+  "shell_nav_contacts": "Contacts",
+  "contacts_count": "{arg1, plural, one {{arg1, number, ::group-off} contact} other {{arg1, number, ::group-off} contacts}}",
+  "contacts_cat_all": "All Contacts",
+  "contacts_cat_people": "Corresponded",
+  "contacts_cat_subscriptions": "Subscriptions",
+  "contacts_cat_blocked": "Blocked",
+  "contacts_filter": "Filter by name or address",
+  "contacts_no_match": "No matching contacts",
+  "contacts_empty": "No contacts yet",
+  "contacts_archive_all": "Archive All",
+  "contacts_block": "Block",
+  "contacts_unblock": "Unblock",
+  "contacts_archive_n": "{arg1, plural, one {Archive {arg1, number, ::group-off} Message} other {Archive All {arg1, number, ::group-off}}}",
+  "contacts_archive_tip_kept": "{arg1, plural, one {Skips {arg1, number, ::group-off} message in threads you starred or replied to; can be undone} other {Skips {arg1, number, ::group-off} messages in threads you starred or replied to; can be undone}}",
+  "contacts_archive_tip_undo": "Can be undone",
+  "contacts_archive_tip_all_kept": "{arg1, plural, one {The {arg1, number, ::group-off} message in the inbox is in a thread you starred or replied to} other {All {arg1, number, ::group-off} messages in the inbox are in threads you starred or replied to}}",
+  "contacts_archive_tip_none": "No mail from this contact in the inbox",
+  "contacts_archived": "{arg1, plural, one {Archived {arg1, number, ::group-off} message} other {Archived {arg1, number, ::group-off} messages}}",
+  "contacts_archive_skipped": "Left {arg1, number, ::group-off} in the inbox: starred or replied to",
+  "contacts_subscription": "Subscription",
+  "contacts_stat_received": "Received",
+  "contacts_stat_sent": "Sent",
+  "contacts_stat_last": "Last Exchanged",
+  "contacts_mail": "Mail Exchanged · {arg1, number, ::group-off}",
+  "contacts_replied": "Replied",
+  "reader_view_contact": "View Contact",
+  "mail_menu_labels": "Labels",
+  "mail_menu_security": "Security Assessment",
+  "mail_security_mark_safe": "Mark as safe / legitimate",
+  "mail_security_mark_suspicious": "Mark as suspicious",
+  "mail_security_mark_warning": "Mark as threat / phishing",
+  "mail_security_reset": "Restore automatic scan",
+  "reader_security_edit_title": "Adjust security assessment",
+  "reader_security_click_to_edit": "Click to adjust",
+  "reader_security_manual_safe_badge": "Marked safe by you",
+  "reader_security_manual_warning_badge": "Manually flagged threat",
+  "reader_security_manual_suspicious_badge": "Manually flagged suspicious",
+  "reader_security_manual_safe_desc": "This email was manually marked as safe and legitimate.",
+  "reader_security_manual_warning_desc": "This email was manually flagged as a security threat or phishing attempt.",
+  "reader_security_manual_suspicious_desc": "This email was manually flagged as suspicious for review.",
+  "reader_security_updated": "Security assessment updated",
+  "reader_message_labels": "Adjust labels…",
+  "settings_rules": "Rules",
+  "settings_rules_sub": "Sort mail automatically as it arrives, by conditions you set. Rules run on this computer.",
+  "settings_rules_new": "New rule",
+  "settings_rules_empty": "No rules yet",
+  "settings_rules_empty_desc": "For example, label and archive bills automatically, or keep newsletters out of the inbox. You can also right-click a message and choose “Create Rule for Similar Mail”.",
+  "settings_rules_list": "My rules",
+  "settings_rules_list_foot": "Rules run from top to bottom; drag to reorder",
+  "mail_menu_rule": "Create Rule for Similar Mail…",
+  "settings_rules_group_organize": "Organize",
+  "settings_rules_group_forward": "Forward",
+  "settings_rules_group_files": "Save to This Computer",
+  "settings_rules_group_wit": "Wit",
+  "settings_rules_hits_count": "Last 7 days: {arg1, number, ::group-off}",
+  "@settings_rules_hits_count": {
+    "placeholders": {
+      "arg1": {
+        "type": "int"
+      }
+    }
+  },
+  "settings_rules_off": "Off",
+  "settings_rules_templates": "Start from a template",
+  "settings_rules_templates_foot": "Opens the editor with conditions and actions filled in; change them, then save. Godwit never turns a rule on by itself.",
+  "settings_rules_template_use_label": "Use template “{arg1}”",
+  "@settings_rules_template_use_label": {
+    "placeholders": {
+      "arg1": {
+        "type": "String"
+      }
+    }
+  },
+  "settings_rules_template_bill": "File bills",
+  "settings_rules_template_bill_desc": "Subject contains invoice and has attachments: apply the Bills label, save a PDF, archive",
+  "settings_rules_template_newsletter": "Keep newsletters out of the inbox",
+  "settings_rules_template_newsletter_desc": "When labeled Newsletter: mark as read and archive",
+  "settings_rules_template_suspicious": "Move suspicious mail to Junk",
+  "settings_rules_template_suspicious_desc": "When the security check flags it suspicious or dangerous, move it to Junk",
+  "settings_rules_from_mail_name": "Mail from {arg1}",
+  "@settings_rules_from_mail_name": {
+    "placeholders": {
+      "arg1": {
+        "type": "String"
+      }
+    }
+  },
+  "settings_rules_from_mail_banner": "Sender filled in from “{arg1}”. Also match on these?",
+  "@settings_rules_from_mail_banner": {
+    "placeholders": {
+      "arg1": {
+        "type": "String"
+      }
+    }
+  },
+  "settings_rules_preview": "Existing mail",
+  "@settings_rules_preview_foot": {
+    "placeholders": {
+      "arg1": {
+        "type": "int"
+      }
+    }
+  },
+  "settings_rules_preview_wait": "Looking for matching mail…",
+  "settings_rules_preview_incomplete": "Fill in every condition to see which mail matches.",
+  "settings_rules_preview_none": "No mail matches. Are the conditions too strict?",
+  "settings_rules_preview_count": "{arg1, number, ::group-off} match. When you save, you can choose to handle them too.",
+  "@settings_rules_preview_count": {
+    "placeholders": {
+      "arg1": {
+        "type": "int"
+      }
+    }
+  },
+  "settings_rules_sep": ", ",
+  "settings_rules_save_title": "Save “{arg1}”",
+  "@settings_rules_save_title": {
+    "placeholders": {
+      "arg1": {
+        "type": "String"
+      }
+    }
+  },
+  "settings_rules_save_desc": "From now on, it runs on matching mail as it arrives.",
+  "settings_rules_save_existing": "Also handle the {arg1, number, ::group-off} existing messages",
+  "@settings_rules_save_existing": {
+    "placeholders": {
+      "arg1": {
+        "type": "int"
+      }
+    }
+  },
+  "settings_rules_save_existing_only": "Runs only: {arg1}.",
+  "@settings_rules_save_existing_only": {
+    "placeholders": {
+      "arg1": {
+        "type": "String"
+      }
+    }
+  },
+  "settings_rules_save_existing_later": "{arg1}: only for mail that arrives from now on.",
+  "@settings_rules_save_existing_later": {
+    "placeholders": {
+      "arg1": {
+        "type": "String"
+      }
+    }
+  },
+  "settings_rules_save_existing_nothing": "This rule has no action that can run on existing mail.",
+  "settings_rules_save_confirm": "Save and Turn On",
+  "@settings_rules_save_ran": {
+    "placeholders": {
+      "arg1": {
+        "type": "int"
+      }
+    }
+  },
+  "settings_rules_enable": "Enable “{arg1}”",
+  "@settings_rules_enable": {
+    "placeholders": {
+      "arg1": {
+        "type": "String"
+      }
+    }
+  },
+  "@settings_rules_edit": {
+    "placeholders": {
+      "arg1": {
+        "type": "String"
+      }
+    }
+  },
+  "settings_rules_untitled": "Untitled rule",
+  "settings_rules_cond": "{arg1} {arg2} {arg3}",
+  "@settings_rules_cond": {
+    "placeholders": {
+      "arg1": {
+        "type": "String"
+      },
+      "arg2": {
+        "type": "String"
+      },
+      "arg3": {
+        "type": "String"
+      }
+    }
+  },
+  "settings_rules_field_age": "Age",
+  "settings_rules_op_older_than": "older than",
+  "settings_rules_days": "Days",
+  "settings_rules_days_ago": "days",
+  "settings_rules_cond_age": "{arg1, plural, one {older than {arg1, number, ::group-off} day} other {older than {arg1, number, ::group-off} days}}",
+  "@settings_rules_cond_age": {
+    "placeholders": {
+      "arg1": {
+        "type": "int"
+      }
+    }
+  },
+  "settings_rules_field_from": "Sender",
+  "settings_rules_field_subject": "Subject",
+  "settings_rules_op_contains": "contains",
+  "settings_rules_op_not_contains": "doesn’t contain",
+  "settings_rules_op_is": "is",
+  "settings_rules_action_label_summary": "Label “{arg1}”",
+  "@settings_rules_action_label_summary": {
+    "placeholders": {
+      "arg1": {
+        "type": "String"
+      }
+    }
+  },
+  "settings_rules_trigger_receive": "New mail arrives",
+  "settings_rules_trigger_label": "A label is applied",
+  "settings_rules_trigger_security": "The security check flags it",
+  "settings_rules_trigger_daily": "First sync of the day",
+  "settings_rules_trigger_receive_help": "Runs when new mail syncs. Mail that arrived while Godwit was quit is handled at the next sync.",
+  "settings_rules_trigger_label_help": "Runs when you or the model apply this label. Labels applied by rules don’t trigger rules.",
+  "settings_rules_trigger_security_help": "Runs once the security check gives new mail a verdict. Re-checking older mail doesn’t trigger it.",
+  "settings_rules_trigger_daily_help": "Runs once over matching mail after the first sync of each day. Suits conditions like “older than N days”.",
+  "settings_rules_trigger_label_which": "Which label",
+  "settings_rules_trigger_security_which": "Verdict",
+  "settings_rules_trigger_label_summary": "Labeled “{arg1}”",
+  "@settings_rules_trigger_label_summary": {
+    "placeholders": {
+      "arg1": {
+        "type": "String"
+      }
+    }
+  },
+  "settings_rules_trigger_security_summary": "Flagged {arg1}",
+  "@settings_rules_trigger_security_summary": {
+    "placeholders": {
+      "arg1": {
+        "type": "String"
+      }
+    }
+  },
+  "settings_rules_security_suspicious": "suspicious or dangerous",
+  "settings_rules_security_dangerous": "dangerous",
+  "settings_rules_run": "How it runs",
+  "settings_rules_run_window": "Only while the window is open",
+  "settings_rules_run_window_help": "Mail that arrives while the window is closed is handled when you open it again.",
+  "settings_rules_run_background": "In the background",
+  "settings_rules_run_background_help": "After the window closes, Godwit stays in the menu bar, keeps syncing and runs this rule.",
+  "settings_rules_summary_always": "{arg1} → {arg2}",
+  "@settings_rules_summary_always": {
+    "placeholders": {
+      "arg1": {
+        "type": "String"
+      },
+      "arg2": {
+        "type": "String"
+      }
+    }
+  },
+  "settings_rules_summary": "{arg1} · {arg2} → {arg3}",
+  "@settings_rules_summary": {
+    "placeholders": {
+      "arg1": {
+        "type": "String"
+      },
+      "arg2": {
+        "type": "String"
+      },
+      "arg3": {
+        "type": "String"
+      }
+    }
+  },
+  "settings_rules_join_all": "{arg1} and {arg2}",
+  "@settings_rules_join_all": {
+    "placeholders": {
+      "arg1": {
+        "type": "String"
+      },
+      "arg2": {
+        "type": "String"
+      }
+    }
+  },
+  "settings_rules_join_any": "{arg1} or {arg2}",
+  "@settings_rules_join_any": {
+    "placeholders": {
+      "arg1": {
+        "type": "String"
+      },
+      "arg2": {
+        "type": "String"
+      }
+    }
+  },
+  "settings_rules_editor_sub": "Set the trigger, conditions and action. Nothing happens until you save.",
+  "settings_rules_name": "Name",
+  "settings_rules_name_placeholder": "Name this rule",
+  "settings_rules_when": "When",
+  "settings_rules_trigger": "Trigger",
+  "settings_rules_match": "Conditions",
+  "settings_rules_match_all": "All match",
+  "settings_rules_match_any": "Any matches",
+  "settings_rules_field": "Field",
+  "settings_rules_op": "Comparison",
+  "settings_rules_value": "Value",
+  "settings_rules_condition_remove": "Remove this condition",
+  "settings_rules_condition_add": "Add condition",
+  "settings_rules_no_conditions": "No conditions: every mail that triggers the rule gets the action below.",
+  "settings_rules_if": "If",
+  "settings_rules_then": "Then",
+  "settings_rules_action_label": "Apply label",
+  "settings_rules_label": "Label",
+  "settings_rules_field_to": "Recipient",
+  "settings_rules_field_body": "Body",
+  "settings_rules_field_attachments": "Attachments",
+  "settings_rules_field_label": "Label",
+  "settings_rules_field_folder": "Folder",
+  "settings_rules_attachments_yes": "Has attachments",
+  "settings_rules_attachments_no": "No attachments",
+  "settings_rules_folder": "Folder",
+  "settings_rules_action_unlabel": "Remove label",
+  "settings_rules_action_read": "Mark as read",
+  "settings_rules_action_star": "Star",
+  "settings_rules_action_archive": "Archive",
+  "settings_rules_action_junk": "Move to Junk",
+  "settings_rules_action_trash": "Move to Trash",
+  "settings_rules_action_stop": "Stop processing later rules",
+  "settings_rules_action_unlabel_summary": "Remove label “{arg1}”",
+  "@settings_rules_action_unlabel_summary": {
+    "placeholders": {
+      "arg1": {
+        "type": "String"
+      }
+    }
+  },
+  "settings_rules_action_n": "Action {arg1, number, ::group-off}",
+  "@settings_rules_action_n": {
+    "placeholders": {
+      "arg1": {
+        "type": "int"
+      }
+    }
+  },
+  "settings_rules_action_add": "Add action",
+  "settings_rules_action_up": "Move up",
+  "settings_rules_action_down": "Move down",
+  "settings_rules_action_remove": "Remove this action",
+  "settings_rules_hits_show": "Show recent hits",
+  "settings_rules_hits_hide": "Hide recent hits",
+  "settings_rules_hits_head": "Last 7 days: {arg1, number, ::group-off}. Local actions can be undone; forwards and exports have already happened and can only be viewed.",
+  "@settings_rules_hits_head": {
+    "placeholders": {
+      "arg1": {
+        "type": "int"
+      }
+    }
+  },
+  "settings_rules_hits_none": "No mail matched in the last 7 days",
+  "settings_rules_hits_undo": "Undo",
+  "settings_rules_hits_undone": "Undone",
+  "settings_rules_hits_gone": "Message deleted",
+  "settings_rules_hits_kept": "Left as they are, changed since: {arg1, number, ::group-off}",
+  "@settings_rules_hits_kept": {
+    "placeholders": {
+      "arg1": {
+        "type": "int"
+      }
+    }
+  },
+  "settings_rules_result_failed": "{arg1} failed: {arg2}",
+  "@settings_rules_result_failed": {
+    "placeholders": {
+      "arg1": {
+        "type": "String"
+      },
+      "arg2": {
+        "type": "String"
+      }
+    }
+  },
+  "settings_rules_result_not_run": "Not run: {arg1}",
+  "@settings_rules_result_not_run": {
+    "placeholders": {
+      "arg1": {
+        "type": "String"
+      }
+    }
+  },
+  "settings_rules_result_undone": "Undone: {arg1}",
+  "@settings_rules_result_undone": {
+    "placeholders": {
+      "arg1": {
+        "type": "String"
+      }
+    }
+  },
+  "settings_rules_result_kept": "Not undone: {arg1}",
+  "@settings_rules_result_kept": {
+    "placeholders": {
+      "arg1": {
+        "type": "String"
+      }
+    }
+  },
+  "settings_rules_failure_no_folder": "the account has no such folder",
+  "settings_rules_failure_no_label": "the label is gone",
+  "settings_rules_failure_gone": "the message is gone",
+  "settings_rules_failure_unknown": "unknown action",
+  "settings_rules_action_forward": "Forward to",
+  "settings_rules_action_forward_summary": "Forward to {arg1}",
+  "@settings_rules_action_forward_summary": {
+    "placeholders": {
+      "arg1": {
+        "type": "String"
+      }
+    }
+  },
+  "settings_rules_forward_to": "Recipient’s address",
+  "settings_rules_egress": "Sends out",
+  "settings_rules_confirm_title": "Confirm the forward recipient",
+  "settings_rules_confirm_desc": "Once saved, new mail matching “{arg1}” is forwarded automatically, without asking you each time.",
+  "@settings_rules_confirm_desc": {
+    "placeholders": {
+      "arg1": {
+        "type": "String"
+      }
+    }
+  },
+  "settings_rules_confirm_to": "Forwards to",
+  "settings_rules_confirm_outbox": "Sent from the account that received it; each goes to the Outbox first and can be undone for 10 seconds",
+  "settings_rules_confirm_new_only": "Only mail that arrives after saving is forwarded; existing mail is not",
+  "settings_rules_confirm_again": "If you change the recipient later, you’ll be asked again",
+  "settings_rules_confirm_back": "Go back and edit",
+  "settings_rules_confirm_ok": "Confirm recipient",
+  "settings_rules_result_skipped": "Skipped: {arg1} (new mail only)",
+  "@settings_rules_result_skipped": {
+    "placeholders": {
+      "arg1": {
+        "type": "String"
+      }
+    }
+  },
+  "settings_rules_failure_unconfirmed": "the recipient isn’t confirmed",
+  "settings_rules_failure_send_check": "a plugin warned about the message",
+  "settings_rules_failure_send": "it couldn’t be put in the Outbox",
+  "settings_rules_empty_trash": "Emptying Trash and Junk on a schedule isn’t a rule: set it in Accounts › Mailboxes ›",
+  "settings_rules_action_pdf": "Export PDF to",
+  "settings_rules_action_eml": "Export original email to",
+  "settings_rules_action_attachments": "Save attachments to",
+  "settings_rules_action_pdf_summary": "Export PDF to “{arg1}”",
+  "settings_rules_action_eml_summary": "Export original email to “{arg1}”",
+  "settings_rules_action_attachments_summary": "Save attachments to “{arg1}”",
+  "settings_rules_failure_no_destination": "the folder is not there",
+  "settings_rules_failure_no_pdf": "PDF export is not available here",
+  "settings_rules_failure_unavailable": "the email could not be read from the server",
+  "settings_rules_failure_too_large": "the email is too large",
+  "settings_rules_failure_write_failed": "the file could not be written",
+  "settings_rules_failure_unsafe_folder": "a folder inside the destination is a link or not a folder",
+  "settings_rules_files_choose": "Choose folder…",
+  "settings_rules_files_change": "Choose…",
+  "settings_rules_files_note": "Writes to the folder you chose. Existing files are never overwritten; a name already taken gets a number. Images inside the body are not saved.",
+  "settings_rules_files_subfolder": "Put each email in its own folder",
+  "settings_rules_files_naming": "Folder naming",
+  "settings_rules_files_custom": "Custom…",
+  "settings_rules_files_insert": "Insert",
+  "settings_rules_files_remove": "Delete “{arg1}”",
+  "settings_rules_files_placeholder": "Type text, or insert a token below",
+  "settings_rules_files_no_token": "Insert at least one token, or every email lands in the same folder.",
+  "settings_rules_files_preset_date": "Date Subject",
+  "settings_rules_files_preset_sender": "Sender / Date Subject",
+  "settings_rules_files_preset_year": "Year / Month / Date Subject",
+  "settings_rules_files_token_date": "Date",
+  "settings_rules_files_token_subject": "Subject",
+  "settings_rules_files_token_from": "Sender",
+  "settings_rules_files_token_domain": "Sender domain",
+  "settings_rules_files_token_year": "Year",
+  "settings_rules_files_token_month": "Month",
+  "settings_rules_files_token_account": "Account",
+  "settings_rule_ai": "Let rules use Wit",
+  "settings_rule_ai_help": "Rules can draft replies and pull out key points. Matching new mail goes to the default model automatically, masked first.",
+  "settings_rules_action_draft_reply": "Have Wit draft a reply",
+  "settings_rules_action_key_points": "Have Wit save key points to",
+  "settings_rules_action_key_points_summary": "Have Wit save key points to “{arg1}”",
+  "settings_rules_ai_off_note": "Wit’s actions send mail to the model and are off by default. Turn on “Let rules use Wit” in Intelligence › Features to choose them.",
+  "settings_rules_ai_off_hint": "Turn on in Intelligence first",
+  "settings_rules_from_wit_banner": "Wit filled in this rule from what you said. Check it, then click Save: it takes effect only then.",
+  "settings_rules_failure_ai_off": "rules can’t use Wit (off in Intelligence)",
+  "settings_rules_failure_model": "the model didn’t answer",
+  "settings_rules_empty_wit": "Tell Wit how you want it sorted",
+  "settings_rules_edit_rule": "Edit Rule",
+  "settings_rules_delete": "Delete Rule",
+  "settings_rules_delete_title": "Delete “{arg1}”?",
+  "settings_rules_delete_desc": "The rule and its history are deleted together. Mail already forwarded and files already saved stay as they are.",
+  "settings_rules_deleted": "Deleted “{arg1}”",
+  "settings_rules_kind_ai": "AI",
+  "settings_rules_kind_local_write": "Writes to this computer",
+  "settings_rules_template_forward": "Forward invoices to your accountant",
+  "settings_rules_template_forward_desc": "Invoices from a sender you choose are forwarded; you confirm the recipient before saving",
+  "settings_rules_template_contract": "Save contract attachments",
+  "settings_rules_template_contract_desc": "Attachments of mail whose subject contains “合同” (contract), saved into folders by date",
+  "settings_rules_template_reply": "Draft replies to clients",
+  "settings_rules_template_reply_desc": "Star it and have Wit draft a reply into Drafts",
+  "settings_rules_suggest": "{arg1} contains {arg2}",
+  "settings_rules_from_wit_quote": "“{arg1}”",
+  "settings_rules_from_wit_back": "Back to Conversation",
+  "settings_rules_preview_recent": "Last {arg1, number, ::group-off} days",
+  "settings_rules_value_addr": "Address or domain, like stripe.com",
+  "settings_rules_value_text": "Text to look for",
+  "settings_rules_account": "Receiving account",
+  "settings_rules_account_all": "All Accounts",
+  "settings_rules_in": "in",
+  "settings_rules_trigger_account": "{arg1} in {arg2}",
+  "settings_rules_then_next": "Next",
+  "settings_rules_forward_note": "You’ll confirm this recipient when you save. Only mail that arrives afterwards is forwarded.",
+  "settings_rules_forward_confirmed": "Recipient confirmed.",
+  "settings_rules_forward_aside": "Forwards mail: you confirm the recipient before saving. Forwards go to the Outbox and can be undone for 10 seconds.",
+  "settings_rules_ai_note": "Sends the mail to the model (masked first). What it writes only goes into Drafts.",
+  "settings_rules_ai_off_option": "{arg1} (turn on in Intelligence first)",
+  "settings_rules_save_saved": "Saved “{arg1}”",
+  "settings_rules_save_saved_existing": "Saved “{arg1}”; handling the existing {arg2, number, ::group-off} emails",
+  "settings_rules_confirm_first": "First time to this address",
+  "settings_rules_confirm_outbox_from": "Sent from {arg1}; each goes to the Outbox first and can be undone for 10 seconds",
+  "settings_rules_files_bad_slash": "Put something on both sides of each “/”.",
+  "settings_rules_files_bad_dot": "A folder can’t be named “.” or “..”.",
+  "settings_rules_files_example": "Example",
+  "settings_rules_aside": "Preview",
+  "settings_masking_feature_rules": "Rules",
+  "error_recipient_unconfirmed": "Confirm the forward recipient before saving the rule.",
+  "wit_tool_propose_rule": "Create a rule",
+  "wit_tool_list_rules": "View rules",
+  "wit_rule_matches": "Matching: {arg1, number, ::group-off}",
+  "wit_rule_new_only": "Existing mail is left as it is: the rule handles only mail that arrives after you save it.",
+  "wit_rule_existing": "Existing mail",
+  "wit_rule_hint": "Takes effect only once you save it. Wit can’t save it for you.",
+  "wit_rule_edit": "Edit in the Editor",
+  "wit_rule_confirm_save": "Confirm Recipient and Save",
+  "wit_rule_saved": "Rule saved and turned on · {arg1}",
+  "wit_rule_rejected": "Rejected: no rule was created",
+  "wit_rule_edited": "Opened in the editor: saved only if you save it there",
+  "wit_rule_save": "Save Rule",
+  "wit_rule_when_account": "{arg1} · {arg2}",
+  "wit_rule_then_next": "Then: {arg1}",
+  "wit_rule_new_only_forward": "Existing mail is not forwarded: the rule handles only mail that arrives after you save it.",
+  "wit_rule_confirm_desc": "Once saved, matching new mail is forwarded automatically, without asking each time.",
+  "wit_rule_confirm_again": "Changing the recipient later needs confirming again",
+  "mail_purge_toast": "{arg1, plural, one {Permanently deleted {arg1, number, ::group-off} message} other {Permanently deleted {arg1, number, ::group-off} messages}}",
+  "mail_purge_undone": "Deletion undone",
+  "mail_purge_too_late": "Too late: message has already been permanently deleted.",
+  "mail_purge_partly_undone": "{arg1, plural, one {Restored the rest; {arg1, number, ::group-off} message was already permanently deleted} other {Restored the rest; {arg1, number, ::group-off} messages were already permanently deleted}}"
 }

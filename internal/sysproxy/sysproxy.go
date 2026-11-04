@@ -18,15 +18,15 @@ import (
 // For is the proxy for a request to u (http or https), nil for none. Only
 // http:// and socks5:// proxies are given.
 func For(u *url.URL) *url.URL {
-	if env := httpproxy.FromEnvironment(); env.HTTPProxy != "" || env.HTTPSProxy != "" {
-		p, err := env.ProxyFunc()(u)
+	if FromEnvironment() {
+		p, err := httpproxy.FromEnvironment().ProxyFunc()(u)
 		if err != nil {
 			return nil
 		}
 		return p
 	}
 	s := system()
-	if bypassed(u.Hostname(), s.bypass) {
+	if Bypassed(u.Hostname(), s.bypass) {
 		return nil
 	}
 	if u.Scheme == "https" && s.https != nil {
@@ -38,6 +38,13 @@ func For(u *url.URL) *url.URL {
 	return s.socks
 }
 
+// FromEnvironment is whether the *_PROXY variables give the proxy, in
+// place of the system's settings.
+func FromEnvironment() bool {
+	env := httpproxy.FromEnvironment()
+	return env.HTTPProxy != "" || env.HTTPSProxy != ""
+}
+
 // settings are the system's proxies by the scheme they serve, and the hosts
 // that go around them.
 type settings struct {
@@ -45,10 +52,19 @@ type settings struct {
 	bypass             []string
 }
 
-// bypassed is whether host is in the bypass list: a name, a *-pattern, a
+// OnThisComputer is whether host is this computer: localhost or a name
+// under it (RFC 6761), with or without the trailing dot, in any case, or
+// a loopback address. Such a host never goes through a proxy.
+func OnThisComputer(host string) bool {
+	host = strings.ToLower(strings.TrimSuffix(host, "."))
+	ip, err := netip.ParseAddr(host)
+	return host == "localhost" || strings.HasSuffix(host, ".localhost") || err == nil && ip.Unmap().IsLoopback()
+}
+
+// Bypassed is whether host is in the bypass list: a name, a *-pattern, a
 // .suffix, an address or CIDR range ("169.254/16" as macOS writes it), or
 // <local> (a name without a dot, as Windows means it).
-func bypassed(host string, list []string) bool {
+func Bypassed(host string, list []string) bool {
 	host = strings.ToLower(strings.TrimSuffix(host, "."))
 	ip, ipErr := netip.ParseAddr(host)
 	for _, e := range list {

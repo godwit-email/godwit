@@ -136,7 +136,7 @@ func TestKitSwitchToggles(t *testing.T) {
 
 func TestKitSelectChooses(t *testing.T) {
 	sel := 1
-	opts := []Option[int]{{1, "Alpha"}, {2, "Beta"}, {3, "Gamma"}}
+	opts := []Option[int]{{Value: 1, Label: "Alpha"}, {Value: 2, Label: "Beta"}, {Value: 3, Label: "Gamma"}}
 	tt := ui.NewTester(themed(func(c *ui.Context) {
 		Select(c, &sel, opts).Label("Letter")
 	}), 300, 300)
@@ -214,7 +214,7 @@ func TestKitDensityScales(t *testing.T) {
 	sel, s := 1, ""
 	body := func(c *ui.Context) {
 		IconButton(c, "archive", "Archive", ButtonOpts{Variant: Ghost})
-		Select(c, &sel, []Option[int]{{1, "Alpha"}}).Label("Letter")
+		Select(c, &sel, []Option[int]{{Value: 1, Label: "Alpha"}}).Label("Letter")
 		Input(c, &s, InputOpts{}).Label("Name")
 		Card(c, func() {}).Label("Box")
 	}
@@ -1313,7 +1313,7 @@ func TestSelectWith(t *testing.T) {
 	width := func(o SelectOpts, label string) float32 {
 		v := 1
 		tt := ui.NewTester(themed(func(c *ui.Context) {
-			SelectWith(c, o, &v, []Option[int]{{1, label}}).Label("sel")
+			SelectWith(c, o, &v, []Option[int]{{Value: 1, Label: label}}).Label("sel")
 		}), 600, 100)
 		r, ok := tt.Find("sel")
 		if !ok {
@@ -1332,7 +1332,7 @@ func TestSelectWith(t *testing.T) {
 		v := 1
 		tt := ui.NewTester(themed(func(c *ui.Context) {
 			ui.Column(c).Padding(20).Children(func() {
-				SelectWith(c, SelectOpts{Flat: flat}, &v, []Option[int]{{1, "a"}}).Label("sel")
+				SelectWith(c, SelectOpts{Flat: flat}, &v, []Option[int]{{Value: 1, Label: "a"}}).Label("sel")
 			})
 		}), 300, 100)
 		r, _ := tt.Find("sel")
@@ -1482,5 +1482,49 @@ func TestGlassMaterialAndTokens(t *testing.T) {
 	}
 	if mat.Tint != l.GlassBg {
 		t.Errorf("glass tint = %v, want %v", mat.Tint, l.GlassBg)
+	}
+}
+
+// A frosted row round on top only fills its square bottom corners, and not
+// its round top ones; the one round below the other way.
+func TestFrostRoundsOneSide(t *testing.T) {
+	tt := ui.NewTester(themed(func(c *ui.Context) {
+		t := theme.Of(c)
+		ui.Column(c).Fill().Background(t.Background).Padding(10).Gap(10).Children(func() {
+			ui.Column(c).Width(100).Height(40).Radius(16, 16, 0, 0).Material(Frost(t.Danger)).Label("top")
+			ui.Column(c).Width(100).Height(40).Radius(0, 0, 16, 16).Material(Frost(t.Danger)).Label("bottom")
+		})
+	}), 140, 120)
+	img := tt.Image()
+	bg := img.RGBAAt(1, 1) // the page, outside both rows
+	filled := func(x, y float32) bool { return img.RGBAAt(int(x), int(y)) != bg }
+	for name, round := range map[string]bool{"top": true, "bottom": false} {
+		r, _ := tt.Find(name)
+		top, bottom := filled(r.X+1, r.Y+1), filled(r.X+1, r.Y+r.H-2)
+		if top == round || bottom != round {
+			t.Errorf("%s: top-left corner filled %v, bottom-left %v", name, top, bottom)
+		}
+	}
+}
+
+// A RadioCard is chosen by a click anywhere on it, its help included.
+func TestRadioCardClicks(t *testing.T) {
+	bg := false
+	tt := ui.NewTester(themed(func(c *ui.Context) {
+		ui.Column(c).Fill().Padding(10).Gap(8).Children(func() {
+			RadioCard(c, &bg, false, "Window", "Only while the window is open.")
+			RadioCard(c, &bg, true, "Background", "Keeps running after the window closes.")
+		})
+	}), 320, 200)
+	r, ok := tt.Find("Keeps running after the window closes.")
+	if !ok {
+		t.Fatalf("no help text: %q", tt.Texts())
+	}
+	tt.Move(r.X+r.W-4, r.Y+r.H/2)
+	tt.Press(r.X+r.W-4, r.Y+r.H/2)
+	tt.Release(r.X+r.W-4, r.Y+r.H/2)
+	tt.Frame()
+	if !bg {
+		t.Fatal("a click on the help did not choose the card")
 	}
 }

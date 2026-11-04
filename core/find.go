@@ -4,12 +4,10 @@ import (
 	"cmp"
 	"context"
 	"fmt"
-	"net/mail"
 	"slices"
 	"strings"
 	"time"
 
-	gomail "github.com/godwit-email/godwit/core/mail"
 	"github.com/godwit-email/godwit/core/store"
 )
 
@@ -43,14 +41,6 @@ type FoundAttachment struct {
 	MessageID     int64
 	Subject, From string
 	Date          time.Time
-}
-
-// Contact is a sender of synced mail, by address: the latest name it used,
-// how many messages it sent and when the latest came.
-type Contact struct {
-	Name, Address string
-	Messages      int
-	Last          time.Time
 }
 
 // Find searches mail, Wit conversations, contacts and attachments at once,
@@ -134,59 +124,20 @@ func (s *Service) findAttachments(ctx context.Context, q FindQuery) (FindGroup[F
 	return g, nil
 }
 
-// findContacts matches the senders of synced mail by any name they used or
-// their address; the user's own accounts are not contacts.
+// findContacts matches the contacts of the query's account (every
+// account's for 0) by any name they used or their address.
 func (s *Service) findContacts(ctx context.Context, q FindQuery) (FindGroup[Contact], error) {
-	own, err := s.db.Query(ctx, "SELECT email FROM accounts")
-	if err != nil {
-		return FindGroup[Contact]{}, err
-	}
-	skip := map[string]bool{}
-	for _, r := range own.Values {
-		skip[gomail.AddrKey(store.Str(r[0]))] = true
-	}
-	// shortcut: groups every sender in Go on each keystroke; keep a senders table if large stores get slow.
-	fcond, args := searchFilter(q.SearchQuery)
-	rows, err := s.db.Query(ctx, "SELECT m.from_addr, count(*), max(m.date) FROM messages m WHERE "+fcond+" GROUP BY m.from_addr ORDER BY 3, 1", args...)
+	all, names, err := s.contacts(ctx, q.AccountID)
 	if err != nil {
 		return FindGroup[Contact]{}, err
 	}
 	text := strings.ToLower(strings.TrimSpace(q.Text))
-	byAddr, hit := map[string]*Contact{}, map[string]bool{}
-	for _, r := range rows.Values {
-		from := store.Str(r[0])
-		addr := gomail.AddrKey(from)
-		if addr == "" || skip[addr] {
-			continue
-		}
-		var name string
-		if a, err := mail.ParseAddress(from); err == nil {
-			name = a.Name
-		}
-		c := byAddr[addr]
-		if c == nil {
-			c = &Contact{Address: addr}
-			byAddr[addr] = c
-		}
-		if name != "" {
-			c.Name = name // rows come oldest first: the latest name wins
-		}
-		c.Messages += int(store.Int(r[1]))
-		c.Last = time.Unix(store.Int(r[2]), 0)
-		hit[addr] = hit[addr] || strings.Contains(addr, text) || strings.Contains(strings.ToLower(name), text)
-	}
-	all := make([]Contact, 0, len(hit))
-	for addr, ok := range hit {
-		if ok {
-			all = append(all, *byAddr[addr])
-		}
-	}
-	slices.SortFunc(all, func(a, b Contact) int {
-		if text == "" { // nothing typed: the people mailed most
-			return cmp.Or(cmp.Compare(b.Messages, a.Messages), b.Last.Compare(a.Last), strings.Compare(a.Address, b.Address))
-		}
-		return cmp.Or(b.Last.Compare(a.Last), strings.Compare(a.Address, b.Address))
+	all = slices.DeleteFunc(all, func(c Contact) bool {
+		return !strings.Contains(c.Address, text) && !slices.ContainsFunc(names[c.Address], func(n string) bool { return strings.Contains(strings.ToLower(n), text) })
 	})
+	if text != "" { // something typed: the latest first; else the people mailed most, as contacts come
+		slices.SortStableFunc(all, func(a, b Contact) int { return cmp.Or(b.Last.Compare(a.Last), strings.Compare(a.Address, b.Address)) })
+	}
 	return firstOf(all, q.Limit), nil
 }
 

@@ -417,3 +417,50 @@ func TestSecurityFiveStatesScanner(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, "ai_fraud", store.Str(row.Values[0][0]))
 }
+
+func TestSetMessageSecurity(t *testing.T) {
+	ctx := t.Context()
+	s := newLabelService(t, "", "de")
+	now := time.Now().Unix()
+
+	id := addMessage(t, s, "Spam Alert", "phish@attacker.com", "Suspicious body", "", now-100)
+
+	// each classification is stored under the status every reader of the column ranks
+	for reason, want := range map[string]gomail.SecurityStatus{
+		"manual_warning":    gomail.SecurityFraud,
+		"manual_suspicious": gomail.SecurityNeedsReview,
+		"manual_safe":       gomail.SecurityNeutral, // never a verified domain it did not prove
+	} {
+		require.NoError(t, s.SetMessageSecurity(ctx, []int64{id}, reason))
+		msg, err := s.GetMessage(ctx, id, false)
+		require.NoError(t, err)
+		require.Equal(t, want, msg.Security.Status, reason)
+		require.Equal(t, reason, msg.Security.Reason)
+	}
+
+	require.Error(t, s.SetMessageSecurity(ctx, []int64{id}, "verified_domain"))
+
+	require.NoError(t, s.SetMessageSecurity(ctx, []int64{id}, ""))
+	rows, err := s.db.Query(ctx, "SELECT security_status, security_scanned_at FROM messages WHERE id = ?", id)
+	require.NoError(t, err)
+	require.Nil(t, rows.Values[0][0])
+	require.Equal(t, int64(0), store.Int(rows.Values[0][1]))
+}
+
+func TestRescanKeepsManualSecurity(t *testing.T) {
+	ctx := t.Context()
+	s := newLabelService(t, "", "de")
+	enableSecurity(t, s)
+	now := time.Now().Unix()
+	marked := addMessage(t, s, "Marked", "phish@attacker.com", "hi", "", now)
+	addMessage(t, s, "Other", "alice@yahoo.com", "hi", "", now)
+	require.NoError(t, s.SetMessageSecurity(ctx, []int64{marked}, "manual_safe"))
+
+	total, err := s.RescanSecurity(ctx, 0, true)
+	require.NoError(t, err)
+	require.Equal(t, 1, total)
+	rows, err := s.db.Query(ctx, "SELECT security_reason, security_scanned_at FROM messages WHERE id = ?", marked)
+	require.NoError(t, err)
+	require.Equal(t, "manual_safe", store.Str(rows.Values[0][0]))
+	require.NotZero(t, store.Int(rows.Values[0][1]))
+}

@@ -144,7 +144,27 @@ func (s scrim) PaintMaterial(p *ui.Painter, box ui.Rect, radii [4]float32) {
 	if BackdropBlur {
 		glass.Blur{Radius: s.blur}.PaintMaterial(p, box, radii)
 	}
-	p.Fill(box, s.tint, radii[0]) // its surfaces round every corner alike
+	fillRounded(p, box, s.tint, radii)
+}
+
+// fillRounded fills box rounded by radii (top-left, top-right, bottom-right,
+// bottom-left), as a settings card's first or last row is. Painter rounds
+// every corner alike, so a box round on one side only is filled inside a
+// clip that reaches past its other side by the radius.
+// shortcut: takes the top pair and the bottom pair alike; a box with four
+// different corners needs a path.
+func fillRounded(p *ui.Painter, box ui.Rect, c ui.Color, radii [4]float32) {
+	top, bottom := radii[0], radii[2]
+	switch {
+	case top == bottom:
+		p.Fill(box, c, top)
+	case bottom == 0:
+		p.Clip(ui.Rect{X: box.X, Y: box.Y, W: box.W, H: box.H + top}, top, func() { p.Fill(box, c, 0) })
+	case top == 0:
+		p.Clip(ui.Rect{X: box.X, Y: box.Y - bottom, W: box.W, H: box.H + bottom}, bottom, func() { p.Fill(box, c, 0) })
+	default:
+		p.Fill(box, c, min(top, bottom))
+	}
 }
 
 // GlassMaterial blurs what is behind it with genuine Gaussian backdrop blur,
@@ -158,7 +178,7 @@ func (g GlassMaterial) PaintMaterial(p *ui.Painter, box ui.Rect, radii [4]float3
 	if BackdropBlur && g.Blur > 0 {
 		glass.Blur{Radius: g.Blur}.PaintMaterial(p, box, radii)
 	}
-	p.Fill(box, g.Tint, radii[0])
+	fillRounded(p, box, g.Tint, radii)
 }
 
 // LiquidGlass creates the unified Liquid Glass material: true Gaussian backdrop blur

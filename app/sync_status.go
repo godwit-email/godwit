@@ -16,7 +16,7 @@ import (
 )
 
 // syncFail is an account's failing sync: the latest error, its kind (core/conn's
-// FailureKind: dns, connect, timeout, tls, auth, protocol), and when the failures began.
+// FailureKind: dns, connect, timeout, tls, auth, protocol, proxy_*), and when the failures began.
 type syncFail struct {
 	err, kind string
 	since     time.Time
@@ -98,7 +98,7 @@ func (a *App) syncHealth(acc core.Account) syncHealth {
 // failCause says what a failure of kind was: 连不上 imap.example.com…
 func failCause(kind, host string) string {
 	switch kind {
-	case "dns", "connect", "timeout":
+	case "dns", "connect", "timeout", "proxy_unreachable", "proxy_refused", "proxy_auth":
 		return i18n.Tf("shell.sync.cause."+kind, host)
 	}
 	return i18n.Tf("shell.sync.cause.other", host)

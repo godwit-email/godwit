@@ -148,6 +148,7 @@ func (s *Service) classifyBatch(ctx context.Context) (int, error) {
 		if _, err := s.db.Transaction(ctx, labelWrites(id, at, newest, labels, yes, answered)); err != nil {
 			return done, err
 		}
+		s.notifyHooks()
 		done++
 	}
 	return done, nil
@@ -165,7 +166,7 @@ func unanswerable(err error) bool {
 }
 
 // labelQuestions returns the labels to ask about for a message, those it has
-// no hand-set row for, their questions (named by slug), and the newest label's
+// no hand-set or rule row for, their questions (named by slug), and the newest label's
 // id then, so a label added while the model answers is noticed.
 func (s *Service) labelQuestions(ctx context.Context, id int64) ([]Label, []ai.Question, int64, error) {
 	top, err := s.db.Query(ctx, "SELECT COALESCE(MAX(id), 0) FROM labels")
@@ -174,7 +175,7 @@ func (s *Service) labelQuestions(ctx context.Context, id int64) ([]Label, []ai.Q
 	}
 	newest := store.Int(top.Values[0][0])
 	rows, err := s.db.Query(ctx, `SELECT id, slug, name, description FROM labels l
-		WHERE NOT EXISTS (SELECT 1 FROM message_labels ml WHERE ml.message_id = ? AND ml.label_id = l.id AND ml.source = 'manual')
+		WHERE NOT EXISTS (SELECT 1 FROM message_labels ml WHERE ml.message_id = ? AND ml.label_id = l.id AND ml.source IN ('manual', 'rule'))
 		ORDER BY position, id`, id)
 	if err != nil {
 		return nil, nil, 0, err
@@ -224,7 +225,12 @@ func labelWrites(id int64, at any, newest int64, labels []Label, yes map[string]
 	var stmts []sqlite.Statement
 	if answered { // unanswered: only the guarded labeled_at update, so an edited label is still asked again
 		for _, l := range labels {
-			if yes[l.Slug] {
+			if yes[l.Slug] { // a label new on new mail runs label rules (labelQuestions left out hand-set and rule rows); old mail, synced or re-classified (RescanLabels' labeled_at 0), does not
+				stmts = append(stmts, sqlite.Statement{SQL: `INSERT INTO events_log(type, account_id, message_id, subject, from_addr, msg_date, detail, created_at)
+					SELECT ?, account_id, id, subject, from_addr, date, ?, unixepoch() FROM messages WHERE id = ? AND labeled_at IS NULL AND ` + guard + `
+					AND EXISTS (SELECT 1 FROM events_log WHERE type = 'message.received' AND message_id = ?)
+					AND NOT EXISTS (SELECT 1 FROM message_labels WHERE message_id = ? AND label_id = ?)`,
+					Args: append(append([]any{eventLabelApplied, l.Slug, id}, guardArgs...), id, id, l.ID)})
 				stmts = append(stmts, sqlite.Statement{SQL: `INSERT INTO message_labels(message_id, label_id, source, active)
 					SELECT ?, ?, 'auto', 1 WHERE ` + guard + ` AND EXISTS (SELECT 1 FROM labels WHERE id = ?)
 					ON CONFLICT(message_id, label_id) DO UPDATE SET active = 1 WHERE source = 'auto'`,

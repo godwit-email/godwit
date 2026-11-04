@@ -56,12 +56,12 @@ func importMessage(ctx context.Context, db *store.DB, a *account, f *folder, m *
 	args = append(args, nullable(p.MessageID), nullable(p.InReplyTo), nullable(strings.Join(p.References, " ")), p.Subject, p.From,
 		jsonList(p.To), jsonList(p.Cc), nullable(p.ReplyTo), p.Date.Unix(), flagString(m.Flags), m.RFC822Size,
 		mail.Snippet(p.Text), p.Text, nullable(p.HTML), p.Truncated, len(p.Attachments) > 0, nullable(labelFP(p, m.RFC822Size)),
-		p.ListUnsubscribe, p.ListUnsubscribePost, p.ListID, p.AuthenticationResults, secStatus, secReason, secScanned, verifyDKIM)
+		p.ListUnsubscribe, p.ListUnsubscribePost, p.ListID, p.AuthenticationResults, secStatus, secReason, secScanned, verifyDKIM, p.RuleSent)
 	stmts := append(plan.pre, sqlite.Statement{
 		SQL: `INSERT INTO messages(account_id, folder_id, server_folder_id, server_uidvalidity, server_uid, thread_id,
 			message_id, in_reply_to, refs, subject, from_addr, to_addrs, cc_addrs, reply_to, date, flags, size,
-			snippet, body_text, body_html, body_truncated, has_attachments, label_fp, list_unsubscribe, list_unsubscribe_post, list_id, auth_results, security_status, security_reason, security_scanned_at, security_verify_dkim, entered_at)
-			VALUES (?, ?, ?, ?, ?, ` + plan.expr + `, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, unixepoch())`,
+			snippet, body_text, body_html, body_truncated, has_attachments, label_fp, list_unsubscribe, list_unsubscribe_post, list_id, auth_results, security_status, security_reason, security_scanned_at, security_verify_dkim, rule_sent, entered_at)
+			VALUES (?, ?, ?, ?, ?, ` + plan.expr + `, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, unixepoch())`,
 		Args: args,
 	})
 	msgAt := len(stmts) - 1
@@ -80,6 +80,14 @@ func importMessage(ctx context.Context, db *store.DB, a *account, f *folder, m *
 					AND server_uidvalidity = ? AND server_uid = ?), ?, ?, ?, unixepoch())`,
 			Args: []any{a.id, a.id, f.id, f.uidValidity, uid, p.Subject, p.From, p.Date.Unix()},
 		})
+		if _, final := secScanned.(int64); final { // a verdict now, not the scanner's later: security rules run on it
+			stmts = append(stmts, sqlite.Statement{
+				SQL: `INSERT INTO events_log(type, account_id, message_id, subject, from_addr, msg_date, detail, created_at)
+					VALUES ('security.verdict', ?, (SELECT id FROM messages WHERE account_id = ? AND server_folder_id = ?
+						AND server_uidvalidity = ? AND server_uid = ?), ?, ?, ?, ?, unixepoch())`,
+				Args: []any{a.id, a.id, f.id, f.uidValidity, uid, p.Subject, p.From, p.Date.Unix(), secStatus},
+			})
+		}
 	}
 	res, err := db.Transaction(ctx, stmts)
 	if err != nil {

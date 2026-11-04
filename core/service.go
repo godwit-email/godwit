@@ -11,6 +11,7 @@ import (
 	"maps"
 	"net"
 	"net/http"
+	"net/url"
 	"os"
 	"path/filepath"
 	"slices"
@@ -31,6 +32,7 @@ import (
 	"github.com/godwit-email/godwit/internal/avatar"
 	"github.com/godwit-email/godwit/internal/imagecache"
 	"github.com/godwit-email/godwit/internal/imagefetch"
+	"github.com/godwit-email/godwit/internal/sysproxy"
 )
 
 // ErrClosed is returned by calls made after Close.
@@ -58,6 +60,9 @@ type Options struct {
 	// ImageClient's default does (public hosts only). Core never lets it
 	// follow a redirect or keep cookies. Tests give one that reaches loopback.
 	UnsubscribeClient *http.Client
+	// SystemProxy is the proxy the computer's settings give for a request to
+	// u, nil for none; nil is sysproxy.For. Tests stand in for it.
+	SystemProxy func(u *url.URL) *url.URL
 	// Registry is where reviewed plugins are listed; nil turns the plugin
 	// directory off (DefaultRegistry is Godwit's own). The apps set it.
 	Registry *RegistrySource
@@ -94,6 +99,9 @@ type Options struct {
 	// (imagefetch.SystemProxy), to public hosts only. Tests give one that
 	// reaches loopback.
 	RecognitionModelClient *http.Client
+	// PrintPDF lays out an HTML document as a PDF, for rules that export
+	// one; the GUI sets it. nil fails those actions (RuleFailNoPDF).
+	PrintPDF func(ctx context.Context, html string) ([]byte, error)
 }
 
 // Service owns the database and event bus of one Godwit data directory.
@@ -109,8 +117,10 @@ type Service struct {
 	locksMu sync.Mutex
 	locks   map[int64]chan struct{} // per-account 1-slot semaphore: sync and op pushing never overlap
 
-	settingsMu sync.Mutex // settings read then written (SetSettings, the trusted senders)
-	editMu     sync.Mutex // local changes (SetFlags, Move, Delete, drafts, Send) read then write
+	settingsMu sync.Mutex                  // settings read then written (SetSettings, the trusted senders)
+	proxy      atomic.Pointer[proxyConfig] // the saved proxy (loadProxy, SetSettings), read by Proxy
+	editMu     sync.Mutex                  // local changes (SetFlags, Move, Delete, drafts, Send) read then write
+	ruleRunMu  sync.Mutex                  // one rule run at a time (runRule): the consumer, a retry, a run over existing mail
 
 	workersMu sync.Mutex
 	workers   map[int64]*worker
@@ -177,7 +187,7 @@ type Service struct {
 	running           map[string]*runningPlugin  // started plugins by name
 	assets            modelAssets                // plugin models' files (assets.go); nil is noModelAssets
 	pluginGen         uint64                     // last runningPlugin.gen handed out
-	hooksMu           sync.Mutex                 // plugin_cursors writes, events_log cleanup, hookWakes
+	hooksMu           sync.Mutex                 // cursor writes, events_log cleanup, hookWakes
 	hookWakes         map[chan struct{}]struct{} // each running dispatcher's wake-up
 	labelsMu          sync.Mutex                 // label writes: a name is checked and saved under it
 	sigMu             sync.Mutex                 // signature writes (read, images stored, HTML saved, unused images cleaned), and a draft taking a signature; before editMu
@@ -258,6 +268,16 @@ func New(ctx context.Context, opts Options) (*Service, error) {
 			s.nativeEnv = append(s.nativeEnv, kv)
 		}
 	}
+	if opts.SystemProxy == nil {
+		s.opts.SystemProxy = sysproxy.For
+	}
+	if err := s.loadProxy(ctx); err != nil {
+		// an unreadable settings row must not keep mail from starting; the default, 跟随系统, stands until a save
+		slog.Warn("proxy settings unreadable, following the system proxy", "err", err)
+		s.setProxy(defaultSettings(), "")
+	}
+	// the hooks are package-wide: the last Service started owns them
+	conn.SystemProxy, imagefetch.SystemProxy = s.Proxy, s.Proxy
 	if opts.ImageClient == nil {
 		s.opts.ImageClient = imagefetch.NewClient(false)
 		if opts.LookupTXT == nil {
@@ -331,6 +351,10 @@ func New(ctx context.Context, opts Options) (*Service, error) {
 	}
 	s.startJanitor()
 	s.startReclaim()
+	if err := s.startRules(ctx); err != nil {
+		s.Close()
+		return nil, err
+	}
 	if opts.LabelMail {
 		s.startLabeler()
 	}
@@ -631,12 +655,15 @@ func (s *Service) dialAccount(ctx context.Context, accountID int64, h *imapclien
 
 // syncAccount runs one sync. An SMTP login failure skips the outbox but not the
 // rest; it is returned at the end, so a worker round ends and parks.
-func (s *Service) syncAccount(ctx context.Context, accountID int64, explicit bool) error {
+func (s *Service) syncAccount(ctx context.Context, accountID int64, explicit bool) (err error) {
 	c, release, _, err := s.dialAccount(ctx, accountID, nil)
 	if err != nil {
 		return err
 	}
 	defer release()
+	defer func() { conn.LogTrace(c, err) }() // a response go-imap could not parse goes in the error report
+	// Purges due after this round starts wake the worker again.
+	defer s.wakeForPurge(ctx, accountID, s.clk().Now())
 	// Queued first, so this round's push expunges and its fetch drops the rows.
 	if err := mailsync.QueuePurge(ctx, s.db, c, accountID); err != nil {
 		return err
@@ -654,6 +681,9 @@ func (s *Service) syncAccount(ctx context.Context, accountID int64, explicit boo
 		return err
 	}
 	more, err := mailsync.Fetch(ctx, s.db, c, accountID, s.bus)
+	if err == nil {
+		err = s.logDaily(ctx) // daily rules run after the day's first complete sync
+	}
 	s.notifyHooks() // rows committed before an error count too
 	s.wakeLabeler()
 	if more {
@@ -704,8 +734,8 @@ func (s *Service) checkSMTP(ctx context.Context, accountID int64, explicit bool)
 // pushOps pushes queued local changes. Ops that became conflict or failed are
 // announced with SyncFailed and the sync goes on.
 func (s *Service) pushOps(ctx context.Context, c *imapclient.Client, accountID int64,
-	push func(context.Context, *store.DB, *imapclient.Client, int64) error) error {
-	err := push(ctx, s.db, c, accountID)
+	push func(context.Context, *store.DB, *imapclient.Client, int64, time.Time) error) error {
+	err := push(ctx, s.db, c, accountID, s.clk().Now())
 	var problems *mailsync.OpsError
 	if errors.As(err, &problems) {
 		if len(problems.Changed) > 0 {
@@ -744,8 +774,8 @@ func (s *Service) setStatus(ctx context.Context, accountID int64, status, detail
 // Gmail's Starred (flagged) are detected only.
 func (s *Service) ListFolders(ctx context.Context, accountID int64) ([]Folder, error) {
 	rows, err := s.db.Query(ctx, `SELECT f.id, f.account_id, f.name, CASE WHEN f.role IN ('inbox', 'flagged') THEN f.role ELSE '' END,
-		(SELECT count(*) FROM messages m WHERE m.folder_id = f.id AND instr(m.flags, '\Seen') = 0), f.delim,
-		(SELECT count(*) FROM messages m WHERE m.folder_id = f.id)
+		(SELECT count(*) FROM messages m WHERE m.folder_id = f.id AND instr(m.flags, '\Seen') = 0 AND `+notPurgedCond+`), f.delim,
+		(SELECT count(*) FROM messages m WHERE m.folder_id = f.id AND `+notPurgedCond+`)
 		FROM folders f WHERE f.account_id = ? ORDER BY f.id`, accountID)
 	if err != nil {
 		return nil, err
@@ -771,8 +801,8 @@ func (s *Service) ListFolders(ctx context.Context, accountID int64) ([]Folder, e
 
 // StarredCounts returns the unread count of starred messages by account ID, and total unread across all accounts.
 func (s *Service) StarredCounts(ctx context.Context) (map[int64]int, int, error) {
-	rows, err := s.db.Query(ctx, `SELECT account_id, count(*) FROM messages
-		WHERE instr(flags, '\Flagged') > 0 AND instr(flags, '\Seen') = 0 GROUP BY account_id`)
+	rows, err := s.db.Query(ctx, `SELECT account_id, count(*) FROM messages m
+		WHERE instr(flags, '\Flagged') > 0 AND instr(flags, '\Seen') = 0 AND `+notPurgedCond+` GROUP BY account_id`)
 	if err != nil {
 		return nil, 0, err
 	}

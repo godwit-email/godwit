@@ -237,6 +237,21 @@ func TestShots(t *testing.T) {
 		s.see("Hi Lena, thanks! I will review it")
 	}
 	noQuick := func(st *core.Settings) { st.QuickReplies = false }
+	t.Run("Contacts", func(t *testing.T) {
+		s := shotMail(t, noAuto)
+		unsub := coretest.Header("List-Unsubscribe: <https://news.northwind.example/u?t=1>")
+		for i, subj := range []string{"本周特价机票", "会员积分即将过期", "秋季目的地推荐"} {
+			s.put(s.you, "INBOX", coretest.Msg("Northwind Airlines <news@northwind.example>", s.you.Email, subj, "精选优惠。",
+				coretest.MessageID(fmt.Sprint("nw", i, "@x")), coretest.Date(day(10, 9-i, 7, 30)), unsub))
+		}
+		s.syncNow(s.you)
+		s.click("联系人")
+		s.see("news@northwind.example")
+		shot(s.harness, "Contacts")
+		s.app.contacts().choose("lena@partner.example")
+		s.see("最近往来")
+		shot(s.harness, "ContactsPerson")
+	})
 	noAuto := func(st *core.Settings) { st.QuickReplies, st.Summary = false, false }
 
 	t.Run("Main", func(t *testing.T) {
@@ -465,6 +480,10 @@ func TestShots(t *testing.T) {
 		s.openSettings("general")
 		s.see("界面密度")
 		shot(s.harness, "SettingsGeneral")
+		s.openSettings("rules")
+		s.click("新建规则")
+		s.click("添加条件")
+		shot(s.harness, "SettingsRulesEditor")
 		s.openSettings("models")
 		s.see("OpenAI")
 		modelsStatus(s, "normal")
@@ -605,23 +624,23 @@ func TestShots(t *testing.T) {
 		p.aiTab = aiApps
 		s.see("启用本机 API")
 		shot(s.harness, "SettingsAIApps")
-		e, _ := s.app.mcpEnv() // Claude connected, Codex there but not
-		if err := os.MkdirAll(filepath.Join(e.Home, ".codex"), 0o755); err != nil {
-			t.Fatal(err)
+		e, _ := s.app.mcpEnv() // Claude connected, Codex, Antigravity and Grok there but not
+		for _, dir := range []string{".codex", ".gemini/antigravity", ".grok"} {
+			if err := os.MkdirAll(filepath.Join(e.Home, dir), 0o755); err != nil {
+				t.Fatal(err)
+			}
 		}
 		if err := os.MkdirAll(filepath.Join(e.Home, "Library", "Application Support", "Claude"), 0o755); err != nil {
 			t.Fatal(err)
 		}
-		if err := e.Connect("claude", s.app.mcpServer()); err != nil {
-			t.Fatal(err)
-		}
+		installClaudeExtension(t, e.Home, s.app.mcpServer())
 		s.post(func() { // serving: the rows to connect a client show
 			s.app.settings.LocalAPI = true
 			s.app.localAPIPath = "/Users/you/Library/Application Support/Godwit/godwit.sock"
 		})
 		s.openSettings("general") // back: the AI apps are read again
 		s.openSettings("models")
-		s.see("Codex")
+		s.see("ChatGPT (Codex)")
 		shot(s.harness, "SettingsAIAppsOn")
 		p.aiTab = aiModels
 		s.openSettings("privacy")

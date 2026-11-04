@@ -50,7 +50,7 @@ func TestPaletteMenuClosesOnNewResults(t *testing.T) {
 // paletteHas is whether a text of the palette holds s.
 func paletteHas(h *harness, s string) bool {
 	texts := h.tt.Texts()
-	i := slices.Index(texts, "联系人")
+	i := slices.Index(texts, "对话") // the palette's tabs; the page switch has 联系人 too
 	return i >= 0 && slices.ContainsFunc(texts[i:], func(t string) bool { return strings.Contains(t, s) })
 }
 
@@ -153,7 +153,7 @@ func TestPaletteMenuConversation(t *testing.T) {
 // saves it and opens its mail.
 func TestPaletteMenuContactAttachment(t *testing.T) {
 	h, _ := invoices(t)
-	h.click("联系人")
+	h.paletteContacts()
 	h.typeText("bob")
 	h.see("联系人 · 1")
 	h.tt.Key(ui.Alt, ui.KeyEnter)

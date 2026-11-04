@@ -121,8 +121,22 @@ func decodeCursor(c string) (date, id int64, err error) {
 	return date, id, nil
 }
 
+// notPurgedCond is the condition on messages alias m that no permanent delete
+// of it waits (in its undo window or for the push): lists, searches and counts
+// leave those out at once, before the server expunges them.
+const notPurgedCond = "NOT EXISTS (SELECT 1 FROM ops o WHERE o.message_id = m.id AND o.kind = 'purge' AND o.state = 'pending')"
+
 // viewCond returns a SQL condition on messages alias m selecting the view.
 func viewCond(v View) (string, []any, error) {
+	cond, args, err := viewOnlyCond(v)
+	if err != nil {
+		return "", nil, err
+	}
+	return cond + " AND " + notPurgedCond, args, nil
+}
+
+// viewOnlyCond is viewCond counting mail being purged too.
+func viewOnlyCond(v View) (string, []any, error) {
 	set := 0
 	for _, on := range []bool{v.FolderID != 0, v.Unified != "", v.LabelID != 0} {
 		if on {
@@ -300,9 +314,9 @@ func searchText(text string) (string, []any) {
 }
 
 // searchFilter is the condition on messages alias m for q's account and
-// filters, its text aside: "1" for none.
+// filters, its text aside; mail being purged is left out.
 func searchFilter(q SearchQuery) (string, []any) {
-	cond, args := "1", []any(nil)
+	cond, args := notPurgedCond, []any(nil)
 	if q.AccountID != 0 {
 		cond += " AND m.account_id = ?"
 		args = append(args, q.AccountID)
@@ -547,6 +561,33 @@ func flagSet(fl []string) []string {
 	return out
 }
 
+// SetMessageSecurity sets the user's classification of the messages: reason is
+// manual_safe, manual_suspicious or manual_warning, stored under the status
+// gomail.ManualSecurityStatus maps it to and kept from later scans; "" drops it
+// and queues the messages for a fresh scan.
+func (s *Service) SetMessageSecurity(ctx context.Context, messageIDs []int64, reason string) error {
+	if len(messageIDs) == 0 {
+		return nil
+	}
+	status, ok := gomail.ManualSecurityStatus(reason)
+	if !ok && reason != "" {
+		return fmt.Errorf("set message security: unknown classification %q", reason)
+	}
+	for _, id := range messageIDs {
+		var err error
+		if reason == "" {
+			_, err = s.db.Execute(ctx, "UPDATE messages SET security_status = NULL, security_reason = NULL, security_scanned_at = 0 WHERE id = ?", id)
+		} else {
+			_, err = s.db.Execute(ctx, "UPDATE messages SET security_status = ?, security_reason = ?, security_scanned_at = ? WHERE id = ?", status, reason, time.Now().Unix(), id)
+		}
+		if err != nil {
+			return fmt.Errorf("set message security %d: %w", id, err)
+		}
+	}
+	s.bus.Publish(events.Event{Type: events.MessagesChanged})
+	return nil
+}
+
 // SetFlags adds then removes flags on the messages locally and queues the change
 // for the server.
 func (s *Service) SetFlags(ctx context.Context, ids []int64, add, remove []string) error {
@@ -559,15 +600,24 @@ func (s *Service) SetFlags(ctx context.Context, ids []int64, add, remove []strin
 	if len(add)+len(remove) == 0 {
 		return nil
 	}
-	payload, err := json.Marshal(mailsync.FlagsPayload{Add: add, Remove: remove})
-	if err != nil {
-		return err
-	}
 	s.editMu.Lock()
 	defer s.editMu.Unlock()
 	acc, ts, err := s.targets(ctx, ids)
 	if err != nil {
 		return err
+	}
+	stmts, err := flagWrites(acc, ts, add, remove)
+	if err != nil {
+		return err
+	}
+	return s.apply(ctx, acc, ts, stmts)
+}
+
+// flagWrites adds then removes the (canonical) flags on ts and queues the change.
+func flagWrites(acc int64, ts []target, add, remove []string) ([]sqlite.Statement, error) {
+	payload, err := json.Marshal(mailsync.FlagsPayload{Add: add, Remove: remove})
+	if err != nil {
+		return nil, err
 	}
 	var stmts []sqlite.Statement
 	for _, m := range ts {
@@ -580,7 +630,7 @@ func (s *Service) SetFlags(ctx context.Context, ids []int64, add, remove []strin
 			sqlite.Statement{SQL: `INSERT INTO ops(account_id, message_id, kind, payload, depends_on, created_at)
 				VALUES (?, ?, 'flags', ?, ` + latestOp + `, unixepoch())`, Args: []any{acc, m.id, string(payload), m.id}})
 	}
-	return s.apply(ctx, acc, ts, stmts)
+	return stmts, nil
 }
 
 // Move moves the messages to folderID, which must belong to their account. The
@@ -610,9 +660,18 @@ func (s *Service) Delete(ctx context.Context, ids []int64) error {
 	return s.MoveToRole(ctx, ids, "trash")
 }
 
+// UndoPurgeWindow is how long a permanent delete waits before it is pushed, so
+// that UndoPurge can take it back.
+const UndoPurgeWindow = 10 * time.Second
+
+// ErrPurgeTooLate is UndoPurge finding none of the messages still waiting:
+// they are deleted for good, or being deleted.
+var ErrPurgeTooLate = errors.New("cannot undo: messages already permanently deleted")
+
 // DeleteForever queues a permanent delete of the messages in their account's
-// Trash or Junk; ones elsewhere stay. A move out of Trash/Junk before the push cancels it, and
-// the fetch after the push drops the rows.
+// Trash or Junk; ones elsewhere stay. They leave lists and counts at once, and
+// the push waits UndoPurgeWindow for an UndoPurge. A move out of Trash/Junk
+// before the push cancels it, and the fetch after the push drops the rows.
 func (s *Service) DeleteForever(ctx context.Context, ids []int64) error {
 	s.editMu.Lock()
 	defer s.editMu.Unlock()
@@ -625,6 +684,8 @@ func (s *Service) DeleteForever(ctx context.Context, ids []int64) error {
 	if trash == 0 && junk == 0 {
 		return &ErrNoRoleFolder{Role: "trash"}
 	}
+	now := s.clk().Now()
+	due := now.Add(UndoPurgeWindow)
 	var purged []target
 	var stmts []sqlite.Statement
 	for _, m := range ts {
@@ -638,54 +699,118 @@ func (s *Service) DeleteForever(ctx context.Context, ids []int64) error {
 		}
 		purged = append(purged, m)
 		stmts = append(stmts, sqlite.Statement{SQL: `INSERT INTO ops(account_id, message_id, kind, dst_folder_id, payload, depends_on, created_at)
-			VALUES (?, ?, 'purge', ?, ?, ` + latestOp + `, unixepoch())`, Args: []any{acc, m.id, m.folder, mailsync.PurgeNowRole(role), m.id}})
+			VALUES (?, ?, 'purge', ?, ?, ` + latestOp + `, unixepoch())`, Args: []any{acc, m.id, m.folder, mailsync.PurgeNowRole(role, due), m.id}})
 	}
-	return s.apply(ctx, acc, purged, stmts)
+	if err := s.apply(ctx, acc, purged, stmts); err != nil {
+		return err
+	}
+	s.wakeForPurge(ctx, acc, now)
+	return nil
 }
 
-// EmptyFolder permanently expunges all messages in a trash or junk folder.
-func (s *Service) EmptyFolder(ctx context.Context, folderID int64) (int, error) {
+// EmptyFolder permanently deletes every message in a trash or junk folder, as
+// DeleteForever, and returns the IDs it queued for an UndoPurge; mail already
+// being deleted is left to its own purge. On an error it returns those queued
+// before it.
+func (s *Service) EmptyFolder(ctx context.Context, folderID int64) ([]int64, error) {
 	s.editMu.Lock()
 	defer s.editMu.Unlock()
 	rows, err := s.db.Query(ctx, "SELECT account_id, role FROM folders WHERE id = ?", folderID)
 	if err != nil {
-		return 0, err
+		return nil, err
 	}
 	if len(rows.Values) == 0 {
-		return 0, fmt.Errorf("folder %d not found", folderID)
+		return nil, fmt.Errorf("folder %d not found", folderID)
 	}
 	acc := store.Int(rows.Values[0][0])
 	role := store.Str(rows.Values[0][1])
 	if role != "trash" && role != "junk" {
-		return 0, fmt.Errorf("cannot empty folder with role %q", role)
+		return nil, fmt.Errorf("cannot empty folder with role %q", role)
 	}
-	msgRows, err := s.db.Query(ctx, "SELECT id, thread_id FROM messages WHERE folder_id = ?", folderID)
-	if err != nil {
-		return 0, err
+	msgRows, err := s.db.Query(ctx, "SELECT m.id, m.thread_id FROM messages m WHERE m.folder_id = ? AND "+notPurgedCond, folderID)
+	if err != nil || len(msgRows.Values) == 0 {
+		return nil, err
 	}
-	if len(msgRows.Values) == 0 {
-		return 0, nil
+	now := s.clk().Now()
+	payload := mailsync.PurgeNowRole(role, now.Add(UndoPurgeWindow))
+	ids := make([]int64, len(msgRows.Values))
+	ts := make([]target, len(msgRows.Values))
+	stmts := make([]sqlite.Statement, len(msgRows.Values))
+	for i, r := range msgRows.Values {
+		ids[i] = store.Int(r[0])
+		ts[i] = target{id: ids[i], thread: store.Int(r[1]), folder: folderID}
+		stmts[i] = sqlite.Statement{SQL: `INSERT INTO ops(account_id, message_id, kind, dst_folder_id, payload, depends_on, created_at)
+			VALUES (?, ?, 'purge', ?, ?, ` + latestOp + `, unixepoch())`, Args: []any{acc, ids[i], folderID, payload, ids[i]}}
 	}
-	payload := mailsync.PurgeNowRole(role)
-	var ts []target
-	var stmts []sqlite.Statement
-	for _, r := range msgRows.Values {
-		id, tid := store.Int(r[0]), store.Int(r[1])
-		ts = append(ts, target{id: id, thread: tid, folder: folderID})
-		stmts = append(stmts, sqlite.Statement{
-			SQL: `INSERT INTO ops(account_id, message_id, kind, dst_folder_id, payload, depends_on, created_at)
-				VALUES (?, ?, 'purge', ?, ?, ` + latestOp + `, unixepoch())`,
-			Args: []any{acc, id, folderID, payload, id},
-		})
-	}
+	defer s.wakeForPurge(ctx, acc, now)
 	const chunk = 200
 	for i := 0; i < len(ts); i += chunk {
 		end := min(i+chunk, len(ts))
 		if err := s.apply(ctx, acc, ts[i:end], stmts[i:end]); err != nil {
-			return i, err
+			return ids[:i], err
 		}
 	}
-	return len(ts), nil
+	return ids, nil
+}
+
+// UndoPurge takes back DeleteForever and EmptyFolder for the messages: their
+// permanent deletes still waiting are cancelled and they show again. gone counts
+// those already deleted for good; when none was restored the error is
+// ErrPurgeTooLate. A purge whose UID EXPUNGE is under way still completes, as
+// with a rescue.
+func (s *Service) UndoPurge(ctx context.Context, ids []int64) (gone int, err error) {
+	s.editMu.Lock()
+	defer s.editMu.Unlock()
+	ids = slices.Compact(slices.Sorted(slices.Values(ids)))
+	if len(ids) == 0 {
+		return 0, nil
+	}
+	marks := strings.TrimSuffix(strings.Repeat("?,", len(ids)), ",")
+	args := make([]any, len(ids))
+	for i, id := range ids {
+		args[i] = id
+	}
+	res, err := s.db.Execute(ctx, "UPDATE ops SET state = 'cancelled' WHERE message_id IN ("+marks+") AND kind = 'purge' AND state = 'pending'", args...)
+	if err != nil {
+		return 0, err
+	}
+	if res.Changes == 0 {
+		return 0, ErrPurgeTooLate
+	}
+	// What is left: rows the fetch has not dropped, of messages not expunged.
+	rows, err := s.db.Query(ctx, `SELECT m.id, m.account_id, m.thread_id FROM messages m WHERE m.id IN (`+marks+`)
+		AND NOT EXISTS (SELECT 1 FROM ops o WHERE o.message_id = m.id AND o.kind = 'purge' AND o.state = 'done')`, args...)
+	if err != nil {
+		return 0, err
+	}
+	byAcc := map[int64]*events.Event{}
+	for _, r := range rows.Values {
+		acc := store.Int(r[1])
+		ev := byAcc[acc]
+		if ev == nil {
+			ev = &events.Event{Type: events.MessagesChanged, AccountID: acc}
+			byAcc[acc] = ev
+		}
+		ev.MessageIDs = append(ev.MessageIDs, store.Int(r[0]))
+		if tid := store.Int(r[2]); tid != 0 {
+			ev.ThreadIDs = append(ev.ThreadIDs, tid)
+		}
+	}
+	for _, ev := range byAcc {
+		ev.ThreadIDs = slices.Compact(slices.Sorted(slices.Values(ev.ThreadIDs)))
+		s.bus.Publish(*ev)
+	}
+	return len(ids) - len(rows.Values), nil
+}
+
+// wakeForPurge has the account's worker sync again when the first purge in its
+// undo window after t comes due, in place of the time set for that before.
+func (s *Service) wakeForPurge(ctx context.Context, accountID int64, t time.Time) {
+	next, err := mailsync.NextPurgeDue(ctx, s.db, accountID, t)
+	if err != nil {
+		return
+	}
+	s.wakeWorkerAt(accountID, wakePurge, next)
 }
 
 // MarkAllAsRead marks every unread message in view v as read. Returns the number of messages marked.
@@ -756,6 +881,12 @@ func (s *Service) roleFolder(ctx context.Context, acc int64, role string) (int64
 // move sets the desired folder of the messages not already in folderID and queues
 // the moves; their server location changes only when the move is pushed.
 func (s *Service) move(ctx context.Context, accountID int64, ts []target, folderID int64) error {
+	moved, stmts := moveWrites(accountID, ts, folderID)
+	return s.apply(ctx, accountID, moved, stmts)
+}
+
+// moveWrites are move's statements and the messages they move.
+func moveWrites(accountID int64, ts []target, folderID int64) ([]target, []sqlite.Statement) {
 	var moved []target
 	var stmts []sqlite.Statement
 	for _, m := range ts {
@@ -770,5 +901,5 @@ func (s *Service) move(ctx context.Context, accountID int64, ts []target, folder
 			sqlite.Statement{SQL: `INSERT INTO ops(account_id, message_id, kind, dst_folder_id, depends_on, created_at)
 				VALUES (?, ?, 'move', ?, ` + latestOp + `, unixepoch())`, Args: []any{accountID, m.id, folderID, m.id}})
 	}
-	return s.apply(ctx, accountID, moved, stmts)
+	return moved, stmts
 }

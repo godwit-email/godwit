@@ -10,9 +10,9 @@ import (
 	"sync"
 	"time"
 
-	"github.com/Calcium-Ion/moejs"
-	"github.com/Calcium-Ion/moejs/engine"
-	"github.com/Calcium-Ion/moejs/eventloop"
+	"github.com/MoeForge/moejs"
+	"github.com/MoeForge/moejs/engine"
+	"github.com/MoeForge/moejs/eventloop"
 )
 
 // MaxResultBytes caps the JSON a plugin call hands back to the host.

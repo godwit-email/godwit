@@ -1,7 +1,9 @@
 package mcpclients
 
 import (
+	"archive/zip"
 	"encoding/json"
+	"io"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -15,7 +17,7 @@ import (
 var srv = Server{Command: "/Applications/Godwit.app/Contents/MacOS/Godwit", Args: []string{"mcp"}}
 
 func env(t *testing.T) Env {
-	return Env{Home: t.TempDir(), OS: "darwin", Run: func(string, ...string) error { t.Fatal("ran a command"); return nil }}
+	return Env{Home: t.TempDir(), OS: "linux", Temp: t.TempDir(), Run: func(string, ...string) error { t.Fatal("ran a command"); return nil }}
 }
 
 func write(t *testing.T, path, text string) {
@@ -40,7 +42,7 @@ func state(t *testing.T, e Env, app string) State {
 func TestClaudeKeepsTheRest(t *testing.T) {
 	e := env(t)
 	assert.Equal(t, Absent, state(t, e, Claude))
-	path := filepath.Join(e.Home, "Library", "Application Support", "Claude", "claude_desktop_config.json")
+	path := filepath.Join(e.Home, ".config", "Claude", "claude_desktop_config.json")
 	write(t, path, `{"globalShortcut": "Alt+Space", "mcpServers": {"files": {"command": "npx", "args": ["fs"]}, "godwit": {"command": "/old/Godwit", "env": {"X": "1"}}}}`)
 	assert.Equal(t, Other, state(t, e, Claude), "godwit points at another program")
 
@@ -64,7 +66,7 @@ func TestClaudeKeepsTheRest(t *testing.T) {
 func TestClaudeNulls(t *testing.T) {
 	for _, text := range []string{`null`, `{"mcpServers": null}`, `{"mcpServers": {"godwit": null}}`} {
 		e := env(t)
-		path := filepath.Join(e.Home, "Library", "Application Support", "Claude", "claude_desktop_config.json")
+		path := filepath.Join(e.Home, ".config", "Claude", "claude_desktop_config.json")
 		write(t, path, text)
 		require.NoError(t, e.Connect(Claude, srv), text)
 		assert.Equal(t, On, state(t, e, Claude), text)
@@ -76,7 +78,7 @@ func TestClaudeNulls(t *testing.T) {
 // A config that is not JSON is left as it was.
 func TestClaudeLeavesBrokenJSON(t *testing.T) {
 	e := env(t)
-	path := filepath.Join(e.Home, "Library", "Application Support", "Claude", "claude_desktop_config.json")
+	path := filepath.Join(e.Home, ".config", "Claude", "claude_desktop_config.json")
 	write(t, path, `{"mcpServers": {`)
 	assert.Error(t, e.Connect(Claude, srv))
 	assert.Equal(t, `{"mcpServers": {`, read(t, path))
@@ -85,7 +87,7 @@ func TestClaudeLeavesBrokenJSON(t *testing.T) {
 // The app's folder there but no config yet: Connect makes one.
 func TestClaudeWithoutConfig(t *testing.T) {
 	e := env(t)
-	require.NoError(t, os.MkdirAll(filepath.Join(e.Home, "Library", "Application Support", "Claude"), 0o755))
+	require.NoError(t, os.MkdirAll(filepath.Join(e.Home, ".config", "Claude"), 0o755))
 	assert.Equal(t, Off, state(t, e, Claude))
 	require.NoError(t, e.Connect(Claude, srv))
 	assert.Equal(t, On, state(t, e, Claude))
@@ -96,7 +98,7 @@ func TestWriteKeepsALink(t *testing.T) {
 	e := env(t)
 	real := filepath.Join(e.Home, "dotfiles", "claude.json")
 	write(t, real, `{}`)
-	dir := filepath.Join(e.Home, "Library", "Application Support", "Claude")
+	dir := filepath.Join(e.Home, ".config", "Claude")
 	require.NoError(t, os.MkdirAll(dir, 0o755))
 	link := filepath.Join(dir, "claude_desktop_config.json")
 	require.NoError(t, os.Symlink(real, link))
@@ -113,27 +115,100 @@ func TestWriteKeepsALink(t *testing.T) {
 	assert.Equal(t, os.FileMode(0o600), fi.Mode().Perm())
 }
 
-// Claude Code is changed through its CLI; its state is read from ~/.claude.json.
-func TestClaudeCodeUsesItsCLI(t *testing.T) {
+// Claude Code's servers are in ~/.claude.json, beside its other state.
+func TestClaudeCodeEditsItsJSON(t *testing.T) {
 	e := env(t)
 	assert.Equal(t, Absent, state(t, e, ClaudeCode))
-	cli := filepath.Join(e.Home, ".local", "bin", "claude")
-	write(t, cli, "")
+	require.NoError(t, os.MkdirAll(filepath.Join(e.Home, ".claude"), 0o755))
+	assert.Equal(t, Off, state(t, e, ClaudeCode))
+	path := filepath.Join(e.Home, ".claude.json")
+	write(t, path, `{"projects": {"/x": {}}, "mcpServers": {"files": {"command": "npx"}}}`)
+	require.NoError(t, e.Connect(ClaudeCode, srv))
+	assert.Equal(t, On, state(t, e, ClaudeCode))
+	var got map[string]any
+	require.NoError(t, json.Unmarshal([]byte(read(t, path)), &got))
+	assert.Contains(t, got, "projects")
+	assert.Contains(t, got["mcpServers"], "files")
+	require.NoError(t, e.Disconnect(ClaudeCode))
+	assert.Equal(t, Off, state(t, e, ClaudeCode))
+}
+
+// On macOS Claude is opened with an extension to install, in place of
+// the entry in its config; installed, it is what State reads, and only
+// Claude can take it away.
+func TestClaudeExtension(t *testing.T) {
+	e := env(t)
+	e.OS = "darwin"
+	dir := filepath.Join(e.Home, "Library", "Application Support", "Claude")
+	config := filepath.Join(dir, "claude_desktop_config.json")
+	write(t, config, `{"mcpServers": {"godwit": {"command": "/old/Godwit", "args": ["mcp"]}}}`)
+	assert.Equal(t, Other, state(t, e, Claude), "the config's entry, before the extension")
 	var ran []string
 	e.Run = func(name string, args ...string) error {
-		ran = append(ran, filepath.Base(name)+" "+strings.Join(args, " "))
+		ran = append(ran, name+" "+strings.Join(args, " "))
 		return nil
 	}
-	assert.Equal(t, Off, state(t, e, ClaudeCode))
-	require.NoError(t, e.Connect(ClaudeCode, srv))
-	require.NoError(t, e.Disconnect(ClaudeCode))
-	assert.Equal(t, []string{
-		"claude mcp remove --scope user godwit",
-		`claude mcp add-json --scope user godwit {"args":["mcp"],"command":"/Applications/Godwit.app/Contents/MacOS/Godwit","type":"stdio"}`,
-		"claude mcp remove --scope user godwit",
-	}, ran)
-	write(t, filepath.Join(e.Home, ".claude.json"), `{"projects": {}, "mcpServers": {"godwit": {"type": "stdio", "command": "/Applications/Godwit.app/Contents/MacOS/Godwit", "args": ["mcp"]}}}`)
-	assert.Equal(t, On, state(t, e, ClaudeCode))
+	s := srv
+	s.Version = "1.2.3"
+	require.NoError(t, e.Connect(Claude, s))
+	bundle := filepath.Join(e.Temp, "Godwit.mcpb")
+	assert.Equal(t, []string{"open -b com.anthropic.claudefordesktop " + bundle}, ran)
+	assert.NotContains(t, read(t, config), "godwit")
+	assert.Equal(t, Off, state(t, e, Claude), "not installed yet")
+
+	z, err := zip.OpenReader(bundle)
+	require.NoError(t, err)
+	defer z.Close()
+	files := map[string][]byte{}
+	for _, f := range z.File {
+		r, err := f.Open()
+		require.NoError(t, err)
+		files[f.Name], _ = io.ReadAll(r)
+		r.Close()
+	}
+	assert.NotEmpty(t, files["icon.png"])
+	var m struct {
+		Name, Version string
+		Server        struct {
+			Type      string
+			MCPConfig jsonServer `json:"mcp_config"`
+		}
+	}
+	require.NoError(t, json.Unmarshal(files["manifest.json"], &m))
+	assert.Equal(t, "godwit", m.Name)
+	assert.Equal(t, "1.2.3", m.Version)
+	assert.Equal(t, "binary", m.Server.Type)
+	assert.Equal(t, jsonServer{Command: srv.Command, Args: []string{"mcp"}}, m.Server.MCPConfig)
+
+	write(t, filepath.Join(dir, "Claude Extensions", "local.mcpb.godwit.godwit", "manifest.json"), string(files["manifest.json"])) // as Claude installs it
+	assert.Equal(t, On, state(t, e, Claude))
+	assert.Equal(t, ErrRemoveInClaude, e.Disconnect(Claude))
+}
+
+// Antigravity keeps its servers in ~/.gemini/config, and is on this
+// computer when its own folder there is.
+func TestAntigravity(t *testing.T) {
+	e := env(t)
+	require.NoError(t, os.MkdirAll(filepath.Join(e.Home, ".gemini"), 0o755)) // Gemini CLI's alone
+	assert.Equal(t, Absent, state(t, e, Antigravity))
+	require.NoError(t, os.MkdirAll(filepath.Join(e.Home, ".gemini", "antigravity"), 0o755))
+	assert.Equal(t, Off, state(t, e, Antigravity))
+	require.NoError(t, e.Connect(Antigravity, srv))
+	assert.Equal(t, On, state(t, e, Antigravity))
+	assert.Contains(t, read(t, filepath.Join(e.Home, ".gemini", "config", "mcp_config.json")), srv.Command)
+}
+
+// Grok's config.toml is Codex's format, in ~/.grok.
+func TestGrok(t *testing.T) {
+	e := env(t)
+	assert.Equal(t, Absent, state(t, e, Grok))
+	path := filepath.Join(e.Home, ".grok", "config.toml")
+	write(t, path, "model = \"grok-4\"\n")
+	require.NoError(t, e.Connect(Grok, srv))
+	assert.Equal(t, On, state(t, e, Grok))
+	assert.Equal(t, "model = \"grok-4\"\n\n"+codexHeader+"\ncommand = \""+srv.Command+"\"\nargs = [\"mcp\"]\n", read(t, path))
+	require.NoError(t, e.Disconnect(Grok))
+	assert.Equal(t, Off, state(t, e, Grok))
 }
 
 // Codex's config.toml is edited as text: comments, other tables and the

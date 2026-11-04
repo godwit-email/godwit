@@ -9,6 +9,7 @@ import (
 	netmail "net/mail"
 	"slices"
 	"strings"
+	"time"
 
 	"github.com/egoist/mygo/plugins/sqlite"
 	"github.com/emersion/go-imap/v2"
@@ -44,21 +45,22 @@ type op struct {
 
 // PushOps sends the account's pending ops to the server in id order. Ops whose
 // message has no server location yet, or whose dependency is still pending or
-// awaiting its claim, wait for a later round; once the dependency failed or
-// conflicted the op is re-based (depends_on cleared) and runs from the message's
-// current server location. Problems with single ops come back as *OpsError; any
-// other error means the connection is unusable and the push stopped.
-func PushOps(ctx context.Context, db *store.DB, c *imapclient.Client, accountID int64) error {
-	return push(ctx, db, c, accountID, "")
+// awaiting its claim, wait for a later round, as do purges whose undo window is
+// still open at now; once the dependency failed or conflicted the op is re-based
+// (depends_on cleared) and runs from the message's current server location.
+// Problems with single ops come back as *OpsError; any other error means the
+// connection is unusable and the push stopped.
+func PushOps(ctx context.Context, db *store.DB, c *imapclient.Client, accountID int64, now time.Time) error {
+	return push(ctx, db, c, accountID, now, "")
 }
 
 // PushNewOps is PushOps limited to ops never attempted, for a second round after
 // a fetch claimed moves: ops that were waiting run, ones that failed are not retried.
-func PushNewOps(ctx context.Context, db *store.DB, c *imapclient.Client, accountID int64) error {
-	return push(ctx, db, c, accountID, " AND attempts = 0")
+func PushNewOps(ctx context.Context, db *store.DB, c *imapclient.Client, accountID int64, now time.Time) error {
+	return push(ctx, db, c, accountID, now, " AND attempts = 0")
 }
 
-func push(ctx context.Context, db *store.DB, c *imapclient.Client, accountID int64, filter string) (rerr error) {
+func push(ctx context.Context, db *store.DB, c *imapclient.Client, accountID int64, now time.Time, filter string) (rerr error) {
 	var problems []string
 	var changed []int64
 	// A purge of a message already gone has nothing left to do.
@@ -81,7 +83,7 @@ func push(ctx context.Context, db *store.DB, c *imapclient.Client, accountID int
 		problems = append(problems, fmt.Sprintf("%d change(s) not applied: the message no longer exists", res.Changes))
 	}
 	rows, err := db.Query(ctx, `SELECT id, kind, message_id, dst_folder_id, payload, depends_on, attempts FROM ops
-		WHERE account_id = ? AND state = 'pending'`+filter+` ORDER BY id`, accountID)
+		WHERE account_id = ? AND state = 'pending' AND `+purgeDue+` <= ?`+filter+` ORDER BY id`, accountID, now.UnixMilli())
 	if err != nil {
 		return err
 	}

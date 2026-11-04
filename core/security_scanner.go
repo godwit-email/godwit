@@ -8,6 +8,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/egoist/mygo/plugins/sqlite"
 	"github.com/godwit-email/godwit/core/ai"
 	"github.com/godwit-email/godwit/core/ai/mask"
 	"github.com/godwit-email/godwit/core/events"
@@ -230,14 +231,23 @@ func (s *Service) scanSecurityBatch(ctx context.Context) (int, error) {
 
 		// Publish each completed message rather than holding progress until all
 		// twenty model calls in this batch finish. Stop/settings guards still apply.
-		result, err := s.db.Execute(ctx,
-			"UPDATE messages SET security_status = ?, security_reason = ?, security_scanned_at = ? WHERE id = ? AND security_scanned_at = 0 AND COALESCE((SELECT value FROM settings WHERE key = 'app'), '') = ? AND folder_id NOT IN (SELECT id FROM folders WHERE role IN ('sent', 'drafts', 'trash'))",
-			secStatus, secReason, now, id, settingsSnapshot)
+		guard := "id = ? AND security_scanned_at = 0 AND COALESCE((SELECT value FROM settings WHERE key = 'app'), '') = ? AND folder_id NOT IN (SELECT id FROM folders WHERE role IN ('sent', 'drafts', 'trash'))"
+		res, err := s.db.Transaction(ctx, []sqlite.Statement{
+			// The first verdict on new mail runs security rules; a re-scan, of mail with one already or of old mail, does not.
+			{SQL: `INSERT INTO events_log(type, account_id, message_id, subject, from_addr, msg_date, detail, created_at)
+				SELECT ?, account_id, id, subject, from_addr, date, ?, unixepoch() FROM messages WHERE ` + guard + `
+				AND EXISTS (SELECT 1 FROM events_log WHERE type = 'message.received' AND message_id = ?)
+				AND NOT EXISTS (SELECT 1 FROM events_log WHERE type = ? AND message_id = ?)`,
+				Args: []any{eventSecurityVerdict, secStatus, id, settingsSnapshot, id, eventSecurityVerdict, id}},
+			{SQL: "UPDATE messages SET security_status = ?, security_reason = ?, security_scanned_at = ? WHERE " + guard,
+				Args: []any{secStatus, secReason, now, id, settingsSnapshot}},
+		})
 		if err != nil {
 			return completed, err
 		}
-		if result.Changes > 0 {
+		if res[1].Changes > 0 {
 			completed++
+			s.notifyHooks()
 			s.bus.Publish(events.Event{Type: events.MessagesChanged})
 		}
 	}
@@ -315,7 +325,8 @@ func (s *Service) RescanSecurity(ctx context.Context, days int, all bool) (int, 
 		return 0, err
 	}
 	through := store.Int(row.Values[0][0])
-	target := "date >= ? AND id <= ? AND " + securityEligible
+	// a user's classification outlives a rescan; only resetting it requeues the message
+	target := "date >= ? AND id <= ? AND COALESCE(security_reason, '') NOT IN " + gomail.ManualSecuritySQL + " AND " + securityEligible
 	if !all {
 		target += " AND security_scanned_at IS NULL"
 	}

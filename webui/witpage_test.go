@@ -42,6 +42,8 @@ type witPageFixture struct {
 	navs     []int
 	urls     []string
 	composed []int64
+	rules    []core.Rule
+	ruleAsks []string // what the user asked each rule for
 }
 
 func newWitPageFixture(t *testing.T, setup ...func(*coretest.Env)) *witPageFixture {
@@ -77,6 +79,9 @@ func newWitPageFixture(t *testing.T, setup ...func(*coretest.Env)) *witPageFixtu
 		NewConversation:     func() { f.record(func() { f.navs = append(f.navs, 0) }) },
 		OnLink:              func(u string) { f.record(func() { f.urls = append(f.urls, u) }) },
 		OpenCompose:         func(id int64) { f.record(func() { f.composed = append(f.composed, id) }) },
+		EditRule: func(r core.Rule, _, _ int64, ask string) {
+			f.record(func() { f.rules, f.ruleAsks = append(f.rules, r), append(f.ruleAsks, ask) })
+		},
 	})
 	f.w.SetService(f.e.Svc)
 	f.p = NewWitPage(f.w)
@@ -1214,4 +1219,34 @@ func TestWitPageRefusedFirstQuestion(t *testing.T) {
 	require.NoError(t, err)
 	require.Len(t, h.Turns, 1, "answered, it replaces the failed one")
 	assert.Empty(t, h.Turns[0].Failed)
+}
+
+// 在编辑器里修改 hands Wit's proposed rule to the editor, saving nothing;
+// the card stays pending for the user to come back to.
+func TestWitPageEditRule(t *testing.T) {
+	f := newWitPageFixture(t)
+	f.llm.Script(coretest.Turn{Calls: []coretest.Call{{Name: "propose_rule", Args: `{"name":"Stripe","trigger":"receive","match":"all","actions":[{"kind":"archive"}]}`}}},
+		coretest.Turn{Text: []string{"好的。"}})
+	conv, ev := f.interrupted(t, "建一条规则")
+	require.Len(t, ev.Approvals, 1)
+	require.NoError(t, f.p.EditRule(f.ctx(), ev.Approvals[0].ID))
+	f.mu.Lock()
+	require.Len(t, f.rules, 1)
+	assert.Equal(t, "Stripe", f.rules[0].Doc.Name)
+	assert.Equal(t, []string{"建一条规则"}, f.ruleAsks, "the editor quotes what was asked")
+	f.mu.Unlock()
+	rs, err := f.e.Svc.Rules(t.Context())
+	require.NoError(t, err)
+	assert.Empty(t, rs)
+	c, err := f.e.Svc.GetConversation(t.Context(), conv)
+	require.NoError(t, err)
+	var states []string
+	for _, tn := range c.Turns {
+		for _, tc := range tn.Calls {
+			if tc.Approval != nil {
+				states = append(states, tc.Approval.State)
+			}
+		}
+	}
+	assert.Equal(t, []string{"pending"}, states, "back in the conversation, its card still asks")
 }

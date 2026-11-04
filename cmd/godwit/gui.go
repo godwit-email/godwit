@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"errors"
+	"io"
 	"io/fs"
 	"log"
 	"os"
@@ -60,6 +61,7 @@ func uiLocale(preference, system string) string {
 // dataDir (ownerlock) before opening it; if another process does, it says so
 // in an error dialog and exits 2.
 func gui(ctx context.Context, dataDir string) int {
+	log.SetOutput(io.MultiWriter(os.Stderr, app.RecentLog)) // and slog, while its default is unset; an error report carries the recent lines
 	mygo.App.SetName("Godwit")
 	if !packaged() { // the Microsoft Store updates the MSIX
 		mygo.Use(updater.Plugin) // checks GitHub releases daily; a no-op in dev builds
@@ -152,6 +154,9 @@ func gui(ctx context.Context, dataDir string) int {
 		ConversationCreated: func(id, v int64) { onApp(func(a *app.App) { a.ConversationCreated(id, v) }) },
 		OnLink:              func(u string) { onApp(func(a *app.App) { a.OpenLink(u) }) },
 		OpenCompose:         func(id int64) { onApp(func(a *app.App) { a.OpenDraft(id) }) }, // a draft Wit made may be in the outbox
+		EditRule: func(r core.Rule, conv, approval int64, ask string) {
+			onApp(func(a *app.App) { a.EditRule(r, conv, approval, ask) })
+		},
 	})
 	mygo.Bind(webui.NewWitPage(wit))
 	// The reader pages, one per expanded message in the main window, each
@@ -234,7 +239,7 @@ func gui(ctx context.Context, dataDir string) int {
 		if err == nil {
 			svc, err = core.New(ctx, core.Options{DataDir: dataDir, AutoSync: true, LabelMail: true, SecurityMail: true, SystemLanguage: lang,
 				Registry: reg, ModelsDev: ai.ModelsDevURL, AppVersion: app.Version, SystemTranslator: systemTranslator(), AppleIntelligence: appleIntelligence(),
-				ConfirmWindow: true, ComposeOpen: windows.IsOpen, OpenURL: mygo.Shell.OpenExternal, GuardCoreML: guardCoreML()})
+				ConfirmWindow: true, ComposeOpen: windows.IsOpen, OpenURL: mygo.Shell.OpenExternal, GuardCoreML: guardCoreML(), PrintPDF: printPDF})
 		}
 		if err != nil {
 			i18n.SetLanguage(lang)
@@ -352,6 +357,8 @@ func gui(ctx context.Context, dataDir string) int {
 		} else if plat.tray, err = mygo.NewTray(mygo.TrayOptions{Icon: icon, IconIsTemplate: true, ToolTip: "Godwit",
 			Menu: trayMenu()}); err != nil {
 			log.Print(err) // no tray here (Linux without an indicator host)
+		} else if runtime.GOOS == "windows" {
+			plat.tray.OnClick(plat.ShowWindow) // Windows opens the app on a left click; the menu stays on the right
 		}
 		mygo.App.OnLocaleChanged(func(locale string) {
 			i18n.SetLanguage(locale)

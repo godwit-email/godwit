@@ -349,8 +349,8 @@ func TestAskNoSendTool(t *testing.T) {
 	names := toolNames(t, reqs[0])
 	assert.Equal(t, []string{
 		"archive_mail", "ask_user_question", "classify_mail", "create_draft", "delete_draft", "forward_mail",
-		"get_account_profile", "get_all_links", "get_message", "get_thread", "list_skills", "mark_as_read",
-		"mark_as_spam", "mark_as_unread", "move_to_trash", "open_link_in_browser", "read_attachment",
+		"get_account_profile", "get_all_links", "get_message", "get_thread", "list_rules", "list_skills", "mark_as_read",
+		"mark_as_spam", "mark_as_unread", "move_to_trash", "open_link_in_browser", "propose_rule", "read_attachment",
 		"read_skill_file", "reply_to_mail", "search_mail", "star_mail", "unstar_mail", "unsubscribe", "use_skill",
 	}, names)
 	for _, n := range names {

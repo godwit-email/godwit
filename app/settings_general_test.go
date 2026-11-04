@@ -1,7 +1,9 @@
 package app
 
 import (
+	"context"
 	"math"
+	"net/url"
 	"slices"
 	"strings"
 	"testing"
@@ -138,5 +140,140 @@ func TestThemeThumbFocusTip(t *testing.T) {
 func TestLanguagesByTag(t *testing.T) {
 	if !slices.IsSortedFunc(languages, func(a, b struct{ tag, name string }) int { return strings.Compare(a.tag, b.tag) }) {
 		t.Fatalf("languages out of tag order: %v", languages)
+	}
+}
+
+// TestSettingsProxyMode: 网络代理 offers both modes, says where the system
+// proxy comes from, saves the chosen mode, and a search for 代理 or proxy finds it.
+func TestSettingsProxyMode(t *testing.T) {
+	for _, v := range []string{"HTTPS_PROXY", "https_proxy", "HTTP_PROXY", "http_proxy"} {
+		t.Setenv(v, "")
+	}
+	h, _ := withAccount(t)
+	p := h.openSettings("general")
+	h.resize(1280, 1600) // the group sits at the page's end; ClickAt needs it in the window
+	h.see("网络代理")
+	h.see("使用系统网络设置中的代理")
+	t.Setenv("HTTPS_PROXY", "http://127.0.0.1:7890")
+	h.tt.Frame()
+	h.see("使用环境变量 HTTPS_PROXY、HTTP_PROXY 中的代理")
+	// the select shows 跟随系统, which a theme tile shows first: click it by
+	// place, at the row's middle and the tiles' right edge, where controls end
+	lab, _ := h.tt.Find("代理方式")
+	src, _ := h.tt.Find("使用环境变量 HTTPS_PROXY、HTTP_PROXY 中的代理")
+	dark, _ := h.tt.Find("深色")
+	h.tt.ClickAt(dark.X+dark.W-8, (lab.Y+src.Y+src.H)/2)
+	h.drain()
+	h.tt.Frame()
+	h.see("不使用代理")
+	h.click("不使用代理")
+	h.until("proxy mode off", func() bool { return h.app.settings.ProxyMode == "off" })
+	st, err := h.env.Svc.GetSettings(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if st.ProxyMode != "off" {
+		t.Errorf("stored ProxyMode %q, want off", st.ProxyMode)
+	}
+	if h.tt.HasText("中的代理") {
+		t.Error("the system proxy's source shows with 不使用代理")
+	}
+
+	// 自定义: its address shows, and saves once it is usable
+	pick := func(mode string) {
+		lab, _ := h.tt.Find("代理方式")
+		h.tt.ClickAt(dark.X+dark.W-8, lab.Y+lab.H/2)
+		h.drain()
+		h.tt.Frame()
+		h.click(mode)
+	}
+	if h.tt.HasText("代理地址") {
+		t.Error("the custom fields show with 不使用代理")
+	}
+	pick("自定义")
+	h.see("代理地址")
+	h.see("支持 SOCKS5 和 HTTP")
+	h.fillRow("代理地址", "socks5://127.0.0.1:70000")
+	h.see("代理地址无效")
+	if h.app.settings.ProxyMode != "off" {
+		t.Errorf("an invalid address saved mode %q", h.app.settings.ProxyMode)
+	}
+	h.fillRow("代理地址", "socks5://alice:x@127.0.0.1:7890")
+	h.see("代理地址无效") // credentials go in their own fields
+	h.fillRow("代理地址", "SOCKS5://127.0.0.1:7890/")
+	h.until("custom proxy saved", func() bool {
+		return h.app.settings.ProxyMode == "custom" && h.app.settings.ProxyURL == "socks5://127.0.0.1:7890"
+	})
+	if h.tt.HasText("代理地址无效") {
+		t.Error("the address error stays once it is valid")
+	}
+	// the values outlast another mode
+	pick("不使用代理")
+	h.until("proxy mode off again", func() bool { return h.app.settings.ProxyMode == "off" })
+	if h.tt.HasText("代理地址") {
+		t.Error("the custom fields show with 不使用代理")
+	}
+	pick("自定义")
+	h.until("custom again", func() bool { return h.app.settings.ProxyMode == "custom" })
+	st, err = h.env.Svc.GetSettings(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if st.ProxyMode != "custom" || st.ProxyURL != "socks5://127.0.0.1:7890" {
+		t.Errorf("stored %q %q, want custom socks5://127.0.0.1:7890", st.ProxyMode, st.ProxyURL)
+	}
+	// 不使用代理的主机: comma-separated, saved as entries
+	h.see("不使用代理的主机")
+	h.fillRow("不使用代理的主机", "*.corp.example, 10.0.0.0/8 mail.lan")
+	h.until("bypass saved", func() bool {
+		return slices.Equal(h.app.settings.ProxyBypass, []string{"*.corp.example", "10.0.0.0/8", "mail.lan"})
+	})
+	pick("不使用代理")
+	h.until("proxy mode off once more", func() bool { return h.app.settings.ProxyMode == "off" })
+	if h.tt.HasText("不使用代理的主机") {
+		t.Error("the bypass field shows with 不使用代理")
+	}
+	pick("自定义")
+	h.until("custom for the credentials", func() bool { return h.app.settings.ProxyMode == "custom" })
+
+	// the username and password save; the password goes to the keychain and never shows back
+	proxyUser := func() string {
+		if u := h.env.Svc.Proxy(&url.URL{Scheme: "https", Host: "example.com:993"}); u != nil && u.User != nil {
+			return u.User.String()
+		}
+		return ""
+	}
+	h.fillRow("用户名", "alice")
+	h.fillRow("密码", "pr0xy-pass")
+	t.Cleanup(func() { // what the page saved, should the wait below time out
+		if t.Failed() {
+			t.Logf("settings user %q set %v; proxy user %q; draft pass %q sent %q", h.app.settings.ProxyUser, h.app.settings.ProxyPasswordSet, proxyUser(), p.proxy.pass, p.proxy.sent)
+		}
+	})
+	h.until("credentials saved", func() bool { return proxyUser() == "alice:pr0xy-pass" })
+	if h.app.settings.ProxyUser != "alice" || h.app.settings.ProxyPassword != "" {
+		t.Errorf("settings %q %q, want alice and no password", h.app.settings.ProxyUser, h.app.settings.ProxyPassword)
+	}
+	p.proxy = proxyDraft{} // the page as shown afresh
+	h.tt.Frame()
+	if p.proxy.pass != "" || !h.app.settings.ProxyPasswordSet {
+		t.Errorf("the password field shows %q, kept %v; want empty, kept", p.proxy.pass, h.app.settings.ProxyPasswordSet)
+	}
+	// a saved password, shown only as the placeholder, clears with 清除
+	h.click("清除")
+	h.until("saved password cleared", func() bool { return proxyUser() == "alice" && !h.app.settings.ProxyPasswordSet })
+	if h.tt.HasText("清除") {
+		t.Error("清除 shows with no password saved")
+	}
+	// erasing what was typed removes it
+	h.fillRow("密码", "x")
+	h.until("replaced", func() bool { return proxyUser() == "alice:x" })
+	h.tt.Command("selectAll")
+	h.tt.Key(0, ui.KeyBackspace)
+	h.until("password removed", func() bool { return proxyUser() == "alice" })
+	for _, q := range []string{"代理", "proxy"} {
+		if m := p.matching(q); !slices.Contains(m.apps, "general") {
+			t.Errorf("%s: %+v, want general", q, m)
+		}
 	}
 }

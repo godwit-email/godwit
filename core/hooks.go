@@ -19,9 +19,10 @@ import (
 
 // message.received hooks are at least once: sync logs each new arrival in
 // events_log (in the import transaction) and one dispatcher per running
-// plugin with a handler delivers the log after its plugin_cursors.seq, in
-// order, moving the cursor only after the handler succeeded. A crash between
-// the two delivers again with the same idempotency key, with no upper bound.
+// plugin with a handler, or per built-in consumer (startConsumer), delivers
+// the log after its cursor, in order, moving the cursor only after the
+// handler succeeded. A crash between the two delivers again (to a plugin with
+// the same idempotency key), with no upper bound.
 
 const (
 	hookBatch     = 50
@@ -40,21 +41,78 @@ func hookBackoff(n int) time.Duration {
 
 type hookEvent struct {
 	seq, accountID, messageID int64
-	subject, from             string
+	typ, subject, from        string
+	detail                    string // label.applied: the slug; security.verdict: the status
 	date                      int64
 	deleted                   bool
 }
 
-// subscribeHooks sets the plugin's cursor to the newest event the first time
-// it runs with a message.received handler (one statement: read and write
-// together), so it gets what arrives from then on; an existing cursor stays,
-// and events that arrived while it was disabled are delivered.
-func (s *Service) subscribeHooks(ctx context.Context, name string) error {
+// eventCursor is a consumer's cursor row: a plugin's in plugin_cursors (gone
+// with the plugin), a built-in consumer's in event_cursors, so no plugin name
+// collides with a built-in one. types are the event types it reads.
+type eventCursor struct {
+	table, key, name string
+	types            []string
+}
+
+func pluginCursor(name string) eventCursor {
+	return eventCursor{"plugin_cursors", "plugin", name, []string{"message.received"}}
+}
+func builtinCursor(name string, types []string) eventCursor {
+	return eventCursor{"event_cursors", "consumer", name, types}
+}
+
+// errStopConsumer from a deliver ends its consumer without moving the cursor.
+var errStopConsumer = errors.New("consumer stopped")
+
+// subscribeCursor sets the cursor to the newest event the first time the consumer
+// runs (for a plugin, with a message.received handler; one statement: read
+// and write together), so it gets what arrives from then on; an existing
+// cursor stays, and events that arrived while it was off are delivered.
+func (s *Service) subscribeCursor(ctx context.Context, c eventCursor) error {
 	s.hooksMu.Lock()
 	defer s.hooksMu.Unlock()
-	_, err := s.db.Execute(ctx, `INSERT INTO plugin_cursors(plugin, seq) SELECT ?, COALESCE(MAX(seq), 0) FROM events_log
-		WHERE true ON CONFLICT(plugin) DO NOTHING`, name)
+	_, err := s.db.Execute(ctx, `INSERT INTO `+c.table+`(`+c.key+`, seq) SELECT ?, COALESCE(MAX(seq), 0) FROM events_log
+		WHERE true ON CONFLICT(`+c.key+`) DO NOTHING`, c.name)
 	return err
+}
+
+// addWake registers a dispatcher's wake-up (before its first read: no
+// arrival is missed); the func removes it.
+func (s *Service) addWake() (chan struct{}, func()) {
+	wake := make(chan struct{}, 1)
+	s.hooksMu.Lock()
+	defer s.hooksMu.Unlock()
+	if s.hookWakes == nil {
+		s.hookWakes = map[chan struct{}]struct{}{}
+	}
+	s.hookWakes[wake] = struct{}{}
+	return wake, func() {
+		s.hooksMu.Lock()
+		defer s.hooksMu.Unlock()
+		delete(s.hookWakes, wake)
+	}
+}
+
+// startConsumer runs a built-in consumer of the event types until Close:
+// deliver gets each event after the consumer's cursor, in order, at least
+// once, and an error is tried again after hookBackoff.
+func (s *Service) startConsumer(ctx context.Context, name string, types []string, deliver func(context.Context, hookEvent) error) error {
+	c := builtinCursor(name, types)
+	if err := s.subscribeCursor(ctx, c); err != nil {
+		return err
+	}
+	cctx, end, err := s.begin(context.Background(), 0)
+	if err != nil {
+		return nil // closing: nothing to deliver to
+	}
+	wake, unwake := s.addWake()
+	go func() {
+		defer end()
+		defer unwake()
+		s.consume(cctx, c, wake, nil, deliver)
+	}()
+	return nil
 }
 
 // startHooks starts rp's dispatcher if it handles message.received. The
@@ -64,7 +122,7 @@ func (s *Service) startHooks(ctx context.Context, rp *runningPlugin, r pluginRow
 	if !rp.p.Handles(plugins.EventReceived) {
 		return nil
 	}
-	if err := s.subscribeHooks(ctx, rp.p.Name); err != nil {
+	if err := s.subscribeCursor(ctx, pluginCursor(rp.p.Name)); err != nil {
 		return err
 	}
 	hctx, end, err := s.begin(context.Background(), 0)
@@ -72,22 +130,12 @@ func (s *Service) startHooks(ctx context.Context, rp *runningPlugin, r pluginRow
 		return nil // closing: nothing to deliver to
 	}
 	hctx, rp.stopHooks = context.WithCancel(hctx)
-	wake := make(chan struct{}, 1) // registered before the first read: no arrival is missed
-	s.hooksMu.Lock()
-	if s.hookWakes == nil {
-		s.hookWakes = map[chan struct{}]struct{}{}
-	}
-	s.hookWakes[wake] = struct{}{}
-	s.hooksMu.Unlock()
+	wake, unwake := s.addWake()
 	egress, _ := plugins.EgressFor(plugins.KindHook, r.m, r.granted == r.permHash, true, false)
 	inv := plugins.Invocation{Kind: plugins.KindHook, Write: slices.Contains(r.m.Permissions.Mail, "write"), EgressHosts: egress}
 	go func() {
 		defer end()
-		defer func() {
-			s.hooksMu.Lock()
-			delete(s.hookWakes, wake)
-			s.hooksMu.Unlock()
-		}()
+		defer unwake()
 		s.dispatchHooks(hctx, rp, inv, wake)
 		if pluginHook != nil {
 			pluginHook("hook.stopped", rp.p.Name)
@@ -101,21 +149,50 @@ func (s *Service) startHooks(ctx context.Context, rp *runningPlugin, r pluginRow
 // and waits hookBackoff before the same event is tried again.
 func (s *Service) dispatchHooks(ctx context.Context, rp *runningPlugin, base plugins.Invocation, wake <-chan struct{}) {
 	name := rp.p.Name
+	holdsMail := func(ctx context.Context) error { return s.markHoldsMail(ctx, name) } // events carry mail content
+	s.consume(ctx, pluginCursor(name), wake, holdsMail, func(ctx context.Context, ev hookEvent) error {
+		inv := base
+		inv.ID, inv.Config = name+":"+strconv.FormatInt(ev.seq, 10), rp.host.snapshot()
+		err := rp.p.Emit(ctx, inv, plugins.EventReceived, map[string]any{
+			"id": ev.messageID, "accountId": ev.accountID, "subject": ev.subject, "from": ev.from,
+			"date": time.Unix(ev.date, 0).UTC().Format(time.RFC3339), "deleted": ev.deleted,
+		}, map[string]any{"idempotencyKey": inv.ID})
+		if ctx.Err() != nil || errors.Is(err, plugins.ErrClosed) {
+			return errStopConsumer // stopped: the event is delivered again by the next instance
+		}
+		if err != nil {
+			s.pluginFailed(ctx, name, rp.gen)
+			return err
+		}
+		s.pluginSucceeded(ctx, name, rp.gen)
+		if pluginHook != nil && pluginHook("hook.advance", name) != nil {
+			return errStopConsumer // tests: a crash before the cursor moves
+		}
+		return nil
+	})
+}
+
+// consume delivers c's events until ctx ends or deliver returns
+// errStopConsumer. before (may be nil) runs ahead of each non-empty batch;
+// a failure of it, of deliver or of the cursor move waits hookBackoff before
+// the same step is tried again.
+func (s *Service) consume(ctx context.Context, c eventCursor, wake <-chan struct{},
+	before func(context.Context) error, deliver func(context.Context, hookEvent) error) {
 	failures := 0
 	fail := func() bool {
 		failures++
 		return s.hookWait(ctx, hookBackoff(failures), nil)
 	}
 	for {
-		evs, err := s.hookEvents(ctx, name)
+		evs, err := s.hookEvents(ctx, c)
 		if err != nil {
 			if ctx.Err() != nil || !fail() {
 				return
 			}
 			continue
 		}
-		if len(evs) > 0 { // events carry mail content
-			if err := s.markHoldsMail(ctx, name); err != nil {
+		if len(evs) > 0 && before != nil {
+			if err := before(ctx); err != nil {
 				if ctx.Err() != nil || !fail() {
 					return
 				}
@@ -124,26 +201,15 @@ func (s *Service) dispatchHooks(ctx context.Context, rp *runningPlugin, base plu
 		}
 		for _, ev := range evs {
 			for {
-				inv := base
-				inv.ID, inv.Config = name+":"+strconv.FormatInt(ev.seq, 10), rp.host.snapshot()
-				err := rp.p.Emit(ctx, inv, plugins.EventReceived, map[string]any{
-					"id": ev.messageID, "accountId": ev.accountID, "subject": ev.subject, "from": ev.from,
-					"date": time.Unix(ev.date, 0).UTC().Format(time.RFC3339), "deleted": ev.deleted,
-				}, map[string]any{"idempotencyKey": inv.ID})
-				if ctx.Err() != nil || errors.Is(err, plugins.ErrClosed) {
-					return // stopped: the event is delivered again by the next instance
+				err := deliver(ctx, ev)
+				if ctx.Err() != nil || errors.Is(err, errStopConsumer) {
+					return
 				}
 				if err == nil {
 					failures = 0
-					s.pluginSucceeded(ctx, name, rp.gen)
-					if pluginHook != nil && pluginHook("hook.advance", name) != nil {
-						return // tests: a crash before the cursor moves
-					}
-					if err = s.advanceCursor(ctx, name, ev.seq); err == nil {
+					if err = s.advanceCursor(ctx, c, ev.seq); err == nil {
 						break
 					}
-				} else {
-					s.pluginFailed(ctx, name, rp.gen)
 				}
 				if !fail() {
 					return
@@ -186,41 +252,48 @@ func (s *Service) hookWait(ctx context.Context, d time.Duration, wake <-chan str
 	}
 }
 
-// hookEvents is the next batch after the plugin's cursor, with each event's
-// snapshot and whether its message has been deleted since.
-func (s *Service) hookEvents(ctx context.Context, name string) ([]hookEvent, error) {
+// hookEvents is the next batch after c, with each event's snapshot and
+// whether its message has been deleted since.
+func (s *Service) hookEvents(ctx context.Context, c eventCursor) ([]hookEvent, error) {
+	var args []any
+	for _, t := range c.types {
+		args = append(args, t)
+	}
+	args = append(args, c.name, hookBatch)
 	rows, err := s.db.Query(ctx, `SELECT e.seq, COALESCE(e.account_id, 0), COALESCE(e.message_id, 0), COALESCE(e.subject, ''),
-			COALESCE(e.from_addr, ''), COALESCE(e.msg_date, 0), m.id IS NULL
+			COALESCE(e.from_addr, ''), COALESCE(e.msg_date, 0), m.id IS NULL, e.type, COALESCE(e.detail, '')
 		FROM events_log e LEFT JOIN messages m ON m.id = e.message_id
-		WHERE e.type = 'message.received' AND e.seq > (SELECT seq FROM plugin_cursors WHERE plugin = ?)
-		ORDER BY e.seq LIMIT ?`, name, hookBatch)
+		WHERE e.type IN (`+placeholders(len(c.types))+`) AND e.seq > (SELECT seq FROM `+c.table+` WHERE `+c.key+` = ?)
+		ORDER BY e.seq LIMIT ?`, args...)
 	if err != nil {
 		return nil, err
 	}
 	out := make([]hookEvent, 0, len(rows.Values))
 	for _, v := range rows.Values {
 		out = append(out, hookEvent{seq: store.Int(v[0]), accountID: store.Int(v[1]), messageID: store.Int(v[2]),
-			subject: store.Str(v[3]), from: store.Str(v[4]), date: store.Int(v[5]), deleted: store.Int(v[6]) != 0})
+			subject: store.Str(v[3]), from: store.Str(v[4]), date: store.Int(v[5]), deleted: store.Int(v[6]) != 0,
+			typ: store.Str(v[7]), detail: store.Str(v[8])})
 	}
 	return out, nil
 }
 
 // advanceCursor moves the cursor forward only: an instance being replaced
 // never moves it back.
-func (s *Service) advanceCursor(ctx context.Context, name string, seq int64) error {
+func (s *Service) advanceCursor(ctx context.Context, c eventCursor, seq int64) error {
 	s.hooksMu.Lock()
 	defer s.hooksMu.Unlock()
-	_, err := s.db.Execute(ctx, "UPDATE plugin_cursors SET seq = ? WHERE plugin = ? AND seq < ?", seq, name, seq)
+	_, err := s.db.Execute(ctx, "UPDATE "+c.table+" SET seq = ? WHERE "+c.key+" = ? AND seq < ?", seq, c.name, seq)
 	return err
 }
 
 // cleanEvents deletes events older than eventsKeepFor that every existing
-// cursor has passed (with no cursor, by age alone).
+// cursor, plugin or built-in, has passed (with no cursor, by age alone).
 func (s *Service) cleanEvents(ctx context.Context) error {
 	s.hooksMu.Lock()
 	defer s.hooksMu.Unlock()
 	_, err := s.db.Execute(ctx, `DELETE FROM events_log WHERE created_at < ?
-		AND seq < COALESCE((SELECT MIN(seq) FROM plugin_cursors), 9223372036854775807)`,
+		AND seq < COALESCE((SELECT MIN(seq) FROM (SELECT seq FROM plugin_cursors UNION ALL SELECT seq FROM event_cursors)),
+			9223372036854775807)`,
 		time.Now().Add(-eventsKeepFor).Unix())
 	return err
 }
@@ -527,7 +600,7 @@ func (s *Service) sendAcknowledged(ctx context.Context, draftID, want int64, dig
 	}
 	defer end()
 	if c, ok := s.sendCheck(digest); ok && c.DraftID == draftID && (want < 0 || c.Revision == want) {
-		err := s.enqueue(ctx, draftID, c.Revision, c.Plugins)
+		err := s.enqueue(ctx, draftID, c.Revision, c.Plugins, nil)
 		if !errors.Is(err, errSendChanged) {
 			if err == nil {
 				s.dropSendCheck(digest)
@@ -535,5 +608,5 @@ func (s *Service) sendAcknowledged(ctx context.Context, draftID, want int64, dig
 			return err
 		}
 	}
-	return s.send(ctx, draftID, want)
+	return s.send(ctx, draftID, want, nil)
 }

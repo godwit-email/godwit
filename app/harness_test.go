@@ -63,7 +63,7 @@ func newHarnessDev(t *testing.T, dev bool, opts []coretest.Option, setup ...func
 	h.app = New(Deps{Svc: h.env.Svc, Platform: h.plat, Post: h.post, Clock: h.clock, SystemLanguage: "zh-CN", Logf: h.logf, Dev: dev})
 	h.home = t.TempDir()
 	h.app.mcpEnv = func() (mcpclients.Env, error) {
-		return mcpclients.Env{Home: h.home, OS: "darwin", Run: func(string, ...string) error { return nil }}, nil
+		return mcpclients.Env{Home: h.home, OS: "darwin", Temp: h.home, Run: func(string, ...string) error { return nil }}, nil
 	}
 	h.tt = ui.NewTester(h.app.View, 1280, 820)
 	ctx, stop := context.WithCancel(context.Background())
@@ -256,6 +256,7 @@ type fakePlatform struct {
 	codeBanners  []core.SignInCode
 	noCodeBanner bool
 	latest       string // LatestVersion's answer
+	autoUpdates  bool   // UpdatesInstallThemselves' answer
 	gh           bool   // the GitHub CLI is signed in
 	starred      bool
 	files        []string // OpenFiles
@@ -472,6 +473,9 @@ func (p *fakePlatform) Calls() []string {
 
 func (p *fakePlatform) OpenURL(url string) error   { p.record("OpenURL", url); return nil }
 func (p *fakePlatform) OpenPath(path string) error { p.record("OpenPath", path); return nil }
+func (p *fakePlatform) TypeIcon(string, int) ([]byte, error) {
+	return nil, errors.New("no type icons")
+}
 func (p *fakePlatform) OpenFiles(multiple bool) ([]string, error) {
 	p.record("OpenFiles", multiple)
 	p.mu.Lock()
@@ -529,6 +533,11 @@ func (p *fakePlatform) LatestVersion(context.Context) (string, error) {
 	p.mu.Lock()
 	defer p.mu.Unlock()
 	return p.latest, nil
+}
+func (p *fakePlatform) UpdatesInstallThemselves() bool {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	return p.autoUpdates
 }
 func (p *fakePlatform) ShowSignInCode(code *core.SignInCode) {
 	if code != nil {

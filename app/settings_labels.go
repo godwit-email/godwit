@@ -101,14 +101,7 @@ func (v *labelsView) list(c *ui.Context) {
 	// the list scrolls itself, so both its edges fit on screen to drag toward.
 	_, wh := c.Size()
 	h = min(h, wh/2)
-	kit.List(c, &v.order, n, func(i int) {
-		ui.Column(c).FillWidth().Material(kit.Frost(theme.Of(c).Card)).Children(func() {
-			if i > 0 {
-				hairline(c)
-			}
-			v.row(c, a.labels[i])
-		})
-	}).FillWidth().Height(h)
+	kit.List(c, &v.order, n, func(i int) { cardListRow(c, i, n, func() { v.row(c, a.labels[i]) }) }).FillWidth().Height(h)
 }
 
 // row is a label: grip, chip, description, built-in mark, count, edit.
@@ -129,7 +122,7 @@ func (v *labelsView) row(c *ui.Context, l core.Label) {
 			kit.Badge(c, i18n.T("settings.labels.builtin")).Background(t.Background)
 		}
 		kit.Text(c, i18n.Tf("settings.labels.count", l.Count), t.Text.Sm).TextColor(t.Muted)
-		kit.IconButton(c, "file-pen", i18n.Tf("settings.labels.edit", l.Name), kit.ButtonOpts{Variant: kit.Ghost, Size: kit.SizeSm}).
+		kit.IconButton(c, "pen-line", i18n.Tf("settings.labels.edit", l.Name), kit.ButtonOpts{Variant: kit.Ghost, Size: kit.SizeSm}).
 			OnClick(func() { v.open(l) })
 	})
 }

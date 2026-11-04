@@ -219,7 +219,7 @@ func TestSettings(t *testing.T) {
 		require.NoError(t, err)
 		out["before"] = before
 		st := core.Settings{Theme: "dark", Density: "comfortable", FontSize: 15, BodyFontSize: 17,
-			SecurityAI: true,
+			SecurityAI: true, RuleAI: true,
 			UILanguage: "en", ReadingLanguage: "de", ReplyLanguage: "reading", NoTranslate: []string{"fr", "es"},
 			LaunchAtLogin: true, KeepInBackground: false, UnreadInMenuBar: true,
 			NotifyNewMail: false, NotifyPreview: false,
@@ -227,7 +227,9 @@ func TestSettings(t *testing.T) {
 			DefaultModel: "svc/big", SmallModel: "svc/small", JudgeService: "judge", JudgeThreshold: 0.85, Translator: "plugin/dlx", LocalAPI: true, SidebarWidth: 320, ListWidth: 400, SignatureDelimiter: true,
 			MaskCategories: core.MaskCategories{Names: core.MaskCategory{On: true, Action: core.MaskWarn}},
 			MaskWords:      []string{"Falcon"}, MaskWordsCase: true, MaskWordsWhole: true,
-			MaskRules: []mask.Rule{{Kind: "EMPLOYEE_ID", Regex: `E\d{6}`}}, MaskAllow: []string{"GitHub"}, RecognitionModel: true}
+			MaskRules: []mask.Rule{{Kind: "EMPLOYEE_ID", Regex: `E\d{6}`}}, MaskAllow: []string{"GitHub"}, RecognitionModel: true,
+			ProxyMode: core.ProxyCustom, ProxyURL: "socks5://127.0.0.1:7890", ProxyBypass: []string{"*.corp.example"},
+			ProxyUser: "alice", ProxyPassword: "pr0xy-pass", ProxyPasswordSet: true}
 		// 识别模型 turns on only with its files here, as a download leaves them
 		models := filepath.Join(env.DataDir, "cache", "guard", guard.Revision)
 		require.NoError(t, os.MkdirAll(models, 0o700))
