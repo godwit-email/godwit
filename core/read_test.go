@@ -406,7 +406,7 @@ func TestAuthFailureDuringDownload(t *testing.T) {
 	assert.Len(t, ofType(collect(ch), events.SyncFailed), 1)
 }
 
-func TestReadSectionBase64Tolerance(t *testing.T) {
+func TestReadSectionTolerance(t *testing.T) {
 	want := []byte("hello, tolerant world!!")
 	enc := base64.StdEncoding.EncodeToString(want)
 	for name, in := range map[string]string{
@@ -422,6 +422,10 @@ func TestReadSectionBase64Tolerance(t *testing.T) {
 	got, err := readSection(strings.NewReader("YQ"), "base64", func() {})
 	require.NoError(t, err)
 	assert.Equal(t, "a", string(got))
+
+	got, err = readSection(strings.NewReader("=E9=AA=8C=0A\r\n\x00"), "quoted-printable", func() {})
+	require.NoError(t, err)
+	assert.Equal(t, "验\n\r\n", string(got))
 }
 
 func TestRebuildSearchIndex(t *testing.T) {

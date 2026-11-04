@@ -304,9 +304,14 @@ func readSection(lit io.Reader, encoding string, abort func()) ([]byte, error) {
 	r := lit
 	switch strings.ToLower(strings.TrimSpace(encoding)) {
 	case "base64":
-		r = base64.NewDecoder(base64.RawStdEncoding, &b64Filter{r}) // as tolerant as mail.DecodePart
+		// Drop whitespace and '=' padding so the unpadded decoder accepts what
+		// mail.DecodePart accepts.
+		r = base64.NewDecoder(base64.RawStdEncoding, &byteFilter{r, func(c byte) bool {
+			return c == '=' || c == ' ' || c == '\t' || c == '\r' || c == '\n'
+		}})
 	case "quoted-printable":
-		r = quotedprintable.NewReader(r)
+		// Drop raw NULs as mail.DecodePart does; the decoder fails on them.
+		r = quotedprintable.NewReader(&byteFilter{r, func(c byte) bool { return c == 0 }})
 	}
 	data, err := io.ReadAll(io.LimitReader(r, attachLimit+1))
 	if int64(len(data)) > attachLimit {
@@ -316,16 +321,18 @@ func readSection(lit io.Reader, encoding string, abort func()) ([]byte, error) {
 	return data, err
 }
 
-// b64Filter drops whitespace and '=' padding so the unpadded decoder accepts what
-// mail.DecodePart accepts.
-type b64Filter struct{ r io.Reader }
+// byteFilter drops the bytes drop reports.
+type byteFilter struct {
+	r    io.Reader
+	drop func(byte) bool
+}
 
-func (f *b64Filter) Read(p []byte) (int, error) {
+func (f *byteFilter) Read(p []byte) (int, error) {
 	for {
 		n, err := f.r.Read(p)
 		k := 0
 		for _, c := range p[:n] {
-			if c != '=' && c != ' ' && c != '\t' && c != '\r' && c != '\n' {
+			if !f.drop(c) {
 				p[k] = c
 				k++
 			}

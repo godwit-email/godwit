@@ -263,9 +263,8 @@ func TestCutUTF8(t *testing.T) {
 	}
 }
 
-// A NUL is not a legal quoted-printable byte, yet some servers append one after
-// the final CRLF. It used to fail the part, and the sync then stored the raw
-// "=0A" text: the message read as garbage. It is dropped instead.
+// A quoted-printable part may carry a raw NUL (some servers append one after the
+// final CRLF) or an "=00" escape. Both are dropped and the rest decodes.
 func TestDecodePartQuotedPrintableDropsNUL(t *testing.T) {
 	got, err := mail.DecodePart([]byte("=E9=AA=8C=E8=AF=81=E7=A0=81=0A\r\n\x00"), "quoted-printable", "UTF-8")
 	require.NoError(t, err)
@@ -276,4 +275,10 @@ func TestDecodePartQuotedPrintableDropsNUL(t *testing.T) {
 	got, err = mail.DecodePart([]byte("=E9=AA=8C=E8=AF=81=E7=A0=81=00"), "quoted-printable", "UTF-8")
 	require.NoError(t, err)
 	assert.Equal(t, "验证码", string(got))
+
+	// In UTF-16 the zero bytes are half of each character and must survive
+	// until the charset step.
+	got, err = mail.DecodePart([]byte("h=00i=00"), "quoted-printable", "UTF-16LE")
+	require.NoError(t, err)
+	assert.Equal(t, "hi", string(got))
 }
