@@ -216,6 +216,25 @@ func TestCrashWhileSendingDropsDraft(t *testing.T) {
 	assert.ErrorIs(t, e.s.CancelOutbox(bg, it.ID), ErrInvalidState)
 }
 
+// A move outside outboxFrom writes nothing, and one from a state the item has
+// left keeps its draft: the draft goes only with the move.
+func TestOutboxMoveChecksFromState(t *testing.T) {
+	e := newSendEnv(t, false)
+	e.sendNew(t)
+	it := e.onlyItem(t)
+	o := outboxRow{id: it.ID, state: "queued", draftID: it.DraftID}
+	_, err := e.s.moveOutbox(bg, o, "sent", []string{"queued"}, "")
+	require.Error(t, err, "queued never goes straight to sent")
+	ok, err := e.s.moveOutbox(bg, o, "sent", []string{"sending"}, "")
+	require.NoError(t, err)
+	assert.False(t, ok, "not sending")
+	it = e.onlyItem(t)
+	assert.Equal(t, "queued", it.State)
+	_, err = e.s.GetDraft(bg, it.DraftID)
+	assert.NoError(t, err)
+	require.NoError(t, e.s.CancelOutbox(bg, it.ID), "still undoable")
+}
+
 // An item queued before undo send has no draft: neither cancel nor edit takes
 // it back, and the other actions work as before.
 func TestItemWithoutDraft(t *testing.T) {
