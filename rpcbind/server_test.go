@@ -447,8 +447,8 @@ func TestAuditRuleForward(t *testing.T) {
 		return core.RuleDoc{Version: core.RuleVersion, Name: "R", Trigger: core.TriggerReceive, Match: core.MatchAll,
 			Conditions: []core.RuleCondition{{Field: core.FieldFrom, Op: core.OpContains, Value: "billing@"}}, Actions: acts}
 	}
-	fwd := core.Rule{Enabled: true, Doc: doc(core.RuleAction{Kind: core.ActionRead}, core.RuleAction{Kind: core.ActionForward, To: "Carol <carol@example.org>"}),
-		Confirmed: []string{"carol@example.org"}}
+	fwd := core.Rule{Enabled: true, Doc: doc(core.RuleAction{Kind: core.ActionRead}, core.RuleAction{Kind: core.ActionForward, To: "Carol <carol@example.org>"},
+		core.RuleAction{Kind: core.ActionForward, To: "billing/ops@example.net"}), Confirmed: []string{"carol@example.org", "billing/ops@example.net"}}
 	local := core.Rule{Enabled: true, Doc: doc(core.RuleAction{Kind: core.ActionRead})}
 
 	var fwdID, localID int64
@@ -468,9 +468,9 @@ func TestAuditRuleForward(t *testing.T) {
 		assert.Equal(t, rpc.CodeForbidden, we.Code, m)
 	}
 	assert.Equal(t, [][]any{
-		{"local_api", "SaveRule", nil, "example.org"}, // new: no id yet
-		{"local_api", "SaveRule", fwdID, "example.org"},
-		{"local_api", "SetRuleEnabled", fwdID, "example.org"},
+		{"local_api", "SaveRule", nil, "example.org,example.net"}, // new: no id yet
+		{"local_api", "SaveRule", fwdID, "example.org,example.net"},
+		{"local_api", "SetRuleEnabled", fwdID, "example.org,example.net"},
 		{"local_api", "RetryRuleRun", int64(7), ""},
 	}, auditRows(t, e.DataDir))
 }

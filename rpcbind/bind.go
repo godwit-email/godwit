@@ -270,7 +270,7 @@ func audit(svc *core.Service, role, method string, params []json.RawMessage) err
 // later, unattended, which ADR 0003 counts as egress; target and dests are
 // what its audit row records. They are SaveRule of a rule with a forward
 // (target: its id, 0 for a new one, whose id does not exist before the call
-// runs; dests: its recipients, which name it in the log), SetRuleEnabled
+// runs; dests: its recipients' domains, which name it in the log), SetRuleEnabled
 // turning such a rule on (target: the rule), and every RetryRuleRun (target:
 // the run): a retry may forward now, and which actions it reruns is known
 // only inside it. RunRuleOnExisting drops forwards and ProposedRuleSaved only
@@ -310,18 +310,19 @@ func ruleForward(svc *core.Service, method string, params []json.RawMessage) (ta
 	return 0, nil, false, nil
 }
 
-// forwards are the bare addresses d forwards to.
+// forwards are the domains d forwards to. They are cut here, not by
+// gateway.Host: a local part may hold '/', '?' or '#', where Host cuts a URL.
 func forwards(d core.RuleDoc) []string {
 	var out []string
 	for _, a := range d.Actions {
 		if a.Kind != core.ActionForward {
 			continue
 		}
+		addr := a.To
 		if p, err := mail.ParseAddress(a.To); err == nil {
-			out = append(out, p.Address)
-		} else {
-			out = append(out, a.To)
+			addr = p.Address
 		}
+		out = append(out, addr[strings.LastIndexByte(addr, '@')+1:])
 	}
 	return out
 }
