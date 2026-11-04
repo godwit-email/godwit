@@ -14,6 +14,7 @@ import (
 	"github.com/godwit-email/godwit/core/conn"
 	"github.com/godwit-email/godwit/core/events"
 	"github.com/godwit-email/godwit/core/internal/testmail"
+	gomail "github.com/godwit-email/godwit/core/mail"
 	"github.com/godwit-email/godwit/core/mailsync"
 	"github.com/godwit-email/godwit/core/store"
 	"github.com/stretchr/testify/assert"
@@ -183,6 +184,11 @@ func TestThreadCopiesShowOnce(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, 1, p.Items[0].Flagged, "a copy's star is its message's")
 	assert.Equal(t, 2, p.Items[0].Unread, "unread while a copy is")
+	require.NoError(t, e.s.SetMessageSecurity(bg, []int64{allMail[0]}, "manual_warning"))
+	p, err = e.s.ListThreads(bg, e.inboxView(t), "", 50)
+	require.NoError(t, err)
+	want := gomail.DBToSecurityReport("Bob <bob@example.com>", "", "warning", "manual_warning")
+	assert.Equal(t, want.Status, p.Items[0].Security.Status, "a copy's warning is the thread's")
 	th2, err := e.s.GetThread(bg, tid)
 	require.NoError(t, err)
 	merged := th2.Merged()

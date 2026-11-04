@@ -45,6 +45,7 @@ type reader struct {
 	// message shows only it, and a message in several folders shows once):
 	// what label changes apply to.
 	threadIDs    []int64
+	thread       core.Thread         // as last read: its copies read with what shows
 	labels       []core.AppliedLabel // the thread's
 	labelMenu    bool
 	labelQuery   string
@@ -192,7 +193,7 @@ func (r *reader) load() {
 			a.toastErr(err)
 			return
 		}
-		r.threadIDs, r.labels = nil, labels[k[0]]
+		r.threadIDs, r.labels, r.thread = nil, labels[k[0]], th
 		for _, m := range th.All() { // every copy: a label goes on each
 			r.threadIDs = append(r.threadIDs, m.ID)
 		}
@@ -237,20 +238,21 @@ func (r *reader) load() {
 				r.expand(m.ID)
 			}
 		}
-		if k[1] == 0 { // a message's copies read with it, so no folder keeps them unread
-			for _, m := range slices.Clone(unread) {
-				unread = append(unread, slices.DeleteFunc(th.CopiesOf(m.ID), isSeen)...)
-			}
-		}
 		r.markRead(unread)
 		r.startAI()
 	})
 }
 
-// markRead flags msgs \Seen: one call per account, chained after the
+// markRead flags msgs \Seen, and in a thread their unread copies, so no
+// folder keeps them unread: one call per account, chained after the
 // account's earlier writes.
 func (r *reader) markRead(msgs []core.MessageSummary) {
 	a := r.p.a
+	if r.key[1] == 0 {
+		for _, m := range slices.Clone(msgs) {
+			msgs = append(msgs, slices.DeleteFunc(r.thread.CopiesOf(m.ID), isSeen)...)
+		}
+	}
 	byAcc := map[int64][]int64{}
 	for _, m := range msgs {
 		acc := r.p.accountOf(m.FolderID)

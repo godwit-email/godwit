@@ -179,6 +179,22 @@ func (s *Service) ListThreads(ctx context.Context, v View, cursor string, limit 
 		unread[of[i]] = unread[of[i]] || !strings.Contains(store.Str(r[3]), `\Seen`)
 		flagged[of[i]] = flagged[of[i]] || strings.Contains(store.Str(r[3]), `\Flagged`)
 	}
+	for _, r := range ms.Values { // a warning on any copy is the thread's
+		t := &page.Items[idx[store.Int(r[0])]]
+		fromAddr := store.Str(r[1])
+		secStatus := store.Str(r[6])
+		secReason := store.Str(r[7])
+		secScanned := store.Int(r[8])
+		var sec gomail.SecurityReport
+		if secStatus != "" {
+			sec = gomail.DBToSecurityReport(fromAddr, store.Str(r[5]), secStatus, secReason)
+		} else if secScanned > 0 {
+			sec = gomail.EvaluateSecurity(fromAddr, store.Str(r[5]))
+		}
+		if gomail.SecurityRank(sec.Status) > gomail.SecurityRank(t.Security.Status) {
+			t.Security = sec
+		}
+	}
 	for i, r := range ms.Values {
 		if of[i] != i {
 			continue
@@ -195,20 +211,7 @@ func (s *Service) ListThreads(ctx context.Context, v View, cursor string, limit 
 			t.Flagged++
 		}
 		t.HasAttachments = t.HasAttachments || store.Int(r[4]) != 0
-		fromAddr := store.Str(r[1])
-		secStatus := store.Str(r[6])
-		secReason := store.Str(r[7])
-		secScanned := store.Int(r[8])
-		var sec gomail.SecurityReport
-		if secStatus != "" {
-			sec = gomail.DBToSecurityReport(fromAddr, store.Str(r[5]), secStatus, secReason)
-		} else if secScanned > 0 {
-			sec = gomail.EvaluateSecurity(fromAddr, store.Str(r[5]))
-		}
-		if gomail.SecurityRank(sec.Status) > gomail.SecurityRank(t.Security.Status) {
-			t.Security = sec
-		}
-		name := displayName(fromAddr)
+		name := displayName(store.Str(r[1]))
 		if k := fmt.Sprint(t.ID, "\x00", name); !seen[k] {
 			seen[k] = true
 			t.Participants = append(t.Participants, name)
