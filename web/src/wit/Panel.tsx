@@ -295,16 +295,18 @@ export type Decide = (
   editedArgs?: string,
 ) => Promise<boolean>;
 
-export const isBatchAction = (a: Approval) =>
-  [
-    "move_to_trash",
-    "archive_mail",
-    "mark_as_spam",
-    "mark_as_read",
-    "mark_as_unread",
-    "star_mail",
-    "unstar_mail",
-  ].includes(a.tool);
+/** The triage tools (core's batchActions) whose approvals are a BatchApprovalCard, each titled wit.action.<tool>. */
+const batchTools = [
+  "move_to_trash",
+  "archive_mail",
+  "mark_as_spam",
+  "mark_as_read",
+  "mark_as_unread",
+  "star_mail",
+  "unstar_mail",
+];
+
+export const isBatchAction = (a: Approval) => batchTools.includes(a.tool);
 
 function BatchApprovalCard({
   a,
@@ -355,16 +357,6 @@ function BatchApprovalCard({
     });
   };
 
-  const actionKeys: Record<string, string> = {
-    move_to_trash: "wit.action.trash",
-    archive_mail: "wit.action.archive",
-    mark_as_spam: "wit.action.spam",
-    mark_as_read: "wit.action.read",
-    mark_as_unread: "wit.action.unread",
-    star_mail: "wit.action.star",
-    unstar_mail: "wit.action.unstar",
-  };
-
   const handleApprove = () => {
     const sel = [...selected];
     const payload = JSON.stringify({
@@ -377,7 +369,7 @@ function BatchApprovalCard({
     decide(true, payload);
   };
 
-  const actionLabel = actionKeys[action] ? t(actionKeys[action]) : action;
+  const actionLabel = t(`wit.action.${action}`);
 
   return (
     <div className="overflow-hidden rounded-xl border-[0.5px] bg-background shadow-(--shadow-xs)">

@@ -176,7 +176,7 @@ describe("BatchApprovalCard & Draft Editing", () => {
     await user.click(
       screen.getByRole("checkbox", { name: new RegExp(t("wit.batch.deselect_all")) }),
     );
-    const confirm = screen.getByRole("button", { name: `${t("wit.action.star")} (0)` });
+    const confirm = screen.getByRole("button", { name: `${t("wit.action.star_mail")} (0)` });
     expect(confirm).toBeDisabled();
     await user.click(confirm);
     expect(onDecide).not.toHaveBeenCalled();

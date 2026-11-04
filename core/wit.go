@@ -33,6 +33,8 @@ import (
 // with each recipient confirmed by the user in Godwit, never by Wit.
 // list_rules only reads the rules (forward recipients and folders included,
 // for the model as any tool result is) and changes none.
+// It stays a written list, not derived from what is registered (batchActions
+// included): a tool reaches Ask only by being named here.
 var askTools = []string{
 	"search_mail", "get_message", "get_thread", "read_attachment", "classify_mail",
 	"list_skills", "use_skill", "read_skill_file", "get_account_profile", "create_draft",
@@ -292,20 +294,13 @@ func (s *Service) registerAskTools() {
 		Write: true, Exec: &executor{Prepare: s.prepareDraft, Apply: s.applyDraft}})
 
 	// Mail triage & flag tools
-	batchTool := func(name, desc, action string) {
+	for _, b := range batchActions {
 		s.mustRegister(toolDesc{Spec: ai.ToolSpec{
-			Name:        name,
-			Description: desc,
+			Name:        b.name,
+			Description: b.desc,
 			Schema:      object(map[string]any{"ids": map[string]any{"type": "array", "items": intProp, "minItems": 1}}, "ids"),
-		}, Write: true, Exec: &executor{Prepare: s.prepareBatchAction(action), Apply: s.applyBatchAction}})
+		}, Write: true, Exec: &executor{Prepare: s.prepareBatchAction(b), Apply: s.applyBatchAction}})
 	}
-	batchTool("move_to_trash", "Propose moving messages to the Trash folder by their ids. The user approves it before any message is moved.", "move_to_trash")
-	batchTool("archive_mail", "Propose archiving messages by their ids. The user approves it before any message is archived.", "archive_mail")
-	batchTool("mark_as_spam", "Propose marking messages as spam (moving to Junk) by their ids. The user approves it before any message is moved.", "mark_as_spam")
-	batchTool("mark_as_read", "Propose marking messages as read by their ids. The user approves it before flags are changed.", "mark_as_read")
-	batchTool("mark_as_unread", "Propose marking messages as unread by their ids. The user approves it before flags are changed.", "mark_as_unread")
-	batchTool("star_mail", "Propose starring (flagging) messages by their ids. The user approves it before flags are changed.", "star_mail")
-	batchTool("unstar_mail", "Propose unstarring (unflagging) messages by their ids. The user approves it before flags are changed.", "unstar_mail")
 
 	// Unsubscribe & links
 	s.mustRegister(toolDesc{Spec: ai.ToolSpec{
@@ -881,6 +876,39 @@ type batchItem struct {
 	Date      int64  `json:"date"`
 }
 
+// batchAction is a triage tool that proposes one change to many messages:
+// its name, what the model reads, the approval summary (%d is the count) and
+// the change. The web's BatchApprovalCard renders these tools (isBatchAction).
+type batchAction struct {
+	name, desc, summary string
+	apply               func(s *Service, ctx context.Context, msgIDs []int64) error
+}
+
+var batchActions = []batchAction{
+	{"move_to_trash", "Propose moving messages to the Trash folder by their ids. The user approves it before any message is moved.", "Move %d messages to Trash",
+		func(s *Service, ctx context.Context, ids []int64) error { return s.Delete(ctx, ids) }},
+	{"archive_mail", "Propose archiving messages by their ids. The user approves it before any message is archived.", "Archive %d messages",
+		func(s *Service, ctx context.Context, ids []int64) error { return s.MoveToRole(ctx, ids, "archive") }},
+	{"mark_as_spam", "Propose marking messages as spam (moving to Junk) by their ids. The user approves it before any message is moved.", "Mark %d messages as spam",
+		func(s *Service, ctx context.Context, ids []int64) error { return s.MoveToRole(ctx, ids, "junk") }},
+	{"mark_as_read", "Propose marking messages as read by their ids. The user approves it before flags are changed.", "Mark %d messages as read",
+		func(s *Service, ctx context.Context, ids []int64) error {
+			return s.SetFlags(ctx, ids, []string{`\Seen`}, nil)
+		}},
+	{"mark_as_unread", "Propose marking messages as unread by their ids. The user approves it before flags are changed.", "Mark %d messages as unread",
+		func(s *Service, ctx context.Context, ids []int64) error {
+			return s.SetFlags(ctx, ids, nil, []string{`\Seen`})
+		}},
+	{"star_mail", "Propose starring (flagging) messages by their ids. The user approves it before flags are changed.", "Star %d messages",
+		func(s *Service, ctx context.Context, ids []int64) error {
+			return s.SetFlags(ctx, ids, []string{`\Flagged`}, nil)
+		}},
+	{"unstar_mail", "Propose unstarring (unflagging) messages by their ids. The user approves it before flags are changed.", "Unstar %d messages",
+		func(s *Service, ctx context.Context, ids []int64) error {
+			return s.SetFlags(ctx, ids, nil, []string{`\Flagged`})
+		}},
+}
+
 type batchArgs struct {
 	Action      string      `json:"action"`
 	IDs         []int       `json:"ids"`
@@ -888,7 +916,7 @@ type batchArgs struct {
 	SelectedIDs []int       `json:"selected_ids"`
 }
 
-func (s *Service) prepareBatchAction(defaultAction string) func(context.Context, Conversation, json.RawMessage) (prepared, error) {
+func (s *Service) prepareBatchAction(act batchAction) func(context.Context, Conversation, json.RawMessage) (prepared, error) {
 	return func(ctx context.Context, _ Conversation, raw json.RawMessage) (prepared, error) {
 		var in struct {
 			IDs    []int  `json:"ids"`
@@ -897,7 +925,7 @@ func (s *Service) prepareBatchAction(defaultAction string) func(context.Context,
 		if err := json.Unmarshal(raw, &in); err != nil {
 			return prepared{}, err
 		}
-		in.Action = defaultAction // the tool, not an argument, names what is done
+		in.Action = act.name // the tool, not an argument, names what is done
 		if len(in.IDs) == 0 {
 			return prepared{}, errors.New("ids cannot be empty")
 		}
@@ -924,26 +952,6 @@ func (s *Service) prepareBatchAction(defaultAction string) func(context.Context,
 				Date:      store.Int(r[3]),
 			})
 		}
-		var summary string
-		n := len(items)
-		switch in.Action {
-		case "move_to_trash":
-			summary = fmt.Sprintf("Move %d messages to Trash", n)
-		case "archive_mail":
-			summary = fmt.Sprintf("Archive %d messages", n)
-		case "mark_as_spam":
-			summary = fmt.Sprintf("Mark %d messages as spam", n)
-		case "mark_as_read":
-			summary = fmt.Sprintf("Mark %d messages as read", n)
-		case "mark_as_unread":
-			summary = fmt.Sprintf("Mark %d messages as unread", n)
-		case "star_mail":
-			summary = fmt.Sprintf("Star %d messages", n)
-		case "unstar_mail":
-			summary = fmt.Sprintf("Unstar %d messages", n)
-		default:
-			summary = fmt.Sprintf("%s on %d messages", in.Action, n)
-		}
 		ba := batchArgs{
 			Action:      in.Action,
 			IDs:         in.IDs,
@@ -956,7 +964,7 @@ func (s *Service) prepareBatchAction(defaultAction string) func(context.Context,
 		}
 		return prepared{
 			Args:       b,
-			Summary:    summary,
+			Summary:    fmt.Sprintf(act.summary, len(items)),
 			TargetKind: "messages",
 		}, nil
 	}
@@ -1035,21 +1043,10 @@ func (s *Service) applyBatchAction(ctx context.Context, a Approval) ([]sqlite.St
 
 // batchApply applies a batch action to msgIDs, all of one account.
 func (s *Service) batchApply(ctx context.Context, action string, msgIDs []int64) error {
-	switch action {
-	case "move_to_trash":
-		return s.Delete(ctx, msgIDs)
-	case "archive_mail":
-		return s.MoveToRole(ctx, msgIDs, "archive")
-	case "mark_as_spam":
-		return s.MoveToRole(ctx, msgIDs, "junk")
-	case "mark_as_read":
-		return s.SetFlags(ctx, msgIDs, []string{`\Seen`}, nil)
-	case "mark_as_unread":
-		return s.SetFlags(ctx, msgIDs, nil, []string{`\Seen`})
-	case "star_mail":
-		return s.SetFlags(ctx, msgIDs, []string{`\Flagged`}, nil)
-	case "unstar_mail":
-		return s.SetFlags(ctx, msgIDs, nil, []string{`\Flagged`})
+	for _, b := range batchActions {
+		if b.name == action {
+			return b.apply(s, ctx, msgIDs)
+		}
 	}
 	return fmt.Errorf("unknown batch action %q", action)
 }

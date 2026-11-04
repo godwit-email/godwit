@@ -5,6 +5,8 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"slices"
 	"strings"
 	"sync/atomic"
 	"testing"
@@ -400,4 +402,20 @@ func TestWitSearchMailWithLabelAndDates(t *testing.T) {
 	m4 := resSearch4.(map[string]any)
 	results4 := m4["results"].([]map[string]any)
 	assert.Len(t, results4, 2) // res1 (labeled + subject) and digest (body content)
+}
+
+// Every built-in Wit tool has a display name, and every batch action is in
+// Ask's allowlist with its approval card title: the web shows these by tool name.
+func TestWitToolLabels(t *testing.T) {
+	b, err := os.ReadFile("../internal/i18n/en.json")
+	require.NoError(t, err)
+	var en map[string]any
+	require.NoError(t, json.Unmarshal(b, &en))
+	for _, name := range slices.Concat(askTools, assistTools, []string{selectionSpec.Name}) {
+		assert.Contains(t, en, "wit_tool_"+name)
+	}
+	for _, a := range batchActions {
+		assert.Contains(t, askTools, a.name)
+		assert.Contains(t, en, "wit_action_"+a.name)
+	}
 }
