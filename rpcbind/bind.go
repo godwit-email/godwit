@@ -183,14 +183,26 @@ func NewCodec() *rpc.Codec {
 	return c
 }
 
+// hidden are the exported *core.Service methods kept off the Local API, each
+// for its reason. full (ADR 0002) gets every other exported method, so a new
+// one is exposed by default: testdata/full_methods.txt pins the result, and a
+// method that must not reach the user's programs goes here instead.
+var hidden = map[string]bool{
+	"Close":         true, // the owner's lifetime, not a client's
+	"Redact":        true, // a client could test guesses of the owner's secrets against it
+	"AuditExternal": true, // writes audit rows; only the owner records what clients did
+	// They fetch images from remote hosts for the native UI.
+	"SenderAvatar": true, "ModelServiceAvatar": true,
+	// A channel and a stop func; RPC clients have SubscribeConversation.
+	"FollowConversation": true,
+	// A progress callback cannot cross the wire; the first two have forms without one.
+	"InstallPluginFromRegistryWithProgress": true, "PrepareModelWithProgress": true, "DownloadRecognitionModel": true,
+}
+
 // Expose picks the *core.Service methods callable over RPC: every exported
-// one but Close, Redact, AuditExternal, the avatars, the progress callbacks,
-// FollowConversation (a channel and a stop func; RPC clients have
-// SubscribeConversation) and the test hooks.
+// one but hidden and the test hooks (…ForTest).
 func Expose(method string) bool {
-	return method != "Close" && method != "Redact" && method != "AuditExternal" && method != "SenderAvatar" && method != "ModelServiceAvatar" &&
-		method != "FollowConversation" &&
-		method != "InstallPluginFromRegistryWithProgress" && method != "PrepareModelWithProgress" && method != "DownloadRecognitionModel" && !strings.HasSuffix(method, "ForTest")
+	return !hidden[method] && !strings.HasSuffix(method, "ForTest")
 }
 
 // Listen serves svc's exposed methods on <dataDir>/godwit.sock (see

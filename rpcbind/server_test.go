@@ -305,6 +305,27 @@ func TestDialFull(t *testing.T) {
 	assert.Equal(t, rpc.CodeMethodNotFound, we.Code)
 }
 
+// Over the socket, full reaches exactly the pinned methods: each one gets past
+// the method lookup (too many params, so none runs) and every other method of
+// *core.Service is not found.
+func TestFullSurfaceOverSocket(t *testing.T) {
+	c := dial(t, listen(t, newService(t)), rpc.RoleFull)
+	pinned := map[string]bool{}
+	for _, m := range fullSurface(t) {
+		pinned[m] = true
+	}
+	tooMany := make([]any, 16)
+	for m := range reflect.TypeFor[*core.Service]().Methods() {
+		var we *rpc.WireError
+		require.ErrorAs(t, c.Call(t.Context(), m.Name, nil, tooMany...), &we, m.Name)
+		want := rpc.CodeMethodNotFound
+		if pinned[m.Name] {
+			want = rpc.CodeInvalidParams
+		}
+		assert.Equal(t, want, we.Code, m.Name)
+	}
+}
+
 // logs captures slog output until the test ends.
 func logs(t *testing.T) func() string {
 	t.Helper()

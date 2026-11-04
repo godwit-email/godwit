@@ -201,24 +201,35 @@ func newService(t *testing.T) *core.Service {
 	return svc
 }
 
-func TestExposeCoversService(t *testing.T) {
-	svc := newService(t)
-	_, err := rpc.NewDispatcher(svc, rpcbind.Expose)
+// fullSurface is testdata/full_methods.txt: the methods full may call.
+func fullSurface(t *testing.T) []string {
+	t.Helper()
+	b, err := os.ReadFile(filepath.Join("testdata", "full_methods.txt"))
 	require.NoError(t, err)
-	for _, m := range []string{"Close", "Redact", "AuditExternal", "SetPluginNetForTest", "SenderAvatar", "ModelServiceAvatar", "InstallPluginFromRegistryWithProgress"} {
-		assert.False(t, rpcbind.Expose(m), m)
+	var out []string
+	for line := range strings.Lines(string(b)) {
+		if line = strings.TrimSpace(line); line != "" && !strings.HasPrefix(line, "#") {
+			out = append(out, line)
+		}
 	}
+	return out
+}
+
+// A new exported *core.Service method reaches full by default; this makes
+// that a reviewed line in testdata/full_methods.txt (or an entry in hidden).
+func TestFullSurfacePinned(t *testing.T) {
+	_, err := rpc.NewDispatcher(newService(t), rpcbind.Expose)
+	require.NoError(t, err)
 	var exposed []string
-	for m := range reflect.TypeOf(svc).Methods() {
+	for m := range reflect.TypeFor[*core.Service]().Methods() {
 		if rpcbind.Expose(m.Name) {
 			exposed = append(exposed, m.Name)
 		}
 	}
-	assert.Contains(t, exposed, "ListAccounts")
-	assert.Contains(t, exposed, "Send")
-	assert.Contains(t, exposed, "InstallPluginFromRegistry")
-	assert.NotContains(t, exposed, "SenderAvatar")
-	t.Logf("%d of %d methods exposed", len(exposed), reflect.TypeOf(svc).NumMethod())
+	assert.Equal(t, fullSurface(t), exposed, "update rpcbind/testdata/full_methods.txt, or hide the method in bind.go")
+	for _, m := range []string{"Close", "Redact", "AuditExternal", "SetPluginNetForTest", "SenderAvatar", "ModelServiceAvatar", "InstallPluginFromRegistryWithProgress"} {
+		assert.False(t, rpcbind.Expose(m), m)
+	}
 }
 
 // Wire codes are API: renaming one must break this test.

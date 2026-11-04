@@ -4,7 +4,7 @@ import "encoding/json"
 
 // Roles a connection declares in hello.
 const (
-	RoleFull = "full" // every exposed method, for the user's own programs
+	RoleFull = "full" // every exposed method (rpcbind/testdata/full_methods.txt), for the user's own programs
 	RoleMCP  = "mcp"  // read, draft and request a send, for godwit mcp
 )
 
