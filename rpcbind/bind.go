@@ -312,17 +312,14 @@ func ruleForward(svc *core.Service, method string, params []json.RawMessage) (ta
 
 // forwards are the domains d forwards to. They are cut here, not by
 // gateway.Host: a local part may hold '/', '?' or '#', where Host cuts a URL.
+// A recipient that does not parse is left out, its text kept off the log:
+// SaveRule refuses a rule with one, so it never forwards.
 func forwards(d core.RuleDoc) []string {
 	var out []string
 	for _, a := range d.Actions {
-		if a.Kind != core.ActionForward {
-			continue
+		if p, err := mail.ParseAddress(a.To); a.Kind == core.ActionForward && err == nil {
+			out = append(out, p.Address[strings.LastIndexByte(p.Address, '@')+1:])
 		}
-		addr := a.To
-		if p, err := mail.ParseAddress(a.To); err == nil {
-			addr = p.Address
-		}
-		out = append(out, addr[strings.LastIndexByte(addr, '@')+1:])
 	}
 	return out
 }

@@ -454,6 +454,8 @@ func TestAuditRuleForward(t *testing.T) {
 	var fwdID, localID int64
 	require.NoError(t, full.Call(ctx, "SaveRule", &fwdID, fwd))
 	require.NoError(t, full.Call(ctx, "SaveRule", &localID, local))
+	bad := core.Rule{Doc: doc(core.RuleAction{Kind: core.ActionForward, To: "Alice Smith"})}
+	assert.ErrorContains(t, full.Call(ctx, "SaveRule", nil, bad), "invalid rule") // refused, and its text kept off the log
 	fwd.ID = fwdID
 	require.NoError(t, full.Call(ctx, "SaveRule", nil, fwd))
 	require.NoError(t, full.Call(ctx, "SetRuleEnabled", nil, fwdID, false))
