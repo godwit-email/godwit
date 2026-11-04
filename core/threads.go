@@ -64,8 +64,8 @@ func (t Thread) CopiesOf(id int64) []MessageSummary {
 	return out
 }
 
-// Merged is Messages, each with its copies' flags as ListThreads counts them:
-// unread while a copy is, starred while one is.
+// Merged is Messages, each with its copies' state as ListThreads counts it:
+// unread while a copy is, starred while one is, and the gravest security.
 func (t Thread) Merged() []MessageSummary {
 	out := slices.Clone(t.Messages)
 	for i := range out {
@@ -76,6 +76,9 @@ func (t Thread) Merged() []MessageSummary {
 			}
 			if slices.Contains(c.Flags, `\Flagged`) && !slices.Contains(m.Flags, `\Flagged`) {
 				m.Flags = append(slices.Clone(m.Flags), `\Flagged`)
+			}
+			if gomail.SecurityRank(c.Security.Status) > gomail.SecurityRank(m.Security.Status) {
+				m.Security = c.Security
 			}
 		}
 	}

@@ -195,6 +195,7 @@ func TestThreadCopiesShowOnce(t *testing.T) {
 	assert.NotContains(t, merged[0].Flags, `\Seen`, "Merged agrees with the list")
 	assert.Contains(t, merged[1].Flags, `\Flagged`)
 	assert.NotContains(t, th2.Messages[1].Flags, `\Flagged`, "each copy keeps its own flags")
+	assert.Equal(t, want.Status, merged[0].Security.Status, "and its gravest security")
 
 	other := e.second(t) // the same mail in another account's inbox is that account's own
 	other.put(t, "INBOX", first)

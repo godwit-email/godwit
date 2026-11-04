@@ -1306,6 +1306,9 @@ func (r *reader) message(c *ui.Context, m core.MessageSummary) {
 	} else {
 		sec = gomail.EvaluateSecurity(m.From, "")
 	}
+	if gomail.SecurityRank(m.Security.Status) > gomail.SecurityRank(sec.Status) { // a hidden copy's warning (Merged)
+		sec = m.Security
+	}
 	ui.Column(c).FillWidth().Gap(th.Space(3.5)).Children(func() {
 		name, addr := sender(m.From)
 		head := r.column(c).Gap(th.Space(3.5))
@@ -1951,8 +1954,14 @@ func (r *reader) applySecurity(msgID int64, reason string) {
 	if b, ok := r.bodies[msgID]; ok && b != nil {
 		b.msg.Security = sec
 	}
+	ids := []int64{msgID}
+	if r.key[1] == 0 { // in a thread, its copies too, whose warning shows with it
+		for _, c := range r.thread.CopiesOf(msgID) {
+			ids = append(ids, c.ID)
+		}
+	}
 	a.writes.Chain("security", func(ctx context.Context) error {
-		return a.svc.SetMessageSecurity(ctx, []int64{msgID}, reason)
+		return a.svc.SetMessageSecurity(ctx, ids, reason)
 	}, func(err error) {
 		if err != nil {
 			a.toastErr(err)
