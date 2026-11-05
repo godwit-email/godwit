@@ -1,5 +1,19 @@
 # Changelog
 
+## [1.27.0](https://github.com/godwit-email/godwit/compare/v1.26.2...v1.27.0) (2026-11-05)
+
+
+### Features
+
+* **app:** show a conversation's message count in its list row ([#477](https://github.com/godwit-email/godwit/issues/477)) ([d9ec4f4](https://github.com/godwit-email/godwit/commit/d9ec4f4ec8d3e295c3279aedd5c63e91e7730d2e))
+
+
+### Bug Fixes
+
+* **app:** open the bug report form from the report link, and add issue forms ([#474](https://github.com/godwit-email/godwit/issues/474)) ([4d91220](https://github.com/godwit-email/godwit/commit/4d9122007665bad5dcf96da47d04b1ef79615cd0))
+* **mail:** a reply to your own mail goes to its recipients ([#476](https://github.com/godwit-email/godwit/issues/476)) ([492893b](https://github.com/godwit-email/godwit/commit/492893b3fc07b2671dd08b55a2462b3242bbc057))
+* **ui:** preserve disabled button styles with updated MyGo ([#478](https://github.com/godwit-email/godwit/issues/478)) ([2b9999f](https://github.com/godwit-email/godwit/commit/2b9999f1fcc8bd4a2b382a9873896cf9c5f880b4))
+
 ## [1.26.2](https://github.com/godwit-email/godwit/compare/v1.26.1...v1.26.2) (2026-11-04)
 
 
