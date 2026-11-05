@@ -67,10 +67,10 @@ type ModelService struct {
 
 // Providers: which formats a service offers (the add dialog's tiles).
 const (
-	ProviderOpenAI    = "openai"
-	ProviderAnthropic = "anthropic"
-	ProviderTypeSafe  = "typesafe"
-	ProviderOther     = "other"
+	ProviderOpenAI      = "openai"
+	ProviderAnthropic   = "anthropic"
+	ProviderTypeSafe    = "typesafe"
+	ProviderOther       = "other"
 	ProviderChatGPT     = "chatgpt"
 	ProviderGrok        = "grok"
 	ProviderAntigravity = "antigravity"
@@ -79,11 +79,11 @@ const (
 var providerFormats = map[string]struct{ gen, judge []string }{
 	ProviderAntigravity: {[]string{ai.KindOpenAI}, []string{string(ai.FormatDecisions)}},
 	ProviderOpenAI:      {[]string{ai.KindResponses, ai.KindOpenAI}, []string{string(ai.FormatDecisions)}},
-	ProviderAnthropic: {[]string{ai.KindAnthropic}, nil},
-	ProviderTypeSafe:  {nil, []string{string(ai.FormatSystemOne)}},
-	ProviderOther:     {[]string{ai.KindOpenAI, ai.KindResponses, ai.KindAnthropic}, []string{string(ai.FormatDecisions), string(ai.FormatSystemOne)}},
-	ProviderChatGPT:   {[]string{ai.KindResponses}, nil},
-	ProviderGrok:      {[]string{ai.KindResponses}, nil},
+	ProviderAnthropic:   {[]string{ai.KindAnthropic}, nil},
+	ProviderTypeSafe:    {nil, []string{string(ai.FormatSystemOne)}},
+	ProviderOther:       {[]string{ai.KindOpenAI, ai.KindResponses, ai.KindAnthropic}, []string{string(ai.FormatDecisions), string(ai.FormatSystemOne)}},
+	ProviderChatGPT:     {[]string{ai.KindResponses}, nil},
+	ProviderGrok:        {[]string{ai.KindResponses}, nil},
 }
 
 // ProviderFormats are the generate kinds and judge formats provider p offers, in the dialog's order.

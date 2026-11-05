@@ -129,19 +129,19 @@ type Service struct {
 	workers   map[int64]*worker
 	closed    bool
 
-	callsMu     sync.Mutex
-	modelMu     sync.RWMutex // writers: a model service's row and key change together; readers see both or neither (ponytail: global, per-id if contended)
-	modelHTTP   *http.Client // model-service HTTP; nil = ai.NoRedirectClient; tests swap it
-	aiMu        sync.Mutex
-	ai          *ai.Engine         // created on first use; see aiEngine
+	callsMu              sync.Mutex
+	modelMu              sync.RWMutex // writers: a model service's row and key change together; readers see both or neither (ponytail: global, per-id if contended)
+	modelHTTP            *http.Client // model-service HTTP; nil = ai.NoRedirectClient; tests swap it
+	aiMu                 sync.Mutex
+	ai                   *ai.Engine   // created on first use; see aiEngine
 	appleClient          *http.Client // cached client for Apple Intelligence on-device model
 	agMu                 sync.Mutex
 	agRuntime            Antigravity
 	antigravityClientVal *http.Client
-	secrets     secretSet          // extension secrets, redacted by the engine and extension output
-	calls       map[*call]struct{} // explicit network calls in flight (SyncNow, downloads, ...)
-	callsClosed bool
-	removing    map[int64]bool // accounts RemoveAccount is deleting
+	secrets              secretSet          // extension secrets, redacted by the engine and extension output
+	calls                map[*call]struct{} // explicit network calls in flight (SyncNow, downloads, ...)
+	callsClosed          bool
+	removing             map[int64]bool // accounts RemoveAccount is deleting
 
 	maskMu sync.Mutex
 	mask   *mask.Masker // created on first use; see masker
