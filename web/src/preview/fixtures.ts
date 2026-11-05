@@ -348,6 +348,7 @@ export const witConversation = (): WitHistory =>
       turn({
         id: "1",
         question: "这个月我订阅了哪些服务，分别花了多少钱？",
+        quoted: mailHits.slice(0, 2),
         runs: [1],
         canAskAgain: true,
         reasoning:

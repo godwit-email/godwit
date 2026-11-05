@@ -118,7 +118,7 @@ import { currentLocale, type T } from "@/shared/i18n";
 import { Citations, type Nums } from "./Citations";
 import { type Command, CommandPicker } from "./Commands";
 import { MailCard, senderName } from "./MailCard";
-import { type PickerKeys, QuoteChips, QuotePicker } from "./Quote";
+import { type PickerKeys, QuoteChips, QuotedMail, QuotePicker } from "./Quote";
 import { Cite, citedNumbers, plainCites, Response } from "./Response";
 import { PROPOSE_RULE_TOOL, RuleCard, ruleSettled } from "./RuleCard";
 import {
@@ -2386,6 +2386,14 @@ export function Panel({
                 {m.role === "user" ? (
                   <Message align="end">
                     <MessageContent className="items-end">
+                      {m.metadata?.hits?.length ? (
+                        <QuotedMail
+                          items={m.metadata.hits}
+                          gone={(id) => gone.includes(id) || !!nums.get(id)?.c.gone}
+                          onOpen={openCited}
+                          t={t}
+                        />
+                      ) : null}
                       {/* the design's max-width is the text's (80%, the panel's 85%), padding aside */}
                       <Bubble
                         variant="secondary"

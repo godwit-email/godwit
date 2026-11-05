@@ -166,6 +166,40 @@ export function QuotePicker({
   );
 }
 
+/** The mail a question quoted, as chips over it; one opens its mail unless it is gone since. */
+export function QuotedMail({
+  items,
+  gone,
+  onOpen,
+  t,
+}: {
+  items: MailHit[];
+  gone(id: number): boolean;
+  onOpen?(id: number): void;
+  t: T;
+}) {
+  return (
+    <div className="flex max-w-full flex-wrap justify-end gap-1.5">
+      {items.map((h) => (
+        <Badge
+          key={h.id}
+          variant="secondary"
+          className="h-6 max-w-full gap-1 rounded-sm font-normal text-sm [button]:hover:bg-secondary/80"
+          title={h.from}
+          render={
+            onOpen && !gone(h.id) ? (
+              <button type="button" onClick={() => onOpen(h.id)} />
+            ) : undefined
+          }
+        >
+          <RiMailLine className="size-3.5 text-muted-foreground" />
+          <span className="truncate">{subjectOf(h, t)}</span>
+        </Badge>
+      ))}
+    </div>
+  );
+}
+
 /** The mail quoted into the next question, as chips over the input; ✕ drops one. */
 export function QuoteChips({
   items,

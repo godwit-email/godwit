@@ -694,7 +694,7 @@ describe("Panel", () => {
     const box = input("向 Wit 提问");
     expect(box).toHaveValue("总结");
     expect(screen.getByText("正在编辑这条提问，发送后会替换它和之后的对话")).toBeInTheDocument();
-    expect(screen.getByText("发票")).toBeInTheDocument(); // its quote's chip
+    expect(screen.getByRole("button", { name: "移除 发票" })).toBeInTheDocument(); // its quote's chip
     // what the edit replaces dims
     expect(screen.getByText("旧答案").closest("[data-role=assistant]")?.parentElement).toHaveClass(
       "opacity-40",
@@ -762,7 +762,7 @@ describe("Panel", () => {
       await screen.findByText("正在编辑这条提问，发送后会替换它和之后的对话"),
     ).toBeInTheDocument();
     expect(input("向 Wit 提问")).toHaveValue("总结！");
-    expect(screen.getByText("发票")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "移除 发票" })).toBeInTheDocument();
     // nothing was replaced: the old question and answer are back, the refusal a toast
     expect(screen.getByText("旧答案")).toBeInTheDocument();
     expect(screen.getAllByText("总结")).toHaveLength(1);
@@ -2188,6 +2188,48 @@ describe("Panel", () => {
     await act(async () => answer());
     expect(api.ask).not.toHaveBeenCalled();
     expect(box).toHaveValue("总结一下");
+  });
+
+  it("a sent question shows the mail it quoted", async () => {
+    const user = userEvent.setup();
+    const onSearch = vi.fn().mockResolvedValue([{ id: 9, subject: "发票", from: "f", date: 0 }]);
+    await setup({ page: true, onSearch, onCite: vi.fn() });
+    const box = input("向 Wit 提问");
+    await user.type(box, "@x");
+    await screen.findByRole("option", { name: /发票/ });
+    await user.keyboard("{Enter}");
+    await user.type(box, "总结{Enter}");
+    expect(await screen.findByRole("button", { name: "发票" })).toBeInTheDocument();
+  });
+
+  it("a question's quoted mail opens from its chip, until found deleted", async () => {
+    const user = userEvent.setup();
+    const onCite = vi.fn().mockRejectedValue(new Error("wit.mail.gone"));
+    await setup({
+      page: true,
+      onCite,
+      history: hist({
+        ...empty,
+        messages: [
+          {
+            id: "q0",
+            role: "user",
+            text: "他是什么意思？",
+            reasoning: "",
+            quoted: [{ id: 9, subject: "合作邀请", from: "f", date: 0 }],
+            calls: [],
+            results: [],
+            citations: [],
+            runs: [7],
+            elapsed: 0,
+          },
+        ],
+      }),
+    });
+    await user.click(await screen.findByRole("button", { name: "合作邀请" }));
+    expect(onCite).toHaveBeenCalledWith(9);
+    await waitFor(() => expect(screen.queryByRole("button", { name: "合作邀请" })).toBeNull());
+    expect(screen.getByText("合作邀请")).toBeInTheDocument();
   });
 
   it("a cited mail found deleted when opened loses its actions everywhere", async () => {
