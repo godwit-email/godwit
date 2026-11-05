@@ -87,6 +87,7 @@ input,select{font:inherit}
 <div style="border-radius: 12px; background: #F5F5F5; overflow: hidden"><div style="display: flex; flex-direction: column; margin-top: -1px">
 <dc-import name="SettingsRow" label="邮件总结" desc="打开邮件时自动总结，需要先设置模型服务" control="switch" on="false" hint-size="100%,48px"></dc-import>
 <dc-import name="SettingsRow" label="即时回复" desc="为收到的邮件准备几条简短的回复" control="switch" on="false" hint-size="100%,48px"></dc-import>
+<sc-if value="{{smartAi}}" hint-placeholder-val="{{ false }}"><dc-import name="SettingsRow" label="智能邮箱的 AI 判断" desc="按你写的一句话判断新邮件属不属于某个智能邮箱，邮件内容会发给模型服务" control="switch" on="false" hint-size="100%,48px"></dc-import></sc-if>
 </div></div>
 </section>
 <section style="flex: none; display: flex; flex-direction: column; gap: 10px">
@@ -339,7 +340,7 @@ class Component extends DCLogic {
         return { label: t[1], selected: on ? 'true' : 'false', pick: function () { self.setState({ tab: t[0] }); },
           style: 'height: 32px; padding: 0 12px; border: 0; border-bottom: 2px solid ' + (on ? '#171717' : 'transparent') + '; background: transparent; color: ' + (on ? '#0A0A0A; font-weight: 600' : '#737373') };
       }),
-      isModels: this.state.tab === 'models', isFeatures: this.state.tab === 'features', isMcp: this.state.tab === 'mcp', isApps: this.state.tab === 'apps',
+      smartAi: this.props.smartAi === 'true' || this.props.smartAi === true, isModels: this.state.tab === 'models', isFeatures: this.state.tab === 'features', isMcp: this.state.tab === 'mcp', isApps: this.state.tab === 'apps',
       showAdd: V.list.length > 0 && this.state.tab === 'models',
       // the AI apps found on this computer; [id, name, icon (lobehub), what makes a change take]
       clients: [['claude-desktop', 'Claude', '/_blob/add7726a69ad4b8634887f0d4dd4651a', '重启 Claude 后生效'],

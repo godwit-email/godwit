@@ -126,7 +126,7 @@ a{color:#0A0A0A}a:hover{color:#404040}
 </span>
 <span style="flex: none; display: flex; gap: 8px">
 <button type="button" onClick="{{cancel}}" style="height: 32px; padding: 0 14px; border: 1px solid #E5E5E5; border-radius: 8px; background: #FFFFFF; color: #0A0A0A; font-weight: 500">取消</button>
-<button type="button" onClick="{{save}}" style="height: 32px; padding: 0 14px; border: 0; border-radius: 8px; background: #171717; color: #FFFFFF; font-weight: 500">保存</button>
+<button type="button" onClick="{{save}}" disabled="{{aiFwd}}" style="{{saveStyle}}">保存</button>
 </span>
 </span>
 </span>
@@ -163,7 +163,6 @@ a{color:#0A0A0A}a:hover{color:#404040}
 <select aria-label="触发" value="{{d.trigger}}" onChange="{{setTrigger}}" style="height: 32px; padding: 0 8px; border: 1px solid #E5E5E5; border-radius: 8px; background: #FFFFFF; font: inherit; color: #0A0A0A"><sc-for list="{{triggerOpts}}" as="o" hint-placeholder-count="4"><option value="{{o.v}}">{{o.n}}</option></sc-for></select>
 <sc-if value="{{trigLabel}}" hint-placeholder-val="{{ false }}"><select aria-label="哪个标签" value="{{d.targ}}" onChange="{{setTarg}}" style="height: 32px; padding: 0 8px; border: 1px solid #E5E5E5; border-radius: 8px; background: #FFFFFF; font: inherit"><sc-for list="{{labelOpts}}" as="o" hint-placeholder-count="4"><option value="{{o.v}}">{{o.n}}</option></sc-for></select></sc-if>
 <sc-if value="{{trigSec}}" hint-placeholder-val="{{ false }}"><select aria-label="判定" value="{{d.targ}}" onChange="{{setTarg}}" style="height: 32px; padding: 0 8px; border: 1px solid #E5E5E5; border-radius: 8px; background: #FFFFFF; font: inherit"><option value="suspicious">可疑或危险</option><option value="dangerous">危险</option></select></sc-if>
-<sc-if value="{{trigWait}}" hint-placeholder-val="{{ false }}"><input type="number" min="1" max="30" aria-label="等待天数" value="{{d.targ}}" onChange="{{setTarg}}" style="width: 64px; height: 32px; box-sizing: border-box; padding: 0 10px; border: 1px solid #E5E5E5; border-radius: 8px; background: #FFFFFF; font: inherit; color: #0A0A0A"><span>天</span></sc-if>
 <span style="color: #737373">在</span>
 <select aria-label="账户" style="height: 32px; padding: 0 8px; border: 1px solid #E5E5E5; border-radius: 8px; background: #FFFFFF; font: inherit"><option>所有账户</option><option>you@example.com</option><option>work@company.example</option></select>
 </div>
@@ -185,6 +184,7 @@ a{color:#0A0A0A}a:hover{color:#404040}
 <button type="button" aria-label="删除这个条件" onClick="{{c.remove}}" style="flex: none; width: 28px; height: 28px; padding: 0; border: 0; border-radius: 6px; background: transparent; color: #737373; display: flex; align-items: center; justify-content: center"><svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="{{ic.close}}"></path></svg></button>
 </div>
 </sc-for>
+<sc-if value="{{aiFwd}}" hint-placeholder-val="{{ false }}"><div role="alert" style="display: flex; align-items: flex-start; gap: 8px; padding: 8px 12px; border-radius: 8px; background: #FEF2F2; color: #9F0712; font-size: 12px; line-height: 1.5"><svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true" style="flex: none; margin-top: 2px"><path d="{{ic.alert}}"></path></svg><span>含转发的规则不能用 AI 判断：邮件内容会影响判断，等于让发件人有机会诱导自动转发。去掉转发，或换成确定的条件。</span></div></sc-if>
 <button type="button" onClick="{{addCond}}" style="align-self: flex-start; height: 28px; display: flex; align-items: center; gap: 4px; padding: 0 8px; border: 0; border-radius: 6px; background: transparent; color: #737373; font: inherit; font-size: 13px"><svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="{{ic.add}}"></path></svg>添加条件</button>
 </section>
 
@@ -204,7 +204,6 @@ a{color:#0A0A0A}a:hover{color:#404040}
 <div style="display: flex; align-items: center; gap: 8px">
 <select aria-label="动作" value="{{a.t}}" onChange="{{a.setT}}" style="flex: none; width: 200px; height: 32px; padding: 0 8px; border: 1px solid #E5E5E5; border-radius: 8px; background: #FFFFFF; font: inherit"><sc-for list="{{a.opts}}" as="o" hint-placeholder-count="10"><option value="{{o.v}}" disabled="{{o.off}}">{{o.n}}</option></sc-for></select>
 <sc-if value="{{a.argLabel}}" hint-placeholder-val="{{ false }}"><select aria-label="标签" value="{{a.v}}" onChange="{{a.setV}}" style="flex: 1; min-width: 0; height: 32px; padding: 0 8px; border: 1px solid #E5E5E5; border-radius: 8px; background: #FFFFFF; font: inherit"><sc-for list="{{labelOpts}}" as="o" hint-placeholder-count="4"><option value="{{o.v}}">{{o.n}}</option></sc-for></select></sc-if>
-<sc-if value="{{a.argBox}}" hint-placeholder-val="{{ false }}"><select aria-label="智能邮箱" value="{{a.v}}" onChange="{{a.setV}}" style="flex: 1; min-width: 0; height: 32px; padding: 0 8px; border: 1px solid #E5E5E5; border-radius: 8px; background: #FFFFFF; font: inherit"><sc-for list="{{boxOpts}}" as="o" hint-placeholder-count="3"><option value="{{o.v}}">{{o.n}}</option></sc-for></select></sc-if>
 <sc-if value="{{a.argText}}" hint-placeholder-val="{{ false }}"><input type="text" aria-label="{{a.argName}}" value="{{a.v}}" placeholder="{{a.argName}}" onInput="{{a.setV}}" style="{{a.argStyle}}"></sc-if>
 <sc-if value="{{a.argDir}}" hint-placeholder-val="{{ false }}"><button type="button" style="flex: 1; min-width: 0; height: 32px; display: flex; align-items: center; gap: 6px; padding: 0 10px; border: 1px solid #E5E5E5; border-radius: 8px; background: #FFFFFF; font: inherit; color: #0A0A0A; text-align: left"><svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true" style="flex: none; color: #737373"><path d="{{ic.folder}}"></path></svg><span style="flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-family: 'Geist Mono', monospace; font-size: 12px">{{a.v}}</span><span style="flex: none; font-size: 12px; color: #737373">选择…</span></button></sc-if>
 </div>
@@ -238,7 +237,7 @@ a{color:#0A0A0A}a:hover{color:#404040}
 <div style="display: flex; align-items: baseline; justify-content: space-between; gap: 8px; padding: 0 4px"><span style="font-weight: 600">现有邮件里</span><span style="font-size: 12px; color: #737373">最近 30 天</span></div>
 <span style="padding: 0 4px; font-size: 12px; color: #737373">{{matchText}}</span>
 <div style="border-radius: 10px; background: #FFFFFF; border: 1px solid #E5E5E5; overflow: hidden">
-<sc-if value="{{noMatch}}" hint-placeholder-val="{{ false }}"><div style="padding: 16px 12px; font-size: 12px; color: #737373; text-align: center">没有符合的邮件。条件是不是太严了？</div></sc-if>
+<sc-if value="{{noMatch}}" hint-placeholder-val="{{ false }}"><div style="padding: 16px 12px; font-size: 12px; color: #737373; text-align: center">{{noMatchText}}</div></sc-if>
 <sc-for list="{{matches}}" as="m" hint-placeholder-count="3">
 <div style="display: flex; flex-direction: column; gap: 2px; padding: 8px 12px; border-top: 1px solid #F0F0F0; margin-top: -1px">
 <span style="display: flex; justify-content: space-between; gap: 8px; font-size: 12px"><span style="font-weight: 500">{{m.name}}</span><span style="color: #737373">{{m.date}}</span></span>
@@ -321,7 +320,7 @@ a{color:#0A0A0A}a:hover{color:#404040}
 </div>
 </div>
 </x-dc>
-<script type="text/x-dc" data-dc-script data-props='{"view":{"editor":"enum","options":["list","empty","bg-off","detail","editor","naming","editor-mail","editor-today","editor-wit","ai-off","forward","save"],"default":"list"},"$preview":{"width":1440,"height":1080}}'>
+<script type="text/x-dc" data-dc-script data-props='{"view":{"editor":"enum","options":["list","empty","bg-off","detail","editor","naming","editor-mail","editor-ai","editor-wit","ai-off","forward","save"],"default":"list"},"$preview":{"width":1440,"height":1080}}'>
 class Component extends DCLogic {
   constructor(props) {
     super(props);
@@ -335,7 +334,7 @@ class Component extends DCLogic {
     if (v === 'naming') this.startEdit(Object.assign({}, T.bill, { acts: [{ t: 'label', v: 'bills' }, { t: 'pdf', v: '~/Documents/账单', tpl: '{from}/{year}-{month} {subject}', custom: true }, { t: 'att', v: '~/Documents/账单', tpl: '{from}/{year}-{month} {subject}', custom: true }, { t: 'archive' }] }), 'edit', true);
     if (v === 'bg-off') this.startEdit(Object.assign({ bg: true }, T.bill), 'edit', true);
     if (v === 'editor-mail') this.startEdit({ name: '来自 AWS 的邮件', trigger: 'receive', targ: '', logic: 'all', conds: [{ f: 'from', op: 'contains', v: 'billing@aws.amazon.com' }], acts: [{ t: 'label', v: 'bills' }] }, 'mail', true);
-    if (v === 'editor-today') this.startEdit(T.today, 'edit', true);
+    if (v === 'editor-ai') this.startEdit({ name: '投诉转给客服主管', trigger: 'receive', targ: '', logic: 'all', conds: [{ f: 'ai', op: 'is', v: '客户投诉，包括要退款的' }], acts: [{ t: 'fwd', v: 'lead@company.example' }] }, 'edit', true);
     if (v === 'editor-wit' || v === 'forward') this.startEdit(T.fwd, 'wit', true);
     if (v === 'ai-off') { this.startEdit(T.ai, 'tpl', true); this.state.menu = true; }
     if (v === 'forward') this.state.dlg = 'forward';
@@ -348,8 +347,6 @@ class Component extends DCLogic {
       sec: { name: '可疑邮件移到垃圾邮件', trigger: 'security', targ: 'suspicious', logic: 'all', conds: [], acts: [{ t: 'junk' }] },
       fwd: { name: 'Stripe 发票转给会计', trigger: 'receive', targ: '', logic: 'all', conds: [{ f: 'from', op: 'contains', v: 'stripe.com' }, { f: 'subject', op: 'contains', v: 'invoice' }], acts: [{ t: 'fwd', v: 'acct@company.example' }, { t: 'archive' }] },
       ai: { name: '客户来信先起草回复', trigger: 'receive', targ: '', logic: 'all', conds: [{ f: 'from', op: 'contains', v: '@client.example' }], acts: [{ t: 'star' }] },
-      today: { name: '该我回复', trigger: 'turn', targ: '', logic: 'all', conds: [], acts: [{ t: 'box', v: '今日' }] },
-      todayWait: { name: '等对方太久', trigger: 'wait', targ: '3', logic: 'all', conds: [], acts: [{ t: 'box', v: '今日' }] },
       att: { name: '合同附件存到本机', trigger: 'receive', targ: '', logic: 'all', conds: [{ f: 'subject', op: 'contains', v: '合同' }, { f: 'attach', op: 'is', v: 'yes' }], acts: [{ t: 'att', v: '~/Documents/合同' }] }
     };
   }
@@ -359,10 +356,8 @@ class Component extends DCLogic {
       Object.assign({ on: true, hits: 12, bg: true }, T.bill),
       Object.assign({ on: true, hits: 48 }, T.news),
       Object.assign({ on: true, hits: 3, bg: true }, T.fwd),
-      Object.assign({ on: false, hits: 0 }, T.sec),
-      Object.assign({ on: true, hits: 12 }, T.today),
-      Object.assign({ on: true, hits: 3 }, T.todayWait)
-    ];
+      Object.assign({ on: false, hits: 0 }, T.sec)
+          ];
   }
   clone(x) { return JSON.parse(JSON.stringify(x)); }
   startEdit(rule, src, init) {
@@ -381,7 +376,6 @@ class Component extends DCLogic {
       archive: { n: '归档', g: 'local', icon: I['inbox-archive-line'] },
       junk: { n: '移到垃圾邮件', g: 'local', icon: I['spam-2-line'] },
       trash: { n: '移到废纸篓', g: 'local', icon: I['delete-bin-line'] },
-      box: { n: '放入智能邮箱', g: 'local', icon: I['inbox-archive-line'], arg: 'box' },
       stop: { n: '不再执行后面的规则', g: 'local', icon: I['stop-circle-line'] },
       fwd: { n: '转发给', g: 'fwd', icon: I['share-forward-line'], arg: 'text', argName: '收件人邮箱' },
       pdf: { n: '导出 PDF 到', g: 'file', icon: I['file-pdf-2-line'], arg: 'dir' },
@@ -390,10 +384,11 @@ class Component extends DCLogic {
       aidraft: { n: '让 Wit 起草回复', g: 'ai', icon: I['quill-pen-ai-line'] },
       aiextract: { n: '让 Wit 提取要点到', g: 'ai', icon: I['file-text-line'], arg: 'dir' }
     };
-    var ORDER = ['label', 'unlabel', 'read', 'star', 'archive', 'junk', 'trash', 'box', 'stop', 'fwd', 'pdf', 'eml', 'att', 'aidraft', 'aiextract'];
+    var ORDER = ['label', 'unlabel', 'read', 'star', 'archive', 'junk', 'trash', 'stop', 'fwd', 'pdf', 'eml', 'att', 'aidraft', 'aiextract'];
     var GROUPS = [['local', '整理'], ['fwd', '转发'], ['file', '存到这台电脑'], ['ai', 'Wit']];
-    var TRIG = [['receive', '收到新邮件'], ['label', '邮件被打上标签'], ['security', '安全检查判定为'], ['daily', '每天第一次同步时'], ['turn', '轮到我回复'], ['wait', '等对方回复满']];
+    var TRIG = [['receive', '收到新邮件'], ['label', '邮件被打上标签'], ['security', '安全检查判定为'], ['daily', '每天第一次同步时']];
     var FIELDS = [['from', '发件人'], ['to', '收件人'], ['subject', '主题'], ['body', '正文'], ['attach', '附件'], ['label', '标签'], ['folder', '文件夹']];
+    if (this.props.view === 'editor-ai') FIELDS.unshift(['ai', 'AI 判断']);
     // 存的都是稳定的英文常量：标签用 slug（ADR 0014），判定、有无附件用固定 id；界面只负责显示
     var LABELS = [['bills', '账单'], ['newsletter', '订阅'], ['orders', '订单与物流'], ['work', '工作'], ['otp', '验证码']];
     var labelName = function (slug) { var x = LABELS.filter(function (l) { return l[0] === slug; })[0]; return x ? x[1] : slug; };
@@ -409,23 +404,18 @@ class Component extends DCLogic {
       { name: 'GitHub', from: 'notifications@github.com', subject: '[godwit] PR #434 opened', date: '10月26日', attach: false, labels: ['work'] },
       { name: '王律师', from: 'lawyer@client.example', subject: '合同终稿，请查收', date: '10月25日', attach: true, labels: ['work'] },
       { name: 'PayPal 安全中心', from: 'security@paypa1-alert.com', subject: 'Verify your account now', date: '10月24日', attach: false, labels: [], sec: true },
-      { name: 'Lena Fischer', from: 'lena@partner.example', subject: 'Q4 partnership proposal', date: '10月6日', attach: false, labels: ['work'], turn: true },
-      { name: '财务部', from: 'finance@company.example', subject: '差旅报销还缺一张发票', date: '昨天', attach: false, labels: ['work'], turn: true },
-      { name: 'Sara Lin', from: 'sara@legal.example', subject: '合同修订意见', date: '10月2日', attach: false, labels: ['work'], waited: 4 },
-      { name: 'Yuki Tan', from: 'yuki@vendor.example', subject: '交付时间确认', date: '10月3日', attach: false, labels: ['work'], waited: 3 }
     ];
     var trigText = function (r) {
       if (r.trigger === 'label') return '被打上「' + labelName(r.targ) + '」';
       if (r.trigger === 'security') return '判定为' + (SEC[r.targ] || r.targ);
       if (r.trigger === 'daily') return '每天第一次同步';
-      if (r.trigger === 'turn') return '轮到我回复';
-      if (r.trigger === 'wait') return '等对方回复满 ' + (r.targ || '…') + ' 天';
       return '收到新邮件';
     };
     var condText = function (c) {
       var f = FIELDS.filter(function (x) { return x[0] === c.f; })[0][1];
       if (c.f === 'attach') return c.v === 'no' ? '没有附件' : '有附件';
       if (c.f === 'label') return '标签是 ' + labelName(c.v);
+      if (c.f === 'ai') return 'AI 判断：' + c.v;
       return f + (c.op === 'not' ? '不含 ' : c.op === 'is' ? '是 ' : '含 ') + (c.v || '…');
     };
     var actText = function (a) { var x = A[a.t]; return x.n + (a.v ? ' ' + (x.arg === 'dir' ? a.v.split('/').pop() : x.arg === 'label' ? labelName(a.v) : a.v) : ''); };
@@ -436,6 +426,7 @@ class Component extends DCLogic {
     var matchOne = function (m, c) {
       var v = (c.v || '').toLowerCase();
       var hit = true;
+      if (c.f === 'ai') return false;
       if (c.f === 'from') hit = m.from.indexOf(v) >= 0;
       else if (c.f === 'subject' || c.f === 'body') hit = m.subject.toLowerCase().indexOf(v) >= 0;
       else if (c.f === 'attach') hit = m.attach === (c.v !== 'no');
@@ -443,11 +434,12 @@ class Component extends DCLogic {
       return c.op === 'not' ? !hit : hit;
     };
     var matchAll = function (r) {
+      // 条件都还没填时，不预览任何邮件，否则像是匹配了全部
+      var filled = r.conds.filter(function (c) { return c.f === 'attach' || (c.v || '').trim(); });
+      if (r.conds.length && !filled.length) return [];
       return MAILS.filter(function (m) {
         if (r.trigger === 'label' && m.labels.indexOf(r.targ) < 0) return false;
         if (r.trigger === 'security' && !m.sec) return false;
-        if (r.trigger === 'turn' && !m.turn) return false;
-        if (r.trigger === 'wait' && !(m.waited >= Number(r.targ))) return false;
         if (!r.conds.length) return true;
         return r.logic === 'any' ? r.conds.some(function (c) { return matchOne(m, c); }) : r.conds.every(function (c) { return matchOne(m, c); });
       });
@@ -472,11 +464,6 @@ class Component extends DCLogic {
         hits = [
           { when: '昨天 18:40', sender: 'Stripe', subject: 'Invoice #1234 from Acme Inc.', results: [{ t: 'ok', text: '已转发到 acct@company.example', icon: I['share-forward-line'] }, { t: 'ok', text: '归档', icon: I['inbox-archive-line'] }], local: false },
           { when: '10月3日', sender: 'Stripe', subject: 'Invoice #1198 from Acme Inc.', results: [{ t: 'ok', text: '已转发到 acct@company.example', icon: I['share-forward-line'] }, { t: 'ok', text: '归档', icon: I['inbox-archive-line'] }], local: false }
-        ];
-      } else if (r.acts[0].t === 'box') {
-        hits = [
-          { when: '09:12', sender: 'Lena Fischer', subject: 'Q4 partnership proposal', results: [{ t: 'ok', text: '放入 ' + r.acts[0].v, icon: I['inbox-archive-line'] }], local: true },
-          { when: '昨天', sender: '财务部', subject: '差旅报销还缺一张发票', results: [{ t: 'ok', text: '放入 ' + r.acts[0].v, icon: I['inbox-archive-line'] }], local: true }
         ];
       } else if (r.trigger === 'label') {
         hits = [
@@ -530,7 +517,6 @@ class Component extends DCLogic {
     });
     var T = this.templates();
     var TPL = [
-      ['today', I['inbox-archive-line'], '今日', '轮到你回复的会话，放入智能邮箱「今日」'],
       ['bill', I['price-tag-3-line'], '账单归档', '主题含 invoice 且有附件：打「账单」标签，存一份 PDF，归档'],
       ['news', I['mail-check-line'], '订阅邮件不进收件箱', '被打上「订阅」时：标为已读并归档'],
       ['sec', I['shield-check-line'], '可疑邮件移到垃圾邮件', '安全检查判定为可疑或危险时，移到垃圾邮件'],
@@ -559,7 +545,7 @@ class Component extends DCLogic {
         hasBadge: !!k, badge: k ? k.badge : '', badgeStyle: k ? pill(k.bg, k.fg) : '',
         cardStyle: 'border: 1px solid ' + (k ? k.border : '#E5E5E5') + '; border-radius: 12px; background: ' + (k ? k.box : '#FFFFFF') + '; padding: 12px 16px; display: flex; flex-direction: column; gap: 10px',
         iconBox: 'width: 24px; height: 24px; border-radius: 6px; display: flex; align-items: center; justify-content: center; background: ' + (k ? k.bg : '#F5F5F5') + '; color: ' + (k ? k.fg : '#0A0A0A'),
-        argLabel: x.arg === 'label', argBox: x.arg === 'box', argText: x.arg === 'text', argDir: x.arg === 'dir', argName: x.argName || '',
+        argLabel: x.arg === 'label', argText: x.arg === 'text', argDir: x.arg === 'dir', argName: x.argName || '',
         argStyle: 'flex: 1; min-width: 0; height: 32px; box-sizing: border-box; padding: 0 10px; border: 1px solid ' + (x.g === 'fwd' ? '#FFD230' : '#E5E5E5') + '; border-radius: 8px; font: inherit; font-family: \'Geist Mono\', monospace; font-size: 13px; color: #0A0A0A; background: #FFFFFF',
         hasNote: !!note, note: note, noteStyle: noteStyle, bundle: x.g === 'file' && x.arg === 'dir',
         sub: a.sub !== false, preset: tplPreset(a), custom: a.sub !== false && tplPreset(a) === 'custom', notCustom: !(a.sub !== false && tplPreset(a) === 'custom'),
@@ -572,7 +558,7 @@ class Component extends DCLogic {
         upStyle: 'width: 28px; height: 28px; padding: 0; border: 0; border-radius: 6px; background: transparent; display: flex; align-items: center; justify-content: center; color: ' + (i === 0 ? '#D4D4D4' : '#737373'),
         downStyle: 'width: 28px; height: 28px; padding: 0; border: 0; border-radius: 6px; background: transparent; display: flex; align-items: center; justify-content: center; color: ' + (i === d.acts.length - 1 ? '#D4D4D4' : '#737373'),
         opts: ORDER.map(function (o) { return { v: o, n: A[o].n + (A[o].g === 'ai' && !aiOn ? '（需在「智能」里打开）' : ''), off: A[o].g === 'ai' && !aiOn && o !== a.t }; }),
-        setT: function (e) { var t = e.target.value; self.patch(function (dd) { dd.acts[i] = { t: t, v: A[t].arg === 'label' ? 'bills' : A[t].arg === 'box' ? '今日' : A[t].arg === 'dir' ? '~/Documents' : '' }; }); if (A[t].g === 'fwd') self.setState({ fwdOk: false }); },
+        setT: function (e) { var t = e.target.value; self.patch(function (dd) { dd.acts[i] = { t: t, v: A[t].arg === 'label' ? 'bills' : A[t].arg === 'dir' ? '~/Documents' : '' }; }); if (A[t].g === 'fwd') self.setState({ fwdOk: false }); },
         setV: function (e) { var v = e.target.value; self.patch(function (dd) { dd.acts[i].v = v; }); if (x.g === 'fwd') self.setState({ fwdOk: false }); },
         up: function () { if (i) self.patch(function (dd) { var t = dd.acts[i - 1]; dd.acts[i - 1] = dd.acts[i]; dd.acts[i] = t; }); },
         down: function () { if (i < d.acts.length - 1) self.patch(function (dd) { var t = dd.acts[i + 1]; dd.acts[i + 1] = dd.acts[i]; dd.acts[i] = t; }); },
@@ -623,14 +609,14 @@ class Component extends DCLogic {
       setName: function (e) { var v = e.target.value; self.patch(function (dd) { dd.name = v; }); },
       cancel: function () { self.setState({ view: 'list', d: null, dlg: '', menu: false }); },
       save: save,
+      aiFwd: d.conds.some(function (c) { return c.f === 'ai'; }) && d.acts.some(function (a) { return a.t === 'fwd'; }),
+      saveStyle: 'height: 32px; padding: 0 14px; border: 0; border-radius: 8px; font-weight: 500; ' + (d.conds.some(function (c) { return c.f === 'ai'; }) && d.acts.some(function (a) { return a.t === 'fwd'; }) ? 'background: #E5E5E5; color: #A1A1A1; cursor: not-allowed' : 'background: #171717; color: #FFFFFF'),
+      noMatchText: d.conds.some(function (c) { return c.f === 'ai'; }) ? 'AI 判断要逐封发给模型，这里不预览。' : '没有符合的邮件。条件是不是太严了？',
       triggerOpts: TRIG.map(function (t) { return { v: t[0], n: t[1] }; }),
-      setTrigger: function (e) { var v = e.target.value; self.patch(function (dd) { dd.trigger = v; dd.targ = v === 'label' ? 'newsletter' : v === 'security' ? 'suspicious' : v === 'wait' ? '3' : ''; }); },
+      setTrigger: function (e) { var v = e.target.value; self.patch(function (dd) { dd.trigger = v; dd.targ = v === 'label' ? 'newsletter' : v === 'security' ? 'suspicious' : ''; }); },
       setTarg: function (e) { var v = e.target.value; self.patch(function (dd) { dd.targ = v; }); },
-      trigLabel: d.trigger === 'label', trigSec: d.trigger === 'security', trigWait: d.trigger === 'wait',
-      boxOpts: ['今日', '财务待办', '发票汇总'].map(function (n) { return { v: n, n: n }; }),
-      trigHelp: d.trigger === 'turn' ? '真人直接发给你、你还没回时执行。抄送、群发、订阅和通知不算。'
-        : d.trigger === 'wait' ? '你发出后对方一直没回，等到这个天数时执行，不用等新邮件。'
-        : d.trigger === 'daily' ? '每天第一次同步完成后，对符合条件的邮件执行一次。适合「早于 N 天」这类条件。'
+      trigLabel: d.trigger === 'label', trigSec: d.trigger === 'security',
+      trigHelp: d.trigger === 'daily' ? '每天第一次同步完成后，对符合条件的邮件执行一次。适合「早于 N 天」这类条件。'
         : d.trigger === 'label' ? '手动或模型打上这个标签时执行。规则自己打的标签不会再触发规则。'
         : d.trigger === 'security' ? '新邮件的安全检查给出判定后执行。重新检查旧邮件不会触发。'
         : '同步到新邮件时执行。Godwit 退出期间到的邮件，下次同步时补上。',
@@ -644,7 +630,7 @@ class Component extends DCLogic {
       namePresets: NAME_PRESETS.map(function (p) { return { v: p[0], n: p[1] }; }).concat([{ v: 'custom', n: '自定义…' }]),
       fieldOpts: FIELDS.map(function (f) { return { v: f[0], n: f[1] }; }),
       conds: d.conds.map(function (c, i) {
-        var ops = c.f === 'attach' || c.f === 'label' || c.f === 'folder' ? [['is', '是']] : [['contains', '包含'], ['not', '不包含'], ['is', '是']];
+        var ops = c.f === 'attach' || c.f === 'label' || c.f === 'folder' || c.f === 'ai' ? [['is', '是']] : [['contains', '包含'], ['not', '不包含'], ['is', '是']];
         return { f: c.f, op: c.op, v: c.v, isAttach: c.f === 'attach', isLabel: c.f === 'label', isText: c.f !== 'attach' && c.f !== 'label', ops: ops.map(function (o) { return { v: o[0], n: o[1] }; }),
           ph: c.f === 'from' ? '地址或域名，如 stripe.com' : c.f === 'attach' ? '有 / 没有' : c.f === 'label' ? '标签名' : '要包含的文字',
           setF: function (e) { var v = e.target.value; self.patch(function (dd) { dd.conds[i] = { f: v, op: v === 'attach' || v === 'label' || v === 'folder' ? 'is' : 'contains', v: v === 'attach' ? 'yes' : v === 'label' ? 'bills' : '' }; }); },
