@@ -1,15 +1,15 @@
-name: 功能请求 / Feature request
-description: 提议新功能或改进 / Suggest a new feature or an improvement
+name: Feature request
+description: Suggest a new feature or an improvement
 labels: [enhancement, needs-triage]
 body:
   - type: textarea
     id: problem
     attributes:
-      label: 想解决的问题或场景 / Problem or use case
-      description: 你想做什么，现在哪里做不到或不方便 / What you want to do, and what stops you today
+      label: Problem or use case
+      description: What you want to do, and what stops you today
     validations:
       required: true
   - type: textarea
     id: proposal
     attributes:
-      label: 期望的做法 / What you'd like to happen
+      label: What you'd like to happen

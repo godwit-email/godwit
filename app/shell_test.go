@@ -411,15 +411,28 @@ func TestReportUnknownError(t *testing.T) {
 	if err != nil || u.Host != "github.com" || u.Path != "/godwit-email/godwit/issues/new" {
 		t.Fatalf("opened %v (%v)", u, err)
 	}
-	body := u.Query().Get("body")
-	if strings.Contains(body, "acme") || strings.Contains(body, home) ||
-		!strings.Contains(body, "lookup <host>: no such host for <email> at ~/x") || !strings.Contains(body, "Godwit "+Version) ||
-		!strings.Contains(body, "sync <email>: EOF") {
-		t.Fatalf("body %q", body)
+	q := u.Query()
+	if q.Get("template") != "bug_report.yml" || q.Get("version") != Version || q.Get("os") == "" {
+		t.Fatalf("query %v", q)
+	}
+	what, logs := q.Get("what-happened"), q.Get("logs")
+	if s := u.RawQuery; strings.Contains(s, "acme") || strings.Contains(what+logs, home) ||
+		!strings.Contains(what, "lookup <host>: no such host for <email> at ~/x") ||
+		!strings.Contains(logs, "sync <email>: EOF") {
+		t.Fatalf("what-happened %q, logs %q", what, logs)
+	}
+	form, err := os.ReadFile("../.github/ISSUE_TEMPLATE/" + q.Get("template"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	for key := range q { // GitHub silently drops a value whose field id is gone
+		if key != "template" && key != "title" && !strings.Contains(string(form), "id: "+key+"\n") {
+			t.Errorf("the form has no field %q", key)
+		}
 	}
 	log := strings.Repeat("旧", 3000) + "\n\nnewest" // dropping the oversized line leaves a blank one first
 	long, _ := url.Parse(issueURL(strings.Repeat("错", 5000), log))
-	if n := len(long.String()); n > issueURLMax || !strings.Contains(long.Query().Get("body"), "newest") {
+	if n := len(long.String()); n > issueURLMax || !strings.Contains(long.Query().Get("logs"), "newest") {
 		t.Fatalf("link of %d bytes without the newest log line", n)
 	}
 }

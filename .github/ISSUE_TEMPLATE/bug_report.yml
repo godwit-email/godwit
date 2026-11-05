@@ -1,42 +1,40 @@
-name: Bug 报告 / Bug report
-description: Godwit 出错或行为不对 / Something is broken or behaves wrongly
+name: Bug report
+description: Something is broken or behaves wrongly
 labels: [bug, needs-triage]
 body:
   - type: input
     id: version
     attributes:
-      label: Godwit 版本 / Version
-      description: 在 设置 › 关于 中查看 / Find it in Settings › About
+      label: Godwit version
+      description: Find it in Settings › About
       placeholder: "1.26.2"
     validations:
       required: true
-  - type: dropdown
+  # A text input, not a dropdown: the app's 报告问题 link prefills it by this id.
+  - type: input
     id: os
     attributes:
-      label: 操作系统 / Operating system
-      options:
-        - macOS
-        - Windows
-        - Linux
+      label: Operating system
+      placeholder: macOS 15, Windows 11, Debian 13
     validations:
       required: true
   - type: input
     id: provider
     attributes:
-      label: 邮箱服务商或 IMAP 服务器 / Mail provider or IMAP server
-      description: 与收发邮件有关时填写 / Fill this in if the problem involves mail
+      label: Mail provider or IMAP server
+      description: Fill this in if the problem involves mail
       placeholder: Gmail, QQ, imap.example.com
   - type: textarea
     id: what-happened
     attributes:
-      label: 发生了什么 / What happened
-      description: 实际看到了什么，你原本期望什么 / What you saw, and what you expected
+      label: What happened
+      description: What you saw, and what you expected
     validations:
       required: true
   - type: textarea
     id: steps
     attributes:
-      label: 复现步骤 / Steps to reproduce
+      label: Steps to reproduce
       placeholder: |
         1.
         2.
@@ -44,6 +42,6 @@ body:
   - type: textarea
     id: logs
     attributes:
-      label: 错误信息或日志 / Error message or logs
-      description: 请先去掉邮箱地址、密码等隐私内容 / Remove email addresses, passwords and other private details first
+      label: Error message or logs
+      description: Remove email addresses, passwords and other private details first
       render: text
