@@ -292,7 +292,7 @@ func TestAccountInputOuterHeights(t *testing.T) {
 				kit.Input(c, &email, kit.InputOpts{}).Height(inputHeight(c))
 			})
 			ui.Box(c).Label("password-frame").Children(func() {
-				secretInput(c, &password, &shown, "密码")
+				secretInput(c, &password, &shown)
 			})
 		})
 	}, 400, 200)

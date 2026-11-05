@@ -294,8 +294,8 @@ func TestSettingsReorderAccounts(t *testing.T) {
 	h.tt.Move(x, y)
 	h.tt.Press(x, y)
 	h.tt.Move(x, y+row/2)
-	h.tt.Move(x, y+row*2.5) // below carol: the end
-	h.tt.Release(x, y+row*2.5)
+	h.tt.Move(x, y+row*2.4) // below carol: the end
+	h.tt.Release(x, y+row*2.4)
 	h.drain()
 	ids := func(accs []core.Account) []int64 {
 		var out []int64

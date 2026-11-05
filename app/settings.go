@@ -288,7 +288,6 @@ func (p *settingsPage) Sidebar(c *ui.Context) {
 		case !hit.accounts:
 		case hit.email == "" && n > 1: // dragged to reorder; not while a search hides some
 			p.accountOrder.Key = func(i int) any { return a.accounts[i].ID }
-			p.accountOrder.Label = func(i int) string { return accountName(a.accounts[i]) }
 			p.accountOrder.Reorder = func(rows []int, to int) { p.moveAccount(rows[0], to) }
 			gap := th.Space(0.5) // the sidebar column's
 			kit.List(c, &p.accountOrder, n, func(i int) {

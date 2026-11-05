@@ -682,7 +682,7 @@ func (p *settingsPage) dialogView(c *ui.Context) {
 		incomplete = p.secret == ""
 		title = i18n.Tf("settings.account.login.update", secretName(prov))
 		body = func() {
-			ui.Field(c, secretName(prov), func() { secretInput(c, &p.secret, &p.showSecret, secretName(prov)) }).
+			ui.Field(c, secretName(prov), func() { secretInput(c, &p.secret, &p.showSecret) }).
 				Description(i18n.T("onboarding.secret.help"))
 			secretWhitespaceHint(c, &p.secret)
 		}

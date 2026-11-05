@@ -6,7 +6,7 @@ require (
 	github.com/MoeForge/moejs v0.1.0-alpha.11
 	github.com/clipperhouse/uax29/v2 v2.2.0
 	github.com/ebitengine/purego v0.11.2
-	github.com/egoist/mygo v0.7.2
+	github.com/egoist/mygo v0.7.5-0.20261104122944-e3e425422325
 	github.com/emersion/go-imap/v2 v2.0.0-beta.8
 	github.com/emersion/go-message v0.18.2
 	github.com/emersion/go-msgauth v0.7.0

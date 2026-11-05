@@ -162,7 +162,7 @@ func (f *clientForm) view(c *ui.Context, a *App, secretHelp string, pub *auth.Pu
 					kit.Input(c, &f.id, kit.InputOpts{Placeholder: "….apps.googleusercontent.com"}).Height(inputHeight(c))
 				})
 				label := i18n.T("onboarding.own_client.secret")
-				ui.Field(c, label, func() { secretInput(c, &f.secret, &f.showSecret, label) }).Description(secretHelp)
+				ui.Field(c, label, func() { secretInput(c, &f.secret, &f.showSecret) }).Description(secretHelp)
 			})
 		}).AlignSelf(ui.Start).Margin(0, 0, 0, -th.Space(2))
 	}

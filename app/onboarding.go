@@ -720,13 +720,13 @@ func tr(key string) string {
 	return ""
 }
 
-func secretInput(c *ui.Context, secret *string, shown *bool, label string) ui.Element {
+func secretInput(c *ui.Context, secret *string, shown *bool) ui.Element {
 	th := c.Theme()
 	height := inputHeight(c)
 	var in ui.Element
 	row := kit.InputGroup(c, kit.InputOpts{}).Height(height).Padding(0, th.Space(0.5), 0, 0)
 	row.Children(func() {
-		in = kit.Input(c, secret, kit.InputOpts{Password: !*shown, Bare: true}).Label(label).Height(height - theme.Stroke - theme.Stroke).Grow(1).Shrink(1).PaddingX(th.Space(2.5))
+		in = kit.Input(c, secret, kit.InputOpts{Password: !*shown, Bare: true}).Height(height - theme.Stroke - theme.Stroke).Grow(1).Shrink(1).PaddingX(th.Space(2.5))
 		icon, tip := "eye", i18n.T("onboarding.secret.show")
 		if *shown {
 			icon, tip = "eye-off", i18n.T("onboarding.secret.hide")
@@ -798,7 +798,7 @@ func (o *onboarding) passwordView(c *ui.Context) {
 		o.hintBox(c, hint, steps, tr("onboarding.note."+o.prov.ID), i18n.Tf("onboarding.open_help", name), o.prov.HelpURL)
 	}
 	ui.Field(c, o.secretName(), func() {
-		if secretInput(c, &o.secret, &o.showSecret, o.secretName()).Submitted() && o.secret != "" {
+		if secretInput(c, &o.secret, &o.showSecret).Submitted() && o.secret != "" {
 			o.connect()
 		}
 	}).Description(i18n.T("onboarding.secret.help")).LineHeight(theme.LineFor(o.secretName())) // the label's line; the description's is the same

@@ -53,17 +53,9 @@ func button(c *ui.Context, o ButtonOpts, square bool) ui.Element {
 	case SizeLg:
 		h, padX = th.Space(9), th.Space(4.5)
 	}
-	var b ui.Element
-	if o.Disabled {
-		// mygo paints a Disabled element, and all inside it, at half
-		// opacity; the design has disabled colours instead. So a disabled
-		// button is a plain row in those colours, and cover lays the
-		// Disabled button over it: that takes the clicks, the focus and
-		// assistive technology.
-		b = ui.Row(c).Center().Shrink(0).Role(ui.RoleNone)
-	} else {
-		b = ui.ButtonBase(c)
-	}
+	// DimDisabled(false) turns off mygo's half-opacity dimming so a disabled
+	// button shows the design's disabled colours instead.
+	b := ui.ButtonBase(c).Disabled(o.Disabled).DimDisabled(false)
 	b.Gap(th.Space(1.5)).Justify(ui.Center).Transition(colors(theme.MotionFast))
 	if o.Variant == Link {
 		b.TextColor(t.Muted)
@@ -135,16 +127,7 @@ func button(c *ui.Context, o ButtonOpts, square bool) ui.Element {
 	return b
 }
 
-// cover lays the Disabled button named label over a disabled button's
-// look (see button); it paints nothing, so mygo's dimming shows nothing.
-func cover(c *ui.Context, o ButtonOpts, label string) {
-	if o.Disabled {
-		ui.ButtonBase(c).Label(label).Disabled(true).Absolute().Top(0).Right(0).Bottom(0).Left(0)
-	}
-}
-
-// ButtonFrame is the styled button without children; it is never
-// Disabled (no label for the cover).
+// ButtonFrame is the styled button without children.
 func ButtonFrame(c *ui.Context, o ButtonOpts) ui.Element { return button(c, o, false) }
 
 // Button is a button of a label.
@@ -153,11 +136,7 @@ func Button(c *ui.Context, label string, o ButtonOpts) ui.Element {
 		if o.Icon != "" {
 			ui.Icon(c, icons.Get(o.Icon)).Size(theme.Icon, theme.Icon)
 		}
-		tx := ui.Text(c, label)
-		if o.Disabled {
-			tx.Role(ui.RoleNone) // the cover names the button
-		}
-		cover(c, o, label)
+		ui.Text(c, label)
 	})
 }
 
@@ -184,7 +163,6 @@ func SwapButton(c *ui.Context, label string, o ButtonOpts, others ...string) ui.
 				content(c.Key(i), l).Height(0).Opacity(0).PassThrough()
 			}
 		})
-		cover(c, o, label)
 	})
 }
 
@@ -199,7 +177,6 @@ func IconButton(c *ui.Context, icon, label string, o ButtonOpts) ui.Element {
 	}
 	return b.Children(func() {
 		ui.Icon(c, icons.Get(icon)).Size(size, size)
-		cover(c, o, label)
 	})
 }
 
