@@ -483,6 +483,40 @@ func TestKeyboardArchiveDelete(t *testing.T) {
 	}
 }
 
+// Delete and forward delete trash the chosen rows, as # does: a selection
+// across accounts in 全部收件箱, then the one open.
+func TestKeyboardDeleteKeys(t *testing.T) {
+	h, accs := mailHarness(t, nil, "alice@example.com", "carol@example.com")
+	base := h.clock.Now()
+	h.put(accs[0], "INBOX", coretest.Msg("bob@example.com", "alice@example.com", "first", "x", at(base, 1)))
+	h.put(accs[1], "INBOX", coretest.Msg("bob@example.com", "carol@example.com", "second", "x", at(base, 2)))
+	h.put(accs[1], "INBOX", coretest.Msg("bob@example.com", "carol@example.com", "third", "x", at(base, 3)))
+	h.syncNow(accs[0])
+	h.syncNow(accs[1])
+	h.click("全部收件箱")
+	h.waitMail("three threads", func() bool { return len(h.items()) == 3 })
+	h.click("first")
+	h.click("first") // the list has the focus again
+	h.tt.Key(ui.Cmd, ui.KeyA)
+	h.tt.Frame()
+	if n := h.app.mail.main.sel.Len(); n != 3 {
+		t.Fatalf("%d chosen", n)
+	}
+	h.tt.Key(0, ui.KeyBackspace)
+	h.waitMail("all deleted", func() bool { return len(h.items()) == 0 })
+	if n := h.countIn(h.folderOf(accs[0], "trash")) + h.countIn(h.folderOf(accs[1], "trash")); n != 3 {
+		t.Fatalf("%d in Trash", n)
+	}
+
+	h.put(accs[0], "INBOX", coretest.Msg("bob@example.com", "alice@example.com", "fourth", "x", at(base, 4)))
+	h.syncNow(accs[0])
+	h.waitMail("fourth", func() bool { return len(h.items()) == 1 })
+	h.click("fourth")
+	h.click("fourth")
+	h.tt.Key(0, ui.KeyDelete)
+	h.waitMail("fourth deleted", func() bool { return len(h.items()) == 0 })
+}
+
 // The row menu offers read or unread, star or unstar, by the row's state,
 // as S and U toggle.
 func TestRowMenuByState(t *testing.T) {

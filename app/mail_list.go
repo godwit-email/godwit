@@ -922,7 +922,7 @@ func (p *mailPage) listView(c *ui.Context) {
 		mods ui.Modifiers
 		key  ui.Key
 		act  string
-	}{{0, ui.KeyE, "archive"}, {ui.Shift, ui.Key3, "delete"}, {0, ui.KeyU, "toggle_read"}, {0, ui.KeyS, "toggle_star"}} {
+	}{{0, ui.KeyE, "archive"}, {ui.Shift, ui.Key3, "delete"}, {0, ui.KeyBackspace, "delete"}, {0, ui.KeyDelete, "delete"}, {0, ui.KeyU, "toggle_read"}, {0, ui.KeyS, "toggle_star"}} {
 		if ls.list.Shortcut(c, k.mods, k.key) {
 			act, target = k.act, p.chosen(rows)
 		}
