@@ -425,8 +425,9 @@ func TestReportUnknownError(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	for key := range q { // GitHub silently drops a value whose field id is gone
-		if key != "template" && key != "title" && !strings.Contains(string(form), "id: "+key+"\n") {
+	body := strings.ReplaceAll(string(form), "\r\n", "\n") // a Windows checkout keeps CRLF
+	for key := range q {                                   // GitHub silently drops a value whose field id is gone
+		if key != "template" && key != "title" && !strings.Contains(body, "id: "+key+"\n") {
 			t.Errorf("the form has no field %q", key)
 		}
 	}
