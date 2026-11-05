@@ -1,0 +1,356 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<title>Godwit 阅读区 · 会话</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600&amp;family=Geist+Mono:wght@500&amp;family=Noto+Sans+SC:wght@400;500;600&amp;display=swap" rel="stylesheet">
+<style>
+body{margin:0;background:#FFFFFF}
+a{color:#0A0A0A}a:hover{color:#404040}
+button{font:inherit;cursor:pointer}
+</style>
+</helmet>
+<section aria-label="阅读区" style="position: absolute; inset: 0; display: flex; flex-direction: column; overflow: hidden; border-radius: {{radius}}; clip-path: inset(0 round {{radius}}); box-sizing: border-box; background: #FFFFFF; color: #0A0A0A; font-family: Geist, 'Noto Sans SC', system-ui, sans-serif; font-size: 14px; line-height: 1.5">
+
+  <div role="toolbar" aria-label="邮件操作" style="position: absolute; z-index: 2; left: 0; right: 0; top: 0; display: flex; align-items: center; gap: 2px; padding: 6px 20px; border-bottom: 1px solid rgba(229,229,229,0.5); flex-wrap: wrap; background: rgba(255,255,255,0.72); backdrop-filter: saturate(180%) blur(16px); -webkit-backdrop-filter: saturate(180%) blur(16px)">
+    <sc-for list="{{leftGroups}}" as="g" hint-placeholder-count="4">
+      <sc-if value="{{g.sep}}" hint-placeholder-val="{{ false }}"><span aria-hidden="true" style="width: 1px; height: 20px; margin: 0 6px; background: #E5E5E5"></span></sc-if>
+      <div role="group" aria-label="{{g.label}}" style="display: flex; align-items: center; gap: 2px">
+        <sc-for list="{{g.items}}" as="b" hint-placeholder-count="3">
+          <button type="button" aria-label="{{b.label}}" title="{{b.label}}" onClick="{{b.onClick}}" style="{{b.style}}"><svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="{{b.d}}" transform="{{b.tf}}"></path></svg></button>
+        </sc-for>
+      </div>
+    </sc-for>
+    <span style="margin-left: auto; display: flex; gap: 2px">
+      <button type="button" onClick="{{toggleSummary}}" aria-pressed="{{summaryPressed}}" style="{{summaryBtn}}"><svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="{{I.summary}}"></path></svg>总结</button>
+      <button type="button" onClick="{{toggleTranslate}}" aria-pressed="{{translatePressed}}" style="{{translateBtn}}"><svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="{{I.translate}}"></path></svg>翻译</button>
+    </span>
+  </div>
+
+  <sc-if value="{{toolbarMenu}}" hint-placeholder-val="{{ false }}">
+  <button type="button" aria-label="关闭标签菜单" onClick="{{toggleMenu}}" style="position: fixed; inset: 0; z-index: 9; padding: 0; border: 0; background: transparent; cursor: default"></button>
+            <div role="menu" aria-label="标签" style="position: absolute; top: 42px; left: {{tagLeft}}; z-index: 10; width: 240px; box-sizing: border-box; padding: 4px; display: flex; flex-direction: column; background: #FFFFFF; border: 1px solid #E5E5E5; border-radius: 8px; box-shadow: 0 4px 6px -1px rgba(0,0,0,0.1), 0 2px 4px -2px rgba(0,0,0,0.1)">
+              <input type="search" aria-label="搜索或新建标签" placeholder="搜索或新建标签" style="height: 32px; box-sizing: border-box; margin-bottom: 4px; padding: 0 8px; border: 0; border-bottom: 1px solid #E5E5E5; background: transparent; font: inherit; font-size: 13px; color: #0A0A0A; outline: none">
+              <sc-for list="{{menuItems}}" as="o" hint-placeholder-count="9">
+              <button type="button" role="menuitemcheckbox" aria-checked="{{o.checked}}" onClick="{{o.toggle}}" style="display: flex; align-items: center; gap: 8px; height: 32px; padding: 0 8px; border: 0; border-radius: 6px; background: transparent; text-align: left; color: #0A0A0A; font-size: 13px">
+                <span style="width: 16px; flex: none; display: flex"><sc-if value="{{o.on}}" hint-placeholder-val="{{ false }}"><svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M9.9997 15.1709L19.1921 5.97852L20.6063 7.39273L9.9997 17.9993L3.63574 11.6354L5.04996 10.2212L9.9997 15.1709Z"></path></svg></sc-if></span>
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true" style="{{o.iconStyle}}"><path d="{{o.d}}"></path></svg>
+                <span style="flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap">{{o.name}}</span>
+                <sc-if value="{{o.auto}}" hint-placeholder-val="{{ false }}"><span style="flex: none; font-size: 12px; color: #737373">模型标记</span></sc-if>
+              </button>
+              </sc-for>
+              <div style="height: 1px; margin: 4px 0; background: #E5E5E5"></div>
+              <a href="SettingsLabels.dc.html" style="display: flex; align-items: center; gap: 8px; height: 32px; padding: 0 8px; border-radius: 6px; text-decoration: none; color: #0A0A0A; font-size: 13px"><span style="width: 16px; flex: none"></span>管理标签…</a>
+            </div>
+  </sc-if>
+  <div style="position: absolute; inset: 0; overflow: auto">
+    <div style="box-sizing: border-box; max-width: 776px; padding: 64px 28px 116px; display: flex; flex-direction: column">
+
+      <h2 style="margin: 0; font-size: 20px; font-weight: 600; line-height: 1.35; display: flex; flex-wrap: wrap; align-items: center; column-gap: 8px; row-gap: 4px">{{mail.subject}}<sc-if value="{{codeTag}}" hint-placeholder-val="{{ false }}"><button type="button" aria-label="复制验证码 {{codeTag}}" style="display: inline-flex; align-items: center; gap: 4px; height: 24px; padding: 0 8px; border: 0; border-radius: 6px; background: #F5F5F5; color: #0A0A0A; font-size: 13px; font-weight: 400; line-height: 1"><svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="{{I.copy}}"></path></svg><span style="font-family: 'Geist Mono', ui-monospace, monospace; font-weight: 500">{{codeTag}}</span></button></sc-if></h2>
+      <sc-if value="{{metaRow}}" hint-placeholder-val="{{ true }}">
+      <div style="display: flex; flex-wrap: wrap; align-items: center; gap: 4px; margin-top: 8px">
+        <sc-if value="{{isThread}}" hint-placeholder-val="{{ true }}"><span style="font-size: 12px; color: #737373">{{count}} 封往来</span></sc-if>
+        <sc-if value="{{labelsOn}}" hint-placeholder-val="{{ false }}">
+        <sc-if value="{{isThread}}" hint-placeholder-val="{{ true }}"><span aria-hidden="true" style="width: 1px; height: 12px; margin: 0 4px; background: #E5E5E5"></span></sc-if>
+        <sc-if value="{{lm.removable}}" hint-placeholder-val="{{ true }}"><sc-for list="{{chips}}" as="c" hint-placeholder-count="2"><dc-import name="LabelChip" text="{{c.text}}" color="{{c.color}}" icon="{{c.icon}}" source="{{c.source}}" removable="true" on-remove="{{c.remove}}" hint-size="96px,20px"></dc-import></sc-for></sc-if>
+        <span style="position: relative; display: flex">
+          <sc-if value="{{lm.add}}" hint-placeholder-val="{{ true }}"><button type="button" aria-haspopup="menu" aria-expanded="{{menuOpen}}" onClick="{{toggleMenu}}" style="{{addStyle}}"><svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M11 11V5H13V11H19V13H13V19H11V13H5V11H11Z"></path></svg>标签</button></sc-if>
+          <sc-if value="{{lm.cluster}}" hint-placeholder-val="{{ false }}"><button type="button" aria-haspopup="menu" aria-expanded="{{menuOpen}}" onClick="{{toggleMenu}}" title="编辑标签" style="{{clusterStyle}}"><sc-for list="{{chips}}" as="c" hint-placeholder-count="2"><dc-import name="LabelChip" text="{{c.text}}" color="{{c.color}}" icon="{{c.icon}}" source="{{c.source}}" hint-size="96px,20px"></dc-import></sc-for><span style="{{clusterAdd}}"><svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M11 11V5H13V11H19V13H13V19H11V13H5V11H11Z"></path></svg>{{clusterAddText}}</span></button></sc-if>
+          <sc-if value="{{inlineMenu}}" hint-placeholder-val="{{ false }}">
+          <button type="button" aria-label="关闭标签菜单" onClick="{{toggleMenu}}" style="position: fixed; inset: 0; z-index: 9; padding: 0; border: 0; background: transparent; cursor: default"></button>
+          <div role="menu" aria-label="标签" style="position: absolute; top: 24px; left: 0; z-index: 10; width: 240px; box-sizing: border-box; padding: 4px; display: flex; flex-direction: column; background: #FFFFFF; border: 1px solid #E5E5E5; border-radius: 8px; box-shadow: 0 4px 6px -1px rgba(0,0,0,0.1), 0 2px 4px -2px rgba(0,0,0,0.1)">
+            <input type="search" aria-label="搜索或新建标签" placeholder="搜索或新建标签" style="height: 32px; box-sizing: border-box; margin-bottom: 4px; padding: 0 8px; border: 0; border-bottom: 1px solid #E5E5E5; background: transparent; font: inherit; font-size: 13px; color: #0A0A0A; outline: none">
+            <sc-for list="{{menuItems}}" as="o" hint-placeholder-count="9">
+            <button type="button" role="menuitemcheckbox" aria-checked="{{o.checked}}" onClick="{{o.toggle}}" style="display: flex; align-items: center; gap: 8px; height: 32px; padding: 0 8px; border: 0; border-radius: 6px; background: transparent; text-align: left; color: #0A0A0A; font-size: 13px">
+              <span style="width: 16px; flex: none; display: flex"><sc-if value="{{o.on}}" hint-placeholder-val="{{ false }}"><svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M9.9997 15.1709L19.1921 5.97852L20.6063 7.39273L9.9997 17.9993L3.63574 11.6354L5.04996 10.2212L9.9997 15.1709Z"></path></svg></sc-if></span>
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true" style="{{o.iconStyle}}"><path d="{{o.d}}"></path></svg>
+              <span style="flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap">{{o.name}}</span>
+              <sc-if value="{{o.auto}}" hint-placeholder-val="{{ false }}"><span style="flex: none; font-size: 12px; color: #737373">模型标记</span></sc-if>
+            </button>
+            </sc-for>
+            <div style="height: 1px; margin: 4px 0; background: #E5E5E5"></div>
+            <a href="SettingsLabels.dc.html" style="display: flex; align-items: center; gap: 8px; height: 32px; padding: 0 8px; border-radius: 6px; text-decoration: none; color: #0A0A0A; font-size: 13px"><span style="width: 16px; flex: none"></span>管理标签…</a>
+          </div>
+          </sc-if>
+        </span>
+        </sc-if>
+      </div>
+      </sc-if>
+
+      <sc-if value="{{summaryTop}}" hint-placeholder-val="{{ false }}">
+        <section aria-label="AI 总结" style="margin-top: 16px; border: 1px solid #E5E5E5; border-radius: 12px; background: #FAFAFA; padding: 12px 14px; display: flex; flex-direction: column; gap: 8px">
+          <div style="display: flex; align-items: center; gap: 8px">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="{{I.sparkle}}"></path></svg>
+            <span style="font-weight: 600">总结</span>
+            <span style="font-size: 12px; color: #737373">{{summaryMeta}}</span>
+          </div>
+          <sc-if value="{{isThread}}" hint-placeholder-val="{{ true }}">
+            <div style="display: flex; flex-direction: column; gap: 4px">
+              <span style="font-size: 12px; font-weight: 500; color: #737373">进展</span>
+              <ol style="margin: 0; padding-left: 18px; display: flex; flex-direction: column; gap: 4px; line-height: 1.65">
+                <sc-for list="{{progress}}" as="s" hint-placeholder-count="3"><li>{{s.text}}<sc-if value="{{s.src}}" hint-placeholder-val="{{ true }}"> <button type="button" onClick="{{s.go}}" title="展开这一封" style="padding: 0; border: 0; background: transparent; color: #737373; font-size: 12px; text-decoration: underline; text-underline-offset: 2px">{{s.src}}</button></sc-if></li></sc-for>
+              </ol>
+            </div>
+            <sc-if value="{{todo}}" hint-placeholder-val="{{ true }}">
+              <div style="display: flex; flex-direction: column; gap: 4px; padding-top: 8px; border-top: 1px solid #E5E5E5">
+                <span style="font-size: 12px; font-weight: 500; color: #737373">等你处理</span>
+                <span style="line-height: 1.65">{{todo}}</span>
+              </div>
+            </sc-if>
+          </sc-if>
+        </section>
+      </sc-if>
+
+      <div style="{{listStyle}}">
+        <sc-for list="{{msgs}}" as="m" hint-placeholder-count="3">
+          <div style="{{m.rowStyle}}">
+
+            <sc-if value="{{m.closed}}" hint-placeholder-val="{{ true }}">
+              <button type="button" onClick="{{m.toggle}}" aria-expanded="false" style="width: 100%; display: flex; align-items: center; gap: 10px; padding: 12px 0; border: 0; background: transparent; color: #0A0A0A; text-align: left">
+                <span aria-hidden="true" style="{{avatar}}">{{m.initial}}</span>
+                <span style="flex: none; font-weight: 500">{{m.from}}</span>
+                <span style="flex: 1; min-width: 0; display: flex; align-items: center; gap: 4px"><span title="{{m.gistTip}}" style="{{m.snippetStyle}}">{{m.snippet}}</span><sc-if value="{{m.gistMark}}" hint-placeholder-val="{{ true }}"><svg width="10" height="10" viewBox="0 0 24 24" fill="currentColor" role="img" aria-label="AI 要点" style="flex: none; color: #C4C4C4"><path d="{{I.sparkle}}"></path></svg></sc-if></span>
+                <span style="flex: none; font-size: 12px; color: #737373">{{m.when}}</span>
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true" style="flex: none; color: #A3A3A3"><path d="{{I.down}}"></path></svg>
+              </button>
+            </sc-if>
+
+            <sc-if value="{{m.open}}" hint-placeholder-val="{{ false }}">
+              <article style="{{articleStyle}}">
+                <div style="display: flex; align-items: center; gap: 10px">
+                  <span style="flex: 0 1 auto; min-width: 0; display: flex; align-items: center; gap: 10px">
+                    <span aria-hidden="true" style="{{avatar}}">{{m.initial}}</span>
+                    <span style="display: flex; flex-direction: column; gap: 2px; min-width: 0">
+                      <span style="display: flex; align-items: center; gap: 6px; flex-wrap: wrap"><span style="font-weight: 500">{{m.from}}</span><span style="height: 20px; padding: 0 6px; display: inline-flex; align-items: center; border-radius: 4px; background: #F5F5F5; color: #737373; font-size: 12px">{{m.addr}}</span></span>
+                      <span style="display: flex; align-items: center; gap: 6px; flex-wrap: wrap; font-size: 12px; color: #737373"><span>发给 {{m.to}}</span><sc-if value="{{m.trackers}}" hint-placeholder-val="{{ false }}"><span aria-hidden="true">·</span><span title="跟踪像素会在你打开邮件时通知发件人，Godwit 总是拦截它们，信任发件人也不放行" style="display: inline-flex; align-items: center; gap: 3px"><svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="{{I.shield}}"></path></svg>已阻止 {{m.trackers}} 个跟踪器</span></sc-if><sc-if value="{{m.blocked}}" hint-placeholder-val="{{ false }}"><span aria-hidden="true">·</span><span>{{m.blocked}} 张图片未加载</span><button type="button" onClick="{{m.loadImages}}" style="padding: 0; border: 0; background: transparent; color: #0A0A0A; font-size: 12px; text-decoration: underline; text-underline-offset: 2px">加载</button><button type="button" onClick="{{m.loadImages}}" title="以后自动加载这个发件人的图片" style="padding: 0; border: 0; background: transparent; color: #0A0A0A; font-size: 12px; text-decoration: underline; text-underline-offset: 2px">信任发件人</button></sc-if></span>
+                    </span>
+                  </span>
+                  <span style="flex: 1"></span>
+                  <span style="flex: none; font-size: 12px; color: #737373">{{m.when}}</span>
+                  <sc-if value="{{isThread}}" hint-placeholder-val="{{ true }}"><button type="button" onClick="{{m.toggle}}" aria-expanded="true" aria-label="收起这一封" title="收起" style="flex: none; width: 28px; height: 28px; padding: 0; margin-right: -7px; border: 0; border-radius: 6px; background: transparent; color: #737373; display: flex; align-items: center; justify-content: center"><svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="{{I.up}}"></path></svg></button></sc-if>
+                </div>
+
+
+                <sc-if value="{{m.summaryHere}}" hint-placeholder-val="{{ false }}">
+                <section aria-label="AI 总结" style="border: 1px solid #E5E5E5; border-radius: 12px; background: #FAFAFA; padding: 12px 14px; display: flex; flex-direction: column; gap: 8px">
+                <div style="display: flex; align-items: center; gap: 8px">
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="{{I.sparkle}}"></path></svg>
+                  <span style="font-weight: 600">总结</span>
+                  <span style="font-size: 12px; color: #737373">{{summaryMeta}}</span>
+                </div>
+                  <ul style="margin: 0; padding-left: 18px; display: flex; flex-direction: column; gap: 4px; line-height: 1.65">
+                    <sc-for list="{{mail.summary}}" as="line" hint-placeholder-count="2"><li>{{line}}</li></sc-for>
+                  </ul>
+                </section>
+                </sc-if>
+
+                <sc-if value="{{m.translatedNote}}" hint-placeholder-val="{{ false }}">
+                  <div style="display: flex; align-items: center; gap: 8px; font-size: 12px; color: #737373">
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="{{I.translate}}"></path></svg>
+                    <span>由 [MODEL] 翻译为中文</span>
+                    <button type="button" onClick="{{toggleTranslate}}" style="border: 0; background: transparent; padding: 0; color: #0A0A0A; text-decoration: underline; font-size: 12px">显示原文</button>
+                  </div>
+                </sc-if>
+
+                <sc-if value="{{m.card}}" hint-placeholder-val="{{ false }}">
+                  <div style="border: 1px solid #E5E5E5; border-radius: 12px; padding: 12px 14px; display: flex; align-items: center; gap: 16px; box-shadow: 0 1px 2px rgba(0,0,0,0.04)">
+                    <span style="display: flex; flex-direction: column; gap: 2px; flex: 1; min-width: 0">
+                      <span style="font-size: 12px; color: #737373">{{m.card.label}} · {{m.card.source}}</span>
+                      <span style="font-family: 'Geist Mono', monospace; font-size: 22px; letter-spacing: 3px">{{m.card.value}}</span>
+                      <span style="font-size: 12px; color: #737373">{{m.card.hint}}</span>
+                    </span>
+                    <button type="button" style="flex: none; height: 32px; padding: 0 14px; border: 0; border-radius: 8px; background: #171717; color: #FAFAFA; font-weight: 500">{{m.card.action}}</button>
+                  </div>
+                </sc-if>
+
+                <div style="line-height: 1.75; display: flex; flex-direction: column; gap: 10px">
+                  <sc-for list="{{m.body}}" as="p" hint-placeholder-count="3"><p style="margin: 0">{{p}}</p></sc-for>
+                </div>
+
+                <sc-if value="{{m.attachment}}" hint-placeholder-val="{{ false }}">
+                  <div style="display: flex; align-items: center; gap: 10px; width: 260px; box-sizing: border-box; padding: 8px 10px; border: 1px solid #E5E5E5; border-radius: 8px">
+                    <span style="flex: none; width: 28px; height: 34px; border-radius: 4px; background: #F5F5F5; display: flex; align-items: center; justify-content: center; font-size: 10px; color: #737373">PDF</span>
+                    <span style="display: flex; flex-direction: column; min-width: 0"><span style="overflow: hidden; text-overflow: ellipsis; white-space: nowrap">{{m.attachment}}</span><span style="font-size: 12px; color: #737373">218 KB</span></span>
+                  </div>
+                </sc-if>
+              </article>
+            </sc-if>
+          </div>
+        </sc-for>
+      </div>
+
+
+
+    </div>
+  </div>
+  <div role="region" aria-label="回复" style="position: absolute; z-index: 2; left: 0; right: 0; bottom: 0; border-top: 1px solid rgba(229,229,229,0.5); padding: 10px 28px 12px; background: rgba(255,255,255,0.72); backdrop-filter: saturate(180%) blur(16px); -webkit-backdrop-filter: saturate(180%) blur(16px)">
+    <div style="max-width: 720px; display: flex; flex-direction: column; gap: 8px">
+      <sc-if value="{{hasQuick}}" hint-placeholder-val="{{ true }}">
+        <div role="group" aria-label="即时回复" style="display: flex; align-items: center; gap: 4px; flex-wrap: wrap">
+          <sc-for list="{{quick}}" as="q" hint-placeholder-count="3">
+            <a href="Compose.dc.html" title="{{q.text}}" style="height: 24px; padding: 0 8px; display: inline-flex; align-items: center; border-radius: 6px; background: #F5F5F5; color: #404040; text-decoration: none; font-size: 12px">{{q.kind}}</a>
+          </sc-for>
+        </div>
+      </sc-if>
+      <label style="position: relative; display: flex; align-items: center; gap: 8px; height: 40px; padding: 0 6px 0 12px; border: 1px solid #E5E5E5; border-radius: 8px; background: #FFFFFF">
+        <span style="position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0)">问 Wit</span>
+        <input type="text" placeholder="{{placeholder}}" style="flex: 1; min-width: 0; height: 100%; border: 0; outline: none; background: transparent; font: inherit; color: #0A0A0A">
+        <a href="Ask.dc.html" aria-label="交给 Wit" title="交给 Wit" style="flex: none; width: 28px; height: 28px; border-radius: 6px; color: #737373; display: flex; align-items: center; justify-content: center"><svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="{{I.send}}"></path></svg></a>
+      </label>
+    </div>
+  </div>
+
+</section>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"mail":{"editor":null},"summary":{"editor":null},"translated":{"editor":null},"quick":{"editor":null},"labels":{"editor":null},"labelChips":{"editor":null},"labelMenuItems":{"editor":null},"labelMenuOpen":{"editor":null},"onToggleLabelMenu":{"editor":null},"radius":{"editor":null},"labelMode":{"editor":"enum","options":["both","toolbar","inline","chip"],"default":"both"},"onToggleSummary":{"editor":null},"onToggleTranslate":{"editor":null},"$preview":{"width":1100,"height":900}}'>
+class Component extends DCLogic {
+  constructor(props) {
+    super(props);
+    this.state = { open: {}, summary: false, translated: false, bmenu: null, loaded: {} };
+  }
+  renderVals() {
+    var self = this;
+    var I = {
+      reply: 'M11 20L1 12L11 4V9C16.5228 9 21 13.4772 21 19C21 19.2727 20.9891 19.5428 20.9677 19.81C19.5055 17.0364 16.6381 15.119 13.313 15.0053L13 15H10.9999L11 20ZM8.99986 13H10.9999L13.0341 13.0003L13.3814 13.0065C14.6657 13.0504 15.9053 13.3165 17.0568 13.7734C15.5898 12.0749 13.4204 11 11 11H9V8.16125L4.20156 12L8.99992 15.8387L8.99986 13Z',
+      replyAll: 'M14 4.5V9C19.5228 9 24 13.4772 24 19C24 19.2727 23.9891 19.5428 23.9677 19.81C22.5055 17.0364 19.6381 15.119 16.313 15.0053L16 15H13.9999L14 19.5L6 12L14 4.5ZM8 4.5V7.237L2.92 12L7.999 16.761L8 19.5L0 12L8 4.5ZM12 9.11646L8.92423 12L11.9999 14.8834L11.9999 13L16.0341 13.0003L16.3814 13.0065C17.6657 13.0504 18.9053 13.3165 20.0568 13.7734C18.5898 12.0749 16.4204 11 14 11H12V9.11646Z',
+      archive: 'M3 10H2V4.00293C2 3.44903 2.45531 3 2.9918 3H21.0082C21.556 3 22 3.43788 22 4.00293V10H21V20.0015C21 20.553 20.5551 21 20.0066 21H3.9934C3.44476 21 3 20.5525 3 20.0015V10ZM19 10H5V19H19V10ZM4 5V8H20V5H4ZM9 12H15V14H9V12Z',
+      spam: 'M15.936 2.50098L21.501 8.06595V15.936L15.936 21.501H8.06595L2.50098 15.936V8.06595L8.06595 2.50098H15.936ZM15.1076 4.50098H8.89437L4.50098 8.89437V15.1076L8.89437 19.501H15.1076L19.501 15.1076V8.89437L15.1076 4.50098ZM11.0002 15.0002H13.0002V17.0002H11.0002V15.0002ZM11.0002 7.00024H13.0002V13.0002H11.0002V7.00024Z',
+      del: 'M17 6H22V8H20V21C20 21.5523 19.5523 22 19 22H5C4.44772 22 4 21.5523 4 21V8H2V6H7V3C7 2.44772 7.44772 2 8 2H16C16.5523 2 17 2.44772 17 3V6ZM18 8H6V20H18V8ZM9 11H11V17H9V11ZM13 11H15V17H13V11ZM9 4V6H15V4H9Z',
+      star: 'M12.0006 18.26L4.94715 22.2082L6.52248 14.2799L0.587891 8.7918L8.61493 7.84006L12.0006 0.5L15.3862 7.84006L23.4132 8.7918L17.4787 14.2799L19.054 22.2082L12.0006 18.26ZM12.0006 15.968L16.2473 18.3451L15.2988 13.5717L18.8719 10.2674L14.039 9.69434L12.0006 5.27502L9.96214 9.69434L5.12921 10.2674L8.70231 13.5717L7.75383 18.3451L12.0006 15.968Z',
+      tag: 'M10.9042 2.10025L20.8037 3.51446L22.2179 13.414L13.0255 22.6063C12.635 22.9969 12.0019 22.9969 11.6113 22.6063L1.71184 12.7069C1.32131 12.3163 1.32131 11.6832 1.71184 11.2926L10.9042 2.10025ZM11.6113 4.22157L3.83316 11.9997L12.3184 20.485L20.0966 12.7069L19.036 5.28235L11.6113 4.22157ZM13.7327 10.5855C12.9516 9.80448 12.9516 8.53815 13.7327 7.7571C14.5137 6.97606 15.78 6.97606 16.5611 7.7571C17.3421 8.53815 17.3421 9.80448 16.5611 10.5855C15.78 11.3666 14.5137 11.3666 13.7327 10.5855Z',
+      more: 'M4.5 10.5C3.675 10.5 3 11.175 3 12C3 12.825 3.675 13.5 4.5 13.5C5.325 13.5 6 12.825 6 12C6 11.175 5.325 10.5 4.5 10.5ZM19.5 10.5C18.675 10.5 18 11.175 18 12C18 12.825 18.675 13.5 19.5 13.5C20.325 13.5 21 12.825 21 12C21 11.175 20.325 10.5 19.5 10.5ZM12 10.5C11.175 10.5 10.5 11.175 10.5 12C10.5 12.825 11.175 13.5 12 13.5C12.825 13.5 13.5 12.825 13.5 12C13.5 11.175 12.825 10.5 12 10.5Z',
+      summary: 'M21 8V20.9932C21 21.5501 20.5552 22 20.0066 22H3.9934C3.44495 22 3 21.556 3 21.0082V2.9918C3 2.45531 3.4487 2 4.00221 2H14.9968L21 8ZM19 9H14V4H5V20H19V9ZM8 7H11V9H8V7ZM8 11H16V13H8V11ZM8 15H16V17H8V15Z',
+      translate: 'M5 15V17C5 18.0544 5.81588 18.9182 6.85074 18.9945L7 19H10V21H7C4.79086 21 3 19.2091 3 17V15H5ZM18 10L22.4 21H20.245L19.044 18H14.954L13.755 21H11.601L16 10H18ZM17 12.8852L15.753 16H18.245L17 12.8852ZM8 2V4H12V11H8V14H6V11H2V4H6V2H8ZM17 3C19.2091 3 21 4.79086 21 7V9H19V7C19 5.89543 18.1046 5 17 5H14V3H17ZM6 6H4V9H6V6ZM10 6H8V9H10V6Z',
+      sparkle: 'M14 4.4375C15.3462 4.4375 16.4375 3.34619 16.4375 2H17.5625C17.5625 3.34619 18.6538 4.4375 20 4.4375V5.5625C18.6538 5.5625 17.5625 6.65381 17.5625 8H16.4375C16.4375 6.65381 15.3462 5.5625 14 5.5625V4.4375ZM1 11C4.31371 11 7 8.31371 7 5H9C9 8.31371 11.6863 11 15 11V13C11.6863 13 9 15.6863 9 19H7C7 15.6863 4.31371 13 1 13V11ZM4.87601 12C6.18717 12.7276 7.27243 13.8128 8 15.124 8.72757 13.8128 9.81283 12.7276 11.124 12 9.81283 11.2724 8.72757 10.1872 8 8.87601 7.27243 10.1872 6.18717 11.2724 4.87601 12ZM17.25 14C17.25 15.7949 15.7949 17.25 14 17.25V18.75C15.7949 18.75 17.25 20.2051 17.25 22H18.75C18.75 20.2051 20.2051 18.75 22 18.75V17.25C20.2051 17.25 18.75 15.7949 18.75 14H17.25Z',
+      external: 'M10 6V8H5V19H16V14H18V20C18 20.5523 17.5523 21 17 21H4C3.44772 21 3 20.5523 3 20V7C3 6.44772 3.44772 6 4 6H10ZM21 3V11H19L18.9999 6.413L11.2071 14.2071L9.79289 12.7929L17.5849 5H13V3H21Z',
+      down: 'M11.9999 13.1714L16.9497 8.22168L18.3639 9.63589L11.9999 15.9999L5.63599 9.63589L7.0502 8.22168L11.9999 13.1714Z',
+      up: 'M11.9999 10.8284L7.0502 15.7782L5.63599 14.364L11.9999 8L18.3639 14.364L16.9497 15.7782L11.9999 10.8284Z',
+      send: 'M13.0001 7.82843V20H11.0001V7.82843L5.63614 13.1924L4.22192 11.7782L12.0001 4L19.7783 11.7782L18.3641 13.1924L13.0001 7.82843Z',
+      copy: 'M6.9998 6V3C6.9998 2.44772 7.44752 2 7.9998 2H19.9998C20.5521 2 20.9998 2.44772 20.9998 3V17C20.9998 17.5523 20.5521 18 19.9998 18H16.9998V20.9991C16.9998 21.5519 16.5499 22 15.993 22H4.00666C3.45059 22 3 21.5554 3 20.9991L3.0026 7.00087C3.0027 6.44811 3.45264 6 4.00942 6H6.9998ZM5.00242 8L5.00019 20H14.9998V8H5.00242ZM8.9998 6H16.9998V16H18.9998V4H8.9998V6Z',
+      shield: 'M3.78307 2.82598L12 1L20.2169 2.82598C20.6745 2.92766 21 3.33347 21 3.80217V13.7889C21 15.795 19.9974 17.6684 18.3282 18.7812L12 23L5.6718 18.7812C4.00261 17.6684 3 15.795 3 13.7889V3.80217C3 3.33347 3.32553 2.92766 3.78307 2.82598ZM5 4.60434V13.7889C5 15.1263 5.6684 16.3752 6.7812 17.1171L12 20.5963L17.2188 17.1171C18.3316 16.3752 19 15.1263 19 13.7889V4.60434L12 3.04879L5 4.60434Z',
+      image: 'M2.9918 21C2.44405 21 2 20.5551 2 20.0066V3.9934C2 3.44476 2.45531 3 2.9918 3H21.0082C21.556 3 22 3.44495 22 3.9934V20.0066C22 20.5552 21.5447 21 21.0082 21H2.9918ZM20 15V5H4V19L14 9L20 15ZM20 17.8284L14 11.8284L6.82843 19H20V17.8284ZM8 11C6.89543 11 6 10.1046 6 9C6 7.89543 6.89543 7 8 7C9.10457 7 10 7.89543 10 9C10 10.1046 9.10457 11 8 11Z'
+    };
+    // standalone sample; inside Main the selected mail comes in as `mail`
+    var SAMPLE = {
+      from: 'Lena Park', addr: 'lena@northwind.example', initial: 'L', date: '昨天 下午4:22',
+      subject: 'Q4 联合推广方案 · 修订版', tag: '', card: null, blocked: 0, attachment: 'Q4-proposal-v2.pdf',
+      body: ['Hi,', '按上周电话里聊的，我把方案改成了 11 月启动：启动日期 11 月 4 日，网络研讨会放在 11 月第二周的周三下午，预算与 10 月版一致 [YOUR BUDGET]。', '如果日期没问题，回我一句就行，我这边开始排物料。', 'Best, Lena'],
+      summary: ['Lena 把联合推广从 10 月挪到 11 月，网络研讨会定在第二周。', '预算不变；最后一封在等你确认日期。'],
+      translation: ['（原文已是中文，无需翻译）'],
+      progress: [{ text: 'Lena 提议 10 月底上线联合推广', src: 0 }, { text: '你回复 10 月排不开，希望顺延到 11 月', src: 1 }, { text: 'Lena 改成 11 月 4 日启动，研讨会放在第二周，预算不变', src: 2 }],
+      todo: '回复 Lena，确认 11 月 4 日启动是否可行',
+      gist: '改成 11 月 4 日启动，等你确认日期',
+      thread: [
+        { day: '10 月 13 日 周二', from: 'Lena Park', addr: 'lena@northwind.example', initial: 'L', time: '下午4:18', gist: '提议 10 月底上线联合推广，问时间是否合适', body: ['Hi，附上 Q4 联合推广的第一版方案，主要想在 10 月底上线，你看下时间是否合适。'] },
+        { day: '10 月 20 日 周二', from: '我', addr: 'you@example.com', initial: '我', time: '下午4:20', gist: '10 月排不开，问能否顺延到 11 月', body: ['谢谢 Lena，10 月我们这边排不开，能不能顺延到 11 月？'] }
+      ]
+    };
+    var p = this.props;
+    var mail = p.mail || SAMPLE;
+    var summaryOn = p.summary !== undefined && p.summary !== null ? (p.summary === true || p.summary === 'true') : this.state.summary;
+    var translatedOn = p.translated !== undefined && p.translated !== null ? (p.translated === true || p.translated === 'true') : this.state.translated;
+    var quick = p.quick || [{ kind: '日期没问题', text: '日期没问题，就按 11 月 4 日启动。' }, { kind: '同意，但研讨会晚一周', text: '可以，但研讨会能否晚一周？' }, { kind: '稍后答复', text: '收到，我和团队对一下，周五前回复你。' }];
+    var dm = /^(.*\S)\s+(\S*\d+:\d+)$/.exec(mail.date || '');
+    var thread = (mail.thread || []).concat([{
+      day: dm ? dm[1] : (mail.date || '今天'), time: dm ? dm[2] : '',
+      from: mail.from, addr: mail.addr, initial: mail.initial, current: true, gist: mail.gist,
+      body: translatedOn ? mail.translation : mail.body
+    }]);
+    var last = thread.length - 1;
+    var key = mail.subject + '|';
+    var open = this.state.open;
+    var FLIP = 'matrix(-1 0 0 1 24 0)';
+    var mode = p.labelMode || 'both';
+    var labelsOn = p.labels === true || p.labels === 'true';
+    var menuShown = p.labelMenuOpen === true || p.labelMenuOpen === 'true';
+    var tbBtn = function (on) { return 'width: 32px; height: 32px; padding: 0; border: 0; border-radius: 8px; color: #0A0A0A; display: flex; align-items: center; justify-content: center; background: ' + (on ? '#F5F5F5' : 'transparent'); };
+    var b = function (label, d, tf) { return { label: label, d: d, tf: tf || '', onClick: function () {}, style: tbBtn(false) }; };
+    // option A opens the label menu from the toolbar's tag button
+    var tagBtn = Object.assign(b('标签', I.tag), mode === 'toolbar' && labelsOn ? { onClick: function () { if (p.onToggleLabelMenu) p.onToggleLabelMenu(); }, style: tbBtn(menuShown) } : {});
+    var btn = function (on) { return 'height: 32px; padding: 0 10px; border: 0; border-radius: 8px; color: #0A0A0A; display: flex; align-items: center; gap: 6px; background: ' + (on ? '#F5F5F5' : 'transparent'); };
+    return {
+      I: I,
+      mail: mail,
+      radius: p.radius || '0px',
+      codeTag: mail.tag && mail.tag.code ? mail.tag.code : '',
+      count: thread.length,
+      isThread: thread.length > 1,
+      single: thread.length === 1,
+      summaryTop: summaryOn && thread.length > 1,
+      listStyle: 'margin-top: ' + (thread.length > 1 ? '16px' : '8px') + '; display: flex; flex-direction: column',
+      articleStyle: 'padding: ' + (thread.length > 1 ? '12px' : '4px') + ' 0 20px; display: flex; flex-direction: column; gap: 14px',
+      todo: mail.todo || '',
+      progress: (mail.progress || (mail.summary || []).map(function (t) { return { text: t }; })).map(function (x) {
+        var t = x.src !== undefined ? thread[x.src] : null;
+        return { text: x.text, src: t ? '（' + t.day + ' · ' + t.from + '）' : '',
+          go: function () { var o = Object.assign({}, self.state.open); o[key + x.src] = true; self.setState({ open: o }); } };
+      }),
+      summary: summaryOn,
+      summaryMeta: '[MODEL]' + (thread.length > 1 ? ' · 基于 ' + thread.length + ' 封往来' : ''),
+      summaryPressed: summaryOn ? 'true' : 'false',
+      translatePressed: translatedOn ? 'true' : 'false',
+      summaryBtn: btn(summaryOn),
+      translateBtn: btn(translatedOn),
+      toggleSummary: function () { if (p.onToggleSummary) p.onToggleSummary(); else self.setState({ summary: !summaryOn }); },
+      toggleTranslate: function () { if (p.onToggleTranslate) p.onToggleTranslate(); else self.setState({ translated: !translatedOn }); },
+      avatar: 'flex: none; width: 32px; height: 32px; border-radius: 8px; background: #F5F5F5; color: #171717; display: flex; align-items: center; justify-content: center; font-weight: 600; font-size: 13px',
+      iconBtn: 'width: 32px; height: 32px; padding: 0; border: 0; border-radius: 8px; background: transparent; color: #0A0A0A; display: flex; align-items: center; justify-content: center',
+      smallIconBtn: 'width: 28px; height: 28px; padding: 0; border: 0; border-radius: 6px; background: transparent; color: #525252; display: flex; align-items: center; justify-content: center',
+      leftGroups: [
+        { label: '回复', items: [b('回复', I.reply), b('全部回复', I.replyAll), b('转发', I.reply, FLIP)] },
+        { label: '整理', sep: true, items: (mode === 'both' || mode === 'toolbar' ? [b('加星标', I.star), tagBtn] : [b('加星标', I.star)]).concat([b('归档', I.archive), b('移到垃圾邮件', I.spam), b('删除', I.del)]) },
+        { label: '更多', items: [b('更多：保存、打印', I.more)] }
+      ],
+      msgs: thread.map(function (m, i) {
+        var k = key + i;
+        var isOpen = open[k] !== undefined ? open[k] : i === last;
+        return {
+          when: m.time ? m.day + ' ' + m.time : m.day,
+          rowStyle: i === 0 ? '' : 'border-top: 1px solid #EAEAEA',
+          from: m.from, addr: m.addr, initial: m.initial, time: m.time, to: m.from === '我' ? mail.from : '我',
+          snippet: m.gist || m.body[0], body: m.body,
+          gistTip: m.gist ? 'AI 要点' : '',
+          gistMark: !!m.gist,
+          snippetStyle: 'flex: 0 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: ' + (m.gist ? '#525252' : '#737373'),
+          card: m.current ? mail.card : null, blocked: m.current && !self.state.loaded[k] ? mail.blocked : 0,
+          trackers: m.current ? mail.trackers || 0 : 0,
+          trackerMenu: self.state.bmenu === k + 't', trackerOpen: self.state.bmenu === k + 't' ? 'true' : 'false',
+          toggleTracker: function () { self.setState({ bmenu: self.state.bmenu === k + 't' ? null : k + 't' }); },
+          blockedMenu: self.state.bmenu === k, blockedOpen: self.state.bmenu === k ? 'true' : 'false',
+          toggleBlocked: function () { self.setState({ bmenu: self.state.bmenu === k ? null : k }); },
+          loadImages: function () { var l = Object.assign({}, self.state.loaded); l[k] = true; self.setState({ loaded: l, bmenu: null }); }, attachment: m.current ? mail.attachment : '',
+          translatedNote: m.current && translatedOn,
+          summaryHere: m.current && thread.length === 1 && summaryOn,
+          open: isOpen, closed: !isOpen,
+          toggle: function () { var o = Object.assign({}, self.state.open); o[k] = !isOpen; self.setState({ open: o }); }
+        };
+      }),
+      quick: quick,
+      hasQuick: quick.length > 0,
+      labelsOn: p.labels === true || p.labels === 'true',
+      metaRow: thread.length > 1 || p.labels === true || p.labels === 'true',
+      chips: p.labelChips || [],
+      menuItems: p.labelMenuItems || [],
+      lm: { removable: mode !== 'chip', add: mode === 'both' || mode === 'inline', cluster: mode === 'chip' },
+      toolbarMenu: labelsOn && menuShown && mode === 'toolbar',
+      inlineMenu: labelsOn && menuShown && mode !== 'toolbar',
+      tagLeft: '163px',
+      clusterStyle: 'display: inline-flex; align-items: center; gap: 4px; padding: 2px 4px 2px 2px; margin: -2px 0; border: 0; border-radius: 6px; background: ' + (menuShown ? '#F5F5F5' : 'transparent'),
+      clusterAdd: 'display: inline-flex; align-items: center; gap: 4px; color: #A3A3A3; font-size: 12px',
+      clusterAddText: (p.labelChips || []).length ? '' : '添加标签',
+      menuOpen: p.labelMenuOpen === true || p.labelMenuOpen === 'true' ? 'true' : 'false',
+      toggleMenu: function () { if (p.onToggleLabelMenu) p.onToggleLabelMenu(); },
+      addStyle: 'height: 20px; display: flex; align-items: center; gap: 4px; padding: 0 6px; border: 1px solid #E5E5E5; border-radius: 4px; background: #FFFFFF; color: #737373; font-size: 12px',
+      placeholder: '让 Wit 帮你回复 ' + mail.from + '…'
+    };
+  }
+}
+</script>
+</body>
+</html>

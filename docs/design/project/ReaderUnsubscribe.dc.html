@@ -1,0 +1,111 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<title>退订入口 · 三个方案</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600&amp;family=Noto+Sans+SC:wght@400;500;600&amp;display=swap" rel="stylesheet">
+<style>
+body{margin:0;background:#FFFFFF}
+a{color:#0A0A0A}a:hover{color:#404040}
+button{font:inherit;cursor:pointer}
+</style>
+</helmet>
+<div style="width: 1720px; height: 640px; box-sizing: border-box; padding: 40px; display: grid; grid-template-columns: repeat(3, 1fr); gap: 40px; background: #FFFFFF; color: #0A0A0A; font-family: Geist, 'Noto Sans SC', system-ui, sans-serif; font-size: 14px; line-height: 1.5">
+
+  <sc-for list="{{options}}" as="o" hint-placeholder-count="3">
+  <section aria-label="{{o.title}}" style="display: flex; flex-direction: column; gap: 16px; min-width: 0">
+    <div style="display: flex; flex-direction: column; gap: 4px">
+      <h3 style="margin: 0; font-size: 16px; font-weight: 600">{{o.title}}</h3>
+      <p style="margin: 0; font-size: 13px; color: #737373">{{o.note}}</p>
+    </div>
+
+    <div style="position: relative; height: 480px; border: 1px solid #E5E5E5; border-radius: 12px; overflow: hidden; background: #FFFFFF">
+      <div role="toolbar" aria-label="邮件操作" style="display: flex; align-items: center; gap: 2px; padding: 6px 16px; border-bottom: 1px solid rgba(229,229,229,0.5)">
+        <sc-for list="{{icons}}" as="i" hint-placeholder-count="5">
+          <button type="button" aria-label="{{i.label}}" style="width: 32px; height: 32px; display: inline-flex; align-items: center; justify-content: center; border: 0; border-radius: 6px; background: transparent; color: #404040"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="{{i.d}}"></path></svg></button>
+        </sc-for>
+        <span style="margin-left: auto; display: flex; align-items: center; gap: 2px">
+          <sc-if value="{{o.inToolbar}}" hint-placeholder-val="{{ false }}">
+          <button type="button" style="height: 32px; display: inline-flex; align-items: center; gap: 6px; padding: 0 10px; border: 0; border-radius: 6px; background: #F5F5F5; color: #0A0A0A; font-size: 13px"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="{{unsubIcon}}"></path></svg>退订</button>
+          </sc-if>
+          <button type="button" style="height: 32px; padding: 0 10px; border: 0; border-radius: 6px; background: transparent; color: #404040; font-size: 13px">总结</button>
+          <button type="button" style="height: 32px; padding: 0 10px; border: 0; border-radius: 6px; background: transparent; color: #404040; font-size: 13px">翻译</button>
+        </span>
+      </div>
+
+      <div style="padding: 20px 24px; display: flex; flex-direction: column; gap: 14px">
+        <div style="display: flex; flex-direction: column; gap: 8px">
+          <h2 style="margin: 0; font-size: 18px; font-weight: 600; line-height: 1.35">本周精选：10 款值得一试的效率工具</h2>
+          <div style="display: flex; align-items: center; gap: 4px; flex-wrap: wrap">
+            <span style="font-size: 12px; color: #737373">3 封往来</span>
+            <span aria-hidden="true" style="width: 1px; height: 12px; margin: 0 4px; background: #E5E5E5"></span>
+            <span style="display: inline-flex; align-items: center; height: 22px; padding: 0 8px; border: 1px solid #E5E5E5; border-radius: 6px; font-size: 12px">订阅</span>
+            <button type="button" style="height: 22px; padding: 0 6px; border: 0; border-radius: 6px; background: transparent; color: #737373; font-size: 12px">+ 标签</button>
+            <sc-if value="{{o.inMeta}}" hint-placeholder-val="{{ false }}">
+            <span style="margin-left: auto; display: inline-flex; align-items: center"><button type="button" style="height: 22px; display: inline-flex; align-items: center; gap: 4px; padding: 0 8px; border: 0; border-radius: 6px; background: #F5F5F5; color: #0A0A0A; font-size: 12px"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="{{unsubIcon}}"></path></svg>退订</button></span>
+            </sc-if>
+          </div>
+        </div>
+
+        <div style="display: flex; align-items: center; gap: 10px; padding: 6px 0">
+          <span aria-hidden="true" style="width: 32px; height: 32px; flex: none; border-radius: 8px; background: #E0E7FF; color: #4338CA; display: flex; align-items: center; justify-content: center; font-weight: 600; font-size: 13px">P</span>
+          <span style="font-weight: 500">Product Weekly</span>
+          <span style="flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: #737373">上周你可能错过的 5 个新工具……</span>
+          <span style="font-size: 12px; color: #737373">10/18</span>
+        </div>
+        <div aria-hidden="true" style="height: 1px; background: #E5E5E5"></div>
+
+        <div style="display: flex; align-items: flex-start; gap: 10px">
+          <span aria-hidden="true" style="width: 32px; height: 32px; flex: none; margin-top: 6px; border-radius: 8px; background: #E0E7FF; color: #4338CA; display: flex; align-items: center; justify-content: center; font-weight: 600; font-size: 13px">P</span>
+          <div style="flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px">
+            <div style="display: flex; align-items: center; gap: 4px; flex-wrap: wrap"><span style="font-weight: 500">Product Weekly</span><span style="color: #737373">&lt;hello@productweekly.com&gt;</span></div>
+            <div style="display: flex; align-items: center; gap: 6px; flex-wrap: wrap; font-size: 12px; color: #737373">发给 我
+              <sc-if value="{{o.inHeader}}" hint-placeholder-val="{{ false }}">
+              <span>· 订阅邮件</span><button type="button" style="height: 20px; padding: 0 2px; border: 0; background: transparent; color: #0A0A0A; font-size: 12px; text-decoration: underline; text-underline-offset: 2px">退订</button>
+              </sc-if>
+            </div>
+          </div>
+          <span style="font-size: 12px; color: #737373; margin-top: 8px">周一 09:12</span>
+        </div>
+
+        <div style="display: flex; flex-direction: column; gap: 8px; padding: 6px 0 0 42px; color: #404040">
+          <p style="margin: 0">你好，这是本周的效率工具精选。</p>
+          <p style="margin: 0">1. Linear 推出了新的路线图视图，适合跨团队排期……</p>
+          <p style="margin: 0">2. Raycast 的 AI 命令现在支持本地模型……</p>
+        </div>
+      </div>
+    </div>
+  </section>
+  </sc-for>
+
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":1720,"height":640}}'>
+class Component extends DCLogic {
+  renderVals() {
+    return {
+      unsubIcon: "M20 11V6H4v12h7 M4 7l8 6 8-6 M18 14a3.5 3.5 0 100 7 3.5 3.5 0 000-7z M15.5 20l5-5",
+      icons: [
+        { label: "回复", d: "M9 14L4 9l5-5 M4 9h10.5a5.5 5.5 0 010 11H11" },
+        { label: "转发", d: "M15 14l5-5-5-5 M20 9H9.5a5.5 5.5 0 000 11H13" },
+        { label: "归档", d: "M4 4h16v4H4z M5 8v12h14V8 M10 12h4" },
+        { label: "删除", d: "M4 7h16 M10 11v6 M14 11v6 M6 7l1 13h10l1-13 M9 7V4h6v3" },
+        { label: "更多操作", d: "M5 12h.01 M12 12h.01 M19 12h.01" }
+      ],
+      options: [
+        { title: "A · 会话标题下的元信息行", note: "已选定。整串一个，跟在标签后面靠右，只有「退订」按钮。退订是对整个订阅的，放在会话级的位置最贴切。", inMeta: true },
+        { title: "B · 顶部工具栏", note: "和总结、翻译并排，只在会话里有可退订的邮件时出现。随时可见，但工具栏会变挤。", inToolbar: true },
+        { title: "C · 最新一封的信头第二行", note: "像「N 张图片未加载」那样跟在「发给 我」后面，只出现在最新一封可退订的邮件上，一行轻量文字链接。", inHeader: true }
+      ]
+    };
+  }
+}
+</script>
+</body>
+</html>

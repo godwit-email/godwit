@@ -1,0 +1,59 @@
+<!-- @dsCard group="Patterns" height=480 width=900 subtitle="Sidebar, grouped cards, rows" -->
+<!doctype html>
+<html><head><meta charset="utf-8"><style>
+body{margin:0;background:var(--background);color:var(--foreground);font-family:Geist,"PingFang SC",system-ui,sans-serif;font-size:14px}
+button,select,input{font:inherit;color:inherit}
+.wrap{display:flex;width:900px;height:480px;box-sizing:border-box;border:1px solid var(--outline);border-radius:var(--radius-xl);overflow:hidden}
+aside{flex:0 0 248px;box-sizing:border-box;padding:var(--space-3);background:var(--sidebar);border-right:1px solid var(--border);display:flex;flex-direction:column;gap:var(--space-0-5)}
+.t{padding:4px 6px 10px;font-size:18px;font-weight:600}
+.search{height:32px;display:flex;align-items:center;padding:0 10px;margin-bottom:6px;border-radius:var(--radius-lg);background:var(--window);color:var(--muted)}
+.g{padding:14px 8px 6px;font-size:12px;color:var(--muted)}
+.g.first{padding-top:4px}
+.r{display:flex;align-items:center;gap:8px;height:32px;padding:0 8px;border-radius:var(--radius-lg)}
+.r.on{background:var(--sidebar-selected)}
+.dot{width:6px;height:6px;border-radius:50%;margin-left:auto}
+.content{flex:1;min-width:0;overflow:hidden}
+main{max-width:760px;margin:0 auto;padding:32px;display:flex;flex-direction:column;gap:32px}
+h1{margin:0;font-size:29px;line-height:1.25;font-weight:600}
+.d{color:var(--muted)}
+h2{margin:0;font-size:14px;font-weight:600}
+.grp{display:flex;flex-direction:column;gap:10px}
+.card{border:1px solid var(--border);border-radius:var(--radius-xl);overflow:hidden}
+.card>div{margin-top:-1px}
+.row{display:flex;align-items:center;justify-content:space-between;gap:24px;padding:8px 16px;border-top:1px solid var(--border)}
+.lab{display:flex;flex-direction:column;gap:2px}
+.lab>span:first-child{font-weight:500}
+.s{font-size:12px;color:var(--muted)}
+.sw{flex:none;width:32px;height:18px;padding:2px;box-sizing:border-box;border:0;border-radius:var(--radius-full);display:flex;align-items:center;background:var(--input)}
+.sw[aria-checked="true"]{background:var(--primary);justify-content:flex-end}
+.sw span{width:14px;height:14px;border-radius:50%;background:#fff;box-shadow:0 1px 2px rgba(0,0,0,.2)}
+select{min-width:200px;height:32px;padding:0 10px;border:1px solid var(--input);border-radius:var(--radius-lg);background:var(--background)}
+.btn{height:32px;padding:0 12px;border:1px solid var(--input);border-radius:var(--radius-lg);background:var(--background)}
+</style></head><body>
+<div class="wrap">
+<aside aria-label="设置">
+<div class="t">设置</div>
+<div class="search">搜索设置</div>
+<div class="g first">账户</div>
+<div class="r"><span style="flex:1">you@example.com</span><span class="dot" style="background:var(--success)"></span></div>
+<div class="r"><span style="flex:1">work@company.example</span><span class="dot" style="background:var(--attention)"></span></div>
+<div class="r" style="color:var(--muted)">+ 添加账户</div>
+<div class="g">应用</div>
+<div class="r on">通用</div>
+<div class="r">模型服务</div>
+<div class="r">扩展</div>
+</aside>
+<div class="content"><main>
+<div class="lab"><h1>通用</h1><span class="d">外观、语言和应用行为。</span></div>
+<section class="grp">
+<h2>启动与窗口</h2>
+<div class="card"><div>
+<label class="row"><span class="lab"><span>开机时自动启动</span><span class="s">登录后在后台启动 Godwit</span></span><button type="button" role="switch" aria-checked="true" class="sw"><span></span></button></label>
+<label class="row"><span class="lab"><span>界面密度</span></span><select><option>紧凑（默认）</option><option>标准</option></select></label>
+<div class="row"><span class="lab"><span>本地占用</span><span class="s">邮件缓存和附件</span></span><span style="display:flex;align-items:center;gap:12px"><span class="s">1.2 GB</span><button type="button" class="btn">清理附件缓存</button></span></div>
+</div></div>
+</section>
+</main></div>
+</div>
+<script>/* static preview */</script>
+</body></html>

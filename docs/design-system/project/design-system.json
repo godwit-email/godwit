@@ -1,0 +1,50 @@
+{
+  "v": 3,
+  "assetGroups": {
+    "Logos": {
+      "files": {
+        "logo.svg": {
+          "blob": "1e101e1f6c38895560139b6d2b4170e7",
+          "name": "logo.svg",
+          "size": 1747,
+          "type": "image/svg+xml"
+        },
+        "app-icon.svg": {
+          "name": "app-icon.svg",
+          "blob": "36e7f086b841aea9dbeeab186bbf78b4",
+          "size": 1865,
+          "type": "image/svg+xml"
+        }
+      },
+      "name": "Logos",
+      "order": [
+        "logo.svg",
+        "app-icon.svg"
+      ],
+      "tile": "l"
+    }
+  },
+  "blobs": {},
+  "createdOnFiles": {
+    "at": "2026-10-10T02:44:26Z",
+    "v": 1
+  },
+  "docs": {
+    "readme": "project/README.md",
+    "sections": []
+  },
+  "groups": [
+    "Logos"
+  ],
+  "lastChange": {
+    "by": "baranwang",
+    "at": "2026-10-11T01:14:22Z",
+    "via": "Claude Code",
+    "note": "Controls (buttons, icon groups, send button, menu, tooltip, bars); few-lines rule; radius usage; Settings preview flat."
+  },
+  "layout": "files",
+  "libraries": [],
+  "namespace": "Godwit",
+  "sections": {},
+  "title": "Godwit"
+}

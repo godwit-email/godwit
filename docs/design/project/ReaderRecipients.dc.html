@@ -1,0 +1,103 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<title>收件人与账户</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600&amp;family=Noto+Sans+SC:wght@400;500;600&amp;display=swap" rel="stylesheet">
+<style>
+body{margin:0;background:#FFFFFF}
+a{color:#0A0A0A}a:hover{color:#404040}
+button{font:inherit;cursor:pointer}
+</style>
+</helmet>
+<div style="width: 1240px; height: 820px; box-sizing: border-box; padding: 40px; display: grid; grid-template-columns: 560px 560px; gap: 40px; background: #FFFFFF; color: #0A0A0A; font-family: Geist, 'Noto Sans SC', system-ui, sans-serif; font-size: 14px; line-height: 1.5">
+
+  <section aria-label="信头第二行" style="display: flex; flex-direction: column; gap: 16px; min-width: 0">
+    <div style="display: flex; flex-direction: column; gap: 4px">
+      <h3 style="margin: 0; font-size: 16px; font-weight: 600">信头第二行 · 简写</h3>
+      <p style="margin: 0; font-size: 13px; color: #737373">先写收到这封信的是你哪个地址，其他收件人和抄送合成「等 N 人」。只有一个账户时仍写「我」。头像上沿对齐名字那一行，第二行换行时不跟着下移。</p>
+    </div>
+    <sc-for list="{{cases}}" as="k" hint-placeholder-count="5">
+      <div style="display: flex; flex-direction: column; gap: 8px; padding: 12px 16px; border: 1px solid #E5E5E5; border-radius: 12px">
+        <span style="font-size: 12px; color: #737373">{{k.when}}</span>
+        <div style="display: flex; align-items: flex-start; gap: 10px">
+          <span aria-hidden="true" style="{{avatar}}">{{k.initial}}</span>
+          <span style="display: flex; flex-direction: column; gap: 2px; min-width: 0">
+            <span style="display: flex; align-items: center; gap: 4px; flex-wrap: wrap"><span style="font-weight: 500">{{k.from}}</span><span style="color: #737373">&lt;{{k.addr}}&gt;</span></span>
+            <span style="display: flex; align-items: center; gap: 6px; flex-wrap: wrap; font-size: 12px; color: #737373">
+              <button type="button" aria-haspopup="dialog" style="height: 20px; display: inline-flex; align-items: center; gap: 2px; margin: 0 -4px; padding: 0 4px; border: 0; border-radius: 4px; background: transparent; color: #737373; font-size: 12px">{{k.to}}<svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="{{down}}"></path></svg></button>
+              <sc-if value="{{k.trackers}}" hint-placeholder-val="{{ false }}"><span aria-hidden="true">·</span><span style="display: inline-flex; align-items: center; gap: 3px"><svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="{{shield}}"></path></svg>已阻止 1 个跟踪器</span></sc-if>
+            </span>
+          </span>
+          <span style="margin-left: auto; flex: none; font-size: 12px; color: #737373; margin-top: 2px">{{k.date}}</span>
+        </div>
+      </div>
+    </sc-for>
+  </section>
+
+  <section aria-label="收件人详情" style="display: flex; flex-direction: column; gap: 16px; min-width: 0">
+    <div style="display: flex; flex-direction: column; gap: 4px">
+      <h3 style="margin: 0; font-size: 16px; font-weight: 600">点开「发给 … ▾」· 详情</h3>
+      <p style="margin: 0; font-size: 13px; color: #737373">弹层列出完整地址，文字可以直接选中复制（标签不会被选上）。「收件账户」只在有多个账户时出现，说明这封信在你哪个账户里，回复默认从这里发出。</p>
+    </div>
+    <div style="position: relative; height: 420px; padding: 16px; border: 1px solid #E5E5E5; border-radius: 12px">
+      <div style="display: flex; align-items: flex-start; gap: 10px">
+        <span aria-hidden="true" style="{{avatar}}">L</span>
+        <span style="display: flex; flex-direction: column; gap: 2px; min-width: 0">
+          <span style="display: flex; align-items: center; gap: 4px; flex-wrap: wrap"><span style="font-weight: 500">Lena Park</span><span style="color: #737373">&lt;lena@partner.example&gt;</span></span>
+          <span style="display: flex; align-items: center; gap: 6px; font-size: 12px; color: #737373">
+            <button type="button" aria-haspopup="dialog" aria-expanded="true" style="height: 20px; display: inline-flex; align-items: center; gap: 2px; margin: 0 -4px; padding: 0 4px; border: 0; border-radius: 4px; background: #F5F5F5; color: #0A0A0A; font-size: 12px">发给 me@baran.wang 等 3 人<svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true" style="transform: rotate(180deg)"><path d="{{down}}"></path></svg></button>
+          </span>
+        </span>
+        <span style="margin-left: auto; flex: none; font-size: 12px; color: #737373; margin-top: 2px">周一 09:23</span>
+      </div>
+      <div role="dialog" aria-label="收件人详情" style="position: absolute; left: 58px; top: 72px; width: 400px; box-sizing: border-box; padding: 12px; display: grid; grid-template-columns: 64px 1fr; column-gap: 12px; row-gap: 8px; border: 1px solid #E5E5E5; border-radius: 8px; background: #FFFFFF; box-shadow: 0 4px 6px -1px rgba(0,0,0,0.1), 0 2px 4px -2px rgba(0,0,0,0.1); font-size: 13px">
+        <sc-for list="{{details}}" as="d" hint-placeholder-count="6">
+          <span style="color: #737373">{{d.label}}</span>
+          <span style="display: flex; flex-direction: column; gap: 2px; min-width: 0">
+            <sc-for list="{{d.values}}" as="v" hint-placeholder-count="1">
+              <span style="overflow: hidden; text-overflow: ellipsis; white-space: nowrap">{{v.name}}<span style="color: #737373">{{v.addr}}</span></span>
+            </sc-for>
+          </span>
+        </sc-for>
+      </div>
+    </div>
+  </section>
+
+
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":1240,"height":820}}'>
+class Component extends DCLogic {
+  renderVals() {
+    return {
+      down: 'M11.9999 13.1714L16.9497 8.22168L18.3639 9.63589L11.9999 15.9999L5.63599 9.63589L7.0502 8.22168L11.9999 13.1714Z',
+      shield: 'M3.78307 2.82598L12 1L20.2169 2.82598C20.6745 2.92766 21 3.33347 21 3.80217V13.7889C21 15.795 19.9974 17.6684 18.3282 18.7812L12 23L5.6718 18.7812C4.00261 17.6684 3 15.795 3 13.7889V3.80217C3 3.33347 3.32553 2.92766 3.78307 2.82598ZM5 4.60434V13.7889C5 15.1263 5.6684 16.3752 6.7812 17.1171L12 20.5963L17.2188 17.1171C18.3316 16.3752 19 15.1263 19 13.7889V4.60434L12 3.04879L5 4.60434Z',
+      avatar: 'flex: none; width: 32px; height: 32px; border-radius: 8px; background: #F5F5F5; color: #171717; display: flex; align-items: center; justify-content: center; font-weight: 600; font-size: 13px',
+      cases: [
+        { when: '只有一个账户', initial: 'V', from: 'V.PS', addr: 'noreply@vps.hosting', to: '发给 我', date: '周一 09:23', trackers: true },
+        { when: '多个账户 · 只发给你', initial: 'G', from: 'GitHub', addr: 'noreply@github.com', to: '发给 me@baran.wang', date: '周一 03:11' },
+        { when: '多个账户 · 还有别人（收件人 + 抄送一起算）', initial: 'L', from: 'Lena Park', addr: 'lena@partner.example', to: '发给 me@baran.wang 等 3 人', date: '周一 09:23' },
+        { when: '你只在抄送里', initial: 'B', from: 'Bob Chen', addr: 'bob@company.example', to: '发给 Lena Park 等 2 人 · 抄送 work@company.example', date: '昨天 18:40' },
+        { when: '你不在收件人里（密送、邮件列表）', initial: 'R', from: 'Rust Weekly', addr: 'hello@rust.example', to: '发给 subscribers@rust.example', date: '10/18' }
+      ],
+      details: [
+        { label: '发件人', values: [{ name: 'Lena Park ', addr: '<lena@partner.example>' }] },
+        { label: '收件人', values: [{ name: 'Baran ', addr: '<me@baran.wang>' }, { name: 'Mia Wong ', addr: '<mia@partner.example>' }] },
+        { label: '抄送', values: [{ name: 'Team ', addr: '<team@partner.example>' }, { name: '', addr: 'ops@partner.example' }] },
+        { label: '回复到', values: [{ name: '', addr: 'proposals@partner.example' }] },
+        { label: '日期', values: [{ name: '2026年10月26日 周一 09:23', addr: '' }] },
+        { label: '收件账户', values: [{ name: 'me@baran.wang', addr: '' }] }
+      ]
+    };
+  }
+}
+</script>
+</body>
+</html>

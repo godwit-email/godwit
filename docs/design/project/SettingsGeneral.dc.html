@@ -1,0 +1,132 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<title>Godwit 设置 通用</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600&amp;family=Geist+Mono:wght@500&amp;family=Noto+Sans+SC:wght@400;500;600&amp;display=swap" rel="stylesheet">
+<style>
+body{margin:0;background:#FFFFFF}
+a{color:#171717}a:hover{color:#0A0A0A}
+button{font:inherit;cursor:pointer}
+input,select{font:inherit}
+</style>
+</helmet>
+<div style="position: relative; width: 1440px; height: 900px; border-radius: 12px; overflow: hidden">
+<img src="/_blob/878f002c10b0d6c92e36b2bcfb479e8e" alt="" aria-label="桌面壁纸（已模糊）" style="position: absolute; left: -120px; top: -120px; width: 1680px; height: 1140px; object-fit: cover">
+<div aria-label="窗口材质" style="position: absolute; inset: 0; backdrop-filter: blur(20px); -webkit-backdrop-filter: blur(20px); background-color: #FAFAFAF2"></div>
+<div style="position: relative; width: 1440px; height: 900px; box-sizing: border-box; display: flex; flex-direction: column; overflow: hidden; font-family: 'Geist', 'Noto Sans SC', 'PingFang SC', sans-serif; font-size: 14px; color: #0A0A0A; background: transparent; border: 1px solid rgba(0, 0, 0, 0.12); border-radius: 12px">
+  <div style="height: 44px; flex: none; display: flex; align-items: center; gap: 4px; padding-left: 88px; position: relative">
+    <span aria-hidden="true" style="position: absolute; left: 20px; top: 16px; display: flex; gap: 8px">
+      <span style="width: 12px; height: 12px; border-radius: 50%; background: #FF5F57; box-shadow: inset 0 0 0 0.5px rgba(0,0,0,0.12)"></span>
+      <span style="width: 12px; height: 12px; border-radius: 50%; background: #FEBC2E; box-shadow: inset 0 0 0 0.5px rgba(0,0,0,0.12)"></span>
+      <span style="width: 12px; height: 12px; border-radius: 50%; background: #28C840; box-shadow: inset 0 0 0 0.5px rgba(0,0,0,0.12)"></span>
+    </span>
+    <button type="button" aria-label="收起侧栏" style="width: 28px; height: 28px; border: 0; border-radius: 6px; background: transparent; color: #737373; display: flex; align-items: center; justify-content: center"><svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M21 3C21.5523 3 22 3.44772 22 4V20C22 20.5523 21.5523 21 21 21H3C2.44772 21 2 20.5523 2 20V4C2 3.44772 2.44772 3 3 3H21ZM7 5H4V19H7V5ZM20 5H9V19H20V5Z"></path></svg></button>
+    <a href="Main.dc.html" aria-label="后退" style="width: 28px; height: 28px; border-radius: 6px; color: #737373; display: flex; align-items: center; justify-content: center"><svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M7.82843 10.9999H20V12.9999H7.82843L13.1924 18.3638L11.7782 19.778L4 11.9999L11.7782 4.22168L13.1924 5.63589L7.82843 10.9999Z"></path></svg></a>
+    <button type="button" aria-label="前进" style="width: 28px; height: 28px; border: 0; border-radius: 6px; background: transparent; color: #A1A1A1; display: flex; align-items: center; justify-content: center"><svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M16.1716 10.9999L10.8076 5.63589L12.2218 4.22168L20 11.9999L12.2218 19.778L10.8076 18.3638L16.1716 12.9999H4V10.9999H16.1716Z"></path></svg></button>
+  </div>
+  <div style="flex: 1; min-height: 0; display: flex; box-sizing: border-box; padding: 0 8px 8px 8px">
+    <div style="flex: 1; min-width: 0; display: flex; gap: 8px">
+    <dc-import name="SettingsSidebar" current="general" hint-size="248px,848px"></dc-import>
+    <div style="flex: 1; min-width: 0; display: flex; overflow: auto; background: #FFFFFF; border: 1px solid #E5E5E5; border-radius: 12px; box-shadow: 0 1px 2px 0 rgba(0,0,0,0.05)">
+
+    
+
+    <main style="flex: 1 1 auto; align-self: flex-start; min-width: 0; max-width: 760px; margin: 0 auto; padding: 32px; display: flex; flex-direction: column; gap: 32px">
+<div style="display: flex; align-items: flex-end; justify-content: space-between; gap: 16px"><div style="display: flex; flex-direction: column; gap: 6px; min-width: 0"><h1 style="margin: 0; font-size: 29px; line-height: 1.25; font-weight: 600">通用</h1><span style="color: #737373">外观、界面语言、启动、通知和会话显示。</span></div></div>
+<section style="flex: none; display: flex; flex-direction: column; gap: 10px">
+<h2 style="margin: 0; padding: 0 16px; font-size: 14px; font-weight: 600">外观</h2>
+<div style="border-radius: 12px; background: #F5F5F5; overflow: hidden"><div style="display: flex; flex-direction: column; margin-top: -1px">
+<div style="padding: 8px 16px; background: linear-gradient(#E5E5E5, #E5E5E5) center top / calc(100% - 32px) 1px no-repeat"><div style="display: flex; align-items: center; justify-content: space-between; gap: 24px"><span style="display: flex; flex-direction: column; gap: 2px; min-width: 0"><span style="font-weight: 500">主题</span><span style="font-size: 12px; color: #737373">跟随系统时随 macOS 的外观切换</span></span>
+<div role="radiogroup" aria-label="主题" style="flex: none; display: flex; gap: 10px">
+<sc-for list="{{themes}}" as="t" hint-placeholder-count="3">
+<button type="button" role="radio" aria-checked="{{t.checked}}" aria-label="{{t.name}}" onClick="{{t.pick}}" onMouseEnter="{{t.enter}}" onMouseLeave="{{t.leave}}" onFocus="{{t.enter}}" onBlur="{{t.leave}}" style="position: relative; display: flex; border: 0; background: transparent; padding: 0; color: #0A0A0A">
+<span style="{{t.frame}}"><span style="{{t.rail}}"></span><span style="{{t.side}}"></span><span style="{{t.body}}"><span style="{{t.line}}"></span><span style="{{t.line2}}"></span></span></span>
+<sc-if value="{{t.tip}}" hint-placeholder-val="{{ false }}"><span role="tooltip" style="position: absolute; bottom: calc(100% + 6px); left: 50%; transform: translateX(-50%); padding: 4px 8px; border-radius: 6px; background: #171717; color: #FFFFFF; font-size: 12px; white-space: nowrap; box-shadow: 0 4px 6px -1px rgba(0,0,0,0.1), 0 2px 4px -2px rgba(0,0,0,0.1); pointer-events: none">{{t.name}}</span></sc-if>
+</button>
+</sc-for>
+</div></div></div>
+<dc-import name="SettingsRow" label="界面密度" control="select" options="紧凑（默认）|标准" hint-size="100%,48px"></dc-import>
+<dc-import name="SettingsRow" label="字号" control="select" options="14 px（默认）|13 px|15 px|16 px" hint-size="100%,48px"></dc-import>
+<dc-import name="SettingsRow" label="邮件正文字号" desc="只影响阅读区的正文" control="select" options="跟随界面|16 px|18 px" hint-size="100%,48px"></dc-import>
+</div></div>
+
+</section>
+<section style="flex: none; display: flex; flex-direction: column; gap: 10px">
+<h2 style="margin: 0; padding: 0 16px; font-size: 14px; font-weight: 600">语言</h2>
+<div style="border-radius: 12px; background: #F5F5F5; overflow: hidden"><div style="display: flex; flex-direction: column; margin-top: -1px">
+<dc-import name="SettingsRow" label="界面语言" desc="重启后生效" control="select" options="跟随系统（简体中文）|简体中文|繁體中文|English|日本語" hint-size="100%,48px"></dc-import></div></div>
+
+</section>
+<section style="flex: none; display: flex; flex-direction: column; gap: 10px">
+<h2 style="margin: 0; padding: 0 16px; font-size: 14px; font-weight: 600">启动与窗口</h2>
+<div style="border-radius: 12px; background: #F5F5F5; overflow: hidden"><div style="display: flex; flex-direction: column; margin-top: -1px">
+<dc-import name="SettingsRow" label="开机时自动启动" desc="登录后在后台启动 Godwit" control="switch" on="true" hint-size="100%,48px"></dc-import>
+<dc-import name="SettingsRow" label="关闭窗口后保持在后台" desc="继续同步和接收通知，可从菜单栏图标打开" control="switch" on="true" hint-size="100%,48px"></dc-import>
+<dc-import name="SettingsRow" label="在应用图标显示未读数" control="switch" on="true" hint-size="100%,48px"></dc-import>
+<dc-import name="SettingsRow" label="在菜单栏显示未读数" control="switch" on="false" hint-size="100%,48px"></dc-import>
+</div></div>
+
+</section>
+<section style="flex: none; display: flex; flex-direction: column; gap: 10px">
+<h2 style="margin: 0; padding: 0 16px; font-size: 14px; font-weight: 600">通知</h2>
+<div style="border-radius: 12px; background: #F5F5F5; overflow: hidden"><div style="display: flex; flex-direction: column; margin-top: -1px">
+<dc-import name="SettingsRow" label="新邮件通知" control="switch" on="true" hint-size="100%,48px"></dc-import>
+<dc-import name="SettingsRow" label="通知里显示邮件预览" desc="关闭后只提示有新邮件" control="switch" on="true" hint-size="100%,48px"></dc-import>
+</div></div>
+
+</section>
+<section style="flex: none; display: flex; flex-direction: column; gap: 10px">
+<h2 style="margin: 0; padding: 0 16px; font-size: 14px; font-weight: 600">邮件</h2>
+<div style="border-radius: 12px; background: #F5F5F5; overflow: hidden"><div style="display: flex; flex-direction: column; margin-top: -1px">
+<dc-import name="SettingsRow" label="会话视图" desc="把同一主题的往来邮件合在一起显示" control="switch" on="true" hint-size="100%,48px"></dc-import>
+<dc-import name="SettingsRow" label="折叠会话历史" desc="长会话中的较早邮件合并为可展开的卡片" control="switch" on="true" hint-size="100%,48px"></dc-import>
+<div style="padding: 8px 16px; background: linear-gradient(#E5E5E5, #E5E5E5) center top / calc(100% - 32px) 1px no-repeat"><label style="display: flex; align-items: center; justify-content: space-between; gap: 24px; min-height: 32px"><span style="display: flex; flex-direction: column; gap: 2px; min-width: 0"><span style="font-weight: 500">历史折叠阈值</span><span style="font-size: 12px; color: #737373">会话中触发折叠的邮件数（2–100，默认：5）</span></span><span style="flex: none; width: 200px; display: flex; align-items: center; gap: 12px"><input type="range" min="2" max="100" step="1" value="{{collapse}}" onChange="{{setCollapse}}" aria-label="历史折叠阈值" style="flex: 1; min-width: 0; accent-color: #171717"><span style="width: 32px; text-align: right; font-size: 12px; color: #737373">{{collapse}}</span></span></label></div>
+</div></div>
+
+</section>
+</main>
+  
+    </div></div>
+  </div>
+</div>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":1440,"height":900}}'>
+class Component extends DCLogic {
+  constructor(props) {
+    super(props);
+    this.state = { theme: 'system', hover: null, collapse: 5 };
+  }
+  renderVals() {
+    var self = this;
+    var pal = { light: ['#EDEDED', '#FAFAFA', '#FFFFFF', '#E5E5E5'], dark: ['#1E1E1E', '#171717', '#0A0A0A', '#404040'] };
+    var tile = function (id, name, c, split) {
+      var on = self.state.theme === id;
+      return {
+        name: name,
+        checked: on ? 'true' : 'false',
+        pick: function () { self.setState({ theme: id }); },
+        frame: 'width: 76px; height: 48px; box-sizing: border-box; display: flex; overflow: hidden; border-radius: 6px; border: ' + (on ? '2px solid #171717' : '1px solid #E5E5E5') + '; background: ' + c[0] + (split ? '; background-image: linear-gradient(135deg, #EDEDED 50%, #1E1E1E 50%)' : ''),
+        rail: 'width: 8px',
+        tip: self.state.hover === id,
+        enter: function () { self.setState({ hover: id }); },
+        leave: function () { self.setState({ hover: null }); },
+        side: 'width: 18px; margin-top: 6px; background: ' + c[1] + '; border-top-left-radius: 6px',
+        body: 'flex: 1; margin-top: 6px; background: ' + c[2] + '; display: flex; flex-direction: column; gap: 4px; padding: 6px',
+        line: 'height: 3px; width: 70%; border-radius: 2px; background: ' + c[3],
+        line2: 'height: 3px; width: 45%; border-radius: 2px; background: ' + c[3]
+      };
+    };
+    return { collapse: this.state.collapse, setCollapse: function (e) { self.setState({ collapse: Number(e.target.value) }); }, themes: [tile('system', '跟随系统', pal.light, true), tile('light', '浅色', pal.light, false), tile('dark', '深色', pal.dark, false)] };
+  }
+}
+</script>
+</body>
+</html>

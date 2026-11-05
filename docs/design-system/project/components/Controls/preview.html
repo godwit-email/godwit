@@ -1,0 +1,55 @@
+<!-- @dsCard group="Actions" height=300 width=640 subtitle="Buttons, icon groups, send button, menu, tooltip" -->
+<!doctype html>
+<html><head><meta charset="utf-8"><style>
+body{margin:0;padding:24px;background:var(--background);color:var(--foreground);font-family:Geist,"PingFang SC",system-ui,sans-serif;font-size:14px}
+button{font:inherit;color:inherit;cursor:default}
+.row{display:flex;align-items:center;gap:8px;margin-bottom:24px}
+.b{height:32px;padding:0 12px;border-radius:var(--radius-lg);border:1px solid var(--input);background:var(--background)}
+.p{border:0;background:var(--primary);color:var(--primary-text);font-weight:600}
+.g{border:0;background:transparent}
+.d{border-color:var(--danger-border);color:var(--danger)}
+.grp{display:flex;align-items:center;gap:2px;height:32px;box-sizing:border-box;padding:0 2px;border:1px solid var(--input);border-radius:var(--radius-lg);background:var(--background)}
+.i{position:relative;width:28px;height:28px;border:0;border-radius:var(--radius-md);background:transparent;color:var(--muted);display:flex;align-items:center;justify-content:center}
+.i:hover,.i.on{background:var(--hover);color:var(--foreground)}
+.sep{width:1px;height:16px;background:var(--border)}
+.tip{position:absolute;top:calc(100% + 6px);left:50%;transform:translateX(-50%);padding:4px 8px;border-radius:var(--radius-md);background:var(--primary);color:var(--primary-text);font-size:12px;white-space:nowrap;box-shadow:var(--shadow-md)}
+.send{position:relative;margin-left:auto;display:flex;border-radius:var(--radius-lg);background:var(--primary);color:var(--primary-text)}
+.send button{height:32px;border:0;background:transparent;color:inherit}
+.send .main{padding:0 16px;font-weight:600}
+.send .more{width:32px;border-left:1px solid color-mix(in srgb,var(--primary-text) 20%,transparent);display:flex;align-items:center;justify-content:center}
+.menu{position:absolute;right:0;bottom:100%;margin-bottom:8px;min-width:200px;padding:4px;box-sizing:border-box;border:1px solid var(--border);border-radius:var(--radius-lg);background:var(--background);box-shadow:var(--shadow-md);display:flex;flex-direction:column;color:var(--foreground)}
+.menu .h{padding:6px 10px 4px;font-size:12px;color:var(--muted)}
+.menu button{height:32px;padding:0 10px;border-radius:var(--radius-md);display:flex;justify-content:space-between;align-items:center;gap:12px}
+.menu button.on{background:var(--hover)}
+.menu small{font-size:12px;color:var(--muted)}
+.bar{display:flex;align-items:center;padding-top:132px}
+svg{width:16px;height:16px;fill:currentColor}
+</style></head><body>
+<div class="row">
+<button type="button" class="b p">保存</button>
+<button type="button" class="b">取消</button>
+<button type="button" class="b g">忽略</button>
+<button type="button" class="b d">删除账户</button>
+</div>
+<div class="row">
+<div class="grp" role="group" aria-label="回复">
+<button type="button" class="i on" aria-label="回复"><svg viewBox="0 0 24 24"><path d="M11 20L1 12L11 4V9C16.5228 9 21 13.4772 21 19C21 19.2729 20.9891 19.5433 20.9676 19.8107C19.4605 16.9502 16.458 15 13 15H11V20ZM9 13H13C14.9 13 16.69 13.53 18.21 14.45C16.92 12.42 14.62 11 12 11H9V8.16L4.2 12L9 15.84V13Z"/></svg><span class="tip" role="tooltip">回复</span></button>
+<button type="button" class="i" aria-label="转发"><svg viewBox="0 0 24 24" style="transform:scaleX(-1)"><path d="M11 20L1 12L11 4V9C16.5228 9 21 13.4772 21 19C21 19.2729 20.9891 19.5433 20.9676 19.8107C19.4605 16.9502 16.458 15 13 15H11V20ZM9 13H13C14.9 13 16.69 13.53 18.21 14.45C16.92 12.42 14.62 11 12 11H9V8.16L4.2 12L9 15.84V13Z"/></svg></button>
+<span class="sep"></span>
+<button type="button" class="i" aria-label="删除"><svg viewBox="0 0 24 24"><path d="M17 6H22V8H20V21C20 21.5523 19.5523 22 19 22H5C4.44772 22 4 21.5523 4 21V8H2V6H7V3C7 2.44772 7.44772 2 8 2H16C16.5523 2 17 2.44772 17 3V6ZM18 8H6V20H18V8ZM9 11H11V17H9V11ZM13 11H15V17H13V11ZM9 4V6H15V4H9Z"/></svg></button>
+</div>
+</div>
+<div class="bar">
+<span style="font-size:12px;color:var(--muted)">底栏：工具在左，发送在右</span>
+<div class="send">
+<button type="button" class="main">发送</button>
+<button type="button" class="more" aria-label="定时发送" aria-expanded="true"><svg viewBox="0 0 24 24"><path d="M11.9999 13.1714L16.9497 8.22168L18.3639 9.63589L11.9999 15.9999L5.63599 9.63589L7.0502 8.22168L11.9999 13.1714Z"/></svg></button>
+<div class="menu" role="menu"><span class="h">定时发送</span>
+<button type="button" role="menuitem" class="on"><span>明天上午</span><small>周一 09:00</small></button>
+<button type="button" role="menuitem"><span>明天下午</span><small>周一 14:00</small></button>
+<button type="button" role="menuitem"><span>选择时间…</span><small></small></button>
+</div>
+</div>
+</div>
+<script>/* static preview */</script>
+</body></html>

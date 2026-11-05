@@ -1,0 +1,179 @@
+/* Godwit — generated from tokens.json */
+:root, [data-theme="light"] {
+  --background: #ffffff; /* Content area, cards, dialogs, popovers, plain toasts. */
+  --foreground: #0a0a0a; /* Body text on background, sidebar and window. */
+  --muted: #737373; /* Secondary text, icons at rest, timestamps, counts. */
+  --window: #ededed; /* Top bar and icon rail behind the panel (transparent over the window material on macOS and Windows 11). */
+  --sidebar: #fafafa; /* Page sidebars (mail folders, settings, Wit conversations); light fills of cards inside panels and kbd. */
+  --border: #e5e5e5; /* Dividers inside panels, and the outlines of cards, dialogs and popovers (shadcn --border). */
+  --outline: #0a0a0a0d; /* The faint edge of a panel over the window material: the foreground at 5%, lighter than border. */
+  --input: #e5e5e5; /* Outlines of inputs, selects, checkboxes, radios, the switch track and outline buttons (shadcn --input). */
+  --ring: #a1a1a1; /* Keyboard focus ring at 50% opacity, and a hovered or dragged divider (shadcn --ring). */
+  --divider-hover: #d4d4d4; /* A draggable divider hovered or dragged (the sidebar's edge): a step darker than border. */
+  --primary: #171717; /* Default buttons, a switch that is on, checked boxes. */
+  --primary-text: #ffffff; /* Text and icons on primary. */
+  --hover: #f5f5f5; /* A hovered row, ghost button or secondary button; badges; tab list track. */
+  --sidebar-selected: #f5f5f5; /* The selected row of a sidebar, at regular weight; its icon is muted until hovered. */
+  --rail-selected: #0a0a0a0a; /* The selected icon of the rail: a tint of the foreground over the window material (4%; dark: white 10%). */
+  --hover-tint: #0a0a0a0a; /* A hovered rail icon or ghost button: a tint of the foreground over the window material (4%; dark: white 8%); over white it equals hover. */
+  --unread: #2b7fff; /* The dot beside unread mail in the list. */
+  --success: #00a63e; /* Status dot for a healthy account; success icons. */
+  --success-bg: #f0fdf4; /* Success toast background. */
+  --success-border: #b9f8cf; /* Success toast outline. */
+  --success-text: #008236; /* Success toast text and icon. */
+  --attention: #fd9a00; /* Status dot asking for a look (re-login needed). */
+  --warning-bg: #fffbeb; /* Warning toast and alert background. */
+  --warning-border: #ffd230; /* Warning toast and alert outline. */
+  --warning-text: #973c00; /* Warning toast and alert text and icon. */
+  --danger: #e7000b; /* Destructive actions, error text, invalid input outline. */
+  --danger-bg: #fef2f2; /* Danger alert and error toast background; a destructive ghost button on hover. */
+  --danger-border: #ffc9c9; /* Error toast outline. */
+  --danger-text: #c10007; /* Error toast text and icon. */
+  --ins-bg: #dcfce7; /* Inserted words in a Wit revision. */
+  --ins-text: #016630; /* Text of inserted words. */
+  --del-bg: #fef2f2; /* Deleted words in a Wit revision. */
+  --del-text: #c10007; /* Text of deleted words. */
+  --shadow-xs: 0 1px 2px 0 rgba(0,0,0,0.05); /* Inputs, selects, checkboxes, radios, outline buttons, the page panel (Tailwind v4 shadow-xs). */
+  --shadow-sm: 0 1px 3px 0 rgba(0,0,0,0.1), 0 1px 2px -1px rgba(0,0,0,0.1); /* Cards, the selected tab (Tailwind v4 shadow-sm). */
+  --shadow-md: 0 4px 6px -1px rgba(0,0,0,0.1), 0 2px 4px -2px rgba(0,0,0,0.1); /* Popovers, select lists (Tailwind v4 shadow-md). */
+  --shadow-lg: 0 10px 15px -3px rgba(0,0,0,0.1), 0 4px 6px -4px rgba(0,0,0,0.1); /* Dialogs, sheets, toasts (Tailwind v4 shadow-lg). */
+  --shadow-xl: 0 20px 25px -5px rgba(0,0,0,0.1), 0 8px 10px -6px rgba(0,0,0,0.1); /* Anything above dialogs (Tailwind v4 shadow-xl). */
+  --shadow-float: 0 0 0 1px #0000000a, 0 2px 8px 0 #0000000a, 0 4px 80px 8px #00000006; /* A floating input box (the Wit input): the 1px ring is its outline, so it has no border. Dark: rgba(255,255,255,0.2) 0 0 1px 0 inset; the app draws that as a white 12% hairline, as mygo has no inset shadow. */
+}
+[data-theme="dark"] {
+  --background: #0a0a0a;
+  --foreground: #fafafa;
+  --muted: #a1a1a1;
+  --window: #1e1e1e;
+  --sidebar: #171717;
+  --border: #ffffff1a;
+  --outline: #ffffff0d;
+  --input: #ffffff26;
+  --ring: #737373;
+  --divider-hover: #404040;
+  --primary: #e5e5e5;
+  --primary-text: #171717;
+  --hover: #262626;
+  --sidebar-selected: #262626;
+  --rail-selected: #ffffff1a;
+  --hover-tint: #ffffff14;
+  --unread: #2b7fff;
+  --success: #00a63e;
+  --success-bg: #f0fdf4;
+  --success-border: #b9f8cf;
+  --success-text: #008236;
+  --attention: #fd9a00;
+  --warning-bg: #fffbeb;
+  --warning-border: #ffd230;
+  --warning-text: #973c00;
+  --danger: #e7000b;
+  --danger-bg: #fef2f2;
+  --danger-border: #ffc9c9;
+  --danger-text: #c10007;
+  --ins-bg: #dcfce7;
+  --ins-text: #016630;
+  --del-bg: #fef2f2;
+  --del-text: #c10007;
+}
+:root {
+  --space-0-5: 2px; /* Gap between sidebar rows. */
+  --space-1: 4px; /* Tight gaps; the base unit (Space(n) = 4n). */
+  --space-1-5: 6px; /* Icon-to-label gap in small controls. */
+  --space-2: 8px; /* Panel inset from the window edge; row padding. */
+  --space-2-5: 10px; /* Card and list-row padding. */
+  --space-3: 12px; /* Sidebar padding; card gap. */
+  --space-4: 16px; /* Page padding on small panes; dialog gaps. */
+  --space-6: 24px; /* Page content padding; dialog padding. */
+  --space-8: 32px; /* Row and control height (default button). */
+  --radius-xs: 2px; /* Badges, kbd, checkboxes. */
+  --radius-sm: 4px; /* Inputs, selects, small buttons, tabs. */
+  --radius-md: 6px; /* Buttons, rows, popovers, cards inside panels. */
+  --radius-lg: 8px; /* Larger cards. */
+  --radius-xl: 12px; /* The sidebar + content panel, cards. */
+  --radius-2xl: 16px; /* Dialogs, sheets, toasts. */
+  --radius-3xl: 24px; /* Dots, switches, avatars. */
+  --radius-4xl: 32px;
+  --radius-full: 9999px;
+  --font-sans: Geist, "PingFang SC", "Microsoft YaHei", "Noto Sans CJK SC", system-ui, sans-serif;
+  --font-mono: "Geist Mono", ui-monospace, monospace;
+  --text-xs: 400 11px/1.4 var(--font-sans);
+  --text-sm: 400 12px/1.45 var(--font-sans);
+  --text-base: 400 13px/1.5 var(--font-sans);
+  --text-body: 400 14px/1.6 var(--font-sans);
+  --text-lg: 500 15px/1.5 var(--font-sans);
+  --text-title: 600 16px/1.4 var(--font-sans);
+  --text-xl: 600 18px/1.35 var(--font-sans);
+  --text-\32 xl: 600 20px/1.3 var(--font-sans);
+  --text-display: 600 29px/1.25 var(--font-sans);
+  --text-mono: 500 12px/1.5 var(--font-mono);
+}
+.xs {
+  font-family: var(--font-sans);
+  font-size: 11px;
+  line-height: 1.4;
+  font-weight: 400;
+  letter-spacing: 0;
+}
+.sm {
+  font-family: var(--font-sans);
+  font-size: 12px;
+  line-height: 1.45;
+  font-weight: 400;
+  letter-spacing: 0;
+}
+.base {
+  font-family: var(--font-sans);
+  font-size: 13px;
+  line-height: 1.5;
+  font-weight: 400;
+  letter-spacing: 0;
+}
+.body {
+  font-family: var(--font-sans);
+  font-size: 14px;
+  line-height: 1.6;
+  font-weight: 400;
+  letter-spacing: 0;
+}
+.lg {
+  font-family: var(--font-sans);
+  font-size: 15px;
+  line-height: 1.5;
+  font-weight: 500;
+  letter-spacing: 0;
+}
+.title {
+  font-family: var(--font-sans);
+  font-size: 16px;
+  line-height: 1.4;
+  font-weight: 600;
+  letter-spacing: 0;
+}
+.xl {
+  font-family: var(--font-sans);
+  font-size: 18px;
+  line-height: 1.35;
+  font-weight: 600;
+  letter-spacing: 0;
+}
+.\32 xl {
+  font-family: var(--font-sans);
+  font-size: 20px;
+  line-height: 1.3;
+  font-weight: 600;
+  letter-spacing: 0;
+}
+.display {
+  font-family: var(--font-sans);
+  font-size: 29px;
+  line-height: 1.25;
+  font-weight: 600;
+  letter-spacing: 0;
+}
+.mono {
+  font-family: var(--font-mono);
+  font-size: 12px;
+  line-height: 1.5;
+  font-weight: 500;
+  letter-spacing: 0;
+}
