@@ -1224,6 +1224,9 @@ func (p *mailPage) row(c *ui.Context, it mailItem) ui.Element {
 		}
 		ui.Row(c).Gap(th.Space(1.5)).AlignItems(ui.Center).Children(func() {
 			ui.Text(c, it.Who).FontWeight(weight).SingleLine().Shrink(1)
+			if it.Thread && it.Count > 1 { // how many messages the conversation holds, as the reader's header says
+				ui.Badge(c, strconv.Itoa(it.Count)).Label(i18n.Tf("reader.thread_count", it.Count))
+			}
 			securityIcon(c, p.a.settings, it.Security)
 			ui.Spacer(c)
 			p.starButton(c, it, col.Hovered())
