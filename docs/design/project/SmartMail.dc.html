@@ -158,7 +158,7 @@ button{font:inherit;cursor:pointer}
         <div style="flex: 1; min-height: 0; overflow-y: auto; padding: 24px 28px; display: flex; flex-direction: column; gap: 24px; box-sizing: border-box">
           <div style="display: flex; align-items: flex-end; justify-content: space-between; gap: 16px">
             <div style="display: flex; flex-direction: column; gap: 6px; min-width: 0"><h2 style="margin: 0; font-size: 29px; line-height: 1.25; font-weight: 600">{{form.title}}</h2><span style="color: #737373">{{form.desc}}</span></div>
-            <span style="flex: none; display: flex; gap: 8px"><button type="button" onClick="{{closeForm}}" style="height: 32px; padding: 0 12px; border: 1px solid #E5E5E5; border-radius: 8px; background: #FFFFFF; color: #0A0A0A">取消</button><button type="button" onClick="{{saveForm}}" style="height: 32px; padding: 0 12px; border: 0; border-radius: 8px; background: #171717; color: #FFFFFF; font-weight: 600">{{form.saveText}}</button></span>
+            <span style="flex: none; display: flex; gap: 8px"><button type="button" onClick="{{closeForm}}" style="height: 32px; padding: 0 12px; border: 1px solid #E5E5E5; border-radius: 8px; background: #FFFFFF; color: #0A0A0A">取消</button><button type="button" onClick="{{saveForm}}" disabled="{{saveBlocked}}" title="{{saveHint}}" style="{{saveStyle}}">{{form.saveText}}</button></span>
           </div>
 
           <div style="display: grid; grid-template-columns: minmax(0, 1fr) 340px; gap: 24px; align-items: start">
@@ -302,7 +302,7 @@ class Component extends DCLogic {
     if (s === 'new') fresh('', '', [{ f: 'from', op: 'contains', v: '', n: '3' }]);
     if (s === 'new-mail') fresh('Lena Fischer', 'mail', [{ f: 'from', op: 'contains', v: 'lena@partner.example', n: '3' }]);
     if (s === 'search') { st.box = 'inbox'; st.search = true; st.sel = 'telecom'; }
-    if (s === 'new-search') fresh('发票', 'search', [{ f: 'subject', op: 'contains', v: '发票', n: '3' }]);
+    if (s === 'new-search') fresh('发票', 'search', [{ f: 'any', op: 'contains', v: '发票', n: '3' }]);
     if (s === 'wrong') { box('acme', 'digest'); st.ctx = true; }
     if (s === 'edit') edit('acme');
     if (s === 'add-group') { edit('bills'); st.fgroups = [{ name: '待处理', logic: 'all', conds: [{ f: 'folder', op: 'is', v: '收件箱', n: '3' }] }]; }
@@ -382,7 +382,8 @@ class Component extends DCLogic {
       if (c.f === 'ai') return !!m.aiWhy;
       if (c.f === 'reply') return v === 'mine' ? isOpen(id) && m.state === 'turn' : isOpen(id) && m.state !== 'turn' && (m.days || 0) >= Number(c.n || 0);
       if (c.f === 'read') return v === 'unread' ? !!m.unread : !m.unread;
-      var hay = c.f === 'from' ? (m.from + ' ' + m.addr).toLowerCase() : c.f === 'to' ? '我' : c.f === 'subject' ? m.subject.toLowerCase() : c.f === 'body' ? m.body.join(' ').toLowerCase() : c.f === 'folder' ? (m.archived || st.archivedNow[id] ? '归档' : '收件箱') : '';
+      if (c.f === 'attach') return v === 'no';
+      var hay = c.f === 'from' ? (m.from + ' ' + m.addr).toLowerCase() : c.f === 'to' ? '我' : c.f === 'any' ? (m.from + ' ' + m.addr + ' ' + m.subject + ' ' + m.body.join(' ')).toLowerCase() : c.f === 'subject' ? m.subject.toLowerCase() : c.f === 'body' ? m.body.join(' ').toLowerCase() : c.f === 'folder' ? (m.archived || st.archivedNow[id] ? '归档' : '收件箱') : '';
       var hit = c.op === 'is' ? hay === v : hay.indexOf(v) >= 0;
       return c.op === 'not' ? !hit : hit;
     };
@@ -390,20 +391,21 @@ class Component extends DCLogic {
     var condText = function (c) {
       if (c.f === 'reply') return c.v === 'mine' ? '回复状态为未回复' : '等待回复超过 ' + (c.n || '') + ' 天';
       if (c.f === 'read') return c.v === 'unread' ? '阅读状态为未读' : '阅读状态为已读';
-      var name = { from: '发件人', to: '收件人', subject: '主题', body: '正文', label: '标签', folder: '文件夹' }[c.f];
+      if (c.f === 'attach') return c.v === 'no' ? '没有附件' : '有附件';
+      var name = { from: '发件人', to: '收件人', subject: '主题', body: '正文', any: '任意内容', label: '标签', folder: '文件夹' }[c.f];
       return name + (c.op === 'not' ? '不包含 ' : c.op === 'is' ? '是 ' : '包含 ') + c.v;
     };
 
     // 所有列表都是这一种行：系统判断要回或要催时写现状，否则是预览
-    var lineOf = function (id, plain) {
+    var lineOf = function (id, plain, waiting) {
       var m = C[id];
       if (plain) return { text: m.preview };
-      if (isOpen(id)) return { text: m.reason, icon: m.state === 'turn' ? ic.reply : ic.time, color: isBack && id === 'lena' ? '#1447E6' : '' };
+      if (isOpen(id) && (m.state === 'turn' || waiting)) return { text: m.reason, icon: m.state === 'turn' ? ic.reply : ic.time, color: isBack && id === 'lena' ? '#1447E6' : '' };
       if (m.manualIn) return { text: '手动添加', icon: ic.add };
       return { text: m.preview };
     };
-    var mailRow = function (id, plain) {
-      var m = C[id], on = st.sel === id, w = m.unread ? '600' : '400', line = lineOf(id, plain);
+    var mailRow = function (id, plain, waiting) {
+      var m = C[id], on = st.sel === id, w = m.unread ? '600' : '400', line = lineOf(id, plain, waiting);
       return {
         from: m.from, time: m.time, subject: m.subject, unread: !!m.unread, pressed: on ? 'true' : 'false',
         line: line.text, lineIcon: line.icon || '',
@@ -415,7 +417,8 @@ class Component extends DCLogic {
         lineStyle: 'display: flex; align-items: center; gap: 4px; min-width: 0; font-size: 13px; color: ' + (line.color || '#737373')
       };
     };
-    var group = function (name, ids, plain) { return { name: name, count: String(ids.length), rows: ids.map(function (id) { return mailRow(id, plain); }) }; };
+    var group = function (name, ids, plain, waiting) { return { name: name, count: String(ids.length), rows: ids.map(function (id) { return mailRow(id, plain, waiting); }) }; };
+    var usesWaiting = function (g) { return g.conds.some(function (c) { return c.f === 'reply' && c.v === 'theirs'; }); };
 
     // 今日和其他智能邮箱走同一个函数：一个会话进第一个符合的分组，写了邮箱条件才有「其他」
     var placed = function (k) {
@@ -430,7 +433,7 @@ class Component extends DCLogic {
     };
     var listGroups = function (k) {
       if (k === 'today' && st.todayEmpty) return [];
-      var p = placed(k), out = p.groups.filter(function (g) { return g.ids.length; }).map(function (g) { return group(g.name, g.ids); });
+      var p = placed(k), out = p.groups.filter(function (g) { return g.ids.length; }).map(function (g) { return group(g.name, g.ids, false, usesWaiting(g.src)); });
       if (p.rest.length) out.push(group(out.length ? '其他' : '', p.rest));
       return out;
     };
@@ -468,12 +471,13 @@ class Component extends DCLogic {
     var selVals = { body: [], subject: '' };
     var excludeSel = function () { if (selId) self.exclude(selId); };
     if (sel) {
-      var isOpenState = isOpen(selId);
+      var isOpenState = false;
       var why = '', whyActText = '', whyAct = false;
       if (boxKey !== 'inbox' && !st.search && defOf(boxKey)) {
         var p2 = placed(boxKey), boxName = p2.def.name;
         if (p2.ids.indexOf(selId) >= 0) {
           var inG = p2.groups.filter(function (g) { return g.ids.indexOf(selId) >= 0; })[0];
+          isOpenState = isOpen(selId) && (sel.state === 'turn' || (!!inG && usesWaiting(inG.src)));
           var reasonOf = function (conds) { var c = filled(conds).filter(function (x) { return hitOne(selId, x); })[0]; return !c ? '' : c.f === 'ai' ? sel.aiWhy : condText(c); };
           if (sel.manualIn === boxKey && !inG && !hitAll(selId, p2.def.conds, p2.def.logic)) { why = boxName + '：手动添加'; whyActText = '撤销'; whyAct = excludeSel; }
           else if (inG) { why = boxName + ' › ' + inG.name + '：' + reasonOf(inG.src.conds); if (p2.top) { whyActText = '移出'; whyAct = excludeSel; } }
@@ -502,7 +506,7 @@ class Component extends DCLogic {
     });
     if (form === 'new') boxes.push({ name: st.name || '未命名', icon: PICK[st.icon], count: '', current: 'page', style: navStyle(true), pick: function () {}, menu: function () {} });
 
-    var FIELDS = [['from', '发件人'], ['to', '收件人'], ['subject', '主题'], ['body', '正文'], ['label', '标签'], ['folder', '文件夹']];
+    var FIELDS = [['from', '发件人'], ['to', '收件人'], ['subject', '主题'], ['body', '正文'], ['any', '任意内容'], ['attach', '附件'], ['label', '标签'], ['folder', '文件夹']];
     var STATE_FIELDS = [['reply', '回复状态'], ['read', '阅读状态']];
     if (st.ai) FIELDS.unshift(['ai', 'AI 判断']);
     var fieldOpts = function (list) { return list.map(function (f) { return { v: f[0], n: f[1] }; }); };
@@ -512,11 +516,11 @@ class Component extends DCLogic {
     };
     var condRows = function (conds, si) {
       return conds.map(function (c, i) {
-        var pick = c.f === 'reply' || c.f === 'read';
+        var pick = c.f === 'reply' || c.f === 'read' || c.f === 'attach';
         return { rowStyle: 'display: flex; align-items: center; gap: 8px; min-height: 32px; padding: 8px 16px' + (i > 0 || si >= 0 ? '; border-top: 1px solid #E5E5E5' : ''), f: c.f, op: c.op, v: c.v, n: c.n || '3', hasOp: !pick && c.f !== 'ai', isText: !pick, isPick: pick, hasDays: c.f === 'reply' && c.v === 'theirs',
-          opts: c.f === 'reply' ? [{ v: 'mine', n: '未回复' }, { v: 'theirs', n: '等待回复超过' }] : [{ v: 'unread', n: '未读' }, { v: 'read', n: '已读' }],
+          opts: c.f === 'reply' ? [{ v: 'mine', n: '未回复' }, { v: 'theirs', n: '等待回复超过' }] : c.f === 'attach' ? [{ v: 'yes', n: '有' }, { v: 'no', n: '没有' }] : [{ v: 'unread', n: '未读' }, { v: 'read', n: '已读' }],
           ph: c.f === 'from' ? '地址或域名，如 acme.example' : c.f === 'ai' ? '描述' : '输入内容',
-          setF: function (e) { var v = e.target.value; patch(si, function (cs) { cs[i] = { f: v, op: v === 'reply' || v === 'ai' || v === 'read' ? 'is' : 'contains', v: v === 'reply' ? 'mine' : v === 'read' ? 'unread' : '', n: '3' }; }); },
+          setF: function (e) { var v = e.target.value; patch(si, function (cs) { cs[i] = { f: v, op: v === 'reply' || v === 'ai' || v === 'read' || v === 'attach' ? 'is' : 'contains', v: v === 'reply' ? 'mine' : v === 'read' ? 'unread' : v === 'attach' ? 'yes' : '', n: '3' }; }); },
           setOp: function (e) { var v = e.target.value; patch(si, function (cs) { cs[i].op = v; }); },
           setV: function (e) { var v = e.target.value; patch(si, function (cs) { cs[i].v = v; }); },
           setN: function (e) { var v = e.target.value; patch(si, function (cs) { cs[i].n = v; }); },
@@ -527,7 +531,7 @@ class Component extends DCLogic {
     var moveStyle = function (off) { return 'width: 28px; height: 28px; padding: 0; border: 0; border-radius: 6px; background: transparent; display: flex; align-items: center; justify-content: center; color: ' + (off ? '#D4D4D4; cursor: not-allowed' : '#737373'); };
     var sections = !form ? [] : [{ isBox: true, isGroup: false, firstGroup: false, showLogic: true, fieldOpts: fieldOpts(FIELDS), label: '条件', noConds: !st.conds.length, noCondsText: st.fgroups.length ? '未设置条件时，只显示分组内的会话。' : '尚未添加条件。', conds: condRows(st.conds, -1), logicOpts: logicOpts(st.logic, function (l) { self.setState({ logic: l }); }), addCond: function () { patch(-1, function (cs) { cs.push({ f: 'subject', op: 'contains', v: '', n: '3' }); }); } }].concat(st.fgroups.map(function (g, si) {
       var swap = function (a, b) { patch(si, function (_, gs) { var t = gs[a]; gs[a] = gs[b]; gs[b] = t; }); };
-      return { isBox: false, isGroup: true, firstGroup: si === 0, showLogic: true, fieldOpts: fieldOpts(FIELDS.concat(STATE_FIELDS)), label: '分组 ' + (g.name || ''), name: g.name, noConds: !g.conds.length, noCondsText: '尚未添加条件，此分组不会显示。', conds: condRows(g.conds, si),
+      return { isBox: false, isGroup: true, firstGroup: si === 0, showLogic: true, fieldOpts: fieldOpts(FIELDS.concat(STATE_FIELDS)), label: '分组 ' + (g.name || ''), name: g.name, noConds: !g.conds.length, noCondsText: '每个分组至少要有一个条件。', conds: condRows(g.conds, si),
         logicOpts: logicOpts(g.logic, function (l) { patch(si, function (_, gs) { gs[si].logic = l; }); }),
         setName: function (e) { var v = e.target.value; patch(si, function (_, gs) { gs[si].name = v; }); },
         addCond: function () { patch(si, function (cs) { cs.push({ f: 'reply', op: 'is', v: 'mine', n: '3' }); }); },
@@ -536,11 +540,12 @@ class Component extends DCLogic {
         remove: function () { patch(si, function (_, gs) { gs.splice(si, 1); }); } };
     }));
     var hasTop = filled(st.conds).length > 0, nGroups = st.fgroups.length;
+    var saveProblem = !form ? '' : !(st.name || '').trim() ? '请填写名称' : !hasTop && !nGroups ? '请添加条件或分组' : st.fgroups.some(function (g) { return !(g.name || '').trim(); }) ? '请填写分组名称' : st.fgroups.some(function (g) { return !filled(g.conds).length; }) ? '每个分组至少要有一个条件' : '';
     var groupHelp = !nGroups ? '未添加分组时，会话平铺显示。' : (hasTop ? '未进入分组的会话显示在「其他」。' : '只显示分组内的会话。') + (nGroups > 1 ? '会话只进入第一个符合条件的分组。' : '') + (st.fgroups.some(function (g) { return g.conds.some(function (c) { return c.f === 'reply'; }); }) ? '回复状态只计算最近 30 天的邮件。' : '');
     var exList = (boxKey === 'acme' ? [{ k: 'in', kind: '已添加', text: '张律师 · Acme 合同草案' }, { k: 'out', kind: '已移出', text: 'Acme Careers · We are hiring' }] : []).concat(Object.keys(st.excluded).filter(function (k) { return k.split('@')[1] === boxKey; }).map(function (k) { var m = C[k.split('@')[0]]; return { k: k, kind: '已移出', text: m.from + ' · ' + m.subject, real: true }; })).filter(function (x) { return !st.exUndone[x.k]; });
     var exRows = exList.map(function (x, i) { return { rowStyle: 'display: flex; align-items: center; gap: 12px; min-height: 32px; padding: 8px 16px' + (i ? '; border-top: 1px solid #E5E5E5' : ''), kind: x.kind, text: x.text, undo: function () { if (x.real) { var e = Object.assign({}, st.excluded); delete e[x.k]; self.setState({ excluded: e }); } else { var u = Object.assign({}, st.exUndone); u[x.k] = true; self.setState({ exUndone: u }); } } }; });
     var formVals = { title: '' };
-    if (form === 'new') formVals = { title: '新建智能邮箱', desc: st.source === 'mail' ? '已填入发件人。' : st.source === 'search' ? '已按搜索内容填入主题。' : st.source === 'ai' ? 'Wit 已根据描述生成条件，可继续修改。' : '符合条件的会话会显示在右侧。', hasName: true, name: st.name, isToday: false, aiOn: !!st.ai, help: st.ai ? '新邮件自动判断。更早的邮件需手动继续，内容会发送给模型服务。' : '包含历史邮件。回复或归档后，符合条件的会话仍会保留。', groupHelp: groupHelp, hasTemplate: !st.source, hasExceptions: false, exceptions: [], noGroups: !nGroups, canDelete: false, hasFoot: false, saveText: '创建' };
+    if (form === 'new') formVals = { title: '新建智能邮箱', desc: st.source === 'mail' ? '已填入发件人。' : st.source === 'search' ? '已按搜索内容填入条件。' : st.source === 'ai' ? 'Wit 已根据描述生成条件，可继续修改。' : '符合条件的会话会显示在右侧。', hasName: true, name: st.name, isToday: false, aiOn: !!st.ai, help: st.ai ? '新邮件自动判断。更早的邮件需手动继续，内容会发送给模型服务。' : '包含历史邮件。回复或归档后，符合条件的会话仍会保留。', groupHelp: groupHelp, hasTemplate: !st.source, hasExceptions: false, exceptions: [], noGroups: !nGroups, canDelete: false, hasFoot: false, saveText: '创建' };
     if (form === 'edit') {
       formVals = { title: '编辑「' + st.name + '」', desc: '预览随条件实时更新。', hasName: true, name: st.name, isToday: false, aiOn: false, help: '包含历史邮件。回复或归档后，符合条件的会话仍会保留。', groupHelp: groupHelp, hasTemplate: false, hasExceptions: exRows.length > 0, exceptions: exRows, noGroups: !nGroups, canDelete: true, hasFoot: true, saveText: '保存' };
     }
@@ -558,7 +563,7 @@ class Component extends DCLogic {
       boxes: boxes,
       openNew: function () { self.setState({ form: 'new', source: '', name: '', icon: 'folder-3', iconOpen: false, conds: [{ f: 'from', op: 'contains', v: '', n: '3' }], logic: 'all', fgroups: [], sel: '', ctx: false, boxCtx: false, search: false }); },
       openSearch: function () { self.setState({ search: true, box: 'inbox', sel: 'telecom', form: '', ctx: false, boxCtx: false }); },
-      saveSearch: function () { self.setState({ form: 'new', source: 'search', name: '发票', icon: 'bill', iconOpen: false, conds: [{ f: 'subject', op: 'contains', v: '发票', n: '3' }], logic: 'all', fgroups: [], sel: '', search: false }); },
+      saveSearch: function () { self.setState({ form: 'new', source: 'search', name: '发票', icon: 'bill', iconOpen: false, conds: [{ f: 'any', op: 'contains', v: '发票', n: '3' }], logic: 'all', fgroups: [], sel: '', search: false }); },
       newFromMail: function () { var m = C[selId] || C.lena; self.setState({ form: 'new', source: 'mail', name: m.from, icon: 'folder-3', iconOpen: false, conds: [{ f: 'from', op: 'contains', v: m.addr, n: '3' }], logic: 'all', fgroups: [], sel: '', ctx: false, search: false }); },
       isSearch: !!st.search, hasPlainHead: hasPlainHead, listTitle: listTitle,
       notice: notice, noticeIcon: noticeIcon, noticeHref: noticeHref, noticeAct: noticeAct, noticeBtn: noticeBtn,
@@ -567,6 +572,8 @@ class Component extends DCLogic {
       sel: selVals,
       archiveSel: function () { if (selId) self.archive(selId); },
       excludeSel: excludeSel,
+      saveBlocked: !!saveProblem, saveHint: saveProblem,
+      saveStyle: 'height: 32px; padding: 0 12px; border: 0; border-radius: 8px; font-weight: 600; ' + (saveProblem ? 'background: #E5E5E5; color: #A1A1A1; cursor: not-allowed' : 'background: #171717; color: #FFFFFF'),
       form: formVals, sections: sections,
       formIcon: PICK[st.icon] || PICK['folder-3'], iconOpen: !!st.iconOpen, iconAria: st.iconOpen ? 'true' : 'false',
       toggleIcon: function () { self.setState({ iconOpen: !st.iconOpen }); },
