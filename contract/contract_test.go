@@ -44,16 +44,16 @@ func runContract(t *testing.T, s scenario) (rpcLog string) {
 	var got [2]string
 	t.Run("typed", func(t *testing.T) {
 		logged := captureLogs(t)
-		env := coretest.New(t, coretest.WithoutAutoSync())
 		start := time.Now()
+		env := coretest.New(t, coretest.WithoutAutoSync())
 		got[0] = normalize(t, s(t, env.Svc, env), start, time.Now())
 		assert.Empty(t, logged(), "typed calls log nothing")
 	})
 	t.Run("rpc", func(t *testing.T) {
 		logged := captureLogs(t)
+		start := time.Now()
 		env := coretest.New(t, coretest.WithoutAutoSync())
 		r, token := serve(t, env.Svc)
-		start := time.Now()
 		v := s(t, r, env)
 		got[1] = normalize(t, v, start, time.Now())
 		assert.Empty(t, r.StreamErrs(), "remote streams ended abnormally")
@@ -125,8 +125,8 @@ func serve(t *testing.T, svc *core.Service) (r *contract.Remote, token string) {
 // string under MessageID, InReplyTo or References) and every opaque value
 // replaced by a placeholder numbered in order of first appearance: the same
 // value always gets the same placeholder, so associations survive and both
-// sides must agree on them. A timestamp taken from the wall clock while the
-// scenario ran (within [start, end], at the store's one-second resolution)
+// sides must agree on them. A timestamp taken from the wall clock during setup
+// or the scenario (within [start, end], at the store's one-second resolution)
 // becomes "time:now" instead: which of those fall in the same second is
 // timing, not behavior.
 func normalize(t *testing.T, v any, start, end time.Time) string {
