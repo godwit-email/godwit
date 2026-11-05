@@ -250,6 +250,43 @@ func TestLabelView(t *testing.T) {
 	require.Error(t, err)
 }
 
+// Deleting from a label's view moves the mail to Trash, which takes it out
+// of the view and the label's counts, as Junk does.
+func TestLabelViewLeavesOutTrashAndJunk(t *testing.T) {
+	s := newLabelService(t, "", "zh-CN")
+	ctx := t.Context()
+	otp := labelIDs(t, s)["otp"]
+	_, err := s.db.Execute(ctx, `INSERT INTO folders(id, account_id, name, role) VALUES (2, 1, 'Trash', 'trash'), (3, 1, 'Junk', 'junk')`)
+	require.NoError(t, err)
+	a := addMessage(t, s, "a", "a@x", "", "", 1)
+	b := addMessage(t, s, "b", "b@x", "", "", 2)
+	c := addMessage(t, s, "c", "c@x", "", "", 3)
+	for _, id := range []int64{a, b, c} {
+		setRow(t, s, id, otp, "auto", 1)
+	}
+	_, err = s.db.Execute(ctx, `UPDATE messages SET folder_id = 2 WHERE id = ?`, b)
+	require.NoError(t, err)
+	_, err = s.db.Execute(ctx, `UPDATE messages SET folder_id = 3 WHERE id = ?`, c)
+	require.NoError(t, err)
+
+	for _, v := range []View{{LabelID: otp}, {LabelID: otp, AccountID: 1}} {
+		p, err := s.ListMessages(ctx, v, "", 10)
+		require.NoError(t, err)
+		require.Len(t, p.Items, 1, "%+v", v)
+		require.Equal(t, a, p.Items[0].ID)
+	}
+	ls, err := s.ListLabels(ctx)
+	require.NoError(t, err)
+	require.Equal(t, 1, ls[0].Count)
+	require.Equal(t, 1, ls[0].Unread)
+	acc, err := s.ListAccountLabels(ctx, 1)
+	require.NoError(t, err)
+	require.Equal(t, 1, acc[0].Count)
+	all, err := s.AllAccountLabels(ctx)
+	require.NoError(t, err)
+	require.Equal(t, 1, all[1][0].Count)
+}
+
 func TestAccountLabelsAndViews(t *testing.T) {
 	s := newLabelService(t, "", "zh-CN")
 	ctx := t.Context()

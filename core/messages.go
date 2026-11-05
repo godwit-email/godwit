@@ -149,9 +149,9 @@ func viewOnlyCond(v View) (string, []any, error) {
 	case set != 1:
 	case v.LabelID != 0:
 		if v.AccountID != 0 {
-			return `m.account_id = ? AND ` + labelCond, []any{v.AccountID, v.LabelID}, nil
+			return `m.account_id = ? AND ` + labelViewCond, []any{v.AccountID, v.LabelID}, nil
 		}
-		return labelCond, []any{v.LabelID}, nil
+		return labelViewCond, []any{v.LabelID}, nil
 	case v.Unified == "inbox" && v.FolderID == 0:
 		return "m.folder_id IN (SELECT id FROM folders WHERE role = 'inbox')", nil, nil
 	case v.Unified == "starred" && v.FolderID == 0:
@@ -168,7 +168,7 @@ func viewOnlyCond(v View) (string, []any, error) {
 			accID, err1 := strconv.ParseInt(parts[0], 10, 64)
 			labelID, err2 := strconv.ParseInt(parts[1], 10, 64)
 			if err1 == nil && err2 == nil {
-				return `m.account_id = ? AND ` + labelCond, []any{accID, labelID}, nil
+				return `m.account_id = ? AND ` + labelViewCond, []any{accID, labelID}, nil
 			}
 		}
 		return "", nil, errors.New("invalid account label view")
