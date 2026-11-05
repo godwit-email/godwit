@@ -20,6 +20,8 @@ func AddrKey(s string) string {
 
 // ReplyRecipients picks reply targets: Reply-To if set, else From. With all,
 // the original To/Cc are added to cc. self and duplicates are dropped.
+// A reply to the user's own mail (From is self, no other Reply-To) follows
+// up with its recipients instead: the original To, plus Cc with all.
 func ReplyRecipients(orig *Parsed, self string, all bool) (to, cc []string) {
 	seen := map[string]bool{AddrKey(self): true}
 	add := func(dst *[]string, in ...string) {
@@ -29,6 +31,13 @@ func ReplyRecipients(orig *Parsed, self string, all bool) (to, cc []string) {
 				*dst = append(*dst, s)
 			}
 		}
+	}
+	if FromSelf(orig.From, orig.ReplyTo, self) {
+		add(&to, orig.To...)
+		if all {
+			add(&cc, orig.Cc...)
+		}
+		return
 	}
 	if orig.ReplyTo != "" {
 		add(&to, orig.ReplyTo)
@@ -40,6 +49,13 @@ func ReplyRecipients(orig *Parsed, self string, all bool) (to, cc []string) {
 		add(&cc, orig.Cc...)
 	}
 	return
+}
+
+// FromSelf reports whether a mail from from (with Reply-To replyTo, "" for
+// none) is the user's own at self: a reply to it goes to its recipients.
+func FromSelf(from, replyTo, self string) bool {
+	key := AddrKey(self)
+	return key != "" && AddrKey(from) == key && (replyTo == "" || AddrKey(replyTo) == key)
 }
 
 // QuoteHTML returns the "on {date}, {from} wrote:" line plus the original in a blockquote.

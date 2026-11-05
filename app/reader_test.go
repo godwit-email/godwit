@@ -1699,3 +1699,25 @@ func TestReaderSecurityManualAdjustment(t *testing.T) {
 	r.senderOpen = false
 	h.tt.Frame()
 }
+
+// The reply box names who a reply goes to: the sender, or for the user's own
+// mail its first recipient, not the user.
+func TestReaderReplyName(t *testing.T) {
+	h, accs := mailHarness(t, nil, "me@baran.wang")
+	h.waitMail("the folders", func() bool { return len(h.app.mail.folders[accs[0].ID]) > 0 })
+	inbox := h.app.mail.folders[accs[0].ID][0].ID
+	r := h.app.mail.reader
+	for _, c := range []struct {
+		from string
+		to   []string
+		want string
+	}{
+		{from: "Lena Park <lena@partner.example>", to: []string{"me@baran.wang"}, want: "Lena Park"},
+		{from: "Baran <ME@baran.wang>", to: []string{"Julie <julie@partner.example>", "mia@partner.example"}, want: "Julie"},
+		{from: "Baran <me@baran.wang>", want: "Baran"}, // no recipients to name
+	} {
+		if got := r.replyName(core.MessageSummary{FolderID: inbox, From: c.from, To: c.to}); got != c.want {
+			t.Errorf("from %q to %q: %q, want %q", c.from, c.to, got, c.want)
+		}
+	}
+}

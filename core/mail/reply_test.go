@@ -21,6 +21,31 @@ func TestReplyRecipients(t *testing.T) {
 	assert.Equal(t, []string{"r@x.com"}, to)
 }
 
+func TestReplyRecipientsOwnMail(t *testing.T) {
+	o := &mail.Parsed{From: "Me <ME@x.com>", To: []string{"J <j@x.com>", "k@x.com"}, Cc: []string{"c@x.com", "me@x.com"}}
+	to, cc := mail.ReplyRecipients(o, "me@x.com", false)
+	assert.Equal(t, []string{"J <j@x.com>", "k@x.com"}, to)
+	assert.Empty(t, cc)
+	to, cc = mail.ReplyRecipients(o, "me@x.com", true)
+	assert.Equal(t, []string{"J <j@x.com>", "k@x.com"}, to)
+	assert.Equal(t, []string{"c@x.com"}, cc)
+	o.ReplyTo = "me@x.com"
+	to, _ = mail.ReplyRecipients(o, "me@x.com", false)
+	assert.Equal(t, []string{"J <j@x.com>", "k@x.com"}, to)
+	// A Reply-To elsewhere still wins: the user asked for replies to go there.
+	o.ReplyTo = "list@x.com"
+	to, _ = mail.ReplyRecipients(o, "me@x.com", false)
+	assert.Equal(t, []string{"list@x.com"}, to)
+}
+
+func TestFromSelf(t *testing.T) {
+	assert.True(t, mail.FromSelf("Me <Me@X.com>", "", "me@x.com"))
+	assert.True(t, mail.FromSelf("me@x.com", "Me <me@x.com>", "me@x.com"))
+	assert.False(t, mail.FromSelf("me@x.com", "r@x.com", "me@x.com"))
+	assert.False(t, mail.FromSelf("a@x.com", "", "me@x.com"))
+	assert.False(t, mail.FromSelf("", "", ""))
+}
+
 func TestSubjects(t *testing.T) {
 	assert.Equal(t, "Re: Q4", mail.ReplySubject("Re: Q4"))
 	assert.Equal(t, "Re: 报销", mail.ReplySubject("报销"))
