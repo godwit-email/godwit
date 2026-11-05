@@ -910,9 +910,22 @@ func TestRowUnreadCount(t *testing.T) {
 	}
 	h.waitMail("two unread of three", func() bool { return h.items()[0].Unread == 2 })
 	h.until("the dot labeled 2 unread", func() bool { _, ok := h.tt.Find("2 未读"); return ok })
-	// The row no longer shows the thread's size (07a4d40); a bare see("3") matched the sidebar's stale unread count.
 	if n := h.items()[0].Count; n != 3 {
 		t.Fatalf("the row holds %d messages, want 3", n)
+	}
+	// The row shows the thread's size, found by its label: a bare see("3") would match the sidebar's unread count.
+	h.until("the count labeled 3 messages", func() bool { _, ok := h.tt.Find(i18n.Tf("reader.thread_count", 3)); return ok })
+}
+
+// A single message has no count: only a conversation shows its size.
+func TestRowNoCountForOneMessage(t *testing.T) {
+	h, accs := mailHarness(t, nil, "alice@example.com")
+	h.put(accs[0], "INBOX", coretest.Msg("bob@example.com", "alice@example.com", "Plan", "one", coretest.MessageID("a@x")))
+	h.syncNow(accs[0])
+	h.waitMail("one row", func() bool { return len(h.items()) == 1 })
+	h.see("one")
+	if _, ok := h.tt.Find(i18n.Tf("reader.thread_count", 1)); ok {
+		t.Fatal("a lone message shows a count")
 	}
 }
 
