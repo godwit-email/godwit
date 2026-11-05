@@ -119,28 +119,120 @@ func (s *Service) GetAttachment(ctx context.Context, attachmentID int64) (string
 	if err != nil {
 		return "", info, err
 	}
+	path, err := s.saveAttachment(ctx, a, data)
+	return path, info, err
+}
+
+// saveAttachment writes a's downloaded data to the cache and records it. The
+// caller holds the account lock.
+func (s *Service) saveAttachment(ctx context.Context, a attRow, data []byte) (string, error) {
 	// Transfer encoding was undone while streaming. Only text has a charset:
 	// a PDF labelled charset=binary or latin-1 keeps its bytes.
-	if strings.HasPrefix(strings.ToLower(info.ContentType), "text/") {
+	if strings.HasPrefix(strings.ToLower(a.info.ContentType), "text/") {
 		if d, err := mail.DecodePart(data, "", a.charset); err == nil {
 			data = d
 		}
 	}
 	if int64(len(data)) > attachLimit {
-		return "", info, ErrTooLarge
+		return "", ErrTooLarge
 	}
-	path, err := filepath.Abs(filepath.Join(s.cacheDir(a.accountID), strconv.FormatInt(attachmentID, 10)))
+	path, err := filepath.Abs(filepath.Join(s.cacheDir(a.accountID), strconv.FormatInt(a.info.ID, 10)))
 	if err != nil {
-		return "", info, err
+		return "", err
 	}
 	if err := store.WriteFileAtomic(path, data); err != nil {
-		return "", info, err
+		return "", err
 	}
-	if _, err := s.db.Execute(ctx, "UPDATE attachments SET cache_path = ?, last_used = ? WHERE id = ?", path, time.Now().Unix(), attachmentID); err != nil {
+	if _, err := s.db.Execute(ctx, "UPDATE attachments SET cache_path = ?, last_used = ? WHERE id = ?", path, time.Now().Unix(), a.info.ID); err != nil {
 		os.Remove(path)
-		return "", info, err
+		return "", err
 	}
-	return path, info, s.evict(ctx, MaxCacheBytes, attachmentID)
+	return path, s.evict(ctx, MaxCacheBytes, a.info.ID)
+}
+
+// inlineImages returns the cached files of one message's attachments ids,
+// downloading the missing ones under one lock and over one connection: a login
+// per image made a message with a few signature logos take seconds to open.
+// One that cannot be had is left out, so its image stays blocked; err is only
+// for a failed connection or an ended ctx.
+func (s *Service) inlineImages(ctx context.Context, ids []int64) (map[int64]string, error) {
+	ctx, end, err := s.begin(ctx, 0)
+	if err != nil {
+		return nil, err
+	}
+	defer end()
+	files := map[int64]string{}
+	var accountID int64
+	var missing []int64
+	for _, id := range ids {
+		a, err := s.loadAttachment(ctx, id)
+		if err != nil {
+			continue
+		}
+		if accountID == 0 {
+			if err := s.bind(ctx, a.accountID); err != nil {
+				return files, err
+			}
+			accountID = a.accountID
+		}
+		if p, ok, err := s.cached(ctx, a); err == nil && ok {
+			files[id] = p
+		} else if err == nil {
+			missing = append(missing, id)
+		}
+	}
+	if len(missing) == 0 {
+		return files, ctx.Err()
+	}
+	unlock, err := s.lockAccount(ctx, accountID)
+	if err != nil {
+		return files, err
+	}
+	defer unlock()
+	var todo []attRow
+	for _, id := range missing {
+		// The row may have changed (cached, moved, deleted) while we waited for the lock.
+		a, err := s.loadAttachment(ctx, id)
+		if err != nil {
+			continue
+		}
+		if p, ok, err := s.cached(ctx, a); err == nil && ok {
+			files[id] = p
+		} else if err == nil && a.onServer && int64(a.info.Size) <= attachLimit {
+			todo = append(todo, a)
+		}
+	}
+	if len(todo) == 0 {
+		return files, ctx.Err()
+	}
+	c, release, abort, err := s.dialDownload(ctx, accountID)
+	if err != nil {
+		return files, err
+	}
+	defer release()
+	var selected *attRow
+	for i, a := range todo {
+		if selected == nil || selected.folder != a.folder || selected.uidValidity != a.uidValidity {
+			if err := selectFolder(c, a.folder, a.uidValidity); err != nil {
+				return files, err
+			}
+			selected = &todo[i]
+		}
+		data, err := fetchSection(c, abort, a.uid, a.part, a.encoding)
+		if ctx.Err() != nil {
+			return files, ctx.Err()
+		}
+		if errors.Is(err, ErrTooLarge) {
+			break // abort closed the connection
+		}
+		if err != nil {
+			continue
+		}
+		if p, err := s.saveAttachment(ctx, a, data); err == nil {
+			files[a.info.ID] = p
+		}
+	}
+	return files, ctx.Err()
 }
 
 // GetRawMessage downloads the message's full original from the server, for a
@@ -194,11 +286,8 @@ func (s *Service) touch(ctx context.Context, id int64) error {
 // download fetches the raw (still transfer-encoded) part from the server, or the
 // whole message when a.part is empty.
 func (s *Service) download(ctx context.Context, a attRow) ([]byte, error) {
-	c, release, abort, err := s.dialAccount(ctx, a.accountID, nil)
+	c, release, abort, err := s.dialDownload(ctx, a.accountID)
 	if err != nil {
-		if errors.Is(err, conn.ErrAuthFailed) {
-			s.bus.Publish(events.Event{Type: events.SyncFailed, AccountID: a.accountID, Error: err.Error(), Kind: string(conn.FailureAuth)})
-		}
 		return nil, err
 	}
 	defer release()
@@ -209,17 +298,39 @@ func (s *Service) download(ctx context.Context, a attRow) ([]byte, error) {
 	return data, err
 }
 
+// dialDownload is dialAccount for a download; a refused login is shown like a sync's.
+func (s *Service) dialDownload(ctx context.Context, accountID int64) (c *imapclient.Client, release, abort func(), err error) {
+	c, release, abort, err = s.dialAccount(ctx, accountID, nil)
+	if errors.Is(err, conn.ErrAuthFailed) {
+		s.bus.Publish(events.Event{Type: events.SyncFailed, AccountID: accountID, Error: err.Error(), Kind: string(conn.FailureAuth)})
+	}
+	return c, release, abort, err
+}
+
 // fetchPart streams the part and undoes its transfer encoding on the fly. Once
 // more than attachLimit decoded bytes arrive it cuts the connection with abort
 // and returns ErrTooLarge.
 func fetchPart(c *imapclient.Client, abort func(), folder string, uidValidity uint32, uid imap.UID, part, encoding string) ([]byte, error) {
-	sel, err := c.Select(folder, &imap.SelectOptions{ReadOnly: true}).Wait()
-	if err != nil {
+	if err := selectFolder(c, folder, uidValidity); err != nil {
 		return nil, err
 	}
-	if sel.UIDValidity != uidValidity {
-		return nil, errors.New("server folder changed since sync; sync again")
+	return fetchSection(c, abort, uid, part, encoding)
+}
+
+// selectFolder opens folder read-only, failing if it is not the one synced.
+func selectFolder(c *imapclient.Client, folder string, uidValidity uint32) error {
+	sel, err := c.Select(folder, &imap.SelectOptions{ReadOnly: true}).Wait()
+	if err != nil {
+		return err
 	}
+	if sel.UIDValidity != uidValidity {
+		return errors.New("server folder changed since sync; sync again")
+	}
+	return nil
+}
+
+// fetchSection is fetchPart in the already selected folder.
+func fetchSection(c *imapclient.Client, abort func(), uid imap.UID, part, encoding string) ([]byte, error) {
 	var path []int // none: the whole message
 	if part != "" {
 		for p := range strings.SplitSeq(part, ".") {
@@ -233,6 +344,7 @@ func fetchPart(c *imapclient.Client, abort func(), folder string, uidValidity ui
 	sec := &imap.FetchItemBodySection{Part: path, Peek: true}
 	cmd := c.Fetch(imap.UIDSetNum(uid), &imap.FetchOptions{UID: true, BodySection: []*imap.FetchItemBodySection{sec}})
 	var data []byte
+	var err error
 	found := false
 	for m := cmd.Next(); m != nil; m = cmd.Next() {
 		for item := m.Next(); item != nil; item = m.Next() {

@@ -273,6 +273,34 @@ func TestGetMessageInlineImage(t *testing.T) {
 	assert.NotZero(t, e.count(t, "SELECT count(*) FROM attachments WHERE cache_path IS NOT NULL"))
 }
 
+// A message's inline images download over one connection, not one login each:
+// every login is a TLS handshake and a SELECT, so a signature with a few logos
+// made the first open take seconds.
+func TestGetMessageInlineImagesOneLogin(t *testing.T) {
+	e := newSyncEnv(t)
+	png := "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6\r\nkgAAAABJRU5ErkJggg=="
+	raw := "From: Alice <alice@example.com>\r\nTo: Bob <bob@example.com>\r\nDate: Wed, 08 Oct 2026 10:00:00 +0000\r\n" +
+		"Message-ID: <imgs@example.com>\r\nMIME-Version: 1.0\r\nSubject: Logos\r\nContent-Type: multipart/related; boundary=\"b1\"\r\n\r\n" +
+		"--b1\r\nContent-Type: text/html; charset=utf-8\r\n\r\n<p>hi</p><img src=\"cid:a\"><img src=\"cid:b\"><img src=\"cid:c\">\r\n"
+	for _, cid := range []string{"a", "b", "c"} {
+		raw += "--b1\r\nContent-Type: image/png\r\nContent-ID: <" + cid + ">\r\nContent-Disposition: inline; filename=\"" + cid +
+			".png\"\r\nContent-Transfer-Encoding: base64\r\n\r\n" + png + "\r\n"
+	}
+	e.put(t, "INBOX", raw+"--b1--\r\n")
+	e.sync(t)
+	id := e.rows(t, "SELECT id FROM messages")[0][0].(int64)
+	before := e.im.Logins()
+	m, err := e.s.GetMessage(bg, id, false)
+	require.NoError(t, err)
+	assert.Equal(t, 3, strings.Count(m.HTML, "data:image/"))
+	assert.Equal(t, 3, e.count(t, "SELECT count(*) FROM attachments WHERE cache_path IS NOT NULL"))
+	assert.Equal(t, before+1, e.im.Logins(), "one login for all inline images")
+	// Cached: opening again needs no connection.
+	_, err = e.s.GetMessage(bg, id, false)
+	require.NoError(t, err)
+	assert.Equal(t, before+1, e.im.Logins())
+}
+
 func TestSearchChineseBodyOnly(t *testing.T) {
 	e := newSyncEnv(t)
 	e.put(t, "INBOX", eml("z@x", "finance@x", "alice@example.com", "通知", "Mon, 05 Oct 2026 09:00:00 +0000", "请查收本月发票和报销单"))
