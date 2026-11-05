@@ -2753,8 +2753,8 @@
       }
     }
   },
-  "codes_recent": "Recent sign-in codes",
-  "codes_empty": "No codes in the last 15 minutes",
+  "codes_recent": "Recent codes & links",
+  "codes_empty": "No codes or links in the last 15 minutes",
   "codes_copy_failed": "Copy failed",
   "codes_copy_button": "Copy",
   "codes_copied": "Copied",
