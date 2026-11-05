@@ -91,6 +91,11 @@ func (t Thread) Merged() []MessageSummary {
 // last, as it holds a copy of every message.
 const copyCols = `m.thread_id, m.message_id, CASE (SELECT f.role FROM folders f WHERE f.id = m.folder_id) WHEN 'inbox' THEN 0 WHEN 'all' THEN 2 ELSE 1 END`
 
+// inSentCol is 1 for a copy in a Sent folder. Mail you sent is never unread,
+// whatever \Seen its copies carry: another client or an import can leave the
+// Sent copy unflagged, and the thread would stay unread for your own reply.
+const inSentCol = `(SELECT f.role FROM folders f WHERE f.id = m.folder_id) = 'sent'`
+
 // copyOf gives, for rows each holding copyCols at col, the index of the row
 // that shows each row's message, its own index for that row: of a thread's
 // rows sharing a Message-ID, the one of the preferred folder, then lowest id
@@ -170,16 +175,17 @@ func (s *Service) ListThreads(ctx context.Context, v View, cursor string, limit 
 	if len(ids) == 0 {
 		return page, nil
 	}
-	ms, err := s.db.Query(ctx, `SELECT thread_id, from_addr, snippet, flags, has_attachments, auth_results, security_status, security_reason, security_scanned_at, m.id, `+copyCols+` FROM messages m
+	ms, err := s.db.Query(ctx, `SELECT thread_id, from_addr, snippet, flags, has_attachments, auth_results, security_status, security_reason, security_scanned_at, m.id, `+copyCols+`, `+inSentCol+` FROM messages m
 		WHERE thread_id IN (`+strings.TrimSuffix(strings.Repeat("?,", len(ids)), ",")+`) AND `+notPurgedCond+` ORDER BY date DESC, id DESC`, ids...)
 	if err != nil {
 		return ThreadPage{}, err
 	}
 	seen := map[string]bool{}
 	of := copyOf(ms.Values, 9, 10)
-	unread, flagged := map[int]bool{}, map[int]bool{} // a message is unread or starred if any copy is
+	unread, flagged, sent := map[int]bool{}, map[int]bool{}, map[int]bool{} // a message is unread or starred if any copy is, and read once one is in Sent
 	for i, r := range ms.Values {
 		unread[of[i]] = unread[of[i]] || !strings.Contains(store.Str(r[3]), `\Seen`)
+		sent[of[i]] = sent[of[i]] || store.Int(r[13]) != 0
 		flagged[of[i]] = flagged[of[i]] || strings.Contains(store.Str(r[3]), `\Flagged`)
 	}
 	for _, r := range ms.Values { // a warning on any copy is the thread's
@@ -207,7 +213,7 @@ func (s *Service) ListThreads(ctx context.Context, v View, cursor string, limit 
 			t.Snippet = gomail.Snippet(store.Str(r[2])) // newest first; clean of what an older sync kept
 		}
 		t.Count++
-		if unread[i] {
+		if unread[i] && !sent[i] {
 			t.Unread++
 		}
 		if flagged[i] {

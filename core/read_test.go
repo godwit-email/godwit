@@ -139,6 +139,24 @@ func TestGetThreadOrder(t *testing.T) {
 	assert.Equal(t, []string{"bob@example.com"}, th.Messages[2].To)
 }
 
+// Mail you sent is never unread, even when the server never flagged its Sent
+// copy \Seen (another client, an import): the thread counts the rest. A copy
+// of it outside Sent, a self-Cc in the inbox, is read with it.
+func TestThreadUnreadSkipsSent(t *testing.T) {
+	e := newSyncEnv(t)
+	e.put(t, "INBOX", eml("o@x", "Bob <bob@example.com>", "alice@example.com", "plan", "Mon, 05 Oct 2026 09:00:00 +0000", "q"))
+	mine := eml("r@x", "alice@example.com", "bob@example.com", "Re: plan", "Mon, 05 Oct 2026 10:00:00 +0000", "a", "In-Reply-To: <o@x>", "Cc: alice@example.com")
+	e.put(t, "Sent", mine)
+	e.put(t, "INBOX", mine)
+	e.sync(t)
+	p, err := e.s.ListThreads(bg, View{Unified: "inbox"}, "", 50)
+	require.NoError(t, err)
+	require.Len(t, p.Items, 1)
+	assert.Equal(t, 2, p.Items[0].Count)
+	assert.Equal(t, 1, p.Items[0].Unread) // Bob's, not yours
+	assert.Equal(t, "a", p.Items[0].Snippet)
+}
+
 // Gmail keeps a message in INBOX, each label's folder and All Mail: the
 // thread shows it once, the inbox copy, and actions still reach every copy.
 func TestThreadCopiesShowOnce(t *testing.T) {
