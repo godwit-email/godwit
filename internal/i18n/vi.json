@@ -1862,5 +1862,9 @@
   "mail_purge_toast": "Đã xóa vĩnh viễn {arg1, number, ::group-off} thư",
   "mail_purge_undone": "Đã hoàn tác việc xóa",
   "mail_purge_too_late": "Quá trễ: thư đã bị xóa vĩnh viễn.",
-  "mail_purge_partly_undone": "Đã khôi phục phần còn lại; {arg1, number, ::group-off} thư đã bị xóa vĩnh viễn trước đó"
+  "mail_purge_partly_undone": "Đã khôi phục phần còn lại; {arg1, number, ::group-off} thư đã bị xóa vĩnh viễn trước đó",
+  "settings_models_preset_antigravity": "Antigravity",
+  "settings_models_tile_antigravity": "Gói Google AI hoặc Antigravity của bạn",
+  "settings_models_antigravity_preparing": "Đang chuẩn bị môi trường Antigravity ACP và bắt đầu đăng nhập bằng Google…",
+  "settings_models_login_antigravity": "Đăng nhập bằng Google"
 }

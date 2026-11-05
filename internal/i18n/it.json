@@ -1862,5 +1862,9 @@
   "mail_purge_toast": "{arg1, plural, one {{arg1, number, ::group-off} messaggio eliminato definitivamente} many {{arg1, number, ::group-off} messaggi eliminati definitivamente} other {{arg1, number, ::group-off} messaggi eliminati definitivamente}}",
   "mail_purge_undone": "Eliminazione annullata",
   "mail_purge_too_late": "Troppo tardi: il messaggio è già stato eliminato definitivamente.",
-  "mail_purge_partly_undone": "{arg1, plural, one {Il resto è stato ripristinato; {arg1, number, ::group-off} messaggio era già stato eliminato definitivamente} many {Il resto è stato ripristinato; {arg1, number, ::group-off} messaggi erano già stati eliminati definitivamente} other {Il resto è stato ripristinato; {arg1, number, ::group-off} messaggi erano già stati eliminati definitivamente}}"
+  "mail_purge_partly_undone": "{arg1, plural, one {Il resto è stato ripristinato; {arg1, number, ::group-off} messaggio era già stato eliminato definitivamente} many {Il resto è stato ripristinato; {arg1, number, ::group-off} messaggi erano già stati eliminati definitivamente} other {Il resto è stato ripristinato; {arg1, number, ::group-off} messaggi erano già stati eliminati definitivamente}}",
+  "settings_models_preset_antigravity": "Antigravity",
+  "settings_models_tile_antigravity": "Il tuo piano Google AI o Antigravity",
+  "settings_models_antigravity_preparing": "Preparazione del runtime Antigravity ACP e avvio dell'accesso Google…",
+  "settings_models_login_antigravity": "Accedi con Google"
 }

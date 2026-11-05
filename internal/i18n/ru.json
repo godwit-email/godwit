@@ -1862,5 +1862,9 @@
   "mail_purge_toast": "Удалено навсегда писем: {arg1, number, ::group-off}",
   "mail_purge_undone": "Удаление отменено",
   "mail_purge_too_late": "Слишком поздно: сообщение уже удалено навсегда.",
-  "mail_purge_partly_undone": "Остальные восстановлены; уже удалено навсегда писем: {arg1, number, ::group-off}"
+  "mail_purge_partly_undone": "Остальные восстановлены; уже удалено навсегда писем: {arg1, number, ::group-off}",
+  "settings_models_preset_antigravity": "Antigravity",
+  "settings_models_tile_antigravity": "Ваш тариф Google AI или Antigravity",
+  "settings_models_antigravity_preparing": "Подготовка среды Antigravity ACP и запуск входа через Google…",
+  "settings_models_login_antigravity": "Войти через Google"
 }

@@ -1862,5 +1862,9 @@
   "mail_purge_toast": "已永久刪除 {arg1, number, ::group-off} 封",
   "mail_purge_undone": "已復原刪除",
   "mail_purge_too_late": "已超時：郵件已被永久刪除。",
-  "mail_purge_partly_undone": "已復原其餘郵件，{arg1, number, ::group-off} 封已被永久刪除"
+  "mail_purge_partly_undone": "已復原其餘郵件，{arg1, number, ::group-off} 封已被永久刪除",
+  "settings_models_preset_antigravity": "Antigravity",
+  "settings_models_tile_antigravity": "用 Google AI 或 Antigravity 訂閱",
+  "settings_models_antigravity_preparing": "正在準備 Antigravity ACP 執行環境並啟動 Google 登入…",
+  "settings_models_login_antigravity": "使用 Google 登入"
 }

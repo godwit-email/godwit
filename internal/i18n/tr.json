@@ -1862,5 +1862,9 @@
   "mail_purge_toast": "{arg1, number, ::group-off} ileti kalıcı olarak silindi",
   "mail_purge_undone": "Silme işlemi geri alındı",
   "mail_purge_too_late": "Çok geç: ileti kalıcı olarak silindi.",
-  "mail_purge_partly_undone": "Kalanlar geri yüklendi; {arg1, number, ::group-off} ileti zaten kalıcı olarak silinmişti"
+  "mail_purge_partly_undone": "Kalanlar geri yüklendi; {arg1, number, ::group-off} ileti zaten kalıcı olarak silinmişti",
+  "settings_models_preset_antigravity": "Antigravity",
+  "settings_models_tile_antigravity": "Google AI veya Antigravity planınız",
+  "settings_models_antigravity_preparing": "Antigravity ACP çalışma ortamı hazırlanıyor ve Google ile giriş başlatılıyor…",
+  "settings_models_login_antigravity": "Google ile giriş yap"
 }

@@ -1862,5 +1862,9 @@
   "mail_purge_toast": "{arg1, number, ::group-off} 通を完全に削除しました",
   "mail_purge_undone": "削除を取り消しました",
   "mail_purge_too_late": "時間が経過しました: メッセージはすでに完全に削除されました。",
-  "mail_purge_partly_undone": "残りを元に戻しました。{arg1, number, ::group-off} 通はすでに完全に削除されていました"
+  "mail_purge_partly_undone": "残りを元に戻しました。{arg1, number, ::group-off} 通はすでに完全に削除されていました",
+  "settings_models_preset_antigravity": "Antigravity",
+  "settings_models_tile_antigravity": "Google AI または Antigravity プランを利用",
+  "settings_models_antigravity_preparing": "Antigravity ACP ランタイムを準備し、Google ログインを開始しています…",
+  "settings_models_login_antigravity": "Google でログイン"
 }
