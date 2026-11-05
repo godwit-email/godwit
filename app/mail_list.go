@@ -836,34 +836,15 @@ func (p *mailPage) listView(c *ui.Context) {
 				}
 			}
 			m.Separator()
-			if len(p.a.labels) > 0 {
-				m.Submenu(i18n.T("mail.menu.labels"), func(sm *ui.Menu) {
-					for _, l := range p.a.labels {
-						lid := l.ID
-						has := slices.ContainsFunc(on, func(item mailItem) bool {
-							return slices.ContainsFunc(item.Labels, func(al core.AppliedLabel) bool { return al.LabelID == lid })
-						})
-						if sm.Item(l.Name).Icon(menuIcon(labelIcon(l.Icon))).Checked(has).Chosen() {
-							p.toggleLabel(on, lid, !has)
-						}
+			labelSubmenu(m, theme.Of(c), p.a.labels, func(id int64) (has, auto bool) {
+				for _, item := range on {
+					if al, ok := appliedLabel(item.Labels, id); ok {
+						has, auto = true, al.Auto && len(on) == 1
 					}
-				}).Icon(menuIcon("tag"))
-			}
-			m.Submenu(i18n.T("mail.menu.security"), func(sm *ui.Menu) {
-				if sm.Item(i18n.T("mail.security.mark_safe")).Chosen() {
-					p.applySecurity(on, "manual_safe")
 				}
-				if sm.Item(i18n.T("mail.security.mark_suspicious")).Chosen() {
-					p.applySecurity(on, "manual_suspicious")
-				}
-				if sm.Item(i18n.T("mail.security.mark_warning")).Chosen() {
-					p.applySecurity(on, "manual_warning")
-				}
-				sm.Separator()
-				if sm.Item(i18n.T("mail.security.reset")).Chosen() {
-					p.applySecurity(on, "")
-				}
-			}).Icon(menuIcon("shield"))
+				return has, auto
+			}, func(id int64, set bool) { p.toggleLabel(on, id, set) })
+			securitySubmenu(m, func(reason string) bool { return len(on) == 1 && on[0].Security.Reason == reason }, func(reason string) { p.applySecurity(on, reason) })
 			if len(on) == 1 { // for mail like this one: a rule, or blocking its sender
 				m.Separator()
 				if m.Item(i18n.T("mail.menu.rule")).Icon(menuIcon("filter")).Chosen() {

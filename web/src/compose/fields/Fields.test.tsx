@@ -127,8 +127,7 @@ test("invalid addresses are listed", () => {
 
 test("choosing another account calls onFrom", async () => {
   const { onFrom } = setup();
-  await userEvent.click(screen.getByRole("combobox", { name: "发件账户" }));
-  await userEvent.click(await screen.findByRole("option", { name: "work@x.com" }));
+  await userEvent.selectOptions(screen.getByRole("combobox", { name: "发件账户" }), "work@x.com");
   expect(onFrom).toHaveBeenCalledWith(2);
 });
 
@@ -161,8 +160,7 @@ test("frozen: read-only, nothing committed, removed or switched", async () => {
   fireEvent.change(screen.getByRole("textbox", { name: "主题" }), { target: { value: "s" } });
   act(() => ref.current?.commitPending());
   await userEvent.click(screen.getByRole("button", { name: "移除 a@b.c" }));
-  await userEvent.click(screen.getByRole("combobox", { name: "发件账户" }));
-  expect(screen.queryByRole("option", { name: "work@x.com" })).not.toBeInTheDocument();
+  expect(screen.getByRole("combobox", { name: "发件账户" })).toBeDisabled();
   expect(onChange).not.toHaveBeenCalled();
   expect(onFrom).not.toHaveBeenCalled();
   expect(chips()).toEqual(["移除 a@b.c"]);

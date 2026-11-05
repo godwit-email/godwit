@@ -79,7 +79,10 @@ func TestReaderViewContact(t *testing.T) {
 	h.openThread(m.ThreadID)
 	h.seeBody(m.ID)
 	h.click("Bob@Example.com")
-	h.click("查看联系人")
+	if err := h.tt.ChooseMenuItem("查看联系人"); err != nil {
+		t.Fatalf("%v; menu %q", err, h.tt.Menu())
+	}
+	h.drain()
 	h.until("the contacts page", func() bool {
 		return h.app.route.Page == PageContacts && h.app.route.Contact == "bob@example.com"
 	})

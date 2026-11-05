@@ -43,12 +43,13 @@ func TestReaderThreadHeader(t *testing.T) {
 		t.Fatalf("open %v", r.open)
 	}
 	h.click("bob@example.com")
-	h.until("the sender's actions", func() bool { return r.senderOpen && r.senderMsgID == msgs[0].ID })
+	if len(h.tt.Menu()) == 0 {
+		t.Fatal("no sender's actions")
+	}
 	if !r.open[msgs[0].ID] {
 		t.Fatal("the sender folded its message")
 	}
-	r.senderOpen = false
-	h.tt.Frame()
+	h.tt.CloseMenu()
 	h.click("收起")
 	h.until("the first folded", func() bool { return !r.open[msgs[0].ID] && r.open[msgs[1].ID] })
 	h.see("first words") // its row: the start of its text

@@ -61,10 +61,10 @@ func TestKitLabelChipLooks(t *testing.T) {
 }
 
 func TestKitLabelChipRemove(t *testing.T) {
-	removed, clicked := 0, 0
+	removed := 0
 	tt := ui.NewTester(themed(func(c *ui.Context) {
 		LabelChip(c, LabelChipOpts{Text: "验证码", Icon: "shield-keyhole", Color: theme.Of(c).Label("red"), Auto: true, Tip: "由模型标记",
-			OnClick: func() { clicked++ }, OnRemove: func() { removed++ }, RemoveLabel: "去掉标签「验证码」"})
+			Menu: func(m *ui.Menu) { m.Item("菜单项") }, OnRemove: func() { removed++ }, RemoveLabel: "去掉标签「验证码」"})
 	}), 300, 200)
 	r, _ := tt.Find("验证码")
 	tt.Move(r.X+r.W/2, r.Y+r.H/2)
@@ -75,21 +75,20 @@ func TestKitLabelChipRemove(t *testing.T) {
 	if err := tt.Click("去掉标签「验证码」"); err != nil {
 		t.Fatal(err)
 	}
-	if removed != 1 || clicked != 0 {
-		t.Errorf("removed %d clicked %d, want 1 and 0", removed, clicked)
+	if removed != 1 || tt.Menu() != nil {
+		t.Errorf("removed %d, menu %q, want 1 and none", removed, tt.Menu())
 	}
 }
 
-func TestKitLabelChipClick(t *testing.T) {
-	clicked := 0
+func TestKitLabelChipMenu(t *testing.T) {
 	tt := ui.NewTester(themed(func(c *ui.Context) {
-		LabelChip(c, LabelChipOpts{Text: "账单", Icon: "bill", Color: theme.Of(c).Label("amber"), OnClick: func() { clicked++ }})
+		LabelChip(c, LabelChipOpts{Text: "账单", Icon: "bill", Color: theme.Of(c).Label("amber"), Menu: func(m *ui.Menu) { m.Item("菜单项") }})
 	}), 300, 200)
 	if err := tt.Click("账单"); err != nil {
 		t.Fatal(err)
 	}
-	if clicked != 1 {
-		t.Errorf("clicked %d, want 1", clicked)
+	if got := tt.Menu(); len(got) != 1 || got[0] != "菜单项" {
+		t.Errorf("menu %q", got)
 	}
 	plain := ui.NewTester(themed(func(c *ui.Context) {
 		LabelChip(c, LabelChipOpts{Text: "账单", Icon: "bill", Color: theme.Of(c).Label("amber")})
@@ -97,7 +96,7 @@ func TestKitLabelChipClick(t *testing.T) {
 	plain.Key(0, ui.KeyTab)
 	plain.Frame()
 	if plain.Focused("账单") {
-		t.Error("a chip with no OnClick takes focus")
+		t.Error("a chip with no Menu takes focus")
 	}
 }
 

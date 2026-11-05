@@ -961,14 +961,20 @@ func TestReaderSenderPopover(t *testing.T) {
 		t.Fatal("unexpectedly blocked")
 	}
 
-	// Verify opening Godwit-native popover via the chevron button
-	h.click("spammer@example.com")
-	h.until("popover open", func() bool { return r.senderOpen && r.senderMsgID == m.ID })
-	h.see(i18n.T("reader.copy_address"))
-	h.see(i18n.T("reader.block_sender"))
+	choose := func(item string) {
+		t.Helper()
+		h.click("spammer@example.com")
+		if !slices.Contains(h.tt.Menu(), i18n.T("reader.copy_address")) {
+			t.Fatalf("menu %q", h.tt.Menu())
+		}
+		if err := h.tt.ChooseMenuItem(item); err != nil {
+			t.Fatalf("%v; menu %q", err, h.tt.Menu())
+		}
+		h.drain()
+	}
 
 	// Blocking shows the badge at once and leaves the conversation where it is.
-	h.click(i18n.T("reader.block_sender"))
+	choose(i18n.T("reader.block_sender"))
 	h.until("blocked", func() bool { return r.isBlocked("Spammer <spammer@example.com>") })
 	h.see(i18n.T("reader.blocked_badge"))
 	h.see(i18n.T("reader.sender_blocked"))
@@ -976,8 +982,7 @@ func TestReaderSenderPopover(t *testing.T) {
 		t.Fatalf("route %+v: blocking must not move the open conversation", h.app.route)
 	}
 
-	h.click("spammer@example.com")
-	h.click(i18n.T("reader.unblock_sender"))
+	choose(i18n.T("reader.unblock_sender"))
 	h.until("unblocked", func() bool { return !r.isBlocked("spammer@example.com") })
 	h.see(i18n.T("reader.sender_unblocked"))
 }
@@ -1682,25 +1687,49 @@ func TestReaderSecurityManualAdjustment(t *testing.T) {
 		return err == nil && len(th.Messages) > 0 && th.Messages[0].Security.Reason == "manual_suspicious"
 	})
 
-	// 5. Test security popover body rendering
+	// 5. The badge's menu sets the classification
 	r := h.app.mail.reader
-	r.secMenuOpen = true
-	r.secMenuMsgID = m.ID
-	h.tt.Frame()
-	h.see(i18n.T("reader.security.edit_title"))
-	h.see(i18n.T("mail.security.mark_safe"))
-	h.see(i18n.T("mail.security.mark_warning"))
-	h.see(i18n.T("mail.security.reset"))
-	r.secMenuOpen = false
+	r.applySecurity(m.ID, "manual_suspicious")
+	h.click(i18n.T("reader.security.manual_suspicious_badge"))
+	menu := h.tt.Menu()
+	for _, want := range []string{"mail.security.mark_safe", "mail.security.mark_suspicious", "mail.security.mark_warning", "mail.security.reset"} {
+		if !slices.Contains(menu, i18n.T(want)) {
+			t.Fatalf("no %s in menu %q", want, menu)
+		}
+	}
+	if err := h.tt.ChooseMenuItem(i18n.T("mail.security.mark_safe")); err != nil {
+		t.Fatalf("%v; menu %q", err, menu)
+	}
+	h.drain()
+	h.until("the badge's choice", func() bool {
+		th, err := h.app.svc.GetThread(t.Context(), m.ThreadID)
+		return err == nil && len(th.Messages) > 0 && th.Messages[0].Security.Reason == "manual_safe"
+	})
 
-	// 6. Test sender menu options for security and labels
-	r.senderOpen = true
-	r.senderMsgID = m.ID
-	h.tt.Frame()
-	h.see(i18n.T("reader.message.labels"))
-	h.see(i18n.T("reader.security.edit_title"))
-	r.senderOpen = false
-	h.tt.Frame()
+	// 6. The sender's menu has the same submenus as a mail row's
+	h.until("the labels", func() bool { return len(h.app.labels) > 0 })
+	chooseSender := func(path ...string) {
+		t.Helper()
+		h.click("shop@example.com")
+		if err := h.tt.ChooseMenuItem(path...); err != nil {
+			t.Fatalf("%v; menu %q", err, h.tt.Menu())
+		}
+		h.drain()
+	}
+	chooseSender(i18n.T("mail.menu.security"), i18n.T("mail.security.mark_warning"))
+	h.until("the sender menu's classification", func() bool {
+		th, err := h.app.svc.GetThread(t.Context(), m.ThreadID)
+		return err == nil && len(th.Messages) > 0 && th.Messages[0].Security.Reason == "manual_warning"
+	})
+	first := h.app.labels[0]
+	on := func() bool {
+		return slices.ContainsFunc(r.labels, func(l core.AppliedLabel) bool { return l.LabelID == first.ID })
+	}
+	wasOn := on()
+	chooseSender(i18n.T("mail.menu.labels"), first.Name)
+	if on() == wasOn {
+		t.Fatalf("label %q still %v on %+v", first.Name, wasOn, r.labels)
+	}
 }
 
 // The reply box names who a reply goes to: the sender, or for the user's own

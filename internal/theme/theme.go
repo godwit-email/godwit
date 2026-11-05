@@ -192,7 +192,7 @@ const (
 	PortWidth             = 90 // port fields
 	SelectMinWidth        = 120
 	FilterMenuMin         = 200 // a search filter chip's menu
-	LabelMenuWidth        = 240 // the reader's label menu
+	LabelMenuWidth        = 240 // the palette's menu
 	CiteCardWidth         = 320 // the mail a summary's cite shows on hover, as Wit's
 	CiteChip              = 16  // a summary's cite: its height, and least width
 	DetailsWidth          = 400 // a message's details popover: who it went to, its date
