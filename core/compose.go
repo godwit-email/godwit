@@ -653,14 +653,19 @@ func (s *Service) enqueue(ctx context.Context, draftID, rev int64, checked []str
 	if rs != nil {
 		o.Header, stmts = map[string]string{mail.RuleHeader: strconv.FormatInt(rs.ruleID, 10)}, rs.stmts
 	}
-	if d.SourceMessageID != 0 && (d.Mode == "reply" || d.Mode == "reply_all") {
+	if d.SourceMessageID != 0 && d.Mode != "new" {
 		rows, err := s.db.Query(ctx, "SELECT message_id, refs FROM messages WHERE id = ?", d.SourceMessageID)
 		if err != nil {
 			return err
 		}
 		if len(rows.Values) > 0 && store.Str(rows.Values[0][0]) != "" {
-			o.InReplyTo = store.Str(rows.Values[0][0])
-			o.References = append(strings.Fields(store.Str(rows.Values[0][1])), o.InReplyTo)
+			id := store.Str(rows.Values[0][0])
+			o.References = append(strings.Fields(store.Str(rows.Values[0][1])), id)
+			// A forward is not a reply (RFC 5322 3.6.4): References alone keeps it
+			// in the original's conversation, as Gmail and Apple Mail do.
+			if d.Mode != "forward" {
+				o.InReplyTo = id
+			}
 		}
 	}
 	atts, err := s.db.Query(ctx, "SELECT filename, content_type, path FROM draft_attachments WHERE draft_id = ? ORDER BY id", draftID)
