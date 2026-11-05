@@ -1,0 +1,6 @@
+# The app's 报告问题 button and older releases open issues/new with a prefilled body, so blank issues stay on.
+blank_issues_enabled: true
+contact_links:
+  - name: 使用问题 / Questions
+    url: https://github.com/godwit-email/godwit/discussions
+    about: 使用方法和其他问题请到 Discussions / Ask how-to and other questions in Discussions
