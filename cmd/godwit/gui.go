@@ -343,7 +343,7 @@ func gui(ctx context.Context, dataDir string) int {
 				mygo.Separator(),
 				{Label: i18n.T("tray.quit"), Click: func(*mygo.MenuItem, *mygo.Window) { mygo.App.Quit() }},
 			}
-			items = slices.Insert(items, 3, recentCodeMenu(plat.signInCodes, time.Now(), plat.useSignInCode)...)
+			items = slices.Insert(items, 3, recentCodeMenu(plat.signInCodes, time.Now(), plat.signInCodeIcon, plat.useSignInCode)...)
 			return mygo.NewMenu(items)
 		}
 		plat.updateTray = func() {

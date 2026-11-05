@@ -1,9 +1,12 @@
 package main
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
+	"image/png"
 	"log"
+	"maps"
 	"net/mail"
 	"os"
 	"path/filepath"
@@ -94,18 +97,19 @@ func codeSender(from string) string {
 	return from
 }
 
-// shortcut: plain-text items until MyGo menu items take an icon and a subtitle (#95).
-func recentCodeMenu(codes []core.SignInCode, now time.Time, use func(core.SignInCode)) []*mygo.MenuItem {
+// shortcut: sender and time stay in the label until MyGo menu items take a subtitle (#95, egoist/mygo#455).
+func recentCodeMenu(codes []core.SignInCode, now time.Time, icon func(core.SignInCode) *mygo.MenuIcon, use func(core.SignInCode)) []*mygo.MenuItem {
 	var items []*mygo.MenuItem
 	for _, code := range codes {
 		if !freshSignInCode(code, now) {
 			continue
 		}
-		label := code.Code + " · " + codeSender(code.From)
+		note := codeSender(code.From) + " · " + codeAge(now.Sub(code.ReceivedAt))
+		label := gomail.GroupCode(code.Code) + " · " + note
 		if code.Code == "" {
-			label = i18n.T("codes.card."+code.LinkKind) + " · " + gomail.LinkHost(code.Link) + " · " + codeSender(code.From)
+			label = i18n.T("codes.card."+code.LinkKind) + " · " + gomail.LinkHost(code.Link) + " · " + note
 		}
-		items = append(items, &mygo.MenuItem{Label: label, Click: func(*mygo.MenuItem, *mygo.Window) { use(code) }})
+		items = append(items, &mygo.MenuItem{Label: label, Icon: icon(code), Click: func(*mygo.MenuItem, *mygo.Window) { use(code) }})
 	}
 	if len(items) == 0 {
 		items = append(items, &mygo.MenuItem{Label: i18n.T("codes.empty"), Disabled: true})
@@ -113,8 +117,76 @@ func recentCodeMenu(codes []core.SignInCode, now time.Time, use func(core.SignIn
 	return []*mygo.MenuItem{mygo.Separator(), {Label: i18n.T("codes.recent"), Submenu: items}}
 }
 
+// codeAge is how long ago a fresh code came; the app's refresh of the codes keeps it current.
+func codeAge(d time.Duration) string {
+	if d < time.Minute {
+		return i18n.T("shell.sync.just_now")
+	}
+	return i18n.Plural("shell.sync.minutes_ago", int(d.Minutes()))
+}
+
+// codeIconPNG draws a sender's avatar, or its initial without an image, as a
+// menu item takes it: 32 pixels, for its 16 points on a high-resolution display.
+func codeIconPNG(sender string, image ui.ImageSource) ([]byte, error) {
+	img := ui.Render(func(c *ui.Context) {
+		theme.Apply(c, theme.Light()) // the initial's fill and ink are a pair, legible on a menu of either appearance
+		c.Root().Background(ui.Transparent)
+		kit.AvatarImage(c, sender, image)
+	}, 32, 32, 1)
+	var b bytes.Buffer
+	err := png.Encode(&b, img)
+	return b.Bytes(), err
+}
+
+func codeMenuIcon(sender string, image ui.ImageSource) *mygo.MenuIcon {
+	data, err := codeIconPNG(sender, image)
+	if err != nil {
+		log.Printf("sign-in code menu icon: %v", err)
+		return nil
+	}
+	icon, err := mygo.NewMenuIcon(data, false)
+	if err != nil {
+		log.Printf("sign-in code menu icon: %v", err)
+		return nil
+	}
+	return icon
+}
+
+// signInCodeIcon is a recent code's menu icon: the sender's initial at once,
+// then, if the avatar policy lets one load, its image. UI thread.
+func (p *platform) signInCodeIcon(code core.SignInCode) *mygo.MenuIcon {
+	id := code.MessageID
+	if icon, ok := p.codeIcons[id]; ok {
+		return icon
+	}
+	sender := codeSender(code.From)
+	icon := codeMenuIcon(sender, nil)
+	if p.codeIcons == nil {
+		p.codeIcons = map[int64]*mygo.MenuIcon{}
+	}
+	p.codeIcons[id] = icon
+	if p.svc != nil {
+		go func() {
+			img := signInAvatar(context.Background(), p.svc, id)
+			if img == nil {
+				return
+			}
+			mygo.RunOnMain(func() {
+				if _, ok := p.codeIcons[id]; ok { // not expired while it loaded
+					p.codeIcons[id] = codeMenuIcon(sender, img)
+					p.updateTray()
+				}
+			})
+		}()
+	}
+	return icon
+}
+
 func (p *platform) SetSignInCodes(codes []core.SignInCode) {
 	p.signInCodes = slices.Clone(codes)
+	maps.DeleteFunc(p.codeIcons, func(id int64, _ *mygo.MenuIcon) bool {
+		return !slices.ContainsFunc(codes, func(c core.SignInCode) bool { return c.MessageID == id })
+	})
 	if p.updateTray != nil {
 		p.updateTray()
 	}

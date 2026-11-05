@@ -8,6 +8,7 @@ import (
 	"image/png"
 	"os"
 	"path/filepath"
+	"slices"
 	"testing"
 	"time"
 
@@ -91,17 +92,27 @@ func TestSignInCodePositionPersists(t *testing.T) {
 }
 
 func TestRecentCodeMenuCopiesSelectedCode(t *testing.T) {
-	now := time.Now()
+	now := time.Date(2026, 11, 5, 14, 32, 0, 0, time.UTC)
 	var copied core.SignInCode
+	icon := &mygo.MenuIcon{}
+	var iconed []int64
 	items := recentCodeMenu([]core.SignInCode{
 		{MessageID: 1, Code: "aB0012", From: "Login <login@example.com>", ReceivedAt: now},
-		{MessageID: 2, Code: "123456", From: "second@example.com", ReceivedAt: now},
+		{MessageID: 2, Code: "123456", From: "second@example.com", ReceivedAt: now.Add(-3 * time.Minute)},
 		{MessageID: 3, Code: "999999", From: "old@example.com", ReceivedAt: now.Add(-15 * time.Minute)},
 		{MessageID: 4, Link: "https://www.acme.example/l/1", LinkKind: "signin", From: "Acme <id@acme.example>", ReceivedAt: now},
-	}, now, func(code core.SignInCode) { copied = code })
+	}, now, func(code core.SignInCode) *mygo.MenuIcon {
+		iconed = append(iconed, code.MessageID)
+		return icon
+	}, func(code core.SignInCode) { copied = code })
 	menu := items[1].Submenu
-	if len(menu) != 3 || menu[0].Label != "aB0012 · Login" || menu[2].Label != i18n.T("codes.card.signin")+" · acme.example · Acme" {
+	justNow := i18n.T("shell.sync.just_now")
+	if len(menu) != 3 || menu[0].Label != "aB0012 · Login · "+justNow || menu[1].Label != "123 456 · second@example.com · "+i18n.Plural("shell.sync.minutes_ago", 3) ||
+		menu[2].Label != i18n.T("codes.card.signin")+" · acme.example · Acme · "+justNow {
 		t.Fatalf("menu %+v", menu)
+	}
+	if !slices.Equal(iconed, []int64{1, 2, 4}) || menu[0].Icon != icon {
+		t.Fatalf("icons for %v, item %+v", iconed, menu[0])
 	}
 	menu[1].Click(menu[1], nil)
 	if copied.MessageID != 2 || copied.Code != "123456" {
@@ -111,9 +122,46 @@ func TestRecentCodeMenuCopiesSelectedCode(t *testing.T) {
 	if copied.MessageID != 4 {
 		t.Fatalf("used %+v", copied)
 	}
-	empty := recentCodeMenu(nil, now, nil)[1].Submenu
+	empty := recentCodeMenu(nil, now, nil, nil)[1].Submenu
 	if len(empty) != 1 || !empty[0].Disabled {
 		t.Fatalf("empty menu %+v", empty)
+	}
+}
+
+func TestCodeIconPNGIsAnAvatarOfRoundedCorners(t *testing.T) {
+	data, err := codeIconPNG("Acme", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	img, err := png.Decode(bytes.NewReader(data))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if b := img.Bounds(); b.Dx() != 32 || b.Dy() != 32 {
+		t.Fatalf("bounds %v", b)
+	}
+	if _, _, _, a := img.At(0, 0).RGBA(); a != 0 {
+		t.Fatalf("corner alpha %d", a)
+	}
+	if _, _, _, a := img.At(3, 16).RGBA(); a == 0 {
+		t.Fatal("the avatar's fill is missing")
+	}
+}
+
+func TestSignInCodesForgetIconsOfExpiredCodes(t *testing.T) {
+	p := &platform{}
+	code := core.SignInCode{MessageID: 1, From: "a@example.com", ReceivedAt: time.Now()}
+	first := p.signInCodeIcon(code)
+	if first == nil || p.signInCodeIcon(code) != first {
+		t.Fatal("the icon is not kept")
+	}
+	p.SetSignInCodes([]core.SignInCode{code})
+	if p.codeIcons[1] != first {
+		t.Fatal("a listed code lost its icon")
+	}
+	p.SetSignInCodes(nil)
+	if len(p.codeIcons) != 0 {
+		t.Fatalf("icons %v", p.codeIcons)
 	}
 }
 
