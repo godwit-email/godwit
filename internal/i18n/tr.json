@@ -1720,6 +1720,7 @@
   "settings_rules_action_archive": "Arşivle",
   "settings_rules_action_junk": "İstenmeyene taşı",
   "settings_rules_action_trash": "Çöp kutusuna taşı",
+  "settings_rules_action_block": "Göndereni Engelle",
   "settings_rules_action_stop": "Sonraki kuralları çalıştırma",
   "settings_rules_action_unlabel_summary": "“{arg1}” etiketini kaldır",
   "settings_rules_action_n": "Eylem {arg1, number, ::group-off}",

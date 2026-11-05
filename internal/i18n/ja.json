@@ -1720,6 +1720,7 @@
   "settings_rules_action_archive": "アーカイブ",
   "settings_rules_action_junk": "迷惑メールに移動",
   "settings_rules_action_trash": "ゴミ箱に移動",
+  "settings_rules_action_block": "送信者をブロック",
   "settings_rules_action_stop": "以降のルールを実行しない",
   "settings_rules_action_unlabel_summary": "ラベル「{arg1}」を外す",
   "settings_rules_action_n": "アクション {arg1, number, ::group-off}",

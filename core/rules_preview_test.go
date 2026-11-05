@@ -156,7 +156,7 @@ func TestRuleRunOnExisting(t *testing.T) {
 // Only local actions run on existing mail; any other kind (forward, Wit)
 // waits for new mail unless it is listed.
 func TestRuleActionsOnExisting(t *testing.T) {
-	for _, k := range []string{ActionLabel, ActionUnlabel, ActionRead, ActionStar, ActionArchive, ActionJunk, ActionTrash, ActionStop} {
+	for _, k := range []string{ActionLabel, ActionUnlabel, ActionRead, ActionStar, ActionArchive, ActionJunk, ActionTrash, ActionBlock, ActionStop} {
 		assert.True(t, RunsOnExisting(k), k)
 	}
 	assert.False(t, RunsOnExisting(ActionForward))

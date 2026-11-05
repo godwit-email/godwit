@@ -481,6 +481,7 @@ const latestOp = "(SELECT max(id) FROM ops WHERE message_id = ? AND state IN ('p
 type target struct {
 	id, thread, folder int64
 	flags              string
+	from               string
 }
 
 // targets loads the messages, which must all exist and belong to one account.

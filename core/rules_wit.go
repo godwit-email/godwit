@@ -214,7 +214,7 @@ func ruleDoes(d RuleDoc, labels map[string]string, account string) string {
 		default:
 			acts[i] = cmp.Or(map[string]string{
 				ActionRead: "mark it read", ActionStar: "star it", ActionArchive: "archive it", ActionJunk: "move it to Junk",
-				ActionTrash: "move it to Trash", ActionStop: "skip the rules below it",
+				ActionTrash: "move it to Trash", ActionBlock: "block the sender", ActionStop: "skip the rules below it",
 				ActionDraftReply: "have Wit draft a reply (never sent)", ActionKeyPoints: "have Wit write its key points",
 			}[a.Kind], a.Kind)
 		}

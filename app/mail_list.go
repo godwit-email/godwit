@@ -49,7 +49,7 @@ type mailItem struct {
 func threadItem(t core.ThreadSummary) mailItem {
 	return mailItem{ID: t.ID, Thread: true, Who: strings.Join(t.Participants, ", "), Subject: t.Subject, Snippet: t.Snippet,
 		Date: t.LastDate, Count: t.Count, Unread: t.Unread, Flagged: t.Flagged, Attach: t.HasAttachments,
-		Security: t.Security}
+		Security: t.Security, Msg: core.MessageSummary{From: t.From}}
 }
 
 func messageItem(m core.MessageSummary) mailItem {
@@ -865,17 +865,19 @@ func (p *mailPage) listView(c *ui.Context) {
 				}
 			})
 			if len(on) == 1 { // for mail like this one: a rule, or blocking its sender
-				m.Separator()
-				if m.Item(i18n.T("mail.menu.rule")).Chosen() {
-					p.ruleFrom(on[0])
-				}
-				if from := on[0].Msg.From; !on[0].Thread && gomail.AddrKey(from) != "" { // a thread row has no one sender at hand
-					if slices.Contains(p.a.blocked, gomail.AddrKey(from)) {
-						if m.Item(i18n.T("reader.unblock_sender")).Chosen() {
-							p.a.setBlocked(from, false, func() { p.a.toast(i18n.T("reader.sender_unblocked")) })
+				if role := p.currentFolderRole(); role != "sent" && role != "drafts" {
+					m.Separator()
+					if m.Item(i18n.T("mail.menu.rule")).Chosen() {
+						p.ruleFrom(on[0])
+					}
+					if from := on[0].Msg.From; gomail.AddrKey(from) != "" {
+						if slices.Contains(p.a.blocked, gomail.AddrKey(from)) {
+							if m.Item(i18n.T("reader.unblock_sender")).Chosen() {
+								p.a.setBlocked(from, false, func() { p.a.toast(i18n.T("reader.sender_unblocked")) })
+							}
+						} else if m.Item(i18n.T("reader.block_sender")).Chosen() {
+							p.a.setBlocked(from, true, func() { p.a.toast(i18n.T("reader.sender_blocked")) })
 						}
-					} else if m.Item(i18n.T("reader.block_sender")).Chosen() {
-						p.a.setBlocked(from, true, func() { p.a.toast(i18n.T("reader.sender_blocked")) })
 					}
 				}
 			}

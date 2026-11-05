@@ -943,6 +943,20 @@ func TestMailListSecurityIcons(t *testing.T) {
 	}
 }
 
+func TestThreadItemSender(t *testing.T) {
+	h, accs := mailHarness(t, nil, "alice@example.com")
+	acc := accs[0]
+	h.deliverOne(acc, coretest.Msg("Spammer <spammer@example.com>", acc.Email, "Spam Title", "Buy now"))
+	h.waitMail("one thread", func() bool { return len(h.items()) == 1 })
+	item := h.items()[0]
+	if !item.Thread {
+		t.Fatal("expected item to be a thread")
+	}
+	if item.Msg.From != "Spammer <spammer@example.com>" {
+		t.Fatalf("expected item.Msg.From to be %q, got %q", "Spammer <spammer@example.com>", item.Msg.From)
+	}
+}
+
 func TestSearchDropsStaleResults(t *testing.T) {
 	h, accs := mailHarness(t, []coretest.Option{coretest.WithoutAutoSync()}, "alice@example.com")
 	h.put(accs[0], "INBOX", coretest.Msg("bob@example.com", "alice@example.com", "Invoice March", "pay"))

@@ -18,6 +18,7 @@ import (
 	"github.com/egoist/mygo/plugins/sqlite"
 	"github.com/godwit-email/godwit/core/events"
 	"github.com/godwit-email/godwit/core/gateway"
+	gomail "github.com/godwit-email/godwit/core/mail"
 	"github.com/godwit-email/godwit/core/store"
 )
 
@@ -69,6 +70,7 @@ const (
 	ActionArchive = "archive"
 	ActionJunk    = "junk"
 	ActionTrash   = "trash"
+	ActionBlock   = "block"
 	ActionStop    = "stop" // later rules do not run on the message
 	// ActionForward forwards the message to RuleAction.To once the user
 	// confirmed it (Rule.Confirmed); egress, so new mail only (newMailTriggers).
@@ -267,7 +269,7 @@ func (s *Service) validRule(ctx context.Context, d RuleDoc) error {
 			if rcptKey(a.To) == "" {
 				return invalidRule("forward to %q", a.To)
 			}
-		case ActionRead, ActionStar, ActionArchive, ActionJunk, ActionTrash, ActionStop:
+		case ActionRead, ActionStar, ActionArchive, ActionJunk, ActionTrash, ActionBlock, ActionStop:
 		case ActionPDF, ActionEML, ActionAttachments, ActionKeyPoints:
 			if err := validFileAction(d.Actions, a); err != nil {
 				return err
@@ -1023,12 +1025,12 @@ func (s *Service) runForward(ctx context.Context, r Rule, runID int64, i int, ms
 
 // ruleTarget loads the message an action works on; ok is false when it is gone.
 func (s *Service) ruleTarget(ctx context.Context, id int64) (acc int64, t target, ok bool, err error) {
-	rows, err := s.db.Query(ctx, "SELECT account_id, thread_id, folder_id, flags FROM messages WHERE id = ?", id)
+	rows, err := s.db.Query(ctx, "SELECT account_id, thread_id, folder_id, flags, from_addr FROM messages WHERE id = ?", id)
 	if err != nil || len(rows.Values) == 0 {
 		return 0, t, false, err
 	}
 	v := rows.Values[0]
-	return store.Int(v[0]), target{id: id, thread: store.Int(v[1]), folder: store.Int(v[2]), flags: store.Str(v[3])}, true, nil
+	return store.Int(v[0]), target{id: id, thread: store.Int(v[1]), folder: store.Int(v[2]), flags: store.Str(v[3]), from: store.Str(v[4])}, true, nil
 }
 
 // actionWrites is an action's statements and the prior state they change.
@@ -1041,12 +1043,13 @@ type actionWrites struct {
 // the label's row (Source "" for none), whether the flag was set, the folder
 // it moved the message from and to.
 type rulePrior struct {
-	LabelID int64  `json:"label_id,omitempty"`
-	Source  string `json:"source,omitempty"`
-	Active  bool   `json:"active,omitempty"`
-	Had     bool   `json:"had,omitempty"`
-	From    int64  `json:"from,omitempty"`
-	To      int64  `json:"to,omitempty"`
+	LabelID  int64  `json:"label_id,omitempty"`
+	Source   string `json:"source,omitempty"`
+	Active   bool   `json:"active,omitempty"`
+	Had      bool   `json:"had,omitempty"`
+	From     int64  `json:"from,omitempty"`
+	To       int64  `json:"to,omitempty"`
+	FromAddr string `json:"from_addr,omitempty"`
 }
 
 func hasFlag(flags, f string) bool {
@@ -1095,6 +1098,23 @@ func (s *Service) ruleAction(ctx context.Context, a RuleAction, acc int64, t tar
 		}
 		_, stmts := moveWrites(acc, []target{t}, to)
 		return actionWrites{prior: rulePrior{From: t.folder, To: to}, writes: stmts}, "", nil
+	case ActionBlock:
+		addr := gomail.AddrKey(t.from)
+		if addr == "" {
+			return actionWrites{}, RuleFailUnknown, nil
+		}
+		blocked, err := s.BlockedSenders(ctx)
+		if err != nil {
+			return actionWrites{}, "", err
+		}
+		p := rulePrior{Had: slices.Contains(blocked, addr), FromAddr: addr}
+		if p.Had {
+			return actionWrites{prior: p}, "", nil
+		}
+		if err := s.BlockSender(ctx, t.from); err != nil {
+			return actionWrites{}, "", err
+		}
+		return actionWrites{prior: p}, "", nil
 	case ActionStop:
 		return actionWrites{}, "", nil
 	}
@@ -1168,7 +1188,7 @@ func (s *Service) RuleHits(ctx context.Context, ruleID int64) ([]RuleHit, error)
 
 // ruleUndoable are the actions an undo puts back: the local ones. A forward
 // has gone, files written and drafts made stay, and a stop changed nothing.
-var ruleUndoable = []string{ActionLabel, ActionUnlabel, ActionRead, ActionStar, ActionArchive, ActionJunk, ActionTrash}
+var ruleUndoable = []string{ActionLabel, ActionUnlabel, ActionRead, ActionStar, ActionArchive, ActionJunk, ActionTrash, ActionBlock}
 
 // RuleUndoable reports whether UndoRuleRun puts back an action of kind, for
 // the hit history's 撤销, which shows only for a run with one done.
@@ -1316,6 +1336,20 @@ func (s *Service) undoAction(ctx context.Context, runID int64, idx int, kind str
 		}
 		if ok = t.folder == p.To && len(rows.Values) > 0; ok {
 			_, stmts = moveWrites(acc, []target{t}, p.From)
+		}
+	case ActionBlock:
+		if p.Had || p.FromAddr == "" {
+			ok = false
+			break
+		}
+		blocked, err := s.BlockedSenders(ctx)
+		if err != nil {
+			return false, err
+		}
+		if ok = slices.Contains(blocked, p.FromAddr); ok {
+			if err := s.UnblockSender(ctx, p.FromAddr); err != nil {
+				return false, err
+			}
 		}
 	}
 	state := RuleActionUndone

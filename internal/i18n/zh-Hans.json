@@ -1720,6 +1720,7 @@
   "settings_rules_action_archive": "归档",
   "settings_rules_action_junk": "移到垃圾邮件",
   "settings_rules_action_trash": "移到废纸篓",
+  "settings_rules_action_block": "屏蔽发件人",
   "settings_rules_action_stop": "不再执行后面的规则",
   "settings_rules_action_unlabel_summary": "去掉标签「{arg1}」",
   "settings_rules_action_n": "动作 {arg1, number, ::group-off}",

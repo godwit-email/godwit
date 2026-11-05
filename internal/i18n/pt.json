@@ -1720,6 +1720,7 @@
   "settings_rules_action_archive": "Arquivar",
   "settings_rules_action_junk": "Mover para spam",
   "settings_rules_action_trash": "Mover para a lixeira",
+  "settings_rules_action_block": "Bloquear remetente",
   "settings_rules_action_stop": "Não executar as regras seguintes",
   "settings_rules_action_unlabel_summary": "Remover etiqueta “{arg1}”",
   "settings_rules_action_n": "Ação {arg1, number, ::group-off}",

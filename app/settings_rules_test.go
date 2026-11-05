@@ -70,6 +70,22 @@ func TestSettingsRulesCreate(t *testing.T) {
 	h.until("the rule off", func() bool { return !h.rules()[0].Enabled })
 }
 
+func TestSettingsRulesBlockAction(t *testing.T) {
+	h, _ := withAccount(t)
+	h.openSettings("rules")
+	h.click("新建规则")
+	h.click("值")
+	h.typeText("spammer@")
+	h.click("打标签")
+	h.click(i18n.T("settings.rules.action.block"))
+	h.saveRule()
+	h.see("已保存「未命名规则」")
+	rs := h.rules()
+	if len(rs) != 1 || rs[0].Doc.Actions[0].Kind != core.ActionBlock {
+		t.Fatalf("expected rule action to be block, got %+v", rs)
+	}
+}
+
 // The editor offers a condition on the mail's age in whole days.
 func TestSettingsRulesAgeCondition(t *testing.T) {
 	h, _ := withAccount(t)

@@ -3389,6 +3389,7 @@
   "settings_rules_action_archive": "Archive",
   "settings_rules_action_junk": "Move to Junk",
   "settings_rules_action_trash": "Move to Trash",
+  "settings_rules_action_block": "Block sender",
   "settings_rules_action_stop": "Stop processing later rules",
   "settings_rules_action_unlabel_summary": "Remove label “{arg1}”",
   "@settings_rules_action_unlabel_summary": {

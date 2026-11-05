@@ -130,6 +130,7 @@ const ACTION_ICONS: Record<string, RemixiconComponentType> = {
   archive: RiArchiveLine,
   junk: RiSpam2Line,
   trash: RiDeleteBinLine,
+  block: RiSpam2Line,
   stop: RiStopCircleLine,
   forward: RiShareForwardLine,
   pdf: RiFilePdf2Line,

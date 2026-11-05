@@ -85,7 +85,7 @@ type ruleActionGroup struct {
 // to ruleActionIcons.
 var ruleActionGroups = []ruleActionGroup{
 	{"organize", []string{core.ActionLabel, core.ActionUnlabel, core.ActionRead, core.ActionStar,
-		core.ActionArchive, core.ActionJunk, core.ActionTrash, core.ActionStop}},
+		core.ActionArchive, core.ActionJunk, core.ActionTrash, core.ActionBlock, core.ActionStop}},
 	{"forward", []string{core.ActionForward}},
 	{"files", []string{core.ActionPDF, core.ActionEML, core.ActionAttachments}},
 	{"wit", core.RuleAIActions},
@@ -94,7 +94,7 @@ var ruleActionGroups = []ruleActionGroup{
 // ruleActionIcons are each action's icon, on its card, in the menu and on its results.
 var ruleActionIcons = map[string]string{
 	core.ActionLabel: "tag", core.ActionUnlabel: "tag", core.ActionRead: "mail-open", core.ActionStar: "star",
-	core.ActionArchive: "archive", core.ActionJunk: "spam", core.ActionTrash: "trash-2", core.ActionStop: "circle-x",
+	core.ActionArchive: "archive", core.ActionJunk: "spam", core.ActionTrash: "trash-2", core.ActionBlock: "spam", core.ActionStop: "circle-x",
 	core.ActionForward: "forward", core.ActionPDF: "file-text", core.ActionEML: "mail", core.ActionAttachments: "paperclip",
 	core.ActionDraftReply: "quill-pen", core.ActionKeyPoints: "file-text",
 }

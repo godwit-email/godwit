@@ -1720,6 +1720,7 @@
   "settings_rules_action_archive": "Archivia",
   "settings_rules_action_junk": "Sposta in Spam",
   "settings_rules_action_trash": "Sposta nel cestino",
+  "settings_rules_action_block": "Blocca mittente",
   "settings_rules_action_stop": "Non eseguire le regole successive",
   "settings_rules_action_unlabel_summary": "Rimuovi etichetta «{arg1}»",
   "settings_rules_action_n": "Azione {arg1, number, ::group-off}",

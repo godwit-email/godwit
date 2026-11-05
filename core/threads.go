@@ -24,6 +24,7 @@ type View struct {
 type ThreadSummary struct {
 	ID               int64
 	Subject, Snippet string
+	From             string // sender of newest message
 	Participants     []string
 	Count, Unread    int
 	Flagged          int // messages starred
@@ -205,6 +206,7 @@ func (s *Service) ListThreads(ctx context.Context, v View, cursor string, limit 
 		t := &page.Items[idx[store.Int(r[0])]]
 		if t.Count == 0 {
 			t.Snippet = gomail.Snippet(store.Str(r[2])) // newest first; clean of what an older sync kept
+			t.From = store.Str(r[1])
 		}
 		t.Count++
 		if unread[i] {

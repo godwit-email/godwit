@@ -1720,6 +1720,7 @@
   "settings_rules_action_archive": "보관",
   "settings_rules_action_junk": "스팸으로 이동",
   "settings_rules_action_trash": "휴지통으로 이동",
+  "settings_rules_action_block": "보낸 사람 차단",
   "settings_rules_action_stop": "이후 규칙 실행 안 함",
   "settings_rules_action_unlabel_summary": "라벨 “{arg1}” 떼기",
   "settings_rules_action_n": "동작 {arg1, number, ::group-off}",

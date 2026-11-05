@@ -405,6 +405,28 @@ func TestRuleUnlabelAndJunk(t *testing.T) {
 	assert.Equal(t, []string{"a@x"}, e.onServer(t, "Junk"))
 }
 
+func TestRuleBlockActionAndUndo(t *testing.T) {
+	e := newRulesEnv(t)
+	e.saveRule(t, rule(RuleAction{Kind: ActionBlock}), true)
+	e.bill(t, "a@x", "billing@evil.example", "Invoice")
+	e.sync(t)
+	e.waitRuns(t, 1)
+
+	blocked, err := e.s.BlockedSenders(bg)
+	require.NoError(t, err)
+	assert.Contains(t, blocked, "billing@evil.example")
+	assert.Equal(t, []string{"block done"}, e.results(t, e.runOf(t, "a@x")))
+
+	kept, err := e.s.UndoRuleRun(bg, e.runOf(t, "a@x"))
+	require.NoError(t, err)
+	assert.Zero(t, kept)
+
+	blocked, err = e.s.BlockedSenders(bg)
+	require.NoError(t, err)
+	assert.NotContains(t, blocked, "billing@evil.example")
+	assert.Equal(t, []string{"block undone"}, e.results(t, e.runOf(t, "a@x")))
+}
+
 // Rules run in list order; a stop action keeps the later ones off the message.
 func TestRuleStopsLaterRules(t *testing.T) {
 	e := newRulesEnv(t)
