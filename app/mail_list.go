@@ -843,7 +843,7 @@ func (p *mailPage) listView(c *ui.Context) {
 						has := slices.ContainsFunc(on, func(item mailItem) bool {
 							return slices.ContainsFunc(item.Labels, func(al core.AppliedLabel) bool { return al.LabelID == lid })
 						})
-						if sm.Item(l.Name).Checked(has).Chosen() {
+						if sm.Item(l.Name).Icon(menuIcon(labelIcon(l.Icon))).Checked(has).Chosen() {
 							p.toggleLabel(on, lid, !has)
 						}
 					}

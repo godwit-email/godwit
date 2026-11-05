@@ -1349,7 +1349,10 @@ func TestReaderSaveAndPrint(t *testing.T) {
 	choose := func(item string) {
 		t.Helper()
 		h.click(i18n.T("reader.more"))
-		h.click(item)
+		if err := h.tt.ChooseMenuItem(item); err != nil {
+			t.Fatalf("%v; menu %q", err, h.tt.Menu())
+		}
+		h.drain()
 	}
 	choose(i18n.T("reader.save"))
 	arg := h.callArg("SaveFile")

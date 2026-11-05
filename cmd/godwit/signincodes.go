@@ -107,13 +107,22 @@ func recentCodeMenu(codes []core.SignInCode, now time.Time, icon func(core.SignI
 		if code.Code == "" {
 			label = i18n.T("codes.card."+code.LinkKind) + " · " + gomail.LinkHost(code.Link)
 		}
-		subtitle := codeSender(code.From) + " · " + codeAge(now.Sub(code.ReceivedAt))
+		subtitle := shortSender(codeSender(code.From)) + " · " + codeAge(now.Sub(code.ReceivedAt))
 		items = append(items, &mygo.MenuItem{Label: label, Subtitle: subtitle, Icon: icon(code), Click: func(*mygo.MenuItem, *mygo.Window) { use(code) }})
 	}
 	if len(items) == 0 {
 		items = append(items, &mygo.MenuItem{Label: i18n.T("codes.empty"), Disabled: true})
 	}
 	return []*mygo.MenuItem{mygo.Separator(), {Label: i18n.T("codes.recent"), Submenu: items}}
+}
+
+// shortSender keeps a long sender from wrapping the subtitle, which native menus do at their own width.
+func shortSender(s string) string {
+	const limit = 24
+	if r := []rune(s); len(r) > limit {
+		return string(r[:limit-1]) + "…"
+	}
+	return s
 }
 
 // codeAge is how long ago a fresh code came; the app's refresh of the codes keeps it current.
@@ -130,7 +139,7 @@ func codeIconPNG(sender string, image ui.ImageSource) ([]byte, error) {
 	img := ui.Render(func(c *ui.Context) {
 		theme.Apply(c, theme.Light()) // the initial's fill and ink are a pair, legible on a menu of either appearance
 		c.Root().Background(ui.Transparent)
-		kit.AvatarImage(c, sender, image)
+		kit.MenuAvatar(c, sender, image)
 	}, 32, 32, 1)
 	var b bytes.Buffer
 	err := png.Encode(&b, img)

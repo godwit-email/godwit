@@ -129,6 +129,16 @@ func TestRecentCodeMenuCopiesSelectedCode(t *testing.T) {
 	}
 }
 
+func TestShortSenderKeepsTheSubtitleOnOneLine(t *testing.T) {
+	if got := shortSender("Acme ID"); got != "Acme ID" {
+		t.Fatalf("short sender %q", got)
+	}
+	got := []rune(shortSender("security@a-very-long-company-name.example"))
+	if len(got) != 24 || got[23] != '…' {
+		t.Fatalf("long sender %q", string(got))
+	}
+}
+
 func TestCodeIconPNGIsAnAvatarOfRoundedCorners(t *testing.T) {
 	data, err := codeIconPNG("Acme", nil)
 	if err != nil {
