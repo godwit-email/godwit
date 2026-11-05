@@ -71,12 +71,14 @@ const (
 	ProviderAnthropic = "anthropic"
 	ProviderTypeSafe  = "typesafe"
 	ProviderOther     = "other"
-	ProviderChatGPT   = "chatgpt"
-	ProviderGrok      = "grok"
+	ProviderChatGPT     = "chatgpt"
+	ProviderGrok        = "grok"
+	ProviderAntigravity = "antigravity"
 )
 
 var providerFormats = map[string]struct{ gen, judge []string }{
-	ProviderOpenAI:    {[]string{ai.KindResponses, ai.KindOpenAI}, []string{string(ai.FormatDecisions)}},
+	ProviderAntigravity: {[]string{ai.KindOpenAI}, []string{string(ai.FormatDecisions)}},
+	ProviderOpenAI:      {[]string{ai.KindResponses, ai.KindOpenAI}, []string{string(ai.FormatDecisions)}},
 	ProviderAnthropic: {[]string{ai.KindAnthropic}, nil},
 	ProviderTypeSafe:  {nil, []string{string(ai.FormatSystemOne)}},
 	ProviderOther:     {[]string{ai.KindOpenAI, ai.KindResponses, ai.KindAnthropic}, []string{string(ai.FormatDecisions), string(ai.FormatSystemOne)}},
@@ -715,9 +717,13 @@ func (s *Service) testGen(ctx context.Context, id int64, in ModelServiceInput, k
 
 func (s *Service) testGenRun(ctx context.Context, id int64, in ModelServiceInput, key string) error {
 	models := in.Models
+	hc := s.modelHTTP
+	if in.Provider == ProviderAntigravity {
+		hc = s.antigravityClient()
+	}
 	if len(models) == 0 {
 		var err error
-		if models, err = ai.ListModels(ctx, s.modelHTTP, in.Kind, in.BaseURL, key); err != nil {
+		if models, err = ai.ListModels(ctx, hc, in.Kind, in.BaseURL, key); err != nil {
 			return err
 		}
 		if len(models) == 0 {
@@ -734,14 +740,22 @@ func (s *Service) testGenRun(ctx context.Context, id int64, in ModelServiceInput
 	if e.Masker, err = s.masker(); err != nil {
 		return err
 	}
-	_, err = s.runText(ctx, e, ai.Request{Model: ai.ResolvedModel{ServiceID: id, Kind: in.Kind, BaseURL: in.BaseURL, Model: models[0], APIKey: key},
+	var client *http.Client
+	if in.Provider == ProviderAntigravity {
+		client = s.antigravityClient()
+	}
+	_, err = s.runText(ctx, e, ai.Request{Model: ai.ResolvedModel{ServiceID: id, Kind: in.Kind, BaseURL: in.BaseURL, Model: models[0], APIKey: key, Client: client},
 		Prompt: "Reply with OK.", MaxTurns: 1}, 0)
 	return err
 }
 
 func (s *Service) testJudge(ctx context.Context, in ModelServiceInput, key string) error {
 	f := ai.JudgeFormat(in.JudgeFormat)
-	j, err := s.newJudge(s.modelHTTP, f, in.BaseURL, key, in.JudgeModel)
+	hc := s.modelHTTP
+	if in.Provider == ProviderAntigravity {
+		hc = s.antigravityClient()
+	}
+	j, err := s.newJudge(hc, f, in.BaseURL, key, in.JudgeModel)
 	if err != nil {
 		return err
 	}
@@ -965,7 +979,11 @@ func (s *Service) serviceModelRef(ctx context.Context, ref string) (ai.ResolvedM
 	if m.Kind == "" || !slices.Contains(m.Models, r.Model) { // generate off: its models don't resolve
 		return ai.ResolvedModel{}, "", fmt.Errorf("%w: %s", ErrModelNotFound, ref)
 	}
-	return ai.ResolvedModel{ServiceID: m.ID, Version: m.Version, Kind: m.Kind, BaseURL: m.BaseURL, Model: r.Model, APIKey: key},
+	var client *http.Client
+	if m.Provider == ProviderAntigravity {
+		client = s.antigravityClient()
+	}
+	return ai.ResolvedModel{ServiceID: m.ID, Version: m.Version, Kind: m.Kind, BaseURL: m.BaseURL, Model: r.Model, APIKey: key, Client: client},
 		m.Slug + "/" + r.Model, nil
 }
 
@@ -1010,7 +1028,11 @@ func (s *Service) resolveJudge(ctx context.Context) (j ai.Judge, label string, g
 			return nil, "", false, err
 		}
 		if err == nil && m.JudgeFormat != "" {
-			j, err := s.newJudge(s.modelHTTP, ai.JudgeFormat(m.JudgeFormat), m.BaseURL, key, m.JudgeModel)
+			hc := s.modelHTTP
+			if m.Provider == ProviderAntigravity {
+				hc = s.antigravityClient()
+			}
+			j, err := s.newJudge(hc, ai.JudgeFormat(m.JudgeFormat), m.BaseURL, key, m.JudgeModel)
 			return j, m.Slug + "/" + m.JudgeModel, false, err
 		}
 	}

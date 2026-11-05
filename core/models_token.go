@@ -85,6 +85,17 @@ func (s *Service) modelCredential(ctx context.Context, m ModelService) (string, 
 	if ModelProviderLogin(m.Provider) != "oauth" {
 		return s.modelKey(m)
 	}
+	if m.Provider == ProviderAntigravity {
+		rt, err := s.modelKey(m)
+		if err != nil {
+			return "", err
+		}
+		if rt == "" {
+			_ = s.putCapStatus(ctx, m.ID, m.Version, CapGen, CapStatus{State: "fail", Code: "auth", HTTPStatus: 401, At: time.Now()})
+			return "", ErrModelReauth
+		}
+		return rt, nil
+	}
 	s.modelTokMu.Lock()
 	seen := s.modelTokens[m.ID]
 	s.modelTokMu.Unlock()

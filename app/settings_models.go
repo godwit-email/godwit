@@ -94,13 +94,19 @@ type capTest struct {
 }
 
 // providerURL is each provider's address (the design's PROVIDERS).
-var providerURL = map[string]string{core.ProviderOpenAI: "https://api.openai.com/v1", core.ProviderAnthropic: "https://api.anthropic.com/v1",
-	core.ProviderTypeSafe: "https://api.typesafe.ai/v1", core.ProviderOther: "",
-	core.ProviderChatGPT: core.ModelProviderURL(core.ProviderChatGPT), core.ProviderGrok: core.ModelProviderURL(core.ProviderGrok)}
+var providerURL = map[string]string{
+	core.ProviderOpenAI:      "https://api.openai.com/v1",
+	core.ProviderAnthropic:   "https://api.anthropic.com/v1",
+	core.ProviderTypeSafe:    "https://api.typesafe.ai/v1",
+	core.ProviderOther:       "",
+	core.ProviderChatGPT:     core.ModelProviderURL(core.ProviderChatGPT),
+	core.ProviderGrok:        core.ModelProviderURL(core.ProviderGrok),
+	core.ProviderAntigravity: core.ModelProviderURL(core.ProviderAntigravity),
+}
 
 // providerGroups are the add dialog's tiles by group: subscriptions first, then API keys.
 var providerGroups = [][]string{
-	{core.ProviderChatGPT, core.ProviderGrok},
+	{core.ProviderChatGPT, core.ProviderGrok, core.ProviderAntigravity},
 	{core.ProviderOpenAI, core.ProviderAnthropic, core.ProviderTypeSafe, core.ProviderOther},
 }
 
@@ -117,6 +123,8 @@ func svcProvider(p string) string {
 		return "Anthropic"
 	case core.ProviderTypeSafe:
 		return "TypeSafe"
+	case core.ProviderAntigravity:
+		return i18n.T("settings.models.preset.antigravity")
 	case core.ProviderChatGPT:
 		return i18n.T("settings.models.preset.chatgpt")
 	case core.ProviderGrok:
@@ -168,7 +176,9 @@ func newForm(p string) *modelForm {
 		f.name = svcProvider(p)
 	}
 	f.kind, f.judgeFormat = first(gen), first(judge)
-	f.judgeModel = first(ai.JudgeFormat(f.judgeFormat).Models())
+	if p != core.ProviderAntigravity {
+		f.judgeModel = first(ai.JudgeFormat(f.judgeFormat).Models())
+	}
 	return f
 }
 
@@ -320,6 +330,9 @@ func (f *modelForm) cantTest() bool {
 // (other: the format's own); the fetched ones, else the format's.
 func (f *modelForm) decList() []string {
 	if f.judgeFormat == "" || !f.anyKey() && !f.custom() {
+		return nil
+	}
+	if f.provider == core.ProviderAntigravity && len(f.judgeModels) == 0 && f.judgeModel == "" {
 		return nil
 	}
 	list := ai.JudgeFormat(f.judgeFormat).Models()

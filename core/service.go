@@ -74,6 +74,9 @@ type Options struct {
 	// AppleIntelligence is the system's on-device intelligence on macOS,
 	// offered as the built-in apple-intelligence plugin; nil leaves that plugin out.
 	AppleIntelligence AppleIntelligence
+	// Antigravity is the Google Antigravity ACP runtime provider;
+	// nil will use DefaultAntigravity with system detection.
+	Antigravity Antigravity
 	// ModelsDev is models.dev's catalog (ai.ModelsDevURL), where models'
 	// display names and context windows come from; "" fetches none (the apps set it).
 	ModelsDev string
@@ -131,7 +134,10 @@ type Service struct {
 	modelHTTP   *http.Client // model-service HTTP; nil = ai.NoRedirectClient; tests swap it
 	aiMu        sync.Mutex
 	ai          *ai.Engine         // created on first use; see aiEngine
-	appleClient *http.Client       // cached client for Apple Intelligence on-device model
+	appleClient          *http.Client // cached client for Apple Intelligence on-device model
+	agMu                 sync.Mutex
+	agRuntime            Antigravity
+	antigravityClientVal *http.Client
 	secrets     secretSet          // extension secrets, redacted by the engine and extension output
 	calls       map[*call]struct{} // explicit network calls in flight (SyncNow, downloads, ...)
 	callsClosed bool

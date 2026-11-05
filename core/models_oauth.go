@@ -89,6 +89,9 @@ var modelOAuth = map[string]modelProvider{
 			AuthParams: map[string]string{"referrer": "godwit"},
 		},
 	},
+	ProviderAntigravity: {
+		BaseURL: "http://127.0.0.1:0/antigravity",
+	},
 }
 
 // ModelProviderLogin returns "oauth" if provider p signs in with OAuth, else "".
@@ -100,9 +103,7 @@ func ModelProviderLogin(p string) string {
 }
 
 // ModelProviderURL returns the fixed BaseURL of a subscription model provider, or "".
-func ModelProviderURL(p string) string {
-	return modelOAuth[p].BaseURL
-}
+func ModelProviderURL(p string) string { return modelOAuth[p].BaseURL }
 
 // hostID formats s.installID (16 random bytes hex) as urn:uuid:xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx.
 func (s *Service) hostID() string {

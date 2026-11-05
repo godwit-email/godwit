@@ -42,22 +42,26 @@ func (s *Service) BeginOAuth(ctx context.Context, providerID, loginHint string, 
 		return "", "", err
 	}
 	defer end() // Close waits for this, then closes the flow added below
-	cfg, err := oauthConfig(providerID)
-	if err == nil {
-		if client, err = s.resolveClient(ctx, client); err == nil && client.ID != "" {
-			cfg.ClientID, cfg.ClientSecret = client.ID, client.Secret
-		}
-	} else {
-		cfg, err = s.modelOAuthConfig(ctx, providerID, loginHint)
-	}
-	if err != nil {
-		return "", "", err
-	}
 	var f flow
-	if cfg.DeviceURL != "" {
-		f, err = auth.StartDevice(ctx, cfg, http.DefaultClient)
+	if providerID == ProviderAntigravity {
+		f, err = s.startAntigravityOAuth(ctx)
 	} else {
-		f, err = auth.StartFlow(cfg, loginHint, http.DefaultClient)
+		cfg, cerr := oauthConfig(providerID)
+		if cerr == nil {
+			if client, cerr = s.resolveClient(ctx, client); cerr == nil && client.ID != "" {
+				cfg.ClientID, cfg.ClientSecret = client.ID, client.Secret
+			}
+		} else {
+			cfg, cerr = s.modelOAuthConfig(ctx, providerID, loginHint)
+		}
+		if cerr != nil {
+			return "", "", cerr
+		}
+		if cfg.DeviceURL != "" {
+			f, err = auth.StartDevice(ctx, cfg, http.DefaultClient)
+		} else {
+			f, err = auth.StartFlow(cfg, loginHint, http.DefaultClient)
+		}
 	}
 	if err != nil {
 		return "", "", err

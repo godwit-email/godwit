@@ -356,6 +356,20 @@ func TestProviderTiles(t *testing.T) {
 	}
 }
 
+func TestAntigravityTile(t *testing.T) {
+	h := withLLM(t)
+	p := h.openSettings("models")
+	h.see("test")
+	h.click("添加服务")
+	h.click("Antigravity")
+	f := p.models.form
+	assert.Equal(t, core.ProviderAntigravity, f.provider)
+	assert.True(t, f.oauth())
+	assert.True(t, f.needKey())
+	assert.Equal(t, "http://127.0.0.1:0/antigravity", f.baseURL)
+	h.see("用 Google 登录")
+}
+
 func TestBaseURLNormalizedOnBlur(t *testing.T) {
 	h := withLLM(t)
 	m := h.newService()

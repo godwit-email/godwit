@@ -46,7 +46,11 @@ func (s *Service) CheckModelService(ctx context.Context, id int64, in ModelServi
 	if in.Kind != "" {
 		c.Endpoint, c.ListSupported = ai.Endpoint(in.Kind, in.BaseURL), true
 		var ms []ai.Model
-		ms, err = ai.ListModelsNamed(ctx, s.modelHTTP, in.Kind, in.BaseURL, key)
+		hc := s.modelHTTP
+		if in.Provider == ProviderAntigravity {
+			hc = s.antigravityClient()
+		}
+		ms, err = ai.ListModelsNamed(ctx, hc, in.Kind, in.BaseURL, key)
 		for _, m := range ms {
 			c.Models = append(c.Models, m.ID)
 			if m.Name == "" { // the service's own name first
@@ -77,6 +81,12 @@ func (s *Service) CheckModelService(ctx context.Context, id int64, in ModelServi
 		switch {
 		case in.Provider == ProviderOther:
 			c.JudgeModels = f.Models()
+		case in.Provider == ProviderAntigravity && key != "":
+			if len(c.Models) > 0 {
+				c.JudgeModels = append([]string(nil), c.Models...)
+			} else {
+				c.JudgeModels, _ = ai.ListModels(ctx, s.antigravityClient(), ai.KindOpenAI, in.BaseURL, key)
+			}
 		case key != "":
 			c.JudgeModels, err = ai.ListJudgeModels(ctx, s.modelHTTP, f, in.BaseURL, key)
 			if errors.Is(err, ai.ErrModelAuth) {

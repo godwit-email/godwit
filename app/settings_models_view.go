@@ -409,7 +409,11 @@ func (m *modelsView) accountRow(c *ui.Context, f *modelForm) {
 			switch {
 			case f.loggingIn:
 				kit.Spinner(c)
-				kit.Text(c, i18n.T("settings.models.login.opened"), t.Text.Sm).TextColor(t.Muted)
+				msg := i18n.T("settings.models.login.opened")
+				if f.authURL == "" && f.provider == core.ProviderAntigravity {
+					msg = i18n.T("settings.models.antigravity.preparing")
+				}
+				kit.Text(c, msg, t.Text.Sm).TextColor(t.Muted)
 				if f.authURL != "" {
 					kit.Button(c, i18n.T("settings.models.login.reopen"), kit.ButtonOpts{Variant: kit.Ghost, Size: kit.SizeSm}).
 						OnClick(func() { m.openURL(f.authURL) })
