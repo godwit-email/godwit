@@ -685,11 +685,13 @@ func (r *reader) citeCard(c *ui.Context, anchor ui.Element, m core.MessageSummar
 	})
 }
 
-// replyName is who a reply to m goes to, for the reply box: its sender, or
-// for the user's own mail its first recipient (core's mail.ReplyRecipients).
 func (r *reader) replyName(m core.MessageSummary) string {
-	if len(m.To) > 0 && gomail.FromSelf(m.From, "", r.accountOf(m)) {
-		name, _ := sender(m.To[0])
+	orig := &gomail.Parsed{From: m.From, To: m.To}
+	if body := r.bodies[m.ID]; body != nil && body.ready {
+		orig.ReplyTo = body.msg.ReplyTo
+	}
+	if to, _ := gomail.ReplyRecipients(orig, r.accountOf(m), false); len(to) > 0 {
+		name, _ := sender(to[0])
 		return name
 	}
 	name, _ := sender(m.From)

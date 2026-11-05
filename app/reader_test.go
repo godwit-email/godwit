@@ -1702,6 +1702,36 @@ func TestReaderSecurityManualAdjustment(t *testing.T) {
 
 // The reply box names who a reply goes to: the sender, or for the user's own
 // mail its first recipient, not the user.
+func TestReaderReplyNameRecipients(t *testing.T) {
+	h, accounts := mailHarness(t, nil, "me@example.com")
+	h.waitMail("the folders", func() bool { return len(h.app.mail.folders[accounts[0].ID]) > 0 })
+	folderID := h.app.mail.folders[accounts[0].ID][0].ID
+	reader := h.app.mail.reader
+	for _, scenario := range []struct {
+		name    string
+		from    string
+		to      []string
+		replyTo string
+		want    string
+	}{
+		{name: "self first", from: "Me <me@example.com>", to: []string{"Me <me@example.com>", "Recipient <recipient@example.com>"}, want: "Recipient"},
+		{name: "own mail with external reply-to", from: "Me <me@example.com>", to: []string{"Recipient <recipient@example.com>"}, replyTo: "Support <support@example.com>", want: "Support"},
+		{name: "own mail with self reply-to", from: "Me <me@example.com>", to: []string{"Me <me@example.com>", "Recipient <recipient@example.com>"}, replyTo: "Me <me@example.com>", want: "Recipient"},
+		{name: "incoming mail with reply-to", from: "Recipient <recipient@example.com>", to: []string{"me@example.com"}, replyTo: "Support <support@example.com>", want: "Support"},
+	} {
+		t.Run(scenario.name, func(t *testing.T) {
+			message := core.Message{
+				MessageSummary: core.MessageSummary{ID: 1, FolderID: folderID, From: scenario.from, To: scenario.to},
+				ReplyTo:        scenario.replyTo,
+			}
+			reader.bodies[message.ID] = &msgBody{msg: message, ready: true}
+			if got := reader.replyName(message.MessageSummary); got != scenario.want {
+				t.Errorf("reply name %q, want %q", got, scenario.want)
+			}
+		})
+	}
+}
+
 func TestReaderReplyName(t *testing.T) {
 	h, accs := mailHarness(t, nil, "me@baran.wang")
 	h.waitMail("the folders", func() bool { return len(h.app.mail.folders[accs[0].ID]) > 0 })
