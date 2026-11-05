@@ -154,6 +154,52 @@ func TestThreadSenderSkipsOwnReplies(t *testing.T) {
 	assert.Equal(t, "reply", page.Items[0].Snippet)
 }
 
+// Mail you sent is never unread, even when the server never flagged its Sent
+// copy \Seen (another client, an import): the thread counts the rest. A copy
+// of it outside Sent, a self-Cc in the inbox, is read with it, and Merged,
+// what a toggle and the reader go by, agrees.
+func TestThreadUnreadSkipsSent(t *testing.T) {
+	e := newSyncEnv(t)
+	e.put(t, "INBOX", eml("o@x", "Bob <bob@example.com>", "alice@example.com", "plan", "Mon, 05 Oct 2026 09:00:00 +0000", "q"))
+	mine := eml("r@x", "alice@example.com", "bob@example.com", "Re: plan", "Mon, 05 Oct 2026 10:00:00 +0000", "a", "In-Reply-To: <o@x>", "Cc: alice@example.com")
+	e.put(t, "Sent", mine)
+	e.put(t, "INBOX", mine)
+	e.sync(t)
+	p, err := e.s.ListThreads(bg, View{Unified: "inbox"}, "", 50)
+	require.NoError(t, err)
+	require.Len(t, p.Items, 1)
+	assert.Equal(t, 2, p.Items[0].Count)
+	assert.Equal(t, 1, p.Items[0].Unread) // Bob's, not yours
+	assert.Equal(t, "a", p.Items[0].Snippet)
+
+	th, err := e.s.GetThread(bg, p.Items[0].ID)
+	require.NoError(t, err)
+	merged := th.Merged()
+	require.Len(t, merged, 2)
+	assert.NotContains(t, merged[0].Flags, `\Seen`, "Bob's still unread")
+	assert.Contains(t, merged[1].Flags, `\Seen`, "yours read, though no copy is flagged")
+	assert.NotContains(t, th.Messages[1].Flags, `\Seen`, "nothing written to the copies")
+}
+
+// The Sent role is the one the user gave: a folder detected as Sent but
+// given another role counts its unread mail, the one given Sent does not.
+func TestThreadUnreadSkipsGivenSent(t *testing.T) {
+	e := newSyncEnv(t)
+	require.NoError(t, e.im.User.Create("Outgoing", nil))
+	e.put(t, "Sent", eml("in@x", "Bob <bob@example.com>", "alice@example.com", "kept", day, "q"))
+	e.put(t, "Outgoing", eml("out@x", "alice@example.com", "carol@example.com", "hi", day, "a"))
+	e.sync(t)
+	require.NoError(t, e.s.SetRoleFolder(bg, e.acc.ID, "sent", e.folderID(t, "Outgoing")))
+	unread := map[string]int{}
+	for _, f := range []string{"Sent", "Outgoing"} {
+		p, err := e.s.ListThreads(bg, View{FolderID: e.folderID(t, f)}, "", 50)
+		require.NoError(t, err)
+		require.Len(t, p.Items, 1)
+		unread[p.Items[0].Subject] = p.Items[0].Unread
+	}
+	assert.Equal(t, map[string]int{"kept": 1, "hi": 0}, unread)
+}
+
 // Gmail keeps a message in INBOX, each label's folder and All Mail: the
 // thread shows it once, the inbox copy, and actions still reach every copy.
 func TestThreadCopiesShowOnce(t *testing.T) {

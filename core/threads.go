@@ -8,6 +8,7 @@ import (
 	"time"
 
 	gomail "github.com/godwit-email/godwit/core/mail"
+	"github.com/godwit-email/godwit/core/mailsync"
 	"github.com/godwit-email/godwit/core/store"
 )
 
@@ -53,6 +54,10 @@ type Thread struct {
 	Copies      []MessageSummary
 	CopyOf      []int64
 	ReplyTarget int64
+	// sent holds the shown messages with a copy in the account's Sent folder
+	// (as RoleFolder resolves it): read, as ListThreads counts them, whatever
+	// \Seen their copies carry.
+	sent map[int64]bool
 }
 
 // All is every message of the thread, Messages then Copies.
@@ -70,7 +75,8 @@ func (t Thread) CopiesOf(id int64) []MessageSummary {
 }
 
 // Merged is Messages, each with its copies' state as ListThreads counts it:
-// unread while a copy is, starred while one is, and the gravest security.
+// unread while a copy is, unless it is your own sent mail, starred while one
+// is, and the gravest security.
 func (t Thread) Merged() []MessageSummary {
 	out := slices.Clone(t.Messages)
 	for i := range out {
@@ -85,6 +91,9 @@ func (t Thread) Merged() []MessageSummary {
 			if gomail.SecurityRank(c.Security.Status) > gomail.SecurityRank(m.Security.Status) {
 				m.Security = c.Security
 			}
+		}
+		if t.sent[m.ID] && !slices.Contains(m.Flags, `\Seen`) {
+			m.Flags = append(slices.Clone(m.Flags), `\Seen`)
 		}
 	}
 	return out
@@ -177,16 +186,22 @@ func (s *Service) ListThreads(ctx context.Context, v View, cursor string, limit 
 	}
 	ms, err := s.db.Query(ctx, `SELECT thread_id, from_addr, snippet, flags, has_attachments, auth_results, security_status, security_reason, security_scanned_at, m.id, `+copyCols+`,
 		(SELECT email FROM accounts WHERE id = m.account_id),
-		(SELECT COALESCE(NULLIF(role_override, ''), role, '') FROM folders WHERE id = m.folder_id) FROM messages m
+		(SELECT COALESCE(NULLIF(role_override, ''), role, '') FROM folders WHERE id = m.folder_id), m.folder_id FROM messages m
 		WHERE thread_id IN (`+strings.TrimSuffix(strings.Repeat("?,", len(ids)), ",")+`) AND `+notPurgedCond+` ORDER BY date DESC, id DESC`, ids...)
+	if err != nil {
+		return ThreadPage{}, err
+	}
+	sentIDs, err := s.roleFolderIDs(ctx, "sent")
 	if err != nil {
 		return ThreadPage{}, err
 	}
 	seen := map[string]bool{}
 	of := copyOf(ms.Values, 9, 10)
-	unread, flagged := map[int]bool{}, map[int]bool{} // a message is unread or starred if any copy is
+	unread, flagged, sent := map[int]bool{}, map[int]bool{}, map[int]bool{} // a message is unread or starred if any copy is, and read once one is in Sent:
+	// your own mail, whose Sent copy another client or an import can leave unflagged
 	for i, r := range ms.Values {
 		unread[of[i]] = unread[of[i]] || !strings.Contains(store.Str(r[3]), `\Seen`)
+		sent[of[i]] = sent[of[i]] || slices.Contains(sentIDs, any(store.Int(r[15])))
 		flagged[of[i]] = flagged[of[i]] || strings.Contains(store.Str(r[3]), `\Flagged`)
 	}
 	for _, r := range ms.Values { // a warning on any copy is the thread's
@@ -217,7 +232,7 @@ func (s *Service) ListThreads(ctx context.Context, v View, cursor string, limit 
 			t.From = from
 		}
 		t.Count++
-		if unread[i] {
+		if unread[i] && !sent[i] {
 			t.Unread++
 		}
 		if flagged[i] {
@@ -235,7 +250,7 @@ func (s *Service) ListThreads(ctx context.Context, v View, cursor string, limit 
 
 // GetThread returns the thread's messages by date ascending, each once.
 func (s *Service) GetThread(ctx context.Context, id int64) (Thread, error) {
-	rows, err := s.db.Query(ctx, "SELECT t.subject, a.email FROM threads t JOIN accounts a ON a.id = t.account_id WHERE t.id = ?", id)
+	rows, err := s.db.Query(ctx, "SELECT t.subject, a.email, a.id FROM threads t JOIN accounts a ON a.id = t.account_id WHERE t.id = ?", id)
 	if err != nil {
 		return Thread{}, err
 	}
@@ -243,12 +258,22 @@ func (s *Service) GetThread(ctx context.Context, id int64) (Thread, error) {
 		return Thread{}, fmt.Errorf("thread %d not found", id)
 	}
 	t, self := Thread{ID: id, Subject: store.Str(rows.Values[0][0])}, store.Str(rows.Values[0][1])
+	sentID, _, err := mailsync.RoleFolder(ctx, s.db, store.Int(rows.Values[0][2]), "sent")
+	if err != nil {
+		return Thread{}, err
+	}
 	ms, err := s.db.Query(ctx, "SELECT "+msgCols+", m.in_reply_to, m.refs, m.reply_to, "+copyCols+" FROM messages m WHERE m.thread_id = ? AND "+notPurgedCond+" ORDER BY m.date, m.id", id)
 	if err != nil {
 		return Thread{}, err
 	}
 	of := copyOf(ms.Values, 0, msgColCount+3)
 	for i, r := range ms.Values {
+		if sentID != 0 && store.Int(r[2]) == sentID { // m.folder_id
+			if t.sent == nil {
+				t.sent = map[int64]bool{}
+			}
+			t.sent[store.Int(ms.Values[of[i]][0])] = true
+		}
 		if of[i] == i {
 			m := scanSummary(r)
 			t.Messages = append(t.Messages, m)
