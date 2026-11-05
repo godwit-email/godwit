@@ -1,5 +1,18 @@
 # Changelog
 
+## [1.28.0](https://github.com/godwit-email/godwit/compare/v1.27.0...v1.28.0) (2026-11-05)
+
+
+### Features
+
+* **app:** icons in a mail row's menu, and subtitles in the tray's recent codes ([#488](https://github.com/godwit-email/godwit/issues/488)) ([b62ce3a](https://github.com/godwit-email/godwit/commit/b62ce3a5dab22b18c7b5450ee8ab1ee0edbd1e80))
+* **app:** show sender avatars in the tray's recent sign-in codes ([#483](https://github.com/godwit-email/godwit/issues/483)) ([f6848a9](https://github.com/godwit-email/godwit/commit/f6848a94e12ce41e7748d3631f9e1e51d2560374))
+
+
+### Bug Fixes
+
+* **wit:** show the mail a question quoted ([#482](https://github.com/godwit-email/godwit/issues/482)) ([5afb9cc](https://github.com/godwit-email/godwit/commit/5afb9ccb4d5ca41753460352b733860c9ca6d2d8))
+
 ## [1.27.0](https://github.com/godwit-email/godwit/compare/v1.26.2...v1.27.0) (2026-11-05)
 
 
