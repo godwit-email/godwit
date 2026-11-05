@@ -662,7 +662,7 @@ func (s *Service) enqueue(ctx context.Context, draftID, rev int64, checked []str
 			id := store.Str(rows.Values[0][0])
 			o.References = append(strings.Fields(store.Str(rows.Values[0][1])), id)
 			// A forward is not a reply (RFC 5322 3.6.4): References alone keeps it
-			// in the original's conversation, as Gmail and Apple Mail do.
+			// in the original's conversation.
 			if d.Mode != "forward" {
 				o.InReplyTo = id
 			}
