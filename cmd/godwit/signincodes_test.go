@@ -107,8 +107,9 @@ func TestRecentCodeMenuCopiesSelectedCode(t *testing.T) {
 	}, func(code core.SignInCode) { copied = code })
 	menu := items[1].Submenu
 	justNow := i18n.T("shell.sync.just_now")
-	if len(menu) != 3 || menu[0].Label != "aB0012 · Login · "+justNow || menu[1].Label != "123 456 · second@example.com · "+i18n.Plural("shell.sync.minutes_ago", 3) ||
-		menu[2].Label != i18n.T("codes.card.signin")+" · acme.example · Acme · "+justNow {
+	if len(menu) != 3 || menu[0].Label != "aB0012" || menu[0].Subtitle != "Login · "+justNow ||
+		menu[1].Label != "123 456" || menu[1].Subtitle != "second@example.com · "+i18n.Plural("shell.sync.minutes_ago", 3) ||
+		menu[2].Label != i18n.T("codes.card.signin")+" · acme.example" || menu[2].Subtitle != "Acme · "+justNow {
 		t.Fatalf("menu %+v", menu)
 	}
 	if !slices.Equal(iconed, []int64{1, 2, 4}) || menu[0].Icon != icon {

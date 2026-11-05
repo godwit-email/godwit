@@ -97,19 +97,18 @@ func codeSender(from string) string {
 	return from
 }
 
-// shortcut: sender and time stay in the label until MyGo menu items take a subtitle (#95, egoist/mygo#455).
 func recentCodeMenu(codes []core.SignInCode, now time.Time, icon func(core.SignInCode) *mygo.MenuIcon, use func(core.SignInCode)) []*mygo.MenuItem {
 	var items []*mygo.MenuItem
 	for _, code := range codes {
 		if !freshSignInCode(code, now) {
 			continue
 		}
-		note := codeSender(code.From) + " · " + codeAge(now.Sub(code.ReceivedAt))
-		label := gomail.GroupCode(code.Code) + " · " + note
+		label := gomail.GroupCode(code.Code)
 		if code.Code == "" {
-			label = i18n.T("codes.card."+code.LinkKind) + " · " + gomail.LinkHost(code.Link) + " · " + note
+			label = i18n.T("codes.card."+code.LinkKind) + " · " + gomail.LinkHost(code.Link)
 		}
-		items = append(items, &mygo.MenuItem{Label: label, Icon: icon(code), Click: func(*mygo.MenuItem, *mygo.Window) { use(code) }})
+		subtitle := codeSender(code.From) + " · " + codeAge(now.Sub(code.ReceivedAt))
+		items = append(items, &mygo.MenuItem{Label: label, Subtitle: subtitle, Icon: icon(code), Click: func(*mygo.MenuItem, *mygo.Window) { use(code) }})
 	}
 	if len(items) == 0 {
 		items = append(items, &mygo.MenuItem{Label: i18n.T("codes.empty"), Disabled: true})
