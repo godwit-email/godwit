@@ -133,6 +133,9 @@ func syncFolders(ctx context.Context, db *store.DB, c *imapclient.Client, accoun
 			Args: []any{accountID, d.Mailbox, rs[i], delim(d)},
 		})
 	}
+	if len(names) == 0 {
+		return nil, nil
+	}
 	stale := "account_id = ? AND name NOT IN (" + marks(len(names)) + ")"
 	staleArgs := append([]any{accountID}, anys(names)...)
 	gone := "(SELECT id FROM folders WHERE " + stale + ")"

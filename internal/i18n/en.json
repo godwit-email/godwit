@@ -912,13 +912,6 @@
   "reader_labels_add": "Label",
   "reader_labels_add_label": "Add label",
   "reader_labels_auto": "By model",
-  "@reader_labels_create": {
-    "placeholders": {
-      "arg1": {
-        "type": "String"
-      }
-    }
-  },
   "reader_labels_manage": "Manage labels…",
   "reader_labels_remove": "Remove label “{arg1}”",
   "@reader_labels_remove": {
@@ -3157,13 +3150,6 @@
     }
   },
   "settings_rules_preview": "Existing mail",
-  "@settings_rules_preview_foot": {
-    "placeholders": {
-      "arg1": {
-        "type": "int"
-      }
-    }
-  },
   "settings_rules_preview_wait": "Looking for matching mail…",
   "settings_rules_preview_incomplete": "Fill in every condition to see which mail matches.",
   "settings_rules_preview_none": "No mail matches. Are the conditions too strict?",
@@ -3211,22 +3197,8 @@
   },
   "settings_rules_save_existing_nothing": "This rule has no action that can run on existing mail.",
   "settings_rules_save_confirm": "Save and Turn On",
-  "@settings_rules_save_ran": {
-    "placeholders": {
-      "arg1": {
-        "type": "int"
-      }
-    }
-  },
   "settings_rules_enable": "Enable “{arg1}”",
   "@settings_rules_enable": {
-    "placeholders": {
-      "arg1": {
-        "type": "String"
-      }
-    }
-  },
-  "@settings_rules_edit": {
     "placeholders": {
       "arg1": {
         "type": "String"
