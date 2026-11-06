@@ -117,6 +117,7 @@ type Service struct {
 	locksMu sync.Mutex
 	locks   map[int64]chan struct{} // per-account 1-slot semaphore: sync and op pushing never overlap
 	kept    map[int64]*downloadConn // an attachmentFetcher's connection between two files
+	cacheMu sync.Mutex              // a cached file and its row change together: evict holds no account lock
 
 	settingsMu sync.Mutex                  // settings read then written (SetSettings, the trusted senders)
 	proxy      atomic.Pointer[proxyConfig] // the saved proxy (loadProxy, SetSettings), read by Proxy

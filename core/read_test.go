@@ -412,6 +412,50 @@ func TestGetMessageInlineImagesEvictAroundThemselves(t *testing.T) {
 	assert.True(t, os.IsNotExist(err))
 }
 
+// A call cancelled after some downloads still keeps the cache within budget.
+func TestAttachmentFetcherEvictsAfterCancel(t *testing.T) {
+	e := newSyncEnv(t)
+	e.put(t, "INBOX", withAttachments("a1@x", "hi", 2))
+	e.sync(t)
+	ids := e.rows(t, "SELECT id FROM attachments ORDER BY id")
+	old, _, err := e.s.GetAttachment(bg, ids[0][0].(int64))
+	require.NoError(t, err)
+	setFor(t, &cacheLimit, 1)
+	ctx, cancel := context.WithCancel(bg)
+	defer cancel()
+	f := e.s.newAttachmentFetcher(ctx)
+	_, _, err = f.get(ids[1][0].(int64))
+	require.NoError(t, err)
+	cancel()
+	require.NoError(t, f.close())
+	_, err = os.Stat(old)
+	assert.True(t, os.IsNotExist(err))
+}
+
+// Eviction outside the account lock waits for a save, and a save for it, so a file
+// saved right after its row cleared is not removed by that eviction.
+func TestEvictAndSaveExcludeEachOther(t *testing.T) {
+	e := newSyncEnv(t)
+	e.put(t, "INBOX", withAttachments("a1@x", "hi", 2))
+	e.sync(t)
+	ids := e.rows(t, "SELECT id FROM attachments ORDER BY id")
+	p, _, err := e.s.GetAttachment(bg, ids[0][0].(int64))
+	require.NoError(t, err)
+
+	e.s.cacheMu.Lock()
+	evicted := make(chan error, 1)
+	go func() { evicted <- e.s.evict(bg, 0) }()
+	saved := make(chan error, 1)
+	go func() { _, _, err := e.s.GetAttachment(bg, ids[1][0].(int64)); saved <- err }()
+	time.Sleep(100 * time.Millisecond)
+	_, err = os.Stat(p)
+	assert.NoError(t, err, "eviction waits")
+	assert.Equal(t, 1, e.count(t, "SELECT count(*) FROM attachments WHERE cache_path IS NOT NULL"), "neither has changed a row")
+	e.s.cacheMu.Unlock()
+	require.NoError(t, <-evicted)
+	require.NoError(t, <-saved)
+}
+
 // A refused login is not tried again for every image.
 func TestGetMessageInlineImagesStopAtRefusedLogin(t *testing.T) {
 	e := newSyncEnv(t)

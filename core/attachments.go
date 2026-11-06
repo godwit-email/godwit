@@ -240,7 +240,7 @@ func (f *attachmentFetcher) hangUp() {
 }
 
 // close hangs up and brings the cache back within budget, once for all the files
-// saved: eviction scans the whole cache.
+// saved: eviction scans the whole cache. A cancelled call's files count too.
 func (f *attachmentFetcher) close() error {
 	if k := f.s.takeKept(f.accountID, f); k != nil {
 		k.release()
@@ -252,7 +252,9 @@ func (f *attachmentFetcher) close() error {
 	if len(f.saved) == 0 {
 		return nil
 	}
-	return f.s.evict(f.ctx, cacheLimit, f.saved...)
+	ctx, cancel := context.WithTimeout(context.WithoutCancel(f.ctx), 5*time.Second)
+	defer cancel()
+	return f.s.evict(ctx, cacheLimit, f.saved...)
 }
 
 // saveAttachment writes a's downloaded data to the cache and records it. The
@@ -272,6 +274,8 @@ func (s *Service) saveAttachment(ctx context.Context, a attRow, data []byte) (st
 	if err != nil {
 		return "", err
 	}
+	s.cacheMu.Lock()
+	defer s.cacheMu.Unlock()
 	if err := store.WriteFileAtomic(path, data); err != nil {
 		return "", err
 	}
@@ -442,11 +446,17 @@ func (s *Service) evict(ctx context.Context, max int64, keep ...int64) error {
 		if slices.Contains(keep, id) {
 			continue
 		}
-		if _, err := s.db.Execute(ctx, "UPDATE attachments SET cache_path = NULL WHERE id = ?", id); err != nil {
+		// Under cacheMu: a download of this file, right after the row clears, must not lose its file to the Remove.
+		s.cacheMu.Lock()
+		_, err := s.db.Execute(ctx, "UPDATE attachments SET cache_path = NULL WHERE id = ?", id)
+		if err != nil {
+			s.cacheMu.Unlock()
 			return err
 		}
 		total -= sizes[i]
-		if err := os.Remove(store.Str(r[1])); err != nil && !os.IsNotExist(err) {
+		err = os.Remove(store.Str(r[1]))
+		s.cacheMu.Unlock()
+		if err != nil && !os.IsNotExist(err) {
 			rmErr = errors.Join(rmErr, err) // reported; the file stays for the orphan sweep
 		}
 	}
