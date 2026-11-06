@@ -187,7 +187,7 @@ func TestClassifyOnlyInbox(t *testing.T) {
 	useLabelJudge(s, j)
 	addSent(t, s)
 	a := addMessage(t, s, "a", "a@x", "", "", 1)
-	_, err := s.db.Execute(t.Context(), "UPDATE messages SET folder_id = 2 WHERE id = ?", a)
+	_, err := s.db.Execute(t.Context(), "UPDATE message_locations SET folder_id = 2 WHERE message_id = ?", a)
 	require.NoError(t, err)
 	n, err := s.classifyBatch(t.Context())
 	require.NoError(t, err)
@@ -328,7 +328,7 @@ func TestClassifyDiscardsStale(t *testing.T) {
 		want   func(t *testing.T, v any)
 	}{
 		"stopped":   {0, "UPDATE messages SET labeled_at = unixepoch() WHERE id = ?", func(t *testing.T, v any) { require.Greater(t, store.Int(v), int64(0)) }},
-		"moved":     {nil, "UPDATE messages SET folder_id = 2 WHERE id = ?", func(t *testing.T, v any) { require.Nil(t, v) }},
+		"moved":     {nil, "UPDATE message_locations SET folder_id = 2 WHERE message_id = ?", func(t *testing.T, v any) { require.Nil(t, v) }},
 		"rescanned": {nil, "UPDATE messages SET labeled_at = 5 WHERE id = ?", func(t *testing.T, v any) { require.EqualValues(t, 5, v) }},
 	} {
 		t.Run(name, func(t *testing.T) {

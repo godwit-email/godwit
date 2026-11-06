@@ -89,7 +89,7 @@ func TestWitBatchActions(t *testing.T) {
 
 	trashID, _, err := mailsync.RoleFolder(ctx, e.s.db, 1, "trash")
 	require.NoError(t, err)
-	rows, err = e.s.db.Query(ctx, "SELECT folder_id FROM messages WHERE id IN (?, ?)", msg1, msg2)
+	rows, err = e.s.db.Query(ctx, "SELECT "+shownCol+" FROM messages WHERE id IN (?, ?)", msg1, msg2)
 	require.NoError(t, err)
 	assert.Equal(t, trashID, store.Int(rows.Values[0][0]))
 	assert.Equal(t, trashID, store.Int(rows.Values[1][0]))
@@ -106,8 +106,10 @@ func TestWitBatchPartialFailure(t *testing.T) {
 	require.NoError(t, err)
 	r, err := e.s.db.Execute(ctx, "INSERT INTO folders(account_id, name) VALUES (2, 'INBOX')")
 	require.NoError(t, err)
-	r, err = e.s.db.Execute(ctx, "INSERT INTO messages(account_id, folder_id, subject, date) VALUES (2, ?, 'x', 0)", r.LastInsertID)
+	folder := r.LastInsertID
+	r, err = e.s.db.Execute(ctx, "INSERT INTO messages(account_id, subject, date) VALUES (2, 'x', 0)")
 	require.NoError(t, err)
+	showIn(t, e.s, r.LastInsertID, folder)
 	b, err := json.Marshal(batchArgs{IDs: []int{1, 2}, Items: []batchItem{{ID: 1, MsgID: msg1, AccountID: 1}, {ID: 2, MsgID: r.LastInsertID, AccountID: 2}}})
 	require.NoError(t, err)
 	_, res, _, err := e.s.applyBatchAction(ctx, Approval{ID: 1, Tool: "move_to_trash", Args: b})
@@ -300,11 +302,12 @@ func TestWitUnsubscribe(t *testing.T) {
 	e.s.opts.UnsubscribeClient = srv.Client()
 
 	// Insert message with List-Unsubscribe headers
-	res, err := e.s.db.Execute(ctx, `INSERT INTO messages(account_id, folder_id, subject, from_addr, date, body_text,
-		list_unsubscribe, list_unsubscribe_post, list_id) VALUES (1, 1, 'Newsletter', 'news@example.com', 1700000000, 'Content', ?, 'List-Unsubscribe=One-Click', 'list.example.com')`,
+	res, err := e.s.db.Execute(ctx, `INSERT INTO messages(account_id, subject, from_addr, date, body_text,
+		list_unsubscribe, list_unsubscribe_post, list_id) VALUES (1, 'Newsletter', 'news@example.com', 1700000000, 'Content', ?, 'List-Unsubscribe=One-Click', 'list.example.com')`,
 		"<"+srv.URL+">")
 	require.NoError(t, err)
 	msgID := res.LastInsertID
+	showIn(t, e.s, msgID, 1)
 
 	// Create conversation and job
 	c, err := e.s.NewConversation(ctx, "ask", 0)
@@ -350,12 +353,15 @@ func TestWitSearchMailWithLabelAndDates(t *testing.T) {
 
 	now := time.Now().Unix()
 	// Insert messages: one recent with label, one older with label, one without label
-	res1, err := e.s.db.Execute(ctx, `INSERT INTO messages(account_id, folder_id, subject, from_addr, date, body_text) VALUES (1, 1, 'Recent Newsletter', 'n1@x.com', ?, 'Hello 1')`, now-86400)
+	res1, err := e.s.db.Execute(ctx, `INSERT INTO messages(account_id, subject, from_addr, date, body_text) VALUES (1, 'Recent Newsletter', 'n1@x.com', ?, 'Hello 1')`, now-86400)
 	require.NoError(t, err)
-	res2, err := e.s.db.Execute(ctx, `INSERT INTO messages(account_id, folder_id, subject, from_addr, date, body_text) VALUES (1, 1, 'Old Newsletter', 'n2@x.com', ?, 'Hello 2')`, now-86400*20)
+	showIn(t, e.s, res1.LastInsertID, 1)
+	res2, err := e.s.db.Execute(ctx, `INSERT INTO messages(account_id, subject, from_addr, date, body_text) VALUES (1, 'Old Newsletter', 'n2@x.com', ?, 'Hello 2')`, now-86400*20)
 	require.NoError(t, err)
-	_, err = e.s.db.Execute(ctx, `INSERT INTO messages(account_id, folder_id, subject, from_addr, date, body_text) VALUES (1, 1, 'Other Mail', 'o@x.com', ?, 'Hello 3')`, now-86400)
+	showIn(t, e.s, res2.LastInsertID, 1)
+	res3, err := e.s.db.Execute(ctx, `INSERT INTO messages(account_id, subject, from_addr, date, body_text) VALUES (1, 'Other Mail', 'o@x.com', ?, 'Hello 3')`, now-86400)
 	require.NoError(t, err)
+	showIn(t, e.s, res3.LastInsertID, 1)
 
 	// Attach labels
 	_, err = e.s.db.Execute(ctx, `INSERT INTO message_labels(message_id, label_id, source, active) VALUES (?, ?, 'auto', 1)`, res1.LastInsertID, labelID)
@@ -392,8 +398,9 @@ func TestWitSearchMailWithLabelAndDates(t *testing.T) {
 	assert.Len(t, results3, 1)
 
 	// 4. Insert an email with NO label, but 'newsletter' in the content
-	_, err = e.s.db.Execute(ctx, `INSERT INTO messages(account_id, folder_id, subject, from_addr, date, body_text) VALUES (1, 1, 'Product Digest', 'digest@x.com', ?, 'Weekly newsletter edition')`, now-86400)
+	res4, err := e.s.db.Execute(ctx, `INSERT INTO messages(account_id, subject, from_addr, date, body_text) VALUES (1, 'Product Digest', 'digest@x.com', ?, 'Weekly newsletter edition')`, now-86400)
 	require.NoError(t, err)
+	showIn(t, e.s, res4.LastInsertID, 1)
 	require.NoError(t, e.s.RebuildSearchIndex(ctx))
 
 	// Search for 'Newsletter' finds BOTH labeled messages and content-matched messages!

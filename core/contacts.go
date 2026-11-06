@@ -106,7 +106,7 @@ func (s *Service) contacts(ctx context.Context, accountID int64) ([]Contact, map
 	if accountID != 0 {
 		acc, accArgs = " AND m.account_id = ?", []any{accountID}
 	}
-	from := " FROM messages m JOIN folders f ON f.id = m.folder_id WHERE m.folder_id NOT IN (" + placeholders(len(left)) + ")" + acc
+	from := " FROM messages m JOIN folders f ON f.id = " + shownFolder + " WHERE f.id NOT IN (" + placeholders(len(left)) + ")" + acc
 	args := append(slices.Clone(left), accArgs...)
 	// shortcut: gathers every contact in Go on each call; keep a contacts table if large stores get slow.
 	// A bare column beside max() (m.id here and below) comes from the row holding the max.
@@ -119,7 +119,7 @@ func (s *Service) contacts(ctx context.Context, accountID int64) ([]Contact, map
 	if err != nil {
 		return nil, nil, err
 	}
-	out, err := s.db.Query(ctx, "SELECT m.to_addrs, m.cc_addrs, m.date FROM messages m WHERE m.folder_id IN ("+placeholders(len(sent))+")"+acc+" ORDER BY m.date",
+	out, err := s.db.Query(ctx, "SELECT m.to_addrs, m.cc_addrs, m.date FROM messages m WHERE "+shownIn("("+placeholders(len(sent))+")")+acc+" ORDER BY m.date",
 		append(slices.Clone(sent), accArgs...)...)
 	if err != nil {
 		return nil, nil, err
@@ -247,7 +247,7 @@ func (s *Service) ContactMail(ctx context.Context, addr, cursor string, limit in
 		return page, err
 	}
 	headers, _ := json.Marshal(append([]string{}, q.fromHeaders...)) // [] when none: theirs is no mail
-	cond := "(m.from_addr IN (SELECT value FROM json_each(?)) AND m.folder_id NOT IN (" + placeholders(len(left)) + ")) OR (m.folder_id IN (" + placeholders(len(sent)) + ")"
+	cond := "(m.from_addr IN (SELECT value FROM json_each(?)) AND NOT " + shownIn("("+placeholders(len(left))+")") + ") OR (" + shownIn("("+placeholders(len(sent))+")")
 	args := slices.Concat([]any{string(headers)}, left, sent)
 	// Narrowed by an ASCII domain, which LIKE folds and JSON never escapes
 	// (a local part's & is \u0026 in the stored list); AddrKey decides below.
@@ -316,9 +316,10 @@ func (s *Service) archivePlan(ctx context.Context, addr string) (archiving, erro
 	for _, h := range q.fromHeaders {
 		args = append(args, h)
 	}
-	kept := `instr(t.flags, '\Flagged') > 0 OR instr(t.flags, '\Answered') > 0 OR t.folder_id IN (` + placeholders(len(sent)) + `)`
-	rows, err := s.db.Query(ctx, `SELECT m.id, m.account_id, m.folder_id, EXISTS (SELECT 1 FROM messages t WHERE (t.id = m.id OR t.thread_id = m.thread_id) AND (`+kept+`))
-		FROM messages m WHERE m.folder_id IN (SELECT id FROM folders WHERE role = 'inbox') AND m.from_addr IN (`+
+	kept := `instr(t.flags, '\Flagged') > 0 OR instr(t.flags, '\Answered') > 0
+		OR EXISTS (SELECT 1 FROM message_locations tl WHERE tl.message_id = t.id AND tl.shown AND tl.folder_id IN (` + placeholders(len(sent)) + `))`
+	rows, err := s.db.Query(ctx, `SELECT m.id, m.account_id, `+shownFolder+`, EXISTS (SELECT 1 FROM messages t WHERE (t.id = m.id OR t.thread_id = m.thread_id) AND (`+kept+`))
+		FROM messages m WHERE `+shownIn("(SELECT id FROM folders WHERE role = 'inbox')")+` AND m.from_addr IN (`+
 		placeholders(len(q.fromHeaders))+") ORDER BY m.id", args...)
 	if err != nil {
 		return p, err
@@ -383,7 +384,7 @@ func (s *Service) UndoArchive(ctx context.Context, a SenderArchive) error {
 	}
 	for k, ids := range back {
 		for c := range slices.Chunk(ids, 200) {
-			rows, err := s.db.Query(ctx, "SELECT id FROM messages WHERE folder_id = ? AND id IN ("+placeholders(len(c))+")", append([]any{k.To}, c...)...)
+			rows, err := s.db.Query(ctx, "SELECT m.id FROM messages m WHERE "+shownIn("(?)")+" AND m.id IN ("+placeholders(len(c))+")", append([]any{k.To}, c...)...)
 			if err != nil {
 				return err
 			}

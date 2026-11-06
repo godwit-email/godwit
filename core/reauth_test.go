@@ -344,7 +344,7 @@ func TestRaiseSyncLimitBackfills(t *testing.T) {
 		e.put(t, "Archive", msg(fmt.Sprintf("a%d@x", i))) // not INBOX: no IDLE wake-up
 	}
 	e.sync(t)
-	archive := "SELECT id FROM messages WHERE server_folder_id = ? ORDER BY id"
+	archive := "SELECT id FROM messages WHERE " + serverCol + " = ? ORDER BY id"
 	before := e.rows(t, archive, e.folderID(t, "Archive"))
 	require.Len(t, before, 2)
 	assert.Equal(t, e.idOf(t, "a4@x"), store.Int(before[1][0]))

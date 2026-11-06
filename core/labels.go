@@ -518,12 +518,12 @@ const labelCond = "EXISTS (SELECT 1 FROM message_labels ml WHERE ml.message_id =
 // the folder the user gave the role, else those detected with it, unless the
 // user gave that folder another role or none, so the view follows where
 // Delete and MoveToRole put mail.
-const notBinnedCond = `m.folder_id NOT IN (SELECT f.id FROM folders f WHERE f.role_override IN ('trash', 'junk')
+var notBinnedCond = "NOT " + shownIn(`(SELECT f.id FROM folders f WHERE f.role_override IN ('trash', 'junk')
 	OR (f.role_override = '' AND f.role IN ('trash', 'junk')
-		AND NOT EXISTS (SELECT 1 FROM folders o WHERE o.account_id = f.account_id AND o.role_override = f.role)))`
+		AND NOT EXISTS (SELECT 1 FROM folders o WHERE o.account_id = f.account_id AND o.role_override = f.role)))`)
 
 // labelViewCond matches a message m in the label's view (one arg).
-const labelViewCond = labelCond + " AND " + notBinnedCond
+var labelViewCond = labelCond + " AND " + notBinnedCond
 
 // AppliedLabel is a label on a message or thread. Auto: the model set it, and
 // no message of the thread has it set by hand.

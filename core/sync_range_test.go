@@ -29,7 +29,7 @@ func (e *syncEnv) setRange(t *testing.T, r SyncRange) {
 func (e *syncEnv) stored(t *testing.T, folder string) []string {
 	t.Helper()
 	var out []string
-	for _, r := range e.rows(t, "SELECT message_id FROM messages WHERE server_folder_id = ? ORDER BY message_id", e.folderID(t, folder)) {
+	for _, r := range e.rows(t, "SELECT message_id FROM messages WHERE "+serverCol+" = ? ORDER BY message_id", e.folderID(t, folder)) {
 		out = append(out, r[0].(string))
 	}
 	return out
@@ -201,5 +201,5 @@ func TestSyncRangeMixed(t *testing.T) {
 	e.sync(t)
 	e.sync(t)
 	assert.Equal(t, []string{"a@x", "b@x", "c@x", "d@x"}, e.stored(t, "Archive"))
-	assert.Equal(t, 4, e.count(t, "SELECT count(*) FROM messages WHERE server_folder_id = ?", e.folderID(t, "Archive")))
+	assert.Equal(t, 4, e.count(t, "SELECT count(*) FROM messages WHERE "+serverCol+" = ?", e.folderID(t, "Archive")))
 }

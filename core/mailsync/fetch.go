@@ -167,19 +167,19 @@ func syncFolder(ctx context.Context, db *store.DB, c *imapclient.Client, a *acco
 // commit; one that cannot be removed is no longer referenced, so the startup
 // orphan sweep of the cache directory (store.CleanOrphans) collects it.
 func resetFolder(ctx context.Context, db *store.DB, accountID int64, f *folder, uidValidity uint32, r *result) error {
-	ids, tids, err := doomed(ctx, db, "server_folder_id = ?", f.id)
+	ids, tids, err := doomed(ctx, db, serverIn, f.id)
 	if err != nil {
 		return err
 	}
-	files, err := db.Query(ctx, `SELECT a.cache_path FROM attachments a JOIN messages m ON m.id = a.message_id
-		WHERE m.server_folder_id = ? AND a.cache_path IS NOT NULL`, f.id)
+	files, err := db.Query(ctx, `SELECT a.cache_path FROM attachments a JOIN messages ON messages.id = a.message_id
+		WHERE `+serverIn+` AND a.cache_path IS NOT NULL`, f.id)
 	if err != nil {
 		return err
 	}
 	stmts := []sqlite.Statement{
 		{SQL: `UPDATE ops SET state = 'conflict' WHERE state = 'pending' AND account_id = ?
-			AND message_id IN (SELECT id FROM messages WHERE server_folder_id = ?)`, Args: []any{accountID, f.id}},
-		{SQL: "DELETE FROM messages WHERE server_folder_id = ?", Args: []any{f.id}},
+			AND message_id IN (SELECT id FROM messages WHERE ` + serverIn + `)`, Args: []any{accountID, f.id}},
+		{SQL: "DELETE FROM messages WHERE " + serverIn, Args: []any{f.id}},
 		{SQL: "UPDATE folders SET uidvalidity = ?, last_uid = 0, synced = 0, filled_since = NULL WHERE id = ?", Args: []any{uidValidity, f.id}},
 	}
 	if _, err := db.Transaction(ctx, append(stmts, tidyThreads(accountID, tids)...)); err != nil {
@@ -306,7 +306,7 @@ func importAbove(ctx context.Context, db *store.DB, c *imapclient.Client, a *acc
 	if err != nil {
 		return 0, err
 	}
-	have, err := db.Query(ctx, "SELECT server_uid FROM messages WHERE server_folder_id = ? AND server_uid > ?", f.id, f.lastUID)
+	have, err := db.Query(ctx, "SELECT uid FROM message_locations WHERE folder_id = ? AND uid > ?", f.id, f.lastUID)
 	if err != nil {
 		return 0, err
 	}
@@ -408,7 +408,7 @@ func backfill(ctx context.Context, db *store.DB, c *imapclient.Client, a *accoun
 	if a.limit <= 0 {
 		return backfillRange(ctx, db, c, a, f, r)
 	}
-	rows, err := db.Query(ctx, "SELECT count(*), min(server_uid) FROM messages WHERE server_folder_id = ?", f.id)
+	rows, err := db.Query(ctx, "SELECT count(*), min(uid) FROM message_locations WHERE folder_id = ? AND uid IS NOT NULL", f.id)
 	if err != nil {
 		return err
 	}
@@ -465,7 +465,7 @@ func backfillRange(ctx context.Context, db *store.DB, c *imapclient.Client, a *a
 	if err != nil {
 		return err
 	}
-	have, err := db.Query(ctx, "SELECT server_uid FROM messages WHERE server_folder_id = ?", f.id)
+	have, err := db.Query(ctx, "SELECT uid FROM message_locations WHERE folder_id = ? AND uid IS NOT NULL", f.id)
 	if err != nil {
 		return err
 	}

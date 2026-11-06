@@ -18,7 +18,7 @@ func (e *syncEnv) age(t *testing.T, days int) {
 	t.Helper()
 	d := days * 86400
 	for _, sql := range []string{
-		"UPDATE messages SET entered_at = entered_at - ?",
+		"UPDATE message_locations SET entered_at = entered_at - ?",
 		"UPDATE folders SET role_since = role_since - ?, purged_at = purged_at - ?",
 		"UPDATE purge_policies SET since = since - ?",
 	} {
@@ -77,7 +77,7 @@ func TestPurgeExpungesOldTrashDaily(t *testing.T) {
 	assert.Contains(t, reason, "7 day(s)")
 
 	// new@x ages, but the folder was purged today.
-	_, err := e.s.db.Execute(bg, "UPDATE messages SET entered_at = entered_at - 30 * 86400 WHERE message_id = 'new@x'")
+	_, err := e.s.db.Execute(bg, "UPDATE message_locations SET entered_at = entered_at - 30 * 86400 WHERE message_id = (SELECT id FROM messages WHERE message_id = 'new@x')")
 	require.NoError(t, err)
 	e.sync(t)
 	assert.Contains(t, e.onServer(t, "Trash"), "new@x")
@@ -110,9 +110,10 @@ func TestPurgeSkipsPendingMoves(t *testing.T) {
 	require.NoError(t, e.s.SetPurge(bg, e.acc.ID, "trash", 1))
 	// Shown in Trash but on the server in INBOX, with no move queued.
 	// Its UIDVALIDITY is set to Trash's, so only the server-folder guard holds it.
-	_, err := e.s.db.Execute(bg, "UPDATE messages SET folder_id = ?, server_uidvalidity = (SELECT uidvalidity FROM folders WHERE id = ?) WHERE message_id = 'stray@x'",
-		e.folderID(t, "Trash"), e.folderID(t, "Trash"))
+	_, err := e.s.db.Execute(bg, "UPDATE message_locations SET shown = 0, uidvalidity = (SELECT uidvalidity FROM folders WHERE id = ?) WHERE message_id = ?",
+		e.folderID(t, "Trash"), e.idOf(t, "stray@x"))
 	require.NoError(t, err)
+	showIn(t, e.s, e.idOf(t, "stray@x"), e.folderID(t, "Trash"))
 	e.im.Stop()
 	require.NoError(t, e.s.Move(bg, []int64{e.idOf(t, "out@x")}, e.folderID(t, "INBOX")))
 	require.NoError(t, e.s.Delete(bg, []int64{e.idOf(t, "in@x")}))
@@ -326,7 +327,7 @@ func TestEnteredAtFollowsFolder(t *testing.T) {
 	e.sync(t)
 	id := e.idOf(t, "m@x")
 	entered := func() int64 {
-		return store.Int(e.rows(t, "SELECT unixepoch() - entered_at FROM messages WHERE id = ?", id)[0][0])
+		return store.Int(e.rows(t, "SELECT unixepoch() - "+enteredCol+" FROM messages WHERE id = ?", id)[0][0])
 	}
 	assert.Less(t, entered(), int64(5), "imported: first seen now")
 	e.age(t, 10)
@@ -346,7 +347,7 @@ func TestPurgeClockStartsWhenTurnedOn(t *testing.T) {
 	e.put(t, "Trash", msg("unknown@x"))
 	e.sync(t)
 	e.age(t, 30) // a month in Trash with the purge off
-	_, err := e.s.db.Execute(bg, "UPDATE messages SET entered_at = 0 WHERE message_id = 'unknown@x'")
+	_, err := e.s.db.Execute(bg, "UPDATE message_locations SET entered_at = 0 WHERE message_id = (SELECT id FROM messages WHERE message_id = 'unknown@x')")
 	require.NoError(t, err)
 	require.NoError(t, e.s.SetPurge(bg, e.acc.ID, "trash", 1))
 	e.sync(t)
@@ -435,7 +436,7 @@ func TestPurgeRacingRescue(t *testing.T) {
 			e.sync(t)
 			assert.Equal(t, []string{"m@x"}, e.onServer(t, "INBOX"))
 			assert.Zero(t, e.audits(t))
-			assert.Equal(t, inbox, store.Int(e.rows(t, "SELECT server_folder_id FROM messages WHERE id = ?", id)[0][0]))
+			assert.Equal(t, inbox, store.Int(e.rows(t, "SELECT "+serverCol+" FROM messages WHERE id = ?", id)[0][0]))
 		})
 	}
 }
@@ -499,7 +500,7 @@ func TestEmptyFolder(t *testing.T) {
 	e.sync(t)
 	assert.Equal(t, []string{}, e.onServer(t, "Trash"))
 	assert.Equal(t, []string{"kept@x"}, e.onServer(t, "INBOX"))
-	assert.Zero(t, e.count(t, "SELECT count(*) FROM messages WHERE folder_id = ?", trashID))
+	assert.Zero(t, e.count(t, "SELECT count(*) FROM messages WHERE "+shownCol+" = ?", trashID))
 }
 
 // trashShown is what the Trash shows: its list, its folder count and a search.

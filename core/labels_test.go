@@ -264,9 +264,9 @@ func TestLabelViewLeavesOutTrashAndJunk(t *testing.T) {
 	for _, id := range []int64{a, b, c} {
 		setRow(t, s, id, otp, "auto", 1)
 	}
-	_, err = s.db.Execute(ctx, `UPDATE messages SET folder_id = 2 WHERE id = ?`, b)
+	_, err = s.db.Execute(ctx, `UPDATE message_locations SET folder_id = 2 WHERE message_id = ?`, b)
 	require.NoError(t, err)
-	_, err = s.db.Execute(ctx, `UPDATE messages SET folder_id = 3 WHERE id = ?`, c)
+	_, err = s.db.Execute(ctx, `UPDATE message_locations SET folder_id = 3 WHERE message_id = ?`, c)
 	require.NoError(t, err)
 
 	for _, v := range []View{{LabelID: otp}, {LabelID: otp, AccountID: 1}} {
@@ -302,9 +302,9 @@ func TestLabelViewFollowsChosenTrash(t *testing.T) {
 	for _, id := range []int64{a, b, c} {
 		setRow(t, s, id, otp, "auto", 1)
 	}
-	_, err = s.db.Execute(ctx, `UPDATE messages SET folder_id = 2 WHERE id = ?`, b)
+	_, err = s.db.Execute(ctx, `UPDATE message_locations SET folder_id = 2 WHERE message_id = ?`, b)
 	require.NoError(t, err)
-	_, err = s.db.Execute(ctx, `UPDATE messages SET folder_id = 3 WHERE id = ?`, c)
+	_, err = s.db.Execute(ctx, `UPDATE message_locations SET folder_id = 3 WHERE message_id = ?`, c)
 	require.NoError(t, err)
 
 	p, err := s.ListMessages(ctx, View{LabelID: otp}, "", 10)
@@ -338,7 +338,9 @@ func TestAccountLabelsAndViews(t *testing.T) {
 	// Add messages to account 1 and account 2
 	a := addMessage(t, s, "msg1", "a@x", "", "", 10)
 	b := addMessage(t, s, "msg2", "b@x", "", "", 20)
-	_, err = s.db.Execute(ctx, `UPDATE messages SET account_id = 2, folder_id = 2 WHERE id = ?`, b)
+	_, err = s.db.Execute(ctx, `UPDATE messages SET account_id = 2 WHERE id = ?`, b)
+	require.NoError(t, err)
+	_, err = s.db.Execute(ctx, `UPDATE message_locations SET folder_id = 2 WHERE message_id = ?`, b)
 	require.NoError(t, err)
 
 	// Give them threads
@@ -488,9 +490,10 @@ func TestLabelsSurviveResetWithoutMessageID(t *testing.T) {
 // addCopy inserts a cached copy of a message with a Message-ID, as an import does.
 func addCopy(t *testing.T, s *Service, mid string) int64 {
 	t.Helper()
-	res, err := s.db.Execute(t.Context(), `INSERT INTO messages(account_id, folder_id, server_folder_id, message_id, subject, from_addr, date, label_fp)
-		VALUES (1, 1, 1, ?, 's', 'a@x', 1, ?)`, mid, "fp:"+mid)
+	res, err := s.db.Execute(t.Context(), `INSERT INTO messages(account_id, message_id, subject, from_addr, date, label_fp)
+		VALUES (1, ?, 's', 'a@x', 1, ?)`, mid, "fp:"+mid)
 	require.NoError(t, err)
+	showIn(t, s, res.LastInsertID, 1)
 	return res.LastInsertID
 }
 

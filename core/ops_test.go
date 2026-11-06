@@ -132,7 +132,7 @@ func TestMoveThenFlagOffline(t *testing.T) {
 	assert.Equal(t, []string{"other@x"}, e.onServer(t, "INBOX"))
 	assert.Equal(t, []string{`m@x \Seen`}, e.onServer(t, "Archive"))
 	assert.Equal(t, id, e.idOf(t, "m@x"))
-	assert.Equal(t, 1, e.count(t, "SELECT count(*) FROM messages WHERE folder_id = ?", archive))
+	assert.Equal(t, 1, e.count(t, "SELECT count(*) FROM messages WHERE "+shownCol+" = ?", archive))
 	assert.Empty(t, e.ops(t))
 	assert.Equal(t, []string{"done", "done"}, e.opStates(t))
 }
@@ -160,7 +160,7 @@ func TestMoveWithoutCOPYUID(t *testing.T) {
 			assert.Equal(t, []string{`keep@x \Deleted`, "other@x"}, e.onServer(t, "INBOX"))
 			assert.Equal(t, []string{`m@x \Seen`}, e.onServer(t, "Archive"))
 			assert.Equal(t, id, e.idOf(t, "m@x"))
-			r := e.rows(t, "SELECT folder_id, server_folder_id, flags FROM messages WHERE id = ?", id)
+			r := e.rows(t, "SELECT "+shownCol+", "+serverCol+", flags FROM messages WHERE id = ?", id)
 			assert.Equal(t, []any{archive, archive, `\Seen`}, r[0])
 			assert.Equal(t, []string{"done", "done"}, e.opStates(t))
 		})
@@ -172,16 +172,18 @@ func TestMoveWithoutCOPYUID(t *testing.T) {
 // must be empty on the server, so a move's COPYUID into it is 1.
 func (e *syncEnv) storedCopy(t *testing.T, id, folder int64) int64 {
 	t.Helper()
-	r, err := e.s.db.Execute(bg, `INSERT INTO messages(account_id, folder_id, server_folder_id, server_uidvalidity, server_uid, message_id, subject, size, flags)
-		SELECT account_id, ?, ?, (SELECT uidvalidity FROM folders WHERE id = ?), 1, message_id, subject, size, flags FROM messages WHERE id = ?`,
-		folder, folder, folder, id)
+	r, err := e.s.db.Execute(bg, `INSERT INTO messages(account_id, message_id, subject, size, flags, date)
+		SELECT account_id, message_id, subject, size, flags, date FROM messages WHERE id = ?`, id)
+	require.NoError(t, err)
+	_, err = e.s.db.Execute(bg, `INSERT INTO message_locations(message_id, folder_id, shown, uidvalidity, uid, entered_at, date)
+		SELECT m.id, f.id, 1, f.uidvalidity, 1, unixepoch(), m.date FROM messages m, folders f WHERE m.id = ? AND f.id = ?`, r.LastInsertID, folder)
 	require.NoError(t, err)
 	return r.LastInsertID
 }
 
 // A COPYUID naming a UID a row already holds in the destination is the same
 // server message: the moved row takes its place instead of the push failing on
-// UNIQUE(server_folder_id, server_uid).
+// UNIQUE(folder_id, uid).
 func TestMoveOntoStoredCopy(t *testing.T) {
 	e := newSyncEnv(t)
 	e.put(t, "INBOX", msg("m@x"))
@@ -194,7 +196,7 @@ func TestMoveOntoStoredCopy(t *testing.T) {
 	e.sync(t)
 
 	assert.Equal(t, []string{"m@x"}, e.onServer(t, "Archive"))
-	assert.Equal(t, [][]any{{id, archive, archive, int64(1)}}, e.rows(t, "SELECT id, folder_id, server_folder_id, server_uid FROM messages"))
+	assert.Equal(t, [][]any{{id, archive, archive, int64(1)}}, e.rows(t, "SELECT id, "+shownCol+", "+serverCol+", "+uidCol+" FROM messages"))
 	assert.Equal(t, []string{"done"}, e.opStates(t))
 }
 
@@ -217,7 +219,7 @@ func TestMoveOntoStoredCopyDropsItsQueuedChanges(t *testing.T) {
 
 	assert.Equal(t, []string{"m@x"}, e.onServer(t, "Archive"))
 	assert.Empty(t, e.onServer(t, "Trash"))
-	assert.Equal(t, [][]any{{id, archive, archive}}, e.rows(t, "SELECT id, folder_id, server_folder_id FROM messages"))
+	assert.Equal(t, [][]any{{id, archive, archive}}, e.rows(t, "SELECT id, "+shownCol+", "+serverCol+" FROM messages"))
 	assert.Equal(t, []string{"done", "conflict"}, e.opStates(t))
 	var reported bool
 	for _, ev := range ofType(collect(ch), events.SyncFailed) {
@@ -271,7 +273,7 @@ func TestMoveNeedsMoveOrUIDPlus(t *testing.T) {
 	assert.Contains(t, ops[0].LastError, "MOVE")
 	evs := collect(ch)
 	assert.Len(t, ofType(evs, events.SyncFailed), 1)
-	assert.Equal(t, e.folderID(t, "INBOX"), store.Int(e.rows(t, "SELECT folder_id FROM messages WHERE id = ?", id)[0][0]),
+	assert.Equal(t, e.folderID(t, "INBOX"), store.Int(e.rows(t, "SELECT "+shownCol+" FROM messages WHERE id = ?", id)[0][0]),
 		"shown where the server still has it")
 	var announced bool
 	for _, ev := range ofType(evs, events.MessagesChanged) {
@@ -288,7 +290,7 @@ func TestClaimAmbiguity(t *testing.T) {
 	e.put(t, "Archive", raw)
 	e.sync(t)
 	inbox, archive := e.folderID(t, "INBOX"), e.folderID(t, "Archive")
-	orig := store.Int(e.rows(t, "SELECT id FROM messages WHERE folder_id = ?", inbox)[0][0])
+	orig := store.Int(e.rows(t, "SELECT id FROM messages WHERE "+shownCol+" = ?", inbox)[0][0])
 	require.NoError(t, e.s.Move(bg, []int64{orig}, archive))
 	ch, unsub := e.s.Subscribe()
 	defer unsub()
@@ -296,12 +298,12 @@ func TestClaimAmbiguity(t *testing.T) {
 
 	assert.Equal(t, []string{"conflict"}, e.opStates(t))
 	assert.Equal(t, []string{"dup@x", "dup@x"}, e.onServer(t, "Archive"))
-	r := e.rows(t, "SELECT id, server_uid FROM messages WHERE folder_id = ? AND server_folder_id = ? ORDER BY server_uid", archive, archive)
+	r := e.rows(t, "SELECT id, "+uidCol+" FROM messages WHERE "+shownCol+" = ? AND "+serverCol+" = ? ORDER BY "+uidCol+"", archive, archive)
 	require.Len(t, r, 2, "both server copies stay separate local messages")
 	assert.Equal(t, int64(1), store.Int(r[0][1]))
 	assert.Equal(t, int64(2), store.Int(r[1][1]))
 	assert.Equal(t, 2, e.count(t, "SELECT count(*) FROM messages"))
-	assert.Zero(t, e.count(t, "SELECT count(*) FROM messages WHERE server_folder_id IS NULL"), "the row awaiting a claim is gone")
+	assert.Zero(t, e.count(t, "SELECT count(*) FROM messages WHERE "+serverCol+" IS NULL"), "the row awaiting a claim is gone")
 	evs := collect(ch)
 	assert.Len(t, ofType(evs, events.SyncFailed), 1)
 	changed := ofType(evs, events.MessagesChanged)
@@ -339,10 +341,10 @@ func TestMoveNotReimportedBeforePush(t *testing.T) {
 
 	_, ferr := mailsync.Fetch(bg, e.s.db, e.dial(t), e.acc.ID, e.s.bus)
 	require.NoError(t, ferr) // pull before push
-	assert.Equal(t, [][]any{{id, archive}}, e.rows(t, "SELECT id, folder_id FROM messages"))
+	assert.Equal(t, [][]any{{id, archive}}, e.rows(t, "SELECT id, "+shownCol+" FROM messages"))
 
 	e.sync(t)
-	assert.Equal(t, [][]any{{id, archive}}, e.rows(t, "SELECT id, folder_id FROM messages"))
+	assert.Equal(t, [][]any{{id, archive}}, e.rows(t, "SELECT id, "+shownCol+" FROM messages"))
 	assert.Equal(t, []string{"m@x"}, e.onServer(t, "Archive"))
 	assert.Equal(t, []string{}, e.onServer(t, "INBOX"))
 }
@@ -428,7 +430,7 @@ func uncertainCopyMoveWithTwin(t *testing.T, twin string) {
 	e.put(t, "INBOX", msg("m@x"))
 	e.put(t, "Archive", twin)
 	e.sync(t)
-	id := e.rows(t, "SELECT id FROM messages WHERE folder_id = ?", e.folderID(t, "INBOX"))[0][0].(int64)
+	id := e.rows(t, "SELECT id FROM messages WHERE "+shownCol+" = ?", e.folderID(t, "INBOX"))[0][0].(int64)
 	require.NoError(t, e.s.Move(bg, []int64{id}, e.folderID(t, "Archive")))
 	_, err := e.s.db.Execute(bg, "UPDATE ops SET attempts = 1")
 	require.NoError(t, err)
@@ -513,7 +515,7 @@ func TestFailedOpKeepsError(t *testing.T) {
 		}
 	}
 	// The message never left INBOX on the server and is shown there again.
-	assert.Equal(t, [][]any{{id, inbox}}, e.rows(t, "SELECT id, folder_id FROM messages"))
+	assert.Equal(t, [][]any{{id, inbox}}, e.rows(t, "SELECT id, "+shownCol+" FROM messages"))
 	assert.Equal(t, []string{"m@x"}, e.onServer(t, "INBOX"))
 }
 
@@ -534,7 +536,7 @@ func TestDeleteMovesToTrash(t *testing.T) {
 	assert.Equal(t, 1, e.count(t, "SELECT count(*) FROM ops"), "deleting from Trash queues nothing")
 	e.sync(t)
 	assert.Equal(t, []string{"m@x"}, e.onServer(t, "Trash"))
-	assert.Equal(t, [][]any{{id, trash}}, e.rows(t, "SELECT id, folder_id FROM messages"))
+	assert.Equal(t, [][]any{{id, trash}}, e.rows(t, "SELECT id, "+shownCol+" FROM messages"))
 }
 
 func TestOpsRejectBadInput(t *testing.T) {
@@ -546,8 +548,9 @@ func TestOpsRejectBadInput(t *testing.T) {
 	require.NoError(t, err)
 	res, err := e.s.db.Execute(bg, "INSERT INTO folders(account_id, name, role) VALUES (?, 'INBOX', 'inbox')", other.LastInsertID)
 	require.NoError(t, err)
-	res2, err := e.s.db.Execute(bg, "INSERT INTO messages(account_id, folder_id, flags) VALUES (?, ?, '')", other.LastInsertID, res.LastInsertID)
+	res2, err := e.s.db.Execute(bg, "INSERT INTO messages(account_id, flags) VALUES (?, '')", other.LastInsertID)
 	require.NoError(t, err)
+	showIn(t, e.s, res2.LastInsertID, res.LastInsertID)
 
 	assert.Error(t, e.s.SetFlags(bg, []int64{id, 999}, []string{`\Seen`}, nil), "unknown id")
 	assert.Error(t, e.s.SetFlags(bg, []int64{id, res2.LastInsertID}, []string{`\Seen`}, nil), "mixed accounts")
@@ -559,7 +562,30 @@ func TestOpsRejectBadInput(t *testing.T) {
 	}
 	assert.Zero(t, e.count(t, "SELECT count(*) FROM ops"))
 	assert.Equal(t, "", store.Str(e.rows(t, "SELECT flags FROM messages WHERE id = ?", id)[0][0]))
-	assert.Equal(t, e.folderID(t, "INBOX"), store.Int(e.rows(t, "SELECT folder_id FROM messages WHERE id = ?", id)[0][0]))
+	assert.Equal(t, e.folderID(t, "INBOX"), store.Int(e.rows(t, "SELECT "+shownCol+" FROM messages WHERE id = ?", id)[0][0]))
+}
+
+// A move queued after one that fails moves the message from where the server
+// still has it, not from the failed move's destination.
+func TestMoveAfterFailedMove(t *testing.T) {
+	e := newSyncEnv(t)
+	require.NoError(t, e.im.User.Create("Junk", nil))
+	e.put(t, "INBOX", msg("m@x"))
+	e.sync(t)
+	id := e.idOf(t, "m@x")
+	junk := e.folderID(t, "Junk")
+	e.im.Stop()
+	require.NoError(t, e.s.Move(bg, []int64{id}, e.folderID(t, "Archive")))
+	require.NoError(t, e.s.Move(bg, []int64{id}, junk))
+	require.NoError(t, e.im.User.Delete("Archive"))
+	e.im.Restart()
+	for i := 0; i < mailsync.MaxAttempts; i++ {
+		e.sync(t)
+	}
+	assert.Equal(t, []string{"failed", "done"}, e.opStates(t))
+	assert.Empty(t, e.onServer(t, "INBOX"))
+	assert.Equal(t, []string{"m@x"}, e.onServer(t, "Junk"))
+	assert.Equal(t, [][]any{{id, junk}}, e.rows(t, "SELECT id, "+shownCol+" FROM messages"))
 }
 
 func TestDependentRunsAfterFailedMove(t *testing.T) {
@@ -578,7 +604,7 @@ func TestDependentRunsAfterFailedMove(t *testing.T) {
 	assert.Equal(t, []string{"failed", "done"}, e.opStates(t))
 	assert.Nil(t, e.rows(t, "SELECT depends_on FROM ops WHERE kind = 'flags'")[0][0], "re-based once its dependency failed")
 	assert.Equal(t, []string{`m@x \Seen`}, e.onServer(t, "INBOX"))
-	assert.Equal(t, [][]any{{id, e.folderID(t, "INBOX"), `\Seen`}}, e.rows(t, "SELECT id, folder_id, flags FROM messages"))
+	assert.Equal(t, [][]any{{id, e.folderID(t, "INBOX"), `\Seen`}}, e.rows(t, "SELECT id, "+shownCol+", flags FROM messages"))
 }
 
 func TestSetFlagsCaseInsensitive(t *testing.T) {
@@ -641,7 +667,7 @@ func TestUnclaimableMoveEndsInConflict(t *testing.T) {
 	assert.NotEmpty(t, ofType(collect(ch), events.SyncFailed))
 	assert.Equal(t, []string{"conflict", "conflict"}, e.opStates(t))
 	assert.Zero(t, e.count(t, "SELECT count(*) FROM messages WHERE id = ?", id))
-	r := e.rows(t, "SELECT folder_id, server_folder_id FROM messages WHERE subject = 'anon'")
+	r := e.rows(t, "SELECT "+shownCol+", "+serverCol+" FROM messages WHERE subject = 'anon'")
 	require.Len(t, r, 1)
 	assert.Equal(t, []any{archive, archive}, r[0])
 	assert.Equal(t, []string{""}, e.onServer(t, "Archive"), "moved, and the flag change was not applied")
@@ -658,7 +684,7 @@ func TestMoveToJunk(t *testing.T) {
 	e.sync(t)
 	id := e.idOf(t, "m@x")
 	require.NoError(t, e.s.MoveToRole(bg, []int64{id}, "junk"))
-	assert.Equal(t, [][]any{{id, e.folderID(t, "Junk")}}, e.rows(t, "SELECT id, folder_id FROM messages"))
+	assert.Equal(t, [][]any{{id, e.folderID(t, "Junk")}}, e.rows(t, "SELECT id, "+shownCol+" FROM messages"))
 	e.sync(t)
 	assert.Equal(t, []string{"m@x"}, e.onServer(t, "Junk"))
 	assert.Equal(t, []string{}, e.onServer(t, "INBOX"))
@@ -670,7 +696,7 @@ func TestMoveToInbox(t *testing.T) {
 	e.sync(t)
 	id := e.idOf(t, "m@x")
 	require.NoError(t, e.s.MoveToRole(bg, []int64{id}, "inbox"))
-	assert.Equal(t, [][]any{{id, e.folderID(t, "INBOX")}}, e.rows(t, "SELECT id, folder_id FROM messages"))
+	assert.Equal(t, [][]any{{id, e.folderID(t, "INBOX")}}, e.rows(t, "SELECT id, "+shownCol+" FROM messages"))
 	e.sync(t)
 	assert.Equal(t, []string{"m@x"}, e.onServer(t, "INBOX"))
 	assert.Equal(t, []string{}, e.onServer(t, "Trash"))
@@ -687,5 +713,5 @@ func TestMoveToRoleWithoutFolder(t *testing.T) {
 	assert.Equal(t, "junk", nf.Role)
 	assert.Error(t, e.s.MoveToRole(bg, []int64{id}, "drafts"), "only inbox, trash, junk and archive")
 	assert.Zero(t, e.count(t, "SELECT count(*) FROM ops"))
-	assert.Equal(t, e.folderID(t, "INBOX"), store.Int(e.rows(t, "SELECT folder_id FROM messages WHERE id = ?", id)[0][0]))
+	assert.Equal(t, e.folderID(t, "INBOX"), store.Int(e.rows(t, "SELECT "+shownCol+" FROM messages WHERE id = ?", id)[0][0]))
 }

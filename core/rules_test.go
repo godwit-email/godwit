@@ -356,7 +356,7 @@ func (e *syncEnv) flagsOf(t *testing.T, mid string) string {
 
 func (e *syncEnv) folderOf(t *testing.T, mid string) int64 {
 	t.Helper()
-	return store.Int(e.rows(t, "SELECT folder_id FROM messages WHERE id = ?", e.idOf(t, mid))[0][0])
+	return store.Int(e.rows(t, "SELECT "+shownCol+" FROM messages WHERE id = ?", e.idOf(t, mid))[0][0])
 }
 
 // The fields a condition reads come from the stored message.

@@ -530,7 +530,7 @@ func (s *Service) ImagesAllowed(ctx context.Context, message int64) (bool, error
 		return false, err
 	}
 	defer end()
-	rows, err := s.db.Query(ctx, "SELECT m.from_addr, "+inJunk+" FROM messages m JOIN folders f ON f.id = m.folder_id WHERE m.id = ?", message)
+	rows, err := s.db.Query(ctx, "SELECT m.from_addr, "+inJunk+" FROM messages m JOIN folders f ON f.id = "+shownFolder+" WHERE m.id = ?", message)
 	if err != nil || len(rows.Values) == 0 || store.Int(rows.Values[0][1]) != 0 {
 		return false, err
 	}

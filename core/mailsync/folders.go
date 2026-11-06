@@ -140,17 +140,20 @@ func syncFolders(ctx context.Context, db *store.DB, c *imapclient.Client, accoun
 	staleArgs := append([]any{accountID}, anys(names)...)
 	gone := "(SELECT id FROM folders WHERE " + stale + ")"
 	twice := append(append([]any{}, staleArgs...), staleArgs...)
-	ids, tids, err := doomed(ctx, db, "folder_id IN "+gone+" OR server_folder_id IN "+gone, twice...)
+	in := "EXISTS (SELECT 1 FROM message_locations WHERE message_id = messages.id AND folder_id IN " + gone + " AND "
+	ids, tids, err := doomed(ctx, db, in+"true)", staleArgs...)
 	if err != nil {
 		return nil, err
 	}
 	stmts = append(stmts,
 		// Moved locally into a vanished folder but still elsewhere on the server: back to where it is.
-		sqlite.Statement{SQL: "UPDATE messages SET folder_id = server_folder_id, entered_at = unixepoch() WHERE folder_id IN " + gone +
-			" AND server_folder_id NOT IN " + gone, Args: twice},
+		sqlite.Statement{SQL: "UPDATE message_locations SET shown = 1, entered_at = unixepoch() WHERE uid IS NOT NULL AND folder_id NOT IN " + gone +
+			" AND message_id IN (SELECT message_id FROM message_locations WHERE shown AND folder_id IN " + gone + ")", Args: twice},
 		// On the server only in a vanished folder: gone, wherever it is shown locally.
-		sqlite.Statement{SQL: "DELETE FROM messages WHERE server_folder_id IN " + gone, Args: staleArgs},
-		sqlite.Statement{SQL: "DELETE FROM folders WHERE " + stale, Args: staleArgs}) // cascades to the rest
+		sqlite.Statement{SQL: "DELETE FROM messages WHERE " + in + "uid IS NOT NULL)", Args: staleArgs},
+		// Shown only in a vanished folder, and on the server nowhere else: gone too.
+		sqlite.Statement{SQL: "DELETE FROM messages WHERE " + in + "shown) AND NOT EXISTS (SELECT 1 FROM message_locations WHERE message_id = messages.id AND shown AND folder_id NOT IN " + gone + ")", Args: twice},
+		sqlite.Statement{SQL: "DELETE FROM folders WHERE " + stale, Args: staleArgs}) // and with them the moved messages' locations there
 	if _, err := db.Transaction(ctx, append(stmts, tidyThreads(accountID, tids)...)); err != nil {
 		return nil, err
 	}

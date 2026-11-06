@@ -717,7 +717,7 @@ func TestGetAttachmentNotOnServerAndEvict(t *testing.T) {
 	assert.NoError(t, err)
 	assert.Equal(t, 1, e.count(t, "SELECT count(*) FROM attachments WHERE cache_path IS NULL"))
 
-	_, err = e.s.db.Execute(bg, "UPDATE messages SET server_folder_id = NULL, server_uid = NULL")
+	_, err = e.s.db.Execute(bg, "UPDATE message_locations SET uidvalidity = NULL, uid = NULL")
 	require.NoError(t, err)
 	_, _, err = e.s.GetAttachment(bg, ids[0][0].(int64))
 	assert.ErrorIs(t, err, ErrNotOnServerYet)

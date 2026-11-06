@@ -53,9 +53,9 @@ func NextPurgeDue(ctx context.Context, db *store.DB, accountID int64, t time.Tim
 // longer than the policy's days, counted from the latest of when Godwit first saw
 // it there, when the folder got the role and when the purge was turned on. The
 // argument is an op id the check ignores (the purge being pushed), else 0.
-const purgeable = `m.folder_id = p.folder_id AND m.server_folder_id = p.folder_id AND m.server_uidvalidity = f.uidvalidity
-	AND p.days > 0 AND m.entered_at > 0 AND max(m.entered_at, f.role_since, p.since) <= unixepoch() - p.days * 86400
-	AND NOT EXISTS (SELECT 1 FROM ops o WHERE o.message_id = m.id AND o.state IN ('pending', 'awaiting_claim') AND o.id != ?)`
+const purgeable = `EXISTS (SELECT 1 FROM message_locations l WHERE l.message_id = m.id AND l.folder_id = p.folder_id AND l.shown
+		AND l.uidvalidity = f.uidvalidity AND l.entered_at > 0 AND max(l.entered_at, f.role_since, p.since) <= unixepoch() - p.days * 86400)
+	AND p.days > 0 AND NOT EXISTS (SELECT 1 FROM ops o WHERE o.message_id = m.id AND o.state IN ('pending', 'awaiting_claim') AND o.id != ?)`
 
 // QueuePurge queues the account's due junk and trash purges as purge ops, which
 // PushOps expunges after checking again. A folder is purged at most once a day,
@@ -98,8 +98,8 @@ func QueuePurge(ctx context.Context, db *store.DB, c *imapclient.Client, account
 		from := ` FROM messages m JOIN purge_policies p ON p.account_id = m.account_id AND p.role = ?
 			JOIN folders f ON f.id = p.folder_id WHERE m.account_id = ? AND ` + purgeable
 		if _, err := db.Transaction(ctx, []sqlite.Statement{
-			{SQL: `INSERT INTO ops(account_id, message_id, kind, dst_folder_id, payload, created_at)
-				SELECT m.account_id, m.id, 'purge', p.folder_id, ?, unixepoch()` + from, Args: []any{string(payload), role, accountID, 0}},
+			{SQL: `INSERT INTO ops(account_id, message_id, kind, src_folder_id, dst_folder_id, payload, created_at)
+				SELECT m.account_id, m.id, 'purge', p.folder_id, p.folder_id, ?, unixepoch()` + from, Args: []any{string(payload), role, accountID, 0}},
 			{SQL: "UPDATE folders SET purged_at = unixepoch() WHERE id = ?", Args: []any{folder}},
 		}); err != nil {
 			return err
@@ -129,7 +129,8 @@ const claimable = `state = 'pending' AND EXISTS (SELECT 1 FROM messages m JOIN p
 // message shown and on the server in the op's folder at the folder's UIDVALIDITY,
 // and no other change of it waiting.
 const claimableNow = `state = 'pending' AND EXISTS (SELECT 1 FROM messages m JOIN folders f ON f.id = ops.dst_folder_id
-	WHERE m.id = ops.message_id AND m.folder_id = f.id AND m.server_folder_id = f.id AND m.server_uidvalidity = f.uidvalidity
+	WHERE m.id = ops.message_id AND EXISTS (SELECT 1 FROM message_locations l WHERE l.message_id = m.id AND l.folder_id = f.id AND l.shown
+		AND l.uidvalidity = f.uidvalidity)
 	AND NOT EXISTS (SELECT 1 FROM ops o WHERE o.message_id = m.id AND o.state IN ('pending', 'awaiting_claim') AND o.id != ops.id))`
 
 // purgeClaim is the claimable condition of a purge op with payload p and id, and its arguments.

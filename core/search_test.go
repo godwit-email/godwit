@@ -19,7 +19,9 @@ func TestSearchWithFilters(t *testing.T) {
 	_, err = s.db.Execute(t.Context(), "UPDATE messages SET has_attachments = 1 WHERE id = ?", recent)
 	require.NoError(t, err)
 	other := addMessage(t, s, "budget elsewhere", "Bob <bob@x>", "", "", day.AddDate(0, 0, 5).Unix())
-	_, err = s.db.Execute(t.Context(), "UPDATE messages SET account_id = 2, folder_id = 2 WHERE id = ?", other)
+	_, err = s.db.Execute(t.Context(), "UPDATE messages SET account_id = 2 WHERE id = ?", other)
+	require.NoError(t, err)
+	_, err = s.db.Execute(t.Context(), "UPDATE message_locations SET folder_id = 2 WHERE message_id = ?", other)
 	require.NoError(t, err)
 
 	ids := func(q SearchQuery) []int64 {

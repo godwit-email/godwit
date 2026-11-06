@@ -127,7 +127,7 @@ func participants(self string, addrs []string) map[string]bool {
 // threadTail records every Message-ID of the message at (folderID, uid) under its
 // thread (unreceived ones become placeholders) and refreshes the thread's last_date.
 func threadTail(accountID, folderID int64, uid uint32, ids []string) []sqlite.Statement {
-	const tid = "(SELECT thread_id FROM messages WHERE server_folder_id = ? AND server_uid = ?)"
+	const tid = "(SELECT thread_id FROM messages WHERE id = (SELECT message_id FROM message_locations WHERE folder_id = ? AND uid = ?))"
 	var out []sqlite.Statement
 	for _, id := range ids {
 		out = append(out, sqlite.Statement{

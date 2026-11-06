@@ -138,7 +138,7 @@ func (s *Service) RuleHitCounts(ctx context.Context) (map[int64]int, error) {
 // existingSQL is the condition on messages m for the existing mail d runs on.
 func (s *Service) existingSQL(d RuleDoc) (string, []any) {
 	cond, args := ruleSQL(d, s.clk().Now().Unix())
-	return cond + " AND m.folder_id NOT IN (SELECT id FROM folders WHERE role IN ('sent', 'drafts'))", args
+	return cond + " AND NOT " + shownIn("(SELECT id FROM folders WHERE role IN ('sent', 'drafts'))"), args
 }
 
 // ruleSQL is d's account, trigger and conditions as a condition on messages m, true
@@ -208,7 +208,7 @@ func (c RuleCondition) sql(now int64) (string, []any) {
 		n, _ := strconv.Atoi(c.Value)
 		return "COALESCE(m.date, 0) < ?", []any{now - int64(n)*86400}
 	case FieldFolder:
-		sql, args = "(COALESCE((SELECT role FROM folders WHERE id = m.folder_id), '') = ? OR CAST(m.folder_id AS TEXT) = ?)", []any{c.Value, c.Value}
+		sql, args = shownIn("(SELECT id FROM folders WHERE role = ? OR CAST(id AS TEXT) = ?)"), []any{c.Value, c.Value}
 	default:
 		return "0", nil
 	}

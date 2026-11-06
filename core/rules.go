@@ -597,9 +597,9 @@ type ruleMail struct {
 
 // ruleMail reads the message as it is now; ok is false when it is gone.
 func (s *Service) ruleMail(ctx context.Context, id int64) (m ruleMail, ok bool, err error) {
-	rows, err := s.db.Query(ctx, `SELECT m.from_addr, m.subject, m.body_text, m.to_addrs, m.cc_addrs, m.has_attachments, m.folder_id, COALESCE(f.role, ''),
+	rows, err := s.db.Query(ctx, `SELECT m.from_addr, m.subject, m.body_text, m.to_addrs, m.cc_addrs, m.has_attachments, f.id, COALESCE(f.role, ''),
 		(SELECT json_group_array(l.slug) FROM message_labels ml JOIN labels l ON l.id = ml.label_id WHERE ml.message_id = m.id AND ml.active = 1), m.date, m.account_id
-		FROM messages m JOIN folders f ON f.id = m.folder_id WHERE m.id = ?`, id)
+		FROM messages m JOIN folders f ON f.id = `+shownFolder+` WHERE m.id = ?`, id)
 	if err != nil || len(rows.Values) == 0 {
 		return m, false, err
 	}
@@ -756,7 +756,7 @@ func (s *Service) runDaily(ctx context.Context, seq int64) error {
 	if len(rules) == 0 {
 		return nil
 	}
-	rows, err := s.db.Query(ctx, `SELECT m.id FROM messages m JOIN folders f ON f.id = m.folder_id
+	rows, err := s.db.Query(ctx, `SELECT m.id FROM messages m JOIN folders f ON f.id = `+shownFolder+`
 		WHERE COALESCE(f.role, '') NOT IN ('sent', 'drafts') ORDER BY m.id`)
 	if err != nil {
 		return err
@@ -1089,7 +1089,7 @@ func (s *Service) runForward(ctx context.Context, r Rule, runID int64, i int, ms
 
 // ruleTarget loads the message an action works on; ok is false when it is gone.
 func (s *Service) ruleTarget(ctx context.Context, id int64) (acc int64, t target, ok bool, err error) {
-	rows, err := s.db.Query(ctx, "SELECT account_id, thread_id, folder_id, flags, from_addr FROM messages WHERE id = ?", id)
+	rows, err := s.db.Query(ctx, "SELECT m.account_id, m.thread_id, "+shownFolder+", m.flags, m.from_addr FROM messages m WHERE m.id = ?", id)
 	if err != nil || len(rows.Values) == 0 {
 		return 0, t, false, err
 	}
