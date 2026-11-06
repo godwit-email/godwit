@@ -104,7 +104,7 @@ type ReaderDeps struct {
 	// Allow read failed: native offers 加载图片 again. Under the lock too.
 	OnFailed func(page any, message int64, err error)
 	// OnImagesFailed is told, for each page bound to message, how many of
-	// its remote images the proxy could not serve: native offers a retry
+	// its images the proxy could not get: native offers a retry
 	// (Allow). Under the lock too.
 	OnImagesFailed func(page any, message int64, n int)
 }
@@ -140,7 +140,7 @@ type bodyOf struct {
 	// the page decodes every image at once. charged is the tokens counted.
 	pixels       *imagefetch.Budget
 	charged      map[string]bool
-	failed       map[string]bool   // the tokens the proxy could not serve since the last Allow
+	failed       map[string]bool   // the tokens the proxy could not get since the last Allow
 	translations map[string]string // display only, applied to the original body's text
 	// The inline images, one download for all of them (a login per image is what
 	// makes a first open slow), begun by the page's first request for one.
@@ -646,7 +646,12 @@ func (r *Reader) inlineImage(st *bodyOf, message int64, svc *core.Service, src s
 			}
 			r.mu.Lock()
 			defer r.mu.Unlock()
-			for _, i := range images {
+			// Told, so native offers a retry; not when a closed page or a retry stopped it.
+			stopped := errors.Is(ctx.Err(), context.Canceled)
+			for src, i := range images {
+				if !i.done && !stopped {
+					r.imageFailedLocked(message, imagecache.Key(src))
+				}
 				i.finish(nil)
 			}
 		}()
@@ -735,10 +740,14 @@ func writeImage(w http.ResponseWriter, format string, data []byte) {
 }
 
 // imageFailed counts token as one of message's images the proxy could not
-// serve, and tells its pages.
+// get, and tells its pages.
 func (r *Reader) imageFailed(message int64, token string) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
+	r.imageFailedLocked(message, token)
+}
+
+func (r *Reader) imageFailedLocked(message int64, token string) {
 	st := r.msgs[message]
 	if st == nil || st.failed[token] {
 		return

@@ -913,6 +913,63 @@ func TestReaderInlineImageServedBeforeTheRest(t *testing.T) {
 	}
 }
 
+// An inline image the download ended without is told, for native's retry; one
+// the download gave, even if the page may not show it, is not.
+func TestReaderInlineImageDownloadFailureIsTold(t *testing.T) {
+	f := newReaderFixture(t)
+	f.fakeMessage(func(int64, bool) core.Message {
+		return core.Message{HTML: `<img src="cid:a"><img src="cid:b"><img src="cid:c">`}
+	})
+	pic := pngOf(t, 2, 2)
+	f.r.getInline = func(_ context.Context, _ *core.Service, _ int64, each func(string, mail.Attachment)) error {
+		each("a", mail.Attachment{Data: pic})
+		each("b", mail.Attachment{Data: []byte("not an image")})
+		return context.DeadlineExceeded
+	}
+	_, err := f.p.Load(pageCtx(f.page(7)))
+	require.NoError(t, err)
+	assert.Equal(t, http.StatusNotFound, f.image(t, 7, "cid:c").Code)
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	assert.Equal(t, []int{1}, f.imgFails)
+}
+
+// A download a retry stopped has not failed: its images are on their way again.
+func TestReaderInlineImageDownloadStoppedIsNotTold(t *testing.T) {
+	pic := pngOf(t, 2, 2)
+	f := newReaderFixture(t)
+	f.fakeMessage(func(int64, bool) core.Message { return core.Message{HTML: `<img src="cid:a">`} })
+	running := make(chan struct{})
+	var calls atomic.Int32
+	f.r.getInline = func(ctx context.Context, _ *core.Service, _ int64, each func(string, mail.Attachment)) error {
+		if calls.Add(1) > 1 {
+			each("a", mail.Attachment{Data: pic})
+			return nil
+		}
+		close(running)
+		<-ctx.Done()
+		return ctx.Err()
+	}
+	k := f.page(7)
+	_, err := f.p.Load(pageCtx(k))
+	require.NoError(t, err)
+	first := make(chan int, 1)
+	go func() {
+		req, _ := http.NewRequest(http.MethodGet, proxied(7, "cid:a"), nil)
+		rec := httptest.NewRecorder()
+		f.r.ImageHandler().ServeHTTP(rec, req)
+		first <- rec.Code
+	}()
+	<-running
+	f.r.Allow(7)
+	assert.Equal(t, http.StatusNotFound, <-first)
+	f.waitEmitted(t, k)
+	assert.Equal(t, http.StatusOK, f.image(t, 7, "cid:a").Code)
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	assert.Empty(t, f.imgFails)
+}
+
 // A retry (Allow) tries the inline images missed again.
 func TestReaderRetryRefetchesInlineImages(t *testing.T) {
 	pic := pngOf(t, 2, 2)
