@@ -219,6 +219,27 @@ func TestMoveOntoStoredCopyKeepsItsQueuedMove(t *testing.T) {
 	assert.Equal(t, []string{"done", "done"}, e.opStates(t))
 }
 
+// The carried-over move keeps its place in the queue: pushed in id order within
+// the same push, so the user's last move wins on the server.
+func TestMoveOntoStoredCopyKeepsQueueOrder(t *testing.T) {
+	e := newSyncEnv(t)
+	e.put(t, "INBOX", msg("m@x"))
+	e.sync(t)
+	id := e.idOf(t, "m@x")
+	inbox, archive, trash := e.folderID(t, "INBOX"), e.folderID(t, "Archive"), e.folderID(t, "Trash")
+	cp := e.storedCopy(t, id, archive)
+
+	require.NoError(t, e.s.Move(bg, []int64{id}, archive))
+	require.NoError(t, e.s.Move(bg, []int64{cp}, trash))
+	require.NoError(t, e.s.Move(bg, []int64{id}, inbox))
+	e.sync(t)
+
+	assert.Equal(t, []string{"m@x"}, e.onServer(t, "INBOX"))
+	assert.Empty(t, e.onServer(t, "Trash"))
+	assert.Equal(t, [][]any{{id, inbox, inbox}}, e.rows(t, "SELECT id, folder_id, server_folder_id FROM messages"))
+	assert.Equal(t, []string{"done", "done", "done"}, e.opStates(t))
+}
+
 func TestMoveNeedsMoveOrUIDPlus(t *testing.T) {
 	e := newSyncEnv(t, testmail.WithoutMove(), testmail.WithoutUIDPlus())
 	e.putFlagged(t, "INBOX", msg("keep@x"), imap.FlagDeleted)

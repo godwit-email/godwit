@@ -90,6 +90,12 @@ func push(ctx context.Context, db *store.DB, c *imapclient.Client, accountID int
 	for _, v := range rows.Values {
 		o := op{id: store.Int(v[0]), kind: store.Str(v[1]), msg: store.Int(v[2]), dst: store.Int(v[3]), accountID: accountID,
 			payload: store.Str(v[4]), dep: store.Int(v[5]), attempts: int(store.Int(v[6]))}
+		// An earlier op of this push may have moved o to another row (moved, #506): run it on that one, in id order.
+		if r, err := db.Query(ctx, "SELECT message_id FROM ops WHERE id = ?", o.id); err != nil {
+			return err
+		} else if len(r.Values) > 0 {
+			o.msg = store.Int(r.Values[0][0])
+		}
 		problem, err := pushOp(ctx, db, c, o)
 		if o.kind == "purge" && err == nil && problem == "" {
 			if r, qerr := db.Query(ctx, "SELECT 1 FROM ops WHERE id = ? AND state = 'done'", o.id); qerr == nil && len(r.Values) > 0 {
