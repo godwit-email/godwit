@@ -1721,6 +1721,7 @@
   "settings_rules_action_junk": "In Spam verschieben",
   "settings_rules_action_trash": "In den Papierkorb",
   "settings_rules_action_block": "Absender blockieren",
+  "settings_rules_failure_block": "Die Absenderadresse ist ungültig oder die Liste blockierter Absender ist voll",
   "settings_rules_action_stop": "Weitere Regeln nicht ausführen",
   "settings_rules_action_unlabel_summary": "Label „{arg1}“ entfernen",
   "settings_rules_action_n": "Aktion {arg1, number, ::group-off}",

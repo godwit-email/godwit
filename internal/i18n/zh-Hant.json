@@ -1721,6 +1721,7 @@
   "settings_rules_action_junk": "移到垃圾郵件",
   "settings_rules_action_trash": "移到垃圾桶",
   "settings_rules_action_block": "封鎖寄件者",
+  "settings_rules_failure_block": "寄件者地址無效或封鎖清單已滿",
   "settings_rules_action_stop": "不再執行後面的規則",
   "settings_rules_action_unlabel_summary": "移除標籤「{arg1}」",
   "settings_rules_action_n": "動作 {arg1, number, ::group-off}",

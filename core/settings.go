@@ -10,6 +10,7 @@ import (
 	"slices"
 	"strings"
 
+	"github.com/egoist/mygo/plugins/sqlite"
 	"github.com/godwit-email/godwit/core/ai"
 	"github.com/godwit-email/godwit/core/ai/mask"
 	"github.com/godwit-email/godwit/core/events"
@@ -417,13 +418,17 @@ func (s *Service) readList(ctx context.Context, key string) ([]string, error) {
 }
 
 func (s *Service) writeList(ctx context.Context, key string, l []string) error {
-	b, err := json.Marshal(l)
+	stmt, err := listWrite(key, l)
 	if err != nil {
 		return err
 	}
-	_, err = s.db.Execute(ctx, `INSERT INTO settings(key, value) VALUES (?, ?)
-		ON CONFLICT(key) DO UPDATE SET value = excluded.value`, key, string(b))
-	return err
+	return s.exec(ctx, stmt)
+}
+
+func listWrite(key string, list []string) (sqlite.Statement, error) {
+	data, err := json.Marshal(list)
+	return sqlite.Statement{SQL: `INSERT INTO settings(key, value) VALUES (?, ?)
+		ON CONFLICT(key) DO UPDATE SET value = excluded.value`, Args: []any{key, string(data)}}, err
 }
 
 // TrustedImageSenders are the lower-cased From addresses whose remote
@@ -463,7 +468,17 @@ func (s *Service) editSenders(ctx context.Context, key string, edit func([]strin
 	if l, err = edit(l); err != nil {
 		return err
 	}
-	if err := s.writeList(ctx, key, l); err != nil {
+	stmt, err := listWrite(key, l)
+	if err != nil {
+		return err
+	}
+	stmts := []sqlite.Statement{stmt}
+	if key == blockedSenders {
+		stmts = append(stmts, sqlite.Statement{SQL: `UPDATE rule_action_results SET prior = json_set(prior, '$.had', json('true'))
+			WHERE kind = ? AND state = ? AND json_extract(prior, '$.from_addr') NOT IN (SELECT value FROM json_each(?))`,
+			Args: []any{ActionBlock, RuleActionDone, stmt.Args[1]}})
+	}
+	if _, err := s.db.Transaction(ctx, stmts); err != nil {
 		return err
 	}
 	s.bus.Publish(events.Event{Type: events.SettingsChanged})
@@ -476,18 +491,22 @@ const maxBlockedSenders = 1000
 // gomail.AddrKey so arrivals and the reader match it the same way.
 func (s *Service) BlockSender(ctx context.Context, from string) error {
 	addr := gomail.AddrKey(from)
-	if addr == "" || !strings.Contains(addr, "@") {
-		return fmt.Errorf("invalid sender address: %q", from)
-	}
-	return s.editSenders(ctx, blockedSenders, func(l []string) ([]string, error) {
-		if slices.Contains(l, addr) {
-			return l, nil
-		}
-		if len(l) >= maxBlockedSenders {
-			return nil, fmt.Errorf("at most %d blocked senders", maxBlockedSenders)
-		}
-		return append(l, addr), nil
+	return s.editSenders(ctx, blockedSenders, func(list []string) ([]string, error) {
+		return addBlockedSender(list, addr)
 	})
+}
+
+func addBlockedSender(list []string, addr string) ([]string, error) {
+	if addr == "" || !strings.Contains(addr, "@") {
+		return nil, fmt.Errorf("invalid sender address: %q", addr)
+	}
+	if slices.Contains(list, addr) {
+		return list, nil
+	}
+	if len(list) >= maxBlockedSenders {
+		return nil, fmt.Errorf("at most %d blocked senders", maxBlockedSenders)
+	}
+	return append(list, addr), nil
 }
 
 // UnblockSender removes addr from the blocked senders list.

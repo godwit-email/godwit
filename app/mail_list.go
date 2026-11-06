@@ -870,7 +870,9 @@ func (p *mailPage) listView(c *ui.Context) {
 					if m.Item(i18n.T("mail.menu.rule")).Chosen() {
 						p.ruleFrom(on[0])
 					}
-					if from := on[0].Msg.From; gomail.AddrKey(from) != "" {
+					if from := on[0].Msg.From; gomail.AddrKey(from) != "" && !slices.ContainsFunc(p.a.accounts, func(acc core.Account) bool {
+						return gomail.AddrKey(from) == gomail.AddrKey(acc.Email)
+					}) {
 						if slices.Contains(p.a.blocked, gomail.AddrKey(from)) {
 							if m.Item(i18n.T("reader.unblock_sender")).Chosen() {
 								p.a.setBlocked(from, false, func() { p.a.toast(i18n.T("reader.sender_unblocked")) })

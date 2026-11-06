@@ -1721,6 +1721,7 @@
   "settings_rules_action_junk": "Chuyển vào thư rác",
   "settings_rules_action_trash": "Chuyển vào thùng rác",
   "settings_rules_action_block": "Chặn người gửi",
+  "settings_rules_failure_block": "Địa chỉ người gửi không hợp lệ hoặc danh sách chặn đã đầy",
   "settings_rules_action_stop": "Không chạy các quy tắc sau",
   "settings_rules_action_unlabel_summary": "Gỡ nhãn “{arg1}”",
   "settings_rules_action_n": "Thao tác {arg1, number, ::group-off}",

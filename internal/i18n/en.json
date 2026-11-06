@@ -3472,6 +3472,7 @@
   "settings_rules_failure_no_label": "the label is gone",
   "settings_rules_failure_gone": "the message is gone",
   "settings_rules_failure_unknown": "unknown action",
+  "settings_rules_failure_block": "the sender address is invalid or the blocked senders list is full",
   "settings_rules_action_forward": "Forward to",
   "settings_rules_action_forward_summary": "Forward to {arg1}",
   "@settings_rules_action_forward_summary": {

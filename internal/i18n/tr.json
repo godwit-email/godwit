@@ -1721,6 +1721,7 @@
   "settings_rules_action_junk": "İstenmeyene taşı",
   "settings_rules_action_trash": "Çöp kutusuna taşı",
   "settings_rules_action_block": "Göndereni Engelle",
+  "settings_rules_failure_block": "Gönderen adresi geçersiz veya engellenen gönderenler listesi dolu",
   "settings_rules_action_stop": "Sonraki kuralları çalıştırma",
   "settings_rules_action_unlabel_summary": "“{arg1}” etiketini kaldır",
   "settings_rules_action_n": "Eylem {arg1, number, ::group-off}",

@@ -139,6 +139,21 @@ func TestGetThreadOrder(t *testing.T) {
 	assert.Equal(t, []string{"bob@example.com"}, th.Messages[2].To)
 }
 
+func TestThreadSenderSkipsOwnReplies(t *testing.T) {
+	e := newSyncEnv(t)
+	e.put(t, "INBOX", eml("original@x", "Bob <bob@example.com>", "alice@example.com", "plan", day, "question"))
+	reply := eml("reply@x", "Alice <ALICE@example.com>", "bob@example.com", "Re: plan",
+		"Tue, 06 Oct 2026 10:00:00 +0000", "reply", "In-Reply-To: <original@x>")
+	e.put(t, "Sent", reply)
+	e.put(t, "INBOX", reply)
+	e.sync(t)
+	page, err := e.s.ListThreads(bg, e.inboxView(t), "", 10)
+	require.NoError(t, err)
+	require.Len(t, page.Items, 1)
+	assert.Equal(t, "Bob <bob@example.com>", page.Items[0].From)
+	assert.Equal(t, "reply", page.Items[0].Snippet)
+}
+
 // Gmail keeps a message in INBOX, each label's folder and All Mail: the
 // thread shows it once, the inbox copy, and actions still reach every copy.
 func TestThreadCopiesShowOnce(t *testing.T) {

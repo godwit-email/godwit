@@ -109,6 +109,7 @@ const (
 	RuleFailNoLabel     = "no_label"
 	RuleFailGone        = "gone" // the message
 	RuleFailUnknown     = "unknown"
+	RuleFailBlock       = "block"
 	RuleFailUnconfirmed = "unconfirmed" // the forward's recipient is not in Rule.Confirmed
 	RuleFailSendCheck   = "send_check"  // a plugin warned about or blocked the forward
 	RuleFailSend        = "send"        // the forward could not be queued
@@ -895,6 +896,10 @@ func (s *Service) runRule(ctx context.Context, r Rule, msgID int64, trigger stri
 // runAction runs acts[i] on the message, its result written in the same
 // transaction; a failure also writes the actions after it as not run.
 func (s *Service) runAction(ctx context.Context, runID int64, acts []RuleAction, i int, msgID int64) (failed bool, err error) {
+	if acts[i].Kind == ActionBlock {
+		s.settingsMu.Lock()
+		defer s.settingsMu.Unlock()
+	}
 	acc, t, ok, err := s.ruleTarget(ctx, msgID)
 	if err != nil {
 		return false, err
@@ -945,7 +950,11 @@ func (s *Service) runAction(ctx context.Context, runID int64, acts []RuleAction,
 		_, err := s.db.Transaction(ctx, stmts)
 		return true, err
 	}
-	return failure != "", s.apply(ctx, acc, []target{t}, stmts)
+	err = s.apply(ctx, acc, []target{t}, stmts)
+	if err == nil && acts[i].Kind == ActionBlock && len(w.writes) > 0 {
+		s.bus.Publish(events.Event{Type: events.SettingsChanged})
+	}
+	return failure != "", err
 }
 
 // ruleResult writes acts[j]'s result.
@@ -1100,10 +1109,7 @@ func (s *Service) ruleAction(ctx context.Context, a RuleAction, acc int64, t tar
 		return actionWrites{prior: rulePrior{From: t.folder, To: to}, writes: stmts}, "", nil
 	case ActionBlock:
 		addr := gomail.AddrKey(t.from)
-		if addr == "" {
-			return actionWrites{}, RuleFailUnknown, nil
-		}
-		blocked, err := s.BlockedSenders(ctx)
+		blocked, err := s.readList(ctx, blockedSenders)
 		if err != nil {
 			return actionWrites{}, "", err
 		}
@@ -1111,10 +1117,12 @@ func (s *Service) ruleAction(ctx context.Context, a RuleAction, acc int64, t tar
 		if p.Had {
 			return actionWrites{prior: p}, "", nil
 		}
-		if err := s.BlockSender(ctx, t.from); err != nil {
-			return actionWrites{}, "", err
+		blocked, err = addBlockedSender(blocked, addr)
+		if err != nil {
+			return actionWrites{}, RuleFailBlock, nil
 		}
-		return actionWrites{prior: p}, "", nil
+		stmt, err := listWrite(blockedSenders, blocked)
+		return actionWrites{prior: p, writes: []sqlite.Statement{stmt}}, "", err
 	case ActionStop:
 		return actionWrites{}, "", nil
 	}
@@ -1286,6 +1294,36 @@ func (s *Service) undoAction(ctx context.Context, runID int64, idx int, kind str
 	mark := func(state string) sqlite.Statement {
 		return sqlite.Statement{SQL: "UPDATE rule_action_results SET state = ? WHERE run_id = ? AND idx = ?", Args: []any{state, runID, idx}}
 	}
+	if kind == ActionBlock {
+		s.settingsMu.Lock()
+		defer s.settingsMu.Unlock()
+		rows, err := s.db.Query(ctx, "SELECT state, prior FROM rule_action_results WHERE run_id = ? AND idx = ?", runID, idx)
+		if err != nil {
+			return false, err
+		}
+		if len(rows.Values) == 0 || store.Str(rows.Values[0][0]) != RuleActionDone {
+			return false, nil
+		}
+		if err := json.Unmarshal([]byte(store.Str(rows.Values[0][1])), &p); err != nil {
+			return false, err
+		}
+		blocked, err := s.readList(ctx, blockedSenders)
+		if err != nil {
+			return false, err
+		}
+		if p.Had || p.FromAddr == "" || !slices.Contains(blocked, p.FromAddr) {
+			return false, s.exec(ctx, mark(RuleActionKept))
+		}
+		stmt, err := listWrite(blockedSenders, slices.DeleteFunc(blocked, func(addr string) bool { return addr == p.FromAddr }))
+		if err != nil {
+			return false, err
+		}
+		if _, err := s.db.Transaction(ctx, []sqlite.Statement{stmt, mark(RuleActionUndone)}); err != nil {
+			return false, err
+		}
+		s.bus.Publish(events.Event{Type: events.SettingsChanged})
+		return true, nil
+	}
 	acc, t, ok, err := s.ruleTarget(ctx, msgID)
 	if err != nil {
 		return false, err
@@ -1336,20 +1374,6 @@ func (s *Service) undoAction(ctx context.Context, runID int64, idx int, kind str
 		}
 		if ok = t.folder == p.To && len(rows.Values) > 0; ok {
 			_, stmts = moveWrites(acc, []target{t}, p.From)
-		}
-	case ActionBlock:
-		if p.Had || p.FromAddr == "" {
-			ok = false
-			break
-		}
-		blocked, err := s.BlockedSenders(ctx)
-		if err != nil {
-			return false, err
-		}
-		if ok = slices.Contains(blocked, p.FromAddr); ok {
-			if err := s.UnblockSender(ctx, p.FromAddr); err != nil {
-				return false, err
-			}
 		}
 	}
 	state := RuleActionUndone

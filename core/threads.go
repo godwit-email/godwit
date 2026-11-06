@@ -24,7 +24,7 @@ type View struct {
 type ThreadSummary struct {
 	ID               int64
 	Subject, Snippet string
-	From             string // sender of newest message
+	From             string
 	Participants     []string
 	Count, Unread    int
 	Flagged          int // messages starred
@@ -171,7 +171,9 @@ func (s *Service) ListThreads(ctx context.Context, v View, cursor string, limit 
 	if len(ids) == 0 {
 		return page, nil
 	}
-	ms, err := s.db.Query(ctx, `SELECT thread_id, from_addr, snippet, flags, has_attachments, auth_results, security_status, security_reason, security_scanned_at, m.id, `+copyCols+` FROM messages m
+	ms, err := s.db.Query(ctx, `SELECT thread_id, from_addr, snippet, flags, has_attachments, auth_results, security_status, security_reason, security_scanned_at, m.id, `+copyCols+`,
+		(SELECT email FROM accounts WHERE id = m.account_id),
+		(SELECT COALESCE(NULLIF(role_override, ''), role, '') FROM folders WHERE id = m.folder_id) FROM messages m
 		WHERE thread_id IN (`+strings.TrimSuffix(strings.Repeat("?,", len(ids)), ",")+`) AND `+notPurgedCond+` ORDER BY date DESC, id DESC`, ids...)
 	if err != nil {
 		return ThreadPage{}, err
@@ -206,7 +208,9 @@ func (s *Service) ListThreads(ctx context.Context, v View, cursor string, limit 
 		t := &page.Items[idx[store.Int(r[0])]]
 		if t.Count == 0 {
 			t.Snippet = gomail.Snippet(store.Str(r[2])) // newest first; clean of what an older sync kept
-			t.From = store.Str(r[1])
+		}
+		if from, role := store.Str(r[1]), store.Str(r[14]); t.From == "" && role != "sent" && role != "drafts" && gomail.AddrKey(from) != gomail.AddrKey(store.Str(r[13])) {
+			t.From = from
 		}
 		t.Count++
 		if unread[i] {

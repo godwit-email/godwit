@@ -1721,6 +1721,7 @@
   "settings_rules_action_junk": "Naar spam verplaatsen",
   "settings_rules_action_trash": "Naar prullenbak verplaatsen",
   "settings_rules_action_block": "Afzender blokkeren",
+  "settings_rules_failure_block": "Het afzenderadres is ongeldig of de lijst met geblokkeerde afzenders is vol",
   "settings_rules_action_stop": "Volgende regels niet uitvoeren",
   "settings_rules_action_unlabel_summary": "Label ‘{arg1}’ verwijderen",
   "settings_rules_action_n": "Actie {arg1, number, ::group-off}",

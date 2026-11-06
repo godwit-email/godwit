@@ -70,7 +70,7 @@ func (s *Service) registerRuleTool() {
 			"account: an account_id to run on that account's mail only; leave it out for every account. " +
 			"conditions (match all or any; none matches all mail): field from, to, subject or body with op contains, not_contains or is; " +
 			"attachments is yes or no; label (a slug) or folder (inbox, archive, junk or trash) with op is or not_contains; age with op older_than (value: whole days, from 1). " +
-			"actions: label or unlabel (label: a slug), read, star, archive, junk, trash, stop (later rules skip the mail), forward (to: one address), " +
+			"actions: label or unlabel (label: a slug), read, star, archive, junk, trash, block (block the sender), stop (later rules skip the mail), forward (to: one address), " +
 			"pdf (saves the mail as a PDF), eml (saves the original .eml), attachments (saves its attachments), " +
 			"draft_reply (Wit drafts a reply; never sent), key_points (Wit writes the mail's key points as Markdown). " +
 			"pdf, eml, attachments and key_points write into dir, an absolute folder path, and only create files, never replace one; " +
