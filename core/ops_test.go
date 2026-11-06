@@ -261,6 +261,29 @@ func TestMoveOntoStoredCopyRefusedMoveHoldsTheQueue(t *testing.T) {
 	assert.Equal(t, []string{"done", "pending", "pending"}, e.opStates(t))
 }
 
+// A change of the copy queued before the moved row's move, held back by a
+// refused move, still holds back what was queued after that move: the moved
+// row's move is done at once, and must not let a later change overtake it.
+func TestMoveOntoStoredCopyEarlierChangeHoldsTheQueue(t *testing.T) {
+	e := newSyncEnv(t)
+	e.put(t, "INBOX", msg("m@x"))
+	e.sync(t)
+	id := e.idOf(t, "m@x")
+	archive := e.folderID(t, "Archive")
+	cp := e.storedCopy(t, id, archive)
+	// Refused on every attempt (its destination is gone), so the read change behind it waits.
+	_, err := e.s.db.Execute(bg, "INSERT INTO ops(account_id, message_id, kind, dst_folder_id, created_at) VALUES (?, ?, 'move', 9999, unixepoch())", e.acc.ID, cp)
+	require.NoError(t, err)
+	require.NoError(t, e.s.SetFlags(bg, []int64{cp}, []string{`\Seen`}, nil))
+	require.NoError(t, e.s.Move(bg, []int64{id}, archive))
+	require.NoError(t, e.s.SetFlags(bg, []int64{id}, nil, []string{`\Seen`}))
+	e.sync(t)
+
+	// Read, then unread: the last choice holds on the server.
+	assert.Equal(t, []string{"m@x"}, e.onServer(t, "Archive"))
+	assert.Equal(t, []string{"cancelled", "done", "done", "done"}, e.opStates(t))
+}
+
 // A move of the copy queued before the moved row's own (one the server refused,
 // still pending) is superseded: it neither takes the moved row's folder nor
 // runs on retry.

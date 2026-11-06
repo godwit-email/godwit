@@ -391,8 +391,10 @@ func moved(ctx context.Context, db *store.DB, o op, validity, uid uint32) error 
 					Args: []any{cp, o.id}},
 				sqlite.Statement{SQL: "UPDATE ops SET message_id = ? WHERE message_id = ? AND state IN ('pending', 'awaiting_claim')", Args: []any{o.msg, cp}},
 				// One queue again: each op waits for the one before it, as latestOp chains new ones.
+				// Without o, done below: what follows o must still wait for what precedes it.
 				sqlite.Statement{SQL: `UPDATE ops SET depends_on = (SELECT max(p.id) FROM ops p WHERE p.message_id = ops.message_id
-					AND p.state IN ('pending', 'awaiting_claim') AND p.id < ops.id) WHERE message_id = ? AND state IN ('pending', 'awaiting_claim')`, Args: []any{o.msg}},
+					AND p.state IN ('pending', 'awaiting_claim') AND p.id < ops.id AND p.id != ?)
+					WHERE message_id = ? AND state IN ('pending', 'awaiting_claim') AND id != ?`, Args: []any{o.id, o.msg, o.id}},
 				// As messages_label_stash hands labels to other copies: a manual label beats a rule's.
 				sqlite.Statement{SQL: `INSERT INTO message_labels(message_id, label_id, source, active)
 					SELECT ?, label_id, source, active FROM message_labels WHERE message_id = ? AND source IN ('manual', 'rule')
