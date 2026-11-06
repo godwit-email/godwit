@@ -12,7 +12,9 @@ AddModelService
 AllAccountLabels
 AnswerQuestion
 ApplyEditedProposal
+ArchiveMessages
 ArchiveSender
+ArchiveThreads
 Ask
 AskAgain
 AskWith
@@ -47,6 +49,7 @@ DeleteForever
 DeleteLabel
 DeleteRule
 DeleteSignature
+DeleteView
 DetectProvider
 DraftForApproval
 DraftFromQuickReply
@@ -97,6 +100,7 @@ ListThreads
 ListTranslators
 LoadOlder
 MarkAllAsRead
+MarkViewRead
 MaskingLog
 MessageExists
 MessageGist
@@ -116,6 +120,7 @@ PluginTags
 PrepareModel
 PreviewMasking
 PreviewRule
+PreviewView
 ProposedRuleSaved
 Purges
 QuickReplies
@@ -138,6 +143,7 @@ RemoveModelService
 ReorderAccounts
 ReorderLabels
 ReorderRules
+ReorderViews
 RequestMCPSend
 RescanLabels
 RescanSecurity
@@ -160,6 +166,8 @@ RunRuleOnExisting
 RunSkill
 SaveDraft
 SaveRule
+SaveView
+SavedViews
 Search
 SearchWith
 SecurityProgress
@@ -182,6 +190,7 @@ SetRoleFolder
 SetRuleEnabled
 SetSettings
 SetSkillEnabled
+SetViewException
 SignatureCode
 SignatureEditor
 SignatureShown
@@ -203,6 +212,7 @@ TrustImageSender
 TrustedImageSenders
 UnblockSender
 UndoArchive
+UndoArchiveThreads
 UndoLastAssist
 UndoPurge
 UndoRuleRun
@@ -216,3 +226,8 @@ UpdateMCPServer
 UpdateModelService
 UpdatePassword
 UpdateSignature
+ViewContents
+ViewExceptions
+ViewGroupPage
+ViewTemplates
+ViewWhy

@@ -75,6 +75,10 @@ func (p *mailPage) markViewAsRead(v core.View) {
 	a := p.a
 	var n int
 	a.do(func(ctx context.Context) (err error) {
+		if id, ok := savedViewOf(v); ok {
+			n, err = a.svc.MarkViewRead(ctx, id)
+			return err
+		}
 		n, err = a.svc.MarkAllAsRead(ctx, v)
 		return err
 	}, func(err error) {

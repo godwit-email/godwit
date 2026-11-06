@@ -76,9 +76,10 @@ func (a *App) forward() {
 // setRoute shows r: results of queries for the old route are dropped, and
 // the page reads what it shows.
 func (a *App) setRoute(r Route) {
-	if a.goneLabel(r) {
+	if a.goneLabel(r) || a.goneView(r) {
 		r = Route{Page: PageMail, View: core.View{Unified: "inbox"}}
 	}
+	a.mail.closeViewEditor()
 	if r.Page != PageMail {
 		a.mail.stopOlder() // older mail is fetched only while the list shows
 	}
@@ -297,6 +298,7 @@ func (a *App) titleBar(c *ui.Context, h float32) {
 				if sub != "" {
 					kit.Text(c, sub, t.Text.Sm).TextColor(t.Muted).SingleLine()
 				}
+				a.mail.titleMenu(c)
 			})
 		}
 		ui.Spacer(c)

@@ -52,6 +52,7 @@ const (
 	FieldLabel       = "label"       // is or not_contains a label's slug
 	FieldFolder      = "folder"      // is or not_contains a folder role or a folder's id
 	FieldAge         = "age"         // older_than a number of whole days, by the message's date
+	FieldAny         = "any"         // contains or not_contains what a search's text matches; 视图 only
 
 	OpContains    = "contains"
 	OpNotContains = "not_contains"
@@ -543,7 +544,7 @@ type ruleMail struct {
 
 // ruleMail reads the message as it is now; ok is false when it is gone.
 func (s *Service) ruleMail(ctx context.Context, id int64) (m ruleMail, ok bool, err error) {
-	rows, err := s.db.Query(ctx, `SELECT m.from_addr, m.subject, m.body_text, m.to_addrs, m.cc_addrs, m.has_attachments, m.folder_id, COALESCE(f.role, ''),
+	rows, err := s.db.Query(ctx, `SELECT m.from_addr, m.subject, m.body_text, m.to_addrs, m.cc_addrs, m.has_attachments, m.folder_id, COALESCE(`+folderRoleSQL+`, ''),
 		(SELECT json_group_array(l.slug) FROM message_labels ml JOIN labels l ON l.id = ml.label_id WHERE ml.message_id = m.id AND ml.active = 1), m.date, m.account_id
 		FROM messages m JOIN folders f ON f.id = m.folder_id WHERE m.id = ?`, id)
 	if err != nil || len(rows.Values) == 0 {

@@ -674,7 +674,7 @@ func (s *Service) enqueue(ctx context.Context, draftID, rev int64, checked []str
 		}
 		o.Attachments = append(o.Attachments, mail.Attachment{Filename: store.Str(a[0]), ContentType: store.Str(a[1]), Data: data})
 	}
-	raw, messageID, err := mail.Build(o, time.Now())
+	raw, messageID, err := mail.Build(o, s.clk().Now())
 	if err != nil {
 		return err
 	}
@@ -687,6 +687,12 @@ func (s *Service) enqueue(ctx context.Context, draftID, rev int64, checked []str
 	// Durable (file and directory entry) before the item is sent from it.
 	if err := store.WriteFileAtomic(rawPath, raw); err != nil {
 		return err
+	}
+	if d.SourceMessageID != 0 && (d.Mode == "reply" || d.Mode == "reply_all") {
+		// last_insert_rowid() here is the outbox item, inserted just before.
+		stmts = append([]sqlite.Statement{{SQL: `INSERT INTO reply_records(thread_id, outbox_id, at)
+			SELECT thread_id, last_insert_rowid(), ? FROM messages WHERE id = ? AND thread_id IS NOT NULL`,
+			Args: []any{s.clk().Now().Unix(), d.SourceMessageID}}}, stmts...)
 	}
 	if _, err := s.db.Transaction(ctx, append([]sqlite.Statement{{SQL: `INSERT INTO outbox(account_id, message_id_hdr, raw_path, rcpts, state, subject, created_at,
 		draft_id, send_after) VALUES (?, ?, ?, ?, 'queued', ?, ?, ?, ?)`,

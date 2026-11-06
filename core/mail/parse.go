@@ -41,6 +41,8 @@ type Parsed struct {
 	// The List-Unsubscribe, List-Unsubscribe-Post and List-Id headers as
 	// sent, unfolded and trimmed; "" when absent or over MaxListHeaderBytes.
 	ListUnsubscribe, ListUnsubscribePost, ListID string
+	// The Auto-Submitted and Precedence headers as sent: whether mail is automated.
+	AutoSubmitted, Precedence string
 	// AuthenticationResults contains only the selected receiving service's results.
 	AuthenticationResults string
 	AuthenticationTrace   []AuthenticationHeader
@@ -157,6 +159,7 @@ func Parse(raw []byte) (*Parsed, error) {
 	}
 	p.References, _ = h.MsgIDList("References")
 	p.ListUnsubscribe, p.ListUnsubscribePost, p.ListID = listHeader(&h, "List-Unsubscribe"), listHeader(&h, "List-Unsubscribe-Post"), listHeader(&h, "List-Id")
+	p.AutoSubmitted, p.Precedence = listHeader(&h, "Auto-Submitted"), listHeader(&h, "Precedence")
 	p.AuthenticationTrace = authenticationTrace(&h)
 	p.AuthenticationResults = ReceiverAuthenticationResults(p.AuthenticationTrace)
 	p.DKIMSigned = strings.TrimSpace(h.Get("DKIM-Signature")) != ""

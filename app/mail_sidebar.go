@@ -129,6 +129,7 @@ func (p *mailPage) Sidebar(c *ui.Context) {
 			p.navItem(c, "outbox", i18n.T("mail.outbox"), core.View{Unified: "outbox"}, n)
 		}
 		ui.Box(c).Height(th.Space(2))
+		p.viewNav(c)
 		p.labelNav(c)
 		kit.SidebarCollapsible(c, &p.accountsOpen, true, func() {
 			ui.Text(c, i18n.T("mail.accounts")).SingleLine().Grow(1).Shrink(1)

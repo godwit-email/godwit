@@ -1037,7 +1037,7 @@ func TestBatchWritesInOrder(t *testing.T) {
 	exec := p.exec
 	entered, release := make(chan struct{}), make(chan struct{})
 	var calls, done atomic.Int32
-	p.exec = func(ctx context.Context, op string, ids []int64, folder int64) error {
+	p.exec = func(ctx context.Context, op string, ids []int64, folder int64) (core.ArchiveUndo, error) {
 		if calls.Add(1) == 1 {
 			close(entered)
 			<-release

@@ -471,7 +471,7 @@ func TestMigrationSettingsRows(t *testing.T) {
 	store.Migrations = all
 	require.NoError(t, err)
 	for _, kv := range [][2]string{
-		{"app", `{"Theme":"dark","TrustedImageSenders":["bob@example.com"],"BlockedSenders":["spam@example.com"],"DisabledBuiltins":["sign-in-codes"],"NotifySmartOnly":true}`},
+		{"app", `{"Theme":"dark","TrustedImageSenders":["bob@example.com"],"BlockedSenders":["spam@example.com"],"DisabledBuiltins":["sign-in-codes"],"NotifyViewOnly":true}`},
 		{"labels_seeded", "1"}, {"model_aliases_v1", "done"}, {"mask_key", "k"},
 	} {
 		_, err = db.Execute(ctx, "INSERT INTO settings(key, value) VALUES (?, ?)", kv[0], kv[1])

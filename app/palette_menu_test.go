@@ -91,7 +91,7 @@ func TestPaletteMenuMail(t *testing.T) {
 	h.tt.Key(0, ui.KeyDown)
 	h.tt.Key(0, ui.KeyEnter)
 	h.until("archived, the palette still open", func() bool {
-		return h.countIn(h.folderOf(accs[0], "archive")) == 1 && paletteShown(h) && paletteHas(h, "归档")
+		return h.countIn(h.folderOf(accs[0], "archive")) == 1 && paletteShown(h) && paletteHas(h, "Bob · 归档 · alice@example.com")
 	})
 
 	h.tt.Key(ui.Alt, ui.KeyEnter)

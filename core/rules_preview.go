@@ -177,6 +177,16 @@ func ruleSQL(d RuleDoc, now int64) (string, []any) {
 	return cond, args
 }
 
+// folderRoleSQL is the role of message m's folder f as the app uses it
+// (mailsync.RoleFolder): the one the user gave it, else the detected one.
+// Without an archive folder, Gmail's All Mail stands in for it, but a message
+// still in the inbox has a copy there too and is not archived.
+const folderRoleSQL = `CASE WHEN f.role_override != '' THEN f.role_override
+	WHEN f.role = 'all' AND NOT EXISTS (SELECT 1 FROM folders a WHERE a.account_id = f.account_id AND (a.role_override = 'archive' OR (a.role_override = '' AND a.role = 'archive')))
+		AND NOT (COALESCE(m.message_id, '') != '' AND EXISTS (SELECT 1 FROM messages c JOIN folders cf ON cf.id = c.folder_id
+			WHERE c.account_id = m.account_id AND c.message_id = m.message_id AND (cf.role_override = 'inbox' OR (cf.role_override = '' AND cf.role = 'inbox')))) THEN 'archive'
+	ELSE f.role END`
+
 const labelSlugSQL = "EXISTS (SELECT 1 FROM message_labels ml JOIN labels l ON l.id = ml.label_id WHERE ml.message_id = m.id AND ml.active = 1 AND l.slug = ?)"
 
 func (c RuleCondition) sql(now int64) (string, []any) {
@@ -201,7 +211,9 @@ func (c RuleCondition) sql(now int64) (string, []any) {
 		n, _ := strconv.Atoi(c.Value)
 		return "COALESCE(m.date, 0) < ?", []any{now - int64(n)*86400}
 	case FieldFolder:
-		sql, args = "(COALESCE((SELECT role FROM folders WHERE id = m.folder_id), '') = ? OR CAST(m.folder_id AS TEXT) = ?)", []any{c.Value, c.Value}
+		sql, args = "(COALESCE((SELECT "+folderRoleSQL+" FROM folders f WHERE f.id = m.folder_id), '') = ? OR CAST(m.folder_id AS TEXT) = ?)", []any{c.Value, c.Value}
+	case FieldAny:
+		sql, args = searchText(c.Value)
 	default:
 		return "0", nil
 	}

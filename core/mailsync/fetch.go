@@ -210,7 +210,7 @@ func doomed(ctx context.Context, db *store.DB, where string, args ...any) (ids, 
 
 func headerSection() *imap.FetchItemBodySection {
 	return &imap.FetchItemBodySection{Specifier: imap.PartSpecifierHeader,
-		HeaderFields: []string{"MESSAGE-ID", "DATE", "SUBJECT", "FROM", "TO", "CC", "REFERENCES", "IN-REPLY-TO", "REPLY-TO", "LIST-UNSUBSCRIBE", "LIST-UNSUBSCRIBE-POST", "LIST-ID", "AUTHENTICATION-RESULTS", "DKIM-SIGNATURE", "RECEIVED", "MIME-VERSION", "CONTENT-TYPE", "X-GODWIT-RULE"}, Peek: true}
+		HeaderFields: []string{"MESSAGE-ID", "DATE", "SUBJECT", "FROM", "TO", "CC", "REFERENCES", "IN-REPLY-TO", "REPLY-TO", "LIST-UNSUBSCRIBE", "LIST-UNSUBSCRIBE-POST", "LIST-ID", "AUTO-SUBMITTED", "PRECEDENCE", "AUTHENTICATION-RESULTS", "DKIM-SIGNATURE", "RECEIVED", "MIME-VERSION", "CONTENT-TYPE", "X-GODWIT-RULE"}, Peek: true}
 }
 
 // fetchNew imports messages above last_uid; the first sync of a count range
@@ -610,6 +610,7 @@ func toParsed(m *imapclient.FetchMessageBuffer, texts map[string][]byte) *mail.P
 		p.MessageID, p.Subject, p.Date, p.From, p.To, p.Cc = h.MessageID, h.Subject, h.Date, h.From, h.To, h.Cc
 		p.InReplyTo, p.References, p.ReplyTo = h.InReplyTo, h.References, h.ReplyTo
 		p.ListUnsubscribe, p.ListUnsubscribePost, p.ListID = h.ListUnsubscribe, h.ListUnsubscribePost, h.ListID
+		p.AutoSubmitted, p.Precedence = h.AutoSubmitted, h.Precedence
 		p.AuthenticationResults, p.AuthenticationTrace, p.DKIMSigned = h.AuthenticationResults, h.AuthenticationTrace, h.DKIMSigned
 		p.RuleSent = h.RuleSent
 	}
