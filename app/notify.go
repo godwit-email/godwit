@@ -213,7 +213,8 @@ func (a *App) showUnread(inbox int) {
 // Compose starts a new draft in a compose window, as the sidebar's button does.
 func (a *App) Compose() { a.mail.compose() }
 
-// HideTrayIcon hides the menu bar icon by updating the setting.
+// HideTrayIcon hides the menu bar icon by updating the setting. Its menu is
+// mostly used with the window hidden, so the window comes up to show the toast.
 func (a *App) HideTrayIcon() {
 	a.onUI(func() {
 		st := a.settings
@@ -222,6 +223,7 @@ func (a *App) HideTrayIcon() {
 		}
 		st.ShowTrayIcon = false
 		a.changeSettings(st)
+		a.plat.ShowWindow()
 		a.toast(i18n.T("tray.hidden_toast"))
 	})
 }

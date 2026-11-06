@@ -1642,7 +1642,7 @@
   "settings_general_sub": "Appearance, interface language, startup, notifications and threads.",
   "settings_heading": "Settings",
   "settings_keep_in_background": "Keep running after the window closes",
-  "settings_keep_in_background_help": "Keeps syncing and notifying; open it again from the menu bar icon",
+  "settings_keep_in_background_help": "Keeps syncing and notifying; open it again from the menu bar icon, Dock or taskbar",
   "settings_keychain": "System keychain",
   "settings_keychain_checking": "Checking…",
   "settings_keychain_ok": "The system keychain works",
@@ -2233,6 +2233,7 @@
     }
   },
   "settings_show_tray_icon": "Show icon in menu bar",
+  "settings_show_tray_icon_help": "Sign-in code banners and recent codes need this icon. Without it, open Godwit from the Dock or taskbar.",
   "settings_unread_in_menu_bar": "Show the unread count in the menu bar",
   "settings_unread_on_app_icon": "Show the unread count on the app icon",
   "shell_back": "Back",
@@ -3280,7 +3281,7 @@
   "settings_rules_run_window": "Only while the window is open",
   "settings_rules_run_window_help": "Mail that arrives while the window is closed is handled when you open it again.",
   "settings_rules_run_background": "In the background",
-  "settings_rules_run_background_help": "After the window closes, Godwit stays in the menu bar, keeps syncing and runs this rule.",
+  "settings_rules_run_background_help": "After the window closes, Godwit keeps running in the background, keeps syncing and runs this rule.",
   "settings_rules_summary_always": "{arg1} → {arg2}",
   "@settings_rules_summary_always": {
     "placeholders": {

@@ -474,7 +474,6 @@ func TestSettingsGeneralApplies(t *testing.T) {
 }
 
 func TestSettingsTrayIconToggle(t *testing.T) {
-	t.Cleanup(func() { i18n.SetLanguage("zh-CN") })
 	h, _ := withAccount(t)
 	h.openSettings("general")
 	h.see(i18n.T("settings.show_tray_icon"))
@@ -499,14 +498,18 @@ func TestSettingsTrayIconToggle(t *testing.T) {
 		return err == nil && st.ShowTrayIcon
 	})
 	h.see(i18n.T("settings.unread_in_menu_bar"))
+}
 
-	// Calling HideTrayIcon hides the tray and toasts
+// The tray's own menu hides it: the window comes up, so the toast is seen.
+func TestHideTrayIcon(t *testing.T) {
+	h, _ := withAccount(t)
 	h.app.HideTrayIcon()
 	h.called("SetTrayVisible false")
 	h.until("tray hidden by HideTrayIcon", func() bool {
 		st, err := h.env.Svc.GetSettings(context.Background())
 		return err == nil && !st.ShowTrayIcon
 	})
+	h.called("ShowWindow")
 	h.see(i18n.T("tray.hidden_toast"))
 }
 
