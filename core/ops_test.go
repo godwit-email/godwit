@@ -198,114 +198,32 @@ func TestMoveOntoStoredCopy(t *testing.T) {
 	assert.Equal(t, []string{"done"}, e.opStates(t))
 }
 
-// The replaced row's queued changes are the user's too: a later move of it
-// carries over to the moved row and is pushed, rather than ending as a conflict.
-func TestMoveOntoStoredCopyKeepsItsQueuedMove(t *testing.T) {
+// The copy's queued changes are not carried over, whose order against the
+// moved row's cannot be told: they are reported as not applied, and the move
+// the user made on the moved row stands.
+func TestMoveOntoStoredCopyDropsItsQueuedChanges(t *testing.T) {
 	e := newSyncEnv(t)
 	e.put(t, "INBOX", msg("m@x"))
 	e.sync(t)
 	id := e.idOf(t, "m@x")
 	archive, trash := e.folderID(t, "Archive"), e.folderID(t, "Trash")
 	cp := e.storedCopy(t, id, archive)
+	ch, unsub := e.s.Subscribe()
+	defer unsub()
 
 	require.NoError(t, e.s.Move(bg, []int64{id}, archive))
 	require.NoError(t, e.s.Move(bg, []int64{cp}, trash))
 	e.sync(t)
 
-	assert.Empty(t, e.onServer(t, "Archive"))
-	assert.Equal(t, []string{"m@x"}, e.onServer(t, "Trash"))
-	r := e.rows(t, "SELECT id, folder_id, server_folder_id FROM messages")
-	assert.Equal(t, [][]any{{id, trash, trash}}, r)
-	assert.Equal(t, []string{"done", "done"}, e.opStates(t))
-}
-
-// The carried-over move keeps its place in the queue: pushed in id order within
-// the same push, so the user's last move wins on the server.
-func TestMoveOntoStoredCopyKeepsQueueOrder(t *testing.T) {
-	e := newSyncEnv(t)
-	e.put(t, "INBOX", msg("m@x"))
-	e.sync(t)
-	id := e.idOf(t, "m@x")
-	inbox, archive, trash := e.folderID(t, "INBOX"), e.folderID(t, "Archive"), e.folderID(t, "Trash")
-	cp := e.storedCopy(t, id, archive)
-
-	require.NoError(t, e.s.Move(bg, []int64{id}, archive))
-	require.NoError(t, e.s.Move(bg, []int64{cp}, trash))
-	require.NoError(t, e.s.Move(bg, []int64{id}, inbox))
-	e.sync(t)
-
-	assert.Equal(t, []string{"m@x"}, e.onServer(t, "INBOX"))
+	assert.Equal(t, []string{"m@x"}, e.onServer(t, "Archive"))
 	assert.Empty(t, e.onServer(t, "Trash"))
-	assert.Equal(t, [][]any{{id, inbox, inbox}}, e.rows(t, "SELECT id, folder_id, server_folder_id FROM messages"))
-	assert.Equal(t, []string{"done", "done", "done"}, e.opStates(t))
-}
-
-// The carried-over move joins the moved row's queue: refused and still pending,
-// it holds back the moves queued after it instead of being overtaken and then
-// undoing them on retry.
-func TestMoveOntoStoredCopyRefusedMoveHoldsTheQueue(t *testing.T) {
-	e := newSyncEnv(t)
-	e.put(t, "INBOX", msg("m@x"))
-	e.sync(t)
-	id := e.idOf(t, "m@x")
-	inbox, archive, trash := e.folderID(t, "INBOX"), e.folderID(t, "Archive"), e.folderID(t, "Trash")
-	cp := e.storedCopy(t, id, archive)
-
-	require.NoError(t, e.s.Move(bg, []int64{id}, archive))
-	require.NoError(t, e.s.Move(bg, []int64{cp}, trash))
-	require.NoError(t, e.s.Move(bg, []int64{id}, inbox))
-	require.NoError(t, e.im.User.Delete("Trash")) // the server refuses the Trash move
-	e.sync(t)
-
-	assert.Equal(t, []string{"m@x"}, e.onServer(t, "Archive"))
-	assert.Equal(t, []string{"done", "pending", "pending"}, e.opStates(t))
-}
-
-// A change of the copy queued before the moved row's move, held back by a
-// refused move, still holds back what was queued after that move: the moved
-// row's move is done at once, and must not let a later change overtake it.
-func TestMoveOntoStoredCopyEarlierChangeHoldsTheQueue(t *testing.T) {
-	e := newSyncEnv(t)
-	e.put(t, "INBOX", msg("m@x"))
-	e.sync(t)
-	id := e.idOf(t, "m@x")
-	archive := e.folderID(t, "Archive")
-	cp := e.storedCopy(t, id, archive)
-	// Refused on every attempt (its destination is gone), so the read change behind it waits.
-	_, err := e.s.db.Execute(bg, "INSERT INTO ops(account_id, message_id, kind, dst_folder_id, created_at) VALUES (?, ?, 'move', 9999, unixepoch())", e.acc.ID, cp)
-	require.NoError(t, err)
-	require.NoError(t, e.s.SetFlags(bg, []int64{cp}, []string{`\Seen`}, nil))
-	require.NoError(t, e.s.Move(bg, []int64{id}, archive))
-	require.NoError(t, e.s.SetFlags(bg, []int64{id}, nil, []string{`\Seen`}))
-	e.sync(t)
-
-	// Read, then unread: the last choice holds on the server.
-	assert.Equal(t, []string{"m@x"}, e.onServer(t, "Archive"))
-	assert.Equal(t, []string{"cancelled", "done", "done", "done"}, e.opStates(t))
-}
-
-// A move of the copy queued before the moved row's own (one the server refused,
-// still pending) is superseded: it neither takes the moved row's folder nor
-// runs on retry.
-func TestMoveOntoStoredCopyCancelsItsOlderMove(t *testing.T) {
-	e := newSyncEnv(t)
-	e.put(t, "INBOX", msg("m@x"))
-	e.sync(t)
-	id := e.idOf(t, "m@x")
-	archive, trash := e.folderID(t, "Archive"), e.folderID(t, "Trash")
-	cp := e.storedCopy(t, id, archive)
-	// Queued first and failing on every attempt: its destination is gone.
-	_, err := e.s.db.Execute(bg, "UPDATE messages SET folder_id = ? WHERE id = ?", trash, cp)
-	require.NoError(t, err)
-	_, err = e.s.db.Execute(bg, "INSERT INTO ops(account_id, message_id, kind, dst_folder_id, created_at) VALUES (?, ?, 'move', 9999, unixepoch())", e.acc.ID, cp)
-	require.NoError(t, err)
-
-	require.NoError(t, e.s.Move(bg, []int64{id}, archive))
-	e.sync(t)
-
-	assert.Equal(t, []string{"m@x"}, e.onServer(t, "Archive"))
 	assert.Equal(t, [][]any{{id, archive, archive}}, e.rows(t, "SELECT id, folder_id, server_folder_id FROM messages"))
-	assert.Equal(t, []string{"cancelled", "done"}, e.opStates(t))
+	assert.Equal(t, []string{"done", "conflict"}, e.opStates(t))
+	var reported bool
+	for _, ev := range ofType(collect(ch), events.SyncFailed) {
+		reported = reported || strings.Contains(ev.Error, "not applied")
+	}
+	assert.True(t, reported, "the dropped change is reported")
 }
 
 // What points at the copy goes to the moved row: its labels even without a

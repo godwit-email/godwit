@@ -90,13 +90,6 @@ func push(ctx context.Context, db *store.DB, c *imapclient.Client, accountID int
 	for _, v := range rows.Values {
 		o := op{id: store.Int(v[0]), kind: store.Str(v[1]), msg: store.Int(v[2]), dst: store.Int(v[3]), accountID: accountID,
 			payload: store.Str(v[4]), dep: store.Int(v[5]), attempts: int(store.Int(v[6]))}
-		// An earlier op of this push may have moved o to another row (moved, #506):
-		// run it on that one, behind the chain it joined there.
-		if r, err := db.Query(ctx, "SELECT message_id, depends_on FROM ops WHERE id = ?", o.id); err != nil {
-			return err
-		} else if len(r.Values) > 0 {
-			o.msg, o.dep = store.Int(r.Values[0][0]), store.Int(r.Values[0][1])
-		}
 		problem, err := pushOp(ctx, db, c, o)
 		if o.kind == "purge" && err == nil && problem == "" {
 			if r, qerr := db.Query(ctx, "SELECT 1 FROM ops WHERE id = ? AND state = 'done'", o.id); qerr == nil && len(r.Values) > 0 {
@@ -363,12 +356,11 @@ func single(s imap.NumSet) uint32 {
 // location becomes the destination; without one it is cleared until fetch claims
 // the arrival (Message-ID and size) in the destination. A row already at the
 // COPYUID is the same server message (Gmail's All Mail copy of mail archived
-// there, #506), so it merges into the moved row and is deleted: its moves queued
-// before o are superseded by o and cancelled, its other queued ops carry over
-// (with its folder, when its latest move is newer than the moved row's), and so
-// do its labels (by row: a copy without label_fp gets no stash from the trigger),
-// reply drafts, rule runs and Wit citations. events_log stays history, as on
-// every other delete of a row.
+// there, #506): it is deleted, after its labels (by row: a copy without label_fp
+// gets no stash from the trigger), reply drafts, rule runs and Wit citations go
+// to the moved row. Its queued ops are not carried over, whose order against the
+// moved row's cannot be told: they lose their message and the next push reports
+// them as not applied. events_log stays history, as on every other delete.
 func moved(ctx context.Context, db *store.DB, o op, validity, uid uint32) error {
 	stmts := []sqlite.Statement{
 		{SQL: "UPDATE messages SET server_folder_id = NULL, server_uidvalidity = NULL, server_uid = NULL WHERE id = ?", Args: []any{o.msg}},
@@ -381,20 +373,8 @@ func moved(ctx context.Context, db *store.DB, o op, validity, uid uint32) error 
 		}
 		stmts = nil
 		if len(ids) > 0 { // at most one: UNIQUE(server_folder_id, server_uid)
-			// The latest queued move of a row; o, still pending, counts for the moved row.
-			const lastMove = "coalesce((SELECT max(id) FROM ops WHERE message_id = ? AND kind = 'move' AND state IN ('pending', 'awaiting_claim')), 0)"
 			cp := ids[0]
 			stmts = append(stmts,
-				sqlite.Statement{SQL: "UPDATE messages SET folder_id = (SELECT folder_id FROM messages WHERE id = ?), entered_at = unixepoch() WHERE id = ? AND " +
-					lastMove + " > " + lastMove, Args: []any{cp, o.msg, cp, o.msg}},
-				sqlite.Statement{SQL: "UPDATE ops SET state = 'cancelled' WHERE message_id = ? AND kind = 'move' AND state IN ('pending', 'awaiting_claim') AND id < ?",
-					Args: []any{cp, o.id}},
-				sqlite.Statement{SQL: "UPDATE ops SET message_id = ? WHERE message_id = ? AND state IN ('pending', 'awaiting_claim')", Args: []any{o.msg, cp}},
-				// One queue again: each op waits for the one before it, as latestOp chains new ones.
-				// Without o, done below: what follows o must still wait for what precedes it.
-				sqlite.Statement{SQL: `UPDATE ops SET depends_on = (SELECT max(p.id) FROM ops p WHERE p.message_id = ops.message_id
-					AND p.state IN ('pending', 'awaiting_claim') AND p.id < ops.id AND p.id != ?)
-					WHERE message_id = ? AND state IN ('pending', 'awaiting_claim') AND id != ?`, Args: []any{o.id, o.msg, o.id}},
 				// As messages_label_stash hands labels to other copies: a manual label beats a rule's.
 				sqlite.Statement{SQL: `INSERT INTO message_labels(message_id, label_id, source, active)
 					SELECT ?, label_id, source, active FROM message_labels WHERE message_id = ? AND source IN ('manual', 'rule')
