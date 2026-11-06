@@ -81,10 +81,6 @@ func (p *preparer) proxy(src string) string {
 		}
 	}
 	p.tokens[token] = src
-	return p.url(token)
-}
-
-func (p *preparer) url(token string) string {
 	p.changed = true
 	return (&url.URL{Scheme: ImageScheme, Host: "m" + strconv.FormatInt(p.message, 10), Path: "/" + token}).String()
 }
@@ -99,10 +95,13 @@ func (p *preparer) image(img *html.Node) {
 	src := img.Attr[i].Val
 	switch lower := strings.ToLower(src); {
 	case strings.HasPrefix(src, cidPrefix):
-		// Budgeted as served (Reader.chargeInline): its size is not known yet.
-		token := imagecache.Key(src)
-		p.tokens[token] = src
-		img.Attr[i].Val = p.url(token)
+		// Its bytes and pixels are charged as served (Reader.chargeInline): not known yet.
+		if u := p.proxy(src); u != "" {
+			img.Attr[i].Val = u
+			return
+		}
+		img.Attr = append(img.Attr[:i], img.Attr[i+1:]...)
+		p.changed = true
 	case strings.HasPrefix(lower, "http://"), strings.HasPrefix(lower, "https://"):
 		if u := p.proxy(src); u != "" {
 			img.Attr[i].Val = u

@@ -935,22 +935,22 @@ func TestReaderRetryRefetchesInlineImages(t *testing.T) {
 	assert.EqualValues(t, 2, calls.Load())
 }
 
-// Inline images come out of the message's budget as they are served: one past
-// the per-image limits, or past what the message has left, is refused.
+// Inline images come out of the message's budget as they are served: one past the
+// per-image limits, or past the pixels the message has left, is refused.
 func TestReaderInlineImageOverBudgetRefused(t *testing.T) {
-	small, huge := pngOf(t, 1, 1), pngHeader(10000, 5000) // 50 MP
-	f := newReaderFixture(t)
-	var sb strings.Builder
-	sb.WriteString(`<img src="cid:huge"><img src="cid:big">`)
-	for i := range 51 {
-		fmt.Fprintf(&sb, `<img src="cid:n%d">`, i)
+	big40 := pngHeader(8000, 5000) // 40 MP: three are past the message's 100 MP
+	images := map[string][]byte{
+		"huge": pngHeader(10000, 5000), // 50 MP: past one image's
+		"big":  append(pngHeader(10, 10), make([]byte, 6<<20)...),
+		"p0":   big40, "p1": big40, "p2": big40,
 	}
-	f.fakeMessage(func(int64, bool) core.Message { return core.Message{HTML: sb.String()} })
+	f := newReaderFixture(t)
+	f.fakeMessage(func(int64, bool) core.Message {
+		return core.Message{HTML: `<img src="cid:huge"><img src="cid:big"><img src="cid:p0"><img src="cid:p1"><img src="cid:p2">`}
+	})
 	f.r.getInline = func(_ context.Context, _ *core.Service, _ int64, each func(string, mail.Attachment)) error {
-		each("huge", mail.Attachment{Data: huge})
-		each("big", mail.Attachment{Data: append(pngHeader(10, 10), make([]byte, 6<<20)...)})
-		for i := range 51 {
-			each(fmt.Sprintf("n%d", i), mail.Attachment{Data: small})
+		for cid, data := range images {
+			each(cid, mail.Attachment{Data: data})
 		}
 		return nil
 	}
@@ -958,11 +958,48 @@ func TestReaderInlineImageOverBudgetRefused(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, http.StatusNotFound, f.image(t, 7, "cid:huge").Code)
 	assert.Equal(t, http.StatusNotFound, f.image(t, 7, "cid:big").Code, "past one image's bytes")
-	for i := range 50 {
+	assert.Equal(t, http.StatusOK, f.image(t, 7, "cid:p0").Code)
+	assert.Equal(t, http.StatusOK, f.image(t, 7, "cid:p1").Code)
+	assert.Equal(t, http.StatusForbidden, f.image(t, 7, "cid:p2").Code)
+	assert.Equal(t, http.StatusOK, f.image(t, 7, "cid:p0").Code, "charged once")
+}
+
+// The message's image count is taken as the body is prepared, in its order: past it
+// an inline image has no src, so the page never asks for it, and one already counted
+// is not counted again as it is served.
+func TestReaderInlineImageCountReservedInOrder(t *testing.T) {
+	pic := pngOf(t, 1, 1)
+	var in strings.Builder
+	in.WriteString(`<img src="cid:n0" alt="first"><img src="cid:n0" alt="again">`)
+	for i := 1; i < imagefetch.MaxImages; i++ {
+		fmt.Fprintf(&in, `<img src="https://cdn.example/%d.png">`, i)
+	}
+	in.WriteString(`<img src="https://cdn.example/late.png" alt="late"><img src="cid:late" alt="late inline">`)
+	out, tokens := prepareBody(in.String(), imagefetch.NewBudget(), 7, noDims)
+	assert.Len(t, tokens, imagefetch.MaxImages)
+	assert.Equal(t, 2, strings.Count(out, proxied(7, "cid:n0")), "the first inline image keeps its place, and its second use costs nothing")
+	assert.Contains(t, out, `<img alt="late"/>`)
+	assert.Contains(t, out, `<img alt="late inline"/>`)
+
+	var all strings.Builder
+	for i := range imagefetch.MaxImages + 1 {
+		fmt.Fprintf(&all, `<img src="cid:n%d">`, i)
+	}
+	f := newReaderFixture(t)
+	f.fakeMessage(func(int64, bool) core.Message { return core.Message{HTML: all.String()} })
+	f.r.getInline = func(_ context.Context, _ *core.Service, _ int64, each func(string, mail.Attachment)) error {
+		for i := range imagefetch.MaxImages + 1 {
+			each(fmt.Sprintf("n%d", i), mail.Attachment{Data: pic})
+		}
+		return nil
+	}
+	b, err := f.p.Load(pageCtx(f.page(7)))
+	require.NoError(t, err)
+	assert.Equal(t, imagefetch.MaxImages, strings.Count(b.HTML, ImageScheme+":"))
+	for i := range imagefetch.MaxImages {
 		require.Equal(t, http.StatusOK, f.image(t, 7, fmt.Sprintf("cid:n%d", i)).Code, i)
 	}
-	assert.Equal(t, http.StatusForbidden, f.image(t, 7, "cid:n50").Code, "past the message's 50 images")
-	assert.Equal(t, http.StatusOK, f.image(t, 7, "cid:n0").Code, "charged once")
+	assert.Equal(t, http.StatusNotFound, f.image(t, 7, fmt.Sprintf("cid:n%d", imagefetch.MaxImages)).Code)
 }
 
 // A real message: the body comes first, and its image through the proxy.

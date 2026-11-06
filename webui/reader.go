@@ -679,8 +679,9 @@ func (r *Reader) serveInline(w http.ResponseWriter, req *http.Request, message i
 	writeImage(w, format, i.data)
 }
 
-// chargeInline takes an inline image from message's budget, once per token; false
-// when the message is gone or has too little left.
+// chargeInline takes an inline image's bytes and pixels from message's budget
+// (prepareBody counted it), once per token; false when the message is gone or has
+// too little left.
 func (r *Reader) chargeInline(message int64, token string, size, px int64) bool {
 	r.mu.Lock()
 	defer r.mu.Unlock()
@@ -691,7 +692,7 @@ func (r *Reader) chargeInline(message int64, token string, size, px int64) bool 
 	if st.charged[token] {
 		return true
 	}
-	if st.pixels.TakeInline(size, px) != nil {
+	if st.pixels.TakeSize(size, px) != nil {
 		return false
 	}
 	st.charged[token] = true
