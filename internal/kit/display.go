@@ -160,6 +160,19 @@ func AvatarSized(c *ui.Context, name string, size float32) ui.Element {
 	})
 }
 
+// MenuAvatar is Avatar or AvatarImage for a native menu's small icon, which
+// the theme doesn't reach: the sender's color solid, to sit on a menu of either
+// appearance, and the initial large enough to read at half size.
+func MenuAvatar(c *ui.Context, name string, image ui.ImageSource) ui.Element {
+	if image != nil {
+		return AvatarImage(c, name, image)
+	}
+	t, th := theme.Of(c), c.Theme()
+	return ui.Box(c).Size(th.Space(8), th.Space(8)).Shrink(0).Radius(t.Radius.Lg).Background(avatarColor(t, name).Text).Center().Label(name).Children(func() {
+		ui.Text(c, initial(name)).FontWeight(600).FontSize(t.Text.Lg).LineHeight(theme.LineTight).TextColor(t.Background)
+	})
+}
+
 // avatarColor is one of the label colors but gray, by a hash of name.
 func avatarColor(t theme.Tokens, name string) theme.LabelColor {
 	h := fnv.New32a()

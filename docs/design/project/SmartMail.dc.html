@@ -1,0 +1,624 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<title>Godwit 智能邮箱</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600&amp;family=Geist+Mono:wght@500&amp;family=Noto+Sans+SC:wght@400;500;600&amp;display=swap" rel="stylesheet">
+<style>
+body{margin:0;background:#FFFFFF}
+a{color:#0A0A0A}a:hover{color:#404040}
+button{font:inherit;cursor:pointer}
+</style>
+</helmet>
+<div style="position: relative; width: 1440px; height: 900px; border-radius: 12px; overflow: hidden">
+<img src="/_blob/878f002c10b0d6c92e36b2bcfb479e8e" alt="" aria-label="桌面壁纸（已模糊）" style="position: absolute; left: -120px; top: -120px; width: 1680px; height: 1140px; object-fit: cover">
+<div aria-label="窗口材质" style="position: absolute; inset: 0; backdrop-filter: blur(20px); -webkit-backdrop-filter: blur(20px); background-color: #FAFAFAF2"></div>
+<div style="position: relative; width: 1440px; height: 900px; box-sizing: border-box; display: flex; flex-direction: column; overflow: hidden; font-family: 'Geist', 'Noto Sans SC', 'PingFang SC', sans-serif; font-size: 14px; color: #0A0A0A; background: transparent; border: 1px solid rgba(0, 0, 0, 0.12); border-radius: 12px">
+
+  <div style="height: 44px; flex: none; display: flex; align-items: center; gap: 4px; padding-left: 88px; position: relative">
+    <span aria-hidden="true" style="position: absolute; left: 20px; top: 16px; display: flex; gap: 8px">
+      <span style="width: 12px; height: 12px; border-radius: 50%; background: #FF5F57; box-shadow: inset 0 0 0 0.5px rgba(0,0,0,0.12)"></span>
+      <span style="width: 12px; height: 12px; border-radius: 50%; background: #FEBC2E; box-shadow: inset 0 0 0 0.5px rgba(0,0,0,0.12)"></span>
+      <span style="width: 12px; height: 12px; border-radius: 50%; background: #28C840; box-shadow: inset 0 0 0 0.5px rgba(0,0,0,0.12)"></span>
+    </span>
+    <button type="button" aria-label="收起侧栏" style="width: 28px; height: 28px; padding: 0; border: 0; border-radius: 6px; background: transparent; color: #737373; display: flex; align-items: center; justify-content: center"><svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M21 3C21.5523 3 22 3.44772 22 4V20C22 20.5523 21.5523 21 21 21H3C2.44772 21 2 20.5523 2 20V4C2 3.44772 2.44772 3 3 3H21ZM7 5H4V19H7V5ZM20 5H9V19H20V5Z"></path></svg></button>
+    <button type="button" aria-label="后退" style="width: 28px; height: 28px; padding: 0; border: 0; border-radius: 6px; background: transparent; color: #A3A3A3; display: flex; align-items: center; justify-content: center"><svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="{{ic.back}}"></path></svg></button>
+    <button type="button" aria-label="前进" style="width: 28px; height: 28px; padding: 0; border: 0; border-radius: 6px; background: transparent; color: #A3A3A3; display: flex; align-items: center; justify-content: center"><svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M16.1716 10.9999L10.8076 5.63589L12.2218 4.22168L20 11.9999L12.2218 19.778L10.8076 18.3638L16.1716 12.9999H4V10.9999H16.1716Z"></path></svg></button>
+    <span style="position: absolute; left: 264px; top: 0; bottom: 0; display: flex; align-items: center; gap: 8px; padding-left: 16px">
+      <span style="font-weight: 600">{{stripTitle}}</span>
+      <span style="font-size: 12px; color: #737373">{{stripMeta}}</span>
+      <sc-if value="{{showBoxMore}}" hint-placeholder-val="{{ true }}"><button type="button" aria-label="「{{stripTitle}}」的操作" aria-haspopup="menu" aria-expanded="{{boxMenuAria}}" onClick="{{toggleBoxMenu}}" style="width: 24px; height: 24px; padding: 0; border: 0; border-radius: 6px; background: transparent; color: #737373; display: flex; align-items: center; justify-content: center"><svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="{{ic.more}}"></path></svg></button></sc-if>
+    </span>
+    <span style="margin-left: auto; margin-right: 16px; height: 28px; padding: 0 8px; display: flex; align-items: center; gap: 6px; font-size: 12px; color: #737373"><span style="width: 6px; height: 6px; border-radius: 50%; background: #00A63E"></span>已同步 · 刚刚</span>
+  </div>
+
+  <div style="flex: 1; min-height: 0; display: flex; box-sizing: border-box; padding: 0 8px 8px 8px; gap: 8px">
+
+    <aside aria-label="文件夹" style="flex: 0 0 248px; box-sizing: border-box; display: flex; flex-direction: column; gap: 2px; padding: 12px; min-width: 0; overflow: hidden">
+      <div style="display: flex; align-items: center; gap: 4px; margin-top: -12px; margin-bottom: 12px">
+        <div role="group" aria-label="应用切换" style="display: flex; gap: 2px; padding: 2px; border-radius: 8px; background: rgba(0, 0, 0, 0.05)"><a href="Main.dc.html" aria-current="page" style="height: 28px; padding: 0 10px 0 6px; display: flex; align-items: center; gap: 6px; border-radius: 6px; text-decoration: none; font-size: 13px; background: #FFFFFF; color: #0A0A0A; box-shadow: 0 1px 2px rgba(0,0,0,0.06)"><svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M3 3H21C21.5523 3 22 3.44772 22 4V20C22 20.5523 21.5523 21 21 21H3C2.44772 21 2 20.5523 2 20V4C2 3.44772 2.44772 3 3 3ZM12.0606 11.6829L5.64722 6.2377L4.35278 7.7623L12.0731 14.3171L19.6544 7.75616L18.3456 6.24384L12.0606 11.6829Z"></path></svg>邮件</a><a href="Contacts.dc.html" aria-label="联系人" title="联系人" style="width: 28px; height: 28px; display: flex; align-items: center; justify-content: center; border-radius: 6px; text-decoration: none; background: transparent; color: #737373"><svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M4 2C3.44772 2 3 2.44772 3 3V5H5V7H2V9H5V11H2V13H5V15H2V17H5V19H3V21C3 21.5523 3.44772 22 4 22H20C20.5523 22 21 21.5523 21 21V3C21 2.44772 20.5523 2 20 2H4ZM9 16C9 14.3431 10.3431 13 12 13C13.6569 13 15 14.3431 15 16H9ZM12 12C10.8954 12 10 11.1046 10 10C10 8.89543 10.8954 8 12 8C13.1046 8 14 8.89543 14 10C14 11.1046 13.1046 12 12 12Z"></path></svg></a><a href="Ask.dc.html" aria-label="Wit" title="Wit" style="width: 28px; height: 28px; display: flex; align-items: center; justify-content: center; border-radius: 6px; text-decoration: none; background: transparent; color: #737373"><svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="{{ic.spark}}"></path></svg></a></div>
+        <button type="button" aria-label="搜索" onClick="{{openSearch}}" style="margin-left: auto; width: 28px; height: 28px; padding: 0; border: 0; border-radius: 6px; background: transparent; color: #737373; display: flex; align-items: center; justify-content: center"><svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="{{ic.search}}"></path></svg></button>
+      </div>
+      <a href="Compose.dc.html" style="display: flex; align-items: center; gap: 10px; height: 32px; padding: 0 8px; border-radius: 8px; text-decoration: none; color: #0A0A0A"><svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true" style="color: #737373"><path d="{{ic.edit}}"></path></svg>写邮件</a>
+      <div style="height: 8px; flex: none"></div>
+      <nav aria-label="邮箱与文件夹" style="flex: 1; min-height: 0; display: flex; flex-direction: column; gap: 2px; overflow-y: auto">
+        <sc-for list="{{unified}}" as="u" hint-placeholder-count="2">
+          <button type="button" onClick="{{u.pick}}" aria-current="{{u.current}}" style="{{u.style}}"><svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true" style="flex: none; color: #737373"><path d="{{u.icon}}"></path></svg><span style="flex: 1; text-align: left">{{u.name}}</span><span style="font-size: 12px; color: #737373">{{u.count}}</span></button>
+        </sc-for>
+        <div style="height: 8px; flex: none"></div>
+        <div style="display: flex; align-items: center; height: 32px; flex: none; padding: 0 4px 0 8px; color: #737373; font-size: 12px"><span style="flex: 1">智能邮箱</span><button type="button" onClick="{{openNew}}" aria-label="新建智能邮箱" title="新建智能邮箱" style="width: 24px; height: 24px; padding: 0; border: 0; border-radius: 6px; background: transparent; display: flex; align-items: center; justify-content: center; color: #737373"><svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="{{ic.add}}"></path></svg></button></div>
+        <sc-for list="{{boxes}}" as="b" hint-placeholder-count="3">
+          <button type="button" onClick="{{b.pick}}" onContextMenu="{{b.menu}}" aria-current="{{b.current}}" style="{{b.style}}"><svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true" style="flex: none; color: #737373"><path d="{{b.icon}}"></path></svg><span style="flex: 1; min-width: 0; text-align: left; overflow: hidden; text-overflow: ellipsis; white-space: nowrap">{{b.name}}</span><span style="font-size: 12px; color: #737373">{{b.count}}</span></button>
+        </sc-for>
+        <div style="height: 8px; flex: none"></div>
+        <div style="display: flex; align-items: center; height: 32px; flex: none; padding: 0 8px; color: #737373; font-size: 12px"><span style="flex: 1">标签</span><svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="{{ic.chev}}"></path></svg></div>
+        <div style="display: flex; align-items: center; height: 32px; flex: none; padding: 0 8px; color: #737373; font-size: 12px"><span style="flex: 1">账户</span><svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true" style="transform: rotate(90deg)"><path d="{{ic.chev}}"></path></svg></div>
+        <div style="display: flex; align-items: center; gap: 8px; height: 32px; flex: none; padding: 0 8px"><span style="flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap">you@example.com</span><span style="font-size: 12px; color: #737373">12</span></div>
+        <div style="display: flex; align-items: center; gap: 8px; height: 32px; flex: none; padding: 0 8px"><span style="flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap">work@company.example</span><span style="font-size: 12px; color: #737373">4</span></div>
+      </nav>
+      <a href="SettingsGeneral.dc.html" style="margin-top: auto; display: flex; align-items: center; gap: 10px; height: 32px; padding: 0 8px; border-radius: 8px; text-decoration: none; color: #0A0A0A"><svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true" style="color: #737373"><path d="M7 3V6H3V8H7V11H9V3H7ZM11 8H21V6H11V8ZM17 13V16H21V18H17V21H15V13H17ZM13 18H3V16H13V18Z"></path></svg>设置</a>
+    </aside>
+
+    <sc-if value="{{showList}}" hint-placeholder-val="{{ true }}">
+    <section aria-label="{{listLabel}}" style="position: relative; background: #FFFFFF; border: 1px solid #E5E5E5; border-radius: 12px; box-shadow: 0 1px 2px 0 rgba(0,0,0,0.05); overflow: hidden; flex: 0 0 340px; display: flex; flex-direction: column; min-width: 0">
+      <sc-if value="{{isSearch}}" hint-placeholder-val="{{ false }}">
+        <div style="display: flex; flex-direction: column; gap: 8px; padding: 12px 12px 8px">
+          <label style="display: flex; align-items: center; gap: 8px; height: 32px; padding: 0 4px 0 10px; border: 1px solid #A1A1A1; border-radius: 8px; background: #FFFFFF; box-shadow: 0 0 0 3px rgba(161,161,161,0.5)"><svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true" style="flex: none; color: #737373"><path d="{{ic.search}}"></path></svg><input type="search" aria-label="搜索邮件" value="发票" style="flex: 1; min-width: 0; height: 30px; padding: 0; border: 0; background: transparent; font: inherit; color: #0A0A0A; outline: none"></label>
+          <div style="display: flex; align-items: center; justify-content: space-between; gap: 8px; min-height: 28px"><span style="font-size: 12px; color: #737373">5 个会话</span><button type="button" onClick="{{saveSearch}}" style="height: 28px; padding: 0 10px; border: 1px solid #E5E5E5; border-radius: 8px; background: #FFFFFF; color: #0A0A0A; font-size: 12px; font-weight: 500">存为智能邮箱</button></div>
+        </div>
+      </sc-if>
+      <sc-if value="{{hasPlainHead}}" hint-placeholder-val="{{ false }}">
+        <div style="flex: none; display: flex; align-items: center; justify-content: space-between; padding: 12px 16px 8px; min-height: 26px">
+          <h1 style="margin: 0; font-size: 13px; font-weight: 500; color: #737373">{{listTitle}}</h1>
+        </div>
+      </sc-if>
+      <sc-if value="{{notice}}" hint-placeholder-val="{{ false }}">
+        <div style="flex: none; margin: 0 8px 4px; padding: 8px 10px; display: flex; align-items: center; gap: 8px; border-radius: 8px; background: #F5F5F5; font-size: 12px; line-height: 1.5; color: #404040"><svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true" style="flex: none; color: #737373"><path d="{{noticeIcon}}"></path></svg><span style="flex: 1; min-width: 0">{{notice}}</span><sc-if value="{{noticeHref}}" hint-placeholder-val="{{ false }}"><a href="{{noticeHref}}" style="flex: none; color: #0A0A0A; font-weight: 500">{{noticeAct}}</a></sc-if><sc-if value="{{noticeBtn}}" hint-placeholder-val="{{ false }}"><button type="button" onClick="{{noticeBtn}}" style="flex: none; height: 24px; padding: 0 8px; border: 1px solid #E5E5E5; border-radius: 6px; background: #FFFFFF; color: #0A0A0A; font-size: 12px; font-weight: 500">{{noticeAct}}</button></sc-if></div>
+      </sc-if>
+      <div style="flex: 1; min-height: 0; overflow-y: auto; padding-bottom: 8px">
+        <sc-for list="{{groups}}" as="g" hint-placeholder-count="2">
+          <sc-if value="{{g.name}}" hint-placeholder-val="{{ true }}"><div style="display: flex; align-items: center; justify-content: space-between; padding: 12px 16px 8px"><h2 style="margin: 0; font-size: 13px; font-weight: 500; color: #737373">{{g.name}}</h2><span style="font-size: 12px; color: #737373">{{g.count}}</span></div></sc-if>
+          <sc-for list="{{g.rows}}" as="m" hint-placeholder-count="2">
+            <div style="position: relative; margin: 0 8px">
+              <button type="button" onClick="{{m.pick}}" onContextMenu="{{m.menu}}" aria-pressed="{{m.pressed}}" style="{{m.rowStyle}}">
+                <sc-if value="{{m.unread}}" hint-placeholder-val="{{ true }}"><span role="img" aria-label="未读" style="position: absolute; left: 6px; top: 16px; width: 8px; height: 8px; border-radius: 50%; background: #2B7FFF"></span></sc-if>
+                <span style="display: flex; justify-content: space-between; gap: 8px"><span style="{{m.fromStyle}}">{{m.from}}</span><span style="font-size: 12px; color: #737373; flex: none">{{m.time}}</span></span>
+                <span style="{{m.subjectStyle}}">{{m.subject}}</span>
+                <span style="{{m.lineStyle}}"><sc-if value="{{m.lineIcon}}" hint-placeholder-val="{{ true }}"><svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true" style="flex: none"><path d="{{m.lineIcon}}"></path></svg></sc-if><span style="min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap">{{m.line}}</span></span>
+              </button>
+            </div>
+          </sc-for>
+        </sc-for>
+        <sc-if value="{{empty}}" hint-placeholder-val="{{ false }}">
+          <div style="padding: 96px 32px; display: flex; flex-direction: column; align-items: center; gap: 8px; text-align: center">
+            <span style="width: 40px; height: 40px; border-radius: 8px; background: #F5F5F5; display: flex; align-items: center; justify-content: center"><svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="{{empty.icon}}"></path></svg></span>
+            <span style="font-size: 16px; font-weight: 600">{{empty.title}}</span>
+            <span style="color: #737373; line-height: 1.6">{{empty.desc}}</span>
+            <sc-if value="{{empty.act}}" hint-placeholder-val="{{ false }}"><button type="button" onClick="{{empty.act}}" style="margin-top: 8px; height: 32px; padding: 0 12px; border: 1px solid #E5E5E5; border-radius: 8px; background: #FFFFFF; color: #0A0A0A; font-weight: 500">{{empty.actText}}</button></sc-if>
+          </div>
+        </sc-if>
+      </div>
+    </section>
+    </sc-if>
+
+    <main style="position: relative; background: #FFFFFF; border: 1px solid #E5E5E5; border-radius: 12px; box-shadow: 0 1px 2px 0 rgba(0,0,0,0.05); overflow: hidden; flex: 1; min-width: 0; display: flex; flex-direction: column">
+
+      <sc-if value="{{showReader}}" hint-placeholder-val="{{ true }}">
+        <div style="display: flex; align-items: center; gap: 2px; padding: 6px 12px; border-bottom: 1px solid #E5E5E5; flex-wrap: wrap">
+          <div role="group" aria-label="回复" style="display: flex; align-items: center; gap: 2px">
+            <a href="Compose.dc.html" aria-label="回复" title="回复" style="width: 32px; height: 32px; border-radius: 8px; display: flex; align-items: center; justify-content: center; color: #0A0A0A"><svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="{{ic.reply}}"></path></svg></a>
+            <a href="Compose.dc.html" aria-label="全部回复" title="全部回复" style="width: 32px; height: 32px; border-radius: 8px; display: flex; align-items: center; justify-content: center; color: #0A0A0A"><svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="{{ic.replyAll}}"></path></svg></a>
+            <a href="Compose.dc.html" aria-label="转发" title="转发" style="width: 32px; height: 32px; border-radius: 8px; display: flex; align-items: center; justify-content: center; color: #0A0A0A"><svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><g transform="matrix(-1 0 0 1 24 0)"><path d="{{ic.reply}}"></path></g></svg></a>
+          </div>
+          <span aria-hidden="true" style="width: 1px; height: 20px; margin: 0 6px; background: #E5E5E5"></span>
+          <div role="group" aria-label="整理" style="display: flex; align-items: center; gap: 2px">
+            <button type="button" aria-label="加星标" title="加星标" style="width: 32px; height: 32px; padding: 0; border: 0; border-radius: 8px; background: transparent; color: #0A0A0A; display: flex; align-items: center; justify-content: center"><svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="{{ic.star}}"></path></svg></button>
+            <button type="button" aria-label="归档" title="归档" onClick="{{archiveSel}}" style="width: 32px; height: 32px; padding: 0; border: 0; border-radius: 8px; background: transparent; color: #0A0A0A; display: flex; align-items: center; justify-content: center"><svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="{{ic.archive}}"></path></svg></button>
+            <button type="button" aria-label="移到垃圾邮件" title="移到垃圾邮件" style="width: 32px; height: 32px; padding: 0; border: 0; border-radius: 8px; background: transparent; color: #0A0A0A; display: flex; align-items: center; justify-content: center"><svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="{{ic.spam}}"></path></svg></button>
+            <button type="button" aria-label="删除" title="删除" style="width: 32px; height: 32px; padding: 0; border: 0; border-radius: 8px; background: transparent; color: #0A0A0A; display: flex; align-items: center; justify-content: center"><svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="{{ic.trash}}"></path></svg></button>
+          </div>
+          <button type="button" aria-label="更多操作" title="更多操作" style="width: 32px; height: 32px; padding: 0; border: 0; border-radius: 8px; background: transparent; color: #0A0A0A; display: flex; align-items: center; justify-content: center"><svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="{{ic.more}}"></path></svg></button>
+          <span style="margin-left: auto; display: flex; gap: 2px; flex-wrap: wrap">
+            <button type="button" style="height: 32px; display: flex; align-items: center; gap: 6px; padding: 0 10px; border: 0; border-radius: 8px; background: transparent; color: #0A0A0A"><svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="{{ic.doc}}"></path></svg>总结</button>
+            <button type="button" style="height: 32px; display: flex; align-items: center; gap: 6px; padding: 0 10px; border: 0; border-radius: 8px; background: transparent; color: #0A0A0A"><svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="{{ic.translate}}"></path></svg>翻译</button>
+            <button type="button" style="height: 32px; padding: 0 10px; border: 0; border-radius: 8px; background: transparent; color: #0A0A0A">更多 skill ▾</button>
+          </span>
+        </div>
+        <article style="flex: 1; min-height: 0; overflow-y: auto; padding: 20px 28px; display: flex; flex-direction: column; gap: 14px; box-sizing: border-box">
+          <h2 style="margin: 0; font-size: 20px; font-weight: 600; line-height: 1.35; max-width: 720px">{{sel.subject}}</h2>
+
+          <sc-if value="{{sel.hasState}}" hint-placeholder-val="{{ true }}">
+            <section aria-label="现状" style="max-width: 720px; border: 1px solid #E5E5E5; border-radius: 12px; background: #FAFAFA; padding: 12px 14px; display: flex; align-items: center; gap: 10px">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true" style="{{sel.stateIconStyle}}"><path d="{{sel.stateIcon}}"></path></svg>
+              <span style="flex: 1; min-width: 0; line-height: 1.5">{{sel.reasonLong}}</span>
+              <sc-if value="{{sel.nudge}}" hint-placeholder-val="{{ false }}"><a href="Compose.dc.html" style="flex: none; height: 28px; display: flex; align-items: center; padding: 0 10px; border: 1px solid #E5E5E5; border-radius: 8px; background: #FFFFFF; color: #0A0A0A; font-size: 12px; font-weight: 500; text-decoration: none">写催促信</a></sc-if>
+            </section>
+          </sc-if>
+
+          <div style="display: flex; align-items: center; gap: 10px">
+            <span style="width: 32px; height: 32px; flex: none; border-radius: 50%; background: #F5F5F5; color: #171717; display: flex; align-items: center; justify-content: center; font-weight: 600; font-size: 13px">{{sel.initial}}</span>
+            <span style="display: flex; flex-direction: column"><span style="font-weight: 500">{{sel.from}} <span style="color: #737373; font-weight: 400">&lt;{{sel.addr}}&gt;</span></span><span style="font-size: 12px; color: #737373">{{sel.to}} · {{sel.date}}</span></span>
+          </div>
+
+          <div style="line-height: 1.75; font-size: 14px; display: flex; flex-direction: column; gap: 10px; max-width: 720px"><sc-for list="{{sel.body}}" as="p" hint-placeholder-count="3"><p style="margin: 0">{{p.t}}</p></sc-for></div>
+
+          <sc-if value="{{sel.why}}" hint-placeholder-val="{{ true }}">
+            <div style="max-width: 720px; display: flex; align-items: center; gap: 8px; padding-top: 12px; border-top: 1px solid #F0F0F0; font-size: 12px; line-height: 1.5; color: #737373"><span style="flex: 1; min-width: 0">{{sel.why}}</span><button type="button" onClick="{{sel.whyAct}}" style="flex: none; height: 24px; padding: 0 8px; border: 0; border-radius: 6px; background: transparent; color: #0A0A0A; font-size: 12px; font-weight: 500; text-decoration: underline">{{sel.whyActText}}</button></div>
+          </sc-if>
+        </article>
+      </sc-if>
+
+      <sc-if value="{{showForm}}" hint-placeholder-val="{{ false }}">
+        <div style="flex: 1; min-height: 0; overflow-y: auto; padding: 24px 28px; display: flex; flex-direction: column; gap: 24px; box-sizing: border-box">
+          <div style="display: flex; align-items: flex-end; justify-content: space-between; gap: 16px">
+            <div style="display: flex; flex-direction: column; gap: 6px; min-width: 0"><h2 style="margin: 0; font-size: 29px; line-height: 1.25; font-weight: 600">{{form.title}}</h2><span style="color: #737373">{{form.desc}}</span></div>
+            <span style="flex: none; display: flex; gap: 8px"><button type="button" onClick="{{closeForm}}" style="height: 32px; padding: 0 12px; border: 1px solid #E5E5E5; border-radius: 8px; background: #FFFFFF; color: #0A0A0A">取消</button><button type="button" onClick="{{saveForm}}" disabled="{{saveBlocked}}" title="{{saveHint}}" style="{{saveStyle}}">{{form.saveText}}</button></span>
+          </div>
+
+          <div style="display: grid; grid-template-columns: minmax(0, 1fr) 340px; gap: 24px; align-items: start">
+          <div style="display: flex; flex-direction: column; gap: 24px; min-width: 0">
+
+          <section aria-label="基本信息" style="background: #FFFFFF; border: 1px solid #E5E5E5; border-radius: 12px">
+            <label style="display: flex; align-items: center; gap: 8px; min-height: 32px; padding: 8px 16px; justify-content: space-between; gap: 24px"><span style="font-weight: 500">名称</span><input type="text" value="{{form.name}}" placeholder="例如：客户 Acme" onInput="{{setName}}" style="width: 260px; height: 32px; box-sizing: border-box; padding: 0 12px; border: 1px solid #E5E5E5; border-radius: 8px; background: #FFFFFF; font: inherit; color: #0A0A0A"></label>
+            <div style="display: flex; align-items: center; gap: 8px; min-height: 32px; padding: 8px 16px; border-top: 1px solid #E5E5E5; justify-content: space-between; gap: 24px; position: relative"><span style="font-weight: 500">图标</span>
+              <button type="button" aria-label="选择图标" title="选择图标" aria-haspopup="dialog" aria-expanded="{{iconAria}}" onClick="{{toggleIcon}}" style="width: 32px; height: 32px; padding: 0; border: 1px solid #E5E5E5; border-radius: 8px; background: #FFFFFF; color: #0A0A0A; display: flex; align-items: center; justify-content: center"><svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="{{formIcon}}"></path></svg></button>
+              <sc-if value="{{iconOpen}}" hint-placeholder-val="{{ false }}"><div role="radiogroup" aria-label="图标" style="position: absolute; right: 16px; top: calc(100% - 4px); z-index: 10; width: 304px; box-sizing: border-box; padding: 4px; display: grid; grid-template-columns: repeat(8, minmax(0, 1fr)); gap: 2px; background: #FFFFFF; border: 1px solid #E5E5E5; border-radius: 8px; box-shadow: 0 4px 6px -1px rgba(0,0,0,0.1), 0 2px 4px -2px rgba(0,0,0,0.1)"><sc-for list="{{iconGrid}}" as="i" hint-placeholder-count="40"><button type="button" role="radio" aria-checked="{{i.on}}" aria-label="{{i.key}}" onClick="{{i.pick}}" style="{{i.style}}"><svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="{{i.d}}"></path></svg></button></sc-for></div></sc-if>
+            </div>
+            <label style="display: flex; align-items: center; gap: 8px; min-height: 32px; padding: 8px 16px; border-top: 1px solid #E5E5E5; justify-content: space-between; gap: 24px"><span style="font-weight: 500">账户</span><select aria-label="账户" style="height: 32px; padding: 0 8px; border: 1px solid #E5E5E5; border-radius: 8px; background: #FFFFFF; font: inherit"><option>所有账户</option><option>you@example.com</option><option>work@company.example</option></select></label>
+            <sc-if value="{{form.aiOn}}" hint-placeholder-val="{{ false }}"><div style="display: flex; align-items: center; gap: 8px; min-height: 32px; padding: 8px 16px; border-top: 1px solid #E5E5E5; justify-content: space-between; gap: 24px"><span style="flex: none; font-weight: 500">描述</span><span style="flex: 1; min-width: 0; display: flex; gap: 8px"><input type="text" aria-label="描述" value="客户投诉，包括要退款的" style="flex: 1; min-width: 0; height: 32px; box-sizing: border-box; padding: 0 12px; border: 1px solid #E5E5E5; border-radius: 8px; background: #FFFFFF; font: inherit; color: #0A0A0A"><button type="button" style="flex: none; height: 32px; padding: 0 12px; border: 1px solid #E5E5E5; border-radius: 8px; background: #FFFFFF; color: #0A0A0A">重新生成</button></span></div></sc-if>
+          </section>
+
+          <sc-for list="{{sections}}" as="sec" hint-placeholder-count="2">
+            <div style="display: flex; flex-direction: column; gap: 10px">
+              <sc-if value="{{sec.isBox}}" hint-placeholder-val="{{ true }}"><div style="display: flex; align-items: center; justify-content: space-between; min-height: 30px"><h3 style="margin: 0; font-size: 14px; font-weight: 600">条件</h3><sc-if value="{{sec.showLogic}}" hint-placeholder-val="{{ false }}"><div role="radiogroup" aria-label="条件怎么组合" style="display: flex; gap: 2px; padding: 2px; border-radius: 8px; background: #F5F5F5"><sc-for list="{{sec.logicOpts}}" as="o" hint-placeholder-count="2"><button type="button" role="radio" aria-checked="{{o.on}}" onClick="{{o.pick}}" style="{{o.style}}">{{o.label}}</button></sc-for></div></sc-if></div></sc-if>
+              <sc-if value="{{sec.firstGroup}}" hint-placeholder-val="{{ false }}"><h3 style="margin: 0; font-size: 14px; font-weight: 600">分组</h3></sc-if>
+              <section aria-label="{{sec.label}}" style="background: #FFFFFF; border: 1px solid #E5E5E5; border-radius: 12px">
+                <sc-if value="{{sec.isGroup}}" hint-placeholder-val="{{ false }}"><div style="display: flex; align-items: center; gap: 8px; min-height: 32px; padding: 8px 16px"><input type="text" aria-label="分组名称" value="{{sec.name}}" placeholder="分组名称" onInput="{{sec.setName}}" style="flex: none; width: 200px; height: 32px; box-sizing: border-box; padding: 0 12px; border: 1px solid #E5E5E5; border-radius: 8px; background: #FFFFFF; font: inherit; color: #0A0A0A; font-weight: 500"><sc-if value="{{sec.showLogic}}" hint-placeholder-val="{{ false }}"><div role="radiogroup" aria-label="条件怎么组合" style="margin-left: 8px; display: flex; gap: 2px; padding: 2px; border-radius: 8px; background: #F5F5F5"><sc-for list="{{sec.logicOpts}}" as="o" hint-placeholder-count="2"><button type="button" role="radio" aria-checked="{{o.on}}" onClick="{{o.pick}}" style="{{o.style}}">{{o.label}}</button></sc-for></div></sc-if><span style="margin-left: auto; display: flex; gap: 2px"><button type="button" aria-label="上移分组" title="上移分组" onClick="{{sec.up}}" disabled="{{sec.first}}" style="{{sec.upStyle}}"><svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="{{ic.up}}"></path></svg></button><button type="button" aria-label="下移分组" title="下移分组" onClick="{{sec.down}}" disabled="{{sec.last}}" style="{{sec.downStyle}}"><svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="{{ic.down}}"></path></svg></button><button type="button" aria-label="删除分组" title="删除分组" onClick="{{sec.remove}}" style="width: 28px; height: 28px; padding: 0; border: 0; border-radius: 6px; background: transparent; color: #737373; display: flex; align-items: center; justify-content: center"><svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="{{ic.trash}}"></path></svg></button></span></div></sc-if>
+                <sc-if value="{{sec.noConds}}" hint-placeholder-val="{{ false }}"><div style="display: flex; align-items: center; gap: 8px; min-height: 32px; padding: 8px 16px; font-size: 12px; color: #737373">{{sec.noCondsText}}</div></sc-if>
+                <sc-for list="{{sec.conds}}" as="c" hint-placeholder-count="1">
+                  <div style="{{c.rowStyle}}">
+                    <select aria-label="字段" value="{{c.f}}" onChange="{{c.setF}}" style="flex: none; width: 108px; height: 32px; padding: 0 8px; border: 1px solid #E5E5E5; border-radius: 8px; background: #FFFFFF; font: inherit"><sc-for list="{{sec.fieldOpts}}" as="o" hint-placeholder-count="5"><option value="{{o.v}}">{{o.n}}</option></sc-for></select>
+                    <sc-if value="{{c.hasOp}}" hint-placeholder-val="{{ true }}"><select aria-label="比较" value="{{c.op}}" onChange="{{c.setOp}}" style="flex: none; width: 96px; height: 32px; padding: 0 8px; border: 1px solid #E5E5E5; border-radius: 8px; background: #FFFFFF; font: inherit"><option value="contains">包含</option><option value="not">不包含</option><option value="is">是</option></select></sc-if>
+                    <sc-if value="{{c.isText}}" hint-placeholder-val="{{ true }}"><input type="text" aria-label="值" value="{{c.v}}" placeholder="{{c.ph}}" onInput="{{c.setV}}" style="flex: 1; min-width: 0; height: 32px; box-sizing: border-box; padding: 0 12px; border: 1px solid #E5E5E5; border-radius: 8px; background: #FFFFFF; font: inherit; color: #0A0A0A"></sc-if>
+                    <sc-if value="{{c.isPick}}" hint-placeholder-val="{{ false }}"><select aria-label="值" value="{{c.v}}" onChange="{{c.setV}}" style="flex: 1; min-width: 0; height: 32px; padding: 0 8px; border: 1px solid #E5E5E5; border-radius: 8px; background: #FFFFFF; font: inherit"><sc-for list="{{c.opts}}" as="o" hint-placeholder-count="2"><option value="{{o.v}}">{{o.n}}</option></sc-for></select></sc-if>
+                    <sc-if value="{{c.hasDays}}" hint-placeholder-val="{{ false }}"><input type="number" min="1" max="30" aria-label="天数" value="{{c.n}}" onInput="{{c.setN}}" style="flex: none; width: 64px; height: 32px; box-sizing: border-box; padding: 0 12px; border: 1px solid #E5E5E5; border-radius: 8px; background: #FFFFFF; font: inherit; color: #0A0A0A"><span style="flex: none; color: #737373">天</span></sc-if>
+                    <button type="button" aria-label="删除条件" title="删除条件" onClick="{{c.remove}}" style="flex: none; width: 28px; height: 28px; padding: 0; border: 0; border-radius: 6px; background: transparent; color: #737373; display: flex; align-items: center; justify-content: center"><svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="{{ic.close}}"></path></svg></button>
+                  </div>
+                </sc-for>
+                <div style="display: flex; align-items: center; gap: 8px; min-height: 32px; padding: 8px 16px; border-top: 1px solid #E5E5E5"><button type="button" onClick="{{sec.addCond}}" style="height: 28px; display: flex; align-items: center; gap: 4px; padding: 0 8px; margin-left: -8px; border: 0; border-radius: 6px; background: transparent; color: #0A0A0A"><svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true" style="color: #737373"><path d="{{ic.add}}"></path></svg>添加条件</button></div>
+              </section>
+              <sc-if value="{{sec.isBox}}" hint-placeholder-val="{{ true }}"><span style="font-size: 12px; color: #737373">{{form.help}}</span></sc-if>
+            </div>
+          </sc-for>
+
+          <div style="display: flex; flex-direction: column; gap: 10px; margin-top: -8px">
+            <sc-if value="{{form.noGroups}}" hint-placeholder-val="{{ true }}"><h3 style="margin: 0; font-size: 14px; font-weight: 600">分组</h3></sc-if>
+            <div style="display: flex; align-items: center; gap: 12px"><button type="button" onClick="{{addGroup}}" style="flex: none; height: 32px; display: flex; align-items: center; gap: 6px; padding: 0 12px; border: 1px solid #E5E5E5; border-radius: 8px; background: #FFFFFF; color: #0A0A0A"><svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="{{ic.add}}"></path></svg>添加分组</button><span style="font-size: 12px; color: #737373">{{form.groupHelp}}</span></div>
+          </div>
+
+          <sc-if value="{{form.hasTemplate}}" hint-placeholder-val="{{ false }}"><div style="display: flex; flex-direction: column; gap: 10px"><h3 style="margin: 0; font-size: 14px; font-weight: 600">从模板创建</h3><div style="display: flex; flex-wrap: wrap; gap: 8px"><sc-for list="{{templates}}" as="t" hint-placeholder-count="4"><button type="button" onClick="{{t.use}}" style="height: 32px; display: flex; align-items: center; gap: 6px; padding: 0 12px; border: 1px solid #E5E5E5; border-radius: 8px; background: #FFFFFF; color: #0A0A0A"><svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true" style="color: #737373"><path d="{{t.icon}}"></path></svg>{{t.name}}</button></sc-for></div></div></sc-if>
+
+          <sc-if value="{{form.hasExceptions}}" hint-placeholder-val="{{ false }}"><div style="display: flex; flex-direction: column; gap: 10px"><h3 style="margin: 0; font-size: 14px; font-weight: 600">例外</h3><section aria-label="例外" style="background: #FFFFFF; border: 1px solid #E5E5E5; border-radius: 12px"><sc-for list="{{form.exceptions}}" as="x" hint-placeholder-count="2"><div style="{{x.rowStyle}}"><span style="flex: none; width: 56px; font-size: 12px; color: #737373">{{x.kind}}</span><span style="flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap">{{x.text}}</span><button type="button" onClick="{{x.undo}}" style="flex: none; height: 28px; padding: 0 10px; border: 1px solid #E5E5E5; border-radius: 8px; background: #FFFFFF; color: #0A0A0A; font-size: 12px">撤销</button></div></sc-for></section></div></sc-if>
+
+          <sc-if value="{{form.hasFoot}}" hint-placeholder-val="{{ false }}"><div style="display: flex; align-items: center; gap: 8px"><sc-if value="{{form.canDelete}}" hint-placeholder-val="{{ false }}"><button type="button" onClick="{{askDelete}}" style="height: 32px; padding: 0 12px; margin-left: -12px; border: 0; border-radius: 8px; background: transparent; color: #E7000B">删除</button></sc-if><sc-if value="{{form.isToday}}" hint-placeholder-val="{{ false }}"><button type="button" onClick="{{resetToday}}" style="height: 32px; padding: 0 12px; border: 0; border-radius: 8px; background: transparent; color: #0A0A0A">恢复默认</button></sc-if></div></sc-if>
+          </div>
+
+          <aside aria-label="实时预览" style="position: sticky; top: 0; border-radius: 12px; background: #F5F5F5; padding: 12px; display: flex; flex-direction: column; gap: 8px">
+            <div style="display: flex; align-items: baseline; justify-content: space-between; gap: 8px; padding: 0 4px"><span style="font-weight: 600">实时预览</span><span style="font-size: 12px; color: #737373">{{previewCount}}</span></div>
+            <sc-if value="{{notice}}" hint-placeholder-val="{{ false }}"><div style="padding: 0 4px; display: flex; align-items: center; gap: 8px; font-size: 12px; line-height: 1.5; color: #404040"><span style="flex: 1; min-width: 0">{{notice}}</span><button type="button" onClick="{{noticeBtn}}" style="flex: none; height: 24px; padding: 0 8px; border: 1px solid #E5E5E5; border-radius: 6px; background: #FFFFFF; color: #0A0A0A; font-size: 12px; font-weight: 500">{{noticeAct}}</button></div></sc-if>
+            <div style="border-radius: 10px; background: #FFFFFF; border: 1px solid #E5E5E5; overflow: hidden">
+              <sc-if value="{{empty}}" hint-placeholder-val="{{ false }}"><div style="padding: 24px 16px; display: flex; flex-direction: column; gap: 4px; text-align: center"><span style="font-weight: 500">{{empty.title}}</span><span style="font-size: 12px; color: #737373">{{empty.desc}}</span></div></sc-if>
+              <sc-for list="{{groups}}" as="g" hint-placeholder-count="2">
+                <sc-if value="{{g.name}}" hint-placeholder-val="{{ true }}"><div style="display: flex; justify-content: space-between; gap: 8px; padding: 8px 12px 4px; font-size: 12px; font-weight: 500; color: #737373"><span>{{g.name}}</span><span>{{g.count}}</span></div></sc-if>
+                <sc-for list="{{g.rows}}" as="m" hint-placeholder-count="2">
+                  <div style="display: flex; flex-direction: column; gap: 2px; padding: 8px 12px; border-top: 1px solid #F0F0F0"><span style="display: flex; justify-content: space-between; gap: 8px; font-size: 12px"><span style="font-weight: 500; overflow: hidden; text-overflow: ellipsis; white-space: nowrap">{{m.from}}</span><span style="flex: none; color: #737373">{{m.time}}</span></span><span style="font-size: 12px; color: #404040; overflow: hidden; text-overflow: ellipsis; white-space: nowrap">{{m.subject}}</span></div>
+                </sc-for>
+              </sc-for>
+            </div>
+          </aside>
+          </div>
+        </div>
+      </sc-if>
+
+      <sc-if value="{{noSel}}" hint-placeholder-val="{{ false }}"><div aria-hidden="true" style="flex: 1; display: flex; align-items: center; justify-content: center"><svg width="96" height="96" viewBox="0 0 512 512" fill="currentColor" style="color: #E5E5E5"><path d="M157.503 350.878c7.82-.745 22.447-2.553 28.724-3.511 15.319-2.287 33.829-3.245 50.744-2.5 16.383.692 23.351.213 33.617-2.34 22.5-5.479 38.936-17.819 58.882-44.202 10.639-14.096 15.107-18.989 24.096-26.33 11.383-9.308 28.936-18.457 61.117-31.915 10.212-4.255 33.67-13.776 42.553-17.287 18.563-7.34 31.595-12.925 30.265-13.085-.744-.106-3.51.479-6.117 1.277-2.606.745-7.819 2.287-11.648 3.404a5499 5499 0 0 0-43.351 13.085c-38.351 11.755-48.883 14.841-53.404 15.638-3.989.692-9.628.692-14.415-.053-6.436-.957-14.415-.691-18.617.585-8.032 2.447-12.819 6.33-24.893 20.213-12.287 14.149-21.968 19.681-34.415 19.681-8.511 0-16.117-2.819-24.255-8.936-6.702-5.054-11.543-10.958-22.128-26.968-12.021-18.192-21.489-27.819-36.382-36.862-14.415-8.83-35.798-16.33-63.245-22.181-14.202-3.085-31.489-8.244-41.17-12.34-17.18-7.287-30.16-15.745-43.085-28.032-4.734-4.521-5-4.734-5.744-3.723-1.915 2.5.744 17.925 5 28.67 9.095 23.191 31.223 49.627 58.138 69.521 13.404 9.893 21.01 14.308 58.51 34.202 20.798 11.01 29.521 17.606 33.723 25.532 1.809 3.351 1.915 8.085.266 11.17-1.862 3.563-7.287 8.617-12.553 11.755-12.819 7.553-30.638 14.042-63.723 23.085-7.766 2.128-10.745 3.138-9.84 3.351 2.606.585 35.425-.106 43.35-.904m69.628-86.01c-11.862-11.968-26.649-21.011-43.032-26.277-8.032-2.553-12.34-3.617-30-7.447-19.255-4.149-30-7.712-39.095-12.978-5.798-3.351-12.819-8.99-17.181-13.777-3.245-3.617-8.51-10.744-7.926-10.744.16 0 3.937 2.446 8.405 5.478 17.446 11.809 30.053 16.862 61.063 24.575 22.925 5.744 30.319 8.191 41.17 13.67 11.755 5.904 22.181 15.638 28.883 26.914 1.596 2.766 2.819 5.054 2.713 5.213-.107.107-2.341-1.968-5-4.627"></path></svg></div></sc-if>
+    </main>
+  </div>
+
+  <sc-if value="{{mailMenuOpen}}" hint-placeholder-val="{{ false }}">
+    <div role="menu" aria-label="邮件操作" style="{{mailMenuStyle}}">
+      <div style="width: 228px; box-sizing: border-box; padding: 4px; display: flex; flex-direction: column; background: #FFFFFF; border: 1px solid #E5E5E5; border-radius: 8px; box-shadow: 0 4px 6px -1px rgba(0,0,0,0.1), 0 2px 4px -2px rgba(0,0,0,0.1); font-size: 13px">
+        <a href="Compose.dc.html" role="menuitem" style="height: 32px; display: flex; align-items: center; padding: 0 8px; border-radius: 6px; text-decoration: none">回复</a>
+        <button type="button" role="menuitem" onClick="{{archiveSel}}" style="height: 32px; display: flex; align-items: center; padding: 0 8px; border: 0; border-radius: 6px; background: transparent; color: #0A0A0A; text-align: left">归档</button>
+        <div style="height: 1px; margin: 4px 0; background: #E5E5E5"></div>
+        <sc-if value="{{menu.canExclude}}" hint-placeholder-val="{{ false }}"><button type="button" role="menuitem" onClick="{{excludeSel}}" style="height: 32px; display: flex; align-items: center; padding: 0 8px; border: 0; border-radius: 6px; background: transparent; color: #0A0A0A; text-align: left">移出</button></sc-if>
+        <button type="button" role="menuitem" aria-haspopup="menu" aria-expanded="{{menu.putAria}}" onClick="{{togglePut}}" style="{{menu.putStyle}}">添加到智能邮箱<svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="{{ic.chev}}"></path></svg></button>
+        <button type="button" role="menuitem" onClick="{{newFromMail}}" style="height: 32px; display: flex; align-items: center; padding: 0 8px; border: 0; border-radius: 6px; background: transparent; color: #0A0A0A; text-align: left">存为智能邮箱…</button>
+        <a href="RulesFromMail.dc.html" role="menuitem" style="height: 32px; display: flex; align-items: center; padding: 0 8px; border-radius: 6px; text-decoration: none">为类似邮件创建规则</a>
+      </div>
+      <sc-if value="{{menu.putOpen}}" hint-placeholder-val="{{ false }}">
+        <div style="margin-top: 156px; width: 180px; box-sizing: border-box; padding: 4px; display: flex; flex-direction: column; background: #FFFFFF; border: 1px solid #E5E5E5; border-radius: 8px; box-shadow: 0 4px 6px -1px rgba(0,0,0,0.1), 0 2px 4px -2px rgba(0,0,0,0.1); font-size: 13px">
+          <sc-for list="{{menu.targets}}" as="t" hint-placeholder-count="3"><button type="button" role="menuitem" onClick="{{t.pick}}" style="height: 32px; display: flex; align-items: center; padding: 0 8px; border: 0; border-radius: 6px; background: transparent; color: #0A0A0A; text-align: left">{{t.name}}</button></sc-for>
+        </div>
+      </sc-if>
+    </div>
+  </sc-if>
+
+  <sc-if value="{{boxMenuOpen}}" hint-placeholder-val="{{ false }}">
+    <div role="menu" aria-label="智能邮箱操作" style="position: absolute; left: 340px; top: 40px; z-index: 20; width: 180px; box-sizing: border-box; padding: 4px; display: flex; flex-direction: column; background: #FFFFFF; border: 1px solid #E5E5E5; border-radius: 8px; box-shadow: 0 4px 6px -1px rgba(0,0,0,0.1), 0 2px 4px -2px rgba(0,0,0,0.1); font-size: 13px">
+      <button type="button" role="menuitem" onClick="{{openEdit}}" style="height: 32px; display: flex; align-items: center; padding: 0 8px; border: 0; border-radius: 6px; background: transparent; color: #0A0A0A; text-align: left">编辑…</button>
+      <button type="button" role="menuitem" onClick="{{toggleBoxMenu}}" style="height: 32px; display: flex; align-items: center; padding: 0 8px; border: 0; border-radius: 6px; background: transparent; color: #0A0A0A; text-align: left">全部标记为已读</button>
+      <div style="height: 1px; margin: 4px 0; background: #E5E5E5"></div>
+      <button type="button" role="menuitem" onClick="{{askDelete}}" style="height: 32px; display: flex; align-items: center; padding: 0 8px; border: 0; border-radius: 6px; background: transparent; color: #E7000B; text-align: left">删除…</button>
+    </div>
+  </sc-if>
+
+  <sc-if value="{{toast}}" hint-placeholder-val="{{ false }}">
+    <div role="status" style="position: absolute; left: 50%; top: 52px; transform: translateX(-50%); z-index: 30; display: flex; align-items: center; gap: 12px; height: 40px; box-sizing: border-box; padding: 0 8px 0 14px; border: 1px solid #E5E5E5; border-radius: 16px; background: #FFFFFF; box-shadow: 0 10px 15px -3px rgba(0,0,0,0.1), 0 4px 6px -4px rgba(0,0,0,0.1); white-space: nowrap"><span>{{toast}}</span><button type="button" onClick="{{undo}}" style="height: 28px; padding: 0 10px; border: 0; border-radius: 6px; background: #F5F5F5; color: #0A0A0A; font-size: 12px; font-weight: 500">撤销</button></div>
+  </sc-if>
+
+  <sc-if value="{{deleteOpen}}" hint-placeholder-val="{{ false }}">
+    <div style="position: absolute; inset: 0; z-index: 50; background: rgba(171,171,171,0.6); display: flex; justify-content: center; align-items: flex-start; padding-top: 240px; box-sizing: border-box">
+      <div role="alertdialog" aria-modal="true" aria-label="删除智能邮箱" style="width: 440px; box-sizing: border-box; display: flex; flex-direction: column; border: 1px solid #E5E5E5; border-radius: 16px; background: #FFFFFF; box-shadow: 0 25px 50px -12px rgba(0,0,0,0.25)">
+        <div style="padding: 16px; display: flex; flex-direction: column; gap: 8px"><h2 style="margin: 0; font-size: 16px; font-weight: 600">删除「{{stripTitle}}」？</h2><p style="margin: 0; line-height: 1.6; color: #404040">{{deleteText}}</p></div>
+        <div style="padding: 12px 16px; display: flex; justify-content: space-between; gap: 8px; border-top: 1px solid #E5E5E5"><button type="button" onClick="{{cancelDelete}}" style="height: 32px; padding: 0 12px; border: 1px solid #E5E5E5; border-radius: 8px; background: #FFFFFF; color: #0A0A0A; font-weight: 500">取消</button><button type="button" onClick="{{cancelDelete}}" style="height: 32px; padding: 0 12px; border: 0; border-radius: 8px; background: #E7000B; color: #FFFFFF; font-weight: 600">删除</button></div>
+      </div>
+    </div>
+  </sc-if>
+</div>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"scene":{"editor":"enum","options":["today","reader","back","today-empty","all","flat","menu","new","add-group","new-mail","search","new-search","wrong","edit","today-edit","delete","ai-new","ai-box","ai-off"],"default":"today"},"$preview":{"width":1440,"height":900}}'>
+class Component extends DCLogic {
+  icons() { return {"shield-keyhole": "M12 1L20.2169 2.82598C20.6745 2.92766 21 3.33347 21 3.80217V13.7889C21 15.795 19.9974 17.6684 18.3282 18.7812L12 23L5.6718 18.7812C4.00261 17.6684 3 15.795 3 13.7889V3.80217C3 3.33347 3.32553 2.92766 3.78307 2.82598L12 1ZM12 3.04879L5 4.60434V13.7889C5 15.1263 5.6684 16.3752 6.7812 17.1171L12 20.5963L17.2188 17.1171C18.3316 16.3752 19 15.1263 19 13.7889V4.60434L12 3.04879ZM12 7C13.1046 7 14 7.89543 14 9C14 9.73984 13.5983 10.3858 13.0011 10.7318L13 15H11L10.9999 10.7324C10.4022 10.3866 10 9.74025 10 9C10 7.89543 10.8954 7 12 7Z", "bill": "M20 22H4C3.44772 22 3 21.5523 3 21V3C3 2.44772 3.44772 2 4 2H20C20.5523 2 21 2.44772 21 3V21C21 21.5523 20.5523 22 20 22ZM19 20V4H5V20H19ZM8 9H16V11H8V9ZM8 13H16V15H8V13Z", "truck": "M8.96456 18C8.72194 19.6961 7.26324 21 5.5 21C3.73676 21 2.27806 19.6961 2.03544 18H1V6C1 5.44772 1.44772 5 2 5H16C16.5523 5 17 5.44772 17 6V8H20L23 12.0557V18H20.9646C20.7219 19.6961 19.2632 21 17.5 21C15.7368 21 14.2781 19.6961 14.0354 18H8.96456ZM15 7H3V15.0505C3.63526 14.4022 4.52066 14 5.5 14C6.8962 14 8.10145 14.8175 8.66318 16H14.3368C14.5045 15.647 14.7296 15.3264 15 15.0505V7ZM17 13H21V12.715L18.9917 10H17V13ZM17.5 19C18.1531 19 18.7087 18.5826 18.9146 18C18.9699 17.8436 19 17.6753 19 17.5C19 16.6716 18.3284 16 17.5 16C16.6716 16 16 16.6716 16 17.5C16 17.6753 16.0301 17.8436 16.0854 18C16.2913 18.5826 16.8469 19 17.5 19ZM7 17.5C7 16.6716 6.32843 16 5.5 16C4.67157 16 4 16.6716 4 17.5C4 17.6753 4.03008 17.8436 4.08535 18C4.29127 18.5826 4.84689 19 5.5 19C6.15311 19 6.70873 18.5826 6.91465 18C6.96992 17.8436 7 17.6753 7 17.5Z", "plane": "M14 8.94737L22 14V16L14 13.4737V18.8333L17 20.5V22L12.5 21L8 22V20.5L11 18.8333V13.4737L3 16V14L11 8.94737V3.5C11 2.67157 11.6716 2 12.5 2C13.3284 2 14 2.67157 14 3.5V8.94737Z", "calendar-event": "M9 1V3H15V1H17V3H21C21.5523 3 22 3.44772 22 4V20C22 20.5523 21.5523 21 21 21H3C2.44772 21 2 20.5523 2 20V4C2 3.44772 2.44772 3 3 3H7V1H9ZM20 11H4V19H20V11ZM11 13V17H6V13H11ZM7 5H4V9H20V5H17V7H15V5H9V7H7V5Z", "notification-3": "M20 17H22V19H2V17H4V10C4 5.58172 7.58172 2 12 2C16.4183 2 20 5.58172 20 10V17ZM18 17V10C18 6.68629 15.3137 4 12 4C8.68629 4 6 6.68629 6 10V17H18ZM9 21H15V23H9V21Z", "newspaper": "M16 20V4H4V19C4 19.5523 4.44772 20 5 20H16ZM19 22H5C3.34315 22 2 20.6569 2 19V3C2 2.44772 2.44772 2 3 2H17C17.5523 2 18 2.44772 18 3V10H22V19C22 20.6569 20.6569 22 19 22ZM18 12V19C18 19.5523 18.4477 20 19 20C19.5523 20 20 19.5523 20 19V12H18ZM6 6H12V12H6V6ZM8 8V10H10V8H8ZM6 13H14V15H6V13ZM6 16H14V18H6V16Z", "shopping-bag-3": "M6.50488 2H17.5049C17.8196 2 18.116 2.14819 18.3049 2.4L21.0049 6V21C21.0049 21.5523 20.5572 22 20.0049 22H4.00488C3.4526 22 3.00488 21.5523 3.00488 21V6L5.70488 2.4C5.89374 2.14819 6.19013 2 6.50488 2ZM19.0049 8H5.00488V20H19.0049V8ZM18.5049 6L17.0049 4H7.00488L5.50488 6H18.5049ZM9.00488 10V12C9.00488 13.6569 10.348 15 12.0049 15C13.6617 15 15.0049 13.6569 15.0049 12V10H17.0049V12C17.0049 14.7614 14.7663 17 12.0049 17C9.24346 17 7.00488 14.7614 7.00488 12V10H9.00488Z", "folder-3": "M12.4142 5H21C21.5523 5 22 5.44772 22 6V20C22 20.5523 21.5523 21 21 21H3C2.44772 21 2 20.5523 2 20V4C2 3.44772 2.44772 3 3 3H10.4142L12.4142 5ZM4 7V19H20V7H4Z", "money-dollar-circle": "M12.0049 22.0027C6.48204 22.0027 2.00488 17.5256 2.00488 12.0027C2.00488 6.4799 6.48204 2.00275 12.0049 2.00275C17.5277 2.00275 22.0049 6.4799 22.0049 12.0027C22.0049 17.5256 17.5277 22.0027 12.0049 22.0027ZM12.0049 20.0027C16.4232 20.0027 20.0049 16.421 20.0049 12.0027C20.0049 7.58447 16.4232 4.00275 12.0049 4.00275C7.5866 4.00275 4.00488 7.58447 4.00488 12.0027C4.00488 16.421 7.5866 20.0027 12.0049 20.0027ZM8.50488 14.0027H14.0049C14.281 14.0027 14.5049 13.7789 14.5049 13.5027C14.5049 13.2266 14.281 13.0027 14.0049 13.0027H10.0049C8.62417 13.0027 7.50488 11.8835 7.50488 10.5027C7.50488 9.12203 8.62417 8.00275 10.0049 8.00275H11.0049V6.00275H13.0049V8.00275H15.5049V10.0027H10.0049C9.72874 10.0027 9.50488 10.2266 9.50488 10.5027C9.50488 10.7789 9.72874 11.0027 10.0049 11.0027H14.0049C15.3856 11.0027 16.5049 12.122 16.5049 13.5027C16.5049 14.8835 15.3856 16.0027 14.0049 16.0027H13.0049V18.0027H11.0049V16.0027H8.50488V14.0027Z", "book-2": "M21 18H6C5.44772 18 5 18.4477 5 19C5 19.5523 5.44772 20 6 20H21V22H6C4.34315 22 3 20.6569 3 19V4C3 2.89543 3.89543 2 5 2H21V18ZM5 16.05C5.16156 16.0172 5.32877 16 5.5 16H19V4H5V16.05ZM16 9H8V7H16V9Z", "graduation-cap": "M4 11.3333L0 9L12 2L24 9V17.5H22V10.1667L20 11.3333V18.0113L19.7774 18.2864C17.9457 20.5499 15.1418 22 12 22C8.85817 22 6.05429 20.5499 4.22263 18.2864L4 18.0113V11.3333ZM6 12.5V17.2917C7.46721 18.954 9.61112 20 12 20C14.3889 20 16.5328 18.954 18 17.2917V12.5L12 16L6 12.5ZM3.96927 9L12 13.6846L20.0307 9L12 4.31541L3.96927 9Z", "pencil": "M15.7279 9.57627L14.3137 8.16206L5 17.4758V18.89H6.41421L15.7279 9.57627ZM17.1421 8.16206L18.5563 6.74785L17.1421 5.33363L15.7279 6.74785L17.1421 8.16206ZM7.24264 20.89H3V16.6473L16.435 3.21231C16.8256 2.82179 17.4587 2.82179 17.8492 3.21231L20.6777 6.04074C21.0682 6.43126 21.0682 7.06443 20.6777 7.45495L7.24264 20.89Z", "quill-pen": "M6.93912 14.0328C6.7072 14.6563 6.51032 15.2331 6.33421 15.8155C7.29345 15.1189 8.43544 14.6767 9.75193 14.5121C12.2652 14.198 14.4976 12.5385 15.6279 10.4537L14.1721 8.99888L15.5848 7.58417C15.9185 7.25004 16.2521 6.91614 16.5858 6.58248C17.0151 6.15312 17.5 5.35849 18.0129 4.2149C12.4197 5.08182 8.99484 8.50647 6.93912 14.0328ZM17 8.99739L18 9.99669C17 12.9967 14 15.9967 10 16.4967C7.33146 16.8303 5.66421 18.6636 4.99824 21.9967H3C4 15.9967 6 1.99669 21 1.99669C20.0009 4.99402 19.0018 6.99313 18.0027 7.99402C17.6662 8.33049 17.3331 8.66382 17 8.99739Z", "braces": "M4 18V14.3C4 13.4716 3.32843 12.8 2.5 12.8H2V11.2H2.5C3.32843 11.2 4 10.5284 4 9.7V6C4 4.34315 5.34315 3 7 3H8V5H7C6.44772 5 6 5.44772 6 6V10.1C6 10.9858 5.42408 11.7372 4.62623 12C5.42408 12.2628 6 13.0142 6 13.9V18C6 18.5523 6.44772 19 7 19H8V21H7C5.34315 21 4 19.6569 4 18ZM20 14.3V18C20 19.6569 18.6569 21 17 21H16V19H17C17.5523 19 18 18.5523 18 18V13.9C18 13.0142 18.5759 12.2628 19.3738 12C18.5759 11.7372 18 10.9858 18 10.1V6C18 5.44772 17.5523 5 17 5H16V3H17C18.6569 3 20 4.34315 20 6V9.7C20 10.5284 20.6716 11.2 21.5 11.2H22V12.8H21.5C20.6716 12.8 20 13.4716 20 14.3Z", "terminal-box": "M3 3H21C21.5523 3 22 3.44772 22 4V20C22 20.5523 21.5523 21 21 21H3C2.44772 21 2 20.5523 2 20V4C2 3.44772 2.44772 3 3 3ZM4 5V19H20V5H4ZM12 15H18V17H12V15ZM8.66685 12L5.83842 9.17157L7.25264 7.75736L11.4953 12L7.25264 16.2426L5.83842 14.8284L8.66685 12Z", "music-2": "M20 3V17C20 19.2091 18.2091 21 16 21C13.7909 21 12 19.2091 12 17C12 14.7909 13.7909 13 16 13C16.7286 13 17.4117 13.1948 18 13.5351V5H9V17C9 19.2091 7.20914 21 5 21C2.79086 21 1 19.2091 1 17C1 14.7909 2.79086 13 5 13C5.72857 13 6.41165 13.1948 7 13.5351V3H20ZM5 19C6.10457 19 7 18.1046 7 17C7 15.8954 6.10457 15 5 15C3.89543 15 3 15.8954 3 17C3 18.1046 3.89543 19 5 19ZM16 19C17.1046 19 18 18.1046 18 17C18 15.8954 17.1046 15 16 15C14.8954 15 14 15.8954 14 17C14 18.1046 14.8954 19 16 19Z", "movie-2": "M12 20H20V22H12C6.47715 22 2 17.5228 2 12C2 6.47715 6.47715 2 12 2C17.5228 2 22 6.47715 22 12C22 14.2512 21.2561 16.3287 20.0007 18H17.2916C18.9525 16.5341 20 14.3894 20 12C20 7.58172 16.4183 4 12 4C7.58172 4 4 7.58172 4 12C4 16.4183 7.58172 20 12 20ZM12 10C10.8954 10 10 9.10457 10 8C10 6.89543 10.8954 6 12 6C13.1046 6 14 6.89543 14 8C14 9.10457 13.1046 10 12 10ZM8 14C6.89543 14 6 13.1046 6 12C6 10.8954 6.89543 10 8 10C9.10457 10 10 10.8954 10 12C10 13.1046 9.10457 14 8 14ZM16 14C14.8954 14 14 13.1046 14 12C14 10.8954 14.8954 10 16 10C17.1046 10 18 10.8954 18 12C18 13.1046 17.1046 14 16 14ZM12 18C10.8954 18 10 17.1046 10 16C10 14.8954 10.8954 14 12 14C13.1046 14 14 14.8954 14 16C14 17.1046 13.1046 18 12 18Z", "tools": "M5.32943 3.27158C6.56252 2.8332 7.9923 3.10749 8.97927 4.09446C10.1002 5.21537 10.3019 6.90741 9.5843 8.23385L20.293 18.9437L18.8788 20.3579L8.16982 9.64875C6.84325 10.3669 5.15069 10.1654 4.02952 9.04421C3.04227 8.05696 2.7681 6.62665 3.20701 5.39332L5.44373 7.63C6.02952 8.21578 6.97927 8.21578 7.56505 7.63C8.15084 7.04421 8.15084 6.09446 7.56505 5.50868L5.32943 3.27158ZM15.6968 5.15512L18.8788 3.38736L20.293 4.80157L18.5252 7.98355L16.7574 8.3371L14.6361 10.4584L13.2219 9.04421L15.3432 6.92289L15.6968 5.15512ZM8.97927 13.2868L10.3935 14.7011L5.09018 20.0044C4.69966 20.3949 4.06649 20.3949 3.67597 20.0044C3.31334 19.6417 3.28744 19.0699 3.59826 18.6774L3.67597 18.5902L8.97927 13.2868Z", "palette": "M12 2C17.5222 2 22 5.97778 22 10.8889C22 13.9556 19.5111 16.4444 16.4444 16.4444H14.4778C13.5556 16.4444 12.8111 17.1889 12.8111 18.1111C12.8111 18.5333 12.9778 18.9222 13.2333 19.2111C13.5 19.5111 13.6667 19.9 13.6667 20.3333C13.6667 21.2556 12.9 22 12 22C6.47778 22 2 17.5222 2 12C2 6.47778 6.47778 2 12 2ZM10.8111 18.1111C10.8111 16.0843 12.451 14.4444 14.4778 14.4444H16.4444C18.4065 14.4444 20 12.851 20 10.8889C20 7.1392 16.4677 4 12 4C7.58235 4 4 7.58235 4 12C4 16.19 7.2226 19.6285 11.324 19.9718C10.9948 19.4168 10.8111 18.7761 10.8111 18.1111ZM7.5 12C6.67157 12 6 11.3284 6 10.5C6 9.67157 6.67157 9 7.5 9C8.32843 9 9 9.67157 9 10.5C9 11.3284 8.32843 12 7.5 12ZM16.5 12C15.6716 12 15 11.3284 15 10.5C15 9.67157 15.6716 9 16.5 9C17.3284 9 18 9.67157 18 10.5C18 11.3284 17.3284 12 16.5 12ZM12 9C11.1716 9 10.5 8.32843 10.5 7.5C10.5 6.67157 11.1716 6 12 6C12.8284 6 13.5 6.67157 13.5 7.5C13.5 8.32843 12.8284 9 12 9Z", "stethoscope": "M8 3V5H6V9C6 11.2091 7.79086 13 10 13C12.2091 13 14 11.2091 14 9V5H12V3H15C15.5523 3 16 3.44772 16 4V9C16 11.9727 13.8381 14.4405 11.0008 14.9169L11 16.5C11 18.433 12.567 20 14.5 20C15.9973 20 17.275 19.0598 17.7749 17.7375C16.7283 17.27 16 16.2201 16 15C16 13.3431 17.3431 12 19 12C20.6569 12 22 13.3431 22 15C22 16.3711 21.0802 17.5274 19.824 17.8854C19.2102 20.252 17.0592 22 14.5 22C11.4624 22 9 19.5376 9 16.5L9.00019 14.9171C6.16238 14.4411 4 11.9731 4 9V4C4 3.44772 4.44772 3 5 3H8ZM19 14C18.4477 14 18 14.4477 18 15C18 15.5523 18.4477 16 19 16C19.5523 16 20 15.5523 20 15C20 14.4477 19.5523 14 19 14Z", "first-aid-kit": "M16 1C16.5523 1 17 1.44772 17 2V5H21C21.5523 5 22 5.44772 22 6V20C22 20.5523 21.5523 21 21 21H3C2.44772 21 2 20.5523 2 20V6C2 5.44772 2.44772 5 3 5H7V2C7 1.44772 7.44772 1 8 1H16ZM20 7H4V19H20V7ZM13 9V12H16V14H12.999L13 17H11L10.999 14H8V12H11V9H13ZM15 3H9V5H15V3Z", "seedling": "M5.99805 3C9.48787 3 12.3812 5.55379 12.9112 8.8945C14.0863 7.72389 15.7076 7 17.498 7H21.998V9.5C21.998 13.0899 19.0879 16 15.498 16H12.998V21H10.998V13H8.99805C5.13205 13 1.99805 9.86599 1.99805 6V3H5.99805ZM19.998 9H17.498C15.0128 9 12.998 11.0147 12.998 13.5V14H15.498C17.9833 14 19.998 11.9853 19.998 9.5V9ZM5.99805 5H3.99805V6C3.99805 8.76142 6.23662 11 8.99805 11H10.998V10C10.998 7.23858 8.75947 5 5.99805 5Z", "briefcase-4": "M7 5V2C7 1.44772 7.44772 1 8 1H16C16.5523 1 17 1.44772 17 2V5H21C21.5523 5 22 5.44772 22 6V20C22 20.5523 21.5523 21 21 21H3C2.44772 21 2 20.5523 2 20V6C2 5.44772 2.44772 5 3 5H7ZM9 13H4V19H20V13H15V16H9V13ZM20 7H4V11H9V9H15V11H20V7ZM11 11V14H13V11H11ZM9 3V5H15V3H9Z", "bar-chart-box": "M3 3H21C21.5523 3 22 3.44772 22 4V20C22 20.5523 21.5523 21 21 21H3C2.44772 21 2 20.5523 2 20V4C2 3.44772 2.44772 3 3 3ZM4 5V19H20V5H4ZM7 13H9V17H7V13ZM11 7H13V17H11V7ZM15 10H17V17H15V10Z", "run": "M9.82986 8.78986L7.99998 9.45588V13H5.99998V8.05H6.015L11.2834 6.13247C11.5274 6.03855 11.7922 5.99162 12.0648 6.0008C13.1762 6.02813 14.1522 6.75668 14.4917 7.82036C14.678 8.40431 14.848 8.79836 15.0015 9.0025C15.9138 10.2155 17.3653 11 19 11V13C16.8253 13 14.8823 12.0083 13.5984 10.4526L12.9008 14.4085L15 16.17V23H13V17.1025L10.7307 15.1984L10.003 19.3253L3.10938 18.1098L3.45667 16.1401L8.38071 17.0084L9.82986 8.78986ZM13.5 5.5C12.3954 5.5 11.5 4.60457 11.5 3.5C11.5 2.39543 12.3954 1.5 13.5 1.5C14.6046 1.5 15.5 2.39543 15.5 3.5C15.5 4.60457 14.6046 5.5 13.5 5.5Z", "sticky-note": "M21 15L15 20.996L4.00221 21C3.4487 21 3 20.5551 3 20.0066V3.9934C3 3.44476 3.44495 3 3.9934 3H20.0066C20.5552 3 21 3.45576 21 4.00247V15ZM19 5H5V19H13V14C13 13.4872 13.386 13.0645 13.8834 13.0067L14 13L19 12.999V5ZM18.171 14.999L15 15V18.169L18.171 14.999Z", "scales-3": "M12.9985 2L12.9979 3.278L17.9985 4.94591L21.631 3.73509L22.2634 5.63246L19.2319 6.643L22.3272 15.1549C21.2353 16.2921 19.6996 17 17.9985 17C16.2975 17 14.7618 16.2921 13.6699 15.1549L16.7639 6.643L12.9979 5.387V19H16.9985V21H6.99854V19H10.9979V5.387L7.23192 6.643L10.3272 15.1549C9.23528 16.2921 7.69957 17 5.99854 17C4.2975 17 2.76179 16.2921 1.66992 15.1549L4.76392 6.643L1.73363 5.63246L2.36608 3.73509L5.99854 4.94591L10.9979 3.278L10.9985 2H12.9985ZM17.9985 9.10267L16.04 14.4892C16.628 14.8201 17.2979 15 17.9985 15C18.6992 15 19.3691 14.8201 19.957 14.4892L17.9985 9.10267ZM5.99854 9.10267L4.04004 14.4892C4.62795 14.8201 5.29792 15 5.99854 15C6.69916 15 7.36912 14.8201 7.95703 14.4892L5.99854 9.10267Z", "earth": "M6.23509 6.45329C4.85101 7.89148 4 9.84636 4 12C4 16.4183 7.58172 20 12 20C13.0808 20 14.1116 19.7857 15.0521 19.3972C15.1671 18.6467 14.9148 17.9266 14.8116 17.6746C14.582 17.115 13.8241 16.1582 12.5589 14.8308C12.2212 14.4758 12.2429 14.2035 12.3636 13.3943L12.3775 13.3029C12.4595 12.7486 12.5971 12.4209 14.4622 12.1248C15.4097 11.9746 15.6589 12.3533 16.0043 12.8777C16.0425 12.9358 16.0807 12.9928 16.1198 13.0499C16.4479 13.5297 16.691 13.6394 17.0582 13.8064C17.2227 13.881 17.428 13.9751 17.7031 14.1314C18.3551 14.504 18.3551 14.9247 18.3551 15.8472V15.9518C18.3551 16.3434 18.3168 16.6872 18.2566 16.9859C19.3478 15.6185 20 13.8854 20 12C20 8.70089 18.003 5.8682 15.1519 4.64482C14.5987 5.01813 13.8398 5.54726 13.575 5.91C13.4396 6.09538 13.2482 7.04166 12.6257 7.11976C12.4626 7.14023 12.2438 7.12589 12.012 7.11097C11.3905 7.07058 10.5402 7.01606 10.268 7.75495C10.0952 8.2232 10.0648 9.49445 10.6239 10.1543C10.7134 10.2597 10.7307 10.4547 10.6699 10.6735C10.59 10.9608 10.4286 11.1356 10.3783 11.1717C10.2819 11.1163 10.0896 10.8931 9.95938 10.7412C9.64554 10.3765 9.25405 9.92233 8.74797 9.78176C8.56395 9.73083 8.36166 9.68867 8.16548 9.64736C7.6164 9.53227 6.99443 9.40134 6.84992 9.09302C6.74442 8.8672 6.74488 8.55621 6.74529 8.22764C6.74529 7.8112 6.74529 7.34029 6.54129 6.88256C6.46246 6.70541 6.35689 6.56446 6.23509 6.45329ZM12 22C6.47715 22 2 17.5228 2 12C2 6.47715 6.47715 2 12 2C17.5228 2 22 6.47715 22 12C22 17.5228 17.5228 22 12 22Z", "global": "M12 22C6.47715 22 2 17.5228 2 12C2 6.47715 6.47715 2 12 2C17.5228 2 22 6.47715 22 12C22 17.5228 17.5228 22 12 22ZM9.71002 19.6674C8.74743 17.6259 8.15732 15.3742 8.02731 13H4.06189C4.458 16.1765 6.71639 18.7747 9.71002 19.6674ZM10.0307 13C10.1811 15.4388 10.8778 17.7297 12 19.752C13.1222 17.7297 13.8189 15.4388 13.9693 13H10.0307ZM19.9381 13H15.9727C15.8427 15.3742 15.2526 17.6259 14.29 19.6674C17.2836 18.7747 19.542 16.1765 19.9381 13ZM4.06189 11H8.02731C8.15732 8.62577 8.74743 6.37407 9.71002 4.33256C6.71639 5.22533 4.458 7.8235 4.06189 11ZM10.0307 11H13.9693C13.8189 8.56122 13.1222 6.27025 12 4.24799C10.8778 6.27025 10.1811 8.56122 10.0307 11ZM14.29 4.33256C15.2526 6.37407 15.8427 8.62577 15.9727 11H19.9381C19.542 7.8235 17.2836 5.22533 14.29 4.33256Z", "hammer": "M20 2C20.5523 2 21 2.44772 21 3V8C21 8.55228 20.5523 9 20 9H15V22C15 22.5523 14.5523 23 14 23H10C9.44772 23 9 22.5523 9 22V9H3.5C2.94772 9 2.5 8.55228 2.5 8V5.61803C2.5 5.23926 2.714 4.893 3.05279 4.72361L8.5 2H20ZM15 4H8.97214L4.5 6.23607V7H11V21H13V7H15V4ZM19 4H17V7H19V4Z", "footprint": "M4 18.0001H9.5V19.2501C9.5 20.7688 8.26878 22.0001 6.75 22.0001C5.23122 22.0001 4 20.7688 4 19.2501V18.0001ZM8.05848 14.0001L8.10263 13.8676C8.86974 11.7622 9 11.3714 9 11.0001C9 10.2506 8.79747 9.35748 8.47234 8.72683C8.23039 8.25753 8.06 8.12067 8 8.12067C6.72086 8.12067 5.5 9.48451 5.5 11.0001C5.5 11.9589 5.57517 12.7733 5.72674 13.7584C5.7328 13.7978 5.74709 13.8873 5.76512 14.0001H8.05848ZM8 6.12067C10 6.12067 11 9.00006 11 11.0001C11 12.0001 10.5 13.0001 10 14.5001L9.5 16.0001H4C4 15.0001 3.5 13.5001 3.5 11.0001C3.5 8.50006 5.49783 6.12067 8 6.12067ZM20.054 14.0984L19.8369 15.3294C19.5732 16.8251 18.1468 17.8238 16.6511 17.5601C15.1554 17.2964 14.1567 15.87 14.4205 14.3743L14.6375 13.1433L20.054 14.0984ZM19.0045 9.85164C19.1695 9.35187 19.3054 8.95753 19.3071 8.95187C19.5089 8.29375 19.668 7.64892 19.7923 6.94426C20.0555 5.45173 19.09 3.89662 17.8303 3.6745C17.7712 3.66408 17.5796 3.76927 17.2598 4.18943C16.8301 4.75404 16.4756 5.59839 16.3455 6.33649C16.2872 6.6667 16.2964 6.74073 16.6158 8.59948C16.6596 8.8547 16.697 9.08523 16.7312 9.3163L16.7517 9.45441L19.0045 9.85164ZM18.1776 1.70488C20.6417 2.13938 22.196 4.82954 21.7619 7.29156C21.3278 9.75358 20.5749 11.144 20.4013 12.1288L14.9848 11.1737L14.7529 9.60967C14.5209 8.04564 14.2022 6.974 14.3758 5.9892C14.7231 4.01958 16.2079 1.35759 18.1776 1.70488Z", "flask": "M15.9994 2V4H14.9994V7.24291C14.9994 8.40051 15.2506 9.54432 15.7357 10.5954L20.017 19.8714C20.3641 20.6236 20.0358 21.5148 19.2836 21.8619C19.0865 21.9529 18.8721 22 18.655 22H5.34375C4.51532 22 3.84375 21.3284 3.84375 20.5C3.84375 20.2829 3.89085 20.0685 3.98181 19.8714L8.26306 10.5954C8.74816 9.54432 8.99939 8.40051 8.99939 7.24291V4H7.99939V2H15.9994ZM13.3873 10.0012H10.6115C10.5072 10.3644 10.3823 10.7221 10.2371 11.0724L10.079 11.4335L6.12439 20H17.8734L13.9198 11.4335C13.7054 10.9691 13.5276 10.4902 13.3873 10.0012ZM10.9994 7.24291C10.9994 7.49626 10.9898 7.7491 10.9706 8.00087H13.0282C13.0189 7.87982 13.0119 7.75852 13.0072 7.63704L12.9994 7.24291V4H10.9994V7.24291Z", "brain": "M9 4C10.1046 4 11 4.89543 11 6V12.8271C10.1058 12.1373 8.96602 11.7305 7.6644 11.5136L7.3356 13.4864C8.71622 13.7165 9.59743 14.1528 10.1402 14.7408C10.67 15.3147 11 16.167 11 17.5C11 18.8807 9.88071 20 8.5 20C7.11929 20 6 18.8807 6 17.5V17.1493C6.43007 17.2926 6.87634 17.4099 7.3356 17.4864L7.6644 15.5136C6.92149 15.3898 6.1752 15.1144 5.42909 14.7599C4.58157 14.3573 4 13.499 4 12.5C4 11.6653 4.20761 11.0085 4.55874 10.5257C4.90441 10.0504 5.4419 9.6703 6.24254 9.47014L7 9.28078V6C7 4.89543 7.89543 4 9 4ZM12 3.35418C11.2671 2.52376 10.1947 2 9 2C6.79086 2 5 3.79086 5 6V7.77422C4.14895 8.11644 3.45143 8.64785 2.94126 9.34933C2.29239 10.2415 2 11.3347 2 12.5C2 14.0652 2.79565 15.4367 4 16.2422V17.5C4 19.9853 6.01472 22 8.5 22C9.91363 22 11.175 21.3482 12 20.3287C12.825 21.3482 14.0864 22 15.5 22C17.9853 22 20 19.9853 20 17.5V16.2422C21.2044 15.4367 22 14.0652 22 12.5C22 11.3347 21.7076 10.2415 21.0587 9.34933C20.5486 8.64785 19.8511 8.11644 19 7.77422V6C19 3.79086 17.2091 2 15 2C13.8053 2 12.7329 2.52376 12 3.35418ZM18 17.1493V17.5C18 18.8807 16.8807 20 15.5 20C14.1193 20 13 18.8807 13 17.5C13 16.167 13.33 15.3147 13.8598 14.7408C14.4026 14.1528 15.2838 13.7165 16.6644 13.4864L16.3356 11.5136C15.034 11.7305 13.8942 12.1373 13 12.8271V6C13 4.89543 13.8954 4 15 4C16.1046 4 17 4.89543 17 6V9.28078L17.7575 9.47014C18.5581 9.6703 19.0956 10.0504 19.4413 10.5257C19.7924 11.0085 20 11.6653 20 12.5C20 13.499 19.4184 14.3573 18.5709 14.7599C17.8248 15.1144 17.0785 15.3898 16.3356 15.5136L16.6644 17.4864C17.1237 17.4099 17.5699 17.2926 18 17.1493Z", "heart-3": "M16.5 3C19.5376 3 22 5.5 22 9C22 16 14.5 20 12 21.5C9.5 20 2 16 2 9C2 5.5 4.5 3 7.5 3C9.35997 3 11 4 12 5C13 4 14.64 3 16.5 3ZM12.9339 18.6038C13.8155 18.0485 14.61 17.4955 15.3549 16.9029C18.3337 14.533 20 11.9435 20 9C20 6.64076 18.463 5 16.5 5C15.4241 5 14.2593 5.56911 13.4142 6.41421L12 7.82843L10.5858 6.41421C9.74068 5.56911 8.5759 5 7.5 5C5.55906 5 4 6.6565 4 9C4 11.9435 5.66627 14.533 8.64514 16.9029C9.39 17.4955 10.1845 18.0485 11.0661 18.6038C11.3646 18.7919 11.6611 18.9729 12 19.1752C12.3389 18.9729 12.6354 18.7919 12.9339 18.6038Z", "plant": "M5.99805 2C8.68733 2 11.0224 3.51653 12.1947 5.74104C13.372 4.08252 15.3086 3 17.498 3H20.998V5.5C20.998 9.08985 18.0879 12 14.498 12H12.998V13H17.998V20C17.998 21.1046 17.1026 22 15.998 22H7.99805C6.89348 22 5.99805 21.1046 5.99805 20V13H10.998V11H8.99805C5.13205 11 1.99805 7.86599 1.99805 4V2H5.99805ZM15.998 15H7.99805V20H15.998V15ZM18.998 5H17.498C15.0128 5 12.998 7.01472 12.998 9.5V10H14.498C16.9833 10 18.998 7.98528 18.998 5.5V5ZM5.99805 4H3.99805C3.99805 6.76142 6.23662 9 8.99805 9H10.998C10.998 6.23858 8.75947 4 5.99805 4Z", "team": "M12 11C14.7614 11 17 13.2386 17 16V22H15V16C15 14.4023 13.7511 13.0963 12.1763 13.0051L12 13C10.4023 13 9.09634 14.2489 9.00509 15.8237L9 16V22H7V16C7 13.2386 9.23858 11 12 11ZM5.5 14C5.77885 14 6.05009 14.0326 6.3101 14.0942C6.14202 14.594 6.03873 15.122 6.00896 15.6693L6 16L6.0007 16.0856C5.88757 16.0456 5.76821 16.0187 5.64446 16.0069L5.5 16C4.7203 16 4.07955 16.5949 4.00687 17.3555L4 17.5V22H2V17.5C2 15.567 3.567 14 5.5 14ZM18.5 14C20.433 14 22 15.567 22 17.5V22H20V17.5C20 16.7203 19.4051 16.0796 18.6445 16.0069L18.5 16C18.3248 16 18.1566 16.03 18.0003 16.0852L18 16C18 15.3343 17.8916 14.694 17.6915 14.0956C17.9499 14.0326 18.2211 14 18.5 14ZM5.5 8C6.88071 8 8 9.11929 8 10.5C8 11.8807 6.88071 13 5.5 13C4.11929 13 3 11.8807 3 10.5C3 9.11929 4.11929 8 5.5 8ZM18.5 8C19.8807 8 21 9.11929 21 10.5C21 11.8807 19.8807 13 18.5 13C17.1193 13 16 11.8807 16 10.5C16 9.11929 17.1193 8 18.5 8ZM5.5 10C5.22386 10 5 10.2239 5 10.5C5 10.7761 5.22386 11 5.5 11C5.77614 11 6 10.7761 6 10.5C6 10.2239 5.77614 10 5.5 10ZM18.5 10C18.2239 10 18 10.2239 18 10.5C18 10.7761 18.2239 11 18.5 11C18.7761 11 19 10.7761 19 10.5C19 10.2239 18.7761 10 18.5 10ZM12 2C14.2091 2 16 3.79086 16 6C16 8.20914 14.2091 10 12 10C9.79086 10 8 8.20914 8 6C8 3.79086 9.79086 2 12 2ZM12 4C10.8954 4 10 4.89543 10 6C10 7.10457 10.8954 8 12 8C13.1046 8 14 7.10457 14 6C14 4.89543 13.1046 4 12 4Z", "home-4": "M19 21H5C4.44772 21 4 20.5523 4 20V11L1 11L11.3273 1.6115C11.7087 1.26475 12.2913 1.26475 12.6727 1.6115L23 11L20 11V20C20 20.5523 19.5523 21 19 21ZM13 19H18V9.15745L12 3.7029L6 9.15745V19H11V13H13V19Z", "key-2": "M10.7577 11.8281L18.6066 3.97919L20.0208 5.3934L18.6066 6.80761L21.0815 9.28249L19.6673 10.6967L17.1924 8.22183L15.7782 9.63604L17.8995 11.7574L16.4853 13.1716L14.364 11.0503L12.1719 13.2423C13.4581 15.1837 13.246 17.8251 11.5355 19.5355C9.58291 21.4882 6.41709 21.4882 4.46447 19.5355C2.51184 17.5829 2.51184 14.4171 4.46447 12.4645C6.17493 10.754 8.81633 10.5419 10.7577 11.8281ZM10.1213 18.1213C11.2929 16.9497 11.2929 15.0503 10.1213 13.8787C8.94975 12.7071 7.05025 12.7071 5.87868 13.8787C4.70711 15.0503 4.70711 16.9497 5.87868 18.1213C7.05025 19.2929 8.94975 19.2929 10.1213 18.1213Z", "chat-3": "M7.29117 20.8242L2 22L3.17581 16.7088C2.42544 15.3056 2 13.7025 2 12C2 6.47715 6.47715 2 12 2C17.5228 2 22 6.47715 22 12C22 17.5228 17.5228 22 12 22C10.2975 22 8.6944 21.5746 7.29117 20.8242ZM7.58075 18.711L8.23428 19.0605C9.38248 19.6745 10.6655 20 12 20C16.4183 20 20 16.4183 20 12C20 7.58172 16.4183 4 12 4C7.58172 4 4 7.58172 4 12C4 13.3345 4.32549 14.6175 4.93949 15.7657L5.28896 16.4192L4.63416 19.3658L7.58075 18.711Z"}; }
+  // 所有智能邮箱都是这一种定义：邮箱条件 + 分组，今日也一样
+  defs() {
+    var cond = function (f, v, n) { return { f: f, op: f === 'reply' || f === 'ai' ? 'is' : 'contains', v: v, n: n || '3' }; };
+    return {
+      today: { name: '今日', icon: 'calendar-event', logic: 'all', conds: [], groups: [{ name: '待回复', logic: 'all', conds: [cond('reply', 'mine')] }, { name: '待跟进', logic: 'all', conds: [cond('reply', 'theirs', '3')] }] },
+      acme: { name: '客户 Acme', icon: 'team', logic: 'all', conds: [cond('from', 'acme.example')], groups: [{ name: '待回复', logic: 'all', conds: [cond('reply', 'mine')] }, { name: '待跟进', logic: 'all', conds: [cond('reply', 'theirs', '1')] }] },
+      bills: { name: '发票', icon: 'bill', logic: 'any', conds: [cond('subject', 'invoice'), cond('subject', '发票')], groups: [] },
+      cases: { name: '客户投诉', icon: 'chat-3', logic: 'all', conds: [cond('ai', '客户投诉，包括要退款的')], groups: [] }
+    };
+  }
+  constructor(props) {
+    super(props);
+    var s = props.scene || 'today', D = this.defs();
+    var clone = function (x) { return JSON.parse(JSON.stringify(x)); };
+    var st = { box: 'today', sel: 'lena', archivedNow: {}, excluded: {}, form: '', source: '', name: '', icon: 'folder-3', iconOpen: false, conds: [], logic: 'all', fgroups: [], saved: {}, custom: {}, ctx: false, put: false, boxCtx: false, del: false, toast: '', search: false, exUndone: {} };
+    var box = function (b, sel) { st.box = b; st.sel = sel; };
+    var edit = function (k) { st.box = k; st.sel = ''; st.form = k === 'today' ? 'today' : 'edit'; st.name = D[k].name; st.icon = D[k].icon; st.conds = clone(D[k].conds); st.logic = D[k].logic; st.fgroups = clone(D[k].groups); };
+    var fresh = function (name, source, conds) { st.form = 'new'; st.sel = ''; st.name = name; st.source = source; st.conds = conds; };
+    if (s === 'reader') st.sel = 'sara';
+    if (s === 'today-empty') { st.sel = ''; st.todayEmpty = true; }
+    if (s === 'all') box('acme', 'anna');
+    if (s === 'flat') box('bills', 'aws');
+    if (s === 'menu') { box('inbox', 'lena'); st.ctx = true; }
+    if (s === 'new') fresh('', '', [{ f: 'from', op: 'contains', v: '', n: '3' }]);
+    if (s === 'new-mail') fresh('Lena Fischer', 'mail', [{ f: 'from', op: 'contains', v: 'lena@partner.example', n: '3' }]);
+    if (s === 'search') { st.box = 'inbox'; st.search = true; st.sel = 'telecom'; }
+    if (s === 'new-search') fresh('发票', 'search', [{ f: 'any', op: 'contains', v: '发票', n: '3' }]);
+    if (s === 'wrong') { box('acme', 'digest'); st.ctx = true; }
+    if (s === 'edit') edit('acme');
+    if (s === 'add-group') { edit('bills'); st.fgroups = [{ name: '待处理', logic: 'all', conds: [{ f: 'folder', op: 'is', v: '收件箱', n: '3' }] }]; }
+    if (s === 'today-edit') edit('today');
+    if (s === 'delete') { box('acme', 'kim'); st.del = true; }
+    if (s === 'ai-new') { fresh('客户投诉', 'ai', [{ f: 'ai', op: 'is', v: '客户投诉，包括要退款的', n: '3' }]); st.ai = true; }
+    if (s === 'ai-box') { box('cases', 'anna'); st.ai = true; }
+    if (s === 'ai-off') { box('cases', 'anna'); st.aiOff = true; st.ai = true; }
+    this.state = st;
+    this.scene = s;
+  }
+  flash(text, fn) { this.undoFn = fn; this.setState({ toast: text, ctx: false, put: false, boxCtx: false }); }
+  renderVals() {
+    var self = this, st = this.state, scene = this.scene;
+    var clone = function (x) { return JSON.parse(JSON.stringify(x)); };
+    var ic = {
+      edit: 'M16.7574 2.99678L14.7574 4.99678H5V18.9968H19V9.23943L21 7.23943V19.9968C21 20.5491 20.5523 20.9968 20 20.9968H4C3.44772 20.9968 3 20.5491 3 19.9968V3.99678C3 3.4445 3.44772 2.99678 4 2.99678H16.7574ZM20.4853 2.09729L21.8995 3.5115L12.7071 12.7039L11.2954 12.7064L11.2929 11.2897L20.4853 2.09729Z',
+      add: 'M11 11V5H13V11H19V13H13V19H11V13H5V11H11Z',
+      chev: 'M13.1717 12.0007L8.22192 7.05093L9.63614 5.63672L16.0001 12.0007L9.63614 18.3646L8.22192 16.9504L13.1717 12.0007Z',
+      back: 'M7.82843 10.9999H20V12.9999H7.82843L13.1924 18.3638L11.7782 19.778L4 11.9999L11.7782 4.22168L13.1924 5.63589L7.82843 10.9999Z',
+      check: 'M12 22C6.47715 22 2 17.5228 2 12C2 6.47715 6.47715 2 12 2C17.5228 2 22 6.47715 22 12C22 17.5228 17.5228 22 12 22ZM12 20C16.4183 20 20 16.4183 20 12C20 7.58172 16.4183 4 12 4C7.58172 4 4 7.58172 4 12C4 16.4183 7.58172 20 12 20ZM11.0026 16L6.75999 11.7574L8.17421 10.3431L11.0026 13.1716L16.6595 7.51472L18.0737 8.92893L11.0026 16Z',
+      tick: 'M9.9997 15.1709L19.1921 5.97852L20.6063 7.39273L9.9997 17.9993L3.63574 11.6354L5.04996 10.2212L9.9997 15.1709Z',
+      time: 'M12 22C6.47715 22 2 17.5228 2 12C2 6.47715 6.47715 2 12 2C17.5228 2 22 6.47715 22 12C22 17.5228 17.5228 22 12 22ZM12 20C16.4183 20 20 16.4183 20 12C20 7.58172 16.4183 4 12 4C7.58172 4 4 7.58172 4 12C4 16.4183 7.58172 20 12 20ZM13 12H17V14H11V7H13V12Z',
+      reply: 'M11 20L1 12L11 4V9C16.5228 9 21 13.4772 21 19C21 19.2727 20.9891 19.5428 20.9677 19.81C19.5055 17.0364 16.6381 15.119 13.313 15.0053L13 15H10.9999L11 20ZM8.99986 13H10.9999L13.0341 13.0003L13.3814 13.0065C14.6657 13.0504 15.9053 13.3165 17.0568 13.7734C15.5898 12.0749 13.4204 11 11 11H9V8.16125L4.20156 12L8.99992 15.8387L8.99986 13Z',
+      replyAll: 'M14 4.5V9C19.5228 9 24 13.4772 24 19C24 19.2727 23.9891 19.5428 23.9677 19.81C22.5055 17.0364 19.6381 15.119 16.313 15.0053L16 15H13.9999L14 19.5L6 12L14 4.5ZM8 4.5V7.237L2.92 12L7.999 16.761L8 19.5L0 12L8 4.5ZM12 9.11646L8.92423 12L11.9999 14.8834L11.9999 13L16.0341 13.0003L16.3814 13.0065C17.6657 13.0504 18.9053 13.3165 20.0568 13.7734C18.5898 12.0749 16.4204 11 14 11H12V9.11646Z',
+      star: 'M12.0006 18.26L4.94715 22.2082L6.52248 14.2799L0.587891 8.7918L8.61493 7.84006L12.0006 0.5L15.3862 7.84006L23.4132 8.7918L17.4787 14.2799L19.054 22.2082L12.0006 18.26ZM12.0006 15.968L16.2473 18.3451L15.2988 13.5717L18.8719 10.2674L14.039 9.69434L12.0006 5.27502L9.96214 9.69434L5.12921 10.2674L8.70231 13.5717L7.75383 18.3451L12.0006 15.968Z',
+      archive: 'M3 10H2V4.00293C2 3.44903 2.45531 3 2.9918 3H21.0082C21.556 3 22 3.43788 22 4.00293V10H21V20.0015C21 20.553 20.5551 21 20.0066 21H3.9934C3.44476 21 3 20.5525 3 20.0015V10ZM19 10H5V19H19V10ZM4 5V8H20V5H4ZM9 12H15V14H9V12Z',
+      spam: 'M15.936 2.50098L21.501 8.06595V15.936L15.936 21.501H8.06595L2.50098 15.936V8.06595L8.06595 2.50098H15.936ZM15.1076 4.50098H8.89437L4.50098 8.89437V15.1076L8.89437 19.501H15.1076L19.501 15.1076V8.89437L15.1076 4.50098ZM11.0002 15.0002H13.0002V17.0002H11.0002V15.0002ZM11.0002 7.00024H13.0002V13.0002H11.0002V7.00024Z',
+      trash: 'M17 6H22V8H20V21C20 21.5523 19.5523 22 19 22H5C4.44772 22 4 21.5523 4 21V8H2V6H7V3C7 2.44772 7.44772 2 8 2H16C16.5523 2 17 2.44772 17 3V6ZM18 8H6V20H18V8ZM9 11H11V17H9V11ZM13 11H15V17H13V11ZM9 4V6H15V4H9Z',
+      close: 'M11.9997 10.5865L16.9495 5.63672L18.3637 7.05093L13.4139 12.0007L18.3637 16.9504L16.9495 18.3646L11.9997 13.4149L7.04996 18.3646L5.63574 16.9504L10.5855 12.0007L5.63574 7.05093L7.04996 5.63672L11.9997 10.5865Z',
+      more: 'M4.5 10.5C3.675 10.5 3 11.175 3 12C3 12.825 3.675 13.5 4.5 13.5C5.325 13.5 6 12.825 6 12C6 11.175 5.325 10.5 4.5 10.5ZM19.5 10.5C18.675 10.5 18 11.175 18 12C18 12.825 18.675 13.5 19.5 13.5C20.325 13.5 21 12.825 21 12C21 11.175 20.325 10.5 19.5 10.5ZM12 10.5C11.175 10.5 10.5 11.175 10.5 12C10.5 12.825 11.175 13.5 12 13.5C12.825 13.5 13.5 12.825 13.5 12C13.5 11.175 12.825 10.5 12 10.5Z',
+      doc: 'M21 8V20.9932C21 21.5501 20.5552 22 20.0066 22H3.9934C3.44495 22 3 21.556 3 21.0082V2.9918C3 2.45531 3.4487 2 4.00221 2H14.9968L21 8ZM19 9H14V4H5V20H19V9ZM8 7H11V9H8V7ZM8 11H16V13H8V11ZM8 15H16V17H8V15Z',
+      translate: 'M5 15V17C5 18.0544 5.81588 18.9182 6.85074 18.9945L7 19H10V21H7C4.79086 21 3 19.2091 3 17V15H5ZM18 10L22.4 21H20.245L19.044 18H14.954L13.755 21H11.601L16 10H18ZM17 12.8852L15.753 16H18.245L17 12.8852ZM8 2V4H12V11H8V14H6V11H2V4H6V2H8ZM17 3C19.2091 3 21 4.79086 21 7V9H19V7C19 5.89543 18.1046 5 17 5H14V3H17ZM6 6H4V9H6V6ZM10 6H8V9H10V6Z',
+      spark: 'M14 4.4375C15.3462 4.4375 16.4375 3.34619 16.4375 2H17.5625C17.5625 3.34619 18.6538 4.4375 20 4.4375V5.5625C18.6538 5.5625 17.5625 6.65381 17.5625 8H16.4375C16.4375 6.65381 15.3462 5.5625 14 5.5625V4.4375ZM1 11C4.31371 11 7 8.31371 7 5H9C9 8.31371 11.6863 11 15 11V13C11.6863 13 9 15.6863 9 19H7C7 15.6863 4.31371 13 1 13V11ZM4.87601 12C6.18717 12.7276 7.27243 13.8128 8 15.124C8.72757 13.8128 9.81283 12.7276 11.124 12C9.81283 11.2724 8.72757 10.1872 8 8.87601C7.27243 10.1872 6.18717 11.2724 4.87601 12ZM17.25 14C17.25 15.7949 15.7949 17.25 14 17.25V18.75C15.7949 18.75 17.25 20.2051 17.25 22H18.75C18.75 20.2051 20.2051 18.75 22 18.75V17.25C20.2051 17.25 18.75 15.7949 18.75 14H17.25Z',
+      search: 'M18.031 16.6168L22.3137 20.8995L20.8995 22.3137L16.6168 18.031C15.0769 19.263 13.124 20 11 20C6.032 20 2 15.968 2 11C2 6.032 6.032 2 11 2C15.968 2 20 6.032 20 11C20 13.124 19.263 15.0769 18.031 16.6168ZM16.0247 15.8748C17.2475 14.6146 18 12.8956 18 11C18 7.1325 14.8675 4 11 4C7.1325 4 4 7.1325 4 11C4 14.8675 7.1325 18 11 18C12.8956 18 14.6146 17.2475 15.8748 16.0247L16.0247 15.8748Z',
+      inbox: 'M21 3C21.5523 3 22 3.44772 22 4V20C22 20.5523 21.5523 21 21 21H3C2.44772 21 2 20.5523 2 20V4C2 3.44772 2.44772 3 3 3H21ZM7.41604 14H4V19H20V14H16.584C15.8124 15.7659 14.0503 17 12 17C9.94968 17 8.1876 15.7659 7.41604 14ZM20 5H4V12H9C9 13.6569 10.3431 15 12 15C13.6569 15 15 13.6569 15 12H20V5Z',
+      calendar: 'M9 1V3H15V1H17V3H21C21.5523 3 22 3.44772 22 4V20C22 20.5523 21.5523 21 21 21H3C2.44772 21 2 20.5523 2 20V4C2 3.44772 2.44772 3 3 3H7V1H9ZM20 11H4V19H20V11ZM11 13V17H6V13H11ZM7 5H4V9H20V5H17V7H15V5H9V7H7V5Z',
+      bill: 'M20 22H4C3.44772 22 3 21.5523 3 21V3C3 2.44772 3.44772 2 4 2H20C20.5523 2 21 2.44772 21 3V21C21 21.5523 20.5523 22 20 22ZM19 20V4H5V20H19ZM8 9H16V11H8V9ZM8 13H16V15H8V13Z',
+      user: 'M4 22C4 17.5817 7.58172 14 12 14C16.4183 14 20 17.5817 20 22H18C18 18.6863 15.3137 16 12 16C8.68629 16 6 18.6863 6 22H4ZM12 13C8.685 13 6 10.315 6 7C6 3.685 8.685 1 12 1C15.315 1 18 3.685 18 7C18 10.315 15.315 13 12 13ZM12 11C14.21 11 16 9.21 16 7C16 4.79 14.21 3 12 3C9.79 3 8 4.79 8 7C8 9.21 9.79 11 12 11Z',
+      up: 'M13.0001 7.82843V20H11.0001V7.82843L5.63614 13.1924L4.22192 11.7782L12.0001 4L19.7783 11.7782L18.3641 13.1924L13.0001 7.82843Z',
+      down: 'M13.0001 16.1716L18.3641 10.8076L19.7783 12.2218L12.0001 20L4.22192 12.2218L5.63614 10.8076L11.0001 16.1716V4H13.0001V16.1716Z',
+      folder: 'M4 5V19H20V7H11.5858L9.58579 5H4ZM12.4142 5H21C21.5523 5 22 5.44772 22 6V20C22 20.5523 21.5523 21 21 21H3C2.44772 21 2 20.5523 2 20V4C2 3.44772 2.44772 3 3 3H10.4142L12.4142 5Z',
+      info: 'M12 22C6.47715 22 2 17.5228 2 12C2 6.47715 6.47715 2 12 2C17.5228 2 22 6.47715 22 12C22 17.5228 17.5228 22 12 22ZM12 20C16.4183 20 20 16.4183 20 12C20 7.58172 16.4183 4 12 4C7.58172 4 4 7.58172 4 12C4 16.4183 7.58172 20 12 20ZM11 7H13V9H11V7ZM11 11H13V17H11V11Z'
+    };
+    var isBack = scene === 'back';
+    // 样例邮件。state 是系统算的回复状态：turn 我还没回；wait、late 都在等对方，days 是已等天数
+    var C = {
+      lena: { from: 'Lena Fischer', addr: 'lena@partner.example', initial: 'L', time: isBack ? '刚刚' : '10/06', date: isBack ? '今天 09:40' : '10 月 6 日', to: '发给 我', unread: true, state: 'turn', subject: 'Q4 partnership proposal', preview: 'November works best for our team.', reason: isBack ? '有新回复' : '未回复 · 已等 2 天', reasonLong: isBack ? '有新回复，已回到收件箱。' : '直接发给你，尚未回复，已等 2 天。', body: isBack ? ['Thanks! One more thing: could you send over the updated deck by Thursday?', 'Lena'] : ['Hi, could we go through the Q4 partnership proposal this week?', 'November works best for our team. Could you confirm before Friday?', 'Thanks, Lena'] },
+      fin: { from: '财务部', addr: 'finance@company.example', initial: '财', time: '昨天', date: '昨天 18:20', to: '发给 我', unread: true, state: 'turn', subject: '差旅报销还缺一张发票', preview: '10 月的差旅报销还缺酒店发票，请补一下。', reason: '未回复 · 昨天', reasonLong: '直接发给你，尚未回复。', body: ['你好，', '10 月的差旅报销还缺酒店发票，请补一下。', '谢谢！'] },
+      anna: { from: 'Anna Park', addr: 'anna@acme.example', initial: 'A', time: '09:12', date: '今天 09:12', to: '发给 我', unread: false, state: 'turn', aiWhy: 'Wit 判断：要求退款', subject: 'Order #4821 到货破损，要求退款', preview: '两台设备外壳破损，希望退款并补发配件。', reason: '未回复 · 今天', reasonLong: '直接发给你，尚未回复。', body: ['你好，', '这批订单里有两台设备外壳破损，希望先退款 ¥1,280，再补发配件。', '处理完请回访一下现场的同事。', 'Anna'] },
+      sara: { from: 'Sara Lin', addr: 'sara@legal.example', initial: 'S', time: '10/04', date: '10 月 4 日', to: '我发给 Sara Lin', unread: false, days: 4, state: 'late', subject: '合同修订意见', preview: '附件是合同的修订意见。', reason: '对方未回复 · 已等 4 天', reasonLong: '4 天前发出，对方尚未回复。', body: ['Sara 你好，', '附件是合同的修订意见，方便的话这周给我答复。', '谢谢'] },
+      yuki: { from: 'Yuki Tan', addr: 'yuki@vendor.example', initial: 'Y', time: '10/05', date: '10 月 5 日', to: '我发给 Yuki Tan', unread: false, days: 3, state: 'late', subject: '交付时间确认', preview: '想确认一下这批内容的交付时间。', reason: '对方未回复 · 已等 3 天', reasonLong: '3 天前发出，对方尚未回复。', body: ['Yuki 你好，', '想确认一下这批内容的交付时间。', '谢谢'] },
+      tom: { from: 'Tom Reed', addr: 'tom@acme.example', initial: 'T', time: '10/06', date: '10 月 6 日', to: '我发给 Tom Reed', unread: false, days: 2, state: 'wait', subject: '2027 年续约报价', preview: '报价单在附件里，请确认。', reason: '对方未回复 · 已等 2 天', reasonLong: '2 天前发出，对方尚未回复。', body: ['Tom 你好，', '2027 年的续约报价在附件里，请确认。'] },
+      kim: { from: 'Kim Lee', addr: 'kim@acme.example', initial: 'K', time: '10/03', date: '10 月 3 日', to: '发给 我', unread: false, subject: '下周到访安排', preview: '已确认，周三上午到。', body: ['已确认，周三上午到。', '不用接机，谢谢。'] },
+      digest: { from: 'Acme News', addr: 'news@acme.example', initial: 'A', time: '10/01', date: '10 月 1 日', to: '发给 我', unread: false, subject: 'Acme Newsletter: October', preview: 'What is new at Acme this month.', body: ['What is new at Acme this month.'] },
+      zhang: { from: '张律师', addr: 'zhang@lawfirm.example', initial: '张', time: '09/28', date: '9 月 28 日', to: '发给 我', unread: false, subject: 'Acme 合同草案', preview: '第二版草案，请看第 7 条。', manualIn: 'acme', body: ['第二版草案，请看第 7 条。'] },
+      stripe: { from: 'Stripe', addr: 'invoice@stripe.com', initial: 'S', time: '10/07', date: '10 月 7 日', to: '发给 我', unread: false, subject: 'Invoice #1234 from Acme Inc.', preview: 'Your invoice for October is available.', body: ['Your invoice for October is available.'] },
+      aws: { from: 'AWS', addr: 'billing@aws.amazon.com', initial: 'A', time: '10/07', date: '10 月 7 日', to: '发给 我', unread: false, subject: 'Your AWS invoice is available', preview: 'Amount due: $48.20, due October 15.', body: ['Your AWS invoice is available.', 'Amount due: $48.20, due October 15.'] },
+      telecom: { from: '中国电信', addr: 'einvoice@telecom.example', initial: '电', time: '10/05', date: '10 月 5 日', to: '发给 我', unread: false, subject: '10 月电子发票', preview: '您的 10 月电子发票已开具。', body: ['您的 10 月电子发票已开具，请查收附件。'] },
+      apple: { from: 'Apple', addr: 'no_reply@email.apple.com', initial: 'A', time: '10/02', date: '10 月 2 日', to: '发给 我', unread: false, archived: true, subject: 'Your invoice from Apple', preview: 'iCloud+ 200 GB, renews monthly.', body: ['iCloud+ 200 GB, renews monthly.'] },
+      figma: { from: 'Figma', addr: 'billing@figma.com', initial: 'F', time: '09/28', date: '9 月 28 日', to: '发给 我', unread: false, archived: true, subject: 'Invoice for September', preview: 'Paid. No action needed.', body: ['Paid. No action needed.'] },
+      mark: { from: 'Mark Chen', addr: 'mark@partner.example', initial: 'M', time: '08:30', date: '今天 08:30', to: '发给 我', unread: true, subject: 'Pricing section: one question', preview: 'Does the pricing section need another review?', body: ['Does the pricing section need another review before we share it?'] },
+      case2: { from: 'Ben Wu', addr: 'ben@retail.example', initial: 'B', time: '10/02', date: '10 月 2 日', to: '发给 我', unread: false, aiWhy: 'Wit 判断：投诉发错货', subject: '发错颜色了，能换吗', preview: '收到的是黑色，订的是白色。', body: ['收到的是黑色，订的是白色，能换吗？'] },
+      case3: { from: 'Chloe Martin', addr: 'chloe@shop.example', initial: 'C', time: '09/21', date: '9 月 21 日', to: '发给 我', unread: false, aiWhy: 'Wit 判断：催退款', subject: 'Refund still not received', preview: 'It has been two weeks since you confirmed.', body: ['It has been two weeks since you confirmed the refund.'] }
+    };
+    var POOL = ['lena', 'fin', 'anna', 'sara', 'yuki', 'tom', 'kim', 'digest', 'zhang', 'stripe', 'aws', 'telecom', 'apple', 'figma', 'mark', 'case2', 'case3'];
+    var D = this.defs(), PICK = this.icons();
+    var boxKey = st.box, form = st.form, isToday = boxKey === 'today';
+    var formKey = form === 'new' ? '__new' : boxKey;
+    var defOf = function (k) { return form && k === formKey ? { name: st.name, icon: st.icon, logic: st.logic, conds: st.conds, groups: st.fgroups } : st.custom[k] || st.saved[k] || D[k]; };
+    var isOpen = function (id) { return !!C[id].state && !st.archivedNow[id]; };
+
+    // 条件：和预览、列表、读信时的原因用同一份
+    var filled = function (conds) { return conds.filter(function (c) { return (c.v || '').trim(); }); };
+    var hitOne = function (id, c) {
+      var m = C[id], v = (c.v || '').trim().toLowerCase();
+      if (c.f === 'ai') return !!m.aiWhy;
+      if (c.f === 'reply') return v === 'mine' ? isOpen(id) && m.state === 'turn' : isOpen(id) && m.state !== 'turn' && (m.days || 0) >= Number(c.n || 0);
+      if (c.f === 'read') return v === 'unread' ? !!m.unread : !m.unread;
+      if (c.f === 'attach') return v === 'no';
+      var hay = c.f === 'from' ? (m.from + ' ' + m.addr).toLowerCase() : c.f === 'to' ? '我' : c.f === 'any' ? (m.from + ' ' + m.addr + ' ' + m.subject + ' ' + m.body.join(' ')).toLowerCase() : c.f === 'subject' ? m.subject.toLowerCase() : c.f === 'body' ? m.body.join(' ').toLowerCase() : c.f === 'folder' ? (m.archived || st.archivedNow[id] ? '归档' : '收件箱') : '';
+      var hit = c.op === 'is' ? hay === v : hay.indexOf(v) >= 0;
+      return c.op === 'not' ? !hit : hit;
+    };
+    var hitAll = function (id, conds, logic) { var cs = filled(conds); if (!cs.length) return false; return logic === 'any' ? cs.some(function (c) { return hitOne(id, c); }) : cs.every(function (c) { return hitOne(id, c); }); };
+    var condText = function (c) {
+      if (c.f === 'reply') return c.v === 'mine' ? '回复状态为未回复' : '等待回复超过 ' + (c.n || '') + ' 天';
+      if (c.f === 'read') return c.v === 'unread' ? '阅读状态为未读' : '阅读状态为已读';
+      if (c.f === 'attach') return c.v === 'no' ? '没有附件' : '有附件';
+      var name = { from: '发件人', to: '收件人', subject: '主题', body: '正文', any: '任意内容', label: '标签', folder: '文件夹' }[c.f];
+      return name + (c.op === 'not' ? '不包含 ' : c.op === 'is' ? '是 ' : '包含 ') + c.v;
+    };
+
+    // 所有列表都是这一种行：系统判断要回或要催时写现状，否则是预览
+    var lineOf = function (id, plain, waiting) {
+      var m = C[id];
+      if (plain) return { text: m.preview };
+      if (isOpen(id) && (m.state === 'turn' || waiting)) return { text: m.reason, icon: m.state === 'turn' ? ic.reply : ic.time, color: isBack && id === 'lena' ? '#1447E6' : '' };
+      if (m.manualIn) return { text: '手动添加', icon: ic.add };
+      return { text: m.preview };
+    };
+    var mailRow = function (id, plain, waiting) {
+      var m = C[id], on = st.sel === id, w = m.unread ? '600' : '400', line = lineOf(id, plain, waiting);
+      return {
+        from: m.from, time: m.time, subject: m.subject, unread: !!m.unread, pressed: on ? 'true' : 'false',
+        line: line.text, lineIcon: line.icon || '',
+        pick: function () { self.setState({ sel: id, ctx: false, put: false, boxCtx: false }); },
+        menu: function (e) { if (e && e.preventDefault) e.preventDefault(); self.setState({ sel: id, ctx: true, put: false, boxCtx: false }); },
+        rowStyle: 'position: relative; display: flex; flex-direction: column; gap: 2px; width: 100%; text-align: left; padding: 10px 10px 10px 20px; border: 0; border-radius: 8px; background: ' + (on ? '#F5F5F5' : '#FFFFFF') + '; color: #0A0A0A',
+        fromStyle: 'font-weight: ' + w + '; overflow: hidden; text-overflow: ellipsis; white-space: nowrap',
+        subjectStyle: 'font-weight: ' + w + '; overflow: hidden; text-overflow: ellipsis; white-space: nowrap',
+        lineStyle: 'display: flex; align-items: center; gap: 4px; min-width: 0; font-size: 13px; color: ' + (line.color || '#737373')
+      };
+    };
+    var group = function (name, ids, plain, waiting) { return { name: name, count: String(ids.length), rows: ids.map(function (id) { return mailRow(id, plain, waiting); }) }; };
+    var usesWaiting = function (g) { return g.conds.some(function (c) { return c.f === 'reply' && c.v === 'theirs'; }); };
+
+    // 今日和其他智能邮箱走同一个函数：一个会话进第一个符合的分组，写了邮箱条件才有「其他」
+    var placed = function (k) {
+      var def = defOf(k), top = filled(def.conds).length > 0;
+      var ids = POOL.filter(function (id) { return !st.excluded[id + '@' + k] && (top ? hitAll(id, def.conds, def.logic) || C[id].manualIn === k : true); });
+      var groups = def.groups.map(function (g) { return { name: g.name || '未命名', ids: [], src: g }; }), rest = [];
+      ids.forEach(function (id) {
+        var g = groups.filter(function (x) { return hitAll(id, x.src.conds, x.src.logic); })[0];
+        if (g) g.ids.push(id); else if (top) rest.push(id);
+      });
+      return { groups: groups, rest: rest, ids: ids, top: top, def: def };
+    };
+    var listGroups = function (k) {
+      if (k === 'today' && st.todayEmpty) return [];
+      var p = placed(k), out = p.groups.filter(function (g) { return g.ids.length; }).map(function (g) { return group(g.name, g.ids, false, usesWaiting(g.src)); });
+      if (p.rest.length) out.push(group(out.length ? '其他' : '', p.rest));
+      return out;
+    };
+    var unreadIn = function (k) { if (k === 'today' && st.todayEmpty) return 0; var p = placed(k), seen = p.groups.reduce(function (a, g) { return a.concat(g.ids); }, []).concat(p.rest); return seen.filter(function (id) { return C[id].unread; }).length; };
+
+    var groups = [], listTitle = '', hasPlainHead = false, empty = false, notice = '', noticeIcon = ic.info, noticeHref = '', noticeAct = '', noticeBtn = false;
+    var stripTitle = '', stripMeta = '', listLabel = '邮件列表', previewCount = '';
+    var aiMore = function () { notice = '已判断到 9 月 8 日，更早的邮件尚未判断。'; noticeIcon = ic.spark; noticeAct = '继续'; noticeBtn = function () { self.flash('正在判断 8 月的邮件', ''); }; };
+    if (st.search) {
+      stripTitle = '搜索';
+      groups = [group('', ['telecom', 'fin', 'figma', 'apple', 'stripe'], true)];
+    } else if (form) {
+      stripTitle = st.name || '新建智能邮箱';
+      groups = listGroups(formKey);
+      var seen = placed(formKey).ids.length;
+      previewCount = (filled(st.conds).length ? seen : groups.reduce(function (n, g) { return n + g.rows.length; }, 0)) + ' 个会话';
+      if (st.ai && form === 'new') aiMore();
+      if (!groups.length) empty = filled(st.conds).length ? { icon: ic.search, title: '没有符合条件的会话', desc: '请调整条件。', act: false } : { icon: ic.search, title: '暂无预览', desc: '设置条件后显示符合的会话。', act: false };
+    } else if (boxKey === 'inbox') {
+      hasPlainHead = true; listTitle = '今天'; stripTitle = '全部收件箱'; stripMeta = '16 封未读';
+      groups = [group('', ['lena', 'mark', 'fin', 'stripe', 'aws'], true)];
+    } else {
+      stripTitle = defOf(boxKey).name;
+      groups = listGroups(boxKey);
+      var total = groups.reduce(function (acc, g) { return acc + g.rows.length; }, 0);
+      stripMeta = total ? total + ' 个会话' : '';
+      if (boxKey === 'cases' && !st.aiOff) aiMore();
+      if (boxKey === 'cases' && st.aiOff) { notice = 'AI 已关闭。已判断的结果保留，新邮件不再判断。'; noticeIcon = ic.info; noticeAct = '打开'; noticeHref = 'SmartMailAiSettings.dc.html'; }
+      if (!groups.length) empty = isToday ? { icon: ic.calendar, title: '没有待处理的会话', desc: '这里显示待回复和待跟进的会话。', act: false } : { icon: ic.search, title: '没有符合条件的会话', desc: '可以修改条件，或手动添加会话。', act: false };
+    }
+
+    var selId = st.sel;
+    var showForm = !!form;
+    var sel = selId && C[selId] && !form ? C[selId] : null;
+    var selVals = { body: [], subject: '' };
+    var excludeSel = function () { if (selId) self.exclude(selId); };
+    if (sel) {
+      var isOpenState = false;
+      var why = '', whyActText = '', whyAct = false;
+      if (boxKey !== 'inbox' && !st.search && defOf(boxKey)) {
+        var p2 = placed(boxKey), boxName = p2.def.name;
+        if (p2.ids.indexOf(selId) >= 0) {
+          var inG = p2.groups.filter(function (g) { return g.ids.indexOf(selId) >= 0; })[0];
+          isOpenState = isOpen(selId) && (sel.state === 'turn' || (!!inG && usesWaiting(inG.src)));
+          var reasonOf = function (conds) { var c = filled(conds).filter(function (x) { return hitOne(selId, x); })[0]; return !c ? '' : c.f === 'ai' ? sel.aiWhy : condText(c); };
+          if (sel.manualIn === boxKey && !inG && !hitAll(selId, p2.def.conds, p2.def.logic)) { why = boxName + '：手动添加'; whyActText = '撤销'; whyAct = excludeSel; }
+          else if (inG) { why = boxName + ' › ' + inG.name + '：' + reasonOf(inG.src.conds); if (p2.top) { whyActText = '移出'; whyAct = excludeSel; } }
+          else { why = boxName + '：' + reasonOf(p2.def.conds); whyActText = '移出'; whyAct = excludeSel; }
+        }
+      }
+      selVals = Object.assign({}, sel, {
+        hasState: isOpenState,
+        stateIcon: sel.state === 'turn' ? ic.reply : ic.time,
+        stateIconStyle: 'flex: none; color: ' + (isBack && selId === 'lena' ? '#1447E6' : '#737373'),
+        nudge: sel.state === 'late',
+        why: why, whyAct: whyAct, whyActText: whyActText,
+        body: sel.body.map(function (t) { return { t: t }; })
+      });
+    }
+
+    var navStyle = function (on) { return 'display: flex; align-items: center; gap: 8px; height: 32px; flex: none; padding: 0 8px; border: 0; border-radius: 8px; color: #0A0A0A; background: ' + (on ? '#F5F5F5' : 'transparent'); };
+    var firstOf = function (k) { var p = placed(k); return (p.groups.reduce(function (a, g) { return a.concat(g.ids); }, []).concat(p.rest))[0] || ''; };
+    var baseKeys = st.ai ? ['today', 'acme', 'bills', 'cases'] : ['today', 'acme', 'bills'];
+    if (form === 'new' && st.ai) baseKeys = ['today', 'acme', 'bills'];
+    var boxes = baseKeys.concat(Object.keys(st.custom)).map(function (k) {
+      var on = boxKey === k && !st.search && form !== 'new', n = unreadIn(k);
+      return { name: defOf(k).name, icon: PICK[defOf(k).icon] || PICK['folder-3'], count: n ? String(n) : '', current: on ? 'page' : 'false', style: navStyle(on),
+        pick: function () { self.setState({ box: k, sel: firstOf(k), form: '', search: false, ctx: false, boxCtx: false, todayEmpty: false }); },
+        menu: function (e) { if (e && e.preventDefault) e.preventDefault(); self.setState({ box: k, boxCtx: true, ctx: false }); } };
+    });
+    if (form === 'new') boxes.push({ name: st.name || '未命名', icon: PICK[st.icon], count: '', current: 'page', style: navStyle(true), pick: function () {}, menu: function () {} });
+
+    var FIELDS = [['from', '发件人'], ['to', '收件人'], ['subject', '主题'], ['body', '正文'], ['any', '任意内容'], ['attach', '附件'], ['label', '标签'], ['folder', '文件夹']];
+    var STATE_FIELDS = [['reply', '回复状态'], ['read', '阅读状态']];
+    if (st.ai) FIELDS.unshift(['ai', 'AI 判断']);
+    var fieldOpts = function (list) { return list.map(function (f) { return { v: f[0], n: f[1] }; }); };
+    var patch = function (si, f) {
+      if (si < 0) { var cs = clone(st.conds); f(cs); self.setState({ conds: cs }); }
+      else { var gs = clone(st.fgroups); f(gs[si].conds, gs); self.setState({ fgroups: gs }); }
+    };
+    var condRows = function (conds, si) {
+      return conds.map(function (c, i) {
+        var pick = c.f === 'reply' || c.f === 'read' || c.f === 'attach';
+        return { rowStyle: 'display: flex; align-items: center; gap: 8px; min-height: 32px; padding: 8px 16px' + (i > 0 || si >= 0 ? '; border-top: 1px solid #E5E5E5' : ''), f: c.f, op: c.op, v: c.v, n: c.n || '3', hasOp: !pick && c.f !== 'ai', isText: !pick, isPick: pick, hasDays: c.f === 'reply' && c.v === 'theirs',
+          opts: c.f === 'reply' ? [{ v: 'mine', n: '未回复' }, { v: 'theirs', n: '等待回复超过' }] : c.f === 'attach' ? [{ v: 'yes', n: '有' }, { v: 'no', n: '没有' }] : [{ v: 'unread', n: '未读' }, { v: 'read', n: '已读' }],
+          ph: c.f === 'from' ? '地址或域名，如 acme.example' : c.f === 'ai' ? '描述' : '输入内容',
+          setF: function (e) { var v = e.target.value; patch(si, function (cs) { cs[i] = { f: v, op: v === 'reply' || v === 'ai' || v === 'read' || v === 'attach' ? 'is' : 'contains', v: v === 'reply' ? 'mine' : v === 'read' ? 'unread' : v === 'attach' ? 'yes' : '', n: '3' }; }); },
+          setOp: function (e) { var v = e.target.value; patch(si, function (cs) { cs[i].op = v; }); },
+          setV: function (e) { var v = e.target.value; patch(si, function (cs) { cs[i].v = v; }); },
+          setN: function (e) { var v = e.target.value; patch(si, function (cs) { cs[i].n = v; }); },
+          remove: function () { patch(si, function (cs) { cs.splice(i, 1); }); } };
+      });
+    };
+    var logicOpts = function (logic, set) { return [['all', '全部满足'], ['any', '任一满足']].map(function (m) { var on = logic === m[0]; return { label: m[1], on: on ? 'true' : 'false', pick: function () { set(m[0]); }, style: 'height: 26px; padding: 0 10px; border: 0; border-radius: 6px; font-size: 12px; background: ' + (on ? '#FFFFFF; box-shadow: 0 1px 2px rgba(0,0,0,0.06); color: #0A0A0A' : 'transparent; color: #737373') }; }); };
+    var moveStyle = function (off) { return 'width: 28px; height: 28px; padding: 0; border: 0; border-radius: 6px; background: transparent; display: flex; align-items: center; justify-content: center; color: ' + (off ? '#D4D4D4; cursor: not-allowed' : '#737373'); };
+    var sections = !form ? [] : [{ isBox: true, isGroup: false, firstGroup: false, showLogic: true, fieldOpts: fieldOpts(FIELDS), label: '条件', noConds: !st.conds.length, noCondsText: st.fgroups.length ? '未设置条件时，只显示分组内的会话。' : '尚未添加条件。', conds: condRows(st.conds, -1), logicOpts: logicOpts(st.logic, function (l) { self.setState({ logic: l }); }), addCond: function () { patch(-1, function (cs) { cs.push({ f: 'subject', op: 'contains', v: '', n: '3' }); }); } }].concat(st.fgroups.map(function (g, si) {
+      var swap = function (a, b) { patch(si, function (_, gs) { var t = gs[a]; gs[a] = gs[b]; gs[b] = t; }); };
+      return { isBox: false, isGroup: true, firstGroup: si === 0, showLogic: true, fieldOpts: fieldOpts(FIELDS.concat(STATE_FIELDS)), label: '分组 ' + (g.name || ''), name: g.name, noConds: !g.conds.length, noCondsText: '每个分组至少要有一个条件。', conds: condRows(g.conds, si),
+        logicOpts: logicOpts(g.logic, function (l) { patch(si, function (_, gs) { gs[si].logic = l; }); }),
+        setName: function (e) { var v = e.target.value; patch(si, function (_, gs) { gs[si].name = v; }); },
+        addCond: function () { patch(si, function (cs) { cs.push({ f: 'reply', op: 'is', v: 'mine', n: '3' }); }); },
+        first: si === 0, last: si === st.fgroups.length - 1, upStyle: moveStyle(si === 0), downStyle: moveStyle(si === st.fgroups.length - 1),
+        up: function () { if (si > 0) swap(si, si - 1); }, down: function () { if (si < st.fgroups.length - 1) swap(si, si + 1); },
+        remove: function () { patch(si, function (_, gs) { gs.splice(si, 1); }); } };
+    }));
+    var hasTop = filled(st.conds).length > 0, nGroups = st.fgroups.length;
+    var saveProblem = !form ? '' : !(st.name || '').trim() ? '请填写名称' : !hasTop && !nGroups ? '请添加条件或分组' : st.fgroups.some(function (g) { return !(g.name || '').trim(); }) ? '请填写分组名称' : st.fgroups.some(function (g) { return !filled(g.conds).length; }) ? '每个分组至少要有一个条件' : '';
+    var groupHelp = !nGroups ? '未添加分组时，会话平铺显示。' : (hasTop ? '未进入分组的会话显示在「其他」。' : '只显示分组内的会话。') + (nGroups > 1 ? '会话只进入第一个符合条件的分组。' : '') + (st.fgroups.some(function (g) { return g.conds.some(function (c) { return c.f === 'reply'; }); }) ? '回复状态只计算最近 30 天的邮件。' : '');
+    var exList = (boxKey === 'acme' ? [{ k: 'in', kind: '已添加', text: '张律师 · Acme 合同草案' }, { k: 'out', kind: '已移出', text: 'Acme Careers · We are hiring' }] : []).concat(Object.keys(st.excluded).filter(function (k) { return k.split('@')[1] === boxKey; }).map(function (k) { var m = C[k.split('@')[0]]; return { k: k, kind: '已移出', text: m.from + ' · ' + m.subject, real: true }; })).filter(function (x) { return !st.exUndone[x.k]; });
+    var exRows = exList.map(function (x, i) { return { rowStyle: 'display: flex; align-items: center; gap: 12px; min-height: 32px; padding: 8px 16px' + (i ? '; border-top: 1px solid #E5E5E5' : ''), kind: x.kind, text: x.text, undo: function () { if (x.real) { var e = Object.assign({}, st.excluded); delete e[x.k]; self.setState({ excluded: e }); } else { var u = Object.assign({}, st.exUndone); u[x.k] = true; self.setState({ exUndone: u }); } } }; });
+    var formVals = { title: '' };
+    if (form === 'new') formVals = { title: '新建智能邮箱', desc: st.source === 'mail' ? '已填入发件人。' : st.source === 'search' ? '已按搜索内容填入条件。' : st.source === 'ai' ? 'Wit 已根据描述生成条件，可继续修改。' : '符合条件的会话会显示在右侧。', hasName: true, name: st.name, isToday: false, aiOn: !!st.ai, help: st.ai ? '新邮件自动判断。更早的邮件需手动继续，内容会发送给模型服务。' : '包含历史邮件。回复或归档后，符合条件的会话仍会保留。', groupHelp: groupHelp, hasTemplate: !st.source, hasExceptions: false, exceptions: [], noGroups: !nGroups, canDelete: false, hasFoot: false, saveText: '创建' };
+    if (form === 'edit') {
+      formVals = { title: '编辑「' + st.name + '」', desc: '预览随条件实时更新。', hasName: true, name: st.name, isToday: false, aiOn: false, help: '包含历史邮件。回复或归档后，符合条件的会话仍会保留。', groupHelp: groupHelp, hasTemplate: false, hasExceptions: exRows.length > 0, exceptions: exRows, noGroups: !nGroups, canDelete: true, hasFoot: true, saveText: '保存' };
+    }
+    if (form === 'today') formVals = { title: '编辑「今日」', desc: '预置的智能邮箱，名称和条件均可修改。', hasName: true, name: st.name, isToday: true, aiOn: false, help: '回复或归档后，会话将离开今日。', groupHelp: groupHelp, hasTemplate: false, hasExceptions: exRows.length > 0, noGroups: !nGroups, exceptions: exRows, canDelete: true, hasFoot: true, saveText: '保存' };
+
+    var targets = ['today', 'acme', 'bills'].filter(function (k) { return filled(defOf(k).conds).length > 0; }).map(function (k) { return defOf(k).name; }).map(function (n) { return { name: n, pick: function () { self.flash('已添加到「' + n + '」', ''); } }; });
+    var inBox = boxKey !== 'inbox' && !st.search;
+    var BOX_HAS_TOP = inBox && !form && filled(defOf(boxKey).conds).length > 0;
+    var closeForm = function () { self.setState({ form: '', sel: form === 'new' ? 'lena' : firstOf(boxKey), box: form === 'new' ? 'today' : boxKey, ai: scene === 'ai-new' ? false : st.ai }); };
+    return {
+      ic: ic, stripTitle: stripTitle, stripMeta: stripMeta, listLabel: listLabel,
+      showBoxMore: !form && inBox, boxMenuAria: st.boxCtx ? 'true' : 'false',
+      toggleBoxMenu: function () { self.setState({ boxCtx: !st.boxCtx, ctx: false }); },
+      unified: [['全部收件箱', ic.inbox, '16', boxKey === 'inbox' && !st.search], ['已标星', ic.star, '', false]].map(function (u) { return { name: u[0], icon: u[1], count: u[2], current: u[3] ? 'page' : 'false', style: navStyle(u[3]), pick: function () { if (u[0] === '全部收件箱') self.setState({ box: 'inbox', sel: 'lena', form: '', search: false, ctx: false, boxCtx: false }); } }; }),
+      boxes: boxes,
+      openNew: function () { self.setState({ form: 'new', source: '', name: '', icon: 'folder-3', iconOpen: false, conds: [{ f: 'from', op: 'contains', v: '', n: '3' }], logic: 'all', fgroups: [], sel: '', ctx: false, boxCtx: false, search: false }); },
+      openSearch: function () { self.setState({ search: true, box: 'inbox', sel: 'telecom', form: '', ctx: false, boxCtx: false }); },
+      saveSearch: function () { self.setState({ form: 'new', source: 'search', name: '发票', icon: 'bill', iconOpen: false, conds: [{ f: 'any', op: 'contains', v: '发票', n: '3' }], logic: 'all', fgroups: [], sel: '', search: false }); },
+      newFromMail: function () { var m = C[selId] || C.lena; self.setState({ form: 'new', source: 'mail', name: m.from, icon: 'folder-3', iconOpen: false, conds: [{ f: 'from', op: 'contains', v: m.addr, n: '3' }], logic: 'all', fgroups: [], sel: '', ctx: false, search: false }); },
+      isSearch: !!st.search, hasPlainHead: hasPlainHead, listTitle: listTitle,
+      notice: notice, noticeIcon: noticeIcon, noticeHref: noticeHref, noticeAct: noticeAct, noticeBtn: noticeBtn,
+      groups: groups, empty: empty,
+      showList: !form, previewCount: form ? previewCount : '', showReader: !!sel, showForm: showForm, noSel: !sel && !showForm,
+      sel: selVals,
+      archiveSel: function () { if (selId) self.archive(selId); },
+      excludeSel: excludeSel,
+      saveBlocked: !!saveProblem, saveHint: saveProblem,
+      saveStyle: 'height: 32px; padding: 0 12px; border: 0; border-radius: 8px; font-weight: 600; ' + (saveProblem ? 'background: #E5E5E5; color: #A1A1A1; cursor: not-allowed' : 'background: #171717; color: #FFFFFF'),
+      form: formVals, sections: sections,
+      formIcon: PICK[st.icon] || PICK['folder-3'], iconOpen: !!st.iconOpen, iconAria: st.iconOpen ? 'true' : 'false',
+      toggleIcon: function () { self.setState({ iconOpen: !st.iconOpen }); },
+      iconGrid: Object.keys(PICK).map(function (k) { var on = st.icon === k; return { key: k, d: PICK[k], on: on ? 'true' : 'false', pick: function () { self.setState({ icon: k, iconOpen: false }); }, style: 'height: 32px; padding: 0; border: 0; border-radius: 6px; display: flex; align-items: center; justify-content: center; color: #0A0A0A; background: ' + (on ? '#F5F5F5' : 'transparent') }; }),
+      addGroup: function () { var gs = clone(st.fgroups); gs.push({ name: '', logic: 'all', conds: [{ f: 'reply', op: 'is', v: 'mine', n: '3' }] }); self.setState({ fgroups: gs }); },
+      setName: function (e) { self.setState({ name: e.target.value }); },
+      templates: [
+        { name: '客户', iconKey: 'team', logic: 'all', conds: [{ f: 'from', op: 'contains', v: '', n: '3' }], groups: [{ name: '待回复', logic: 'all', conds: [{ f: 'reply', op: 'is', v: 'mine', n: '3' }] }] },
+        { name: '票据', iconKey: 'bill', logic: 'any', conds: [{ f: 'subject', op: 'contains', v: 'invoice', n: '3' }, { f: 'subject', op: 'contains', v: '发票', n: '3' }], groups: [{ name: '待处理', logic: 'all', conds: [{ f: 'folder', op: 'is', v: '收件箱', n: '3' }] }] },
+        { name: '订阅', iconKey: 'newspaper', logic: 'all', conds: [{ f: 'subject', op: 'contains', v: 'newsletter', n: '3' }], groups: [{ name: '未读', logic: 'all', conds: [{ f: 'read', op: 'is', v: 'unread', n: '3' }] }] },
+        { name: '今日', iconKey: 'calendar-event', logic: 'all', conds: clone(D.today.conds), groups: clone(D.today.groups) }
+      ].map(function (t) { return { name: t.name, icon: PICK[t.iconKey], use: function () { self.setState({ form: 'new', source: 'template', name: t.name, icon: t.iconKey, iconOpen: false, conds: clone(t.conds), logic: t.logic, fgroups: clone(t.groups) }); } }; }),
+      resetToday: function () { self.setState({ conds: clone(D.today.conds), logic: 'all', fgroups: clone(D.today.groups) }); },
+      closeForm: closeForm,
+      saveForm: function () {
+        var def = { name: st.name, icon: st.icon, logic: st.logic, conds: clone(st.conds), groups: clone(st.fgroups) };
+        if (form === 'new') { var key = 'box' + Object.keys(st.custom).length, cu = Object.assign({}, st.custom); cu[key] = def; self.setState({ custom: cu, box: key, form: '', sel: '', ai: false }); }
+        else { var sv = Object.assign({}, st.saved); sv[boxKey] = def; self.setState({ saved: sv, form: '', sel: '' }); }
+      },
+      openEdit: function () { var d = defOf(boxKey); self.setState({ form: boxKey === 'today' ? 'today' : 'edit', name: d.name, icon: d.icon, iconOpen: false, conds: clone(d.conds), logic: d.logic, fgroups: clone(d.groups), boxCtx: false, sel: '' }); },
+      askDelete: function () { self.setState({ del: true, boxCtx: false }); }, cancelDelete: function () { self.setState({ del: false }); },
+      deleteOpen: !!st.del,
+      deleteText: boxKey === 'today' ? '不影响邮件和规则。可从模板重新添加。' : '不影响邮件和规则。',
+      mailMenuOpen: !!st.ctx, boxMenuOpen: !!st.boxCtx,
+      mailMenuStyle: 'position: absolute; left: 470px; top: ' + (scene === 'wrong' ? '300px' : '120px') + '; z-index: 20; display: flex; gap: 4px; align-items: flex-start',
+      menu: { canExclude: BOX_HAS_TOP, putOpen: !!st.put, putAria: st.put ? 'true' : 'false', putStyle: 'height: 32px; display: flex; align-items: center; justify-content: space-between; padding: 0 8px; border: 0; border-radius: 6px; color: #0A0A0A; text-align: left; background: ' + (st.put ? '#F5F5F5' : 'transparent'), targets: targets },
+      togglePut: function () { self.setState({ put: !st.put }); },
+      toast: st.toast,
+      undo: function () { var f = self.undoFn; if (typeof f === 'function') f(); else self.setState({ toast: '' }); self.undoFn = ''; }
+    };
+  }
+  archive(id) {
+    var d = Object.assign({}, this.state.archivedNow); d[id] = true;
+    var self = this;
+    this.undoFn = function () { var x = Object.assign({}, self.state.archivedNow); delete x[id]; self.setState({ archivedNow: x, toast: '', sel: id }); };
+    this.setState({ archivedNow: d, toast: '已归档', ctx: false, put: false, sel: this.state.box === 'today' ? this.nextAfter(id) : id });
+  }
+  exclude(id) {
+    var e = Object.assign({}, this.state.excluded), key = id + '@' + this.state.box; e[key] = true;
+    var self = this;
+    this.undoFn = function () { var x = Object.assign({}, self.state.excluded); delete x[key]; self.setState({ excluded: x, toast: '', sel: id }); };
+    this.setState({ excluded: e, toast: '已移出', ctx: false, put: false, sel: '' });
+  }
+  nextAfter(id) { var order = ['lena', 'fin', 'anna', 'sara', 'yuki']; var i = order.indexOf(id); return i >= 0 && order[i + 1] ? order[i + 1] : ''; }
+}
+</script>
+</body>
+</html>

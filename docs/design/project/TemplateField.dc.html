@@ -1,0 +1,105 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<title>命名模板输入框</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600&amp;family=Geist+Mono:wght@500&amp;family=Noto+Sans+SC:wght@400;500;600&amp;display=swap" rel="stylesheet">
+<style>
+body{margin:0}
+.tf-add:hover{background:#F5F5F5;color:#0A0A0A}
+.tf-x:hover{background:#E5E5E5;color:#0A0A0A}
+</style>
+</helmet>
+<div style="display: flex; flex-direction: column; gap: 8px; color: #0A0A0A; font-family: 'Geist', 'Noto Sans SC', 'PingFang SC', sans-serif; font-size: 13px; line-height: 1.5">
+  <div role="group" aria-label="{{label}}" style="{{boxStyle}}">
+    <sc-for list="{{segs}}" as="s" hint-placeholder-count="3">
+      <sc-if value="{{s.isTok}}" hint-placeholder-val="{{ true }}"><span style="display: inline-flex; align-items: center; gap: 2px; height: 24px; padding: 0 2px 0 8px; border: 1px solid #E5E5E5; border-radius: 6px; background: #F5F5F5; font-size: 12px; font-weight: 500">{{s.label}}<button type="button" class="tf-x" aria-label="删除「{{s.label}}」" onClick="{{s.remove}}" style="width: 18px; height: 18px; padding: 0; border: 0; border-radius: 4px; background: transparent; color: #737373; display: flex; align-items: center; justify-content: center"><svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M11.9997 10.5865L16.9495 5.63672L18.3637 7.05093L13.4139 12.0007L18.3637 16.9504L16.9495 18.3646L11.9997 13.4149L7.04996 18.3646L5.63574 16.9504L10.5855 12.0007L5.63574 7.05093L7.04996 5.63672L11.9997 10.5865Z"></path></svg></button></span></sc-if>
+      <sc-if value="{{s.isText}}" hint-placeholder-val="{{ false }}"><span style="white-space: pre; font-family: 'Geist Mono', monospace; font-size: 12px; color: #404040">{{s.text}}</span></sc-if>
+    </sc-for>
+    <input type="text" aria-label="输入文字，回车加入" value="{{draft}}" placeholder="{{ph}}" onInput="{{setDraft}}" onKeyDown="{{keyDown}}" onBlur="{{commit}}" style="flex: 1; min-width: 80px; height: 24px; padding: 0 2px; border: 0; outline: none; background: transparent; font-family: 'Geist Mono', monospace; font-size: 12px; color: #0A0A0A">
+  </div>
+  <div style="display: flex; flex-wrap: wrap; align-items: center; gap: 4px">
+    <span style="font-size: 12px; color: #737373; margin-right: 2px">插入</span>
+    <sc-for list="{{adds}}" as="t" hint-placeholder-count="6"><button type="button" class="tf-add" onClick="{{t.add}}" style="height: 24px; padding: 0 8px; border: 1px dashed #D4D4D4; border-radius: 6px; background: #FFFFFF; color: #404040; font: inherit; font-size: 12px">＋ {{t.label}}</button></sc-for>
+  </div>
+  <sc-if value="{{hasError}}" hint-placeholder-val="{{ false }}"><span role="alert" style="font-size: 12px; color: #E7000B">{{error}}</span></sc-if>
+  <sc-if value="{{noError}}" hint-placeholder-val="{{ true }}"><span style="display: flex; align-items: center; gap: 6px; min-width: 0; font-size: 12px; color: #737373"><span style="flex: none">{{previewLabel}}</span><span style="min-width: 0; font-family: 'Geist Mono', monospace; font-size: 11px; color: #404040; overflow: hidden; text-overflow: ellipsis; white-space: nowrap">{{preview}}</span></span></sc-if>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"value":{"editor":"text","default":"{from}/{date} {subject}"},"tokens":{"editor":"text","default":"date|subject|from|domain|year|month"},"prefix":{"editor":"text","default":"~/Documents/账单/"},"label":{"editor":"text","default":"文件夹命名"},"onChange":{"editor":null},"$preview":{"width":560,"height":160}}'>
+class Component extends DCLogic {
+  // 存储用稳定的英文 id（{date}），界面按语言显示；值都来自示例邮件
+  static TOKENS = {
+    date: ['日期', '2026-11-03'], subject: ['主题', 'Invoice #1234 from Acme Inc.'], from: ['发件人', 'Stripe'],
+    domain: ['发件人域名', 'stripe.com'], year: ['年', '2026'], month: ['月', '11'], account: ['账户', 'you@example.com']
+  };
+  constructor(props) {
+    super(props);
+    this.state = { segs: Component.parse(props.value ?? '{from}/{date} {subject}'), draft: '' };
+  }
+  static parse(v) {
+    var out = [], re = /\{([a-z]+)\}/g, last = 0, m;
+    while ((m = re.exec(v))) {
+      if (m.index > last) out.push({ text: v.slice(last, m.index) });
+      out.push(Component.TOKENS[m[1]] ? { tok: m[1] } : { text: m[0] });
+      last = re.lastIndex;
+    }
+    if (last < v.length) out.push({ text: v.slice(last) });
+    return out;
+  }
+  static format(segs) { return segs.map(function (s) { return s.tok ? '{' + s.tok + '}' : s.text; }).join(''); }
+  // 变量的值来自邮件：不能带出路径分隔或控制字符，首尾的空格和点也去掉
+  static clean(v) { return v.replace(/[\u0000-\u001f\/\\:*?"<>|]/g, '-').replace(/^[\s.]+|[\s.]+$/g, '').slice(0, 80) || '无主题'; }
+  set(segs) {
+    // 相邻文字段合并，删到只剩空字符串的去掉
+    var merged = [];
+    segs.forEach(function (s) {
+      var prev = merged[merged.length - 1];
+      if (s.text != null && prev && prev.text != null) prev.text += s.text; else if (s.tok || s.text) merged.push(Object.assign({}, s));
+    });
+    this.setState({ segs: merged, draft: '' });
+    (this.props.onChange || function () {})(Component.format(merged));
+  }
+  renderVals() {
+    var self = this, st = this.state, T = Component.TOKENS;
+    var ids = (this.props.tokens || 'date|subject|from|domain|year|month').split('|').filter(function (k) { return T[k]; });
+    var segs = st.segs;
+    var path = segs.map(function (s) { return s.tok ? Component.clean(T[s.tok][1]) : s.text; }).join('');
+    var parts = path.split('/');
+    var error = '';
+    if (!segs.some(function (s) { return s.tok; })) error = '至少插入一个变量，否则所有邮件都会进同一个文件夹。';
+    else if (parts.some(function (p) { return p.trim() === '..' || p.trim() === '.'; })) error = '不能用「.」或「..」作为文件夹名。';
+    else if (parts.some(function (p) { return p.trim() === ''; })) error = '「/」两边都要有内容。';
+    var commit = function () { if (st.draft) self.set(segs.concat([{ text: st.draft }])); };
+    return {
+      label: this.props.label || '文件夹命名',
+      boxStyle: 'display: flex; flex-wrap: wrap; align-items: center; gap: 4px; min-height: 36px; box-sizing: border-box; padding: 5px 8px; border: 1px solid ' + (error ? '#E7000B' : '#E5E5E5') + '; border-radius: 8px; background: #FFFFFF; cursor: text',
+      segs: segs.map(function (s, i) {
+        return { isTok: !!s.tok, isText: !s.tok, label: s.tok ? T[s.tok][0] : '', text: s.text || '',
+          remove: function () { self.set(segs.filter(function (_, j) { return j !== i; })); } };
+      }),
+      draft: st.draft, ph: segs.length ? '' : '输入文字，或从下面插入变量',
+      setDraft: function (e) { self.setState({ draft: e.target.value }); },
+      commit: commit,
+      keyDown: function (e) {
+        if (e.key === 'Enter') { e.preventDefault(); commit(); }
+        else if (e.key === 'Backspace' && !st.draft && segs.length) {
+          var last = segs[segs.length - 1];
+          self.set(last.tok || last.text.length <= 1 ? segs.slice(0, -1) : segs.slice(0, -1).concat([{ text: last.text.slice(0, -1) }]));
+        }
+      },
+      adds: ids.map(function (k) { return { label: T[k][0], add: function () { self.set(segs.concat(st.draft ? [{ text: st.draft }, { tok: k }] : [{ tok: k }])); } }; }),
+      hasError: !!error, noError: !error, error: error,
+      previewLabel: '示例', preview: (this.props.prefix || '') + path + '/'
+    };
+  }
+}
+</script>
+</body>
+</html>

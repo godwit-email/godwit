@@ -1,14 +1,8 @@
+import { RiArrowDownSLine } from "@remixicon/react";
 import { type ReactNode, type Ref, useId, useImperativeHandle, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
 import type { Account } from "@/mygo";
 import type { T } from "@/shared/i18n";
 import { AddressInput } from "./AddressInput";
@@ -165,28 +159,24 @@ export function Fields({
       {row(
         "from",
         t("compose.from"),
-        <Select
-          value={from}
-          disabled={frozen}
-          onValueChange={(v) => v !== null && onFrom(v)}
-          items={accounts.map((a) => ({ value: a.id, label: a.email }))}
-        >
-          <SelectTrigger
+        // A native select: the system's own menu in the app's webview.
+        <div className="relative flex min-w-0 items-center">
+          <select
             id={`${id}from`}
             aria-label={t("compose.from.select")}
-            size="sm"
-            className="gap-0 border-0 py-0 pr-0 pl-1 text-md data-[size=sm]:h-5 dark:bg-transparent dark:hover:bg-transparent [&_svg]:size-4 [&_svg]:text-foreground"
+            value={from}
+            disabled={frozen}
+            onChange={(e) => onFrom(Number(e.target.value))}
+            className="h-5 min-w-0 appearance-none truncate rounded-sm bg-transparent pr-5 pl-1 text-md outline-none focus-visible:ring-3 focus-visible:ring-ring/50 disabled:opacity-50"
           >
-            <SelectValue />
-          </SelectTrigger>
-          <SelectContent>
             {accounts.map((a) => (
-              <SelectItem key={a.id} value={a.id}>
+              <option key={a.id} value={a.id}>
                 {a.email}
-              </SelectItem>
+              </option>
             ))}
-          </SelectContent>
-        </Select>,
+          </select>
+          <RiArrowDownSLine className="pointer-events-none absolute right-0 size-4 text-foreground" />
+        </div>,
       )}
     </div>
   );

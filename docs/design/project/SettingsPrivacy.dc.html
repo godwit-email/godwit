@@ -1,0 +1,185 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<title>Godwit 设置 隐私与安全</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600&amp;family=Geist+Mono:wght@500&amp;family=Noto+Sans+SC:wght@400;500;600&amp;display=swap" rel="stylesheet">
+<style>
+body{margin:0;background:#FFFFFF}
+a{color:#171717}a:hover{color:#0A0A0A}
+button{font:inherit;cursor:pointer}
+input,select,textarea{font:inherit}
+</style>
+</helmet>
+<div style="position: relative; width: 1440px; height: 900px; border-radius: 12px; overflow: hidden">
+<img src="/_blob/878f002c10b0d6c92e36b2bcfb479e8e" alt="" aria-label="桌面壁纸（已模糊）" style="position: absolute; left: -120px; top: -120px; width: 1680px; height: 1140px; object-fit: cover">
+<div aria-label="窗口材质" style="position: absolute; inset: 0; backdrop-filter: blur(20px); -webkit-backdrop-filter: blur(20px); background-color: #FAFAFAF2"></div>
+<div style="position: relative; width: 1440px; height: 900px; box-sizing: border-box; display: flex; flex-direction: column; overflow: hidden; font-family: 'Geist', 'Noto Sans SC', 'PingFang SC', sans-serif; font-size: 14px; color: #0A0A0A; background: transparent; border: 1px solid rgba(0, 0, 0, 0.12); border-radius: 12px">
+  <div style="height: 44px; flex: none; display: flex; align-items: center; gap: 4px; padding-left: 88px; position: relative">
+    <span aria-hidden="true" style="position: absolute; left: 20px; top: 16px; display: flex; gap: 8px">
+      <span style="width: 12px; height: 12px; border-radius: 50%; background: #FF5F57; box-shadow: inset 0 0 0 0.5px rgba(0,0,0,0.12)"></span>
+      <span style="width: 12px; height: 12px; border-radius: 50%; background: #FEBC2E; box-shadow: inset 0 0 0 0.5px rgba(0,0,0,0.12)"></span>
+      <span style="width: 12px; height: 12px; border-radius: 50%; background: #28C840; box-shadow: inset 0 0 0 0.5px rgba(0,0,0,0.12)"></span>
+    </span>
+    <button type="button" aria-label="收起侧栏" style="width: 28px; height: 28px; border: 0; border-radius: 6px; background: transparent; color: #737373; display: flex; align-items: center; justify-content: center"><svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M21 3C21.5523 3 22 3.44772 22 4V20C22 20.5523 21.5523 21 21 21H3C2.44772 21 2 20.5523 2 20V4C2 3.44772 2.44772 3 3 3H21ZM7 5H4V19H7V5ZM20 5H9V19H20V5Z"></path></svg></button>
+    <a href="Main.dc.html" aria-label="后退" style="width: 28px; height: 28px; border-radius: 6px; color: #737373; display: flex; align-items: center; justify-content: center"><svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M7.82843 10.9999H20V12.9999H7.82843L13.1924 18.3638L11.7782 19.778L4 11.9999L11.7782 4.22168L13.1924 5.63589L7.82843 10.9999Z"></path></svg></a>
+    <button type="button" aria-label="前进" style="width: 28px; height: 28px; border: 0; border-radius: 6px; background: transparent; color: #A1A1A1; display: flex; align-items: center; justify-content: center"><svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M16.1716 10.9999L10.8076 5.63589L12.2218 4.22168L20 11.9999L12.2218 19.778L10.8076 18.3638L16.1716 12.9999H4V10.9999H16.1716Z"></path></svg></button>
+  </div>
+  <div style="flex: 1; min-height: 0; display: flex; box-sizing: border-box; padding: 0 8px 8px 8px">
+    <div style="flex: 1; min-width: 0; display: flex; gap: 8px">
+    <dc-import name="SettingsSidebar" current="privacy" hint-size="248px,848px"></dc-import>
+    <div style="flex: 1; min-width: 0; display: flex; overflow: auto; background: #FFFFFF; border: 1px solid #E5E5E5; border-radius: 12px; box-shadow: 0 1px 2px 0 rgba(0,0,0,0.05)">
+
+    <main style="flex: 1 1 auto; align-self: flex-start; min-width: 0; max-width: 760px; margin: 0 auto; padding: 32px; display: flex; flex-direction: column; gap: 32px">
+<div style="display: flex; align-items: flex-end; justify-content: space-between; gap: 16px"><div style="display: flex; flex-direction: column; gap: 6px; min-width: 0"><h1 style="margin: 0; font-size: 29px; line-height: 1.25; font-weight: 600">隐私与安全</h1><span style="color: #737373">你的邮件和凭据只留在这台电脑上。</span></div><span style="flex: none; display: flex; align-items: center; gap: 6px; font-size: 12px; color: #737373"><span style="width: 6px; height: 6px; flex: none; border-radius: 50%; background: #00A63E"></span>系统钥匙串可用</span></div>
+<div role="tablist" aria-label="隐私设置" style="display: flex; gap: 4px; border-bottom: 1px solid #E5E5E5">
+<sc-for list="{{tabs}}" as="t" hint-placeholder-count="3"><button type="button" role="tab" aria-selected="{{t.selected}}" onClick="{{t.pick}}" style="{{t.style}}">{{t.label}}</button></sc-for>
+</div>
+
+<sc-if value="{{isMask}}" hint-placeholder-val="{{ true }}">
+<section style="flex: none; display: flex; flex-direction: column; gap: 10px">
+<h2 style="margin: 0; padding: 0 16px; font-size: 14px; font-weight: 600">隐私脱敏</h2>
+<div style="border-radius: 12px; background: #F5F5F5; overflow: hidden"><div style="display: flex; flex-direction: column; margin-top: -1px">
+<div style="padding: 8px 16px; background: linear-gradient(#E5E5E5, #E5E5E5) center top / calc(100% - 32px) 1px no-repeat"><div style="display: flex; align-items: center; justify-content: space-between; gap: 24px; min-height: 32px"><span style="display: flex; flex-direction: column; gap: 2px; min-width: 0"><span style="font-weight: 500">发给云端前脱敏</span><span style="font-size: 12px; color: #737373">密钥、证件号等先换成占位符，再发给模型服务和翻译插件，回答里再换回原值。Apple Intelligence 和系统翻译在本机运行，不脱敏。</span></span><button type="button" role="switch" aria-checked="{{maskOn}}" aria-label="发给云端前脱敏" onClick="{{toggleMask}}" style="{{maskTrack}}"><span style="width: 14px; height: 14px; border-radius: 50%; background: #FFFFFF; box-shadow: 0 1px 2px rgba(0,0,0,0.2)"></span></button></div></div>
+<sc-if value="{{masking}}" hint-placeholder-val="{{ true }}">
+<sc-for list="{{cats}}" as="c" hint-placeholder-count="6">
+<div style="padding: 8px 16px; background: linear-gradient(#E5E5E5, #E5E5E5) center top / calc(100% - 32px) 1px no-repeat"><div style="display: flex; align-items: center; justify-content: space-between; gap: 24px; min-height: 32px">
+<span style="display: flex; flex-direction: column; gap: 2px; min-width: 0"><span style="font-weight: 500">{{c.label}}</span><span style="font-size: 12px; color: #737373">{{c.help}}</span></span>
+<span style="flex: none; display: flex; align-items: center; gap: 12px">
+<sc-if value="{{c.on}}" hint-placeholder-val="{{ true }}"><select aria-label="处理方式" onChange="{{c.pickAction}}" style="flex: none; min-width: 112px; height: 32px; padding: 0 10px; border: 1px solid #E5E5E5; border-radius: 8px; background: #FFFFFF; font: inherit; color: inherit"><option>遮住</option><option>仅警告</option><option>拦截</option></select></sc-if>
+<button type="button" role="switch" aria-checked="{{c.onText}}" aria-label="{{c.label}}" onClick="{{c.toggle}}" style="{{c.track}}"><span style="width: 14px; height: 14px; border-radius: 50%; background: #FFFFFF; box-shadow: 0 1px 2px rgba(0,0,0,0.2)"></span></button>
+</span>
+</div></div>
+</sc-for>
+</sc-if>
+</div></div>
+<span style="padding: 0 16px; font-size: 12px; color: #737373">脱敏不覆盖 godwit mcp、本机 API 和插件自己调用的模型，也不识别正文里第三方的人名和地址。</span>
+</section>
+
+<sc-if value="{{masking}}" hint-placeholder-val="{{ true }}">
+<section style="flex: none; display: flex; flex-direction: column; gap: 10px">
+<h2 style="margin: 0; padding: 0 16px; font-size: 14px; font-weight: 600">自定义</h2>
+<div style="border-radius: 12px; background: #F5F5F5; overflow: hidden"><div style="display: flex; flex-direction: column; margin-top: -1px">
+<dc-import name="SettingsRow" label="自定义词" desc="每行一个，以 TERM 类别脱敏" control="textarea" hint-size="100%,120px"></dc-import>
+<dc-import name="SettingsRow" label="区分大小写" control="switch" on="false" hint-size="100%,48px"></dc-import>
+<dc-import name="SettingsRow" label="整词匹配" desc="不匹配更长单词里的一部分；中文和日文照常匹配" control="switch" on="false" hint-size="100%,48px"></dc-import>
+<dc-import name="SettingsRow" label="自定义正则" desc="每行一条：类别名、空格，再写 RE2 正则，如 ORDER_NO PO-\d+。有分组时只遮第一个分组。最多 32 条" control="textarea" hint-size="100%,120px"></dc-import>
+<dc-import name="SettingsRow" label="白名单" desc="每行一个值，不论大小写都原样发出。最多 200 条" control="textarea" hint-size="100%,120px"></dc-import>
+</div></div>
+<span style="padding: 0 16px; font-size: 12px; color: #737373">点「保存」后生效；预览里可以先看效果。</span>
+</section>
+</sc-if>
+
+<section style="flex: none; display: flex; flex-direction: column; gap: 10px">
+<h2 style="margin: 0; padding: 0 16px; font-size: 14px; font-weight: 600">脱敏记录</h2>
+<div style="border-radius: 12px; background: #F5F5F5; overflow: hidden"><a href="SettingsMaskLog.dc.html" style="display: flex; align-items: center; justify-content: space-between; gap: 24px; min-height: 32px; padding: 8px 16px; text-decoration: none; color: #0A0A0A"><span style="display: flex; flex-direction: column; gap: 2px; min-width: 0"><span style="font-weight: 500">查看脱敏记录</span><span style="font-size: 12px; color: #737373">最近 30 天：2 次请求被拦截，1 个值原样发出</span></span><svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true" style="flex: none; color: #737373"><path d="M13.1717 12.0007L8.22192 7.05093L9.63614 5.63672L16.0001 12.0007L9.63614 18.3646L8.22192 16.9504L13.1717 12.0007Z"></path></svg></a></div>
+<span style="padding: 0 16px; font-size: 12px; color: #737373">发给云端的请求里找到了什么：只记类别、首字符和长度，不记原值，保留 30 天。</span>
+</section>
+</sc-if>
+
+<sc-if value="{{isImages}}" hint-placeholder-val="{{ false }}">
+<section style="flex: none; display: flex; flex-direction: column; gap: 10px">
+<h2 style="margin: 0; padding: 0 16px; font-size: 14px; font-weight: 600">远程图片</h2>
+<div style="border-radius: 12px; background: #F5F5F5; overflow: hidden"><div style="display: flex; flex-direction: column; margin-top: -1px">
+<dc-import name="SettingsRow" label="加载远程图片" desc="垃圾邮件里的图片不会自动加载" control="select" options="自动|仅信任的发件人|每次询问" hint-size="100%,48px"></dc-import>
+<dc-import name="SettingsRow" label="图片缓存" desc="新邮件到达时提前下载，离线也能看已缓存的图片" control="value" value="86 MB" action="清理图片缓存" hint-size="100%,48px"></dc-import>
+</div></div>
+<span style="padding: 0 16px; font-size: 12px; color: #737373">邮件里的图片由 Godwit 代为下载，不带 Cookie 和来源，邮件到达时已提前下载的图片，发件人无法得知你何时读信（下载图片时对方仍能看到本机 IP）</span>
+</section>
+
+<section style="flex: none; display: flex; flex-direction: column; gap: 10px">
+<h2 style="margin: 0; padding: 0 16px; font-size: 14px; font-weight: 600">信任的发件人</h2>
+<div style="border-radius: 12px; background: #F5F5F5; overflow: hidden"><div style="display: flex; flex-direction: column; margin-top: -1px">
+<sc-for list="{{trusted}}" as="t" hint-placeholder-count="2">
+<div style="padding: 8px 16px; background: linear-gradient(#E5E5E5, #E5E5E5) center top / calc(100% - 32px) 1px no-repeat"><div style="display: flex; align-items: center; justify-content: space-between; gap: 24px; min-height: 32px"><span style="min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap">{{t.addr}}</span><button type="button" aria-label="{{t.removeLabel}}" onClick="{{t.remove}}" style="flex: none; height: 32px; padding: 0 12px; border-radius: 8px; border: 1px solid #E5E5E5; background: #FFFFFF; color: #0A0A0A">移除</button></div></div>
+</sc-for>
+<sc-if value="{{noTrusted}}" hint-placeholder-val="{{ false }}"><div style="padding: 8px 16px; min-height: 32px; display: flex; align-items: center; color: #737373">还没有信任的发件人。在邮件的远程图片提示里点「始终信任此发件人」添加</div></sc-if>
+</div></div>
+<span style="padding: 0 16px; font-size: 12px; color: #737373">这些发件人的远程图片会自动加载；垃圾邮件里的除外</span>
+</section>
+</sc-if>
+
+<sc-if value="{{isBlocked}}" hint-placeholder-val="{{ false }}">
+<section style="flex: none; display: flex; flex-direction: column; gap: 10px">
+<h2 style="margin: 0; padding: 0 16px; font-size: 14px; font-weight: 600">已屏蔽的发件人</h2>
+<div style="border-radius: 12px; background: #F5F5F5; overflow: hidden"><div style="display: flex; flex-direction: column; margin-top: -1px">
+<sc-for list="{{blocked}}" as="b" hint-placeholder-count="1">
+<div style="padding: 8px 16px; background: linear-gradient(#E5E5E5, #E5E5E5) center top / calc(100% - 32px) 1px no-repeat"><div style="display: flex; align-items: center; justify-content: space-between; gap: 24px; min-height: 32px"><span style="min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap">{{b.addr}}</span><button type="button" aria-label="{{b.removeLabel}}" onClick="{{b.remove}}" style="flex: none; height: 32px; padding: 0 12px; border-radius: 8px; border: 1px solid #E5E5E5; background: #FFFFFF; color: #0A0A0A">取消屏蔽</button></div></div>
+</sc-for>
+<sc-if value="{{noBlocked}}" hint-placeholder-val="{{ false }}"><div style="padding: 8px 16px; min-height: 32px; display: flex; align-items: center; color: #737373">没有已屏蔽的发件人。</div></sc-if>
+</div></div>
+<span style="padding: 0 16px; font-size: 12px; color: #737373">来自已屏蔽发件人的新邮件会自动移到垃圾邮件。</span>
+</section>
+</sc-if>
+</main>
+
+    </div></div>
+  </div>
+</div>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"tab":{"editor":"enum","options":["mask","images","blocked"],"default":"mask"},"$preview":{"width":1440,"height":900}}'>
+class Component extends DCLogic {
+  constructor(props) {
+    super(props);
+    this.state = {
+      tab: props.tab || 'mask',
+      masking: true,
+      off: { names: true },
+      trusted: ['newsletter@example.com', 'billing@example.org'],
+      blocked: ['promo@spam.example']
+    };
+  }
+  renderVals() {
+    var self = this;
+    var track = function (on) {
+      return 'flex: none; width: 32px; height: 18px; padding: 2px; box-sizing: border-box; border: 0; border-radius: 9999px; display: flex; align-items: center; transition: background 120ms; background: ' + (on ? '#171717' : '#E5E5E5') + '; justify-content: ' + (on ? 'flex-end' : 'flex-start');
+    };
+    var CATS = [
+      ['secrets', '密钥', 'API 密钥、令牌、私钥和密码'],
+      ['ids', '证件与金融号码', '身份证、护照、银行卡和 IBAN，按校验位识别'],
+      ['codes', '验证码与一次性链接', '登录验证码，以及登录、确认邮箱和重置密码的链接'],
+      ['phones', '电话', '中国大陆手机和座机，以及带 + 的国际号码'],
+      ['emails', '邮箱', '只遮 @ 前的用户名，保留域名，标签和分拣要靠它'],
+      ['names', '人名', 'From、To、Cc 里的显示名，以及正文里同样的写法。显示名常常是品牌名，所以默认关闭']
+    ];
+    var off = this.state.off;
+    var drop = function (key, addr) {
+      return function () { var s = {}; s[key] = self.state[key].filter(function (a) { return a !== addr; }); self.setState(s); };
+    };
+    var tab = this.state.tab;
+    return {
+      tabs: [['mask', '脱敏'], ['images', '远程图片'], ['blocked', '屏蔽的发件人']].map(function (t) {
+        var on = tab === t[0];
+        return { label: t[1], selected: on ? 'true' : 'false', pick: function () { self.setState({ tab: t[0] }); },
+          style: 'height: 32px; padding: 0 12px; border: 0; border-bottom: 2px solid ' + (on ? '#171717' : 'transparent') + '; background: transparent; color: ' + (on ? '#0A0A0A; font-weight: 600' : '#737373') };
+      }),
+      isMask: tab === 'mask', isImages: tab === 'images', isBlocked: tab === 'blocked',
+      masking: this.state.masking,
+      maskOn: this.state.masking ? 'true' : 'false',
+      maskTrack: track(this.state.masking),
+      toggleMask: function () { self.setState({ masking: !self.state.masking }); },
+      cats: CATS.map(function (c) {
+        var on = !off[c[0]];
+        return {
+          label: c[1], help: c[2], on: on, onText: on ? 'true' : 'false', track: track(on),
+          pickAction: function () {},
+          toggle: function () { var o = Object.assign({}, self.state.off); o[c[0]] = on; self.setState({ off: o }); }
+        };
+      }),
+      trusted: this.state.trusted.map(function (a) { return { addr: a, removeLabel: '移除 ' + a, remove: drop('trusted', a) }; }),
+      noTrusted: this.state.trusted.length === 0,
+      blocked: this.state.blocked.map(function (a) { return { addr: a, removeLabel: '取消屏蔽 ' + a, remove: drop('blocked', a) }; }),
+      noBlocked: this.state.blocked.length === 0
+    };
+  }
+}
+</script>
+</body>
+</html>

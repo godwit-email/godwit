@@ -912,7 +912,6 @@
   "reader_labels_add": "Label",
   "reader_labels_add_label": "Add label",
   "reader_labels_auto": "By model",
-  "reader_labels_create": "Create “{arg1}”",
   "@reader_labels_create": {
     "placeholders": {
       "arg1": {
@@ -929,7 +928,6 @@
       }
     }
   },
-  "reader_labels_search": "Search or create a label",
   "reader_lang_de": "German",
   "reader_lang_en": "English",
   "reader_lang_es": "Spanish",
@@ -3097,7 +3095,6 @@
   "mail_security_mark_suspicious": "Mark as suspicious",
   "mail_security_mark_warning": "Mark as threat / phishing",
   "mail_security_reset": "Restore automatic scan",
-  "reader_security_edit_title": "Adjust security assessment",
   "reader_security_click_to_edit": "Click to adjust",
   "reader_security_manual_safe_badge": "Marked safe by you",
   "reader_security_manual_warning_badge": "Manually flagged threat",
@@ -3106,7 +3103,6 @@
   "reader_security_manual_warning_desc": "This email was manually flagged as a security threat or phishing attempt.",
   "reader_security_manual_suspicious_desc": "This email was manually flagged as suspicious for review.",
   "reader_security_updated": "Security assessment updated",
-  "reader_message_labels": "Adjust labels…",
   "settings_rules": "Rules",
   "settings_rules_sub": "Sort mail automatically as it arrives, by conditions you set. Rules run on this computer.",
   "settings_rules_new": "New rule",

@@ -805,7 +805,7 @@ func (p *mailPage) listView(c *ui.Context) {
 			}
 			if len(on) == 1 && p.canReply(on[0]) {
 				for _, mode := range []string{"reply", "reply_all", "forward"} {
-					if m.Item(i18n.T("reader." + mode)).Chosen() {
+					if m.Item(i18n.T("reader." + mode)).Icon(menuIcon(mailActionIcons[mode])).Chosen() {
 						p.draft(on[0], mode)
 					}
 				}
@@ -820,7 +820,7 @@ func (p *mailPage) listView(c *ui.Context) {
 				star = "star"
 			}
 			for _, k := range []string{read, star} {
-				if m.Item(i18n.T("mail.action." + k)).Chosen() {
+				if m.Item(i18n.T("mail.action." + k)).Icon(menuIcon(mailActionIcons[k])).Chosen() {
 					act, target = k, on
 				}
 			}
@@ -831,53 +831,34 @@ func (p *mailPage) listView(c *ui.Context) {
 				if k != "delete" && role == k {
 					continue // never show current folder as target
 				}
-				if m.Item(i18n.T("mail.action." + k)).Chosen() {
+				if m.Item(i18n.T("mail.action." + k)).Icon(menuIcon(mailActionIcons[k])).Chosen() {
 					act, target = k, on
 				}
 			}
 			m.Separator()
-			if len(p.a.labels) > 0 {
-				m.Submenu(i18n.T("mail.menu.labels"), func(sm *ui.Menu) {
-					for _, l := range p.a.labels {
-						lid := l.ID
-						has := slices.ContainsFunc(on, func(item mailItem) bool {
-							return slices.ContainsFunc(item.Labels, func(al core.AppliedLabel) bool { return al.LabelID == lid })
-						})
-						if sm.Item(l.Name).Checked(has).Chosen() {
-							p.toggleLabel(on, lid, !has)
-						}
+			labelSubmenu(m, theme.Of(c), p.a.labels, func(id int64) (has, auto bool) {
+				for _, item := range on {
+					if al, ok := appliedLabel(item.Labels, id); ok {
+						has, auto = true, al.Auto && len(on) == 1
 					}
-				})
-			}
-			m.Submenu(i18n.T("mail.menu.security"), func(sm *ui.Menu) {
-				if sm.Item(i18n.T("mail.security.mark_safe")).Chosen() {
-					p.applySecurity(on, "manual_safe")
 				}
-				if sm.Item(i18n.T("mail.security.mark_suspicious")).Chosen() {
-					p.applySecurity(on, "manual_suspicious")
-				}
-				if sm.Item(i18n.T("mail.security.mark_warning")).Chosen() {
-					p.applySecurity(on, "manual_warning")
-				}
-				sm.Separator()
-				if sm.Item(i18n.T("mail.security.reset")).Chosen() {
-					p.applySecurity(on, "")
-				}
-			})
+				return has, auto
+			}, func(id int64, set bool) { p.toggleLabel(on, id, set) })
+			securitySubmenu(m, func(reason string) bool { return len(on) == 1 && on[0].Security.Reason == reason }, func(reason string) { p.applySecurity(on, reason) })
 			if len(on) == 1 { // for mail like this one: a rule, or blocking its sender
 				if role := p.currentFolderRole(); role != "sent" && role != "drafts" {
 					m.Separator()
-					if m.Item(i18n.T("mail.menu.rule")).Chosen() {
+					if m.Item(i18n.T("mail.menu.rule")).Icon(menuIcon("filter")).Chosen() {
 						p.ruleFrom(on[0])
 					}
 					if from := on[0].Msg.From; gomail.AddrKey(from) != "" && !slices.ContainsFunc(p.a.accounts, func(acc core.Account) bool {
 						return gomail.AddrKey(from) == gomail.AddrKey(acc.Email)
 					}) {
 						if slices.Contains(p.a.blocked, gomail.AddrKey(from)) {
-							if m.Item(i18n.T("reader.unblock_sender")).Chosen() {
+							if m.Item(i18n.T("reader.unblock_sender")).Icon(menuIcon("shield")).Chosen() {
 								p.a.setBlocked(from, false, func() { p.a.toast(i18n.T("reader.sender_unblocked")) })
 							}
-						} else if m.Item(i18n.T("reader.block_sender")).Chosen() {
+						} else if m.Item(i18n.T("reader.block_sender")).Icon(menuIcon("spam")).Chosen() {
 							p.a.setBlocked(from, true, func() { p.a.toast(i18n.T("reader.sender_blocked")) })
 						}
 					}
@@ -926,7 +907,7 @@ func (p *mailPage) listView(c *ui.Context) {
 		mods ui.Modifiers
 		key  ui.Key
 		act  string
-	}{{0, ui.KeyE, "archive"}, {ui.Shift, ui.Key3, "delete"}, {0, ui.KeyU, "toggle_read"}, {0, ui.KeyS, "toggle_star"}} {
+	}{{0, ui.KeyE, "archive"}, {ui.Shift, ui.Key3, "delete"}, {0, ui.KeyBackspace, "delete"}, {0, ui.KeyDelete, "delete"}, {0, ui.KeyU, "toggle_read"}, {0, ui.KeyS, "toggle_star"}} {
 		if ls.list.Shortcut(c, k.mods, k.key) {
 			act, target = k.act, p.chosen(rows)
 		}

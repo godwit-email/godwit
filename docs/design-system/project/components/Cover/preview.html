@@ -1,0 +1,36 @@
+<!-- @dsCard height=288 -->
+<!doctype html>
+<html><head><meta charset="utf-8"><style>
+body{margin:0;background:var(--window);font-family:Geist,"PingFang SC",system-ui,sans-serif}
+.wrap{position:relative;width:960px;height:288px;overflow:hidden}
+.name{position:absolute;left:40px;bottom:64px;margin:0;font-size:96px;line-height:.92;font-weight:600;letter-spacing:-0.03em;color:var(--foreground)}
+.tag{position:absolute;left:44px;bottom:36px;margin:0;font-size:14px;color:var(--muted);max-width:440px}
+.panel{fill:var(--background);stroke:var(--border);rx:var(--radius-panel)}
+.side{fill:var(--sidebar);rx:var(--radius-panel)}
+.ink{fill:var(--primary);rx:var(--radius-md)}
+.row{fill:var(--sidebar-selected);rx:var(--radius-md)}
+.tint{fill:var(--hover);rx:var(--radius-md)}
+.dot{fill:var(--unread)}
+.ok{fill:var(--success-bg);stroke:var(--success-border);rx:var(--radius-xl)}
+</style></head><body><div class="wrap">
+<svg width="960" height="288" viewBox="0 0 960 288" aria-hidden="true" style="position:absolute;inset:0">
+<!-- blocks: background panel 440x248 + sidebar slab 128x248 (radius-panel), primary 96x32 (radius-md), success tint 168x40 (radius-xl)
+     arrangement: one tall slab with satellites, the app shell bleeding off the right edge
+     pattern: geometric, modular, dense UI -> rows cut by radius-md at space-8 pitch, unread dots beside them
+     steps: space-2 inset, space-3 padding, space-8 row pitch; radii panel, md, xl, full -->
+<rect class="panel" x="520" y="24" width="460" height="248" stroke-width="1"/>
+<rect class="side" x="520" y="24" width="136" height="248"/>
+<rect class="ink" x="532" y="40" width="96" height="32"/>
+<rect class="row" x="532" y="88" width="112" height="32"/>
+<rect class="tint" x="532" y="128" width="112" height="24"/>
+<rect class="tint" x="532" y="160" width="88" height="24"/>
+<rect class="tint" x="532" y="192" width="100" height="24"/>
+<circle class="dot" cx="680" cy="56" r="4"/><rect class="row" x="692" y="44" width="220" height="24"/>
+<circle class="dot" cx="680" cy="96" r="4"/><rect class="tint" x="692" y="84" width="180" height="24"/>
+<rect class="tint" x="692" y="124" width="240" height="24"/>
+<rect class="tint" x="692" y="164" width="200" height="24"/>
+<rect class="ok" x="736" y="216" width="168" height="40" stroke-width="1"/>
+</svg>
+<h1 class="name">Godwit</h1>
+<p class="tag">An open-source AI email client. Neutral, quiet, and native.</p>
+</div></body></html>

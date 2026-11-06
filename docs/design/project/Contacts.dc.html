@@ -1,0 +1,361 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<title>Godwit 联系人</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600&amp;family=Geist+Mono:wght@500&amp;family=Noto+Sans+SC:wght@400;500;600&amp;display=swap" rel="stylesheet">
+<style>
+body{margin:0;background:#FFFFFF}
+a{color:#0A0A0A}a:hover{color:#404040}
+button{font:inherit;cursor:pointer}
+</style>
+</helmet>
+<div style="position: relative; width: 1440px; height: 900px; border-radius: 12px; overflow: hidden">
+<img src="/_blob/878f002c10b0d6c92e36b2bcfb479e8e" alt="" aria-label="桌面壁纸（已模糊）" style="position: absolute; left: -120px; top: -120px; width: 1680px; height: 1140px; object-fit: cover">
+<div aria-label="窗口材质" style="position: absolute; inset: 0; backdrop-filter: blur(20px); -webkit-backdrop-filter: blur(20px); background-color: #FAFAFAF2"></div>
+<div style="position: relative; width: 1440px; height: 900px; box-sizing: border-box; display: flex; flex-direction: column; overflow: hidden; font-family: 'Geist', 'Noto Sans SC', 'PingFang SC', sans-serif; font-size: 14px; color: #0A0A0A; background: transparent; border: 1px solid rgba(0, 0, 0, 0.12); border-radius: 12px">
+  <div style="height: 44px; flex: none; display: flex; align-items: center; gap: 4px; padding-left: 88px; position: relative">
+    <span aria-hidden="true" style="position: absolute; left: 20px; top: 16px; display: flex; gap: 8px">
+      <span style="width: 12px; height: 12px; border-radius: 50%; background: #FF5F57; box-shadow: inset 0 0 0 0.5px rgba(0,0,0,0.12)"></span>
+      <span style="width: 12px; height: 12px; border-radius: 50%; background: #FEBC2E; box-shadow: inset 0 0 0 0.5px rgba(0,0,0,0.12)"></span>
+      <span style="width: 12px; height: 12px; border-radius: 50%; background: #28C840; box-shadow: inset 0 0 0 0.5px rgba(0,0,0,0.12)"></span>
+    </span>
+    <button type="button" aria-label="收起侧栏" style="width: 28px; height: 28px; border: 0; border-radius: 6px; background: transparent; color: #737373; display: flex; align-items: center; justify-content: center"><svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M21 3C21.5523 3 22 3.44772 22 4V20C22 20.5523 21.5523 21 21 21H3C2.44772 21 2 20.5523 2 20V4C2 3.44772 2.44772 3 3 3H21ZM7 5H4V19H7V5ZM20 5H9V19H20V5Z"></path></svg></button>
+    <a href="Main.dc.html" aria-label="后退" style="width: 28px; height: 28px; border-radius: 6px; color: #737373; display: flex; align-items: center; justify-content: center"><svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M7.82843 10.9999H20V12.9999H7.82843L13.1924 18.3638L11.7782 19.778L4 11.9999L11.7782 4.22168L13.1924 5.63589L7.82843 10.9999Z"></path></svg></a>
+    <button type="button" aria-label="前进" style="width: 28px; height: 28px; border: 0; border-radius: 6px; background: transparent; color: #A3A3A3; display: flex; align-items: center; justify-content: center"><svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M16.1716 10.9999L10.8076 5.63589L12.2218 4.22168L20 11.9999L12.2218 19.778L10.8076 18.3638L16.1716 12.9999H4V10.9999H16.1716Z"></path></svg></button>
+    <span style="position: absolute; left: 264px; top: 0; bottom: 0; display: flex; align-items: center; gap: 8px; padding-left: 16px">
+      <span style="font-weight: 600">{{stripTitle}}</span>
+      <span style="font-size: 12px; color: #737373">{{stripMeta}}</span>
+    </span>
+    <span style="margin-left: auto; margin-right: 16px; display: flex; align-items: center; gap: 6px; font-size: 12px; color: #737373"><span style="width: 6px; height: 6px; border-radius: 50%; background: #00A63E"></span>已同步 · 刚刚</span>
+  </div>
+  <div style="flex: 1; min-height: 0; display: flex; box-sizing: border-box; padding: 0 8px 8px 8px">
+    <div style="flex: 1; min-width: 0; display: flex; gap: 8px">
+
+    <aside aria-label="联系人分类" style="flex: 0 0 248px; box-sizing: border-box; display: flex; flex-direction: column; gap: 2px; padding: 12px; min-width: 0; overflow: hidden">
+      <div style="display: flex; align-items: center; gap: 4px; margin-top: -12px; margin-bottom: 12px"><div role="group" aria-label="应用切换" style="display: flex; gap: 2px; padding: 2px; border-radius: 8px; background: rgba(0, 0, 0, 0.05)"><a href="Main.dc.html" aria-label="邮件" title="邮件" style="width: 28px; height: 28px; display: flex; align-items: center; justify-content: center; border-radius: 6px; text-decoration: none; background: transparent; color: #737373"><svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M3 3H21C21.5523 3 22 3.44772 22 4V20C22 20.5523 21.5523 21 21 21H3C2.44772 21 2 20.5523 2 20V4C2 3.44772 2.44772 3 3 3ZM12.0606 11.6829L5.64722 6.2377L4.35278 7.7623L12.0731 14.3171L19.6544 7.75616L18.3456 6.24384L12.0606 11.6829Z"></path></svg></a><a href="Contacts.dc.html" aria-current="page" style="height: 28px; padding: 0 10px 0 6px; display: flex; align-items: center; gap: 6px; border-radius: 6px; text-decoration: none; font-size: 13px; background: #FFFFFF; color: #0A0A0A; box-shadow: 0 1px 2px rgba(0,0,0,0.06)"><svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M4 2C3.44772 2 3 2.44772 3 3V5H5V7H2V9H5V11H2V13H5V15H2V17H5V19H3V21C3 21.5523 3.44772 22 4 22H20C20.5523 22 21 21.5523 21 21V3C21 2.44772 20.5523 2 20 2H4ZM9 16C9 14.3431 10.3431 13 12 13C13.6569 13 15 14.3431 15 16H9ZM12 12C10.8954 12 10 11.1046 10 10C10 8.89543 10.8954 8 12 8C13.1046 8 14 8.89543 14 10C14 11.1046 13.1046 12 12 12Z"></path></svg>联系人</a><a href="Ask.dc.html" aria-label="Wit" title="Wit" style="width: 28px; height: 28px; display: flex; align-items: center; justify-content: center; border-radius: 6px; text-decoration: none; background: transparent; color: #737373"><svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M14 4.4375C15.3462 4.4375 16.4375 3.34619 16.4375 2H17.5625C17.5625 3.34619 18.6538 4.4375 20 4.4375V5.5625C18.6538 5.5625 17.5625 6.65381 17.5625 8H16.4375C16.4375 6.65381 15.3462 5.5625 14 5.5625V4.4375ZM1 11C4.31371 11 7 8.31371 7 5H9C9 8.31371 11.6863 11 15 11V13C11.6863 13 9 15.6863 9 19H7C7 15.6863 4.31371 13 1 13V11ZM17.25 14C17.25 15.7949 15.7949 17.25 14 17.25V18.75C15.7949 18.75 17.25 20.2051 17.25 22H18.75C18.75 20.2051 20.2051 18.75 22 18.75V17.25C20.2051 17.25 18.75 15.7949 18.75 14H17.25Z"></path></svg></a></div>
+        <button type="button" aria-label="搜索" style="margin-left: auto; width: 28px; height: 28px; border: 0; border-radius: 6px; background: transparent; color: #737373; display: flex; align-items: center; justify-content: center"><svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M18.031 16.6168L22.3137 20.8995L20.8995 22.3137L16.6168 18.031C15.0769 19.263 13.124 20 11 20C6.032 20 2 15.968 2 11C2 6.032 6.032 2 11 2C15.968 2 20 6.032 20 11C20 13.124 19.263 15.0769 18.031 16.6168ZM16.0247 15.8748C17.2475 14.6146 18 12.8956 18 11C18 7.1325 14.8675 4 11 4C7.1325 4 4 7.1325 4 11C4 14.8675 7.1325 18 11 18C12.8956 18 14.6146 17.2475 15.8748 16.0247L16.0247 15.8748Z"></path></svg></button>
+      </div>
+      <nav aria-label="分类" style="display: flex; flex-direction: column; gap: 2px">
+        <sc-for list="{{cats}}" as="c" hint-placeholder-count="4">
+          <a href="#" onClick="{{c.pick}}" aria-current="{{c.current}}" style="{{c.style}}">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true" style="{{c.iconStyle}}"><path d="{{c.icon}}"></path></svg>
+            <span style="flex: 1">{{c.name}}</span>
+            <span style="font-size: 12px; color: #737373">{{c.count}}</span>
+          </a>
+        </sc-for>
+      </nav>
+      <a href="SettingsGeneral.dc.html" style="margin-top: auto; display: flex; align-items: center; gap: 10px; height: 32px; padding: 0 8px; border-radius: 8px; text-decoration: none; color: #0A0A0A"><svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true" style="color: #737373"><path d="M7 3V6H3V8H7V11H9V3H7ZM11 8H21V6H11V8ZM17 13V16H21V18H17V21H15V13H17ZM13 18H3V16H13V18Z"></path></svg>设置</a>
+    </aside>
+
+    <section aria-label="联系人列表" style="background: #FFFFFF; border: 1px solid #E5E5E5; border-radius: 12px; box-shadow: 0 1px 2px 0 rgba(0,0,0,0.05); overflow: hidden; flex: 0 0 340px; display: flex; flex-direction: column; min-width: 0">
+      <div style="padding: 12px 16px 8px">
+        <h1 style="margin: 0; font-size: 13px; font-weight: 500; color: #737373">{{listTitle}}</h1>
+      </div>
+      <label style="display: flex; align-items: center; gap: 8px; height: 32px; margin: 0 12px 8px; padding: 0 10px; border: 1px solid #E5E5E5; border-radius: 8px; background: #FFFFFF">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true" style="flex: none; color: #737373"><path d="M18.031 16.6168L22.3137 20.8995L20.8995 22.3137L16.6168 18.031C15.0769 19.263 13.124 20 11 20C6.032 20 2 15.968 2 11C2 6.032 6.032 2 11 2C15.968 2 20 6.032 20 11C20 13.124 19.263 15.0769 18.031 16.6168ZM16.0247 15.8748C17.2475 14.6146 18 12.8956 18 11C18 7.1325 14.8675 4 11 4C7.1325 4 4 7.1325 4 11C4 14.8675 7.1325 18 11 18C12.8956 18 14.6146 17.2475 15.8748 16.0247L16.0247 15.8748Z"></path></svg>
+        <input type="search" aria-label="筛选联系人" placeholder="按名字或地址筛选" value="{{q}}" onInput="{{onQ}}" style="flex: 1; min-width: 0; height: 30px; padding: 0; border: 0; background: transparent; font: inherit; font-size: 13px; color: #0A0A0A; outline: none">
+      </label>
+      <div style="flex: 1; min-height: 0; overflow-y: auto; display: flex; flex-direction: column; gap: 1px; padding-bottom: 8px">
+        <sc-for list="{{rows}}" as="s" hint-placeholder-count="8">
+          <button type="button" onClick="{{s.pick}}" aria-current="{{s.current}}" style="{{s.rowStyle}}">
+            <sc-if value="{{s.unread}}" hint-placeholder-val="{{ false }}">
+              <span role="img" aria-label="{{s.unreadLabel}}" style="position: absolute; left: 6px; top: 22px; width: 8px; height: 8px; border-radius: 50%; background: #2B7FFF"></span>
+            </sc-if>
+            <span aria-hidden="true" style="{{s.avatarStyle}}">{{s.initial}}</span>
+            <span style="flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 1px">
+              <span style="display: flex; align-items: center; gap: 6px; min-width: 0">
+                <span style="{{s.nameStyle}}">{{s.name}}</span>
+                <sc-if value="{{s.blocked}}" hint-placeholder-val="{{ false }}"><span style="flex: none; height: 18px; display: inline-flex; align-items: center; padding: 0 6px; border-radius: 4px; background: #F5F5F5; color: #404040; font-size: 11px">已屏蔽</span></sc-if>
+                <span style="margin-left: auto; flex: none; font-size: 12px; color: #737373">{{s.time}}</span>
+              </span>
+              <span style="display: flex; align-items: center; gap: 8px; min-width: 0; font-size: 12px; color: #737373">
+                <span style="flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap">{{s.addr}}</span>
+                <span style="flex: none">{{s.countLabel}}</span>
+              </span>
+            </span>
+          </button>
+        </sc-for>
+        <sc-if value="{{noRows}}" hint-placeholder-val="{{ false }}">
+          <p style="margin: 0; padding: 24px 16px; text-align: center; font-size: 13px; color: #737373">{{emptyText}}</p>
+        </sc-if>
+      </div>
+    </section>
+
+    <main aria-label="{{cur.name}}" style="background: #FFFFFF; border: 1px solid #E5E5E5; border-radius: 12px; box-shadow: 0 1px 2px 0 rgba(0,0,0,0.05); overflow-y: auto; flex: 1; min-width: 0">
+      <div style="max-width: 760px; margin: 0 auto; box-sizing: border-box; padding: 36px 40px 32px; display: flex; flex-direction: column; gap: 24px">
+
+        <header style="display: flex; flex-direction: column; align-items: center; gap: 16px; padding-top: 12px; text-align: center">
+          <span aria-hidden="true" style="{{cur.bigAvatarStyle}}">{{cur.initial}}</span>
+          <div style="min-width: 0; max-width: 100%; display: flex; flex-direction: column; align-items: center; gap: 2px">
+            <h2 style="margin: 0; font-size: 20px; font-weight: 600; line-height: 1.3">{{cur.name}}</h2>
+            <span style="font-size: 13px; color: #737373">{{cur.addr}}</span>
+            <sc-if value="{{cur.badged}}" hint-placeholder-val="{{ true }}">
+            <div style="display: flex; justify-content: center; flex-wrap: wrap; gap: 6px; margin-top: 8px">
+              <sc-if value="{{cur.list}}" hint-placeholder-val="{{ true }}"><span style="height: 22px; display: inline-flex; align-items: center; padding: 0 8px; border: 1px solid #E5E5E5; border-radius: 6px; font-size: 12px; color: #404040">订阅 · {{cur.list}}</span></sc-if>
+              <sc-if value="{{cur.blocked}}" hint-placeholder-val="{{ false }}"><span style="height: 22px; display: inline-flex; align-items: center; padding: 0 8px; border-radius: 6px; background: #F5F5F5; font-size: 12px; color: #404040">已屏蔽 · 新邮件直接进垃圾邮件</span></sc-if>
+            </div>
+            </sc-if>
+          </div>
+          <div role="toolbar" aria-label="对这位联系人" style="display: flex; justify-content: center; gap: 8px">
+            <sc-for list="{{cur.actions}}" as="ac" hint-placeholder-count="3">
+              <button type="button" onClick="{{ac.run}}" disabled="{{ac.disabled}}" aria-label="{{ac.title}}" title="{{ac.title}}" style="{{ac.style}}">
+                <span aria-hidden="true" style="{{ac.dotStyle}}"><svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor"><path d="{{ac.icon}}"></path></svg></span>
+                <span style="font-size: 12px; line-height: 1.3">{{ac.label}}</span>
+              </button>
+            </sc-for>
+          </div>
+        </header>
+
+        <dl style="margin: 0; display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); padding: 14px 0; border-top: 1px solid #E5E5E5; border-bottom: 1px solid #E5E5E5">
+          <sc-for list="{{cur.stats}}" as="st" hint-placeholder-count="4">
+            <div style="{{st.cellStyle}}">
+              <dt style="font-size: 12px; color: #737373">{{st.label}}</dt>
+              <dd style="{{st.style}}">{{st.value}}</dd>
+            </div>
+          </sc-for>
+        </dl>
+
+        <section aria-label="往来邮件" style="display: flex; flex-direction: column; gap: 4px">
+          <h3 style="margin: 0; padding: 0 12px 4px; font-size: 13px; font-weight: 500; color: #737373">往来邮件 · {{cur.total}} 封</h3>
+          <sc-for list="{{cur.recent}}" as="m" hint-placeholder-count="5">
+            <a href="Main.dc.html" style="display: flex; align-items: center; gap: 12px; padding: 10px 12px; border-radius: 8px; text-decoration: none; color: #0A0A0A">
+              <span style="flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 1px">
+                <span style="{{m.subjectStyle}}">{{m.subject}}</span>
+                <span style="font-size: 13px; color: #737373; overflow: hidden; text-overflow: ellipsis; white-space: nowrap">{{m.snippet}}</span>
+              </span>
+              <sc-if value="{{m.mark}}" hint-placeholder-val="{{ false }}"><span style="flex: none; font-size: 12px; color: #737373">{{m.mark}}</span></sc-if>
+              <span style="flex: none; height: 20px; display: inline-flex; align-items: center; padding: 0 6px; border: 1px solid #E5E5E5; border-radius: 4px; font-size: 12px; color: #404040">{{m.folder}}</span>
+              <span style="flex: none; width: 44px; text-align: right; font-size: 12px; color: #737373">{{m.time}}</span>
+            </a>
+          </sc-for>
+        </section>
+
+      </div>
+    </main>
+
+    </div>
+  </div>
+</div>
+
+<sc-if value="{{dlg.show}}" hint-placeholder-val="{{ false }}">
+<div style="position: absolute; inset: 0; border-radius: 12px; background-color: #ABABAB99; display: flex; align-items: center; justify-content: center; padding-bottom: 180px; font-family: 'Geist', 'Noto Sans SC', 'PingFang SC', sans-serif; font-size: 14px; color: #0A0A0A">
+  <div role="alertdialog" aria-modal="true" aria-label="{{dlg.title}}" style="width: 440px; box-sizing: border-box; border-radius: 16px; background: rgba(255,255,255,0.8); backdrop-filter: blur(16px); -webkit-backdrop-filter: blur(16px); border: 1px solid #E5E5E5; box-shadow: 0 25px 50px -12px rgba(0,0,0,0.25); display: flex; flex-direction: column; overflow: hidden">
+    <div style="display: flex; flex-direction: column; gap: 4px; padding: 16px">
+      <div style="font-size: 16px; font-weight: 600; line-height: 1.4">{{dlg.title}}</div>
+      <div style="color: #737373; line-height: 1.6">Godwit 会向 <strong style="font-weight: 600; color: #0A0A0A">{{dlg.host}}</strong> 发送一键退订请求，不会打开网页，也不会发邮件。</div>
+      <div style="color: #737373; line-height: 1.6">之后可以在这里屏蔽，也可以把收件箱里的 {{dlg.inbox}} 封全部归档。</div>
+    </div>
+    <div style="display: flex; align-items: center; justify-content: flex-end; gap: 8px; padding: 12px 16px; border-top: 1px solid #E5E5E5; background: #FAFAFA">
+      <button type="button" onClick="{{closeDlg}}" style="height: 32px; padding: 0 14px; border: 1px solid #E5E5E5; border-radius: 8px; background: #FFFFFF; color: #0A0A0A; font-weight: 500">取消</button>
+      <button type="button" onClick="{{confirmUnsub}}" style="height: 32px; padding: 0 14px; border: 0; border-radius: 8px; background: #171717; color: #FFFFFF; font-weight: 500">退订</button>
+    </div>
+  </div>
+</div>
+</sc-if>
+
+<sc-if value="{{unsubToast.show}}" hint-placeholder-val="{{ false }}">
+<div aria-label="通知" style="position: absolute; left: 0; right: 0; top: 52px; display: flex; justify-content: center; pointer-events: none">
+  <div role="status" style="pointer-events: auto; display: flex; align-items: center; gap: 10px; padding: 12px 16px; max-width: 420px; box-sizing: border-box; border-radius: 16px; background: #F0FDF4; border: 1px solid #B9F8CF; box-shadow: 0 4px 16px rgba(10,10,10,0.08); font-family: 'Geist', 'Noto Sans SC', 'PingFang SC', sans-serif; font-size: 14px; color: #008236">
+    <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor" role="img" aria-label="成功" style="flex: none"><path d="M4 12C4 7.58172 7.58172 4 12 4C16.4183 4 20 7.58172 20 12C20 16.4183 16.4183 20 12 20C7.58172 20 4 16.4183 4 12ZM12 2C6.47715 2 2 6.47715 2 12C2 17.5228 6.47715 22 12 22C17.5228 22 22 17.5228 22 12C22 6.47715 17.5228 2 12 2ZM17.4571 9.45711L16.0429 8.04289L11 13.0858L8.20711 10.2929L6.79289 11.7071L11 15.9142L17.4571 9.45711Z"></path></svg><span style="flex: 1; font-weight: 500">{{unsubToast.title}}</span>
+  </div>
+</div>
+</sc-if>
+
+<sc-if value="{{toast.show}}" hint-placeholder-val="{{ false }}">
+<div aria-label="通知" style="position: absolute; left: 0; right: 0; top: 52px; display: flex; justify-content: center; pointer-events: none">
+  <div role="status" style="pointer-events: auto; display: flex; align-items: center; gap: 12px; padding: 10px 10px 10px 16px; max-width: 460px; box-sizing: border-box; border-radius: 16px; background: #FFFFFF; border: 1px solid #E5E5E5; box-shadow: 0 4px 16px rgba(10,10,10,0.08); font-family: 'Geist', 'Noto Sans SC', 'PingFang SC', sans-serif; font-size: 14px; color: #0A0A0A">
+    <span style="flex: 1; min-width: 0; display: flex; flex-direction: column">
+      <span style="font-weight: 500">{{toast.title}}</span>
+      <sc-if value="{{toast.desc}}" hint-placeholder-val="{{ true }}"><span style="font-size: 12px; color: #737373">{{toast.desc}}</span></sc-if>
+    </span>
+    <button type="button" onClick="{{undo}}" style="flex: none; height: 28px; padding: 0 10px; border: 1px solid #E5E5E5; border-radius: 6px; background: #FFFFFF; color: #0A0A0A; font-size: 13px">撤销</button>
+  </div>
+</div>
+</sc-if>
+
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"cat":{"editor":"enum","options":["all","people","subs","blocked"],"default":"all"},"sel":{"editor":"text","default":"news@northwind.example"},"archived":{"editor":"boolean","default":false},"unsub":{"editor":"boolean","default":false},"$preview":{"width":1440,"height":900}}'>
+class Component extends DCLogic {
+  renderVals() {
+    var self = this;
+    var TONES = [
+      { bg: '#E0E7FF', fg: '#4338CA' }, { bg: '#DCFCE7', fg: '#15803D' }, { bg: '#FFEDD5', fg: '#C2410C' },
+      { bg: '#FCE7F3', fg: '#BE185D' }, { bg: '#E0F2FE', fg: '#0369A1' }, { bg: '#F5F5F5', fg: '#404040' }
+    ];
+    var ICON = {
+      all: { line: 'M2 22C2 17.5817 5.58172 14 10 14C14.4183 14 18 17.5817 18 22H16C16 18.6863 13.3137 16 10 16C6.68629 16 4 18.6863 4 22H2ZM10 13C6.685 13 4 10.315 4 7C4 3.685 6.685 1 10 1C13.315 1 16 3.685 16 7C16 10.315 13.315 13 10 13ZM10 11C12.21 11 14 9.21 14 7C14 4.79 12.21 3 10 3C7.79 3 6 4.79 6 7C6 9.21 7.79 11 10 11ZM18.2837 14.7028C21.0644 15.9561 23 18.752 23 22H21C21 19.564 19.5483 17.4671 17.4628 16.5271L18.2837 14.7028ZM17.5962 3.41321C19.5944 4.23703 21 6.20361 21 8.5C21 11.3702 18.8042 13.7252 16 13.9776V11.9646C17.6967 11.7222 19 10.264 19 8.5C19 7.11935 18.2016 5.92603 17.041 5.35635L17.5962 3.41321Z', fill: 'M2 22C2 17.5817 5.58172 14 10 14C14.4183 14 18 17.5817 18 22H2ZM10 13C6.685 13 4 10.315 4 7C4 3.685 6.685 1 10 1C13.315 1 16 3.685 16 7C16 10.315 13.315 13 10 13ZM17.3628 15.2332C20.4482 16.0217 22.7679 18.7235 22.9836 22H20C20 19.3902 19.0002 17.0139 17.3628 15.2332ZM15.3401 12.9569C16.9728 11.4922 18 9.36607 18 7C18 5.58266 17.6314 4.25141 16.9849 3.09687C19.2753 3.55397 21 5.57465 21 8C21 10.7625 18.7625 13 16 13C15.7763 13 15.556 12.9853 15.3401 12.9569Z' },
+      people: { line: 'M7.29117 20.8242L2 22L3.17581 16.7088C2.42544 15.3056 2 13.7025 2 12C2 6.47715 6.47715 2 12 2C17.5228 2 22 6.47715 22 12C22 17.5228 17.5228 22 12 22C10.2975 22 8.6944 21.5746 7.29117 20.8242ZM7.58075 18.711L8.23428 19.0605C9.38248 19.6745 10.6655 20 12 20C16.4183 20 20 16.4183 20 12C20 7.58172 16.4183 4 12 4C7.58172 4 4 7.58172 4 12C4 13.3345 4.32549 14.6175 4.93949 15.7657L5.28896 16.4192L4.63416 19.3658L7.58075 18.711ZM7 12H9C9 13.6569 10.3431 15 12 15C13.6569 15 15 13.6569 15 12H17C17 14.7614 14.7614 17 12 17C9.23858 17 7 14.7614 7 12Z', fill: 'M7.29117 20.8242L2 22L3.17581 16.7088C2.42544 15.3056 2 13.7025 2 12C2 6.47715 6.47715 2 12 2C17.5228 2 22 6.47715 22 12C22 17.5228 17.5228 22 12 22C10.2975 22 8.6944 21.5746 7.29117 20.8242ZM7 12C7 14.7614 9.23858 17 12 17C14.7614 17 17 14.7614 17 12H15C15 13.6569 13.6569 15 12 15C10.3431 15 9 13.6569 9 12H7Z' },
+      subs: { line: 'M16 20V4H4V19C4 19.5523 4.44772 20 5 20H16ZM19 22H5C3.34315 22 2 20.6569 2 19V3C2 2.44772 2.44772 2 3 2H17C17.5523 2 18 2.44772 18 3V10H22V19C22 20.6569 20.6569 22 19 22ZM18 12V19C18 19.5523 18.4477 20 19 20C19.5523 20 20 19.5523 20 19V12H18ZM6 6H12V12H6V6ZM8 8V10H10V8H8ZM6 13H14V15H6V13ZM6 16H14V18H6V16Z', fill: 'M19 22H5C3.34315 22 2 20.6569 2 19V3C2 2.44772 2.44772 2 3 2H17C17.5523 2 18 2.44772 18 3V10H22V19C22 20.6569 20.6569 22 19 22ZM18 12V19C18 19.5523 18.4477 20 19 20C19.5523 20 20 19.5523 20 19V12H18ZM5 6V12H11V6H5ZM5 13V15H15V13H5ZM5 16V18H15V16H5ZM7 8H9V10H7V8Z' },
+      blocked: { line: 'M15.936 2.50098L21.501 8.06595V15.936L15.936 21.501H8.06595L2.50098 15.936V8.06595L8.06595 2.50098H15.936ZM15.1076 4.50098H8.89437L4.50098 8.89437V15.1076L8.89437 19.501H15.1076L19.501 15.1076V8.89437L15.1076 4.50098ZM11.0002 15.0002H13.0002V17.0002H11.0002V15.0002ZM11.0002 7.00024H13.0002V13.0002H11.0002V7.00024Z', fill: 'M15.936 2.50098L21.501 8.06595V15.936L15.936 21.501H8.06595L2.50098 15.936V8.06595L8.06595 2.50098H15.936ZM11.0002 15.0002V17.0002H13.0002V15.0002H11.0002ZM11.0002 7.00024V13.0002H13.0002V7.00024H11.0002Z' }
+    };
+    // received/sent count what is synced; inbox is what 全部归档 would look at, kept what it would leave (starred or replied threads)
+    var PEOPLE = [
+      { name: 'Northwind Airlines', addr: 'news@northwind.example', list: 'Northwind 特惠', host: 'news.northwind.example', received: 23, sent: 0, unread: 3, inbox: 12, kept: 2, last: '今天 07:30', time: '07:30', tone: 0,
+        recent: [
+          { subject: '本周特价：上海 → 成都 ¥480 起', snippet: '会员专享，周日 24:00 截止。', folder: '收件箱', time: '07:30', unread: true },
+          { subject: 'NW 1858 值机提醒', snippet: '你的航班将于明天 14:20 起飞，现已开放在线值机。', folder: '收件箱', time: '08:15', mark: '已标星' },
+          { subject: '会员积分即将过期', snippet: '你有 1,200 积分将于 10 月 31 日过期。', folder: '收件箱', time: '周三', unread: true },
+          { subject: '秋季目的地推荐', snippet: '九寨沟、稻城亚丁、喀纳斯：错峰出行指南。', folder: '收件箱', time: '周一', unread: true },
+          { subject: '行程单：NW 1858', snippet: '电子行程单和发票已生成，见附件。', folder: '归档', time: '9/30' }
+        ] },
+      { name: 'Code Host', addr: 'noreply@codehost.example', received: 18, sent: 0, unread: 1, inbox: 4, kept: 0, last: '今天 09:41', time: '09:41', tone: 5,
+        recent: [
+          { subject: '[Code Host] 你的登录验证码', snippet: '有人正在尝试登录你的账户，验证码 482913。', folder: '收件箱', time: '09:41', unread: true },
+          { subject: '[Code Host] 新的 SSH 密钥已添加', snippet: '如果不是你本人操作，请立即删除。', folder: '收件箱', time: '周二' }
+        ] },
+      { name: 'Lena Fischer', addr: 'lena@partner.example', received: 9, sent: 6, unread: 0, inbox: 2, kept: 2, last: '昨天 21:03', time: '昨天', tone: 3,
+        recent: [
+          { subject: 'Q4 partnership proposal', snippet: 'Could you take a look and let me know by Friday?', folder: '收件箱', time: '昨天', mark: '已回复' },
+          { subject: 'Re: proposal timeline', snippet: 'Sounds good. Let us aim to finalize the proposal by Friday.', folder: '已发送', time: '10/03' },
+          { subject: 'Re: webinar dates', snippet: 'Either week works for us, thanks!', folder: '收件箱', time: '10/06', mark: '已回复' },
+          { subject: 'Intro call follow-up', snippet: 'Great talking to you today.', folder: '归档', time: '9/22' }
+        ] },
+      { name: 'Product Weekly', addr: 'hello@productweekly.com', list: 'Product Weekly', host: 'productweekly.com', received: 15, sent: 0, unread: 2, inbox: 6, kept: 0, last: '周一 09:12', time: '周一', tone: 4,
+        recent: [
+          { subject: '本周精选：10 款值得一试的效率工具', snippet: '上周你可能错过的 5 个新工具……', folder: '收件箱', time: '周一', unread: true },
+          { subject: '设计系统的 7 个常见误区', snippet: '从 token 命名到组件边界。', folder: '收件箱', time: '9/28', unread: true }
+        ] },
+      { name: 'Mark Chen', addr: 'mark@partner.example', received: 5, sent: 3, unread: 1, inbox: 0, kept: 0, last: '9/28', time: '9/28', tone: 4,
+        recent: [
+          { subject: 'Partnership proposal — revised deck', snippet: 'Attached is the revised proposal deck with the pricing.', folder: '归档', time: '9/28', unread: true },
+          { subject: 'Re: pricing', snippet: 'Thanks Mark, the new tiers look right.', folder: '已发送', time: '9/27' }
+        ] },
+      { name: 'Acme Cloud', addr: 'billing@acme.example', list: 'Acme 账单', host: 'acme.example', received: 8, sent: 0, unread: 0, inbox: 1, kept: 0, last: '10/02', time: '10/02', tone: 1,
+        recent: [
+          { subject: 'Your receipt for October', snippet: 'Thanks for your payment. Amount: [AMOUNT]', folder: '收件箱', time: '10/02' },
+          { subject: 'Your receipt for September', snippet: 'Thanks for your payment.', folder: '归档', time: '9/02' }
+        ] },
+      { name: '财务部', addr: 'finance@company.example', received: 6, sent: 2, unread: 0, inbox: 1, kept: 1, last: '10/05', time: '10/05', tone: 2,
+        recent: [
+          { subject: '10 月报销单已审批通过', snippet: '款项将于 3 个工作日内到账。', folder: '收件箱', time: '10/05', mark: '已回复' },
+          { subject: '9 月差旅报销', snippet: '发票和行程单见附件。', folder: '已发送', time: '9/30' }
+        ] },
+      { name: '陈静', addr: 'chenjing@company.example', received: 0, sent: 4, unread: 0, inbox: 0, kept: 0, last: '周二 16:20', time: '周二', tone: 1,
+        recent: [
+          { subject: '周报模板确认', snippet: '新模板我放在共享盘了，第三页的指标口径请帮忙看下。', folder: '已发送', time: '周二' },
+          { subject: '季度复盘议程', snippet: '初稿附上，周四前给我意见就好。', folder: '已发送', time: '9/24' }
+        ] },
+      { name: 'Shop Deals', addr: 'deals@shop.example', list: 'Shop 每日特价', host: 'shop.example', received: 4, sent: 0, unread: 0, inbox: 0, kept: 0, last: '9/20', time: '9/20', tone: 2, blocked: true,
+        recent: [
+          { subject: '今日特价：耳机 5 折', snippet: '限时 24 小时。', folder: '垃圾邮件', time: '9/20' },
+          { subject: '你的购物车还有 2 件商品', snippet: '库存紧张，尽快下单。', folder: '垃圾邮件', time: '9/18' }
+        ] },
+      { name: 'Design Digest', addr: 'digest@designdigest.example', list: 'Design Digest', host: 'designdigest.example', received: 3, sent: 0, unread: 1, inbox: 3, kept: 0, last: '9/18', time: '9/18', tone: 3,
+        recent: [
+          { subject: 'Digest #42：动效的克制', snippet: '什么时候不该加动画。', folder: '收件箱', time: '9/18', unread: true }
+        ] }
+    ];
+    var CATS = [['all', '全部联系人'], ['people', '往来过'], ['subs', '订阅'], ['blocked', '已屏蔽']];
+    var cat = this.state.cat || this.props.cat || 'all';
+    var q = this.state.q || '';
+    var blockedOv = this.state.blocked || {};
+    var archivedNow = this.state.archived !== undefined ? this.state.archived : (this.props.archived === true || this.props.archived === 'true');
+    var isBlocked = function (p) { return blockedOv[p.addr] !== undefined ? blockedOv[p.addr] : !!p.blocked; };
+    var inCat = function (p, c) {
+      if (c === 'people') return p.sent > 0;
+      if (c === 'subs') return !!p.list;
+      if (c === 'blocked') return isBlocked(p);
+      return true;
+    };
+    var k = q.toLowerCase();
+    var shown = PEOPLE.filter(function (p) {
+      return inCat(p, cat) && (!k || p.name.toLowerCase().indexOf(k) >= 0 || p.addr.indexOf(k) >= 0);
+    });
+    var selAddr = this.state.sel || this.props.sel || PEOPLE[0].addr;
+    var cur = PEOPLE.filter(function (p) { return p.addr === selAddr; })[0] || PEOPLE[0];
+    var archived = archivedNow && cur.inbox - cur.kept > 0; // the selected contact's 全部归档 just ran
+    var inbox = archived ? cur.kept : cur.inbox;
+    var movable = inbox - cur.kept;
+    var tile = function (p, size, radius, font) {
+      var t = TONES[p.tone];
+      return 'width: ' + size + 'px; height: ' + size + 'px; flex: none; border-radius: ' + radius + 'px; background: ' + t.bg + '; color: ' + t.fg + '; display: flex; align-items: center; justify-content: center; font-weight: 600; font-size: ' + font + 'px';
+    };
+    var hint;
+    if (movable > 0) {
+      hint = '收件箱里的 ' + movable + ' 封移到归档' + (cur.kept ? '，标星或回复过的 ' + cur.kept + ' 封不动' : '') + '，可以撤销';
+    } else if (inbox > 0) {
+      hint = '收件箱里的 ' + inbox + ' 封都标过星或回复过，不会归档';
+    } else {
+      hint = '收件箱里没有他的邮件';
+    }
+    var dlgOpen = this.state.dlg !== undefined ? this.state.dlg : (this.props.unsub === true || this.props.unsub === 'true');
+    var catName = CATS.filter(function (c) { return c[0] === cat; })[0][1];
+    var unit = cat === 'subs' ? ' 个订阅' : ' 位';
+    return {
+      stripTitle: '联系人',
+      stripMeta: PEOPLE.length + ' 位',
+      cats: CATS.map(function (c) {
+        var on = c[0] === cat;
+        var n = PEOPLE.filter(function (p) { return inCat(p, c[0]); }).length;
+        return { name: c[1], count: n || '', current: on ? 'page' : 'false', icon: ICON[c[0]][on ? 'fill' : 'line'],
+          iconStyle: 'flex: none; color: ' + (on ? '#0A0A0A' : '#737373'),
+          pick: function () { self.setState({ cat: c[0] }); },
+          style: 'display: flex; align-items: center; gap: 10px; height: 32px; padding: 0 8px; border-radius: 8px; text-decoration: none; color: #0A0A0A; background: ' + (on ? '#F5F5F5' : 'transparent') + '; flex: none' };
+      }),
+      listTitle: catName + ' · ' + shown.length + unit + ' · 按往来邮件数',
+      q: q,
+      onQ: function (e) { self.setState({ q: e.target.value }); },
+      noRows: shown.length === 0,
+      emptyText: q ? '没有匹配「' + q + '」的联系人' : '这里还没有联系人',
+      rows: shown.map(function (p) {
+        var on = p.addr === cur.addr;
+        return { name: p.name, addr: p.addr, time: p.time, initial: p.name.slice(0, 1), blocked: isBlocked(p),
+          unread: p.unread > 0, unreadLabel: p.unread + ' 封未读', current: on ? 'true' : 'false',
+          countLabel: (p.received + p.sent) + ' 封',
+          pick: function () { self.setState({ sel: p.addr }); },
+          avatarStyle: tile(p, 32, 8, 13),
+          nameStyle: 'min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: ' + (p.unread ? '600' : '400'),
+          rowStyle: 'position: relative; display: flex; align-items: center; gap: 10px; width: calc(100% - 16px); margin: 0 8px; padding: 10px 10px 10px 20px; border: 0; border-radius: 8px; text-align: left; color: #0A0A0A; background: ' + (on ? '#F5F5F5' : '#FFFFFF') };
+      }),
+      cur: {
+        name: cur.name, addr: cur.addr, list: cur.list || '', person: !cur.list, initial: cur.name.slice(0, 1), blocked: isBlocked(cur), total: cur.received + cur.sent,
+        bigAvatarStyle: tile(cur, 72, 16, 28),
+        badged: !!cur.list || isBlocked(cur),
+        actions: (function () {
+          var act = function (label, title, icon, run, opts) {
+            opts = opts || {};
+            return { label: label, title: title, icon: icon, run: run, disabled: !!opts.disabled,
+              style: 'width: 64px; display: flex; flex-direction: column; align-items: center; gap: 6px; padding: 0; border: 0; background: transparent; color: ' + (opts.disabled ? '#A3A3A3; cursor: default' : '#404040'),
+              dotStyle: 'width: 40px; height: 40px; border-radius: 20px; display: flex; align-items: center; justify-content: center; background: ' + (opts.on ? '#E5E5E5; color: #0A0A0A' : '#F5F5F5') + (opts.disabled ? '; color: #D4D4D4' : '') };
+          };
+          var list = [];
+          if (cur.list) list.push(act('退订', '退订「' + cur.list + '」', 'M20 7.23792L12.0718 14.338L4 7.21594V19H11.0709C11.1719 19.7061 11.3783 20.3783 11.6736 21H3C2.44772 21 2 20.5523 2 20V4C2 3.44772 2.44772 3 3 3H21C21.5523 3 22 3.44772 22 4V12.2547C21.396 11.8334 20.7224 11.5049 20 11.2899V7.23792ZM19.501 5H4.51146L12.0619 11.662L19.501 5ZM16.7066 20.7076C17.0982 20.895 17.5369 21 18 21C19.6569 21 21 19.6569 21 18C21 17.5369 20.895 17.0982 20.7076 16.7066L16.7066 20.7076ZM15.2924 19.2934L19.2934 15.2924C18.9018 15.105 18.4631 15 18 15C16.3431 15 15 16.3431 15 18C15 18.4631 15.105 18.9018 15.2924 19.2934ZM18 23C15.2386 23 13 20.7614 13 18C13 15.2386 15.2386 13 18 13C20.7614 13 23 15.2386 23 18C23 20.7614 20.7614 23 18 23Z', function () { self.setState({ dlg: true, unsubbed: '' }); }));
+          else list.push(act('写邮件', '写邮件给 ' + cur.addr, 'M16.7574 2.99678L14.7574 4.99678H5V18.9968H19V9.23943L21 7.23943V19.9968C21 20.5491 20.5523 20.9968 20 20.9968H4C3.44772 20.9968 3 20.5491 3 19.9968V3.99678C3 3.4445 3.44772 2.99678 4 2.99678H16.7574ZM20.4853 2.09729L21.8995 3.5115L12.7071 12.7039L11.2954 12.7064L11.2929 11.2897L20.4853 2.09729Z', function () {}));
+          list.push(act('全部归档', movable > 0 ? '全部归档 ' + movable + ' 封 · 之后可以撤销' : '全部归档（' + hint + '）', 'M3 10H2V4.00293C2 3.44903 2.45531 3 2.9918 3H21.0082C21.556 3 22 3.43788 22 4.00293V10H21V20.0015C21 20.553 20.5551 21 20.0066 21H3.9934C3.44476 21 3 20.5525 3 20.0015V10ZM19 10H5V19H19V10ZM4 5V8H20V5H4ZM9 12H15V14H9V12Z', function () { if (movable > 0) self.setState({ archived: true }); }, { disabled: movable <= 0 }));
+          list.push(act(isBlocked(cur) ? '取消屏蔽' : '屏蔽', isBlocked(cur) ? '取消屏蔽 · 新邮件回到收件箱' : '屏蔽 · 新邮件直接进垃圾邮件', 'M15.936 2.50098L21.501 8.06595V15.936L15.936 21.501H8.06595L2.50098 15.936V8.06595L8.06595 2.50098H15.936ZM15.1076 4.50098H8.89437L4.50098 8.89437V15.1076L8.89437 19.501H15.1076L19.501 15.1076V8.89437L15.1076 4.50098ZM11.0002 15.0002H13.0002V17.0002H11.0002V15.0002ZM11.0002 7.00024H13.0002V13.0002H11.0002V7.00024Z', function () { var b = Object.assign({}, blockedOv); b[cur.addr] = !isBlocked(cur); self.setState({ blocked: b }); }, { on: isBlocked(cur) }));
+          return list;
+        })(),
+        archiveTip: hint,
+        stats: [['收到', String(cur.received), true], ['已发送', String(cur.sent), true], ['未读', String(cur.unread), true], ['最近往来', cur.last, true]].map(function (x, i) {
+          return { label: x[0], value: x[1], cellStyle: 'display: flex; flex-direction: column; align-items: center; gap: 2px; min-width: 0; padding: 0 12px' + (i ? '; border-left: 1px solid #E5E5E5' : ''), style: 'margin: 0; max-width: 100%; font-weight: 600; ' + (x[2] ? 'font-size: 18px; line-height: 1.35' : 'font-size: 14px; line-height: 1.9') + '; white-space: nowrap; overflow: hidden; text-overflow: ellipsis' };
+        }),
+        recent: cur.recent.map(function (m) {
+          var folder = archived && m.folder === '收件箱' && !m.mark ? '归档' : m.folder;
+          return { subject: m.subject, snippet: m.snippet, time: m.time, mark: m.mark || '', folder: folder,
+            subjectStyle: 'overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: ' + (m.unread ? '600' : '400') };
+        })
+      },
+      dlg: { show: dlgOpen && !!cur.list, title: '退订「' + (cur.list || '') + '」？', host: cur.host || '', inbox: inbox },
+      closeDlg: function () { self.setState({ dlg: false }); },
+      confirmUnsub: function () { self.setState({ dlg: false, unsubbed: cur.host }); },
+      unsubToast: { show: !!this.state.unsubbed && this.state.unsubbed === cur.host, title: '已向 ' + (cur.host || '') + ' 发送退订请求' },
+      undo: function () { self.setState({ archived: false }); },
+      toast: {
+        show: archived,
+        title: '已归档 ' + (cur.inbox - cur.kept) + ' 封',
+        desc: cur.kept ? cur.kept + ' 封在标过星或回复过的会话里，留在收件箱' : ''
+      }
+    };
+  }
+}
+</script>
+</body>
+</html>

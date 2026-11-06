@@ -1,0 +1,118 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<title>Wit 规则预览卡片</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600&amp;family=Geist+Mono:wght@500&amp;family=Noto+Sans+SC:wght@400;500;600&amp;display=swap" rel="stylesheet">
+<style>
+body{margin:0}
+.wr-ghost:hover{background:#F5F5F5}
+</style>
+</helmet>
+<section aria-label="Wit 想要：创建规则" style="border: 1px solid #E5E5E5; border-radius: 12px; background: #FFFFFF; box-shadow: 0 1px 3px 0 rgba(0,0,0,0.1), 0 1px 2px -1px rgba(0,0,0,0.1); overflow: hidden; color: #0A0A0A; font-family: 'Geist', 'Noto Sans SC', 'PingFang SC', sans-serif; font-size: 14px; line-height: 1.5">
+  <div style="padding: 10px 14px; background: #FAFAFA; border-bottom: 1px solid #E5E5E5; display: flex; align-items: center; gap: 8px">
+    <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true" style="color: #737373"><path d="M6 21.5C4.067 21.5 2.5 19.933 2.5 18C2.5 16.067 4.067 14.5 6 14.5C7.5852 14.5 8.92427 15.5539 9.35481 16.9992L15 16.9994V15L17 14.9994V9.24339L14.757 6.99938H9V9.00003H3V3.00003H9V4.99939H14.757L18 1.75739L22.2426 6.00003L19 9.24139V14.9994L21 15V21H15V18.9994L9.35499 19.0003C8.92464 20.4459 7.58543 21.5 6 21.5ZM6 16.5C5.17157 16.5 4.5 17.1716 4.5 18C4.5 18.8285 5.17157 19.5 6 19.5C6.82843 19.5 7.5 18.8285 7.5 18C7.5 17.1716 6.82843 16.5 6 16.5ZM19 17H17V19H19V17ZM18 4.58581L16.5858 6.00003L18 7.41424L19.4142 6.00003L18 4.58581ZM7 5.00003H5V7.00003H7V5.00003Z"></path></svg>
+    <span style="font-weight: 600">Wit 想要：创建规则</span>
+    <span style="font-family: 'Geist Mono', monospace; font-size: 12px; color: #737373">propose_rule</span>
+    <span style="margin-left: auto; height: 20px; padding: 0 6px; border-radius: 4px; background: #FEF3C6; color: #973C00; font-size: 11px; display: flex; align-items: center">外发</span>
+    <span style="{{statusStyle}}">{{statusText}}</span>
+  </div>
+
+  <div style="padding: 12px 14px; display: grid; grid-template-columns: 72px minmax(0, 1fr); gap: 8px 12px; font-size: 13px; line-height: 1.6">
+    <span style="color: #737373">名称</span><span style="font-weight: 500">Stripe 发票转给会计</span>
+    <span style="color: #737373">当</span><span>收到新邮件 · 所有账户</span>
+    <span style="color: #737373">如果</span>
+    <span style="display: flex; flex-wrap: wrap; align-items: center; gap: 6px"><span style="padding: 0 8px; border-radius: 6px; background: #F5F5F5; line-height: 24px">发件人包含 <span style="font-family: 'Geist Mono', monospace; font-size: 12px">stripe.com</span></span><span style="color: #737373; font-size: 12px">且</span><span style="padding: 0 8px; border-radius: 6px; background: #F5F5F5; line-height: 24px">主题包含 <span style="font-family: 'Geist Mono', monospace; font-size: 12px">invoice</span></span></span>
+    <span style="color: #737373">就</span>
+    <span style="display: flex; flex-direction: column; gap: 6px">
+      <span style="display: flex; align-items: center; gap: 8px; padding: 6px 10px; border: 1px solid #FFD230; border-radius: 8px; background: #FFFBEB"><svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true" style="flex: none; color: #973C00"><path d="M13 14H11C7.54202 14 4.53953 15.9502 3.03239 18.8107C3.01093 18.5433 3 18.2729 3 18C3 12.4772 7.47715 8 13 8V2.5L23.5 11L13 19.5V14ZM11 12H15V15.3078L20.3214 11L15 6.69224V10H13C10.5795 10 8.41011 11.0749 6.94312 12.7735C8.20873 12.2714 9.58041 12 11 12Z"></path></svg><span style="flex: none">转发给</span><span style="min-width: 0; font-family: 'Geist Mono', monospace; font-size: 13px; font-weight: 500; overflow: hidden; text-overflow: ellipsis">acct@company.example</span><span style="margin-left: auto; flex: none; padding: 0 6px; border-radius: 4px; background: #FEF3C6; color: #973C00; font-size: 11px; line-height: 20px">第一次发往这个地址</span></span>
+      <span style="display: flex; align-items: center; gap: 8px; padding: 6px 10px; border: 1px solid #E5E5E5; border-radius: 8px"><svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true" style="flex: none; color: #737373"><path d="M20 3L22 7V20C22 20.5523 21.5523 21 21 21H3C2.44772 21 2 20.5523 2 20V7.00353L4 3H20ZM20 9H4V19H20V9ZM13 10V14H16L12 18L8 14H11V10H13ZM18.7639 5H5.23656L4.23744 7H19.7639L18.7639 5Z"></path></svg><span>然后归档</span></span>
+    </span>
+    <span style="color: #737373">运行方式</span><span>仅在窗口打开时</span>
+    <span style="color: #737373">现有邮件</span>
+    <span style="display: flex; flex-direction: column; gap: 6px">
+      <button type="button" class="wr-ghost" aria-expanded="{{matchAria}}" onClick="{{toggleMatches}}" style="align-self: flex-start; height: 24px; margin-left: -6px; padding: 0 6px; border: 0; border-radius: 6px; background: transparent; font: inherit; color: #0A0A0A; display: flex; align-items: center; gap: 4px; cursor: pointer">最近 30 天有 2 封符合<svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true" style="{{chev}}"><path d="M13.1717 12.0007L8.22192 7.05093L9.63614 5.63672L16.0001 12.0007L9.63614 18.3646L8.22192 16.9504L13.1717 12.0007Z"></path></svg></button>
+      <sc-if value="{{matchesOpen}}" hint-placeholder-val="{{ false }}">
+        <span style="display: flex; flex-direction: column; border: 1px solid #E5E5E5; border-radius: 8px; overflow: hidden">
+          <span style="display: flex; gap: 8px; padding: 6px 10px; font-size: 12px"><span style="flex: none; font-weight: 500">Stripe</span><span style="flex: 1; min-width: 0; color: #404040; overflow: hidden; text-overflow: ellipsis; white-space: nowrap">Invoice #1234 from Acme Inc.</span><span style="flex: none; color: #737373">昨天</span></span>
+          <span style="display: flex; gap: 8px; padding: 6px 10px; font-size: 12px; border-top: 1px solid #F0F0F0"><span style="flex: none; font-weight: 500">Stripe</span><span style="flex: 1; min-width: 0; color: #404040; overflow: hidden; text-overflow: ellipsis; white-space: nowrap">Invoice #1198 from Acme Inc.</span><span style="flex: none; color: #737373">10月3日</span></span>
+        </span>
+      </sc-if>
+      <span style="font-size: 12px; color: #737373">现有邮件不会被转发，规则只处理保存之后收到的新邮件。</span>
+    </span>
+  </div>
+
+  <sc-if value="{{isPending}}" hint-placeholder-val="{{ true }}">
+  <div style="padding: 10px 14px; border-top: 1px solid #F5F5F5; display: flex; gap: 8px; align-items: center; flex-wrap: wrap">
+    <span style="font-size: 12px; color: #737373; display: flex; align-items: center; gap: 6px"><svg width="13" height="13" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M12 1L20.2169 2.82598C20.6745 2.92766 21 3.33347 21 3.80217V13.7889C21 15.795 19.9974 17.6684 18.3282 18.7812L12 23L5.6718 18.7812C4.00261 17.6684 3 15.795 3 13.7889V3.80217C3 3.33347 3.32553 2.92766 3.78307 2.82598L12 1ZM12 3.04879L5 4.60434V13.7889C5 15.1263 5.6684 16.3752 6.7812 17.1171L12 20.5963L17.2188 17.1171C18.3316 16.3752 19 15.1263 19 13.7889V4.60434L12 3.04879ZM16.4524 8.22183L17.8666 9.63604L11.5026 16L7.25999 11.7574L8.67421 10.3431L11.5019 13.1709L16.4524 8.22183Z"></path></svg>保存后才会生效，Wit 不能替你保存</span>
+    <span style="margin-left: auto; display: flex; gap: 8px">
+      <button type="button" onClick="{{reject}}" style="height: 32px; padding: 0 12px; border: 1px solid #E5E5E5; border-radius: 8px; background: #FFFFFF; color: #0A0A0A; font: inherit">拒绝</button>
+      <a href="SettingsRulesFromWit.dc.html" style="height: 32px; box-sizing: border-box; padding: 0 12px; border: 1px solid #E5E5E5; border-radius: 8px; background: #FFFFFF; color: #0A0A0A; text-decoration: none; display: flex; align-items: center">在编辑器里修改</a>
+      <button type="button" onClick="{{toConfirm}}" style="height: 32px; padding: 0 14px; border: 0; border-radius: 8px; background: #171717; color: #FFFFFF; font: inherit; font-weight: 500">保存规则</button>
+    </span>
+  </div>
+  </sc-if>
+
+  <sc-if value="{{isConfirm}}" hint-placeholder-val="{{ false }}">
+  <div role="group" aria-label="确认转发收件人" style="padding: 12px 14px; border-top: 1px solid #FFD230; background: #FFFBEB; display: flex; flex-direction: column; gap: 10px">
+    <span style="display: flex; flex-direction: column; gap: 2px"><span style="font-weight: 600; color: #973C00">确认转发收件人</span><span style="font-size: 12px; color: #973C00">保存后，符合条件的新邮件会自动转发出去，不再逐封询问。</span></span>
+    <span style="display: flex; align-items: center; gap: 8px; flex-wrap: wrap"><span style="font-family: 'Geist Mono', monospace; font-size: 16px; font-weight: 500">acct@company.example</span><span style="padding: 0 6px; border-radius: 4px; background: #FEF3C6; color: #973C00; font-size: 12px; line-height: 20px">第一次发往这个地址</span></span>
+    <span style="display: flex; flex-direction: column; gap: 2px; font-size: 12px; color: #404040; line-height: 1.6"><span>· 从 you@example.com 发出，每封都先进发件箱，10 秒内可以撤销</span><span>· 以后修改收件人，需要再次确认</span></span>
+    <span style="display: flex; gap: 8px; justify-content: flex-end">
+      <button type="button" onClick="{{back}}" style="height: 32px; padding: 0 12px; border: 1px solid #E5E5E5; border-radius: 8px; background: #FFFFFF; color: #0A0A0A; font: inherit">返回</button>
+      <button type="button" onClick="{{save}}" style="height: 32px; padding: 0 14px; border: 0; border-radius: 8px; background: #171717; color: #FFFFFF; font: inherit; font-weight: 500">确认收件人并保存</button>
+    </span>
+  </div>
+  </sc-if>
+
+  <sc-if value="{{isSaved}}" hint-placeholder-val="{{ false }}">
+  <div style="padding: 10px 14px; border-top: 1px solid #F5F5F5; display: flex; align-items: center; gap: 8px; font-size: 13px">
+    <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true" style="flex: none; color: #00A63E"><path d="M4 12C4 7.58172 7.58172 4 12 4C16.4183 4 20 7.58172 20 12C20 16.4183 16.4183 20 12 20C7.58172 20 4 16.4183 4 12ZM12 2C6.47715 2 2 6.47715 2 12C2 17.5228 6.47715 22 12 22C17.5228 22 22 17.5228 22 12C22 6.47715 17.5228 2 12 2ZM17.4571 9.45711L16.0429 8.04289L11 13.0858L8.20711 10.2929L6.79289 11.7071L11 15.9142L17.4571 9.45711Z"></path></svg>
+    <span style="flex: 1; min-width: 0">已保存并启用，转发收件人已确认。</span>
+    <a href="SettingsRules.dc.html" style="flex: none; color: #0A0A0A; font-size: 13px">在 设置 › 规则 里查看</a>
+  </div>
+  </sc-if>
+
+  <sc-if value="{{isRejected}}" hint-placeholder-val="{{ false }}">
+  <div style="padding: 10px 14px; border-top: 1px solid #F5F5F5; display: flex; align-items: center; gap: 8px; font-size: 13px; color: #737373">
+    <span style="flex: 1">已拒绝，没有创建规则。</span>
+    <button type="button" class="wr-ghost" onClick="{{back}}" style="height: 28px; padding: 0 10px; border: 0; border-radius: 6px; background: transparent; color: #0A0A0A; font: inherit; font-size: 13px">撤销拒绝</button>
+  </div>
+  </sc-if>
+</section>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"state":{"editor":"enum","options":["pending","confirm","saved","rejected"],"default":"pending"},"$preview":{"width":720,"height":520}}'>
+class Component extends DCLogic {
+  constructor(props) {
+    super(props);
+    this.state = { step: props.state || 'pending', matches: false };
+  }
+  renderVals() {
+    var self = this, st = this.state, s = st.step;
+    var go = function (to) { return function () { self.setState({ step: to }); }; };
+    var tag = function (bg, fg, border) { return 'height: 20px; padding: 0 6px; border-radius: 4px; font-size: 11px; display: flex; align-items: center; background: ' + bg + '; color: ' + fg + (border ? '; border: 1px solid ' + border : ''); };
+    var STATUS = {
+      pending: ['待确认', tag('#FFFBEB', '#973C00', '#FFD230')],
+      confirm: ['待确认', tag('#FFFBEB', '#973C00', '#FFD230')],
+      saved: ['已保存', tag('#F0FDF4', '#008236')],
+      rejected: ['已拒绝', tag('#F5F5F5', '#737373')]
+    }[s];
+    return {
+      statusText: STATUS[0], statusStyle: STATUS[1],
+      isPending: s === 'pending', isConfirm: s === 'confirm', isSaved: s === 'saved', isRejected: s === 'rejected',
+      matchesOpen: st.matches, matchAria: st.matches ? 'true' : 'false',
+      chev: 'transition: transform 0.15s; transform: rotate(' + (st.matches ? 90 : 0) + 'deg)',
+      toggleMatches: function () { self.setState({ matches: !st.matches }); },
+      toConfirm: go('confirm'), back: go('pending'), save: go('saved'), reject: go('rejected')
+    };
+  }
+}
+</script>
+</body>
+</html>

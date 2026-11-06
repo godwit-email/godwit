@@ -1,0 +1,47 @@
+{
+  "manifestVersion": 3,
+  "name": "Godwit",
+  "namespace": "Godwit",
+  "files": [
+    "tokens.css"
+  ],
+  "libraries": [],
+  "components": [],
+  "assetGroups": [
+    {
+      "name": "Logos",
+      "tile": "l",
+      "order": [
+        "logo.svg",
+        "app-icon.svg"
+      ],
+      "files": [
+        {
+          "path": "assets/Logos/logo.svg",
+          "id": "1e101e1f6c38895560139b6d2b4170e7"
+        },
+        {
+          "path": "assets/Logos/app-icon.svg",
+          "id": "36e7f086b841aea9dbeeab186bbf78b4"
+        }
+      ]
+    }
+  ],
+  "storage": {
+    "files": {
+      "assets/Logos/app-icon.svg": {
+        "store": "blob",
+        "id": "36e7f086b841aea9dbeeab186bbf78b4",
+        "bytes": 1865,
+        "type": "image/svg+xml"
+      },
+      "assets/Logos/logo.svg": {
+        "store": "blob",
+        "id": "1e101e1f6c38895560139b6d2b4170e7",
+        "bytes": 1747,
+        "type": "image/svg+xml"
+      }
+    },
+    "blobBytesUsed": 3612
+  }
+}

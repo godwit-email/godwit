@@ -1,0 +1,353 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<title>Godwit 搜索弹层</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600&amp;family=Geist+Mono:wght@500&amp;family=Noto+Sans+SC:wght@400;500;600&amp;display=swap" rel="stylesheet">
+<style>
+body{margin:0;background:#FFFFFF}
+a{color:#0A0A0A}a:hover{color:#0A0A0A}
+button{font:inherit;cursor:pointer}
+kbd{display:inline-flex;align-items:center;justify-content:center;min-width:18px;height:18px;box-sizing:border-box;padding:0 4px;border:1px solid rgba(10,10,10,0.12);border-radius:4px;font:inherit;font-size:11px;color:#737373}
+</style>
+</helmet>
+<div style="position: relative; width: 1440px; height: 900px; overflow: hidden; font-family: Geist, 'PingFang SC', 'Noto Sans SC', system-ui, sans-serif; font-size: 13px; color: #0A0A0A">
+  <div aria-hidden="true" style="position: absolute; inset: 0; pointer-events: none">
+    <dc-import name="Main" platform="mac" initial-summary="false" hint-size="1440px,900px"></dc-import>
+  </div>
+  <div aria-hidden="true" style="position: absolute; inset: 0; background-color: #00000033"></div>
+
+  <div role="dialog" aria-modal="true" aria-label="搜索" style="position: absolute; left: 400px; top: 96px; width: 640px; display: flex; flex-direction: column; background: rgba(255,255,255,0.8); backdrop-filter: blur(16px); -webkit-backdrop-filter: blur(16px); border: 1px solid #E5E5E5; border-radius: 16px; box-shadow: 0 25px 50px -12px rgba(0,0,0,0.25); overflow: hidden">
+
+    <sc-if value="{{searching}}" hint-placeholder-val="{{ true }}">
+    <div style="display: flex; align-items: center; gap: 8px; min-height: 56px; padding: 0 12px 0 20px">
+      <sc-for list="{{chips}}" as="c" hint-placeholder-count="0">
+        <span style="flex: none; display: flex; align-items: center; gap: 2px; height: 24px; padding: 0 2px 0 8px; border-radius: 6px; background: rgba(10,10,10,0.06); font-size: 12px">{{c.label}}<button type="button" aria-label="移除筛选 {{c.label}}" onClick="{{c.remove}}" style="width: 20px; height: 20px; border: 0; border-radius: 4px; background: transparent; color: #737373; display: flex; align-items: center; justify-content: center"><svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M11.9997 10.5865L16.9495 5.63672L18.3637 7.05093L13.4139 12.0007L18.3637 16.9504L16.9495 18.3646L11.9997 13.4149L7.04996 18.3646L5.63574 16.9504L10.5855 12.0007L5.63574 7.05093L7.04996 5.63672L11.9997 10.5865Z"></path></svg></button></span>
+      </sc-for>
+      <input type="search" role="combobox" aria-expanded="true" aria-controls="palette-list" aria-label="搜索" value="{{query}}" onInput="{{onInput}}" onKeyDown="{{onKey}}" placeholder="{{placeholder}}" style="flex: 1; min-width: 0; height: 40px; padding: 0; border: 0; background: transparent; font: inherit; font-size: 16px; color: #0A0A0A; outline: none">
+      <button type="button" aria-label="关闭" style="width: 32px; height: 32px; flex: none; border: 0; border-radius: 8px; background: transparent; color: #737373; display: flex; align-items: center; justify-content: center"><svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M11.9997 10.5865L16.9495 5.63672L18.3637 7.05093L13.4139 12.0007L18.3637 16.9504L16.9495 18.3646L11.9997 13.4149L7.04996 18.3646L5.63574 16.9504L10.5855 12.0007L5.63574 7.05093L7.04996 5.63672L11.9997 10.5865Z"></path></svg></button>
+    </div>
+
+    <div role="tablist" aria-label="类型" style="display: flex; align-items: center; gap: 4px; padding: 0 16px 12px; border-bottom: 1px solid rgba(10,10,10,0.08)">
+      <sc-for list="{{tabs}}" as="t" hint-placeholder-count="5">
+        <button type="button" role="tab" aria-selected="{{t.selText}}" onClick="{{t.pick}}" style="{{t.style}}">{{t.label}}</button>
+      </sc-for>
+    </div>
+
+    <div style="position: relative">
+      <div id="palette-list" role="listbox" aria-label="结果" style="height: 452px; overflow-y: auto; padding: 4px 8px 8px; display: flex; flex-direction: column">
+        <sc-for list="{{sections}}" as="s" hint-placeholder-count="3">
+          <div role="group" aria-label="{{s.title}}" style="display: flex; flex-direction: column; gap: 2px">
+            <div style="padding: 12px 12px 6px; font-size: 12px; color: #737373">{{s.title}}</div>
+            <sc-for list="{{s.rows}}" as="r" hint-placeholder-count="3">
+              <sc-if value="{{r.isLink}}" hint-placeholder-val="{{ true }}">
+                <a href="{{r.href}}" role="option" aria-selected="{{r.selText}}" onMouseEnter="{{r.hover}}" style="{{r.style}}">
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true" style="{{r.iconStyle}}"><path d="{{r.icon}}"></path></svg>
+                  <span style="flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap"><sc-for list="{{r.segs}}" as="g" hint-placeholder-count="1"><sc-if value="{{g.hit}}" hint-placeholder-val="{{ false }}"><mark style="padding: 0 1px; border-radius: 2px; background: #FFF085; color: #0A0A0A">{{g.t}}</mark></sc-if><sc-if value="{{g.plain}}" hint-placeholder-val="{{ true }}"><span>{{g.t}}</span></sc-if></sc-for><span style="margin-left: 8px; color: #737373">{{r.sub}}</span></span>
+                  <sc-if value="{{r.unread}}" hint-placeholder-val="{{ false }}"><span role="img" aria-label="未读" style="width: 6px; height: 6px; flex: none; border-radius: 50%; background: #2B7FFF"></span></sc-if>
+                  <sc-if value="{{r.off}}" hint-placeholder-val="{{ true }}"><span style="flex: none; font-size: 12px; color: #737373">{{r.meta}}</span><sc-if value="{{r.kbd}}" hint-placeholder-val="{{ false }}"><span style="display: flex; gap: 4px"><sc-for list="{{r.keys}}" as="k" hint-placeholder-count="1"><kbd>{{k.t}}</kbd></sc-for></span></sc-if></sc-if>
+                  <sc-if value="{{r.on}}" hint-placeholder-val="{{ false }}"><span style="flex: none; display: flex; align-items: center; gap: 4px"><button type="button" aria-label="更多操作" onClick="{{r.more}}" style="width: 24px; height: 24px; border: 0; border-radius: 6px; background: transparent; color: #404040; font-size: 14px; line-height: 1">···</button><kbd>↵</kbd></span></sc-if>
+                </a>
+              </sc-if>
+              <sc-if value="{{r.isFill}}" hint-placeholder-val="{{ false }}">
+                <button type="button" role="option" aria-selected="{{r.selText}}" onClick="{{r.fill}}" onMouseEnter="{{r.hover}}" style="{{r.style}}">
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true" style="{{r.iconStyle}}"><path d="{{r.icon}}"></path></svg>
+                  <span style="flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; text-align: left">{{r.title}}<span style="margin-left: 8px; color: #737373">{{r.sub}}</span></span>
+                  <sc-if value="{{r.on}}" hint-placeholder-val="{{ false }}"><kbd>↵</kbd></sc-if>
+                </button>
+              </sc-if>
+            </sc-for>
+          </div>
+        </sc-for>
+        <sc-if value="{{noResults}}" hint-placeholder-val="{{ false }}">
+          <div style="padding: 32px 24px 8px; display: flex; flex-direction: column; align-items: center; gap: 6px; text-align: center">
+            <span style="font-size: 14px; font-weight: 500">没有找到「{{query}}」</span>
+            <span style="font-size: 12px; color: #737373">只搜索了已同步到本机的邮件。按 Tab 让 Wit 读正文帮你找。</span>
+          </div>
+        </sc-if>
+      </div>
+
+      <sc-if value="{{menu.open}}" hint-placeholder-val="{{ false }}">
+        <div role="menu" aria-label="{{menu.title}}" style="{{menu.style}}">
+          <div style="padding: 6px 8px 4px; font-size: 12px; color: #737373; overflow: hidden; text-overflow: ellipsis; white-space: nowrap">{{menu.title}}</div>
+          <sc-for list="{{menu.items}}" as="m" hint-placeholder-count="4">
+            <button type="button" role="menuitem" onClick="{{m.pick}}" onMouseEnter="{{m.hover}}" style="{{m.style}}"><span>{{m.label}}</span><sc-if value="{{m.kbd}}" hint-placeholder-val="{{ false }}"><span style="display: flex; gap: 4px"><sc-for list="{{m.keys}}" as="k" hint-placeholder-count="1"><kbd>{{k.t}}</kbd></sc-for></span></sc-if></button>
+          </sc-for>
+        </div>
+      </sc-if>
+    </div>
+    </sc-if>
+    <sc-if value="{{asking}}" hint-placeholder-val="{{ false }}">
+      <div style="padding: 12px">
+        <div style="display: flex; flex-direction: column; gap: 8px; padding: 12px; border: 1px solid #E5E5E5; border-radius: 12px; background: #FFFFFF">
+          <textarea aria-label="向 Wit 提问" placeholder="问点什么，比如：上周谁还在等我回复？" onInput="{{onInput}}" onKeyDown="{{onAskKey}}" style="min-height: 56px; max-height: 240px; padding: 0; border: 0; resize: none; background: transparent; font: inherit; font-size: 14px; line-height: 1.5; color: #0A0A0A; outline: none">{{query}}</textarea>
+          <div style="display: flex; justify-content: flex-end">
+            <a href="Ask.dc.html" aria-label="发送给 Wit" style="width: 28px; height: 28px; display: flex; align-items: center; justify-content: center; border-radius: 8px; background: #171717; color: #FAFAFA"><svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M13.0001 7.82843V20H11.0001V7.82843L5.63614 13.1924L4.22192 11.7782L12.0001 4L19.7783 11.7782L18.3641 13.1924L13.0001 7.82843Z"></path></svg></a>
+          </div>
+        </div>
+      </div>
+    </sc-if>
+
+    <div style="display: flex; align-items: center; gap: 20px; height: 40px; padding: 0 16px; border-top: 1px solid rgba(10,10,10,0.08); background: rgba(250,250,250,0.4); font-size: 12px; color: #737373">
+      <sc-if value="{{searching}}" hint-placeholder-val="{{ true }}">
+      <span style="display: flex; align-items: center; gap: 6px">关闭<kbd>Esc</kbd></span>
+      <span style="display: flex; align-items: center; gap: 6px">切换类型<kbd>←</kbd><kbd>→</kbd></span>
+      <span style="display: flex; align-items: center; gap: 6px">筛选条件<kbd>/</kbd></span>
+      <span style="display: flex; align-items: center; gap: 6px">操作<kbd>⌥</kbd><kbd>↵</kbd></span>
+      <button type="button" data-wit="true" onClick="{{toggleAsk}}" style="margin-left: auto; display: flex; align-items: center; gap: 6px; border: 0; padding: 0; background: transparent; font: inherit; color: #737373">问 Wit<kbd>Tab</kbd></button>
+      </sc-if>
+      <sc-if value="{{asking}}" hint-placeholder-val="{{ false }}">
+      <span style="display: flex; align-items: center; gap: 6px">发送<kbd>↵</kbd></span>
+      <button type="button" onClick="{{toggleAsk}}" style="margin-left: auto; display: flex; align-items: center; gap: 6px; border: 0; padding: 0; background: transparent; font: inherit; color: #737373">搜索<kbd>Tab</kbd></button>
+      </sc-if>
+    </div>
+  </div>
+
+  <sc-if value="{{preview.show}}" hint-placeholder-val="{{ false }}">
+    <aside aria-label="邮件预览" style="{{preview.style}}">
+      <div style="display: flex; align-items: center; gap: 10px">
+        <span aria-hidden="true" style="{{preview.avatarStyle}}">{{preview.initial}}</span>
+        <span style="flex: 1; min-width: 0; display: flex; flex-direction: column">
+          <span style="font-weight: 500; overflow: hidden; text-overflow: ellipsis; white-space: nowrap">{{preview.from}}</span>
+          <span style="font-size: 12px; color: #737373">{{preview.date}}</span>
+        </span>
+        <sc-if value="{{preview.folder}}" hint-placeholder-val="{{ false }}"><span style="flex: none; padding: 0 6px; border-radius: 4px; background: rgba(10,10,10,0.06); color: #404040; font-size: 11px; line-height: 18px">{{preview.folder}}</span></sc-if>
+      </div>
+      <div style="font-size: 14px; font-weight: 600; line-height: 1.4"><sc-for list="{{preview.subject}}" as="g" hint-placeholder-count="1"><sc-if value="{{g.hit}}" hint-placeholder-val="{{ false }}"><mark style="padding: 0 1px; border-radius: 2px; background: #FFF085; color: #0A0A0A">{{g.t}}</mark></sc-if><sc-if value="{{g.plain}}" hint-placeholder-val="{{ true }}"><span>{{g.t}}</span></sc-if></sc-for></div>
+      <p style="margin: 0; color: #404040; line-height: 1.6; display: -webkit-box; -webkit-line-clamp: 5; -webkit-box-orient: vertical; overflow: hidden"><sc-for list="{{preview.body}}" as="g" hint-placeholder-count="1"><sc-if value="{{g.hit}}" hint-placeholder-val="{{ false }}"><mark style="padding: 0 1px; border-radius: 2px; background: #FFF085; color: #0A0A0A">{{g.t}}</mark></sc-if><sc-if value="{{g.plain}}" hint-placeholder-val="{{ true }}"><span>{{g.t}}</span></sc-if></sc-for></p>
+      <sc-if value="{{preview.file}}" hint-placeholder-val="{{ false }}"><span style="align-self: flex-start; display: flex; align-items: center; gap: 6px; height: 28px; padding: 0 10px; border: 1px solid rgba(10,10,10,0.08); border-radius: 8px; font-size: 12px"><svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true" style="color: #737373"><path d="{{preview.fileIcon}}"></path></svg>{{preview.file}}</span></sc-if>
+    </aside>
+  </sc-if>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"initialQuery":{"editor":"text","default":""},"initialScope":{"editor":"enum","options":["all","mail","chats","people","files"],"default":"all"},"initialFilters":{"editor":"text","default":""},"initialMenu":{"editor":"enum","options":["","filter","actions"],"default":""},"initialMode":{"editor":"enum","options":["search","ask"],"default":"search"},"$preview":{"width":1440,"height":900}}'>
+class Component extends DCLogic {
+  constructor(props) {
+    super(props);
+    this.state = { q: props.initialQuery || '', scope: props.initialScope || 'all', sel: 0,
+      filters: props.initialFilters ? props.initialFilters.split(',') : [], menu: props.initialMenu || '', msel: 0, ask: props.initialMode === 'ask' };
+  }
+  renderVals() {
+    var self = this, st = this.state;
+    var I = {
+      search: 'M18.031 16.6168L22.3137 20.8995L20.8995 22.3137L16.6168 18.031C15.0769 19.263 13.124 20 11 20C6.032 20 2 15.968 2 11C2 6.032 6.032 2 11 2C15.968 2 20 6.032 20 11C20 13.124 19.263 15.0769 18.031 16.6168ZM16.0247 15.8748C17.2475 14.6146 18 12.8956 18 11C18 7.1325 14.8675 4 11 4C7.1325 4 4 7.1325 4 11C4 14.8675 7.1325 18 11 18C12.8956 18 14.6146 17.2475 15.8748 16.0247L16.0247 15.8748Z',
+      mail: 'M3 3H21C21.5523 3 22 3.44772 22 4V20C22 20.5523 21.5523 21 21 21H3C2.44772 21 2 20.5523 2 20V4C2 3.44772 2.44772 3 3 3ZM20 7.23792L12.0718 14.338L4 7.21594V19H20V7.23792ZM4.51146 5L12.0619 11.662L19.501 5H4.51146Z',
+      user: 'M4 22C4 17.5817 7.58172 14 12 14C16.4183 14 20 17.5817 20 22H18C18 18.6863 15.3137 16 12 16C8.68629 16 6 18.6863 6 22H4ZM12 13C8.685 13 6 10.315 6 7C6 3.685 8.685 1 12 1C15.315 1 18 3.685 18 7C18 10.315 15.315 13 12 13ZM12 11C14.21 11 16 9.21 16 7C16 4.79 14.21 3 12 3C9.79 3 8 4.79 8 7C8 9.21 9.79 11 12 11Z',
+      file: 'M14.8287 7.7574L9.1718 13.4143C8.78127 13.8048 8.78127 14.4379 9.1718 14.8285C9.56232 15.219 10.1955 15.219 10.586 14.8285L16.2429 9.17161C17.4144 8.00004 17.4144 6.10055 16.2429 4.92897C15.0713 3.7574 13.1718 3.7574 12.0002 4.92897L6.34337 10.5858C4.39075 12.5384 4.39075 15.7043 6.34337 17.6569C8.29599 19.6095 11.4618 19.6095 13.4144 17.6569L19.0713 12L20.4855 13.4143L14.8287 19.0711C12.095 21.8048 7.66283 21.8048 4.92916 19.0711C2.19549 16.3374 2.19549 11.9053 4.92916 9.17161L10.586 3.51476C12.5386 1.56214 15.7045 1.56214 17.6571 3.51476C19.6097 5.46738 19.6097 8.63321 17.6571 10.5858L12.0002 16.2427C10.8287 17.4143 8.92916 17.4143 7.75759 16.2427C6.58601 15.0711 6.58601 13.1716 7.75759 12L13.4144 6.34319L14.8287 7.7574Z',
+      write: 'M16.7574 2.99678L14.7574 4.99678H5V18.9968H19V9.23943L21 7.23943V19.9968C21 20.5491 20.5523 20.9968 20 20.9968H4C3.44772 20.9968 3 20.5491 3 19.9968V3.99678C3 3.4445 3.44772 2.99678 4 2.99678H16.7574ZM20.4853 2.09729L21.8995 3.5115L12.7071 12.7039L11.2954 12.7064L11.2929 11.2897L20.4853 2.09729Z',
+      wit: 'M14 4.4375C15.3462 4.4375 16.4375 3.34619 16.4375 2H17.5625C17.5625 3.34619 18.6538 4.4375 20 4.4375V5.5625C18.6538 5.5625 17.5625 6.65381 17.5625 8H16.4375C16.4375 6.65381 15.3462 5.5625 14 5.5625V4.4375ZM1 11C4.31371 11 7 8.31371 7 5H9C9 8.31371 11.6863 11 15 11V13C11.6863 13 9 15.6863 9 19H7C7 15.6863 4.31371 13 1 13V11ZM17.25 14C17.25 15.7949 15.7949 17.25 14 17.25V18.75C15.7949 18.75 17.25 20.2051 17.25 22H18.75C18.75 20.2051 20.2051 18.75 22 18.75V17.25C20.2051 17.25 18.75 15.7949 18.75 14H17.25Z',
+      chat: 'M7.29117 20.8242L2 22L3.17581 16.7088C2.42544 15.3056 2 13.7025 2 12C2 6.47715 6.47715 2 12 2C17.5228 2 22 6.47715 22 12C22 17.5228 17.5228 22 12 22C10.2975 22 8.6944 21.5746 7.29117 20.8242ZM7.58075 18.711L8.23428 19.0605C9.38248 19.6745 10.6655 20 12 20C16.4183 20 20 16.4183 20 12C20 7.58172 16.4183 4 12 4C7.58172 4 4 7.58172 4 12C4 13.3345 4.32549 14.6175 4.93949 15.7657L5.28896 16.4192L4.63416 19.3658L7.58075 18.711Z',
+      settings: 'M7 3V6H3V8H7V11H9V3H7ZM11 8H21V6H11V8ZM17 13V16H21V18H17V21H15V13H17ZM13 18H3V16H13V18Z',
+      arrow: 'M16.1716 10.9999L10.8076 5.63589L12.2218 4.22168L20 11.9999L12.2218 19.778L10.8076 18.3638L16.1716 12.9999H4V10.9999H16.1716Z',
+      add: 'M11 11V5H13V11H19V13H13V19H11V13H5V11H11Z',
+      filter: 'M10.9042 2.10025L20.8037 3.51446L22.2179 13.414L13.0255 22.6063C12.635 22.9969 12.0019 22.9969 11.6113 22.6063L1.71184 12.7069C1.32131 12.3163 1.32131 11.6832 1.71184 11.2926L10.9042 2.10025ZM11.6113 4.22157L3.83316 11.9997L12.3184 20.485L20.0966 12.7069L19.036 5.28223L11.6113 4.22157ZM13.7327 10.5855C12.9516 9.80448 12.9516 8.53815 13.7327 7.7571C14.5137 6.97606 15.78 6.97606 16.5611 7.7571C17.3421 8.53815 17.3421 9.80448 16.5611 10.5855C15.78 11.3666 14.5137 11.3666 13.7327 10.5855Z'
+    };
+    var MAILS = [
+      { t: 'Q4 partnership proposal', sub: 'Lena Fischer', meta: '昨天', file: 'Q4-proposal.pdf', body: 'Hi, following up on our call last week, I put together a draft proposal for the Q4 partnership. The main points are a shared launch in November.' },
+      { t: 'Re: Q4 partnership proposal', sub: 'Lena Fischer', to: '发给 ', folder: '草稿', meta: '09:52', body: 'Hi Lena, thank you for the proposal. November works well for us; would it be possible to move the webinar back by one week?' },
+      { t: 'Proposal review moved to Thursday', sub: 'Daniel Ortiz', meta: '10/18', unread: true, body: 'Quick heads-up: the proposal review is now on Thursday at 15:00, same room.' },
+      { t: '值机提醒：NW 1858 上海 → 成都', sub: 'Northwind Airlines', meta: '08:15', unread: true, body: '你的航班将于明天 14:20 起飞，现已开放在线值机。' },
+      { t: '[Code Host] 你的登录验证码', sub: 'Code Host', meta: '09:41', unread: true, body: '有人正在尝试登录你的账户，验证码 10 分钟内有效。' },
+      { t: '10 月报销单已审批通过', sub: '财务部', meta: '周一', body: '你提交的 10 月差旅报销单已审批通过，款项将在 3 个工作日内到账。' },
+      { t: 'Your receipt for October', sub: 'Acme Cloud', meta: '10/02', folder: '归档', file: 'receipt-oct.pdf', body: 'Thanks for your payment. Amount: [AMOUNT]. Paid on October 2.' }
+    ];
+    // Wit conversations, as in the Wit page's sidebar
+    var CHATS = [
+      { t: '这个月的订阅', meta: '今天', body: 'Acme Cloud receipt subscription' },
+      { t: '整理 Q4 合作往来', meta: '10/24', body: 'Lena Fischer Q4 partnership proposal 时间线' },
+      { t: '上周谁在等我回复', meta: '10/23', body: 'Daniel Ortiz proposal review' },
+      { t: '找一下去年的发票', meta: '10/12', body: 'invoice 发票' },
+      { t: '旅行订单汇总', meta: '10/08', body: 'Northwind 航班 hotel' }
+    ];
+    var PEOPLE = [
+      { t: 'Lena Fischer', sub: 'lena@partner.example', meta: '12 封' },
+      { t: 'Daniel Ortiz', sub: 'daniel@partner.example', meta: '4 封' },
+      { t: '财务部', sub: 'finance@company.example', meta: '9 封' },
+      { t: 'Acme Cloud', sub: 'billing@acme.example', meta: '6 封' },
+      { t: 'Northwind Airlines', sub: 'checkin@northwind.example', meta: '3 封' }
+    ];
+    var FILES = [
+      { t: 'Q4-proposal.pdf', sub: 'Lena Fischer · Q4 partnership proposal', meta: '昨天' },
+      { t: 'hotel-invoice.pdf', sub: '草稿 · 差旅报销', meta: '昨天' },
+      { t: 'receipt-oct.pdf', sub: 'Acme Cloud · Your receipt for October', meta: '10/02' }
+    ];
+    var CMDS = [
+      { t: '写邮件', kbd: '⌘N', icon: I.write, href: 'Compose.dc.html' },
+      { t: '新对话', sub: 'Wit', kbd: '', icon: I.chat, href: 'WitEmpty.dc.html' },
+      { t: '转到草稿', kbd: '', icon: I.arrow, href: 'MainDrafts.dc.html' },
+      { t: '管理标签', kbd: '', icon: I.settings, href: 'SettingsLabels.dc.html' },
+      { t: '添加账户', kbd: '', icon: I.add, href: 'SettingsAccounts.dc.html' },
+      { t: '打开设置', kbd: '⌘,', icon: I.settings, href: 'SettingsGeneral.dc.html' }
+    ];
+    var FILTERS = [['有附件', '只看带附件的邮件'], ['未读', ''], ['账户：工作', 'you@company.example'], ['文件夹：收件箱', ''], ['最近 7 天', '']];
+    var ACTIONS = {
+      mail: [['回复', 'R'], ['全部回复', '⇧R'], ['归档', 'E'], ['标为未读', 'U'], ['打标签…', 'L']],
+      chat: [['打开对话', '↵'], ['重命名', ''], ['删除', '']],
+      person: [['写邮件', ''], ['查看往来邮件', ''], ['复制地址', '⌘C']],
+      file: [['快速预览', 'Space'], ['存储到…', '⌘S'], ['打开所在邮件', '']],
+      cmd: [['运行', '↵']]
+    };
+
+    var q = st.q, scope = st.scope, ql = q.trim().toLowerCase(), F = st.filters;
+    var active = !!ql || F.length > 0;
+    var has = function (x) { return !ql || (x.t + ' ' + (x.sub || '') + ' ' + (x.body || '')).toLowerCase().indexOf(ql) >= 0; };
+    var mailOk = function (m) { return has(m) && (F.indexOf('有附件') < 0 || m.file) && (F.indexOf('未读') < 0 || m.unread); };
+    var segs = function (t) {
+      var i = ql ? t.toLowerCase().indexOf(ql) : -1;
+      if (i < 0) return [{ t: t, hit: false, plain: true }];
+      return [{ t: t.slice(0, i), hit: false, plain: true }, { t: t.slice(i, i + ql.length), hit: true, plain: false }, { t: t.slice(i + ql.length), hit: false, plain: true }];
+    };
+    // kit.Avatar: a 32px rounded square (radius-lg) with the name's initial, in a
+    // label color but gray picked by FNV-1a of the name. The app shows the sender's
+    // favicon or Gravatar instead when one is found; these example domains have none.
+    var AVATAR = [['#FFE2E2', '#C10007'], ['#FFEDD4', '#CA3500'], ['#FEF3C6', '#BB4D00'], ['#FEF9C2', '#A65F00'], ['#ECFCCA', '#497D00'], ['#DCFCE7', '#008236'], ['#CBFBF1', '#00786F'], ['#DFF2FE', '#0069A8'], ['#DBEAFE', '#1447E6'], ['#EDE9FE', '#7008E7'], ['#FCE7F3', '#C6005C']];
+    var avatarStyle = function (name) {
+      var h = 0x811c9dc5;
+      new TextEncoder().encode(name).forEach(function (b) { h = Math.imul(h ^ b, 0x01000193) >>> 0; });
+      var c = AVATAR[h % AVATAR.length];
+      return 'width: 32px; height: 32px; flex: none; border-radius: 8px; background: ' + c[0] + '; color: ' + c[1] + '; font-size: 13px; font-weight: 600; line-height: 1; display: flex; align-items: center; justify-content: center';
+    };
+    // one line like every other row; the selected mail's details go to the preview card
+    var mailRow = function (m) {
+      return { kind: 'link', act: 'mail', title: m.t, sub: (m.to || '') + m.sub + (m.folder ? ' · ' + m.folder : ''), meta: m.meta, kbd: '', icon: I.mail, href: 'Main.dc.html', unread: !!m.unread, mail: m };
+    };
+    var row = function (x, icon, href, act) { return { kind: 'link', act: act, title: x.t, sub: x.sub || '', meta: x.meta || '', kbd: x.kbd || '', icon: x.icon || icon, href: x.href || href }; };
+    var chatRow = function (c) { return row(c, I.chat, 'Ask.dc.html', 'chat'); };
+    var personRow = function (p) { return row(p, I.user, 'MainSearch.dc.html', 'person'); };
+    var fileRow = function (f) { return row(f, I.file, 'Main.dc.html', 'file'); };
+    var cmdRow = function (c) { return row(c, null, null, 'cmd'); };
+    var cap = function (list, n) { return scope === 'all' ? list.slice(0, n) : list; };
+
+    var raw = [];
+    var mails = MAILS.filter(mailOk), chats = CHATS.filter(has), people = PEOPLE.filter(has), files = FILES.filter(has), cmds = CMDS.filter(has);
+    if (F.length) { chats = []; people = []; cmds = []; }
+    if (st.menu === 'filter') {
+      raw.push({ title: '筛选条件', rows: FILTERS.filter(function (f) { return F.indexOf(f[0]) < 0; }).map(function (f) {
+        return { kind: 'fill', title: f[0], sub: f[1], icon: I.filter, fill: function () { self.setState({ filters: F.concat([f[0]]), menu: '', sel: 0 }); } };
+      }) });
+    } else if (!active && scope === 'all') {
+      raw.push({ title: '最近使用', rows: [mailRow(MAILS[0]), chatRow(CHATS[0]), mailRow(MAILS[3]), fileRow(FILES[0]), chatRow(CHATS[1])] });
+      raw.push({ title: '操作', rows: CMDS.slice(0, 2).map(cmdRow) });
+    } else {
+      if (scope === 'all' || scope === 'mail') raw.push({ title: active ? '邮件 · ' + mails.length : '最近打开的邮件', rows: cap(mails, 3).map(mailRow) });
+      if (scope === 'all' || scope === 'chats') raw.push({ title: active ? '对话' : 'Wit 对话', rows: cap(chats, 2).map(chatRow) });
+      if (scope === 'all' || scope === 'people') raw.push({ title: active ? '联系人' : '常用联系人', rows: cap(people, 2).map(personRow) });
+      if (scope === 'all' || scope === 'files') raw.push({ title: active ? '附件' : '最近的附件', rows: cap(files, 2).map(fileRow) });
+      if (scope === 'all') raw.push({ title: '操作', rows: cmds.slice(0, 3).map(cmdRow) });
+      if (active && mails.length > 3 && scope === 'all') raw.push({ title: '更多', rows: [{ kind: 'link', act: 'cmd', title: '在邮件列表中查看全部 ' + mails.length + ' 封', sub: '', meta: '', kbd: '⌘↵', icon: I.search, href: 'MainSearch.dc.html', seeAll: true }] });
+    }
+    raw = raw.filter(function (s) { return s.rows.length; });
+
+    var flat = [];
+    raw.forEach(function (s) { s.rows.forEach(function (r) { flat.push(r); }); });
+    var sel = Math.max(0, Math.min(st.sel, flat.length - 1));
+    var n = 0, y = 4, selY = 0;
+    var sections = raw.map(function (s) {
+      y += 38; // section heading
+      return { title: s.title, rows: s.rows.map(function (r) {
+        var i = n++, on = i === sel;
+        if (on) selY = y;
+        y += 42;
+        return Object.assign({}, r, {
+          keys: keysOf(r.kbd), isLink: r.kind === 'link', isFill: r.kind === 'fill', unread: !!r.unread,
+          on: on, off: !on, segs: segs(r.title), selText: on ? 'true' : 'false',
+          style: 'display: flex; align-items: center; gap: 12px; height: 40px; flex: none; padding: 0 12px; border: 0; border-radius: 8px; text-decoration: none; color: #0A0A0A; font: inherit; background: ' + (on ? 'rgba(10,10,10,0.06)' : 'transparent'),
+          iconStyle: 'flex: none; color: ' + (on ? '#0A0A0A' : '#737373'),
+          hover: function () { if (self.state.sel !== i) self.setState({ sel: i }); },
+          more: function (e) { e.preventDefault(); e.stopPropagation(); self.setState({ sel: i, menu: 'actions', msel: 0 }); }
+        });
+      }) };
+    });
+
+    var cur = flat[sel];
+    // Claude-style peek beside the palette, level with the selected row (list scroll ignored)
+    var pm = cur && cur.mail && st.menu !== 'actions' ? cur.mail : null;
+    if (st.ask) pm = null; // asking hides the results and their card
+    var preview = { show: !!pm };
+    if (pm) {
+      var DATE = { '昨天': '昨天 21:03', '09:52': '今天 09:52 · 草稿', '10/18': '10 月 18 日', '08:15': '今天 08:15', '09:41': '今天 09:41', '周一': '周一 17:30', '10/02': '10 月 2 日' };
+      preview = { show: true, from: (pm.to || '') + pm.sub, date: DATE[pm.meta] || pm.meta, folder: pm.folder || '', initial: Array.from(pm.sub)[0].toUpperCase(),
+        avatarStyle: avatarStyle(pm.sub), subject: segs(pm.t), body: segs(pm.body), file: pm.file || '', fileIcon: I.file,
+        style: 'position: absolute; left: 1048px; top: ' + Math.min(96 + 102 + selY - 12, 600) + 'px; width: 340px; box-sizing: border-box; display: flex; flex-direction: column; gap: 12px; padding: 16px; background: rgba(255,255,255,0.8); backdrop-filter: blur(24px) saturate(180%); -webkit-backdrop-filter: blur(24px) saturate(180%); border: 1px solid rgba(10,10,10,0.08); border-radius: 12px; box-shadow: 0 10px 15px -3px rgba(0,0,0,0.1), 0 4px 6px -4px rgba(0,0,0,0.1)' };
+    }
+    var acts = st.menu === 'actions' && cur ? ACTIONS[cur.act] || ACTIONS.cmd : [];
+    var msel = Math.min(st.msel, Math.max(acts.length - 1, 0));
+    // under the selected row, its right edge on the row's; kept inside the list
+    var menuTop = Math.min(selY + 44, 452 - (34 + acts.length * 34));
+    var menu = { open: acts.length > 0, title: cur ? cur.title : '', style: 'position: absolute; right: 8px; top: ' + menuTop + 'px; width: 220px; display: flex; flex-direction: column; gap: 2px; padding: 4px; background: rgba(255,255,255,0.92); backdrop-filter: blur(24px); -webkit-backdrop-filter: blur(24px); border: 1px solid rgba(10,10,10,0.08); border-radius: 8px; box-shadow: 0 4px 6px -1px rgba(0,0,0,0.1), 0 2px 4px -2px rgba(0,0,0,0.1)', items: acts.map(function (a, i) {
+      return { label: a[0], kbd: a[1], keys: keysOf(a[1]), pick: function () { self.setState({ menu: '' }); }, hover: function () { self.setState({ msel: i }); },
+        style: 'display: flex; align-items: center; justify-content: space-between; gap: 8px; height: 32px; padding: 0 8px; border: 0; border-radius: 6px; color: #0A0A0A; text-align: left; background: ' + (i === msel ? 'rgba(10,10,10,0.06)' : 'transparent') };
+    }) };
+
+    // a keycap each key: each modifier and arrow its own, the rest one (Esc, Space)
+    function keysOf(k) { var out = []; k = k || ''; while (k && '⌘⇧⌥⌃←→↑↓'.indexOf(k[0]) >= 0) { out.push({ t: k[0] }); k = k.slice(1); } if (k) out.push({ t: k }); return out; }
+    var SCOPES = [['all', '全部'], ['mail', '邮件'], ['chats', '对话'], ['people', '联系人'], ['files', '附件']];
+    var go = function (d) {
+      var k = SCOPES.map(function (s) { return s[0]; }).indexOf(scope);
+      self.setState({ scope: SCOPES[(k + d + SCOPES.length) % SCOPES.length][0], sel: 0, menu: '' });
+    };
+    var dialog = function (e) { return e.currentTarget.closest('[role=dialog]'); };
+
+    return {
+      query: q, placeholder: st.menu === 'filter' ? '选择筛选条件' : '搜索',
+      noResults: active && !flat.length,
+      chips: F.map(function (f) { return { label: f, remove: function () { self.setState({ filters: F.filter(function (x) { return x !== f; }), sel: 0 }); } }; }),
+      tabs: SCOPES.map(function (s) {
+        var on = s[0] === scope;
+        return { label: s[1], selText: on ? 'true' : 'false', pick: function () { self.setState({ scope: s[0], sel: 0, menu: '' }); },
+          style: 'height: 32px; padding: 0 12px; border: 0; border-radius: 8px; font-size: 14px; background: ' + (on ? 'rgba(10,10,10,0.06)' : 'transparent') + '; color: ' + (on ? '#0A0A0A' : '#404040') + '; font-weight: ' + (on ? '500' : '400') };
+      }),
+      sections: sections, menu: menu, preview: preview, searching: !st.ask, asking: !!st.ask,
+      // Tab turns the box into a question to Wit and back, the text kept
+      toggleAsk: function () { self.setState({ ask: !st.ask, menu: '' }); },
+      onAskKey: function (e) {
+        if (e.key === 'Tab') { e.preventDefault(); self.setState({ ask: false }); }
+        else if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); dialog(e).querySelector('a[href="Ask.dc.html"]').click(); }
+      },
+      onInput: function (e) { self.setState({ q: e.target.value, sel: 0, menu: st.menu === 'actions' ? '' : st.menu }); },
+      onKey: function (e) {
+        var k = e.key;
+        if (st.menu === 'actions') {
+          if (k === 'ArrowDown' || k === 'ArrowUp') { e.preventDefault(); self.setState({ msel: (msel + (k === 'ArrowDown' ? 1 : -1) + acts.length) % acts.length }); }
+          else if (k === 'Enter' || k === 'Escape') { e.preventDefault(); self.setState({ menu: '' }); }
+          return;
+        }
+        if (k === 'ArrowDown' || k === 'ArrowUp') {
+          e.preventDefault();
+          if (flat.length) self.setState({ sel: (sel + (k === 'ArrowDown' ? 1 : -1) + flat.length) % flat.length });
+        } else if ((k === 'ArrowLeft' || k === 'ArrowRight') && !q) {
+          // with text in the box the arrows move the caret; ⌃Tab switches type then
+          e.preventDefault(); go(k === 'ArrowRight' ? 1 : -1);
+        } else if (k === 'Tab' && e.ctrlKey) {
+          e.preventDefault(); go(e.shiftKey ? -1 : 1);
+        } else if (k === 'Tab') {
+          e.preventDefault(); self.setState({ ask: true, menu: '' });
+        } else if (k === '/' && (!q || / $/.test(q))) {
+          // a slash inside a word stays text, so dates like 10/02 still search
+          e.preventDefault(); self.setState({ menu: 'filter', sel: 0 });
+        } else if (k === 'Backspace' && !q && F.length) {
+          self.setState({ filters: F.slice(0, -1), sel: 0 });
+        } else if (k === 'Escape') {
+          e.preventDefault();
+          if (st.menu) self.setState({ menu: '', sel: 0 }); else if (q) self.setState({ q: '', sel: 0 });
+        } else if (k === 'Enter' && e.altKey) {
+          e.preventDefault(); if (cur && cur.kind !== 'fill') self.setState({ menu: 'actions', msel: 0 });
+        } else if (k === 'Enter') {
+          e.preventDefault();
+          // shortcut: the prototype "opens" a row by clicking its option; the app routes by row kind.
+          var opt = dialog(e).querySelector(e.metaKey ? 'a[href="MainSearch.dc.html"]' : '[role=option][aria-selected=true]');
+          if (opt) opt.click();
+        }
+      }
+    };
+  }
+}
+</script>
+</body>
+</html>

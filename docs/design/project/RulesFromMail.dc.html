@@ -1,0 +1,36 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<title>Godwit 邮件右键菜单 · 创建规则</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600&amp;family=Geist+Mono:wght@500&amp;family=Noto+Sans+SC:wght@400;500;600&amp;display=swap" rel="stylesheet">
+<style>
+body{margin:0}
+</style>
+</helmet>
+<div style="position: relative; width: 1440px; height: 900px; font-family: 'Geist', 'Noto Sans SC', 'PingFang SC', sans-serif; font-size: 14px; color: #0A0A0A">
+<dc-import name="Main" reader="thread" labels="true" platform="mac" initial-message="2" initial-summary="false" hint-size="1440px,900px"></dc-import>
+<div role="menu" aria-label="邮件操作" style="position: absolute; left: 430px; top: 196px; z-index: 30; width: 236px; box-sizing: border-box; padding: 4px; border: 1px solid #E5E5E5; border-radius: 10px; background: #FFFFFF; box-shadow: 0 4px 6px -1px rgba(0,0,0,0.1), 0 2px 4px -2px rgba(0,0,0,0.1); display: flex; flex-direction: column">
+<button type="button" role="menuitem" style="height: 32px; display: flex; align-items: center; justify-content: space-between; padding: 0 10px; border: 0; border-radius: 6px; background: transparent; font: inherit; color: #0A0A0A; text-align: left">回复<span style="font-size: 12px; color: #737373">⌘R</span></button>
+<button type="button" role="menuitem" style="height: 32px; display: flex; align-items: center; justify-content: space-between; padding: 0 10px; border: 0; border-radius: 6px; background: transparent; font: inherit; color: #0A0A0A; text-align: left">转发<span style="font-size: 12px; color: #737373">⇧⌘F</span></button>
+<button type="button" role="menuitem" style="height: 32px; display: flex; align-items: center; justify-content: space-between; padding: 0 10px; border: 0; border-radius: 6px; background: transparent; font: inherit; color: #0A0A0A; text-align: left">归档<span style="font-size: 12px; color: #737373">E</span></button>
+<button type="button" role="menuitem" style="height: 32px; display: flex; align-items: center; padding: 0 10px; border: 0; border-radius: 6px; background: transparent; font: inherit; color: #0A0A0A; text-align: left">改标签…</button>
+<div aria-hidden="true" style="height: 1px; margin: 4px 6px; background: #E5E5E5"></div>
+<a href="SettingsRulesFromMail.dc.html" role="menuitem" style="height: 32px; display: flex; align-items: center; gap: 8px; padding: 0 10px; border-radius: 6px; background: #F5F5F5; color: #0A0A0A; text-decoration: none">为类似邮件创建规则…</a>
+<button type="button" role="menuitem" style="height: 32px; display: flex; align-items: center; padding: 0 10px; border: 0; border-radius: 6px; background: transparent; font: inherit; color: #0A0A0A; text-align: left">屏蔽发件人</button>
+</div>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":1440,"height":900}}'>
+class Component extends DCLogic {
+  renderVals() { return {}; }
+}
+</script>
+</body>
+</html>

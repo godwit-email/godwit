@@ -15,8 +15,8 @@ type LabelChipOpts struct {
 	Display         string
 	Color           theme.LabelColor
 	Auto            bool
-	OnClick         func() // set: the chip is a button
-	OnRemove        func() // set: a trailing × named RemoveLabel
+	Menu            func(*ui.Menu) // set: the chip is a button with this menu
+	OnRemove        func()         // set: a trailing × named RemoveLabel
 	RemoveLabel     string
 }
 
@@ -24,11 +24,8 @@ type LabelChipOpts struct {
 func LabelChip(c *ui.Context, o LabelChipOpts) ui.Element {
 	t, th := theme.Of(c), c.Theme()
 	var chip ui.Element
-	if o.OnClick != nil {
-		chip = ui.ButtonBase(c).Label(o.Text)
-		if chip.Clicked() {
-			o.OnClick()
-		}
+	if o.Menu != nil {
+		chip = ui.ButtonBase(c).Label(o.Text).Menu(o.Menu)
 	} else {
 		chip = ui.Row(c)
 	}

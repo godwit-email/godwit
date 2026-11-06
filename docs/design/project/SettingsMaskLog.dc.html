@@ -1,0 +1,199 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<title>Godwit 设置 脱敏记录</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600&amp;family=Geist+Mono:wght@500&amp;family=Noto+Sans+SC:wght@400;500;600&amp;display=swap" rel="stylesheet">
+<style>
+body{margin:0}
+button,select{font:inherit}
+.back-link{color:#737373;background:transparent}
+.back-link:hover{color:#0A0A0A;background:#F5F5F5}
+.req:hover{background-color:#EFEFEF}
+</style>
+</helmet>
+<div style="position: relative; width: 1440px; height: 900px; border-radius: 12px; overflow: hidden">
+<img src="/_blob/878f002c10b0d6c92e36b2bcfb479e8e" alt="" aria-label="桌面壁纸（已模糊）" style="position: absolute; left: -120px; top: -120px; width: 1680px; height: 1140px; object-fit: cover">
+<div aria-label="窗口材质" style="position: absolute; inset: 0; backdrop-filter: blur(20px); -webkit-backdrop-filter: blur(20px); background-color: #FAFAFAF2"></div>
+<div style="position: relative; width: 1440px; height: 900px; box-sizing: border-box; display: flex; flex-direction: column; overflow: hidden; font-family: 'Geist', 'Noto Sans SC', 'PingFang SC', sans-serif; font-size: 14px; color: #0A0A0A; background: transparent; border: 1px solid rgba(0, 0, 0, 0.12); border-radius: 12px">
+  <div style="height: 44px; flex: none; display: flex; align-items: center; gap: 4px; padding-left: 88px; position: relative">
+    <span aria-hidden="true" style="position: absolute; left: 20px; top: 16px; display: flex; gap: 8px">
+      <span style="width: 12px; height: 12px; border-radius: 50%; background: #FF5F57; box-shadow: inset 0 0 0 0.5px rgba(0,0,0,0.12)"></span>
+      <span style="width: 12px; height: 12px; border-radius: 50%; background: #FEBC2E; box-shadow: inset 0 0 0 0.5px rgba(0,0,0,0.12)"></span>
+      <span style="width: 12px; height: 12px; border-radius: 50%; background: #28C840; box-shadow: inset 0 0 0 0.5px rgba(0,0,0,0.12)"></span>
+    </span>
+    <button type="button" aria-label="收起侧栏" style="width: 28px; height: 28px; border: 0; border-radius: 6px; background: transparent; color: #737373; display: flex; align-items: center; justify-content: center"><svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M21 3C21.5523 3 22 3.44772 22 4V20C22 20.5523 21.5523 21 21 21H3C2.44772 21 2 20.5523 2 20V4C2 3.44772 2.44772 3 3 3H21ZM7 5H4V19H7V5ZM20 5H9V19H20V5Z"></path></svg></button>
+    <a href="SettingsPrivacy.dc.html" aria-label="后退" style="width: 28px; height: 28px; border-radius: 6px; color: #737373; display: flex; align-items: center; justify-content: center"><svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M7.82843 10.9999H20V12.9999H7.82843L13.1924 18.3638L11.7782 19.778L4 11.9999L11.7782 4.22168L13.1924 5.63589L7.82843 10.9999Z"></path></svg></a>
+    <button type="button" aria-label="前进" style="width: 28px; height: 28px; border: 0; border-radius: 6px; background: transparent; color: #A1A1A1; display: flex; align-items: center; justify-content: center"><svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M16.1716 10.9999L10.8076 5.63589L12.2218 4.22168L20 11.9999L12.2218 19.778L10.8076 18.3638L16.1716 12.9999H4V10.9999H16.1716Z"></path></svg></button>
+  </div>
+  <div style="flex: 1; min-height: 0; display: flex; box-sizing: border-box; padding: 0 8px 8px 8px">
+    <div style="flex: 1; min-width: 0; display: flex; gap: 8px">
+    <dc-import name="SettingsSidebar" current="privacy" hint-size="248px,848px"></dc-import>
+    <div style="flex: 1; min-width: 0; display: flex; overflow: auto; background: #FFFFFF; border: 1px solid #E5E5E5; border-radius: 12px; box-shadow: 0 1px 2px 0 rgba(0,0,0,0.05)">
+<main style="flex: 1 1 auto; align-self: flex-start; min-width: 0; max-width: 760px; margin: 0 auto; padding: 32px; display: flex; flex-direction: column; gap: 24px">
+<span style="display: flex; flex-direction: column; gap: 6px">
+<a href="SettingsPrivacy.dc.html" class="back-link" style="align-self: flex-start; display: flex; align-items: center; gap: 6px; height: 28px; padding: 0 8px; margin-left: -8px; border-radius: 6px; font-size: 13px; text-decoration: none"><svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M7.82843 10.9999H20V12.9999H7.82843L13.1924 18.3638L11.7782 19.778L4 11.9999L11.7782 4.22168L13.1924 5.63589L7.82843 10.9999Z"></path></svg>隐私与安全</a>
+<span style="display: flex; align-items: flex-end; justify-content: space-between; gap: 16px">
+<span style="display: flex; flex-direction: column; gap: 6px; min-width: 0">
+<h1 style="margin: 0; font-size: 29px; line-height: 1.25; font-weight: 600">脱敏记录</h1>
+<span style="color: #737373">发给模型服务和翻译插件的请求里找到了什么。只有找到值的请求才有记录，保留 30 天。</span>
+</span>
+<button type="button" style="flex: none; height: 32px; padding: 0 12px; border-radius: 8px; border: 1px solid #FFC9C9; background: #FFFFFF; color: #E7000B">清空记录</button>
+</span>
+</span>
+
+<div role="radiogroup" aria-label="按处理结果筛选" style="display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 8px">
+<sc-for list="{{tiles}}" as="t" hint-placeholder-count="4">
+<button type="button" role="radio" aria-checked="{{t.checked}}" onClick="{{t.pick}}" style="{{t.style}}">
+<span style="font-size: 12px; color: #737373">{{t.label}}</span>
+<span style="display: flex; align-items: baseline; gap: 4px"><span style="{{t.numStyle}}">{{t.n}}</span><span style="font-size: 12px; color: #737373">{{t.unit}}</span></span>
+<span style="font-size: 12px; color: #737373">{{t.desc}}</span>
+</button>
+</sc-for>
+</div>
+
+<section style="flex: none; display: flex; flex-direction: column; gap: 12px">
+<div style="display: flex; align-items: center; gap: 8px">
+<select aria-label="类别" onChange="{{pickCat}}" style="flex: none; height: 32px; padding: 0 10px; border: 1px solid #E5E5E5; border-radius: 8px; background: #FFFFFF; color: #0A0A0A"><sc-for list="{{catOpts}}" as="o" hint-placeholder-count="3"><option value="{{o.v}}">{{o.text}}</option></sc-for></select>
+<select aria-label="功能" onChange="{{pickFeature}}" style="flex: none; height: 32px; padding: 0 10px; border: 1px solid #E5E5E5; border-radius: 8px; background: #FFFFFF; color: #0A0A0A"><sc-for list="{{featureOpts}}" as="o" hint-placeholder-count="3"><option value="{{o.v}}">{{o.text}}</option></sc-for></select>
+</div>
+<sc-for list="{{groups}}" as="g" hint-placeholder-count="2">
+<div style="display: flex; flex-direction: column; gap: 8px">
+<span style="padding: 0 16px; font-size: 12px; color: #737373">{{g.day}}</span>
+<div style="border-radius: 12px; background: #F5F5F5; overflow: hidden"><div style="display: flex; flex-direction: column; margin-top: -1px">
+<sc-for list="{{g.rows}}" as="r" hint-placeholder-count="3">
+<div style="background: linear-gradient(#E5E5E5, #E5E5E5) center top / calc(100% - 32px) 1px no-repeat">
+<button type="button" class="req" aria-expanded="{{r.expanded}}" onClick="{{r.toggle}}" style="width: 100%; display: flex; align-items: center; gap: 12px; padding: 10px 16px; border: 0; background-color: transparent; text-align: left; color: #0A0A0A">
+<span style="flex: none; width: 40px; font-size: 12px; color: #737373; font-variant-numeric: tabular-nums">{{r.time}}</span>
+<span style="flex: 1; min-width: 0; font-weight: 500">{{r.feature}}</span>
+<span style="flex: none; display: flex; gap: 6px; flex-wrap: wrap; justify-content: flex-end">
+<sc-for list="{{r.cats}}" as="c" hint-placeholder-count="2"><span style="display: flex; align-items: center; gap: 6px; height: 24px; padding: 0 8px; border-radius: 6px; background: #FFFFFF; font-size: 12px"><span style="{{c.dot}}"></span>{{c.text}}</span></sc-for>
+<sc-if value="{{r.flag}}" hint-placeholder-val="{{ false }}"><span style="{{r.flagStyle}}">{{r.flagText}}</span></sc-if>
+</span>
+<svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true" style="{{r.chevron}}"><path d="M11.9997 13.1714L16.9495 8.22168L18.3637 9.63589L11.9997 15.9999L5.63574 9.63589L7.04996 8.22168L11.9997 13.1714Z"></path></svg>
+</button>
+<sc-if value="{{r.expanded}}" hint-placeholder-val="{{ false }}">
+<div style="display: flex; flex-direction: column; gap: 6px; padding: 0 16px 12px 68px">
+<sc-for list="{{r.values}}" as="v" hint-placeholder-count="2">
+<div style="display: flex; align-items: center; gap: 10px; min-height: 28px; padding: 4px 10px; border-radius: 8px; background: #FFFFFF; font-size: 13px">
+<span style="{{v.dot}}"></span>
+<span style="flex: none; font-weight: 500">{{v.cat}}</span>
+<span style="flex: none; font-family: 'Geist Mono', monospace; font-size: 11px; color: #737373">{{v.kind}}</span>
+<span style="flex: 1; min-width: 0; color: #737373; overflow: hidden; text-overflow: ellipsis; white-space: nowrap">{{v.shape}}</span>
+<span style="{{v.actStyle}}">{{v.act}}</span>
+</div>
+</sc-for>
+</div>
+</sc-if>
+</div>
+</sc-for>
+</div></div>
+</div>
+</sc-for>
+<sc-if value="{{empty}}" hint-placeholder-val="{{ false }}"><div style="padding: 24px 16px; border-radius: 12px; background: #F5F5F5; color: #737373; text-align: center">没有符合筛选条件的请求</div></sc-if>
+<span style="padding: 0 16px; font-size: 12px; color: #737373">不保存请求原文和原值，只记类别、首字符和长度；3 个字符及以下的值连首字符也不记。</span>
+</section>
+</main>
+    </div></div>
+  </div>
+</div>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"filter":{"editor":"enum","options":["","block","warn","mask"],"default":""},"expand":{"editor":"int","default":0},"$preview":{"width":1440,"height":900}}'>
+class Component extends DCLogic {
+  constructor(props) {
+    super(props);
+    var open = {};
+    open[Number(props.expand ?? 0)] = true;
+    this.state = { filter: props.filter || '', cat: '', feature: '', open: open };
+  }
+  renderVals() {
+    var self = this, st = this.state;
+    // category → dot color; colors differ in lightness as well as hue
+    var CAT = { '密钥': '#4338CA', '证件与金融号码': '#C2410C', '验证码与一次性链接': '#0F766E', '电话': '#A16207', '邮箱': '#2563EB', '人名': '#15803D', '自定义': '#737373' };
+    var dot = function (c) { return 'width: 6px; height: 6px; flex: none; border-radius: 50%; background: ' + CAT[c]; };
+    // features, as the masking log names them in core/masking.go
+    var FEATURES = ['Wit', '撰写', 'Skill', '即时回复', '翻译', '自动标签', '对话压缩', '插件'];
+    // [day, time, feature, [[category, kind, first char, length, action]]]
+    var REQS = [
+      ['今天', '12:37', 'Wit', [['邮箱', 'EMAIL', 'w', 13, 'mask'], ['邮箱', 'EMAIL', 'l', 18, 'mask'], ['自定义', 'TERM', 'P', 7, 'mask']]],
+      ['今天', '12:14', '自动标签', [['邮箱', 'EMAIL', 'n', 13, 'mask']]],
+      ['今天', '10:02', 'Wit', [['密钥', 'API_KEY', 's', 51, 'mask']]],
+      ['今天', '09:47', 'Skill', [['证件与金融号码', 'ID_CARD', '3', 18, 'block'], ['邮箱', 'EMAIL', 'h', 16, 'mask']]],
+      ['今天', '09:12', '即时回复', [['电话', 'PHONE', '1', 11, 'warn'], ['人名', 'NAME', '', 2, 'mask']]],
+      ['今天', '08:04', '自动标签', [['邮箱', 'EMAIL', 'm', 2, 'mask'], ['邮箱', 'EMAIL', 'a', 8, 'mask']]],
+      ['昨天', '19:31', '翻译', [['验证码与一次性链接', 'CODE', '4', 6, 'mask'], ['邮箱', 'EMAIL', 'b', 14, 'mask']]],
+      ['昨天', '16:08', '撰写', [['自定义', 'ORDER_NO', 'P', 10, 'mask'], ['自定义', 'TERM', 'P', 7, 'mask']]],
+      ['昨天', '11:40', '对话压缩', [['密钥', 'TOKEN', 'g', 40, 'block']]],
+      ['昨天', '04:17', '自动标签', [['邮箱', 'EMAIL', 'u', 10, 'mask'], ['邮箱', 'EMAIL', 's', 7, 'mask']]]
+    ];
+    var blocked = function (r) { return r[3].some(function (v) { return v[4] === 'block'; }); };
+    var warned = function (r) { return !blocked(r) && r[3].some(function (v) { return v[4] === 'warn'; }); };
+    var masked = function (r) { return !blocked(r) && r[3].some(function (v) { return v[4] === 'mask'; }); };
+    var byFilter = { '': function () { return true; }, block: blocked, warn: warned, mask: masked }[st.filter];
+    var hasCat = function (r, c) { return r[3].some(function (v) { return v[0] === c; }); };
+
+    // counts follow the requests that were sent: a blocked request's values count as neither masked nor warned
+    var sum = function (pick) { return REQS.reduce(function (n, r) { return n + (blocked(r) ? 0 : r[3].filter(function (v) { return v[4] === pick; }).length); }, 0); };
+    var TILES = [
+      ['', '全部', REQS.length, '次请求', '找到值的请求', '#0A0A0A'],
+      ['block', '已拦截', REQS.filter(blocked).length, '次请求', '整次请求没有发出', '#C10007'],
+      ['warn', '仅警告', sum('warn'), '个值', '原样发给了模型服务', '#973C00'],
+      ['mask', '已遮住', sum('mask'), '个值', '换成占位符后发出', '#0A0A0A']
+    ];
+
+    var list = REQS.map(function (r, i) { return { r: r, i: i }; }).filter(function (x) {
+      return byFilter(x.r) && (!st.cat || hasCat(x.r, st.cat)) && (!st.feature || x.r[2] === st.feature);
+    });
+    var groups = [];
+    list.forEach(function (x) {
+      var r = x.r, isBlocked = blocked(r), open = !!st.open[x.i];
+      var g = groups[groups.length - 1];
+      if (!g || g.day !== r[0]) { g = { day: r[0], rows: [] }; groups.push(g); }
+      var per = {};
+      r[3].forEach(function (v) { per[v[0]] = (per[v[0]] || 0) + 1; });
+      g.rows.push({
+        time: r[1], feature: r[2], expanded: open,
+        toggle: function () { var o = Object.assign({}, self.state.open); o[x.i] = !open; self.setState({ open: o }); },
+        chevron: 'flex: none; color: #A1A1A1; transition: transform 120ms; transform: rotate(' + (open ? 180 : 0) + 'deg)',
+        cats: Object.keys(per).map(function (c) { return { text: c + ' ×' + per[c], dot: dot(c) }; }),
+        flag: isBlocked || warned(r), flagText: isBlocked ? '已拦截' : '有值原样发出',
+        flagStyle: 'display: flex; align-items: center; height: 24px; padding: 0 8px; border-radius: 6px; font-size: 12px; ' + (isBlocked ? 'background: #FEF2F2; color: #C10007' : 'background: #FFFBEB; color: #973C00'),
+        values: r[3].map(function (v) {
+          // in a blocked request the other values never left this computer
+          var a = isBlocked && v[4] !== 'block' ? ['没有发出', '#737373'] : { mask: ['遮住', '#737373'], warn: ['仅警告，原样发出', '#973C00'], block: ['拦截', '#C10007'] }[v[4]];
+          return { cat: v[0], kind: v[1], dot: dot(v[0]),
+            shape: v[3] <= 3 ? v[3] + ' 个字符' : '以「' + v[2] + '」开头，' + v[3] + ' 个字符',
+            act: a[0], actStyle: 'flex: none; font-size: 12px; color: ' + a[1] };
+        })
+      });
+    });
+
+    var reqCount = {};
+    REQS.forEach(function (r) { Object.keys(CAT).forEach(function (c) { if (hasCat(r, c)) reqCount[c] = (reqCount[c] || 0) + 1; }); });
+    return {
+      tiles: TILES.map(function (t) {
+        var on = st.filter === t[0];
+        return { label: t[1], n: t[2], unit: t[3], desc: t[4], checked: on ? 'true' : 'false',
+          pick: function () { self.setState({ filter: t[0] }); },
+          numStyle: 'font-size: 22px; line-height: 1.2; font-weight: 600; font-variant-numeric: tabular-nums; color: ' + (t[2] ? t[5] : '#A1A1A1'),
+          style: 'display: flex; flex-direction: column; align-items: flex-start; gap: 2px; padding: 12px; border-radius: 12px; text-align: left; color: #0A0A0A; border: 1px solid ' + (on ? '#171717' : 'transparent') + '; background: #F5F5F5' };
+      }),
+      catOpts: [{ v: '', text: '所有类别' }].concat(Object.keys(CAT).filter(function (c) { return reqCount[c]; }).map(function (c) { return { v: c, text: c + '（' + reqCount[c] + '）' }; })),
+      pickCat: function (e) { self.setState({ cat: e.target.value }); },
+      featureOpts: [{ v: '', text: '所有功能' }].concat(FEATURES.map(function (f) { return { v: f, text: f }; })),
+      pickFeature: function (e) { self.setState({ feature: e.target.value }); },
+      groups: groups,
+      empty: list.length === 0
+    };
+  }
+}
+</script>
+</body>
+</html>

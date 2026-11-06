@@ -30,8 +30,8 @@ func (a *App) label(id int64) (core.Label, bool) {
 	return core.Label{}, false
 }
 
-// labelChip draws an applied label; onClick and onRemove may be nil.
-func (a *App) labelChip(c *ui.Context, al core.AppliedLabel, onClick, onRemove func()) {
+// labelChip draws an applied label; menu and onRemove may be nil.
+func (a *App) labelChip(c *ui.Context, al core.AppliedLabel, menu func(*ui.Menu), onRemove func()) {
 	l, ok := a.label(al.LabelID)
 	if !ok {
 		return
@@ -40,7 +40,7 @@ func (a *App) labelChip(c *ui.Context, al core.AppliedLabel, onClick, onRemove f
 	if al.Auto {
 		tip = i18n.T("label.tip.auto")
 	}
-	o := kit.LabelChipOpts{Text: l.Name, Icon: l.Icon, Display: a.settings.LabelDisplay, Tip: tip, Color: theme.Of(c).Label(l.Color), Auto: al.Auto, OnClick: onClick}
+	o := kit.LabelChipOpts{Text: l.Name, Icon: l.Icon, Display: a.settings.LabelDisplay, Tip: tip, Color: theme.Of(c).Label(l.Color), Auto: al.Auto, Menu: menu}
 	if onRemove != nil {
 		o.OnRemove, o.RemoveLabel = onRemove, i18n.Tf("reader.labels.remove", l.Name)
 	}
@@ -93,6 +93,38 @@ func withLabels(ctx context.Context, svc *core.Service, items []mailItem) error 
 		}
 	}
 	return nil
+}
+
+// appliedLabel is the label of an id among ls.
+func appliedLabel(ls []core.AppliedLabel, id int64) (core.AppliedLabel, bool) {
+	i := slices.IndexFunc(ls, func(l core.AppliedLabel) bool { return l.LabelID == id })
+	if i < 0 {
+		return core.AppliedLabel{}, false
+	}
+	return ls[i], true
+}
+
+// labelItems are the labels as a menu's items, in their colors: state says
+// whether each is on, and whether a model put it on; toggle switches it.
+func labelItems(m *ui.Menu, t theme.Tokens, labels []core.Label, state func(id int64) (on, auto bool), toggle func(id int64, on bool)) {
+	for _, l := range labels {
+		on, auto := state(l.ID)
+		name := l.Name
+		if on && auto {
+			name += " · " + i18n.T("reader.labels.auto")
+		}
+		if m.Item(name).Icon(labelMenuIcon(t, l)).Checked(on).Chosen() {
+			toggle(l.ID, !on)
+		}
+	}
+}
+
+// labelSubmenu is labelItems as a menu's submenu; none without labels.
+func labelSubmenu(m *ui.Menu, t theme.Tokens, labels []core.Label, state func(id int64) (on, auto bool), toggle func(id int64, on bool)) {
+	if len(labels) == 0 {
+		return
+	}
+	m.Submenu(i18n.T("mail.menu.labels"), func(sm *ui.Menu) { labelItems(sm, t, labels, state, toggle) }).Icon(menuIcon("tag"))
 }
 
 // labelNav is the sidebar's foldable label group: the labels on some mail.

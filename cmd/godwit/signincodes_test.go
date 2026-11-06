@@ -107,8 +107,9 @@ func TestRecentCodeMenuCopiesSelectedCode(t *testing.T) {
 	}, func(code core.SignInCode) { copied = code })
 	menu := items[1].Submenu
 	justNow := i18n.T("shell.sync.just_now")
-	if len(menu) != 3 || menu[0].Label != "aB0012 · Login · "+justNow || menu[1].Label != "123 456 · second@example.com · "+i18n.Plural("shell.sync.minutes_ago", 3) ||
-		menu[2].Label != i18n.T("codes.card.signin")+" · acme.example · Acme · "+justNow {
+	if len(menu) != 3 || menu[0].Label != "aB0012" || menu[0].Subtitle != "Login · "+justNow ||
+		menu[1].Label != "123 456" || menu[1].Subtitle != "second@example.com · "+i18n.Plural("shell.sync.minutes_ago", 3) ||
+		menu[2].Label != i18n.T("codes.card.signin")+" · acme.example" || menu[2].Subtitle != "Acme · "+justNow {
 		t.Fatalf("menu %+v", menu)
 	}
 	if !slices.Equal(iconed, []int64{1, 2, 4}) || menu[0].Icon != icon {
@@ -125,6 +126,16 @@ func TestRecentCodeMenuCopiesSelectedCode(t *testing.T) {
 	empty := recentCodeMenu(nil, now, nil, nil)[1].Submenu
 	if len(empty) != 1 || !empty[0].Disabled {
 		t.Fatalf("empty menu %+v", empty)
+	}
+}
+
+func TestShortSenderKeepsTheSubtitleOnOneLine(t *testing.T) {
+	if got := shortSender("Acme ID"); got != "Acme ID" {
+		t.Fatalf("short sender %q", got)
+	}
+	got := []rune(shortSender("security@a-very-long-company-name.example"))
+	if len(got) != 24 || got[23] != '…' {
+		t.Fatalf("long sender %q", string(got))
 	}
 }
 
