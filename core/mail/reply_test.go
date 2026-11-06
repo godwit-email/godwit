@@ -54,6 +54,8 @@ func TestSubjects(t *testing.T) {
 	assert.Equal(t, "AW: Angebot", mail.ReplySubject("AW: Angebot"))
 	assert.Equal(t, "답장: 보고서", mail.ReplySubject("답장: 보고서"))
 	assert.Equal(t, "Fwd: Q4", mail.ForwardSubject("Q4"))
+	assert.True(t, mail.IsForwardSubject(mail.ForwardSubject("Re: Q4")))
+	assert.False(t, mail.IsForwardSubject("Re: Fwd: Q4"))
 	assert.Equal(t, "Fwd: Q4", mail.ForwardSubject("Fwd: Q4"))
 	assert.Equal(t, "转发：Q4", mail.ForwardSubject("转发：Q4"))
 	assert.Equal(t, "轉寄：Q4", mail.ForwardSubject("轉寄：Q4"))

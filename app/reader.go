@@ -616,13 +616,23 @@ func (r *reader) act(op string) {
 	}
 }
 
-// draft starts a reply, reply-all or forward of the reply target and
-// opens it in a compose window, even when the reader has moved on since:
-// the window does not cover it.
+// draft starts a reply, reply-all or forward (see draftSource) and opens it
+// in a compose window, even when the reader has moved on since: the window
+// does not cover it.
 func (r *reader) draft(mode string) {
-	if m, ok := r.replyTarget(); ok {
+	if m, ok := draftSource(r.msgs, r.thread.ReplyTarget, mode); ok {
 		r.p.a.draft(m, r.account(), mode)
 	}
+}
+
+// draftSource is the message of a thread a draft of mode starts from: a reply
+// answers target; a forward takes the newest, so forwarding the user's own
+// forward again keeps the note and attachments added to it.
+func draftSource(msgs []core.MessageSummary, target int64, mode string) (core.MessageSummary, bool) {
+	if mode == "forward" {
+		target = 0
+	}
+	return replyTarget(msgs, target)
 }
 
 // draft starts a reply, reply-all or forward of m from account acc (0 to

@@ -247,8 +247,10 @@ func (s *Service) GetThread(ctx context.Context, id int64) (Thread, error) {
 			m := scanSummary(r)
 			t.Messages = append(t.Messages, m)
 			inReplyTo, refs, replyTo := store.Str(r[msgColCount]), store.Str(r[msgColCount+1]), store.Str(r[msgColCount+2])
-			// References without In-Reply-To is how a forward is sent (see enqueue).
-			if inReplyTo != "" || refs == "" || !gomail.FromSelf(m.From, replyTo, self) {
+			// A forward as enqueue sends it. With its subject edited it counts as mail
+			// to answer: the compose window still shows who the reply goes to.
+			forward := inReplyTo == "" && refs != "" && gomail.IsForwardSubject(m.Subject) && gomail.FromSelf(m.From, replyTo, self)
+			if !forward {
 				t.ReplyTarget = m.ID
 			}
 		} else {

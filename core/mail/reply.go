@@ -125,8 +125,14 @@ func ReplySubject(s string) string {
 }
 
 func ForwardSubject(s string) string {
-	if hasPrefix(s, "fwd", "fw", "wg", "tr", "rv", "enc", "dr", "ilt", "转发", "轉寄", "轉發", "전달") {
+	if IsForwardSubject(s) {
 		return s
 	}
 	return "Fwd: " + s
+}
+
+// IsForwardSubject reports whether s starts with a forward prefix, as every
+// subject from ForwardSubject does.
+func IsForwardSubject(s string) bool {
+	return hasPrefix(s, "fwd", "fw", "wg", "tr", "rv", "enc", "dr", "ilt", "转发", "轉寄", "轉發", "전달")
 }

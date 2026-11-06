@@ -1381,7 +1381,7 @@ func (p *mailPage) draft(it mailItem, mode string) {
 		if err != nil {
 			return err
 		}
-		m, ok := replyTarget(th.Messages, th.ReplyTarget)
+		m, ok := draftSource(th.Messages, th.ReplyTarget, mode)
 		if !ok {
 			return fmt.Errorf("thread %d has no messages", it.ID)
 		}

@@ -595,6 +595,12 @@ func TestThreadReplyTarget(t *testing.T) {
 
 	e.put(t, "INBOX", eml("d@x", "dave@example.com", self, "Fwd: plan", at(13), "fyi", "References: <o@x>"))
 	want("d@x", "someone else's forward is a mail to answer")
+
+	e.put(t, "Sent", eml("r2@x", self, "bob@example.com", "Re: plan", at(14), "b", "References: <o@x>"))
+	want("r2@x", "the user's reply from a client that sends References alone is no forward")
+
+	e.put(t, "Sent", eml("r3@x", self, "bob@example.com", "Re: Fwd: plan", at(15), "c", "References: <o@x>"))
+	want("r3@x", "a reply to a forward is no forward")
 }
 
 func TestThreadReplyTargetOnlyForwards(t *testing.T) {

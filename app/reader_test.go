@@ -1756,8 +1756,8 @@ func TestReaderReplyName(t *testing.T) {
 }
 
 // TestReplySkipsOwnForward: the reader and the list answer the conversation,
-// not the recipient of the user's own forward in it; that forward read alone
-// still answers its recipient.
+// not the recipient of the user's own forward in it, but forward that forward
+// again; read alone, it still answers its recipient.
 func TestReplySkipsOwnForward(t *testing.T) {
 	h, accs := mailHarness(t, nil, "alice@example.com")
 	acc, base := accs[0], h.clock.Now()
@@ -1781,11 +1781,21 @@ func TestReplySkipsOwnForward(t *testing.T) {
 		}
 	}
 	wantTo("list", "bob@example.com", func() { h.app.mail.draft(item, "reply") })
+	wantForward := func(what string, open func()) {
+		t.Helper()
+		h.post(open)
+		last = h.composeOpened(last)
+		if src := h.draft(last).SourceMessageID; src != msgs[1].ID {
+			t.Errorf("%s: forward of %d, want the newest, %d: it holds what the user added", what, src, msgs[1].ID)
+		}
+	}
+	wantForward("list", func() { h.app.mail.draft(item, "forward") })
 
 	h.openThread(item.ID)
 	h.seeBody(msgs[1].ID)
 	r := h.app.mail.reader
 	wantTo("reader", "bob@example.com", func() { r.draft("reply") })
+	wantForward("reader", func() { r.draft("forward") })
 
 	if m, ok := replyTarget(msgs[1:], msgs[0].ID); !ok || m.ID != msgs[1].ID {
 		t.Errorf("a message read alone: replyTarget = %v, %v", m.ID, ok)

@@ -663,7 +663,7 @@ func (s *Service) enqueue(ctx context.Context, draftID, rev int64, checked []str
 			if d.Mode == "forward" {
 				// A forward is not a reply (RFC 5322 3.6.4), and its recipient may be new
 				// to the thread: the original's ID keeps it in the conversation without
-				// listing the earlier mail's. Thread.ReplyTarget relies on this shape.
+				// listing the earlier mail's. GetThread recognizes a forward by this shape.
 				o.References = []string{id}
 			} else {
 				o.InReplyTo = id
