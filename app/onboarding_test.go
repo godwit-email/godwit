@@ -993,3 +993,29 @@ func TestOnboardingOtherTileAppliesServersWithSameIMAPHost(t *testing.T) {
 		t.Fatalf("same servers replaced the edited port: %s", o.imapPort)
 	}
 }
+
+// The username found for the address before goes with it; one the user typed stays.
+func TestOnboardingOtherTileUsernameFollowsDetection(t *testing.T) {
+	o := &onboarding{step: stepPassword, prov: otherProvider, email: "a@web.de"}
+	o.setServers(otherProvider)
+	found := otherProvider
+	found.IMAP, found.SMTP = auth.Server{Host: "imap.web.de", Port: 993, Security: core.SecurityTLS}, auth.Server{Host: "smtp.web.de", Port: 465, Security: core.SecurityTLS}
+	o.detectedSrc = auth.SourceDomain
+
+	found.Username = "a"
+	o.found(found, "a@web.de")
+	if o.username != "a" {
+		t.Fatalf("username = %q, want a", o.username)
+	}
+	found.Username = "b"
+	o.found(found, "b@web.de") // same servers
+	if o.username != "b" {
+		t.Fatalf("username = %q, want b", o.username)
+	}
+	o.username = "typed"
+	found.Username = "c"
+	o.found(found, "c@web.de")
+	if o.username != "typed" {
+		t.Fatalf("username = %q, want what was typed", o.username)
+	}
+}

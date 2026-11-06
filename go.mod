@@ -38,6 +38,7 @@ require (
 	github.com/extrame/xls v0.0.1 // indirect
 	github.com/go-text/typesetting v0.3.5 // indirect
 	github.com/godbus/dbus/v5 v5.2.2 // indirect
+	github.com/godwit-email/mailservers v0.20261106.1793937071 // indirect
 	github.com/jsummers/gobmp v0.0.0-20230614200233-a9de23ed2e25 // indirect
 	github.com/ledongthuc/pdf v0.0.0-20260907135840-6c8c28e0e8a0 // indirect
 	github.com/richardlehane/mscfb v1.0.4 // indirect

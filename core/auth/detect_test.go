@@ -109,6 +109,36 @@ func TestDetect(t *testing.T) {
 	}
 }
 
+func TestDetectMailserversDatabase(t *testing.T) {
+	r := fakeResolver{mx: map[string][]*net.MX{
+		"web.de":          {{Host: "mx-ha02.web.de.", Pref: 1}},
+		"custom.example":  {{Host: "mx-ha02.web.de.", Pref: 1}},
+		"gmail-hosted.de": {{Host: "aspmx.l.google.com.", Pref: 1}},
+		"mit.edu":         {{Host: "mit-edu.mail.protection.outlook.com.", Pref: 1}},
+	}}
+	cases := []struct {
+		email, id string
+		src       auth.Source
+		imapHost  string
+		username  string
+	}{
+		{"a@web.de", "other", "domain", "imap.web.de", "a"},
+		{"a@custom.example", "other", "mx", "imap.web.de", ""}, // web.de's template is for its own addresses
+		{"a@gmail-hosted.de", "gmail", "mx", "imap.gmail.com", ""},
+		{"a@goo.jp", "other", "domain", "imap.mail.goo.jp", ""}, // no MX answer
+		{"a@mit.edu", "other", "guess", "imap.mit.edu", ""},     // OAuth only
+	}
+	for _, c := range cases {
+		p, src, err := auth.Detect(context.Background(), r, c.email)
+		if err != nil {
+			t.Fatalf("%s: %v", c.email, err)
+		}
+		if p.ID != c.id || src != c.src || p.IMAP.Host != c.imapHost || p.Username != c.username {
+			t.Errorf("%s: got %s/%s/%s/%q want %s/%s/%s/%q", c.email, p.ID, src, p.IMAP.Host, p.Username, c.id, c.src, c.imapHost, c.username)
+		}
+	}
+}
+
 func TestDetectRejectsBadAddress(t *testing.T) {
 	for _, e := range []string{"not-an-email", "a@", "@x.com"} {
 		if _, _, err := auth.Detect(context.Background(), fakeResolver{}, e); err == nil {

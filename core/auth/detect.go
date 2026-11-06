@@ -5,10 +5,12 @@ import (
 	"fmt"
 	"net"
 	"net/mail"
+	"slices"
 	"sort"
 	"strings"
 
 	"github.com/godwit-email/godwit/core/conn"
+	"github.com/godwit-email/mailservers"
 )
 
 type Source string
@@ -26,8 +28,9 @@ type Resolver interface {
 	LookupSRV(ctx context.Context, service, proto, name string) (string, []*net.SRV, error)
 }
 
-// Detect finds the provider for email: domain table, then MX, then SRV, then a
-// guess. DNS errors fall through; only a malformed address is an error.
+// Detect finds the provider for email: domain table, then the providers we sign
+// in to by MX, then the mailservers database by domain and by MX, then SRV, then
+// a guess. DNS errors fall through; only a malformed address is an error.
 func Detect(ctx context.Context, r Resolver, email string) (Provider, Source, error) {
 	a, err := mail.ParseAddress(email)
 	if err != nil {
@@ -48,9 +51,11 @@ func Detect(ctx context.Context, r Resolver, email string) (Provider, Source, er
 	}
 
 	other := Provider{ID: "other", Name: domain, Login: "password"}
+	mx := ""
 	if mxs, err := r.LookupMX(ctx, domain); err == nil && len(mxs) > 0 {
 		sort.SliceStable(mxs, func(i, j int) bool { return mxs[i].Pref < mxs[j].Pref })
 		host := strings.ToLower(mxs[0].Host)
+		mx = host
 		id := ""
 		switch {
 		case inDomain(host, "google.com.") || inDomain(host, "googlemail.com."):
@@ -67,9 +72,16 @@ func Detect(ctx context.Context, r Resolver, email string) (Provider, Source, er
 		if p, ok := ByID(id); ok {
 			return p, SourceMX, nil
 		}
-		if imap, smtp, ok := mxServers(host); ok {
-			other.IMAP, other.SMTP = imap, smtp
-			return other, SourceMX, nil
+	}
+	if p, ok := mailservers.ByDomain(domain); ok {
+		if o, ok := withServers(other, p, a.Address); ok {
+			return o, SourceDomain, nil
+		}
+	}
+	if p, ok := mailservers.ByMX(domain, mx); ok {
+		// the provider's login template is for its own addresses, not a customer's domain
+		if o, ok := withServers(other, p, ""); ok {
+			return o, SourceMX, nil
 		}
 	}
 
@@ -108,39 +120,30 @@ func lookupSRV(ctx context.Context, r Resolver, service, domain string) (Server,
 	return Server{}, false
 }
 
-// mxServers returns the IMAP and SMTP servers for hosted corporate mail
-// providers whose custom-domain CNAMEs do not carry the customer's domain on
-// their TLS certificates.
-func mxServers(host string) (imap, smtp Server, ok bool) {
-	switch {
-	case inDomain(host, "icoremail.net."):
-		// mx.c3.icoremail.net. -> c3.icoremail.net: each cluster only serves its own
-		// domains, and *.icoremail.net covers single-label cluster hosts.
-		if _, rest, _ := strings.Cut(host, "."); strings.HasSuffix(rest, ".icoremail.net.") && strings.Count(rest, ".") == 3 {
-			rest = strings.TrimSuffix(rest, ".")
-			return tls(rest), smtps(rest), true
-		}
-		return tls("imap.icoremail.net"), smtps("smtp.icoremail.net"), true
-	case inDomain(host, "mxhichina.com."), inDomain(host, "qiye.aliyun.com."):
-		return tls("imap.qiye.aliyun.com"), smtps("smtp.qiye.aliyun.com"), true
-	case inDomain(host, "qiye.163.com."),
-		inDomain(host, "mxmail.netease.com.") && (strings.HasPrefix(host, "qiye163mx") || strings.HasPrefix(host, "hzmx")):
-		return tls("imap.qiye.163.com"), smtps("smtp.qiye.163.com"), true
-	case inDomain(host, "ym.163.com."):
-		return tls("imap.ym.163.com"), smtps("smtp.ym.163.com"), true
-	case inDomain(host, "263xmail.com."):
-		return tls("imap.263.net"), smtps("smtp.263.net"), true
-	case inDomain(host, "sina.net."), inDomain(host, "entmail.sina.com."):
-		return tls("imap.sina.net"), smtps("smtp.sina.net"), true
-	case inDomain(host, "messagingengine.com."):
-		return tls("imap.fastmail.com"), smtps("smtp.fastmail.com"), true
+// withServers returns o with p's servers, unless p has none that take a password
+// over an encrypted connection; a non-empty email also fills in p's username for it.
+func withServers(o Provider, p mailservers.Provider, email string) (Provider, bool) {
+	imap, ok := passwordServer(p.IMAP)
+	smtp, ok2 := passwordServer(p.SMTP)
+	if !ok || !ok2 {
+		return o, false
 	}
-	for _, zoho := range []string{"zoho.com", "zoho.com.cn", "zoho.eu", "zoho.in", "zoho.com.au", "zoho.jp"} {
-		if inDomain(host, zoho+".") {
-			return tls("imappro." + zoho), smtps("smtppro." + zoho), true
+	o.IMAP = Server{imap.Host, imap.Port, conn.Security(imap.Security)}
+	o.SMTP = Server{smtp.Host, smtp.Port, conn.Security(smtp.Security)}
+	if u := mailservers.Login(imap, email); email != "" && u != email {
+		o.Username = u
+	}
+	return o, true
+}
+
+func passwordServer(list []mailservers.Server) (mailservers.Server, bool) {
+	for _, s := range list {
+		encrypted := s.Security == string(conn.TLS) || s.Security == string(conn.StartTLS)
+		if encrypted && slices.ContainsFunc(s.Auth, func(a string) bool { return strings.HasPrefix(a, "password") }) {
+			return s, true
 		}
 	}
-	return Server{}, Server{}, false
+	return mailservers.Server{}, false
 }
 
 // inDomain reports whether host is domain or a subdomain of it (label boundary).
