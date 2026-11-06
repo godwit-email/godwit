@@ -568,3 +568,40 @@ func TestMarkAllAsRead(t *testing.T) {
 	e.sync(t)
 	assert.Equal(t, []string{`m1@x \Seen`, `m2@x \Seen`}, e.onServer(t, "INBOX"))
 }
+
+func TestThreadReplyTarget(t *testing.T) {
+	e := newSyncEnv(t)
+	at := func(h int) string { return fmt.Sprintf("Mon, 05 Oct 2026 %02d:00:00 +0000", h) }
+	const self = "alice@example.com"
+	want := func(mid, why string) {
+		t.Helper()
+		e.sync(t)
+		th, err := e.s.GetThread(bg, e.threadOf(t, "o@x"))
+		require.NoError(t, err)
+		assert.Equal(t, e.idOf(t, mid), th.ReplyTarget, why)
+	}
+
+	e.put(t, "INBOX", eml("o@x", "Bob <bob@example.com>", self, "plan", at(9), "q"))
+	want("o@x", "the only mail")
+
+	e.put(t, "Sent", eml("f@x", self, "carol@example.com", "Fwd: plan", at(10), "fwd", "References: <o@x>"))
+	want("o@x", "the user's forward is skipped")
+
+	e.put(t, "INBOX", eml("c@x", "carol@example.com", self, "Re: Fwd: plan", at(11), "seen", "In-Reply-To: <f@x>", "References: <o@x> <f@x>"))
+	want("c@x", "the recipient's answer is a mail to answer")
+
+	e.put(t, "Sent", eml("r@x", self, "bob@example.com", "Re: plan", at(12), "a", "In-Reply-To: <o@x>", "References: <o@x>"))
+	want("r@x", "the user's own reply follows up with its recipients")
+
+	e.put(t, "INBOX", eml("d@x", "dave@example.com", self, "Fwd: plan", at(13), "fyi", "References: <o@x>"))
+	want("d@x", "someone else's forward is a mail to answer")
+}
+
+func TestThreadReplyTargetOnlyForwards(t *testing.T) {
+	e := newSyncEnv(t)
+	e.put(t, "Sent", eml("f@x", "alice@example.com", "carol@example.com", "Fwd: gone", "Mon, 05 Oct 2026 10:00:00 +0000", "fwd", "References: <gone@x>"))
+	e.sync(t)
+	th, err := e.s.GetThread(bg, e.threadOf(t, "f@x"))
+	require.NoError(t, err)
+	assert.Zero(t, th.ReplyTarget)
+}

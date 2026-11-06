@@ -267,7 +267,7 @@ func (r *reader) loadQuick(id int64, force bool) {
 }
 
 // startAI, once the thread is read, starts the AI of the expanded messages,
-// the newest one's quick replies, and reads the skill menu's two sources.
+// the reply target's quick replies, and reads the skill menu's two sources.
 func (r *reader) startAI() {
 	m, ok := r.last()
 	if !ok {
@@ -281,8 +281,8 @@ func (r *reader) startAI() {
 	for id := range r.open {
 		r.startFor(id)
 	}
-	if r.taskReady("") && r.p.a.settings.QuickReplies {
-		r.loadQuick(m.ID, false)
+	if target, ok := r.replyTarget(); ok && r.taskReady("") && r.p.a.settings.QuickReplies {
+		r.loadQuick(target.ID, false)
 	}
 	a, skills, actions := r.p.a, r.skillsFn, r.actionsFn
 	fetchInto(r, &r.skills, false, func(ctx context.Context) ([]core.SkillInfo, error) {
@@ -984,12 +984,12 @@ func (r *reader) tagChips(c *ui.Context) {
 // question about the thread, quoting that message, to Wit.
 func (r *reader) replyBar(c *ui.Context) ui.Element {
 	t, th := theme.Of(c), c.Theme()
-	last, _ := r.last()
+	target, _ := r.replyTarget()
 	return ui.Column(c).Padding(th.Space(2.5), th.Space(7), th.Space(3)).Material(kit.Bar(t.Background)).
 		BorderWidth(theme.Hairline, 0, 0, 0).BorderColor(t.Border).Children(func() {
 		r.column(c).Gap(th.Space(2)).Children(func() {
-			if st := r.ai[last.ID]; st != nil && r.taskReady("") && r.p.a.settings.QuickReplies {
-				r.fetchErr(c, st.quick.err, st.quick.loading, func() { r.loadQuick(last.ID, true) })
+			if st := r.ai[target.ID]; st != nil && r.taskReady("") && r.p.a.settings.QuickReplies {
+				r.fetchErr(c, st.quick.err, st.quick.loading, func() { r.loadQuick(target.ID, true) })
 				if len(st.quick.v) > 0 {
 					availW := float32(theme.ReaderMaxWidth)
 					if r.pane.W > 0 {
@@ -999,7 +999,7 @@ func (r *reader) replyBar(c *ui.Context) ui.Element {
 					ui.Row(c).Gap(th.Space(1)).Role(ui.RoleGroup).Label(i18n.T("reader.ai.quick")).Children(func() {
 						for i, q := range st.quick.v {
 							lbl := labels[i]
-							chip := kit.Pressable(c, kit.PressableOpts{OnClick: func() { r.quickReply(last.ID, q) }}).
+							chip := kit.Pressable(c, kit.PressableOpts{OnClick: func() { r.quickReply(target.ID, q) }}).
 								Height(th.Space(6)).PaddingX(th.Space(2)).Radius(t.Radius.Md).Background(t.Hover).Center().Shrink(1).MinWidth(0).Label(q.Preview)
 							chip.Children(func() { kit.Text(c, lbl, t.Text.Sm).SingleLine().Shrink(1) })
 							kit.TooltipLabelled(c, chip, q.Preview)
@@ -1008,7 +1008,7 @@ func (r *reader) replyBar(c *ui.Context) ui.Element {
 				}
 			}
 			kit.InputGroup(c, kit.InputOpts{Flat: true}).Height(th.Space(10)).Padding(0, th.Space(1), 0, th.Space(3)).Gap(th.Space(1)).Children(func() {
-				name := r.replyName(last)
+				name := r.replyName(target)
 				in := kit.Input(c, &r.replyAsk, kit.InputOpts{Bare: true, Placeholder: i18n.Tf("reader.reply_wit", name)}).Grow(1).Shrink(1).Label(i18n.T("reader.ask_wit"))
 				if in.Submitted() {
 					r.askReply()
@@ -1140,10 +1140,10 @@ func applyQuickLabelCap(s string, k int) string {
 	return sub + "…"
 }
 
-// askReply hands the reply bar's question to Wit, quoting the newest message.
+// askReply hands the reply bar's question to Wit, quoting the reply target.
 func (r *reader) askReply() {
 	q := strings.TrimSpace(r.replyAsk)
-	m, ok := r.last()
+	m, ok := r.replyTarget()
 	if q == "" || !ok {
 		return
 	}

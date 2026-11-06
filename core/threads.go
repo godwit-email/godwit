@@ -42,12 +42,16 @@ type ThreadPage struct {
 // server keeps in several folders (Gmail's INBOX, labels and All Mail) is in
 // Messages once; Copies holds its other copies, which an action on the whole
 // thread still covers, and CopyOf, for each, the ID of the one in Messages.
+// ReplyTarget is the message a reply to the whole thread answers: the newest
+// that is not the user's own forward, whose recipient the reply is not for; 0
+// when all are, and the newest then is the one.
 type Thread struct {
-	ID       int64
-	Subject  string
-	Messages []MessageSummary
-	Copies   []MessageSummary
-	CopyOf   []int64
+	ID          int64
+	Subject     string
+	Messages    []MessageSummary
+	Copies      []MessageSummary
+	CopyOf      []int64
+	ReplyTarget int64
 }
 
 // All is every message of the thread, Messages then Copies.
@@ -225,22 +229,28 @@ func (s *Service) ListThreads(ctx context.Context, v View, cursor string, limit 
 
 // GetThread returns the thread's messages by date ascending, each once.
 func (s *Service) GetThread(ctx context.Context, id int64) (Thread, error) {
-	rows, err := s.db.Query(ctx, "SELECT subject FROM threads WHERE id = ?", id)
+	rows, err := s.db.Query(ctx, "SELECT t.subject, a.email FROM threads t JOIN accounts a ON a.id = t.account_id WHERE t.id = ?", id)
 	if err != nil {
 		return Thread{}, err
 	}
 	if len(rows.Values) == 0 {
 		return Thread{}, fmt.Errorf("thread %d not found", id)
 	}
-	t := Thread{ID: id, Subject: store.Str(rows.Values[0][0])}
-	ms, err := s.db.Query(ctx, "SELECT "+msgCols+", "+copyCols+" FROM messages m WHERE m.thread_id = ? AND "+notPurgedCond+" ORDER BY m.date, m.id", id)
+	t, self := Thread{ID: id, Subject: store.Str(rows.Values[0][0])}, store.Str(rows.Values[0][1])
+	ms, err := s.db.Query(ctx, "SELECT "+msgCols+", m.in_reply_to, m.refs, m.reply_to, "+copyCols+" FROM messages m WHERE m.thread_id = ? AND "+notPurgedCond+" ORDER BY m.date, m.id", id)
 	if err != nil {
 		return Thread{}, err
 	}
-	of := copyOf(ms.Values, 0, msgColCount)
+	of := copyOf(ms.Values, 0, msgColCount+3)
 	for i, r := range ms.Values {
 		if of[i] == i {
-			t.Messages = append(t.Messages, scanSummary(r))
+			m := scanSummary(r)
+			t.Messages = append(t.Messages, m)
+			inReplyTo, refs, replyTo := store.Str(r[msgColCount]), store.Str(r[msgColCount+1]), store.Str(r[msgColCount+2])
+			// References without In-Reply-To is how a forward is sent (see enqueue).
+			if inReplyTo != "" || refs == "" || !gomail.FromSelf(m.From, replyTo, self) {
+				t.ReplyTarget = m.ID
+			}
 		} else {
 			t.Copies = append(t.Copies, scanSummary(r))
 			t.CopyOf = append(t.CopyOf, store.Int(ms.Values[of[i]][0]))

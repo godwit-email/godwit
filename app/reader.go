@@ -542,12 +542,29 @@ func folderAccount(ctx context.Context, svc *core.Service, folderID int64) (int6
 	return 0, fmt.Errorf("folder %d not found", folderID)
 }
 
-// last is the newest message shown: the one replies and the AI buttons act on.
+// last is the newest message shown: the one the AI buttons act on.
 func (r *reader) last() (core.MessageSummary, bool) {
 	if len(r.msgs) == 0 {
 		return core.MessageSummary{}, false
 	}
 	return r.msgs[len(r.msgs)-1], true
+}
+
+// replyTarget is the message shown that replies act on: the thread's, or the
+// newest when that one is not shown, as for a message read alone.
+func (r *reader) replyTarget() (core.MessageSummary, bool) {
+	return replyTarget(r.msgs, r.thread.ReplyTarget)
+}
+
+// replyTarget is the message with the ID target among msgs, else the newest.
+func replyTarget(msgs []core.MessageSummary, target int64) (core.MessageSummary, bool) {
+	if len(msgs) == 0 {
+		return core.MessageSummary{}, false
+	}
+	if i := slices.IndexFunc(msgs, func(m core.MessageSummary) bool { return m.ID == target }); i >= 0 {
+		return msgs[i], true
+	}
+	return msgs[len(msgs)-1], true
 }
 
 // target is the message save and print act on: the focused one while it is
@@ -599,11 +616,11 @@ func (r *reader) act(op string) {
 	}
 }
 
-// draft starts a reply, reply-all or forward of the newest message and
+// draft starts a reply, reply-all or forward of the reply target and
 // opens it in a compose window, even when the reader has moved on since:
 // the window does not cover it.
 func (r *reader) draft(mode string) {
-	if m, ok := r.last(); ok {
+	if m, ok := r.replyTarget(); ok {
 		r.p.a.draft(m, r.account(), mode)
 	}
 }

@@ -1381,10 +1381,10 @@ func (p *mailPage) draft(it mailItem, mode string) {
 		if err != nil {
 			return err
 		}
-		if len(th.Messages) == 0 {
+		m, ok := replyTarget(th.Messages, th.ReplyTarget)
+		if !ok {
 			return fmt.Errorf("thread %d has no messages", it.ID)
 		}
-		m := th.Messages[len(th.Messages)-1]
 		acc := p.accountOf(m.FolderID)
 		if acc == 0 {
 			if acc, err = folderAccount(ctx, p.a.svc, m.FolderID); err != nil {
