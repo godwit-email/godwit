@@ -246,7 +246,7 @@ func (o *onboarding) found(p auth.Provider, email string) {
 		if o.detectedSrc == auth.SourceGuess {
 			p = otherProvider // the servers found for the address typed before are not this one's
 		}
-		if p.IMAP.Host != o.prov.IMAP.Host {
+		if p.IMAP != o.prov.IMAP || p.SMTP != o.prov.SMTP {
 			o.prov.IMAP, o.prov.SMTP = p.IMAP, p.SMTP
 			o.setServers(p)
 		}

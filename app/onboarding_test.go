@@ -967,3 +967,29 @@ func TestOnboardingOtherTileConnectWaitsForDetection(t *testing.T) {
 		t.Fatal("no servers left, but the check was not refused")
 	}
 }
+
+// SRV finds IMAP and SMTP apart: the same IMAP host says nothing about SMTP.
+func TestOnboardingOtherTileAppliesServersWithSameIMAPHost(t *testing.T) {
+	h := newHarness(t)
+	o := h.firstRun()
+	h.click("其他 IMAP 邮箱")
+
+	imap := auth.Server{Host: "mail.example", Port: 993, Security: core.SecurityTLS}
+	o.email = "a@one.example"
+	o.detectedSrc = auth.SourceSRV
+	o.found(auth.Provider{ID: "other", IMAP: imap, SMTP: auth.Server{Host: "smtp.one.example", Port: 465, Security: core.SecurityTLS}}, o.email)
+
+	two := auth.Server{Host: "smtp.two.example", Port: 587, Security: core.SecurityStartTLS}
+	o.email = "a@two.example"
+	o.found(auth.Provider{ID: "other", IMAP: imap, SMTP: two}, o.email)
+	if o.smtpHost != two.Host || o.smtpPort != "587" || o.smtpSec != two.Security {
+		t.Fatalf("kept the previous address's SMTP: %s:%s %s", o.smtpHost, o.smtpPort, o.smtpSec)
+	}
+
+	// The same servers again leave an edited port alone.
+	o.imapPort = "1993"
+	o.found(auth.Provider{ID: "other", IMAP: imap, SMTP: two}, o.email)
+	if o.imapPort != "1993" {
+		t.Fatalf("same servers replaced the edited port: %s", o.imapPort)
+	}
+}
