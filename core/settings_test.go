@@ -25,7 +25,7 @@ func TestSettingsDefaults(t *testing.T) {
 	got, err := s.GetSettings(t.Context())
 	require.NoError(t, err)
 	assert.Equal(t, Settings{Theme: "system", Density: "compact", FontSize: 14, SettingsVersion: 4, ReplyLanguage: "match",
-		KeepInBackground: true, UnreadOnAppIcon: true, NotifyNewMail: true, NotifyPreview: true, ThreadView: true, ThreadCollapse: true, ThreadCollapseThreshold: 5, RemoteImages: "auto", AutoLabel: true, LabelDisplay: "both", JudgeThreshold: 0.8,
+		KeepInBackground: true, ShowTrayIcon: true, UnreadOnAppIcon: true, NotifyNewMail: true, NotifyPreview: true, ThreadView: true, ThreadCollapse: true, ThreadCollapseThreshold: 5, RemoteImages: "auto", AutoLabel: true, LabelDisplay: "both", JudgeThreshold: 0.8,
 		MCPSend: "confirm", Masking: true, MaskCategories: defaultMaskCategories(),
 		SecurityWarnings: true, VerifiedBadge: true, ProxyMode: "system"}, got)
 }
@@ -63,6 +63,7 @@ func TestSettingsRoundTrip(t *testing.T) {
 	assert.Equal(t, "light", got.Theme)
 	assert.Equal(t, 14, got.FontSize)
 	assert.True(t, got.UnreadOnAppIcon, "older settings default to showing the app badge")
+	assert.True(t, got.ShowTrayIcon, "older settings default to showing the menu bar icon")
 	assert.Equal(t, 0.8, got.JudgeThreshold, "settings with no threshold use the default")
 	assert.Equal(t, ProxySystem, got.ProxyMode, "settings stored before the proxy setting follow the system")
 }

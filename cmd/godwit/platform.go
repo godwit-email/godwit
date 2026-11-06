@@ -33,18 +33,20 @@ import (
 // tray stays nil where the system has none. The Local API serves svc on
 // dataDir, whose owner lock the GUI holds.
 type platform struct {
-	win         *mygo.Window
-	tray        *mygo.Tray
-	windows     *webui.Windows // the compose windows
-	wit         *webui.Wit
-	roles       *webui.Pages                 // the embedded pages' roles
-	reader      *webui.Reader                // the reader pages' messages
-	sig         *webui.Signature             // the signature page's signature and flushes
-	bodies      map[*mygo.Page]*mygo.WebView // the reader pages open; UI thread
-	signInCodes []core.SignInCode
-	codeIcons   map[int64]*mygo.MenuIcon // recent codes' menu icons by message; UI thread
-	codeBanner  *signInBanner
-	updateTray  func()
+	win            *mygo.Window
+	tray           *mygo.Tray
+	windows        *webui.Windows // the compose windows
+	wit            *webui.Wit
+	roles          *webui.Pages                 // the embedded pages' roles
+	reader         *webui.Reader                // the reader pages' messages
+	sig            *webui.Signature             // the signature page's signature and flushes
+	bodies         map[*mygo.Page]*mygo.WebView // the reader pages open; UI thread
+	signInCodes    []core.SignInCode
+	codeIcons      map[int64]*mygo.MenuIcon // recent codes' menu icons by message; UI thread
+	codeBanner     *signInBanner
+	updateTray     func()
+	setTrayVisible func(visible bool)
+	trayUnread     int
 
 	dataDir string
 	svc     *core.Service
@@ -125,7 +127,13 @@ func (p *platform) Notify(n app.Notification) error {
 }
 func (*platform) NotificationsSupported() bool { return mygo.NotificationsSupported() }
 func (*platform) SetOpenAtLogin(on bool) error { return mygo.App.SetOpenAtLogin(on) }
+func (p *platform) SetTrayVisible(visible bool) {
+	if p.setTrayVisible != nil {
+		p.setTrayVisible(visible)
+	}
+}
 func (p *platform) SetTrayUnread(n int) {
+	p.trayUnread = n
 	if p.tray != nil {
 		title := ""
 		if n > 0 {

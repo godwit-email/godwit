@@ -9,6 +9,7 @@ import (
 	"os"
 	"runtime"
 	"slices"
+	"strconv"
 	"strings"
 	"sync/atomic"
 	"time"
@@ -341,6 +342,8 @@ func gui(ctx context.Context, dataDir string) int {
 				{Label: i18n.T("mail.compose"), Click: compose},
 				{Label: i18n.T("tray.sync_all"), Click: func(*mygo.MenuItem, *mygo.Window) { a.SyncAll() }},
 				mygo.Separator(),
+				{Label: i18n.T("tray.hide"), Click: func(*mygo.MenuItem, *mygo.Window) { a.HideTrayIcon() }},
+				mygo.Separator(),
 				{Label: i18n.T("tray.quit"), Click: func(*mygo.MenuItem, *mygo.Window) { mygo.App.Quit() }},
 			}
 			items = slices.Insert(items, 3, recentCodeMenu(plat.signInCodes, time.Now(), plat.signInCodeIcon, plat.useSignInCode)...)
@@ -352,13 +355,39 @@ func gui(ctx context.Context, dataDir string) int {
 			}
 		}
 
-		if icon, err := trayIcon(trayBoxFor(runtime.GOOS)); err != nil {
-			log.Print(err)
-		} else if plat.tray, err = mygo.NewTray(mygo.TrayOptions{Icon: icon, IconIsTemplate: true, ToolTip: "Godwit",
-			Menu: trayMenu()}); err != nil {
-			log.Print(err) // no tray here (Linux without an indicator host)
-		} else if runtime.GOOS == "windows" {
-			plat.tray.OnClick(plat.ShowWindow) // Windows opens the app on a left click; the menu stays on the right
+		showTray := func() {
+			if plat.tray != nil {
+				return
+			}
+			if icon, err := trayIcon(trayBoxFor(runtime.GOOS)); err != nil {
+				log.Print(err)
+			} else if plat.tray, err = mygo.NewTray(mygo.TrayOptions{Icon: icon, IconIsTemplate: true, ToolTip: "Godwit",
+				Menu: trayMenu()}); err != nil {
+				log.Print(err) // no tray here (Linux without an indicator host)
+			} else {
+				if runtime.GOOS == "windows" {
+					plat.tray.OnClick(plat.ShowWindow) // Windows opens the app on a left click; the menu stays on the right
+				}
+				if plat.trayUnread > 0 {
+					plat.tray.SetTitle(strconv.Itoa(plat.trayUnread))
+				}
+			}
+		}
+		hideTray := func() {
+			if plat.tray != nil {
+				plat.tray.Destroy()
+				plat.tray = nil
+			}
+		}
+		plat.setTrayVisible = func(visible bool) {
+			if visible {
+				showTray()
+			} else {
+				hideTray()
+			}
+		}
+		if st.ShowTrayIcon {
+			plat.setTrayVisible(true)
 		}
 		mygo.App.OnLocaleChanged(func(locale string) {
 			i18n.SetLanguage(locale)

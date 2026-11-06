@@ -473,6 +473,43 @@ func TestSettingsGeneralApplies(t *testing.T) {
 	})
 }
 
+func TestSettingsTrayIconToggle(t *testing.T) {
+	t.Cleanup(func() { i18n.SetLanguage("zh-CN") })
+	h, _ := withAccount(t)
+	h.openSettings("general")
+	h.see(i18n.T("settings.show_tray_icon"))
+	h.see(i18n.T("settings.unread_in_menu_bar"))
+
+	// Toggle tray icon off
+	h.click(i18n.T("settings.show_tray_icon"))
+	h.called("SetTrayVisible false")
+	h.until("tray setting saved off", func() bool {
+		st, err := h.env.Svc.GetSettings(context.Background())
+		return err == nil && !st.ShowTrayIcon
+	})
+	h.until("unread in menu bar row hidden", func() bool {
+		return !h.tt.HasText(i18n.T("settings.unread_in_menu_bar"))
+	})
+
+	// Toggle tray icon back on
+	h.click(i18n.T("settings.show_tray_icon"))
+	h.called("SetTrayVisible true")
+	h.until("tray setting saved on", func() bool {
+		st, err := h.env.Svc.GetSettings(context.Background())
+		return err == nil && st.ShowTrayIcon
+	})
+	h.see(i18n.T("settings.unread_in_menu_bar"))
+
+	// Calling HideTrayIcon hides the tray and toasts
+	h.app.HideTrayIcon()
+	h.called("SetTrayVisible false")
+	h.until("tray hidden by HideTrayIcon", func() bool {
+		st, err := h.env.Svc.GetSettings(context.Background())
+		return err == nil && !st.ShowTrayIcon
+	})
+	h.see(i18n.T("tray.hidden_toast"))
+}
+
 func TestSettingsRapidTogglesOrdered(t *testing.T) {
 	h, _ := withAccount(t)
 	release := make(chan struct{})

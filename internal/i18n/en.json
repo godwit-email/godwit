@@ -2232,6 +2232,7 @@
       }
     }
   },
+  "settings_show_tray_icon": "Show icon in menu bar",
   "settings_unread_in_menu_bar": "Show the unread count in the menu bar",
   "settings_unread_on_app_icon": "Show the unread count on the app icon",
   "shell_back": "Back",
@@ -2265,6 +2266,8 @@
   },
   "shell_sync_syncing": "Syncing…",
   "toast_close": "Close",
+  "tray_hide": "Hide menu bar icon",
+  "tray_hidden_toast": "Menu bar icon hidden. You can turn it back on in Settings.",
   "tray_open": "Open Godwit",
   "tray_quit": "Quit",
   "tray_sync_all": "Sync all accounts now",
