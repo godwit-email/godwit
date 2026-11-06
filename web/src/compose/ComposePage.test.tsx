@@ -536,8 +536,7 @@ test("account switch keeps body", async () => {
   render(<ComposePage />);
   const el = await body();
   fireEvent.change(el, { target: { value: "正文!" } });
-  await userEvent.click(screen.getByRole("combobox", { name: "发件账户" }));
-  await userEvent.click(await screen.findByRole("option", { name: "work@x.com" }));
+  await userEvent.selectOptions(screen.getByRole("combobox", { name: "发件账户" }), "work@x.com");
   await waitFor(() => expect(api.setAccount).toHaveBeenCalledWith(2, 8));
   expect(api.save).toHaveBeenCalledWith(expect.objectContaining({ body: "正文!" }));
   expect(order(vi.mocked(api.save))).toBeLessThan(order(vi.mocked(api.setAccount)));
@@ -572,11 +571,10 @@ test("an account switch that conflicts reverts the select", async () => {
   });
   render(<ComposePage />);
   await body();
-  await userEvent.click(screen.getByRole("combobox", { name: "发件账户" }));
-  await userEvent.click(await screen.findByRole("option", { name: "work@x.com" }));
+  await userEvent.selectOptions(screen.getByRole("combobox", { name: "发件账户" }), "work@x.com");
   await waitFor(() => expect(api.setAccount).toHaveBeenCalled());
   await waitFor(() =>
-    expect(screen.getByRole("combobox", { name: "发件账户" })).toHaveTextContent("me@x.com"),
+    expect(screen.getByRole("combobox", { name: "发件账户" })).toHaveDisplayValue("me@x.com"),
   );
   expect(screen.getByText("-- me")).toBeInTheDocument();
 });

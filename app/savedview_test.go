@@ -48,6 +48,7 @@ func TestViewCreateFromSidebar(t *testing.T) {
 	if !h.tt.HasText(i18n.T("view.editor.create")) {
 		t.Fatal("no create button")
 	}
+	h.click(i18n.T("settings.rules.add"))
 	h.click(i18n.T("settings.rules.condition.add"))
 	h.fill(i18n.T("settings.rules.value"), "acme.example")
 	h.until("the preview", func() bool {

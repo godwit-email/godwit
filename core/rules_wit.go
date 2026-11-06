@@ -70,7 +70,8 @@ func (s *Service) registerRuleTool() {
 			"account: an account_id to run on that account's mail only; leave it out for every account. " +
 			"conditions (match all or any; none matches all mail): field from, to, subject or body with op contains, not_contains or is; " +
 			"attachments is yes or no; label (a slug) or folder (inbox, archive, junk or trash) with op is or not_contains; age with op older_than (value: whole days, from 1). " +
-			"actions: label or unlabel (label: a slug), read, star, archive, junk, trash, stop (later rules skip the mail), forward (to: one address), " +
+			"To mix and with or, make every condition a group, {match, group: [conditions]}, at least two of them and one level deep: (a or b) and c is match all of a group matching any of a and b, and a group of c. " +
+			"actions: label or unlabel (label: a slug), read, star, archive, junk, trash, block (block the sender), stop (later rules skip the mail), forward (to: one address), " +
 			"pdf (saves the mail as a PDF), eml (saves the original .eml), attachments (saves its attachments), " +
 			"draft_reply (Wit drafts a reply; never sent), key_points (Wit writes the mail's key points as Markdown). " +
 			"pdf, eml, attachments and key_points write into dir, an absolute folder path, and only create files, never replace one; " +
@@ -85,9 +86,14 @@ func (s *Service) registerRuleTool() {
 			"trigger_arg": stringProp,
 			"account":     intProp,
 			"match":       map[string]any{"type": "string", "enum": []string{MatchAll, MatchAny}},
+			// Every condition's field, op and value are checked by validRule; a group has none of them.
 			"conditions": map[string]any{"type": "array", "maxItems": MaxRuleConditions, "items": object(map[string]any{
 				"field": stringProp, "op": stringProp, "value": stringProp,
-			}, "field", "op", "value")},
+				"match": map[string]any{"type": "string", "enum": []string{MatchAll, MatchAny}},
+				"group": map[string]any{"type": "array", "maxItems": MaxRuleConditions, "items": object(map[string]any{
+					"field": stringProp, "op": stringProp, "value": stringProp,
+				}, "field", "op", "value")},
+			})},
 			"actions": map[string]any{"type": "array", "minItems": 1, "maxItems": MaxRuleActions, "items": object(map[string]any{
 				"kind": stringProp, "label": stringProp, "to": stringProp, "dir": stringProp,
 				"subfolder": map[string]any{"type": "boolean"}, "naming": stringProp,
@@ -171,30 +177,49 @@ func ruleDoes(d RuleDoc, labels map[string]string, account string) string {
 	if account != "" {
 		when += " in " + account
 	}
-	conds := make([]string, len(d.Conditions))
-	for i, c := range d.Conditions {
+	joinOf := func(match string) string {
+		if match == MatchAny {
+			return " or "
+		}
+		return " and "
+	}
+	var words func(c RuleCondition) string
+	words = func(c RuleCondition) string {
+		if len(c.Group) == 1 {
+			return words(c.Group[0])
+		}
+		if c.Group != nil {
+			inner := make([]string, len(c.Group))
+			for i, g := range c.Group {
+				inner[i] = words(g)
+			}
+			return "(" + strings.Join(inner, joinOf(c.Match)) + ")"
+		}
 		switch c.Field {
 		case FieldAttachments:
-			conds[i] = "it has attachments"
 			if c.Value == RuleNo {
-				conds[i] = "it has no attachments"
+				return "it has no attachments"
 			}
+			return "it has attachments"
 		case FieldAge:
-			conds[i] = "it is older than " + c.Value + " days"
+			return "it is older than " + c.Value + " days"
 		case FieldLabel, FieldFolder:
 			what := "labeled " + label(c.Value)
 			if c.Field == FieldFolder {
 				what = "in " + folderWords(c.Value)
 			}
-			conds[i] = "it is " + what
 			if c.Op == OpNotContains {
-				conds[i] = "it is not " + what
+				return "it is not " + what
 			}
-		default:
-			field := map[string]string{FieldFrom: "the sender", FieldTo: "a recipient (To or Cc)", FieldSubject: "the subject", FieldBody: "the body"}[c.Field]
-			op := map[string]string{OpContains: "contains", OpNotContains: "does not contain", OpIs: "is"}[c.Op]
-			conds[i] = fmt.Sprintf("%s %s %q", cmp.Or(field, c.Field), cmp.Or(op, c.Op), c.Value)
+			return "it is " + what
 		}
+		field := map[string]string{FieldFrom: "the sender", FieldTo: "a recipient (To or Cc)", FieldSubject: "the subject", FieldBody: "the body"}[c.Field]
+		op := map[string]string{OpContains: "contains", OpNotContains: "does not contain", OpIs: "is"}[c.Op]
+		return fmt.Sprintf("%s %s %q", cmp.Or(field, c.Field), cmp.Or(op, c.Op), c.Value)
+	}
+	conds := make([]string, len(d.Conditions))
+	for i, c := range d.Conditions {
+		conds[i] = words(c)
 	}
 	acts := make([]string, len(d.Actions))
 	for i, a := range d.Actions {
@@ -214,7 +239,7 @@ func ruleDoes(d RuleDoc, labels map[string]string, account string) string {
 		default:
 			acts[i] = cmp.Or(map[string]string{
 				ActionRead: "mark it read", ActionStar: "star it", ActionArchive: "archive it", ActionJunk: "move it to Junk",
-				ActionTrash: "move it to Trash", ActionStop: "skip the rules below it",
+				ActionTrash: "move it to Trash", ActionBlock: "block the sender", ActionStop: "skip the rules below it",
 				ActionDraftReply: "have Wit draft a reply (never sent)", ActionKeyPoints: "have Wit write its key points",
 			}[a.Kind], a.Kind)
 		}
@@ -222,14 +247,10 @@ func ruleDoes(d RuleDoc, labels map[string]string, account string) string {
 			acts[i] += " into the folder " + a.Dir
 		}
 	}
-	join := " and "
-	if d.Match == MatchAny {
-		join = " or "
-	}
 	if len(conds) == 0 {
 		return when + ": " + strings.Join(acts, ", then ") + "."
 	}
-	return when + ", if " + strings.Join(conds, join) + ": " + strings.Join(acts, ", then ") + "."
+	return when + ", if " + strings.Join(conds, joinOf(d.Match)) + ": " + strings.Join(acts, ", then ") + "."
 }
 
 // folderWords names a folder condition's value: a role, or a folder by id.

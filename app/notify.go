@@ -174,7 +174,7 @@ func (a *App) notificationRoute(ctx context.Context, id string) (Route, bool, er
 	}
 	switch kind {
 	case "message":
-		m, err := a.svc.GetMessage(ctx, n, false)
+		m, err := a.svc.GetMessageText(ctx, n) // no inline image is downloaded for a route
 		if err != nil {
 			return Route{}, false, err
 		}
@@ -201,7 +201,7 @@ func (a *App) showUnread(inbox int) {
 		a.appUnread = badge
 		a.plat.SetAppUnread(badge)
 	}
-	if !a.settings.UnreadInMenuBar {
+	if !a.settings.UnreadInMenuBar || !a.settings.ShowTrayIcon {
 		inbox = 0
 	}
 	if inbox != a.trayUnread {
@@ -212,6 +212,21 @@ func (a *App) showUnread(inbox int) {
 
 // Compose starts a new draft in a compose window, as the sidebar's button does.
 func (a *App) Compose() { a.mail.compose() }
+
+// HideTrayIcon hides the menu bar icon by updating the setting. Its menu is
+// mostly used with the window hidden, so the window comes up to show the toast.
+func (a *App) HideTrayIcon() {
+	a.onUI(func() {
+		st := a.settings
+		if !st.ShowTrayIcon {
+			return
+		}
+		st.ShowTrayIcon = false
+		a.changeSettings(st)
+		a.plat.ShowWindow()
+		a.toast(i18n.T("tray.hidden_toast"))
+	})
+}
 
 // SyncAll syncs every account now. The status shows syncing until the last one
 // returns; a click while that batch is in flight starts nothing more.

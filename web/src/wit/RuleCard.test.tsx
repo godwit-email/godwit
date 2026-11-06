@@ -65,6 +65,45 @@ test("a forward is saved only through the recipient confirmation", async () => {
   );
 });
 
+test("a rule's condition groups show as groups", () => {
+  const a = proposal([{ kind: "forward", to: "acct@company.example" }], ["acct@company.example"]);
+  const args = JSON.parse(a.args);
+  args.rule.conditions = [
+    {
+      field: "",
+      op: "",
+      value: "",
+      match: "any",
+      group: [
+        { field: "from", op: "contains", value: "stripe.com" },
+        { field: "from", op: "contains", value: "aws.example" },
+      ],
+    },
+    {
+      field: "",
+      op: "",
+      value: "",
+      match: "all",
+      group: [{ field: "attachments", op: "is", value: "yes" }],
+    },
+  ];
+  render(
+    <RuleCard
+      a={{ ...a, args: JSON.stringify(args) }}
+      busy={false}
+      decide={vi.fn()}
+      onEdit={vi.fn()}
+      t={t}
+    />,
+  );
+  const group = screen.getByRole("group", { name: "一组条件" });
+  expect(group.textContent).toContain("stripe.com");
+  expect(group.textContent).toContain("或");
+  expect(group.textContent).toContain("aws.example");
+  expect(group.textContent).not.toContain("有附件");
+  expect(screen.getByText("且")).toBeTruthy();
+});
+
 test("reject and edit decide nothing else", async () => {
   const decide = vi.fn();
   const onEdit = vi.fn();

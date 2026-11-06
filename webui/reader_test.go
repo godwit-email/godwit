@@ -854,6 +854,228 @@ func TestReaderEmitFollowsBinding(t *testing.T) {
 
 func noDims(string) (int, int, bool) { return 0, 0, false }
 
+// An inline image is left for the page to ask for, whatever the remote-image
+// policy, and all of them come from one download however many requests there are.
+func TestReaderInlineImagesLoadThroughProxyOnce(t *testing.T) {
+	pic := pngOf(t, 2, 2)
+	f := newReaderFixture(t)
+	f.fakeMessage(func(int64, bool) core.Message {
+		return core.Message{HTML: `<img src="cid:a"><img src="cid:b"><img src="cid:gone">`}
+	})
+	var calls atomic.Int32
+	f.r.getInline = func(_ context.Context, _ *core.Service, _ int64, each func(string, mail.Attachment)) error {
+		calls.Add(1)
+		each("a", mail.Attachment{Data: pic})
+		each("b", mail.Attachment{Data: []byte("not an image")})
+		return nil
+	}
+	k := f.page(7)
+	b, err := f.p.Load(pageCtx(k))
+	require.NoError(t, err)
+	assert.Contains(t, b.HTML, `src="`+proxied(7, "cid:a")+`"`)
+	assert.False(t, b.Remote)
+	assert.Zero(t, calls.Load(), "nothing downloads until the page asks")
+
+	rec := f.image(t, 7, "cid:a")
+	require.Equal(t, http.StatusOK, rec.Code)
+	assert.Equal(t, pic, rec.Body.Bytes())
+	assert.Equal(t, "image/png", rec.Header().Get("Content-Type"))
+	assert.Equal(t, http.StatusNotFound, f.image(t, 7, "cid:b").Code, "not an image the page may show")
+	assert.Equal(t, http.StatusNotFound, f.image(t, 7, "cid:gone").Code, "the download ended without it")
+	assert.Equal(t, http.StatusNotFound, f.image(t, 7, "cid:never").Code, "not in this body")
+	assert.Equal(t, http.StatusOK, f.image(t, 7, "cid:a").Code, "asked again")
+	assert.EqualValues(t, 1, calls.Load())
+}
+
+// Whoever asks waits for its own image only, and closing the last page stops the download.
+func TestReaderInlineImageServedBeforeTheRest(t *testing.T) {
+	pic := pngOf(t, 2, 2)
+	f := newReaderFixture(t)
+	f.fakeMessage(func(int64, bool) core.Message {
+		return core.Message{HTML: `<img src="cid:a"><img src="cid:b">`}
+	})
+	stopped := make(chan struct{})
+	f.r.getInline = func(ctx context.Context, _ *core.Service, _ int64, each func(string, mail.Attachment)) error {
+		each("a", mail.Attachment{Data: pic})
+		<-ctx.Done() // b never arrives
+		close(stopped)
+		return ctx.Err()
+	}
+	k := f.page(7)
+	_, err := f.p.Load(pageCtx(k))
+	require.NoError(t, err)
+	assert.Equal(t, http.StatusOK, f.image(t, 7, "cid:a").Code)
+	f.r.Unbind(k)
+	select {
+	case <-stopped:
+	case <-time.After(10 * time.Second):
+		t.Fatal("the download went on after the last page closed")
+	}
+}
+
+// An inline image the download ended without is told, for native's retry; one
+// the download gave, even if the page may not show it, is not.
+func TestReaderInlineImageDownloadFailureIsTold(t *testing.T) {
+	f := newReaderFixture(t)
+	f.fakeMessage(func(int64, bool) core.Message {
+		return core.Message{HTML: `<img src="cid:a"><img src="cid:b"><img src="cid:c">`}
+	})
+	pic := pngOf(t, 2, 2)
+	f.r.getInline = func(_ context.Context, _ *core.Service, _ int64, each func(string, mail.Attachment)) error {
+		each("a", mail.Attachment{Data: pic})
+		each("b", mail.Attachment{Data: []byte("not an image")})
+		return context.DeadlineExceeded
+	}
+	_, err := f.p.Load(pageCtx(f.page(7)))
+	require.NoError(t, err)
+	assert.Equal(t, http.StatusNotFound, f.image(t, 7, "cid:c").Code)
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	assert.Equal(t, []int{1}, f.imgFails)
+}
+
+// A download a retry stopped has not failed: its images are on their way again.
+func TestReaderInlineImageDownloadStoppedIsNotTold(t *testing.T) {
+	pic := pngOf(t, 2, 2)
+	f := newReaderFixture(t)
+	f.fakeMessage(func(int64, bool) core.Message { return core.Message{HTML: `<img src="cid:a">`} })
+	running := make(chan struct{})
+	var calls atomic.Int32
+	f.r.getInline = func(ctx context.Context, _ *core.Service, _ int64, each func(string, mail.Attachment)) error {
+		if calls.Add(1) > 1 {
+			each("a", mail.Attachment{Data: pic})
+			return nil
+		}
+		close(running)
+		<-ctx.Done()
+		return ctx.Err()
+	}
+	k := f.page(7)
+	_, err := f.p.Load(pageCtx(k))
+	require.NoError(t, err)
+	first := make(chan int, 1)
+	go func() {
+		req, _ := http.NewRequest(http.MethodGet, proxied(7, "cid:a"), nil)
+		rec := httptest.NewRecorder()
+		f.r.ImageHandler().ServeHTTP(rec, req)
+		first <- rec.Code
+	}()
+	<-running
+	f.r.Allow(7)
+	assert.Equal(t, http.StatusNotFound, <-first)
+	f.waitEmitted(t, k)
+	assert.Equal(t, http.StatusOK, f.image(t, 7, "cid:a").Code)
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	assert.Empty(t, f.imgFails)
+}
+
+// A retry (Allow) tries the inline images missed again.
+func TestReaderRetryRefetchesInlineImages(t *testing.T) {
+	pic := pngOf(t, 2, 2)
+	f := newReaderFixture(t)
+	f.fakeMessage(func(int64, bool) core.Message { return core.Message{HTML: `<img src="cid:a">`} })
+	var calls atomic.Int32
+	f.r.getInline = func(_ context.Context, _ *core.Service, _ int64, each func(string, mail.Attachment)) error {
+		if calls.Add(1) > 1 {
+			each("a", mail.Attachment{Data: pic})
+		}
+		return nil
+	}
+	k := f.page(7)
+	_, err := f.p.Load(pageCtx(k))
+	require.NoError(t, err)
+	assert.Equal(t, http.StatusNotFound, f.image(t, 7, "cid:a").Code)
+	f.r.Allow(7)
+	f.waitEmitted(t, k)
+	assert.Equal(t, http.StatusOK, f.image(t, 7, "cid:a").Code)
+	assert.EqualValues(t, 2, calls.Load())
+}
+
+// Inline images come out of the message's budget as they are served: one past the
+// per-image limits, or past the pixels the message has left, is refused.
+func TestReaderInlineImageOverBudgetRefused(t *testing.T) {
+	big40 := pngHeader(8000, 5000) // 40 MP: three are past the message's 100 MP
+	images := map[string][]byte{
+		"huge": pngHeader(10000, 5000), // 50 MP: past one image's
+		"big":  append(pngHeader(10, 10), make([]byte, 6<<20)...),
+		"p0":   big40, "p1": big40, "p2": big40,
+	}
+	f := newReaderFixture(t)
+	f.fakeMessage(func(int64, bool) core.Message {
+		return core.Message{HTML: `<img src="cid:huge"><img src="cid:big"><img src="cid:p0"><img src="cid:p1"><img src="cid:p2">`}
+	})
+	f.r.getInline = func(_ context.Context, _ *core.Service, _ int64, each func(string, mail.Attachment)) error {
+		for cid, data := range images {
+			each(cid, mail.Attachment{Data: data})
+		}
+		return nil
+	}
+	_, err := f.p.Load(pageCtx(f.page(7)))
+	require.NoError(t, err)
+	assert.Equal(t, http.StatusNotFound, f.image(t, 7, "cid:huge").Code)
+	assert.Equal(t, http.StatusNotFound, f.image(t, 7, "cid:big").Code, "past one image's bytes")
+	assert.Equal(t, http.StatusOK, f.image(t, 7, "cid:p0").Code)
+	assert.Equal(t, http.StatusOK, f.image(t, 7, "cid:p1").Code)
+	assert.Equal(t, http.StatusForbidden, f.image(t, 7, "cid:p2").Code)
+	assert.Equal(t, http.StatusOK, f.image(t, 7, "cid:p0").Code, "charged once")
+}
+
+// The message's image count is taken as the body is prepared, in its order: past it
+// an inline image has no src, so the page never asks for it, and one already counted
+// is not counted again as it is served.
+func TestReaderInlineImageCountReservedInOrder(t *testing.T) {
+	pic := pngOf(t, 1, 1)
+	var in strings.Builder
+	in.WriteString(`<img src="cid:n0" alt="first"><img src="cid:n0" alt="again">`)
+	for i := 1; i < imagefetch.MaxImages; i++ {
+		fmt.Fprintf(&in, `<img src="https://cdn.example/%d.png">`, i)
+	}
+	in.WriteString(`<img src="https://cdn.example/late.png" alt="late"><img src="cid:late" alt="late inline">`)
+	out, tokens := prepareBody(in.String(), imagefetch.NewBudget(), 7, noDims)
+	assert.Len(t, tokens, imagefetch.MaxImages)
+	assert.Equal(t, 2, strings.Count(out, proxied(7, "cid:n0")), "the first inline image keeps its place, and its second use costs nothing")
+	assert.Contains(t, out, `<img alt="late"/>`)
+	assert.Contains(t, out, `<img alt="late inline"/>`)
+
+	var all strings.Builder
+	for i := range imagefetch.MaxImages + 1 {
+		fmt.Fprintf(&all, `<img src="cid:n%d">`, i)
+	}
+	f := newReaderFixture(t)
+	f.fakeMessage(func(int64, bool) core.Message { return core.Message{HTML: all.String()} })
+	f.r.getInline = func(_ context.Context, _ *core.Service, _ int64, each func(string, mail.Attachment)) error {
+		for i := range imagefetch.MaxImages + 1 {
+			each(fmt.Sprintf("n%d", i), mail.Attachment{Data: pic})
+		}
+		return nil
+	}
+	b, err := f.p.Load(pageCtx(f.page(7)))
+	require.NoError(t, err)
+	assert.Equal(t, imagefetch.MaxImages, strings.Count(b.HTML, ImageScheme+":"))
+	for i := range imagefetch.MaxImages {
+		require.Equal(t, http.StatusOK, f.image(t, 7, fmt.Sprintf("cid:n%d", i)).Code, i)
+	}
+	assert.Equal(t, http.StatusNotFound, f.image(t, 7, fmt.Sprintf("cid:n%d", imagefetch.MaxImages)).Code)
+}
+
+// A real message: the body comes first, and its image through the proxy.
+func TestReaderInlineImageEndToEnd(t *testing.T) {
+	pic := pngOf(t, 2, 2)
+	f := newReaderFixture(t)
+	raw := "From: bob@example.com\r\nTo: " + f.acc.Email + "\r\nSubject: Logo\r\nDate: Mon, 05 Oct 2026 10:00:00 +0000\r\nMessage-ID: <logo@x>\r\n" +
+		"MIME-Version: 1.0\r\nContent-Type: multipart/related; boundary=b1\r\n\r\n--b1\r\nContent-Type: text/html\r\n\r\n<img src=\"cid:logo\">\r\n" +
+		"--b1\r\nContent-Type: image/png\r\nContent-ID: <logo>\r\nContent-Disposition: inline; filename=\"l.png\"\r\nContent-Transfer-Encoding: base64\r\n\r\n" +
+		base64.StdEncoding.EncodeToString(pic) + "\r\n--b1--\r\n"
+	m := f.deliverOne(t, []byte(raw))
+	b, err := f.p.Load(pageCtx(f.page(m.ID)))
+	require.NoError(t, err)
+	assert.Contains(t, b.HTML, proxied(m.ID, "cid:logo"))
+	rec := f.image(t, m.ID, "cid:logo")
+	require.Equal(t, http.StatusOK, rec.Code)
+	assert.Equal(t, pic, rec.Body.Bytes())
+}
+
 func TestPrepareBodyProxiesRemoteImages(t *testing.T) {
 	dims := func(src string) (int, int, bool) { return 40, 30, src == "https://cdn.example/known.png" }
 	in := `<img src="https://cdn.example/known.png" alt="a"><img src="https://cdn.example/sized.png" width="9">` +

@@ -222,8 +222,10 @@ func (s *Service) copyAttachments(ctx context.Context, draftID, messageID int64)
 	if err != nil {
 		return err
 	}
+	fetcher := s.newAttachmentFetcher(ctx)
+	defer fetcher.close()
 	for _, r := range rows.Values {
-		path, info, err := s.GetAttachment(ctx, store.Int(r[0]))
+		path, info, err := fetcher.get(store.Int(r[0]))
 		if err != nil {
 			return err
 		}
@@ -653,14 +655,22 @@ func (s *Service) enqueue(ctx context.Context, draftID, rev int64, checked []str
 	if rs != nil {
 		o.Header, stmts = map[string]string{mail.RuleHeader: strconv.FormatInt(rs.ruleID, 10)}, rs.stmts
 	}
-	if d.SourceMessageID != 0 && (d.Mode == "reply" || d.Mode == "reply_all") {
+	if d.SourceMessageID != 0 && (d.Mode == "reply" || d.Mode == "reply_all" || d.Mode == "forward") {
 		rows, err := s.db.Query(ctx, "SELECT message_id, refs FROM messages WHERE id = ?", d.SourceMessageID)
 		if err != nil {
 			return err
 		}
 		if len(rows.Values) > 0 && store.Str(rows.Values[0][0]) != "" {
-			o.InReplyTo = store.Str(rows.Values[0][0])
-			o.References = append(strings.Fields(store.Str(rows.Values[0][1])), o.InReplyTo)
+			id := store.Str(rows.Values[0][0])
+			if d.Mode == "forward" {
+				// A forward is not a reply (RFC 5322 3.6.4), and its recipient may be new
+				// to the thread: the original's ID keeps it in the conversation without
+				// listing the earlier mail's. GetThread recognizes a forward by this shape.
+				o.References = []string{id}
+			} else {
+				o.InReplyTo = id
+				o.References = append(strings.Fields(store.Str(rows.Values[0][1])), id)
+			}
 		}
 	}
 	atts, err := s.db.Query(ctx, "SELECT filename, content_type, path FROM draft_attachments WHERE draft_id = ? ORDER BY id", draftID)

@@ -173,10 +173,14 @@ func (s *Service) validViewConditions(ctx context.Context, match string, conds [
 	if len(conds) > 0 && match != MatchAll && match != MatchAny {
 		return invalidView("match %q", match)
 	}
-	if len(conds) > MaxRuleConditions {
+	if err := validGroups(RuleDoc{Conditions: conds}); err != nil {
+		return fmt.Errorf("%w: %v", ErrInvalidView, err)
+	}
+	rows := RuleDoc{Conditions: conds}.Rows()
+	if len(rows) > MaxRuleConditions {
 		return invalidView("more than %d conditions", MaxRuleConditions)
 	}
-	for _, c := range conds {
+	for _, c := range rows {
 		switch c.Field {
 		case FieldReply:
 			switch c.Op {
@@ -215,6 +219,7 @@ type viewEval struct {
 	now      int64
 	statuses map[int64]replyStatus
 	notIn    string // the condition on messages m that they count in a conversation
+	unread   string // the condition on messages m that they are unread: your own sent mail never is
 }
 
 func (s *Service) newViewEval(ctx context.Context) (*viewEval, error) {
@@ -227,18 +232,24 @@ func (s *Service) newViewEval(ctx context.Context) (*viewEval, error) {
 	if err != nil {
 		return nil, err
 	}
-	var out []string
+	var out, sent []string
 	for id, r := range roles {
-		if r == "trash" || r == "junk" || r == "drafts" {
+		switch r {
+		case "trash", "junk", "drafts":
 			out = append(out, strconv.FormatInt(id, 10))
+		case "sent":
+			sent = append(sent, strconv.FormatInt(id, 10))
 		}
 	}
 	slices.Sort(out)
+	inSent := strings.Join(sent, ",")
+	unread := `instr(COALESCE(m.flags, ''), '\Seen') = 0 AND m.folder_id NOT IN (` + inSent + `) AND NOT (COALESCE(m.message_id, '') != '' AND EXISTS (SELECT 1 FROM messages sc
+		WHERE sc.thread_id = m.thread_id AND sc.message_id = m.message_id AND sc.folder_id IN (` + inSent + `)))`
 	notIn := notPurgedCond
 	if len(out) > 0 {
 		notIn += " AND m.folder_id NOT IN (" + strings.Join(out, ",") + ")"
 	}
-	return &viewEval{now: now, statuses: statuses, notIn: notIn}, nil
+	return &viewEval{now: now, statuses: statuses, notIn: notIn, unread: unread}, nil
 }
 
 // inThread is the condition on threads t that a message of it meets cond,
@@ -269,7 +280,7 @@ func positive(c RuleCondition) RuleCondition {
 // stateSQL is a state condition on threads t.
 func (e *viewEval) stateSQL(c RuleCondition) (string, []any) {
 	if c.Field == FieldRead {
-		unread := e.inThread(`instr(COALESCE(m.flags, ''), '\Seen') = 0`)
+		unread := e.inThread(e.unread)
 		if c.Value == ViewReadRead {
 			return "NOT " + unread, nil
 		}
@@ -287,39 +298,49 @@ func (e *viewEval) stateSQL(c RuleCondition) (string, []any) {
 	return "t.id IN (SELECT value FROM json_each(?))", []any{intList(ids)}
 }
 
-// conditionsSQL is match of conds as a condition on threads t. With MatchAll,
-// the positive conditions hold on one message: spread over two they don't.
+// conditionsSQL is match of conds as a condition on threads t. Their positive
+// conditions hold on one message, in their groups too: spread over two, (A or
+// B) and C doesn't hold.
 func (e *viewEval) conditionsSQL(match string, conds []RuleCondition) (string, []any) {
-	var pos, parts []string
-	var posArgs, args []any
-	for _, c := range conds {
-		switch {
-		case c.Field == FieldReply || c.Field == FieldRead:
-			sql, a := e.stateSQL(c)
-			parts, args = append(parts, sql), append(args, a...)
-		case c.Op == OpNotContains:
-			sql, a := positive(c).sql(e.now)
-			parts, args = append(parts, "NOT "+e.inThread(sql)), append(args, a...)
-		case match == MatchAny:
-			sql, a := c.sql(e.now)
-			parts, args = append(parts, e.inThread(sql)), append(args, a...)
-		default:
-			sql, a := c.sql(e.now)
-			pos, posArgs = append(pos, e.onMessage(sql)), append(posArgs, a...)
-		}
-	}
-	if len(pos) > 0 {
-		sql := "EXISTS (SELECT 1 FROM messages lm WHERE lm.thread_id = t.id AND " + strings.Join(pos, " AND ") + ")"
-		parts, args = append([]string{sql}, parts...), append(posArgs, args...)
-	}
-	if len(parts) == 0 {
+	if len(conds) == 0 {
 		return "1", nil
+	}
+	sql, args, perMessage := e.treeSQL(match, conds)
+	if perMessage {
+		sql = "EXISTS (SELECT 1 FROM messages lm WHERE lm.thread_id = t.id AND " + sql + ")"
+	}
+	return sql, args
+}
+
+// treeSQL is match of conds, on messages lm if perMessage, else on threads t alone.
+func (e *viewEval) treeSQL(match string, conds []RuleCondition) (string, []any, bool) {
+	var parts []string
+	var args []any
+	perMessage := false
+	for _, c := range conds {
+		var sql string
+		var a []any
+		switch {
+		case c.Group != nil:
+			var on bool
+			sql, a, on = e.treeSQL(c.Match, c.Group)
+			perMessage = perMessage || on
+		case c.Field == FieldReply || c.Field == FieldRead:
+			sql, a = e.stateSQL(c)
+		case c.Op == OpNotContains:
+			sql, a = positive(c).sql(e.now)
+			sql = "NOT " + e.inThread(sql)
+		default:
+			sql, a = c.sql(e.now)
+			sql, perMessage = e.onMessage(sql), true
+		}
+		parts, args = append(parts, sql), append(args, a...)
 	}
 	join := " AND "
 	if match == MatchAny {
 		join = " OR "
 	}
-	return "(" + strings.Join(parts, join) + ")", args
+	return "(" + strings.Join(parts, join) + ")", args, perMessage
 }
 
 // placedThread is a conversation in a view: group is its index in the
@@ -359,7 +380,7 @@ func (s *Service) placed(ctx context.Context, e *viewEval, viewID int64, d Saved
 		}
 		groupCase = "CASE " + strings.Join(whens, " ") + " ELSE -1 END"
 	}
-	cols := []string{"t.id", "COALESCE(t.last_date, 0)", groupCase + " AS g", e.inThread(`instr(COALESCE(m.flags, ''), '\Seen') = 0`), addedSQL}
+	cols := []string{"t.id", "COALESCE(t.last_date, 0)", groupCase + " AS g", e.inThread(e.unread), addedSQL}
 	args = append(args, addedArg)
 	where := e.inThread("1")
 	if needsStatus(d.Match, d.Conditions) {
@@ -393,7 +414,12 @@ func (s *Service) placed(ctx context.Context, e *viewEval, viewID int64, d Saved
 
 // needsStatus is whether only a conversation with a 回复状态 can meet match of conds.
 func needsStatus(match string, conds []RuleCondition) bool {
-	reply := func(c RuleCondition) bool { return c.Field == FieldReply }
+	reply := func(c RuleCondition) bool {
+		if c.Group != nil {
+			return needsStatus(c.Match, c.Group)
+		}
+		return c.Field == FieldReply
+	}
 	if match == MatchAny {
 		return len(conds) > 0 && !slices.ContainsFunc(conds, func(c RuleCondition) bool { return !reply(c) })
 	}
@@ -403,7 +429,7 @@ func needsStatus(match string, conds []RuleCondition) bool {
 // usesWaiting is whether conds ask how long the user has waited: only then does
 // a row say so, or every mail just sent would.
 func usesWaiting(conds []RuleCondition) bool {
-	return slices.ContainsFunc(conds, func(c RuleCondition) bool { return c.Field == FieldReply && c.Op == OpOlderThan })
+	return slices.ContainsFunc(RuleDoc{Conditions: conds}.Rows(), func(c RuleCondition) bool { return c.Field == FieldReply && c.Op == OpOlderThan })
 }
 
 // row completes a placed conversation's status, in a view or group whose
@@ -832,7 +858,7 @@ func (s *Service) ViewWhy(ctx context.Context, id, threadID int64) (ViewReason, 
 	}
 	r := e.row(p, waiting)
 	why.Status, why.NewReply, why.Days = r.Status, r.NewReply, r.WaitingDays
-	for _, c := range conds {
+	for _, c := range (RuleDoc{Conditions: conds}).Rows() {
 		sql, args := e.conditionsSQL(cmp.Or(match, MatchAll), []RuleCondition{c})
 		rows, err := s.db.Query(ctx, "SELECT 1 FROM threads t WHERE t.id = ? AND "+sql, append([]any{threadID}, args...)...)
 		if err != nil {
@@ -874,7 +900,7 @@ func (s *Service) MarkViewRead(ctx context.Context, id int64) (int, error) {
 	}
 	var ids []int64
 	for c := range slices.Chunk(threads, 200) {
-		rows, err := s.db.Query(ctx, "SELECT m.id FROM messages m WHERE m.thread_id IN ("+placeholders(len(c))+") AND "+e.notIn+` AND instr(COALESCE(m.flags, ''), '\Seen') = 0`, c...)
+		rows, err := s.db.Query(ctx, "SELECT m.id FROM messages m WHERE m.thread_id IN ("+placeholders(len(c))+") AND "+e.notIn+" AND "+e.unread, c...)
 		if err != nil {
 			return 0, err
 		}
@@ -1135,14 +1161,31 @@ var (
 		"de": "Newsletter", "fr": "Newsletters", "es": "Boletines", "pt": "Newsletters", "it": "Newsletter", "ru": "Рассылки", "nl": "Nieuwsbrieven", "tr": "Bültenler", "vi": "Bản tin"})
 )
 
-// todayDoc is 今日, in lang: a view like any other.
-func todayDoc(lang string) SavedViewDoc {
+// todayLeavesOut are the labels 今日 leaves out: nobody replies to them.
+var todayLeavesOut = []string{"otp", "notice", "newsletter"}
+
+// todayDoc is 今日, in lang, leaving out those of todayLeavesOut that exist: a view like any other.
+func (s *Service) todayDoc(ctx context.Context, lang string) (SavedViewDoc, error) {
+	rows, err := s.db.Query(ctx, "SELECT slug FROM labels")
+	if err != nil {
+		return SavedViewDoc{}, err
+	}
+	var out []RuleCondition
+	for _, slug := range todayLeavesOut {
+		if slices.ContainsFunc(rows.Values, func(r []any) bool { return store.Str(r[0]) == slug }) {
+			out = append(out, RuleCondition{Field: FieldLabel, Op: OpNotContains, Value: slug})
+		}
+	}
 	unreplied := RuleCondition{Field: FieldReply, Op: OpIs, Value: ViewReplyUnreplied}
 	waiting := RuleCondition{Field: FieldReply, Op: OpOlderThan, Value: "3"}
-	return SavedViewDoc{Version: SavedViewVersion, Match: MatchAny, Conditions: []RuleCondition{unreplied, waiting}, Groups: []ViewGroup{
+	d := SavedViewDoc{Version: SavedViewVersion, Match: MatchAny, Conditions: []RuleCondition{unreplied, waiting}, Groups: []ViewGroup{
 		{ID: "reply", Name: textToReply.For(lang), Match: MatchAll, Conditions: []RuleCondition{unreplied}},
 		{ID: "wait", Name: textFollowUp.For(lang), Match: MatchAll, Conditions: []RuleCondition{waiting}},
 	}}
+	if len(out) > 0 {
+		d.Match, d.Conditions = MatchAll, []RuleCondition{{Match: MatchAny, Group: d.Conditions}, {Match: MatchAll, Group: out}}
+	}
+	return d, nil
 }
 
 // seedSavedViews writes 今日 once, in the UI language (the default one when
@@ -1157,7 +1200,11 @@ func (s *Service) seedSavedViews(ctx context.Context) error {
 		return err
 	}
 	lang := cmp.Or(st.UILanguage, s.opts.SystemLanguage)
-	doc, err := json.Marshal(todayDoc(lang))
+	today, err := s.todayDoc(ctx, lang)
+	if err != nil {
+		return err
+	}
+	doc, err := json.Marshal(today)
 	if err != nil {
 		return err
 	}
@@ -1192,7 +1239,11 @@ func (s *Service) ViewTemplates(ctx context.Context) ([]ViewTemplate, error) {
 			Conditions: []RuleCondition{{Field: FieldLabel, Op: OpIs, Value: "newsletter"}},
 			Groups:     []ViewGroup{{ID: "unread", Name: textUnread.For(lang), Match: MatchAll, Conditions: []RuleCondition{{Field: FieldRead, Op: OpIs, Value: ViewReadUnread}}}}}})
 	}
-	return append(out, ViewTemplate{ID: "today", Name: textToday.For(lang), Icon: "calendar-event", Doc: todayDoc(lang)}), nil
+	today, err := s.todayDoc(ctx, lang)
+	if err != nil {
+		return nil, err
+	}
+	return append(out, ViewTemplate{ID: "today", Name: textToday.For(lang), Icon: "calendar-event", Doc: today}), nil
 }
 
 // setFlagsByAccount sets flags on messages of any accounts.

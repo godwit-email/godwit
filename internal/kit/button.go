@@ -38,6 +38,7 @@ type ButtonOpts struct {
 	Disabled bool
 	Flat     bool // Outline without its shadow
 	Icon     string
+	Trailing string // an icon after the label, as a menu's chevron
 }
 
 func button(c *ui.Context, o ButtonOpts, square bool) ui.Element {
@@ -137,6 +138,9 @@ func Button(c *ui.Context, label string, o ButtonOpts) ui.Element {
 			ui.Icon(c, icons.Get(o.Icon)).Size(theme.Icon, theme.Icon)
 		}
 		ui.Text(c, label)
+		if o.Trailing != "" {
+			ui.Icon(c, icons.Get(o.Trailing)).Size(theme.IconSm, theme.IconSm)
+		}
 	})
 }
 

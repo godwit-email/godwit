@@ -512,6 +512,26 @@ func TestSyncFolderDeletedOnServer(t *testing.T) {
 	assert.Equal(t, []int64{tid}, changed[0].ThreadIDs)
 }
 
+// An empty LIST (a broken proxy or transient server state with no selectable
+// folders, even INBOX missing) must not wipe cached mail and folders via
+// SQLite's "name NOT IN ()" matching every row.
+func TestSyncEmptyListKeepsLocalStore(t *testing.T) {
+	e := newSyncEnv(t)
+	e.put(t, "INBOX", eml("keep@x", "bob@example.com", "alice@example.com", "keep me", day, "body"))
+	e.sync(t)
+	id := e.idOf(t, "keep@x")
+	for _, m := range []string{"INBOX", "Sent", "Trash", "Archive"} {
+		require.NoError(t, e.im.User.Delete(m))
+	}
+	e.sync(t)
+	got, err := e.s.GetMessage(bg, id, false)
+	require.NoError(t, err)
+	assert.Equal(t, "keep me", got.Subject)
+	folders, err := e.s.ListFolders(bg, e.acc.ID)
+	require.NoError(t, err)
+	assert.NotEmpty(t, folders)
+}
+
 func TestSyncExpungeRecomputesLastDate(t *testing.T) {
 	e := newSyncEnv(t)
 	e.put(t, "INBOX", eml("a@t", "bob@example.com", "alice@example.com", "x", day, "a"))

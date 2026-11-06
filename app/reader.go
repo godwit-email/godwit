@@ -48,35 +48,29 @@ type reader struct {
 	threadIDs    []int64
 	thread       core.Thread         // as last read: its copies read with what shows
 	labels       []core.AppliedLabel // the thread's
-	labelMenu    bool
-	labelQuery   string
-	open         map[int64]bool // messages shown in full
-	focus        int64          // the message last expanded, or whose page took ⌘S/⌘P: what save and print act on while it is open
-	historyShown bool           // the thread's history (its messages before the newest it keeps in sight) shown: a history card clicked
-	historyOpen  map[int64]bool // folded messages shown though the history is collapsed: ones the reader folded
-	revealID     int64          // a message to scroll to once it is laid out (a digest's source); 0 for none
+	open         map[int64]bool      // messages shown in full
+	focus        int64               // the message last expanded, or whose page took ⌘S/⌘P: what save and print act on while it is open
+	historyShown bool                // the thread's history (its messages before the newest it keeps in sight) shown: a history card clicked
+	historyOpen  map[int64]bool      // folded messages shown though the history is collapsed: ones the reader folded
+	revealID     int64               // a message to scroll to once it is laid out (a digest's source); 0 for none
 	bodies       map[int64]*msgBody
 	scroll       ui.ScrollState // the messages' scrolling; a body's page hands on the wheels it does not use
 
-	ai           map[int64]*msgAI         // by message; kept across switches so a summary runs once
-	aiCtx        context.Context          // the AI work of the key shown; nil until some starts
-	aiStop       context.CancelFunc       // cancels aiCtx
-	skills       fetch[[]core.SkillInfo]  // the skill menu: skills on messages but summarize and translate
-	actions      fetch[[]core.ActionInfo] // and plugin actions on messages
-	egress       egressAsk                // the action waiting for egress approval
-	egressDlg    bool                     // its dialog shows
-	unsubAsk     int64                    // the message whose one-click unsubscribe waits to be confirmed
-	unsubDlg     bool                     // its dialog shows
-	senderOpen   bool                     // the sender action popover shows
-	senderMsgID  int64                    // which message's sender popover is open
-	secMenuOpen  bool                     // the security verdict edit popover shows
-	secMenuMsgID int64                    // which message's security popover is open
-	detailsOpen  bool                     // the recipients' details popover shows
-	detailsID    int64                    // which message's details popover is open
-	barTop       float32                  // the floating toolbar's height as the last frame laid it out: the messages start under it
-	barBottom    float32                  // the reply bar's, likewise: the messages end above it
-	pane         ui.Rect                  // the messages' scroll box as the last frame laid it out, in the window: the bars float at its top and bottom
-	replyAsk     string                   // the reply bar's question to Wit, until it is asked
+	ai          map[int64]*msgAI         // by message; kept across switches so a summary runs once
+	aiCtx       context.Context          // the AI work of the key shown; nil until some starts
+	aiStop      context.CancelFunc       // cancels aiCtx
+	skills      fetch[[]core.SkillInfo]  // the skill menu: skills on messages but summarize and translate
+	actions     fetch[[]core.ActionInfo] // and plugin actions on messages
+	egress      egressAsk                // the action waiting for egress approval
+	egressDlg   bool                     // its dialog shows
+	unsubAsk    int64                    // the message whose one-click unsubscribe waits to be confirmed
+	unsubDlg    bool                     // its dialog shows
+	detailsOpen bool                     // the recipients' details popover shows
+	detailsID   int64                    // which message's details popover is open
+	barTop      float32                  // the floating toolbar's height as the last frame laid it out: the messages start under it
+	barBottom   float32                  // the reply bar's, likewise: the messages end above it
+	pane        ui.Rect                  // the messages' scroll box as the last frame laid it out, in the window: the bars float at its top and bottom
+	replyAsk    string                   // the reply bar's question to Wit, until it is asked
 
 	getThread  func(ctx context.Context, id int64) (core.Thread, error)                       // tests wrap it
 	getMessage func(ctx context.Context, id int64, remote bool) (core.Message, error)         // tests wrap it
@@ -116,8 +110,9 @@ type msgBody struct {
 	remote   bool
 	allowErr error
 	trusted  bool
-	// imgFailed is the remote images the proxy could not serve
-	// (BodyImagesFailed); a retry reloads the body.
+	// imgFailed is the images the proxy could not get (BodyImagesFailed); a
+	// retry reloads the body. Offered only while no remote image is blocked,
+	// as the retry is Allow, which lets them load.
 	imgFailed int
 
 	unsub     core.Unsubscribe // how it unsubscribes, by its headers; none until asked
@@ -131,7 +126,7 @@ type msgBody struct {
 
 func newReader(p *mailPage) *reader {
 	return &reader{p: p, open: map[int64]bool{}, bodies: map[int64]*msgBody{}, ai: map[int64]*msgAI{},
-		getThread: p.a.svc.GetThread, getMessage: p.a.svc.GetMessage, getAvatar: p.a.svc.SenderAvatar, runSkill: p.a.svc.RunSkill,
+		getThread: p.a.svc.GetThread, getMessage: p.a.svc.GetMessageLazyImages, getAvatar: p.a.svc.SenderAvatar, runSkill: p.a.svc.RunSkill,
 		cardsFn: p.a.svc.PluginCards, tagsFn: p.a.svc.PluginTags, quickFn: p.a.svc.QuickReplies, gistFn: p.a.svc.MessageGist, skillsFn: p.a.svc.ListSkills, actionsFn: p.a.svc.ListActions}
 }
 
@@ -167,8 +162,8 @@ func (r *reader) reset(k [2]int64) {
 	}
 	r.stopAI()
 	r.key, r.loaded, r.subject, r.msgs, r.focus = k, false, "", nil, 0
-	r.threadIDs, r.labels, r.labelMenu, r.labelQuery = nil, nil, false, ""
-	r.senderOpen, r.senderMsgID, r.secMenuOpen, r.secMenuMsgID, r.replyAsk = false, 0, false, 0, "" // a question is for the thread it was typed in
+	r.threadIDs, r.labels = nil, nil
+	r.replyAsk = "" // a question is for the thread it was typed in
 	r.detailsOpen, r.detailsID, r.why = false, 0, core.ViewReason{}
 	r.open, r.historyOpen, r.historyShown, r.revealID, r.bodies = map[int64]bool{}, map[int64]bool{}, false, 0, map[int64]*msgBody{}
 	r.scroll.X, r.scroll.Y = 0, 0
@@ -544,12 +539,29 @@ func folderAccount(ctx context.Context, svc *core.Service, folderID int64) (int6
 	return 0, fmt.Errorf("folder %d not found", folderID)
 }
 
-// last is the newest message shown: the one replies and the AI buttons act on.
+// last is the newest message shown: the one the AI buttons act on.
 func (r *reader) last() (core.MessageSummary, bool) {
 	if len(r.msgs) == 0 {
 		return core.MessageSummary{}, false
 	}
 	return r.msgs[len(r.msgs)-1], true
+}
+
+// replyTarget is the message shown that replies act on: the thread's, or the
+// newest when that one is not shown, as for a message read alone.
+func (r *reader) replyTarget() (core.MessageSummary, bool) {
+	return replyTarget(r.msgs, r.thread.ReplyTarget)
+}
+
+// replyTarget is the message with the ID target among msgs, else the newest.
+func replyTarget(msgs []core.MessageSummary, target int64) (core.MessageSummary, bool) {
+	if len(msgs) == 0 {
+		return core.MessageSummary{}, false
+	}
+	if i := slices.IndexFunc(msgs, func(m core.MessageSummary) bool { return m.ID == target }); i >= 0 {
+		return msgs[i], true
+	}
+	return msgs[len(msgs)-1], true
 }
 
 // target is the message save and print act on: the focused one while it is
@@ -601,13 +613,23 @@ func (r *reader) act(op string) {
 	}
 }
 
-// draft starts a reply, reply-all or forward of the newest message and
-// opens it in a compose window, even when the reader has moved on since:
-// the window does not cover it.
+// draft starts a reply, reply-all or forward (see draftSource) and opens it
+// in a compose window, even when the reader has moved on since: the window
+// does not cover it.
 func (r *reader) draft(mode string) {
-	if m, ok := r.last(); ok {
+	if m, ok := draftSource(r.msgs, r.thread.ReplyTarget, mode); ok {
 		r.p.a.draft(m, r.account(), mode)
 	}
+}
+
+// draftSource is the message of a thread a draft of mode starts from: a reply
+// answers target; a forward takes the newest, so forwarding the user's own
+// forward again keeps the note and attachments added to it.
+func draftSource(msgs []core.MessageSummary, target int64, mode string) (core.MessageSummary, bool) {
+	if mode == "forward" {
+		target = 0
+	}
+	return replyTarget(msgs, target)
 }
 
 // draft starts a reply, reply-all or forward of m from account acc (0 to
@@ -1312,18 +1334,17 @@ func (r *reader) message(c *ui.Context, m core.MessageSummary) {
 			// The sender, its avatar or name, opens its actions (block, copy,
 			// mail from them); it no longer folds.
 			target := cmp.Or(addr, m.From)
-			senderActions := func() {
-				if r.senderOpen && r.senderMsgID == m.ID {
-					r.senderOpen = false
-				} else {
-					r.senderOpen = true
-					r.senderMsgID = m.ID
+			senderActions := func(e ui.Element) {
+				if target != "" {
+					e.Menu(func(menu *ui.Menu) { r.senderMenu(c, menu, addr, target, m.ID, sec) })
 				}
 			}
 			ui.Row(c).Gap(th.Space(2.5)).AlignItems(ui.Center).Children(func() {
 				// At its folded row's place (its padding), so it stays still as the message opens.
-				kit.Pressable(c, kit.PressableOpts{OnClick: senderActions}).Shrink(0).Radius(t.Radius.Lg).Label(target).
-					AlignSelf(ui.Start).Margin(th.Space(1.5), 0, 0, 0).Children(func() {
+				avatar := kit.Pressable(c, kit.PressableOpts{}).Shrink(0).Radius(t.Radius.Lg).Label(target).
+					AlignSelf(ui.Start).Margin(th.Space(1.5), 0, 0, 0)
+				senderActions(avatar)
+				avatar.Children(func() {
 					// Until the avatar is fetched or refused, a pulse, or in a thread what
 					// its folded row showed (no grey flash as it opens); then the image or
 					// the initial.
@@ -1340,19 +1361,22 @@ func (r *reader) message(c *ui.Context, m core.MessageSummary) {
 				ui.Column(c).Shrink(1).Gap(th.Space(0.5)).AlignSelf(ui.Start).Margin(th.Space(1.5), 0, 0, 0).Children(func() {
 					ui.Row(c).Wrap().Gap(th.Space(1.5)).AlignItems(ui.Center).Children(func() {
 						// Its hover clears the text by its padding; the margin keeps the text where it was.
-						who := kit.Pressable(c, kit.PressableOpts{OnClick: senderActions}).Gap(th.Space(1)).AlignItems(ui.Center).Label(target).
+						who := kit.Pressable(c, kit.PressableOpts{}).Gap(th.Space(1)).AlignItems(ui.Center).Label(target).
 							Padding(th.Space(0.5), th.Space(1.5)).Margin(-th.Space(0.5), -th.Space(1.5)).Radius(t.Radius.Md)
+						senderActions(who)
 						who.Children(func() {
 							ui.Text(c, name).FontWeight(500).SingleLine().Transition(nameMotion(m.ID))
 							if addr != "" && addr != name { // Name <address>, the address quieter
 								kit.Text(c, "<"+addr+">", t.Text.Base).TextColor(t.Muted).SingleLine().Shrink(1)
 							}
+							ui.Icon(c, icons.Get("chevron-down")).Size(theme.IconXs, theme.IconXs).TextColor(t.Muted)
 						})
-						if r.senderOpen && r.senderMsgID == m.ID {
-							r.senderMenu(c, who, addr, m.From, m.ID, sec)
-						}
 						if r.isBlocked(m.From) {
-							kit.Badge(c, i18n.T("reader.blocked_badge"))
+							badge := kit.Pressable(c, kit.PressableOpts{})
+							senderActions(badge)
+							badge.Children(func() {
+								kit.Badge(c, i18n.T("reader.blocked_badge"))
+							})
 						}
 						r.securityBadge(c, m.ID, sec)
 					})
@@ -1682,7 +1706,7 @@ func (a *App) BodyBuilt(view ui.NativeWebView, message int64, cut, remote bool) 
 	}
 }
 
-// BodyImagesFailed is told n of message's remote images could not load:
+// BodyImagesFailed is told n of message's images could not load:
 // the notice offers a retry.
 func (a *App) BodyImagesFailed(view ui.NativeWebView, message int64, n int) {
 	if b := a.mail.reader.shown(view, message); b != nil {
@@ -1843,53 +1867,26 @@ func (a *App) setBlocked(from string, block bool, done func()) {
 	})
 }
 
-// senderMenu is the sender's actions under anchor, the reader's menu as its
-// toolbar's more menu is: view them in contacts, copy the address, block or
-// unblock the sender, edit labels, or adjust security classification.
-func (r *reader) senderMenu(c *ui.Context, anchor ui.Element, addr, rawFrom string, msgID int64, sec gomail.SecurityReport) {
-	target := cmp.Or(addr, rawFrom)
-	if target == "" {
-		return
+// senderMenu is the sender's actions: view them in contacts, copy the address,
+// block or unblock the sender, edit labels, or adjust security classification.
+func (r *reader) senderMenu(c *ui.Context, m *ui.Menu, addr, target string, msgID int64, sec gomail.SecurityReport) {
+	if addr != "" && m.Item(i18n.T("reader.view_contact")).Icon(menuIcon("contacts")).Chosen() {
+		r.p.a.openContact(addr)
 	}
-	t := theme.Of(c)
-	item := func(i int, label, icon string, danger bool, act func()) {
-		color := t.Muted
-		e := kit.MenuItem(c.Key(i), false).Label(label).OnClick(func() { r.senderOpen = false; act() })
-		if danger {
-			color = t.DangerText
-			e.TextColor(color)
-		}
-		e.Children(func() {
-			ui.Icon(c, icons.Get(icon)).Size(theme.IconSm, theme.IconSm).TextColor(color)
-			ui.Text(c, label).SingleLine()
-		})
+	if m.Item(i18n.T("reader.copy_address")).Icon(menuIcon("copy")).Chosen() {
+		c.WriteClipboard(target)
+		r.p.a.toast(i18n.T("reader.address_copied"))
 	}
-	kit.MenuAt(c, anchor, &r.senderOpen, ui.AnchorBottomLeft, ui.AnchorTopLeft, theme.PopupOffset, target, func() {
-		if addr != "" {
-			item(2, i18n.T("reader.view_contact"), "contacts", false, func() { r.p.a.openContact(addr) })
+	if r.isBlocked(target) {
+		if m.Item(i18n.T("reader.unblock_sender")).Icon(menuIcon("shield")).Chosen() {
+			r.p.a.setBlocked(target, false, func() { r.p.a.toast(i18n.T("reader.sender_unblocked")) })
 		}
-		item(0, i18n.T("reader.copy_address"), "copy", false, func() {
-			c.WriteClipboard(target)
-			r.p.a.toast(i18n.T("reader.address_copied"))
-		})
-		if r.isBlocked(target) {
-			item(1, i18n.T("reader.unblock_sender"), "shield", false, func() {
-				r.p.a.setBlocked(target, false, func() { r.p.a.toast(i18n.T("reader.sender_unblocked")) })
-			})
-		} else {
-			item(1, i18n.T("reader.block_sender"), "spam", true, func() {
-				r.p.a.setBlocked(target, true, func() { r.p.a.toast(i18n.T("reader.sender_blocked")) })
-			})
-		}
-		kit.Separator(c, false)
-		item(10, i18n.T("reader.message.labels"), "tag", false, func() {
-			r.labelMenu = true
-		})
-		item(11, i18n.T("reader.security.edit_title"), "shield-check", false, func() {
-			r.secMenuOpen = true
-			r.secMenuMsgID = msgID
-		})
-	})
+	} else if m.Item(i18n.T("reader.block_sender")).Icon(menuIcon("spam")).Chosen() {
+		r.p.a.setBlocked(target, true, func() { r.p.a.toast(i18n.T("reader.sender_blocked")) })
+	}
+	m.Separator()
+	labelSubmenu(m, theme.Of(c), r.p.a.labels, r.labelState, r.setLabel)
+	securitySubmenu(m, r.securityChecked(sec), func(reason string) { r.applySecurity(msgID, reason) })
 }
 
 func secWarningText(sec gomail.SecurityReport) string {
@@ -1966,105 +1963,55 @@ func (r *reader) applySecurity(msgID int64, reason string) {
 	})
 }
 
-// securityPopoverBody renders the classification options popover.
-func (r *reader) securityPopoverBody(c *ui.Context, msgID int64, sec gomail.SecurityReport) {
-	t, th := theme.Of(c), c.Theme()
-	ui.Column(c).Width(theme.SecurityCardWidth).Gap(th.Space(2)).Children(func() {
-		kit.Text(c, i18n.T("reader.security.edit_title"), t.Text.Base).FontWeight(600)
-		iconName, label, color := secVisual(t, sec)
-		if iconName != "" {
-			ui.Row(c).Gap(th.Space(1.5)).AlignItems(ui.Center).Children(func() {
-				ui.Icon(c, icons.Fill(iconName)).Size(theme.IconSm, theme.IconSm).TextColor(color)
-				kit.Text(c, label, t.Text.Sm).FontWeight(600).TextColor(color)
-			})
+// securityItems are the classifications mail can be set to, in the reader's
+// menus and a mail row's; checked says which one it has.
+func securityItems(m *ui.Menu, checked func(reason string) bool, apply func(reason string)) {
+	item := func(label, icon, reason string) {
+		if m.Item(i18n.T(label)).Icon(menuIcon(icon)).Checked(checked(reason)).Chosen() {
+			apply(reason)
 		}
-		if exp := r.secExplanation(sec); exp != "" {
-			kit.Text(c, exp, t.Text.Sm).LineHeight(theme.LineCJK).TextColor(t.Muted)
-		}
-		kit.Separator(c, false)
+	}
+	item("mail.security.mark_safe", "circle-check", "manual_safe")
+	item("mail.security.mark_suspicious", "triangle-alert", "manual_suspicious")
+	item("mail.security.mark_warning", "skull", "manual_warning")
+	m.Separator()
+	item("mail.security.reset", "refresh-cw", "")
+}
 
-		optButton := func(key int, label, icon string, active bool, danger bool, onClick func()) {
-			color := t.Foreground
-			if danger {
-				color = t.DangerText
-			}
-			b := kit.Pressable(c.Key(key), kit.PressableOpts{OnClick: onClick}).AlignSelf(ui.Stretch).
-				Height(th.Space(8)).Padding(0, th.Space(2)).Gap(th.Space(2)).AlignItems(ui.Center).Radius(t.Radius.Md)
-			if active {
-				b.Background(t.Hover)
-			}
-			b.Children(func() {
-				ui.Icon(c, icons.Get(icon)).Size(theme.IconSm, theme.IconSm).TextColor(color)
-				kit.Text(c, label, t.Text.Sm).TextColor(color).Grow(1)
-				if active {
-					ui.Icon(c, icons.Get("check")).Size(theme.IconSm, theme.IconSm).TextColor(t.Muted)
-				}
-			})
-		}
+// securitySubmenu is securityItems as a menu's submenu.
+func securitySubmenu(m *ui.Menu, checked func(reason string) bool, apply func(reason string)) {
+	m.Submenu(i18n.T("mail.menu.security"), func(sm *ui.Menu) { securityItems(sm, checked, apply) }).Icon(menuIcon("shield"))
+}
 
-		optButton(1, i18n.T("mail.security.mark_safe"), "circle-check", sec.Reason == "manual_safe", false, func() {
-			r.secMenuOpen = false
-			r.secMenuMsgID = 0
-			r.applySecurity(msgID, "manual_safe")
-		})
-		optButton(2, i18n.T("mail.security.mark_suspicious"), "triangle-alert", sec.Reason == "manual_suspicious", false, func() {
-			r.secMenuOpen = false
-			r.secMenuMsgID = 0
-			r.applySecurity(msgID, "manual_suspicious")
-		})
-		optButton(3, i18n.T("mail.security.mark_warning"), "skull", sec.Reason == "manual_warning", true, func() {
-			r.secMenuOpen = false
-			r.secMenuMsgID = 0
-			r.applySecurity(msgID, "manual_warning")
-		})
-		kit.Separator(c, false)
-		optButton(4, i18n.T("mail.security.reset"), "refresh-cw", sec.Reason == "", false, func() {
-			r.secMenuOpen = false
-			r.secMenuMsgID = 0
-			r.applySecurity(msgID, "")
-		})
-	})
+func (r *reader) securityChecked(sec gomail.SecurityReport) func(string) bool {
+	return func(reason string) bool { return sec.Reason == reason }
 }
 
 // securityBadge is the sender's verdict as an icon by the name; hovering it
-// explains the verdict, and clicking it opens a popover to adjust the classification.
+// explains the verdict, and clicking it opens a menu to adjust the classification.
 func (r *reader) securityBadge(c *ui.Context, msgID int64, sec gomail.SecurityReport) {
 	isManual := gomail.IsManualSecurity(sec.Reason)
-	open := r.secMenuOpen && r.secMenuMsgID == msgID
-	if !isManual && !showSecurity(r.p.a.settings, sec.Status) && !open {
+	if !isManual && !showSecurity(r.p.a.settings, sec.Status) {
 		return
 	}
 	t, th := theme.Of(c), c.Theme()
 	iconName, label, color := secVisual(t, sec)
-	mark := kit.Pressable(c, kit.PressableOpts{OnClick: func() {
-		if r.secMenuOpen && r.secMenuMsgID == msgID {
-			r.secMenuOpen = false
-			r.secMenuMsgID = 0
-		} else {
-			r.open[msgID] = true
-			r.secMenuOpen = true
-			r.secMenuMsgID = msgID
-		}
-	}}).Shrink(0).Label(label).Radius(t.Radius.Sm).Padding(th.Space(0.5), th.Space(1))
+	mark := kit.Pressable(c, kit.PressableOpts{}).Shrink(0).Label(label).Radius(t.Radius.Sm).Padding(th.Space(0.5), th.Space(1))
+	mark.Menu(func(m *ui.Menu) {
+		securityItems(m, r.securityChecked(sec), func(reason string) { r.applySecurity(msgID, reason) })
+	})
 	mark.Children(func() {
 		ui.Icon(c, icons.Fill(iconName)).Size(theme.IconXs, theme.IconXs).TextColor(color)
 	})
-	if !open {
-		kit.HoverCard(c, mark, theme.SecurityCardWidth, func() {
-			ui.Row(c).Gap(th.Space(1.5)).AlignItems(ui.Center).Children(func() {
-				ui.Icon(c, icons.Fill(iconName)).Size(theme.Icon, theme.Icon).TextColor(color)
-				kit.Text(c, label, t.Text.Base).FontWeight(600).TextColor(color)
-			})
-			kit.Text(c, r.secExplanation(sec), t.Text.Sm).LineHeight(theme.LineCJK).TextColor(t.Foreground)
-			kit.Separator(c, false)
-			kit.Text(c, i18n.T("reader.security.click_to_edit"), t.Text.Xs).TextColor(t.Muted)
+	kit.HoverCard(c, mark, theme.SecurityCardWidth, func() {
+		ui.Row(c).Gap(th.Space(1.5)).AlignItems(ui.Center).Children(func() {
+			ui.Icon(c, icons.Fill(iconName)).Size(theme.Icon, theme.Icon).TextColor(color)
+			kit.Text(c, label, t.Text.Base).FontWeight(600).TextColor(color)
 		})
-	}
-	if open {
-		kit.PopoverAt(c, mark, &r.secMenuOpen, ui.AnchorBottomLeft, ui.AnchorTopLeft, theme.PopupOffset, func() {
-			r.securityPopoverBody(c, msgID, sec)
-		})
-	}
+		kit.Text(c, r.secExplanation(sec), t.Text.Sm).LineHeight(theme.LineCJK).TextColor(t.Foreground)
+		kit.Separator(c, false)
+		kit.Text(c, i18n.T("reader.security.click_to_edit"), t.Text.Xs).TextColor(t.Muted)
+	})
 }
 
 // securityIcon is a mail list row's warning, after the sender's name. Verified

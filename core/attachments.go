@@ -9,6 +9,7 @@ import (
 	"mime/quotedprintable"
 	"os"
 	"path/filepath"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -28,6 +29,9 @@ const (
 
 // attachLimit is MaxMessageBytes; a variable so tests can lower it.
 var attachLimit int64 = MaxMessageBytes
+
+// cacheLimit is MaxCacheBytes; a variable so tests can lower it.
+var cacheLimit int64 = MaxCacheBytes
 
 var (
 	ErrTooLarge       = errors.New("attachment exceeds the size limit")
@@ -81,31 +85,85 @@ func (s *Service) cached(ctx context.Context, a attRow) (string, bool, error) {
 
 // GetAttachment returns the attachment's cached file, downloading it first if needed.
 func (s *Service) GetAttachment(ctx context.Context, attachmentID int64) (string, AttachmentInfo, error) {
-	ctx, end, err := s.begin(ctx, 0)
+	f := s.newAttachmentFetcher(ctx)
+	path, info, err := f.get(attachmentID)
+	if cerr := f.close(); err == nil {
+		err = cerr
+	}
+	return path, info, err
+}
+
+// attachmentFetcher gets attachments one after another over one connection: a
+// login per file made a message with a few signature logos take seconds to open.
+// It holds the account lock only inside get, so whoever waits for the lock still
+// goes between two files. Between files its connection is kept with the account,
+// where the lock's next holder closes it: that holder may dial, and a server may
+// limit an account's connections. close must be called.
+type attachmentFetcher struct {
+	s         *Service
+	ctx       context.Context
+	end       func()  // ends the call begun by the first get
+	saved     []int64 // downloaded here; close evicts around them
+	accountID int64   // of the last get
+
+	conn *downloadConn // while inside get; nil when there is none yet
+
+	dialFails int // in a row
+	dialErr   error
+}
+
+// downloadConn is a logged-in connection with the folder selected on it.
+type downloadConn struct {
+	owner          *attachmentFetcher
+	c              *imapclient.Client
+	release, abort func()
+	folder         string
+	uidValidity    uint32
+}
+
+func (s *Service) newAttachmentFetcher(ctx context.Context) *attachmentFetcher {
+	return &attachmentFetcher{s: s, ctx: ctx}
+}
+
+func (f *attachmentFetcher) get(id int64) (string, AttachmentInfo, error) {
+	s := f.s
+	if f.end == nil {
+		ctx, end, err := s.begin(f.ctx, 0)
+		if err != nil {
+			return "", AttachmentInfo{}, err
+		}
+		f.ctx, f.end = ctx, end
+	}
+	a, err := s.loadAttachment(f.ctx, id)
 	if err != nil {
 		return "", AttachmentInfo{}, err
 	}
-	defer end()
-	a, err := s.loadAttachment(ctx, attachmentID)
-	if err != nil {
+	if err := s.bind(f.ctx, a.accountID); err != nil {
 		return "", AttachmentInfo{}, err
 	}
-	if err := s.bind(ctx, a.accountID); err != nil {
-		return "", AttachmentInfo{}, err
-	}
-	if p, ok, err := s.cached(ctx, a); ok || err != nil {
+	if p, ok, err := s.cached(f.ctx, a); ok || err != nil {
 		return p, a.info, err
 	}
-	unlock, err := s.lockAccount(ctx, a.accountID)
+	unlock, err := s.acquireAccount(f.ctx, a.accountID)
 	if err != nil {
 		return "", AttachmentInfo{}, err
 	}
-	defer unlock()
+	f.accountID = a.accountID
+	if k := s.takeKept(a.accountID, nil); k != nil && k.owner == f {
+		f.conn = k
+	} else if k != nil {
+		k.release()
+	}
+	defer func() {
+		s.keepConn(a.accountID, f.conn)
+		f.conn = nil
+		unlock()
+	}()
 	// The row may have changed (cached, moved, deleted) while we waited for the lock.
-	if a, err = s.loadAttachment(ctx, attachmentID); err != nil {
+	if a, err = s.loadAttachment(f.ctx, id); err != nil {
 		return "", AttachmentInfo{}, err
 	}
-	if p, ok, err := s.cached(ctx, a); ok || err != nil {
+	if p, ok, err := s.cached(f.ctx, a); ok || err != nil {
 		return p, a.info, err
 	}
 	info := a.info
@@ -115,32 +173,117 @@ func (s *Service) GetAttachment(ctx context.Context, attachmentID int64) (string
 	if !a.onServer {
 		return "", info, ErrNotOnServerYet
 	}
-	data, err := s.download(ctx, a)
+	data, err := f.fetch(a)
+	var path string
+	if err == nil {
+		path, err = s.saveAttachment(f.ctx, a, data)
+	}
+	if errors.Is(err, ErrTooLarge) {
+		// The row understated it: the next open need not download up to the limit again.
+		s.db.Execute(f.ctx, "UPDATE attachments SET size = ? WHERE id = ?", attachLimit+1, id)
+		return "", info, err
+	}
 	if err != nil {
 		return "", info, err
 	}
+	f.saved = append(f.saved, id)
+	return path, info, nil
+}
+
+// fetch downloads a's part. A failure hangs up, as it may have left the
+// connection unusable; on a kept connection, which may just have gone stale, a
+// gets one more try on a new one.
+func (f *attachmentFetcher) fetch(a attRow) ([]byte, error) {
+	for {
+		reused := f.conn != nil
+		data, err := f.fetchOnce(a)
+		if err == nil {
+			return data, nil
+		}
+		if f.ctx.Err() != nil {
+			return nil, f.ctx.Err()
+		}
+		f.hangUp()
+		if !reused || errors.Is(err, ErrTooLarge) {
+			return nil, err
+		}
+	}
+}
+
+func (f *attachmentFetcher) fetchOnce(a attRow) ([]byte, error) {
+	if f.conn == nil {
+		// A refused login or a server that stays away is not worth a dial per file.
+		if f.dialFails == 2 || errors.Is(f.dialErr, conn.ErrAuthFailed) {
+			return nil, f.dialErr
+		}
+		c, release, abort, err := f.s.dialDownload(f.ctx, a.accountID)
+		if err != nil {
+			f.dialFails, f.dialErr = f.dialFails+1, err
+			return nil, err
+		}
+		f.conn, f.dialFails = &downloadConn{owner: f, c: c, release: release, abort: abort}, 0
+	}
+	if f.conn.folder != a.folder || f.conn.uidValidity != a.uidValidity {
+		if err := selectFolder(f.conn.c, a.folder, a.uidValidity); err != nil {
+			return nil, err
+		}
+		f.conn.folder, f.conn.uidValidity = a.folder, a.uidValidity
+	}
+	return fetchSection(f.conn.c, f.conn.abort, a.uid, a.part, a.encoding)
+}
+
+func (f *attachmentFetcher) hangUp() {
+	if f.conn != nil {
+		f.conn.release()
+		f.conn = nil
+	}
+}
+
+// close hangs up and brings the cache back within budget, once for all the files
+// saved: eviction scans the whole cache. A cancelled call's files count too.
+func (f *attachmentFetcher) close() error {
+	if k := f.s.takeKept(f.accountID, f); k != nil {
+		k.release()
+	}
+	if f.end == nil {
+		return nil
+	}
+	defer f.end()
+	if len(f.saved) == 0 {
+		return nil
+	}
+	ctx, cancel := context.WithTimeout(context.WithoutCancel(f.ctx), 5*time.Second)
+	defer cancel()
+	return f.s.evict(ctx, cacheLimit, f.saved...)
+}
+
+// saveAttachment writes a's downloaded data to the cache and records it. The
+// caller holds the account lock.
+func (s *Service) saveAttachment(ctx context.Context, a attRow, data []byte) (string, error) {
 	// Transfer encoding was undone while streaming. Only text has a charset:
 	// a PDF labelled charset=binary or latin-1 keeps its bytes.
-	if strings.HasPrefix(strings.ToLower(info.ContentType), "text/") {
+	if strings.HasPrefix(strings.ToLower(a.info.ContentType), "text/") {
 		if d, err := mail.DecodePart(data, "", a.charset); err == nil {
 			data = d
 		}
 	}
 	if int64(len(data)) > attachLimit {
-		return "", info, ErrTooLarge
+		return "", ErrTooLarge
 	}
-	path, err := filepath.Abs(filepath.Join(s.cacheDir(a.accountID), strconv.FormatInt(attachmentID, 10)))
+	path, err := filepath.Abs(filepath.Join(s.cacheDir(a.accountID), strconv.FormatInt(a.info.ID, 10)))
 	if err != nil {
-		return "", info, err
+		return "", err
 	}
+	s.cacheMu.Lock()
+	defer s.cacheMu.Unlock()
 	if err := store.WriteFileAtomic(path, data); err != nil {
-		return "", info, err
+		return "", err
 	}
-	if _, err := s.db.Execute(ctx, "UPDATE attachments SET cache_path = ?, last_used = ? WHERE id = ?", path, time.Now().Unix(), attachmentID); err != nil {
+	if _, err := s.db.Execute(ctx, "UPDATE attachments SET cache_path = ?, last_used = ? WHERE id = ?", path, time.Now().Unix(), a.info.ID); err != nil {
 		os.Remove(path)
-		return "", info, err
+		return "", err
 	}
-	return path, info, s.evict(ctx, MaxCacheBytes, attachmentID)
+	return path, nil
 }
 
 // GetRawMessage downloads the message's full original from the server, for a
@@ -194,11 +337,8 @@ func (s *Service) touch(ctx context.Context, id int64) error {
 // download fetches the raw (still transfer-encoded) part from the server, or the
 // whole message when a.part is empty.
 func (s *Service) download(ctx context.Context, a attRow) ([]byte, error) {
-	c, release, abort, err := s.dialAccount(ctx, a.accountID, nil)
+	c, release, abort, err := s.dialDownload(ctx, a.accountID)
 	if err != nil {
-		if errors.Is(err, conn.ErrAuthFailed) {
-			s.bus.Publish(events.Event{Type: events.SyncFailed, AccountID: a.accountID, Error: err.Error(), Kind: string(conn.FailureAuth)})
-		}
 		return nil, err
 	}
 	defer release()
@@ -209,17 +349,39 @@ func (s *Service) download(ctx context.Context, a attRow) ([]byte, error) {
 	return data, err
 }
 
+// dialDownload is dialAccount for a download; a refused login is shown like a sync's.
+func (s *Service) dialDownload(ctx context.Context, accountID int64) (c *imapclient.Client, release, abort func(), err error) {
+	c, release, abort, err = s.dialAccount(ctx, accountID, nil)
+	if errors.Is(err, conn.ErrAuthFailed) {
+		s.bus.Publish(events.Event{Type: events.SyncFailed, AccountID: accountID, Error: err.Error(), Kind: string(conn.FailureAuth)})
+	}
+	return c, release, abort, err
+}
+
 // fetchPart streams the part and undoes its transfer encoding on the fly. Once
 // more than attachLimit decoded bytes arrive it cuts the connection with abort
 // and returns ErrTooLarge.
 func fetchPart(c *imapclient.Client, abort func(), folder string, uidValidity uint32, uid imap.UID, part, encoding string) ([]byte, error) {
-	sel, err := c.Select(folder, &imap.SelectOptions{ReadOnly: true}).Wait()
-	if err != nil {
+	if err := selectFolder(c, folder, uidValidity); err != nil {
 		return nil, err
 	}
-	if sel.UIDValidity != uidValidity {
-		return nil, errors.New("server folder changed since sync; sync again")
+	return fetchSection(c, abort, uid, part, encoding)
+}
+
+// selectFolder opens folder read-only, failing if it is not the one synced.
+func selectFolder(c *imapclient.Client, folder string, uidValidity uint32) error {
+	sel, err := c.Select(folder, &imap.SelectOptions{ReadOnly: true}).Wait()
+	if err != nil {
+		return err
 	}
+	if sel.UIDValidity != uidValidity {
+		return errors.New("server folder changed since sync; sync again")
+	}
+	return nil
+}
+
+// fetchSection is fetchPart in the already selected folder.
+func fetchSection(c *imapclient.Client, abort func(), uid imap.UID, part, encoding string) ([]byte, error) {
 	var path []int // none: the whole message
 	if part != "" {
 		for p := range strings.SplitSeq(part, ".") {
@@ -233,6 +395,7 @@ func fetchPart(c *imapclient.Client, abort func(), folder string, uidValidity ui
 	sec := &imap.FetchItemBodySection{Part: path, Peek: true}
 	cmd := c.Fetch(imap.UIDSetNum(uid), &imap.FetchOptions{UID: true, BodySection: []*imap.FetchItemBodySection{sec}})
 	var data []byte
+	var err error
 	found := false
 	for m := cmd.Next(); m != nil; m = cmd.Next() {
 		for item := m.Next(); item != nil; item = m.Next() {
@@ -258,10 +421,13 @@ func fetchPart(c *imapclient.Client, abort func(), folder string, uidValidity ui
 }
 
 // evict deletes the least recently used cached files until the cache fits max.
-// keep is never evicted. cache_path is cleared before the file is removed, so a
+// keep are never evicted. cache_path is cleared before the file is removed, so a
 // file that cannot be removed is merely unreferenced (the orphan sweep collects it)
-// and its error is returned.
-func (s *Service) evict(ctx context.Context, max int64, keep int64) error {
+// and its error is returned. It holds cacheMu throughout: with a save between
+// reading the rows and acting on them, it would remove a file just downloaded.
+func (s *Service) evict(ctx context.Context, max int64, keep ...int64) error {
+	s.cacheMu.Lock()
+	defer s.cacheMu.Unlock()
 	rows, err := s.db.Query(ctx, "SELECT id, cache_path FROM attachments WHERE cache_path IS NOT NULL ORDER BY last_used, id")
 	if err != nil {
 		return err
@@ -280,7 +446,7 @@ func (s *Service) evict(ctx context.Context, max int64, keep int64) error {
 			break
 		}
 		id := store.Int(r[0])
-		if id == keep {
+		if slices.Contains(keep, id) {
 			continue
 		}
 		if _, err := s.db.Execute(ctx, "UPDATE attachments SET cache_path = NULL WHERE id = ?", id); err != nil {

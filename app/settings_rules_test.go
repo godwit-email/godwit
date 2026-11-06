@@ -2,6 +2,7 @@ package app
 
 import (
 	"context"
+	"reflect"
 	"slices"
 	"testing"
 	"time"
@@ -70,6 +71,22 @@ func TestSettingsRulesCreate(t *testing.T) {
 	h.until("the rule off", func() bool { return !h.rules()[0].Enabled })
 }
 
+func TestSettingsRulesBlockAction(t *testing.T) {
+	h, _ := withAccount(t)
+	h.openSettings("rules")
+	h.click("新建规则")
+	h.click("值")
+	h.typeText("spammer@")
+	h.click("打标签")
+	h.click(i18n.T("settings.rules.action.block"))
+	h.saveRule()
+	h.see("已保存「未命名规则」")
+	rs := h.rules()
+	if len(rs) != 1 || rs[0].Doc.Actions[0].Kind != core.ActionBlock {
+		t.Fatalf("expected rule action to be block, got %+v", rs)
+	}
+}
+
 // The editor offers a condition on the mail's age in whole days.
 func TestSettingsRulesAgeCondition(t *testing.T) {
 	h, _ := withAccount(t)
@@ -81,8 +98,73 @@ func TestSettingsRulesAgeCondition(t *testing.T) {
 	h.saveRule()
 	h.see("早于 30 天前")
 	rs := h.rules()
-	if len(rs) != 1 || rs[0].Doc.Conditions[0] != (core.RuleCondition{Field: core.FieldAge, Op: core.OpOlderThan, Value: "30"}) {
+	if len(rs) != 1 || rs[0].Doc.Conditions[0].Field != core.FieldAge || rs[0].Doc.Conditions[0].Value != "30" {
 		t.Fatalf("rules %+v", rs)
+	}
+}
+
+// A rule's conditions go into groups: the button on a bracket's line switches
+// its and or or, a group removed down to one leaves plain conditions, and 添加
+// makes a group of the conditions so far.
+func TestSettingsRulesConditionGroups(t *testing.T) {
+	h, _ := withAccount(t)
+	stripe := core.RuleCondition{Field: core.FieldFrom, Op: core.OpContains, Value: "stripe.com"}
+	aws := core.RuleCondition{Field: core.FieldFrom, Op: core.OpContains, Value: "aws.example"}
+	attached := core.RuleCondition{Field: core.FieldAttachments, Op: core.OpIs, Value: core.RuleYes}
+	h.app.EditRule(core.Rule{Enabled: true, Doc: core.RuleDoc{Version: core.RuleVersion, Name: "云服务", Trigger: core.TriggerReceive, Match: core.MatchAll,
+		Conditions: []core.RuleCondition{{Match: core.MatchAny, Group: []core.RuleCondition{stripe, aws}}, {Match: core.MatchAll, Group: []core.RuleCondition{attached}}},
+		Actions:    []core.RuleAction{{Kind: core.ActionStar}}}}, 0, 0, "")
+	h.openSettings("rules")
+	h.click("现在是「且」，点击切换")
+	h.saveRule()
+	h.see("） 或 ") // the list says its groups, and the and it was switched to or
+	d := h.rules()[0].Doc
+	if d.Match != core.MatchAny || d.Conditions[0].Match != core.MatchAny || len(d.Rows()) != 3 {
+		t.Fatalf("saved %+v", d)
+	}
+
+	h.click("展开最近命中")
+	h.click("编辑规则")
+	h.click("删除这组") // the first: the last group's conditions are plain again
+	h.click("保存")
+	h.click("保存并启用")
+	d = h.rules()[0].Doc
+	if len(d.Conditions) != 1 || d.Conditions[0].Group != nil || d.Conditions[0].Field != core.FieldAttachments || d.Match != core.MatchAll {
+		t.Fatalf("after removing a group %+v", d)
+	}
+
+	h.click("编辑规则")
+	h.click("添加")
+	h.click("添加一组条件")
+	h.see("删除这组") // the condition so far is one group, the two new rows another
+	h.click("取消")
+	if d := h.rules()[0].Doc; len(d.Conditions) != 1 {
+		t.Fatalf("saved without saving %+v", d)
+	}
+}
+
+// Adding a group adds two conditions: with room for one, it does nothing, so
+// the editor never builds a rule validRule refuses.
+func TestSettingsRulesConditionGroupNeedsRoom(t *testing.T) {
+	h, _ := withAccount(t)
+	row := core.RuleCondition{Field: core.FieldSubject, Op: core.OpContains, Value: "a"}
+	conds := slices.Repeat([]core.RuleCondition{row}, core.MaxRuleConditions-1)
+	h.app.EditRule(core.Rule{Enabled: true, Doc: core.RuleDoc{Version: core.RuleVersion, Name: "满", Trigger: core.TriggerReceive, Match: core.MatchAll,
+		Conditions: conds, Actions: []core.RuleAction{{Kind: core.ActionStar}}}}, 0, 0, "")
+	h.openSettings("rules")
+	h.click("添加")
+	h.click("添加一组条件")
+	if h.tt.HasText("删除这组") {
+		t.Fatal("a group added past the limit")
+	}
+
+	grouped := []core.RuleCondition{{Match: core.MatchAny, Group: conds[:len(conds)-1]}, {Match: core.MatchAll, Group: conds[:1]}}
+	h.app.pages[PageSettings].(*settingsPage).rules.openEditor(core.Rule{Enabled: true, Doc: core.RuleDoc{Version: core.RuleVersion, Name: "满", Trigger: core.TriggerReceive, Match: core.MatchAll,
+		Conditions: grouped, Actions: []core.RuleAction{{Kind: core.ActionStar}}}})
+	h.tt.Frame()
+	h.click("添加一组条件")
+	if d := h.app.pages[PageSettings].(*settingsPage).rules.edit.Doc; len(d.Conditions) != 2 {
+		t.Fatalf("a group added past the limit: %d groups", len(d.Conditions))
 	}
 }
 
@@ -253,7 +335,7 @@ func TestSettingsRulesFromMail(t *testing.T) {
 	d := h.rules()[0].Doc
 	want := []core.RuleCondition{{Field: core.FieldFrom, Op: core.OpContains, Value: "billing@aws.example"},
 		{Field: core.FieldSubject, Op: core.OpContains, Value: "invoice"}, {Field: core.FieldAttachments, Op: core.OpIs, Value: core.RuleYes}}
-	if d.Name != "来自 AWS 的邮件" || !slices.Equal(d.Conditions, want) {
+	if d.Name != "来自 AWS 的邮件" || !reflect.DeepEqual(d.Conditions, want) {
 		t.Fatalf("rule %+v", d)
 	}
 }
@@ -433,5 +515,32 @@ func TestSettingsRulesListHeight(t *testing.T) {
 	h.tt.Frame()
 	if got := foot(); got != closed {
 		t.Fatalf("the list is %v from its closed place", got-closed)
+	}
+}
+
+// Every language's logic button fits its word with padding, at least 28 wide,
+// and centers on the bracket's line.
+func TestSettingsRulesLogicButtonFitsAllLocales(t *testing.T) {
+	t.Cleanup(func() { i18n.SetLanguage("zh-CN") })
+	for _, lang := range i18n.Catalog.Languages() {
+		i18n.SetLanguage(lang)
+		for _, m := range []string{core.MatchAll, core.MatchAny} {
+			match := m
+			var textW, btnW, railW float32
+			tt := ui.NewTester(func(c *ui.Context) {
+				word := i18n.T("settings.rules.logic." + match)
+				textW, _ = c.MeasureText(0, ui.Span{Text: word})
+				btnW, railW = condRailWidth(c)
+				condRail(c, true, false, true, &match, true)
+			}, 200, 100)
+			word := i18n.T("settings.rules.logic." + match)
+			r, ok := tt.Find(i18n.Tf("settings.rules.logic.flip", word))
+			if !ok {
+				t.Fatalf("%s/%s: button %q not found", lang, match, word)
+			}
+			if r.W < 28 || r.W < textW+12 || r.X+r.W/2 != btnW/2 || railW != btnW+8 {
+				t.Errorf("%s/%s (%q): button=%+v textW=%v btnW=%v railW=%v", lang, match, word, r, textW, btnW, railW)
+			}
+		}
 	}
 }

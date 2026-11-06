@@ -244,9 +244,9 @@ func TestRuleStoresStableIDs(t *testing.T) {
 	for _, d := range []RuleDoc{
 		{Version: RuleVersion, Trigger: "收到新邮件", Match: MatchAll, Actions: []RuleAction{{Kind: ActionLabel, Label: "u1"}}},
 		{Version: RuleVersion, Trigger: TriggerReceive, Match: MatchAll, Actions: []RuleAction{{Kind: ActionLabel, Label: "Bills"}}},
-		{Version: RuleVersion, Trigger: TriggerReceive, Match: MatchAll, Conditions: []RuleCondition{{FieldAge, OpOlderThan, "1.5"}}, Actions: []RuleAction{{Kind: ActionRead}}},
-		{Version: RuleVersion, Trigger: TriggerReceive, Match: MatchAll, Conditions: []RuleCondition{{FieldAge, OpOlderThan, "0"}}, Actions: []RuleAction{{Kind: ActionRead}}},
-		{Version: RuleVersion, Trigger: TriggerReceive, Match: MatchAll, Conditions: []RuleCondition{{FieldAge, OpContains, "3"}}, Actions: []RuleAction{{Kind: ActionRead}}},
+		{Version: RuleVersion, Trigger: TriggerReceive, Match: MatchAll, Conditions: []RuleCondition{{Field: FieldAge, Op: OpOlderThan, Value: "1.5"}}, Actions: []RuleAction{{Kind: ActionRead}}},
+		{Version: RuleVersion, Trigger: TriggerReceive, Match: MatchAll, Conditions: []RuleCondition{{Field: FieldAge, Op: OpOlderThan, Value: "0"}}, Actions: []RuleAction{{Kind: ActionRead}}},
+		{Version: RuleVersion, Trigger: TriggerReceive, Match: MatchAll, Conditions: []RuleCondition{{Field: FieldAge, Op: OpContains, Value: "3"}}, Actions: []RuleAction{{Kind: ActionRead}}},
 	} {
 		_, err := e.s.SaveRule(bg, Rule{Doc: d})
 		assert.ErrorIs(t, err, ErrInvalidRule)
@@ -403,6 +403,28 @@ func TestRuleUnlabelAndJunk(t *testing.T) {
 	e.sync(t)
 	assert.Empty(t, e.labelOn(t, e.idOf(t, "a@x")))
 	assert.Equal(t, []string{"a@x"}, e.onServer(t, "Junk"))
+}
+
+func TestRuleBlockActionAndUndo(t *testing.T) {
+	e := newRulesEnv(t)
+	e.saveRule(t, rule(RuleAction{Kind: ActionBlock}), true)
+	e.bill(t, "a@x", "billing@evil.example", "Invoice")
+	e.sync(t)
+	e.waitRuns(t, 1)
+
+	blocked, err := e.s.BlockedSenders(bg)
+	require.NoError(t, err)
+	assert.Contains(t, blocked, "billing@evil.example")
+	assert.Equal(t, []string{"block done"}, e.results(t, e.runOf(t, "a@x")))
+
+	kept, err := e.s.UndoRuleRun(bg, e.runOf(t, "a@x"))
+	require.NoError(t, err)
+	assert.Zero(t, kept)
+
+	blocked, err = e.s.BlockedSenders(bg)
+	require.NoError(t, err)
+	assert.NotContains(t, blocked, "billing@evil.example")
+	assert.Equal(t, []string{"block undone"}, e.results(t, e.runOf(t, "a@x")))
 }
 
 // Rules run in list order; a stop action keeps the later ones off the message.

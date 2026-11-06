@@ -69,7 +69,7 @@ func TestProposeRuleNamesItsAccount(t *testing.T) {
 func TestProposeRuleNamesEverythingItTakes(t *testing.T) {
 	e := newApprovalEnv(t)
 	spec := e.s.tools[proposeRuleTool].Spec
-	for _, w := range []string{"pdf", "eml", "attachments", "key_points", "dir", "subfolder", "naming", "{subject}", "age", "older_than"} {
+	for _, w := range []string{"block", "pdf", "eml", "attachments", "key_points", "dir", "subfolder", "naming", "{subject}", "age", "older_than"} {
 		assert.Contains(t, spec.Description, w)
 	}
 	item := spec.Schema["properties"].(map[string]any)["actions"].(map[string]any)["items"].(map[string]any)["properties"].(map[string]any)

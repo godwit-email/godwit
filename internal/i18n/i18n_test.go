@@ -134,6 +134,9 @@ func TestAllSupportedLocales(t *testing.T) {
 		if got := Plural("shell.sync.minutes_ago", 5); got == "" || got == "shell.sync.minutes_ago" {
 			t.Errorf("%s plural(5): %q", want, got)
 		}
+		if got := Tf("palette.filter.remove", "Unread"); !strings.Contains(got, "Unread") {
+			t.Errorf("%s palette.filter.remove: %q does not substitute argument", want, got)
+		}
 	}
 }
 

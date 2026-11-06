@@ -266,9 +266,10 @@ func (s *Service) ListLabels(ctx context.Context) ([]Label, error) {
 
 func (s *Service) listLabels(ctx context.Context) ([]Label, error) {
 	rows, err := s.db.Query(ctx, `SELECT l.id, l.slug, l.name, l.description, l.color, l.icon, l.builtin, l.position,
-		(SELECT count(*) FROM message_labels ml WHERE ml.label_id = l.id AND ml.active = 1),
 		(SELECT count(*) FROM message_labels ml JOIN messages m ON m.id = ml.message_id
-			WHERE ml.label_id = l.id AND ml.active = 1 AND instr(m.flags, '\Seen') = 0)
+			WHERE ml.label_id = l.id AND ml.active = 1 AND `+notBinnedCond+`),
+		(SELECT count(*) FROM message_labels ml JOIN messages m ON m.id = ml.message_id
+			WHERE ml.label_id = l.id AND ml.active = 1 AND `+notBinnedCond+` AND instr(m.flags, '\Seen') = 0)
 		FROM labels l ORDER BY l.position, l.id`)
 	if err != nil {
 		return nil, err
@@ -295,9 +296,9 @@ func (s *Service) ListAccountLabels(ctx context.Context, accountID int64) ([]Lab
 func (s *Service) listAccountLabels(ctx context.Context, accountID int64) ([]Label, error) {
 	rows, err := s.db.Query(ctx, `SELECT l.id, l.slug, l.name, l.description, l.color, l.icon, l.builtin, l.position,
 		(SELECT count(*) FROM message_labels ml JOIN messages m ON m.id = ml.message_id
-			WHERE ml.label_id = l.id AND ml.active = 1 AND m.account_id = ?),
+			WHERE ml.label_id = l.id AND ml.active = 1 AND m.account_id = ? AND `+notBinnedCond+`),
 		(SELECT count(*) FROM message_labels ml JOIN messages m ON m.id = ml.message_id
-			WHERE ml.label_id = l.id AND ml.active = 1 AND m.account_id = ? AND instr(m.flags, '\Seen') = 0)
+			WHERE ml.label_id = l.id AND ml.active = 1 AND m.account_id = ? AND `+notBinnedCond+` AND instr(m.flags, '\Seen') = 0)
 		FROM labels l ORDER BY l.position, l.id`, accountID, accountID)
 	if err != nil {
 		return nil, err
@@ -330,7 +331,7 @@ func (s *Service) allAccountLabels(ctx context.Context) (map[int64][]Label, erro
 		sum(case when instr(m.flags, '\Seen') = 0 then 1 else 0 end)
 		FROM message_labels ml
 		JOIN messages m ON m.id = ml.message_id
-		WHERE ml.active = 1
+		WHERE ml.active = 1 AND `+notBinnedCond+`
 		GROUP BY ml.label_id, m.account_id`)
 	if err != nil {
 		return nil, err
@@ -510,6 +511,19 @@ func (s *Service) ReorderLabels(ctx context.Context, ids []int64) error {
 
 // labelCond matches a message m with the label (one arg) on.
 const labelCond = "EXISTS (SELECT 1 FROM message_labels ml WHERE ml.message_id = m.id AND ml.label_id = ? AND ml.active = 1)"
+
+// notBinnedCond: message m is not in a Trash or Junk folder. A label's view
+// and its counts leave such mail out, so deleting from the view takes it
+// out of the view, as in a folder. Roles resolve as mailsync.RoleFolder does:
+// the folder the user gave the role, else those detected with it, unless the
+// user gave that folder another role or none, so the view follows where
+// Delete and MoveToRole put mail.
+const notBinnedCond = `m.folder_id NOT IN (SELECT f.id FROM folders f WHERE f.role_override IN ('trash', 'junk')
+	OR (f.role_override = '' AND f.role IN ('trash', 'junk')
+		AND NOT EXISTS (SELECT 1 FROM folders o WHERE o.account_id = f.account_id AND o.role_override = f.role)))`
+
+// labelViewCond matches a message m in the label's view (one arg).
+const labelViewCond = labelCond + " AND " + notBinnedCond
 
 // AppliedLabel is a label on a message or thread. Auto: the model set it, and
 // no message of the thread has it set by hand.

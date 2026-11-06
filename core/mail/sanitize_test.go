@@ -56,6 +56,13 @@ func TestSanitizeInlineCID(t *testing.T) {
 	assert.NotContains(t, safe, "src")
 }
 
+func TestSanitizeLazyKeepsKnownCIDs(t *testing.T) {
+	safe, _, _ := mail.SanitizeLazy(`<img src="cid:known" alt="a"><img src="cid:other" alt="b">`,
+		map[string]mail.Attachment{"known": {}}, false)
+	assert.Contains(t, safe, `src="cid:known"`)
+	assert.NotContains(t, safe, "cid:other")
+}
+
 func TestSanitizeStyles(t *testing.T) {
 	safe, _, _ := mail.Sanitize(`<p style="color:red;margin-top:4px;position:fixed;background-color:url(x)">a</p>`, nil, false)
 	assert.Contains(t, safe, "color: red")

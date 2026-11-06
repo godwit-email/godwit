@@ -483,6 +483,40 @@ func TestKeyboardArchiveDelete(t *testing.T) {
 	}
 }
 
+// Delete and forward delete trash the chosen rows, as # does: a selection
+// across accounts in 全部收件箱, then the one open.
+func TestKeyboardDeleteKeys(t *testing.T) {
+	h, accs := mailHarness(t, nil, "alice@example.com", "carol@example.com")
+	base := h.clock.Now()
+	h.put(accs[0], "INBOX", coretest.Msg("bob@example.com", "alice@example.com", "first", "x", at(base, 1)))
+	h.put(accs[1], "INBOX", coretest.Msg("bob@example.com", "carol@example.com", "second", "x", at(base, 2)))
+	h.put(accs[1], "INBOX", coretest.Msg("bob@example.com", "carol@example.com", "third", "x", at(base, 3)))
+	h.syncNow(accs[0])
+	h.syncNow(accs[1])
+	h.click("全部收件箱")
+	h.waitMail("three threads", func() bool { return len(h.items()) == 3 })
+	h.click("first")
+	h.click("first") // the list has the focus again
+	h.tt.Key(ui.Cmd, ui.KeyA)
+	h.tt.Frame()
+	if n := h.app.mail.main.sel.Len(); n != 3 {
+		t.Fatalf("%d chosen", n)
+	}
+	h.tt.Key(0, ui.KeyBackspace)
+	h.waitMail("all deleted", func() bool { return len(h.items()) == 0 })
+	if n := h.countIn(h.folderOf(accs[0], "trash")) + h.countIn(h.folderOf(accs[1], "trash")); n != 3 {
+		t.Fatalf("%d in Trash", n)
+	}
+
+	h.put(accs[0], "INBOX", coretest.Msg("bob@example.com", "alice@example.com", "fourth", "x", at(base, 4)))
+	h.syncNow(accs[0])
+	h.waitMail("fourth", func() bool { return len(h.items()) == 1 })
+	h.click("fourth")
+	h.click("fourth")
+	h.tt.Key(0, ui.KeyDelete)
+	h.waitMail("fourth deleted", func() bool { return len(h.items()) == 0 })
+}
+
 // The row menu offers read or unread, star or unstar, by the row's state,
 // as S and U toggle.
 func TestRowMenuByState(t *testing.T) {
@@ -940,6 +974,62 @@ func TestMailListSecurityIcons(t *testing.T) {
 	}
 	if got := h.items()[0].Security.WarningKind; got != gomail.WarnDisplaySpoof {
 		t.Fatalf("item warning kind = %v, want WarnDisplaySpoof", got)
+	}
+}
+
+func TestThreadItemSender(t *testing.T) {
+	h, accs := mailHarness(t, nil, "alice@example.com")
+	acc := accs[0]
+	h.deliverOne(acc, coretest.Msg("Spammer <spammer@example.com>", acc.Email, "Spam Title", "Buy now"))
+	h.waitMail("one thread", func() bool { return len(h.items()) == 1 })
+	item := h.items()[0]
+	if !item.Thread {
+		t.Fatal("expected item to be a thread")
+	}
+	if item.Msg.From != "Spammer <spammer@example.com>" {
+		t.Fatalf("expected item.Msg.From to be %q, got %q", "Spammer <spammer@example.com>", item.Msg.From)
+	}
+}
+
+func TestThreadMenuBlocksCorrespondentAfterOwnReply(t *testing.T) {
+	h, accs := mailHarness(t, nil, "alice@example.com")
+	acc := accs[0]
+	h.put(acc, "INBOX", coretest.Msg("bob@example.com", acc.Email, "Plan", "question",
+		coretest.MessageID("a@x"), at(h.clock.Now(), 1)))
+	h.put(acc, "Sent", coretest.Msg(acc.Email, "bob@example.com", "Re: Plan", "answer",
+		coretest.InReplyTo("a@x"), at(h.clock.Now(), 2)))
+	h.syncNow(acc)
+	h.waitMail("one conversation", func() bool { return len(h.items()) == 1 })
+	if err := h.tt.RightClick("Plan"); err != nil {
+		t.Fatal(err)
+	}
+	if err := h.tt.ChooseMenuItem(i18n.T("reader.block_sender")); err != nil {
+		t.Fatal(err)
+	}
+	h.until("correspondent blocked", func() bool { return slices.Contains(h.app.blocked, "bob@example.com") })
+	if slices.Contains(h.app.blocked, acc.Email) {
+		t.Fatal("blocked the user's account")
+	}
+}
+
+func TestMessageMenuDoesNotBlockOwnAddress(t *testing.T) {
+	h, accs := mailHarness(t, nil, "alice@example.com")
+	acc := accs[0]
+	st, err := h.env.Svc.GetSettings(t.Context())
+	if err != nil {
+		t.Fatal(err)
+	}
+	st.ThreadView = false
+	if _, err := h.env.Svc.SetSettings(t.Context(), st); err != nil {
+		t.Fatal(err)
+	}
+	h.deliverOne(acc, coretest.Msg(acc.Email, acc.Email, "Note to self", "note"))
+	h.waitMail("one message", func() bool { return len(h.items()) == 1 && !h.app.mail.threads })
+	if err := h.tt.RightClick("Note to self"); err != nil {
+		t.Fatal(err)
+	}
+	if slices.Contains(h.tt.Menu(), i18n.T("reader.block_sender")) {
+		t.Fatal("offered to block the user's account")
 	}
 }
 

@@ -15,6 +15,7 @@ require (
 	github.com/evanw/esbuild v0.28.2
 	github.com/fyne-io/image v0.1.1
 	github.com/goccy/go-yaml v1.19.2
+	github.com/godwit-email/mailservers v0.20261106.1793937071
 	github.com/godwit-email/markitdown-go v0.0.0
 	github.com/google/jsonschema-go v0.4.3
 	github.com/gorilla/css v1.0.1

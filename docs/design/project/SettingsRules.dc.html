@@ -173,19 +173,28 @@ a{color:#0A0A0A}a:hover{color:#404040}
 
 <section aria-label="条件" style="border: 1px solid #E5E5E5; border-radius: 12px; background: #FFFFFF; padding: 12px 16px; display: flex; flex-direction: column; gap: 10px">
 <div style="display: flex; align-items: center; gap: 8px"><span style="width: 24px; height: 24px; border-radius: 6px; background: #F5F5F5; display: flex; align-items: center; justify-content: center"><svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="{{ic.filter}}"></path></svg></span><span style="font-weight: 600">如果</span>
-<div role="radiogroup" aria-label="条件怎么组合" style="margin-left: auto; display: flex; gap: 2px; padding: 2px; border-radius: 8px; background: #F5F5F5"><sc-for list="{{logicOpts}}" as="m" hint-placeholder-count="2"><button type="button" role="radio" aria-checked="{{m.checked}}" onClick="{{m.pick}}" style="{{m.style}}">{{m.label}}</button></sc-for></div>
 </div>
 <sc-if value="{{noConds}}" hint-placeholder-val="{{ false }}"><span style="font-size: 12px; color: #737373">没有条件：每封触发的邮件都会执行下面的动作。</span></sc-if>
-<sc-for list="{{conds}}" as="c" hint-placeholder-count="2">
-<div style="display: flex; align-items: center; gap: 8px">
+<sc-for list="{{conds}}" as="s" hint-placeholder-count="1">
+<div role="{{s.role}}" aria-label="{{s.label}}" style="{{s.style}}">
+<sc-if value="{{s.hasRail}}" hint-placeholder-val="{{ false }}"><span aria-hidden="true" style="{{s.railLine}}"></span><span aria-hidden="true" style="{{s.railTick}}"></span></sc-if>
+<sc-if value="{{s.outerFlip}}" hint-placeholder-val="{{ false }}"><button type="button" aria-label="{{s.flipLabel}}" title="{{s.flipLabel}}" onClick="{{s.flip}}" style="{{s.flipStyle}}">{{s.flipWord}}</button></sc-if>
+<sc-for list="{{s.rows}}" as="c" hint-placeholder-count="2">
+<div style="position: relative; display: flex; align-items: center; gap: 8px">
+<sc-if value="{{c.hasRail}}" hint-placeholder-val="{{ false }}"><span aria-hidden="true" style="{{c.railLine}}"></span><span aria-hidden="true" style="{{c.railTick}}"></span></sc-if>
+<sc-if value="{{c.hasLead}}" hint-placeholder-val="{{ false }}"><span style="flex: none; width: 28px; height: 32px; display: flex; align-items: center; justify-content: center"><sc-if value="{{c.canFlip}}" hint-placeholder-val="{{ false }}"><button type="button" aria-label="{{c.flipLabel}}" title="{{c.flipLabel}}" onClick="{{c.flip}}" style="{{c.flipStyle}}">{{c.flipWord}}</button></sc-if></span></sc-if>
 <select aria-label="字段" value="{{c.f}}" onChange="{{c.setF}}" style="flex: none; width: 108px; height: 32px; padding: 0 8px; border: 1px solid #E5E5E5; border-radius: 8px; background: #FFFFFF; font: inherit"><sc-for list="{{fieldOpts}}" as="o" hint-placeholder-count="6"><option value="{{o.v}}">{{o.n}}</option></sc-for></select>
 <select aria-label="比较" value="{{c.op}}" onChange="{{c.setOp}}" style="flex: none; width: 96px; height: 32px; padding: 0 8px; border: 1px solid #E5E5E5; border-radius: 8px; background: #FFFFFF; font: inherit"><sc-for list="{{c.ops}}" as="o" hint-placeholder-count="2"><option value="{{o.v}}">{{o.n}}</option></sc-for></select>
 <sc-if value="{{c.isAttach}}" hint-placeholder-val="{{ false }}"><select aria-label="值" value="{{c.v}}" onChange="{{c.setV}}" style="flex: 1; min-width: 0; height: 32px; padding: 0 8px; border: 1px solid #E5E5E5; border-radius: 8px; background: #FFFFFF; font: inherit"><option value="yes">有</option><option value="no">没有</option></select></sc-if><sc-if value="{{c.isLabel}}" hint-placeholder-val="{{ false }}"><select aria-label="值" value="{{c.v}}" onChange="{{c.setV}}" style="flex: 1; min-width: 0; height: 32px; padding: 0 8px; border: 1px solid #E5E5E5; border-radius: 8px; background: #FFFFFF; font: inherit"><sc-for list="{{labelOpts}}" as="o" hint-placeholder-count="4"><option value="{{o.v}}">{{o.n}}</option></sc-for></select></sc-if><sc-if value="{{c.isText}}" hint-placeholder-val="{{ true }}"><input type="text" aria-label="值" value="{{c.v}}" placeholder="{{c.ph}}" onInput="{{c.setV}}" style="flex: 1; min-width: 0; height: 32px; box-sizing: border-box; padding: 0 10px; border: 1px solid #E5E5E5; border-radius: 8px; font: inherit; color: #0A0A0A"></sc-if>
 <button type="button" aria-label="删除这个条件" onClick="{{c.remove}}" style="flex: none; width: 28px; height: 28px; padding: 0; border: 0; border-radius: 6px; background: transparent; color: #737373; display: flex; align-items: center; justify-content: center"><svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="{{ic.close}}"></path></svg></button>
 </div>
 </sc-for>
+<sc-if value="{{s.boxed}}" hint-placeholder-val="{{ false }}"><div style="display: flex; align-items: center; gap: 8px"><button type="button" onClick="{{s.add}}" style="height: 28px; display: flex; align-items: center; gap: 4px; padding: 0 8px; margin-left: 28px; border: 0; border-radius: 6px; background: transparent; color: #737373; font: inherit; font-size: 13px"><svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="{{ic.add}}"></path></svg>添加条件</button><button type="button" onClick="{{s.remove}}" style="margin-left: auto; height: 28px; padding: 0 8px; border: 0; border-radius: 6px; background: transparent; color: #737373; font: inherit; font-size: 13px">删除这组</button></div></sc-if>
+</div>
+</sc-for>
 <sc-if value="{{aiFwd}}" hint-placeholder-val="{{ false }}"><div role="alert" style="display: flex; align-items: flex-start; gap: 8px; padding: 8px 12px; border-radius: 8px; background: #FEF2F2; color: #9F0712; font-size: 12px; line-height: 1.5"><svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true" style="flex: none; margin-top: 2px"><path d="{{ic.alert}}"></path></svg><span>含转发的规则不能用 AI 判断：邮件内容会影响判断，等于让发件人有机会诱导自动转发。去掉转发，或换成确定的条件。</span></div></sc-if>
-<button type="button" onClick="{{addCond}}" style="align-self: flex-start; height: 28px; display: flex; align-items: center; gap: 4px; padding: 0 8px; border: 0; border-radius: 6px; background: transparent; color: #737373; font: inherit; font-size: 13px"><svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="{{ic.add}}"></path></svg>添加条件</button>
+<div style="{{condFootStyle}}"><sc-if value="{{footCond}}" hint-placeholder-val="{{ true }}"><button type="button" aria-haspopup="menu" aria-expanded="{{condMenuAria}}" onClick="{{toggleCondMenu}}" style="height: 28px; display: flex; align-items: center; gap: 4px; padding: 0 8px; border: 0; border-radius: 6px; background: transparent; color: #737373; font: inherit; font-size: 13px"><svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="{{ic.add}}"></path></svg>添加<svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M11.9997 13.1714L16.9495 8.22168L18.3637 9.63589L11.9997 15.9999L5.63574 9.63589L7.04996 8.22168L11.9997 13.1714Z"></path></svg></button>
+<sc-if value="{{condMenu}}" hint-placeholder-val="{{ false }}"><div role="menu" aria-label="添加" style="position: absolute; left: 0; top: 32px; z-index: 5; width: 220px; box-sizing: border-box; padding: 4px; border: 1px solid #E5E5E5; border-radius: 10px; background: #FFFFFF; box-shadow: 0 4px 6px -1px rgba(0,0,0,0.1), 0 2px 4px -2px rgba(0,0,0,0.1)"><button type="button" role="menuitem" onClick="{{addCond}}" style="width: 100%; min-height: 32px; padding: 6px 8px; border: 0; border-radius: 6px; background: transparent; color: #0A0A0A; font: inherit; text-align: left">添加条件</button><button type="button" role="menuitem" onClick="{{addCondGroup}}" style="width: 100%; min-height: 32px; padding: 6px 8px; border: 0; border-radius: 6px; background: transparent; color: #0A0A0A; font: inherit; text-align: left">添加一组条件</button></div></sc-if></sc-if><sc-if value="{{footGroup}}" hint-placeholder-val="{{ false }}"><button type="button" onClick="{{addCondGroup}}" style="height: 28px; display: flex; align-items: center; gap: 4px; padding: 0 8px; border: 0; border-radius: 6px; background: transparent; color: #737373; font: inherit; font-size: 13px"><svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="{{ic.add}}"></path></svg>添加一组条件</button></sc-if></div>
 </section>
 
 <sc-for list="{{acts}}" as="a" hint-placeholder-count="3">
@@ -320,7 +329,7 @@ a{color:#0A0A0A}a:hover{color:#404040}
 </div>
 </div>
 </x-dc>
-<script type="text/x-dc" data-dc-script data-props='{"view":{"editor":"enum","options":["list","empty","bg-off","detail","editor","naming","editor-mail","editor-ai","editor-wit","ai-off","forward","save"],"default":"list"},"$preview":{"width":1440,"height":1080}}'>
+<script type="text/x-dc" data-dc-script data-props='{"view":{"editor":"enum","options":["list","empty","bg-off","detail","editor","editor-or","naming","editor-mail","editor-ai","editor-wit","ai-off","forward","save"],"default":"list"},"$preview":{"width":1440,"height":1080}}'>
 class Component extends DCLogic {
   constructor(props) {
     super(props);
@@ -331,6 +340,7 @@ class Component extends DCLogic {
       d: null, src: '', menu: false, dlg: '', applyOld: false, toast: '', undone: {}, fwdOk: false
     };
     if (v === 'editor' || v === 'save') this.startEdit(T.bill, 'tpl', true);
+    if (v === 'editor-or') this.startEdit({ name: '云服务账单归档', trigger: 'receive', targ: '', logic: 'all', conds: [{ logic: 'any', group: [{ f: 'from', op: 'contains', v: 'stripe.com' }, { f: 'from', op: 'contains', v: 'aws.amazon.com' }] }, { logic: 'all', group: [{ f: 'attach', op: 'is', v: 'yes' }] }], acts: [{ t: 'label', v: 'bills' }, { t: 'archive' }] }, 'edit', true);
     if (v === 'naming') this.startEdit(Object.assign({}, T.bill, { acts: [{ t: 'label', v: 'bills' }, { t: 'pdf', v: '~/Documents/账单', tpl: '{from}/{year}-{month} {subject}', custom: true }, { t: 'att', v: '~/Documents/账单', tpl: '{from}/{year}-{month} {subject}', custom: true }, { t: 'archive' }] }), 'edit', true);
     if (v === 'bg-off') this.startEdit(Object.assign({ bg: true }, T.bill), 'edit', true);
     if (v === 'editor-mail') this.startEdit({ name: '来自 AWS 的邮件', trigger: 'receive', targ: '', logic: 'all', conds: [{ f: 'from', op: 'contains', v: 'billing@aws.amazon.com' }], acts: [{ t: 'label', v: 'bills' }] }, 'mail', true);
@@ -419,8 +429,70 @@ class Component extends DCLogic {
       return f + (c.op === 'not' ? '不含 ' : c.op === 'is' ? '是 ' : '含 ') + (c.v || '…');
     };
     var actText = function (a) { var x = A[a.t]; return x.n + (a.v ? ' ' + (x.arg === 'dir' ? a.v.split('/').pop() : x.arg === 'label' ? labelName(a.v) : a.v) : ''); };
+    // conds 要么全是条件（只有一组，logic 管行之间），要么全是条件组 { logic, group: [条件…] }（logic 管组之间）
+    var leaves = function (conds) { return conds.reduce(function (o, c) { return o.concat(c.group || [c]); }, []); };
+    var isFilled = function (c) { return c.f === 'attach' || (c.v || '').trim(); };
+    var hasGroups = function (r) { return !!(r.conds[0] && r.conds[0].group); };
+    // 只剩一个条件组时还原成平铺；只剩一条时逻辑回到默认
+    var tidy = function (dd) {
+      if (dd.conds.length === 1 && dd.conds[0].group) { dd.logic = dd.conds[0].logic; dd.conds = dd.conds[0].group; }
+      if (!hasGroups(dd) && dd.conds.length < 2) dd.logic = 'all';
+    };
+    var wordOf = function (l) { return l === 'any' ? '或' : '且'; };
+    var flipLabelOf = function (l) { return '现在是「' + wordOf(l) + '」，点击切换为「' + wordOf(l === 'any' ? 'all' : 'any') + '」'; };
+    var flipBase = 'width: 28px; height: 24px; padding: 0; border: 1px solid #E5E5E5; border-radius: 6px; background: #FFFFFF; color: #404040; font: inherit; font-size: 12px; z-index: 1';
+    // 括号线：首尾两项是带圆角的拐角，中间的项是竖线加短横线；x 是竖线的位置，gap 是项之间的空隙
+    var railLine = function (x, gap, first, last) {
+      var base = 'position: absolute; left: ' + x + 'px; box-sizing: border-box; border-left: 1px solid #D4D4D4; ';
+      if (first) return base + 'width: 22px; top: 50%; bottom: 0; border-top: 1px solid #D4D4D4; border-top-left-radius: 8px';
+      if (last) return base + 'width: 22px; top: -' + gap + 'px; bottom: 50%; border-bottom: 1px solid #D4D4D4; border-bottom-left-radius: 8px';
+      return base + 'width: 1px; top: -' + gap + 'px; bottom: 0';
+    };
+    var railTick = function (x, first, last) { return first || last ? 'display: none' : 'position: absolute; left: ' + x + 'px; width: 22px; height: 1px; top: 50%; background: #D4D4D4'; };
+    var condGroups = function (d) {
+      var boxed = hasGroups(d), groups = boxed ? d.conds : [{ logic: d.logic, group: d.conds }];
+      // 条件组里的新行沿用上一行的字段：多半是「发件人 a 或 发件人 b」
+      var nextTo = function (c) { var text = c.f === 'from' || c.f === 'to' || c.f === 'subject' || c.f === 'body'; return { f: text ? c.f : 'subject', op: 'contains', v: '' }; };
+      return groups.map(function (block, si) {
+        var total = block.group.length, lastGroup = groups.length - 1;
+        var at = function (dd) { return boxed ? dd.conds[si].group : dd.conds; };
+        var rows = block.group.map(function (c, k) {
+          var first = k === 0, last = k === total - 1;
+          var ops = c.f === 'attach' || c.f === 'label' || c.f === 'folder' || c.f === 'ai' ? [['is', '是']] : [['contains', '包含'], ['not', '不包含'], ['is', '是']];
+          return { f: c.f, op: c.op, v: c.v, isAttach: c.f === 'attach', isLabel: c.f === 'label', isText: c.f !== 'attach' && c.f !== 'label', ops: ops.map(function (o) { return { v: o[0], n: o[1] }; }),
+            ph: c.f === 'from' ? '地址或域名，如 stripe.com' : c.f === 'attach' ? '有 / 没有' : c.f === 'label' ? '标签名' : '要包含的文字',
+            hasRail: total > 1, railLine: railLine(14, 8, first, last), railTick: railTick(14, first, last),
+            hasLead: boxed || total > 1, canFlip: k === 1, flipWord: wordOf(block.logic), flipLabel: flipLabelOf(block.logic),
+            // 只有两行时按钮放在两行中间（行高 32、间距 8），否则会盖住下面的圆角
+            flipStyle: 'position: relative; ' + (total === 2 ? 'top: -20px; ' : '') + flipBase,
+            flip: function () { self.patch(function (dd) { var o = boxed ? dd.conds[si] : dd; o.logic = o.logic === 'any' ? 'all' : 'any'; }); },
+            setF: function (e) { var v = e.target.value; self.patch(function (dd) { at(dd)[k] = { f: v, op: v === 'attach' || v === 'label' || v === 'folder' ? 'is' : 'contains', v: v === 'attach' ? 'yes' : v === 'label' ? 'bills' : '' }; }); },
+            setOp: function (e) { var v = e.target.value; self.patch(function (dd) { at(dd)[k].op = v; }); },
+            setV: function (e) { var v = e.target.value; self.patch(function (dd) { at(dd)[k].v = v; }); },
+            // 条件组删空就一起去掉
+            remove: function () { self.patch(function (dd) {
+              at(dd).splice(k, 1);
+              if (boxed && !dd.conds[si].group.length) dd.conds.splice(si, 1);
+              tidy(dd);
+            }); } };
+        });
+        return { boxed: boxed, role: boxed ? 'group' : 'none', label: boxed ? '条件组' : '', rows: rows,
+          style: 'position: relative; display: flex; flex-direction: column; gap: 8px' + (boxed ? '; margin-left: 36px; padding: 8px 10px 4px; border: 1px solid #E5E5E5; border-radius: 8px; background: #FAFAFA' : ''),
+          hasRail: boxed, railLine: railLine(-22, 12, si === 0, si === lastGroup), railTick: railTick(-22, si === 0, si === lastGroup),
+          outerFlip: boxed && si === 1, flipWord: wordOf(d.logic), flipLabel: flipLabelOf(d.logic),
+          flipStyle: 'position: absolute; left: -36px; top: -17px; ' + flipBase,
+          flip: function () { self.patch(function (dd) { dd.logic = dd.logic === 'any' ? 'all' : 'any'; }); },
+          add: function () { self.patch(function (dd) { var g = at(dd); g.push(g.length ? nextTo(g[g.length - 1]) : { f: 'subject', op: 'contains', v: '' }); }); },
+          remove: function () { self.patch(function (dd) { dd.conds.splice(si, 1); tidy(dd); }); } };
+      });
+    };
     var summary = function (r) {
-      var c = r.conds.map(condText).join(r.logic === 'any' ? ' 或 ' : ' 且 ');
+      var join = function (logic) { return logic === 'any' ? ' 或 ' : ' 且 '; };
+      var c = r.conds.map(function (x) {
+        if (!x.group) return condText(x);
+        var s = x.group.map(condText).join(join(x.logic));
+        return r.conds.length > 1 && x.group.length > 1 ? '（' + s + '）' : s;
+      }).join(join(r.logic));
       return trigText(r) + (c ? ' · ' + c : '') + ' → ' + r.acts.map(actText).join(' → ');
     };
     var matchOne = function (m, c) {
@@ -435,13 +507,22 @@ class Component extends DCLogic {
     };
     var matchAll = function (r) {
       // 条件都还没填时，不预览任何邮件，否则像是匹配了全部
-      var filled = r.conds.filter(function (c) { return c.f === 'attach' || (c.v || '').trim(); });
+      var filled = leaves(r.conds).filter(isFilled);
       if (r.conds.length && !filled.length) return [];
+      // 条件组里还没填的行先不算，否则刚加一个组预览就变成全部邮件
+      var hitBlock = function (m, c) {
+        if (!c.group) return matchOne(m, c);
+        var cs = c.group.filter(isFilled);
+        if (!cs.length) return r.logic !== 'any';
+        var one = function (x) { return matchOne(m, x); };
+        return c.logic === 'any' ? cs.some(one) : cs.every(one);
+      };
       return MAILS.filter(function (m) {
         if (r.trigger === 'label' && m.labels.indexOf(r.targ) < 0) return false;
         if (r.trigger === 'security' && !m.sec) return false;
         if (!r.conds.length) return true;
-        return r.logic === 'any' ? r.conds.some(function (c) { return matchOne(m, c); }) : r.conds.every(function (c) { return matchOne(m, c); });
+        var hit = function (c) { return hitBlock(m, c); };
+        return r.logic === 'any' ? r.conds.some(hit) : r.conds.every(hit);
       });
     };
     var pill = function (bg, fg) { return 'padding: 0 6px; border-radius: 4px; background: ' + bg + '; color: ' + fg + '; font-size: 12px; line-height: 20px; white-space: nowrap'; };
@@ -603,15 +684,15 @@ class Component extends DCLogic {
       subtitle: st.src === 'edit' ? summary(d) : '设置触发、条件和动作。保存后才会生效。',
       d: d, fromMail: st.src === 'mail', fromWit: st.src === 'wit',
       suggest: [
-        { text: '主题含 invoice', add: function () { self.patch(function (dd) { dd.conds.push({ f: 'subject', op: 'contains', v: 'invoice' }); }); } },
-        { text: '有附件', add: function () { self.patch(function (dd) { dd.conds.push({ f: 'attach', op: 'is', v: 'yes' }); }); } }
+        { text: '主题含 invoice', add: function () { self.patch(function (dd) { (hasGroups(dd) ? dd.conds[0].group : dd.conds).push({ f: 'subject', op: 'contains', v: 'invoice' }); }); } },
+        { text: '有附件', add: function () { self.patch(function (dd) { (hasGroups(dd) ? dd.conds[0].group : dd.conds).push({ f: 'attach', op: 'is', v: 'yes' }); }); } }
       ],
       setName: function (e) { var v = e.target.value; self.patch(function (dd) { dd.name = v; }); },
       cancel: function () { self.setState({ view: 'list', d: null, dlg: '', menu: false }); },
       save: save,
-      aiFwd: d.conds.some(function (c) { return c.f === 'ai'; }) && d.acts.some(function (a) { return a.t === 'fwd'; }),
-      saveStyle: 'height: 32px; padding: 0 14px; border: 0; border-radius: 8px; font-weight: 500; ' + (d.conds.some(function (c) { return c.f === 'ai'; }) && d.acts.some(function (a) { return a.t === 'fwd'; }) ? 'background: #E5E5E5; color: #A1A1A1; cursor: not-allowed' : 'background: #171717; color: #FFFFFF'),
-      noMatchText: d.conds.some(function (c) { return c.f === 'ai'; }) ? 'AI 判断要逐封发给模型，这里不预览。' : '没有符合的邮件。条件是不是太严了？',
+      aiFwd: leaves(d.conds).some(function (c) { return c.f === 'ai'; }) && d.acts.some(function (a) { return a.t === 'fwd'; }),
+      saveStyle: 'height: 32px; padding: 0 14px; border: 0; border-radius: 8px; font-weight: 500; ' + (leaves(d.conds).some(function (c) { return c.f === 'ai'; }) && d.acts.some(function (a) { return a.t === 'fwd'; }) ? 'background: #E5E5E5; color: #A1A1A1; cursor: not-allowed' : 'background: #171717; color: #FFFFFF'),
+      noMatchText: leaves(d.conds).some(function (c) { return c.f === 'ai'; }) ? 'AI 判断要逐封发给模型，这里不预览。' : '没有符合的邮件。条件是不是太严了？',
       triggerOpts: TRIG.map(function (t) { return { v: t[0], n: t[1] }; }),
       setTrigger: function (e) { var v = e.target.value; self.patch(function (dd) { dd.trigger = v; dd.targ = v === 'label' ? 'newsletter' : v === 'security' ? 'suspicious' : ''; }); },
       setTarg: function (e) { var v = e.target.value; self.patch(function (dd) { dd.targ = v; }); },
@@ -621,24 +702,22 @@ class Component extends DCLogic {
         : d.trigger === 'security' ? '新邮件的安全检查给出判定后执行。重新检查旧邮件不会触发。'
         : '同步到新邮件时执行。Godwit 退出期间到的邮件，下次同步时补上。',
       labelOpts: LABELS.map(function (l) { return { v: l[0], n: l[1] }; }),
-      logicOpts: [['all', '全部满足'], ['any', '任一满足']].map(function (m) {
-        var on = d.logic === m[0];
-        return { label: m[1], checked: on ? 'true' : 'false', pick: function () { self.patch(function (dd) { dd.logic = m[0]; }); },
-          style: 'height: 24px; padding: 0 8px; border: 0; border-radius: 6px; font-size: 12px; color: ' + (on ? '#0A0A0A; background: #FFFFFF; box-shadow: 0 1px 2px rgba(0,0,0,0.06)' : '#737373; background: transparent') };
-      }),
       noConds: d.conds.length === 0,
       namePresets: NAME_PRESETS.map(function (p) { return { v: p[0], n: p[1] }; }).concat([{ v: 'custom', n: '自定义…' }]),
       fieldOpts: FIELDS.map(function (f) { return { v: f[0], n: f[1] }; }),
-      conds: d.conds.map(function (c, i) {
-        var ops = c.f === 'attach' || c.f === 'label' || c.f === 'folder' || c.f === 'ai' ? [['is', '是']] : [['contains', '包含'], ['not', '不包含'], ['is', '是']];
-        return { f: c.f, op: c.op, v: c.v, isAttach: c.f === 'attach', isLabel: c.f === 'label', isText: c.f !== 'attach' && c.f !== 'label', ops: ops.map(function (o) { return { v: o[0], n: o[1] }; }),
-          ph: c.f === 'from' ? '地址或域名，如 stripe.com' : c.f === 'attach' ? '有 / 没有' : c.f === 'label' ? '标签名' : '要包含的文字',
-          setF: function (e) { var v = e.target.value; self.patch(function (dd) { dd.conds[i] = { f: v, op: v === 'attach' || v === 'label' || v === 'folder' ? 'is' : 'contains', v: v === 'attach' ? 'yes' : v === 'label' ? 'bills' : '' }; }); },
-          setOp: function (e) { var v = e.target.value; self.patch(function (dd) { dd.conds[i].op = v; }); },
-          setV: function (e) { var v = e.target.value; self.patch(function (dd) { dd.conds[i].v = v; }); },
-          remove: function () { self.patch(function (dd) { dd.conds.splice(i, 1); }); } };
-      }),
-      addCond: function () { self.patch(function (dd) { dd.conds.push({ f: 'subject', op: 'contains', v: '' }); }); },
+      conds: condGroups(d),
+      footCond: !hasGroups(d), footGroup: hasGroups(d),
+      condFootStyle: 'position: relative; display: flex; align-items: center; gap: 4px; margin-left: ' + (hasGroups(d) ? '36px' : '-8px'),
+      condMenu: !!st.condMenu, condMenuAria: st.condMenu ? 'true' : 'false',
+      toggleCondMenu: function () { self.setState({ condMenu: !st.condMenu }); },
+      addCond: function () { self.patch(function (dd) { dd.conds.push({ f: 'subject', op: 'contains', v: '' }); }); self.setState({ condMenu: false }); },
+      // 新条件组默认是「或」，这是要分组的主要原因；先放两行，组才有意义。平铺的条件变成第一组
+      addCondGroup: function () { self.patch(function (dd) {
+        var two = [{ f: 'from', op: 'contains', v: '' }, { f: 'from', op: 'contains', v: '' }];
+        if (!dd.conds.length) { dd.conds = two; dd.logic = 'any'; }
+        else if (!hasGroups(dd)) { dd.conds = [{ logic: dd.logic, group: dd.conds }, { logic: 'any', group: two }]; dd.logic = 'all'; }
+        else dd.conds.push({ logic: 'any', group: two });
+      }); self.setState({ condMenu: false }); },
       acts: acts,
       menu: st.menu, menuAria: st.menu ? 'true' : 'false', menuGroups: menuGroups,
       toggleMenu: function () { self.setState({ menu: !st.menu }); },

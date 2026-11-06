@@ -509,6 +509,39 @@ func TestReaderCloseClosesViews(t *testing.T) {
 
 // 始终信任此发件人 trusts the From address in core and loads the images;
 // the sender's next message loads them at once, without the notice.
+// The images-failed retry is Allow, which lets remote images load: it is offered
+// only with none of them blocked, so an inline image that failed never lets them
+// load unasked. 加载 is how to try again then.
+func TestReaderImagesFailedRetryKeepsRemoteBlocked(t *testing.T) {
+	h, accs := mailHarness(t, nil, "alice@example.com")
+	remoteImages(t, h, "ask")
+	acc, base := accs[0], h.clock.Now()
+	h.put(acc, "INBOX", coretest.Msg("bob@example.com", acc.Email, "Remote", "text", coretest.MessageID("r@x"), at(base, 2),
+		coretest.HTML(`<p>Hello</p><img src="https://img.example/p.png" width="2" height="2">`)))
+	h.put(acc, "INBOX", coretest.Msg("bob@example.com", acc.Email, "Plain", "text", coretest.MessageID("p@x"), at(base, 1),
+		coretest.HTML(`<p>Hello</p>`)))
+	h.syncNow(acc)
+	page, _ := h.env.Svc.ListThreads(context.Background(), core.View{Unified: "inbox"}, "", 10)
+	for _, it := range page.Items {
+		m := h.messages(it.ID)[0]
+		h.openThread(m.ThreadID)
+		v := h.seeBody(m.ID)
+		h.app.BodyImagesFailed(v, m.ID, 1)
+		h.tt.Frame()
+		if m.Subject == "Remote" {
+			h.see("1 张图片未加载")
+			if _, retry := h.tt.Find("重试"); retry {
+				t.Fatalf("a retry that would load the blocked remote images: %q", h.tt.Texts())
+			}
+			continue
+		}
+		h.click("重试")
+		if h.countCalls(fmt.Sprint("AllowImages ", m.ID)) != 1 {
+			t.Fatalf("calls %q", h.plat.Calls())
+		}
+	}
+}
+
 func TestReaderTrustSender(t *testing.T) {
 	h, accs := mailHarness(t, nil, "alice@example.com")
 	remoteImages(t, h, "trusted")

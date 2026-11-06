@@ -38,9 +38,9 @@ func (e *OpsError) Error() string { return strings.Join(e.Problems, "; ") }
 var errNoDestination = errors.New("the destination folder no longer exists")
 
 type op struct {
-	id, msg, dst, dep int64
-	kind, payload     string
-	attempts          int
+	id, msg, dst, dep, accountID int64
+	kind, payload                string
+	attempts                     int
 }
 
 // PushOps sends the account's pending ops to the server in id order. Ops whose
@@ -88,7 +88,7 @@ func push(ctx context.Context, db *store.DB, c *imapclient.Client, accountID int
 		return err
 	}
 	for _, v := range rows.Values {
-		o := op{id: store.Int(v[0]), kind: store.Str(v[1]), msg: store.Int(v[2]), dst: store.Int(v[3]),
+		o := op{id: store.Int(v[0]), kind: store.Str(v[1]), msg: store.Int(v[2]), dst: store.Int(v[3]), accountID: accountID,
 			payload: store.Str(v[4]), dep: store.Int(v[5]), attempts: int(store.Int(v[6]))}
 		problem, err := pushOp(ctx, db, c, o)
 		if o.kind == "purge" && err == nil && problem == "" {
@@ -354,16 +354,43 @@ func single(s imap.NumSet) uint32 {
 
 // moved records a move the server accepted: with a COPYUID the message's server
 // location becomes the destination; without one it is cleared until fetch claims
-// the arrival (Message-ID and size) in the destination.
+// the arrival (Message-ID and size) in the destination. A row already at the
+// COPYUID is the same server message (Gmail's All Mail copy of mail archived
+// there, #506): it is deleted, after its labels (by row: a copy without label_fp
+// gets no stash from the trigger), reply drafts, rule runs and Wit citations go
+// to the moved row. Its queued ops are not carried over, whose order against the
+// moved row's cannot be told: they lose their message and the next push reports
+// them as not applied. events_log stays history, as on every other delete.
 func moved(ctx context.Context, db *store.DB, o op, validity, uid uint32) error {
 	stmts := []sqlite.Statement{
 		{SQL: "UPDATE messages SET server_folder_id = NULL, server_uidvalidity = NULL, server_uid = NULL WHERE id = ?", Args: []any{o.msg}},
 		{SQL: "UPDATE ops SET state = 'awaiting_claim', last_error = NULL WHERE id = ?", Args: []any{o.id}},
 	}
 	if uid != 0 {
-		stmts = []sqlite.Statement{
-			{SQL: "UPDATE messages SET server_folder_id = ?, server_uidvalidity = ?, server_uid = ? WHERE id = ?", Args: []any{o.dst, validity, uid, o.msg}},
-			{SQL: "UPDATE ops SET state = 'done', last_error = NULL WHERE id = ?", Args: []any{o.id}},
+		ids, tids, err := doomed(ctx, db, "server_folder_id = ? AND server_uid = ? AND id != ?", o.dst, uid, o.msg)
+		if err != nil {
+			return err
+		}
+		stmts = nil
+		if len(ids) > 0 { // at most one: UNIQUE(server_folder_id, server_uid)
+			cp := ids[0]
+			stmts = append(stmts,
+				// As messages_label_stash hands labels to other copies: a manual label beats a rule's.
+				sqlite.Statement{SQL: `INSERT INTO message_labels(message_id, label_id, source, active)
+					SELECT ?, label_id, source, active FROM message_labels WHERE message_id = ? AND source IN ('manual', 'rule')
+					ON CONFLICT(message_id, label_id) DO UPDATE SET source = excluded.source, active = excluded.active
+					WHERE excluded.source = 'manual' OR message_labels.source != 'manual'`, Args: []any{o.msg, cp}},
+				sqlite.Statement{SQL: "UPDATE drafts SET source_message_id = ? WHERE source_message_id = ?", Args: []any{o.msg, cp}},
+				// UNIQUE(rule_id, message_id): a rule that ran on both keeps the moved row's run.
+				sqlite.Statement{SQL: "UPDATE OR IGNORE rule_runs SET message_id = ? WHERE message_id = ?", Args: []any{o.msg, cp}},
+				sqlite.Statement{SQL: "UPDATE run_citations SET message_id = ? WHERE message_id = ?", Args: []any{o.msg, cp}},
+				sqlite.Statement{SQL: "DELETE FROM messages WHERE id = ?", Args: []any{cp}})
+		}
+		stmts = append(stmts,
+			sqlite.Statement{SQL: "UPDATE messages SET server_folder_id = ?, server_uidvalidity = ?, server_uid = ? WHERE id = ?", Args: []any{o.dst, validity, uid, o.msg}},
+			sqlite.Statement{SQL: "UPDATE ops SET state = 'done', last_error = NULL WHERE id = ?", Args: []any{o.id}})
+		if len(tids) > 0 {
+			stmts = append(stmts, tidyThreads(o.accountID, tids)...)
 		}
 	}
 	_, err := db.Transaction(ctx, stmts)

@@ -774,3 +774,54 @@ func TestSavedViewLargeViewTimes(t *testing.T) {
 		timed("contents of "+b.Name, func() error { _, err := e.s.ViewContents(bg, b.ID, 50); return err })
 	}
 }
+
+// (A or B) and C holds on one message, and 今日 leaves out the labels nobody replies to.
+func TestViewConditionGroups(t *testing.T) {
+	e := newSendEnv(t, false)
+	e.put(t, "INBOX", eml("a@x", "anna@acme.example", "alice@example.com", "invoice", e.viewAt(2), "x"))
+	e.put(t, "INBOX", eml("b@x", "ben@other.example", "alice@example.com", "invoice too", e.viewAt(2), "y"))
+	e.put(t, "INBOX", eml("c1@x", "anna@acme.example", "alice@example.com", "hello", e.viewAt(3), "z"))
+	e.put(t, "INBOX", eml("c2@x", "cora@other.example", "alice@example.com", "Re: hello invoice", e.viewAt(2), "z", "In-Reply-To: <c1@x>"))
+	e.sync(t)
+	grouped := func(g ...RuleCondition) RuleCondition { return RuleCondition{Match: MatchAny, Group: g} }
+	d := flatDoc(MatchAll, grouped(cond(FieldFrom, OpContains, "anna@"), cond(FieldFrom, OpContains, "dan@")), grouped(cond(FieldSubject, OpContains, "invoice")))
+	assert.Equal(t, []string{"invoice"}, e.shown(t, d)[ViewGroupOther], "spread over two messages, it doesn't hold")
+
+	for name, bad := range map[string]SavedViewDoc{
+		"one group":    flatDoc(MatchAll, grouped(cond(FieldSubject, OpContains, "x"))),
+		"mixed":        flatDoc(MatchAll, grouped(cond(FieldSubject, OpContains, "x")), cond(FieldSubject, OpContains, "y")),
+		"nested":       flatDoc(MatchAll, grouped(grouped(cond(FieldSubject, OpContains, "x"))), grouped(cond(FieldSubject, OpContains, "y"))),
+		"empty inside": flatDoc(MatchAll, grouped(cond(FieldSubject, OpContains, "")), grouped(cond(FieldSubject, OpContains, "y"))),
+	} {
+		_, err := e.s.PreviewView(bg, bad, 0, 50)
+		assert.ErrorIs(t, err, ErrInvalidView, name)
+	}
+}
+
+func TestTodayLeavesOutLabels(t *testing.T) {
+	e := newSendEnv(t, false)
+	e.put(t, "INBOX", eml("q@x", "bob@a.example", "alice@example.com", "a question", e.viewAt(1), "?"))
+	e.put(t, "INBOX", eml("o@x", "carol@a.example", "alice@example.com", "your code", e.viewAt(1), "123456"))
+	e.sync(t)
+	boxes, err := e.s.SavedViews(bg)
+	require.NoError(t, err)
+	before, err := e.s.ViewContents(bg, boxes[0].ID, 50)
+	require.NoError(t, err)
+	assert.Len(t, subjectsOf(before)["reply"], 2, "no language was known, so no labels to leave out")
+
+	_, err = e.s.db.Execute(bg, "INSERT INTO labels(slug, name, description, color, icon, builtin, position) VALUES ('otp', 'OTP', '', 'red', 'bill', 1, 0)")
+	require.NoError(t, err)
+	l := e.rows(t, "SELECT id FROM labels WHERE slug = 'otp'")[0][0].(int64)
+	require.NoError(t, e.s.SetLabel(bg, []int64{e.idOf(t, "o@x")}, l, true))
+	tpls, err := e.s.ViewTemplates(bg)
+	require.NoError(t, err)
+	today := tpls[slices.IndexFunc(tpls, func(t ViewTemplate) bool { return t.ID == "today" })]
+	assert.Equal(t, map[string][]string{"reply": {"a question"}}, e.shown(t, today.Doc), "the template leaves out the labels there are")
+}
+
+func TestOwnSentMailIsNotUnread(t *testing.T) {
+	e := newSendEnv(t, false)
+	e.put(t, "Sent", eml("s@x", "alice@example.com", "bob@a.example", "sent", e.viewAt(1), "x"))
+	e.sync(t)
+	assert.Empty(t, e.shown(t, flatDoc(MatchAll, cond(FieldRead, OpIs, ViewReadUnread))))
+}

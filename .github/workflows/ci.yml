@@ -94,6 +94,12 @@ jobs:
       - name: gofmt
         if: runner.os != 'Windows'
         run: test -z "$(gofmt -l $(git ls-files '*.go'))"
+      - name: i18n check
+        if: runner.os != 'Windows'
+        run: |
+          out="$(go tool mygo i18n check 2>&1)"
+          printf '%s\n' "$out"
+          ! printf '%s\n' "$out" | grep -q 'warning:'
       - name: vet
         run: go vet ./...
       - name: build (no cgo)

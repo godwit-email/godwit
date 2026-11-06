@@ -33,18 +33,19 @@ import (
 // tray stays nil where the system has none. The Local API serves svc on
 // dataDir, whose owner lock the GUI holds.
 type platform struct {
-	win         *mygo.Window
-	tray        *mygo.Tray
-	windows     *webui.Windows // the compose windows
-	wit         *webui.Wit
-	roles       *webui.Pages                 // the embedded pages' roles
-	reader      *webui.Reader                // the reader pages' messages
-	sig         *webui.Signature             // the signature page's signature and flushes
-	bodies      map[*mygo.Page]*mygo.WebView // the reader pages open; UI thread
-	signInCodes []core.SignInCode
-	codeIcons   map[int64]*mygo.MenuIcon // recent codes' menu icons by message; UI thread
-	codeBanner  *signInBanner
-	updateTray  func()
+	win            *mygo.Window
+	tray           *mygo.Tray
+	windows        *webui.Windows // the compose windows
+	wit            *webui.Wit
+	roles          *webui.Pages                 // the embedded pages' roles
+	reader         *webui.Reader                // the reader pages' messages
+	sig            *webui.Signature             // the signature page's signature and flushes
+	bodies         map[*mygo.Page]*mygo.WebView // the reader pages open; UI thread
+	signInCodes    []core.SignInCode
+	codeIcons      map[int64]*mygo.MenuIcon // recent codes' menu icons by message; UI thread
+	codeBanner     *signInBanner
+	updateTray     func()
+	setTrayVisible func(visible bool)
 
 	dataDir string
 	svc     *core.Service
@@ -125,6 +126,11 @@ func (p *platform) Notify(n app.Notification) error {
 }
 func (*platform) NotificationsSupported() bool { return mygo.NotificationsSupported() }
 func (*platform) SetOpenAtLogin(on bool) error { return mygo.App.SetOpenAtLogin(on) }
+func (p *platform) SetTrayVisible(visible bool) {
+	if p.setTrayVisible != nil {
+		p.setTrayVisible(visible)
+	}
+}
 func (p *platform) SetTrayUnread(n int) {
 	if p.tray != nil {
 		title := ""
@@ -393,6 +399,11 @@ func (p *platform) serveAPI(srv *rpc.Server, serve func(context.Context, *rpc.Se
 // flat bird gets a wide picture, about 23 by 11 points where a square
 // showed it 14 by 7; Windows squares the icon, so there it stays square.
 type trayBox struct{ w, h, inkW float32 }
+
+// closeMinimizes reports whether closing the window while it keeps running
+// minimizes it rather than hiding it: without a tray icon, only macOS's Dock
+// can bring back a hidden window, and a minimized one keeps its taskbar entry.
+func closeMinimizes(goos string, hasTray bool) bool { return !hasTray && goos != "darwin" }
 
 func trayBoxFor(goos string) trayBox {
 	if goos == "darwin" {

@@ -167,6 +167,94 @@ func TestMoveWithoutCOPYUID(t *testing.T) {
 	}
 }
 
+// storedCopy stores a second row of message id in folder at UID 1, as Gmail's
+// All Mail copy of mail archived there is (#506), and returns its id. folder
+// must be empty on the server, so a move's COPYUID into it is 1.
+func (e *syncEnv) storedCopy(t *testing.T, id, folder int64) int64 {
+	t.Helper()
+	r, err := e.s.db.Execute(bg, `INSERT INTO messages(account_id, folder_id, server_folder_id, server_uidvalidity, server_uid, message_id, subject, size, flags)
+		SELECT account_id, ?, ?, (SELECT uidvalidity FROM folders WHERE id = ?), 1, message_id, subject, size, flags FROM messages WHERE id = ?`,
+		folder, folder, folder, id)
+	require.NoError(t, err)
+	return r.LastInsertID
+}
+
+// A COPYUID naming a UID a row already holds in the destination is the same
+// server message: the moved row takes its place instead of the push failing on
+// UNIQUE(server_folder_id, server_uid).
+func TestMoveOntoStoredCopy(t *testing.T) {
+	e := newSyncEnv(t)
+	e.put(t, "INBOX", msg("m@x"))
+	e.sync(t)
+	id := e.idOf(t, "m@x")
+	archive := e.folderID(t, "Archive")
+	e.storedCopy(t, id, archive)
+
+	require.NoError(t, e.s.Move(bg, []int64{id}, archive))
+	e.sync(t)
+
+	assert.Equal(t, []string{"m@x"}, e.onServer(t, "Archive"))
+	assert.Equal(t, [][]any{{id, archive, archive, int64(1)}}, e.rows(t, "SELECT id, folder_id, server_folder_id, server_uid FROM messages"))
+	assert.Equal(t, []string{"done"}, e.opStates(t))
+}
+
+// The copy's queued changes are not carried over, whose order against the
+// moved row's cannot be told: they are reported as not applied, and the move
+// the user made on the moved row stands.
+func TestMoveOntoStoredCopyDropsItsQueuedChanges(t *testing.T) {
+	e := newSyncEnv(t)
+	e.put(t, "INBOX", msg("m@x"))
+	e.sync(t)
+	id := e.idOf(t, "m@x")
+	archive, trash := e.folderID(t, "Archive"), e.folderID(t, "Trash")
+	cp := e.storedCopy(t, id, archive)
+	ch, unsub := e.s.Subscribe()
+	defer unsub()
+
+	require.NoError(t, e.s.Move(bg, []int64{id}, archive))
+	require.NoError(t, e.s.Move(bg, []int64{cp}, trash))
+	e.sync(t)
+
+	assert.Equal(t, []string{"m@x"}, e.onServer(t, "Archive"))
+	assert.Empty(t, e.onServer(t, "Trash"))
+	assert.Equal(t, [][]any{{id, archive, archive}}, e.rows(t, "SELECT id, folder_id, server_folder_id FROM messages"))
+	assert.Equal(t, []string{"done", "conflict"}, e.opStates(t))
+	var reported bool
+	for _, ev := range ofType(collect(ch), events.SyncFailed) {
+		reported = reported || strings.Contains(ev.Error, "not applied")
+	}
+	assert.True(t, reported, "the dropped change is reported")
+}
+
+// What points at the copy goes to the moved row: its labels even without a
+// label_fp (no Message-ID and a cut body or attachments, which the delete
+// trigger skips), a reply draft's source (its threading headers) and rule runs.
+func TestMoveOntoStoredCopyKeepsWhatPointsAtIt(t *testing.T) {
+	e := newSyncEnv(t)
+	e.put(t, "INBOX", msg("m@x"))
+	e.sync(t)
+	id := e.idOf(t, "m@x")
+	archive := e.folderID(t, "Archive")
+	cp := e.storedCopy(t, id, archive) // stored without label_fp
+	l, err := e.s.CreateLabel(bg, LabelInput{Name: "Family", Color: "pink", Icon: "heart-3"})
+	require.NoError(t, err)
+	_, err = e.s.db.Execute(bg, "INSERT INTO message_labels(message_id, label_id, source, active) VALUES (?, ?, 'manual', 1)", cp, l.ID)
+	require.NoError(t, err)
+	d, err := e.s.NewDraft(bg, e.acc.ID, "reply", cp)
+	require.NoError(t, err)
+	_, err = e.s.db.Execute(bg, `INSERT INTO rules(position, enabled, doc, created_at, updated_at) VALUES (0, 0, '{}', 0, 0)`)
+	require.NoError(t, err)
+	_, err = e.s.db.Execute(bg, "INSERT INTO rule_runs(rule_id, message_id, trigger, state, at) VALUES (1, ?, 'new', 'done', 0)", cp)
+	require.NoError(t, err)
+
+	require.NoError(t, e.s.Move(bg, []int64{id}, archive))
+	e.sync(t)
+
+	assert.Equal(t, [][]any{{id, l.ID, "manual", int64(1)}}, e.rows(t, "SELECT message_id, label_id, source, active FROM message_labels"))
+	assert.Equal(t, [][]any{{id}}, e.rows(t, "SELECT source_message_id FROM drafts WHERE id = ?", d.ID))
+	assert.Equal(t, [][]any{{id}}, e.rows(t, "SELECT message_id FROM rule_runs"))
+}
+
 func TestMoveNeedsMoveOrUIDPlus(t *testing.T) {
 	e := newSyncEnv(t, testmail.WithoutMove(), testmail.WithoutUIDPlus())
 	e.putFlagged(t, "INBOX", msg("keep@x"), imap.FlagDeleted)

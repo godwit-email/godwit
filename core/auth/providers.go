@@ -36,6 +36,7 @@ type Provider struct {
 	IMAP, SMTP Server
 	Login      string // app_password | authorization_code | client_password | password | oauth
 	HelpURL    string
+	Username   string // when the servers want something other than the address
 	OAuth      *OAuthConfig
 }
 

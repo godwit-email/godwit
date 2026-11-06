@@ -35,10 +35,10 @@ type rulesView struct {
 	heights  map[int64]float32 // each rule's row as last laid out, which the list is as tall as
 	shape    [2]int64          // the open rule and its hits' count the rows were built with
 
-	editing bool
-	edit    core.Rule // the rule in the editor; ID 0 a new one
-	any     int       // the editor's match: 0 all, 1 any
-	menu    bool      // the add-action menu is open
+	editing  bool
+	edit     core.Rule // the rule in the editor; ID 0 a new one
+	menu     bool      // the add-action menu is open
+	condMenu bool      // the add-condition menu is open
 
 	// The confirmation of forward recipients not confirmed yet, before saving.
 	confirming  bool
@@ -85,7 +85,7 @@ type ruleActionGroup struct {
 // to ruleActionIcons.
 var ruleActionGroups = []ruleActionGroup{
 	{"organize", []string{core.ActionLabel, core.ActionUnlabel, core.ActionRead, core.ActionStar,
-		core.ActionArchive, core.ActionJunk, core.ActionTrash, core.ActionStop}},
+		core.ActionArchive, core.ActionJunk, core.ActionTrash, core.ActionBlock, core.ActionStop}},
 	{"forward", []string{core.ActionForward}},
 	{"files", []string{core.ActionPDF, core.ActionEML, core.ActionAttachments}},
 	{"wit", core.RuleAIActions},
@@ -94,7 +94,7 @@ var ruleActionGroups = []ruleActionGroup{
 // ruleActionIcons are each action's icon, on its card, in the menu and on its results.
 var ruleActionIcons = map[string]string{
 	core.ActionLabel: "tag", core.ActionUnlabel: "tag", core.ActionRead: "mail-open", core.ActionStar: "star",
-	core.ActionArchive: "archive", core.ActionJunk: "spam", core.ActionTrash: "trash-2", core.ActionStop: "circle-x",
+	core.ActionArchive: "archive", core.ActionJunk: "spam", core.ActionTrash: "trash-2", core.ActionBlock: "spam", core.ActionStop: "circle-x",
 	core.ActionForward: "forward", core.ActionPDF: "file-text", core.ActionEML: "mail", core.ActionAttachments: "paperclip",
 	core.ActionDraftReply: "quill-pen", core.ActionKeyPoints: "file-text",
 }
@@ -530,14 +530,7 @@ func ruleName(d core.RuleDoc) string {
 
 // summary is the rule in a line: trigger · conditions → actions.
 func (v *rulesView) summary(d core.RuleDoc) string {
-	conds := ""
-	for i, cd := range d.Conditions {
-		s := v.condText(cd)
-		if i > 0 {
-			s = i18n.Tf("settings.rules.join."+d.Match, conds, s)
-		}
-		conds = s
-	}
+	conds := v.condsText(d.Match, d.Conditions)
 	acts := make([]string, len(d.Actions))
 	for i, ac := range d.Actions {
 		acts[i] = v.actionText(ac)
@@ -564,6 +557,24 @@ func (v *rulesView) account(id int64) (core.Account, bool) {
 		return v.a.accounts[i], true
 	}
 	return core.Account{}, false
+}
+
+// condsText is conditions joined by match, each group in parentheses.
+func (v *rulesView) condsText(match string, conds []core.RuleCondition) string {
+	out := ""
+	for i, cd := range conds {
+		s := v.condText(cd)
+		if len(cd.Group) == 1 {
+			s = v.condText(cd.Group[0])
+		} else if cd.Group != nil {
+			s = i18n.Tf("settings.rules.parens", v.condsText(cd.Match, cd.Group))
+		}
+		if i > 0 {
+			s = i18n.Tf("settings.rules.join."+match, out, s)
+		}
+		out = s
+	}
+	return out
 }
 
 func (v *rulesView) condText(cd core.RuleCondition) string {
@@ -628,20 +639,26 @@ func (v *rulesView) create() {
 }
 
 func (v *rulesView) openEditor(r core.Rule) {
-	r.Doc.Conditions = slices.Clone(r.Doc.Conditions)
+	r.Doc.Conditions = cloneConds(r.Doc.Conditions)
 	r.Doc.Actions = slices.Clone(r.Doc.Actions)
 	r.Confirmed = slices.Clone(r.Confirmed)
 	v.closeEditor()
-	v.editing, v.edit, v.any, v.custom = true, r, 0, nil
-	if r.Doc.Match == core.MatchAny {
-		v.any = 1
+	v.editing, v.edit, v.custom = true, r, nil
+}
+
+// cloneConds copies conditions and their groups: the editor writes to its own.
+func cloneConds(conds []core.RuleCondition) []core.RuleCondition {
+	out := slices.Clone(conds)
+	for i := range out {
+		out[i].Group = slices.Clone(out[i].Group)
 	}
+	return out
 }
 
 // closeEditor leaves the editor, stopping its preview.
 func (v *rulesView) closeEditor() {
 	v.stopPreview()
-	v.editing, v.menu, v.saveAsk, v.runExisting, v.wit, v.asideTop = false, false, false, false, nil, 0
+	v.editing, v.menu, v.condMenu, v.saveAsk, v.runExisting, v.wit, v.asideTop = false, false, false, false, false, nil, 0
 	v.from, v.suggest, v.prevKey, v.prev = "", nil, "", nil
 }
 

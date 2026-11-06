@@ -883,3 +883,143 @@ func TestOnboardingFeishuLarkTileAfterDetection(t *testing.T) {
 		t.Fatalf("tile chose %s on %s for a Lark address", o.prov.ID, o.imapHost)
 	}
 }
+
+func TestOnboardingOtherTileFillsDetectedServers(t *testing.T) {
+	h := newHarness(t)
+	o := h.firstRun()
+	h.click("其他 IMAP 邮箱")
+	o.email = "a@corp.example"
+
+	// A blind guess leaves the manual fields empty.
+	o.detectedSrc = auth.SourceGuess
+	o.found(auth.Provider{ID: "other", IMAP: auth.Server{Host: "imap.corp.example", Port: 993, Security: core.SecurityTLS},
+		SMTP: auth.Server{Host: "smtp.corp.example", Port: 465, Security: core.SecurityTLS}}, o.email)
+	if o.imapHost != "" || o.smtpHost != "" {
+		t.Fatalf("guess filled manual hosts: %q / %q", o.imapHost, o.smtpHost)
+	}
+
+	// An MX-detected corporate host fills the manual fields unless edited.
+	o.detectedSrc = auth.SourceMX
+	o.found(auth.Provider{ID: "other", IMAP: auth.Server{Host: "imap.icoremail.net", Port: 993, Security: core.SecurityTLS},
+		SMTP: auth.Server{Host: "smtp.icoremail.net", Port: 465, Security: core.SecurityTLS}}, o.email)
+	if o.imapHost != "imap.icoremail.net" || o.smtpHost != "smtp.icoremail.net" || !o.manual {
+		t.Fatalf("MX hosts not filled: %q / %q (manual=%v)", o.imapHost, o.smtpHost, o.manual)
+	}
+
+	o.smtpHost = "smtp.custom.example"
+	o.found(auth.Provider{ID: "other", IMAP: auth.Server{Host: "imap.qiye.aliyun.com", Port: 993, Security: core.SecurityTLS},
+		SMTP: auth.Server{Host: "smtp.qiye.aliyun.com", Port: 465, Security: core.SecurityTLS}}, o.email)
+	if o.imapHost != "imap.icoremail.net" || o.smtpHost != "smtp.custom.example" {
+		t.Fatalf("edited servers were replaced: %q / %q", o.imapHost, o.smtpHost)
+	}
+}
+
+// The password must not go to the servers found for the address typed before.
+func TestOnboardingOtherTileClearsServersOfPreviousAddress(t *testing.T) {
+	h := newHarness(t)
+	o := h.firstRun()
+	h.click("其他 IMAP 邮箱")
+
+	o.email = "a@corp.example"
+	o.detectedSrc = auth.SourceMX
+	o.found(auth.Provider{ID: "other", IMAP: auth.Server{Host: "c3.icoremail.net", Port: 993, Security: core.SecurityTLS},
+		SMTP: auth.Server{Host: "c3.icoremail.net", Port: 465, Security: core.SecurityTLS}}, o.email)
+
+	o.email = "a@corp.example.cn"
+	o.detectedSrc = auth.SourceGuess
+	o.found(auth.Provider{ID: "other", IMAP: auth.Server{Host: "imap.corp.example.cn", Port: 993, Security: core.SecurityTLS},
+		SMTP: auth.Server{Host: "smtp.corp.example.cn", Port: 465, Security: core.SecurityTLS}}, o.email)
+	if o.imapHost != "" || o.smtpHost != "" || o.prov.IMAP.Host != "" {
+		t.Fatalf("kept the previous address's servers: %q / %q", o.imapHost, o.smtpHost)
+	}
+	if o.imapPort != "993" || o.smtpPort != "465" || o.imapSec != core.SecurityTLS || o.smtpSec != core.SecurityTLS {
+		t.Fatalf("defaults not restored: %s %s / %s %s", o.imapPort, o.imapSec, o.smtpPort, o.smtpSec)
+	}
+
+	// With nothing filled in, a guess leaves what the user chose alone.
+	o.imapPort = "143"
+	o.email = "a@other.example"
+	o.found(auth.Provider{ID: "other", IMAP: auth.Server{Host: "imap.other.example", Port: 993, Security: core.SecurityTLS},
+		SMTP: auth.Server{Host: "smtp.other.example", Port: 465, Security: core.SecurityTLS}}, o.email)
+	if o.imapPort != "143" {
+		t.Fatalf("guess replaced the edited port: %s", o.imapPort)
+	}
+}
+
+// Connecting before the new address's detection finished must wait for it.
+func TestOnboardingOtherTileConnectWaitsForDetection(t *testing.T) {
+	h := newHarness(t)
+	o := h.firstRun()
+	h.click("其他 IMAP 邮箱")
+
+	o.email, o.secret = "a@corp.example", "secret"
+	o.detectedSrc = auth.SourceMX
+	o.found(auth.Provider{ID: "other", IMAP: auth.Server{Host: "stale.invalid", Port: 993, Security: core.SecurityTLS},
+		SMTP: auth.Server{Host: "stale.invalid", Port: 465, Security: core.SecurityTLS}}, o.email)
+
+	o.email = "a@no-mx.invalid"
+	o.connect()
+	h.until("detected", func() bool { return o.detectedFor == o.email })
+	if o.imapHost != "" || o.smtpHost != "" {
+		t.Fatalf("connected with the previous address's servers: %q / %q", o.imapHost, o.smtpHost)
+	}
+	if o.invalid == "" {
+		t.Fatal("no servers left, but the check was not refused")
+	}
+}
+
+// SRV finds IMAP and SMTP apart: the same IMAP host says nothing about SMTP.
+func TestOnboardingOtherTileAppliesServersWithSameIMAPHost(t *testing.T) {
+	h := newHarness(t)
+	o := h.firstRun()
+	h.click("其他 IMAP 邮箱")
+
+	imap := auth.Server{Host: "mail.example", Port: 993, Security: core.SecurityTLS}
+	o.email = "a@one.example"
+	o.detectedSrc = auth.SourceSRV
+	o.found(auth.Provider{ID: "other", IMAP: imap, SMTP: auth.Server{Host: "smtp.one.example", Port: 465, Security: core.SecurityTLS}}, o.email)
+
+	two := auth.Server{Host: "smtp.two.example", Port: 587, Security: core.SecurityStartTLS}
+	o.email = "a@two.example"
+	o.found(auth.Provider{ID: "other", IMAP: imap, SMTP: two}, o.email)
+	if o.smtpHost != two.Host || o.smtpPort != "587" || o.smtpSec != two.Security {
+		t.Fatalf("kept the previous address's SMTP: %s:%s %s", o.smtpHost, o.smtpPort, o.smtpSec)
+	}
+
+	// The same servers again leave an edited port alone.
+	o.imapPort = "1993"
+	o.found(auth.Provider{ID: "other", IMAP: imap, SMTP: two}, o.email)
+	if o.imapPort != "1993" {
+		t.Fatalf("same servers replaced the edited port: %s", o.imapPort)
+	}
+}
+
+// The username found for the address before goes with it; one the user typed stays.
+func TestOnboardingOtherTileUsernameFollowsDetection(t *testing.T) {
+	o := &onboarding{step: stepPassword, prov: otherProvider, email: "a@web.de"}
+	o.setServers(otherProvider)
+	found := otherProvider
+	found.IMAP, found.SMTP = auth.Server{Host: "imap.web.de", Port: 993, Security: core.SecurityTLS}, auth.Server{Host: "smtp.web.de", Port: 465, Security: core.SecurityTLS}
+	o.detectedSrc = auth.SourceDomain
+
+	found.Username = "a"
+	o.found(found, "a@web.de")
+	if o.username != "a" {
+		t.Fatalf("username = %q, want a", o.username)
+	}
+	o.imapPort = "1143"
+	found.Username = "b"
+	o.found(found, "b@web.de") // same servers
+	if o.username != "b" {
+		t.Fatalf("username = %q, want b", o.username)
+	}
+	if o.imapPort != "1143" {
+		t.Fatalf("imap port = %q, a new username must not reset it", o.imapPort)
+	}
+	o.username = "typed"
+	found.Username = "c"
+	o.found(found, "c@web.de")
+	if o.username != "typed" {
+		t.Fatalf("username = %q, want what was typed", o.username)
+	}
+}

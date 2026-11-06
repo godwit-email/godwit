@@ -151,9 +151,9 @@ func (p *askPage) noModel(c *ui.Context) {
 
 // OpenMessage opens message id in the reader (a mail the Wit page cites).
 func (a *App) OpenMessage(id int64) {
-	var m core.Message
+	var m core.MessageText
 	a.query(func(ctx context.Context) (err error) {
-		m, err = a.svc.GetMessage(ctx, id, false)
+		m, err = a.svc.GetMessageText(ctx, id) // no inline image is downloaded for a route
 		return err
 	}, func(err error) {
 		if err != nil {

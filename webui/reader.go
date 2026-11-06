@@ -38,8 +38,8 @@ type ReaderBody struct {
 	// a Load that resolves after a ReaderReload is dropped.
 	Version int64 `json:"version"`
 	// HTML is the sanitized body (remote images kept when Remote), its
-	// inline images within the message's budget and its structure within
-	// the limits; "" when the mail has no HTML, which Plain then holds.
+	// inline images godwit-img: URLs the image proxy serves as they download,
+	// and its structure within the limits; "" when the mail has no HTML, which Plain then holds.
 	HTML  string `json:"html"`
 	Plain string `json:"plain"`
 	// Remote is that the message's remote images may load (the setting, or
@@ -104,7 +104,7 @@ type ReaderDeps struct {
 	// Allow read failed: native offers 加载图片 again. Under the lock too.
 	OnFailed func(page any, message int64, err error)
 	// OnImagesFailed is told, for each page bound to message, how many of
-	// its remote images the proxy could not serve: native offers a retry
+	// its images the proxy could not get: native offers a retry
 	// (Allow). Under the lock too.
 	OnImagesFailed func(page any, message int64, n int)
 }
@@ -119,6 +119,7 @@ type Reader struct {
 	// Test seams.
 	getMessage func(ctx context.Context, svc *core.Service, id int64, remote bool) (core.Message, error)
 	getAvatar  func(ctx context.Context, svc *core.Service, id int64) (core.Avatar, error)
+	getInline  func(ctx context.Context, svc *core.Service, id int64, each func(cid string, a mail.Attachment)) error
 
 	mu      sync.Mutex
 	svc     *core.Service
@@ -139,15 +140,37 @@ type bodyOf struct {
 	// the page decodes every image at once. charged is the tokens counted.
 	pixels       *imagefetch.Budget
 	charged      map[string]bool
-	failed       map[string]bool   // the tokens the proxy could not serve since the last Allow
+	failed       map[string]bool   // the tokens the proxy could not get since the last Allow
 	translations map[string]string // display only, applied to the original body's text
+	// The inline images, one download for all of them (a login per image is what
+	// makes a first open slow), begun by the page's first request for one.
+	inline     map[string]*inlineImage // by cid:<id>
+	stopInline context.CancelFunc
+}
+
+// inlineImage is an inline image downloading: ready closes when data is what
+// there will be, nil if it could not be had.
+type inlineImage struct {
+	ready chan struct{}
+	done  bool // ready is closed
+	data  []byte
+}
+
+func (i *inlineImage) finish(data []byte) {
+	if !i.done {
+		i.done, i.data = true, data
+		close(i.ready)
+	}
 }
 
 // NewReader keeps the reader pages of pages; SetService opens it up.
 func NewReader(pages *Pages, d ReaderDeps) *Reader {
 	return &Reader{pages: pages, d: d, bound: map[any]int64{}, msgs: map[int64]*bodyOf{},
 		getMessage: func(ctx context.Context, svc *core.Service, id int64, remote bool) (core.Message, error) {
-			return svc.GetMessage(ctx, id, remote)
+			return svc.GetMessageLazyImages(ctx, id, remote)
+		},
+		getInline: func(ctx context.Context, svc *core.Service, id int64, each func(cid string, a mail.Attachment)) error {
+			return svc.InlineImages(ctx, id, each)
 		},
 		getAvatar: func(ctx context.Context, svc *core.Service, id int64) (core.Avatar, error) {
 			return svc.SenderAvatar(ctx, id, false)
@@ -201,6 +224,9 @@ func (r *Reader) unbind(key any) {
 	delete(r.bound, key)
 	st := r.msgs[m]
 	if st.pages--; st.pages == 0 {
+		if st.stopInline != nil {
+			st.stopInline()
+		}
 		delete(r.msgs, m)
 	}
 }
@@ -215,6 +241,11 @@ func (r *Reader) Allow(message int64) {
 			r.svc.ImageCache().ForgetFailure(st.tokens[token])
 		}
 		st.allowed, st.failed = true, nil
+		// Inline images missed are tried again; those had come from the attachment cache.
+		if st.stopInline != nil {
+			st.stopInline()
+		}
+		st.inline, st.stopInline = nil, nil
 	})
 }
 
@@ -530,10 +561,11 @@ func (p *ReaderPage) Print(ctx context.Context) error {
 // avatar: godwit-img://a<message>.
 const ImageScheme = "godwit-img"
 
-// ImageHandler is the image proxy the pages load remote images from. It
-// serves the image of a token of a message a page shows and whose images may
-// load (Remote), from the cache: downloaded once through core's client (public
-// hosts only, no cookies, no Referer), kept on disk, shared by messages.
+// ImageHandler is the image proxy the pages load images from. It serves the
+// image of a token of a message a page shows: an inline image, from the mail
+// server; a remote one if its images may load (Remote), from the cache: downloaded
+// once through core's client (public hosts only, no cookies, no Referer), kept on
+// disk, shared by messages.
 func (r *Reader) ImageHandler() http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
 		if message, ok := parseAvatarURL(req.URL); ok {
@@ -547,11 +579,24 @@ func (r *Reader) ImageHandler() http.Handler {
 		}
 		r.mu.Lock()
 		var src string
-		if st := r.msgs[message]; st != nil && st.allowed {
-			src = st.tokens[token]
-		}
+		var inline *inlineImage
+		st := r.msgs[message]
 		svc := r.svc
+		if st != nil {
+			src = st.tokens[token]
+			if strings.HasPrefix(src, cidPrefix) {
+				if svc != nil {
+					inline = r.inlineImage(st, message, svc, src)
+				}
+			} else if !st.allowed {
+				src = ""
+			}
+		}
 		r.mu.Unlock()
+		if inline != nil {
+			r.serveInline(w, req, message, token, inline)
+			return
+		}
 		if src == "" || svc == nil {
 			http.NotFound(w, req)
 			return
@@ -571,6 +616,92 @@ func (r *Reader) ImageHandler() http.Handler {
 		}
 		writeImage(w, img.Format, img.Data)
 	})
+}
+
+// inlineImage is st's inline image src, the download of them all begun at the
+// first asked for. It runs with r.mu held.
+func (r *Reader) inlineImage(st *bodyOf, message int64, svc *core.Service, src string) *inlineImage {
+	if st.inline == nil {
+		st.inline = map[string]*inlineImage{}
+		for _, s := range st.tokens {
+			if strings.HasPrefix(s, cidPrefix) {
+				st.inline[s] = &inlineImage{ready: make(chan struct{})}
+			}
+		}
+		// Not the request's: the others wait on it too. Bounded, as it holds the account lock.
+		ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
+		st.stopInline = cancel
+		images := st.inline
+		go func() {
+			defer cancel()
+			err := r.getInline(ctx, svc, message, func(cid string, a mail.Attachment) {
+				r.mu.Lock()
+				defer r.mu.Unlock()
+				if i := images[cidPrefix+cid]; i != nil {
+					i.finish(a.Data)
+				}
+			})
+			if err != nil && ctx.Err() == nil {
+				log.Printf("inline images: message %d: %v", message, err)
+			}
+			r.mu.Lock()
+			defer r.mu.Unlock()
+			// Told, so native offers a retry; not when a closed page or a retry stopped it.
+			stopped := errors.Is(ctx.Err(), context.Canceled)
+			for src, i := range images {
+				if !i.done && !stopped {
+					r.imageFailedLocked(message, imagecache.Key(src))
+				}
+				i.finish(nil)
+			}
+		}()
+	}
+	return st.inline[src]
+}
+
+// serveInline answers with an inline image once it has downloaded. It must be an
+// image the page may show, within what the message has left: a data: image of the
+// body would have had to be as well (preparer.inlineImage).
+func (r *Reader) serveInline(w http.ResponseWriter, req *http.Request, message int64, token string, i *inlineImage) {
+	select {
+	case <-i.ready:
+	case <-req.Context().Done():
+		return
+	}
+	if len(i.data) == 0 || len(i.data) > imagefetch.MaxImageBytes {
+		http.NotFound(w, req)
+		return
+	}
+	format, px, err := imagefetch.Config(i.data)
+	if err != nil {
+		http.NotFound(w, req)
+		return
+	}
+	if !r.chargeInline(message, token, int64(len(i.data)), px) {
+		http.Error(w, "the message's images are over its budget", http.StatusForbidden)
+		return
+	}
+	writeImage(w, format, i.data)
+}
+
+// chargeInline takes an inline image's bytes and pixels from message's budget
+// (prepareBody counted it), once per token; false when the message is gone or has
+// too little left.
+func (r *Reader) chargeInline(message int64, token string, size, px int64) bool {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	st := r.msgs[message]
+	if st == nil || st.pixels == nil {
+		return false
+	}
+	if st.charged[token] {
+		return true
+	}
+	if st.pixels.TakeSize(size, px) != nil {
+		return false
+	}
+	st.charged[token] = true
+	return true
 }
 
 // serveAvatar serves message's sender avatar under the message's own
@@ -609,10 +740,14 @@ func writeImage(w http.ResponseWriter, format string, data []byte) {
 }
 
 // imageFailed counts token as one of message's images the proxy could not
-// serve, and tells its pages.
+// get, and tells its pages.
 func (r *Reader) imageFailed(message int64, token string) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
+	r.imageFailedLocked(message, token)
+}
+
+func (r *Reader) imageFailedLocked(message int64, token string) {
 	st := r.msgs[message]
 	if st == nil || st.failed[token] {
 		return

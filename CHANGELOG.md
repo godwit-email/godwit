@@ -1,5 +1,32 @@
 # Changelog
 
+## [1.29.0](https://github.com/godwit-email/godwit/compare/v1.28.0...v1.29.0) (2026-11-06)
+
+
+### Features
+
+* **app:** system menus for the reader's sender, security and labels, and the sending account ([#491](https://github.com/godwit-email/godwit/issues/491)) ([4809388](https://github.com/godwit-email/godwit/commit/48093885a2da4bda2d228830e21ea9faaf0c8a4c))
+* **auth:** detect hosted corporate mail servers from MX records ([#501](https://github.com/godwit-email/godwit/issues/501)) ([1998f97](https://github.com/godwit-email/godwit/commit/1998f976f9680cacb252888b00aae756331c7d58))
+* **auth:** detect servers from the mailservers database ([#502](https://github.com/godwit-email/godwit/issues/502)) ([0959732](https://github.com/godwit-email/godwit/commit/09597328388dcd395389984526efc9ac266b32ba))
+* **rules,mail:** add block sender rule action and restore sender block affordances ([#486](https://github.com/godwit-email/godwit/issues/486)) ([da846fa](https://github.com/godwit-email/godwit/commit/da846fa566a784a4ce64e3f299653b4935e2c2a2))
+* **rules:** add one level of condition groups ([#511](https://github.com/godwit-email/godwit/issues/511)) ([d27fd43](https://github.com/godwit-email/godwit/commit/d27fd43e6467b04c86a22df999ab28730decb5bb))
+
+
+### Bug Fixes
+
+* **app:** Delete and forward delete trash the chosen mail ([#496](https://github.com/godwit-email/godwit/issues/496)) ([7ec5c3b](https://github.com/godwit-email/godwit/commit/7ec5c3b3e254d807396463daa1df84a45b57504e)), closes [#494](https://github.com/godwit-email/godwit/issues/494)
+* **compose:** a forward stays in the original's conversation ([#495](https://github.com/godwit-email/godwit/issues/495)) ([7ce9ac6](https://github.com/godwit-email/godwit/commit/7ce9ac6bc4e9376e1137b7dcb8230f724571430e))
+* **core:** your own sent mail never makes a conversation unread ([#507](https://github.com/godwit-email/godwit/issues/507)) ([5c69825](https://github.com/godwit-email/godwit/commit/5c698257503a7424418103dd81b7310fa7df1d8b))
+* **labels:** leave mail in Trash and Junk out of a label's view ([#505](https://github.com/godwit-email/godwit/issues/505)) ([2517389](https://github.com/godwit-email/godwit/commit/25173892216df47f75ba9fd2a52b6e50a3a11835))
+* **rules,i18n:** size condition logic pill to its word and uppercase labels ([#513](https://github.com/godwit-email/godwit/issues/513)) ([d66189a](https://github.com/godwit-email/godwit/commit/d66189a0e0282bec0e15b8772ab1496e9bdf8b87))
+* **sync,i18n:** guard empty folder LIST and fix Korean filter chip ([#508](https://github.com/godwit-email/godwit/issues/508)) ([48b1c21](https://github.com/godwit-email/godwit/commit/48b1c21776c4108d7d8080a6b1df710fba2dd54e))
+
+
+### Performance Improvements
+
+* **core:** download a message's inline images over one connection ([#487](https://github.com/godwit-email/godwit/issues/487)) ([f8234f5](https://github.com/godwit-email/godwit/commit/f8234f5a4cd7f74ede4e60e0407484d6674d47c7))
+* **reader:** show a message's body before its inline images download ([#510](https://github.com/godwit-email/godwit/issues/510)) ([d331abb](https://github.com/godwit-email/godwit/commit/d331abb217b5d3ca26a5af14dfd54fd15a9b8501))
+
 ## [1.28.0](https://github.com/godwit-email/godwit/compare/v1.27.0...v1.28.0) (2026-11-05)
 
 

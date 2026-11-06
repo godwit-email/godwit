@@ -3,9 +3,9 @@ package app
 import (
 	"context"
 	"path/filepath"
+	"slices"
 	"testing"
 
-	"github.com/egoist/mygo/ui"
 	"github.com/godwit-email/godwit/core"
 	"github.com/godwit-email/godwit/core/coretest"
 	"github.com/godwit-email/godwit/core/store"
@@ -90,7 +90,9 @@ func TestReaderChipOpensMenu(t *testing.T) {
 	h.tt.ClickAt(r.X-20, r.Y+r.H/2) // on the chip's name, left of its ×
 	h.drain()
 	h.tt.Frame()
-	h.see("管理标签…")
+	if !slices.Contains(h.tt.Menu(), "管理标签…") {
+		t.Fatalf("menu %q", h.tt.Menu())
+	}
 }
 
 func TestReaderLabelMenu(t *testing.T) {
@@ -98,42 +100,26 @@ func TestReaderLabelMenu(t *testing.T) {
 	h.openThread(thread)
 	h.until("the add button", func() bool { h.tt.Frame(); return h.tt.HasText("添加标签") })
 	h.click("添加标签")
-	for _, s := range []string{"订单与物流", "订阅与资讯", "模型标记", "管理标签…"} {
-		h.see(s)
+	menu := h.tt.Menu()
+	for _, want := range []string{"订单与物流", "订阅与资讯", "验证码 · 模型标记", "管理标签…"} {
+		if !slices.Contains(menu, want) {
+			t.Fatalf("no %q in menu %q", want, menu)
+		}
 	}
-	h.click("账单")
+	if err := h.tt.ChooseMenuItem("账单"); err != nil {
+		t.Fatalf("%v; menu %q", err, menu)
+	}
+	h.drain()
 	for _, m := range msgs {
 		h.until("bill on by hand", func() bool { src, on := h.labelState(m.ID, "bill"); return src == "manual" && on == 1 })
 	}
-	h.click("管理标签…")
-	h.until("the labels settings", func() bool { return h.app.route == Route{Page: PageSettings, Settings: "labels"} })
-}
-
-func TestReaderLabelCreate(t *testing.T) {
-	h, thread, msgs := labeledThread(t)
-	h.openThread(thread)
-	h.until("the add button", func() bool { h.tt.Frame(); return h.tt.HasText("添加标签") })
 	h.click("添加标签")
-	h.click("搜索或新建标签")
-	h.typeText("账单")
-	if h.tt.HasText("新建「账单」") {
-		t.Fatal("offers to create a label that exists")
+	if slices.Contains(h.tt.Menu(), "账单 · 模型标记") {
+		t.Fatalf("a label put on by hand shows as the model's: %q", h.tt.Menu())
 	}
-	h.tt.Key(0, ui.KeyBackspace)
-	h.tt.Key(0, ui.KeyBackspace)
+	if err := h.tt.ChooseMenuItem("管理标签…"); err != nil {
+		t.Fatalf("%v; menu %q", err, h.tt.Menu())
+	}
 	h.drain()
-	h.typeText("家人")
-	h.click("新建「家人」")
-	h.until("the new label on the thread", func() bool {
-		ls, err := h.env.Svc.ListLabels(context.Background())
-		if err != nil || ls[len(ls)-1].Name != "家人" {
-			return false
-		}
-		l := ls[len(ls)-1]
-		if l.Color != "gray" || l.Icon != "folder-3" {
-			t.Fatalf("new label %+v", l)
-		}
-		got, err := h.env.Svc.MessageLabels(context.Background(), []int64{msgs[0].ID, msgs[1].ID})
-		return err == nil && len(got[msgs[0].ID]) == 1 && got[msgs[0].ID][0].LabelID == l.ID
-	})
+	h.until("the labels settings", func() bool { return h.app.route == Route{Page: PageSettings, Settings: "labels"} })
 }

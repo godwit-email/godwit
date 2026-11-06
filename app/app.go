@@ -33,6 +33,7 @@ type Platform interface {
 	Notify(n Notification) error
 	NotificationsSupported() bool
 	SetOpenAtLogin(on bool) error
+	SetTrayVisible(visible bool)
 	SetTrayUnread(n int)              // the inboxes' unread total on the tray; 0 clears it
 	SetAppUnread(n int)               // the inboxes' unread total on the app icon; 0 clears it
 	SetSignInCodes([]core.SignInCode) // replaces the tray's recent codes; UI thread

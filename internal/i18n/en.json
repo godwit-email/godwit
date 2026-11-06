@@ -912,14 +912,6 @@
   "reader_labels_add": "Label",
   "reader_labels_add_label": "Add label",
   "reader_labels_auto": "By model",
-  "reader_labels_create": "Create “{arg1}”",
-  "@reader_labels_create": {
-    "placeholders": {
-      "arg1": {
-        "type": "String"
-      }
-    }
-  },
   "reader_labels_manage": "Manage labels…",
   "reader_labels_remove": "Remove label “{arg1}”",
   "@reader_labels_remove": {
@@ -929,7 +921,6 @@
       }
     }
   },
-  "reader_labels_search": "Search or create a label",
   "reader_lang_de": "German",
   "reader_lang_en": "English",
   "reader_lang_es": "Spanish",
@@ -1651,7 +1642,7 @@
   "settings_general_sub": "Appearance, interface language, startup, notifications and threads.",
   "settings_heading": "Settings",
   "settings_keep_in_background": "Keep running after the window closes",
-  "settings_keep_in_background_help": "Keeps syncing and notifying; open it again from the menu bar icon",
+  "settings_keep_in_background_help": "Keeps syncing and notifying; open it again from the menu bar icon, Dock or taskbar",
   "settings_keychain": "System keychain",
   "settings_keychain_checking": "Checking…",
   "settings_keychain_ok": "The system keychain works",
@@ -2241,6 +2232,8 @@
       }
     }
   },
+  "settings_show_tray_icon": "Show icon in menu bar",
+  "settings_show_tray_icon_help": "Sign-in code banners and recent codes need this icon. Without it, open Godwit from the Dock or taskbar.",
   "settings_unread_in_menu_bar": "Show the unread count in the menu bar",
   "settings_unread_on_app_icon": "Show the unread count on the app icon",
   "shell_back": "Back",
@@ -2274,6 +2267,8 @@
   },
   "shell_sync_syncing": "Syncing…",
   "toast_close": "Close",
+  "tray_hide": "Hide menu bar icon",
+  "tray_hidden_toast": "Menu bar icon hidden. You can turn it back on in Settings.",
   "tray_open": "Open Godwit",
   "tray_quit": "Quit",
   "tray_sync_all": "Sync all accounts now",
@@ -3097,7 +3092,6 @@
   "mail_security_mark_suspicious": "Mark as suspicious",
   "mail_security_mark_warning": "Mark as threat / phishing",
   "mail_security_reset": "Restore automatic scan",
-  "reader_security_edit_title": "Adjust security assessment",
   "reader_security_click_to_edit": "Click to adjust",
   "reader_security_manual_safe_badge": "Marked safe by you",
   "reader_security_manual_warning_badge": "Manually flagged threat",
@@ -3106,7 +3100,6 @@
   "reader_security_manual_warning_desc": "This email was manually flagged as a security threat or phishing attempt.",
   "reader_security_manual_suspicious_desc": "This email was manually flagged as suspicious for review.",
   "reader_security_updated": "Security assessment updated",
-  "reader_message_labels": "Adjust labels…",
   "settings_rules": "Rules",
   "settings_rules_sub": "Sort mail automatically as it arrives, by conditions you set. Rules run on this computer.",
   "settings_rules_new": "New rule",
@@ -3161,13 +3154,6 @@
     }
   },
   "settings_rules_preview": "Existing mail",
-  "@settings_rules_preview_foot": {
-    "placeholders": {
-      "arg1": {
-        "type": "int"
-      }
-    }
-  },
   "settings_rules_preview_wait": "Looking for matching mail…",
   "settings_rules_preview_incomplete": "Fill in every condition to see which mail matches.",
   "settings_rules_preview_none": "No mail matches. Are the conditions too strict?",
@@ -3215,22 +3201,8 @@
   },
   "settings_rules_save_existing_nothing": "This rule has no action that can run on existing mail.",
   "settings_rules_save_confirm": "Save and Turn On",
-  "@settings_rules_save_ran": {
-    "placeholders": {
-      "arg1": {
-        "type": "int"
-      }
-    }
-  },
   "settings_rules_enable": "Enable “{arg1}”",
   "@settings_rules_enable": {
-    "placeholders": {
-      "arg1": {
-        "type": "String"
-      }
-    }
-  },
-  "@settings_rules_edit": {
     "placeholders": {
       "arg1": {
         "type": "String"
@@ -3309,7 +3281,7 @@
   "settings_rules_run_window": "Only while the window is open",
   "settings_rules_run_window_help": "Mail that arrives while the window is closed is handled when you open it again.",
   "settings_rules_run_background": "In the background",
-  "settings_rules_run_background_help": "After the window closes, Godwit stays in the menu bar, keeps syncing and runs this rule.",
+  "settings_rules_run_background_help": "After the window closes, Godwit keeps running in the background, keeps syncing and runs this rule.",
   "settings_rules_summary_always": "{arg1} → {arg2}",
   "@settings_rules_summary_always": {
     "placeholders": {
@@ -3362,14 +3334,33 @@
   "settings_rules_name_placeholder": "Name this rule",
   "settings_rules_when": "When",
   "settings_rules_trigger": "Trigger",
-  "settings_rules_match": "Conditions",
-  "settings_rules_match_all": "All match",
-  "settings_rules_match_any": "Any matches",
   "settings_rules_field": "Field",
   "settings_rules_op": "Comparison",
   "settings_rules_value": "Value",
   "settings_rules_condition_remove": "Remove this condition",
   "settings_rules_condition_add": "Add condition",
+  "settings_rules_add": "Add",
+  "settings_rules_cond_group_add": "Add a group of conditions",
+  "settings_rules_cond_group_remove": "Remove this group",
+  "settings_rules_cond_group": "Group of conditions",
+  "settings_rules_logic_all": "AND",
+  "settings_rules_logic_any": "OR",
+  "settings_rules_logic_flip": "Now “{arg1}”. Click to switch",
+  "@settings_rules_logic_flip": {
+    "placeholders": {
+      "arg1": {
+        "type": "String"
+      }
+    }
+  },
+  "settings_rules_parens": "({arg1})",
+  "@settings_rules_parens": {
+    "placeholders": {
+      "arg1": {
+        "type": "String"
+      }
+    }
+  },
   "settings_rules_no_conditions": "No conditions: every mail that triggers the rule gets the action below.",
   "settings_rules_if": "If",
   "settings_rules_then": "Then",
@@ -3389,6 +3380,7 @@
   "settings_rules_action_archive": "Archive",
   "settings_rules_action_junk": "Move to Junk",
   "settings_rules_action_trash": "Move to Trash",
+  "settings_rules_action_block": "Block sender",
   "settings_rules_action_stop": "Stop processing later rules",
   "settings_rules_action_unlabel_summary": "Remove label “{arg1}”",
   "@settings_rules_action_unlabel_summary": {
@@ -3471,6 +3463,7 @@
   "settings_rules_failure_no_label": "the label is gone",
   "settings_rules_failure_gone": "the message is gone",
   "settings_rules_failure_unknown": "unknown action",
+  "settings_rules_failure_block": "the sender address is invalid or the blocked senders list is full",
   "settings_rules_action_forward": "Forward to",
   "settings_rules_action_forward_summary": "Forward to {arg1}",
   "@settings_rules_action_forward_summary": {
@@ -3692,5 +3685,6 @@
   "settings_rules_field_reply": "Reply status",
   "settings_rules_field_read": "Read status",
   "error_invalid_view": "This view can’t be saved. Check its conditions and groups.",
-  "view_editor_group_empty": "With no conditions, it takes all that is left."
+  "view_editor_group_empty": "With no conditions, it takes all that is left.",
+  "view_problem_label": "A condition uses a deleted label"
 }

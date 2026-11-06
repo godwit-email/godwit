@@ -339,6 +339,12 @@ func (b *Budget) TakeInline(size, px int64) error {
 	if err := b.Take(); err != nil {
 		return err
 	}
+	return b.TakeSize(size, px)
+}
+
+// TakeSize takes the bytes and pixels of an image already counted (Take): both
+// or neither.
+func (b *Budget) TakeSize(size, px int64) error {
 	if err := b.TakeBytes(size); err != nil {
 		return err
 	}

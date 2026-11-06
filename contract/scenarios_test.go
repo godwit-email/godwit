@@ -221,7 +221,7 @@ func TestSettings(t *testing.T) {
 		st := core.Settings{Theme: "dark", Density: "comfortable", FontSize: 15, BodyFontSize: 17,
 			SecurityAI: true, RuleAI: true,
 			UILanguage: "en", ReadingLanguage: "de", ReplyLanguage: "reading", NoTranslate: []string{"fr", "es"},
-			LaunchAtLogin: true, KeepInBackground: false, UnreadInMenuBar: true,
+			LaunchAtLogin: true, KeepInBackground: false, ShowTrayIcon: false, UnreadInMenuBar: true,
 			NotifyNewMail: false, NotifyPreview: false,
 			QuickReplies: true, Summary: true, ThreadView: false,
 			DefaultModel: "svc/big", SmallModel: "svc/small", JudgeService: "judge", JudgeThreshold: 0.85, Translator: "plugin/dlx", LocalAPI: true, SidebarWidth: 320, ListWidth: 400, SignatureDelimiter: true,

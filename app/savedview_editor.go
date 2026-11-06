@@ -29,6 +29,7 @@ type viewEditor struct {
 	exceptions []core.ViewException
 	templates  []core.ViewTemplate
 	iconOpen   bool
+	menus      map[string]*bool // each list of conditions' 添加 menu
 
 	prev       *core.ViewContents
 	prevKey    string
@@ -39,7 +40,7 @@ type viewEditor struct {
 }
 
 func newViewEditor(p *mailPage) *viewEditor {
-	return &viewEditor{p: p, box: core.SavedView{Icon: "folder-3", Doc: core.SavedViewDoc{Match: core.MatchAll, Conditions: []core.RuleCondition{}}}}
+	return &viewEditor{p: p, menus: map[string]*bool{}, box: core.SavedView{Icon: "folder-3", Doc: core.SavedViewDoc{Match: core.MatchAll, Conditions: []core.RuleCondition{}}}}
 }
 
 // openViewEditor shows e in place of the list and loads what it lists.
@@ -78,10 +79,10 @@ func (p *mailPage) editView(b core.SavedView) {
 
 // cloneViewDoc is d's own copy: the form writes into it until 保存.
 func cloneViewDoc(d core.SavedViewDoc) core.SavedViewDoc {
-	d.Conditions = slices.Clone(d.Conditions)
+	d.Conditions = cloneConds(d.Conditions)
 	d.Groups = slices.Clone(d.Groups)
 	for i := range d.Groups {
-		d.Groups[i].Conditions = slices.Clone(d.Groups[i].Conditions)
+		d.Groups[i].Conditions = cloneConds(d.Groups[i].Conditions)
 	}
 	return d
 }
@@ -97,24 +98,30 @@ func (p *mailPage) closeViewEditor() {
 // docProblem says what keeps the document from being a view, "" for nothing.
 func (e *viewEditor) docProblem() string {
 	d := e.box.Doc
-	blank := func(cd core.RuleCondition) bool { return strings.TrimSpace(cd.Value) == "" }
-	if slices.ContainsFunc(d.Conditions, blank) {
-		return i18n.T("view.problem.value")
+	check := func(conds []core.RuleCondition) string {
+		for _, cd := range (core.RuleDoc{Conditions: conds}).Rows() {
+			switch {
+			case strings.TrimSpace(cd.Value) == "":
+				return i18n.T("view.problem.value")
+			case cd.Field == core.FieldLabel && !slices.ContainsFunc(e.p.a.labels, func(l core.Label) bool { return l.Slug == cd.Value }):
+				return i18n.T("view.problem.label") // deleted since
+			case cd.Field == core.FieldReply && cd.Op == core.OpOlderThan:
+				if n, err := strconv.Atoi(cd.Value); err != nil || n < 1 || n > core.MaxViewWaitDays {
+					return i18n.Tf("view.problem.days", core.MaxViewWaitDays)
+				}
+			}
+		}
+		return ""
+	}
+	if p := check(d.Conditions); p != "" {
+		return p
 	}
 	for _, g := range d.Groups {
-		switch {
-		case strings.TrimSpace(g.Name) == "":
+		if strings.TrimSpace(g.Name) == "" {
 			return i18n.T("view.problem.group_name")
-		case slices.ContainsFunc(g.Conditions, blank):
-			return i18n.T("view.problem.value")
-		case slices.ContainsFunc(g.Conditions, func(cd core.RuleCondition) bool {
-			if cd.Field != core.FieldReply || cd.Op != core.OpOlderThan {
-				return false
-			}
-			n, err := strconv.Atoi(cd.Value)
-			return err != nil || n < 1 || n > core.MaxViewWaitDays
-		}):
-			return i18n.Tf("view.problem.days", core.MaxViewWaitDays)
+		}
+		if p := check(g.Conditions); p != "" {
+			return p
 		}
 	}
 	return ""
@@ -267,8 +274,8 @@ func (e *viewEditor) form(c *ui.Context) {
 		})
 	})
 	ui.Column(c).FillWidth().Gap(theme.SectionGap).Children(func() {
-		e.sectionHead(c, i18n.T("view.editor.conditions"), &d.Match)
-		settingsCard(c, func() { e.conditionRows(c, &d.Conditions) })
+		sectionTitle(c, i18n.T("view.editor.conditions"))
+		settingsCard(c, func() { e.conditionRows(c, &d.Conditions, &d.Match, "view") })
 		if note := e.conditionsNote(); note != "" {
 			kit.Text(c, note, t.Text.Sm).TextColor(t.Muted).PaddingX(th.Space(4))
 		}
@@ -303,7 +310,7 @@ func (e *viewEditor) form(c *ui.Context) {
 }
 
 func usesField(conds []core.RuleCondition, fields ...string) bool {
-	return slices.ContainsFunc(conds, func(cd core.RuleCondition) bool { return slices.Contains(fields, cd.Field) })
+	return slices.ContainsFunc(core.RuleDoc{Conditions: conds}.Rows(), func(cd core.RuleCondition) bool { return slices.Contains(fields, cd.Field) })
 }
 
 // conditionsNote says what the view's conditions take in.
@@ -331,24 +338,6 @@ func (e *viewEditor) groupsNote() string {
 		parts = append(parts, i18n.T("view.editor.groups.days"))
 	}
 	return strings.Join(parts, " ")
-}
-
-// matchTabs is 全部满足 and 任一满足, always shown.
-func matchTabs(c *ui.Context, match *string) {
-	sel := 0
-	if *match == core.MatchAny {
-		sel = 1
-	}
-	kit.Tabs(c, &sel, i18n.T("settings.rules.match.all"), i18n.T("settings.rules.match.any")).Label(i18n.T("settings.rules.match"))
-	*match = []string{core.MatchAll, core.MatchAny}[sel]
-}
-
-func (e *viewEditor) sectionHead(c *ui.Context, title string, match *string) {
-	ui.Row(c).FillWidth().AlignItems(ui.Center).Gap(c.Theme().Space(2)).Children(func() {
-		sectionTitle(c, title)
-		ui.Spacer(c)
-		matchTabs(c, match)
-	})
 }
 
 // iconButton is the icon chosen, opening the grid of the icons labels use.
@@ -409,8 +398,16 @@ func (e *viewEditor) fieldChanged(cd *core.RuleCondition, was string) {
 	}
 }
 
-// conditionRows are a group of conditions, each a row, then 添加条件.
-func (e *viewEditor) conditionRows(c *ui.Context, conds *[]core.RuleCondition) {
+// conditionRows is a list of conditions, as a rule's are; key keeps its 添加 menu.
+func (e *viewEditor) conditionRows(c *ui.Context, conds *[]core.RuleCondition, match *string, key string) {
+	th := c.Theme()
+	ui.Column(c).FillWidth().Gap(th.Space(2)).Padding(th.Space(2.5), th.Space(4)).Children(func() {
+		condEditor(c, conds, match, boolAt(e.menus, key, false), func(cd *core.RuleCondition) { e.condRow(c, cd) })
+	})
+}
+
+// condRow is one condition's controls.
+func (e *viewEditor) condRow(c *ui.Context, cd *core.RuleCondition) {
 	a := e.p.a
 	t, th := theme.Of(c), c.Theme()
 	var fields []kit.Option[string]
@@ -428,64 +425,50 @@ func (e *viewEditor) conditionRows(c *ui.Context, conds *[]core.RuleCondition) {
 	for i, r := range ruleRoles {
 		roles[i] = kit.Option[string]{Value: r, Label: i18n.T("mail.folder." + r)}
 	}
-	ui.Column(c).FillWidth().Gap(th.Space(2)).Padding(th.Space(2.5), th.Space(4)).Children(func() {
-		for i := range *conds {
-			ui.Row(c.Key(i)).FillWidth().Gap(th.Space(2)).AlignItems(ui.Center).Children(func() {
-				cd := &(*conds)[i]
-				was := cd.Field
-				ruleSelect(c, i18n.T("settings.rules.field"), &cd.Field, fields, theme.RuleFieldWidth)
-				if cd.Field != was {
-					e.fieldChanged(cd, was)
-				}
-				switch cd.Field {
-				case core.FieldAttachments:
-					ruleSelect(c, i18n.T("settings.rules.value"), &cd.Value, []kit.Option[string]{
-						{Value: core.RuleYes, Label: i18n.T("settings.rules.attachments.yes")}, {Value: core.RuleNo, Label: i18n.T("settings.rules.attachments.no")}}, 0)
-				case core.FieldLabel:
-					ruleSelect(c, i18n.T("settings.rules.op"), &cd.Op, []kit.Option[string]{is, notContains}, theme.RuleOpWidth)
-					ruleSelect(c, i18n.T("settings.rules.label"), &cd.Value, labels, 0)
-				case core.FieldFolder:
-					ruleSelect(c, i18n.T("settings.rules.op"), &cd.Op, []kit.Option[string]{is, notContains}, theme.RuleOpWidth)
-					ruleSelect(c, i18n.T("settings.rules.folder"), &cd.Value, roles, 0)
-				case core.FieldReply:
-					op := cd.Op
-					ruleSelect(c, i18n.T("settings.rules.field.reply"), &cd.Op, []kit.Option[string]{
-						{Value: core.OpIs, Label: i18n.T("view.field.reply.unreplied")}, {Value: core.OpOlderThan, Label: i18n.T("view.field.reply.waiting")}}, 0)
-					if cd.Op != op {
-						cd.Value = core.ViewReplyUnreplied
-						if cd.Op == core.OpOlderThan {
-							cd.Value = "3"
-						}
-					}
-					if cd.Op == core.OpOlderThan {
-						kit.Input(c, &cd.Value, kit.InputOpts{Placeholder: "3"}).Label(i18n.T("settings.rules.days")).Width(th.Space(16))
-						kit.Text(c, i18n.T("view.field.reply.days"), t.Text.Sm).Shrink(0)
-					}
-				case core.FieldRead:
-					ruleSelect(c, i18n.T("settings.rules.field.read"), &cd.Value, []kit.Option[string]{
-						{Value: core.ViewReadUnread, Label: i18n.T("view.field.read.unread")}, {Value: core.ViewReadRead, Label: i18n.T("view.field.read.read")}}, 0)
-				default:
-					ops := []kit.Option[string]{contains, notContains, is}
-					if cd.Field == core.FieldAny {
-						ops = ops[:2]
-					}
-					ruleSelect(c, i18n.T("settings.rules.op"), &cd.Op, ops, theme.RuleOpWidth)
-					ph := "settings.rules.value.text"
-					if cd.Field == core.FieldFrom || cd.Field == core.FieldTo {
-						ph = "settings.rules.value.addr"
-					}
-					kit.Input(c, &cd.Value, kit.InputOpts{Placeholder: i18n.T(ph)}).Label(i18n.T("settings.rules.value")).Grow(1).Shrink(1).Basis(0).MinWidth(0)
-				}
-				kit.IconButton(c, "x", i18n.T("settings.rules.condition.remove"), kit.ButtonOpts{Variant: kit.Ghost, Size: kit.SizeSm}).
-					OnClick(func() { *conds = slices.Delete(slices.Clone(*conds), i, i+1) })
-			})
+	was := cd.Field
+	ruleSelect(c, i18n.T("settings.rules.field"), &cd.Field, fields, theme.RuleFieldWidth)
+	if cd.Field != was {
+		e.fieldChanged(cd, was)
+	}
+	switch cd.Field {
+	case core.FieldAttachments:
+		ruleSelect(c, i18n.T("settings.rules.value"), &cd.Value, []kit.Option[string]{
+			{Value: core.RuleYes, Label: i18n.T("settings.rules.attachments.yes")}, {Value: core.RuleNo, Label: i18n.T("settings.rules.attachments.no")}}, 0)
+	case core.FieldLabel:
+		ruleSelect(c, i18n.T("settings.rules.op"), &cd.Op, []kit.Option[string]{is, notContains}, theme.RuleOpWidth)
+		ruleSelect(c, i18n.T("settings.rules.label"), &cd.Value, labels, 0)
+	case core.FieldFolder:
+		ruleSelect(c, i18n.T("settings.rules.op"), &cd.Op, []kit.Option[string]{is, notContains}, theme.RuleOpWidth)
+		ruleSelect(c, i18n.T("settings.rules.folder"), &cd.Value, roles, 0)
+	case core.FieldReply:
+		op := cd.Op
+		ruleSelect(c, i18n.T("settings.rules.field.reply"), &cd.Op, []kit.Option[string]{
+			{Value: core.OpIs, Label: i18n.T("view.field.reply.unreplied")}, {Value: core.OpOlderThan, Label: i18n.T("view.field.reply.waiting")}}, 0)
+		if cd.Op != op {
+			cd.Value = core.ViewReplyUnreplied
+			if cd.Op == core.OpOlderThan {
+				cd.Value = "3"
+			}
 		}
-		kit.Button(c, i18n.T("settings.rules.condition.add"), kit.ButtonOpts{Variant: kit.Ghost, Size: kit.SizeSm, Icon: "plus",
-			Disabled: len(*conds) >= core.MaxRuleConditions}).AlignSelf(ui.Start).TextColor(t.Muted).
-			OnClick(func() {
-				*conds = append(*conds, core.RuleCondition{Field: core.FieldFrom, Op: core.OpContains})
-			})
-	})
+		if cd.Op == core.OpOlderThan {
+			kit.Input(c, &cd.Value, kit.InputOpts{Placeholder: "3"}).Label(i18n.T("settings.rules.days")).Width(th.Space(16))
+			kit.Text(c, i18n.T("view.field.reply.days"), t.Text.Sm).Shrink(0)
+		}
+	case core.FieldRead:
+		ruleSelect(c, i18n.T("settings.rules.field.read"), &cd.Value, []kit.Option[string]{
+			{Value: core.ViewReadUnread, Label: i18n.T("view.field.read.unread")}, {Value: core.ViewReadRead, Label: i18n.T("view.field.read.read")}}, 0)
+	default:
+		ops := []kit.Option[string]{contains, notContains, is}
+		if cd.Field == core.FieldAny {
+			ops = ops[:2]
+		}
+		ruleSelect(c, i18n.T("settings.rules.op"), &cd.Op, ops, theme.RuleOpWidth)
+		ph := "settings.rules.value.text"
+		if cd.Field == core.FieldFrom || cd.Field == core.FieldTo {
+			ph = "settings.rules.value.addr"
+		}
+		kit.Input(c, &cd.Value, kit.InputOpts{Placeholder: i18n.T(ph)}).Label(i18n.T("settings.rules.value")).Grow(1).Shrink(1).Basis(0).MinWidth(0)
+	}
 }
 
 // groupCard is group i: its name, how its conditions combine, moves and
@@ -497,7 +480,6 @@ func (e *viewEditor) groupCard(c *ui.Context, i int) {
 	settingsCard(c, func() {
 		ui.Row(c).FillWidth().AlignItems(ui.Center).Gap(th.Space(2)).Padding(th.Space(2), th.Space(4)).Children(func() {
 			kit.Input(c, &g.Name, kit.InputOpts{Placeholder: i18n.T("view.editor.group.name")}).Label(i18n.T("view.editor.group.name")).Width(theme.SettingsSelectMin)
-			matchTabs(c, &g.Match)
 			ui.Spacer(c)
 			kit.IconButton(c, "arrow-up", i18n.T("view.editor.group.up"), kit.ButtonOpts{Variant: kit.Ghost, Size: kit.SizeSm, Disabled: i == 0}).
 				OnClick(func() { d.Groups[i-1], d.Groups[i] = d.Groups[i], d.Groups[i-1] })
@@ -507,7 +489,7 @@ func (e *viewEditor) groupCard(c *ui.Context, i int) {
 				OnClick(func() { d.Groups = slices.Delete(slices.Clone(d.Groups), i, i+1) })
 		})
 	}, func() {
-		e.conditionRows(c, &g.Conditions)
+		e.conditionRows(c, &g.Conditions, &g.Match, g.ID)
 		if len(g.Conditions) == 0 {
 			kit.Text(c, i18n.T("view.editor.group.empty"), t.Text.Sm).TextColor(t.Muted).Padding(0, th.Space(4), th.Space(2.5), th.Space(4))
 		}
