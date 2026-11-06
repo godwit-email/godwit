@@ -312,6 +312,9 @@ func tidyConds(d *core.RuleDoc) {
 	}
 }
 
+// condGroupRows is how many conditions addCondGroup adds.
+const condGroupRows = 2
+
 // addCondGroup adds a group of two empty conditions, matching any: mixing and
 // with or is why there is a group. Conditions so far become the first group.
 func addCondGroup(d *core.RuleDoc) {
@@ -389,6 +392,7 @@ func (v *rulesView) ifCard(c *ui.Context, labels []kit.Option[string]) {
 		roles[i] = kit.Option[string]{Value: r, Label: i18n.T("mail.folder." + r)}
 	}
 	atLimit := len(d.Rows()) >= core.MaxRuleConditions
+	noGroupRoom := len(d.Rows())+condGroupRows > core.MaxRuleConditions
 	// rows is conditions, boxed in a group or not, under one bracket with match.
 	rows := func(conds *[]core.RuleCondition, match *string, boxed bool, remove func(i int)) {
 		n := len(*conds)
@@ -450,7 +454,7 @@ func (v *rulesView) ifCard(c *ui.Context, labels []kit.Option[string]) {
 					tidyConds(d)
 				})
 			})
-			v.addCondMenu(c, atLimit)
+			v.addCondMenu(c, atLimit, noGroupRoom)
 			return
 		}
 		ui.Column(c).FillWidth().Children(func() {
@@ -494,13 +498,13 @@ func (v *rulesView) ifCard(c *ui.Context, labels []kit.Option[string]) {
 				})
 			}
 		})
-		kit.Button(c, i18n.T("settings.rules.cond_group.add"), kit.ButtonOpts{Variant: kit.Ghost, Size: kit.SizeSm, Icon: "plus", Disabled: atLimit}).
+		kit.Button(c, i18n.T("settings.rules.cond_group.add"), kit.ButtonOpts{Variant: kit.Ghost, Size: kit.SizeSm, Icon: "plus", Disabled: noGroupRoom}).
 			AlignSelf(ui.Start).Margin(0, 0, 0, theme.RuleRail).TextColor(t.Muted).OnClick(func() { addCondGroup(d) })
 	})
 }
 
 // addCondMenu is 添加 and its menu: 添加条件, or 添加一组条件.
-func (v *rulesView) addCondMenu(c *ui.Context, disabled bool) {
+func (v *rulesView) addCondMenu(c *ui.Context, disabled, noGroupRoom bool) {
 	t := theme.Of(c)
 	d := &v.edit.Doc
 	label := i18n.T("settings.rules.add")
@@ -512,15 +516,19 @@ func (v *rulesView) addCondMenu(c *ui.Context, disabled bool) {
 	kit.MenuAt(c, add, &v.condMenu, ui.AnchorBottomLeft, ui.AnchorTopLeft, theme.PopupOffset, label, func() {
 		for _, o := range []struct {
 			key  string
+			off  bool
 			pick func()
 		}{
-			{"settings.rules.condition.add", func() {
+			{"settings.rules.condition.add", false, func() {
 				d.Conditions = append(d.Conditions, core.RuleCondition{Field: core.FieldSubject, Op: core.OpContains})
 			}},
-			{"settings.rules.cond_group.add", func() { addCondGroup(d) }},
+			{"settings.rules.cond_group.add", noGroupRoom, func() { addCondGroup(d) }},
 		} {
-			item := i18n.T(o.key)
-			kit.MenuItem(c.Key(o.key), false).Label(item).Children(func() {
+			item, fg := i18n.T(o.key), t.Foreground
+			if o.off {
+				fg = t.Muted
+			}
+			kit.MenuItem(c.Key(o.key), false).Label(item).Disabled(o.off).TextColor(fg).Children(func() {
 				ui.Text(c, item).SingleLine().Grow(1)
 			}).OnClick(func() {
 				v.condMenu = false

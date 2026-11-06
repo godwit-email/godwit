@@ -3,6 +3,7 @@ package app
 import (
 	"context"
 	"reflect"
+	"slices"
 	"testing"
 	"time"
 
@@ -139,6 +140,31 @@ func TestSettingsRulesConditionGroups(t *testing.T) {
 	h.click("取消")
 	if d := h.rules()[0].Doc; len(d.Conditions) != 1 {
 		t.Fatalf("saved without saving %+v", d)
+	}
+}
+
+// Adding a group adds two conditions: with room for one, it does nothing, so
+// the editor never builds a rule validRule refuses.
+func TestSettingsRulesConditionGroupNeedsRoom(t *testing.T) {
+	h, _ := withAccount(t)
+	row := core.RuleCondition{Field: core.FieldSubject, Op: core.OpContains, Value: "a"}
+	conds := slices.Repeat([]core.RuleCondition{row}, core.MaxRuleConditions-1)
+	h.app.EditRule(core.Rule{Enabled: true, Doc: core.RuleDoc{Version: core.RuleVersion, Name: "满", Trigger: core.TriggerReceive, Match: core.MatchAll,
+		Conditions: conds, Actions: []core.RuleAction{{Kind: core.ActionStar}}}}, 0, 0, "")
+	h.openSettings("rules")
+	h.click("添加")
+	h.click("添加一组条件")
+	if h.tt.HasText("删除这组") {
+		t.Fatal("a group added past the limit")
+	}
+
+	grouped := []core.RuleCondition{{Match: core.MatchAny, Group: conds[:len(conds)-1]}, {Match: core.MatchAll, Group: conds[:1]}}
+	h.app.pages[PageSettings].(*settingsPage).rules.openEditor(core.Rule{Enabled: true, Doc: core.RuleDoc{Version: core.RuleVersion, Name: "满", Trigger: core.TriggerReceive, Match: core.MatchAll,
+		Conditions: grouped, Actions: []core.RuleAction{{Kind: core.ActionStar}}}})
+	h.tt.Frame()
+	h.click("添加一组条件")
+	if d := h.app.pages[PageSettings].(*settingsPage).rules.edit.Doc; len(d.Conditions) != 2 {
+		t.Fatalf("a group added past the limit: %d groups", len(d.Conditions))
 	}
 }
 
