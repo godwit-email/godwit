@@ -914,3 +914,34 @@ func TestOnboardingOtherTileFillsDetectedServers(t *testing.T) {
 	}
 }
 
+// The password must not go to the servers found for the address typed before.
+func TestOnboardingOtherTileClearsServersOfPreviousAddress(t *testing.T) {
+	h := newHarness(t)
+	o := h.firstRun()
+	h.click("其他 IMAP 邮箱")
+
+	o.email = "a@corp.example"
+	o.detectedSrc = auth.SourceMX
+	o.found(auth.Provider{ID: "other", IMAP: auth.Server{Host: "c3.icoremail.net", Port: 993, Security: core.SecurityTLS},
+		SMTP: auth.Server{Host: "c3.icoremail.net", Port: 465, Security: core.SecurityTLS}}, o.email)
+
+	o.email = "a@corp.example.cn"
+	o.detectedSrc = auth.SourceGuess
+	o.found(auth.Provider{ID: "other", IMAP: auth.Server{Host: "imap.corp.example.cn", Port: 993, Security: core.SecurityTLS},
+		SMTP: auth.Server{Host: "smtp.corp.example.cn", Port: 465, Security: core.SecurityTLS}}, o.email)
+	if o.imapHost != "" || o.smtpHost != "" || o.prov.IMAP.Host != "" {
+		t.Fatalf("kept the previous address's servers: %q / %q", o.imapHost, o.smtpHost)
+	}
+	if o.imapPort != "993" || o.smtpPort != "465" || o.imapSec != core.SecurityTLS || o.smtpSec != core.SecurityTLS {
+		t.Fatalf("defaults not restored: %s %s / %s %s", o.imapPort, o.imapSec, o.smtpPort, o.smtpSec)
+	}
+
+	// With nothing filled in, a guess leaves what the user chose alone.
+	o.imapPort = "143"
+	o.email = "a@other.example"
+	o.found(auth.Provider{ID: "other", IMAP: auth.Server{Host: "imap.other.example", Port: 993, Security: core.SecurityTLS},
+		SMTP: auth.Server{Host: "smtp.other.example", Port: 465, Security: core.SecurityTLS}}, o.email)
+	if o.imapPort != "143" {
+		t.Fatalf("guess replaced the edited port: %s", o.imapPort)
+	}
+}

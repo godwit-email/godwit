@@ -242,11 +242,23 @@ func (o *onboarding) found(p auth.Provider, email string) {
 		o.prov = p
 		o.imapHost, o.smtpHost = p.IMAP.Host, p.SMTP.Host
 	}
-	if o.step == stepPassword && o.prov.ID == "other" && o.detectedSrc != auth.SourceGuess && p.IMAP.Host != "" &&
-		o.imapHost == o.prov.IMAP.Host && o.smtpHost == o.prov.SMTP.Host {
-		o.prov.IMAP, o.prov.SMTP = p.IMAP, p.SMTP
-		o.imapHost, o.imapPort, o.imapSec = p.IMAP.Host, strconv.Itoa(p.IMAP.Port), p.IMAP.Security
-		o.smtpHost, o.smtpPort, o.smtpSec = p.SMTP.Host, strconv.Itoa(p.SMTP.Port), p.SMTP.Security
+	if o.step == stepPassword && o.prov.ID == "other" && o.imapHost == o.prov.IMAP.Host && o.smtpHost == o.prov.SMTP.Host {
+		if o.detectedSrc == auth.SourceGuess {
+			p = otherProvider // the servers found for the address typed before are not this one's
+		}
+		if p.IMAP.Host != o.prov.IMAP.Host {
+			o.prov.IMAP, o.prov.SMTP = p.IMAP, p.SMTP
+			o.setServers(p)
+		}
+	}
+}
+
+// setServers fills the server fields with p's, or the defaults if it has none.
+func (o *onboarding) setServers(p auth.Provider) {
+	o.imapHost, o.imapPort, o.imapSec = p.IMAP.Host, strconv.Itoa(p.IMAP.Port), p.IMAP.Security
+	o.smtpHost, o.smtpPort, o.smtpSec = p.SMTP.Host, strconv.Itoa(p.SMTP.Port), p.SMTP.Security
+	if p.IMAP.Host == "" {
+		o.imapPort, o.imapSec, o.smtpPort, o.smtpSec = "993", core.SecurityTLS, "465", core.SecurityTLS
 	}
 }
 
@@ -277,11 +289,7 @@ func (o *onboarding) choose(p auth.Provider) {
 		o.secret, o.client = "", clientForm{}
 	}
 	o.prov, o.tab = p, 0
-	o.imapHost, o.imapPort, o.imapSec = p.IMAP.Host, strconv.Itoa(p.IMAP.Port), p.IMAP.Security
-	o.smtpHost, o.smtpPort, o.smtpSec = p.SMTP.Host, strconv.Itoa(p.SMTP.Port), p.SMTP.Security
-	if p.IMAP.Host == "" {
-		o.imapPort, o.imapSec, o.smtpPort, o.smtpSec = "993", core.SecurityTLS, "465", core.SecurityTLS
-	}
+	o.setServers(p)
 	o.manual = manualTile
 	o.askEmail = !validEmail(o.email)
 	o.focusEmail = false

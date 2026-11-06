@@ -35,13 +35,15 @@ func (f fakeResolver) LookupSRV(_ context.Context, service, _, name string) (str
 func TestDetect(t *testing.T) {
 	r := fakeResolver{
 		mx: map[string][]*net.MX{
-			"corp.example": {{Host: "alt1.aspmx.l.google.com.", Pref: 20}, {Host: "aspmx.l.google.com.", Pref: 1}},
-			"biz.example":  {{Host: "mxbiz1.qq.com.", Pref: 5}},
-			"fs.example":   {{Host: "mx2.feishu.cn.", Pref: 20}, {Host: "mx1.feishu.cn.", Pref: 10}},
+			"corp.example":      {{Host: "alt1.aspmx.l.google.com.", Pref: 20}, {Host: "aspmx.l.google.com.", Pref: 1}},
+			"biz.example":       {{Host: "mxbiz1.qq.com.", Pref: 5}},
+			"fs.example":        {{Host: "mx2.feishu.cn.", Pref: 20}, {Host: "mx1.feishu.cn.", Pref: 10}},
 			"lark.example":      {{Host: "mx-sg.larksuite.com.", Pref: 10}},
 			"ding.example":      {{Host: "mx1.em.dingtalk.com.", Pref: 10}},
 			"coremail.example":  {{Host: "mx2.c3.icoremail.net.", Pref: 10}, {Host: "mx.c3.icoremail.net.", Pref: 5}},
 			"coremail1.example": {{Host: "mx.icoremail.net.", Pref: 5}},
+			"coreapex.example":  {{Host: "icoremail.net.", Pref: 5}},
+			"coredeep.example":  {{Host: "a.mx.c3.icoremail.net.", Pref: 5}},
 			"alimail.example":   {{Host: "mxn.mxhichina.com.", Pref: 5}},
 			"aliqiye.example":   {{Host: "mx1.qiye.aliyun.com.", Pref: 5}},
 			"ntesqiye.example":  {{Host: "qiye163mx01.mxmail.netease.com.", Pref: 5}},
@@ -75,6 +77,8 @@ func TestDetect(t *testing.T) {
 		{"a@ding.example", "dingtalk", "mx", "imap.em.dingtalk.com"},
 		{"a@coremail.example", "other", "mx", "c3.icoremail.net"},
 		{"a@coremail1.example", "other", "mx", "imap.icoremail.net"},
+		{"a@coreapex.example", "other", "mx", "imap.icoremail.net"},
+		{"a@coredeep.example", "other", "mx", "imap.icoremail.net"},
 		{"a@alimail.example", "other", "mx", "imap.qiye.aliyun.com"},
 		{"a@aliqiye.example", "other", "mx", "imap.qiye.aliyun.com"},
 		{"a@ntesqiye.example", "other", "mx", "imap.qiye.163.com"},

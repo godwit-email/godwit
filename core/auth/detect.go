@@ -116,8 +116,8 @@ func mxServers(host string) (imap, smtp Server, ok bool) {
 	case inDomain(host, "icoremail.net."):
 		// mx.c3.icoremail.net. -> c3.icoremail.net: each cluster only serves its own
 		// domains, and *.icoremail.net covers single-label cluster hosts.
-		if _, rest, ok := strings.Cut(strings.TrimSuffix(host, "."), "."); ok && rest != "icoremail.net" &&
-			!strings.Contains(strings.TrimSuffix(rest, ".icoremail.net"), ".") {
+		if _, rest, _ := strings.Cut(host, "."); strings.HasSuffix(rest, ".icoremail.net.") && strings.Count(rest, ".") == 3 {
+			rest = strings.TrimSuffix(rest, ".")
 			return tls(rest), smtps(rest), true
 		}
 		return tls("imap.icoremail.net"), smtps("smtp.icoremail.net"), true
