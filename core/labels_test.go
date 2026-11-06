@@ -287,6 +287,43 @@ func TestLabelViewLeavesOutTrashAndJunk(t *testing.T) {
 	require.Equal(t, 1, all[1][0].Count)
 }
 
+// A Trash the user chose takes mail out of a label's view; the detected one
+// it replaced is an ordinary folder again, its mail back in the view.
+func TestLabelViewFollowsChosenTrash(t *testing.T) {
+	s := newLabelService(t, "", "zh-CN")
+	ctx := t.Context()
+	otp := labelIDs(t, s)["otp"]
+	_, err := s.db.Execute(ctx, `INSERT INTO folders(id, account_id, name, role) VALUES (2, 1, 'Trash', 'trash'), (3, 1, 'Bin', '')`)
+	require.NoError(t, err)
+	require.NoError(t, s.SetRoleFolder(ctx, 1, "trash", 3))
+	a := addMessage(t, s, "a", "a@x", "", "", 1)
+	b := addMessage(t, s, "b", "b@x", "", "", 2)
+	c := addMessage(t, s, "c", "c@x", "", "", 3)
+	for _, id := range []int64{a, b, c} {
+		setRow(t, s, id, otp, "auto", 1)
+	}
+	_, err = s.db.Execute(ctx, `UPDATE messages SET folder_id = 2 WHERE id = ?`, b)
+	require.NoError(t, err)
+	_, err = s.db.Execute(ctx, `UPDATE messages SET folder_id = 3 WHERE id = ?`, c)
+	require.NoError(t, err)
+
+	p, err := s.ListMessages(ctx, View{LabelID: otp}, "", 10)
+	require.NoError(t, err)
+	var got []int64
+	for _, m := range p.Items {
+		got = append(got, m.ID)
+	}
+	require.ElementsMatch(t, []int64{a, b}, got)
+	ls, err := s.ListLabels(ctx)
+	require.NoError(t, err)
+	require.Equal(t, 2, ls[0].Count)
+
+	require.NoError(t, s.SetRoleFolder(ctx, 1, "trash", 0)) // no Trash at all
+	p, err = s.ListMessages(ctx, View{LabelID: otp}, "", 10)
+	require.NoError(t, err)
+	require.Len(t, p.Items, 3)
+}
+
 func TestAccountLabelsAndViews(t *testing.T) {
 	s := newLabelService(t, "", "zh-CN")
 	ctx := t.Context()
