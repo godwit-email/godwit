@@ -945,3 +945,25 @@ func TestOnboardingOtherTileClearsServersOfPreviousAddress(t *testing.T) {
 		t.Fatalf("guess replaced the edited port: %s", o.imapPort)
 	}
 }
+
+// Connecting before the new address's detection finished must wait for it.
+func TestOnboardingOtherTileConnectWaitsForDetection(t *testing.T) {
+	h := newHarness(t)
+	o := h.firstRun()
+	h.click("其他 IMAP 邮箱")
+
+	o.email, o.secret = "a@corp.example", "secret"
+	o.detectedSrc = auth.SourceMX
+	o.found(auth.Provider{ID: "other", IMAP: auth.Server{Host: "stale.invalid", Port: 993, Security: core.SecurityTLS},
+		SMTP: auth.Server{Host: "stale.invalid", Port: 465, Security: core.SecurityTLS}}, o.email)
+
+	o.email = "a@no-mx.invalid"
+	o.connect()
+	h.settle()
+	if o.imapHost != "" || o.smtpHost != "" {
+		t.Fatalf("connected with the previous address's servers: %q / %q", o.imapHost, o.smtpHost)
+	}
+	if o.invalid == "" {
+		t.Fatal("no servers left, but the check was not refused")
+	}
+}

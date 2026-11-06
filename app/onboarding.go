@@ -384,8 +384,8 @@ func (o *onboarding) input() core.AccountInput {
 // connect checks the account; a pass goes on to the done step, a failure
 // stays to show which step failed.
 func (o *onboarding) connect() {
-	if feishuOrLark(o.prov) && o.detectedFor != o.email && validEmail(o.email) {
-		o.detect(o.email, func(auth.Provider) { o.connect() }) // Feishu or Lark first
+	if (feishuOrLark(o.prov) || o.prov.ID == "other" && o.askEmail) && o.detectedFor != o.email && validEmail(o.email) {
+		o.detect(o.email, func(auth.Provider) { o.connect() }) // Feishu or Lark, or this address's servers, first
 		return
 	}
 	from := o.step
