@@ -562,6 +562,14 @@ func (s *Service) lockAccount(ctx context.Context, id int64) (unlock func(), err
 	}
 }
 
+// lockWanted says whether the account's lock, just released, has been taken: a
+// waiter is handed it at once.
+func (s *Service) lockWanted(id int64) bool {
+	s.locksMu.Lock()
+	defer s.locksMu.Unlock()
+	return len(s.locks[id]) > 0
+}
+
 // SyncNow connects to the account's IMAP server, pushes queued local changes,
 // sends and files the outbox, and fetches new mail. Calls for the same account
 // run one at a time.

@@ -214,8 +214,10 @@ func (s *Service) ruleFiles(ctx context.Context, runID int64, a RuleAction, msgI
 		if err != nil {
 			return nil, "", err
 		}
+		fetcher := s.newAttachmentFetcher(ctx)
+		defer fetcher.close()
 		for _, v := range rows.Values {
-			p, _, err := s.GetAttachment(ctx, store.Int(v[0]))
+			p, _, err := fetcher.get(store.Int(v[0]))
 			if f := fetchFailure(err); f != "" {
 				return paths, f, nil
 			}

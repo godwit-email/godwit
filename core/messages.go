@@ -415,8 +415,9 @@ func (s *Service) GetMessage(ctx context.Context, id int64, loadRemoteImages boo
 	if err != nil {
 		return Message{}, err
 	}
-	var images []AttachmentInfo
-	cids := map[int64]string{}
+	inline := map[string]gomail.Attachment{}
+	fetcher := s.newAttachmentFetcher(ctx)
+	defer fetcher.close()
 	for _, a := range ar.Values {
 		info := AttachmentInfo{ID: store.Int(a[0]), Filename: store.Str(a[1]), ContentType: store.Str(a[2]),
 			Size: int(store.Int(a[3])), Inline: store.Int(a[4]) != 0}
@@ -425,26 +426,15 @@ func (s *Service) GetMessage(ctx context.Context, id int64, loadRemoteImages boo
 		if raw == "" || cid == "" || !strings.HasPrefix(info.ContentType, "image/") || !strings.Contains(raw, cid) {
 			continue
 		}
-		images = append(images, info)
-		cids[info.ID] = cid
-	}
-	inline := map[string]gomail.Attachment{}
-	if len(images) > 0 {
-		ids := make([]int64, len(images))
-		for i, info := range images {
-			ids[i] = info.ID
-		}
-		// An image it could not get stays blocked; the message is still readable.
-		files, _ := s.inlineImages(ctx, ids)
-		if ctx.Err() != nil {
-			return Message{}, ctx.Err()
-		}
-		for _, info := range images {
-			if path, ok := files[info.ID]; ok {
-				if data, err := readFile(path); err == nil {
-					inline[cids[info.ID]] = gomail.Attachment{Data: data, ContentType: info.ContentType}
-				}
+		path, _, err := fetcher.get(info.ID)
+		if err != nil {
+			if ctx.Err() != nil {
+				return Message{}, ctx.Err()
 			}
+			continue // image stays blocked; the message is still readable
+		}
+		if data, err := readFile(path); err == nil {
+			inline[cid] = gomail.Attachment{Data: data, ContentType: info.ContentType}
 		}
 	}
 	if raw != "" {

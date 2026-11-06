@@ -138,6 +138,17 @@ func TestForwardCarriesAttachments(t *testing.T) {
 	assert.Equal(t, "%PDF-1.4\n", string(b))
 }
 
+func TestForwardDownloadsAttachmentsOverOneLogin(t *testing.T) {
+	e := newSendEnv(t, false)
+	e.put(t, "INBOX", withAttachments("f@x", "hi", 3))
+	e.sync(t)
+	before := e.im.Logins()
+	d, err := e.s.NewDraft(bg, e.acc.ID, "forward", e.idOf(t, "f@x"))
+	require.NoError(t, err)
+	assert.Len(t, d.Attachments, 3)
+	assert.Equal(t, before+1, e.im.Logins())
+}
+
 func TestSendHTMLWithBcc(t *testing.T) {
 	e := newSendEnv(t, false)
 	e.put(t, "INBOX", eml("o@x", "Bob <bob@example.com>", "alice@example.com", "plan", day, "the plan"))

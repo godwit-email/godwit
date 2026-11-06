@@ -174,7 +174,7 @@ func (a *App) notificationRoute(ctx context.Context, id string) (Route, bool, er
 	}
 	switch kind {
 	case "message":
-		m, err := a.svc.GetMessage(ctx, n, false)
+		m, err := a.svc.GetMessageText(ctx, n) // no inline image is downloaded for a route
 		if err != nil {
 			return Route{}, false, err
 		}

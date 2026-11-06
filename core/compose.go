@@ -222,8 +222,10 @@ func (s *Service) copyAttachments(ctx context.Context, draftID, messageID int64)
 	if err != nil {
 		return err
 	}
+	fetcher := s.newAttachmentFetcher(ctx)
+	defer fetcher.close()
 	for _, r := range rows.Values {
-		path, info, err := s.GetAttachment(ctx, store.Int(r[0]))
+		path, info, err := fetcher.get(store.Int(r[0]))
 		if err != nil {
 			return err
 		}

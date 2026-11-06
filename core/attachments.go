@@ -9,6 +9,7 @@ import (
 	"mime/quotedprintable"
 	"os"
 	"path/filepath"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -28,6 +29,9 @@ const (
 
 // attachLimit is MaxMessageBytes; a variable so tests can lower it.
 var attachLimit int64 = MaxMessageBytes
+
+// cacheLimit is MaxCacheBytes; a variable so tests can lower it.
+var cacheLimit int64 = MaxCacheBytes
 
 var (
 	ErrTooLarge       = errors.New("attachment exceeds the size limit")
@@ -81,31 +85,72 @@ func (s *Service) cached(ctx context.Context, a attRow) (string, bool, error) {
 
 // GetAttachment returns the attachment's cached file, downloading it first if needed.
 func (s *Service) GetAttachment(ctx context.Context, attachmentID int64) (string, AttachmentInfo, error) {
-	ctx, end, err := s.begin(ctx, 0)
+	f := s.newAttachmentFetcher(ctx)
+	path, info, err := f.get(attachmentID)
+	if cerr := f.close(); err == nil {
+		err = cerr
+	}
+	return path, info, err
+}
+
+// attachmentFetcher gets attachments one after another over one connection: a
+// login per file made a message with a few signature logos take seconds to open.
+// It holds the account lock only inside get, so whoever waits for the lock still
+// goes between two files, and it hangs up when someone does: the lock's holder
+// is the account's one working connection. close must be called.
+type attachmentFetcher struct {
+	s     *Service
+	ctx   context.Context
+	end   func()  // ends the call begun by the first get
+	saved []int64 // downloaded here; close evicts around them
+
+	c              *imapclient.Client // nil while hung up
+	release, abort func()
+	folder         string // selected on c
+	uidValidity    uint32
+
+	dialFails int // in a row
+	dialErr   error
+}
+
+func (s *Service) newAttachmentFetcher(ctx context.Context) *attachmentFetcher {
+	return &attachmentFetcher{s: s, ctx: ctx}
+}
+
+func (f *attachmentFetcher) get(id int64) (string, AttachmentInfo, error) {
+	s := f.s
+	if f.end == nil {
+		ctx, end, err := s.begin(f.ctx, 0)
+		if err != nil {
+			return "", AttachmentInfo{}, err
+		}
+		f.ctx, f.end = ctx, end
+	}
+	a, err := s.loadAttachment(f.ctx, id)
 	if err != nil {
 		return "", AttachmentInfo{}, err
 	}
-	defer end()
-	a, err := s.loadAttachment(ctx, attachmentID)
-	if err != nil {
+	if err := s.bind(f.ctx, a.accountID); err != nil {
 		return "", AttachmentInfo{}, err
 	}
-	if err := s.bind(ctx, a.accountID); err != nil {
-		return "", AttachmentInfo{}, err
-	}
-	if p, ok, err := s.cached(ctx, a); ok || err != nil {
+	if p, ok, err := s.cached(f.ctx, a); ok || err != nil {
 		return p, a.info, err
 	}
-	unlock, err := s.lockAccount(ctx, a.accountID)
+	unlock, err := s.lockAccount(f.ctx, a.accountID)
 	if err != nil {
 		return "", AttachmentInfo{}, err
 	}
-	defer unlock()
+	defer func() {
+		unlock()
+		if s.lockWanted(a.accountID) {
+			f.hangUp()
+		}
+	}()
 	// The row may have changed (cached, moved, deleted) while we waited for the lock.
-	if a, err = s.loadAttachment(ctx, attachmentID); err != nil {
+	if a, err = s.loadAttachment(f.ctx, id); err != nil {
 		return "", AttachmentInfo{}, err
 	}
-	if p, ok, err := s.cached(ctx, a); ok || err != nil {
+	if p, ok, err := s.cached(f.ctx, a); ok || err != nil {
 		return p, a.info, err
 	}
 	info := a.info
@@ -115,12 +160,84 @@ func (s *Service) GetAttachment(ctx context.Context, attachmentID int64) (string
 	if !a.onServer {
 		return "", info, ErrNotOnServerYet
 	}
-	data, err := s.download(ctx, a)
+	data, err := f.fetch(a)
+	var path string
+	if err == nil {
+		path, err = s.saveAttachment(f.ctx, a, data)
+	}
+	if errors.Is(err, ErrTooLarge) {
+		// The row understated it: the next open need not download up to the limit again.
+		s.db.Execute(f.ctx, "UPDATE attachments SET size = ? WHERE id = ?", attachLimit+1, id)
+		return "", info, err
+	}
 	if err != nil {
 		return "", info, err
 	}
-	path, err := s.saveAttachment(ctx, a, data)
-	return path, info, err
+	f.saved = append(f.saved, id)
+	return path, info, nil
+}
+
+// fetch downloads a's part. A failure hangs up, as it may have left the
+// connection unusable; on a kept connection, which may just have gone stale, a
+// gets one more try on a new one.
+func (f *attachmentFetcher) fetch(a attRow) ([]byte, error) {
+	for {
+		reused := f.c != nil
+		data, err := f.fetchOnce(a)
+		if err == nil {
+			return data, nil
+		}
+		if f.ctx.Err() != nil {
+			return nil, f.ctx.Err()
+		}
+		f.hangUp()
+		if !reused || errors.Is(err, ErrTooLarge) {
+			return nil, err
+		}
+	}
+}
+
+func (f *attachmentFetcher) fetchOnce(a attRow) ([]byte, error) {
+	if f.c == nil {
+		// A refused login or a server that stays away is not worth a dial per file.
+		if f.dialFails == 2 || errors.Is(f.dialErr, conn.ErrAuthFailed) {
+			return nil, f.dialErr
+		}
+		c, release, abort, err := f.s.dialDownload(f.ctx, a.accountID)
+		if err != nil {
+			f.dialFails, f.dialErr = f.dialFails+1, err
+			return nil, err
+		}
+		f.c, f.release, f.abort, f.dialFails = c, release, abort, 0
+	}
+	if f.folder != a.folder || f.uidValidity != a.uidValidity {
+		if err := selectFolder(f.c, a.folder, a.uidValidity); err != nil {
+			return nil, err
+		}
+		f.folder, f.uidValidity = a.folder, a.uidValidity
+	}
+	return fetchSection(f.c, f.abort, a.uid, a.part, a.encoding)
+}
+
+func (f *attachmentFetcher) hangUp() {
+	if f.c != nil {
+		f.release()
+		f.c, f.folder, f.uidValidity = nil, "", 0
+	}
+}
+
+// close hangs up and brings the cache back within budget, once for all the files
+// saved: eviction scans the whole cache.
+func (f *attachmentFetcher) close() error {
+	f.hangUp()
+	if f.end == nil {
+		return nil
+	}
+	defer f.end()
+	if len(f.saved) == 0 {
+		return nil
+	}
+	return f.s.evict(f.ctx, cacheLimit, f.saved...)
 }
 
 // saveAttachment writes a's downloaded data to the cache and records it. The
@@ -147,92 +264,7 @@ func (s *Service) saveAttachment(ctx context.Context, a attRow, data []byte) (st
 		os.Remove(path)
 		return "", err
 	}
-	return path, s.evict(ctx, MaxCacheBytes, a.info.ID)
-}
-
-// inlineImages returns the cached files of one message's attachments ids,
-// downloading the missing ones under one lock and over one connection: a login
-// per image made a message with a few signature logos take seconds to open.
-// One that cannot be had is left out, so its image stays blocked; err is only
-// for a failed connection or an ended ctx.
-func (s *Service) inlineImages(ctx context.Context, ids []int64) (map[int64]string, error) {
-	ctx, end, err := s.begin(ctx, 0)
-	if err != nil {
-		return nil, err
-	}
-	defer end()
-	files := map[int64]string{}
-	var accountID int64
-	var missing []int64
-	for _, id := range ids {
-		a, err := s.loadAttachment(ctx, id)
-		if err != nil {
-			continue
-		}
-		if accountID == 0 {
-			if err := s.bind(ctx, a.accountID); err != nil {
-				return files, err
-			}
-			accountID = a.accountID
-		}
-		if p, ok, err := s.cached(ctx, a); err == nil && ok {
-			files[id] = p
-		} else if err == nil {
-			missing = append(missing, id)
-		}
-	}
-	if len(missing) == 0 {
-		return files, ctx.Err()
-	}
-	unlock, err := s.lockAccount(ctx, accountID)
-	if err != nil {
-		return files, err
-	}
-	defer unlock()
-	var todo []attRow
-	for _, id := range missing {
-		// The row may have changed (cached, moved, deleted) while we waited for the lock.
-		a, err := s.loadAttachment(ctx, id)
-		if err != nil {
-			continue
-		}
-		if p, ok, err := s.cached(ctx, a); err == nil && ok {
-			files[id] = p
-		} else if err == nil && a.onServer && int64(a.info.Size) <= attachLimit {
-			todo = append(todo, a)
-		}
-	}
-	if len(todo) == 0 {
-		return files, ctx.Err()
-	}
-	c, release, abort, err := s.dialDownload(ctx, accountID)
-	if err != nil {
-		return files, err
-	}
-	defer release()
-	var selected *attRow
-	for i, a := range todo {
-		if selected == nil || selected.folder != a.folder || selected.uidValidity != a.uidValidity {
-			if err := selectFolder(c, a.folder, a.uidValidity); err != nil {
-				return files, err
-			}
-			selected = &todo[i]
-		}
-		data, err := fetchSection(c, abort, a.uid, a.part, a.encoding)
-		if ctx.Err() != nil {
-			return files, ctx.Err()
-		}
-		if errors.Is(err, ErrTooLarge) {
-			break // abort closed the connection
-		}
-		if err != nil {
-			continue
-		}
-		if p, err := s.saveAttachment(ctx, a, data); err == nil {
-			files[a.info.ID] = p
-		}
-	}
-	return files, ctx.Err()
+	return path, nil
 }
 
 // GetRawMessage downloads the message's full original from the server, for a
@@ -370,10 +402,10 @@ func fetchSection(c *imapclient.Client, abort func(), uid imap.UID, part, encodi
 }
 
 // evict deletes the least recently used cached files until the cache fits max.
-// keep is never evicted. cache_path is cleared before the file is removed, so a
+// keep are never evicted. cache_path is cleared before the file is removed, so a
 // file that cannot be removed is merely unreferenced (the orphan sweep collects it)
 // and its error is returned.
-func (s *Service) evict(ctx context.Context, max int64, keep int64) error {
+func (s *Service) evict(ctx context.Context, max int64, keep ...int64) error {
 	rows, err := s.db.Query(ctx, "SELECT id, cache_path FROM attachments WHERE cache_path IS NOT NULL ORDER BY last_used, id")
 	if err != nil {
 		return err
@@ -392,7 +424,7 @@ func (s *Service) evict(ctx context.Context, max int64, keep int64) error {
 			break
 		}
 		id := store.Int(r[0])
-		if id == keep {
+		if slices.Contains(keep, id) {
 			continue
 		}
 		if _, err := s.db.Execute(ctx, "UPDATE attachments SET cache_path = NULL WHERE id = ?", id); err != nil {
