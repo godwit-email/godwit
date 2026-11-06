@@ -1007,10 +1007,14 @@ func TestOnboardingOtherTileUsernameFollowsDetection(t *testing.T) {
 	if o.username != "a" {
 		t.Fatalf("username = %q, want a", o.username)
 	}
+	o.imapPort = "1143"
 	found.Username = "b"
 	o.found(found, "b@web.de") // same servers
 	if o.username != "b" {
 		t.Fatalf("username = %q, want b", o.username)
+	}
+	if o.imapPort != "1143" {
+		t.Fatalf("imap port = %q, a new username must not reset it", o.imapPort)
 	}
 	o.username = "typed"
 	found.Username = "c"

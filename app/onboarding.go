@@ -247,10 +247,11 @@ func (o *onboarding) found(p auth.Provider, email string) {
 		if o.detectedSrc == auth.SourceGuess {
 			p = otherProvider // the servers found for the address typed before are not this one's
 		}
-		if p.IMAP != o.prov.IMAP || p.SMTP != o.prov.SMTP || p.Username != o.foundUsername {
+		if p.IMAP != o.prov.IMAP || p.SMTP != o.prov.SMTP {
 			o.prov.IMAP, o.prov.SMTP = p.IMAP, p.SMTP
 			o.setServers(p)
 		}
+		o.setUsername(p.Username)
 	}
 }
 
@@ -261,10 +262,14 @@ func (o *onboarding) setServers(p auth.Provider) {
 	if p.IMAP.Host == "" {
 		o.imapPort, o.imapSec, o.smtpPort, o.smtpSec = "993", core.SecurityTLS, "465", core.SecurityTLS
 	}
-	if o.username == o.foundUsername { // what the user typed stays
-		o.username = p.Username
+}
+
+// setUsername fills the username with the detected one; what the user typed stays.
+func (o *onboarding) setUsername(u string) {
+	if o.username == o.foundUsername {
+		o.username = u
 	}
-	o.foundUsername = p.Username
+	o.foundUsername = u
 }
 
 // next goes on from the address to its provider's sign-in.
@@ -295,6 +300,7 @@ func (o *onboarding) choose(p auth.Provider) {
 	}
 	o.prov, o.tab = p, 0
 	o.setServers(p)
+	o.setUsername(p.Username)
 	o.manual = manualTile
 	o.askEmail = !validEmail(o.email)
 	o.focusEmail = false
