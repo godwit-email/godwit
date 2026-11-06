@@ -47,6 +47,7 @@ func Detect(ctx context.Context, r Resolver, email string) (Provider, Source, er
 		}
 	}
 
+	other := Provider{ID: "other", Name: domain, Login: "password"}
 	if mxs, err := r.LookupMX(ctx, domain); err == nil && len(mxs) > 0 {
 		sort.SliceStable(mxs, func(i, j int) bool { return mxs[i].Pref < mxs[j].Pref })
 		host := strings.ToLower(mxs[0].Host)
@@ -66,9 +67,12 @@ func Detect(ctx context.Context, r Resolver, email string) (Provider, Source, er
 		if p, ok := ByID(id); ok {
 			return p, SourceMX, nil
 		}
+		if imap, smtp, ok := mxServers(host); ok {
+			other.IMAP, other.SMTP = imap, smtp
+			return other, SourceMX, nil
+		}
 	}
 
-	other := Provider{ID: "other", Name: domain, Login: "password"}
 	if imap, ok := lookupSRV(ctx, r, "imaps", domain); ok {
 		other.IMAP = imap
 		other.SMTP, ok = lookupSRV(ctx, r, "submissions", domain)
@@ -102,6 +106,35 @@ func lookupSRV(ctx context.Context, r Resolver, service, domain string) (Server,
 		return Server{host, int(s.Port), sec}, true
 	}
 	return Server{}, false
+}
+
+// mxServers returns the IMAP and SMTP servers for hosted corporate mail
+// providers whose custom-domain CNAMEs do not carry the customer's domain on
+// their TLS certificates.
+func mxServers(host string) (imap, smtp Server, ok bool) {
+	switch {
+	case inDomain(host, "icoremail.net."):
+		return tls("imap.icoremail.net"), smtps("smtp.icoremail.net"), true
+	case inDomain(host, "mxhichina.com."), inDomain(host, "qiye.aliyun.com."):
+		return tls("imap.qiye.aliyun.com"), smtps("smtp.qiye.aliyun.com"), true
+	case inDomain(host, "qiye.163.com."),
+		inDomain(host, "mxmail.netease.com.") && (strings.HasPrefix(host, "qiye163mx") || strings.HasPrefix(host, "hzmx")):
+		return tls("imap.qiye.163.com"), smtps("smtp.qiye.163.com"), true
+	case inDomain(host, "ym.163.com."):
+		return tls("imap.ym.163.com"), smtps("smtp.ym.163.com"), true
+	case inDomain(host, "263xmail.com."):
+		return tls("imap.263.net"), smtps("smtp.263.net"), true
+	case inDomain(host, "sina.net."), inDomain(host, "entmail.sina.com."):
+		return tls("imap.sina.net"), smtps("smtp.sina.net"), true
+	case inDomain(host, "messagingengine.com."):
+		return tls("imap.fastmail.com"), smtps("smtp.fastmail.com"), true
+	}
+	for _, zoho := range []string{"zoho.com", "zoho.com.cn", "zoho.eu", "zoho.in", "zoho.com.au", "zoho.jp"} {
+		if inDomain(host, zoho+".") {
+			return tls("imappro." + zoho), smtps("smtppro." + zoho), true
+		}
+	}
+	return Server{}, Server{}, false
 }
 
 // inDomain reports whether host is domain or a subdomain of it (label boundary).

@@ -55,6 +55,7 @@ type onboarding struct {
 
 	email, emailErr string
 	detected        auth.Provider
+	detectedSrc     auth.Source
 	detectedFor     string // the address detected is for
 	detectStop      func()
 
@@ -210,9 +211,10 @@ func (o *onboarding) detect(email string, then func(auth.Provider)) {
 	}
 	svc, gen := o.a.svc, o.gen
 	var p auth.Provider
+	var src auth.Source
 	o.a.do(func(ctx context.Context) error {
 		var err error
-		p, _, err = svc.DetectProvider(ctx, strings.TrimSpace(email))
+		p, src, err = svc.DetectProvider(ctx, strings.TrimSpace(email))
 		return err
 	}, func(err error) {
 		if gen != o.gen || email != o.email {
@@ -222,6 +224,7 @@ func (o *onboarding) detect(email string, then func(auth.Provider)) {
 			o.emailErr = humanize(err)
 			return
 		}
+		o.detectedSrc = src
 		o.found(p, email)
 		if then != nil {
 			then(p)
@@ -230,13 +233,20 @@ func (o *onboarding) detect(email string, then func(auth.Provider)) {
 }
 
 // found records p as email's provider. From the 飞书/Lark tile, it also says
-// which of the two the sign-in is, unless the servers were edited.
+// which of the two the sign-in is, unless the servers were edited; from the
+// 其他 IMAP tile, a non-guess match fills in the servers unless edited.
 func (o *onboarding) found(p auth.Provider, email string) {
 	o.detected, o.detectedFor = p, email
 	if o.step == stepPassword && feishuOrLark(o.prov) && feishuOrLark(p) && p.ID != o.prov.ID &&
 		o.imapHost == o.prov.IMAP.Host && o.smtpHost == o.prov.SMTP.Host {
 		o.prov = p
 		o.imapHost, o.smtpHost = p.IMAP.Host, p.SMTP.Host
+	}
+	if o.step == stepPassword && o.prov.ID == "other" && o.detectedSrc != auth.SourceGuess && p.IMAP.Host != "" &&
+		o.imapHost == o.prov.IMAP.Host && o.smtpHost == o.prov.SMTP.Host {
+		o.prov.IMAP, o.prov.SMTP = p.IMAP, p.SMTP
+		o.imapHost, o.imapPort, o.imapSec = p.IMAP.Host, strconv.Itoa(p.IMAP.Port), p.IMAP.Security
+		o.smtpHost, o.smtpPort, o.smtpSec = p.SMTP.Host, strconv.Itoa(p.SMTP.Port), p.SMTP.Security
 	}
 }
 
@@ -256,8 +266,12 @@ func (o *onboarding) next() {
 
 // choose takes p's servers and goes to its sign-in.
 func (o *onboarding) choose(p auth.Provider) {
+	manualTile := p.IMAP.Host == ""
 	if feishuOrLark(p) && o.detectedFor == o.email && feishuOrLark(o.detected) {
 		p = o.detected // the 飞书/Lark tile for an address already found
+	}
+	if manualTile && o.detectedFor == o.email && o.detectedSrc != auth.SourceGuess && o.detected.IMAP.Host != "" {
+		p.IMAP, p.SMTP = o.detected.IMAP, o.detected.SMTP
 	}
 	if p.ID != o.prov.ID { // what was typed or imported is for the provider it was given to
 		o.secret, o.client = "", clientForm{}
@@ -268,7 +282,7 @@ func (o *onboarding) choose(p auth.Provider) {
 	if p.IMAP.Host == "" {
 		o.imapPort, o.imapSec, o.smtpPort, o.smtpSec = "993", core.SecurityTLS, "465", core.SecurityTLS
 	}
-	o.manual = p.IMAP.Host == ""
+	o.manual = manualTile
 	o.askEmail = !validEmail(o.email)
 	o.focusEmail = false
 	if p.Login == "oauth" {
@@ -765,7 +779,7 @@ func (o *onboarding) passwordView(c *ui.Context) {
 				placeholder = "you@" + o.prov.Domains[0]
 			}
 			in := kit.Input(c, &o.email, kit.InputOpts{Placeholder: placeholder}).Height(inputHeight(c))
-			if in.Changed() && feishuOrLark(o.prov) {
+			if in.Changed() && (feishuOrLark(o.prov) || o.prov.ID == "other") {
 				o.scheduleDetect()
 			}
 			if o.focusEmail {

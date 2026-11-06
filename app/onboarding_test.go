@@ -883,3 +883,34 @@ func TestOnboardingFeishuLarkTileAfterDetection(t *testing.T) {
 		t.Fatalf("tile chose %s on %s for a Lark address", o.prov.ID, o.imapHost)
 	}
 }
+
+func TestOnboardingOtherTileFillsDetectedServers(t *testing.T) {
+	h := newHarness(t)
+	o := h.firstRun()
+	h.click("其他 IMAP 邮箱")
+	o.email = "a@corp.example"
+
+	// A blind guess leaves the manual fields empty.
+	o.detectedSrc = auth.SourceGuess
+	o.found(auth.Provider{ID: "other", IMAP: auth.Server{Host: "imap.corp.example", Port: 993, Security: core.SecurityTLS},
+		SMTP: auth.Server{Host: "smtp.corp.example", Port: 465, Security: core.SecurityTLS}}, o.email)
+	if o.imapHost != "" || o.smtpHost != "" {
+		t.Fatalf("guess filled manual hosts: %q / %q", o.imapHost, o.smtpHost)
+	}
+
+	// An MX-detected corporate host fills the manual fields unless edited.
+	o.detectedSrc = auth.SourceMX
+	o.found(auth.Provider{ID: "other", IMAP: auth.Server{Host: "imap.icoremail.net", Port: 993, Security: core.SecurityTLS},
+		SMTP: auth.Server{Host: "smtp.icoremail.net", Port: 465, Security: core.SecurityTLS}}, o.email)
+	if o.imapHost != "imap.icoremail.net" || o.smtpHost != "smtp.icoremail.net" || !o.manual {
+		t.Fatalf("MX hosts not filled: %q / %q (manual=%v)", o.imapHost, o.smtpHost, o.manual)
+	}
+
+	o.smtpHost = "smtp.custom.example"
+	o.found(auth.Provider{ID: "other", IMAP: auth.Server{Host: "imap.qiye.aliyun.com", Port: 993, Security: core.SecurityTLS},
+		SMTP: auth.Server{Host: "smtp.qiye.aliyun.com", Port: 465, Security: core.SecurityTLS}}, o.email)
+	if o.imapHost != "imap.icoremail.net" || o.smtpHost != "smtp.custom.example" {
+		t.Fatalf("edited servers were replaced: %q / %q", o.imapHost, o.smtpHost)
+	}
+}
+
