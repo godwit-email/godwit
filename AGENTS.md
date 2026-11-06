@@ -12,6 +12,10 @@ The five default triage labels: `needs-triage`, `needs-info`, `ready-for-agent`,
 
 Single-context: one `GLOSSARY.md` and `docs/adr/` at the repo root. See `docs/agents/domain.md`.
 
+### Code review
+
+Before reviewing code changes or re-reviewing fixes, read [docs/agents/code-review.md](docs/agents/code-review.md).
+
 ## Model-facing interfaces
 
 When adding or widening anything a model or extension can call (a Wit tool, a plugin host API or permission, a `godwit mcp` tool, an `mcp`-role method), read ADR 0003 and 0004 first, then hold the change to these rules. Terms follow `GLOSSARY.md`.
