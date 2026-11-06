@@ -15,15 +15,18 @@ import (
 // background image.
 const bgAttr = "data-bg"
 
+// cidPrefix starts the src of an inline image not yet read (mail.SanitizeLazy).
+const cidPrefix = "cid:"
+
 // prepareBody readies safe, a sanitized body (mail.Sanitize), for the
 // reader page: every data: image must be a PNG, JPEG, GIF or WebP within the
 // per-image limits and what budget has left (count, bytes, pixels); one that
 // is not loses its src (its alt stays). The structure is not limited: the
 // browser renders the whole body.
 //
-// Each remote image (an http(s) src, a data-bg) is pointed at the image
-// proxy, godwit-img://m<message>/<token>; tokens maps each token to its
-// URL. An <img> with no size gets the one dims knows (the image is cached),
+// Each remote image (an http(s) src, a data-bg) and inline image not yet read
+// (a cid: src) is pointed at the image proxy, godwit-img://m<message>/<token>;
+// tokens maps each token to its URL or its cid:<id>. An <img> with no size gets the one dims knows (the image is cached),
 // so its space is kept before it loads. A body needing no change comes back
 // as it was.
 func prepareBody(safe string, budget *imagefetch.Budget, message int64,
@@ -78,6 +81,10 @@ func (p *preparer) proxy(src string) string {
 		}
 	}
 	p.tokens[token] = src
+	return p.url(token)
+}
+
+func (p *preparer) url(token string) string {
 	p.changed = true
 	return (&url.URL{Scheme: ImageScheme, Host: "m" + strconv.FormatInt(p.message, 10), Path: "/" + token}).String()
 }
@@ -91,6 +98,11 @@ func (p *preparer) image(img *html.Node) {
 	}
 	src := img.Attr[i].Val
 	switch lower := strings.ToLower(src); {
+	case strings.HasPrefix(src, cidPrefix):
+		// Budgeted as served (Reader.chargeInline): its size is not known yet.
+		token := imagecache.Key(src)
+		p.tokens[token] = src
+		img.Attr[i].Val = p.url(token)
 	case strings.HasPrefix(lower, "http://"), strings.HasPrefix(lower, "https://"):
 		if u := p.proxy(src); u != "" {
 			img.Attr[i].Val = u

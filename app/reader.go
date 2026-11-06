@@ -124,7 +124,7 @@ type msgBody struct {
 
 func newReader(p *mailPage) *reader {
 	return &reader{p: p, open: map[int64]bool{}, bodies: map[int64]*msgBody{}, ai: map[int64]*msgAI{},
-		getThread: p.a.svc.GetThread, getMessage: p.a.svc.GetMessage, getAvatar: p.a.svc.SenderAvatar, runSkill: p.a.svc.RunSkill,
+		getThread: p.a.svc.GetThread, getMessage: p.a.svc.GetMessageLazyImages, getAvatar: p.a.svc.SenderAvatar, runSkill: p.a.svc.RunSkill,
 		cardsFn: p.a.svc.PluginCards, tagsFn: p.a.svc.PluginTags, quickFn: p.a.svc.QuickReplies, gistFn: p.a.svc.MessageGist, skillsFn: p.a.svc.ListSkills, actionsFn: p.a.svc.ListActions}
 }
 

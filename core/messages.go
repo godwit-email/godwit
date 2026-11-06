@@ -375,7 +375,6 @@ func (s *Service) RebuildSearchIndex(ctx context.Context) error {
 	return err
 }
 
-// GetMessage returns the message with sanitized HTML. Inline images are
 // MessageExists says whether message id is still stored: a row lookup, nothing loaded.
 func (s *Service) MessageExists(ctx context.Context, id int64) (bool, error) {
 	rows, err := s.db.Query(ctx, "SELECT 1 FROM messages WHERE id = ?", id)
@@ -398,8 +397,63 @@ func (s *Service) StoredHTML(ctx context.Context, id int64) (string, error) {
 	return store.Str(rows.Values[0][0]), nil
 }
 
+// GetMessage returns the message with sanitized HTML. Inline images are
 // downloaded first if needed and embedded.
 func (s *Service) GetMessage(ctx context.Context, id int64, loadRemoteImages bool) (Message, error) {
+	return s.readMessage(ctx, id, loadRemoteImages, false)
+}
+
+// GetMessageLazyImages is GetMessage without touching the network: an inline
+// image keeps its src as cid:<id>, for InlineImages to fill in, so the reader
+// shows the body before its images have downloaded.
+func (s *Service) GetMessageLazyImages(ctx context.Context, id int64, loadRemoteImages bool) (Message, error) {
+	return s.readMessage(ctx, id, loadRemoteImages, true)
+}
+
+// InlineImages calls each with the inline images message id's body shows,
+// downloading the missing ones in turn over one connection. One that cannot be
+// had is left out, so its image stays blocked; the error is for the database or
+// an ended ctx.
+func (s *Service) InlineImages(ctx context.Context, id int64, each func(cid string, a gomail.Attachment)) error {
+	rows, err := s.db.Query(ctx, "SELECT body_html FROM messages WHERE id = ?", id)
+	if err != nil {
+		return err
+	}
+	if len(rows.Values) == 0 {
+		return fmt.Errorf("message %d not found", id)
+	}
+	raw := store.Str(rows.Values[0][0])
+	ar, err := s.db.Query(ctx, "SELECT id, content_type, content_id FROM attachments WHERE message_id = ? ORDER BY id", id)
+	if err != nil {
+		return err
+	}
+	fetcher := s.newAttachmentFetcher(ctx)
+	defer fetcher.close()
+	for _, a := range ar.Values {
+		contentType, cid := store.Str(a[1]), store.Str(a[2])
+		if !showsInlineImage(raw, cid, contentType) {
+			continue
+		}
+		path, _, err := fetcher.get(store.Int(a[0]))
+		if err != nil {
+			if ctx.Err() != nil {
+				return ctx.Err()
+			}
+			continue // image stays blocked; the message is still readable
+		}
+		if data, err := readFile(path); err == nil {
+			each(cid, gomail.Attachment{Data: data, ContentType: contentType})
+		}
+	}
+	return ctx.Err()
+}
+
+// showsInlineImage says whether the body raw shows an attachment as an inline image.
+func showsInlineImage(raw, cid, contentType string) bool {
+	return raw != "" && cid != "" && strings.HasPrefix(contentType, "image/") && strings.Contains(raw, cid)
+}
+
+func (s *Service) readMessage(ctx context.Context, id int64, loadRemoteImages, lazy bool) (Message, error) {
 	rows, err := s.db.Query(ctx, "SELECT "+msgCols+", m.reply_to, m.body_text, m.body_html, m.body_truncated, "+inJunk+" FROM messages m LEFT JOIN folders f ON f.id = m.folder_id WHERE m.id = ?", id)
 	if err != nil {
 		return Message{}, err
@@ -416,26 +470,22 @@ func (s *Service) GetMessage(ctx context.Context, id int64, loadRemoteImages boo
 		return Message{}, err
 	}
 	inline := map[string]gomail.Attachment{}
-	fetcher := s.newAttachmentFetcher(ctx)
-	defer fetcher.close()
 	for _, a := range ar.Values {
 		info := AttachmentInfo{ID: store.Int(a[0]), Filename: store.Str(a[1]), ContentType: store.Str(a[2]),
 			Size: int(store.Int(a[3])), Inline: store.Int(a[4]) != 0}
 		msg.Attachments = append(msg.Attachments, info)
-		cid := store.Str(a[5])
-		if raw == "" || cid == "" || !strings.HasPrefix(info.ContentType, "image/") || !strings.Contains(raw, cid) {
-			continue
+		if cid := store.Str(a[5]); lazy && showsInlineImage(raw, cid, info.ContentType) {
+			inline[cid] = gomail.Attachment{}
 		}
-		path, _, err := fetcher.get(info.ID)
-		if err != nil {
-			if ctx.Err() != nil {
-				return Message{}, ctx.Err()
-			}
-			continue // image stays blocked; the message is still readable
+	}
+	if lazy {
+		if raw != "" {
+			msg.HTML, msg.RemoteImagesBlocked, msg.TrackersBlocked = gomail.SanitizeLazy(raw, inline, loadRemoteImages)
 		}
-		if data, err := readFile(path); err == nil {
-			inline[cid] = gomail.Attachment{Data: data, ContentType: info.ContentType}
-		}
+		return msg, nil
+	}
+	if err := s.InlineImages(ctx, id, func(cid string, a gomail.Attachment) { inline[cid] = a }); err != nil {
+		return Message{}, err
 	}
 	if raw != "" {
 		msg.HTML, msg.RemoteImagesBlocked, msg.TrackersBlocked = gomail.Sanitize(raw, inline, loadRemoteImages)

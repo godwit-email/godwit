@@ -375,6 +375,31 @@ func TestGetMessageInlineImagesOneLogin(t *testing.T) {
 	assert.Equal(t, before+1, e.im.Logins())
 }
 
+// The lazy form reads no image and needs no connection; InlineImages then gets them
+// all over one.
+func TestGetMessageLazyImagesThenInlineImages(t *testing.T) {
+	e := newSyncEnv(t)
+	e.put(t, "INBOX", inlineImagesMail([]string{"a", "b", "c"}, nil))
+	e.sync(t)
+	id := e.rows(t, "SELECT id FROM messages")[0][0].(int64)
+	before := e.im.Logins()
+	m, err := e.s.GetMessageLazyImages(bg, id, false)
+	require.NoError(t, err)
+	assert.Equal(t, before, e.im.Logins(), "the body needs no connection")
+	assert.Zero(t, e.count(t, "SELECT count(*) FROM attachments WHERE cache_path IS NOT NULL"))
+	assert.Zero(t, strings.Count(m.HTML, "data:image/"))
+	assert.Equal(t, 3, strings.Count(m.HTML, `src="cid:`))
+	assert.Len(t, m.Attachments, 3)
+
+	var got []string
+	require.NoError(t, e.s.InlineImages(bg, id, func(cid string, a gomail.Attachment) {
+		got = append(got, cid)
+		assert.NotEmpty(t, a.Data)
+	}))
+	assert.Equal(t, []string{"a", "b", "c"}, got)
+	assert.Equal(t, before+1, e.im.Logins())
+}
+
 // A connection lost between two images costs a new login, not the other images.
 func TestGetMessageInlineImagesSurviveLostConnection(t *testing.T) {
 	e := newSyncEnv(t)

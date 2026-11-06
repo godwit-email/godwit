@@ -312,7 +312,7 @@ var allowedImage = map[string]bool{"image/png": true, "image/jpeg": true, "image
 
 // finish applies the display contract on bluemonday's output. In compose,
 // a cid in keep stays a cid: and every other image source goes.
-func finish(safe string, inline map[string]Attachment, keep map[string]bool, loadRemote, compose bool) string {
+func finish(safe string, inline map[string]Attachment, keep map[string]bool, loadRemote, compose, lazy bool) string {
 	root := parseBody(safe)
 	walkNodes(root, func(n *html.Node) {
 		if n.Type != html.ElementNode {
@@ -330,7 +330,7 @@ func finish(safe string, inline map[string]Attachment, keep map[string]bool, loa
 				id, _ := url.QueryUnescape(strings.TrimPrefix(src, cidScheme))
 				a, ok := inline[id]
 				ct := http.DetectContentType(a.Data)
-				if compose && keep[id] {
+				if compose && keep[id] || lazy && ok {
 					setAttr(n, "src", "cid:"+id)
 				} else if compose || !ok || !allowedImage[ct] {
 					delAttr(n, "src")
@@ -361,11 +361,21 @@ func finish(safe string, inline map[string]Attachment, keep map[string]bool, loa
 // blockedRemote counts remote resources found in the original HTML; trackers
 // counts the tracking pixels, dropped whatever loadRemote says.
 func Sanitize(src string, inline map[string]Attachment, loadRemote bool) (safe string, blockedRemote, trackers int) {
+	return sanitize(src, inline, loadRemote, false)
+}
+
+// SanitizeLazy is Sanitize for a reader that loads the inline images itself: an
+// image of a Content-ID in known keeps its src as cid:<id>, the data unread.
+func SanitizeLazy(src string, known map[string]Attachment, loadRemote bool) (safe string, blockedRemote, trackers int) {
+	return sanitize(src, known, loadRemote, true)
+}
+
+func sanitize(src string, inline map[string]Attachment, loadRemote, lazy bool) (safe string, blockedRemote, trackers int) {
 	prepared, blocked, trackers, sheets, darkCanvas := prepare(src, true)
 	p := policy()
 	p.AllowAttrs("data-href").OnElements("a", "area")
 	p.AllowAttrs("class", "id").Globally() // what the mail's own <style> selects by; prepare cleaned them
-	safe = finish(p.Sanitize(prepared), inline, nil, loadRemote, false)
+	safe = finish(p.Sanitize(prepared), inline, nil, loadRemote, false, lazy)
 	css, darkCSS := sanitizeCSS(sheets)
 	if darkCSS {
 		// Keep the marker stable through html.Render when the image proxy rewrites the body.
@@ -389,7 +399,7 @@ func SanitizeDraft(src string, cids map[string]bool) string {
 	prepared, _, _, _, _ := prepare(src, false)
 	p := policy()
 	p.AllowAttrs(marker).Matching(markerValue).Globally()
-	return finish(p.Sanitize(prepared), nil, cids, false, true)
+	return finish(p.Sanitize(prepared), nil, cids, false, true, false)
 }
 
 // cleanStyle rejoins an element's inline declarations trimmed, dropping empty
