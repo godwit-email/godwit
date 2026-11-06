@@ -116,6 +116,7 @@ type Service struct {
 
 	locksMu sync.Mutex
 	locks   map[int64]chan struct{} // per-account 1-slot semaphore: sync and op pushing never overlap
+	kept    map[int64]*downloadConn // an attachmentFetcher's connection between two files
 
 	settingsMu sync.Mutex                  // settings read then written (SetSettings, the trusted senders)
 	proxy      atomic.Pointer[proxyConfig] // the saved proxy (loadProxy, SetSettings), read by Proxy
@@ -535,8 +536,21 @@ func (s *Service) cleanOrphans(ctx context.Context) error {
 // Subscribe returns UI notifications and a func that unsubscribes.
 func (s *Service) Subscribe() (<-chan events.Event, func()) { return s.bus.Subscribe() }
 
-// lockAccount takes the account's sync lock, or gives up when ctx ends.
+// lockAccount takes the account's sync lock, or gives up when ctx ends. It closes
+// a connection kept for the next file, so the holder's is the account's only one.
 func (s *Service) lockAccount(ctx context.Context, id int64) (unlock func(), err error) {
+	unlock, err = s.acquireAccount(ctx, id)
+	if err != nil {
+		return nil, err
+	}
+	if k := s.takeKept(id, nil); k != nil {
+		k.release()
+	}
+	return unlock, nil
+}
+
+// acquireAccount is lockAccount leaving a kept connection to the caller.
+func (s *Service) acquireAccount(ctx context.Context, id int64) (unlock func(), err error) {
 	s.locksMu.Lock()
 	if s.locks == nil {
 		s.locks = map[int64]chan struct{}{}
@@ -562,12 +576,31 @@ func (s *Service) lockAccount(ctx context.Context, id int64) (unlock func(), err
 	}
 }
 
-// lockWanted says whether the account's lock, just released, has been taken: a
-// waiter is handed it at once.
-func (s *Service) lockWanted(id int64) bool {
+// takeKept removes and returns the account's kept connection, if it is owner's
+// (any owner's when nil). Whoever gets it alone may use or close it.
+func (s *Service) takeKept(id int64, owner *attachmentFetcher) *downloadConn {
 	s.locksMu.Lock()
 	defer s.locksMu.Unlock()
-	return len(s.locks[id]) > 0
+	k := s.kept[id]
+	if k == nil || owner != nil && k.owner != owner {
+		return nil
+	}
+	delete(s.kept, id)
+	return k
+}
+
+// keepConn leaves k with the account for the lock's next holder. The caller holds
+// the lock, having taken what was kept.
+func (s *Service) keepConn(id int64, k *downloadConn) {
+	if k == nil {
+		return
+	}
+	s.locksMu.Lock()
+	defer s.locksMu.Unlock()
+	if s.kept == nil {
+		s.kept = map[int64]*downloadConn{}
+	}
+	s.kept[id] = k
 }
 
 // SyncNow connects to the account's IMAP server, pushes queued local changes,

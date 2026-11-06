@@ -96,21 +96,29 @@ func (s *Service) GetAttachment(ctx context.Context, attachmentID int64) (string
 // attachmentFetcher gets attachments one after another over one connection: a
 // login per file made a message with a few signature logos take seconds to open.
 // It holds the account lock only inside get, so whoever waits for the lock still
-// goes between two files, and it hangs up when someone does: the lock's holder
-// is the account's one working connection. close must be called.
+// goes between two files. Between files its connection is kept with the account,
+// where the lock's next holder closes it: that holder may dial, and a server may
+// limit an account's connections. close must be called.
 type attachmentFetcher struct {
-	s     *Service
-	ctx   context.Context
-	end   func()  // ends the call begun by the first get
-	saved []int64 // downloaded here; close evicts around them
+	s         *Service
+	ctx       context.Context
+	end       func()  // ends the call begun by the first get
+	saved     []int64 // downloaded here; close evicts around them
+	accountID int64   // of the last get
 
-	c              *imapclient.Client // nil while hung up
-	release, abort func()
-	folder         string // selected on c
-	uidValidity    uint32
+	conn *downloadConn // while inside get; nil when there is none yet
 
 	dialFails int // in a row
 	dialErr   error
+}
+
+// downloadConn is a logged-in connection with the folder selected on it.
+type downloadConn struct {
+	owner          *attachmentFetcher
+	c              *imapclient.Client
+	release, abort func()
+	folder         string
+	uidValidity    uint32
 }
 
 func (s *Service) newAttachmentFetcher(ctx context.Context) *attachmentFetcher {
@@ -136,15 +144,20 @@ func (f *attachmentFetcher) get(id int64) (string, AttachmentInfo, error) {
 	if p, ok, err := s.cached(f.ctx, a); ok || err != nil {
 		return p, a.info, err
 	}
-	unlock, err := s.lockAccount(f.ctx, a.accountID)
+	unlock, err := s.acquireAccount(f.ctx, a.accountID)
 	if err != nil {
 		return "", AttachmentInfo{}, err
 	}
+	f.accountID = a.accountID
+	if k := s.takeKept(a.accountID, nil); k != nil && k.owner == f {
+		f.conn = k
+	} else if k != nil {
+		k.release()
+	}
 	defer func() {
+		s.keepConn(a.accountID, f.conn)
+		f.conn = nil
 		unlock()
-		if s.lockWanted(a.accountID) {
-			f.hangUp()
-		}
 	}()
 	// The row may have changed (cached, moved, deleted) while we waited for the lock.
 	if a, err = s.loadAttachment(f.ctx, id); err != nil {
@@ -182,7 +195,7 @@ func (f *attachmentFetcher) get(id int64) (string, AttachmentInfo, error) {
 // gets one more try on a new one.
 func (f *attachmentFetcher) fetch(a attRow) ([]byte, error) {
 	for {
-		reused := f.c != nil
+		reused := f.conn != nil
 		data, err := f.fetchOnce(a)
 		if err == nil {
 			return data, nil
@@ -198,7 +211,7 @@ func (f *attachmentFetcher) fetch(a attRow) ([]byte, error) {
 }
 
 func (f *attachmentFetcher) fetchOnce(a attRow) ([]byte, error) {
-	if f.c == nil {
+	if f.conn == nil {
 		// A refused login or a server that stays away is not worth a dial per file.
 		if f.dialFails == 2 || errors.Is(f.dialErr, conn.ErrAuthFailed) {
 			return nil, f.dialErr
@@ -208,28 +221,30 @@ func (f *attachmentFetcher) fetchOnce(a attRow) ([]byte, error) {
 			f.dialFails, f.dialErr = f.dialFails+1, err
 			return nil, err
 		}
-		f.c, f.release, f.abort, f.dialFails = c, release, abort, 0
+		f.conn, f.dialFails = &downloadConn{owner: f, c: c, release: release, abort: abort}, 0
 	}
-	if f.folder != a.folder || f.uidValidity != a.uidValidity {
-		if err := selectFolder(f.c, a.folder, a.uidValidity); err != nil {
+	if f.conn.folder != a.folder || f.conn.uidValidity != a.uidValidity {
+		if err := selectFolder(f.conn.c, a.folder, a.uidValidity); err != nil {
 			return nil, err
 		}
-		f.folder, f.uidValidity = a.folder, a.uidValidity
+		f.conn.folder, f.conn.uidValidity = a.folder, a.uidValidity
 	}
-	return fetchSection(f.c, f.abort, a.uid, a.part, a.encoding)
+	return fetchSection(f.conn.c, f.conn.abort, a.uid, a.part, a.encoding)
 }
 
 func (f *attachmentFetcher) hangUp() {
-	if f.c != nil {
-		f.release()
-		f.c, f.folder, f.uidValidity = nil, "", 0
+	if f.conn != nil {
+		f.conn.release()
+		f.conn = nil
 	}
 }
 
 // close hangs up and brings the cache back within budget, once for all the files
 // saved: eviction scans the whole cache.
 func (f *attachmentFetcher) close() error {
-	f.hangUp()
+	if k := f.s.takeKept(f.accountID, f); k != nil {
+		k.release()
+	}
 	if f.end == nil {
 		return nil
 	}

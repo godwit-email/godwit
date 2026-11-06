@@ -366,6 +366,34 @@ func TestGetMessageInlineImageTooLargeKeepsTheOthers(t *testing.T) {
 	assert.Equal(t, before, e.im.Logins(), "known too large, the rest cached: no connection")
 }
 
+// Whoever takes the account lock between two files, even long after the last one,
+// finds the fetcher's connection closed: a server may limit an account's connections.
+func TestAttachmentFetcherConnectionClosedForNextLockHolder(t *testing.T) {
+	e := newSyncEnv(t)
+	e.put(t, "INBOX", withAttachments("a1@x", "hi", 3))
+	e.sync(t)
+	ids := e.rows(t, "SELECT id FROM attachments ORDER BY id")
+	before := e.im.Logins()
+	f := e.s.newAttachmentFetcher(bg)
+	_, _, err := f.get(ids[0][0].(int64))
+	require.NoError(t, err)
+	_, _, err = f.get(ids[1][0].(int64))
+	require.NoError(t, err)
+	assert.Equal(t, before+1, e.im.Logins(), "no one came between: the connection is reused")
+	kept := e.s.kept[e.acc.ID]
+	require.NotNil(t, kept)
+	unlock, err := e.s.lockAccount(bg, e.acc.ID)
+	require.NoError(t, err)
+	assert.Nil(t, e.s.kept[e.acc.ID])
+	assert.Error(t, kept.c.Noop().Wait(), "closed once the lock was taken")
+	unlock()
+	_, _, err = f.get(ids[2][0].(int64))
+	require.NoError(t, err)
+	assert.Equal(t, before+2, e.im.Logins())
+	require.NoError(t, f.close())
+	assert.Nil(t, e.s.kept[e.acc.ID], "close leaves nothing kept")
+}
+
 // Eviction, after the last image, makes room around all of them.
 func TestGetMessageInlineImagesEvictAroundThemselves(t *testing.T) {
 	e := newSyncEnv(t)
