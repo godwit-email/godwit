@@ -240,6 +240,27 @@ func TestMoveOntoStoredCopyKeepsQueueOrder(t *testing.T) {
 	assert.Equal(t, []string{"done", "done", "done"}, e.opStates(t))
 }
 
+// The carried-over move joins the moved row's queue: refused and still pending,
+// it holds back the moves queued after it instead of being overtaken and then
+// undoing them on retry.
+func TestMoveOntoStoredCopyRefusedMoveHoldsTheQueue(t *testing.T) {
+	e := newSyncEnv(t)
+	e.put(t, "INBOX", msg("m@x"))
+	e.sync(t)
+	id := e.idOf(t, "m@x")
+	inbox, archive, trash := e.folderID(t, "INBOX"), e.folderID(t, "Archive"), e.folderID(t, "Trash")
+	cp := e.storedCopy(t, id, archive)
+
+	require.NoError(t, e.s.Move(bg, []int64{id}, archive))
+	require.NoError(t, e.s.Move(bg, []int64{cp}, trash))
+	require.NoError(t, e.s.Move(bg, []int64{id}, inbox))
+	require.NoError(t, e.im.User.Delete("Trash")) // the server refuses the Trash move
+	e.sync(t)
+
+	assert.Equal(t, []string{"m@x"}, e.onServer(t, "Archive"))
+	assert.Equal(t, []string{"done", "pending", "pending"}, e.opStates(t))
+}
+
 // A move of the copy queued before the moved row's own (one the server refused,
 // still pending) is superseded: it neither takes the moved row's folder nor
 // runs on retry.

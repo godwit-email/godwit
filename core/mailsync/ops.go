@@ -90,11 +90,12 @@ func push(ctx context.Context, db *store.DB, c *imapclient.Client, accountID int
 	for _, v := range rows.Values {
 		o := op{id: store.Int(v[0]), kind: store.Str(v[1]), msg: store.Int(v[2]), dst: store.Int(v[3]), accountID: accountID,
 			payload: store.Str(v[4]), dep: store.Int(v[5]), attempts: int(store.Int(v[6]))}
-		// An earlier op of this push may have moved o to another row (moved, #506): run it on that one, in id order.
-		if r, err := db.Query(ctx, "SELECT message_id FROM ops WHERE id = ?", o.id); err != nil {
+		// An earlier op of this push may have moved o to another row (moved, #506):
+		// run it on that one, behind the chain it joined there.
+		if r, err := db.Query(ctx, "SELECT message_id, depends_on FROM ops WHERE id = ?", o.id); err != nil {
 			return err
 		} else if len(r.Values) > 0 {
-			o.msg = store.Int(r.Values[0][0])
+			o.msg, o.dep = store.Int(r.Values[0][0]), store.Int(r.Values[0][1])
 		}
 		problem, err := pushOp(ctx, db, c, o)
 		if o.kind == "purge" && err == nil && problem == "" {
@@ -389,6 +390,9 @@ func moved(ctx context.Context, db *store.DB, o op, validity, uid uint32) error 
 				sqlite.Statement{SQL: "UPDATE ops SET state = 'cancelled' WHERE message_id = ? AND kind = 'move' AND state IN ('pending', 'awaiting_claim') AND id < ?",
 					Args: []any{cp, o.id}},
 				sqlite.Statement{SQL: "UPDATE ops SET message_id = ? WHERE message_id = ? AND state IN ('pending', 'awaiting_claim')", Args: []any{o.msg, cp}},
+				// One queue again: each op waits for the one before it, as latestOp chains new ones.
+				sqlite.Statement{SQL: `UPDATE ops SET depends_on = (SELECT max(p.id) FROM ops p WHERE p.message_id = ops.message_id
+					AND p.state IN ('pending', 'awaiting_claim') AND p.id < ops.id) WHERE message_id = ? AND state IN ('pending', 'awaiting_claim')`, Args: []any{o.msg}},
 				// As messages_label_stash hands labels to other copies: a manual label beats a rule's.
 				sqlite.Statement{SQL: `INSERT INTO message_labels(message_id, label_id, source, active)
 					SELECT ?, label_id, source, active FROM message_labels WHERE message_id = ? AND source IN ('manual', 'rule')
