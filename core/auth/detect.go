@@ -114,6 +114,12 @@ func lookupSRV(ctx context.Context, r Resolver, service, domain string) (Server,
 func mxServers(host string) (imap, smtp Server, ok bool) {
 	switch {
 	case inDomain(host, "icoremail.net."):
+		// mx.c3.icoremail.net. -> c3.icoremail.net: each cluster only serves its own
+		// domains, and *.icoremail.net covers single-label cluster hosts.
+		if _, rest, ok := strings.Cut(strings.TrimSuffix(host, "."), "."); ok && rest != "icoremail.net" &&
+			!strings.Contains(strings.TrimSuffix(rest, ".icoremail.net"), ".") {
+			return tls(rest), smtps(rest), true
+		}
 		return tls("imap.icoremail.net"), smtps("smtp.icoremail.net"), true
 	case inDomain(host, "mxhichina.com."), inDomain(host, "qiye.aliyun.com."):
 		return tls("imap.qiye.aliyun.com"), smtps("smtp.qiye.aliyun.com"), true
