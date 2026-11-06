@@ -281,3 +281,93 @@ func TestLiteralHeaderAcrossReadBuffer(t *testing.T) {
 		require.Len(t, s.IDs(), 1, n)
 	}
 }
+
+func gmailFetch(t *testing.T, c *imapclient.Client, folder string) map[imap.UID]*imapclient.FetchMessageBuffer {
+	t.Helper()
+	_, err := c.Select(folder, nil).Wait()
+	require.NoError(t, err)
+	msgs, err := c.Fetch(imap.SeqSet{{Start: 1, Stop: 0}}, &imap.FetchOptions{UID: true, Flags: true, GmailMsgID: true, GmailLabels: true}).Collect()
+	require.NoError(t, err)
+	out := map[imap.UID]*imapclient.FetchMessageBuffer{}
+	for _, m := range msgs {
+		out[m.UID] = m
+	}
+	return out
+}
+
+func uids(s imap.NumSet) []imap.UID {
+	n, _ := s.(imap.UIDSet).Nums()
+	return n
+}
+
+// A Gmail message is one object in several folders, each with its own UID:
+// FETCH names it by X-GM-MSGID, flags are shared, and MOVE changes which
+// folders hold it, answering with the UID it already has there.
+func TestGmail(t *testing.T) {
+	s := testmail.StartIMAP(t, testmail.Gmail())
+	for _, f := range []string{"Work", "Later"} {
+		require.NoError(t, s.User.Create(f, nil))
+	}
+	m := s.AddGmail(rfc822, nil, testmail.GmailAllMail, "Work", "INBOX")
+	twin := s.AddGmail(rfc822, nil, "INBOX") // same content, another message
+	assert.NotEqual(t, m.ID, twin.ID)
+	assert.Equal(t, []string{"INBOX", "Work", testmail.GmailAllMail}, m.Folders())
+
+	c := dial(t, s)
+	assert.True(t, c.Caps().Has("X-GM-EXT-1"))
+	list, err := c.List("", "*", nil).Collect()
+	require.NoError(t, err)
+	attrs := map[string][]imap.MailboxAttr{}
+	for _, d := range list {
+		attrs[d.Mailbox] = d.Attrs
+	}
+	assert.Contains(t, attrs[testmail.GmailAllMail], imap.MailboxAttrAll)
+	assert.Contains(t, attrs[testmail.GmailTrash], imap.MailboxAttrTrash)
+
+	inbox := gmailFetch(t, c, "INBOX")
+	require.Len(t, inbox, 2)
+	got := inbox[m.UID("INBOX")]
+	assert.Equal(t, m.ID, got.GmailMsgID)
+	assert.ElementsMatch(t, []string{`\Inbox`, "Work"}, got.GmailLabels)
+	assert.Equal(t, twin.ID, inbox[twin.UID("INBOX")].GmailMsgID)
+
+	require.NoError(t, c.Store(imap.UIDSetNum(m.UID("INBOX")), &imap.StoreFlags{Op: imap.StoreFlagsAdd, Silent: true, Flags: []imap.Flag{imap.FlagFlagged}}, nil).Close())
+	assert.Contains(t, gmailFetch(t, c, "Work")[m.UID("Work")].Flags, imap.FlagFlagged, "flags are the message's")
+	assert.NotContains(t, gmailFetch(t, c, "INBOX")[twin.UID("INBOX")].Flags, imap.FlagFlagged)
+
+	all := m.UID(testmail.GmailAllMail)
+	mv, err := c.Move(imap.UIDSetNum(m.UID("INBOX")), testmail.GmailAllMail).Wait() // archive
+	require.NoError(t, err)
+	assert.Equal(t, []imap.UID{all}, uids(mv.DestUIDs))
+	assert.Equal(t, []string{"Work", testmail.GmailAllMail}, m.Folders())
+	assert.Len(t, gmailFetch(t, c, "INBOX"), 1)
+	assert.Len(t, gmailFetch(t, c, testmail.GmailAllMail), 1, "no second copy in All Mail")
+
+	_, err = c.Select("Work", nil).Wait()
+	require.NoError(t, err)
+	mv, err = c.Move(imap.UIDSetNum(m.UID("Work")), "Later").Wait()
+	require.NoError(t, err)
+	assert.Equal(t, []imap.UID{m.UID("Later")}, uids(mv.DestUIDs))
+	assert.Equal(t, []string{"Later", testmail.GmailAllMail}, m.Folders())
+	later := gmailFetch(t, c, "Later")[m.UID("Later")]
+	assert.Equal(t, m.ID, later.GmailMsgID)
+	assert.Contains(t, later.Flags, imap.FlagFlagged)
+
+	m.Unlabel("Later") // as the web app removes a label
+	m.Label("INBOX")
+	assert.Equal(t, []string{"INBOX", testmail.GmailAllMail}, m.Folders())
+	assert.Empty(t, gmailFetch(t, c, "Later"))
+	assert.Equal(t, m.ID, gmailFetch(t, c, "INBOX")[m.UID("INBOX")].GmailMsgID)
+}
+
+// Without Gmail, the server refuses X-GM-MSGID as any other server does.
+func TestNotGmail(t *testing.T) {
+	s := testmail.StartIMAP(t)
+	seed(t, s, 1)
+	c := dial(t, s)
+	assert.False(t, c.Caps().Has("X-GM-EXT-1"))
+	_, err := c.Select("INBOX", nil).Wait()
+	require.NoError(t, err)
+	_, err = c.Fetch(imap.UIDSetNum(1), &imap.FetchOptions{UID: true, GmailMsgID: true}).Collect()
+	assert.Error(t, err)
+}
