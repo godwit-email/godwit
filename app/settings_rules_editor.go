@@ -339,15 +339,30 @@ func flipMatch(m *string) {
 	}
 }
 
+// condButtonWidth is the width of a logic button for word, at least Space(7).
+func condButtonWidth(c *ui.Context, word string) float32 {
+	th := c.Theme()
+	w, _ := c.MeasureText(0, ui.Span{Text: word})
+	return max(th.Space(7), w+th.Space(3))
+}
+
+// condRailWidth is the width of the wider logic button in the current language,
+// and of the rail cell (Space(2) wider, for the bracket's horizontal arm).
+func condRailWidth(c *ui.Context) (btnW, railW float32) {
+	btnW = max(condButtonWidth(c, i18n.T("settings.rules.logic.all")), condButtonWidth(c, i18n.T("settings.rules.logic.any")))
+	return btnW, btnW + c.Theme().Space(2)
+}
+
 // condRail is the cell left of a row or a group: its part of a bracket's line,
 // rounded at the first and the last, and match's and or or to click, if given.
 // With seam the button sits on the top edge of the cell: with two rows, the
 // middle of the line, clear of its corners.
 func condRail(c *ui.Context, line, first, last bool, match *string, seam bool) {
 	t, th := theme.Of(c), c.Theme()
-	ui.Row(c).Width(theme.RuleRail).Shrink(0).AlignSelf(ui.Stretch).AlignItems(ui.Center).Children(func() {
+	btnW, railW := condRailWidth(c)
+	ui.Row(c).Width(railW).Shrink(0).AlignSelf(ui.Stretch).AlignItems(ui.Center).Children(func() {
 		if line {
-			ui.Column(c).Absolute().Left(theme.RuleRailLine).Top(0).Right(0).Bottom(0).PassThrough().Children(func() {
+			ui.Column(c).Absolute().Left(btnW / 2).Top(0).Right(0).Bottom(0).PassThrough().Children(func() {
 				hair, r := float32(theme.Hairline), th.Space(2)
 				up := ui.Box(c).FillWidth().Grow(1).Basis(0).BorderColor(t.Border)
 				down := ui.Box(c).FillWidth().Grow(1).Basis(0).BorderColor(t.Border)
@@ -366,10 +381,14 @@ func condRail(c *ui.Context, line, first, last bool, match *string, seam bool) {
 			return
 		}
 		word := i18n.T("settings.rules.logic." + *match)
-		b := kit.Button(c, word, kit.ButtonOpts{Variant: kit.Outline, Flat: true, Size: kit.SizeSm}).Size(th.Space(7), th.Space(6)).PaddingX(0).
+		w := condButtonWidth(c, word)
+		left := (btnW - w) / 2
+		b := kit.Button(c, word, kit.ButtonOpts{Variant: kit.Outline, Flat: true, Size: kit.SizeSm}).Size(w, th.Space(6)).PaddingX(0).
 			Background(t.Background).Label(i18n.Tf("settings.rules.logic.flip", word)).OnClick(func() { flipMatch(match) })
 		if seam {
-			b.Absolute().Left(0).Top(-th.Space(3))
+			b.Absolute().Left(left).Top(-th.Space(3))
+		} else {
+			b.Margin(0, 0, 0, left)
 		}
 	})
 }
@@ -477,7 +496,8 @@ func (v *rulesView) ifCard(c *ui.Context, labels []kit.Option[string]) {
 								}
 								tidyConds(d)
 							})
-							ui.Row(c).FillWidth().AlignItems(ui.Center).Padding(0, 0, 0, theme.RuleRail).Children(func() {
+							_, railW := condRailWidth(c)
+							ui.Row(c).FillWidth().AlignItems(ui.Center).Padding(0, 0, 0, railW).Children(func() {
 								kit.Button(c, i18n.T("settings.rules.condition.add"), kit.ButtonOpts{Variant: kit.Ghost, Size: kit.SizeSm, Icon: "plus", Disabled: atLimit}).TextColor(t.Muted).
 									OnClick(func() {
 										add := core.RuleCondition{Field: core.FieldSubject, Op: core.OpContains}
@@ -498,8 +518,9 @@ func (v *rulesView) ifCard(c *ui.Context, labels []kit.Option[string]) {
 				})
 			}
 		})
+		_, railW := condRailWidth(c)
 		kit.Button(c, i18n.T("settings.rules.cond_group.add"), kit.ButtonOpts{Variant: kit.Ghost, Size: kit.SizeSm, Icon: "plus", Disabled: noGroupRoom}).
-			AlignSelf(ui.Start).Margin(0, 0, 0, theme.RuleRail).TextColor(t.Muted).OnClick(func() { addCondGroup(d) })
+			AlignSelf(ui.Start).Margin(0, 0, 0, railW).TextColor(t.Muted).OnClick(func() { addCondGroup(d) })
 	})
 }
 

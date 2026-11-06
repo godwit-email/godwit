@@ -1699,7 +1699,7 @@
   "settings_rules_cond_group_remove": "このグループを削除",
   "settings_rules_cond_group": "条件グループ",
   "settings_rules_logic_all": "かつ",
-  "settings_rules_logic_any": "または",
+  "settings_rules_logic_any": "又は",
   "settings_rules_logic_flip": "現在は「{arg1}」。クリックで切り替え",
   "settings_rules_parens": "（{arg1}）",
   "settings_rules_no_conditions": "条件なし：トリガーされたすべてのメールに下のアクションを実行します。",

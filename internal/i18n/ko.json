@@ -1698,7 +1698,7 @@
   "settings_rules_cond_group_add": "조건 그룹 추가",
   "settings_rules_cond_group_remove": "이 그룹 삭제",
   "settings_rules_cond_group": "조건 그룹",
-  "settings_rules_logic_all": "그리고",
+  "settings_rules_logic_all": "및",
   "settings_rules_logic_any": "또는",
   "settings_rules_logic_flip": "현재 “{arg1}”. 클릭하여 전환",
   "settings_rules_parens": "({arg1})",

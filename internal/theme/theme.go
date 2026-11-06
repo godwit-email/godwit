@@ -174,8 +174,6 @@ const (
 	ContentMaxWidth     = 1040 // settings pages
 	RuleAsideWidth      = 340  // the rule editor's side panel
 	RuleConnector       = 20   // the line between the rule editor's cards
-	RuleRail            = 36   // the cell left of a rule condition, with its bracket
-	RuleRailLine        = 14   // where in that cell the bracket's line is
 	RuleFieldWidth      = 108  // a rule condition's field select
 	RuleOpWidth         = 96   // a rule condition's comparison select
 	RuleActionWidth     = 200  // a rule action's kind select

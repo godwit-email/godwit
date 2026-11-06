@@ -3339,8 +3339,8 @@
   "settings_rules_cond_group_add": "Add a group of conditions",
   "settings_rules_cond_group_remove": "Remove this group",
   "settings_rules_cond_group": "Group of conditions",
-  "settings_rules_logic_all": "and",
-  "settings_rules_logic_any": "or",
+  "settings_rules_logic_all": "AND",
+  "settings_rules_logic_any": "OR",
   "settings_rules_logic_flip": "Now “{arg1}”. Click to switch",
   "@settings_rules_logic_flip": {
     "placeholders": {

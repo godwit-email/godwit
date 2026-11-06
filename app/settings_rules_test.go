@@ -517,3 +517,30 @@ func TestSettingsRulesListHeight(t *testing.T) {
 		t.Fatalf("the list is %v from its closed place", got-closed)
 	}
 }
+
+// Every language's logic button fits its word with padding, at least 28 wide,
+// and centers on the bracket's line.
+func TestSettingsRulesLogicButtonFitsAllLocales(t *testing.T) {
+	t.Cleanup(func() { i18n.SetLanguage("zh-CN") })
+	for _, lang := range i18n.Catalog.Languages() {
+		i18n.SetLanguage(lang)
+		for _, m := range []string{core.MatchAll, core.MatchAny} {
+			match := m
+			var textW, btnW, railW float32
+			tt := ui.NewTester(func(c *ui.Context) {
+				word := i18n.T("settings.rules.logic." + match)
+				textW, _ = c.MeasureText(0, ui.Span{Text: word})
+				btnW, railW = condRailWidth(c)
+				condRail(c, true, false, true, &match, true)
+			}, 200, 100)
+			word := i18n.T("settings.rules.logic." + match)
+			r, ok := tt.Find(i18n.Tf("settings.rules.logic.flip", word))
+			if !ok {
+				t.Fatalf("%s/%s: button %q not found", lang, match, word)
+			}
+			if r.W < 28 || r.W < textW+12 || r.X+r.W/2 != btnW/2 || railW != btnW+8 {
+				t.Errorf("%s/%s (%q): button=%+v textW=%v btnW=%v railW=%v", lang, match, word, r, textW, btnW, railW)
+			}
+		}
+	}
+}
