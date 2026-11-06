@@ -81,18 +81,18 @@ func TestRulePreviewAgreesWithEvaluator(t *testing.T) {
 	e := newPreviewEnv(t)
 	archive := strconv.FormatInt(e.folderID(t, "Archive"), 10)
 	conds := []RuleCondition{
-		{FieldFrom, OpContains, "billing@"}, {FieldFrom, OpContains, "BILLING"}, {FieldFrom, OpContains, "ab"},
-		{FieldFrom, OpContains, "王律师"}, {FieldFrom, OpNotContains, "billing@"},
-		{FieldFrom, OpIs, "billing@aws.example"}, {FieldFrom, OpIs, " AWS <billing@aws.example>"}, {FieldFrom, OpIs, "aws"},
-		{FieldTo, OpContains, "team@"}, {FieldTo, OpContains, "al"}, {FieldTo, OpIs, "alice@example.com"}, {FieldTo, OpNotContains, "team@"},
-		{FieldSubject, OpContains, "invoice"}, {FieldSubject, OpContains, "合同"}, {FieldSubject, OpContains, "hi"}, {FieldSubject, OpContains, "#12"},
-		{FieldSubject, OpIs, "receipt #1234"}, {FieldSubject, OpNotContains, "invoice"}, {FieldSubject, OpContains, `"quoted"`},
-		{FieldBody, OpContains, "amount due"}, {FieldBody, OpContains, "ok"}, {FieldBody, OpContains, "invoice"},
-		{FieldBody, OpIs, "ok"}, {FieldBody, OpNotContains, "invoice"},
-		{FieldAttachments, OpIs, RuleYes}, {FieldAttachments, OpIs, RuleNo},
-		{FieldLabel, OpIs, "u1"}, {FieldLabel, OpNotContains, "u1"},
-		{FieldFolder, OpIs, "inbox"}, {FieldFolder, OpIs, "archive"}, {FieldFolder, OpIs, archive}, {FieldFolder, OpNotContains, "inbox"},
-		{FieldAge, OpOlderThan, "1"}, {FieldAge, OpOlderThan, "3"},
+		{Field: FieldFrom, Op: OpContains, Value: "billing@"}, {Field: FieldFrom, Op: OpContains, Value: "BILLING"}, {Field: FieldFrom, Op: OpContains, Value: "ab"},
+		{Field: FieldFrom, Op: OpContains, Value: "王律师"}, {Field: FieldFrom, Op: OpNotContains, Value: "billing@"},
+		{Field: FieldFrom, Op: OpIs, Value: "billing@aws.example"}, {Field: FieldFrom, Op: OpIs, Value: " AWS <billing@aws.example>"}, {Field: FieldFrom, Op: OpIs, Value: "aws"},
+		{Field: FieldTo, Op: OpContains, Value: "team@"}, {Field: FieldTo, Op: OpContains, Value: "al"}, {Field: FieldTo, Op: OpIs, Value: "alice@example.com"}, {Field: FieldTo, Op: OpNotContains, Value: "team@"},
+		{Field: FieldSubject, Op: OpContains, Value: "invoice"}, {Field: FieldSubject, Op: OpContains, Value: "合同"}, {Field: FieldSubject, Op: OpContains, Value: "hi"}, {Field: FieldSubject, Op: OpContains, Value: "#12"},
+		{Field: FieldSubject, Op: OpIs, Value: "receipt #1234"}, {Field: FieldSubject, Op: OpNotContains, Value: "invoice"}, {Field: FieldSubject, Op: OpContains, Value: `"quoted"`},
+		{Field: FieldBody, Op: OpContains, Value: "amount due"}, {Field: FieldBody, Op: OpContains, Value: "ok"}, {Field: FieldBody, Op: OpContains, Value: "invoice"},
+		{Field: FieldBody, Op: OpIs, Value: "ok"}, {Field: FieldBody, Op: OpNotContains, Value: "invoice"},
+		{Field: FieldAttachments, Op: OpIs, Value: RuleYes}, {Field: FieldAttachments, Op: OpIs, Value: RuleNo},
+		{Field: FieldLabel, Op: OpIs, Value: "u1"}, {Field: FieldLabel, Op: OpNotContains, Value: "u1"},
+		{Field: FieldFolder, Op: OpIs, Value: "inbox"}, {Field: FieldFolder, Op: OpIs, Value: "archive"}, {Field: FieldFolder, Op: OpIs, Value: archive}, {Field: FieldFolder, Op: OpNotContains, Value: "inbox"},
+		{Field: FieldAge, Op: OpOlderThan, Value: "1"}, {Field: FieldAge, Op: OpOlderThan, Value: "3"},
 	}
 	some := 0
 	for _, c := range conds {
@@ -104,7 +104,7 @@ func TestRulePreviewAgreesWithEvaluator(t *testing.T) {
 		}
 	}
 	assert.Greater(t, some, len(conds)/2, "the fixture tells too few conditions apart")
-	two := []RuleCondition{{FieldFrom, OpContains, "billing@"}, {FieldBody, OpContains, "invoice"}}
+	two := []RuleCondition{{Field: FieldFrom, Op: OpContains, Value: "billing@"}, {Field: FieldBody, Op: OpContains, Value: "invoice"}}
 	for _, d := range []RuleDoc{
 		{Trigger: TriggerReceive, Match: MatchAll, Conditions: two},
 		{Trigger: TriggerReceive, Match: MatchAny, Conditions: two},
@@ -123,7 +123,7 @@ func TestRulePreviewAgreesWithEvaluator(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, 6, p.Count, "older mail counts, Sent does not")
 	assert.Len(t, p.Messages, 2)
-	_, err = e.s.PreviewRule(bg, RuleDoc{Trigger: TriggerReceive, Match: MatchAll, Conditions: []RuleCondition{{FieldSubject, OpContains, " "}}}, 2)
+	_, err = e.s.PreviewRule(bg, RuleDoc{Trigger: TriggerReceive, Match: MatchAll, Conditions: []RuleCondition{{Field: FieldSubject, Op: OpContains, Value: " "}}}, 2)
 	assert.ErrorIs(t, err, ErrInvalidRule)
 }
 

@@ -45,7 +45,7 @@ func (s *Service) PreviewRule(ctx context.Context, d RuleDoc, limit int) (RulePr
 		return RulePreview{}, err
 	}
 	defer end()
-	for _, c := range d.Conditions {
+	for _, c := range d.Rows() {
 		if err := s.validCondition(ctx, c); err != nil {
 			return RulePreview{}, err
 		}
@@ -146,18 +146,9 @@ func (s *Service) existingSQL(d RuleDoc) (string, []any) {
 // shortcut: SQLite's lower() folds ASCII only, the evaluator all of Unicode;
 // they differ on a non-ASCII capital in an "is" or a short "contains".
 func ruleSQL(d RuleDoc, now int64) (string, []any) {
-	parts, args := make([]string, 0, len(d.Conditions)), []any(nil)
-	for _, c := range d.Conditions {
-		sql, a := c.sql(now)
-		parts, args = append(parts, sql), append(args, a...)
-	}
-	cond := "1"
-	if len(parts) > 0 {
-		join := " AND "
-		if d.Match == MatchAny {
-			join = " OR "
-		}
-		cond = "(" + strings.Join(parts, join) + ")"
+	cond, args := "1", []any(nil)
+	if len(d.Conditions) > 0 {
+		cond, args = allOrAnySQL(d.Match, d.Conditions, now)
 	}
 	if d.Account != 0 {
 		cond += " AND m.account_id = ?"
@@ -179,7 +170,23 @@ func ruleSQL(d RuleDoc, now int64) (string, []any) {
 
 const labelSlugSQL = "EXISTS (SELECT 1 FROM message_labels ml JOIN labels l ON l.id = ml.label_id WHERE ml.message_id = m.id AND ml.active = 1 AND l.slug = ?)"
 
+func allOrAnySQL(match string, conds []RuleCondition, now int64) (string, []any) {
+	parts, args := make([]string, 0, len(conds)), []any(nil)
+	for _, c := range conds {
+		sql, a := c.sql(now)
+		parts, args = append(parts, sql), append(args, a...)
+	}
+	join := " AND "
+	if match == MatchAny {
+		join = " OR "
+	}
+	return "(" + strings.Join(parts, join) + ")", args
+}
+
 func (c RuleCondition) sql(now int64) (string, []any) {
+	if c.Group != nil {
+		return allOrAnySQL(c.Match, c.Group, now)
+	}
 	want := strings.ToLower(strings.TrimSpace(c.Value))
 	var sql string
 	var args []any

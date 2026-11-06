@@ -2,7 +2,7 @@ package app
 
 import (
 	"context"
-	"slices"
+	"reflect"
 	"testing"
 	"time"
 
@@ -97,8 +97,48 @@ func TestSettingsRulesAgeCondition(t *testing.T) {
 	h.saveRule()
 	h.see("早于 30 天前")
 	rs := h.rules()
-	if len(rs) != 1 || rs[0].Doc.Conditions[0] != (core.RuleCondition{Field: core.FieldAge, Op: core.OpOlderThan, Value: "30"}) {
+	if len(rs) != 1 || rs[0].Doc.Conditions[0].Field != core.FieldAge || rs[0].Doc.Conditions[0].Value != "30" {
 		t.Fatalf("rules %+v", rs)
+	}
+}
+
+// A rule's conditions go into groups: the button on a bracket's line switches
+// its and or or, a group removed down to one leaves plain conditions, and 添加
+// makes a group of the conditions so far.
+func TestSettingsRulesConditionGroups(t *testing.T) {
+	h, _ := withAccount(t)
+	stripe := core.RuleCondition{Field: core.FieldFrom, Op: core.OpContains, Value: "stripe.com"}
+	aws := core.RuleCondition{Field: core.FieldFrom, Op: core.OpContains, Value: "aws.example"}
+	attached := core.RuleCondition{Field: core.FieldAttachments, Op: core.OpIs, Value: core.RuleYes}
+	h.app.EditRule(core.Rule{Enabled: true, Doc: core.RuleDoc{Version: core.RuleVersion, Name: "云服务", Trigger: core.TriggerReceive, Match: core.MatchAll,
+		Conditions: []core.RuleCondition{{Match: core.MatchAny, Group: []core.RuleCondition{stripe, aws}}, {Match: core.MatchAll, Group: []core.RuleCondition{attached}}},
+		Actions:    []core.RuleAction{{Kind: core.ActionStar}}}}, 0, 0, "")
+	h.openSettings("rules")
+	h.click("现在是「且」，点击切换")
+	h.saveRule()
+	h.see("） 或 ") // the list says its groups, and the and it was switched to or
+	d := h.rules()[0].Doc
+	if d.Match != core.MatchAny || d.Conditions[0].Match != core.MatchAny || len(d.Rows()) != 3 {
+		t.Fatalf("saved %+v", d)
+	}
+
+	h.click("展开最近命中")
+	h.click("编辑规则")
+	h.click("删除这组") // the first: the last group's conditions are plain again
+	h.click("保存")
+	h.click("保存并启用")
+	d = h.rules()[0].Doc
+	if len(d.Conditions) != 1 || d.Conditions[0].Group != nil || d.Conditions[0].Field != core.FieldAttachments || d.Match != core.MatchAll {
+		t.Fatalf("after removing a group %+v", d)
+	}
+
+	h.click("编辑规则")
+	h.click("添加")
+	h.click("添加一组条件")
+	h.see("删除这组") // the condition so far is one group, the two new rows another
+	h.click("取消")
+	if d := h.rules()[0].Doc; len(d.Conditions) != 1 {
+		t.Fatalf("saved without saving %+v", d)
 	}
 }
 
@@ -269,7 +309,7 @@ func TestSettingsRulesFromMail(t *testing.T) {
 	d := h.rules()[0].Doc
 	want := []core.RuleCondition{{Field: core.FieldFrom, Op: core.OpContains, Value: "billing@aws.example"},
 		{Field: core.FieldSubject, Op: core.OpContains, Value: "invoice"}, {Field: core.FieldAttachments, Op: core.OpIs, Value: core.RuleYes}}
-	if d.Name != "来自 AWS 的邮件" || !slices.Equal(d.Conditions, want) {
+	if d.Name != "来自 AWS 的邮件" || !reflect.DeepEqual(d.Conditions, want) {
 		t.Fatalf("rule %+v", d)
 	}
 }

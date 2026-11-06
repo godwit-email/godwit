@@ -31,7 +31,7 @@ export const PROPOSE_RULE_TOOL = "propose_rule";
 const MSG_TO_EDITOR =
   "the user opened the rule in the editor; it is saved only if they save it there";
 
-type Cond = { field: string; op: string; value: string };
+type Cond = { field: string; op: string; value: string; match?: string; group?: Cond[] };
 type Act = { kind: string; label?: string; to?: string; dir?: string };
 
 /** propose_rule's recorded arguments (core ruleProposal). */
@@ -118,8 +118,12 @@ function ruleText(p: Proposal, t: T) {
           ? phrase(t(`settings.rules.action.${a.kind}.summary`, a.dir))
           : phrase(t(`settings.rules.action.${a.kind}`));
   // 且 / 或 between the conditions, as the join puts it
-  const join = t(`settings.rules.join.${r.match}`, "", "").trim();
-  return { when, ifs: (r.conditions ?? []).map(cond), join, thens: (r.actions ?? []).map(act) };
+  const joinOf = (match?: string) => t(`settings.rules.join.${match}`, "", "").trim();
+  // A rule forwards on what this shows, so a condition group shows as one (ADR 0030).
+  const ifs = (r.conditions ?? []).map((c) =>
+    c.group ? { rows: c.group.map(cond), join: joinOf(c.match) } : { rows: [cond(c)], join: "" },
+  );
+  return { when, ifs, join: joinOf(r.match), thens: (r.actions ?? []).map(act) };
 }
 
 const ACTION_ICONS: Record<string, RemixiconComponentType> = {
@@ -219,7 +223,24 @@ export function RuleCard({
                 // biome-ignore lint/suspicious/noArrayIndexKey: conditions are in order and may repeat
                 <span key={i} className="contents">
                   {i > 0 && <span className="text-muted-foreground text-sm">{join}</span>}
-                  <span className="rounded-md bg-muted px-2 leading-6">{mono(c)}</span>
+                  {c.rows.length > 1 ? (
+                    // biome-ignore lint/a11y/useSemanticElements: a run of chips inline, not a form's fieldset
+                    <span
+                      role="group"
+                      aria-label={t("settings.rules.cond_group")}
+                      className="flex flex-wrap items-center gap-1.5 rounded-lg border-[0.5px] p-0.5"
+                    >
+                      {c.rows.map((row, j) => (
+                        // biome-ignore lint/suspicious/noArrayIndexKey: conditions are in order and may repeat
+                        <span key={j} className="contents">
+                          {j > 0 && <span className="text-muted-foreground text-sm">{c.join}</span>}
+                          <span className="rounded-md bg-muted px-2 leading-6">{mono(row)}</span>
+                        </span>
+                      ))}
+                    </span>
+                  ) : (
+                    <span className="rounded-md bg-muted px-2 leading-6">{mono(c.rows[0])}</span>
+                  )}
                 </span>
               ))}
             </span>

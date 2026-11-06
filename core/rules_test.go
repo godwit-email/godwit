@@ -244,9 +244,9 @@ func TestRuleStoresStableIDs(t *testing.T) {
 	for _, d := range []RuleDoc{
 		{Version: RuleVersion, Trigger: "收到新邮件", Match: MatchAll, Actions: []RuleAction{{Kind: ActionLabel, Label: "u1"}}},
 		{Version: RuleVersion, Trigger: TriggerReceive, Match: MatchAll, Actions: []RuleAction{{Kind: ActionLabel, Label: "Bills"}}},
-		{Version: RuleVersion, Trigger: TriggerReceive, Match: MatchAll, Conditions: []RuleCondition{{FieldAge, OpOlderThan, "1.5"}}, Actions: []RuleAction{{Kind: ActionRead}}},
-		{Version: RuleVersion, Trigger: TriggerReceive, Match: MatchAll, Conditions: []RuleCondition{{FieldAge, OpOlderThan, "0"}}, Actions: []RuleAction{{Kind: ActionRead}}},
-		{Version: RuleVersion, Trigger: TriggerReceive, Match: MatchAll, Conditions: []RuleCondition{{FieldAge, OpContains, "3"}}, Actions: []RuleAction{{Kind: ActionRead}}},
+		{Version: RuleVersion, Trigger: TriggerReceive, Match: MatchAll, Conditions: []RuleCondition{{Field: FieldAge, Op: OpOlderThan, Value: "1.5"}}, Actions: []RuleAction{{Kind: ActionRead}}},
+		{Version: RuleVersion, Trigger: TriggerReceive, Match: MatchAll, Conditions: []RuleCondition{{Field: FieldAge, Op: OpOlderThan, Value: "0"}}, Actions: []RuleAction{{Kind: ActionRead}}},
+		{Version: RuleVersion, Trigger: TriggerReceive, Match: MatchAll, Conditions: []RuleCondition{{Field: FieldAge, Op: OpContains, Value: "3"}}, Actions: []RuleAction{{Kind: ActionRead}}},
 	} {
 		_, err := e.s.SaveRule(bg, Rule{Doc: d})
 		assert.ErrorIs(t, err, ErrInvalidRule)

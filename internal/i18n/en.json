@@ -3358,14 +3358,33 @@
   "settings_rules_name_placeholder": "Name this rule",
   "settings_rules_when": "When",
   "settings_rules_trigger": "Trigger",
-  "settings_rules_match": "Conditions",
-  "settings_rules_match_all": "All match",
-  "settings_rules_match_any": "Any matches",
   "settings_rules_field": "Field",
   "settings_rules_op": "Comparison",
   "settings_rules_value": "Value",
   "settings_rules_condition_remove": "Remove this condition",
   "settings_rules_condition_add": "Add condition",
+  "settings_rules_add": "Add",
+  "settings_rules_cond_group_add": "Add a group of conditions",
+  "settings_rules_cond_group_remove": "Remove this group",
+  "settings_rules_cond_group": "Group of conditions",
+  "settings_rules_logic_all": "and",
+  "settings_rules_logic_any": "or",
+  "settings_rules_logic_flip": "Now “{arg1}”. Click to switch",
+  "@settings_rules_logic_flip": {
+    "placeholders": {
+      "arg1": {
+        "type": "String"
+      }
+    }
+  },
+  "settings_rules_parens": "({arg1})",
+  "@settings_rules_parens": {
+    "placeholders": {
+      "arg1": {
+        "type": "String"
+      }
+    }
+  },
   "settings_rules_no_conditions": "No conditions: every mail that triggers the rule gets the action below.",
   "settings_rules_if": "If",
   "settings_rules_then": "Then",

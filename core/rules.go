@@ -158,11 +158,58 @@ type RuleDoc struct {
 	Actions    []RuleAction    `json:"actions"`
 }
 
-// RuleCondition compares a field of the message with Value (typed by the user).
+// RuleCondition compares a field of the message with Value (typed by the user),
+// or is a group: Match of the conditions in Group, and no field. A doc's
+// Conditions are all conditions or at least two groups, one level deep. A build
+// without groups reads one as a condition on no field, which never matches.
 type RuleCondition struct {
-	Field string `json:"field"`
-	Op    string `json:"op"`
-	Value string `json:"value"`
+	Field string          `json:"field"`
+	Op    string          `json:"op"`
+	Value string          `json:"value"`
+	Match string          `json:"match,omitempty"`
+	Group []RuleCondition `json:"group,omitempty"`
+}
+
+// Rows is the doc's conditions, out of their groups.
+func (d RuleDoc) Rows() []RuleCondition {
+	var out []RuleCondition
+	for _, c := range d.Conditions {
+		if c.Group != nil {
+			out = append(out, c.Group...)
+		} else {
+			out = append(out, c)
+		}
+	}
+	return out
+}
+
+// validGroups checks how d's conditions are grouped; validCondition, each.
+func validGroups(d RuleDoc) error {
+	grouped := len(d.Conditions) > 0 && d.Conditions[0].Group != nil
+	if grouped && len(d.Conditions) < 2 {
+		return invalidRule("one condition group")
+	}
+	for _, c := range d.Conditions {
+		switch {
+		case (c.Group != nil) != grouped:
+			return invalidRule("conditions beside a condition group")
+		case !grouped && c.Match != "":
+			return invalidRule("match %q on a condition", c.Match)
+		case !grouped:
+		case c.Field != "" || c.Op != "" || c.Value != "":
+			return invalidRule("condition group with a field")
+		case c.Match != MatchAll && c.Match != MatchAny:
+			return invalidRule("match %q", c.Match)
+		case len(c.Group) == 0:
+			return invalidRule("empty condition group")
+		}
+		for _, g := range c.Group {
+			if g.Group != nil || g.Match != "" {
+				return invalidRule("nested condition group")
+			}
+		}
+	}
+	return nil
 }
 
 // RuleAction is one step; Label is a label's slug (ActionLabel), To an
@@ -244,10 +291,14 @@ func (s *Service) validRule(ctx context.Context, d RuleDoc) error {
 			return invalidRule("account %d", d.Account)
 		}
 	}
-	if len(d.Conditions) > MaxRuleConditions {
+	if err := validGroups(d); err != nil {
+		return err
+	}
+	rows := d.Rows()
+	if len(rows) > MaxRuleConditions {
 		return invalidRule("more than %d conditions", MaxRuleConditions)
 	}
-	for _, c := range d.Conditions {
+	for _, c := range rows {
 		if err := s.validCondition(ctx, c); err != nil {
 			return err
 		}
@@ -565,18 +616,22 @@ func (d RuleDoc) matches(m ruleMail) bool {
 	if d.Account != 0 && m.account != d.Account {
 		return false
 	}
-	if len(d.Conditions) == 0 {
-		return true
-	}
-	for _, c := range d.Conditions {
-		if c.matches(m) == (d.Match == MatchAny) {
-			return d.Match == MatchAny
+	return len(d.Conditions) == 0 || allOrAny(d.Match, d.Conditions, m)
+}
+
+func allOrAny(match string, conds []RuleCondition, m ruleMail) bool {
+	for _, c := range conds {
+		if c.matches(m) == (match == MatchAny) {
+			return match == MatchAny
 		}
 	}
-	return d.Match == MatchAll
+	return match == MatchAll
 }
 
 func (c RuleCondition) matches(m ruleMail) bool {
+	if c.Group != nil {
+		return allOrAny(c.Match, c.Group, m)
+	}
 	want := strings.ToLower(strings.TrimSpace(c.Value))
 	var got []string // the field's values; the op holds on one of them
 	switch c.Field {

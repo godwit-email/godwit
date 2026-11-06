@@ -1,0 +1,190 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<title>规则 · 组合条件方案</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600&amp;family=Geist+Mono:wght@500&amp;family=Noto+Sans+SC:wght@400;500;600&amp;display=swap" rel="stylesheet">
+<style>
+body{margin:0}
+</style>
+</helmet>
+<div style="width: 760px; height: 600px; box-sizing: border-box; padding: 24px; overflow-y: auto; display: flex; flex-direction: column; gap: 12px; background: #FAFAFA; color: #0A0A0A; font-family: Geist, 'Noto Sans SC', sans-serif; font-size: 13px; line-height: 1.5">
+<div style="display: flex; flex-direction: column; gap: 2px"><span style="font-size: 12px; color: #737373">摘要</span><span style="font-weight: 500">{{summary}}</span></div>
+
+<section aria-label="条件" style="border: 1px solid #E5E5E5; border-radius: 12px; background: #FFFFFF; padding: 12px 16px; display: flex; flex-direction: column; gap: 10px">
+<div style="display: flex; align-items: center; gap: 8px">
+<span style="width: 24px; height: 24px; border-radius: 6px; background: #F5F5F5; display: flex; align-items: center; justify-content: center"><svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M10 18H14V16H10V18ZM3 6V8H21V6H3ZM6 13H18V11H6V13Z"></path></svg></span>
+<span style="font-weight: 600">如果</span>
+<sc-if value="{{topToggle}}" hint-placeholder-val="{{ true }}"><div role="radiogroup" aria-label="条件怎么组合" style="margin-left: auto; display: flex; gap: 2px; padding: 2px; border-radius: 8px; background: #F0F0F0"><sc-for list="{{topOpts}}" as="m" hint-placeholder-count="2"><button type="button" role="radio" aria-checked="{{m.checked}}" onClick="{{m.pick}}" style="{{m.style}}">{{m.label}}</button></sc-for></div></sc-if>
+<sc-if value="{{topSelect}}" hint-placeholder-val="{{ false }}"><span style="display: flex; align-items: center; gap: 8px; color: #737373">满足<select aria-label="条件怎么组合" value="{{topLogic}}" onChange="{{setTopLogic}}" style="height: 28px; padding: 0 6px; border: 1px solid #E5E5E5; border-radius: 6px; background: #FFFFFF; font: inherit; color: #0A0A0A"><option value="all">全部</option><option value="any">任一</option></select>条件</span></sc-if>
+</div>
+
+<sc-for list="{{sections}}" as="s" hint-placeholder-count="1">
+<sc-if value="{{s.hasJoin}}" hint-placeholder-val="{{ false }}"><div style="display: flex; align-items: center; justify-content: center; gap: 8px"><span style="flex: 1; height: 1px; background: #E5E5E5"></span><span style="font-size: 12px; color: #737373">{{s.joinWord}}</span><span style="flex: 1; height: 1px; background: #E5E5E5"></span></div></sc-if>
+<div style="{{s.style}}">
+<sc-if value="{{s.hasRail}}" hint-placeholder-val="{{ false }}"><span aria-hidden="true" style="{{s.railLine}}"></span><span aria-hidden="true" style="{{s.railTick}}"></span></sc-if>
+<sc-if value="{{s.outerFlip}}" hint-placeholder-val="{{ false }}"><button type="button" aria-label="{{s.flipLabel}}" title="{{s.flipLabel}}" onClick="{{s.flip}}" style="{{s.flipStyle}}">{{s.joinWord}}</button></sc-if>
+<sc-if value="{{s.hasHead}}" hint-placeholder-val="{{ false }}"><div style="display: flex; align-items: center; gap: 8px; min-height: 28px"><span style="font-weight: 500">{{s.title}}</span></div></sc-if>
+
+<sc-for list="{{s.blocks}}" as="g" hint-placeholder-count="2">
+<div style="position: relative; display: flex; align-items: flex-start; gap: 8px">
+<sc-if value="{{g.hasRail}}" hint-placeholder-val="{{ false }}"><span aria-hidden="true" style="{{g.railLine}}"></span><span aria-hidden="true" style="{{g.railTick}}"></span></sc-if>
+<sc-if value="{{g.hasLead}}" hint-placeholder-val="{{ true }}"><span style="{{g.leadStyle}}">{{g.lead}}<sc-if value="{{g.canFlip}}" hint-placeholder-val="{{ false }}"><button type="button" aria-label="{{g.flipLabel}}" title="{{g.flipLabel}}" onClick="{{g.flip}}" style="{{g.flipStyle}}">{{g.flipWord}}</button></sc-if></span></sc-if>
+<div role="{{g.role}}" aria-label="{{g.label}}" style="{{g.style}}">
+<sc-if value="{{g.boxHead}}" hint-placeholder-val="{{ false }}"><div style="display: flex; align-items: center; gap: 8px"><div role="radiogroup" aria-label="条件组怎么组合" style="display: flex; gap: 2px; padding: 2px; border-radius: 8px; background: #F0F0F0"><sc-for list="{{g.opts}}" as="m" hint-placeholder-count="2"><button type="button" role="radio" aria-checked="{{m.checked}}" onClick="{{m.pick}}" style="{{m.style}}">{{m.label}}</button></sc-for></div><button type="button" aria-label="删除条件组" title="删除条件组" onClick="{{g.remove}}" style="margin-left: auto; flex: none; width: 28px; height: 28px; padding: 0; border: 0; border-radius: 6px; background: transparent; color: #737373; display: flex; align-items: center; justify-content: center"><svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="{{ic.close}}"></path></svg></button></div></sc-if>
+<sc-if value="{{g.lineHead}}" hint-placeholder-val="{{ false }}"><div style="display: flex; align-items: center; gap: 8px; min-height: 32px; color: #737373">满足<select aria-label="条件组怎么组合" value="{{g.logic}}" onChange="{{g.setLogic}}" style="height: 28px; padding: 0 6px; border: 1px solid #E5E5E5; border-radius: 6px; background: #FFFFFF; font: inherit; color: #0A0A0A"><option value="all">全部</option><option value="any">任一</option></select>以下条件<span style="margin-left: auto; display: flex; gap: 4px"><button type="button" aria-label="删除这一组" title="删除这一组" onClick="{{g.remove}}" style="{{stepStyle}}">−</button><button type="button" aria-label="再加一条" title="再加一条" onClick="{{g.add}}" style="{{stepStyle}}">…</button></span></div></sc-if>
+
+<sc-for list="{{g.rows}}" as="c" hint-placeholder-count="1">
+<div style="display: flex; align-items: center; gap: 8px">
+<sc-if value="{{c.hasLead}}" hint-placeholder-val="{{ false }}"><span style="flex: none; width: 20px; font-size: 12px; color: #737373; text-align: center">{{c.lead}}</span></sc-if>
+<select aria-label="字段" value="{{c.f}}" onChange="{{c.setF}}" style="flex: none; width: 88px; height: 32px; padding: 0 8px; border: 1px solid #E5E5E5; border-radius: 8px; background: #FFFFFF; font: inherit"><option value="from">发件人</option><option value="to">收件人</option><option value="subject">主题</option><option value="body">正文</option><option value="attach">附件</option></select>
+<sc-if value="{{c.isText}}" hint-placeholder-val="{{ true }}"><select aria-label="比较" value="{{c.op}}" onChange="{{c.setOp}}" style="flex: none; width: 84px; height: 32px; padding: 0 8px; border: 1px solid #E5E5E5; border-radius: 8px; background: #FFFFFF; font: inherit"><option value="contains">包含</option><option value="not">不包含</option><option value="is">是</option></select><input type="text" aria-label="值" value="{{c.v}}" placeholder="要包含的文字" onInput="{{c.setV}}" style="flex: 1; min-width: 0; height: 32px; box-sizing: border-box; padding: 0 10px; border: 1px solid #E5E5E5; border-radius: 8px; background: #FFFFFF; font: inherit; color: #0A0A0A"></sc-if>
+<sc-if value="{{c.isAttach}}" hint-placeholder-val="{{ false }}"><select aria-label="值" value="{{c.v}}" onChange="{{c.setV}}" style="flex: 1; min-width: 0; height: 32px; padding: 0 8px; border: 1px solid #E5E5E5; border-radius: 8px; background: #FFFFFF; font: inherit"><option value="yes">有</option><option value="no">没有</option></select></sc-if>
+<sc-if value="{{c.plain}}" hint-placeholder-val="{{ true }}"><button type="button" aria-label="删除这个条件" onClick="{{c.remove}}" style="flex: none; width: 28px; height: 28px; padding: 0; border: 0; border-radius: 6px; background: transparent; color: #737373; display: flex; align-items: center; justify-content: center"><svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="{{ic.close}}"></path></svg></button></sc-if>
+<sc-if value="{{c.steps}}" hint-placeholder-val="{{ false }}"><span style="flex: none; display: flex; gap: 4px"><button type="button" aria-label="删除这个条件" title="删除这个条件" onClick="{{c.remove}}" style="{{stepStyle}}">−</button><button type="button" aria-label="{{c.nestLabel}}" title="{{c.nestLabel}}" onClick="{{c.nest}}" style="{{stepStyle}}">…</button></span></sc-if>
+</div>
+</sc-for>
+<sc-if value="{{g.hasAdd}}" hint-placeholder-val="{{ false }}"><button type="button" onClick="{{g.add}}" style="align-self: flex-start; height: 28px; display: flex; align-items: center; gap: 4px; padding: 0 8px; margin-left: 20px; border: 0; border-radius: 6px; background: transparent; color: #737373; font: inherit"><svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="{{ic.add}}"></path></svg>添加条件</button></sc-if>
+</div>
+</div>
+</sc-for>
+<sc-if value="{{s.hasAdd}}" hint-placeholder-val="{{ false }}"><div style="display: flex; align-items: center; gap: 8px"><button type="button" onClick="{{s.add}}" style="{{s.addStyle}}"><svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="{{ic.add}}"></path></svg>添加条件</button><sc-if value="{{s.canRemove}}" hint-placeholder-val="{{ false }}"><button type="button" onClick="{{s.remove}}" style="margin-left: auto; height: 28px; padding: 0 8px; border: 0; border-radius: 6px; background: transparent; color: #737373; font: inherit">删除条件组</button></sc-if></div></sc-if>
+</div>
+</sc-for>
+
+<sc-if value="{{hasFoot}}" hint-placeholder-val="{{ true }}"><div style="{{footStyle}}"><sc-if value="{{footCond}}" hint-placeholder-val="{{ true }}"><button type="button" onClick="{{addTopCond}}" style="height: 28px; display: flex; align-items: center; gap: 4px; padding: 0 8px; border: 0; border-radius: 6px; background: transparent; color: #737373; font: inherit"><svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="{{ic.add}}"></path></svg>添加条件</button></sc-if><button type="button" onClick="{{addGroup}}" style="height: 28px; display: flex; align-items: center; gap: 4px; padding: 0 8px; border: 0; border-radius: 6px; background: transparent; color: #737373; font: inherit"><svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="{{ic.add}}"></path></svg>添加条件组</button></div></sc-if>
+</section>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"scheme":{"editor":"enum","options":["a","b","c","d"],"default":"a"},"$preview":{"width":760,"height":600}}'>
+class Component extends DCLogic {
+  constructor(props) {
+    super(props);
+    var A = function () { return { f: 'from', op: 'contains', v: 'stripe.com' }; };
+    var B = function () { return { f: 'from', op: 'contains', v: 'aws.amazon.com' }; };
+    var C = function () { return { f: 'attach', op: 'is', v: 'yes' }; };
+    var nested = function () { return [{ logic: 'all', items: [{ logic: 'any', group: [A(), B()] }, C()] }]; };
+    var seeds = {
+      a: nested(),
+      b: [{ logic: 'all', items: [C()] }, { logic: 'any', items: [A(), B()] }],
+      c: [{ logic: 'any', items: [A(), B()] }, { logic: 'all', items: [C()] }],
+      d: nested()
+    };
+    this.state = { sections: seeds[props.scheme ?? 'a'] || seeds.a, between: 'all' };
+  }
+  renderVals() {
+    var self = this, st = this.state, scheme = this.props.scheme ?? 'a';
+    var isA = scheme === 'a', isB = scheme === 'b', isC = scheme === 'c', isD = scheme === 'd';
+    var fresh = function () { return { f: 'from', op: 'contains', v: '' }; };
+    var patch = function (f) { var ss = JSON.parse(JSON.stringify(st.sections)), box = { between: st.between }; f(ss, box); self.setState({ sections: ss, between: box.between }); };
+    var word = function (l) { return l === 'any' ? '或' : '且'; };
+    var flipBase = 'width: 28px; height: 24px; padding: 0; border: 1px solid #E5E5E5; border-radius: 6px; background: #FFFFFF; color: #404040; font: inherit; font-size: 12px; z-index: 1';
+    // 括号线：竖线从第一项的中线连到最后一项的中线，每项一条短横线；x 是竖线的位置，gap 是项之间的空隙
+    var railLine = function (x, gap, first, last) {
+      var base = 'position: absolute; left: ' + x + 'px; box-sizing: border-box; border-left: 1px solid #D4D4D4; ';
+      // 首尾两项是带圆角的拐角，中间的项是竖线
+      if (first) return base + 'width: 22px; top: 50%; bottom: 0; border-top: 1px solid #D4D4D4; border-top-left-radius: 8px';
+      if (last) return base + 'width: 22px; top: -' + gap + 'px; bottom: 50%; border-bottom: 1px solid #D4D4D4; border-bottom-left-radius: 8px';
+      return base + 'width: 1px; top: -' + gap + 'px; bottom: 0';
+    };
+    var railTick = function (x, first, last) { return first || last ? 'display: none' : 'position: absolute; left: ' + x + 'px; width: 22px; height: 1px; top: 50%; background: #D4D4D4'; };
+    var flipLabelOf = function (l) { return '现在是「' + word(l) + '」，点击切换为「' + word(l === 'any' ? 'all' : 'any') + '」'; };
+    var opts = function (cur, set, pair) {
+      return (pair || [['all', '全部满足'], ['any', '任一满足']]).map(function (m) {
+        var on = cur === m[0];
+        return { label: m[1], checked: on ? 'true' : 'false', pick: function () { set(m[0]); },
+          style: 'height: 24px; padding: 0 8px; border: 0; border-radius: 6px; font-size: 12px; font-family: inherit; color: ' + (on ? '#0A0A0A; background: #FFFFFF; box-shadow: 0 1px 2px rgba(0,0,0,0.06)' : '#737373; background: transparent') };
+      });
+    };
+    var condText = function (c) {
+      if (c.f === 'attach') return c.v === 'no' ? '没有附件' : '有附件';
+      var f = { from: '发件人', to: '收件人', subject: '主题', body: '正文' }[c.f];
+      return f + (c.op === 'not' ? '不含 ' : c.op === 'is' ? '是 ' : '含 ') + (c.v || '…');
+    };
+    var joinText = function (list, logic, wrap) { var s = list.join(' ' + word(logic) + ' '); return wrap && list.length > 1 ? '（' + s + '）' : s; };
+    var secText = function (sec, wrap) {
+      return joinText(sec.items.map(function (x) { return x.group ? joinText(x.group.map(condText), x.logic, sec.items.length > 1) : condText(x); }), sec.logic, wrap);
+    };
+    var filled = st.sections.filter(function (s) { return s.items.length; });
+    var summaryText = joinText(filled.map(function (s) { return secText(s, filled.length > 1); }), isB ? 'all' : st.between, false);
+
+    var row = function (si, i, j) {
+      var grouped = j !== undefined, cur = grouped ? st.sections[si].items[i].group[j] : st.sections[si].items[i];
+      var at = function (ss) { return grouped ? ss[si].items[i].group : ss[si].items; }, k = grouped ? j : i;
+      return { f: cur.f, op: cur.op, v: cur.v, isText: cur.f !== 'attach', isAttach: cur.f === 'attach', plain: !isD, steps: isD,
+        hasLead: isA && grouped, lead: grouped && j > 0 ? word(st.sections[si].items[i].logic) : '',
+        nestLabel: grouped ? '再加一条' : '按住 Option 点击：在这里加一组',
+        nest: function () { patch(function (ss) { if (grouped) at(ss).splice(k + 1, 0, fresh()); else ss[si].items.splice(i + 1, 0, { logic: 'any', group: [fresh(), fresh()] }); }); },
+        setF: function (e) { var v = e.target.value; patch(function (ss) { at(ss)[k] = v === 'attach' ? { f: v, op: 'is', v: 'yes' } : { f: v, op: 'contains', v: cur.f === 'attach' ? '' : cur.v }; }); },
+        setOp: function (e) { var v = e.target.value; patch(function (ss) { at(ss)[k].op = v; }); },
+        setV: function (e) { var v = e.target.value; patch(function (ss) { at(ss)[k].v = v; }); },
+        remove: function () { patch(function (ss) {
+          at(ss).splice(k, 1);
+          if (grouped && !ss[si].items[i].group.length) ss[si].items.splice(i, 1);
+          if (isC && !ss[si].items.length && ss.length > 1) ss.splice(si, 1);
+        }); } };
+    };
+    var outerRail = isC && st.sections.length > 1;
+    var sections = st.sections.map(function (sec, si) {
+      var blocks = sec.items.map(function (x, i) {
+        var hasLead = isA || isC || isD;
+        var lead = hasLead && !isC && i > 0 ? word(sec.logic) : '';
+        var leadStyle = 'flex: none; width: ' + (isC ? '28px' : '20px') + '; height: 32px; display: flex; align-items: center; justify-content: center; font-size: 12px; color: #737373';
+        // C 只有第二行放一个能点的且 / 或，后面的行留空
+        var canFlip = isC && i === 1;
+        var flip = function () { patch(function (ss) { ss[si].logic = ss[si].logic === 'any' ? 'all' : 'any'; }); };
+        var setGroupLogic = function (l) { patch(function (ss) { ss[si].items[i].logic = l; }); };
+        var removeGroup = function () { patch(function (ss) { ss[si].items.splice(i, 1); }); };
+        var addInGroup = function () { patch(function (ss) { ss[si].items[i].group.push(fresh()); }); };
+        // 只有两行时按钮放在两行中间（行高 32、间距 8），否则会盖住下面的圆角
+        if (!x.group) return { flipStyle: 'position: relative; ' + (sec.items.length === 2 ? 'top: -20px; ' : '') + flipBase, hasRail: isC && sec.items.length > 1, railLine: railLine(14, 8, i === 0, i === sec.items.length - 1), railTick: railTick(14, i === 0, i === sec.items.length - 1), hasLead: hasLead, lead: lead, leadStyle: leadStyle, canFlip: canFlip, flip: flip, flipWord: word(sec.logic), flipLabel: flipLabelOf(sec.logic), role: 'none', label: '', style: 'flex: 1; min-width: 0; display: flex; flex-direction: column', boxHead: false, lineHead: false, hasAdd: false, rows: [row(si, i)] };
+        return { hasLead: hasLead, lead: lead, leadStyle: leadStyle, role: 'group', label: '条件组', boxHead: isA, lineHead: isD, hasAdd: isA, logic: x.logic,
+          style: isA ? 'flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 8px; padding: 8px 10px 4px; border: 1px solid #E5E5E5; border-radius: 8px; background: #FAFAFA'
+            : 'flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 8px; padding-left: 24px',
+          opts: opts(x.logic, setGroupLogic),
+          setLogic: function (e) { setGroupLogic(e.target.value); },
+          remove: removeGroup, add: addInGroup,
+          rows: x.group.map(function (_, j) { return row(si, i, j); }) };
+      });
+      return { blocks: blocks,
+        hasJoin: si > 0 && isB, joinWord: word(isB ? 'all' : st.between),
+        outerFlip: isC && si === 1, flipLabel: flipLabelOf(st.between),
+        flipStyle: 'position: absolute; left: -36px; top: -17px; ' + flipBase,
+        flip: function () { patch(function (ss, box) { box.between = box.between === 'any' ? 'all' : 'any'; }); },
+        hasRail: outerRail, railLine: railLine(-22, 12, si === 0, si === st.sections.length - 1), railTick: railTick(-22, si === 0, si === st.sections.length - 1),
+        hasHead: isB, title: sec.logic === 'any' ? '任一满足' : '全部满足', canRemove: outerRail,
+        addStyle: 'align-self: flex-start; height: 28px; display: flex; align-items: center; gap: 4px; padding: 0 8px; margin-left: ' + (isC ? '36px' : '0') + '; border: 0; border-radius: 6px; background: transparent; color: #737373; font: inherit',
+        opts: opts(sec.logic, function (l) { patch(function (ss) { ss[si].logic = l; }); }),
+        remove: function () { patch(function (ss) { ss.splice(si, 1); }); },
+        hasAdd: isB || isC,
+        add: function () { patch(function (ss) { ss[si].items.push(fresh()); }); },
+        style: 'position: relative; display: flex; flex-direction: column; gap: 8px' + (isC ? '; padding: 8px 10px 4px; border: 1px solid #E5E5E5; border-radius: 8px; background: #FAFAFA' : '') + (outerRail ? '; margin-left: 36px' : '') };
+    });
+    var top = st.sections[0];
+    var setTop = function (l) { patch(function (ss) { ss[0].logic = l; }); };
+    return {
+      ic: { add: 'M11 11V5H13V11H19V13H13V19H11V13H5V11H11Z', close: 'M11.9997 10.5865L16.9495 5.63672L18.3637 7.05093L13.4139 12.0007L18.3637 16.9504L16.9495 18.3646L11.9997 13.4149L7.04996 18.3646L5.63574 16.9504L10.5855 12.0007L5.63574 7.05093L7.04996 5.63672L11.9997 10.5865Z' },
+      summary: summaryText || '没有条件',
+      sections: sections,
+      topToggle: isA && top.items.length > 1, topOpts: opts(top.logic, setTop),
+      footStyle: 'display: flex; align-items: center; gap: 4px' + (outerRail ? '; margin-left: 36px' : ''),
+      topSelect: isD, topLogic: top.logic, setTopLogic: function (e) { setTop(e.target.value); },
+      hasFoot: isA || isC, footCond: isA,
+      addTopCond: function () { patch(function (ss) { ss[0].items.push(fresh()); }); },
+      addGroup: function () { patch(function (ss) {
+        if (isC) ss.push({ logic: 'any', items: [fresh(), fresh()] });
+        else ss[0].items.push({ logic: ss[0].logic === 'any' ? 'all' : 'any', group: [fresh(), fresh()] });
+      }); },
+      stepStyle: 'width: 24px; height: 24px; padding: 0; border: 1px solid #E5E5E5; border-radius: 6px; background: #FFFFFF; color: #525252; font: inherit; line-height: 1'
+    };
+  }
+}
+</script>
+</body>
+</html>
