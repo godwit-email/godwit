@@ -50,6 +50,7 @@ func TestViewCreateFromSidebar(t *testing.T) {
 	}
 	h.click(i18n.T("settings.rules.add"))
 	h.click(i18n.T("settings.rules.condition.add"))
+	h.app.mail.viewEdit.box.Doc.Conditions[0].Field = core.FieldFrom
 	h.fill(i18n.T("settings.rules.value"), "acme.example")
 	h.until("the preview", func() bool {
 		h.advance(debounce)
