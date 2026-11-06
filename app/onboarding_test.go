@@ -959,7 +959,7 @@ func TestOnboardingOtherTileConnectWaitsForDetection(t *testing.T) {
 
 	o.email = "a@no-mx.invalid"
 	o.connect()
-	h.settle()
+	h.until("detected", func() bool { return o.detectedFor == o.email })
 	if o.imapHost != "" || o.smtpHost != "" {
 		t.Fatalf("connected with the previous address's servers: %q / %q", o.imapHost, o.smtpHost)
 	}
