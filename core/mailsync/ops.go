@@ -365,7 +365,9 @@ func single(s imap.NumSet) uint32 {
 // there, #506), so it merges into the moved row and is deleted: its moves queued
 // before o are superseded by o and cancelled, its other queued ops carry over
 // (with its folder, when its latest move is newer than the moved row's), and so
-// do its labels, by row: a copy without label_fp gets no stash from the trigger.
+// do its labels (by row: a copy without label_fp gets no stash from the trigger),
+// reply drafts, rule runs and Wit citations. events_log stays history, as on
+// every other delete of a row.
 func moved(ctx context.Context, db *store.DB, o op, validity, uid uint32) error {
 	stmts := []sqlite.Statement{
 		{SQL: "UPDATE messages SET server_folder_id = NULL, server_uidvalidity = NULL, server_uid = NULL WHERE id = ?", Args: []any{o.msg}},
@@ -392,6 +394,10 @@ func moved(ctx context.Context, db *store.DB, o op, validity, uid uint32) error 
 					SELECT ?, label_id, source, active FROM message_labels WHERE message_id = ? AND source IN ('manual', 'rule')
 					ON CONFLICT(message_id, label_id) DO UPDATE SET source = excluded.source, active = excluded.active
 					WHERE excluded.source = 'manual' OR message_labels.source != 'manual'`, Args: []any{o.msg, cp}},
+				sqlite.Statement{SQL: "UPDATE drafts SET source_message_id = ? WHERE source_message_id = ?", Args: []any{o.msg, cp}},
+				// UNIQUE(rule_id, message_id): a rule that ran on both keeps the moved row's run.
+				sqlite.Statement{SQL: "UPDATE OR IGNORE rule_runs SET message_id = ? WHERE message_id = ?", Args: []any{o.msg, cp}},
+				sqlite.Statement{SQL: "UPDATE run_citations SET message_id = ? WHERE message_id = ?", Args: []any{o.msg, cp}},
 				sqlite.Statement{SQL: "DELETE FROM messages WHERE id = ?", Args: []any{cp}})
 		}
 		stmts = append(stmts,

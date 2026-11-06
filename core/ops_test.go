@@ -264,9 +264,10 @@ func TestMoveOntoStoredCopyCancelsItsOlderMove(t *testing.T) {
 	assert.Equal(t, []string{"cancelled", "done"}, e.opStates(t))
 }
 
-// The copy's labels go to the moved row even when it has no label_fp (no
-// Message-ID and a cut body or attachments), which the delete trigger skips.
-func TestMoveOntoStoredCopyKeepsItsLabels(t *testing.T) {
+// What points at the copy goes to the moved row: its labels even without a
+// label_fp (no Message-ID and a cut body or attachments, which the delete
+// trigger skips), a reply draft's source (its threading headers) and rule runs.
+func TestMoveOntoStoredCopyKeepsWhatPointsAtIt(t *testing.T) {
 	e := newSyncEnv(t)
 	e.put(t, "INBOX", msg("m@x"))
 	e.sync(t)
@@ -277,11 +278,19 @@ func TestMoveOntoStoredCopyKeepsItsLabels(t *testing.T) {
 	require.NoError(t, err)
 	_, err = e.s.db.Execute(bg, "INSERT INTO message_labels(message_id, label_id, source, active) VALUES (?, ?, 'manual', 1)", cp, l.ID)
 	require.NoError(t, err)
+	d, err := e.s.NewDraft(bg, e.acc.ID, "reply", cp)
+	require.NoError(t, err)
+	_, err = e.s.db.Execute(bg, `INSERT INTO rules(position, enabled, doc, created_at, updated_at) VALUES (0, 0, '{}', 0, 0)`)
+	require.NoError(t, err)
+	_, err = e.s.db.Execute(bg, "INSERT INTO rule_runs(rule_id, message_id, trigger, state, at) VALUES (1, ?, 'new', 'done', 0)", cp)
+	require.NoError(t, err)
 
 	require.NoError(t, e.s.Move(bg, []int64{id}, archive))
 	e.sync(t)
 
 	assert.Equal(t, [][]any{{id, l.ID, "manual", int64(1)}}, e.rows(t, "SELECT message_id, label_id, source, active FROM message_labels"))
+	assert.Equal(t, [][]any{{id}}, e.rows(t, "SELECT source_message_id FROM drafts WHERE id = ?", d.ID))
+	assert.Equal(t, [][]any{{id}}, e.rows(t, "SELECT message_id FROM rule_runs"))
 }
 
 func TestMoveNeedsMoveOrUIDPlus(t *testing.T) {
