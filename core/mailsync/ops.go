@@ -356,22 +356,31 @@ func single(s imap.NumSet) uint32 {
 // location becomes the destination; without one it is cleared until fetch claims
 // the arrival (Message-ID and size) in the destination. A row already at the
 // COPYUID is the same server message (Gmail's All Mail copy of mail archived
-// there, #506): it is deleted, and the moved row, with its labels and ops, stays.
+// there, #506): the moved row takes its queued ops, and its folder when its
+// latest queued move is the newer one, then it is deleted (its labels go to the
+// moved row by label_fp).
 func moved(ctx context.Context, db *store.DB, o op, validity, uid uint32) error {
 	stmts := []sqlite.Statement{
 		{SQL: "UPDATE messages SET server_folder_id = NULL, server_uidvalidity = NULL, server_uid = NULL WHERE id = ?", Args: []any{o.msg}},
 		{SQL: "UPDATE ops SET state = 'awaiting_claim', last_error = NULL WHERE id = ?", Args: []any{o.id}},
 	}
 	if uid != 0 {
-		_, tids, err := doomed(ctx, db, "server_folder_id = ? AND server_uid = ? AND id != ?", o.dst, uid, o.msg)
+		ids, tids, err := doomed(ctx, db, "server_folder_id = ? AND server_uid = ? AND id != ?", o.dst, uid, o.msg)
 		if err != nil {
 			return err
 		}
-		stmts = []sqlite.Statement{
-			{SQL: "DELETE FROM messages WHERE server_folder_id = ? AND server_uid = ? AND id != ?", Args: []any{o.dst, uid, o.msg}},
-			{SQL: "UPDATE messages SET server_folder_id = ?, server_uidvalidity = ?, server_uid = ? WHERE id = ?", Args: []any{o.dst, validity, uid, o.msg}},
-			{SQL: "UPDATE ops SET state = 'done', last_error = NULL WHERE id = ?", Args: []any{o.id}},
+		stmts = nil
+		if len(ids) > 0 { // at most one: UNIQUE(server_folder_id, server_uid)
+			const lastMove = "coalesce((SELECT max(id) FROM ops WHERE message_id = ? AND kind = 'move' AND state IN ('pending', 'awaiting_claim') AND id != ?), 0)"
+			stmts = append(stmts,
+				sqlite.Statement{SQL: "UPDATE messages SET folder_id = (SELECT folder_id FROM messages WHERE id = ?), entered_at = unixepoch() WHERE id = ? AND " +
+					lastMove + " > " + lastMove, Args: []any{ids[0], o.msg, ids[0], o.id, o.msg, o.id}},
+				sqlite.Statement{SQL: "UPDATE ops SET message_id = ? WHERE message_id = ? AND state IN ('pending', 'awaiting_claim')", Args: []any{o.msg, ids[0]}},
+				sqlite.Statement{SQL: "DELETE FROM messages WHERE id = ?", Args: []any{ids[0]}})
 		}
+		stmts = append(stmts,
+			sqlite.Statement{SQL: "UPDATE messages SET server_folder_id = ?, server_uidvalidity = ?, server_uid = ? WHERE id = ?", Args: []any{o.dst, validity, uid, o.msg}},
+			sqlite.Statement{SQL: "UPDATE ops SET state = 'done', last_error = NULL WHERE id = ?", Args: []any{o.id}})
 		if len(tids) > 0 {
 			stmts = append(stmts, tidyThreads(o.accountID, tids)...)
 		}
