@@ -167,6 +167,29 @@ func TestMoveWithoutCOPYUID(t *testing.T) {
 	}
 }
 
+// A COPYUID naming a UID a row already holds in the destination (Gmail's All
+// Mail copy of mail archived there, #506) is the same server message: the moved
+// row takes its place instead of the push failing on UNIQUE(server_folder_id, server_uid).
+func TestMoveOntoStoredCopy(t *testing.T) {
+	e := newSyncEnv(t)
+	e.put(t, "INBOX", msg("m@x"))
+	e.sync(t)
+	id := e.idOf(t, "m@x")
+	archive := e.folderID(t, "Archive")
+	// Archive is empty on the server, so the move's COPYUID is 1: a row already there stands in for All Mail's copy.
+	_, err := e.s.db.Execute(bg, `INSERT INTO messages(account_id, folder_id, server_folder_id, server_uidvalidity, server_uid, message_id, subject, size, flags)
+		SELECT account_id, ?, ?, (SELECT uidvalidity FROM folders WHERE id = ?), 1, message_id, subject, size, flags FROM messages WHERE id = ?`,
+		archive, archive, archive, id)
+	require.NoError(t, err)
+
+	require.NoError(t, e.s.Move(bg, []int64{id}, archive))
+	e.sync(t)
+
+	assert.Equal(t, []string{"m@x"}, e.onServer(t, "Archive"))
+	assert.Equal(t, [][]any{{id, archive, archive, int64(1)}}, e.rows(t, "SELECT id, folder_id, server_folder_id, server_uid FROM messages"))
+	assert.Equal(t, []string{"done"}, e.opStates(t))
+}
+
 func TestMoveNeedsMoveOrUIDPlus(t *testing.T) {
 	e := newSyncEnv(t, testmail.WithoutMove(), testmail.WithoutUIDPlus())
 	e.putFlagged(t, "INBOX", msg("keep@x"), imap.FlagDeleted)
