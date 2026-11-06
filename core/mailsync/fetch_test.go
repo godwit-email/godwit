@@ -98,3 +98,42 @@ func TestFillStructuresMalformed(t *testing.T) {
 		t.Fatalf("parts %+v, attachments %+v", parts, atts)
 	}
 }
+
+// A Gmail server (X-GM-EXT-1) is asked for X-GM-MSGID with each imported
+// message, and the go-imap fork parses it (a bump that loses the patch fails
+// here); any other server is never sent the item, which it would refuse.
+func TestImportItemsGmailMsgID(t *testing.T) {
+	for _, gmail := range []bool{true, false} {
+		cc, sc := net.Pipe()
+		asked := make(chan bool, 1)
+		go func() {
+			r := bufio.NewReader(sc)
+			caps := "IMAP4rev1"
+			if gmail {
+				caps += " X-GM-EXT-1"
+			}
+			fmt.Fprintf(sc, "* OK [CAPABILITY %s] hi\r\n", caps)
+			for {
+				line, err := r.ReadString('\n')
+				if err != nil {
+					return
+				}
+				asked <- strings.Contains(line, "X-GM-MSGID")
+				fmt.Fprint(sc, "* 1 FETCH (UID 7 X-GM-MSGID 18000000000000000001)\r\n")
+				fmt.Fprintf(sc, "%s OK done\r\n", strings.Fields(line)[0])
+			}
+		}()
+		c := imapclient.New(cc, nil)
+		msgs, err := c.Fetch(imap.UIDSetNum(7), importItems(c)).Collect()
+		c.Close()
+		if err != nil || len(msgs) != 1 {
+			t.Fatalf("gmail %v: fetch: %v, %d messages", gmail, err, len(msgs))
+		}
+		if got := <-asked; got != gmail {
+			t.Fatalf("gmail %v: X-GM-MSGID asked: %v", gmail, got)
+		}
+		if gmail && msgs[0].GmailMsgID != 18000000000000000001 {
+			t.Fatalf("X-GM-MSGID %d", msgs[0].GmailMsgID)
+		}
+	}
+}

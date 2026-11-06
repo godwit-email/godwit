@@ -302,7 +302,7 @@ func arrivalTwins(ctx context.Context, db *store.DB, c *imapclient.Client, a *ac
 // importAbove imports the messages of set above last_uid that are not stored
 // yet, in UID order, and returns the highest UID set has above last_uid.
 func importAbove(ctx context.Context, db *store.DB, c *imapclient.Client, a *account, f *folder, set imap.NumSet, arrivals bool, twins map[string]int, r *result) (uint32, error) {
-	msgs, err := c.Fetch(set, importItems()).Collect()
+	msgs, err := c.Fetch(set, importItems(c)).Collect()
 	if err != nil {
 		return 0, err
 	}
@@ -341,10 +341,22 @@ func advance(ctx context.Context, db *store.DB, f *folder, last uint32) error {
 	return nil
 }
 
-// importItems is what a sync fetches of each message before its text parts.
-func importItems() *imap.FetchOptions {
-	return &imap.FetchOptions{UID: true, Flags: true, RFC822Size: true, InternalDate: true,
+// capGmail marks a Gmail server, which answers X-GM-MSGID (ADR 0032).
+const capGmail imap.Cap = "X-GM-EXT-1"
+
+// importItems is what a sync fetches of each message before its text parts,
+// with X-GM-MSGID only from a Gmail server: others refuse the item.
+func importItems(c *imapclient.Client) *imap.FetchOptions {
+	return &imap.FetchOptions{UID: true, Flags: true, RFC822Size: true, InternalDate: true, GmailMsgID: c.Caps().Has(capGmail),
 		BodyStructure: &imap.FetchItemBodyStructure{Extended: true}, BodySection: []*imap.FetchItemBodySection{headerSection()}}
+}
+
+// gmailMsgID is m's X-GM-MSGID as stored: decimal text, NULL when not fetched.
+func gmailMsgID(m *imapclient.FetchMessageBuffer) any {
+	if m.GmailMsgID == 0 {
+		return nil
+	}
+	return strconv.FormatUint(m.GmailMsgID, 10)
 }
 
 // importAll imports msgs in the order given, fetching their text parts in
@@ -431,7 +443,7 @@ func backfill(ctx context.Context, db *store.DB, c *imapclient.Client, a *accoun
 	if len(uids) == 0 {
 		return nil
 	}
-	msgs, err := c.Fetch(imap.UIDSetNum(uids...), importItems()).Collect()
+	msgs, err := c.Fetch(imap.UIDSetNum(uids...), importItems(c)).Collect()
 	if err != nil {
 		return err
 	}
@@ -481,7 +493,7 @@ func backfillRange(ctx context.Context, db *store.DB, c *imapclient.Client, a *a
 			return nil
 		}
 		a.budget--
-		msgs, err := c.Fetch(imap.UIDSetNum(page...), importItems()).Collect()
+		msgs, err := c.Fetch(imap.UIDSetNum(page...), importItems(c)).Collect()
 		if err != nil {
 			return err
 		}

@@ -592,6 +592,10 @@ var Migrations = [][]string{{
 	// only on a later event, so mail that came before, still in the
 	// consumer's backlog, is not forwarded (0: every event).
 	`ALTER TABLE rules ADD COLUMN since_seq INTEGER NOT NULL DEFAULT 0`,
+}, {
+	// A Gmail message's X-GM-MSGID, an unsigned 64-bit number kept as
+	// decimal text (ADR 0032); NULL on other servers and rows synced before.
+	`ALTER TABLE messages ADD COLUMN gmail_msgid TEXT`,
 }}
 
 // HistoryRowsVersion is the schema version that keeps a conversation's
