@@ -423,8 +423,11 @@ func fetchSection(c *imapclient.Client, abort func(), uid imap.UID, part, encodi
 // evict deletes the least recently used cached files until the cache fits max.
 // keep are never evicted. cache_path is cleared before the file is removed, so a
 // file that cannot be removed is merely unreferenced (the orphan sweep collects it)
-// and its error is returned.
+// and its error is returned. It holds cacheMu throughout: with a save between
+// reading the rows and acting on them, it would remove a file just downloaded.
 func (s *Service) evict(ctx context.Context, max int64, keep ...int64) error {
+	s.cacheMu.Lock()
+	defer s.cacheMu.Unlock()
 	rows, err := s.db.Query(ctx, "SELECT id, cache_path FROM attachments WHERE cache_path IS NOT NULL ORDER BY last_used, id")
 	if err != nil {
 		return err
@@ -446,17 +449,11 @@ func (s *Service) evict(ctx context.Context, max int64, keep ...int64) error {
 		if slices.Contains(keep, id) {
 			continue
 		}
-		// Under cacheMu: a download of this file, right after the row clears, must not lose its file to the Remove.
-		s.cacheMu.Lock()
-		_, err := s.db.Execute(ctx, "UPDATE attachments SET cache_path = NULL WHERE id = ?", id)
-		if err != nil {
-			s.cacheMu.Unlock()
+		if _, err := s.db.Execute(ctx, "UPDATE attachments SET cache_path = NULL WHERE id = ?", id); err != nil {
 			return err
 		}
 		total -= sizes[i]
-		err = os.Remove(store.Str(r[1]))
-		s.cacheMu.Unlock()
-		if err != nil && !os.IsNotExist(err) {
+		if err := os.Remove(store.Str(r[1])); err != nil && !os.IsNotExist(err) {
 			rmErr = errors.Join(rmErr, err) // reported; the file stays for the orphan sweep
 		}
 	}

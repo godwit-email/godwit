@@ -456,6 +456,27 @@ func TestEvictAndSaveExcludeEachOther(t *testing.T) {
 	require.NoError(t, <-saved)
 }
 
+// Eviction reads its victims under cacheMu: a file whose row changed while it
+// waited for the lock is not removed on what the row said before.
+func TestEvictReadsVictimsUnderCacheLock(t *testing.T) {
+	e := newSyncEnv(t)
+	e.put(t, "INBOX", withAttachments("a1@x", "hi", 1))
+	e.sync(t)
+	aid := e.rows(t, "SELECT id FROM attachments")[0][0].(int64)
+	p, _, err := e.s.GetAttachment(bg, aid)
+	require.NoError(t, err)
+	e.s.cacheMu.Lock()
+	evicted := make(chan error, 1)
+	go func() { evicted <- e.s.evict(bg, 0) }()
+	time.Sleep(100 * time.Millisecond)
+	_, err = e.s.db.Execute(bg, "UPDATE attachments SET cache_path = NULL WHERE id = ?", aid)
+	require.NoError(t, err)
+	e.s.cacheMu.Unlock()
+	require.NoError(t, <-evicted)
+	_, err = os.Stat(p)
+	assert.NoError(t, err)
+}
+
 // A refused login is not tried again for every image.
 func TestGetMessageInlineImagesStopAtRefusedLogin(t *testing.T) {
 	e := newSyncEnv(t)
