@@ -362,9 +362,10 @@ func single(s imap.NumSet) uint32 {
 // location becomes the destination; without one it is cleared until fetch claims
 // the arrival (Message-ID and size) in the destination. A row already at the
 // COPYUID is the same server message (Gmail's All Mail copy of mail archived
-// there, #506): the moved row takes its queued ops, and its folder when its
-// latest queued move is the newer one, then it is deleted (its labels go to the
-// moved row by label_fp).
+// there, #506), so it merges into the moved row and is deleted: its moves queued
+// before o are superseded by o and cancelled, its other queued ops carry over
+// (with its folder, when its latest move is newer than the moved row's), and so
+// do its labels, by row: a copy without label_fp gets no stash from the trigger.
 func moved(ctx context.Context, db *store.DB, o op, validity, uid uint32) error {
 	stmts := []sqlite.Statement{
 		{SQL: "UPDATE messages SET server_folder_id = NULL, server_uidvalidity = NULL, server_uid = NULL WHERE id = ?", Args: []any{o.msg}},
@@ -377,12 +378,21 @@ func moved(ctx context.Context, db *store.DB, o op, validity, uid uint32) error 
 		}
 		stmts = nil
 		if len(ids) > 0 { // at most one: UNIQUE(server_folder_id, server_uid)
-			const lastMove = "coalesce((SELECT max(id) FROM ops WHERE message_id = ? AND kind = 'move' AND state IN ('pending', 'awaiting_claim') AND id != ?), 0)"
+			// The latest queued move of a row; o, still pending, counts for the moved row.
+			const lastMove = "coalesce((SELECT max(id) FROM ops WHERE message_id = ? AND kind = 'move' AND state IN ('pending', 'awaiting_claim')), 0)"
+			cp := ids[0]
 			stmts = append(stmts,
 				sqlite.Statement{SQL: "UPDATE messages SET folder_id = (SELECT folder_id FROM messages WHERE id = ?), entered_at = unixepoch() WHERE id = ? AND " +
-					lastMove + " > " + lastMove, Args: []any{ids[0], o.msg, ids[0], o.id, o.msg, o.id}},
-				sqlite.Statement{SQL: "UPDATE ops SET message_id = ? WHERE message_id = ? AND state IN ('pending', 'awaiting_claim')", Args: []any{o.msg, ids[0]}},
-				sqlite.Statement{SQL: "DELETE FROM messages WHERE id = ?", Args: []any{ids[0]}})
+					lastMove + " > " + lastMove, Args: []any{cp, o.msg, cp, o.msg}},
+				sqlite.Statement{SQL: "UPDATE ops SET state = 'cancelled' WHERE message_id = ? AND kind = 'move' AND state IN ('pending', 'awaiting_claim') AND id < ?",
+					Args: []any{cp, o.id}},
+				sqlite.Statement{SQL: "UPDATE ops SET message_id = ? WHERE message_id = ? AND state IN ('pending', 'awaiting_claim')", Args: []any{o.msg, cp}},
+				// As messages_label_stash hands labels to other copies: a manual label beats a rule's.
+				sqlite.Statement{SQL: `INSERT INTO message_labels(message_id, label_id, source, active)
+					SELECT ?, label_id, source, active FROM message_labels WHERE message_id = ? AND source IN ('manual', 'rule')
+					ON CONFLICT(message_id, label_id) DO UPDATE SET source = excluded.source, active = excluded.active
+					WHERE excluded.source = 'manual' OR message_labels.source != 'manual'`, Args: []any{o.msg, cp}},
+				sqlite.Statement{SQL: "DELETE FROM messages WHERE id = ?", Args: []any{cp}})
 		}
 		stmts = append(stmts,
 			sqlite.Statement{SQL: "UPDATE messages SET server_folder_id = ?, server_uidvalidity = ?, server_uid = ? WHERE id = ?", Args: []any{o.dst, validity, uid, o.msg}},

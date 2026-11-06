@@ -240,6 +240,50 @@ func TestMoveOntoStoredCopyKeepsQueueOrder(t *testing.T) {
 	assert.Equal(t, []string{"done", "done", "done"}, e.opStates(t))
 }
 
+// A move of the copy queued before the moved row's own (one the server refused,
+// still pending) is superseded: it neither takes the moved row's folder nor
+// runs on retry.
+func TestMoveOntoStoredCopyCancelsItsOlderMove(t *testing.T) {
+	e := newSyncEnv(t)
+	e.put(t, "INBOX", msg("m@x"))
+	e.sync(t)
+	id := e.idOf(t, "m@x")
+	archive, trash := e.folderID(t, "Archive"), e.folderID(t, "Trash")
+	cp := e.storedCopy(t, id, archive)
+	// Queued first and failing on every attempt: its destination is gone.
+	_, err := e.s.db.Execute(bg, "UPDATE messages SET folder_id = ? WHERE id = ?", trash, cp)
+	require.NoError(t, err)
+	_, err = e.s.db.Execute(bg, "INSERT INTO ops(account_id, message_id, kind, dst_folder_id, created_at) VALUES (?, ?, 'move', 9999, unixepoch())", e.acc.ID, cp)
+	require.NoError(t, err)
+
+	require.NoError(t, e.s.Move(bg, []int64{id}, archive))
+	e.sync(t)
+
+	assert.Equal(t, []string{"m@x"}, e.onServer(t, "Archive"))
+	assert.Equal(t, [][]any{{id, archive, archive}}, e.rows(t, "SELECT id, folder_id, server_folder_id FROM messages"))
+	assert.Equal(t, []string{"cancelled", "done"}, e.opStates(t))
+}
+
+// The copy's labels go to the moved row even when it has no label_fp (no
+// Message-ID and a cut body or attachments), which the delete trigger skips.
+func TestMoveOntoStoredCopyKeepsItsLabels(t *testing.T) {
+	e := newSyncEnv(t)
+	e.put(t, "INBOX", msg("m@x"))
+	e.sync(t)
+	id := e.idOf(t, "m@x")
+	archive := e.folderID(t, "Archive")
+	cp := e.storedCopy(t, id, archive) // stored without label_fp
+	l, err := e.s.CreateLabel(bg, LabelInput{Name: "Family", Color: "pink", Icon: "heart-3"})
+	require.NoError(t, err)
+	_, err = e.s.db.Execute(bg, "INSERT INTO message_labels(message_id, label_id, source, active) VALUES (?, ?, 'manual', 1)", cp, l.ID)
+	require.NoError(t, err)
+
+	require.NoError(t, e.s.Move(bg, []int64{id}, archive))
+	e.sync(t)
+
+	assert.Equal(t, [][]any{{id, l.ID, "manual", int64(1)}}, e.rows(t, "SELECT message_id, label_id, source, active FROM message_labels"))
+}
+
 func TestMoveNeedsMoveOrUIDPlus(t *testing.T) {
 	e := newSyncEnv(t, testmail.WithoutMove(), testmail.WithoutUIDPlus())
 	e.putFlagged(t, "INBOX", msg("keep@x"), imap.FlagDeleted)
