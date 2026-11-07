@@ -136,7 +136,7 @@ const shownFolder = `(SELECT sl.folder_id FROM message_locations sl JOIN folders
 	ORDER BY (CASE sf.role WHEN 'inbox' THEN 0 WHEN 'all' THEN 2 ELSE 1 END << 40) + sl.folder_id LIMIT 1)`
 
 // serverLocation joins, as l and its folder as f, where the server has message
-// alias m (ADR 0032; for now in one folder at most).
+// alias m (ADR 0032): one row per folder on Gmail, any of which serves a read.
 const serverLocation = "(message_locations l JOIN folders f ON f.id = l.folder_id) ON l.message_id = m.id AND l.uid IS NOT NULL"
 
 // shownIn is the condition that message alias m shows in one of folders, a
