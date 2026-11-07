@@ -228,3 +228,105 @@ func TestSyncWithoutGmailHasNoMsgID(t *testing.T) {
 	e.sync(t)
 	assert.Equal(t, 1, e.count(t, "SELECT count(*) FROM messages WHERE gmail_msgid IS NULL"))
 }
+
+// Archiving a message in INBOX, Work and All Mail takes it out of INBOX only,
+// at once and on the server; deleting it leaves it in Trash only.
+func TestGmailArchiveKeepsLabelsDeleteLeavesTrash(t *testing.T) {
+	e := newSyncEnv(t, testmail.Gmail())
+	require.NoError(t, e.im.User.Create("Work", nil))
+	m := e.im.AddGmail(msg("a@x"), nil, "INBOX", "Work", testmail.GmailAllMail)
+	e.sync(t)
+	id := e.idOf(t, "a@x")
+
+	require.NoError(t, e.s.MoveToRole(bg, []int64{id}, "archive"))
+	for _, step := range []string{"before the push", "after it"} {
+		assert.Empty(t, e.listed(t, "INBOX"), step)
+		assert.Equal(t, []int64{id}, e.listed(t, "Work"), step)
+		assert.Equal(t, []int64{id}, e.listed(t, testmail.GmailAllMail), step)
+		e.sync(t)
+	}
+	assert.Equal(t, []string{"Work", testmail.GmailAllMail}, m.Folders())
+
+	require.NoError(t, e.s.Delete(bg, []int64{id}))
+	for _, step := range []string{"before the push", "after it"} {
+		assert.Empty(t, e.listed(t, "Work"), step)
+		assert.Empty(t, e.listed(t, testmail.GmailAllMail), step)
+		assert.Equal(t, []int64{id}, e.listed(t, testmail.GmailTrash), step)
+		e.sync(t)
+	}
+	assert.Equal(t, []string{testmail.GmailTrash}, m.Folders())
+	assert.Equal(t, []string{"done", "done"}, e.opStates(t))
+}
+
+// A move takes a message out of the folder of the view it came from only; from
+// a view with no single folder, out of INBOX.
+func TestGmailMoveLeavesTheFolderActedFrom(t *testing.T) {
+	e := newSyncEnv(t, testmail.Gmail())
+	for _, f := range []string{"Work", "Done", "Later"} {
+		require.NoError(t, e.im.User.Create(f, nil))
+	}
+	m := e.im.AddGmail(msg("a@x"), nil, "INBOX", "Work", testmail.GmailAllMail)
+	e.sync(t)
+	id := e.idOf(t, "a@x")
+
+	require.NoError(t, e.s.MoveFrom(bg, []int64{id}, e.folderID(t, "Work"), e.folderID(t, "Done")))
+	for _, step := range []string{"before the push", "after it"} {
+		assert.Equal(t, []int64{id}, e.listed(t, "INBOX"), step)
+		assert.Empty(t, e.listed(t, "Work"), step)
+		assert.Equal(t, []int64{id}, e.listed(t, "Done"), step)
+		e.sync(t)
+	}
+	assert.Equal(t, []string{"Done", "INBOX", testmail.GmailAllMail}, m.Folders())
+
+	require.NoError(t, e.s.Move(bg, []int64{id}, e.folderID(t, "Later")))
+	e.sync(t)
+	assert.Equal(t, []string{"Done", "Later", testmail.GmailAllMail}, m.Folders())
+	assert.Equal(t, []int64{id}, e.listed(t, "Done"))
+	assert.Empty(t, e.listed(t, "INBOX"))
+	assert.Equal(t, []string{"done", "done"}, e.opStates(t))
+}
+
+// An archive whose MOVE reached Gmail but whose answer was lost is found
+// done from the server, not sent again.
+func TestGmailLostMoveResponseReconciled(t *testing.T) {
+	e := newSyncEnv(t, testmail.Gmail())
+	m := e.im.AddGmail(msg("a@x"), nil, "INBOX", testmail.GmailAllMail)
+	e.sync(t)
+	id := e.idOf(t, "a@x")
+
+	require.NoError(t, e.s.MoveToRole(bg, []int64{id}, "archive"))
+	_, err := e.s.db.Execute(bg, "UPDATE ops SET attempts = 1") // sent, then the connection dropped
+	require.NoError(t, err)
+	m.Unlabel("INBOX") // what the MOVE did
+	before := e.im.MovesAndCopies()
+	e.sync(t)
+	e.sync(t)
+	assert.Equal(t, []string{"done"}, e.opStates(t))
+	assert.Equal(t, before, e.im.MovesAndCopies(), "the MOVE is not sent again")
+	assert.Equal(t, []int64{id}, e.listed(t, testmail.GmailAllMail))
+	assert.Empty(t, e.listed(t, "INBOX"))
+}
+
+// A move whose source folder lost the message on the server before it was
+// sent ends as a conflict, and the message shows where the server has it.
+func TestGmailMoveFromFolderLostOnServer(t *testing.T) {
+	e := newSyncEnv(t, testmail.Gmail(), testmail.WithoutCOPYUID())
+	for _, f := range []string{"Work", "Old", "Later"} {
+		require.NoError(t, e.im.User.Create(f, nil))
+	}
+	m := e.im.AddGmail(msg("a@x"), nil, "INBOX", "Old", testmail.GmailAllMail)
+	e.sync(t)
+	id := e.idOf(t, "a@x")
+
+	// The first move awaits its claim while Old's is held back behind it.
+	require.NoError(t, e.s.Move(bg, []int64{id}, e.folderID(t, "Work")))
+	require.NoError(t, e.s.MoveFrom(bg, []int64{id}, e.folderID(t, "Old"), e.folderID(t, "Later")))
+	m.Unlabel("Old") // by another client
+	e.sync(t)
+	e.sync(t)
+	assert.Equal(t, []string{"done", "conflict"}, e.opStates(t))
+	assert.Equal(t, []string{"Work", testmail.GmailAllMail}, m.Folders())
+	assert.Equal(t, []int64{id}, e.listed(t, "Work"))
+	assert.Empty(t, e.listed(t, "Later"))
+	assert.Empty(t, e.listed(t, "Old"))
+}

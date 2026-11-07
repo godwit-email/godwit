@@ -36,7 +36,8 @@ var systemLabels = map[string]string{"INBOX": `\Inbox`, GmailSent: `\Sent`, Gmai
 // folders, each with its own UID; flags other than \Deleted are shared; FETCH
 // answers X-GM-MSGID and X-GM-LABELS; COPY and MOVE add the destination to
 // its folders (with the UID it already has there, if any), and MOVE and
-// EXPUNGE take it out of the source. Identity is never derived from content:
+// EXPUNGE take it out of the source; a MOVE to Trash or Spam takes it out of
+// every other folder. Identity is never derived from content:
 // two AddGmail calls make two messages, and an APPEND makes a new one.
 func Gmail() Option { return func(c *config) { c.gmail = true } }
 
@@ -233,6 +234,24 @@ func (s session) gmailMove(w *imapserver.MoveWriter, set imap.NumSet, dest strin
 	}
 	if err := s.gmailPrune(); err != nil {
 		return err
+	}
+	if dest == GmailTrash || dest == GmailSpam { // as on Gmail, they leave every other folder
+		var binned []*GmailMessage
+		uids, _ := d.DestUIDs.Nums()
+		s.s.gmu.Lock()
+		for _, u := range uids {
+			if m := s.s.at(dest, imap.UID(u)); m != nil {
+				binned = append(binned, m)
+			}
+		}
+		s.s.gmu.Unlock()
+		for _, m := range binned {
+			for _, f := range m.Folders() {
+				if f != dest {
+					m.Unlabel(f)
+				}
+			}
+		}
 	}
 	return w.WriteCopyData(d) // the EXPUNGEs follow, from the tracker
 }

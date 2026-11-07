@@ -41,109 +41,17 @@ type ThreadPage struct {
 }
 
 // Thread is a conversation with its messages, oldest first. A message the
-// server keeps in several folders (Gmail's INBOX, labels and All Mail) is in
-// Messages once; Copies holds its other copies, which an action on the whole
-// thread still covers, and CopyOf, for each, the ID of the one in Messages.
-// ReplyTarget is the message a reply to the whole thread answers: the newest
-// that is not the user's own forward, whose recipient the reply is not for; 0
-// when all are, and the newest then is the one.
+// server keeps in several folders (Gmail's INBOX, labels and All Mail) is one
+// message, in all of its FolderIDs. One in the account's Sent folder is your
+// own mail and reads as read (\Seen), as ListThreads counts it, whatever the
+// server's flags. ReplyTarget is the message a reply to the whole thread
+// answers: the newest that is not the user's own forward, whose recipient the
+// reply is not for; 0 when all are, and the newest then is the one.
 type Thread struct {
 	ID          int64
 	Subject     string
 	Messages    []MessageSummary
-	Copies      []MessageSummary
-	CopyOf      []int64
 	ReplyTarget int64
-	// sent holds the shown messages with a copy in the account's Sent folder
-	// (as RoleFolder resolves it): read, as ListThreads counts them, whatever
-	// \Seen their copies carry.
-	sent map[int64]bool
-}
-
-// All is every message of the thread, Messages then Copies.
-func (t Thread) All() []MessageSummary { return append(slices.Clip(t.Messages), t.Copies...) }
-
-// CopiesOf are the other copies of the message id.
-func (t Thread) CopiesOf(id int64) []MessageSummary {
-	var out []MessageSummary
-	for i, c := range t.Copies {
-		if t.CopyOf[i] == id {
-			out = append(out, c)
-		}
-	}
-	return out
-}
-
-// Merged is Messages, each with its copies' state as ListThreads counts it:
-// unread while a copy is, unless it is your own sent mail, starred while one
-// is, and the gravest security.
-func (t Thread) Merged() []MessageSummary {
-	out := slices.Clone(t.Messages)
-	for i := range out {
-		m := &out[i]
-		for _, c := range t.CopiesOf(m.ID) {
-			if !slices.Contains(c.Flags, `\Seen`) && slices.Contains(m.Flags, `\Seen`) {
-				m.Flags = slices.DeleteFunc(slices.Clone(m.Flags), func(f string) bool { return f == `\Seen` })
-			}
-			if slices.Contains(c.Flags, `\Flagged`) && !slices.Contains(m.Flags, `\Flagged`) {
-				m.Flags = append(slices.Clone(m.Flags), `\Flagged`)
-			}
-			if gomail.SecurityRank(c.Security.Status) > gomail.SecurityRank(m.Security.Status) {
-				m.Security = c.Security
-			}
-		}
-		if t.sent[m.ID] && !slices.Contains(m.Flags, `\Seen`) {
-			m.Flags = append(slices.Clone(m.Flags), `\Seen`)
-		}
-	}
-	return out
-}
-
-// copyCols are the columns, on messages alias m, that copyOf reads: the
-// thread, the Message-ID and how much the copy's folder is preferred. The
-// inbox copy shows, so acting on what is shown acts in the inbox; All Mail's
-// last, as it holds a copy of every message.
-const copyCols = `m.thread_id, m.message_id, CASE (SELECT f.role FROM folders f WHERE f.id = ` + shownFolder + `) WHEN 'inbox' THEN 0 WHEN 'all' THEN 2 ELSE 1 END`
-
-// copyOf gives, for rows each holding copyCols at col, the index of the row
-// that shows each row's message, its own index for that row: of a thread's
-// rows sharing a Message-ID, the one of the preferred folder, then lowest id
-// (idCol). Copies are only
-// ever within a thread, so the same mail in two accounts' threads stays in
-// both; a row without a Message-ID is always its own message.
-func copyOf(rows [][]any, idCol, col int) []int {
-	key := func(r []any) string {
-		if mid := store.Str(r[col+1]); mid != "" {
-			return fmt.Sprint(store.Int(r[col]), "\x00", mid)
-		}
-		return ""
-	}
-	best := map[string]int{}
-	for i, r := range rows {
-		k := key(r)
-		if k == "" {
-			continue
-		}
-		if j, ok := best[k]; !ok || copyLess(r, rows[j], idCol, col) {
-			best[k] = i
-		}
-	}
-	of := make([]int, len(rows))
-	for i, r := range rows {
-		if j, ok := best[key(r)]; ok {
-			of[i] = j
-		} else {
-			of[i] = i
-		}
-	}
-	return of
-}
-
-func copyLess(a, b []any, idCol, col int) bool {
-	if ra, rb := store.Int(a[col+2]), store.Int(b[col+2]); ra != rb {
-		return ra < rb
-	}
-	return store.Int(a[idCol]) < store.Int(b[idCol])
 }
 
 // ListThreads lists threads with at least one message in the view, newest first.
@@ -184,9 +92,9 @@ func (s *Service) ListThreads(ctx context.Context, v View, cursor string, limit 
 	if len(ids) == 0 {
 		return page, nil
 	}
-	ms, err := s.db.Query(ctx, `SELECT thread_id, from_addr, snippet, flags, has_attachments, auth_results, security_status, security_reason, security_scanned_at, m.id, `+copyCols+`,
+	ms, err := s.db.Query(ctx, `SELECT thread_id, from_addr, snippet, flags, has_attachments, auth_results, security_status, security_reason, security_scanned_at,
 		(SELECT email FROM accounts WHERE id = m.account_id),
-		(SELECT COALESCE(NULLIF(role_override, ''), role, '') FROM folders WHERE id = `+shownFolder+`), `+shownFolder+` FROM messages m
+		(SELECT COALESCE(NULLIF(role_override, ''), role, '') FROM folders WHERE id = `+shownFolder+`), `+shownFolders+` FROM messages m
 		WHERE thread_id IN (`+strings.TrimSuffix(strings.Repeat("?,", len(ids)), ",")+`) AND `+notPurgedCond+` ORDER BY date DESC, id DESC`, ids...)
 	if err != nil {
 		return ThreadPage{}, err
@@ -196,16 +104,7 @@ func (s *Service) ListThreads(ctx context.Context, v View, cursor string, limit 
 		return ThreadPage{}, err
 	}
 	seen := map[string]bool{}
-	of := copyOf(ms.Values, 9, 10)
-	unread, flagged, sent := map[int]bool{}, map[int]bool{}, map[int]bool{} // a message is unread or starred if any copy is, and read once one is in Sent:
-	// your own mail, whose Sent copy another client or an import can leave unflagged
-	// shortcut: reads Sent from shownFolder, so Gmail mail to yourself (INBOX and Sent) counts as unread; #525 reads FolderIDs.
-	for i, r := range ms.Values {
-		unread[of[i]] = unread[of[i]] || !strings.Contains(store.Str(r[3]), `\Seen`)
-		sent[of[i]] = sent[of[i]] || slices.Contains(sentIDs, any(store.Int(r[15])))
-		flagged[of[i]] = flagged[of[i]] || strings.Contains(store.Str(r[3]), `\Flagged`)
-	}
-	for _, r := range ms.Values { // a warning on any copy is the thread's
+	for _, r := range ms.Values {
 		t := &page.Items[idx[store.Int(r[0])]]
 		fromAddr := store.Str(r[1])
 		secStatus := store.Str(r[6])
@@ -217,30 +116,28 @@ func (s *Service) ListThreads(ctx context.Context, v View, cursor string, limit 
 		} else if secScanned > 0 {
 			sec = gomail.EvaluateSecurity(fromAddr, store.Str(r[5]))
 		}
-		if gomail.SecurityRank(sec.Status) > gomail.SecurityRank(t.Security.Status) {
+		if gomail.SecurityRank(sec.Status) > gomail.SecurityRank(t.Security.Status) { // a warning on any message is the thread's
 			t.Security = sec
 		}
-	}
-	for i, r := range ms.Values {
-		if of[i] != i {
-			continue
-		}
-		t := &page.Items[idx[store.Int(r[0])]]
 		if t.Count == 0 {
 			t.Snippet = gomail.Snippet(store.Str(r[2])) // newest first; clean of what an older sync kept
 		}
-		if from, role := store.Str(r[1]), store.Str(r[14]); t.From == "" && role != "sent" && role != "drafts" && gomail.AddrKey(from) != gomail.AddrKey(store.Str(r[13])) {
-			t.From = from
+		if role := store.Str(r[10]); t.From == "" && role != "sent" && role != "drafts" && gomail.AddrKey(fromAddr) != gomail.AddrKey(store.Str(r[9])) {
+			t.From = fromAddr
 		}
 		t.Count++
-		if unread[i] && !sent[i] {
+		// Read once it is in Sent: your own mail, which another client or an
+		// import can leave unflagged.
+		flags := store.Str(r[3])
+		inSent := slices.ContainsFunc(scanFolderIDs(r[11]), func(f int64) bool { return slices.Contains(sentIDs, any(f)) })
+		if !strings.Contains(flags, `\Seen`) && !inSent {
 			t.Unread++
 		}
-		if flagged[i] {
+		if strings.Contains(flags, `\Flagged`) {
 			t.Flagged++
 		}
 		t.HasAttachments = t.HasAttachments || store.Int(r[4]) != 0
-		name := displayName(store.Str(r[1]))
+		name := displayName(fromAddr)
 		if k := fmt.Sprint(t.ID, "\x00", name); !seen[k] {
 			seen[k] = true
 			t.Participants = append(t.Participants, name)
@@ -249,7 +146,7 @@ func (s *Service) ListThreads(ctx context.Context, v View, cursor string, limit 
 	return page, nil
 }
 
-// GetThread returns the thread's messages by date ascending, each once.
+// GetThread returns the thread's messages by date ascending.
 func (s *Service) GetThread(ctx context.Context, id int64) (Thread, error) {
 	rows, err := s.db.Query(ctx, "SELECT t.subject, a.email, a.id FROM threads t JOIN accounts a ON a.id = t.account_id WHERE t.id = ?", id)
 	if err != nil {
@@ -263,31 +160,22 @@ func (s *Service) GetThread(ctx context.Context, id int64) (Thread, error) {
 	if err != nil {
 		return Thread{}, err
 	}
-	ms, err := s.db.Query(ctx, "SELECT "+msgCols+", m.in_reply_to, m.refs, m.reply_to, "+copyCols+" FROM messages m WHERE m.thread_id = ? AND "+notPurgedCond+" ORDER BY m.date, m.id", id)
+	ms, err := s.db.Query(ctx, "SELECT "+msgCols+", m.in_reply_to, m.refs, m.reply_to FROM messages m WHERE m.thread_id = ? AND "+notPurgedCond+" ORDER BY m.date, m.id", id)
 	if err != nil {
 		return Thread{}, err
 	}
-	of := copyOf(ms.Values, 0, msgColCount+3)
-	for i, r := range ms.Values {
-		if sentID != 0 && store.Int(r[2]) == sentID { // its shown folder (shortcut: one of them, see ListThreads; #525)
-			if t.sent == nil {
-				t.sent = map[int64]bool{}
-			}
-			t.sent[store.Int(ms.Values[of[i]][0])] = true
+	for _, r := range ms.Values {
+		m := scanSummary(r)
+		if sentID != 0 && slices.Contains(m.FolderIDs, sentID) && !slices.Contains(m.Flags, `\Seen`) {
+			m.Flags = append(m.Flags, `\Seen`)
 		}
-		if of[i] == i {
-			m := scanSummary(r)
-			t.Messages = append(t.Messages, m)
-			inReplyTo, refs, replyTo := store.Str(r[msgColCount]), store.Str(r[msgColCount+1]), store.Str(r[msgColCount+2])
-			// A forward as enqueue sends it. With its subject edited it counts as mail
-			// to answer: the compose window still shows who the reply goes to.
-			forward := inReplyTo == "" && refs != "" && gomail.IsForwardSubject(m.Subject) && gomail.FromSelf(m.From, replyTo, self)
-			if !forward {
-				t.ReplyTarget = m.ID
-			}
-		} else {
-			t.Copies = append(t.Copies, scanSummary(r))
-			t.CopyOf = append(t.CopyOf, store.Int(ms.Values[of[i]][0]))
+		t.Messages = append(t.Messages, m)
+		inReplyTo, refs, replyTo := store.Str(r[msgColCount]), store.Str(r[msgColCount+1]), store.Str(r[msgColCount+2])
+		// A forward as enqueue sends it. With its subject edited it counts as mail
+		// to answer: the compose window still shows who the reply goes to.
+		forward := inReplyTo == "" && refs != "" && gomail.IsForwardSubject(m.Subject) && gomail.FromSelf(m.From, replyTo, self)
+		if !forward {
+			t.ReplyTarget = m.ID
 		}
 	}
 	return t, nil

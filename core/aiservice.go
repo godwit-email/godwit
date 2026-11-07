@@ -244,16 +244,15 @@ type contentMember struct {
 	Hash string // sha256 of subject and bodies
 }
 
-// mailTarget loads a message or thread: its account, member IDs by date (a
-// message in several folders once, as the copy prefer names when it is one),
-// and its content version (members sorted by ID). It also proves the target
+// mailTarget loads a message or thread: its account, member IDs by date and
+// its content version (members sorted by ID). It also proves the target
 // exists.
-func (s *Service) mailTarget(ctx context.Context, kind string, id int64, prefer ...int64) (int64, []int64, []contentMember, error) {
+func (s *Service) mailTarget(ctx context.Context, kind string, id int64) (int64, []int64, []contentMember, error) {
 	where := "id = ?"
 	if kind == "thread" {
 		where = "thread_id = ?"
 	}
-	rows, err := s.db.Query(ctx, "SELECT m.id, m.account_id, m.subject, m.body_text, m.body_html, "+copyCols+" FROM messages m WHERE m."+where+" ORDER BY m.date, m.id", id)
+	rows, err := s.db.Query(ctx, "SELECT m.id, m.account_id, m.subject, m.body_text, m.body_html FROM messages m WHERE m."+where+" ORDER BY m.date, m.id", id)
 	if err != nil {
 		return 0, nil, nil, err
 	}
@@ -262,21 +261,7 @@ func (s *Service) mailTarget(ctx context.Context, kind string, id int64, prefer 
 	}
 	var ids []int64
 	var members []contentMember
-	of := copyOf(rows.Values, 0, 5) // a message in several folders is read once
-	for p, r := range rows.Values {
-		if slices.Contains(prefer, store.Int(r[0])) && of[p] != p {
-			shown := of[p]
-			for i := range of {
-				if of[i] == shown {
-					of[i] = p
-				}
-			}
-		}
-	}
-	for i, r := range rows.Values {
-		if of[i] != i {
-			continue
-		}
+	for _, r := range rows.Values {
 		ids = append(ids, store.Int(r[0]))
 		sum := sha256.Sum256([]byte(store.Str(r[2]) + "\x00" + store.Str(r[3]) + "\x00" + store.Str(r[4])))
 		members = append(members, contentMember{store.Int(r[0]), hex.EncodeToString(sum[:])})
@@ -379,7 +364,7 @@ func (s *Service) QuickReplies(ctx context.Context, messageID int64) ([]QuickRep
 	if tid := store.Int(r0[1]); tid != 0 {
 		kind, target = "thread", tid
 	}
-	account, ids, members, err := s.mailTarget(ctx, kind, target, messageID) // the copy answered, though another shows
+	account, ids, members, err := s.mailTarget(ctx, kind, target)
 	if err != nil {
 		return nil, err
 	}
