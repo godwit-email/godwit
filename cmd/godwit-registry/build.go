@@ -66,6 +66,9 @@ func build(directoryPath, outPath string) error {
 	if err := decodeStrict(b, &dir); err != nil {
 		return fmt.Errorf("directory: %w", err)
 	}
+	if dir.Plugins == nil { // publishing no plugins revokes them all, so it must be spelled out
+		return errors.New(`directory: no "plugins" array; an empty list is written []`)
+	}
 	type outPlugin struct {
 		Name      string            `json:"name"`
 		Title     json.RawMessage   `json:"title"`

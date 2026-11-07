@@ -156,6 +156,27 @@ func TestBuildRejectsTrailingData(t *testing.T) {
 	})
 }
 
+func TestBuildNeedsAnExplicitPluginsArray(t *testing.T) {
+	buildDir := func(t *testing.T, directory string) (string, int, string) {
+		dir := t.TempDir()
+		in, out := filepath.Join(dir, "directory.json"), filepath.Join(dir, "registry.json")
+		require.NoError(t, os.WriteFile(in, []byte(directory), 0o600))
+		code, _, errw := call("build", in, out)
+		return out, code, errw
+	}
+	for _, directory := range []string{`null`, `{}`, `{"plugins":null}`} {
+		t.Run(directory, func(t *testing.T) {
+			out, code, errw := buildDir(t, directory)
+			assert.Equal(t, 1, code)
+			assert.Contains(t, errw, "plugins")
+			assert.NoFileExists(t, out)
+		})
+	}
+	out, code, errw := buildDir(t, `{"plugins":[]}`)
+	require.Zero(t, code, errw)
+	assert.FileExists(t, out)
+}
+
 func TestBuildFailsWhenACommitIsGone(t *testing.T) {
 	gone := entry()
 	gone["source"] = map[string]any{"repo": "godwit-email/deleted", "path": "godwit-plugin.json", "sha": testCommit}
