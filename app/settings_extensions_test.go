@@ -458,3 +458,13 @@ func TestScriptPluginCardUnchanged(t *testing.T) {
 		t.Fatal("a script plugin shows the native card")
 	}
 }
+
+func TestSameConsentCoversTheKind(t *testing.T) {
+	shown := core.RegistryEntry{Version: "1.0.0", Script: true}
+	if !sameConsent(shown, core.PluginInfo{Version: "1.0.0"}) {
+		t.Fatal("the release the dialog showed")
+	}
+	if sameConsent(shown, core.PluginInfo{Version: "1.0.0", Native: true}) {
+		t.Fatal("a native release of the same version must ask again: the user approved a script's permissions")
+	}
+}
