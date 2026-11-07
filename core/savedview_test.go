@@ -744,7 +744,7 @@ func TestSavedViewLargeViewTimes(t *testing.T) {
 			for j := range perThread {
 				stmts = append(stmts, sqlite.Statement{SQL: `INSERT INTO messages(account_id, thread_id, message_id, from_addr, to_addrs, cc_addrs, subject, date, flags, snippet, body_text)
 					VALUES (?, ?, ?, ?, '["alice@example.com"]', '[]', ?, ?, '\Seen', 'snippet', 'body text')`,
-					Args: []any{folder[1], 1000 + i, fmt.Sprintf("m%d-%d@x", i, j), from, fmt.Sprintf("subject %d", i), date - int64(j)}},
+					Args: []any{folder[1], 1000 + i, fmt.Sprintf("message-%d-%d", i, j), from, fmt.Sprintf("subject %d", i), date - int64(j)}},
 					sqlite.Statement{SQL: `INSERT INTO message_locations(message_id, folder_id, shown, uid, entered_at, date)
 						VALUES (last_insert_rowid(), ?, 1, ?, 0, ?)`, Args: []any{folder[0], 1000 + i*10 + j, date - int64(j)}})
 			}
