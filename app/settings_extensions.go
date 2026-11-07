@@ -1058,7 +1058,8 @@ func (e *extView) installFromRegistry(name string, approved *core.RegistryEntry)
 	})
 }
 
-// sameConsent: the installed plugin is the release and permissions the dialog showed.
+// sameConsent: the installed plugin is the release, kind and permissions the
+// dialog showed. A native release with no permissions is no script's consent.
 func sameConsent(en core.RegistryEntry, p core.PluginInfo) bool {
-	return en.Version == p.Version && reflect.DeepEqual(en.Permissions, p.Permissions) && slices.Equal(en.Capabilities, p.Capabilities)
+	return en.Native == p.Native && en.Version == p.Version && reflect.DeepEqual(en.Permissions, p.Permissions) && slices.Equal(en.Capabilities, p.Capabilities)
 }

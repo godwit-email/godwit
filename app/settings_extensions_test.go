@@ -532,3 +532,13 @@ func TestPluginSignedInShowsAccountAndSignsOut(t *testing.T) {
 	h.click("退出登录")
 	h.until("the write", func() bool { return len(h.app.writes.chains["plugins"]) == 0 })
 }
+
+func TestSameConsentCoversTheKind(t *testing.T) {
+	shown := core.RegistryEntry{Version: "1.0.0", Script: true}
+	if !sameConsent(shown, core.PluginInfo{Version: "1.0.0"}) {
+		t.Fatal("the release the dialog showed")
+	}
+	if sameConsent(shown, core.PluginInfo{Version: "1.0.0", Native: true}) {
+		t.Fatal("a native release of the same version must ask again: the user approved a script's permissions")
+	}
+}
