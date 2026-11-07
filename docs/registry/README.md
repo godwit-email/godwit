@@ -1,17 +1,22 @@
 # Godwit plugin registry
 
 This is the template for the `godwit-email/plugins` repository: the list of plugins Godwit's
-Extensions page offers as reviewed. Copy `registry.json` to the repository root and
+Extensions page offers as reviewed. Copy `directory.json` to the repository root and
 `publish.yml` to `.github/workflows/`. The design is
-recorded in `docs/adr/0015`–`0018` in the Godwit repository.
+recorded in `docs/adr/0015`–`0018` and `0032` in the Godwit repository.
 
 ## How it works
 
-- `registry.json` lists plugins and their releases. Each release carries its `plugin.json`
+- `directory.json` says what each plugin is, in the reviewers' words, and pins by commit the
+  `godwit-plugin.json` its author maintains.
+- `godwit-plugin.json` lists the plugin's releases. Each release carries its `plugin.json`
   (as `manifest`) and, per file it ships, the URL, size and SHA-256. Godwit trusts **those
   exact files**, never what a plugin says about itself.
-- A merge to `main` runs `godwit-registry check --fetch` (the validator Godwit itself uses,
-  plus a download of every file), signs `registry.json` with the repository's ed25519 key
+- `godwit-registry build` joins them into `registry.json`, which is built and never committed.
+  Godwit only reads that file: it cannot check a commit SHA itself, so what it trusts is the
+  signature over the joined result.
+- A merge to `main` builds it, runs `godwit-registry check --fetch` (the validator Godwit itself
+  uses, plus a download of every file), signs `registry.json` with the repository's ed25519 key
   and uploads both files to `dl.godwit.email/plugins/`. Godwit verifies the signature with the
   public key built into it, and refuses a registry older than the one it has.
 - Godwit installs a release by downloading its file and checking the size and SHA-256. A
@@ -22,14 +27,33 @@ recorded in `docs/adr/0015`–`0018` in the Godwit repository.
 
 ## Adding a plugin or a release
 
-Open a pull request that adds to `plugins` (or to an existing plugin's `releases`):
+1. Commit the new release to the plugin's `godwit-plugin.json` (a new plugin: create the file).
+2. Open a pull request here that sets `source.sha` to that commit, or adds the entry. The check
+   shows what changes in the published `registry.json`; that difference is what gets reviewed.
+
+An entry of `directory.json`:
 
 ```json
 {
   "name": "dlx",
-  "title": { "default": "DLX", "zh-CN": "DLX 翻译" },
+  "title": { "default": "DLX", "zh-Hans": "DLX 翻译" },
   "summary": { "default": "Translate mail with DeepLX. Uses an unofficial DeepL endpoint that may stop working." },
+  "category": "translate",
+  "publisher": "Example",
+  "dataFlow": "third-party",
   "homepage": "https://github.com/someone/godwit-dlx",
+  "source": { "repo": "someone/godwit-dlx", "path": "godwit-plugin.json", "sha": "<the full 40-character commit SHA>" }
+}
+```
+
+- `category` is `translate`, `models` or `other`; `dataFlow` is `local` or `third-party`.
+- `name` never changes once published: installs are keyed by it. To relabel a plugin, change `title`.
+
+A `godwit-plugin.json`, with every release still offered or installed, not just the newest:
+
+```json
+{
+  "name": "dlx",
   "releases": [
     {
       "version": "0.1.0",
@@ -71,7 +95,7 @@ Open a pull request that adds to `plugins` (or to an existing plugin's `releases
 
   A release's assets are part of what was reviewed: changing or removing any of them, even a
   variant nobody downloaded, revokes the release for everyone who installed it.
-- Bump the top-level `updated` (RFC 3339) in every pull request.
+- A release that leaves `releases` is revoked for everyone who installed it.
 - **Never edit a published release**; publish a new version instead. A Godwit that cannot read a
   release (a field, capability or manifest field from a newer Godwit) sets that release aside and
   keeps the rest of the registry, so a release that uses anything new must carry the `minGodwit`
@@ -93,17 +117,20 @@ Before approving:
    answers the same name, version, ABI and capabilities, or Godwit will not start it.
    For a script plugin, the permissions are no wider than what it does.
 4. **Risk in plain words.** If the plugin depends on an unofficial or rate-limited service, or
-   sends mail content somewhere, `summary` says so.
+   sends mail content somewhere, `summary` says so and `dataFlow` is `third-party`.
 
 ## Revoking
 
-Remove the release (or the whole plugin) and merge. On its next refresh (on opening
-Extensions, and every 24 hours) Godwit stops every installed copy of a file the registry no
-longer lists and asks the user before it runs again.
+Add the version to the entry's `revoked` list, or remove the whole entry, and merge. Neither needs
+the author. On its next refresh (on opening Extensions, and every 24 hours) Godwit stops every
+installed copy of a file the registry no longer lists and asks the user before it runs again.
+
+If a pinned commit can no longer be fetched (the repository was deleted or its history rewritten),
+the build fails and nothing can be published until that entry is changed or removed.
 
 ## Keys
 
-- `go run github.com/godwit-email/godwit/cmd/godwit-registry@main keygen` prints a key pair.
+- In a Godwit checkout, after `mise run generate`, `go run ./cmd/godwit-registry keygen` prints a key pair.
 - The private key goes to the repository secret `GODWIT_REGISTRY_KEY`, and nowhere else.
 - The public key goes into `registryPublicKey` in Godwit's `core/registry.go`. Godwit's plugin
   directory is off while that constant is empty.
