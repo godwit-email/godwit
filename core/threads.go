@@ -76,36 +76,48 @@ func (s *Service) ListThreads(ctx context.Context, v View, cursor string, limit 
 		return ThreadPage{}, err
 	}
 	var page ThreadPage
-	idx := map[int64]int{}
-	var ids []any
 	for _, r := range rows.Values {
 		if len(page.Items) == limit {
 			last := page.Items[limit-1]
 			page.NextCursor = encodeCursor(last.LastDate.Unix(), last.ID)
 			break
 		}
-		t := ThreadSummary{ID: store.Int(r[0]), Subject: store.Str(r[1]), LastDate: time.Unix(store.Int(r[2]), 0)}
-		idx[t.ID] = len(page.Items)
-		ids = append(ids, t.ID)
-		page.Items = append(page.Items, t)
+		page.Items = append(page.Items, ThreadSummary{ID: store.Int(r[0]), Subject: store.Str(r[1]), LastDate: time.Unix(store.Int(r[2]), 0)})
 	}
-	if len(ids) == 0 {
-		return page, nil
+	if err := s.fillThreads(ctx, page.Items, ""); err != nil {
+		return ThreadPage{}, err
+	}
+	return page, nil
+}
+
+// fillThreads completes summaries holding their ID from the threads' messages
+// that aren't being purged and, when set, meet the condition only on messages m.
+func (s *Service) fillThreads(ctx context.Context, items []ThreadSummary, only string) error {
+	if len(items) == 0 {
+		return nil
+	}
+	idx := map[int64]int{}
+	ids := make([]any, len(items))
+	for i, t := range items {
+		idx[t.ID], ids[i] = i, t.ID
+	}
+	if only != "" {
+		only = " AND " + only
 	}
 	ms, err := s.db.Query(ctx, `SELECT thread_id, from_addr, snippet, flags, has_attachments, auth_results, security_status, security_reason, security_scanned_at,
 		(SELECT email FROM accounts WHERE id = m.account_id),
 		(SELECT COALESCE(NULLIF(role_override, ''), role, '') FROM folders WHERE id = `+shownFolder+`), `+shownFolders+` FROM messages m
-		WHERE thread_id IN (`+strings.TrimSuffix(strings.Repeat("?,", len(ids)), ",")+`) AND `+notPurgedCond+` ORDER BY date DESC, id DESC`, ids...)
+		WHERE thread_id IN (`+strings.TrimSuffix(strings.Repeat("?,", len(ids)), ",")+`) AND `+notPurgedCond+only+` ORDER BY date DESC, id DESC`, ids...)
 	if err != nil {
-		return ThreadPage{}, err
+		return err
 	}
 	sentIDs, err := s.roleFolderIDs(ctx, "sent")
 	if err != nil {
-		return ThreadPage{}, err
+		return err
 	}
 	seen := map[string]bool{}
 	for _, r := range ms.Values {
-		t := &page.Items[idx[store.Int(r[0])]]
+		t := &items[idx[store.Int(r[0])]]
 		fromAddr := store.Str(r[1])
 		secStatus := store.Str(r[6])
 		secReason := store.Str(r[7])
@@ -143,7 +155,7 @@ func (s *Service) ListThreads(ctx context.Context, v View, cursor string, limit 
 			t.Participants = append(t.Participants, name)
 		}
 	}
-	return page, nil
+	return nil
 }
 
 // GetThread returns the thread's messages by date ascending.

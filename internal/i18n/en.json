@@ -1409,18 +1409,58 @@
   "settings_density_comfortable": "Comfortable",
   "settings_density_compact": "Compact (default)",
   "settings_ext_allow": "Allow and enable",
+  "settings_ext_browse": "Browse the plugin directory",
+  "settings_ext_browse_hint": "Reviewed plugins you can install.",
   "settings_ext_builtin": "Built-in",
   "settings_ext_config": "Settings",
   "settings_ext_config_required": "Required",
   "settings_ext_config_sub": "· form generated from the plugin''s config declaration",
+  "settings_ext_dialog_allow_install": "Allow and install",
+  "settings_ext_dialog_flow": "Where data goes",
+  "settings_ext_dialog_foot_native": "A native plugin is someone else''s code, and Godwit can''t restrict it.",
+  "settings_ext_dialog_foot_script": "A script plugin is someone else''s code, and can only use what you allow.",
+  "settings_ext_dialog_home": "Homepage and source",
+  "settings_ext_dialog_install_enable": "Install and enable",
+  "settings_ext_dialog_kind": "Type",
+  "settings_ext_dialog_perm": "Permissions",
+  "settings_ext_dialog_perm_native": "Runs with all of Godwit''s rights: it can read mail, account credentials and local files, reach any address and run programs. Where its data goes comes from the directory''s review, not from a limit Godwit can enforce.",
+  "settings_ext_dialog_publisher": "Published by {arg1}",
+  "@settings_ext_dialog_publisher": {
+    "placeholders": {
+      "arg1": {
+        "type": "String"
+      }
+    }
+  },
+  "settings_ext_dialog_readme_loading": "Reading the description…",
+  "settings_ext_dialog_readme_note": "The text below comes from the plugin''s GitHub page and isn''t part of the review.",
+  "settings_ext_dialog_source": "Source",
+  "settings_ext_dialog_source_listed": "Plugin directory, reviewed",
+  "settings_ext_dialog_version": "Version",
+  "settings_ext_directory": "Plugin directory",
+  "settings_ext_directory_offline": "Can''t read the plugin directory right now",
+  "settings_ext_directory_offline_hint": "Installed plugins aren''t affected.",
+  "settings_ext_directory_sub": "Every plugin here is reviewed. Before you install one, you can see where it sends data and what it can do.",
+  "settings_ext_directory_view": "View {arg1}",
+  "@settings_ext_directory_view": {
+    "placeholders": {
+      "arg1": {
+        "type": "String"
+      }
+    }
+  },
   "settings_ext_excl_llm": "calling the language model",
   "settings_ext_excl_net": "network access",
   "settings_ext_excl_read": "reading mail",
   "settings_ext_excl_send": "sending mail (no plugin can send)",
   "settings_ext_excl_write": "changing mail",
   "settings_ext_excluded": "Excludes",
+  "settings_ext_flow_local": "On this computer",
+  "settings_ext_flow_third": "Sent to a third party",
   "settings_ext_grant": "Approve and enable",
   "settings_ext_install": "Install from folder",
+  "settings_ext_install_choose": "Choose folder",
+  "settings_ext_install_hint": "Plugins you wrote or were given. They aren''t reviewed, and need your permission before they run.",
   "settings_ext_installing": "Installing…",
   "settings_ext_downloading": "Downloading… {arg1, number, ::group-off}%",
   "@settings_ext_downloading": {
@@ -1430,6 +1470,8 @@
       }
     }
   },
+  "settings_ext_sec_add": "Add plugins",
+  "settings_ext_sec_installed": "Installed",
   "settings_ext_verifying": "Verifying…",
   "settings_ext_native_reviewed_body": "Native plugins share Godwit''s system permissions and can access mail, account credentials, local files and the network, and run programs.",
   "settings_ext_mcp_add": "Add server",
@@ -1507,23 +1549,11 @@
   "settings_ext_plugin_enable": "Enable plugin",
   "settings_ext_plugins_empty": "No plugins installed.",
   "settings_ext_registry": "Plugin directory",
-  "settings_ext_registry_confirm_body": "This file was reviewed for Godwit''s plugin directory. Its integrity is checked before installation. Native plugins share Godwit''s system permissions and can access mail, account credentials, local files and the network, and run programs.",
   "settings_ext_registry_confirm_ok": "Install",
   "settings_ext_registry_confirm_replace": " It replaces the {arg1} you installed yourself.",
   "@settings_ext_registry_confirm_replace": {
     "placeholders": {
       "arg1": {
-        "type": "String"
-      }
-    }
-  },
-  "settings_ext_registry_confirm_title": "Install the native plugin {arg1} {arg2}",
-  "@settings_ext_registry_confirm_title": {
-    "placeholders": {
-      "arg1": {
-        "type": "String"
-      },
-      "arg2": {
         "type": "String"
       }
     }
@@ -1564,7 +1594,6 @@
   },
   "settings_ext_revoked": "Godwit''s plugin directory no longer trusts this file.",
   "settings_ext_script": "Script",
-  "settings_ext_sec_plugins": "Plugins",
   "settings_ext_sec_skills": "Skills",
   "settings_ext_skill_enable": "Enable {arg1}",
   "@settings_ext_skill_enable": {
@@ -1625,6 +1654,37 @@
       }
     }
   },
+  "settings_ext_login": "Sign in",
+  "settings_ext_login_cancel": "Cancel sign-in",
+  "settings_ext_login_title": "Sign in to {arg1}?",
+  "@settings_ext_login_title": {
+    "placeholders": {
+      "arg1": {
+        "type": "String"
+      }
+    }
+  },
+  "settings_ext_login_body": "The plugin will use your account to reach its service.",
+  "settings_ext_login_confirm": "Sign in anyway",
+  "settings_ext_login_open_title": "Open the sign-in page?",
+  "settings_ext_login_open_body": "Your browser will open {arg1}.",
+  "@settings_ext_login_open_body": {
+    "placeholders": {
+      "arg1": {
+        "type": "String"
+      }
+    }
+  },
+  "settings_ext_login_open_confirm": "Open",
+  "settings_ext_logout": "Sign out",
+  "settings_ext_signed_in": "Signed in as {arg1}",
+  "@settings_ext_signed_in": {
+    "placeholders": {
+      "arg1": {
+        "type": "String"
+      }
+    }
+  },
   "settings_ext_uninstall": "Uninstall plugin",
   "settings_ext_uninstall_body": "The plugin''s files and settings are deleted.",
   "settings_ext_uninstall_confirm": "Uninstall",
@@ -1642,7 +1702,7 @@
   "settings_general_sub": "Appearance, interface language, startup, notifications and threads.",
   "settings_heading": "Settings",
   "settings_keep_in_background": "Keep running after the window closes",
-  "settings_keep_in_background_help": "Keeps syncing and notifying; open it again from the menu bar icon",
+  "settings_keep_in_background_help": "Keeps syncing and notifying; open it again from the menu bar icon, Dock or taskbar",
   "settings_keychain": "System keychain",
   "settings_keychain_checking": "Checking…",
   "settings_keychain_ok": "The system keychain works",
@@ -2232,6 +2292,8 @@
       }
     }
   },
+  "settings_show_tray_icon": "Show icon in menu bar",
+  "settings_show_tray_icon_help": "Sign-in code banners and recent codes need this icon. Without it, open Godwit from the Dock or taskbar.",
   "settings_unread_in_menu_bar": "Show the unread count in the menu bar",
   "settings_unread_on_app_icon": "Show the unread count on the app icon",
   "shell_back": "Back",
@@ -2265,6 +2327,8 @@
   },
   "shell_sync_syncing": "Syncing…",
   "toast_close": "Close",
+  "tray_hide": "Hide menu bar icon",
+  "tray_hidden_toast": "Menu bar icon hidden. You can turn it back on in Settings.",
   "tray_open": "Open Godwit",
   "tray_quit": "Quit",
   "tray_sync_all": "Sync all accounts now",
@@ -3277,7 +3341,7 @@
   "settings_rules_run_window": "Only while the window is open",
   "settings_rules_run_window_help": "Mail that arrives while the window is closed is handled when you open it again.",
   "settings_rules_run_background": "In the background",
-  "settings_rules_run_background_help": "After the window closes, Godwit stays in the menu bar, keeps syncing and runs this rule.",
+  "settings_rules_run_background_help": "After the window closes, Godwit keeps running in the background, keeps syncing and runs this rule.",
   "settings_rules_summary_always": "{arg1} → {arg2}",
   "@settings_rules_summary_always": {
     "placeholders": {
@@ -3600,5 +3664,106 @@
   "mail_purge_toast": "{arg1, plural, one {Permanently deleted {arg1, number, ::group-off} message} other {Permanently deleted {arg1, number, ::group-off} messages}}",
   "mail_purge_undone": "Deletion undone",
   "mail_purge_too_late": "Too late: message has already been permanently deleted.",
-  "mail_purge_partly_undone": "{arg1, plural, one {Restored the rest; {arg1, number, ::group-off} message was already permanently deleted} other {Restored the rest; {arg1, number, ::group-off} messages were already permanently deleted}}"
+  "mail_purge_partly_undone": "{arg1, plural, one {Restored the rest; {arg1, number, ::group-off} message was already permanently deleted} other {Restored the rest; {arg1, number, ::group-off} messages were already permanently deleted}}",
+  "view_title": "Views",
+  "view_new": "New view",
+  "view_other": "Other",
+  "view_count": "{arg1, plural, one {{arg1, number, ::group-off} conversation} other {{arg1, number, ::group-off} conversations}}",
+  "view_status_new_reply": "New reply",
+  "view_status_unreplied_today": "Not replied · Today",
+  "view_status_unreplied_yesterday": "Not replied · Yesterday",
+  "view_status_unreplied_days": "Not replied · {arg1, number, ::group-off} days",
+  "view_status_waiting": "{arg1, plural, one {No reply · waiting {arg1, number, ::group-off} day} other {No reply · waiting {arg1, number, ::group-off} days}}",
+  "view_status_manual": "Added by hand",
+  "view_empty": "No matching conversations",
+  "view_empty_desc": "Change the conditions, or add conversations by hand.",
+  "view_menu": "View options",
+  "view_menu_edit": "Edit…",
+  "view_menu_delete": "Delete…",
+  "view_delete_title": "Delete “{arg1}”?",
+  "view_delete_desc": "Mail and rules are not affected.",
+  "view_remove": "Remove",
+  "view_add_to": "Add to view",
+  "view_save_as": "Save as view…",
+  "view_save_search": "Save as view",
+  "view_added": "Added to “{arg1}”",
+  "view_removed": "Removed from “{arg1}”",
+  "view_archived": "Archived",
+  "view_follow_up": "Write a follow-up",
+  "view_band_new_reply": "New reply, back in your inbox.",
+  "view_band_unreplied": "Sent directly to you, not replied yet.",
+  "view_band_unreplied_days": "Sent directly to you, not replied yet, waiting {arg1, number, ::group-off} days.",
+  "view_band_waiting": "{arg1, plural, one {Sent {arg1, number, ::group-off} day ago, no reply yet.} other {Sent {arg1, number, ::group-off} days ago, no reply yet.}}",
+  "view_why": "{arg1}: {arg2}",
+  "view_why_group": "{arg1} › {arg2}",
+  "view_cond_unreplied": "Reply status is not replied",
+  "view_cond_waiting": "{arg1, plural, one {Waiting for a reply over {arg1, number, ::group-off} day} other {Waiting for a reply over {arg1, number, ::group-off} days}}",
+  "view_cond_unread": "Read status is unread",
+  "view_cond_read": "Read status is read",
+  "view_preview": "Live preview",
+  "view_preview_none": "No preview yet",
+  "view_preview_none_desc": "Matching conversations show here once conditions are set.",
+  "view_preview_empty_desc": "Change the conditions.",
+  "view_problem_name": "Enter a name",
+  "view_problem_value": "Fill in every condition",
+  "view_problem_group_name": "Name each group",
+  "view_problem_days": "Days must be 1 to {arg1, number, ::group-off}",
+  "view_editor_create": "Create",
+  "view_editor_edit": "Edit “{arg1}”",
+  "view_editor_sub_new": "Matching conversations show on the right.",
+  "view_editor_sub_edit": "The preview updates as you change conditions.",
+  "view_editor_from_mail": "Sender filled in.",
+  "view_editor_from_search": "Conditions filled in from the search.",
+  "view_editor_name": "Name",
+  "view_editor_name_placeholder": "Enter a name",
+  "view_editor_icon": "Icon",
+  "view_editor_account": "Account",
+  "view_editor_conditions": "Conditions",
+  "view_editor_conditions_empty": "With no conditions, it shows all mail.",
+  "view_editor_conditions_note": "Includes past mail. Matching conversations stay after you reply or archive.",
+  "view_editor_groups": "Groups",
+  "view_editor_groups_none": "With no groups, conversations show as a flat list.",
+  "view_editor_groups_first": "A conversation goes in the first group it matches.",
+  "view_editor_groups_other": "Conversations in no group show under Other.",
+  "view_editor_groups_days": "Reply status only reads the last 30 days of mail.",
+  "view_editor_group_add": "Add group",
+  "view_editor_group_name": "Group name",
+  "view_editor_group_up": "Move group up",
+  "view_editor_group_down": "Move group down",
+  "view_editor_group_remove": "Delete group",
+  "view_editor_templates": "Start from a template",
+  "view_editor_exceptions": "Exceptions",
+  "view_field_reply_unreplied": "Not replied",
+  "view_field_reply_waiting": "Waiting for a reply over",
+  "view_field_reply_days": "days",
+  "view_field_read_unread": "Unread",
+  "view_field_read_read": "Read",
+  "view_exception_added": "Added",
+  "view_exception_removed": "Removed",
+  "view_exception_row": "{arg1} · {arg2}",
+  "settings_rules_field_any": "Any content",
+  "settings_rules_field_reply": "Reply status",
+  "settings_rules_field_read": "Read status",
+  "error_invalid_view": "This view can’t be saved. Check its conditions and groups.",
+  "view_editor_group_empty": "With no conditions, it takes all that is left.",
+  "view_problem_label": "A condition uses a deleted label",
+  "settings_rules_field_date": "Date",
+  "settings_rules_field_starred": "Star",
+  "settings_rules_field_wrote": "History",
+  "view_op_not": "is not",
+  "view_date_today": "Today",
+  "view_date_yesterday": "Yesterday",
+  "view_date_this_week": "This week",
+  "view_date_last_week": "Last week",
+  "view_date_this_month": "This month",
+  "view_date_last_month": "Last month",
+  "view_date_days": "Last few days",
+  "view_starred_yes": "Starred",
+  "view_starred_no": "Not starred",
+  "view_wrote_yes": "I’ve written to the sender",
+  "view_wrote_no": "Never written to the sender",
+  "view_date_last": "{arg1, plural, one {Last {arg1, number, ::group-off} day} other {Last {arg1, number, ::group-off} days}}",
+  "view_leave_desc": "If you discard them, your changes to this view are lost.",
+  "view_leave_keep": "Keep editing",
+  "view_leave_discard": "Discard changes"
 }

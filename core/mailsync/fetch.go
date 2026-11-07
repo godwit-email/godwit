@@ -206,7 +206,7 @@ const orphaned = unlocated + " AND NOT EXISTS (SELECT 1 FROM ops WHERE message_i
 
 // orphan deletes those of ids, messages sync just dropped a server location
 // of, that are orphaned. Gmail's wait for the round's end (Fetch): a folder
-// synced later may hold them still (ADR 0032).
+// synced later may hold them still (ADR 0034).
 func (r *result) orphan(ctx context.Context, db *store.DB, c *imapclient.Client, accountID int64, ids []int64) error {
 	if c.Caps().Has(capGmail) {
 		r.orphans = append(r.orphans, ids...)
@@ -266,7 +266,7 @@ func doomed(ctx context.Context, db *store.DB, where string, args ...any) (ids, 
 
 func headerSection() *imap.FetchItemBodySection {
 	return &imap.FetchItemBodySection{Specifier: imap.PartSpecifierHeader,
-		HeaderFields: []string{"MESSAGE-ID", "DATE", "SUBJECT", "FROM", "TO", "CC", "REFERENCES", "IN-REPLY-TO", "REPLY-TO", "LIST-UNSUBSCRIBE", "LIST-UNSUBSCRIBE-POST", "LIST-ID", "AUTHENTICATION-RESULTS", "DKIM-SIGNATURE", "RECEIVED", "MIME-VERSION", "CONTENT-TYPE", "X-GODWIT-RULE"}, Peek: true}
+		HeaderFields: []string{"MESSAGE-ID", "DATE", "SUBJECT", "FROM", "TO", "CC", "REFERENCES", "IN-REPLY-TO", "REPLY-TO", "LIST-UNSUBSCRIBE", "LIST-UNSUBSCRIBE-POST", "LIST-ID", "AUTO-SUBMITTED", "PRECEDENCE", "AUTHENTICATION-RESULTS", "DKIM-SIGNATURE", "RECEIVED", "MIME-VERSION", "CONTENT-TYPE", "X-GODWIT-RULE"}, Peek: true}
 }
 
 // fetchNew imports messages above last_uid; the first sync of a count range
@@ -392,7 +392,7 @@ func advance(ctx context.Context, db *store.DB, f *folder, last uint32) error {
 	return nil
 }
 
-// capGmail marks a Gmail server, which answers X-GM-MSGID (ADR 0032).
+// capGmail marks a Gmail server, which answers X-GM-MSGID (ADR 0034).
 const capGmail imap.Cap = "X-GM-EXT-1"
 
 // importItems is what a sync fetches of each message before its text parts,
@@ -673,6 +673,7 @@ func toParsed(m *imapclient.FetchMessageBuffer, texts map[string][]byte) *mail.P
 		p.MessageID, p.Subject, p.Date, p.From, p.To, p.Cc = h.MessageID, h.Subject, h.Date, h.From, h.To, h.Cc
 		p.InReplyTo, p.References, p.ReplyTo = h.InReplyTo, h.References, h.ReplyTo
 		p.ListUnsubscribe, p.ListUnsubscribePost, p.ListID = h.ListUnsubscribe, h.ListUnsubscribePost, h.ListID
+		p.AutoSubmitted, p.Precedence = h.AutoSubmitted, h.Precedence
 		p.AuthenticationResults, p.AuthenticationTrace, p.DKIMSigned = h.AuthenticationResults, h.AuthenticationTrace, h.DKIMSigned
 		p.RuleSent = h.RuleSent
 	}

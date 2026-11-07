@@ -323,6 +323,10 @@ func New(ctx context.Context, opts Options) (*Service, error) {
 		db.Close()
 		return nil, fmt.Errorf("labels: %w", err)
 	}
+	if err := s.seedSavedViews(ctx); err != nil {
+		db.Close()
+		return nil, fmt.Errorf("views: %w", err)
+	}
 	if err := s.sweepModelKeys(ctx); err != nil {
 		db.Close()
 		return nil, fmt.Errorf("model service keys: %w", err)

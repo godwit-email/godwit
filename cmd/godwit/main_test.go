@@ -53,6 +53,24 @@ func TestUILocale(t *testing.T) {
 	}
 }
 
+func TestCloseMinimizes(t *testing.T) {
+	for _, tc := range []struct {
+		goos     string
+		hasTray  bool
+		minimize bool
+	}{
+		{"darwin", true, false},
+		{"darwin", false, false}, // the Dock reopens it
+		{"windows", true, false},
+		{"windows", false, true},
+		{"linux", false, true},
+	} {
+		if got := closeMinimizes(tc.goos, tc.hasTray); got != tc.minimize {
+			t.Errorf("closeMinimizes(%q, %v) = %v", tc.goos, tc.hasTray, got)
+		}
+	}
+}
+
 func TestTrayIcon(t *testing.T) {
 	for _, goos := range []string{"darwin", "windows"} {
 		t.Run(goos, func(t *testing.T) { checkTrayIcon(t, trayBoxFor(goos)) })

@@ -53,6 +53,7 @@ const (
 	FieldLabel       = "label"       // is or not_contains a label's slug
 	FieldFolder      = "folder"      // is or not_contains a folder role or a folder's id
 	FieldAge         = "age"         // older_than a number of whole days, by the message's date
+	FieldAny         = "any"         // contains or not_contains what a search's text matches; 视图 only
 
 	OpContains    = "contains"
 	OpNotContains = "not_contains"
@@ -598,7 +599,7 @@ type ruleMail struct {
 func (s *Service) ruleMail(ctx context.Context, id int64) (m ruleMail, ok bool, err error) {
 	rows, err := s.db.Query(ctx, `SELECT m.from_addr, m.subject, m.body_text, m.to_addrs, m.cc_addrs, m.has_attachments,
 		(SELECT json_group_array(v) FROM (SELECT CAST(f.id AS TEXT) AS v FROM message_locations l JOIN folders f ON f.id = l.folder_id WHERE l.message_id = m.id AND l.shown
-			UNION SELECT f.role FROM message_locations l JOIN folders f ON f.id = l.folder_id WHERE l.message_id = m.id AND l.shown AND f.role != '')),
+			UNION SELECT `+folderRoleSQL+` FROM message_locations l JOIN folders f ON f.id = l.folder_id WHERE l.message_id = m.id AND l.shown)),
 		(SELECT json_group_array(l.slug) FROM message_labels ml JOIN labels l ON l.id = ml.label_id WHERE ml.message_id = m.id AND ml.active = 1), m.date, m.account_id
 		FROM messages m WHERE m.id = ? AND `+shownFolder+` IS NOT NULL`, id)
 	if err != nil || len(rows.Values) == 0 {

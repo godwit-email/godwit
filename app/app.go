@@ -33,6 +33,7 @@ type Platform interface {
 	Notify(n Notification) error
 	NotificationsSupported() bool
 	SetOpenAtLogin(on bool) error
+	SetTrayVisible(visible bool)
 	SetTrayUnread(n int)              // the inboxes' unread total on the tray; 0 clears it
 	SetAppUnread(n int)               // the inboxes' unread total on the app icon; 0 clears it
 	SetSignInCodes([]core.SignInCode) // replaces the tray's recent codes; UI thread
@@ -568,6 +569,9 @@ const flushWait = 3 * time.Second
 // errFlushSlow is why BeforeClose asks when the writes take longer than flushWait.
 var errFlushSlow = errors.New("still saving")
 
+// errViewUnsaved is why BeforeClose asks while the view editor has changes.
+var errViewUnsaved = errors.New("the view was not saved")
+
 // BeforeClose saves the signature page's edit and the settings' account
 // fields, waits for every write in
 // flight, then calls proceed: before the window closes or the App quits
@@ -576,6 +580,15 @@ var errFlushSlow = errors.New("still saving")
 // shows and asks whether to close anyway; writes that finish while it asks
 // close after all.
 func (a *App) BeforeClose(proceed func()) {
+	if a.mail.viewUnsaved() {
+		a.closeErr, a.closeAsk = errViewUnsaved, true
+		a.closeAnyway = func() {
+			a.mail.closeViewEditor()
+			a.BeforeClose(proceed)
+		}
+		a.plat.ShowWindow()
+		return
+	}
 	settled := false
 	ask := func(err error) {
 		settled = true

@@ -14,7 +14,7 @@ import (
 // fetchImport fetches the messages of set to import into f, and the highest
 // UID in set. From Gmail it first fetches only UID, FLAGS and X-GM-MSGID: a
 // message stored already, from another folder, gains f as a location
-// (gmailLocate) and only the others are fetched whole (ADR 0032). arrivals
+// (gmailLocate) and only the others are fetched whole (ADR 0034). arrivals
 // tells whether what set holds is new mail.
 func fetchImport(ctx context.Context, db *store.DB, c *imapclient.Client, a *account, f *folder, set imap.NumSet, arrivals bool, r *result) ([]*imapclient.FetchMessageBuffer, uint32, error) {
 	gmail := c.Caps().Has(capGmail)
@@ -42,7 +42,7 @@ func fetchImport(ctx context.Context, db *store.DB, c *imapclient.Client, a *acc
 }
 
 // mergeOld merges the rows a Gmail sync stored per folder before it fetched
-// X-GM-MSGID (ADR 0032): it fetches the X-GM-MSGID of their UIDs, folder by
+// X-GM-MSGID (ADR 0034): it fetches the X-GM-MSGID of their UIDs, folder by
 // folder, then merges the rows sharing one. A folder recreated since is left
 // to its reset.
 func mergeOld(ctx context.Context, db *store.DB, c *imapclient.Client, a *account, folders []*folder, r *result) error {

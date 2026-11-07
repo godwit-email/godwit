@@ -11,7 +11,7 @@ import (
 )
 
 // merge returns the statements that make messages drop, rows of the same
-// server message as keep, part of keep (ADR 0032), for one transaction, and
+// server message as keep, part of keep (ADR 0034), for one transaction, and
 // the threads they leave. keep takes their locations (on a folder both have,
 // the confirmed one), their ops (re-chained by id, each keeping its source
 // folder) and its flags with every pending flags change applied on top in

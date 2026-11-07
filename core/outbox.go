@@ -148,11 +148,13 @@ func (s *Service) takeBack(ctx context.Context, id int64, state string) error {
 	if err := s.bind(ctx, store.Int(r[0])); err != nil {
 		return err
 	}
-	res, err := s.db.Execute(ctx, "DELETE FROM outbox WHERE id = ? AND state = ? AND draft_id IS NOT NULL", id, state)
+	rs, err := s.db.Transaction(ctx, []sqlite.Statement{
+		{SQL: "DELETE FROM reply_records WHERE outbox_id = (SELECT id FROM outbox WHERE id = ? AND state = ? AND draft_id IS NOT NULL)", Args: []any{id, state}},
+		{SQL: "DELETE FROM outbox WHERE id = ? AND state = ? AND draft_id IS NOT NULL", Args: []any{id, state}}})
 	if err != nil {
 		return err
 	}
-	if res.Changes == 0 {
+	if rs[1].Changes == 0 {
 		if r[3] == nil && store.Str(r[2]) == state {
 			return ErrNoOutboxDraft
 		}
@@ -210,8 +212,9 @@ func (s *Service) ResolveOutbox(ctx context.Context, id int64, action string) er
 		const decidable = "id = ? AND state IN ('send_uncertain', 'archive_uncertain', 'failed')"
 		rs, terr := s.db.Transaction(ctx, []sqlite.Statement{
 			{SQL: "DELETE FROM drafts WHERE id = (SELECT draft_id FROM outbox WHERE " + decidable + ")", Args: []any{id}},
+			{SQL: "DELETE FROM reply_records WHERE outbox_id = (SELECT id FROM outbox WHERE " + decidable + ")", Args: []any{id}},
 			{SQL: "DELETE FROM outbox WHERE " + decidable, Args: []any{id}}})
-		ok, err = terr == nil && rs[1].Changes == 1, terr
+		ok, err = terr == nil && rs[2].Changes == 1, terr
 	default:
 		return fmt.Errorf("unknown outbox action %q", action)
 	}

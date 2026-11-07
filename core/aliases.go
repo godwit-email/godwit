@@ -8,7 +8,7 @@ import (
 )
 
 // resolve returns ids with the ID of each message merged into another (ADR
-// 0032) replaced by the kept message's, so an ID held from before a merge
+// 0034) replaced by the kept message's, so an ID held from before a merge
 // still names its message. Every Service entry point that takes message IDs
 // resolves them here first; ids itself is left as it was.
 func (s *Service) resolve(ctx context.Context, ids []int64) ([]int64, error) {

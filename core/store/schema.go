@@ -475,7 +475,7 @@ var Migrations = [][]string{{
 		FROM (SELECT value FROM settings WHERE key = 'app' AND json_valid(value)) WHERE json_type(value, '$.BlockedSenders') = 'array'`,
 	`INSERT OR IGNORE INTO settings(key, value) SELECT 'builtins.disabled', json_extract(value, '$.DisabledBuiltins')
 		FROM (SELECT value FROM settings WHERE key = 'app' AND json_valid(value)) WHERE json_type(value, '$.DisabledBuiltins') = 'array'`,
-	`UPDATE settings SET value = json_remove(value, '$.TrustedImageSenders', '$.BlockedSenders', '$.DisabledBuiltins', '$.NotifySmartOnly')
+	`UPDATE settings SET value = json_remove(value, '$.TrustedImageSenders', '$.BlockedSenders', '$.DisabledBuiltins', '$.NotifyViewOnly')
 		WHERE key = 'app' AND json_valid(value)`,
 	`INSERT OR IGNORE INTO meta(key, value) SELECT key, value FROM settings WHERE key IN ('labels_seeded', 'model_aliases_v1', 'mask_key')`,
 	`DELETE FROM settings WHERE key IN ('labels_seeded', 'model_aliases_v1', 'mask_key')`,
@@ -593,7 +593,42 @@ var Migrations = [][]string{{
 	// consumer's backlog, is not forwarded (0: every event).
 	`ALTER TABLE rules ADD COLUMN since_seq INTEGER NOT NULL DEFAULT 0`,
 }, {
-	// A message's folders are its locations (ADR 0032), one row per folder:
+	// 视图 (ADR 0031). A view's doc holds its conditions and groups; an
+	// exception is a conversation added to or removed from it by hand.
+	`CREATE TABLE saved_views (
+		id INTEGER PRIMARY KEY AUTOINCREMENT,
+		name TEXT NOT NULL,
+		icon TEXT NOT NULL,
+		position INTEGER NOT NULL DEFAULT 0,
+		doc TEXT NOT NULL,
+		revision INTEGER NOT NULL DEFAULT 1)`,
+	`CREATE TABLE saved_view_exceptions (
+		view_id INTEGER NOT NULL REFERENCES saved_views(id) ON DELETE CASCADE,
+		thread_id INTEGER NOT NULL REFERENCES threads(id) ON DELETE CASCADE,
+		kind TEXT NOT NULL,
+		PRIMARY KEY (view_id, thread_id))`,
+	`CREATE INDEX saved_view_exceptions_thread ON saved_view_exceptions(thread_id)`,
+	// What the conversation's newest message was when it was archived in
+	// Godwit: 回复状态 reads it, and mail newer than it brings the status back.
+	`CREATE TABLE archive_marks (
+		thread_id INTEGER PRIMARY KEY REFERENCES threads(id) ON DELETE CASCADE,
+		message_id_hdr TEXT NOT NULL DEFAULT '',
+		date INTEGER NOT NULL)`,
+	// A reply queued against a message of the conversation, kept apart from
+	// the outbox item, which forgets its draft, and from Sent, which may be
+	// missing or late. outbox_id is no reference: a done item may go.
+	`CREATE TABLE reply_records (
+		id INTEGER PRIMARY KEY AUTOINCREMENT,
+		thread_id INTEGER NOT NULL REFERENCES threads(id) ON DELETE CASCADE,
+		outbox_id INTEGER NOT NULL,
+		at INTEGER NOT NULL)`,
+	`CREATE INDEX reply_records_thread ON reply_records(thread_id)`,
+	`CREATE INDEX reply_records_outbox ON reply_records(outbox_id)`,
+	// Whether mail is automated: 回复状态 leaves it out. Older mail stays empty.
+	`ALTER TABLE messages ADD COLUMN auto_submitted TEXT NOT NULL DEFAULT ''`,
+	`ALTER TABLE messages ADD COLUMN precedence TEXT NOT NULL DEFAULT ''`,
+}, {
+	// A message's folders are its locations (ADR 0034), one row per folder:
 	// shown is the 期望位置 there (the user sees it in the folder), uidvalidity
 	// and uid the 服务器位置 (NULL until the server confirms it). A move not
 	// yet pushed shows at its destination, unconfirmed, and stays hidden where
@@ -635,13 +670,13 @@ var Migrations = [][]string{{
 	`ALTER TABLE messages RENAME COLUMN server_uid TO dropped_server_uid`,
 }, {
 	// A Gmail message's X-GM-MSGID, an unsigned 64-bit number kept as
-	// decimal text (ADR 0032); NULL on other servers and rows synced before.
+	// decimal text (ADR 0034); NULL on other servers and rows synced before.
 	`ALTER TABLE messages ADD COLUMN gmail_msgid TEXT`,
 }, {
 	// Sync finds a Gmail message it stores by X-GM-MSGID, to add a folder to it.
 	`CREATE INDEX messages_gmail ON messages(account_id, gmail_msgid) WHERE gmail_msgid IS NOT NULL`,
 }, {
-	// A message merged into another (ADR 0032) leaves its ID here, naming the
+	// A message merged into another (ADR 0034) leaves its ID here, naming the
 	// message kept, so an ID held from before the merge still resolves.
 	`CREATE TABLE message_aliases (id INTEGER PRIMARY KEY, message_id INTEGER NOT NULL REFERENCES messages(id) ON DELETE CASCADE)`,
 	`CREATE INDEX message_aliases_message ON message_aliases(message_id)`,

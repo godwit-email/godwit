@@ -405,7 +405,7 @@ func single(s imap.NumSet) uint32 {
 // in the destination. Its other folders keep their server locations. Another
 // row already at the COPYUID is the same server message (Gmail's All Mail copy
 // of mail archived there, synced before X-GM-MSGID was, #506): it is merged
-// into the moved one (ADR 0032), its queued ops with it.
+// into the moved one (ADR 0034), its queued ops with it.
 func moved(ctx context.Context, db *store.DB, o op, validity, uid uint32) error {
 	stmts := append(unlocate(o.msg, o.src),
 		sqlite.Statement{SQL: "UPDATE ops SET state = 'awaiting_claim', last_error = NULL WHERE id = ?", Args: []any{o.id}})

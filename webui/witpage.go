@@ -350,11 +350,11 @@ func (p *WitPage) Follow(ctx context.Context, conv int64) (WitHistory, error) {
 	if err != nil {
 		return WitHistory{}, keyed(err)
 	}
-	if err := p.w.followWith(t, conv, ch, stop, sel); err != nil {
-		return noHistory(), keyed(err)
-	}
 	if followHook != nil {
 		followHook()
+	}
+	if err := p.w.followWith(t, conv, ch, stop, sel); err != nil {
+		return noHistory(), keyed(err)
 	}
 	return history(c), nil
 }

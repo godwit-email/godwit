@@ -44,6 +44,13 @@ type mailItem struct {
 	Msg                    core.MessageSummary // a message row's own summary
 	Labels                 []core.AppliedLabel
 	Security               gomail.SecurityReport
+
+	// In a view: its group, and what ViewRow says of it.
+	Group       string
+	Status      string
+	NewReply    bool
+	WaitingDays int
+	Manual      bool
 }
 
 func threadItem(t core.ThreadSummary) mailItem {
@@ -125,8 +132,21 @@ type mailPage struct {
 	emptyFolderRole string
 	emptyFolderAcc  int64
 
-	exec    func(ctx context.Context, op string, ids []int64, from, folder int64) error // write; tests wrap it
-	fetched func()                                                                      // tests: runs off the UI thread once a reload has read the list
+	views      []core.SavedView // in sidebar order, with their unread counts
+	viewsKnown bool
+	viewsOpen  bool             // the sidebar's group unfolded
+	viewGroups []viewGroupState // the view shown's groups; p.items holds their rows in order
+	viewEdit   *viewEditor      // shown in place of the list and reader
+	viewLeave  func()           // asking to give up viewEdit's changes, for this
+	viewDelete *core.SavedView  // awaiting its confirmation
+	// The dialogs' own: kit.Dialog times its fade by this address, so it must outlive the frame.
+	viewLeaveOpen, viewDeleteOpen bool
+	viewsCached                   bool   // the last refresh changed nothing they show
+	viewsReading                  bool   // a reload that reads them has not landed
+	viewRefresh                   func() // stops the timer that rereads an open view
+
+	exec    func(ctx context.Context, op string, ids []int64, from, folder int64) (core.ArchiveUndo, error) // write; tests wrap it
+	fetched func()                                                                                          // tests: runs off the UI thread once a reload has read the list
 }
 
 // listSel is a list's place and choice, kept on its items by key.
@@ -148,7 +168,7 @@ func (it mailItem) key() string {
 }
 
 func newMailPage(a *App) *mailPage {
-	p := &mailPage{a: a, folders: map[int64][]core.Folder{}, accOpen: map[int64]*bool{}, accLabelsOpen: map[int64]*bool{}, folderOpen: map[folderKey]*bool{}, labelsOpen: true, accountsOpen: true, draftList: &ui.ListState{}}
+	p := &mailPage{a: a, folders: map[int64][]core.Folder{}, accOpen: map[int64]*bool{}, accLabelsOpen: map[int64]*bool{}, folderOpen: map[folderKey]*bool{}, labelsOpen: true, accountsOpen: true, viewsOpen: true, draftList: &ui.ListState{}}
 	p.main.reset()
 	p.found.reset()
 	p.exec = p.write
@@ -166,32 +186,33 @@ func (p *mailPage) ls() *listSel {
 
 // write is a batch's call for one account's messages: from is the folder of
 // the view it came from (0 for none), folder where archive and inbox put them.
-func (p *mailPage) write(ctx context.Context, op string, ids []int64, from, folder int64) error {
+func (p *mailPage) write(ctx context.Context, op string, ids []int64, from, folder int64) (core.ArchiveUndo, error) {
 	svc := p.a.svc
 	switch op {
 	case "read":
-		return svc.SetFlags(ctx, ids, []string{`\Seen`}, nil)
+		return core.ArchiveUndo{}, svc.SetFlags(ctx, ids, []string{`\Seen`}, nil)
 	case "unread":
-		return svc.SetFlags(ctx, ids, nil, []string{`\Seen`})
+		return core.ArchiveUndo{}, svc.SetFlags(ctx, ids, nil, []string{`\Seen`})
 	case "star":
-		return svc.SetFlags(ctx, ids, []string{`\Flagged`}, nil)
+		return core.ArchiveUndo{}, svc.SetFlags(ctx, ids, []string{`\Flagged`}, nil)
 	case "unstar":
-		return svc.SetFlags(ctx, ids, nil, []string{`\Flagged`})
+		return core.ArchiveUndo{}, svc.SetFlags(ctx, ids, nil, []string{`\Flagged`})
 	case "archive":
-		return svc.Move(ctx, ids, folder) // out of the inbox, whatever the view
+		return svc.ArchiveMessages(ctx, ids, folder)
 	case "delete":
-		return svc.Delete(ctx, ids)
+		return core.ArchiveUndo{}, svc.Delete(ctx, ids)
 	case "junk":
-		return svc.MoveToRole(ctx, ids, "junk")
+		return core.ArchiveUndo{}, svc.MoveToRole(ctx, ids, "junk")
 	case "inbox":
-		return svc.MoveFrom(ctx, ids, from, folder)
+		return core.ArchiveUndo{}, svc.MoveFrom(ctx, ids, from, folder)
 	case "purge":
-		return svc.DeleteForever(ctx, ids)
+		return core.ArchiveUndo{}, svc.DeleteForever(ctx, ids)
 	}
-	return fmt.Errorf("unknown mail action %q", op)
+	return core.ArchiveUndo{}, fmt.Errorf("unknown mail action %q", op)
 }
 
-func (p *mailPage) refresh([]events.Event) {
+func (p *mailPage) refresh(dirty []events.Event) {
+	p.viewsCached = viewUnchanged(dirty)
 	p.reload()
 	p.reader.sync(true)
 }
@@ -209,8 +230,17 @@ func (p *mailPage) reload() {
 	}
 	reset := v != p.view
 	want, toEnd := len(p.items), p.cursor == "" && len(p.items) > 0
+	savedViewID, viewList := savedViewOf(v)
+	cached := p.viewsCached && p.viewsKnown && !reset && !p.viewsReading
+	p.viewsCached = false
+	p.viewsReading = p.viewsReading || !cached // until read: this reload drops the last one's result
+	var viewWant map[string]int
+	if !reset {
+		viewWant = p.viewsKnownCounts()
+	}
 	if reset {
 		p.view, p.items, p.cursor, p.stalled = v, nil, "", false
+		p.viewGroups = nil
 		p.stopOlder()
 		p.main.reset()
 		p.closeSearch()
@@ -232,6 +262,8 @@ func (p *mailPage) reload() {
 		items        []mailItem
 		cursor       string
 		threads      bool
+		saved        []core.SavedView
+		viewGroups   []viewGroupState
 	)
 	a.do(func(ctx context.Context) error {
 		accs, err := a.svc.ListAccounts(ctx)
@@ -258,9 +290,18 @@ func (p *mailPage) reload() {
 			return err
 		}
 		threads = st.ThreadView
+		if !cached {
+			if saved, err = a.svc.SavedViews(ctx); err != nil {
+				return err
+			}
+		}
 		draftsAcc, isDrafts := draftsOf(folders, v)
 		switch {
 		case v.Unified == "outbox" || v == (core.View{}):
+		case viewList && cached:
+		case viewList && !slices.ContainsFunc(saved, func(b core.SavedView) bool { return b.ID == savedViewID }): // deleted: viewsLoaded leaves it
+		case viewList:
+			items, viewGroups, err = fetchView(ctx, a.svc, savedViewID, viewWant)
 		case isDrafts:
 			drafts, err = a.svc.ListDrafts(ctx, draftsAcc)
 			for i := range drafts { // shown, never saved: signature images as data: (richtext's only kind)
@@ -289,9 +330,38 @@ func (p *mailPage) reload() {
 		}
 		p.folders, p.outbox, p.drafts, p.threads = folders, outbox, drafts, threads
 		p.starredUnread, p.starredUnreadTotal = starredByAcc, starredTotal
+		if viewList && cached {
+			items, viewGroups, cursor = p.items, p.viewGroups, ""
+		}
 		p.items, p.cursor, p.stalled = items, cursor, false
+		p.viewGroups = viewGroups
+		if !cached {
+			p.views, p.viewsKnown, p.viewsReading = saved, true, false
+			p.viewsLoaded()
+		}
 		p.setDrafts()
+		p.keepViewFresh()
 	})
+}
+
+// keepViewFresh rereads an open view in a while, if nothing does sooner:
+// its 等待回复 changes with time alone.
+func (p *mailPage) keepViewFresh() {
+	if p.viewRefresh != nil {
+		p.viewRefresh()
+		p.viewRefresh = nil
+	}
+	if p.savedViewID() != 0 {
+		now := p.a.clock.Now()
+		y, m, d := now.Date()
+		midnight := time.Date(y, m, d+1, 0, 0, 1, 0, now.Location()) // 今天 turns over
+		p.viewRefresh = p.a.after(min(viewRefreshEvery, midnight.Sub(now)), func() {
+			p.viewRefresh = nil
+			if p.savedViewID() != 0 {
+				p.reload()
+			}
+		})
+	}
 }
 
 // fetchItems reads pages from cursor until it has want items, or to the end
@@ -338,6 +408,9 @@ func fetchItems(ctx context.Context, svc *core.Service, v core.View, threads boo
 
 // loadMore appends the next page, unless one is loading already.
 func (p *mailPage) loadMore() {
+	if p.savedViewID() != 0 {
+		return // each group loads on its own: viewLoadVisible
+	}
 	if p.loading || p.stalled || p.cursor == "" || p.searched {
 		return
 	}
@@ -378,7 +451,7 @@ func (p *mailPage) shown() []mailItem {
 	switch {
 	case p.searched:
 		return p.results
-	case p.filter == 0:
+	case p.filter == 0 || p.savedViewID() != 0: // a view says what it is about in its groups
 		return p.items
 	}
 	return slices.DeleteFunc(slices.Clone(p.items), func(it mailItem) bool { return it.Unread == 0 })
@@ -526,6 +599,16 @@ func unreadSub(n int) string {
 // Title names the view the route shows, with its unread count.
 func (p *mailPage) Title() (string, string) {
 	v := p.a.route.View
+	if id, ok := savedViewOf(v); ok {
+		if b, ok := p.savedView(id); ok {
+			total := 0
+			for _, g := range p.viewGroups {
+				total += g.total
+			}
+			return b.Name, i18n.Tf("view.count", total)
+		}
+		return "", ""
+	}
 	if l, ok := p.a.label(v.LabelID); ok && v.LabelID != 0 {
 		unread := l.Unread
 		if v.AccountID != 0 {
@@ -581,6 +664,12 @@ func listTime(now, t time.Time) string {
 // gap between them a grip that sets the list's width.
 func (p *mailPage) Content(c *ui.Context) {
 	a, th, r := p.a, c.Theme(), panelRadius(c)
+	p.viewDeleteDialog(c)
+	p.viewLeaveDialog(c)
+	if e := p.viewEdit; e != nil {
+		kit.Panel(c, r).Grow(1).Children(func() { e.view(c) })
+		return
+	}
 	_, isDrafts := draftsOf(p.folders, p.view)
 	a.listW = a.listWidth()
 	changed, _ := kit.Resizer(c, &a.listW, th.Space(2), false, i18n.T("mail.resize_list"), nil, func() {
@@ -629,7 +718,12 @@ func (p *mailPage) listHeader(c *ui.Context, head string) {
 				}
 			})
 			p.filterChips(c)
-			kit.Text(c, p.searchHint(), t.Text.Sm).TextColor(t.Muted)
+			ui.Row(c).FillWidth().AlignItems(ui.Center).Gap(th.Space(2)).Children(func() {
+				kit.Text(c, p.searchHint(), t.Text.Sm).TextColor(t.Muted).Grow(1).Shrink(1)
+				if p.savableSearch() {
+					kit.Button(c, i18n.T("view.save_search"), kit.ButtonOpts{Variant: kit.Outline, Size: kit.SizeSm}).Shrink(0).OnClick(p.viewFromSearch)
+				}
+			})
 		})
 		if p.searched && len(p.results) > 0 && p.hlQuery != "" {
 			q := p.hlQuery
@@ -647,10 +741,16 @@ func (p *mailPage) listHeader(c *ui.Context, head string) {
 	if c.Shortcut(ui.Cmd, ui.KeyF) {
 		p.a.openPalette()
 	}
+	saved := p.savedViewID() != 0
+	if saved && head == "" && !p.a.sidebarHidden { // its groups' headings are the list's
+		return
+	}
 	ui.Row(c).AlignItems(ui.Center).Padding(th.Space(3), th.Space(4), th.Space(2), th.Space(4)).Gap(th.Space(2)).Children(func() {
 		kit.Text(c, head, t.Text.Base).FontWeight(500).TextColor(t.Muted)
 		ui.Spacer(c)
-		kit.Tabs(c, &p.filter, i18n.T("mail.filter.all"), i18n.T("mail.filter.unread"))
+		if !saved {
+			kit.Tabs(c, &p.filter, i18n.T("mail.filter.all"), i18n.T("mail.filter.unread"))
+		}
 		if p.a.sidebarHidden { // else the sidebar's header has it
 			kit.IconButton(c, "search", i18n.T("mail.search"), kit.ButtonOpts{Variant: kit.Ghost, Size: kit.SizeSm}).
 				OnClick(p.a.openPalette)
@@ -770,13 +870,15 @@ func (p *mailPage) listView(c *ui.Context) {
 	// scrolled last frame; that group's own heading, pinned under it, is
 	// drawn clear so the name shows once.
 	head := ""
-	if len(rows) > 0 && !p.searched {
+	if len(rows) > 0 && !p.searched && !p.viewGrouped() {
 		first, _ := ls.list.Visible()
 		head = topGroup(p.a.clock.Now(), rows, es, first)
 	}
 	p.listHeader(c, head)
 	ls.list.Key = func(i int) any {
-		if e := es[i]; e.head != "" {
+		if e := es[i]; e.group != "" {
+			return "g:" + e.group // two groups may share a name
+		} else if e.head != "" {
 			return "h:" + e.head
 		}
 		return rows[es[i].row].key()
@@ -788,6 +890,10 @@ func (p *mailPage) listView(c *ui.Context) {
 	ls.list.Selected, ls.list.Selection = &ls.cur, &ls.sel
 	act, target := "", []mailItem(nil)
 	l := kit.List(c, ls.list, len(es), func(i int) {
+		if es[i].group != "" {
+			viewHeading(c, es[i])
+			return
+		}
 		if es[i].head != "" { // a date heading: no row, never chosen
 			// left as the header's name: the list's own Space(2) and Space(2) more
 			h := kit.Text(c, es[i].head, t.Text.Base).FontWeight(500).Padding(th.Space(2), th.Space(2.5), th.Space(0.5), th.Space(2))
@@ -846,6 +952,8 @@ func (p *mailPage) listView(c *ui.Context) {
 				return has, auto
 			}, func(id int64, set bool) { p.toggleLabel(on, id, set) })
 			securitySubmenu(m, func(reason string) bool { return len(on) == 1 && on[0].Security.Reason == reason }, func(reason string) { p.applySecurity(on, reason) })
+			m.Separator()
+			p.viewMenu(m, on)
 			if len(on) == 1 { // for mail like this one: a rule, or blocking its sender
 				if role := p.currentFolderRole(); role != "sent" && role != "drafts" {
 					m.Separator()
@@ -896,6 +1004,8 @@ func (p *mailPage) listView(c *ui.Context) {
 		if len(rows) == 0 && !p.loading {
 			if p.searched {
 				p.noResults(c)
+			} else if p.savedViewID() != 0 {
+				p.viewEmpty(c)
 			} else {
 				ui.Text(c, i18n.T("mail.empty")).TextColor(t.Muted).Padding(th.Space(3))
 			}
@@ -919,9 +1029,13 @@ func (p *mailPage) listView(c *ui.Context) {
 	if p.older.busy || p.older.err != nil {
 		p.olderRow(c)
 	}
-	if _, last := ls.list.Visible(); last >= len(es)-5 {
+	first, last := ls.list.Visible()
+	if last >= len(es)-5 {
 		p.loadMore()
 		p.loadOlder()
+	}
+	if p.savedViewID() != 0 && !p.searched {
+		p.viewLoadVisible(rows, es, first, last)
 	}
 }
 
@@ -1018,12 +1132,18 @@ func (p *mailPage) olderRow(c *ui.Context) {
 type listEntry struct {
 	head string
 	row  int
+
+	group string // a view group's heading: its id, and its total
+	count int
 }
 
 // entries are the list's lines: each group of rows under its date heading
 // (but the first, whose heading the list header shows), a search's results
 // as they are. The list's own choice (cur) counts these.
 func (p *mailPage) entries(rows []mailItem) []listEntry {
+	if p.viewGrouped() {
+		return p.viewEntries(rows)
+	}
 	var out []listEntry
 	now, last := p.a.clock.Now(), ""
 	for i, it := range rows {
@@ -1226,7 +1346,12 @@ func (p *mailPage) row(c *ui.Context, it mailItem) ui.Element {
 			subject = i18n.T("mail.no_subject")
 		}
 		ui.Text(c, subject).FontWeight(weight).SingleLine()
-		if it.Snippet != "" {
+		if icon, line := p.viewLine(it); line != "" {
+			ui.Row(c).Gap(th.Space(1)).AlignItems(ui.Center).TextColor(t.Muted).Children(func() {
+				ui.Icon(c, icons.Get(icon)).Size(theme.IconXs, theme.IconXs).Shrink(0)
+				kit.Text(c, line, t.Text.Base).SingleLine()
+			})
+		} else if it.Snippet != "" {
 			kit.Text(c, it.Snippet, t.Text.Base).TextColor(t.Muted).SingleLine()
 		}
 		p.a.rowChips(c, it.Labels)
@@ -1472,7 +1597,12 @@ func (p *mailPage) applySecurity(rows []mailItem, reason string) {
 // only the messages in the view; an account without an archive (junk)
 // folder is skipped and named.
 func (p *mailPage) batch(act string, rows []mailItem) {
-	p.batchScoped(act, rows, p.searched) // a search's results are in view wherever they are
+	saved := p.savedViewID() != 0 && !p.searched // a view's rows are whole conversations, wherever their mail is
+	if act == "archive" && saved {
+		p.archiveThreads(rows)
+		return
+	}
+	p.batchScoped(act, rows, p.searched || saved) // a search's results are in view wherever they are
 }
 
 // batchScoped is batch whatever the list shows: with anywhere every message
@@ -1504,6 +1634,7 @@ func (p *mailPage) batchScoped(act string, rows []mailItem, anywhere bool) {
 		names[acc.ID] = acc.Email
 	}
 	v, search := p.view, anywhere
+	saved := p.savedViewID() != 0
 	var labeled map[int64][]core.AppliedLabel // a label view's messages' labels
 	inView := func(m core.MessageSummary) bool {
 		switch {
@@ -1570,6 +1701,9 @@ func (p *mailPage) batchScoped(act string, rows []mailItem, anywhere bool) {
 			if removes(op) && !inView(m) {
 				continue
 			}
+			if saved && (op == "junk" || op == "inbox") && role[m.FolderID] == "sent" {
+				continue // a whole conversation moves, but what the user sent stays sent
+			}
 			acc, ok := acctOf[m.FolderID]
 			if !ok {
 				failed++
@@ -1582,6 +1716,7 @@ func (p *mailPage) batchScoped(act string, rows []mailItem, anywhere bool) {
 		var skipped []string
 		pending := 0
 		var purged []int64
+		var archived []core.ArchiveUndo
 		finish := func() {
 			if failed > 0 {
 				a.toastAs(kit.ToastError, i18n.Tf("mail.failed", failed))
@@ -1594,6 +1729,9 @@ func (p *mailPage) batchScoped(act string, rows []mailItem, anywhere bool) {
 			}
 			if op == "purge" && len(purged) > 0 {
 				p.offerUndoPurge(i18n.Tf("mail.purge.toast", len(purged)), purged, start)
+			}
+			if op == "archive" {
+				p.offerUndoArchive(archived)
 			}
 		}
 		for _, acc := range slices.Sorted(maps.Keys(byAcc)) {
@@ -1610,13 +1748,17 @@ func (p *mailPage) batchScoped(act string, rows []mailItem, anywhere bool) {
 			if !search {
 				from = v.FolderID
 			}
-			a.writes.Chain(fmt.Sprintf("account:%d", acc), func(ctx context.Context) error {
-				return exec(ctx, op, ids, from, folder)
+			var undo core.ArchiveUndo
+			a.writes.Chain(fmt.Sprintf("account:%d", acc), func(ctx context.Context) (err error) {
+				undo, err = exec(ctx, op, ids, from, folder)
+				return err
 			}, func(err error) {
 				if err != nil {
 					failed += len(ids)
 				} else if op == "purge" {
 					purged = append(purged, ids...)
+				} else if op == "archive" {
+					archived = append(archived, undo)
 				}
 				if pending--; pending == 0 {
 					finish()

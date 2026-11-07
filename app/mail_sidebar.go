@@ -129,6 +129,7 @@ func (p *mailPage) Sidebar(c *ui.Context) {
 			p.navItem(c, "outbox", i18n.T("mail.outbox"), core.View{Unified: "outbox"}, n)
 		}
 		ui.Box(c).Height(th.Space(2))
+		p.viewNav(c)
 		p.labelNav(c)
 		kit.SidebarCollapsible(c, &p.accountsOpen, true, func() {
 			ui.Text(c, i18n.T("mail.accounts")).SingleLine().Grow(1).Shrink(1)
@@ -151,7 +152,7 @@ func (p *mailPage) Sidebar(c *ui.Context) {
 func (p *mailPage) navItem(c *ui.Context, icon, label string, v core.View, count int) {
 	t := theme.Of(c)
 	on := p.viewShown(v)
-	item := kit.SidebarItem(c, kit.SidebarItemOpts{Selected: on, OnClick: func() { p.a.navigate(Route{Page: PageMail, View: v}) }})
+	item := kit.SidebarItem(c, kit.SidebarItemOpts{Selected: on, Covered: p.viewEdit != nil, OnClick: func() { p.a.navigate(Route{Page: PageMail, View: v}) }})
 	item.Children(func() {
 		kit.SidebarIcon(c, item, icon, on)
 		ui.Text(c, label).SingleLine().Grow(1).Shrink(1)
@@ -248,7 +249,7 @@ func (p *mailPage) folderRow(c *ui.Context, f sideFolder, open *bool) {
 	if !real {
 		click = toggle
 	}
-	item := kit.SidebarItem(c, kit.SidebarItemOpts{Selected: on, Indent: 4 * float32(f.depth), OnClick: click})
+	item := kit.SidebarItem(c, kit.SidebarItemOpts{Selected: on, Covered: p.viewEdit != nil, Indent: 4 * float32(f.depth), OnClick: click})
 	item.Children(func() {
 		kit.SidebarIcon(c, item, cmp.Or(folderIcons[f.Role], "folder"), on)
 		ui.Text(c, f.name).SingleLine().Grow(1).Shrink(1)
@@ -349,7 +350,7 @@ func (p *mailPage) accountLabelsNav(c *ui.Context, accID int64) {
 			}
 			v := core.View{AccountID: accID, LabelID: l.ID}
 			on := p.viewShown(v)
-			item := kit.SidebarItem(c, kit.SidebarItemOpts{Selected: on, Indent: 8, OnClick: func() { p.a.navigate(Route{Page: PageMail, View: v}) }})
+			item := kit.SidebarItem(c, kit.SidebarItemOpts{Selected: on, Covered: p.viewEdit != nil, Indent: 8, OnClick: func() { p.a.navigate(Route{Page: PageMail, View: v}) }})
 			item.Children(func() {
 				ui.Icon(c, icons.Get("label-"+l.Icon)).Size(theme.Icon, theme.Icon).TextColor(t.Label(l.Color).Text)
 				ui.Text(c, l.Name).SingleLine().Grow(1).Shrink(1)

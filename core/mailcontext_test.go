@@ -35,7 +35,7 @@ func addMessage(t *testing.T, s *Service, subject, from, text, html string, date
 	return res.LastInsertID
 }
 
-// Test SQL on messages (unaliased) for a message's locations (ADR 0032): the
+// Test SQL on messages (unaliased) for a message's locations (ADR 0034): the
 // folder it shows in, and the folder, UIDVALIDITY and UID the server has it at.
 const (
 	shownCol    = "(SELECT folder_id FROM message_locations WHERE message_id = messages.id AND shown)"

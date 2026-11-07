@@ -242,6 +242,13 @@ func (n *NativeProcess) done() {
 	})
 }
 
+// Hold keeps the process from going idle until the returned func runs: for
+// work of the plugin outside the ABI, such as a stream from its loopback server.
+func (n *NativeProcess) Hold() (release func()) {
+	n.busy()
+	return sync.OnceFunc(n.done)
+}
+
 // Start makes sure the process runs and finished OnStart.
 func (n *NativeProcess) Start(ctx context.Context) error {
 	n.busy()

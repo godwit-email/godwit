@@ -2,6 +2,7 @@ package app
 
 import (
 	"context"
+	"github.com/godwit-email/godwit/internal/theme"
 	"reflect"
 	"slices"
 	"testing"
@@ -400,6 +401,11 @@ func TestSettingsRulesDelete(t *testing.T) {
 	h.click("展开最近命中")
 	h.click("删除规则")
 	h.see("删除「未命名规则」？")
+	h.tt.Advance(2 * theme.MotionBase)
+	h.tt.Frame()
+	if px := h.tt.Image().RGBAAt(640, 800); px.R > 235 { // the scrim over the white panel: modal even while it draws nothing
+		t.Fatalf("the dialog is not drawn: %v", px)
+	}
 	h.click("取消")
 	if len(h.rules()) != 1 {
 		t.Fatal("cancel deleted the rule")

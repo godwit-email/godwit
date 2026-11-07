@@ -144,7 +144,7 @@ func decodeCursor(c string) (date, id int64, err error) {
 // leave those out at once, before the server expunges them.
 const notPurgedCond = "NOT EXISTS (SELECT 1 FROM ops o WHERE o.message_id = m.id AND o.kind = 'purge' AND o.state = 'pending')"
 
-// shownFolder is the one folder message alias m is reported in (ADR 0032) of
+// shownFolder is the one folder message alias m is reported in (ADR 0034) of
 // those it shows in: the inbox, else another (lowest id), else All Mail. A
 // folder condition asks shownIn, not this. Without a comma: msgColCount
 // counts them.
@@ -156,7 +156,7 @@ const shownFolder = `(SELECT sl.folder_id FROM message_locations sl JOIN folders
 const shownFolders = `(SELECT group_concat(sl.folder_id) FROM message_locations sl WHERE sl.message_id = m.id AND sl.shown)`
 
 // serverLocation joins, as l and its folder as f, where the server has message
-// alias m (ADR 0032): one row per folder on Gmail, any of which serves a read.
+// alias m (ADR 0034): one row per folder on Gmail, any of which serves a read.
 const serverLocation = "(message_locations l JOIN folders f ON f.id = l.folder_id) ON l.message_id = m.id AND l.uid IS NOT NULL"
 
 // shownIn is the condition that message alias m shows in one of folders, a
@@ -622,7 +622,7 @@ func scanShownAts(v any) []shownAt {
 	return out
 }
 
-// leaves is the folders a move of m to folder to takes it out of (ADR 0032),
+// leaves is the folders a move of m to folder to takes it out of (ADR 0034),
 // none when it stays where it is: for Trash or Junk (binned) every folder it
 // shows in; else from, the folder of the view the move came from, when it
 // shows there; else the inbox when it shows there; else every folder but All

@@ -362,6 +362,18 @@ func TestTrayUnread(t *testing.T) {
 	h.waitMail("tray cleared", func() bool { return slices.Contains(h.plat.Calls(), "SetTrayUnread 0") })
 }
 
+func TestTrayUnreadClearedWithIcon(t *testing.T) {
+	h, acc := notifyHarness(t, func(st *core.Settings) { st.UnreadInMenuBar = true })
+	h.env.Deliver(t, acc.ID, "INBOX", coretest.Msg("bob@example.com", acc.Email, "One", "1"))
+	h.waitMail("tray shows 1", func() bool { return slices.Contains(h.plat.Calls(), "SetTrayUnread 1") })
+
+	h.app.HideTrayIcon()
+	h.waitMail("tray cleared", func() bool { return slices.Contains(h.plat.Calls(), "SetTrayUnread 0") })
+	if !h.app.settings.UnreadInMenuBar {
+		t.Fatal("hiding the icon changed the unread setting")
+	}
+}
+
 func TestAppUnreadInitialClear(t *testing.T) {
 	for _, tc := range []struct {
 		name   string

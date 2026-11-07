@@ -19,7 +19,7 @@ func (e *syncEnv) listed(t *testing.T, folder string) []int64 {
 	return msgIDs(p.Items)
 }
 
-// A Gmail message is one message (ADR 0032), whichever folders it is in, with
+// A Gmail message is one message (ADR 0034), whichever folders it is in, with
 // its X-GM-MSGID; a message with the same Message-ID and content but its own
 // X-GM-MSGID is another.
 func TestGmailMessageIsOneInEveryFolder(t *testing.T) {

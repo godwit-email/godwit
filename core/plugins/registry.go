@@ -26,6 +26,17 @@ var Platforms = []string{"darwin-arm64", "darwin-amd64", "windows-amd64", "windo
 
 const AnyPlatform = "any"
 
+// What a directory entry says a plugin is for and where its data goes
+// (docs/adr/0032-plugin-directory-points-at-plugins.md).
+const (
+	CategoryTranslate = "translate"
+	CategoryModels    = "models"
+	CategoryOther     = "other"
+
+	DataFlowLocal      = "local"
+	DataFlowThirdParty = "third-party"
+)
+
 type Registry struct {
 	Schema  int              `json:"schema"`
 	Updated time.Time        `json:"updated"`
@@ -33,11 +44,14 @@ type Registry struct {
 }
 
 type RegistryPlugin struct {
-	Name     string            `json:"name"`
-	Title    Text              `json:"title"`
-	Summary  Text              `json:"summary"`
-	Homepage string            `json:"homepage,omitempty"`
-	Releases []RegistryRelease `json:"releases"`
+	Name      string            `json:"name"`
+	Title     Text              `json:"title"`
+	Summary   Text              `json:"summary"`
+	Category  string            `json:"category,omitempty"`  // CategoryXxx; "" in a registry from before it
+	Publisher string            `json:"publisher,omitempty"` // who publishes it, as the directory's reviewers state it
+	DataFlow  string            `json:"dataFlow,omitempty"`  // DataFlowXxx, as the directory's reviewers state it
+	Homepage  string            `json:"homepage,omitempty"`
+	Releases  []RegistryRelease `json:"releases"`
 	// Unsupported are the releases this build cannot read, with only their
 	// Version and MinGodwit: Pick's reason when none of Releases fits.
 	Unsupported []RegistryRelease `json:"-"`
@@ -77,11 +91,14 @@ func parseRegistry(data []byte, strict bool) (Registry, error) {
 		Schema  int       `json:"schema"`
 		Updated time.Time `json:"updated"`
 		Plugins []struct {
-			Name     string            `json:"name"`
-			Title    Text              `json:"title"`
-			Summary  Text              `json:"summary"`
-			Homepage string            `json:"homepage,omitempty"`
-			Releases []json.RawMessage `json:"releases"`
+			Name      string            `json:"name"`
+			Title     Text              `json:"title"`
+			Summary   Text              `json:"summary"`
+			Category  string            `json:"category,omitempty"`
+			Publisher string            `json:"publisher,omitempty"`
+			DataFlow  string            `json:"dataFlow,omitempty"`
+			Homepage  string            `json:"homepage,omitempty"`
+			Releases  []json.RawMessage `json:"releases"`
 		} `json:"plugins"`
 	}
 	dec := json.NewDecoder(bytes.NewReader(data))
@@ -107,7 +124,7 @@ func parseRegistry(data []byte, strict bool) (Registry, error) {
 		if rp.Homepage != "" && !strings.HasPrefix(rp.Homepage, "https://") {
 			return Registry{}, fmt.Errorf("registry: %s: homepage must be https", rp.Name)
 		}
-		p := RegistryPlugin{Name: rp.Name, Title: rp.Title, Summary: rp.Summary, Homepage: rp.Homepage}
+		p := RegistryPlugin{Name: rp.Name, Title: rp.Title, Summary: rp.Summary, Category: rp.Category, Publisher: rp.Publisher, DataFlow: rp.DataFlow, Homepage: rp.Homepage}
 		versions := map[string]bool{}
 		for _, b := range rp.Releases {
 			rel, err := parseRelease(rp.Name, b)

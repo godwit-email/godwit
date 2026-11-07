@@ -575,6 +575,7 @@ func (p *fakePlatform) DataDir() (string, bool) {
 	defer p.mu.Unlock()
 	return p.dataDir, p.customDir
 }
+func (p *fakePlatform) SetTrayVisible(visible bool) { p.record("SetTrayVisible", visible) }
 func (p *fakePlatform) SetTrayUnread(n int)         { p.record("SetTrayUnread", n) }
 func (p *fakePlatform) SetAppUnread(n int)          { p.record("SetAppUnread", n) }
 func (p *fakePlatform) ShowWindow()                 { p.record("ShowWindow") }

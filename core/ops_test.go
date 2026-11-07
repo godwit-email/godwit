@@ -200,7 +200,7 @@ func TestMoveOntoStoredCopy(t *testing.T) {
 	assert.Equal(t, []string{"done"}, e.opStates(t))
 }
 
-// The copy's queued changes are merged with it (ADR 0032) and still reach the
+// The copy's queued changes are merged with it (ADR 0034) and still reach the
 // server after the moved row's: the copy's move to Trash follows the move the
 // user made on the moved row.
 func TestMoveOntoStoredCopyCarriesItsQueuedChanges(t *testing.T) {

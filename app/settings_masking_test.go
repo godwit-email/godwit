@@ -357,6 +357,7 @@ func TestMaskingLogPages(t *testing.T) {
 	now := h.app.clock.Now()
 	n := maskLogPage + 10
 	h.post(func() {
+		h.app.gen++ // the page's own read of the empty log must not land on these
 		p.maskLog = nil
 		for i := range n {
 			p.maskLog = append(p.maskLog, core.MaskRecord{At: now.Add(-time.Duration(i) * time.Minute), Request: int64(n - i), Feature: "wit", Kind: "EMAIL", Category: "emails", Len: 16, Action: core.MaskMask, Source: core.MaskSourceRule})
@@ -381,6 +382,7 @@ func TestMaskingLogShowsWhatFoundEachValue(t *testing.T) {
 	p := h.openSettings("masklog")
 	now := h.app.clock.Now()
 	h.post(func() {
+		h.app.gen++ // the page's own read of the empty log must not land on these
 		p.maskLog = []core.MaskRecord{
 			{At: now, Request: 1, Feature: "wit", Kind: "NAME", Category: "names", First: "陈", Len: 3, Action: core.MaskMask, Source: core.MaskSourceRecognizer},
 			{At: now, Request: 1, Feature: "wit", Kind: "BANK_CARD", Category: "ids", First: "4", Len: 19, Action: core.MaskMask, Source: core.MaskSourceRule},

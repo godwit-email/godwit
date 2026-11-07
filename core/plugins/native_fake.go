@@ -8,8 +8,10 @@ import (
 	"io"
 	"os"
 	"os/exec"
+	"slices"
 	"strconv"
 	"strings"
+	"sync/atomic"
 	"time"
 )
 
@@ -30,7 +32,10 @@ import (
 // (answers models), models.prepare (adds header X-Native: 1),
 // models.load and models.judge (probability 0.9 for each question, a
 // choice's last value, no answers with judgeWrong), each failing with its error code if set and,
-// with record, appending its request to record + "." + method.
+// with record, appending its request to record + "." + method. login.status,
+// login.start, login.cancel and login.logout answer login[method] (default {}),
+// login.poll the next of loginPoll, the last one repeating; with record each
+// appends its request to record + "." + method, as the models ones do.
 func FakeNativeOpener(stderr io.Writer) NativeOpener {
 	return func(path string, hostABI uint32) (NativeCall, error) {
 		b, err := os.ReadFile(path)
@@ -38,22 +43,24 @@ func FakeNativeOpener(stderr io.Writer) NativeOpener {
 			return nil, err
 		}
 		var spec struct {
-			Describe        json.RawMessage `json:"describe"`
-			RestartDescribe json.RawMessage `json:"restartDescribe"`
-			DescribeSleepMs int             `json:"describeSleepMs"`
-			InitFail        bool            `json:"initFail"`
-			EchoStderr      string          `json:"echoStderr"`
-			Record          string          `json:"record"`
-			RecordEnv       bool            `json:"recordEnv"`
-			Source          string          `json:"source"`
-			WrongCount      bool            `json:"translateWrongCount"`
-			TranslateError  string          `json:"translateError"`
-			TranslateUpper  bool            `json:"translateUpper"`
-			Models          json.RawMessage `json:"models"`
-			JudgeError      string          `json:"judgeError"`
-			JudgeWrong      bool            `json:"judgeWrong"`
-			JudgeSleepMs    int             `json:"judgeSleepMs"`
-			LoadError       string          `json:"loadError"`
+			Describe        json.RawMessage            `json:"describe"`
+			RestartDescribe json.RawMessage            `json:"restartDescribe"`
+			DescribeSleepMs int                        `json:"describeSleepMs"`
+			InitFail        bool                       `json:"initFail"`
+			EchoStderr      string                     `json:"echoStderr"`
+			Record          string                     `json:"record"`
+			RecordEnv       bool                       `json:"recordEnv"`
+			Source          string                     `json:"source"`
+			WrongCount      bool                       `json:"translateWrongCount"`
+			TranslateError  string                     `json:"translateError"`
+			TranslateUpper  bool                       `json:"translateUpper"`
+			Models          json.RawMessage            `json:"models"`
+			JudgeError      string                     `json:"judgeError"`
+			JudgeWrong      bool                       `json:"judgeWrong"`
+			JudgeSleepMs    int                        `json:"judgeSleepMs"`
+			LoadError       string                     `json:"loadError"`
+			Login           map[string]json.RawMessage `json:"login"`
+			LoginPoll       []json.RawMessage          `json:"loginPoll"`
 		}
 		if err := json.Unmarshal(b, &spec); err != nil {
 			return nil, fmt.Errorf("fake library: %w", err)
@@ -76,8 +83,9 @@ func FakeNativeOpener(stderr io.Writer) NativeOpener {
 		fail := func(code string) []byte {
 			return []byte(`{"ok":false,"error":{"code":"` + code + `","message":"` + code + `"}}`)
 		}
+		var polls atomic.Int64
 		return func(method string, req []byte) ([]byte, error) {
-			if spec.Record != "" && strings.HasPrefix(method, "models.") {
+			if spec.Record != "" && (strings.HasPrefix(method, "models.") || strings.HasPrefix(method, "login.")) {
 				f, err := os.OpenFile(spec.Record+"."+method, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o600)
 				if err != nil {
 					return nil, err
@@ -86,6 +94,17 @@ func FakeNativeOpener(stderr io.Writer) NativeOpener {
 				f.Close()
 			}
 			switch method {
+			case "login.status", "login.start", "login.cancel", "login.logout":
+				if r, found := spec.Login[method]; found {
+					return ok(r), nil
+				}
+				return ok(struct{}{}), nil
+			case "login.poll":
+				i := min(int(polls.Add(1))-1, len(spec.LoginPoll)-1)
+				if i < 0 {
+					return fail("internal"), nil
+				}
+				return ok(spec.LoginPoll[i]), nil
 			case "models.list":
 				return ok(spec.Models), nil
 			case "models.prepare":
@@ -125,6 +144,16 @@ func FakeNativeOpener(stderr io.Writer) NativeOpener {
 				time.Sleep(time.Duration(spec.DescribeSleepMs) * time.Millisecond)
 				return ok(spec.Describe), nil
 			case "configure":
+				// Strict as published libraries are: an unknown field fails the plugin's start.
+				var d struct{ Capabilities []string }
+				json.Unmarshal(spec.Describe, &d)
+				var fields map[string]json.RawMessage
+				json.Unmarshal(req, &fields)
+				for f := range fields {
+					if f != "config" && (f != "dataDir" || !slices.Contains(d.Capabilities, "login")) {
+						return fail("invalid_request"), nil
+					}
+				}
 				if spec.Record != "" {
 					rec := req
 					if spec.RecordEnv {

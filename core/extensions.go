@@ -87,6 +87,35 @@ func (s *Service) versionDir(name, installDir string) string {
 	return filepath.Join(s.pluginsDir(), name, installDir)
 }
 
+// pluginDataDir is the directory native plugin name keeps its own files in,
+// beside its versions: updates leave it and an uninstall removes it.
+func (s *Service) pluginDataDir(name string) (string, error) {
+	dir, err := filepath.Abs(filepath.Join(s.pluginsDir(), name, "data"))
+	if err != nil {
+		return "", err
+	}
+	return dir, os.MkdirAll(dir, 0o700)
+}
+
+// nativeDataDir is what configure tells a plugin of its directory: "" unless it
+// declares login. Published libraries refuse a request with a field they do not
+// know, so nothing new reaches them: a new field needs a capability to ask for it.
+func (s *Service) nativeDataDir(name string, m plugins.Manifest) (string, error) {
+	if !slices.Contains(m.Capabilities, "login") {
+		return "", nil
+	}
+	return s.pluginDataDir(name)
+}
+
+// configureArgs is configure's request.
+func configureArgs[C any](cfg C, dataDir string) map[string]any {
+	args := map[string]any{"config": cfg}
+	if dataDir != "" {
+		args["dataDir"] = dataDir
+	}
+	return args
+}
+
 var versionRE = regexp.MustCompile(`^[0-9a-f]{64}-[0-9a-f]{16}$`)
 
 func isVersion(n string) bool { return versionRE.MatchString(n) }
@@ -538,6 +567,8 @@ type runningPlugin struct {
 	p    *plugins.Plugin // script plugins
 	row  pluginRow       // the row it was started from: manifest and permission hashes
 
+	loginOpened sync.Map // the sign-in flows whose page was audited
+
 	native  *plugins.NativeProcess         // native plugins (p and host are nil)
 	cfg     atomic.Pointer[map[string]any] // native: the settings a new process gets
 	acked   atomic.Pointer[map[string]any] // native: the last of them a process accepted (cfgKey)
@@ -659,13 +690,17 @@ func (s *Service) loadNative(ctx context.Context, name string, r pluginRow) erro
 	if err != nil {
 		return err
 	}
+	dataDir, err := s.nativeDataDir(name, r.m)
+	if err != nil {
+		return err
+	}
 	rp := &runningPlugin{hash: r.sourceHash, row: r, judging: make(chan struct{}, 1)}
 	rp.cfg.Store(&cfg)
 	rp.native = plugins.NewNativeProcess(plugins.NativeOptions{Command: s.nativeCmd, Env: s.nativeEnv, Library: lib, SHA256: r.libraryHash,
 		Redact: s.secrets.Redact, Idle: cmp.Or(time.Duration(r.m.Native.Idle)*time.Second, nativeIdle),
-		OnExit: func() { rp.exited.Store(rp.procs.Load()); rp.dropLoaded() }, // its models' files are no longer in use; a load it answered counts for nothing
+		OnExit: func() { rp.exited.Store(rp.procs.Load()); rp.dropLoaded(); rp.dropLoopbackModels() }, // its models' files are no longer in use; a load it answered counts for nothing
 		OnStart: func(ctx context.Context, call func(context.Context, string, any) (json.RawMessage, error)) error {
-			return setUpNative(ctx, name, r, rp, call)
+			return setUpNative(ctx, name, r, rp, dataDir, call)
 		}})
 	cctx, cancel := context.WithTimeout(ctx, nativeStart)
 	defer cancel()
@@ -685,7 +720,7 @@ func (s *Service) loadNative(ctx context.Context, name string, r pluginRow) erro
 
 // setUpNative is a new process's OnStart: describe must match the manifest
 // before the settings (secrets included) are handed over.
-func setUpNative(ctx context.Context, name string, r pluginRow, rp *runningPlugin, call func(context.Context, string, any) (json.RawMessage, error)) error {
+func setUpNative(ctx context.Context, name string, r pluginRow, rp *runningPlugin, dataDir string, call func(context.Context, string, any) (json.RawMessage, error)) error {
 	res, err := call(ctx, "describe", struct{}{})
 	if err != nil {
 		return err
@@ -706,7 +741,7 @@ func setUpNative(ctx context.Context, name string, r pluginRow, rp *runningPlugi
 	rp.procs.Add(1)
 	rp.dropLoaded() // a new process has loaded nothing
 	cfg := rp.cfg.Load()
-	if _, err = call(ctx, "configure", map[string]any{"config": *cfg}); err == nil {
+	if _, err = call(ctx, "configure", configureArgs(*cfg, dataDir)); err == nil {
 		rp.acked.Store(cfg)
 	}
 	return err
@@ -723,7 +758,11 @@ func (s *Service) configureNative(ctx context.Context, name string, rp *runningP
 	// Bounded as a start's configure is: the caller holds pluginsMu, which every send check waits on.
 	cctx, cancel := context.WithTimeout(ctx, nativeStart)
 	defer cancel()
-	if _, err = rp.native.Call(cctx, "configure", map[string]any{"config": cfg}); err == nil {
+	dataDir, err := s.nativeDataDir(name, rp.row.m)
+	if err != nil {
+		return err
+	}
+	if _, err = rp.native.Call(cctx, "configure", configureArgs(cfg, dataDir)); err == nil {
 		rp.acked.Store(&cfg)
 	}
 	return err

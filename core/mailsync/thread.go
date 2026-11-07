@@ -3,6 +3,7 @@ package mailsync
 import (
 	"context"
 	"encoding/json"
+	"slices"
 	"time"
 
 	"github.com/egoist/mygo/plugins/sqlite"
@@ -56,10 +57,29 @@ func planThread(ctx context.Context, db *store.DB, acc *account, p *mail.Parsed)
 		plan.pre = []sqlite.Statement{
 			{SQL: "UPDATE messages SET thread_id = ? WHERE thread_id IN " + in, Args: args},
 			{SQL: "UPDATE thread_refs SET thread_id = ? WHERE thread_id IN " + in, Args: args},
-			{SQL: "DELETE FROM threads WHERE id IN " + in, Args: others}, // after the updates: it cascades
 		}
+		plan.pre = append(append(plan.pre, mergeViewState(target, others)...),
+			sqlite.Statement{SQL: "DELETE FROM threads WHERE id IN " + in, Args: others}) // after the updates: it cascades
 	}
 	return plan, nil
+}
+
+// mergeViewState moves what is kept per conversation for 视图 to target:
+// an exception (removed wins over added), the archive mark of the latest
+// archive, and the replies.
+func mergeViewState(target int64, others []any) []sqlite.Statement {
+	all := append([]any{target}, others...)
+	in, inAll := "("+marks(len(others))+")", "("+marks(len(all))+")"
+	args := append([]any{target}, others...)
+	return []sqlite.Statement{
+		{SQL: `DELETE FROM saved_view_exceptions WHERE kind = 'added' AND thread_id IN ` + inAll + ` AND view_id IN
+			(SELECT view_id FROM saved_view_exceptions WHERE kind = 'removed' AND thread_id IN ` + inAll + `)`, Args: append(slices.Clone(all), all...)},
+		{SQL: "UPDATE OR IGNORE saved_view_exceptions SET thread_id = ? WHERE thread_id IN " + in, Args: args},
+		{SQL: `DELETE FROM archive_marks WHERE thread_id IN ` + inAll + ` AND thread_id != (SELECT thread_id FROM archive_marks
+			WHERE thread_id IN ` + inAll + ` ORDER BY date DESC, thread_id LIMIT 1)`, Args: append(slices.Clone(all), all...)},
+		{SQL: "UPDATE archive_marks SET thread_id = ? WHERE thread_id IN " + in, Args: args},
+		{SQL: "UPDATE reply_records SET thread_id = ? WHERE thread_id IN " + in, Args: args},
+	}
 }
 
 func refThreads(ctx context.Context, db *store.DB, accountID int64, ids []string) ([]int64, error) {

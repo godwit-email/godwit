@@ -364,7 +364,36 @@ func (t *pluginModelTransport) RoundTrip(req *http.Request) (*http.Response, err
 		}
 		return resp, err
 	}
-	return t.base.RoundTrip(out)
+	release := t.rp.native.Hold() // a plugin's loopback server answers outside the ABI: no going idle mid-stream
+	resp, err := t.base.RoundTrip(out)
+	if err != nil {
+		release()
+		return nil, err
+	}
+	resp.Body = heldBody{resp.Body, release}
+	return resp, nil
+}
+
+// heldBody releases its process when the response is read and closed.
+type heldBody struct {
+	io.ReadCloser
+	release func()
+}
+
+func (b heldBody) Close() error {
+	defer b.release()
+	return b.ReadCloser.Close()
+}
+
+// dropLoopbackModels forgets a list that names a loopback server of the
+// process that just ended: the next process listens on another port.
+func (rp *runningPlugin) dropLoopbackModels() {
+	if c := rp.models.Load(); c != nil && slices.ContainsFunc(c.models, func(m plugins.ProviderModel) bool {
+		u, err := url.Parse(m.BaseURL)
+		return err == nil && (u.Hostname() == "127.0.0.1" || u.Hostname() == "localhost" || u.Hostname() == "::1")
+	}) {
+		rp.models.Store(nil)
+	}
 }
 
 // stale is ErrModelUnavailable once the plugin stopped, was replaced or

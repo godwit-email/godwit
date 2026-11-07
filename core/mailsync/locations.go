@@ -2,7 +2,7 @@ package mailsync
 
 import "github.com/egoist/mygo/plugins/sqlite"
 
-// A message's folders are its rows in message_locations (ADR 0032). On most
+// A message's folders are its rows in message_locations (ADR 0034). On most
 // servers a message is in one folder; on Gmail it is in each folder the server
 // has it in, every row with its own UID. A move not yet pushed shows it at its
 // destination, unconfirmed, and keeps it hidden where the server has it.

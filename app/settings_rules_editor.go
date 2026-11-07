@@ -201,7 +201,7 @@ func (v *rulesView) banners(c *ui.Context) {
 			kit.Text(c, i18n.Tf("settings.rules.from_mail.banner", v.from), t.Text.Body).Grow(1).Shrink(1)
 			for i, cd := range v.suggest {
 				kit.Button(c.Key(i), "＋ "+v.chipText(cd), kit.ButtonOpts{Variant: kit.Outline, Size: kit.SizeSm}).Shrink(0).OnClick(func() {
-					if condGrouped(d) {
+					if condGrouped(d.Conditions) {
 						d.Conditions[0].Group = append(d.Conditions[0].Group, cd)
 					} else {
 						d.Conditions = append(d.Conditions, cd)
@@ -297,18 +297,18 @@ func (v *rulesView) whenCard(c *ui.Context, labels []kit.Option[string]) {
 }
 
 // condGrouped reports whether d's conditions are condition groups.
-func condGrouped(d *core.RuleDoc) bool {
-	return len(d.Conditions) > 0 && d.Conditions[0].Group != nil
+func condGrouped(conds []core.RuleCondition) bool {
+	return len(conds) > 0 && conds[0].Group != nil
 }
 
-// tidyConds puts a last group's conditions back in the doc, and a lone
+// tidyConds puts a last group's conditions back in the list, and a lone
 // condition back to the default match, which it no longer shows.
-func tidyConds(d *core.RuleDoc) {
-	if len(d.Conditions) == 1 && condGrouped(d) {
-		d.Match, d.Conditions = d.Conditions[0].Match, d.Conditions[0].Group
+func tidyConds(conds *[]core.RuleCondition, match *string) {
+	if len(*conds) == 1 && condGrouped(*conds) {
+		*match, *conds = (*conds)[0].Match, (*conds)[0].Group
 	}
-	if !condGrouped(d) && len(d.Conditions) < 2 {
-		d.Match = core.MatchAll
+	if !condGrouped(*conds) && len(*conds) < 2 {
+		*match = core.MatchAll
 	}
 }
 
@@ -317,16 +317,16 @@ const condGroupRows = 2
 
 // addCondGroup adds a group of two empty conditions, matching any: mixing and
 // with or is why there is a group. Conditions so far become the first group.
-func addCondGroup(d *core.RuleDoc) {
+func addCondGroup(conds *[]core.RuleCondition, match *string) {
 	two := []core.RuleCondition{{Field: core.FieldFrom, Op: core.OpContains}, {Field: core.FieldFrom, Op: core.OpContains}}
 	switch {
-	case len(d.Conditions) == 0:
-		d.Conditions, d.Match = two, core.MatchAny
-	case condGrouped(d):
-		d.Conditions = append(d.Conditions, core.RuleCondition{Match: core.MatchAny, Group: two})
+	case len(*conds) == 0:
+		*conds, *match = two, core.MatchAny
+	case condGrouped(*conds):
+		*conds = append(*conds, core.RuleCondition{Match: core.MatchAny, Group: two})
 	default:
-		d.Conditions = []core.RuleCondition{{Match: d.Match, Group: d.Conditions}, {Match: core.MatchAny, Group: two}}
-		d.Match = core.MatchAll
+		*conds = []core.RuleCondition{{Match: *match, Group: *conds}, {Match: core.MatchAny, Group: two}}
+		*match = core.MatchAll
 	}
 }
 
@@ -393,10 +393,9 @@ func condRail(c *ui.Context, line, first, last bool, match *string, seam bool) {
 	})
 }
 
-// ifCard is 如果: the conditions, or their groups, each in a bracket with one
-// and or or to click, then what adds more.
+// ifCard is 如果: the rule's conditions.
 func (v *rulesView) ifCard(c *ui.Context, labels []kit.Option[string]) {
-	t, th := theme.Of(c), c.Theme()
+	t := theme.Of(c)
 	d := &v.edit.Doc
 	var fields []kit.Option[string]
 	for _, f := range []string{core.FieldFrom, core.FieldTo, core.FieldSubject, core.FieldBody, core.FieldAttachments, core.FieldLabel, core.FieldFolder, core.FieldAge} {
@@ -410,55 +409,34 @@ func (v *rulesView) ifCard(c *ui.Context, labels []kit.Option[string]) {
 	for i, r := range ruleRoles {
 		roles[i] = kit.Option[string]{Value: r, Label: i18n.T("mail.folder." + r)}
 	}
-	atLimit := len(d.Rows()) >= core.MaxRuleConditions
-	noGroupRoom := len(d.Rows())+condGroupRows > core.MaxRuleConditions
-	// rows is conditions, boxed in a group or not, under one bracket with match.
-	rows := func(conds *[]core.RuleCondition, match *string, boxed bool, remove func(i int)) {
-		n := len(*conds)
-		for i := range *conds {
-			ui.Row(c.Key(i)).FillWidth().AlignItems(ui.Stretch).Children(func() {
-				if boxed || n > 1 {
-					var on *string
-					if i == 1 {
-						on = match
-					}
-					condRail(c, n > 1, i == 0, i == n-1, on, n == 2)
-				}
-				ui.Row(c).Grow(1).Shrink(1).Basis(0).MinWidth(0).PaddingY(th.Space(1)).Gap(th.Space(2)).AlignItems(ui.Center).Children(func() {
-					cd := &(*conds)[i]
-					was := cd.Field
-					ruleSelect(c, i18n.T("settings.rules.field"), &cd.Field, fields, theme.RuleFieldWidth)
-					if cd.Field != was {
-						v.fieldChanged(cd, was)
-					}
-					switch cd.Field {
-					case core.FieldAttachments:
-						ruleSelect(c, i18n.T("settings.rules.value"), &cd.Value, yesNo, 0)
-					case core.FieldLabel:
-						ruleSelect(c, i18n.T("settings.rules.op"), &cd.Op, setOps, theme.RuleOpWidth)
-						ruleSelect(c, i18n.T("settings.rules.label"), &cd.Value, labels, 0)
-					case core.FieldFolder:
-						ruleSelect(c, i18n.T("settings.rules.op"), &cd.Op, setOps, theme.RuleOpWidth)
-						ruleSelect(c, i18n.T("settings.rules.folder"), &cd.Value, roles, 0)
-					case core.FieldAge:
-						kit.Text(c, i18n.T("settings.rules.op.older_than"), t.Text.Sm)
-						kit.Input(c, &cd.Value, kit.InputOpts{Placeholder: "30"}).Label(i18n.T("settings.rules.days")).Width(th.Space(16))
-						kit.Text(c, i18n.T("settings.rules.days_ago"), t.Text.Sm)
-					default:
-						ruleSelect(c, i18n.T("settings.rules.op"), &cd.Op, ops, theme.RuleOpWidth)
-						ph := "settings.rules.value.text"
-						if cd.Field == core.FieldFrom || cd.Field == core.FieldTo {
-							ph = "settings.rules.value.addr"
-						}
-						kit.Input(c, &cd.Value, kit.InputOpts{Placeholder: i18n.T(ph)}).Label(i18n.T("settings.rules.value")).Grow(1).Shrink(1).Basis(0).MinWidth(0)
-					}
-					if cd.Field == core.FieldAge {
-						ui.Row(c).Grow(1)
-					}
-					kit.IconButton(c, "x", i18n.T("settings.rules.condition.remove"), kit.ButtonOpts{Variant: kit.Ghost, Size: kit.SizeSm}).
-						OnClick(func() { remove(i) })
-				})
-			})
+	row := func(cd *core.RuleCondition) {
+		th := c.Theme()
+		was := cd.Field
+		ruleSelect(c, i18n.T("settings.rules.field"), &cd.Field, fields, theme.RuleFieldWidth)
+		if cd.Field != was {
+			v.fieldChanged(cd, was)
+		}
+		switch cd.Field {
+		case core.FieldAttachments:
+			ruleSelect(c, i18n.T("settings.rules.value"), &cd.Value, yesNo, 0)
+		case core.FieldLabel:
+			ruleSelect(c, i18n.T("settings.rules.op"), &cd.Op, setOps, theme.RuleOpWidth)
+			ruleSelect(c, i18n.T("settings.rules.label"), &cd.Value, labels, 0)
+		case core.FieldFolder:
+			ruleSelect(c, i18n.T("settings.rules.op"), &cd.Op, setOps, theme.RuleOpWidth)
+			ruleSelect(c, i18n.T("settings.rules.folder"), &cd.Value, roles, 0)
+		case core.FieldAge:
+			kit.Text(c, i18n.T("settings.rules.op.older_than"), t.Text.Sm)
+			kit.Input(c, &cd.Value, kit.InputOpts{Placeholder: "30"}).Label(i18n.T("settings.rules.days")).Width(th.Space(16))
+			kit.Text(c, i18n.T("settings.rules.days_ago"), t.Text.Sm)
+			ui.Row(c).Grow(1)
+		default:
+			ruleSelect(c, i18n.T("settings.rules.op"), &cd.Op, ops, theme.RuleOpWidth)
+			ph := "settings.rules.value.text"
+			if cd.Field == core.FieldFrom || cd.Field == core.FieldTo {
+				ph = "settings.rules.value.addr"
+			}
+			kit.Input(c, &cd.Value, kit.InputOpts{Placeholder: i18n.T(ph)}).Label(i18n.T("settings.rules.value")).Grow(1).Shrink(1).Basis(0).MinWidth(0)
 		}
 	}
 	ruleCard(c, t.Border, t.Card, func() {
@@ -466,84 +444,114 @@ func (v *rulesView) ifCard(c *ui.Context, labels []kit.Option[string]) {
 		if len(d.Conditions) == 0 {
 			kit.Text(c, i18n.T("settings.rules.no_conditions"), t.Text.Sm).TextColor(t.Muted)
 		}
-		if !condGrouped(d) {
-			ui.Column(c).FillWidth().Children(func() {
-				rows(&d.Conditions, &d.Match, false, func(i int) {
-					d.Conditions = slices.Delete(d.Conditions, i, i+1)
-					tidyConds(d)
-				})
-			})
-			v.addCondMenu(c, atLimit, noGroupRoom)
-			return
-		}
-		ui.Column(c).FillWidth().Children(func() {
-			last := len(d.Conditions) - 1
-			for g := range d.Conditions {
-				cg := &d.Conditions[g]
-				ui.Row(c.Key(g)).FillWidth().AlignItems(ui.Stretch).Children(func() {
-					var on *string
-					if g == 1 {
-						on = &d.Match
-					}
-					condRail(c, true, g == 0, g == last, on, true)
-					ui.Column(c).Grow(1).Shrink(1).Basis(0).MinWidth(0).PaddingY(th.Space(1)).Children(func() {
-						ui.Column(c).FillWidth().Padding(th.Space(1), th.Space(2.5)).Radius(t.Radius.Lg).Background(t.Hover).Border(theme.Hairline, t.Border).
-							Label(i18n.T("settings.rules.cond_group")).Children(func() {
-							rows(&cg.Group, &cg.Match, true, func(i int) {
-								cg.Group = slices.Delete(cg.Group, i, i+1)
-								if len(cg.Group) == 0 {
-									d.Conditions = slices.Delete(d.Conditions, g, g+1)
-								}
-								tidyConds(d)
-							})
-							_, railW := condRailWidth(c)
-							ui.Row(c).FillWidth().AlignItems(ui.Center).Padding(0, 0, 0, railW).Children(func() {
-								kit.Button(c, i18n.T("settings.rules.condition.add"), kit.ButtonOpts{Variant: kit.Ghost, Size: kit.SizeSm, Icon: "plus", Disabled: atLimit}).TextColor(t.Muted).
-									OnClick(func() {
-										add := core.RuleCondition{Field: core.FieldSubject, Op: core.OpContains}
-										if f := cg.Group[len(cg.Group)-1].Field; textField(f) {
-											add.Field = f // 发件人 a 或 发件人 b, most often
-										}
-										cg.Group = append(cg.Group, add)
-									})
-								ui.Row(c).Grow(1)
-								kit.Button(c, i18n.T("settings.rules.cond_group.remove"), kit.ButtonOpts{Variant: kit.Ghost, Size: kit.SizeSm}).TextColor(t.Muted).
-									OnClick(func() {
-										d.Conditions = slices.Delete(d.Conditions, g, g+1)
-										tidyConds(d)
-									})
-							})
-						})
-					})
-				})
-			}
-		})
-		_, railW := condRailWidth(c)
-		kit.Button(c, i18n.T("settings.rules.cond_group.add"), kit.ButtonOpts{Variant: kit.Ghost, Size: kit.SizeSm, Icon: "plus", Disabled: noGroupRoom}).
-			AlignSelf(ui.Start).Margin(0, 0, 0, railW).TextColor(t.Muted).OnClick(func() { addCondGroup(d) })
+		condEditor(c, &d.Conditions, &d.Match, &v.condMenu, row)
 	})
 }
 
-// addCondMenu is 添加 and its menu: 添加条件, or 添加一组条件.
-func (v *rulesView) addCondMenu(c *ui.Context, disabled, noGroupRoom bool) {
-	t := theme.Of(c)
-	d := &v.edit.Doc
-	label := i18n.T("settings.rules.add")
-	add := kit.Button(c, label, kit.ButtonOpts{Variant: kit.Ghost, Size: kit.SizeSm, Icon: "plus", Trailing: "chevron-down", Disabled: disabled}).
-		AlignSelf(ui.Start).TextColor(t.Muted).OnClick(func() { v.condMenu = !v.condMenu })
-	if !v.condMenu {
+// condEditor is conditions, or their groups, each in a bracket with one and or
+// or to click, then what adds more; row is one condition's controls. Rules and
+// views share it.
+func condEditor(c *ui.Context, conds *[]core.RuleCondition, match *string, menu *bool, row func(*core.RuleCondition)) {
+	t, th := theme.Of(c), c.Theme()
+	count := len(core.RuleDoc{Conditions: *conds}.Rows())
+	atLimit := count >= core.MaxRuleConditions
+	noGroupRoom := count+condGroupRows > core.MaxRuleConditions
+	// rows is conditions, boxed in a group or not, under one bracket with match.
+	rows := func(list *[]core.RuleCondition, on *string, boxed bool, remove func(i int)) {
+		n := len(*list)
+		for i := range *list {
+			ui.Row(c.Key(i)).FillWidth().AlignItems(ui.Stretch).Children(func() {
+				if boxed || n > 1 {
+					var btn *string
+					if i == 1 {
+						btn = on
+					}
+					condRail(c, n > 1, i == 0, i == n-1, btn, n == 2)
+				}
+				ui.Row(c).Grow(1).Shrink(1).Basis(0).MinWidth(0).PaddingY(th.Space(1)).Gap(th.Space(2)).AlignItems(ui.Center).Children(func() {
+					row(&(*list)[i])
+					kit.IconButton(c, "x", i18n.T("settings.rules.condition.remove"), kit.ButtonOpts{Variant: kit.Ghost, Size: kit.SizeSm}).
+						OnClick(func() { remove(i) })
+				})
+			})
+		}
+	}
+	if !condGrouped(*conds) {
+		ui.Column(c).FillWidth().Children(func() {
+			rows(conds, match, false, func(i int) {
+				*conds = slices.Delete(*conds, i, i+1)
+				tidyConds(conds, match)
+			})
+		})
+		addCondMenu(c, conds, match, menu, atLimit, noGroupRoom)
 		return
 	}
-	kit.MenuAt(c, add, &v.condMenu, ui.AnchorBottomLeft, ui.AnchorTopLeft, theme.PopupOffset, label, func() {
+	ui.Column(c).FillWidth().Children(func() {
+		last := len(*conds) - 1
+		for g := range *conds {
+			cg := &(*conds)[g]
+			ui.Row(c.Key(g)).FillWidth().AlignItems(ui.Stretch).Children(func() {
+				var btn *string
+				if g == 1 {
+					btn = match
+				}
+				condRail(c, true, g == 0, g == last, btn, true)
+				ui.Column(c).Grow(1).Shrink(1).Basis(0).MinWidth(0).PaddingY(th.Space(1)).Children(func() {
+					ui.Column(c).FillWidth().Padding(th.Space(1), th.Space(2.5)).Radius(t.Radius.Lg).Background(t.Hover).Border(theme.Hairline, t.Border).
+						Label(i18n.T("settings.rules.cond_group")).Children(func() {
+						rows(&cg.Group, &cg.Match, true, func(i int) {
+							cg.Group = slices.Delete(cg.Group, i, i+1)
+							if len(cg.Group) == 0 {
+								*conds = slices.Delete(*conds, g, g+1)
+							}
+							tidyConds(conds, match)
+						})
+						_, railW := condRailWidth(c)
+						ui.Row(c).FillWidth().AlignItems(ui.Center).Padding(0, 0, 0, railW).Children(func() {
+							kit.Button(c, i18n.T("settings.rules.condition.add"), kit.ButtonOpts{Variant: kit.Ghost, Size: kit.SizeSm, Icon: "plus", Disabled: atLimit}).TextColor(t.Muted).
+								OnClick(func() {
+									add := core.RuleCondition{Field: core.FieldSubject, Op: core.OpContains}
+									if f := cg.Group[len(cg.Group)-1].Field; textField(f) {
+										add.Field = f // 发件人 a 或 发件人 b, most often
+									}
+									cg.Group = append(cg.Group, add)
+								})
+							ui.Row(c).Grow(1)
+							kit.Button(c, i18n.T("settings.rules.cond_group.remove"), kit.ButtonOpts{Variant: kit.Ghost, Size: kit.SizeSm}).TextColor(t.Muted).
+								OnClick(func() {
+									*conds = slices.Delete(*conds, g, g+1)
+									tidyConds(conds, match)
+								})
+						})
+					})
+				})
+			})
+		}
+	})
+	_, railW := condRailWidth(c)
+	kit.Button(c, i18n.T("settings.rules.cond_group.add"), kit.ButtonOpts{Variant: kit.Ghost, Size: kit.SizeSm, Icon: "plus", Disabled: noGroupRoom}).
+		AlignSelf(ui.Start).Margin(0, 0, 0, railW).TextColor(t.Muted).OnClick(func() { addCondGroup(conds, match) })
+}
+
+// addCondMenu is 添加 and its menu: 添加条件, or 添加一组条件.
+func addCondMenu(c *ui.Context, conds *[]core.RuleCondition, match *string, menu *bool, disabled, noGroupRoom bool) {
+	t := theme.Of(c)
+	label := i18n.T("settings.rules.add")
+	add := kit.Button(c, label, kit.ButtonOpts{Variant: kit.Ghost, Size: kit.SizeSm, Icon: "plus", Trailing: "chevron-down", Disabled: disabled}).
+		AlignSelf(ui.Start).TextColor(t.Muted).OnClick(func() { *menu = !*menu })
+	if !*menu {
+		return
+	}
+	kit.MenuAt(c, add, menu, ui.AnchorBottomLeft, ui.AnchorTopLeft, theme.PopupOffset, label, func() {
 		for _, o := range []struct {
 			key  string
 			off  bool
 			pick func()
 		}{
 			{"settings.rules.condition.add", false, func() {
-				d.Conditions = append(d.Conditions, core.RuleCondition{Field: core.FieldSubject, Op: core.OpContains})
+				*conds = append(*conds, core.RuleCondition{Field: core.FieldSubject, Op: core.OpContains})
 			}},
-			{"settings.rules.cond_group.add", noGroupRoom, func() { addCondGroup(d) }},
+			{"settings.rules.cond_group.add", noGroupRoom, func() { addCondGroup(conds, match) }},
 		} {
 			item, fg := i18n.T(o.key), t.Foreground
 			if o.off {
@@ -552,7 +560,7 @@ func (v *rulesView) addCondMenu(c *ui.Context, disabled, noGroupRoom bool) {
 			kit.MenuItem(c.Key(o.key), false).Label(item).Disabled(o.off).TextColor(fg).Children(func() {
 				ui.Text(c, item).SingleLine().Grow(1)
 			}).OnClick(func() {
-				v.condMenu = false
+				*menu = false
 				o.pick()
 			})
 		}

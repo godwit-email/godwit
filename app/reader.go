@@ -35,9 +35,10 @@ type reader struct {
 	copiedCard string // the card button that just copied (message/plugin/button), shown as Copied for a moment
 	p          *mailPage
 
-	key     [2]int64 // the route's ThreadID and MessageID shown
-	gen     uint64   // bumped per key; older results are dropped
-	readGen uint64   // bumped per thread read; only the newest read applies
+	key     [2]int64        // the route's ThreadID and MessageID shown
+	why     core.ViewReason // why it is in the view shown
+	gen     uint64          // bumped per key; older results are dropped
+	readGen uint64          // bumped per thread read; only the newest read applies
 	loaded  bool
 	subject string
 	msgs    []core.MessageSummary // oldest first
@@ -149,6 +150,7 @@ func (r *reader) sync(reread bool) {
 	if k[0] != 0 {
 		r.load()
 	}
+	r.loadWhy()
 }
 
 // reset forgets what was shown and closes its pages; the next thread
@@ -162,7 +164,7 @@ func (r *reader) reset(k [2]int64) {
 	r.key, r.loaded, r.subject, r.msgs, r.focus = k, false, "", nil, 0
 	r.threadIDs, r.labels = nil, nil
 	r.replyAsk = "" // a question is for the thread it was typed in
-	r.detailsOpen, r.detailsID = false, 0
+	r.detailsOpen, r.detailsID, r.why = false, 0, core.ViewReason{}
 	r.open, r.historyOpen, r.historyShown, r.revealID, r.bodies = map[int64]bool{}, map[int64]bool{}, false, 0, map[int64]*msgBody{}
 	r.scroll.X, r.scroll.Y = 0, 0
 	r.gen++
@@ -829,12 +831,14 @@ func (r *reader) view(c *ui.Context) {
 						})
 						r.labelRow(c)
 					})
+					r.viewBand(c)
 					if len(r.msgs) > 1 { // a thread's summary is the thread's: under its subject, not in a message
 						if m, ok := r.last(); ok {
 							r.column(c).Children(func() { r.summaryPanel(c, m) })
 						}
 					}
 					r.renderMessages(c)
+					r.viewWhyLine(c)
 				})
 			})
 		}).LayoutBounds()

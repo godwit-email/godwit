@@ -48,7 +48,11 @@ func (a *App) page() pageView { return a.pages[a.route.Page] }
 // navigate goes to r, after the current route in the history; the routes
 // ahead are dropped.
 func (a *App) navigate(r Route) {
+	if a.mail.askToLeave(func() { a.navigate(r) }) {
+		return
+	}
 	if r == a.route {
+		a.mail.closeViewEditor() // the editor covers this route's list
 		return
 	}
 	a.history, a.ahead = append(a.history, a.route), nil
@@ -56,6 +60,9 @@ func (a *App) navigate(r Route) {
 }
 
 func (a *App) back() {
+	if a.mail.askToLeave(a.back) {
+		return
+	}
 	if n := len(a.history); n > 0 {
 		a.ahead = append(a.ahead, a.route)
 		r := a.history[n-1]
@@ -65,6 +72,9 @@ func (a *App) back() {
 }
 
 func (a *App) forward() {
+	if a.mail.askToLeave(a.forward) {
+		return
+	}
 	if n := len(a.ahead); n > 0 {
 		a.history = append(a.history, a.route)
 		r := a.ahead[n-1]
@@ -76,9 +86,10 @@ func (a *App) forward() {
 // setRoute shows r: results of queries for the old route are dropped, and
 // the page reads what it shows.
 func (a *App) setRoute(r Route) {
-	if a.goneLabel(r) {
+	if a.goneLabel(r) || a.goneView(r) {
 		r = Route{Page: PageMail, View: core.View{Unified: "inbox"}}
 	}
+	a.mail.closeViewEditor()
 	if r.Page != PageMail {
 		a.mail.stopOlder() // older mail is fetched only while the list shows
 	}
@@ -297,6 +308,7 @@ func (a *App) titleBar(c *ui.Context, h float32) {
 				if sub != "" {
 					kit.Text(c, sub, t.Text.Sm).TextColor(t.Muted).SingleLine()
 				}
+				a.mail.titleMenu(c)
 			})
 		}
 		ui.Spacer(c)

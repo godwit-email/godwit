@@ -473,7 +473,7 @@ func TestMigrationSettingsRows(t *testing.T) {
 	store.Migrations = all
 	require.NoError(t, err)
 	for _, kv := range [][2]string{
-		{"app", `{"Theme":"dark","TrustedImageSenders":["bob@example.com"],"BlockedSenders":["spam@example.com"],"DisabledBuiltins":["sign-in-codes"],"NotifySmartOnly":true}`},
+		{"app", `{"Theme":"dark","TrustedImageSenders":["bob@example.com"],"BlockedSenders":["spam@example.com"],"DisabledBuiltins":["sign-in-codes"],"NotifyViewOnly":true}`},
 		{"labels_seeded", "1"}, {"model_aliases_v1", "done"}, {"mask_key", "k"},
 	} {
 		_, err = db.Execute(ctx, "INSERT INTO settings(key, value) VALUES (?, ?)", kv[0], kv[1])
@@ -565,7 +565,7 @@ func TestMessageChildrenIndexed(t *testing.T) {
 	}
 }
 
-// Each message becomes its locations (ADR 0032): one shown where the user
+// Each message becomes its locations (ADR 0034): one shown where the user
 // sees it, holding the server location when the server has it there, and,
 // while a move waits to be pushed, a hidden one where the server has it.
 // A queued move or purge takes the folder it moves from: the server's, or
