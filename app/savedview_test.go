@@ -3,6 +3,7 @@ package app
 import (
 	"context"
 	"github.com/egoist/mygo/ui"
+	"github.com/godwit-email/godwit/core/events"
 	"github.com/godwit-email/godwit/internal/theme"
 	"slices"
 	"testing"
@@ -140,6 +141,23 @@ func TestViewToHandleFirstRun(t *testing.T) {
 	}
 	h.waitMail("it gone once queued", func() bool { return len(h.items()) == 0 })
 	h.see(i18n.T("view.empty"))
+}
+
+// TestViewRefreshNotLostToCached: a refresh that reuses the views must not
+// replace one still reading them: its result is dropped, so nothing would.
+func TestViewRefreshNotLostToCached(t *testing.T) {
+	h, accs := mailHarness(t, nil, "alice@example.com")
+	h.put(accs[0], "INBOX", coretest.Msg("anna@acme.example", "alice@example.com", "needs a reply", "x"))
+	h.syncNow(accs[0])
+	p := h.app.mail
+	h.waitMail("待处理", func() bool { return len(p.views) == 1 })
+	h.click(p.views[0].Name)
+	h.waitMail("the mail in it", func() bool { return len(h.items()) == 1 })
+
+	p.items, p.viewGroups = nil, nil // what the list looks like just before a change shows
+	p.refresh([]events.Event{{Type: events.OutboxChanged}})
+	p.refresh([]events.Event{{Type: events.SyncStarted}})
+	h.waitMail("the list read again", func() bool { return len(h.items()) == 1 })
 }
 
 // TestViewWhyAndRemove: in a view the reader says the status and why

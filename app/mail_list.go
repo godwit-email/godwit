@@ -142,6 +142,7 @@ type mailPage struct {
 	// The dialogs' own: kit.Dialog times its fade by this address, so it must outlive the frame.
 	viewLeaveOpen, viewDeleteOpen bool
 	viewsCached                   bool   // the last refresh changed nothing they show
+	viewsReading                  bool   // a reload that reads them has not landed
 	viewRefresh                   func() // stops the timer that rereads an open view
 
 	exec    func(ctx context.Context, op string, ids []int64, folder int64) (core.ArchiveUndo, error) // write; tests wrap it
@@ -229,8 +230,9 @@ func (p *mailPage) reload() {
 	reset := v != p.view
 	want, toEnd := len(p.items), p.cursor == "" && len(p.items) > 0
 	savedViewID, viewList := savedViewOf(v)
-	cached := p.viewsCached && p.viewsKnown && !reset
+	cached := p.viewsCached && p.viewsKnown && !reset && !p.viewsReading
 	p.viewsCached = false
+	p.viewsReading = p.viewsReading || !cached // until read: this reload drops the last one's result
 	var viewWant map[string]int
 	if !reset {
 		viewWant = p.viewsKnownCounts()
@@ -333,7 +335,7 @@ func (p *mailPage) reload() {
 		p.items, p.cursor, p.stalled = items, cursor, false
 		p.viewGroups = viewGroups
 		if !cached {
-			p.views, p.viewsKnown = saved, true
+			p.views, p.viewsKnown, p.viewsReading = saved, true, false
 			p.viewsLoaded()
 		}
 		p.setDrafts()
