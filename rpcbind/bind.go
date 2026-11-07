@@ -197,8 +197,8 @@ var hidden = map[string]bool{
 	"Redact":        true, // a client could test guesses of the owner's secrets against it
 	"AuditExternal": true, // writes audit rows; only the owner records what clients did
 	"Proxy":         true, // a custom proxy's URL carries its password
-	// They fetch images from remote hosts for the native UI.
-	"SenderAvatar": true, "ModelServiceAvatar": true,
+	// They fetch from remote hosts for the native UI.
+	"SenderAvatar": true, "ModelServiceAvatar": true, "PluginReadme": true,
 	// A channel and a stop func; RPC clients have SubscribeConversation.
 	"FollowConversation": true,
 	// A progress callback cannot cross the wire; the first two have forms without one.

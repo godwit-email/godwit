@@ -91,10 +91,17 @@ type RegistryView struct {
 // or "godwit:<min>"); Installed and InstalledTrust describe what is installed
 // under its name; Update is a newer listed release for a listed install.
 // Native and Script are its kind, neither when this build reads no release.
+// Category, Publisher and DataFlow are the reviewers' (ADR 0032), "" in a
+// registry from before them; Permissions, Capabilities and Configurable are the
+// release's manifest.
 type RegistryEntry struct {
 	Name                                            string
 	Title, Summary                                  plugins.Text
+	Category, Publisher, DataFlow                   string
 	Homepage                                        string
+	Permissions                                     plugins.Permissions
+	Capabilities                                    []string
+	Configurable                                    bool
 	Native, Script                                  bool
 	Version, Unavailable, Installed, InstalledTrust string
 	Update                                          bool
@@ -284,7 +291,7 @@ func (s *Service) ListPluginRegistry(ctx context.Context) (RegistryView, error) 
 	}
 	v.Updated = reg.Updated
 	for _, p := range reg.Plugins {
-		e := RegistryEntry{Name: p.Name, Title: p.Title, Summary: p.Summary, Homepage: p.Homepage}
+		e := RegistryEntry{Name: p.Name, Title: p.Title, Summary: p.Summary, Category: p.Category, Publisher: p.Publisher, DataFlow: p.DataFlow, Homepage: p.Homepage}
 		rel, _, why := p.Pick(plugins.PlatformKey(), s.opts.AppVersion)
 		e.Version, e.Unavailable = rel.Version, why
 		if why != "" && len(p.Releases) > 0 {
@@ -292,6 +299,7 @@ func (s *Service) ListPluginRegistry(ctx context.Context) (RegistryView, error) 
 		}
 		if why == "" || len(p.Releases) > 0 {
 			e.Native, e.Script = rel.Parsed.IsNative(), !rel.Parsed.IsNative()
+			e.Permissions, e.Capabilities, e.Configurable = rel.Parsed.Permissions, rel.Parsed.Capabilities, len(rel.Parsed.Config) > 0
 		}
 		if r, ok := rows[p.Name]; ok {
 			e.Installed, e.InstalledTrust = r.m.Version, r.trust

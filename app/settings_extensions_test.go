@@ -81,7 +81,7 @@ func TestPluginInstallGrantConfigure(t *testing.T) {
 	h, _ := withAccount(t)
 	h.plat.dir = coretest.PluginFixture(t, "config-demo")
 	p := h.openSettings("extensions")
-	h.click("从文件夹安装")
+	h.click("选择文件夹")
 	h.called("OpenDirectory")
 	h.until("installed", func() bool { _, ok := h.plugin("config-demo"); return ok })
 	h.see("待授权")
@@ -137,7 +137,7 @@ func TestPluginFolderInstallLoading(t *testing.T) {
 	h.plat.dir = coretest.PluginFixture(t, "config-demo")
 	h.openSettings("extensions")
 	release := h.block("plugins")
-	h.click("从文件夹安装")
+	h.click("选择文件夹")
 	h.see("正在安装…")
 	release()
 	h.until("installed without progress", func() bool {
@@ -432,7 +432,7 @@ func TestNativePluginRiskAndGrant(t *testing.T) {
 	h, _ := withAccount(t)
 	h.plat.dir = coretest.NativePluginFixture(t, "dlx", "0.1.0", nil, nil)
 	h.openSettings("extensions")
-	h.click("从文件夹安装")
+	h.click("选择文件夹")
 	h.called("OpenDirectory")
 	h.until("installed", func() bool { _, ok := h.plugin("dlx"); return ok })
 	h.until("the 原生 pill", func() bool { _, ok := h.tt.Find("原生"); return ok }) // exactly: the page's subtitle mentions 原生插件
@@ -456,5 +456,15 @@ func TestScriptPluginCardUnchanged(t *testing.T) {
 	h.see("允许并启用")
 	if _, pill := h.tt.Find("原生"); pill || h.tt.HasText("仍然启用") {
 		t.Fatal("a script plugin shows the native card")
+	}
+}
+
+func TestSameConsentCoversTheKind(t *testing.T) {
+	shown := core.RegistryEntry{Version: "1.0.0", Script: true}
+	if !sameConsent(shown, core.PluginInfo{Version: "1.0.0"}) {
+		t.Fatal("the release the dialog showed")
+	}
+	if sameConsent(shown, core.PluginInfo{Version: "1.0.0", Native: true}) {
+		t.Fatal("a native release of the same version must ask again: the user approved a script's permissions")
 	}
 }
