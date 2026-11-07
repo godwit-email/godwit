@@ -1,5 +1,21 @@
 # Changelog
 
+## [1.30.0](https://github.com/godwit-email/godwit/compare/v1.29.0...v1.30.0) (2026-11-07)
+
+
+### Features
+
+* **extensions:** plugin directory page and install dialog ([#530](https://github.com/godwit-email/godwit/issues/530)) ([587e42d](https://github.com/godwit-email/godwit/commit/587e42ddf1b3628b18f33939305ff1aaa1e4daec))
+* **mail:** views, with groups and a default 待处理 ([#531](https://github.com/godwit-email/godwit/issues/531)) ([3aff43e](https://github.com/godwit-email/godwit/commit/3aff43e84da26412f01521b5431ee73bc4ce58e6))
+* **plugins:** let the user sign in to a native plugin's service ([#532](https://github.com/godwit-email/godwit/issues/532)) ([b0df396](https://github.com/godwit-email/godwit/commit/b0df3966277515d46cc1b0073352c34e8d3cc424))
+* **settings,tray:** add option to hide menu bar icon from settings and context menu ([#515](https://github.com/godwit-email/godwit/issues/515)) ([69c5849](https://github.com/godwit-email/godwit/commit/69c5849cfc787d542a3c1ff60cb58f1b6c227dc9))
+
+
+### Bug Fixes
+
+* **plugins:** keep configure as published native plugins expect it ([#535](https://github.com/godwit-email/godwit/issues/535)) ([499ccdc](https://github.com/godwit-email/godwit/commit/499ccdc4a077afbf45c8bc6a17ea156123a4246d))
+* **sync:** a move whose COPYUID names a stored copy replaces it ([#514](https://github.com/godwit-email/godwit/issues/514)) ([de0006a](https://github.com/godwit-email/godwit/commit/de0006a27265c993b95bfa08e14b64aa3a15954d))
+
 ## [1.29.0](https://github.com/godwit-email/godwit/compare/v1.28.0...v1.29.0) (2026-11-06)
 
 
