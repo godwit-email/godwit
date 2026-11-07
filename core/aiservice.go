@@ -61,6 +61,10 @@ func (s *Service) RunSkill(ctx context.Context, name string, t Target) (<-chan a
 	if err != nil {
 		return nil, err
 	}
+	if t, err = s.resolveTarget(ctx, t); err != nil {
+		end()
+		return nil, err
+	}
 	ch, err := s.runSkill(ctx, end, name, t)
 	if err != nil {
 		end()
@@ -355,6 +359,10 @@ func (s *Service) QuickReplies(ctx context.Context, messageID int64) ([]QuickRep
 		return nil, err
 	}
 	defer end()
+	messageID, err = s.resolveID(ctx, messageID)
+	if err != nil {
+		return nil, err
+	}
 	st, err := s.loadSettings(ctx)
 	if err != nil || !st.QuickReplies {
 		return nil, err
@@ -677,6 +685,10 @@ func (s *Service) DraftFromQuickReply(ctx context.Context, messageID int64, r Qu
 		return Draft{}, err
 	}
 	defer end()
+	messageID, err = s.resolveID(ctx, messageID)
+	if err != nil {
+		return Draft{}, err
+	}
 	rows, err := s.db.Query(ctx, "SELECT account_id FROM messages WHERE id = ?", messageID)
 	if err != nil {
 		return Draft{}, err

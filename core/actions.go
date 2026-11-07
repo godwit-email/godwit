@@ -75,6 +75,10 @@ func (s *Service) PluginTags(ctx context.Context, messageID int64) ([]Tag, error
 		return nil, err
 	}
 	defer end()
+	messageID, err = s.resolveID(ctx, messageID)
+	if err != nil {
+		return nil, err
+	}
 	return s.builtinTags(ctx, messageID)
 }
 
@@ -144,6 +148,9 @@ func (s *Service) RunAction(ctx context.Context, id string, t Target, opts RunAc
 		return ActionResult{}, err
 	}
 	defer end()
+	if t, err = s.resolveTarget(ctx, t); err != nil {
+		return ActionResult{}, err
+	}
 	name, aid, _ := strings.Cut(id, "/")
 	pcs := s.runningPlugins(func(p *plugins.Plugin) bool { return p.Name == name })
 	if len(pcs) == 0 || !slices.ContainsFunc(pcs[0].p.Actions(), func(a plugins.ActionInfo) bool { return a.ID == aid && slices.Contains(a.On, t.Kind) }) {
@@ -244,6 +251,10 @@ func (s *Service) PluginCards(ctx context.Context, messageID int64) ([]Card, err
 		return nil, err
 	}
 	defer end()
+	messageID, err = s.resolveID(ctx, messageID)
+	if err != nil {
+		return nil, err
+	}
 	msg, err := s.pluginMail(ctx, messageID)
 	if err != nil {
 		return nil, err

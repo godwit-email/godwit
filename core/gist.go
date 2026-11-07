@@ -26,6 +26,10 @@ func (s *Service) MessageGist(ctx context.Context, messageID int64) (string, err
 		return "", err
 	}
 	defer end()
+	messageID, err = s.resolveID(ctx, messageID)
+	if err != nil {
+		return "", err
+	}
 	account, ids, members, err := s.mailTarget(ctx, "message", messageID)
 	if err != nil {
 		return "", err

@@ -399,6 +399,10 @@ func (s *Service) RebuildSearchIndex(ctx context.Context) error {
 
 // MessageExists says whether message id is still stored: a row lookup, nothing loaded.
 func (s *Service) MessageExists(ctx context.Context, id int64) (bool, error) {
+	id, err := s.resolveID(ctx, id)
+	if err != nil {
+		return false, err
+	}
 	rows, err := s.db.Query(ctx, "SELECT 1 FROM messages WHERE id = ?", id)
 	if err != nil {
 		return false, err
@@ -409,6 +413,10 @@ func (s *Service) MessageExists(ctx context.Context, id int64) (bool, error) {
 // StoredHTML is message id's HTML body as synced, unsanitized; "" when it
 // has none. It needs no connection, unlike GetRawMessage.
 func (s *Service) StoredHTML(ctx context.Context, id int64) (string, error) {
+	id, err := s.resolveID(ctx, id)
+	if err != nil {
+		return "", err
+	}
 	rows, err := s.db.Query(ctx, "SELECT body_html FROM messages WHERE id = ?", id)
 	if err != nil {
 		return "", err
@@ -437,6 +445,10 @@ func (s *Service) GetMessageLazyImages(ctx context.Context, id int64, loadRemote
 // had is left out, so its image stays blocked; the error is for the database or
 // an ended ctx.
 func (s *Service) InlineImages(ctx context.Context, id int64, each func(cid string, a gomail.Attachment)) error {
+	id, err := s.resolveID(ctx, id)
+	if err != nil {
+		return err
+	}
 	rows, err := s.db.Query(ctx, "SELECT body_html FROM messages WHERE id = ?", id)
 	if err != nil {
 		return err
@@ -476,6 +488,10 @@ func showsInlineImage(raw, cid, contentType string) bool {
 }
 
 func (s *Service) readMessage(ctx context.Context, id int64, loadRemoteImages, lazy bool) (Message, error) {
+	id, err := s.resolveID(ctx, id)
+	if err != nil {
+		return Message{}, err
+	}
 	rows, err := s.db.Query(ctx, "SELECT "+msgCols+", m.reply_to, m.body_text, m.body_html, m.body_truncated, "+inJunk+" FROM messages m LEFT JOIN folders f ON f.id = "+shownFolder+" WHERE m.id = ?", id)
 	if err != nil {
 		return Message{}, err
@@ -560,6 +576,10 @@ type target struct {
 
 // targets loads the messages, which must all exist and belong to one account.
 func (s *Service) targets(ctx context.Context, ids []int64) (int64, []target, error) {
+	ids, err := s.resolve(ctx, ids)
+	if err != nil {
+		return 0, nil, err
+	}
 	ids = slices.Compact(slices.Sorted(slices.Values(ids)))
 	if len(ids) == 0 {
 		return 0, nil, nil
@@ -649,6 +669,10 @@ func (s *Service) SetMessageSecurity(ctx context.Context, messageIDs []int64, re
 	status, ok := gomail.ManualSecurityStatus(reason)
 	if !ok && reason != "" {
 		return fmt.Errorf("set message security: unknown classification %q", reason)
+	}
+	messageIDs, err := s.resolve(ctx, messageIDs)
+	if err != nil {
+		return err
 	}
 	for _, id := range messageIDs {
 		var err error
@@ -838,6 +862,10 @@ func (s *Service) EmptyFolder(ctx context.Context, folderID int64) ([]int64, err
 func (s *Service) UndoPurge(ctx context.Context, ids []int64) (gone int, err error) {
 	s.editMu.Lock()
 	defer s.editMu.Unlock()
+	ids, err = s.resolve(ctx, ids)
+	if err != nil {
+		return 0, err
+	}
 	ids = slices.Compact(slices.Sorted(slices.Values(ids)))
 	if len(ids) == 0 {
 		return 0, nil

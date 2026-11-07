@@ -41,6 +41,53 @@ func fetchImport(ctx context.Context, db *store.DB, c *imapclient.Client, a *acc
 	return msgs, top, err
 }
 
+// mergeOld merges the rows a Gmail sync stored per folder before it fetched
+// X-GM-MSGID (ADR 0032): it fetches the X-GM-MSGID of their UIDs, folder by
+// folder, then merges the rows sharing one. A folder recreated since is left
+// to its reset.
+func mergeOld(ctx context.Context, db *store.DB, c *imapclient.Client, a *account, folders []*folder, r *result) error {
+	for _, f := range folders {
+		rows, err := db.Query(ctx, `SELECT l.uid FROM message_locations l JOIN messages m ON m.id = l.message_id
+			WHERE l.folder_id = ? AND l.uidvalidity = ? AND l.uid IS NOT NULL AND m.gmail_msgid IS NULL`, f.id, f.uidValidity)
+		if err != nil {
+			return err
+		}
+		if len(rows.Values) == 0 {
+			continue
+		}
+		var uids []imap.UID
+		for _, v := range rows.Values {
+			uids = append(uids, imap.UID(store.Int(v[0])))
+		}
+		sel, err := c.Select(f.name, &imap.SelectOptions{ReadOnly: true}).Wait()
+		if err != nil {
+			return err
+		}
+		if sel.UIDValidity != f.uidValidity {
+			continue
+		}
+		msgs, err := c.Fetch(imap.UIDSetNum(uids...), &imap.FetchOptions{UID: true, GmailMsgID: true}).Collect()
+		if err != nil {
+			return err
+		}
+		var stmts []sqlite.Statement
+		for _, m := range msgs {
+			if m.GmailMsgID != 0 {
+				stmts = append(stmts, sqlite.Statement{SQL: `UPDATE messages SET gmail_msgid = ? WHERE gmail_msgid IS NULL
+					AND id = (SELECT message_id FROM message_locations WHERE folder_id = ? AND uid = ?)`,
+					Args: []any{strconv.FormatUint(m.GmailMsgID, 10), f.id, uint32(m.UID)}})
+			}
+		}
+		if len(stmts) == 0 {
+			continue
+		}
+		if _, err := db.Transaction(ctx, stmts); err != nil {
+			return err
+		}
+	}
+	return mergeShared(ctx, db, a.id, nil, r)
+}
+
 // gmailLocate gives each of msgs (UID, FLAGS, X-GM-MSGID) whose X-GM-MSGID
 // the account stores f as a location and the server's flags, as Gmail shares
 // them across folders, and returns the UIDs of the others, which f does not
@@ -68,7 +115,9 @@ func gmailLocate(ctx context.Context, db *store.DB, a *account, f *folder, msgs 
 		if len(ids) == 0 {
 			continue
 		}
-		// shortcut: rows of one message synced before this dedup keep apart (lowest id here) until #524 merges them.
+		if err := mergeShared(ctx, db, a.id, ids, r); err != nil {
+			return nil, err
+		}
 		rows, err := db.Query(ctx, "SELECT gmail_msgid, min(id), thread_id FROM messages WHERE account_id = ? AND gmail_msgid IN ("+marks(len(ids))+") GROUP BY gmail_msgid",
 			append([]any{a.id}, ids...)...)
 		if err != nil {

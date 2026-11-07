@@ -30,6 +30,10 @@ func (s *Service) SenderAvatar(ctx context.Context, messageID int64, allowRemote
 		return Avatar{}, err
 	}
 	defer end()
+	messageID, err = s.resolveID(ctx, messageID)
+	if err != nil {
+		return Avatar{}, err
+	}
 	rows, err := s.db.Query(ctx, "SELECT account_id, from_addr FROM messages WHERE id = ?", messageID)
 	if err != nil {
 		return Avatar{}, err

@@ -540,6 +540,10 @@ func (s *Service) SetLabel(ctx context.Context, messageIDs []int64, labelID int6
 		return err
 	}
 	defer end()
+	messageIDs, err = s.resolve(ctx, messageIDs)
+	if err != nil {
+		return err
+	}
 	if len(messageIDs) == 0 {
 		return nil
 	}
@@ -577,8 +581,23 @@ func (s *Service) SetLabel(ctx context.Context, messageIDs []int64, labelID int6
 }
 
 // MessageLabels returns the labels on each of the messages, in the labels' order.
+// A merged-away ID gets the labels of the message it went into.
 func (s *Service) MessageLabels(ctx context.Context, ids []int64) (map[int64][]AppliedLabel, error) {
-	return s.appliedLabels(ctx, "ml.message_id", ids)
+	kept, err := s.resolve(ctx, ids)
+	if err != nil {
+		return nil, err
+	}
+	got, err := s.appliedLabels(ctx, "ml.message_id", kept)
+	if err != nil {
+		return nil, err
+	}
+	out := map[int64][]AppliedLabel{}
+	for i, id := range ids {
+		if l, ok := got[kept[i]]; ok {
+			out[id] = l
+		}
+	}
+	return out, nil
 }
 
 // ThreadLabels returns the labels on any message of each thread, in the labels' order.
