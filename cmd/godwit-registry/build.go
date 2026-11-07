@@ -63,9 +63,7 @@ func build(directoryPath, outPath string) error {
 	var dir struct {
 		Plugins []directoryEntry `json:"plugins"`
 	}
-	dec := json.NewDecoder(bytes.NewReader(b))
-	dec.DisallowUnknownFields()
-	if err := dec.Decode(&dir); err != nil {
+	if err := decodeStrict(b, &dir); err != nil {
 		return fmt.Errorf("directory: %w", err)
 	}
 	type outPlugin struct {
@@ -145,9 +143,7 @@ func (e directoryEntry) releases() ([]json.RawMessage, error) {
 		Name     string            `json:"name"`
 		Releases []json.RawMessage `json:"releases"`
 	}
-	dec := json.NewDecoder(bytes.NewReader(b))
-	dec.DisallowUnknownFields()
-	if err := dec.Decode(&doc); err != nil {
+	if err := decodeStrict(b, &doc); err != nil {
 		return nil, fmt.Errorf("%s: %w", e.Source.Path, err)
 	}
 	if doc.Name != e.Name {
@@ -175,6 +171,20 @@ func (e directoryEntry) releases() ([]json.RawMessage, error) {
 		return nil, errors.New("no releases left: remove the entry instead")
 	}
 	return kept, nil
+}
+
+// decodeStrict reads exactly one document with only known fields, as
+// plugins.CheckRegistry does: what it dropped, no later check could see.
+func decodeStrict(b []byte, v any) error {
+	dec := json.NewDecoder(bytes.NewReader(b))
+	dec.DisallowUnknownFields()
+	if err := dec.Decode(v); err != nil {
+		return err
+	}
+	if _, err := dec.Token(); err != io.EOF {
+		return errors.New("trailing data after the document")
+	}
+	return nil
 }
 
 func fetchSource(url string) ([]byte, error) {

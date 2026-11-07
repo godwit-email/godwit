@@ -34,8 +34,12 @@ func entry() map[string]any {
 // buildWith serves doc at the entry's pinned commit and builds the directory.
 func buildWith(t *testing.T, doc any, entries ...map[string]any) (string, int, string) {
 	t.Helper()
-	body, err := json.Marshal(doc)
-	require.NoError(t, err)
+	body, isRaw := doc.([]byte)
+	if !isRaw {
+		var err error
+		body, err = json.Marshal(doc)
+		require.NoError(t, err)
+	}
 	srv := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path != "/godwit-email/plugin-hello/"+testCommit+"/godwit-plugin.json" {
 			http.NotFound(w, r)
@@ -128,6 +132,28 @@ func TestBuildRejects(t *testing.T) {
 			assert.NoFileExists(t, out) // nothing to sign
 		})
 	}
+}
+
+// A second document must not be dropped: publishing what is left of the
+// directory would revoke every plugin missing from it.
+func TestBuildRejectsTrailingData(t *testing.T) {
+	t.Run("directory", func(t *testing.T) {
+		dir := t.TempDir()
+		in, out := filepath.Join(dir, "directory.json"), filepath.Join(dir, "registry.json")
+		require.NoError(t, os.WriteFile(in, []byte(`{"plugins":[]} {"plugins":[{"name":"hello"}]}`), 0o600))
+		code, _, errw := call("build", in, out)
+		assert.Equal(t, 1, code)
+		assert.Contains(t, errw, "trailing data")
+		assert.NoFileExists(t, out)
+	})
+	t.Run("plugin file", func(t *testing.T) {
+		good, err := json.Marshal(map[string]any{"name": "hello", "releases": []any{release("0.1.0")}})
+		require.NoError(t, err)
+		out, code, errw := buildWith(t, append(good, []byte(` {"name":"hello","releases":[]}`)...), entry())
+		assert.Equal(t, 1, code)
+		assert.Contains(t, errw, "trailing data")
+		assert.NoFileExists(t, out)
+	})
 }
 
 func TestBuildFailsWhenACommitIsGone(t *testing.T) {
