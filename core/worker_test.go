@@ -416,7 +416,7 @@ func TestWorkerFullRoundFindsOtherFolders(t *testing.T) {
 	e, ch := newWorkerEnv(t)
 	e.put(t, "Archive", msg("arch@x"))
 	waitEvent(t, ch, events.MessageReceived, 5*time.Second)
-	assert.Equal(t, 1, e.count(t, "SELECT count(*) FROM messages WHERE message_id = 'arch@x' AND folder_id = ?", e.folderID(t, "Archive")))
+	assert.Equal(t, 1, e.count(t, "SELECT count(*) FROM messages WHERE message_id = 'arch@x' AND "+shownCol+" = ?", e.folderID(t, "Archive")))
 }
 
 func TestWorkerDeliversSend(t *testing.T) {

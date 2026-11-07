@@ -1127,13 +1127,13 @@ func TestBatchWritesInOrder(t *testing.T) {
 	exec := p.exec
 	entered, release := make(chan struct{}), make(chan struct{})
 	var calls, done atomic.Int32
-	p.exec = func(ctx context.Context, op string, ids []int64, folder int64) (core.ArchiveUndo, error) {
+	p.exec = func(ctx context.Context, op string, ids []int64, from, folder int64) (core.ArchiveUndo, error) {
 		if calls.Add(1) == 1 {
 			close(entered)
 			<-release
 		}
 		defer done.Add(1)
-		return exec(ctx, op, ids, folder)
+		return exec(ctx, op, ids, from, folder)
 	}
 	rows := h.items()
 	p.batch("read", rows)

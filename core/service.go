@@ -684,6 +684,13 @@ func (s *Service) dialAccount(ctx context.Context, accountID int64, h *imapclien
 		}
 		return nil, nil, nil, err
 	}
+	if err := s.ifCurrent(accountID, ver, func() error {
+		_, err := s.db.Execute(ctx, "UPDATE accounts SET imap_gmail = ? WHERE id = ?", b2i(c.Caps().Has("X-GM-EXT-1")), accountID)
+		return err
+	}); err != nil {
+		c.Close()
+		return nil, nil, nil, err
+	}
 	// The credentials work: clear reauth_required as it is now, not as it was read
 	// above, since another login may have failed meanwhile. A parked worker resumes.
 	// SMTP's refusal (smtp_reauth) is separate and stays until checkSMTP clears it.
@@ -708,8 +715,8 @@ func (s *Service) syncAccount(ctx context.Context, accountID int64, explicit boo
 	}
 	defer release()
 	defer func() { conn.LogTrace(c, err) }() // a response go-imap could not parse goes in the error report
-	// Purges due after this round starts wake the worker again.
-	defer s.wakeForPurge(ctx, accountID, s.clk().Now())
+	// Purge and archive undo deadlines wake the worker again.
+	defer s.wakeForOps(ctx, accountID, s.clk().Now())
 	// Queued first, so this round's push expunges and its fetch drops the rows.
 	if err := mailsync.QueuePurge(ctx, s.db, c, accountID); err != nil {
 		return err
@@ -820,8 +827,9 @@ func (s *Service) setStatus(ctx context.Context, accountID int64, status, detail
 // Gmail's Starred (flagged) are detected only.
 func (s *Service) ListFolders(ctx context.Context, accountID int64) ([]Folder, error) {
 	rows, err := s.db.Query(ctx, `SELECT f.id, f.account_id, f.name, CASE WHEN f.role IN ('inbox', 'flagged') THEN f.role ELSE '' END,
-		(SELECT count(*) FROM messages m WHERE m.folder_id = f.id AND instr(m.flags, '\Seen') = 0 AND `+notPurgedCond+`), f.delim,
-		(SELECT count(*) FROM messages m WHERE m.folder_id = f.id AND `+notPurgedCond+`)
+		(SELECT count(*) FROM messages m JOIN message_locations l ON l.message_id = m.id AND l.folder_id = f.id AND l.shown
+			WHERE instr(m.flags, '\Seen') = 0 AND `+notPurgedCond+`), f.delim,
+		(SELECT count(*) FROM messages m JOIN message_locations l ON l.message_id = m.id AND l.folder_id = f.id AND l.shown WHERE `+notPurgedCond+`)
 		FROM folders f WHERE f.account_id = ? ORDER BY f.id`, accountID)
 	if err != nil {
 		return nil, err

@@ -518,12 +518,12 @@ const labelCond = "EXISTS (SELECT 1 FROM message_labels ml WHERE ml.message_id =
 // the folder the user gave the role, else those detected with it, unless the
 // user gave that folder another role or none, so the view follows where
 // Delete and MoveToRole put mail.
-const notBinnedCond = `m.folder_id NOT IN (SELECT f.id FROM folders f WHERE f.role_override IN ('trash', 'junk')
+var notBinnedCond = "NOT " + shownIn(`(SELECT f.id FROM folders f WHERE f.role_override IN ('trash', 'junk')
 	OR (f.role_override = '' AND f.role IN ('trash', 'junk')
-		AND NOT EXISTS (SELECT 1 FROM folders o WHERE o.account_id = f.account_id AND o.role_override = f.role)))`
+		AND NOT EXISTS (SELECT 1 FROM folders o WHERE o.account_id = f.account_id AND o.role_override = f.role)))`)
 
 // labelViewCond matches a message m in the label's view (one arg).
-const labelViewCond = labelCond + " AND " + notBinnedCond
+var labelViewCond = labelCond + " AND " + notBinnedCond
 
 // AppliedLabel is a label on a message or thread. Auto: the model set it, and
 // no message of the thread has it set by hand.
@@ -540,6 +540,10 @@ func (s *Service) SetLabel(ctx context.Context, messageIDs []int64, labelID int6
 		return err
 	}
 	defer end()
+	messageIDs, err = s.resolve(ctx, messageIDs)
+	if err != nil {
+		return err
+	}
 	if len(messageIDs) == 0 {
 		return nil
 	}
@@ -577,8 +581,23 @@ func (s *Service) SetLabel(ctx context.Context, messageIDs []int64, labelID int6
 }
 
 // MessageLabels returns the labels on each of the messages, in the labels' order.
+// A merged-away ID gets the labels of the message it went into.
 func (s *Service) MessageLabels(ctx context.Context, ids []int64) (map[int64][]AppliedLabel, error) {
-	return s.appliedLabels(ctx, "ml.message_id", ids)
+	kept, err := s.resolve(ctx, ids)
+	if err != nil {
+		return nil, err
+	}
+	got, err := s.appliedLabels(ctx, "ml.message_id", kept)
+	if err != nil {
+		return nil, err
+	}
+	out := map[int64][]AppliedLabel{}
+	for i, id := range ids {
+		if l, ok := got[kept[i]]; ok {
+			out[id] = l
+		}
+	}
+	return out, nil
 }
 
 // ThreadLabels returns the labels on any message of each thread, in the labels' order.

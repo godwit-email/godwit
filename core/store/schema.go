@@ -627,6 +627,70 @@ var Migrations = [][]string{{
 	// Whether mail is automated: 回复状态 leaves it out. Older mail stays empty.
 	`ALTER TABLE messages ADD COLUMN auto_submitted TEXT NOT NULL DEFAULT ''`,
 	`ALTER TABLE messages ADD COLUMN precedence TEXT NOT NULL DEFAULT ''`,
+}, {
+	// A message's folders are its locations (ADR 0034), one row per folder:
+	// shown is the 期望位置 there (the user sees it in the folder), uidvalidity
+	// and uid the 服务器位置 (NULL until the server confirms it). A move not
+	// yet pushed shows at its destination, unconfirmed, and stays hidden where
+	// the server has it. entered_at is when the message entered the folder,
+	// what a purge measures; date copies the message's, for folder lists.
+	`CREATE TABLE message_locations (
+		message_id INTEGER NOT NULL REFERENCES messages(id) ON DELETE CASCADE,
+		folder_id INTEGER NOT NULL REFERENCES folders(id) ON DELETE CASCADE,
+		shown INTEGER NOT NULL,
+		uidvalidity INTEGER,
+		uid INTEGER,
+		entered_at INTEGER NOT NULL,
+		date INTEGER,
+		PRIMARY KEY(message_id, folder_id),
+		UNIQUE(folder_id, uid))`,
+	`CREATE INDEX message_locations_list ON message_locations(folder_id, shown, date DESC, message_id DESC)`,
+	`INSERT INTO message_locations(message_id, folder_id, shown, uidvalidity, uid, entered_at, date)
+		SELECT id, folder_id, 1, iif(server_folder_id = folder_id, server_uidvalidity, NULL), iif(server_folder_id = folder_id, server_uid, NULL), entered_at, date
+		FROM messages`,
+	`INSERT INTO message_locations(message_id, folder_id, shown, uidvalidity, uid, entered_at, date)
+		SELECT id, server_folder_id, 0, server_uidvalidity, server_uid, entered_at, date FROM messages WHERE server_folder_id != folder_id`,
+	// The folder a move or purge takes the message from, set when it is
+	// queued: where the server has it, or the destination of the move before.
+	`ALTER TABLE ops ADD COLUMN src_folder_id INTEGER`,
+	`UPDATE ops SET src_folder_id = coalesce(
+		(SELECT p.dst_folder_id FROM ops p WHERE p.message_id = ops.message_id AND p.kind = 'move' AND p.state IN ('pending', 'awaiting_claim') AND p.id < ops.id ORDER BY p.id DESC LIMIT 1),
+		(SELECT server_folder_id FROM messages WHERE id = ops.message_id))
+		WHERE kind IN ('move', 'purge') AND state = 'pending'`,
+	`DROP INDEX messages_folder_date`,
+	`DROP INDEX messages_labeled`,
+	`CREATE INDEX messages_labeled ON messages(labeled_at)`,
+	`ALTER TABLE messages DROP COLUMN folder_id`,
+	`ALTER TABLE messages DROP COLUMN server_uidvalidity`,
+	`ALTER TABLE messages DROP COLUMN entered_at`,
+	// SQLite cannot drop a column of a UNIQUE constraint without rebuilding
+	// messages, which under foreign keys would cascade to its labels and
+	// attachments: these two are renamed out of the way and never read.
+	`ALTER TABLE messages RENAME COLUMN server_folder_id TO dropped_server_folder_id`,
+	`ALTER TABLE messages RENAME COLUMN server_uid TO dropped_server_uid`,
+}, {
+	// A Gmail message's X-GM-MSGID, an unsigned 64-bit number kept as
+	// decimal text (ADR 0034); NULL on other servers and rows synced before.
+	`ALTER TABLE messages ADD COLUMN gmail_msgid TEXT`,
+}, {
+	// Sync finds a Gmail message it stores by X-GM-MSGID, to add a folder to it.
+	`CREATE INDEX messages_gmail ON messages(account_id, gmail_msgid) WHERE gmail_msgid IS NOT NULL`,
+}, {
+	// A message merged into another (ADR 0034) leaves its ID here, naming the
+	// message kept, so an ID held from before the merge still resolves.
+	`CREATE TABLE message_aliases (id INTEGER PRIMARY KEY, message_id INTEGER NOT NULL REFERENCES messages(id) ON DELETE CASCADE)`,
+	`CREATE INDEX message_aliases_message ON message_aliases(message_id)`,
+}, {
+	// Imported mail waits here, durably, until a complete folder round can
+	// publish its receive event with all memberships known (ADR 0034).
+	`CREATE TABLE message_imports (
+  message_id INTEGER PRIMARY KEY REFERENCES messages(id) ON DELETE CASCADE,
+  arrival INTEGER NOT NULL,
+  verdict TEXT NOT NULL DEFAULT '')`,
+}, {
+	// NULL is an old account whose authenticated IMAP capabilities are unknown.
+	`ALTER TABLE accounts ADD COLUMN imap_gmail INTEGER`,
+	`UPDATE accounts SET imap_gmail = 1 WHERE provider = 'gmail' OR EXISTS (SELECT 1 FROM messages WHERE account_id = accounts.id AND gmail_msgid IS NOT NULL)`,
 }}
 
 // HistoryRowsVersion is the schema version that keeps a conversation's

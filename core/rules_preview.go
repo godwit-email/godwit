@@ -138,7 +138,7 @@ func (s *Service) RuleHitCounts(ctx context.Context) (map[int64]int, error) {
 // existingSQL is the condition on messages m for the existing mail d runs on.
 func (s *Service) existingSQL(d RuleDoc) (string, []any) {
 	cond, args := ruleSQL(d, s.clk().Now().Unix())
-	return cond + " AND m.folder_id NOT IN (SELECT id FROM folders WHERE role IN ('sent', 'drafts'))", args
+	return cond + " AND NOT " + shownIn("(SELECT id FROM folders WHERE role IN ('sent', 'drafts'))"), args
 }
 
 // ruleSQL is d's account, trigger and conditions as a condition on messages m, true
@@ -174,8 +174,8 @@ func ruleSQL(d RuleDoc, now int64) (string, []any) {
 // still in the inbox has a copy there too and is not archived.
 const folderRoleSQL = `CASE WHEN f.role_override != '' THEN f.role_override
 	WHEN f.role = 'all' AND NOT EXISTS (SELECT 1 FROM folders a WHERE a.account_id = f.account_id AND (a.role_override = 'archive' OR (a.role_override = '' AND a.role = 'archive')))
-		AND NOT (COALESCE(m.message_id, '') != '' AND EXISTS (SELECT 1 FROM messages c JOIN folders cf ON cf.id = c.folder_id
-			WHERE c.account_id = m.account_id AND c.message_id = m.message_id AND (cf.role_override = 'inbox' OR (cf.role_override = '' AND cf.role = 'inbox')))) THEN 'archive'
+		AND NOT EXISTS (SELECT 1 FROM message_locations cl JOIN folders cf ON cf.id = cl.folder_id
+			WHERE cl.message_id = m.id AND cl.shown AND (cf.role_override = 'inbox' OR (cf.role_override = '' AND cf.role = 'inbox'))) THEN 'archive'
 	ELSE f.role END`
 
 const labelSlugSQL = "EXISTS (SELECT 1 FROM message_labels ml JOIN labels l ON l.id = ml.label_id WHERE ml.message_id = m.id AND ml.active = 1 AND l.slug = ?)"
@@ -218,7 +218,7 @@ func (c RuleCondition) sql(now int64) (string, []any) {
 		n, _ := strconv.Atoi(c.Value)
 		return "COALESCE(m.date, 0) < ?", []any{now - int64(n)*86400}
 	case FieldFolder:
-		sql, args = "(COALESCE((SELECT "+folderRoleSQL+" FROM folders f WHERE f.id = m.folder_id), '') = ? OR CAST(m.folder_id AS TEXT) = ?)", []any{c.Value, c.Value}
+		sql, args = shownIn("(SELECT f.id FROM folders f WHERE "+folderRoleSQL+" = ? OR CAST(f.id AS TEXT) = ?)"), []any{c.Value, c.Value}
 	case FieldAny:
 		sql, args = searchText(c.Value)
 	default:

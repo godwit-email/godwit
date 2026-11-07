@@ -88,14 +88,14 @@ func TestArchiveSenderSkipsStarredAndRepliedAndUndoes(t *testing.T) {
 	assert.Equal(t, 4, res.Skipped, "starred, answered, replied from Sent, starred later in the thread")
 	assert.Equal(t, []int{2, 4}, []int{d.Archivable, d.Kept}, "as previewed")
 	assert.Equal(t, []ArchivedMessage{{e.idOf(t, "plain@x"), inbox, archive}, {e.idOf(t, "plain2@x"), inbox, archive}}, res.Moved)
-	assert.Equal(t, 5, e.count(t, "SELECT count(*) FROM messages WHERE folder_id = ?", inbox))
+	assert.Equal(t, 5, e.count(t, "SELECT count(*) FROM messages WHERE "+shownCol+" = ?", inbox))
 
 	// One moved on since: undo leaves it where the user put it.
 	trash := e.folderID(t, "Trash")
 	require.NoError(t, e.s.Move(bg, []int64{e.idOf(t, "plain2@x")}, trash))
 	require.NoError(t, e.s.UndoArchive(bg, res))
-	assert.Equal(t, [][]any{{inbox}}, e.rows(t, "SELECT folder_id FROM messages WHERE message_id = 'plain@x'"))
-	assert.Equal(t, [][]any{{trash}}, e.rows(t, "SELECT folder_id FROM messages WHERE message_id = 'plain2@x'"))
+	assert.Equal(t, [][]any{{inbox}}, e.rows(t, "SELECT "+shownCol+" FROM messages WHERE message_id = 'plain@x'"))
+	assert.Equal(t, [][]any{{trash}}, e.rows(t, "SELECT "+shownCol+" FROM messages WHERE message_id = 'plain2@x'"))
 	e.sync(t)
 	assert.Contains(t, e.onServer(t, "INBOX"), "plain@x")
 	assert.NotContains(t, e.onServer(t, "Archive"), "plain@x")
@@ -109,7 +109,7 @@ func TestArchiveSenderNeedsArchiveFolder(t *testing.T) {
 	_, err := e.s.ArchiveSender(bg, "news@shop.example")
 	var nf *ErrNoRoleFolder
 	require.ErrorAs(t, err, &nf)
-	assert.Equal(t, 1, e.count(t, "SELECT count(*) FROM messages WHERE folder_id = ?", e.folderID(t, "INBOX")))
+	assert.Equal(t, 1, e.count(t, "SELECT count(*) FROM messages WHERE "+shownCol+" = ?", e.folderID(t, "INBOX")))
 }
 
 // A role the user moved to another folder leaves the detected one ordinary:

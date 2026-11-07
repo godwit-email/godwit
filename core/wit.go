@@ -127,6 +127,10 @@ const maxQuoted = 10
 
 // quotedIDs is ids without repeats, each an existing message.
 func (s *Service) quotedIDs(ctx context.Context, ids []int64) ([]int64, error) {
+	ids, err := s.resolve(ctx, ids)
+	if err != nil {
+		return nil, err
+	}
 	var out []int64
 	for _, id := range ids {
 		if !slices.Contains(out, id) {

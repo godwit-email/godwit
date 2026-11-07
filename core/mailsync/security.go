@@ -13,7 +13,8 @@ import (
 // Upgrade old cached messages in bounded header-only batches. No message body
 // or account setting is needed to recover the current receiving service's data.
 func refreshAuthenticationResults(ctx context.Context, db *store.DB, c *imapclient.Client, a *account, f *folder, r *result) error {
-	rows, err := db.Query(ctx, `SELECT id,server_uid,from_addr FROM messages WHERE account_id=? AND server_folder_id=? AND server_uidvalidity=? AND server_uid IS NOT NULL AND auth_results IS NULL ORDER BY server_uid DESC LIMIT 50`, a.id, f.id, f.uidValidity)
+	rows, err := db.Query(ctx, `SELECT m.id,l.uid,m.from_addr FROM message_locations l JOIN messages m ON m.id=l.message_id
+		WHERE m.account_id=? AND l.folder_id=? AND l.uidvalidity=? AND l.uid IS NOT NULL AND m.auth_results IS NULL ORDER BY l.uid DESC LIMIT 50`, a.id, f.id, f.uidValidity)
 	if err != nil || len(rows.Values) == 0 {
 		return err
 	}
@@ -54,7 +55,7 @@ func refreshAuthenticationResults(ctx context.Context, db *store.DB, c *imapclie
    security_status=CASE WHEN ` + keep + ` THEN security_status ELSE ? END,
    security_reason=CASE WHEN ` + keep + ` THEN security_reason ELSE ? END,
    security_scanned_at=CASE WHEN ` + keep + ` THEN security_scanned_at ELSE 0 END
-   WHERE id=? AND server_folder_id=? AND server_uidvalidity=? AND server_uid=? AND auth_results IS NULL`, Args: []any{result, verifyDKIM, status, reason, id, f.id, f.uidValidity, uint32(m.UID)}})
+   WHERE id=? AND EXISTS (SELECT 1 FROM message_locations WHERE message_id=messages.id AND folder_id=? AND uidvalidity=? AND uid=?) AND auth_results IS NULL`, Args: []any{result, verifyDKIM, status, reason, id, f.id, f.uidValidity, uint32(m.UID)}})
 		r.changed = append(r.changed, id)
 	}
 	if len(stmts) > 0 {

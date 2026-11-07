@@ -250,7 +250,7 @@ func TestSyncFirstSyncHonoursLimit(t *testing.T) {
 		e.put(t, "INBOX", eml(fmt.Sprintf("m%d@x", i), "bob@example.com", "alice@example.com", "s", "Mon, 05 Oct 2026 09:00:00 +0000", "b"))
 	}
 	e.sync(t)
-	assert.Equal(t, [][]any{{"m3@x"}, {"m4@x"}}, e.rows(t, "SELECT message_id FROM messages ORDER BY server_uid"))
+	assert.Equal(t, [][]any{{"m3@x"}, {"m4@x"}}, e.rows(t, "SELECT message_id FROM messages ORDER BY "+uidCol+""))
 	e.put(t, "INBOX", eml("m5@x", "bob@example.com", "alice@example.com", "s", "Mon, 05 Oct 2026 09:00:00 +0000", "b"))
 	e.sync(t)
 	assert.Equal(t, 3, e.count(t, "SELECT count(*) FROM messages"))
@@ -274,7 +274,7 @@ func TestSyncRemoteFlagsAndExpunge(t *testing.T) {
 	ch, unsub := e.s.Subscribe()
 	defer unsub()
 	e.sync(t)
-	assert.Equal(t, [][]any{{"m1@x", `\Seen`}, {"m3@x", ""}}, e.rows(t, "SELECT message_id, flags FROM messages ORDER BY server_uid"))
+	assert.Equal(t, [][]any{{"m1@x", `\Seen`}, {"m3@x", ""}}, e.rows(t, "SELECT message_id, flags FROM messages ORDER BY "+uidCol+""))
 	assert.Zero(t, e.count(t, "SELECT count(*) FROM messages_fts WHERE messages_fts MATCH 'unique2'"))
 	assert.Zero(t, e.count(t, "SELECT count(*) FROM messages_fts WHERE rowid = ?", gone))
 	changed := ofType(collect(ch), events.MessagesChanged)
@@ -326,7 +326,7 @@ func TestSyncUIDValidityChange(t *testing.T) {
 	e.put(t, "Archive", eml("new2@x", "bob@example.com", "alice@example.com", "s", "Mon, 05 Oct 2026 09:00:00 +0000", "newbody"))
 	e.sync(t)
 
-	assert.Equal(t, [][]any{{"new1@x"}, {"new2@x"}}, e.rows(t, "SELECT message_id FROM messages WHERE folder_id = ? ORDER BY server_uid", archive))
+	assert.Equal(t, [][]any{{"new1@x"}, {"new2@x"}}, e.rows(t, "SELECT message_id FROM messages WHERE "+shownCol+" = ? ORDER BY "+uidCol+"", archive))
 	assert.Equal(t, 1, e.count(t, "SELECT count(*) FROM messages WHERE message_id = 'keep@x'"))
 	assert.Zero(t, e.count(t, "SELECT count(*) FROM attachments"))
 	_, err = os.Stat(cached)
@@ -443,16 +443,32 @@ func TestSyncAuthFailureNeedsReauth(t *testing.T) {
 	assert.Equal(t, "ok", acc.Status)
 }
 
+// A message shown only in a folder the server no longer lists, and on the
+// server nowhere Godwit knows (a move awaiting its claim), goes with it.
+func TestSyncDropsMessageOnlyInVanishedFolder(t *testing.T) {
+	e := newSyncEnv(t)
+	e.sync(t) // creates the folder rows
+	archive := e.folderID(t, "Archive")
+	res, err := e.s.db.Execute(bg, `INSERT INTO messages(account_id, message_id, subject) VALUES (?, 'moved@x', 'moved')`, e.acc.ID)
+	require.NoError(t, err)
+	showIn(t, e.s, res.LastInsertID, archive)
+	require.NoError(t, e.im.User.Delete("Archive"))
+	e.sync(t)
+	assert.Zero(t, e.count(t, "SELECT count(*) FROM messages"))
+	assert.Zero(t, e.count(t, "SELECT count(*) FROM message_locations"))
+}
+
 func TestSyncClaimsAwaitingMove(t *testing.T) {
 	e := newSyncEnv(t)
 	e.sync(t) // creates the folder rows
 	archive := store.Int(e.rows(t, "SELECT id FROM folders WHERE name = 'Archive'")[0][0])
 	raw := eml("moved@x", "bob@example.com", "alice@example.com", "moved", day, "moved body")
 	// A local message whose server location was cleared by a MOVE without COPYUID.
-	res, err := e.s.db.Execute(bg, `INSERT INTO messages(account_id, folder_id, message_id, subject, size, flags)
-		VALUES (?, ?, 'moved@x', 'moved', ?, '\Seen')`, e.acc.ID, archive, len(raw))
+	res, err := e.s.db.Execute(bg, `INSERT INTO messages(account_id, message_id, subject, size, flags)
+		VALUES (?, 'moved@x', 'moved', ?, '\Seen')`, e.acc.ID, len(raw))
 	require.NoError(t, err)
 	local := res.LastInsertID
+	showIn(t, e.s, local, archive)
 	_, err = e.s.db.Execute(bg, "INSERT INTO ops(account_id, message_id, kind, dst_folder_id, state) VALUES (?, ?, 'move', ?, 'awaiting_claim')", e.acc.ID, local, archive)
 	require.NoError(t, err)
 
@@ -461,7 +477,7 @@ func TestSyncClaimsAwaitingMove(t *testing.T) {
 	e.sync(t)
 
 	assert.Equal(t, 2, e.count(t, "SELECT count(*) FROM messages"))
-	r := e.rows(t, "SELECT server_folder_id, server_uid, server_uidvalidity FROM messages WHERE id = ?", local)
+	r := e.rows(t, "SELECT "+serverCol+", "+uidCol+", "+validityCol+" FROM messages WHERE id = ?", local)
 	assert.Equal(t, archive, store.Int(r[0][0]))
 	assert.Equal(t, int64(1), store.Int(r[0][1]))
 	assert.NotZero(t, store.Int(r[0][2]))
@@ -487,10 +503,10 @@ func TestSyncInterruptedFlagsFetchChangesNothing(t *testing.T) {
 	require.Error(t, e.s.SyncNow(bg, e.acc.ID))
 	assert.Equal(t, 1, e.count(t, "SELECT count(*) FROM messages WHERE message_id = 'm4@x'"), "the drop must hit the FLAGS phase")
 	assert.Equal(t, [][]any{{"m1@x", ""}, {"m2@x", ""}, {"m3@x", ""}},
-		e.rows(t, "SELECT message_id, flags FROM messages WHERE message_id != 'm4@x' ORDER BY server_uid"))
+		e.rows(t, "SELECT message_id, flags FROM messages WHERE message_id != 'm4@x' ORDER BY "+uidCol+""))
 
 	e.sync(t)
-	assert.Equal(t, [][]any{{"m1@x", `\Seen`}, {"m4@x", ""}}, e.rows(t, "SELECT message_id, flags FROM messages ORDER BY server_uid"))
+	assert.Equal(t, [][]any{{"m1@x", `\Seen`}, {"m4@x", ""}}, e.rows(t, "SELECT message_id, flags FROM messages ORDER BY "+uidCol+""))
 }
 
 func TestSyncFolderDeletedOnServer(t *testing.T) {

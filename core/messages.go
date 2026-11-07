@@ -1,6 +1,7 @@
 package core
 
 import (
+	"cmp"
 	"context"
 	"encoding/base64"
 	"encoding/json"
@@ -20,9 +21,12 @@ import (
 	"github.com/godwit-email/godwit/core/store"
 )
 
-// MessageSummary is a message as listed.
+// MessageSummary is a message as listed. FolderIDs are every folder it shows
+// in (several on Gmail); FolderID is one of them: the view's folder in a
+// folder's list, else the inbox, another folder, All Mail, in that order.
 type MessageSummary struct {
 	ID, ThreadID, FolderID int64
+	FolderIDs              []int64
 	Subject, From, Snippet string
 	To, Cc                 []string
 	Date                   time.Time
@@ -65,7 +69,7 @@ type AttachmentInfo struct {
 	Inline                bool
 }
 
-const msgCols = `m.id, m.thread_id, m.folder_id, m.subject, m.from_addr, m.snippet, m.to_addrs, m.cc_addrs, m.date, m.flags, m.has_attachments, m.auth_results, m.security_status, m.security_reason, m.security_scanned_at`
+const msgCols = `m.id, m.thread_id, ` + shownFolder + `, m.subject, m.from_addr, m.snippet, m.to_addrs, m.cc_addrs, m.date, m.flags, m.has_attachments, m.auth_results, m.security_status, m.security_reason, m.security_scanned_at, ` + shownFolders
 
 var msgColCount = strings.Count(msgCols, ",") + 1
 
@@ -85,7 +89,19 @@ func scanSummary(r []any) MessageSummary {
 		Subject: store.Str(r[3]), From: from, Snippet: gomail.Snippet(store.Str(r[5])), // clean of what an older sync kept
 		To: jsonList(store.Str(r[6])), Cc: jsonList(store.Str(r[7])), Date: time.Unix(store.Int(r[8]), 0),
 		Flags: strings.Fields(store.Str(r[9])), HasAttachments: store.Int(r[10]) != 0,
-		AuthResults: authRes, Security: sec}
+		AuthResults: authRes, Security: sec, FolderIDs: scanFolderIDs(r[15])}
+}
+
+// scanFolderIDs reads a shownFolders column.
+func scanFolderIDs(v any) []int64 {
+	var out []int64
+	for _, f := range strings.Split(store.Str(v), ",") {
+		if id, err := strconv.ParseInt(f, 10, 64); err == nil {
+			out = append(out, id)
+		}
+	}
+	slices.Sort(out)
+	return out
 }
 
 func jsonList(s string) []string {
@@ -128,6 +144,27 @@ func decodeCursor(c string) (date, id int64, err error) {
 // leave those out at once, before the server expunges them.
 const notPurgedCond = "NOT EXISTS (SELECT 1 FROM ops o WHERE o.message_id = m.id AND o.kind = 'purge' AND o.state = 'pending')"
 
+// shownFolder is the one folder message alias m is reported in (ADR 0034) of
+// those it shows in: the inbox, else another (lowest id), else All Mail. A
+// folder condition asks shownIn, not this. Without a comma: msgColCount
+// counts them.
+const shownFolder = `(SELECT sl.folder_id FROM message_locations sl JOIN folders sf ON sf.id = sl.folder_id WHERE sl.message_id = m.id AND sl.shown
+	ORDER BY (CASE sf.role WHEN 'inbox' THEN 0 WHEN 'all' THEN 2 ELSE 1 END << 40) + sl.folder_id LIMIT 1)`
+
+// shownFolders is every folder message alias m shows in, as scanFolderIDs
+// reads it. Without a comma, as shownFolder.
+const shownFolders = `(SELECT group_concat(sl.folder_id) FROM message_locations sl WHERE sl.message_id = m.id AND sl.shown)`
+
+// serverLocation joins, as l and its folder as f, where the server has message
+// alias m (ADR 0034): one row per folder on Gmail, any of which serves a read.
+const serverLocation = "(message_locations l JOIN folders f ON f.id = l.folder_id) ON l.message_id = m.id AND l.uid IS NOT NULL"
+
+// shownIn is the condition that message alias m shows in one of folders, a
+// parenthesized SQL list or subquery of folder IDs.
+func shownIn(folders string) string {
+	return "EXISTS (SELECT 1 FROM message_locations l WHERE l.message_id = m.id AND l.shown AND l.folder_id IN " + folders + ")"
+}
+
 // viewCond returns a SQL condition on messages alias m selecting the view.
 func viewCond(v View) (string, []any, error) {
 	cond, args, err := viewOnlyCond(v)
@@ -153,7 +190,7 @@ func viewOnlyCond(v View) (string, []any, error) {
 		}
 		return labelViewCond, []any{v.LabelID}, nil
 	case v.Unified == "inbox" && v.FolderID == 0:
-		return "m.folder_id IN (SELECT id FROM folders WHERE role = 'inbox')", nil, nil
+		return shownIn("(SELECT id FROM folders WHERE role = 'inbox')"), nil, nil
 	case v.Unified == "starred" && v.FolderID == 0:
 		return `instr(m.flags, '\Flagged') > 0`, nil, nil
 	case strings.HasPrefix(v.Unified, "starred:") && v.FolderID == 0:
@@ -173,7 +210,7 @@ func viewOnlyCond(v View) (string, []any, error) {
 		}
 		return "", nil, errors.New("invalid account label view")
 	case v.Unified == "" && v.FolderID != 0:
-		return "m.folder_id = ?", []any{v.FolderID}, nil
+		return shownIn("(?)"), []any{v.FolderID}, nil
 	}
 	return "", nil, errors.New("view needs exactly one of FolderID, Unified (inbox, starred) or LabelID")
 }
@@ -184,22 +221,31 @@ func (s *Service) ListMessages(ctx context.Context, v View, cursor string, limit
 	if err != nil {
 		return MessagePage{}, err
 	}
+	from, date, id := "messages m", "m.date", "m.id"
+	if v.FolderID != 0 { // a folder pages by its locations' date, through their index
+		from, date, id = "message_locations l JOIN messages m ON m.id = l.message_id", "l.date", "l.message_id"
+		cond, args = "l.folder_id = ? AND l.shown = 1 AND "+notPurgedCond, []any{v.FolderID}
+	}
 	if cursor != "" {
-		d, id, err := decodeCursor(cursor)
+		d, i, err := decodeCursor(cursor)
 		if err != nil {
 			return MessagePage{}, err
 		}
-		cond += " AND (m.date < ? OR (m.date = ? AND m.id < ?))"
-		args = append(args, d, d, id)
+		cond += " AND (" + date + " < ? OR (" + date + " = ? AND " + id + " < ?))"
+		args = append(args, d, d, i)
 	}
 	limit = clampLimit(limit)
-	rows, err := s.db.Query(ctx, "SELECT "+msgCols+" FROM messages m WHERE "+cond+" ORDER BY m.date DESC, m.id DESC LIMIT ?", append(args, limit+1)...)
+	rows, err := s.db.Query(ctx, "SELECT "+msgCols+" FROM "+from+" WHERE "+cond+" ORDER BY "+date+" DESC, "+id+" DESC LIMIT ?", append(args, limit+1)...)
 	if err != nil {
 		return MessagePage{}, err
 	}
 	var page MessagePage
 	for _, r := range rows.Values {
-		page.Items = append(page.Items, scanSummary(r))
+		m := scanSummary(r)
+		if v.FolderID != 0 {
+			m.FolderID = v.FolderID
+		}
+		page.Items = append(page.Items, m)
 	}
 	if len(page.Items) > limit {
 		page.Items = page.Items[:limit]
@@ -377,6 +423,10 @@ func (s *Service) RebuildSearchIndex(ctx context.Context) error {
 
 // MessageExists says whether message id is still stored: a row lookup, nothing loaded.
 func (s *Service) MessageExists(ctx context.Context, id int64) (bool, error) {
+	id, err := s.resolveID(ctx, id)
+	if err != nil {
+		return false, err
+	}
 	rows, err := s.db.Query(ctx, "SELECT 1 FROM messages WHERE id = ?", id)
 	if err != nil {
 		return false, err
@@ -387,6 +437,10 @@ func (s *Service) MessageExists(ctx context.Context, id int64) (bool, error) {
 // StoredHTML is message id's HTML body as synced, unsanitized; "" when it
 // has none. It needs no connection, unlike GetRawMessage.
 func (s *Service) StoredHTML(ctx context.Context, id int64) (string, error) {
+	id, err := s.resolveID(ctx, id)
+	if err != nil {
+		return "", err
+	}
 	rows, err := s.db.Query(ctx, "SELECT body_html FROM messages WHERE id = ?", id)
 	if err != nil {
 		return "", err
@@ -415,6 +469,10 @@ func (s *Service) GetMessageLazyImages(ctx context.Context, id int64, loadRemote
 // had is left out, so its image stays blocked; the error is for the database or
 // an ended ctx.
 func (s *Service) InlineImages(ctx context.Context, id int64, each func(cid string, a gomail.Attachment)) error {
+	id, err := s.resolveID(ctx, id)
+	if err != nil {
+		return err
+	}
 	rows, err := s.db.Query(ctx, "SELECT body_html FROM messages WHERE id = ?", id)
 	if err != nil {
 		return err
@@ -454,7 +512,11 @@ func showsInlineImage(raw, cid, contentType string) bool {
 }
 
 func (s *Service) readMessage(ctx context.Context, id int64, loadRemoteImages, lazy bool) (Message, error) {
-	rows, err := s.db.Query(ctx, "SELECT "+msgCols+", m.reply_to, m.body_text, m.body_html, m.body_truncated, "+inJunk+" FROM messages m LEFT JOIN folders f ON f.id = m.folder_id WHERE m.id = ?", id)
+	id, err := s.resolveID(ctx, id)
+	if err != nil {
+		return Message{}, err
+	}
+	rows, err := s.db.Query(ctx, "SELECT "+msgCols+", m.reply_to, m.body_text, m.body_html, m.body_truncated, "+inJunk+" FROM messages m LEFT JOIN folders f ON f.id = "+shownFolder+" WHERE m.id = ?", id)
 	if err != nil {
 		return Message{}, err
 	}
@@ -463,8 +525,8 @@ func (s *Service) readMessage(ctx context.Context, id int64, loadRemoteImages, l
 	}
 	r := rows.Values[0]
 	summary := scanSummary(r)
-	msg := Message{MessageSummary: summary, ReplyTo: store.Str(r[15]), Text: store.Str(r[16]), Truncated: store.Int(r[18]) != 0, InJunk: store.Int(r[19]) != 0, AuthResults: summary.AuthResults, Security: summary.Security}
-	raw := store.Str(r[17])
+	msg := Message{MessageSummary: summary, ReplyTo: store.Str(r[msgColCount]), Text: store.Str(r[msgColCount+1]), Truncated: store.Int(r[msgColCount+3]) != 0, InJunk: store.Int(r[msgColCount+4]) != 0, AuthResults: summary.AuthResults, Security: summary.Security}
+	raw := store.Str(r[msgColCount+2])
 	ar, err := s.db.Query(ctx, "SELECT id, filename, content_type, size, inline, content_id FROM attachments WHERE message_id = ? ORDER BY id", id)
 	if err != nil {
 		return Message{}, err
@@ -534,10 +596,69 @@ type target struct {
 	id, thread, folder int64
 	flags              string
 	from               string
+	in                 []shownAt // where it shows, in shownFolder's order
+}
+
+// shownAt is a folder a message shows in and its rank in shownFolder's order:
+// 0 the inbox, 1 another folder, 2 All Mail.
+type shownAt struct {
+	folder int64
+	rank   int
+}
+
+// shownAts is the column of message alias m that scanShownAts reads.
+const shownAts = `(SELECT group_concat(sl.folder_id || ':' || CASE sf.role WHEN 'inbox' THEN 0 WHEN 'all' THEN 2 ELSE 1 END, ' ')
+	FROM message_locations sl JOIN folders sf ON sf.id = sl.folder_id WHERE sl.message_id = m.id AND sl.shown)`
+
+func scanShownAts(v any) []shownAt {
+	var out []shownAt
+	for _, f := range strings.Fields(store.Str(v)) {
+		id, rank, _ := strings.Cut(f, ":")
+		folder, _ := strconv.ParseInt(id, 10, 64)
+		r, _ := strconv.Atoi(rank)
+		out = append(out, shownAt{folder, r})
+	}
+	slices.SortFunc(out, func(a, b shownAt) int { return cmp.Or(a.rank-b.rank, cmp.Compare(a.folder, b.folder)) })
+	return out
+}
+
+// leaves is the folders a move of m to folder to takes it out of (ADR 0034),
+// none when it stays where it is: for Trash or Junk (binned) every folder it
+// shows in; else from, the folder of the view the move came from, when it
+// shows there; else the inbox when it shows there; else every folder but All
+// Mail, or All Mail when it shows nowhere else and not in to.
+func (m target) leaves(from, to int64, binned bool) []int64 {
+	var out []int64
+	pick := func(keep func(shownAt) bool) {
+		for _, l := range m.in {
+			if l.folder != to && keep(l) {
+				out = append(out, l.folder)
+			}
+		}
+	}
+	shows := func(keep func(shownAt) bool) bool { return slices.ContainsFunc(m.in, keep) }
+	switch {
+	case binned:
+		pick(func(shownAt) bool { return true })
+	case from != 0 && shows(func(l shownAt) bool { return l.folder == from }):
+		pick(func(l shownAt) bool { return l.folder == from })
+	case shows(func(l shownAt) bool { return l.rank == 0 }):
+		pick(func(l shownAt) bool { return l.rank == 0 })
+	default:
+		pick(func(l shownAt) bool { return l.rank != 2 })
+		if len(out) == 0 && !shows(func(l shownAt) bool { return l.folder == to }) {
+			pick(func(shownAt) bool { return true })
+		}
+	}
+	return out
 }
 
 // targets loads the messages, which must all exist and belong to one account.
 func (s *Service) targets(ctx context.Context, ids []int64) (int64, []target, error) {
+	ids, err := s.resolve(ctx, ids)
+	if err != nil {
+		return 0, nil, err
+	}
 	ids = slices.Compact(slices.Sorted(slices.Values(ids)))
 	if len(ids) == 0 {
 		return 0, nil, nil
@@ -546,7 +667,7 @@ func (s *Service) targets(ctx context.Context, ids []int64) (int64, []target, er
 	for i, id := range ids {
 		args[i] = id
 	}
-	rows, err := s.db.Query(ctx, "SELECT id, account_id, thread_id, folder_id, flags FROM messages WHERE id IN ("+
+	rows, err := s.db.Query(ctx, "SELECT m.id, m.account_id, m.thread_id, "+shownFolder+", m.flags, "+shownAts+" FROM messages m WHERE m.id IN ("+
 		strings.TrimSuffix(strings.Repeat("?,", len(ids)), ",")+")", args...)
 	if err != nil {
 		return 0, nil, err
@@ -560,7 +681,7 @@ func (s *Service) targets(ctx context.Context, ids []int64) (int64, []target, er
 		if store.Int(r[1]) != acc {
 			return 0, nil, errors.New("the messages belong to different accounts")
 		}
-		out = append(out, target{id: store.Int(r[0]), thread: store.Int(r[2]), folder: store.Int(r[3]), flags: store.Str(r[4])})
+		out = append(out, target{id: store.Int(r[0]), thread: store.Int(r[2]), folder: store.Int(r[3]), flags: store.Str(r[4]), in: scanShownAts(r[5])})
 	}
 	return acc, out, nil
 }
@@ -582,6 +703,7 @@ func (s *Service) apply(ctx context.Context, accountID int64, ts []target, stmts
 	}
 	s.bus.Publish(events.Event{Type: events.MessagesChanged, AccountID: accountID, MessageIDs: ids,
 		ThreadIDs: slices.Compact(slices.Sorted(slices.Values(tids)))})
+	s.wakeForOps(ctx, accountID, s.clk().Now())
 	s.wakeWorker(accountID)
 	return nil
 }
@@ -627,6 +749,10 @@ func (s *Service) SetMessageSecurity(ctx context.Context, messageIDs []int64, re
 	status, ok := gomail.ManualSecurityStatus(reason)
 	if !ok && reason != "" {
 		return fmt.Errorf("set message security: unknown classification %q", reason)
+	}
+	messageIDs, err := s.resolve(ctx, messageIDs)
+	if err != nil {
+		return err
 	}
 	for _, id := range messageIDs {
 		var err error
@@ -688,9 +814,20 @@ func flagWrites(acc int64, ts []target, add, remove []string) ([]sqlite.Statemen
 	return stmts, nil
 }
 
-// Move moves the messages to folderID, which must belong to their account. The
-// local message IDs stay the same.
+// Move moves the messages to folderID, which must belong to their account, as
+// MoveFrom does from a view with no single folder. The local message IDs stay
+// the same.
 func (s *Service) Move(ctx context.Context, ids []int64, folderID int64) error {
+	return s.MoveFrom(ctx, ids, 0, folderID)
+}
+
+// MoveFrom moves the messages to folderID, which must belong to their
+// account, out of from, the folder of the view the move came from (0 for a
+// view with no single folder). A message in several folders (Gmail) leaves
+// only from; one not shown there leaves the inbox, else every folder but All
+// Mail. A move to Trash or Junk takes it out of every folder. The local
+// message IDs stay the same.
+func (s *Service) MoveFrom(ctx context.Context, ids []int64, from, folderID int64) error {
 	s.editMu.Lock()
 	defer s.editMu.Unlock()
 	rows, err := s.db.Query(ctx, "SELECT account_id FROM folders WHERE id = ?", folderID)
@@ -707,7 +844,7 @@ func (s *Service) Move(ctx context.Context, ids []int64, folderID int64) error {
 	if len(ts) > 0 && acc != store.Int(rows.Values[0][0]) {
 		return errors.New("the folder belongs to another account")
 	}
-	return s.move(ctx, acc, ts, folderID)
+	return s.move(ctx, acc, ts, from, folderID)
 }
 
 // Delete moves the messages to their account's Trash; ones already there stay.
@@ -753,13 +890,13 @@ func (s *Service) DeleteForever(ctx context.Context, ids []int64) error {
 			continue
 		}
 		purged = append(purged, m)
-		stmts = append(stmts, sqlite.Statement{SQL: `INSERT INTO ops(account_id, message_id, kind, dst_folder_id, payload, depends_on, created_at)
-			VALUES (?, ?, 'purge', ?, ?, ` + latestOp + `, unixepoch())`, Args: []any{acc, m.id, m.folder, mailsync.PurgeNowRole(role, due), m.id}})
+		stmts = append(stmts, sqlite.Statement{SQL: `INSERT INTO ops(account_id, message_id, kind, src_folder_id, dst_folder_id, payload, depends_on, created_at)
+			VALUES (?, ?, 'purge', ?, ?, ?, ` + latestOp + `, unixepoch())`, Args: []any{acc, m.id, m.folder, m.folder, mailsync.PurgeNowRole(role, due), m.id}})
 	}
 	if err := s.apply(ctx, acc, purged, stmts); err != nil {
 		return err
 	}
-	s.wakeForPurge(ctx, acc, now)
+	s.wakeForOps(ctx, acc, now)
 	return nil
 }
 
@@ -782,7 +919,7 @@ func (s *Service) EmptyFolder(ctx context.Context, folderID int64) ([]int64, err
 	if role != "trash" && role != "junk" {
 		return nil, fmt.Errorf("cannot empty folder with role %q", role)
 	}
-	msgRows, err := s.db.Query(ctx, "SELECT m.id, m.thread_id FROM messages m WHERE m.folder_id = ? AND "+notPurgedCond, folderID)
+	msgRows, err := s.db.Query(ctx, "SELECT m.id, m.thread_id FROM messages m WHERE "+shownIn("(?)")+" AND "+notPurgedCond, folderID)
 	if err != nil || len(msgRows.Values) == 0 {
 		return nil, err
 	}
@@ -794,10 +931,10 @@ func (s *Service) EmptyFolder(ctx context.Context, folderID int64) ([]int64, err
 	for i, r := range msgRows.Values {
 		ids[i] = store.Int(r[0])
 		ts[i] = target{id: ids[i], thread: store.Int(r[1]), folder: folderID}
-		stmts[i] = sqlite.Statement{SQL: `INSERT INTO ops(account_id, message_id, kind, dst_folder_id, payload, depends_on, created_at)
-			VALUES (?, ?, 'purge', ?, ?, ` + latestOp + `, unixepoch())`, Args: []any{acc, ids[i], folderID, payload, ids[i]}}
+		stmts[i] = sqlite.Statement{SQL: `INSERT INTO ops(account_id, message_id, kind, src_folder_id, dst_folder_id, payload, depends_on, created_at)
+			VALUES (?, ?, 'purge', ?, ?, ?, ` + latestOp + `, unixepoch())`, Args: []any{acc, ids[i], folderID, folderID, payload, ids[i]}}
 	}
-	defer s.wakeForPurge(ctx, acc, now)
+	defer s.wakeForOps(ctx, acc, now)
 	const chunk = 200
 	for i := 0; i < len(ts); i += chunk {
 		end := min(i+chunk, len(ts))
@@ -816,6 +953,10 @@ func (s *Service) EmptyFolder(ctx context.Context, folderID int64) ([]int64, err
 func (s *Service) UndoPurge(ctx context.Context, ids []int64) (gone int, err error) {
 	s.editMu.Lock()
 	defer s.editMu.Unlock()
+	ids, err = s.resolve(ctx, ids)
+	if err != nil {
+		return 0, err
+	}
 	ids = slices.Compact(slices.Sorted(slices.Values(ids)))
 	if len(ids) == 0 {
 		return 0, nil
@@ -858,14 +999,13 @@ func (s *Service) UndoPurge(ctx context.Context, ids []int64) (gone int, err err
 	return len(ids) - len(rows.Values), nil
 }
 
-// wakeForPurge has the account's worker sync again when the first purge in its
-// undo window after t comes due, in place of the time set for that before.
-func (s *Service) wakeForPurge(ctx context.Context, accountID int64, t time.Time) {
-	next, err := mailsync.NextPurgeDue(ctx, s.db, accountID, t)
+// wakeForOps rearms the existing worker timer for the next durable undo deadline.
+func (s *Service) wakeForOps(ctx context.Context, accountID int64, t time.Time) {
+	next, err := mailsync.NextOpDue(ctx, s.db, accountID, t)
 	if err != nil {
 		return
 	}
-	s.wakeWorkerAt(accountID, wakePurge, next)
+	s.wakeWorkerAt(accountID, wakeOps, next)
 }
 
 // MarkAllAsRead marks every unread message in view v as read. Returns the number of messages marked.
@@ -906,7 +1046,8 @@ type ErrNoRoleFolder struct{ Role string }
 func (e *ErrNoRoleFolder) Error() string { return "the account has no " + e.Role + " folder" }
 
 // MoveToRole moves the messages to their account's folder of role (inbox,
-// trash, junk or archive); ones already there stay.
+// trash, junk or archive), as Move; ones already there stay. Archiving a
+// message in the inbox takes it out of the inbox only.
 func (s *Service) MoveToRole(ctx context.Context, ids []int64, role string) error {
 	if role != "trash" && role != "junk" && role != "archive" && role != "inbox" {
 		return fmt.Errorf("invalid role %q", role)
@@ -917,11 +1058,98 @@ func (s *Service) MoveToRole(ctx context.Context, ids []int64, role string) erro
 	if err != nil || len(ts) == 0 {
 		return err
 	}
-	folder, err := s.roleFolder(ctx, acc, role)
+	var folder int64
+	if role == "archive" {
+		ts, folder, err = s.archiveTargets(ctx, acc, ts, 0)
+	} else {
+		folder, err = s.roleFolder(ctx, acc, role)
+	}
 	if err != nil {
 		return err
 	}
-	return s.move(ctx, acc, ts, folder)
+	return s.move(ctx, acc, ts, 0, folder)
+}
+
+// archiveTargets gives every archive entry point Gmail's remove-INBOX intent.
+func (s *Service) archiveTargets(ctx context.Context, acc int64, ts []target, folder int64) ([]target, int64, error) {
+	gmail, err := s.gmailAccount(ctx, acc)
+	if err != nil {
+		return nil, 0, err
+	}
+	if gmail {
+		ts = slices.DeleteFunc(slices.Clone(ts), func(m target) bool {
+			return !slices.ContainsFunc(m.in, func(l shownAt) bool { return l.rank == 0 })
+		})
+		// All Mail is only a MOVE shortcut; archive never adds a user label.
+		folder, _, err = mailsync.RoleFolder(ctx, s.db, acc, "all")
+		return ts, folder, err
+	}
+	if folder == 0 {
+		folder, err = s.roleFolder(ctx, acc, "archive")
+	}
+	return ts, folder, err
+}
+
+func (s *Service) gmailAccount(ctx context.Context, acc int64) (bool, error) {
+	if acc == 0 {
+		return false, nil
+	}
+	r, err := s.db.Query(ctx, "SELECT imap_gmail, provider FROM accounts WHERE id = ?", acc)
+	if err != nil {
+		return false, err
+	}
+	if len(r.Values) == 0 {
+		return false, ErrAccountNotFound
+	}
+	if r.Values[0][0] != nil {
+		return store.Int(r.Values[0][0]) != 0, nil
+	}
+	if store.Str(r.Values[0][1]) == "gmail" {
+		_, err := s.db.Execute(ctx, "UPDATE accounts SET imap_gmail = 1 WHERE id = ?", acc)
+		return true, err
+	}
+	// An unknown legacy server must be identified before choosing archive semantics.
+	c, release, _, err := s.dialAccount(ctx, acc, nil)
+	if err != nil {
+		return false, err
+	}
+	defer release()
+	return c.Caps().Has("X-GM-EXT-1"), nil
+}
+
+// archiveUndoWrites restores Gmail's INBOX label without removing a user label.
+func (s *Service) archiveUndoWrites(ctx context.Context, acc int64, ts []target, from, to int64) ([]sqlite.Statement, error) {
+	gmail, err := s.gmailAccount(ctx, acc)
+	if err != nil {
+		return nil, err
+	}
+	if !gmail {
+		binned, err := s.binned(ctx, acc, to)
+		if err != nil {
+			return nil, err
+		}
+		_, stmts := moveWrites(acc, ts, from, to, binned, s.clk().Now())
+		return stmts, nil
+	}
+	var stmts []sqlite.Statement
+	for _, m := range ts {
+		var cancel int64
+		if from == 0 {
+			r, err := s.db.Query(ctx, `SELECT id FROM ops WHERE message_id = ? AND kind = 'move' AND src_folder_id = ?
+				AND dst_folder_id IS NULL AND state = 'pending' AND attempts = 0 ORDER BY id DESC LIMIT 1`, m.id, to)
+			if err != nil {
+				return nil, err
+			}
+			if len(r.Values) > 0 {
+				cancel = store.Int(r.Values[0][0])
+			}
+		}
+		stmts = append(stmts, sqlite.Statement{SQL: "UPDATE ops SET state = 'cancelled' WHERE id = ? AND state = 'pending' AND attempts = 0", Args: []any{cancel}})
+		stmts = append(stmts, mailsync.ShowIn(m.id, to, []int64{})...)
+		stmts = append(stmts, sqlite.Statement{SQL: `INSERT INTO ops(account_id, message_id, kind, dst_folder_id, depends_on, created_at)
+			SELECT ?, ?, 'move', ?, ` + latestOp + `, unixepoch() WHERE NOT EXISTS (SELECT 1 FROM ops WHERE id = ? AND state = 'cancelled')`, Args: []any{acc, m.id, to, m.id, cancel}})
+	}
+	return stmts, nil
 }
 
 // roleFolder is the account's folder of role (mailsync.RoleFolder).
@@ -933,28 +1161,64 @@ func (s *Service) roleFolder(ctx context.Context, acc int64, role string) (int64
 	return id, err
 }
 
-// move sets the desired folder of the messages not already in folderID and queues
-// the moves; their server location changes only when the move is pushed.
-func (s *Service) move(ctx context.Context, accountID int64, ts []target, folderID int64) error {
-	moved, stmts := moveWrites(accountID, ts, folderID)
+// move sets the desired folders of the messages and queues the moves out of
+// the folders they leave (target.leaves, from the view's folder from); their
+// server locations change only when the moves are pushed.
+func (s *Service) move(ctx context.Context, accountID int64, ts []target, from, folderID int64) error {
+	binned, err := s.binned(ctx, accountID, folderID)
+	if err != nil {
+		return err
+	}
+	moved, stmts := moveWrites(accountID, ts, from, folderID, binned, s.clk().Now())
 	return s.apply(ctx, accountID, moved, stmts)
 }
 
-// moveWrites are move's statements and the messages they move.
-func moveWrites(accountID int64, ts []target, folderID int64) ([]target, []sqlite.Statement) {
+// binned reports whether folder is the account's Trash or Junk.
+func (s *Service) binned(ctx context.Context, accountID, folder int64) (bool, error) {
+	for _, role := range []string{"trash", "junk"} {
+		id, _, err := mailsync.RoleFolder(ctx, s.db, accountID, role)
+		if err != nil || id == folder {
+			return err == nil, err
+		}
+	}
+	return false, nil
+}
+
+// UndoArchiveWindow is the existing archive toast's undo window. Removing the
+// last visible Gmail location waits this long so an undo still has a server UID.
+const UndoArchiveWindow = 10 * time.Second
+
+// moveWrites are move's statements and the messages they move. A move to
+// Trash or Junk (binned) is one MOVE from the preferred folder.
+func moveWrites(accountID int64, ts []target, from, folderID int64, binned bool, now time.Time) ([]target, []sqlite.Statement) {
 	var moved []target
 	var stmts []sqlite.Statement
 	for _, m := range ts {
-		if m.folder == folderID {
+		out := m.leaves(from, folderID, binned)
+		if len(out) == 0 {
 			continue
 		}
 		moved = append(moved, m)
-		stmts = append(stmts,
-			sqlite.Statement{SQL: "UPDATE messages SET folder_id = ?, entered_at = unixepoch() WHERE id = ?", Args: []any{folderID, m.id}},
+		hide := out
+		if binned {
+			hide, out = nil, out[:1]
+		}
+		stmts = append(append(stmts, mailsync.ShowIn(m.id, folderID, hide)...),
 			// A rescue beats a purge queued before it (the move would otherwise wait for it).
-			sqlite.Statement{SQL: "UPDATE ops SET state = 'cancelled' WHERE message_id = ? AND kind = 'purge' AND state = 'pending'", Args: []any{m.id}},
-			sqlite.Statement{SQL: `INSERT INTO ops(account_id, message_id, kind, dst_folder_id, depends_on, created_at)
-				VALUES (?, ?, 'move', ?, ` + latestOp + `, unixepoch())`, Args: []any{accountID, m.id, folderID, m.id}})
+			sqlite.Statement{SQL: "UPDATE ops SET state = 'cancelled' WHERE message_id = ? AND kind = 'purge' AND state = 'pending'", Args: []any{m.id}})
+		var dst any
+		if folderID != 0 {
+			dst = folderID
+		}
+		payload := "{}"
+		if folderID == 0 && len(m.in) == 1 && m.in[0].rank == 0 {
+			b, _ := json.Marshal(map[string]int64{"due_at": now.Add(UndoArchiveWindow).UnixMilli()})
+			payload = string(b)
+		}
+		for _, src := range out {
+			stmts = append(stmts, sqlite.Statement{SQL: `INSERT INTO ops(account_id, message_id, kind, src_folder_id, dst_folder_id, payload, depends_on, created_at)
+				VALUES (?, ?, 'move', ?, ?, ?, ` + latestOp + `, unixepoch())`, Args: []any{accountID, m.id, src, dst, payload, m.id}})
+		}
 	}
 	return moved, stmts
 }

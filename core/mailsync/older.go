@@ -49,7 +49,7 @@ func FetchOlder(ctx context.Context, db *store.DB, c *imapclient.Client, account
 	if f.lastUID == 0 { // synced empty: nothing older
 		return false, nil
 	}
-	have, err := db.Query(ctx, "SELECT server_uid FROM messages WHERE server_folder_id = ?", f.id)
+	have, err := db.Query(ctx, "SELECT uid FROM message_locations WHERE folder_id = ? AND uid IS NOT NULL", f.id)
 	if err != nil {
 		return false, err
 	}
@@ -83,7 +83,7 @@ func FetchOlder(ctx context.Context, db *store.DB, c *imapclient.Client, account
 		return false, nil
 	}
 	more = len(uids) > OlderPage
-	msgs, err := c.Fetch(imap.UIDSetNum(uids[:min(len(uids), OlderPage)]...), importItems()).Collect()
+	msgs, _, err := fetchImport(ctx, db, c, a, f, imap.UIDSetNum(uids[:min(len(uids), OlderPage)]...), false, &r)
 	if err != nil {
 		return false, err
 	}

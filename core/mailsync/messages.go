@@ -18,8 +18,9 @@ import (
 
 // importMessage claims the message for a local row awaiting it or inserts it,
 // with its attachments and thread, in one transaction. twins is how many messages
-// of this fetch share its Message-ID and size. An inserted arrival also logs its
-// message.received event (plugin hooks) in that transaction; a claim does not.
+// of this fetch share its Message-ID and size. An inserted arrival logs its
+// pending receive event in that transaction; logArrivals publishes it after
+// a complete round knows its folders. A claim does not create an event.
 func importMessage(ctx context.Context, db *store.DB, a *account, f *folder, m *imapclient.FetchMessageBuffer, texts map[string][]byte, twins int, arrival bool, r *result) error {
 	p := toParsed(m, texts)
 	uid := uint32(m.UID)
@@ -52,43 +53,40 @@ func importMessage(ctx context.Context, db *store.DB, a *account, f *folder, m *
 		secScanned = 0
 	}
 
-	args := append([]any{a.id, f.id, f.id, f.uidValidity, uid}, plan.args...)
+	args := append([]any{a.id}, plan.args...)
 	args = append(args, nullable(p.MessageID), nullable(p.InReplyTo), nullable(strings.Join(p.References, " ")), p.Subject, p.From,
 		jsonList(p.To), jsonList(p.Cc), nullable(p.ReplyTo), p.Date.Unix(), flagString(m.Flags), m.RFC822Size,
 		mail.Snippet(p.Text), p.Text, nullable(p.HTML), p.Truncated, len(p.Attachments) > 0, nullable(labelFP(p, m.RFC822Size)),
-		p.ListUnsubscribe, p.ListUnsubscribePost, p.ListID, p.AutoSubmitted, p.Precedence, p.AuthenticationResults, secStatus, secReason, secScanned, verifyDKIM, p.RuleSent)
+		p.ListUnsubscribe, p.ListUnsubscribePost, p.ListID, p.AutoSubmitted, p.Precedence, p.AuthenticationResults, secStatus, secReason, secScanned, verifyDKIM, p.RuleSent, gmailMsgID(m))
 	stmts := append(plan.pre, sqlite.Statement{
-		SQL: `INSERT INTO messages(account_id, folder_id, server_folder_id, server_uidvalidity, server_uid, thread_id,
+		SQL: `INSERT INTO messages(account_id, thread_id,
 			message_id, in_reply_to, refs, subject, from_addr, to_addrs, cc_addrs, reply_to, date, flags, size,
-			snippet, body_text, body_html, body_truncated, has_attachments, label_fp, list_unsubscribe, list_unsubscribe_post, list_id, auto_submitted, precedence, auth_results, security_status, security_reason, security_scanned_at, security_verify_dkim, rule_sent, entered_at)
-			VALUES (?, ?, ?, ?, ?, ` + plan.expr + `, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, unixepoch())`,
+			snippet, body_text, body_html, body_truncated, has_attachments, label_fp, list_unsubscribe, list_unsubscribe_post, list_id, auto_submitted, precedence, auth_results, security_status, security_reason, security_scanned_at, security_verify_dkim, rule_sent, gmail_msgid)
+			VALUES (?, ` + plan.expr + `, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 		Args: args,
+	}, sqlite.Statement{
+		SQL: `INSERT INTO message_locations(message_id, folder_id, shown, uidvalidity, uid, entered_at, date)
+			VALUES (last_insert_rowid(), ?, 1, ?, ?, unixepoch(), ?)`,
+		Args: []any{f.id, f.uidValidity, uid, p.Date.Unix()},
 	})
-	msgAt := len(stmts) - 1
+	msgAt := len(stmts) - 2
 	for _, at := range p.Attachments {
 		stmts = append(stmts, sqlite.Statement{
 			SQL: `INSERT INTO attachments(message_id, part, encoding, charset, filename, content_type, size, content_id, inline)
-				VALUES ((SELECT id FROM messages WHERE server_folder_id = ? AND server_uid = ?), ?, ?, ?, ?, ?, ?, ?, ?)`,
+				VALUES ((SELECT message_id FROM message_locations WHERE folder_id = ? AND uid = ?), ?, ?, ?, ?, ?, ?, ?, ?)`,
 			Args: []any{f.id, uid, at.Part, at.Encoding, at.Charset, at.Filename, at.ContentType, at.Size, at.ContentID, at.Inline},
 		})
 	}
 	stmts = append(stmts, threadTail(a.id, f.id, uid, ids)...)
-	if arrival {
-		stmts = append(stmts, sqlite.Statement{
-			SQL: `INSERT INTO events_log(type, account_id, message_id, subject, from_addr, msg_date, created_at)
-				VALUES ('message.received', ?, (SELECT id FROM messages WHERE account_id = ? AND server_folder_id = ?
-					AND server_uidvalidity = ? AND server_uid = ?), ?, ?, ?, unixepoch())`,
-			Args: []any{a.id, a.id, f.id, f.uidValidity, uid, p.Subject, p.From, p.Date.Unix()},
-		})
-		if _, final := secScanned.(int64); final { // a verdict now, not the scanner's later: security rules run on it
-			stmts = append(stmts, sqlite.Statement{
-				SQL: `INSERT INTO events_log(type, account_id, message_id, subject, from_addr, msg_date, detail, created_at)
-					VALUES ('security.verdict', ?, (SELECT id FROM messages WHERE account_id = ? AND server_folder_id = ?
-						AND server_uidvalidity = ? AND server_uid = ?), ?, ?, ?, ?, unixepoch())`,
-				Args: []any{a.id, a.id, f.id, f.uidValidity, uid, p.Subject, p.From, p.Date.Unix(), secStatus},
-			})
-		}
+	verdict := ""
+	if _, final := secScanned.(int64); final {
+		verdict = secStatus
 	}
+	stmts = append(stmts, sqlite.Statement{
+		SQL: `INSERT INTO message_imports(message_id, arrival, verdict)
+   VALUES ((SELECT message_id FROM message_locations WHERE folder_id = ? AND uid = ?), ?, ?)`,
+		Args: []any{f.id, uid, arrival, verdict},
+	})
 	res, err := db.Transaction(ctx, stmts)
 	if err != nil {
 		return err
@@ -101,12 +99,60 @@ func importMessage(ctx context.Context, db *store.DB, a *account, f *folder, m *
 		r.gone(plan.moved, nil)
 		r.merged(tid, plan.others)
 	}
-	if arrival { // only new mail is announced as received; older mail and backfills only change the list
-		r.received = append(r.received, res[msgAt].LastInsertID)
-		r.threads = append(r.threads, tid)
-	} else {
+
+	if !arrival { // older mail and backfills only change the list
 		r.changed = append(r.changed, res[msgAt].LastInsertID)
 		r.changedThreads = append(r.changedThreads, tid)
+	}
+	return nil
+}
+
+// ownMail is the condition on messages (unaliased) that the message shows in
+// Sent or Drafts: the user's own, not received mail.
+const ownMail = "EXISTS (SELECT 1 FROM message_locations l JOIN folders f ON f.id = l.folder_id WHERE l.message_id = messages.id AND l.shown AND f.role IN ('sent', 'drafts'))"
+
+// logArrivals publishes imports only after a complete folder round, and clears
+// their durable markers in the same transaction. A stopped round leaves them
+// for the next sync, whose folder discovery precedes receive rules and hooks.
+func (r *result) logArrivals(ctx context.Context, db *store.DB, accountID int64) error {
+	rows, err := db.Query(ctx, `SELECT m.id, m.thread_id, m.subject, m.from_addr, m.date, i.arrival, i.verdict
+  FROM message_imports i JOIN messages m ON m.id = i.message_id WHERE m.account_id = ? ORDER BY m.id`, accountID)
+	if err != nil || len(rows.Values) == 0 {
+		return err
+	}
+	var ids []any
+	var stmts []sqlite.Statement
+	for _, n := range rows.Values {
+		ids = append(ids, n[0])
+		if store.Int(n[5]) == 0 {
+			continue
+		}
+		stmts = append(stmts, sqlite.Statement{
+			SQL: `INSERT INTO events_log(type, account_id, message_id, subject, from_addr, msg_date, created_at)
+    SELECT 'message.received', ?, id, ?, ?, ?, unixepoch() FROM messages WHERE id = ?`,
+			Args: []any{accountID, n[2], n[3], n[4], n[0]},
+		})
+		if store.Str(n[6]) != "" {
+			stmts = append(stmts, sqlite.Statement{
+				SQL: `INSERT INTO events_log(type, account_id, message_id, subject, from_addr, msg_date, detail, created_at)
+     SELECT 'security.verdict', ?, id, ?, ?, ?, ?, unixepoch() FROM messages WHERE id = ? AND NOT ` + ownMail,
+				Args: []any{accountID, n[2], n[3], n[4], n[6], n[0]},
+			})
+		}
+	}
+	stmts = append(stmts, sqlite.Statement{
+		SQL: `UPDATE messages SET security_status = 'neutral', security_reason = 'unverified', security_scanned_at = unixepoch(), security_verify_dkim = 0
+   WHERE id IN (` + marks(len(ids)) + `) AND security_reason IS NOT 'unverified' AND ` + ownMail,
+		Args: ids,
+	}, sqlite.Statement{SQL: "DELETE FROM message_imports WHERE message_id IN (" + marks(len(ids)) + ")", Args: ids})
+	if _, err := db.Transaction(ctx, stmts); err != nil {
+		return err
+	}
+	for _, n := range rows.Values {
+		if store.Int(n[5]) != 0 {
+			r.received = append(r.received, store.Int(n[0]))
+			r.threads = append(r.threads, store.Int(n[1]))
+		}
 	}
 	return nil
 }
@@ -129,17 +175,14 @@ func claim(ctx context.Context, db *store.DB, accountID int64, f *folder, uid ui
 	if err != nil || len(rows.Values) == 0 {
 		return 0, err
 	}
-	present, err := db.Query(ctx, "SELECT count(*) FROM messages WHERE server_folder_id = ? AND message_id = ? AND size = ?", f.id, messageID, size)
+	present, err := db.Query(ctx, "SELECT count(*) FROM messages WHERE "+serverIn+" AND message_id = ? AND size = ?", f.id, messageID, size)
 	if err != nil {
 		return 0, err
 	}
 	if len(rows.Values) == 1 && twins <= 1 && store.Int(present.Values[0][0]) == 0 {
 		op, id := store.Int(rows.Values[0][0]), store.Int(rows.Values[0][1])
-		_, err = db.Transaction(ctx, []sqlite.Statement{
-			{SQL: "UPDATE messages SET server_folder_id = ?, server_uidvalidity = ?, server_uid = ? WHERE id = ?",
-				Args: []any{f.id, f.uidValidity, uid, id}},
-			{SQL: "UPDATE ops SET state = 'done' WHERE id = ?", Args: []any{op}},
-		})
+		_, err = db.Transaction(ctx, append(locate(id, f.id, f.uidValidity, uid),
+			sqlite.Statement{SQL: "UPDATE ops SET state = 'done' WHERE id = ?", Args: []any{op}}))
 		if err != nil {
 			return 0, err
 		}
@@ -171,6 +214,7 @@ func claim(ctx context.Context, db *store.DB, accountID int64, f *folder, uid ui
 // Message-ID, or the server changed it). The op and the message's other pending
 // ops become conflicts and the local row, which has no server location, is
 // deleted; the copy in the destination was imported as a message of its own.
+// A Gmail message still in another folder stays, shown where the server has it.
 func unclaimable(ctx context.Context, db *store.DB, accountID int64, r *result) error {
 	rows, err := db.Query(ctx, `SELECT o.message_id, f.name FROM ops o LEFT JOIN folders f ON f.id = o.dst_folder_id
 		WHERE o.account_id = ? AND o.state = 'awaiting_claim' AND o.message_id IS NOT NULL`, accountID)
@@ -184,14 +228,17 @@ func unclaimable(ctx context.Context, db *store.DB, accountID int64, r *result) 
 	}
 	msg := fmt.Sprintf("%d message(s) moved to %s could not be matched to the copy there; the copy is kept as a new message and changes queued for the original were not applied",
 		len(msgs), strings.Join(slices.Compact(slices.Sorted(slices.Values(names))), ", "))
-	ids, tids, err := doomed(ctx, db, "server_folder_id IS NULL AND id IN ("+marks(len(msgs))+")", msgs...)
+	ids, tids, err := doomed(ctx, db, unlocated+" AND id IN ("+marks(len(msgs))+")", msgs...)
 	if err != nil {
 		return err
 	}
 	stmts := []sqlite.Statement{
 		{SQL: "UPDATE ops SET state = 'conflict', last_error = ? WHERE state IN ('pending', 'awaiting_claim') AND message_id IN (" + marks(len(msgs)) + ")",
 			Args: append([]any{msg}, msgs...)},
-		{SQL: "DELETE FROM messages WHERE server_folder_id IS NULL AND id IN (" + marks(len(msgs)) + ")", Args: msgs},
+		{SQL: "DELETE FROM messages WHERE " + unlocated + " AND id IN (" + marks(len(msgs)) + ")", Args: msgs},
+	}
+	for _, m := range msgs {
+		stmts = append(stmts, settle(store.Int(m))...)
 	}
 	if _, err := db.Transaction(ctx, append(stmts, tidyThreads(accountID, tids)...)); err != nil {
 		return err
@@ -205,8 +252,8 @@ func unclaimable(ctx context.Context, db *store.DB, accountID int64, r *result) 
 const pendingFlags = "EXISTS (SELECT 1 FROM ops o WHERE o.message_id = messages.id AND o.kind = 'flags' AND o.state = 'pending')"
 
 // syncFlags refreshes flags of 1:last_uid (except where a flags op is pending)
-// and deletes local rows whose UID the server no longer returns. It changes
-// nothing unless the FETCH completed.
+// and drops the folder's locations whose UID the server no longer returns,
+// and the messages then orphaned. It changes nothing unless the FETCH completed.
 // ponytail: refetches every FLAGS each round; switch to CONDSTORE/QRESYNC.
 func syncFlags(ctx context.Context, db *store.DB, c *imapclient.Client, accountID int64, f *folder, r *result) error {
 	if f.lastUID == 0 {
@@ -223,20 +270,20 @@ func syncFlags(ctx context.Context, db *store.DB, c *imapclient.Client, accountI
 		remote[uint32(b.UID)] = flagString(b.Flags)
 	}
 	// A flags change still queued wins over the server's flags until it is pushed.
-	rows, err := db.Query(ctx, "SELECT id, server_uid, flags, thread_id, "+pendingFlags+
-		" FROM messages WHERE server_folder_id = ? AND server_uid <= ?", f.id, f.lastUID)
+	rows, err := db.Query(ctx, "SELECT messages.id, l.uid, flags, thread_id, "+pendingFlags+
+		" FROM message_locations l JOIN messages ON messages.id = l.message_id WHERE l.folder_id = ? AND l.uid <= ?", f.id, f.lastUID)
 	if err != nil {
 		return err
 	}
 	var stmts []sqlite.Statement
-	var changed, tids []int64
+	var changed, tids, vanished []int64
 	for _, v := range rows.Values {
 		id, uid, flags := store.Int(v[0]), uint32(store.Int(v[1])), store.Str(v[2])
 		fl, ok := remote[uid]
 		switch {
 		case !ok:
-			stmts = append(stmts, sqlite.Statement{SQL: "DELETE FROM messages WHERE id = ?", Args: []any{id}})
-			tids = append(tids, store.Int(v[3]))
+			stmts = append(stmts, sqlite.Statement{SQL: "DELETE FROM message_locations WHERE message_id = ? AND folder_id = ?", Args: []any{id, f.id}})
+			tids, vanished = append(tids, store.Int(v[3])), append(vanished, id)
 		case fl != flags && store.Int(v[4]) == 0:
 			// Checked again in the UPDATE: a local edit may commit between this read and the write.
 			stmts = append(stmts, sqlite.Statement{SQL: "UPDATE messages SET flags = ? WHERE id = ? AND NOT " + pendingFlags, Args: []any{fl, id}})
@@ -245,9 +292,6 @@ func syncFlags(ctx context.Context, db *store.DB, c *imapclient.Client, accountI
 		}
 		changed = append(changed, id)
 	}
-	if len(tids) > 0 {
-		stmts = append(stmts, tidyThreads(accountID, tids)...)
-	}
 	if BeforeFlagsWrite != nil {
 		BeforeFlagsWrite()
 	}
@@ -255,7 +299,7 @@ func syncFlags(ctx context.Context, db *store.DB, c *imapclient.Client, accountI
 		return err
 	}
 	r.gone(changed, tids)
-	return nil
+	return r.orphan(ctx, db, c, accountID, vanished)
 }
 
 // BeforeFlagsWrite, when set, runs between syncFlags reading the local flags and

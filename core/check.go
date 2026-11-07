@@ -29,6 +29,7 @@ type CheckStep struct {
 type CheckReport struct {
 	Steps   []CheckStep
 	Folders int
+	gmail   bool // authenticated X-GM-EXT-1; kept off the public report
 }
 
 // OK reports whether every step passed.
@@ -98,6 +99,7 @@ func (s *Service) check(ctx context.Context, in AccountInput, token string) (Che
 			c, err := dialStep(ctx, func(ctx context.Context) (interface{ Close() error }, error) {
 				c, abort, err := conn.DialIMAPAbortable(ctx, conn.Endpoint{Host: in.IMAPHost, Port: in.IMAPPort, Security: in.IMAPSecurity, Username: user, Password: in.Password, AccessToken: token}, nil)
 				if err == nil {
+					r.gmail = c.Caps().Has("X-GM-EXT-1")
 					stop := context.AfterFunc(ctx, abort)   // a stalled LIST ends with the step's timeout
 					r.Folders, _ = mailsync.CountFolders(c) // a failing LIST does not fail the sign-in
 					stop()

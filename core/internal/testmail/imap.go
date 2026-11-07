@@ -23,10 +23,10 @@ import (
 )
 
 type config struct {
-	move, uidplus, copyuid, noIdle, requireID bool
-	xoauth2                                   func(token string) bool // accepts an XOAUTH2 token; nil = not offered
-	sent                                      *IMAP                   // SMTP only: SaveToSent target
-	loginOnly                                 bool                    // SMTP only: AUTH LOGIN instead of PLAIN
+	move, uidplus, copyuid, noIdle, requireID, gmail bool
+	xoauth2                                          func(token string) bool // accepts an XOAUTH2 token; nil = not offered
+	sent                                             *IMAP                   // SMTP only: SaveToSent target
+	loginOnly                                        bool                    // SMTP only: AUTH LOGIN instead of PLAIN
 }
 
 // Option customises StartIMAP and StartSMTP; each option says which servers it affects.
@@ -69,18 +69,24 @@ type IMAP struct {
 	Addr string
 	User *imapmemserver.User
 
-	cfg         config
-	srv         *imapserver.Server
-	mu          sync.Mutex
-	ln          net.Listener
-	conn        map[*tconn]struct{}
-	sent        atomic.Int64 // bytes written to clients
-	drop        atomic.Int32 // FETCHes to let through + 1; 0 = no drop pending
-	cmds        atomic.Int64 // MOVE and COPY commands handled
-	dropAppend  atomic.Bool
-	dropExpunge atomic.Bool
-	logins      atomic.Int64
-	ids         []map[string]string // guarded by mu
+	cfg               config
+	srv               *imapserver.Server
+	mu                sync.Mutex
+	ln                net.Listener
+	conn              map[*tconn]struct{}
+	sent              atomic.Int64 // bytes written to clients
+	drop              atomic.Int32 // FETCHes to let through + 1; 0 = no drop pending
+	cmds              atomic.Int64 // MOVE and COPY commands handled
+	dropAppend        atomic.Bool
+	dropExpunge       atomic.Bool
+	dropLabels        atomic.Int32
+	labelStores       atomic.Int64
+	rejectGmailSearch atomic.Bool
+	rejectGmailSelect atomic.Bool
+	logins            atomic.Int64
+	ids               []map[string]string // guarded by mu
+	gmu               sync.Mutex
+	gm                []*GmailMessage // Gmail mode; guarded by gmu
 }
 
 // Logins is how many LOGIN and AUTHENTICATE commands the server has handled.
@@ -137,7 +143,9 @@ var idString = regexp.MustCompile(`"((?:[^"\\]|\\.)*)"`)
 // are parsed into lines and literals; only lines are ever touched. On the way out
 // it adds ID to (and with noIdle strips IDLE from) capability lists and, while
 // stripCopyUID is set, removes the COPYUID code from untagged OK lines. On the way
-// in it answers ID itself, since imapserver has no ID command.
+// in it answers ID itself, since imapserver has no ID command. In Gmail mode it
+// also adds X-GM-EXT-1, the Gmail folders' special use and the X-GM items of
+// FETCH responses, which it takes out of FETCH commands.
 type tconn struct {
 	net.Conn
 	fetch        atomic.Bool
@@ -153,6 +161,8 @@ type tconn struct {
 	wline        []byte // server line not yet complete
 	wlit         int    // server literal bytes still to pass through
 	gotID        atomic.Bool
+	gmWant       atomic.Int32 // X-GM items the current FETCH asks for
+	selected     atomic.Value // string: the selected folder
 }
 
 func (c *tconn) Read(p []byte) (int, error) {
@@ -170,6 +180,9 @@ func (c *tconn) Read(p []byte) (int, error) {
 			if m := idCmd.FindSubmatch(line); m != nil && !c.midCmd {
 				c.handleID(string(m[1]), string(m[2]))
 				continue
+			}
+			if c.s.cfg.gmail && !c.midCmd {
+				line = c.gmailCmd(line)
 			}
 			c.rlit = literalLen(line)
 		}
@@ -238,10 +251,16 @@ func (c *tconn) rewrite(b []byte) []byte {
 			if c.noIdle {
 				l = bytes.ReplaceAll(l, []byte(" IDLE"), nil)
 			}
+			if c.s.cfg.gmail {
+				l = append(l[:len(l):len(l)], " X-GM-EXT-1"...)
+			}
 			return append(l[:len(l):len(l)], " ID"...) // copy: l aliases line; ID is answered by Read
 		})
 		if c.stripCopyUID.Load() {
 			line = uidCodes.ReplaceAll(line, []byte("* OK "))
+		}
+		if c.s.cfg.gmail {
+			line = gmailList(c.gmailFetch(line, c.gmWant.Load()))
 		}
 		out = append(out, line...)
 	}
@@ -277,7 +296,11 @@ type session struct {
 // Copy drops the COPYUID data when COPYUID is disabled.
 func (s session) Copy(set imap.NumSet, dest string) (*imap.CopyData, error) {
 	s.s.cmds.Add(1)
-	d, err := s.Session.Copy(set, dest)
+	cp := s.Session.Copy
+	if s.s.cfg.gmail {
+		cp = s.gmailCopy
+	}
+	d, err := cp(set, dest)
 	if !s.s.cfg.copyuid {
 		d = nil
 	}
@@ -291,6 +314,9 @@ func (s session) Append(mb string, r imap.LiteralReader, o *imap.AppendOptions) 
 		s.conn.Conn.Close()
 		return nil, errors.New("dropped")
 	}
+	if err == nil && s.s.cfg.gmail {
+		s.s.addGmail(map[string]imap.UID{mb: d.UID}) // shortcut: Gmail also files it in All Mail; add when a test needs it
+	}
 	if !s.s.cfg.uidplus {
 		d = nil
 	}
@@ -303,7 +329,10 @@ func (s session) Expunge(w *imapserver.ExpungeWriter, uids *imap.UIDSet) error {
 		s.conn.Conn.Close()
 		return errors.New("dropped")
 	}
-	return s.Session.Expunge(w, uids)
+	if err := s.Session.Expunge(w, uids); err != nil || !s.s.cfg.gmail {
+		return err
+	}
+	return s.gmailPrune()
 }
 
 // Move cannot return nil data (MoveWriter is concrete), so the connection strips COPYUID.
@@ -313,7 +342,20 @@ func (s session) Move(w *imapserver.MoveWriter, set imap.NumSet, dest string) er
 		s.conn.stripCopyUID.Store(true)
 		defer s.conn.stripCopyUID.Store(false)
 	}
+	if s.s.cfg.gmail {
+		return s.gmailMove(w, set, dest)
+	}
 	return s.Session.(imapserver.SessionMove).Move(w, set, dest)
+}
+
+// Store sets flags on every folder of a Gmail message.
+func (s session) Store(w *imapserver.FetchWriter, set imap.NumSet, f *imap.StoreFlags, o *imap.StoreOptions) error {
+	if s.s.cfg.gmail {
+		if err := s.gmailShare(set, f); err != nil {
+			return err
+		}
+	}
+	return s.Session.Store(w, set, f, o)
 }
 
 // SetPassword changes alice's password, as a user does on the provider's website.
@@ -383,10 +425,17 @@ func (s session) Authenticate(mech string) (sasl.Server, error) {
 
 // Select refuses until ID was sent when RequireID is set.
 func (s session) Select(mb string, o *imap.SelectOptions) (*imap.SelectData, error) {
+	if s.s.rejectGmailSelect.CompareAndSwap(true, false) {
+		return nil, &imap.Error{Type: imap.StatusResponseTypeNo, Text: "mailbox temporarily unavailable"}
+	}
 	if s.s.cfg.requireID && !s.conn.gotID.Load() {
 		return nil, &imap.Error{Type: imap.StatusResponseTypeNo, Text: "Unsafe Login"}
 	}
-	return s.Session.Select(mb, o)
+	d, err := s.Session.Select(mb, o)
+	if err == nil {
+		s.conn.selected.Store(mb)
+	}
+	return d, err
 }
 
 // Idle polls for updates instead of using the memory backend's tracker, which
@@ -432,7 +481,8 @@ func (quietLog) Printf(format string, args ...any) {
 	}
 }
 
-// StartIMAP starts a server on 127.0.0.1:0 with INBOX, Sent, Trash and Archive.
+// StartIMAP starts a server on 127.0.0.1:0 with INBOX, Sent, Trash and Archive
+// (with Gmail, INBOX and the Gmail folders).
 func StartIMAP(t *testing.T, opts ...Option) *IMAP {
 	t.Helper()
 	s := &IMAP{cfg: config{move: true, uidplus: true, copyuid: true}, conn: map[*tconn]struct{}{}}
@@ -441,7 +491,11 @@ func StartIMAP(t *testing.T, opts ...Option) *IMAP {
 		o(&s.cfg)
 	}
 	s.User = imapmemserver.NewUser("alice", "secret")
-	for _, m := range []string{"INBOX", "Sent", "Trash", "Archive"} {
+	folders := []string{"INBOX", "Sent", "Trash", "Archive"}
+	if s.cfg.gmail {
+		folders = []string{"INBOX", GmailAllMail, GmailSent, GmailDrafts, GmailTrash, GmailSpam}
+	}
+	for _, m := range folders {
 		if err := s.User.Create(m, nil); err != nil {
 			t.Fatal(err)
 		}

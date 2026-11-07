@@ -38,9 +38,9 @@ func (e *OpsError) Error() string { return strings.Join(e.Problems, "; ") }
 var errNoDestination = errors.New("the destination folder no longer exists")
 
 type op struct {
-	id, msg, dst, dep, accountID int64
-	kind, payload                string
-	attempts                     int
+	id, msg, src, dst, dep, accountID int64
+	kind, payload                     string
+	attempts                          int
 }
 
 // PushOps sends the account's pending ops to the server in id order. Ops whose
@@ -82,14 +82,24 @@ func push(ctx context.Context, db *store.DB, c *imapclient.Client, accountID int
 	if res.Changes > 0 {
 		problems = append(problems, fmt.Sprintf("%d change(s) not applied: the message no longer exists", res.Changes))
 	}
-	rows, err := db.Query(ctx, `SELECT id, kind, message_id, dst_folder_id, payload, depends_on, attempts FROM ops
-		WHERE account_id = ? AND state = 'pending' AND `+purgeDue+` <= ?`+filter+` ORDER BY id`, accountID, now.UnixMilli())
+	rows, err := db.Query(ctx, `SELECT id FROM ops
+		WHERE account_id = ? AND state = 'pending' AND `+opReady+filter+` ORDER BY id`, accountID, now.UnixMilli())
 	if err != nil {
 		return err
 	}
-	for _, v := range rows.Values {
-		o := op{id: store.Int(v[0]), kind: store.Str(v[1]), msg: store.Int(v[2]), dst: store.Int(v[3]), accountID: accountID,
-			payload: store.Str(v[4]), dep: store.Int(v[5]), attempts: int(store.Int(v[6]))}
+	for _, row := range rows.Values {
+		// A preceding move can merge queues or rebase the next move's source.
+		current, err := db.Query(ctx, `SELECT id, kind, message_id, src_folder_id, dst_folder_id, payload, depends_on, attempts FROM ops
+			WHERE id = ? AND state = 'pending' AND `+opReady+filter, row[0], now.UnixMilli())
+		if err != nil {
+			return err
+		}
+		if len(current.Values) == 0 {
+			continue
+		}
+		v := current.Values[0]
+		o := op{id: store.Int(v[0]), kind: store.Str(v[1]), msg: store.Int(v[2]), src: store.Int(v[3]), dst: store.Int(v[4]), accountID: accountID,
+			payload: store.Str(v[5]), dep: store.Int(v[6]), attempts: int(store.Int(v[7]))}
 		problem, err := pushOp(ctx, db, c, o)
 		if o.kind == "purge" && err == nil && problem == "" {
 			if r, qerr := db.Query(ctx, "SELECT 1 FROM ops WHERE id = ? AND state = 'done'", o.id); qerr == nil && len(r.Values) > 0 {
@@ -130,10 +140,30 @@ func pushOp(ctx context.Context, db *store.DB, c *imapclient.Client, o op) (prob
 			return "", err
 		}
 	}
-	r, err := db.Query(ctx, `SELECT m.server_folder_id, m.server_uidvalidity, m.server_uid, f.name FROM messages m
-		JOIN folders f ON f.id = m.server_folder_id WHERE m.id = ?`, o.msg)
-	if err != nil || len(r.Values) == 0 {
-		return "", err // no server location: the move before it awaits its claim
+	if o.kind == "move" && c.Caps().Has(capGmail) && (!c.Caps().Has(imap.CapMove) || o.dst == 0 || o.src == 0) {
+		return pushGmailLabels(ctx, db, c, o)
+	}
+	// A flags change goes wherever the server has the message; a move or purge
+	// takes it from the folder it was queued from.
+	at, args := "", []any{o.msg}
+	if o.kind != "flags" {
+		at, args = " AND l.folder_id = ?", append(args, o.src)
+	}
+	r, err := db.Query(ctx, `SELECT l.folder_id, l.uidvalidity, l.uid, f.name FROM message_locations l
+		JOIN folders f ON f.id = l.folder_id WHERE l.message_id = ? AND l.uid IS NOT NULL`+at+" LIMIT 1", args...)
+	if err != nil {
+		return "", err
+	}
+	gmail := c.Caps().Has(capGmail)
+	if len(r.Values) == 0 {
+		if o.kind == "move" && gmail {
+			return lostSource(ctx, db, o, o.attempts > 0)
+		}
+		if gmail {
+			msg := "the message no longer has a server location, so the change could not be applied"
+			return msg, finish(ctx, db, o, "conflict", msg)
+		}
+		return "", nil // no server location: the move before it awaits its claim
 	}
 	src, srcValidity, uid, srcName := store.Int(r.Values[0][0]), uint32(store.Int(r.Values[0][1])),
 		imap.UID(store.Int(r.Values[0][2])), store.Str(r.Values[0][3])
@@ -206,6 +236,9 @@ func pushOp(ctx context.Context, db *store.DB, c *imapclient.Client, o op) (prob
 			return fail(ctx, db, o, err)
 		}
 		if len(got) == 0 {
+			if gmail {
+				return lostSource(ctx, db, o, true)
+			}
 			return "", moved(ctx, db, o, 0, 0)
 		}
 		// Without MOVE, the last attempt may have got through COPY and STORE but
@@ -240,7 +273,36 @@ func pushOp(ctx context.Context, db *store.DB, c *imapclient.Client, o op) (prob
 	if validity != dstValidity { // a COPYUID from a folder generation we have not synced is no use
 		dstUID = 0
 	}
+	if dstUID == 0 && gmail {
+		return lostSource(ctx, db, o, true)
+	}
 	return "", moved(ctx, db, o, validity, dstUID)
+}
+
+// lostSource ends a Gmail move whose source folder no longer has the message,
+// or whose MOVE got no usable COPYUID, from what Godwit knows of the server
+// rather than by sending it again. Gmail keeps a message in a folder under
+// one UID, so a known location in the destination means the move is done.
+// Else, when a MOVE of it may have reached the server (sent), it awaits its
+// claim there by X-GM-MSGID; when none can have, another client took it out
+// of the source first, and the move is a conflict. A message the server has
+// nowhere else waits for the claim of the move before it.
+func lostSource(ctx context.Context, db *store.DB, o op, sent bool) (string, error) {
+	r, err := db.Query(ctx, `SELECT count(*), coalesce(sum(folder_id = ?), 0) FROM message_locations
+		WHERE message_id = ? AND folder_id != ? AND uid IS NOT NULL`, o.dst, o.msg, o.src)
+	if err != nil {
+		return "", err
+	}
+	switch {
+	case store.Int(r.Values[0][1]) > 0:
+		_, err := db.Transaction(ctx, append(unlocate(o.msg, o.src),
+			sqlite.Statement{SQL: "UPDATE ops SET state = 'done', last_error = NULL WHERE id = ?", Args: []any{o.id}}))
+		return "", err
+	case sent:
+		return "", moved(ctx, db, o, 0, 0)
+	}
+	msg := "the message left the folder it was moved from on the server before the move was sent"
+	return msg, finish(ctx, db, o, "conflict", msg)
 }
 
 // copyIn reports whether folder holds a message with msg's Message-ID and
@@ -353,44 +415,34 @@ func single(s imap.NumSet) uint32 {
 }
 
 // moved records a move the server accepted: with a COPYUID the message's server
-// location becomes the destination; without one it is cleared until fetch claims
-// the arrival (Message-ID and size) in the destination. A row already at the
-// COPYUID is the same server message (Gmail's All Mail copy of mail archived
-// there, #506): it is deleted, after its labels (by row: a copy without label_fp
-// gets no stash from the trigger), reply drafts, rule runs and Wit citations go
-// to the moved row. Its queued ops are not carried over, whose order against the
-// moved row's cannot be told: they lose their message and the next push reports
-// them as not applied. events_log stays history, as on every other delete.
+// location in the source folder becomes the destination; without one it is
+// cleared until fetch claims the arrival (X-GM-MSGID, else Message-ID and size)
+// in the destination. Its other folders keep their server locations. Another
+// row already at the COPYUID is the same server message (Gmail's All Mail copy
+// of mail archived there, synced before X-GM-MSGID was, #506): it is merged
+// into the moved one (ADR 0034), its queued ops with it.
 func moved(ctx context.Context, db *store.DB, o op, validity, uid uint32) error {
-	stmts := []sqlite.Statement{
-		{SQL: "UPDATE messages SET server_folder_id = NULL, server_uidvalidity = NULL, server_uid = NULL WHERE id = ?", Args: []any{o.msg}},
-		{SQL: "UPDATE ops SET state = 'awaiting_claim', last_error = NULL WHERE id = ?", Args: []any{o.id}},
-	}
+	stmts := append(unlocate(o.msg, o.src),
+		sqlite.Statement{SQL: "UPDATE ops SET state = 'awaiting_claim', last_error = NULL WHERE id = ?", Args: []any{o.id}})
 	if uid != 0 {
-		ids, tids, err := doomed(ctx, db, "server_folder_id = ? AND server_uid = ? AND id != ?", o.dst, uid, o.msg)
+		ids, _, err := doomed(ctx, db, "EXISTS (SELECT 1 FROM message_locations WHERE message_id = messages.id AND folder_id = ? AND uid = ?) AND id != ?", o.dst, uid, o.msg)
 		if err != nil {
 			return err
 		}
-		stmts = nil
-		if len(ids) > 0 { // at most one: UNIQUE(server_folder_id, server_uid)
-			cp := ids[0]
-			stmts = append(stmts,
-				// As messages_label_stash hands labels to other copies: a manual label beats a rule's.
-				sqlite.Statement{SQL: `INSERT INTO message_labels(message_id, label_id, source, active)
-					SELECT ?, label_id, source, active FROM message_labels WHERE message_id = ? AND source IN ('manual', 'rule')
-					ON CONFLICT(message_id, label_id) DO UPDATE SET source = excluded.source, active = excluded.active
-					WHERE excluded.source = 'manual' OR message_labels.source != 'manual'`, Args: []any{o.msg, cp}},
-				sqlite.Statement{SQL: "UPDATE drafts SET source_message_id = ? WHERE source_message_id = ?", Args: []any{o.msg, cp}},
-				// UNIQUE(rule_id, message_id): a rule that ran on both keeps the moved row's run.
-				sqlite.Statement{SQL: "UPDATE OR IGNORE rule_runs SET message_id = ? WHERE message_id = ?", Args: []any{o.msg, cp}},
-				sqlite.Statement{SQL: "UPDATE run_citations SET message_id = ? WHERE message_id = ?", Args: []any{o.msg, cp}},
-				sqlite.Statement{SQL: "DELETE FROM messages WHERE id = ?", Args: []any{cp}})
+		stmts = append(unlocate(o.msg, o.src), sqlite.Statement{SQL: "UPDATE ops SET state = 'done', last_error = NULL WHERE id = ?", Args: []any{o.id}})
+		if len(ids) > 0 { // at most one: UNIQUE(folder_id, uid)
+			m, tids, err := merge(ctx, db, o.msg, ids)
+			if err != nil {
+				return err
+			}
+			stmts = append(append(stmts, m...), tidyThreads(o.accountID, tids)...)
 		}
-		stmts = append(stmts,
-			sqlite.Statement{SQL: "UPDATE messages SET server_folder_id = ?, server_uidvalidity = ?, server_uid = ? WHERE id = ?", Args: []any{o.dst, validity, uid, o.msg}},
-			sqlite.Statement{SQL: "UPDATE ops SET state = 'done', last_error = NULL WHERE id = ?", Args: []any{o.id}})
-		if len(tids) > 0 {
-			stmts = append(stmts, tidyThreads(o.accountID, tids)...)
+		// Trash/Spam removes every other Gmail membership before a queued flag runs.
+		stmts = append(stmts, sqlite.Statement{SQL: `UPDATE message_locations SET uidvalidity = NULL, uid = NULL
+			WHERE message_id = ? AND folder_id != ? AND EXISTS (SELECT 1 FROM folders WHERE id = ? AND role IN ('trash', 'junk'))`, Args: []any{o.msg, o.dst, o.dst}}, dropUnseen(o.msg))
+		stmts = append(stmts, locate(o.msg, o.dst, validity, uid)...)
+		if o.src == 0 {
+			stmts = append(stmts, settle(o.msg)...)
 		}
 	}
 	_, err := db.Transaction(ctx, stmts)
@@ -398,7 +450,8 @@ func moved(ctx context.Context, db *store.DB, o op, validity, uid uint32) error 
 }
 
 // finish sets o's state. A move that ends failed or conflict puts the message
-// back in the folder the server has it in, unless another move of it is queued.
+// back in the folders the server has it in (settle); a move queued after it
+// from its destination then moves it from its source.
 func finish(ctx context.Context, db *store.DB, o op, state, lastError string) error {
 	where := "id = ?"
 	if o.kind == "purge" {
@@ -406,9 +459,10 @@ func finish(ctx context.Context, db *store.DB, o op, state, lastError string) er
 	}
 	stmts := []sqlite.Statement{{SQL: "UPDATE ops SET state = ?, last_error = ? WHERE " + where, Args: []any{state, nullable(lastError), o.id}}}
 	if o.kind == "move" && (state == "failed" || state == "conflict") {
-		stmts = append(stmts, sqlite.Statement{SQL: `UPDATE messages SET folder_id = server_folder_id, entered_at = unixepoch()
-			WHERE id = ? AND server_folder_id IS NOT NULL AND folder_id != server_folder_id AND NOT EXISTS (SELECT 1 FROM ops
-				WHERE message_id = messages.id AND kind = 'move' AND state IN ('pending', 'awaiting_claim'))`, Args: []any{o.msg}})
+		stmts = append(append(stmts,
+			sqlite.Statement{SQL: `UPDATE ops SET src_folder_id = ? WHERE message_id = ? AND kind IN ('move', 'purge') AND state = 'pending'
+				AND src_folder_id = ? AND id > ?`, Args: []any{o.src, o.msg, o.dst, o.id}}),
+			settle(o.msg)...)
 	}
 	_, err := db.Transaction(ctx, stmts)
 	return err

@@ -24,6 +24,10 @@ type MessageText struct {
 // text a model reads, without what the reader never shows. Unlike GetMessage it
 // sanitizes no HTML and reads or downloads no attachment or inline image.
 func (s *Service) GetMessageText(ctx context.Context, id int64) (MessageText, error) {
+	id, err := s.resolveID(ctx, id)
+	if err != nil {
+		return MessageText{}, err
+	}
 	rows, err := s.db.Query(ctx, "SELECT "+msgCols+", m.account_id, m.reply_to, m.body_text, m.body_truncated, m.body_html FROM messages m WHERE m.id = ?", id)
 	if err != nil {
 		return MessageText{}, err
@@ -32,10 +36,10 @@ func (s *Service) GetMessageText(ctx context.Context, id int64) (MessageText, er
 		return MessageText{}, fmt.Errorf("message %d not found", id)
 	}
 	r := rows.Values[0]
-	m := MessageText{MessageSummary: scanSummary(r), AccountID: store.Int(r[15]), ReplyTo: store.Str(r[16]),
-		Truncated: store.Int(r[18]) != 0}
-	body := Message{Text: store.Str(r[17])}
-	if raw := store.Str(r[19]); raw != "" {
+	m := MessageText{MessageSummary: scanSummary(r), AccountID: store.Int(r[msgColCount]), ReplyTo: store.Str(r[msgColCount+1]),
+		Truncated: store.Int(r[msgColCount+3]) != 0}
+	body := Message{Text: store.Str(r[msgColCount+2])}
+	if raw := store.Str(r[msgColCount+4]); raw != "" {
 		body.HTML, _, _ = mail.Sanitize(raw, nil, false) // as mailForModel: the HTML the reader shows
 	}
 	m.Text = modelBody(body)

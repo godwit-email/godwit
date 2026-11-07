@@ -109,6 +109,7 @@ MessageGist
 MessageLabels
 ModelName
 Move
+MoveFrom
 MoveToRole
 NewConversation
 NewDraft

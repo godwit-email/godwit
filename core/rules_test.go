@@ -277,7 +277,7 @@ func TestRuleAccountScope(t *testing.T) {
 
 func TestRuleConditions(t *testing.T) {
 	m := ruleMail{from: "AWS <billing@aws.example>", subject: "Your Invoice", to: []string{"Alice <alice@example.com>", "team@example.com"},
-		body: "Amount due: $12", attachments: true, labels: []string{"u1"}, folderID: 7, folderRole: "inbox",
+		body: "Amount due: $12", attachments: true, labels: []string{"u1"}, folders: []string{"7", "inbox"},
 		date: time.Now().AddDate(0, 0, -10).Unix(), now: time.Now().Unix()}
 	for _, tc := range []struct {
 		field, op, value string
@@ -356,7 +356,7 @@ func (e *syncEnv) flagsOf(t *testing.T, mid string) string {
 
 func (e *syncEnv) folderOf(t *testing.T, mid string) int64 {
 	t.Helper()
-	return store.Int(e.rows(t, "SELECT folder_id FROM messages WHERE id = ?", e.idOf(t, mid))[0][0])
+	return store.Int(e.rows(t, "SELECT "+shownCol+" FROM messages WHERE id = ?", e.idOf(t, mid))[0][0])
 }
 
 // The fields a condition reads come from the stored message.

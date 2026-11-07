@@ -591,24 +591,25 @@ type ruleMail struct {
 	to                  []string // To and Cc
 	attachments         bool
 	labels              []string // the slugs of the labels on it
-	folderID            int64
-	folderRole          string
-	date, now           int64 // unix seconds: the message's date, and when it was read
+	folders             []string // the IDs and roles of the folders it shows in
+	date, now           int64    // unix seconds: the message's date, and when it was read
 }
 
 // ruleMail reads the message as it is now; ok is false when it is gone.
 func (s *Service) ruleMail(ctx context.Context, id int64) (m ruleMail, ok bool, err error) {
-	rows, err := s.db.Query(ctx, `SELECT m.from_addr, m.subject, m.body_text, m.to_addrs, m.cc_addrs, m.has_attachments, m.folder_id, COALESCE(`+folderRoleSQL+`, ''),
+	rows, err := s.db.Query(ctx, `SELECT m.from_addr, m.subject, m.body_text, m.to_addrs, m.cc_addrs, m.has_attachments,
+		(SELECT json_group_array(v) FROM (SELECT CAST(f.id AS TEXT) AS v FROM message_locations l JOIN folders f ON f.id = l.folder_id WHERE l.message_id = m.id AND l.shown
+			UNION SELECT `+folderRoleSQL+` FROM message_locations l JOIN folders f ON f.id = l.folder_id WHERE l.message_id = m.id AND l.shown)),
 		(SELECT json_group_array(l.slug) FROM message_labels ml JOIN labels l ON l.id = ml.label_id WHERE ml.message_id = m.id AND ml.active = 1), m.date, m.account_id
-		FROM messages m JOIN folders f ON f.id = m.folder_id WHERE m.id = ?`, id)
+		FROM messages m WHERE m.id = ? AND `+shownFolder+` IS NOT NULL`, id)
 	if err != nil || len(rows.Values) == 0 {
 		return m, false, err
 	}
 	v := rows.Values[0]
 	return ruleMail{from: store.Str(v[0]), subject: store.Str(v[1]), body: store.Str(v[2]),
 		to: append(jsonList(store.Str(v[3])), jsonList(store.Str(v[4]))...), attachments: store.Int(v[5]) != 0,
-		folderID: store.Int(v[6]), folderRole: store.Str(v[7]), labels: jsonList(store.Str(v[8])),
-		date: store.Int(v[9]), account: store.Int(v[10]), now: s.clk().Now().Unix()}, true, nil
+		folders: jsonList(store.Str(v[6])), labels: jsonList(store.Str(v[7])),
+		date: store.Int(v[8]), account: store.Int(v[9]), now: s.clk().Now().Unix()}, true, nil
 }
 
 // matches evaluates the account and the conditions; none matches every
@@ -651,8 +652,7 @@ func (c RuleCondition) matches(m ruleMail) bool {
 	case FieldLabel:
 		return slices.Contains(m.labels, c.Value) != (c.Op == OpNotContains)
 	case FieldFolder:
-		in := c.Value == m.folderRole || c.Value == strconv.FormatInt(m.folderID, 10)
-		return in != (c.Op == OpNotContains)
+		return slices.Contains(m.folders, c.Value) != (c.Op == OpNotContains) // in some folder, or in none
 	case FieldAge:
 		n, _ := strconv.Atoi(c.Value)
 		return m.date < m.now-int64(n)*86400
@@ -704,9 +704,10 @@ func (s *Service) startRules(ctx context.Context) error {
 var rulesHook func(stage string) error
 
 // The events rules run on, logged in the transaction that makes them true:
-// new mail at import, a label put on by hand (SetLabel) or by the classifier
-// (labelWrites; never by a rule, so a label rule fires one level deep), the
-// first verdict on new mail (import or scanner; never a re-scan), and the
+// new mail (at the end of its sync round, its folders known), a label put on
+// by hand (SetLabel) or by the classifier (labelWrites; never by a rule, so a
+// label rule fires one level deep), the first verdict on new mail (sync or
+// scanner; never a re-scan), and the
 // day's first sync (logDaily).
 const (
 	eventLabelApplied    = "label.applied"
@@ -757,8 +758,8 @@ func (s *Service) runDaily(ctx context.Context, seq int64) error {
 	if len(rules) == 0 {
 		return nil
 	}
-	rows, err := s.db.Query(ctx, `SELECT m.id FROM messages m JOIN folders f ON f.id = m.folder_id
-		WHERE COALESCE(f.role, '') NOT IN ('sent', 'drafts') ORDER BY m.id`)
+	rows, err := s.db.Query(ctx, `SELECT m.id FROM messages m WHERE `+shownFolder+` IS NOT NULL
+		AND NOT `+shownIn("(SELECT id FROM folders WHERE role IN ('sent', 'drafts'))")+` ORDER BY m.id`)
 	if err != nil {
 		return err
 	}
@@ -834,7 +835,7 @@ func (s *Service) runRules(ctx context.Context, ev hookEvent) error {
 		return nil
 	}
 	m, ok, err := s.ruleMail(ctx, ev.messageID)
-	if err != nil || !ok || m.folderRole == "sent" || m.folderRole == "drafts" {
+	if err != nil || !ok || slices.Contains(m.folders, "sent") || slices.Contains(m.folders, "drafts") {
 		return err
 	}
 	rules, err := s.rules(ctx, true)
@@ -1090,12 +1091,12 @@ func (s *Service) runForward(ctx context.Context, r Rule, runID int64, i int, ms
 
 // ruleTarget loads the message an action works on; ok is false when it is gone.
 func (s *Service) ruleTarget(ctx context.Context, id int64) (acc int64, t target, ok bool, err error) {
-	rows, err := s.db.Query(ctx, "SELECT account_id, thread_id, folder_id, flags, from_addr FROM messages WHERE id = ?", id)
+	rows, err := s.db.Query(ctx, "SELECT m.account_id, m.thread_id, "+shownFolder+", m.flags, m.from_addr, "+shownAts+" FROM messages m WHERE m.id = ?", id)
 	if err != nil || len(rows.Values) == 0 {
 		return 0, t, false, err
 	}
 	v := rows.Values[0]
-	return store.Int(v[0]), target{id: id, thread: store.Int(v[1]), folder: store.Int(v[2]), flags: store.Str(v[3]), from: store.Str(v[4])}, true, nil
+	return store.Int(v[0]), target{id: id, thread: store.Int(v[1]), folder: store.Int(v[2]), flags: store.Str(v[3]), from: store.Str(v[4]), in: scanShownAts(v[5])}, true, nil
 }
 
 // actionWrites is an action's statements and the prior state they change.
@@ -1154,15 +1155,29 @@ func (s *Service) ruleAction(ctx context.Context, a RuleAction, acc int64, t tar
 		stmts, err := flagWrites(acc, []target{t}, []string{ruleFlags[a.Kind]}, nil)
 		return actionWrites{prior: p, writes: stmts}, "", err
 	case ActionArchive, ActionJunk, ActionTrash:
-		to, err := s.roleFolder(ctx, acc, a.Kind)
+		moving := []target{t}
+		var to int64
+		var err error
+		if a.Kind == ActionArchive {
+			moving, to, err = s.archiveTargets(ctx, acc, moving, 0)
+		} else {
+			to, err = s.roleFolder(ctx, acc, a.Kind)
+		}
 		if _, none := errors.AsType[*ErrNoRoleFolder](err); none {
 			return actionWrites{}, RuleFailNoFolder, nil
 		}
 		if err != nil {
 			return actionWrites{}, "", err
 		}
-		_, stmts := moveWrites(acc, []target{t}, to)
-		return actionWrites{prior: rulePrior{From: t.folder, To: to}, writes: stmts}, "", nil
+		if len(moving) == 0 {
+			return actionWrites{prior: rulePrior{From: to, To: to}}, "", nil
+		}
+		binned, from := a.Kind != ActionArchive, t.folder
+		if out := t.leaves(0, to, binned); len(out) > 0 {
+			from = out[0]
+		}
+		_, stmts := moveWrites(acc, []target{t}, 0, to, binned, s.clk().Now())
+		return actionWrites{prior: rulePrior{From: from, To: to}, writes: stmts}, "", nil
 	case ActionBlock:
 		addr := gomail.AddrKey(t.from)
 		blocked, err := s.readList(ctx, blockedSenders)
@@ -1428,8 +1443,23 @@ func (s *Service) undoAction(ctx context.Context, runID int64, idx int, kind str
 		if err != nil {
 			return false, err
 		}
-		if ok = t.folder == p.To && len(rows.Values) > 0; ok {
-			_, stmts = moveWrites(acc, []target{t}, p.From)
+		atDestination := slices.ContainsFunc(t.in, func(l shownAt) bool { return l.folder == p.To })
+		if kind == ActionArchive && p.To == 0 {
+			atDestination = !slices.ContainsFunc(t.in, func(l shownAt) bool { return l.folder == p.From })
+		}
+		if ok = atDestination && len(rows.Values) > 0; ok {
+			if kind == ActionArchive {
+				stmts, err = s.archiveUndoWrites(ctx, acc, []target{t}, p.To, p.From)
+				if err != nil {
+					return false, err
+				}
+				break
+			}
+			binned, err := s.binned(ctx, acc, p.From)
+			if err != nil {
+				return false, err
+			}
+			_, stmts = moveWrites(acc, []target{t}, p.To, p.From, binned, s.clk().Now())
 		}
 	}
 	state := RuleActionUndone

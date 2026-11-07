@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -36,7 +37,8 @@ func seedMessage(t *testing.T, db *store.DB) {
 	for _, s := range []string{
 		"INSERT INTO accounts(id, email) VALUES (1, 'a@b.c')",
 		"INSERT INTO folders(id, account_id, name) VALUES (1, 1, 'INBOX')",
-		"INSERT INTO messages(id, account_id, folder_id, subject, from_addr, body_text) VALUES (1, 1, 1, 'hello', 'x@y.z', 'alpha content')",
+		"INSERT INTO messages(id, account_id, subject, from_addr, body_text) VALUES (1, 1, 'hello', 'x@y.z', 'alpha content')",
+		"INSERT INTO message_locations(message_id, folder_id, shown, entered_at) VALUES (1, 1, 1, 0)",
 	} {
 		_, err := db.Execute(ctx, s)
 		require.NoError(t, err)
@@ -91,7 +93,7 @@ func TestForeignKeysCascade(t *testing.T) {
 
 	_, err = db.Execute(ctx, "DELETE FROM accounts WHERE id = 1")
 	require.NoError(t, err)
-	for _, tb := range []string{"accounts", "folders", "messages", "attachments", "messages_fts"} {
+	for _, tb := range []string{"accounts", "folders", "messages", "message_locations", "attachments", "messages_fts"} {
 		assert.Zero(t, count(t, db, tb), tb)
 	}
 }
@@ -122,7 +124,7 @@ func TestIDsNeverReused(t *testing.T) {
 	seedMessage(t, db)
 	_, err := db.Execute(ctx, "DELETE FROM messages WHERE id = 1")
 	require.NoError(t, err)
-	res, err := db.Execute(ctx, "INSERT INTO messages(account_id, folder_id) VALUES (1, 1)")
+	res, err := db.Execute(ctx, "INSERT INTO messages(account_id) VALUES (1)")
 	require.NoError(t, err)
 	assert.Greater(t, res.LastInsertID, int64(1), "a deleted message's id must never point at another message")
 }
@@ -295,7 +297,7 @@ func TestMigration17(t *testing.T) {
 	db, err = store.Open(ctx, path)
 	require.NoError(t, err)
 	defer db.Close()
-	rows, err := db.Query(ctx, "SELECT m.entered_at, f.role_since, unixepoch() FROM messages m JOIN folders f ON f.id = m.folder_id")
+	rows, err := db.Query(ctx, "SELECT l.entered_at, f.role_since, unixepoch() FROM message_locations l JOIN folders f ON f.id = l.folder_id")
 	require.NoError(t, err)
 	now := store.Int(rows.Values[0][2])
 	assert.InDelta(t, now, store.Int(rows.Values[0][0]), 5, "mail already there counts from the upgrade, never as old")
@@ -560,5 +562,67 @@ func TestMessageChildrenIndexed(t *testing.T) {
 		rows, err := db.Query(ctx, "EXPLAIN QUERY PLAN SELECT 1 FROM "+table+" WHERE message_id = 1")
 		require.NoError(t, err)
 		assert.Contains(t, fmt.Sprint(rows.Values), index)
+	}
+}
+
+// Each message becomes its locations (ADR 0034): one shown where the user
+// sees it, holding the server location when the server has it there, and,
+// while a move waits to be pushed, a hidden one where the server has it.
+// A queued move or purge takes the folder it moves from: the server's, or
+// the destination of the move queued before it.
+func TestMigrationMessageLocations(t *testing.T) {
+	all := store.Migrations
+	i := slices.IndexFunc(all, func(m []string) bool { return strings.Contains(strings.Join(m, "\n"), "message_locations") })
+	require.Positive(t, i)
+	path := filepath.Join(t.TempDir(), "godwit.db")
+	store.Migrations = all[:i]
+	db, err := store.Open(ctx, path)
+	store.Migrations = all
+	require.NoError(t, err)
+	for _, s := range []string{
+		"INSERT INTO accounts(id, email) VALUES (1, 'a@b.c')",
+		"INSERT INTO folders(id, account_id, name, uidvalidity) VALUES (1, 1, 'INBOX', 7), (2, 1, 'Archive', 7), (3, 1, 'Trash', 7)",
+		`INSERT INTO messages(id, account_id, folder_id, server_folder_id, server_uidvalidity, server_uid, entered_at, date) VALUES
+			(1, 1, 1, 1, 7, 10, 100, 1000),
+			(2, 1, 2, 1, 7, 11, 200, 2000),
+			(3, 1, 2, NULL, NULL, NULL, 300, 3000),
+			(4, 1, 3, 3, 7, 12, 400, 4000),
+			(5, 1, 3, 1, 7, 13, 500, 5000)`,
+		`INSERT INTO ops(id, account_id, message_id, kind, dst_folder_id, state) VALUES
+			(1, 1, 2, 'move', 2, 'pending'),
+			(2, 1, 3, 'move', 2, 'awaiting_claim'),
+			(3, 1, 4, 'purge', 3, 'pending'),
+			(4, 1, 1, 'flags', NULL, 'pending'),
+			(5, 1, 1, 'move', 2, 'done'),
+			(6, 1, 5, 'move', 2, 'pending'),
+			(7, 1, 5, 'move', 3, 'pending')`,
+	} {
+		_, err := db.Execute(ctx, s)
+		require.NoError(t, err)
+	}
+	require.NoError(t, db.Close())
+
+	db, err = store.Open(ctx, path)
+	require.NoError(t, err)
+	defer db.Close()
+	rows, err := db.Query(ctx, "SELECT message_id, folder_id, shown, uidvalidity, uid, entered_at, date FROM message_locations ORDER BY message_id, folder_id")
+	require.NoError(t, err)
+	assert.Equal(t, [][]any{
+		{int64(1), int64(1), int64(1), int64(7), int64(10), int64(100), int64(1000)},
+		{int64(2), int64(1), int64(0), int64(7), int64(11), int64(200), int64(2000)},
+		{int64(2), int64(2), int64(1), nil, nil, int64(200), int64(2000)},
+		{int64(3), int64(2), int64(1), nil, nil, int64(300), int64(3000)},
+		{int64(4), int64(3), int64(1), int64(7), int64(12), int64(400), int64(4000)},
+		{int64(5), int64(1), int64(0), int64(7), int64(13), int64(500), int64(5000)},
+		{int64(5), int64(3), int64(1), nil, nil, int64(500), int64(5000)},
+	}, rows.Values)
+	rows, err = db.Query(ctx, "SELECT id, src_folder_id FROM ops ORDER BY id")
+	require.NoError(t, err)
+	assert.Equal(t, [][]any{
+		{int64(1), int64(1)}, {int64(2), nil}, {int64(3), int64(3)}, {int64(4), nil}, {int64(5), nil}, {int64(6), int64(1)}, {int64(7), int64(2)},
+	}, rows.Values)
+	for _, col := range []string{"folder_id", "server_folder_id", "server_uidvalidity", "server_uid", "entered_at"} {
+		_, err := db.Query(ctx, "SELECT "+col+" FROM messages")
+		assert.Error(t, err, "messages.%s is gone", col)
 	}
 }

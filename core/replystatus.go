@@ -112,7 +112,7 @@ func (s *Service) mailPeople(ctx context.Context, roles map[int64]string) (mailP
 			sent = append(sent, id)
 		}
 	}
-	rows, err := s.db.Query(ctx, "SELECT from_addr, to_addrs, cc_addrs FROM messages WHERE folder_id IN (SELECT value FROM json_each(?)) ORDER BY date DESC LIMIT ?", intList(sent), sentMailRead)
+	rows, err := s.db.Query(ctx, "SELECT from_addr, to_addrs, cc_addrs FROM messages m WHERE "+shownIn("(SELECT value FROM json_each(?))")+" ORDER BY date DESC LIMIT ?", intList(sent), sentMailRead)
 	if err != nil {
 		return p, err
 	}
@@ -142,7 +142,7 @@ func (s *Service) replyStatuses(ctx context.Context, now int64) (map[int64]reply
 		return nil, err
 	}
 	rows, err := s.db.Query(ctx, `SELECT m.thread_id, m.id, COALESCE(m.message_id, ''), COALESCE(m.date, 0), m.from_addr, m.to_addrs, m.cc_addrs, m.reply_to,
-		m.list_id, m.list_unsubscribe, m.auto_submitted, m.precedence, m.flags, m.folder_id FROM messages m JOIN threads t ON t.id = m.thread_id
+		m.list_id, m.list_unsubscribe, m.auto_submitted, m.precedence, m.flags, `+shownFolders+` FROM messages m JOIN threads t ON t.id = m.thread_id
 		WHERE t.last_date >= ? AND `+notPurgedCond+` ORDER BY m.id`, cutoff)
 	if err != nil {
 		return nil, err
@@ -150,10 +150,7 @@ func (s *Service) replyStatuses(ctx context.Context, now int64) (map[int64]reply
 	threads := map[int64]map[string]*logicalMail{}
 	for _, r := range rows.Values {
 		tid, id, mid := store.Int(r[0]), store.Int(r[1]), store.Str(r[2])
-		key := mid
-		if key == "" {
-			key = "\x00" + store.Str(r[1]) // no Message-ID: always its own message
-		}
+		key := "\x00" + store.Str(r[1])
 		if threads[tid] == nil {
 			threads[tid] = map[string]*logicalMail{}
 		}
@@ -163,7 +160,9 @@ func (s *Service) replyStatuses(ctx context.Context, now int64) (map[int64]reply
 				replyTo: store.Str(r[7]), listID: store.Str(r[8]), listUnsub: store.Str(r[9]), auto: store.Str(r[10]), precedence: store.Str(r[11])}
 			threads[tid][key] = m
 		}
-		m.roles = append(m.roles, roles[store.Int(r[13])])
+		for _, folder := range scanFolderIDs(r[13]) {
+			m.roles = append(m.roles, roles[folder])
+		}
 		m.answered = m.answered || strings.Contains(store.Str(r[12]), `\Answered`)
 	}
 	marks, err := s.archiveMarks(ctx)

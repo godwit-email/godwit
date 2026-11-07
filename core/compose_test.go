@@ -29,7 +29,7 @@ type sendEnv struct {
 
 // newSendEnv is newSyncEnv with access to the SMTP inbox. With autoSave the SMTP
 // server also files every accepted message into the IMAP Sent folder.
-func newSendEnv(t *testing.T, autoSave bool) *sendEnv {
+func newSendEnv(t *testing.T, autoSave bool, imapOpts ...testmail.Option) *sendEnv {
 	t.Helper()
 	keyring.MockInit()
 	clock := useTestClock(t)
@@ -37,7 +37,7 @@ func newSendEnv(t *testing.T, autoSave bool) *sendEnv {
 	s, err := New(bg, Options{DataDir: dir, ImageClient: loopbackImageClient()})
 	require.NoError(t, err)
 	t.Cleanup(func() { s.Close() })
-	im := testmail.StartIMAP(t)
+	im := testmail.StartIMAP(t, imapOpts...)
 	var opts []testmail.SMTPOption
 	if autoSave {
 		opts = append(opts, testmail.SaveToSent(im))

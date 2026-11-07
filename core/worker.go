@@ -38,7 +38,7 @@ type wakeSource int
 
 const (
 	wakeOutbox wakeSource = iota // the next queued outbox item comes due
-	wakePurge                    // the next purge's undo window ends
+	wakeOps                      // the next purge or archive undo window ends
 	wakeSources
 )
 

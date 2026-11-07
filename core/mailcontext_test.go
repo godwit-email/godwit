@@ -28,10 +28,30 @@ func newMailContextService(t *testing.T) *Service {
 
 func addMessage(t *testing.T, s *Service, subject, from, text, html string, date int64) int64 {
 	t.Helper()
-	res, err := s.db.Execute(t.Context(), `INSERT INTO messages(account_id, folder_id, subject, from_addr, date, body_text, body_html, snippet, has_attachments)
-		VALUES (1, 1, ?, ?, ?, ?, ?, 'snip', 0)`, subject, from, date, text, html)
+	res, err := s.db.Execute(t.Context(), `INSERT INTO messages(account_id, subject, from_addr, date, body_text, body_html, snippet, has_attachments)
+		VALUES (1, ?, ?, ?, ?, ?, 'snip', 0)`, subject, from, date, text, html)
 	require.NoError(t, err)
+	showIn(t, s, res.LastInsertID, 1)
 	return res.LastInsertID
+}
+
+// Test SQL on messages (unaliased) for a message's locations (ADR 0034): the
+// folder it shows in, and the folder, UIDVALIDITY and UID the server has it at.
+const (
+	shownCol    = "(SELECT folder_id FROM message_locations WHERE message_id = messages.id AND shown)"
+	serverCol   = "(SELECT folder_id FROM message_locations WHERE message_id = messages.id AND uid IS NOT NULL)"
+	validityCol = "(SELECT uidvalidity FROM message_locations WHERE message_id = messages.id AND uid IS NOT NULL)"
+	uidCol      = "(SELECT uid FROM message_locations WHERE message_id = messages.id AND uid IS NOT NULL)"
+	enteredCol  = "(SELECT entered_at FROM message_locations WHERE message_id = messages.id AND shown)"
+)
+
+// showIn shows message id in folder, with no server location, as a row a
+// test inserts has.
+func showIn(t *testing.T, s *Service, id, folder int64) {
+	t.Helper()
+	_, err := s.db.Execute(t.Context(), `INSERT INTO message_locations(message_id, folder_id, shown, entered_at, date)
+		SELECT id, ?, 1, unixepoch(), date FROM messages WHERE id = ?`, folder, id)
+	require.NoError(t, err)
 }
 
 // bodyRunes counts the body of a block: after the header's blank line, up to the close tag.

@@ -275,11 +275,10 @@ func (s *Service) newViewEval(ctx context.Context) (*viewEval, error) {
 	}
 	slices.Sort(out)
 	inSent := strings.Join(sent, ",")
-	unread := `instr(COALESCE(m.flags, ''), '\Seen') = 0 AND m.folder_id NOT IN (` + inSent + `) AND NOT (COALESCE(m.message_id, '') != '' AND EXISTS (SELECT 1 FROM messages sc
-		WHERE sc.thread_id = m.thread_id AND sc.message_id = m.message_id AND sc.folder_id IN (` + inSent + `)))`
+	unread := `instr(COALESCE(m.flags, ''), '\Seen') = 0 AND NOT ` + shownIn("("+inSent+")")
 	notIn := notPurgedCond
 	if len(out) > 0 {
-		notIn += " AND m.folder_id NOT IN (" + strings.Join(out, ",") + ")"
+		notIn += " AND NOT " + shownIn("("+strings.Join(out, ",")+")")
 	}
 	people, err := s.mailPeople(ctx, roles)
 	if err != nil {
@@ -298,7 +297,7 @@ func (s *Service) newViewEval(ctx context.Context) (*viewEval, error) {
 	}
 	const bare = `CASE WHEN instr(m.from_addr, '<') > 0 AND instr(m.from_addr, '>') > instr(m.from_addr, '<')
 		THEN substr(m.from_addr, instr(m.from_addr, '<') + 1, instr(m.from_addr, '>') - instr(m.from_addr, '<') - 1) ELSE trim(m.from_addr) END`
-	wrote := "(lower(" + bare + ") IN (SELECT value FROM json_each(?)) OR m.folder_id IN (" + inSent + "))"
+	wrote := "(lower(" + bare + ") IN (SELECT value FROM json_each(?)) OR " + shownIn("("+inSent+")") + ")"
 	return &viewEval{now: now, statuses: statuses, notIn: notIn, unread: unread, wrote: wrote, wroteTo: string(list), today: s.clk().Now()}, nil
 }
 
@@ -617,7 +616,7 @@ func (s *Service) fillRecipients(ctx context.Context, e *viewEval, items []Threa
 	for i, t := range items {
 		args[i] = t.ID
 	}
-	rows, err := s.db.Query(ctx, "SELECT m.thread_id, m.id, COALESCE(m.message_id, ''), m.from_addr, m.to_addrs, m.folder_id FROM messages m WHERE m.thread_id IN ("+
+	rows, err := s.db.Query(ctx, "SELECT m.thread_id, m.id, COALESCE(m.message_id, ''), m.from_addr, m.to_addrs, "+shownFolders+" FROM messages m WHERE m.thread_id IN ("+
 		placeholders(len(args))+") AND "+e.notIn+" ORDER BY m.date, m.id", args...)
 	if err != nil {
 		return err
@@ -625,12 +624,12 @@ func (s *Service) fillRecipients(ctx context.Context, e *viewEval, items []Threa
 	mine := map[int64]map[string]bool{} // by thread, then logical message: any copy shows it is the user's
 	first := map[int64][]string{}
 	for _, r := range rows.Values {
-		tid, key := store.Int(r[0]), cmp.Or(store.Str(r[2]), "\x00"+store.Str(r[1]))
+		tid, key := store.Int(r[0]), "\x00"+store.Str(r[1])
 		if mine[tid] == nil {
 			mine[tid] = map[string]bool{}
 			first[tid] = jsonList(store.Str(r[4]))
 		}
-		mine[tid][key] = mine[tid][key] || people.own[ownKey(store.Str(r[3]))] || roles[store.Int(r[5])] == "sent"
+		mine[tid][key] = mine[tid][key] || people.own[ownKey(store.Str(r[3]))] || slices.ContainsFunc(scanFolderIDs(r[5]), func(id int64) bool { return roles[id] == "sent" })
 	}
 	for i, t := range items {
 		if slices.Contains(slices.Collect(maps.Values(mine[t.ID])), false) || len(first[t.ID]) == 0 {
@@ -1036,19 +1035,15 @@ func (s *Service) newestCounted(ctx context.Context, threads []any) (map[int64]a
 	marks := map[int64]archiveMark{}
 	copies := map[int64][]int64{}
 	for c := range slices.Chunk(threads, 200) {
-		rows, err := s.db.Query(ctx, "SELECT m.thread_id, m.id, COALESCE(m.message_id, ''), COALESCE(m.date, 0), m.folder_id FROM messages m WHERE m.thread_id IN ("+placeholders(len(c))+") AND "+notPurgedCond+" ORDER BY m.date, m.id", c...)
+		rows, err := s.db.Query(ctx, "SELECT m.thread_id, m.id, COALESCE(m.message_id, ''), COALESCE(m.date, 0), "+shownFolders+" FROM messages m WHERE m.thread_id IN ("+placeholders(len(c))+") AND "+notPurgedCond+" ORDER BY m.date, m.id", c...)
 		if err != nil {
 			return nil, nil, err
 		}
 		for _, r := range rows.Values {
-			if role := roles[store.Int(r[4])]; role == "trash" || role == "junk" || role == "drafts" {
+			if !slices.ContainsFunc(scanFolderIDs(r[4]), func(id int64) bool { role := roles[id]; return role != "trash" && role != "junk" && role != "drafts" }) {
 				continue
 			}
 			tid, id, mid, date := store.Int(r[0]), store.Int(r[1]), store.Str(r[2]), store.Int(r[3])
-			if m := marks[tid]; mid != "" && m.mid == mid {
-				copies[tid] = append(copies[tid], id)
-				continue
-			}
 			marks[tid], copies[tid] = archiveMark{has: true, mid: mid, date: date}, []int64{id} // rows come oldest first
 		}
 	}
@@ -1078,7 +1073,8 @@ func (s *Service) markArchived(ctx context.Context, marks map[int64]archiveMark)
 
 // ArchiveMessages moves the messages to folderID, the archive folder of their
 // account, and marks the conversations whose newest message is among them, so
-// that 回复状态 leaves them until newer mail comes.
+// that 回复状态 leaves them until newer mail comes. Gmail removes INBOX only;
+// folderID may be 0 when All Mail is hidden.
 func (s *Service) ArchiveMessages(ctx context.Context, ids []int64, folderID int64) (ArchiveUndo, error) {
 	ctx, end, err := s.begin(ctx, 0)
 	if err != nil {
@@ -1095,8 +1091,12 @@ func (s *Service) ArchiveMessages(ctx context.Context, ids []int64, folderID int
 	if err != nil {
 		return ArchiveUndo{}, err
 	}
-	if len(ts) > 0 && len(rows.Values) == 0 {
+	if len(ts) > 0 && folderID != 0 && len(rows.Values) == 0 {
 		return ArchiveUndo{}, errors.New("the folder belongs to another account")
+	}
+	moving, folderID, err := s.archiveTargets(ctx, acc, ts, folderID)
+	if err != nil {
+		return ArchiveUndo{}, err
 	}
 	var undo ArchiveUndo
 	threads := map[int64]bool{}
@@ -1106,6 +1106,8 @@ func (s *Service) ArchiveMessages(ctx context.Context, ids []int64, folderID int
 		if t.thread != 0 {
 			threads[t.thread] = true
 		}
+	}
+	for _, t := range moving {
 		if t.folder != folderID {
 			undo.Moved = append(undo.Moved, ArchivedMessage{ID: t.id, From: t.folder, To: folderID})
 		}
@@ -1126,7 +1128,7 @@ func (s *Service) ArchiveMessages(ctx context.Context, ids []int64, folderID int
 	if undo.Marks, err = s.markArchived(ctx, marks); err != nil {
 		return ArchiveUndo{}, err
 	}
-	if err := s.move(ctx, acc, ts, folderID); err != nil {
+	if err := s.move(ctx, acc, moving, 0, folderID); err != nil {
 		return ArchiveUndo{}, err
 	}
 	return undo, nil
@@ -1155,7 +1157,7 @@ func (s *Service) ArchiveThreads(ctx context.Context, threadIDs []int64) (Archiv
 	}
 	byAccount := map[int64][]int64{}
 	for c := range slices.Chunk(list, 200) {
-		rows, err := s.db.Query(ctx, "SELECT m.id, m.account_id, m.folder_id FROM messages m WHERE m.thread_id IN ("+placeholders(len(c))+") AND "+notPurgedCond, c...)
+		rows, err := s.db.Query(ctx, "SELECT m.id, m.account_id, "+shownFolder+" FROM messages m WHERE m.thread_id IN ("+placeholders(len(c))+") AND "+notPurgedCond, c...)
 		if err != nil {
 			return ArchiveUndo{}, err
 		}
@@ -1167,7 +1169,7 @@ func (s *Service) ArchiveThreads(ctx context.Context, threadIDs []int64) (Archiv
 	}
 	folders := map[int64]int64{}
 	for acc := range byAccount {
-		if folders[acc], err = s.roleFolder(ctx, acc, "archive"); err != nil {
+		if _, folders[acc], err = s.archiveTargets(ctx, acc, nil, 0); err != nil {
 			return ArchiveUndo{}, err
 		}
 	}
@@ -1187,7 +1189,7 @@ func (s *Service) ArchiveThreads(ctx context.Context, threadIDs []int64) (Archiv
 		for _, t := range ts {
 			undo.Moved = append(undo.Moved, ArchivedMessage{ID: t.id, From: t.folder, To: folders[acc]})
 		}
-		if err := s.move(ctx, a, ts, folders[acc]); err != nil {
+		if err := s.move(ctx, a, ts, 0, folders[acc]); err != nil {
 			return ArchiveUndo{}, err
 		}
 	}

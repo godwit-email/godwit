@@ -102,14 +102,14 @@ func (s *Service) scanSecurityBatch(ctx context.Context) (int, error) {
 	now := time.Now().Unix()
 	_, err = s.db.Execute(ctx, `UPDATE messages SET security_scanned_at = ?, security_status = 'neutral', security_reason = 'unverified'
 		WHERE security_scanned_at = 0
-		  AND folder_id IN (SELECT id FROM folders WHERE role IN ('sent', 'drafts', 'trash'))`, now)
+		  AND NOT `+securityEligible, now)
 	if err != nil {
 		return 0, err
 	}
 
 	rows, err := s.db.Query(ctx, `SELECT m.id, m.from_addr, m.auth_results, m.security_verify_dkim FROM messages m
 		WHERE m.security_scanned_at = 0
-		  AND m.folder_id NOT IN (SELECT id FROM folders WHERE role IN ('sent', 'drafts', 'trash'))
+		  AND NOT `+shownIn("(SELECT id FROM folders WHERE role IN ('sent', 'drafts', 'trash'))")+`
 		ORDER BY m.date DESC, m.id DESC LIMIT ?`, securityBatch)
 	if err != nil {
 		return 0, err
@@ -231,7 +231,7 @@ func (s *Service) scanSecurityBatch(ctx context.Context) (int, error) {
 
 		// Publish each completed message rather than holding progress until all
 		// twenty model calls in this batch finish. Stop/settings guards still apply.
-		guard := "id = ? AND security_scanned_at = 0 AND COALESCE((SELECT value FROM settings WHERE key = 'app'), '') = ? AND folder_id NOT IN (SELECT id FROM folders WHERE role IN ('sent', 'drafts', 'trash'))"
+		guard := "id = ? AND security_scanned_at = 0 AND COALESCE((SELECT value FROM settings WHERE key = 'app'), '') = ? AND " + securityEligible
 		res, err := s.db.Transaction(ctx, []sqlite.Statement{
 			// The first verdict on new mail runs security rules; a re-scan, of mail with one already or of old mail, does not.
 			{SQL: `INSERT INTO events_log(type, account_id, message_id, subject, from_addr, msg_date, detail, created_at)
@@ -260,7 +260,9 @@ var ErrSecurityScanBusy = errors.New("security scan or synchronization already i
 // ErrSecurityScanDisabled is returned when attempting to scan while security is turned off.
 var ErrSecurityScanDisabled = errors.New("security scan disabled")
 
-const securityEligible = "folder_id NOT IN (SELECT id FROM folders WHERE role IN ('sent', 'drafts', 'trash'))"
+// securityEligible is the condition on messages (unaliased) that the scanner
+// looks at it: it shows outside sent, drafts and trash.
+const securityEligible = "NOT EXISTS (SELECT 1 FROM message_locations l WHERE l.message_id = messages.id AND l.shown AND l.folder_id IN (SELECT id FROM folders WHERE role IN ('sent', 'drafts', 'trash')))"
 
 // SecurityScanProgress is the active manual run's fixed scope, plus global busy
 // state. Background/newly arrived messages cannot inflate its pending counter.

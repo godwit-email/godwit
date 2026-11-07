@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/egoist/mygo/plugins/sqlite"
+	"github.com/godwit-email/godwit/core/internal/testmail"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -326,7 +327,7 @@ func TestReplyStatusArchiving(t *testing.T) {
 	assert.Empty(t, e.replyOf(t, "in@x").Kind, "archiving clears it")
 	assert.Empty(t, e.replyOf(t, "only@x").Kind, "of only sent mail too")
 	assert.Len(t, undo.Moved, 1, "Sent copies don't move")
-	assert.Equal(t, 1, e.count(t, "SELECT count(*) FROM messages m JOIN folders f ON f.id = m.folder_id WHERE m.message_id = 'only@x' AND f.role = 'sent'"))
+	assert.Equal(t, 1, e.count(t, "SELECT count(*) FROM messages m JOIN message_locations l ON l.message_id = m.id AND l.shown JOIN folders f ON f.id = l.folder_id WHERE m.message_id = 'only@x' AND f.role = 'sent'"))
 
 	require.NoError(t, e.s.UndoArchiveThreads(bg, undo))
 	assert.Equal(t, ReplyStatusUnreplied, e.replyOf(t, "in@x").Kind, "undo restores the folder and the mark")
@@ -588,37 +589,31 @@ func TestFolderConditionUsesEffectiveRoles(t *testing.T) {
 
 	assert.Equal(t, []string{"filed"}, e.shown(t, flatDoc(MatchAll, cond(FieldFolder, OpIs, "archive")))[ViewGroupOther])
 
-	// Gmail: All Mail stands in for archive, but a message still in the inbox isn't archived.
-	_, err = e.s.db.Execute(bg, "UPDATE folders SET role_override = ''")
-	require.NoError(t, err)
-	require.NoError(t, e.im.User.Create("All Mail", nil))
-	e.put(t, "All Mail", eml("i@x", "bob@a.example", "alice@example.com", "inboxed", e.viewAt(1), "x"))
-	e.put(t, "All Mail", eml("g@x", "bob@a.example", "alice@example.com", "only all mail", e.viewAt(1), "x"))
-	e.sync(t)
-	_, err = e.s.db.Execute(bg, "UPDATE folders SET role = CASE name WHEN 'All Mail' THEN 'all' WHEN 'Archive' THEN '' ELSE role END")
-	require.NoError(t, err)
-	got := e.shown(t, flatDoc(MatchAll, cond(FieldFolder, OpIs, "archive")))
+	// Gmail: All Mail stands in for archive only after INBOX is removed.
+	g := newSendEnv(t, false, testmail.Gmail())
+	g.im.AddGmail(eml("i@x", "bob@a.example", "alice@example.com", "inboxed", g.viewAt(1), "x"), nil, "INBOX", testmail.GmailAllMail)
+	g.im.AddGmail(eml("g@x", "bob@a.example", "alice@example.com", "only all mail", g.viewAt(1), "x"), nil, testmail.GmailAllMail)
+	g.sync(t)
+	got := g.shown(t, flatDoc(MatchAll, cond(FieldFolder, OpIs, "archive")))
 	assert.Equal(t, []string{"only all mail"}, got[ViewGroupOther])
-	assert.Equal(t, ReplyStatusUnreplied, e.replyOf(t, "i@x").Kind, "one message's copies count once")
+	assert.Equal(t, ReplyStatusUnreplied, g.replyOf(t, "i@x").Kind, "one message's memberships count once")
 }
 
 func TestReplyStatusGmailCopies(t *testing.T) {
-	e := newSendEnv(t, false)
+	e := newSendEnv(t, false, testmail.Gmail())
 	require.NoError(t, e.im.User.Create("Label", nil))
 	day := e.viewAt(1)
-	// Sent from an alias, so only the Sent copy shows it is the user's; the
-	// label's copy syncs after it.
-	e.put(t, "Sent", eml("s@x", "alias@else.example", "bob@a.example", "from alias", day, "x"))
-	e.put(t, "Label", eml("s@x", "alias@else.example", "bob@a.example", "from alias", day, "x"))
+	// The Sent membership identifies mail sent from an alias as the user's.
+	e.im.AddGmail(eml("s@x", "alias@else.example", "bob@a.example", "from alias", day, "x"), nil, testmail.GmailSent, "Label")
 	e.sync(t)
 	assert.Equal(t, ReplyStatusWaiting, e.replyOf(t, "s@x").Kind)
 
-	// A copy syncing after an archive isn't a new reply.
-	e.put(t, "INBOX", eml("c@x", "bob@a.example", "alice@example.com", "ask", day, "?"))
+	// Discovering another membership after an archive isn't a new reply.
+	m := e.im.AddGmail(eml("c@x", "bob@a.example", "alice@example.com", "ask", day, "?"), nil, "INBOX", testmail.GmailAllMail)
 	e.sync(t)
 	_, err := e.s.ArchiveThreads(bg, []int64{e.threadOf(t, "c@x")})
 	require.NoError(t, err)
-	e.put(t, "Label", eml("c@x", "bob@a.example", "alice@example.com", "ask", day, "?"))
+	m.Label("Label")
 	e.sync(t)
 	assert.Empty(t, e.replyOf(t, "c@x").Kind)
 }
@@ -736,7 +731,7 @@ func TestSavedViewLargeViewTimes(t *testing.T) {
 	e := newSendEnv(t, false)
 	e.put(t, "INBOX", eml("seed@x", "seed@acme.example", "alice@example.com", "seed", e.viewAt(1), "x"))
 	e.sync(t)
-	folder := e.rows(t, "SELECT folder_id, account_id FROM messages LIMIT 1")[0]
+	folder := e.rows(t, "SELECT "+shownCol+", account_id FROM messages LIMIT 1")[0]
 	now := e.clock.Now().Unix()
 	const batch = 500
 	for start := 0; start < threads; start += batch {
@@ -747,9 +742,11 @@ func TestSavedViewLargeViewTimes(t *testing.T) {
 			stmts = append(stmts, sqlite.Statement{SQL: "INSERT INTO threads(id, account_id, subject, last_date) VALUES (?, ?, ?, ?)",
 				Args: []any{1000 + i, folder[1], fmt.Sprintf("subject %d", i), date}})
 			for j := range perThread {
-				stmts = append(stmts, sqlite.Statement{SQL: `INSERT INTO messages(account_id, folder_id, server_folder_id, server_uid, thread_id, message_id, from_addr, to_addrs, cc_addrs, subject, date, flags, snippet, body_text)
-					VALUES (?, ?, ?, ?, ?, ?, ?, '["alice@example.com"]', '[]', ?, ?, '\Seen', 'snippet', 'body text')`,
-					Args: []any{folder[1], folder[0], folder[0], 1000 + i*10 + j, 1000 + i, fmt.Sprintf("m%d-%d@x", i, j), from, fmt.Sprintf("subject %d", i), date - int64(j)}})
+				stmts = append(stmts, sqlite.Statement{SQL: `INSERT INTO messages(account_id, thread_id, message_id, from_addr, to_addrs, cc_addrs, subject, date, flags, snippet, body_text)
+					VALUES (?, ?, ?, ?, '["alice@example.com"]', '[]', ?, ?, '\Seen', 'snippet', 'body text')`,
+					Args: []any{folder[1], 1000 + i, fmt.Sprintf("message-%d-%d", i, j), from, fmt.Sprintf("subject %d", i), date - int64(j)}},
+					sqlite.Statement{SQL: `INSERT INTO message_locations(message_id, folder_id, shown, uid, entered_at, date)
+						VALUES (last_insert_rowid(), ?, 1, ?, 0, ?)`, Args: []any{folder[0], 1000 + i*10 + j, date - int64(j)}})
 			}
 		}
 		_, err := e.s.db.Transaction(bg, stmts)
