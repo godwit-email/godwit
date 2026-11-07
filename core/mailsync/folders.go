@@ -2,6 +2,7 @@ package mailsync
 
 import (
 	"context"
+	"fmt"
 	"slices"
 	"strings"
 
@@ -145,19 +146,27 @@ func syncFolders(ctx context.Context, db *store.DB, c *imapclient.Client, accoun
 	if err != nil {
 		return nil, err
 	}
+	held, _, err := doomed(ctx, db, in+"uid IS NOT NULL)", staleArgs...)
+	if err != nil {
+		return nil, err
+	}
+	shownElsewhere := "EXISTS (SELECT 1 FROM message_locations o WHERE o.message_id = %s AND o.shown AND o.folder_id NOT IN " + gone + ")"
 	stmts = append(stmts,
-		// Moved locally into a vanished folder but still elsewhere on the server: back to where it is.
+		// Shown only in a vanished folder but on the server elsewhere: back to where it is.
 		sqlite.Statement{SQL: "UPDATE message_locations SET shown = 1, entered_at = unixepoch() WHERE uid IS NOT NULL AND folder_id NOT IN " + gone +
-			" AND message_id IN (SELECT message_id FROM message_locations WHERE shown AND folder_id IN " + gone + ")", Args: twice},
-		// On the server only in a vanished folder: gone, wherever it is shown locally.
-		sqlite.Statement{SQL: "DELETE FROM messages WHERE " + in + "uid IS NOT NULL)", Args: staleArgs},
-		// Shown only in a vanished folder, and on the server nowhere else: gone too.
-		sqlite.Statement{SQL: "DELETE FROM messages WHERE " + in + "shown) AND NOT EXISTS (SELECT 1 FROM message_locations WHERE message_id = messages.id AND shown AND folder_id NOT IN " + gone + ")", Args: twice},
-		sqlite.Statement{SQL: "DELETE FROM folders WHERE " + stale, Args: staleArgs}) // and with them the moved messages' locations there
+			" AND message_id IN (SELECT message_id FROM message_locations WHERE shown AND folder_id IN " + gone + ") AND NOT " +
+			fmt.Sprintf(shownElsewhere, "message_locations.message_id"), Args: append(slices.Clone(twice), staleArgs...)},
+		// Shown only in a vanished folder and on the server nowhere: gone too.
+		sqlite.Statement{SQL: "DELETE FROM messages WHERE " + in + "shown) AND " + unlocated + " AND NOT " + fmt.Sprintf(shownElsewhere, "messages.id"), Args: twice},
+		// With the folders go their locations; a message the server then holds nowhere is orphaned.
+		sqlite.Statement{SQL: "DELETE FROM folders WHERE " + stale, Args: staleArgs})
 	if _, err := db.Transaction(ctx, append(stmts, tidyThreads(accountID, tids)...)); err != nil {
 		return nil, err
 	}
 	r.gone(ids, tids)
+	if err := r.orphan(ctx, db, c, accountID, held); err != nil {
+		return nil, err
+	}
 	rows, err := db.Query(ctx, "SELECT "+folderCols+" FROM folders WHERE account_id = ?", accountID)
 	if err != nil {
 		return nil, err

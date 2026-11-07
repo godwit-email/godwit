@@ -128,8 +128,12 @@ func decodeCursor(c string) (date, id int64, err error) {
 // leave those out at once, before the server expunges them.
 const notPurgedCond = "NOT EXISTS (SELECT 1 FROM ops o WHERE o.message_id = m.id AND o.kind = 'purge' AND o.state = 'pending')"
 
-// shownFolder is the folder message alias m shows in (ADR 0032; for now one).
-const shownFolder = "(SELECT folder_id FROM message_locations WHERE message_id = m.id AND shown)"
+// shownFolder is the one folder message alias m is reported in (ADR 0032) of
+// those it shows in: the inbox, else another (lowest id), else All Mail. A
+// folder condition asks shownIn, not this. Without a comma: msgColCount
+// counts them.
+const shownFolder = `(SELECT sl.folder_id FROM message_locations sl JOIN folders sf ON sf.id = sl.folder_id WHERE sl.message_id = m.id AND sl.shown
+	ORDER BY (CASE sf.role WHEN 'inbox' THEN 0 WHEN 'all' THEN 2 ELSE 1 END << 40) + sl.folder_id LIMIT 1)`
 
 // serverLocation joins, as l and its folder as f, where the server has message
 // alias m (ADR 0032; for now in one folder at most).

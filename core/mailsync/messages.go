@@ -206,8 +206,8 @@ func unclaimable(ctx context.Context, db *store.DB, accountID int64, r *result) 
 const pendingFlags = "EXISTS (SELECT 1 FROM ops o WHERE o.message_id = messages.id AND o.kind = 'flags' AND o.state = 'pending')"
 
 // syncFlags refreshes flags of 1:last_uid (except where a flags op is pending)
-// and deletes local rows whose UID the server no longer returns. It changes
-// nothing unless the FETCH completed.
+// and drops the folder's locations whose UID the server no longer returns,
+// and the messages then orphaned. It changes nothing unless the FETCH completed.
 // ponytail: refetches every FLAGS each round; switch to CONDSTORE/QRESYNC.
 func syncFlags(ctx context.Context, db *store.DB, c *imapclient.Client, accountID int64, f *folder, r *result) error {
 	if f.lastUID == 0 {
@@ -230,14 +230,14 @@ func syncFlags(ctx context.Context, db *store.DB, c *imapclient.Client, accountI
 		return err
 	}
 	var stmts []sqlite.Statement
-	var changed, tids []int64
+	var changed, tids, vanished []int64
 	for _, v := range rows.Values {
 		id, uid, flags := store.Int(v[0]), uint32(store.Int(v[1])), store.Str(v[2])
 		fl, ok := remote[uid]
 		switch {
 		case !ok:
-			stmts = append(stmts, sqlite.Statement{SQL: "DELETE FROM messages WHERE id = ?", Args: []any{id}})
-			tids = append(tids, store.Int(v[3]))
+			stmts = append(stmts, sqlite.Statement{SQL: "DELETE FROM message_locations WHERE message_id = ? AND folder_id = ?", Args: []any{id, f.id}})
+			tids, vanished = append(tids, store.Int(v[3])), append(vanished, id)
 		case fl != flags && store.Int(v[4]) == 0:
 			// Checked again in the UPDATE: a local edit may commit between this read and the write.
 			stmts = append(stmts, sqlite.Statement{SQL: "UPDATE messages SET flags = ? WHERE id = ? AND NOT " + pendingFlags, Args: []any{fl, id}})
@@ -246,9 +246,6 @@ func syncFlags(ctx context.Context, db *store.DB, c *imapclient.Client, accountI
 		}
 		changed = append(changed, id)
 	}
-	if len(tids) > 0 {
-		stmts = append(stmts, tidyThreads(accountID, tids)...)
-	}
 	if BeforeFlagsWrite != nil {
 		BeforeFlagsWrite()
 	}
@@ -256,7 +253,7 @@ func syncFlags(ctx context.Context, db *store.DB, c *imapclient.Client, accountI
 		return err
 	}
 	r.gone(changed, tids)
-	return nil
+	return r.orphan(ctx, db, c, accountID, vanished)
 }
 
 // BeforeFlagsWrite, when set, runs between syncFlags reading the local flags and

@@ -637,6 +637,9 @@ var Migrations = [][]string{{
 	// A Gmail message's X-GM-MSGID, an unsigned 64-bit number kept as
 	// decimal text (ADR 0032); NULL on other servers and rows synced before.
 	`ALTER TABLE messages ADD COLUMN gmail_msgid TEXT`,
+}, {
+	// Sync finds a Gmail message it stores by X-GM-MSGID, to add a folder to it.
+	`CREATE INDEX messages_gmail ON messages(account_id, gmail_msgid) WHERE gmail_msgid IS NOT NULL`,
 }}
 
 // HistoryRowsVersion is the schema version that keeps a conversation's
