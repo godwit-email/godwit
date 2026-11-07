@@ -21,9 +21,12 @@ import (
 	"github.com/godwit-email/godwit/core/store"
 )
 
-// MessageSummary is a message as listed.
+// MessageSummary is a message as listed. FolderIDs are every folder it shows
+// in (several on Gmail); FolderID is one of them: the view's folder in a
+// folder's list, else the inbox, another folder, All Mail, in that order.
 type MessageSummary struct {
 	ID, ThreadID, FolderID int64
+	FolderIDs              []int64
 	Subject, From, Snippet string
 	To, Cc                 []string
 	Date                   time.Time
@@ -66,7 +69,7 @@ type AttachmentInfo struct {
 	Inline                bool
 }
 
-const msgCols = `m.id, m.thread_id, ` + shownFolder + `, m.subject, m.from_addr, m.snippet, m.to_addrs, m.cc_addrs, m.date, m.flags, m.has_attachments, m.auth_results, m.security_status, m.security_reason, m.security_scanned_at`
+const msgCols = `m.id, m.thread_id, ` + shownFolder + `, m.subject, m.from_addr, m.snippet, m.to_addrs, m.cc_addrs, m.date, m.flags, m.has_attachments, m.auth_results, m.security_status, m.security_reason, m.security_scanned_at, ` + shownFolders
 
 var msgColCount = strings.Count(msgCols, ",") + 1
 
@@ -86,7 +89,19 @@ func scanSummary(r []any) MessageSummary {
 		Subject: store.Str(r[3]), From: from, Snippet: gomail.Snippet(store.Str(r[5])), // clean of what an older sync kept
 		To: jsonList(store.Str(r[6])), Cc: jsonList(store.Str(r[7])), Date: time.Unix(store.Int(r[8]), 0),
 		Flags: strings.Fields(store.Str(r[9])), HasAttachments: store.Int(r[10]) != 0,
-		AuthResults: authRes, Security: sec}
+		AuthResults: authRes, Security: sec, FolderIDs: scanFolderIDs(r[15])}
+}
+
+// scanFolderIDs reads a shownFolders column.
+func scanFolderIDs(v any) []int64 {
+	var out []int64
+	for _, f := range strings.Split(store.Str(v), ",") {
+		if id, err := strconv.ParseInt(f, 10, 64); err == nil {
+			out = append(out, id)
+		}
+	}
+	slices.Sort(out)
+	return out
 }
 
 func jsonList(s string) []string {
@@ -135,6 +150,10 @@ const notPurgedCond = "NOT EXISTS (SELECT 1 FROM ops o WHERE o.message_id = m.id
 // counts them.
 const shownFolder = `(SELECT sl.folder_id FROM message_locations sl JOIN folders sf ON sf.id = sl.folder_id WHERE sl.message_id = m.id AND sl.shown
 	ORDER BY (CASE sf.role WHEN 'inbox' THEN 0 WHEN 'all' THEN 2 ELSE 1 END << 40) + sl.folder_id LIMIT 1)`
+
+// shownFolders is every folder message alias m shows in, as scanFolderIDs
+// reads it. Without a comma, as shownFolder.
+const shownFolders = `(SELECT group_concat(sl.folder_id) FROM message_locations sl WHERE sl.message_id = m.id AND sl.shown)`
 
 // serverLocation joins, as l and its folder as f, where the server has message
 // alias m (ADR 0032): one row per folder on Gmail, any of which serves a read.
@@ -222,7 +241,11 @@ func (s *Service) ListMessages(ctx context.Context, v View, cursor string, limit
 	}
 	var page MessagePage
 	for _, r := range rows.Values {
-		page.Items = append(page.Items, scanSummary(r))
+		m := scanSummary(r)
+		if v.FolderID != 0 {
+			m.FolderID = v.FolderID
+		}
+		page.Items = append(page.Items, m)
 	}
 	if len(page.Items) > limit {
 		page.Items = page.Items[:limit]
@@ -486,8 +509,8 @@ func (s *Service) readMessage(ctx context.Context, id int64, loadRemoteImages, l
 	}
 	r := rows.Values[0]
 	summary := scanSummary(r)
-	msg := Message{MessageSummary: summary, ReplyTo: store.Str(r[15]), Text: store.Str(r[16]), Truncated: store.Int(r[18]) != 0, InJunk: store.Int(r[19]) != 0, AuthResults: summary.AuthResults, Security: summary.Security}
-	raw := store.Str(r[17])
+	msg := Message{MessageSummary: summary, ReplyTo: store.Str(r[msgColCount]), Text: store.Str(r[msgColCount+1]), Truncated: store.Int(r[msgColCount+3]) != 0, InJunk: store.Int(r[msgColCount+4]) != 0, AuthResults: summary.AuthResults, Security: summary.Security}
+	raw := store.Str(r[msgColCount+2])
 	ar, err := s.db.Query(ctx, "SELECT id, filename, content_type, size, inline, content_id FROM attachments WHERE message_id = ? ORDER BY id", id)
 	if err != nil {
 		return Message{}, err

@@ -125,8 +125,8 @@ type mailPage struct {
 	emptyFolderRole string
 	emptyFolderAcc  int64
 
-	exec    func(ctx context.Context, op string, ids []int64, folder int64) error // write; tests wrap it
-	fetched func()                                                                // tests: runs off the UI thread once a reload has read the list
+	exec    func(ctx context.Context, op string, ids []int64, from, folder int64) error // write; tests wrap it
+	fetched func()                                                                      // tests: runs off the UI thread once a reload has read the list
 }
 
 // listSel is a list's place and choice, kept on its items by key.
@@ -164,8 +164,9 @@ func (p *mailPage) ls() *listSel {
 	return &p.main
 }
 
-// write is a batch's call for one account's messages.
-func (p *mailPage) write(ctx context.Context, op string, ids []int64, folder int64) error {
+// write is a batch's call for one account's messages: from is the folder of
+// the view it came from (0 for none), folder where archive and inbox put them.
+func (p *mailPage) write(ctx context.Context, op string, ids []int64, from, folder int64) error {
 	svc := p.a.svc
 	switch op {
 	case "read":
@@ -177,13 +178,13 @@ func (p *mailPage) write(ctx context.Context, op string, ids []int64, folder int
 	case "unstar":
 		return svc.SetFlags(ctx, ids, nil, []string{`\Flagged`})
 	case "archive":
-		return svc.Move(ctx, ids, folder)
+		return svc.Move(ctx, ids, folder) // out of the inbox, whatever the view
 	case "delete":
 		return svc.Delete(ctx, ids)
 	case "junk":
 		return svc.MoveToRole(ctx, ids, "junk")
 	case "inbox":
-		return svc.MoveToRole(ctx, ids, "inbox")
+		return svc.MoveFrom(ctx, ids, from, folder)
 	case "purge":
 		return svc.DeleteForever(ctx, ids)
 	}
@@ -1403,7 +1404,7 @@ func (p *mailPage) rowMessageIDs(ctx context.Context, rows []mailItem) ([]int64,
 		if err != nil {
 			return nil, err
 		}
-		for _, m := range th.All() {
+		for _, m := range th.Messages {
 			ids = append(ids, m.ID)
 		}
 	}
@@ -1485,12 +1486,15 @@ func (p *mailPage) batchScoped(act string, rows []mailItem, anywhere bool) {
 		return
 	}
 	a := p.a
-	acctOf, role, archive, junk := map[int64]int64{}, map[int64]string{}, map[int64]int64{}, map[int64]bool{}
+	acctOf, role, archive, inbox, junk := map[int64]int64{}, map[int64]string{}, map[int64]int64{}, map[int64]int64{}, map[int64]bool{}
 	for acc, fs := range p.folders {
 		for _, f := range fs {
 			acctOf[f.ID], role[f.ID] = acc, f.Role
 			if f.Role == "archive" && archive[acc] == 0 {
 				archive[acc] = f.ID
+			}
+			if f.Role == "inbox" && inbox[acc] == 0 {
+				inbox[acc] = f.ID
 			}
 			junk[acc] = junk[acc] || f.Role == "junk"
 		}
@@ -1511,14 +1515,14 @@ func (p *mailPage) batchScoped(act string, rows []mailItem, anywhere bool) {
 			}
 			return slices.ContainsFunc(labeled[m.ID], func(l core.AppliedLabel) bool { return l.LabelID == v.LabelID })
 		case v.Unified == "inbox":
-			return role[m.FolderID] == "inbox"
+			return slices.ContainsFunc(m.FolderIDs, func(f int64) bool { return role[f] == "inbox" })
 		case v.Unified == "starred":
 			return slices.Contains(m.Flags, `\Flagged`)
 		case strings.HasPrefix(v.Unified, "starred:"):
 			acc, ok := starredOf(v)
 			return ok && acctOf[m.FolderID] == acc && slices.Contains(m.Flags, `\Flagged`)
 		}
-		return m.FolderID == v.FolderID
+		return slices.Contains(m.FolderIDs, v.FolderID)
 	}
 	l, exec := p.ls(), p.exec
 	var op string
@@ -1526,10 +1530,10 @@ func (p *mailPage) batchScoped(act string, rows []mailItem, anywhere bool) {
 	start := a.clock.Now() // a purge's undo window starts after this
 	// Expansions run in the order asked, so the writes they chain do too.
 	a.writes.Chain("mail:expand", func(ctx context.Context) error {
-		var msgs, shown []core.MessageSummary // shown: what a toggle reads, its copies' flags in each
+		var msgs []core.MessageSummary
 		for _, it := range rows {
 			if !it.Thread {
-				msgs, shown = append(msgs, it.Msg), append(shown, it.Msg)
+				msgs = append(msgs, it.Msg)
 				continue
 			}
 			th, err := a.svc.GetThread(ctx, it.ID)
@@ -1537,8 +1541,7 @@ func (p *mailPage) batchScoped(act string, rows []mailItem, anywhere bool) {
 				failed += it.Count
 				continue
 			}
-			msgs = append(msgs, th.All()...) // every copy, so the view's own is acted on
-			shown = append(shown, th.Merged()...)
+			msgs = append(msgs, th.Messages...)
 		}
 		if v.LabelID != 0 && !search {
 			ids := make([]int64, len(msgs))
@@ -1554,12 +1557,12 @@ func (p *mailPage) batchScoped(act string, rows []mailItem, anywhere bool) {
 		switch act {
 		case "toggle_read":
 			op = "unread"
-			if slices.ContainsFunc(shown, func(m core.MessageSummary) bool { return !slices.Contains(m.Flags, `\Seen`) }) {
+			if slices.ContainsFunc(msgs, func(m core.MessageSummary) bool { return !slices.Contains(m.Flags, `\Seen`) }) {
 				op = "read"
 			}
 		case "toggle_star":
 			op = "unstar"
-			if slices.ContainsFunc(shown, func(m core.MessageSummary) bool { return !slices.Contains(m.Flags, `\Flagged`) }) {
+			if slices.ContainsFunc(msgs, func(m core.MessageSummary) bool { return !slices.Contains(m.Flags, `\Flagged`) }) {
 				op = "star"
 			}
 		}
@@ -1600,9 +1603,15 @@ func (p *mailPage) batchScoped(act string, rows []mailItem, anywhere bool) {
 				continue
 			}
 			pending++
-			folder := archive[acc]
+			folder, from := archive[acc], int64(0)
+			if op == "inbox" {
+				folder = inbox[acc]
+			}
+			if !search {
+				from = v.FolderID
+			}
 			a.writes.Chain(fmt.Sprintf("account:%d", acc), func(ctx context.Context) error {
-				return exec(ctx, op, ids, folder)
+				return exec(ctx, op, ids, from, folder)
 			}, func(err error) {
 				if err != nil {
 					failed += len(ids)

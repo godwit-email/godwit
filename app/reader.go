@@ -188,14 +188,12 @@ func (r *reader) load() {
 			return
 		}
 		r.threadIDs, r.labels, r.thread = nil, labels[k[0]], th
-		for _, m := range th.All() { // every copy: a label goes on each
+		for _, m := range th.Messages {
 			r.threadIDs = append(r.threadIDs, m.ID)
 		}
-		// A thread's actions cover every copy, so it shows their flags; a route
-		// to one copy shows it as it is, though another one shows in the thread.
-		msgs := th.Merged()
+		msgs := th.Messages
 		if k[1] != 0 {
-			msgs = slices.DeleteFunc(th.All(), func(m core.MessageSummary) bool { return m.ID != k[1] })
+			msgs = slices.DeleteFunc(slices.Clone(msgs), func(m core.MessageSummary) bool { return m.ID != k[1] })
 		}
 		known := map[int64]int64{} // messages shown before keep their state
 		for _, m := range r.msgs {
@@ -237,16 +235,10 @@ func (r *reader) load() {
 	})
 }
 
-// markRead flags msgs \Seen, and in a thread their unread copies, so no
-// folder keeps them unread: one call per account, chained after the
+// markRead flags msgs \Seen: one call per account, chained after the
 // account's earlier writes.
 func (r *reader) markRead(msgs []core.MessageSummary) {
 	a := r.p.a
-	if r.key[1] == 0 {
-		for _, m := range slices.Clone(msgs) {
-			msgs = append(msgs, slices.DeleteFunc(r.thread.CopiesOf(m.ID), isSeen)...)
-		}
-	}
 	byAcc := map[int64][]int64{}
 	for _, m := range msgs {
 		acc := r.p.accountOf(m.FolderID)
@@ -1943,11 +1935,6 @@ func (r *reader) applySecurity(msgID int64, reason string) {
 		b.msg.Security = sec
 	}
 	ids := []int64{msgID}
-	if r.key[1] == 0 { // in a thread, its copies too, whose warning shows with it
-		for _, c := range r.thread.CopiesOf(msgID) {
-			ids = append(ids, c.ID)
-		}
-	}
 	a.writes.Chain("security", func(ctx context.Context) error {
 		return a.svc.SetMessageSecurity(ctx, ids, reason)
 	}, func(err error) {

@@ -46,8 +46,8 @@ func (s *Service) mailForModel(ctx context.Context, id int64) (Message, error) {
 		return Message{}, fmt.Errorf("message %d %w", id, errMailNotFound)
 	}
 	r := rows.Values[0]
-	m := Message{MessageSummary: scanSummary(r), Text: store.Str(r[15]), Truncated: store.Int(r[17]) != 0}
-	if raw := store.Str(r[16]); raw != "" {
+	m := Message{MessageSummary: scanSummary(r), Text: store.Str(r[msgColCount]), Truncated: store.Int(r[msgColCount+2]) != 0}
+	if raw := store.Str(r[msgColCount+1]); raw != "" {
 		m.HTML, _, _ = gomail.Sanitize(raw, nil, false)
 	}
 	ar, err := s.db.Query(ctx, "SELECT id, filename, content_type, size FROM attachments WHERE message_id = ? ORDER BY id", id)
