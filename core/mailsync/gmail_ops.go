@@ -111,6 +111,11 @@ func pushGmailLabels(ctx context.Context, db *store.DB, c *imapclient.Client, o 
 		return "", gmailMoved(ctx, db, completed, dstValidity, dstUID)
 	}
 	if srcUID == 0 {
+		if addOnly {
+			msg := "Gmail message has no addressable location in visible IMAP folders; expose All Mail or restore a label to apply this change"
+			_, err := db.Execute(ctx, "UPDATE ops SET last_error = ? WHERE id = ?", msg, o.id)
+			return msg, err // report the blocked intent, but let fetch discover a new location
+		}
 		if removeOnly || dstUID != 0 {
 			return "", gmailMoved(ctx, db, completed, dstValidity, dstUID)
 		}
@@ -120,8 +125,12 @@ func pushGmailLabels(ctx context.Context, db *store.DB, c *imapclient.Client, o 
 	if err := reselect(c, srcName, srcValidity); err != nil {
 		return gmailFailure(ctx, db, o, err)
 	}
-	if _, err := db.Execute(ctx, "UPDATE ops SET attempts = attempts + 1 WHERE id = ?", o.id); err != nil {
+	claimed, err := db.Execute(ctx, "UPDATE ops SET attempts = attempts + 1 WHERE id = ? AND state = 'pending'", o.id)
+	if err != nil {
 		return "", err
+	}
+	if claimed.Changes == 0 {
+		return "", nil
 	}
 	o.attempts++
 	purges, err := db.Query(ctx, "SELECT 1 FROM ops WHERE message_id = ? AND kind = 'purge' AND attempts > 0", o.msg)

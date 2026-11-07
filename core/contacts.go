@@ -378,9 +378,13 @@ func (s *Service) ArchiveSender(ctx context.Context, addr string) (SenderArchive
 func (s *Service) UndoArchive(ctx context.Context, a SenderArchive) error {
 	s.editMu.Lock()
 	defer s.editMu.Unlock()
+	ids, err := s.resolve(ctx, archivedIDs(a.Moved))
+	if err != nil {
+		return err
+	}
 	back := map[ArchivedMessage][]any{} // by From and To, ID 0
-	for _, m := range a.Moved {
-		back[ArchivedMessage{From: m.From, To: m.To}] = append(back[ArchivedMessage{From: m.From, To: m.To}], m.ID)
+	for i, m := range a.Moved {
+		back[ArchivedMessage{From: m.From, To: m.To}] = append(back[ArchivedMessage{From: m.From, To: m.To}], ids[i])
 	}
 	for k, ids := range back {
 		for c := range slices.Chunk(ids, 200) {

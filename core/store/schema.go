@@ -687,6 +687,10 @@ var Migrations = [][]string{{
   message_id INTEGER PRIMARY KEY REFERENCES messages(id) ON DELETE CASCADE,
   arrival INTEGER NOT NULL,
   verdict TEXT NOT NULL DEFAULT '')`,
+}, {
+	// NULL is an old account whose authenticated IMAP capabilities are unknown.
+	`ALTER TABLE accounts ADD COLUMN imap_gmail INTEGER`,
+	`UPDATE accounts SET imap_gmail = 1 WHERE provider = 'gmail' OR EXISTS (SELECT 1 FROM messages WHERE account_id = accounts.id AND gmail_msgid IS NOT NULL)`,
 }}
 
 // HistoryRowsVersion is the schema version that keeps a conversation's

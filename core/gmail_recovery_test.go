@@ -3,7 +3,9 @@ package core
 import (
 	"fmt"
 	"testing"
+	"time"
 
+	"github.com/godwit-email/godwit/core/events"
 	"github.com/godwit-email/godwit/core/internal/testmail"
 	"github.com/godwit-email/godwit/core/mailsync"
 	"github.com/stretchr/testify/assert"
@@ -55,6 +57,86 @@ func TestArchiveOnRegularIMAPWithAllMailStillMoves(t *testing.T) {
 	e.sync(t)
 	assert.Equal(t, []string{"a@x"}, e.onServer(t, "Archive"))
 	assert.Empty(t, e.onServer(t, "Work"))
+}
+
+func TestGmailUpgradeArchiveBeforeIdentityFetch(t *testing.T) {
+	for _, hidden := range []bool{false, true} {
+		for _, official := range []bool{false, true} {
+			t.Run(fmt.Sprintf("hidden=%v/official=%v", hidden, official), func(t *testing.T) {
+				e := newSyncEnv(t, testmail.Gmail())
+				require.NoError(t, e.im.User.Create("Work", nil))
+				folders := []string{"Work", testmail.GmailAllMail}
+				if hidden {
+					require.NoError(t, e.im.User.Delete(testmail.GmailAllMail))
+					folders = []string{"INBOX", "Work"}
+				}
+				m := e.im.AddGmail(msg("upgrade@x"), nil, folders...)
+				e.sync(t)
+				rows := e.oldRows(t, e.idOf(t, "upgrade@x"))
+				_, err := e.s.db.Execute(bg, "UPDATE accounts SET imap_gmail = NULL WHERE id = ?", e.acc.ID)
+				require.NoError(t, err)
+				if official {
+					_, err := e.s.db.Execute(bg, "UPDATE accounts SET provider = 'gmail' WHERE id = ?", e.acc.ID)
+					require.NoError(t, err)
+					e.im.Stop()
+				}
+				source := "Work"
+				if hidden {
+					source = "INBOX"
+				}
+				require.NoError(t, e.s.MoveToRole(bg, []int64{rows[source]}, "archive"))
+				if official {
+					e.im.Restart()
+				}
+				e.sync(t)
+				want := []string{"Work"}
+				if !hidden {
+					want = append(want, testmail.GmailAllMail)
+				}
+				assert.Equal(t, want, m.Folders())
+			})
+		}
+	}
+}
+
+func TestGmailUpgradeArchiveUndoResolvesMergedID(t *testing.T) {
+	e := newSyncEnv(t, testmail.Gmail())
+	require.NoError(t, e.im.User.Delete(testmail.GmailAllMail))
+	require.NoError(t, e.im.User.Create("Work", nil))
+	m := e.im.AddGmail(msg("upgrade@x"), nil, "INBOX", "Work")
+	e.sync(t)
+	rows := e.oldRows(t, e.idOf(t, "upgrade@x"))
+	u, err := e.s.ArchiveMessages(bg, []int64{rows["INBOX"]}, 0)
+	require.NoError(t, err)
+	e.sync(t)
+	assert.Equal(t, []string{"Work"}, m.Folders())
+	e.reopen(t)
+	require.NoError(t, e.s.UndoArchiveThreads(bg, u))
+	e.sync(t)
+	assert.Equal(t, []string{"INBOX", "Work"}, m.Folders(), "the undo token survives the upgrade merge")
+}
+
+func TestGmailUnknownLegacyArchiveWaitsForCapabilityProbe(t *testing.T) {
+	e := newSyncEnv(t, testmail.Gmail())
+	require.NoError(t, e.im.User.Delete(testmail.GmailAllMail))
+	require.NoError(t, e.im.User.Create("Work", nil))
+	m := e.im.AddGmail(msg("legacy@x"), nil, "INBOX", "Work")
+	e.sync(t)
+	rows := e.oldRows(t, e.idOf(t, "legacy@x"))
+	_, err := e.s.db.Execute(bg, "UPDATE accounts SET imap_gmail = NULL WHERE id = ?", e.acc.ID)
+	require.NoError(t, err)
+	e.im.Stop()
+	_, err = e.s.ArchiveMessages(bg, []int64{rows["INBOX"]}, 0)
+	require.Error(t, err, "unknown legacy semantics cannot be guessed while offline")
+	assert.Equal(t, []int64{rows["INBOX"]}, e.listed(t, "INBOX"))
+	pending, err := e.s.PendingOps(bg, e.acc.ID)
+	require.NoError(t, err)
+	assert.Empty(t, pending)
+	e.im.Restart()
+	_, err = e.s.ArchiveMessages(bg, []int64{rows["INBOX"]}, 0)
+	require.NoError(t, err, "a capability probe is sufficient; no new message sync is needed")
+	e.sync(t)
+	assert.Equal(t, []string{"Work"}, m.Folders())
 }
 
 func TestGmailArchiveEntryPointsPreserveLabels(t *testing.T) {
@@ -161,6 +243,161 @@ func TestGmailHiddenAllMailRuleArchive(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestGmailHiddenOnlyInboxArchiveUndoSurvivesRestart(t *testing.T) {
+	clock := useTestClock(t)
+	e := newSyncEnv(t, testmail.Gmail(), testmail.WithoutMove())
+	require.NoError(t, e.im.User.Delete(testmail.GmailAllMail))
+	m := e.im.AddGmail(msg("only@x"), nil, "INBOX")
+	e.sync(t)
+	id := e.idOf(t, "only@x")
+	u, err := e.s.ArchiveMessages(bg, []int64{id}, 0)
+	require.NoError(t, err)
+	assert.Empty(t, e.listed(t, "INBOX"))
+	e.sync(t)
+	assert.Equal(t, []string{"INBOX"}, m.Folders(), "last addressable location remains during undo window")
+	e.reopen(t)
+	clock.Advance(10*time.Second - time.Millisecond)
+	e.sync(t)
+	assert.Equal(t, []string{"INBOX"}, m.Folders(), "restart cannot shorten the durable deadline")
+	require.NoError(t, e.s.UndoArchiveThreads(bg, u))
+	e.sync(t)
+	clock.Advance(10 * time.Second)
+	e.sync(t)
+	assert.Equal(t, []string{"INBOX"}, m.Folders())
+	assert.Equal(t, []int64{id}, e.listed(t, "INBOX"))
+	assert.Zero(t, e.im.GmailLabelStores(), "undo cancels an unsent archive")
+}
+
+func TestGmailHiddenOnlyInboxArchiveRetainsIdentityAfterWindow(t *testing.T) {
+	clock := useTestClock(t)
+	e := newSyncEnv(t, testmail.Gmail(), testmail.WithoutMove())
+	require.NoError(t, e.im.User.Delete(testmail.GmailAllMail))
+	m := e.im.AddGmail(msg("only@x"), nil, "INBOX")
+	e.sync(t)
+	id := e.idOf(t, "only@x")
+	require.NoError(t, e.s.SetFlags(bg, []int64{id}, []string{`\Flagged`}, nil))
+	e.sync(t)
+	u, err := e.s.ArchiveMessages(bg, []int64{id}, 0)
+	require.NoError(t, err)
+	clock.Advance(10 * time.Second)
+	e.sync(t)
+	assert.Empty(t, m.Folders())
+	e.reopen(t)
+	e.sync(t)
+	exists, err := e.s.MessageExists(bg, id)
+	require.NoError(t, err)
+	require.True(t, exists, "hidden All Mail means a complete visible scan cannot prove permanent deletion")
+	ch, unsub := e.s.Subscribe()
+	defer unsub()
+	require.NoError(t, e.s.UndoArchiveThreads(bg, u))
+	e.sync(t)
+	failures := ofType(collect(ch), events.SyncFailed)
+	require.NotEmpty(t, failures, "late undo explicitly reports the blocked intent")
+	assert.Contains(t, failures[0].Error, "visible IMAP")
+	pending, err := e.s.PendingOps(bg, e.acc.ID)
+	require.NoError(t, err)
+	require.Len(t, pending, 1)
+	assert.Equal(t, "pending", pending[0].State)
+	assert.Contains(t, pending[0].LastError, "visible IMAP")
+	assert.Empty(t, m.Folders(), "no invalid UID or replacement APPEND is used")
+	// Another client exposes All Mail again; fetch must run despite the blocked push.
+	require.NoError(t, e.im.User.Create(testmail.GmailAllMail, nil))
+	m.Label(testmail.GmailAllMail)
+	e.sync(t)
+	assert.Equal(t, []string{"INBOX", testmail.GmailAllMail}, m.Folders())
+	assert.Equal(t, []int64{id}, e.listed(t, "INBOX"))
+	assert.Equal(t, []string{`only@x \Flagged`}, e.onServer(t, "INBOX"))
+	pending, err = e.s.PendingOps(bg, e.acc.ID)
+	require.NoError(t, err)
+	assert.Empty(t, pending)
+}
+
+func TestGmailHiddenOnlyInboxArchiveOtherEntryPointsUndo(t *testing.T) {
+	for _, entry := range []string{"threads", "sender", "rule"} {
+		t.Run(entry, func(t *testing.T) {
+			clock := useTestClock(t)
+			e := newSyncEnv(t, testmail.Gmail(), testmail.WithoutMove())
+			require.NoError(t, e.im.User.Delete(testmail.GmailAllMail))
+			e.sync(t)
+			if entry == "rule" {
+				e.saveRule(t, RuleDoc{Version: RuleVersion, Name: "archive", Trigger: TriggerReceive, Match: MatchAll, Actions: []RuleAction{{Kind: ActionArchive}}}, true)
+			}
+			m := e.im.AddGmail(msg("only@x"), nil, "INBOX")
+			e.sync(t)
+			id := e.idOf(t, "only@x")
+			var undo func() error
+			switch entry {
+			case "threads":
+				u, err := e.s.ArchiveThreads(bg, []int64{e.threadOf(t, "only@x")})
+				require.NoError(t, err)
+				undo = func() error { return e.s.UndoArchiveThreads(bg, u) }
+			case "sender":
+				got, err := e.s.GetMessage(bg, id, false)
+				require.NoError(t, err)
+				u, err := e.s.ArchiveSender(bg, got.From)
+				require.NoError(t, err)
+				undo = func() error { return e.s.UndoArchive(bg, u) }
+			case "rule":
+				e.waitRuns(t, 1)
+				run := e.runOf(t, "only@x")
+				undo = func() error { kept, err := e.s.UndoRuleRun(bg, run); assert.Zero(t, kept); return err }
+			}
+			e.sync(t)
+			assert.Empty(t, e.listed(t, "INBOX"))
+			e.reopen(t)
+			require.NoError(t, undo())
+			clock.Advance(10 * time.Second)
+			e.sync(t)
+			assert.Equal(t, []string{"INBOX"}, m.Folders())
+			assert.Equal(t, []int64{id}, e.listed(t, "INBOX"))
+			assert.Zero(t, e.im.GmailLabelStores())
+		})
+	}
+}
+
+func TestGmailHiddenOnlyInboxRuleLateUndoStaysPending(t *testing.T) {
+	clock := useTestClock(t)
+	e := newSyncEnv(t, testmail.Gmail(), testmail.WithoutMove())
+	require.NoError(t, e.im.User.Delete(testmail.GmailAllMail))
+	e.sync(t)
+	e.saveRule(t, RuleDoc{Version: RuleVersion, Name: "archive", Trigger: TriggerReceive, Match: MatchAll, Actions: []RuleAction{{Kind: ActionArchive}}}, true)
+	m := e.im.AddGmail(msg("only@x"), nil, "INBOX")
+	e.sync(t)
+	e.waitRuns(t, 1)
+	run := e.runOf(t, "only@x")
+	clock.Advance(10 * time.Second)
+	e.sync(t)
+	assert.Empty(t, m.Folders())
+	e.reopen(t)
+	ch, unsub := e.s.Subscribe()
+	defer unsub()
+	kept, err := e.s.UndoRuleRun(bg, run)
+	require.NoError(t, err)
+	assert.Zero(t, kept)
+	e.sync(t)
+	failures := ofType(collect(ch), events.SyncFailed)
+	require.NotEmpty(t, failures)
+	assert.Contains(t, failures[0].Error, "visible IMAP")
+	pending, err := e.s.PendingOps(bg, e.acc.ID)
+	require.NoError(t, err)
+	require.Len(t, pending, 1)
+	assert.Equal(t, "pending", pending[0].State)
+	assert.Contains(t, pending[0].LastError, "visible IMAP")
+}
+
+func TestGmailHiddenOnlyInboxArchiveWorkerWakesAtDeadline(t *testing.T) {
+	e, _ := newWorkerEnv(t, testmail.Gmail(), testmail.WithoutMove())
+	require.NoError(t, e.im.User.Delete(testmail.GmailAllMail))
+	m := e.im.AddGmail(msg("only@x"), nil, "INBOX")
+	e.sync(t)
+	_, err := e.s.ArchiveMessages(bg, []int64{e.idOf(t, "only@x")}, 0)
+	require.NoError(t, err)
+	e.sync(t)
+	assert.Equal(t, []string{"INBOX"}, m.Folders())
+	e.clock.Advance(10 * time.Second)
+	require.Eventually(t, func() bool { return len(m.Folders()) == 0 }, 5*time.Second, 10*time.Millisecond, "the durable deadline wakes the existing worker")
 }
 
 func TestGmailHiddenAllMailArchiveUndoKeepsLabels(t *testing.T) {

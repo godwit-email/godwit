@@ -83,14 +83,14 @@ func push(ctx context.Context, db *store.DB, c *imapclient.Client, accountID int
 		problems = append(problems, fmt.Sprintf("%d change(s) not applied: the message no longer exists", res.Changes))
 	}
 	rows, err := db.Query(ctx, `SELECT id FROM ops
-		WHERE account_id = ? AND state = 'pending' AND `+purgeDue+` <= ?`+filter+` ORDER BY id`, accountID, now.UnixMilli())
+		WHERE account_id = ? AND state = 'pending' AND `+opReady+filter+` ORDER BY id`, accountID, now.UnixMilli())
 	if err != nil {
 		return err
 	}
 	for _, row := range rows.Values {
 		// A preceding move can merge queues or rebase the next move's source.
 		current, err := db.Query(ctx, `SELECT id, kind, message_id, src_folder_id, dst_folder_id, payload, depends_on, attempts FROM ops
-			WHERE id = ? AND state = 'pending'`+filter, row[0])
+			WHERE id = ? AND state = 'pending' AND `+opReady+filter, row[0], now.UnixMilli())
 		if err != nil {
 			return err
 		}

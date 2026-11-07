@@ -153,7 +153,7 @@ func syncFolders(ctx context.Context, db *store.DB, c *imapclient.Client, accoun
 	shownElsewhere := "EXISTS (SELECT 1 FROM message_locations o WHERE o.message_id = %s AND o.shown AND o.folder_id NOT IN " + gone + ")"
 	keepPending := ""
 	if c.Caps().Has(capGmail) {
-		keepPending = " AND NOT EXISTS (SELECT 1 FROM ops WHERE message_id = messages.id AND state IN ('pending', 'awaiting_claim'))"
+		keepPending = " AND gmail_msgid IS NULL AND NOT EXISTS (SELECT 1 FROM ops WHERE message_id = messages.id AND state IN ('pending', 'awaiting_claim'))"
 	}
 	stmts = append(stmts,
 		// Shown only in a vanished folder but on the server elsewhere: back to where it is.

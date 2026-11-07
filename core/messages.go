@@ -703,6 +703,7 @@ func (s *Service) apply(ctx context.Context, accountID int64, ts []target, stmts
 	}
 	s.bus.Publish(events.Event{Type: events.MessagesChanged, AccountID: accountID, MessageIDs: ids,
 		ThreadIDs: slices.Compact(slices.Sorted(slices.Values(tids)))})
+	s.wakeForOps(ctx, accountID, s.clk().Now())
 	s.wakeWorker(accountID)
 	return nil
 }
@@ -895,7 +896,7 @@ func (s *Service) DeleteForever(ctx context.Context, ids []int64) error {
 	if err := s.apply(ctx, acc, purged, stmts); err != nil {
 		return err
 	}
-	s.wakeForPurge(ctx, acc, now)
+	s.wakeForOps(ctx, acc, now)
 	return nil
 }
 
@@ -933,7 +934,7 @@ func (s *Service) EmptyFolder(ctx context.Context, folderID int64) ([]int64, err
 		stmts[i] = sqlite.Statement{SQL: `INSERT INTO ops(account_id, message_id, kind, src_folder_id, dst_folder_id, payload, depends_on, created_at)
 			VALUES (?, ?, 'purge', ?, ?, ?, ` + latestOp + `, unixepoch())`, Args: []any{acc, ids[i], folderID, folderID, payload, ids[i]}}
 	}
-	defer s.wakeForPurge(ctx, acc, now)
+	defer s.wakeForOps(ctx, acc, now)
 	const chunk = 200
 	for i := 0; i < len(ts); i += chunk {
 		end := min(i+chunk, len(ts))
@@ -998,14 +999,13 @@ func (s *Service) UndoPurge(ctx context.Context, ids []int64) (gone int, err err
 	return len(ids) - len(rows.Values), nil
 }
 
-// wakeForPurge has the account's worker sync again when the first purge in its
-// undo window after t comes due, in place of the time set for that before.
-func (s *Service) wakeForPurge(ctx context.Context, accountID int64, t time.Time) {
-	next, err := mailsync.NextPurgeDue(ctx, s.db, accountID, t)
+// wakeForOps rearms the existing worker timer for the next durable undo deadline.
+func (s *Service) wakeForOps(ctx context.Context, accountID int64, t time.Time) {
+	next, err := mailsync.NextOpDue(ctx, s.db, accountID, t)
 	if err != nil {
 		return
 	}
-	s.wakeWorkerAt(accountID, wakePurge, next)
+	s.wakeWorkerAt(accountID, wakeOps, next)
 }
 
 // MarkAllAsRead marks every unread message in view v as read. Returns the number of messages marked.
@@ -1091,8 +1091,30 @@ func (s *Service) archiveTargets(ctx context.Context, acc int64, ts []target, fo
 }
 
 func (s *Service) gmailAccount(ctx context.Context, acc int64) (bool, error) {
-	r, err := s.db.Query(ctx, `SELECT 1 FROM messages WHERE account_id = ? AND gmail_msgid IS NOT NULL LIMIT 1`, acc)
-	return err == nil && len(r.Values) > 0, err
+	if acc == 0 {
+		return false, nil
+	}
+	r, err := s.db.Query(ctx, "SELECT imap_gmail, provider FROM accounts WHERE id = ?", acc)
+	if err != nil {
+		return false, err
+	}
+	if len(r.Values) == 0 {
+		return false, ErrAccountNotFound
+	}
+	if r.Values[0][0] != nil {
+		return store.Int(r.Values[0][0]) != 0, nil
+	}
+	if store.Str(r.Values[0][1]) == "gmail" {
+		_, err := s.db.Execute(ctx, "UPDATE accounts SET imap_gmail = 1 WHERE id = ?", acc)
+		return true, err
+	}
+	// An unknown legacy server must be identified before choosing archive semantics.
+	c, release, _, err := s.dialAccount(ctx, acc, nil)
+	if err != nil {
+		return false, err
+	}
+	defer release()
+	return c.Caps().Has("X-GM-EXT-1"), nil
 }
 
 // archiveUndoWrites restores Gmail's INBOX label without removing a user label.
@@ -1106,14 +1128,26 @@ func (s *Service) archiveUndoWrites(ctx context.Context, acc int64, ts []target,
 		if err != nil {
 			return nil, err
 		}
-		_, stmts := moveWrites(acc, ts, from, to, binned)
+		_, stmts := moveWrites(acc, ts, from, to, binned, s.clk().Now())
 		return stmts, nil
 	}
 	var stmts []sqlite.Statement
 	for _, m := range ts {
+		var cancel int64
+		if from == 0 {
+			r, err := s.db.Query(ctx, `SELECT id FROM ops WHERE message_id = ? AND kind = 'move' AND src_folder_id = ?
+				AND dst_folder_id IS NULL AND state = 'pending' AND attempts = 0 ORDER BY id DESC LIMIT 1`, m.id, to)
+			if err != nil {
+				return nil, err
+			}
+			if len(r.Values) > 0 {
+				cancel = store.Int(r.Values[0][0])
+			}
+		}
+		stmts = append(stmts, sqlite.Statement{SQL: "UPDATE ops SET state = 'cancelled' WHERE id = ? AND state = 'pending' AND attempts = 0", Args: []any{cancel}})
 		stmts = append(stmts, mailsync.ShowIn(m.id, to, []int64{})...)
 		stmts = append(stmts, sqlite.Statement{SQL: `INSERT INTO ops(account_id, message_id, kind, dst_folder_id, depends_on, created_at)
-			VALUES (?, ?, 'move', ?, ` + latestOp + `, unixepoch())`, Args: []any{acc, m.id, to, m.id}})
+			SELECT ?, ?, 'move', ?, ` + latestOp + `, unixepoch() WHERE NOT EXISTS (SELECT 1 FROM ops WHERE id = ? AND state = 'cancelled')`, Args: []any{acc, m.id, to, m.id, cancel}})
 	}
 	return stmts, nil
 }
@@ -1135,7 +1169,7 @@ func (s *Service) move(ctx context.Context, accountID int64, ts []target, from, 
 	if err != nil {
 		return err
 	}
-	moved, stmts := moveWrites(accountID, ts, from, folderID, binned)
+	moved, stmts := moveWrites(accountID, ts, from, folderID, binned, s.clk().Now())
 	return s.apply(ctx, accountID, moved, stmts)
 }
 
@@ -1150,10 +1184,13 @@ func (s *Service) binned(ctx context.Context, accountID, folder int64) (bool, er
 	return false, nil
 }
 
+// UndoArchiveWindow is the existing archive toast's undo window. Removing the
+// last visible Gmail location waits this long so an undo still has a server UID.
+const UndoArchiveWindow = 10 * time.Second
+
 // moveWrites are move's statements and the messages they move. A move to
-// Trash or Junk (binned) is one MOVE from the folder preferred, which takes
-// the message out of every folder on Gmail too.
-func moveWrites(accountID int64, ts []target, from, folderID int64, binned bool) ([]target, []sqlite.Statement) {
+// Trash or Junk (binned) is one MOVE from the preferred folder.
+func moveWrites(accountID int64, ts []target, from, folderID int64, binned bool, now time.Time) ([]target, []sqlite.Statement) {
 	var moved []target
 	var stmts []sqlite.Statement
 	for _, m := range ts {
@@ -1173,9 +1210,14 @@ func moveWrites(accountID int64, ts []target, from, folderID int64, binned bool)
 		if folderID != 0 {
 			dst = folderID
 		}
+		payload := "{}"
+		if folderID == 0 && len(m.in) == 1 && m.in[0].rank == 0 {
+			b, _ := json.Marshal(map[string]int64{"due_at": now.Add(UndoArchiveWindow).UnixMilli()})
+			payload = string(b)
+		}
 		for _, src := range out {
-			stmts = append(stmts, sqlite.Statement{SQL: `INSERT INTO ops(account_id, message_id, kind, src_folder_id, dst_folder_id, depends_on, created_at)
-				VALUES (?, ?, 'move', ?, ?, ` + latestOp + `, unixepoch())`, Args: []any{accountID, m.id, src, dst, m.id}})
+			stmts = append(stmts, sqlite.Statement{SQL: `INSERT INTO ops(account_id, message_id, kind, src_folder_id, dst_folder_id, payload, depends_on, created_at)
+				VALUES (?, ?, 'move', ?, ?, ?, ` + latestOp + `, unixepoch())`, Args: []any{accountID, m.id, src, dst, payload, m.id}})
 		}
 	}
 	return moved, stmts

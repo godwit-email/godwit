@@ -1176,7 +1176,7 @@ func (s *Service) ruleAction(ctx context.Context, a RuleAction, acc int64, t tar
 		if out := t.leaves(0, to, binned); len(out) > 0 {
 			from = out[0]
 		}
-		_, stmts := moveWrites(acc, []target{t}, 0, to, binned)
+		_, stmts := moveWrites(acc, []target{t}, 0, to, binned, s.clk().Now())
 		return actionWrites{prior: rulePrior{From: from, To: to}, writes: stmts}, "", nil
 	case ActionBlock:
 		addr := gomail.AddrKey(t.from)
@@ -1459,7 +1459,7 @@ func (s *Service) undoAction(ctx context.Context, runID int64, idx int, kind str
 			if err != nil {
 				return false, err
 			}
-			_, stmts = moveWrites(acc, []target{t}, p.To, p.From, binned)
+			_, stmts = moveWrites(acc, []target{t}, p.To, p.From, binned, s.clk().Now())
 		}
 	}
 	state := RuleActionUndone

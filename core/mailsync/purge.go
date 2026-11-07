@@ -32,15 +32,17 @@ func PurgeNowRole(role string, due time.Time) string {
 	return string(b)
 }
 
-// purgeDue is the time an ops row may be pushed at, in unix milliseconds: a
-// purge's DueAt, else 0.
-const purgeDue = "CASE WHEN kind = 'purge' THEN IFNULL(json_extract(payload, '$.due_at'), 0) ELSE 0 END"
+// opDue is the durable undo deadline of a purge or a last-location archive.
+const opDue = "CASE WHEN kind IN ('purge', 'move') THEN IFNULL(json_extract(payload, '$.due_at'), 0) ELSE 0 END"
 
-// NextPurgeDue is when the account's first purge still in its undo window after
-// t comes due; zero for none.
-func NextPurgeDue(ctx context.Context, db *store.DB, accountID int64, t time.Time) (time.Time, error) {
-	rows, err := db.Query(ctx, `SELECT MIN(`+purgeDue+`) FROM ops
-		WHERE account_id = ? AND kind = 'purge' AND state = 'pending' AND `+purgeDue+` > ?`, accountID, t.UnixMilli())
+// opReady also releases a deferred archive once fetch finds another server location.
+const opReady = "(" + opDue + ` <= ? OR (kind = 'move' AND dst_folder_id IS NULL AND EXISTS
+	(SELECT 1 FROM message_locations l WHERE l.message_id = ops.message_id AND l.folder_id != ops.src_folder_id AND l.uid IS NOT NULL)))`
+
+// NextOpDue is the account's first undo deadline after t; zero for none.
+func NextOpDue(ctx context.Context, db *store.DB, accountID int64, t time.Time) (time.Time, error) {
+	rows, err := db.Query(ctx, `SELECT MIN(`+opDue+`) FROM ops
+		WHERE account_id = ? AND state = 'pending' AND `+opDue+` > ?`, accountID, t.UnixMilli())
 	if err != nil || len(rows.Values) == 0 || rows.Values[0][0] == nil {
 		return time.Time{}, err
 	}

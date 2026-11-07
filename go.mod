@@ -60,5 +60,4 @@ ignore ./web/node_modules
 
 tool github.com/egoist/mygo/cmd/mygo
 
-// Temporary until the reviewed fork commit is published as v2.0.0-beta.8.godwit.6.
-replace github.com/emersion/go-imap/v2 => /tmp/godwit-518-go-imap
+replace github.com/emersion/go-imap/v2 => github.com/godwit-email/go-imap/v2 v2.0.0-beta.8.godwit.6

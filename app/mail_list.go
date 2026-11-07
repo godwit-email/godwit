@@ -1731,7 +1731,7 @@ func (p *mailPage) batchScoped(act string, rows []mailItem, anywhere bool) {
 				p.offerUndoPurge(i18n.Tf("mail.purge.toast", len(purged)), purged, start)
 			}
 			if op == "archive" {
-				p.offerUndoArchive(archived)
+				p.offerUndoArchive(archived, start)
 			}
 		}
 		for _, acc := range slices.Sorted(maps.Keys(byAcc)) {

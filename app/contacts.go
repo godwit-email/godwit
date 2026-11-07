@@ -485,6 +485,7 @@ func (p *contactsPage) sendUnsubscribe(id int64, u core.Unsubscribe) {
 // part way.
 func (p *contactsPage) archive(addr string) {
 	a := p.a
+	start := a.clock.Now()
 	var res core.SenderArchive
 	a.do(func(ctx context.Context) (err error) {
 		res, err = a.svc.ArchiveSender(ctx, addr)
@@ -500,7 +501,9 @@ func (p *contactsPage) archive(addr string) {
 		if res.Skipped > 0 {
 			toast.Description = i18n.Tf("contacts.archive.skipped", res.Skipped)
 		}
-		if len(res.Moved) > 0 {
+		left := start.Add(core.UndoArchiveWindow).Sub(a.clock.Now())
+		if len(res.Moved) > 0 && left > 0 {
+			toast.Timeout = left
 			toast.Action, toast.OnAction = i18n.T("compose.undo"), func() {
 				a.do(func(ctx context.Context) error { return a.svc.UndoArchive(ctx, res) }, func(err error) {
 					if err != nil {

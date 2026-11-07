@@ -230,7 +230,8 @@ func dropOrphans(ctx context.Context, db *store.DB, accountID int64, ids []int64
 	}
 	where, args := "account_id = ? AND "+which+" AND "+orphaned, append([]any{accountID}, anys(ids)...)
 	if gmail {
-		where += " AND NOT EXISTS (SELECT 1 FROM ops WHERE message_id = messages.id AND state = 'pending')"
+		where += ` AND NOT EXISTS (SELECT 1 FROM ops WHERE message_id = messages.id AND state = 'pending')
+			AND (gmail_msgid IS NULL OR EXISTS (SELECT 1 FROM folders WHERE account_id = messages.account_id AND role = 'all'))`
 	}
 	gone, tids, err := doomed(ctx, db, where, args...)
 	if err != nil || len(gone) == 0 {

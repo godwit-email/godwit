@@ -134,9 +134,11 @@ func (s session) Search(kind imapserver.NumKind, criteria *imap.SearchCriteria, 
 
 // GmailMessage is one Gmail message, in the folders it has a UID in.
 type GmailMessage struct {
-	ID   uint64 // X-GM-MSGID
-	s    *IMAP
-	uids map[string]imap.UID // folder → UID; guarded by s.gmu
+	ID    uint64 // X-GM-MSGID
+	s     *IMAP
+	uids  map[string]imap.UID // folder → UID; guarded by s.gmu
+	raw   string              // the Gmail object survives losing its last IMAP-visible location
+	flags []imap.Flag         // shared flags; guarded by s.gmu
 }
 
 // UID is the message's UID in folder, 0 when it is not there.
@@ -167,7 +169,11 @@ func (s *IMAP) AddGmail(raw string, flags []imap.Flag, folders ...string) *Gmail
 		}
 		uids[f] = d.UID
 	}
-	return s.addGmail(uids)
+	m := s.addGmail(uids)
+	s.gmu.Lock()
+	m.raw, m.flags = raw, slices.Clone(flags)
+	s.gmu.Unlock()
+	return m
 }
 
 func (s *IMAP) addGmail(uids map[string]imap.UID) *GmailMessage {
@@ -189,8 +195,22 @@ func (m *GmailMessage) Label(folder string) {
 		break
 	}
 	have := m.uids[folder] != 0
+	raw, flags := m.raw, slices.Clone(m.flags)
 	m.s.gmu.Unlock()
-	if have || uid == 0 {
+	if have {
+		return
+	}
+	if uid == 0 {
+		if raw == "" {
+			return
+		}
+		d, err := m.s.User.Append(folder, strings.NewReader(raw), &imap.AppendOptions{Flags: flags})
+		if err != nil {
+			panic(err)
+		}
+		m.s.gmu.Lock()
+		m.uids[folder] = d.UID // another client exposes the same Gmail object again
+		m.s.gmu.Unlock()
 		return
 	}
 	var d *imap.CopyData
@@ -382,6 +402,16 @@ func (s session) gmailShare(set imap.NumSet, f *imap.StoreFlags) error {
 	s.s.gmu.Lock()
 	for _, u := range uids {
 		if m := s.s.at(src, u); m != nil {
+			if shared.Op == imap.StoreFlagsSet {
+				m.flags = slices.Clone(shared.Flags)
+			} else {
+				for _, flag := range shared.Flags {
+					m.flags = slices.DeleteFunc(m.flags, func(f imap.Flag) bool { return strings.EqualFold(string(f), string(flag)) })
+					if shared.Op == imap.StoreFlagsAdd {
+						m.flags = append(m.flags, flag)
+					}
+				}
+			}
 			for folder, uid := range m.uids {
 				if folder != src {
 					others[folder] = append(others[folder], uid)

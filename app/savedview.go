@@ -20,7 +20,7 @@ import (
 )
 
 // viewUndoWindow is how long the toast after an archive or 移出 offers to undo it.
-const viewUndoWindow = 10 * time.Second
+const viewUndoWindow = core.UndoArchiveWindow
 
 // viewRefreshEvery rereads an open view with nothing else changing,
 // so that 等待回复 shows on time.
@@ -409,6 +409,7 @@ func (p *mailPage) removeFromView(b core.SavedView, rows []mailItem) {
 func (p *mailPage) archiveThreads(rows []mailItem) {
 	a, l := p.a, p.ls()
 	threads := threadsOf(rows)
+	start := a.clock.Now()
 	var undo core.ArchiveUndo
 	a.writes.Chain("mail:expand", func(ctx context.Context) (err error) {
 		undo, err = a.svc.ArchiveThreads(ctx, threads)
@@ -419,12 +420,12 @@ func (p *mailPage) archiveThreads(rows []mailItem) {
 			return
 		}
 		l.sel.Clear()
-		p.offerUndoArchive([]core.ArchiveUndo{undo})
+		p.offerUndoArchive([]core.ArchiveUndo{undo}, start)
 	})
 }
 
 // offerUndoArchive is the toast after an archive: it says so, and takes it back.
-func (p *mailPage) offerUndoArchive(undos []core.ArchiveUndo) {
+func (p *mailPage) offerUndoArchive(undos []core.ArchiveUndo, start time.Time) {
 	a := p.a
 	var all core.ArchiveUndo
 	for _, u := range undos {
@@ -433,8 +434,14 @@ func (p *mailPage) offerUndoArchive(undos []core.ArchiveUndo) {
 	if len(all.Moved) == 0 && len(all.Marks) == 0 {
 		return
 	}
+	// Start before the Service call so the toast cannot outlive its durable deadline.
+	left := start.Add(core.UndoArchiveWindow).Sub(a.clock.Now())
+	if left <= 0 {
+		a.toast(i18n.T("view.archived"))
+		return
+	}
 	a.toasts = append(a.toasts, ui.Toast{ID: fmt.Sprintf("archive-%d", a.clock.Now().UnixNano()), Title: i18n.T("view.archived"),
-		Action: i18n.T("compose.undo"), Timeout: viewUndoWindow, OnAction: func() {
+		Action: i18n.T("compose.undo"), Timeout: left, OnAction: func() {
 			a.writes.Chain("mail:expand", func(ctx context.Context) error { return a.svc.UndoArchiveThreads(ctx, all) }, a.toastErr)
 		}})
 }
