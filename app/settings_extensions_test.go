@@ -483,7 +483,10 @@ func loginFixture(t *testing.T, h *harness, extra map[string]any) *settingsPage 
 	h.click("选择文件夹")
 	h.until("installed", func() bool { _, ok := h.plugin("signin"); return ok })
 	h.click("仍然启用")
-	h.until("enabled", func() bool { info, _ := h.plugin("signin"); return info.Enabled && !info.NeedsGrant })
+	// In the view, not just stored. The install leaves the row open.
+	h.until("enabled", func() bool {
+		return slices.ContainsFunc(p.ext.plugins, func(p core.PluginInfo) bool { return p.Name == "signin" && p.Enabled && !p.NeedsGrant })
+	})
 	return p
 }
 
@@ -529,7 +532,6 @@ func TestPluginSignIn(t *testing.T) {
 func TestPluginSignedInShowsAccountAndSignsOut(t *testing.T) {
 	h, _ := withAccount(t)
 	loginFixture(t, h, map[string]any{"login": map[string]any{"login.status": map[string]any{"signedIn": true, "account": "a@example.com"}}})
-	h.click("signin")
 	h.until("the account", func() bool { return h.tt.HasText("已登录 a@example.com") })
 	if _, button := h.tt.Find("登录"); button {
 		t.Fatal("no sign-in while signed in")
