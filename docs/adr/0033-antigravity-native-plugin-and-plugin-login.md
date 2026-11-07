@@ -54,7 +54,7 @@ Google Antigravity 不做成内置服务（替代 PR 485 的方案），做成�
 - `core.Service` 加 `PluginLoginStatus`、`BeginPluginLogin`、`PollPluginLogin`、`CancelPluginLogin`、`PluginLogout`。`full` 角色都能调用（`rpcbind/testdata/full_methods.txt`）。`BeginPluginLogin` 可能导致外发，进入 `audit`。都不进 `mcp` 角色，也不暴露给 Wit 和脚本插件。
 - 只接受 `https` 的 URL。打开前再确认一次，对话框显示 URL 的主机名（这时才知道），用户同意后由应用打开，且只打开一次。这只是防误用，不是约束：原生插件本来就有全部权限（[0015](0015-native-plugins-trusted-subprocess.md)）。
 - 登录或退出成功后清掉 `rp.models` 并调用 `forgetPluginModels`，让模型列表重新获取。
-- `configure` 增加 `dataDir`（`DataDir/plugins/<name>/data`，更新时保留，卸载时删除）：原生插件原来没有稳定的目录可用。
+- `configure` 增加 `dataDir`（`DataDir/plugins/<name>/data`，更新时保留，卸载时删除）：原生插件原来没有稳定的目录可用。只发给声明了 `login` 的插件：已发布的库遇到未知字段会拒绝请求，插件因此启动失败。
 - 进程退出时，如果模型列表指向 loopback 地址就清掉，下次调用重新列出，因为新进程的端口不同。
 - `pluginModelTransport` 在流式响应结束前算作进行中的调用。现在 loopback 上的流不经过 ABI，空闲定时器可能在生成途中结束进程。这对所有 loopback 模型的插件都是修复。
 - 扩展页接上设计稿的「登录」按钮（`canLogin`，见 PR 530 的 `ExtensionsPlugins.dc.html`）。这部分基于 [PR 530](https://github.com/godwit-email/godwit/pull/530)。

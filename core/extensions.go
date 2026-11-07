@@ -97,6 +97,25 @@ func (s *Service) pluginDataDir(name string) (string, error) {
 	return dir, os.MkdirAll(dir, 0o700)
 }
 
+// nativeDataDir is what configure tells a plugin of its directory: "" unless it
+// declares login. Published libraries refuse a request with a field they do not
+// know, so nothing new reaches them: a new field needs a capability to ask for it.
+func (s *Service) nativeDataDir(name string, m plugins.Manifest) (string, error) {
+	if !slices.Contains(m.Capabilities, "login") {
+		return "", nil
+	}
+	return s.pluginDataDir(name)
+}
+
+// configureArgs is configure's request.
+func configureArgs[C any](cfg C, dataDir string) map[string]any {
+	args := map[string]any{"config": cfg}
+	if dataDir != "" {
+		args["dataDir"] = dataDir
+	}
+	return args
+}
+
 var versionRE = regexp.MustCompile(`^[0-9a-f]{64}-[0-9a-f]{16}$`)
 
 func isVersion(n string) bool { return versionRE.MatchString(n) }
@@ -671,7 +690,7 @@ func (s *Service) loadNative(ctx context.Context, name string, r pluginRow) erro
 	if err != nil {
 		return err
 	}
-	dataDir, err := s.pluginDataDir(name)
+	dataDir, err := s.nativeDataDir(name, r.m)
 	if err != nil {
 		return err
 	}
@@ -722,7 +741,7 @@ func setUpNative(ctx context.Context, name string, r pluginRow, rp *runningPlugi
 	rp.procs.Add(1)
 	rp.dropLoaded() // a new process has loaded nothing
 	cfg := rp.cfg.Load()
-	if _, err = call(ctx, "configure", map[string]any{"config": *cfg, "dataDir": dataDir}); err == nil {
+	if _, err = call(ctx, "configure", configureArgs(*cfg, dataDir)); err == nil {
 		rp.acked.Store(cfg)
 	}
 	return err
@@ -739,11 +758,11 @@ func (s *Service) configureNative(ctx context.Context, name string, rp *runningP
 	// Bounded as a start's configure is: the caller holds pluginsMu, which every send check waits on.
 	cctx, cancel := context.WithTimeout(ctx, nativeStart)
 	defer cancel()
-	dataDir, err := s.pluginDataDir(name)
+	dataDir, err := s.nativeDataDir(name, rp.row.m)
 	if err != nil {
 		return err
 	}
-	if _, err = rp.native.Call(cctx, "configure", map[string]any{"config": cfg, "dataDir": dataDir}); err == nil {
+	if _, err = rp.native.Call(cctx, "configure", configureArgs(cfg, dataDir)); err == nil {
 		rp.acked.Store(&cfg)
 	}
 	return err

@@ -17,7 +17,8 @@
  *              Must match plugin.json, or the plugin does not start.
  *   configure  {"config": {...},"dataDir":"/abs"}  -> {}
  *              After start and after each settings save; secrets included. dataDir
- *              is the plugin's own directory, kept across updates, gone on uninstall.
+ *              only with the capability "login": the plugin's own directory, kept
+ *              across updates, gone on uninstall.
  *   translate  {"texts":[...],"source":"","target":"zh-Hans"} -> {"texts":[...],"source":"en"}
  *              source "" asks the plugin to detect it; tags are BCP 47. One text
  *              per paragraph of the mail, in order; they may be long, so split

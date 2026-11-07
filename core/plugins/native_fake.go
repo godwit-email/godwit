@@ -8,6 +8,7 @@ import (
 	"io"
 	"os"
 	"os/exec"
+	"slices"
 	"strconv"
 	"strings"
 	"sync/atomic"
@@ -143,6 +144,16 @@ func FakeNativeOpener(stderr io.Writer) NativeOpener {
 				time.Sleep(time.Duration(spec.DescribeSleepMs) * time.Millisecond)
 				return ok(spec.Describe), nil
 			case "configure":
+				// Strict as published libraries are: an unknown field fails the plugin's start.
+				var d struct{ Capabilities []string }
+				json.Unmarshal(spec.Describe, &d)
+				var fields map[string]json.RawMessage
+				json.Unmarshal(req, &fields)
+				for f := range fields {
+					if f != "config" && (f != "dataDir" || !slices.Contains(d.Capabilities, "login")) {
+						return fail("invalid_request"), nil
+					}
+				}
 				if spec.Record != "" {
 					rec := req
 					if spec.RecordEnv {
