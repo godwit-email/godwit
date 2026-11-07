@@ -19,7 +19,6 @@ vi.mock("@/mygo", () => ({
   ReaderPage: {
     load: vi.fn(),
     height: vi.fn(async () => {}),
-    wheel: vi.fn(async () => {}),
     openLink: vi.fn(async () => {}),
     navigate: vi.fn(async () => {}),
     search: vi.fn(async () => {}),
@@ -331,18 +330,6 @@ test("⌘F or ⌘K in the iframe or the page → search()", async () => {
   expect(api.search).toHaveBeenCalledTimes(2);
   window.dispatchEvent(new KeyboardEvent("keydown", { key: "k", metaKey: true, cancelable: true }));
   expect(api.search).toHaveBeenCalledTimes(3);
-});
-
-test("wheel in the iframe goes to Go once per frame", async () => {
-  const { win } = await start(body(1, "<p>x</p>"));
-  flush();
-  const evs = [10, 20, 30].map(
-    (dy) => new win.WheelEvent("wheel", { deltaY: dy, cancelable: true }),
-  );
-  for (const e of evs) win.dispatchEvent(e);
-  expect(evs.every((e) => e.defaultPrevented)).toBe(true);
-  flush();
-  expect(api.wheel).toHaveBeenCalledExactlyOnceWith(60);
 });
 
 test("remote images are godwit-img: URLs left to the frame: the page asks Go for nothing", async () => {

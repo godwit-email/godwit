@@ -64,9 +64,8 @@ type Platform interface {
 	SettingsChanged(st core.Settings)
 	// NewBodyView makes a reader page in the main window showing message's
 	// body (bound to it before it loads); close unbinds and destroys it.
-	// The page reports to BodyHeight, BodyWheel, BodyLink, BodyNavigate,
-	// BodyBuilt and BodyFailed with the view. UI thread only; it may run
-	// the event loop.
+	// The page reports to BodyHeight, BodyLink, BodyNavigate, BodyBuilt and
+	// BodyFailed with the view. UI thread only; it may run the event loop.
 	NewBodyView(message int64) (view ui.NativeWebView, close func(), err error)
 	// AllowImages lets the pages showing message load its remote images
 	// (加载图片). Call it after NewBodyView: it forgets once the last page

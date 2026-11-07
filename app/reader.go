@@ -54,7 +54,7 @@ type reader struct {
 	historyOpen  map[int64]bool      // folded messages shown though the history is collapsed: ones the reader folded
 	revealID     int64               // a message to scroll to once it is laid out (a digest's source); 0 for none
 	bodies       map[int64]*msgBody
-	scroll       ui.ScrollState // the messages' scrolling; a body's page hands on the wheels it does not use
+	scroll       ui.ScrollState // the messages' scrolling: the wheel and touchpad over a body's page scroll it (ScrollToContainer)
 
 	ai          map[int64]*msgAI         // by message; kept across switches so a summary runs once
 	aiCtx       context.Context          // the AI work of the key shown; nil until some starts
@@ -1646,16 +1646,6 @@ func (a *App) BodyHeight(view ui.NativeWebView, message int64, px int) {
 		b.height = px
 		b.glass = [2]int{-1, -1} // the page listens now: what it was told before it loaded was dropped
 	}
-}
-
-// BodyWheel is told a vertical wheel delta a body's page did not use: the
-// reader scrolls by it, within its content.
-func (a *App) BodyWheel(view ui.NativeWebView, dy float64) {
-	if !a.mail.reader.current(view) {
-		return
-	}
-	s := &a.mail.reader.scroll
-	s.Y = min(max(s.Y+float32(dy), 0), s.MaxY)
 }
 
 // BodyLink opens a link of a body's page as one of the native reader's:

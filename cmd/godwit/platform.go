@@ -158,7 +158,11 @@ func (p *platform) ComposeOpen(id int64) bool { return p.windows.IsOpen(id) }
 // loads (loadAfterSetup), so that its first call finds it so; close
 // undoes each and destroys it. UI thread.
 func (p *platform) NewBodyView(message int64) (ui.NativeWebView, func(), error) {
-	v, err := p.win.NewWebView(mygo.WebViewOptions{BackgroundColor: panelBackground()})
+	// ScrollToContainer: the body fills its own height, and the wheel and
+	// touchpad over it scroll the reader's pane as over any native element
+	// of it (MyGo's own notches glide, a touchpad's moves follow), rather
+	// than a page that scrolls itself.
+	v, err := p.win.NewWebView(mygo.WebViewOptions{BackgroundColor: panelBackground(), ScrollToContainer: true})
 	if err != nil {
 		return nil, nil, err
 	}

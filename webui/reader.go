@@ -5,7 +5,6 @@ import (
 	"errors"
 	"log"
 	"maps"
-	"math"
 	"net/http"
 	"net/url"
 	"strconv"
@@ -24,8 +23,6 @@ import (
 var (
 	// ErrBadHeight is returned for a negative or absurd height.
 	ErrBadHeight = errors.New("the height is out of range")
-	// ErrBadWheel is returned for a wheel delta that is not a number.
-	ErrBadWheel = errors.New("the wheel delta is not a number")
 )
 
 // maxBodyHeight bounds a reported height, in CSS pixels.
@@ -81,8 +78,6 @@ type ReaderDeps struct {
 	Emit func(page any, b ReaderBody)
 	// OnHeight is the height of message's body in page, in CSS pixels.
 	OnHeight func(page any, message int64, px int)
-	// OnWheel is a wheel delta page's body did not use: the reader scrolls.
-	OnWheel func(page any, dy float64)
 	// OnLink opens a link of page's body (the native confirmation; mailto
 	// composes).
 	OnLink func(page any, url string)
@@ -468,20 +463,6 @@ func (p *ReaderPage) Height(ctx context.Context, px int) error {
 		return ErrBadHeight
 	}
 	p.r.d.OnHeight(key, message, px)
-	return nil
-}
-
-// Wheel is a vertical wheel delta the body did not use: the reader
-// scrolls by it.
-func (p *ReaderPage) Wheel(ctx context.Context, dy float64) error {
-	key, _, _, err := p.r.callerKey(ctx)
-	if err != nil {
-		return err
-	}
-	if math.IsNaN(dy) || math.IsInf(dy, 0) {
-		return ErrBadWheel
-	}
-	p.r.d.OnWheel(key, dy)
 	return nil
 }
 

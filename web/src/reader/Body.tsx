@@ -7,7 +7,6 @@ import { forwardShortcuts } from "@/shared/shortcuts";
 import { applyTheme, type Theme as PageTheme } from "@/shared/theme";
 import { adaptDarkMode } from "./dark";
 import { buildSrcdoc, frameScheme } from "./frame";
-import { wheelForwarder } from "./wheel";
 
 const ignore = () => {};
 let nextDocument = 0;
@@ -148,10 +147,12 @@ function useSystemDark(): boolean {
 /**
  * A body in a sandboxed iframe (the srcdoc's own CSP first, which allows no script: Go strips them
  * too). allow-scripts is for WebKit, which does not fire a listener on a document whose frame may
- * not run scripts, even one the page added: without it no click, wheel or key reached the page
+ * not run scripts, even one the page added: without it no click or key reached the page
  * (and loading="lazy" is ignored). The page wires it on each
- * load: its height (to Go and to the iframe, so nothing is clipped), wheels and ⌘[ ⌘] to Go, links
+ * load: its height (to Go and to the iframe, so nothing is clipped), ⌘[ ⌘] to Go, links
  * to OpenLink. Remote images are godwit-img: URLs the frame loads itself, from Go's image proxy.
+ * The wheel is not its own: the web view scrolls the native reader around it (ScrollToContainer),
+ * as over any native element, so a notch glides and a touchpad's moves follow.
  */
 export function Body({ body, theme }: { body: ReaderBody; theme: Theme }) {
   const systemDark = useSystemDark();
@@ -163,14 +164,7 @@ export function Body({ body, theme }: { body: ReaderBody; theme: Theme }) {
   const frame = useRef<HTMLIFrameElement>(null);
   const t = useT(body.locale);
 
-  // One forwarder for both windows, so a frame's wheels are summed once.
-  const wheel = useMemo(() => wheelForwarder((dy) => void api.wheel(dy).catch(ignore)), []);
-  useEffect(() => {
-    addEventListener("wheel", wheel, { passive: false });
-    return () => removeEventListener("wheel", wheel);
-  }, [wheel]);
-
-  const wire = useCallback((f: HTMLIFrameElement) => attach(f, wheel, theme), [wheel, theme]);
+  const wire = useCallback((f: HTMLIFrameElement) => attach(f, theme), [theme]);
   useEffect(() => {
     const f = frame.current;
     if (!f) return;
@@ -223,11 +217,7 @@ export function Body({ body, theme }: { body: ReaderBody; theme: Theme }) {
 }
 
 /** Wires a loaded body document; returns the unwiring. */
-function attach(
-  frame: HTMLIFrameElement,
-  wheel: (e: WheelEvent) => void,
-  theme: Theme,
-): () => void {
+function attach(frame: HTMLIFrameElement, theme: Theme): () => void {
   const doc = frame.contentDocument;
   const win = frame.contentWindow;
   const wrap = doc?.getElementById("godwit-body");
@@ -316,7 +306,6 @@ function attach(
     open(href);
   });
 
-  on(win, "wheel", wheel, { passive: false });
   offs.push(
     forwardShortcuts(
       (dir) => api.navigate(dir),
