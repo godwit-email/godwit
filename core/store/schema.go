@@ -633,6 +633,10 @@ var Migrations = [][]string{{
 	// attachments: these two are renamed out of the way and never read.
 	`ALTER TABLE messages RENAME COLUMN server_folder_id TO dropped_server_folder_id`,
 	`ALTER TABLE messages RENAME COLUMN server_uid TO dropped_server_uid`,
+}, {
+	// A Gmail message's X-GM-MSGID, an unsigned 64-bit number kept as
+	// decimal text (ADR 0032); NULL on other servers and rows synced before.
+	`ALTER TABLE messages ADD COLUMN gmail_msgid TEXT`,
 }}
 
 // HistoryRowsVersion is the schema version that keeps a conversation's

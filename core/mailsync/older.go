@@ -83,7 +83,7 @@ func FetchOlder(ctx context.Context, db *store.DB, c *imapclient.Client, account
 		return false, nil
 	}
 	more = len(uids) > OlderPage
-	msgs, err := c.Fetch(imap.UIDSetNum(uids[:min(len(uids), OlderPage)]...), importItems()).Collect()
+	msgs, err := c.Fetch(imap.UIDSetNum(uids[:min(len(uids), OlderPage)]...), importItems(c)).Collect()
 	if err != nil {
 		return false, err
 	}
