@@ -65,7 +65,6 @@ func (a *account) since(now time.Time) time.Time {
 
 // result collects what one Fetch changed, for the events it publishes.
 type result struct {
-	fresh                                      []newMessage
 	received, threads, changed, changedThreads []int64
 	orphans                                    []int64 // Gmail messages that lost a server location, for the round's end
 	conflicts                                  []string
@@ -98,8 +97,8 @@ func (r *result) merged(target int64, others []int64) {
 func Fetch(ctx context.Context, db *store.DB, c *imapclient.Client, accountID int64, bus *events.Bus) (more bool, err error) {
 	var r result
 	defer func() {
-		if lerr := r.logArrivals(context.WithoutCancel(ctx), db, accountID); err == nil {
-			err = lerr
+		if err == nil {
+			err = r.logArrivals(context.WithoutCancel(ctx), db, accountID)
 		}
 		r.publish(bus, accountID)
 	}()
@@ -122,7 +121,7 @@ func Fetch(ctx context.Context, db *store.DB, c *imapclient.Client, accountID in
 			return r.more, fmt.Errorf("sync %q: %w", f.name, err)
 		}
 	}
-	if err := dropOrphans(ctx, db, accountID, r.orphans, true, &r); err != nil {
+	if err := dropOrphans(ctx, db, accountID, r.orphans, true, c.Caps().Has(capGmail), &r); err != nil {
 		return r.more, err
 	}
 	return r.more, unclaimable(ctx, db, accountID, &r)
@@ -212,7 +211,7 @@ func (r *result) orphan(ctx context.Context, db *store.DB, c *imapclient.Client,
 		r.orphans = append(r.orphans, ids...)
 		return nil
 	}
-	return dropOrphans(ctx, db, accountID, ids, false, r)
+	return dropOrphans(ctx, db, accountID, ids, false, false, r)
 }
 
 // dropOrphans deletes the orphaned messages of ids (attachments and FTS rows go
@@ -221,7 +220,7 @@ func (r *result) orphan(ctx context.Context, db *store.DB, c *imapclient.Client,
 // Cached attachment files are removed best effort after the commit; one that
 // cannot be removed is no longer referenced, so the startup orphan sweep of
 // the cache directory (store.CleanOrphans) collects it.
-func dropOrphans(ctx context.Context, db *store.DB, accountID int64, ids []int64, stray bool, r *result) error {
+func dropOrphans(ctx context.Context, db *store.DB, accountID int64, ids []int64, stray, gmail bool, r *result) error {
 	which := "id IN (" + marks(len(ids)) + ")"
 	if stray {
 		which = "(" + which + " OR NOT EXISTS (SELECT 1 FROM message_locations WHERE message_id = messages.id))"
@@ -230,6 +229,9 @@ func dropOrphans(ctx context.Context, db *store.DB, accountID int64, ids []int64
 		return nil
 	}
 	where, args := "account_id = ? AND "+which+" AND "+orphaned, append([]any{accountID}, anys(ids)...)
+	if gmail {
+		where += " AND NOT EXISTS (SELECT 1 FROM ops WHERE message_id = messages.id AND state = 'pending')"
+	}
 	gone, tids, err := doomed(ctx, db, where, args...)
 	if err != nil || len(gone) == 0 {
 		return err

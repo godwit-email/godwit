@@ -148,10 +148,8 @@ func gmailLocate(ctx context.Context, db *store.DB, a *account, f *folder, msgs 
 		}, sqlite.Statement{SQL: "UPDATE ops SET state = 'done', last_error = NULL WHERE message_id = ? AND state = 'awaiting_claim' AND dst_folder_id = ?", Args: []any{id, f.id}},
 			sqlite.Statement{SQL: "UPDATE messages SET flags = ? WHERE id = ? AND flags != ? AND NOT " + pendingFlags, Args: []any{fl, id, fl}})
 		ids, tids = append(ids, id), append(tids, s[1])
-		for i := range r.fresh {
-			if arrivals && r.fresh[i].id == id {
-				r.fresh[i].arrival = true
-			}
+		if arrivals {
+			stmts = append(stmts, sqlite.Statement{SQL: "UPDATE message_imports SET arrival = 1 WHERE message_id = ?", Args: []any{id}})
 		}
 	}
 	if len(stmts) == 0 {

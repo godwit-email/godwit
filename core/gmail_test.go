@@ -6,6 +6,7 @@ import (
 
 	"github.com/emersion/go-imap/v2"
 	"github.com/godwit-email/godwit/core/internal/testmail"
+	"github.com/godwit-email/godwit/core/mailsync"
 	"github.com/godwit-email/godwit/core/store"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -329,4 +330,29 @@ func TestGmailMoveFromFolderLostOnServer(t *testing.T) {
 	assert.Equal(t, []int64{id}, e.listed(t, "Work"))
 	assert.Empty(t, e.listed(t, "Later"))
 	assert.Empty(t, e.listed(t, "Old"))
+}
+
+// Imports committed before the connection/database stops survive a restart,
+// including the receive event that must wait for the other folders to be known.
+func TestGmailArrivalRecoveredAfterInterruptedRound(t *testing.T) {
+	e := newGmailRulesEnv(t, "Aaa")
+	e.im.AddGmail(msg("recover@x"), nil, "Aaa", "INBOX", testmail.GmailAllMail)
+	interrupted := false
+	mailsync.BeforeFlagsWrite = func() {
+		mailsync.BeforeFlagsWrite = nil
+		interrupted = true
+		require.NoError(t, e.s.db.Close()) // imports committed; the round cannot publish
+	}
+	t.Cleanup(func() { mailsync.BeforeFlagsWrite = nil })
+	require.Error(t, e.s.SyncNow(bg, e.acc.ID))
+	require.True(t, interrupted)
+	e.reopen(t)
+	e.sync(t)
+	id := e.idOf(t, "recover@x")
+	e.waitRuns(t, 1)
+	assert.Equal(t, "rule", e.labelOn(t, id))
+	assert.Equal(t, 1, e.count(t, "SELECT count(*) FROM events_log WHERE type = 'message.received' AND message_id = ?", id))
+	e.sync(t)
+	e.rulesIdle(t)
+	assert.Equal(t, 1, e.count(t, "SELECT count(*) FROM events_log WHERE type = 'message.received' AND message_id = ?", id))
 }

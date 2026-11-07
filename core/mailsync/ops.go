@@ -146,6 +146,10 @@ func pushOp(ctx context.Context, db *store.DB, c *imapclient.Client, o op) (prob
 		if o.kind == "move" && gmail {
 			return lostSource(ctx, db, o, o.attempts > 0)
 		}
+		if gmail {
+			msg := "the message no longer has a server location, so the change could not be applied"
+			return msg, finish(ctx, db, o, "conflict", msg)
+		}
 		return "", nil // no server location: the move before it awaits its claim
 	}
 	src, srcValidity, uid, srcName := store.Int(r.Values[0][0]), uint32(store.Int(r.Values[0][1])),
@@ -169,6 +173,10 @@ func pushOp(ctx context.Context, db *store.DB, c *imapclient.Client, o op) (prob
 	switch o.kind {
 	case "flags":
 	case "move":
+		if gmail && !c.Caps().Has(imap.CapMove) {
+			msg := "this Gmail server does not advertise MOVE; move the message in Gmail and sync again"
+			return msg, finish(ctx, db, o, "failed", msg)
+		}
 		if !c.Caps().Has(imap.CapMove) && !c.Caps().Has(imap.CapUIDPlus) {
 			msg := "the server supports neither MOVE nor UIDPLUS, so messages cannot be moved safely"
 			return msg, finish(ctx, db, o, "failed", msg)
@@ -283,8 +291,6 @@ func lostSource(ctx context.Context, db *store.DB, o op, sent bool) (string, err
 		return "", err
 	case sent:
 		return "", moved(ctx, db, o, 0, 0)
-	case store.Int(r.Values[0][0]) == 0:
-		return "", nil
 	}
 	msg := "the message left the folder it was moved from on the server before the move was sent"
 	return msg, finish(ctx, db, o, "conflict", msg)

@@ -66,6 +66,9 @@ func merge(ctx context.Context, db *store.DB, keep int64, drop []int64) ([]sqlit
 		to("UPDATE OR IGNORE rule_runs SET message_id = ? WHERE message_id IN " + in),
 		to("UPDATE run_citations SET message_id = ? WHERE message_id IN " + in),
 		to("UPDATE events_log SET message_id = ? WHERE message_id IN " + in),
+		to(`INSERT INTO message_imports(message_id, arrival, verdict)
+   SELECT ?, arrival, verdict FROM message_imports WHERE message_id IN ` + in + `
+   ON CONFLICT(message_id) DO UPDATE SET arrival = max(arrival, excluded.arrival), verdict = max(verdict, excluded.verdict)`),
 		to("UPDATE approvals SET target_id = ? WHERE target_kind = 'message' AND target_id IN " + in),
 		to("UPDATE audit_log SET target_id = ? WHERE target_kind = 'message' AND target_id IN " + in),
 		{SQL: `UPDATE attachments SET (cache_path, last_used) = (SELECT d.cache_path, d.last_used FROM attachments d

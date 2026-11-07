@@ -151,13 +151,17 @@ func syncFolders(ctx context.Context, db *store.DB, c *imapclient.Client, accoun
 		return nil, err
 	}
 	shownElsewhere := "EXISTS (SELECT 1 FROM message_locations o WHERE o.message_id = %s AND o.shown AND o.folder_id NOT IN " + gone + ")"
+	keepPending := ""
+	if c.Caps().Has(capGmail) {
+		keepPending = " AND NOT EXISTS (SELECT 1 FROM ops WHERE message_id = messages.id AND state IN ('pending', 'awaiting_claim'))"
+	}
 	stmts = append(stmts,
 		// Shown only in a vanished folder but on the server elsewhere: back to where it is.
 		sqlite.Statement{SQL: "UPDATE message_locations SET shown = 1, entered_at = unixepoch() WHERE uid IS NOT NULL AND folder_id NOT IN " + gone +
 			" AND message_id IN (SELECT message_id FROM message_locations WHERE shown AND folder_id IN " + gone + ") AND NOT " +
 			fmt.Sprintf(shownElsewhere, "message_locations.message_id"), Args: append(slices.Clone(twice), staleArgs...)},
 		// Shown only in a vanished folder and on the server nowhere: gone too.
-		sqlite.Statement{SQL: "DELETE FROM messages WHERE " + in + "shown) AND " + unlocated + " AND NOT " + fmt.Sprintf(shownElsewhere, "messages.id"), Args: twice},
+		sqlite.Statement{SQL: "DELETE FROM messages WHERE " + in + "shown) AND " + unlocated + keepPending + " AND NOT " + fmt.Sprintf(shownElsewhere, "messages.id"), Args: twice},
 		// With the folders go their locations; a message the server then holds nowhere is orphaned.
 		sqlite.Statement{SQL: "DELETE FROM folders WHERE " + stale, Args: staleArgs})
 	if _, err := db.Transaction(ctx, append(stmts, tidyThreads(accountID, tids)...)); err != nil {

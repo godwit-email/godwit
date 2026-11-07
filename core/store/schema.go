@@ -680,6 +680,13 @@ var Migrations = [][]string{{
 	// message kept, so an ID held from before the merge still resolves.
 	`CREATE TABLE message_aliases (id INTEGER PRIMARY KEY, message_id INTEGER NOT NULL REFERENCES messages(id) ON DELETE CASCADE)`,
 	`CREATE INDEX message_aliases_message ON message_aliases(message_id)`,
+}, {
+	// Imported mail waits here, durably, until a complete folder round can
+	// publish its receive event with all memberships known (ADR 0034).
+	`CREATE TABLE message_imports (
+  message_id INTEGER PRIMARY KEY REFERENCES messages(id) ON DELETE CASCADE,
+  arrival INTEGER NOT NULL,
+  verdict TEXT NOT NULL DEFAULT '')`,
 }}
 
 // HistoryRowsVersion is the schema version that keeps a conversation's
