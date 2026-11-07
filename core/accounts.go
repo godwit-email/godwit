@@ -629,7 +629,7 @@ func (s *Service) UpdateAccount(ctx context.Context, id int64, p AccountPatch) (
 		// see a recreated folder and the next fetch re-imports every folder.
 		stmts = append(stmts,
 			sqlite.Statement{SQL: "UPDATE folders SET uidvalidity = 0 WHERE account_id = ?", Args: []any{id}},
-			sqlite.Statement{SQL: "UPDATE messages SET server_uidvalidity = 0 WHERE account_id = ? AND server_uid IS NOT NULL", Args: []any{id}})
+			sqlite.Statement{SQL: "UPDATE message_locations SET uidvalidity = 0 WHERE uid IS NOT NULL AND message_id IN (SELECT id FROM messages WHERE account_id = ?)", Args: []any{id}})
 		unlock, err := s.lockAccount(ctx, id) // no sync or download is using the old UIDs meanwhile
 		if err != nil {
 			return Account{}, err

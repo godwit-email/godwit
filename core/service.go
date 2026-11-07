@@ -816,8 +816,9 @@ func (s *Service) setStatus(ctx context.Context, accountID int64, status, detail
 // Gmail's Starred (flagged) are detected only.
 func (s *Service) ListFolders(ctx context.Context, accountID int64) ([]Folder, error) {
 	rows, err := s.db.Query(ctx, `SELECT f.id, f.account_id, f.name, CASE WHEN f.role IN ('inbox', 'flagged') THEN f.role ELSE '' END,
-		(SELECT count(*) FROM messages m WHERE m.folder_id = f.id AND instr(m.flags, '\Seen') = 0 AND `+notPurgedCond+`), f.delim,
-		(SELECT count(*) FROM messages m WHERE m.folder_id = f.id AND `+notPurgedCond+`)
+		(SELECT count(*) FROM messages m JOIN message_locations l ON l.message_id = m.id AND l.folder_id = f.id AND l.shown
+			WHERE instr(m.flags, '\Seen') = 0 AND `+notPurgedCond+`), f.delim,
+		(SELECT count(*) FROM messages m JOIN message_locations l ON l.message_id = m.id AND l.folder_id = f.id AND l.shown WHERE `+notPurgedCond+`)
 		FROM folders f WHERE f.account_id = ? ORDER BY f.id`, accountID)
 	if err != nil {
 		return nil, err

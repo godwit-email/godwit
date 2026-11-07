@@ -48,7 +48,7 @@ func TestLoadOlderPages(t *testing.T) {
 	require.NoError(t, err)
 	assert.False(t, more)
 	e.sync(t)
-	assert.Equal(t, 5, e.count(t, "SELECT count(*) FROM messages WHERE server_folder_id = ?", f), "no duplicates")
+	assert.Equal(t, 5, e.count(t, "SELECT count(*) FROM messages WHERE "+serverCol+" = ?", f), "no duplicates")
 }
 
 // Under a months range the page also takes old mail above the oldest stored
@@ -89,8 +89,8 @@ func TestLoadOlderWithSync(t *testing.T) {
 	wg.Wait()
 	require.NoError(t, olderErr)
 	require.NoError(t, syncErr)
-	n := e.count(t, "SELECT count(*) FROM messages WHERE server_folder_id = ?", f)
-	assert.Equal(t, n, e.count(t, "SELECT count(DISTINCT message_id) FROM messages WHERE server_folder_id = ?", f))
+	n := e.count(t, "SELECT count(*) FROM messages WHERE "+serverCol+" = ?", f)
+	assert.Equal(t, n, e.count(t, "SELECT count(DISTINCT message_id) FROM messages WHERE "+serverCol+" = ?", f))
 	assert.GreaterOrEqual(t, n, 5)
 	_, err := e.s.LoadOlder(bg, f)
 	require.NoError(t, err)

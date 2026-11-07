@@ -52,23 +52,27 @@ func importMessage(ctx context.Context, db *store.DB, a *account, f *folder, m *
 		secScanned = 0
 	}
 
-	args := append([]any{a.id, f.id, f.id, f.uidValidity, uid}, plan.args...)
+	args := append([]any{a.id}, plan.args...)
 	args = append(args, nullable(p.MessageID), nullable(p.InReplyTo), nullable(strings.Join(p.References, " ")), p.Subject, p.From,
 		jsonList(p.To), jsonList(p.Cc), nullable(p.ReplyTo), p.Date.Unix(), flagString(m.Flags), m.RFC822Size,
 		mail.Snippet(p.Text), p.Text, nullable(p.HTML), p.Truncated, len(p.Attachments) > 0, nullable(labelFP(p, m.RFC822Size)),
 		p.ListUnsubscribe, p.ListUnsubscribePost, p.ListID, p.AuthenticationResults, secStatus, secReason, secScanned, verifyDKIM, p.RuleSent)
 	stmts := append(plan.pre, sqlite.Statement{
-		SQL: `INSERT INTO messages(account_id, folder_id, server_folder_id, server_uidvalidity, server_uid, thread_id,
+		SQL: `INSERT INTO messages(account_id, thread_id,
 			message_id, in_reply_to, refs, subject, from_addr, to_addrs, cc_addrs, reply_to, date, flags, size,
-			snippet, body_text, body_html, body_truncated, has_attachments, label_fp, list_unsubscribe, list_unsubscribe_post, list_id, auth_results, security_status, security_reason, security_scanned_at, security_verify_dkim, rule_sent, entered_at)
-			VALUES (?, ?, ?, ?, ?, ` + plan.expr + `, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, unixepoch())`,
+			snippet, body_text, body_html, body_truncated, has_attachments, label_fp, list_unsubscribe, list_unsubscribe_post, list_id, auth_results, security_status, security_reason, security_scanned_at, security_verify_dkim, rule_sent)
+			VALUES (?, ` + plan.expr + `, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 		Args: args,
+	}, sqlite.Statement{
+		SQL: `INSERT INTO message_locations(message_id, folder_id, shown, uidvalidity, uid, entered_at, date)
+			VALUES (last_insert_rowid(), ?, 1, ?, ?, unixepoch(), ?)`,
+		Args: []any{f.id, f.uidValidity, uid, p.Date.Unix()},
 	})
-	msgAt := len(stmts) - 1
+	msgAt := len(stmts) - 2
 	for _, at := range p.Attachments {
 		stmts = append(stmts, sqlite.Statement{
 			SQL: `INSERT INTO attachments(message_id, part, encoding, charset, filename, content_type, size, content_id, inline)
-				VALUES ((SELECT id FROM messages WHERE server_folder_id = ? AND server_uid = ?), ?, ?, ?, ?, ?, ?, ?, ?)`,
+				VALUES ((SELECT message_id FROM message_locations WHERE folder_id = ? AND uid = ?), ?, ?, ?, ?, ?, ?, ?, ?)`,
 			Args: []any{f.id, uid, at.Part, at.Encoding, at.Charset, at.Filename, at.ContentType, at.Size, at.ContentID, at.Inline},
 		})
 	}
@@ -76,16 +80,16 @@ func importMessage(ctx context.Context, db *store.DB, a *account, f *folder, m *
 	if arrival {
 		stmts = append(stmts, sqlite.Statement{
 			SQL: `INSERT INTO events_log(type, account_id, message_id, subject, from_addr, msg_date, created_at)
-				VALUES ('message.received', ?, (SELECT id FROM messages WHERE account_id = ? AND server_folder_id = ?
-					AND server_uidvalidity = ? AND server_uid = ?), ?, ?, ?, unixepoch())`,
-			Args: []any{a.id, a.id, f.id, f.uidValidity, uid, p.Subject, p.From, p.Date.Unix()},
+				VALUES ('message.received', ?, (SELECT message_id FROM message_locations WHERE folder_id = ?
+					AND uidvalidity = ? AND uid = ?), ?, ?, ?, unixepoch())`,
+			Args: []any{a.id, f.id, f.uidValidity, uid, p.Subject, p.From, p.Date.Unix()},
 		})
 		if _, final := secScanned.(int64); final { // a verdict now, not the scanner's later: security rules run on it
 			stmts = append(stmts, sqlite.Statement{
 				SQL: `INSERT INTO events_log(type, account_id, message_id, subject, from_addr, msg_date, detail, created_at)
-					VALUES ('security.verdict', ?, (SELECT id FROM messages WHERE account_id = ? AND server_folder_id = ?
-						AND server_uidvalidity = ? AND server_uid = ?), ?, ?, ?, ?, unixepoch())`,
-				Args: []any{a.id, a.id, f.id, f.uidValidity, uid, p.Subject, p.From, p.Date.Unix(), secStatus},
+					VALUES ('security.verdict', ?, (SELECT message_id FROM message_locations WHERE folder_id = ?
+						AND uidvalidity = ? AND uid = ?), ?, ?, ?, ?, unixepoch())`,
+				Args: []any{a.id, f.id, f.uidValidity, uid, p.Subject, p.From, p.Date.Unix(), secStatus},
 			})
 		}
 	}
@@ -129,17 +133,14 @@ func claim(ctx context.Context, db *store.DB, accountID int64, f *folder, uid ui
 	if err != nil || len(rows.Values) == 0 {
 		return 0, err
 	}
-	present, err := db.Query(ctx, "SELECT count(*) FROM messages WHERE server_folder_id = ? AND message_id = ? AND size = ?", f.id, messageID, size)
+	present, err := db.Query(ctx, "SELECT count(*) FROM messages WHERE "+serverIn+" AND message_id = ? AND size = ?", f.id, messageID, size)
 	if err != nil {
 		return 0, err
 	}
 	if len(rows.Values) == 1 && twins <= 1 && store.Int(present.Values[0][0]) == 0 {
 		op, id := store.Int(rows.Values[0][0]), store.Int(rows.Values[0][1])
-		_, err = db.Transaction(ctx, []sqlite.Statement{
-			{SQL: "UPDATE messages SET server_folder_id = ?, server_uidvalidity = ?, server_uid = ? WHERE id = ?",
-				Args: []any{f.id, f.uidValidity, uid, id}},
-			{SQL: "UPDATE ops SET state = 'done' WHERE id = ?", Args: []any{op}},
-		})
+		_, err = db.Transaction(ctx, append(locate(id, f.id, f.uidValidity, uid),
+			sqlite.Statement{SQL: "UPDATE ops SET state = 'done' WHERE id = ?", Args: []any{op}}))
 		if err != nil {
 			return 0, err
 		}
@@ -184,14 +185,14 @@ func unclaimable(ctx context.Context, db *store.DB, accountID int64, r *result) 
 	}
 	msg := fmt.Sprintf("%d message(s) moved to %s could not be matched to the copy there; the copy is kept as a new message and changes queued for the original were not applied",
 		len(msgs), strings.Join(slices.Compact(slices.Sorted(slices.Values(names))), ", "))
-	ids, tids, err := doomed(ctx, db, "server_folder_id IS NULL AND id IN ("+marks(len(msgs))+")", msgs...)
+	ids, tids, err := doomed(ctx, db, unlocated+" AND id IN ("+marks(len(msgs))+")", msgs...)
 	if err != nil {
 		return err
 	}
 	stmts := []sqlite.Statement{
 		{SQL: "UPDATE ops SET state = 'conflict', last_error = ? WHERE state IN ('pending', 'awaiting_claim') AND message_id IN (" + marks(len(msgs)) + ")",
 			Args: append([]any{msg}, msgs...)},
-		{SQL: "DELETE FROM messages WHERE server_folder_id IS NULL AND id IN (" + marks(len(msgs)) + ")", Args: msgs},
+		{SQL: "DELETE FROM messages WHERE " + unlocated + " AND id IN (" + marks(len(msgs)) + ")", Args: msgs},
 	}
 	if _, err := db.Transaction(ctx, append(stmts, tidyThreads(accountID, tids)...)); err != nil {
 		return err
@@ -223,8 +224,8 @@ func syncFlags(ctx context.Context, db *store.DB, c *imapclient.Client, accountI
 		remote[uint32(b.UID)] = flagString(b.Flags)
 	}
 	// A flags change still queued wins over the server's flags until it is pushed.
-	rows, err := db.Query(ctx, "SELECT id, server_uid, flags, thread_id, "+pendingFlags+
-		" FROM messages WHERE server_folder_id = ? AND server_uid <= ?", f.id, f.lastUID)
+	rows, err := db.Query(ctx, "SELECT messages.id, l.uid, flags, thread_id, "+pendingFlags+
+		" FROM message_locations l JOIN messages ON messages.id = l.message_id WHERE l.folder_id = ? AND l.uid <= ?", f.id, f.lastUID)
 	if err != nil {
 		return err
 	}

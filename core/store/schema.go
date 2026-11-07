@@ -592,6 +592,47 @@ var Migrations = [][]string{{
 	// only on a later event, so mail that came before, still in the
 	// consumer's backlog, is not forwarded (0: every event).
 	`ALTER TABLE rules ADD COLUMN since_seq INTEGER NOT NULL DEFAULT 0`,
+}, {
+	// A message's folders are its locations (ADR 0032), one row per folder:
+	// shown is the 期望位置 there (the user sees it in the folder), uidvalidity
+	// and uid the 服务器位置 (NULL until the server confirms it). A move not
+	// yet pushed shows at its destination, unconfirmed, and stays hidden where
+	// the server has it. entered_at is when the message entered the folder,
+	// what a purge measures; date copies the message's, for folder lists.
+	`CREATE TABLE message_locations (
+		message_id INTEGER NOT NULL REFERENCES messages(id) ON DELETE CASCADE,
+		folder_id INTEGER NOT NULL REFERENCES folders(id) ON DELETE CASCADE,
+		shown INTEGER NOT NULL,
+		uidvalidity INTEGER,
+		uid INTEGER,
+		entered_at INTEGER NOT NULL,
+		date INTEGER,
+		PRIMARY KEY(message_id, folder_id),
+		UNIQUE(folder_id, uid))`,
+	`CREATE INDEX message_locations_list ON message_locations(folder_id, shown, date DESC, message_id DESC)`,
+	`INSERT INTO message_locations(message_id, folder_id, shown, uidvalidity, uid, entered_at, date)
+		SELECT id, folder_id, 1, iif(server_folder_id = folder_id, server_uidvalidity, NULL), iif(server_folder_id = folder_id, server_uid, NULL), entered_at, date
+		FROM messages`,
+	`INSERT INTO message_locations(message_id, folder_id, shown, uidvalidity, uid, entered_at, date)
+		SELECT id, server_folder_id, 0, server_uidvalidity, server_uid, entered_at, date FROM messages WHERE server_folder_id != folder_id`,
+	// The folder a move or purge takes the message from, set when it is
+	// queued: where the server has it, or the destination of the move before.
+	`ALTER TABLE ops ADD COLUMN src_folder_id INTEGER`,
+	`UPDATE ops SET src_folder_id = coalesce(
+		(SELECT p.dst_folder_id FROM ops p WHERE p.message_id = ops.message_id AND p.kind = 'move' AND p.state IN ('pending', 'awaiting_claim') AND p.id < ops.id ORDER BY p.id DESC LIMIT 1),
+		(SELECT server_folder_id FROM messages WHERE id = ops.message_id))
+		WHERE kind IN ('move', 'purge') AND state = 'pending'`,
+	`DROP INDEX messages_folder_date`,
+	`DROP INDEX messages_labeled`,
+	`CREATE INDEX messages_labeled ON messages(labeled_at)`,
+	`ALTER TABLE messages DROP COLUMN folder_id`,
+	`ALTER TABLE messages DROP COLUMN server_uidvalidity`,
+	`ALTER TABLE messages DROP COLUMN entered_at`,
+	// SQLite cannot drop a column of a UNIQUE constraint without rebuilding
+	// messages, which under foreign keys would cascade to its labels and
+	// attachments: these two are renamed out of the way and never read.
+	`ALTER TABLE messages RENAME COLUMN server_folder_id TO dropped_server_folder_id`,
+	`ALTER TABLE messages RENAME COLUMN server_uid TO dropped_server_uid`,
 }}
 
 // HistoryRowsVersion is the schema version that keeps a conversation's

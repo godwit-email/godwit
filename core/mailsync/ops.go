@@ -38,9 +38,9 @@ func (e *OpsError) Error() string { return strings.Join(e.Problems, "; ") }
 var errNoDestination = errors.New("the destination folder no longer exists")
 
 type op struct {
-	id, msg, dst, dep, accountID int64
-	kind, payload                string
-	attempts                     int
+	id, msg, src, dst, dep, accountID int64
+	kind, payload                     string
+	attempts                          int
 }
 
 // PushOps sends the account's pending ops to the server in id order. Ops whose
@@ -82,14 +82,14 @@ func push(ctx context.Context, db *store.DB, c *imapclient.Client, accountID int
 	if res.Changes > 0 {
 		problems = append(problems, fmt.Sprintf("%d change(s) not applied: the message no longer exists", res.Changes))
 	}
-	rows, err := db.Query(ctx, `SELECT id, kind, message_id, dst_folder_id, payload, depends_on, attempts FROM ops
+	rows, err := db.Query(ctx, `SELECT id, kind, message_id, src_folder_id, dst_folder_id, payload, depends_on, attempts FROM ops
 		WHERE account_id = ? AND state = 'pending' AND `+purgeDue+` <= ?`+filter+` ORDER BY id`, accountID, now.UnixMilli())
 	if err != nil {
 		return err
 	}
 	for _, v := range rows.Values {
-		o := op{id: store.Int(v[0]), kind: store.Str(v[1]), msg: store.Int(v[2]), dst: store.Int(v[3]), accountID: accountID,
-			payload: store.Str(v[4]), dep: store.Int(v[5]), attempts: int(store.Int(v[6]))}
+		o := op{id: store.Int(v[0]), kind: store.Str(v[1]), msg: store.Int(v[2]), src: store.Int(v[3]), dst: store.Int(v[4]), accountID: accountID,
+			payload: store.Str(v[5]), dep: store.Int(v[6]), attempts: int(store.Int(v[7]))}
 		problem, err := pushOp(ctx, db, c, o)
 		if o.kind == "purge" && err == nil && problem == "" {
 			if r, qerr := db.Query(ctx, "SELECT 1 FROM ops WHERE id = ? AND state = 'done'", o.id); qerr == nil && len(r.Values) > 0 {
@@ -130,8 +130,14 @@ func pushOp(ctx context.Context, db *store.DB, c *imapclient.Client, o op) (prob
 			return "", err
 		}
 	}
-	r, err := db.Query(ctx, `SELECT m.server_folder_id, m.server_uidvalidity, m.server_uid, f.name FROM messages m
-		JOIN folders f ON f.id = m.server_folder_id WHERE m.id = ?`, o.msg)
+	// A flags change goes wherever the server has the message; a move or purge
+	// takes it from the folder it was queued from.
+	at, args := "", []any{o.msg}
+	if o.kind != "flags" {
+		at, args = " AND l.folder_id = ?", append(args, o.src)
+	}
+	r, err := db.Query(ctx, `SELECT l.folder_id, l.uidvalidity, l.uid, f.name FROM message_locations l
+		JOIN folders f ON f.id = l.folder_id WHERE l.message_id = ? AND l.uid IS NOT NULL`+at+" LIMIT 1", args...)
 	if err != nil || len(r.Values) == 0 {
 		return "", err // no server location: the move before it awaits its claim
 	}
@@ -362,17 +368,15 @@ func single(s imap.NumSet) uint32 {
 // moved row's cannot be told: they lose their message and the next push reports
 // them as not applied. events_log stays history, as on every other delete.
 func moved(ctx context.Context, db *store.DB, o op, validity, uid uint32) error {
-	stmts := []sqlite.Statement{
-		{SQL: "UPDATE messages SET server_folder_id = NULL, server_uidvalidity = NULL, server_uid = NULL WHERE id = ?", Args: []any{o.msg}},
-		{SQL: "UPDATE ops SET state = 'awaiting_claim', last_error = NULL WHERE id = ?", Args: []any{o.id}},
-	}
+	stmts := append(unlocate(o.msg),
+		sqlite.Statement{SQL: "UPDATE ops SET state = 'awaiting_claim', last_error = NULL WHERE id = ?", Args: []any{o.id}})
 	if uid != 0 {
-		ids, tids, err := doomed(ctx, db, "server_folder_id = ? AND server_uid = ? AND id != ?", o.dst, uid, o.msg)
+		ids, tids, err := doomed(ctx, db, "EXISTS (SELECT 1 FROM message_locations WHERE message_id = messages.id AND folder_id = ? AND uid = ?) AND id != ?", o.dst, uid, o.msg)
 		if err != nil {
 			return err
 		}
 		stmts = nil
-		if len(ids) > 0 { // at most one: UNIQUE(server_folder_id, server_uid)
+		if len(ids) > 0 { // at most one: UNIQUE(folder_id, uid)
 			cp := ids[0]
 			stmts = append(stmts,
 				// As messages_label_stash hands labels to other copies: a manual label beats a rule's.
@@ -386,8 +390,7 @@ func moved(ctx context.Context, db *store.DB, o op, validity, uid uint32) error 
 				sqlite.Statement{SQL: "UPDATE run_citations SET message_id = ? WHERE message_id = ?", Args: []any{o.msg, cp}},
 				sqlite.Statement{SQL: "DELETE FROM messages WHERE id = ?", Args: []any{cp}})
 		}
-		stmts = append(stmts,
-			sqlite.Statement{SQL: "UPDATE messages SET server_folder_id = ?, server_uidvalidity = ?, server_uid = ? WHERE id = ?", Args: []any{o.dst, validity, uid, o.msg}},
+		stmts = append(append(stmts, locate(o.msg, o.dst, validity, uid)...),
 			sqlite.Statement{SQL: "UPDATE ops SET state = 'done', last_error = NULL WHERE id = ?", Args: []any{o.id}})
 		if len(tids) > 0 {
 			stmts = append(stmts, tidyThreads(o.accountID, tids)...)
@@ -398,7 +401,8 @@ func moved(ctx context.Context, db *store.DB, o op, validity, uid uint32) error 
 }
 
 // finish sets o's state. A move that ends failed or conflict puts the message
-// back in the folder the server has it in, unless another move of it is queued.
+// back in the folder the server has it in, unless another move of it is queued;
+// one queued after it then moves it from there.
 func finish(ctx context.Context, db *store.DB, o op, state, lastError string) error {
 	where := "id = ?"
 	if o.kind == "purge" {
@@ -406,9 +410,16 @@ func finish(ctx context.Context, db *store.DB, o op, state, lastError string) er
 	}
 	stmts := []sqlite.Statement{{SQL: "UPDATE ops SET state = ?, last_error = ? WHERE " + where, Args: []any{state, nullable(lastError), o.id}}}
 	if o.kind == "move" && (state == "failed" || state == "conflict") {
-		stmts = append(stmts, sqlite.Statement{SQL: `UPDATE messages SET folder_id = server_folder_id, entered_at = unixepoch()
-			WHERE id = ? AND server_folder_id IS NOT NULL AND folder_id != server_folder_id AND NOT EXISTS (SELECT 1 FROM ops
-				WHERE message_id = messages.id AND kind = 'move' AND state IN ('pending', 'awaiting_claim'))`, Args: []any{o.msg}})
+		stmts = append(stmts,
+			sqlite.Statement{SQL: `UPDATE ops SET src_folder_id = ? WHERE message_id = ? AND kind IN ('move', 'purge') AND state = 'pending'
+				AND src_folder_id = ? AND id > ?`, Args: []any{o.src, o.msg, o.dst, o.id}},
+			sqlite.Statement{SQL: `UPDATE message_locations SET shown = 0 WHERE message_id = ? AND shown AND uid IS NULL
+				AND EXISTS (SELECT 1 FROM message_locations c WHERE c.message_id = message_locations.message_id AND c.uid IS NOT NULL AND NOT c.shown)
+				AND NOT EXISTS (SELECT 1 FROM ops WHERE message_id = message_locations.message_id AND kind = 'move' AND state IN ('pending', 'awaiting_claim'))`,
+				Args: []any{o.msg}},
+			sqlite.Statement{SQL: `UPDATE message_locations SET shown = 1, entered_at = unixepoch() WHERE message_id = ? AND uid IS NOT NULL
+				AND NOT EXISTS (SELECT 1 FROM message_locations c WHERE c.message_id = message_locations.message_id AND c.shown)`, Args: []any{o.msg}},
+			dropUnseen(o.msg))
 	}
 	_, err := db.Transaction(ctx, stmts)
 	return err

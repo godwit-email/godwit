@@ -65,7 +65,7 @@ type AttachmentInfo struct {
 	Inline                bool
 }
 
-const msgCols = `m.id, m.thread_id, m.folder_id, m.subject, m.from_addr, m.snippet, m.to_addrs, m.cc_addrs, m.date, m.flags, m.has_attachments, m.auth_results, m.security_status, m.security_reason, m.security_scanned_at`
+const msgCols = `m.id, m.thread_id, ` + shownFolder + `, m.subject, m.from_addr, m.snippet, m.to_addrs, m.cc_addrs, m.date, m.flags, m.has_attachments, m.auth_results, m.security_status, m.security_reason, m.security_scanned_at`
 
 var msgColCount = strings.Count(msgCols, ",") + 1
 
@@ -128,6 +128,19 @@ func decodeCursor(c string) (date, id int64, err error) {
 // leave those out at once, before the server expunges them.
 const notPurgedCond = "NOT EXISTS (SELECT 1 FROM ops o WHERE o.message_id = m.id AND o.kind = 'purge' AND o.state = 'pending')"
 
+// shownFolder is the folder message alias m shows in (ADR 0032; for now one).
+const shownFolder = "(SELECT folder_id FROM message_locations WHERE message_id = m.id AND shown)"
+
+// serverLocation joins, as l and its folder as f, where the server has message
+// alias m (ADR 0032; for now in one folder at most).
+const serverLocation = "(message_locations l JOIN folders f ON f.id = l.folder_id) ON l.message_id = m.id AND l.uid IS NOT NULL"
+
+// shownIn is the condition that message alias m shows in one of folders, a
+// parenthesized SQL list or subquery of folder IDs.
+func shownIn(folders string) string {
+	return "EXISTS (SELECT 1 FROM message_locations l WHERE l.message_id = m.id AND l.shown AND l.folder_id IN " + folders + ")"
+}
+
 // viewCond returns a SQL condition on messages alias m selecting the view.
 func viewCond(v View) (string, []any, error) {
 	cond, args, err := viewOnlyCond(v)
@@ -153,7 +166,7 @@ func viewOnlyCond(v View) (string, []any, error) {
 		}
 		return labelViewCond, []any{v.LabelID}, nil
 	case v.Unified == "inbox" && v.FolderID == 0:
-		return "m.folder_id IN (SELECT id FROM folders WHERE role = 'inbox')", nil, nil
+		return shownIn("(SELECT id FROM folders WHERE role = 'inbox')"), nil, nil
 	case v.Unified == "starred" && v.FolderID == 0:
 		return `instr(m.flags, '\Flagged') > 0`, nil, nil
 	case strings.HasPrefix(v.Unified, "starred:") && v.FolderID == 0:
@@ -173,7 +186,7 @@ func viewOnlyCond(v View) (string, []any, error) {
 		}
 		return "", nil, errors.New("invalid account label view")
 	case v.Unified == "" && v.FolderID != 0:
-		return "m.folder_id = ?", []any{v.FolderID}, nil
+		return shownIn("(?)"), []any{v.FolderID}, nil
 	}
 	return "", nil, errors.New("view needs exactly one of FolderID, Unified (inbox, starred) or LabelID")
 }
@@ -184,16 +197,21 @@ func (s *Service) ListMessages(ctx context.Context, v View, cursor string, limit
 	if err != nil {
 		return MessagePage{}, err
 	}
+	from, date, id := "messages m", "m.date", "m.id"
+	if v.FolderID != 0 { // a folder pages by its locations' date, through their index
+		from, date, id = "message_locations l JOIN messages m ON m.id = l.message_id", "l.date", "l.message_id"
+		cond, args = "l.folder_id = ? AND l.shown = 1 AND "+notPurgedCond, []any{v.FolderID}
+	}
 	if cursor != "" {
-		d, id, err := decodeCursor(cursor)
+		d, i, err := decodeCursor(cursor)
 		if err != nil {
 			return MessagePage{}, err
 		}
-		cond += " AND (m.date < ? OR (m.date = ? AND m.id < ?))"
-		args = append(args, d, d, id)
+		cond += " AND (" + date + " < ? OR (" + date + " = ? AND " + id + " < ?))"
+		args = append(args, d, d, i)
 	}
 	limit = clampLimit(limit)
-	rows, err := s.db.Query(ctx, "SELECT "+msgCols+" FROM messages m WHERE "+cond+" ORDER BY m.date DESC, m.id DESC LIMIT ?", append(args, limit+1)...)
+	rows, err := s.db.Query(ctx, "SELECT "+msgCols+" FROM "+from+" WHERE "+cond+" ORDER BY "+date+" DESC, "+id+" DESC LIMIT ?", append(args, limit+1)...)
 	if err != nil {
 		return MessagePage{}, err
 	}
@@ -454,7 +472,7 @@ func showsInlineImage(raw, cid, contentType string) bool {
 }
 
 func (s *Service) readMessage(ctx context.Context, id int64, loadRemoteImages, lazy bool) (Message, error) {
-	rows, err := s.db.Query(ctx, "SELECT "+msgCols+", m.reply_to, m.body_text, m.body_html, m.body_truncated, "+inJunk+" FROM messages m LEFT JOIN folders f ON f.id = m.folder_id WHERE m.id = ?", id)
+	rows, err := s.db.Query(ctx, "SELECT "+msgCols+", m.reply_to, m.body_text, m.body_html, m.body_truncated, "+inJunk+" FROM messages m LEFT JOIN folders f ON f.id = "+shownFolder+" WHERE m.id = ?", id)
 	if err != nil {
 		return Message{}, err
 	}
@@ -546,7 +564,7 @@ func (s *Service) targets(ctx context.Context, ids []int64) (int64, []target, er
 	for i, id := range ids {
 		args[i] = id
 	}
-	rows, err := s.db.Query(ctx, "SELECT id, account_id, thread_id, folder_id, flags FROM messages WHERE id IN ("+
+	rows, err := s.db.Query(ctx, "SELECT m.id, m.account_id, m.thread_id, "+shownFolder+", m.flags FROM messages m WHERE m.id IN ("+
 		strings.TrimSuffix(strings.Repeat("?,", len(ids)), ",")+")", args...)
 	if err != nil {
 		return 0, nil, err
@@ -753,8 +771,8 @@ func (s *Service) DeleteForever(ctx context.Context, ids []int64) error {
 			continue
 		}
 		purged = append(purged, m)
-		stmts = append(stmts, sqlite.Statement{SQL: `INSERT INTO ops(account_id, message_id, kind, dst_folder_id, payload, depends_on, created_at)
-			VALUES (?, ?, 'purge', ?, ?, ` + latestOp + `, unixepoch())`, Args: []any{acc, m.id, m.folder, mailsync.PurgeNowRole(role, due), m.id}})
+		stmts = append(stmts, sqlite.Statement{SQL: `INSERT INTO ops(account_id, message_id, kind, src_folder_id, dst_folder_id, payload, depends_on, created_at)
+			VALUES (?, ?, 'purge', ?, ?, ?, ` + latestOp + `, unixepoch())`, Args: []any{acc, m.id, m.folder, m.folder, mailsync.PurgeNowRole(role, due), m.id}})
 	}
 	if err := s.apply(ctx, acc, purged, stmts); err != nil {
 		return err
@@ -782,7 +800,7 @@ func (s *Service) EmptyFolder(ctx context.Context, folderID int64) ([]int64, err
 	if role != "trash" && role != "junk" {
 		return nil, fmt.Errorf("cannot empty folder with role %q", role)
 	}
-	msgRows, err := s.db.Query(ctx, "SELECT m.id, m.thread_id FROM messages m WHERE m.folder_id = ? AND "+notPurgedCond, folderID)
+	msgRows, err := s.db.Query(ctx, "SELECT m.id, m.thread_id FROM messages m WHERE "+shownIn("(?)")+" AND "+notPurgedCond, folderID)
 	if err != nil || len(msgRows.Values) == 0 {
 		return nil, err
 	}
@@ -794,8 +812,8 @@ func (s *Service) EmptyFolder(ctx context.Context, folderID int64) ([]int64, err
 	for i, r := range msgRows.Values {
 		ids[i] = store.Int(r[0])
 		ts[i] = target{id: ids[i], thread: store.Int(r[1]), folder: folderID}
-		stmts[i] = sqlite.Statement{SQL: `INSERT INTO ops(account_id, message_id, kind, dst_folder_id, payload, depends_on, created_at)
-			VALUES (?, ?, 'purge', ?, ?, ` + latestOp + `, unixepoch())`, Args: []any{acc, ids[i], folderID, payload, ids[i]}}
+		stmts[i] = sqlite.Statement{SQL: `INSERT INTO ops(account_id, message_id, kind, src_folder_id, dst_folder_id, payload, depends_on, created_at)
+			VALUES (?, ?, 'purge', ?, ?, ?, ` + latestOp + `, unixepoch())`, Args: []any{acc, ids[i], folderID, folderID, payload, ids[i]}}
 	}
 	defer s.wakeForPurge(ctx, acc, now)
 	const chunk = 200
@@ -949,12 +967,11 @@ func moveWrites(accountID int64, ts []target, folderID int64) ([]target, []sqlit
 			continue
 		}
 		moved = append(moved, m)
-		stmts = append(stmts,
-			sqlite.Statement{SQL: "UPDATE messages SET folder_id = ?, entered_at = unixepoch() WHERE id = ?", Args: []any{folderID, m.id}},
+		stmts = append(append(stmts, mailsync.ShowIn(m.id, folderID)...),
 			// A rescue beats a purge queued before it (the move would otherwise wait for it).
 			sqlite.Statement{SQL: "UPDATE ops SET state = 'cancelled' WHERE message_id = ? AND kind = 'purge' AND state = 'pending'", Args: []any{m.id}},
-			sqlite.Statement{SQL: `INSERT INTO ops(account_id, message_id, kind, dst_folder_id, depends_on, created_at)
-				VALUES (?, ?, 'move', ?, ` + latestOp + `, unixepoch())`, Args: []any{accountID, m.id, folderID, m.id}})
+			sqlite.Statement{SQL: `INSERT INTO ops(account_id, message_id, kind, src_folder_id, dst_folder_id, depends_on, created_at)
+				VALUES (?, ?, 'move', ?, ?, ` + latestOp + `, unixepoch())`, Args: []any{accountID, m.id, m.folder, folderID, m.id}})
 	}
 	return moved, stmts
 }

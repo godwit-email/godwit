@@ -21,7 +21,7 @@ import (
 const (
 	labelBatch     = 20
 	labelBodyRunes = 4000
-	inboxCond      = "m.folder_id IN (SELECT id FROM folders WHERE role = 'inbox')"
+	inboxCond      = "EXISTS (SELECT 1 FROM message_locations l WHERE l.message_id = m.id AND l.shown AND l.folder_id IN (SELECT id FROM folders WHERE role = 'inbox'))"
 )
 
 var errNoLabelModel = errors.New("no model to classify mail with")

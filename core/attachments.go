@@ -54,8 +54,8 @@ type attRow struct {
 
 func (s *Service) loadAttachment(ctx context.Context, id int64) (attRow, error) {
 	rows, err := s.db.Query(ctx, `SELECT a.part, a.encoding, a.charset, a.filename, a.content_type, a.size, a.inline, a.cache_path,
-		m.account_id, f.name, m.server_uidvalidity, m.server_uid
-		FROM attachments a JOIN messages m ON m.id = a.message_id LEFT JOIN folders f ON f.id = m.server_folder_id
+		m.account_id, f.name, l.uidvalidity, l.uid
+		FROM attachments a JOIN messages m ON m.id = a.message_id LEFT JOIN `+serverLocation+`
 		WHERE a.id = ?`, id)
 	if err != nil {
 		return attRow{}, err
@@ -310,8 +310,8 @@ func (s *Service) GetRawMessage(ctx context.Context, messageID int64) ([]byte, e
 	}
 	defer unlock()
 	// Read under the lock: a sync may have moved or deleted it meanwhile.
-	rows, err = s.db.Query(ctx, `SELECT m.account_id, f.name, m.server_uidvalidity, m.server_uid, m.size
-		FROM messages m LEFT JOIN folders f ON f.id = m.server_folder_id WHERE m.id = ?`, messageID)
+	rows, err = s.db.Query(ctx, `SELECT m.account_id, f.name, l.uidvalidity, l.uid, m.size
+		FROM messages m LEFT JOIN `+serverLocation+` WHERE m.id = ?`, messageID)
 	if err != nil {
 		return nil, err
 	}

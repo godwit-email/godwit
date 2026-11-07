@@ -143,7 +143,7 @@ func (s *Service) NewMailtoDraft(ctx context.Context, accountID int64, link stri
 
 func (s *Service) unsubscribeMethod(ctx context.Context, messageID int64) (Unsubscribe, error) {
 	rows, err := s.db.Query(ctx, "SELECT m.account_id, m.list_unsubscribe, m.list_unsubscribe_post, m.list_id, "+inJunk+
-		" FROM messages m LEFT JOIN folders f ON f.id = m.folder_id WHERE m.id = ?", messageID)
+		" FROM messages m LEFT JOIN folders f ON f.id = "+shownFolder+" WHERE m.id = ?", messageID)
 	if err != nil {
 		return Unsubscribe{}, err
 	}
@@ -176,8 +176,8 @@ func (s *Service) fetchListHeaders(ctx context.Context, accountID, messageID int
 	}
 	defer unlock()
 	// Read under the lock: a sync may have moved, deleted or filled it meanwhile.
-	rows, err := s.db.Query(ctx, `SELECT f.name, m.server_uidvalidity, m.server_uid, m.list_unsubscribe, m.list_unsubscribe_post, m.list_id
-		FROM messages m LEFT JOIN folders f ON f.id = m.server_folder_id WHERE m.id = ?`, messageID)
+	rows, err := s.db.Query(ctx, `SELECT f.name, l.uidvalidity, l.uid, m.list_unsubscribe, m.list_unsubscribe_post, m.list_id
+		FROM messages m LEFT JOIN `+serverLocation+` WHERE m.id = ?`, messageID)
 	if err != nil || len(rows.Values) == 0 {
 		return nil, false
 	}

@@ -103,7 +103,7 @@ func (t Thread) Merged() []MessageSummary {
 // thread, the Message-ID and how much the copy's folder is preferred. The
 // inbox copy shows, so acting on what is shown acts in the inbox; All Mail's
 // last, as it holds a copy of every message.
-const copyCols = `m.thread_id, m.message_id, CASE (SELECT f.role FROM folders f WHERE f.id = m.folder_id) WHEN 'inbox' THEN 0 WHEN 'all' THEN 2 ELSE 1 END`
+const copyCols = `m.thread_id, m.message_id, CASE (SELECT f.role FROM folders f WHERE f.id = ` + shownFolder + `) WHEN 'inbox' THEN 0 WHEN 'all' THEN 2 ELSE 1 END`
 
 // copyOf gives, for rows each holding copyCols at col, the index of the row
 // that shows each row's message, its own index for that row: of a thread's
@@ -186,7 +186,7 @@ func (s *Service) ListThreads(ctx context.Context, v View, cursor string, limit 
 	}
 	ms, err := s.db.Query(ctx, `SELECT thread_id, from_addr, snippet, flags, has_attachments, auth_results, security_status, security_reason, security_scanned_at, m.id, `+copyCols+`,
 		(SELECT email FROM accounts WHERE id = m.account_id),
-		(SELECT COALESCE(NULLIF(role_override, ''), role, '') FROM folders WHERE id = m.folder_id), m.folder_id FROM messages m
+		(SELECT COALESCE(NULLIF(role_override, ''), role, '') FROM folders WHERE id = `+shownFolder+`), `+shownFolder+` FROM messages m
 		WHERE thread_id IN (`+strings.TrimSuffix(strings.Repeat("?,", len(ids)), ",")+`) AND `+notPurgedCond+` ORDER BY date DESC, id DESC`, ids...)
 	if err != nil {
 		return ThreadPage{}, err
@@ -268,7 +268,7 @@ func (s *Service) GetThread(ctx context.Context, id int64) (Thread, error) {
 	}
 	of := copyOf(ms.Values, 0, msgColCount+3)
 	for i, r := range ms.Values {
-		if sentID != 0 && store.Int(r[2]) == sentID { // m.folder_id
+		if sentID != 0 && store.Int(r[2]) == sentID { // its shown folder
 			if t.sent == nil {
 				t.sent = map[int64]bool{}
 			}
