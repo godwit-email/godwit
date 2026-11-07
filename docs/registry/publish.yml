@@ -24,6 +24,15 @@ jobs:
         with:
           go-version-file: godwit/go.mod
           cache-dependency-path: godwit/go.sum
+      - name: Build registry.json from the directory and each plugin's pinned commit
+        run: cd godwit && go run ./cmd/godwit-registry build ../directory.json ../registry.json
+      # What the reviewer approves: the difference this pull request makes to what is published.
+      - name: Show what changes
+        if: github.event_name == 'pull_request'
+        run: |
+          curl -fsS https://dl.godwit.email/plugins/registry.json | jq -S 'del(.updated)' > published.json
+          jq -S 'del(.updated)' registry.json > built.json
+          { echo '```diff'; diff -u published.json built.json || true; echo '```'; } >> "$GITHUB_STEP_SUMMARY"
       # Godwit's own validator: what passes here is what the app accepts.
       - name: Check every release and download every file
         run: cd godwit && go run ./cmd/godwit-registry check --fetch ../registry.json

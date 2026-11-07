@@ -1,7 +1,8 @@
-// Command godwit-registry checks and signs a Godwit plugin registry.json
+// Command godwit-registry builds, checks and signs a Godwit plugin registry.json
 // (docs/registry/README.md). The plugins repository's CI runs it with
 // `go run github.com/godwit-email/godwit/cmd/godwit-registry@main`.
 //
+//	godwit-registry build directory.json registry.json   join the directory and each plugin's godwit-plugin.json at its pinned commit
 //	godwit-registry check [--fetch] registry.json   validate; --fetch also downloads every file (artifacts and assets) and checks its size and sha256
 //	godwit-registry sign registry.json              write registry.json.sig with the key in GODWIT_REGISTRY_KEY
 //	godwit-registry keygen                          print a new key pair
@@ -38,11 +39,16 @@ func main() { os.Exit(run(os.Args[1:], os.Stdout, os.Stderr)) }
 
 func run(args []string, stdout, stderr io.Writer) int {
 	if len(args) == 0 {
-		fmt.Fprintln(stderr, "usage: godwit-registry check [--fetch] registry.json | sign registry.json | keygen | dev [--addr host:port] spec.json")
+		fmt.Fprintln(stderr, "usage: godwit-registry build directory.json registry.json | check [--fetch] registry.json | sign registry.json | keygen | dev [--addr host:port] spec.json")
 		return 2
 	}
 	var err error
 	switch args[0] {
+	case "build":
+		if len(args) != 3 {
+			return 2
+		}
+		err = build(args[1], args[2])
 	case "check":
 		fs := flag.NewFlagSet("check", flag.ContinueOnError)
 		fs.SetOutput(stderr)
