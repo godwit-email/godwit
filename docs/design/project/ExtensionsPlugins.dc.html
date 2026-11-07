@@ -1,0 +1,507 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<title>Godwit 设置 扩展 插件</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600&amp;family=Geist+Mono:wght@500&amp;family=Noto+Sans+SC:wght@400;500;600&amp;display=swap" rel="stylesheet">
+<style>
+body{margin:0}
+</style>
+</helmet>
+<div style="{{rootStyle}}">
+<sc-if value="{{chrome}}" hint-placeholder-val="{{ true }}">
+<img src="/_blob/878f002c10b0d6c92e36b2bcfb479e8e" alt="" aria-label="桌面壁纸（已模糊）" style="position: absolute; left: -120px; top: -120px; width: 1680px; height: 1140px; object-fit: cover">
+<div aria-label="窗口材质" style="position: absolute; inset: 0; backdrop-filter: blur(20px); -webkit-backdrop-filter: blur(20px); background-color: #FAFAFAF2"></div>
+</sc-if>
+<div style="{{windowStyle}}">
+  <sc-if value="{{chrome}}" hint-placeholder-val="{{ true }}">
+  <div style="height: 44px; flex: none; display: flex; align-items: center; gap: 4px; padding-left: 88px; position: relative">
+    <span aria-hidden="true" style="position: absolute; left: 20px; top: 16px; display: flex; gap: 8px">
+      <span style="width: 12px; height: 12px; border-radius: 50%; background: #FF5F57; box-shadow: inset 0 0 0 0.5px rgba(0,0,0,0.12)"></span>
+      <span style="width: 12px; height: 12px; border-radius: 50%; background: #FEBC2E; box-shadow: inset 0 0 0 0.5px rgba(0,0,0,0.12)"></span>
+      <span style="width: 12px; height: 12px; border-radius: 50%; background: #28C840; box-shadow: inset 0 0 0 0.5px rgba(0,0,0,0.12)"></span>
+    </span>
+    <button type="button" aria-label="收起侧栏" style="width: 28px; height: 28px; border: 0; border-radius: 6px; background: transparent; color: #737373; display: flex; align-items: center; justify-content: center"><svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M21 3C21.5523 3 22 3.44772 22 4V20C22 20.5523 21.5523 21 21 21H3C2.44772 21 2 20.5523 2 20V4C2 3.44772 2.44772 3 3 3H21ZM7 5H4V19H7V5ZM20 5H9V19H20V5Z"></path></svg></button>
+    <a href="Main.dc.html" aria-label="后退" style="width: 28px; height: 28px; border-radius: 6px; color: #737373; display: flex; align-items: center; justify-content: center"><svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M7.82843 10.9999H20V12.9999H7.82843L13.1924 18.3638L11.7782 19.778L4 11.9999L11.7782 4.22168L13.1924 5.63589L7.82843 10.9999Z"></path></svg></a>
+    <button type="button" aria-label="前进" style="width: 28px; height: 28px; border: 0; border-radius: 6px; background: transparent; color: #A1A1A1; display: flex; align-items: center; justify-content: center"><svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M16.1716 10.9999L10.8076 5.63589L12.2218 4.22168L20 11.9999L12.2218 19.778L10.8076 18.3638L16.1716 12.9999H4V10.9999H16.1716Z"></path></svg></button>
+  </div>
+  </sc-if>
+  <div style="{{bodyStyle}}">
+    <div style="flex: 1; min-width: 0; display: flex; gap: 8px">
+    <sc-if value="{{chrome}}" hint-placeholder-val="{{ true }}">
+    <dc-import name="SettingsSidebar" current="extensions" height="{{sideH}}" hint-size="248px,848px"></dc-import>
+    </sc-if>
+    <div style="{{panelStyle}}">
+    <main style="flex: 1 1 auto; align-self: flex-start; min-width: 0; max-width: 760px; margin: 0 auto; padding: 32px; display: flex; flex-direction: column; gap: 32px">
+
+<sc-if value="{{isDirectoryPage}}" hint-placeholder-val="{{ false }}">
+<div style="display: flex; flex-direction: column; gap: 6px; min-width: 0">
+  <button type="button" onClick="{{goBack}}" style="align-self: flex-start; display: flex; align-items: center; gap: 6px; height: 28px; padding: 0 8px; margin-left: -8px; border: 0; border-radius: 6px; background: transparent; color: var(--muted); font: inherit; font-size: 13px; cursor: pointer"><svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M7.82843 10.9999H20V12.9999H7.82843L13.1924 18.3638L11.7782 19.778L4 11.9999L11.7782 4.22168L13.1924 5.63589L7.82843 10.9999Z"></path></svg>扩展</button>
+  <h1 style="margin: 0; font-size: 29px; line-height: 1.25; font-weight: 600">插件目录</h1>
+  <span style="color: var(--muted)">这里的插件都经过审核。安装前可以看清它会把数据发到哪里、需要什么权限。</span>
+</div>
+</sc-if>
+
+<sc-if value="{{isPluginsPage}}" hint-placeholder-val="{{ true }}">
+<div style="display: flex; flex-direction: column; gap: 6px; min-width: 0">
+  <h1 style="margin: 0; font-size: 29px; line-height: 1.25; font-weight: 600">扩展</h1>
+  <span style="color: var(--muted)">Skill 写 prompt 就能用；插件给 Godwit 增加翻译、模型等能力。MCP 服务器在「智能」里设置。</span>
+</div>
+
+<div role="tablist" aria-label="扩展类型" style="display: flex; gap: 4px; border-bottom: 1px solid var(--border); margin-bottom: -8px">
+  <button type="button" role="tab" aria-selected="false" style="height: 32px; padding: 0 12px; border: 0; border-bottom: 2px solid transparent; background: transparent; color: var(--muted); font: inherit; cursor: pointer">Skill · 10</button>
+  <button type="button" role="tab" aria-selected="true" style="height: 32px; padding: 0 12px; border: 0; border-bottom: 2px solid var(--fg); background: transparent; color: var(--fg); font: inherit; font-weight: 600; cursor: pointer">插件 · {{installedCount}}</button>
+</div>
+
+<section style="flex: none; display: flex; flex-direction: column; gap: 10px">
+  <h2 style="margin: 0; padding: 0 16px; font-size: 14px; font-weight: 600">已安装</h2>
+  <div style="border-radius: 12px; background: var(--card); overflow: hidden"><div style="display: flex; flex-direction: column; margin-top: -1px">
+    <sc-for list="{{rows}}" as="p" hint-placeholder-count="4">
+    <div style="background: linear-gradient(var(--border), var(--border)) center top / calc(100% - 32px) 1px no-repeat">
+      <div style="display: flex; align-items: center; gap: 16px; padding: 8px 16px; min-height: 48px; box-sizing: border-box">
+        <button type="button" aria-expanded="{{p.expanded}}" onClick="{{p.toggleOpen}}" style="flex: 1; min-width: 0; display: flex; align-items: center; gap: 8px; padding: 0; border: 0; background: transparent; color: inherit; font: inherit; text-align: left; cursor: pointer">
+          <span style="flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px">
+            <span style="display: flex; align-items: center; flex-wrap: wrap; column-gap: 8px; row-gap: 2px">
+              <span style="font-weight: 500">{{p.title}}</span>
+              <span style="font-size: 12px; color: var(--muted)">{{p.meta}}</span>
+              <sc-if value="{{p.isLocal}}" hint-placeholder-val="{{ true }}"><span style="font-size: 12px; color: var(--muted)">仅在本机</span></sc-if>
+              <sc-if value="{{p.isThird}}" hint-placeholder-val="{{ false }}"><span style="padding: 1px 6px; border-radius: 4px; background: var(--chip); font-size: 12px; color: var(--fg)">发往第三方</span></sc-if>
+            </span>
+            <span style="font-size: 12px; color: var(--muted)">{{p.desc}}</span>
+          </span>
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true" style="{{p.chevronStyle}}"><path d="M11.9999 13.1714L16.9497 8.22168L18.3639 9.63589L11.9999 15.9999L5.63599 9.63589L7.0502 8.22168L11.9999 13.1714Z"></path></svg>
+        </button>
+        <span style="flex: none; display: flex; align-items: center; gap: 12px">
+          <sc-if value="{{p.canUpdate}}" hint-placeholder-val="{{ false }}"><button type="button" onClick="{{p.update}}" style="height: 32px; padding: 0 12px; border: 1px solid var(--input); border-radius: 8px; background: var(--bg); color: var(--fg); font: inherit; cursor: pointer">更新到 {{p.next}}</button></sc-if>
+          <sc-if value="{{p.canLogin}}" hint-placeholder-val="{{ false }}"><button type="button" style="height: 32px; padding: 0 12px; border: 1px solid var(--input); border-radius: 8px; background: var(--bg); color: var(--fg); font: inherit; cursor: pointer">登录</button></sc-if>
+          <sc-if value="{{p.hasPill}}" hint-placeholder-val="{{ false }}"><span style="padding: 2px 8px; border-radius: 4px; background: #FFFBEB; color: #973C00; font-size: 12px">{{p.pill}}</span></sc-if>
+          <sc-if value="{{p.isProgress}}" hint-placeholder-val="{{ false }}"><span style="width: 144px; display: flex; flex-direction: column; gap: 4px"><span style="font-size: 12px; color: var(--muted)">正在下载 64%</span><span style="height: 4px; border-radius: 2px; background: var(--track); overflow: hidden; display: block"><span style="display: block; width: 64%; height: 4px; background: var(--primary)"></span></span></span></sc-if>
+          <sc-if value="{{p.hasSwitch}}" hint-placeholder-val="{{ true }}"><button type="button" role="switch" aria-checked="{{p.onText}}" aria-label="{{p.switchLabel}}" onClick="{{p.flip}}" style="{{p.trackStyle}}"><span style="width: 14px; height: 14px; border-radius: 50%; background: var(--thumb); box-shadow: 0 1px 2px rgba(0,0,0,0.2)"></span></button></sc-if>
+        </span>
+      </div>
+
+      <sc-if value="{{p.open}}" hint-placeholder-val="{{ false }}">
+      <div style="display: flex; flex-direction: column; gap: 12px; padding: 4px 16px 16px">
+        <sc-if value="{{p.hasAlert}}" hint-placeholder-val="{{ false }}"><div style="padding: 8px 12px; border-radius: 8px; background: #FFFBEB; color: #973C00; line-height: 1.6">{{p.alert}}</div></sc-if>
+        <dl style="margin: 0; display: grid; grid-template-columns: 64px minmax(0, 1fr); gap: 10px 16px; padding: 12px 16px; border-radius: 8px; background: var(--bg); line-height: 1.6">
+          <dt style="color: var(--muted)">数据去向</dt>
+          <dd style="margin: 0">{{p.flowDetail}}</dd>
+          <dt style="color: var(--muted)">权限</dt>
+          <dd style="margin: 0; display: flex; flex-direction: column; gap: 6px">
+            <span>{{p.permText}}</span>
+            <sc-if value="{{p.hasHosts}}" hint-placeholder-val="{{ false }}"><span style="display: flex; flex-wrap: wrap; gap: 4px"><sc-for list="{{p.hosts}}" as="h" hint-placeholder-count="3"><span style="font-family: 'Geist Mono', monospace; font-size: 12px; padding: 2px 6px; border-radius: 4px; background: var(--card)">{{h.host}}</span></sc-for></span></sc-if>
+            <sc-if value="{{p.hasExcluded}}" hint-placeholder-val="{{ false }}"><span style="color: var(--muted)">不包含：直接读写邮箱、调用你的模型、发送邮件（任何插件都不能发送）</span></sc-if>
+          </dd>
+          <dt style="color: var(--muted)">来源</dt>
+          <dd style="margin: 0">{{p.source}}<sc-if value="{{p.hasHome}}" hint-placeholder-val="{{ false }}"> · <a href="{{p.home}}" style="color: var(--fg)">主页</a></sc-if></dd>
+        </dl>
+        <sc-if value="{{p.hasActions}}" hint-placeholder-val="{{ true }}">
+        <div style="display: flex; align-items: center; gap: 8px">
+          <sc-if value="{{p.isPending}}" hint-placeholder-val="{{ false }}">
+            <button type="button" onClick="{{p.allow}}" style="height: 32px; padding: 0 12px; border: 0; border-radius: 8px; background: var(--primary); color: var(--primary-text); font: inherit; font-weight: 500; cursor: pointer">允许并启用</button>
+            <button type="button" onClick="{{p.later}}" style="height: 32px; padding: 0 12px; border: 1px solid var(--input); border-radius: 8px; background: var(--bg); color: var(--fg); font: inherit; cursor: pointer">暂不启用</button>
+          </sc-if>
+          <sc-if value="{{p.isRevoked}}" hint-placeholder-val="{{ false }}"><button type="button" onClick="{{p.allow}}" style="height: 32px; padding: 0 12px; border: 1px solid var(--input); border-radius: 8px; background: var(--bg); color: var(--fg); font: inherit; cursor: pointer">仍然启用</button></sc-if>
+          <sc-if value="{{p.hasGo}}" hint-placeholder-val="{{ true }}"><a href="{{p.goHref}}" style="height: 32px; box-sizing: border-box; display: inline-flex; align-items: center; padding: 0 12px; border: 1px solid var(--input); border-radius: 8px; background: var(--bg); color: var(--fg); text-decoration: none">{{p.goLabel}}</a></sc-if>
+          <sc-if value="{{p.canRemove}}" hint-placeholder-val="{{ true }}"><button type="button" onClick="{{p.remove}}" style="margin-left: auto; height: 32px; padding: 0 12px; border: 1px solid var(--danger-border); border-radius: 8px; background: transparent; color: var(--danger); font: inherit; cursor: pointer">卸载</button></sc-if>
+        </div>
+        </sc-if>
+      </div>
+      </sc-if>
+    </div>
+    </sc-for>
+  </div></div>
+</section>
+
+<section style="flex: none; display: flex; flex-direction: column; gap: 10px">
+  <h2 style="margin: 0; padding: 0 16px; font-size: 14px; font-weight: 600">添加插件</h2>
+  <div style="border-radius: 12px; background: var(--card); overflow: hidden">
+    <button type="button" onClick="{{openDirectory}}" style="width: 100%; display: flex; align-items: center; justify-content: space-between; gap: 24px; min-height: 48px; box-sizing: border-box; padding: 8px 16px; border: 0; background: transparent; color: var(--fg); font: inherit; text-align: left; cursor: pointer">
+      <span style="display: flex; flex-direction: column; gap: 2px; min-width: 0"><span style="font-weight: 500">浏览插件目录</span><span style="font-size: 12px; color: var(--muted)">{{directoryHint}}</span></span>
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true" style="flex: none; color: var(--muted)"><path d="M13.1717 12.0007L8.22192 7.05093L9.63614 5.63672L16.0001 12.0007L9.63614 18.3646L8.22192 16.9504L13.1717 12.0007Z"></path></svg>
+    </button>
+    <div style="display: flex; align-items: center; justify-content: space-between; gap: 24px; min-height: 48px; box-sizing: border-box; padding: 8px 16px; background: linear-gradient(var(--border), var(--border)) center top / calc(100% - 32px) 1px no-repeat">
+      <span style="display: flex; flex-direction: column; gap: 2px; min-width: 0"><span style="font-weight: 500">从文件夹安装</span><span style="font-size: 12px; color: var(--muted)">自己写的或别人给你的插件。它们没有经过审核，启用前要你授权。</span></span>
+      <button type="button" style="flex: none; height: 32px; padding: 0 12px; border: 1px solid var(--input); border-radius: 8px; background: var(--bg); color: var(--fg); font: inherit; cursor: pointer">选择文件夹</button>
+    </div>
+  </div>
+  <span style="padding: 0 16px; font-size: 12px; color: var(--muted)">任何插件都不能发送邮件。</span>
+</section>
+</sc-if>
+
+<sc-if value="{{isDirectoryPage}}" hint-placeholder-val="{{ false }}">
+<section style="flex: none; display: flex; flex-direction: column; gap: 10px; margin-top: -8px">
+
+  <sc-if value="{{hasSearch}}" hint-placeholder-val="{{ false }}">
+  <label style="display: flex; align-items: center; gap: 8px; height: 32px; box-sizing: border-box; margin-bottom: 6px; padding: 0 10px; border: 1px solid var(--input); border-radius: 8px; color: var(--muted)"><svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true" style="flex: none"><path d="M18.031 16.6168L22.3137 20.8995L20.8995 22.3137L16.6168 18.031C15.0769 19.263 13.124 20 11 20C6.032 20 2 15.968 2 11C2 6.032 6.032 2 11 2C15.968 2 20 6.032 20 11C20 13.124 19.263 15.0769 18.031 16.6168ZM16.0247 15.8748C17.2475 14.6146 18 12.8956 18 11C18 7.1325 14.8675 4 11 4C7.1325 4 4 7.1325 4 11C4 14.8675 7.1325 18 11 18C12.8956 18 14.6146 17.2475 15.8748 16.0247L16.0247 15.8748Z"></path></svg><input type="search" aria-label="搜索插件目录" placeholder="搜索插件目录" style="flex: 1; min-width: 0; border: 0; outline: 0; background: transparent; color: var(--fg); font: inherit"></label>
+  </sc-if>
+
+  <sc-if value="{{regOffline}}" hint-placeholder-val="{{ false }}">
+  <div style="display: flex; align-items: center; justify-content: space-between; gap: 24px; padding: 12px 16px; border: 1px dashed var(--track); border-radius: 12px">
+    <span style="display: flex; flex-direction: column; gap: 2px; min-width: 0"><span style="font-weight: 500">暂时读取不到插件目录</span><span style="font-size: 12px; color: var(--muted)">已安装的插件不受影响。</span></span>
+    <button type="button" style="flex: none; height: 32px; padding: 0 12px; border: 1px solid var(--input); border-radius: 8px; background: var(--bg); color: var(--fg); font: inherit; cursor: pointer">重试</button>
+  </div>
+  </sc-if>
+
+  <sc-for list="{{sections}}" as="s" hint-placeholder-count="1">
+  <div style="display: flex; flex-direction: column; gap: 8px; margin-bottom: 6px">
+    <sc-if value="{{s.hasHead}}" hint-placeholder-val="{{ false }}">
+    <div style="display: flex; align-items: center; justify-content: space-between; gap: 16px; padding: 0 16px">
+      <h3 style="margin: 0; font-size: 12px; font-weight: 500; color: var(--muted)">{{s.title}}</h3>
+      <sc-if value="{{s.hasMore}}" hint-placeholder-val="{{ false }}"><button type="button" style="display: inline-flex; align-items: center; gap: 4px; padding: 0; border: 0; background: transparent; color: var(--muted); font: inherit; font-size: 12px; cursor: pointer">显示全部<svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M16.1716 10.9999L10.8076 5.63589L12.2218 4.22168L20 11.9999L12.2218 19.778L10.8076 18.3638L16.1716 12.9999H4V10.9999H16.1716Z"></path></svg></button></sc-if>
+    </div>
+    </sc-if>
+    <div style="display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px">
+      <sc-for list="{{s.cards}}" as="c" hint-placeholder-count="2">
+      <div style="position: relative; min-width: 0; border-radius: 12px; background: var(--card)">
+        <button type="button" onClick="{{c.openCard}}" aria-label="{{c.openLabel}}" style="width: 100%; height: 100%; box-sizing: border-box; display: flex; flex-direction: column; gap: 8px; padding: 12px; border: 0; border-radius: 12px; background: transparent; color: inherit; font: inherit; text-align: left; cursor: pointer">
+          <span style="display: flex; align-items: center; gap: 12px; padding-right: 72px; min-width: 0">
+            <span style="width: 40px; height: 40px; flex: none; display: flex; align-items: center; justify-content: center; border-radius: 8px; background: var(--bg); color: var(--muted)"><svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="{{c.icon}}"></path></svg></span>
+            <span style="min-width: 0; display: flex; flex-direction: column; gap: 2px">
+              <span style="font-weight: 500">{{c.title}}</span>
+              <span style="display: flex; align-items: center; gap: 4px; font-size: 12px; color: var(--muted)"><sc-if value="{{c.official}}" hint-placeholder-val="{{ true }}"><svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor" aria-label="Godwit 官方" role="img"><path d="M12 1L20.2169 2.82598C20.6745 2.92766 21 3.33347 21 3.80217V13.7889C21 15.795 19.9974 17.6684 18.3282 18.7812L12 23L5.6718 18.7812C4.00261 17.6684 3 15.795 3 13.7889V3.80217C3 3.33347 3.32553 2.92766 3.78307 2.82598L12 1ZM12 3.04879L5 4.60434V13.7889C5 15.1263 5.6684 16.3752 6.7812 17.1171L12 20.5963L17.2188 17.1171C18.3316 16.3752 19 15.1263 19 13.7889V4.60434L12 3.04879ZM16.4524 8.22183L17.8666 9.63604L11.5026 16L7.25999 11.7574L8.67421 10.3431L11.5019 13.1709L16.4524 8.22183Z"></path></svg></sc-if>{{c.publisher}}</span>
+            </span>
+          </span>
+          <span style="min-height: 36px; font-size: 12px; line-height: 1.5; color: var(--muted); display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; overflow: hidden">{{c.desc}}</span>
+          <span style="display: flex; align-items: center; flex-wrap: wrap; column-gap: 6px; font-size: 12px; color: var(--muted)">
+            <sc-if value="{{c.hasWhy}}" hint-placeholder-val="{{ false }}"><span>{{c.why}}</span></sc-if>
+            <sc-if value="{{c.isLocal}}" hint-placeholder-val="{{ true }}"><span>仅在本机</span></sc-if>
+            <sc-if value="{{c.isThird}}" hint-placeholder-val="{{ false }}"><span style="padding: 1px 6px; border-radius: 4px; background: var(--chip); color: var(--fg)">发往第三方</span></sc-if>
+            <span aria-hidden="true">·</span>
+            <span>{{c.kindVersion}}</span>
+          </span>
+        </button>
+        <sc-if value="{{c.canAdd}}" hint-placeholder-val="{{ true }}"><button type="button" aria-label="{{c.addLabel}}" onClick="{{c.openCard}}" style="position: absolute; top: 16px; right: 12px; height: 32px; padding: 0 12px; border: 1px solid var(--input); border-radius: 8px; background: var(--bg); color: var(--fg); font: inherit; cursor: pointer">安装</button></sc-if>
+        <sc-if value="{{c.hasStatus}}" hint-placeholder-val="{{ false }}"><span style="position: absolute; top: 24px; right: 12px; display: flex; align-items: center; gap: 4px; font-size: 12px; color: var(--muted)"><svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M9.9997 15.1709L19.1921 5.97852L20.6063 7.39273L9.9997 17.9993L3.63574 11.6354L5.04996 10.2212L9.9997 15.1709Z"></path></svg>{{c.statusText}}</span></sc-if>
+      </div>
+      </sc-for>
+    </div>
+  </div>
+  </sc-for>
+
+  <span style="padding: 0 16px; font-size: 12px; color: var(--muted)">任何插件都不能发送邮件。</span>
+</section>
+</sc-if>
+
+    </main>
+    </div></div>
+  </div>
+</div>
+
+<sc-if value="{{hasToast}}" hint-placeholder-val="{{ false }}">
+<div role="status" style="position: absolute; top: 52px; left: 50%; transform: translateX(-50%); display: flex; align-items: center; gap: 12px; padding: 8px 12px; border: 1px solid var(--border); border-radius: 8px; background: var(--bg); box-shadow: 0 10px 15px -3px rgba(0,0,0,0.1); font-family: 'Geist', 'Noto Sans SC', 'PingFang SC', sans-serif; font-size: 14px; color: var(--fg); white-space: nowrap">
+  <span>{{toastText}}</span>
+  <sc-if value="{{toastHasGo}}" hint-placeholder-val="{{ true }}"><a href="{{toastHref}}" style="color: var(--fg); font-weight: 500">{{toastGo}}</a></sc-if>
+</div>
+</sc-if>
+
+<sc-if value="{{hasDialog}}" hint-placeholder-val="{{ false }}">
+<div style="position: absolute; inset: 0; border-radius: 12px; background-color: rgba(0, 0, 0, 0.2); display: flex; align-items: flex-start; justify-content: center; padding: 64px 0 32px; box-sizing: border-box; font-family: 'Geist', 'Noto Sans SC', 'PingFang SC', sans-serif; font-size: 14px; color: var(--fg)">
+  <div role="dialog" aria-modal="true" aria-label="{{d.title}}" style="width: 640px; max-height: 100%; box-sizing: border-box; border-radius: 16px; background: var(--bg); border: 1px solid var(--border); box-shadow: 0 25px 50px -12px rgba(0,0,0,0.25); display: flex; flex-direction: column; overflow: hidden">
+    <div style="flex: none; display: flex; align-items: flex-start; gap: 12px; padding: 16px; border-bottom: 1px solid var(--border)">
+      <span style="width: 40px; height: 40px; flex: none; display: flex; align-items: center; justify-content: center; border-radius: 8px; background: var(--card); color: var(--muted)"><svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="{{d.icon}}"></path></svg></span>
+      <span style="flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px">
+        <span style="font-size: 18px; font-weight: 600; line-height: 1.4">{{d.title}}</span>
+        <span style="font-size: 12px; color: var(--muted)">由 {{d.publisher}} 发布 · <a href="{{d.home}}" style="color: var(--muted)">主页与源码</a></span>
+      </span>
+      <button type="button" aria-label="关闭" onClick="{{dialogCancel}}" style="width: 28px; height: 28px; flex: none; display: flex; align-items: center; justify-content: center; padding: 0; border: 0; border-radius: 6px; background: transparent; color: var(--muted); cursor: pointer"><svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M11.9997 10.5865L16.9495 5.63672L18.3637 7.05093L13.4139 12.0007L18.3637 16.9504L16.9495 18.3646L11.9997 13.4149L7.04996 18.3646L5.63574 16.9504L10.5855 12.0007L5.63574 7.05093L7.04996 5.63672L11.9997 10.5865Z"></path></svg></button>
+    </div>
+    <div style="flex: 1; min-height: 0; overflow: auto; display: flex; flex-direction: column; gap: 16px; padding: 16px; line-height: 1.6">
+      <div style="flex: none; display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 1px; border: 1px solid var(--border); border-radius: 8px; background: var(--border); overflow: hidden">
+        <span style="display: flex; flex-direction: column; gap: 2px; padding: 8px 12px; background: var(--bg)"><span style="font-size: 12px; color: var(--muted)">版本</span><span>{{d.version}}</span></span>
+        <span style="display: flex; flex-direction: column; gap: 2px; padding: 8px 12px; background: var(--bg)"><span style="font-size: 12px; color: var(--muted)">类型</span><span>{{d.kindText}}</span></span>
+        <span style="display: flex; flex-direction: column; gap: 2px; padding: 8px 12px; background: var(--bg)"><span style="font-size: 12px; color: var(--muted)">来源</span><span>插件目录，已审核</span></span>
+      </div>
+      <dl style="flex: none; margin: 0; display: grid; grid-template-columns: 64px minmax(0, 1fr); gap: 10px 16px; padding: 12px 16px; border-radius: 8px; background: var(--card)">
+        <dt style="color: var(--muted)">数据去向</dt>
+        <dd style="margin: 0">{{d.flowDetail}}</dd>
+        <dt style="color: var(--muted)">权限</dt>
+        <dd style="margin: 0; display: flex; flex-direction: column; gap: 6px">
+          <span>{{d.permText}}</span>
+          <sc-if value="{{d.hasHosts}}" hint-placeholder-val="{{ false }}"><span style="display: flex; flex-wrap: wrap; gap: 4px"><sc-for list="{{d.hosts}}" as="h" hint-placeholder-count="3"><span style="font-family: 'Geist Mono', monospace; font-size: 12px; padding: 2px 6px; border-radius: 4px; background: var(--bg)">{{h.host}}</span></sc-for></span></sc-if>
+          <sc-if value="{{d.hasExcluded}}" hint-placeholder-val="{{ false }}"><span style="color: var(--muted)">不包含：直接读写邮箱、调用你的模型、发送邮件（任何插件都不能发送）</span></sc-if>
+        </dd>
+      </dl>
+      <sc-if value="{{d.hasReadme}}" hint-placeholder-val="{{ true }}">
+      <article aria-label="插件说明" style="flex: none; display: flex; flex-direction: column; gap: 8px; padding-top: 16px; border-top: 1px solid var(--border)">
+        <span style="font-size: 12px; color: var(--muted)">以下说明来自插件的 GitHub 主页，不在审核范围内。</span>
+        <sc-for list="{{d.readme}}" as="b" hint-placeholder-count="5">
+          <sc-if value="{{b.isH}}" hint-placeholder-val="{{ false }}"><h3 style="margin: 8px 0 0; font-size: 16px; font-weight: 600; line-height: 1.4">{{b.text}}</h3></sc-if>
+          <sc-if value="{{b.isP}}" hint-placeholder-val="{{ true }}"><p style="margin: 0">{{b.text}}</p></sc-if>
+          <sc-if value="{{b.isLi}}" hint-placeholder-val="{{ false }}"><div style="display: flex; gap: 8px"><span style="flex: none; min-width: 16px; color: var(--muted)">{{b.mark}}</span><span>{{b.text}}</span></div></sc-if>
+        </sc-for>
+      </article>
+      </sc-if>
+      <sc-if value="{{d.noReadme}}" hint-placeholder-val="{{ false }}"><p style="flex: none; margin: 0; padding-top: 16px; border-top: 1px solid var(--border)">{{d.desc}}</p></sc-if>
+    </div>
+    <div style="flex: none; display: flex; align-items: center; gap: 8px; padding: 12px 16px; border-top: 1px solid var(--border)">
+      <span style="flex: 1; min-width: 0; font-size: 12px; color: var(--muted)">{{d.footnote}}</span>
+      <button type="button" onClick="{{dialogCancel}}" style="height: 32px; padding: 0 14px; border: 1px solid var(--input); border-radius: 8px; background: var(--bg); color: var(--fg); font: inherit; font-weight: 500; cursor: pointer">取消</button>
+      <button type="button" onClick="{{dialogConfirm}}" style="height: 32px; padding: 0 14px; border: 0; border-radius: 8px; background: var(--primary); color: var(--primary-text); font: inherit; font-weight: 500; cursor: pointer">{{d.confirmText}}</button>
+    </div>
+  </div>
+</div>
+</sc-if>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"scene":{"editor":"enum","options":["default","directory","detail","grant","confirm","states","fresh","offline","many"],"default":"default"},"dark":{"editor":"boolean","default":false},"height":{"editor":"int","default":900},"$preview":{"width":1440,"height":900}}'>
+var ICONS = {
+  translate: 'M5 15V17C5 18.0544 5.81588 18.9182 6.85074 18.9945L7 19H10V21H7C4.79086 21 3 19.2091 3 17V15H5ZM18 10L22.4 21H20.245L19.044 18H13.954L12.755 21H10.6L15 10H18ZM16.5 12.8852L14.753 16H18.245L16.5 12.8852ZM8 2V4H12V11H8V14H6V11H2V4H6V2H8ZM17 3C19.2091 3 21 4.79086 21 7V9H19V7C19 5.89543 18.1046 5 17 5H14V3H17ZM6 6H4V9H6V6ZM10 6H8V9H10V6Z',
+  models: 'M19.5 4.7832V7.6709L22 9.11426V14.8867L19.499 16.3311L19.5 19.2178L14.5 22.1045L12 20.6611L9.5 22.1045L4.5 19.2178V16.3311L2 14.8877L2.00098 9.11328L4.5 7.66992V4.78418L9.5 1.89746L11.999 3.34082L14.501 1.89648L19.5 4.7832ZM13 5.07227L12.999 8.42285L15.9639 10.1338L14.9639 11.8662L11 9.57715V5.07324L9.5 4.20703L6.49902 5.93848V8.8252L4 10.2676V13.7334L6.5 15.1768V18.0635L9.5 19.7959L11 18.9287L11.001 15.5771L8.03613 13.8652L9.03613 12.1338L13.001 14.4229V18.9297L14.5 19.7959L17.5 18.0625V15.1768L20 13.7324V10.2695L17.499 8.8252L17.5 5.9375L14.501 4.20605L13 5.07227Z',
+  other: 'M7 5C7 2.79086 8.79086 1 11 1C13.2091 1 15 2.79086 15 5H18C18.5523 5 19 5.44772 19 6V9C21.2091 9 23 10.7909 23 13C23 15.2091 21.2091 17 19 17V20C19 20.5523 18.5523 21 18 21H4C3.44772 21 3 20.5523 3 20V6C3 5.44772 3.44772 5 4 5H7ZM11 3C9.89543 3 9 3.89543 9 5C9 5.23554 9.0403 5.45952 9.11355 5.66675C9.22172 5.97282 9.17461 6.31235 8.98718 6.57739C8.79974 6.84243 8.49532 7 8.17071 7H5V19H17V15.8293C17 15.5047 17.1576 15.2003 17.4226 15.0128C17.6877 14.8254 18.0272 14.7783 18.3332 14.8865C18.5405 14.9597 18.7645 15 19 15C20.1046 15 21 14.1046 21 13C21 11.8954 20.1046 11 19 11C18.7645 11 18.5405 11.0403 18.3332 11.1135C18.0272 11.2217 17.6877 11.1746 17.4226 10.9872C17.1576 10.7997 17 10.4953 17 10.1707V7H13.8293C13.5047 7 13.2003 6.84243 13.0128 6.57739C12.8254 6.31235 12.7783 5.97282 12.8865 5.66675C12.9597 5.45952 13 5.23555 13 5C13 3.89543 12.1046 3 11 3Z'
+};
+var CATALOG = [
+  { id: 'system-translate', title: '系统翻译', group: 'translate', kind: 'builtin', flow: 'local',
+    desc: '用 macOS 自带的翻译在本机翻译邮件，免费，无需模型。',
+    flowDetail: '由 macOS 在本机翻译，文本不离开这台电脑。' },
+  { id: 'dlx', title: 'DLX', group: 'translate', kind: 'native', version: '0.1.0', flow: 'third', listed: true, publisher: 'Godwit',
+    desc: '翻译邮件与选中文本，无需设置。',
+    flowDetail: '要翻译的文本会通过非官方接口发送到第三方翻译服务，可能被限流或失效。' },
+  { id: 'my-translator', title: 'my-translator', group: 'translate', kind: 'script', version: '0.3.0', flow: 'third', folder: true,
+    desc: '来自文件夹的翻译插件。',
+    flowDetail: '插件声明可以访问下面的地址。这个文件没有经过审核，实际发送的内容以它的代码为准。',
+    hosts: ['api.example.com'] },
+  { id: 'startlux', title: 'StartLux', group: 'models', kind: 'native', version: '0.1.0', flow: 'local', listed: true, publisher: 'Godwit',
+    desc: '本地判断模型：在本机给邮件打标签、回答是非题。',
+    flowDetail: '邮件内容不发往任何地方。选用时下载 2–2.7 GB 的模型；非 Apple 芯片的电脑上较慢，建议只给新邮件打标签。' },
+  { id: 'zen-free', title: 'Zen Free', group: 'models', kind: 'script', version: '0.1.0', flow: 'third', listed: true, publisher: 'Godwit',
+    desc: 'OpenCode Zen 免费模型，无需 API Key。',
+    flowDetail: '提示、邮件上下文、工具定义和工具结果会通过非官方接口发送到 OpenCode 及其模型服务商。免费模型和额度随时可能变化。',
+    hosts: ['opencode.ai', 'models.opencode.ai', 'raw.githubusercontent.com'] },
+  { id: 'codes', title: '验证码与登录链接', group: 'other', kind: 'builtin', flow: 'local',
+    desc: '在本机识别新邮件里的验证码和登录链接，一键复制或打开。',
+    flowDetail: '只在这台电脑上识别，邮件内容不发往任何地方。' },
+  { id: 'example-translate', title: '示例翻译', group: 'translate', kind: 'script', version: '1.0.0', flow: 'third', listed: true, publisher: 'Example',
+    desc: '[示例] 用你自己的 API Key 调用翻译服务。',
+    flowDetail: '要翻译的文本会发送到 api.example.com。', hosts: ['api.example.com'] },
+  { id: 'example-translate-local', title: '示例本地翻译', group: 'translate', kind: 'native', version: '0.5.0', flow: 'local', listed: true, publisher: 'Example',
+    desc: '[示例] 下载语言包后在本机翻译。',
+    flowDetail: '文本不离开这台电脑。' },
+  { id: 'example-model', title: '示例模型', group: 'models', kind: 'native', version: '1.0.0', flow: 'local', listed: true, publisher: 'Example',
+    desc: '[示例] 在本机运行的判断模型。',
+    flowDetail: '邮件内容不发往任何地方。' },
+  { id: 'example-sub', title: '示例订阅', group: 'models', kind: 'native', version: '1.0.0', flow: 'third', listed: true, publisher: 'Example', login: true,
+    desc: '[示例] 用你的订阅账号使用模型。装好后还需要登录。',
+    flowDetail: '提示和邮件上下文会发送到这个订阅的服务商。' },
+  { id: 'example-cards', title: '示例行程卡片', group: 'other', kind: 'script', version: '0.2.0', flow: 'local', listed: true, publisher: 'Example',
+    desc: '[示例] 航班邮件显示行程卡片。',
+    flowDetail: '只读取你打开的邮件，不访问网络。', hosts: [] },
+  { id: 'example-check', title: '示例发送前检查', group: 'other', kind: 'script', version: '0.4.0', flow: 'local', listed: true, publisher: 'Example',
+    desc: '[示例] 发送前检查有没有遗漏附件。',
+    flowDetail: '只读取你正在写的草稿，不访问网络。', hosts: [], minGodwit: '1.31' }
+];
+function h(text) { return { isH: true, text: text }; }
+function para(text) { return { isP: true, text: text }; }
+function li(mark, text) { return { isLi: true, mark: mark, text: text }; }
+// The real README text of each plugin. Zen Free reads README.zh-Hans.md; DLX has only README.md, so zh-Hans falls back to it.
+var READMES = {
+  'zen-free': [
+    para('在 Godwit 中使用 OpenCode Zen 的免费模型，无需 API Key。'),
+    h('使用'),
+    li('1.', '打开 Godwit「设置 → 扩展」，在插件目录中安装 Zen Free。'),
+    li('2.', '启用插件，允许它声明的网络权限。'),
+    li('3.', '打开「设置 → 模型服务」，选择 Zen Free 的模型。'),
+    para('可用模型由上游免费目录决定，无需手动配置接口或协议。需要支持模型插件的 Godwit 版本。'),
+    h('数据与可用性'),
+    para('使用模型时，提示、邮件上下文、工具定义及工具结果会发送到 OpenCode 及其模型服务商，请阅读上游的数据使用条款。'),
+    para('插件依赖非官方公共接口。免费模型、限流和免费期限可能变化，不保证配额或持续可用。')
+  ],
+  dlx: [
+    para('Translate emails and selected text in Godwit into many languages, with nothing to set up. Translation is powered by DLX, called in-process: no server to run, no account, no API key.'),
+    para('DLX is a community plugin. It needs a Godwit release with native plugins.'),
+    h('Install'),
+    li('1.', 'In Godwit, open Settings › Extensions › Plugin directory, find DLX and choose Install.'),
+    li('2.', 'In Settings › General › Translate with, choose DLX.'),
+    para('Messages, selections and drafts are then translated with DLX. There are no plugin settings.'),
+    h('Privacy and availability'),
+    li('•', 'The text you translate is sent to the third-party translation service DLX uses.'),
+    li('•', 'The plugin does not log or store what it translates, and uses no relay of its own.'),
+    li('•', 'DLX relies on an unofficial interface. It may be rate limited, blocked for a while, or stop working when the service changes.')
+  ]
+};
+var GROUPS = {
+  translate: { href: 'SettingsAIFeatures.dc.html', go: '去选择翻译服务' },
+  models: { href: 'SettingsModels.dc.html', go: '去选择模型' },
+  other: {}
+};
+var BASE = { 'system-translate': 'on', dlx: 'on', startlux: 'on', 'zen-free': 'available', codes: 'on' };
+var SCENES = {
+  'default': { states: BASE },
+  directory: { page: 'directory', states: BASE },
+  detail: { states: BASE, open: { dlx: true } },
+  grant: { page: 'directory', states: BASE, dialog: 'zen-free' },
+  confirm: { page: 'directory', states: { 'system-translate': 'on', dlx: 'available', startlux: 'on', 'zen-free': 'available', codes: 'on' }, dialog: 'dlx' },
+  states: { states: { 'system-translate': 'on', dlx: 'update', 'my-translator': 'pending', startlux: 'progress', 'zen-free': 'revoked', 'example-sub': 'on', codes: 'on' }, open: { 'zen-free': true, 'my-translator': true } },
+  fresh: { states: { 'system-translate': 'on', dlx: 'available', startlux: 'available', 'zen-free': 'available', codes: 'on' } },
+  offline: { page: 'directory', states: { 'system-translate': 'on', dlx: 'on', startlux: 'on', codes: 'on' }, offline: true },
+  many: { page: 'directory', many: true, states: { 'system-translate': 'on', dlx: 'on', startlux: 'on', 'zen-free': 'available', codes: 'on', 'example-translate': 'available', 'example-translate-local': 'available', 'example-model': 'available', 'example-sub': 'available', 'example-cards': 'available', 'example-check': 'available' } }
+};
+var THEMES = {
+  light: '--bg: #FFFFFF; --fg: #0A0A0A; --muted: #737373; --card: #F5F5F5; --chip: #E5E5E5; --border: #E5E5E5; --input: #E5E5E5; --primary: #171717; --primary-text: #FFFFFF; --track: #D4D4D4; --thumb: #FFFFFF; --danger: #C10007; --danger-border: #FFC9C9;',
+  dark: '--bg: #0A0A0A; --fg: #FAFAFA; --muted: #A1A1A1; --card: #171717; --chip: #FFFFFF1A; --border: #FFFFFF1A; --input: #FFFFFF26; --primary: #E5E5E5; --primary-text: #171717; --track: #FFFFFF26; --thumb: #171717; --danger: #FF6467; --danger-border: #FF646766;'
+};
+function permOf(p) {
+  var hosts = (p.hosts || []).map(function (h) { return { host: h }; });
+  return {
+    hosts: hosts, hasHosts: hosts.length > 0, hasExcluded: p.kind === 'script' && !p.folder,
+    permText: p.kind === 'builtin' ? '随 Godwit 提供，在本机运行。'
+      : p.kind === 'native' ? '以 Godwit 的全部权限运行：能读取邮件、账户凭据和本机文件，访问任何网络地址，运行程序。上面的数据去向来自插件目录的审核，不是 Godwit 能强制的限制。'
+      : hosts.length ? '在沙箱里运行，只能访问这些地址：' : '在沙箱里运行，不能访问网络。'
+  };
+}
+class Component extends DCLogic {
+  constructor(props) {
+    super(props);
+    var s = SCENES[props.scene] || SCENES['default'];
+    this.state = { page: s.page || 'plugins', states: Object.assign({}, s.states), open: Object.assign({}, s.open || {}), dialog: s.dialog || '', toast: '' };
+  }
+  put(id, state, open) {
+    var next = { states: Object.assign({}, this.state.states) };
+    next.states[id] = state;
+    if (open !== undefined) {
+      next.open = Object.assign({}, this.state.open);
+      next.open[id] = open;
+    }
+    this.setState(next);
+  }
+  card(p) {
+    var self = this;
+    var state = this.state.states[p.id];
+    var installed = state !== 'available';
+    var blocked = !installed && !!p.minGodwit;
+    return {
+      title: p.title, desc: p.desc, icon: ICONS[p.group],
+      publisher: p.publisher, official: p.publisher === 'Godwit',
+      kindVersion: (p.kind === 'native' ? '原生' : '脚本') + ' · ' + p.version,
+      hasWhy: blocked, why: blocked ? '需要 Godwit ' + p.minGodwit + ' 或更新' : '',
+      isLocal: !blocked && p.flow === 'local', isThird: !blocked && p.flow === 'third',
+      canAdd: !installed && !blocked,
+      hasStatus: installed, statusText: state === 'off' ? '已安装' : '已启用',
+      addLabel: '安装 ' + p.title, openLabel: '查看 ' + p.title,
+      openCard: function () {
+        if (blocked) { return; }
+        if (installed) {
+          var o = Object.assign({}, self.state.open); o[p.id] = true;
+          self.setState({ page: 'plugins', open: o, toast: '' });
+          return;
+        }
+        self.setState({ dialog: p.id, toast: '' });
+      }
+    };
+  }
+  row(p, state) {
+    var self = this;
+    var id = p.id, open = !!this.state.open[id], group = GROUPS[p.group];
+    var builtin = p.kind === 'builtin', native = p.kind === 'native';
+    var usable = state === 'on' || state === 'off' || state === 'update';
+    var on = state === 'on' || state === 'update';
+    var meta = builtin ? '内置' : (native ? '原生' : '脚本') + ' · ' + p.version + (p.folder ? ' · 来自文件夹' : '');
+    var source = builtin ? 'Godwit 内置'
+      : p.folder ? '从文件夹安装，不在 Godwit 审核过的插件目录里。文件变化后需要重新授权。'
+      : state === 'revoked' ? '曾由 Godwit 插件目录收录，当前版本已被移除。'
+      : 'Godwit 插件目录，已审核。';
+    var alert = state === 'revoked' ? '插件目录不再列出这个版本，Godwit 已停止运行它。不确定时请卸载。' : '';
+    var track = 'width: 32px; height: 18px; flex: none; box-sizing: border-box; display: flex; align-items: center; padding: 2px; border: 0; border-radius: 9px; cursor: pointer; justify-content: ' + (on ? 'flex-end' : 'flex-start') + '; background: var(' + (on ? '--primary' : '--track') + ')';
+    var hasGo = !!group.go && on && !p.login;
+    var canRemove = !builtin && state !== 'pending' && state !== 'progress';
+    return Object.assign({
+      title: p.title, meta: meta, desc: p.desc,
+      isLocal: p.flow === 'local', isThird: p.flow === 'third',
+      open: open, expanded: open ? 'true' : 'false',
+      chevronStyle: 'flex: none; color: var(--muted); transform: rotate(' + (open ? 180 : 0) + 'deg)',
+      toggleOpen: function () { var o = Object.assign({}, self.state.open); o[id] = !open; self.setState({ open: o }); },
+      canUpdate: state === 'update', next: '0.2.0',
+      canLogin: state === 'on' && !!p.login,
+      update: function () { self.put(id, 'on'); },
+      hasPill: state === 'pending' || state === 'revoked',
+      pill: state === 'pending' ? '待授权' : '已停用',
+      isProgress: state === 'progress',
+      hasSwitch: usable, onText: on ? 'true' : 'false', switchLabel: '启用 ' + p.title,
+      trackStyle: track,
+      flip: function () { self.put(id, on ? 'off' : 'on'); },
+      hasAlert: !!alert, alert: alert,
+      flowDetail: p.flowDetail,
+      source: source, hasHome: !builtin && !p.folder,
+      home: 'https://github.com/godwit-email/plugins',
+      isPending: state === 'pending', isRevoked: state === 'revoked',
+      allow: function () { self.put(id, 'on', true); },
+      later: function () { self.put(id, 'off', false); },
+      hasGo: hasGo, goHref: group.href, goLabel: group.go,
+      canRemove: canRemove,
+      remove: function () { self.put(id, 'available', false); },
+      hasActions: state === 'pending' || state === 'revoked' || hasGo || canRemove
+    }, permOf(p));
+  }
+  renderVals() {
+    var self = this;
+    var states = this.state.states;
+    var dark = this.props.dark === true || this.props.dark === 'true';
+    var scene = SCENES[this.props.scene] || SCENES['default'];
+    var h = Number(this.props.height ?? 900);
+    var w = dark ? 1024 : 1440;
+    var listed = CATALOG.filter(function (p) { return p.listed && states[p.id]; });
+    var availableCount = listed.filter(function (p) { return states[p.id] === 'available'; }).length;
+    var cardsFor = function (ids) { return listed.filter(function (p) { return ids.indexOf(p.id) >= 0; }).map(function (p) { return self.card(p); }); };
+    var sections = scene.offline ? [] : scene.many ? [
+      { title: '精选', hasHead: true, hasMore: false, cards: cardsFor(['zen-free', 'example-cards']) },
+      { title: '翻译', hasHead: true, hasMore: true, cards: cardsFor(['dlx', 'example-translate']) },
+      { title: '模型', hasHead: true, hasMore: true, cards: cardsFor(['startlux', 'example-sub']) },
+      { title: '其他', hasHead: true, hasMore: true, cards: cardsFor(['example-check', 'example-model']) }
+    ] : [
+      { hasHead: false, hasMore: false, cards: listed.map(function (p) { return self.card(p); }) }
+    ];
+    var rank = function (p) { var s = states[p.id]; return s === 'pending' || s === 'revoked' || s === 'update' || s === 'progress' ? 0 : p.kind === 'builtin' ? 2 : 1; };
+    var rows = CATALOG.filter(function (p) { var s = states[p.id]; return s && s !== 'available'; })
+      .sort(function (a, b) { return rank(a) - rank(b); })
+      .map(function (p) { return self.row(p, states[p.id]); });
+    var dlg = CATALOG.filter(function (p) { return p.id === self.state.dialog; })[0];
+    var toastP = CATALOG.filter(function (p) { return p.id === self.state.toast; })[0];
+    var toastG = toastP ? GROUPS[toastP.group] : null;
+    return {
+      chrome: !dark,
+      sideH: h - 52,
+      rootStyle: 'position: relative; width: ' + w + 'px; height: ' + h + 'px; border-radius: 12px; overflow: hidden; ' + (dark ? THEMES.dark + ' background: #0A0A0A' : THEMES.light),
+      windowStyle: 'position: relative; width: ' + w + 'px; height: ' + h + 'px; box-sizing: border-box; display: flex; flex-direction: column; overflow: hidden; font-family: \'Geist\', \'Noto Sans SC\', \'PingFang SC\', sans-serif; font-size: 14px; color: var(--fg); background: transparent; border: 1px solid ' + (dark ? '#FFFFFF1A' : 'rgba(0, 0, 0, 0.12)') + '; border-radius: 12px',
+      bodyStyle: 'flex: 1; min-height: 0; display: flex; box-sizing: border-box; ' + (dark ? '' : 'padding: 0 8px 8px 8px'),
+      panelStyle: 'flex: 1; min-width: 0; display: flex; overflow: auto; background: var(--bg); ' + (dark ? '' : 'border: 1px solid #E5E5E5; border-radius: 12px; box-shadow: 0 1px 2px 0 rgba(0,0,0,0.05)'),
+      isPluginsPage: this.state.page === 'plugins', isDirectoryPage: this.state.page === 'directory',
+      openDirectory: function () { self.setState({ page: 'directory', toast: '' }); },
+      goBack: function () { self.setState({ page: 'plugins', toast: '' }); },
+      directoryHint: availableCount ? '还有 ' + availableCount + ' 个插件可以安装，都经过审核。' : '目录里的插件都已安装。',
+      hasSearch: !!scene.many,
+      regOffline: !!scene.offline,
+      sections: sections,
+      rows: rows,
+      installedCount: rows.length,
+      hasToast: !!toastP,
+      toastText: toastP ? toastP.title + ' 已启用' : '',
+      toastHasGo: !!(toastG && toastG.go), toastHref: toastG ? toastG.href : '', toastGo: toastG ? toastG.go : '',
+      hasDialog: !!dlg,
+      d: dlg ? Object.assign({
+        title: dlg.title, desc: dlg.desc, icon: ICONS[dlg.group],
+        publisher: dlg.publisher,
+        readme: READMES[dlg.id] || [], hasReadme: !!READMES[dlg.id], noReadme: !READMES[dlg.id],
+        kindText: dlg.kind === 'native' ? '原生插件' : '脚本插件',
+        footnote: dlg.kind === 'native' ? '原生插件是他人的代码，Godwit 无法限制它。' : '脚本插件是他人的代码，只能使用你允许的权限。',
+        version: dlg.version, home: 'https://github.com/godwit-email/plugins',
+        flowDetail: dlg.flowDetail,
+        confirmText: dlg.kind === 'native' ? '安装并启用' : '允许并安装'
+      }, permOf(dlg)) : {},
+      dialogCancel: function () { self.setState({ dialog: '' }); },
+      dialogConfirm: function () {
+        var id = self.state.dialog;
+        var st = Object.assign({}, self.state.states); st[id] = 'on';
+        self.setState({ dialog: '', states: st, toast: id });
+      }
+    };
+  }
+}
+</script>
+</body>
+</html>
