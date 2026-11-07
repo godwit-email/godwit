@@ -30,10 +30,11 @@ type rulesView struct {
 
 	counts map[int64]int // each rule's hits of the last week
 
-	deleting *core.Rule        // the rule whose 删除规则 asks to confirm
-	order    ui.ListState      // the rules' list, its rows dragged to reorder them
-	heights  map[int64]float32 // each rule's row as last laid out, which the list is as tall as
-	shape    [2]int64          // the open rule and its hits' count the rows were built with
+	deleting   *core.Rule        // the rule whose 删除规则 asks to confirm
+	deleteOpen bool              // its dialog's: kit.Dialog times its fade by this address, so it must outlive the frame
+	order      ui.ListState      // the rules' list, its rows dragged to reorder them
+	heights    map[int64]float32 // each rule's row as last laid out, which the list is as tall as
+	shape      [2]int64          // the open rule and its hits' count the rows were built with
 
 	editing  bool
 	edit     core.Rule // the rule in the editor; ID 0 a new one
@@ -494,13 +495,13 @@ func (v *rulesView) retry(runID int64) {
 
 // deleteDialog asks before 删除规则 deletes a rule and its hits.
 func (v *rulesView) deleteDialog(c *ui.Context) {
-	if v.deleting == nil {
-		return
+	a, r := v.a, core.Rule{}
+	if v.deleting != nil {
+		r = *v.deleting
 	}
-	a, r := v.a, *v.deleting
 	name := ruleName(r.Doc)
-	open := true
-	kit.Dialog(c, &open, i18n.Tf("settings.rules.delete.title", name),
+	v.deleteOpen = v.deleting != nil
+	kit.Dialog(c, &v.deleteOpen, i18n.Tf("settings.rules.delete.title", name),
 		kit.DialogOpts{Size: kit.DialogSm, Alert: true, Desc: i18n.T("settings.rules.delete.desc"), Close: i18n.T("common.close")}, nil, func() {
 			kit.Button(c, i18n.T("common.cancel"), kit.ButtonOpts{Variant: kit.Outline}).OnClick(func() { v.deleting = nil })
 			kit.Button(c, i18n.T("common.delete"), kit.ButtonOpts{Variant: kit.Destructive}).OnClick(func() {
@@ -516,7 +517,7 @@ func (v *rulesView) deleteDialog(c *ui.Context) {
 				})
 			})
 		})
-	if !open {
+	if !v.deleteOpen {
 		v.deleting = nil
 	}
 }

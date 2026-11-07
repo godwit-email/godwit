@@ -132,14 +132,17 @@ type mailPage struct {
 	emptyFolderRole string
 	emptyFolderAcc  int64
 
-	views       []core.SavedView // in sidebar order, with their unread counts
-	viewsKnown  bool
-	viewsOpen   bool             // the sidebar's group unfolded
-	viewGroups  []viewGroupState // the view shown's groups; p.items holds their rows in order
-	viewEdit    *viewEditor      // shown in place of the list and reader
-	viewDelete  *core.SavedView  // awaiting its confirmation
-	viewsCached bool             // the last refresh changed nothing they show
-	viewRefresh func()           // stops the timer that rereads an open view
+	views      []core.SavedView // in sidebar order, with their unread counts
+	viewsKnown bool
+	viewsOpen  bool             // the sidebar's group unfolded
+	viewGroups []viewGroupState // the view shown's groups; p.items holds their rows in order
+	viewEdit   *viewEditor      // shown in place of the list and reader
+	viewLeave  func()           // asking to give up viewEdit's changes, for this
+	viewDelete *core.SavedView  // awaiting its confirmation
+	// The dialogs' own: kit.Dialog times its fade by this address, so it must outlive the frame.
+	viewLeaveOpen, viewDeleteOpen bool
+	viewsCached                   bool   // the last refresh changed nothing they show
+	viewRefresh                   func() // stops the timer that rereads an open view
 
 	exec    func(ctx context.Context, op string, ids []int64, folder int64) (core.ArchiveUndo, error) // write; tests wrap it
 	fetched func()                                                                                    // tests: runs off the UI thread once a reload has read the list
@@ -346,7 +349,10 @@ func (p *mailPage) keepViewFresh() {
 		p.viewRefresh = nil
 	}
 	if p.savedViewID() != 0 {
-		p.viewRefresh = p.a.after(viewRefreshEvery, func() {
+		now := p.a.clock.Now()
+		y, m, d := now.Date()
+		midnight := time.Date(y, m, d+1, 0, 0, 1, 0, now.Location()) // 今天 turns over
+		p.viewRefresh = p.a.after(min(viewRefreshEvery, midnight.Sub(now)), func() {
 			p.viewRefresh = nil
 			if p.savedViewID() != 0 {
 				p.reload()
@@ -656,6 +662,7 @@ func listTime(now, t time.Time) string {
 func (p *mailPage) Content(c *ui.Context) {
 	a, th, r := p.a, c.Theme(), panelRadius(c)
 	p.viewDeleteDialog(c)
+	p.viewLeaveDialog(c)
 	if e := p.viewEdit; e != nil {
 		kit.Panel(c, r).Grow(1).Children(func() { e.view(c) })
 		return

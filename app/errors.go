@@ -22,6 +22,7 @@ var errorKeys = []struct {
 }{
 	{errFlushSlow, "error.flush_slow"},
 	{errSignatureUnsaved, "error.signature_unsaved"},
+	{errViewUnsaved, "view.leave.desc"},
 }
 
 // humanize says what err means to the user; "" for a cancellation, which

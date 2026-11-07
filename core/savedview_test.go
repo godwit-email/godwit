@@ -428,7 +428,7 @@ func TestViewExceptions(t *testing.T) {
 
 }
 
-func TestSavedViewToday(t *testing.T) {
+func TestSavedViewToHandle(t *testing.T) {
 	e := newSendEnv(t, false) // no language known
 	e.put(t, "INBOX", eml("q@x", "bob@a.example", "alice@example.com", "needs a reply", e.viewAt(1), "?"))
 	e.put(t, "INBOX", eml("n@x", "news@a.example", "alice@example.com", "newsletter", e.viewAt(1), "x"))
@@ -437,30 +437,30 @@ func TestSavedViewToday(t *testing.T) {
 	boxes, err := e.s.SavedViews(bg)
 	require.NoError(t, err)
 	require.Len(t, boxes, 1, "it is there from the first run, whatever the language")
-	today := boxes[0]
-	assert.Equal(t, "calendar-event", today.Icon)
+	toHandle := boxes[0]
+	assert.Equal(t, "chat-3", toHandle.Icon)
 
 	// A view like any other: its conditions say what is in it, so nothing falls to 其他.
-	got, err := e.s.ViewContents(bg, today.ID, 50)
+	got, err := e.s.ViewContents(bg, toHandle.ID, 50)
 	require.NoError(t, err)
 	assert.Equal(t, map[string][]string{"reply": {"needs a reply"}, "wait": {"asked"}}, subjectsOf(got))
 
 	// Added by hand, it shows in 其他, as anywhere.
-	require.NoError(t, e.s.SetViewException(bg, today.ID, e.threadOf(t, "n@x"), ViewExceptionAdded))
-	got, err = e.s.ViewContents(bg, today.ID, 50)
+	require.NoError(t, e.s.SetViewException(bg, toHandle.ID, e.threadOf(t, "n@x"), ViewExceptionAdded))
+	got, err = e.s.ViewContents(bg, toHandle.ID, 50)
 	require.NoError(t, err)
 	assert.Equal(t, []string{"newsletter"}, subjectsOf(got)[ViewGroupOther])
 
 	// It is seeded once: edits stay, and one deleted stays deleted.
-	today.Name = "Mine"
-	_, err = e.s.SaveView(bg, today)
+	toHandle.Name = "Mine"
+	_, err = e.s.SaveView(bg, toHandle)
 	require.NoError(t, err)
 	require.NoError(t, e.s.seedSavedViews(bg))
 	boxes, err = e.s.SavedViews(bg)
 	require.NoError(t, err)
 	require.Len(t, boxes, 1)
 	assert.Equal(t, "Mine", boxes[0].Name)
-	require.NoError(t, e.s.DeleteView(bg, today.ID))
+	require.NoError(t, e.s.DeleteView(bg, toHandle.ID))
 	require.NoError(t, e.s.seedSavedViews(bg))
 	boxes, err = e.s.SavedViews(bg)
 	require.NoError(t, err)
@@ -468,7 +468,7 @@ func TestSavedViewToday(t *testing.T) {
 
 	tpls, err := e.s.ViewTemplates(bg)
 	require.NoError(t, err)
-	at := slices.IndexFunc(tpls, func(t ViewTemplate) bool { return t.ID == "today" })
+	at := slices.IndexFunc(tpls, func(t ViewTemplate) bool { return t.ID == "to_handle" })
 	require.GreaterOrEqual(t, at, 0, "it comes back from a template")
 	id, err := e.s.SaveView(bg, SavedView{Name: tpls[at].Name, Icon: tpls[at].Icon, Doc: tpls[at].Doc})
 	require.NoError(t, err)
@@ -775,7 +775,7 @@ func TestSavedViewLargeViewTimes(t *testing.T) {
 	}
 }
 
-// (A or B) and C holds on one message, and 今日 leaves out the labels nobody replies to.
+// (A or B) and C holds on one message, and 待处理 leaves out the labels nobody replies to.
 func TestViewConditionGroups(t *testing.T) {
 	e := newSendEnv(t, false)
 	e.put(t, "INBOX", eml("a@x", "anna@acme.example", "alice@example.com", "invoice", e.viewAt(2), "x"))
@@ -798,7 +798,7 @@ func TestViewConditionGroups(t *testing.T) {
 	}
 }
 
-func TestTodayLeavesOutLabels(t *testing.T) {
+func TestToHandleLeavesOutLabels(t *testing.T) {
 	e := newSendEnv(t, false)
 	e.put(t, "INBOX", eml("q@x", "bob@a.example", "alice@example.com", "a question", e.viewAt(1), "?"))
 	e.put(t, "INBOX", eml("o@x", "carol@a.example", "alice@example.com", "your code", e.viewAt(1), "123456"))
@@ -815,8 +815,8 @@ func TestTodayLeavesOutLabels(t *testing.T) {
 	require.NoError(t, e.s.SetLabel(bg, []int64{e.idOf(t, "o@x")}, l, true))
 	tpls, err := e.s.ViewTemplates(bg)
 	require.NoError(t, err)
-	today := tpls[slices.IndexFunc(tpls, func(t ViewTemplate) bool { return t.ID == "today" })]
-	assert.Equal(t, map[string][]string{"reply": {"a question"}}, e.shown(t, today.Doc), "the template leaves out the labels there are")
+	toHandle := tpls[slices.IndexFunc(tpls, func(t ViewTemplate) bool { return t.ID == "to_handle" })]
+	assert.Equal(t, map[string][]string{"reply": {"a question"}}, e.shown(t, toHandle.Doc), "the template leaves out the labels there are")
 }
 
 func TestOwnSentMailIsNotUnread(t *testing.T) {
@@ -824,4 +824,61 @@ func TestOwnSentMailIsNotUnread(t *testing.T) {
 	e.put(t, "Sent", eml("s@x", "alice@example.com", "bob@a.example", "sent", e.viewAt(1), "x"))
 	e.sync(t)
 	assert.Empty(t, e.shown(t, flatDoc(MatchAll, cond(FieldRead, OpIs, ViewReadUnread))))
+}
+
+func TestViewDateRange(t *testing.T) {
+	loc := time.FixedZone("x", 8*3600)
+	now := time.Date(2026, 11, 4, 15, 0, 0, 0, loc) // a Wednesday
+	day := func(m time.Month, d int) time.Time { return time.Date(2026, m, d, 0, 0, 0, 0, loc) }
+	for value, want := range map[string][2]time.Time{
+		ViewDateToday:     {day(11, 4), day(11, 5)},
+		ViewDateYesterday: {day(11, 3), day(11, 4)},
+		ViewDateThisWeek:  {day(11, 2), day(11, 9)},
+		ViewDateLastWeek:  {day(10, 26), day(11, 2)},
+		ViewDateThisMonth: {day(11, 1), day(12, 1)},
+		ViewDateLastMonth: {day(10, 1), day(11, 1)},
+		"7":               {day(10, 29), day(11, 5)},
+		"1":               {day(11, 4), day(11, 5)},
+	} {
+		start, end := viewDateRange(now, value)
+		assert.True(t, start.Equal(want[0]) && end.Equal(want[1]), "%s: %v to %v", value, start, end)
+	}
+	sunday := time.Date(2026, 11, 8, 23, 0, 0, 0, loc)
+	start, _ := viewDateRange(sunday, ViewDateThisWeek)
+	assert.True(t, start.Equal(day(11, 2)), "a week starts on Monday, Sunday is its end")
+}
+
+func TestViewDateStarredAndWrote(t *testing.T) {
+	e := newSendEnv(t, false)
+	e.put(t, "INBOX", eml("new@x", "pal@a.example", "alice@example.com", "new", e.viewAt(0), "x"))
+	e.put(t, "INBOX", eml("old@x", "stranger@a.example", "alice@example.com", "old", e.viewAt(40), "y"))
+	e.put(t, "Sent", eml("me@x", "alice@example.com", "Pal <pal@a.example>", "mine", e.viewAt(90), "z"))
+	e.sync(t)
+	require.NoError(t, e.s.SetFlags(bg, []int64{e.idOf(t, "old@x")}, []string{`\Flagged`}, nil))
+	shown := func(c RuleCondition) []string { return e.shown(t, flatDoc(MatchAll, c))[ViewGroupOther] }
+
+	assert.Equal(t, []string{"new"}, shown(cond(FieldDate, OpIs, "7")))
+	assert.Equal(t, []string{"mine", "old"}, shown(cond(FieldDate, OpNotContains, "7")))
+	assert.Equal(t, []string{"new"}, shown(cond(FieldDate, OpIs, ViewDateToday)))
+	assert.Equal(t, []string{"old"}, shown(cond(FieldStarred, OpIs, RuleYes)))
+	assert.Equal(t, []string{"mine", "new"}, shown(cond(FieldStarred, OpIs, RuleNo)))
+	assert.Equal(t, []string{"mine", "new"}, shown(cond(FieldWrote, OpIs, RuleYes)), "who they wrote to, by name or not, and their own")
+	assert.Equal(t, []string{"old"}, shown(cond(FieldWrote, OpIs, RuleNo)))
+
+	d := flatDoc(MatchAll, cond(FieldFrom, OpContains, "stranger"), cond(FieldDate, OpIs, "7"))
+	assert.Empty(t, e.shown(t, d), "on the same message, as other conditions")
+
+	for name, c := range map[string]RuleCondition{
+		"unknown date": cond(FieldDate, OpIs, "someday"),
+		"no days":      cond(FieldDate, OpIs, "0"),
+		"too many":     cond(FieldDate, OpIs, "3651"),
+		"date op":      cond(FieldDate, OpContains, "7"),
+		"star value":   cond(FieldStarred, OpIs, "maybe"),
+		"wrote op":     cond(FieldWrote, OpContains, RuleYes),
+	} {
+		_, err := e.s.PreviewView(bg, flatDoc(MatchAll, c), 0, 50)
+		assert.ErrorIs(t, err, ErrInvalidView, name)
+	}
+	_, err := e.s.SaveRule(bg, Rule{Doc: RuleDoc{Version: RuleVersion, Trigger: TriggerReceive, Match: MatchAll, Conditions: []RuleCondition{cond(FieldDate, OpIs, "7")}, Actions: []RuleAction{{Kind: ActionRead}}}})
+	assert.Error(t, err, "a rule runs once: 今天 means nothing to it")
 }

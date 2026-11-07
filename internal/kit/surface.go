@@ -11,6 +11,7 @@ import (
 // SidebarItemOpts says how a sidebar row looks and what clicking it does.
 type SidebarItemOpts struct {
 	Selected bool    // the page shown: highlighted, and it does not click
+	Covered  bool    // selected, but something covers the page: it clicks, to show it
 	Muted    bool    // a secondary action, as Add account
 	Small    bool    // 30 high in the small text, as an account's header
 	Indent   float32 // more left padding, in spacing steps, as a folder under its account
@@ -36,7 +37,7 @@ func SidebarItem(c *ui.Context, o SidebarItemOpts) ui.Element {
 	case b.Hovered():
 		b.Background(t.HoverTint)
 	}
-	if o.OnClick != nil && !o.Selected {
+	if o.OnClick != nil && (!o.Selected || o.Covered) {
 		b.OnClick(o.OnClick)
 	}
 	return b

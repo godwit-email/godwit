@@ -2,6 +2,8 @@ package app
 
 import (
 	"context"
+	"github.com/egoist/mygo/ui"
+	"github.com/godwit-email/godwit/internal/theme"
 	"slices"
 	"testing"
 	"time"
@@ -111,17 +113,17 @@ func TestViewArchiveAndUndo(t *testing.T) {
 	}
 }
 
-// TestViewTodayFirstRun: 今日 is there from the first run, and a reply takes
+// TestViewToHandleFirstRun: 待处理 is there from the first run, and a reply takes
 // a mail out of it as soon as it is queued.
-func TestViewTodayFirstRun(t *testing.T) {
+func TestViewToHandleFirstRun(t *testing.T) {
 	h, accs := mailHarness(t, nil, "alice@example.com")
 	h.put(accs[0], "INBOX", coretest.Msg("anna@acme.example", "alice@example.com", "needs a reply", "x"))
 	h.syncNow(accs[0])
-	h.waitMail("今日", func() bool { return len(h.app.mail.views) == 1 })
-	today := h.app.mail.views[0]
-	h.click(today.Name)
+	h.waitMail("待处理", func() bool { return len(h.app.mail.views) == 1 })
+	toHandle := h.app.mail.views[0]
+	h.click(toHandle.Name)
 	h.waitMail("the mail in it", func() bool { return h.groupOf("needs a reply") == "reply" })
-	h.waitMail("its count", func() bool { b, _ := h.app.mail.savedView(today.ID); return b.Unread == 1 })
+	h.waitMail("its count", func() bool { b, _ := h.app.mail.savedView(toHandle.ID); return b.Unread == 1 })
 	h.see(i18n.T("view.status.unreplied.today"))
 
 	it := h.items()[0]
@@ -177,9 +179,12 @@ func TestViewSaveSearch(t *testing.T) {
 	h.until("results", func() bool { h.drain(); return p.searched && len(p.results) == 1 })
 	h.see(i18n.T("view.save_search"))
 
-	p.sf.span = 1
-	h.until("no button with a time filter", func() bool { return !p.savableSearch() })
-	p.sf.span = 0
+	p.sf.unread = true
+	h.until("no button with unread", func() bool { return !p.savableSearch() })
+	p.sf.unread = false
+	p.sf.span = viewlessSpan
+	h.until("no button with this year", func() bool { return !p.savableSearch() })
+	p.sf.span = 3 // the last 30 days
 
 	h.click(i18n.T("view.save_search"))
 	h.see(i18n.T("view.editor.from_search"))
@@ -187,7 +192,7 @@ func TestViewSaveSearch(t *testing.T) {
 		h.advance(debounce)
 		return h.tt.HasText("quarterly report") && p.viewEdit.prev != nil
 	})
-	if got := p.viewEdit.box.Doc.Conditions; len(got) != 1 || got[0].Field != core.FieldAny {
+	if got := p.viewEdit.box.Doc.Conditions; len(got) != 2 || got[0].Field != core.FieldAny || got[1].Field != core.FieldDate || got[1].Value != "30" {
 		t.Fatalf("conditions %+v", got)
 	}
 	h.click(i18n.T("view.editor.create"))
@@ -277,4 +282,146 @@ func TestViewFromMailAndAdd(t *testing.T) {
 	h.waitMail("it listed no more", func() bool { return p.viewEdit != nil && len(p.viewEdit.exceptions) == 0 })
 	p.closeViewEditor()
 	h.waitMail("one again", func() bool { return len(h.items()) == 1 })
+}
+
+// TestViewEditorLeavesToSidebarRoute: the sidebar leaves the editor even for
+// the route already showing behind it.
+func TestViewEditorLeavesToSidebarRoute(t *testing.T) {
+	h, accs := mailHarness(t, nil, "alice@example.com")
+	h.put(accs[0], "INBOX", coretest.Msg("anna@acme.example", "alice@example.com", "needs a reply", "x"))
+	h.syncNow(accs[0])
+	p := h.app.mail
+	h.waitMail("the default view", func() bool { return len(p.views) == 1 })
+	b := p.views[0]
+	p.editView(b)
+	h.see(i18n.T("common.save"))
+	clickRow := func(name string) { // the title bar shows the name too
+		t.Helper()
+		row, ok := h.tt.AccessByRole(ui.RoleButton, name)
+		if !ok {
+			t.Fatalf("no sidebar row %q", name)
+		}
+		h.tt.ClickAt(row.Bounds.X+row.Bounds.W/2, row.Bounds.Y+row.Bounds.H/2)
+	}
+	clickRow(b.Name)
+	h.waitMail("its list", func() bool { return p.viewEdit == nil && p.savedViewID() == b.ID })
+
+	// The same for the mailbox behind a new view's editor.
+	starred, v := i18n.T("mail.unified.starred"), core.View{Unified: "starred"}
+	clickRow(starred)
+	h.waitMail("the mailbox", func() bool { return h.app.route.View == v })
+	p.openViewEditor(newViewEditor(p))
+	h.see(i18n.T("view.editor.create"))
+	clickRow(starred)
+	h.waitMail("the mailbox again", func() bool { return p.viewEdit == nil && h.app.route.View == v })
+}
+
+// TestViewEditorAsksBeforeLosingEdits: leaving with changes asks, whichever
+// way the user leaves; leaving with none does not.
+func TestViewEditorAsksBeforeLosingEdits(t *testing.T) {
+	h, accs := mailHarness(t, nil, "alice@example.com")
+	h.put(accs[0], "INBOX", coretest.Msg("anna@acme.example", "alice@example.com", "needs a reply", "x"))
+	h.syncNow(accs[0])
+	p := h.app.mail
+	h.waitMail("the default view", func() bool { return len(p.views) == 1 })
+	b := p.views[0]
+	starred, there := i18n.T("mail.unified.starred"), core.View{Unified: "starred"}
+	clickRow := func() {
+		t.Helper()
+		row, ok := h.tt.AccessByRole(ui.RoleButton, starred)
+		if !ok {
+			t.Fatal("no sidebar row")
+		}
+		h.tt.ClickAt(row.Bounds.X+row.Bounds.W/2, row.Bounds.Y+row.Bounds.H/2)
+		h.drain()
+		h.tt.Frame()
+	}
+
+	p.editView(b)
+	h.see(i18n.T("common.save"))
+	h.tt.Frame() // drawing the form must not count as a change
+	clickRow()
+	if p.viewEdit != nil || p.viewLeave != nil || h.app.route.View != there {
+		t.Fatalf("no changes, yet edit=%v asked=%v route=%+v", p.viewEdit != nil, p.viewLeave != nil, h.app.route.View)
+	}
+
+	p.editView(b)
+	h.see(i18n.T("common.save"))
+	p.viewEdit.box.Name = "Renamed"
+	h.tt.Frame()
+	drawn := func(button string) { // a dialog is modal even while it draws nothing
+		t.Helper()
+		h.see(button)
+		h.tt.Advance(2 * theme.MotionBase)
+		h.tt.Frame()
+		if px := h.tt.Image().RGBAAt(640, 800); px.R > 235 { // the scrim over the white panel
+			t.Fatalf("%s is not drawn: %v", button, px)
+		}
+	}
+	clickRow()
+	drawn(i18n.T("view.leave.discard"))
+	if h.app.route.View != savedRoute(b.ID) {
+		t.Fatalf("left while asking: %+v", h.app.route.View)
+	}
+	h.click(i18n.T("view.leave.keep"))
+	if p.viewEdit == nil || p.viewEdit.box.Name != "Renamed" || p.viewLeave != nil {
+		t.Fatal("继续编辑 lost the form")
+	}
+
+	h.app.back() // not only the sidebar
+	h.see(i18n.T("view.leave.discard"))
+	h.click(i18n.T("view.leave.keep"))
+
+	clickRow()
+	h.click(i18n.T("view.leave.discard"))
+	if p.viewEdit != nil || h.app.route.View != there {
+		t.Fatalf("放弃修改 stayed: edit=%v route=%+v", p.viewEdit != nil, h.app.route.View)
+	}
+
+	p.viewDelete = &b
+	drawn(i18n.T("common.delete"))
+	h.click(i18n.T("common.cancel"))
+
+	// Closing the window asks too, with the close's own dialog.
+	p.editView(b)
+	h.see(i18n.T("common.save"))
+	p.viewEdit.box.Name = "Renamed"
+	closed := false
+	h.app.BeforeClose(func() { closed = true })
+	h.until("the question", func() bool { return h.app.closeAsk })
+	if closed {
+		t.Fatal("closed without asking")
+	}
+	h.see(i18n.T("view.leave.desc"))
+	h.click(i18n.T("close.unsaved.quit"))
+	h.until("closed", func() bool { return closed })
+	if p.viewEdit != nil {
+		t.Fatal("the editor outlived the close")
+	}
+}
+
+// TestViewRefreshesAtMidnight: 今天 turns over on time, not up to an hour late.
+func TestViewRefreshesAtMidnight(t *testing.T) {
+	h, accs := mailHarness(t, nil, "alice@example.com")
+	h.put(accs[0], "INBOX", coretest.Msg("anna@acme.example", "alice@example.com", "kept", "x"))
+	h.syncNow(accs[0])
+	if _, err := h.env.Svc.SaveView(context.Background(), core.SavedView{Name: "Acme", Icon: "team", Doc: core.SavedViewDoc{Match: core.MatchAll,
+		Conditions: []core.RuleCondition{{Field: core.FieldFrom, Op: core.OpContains, Value: "acme"}}}}); err != nil {
+		t.Fatal(err)
+	}
+	h.savedViewNamed("Acme")
+	h.click("Acme")
+	h.waitMail("the row", func() bool { return len(h.items()) == 1 })
+	now := h.clock.Now()
+	y, m, d := now.Date()
+	for now.Add(viewRefreshEvery).Before(time.Date(y, m, d+1, 0, 0, 0, 0, now.Location())) {
+		h.advance(viewRefreshEvery)
+		now = h.clock.Now()
+	}
+	h.waitMail("settled", func() bool { return !h.app.mail.loading })
+	before := h.app.mail.gen
+	h.advance(time.Date(y, m, d+1, 0, 0, 2, 0, now.Location()).Sub(now))
+	if h.app.mail.gen == before {
+		t.Fatal("no reread just after midnight")
+	}
 }

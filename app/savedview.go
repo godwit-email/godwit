@@ -275,7 +275,7 @@ func (p *mailPage) viewRow(c *ui.Context, b core.SavedView) {
 	t := theme.Of(c)
 	v := savedRoute(b.ID)
 	on := p.viewShown(v)
-	item := kit.SidebarItem(c, kit.SidebarItemOpts{Selected: on, OnClick: func() { p.a.navigate(Route{Page: PageMail, View: v}) }})
+	item := kit.SidebarItem(c, kit.SidebarItemOpts{Selected: on, Covered: p.viewEdit != nil, OnClick: func() { p.a.navigate(Route{Page: PageMail, View: v}) }})
 	item.Children(func() {
 		ui.Icon(c, icons.Get(labelIcon(b.Icon))).Size(theme.Icon, theme.Icon).Shrink(0).TextColor(t.Muted)
 		ui.Text(c, b.Name).SingleLine().Grow(1).Shrink(1)
@@ -313,19 +313,22 @@ func (p *mailPage) titleMenu(c *ui.Context) {
 
 // viewDeleteDialog asks before deleting a view.
 func (p *mailPage) viewDeleteDialog(c *ui.Context) {
-	if p.viewDelete == nil {
-		return
+	a, b := p.a, core.SavedView{}
+	if p.viewDelete != nil {
+		b = *p.viewDelete
 	}
-	a, b := p.a, *p.viewDelete
-	open := true
-	kit.Dialog(c, &open, i18n.Tf("view.delete.title", b.Name), kit.DialogOpts{Size: kit.DialogSm, Alert: true, Desc: i18n.T("view.delete.desc"), Close: i18n.T("common.close")}, nil, func() {
+	p.viewDeleteOpen = p.viewDelete != nil
+	kit.Dialog(c, &p.viewDeleteOpen, i18n.Tf("view.delete.title", b.Name), kit.DialogOpts{Size: kit.DialogSm, Alert: true, Desc: i18n.T("view.delete.desc"), Close: i18n.T("common.close")}, nil, func() {
 		kit.Button(c, i18n.T("common.cancel"), kit.ButtonOpts{Variant: kit.Outline}).OnClick(func() { p.viewDelete = nil })
 		kit.Button(c, i18n.T("common.delete"), kit.ButtonOpts{Variant: kit.Destructive}).OnClick(func() {
-			p.viewDelete, p.viewEdit = nil, nil
+			p.viewDelete = nil
+			if p.viewEdit != nil && p.viewEdit.box.ID == b.ID {
+				p.closeViewEditor()
+			}
 			a.writes.Chain("saved", func(ctx context.Context) error { return a.svc.DeleteView(ctx, b.ID) }, a.toastErr)
 		})
 	})
-	if !open {
+	if !p.viewDeleteOpen {
 		p.viewDelete = nil
 	}
 }
@@ -475,10 +478,13 @@ func (p *mailPage) viewFromMail(it mailItem) {
 	})
 }
 
-// savableSearch is whether a search can be a view with the same
-// results: a time range, unread or starred can't be said without changing them.
+// viewlessSpan is the search span with no date condition: this year.
+const viewlessSpan = 4
+
+// savableSearch is whether a search can be a view with the same results: 未读
+// is the conversation's, where a search's is the message's.
 func (p *mailPage) savableSearch() bool {
-	return p.searched && p.sf.span == 0 && !p.sf.unread && !p.sf.starred
+	return p.searched && p.sf.span != viewlessSpan && !p.sf.unread
 }
 
 // viewFromSearch opens the editor on a new view for the search shown.
@@ -502,6 +508,12 @@ func (p *mailPage) viewFromSearch() {
 	if sq.HasAttachments {
 		conds = append(conds, core.RuleCondition{Field: core.FieldAttachments, Op: core.OpIs, Value: core.RuleYes})
 	}
+	if d := map[int]string{1: core.ViewDateToday, 2: "7", 3: "30"}[p.sf.span]; d != "" {
+		conds = append(conds, core.RuleCondition{Field: core.FieldDate, Op: core.OpIs, Value: d})
+	}
+	if p.sf.starred {
+		conds = append(conds, core.RuleCondition{Field: core.FieldStarred, Op: core.OpIs, Value: core.RuleYes})
+	}
 	e.box.Doc.Conditions = conds
 	e.box.Name = cmp.Or(sq.Text, sq.From, sq.FromAddr)
 	e.note = i18n.T("view.editor.from_search")
@@ -519,6 +531,21 @@ func (a *App) viewCondText(cd core.RuleCondition) string {
 		return i18n.T("view.cond.unreplied")
 	case core.FieldRead:
 		return i18n.T("view.cond." + cd.Value)
+	case core.FieldStarred:
+		return i18n.T("view.starred." + cd.Value)
+	case core.FieldWrote:
+		return i18n.T("view.wrote." + cd.Value)
+	case core.FieldDate:
+		op, val := i18n.T("settings.rules.op.is"), ""
+		if cd.Op == core.OpNotContains {
+			op = i18n.T("view.op.not")
+		}
+		if n, err := strconv.Atoi(cd.Value); err == nil {
+			val = i18n.Tf("view.date.last", n)
+		} else {
+			val = i18n.T("view.date." + cd.Value)
+		}
+		return i18n.Tf("settings.rules.cond", i18n.T("settings.rules.field.date"), op, val)
 	}
 	return a.pages[PageSettings].(*settingsPage).rules.condText(cd)
 }

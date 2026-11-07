@@ -28,6 +28,19 @@ const (
 	FieldReply = "reply" // is ViewReplyUnreplied, or older_than a number of whole days
 	FieldRead  = "read"  // is ViewReadUnread or ViewReadRead
 
+	// FieldDate is, or isn't (OpNotContains), one of the ViewDate values or a
+	// number of days, today included, in local calendar days.
+	FieldDate    = "date"
+	FieldStarred = "starred" // is RuleYes or RuleNo
+	FieldWrote   = "wrote"   // is RuleYes: a sender the user has written to, or their own mail; RuleNo: only others
+
+	ViewDateToday     = "today"
+	ViewDateYesterday = "yesterday"
+	ViewDateThisWeek  = "this_week"
+	ViewDateLastWeek  = "last_week"
+	ViewDateThisMonth = "this_month"
+	ViewDateLastMonth = "last_month"
+
 	ViewReplyUnreplied = "unreplied"
 	ViewReadUnread     = "unread"
 	ViewReadRead       = "read"
@@ -44,6 +57,7 @@ const (
 const (
 	MaxViewGroups    = 20
 	MaxViewWaitDays  = 29 // 回复状态 reads replyStatusDays days back
+	MaxViewDateDays  = 3650
 	maxViewIconBytes = 64
 )
 
@@ -199,6 +213,21 @@ func (s *Service) validViewConditions(ctx context.Context, match string, conds [
 			if c.Op != OpIs || c.Value != ViewReadUnread && c.Value != ViewReadRead {
 				return invalidView("read %s %q", c.Op, c.Value)
 			}
+		case FieldDate:
+			if c.Op != OpIs && c.Op != OpNotContains {
+				return invalidView("date op %q", c.Op)
+			}
+			if n, err := strconv.Atoi(c.Value); err == nil {
+				if n < 1 || n > MaxViewDateDays {
+					return invalidView("date days %q", c.Value)
+				}
+			} else if !slices.Contains(viewDates, c.Value) {
+				return invalidView("date %q", c.Value)
+			}
+		case FieldStarred, FieldWrote:
+			if c.Op != OpIs || c.Value != RuleYes && c.Value != RuleNo {
+				return invalidView("%s %s %q", c.Field, c.Op, c.Value)
+			}
 		case FieldAny:
 			if c.Op != OpContains && c.Op != OpNotContains || strings.TrimSpace(c.Value) == "" || utf8.RuneCountInString(c.Value) > MaxRuleValue {
 				return invalidView("any %s %q", c.Op, c.Value)
@@ -220,6 +249,9 @@ type viewEval struct {
 	statuses map[int64]replyStatus
 	notIn    string // the condition on messages m that they count in a conversation
 	unread   string // the condition on messages m that they are unread: your own sent mail never is
+	wrote    string // the condition on messages m that they are the user's, or from who they wrote to
+	wroteTo  string // its argument
+	today    time.Time
 }
 
 func (s *Service) newViewEval(ctx context.Context) (*viewEval, error) {
@@ -249,7 +281,25 @@ func (s *Service) newViewEval(ctx context.Context) (*viewEval, error) {
 	if len(out) > 0 {
 		notIn += " AND m.folder_id NOT IN (" + strings.Join(out, ",") + ")"
 	}
-	return &viewEval{now: now, statuses: statuses, notIn: notIn, unread: unread}, nil
+	people, err := s.mailPeople(ctx, roles)
+	if err != nil {
+		return nil, err
+	}
+	addrs := make([]string, 0, len(people.known)+len(people.own))
+	for a := range people.known {
+		addrs = append(addrs, a)
+	}
+	for a := range people.own {
+		addrs = append(addrs, a)
+	}
+	list, err := json.Marshal(addrs)
+	if err != nil {
+		return nil, err
+	}
+	const bare = `CASE WHEN instr(m.from_addr, '<') > 0 AND instr(m.from_addr, '>') > instr(m.from_addr, '<')
+		THEN substr(m.from_addr, instr(m.from_addr, '<') + 1, instr(m.from_addr, '>') - instr(m.from_addr, '<') - 1) ELSE trim(m.from_addr) END`
+	wrote := "(lower(" + bare + ") IN (SELECT value FROM json_each(?)) OR m.folder_id IN (" + inSent + "))"
+	return &viewEval{now: now, statuses: statuses, notIn: notIn, unread: unread, wrote: wrote, wroteTo: string(list), today: s.clk().Now()}, nil
 }
 
 // inThread is the condition on threads t that a message of it meets cond,
@@ -327,6 +377,14 @@ func (e *viewEval) treeSQL(match string, conds []RuleCondition) (string, []any, 
 			perMessage = perMessage || on
 		case c.Field == FieldReply || c.Field == FieldRead:
 			sql, a = e.stateSQL(c)
+		case c.Field == FieldDate, c.Field == FieldStarred, c.Field == FieldWrote:
+			var yes bool
+			sql, a, yes = e.fieldSQL(c)
+			if yes {
+				sql, perMessage = e.onMessage(sql), true
+			} else {
+				sql = "NOT " + e.inThread(sql)
+			}
 		case c.Op == OpNotContains:
 			sql, a = positive(c).sql(e.now)
 			sql = "NOT " + e.inThread(sql)
@@ -341,6 +399,46 @@ func (e *viewEval) treeSQL(match string, conds []RuleCondition) (string, []any, 
 		join = " OR "
 	}
 	return "(" + strings.Join(parts, join) + ")", args, perMessage
+}
+
+// viewDates are the named values of FieldDate.
+var viewDates = []string{ViewDateToday, ViewDateYesterday, ViewDateThisWeek, ViewDateLastWeek, ViewDateThisMonth, ViewDateLastMonth}
+
+// viewDateRange is when value of FieldDate starts and ends, in now's local days;
+// a week starts on Monday, and a number of days has today as its last.
+func viewDateRange(now time.Time, value string) (time.Time, time.Time) {
+	y, m, d := now.Date()
+	today := time.Date(y, m, d, 0, 0, 0, 0, now.Location())
+	monday := today.AddDate(0, 0, -(int(now.Weekday())+6)%7)
+	month := time.Date(y, m, 1, 0, 0, 0, 0, now.Location())
+	switch value {
+	case ViewDateToday:
+		return today, today.AddDate(0, 0, 1)
+	case ViewDateYesterday:
+		return today.AddDate(0, 0, -1), today
+	case ViewDateThisWeek:
+		return monday, monday.AddDate(0, 0, 7)
+	case ViewDateLastWeek:
+		return monday.AddDate(0, 0, -7), monday
+	case ViewDateThisMonth:
+		return month, month.AddDate(0, 1, 0)
+	case ViewDateLastMonth:
+		return month.AddDate(0, -1, 0), month
+	}
+	n, _ := strconv.Atoi(value)
+	return today.AddDate(0, 0, 1-n), today.AddDate(0, 0, 1)
+}
+
+// fieldSQL is c's positive form on messages m, and whether c asks for it or for its absence.
+func (e *viewEval) fieldSQL(c RuleCondition) (string, []any, bool) {
+	switch c.Field {
+	case FieldDate:
+		start, end := viewDateRange(e.today, c.Value)
+		return "COALESCE(m.date, 0) >= ? AND COALESCE(m.date, 0) < ?", []any{start.Unix(), end.Unix()}, c.Op != OpNotContains
+	case FieldStarred:
+		return `instr(COALESCE(m.flags, ''), '\Flagged') > 0`, nil, c.Value == RuleYes
+	}
+	return e.wrote, []any{e.wroteTo}, c.Value == RuleYes
 }
 
 // placedThread is a conversation in a view: group is its index in the
@@ -1141,8 +1239,6 @@ func viewText(def string, byLang map[string]string) plugins.Text {
 }
 
 var (
-	textToday = viewText("Today", map[string]string{"zh-Hans": "今日", "zh-Hant": "今日", "ja": "今日", "ko": "오늘",
-		"de": "Heute", "fr": "Aujourd’hui", "es": "Hoy", "pt": "Hoje", "it": "Oggi", "ru": "Сегодня", "nl": "Vandaag", "tr": "Bugün", "vi": "Hôm nay"})
 	textToReply = viewText("To reply", map[string]string{"zh-Hans": "待回复", "zh-Hant": "待回覆", "ja": "返信待ち", "ko": "답장 필요",
 		"de": "Zu beantworten", "fr": "À répondre", "es": "Por responder", "pt": "Por responder", "it": "Da rispondere", "ru": "Нужен ответ", "nl": "Te beantwoorden", "tr": "Yanıtlanacak", "vi": "Cần trả lời"})
 	textFollowUp = viewText("To follow up", map[string]string{"zh-Hans": "待跟进", "zh-Hant": "待跟進", "ja": "フォローアップ", "ko": "후속 조치",
@@ -1161,17 +1257,17 @@ var (
 		"de": "Newsletter", "fr": "Newsletters", "es": "Boletines", "pt": "Newsletters", "it": "Newsletter", "ru": "Рассылки", "nl": "Nieuwsbrieven", "tr": "Bültenler", "vi": "Bản tin"})
 )
 
-// todayLeavesOut are the labels 今日 leaves out: nobody replies to them.
-var todayLeavesOut = []string{"otp", "notice", "newsletter"}
+// toHandleLeavesOut are the labels 待处理 leaves out: nobody replies to them.
+var toHandleLeavesOut = []string{"otp", "notice", "newsletter"}
 
-// todayDoc is 今日, in lang, leaving out those of todayLeavesOut that exist: a view like any other.
-func (s *Service) todayDoc(ctx context.Context, lang string) (SavedViewDoc, error) {
+// toHandleDoc is 待处理, in lang, leaving out those of toHandleLeavesOut that exist: a view like any other.
+func (s *Service) toHandleDoc(ctx context.Context, lang string) (SavedViewDoc, error) {
 	rows, err := s.db.Query(ctx, "SELECT slug FROM labels")
 	if err != nil {
 		return SavedViewDoc{}, err
 	}
 	var out []RuleCondition
-	for _, slug := range todayLeavesOut {
+	for _, slug := range toHandleLeavesOut {
 		if slices.ContainsFunc(rows.Values, func(r []any) bool { return store.Str(r[0]) == slug }) {
 			out = append(out, RuleCondition{Field: FieldLabel, Op: OpNotContains, Value: slug})
 		}
@@ -1188,7 +1284,7 @@ func (s *Service) todayDoc(ctx context.Context, lang string) (SavedViewDoc, erro
 	return d, nil
 }
 
-// seedSavedViews writes 今日 once, in the UI language (the default one when
+// seedSavedViews writes 待处理 once, in the UI language (the default one when
 // none is known yet). From then on it is the user's: one they deleted stays gone.
 func (s *Service) seedSavedViews(ctx context.Context) error {
 	rows, err := s.db.Query(ctx, "SELECT 1 FROM meta WHERE key = 'saved_views_seeded'")
@@ -1200,16 +1296,16 @@ func (s *Service) seedSavedViews(ctx context.Context) error {
 		return err
 	}
 	lang := cmp.Or(st.UILanguage, s.opts.SystemLanguage)
-	today, err := s.todayDoc(ctx, lang)
+	toHandle, err := s.toHandleDoc(ctx, lang)
 	if err != nil {
 		return err
 	}
-	doc, err := json.Marshal(today)
+	doc, err := json.Marshal(toHandle)
 	if err != nil {
 		return err
 	}
 	_, err = s.db.Transaction(ctx, []sqlite.Statement{
-		{SQL: "INSERT INTO saved_views(name, icon, doc, position) VALUES (?, 'calendar-event', ?, 0)", Args: []any{textToday.For(lang), string(doc)}},
+		{SQL: "INSERT INTO saved_views(name, icon, doc, position) VALUES (?, 'chat-3', ?, 0)", Args: []any{textToHandle.For(lang), string(doc)}},
 		{SQL: "INSERT INTO meta(key, value) VALUES ('saved_views_seeded', '1')"}})
 	return err
 }
@@ -1239,11 +1335,11 @@ func (s *Service) ViewTemplates(ctx context.Context) ([]ViewTemplate, error) {
 			Conditions: []RuleCondition{{Field: FieldLabel, Op: OpIs, Value: "newsletter"}},
 			Groups:     []ViewGroup{{ID: "unread", Name: textUnread.For(lang), Match: MatchAll, Conditions: []RuleCondition{{Field: FieldRead, Op: OpIs, Value: ViewReadUnread}}}}}})
 	}
-	today, err := s.todayDoc(ctx, lang)
+	toHandle, err := s.toHandleDoc(ctx, lang)
 	if err != nil {
 		return nil, err
 	}
-	return append(out, ViewTemplate{ID: "today", Name: textToday.For(lang), Icon: "calendar-event", Doc: today}), nil
+	return append(out, ViewTemplate{ID: "to_handle", Name: textToHandle.For(lang), Icon: "chat-3", Doc: toHandle}), nil
 }
 
 // setFlagsByAccount sets flags on messages of any accounts.

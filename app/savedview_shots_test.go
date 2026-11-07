@@ -67,11 +67,17 @@ func TestViewShots(t *testing.T) {
 	h.app.mail.editView(b)
 	h.until("the preview", func() bool { h.advance(debounce); return h.app.mail.viewEdit.prev != nil })
 	shot("SmartMailEdit")
-	h.app.mail.editView(h.app.mail.views[0]) // 今日
+	h.app.mail.editView(h.app.mail.views[0]) // 待处理
 	h.until("its preview", func() bool { h.advance(debounce); return h.app.mail.viewEdit.prev != nil })
 	shot("SmartMailTodayEdit")
 	h.app.mail.closeViewEditor()
 	h.click(i18n.T("view.new"))
 	h.see(i18n.T("view.editor.templates"))
 	shot("SmartMailNew")
+	h.app.mail.viewEdit.box.Doc.Conditions = []core.RuleCondition{{Field: core.FieldDate, Op: core.OpIs, Value: "7"}, {Field: core.FieldStarred, Op: core.OpIs, Value: core.RuleYes},
+		{Field: core.FieldWrote, Op: core.OpIs, Value: core.RuleYes}, {Field: core.FieldDate, Op: core.OpNotContains, Value: core.ViewDateThisMonth}}
+	shot("SmartMailConditions")
+	h.app.back()
+	h.see(i18n.T("view.leave.discard"))
+	shot("SmartMailLeave")
 }

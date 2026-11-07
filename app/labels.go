@@ -143,7 +143,7 @@ func (p *mailPage) labelNav(c *ui.Context) {
 			}
 			v := core.View{LabelID: l.ID}
 			on := p.viewShown(v)
-			item := kit.SidebarItem(c, kit.SidebarItemOpts{Selected: on, OnClick: func() { a.navigate(Route{Page: PageMail, View: v}) }})
+			item := kit.SidebarItem(c, kit.SidebarItemOpts{Selected: on, Covered: p.viewEdit != nil, OnClick: func() { a.navigate(Route{Page: PageMail, View: v}) }})
 			item.Children(func() {
 				ui.Icon(c, icons.Get("label-"+l.Icon)).Size(theme.Icon, theme.Icon).TextColor(t.Label(l.Color).Text)
 				ui.Text(c, l.Name).SingleLine().Grow(1).Shrink(1)

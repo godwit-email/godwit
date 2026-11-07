@@ -25,6 +25,7 @@ type viewEditor struct {
 	p    *mailPage
 	box  core.SavedView
 	note string // where a new one's conditions came from
+	base string // the form as it opened: anything else is unsaved
 
 	exceptions []core.ViewException
 	templates  []core.ViewTemplate
@@ -45,10 +46,13 @@ func newViewEditor(p *mailPage) *viewEditor {
 
 // openViewEditor shows e in place of the list and loads what it lists.
 func (p *mailPage) openViewEditor(e *viewEditor) {
+	if p.askToLeave(func() { p.openViewEditor(e) }) {
+		return
+	}
 	if p.viewEdit != nil {
 		p.viewEdit.stopPreview()
 	}
-	p.viewEdit = e
+	p.viewEdit, e.base = e, e.snapshot()
 	a, id := p.a, e.box.ID
 	var exceptions []core.ViewException
 	var templates []core.ViewTemplate
@@ -70,6 +74,9 @@ func (p *mailPage) openViewEditor(e *viewEditor) {
 
 // editView opens the editor on b, showing its list when the editor closes.
 func (p *mailPage) editView(b core.SavedView) {
+	if p.askToLeave(func() { p.editView(b) }) {
+		return
+	}
 	e := newViewEditor(p)
 	e.box = b
 	e.box.Doc = cloneViewDoc(b.Doc)
@@ -87,6 +94,44 @@ func cloneViewDoc(d core.SavedViewDoc) core.SavedViewDoc {
 	return d
 }
 
+// snapshot is what 保存 would write, to compare.
+func (e *viewEditor) snapshot() string {
+	b, _ := json.Marshal(core.SavedView{Name: e.box.Name, Icon: e.box.Icon, Doc: e.box.Doc})
+	return string(b)
+}
+
+// viewUnsaved reports whether the editor has changes 保存 would write.
+func (p *mailPage) viewUnsaved() bool {
+	return p.viewEdit != nil && p.viewEdit.snapshot() != p.viewEdit.base
+}
+
+// askToLeave asks first when the editor has unsaved changes, and reports
+// whether it did; then runs once the user gives them up.
+func (p *mailPage) askToLeave(then func()) bool {
+	if !p.viewUnsaved() {
+		return false
+	}
+	p.viewLeave = then
+	return true
+}
+
+// viewLeaveDialog asks before giving up the editor's changes.
+func (p *mailPage) viewLeaveDialog(c *ui.Context) {
+	p.viewLeaveOpen = p.viewLeave != nil
+	kit.Dialog(c, &p.viewLeaveOpen, i18n.T("close.unsaved.title"), kit.DialogOpts{Size: kit.DialogSm, Alert: true, Desc: i18n.T("view.leave.desc"), Close: i18n.T("common.close")}, nil, func() {
+		kit.Button(c, i18n.T("view.leave.keep"), kit.ButtonOpts{Variant: kit.Outline}).OnClick(func() { p.viewLeave = nil })
+		kit.Button(c, i18n.T("view.leave.discard"), kit.ButtonOpts{Variant: kit.Destructive}).OnClick(func() {
+			then := p.viewLeave
+			p.viewLeave = nil
+			p.closeViewEditor()
+			then()
+		})
+	})
+	if !p.viewLeaveOpen {
+		p.viewLeave = nil
+	}
+}
+
 // closeViewEditor goes back to the list.
 func (p *mailPage) closeViewEditor() {
 	if p.viewEdit != nil {
@@ -94,6 +139,8 @@ func (p *mailPage) closeViewEditor() {
 		p.viewEdit = nil
 	}
 }
+
+var viewDateNames = []string{core.ViewDateToday, core.ViewDateYesterday, core.ViewDateThisWeek, core.ViewDateLastWeek, core.ViewDateThisMonth, core.ViewDateLastMonth}
 
 // docProblem says what keeps the document from being a view, "" for nothing.
 func (e *viewEditor) docProblem() string {
@@ -105,6 +152,10 @@ func (e *viewEditor) docProblem() string {
 				return i18n.T("view.problem.value")
 			case cd.Field == core.FieldLabel && !slices.ContainsFunc(e.p.a.labels, func(l core.Label) bool { return l.Slug == cd.Value }):
 				return i18n.T("view.problem.label") // deleted since
+			case cd.Field == core.FieldDate && !slices.Contains(viewDateNames, cd.Value):
+				if n, err := strconv.Atoi(cd.Value); err != nil || n < 1 || n > core.MaxViewDateDays {
+					return i18n.Tf("view.problem.days", core.MaxViewDateDays)
+				}
 			case cd.Field == core.FieldReply && cd.Op == core.OpOlderThan:
 				if n, err := strconv.Atoi(cd.Value); err != nil || n < 1 || n > core.MaxViewWaitDays {
 					return i18n.Tf("view.problem.days", core.MaxViewWaitDays)
@@ -395,6 +446,10 @@ func (e *viewEditor) fieldChanged(cd *core.RuleCondition, was string) {
 		cd.Op, cd.Value = core.OpIs, core.ViewReplyUnreplied
 	case cd.Field == core.FieldRead:
 		cd.Op, cd.Value = core.OpIs, core.ViewReadUnread
+	case cd.Field == core.FieldDate:
+		cd.Op, cd.Value = core.OpIs, core.ViewDateThisWeek
+	case cd.Field == core.FieldStarred || cd.Field == core.FieldWrote:
+		cd.Op, cd.Value = core.OpIs, core.RuleYes
 	}
 }
 
@@ -411,7 +466,7 @@ func (e *viewEditor) condRow(c *ui.Context, cd *core.RuleCondition) {
 	a := e.p.a
 	t, th := theme.Of(c), c.Theme()
 	var fields []kit.Option[string]
-	for _, f := range []string{core.FieldFrom, core.FieldTo, core.FieldSubject, core.FieldBody, core.FieldAny, core.FieldAttachments, core.FieldLabel, core.FieldFolder, core.FieldReply, core.FieldRead} {
+	for _, f := range []string{core.FieldFrom, core.FieldTo, core.FieldSubject, core.FieldBody, core.FieldAny, core.FieldAttachments, core.FieldLabel, core.FieldFolder, core.FieldDate, core.FieldStarred, core.FieldWrote, core.FieldReply, core.FieldRead} {
 		fields = append(fields, kit.Option[string]{Value: f, Label: i18n.T("settings.rules.field." + f)})
 	}
 	contains := kit.Option[string]{Value: core.OpContains, Label: i18n.T("settings.rules.op.contains")}
@@ -454,6 +509,28 @@ func (e *viewEditor) condRow(c *ui.Context, cd *core.RuleCondition) {
 			kit.Input(c, &cd.Value, kit.InputOpts{Placeholder: "3"}).Label(i18n.T("settings.rules.days")).Width(th.Space(16))
 			kit.Text(c, i18n.T("view.field.reply.days"), t.Text.Sm).Shrink(0)
 		}
+	case core.FieldDate:
+		ruleSelect(c, i18n.T("settings.rules.op"), &cd.Op, []kit.Option[string]{is, {Value: core.OpNotContains, Label: i18n.T("view.op.not")}}, theme.RuleOpWidth)
+		days := cd.Value // the 最近几天 option is whatever number is there
+		var dates []kit.Option[string]
+		for _, d := range viewDateNames {
+			dates = append(dates, kit.Option[string]{Value: d, Label: i18n.T("view.date." + d)})
+			if cd.Value == d {
+				days = "7"
+			}
+		}
+		dates = append(dates, kit.Option[string]{Value: days, Label: i18n.T("view.date.days")})
+		ruleSelect(c, i18n.T("settings.rules.field.date"), &cd.Value, dates, 0)
+		if days == cd.Value {
+			kit.Input(c, &cd.Value, kit.InputOpts{Placeholder: "7"}).Label(i18n.T("settings.rules.days")).Width(th.Space(16))
+			kit.Text(c, i18n.T("view.field.reply.days"), t.Text.Sm).Shrink(0)
+		}
+	case core.FieldStarred:
+		ruleSelect(c, i18n.T("settings.rules.field.starred"), &cd.Value, []kit.Option[string]{
+			{Value: core.RuleYes, Label: i18n.T("view.starred.yes")}, {Value: core.RuleNo, Label: i18n.T("view.starred.no")}}, 0)
+	case core.FieldWrote:
+		ruleSelect(c, i18n.T("settings.rules.field.wrote"), &cd.Value, []kit.Option[string]{
+			{Value: core.RuleYes, Label: i18n.T("view.wrote.yes")}, {Value: core.RuleNo, Label: i18n.T("view.wrote.no")}}, 0)
 	case core.FieldRead:
 		ruleSelect(c, i18n.T("settings.rules.field.read"), &cd.Value, []kit.Option[string]{
 			{Value: core.ViewReadUnread, Label: i18n.T("view.field.read.unread")}, {Value: core.ViewReadRead, Label: i18n.T("view.field.read.read")}}, 0)
