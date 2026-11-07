@@ -406,7 +406,7 @@ func TestWitPageSwitchGeneration(t *testing.T) {
 	}()
 	reading, goOn := make(chan struct{}), make(chan struct{})
 	var first atomic.Bool
-	followHook = func() { // A's history read is slow
+	followHook = func() { // A's history read is slow: B comes before A's events go to the page
 		if first.CompareAndSwap(false, true) {
 			close(reading)
 			<-goOn
