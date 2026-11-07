@@ -1,14 +1,18 @@
 package app
 
 import (
+	"cmp"
 	"context"
 	"encoding/json"
+	"errors"
 	"reflect"
 	"slices"
 	"strings"
+	"time"
 
 	"github.com/egoist/mygo/ui"
 	"github.com/godwit-email/godwit/core"
+	"github.com/godwit-email/godwit/core/auth"
 	"github.com/godwit-email/godwit/core/events"
 	"github.com/godwit-email/godwit/core/plugins"
 	"github.com/godwit-email/godwit/internal/i18n"
@@ -33,7 +37,7 @@ type extView struct {
 	mcp             int64                  // the server shown
 	mform           *mcpForm               // the add or edit form; nil when closed
 	later           map[string]bool        // pending plugins collapsed with 暂不启用, this session only
-	confirm         string                 // the open confirmation: "plugin", "mcp"; "" none
+	confirm         string                 // the open confirmation: "plugin", "mcp", "login"; "" none
 	reg             core.RegistryView      // the plugin directory
 	onDirectory     bool                   // the plugin directory's subpage shows
 	detail          string                 // the directory entry whose install dialog shows; "" none
@@ -42,6 +46,9 @@ type extView struct {
 	open            bool   // the confirmation shows
 	installing      string // ":folder" for a local install, otherwise the registry plugin name; "" when idle
 	installProgress core.PluginInstallProgress
+	logins          map[string]core.PluginLogin // what each sign-in plugin answered
+	loginFlow       string                      // the plugin signing in; "" none
+	loginCancel     context.CancelFunc          // gives up on that sign-in
 }
 
 // extChange: the event changes what the page lists.
@@ -78,6 +85,7 @@ func (e *extView) load() {
 			return
 		}
 		e.skills, e.plugins, e.servers, e.reg = sk, pl, ms, rv
+		e.loadLogins(gen)
 		for _, p := range pl {
 			if !p.Builtin { // no config, nothing installed
 				e.loadCfg(p.Name)
@@ -94,6 +102,93 @@ func (e *extView) load() {
 		if _, ok := e.server(); !ok && len(ms) > 0 {
 			e.mcp = ms[0].ID
 		}
+	})
+}
+
+// signsIn reports whether p offers a sign-in now.
+func signsIn(p core.PluginInfo) bool {
+	return p.Enabled && !p.NeedsGrant && slices.Contains(p.Capabilities, "login")
+}
+
+// loadLogins asks each sign-in plugin apart from the list: its process may
+// have to start. One that cannot answer offers nothing, and shows its error.
+func (e *extView) loadLogins(gen uint64) {
+	a := e.a
+	for _, p := range e.plugins {
+		if !signsIn(p) {
+			continue
+		}
+		name := p.Name
+		var st core.PluginLogin
+		a.do(func(ctx context.Context) (err error) {
+			st, err = a.svc.PluginLoginStatus(ctx, name)
+			return err
+		}, func(err error) {
+			if gen != e.gen {
+				return
+			}
+			if err != nil {
+				delete(e.logins, name)
+				return
+			}
+			if e.logins == nil {
+				e.logins = map[string]core.PluginLogin{}
+			}
+			e.logins[name] = st
+		})
+	}
+}
+
+// startLogin runs a sign-in to its end: a page opened once, then polling,
+// until it ends or the user gives up.
+func (e *extView) startLogin(name string) {
+	a := e.a
+	ctx, cancel := context.WithTimeout(a.ctx, auth.FlowTimeout)
+	e.loginFlow, e.loginCancel = name, cancel
+	a.do(func(context.Context) error {
+		flow, err := a.svc.BeginPluginLogin(ctx, name)
+		if err != nil {
+			return err
+		}
+		finished, opened := false, false
+		defer func() {
+			if !finished { // the plugin would otherwise go on waiting for the browser
+				a.svc.CancelPluginLogin(context.WithoutCancel(ctx), name, flow)
+			}
+		}()
+		for {
+			st, err := a.svc.PollPluginLogin(ctx, name, flow)
+			if err != nil {
+				return err
+			}
+			switch st.State {
+			case "open":
+				if !opened {
+					opened = true
+					if err := a.plat.OpenURL(st.URL); err != nil {
+						return err
+					}
+				}
+			case "done":
+				finished = true
+				return nil
+			case "failed":
+				finished = true
+				return errors.New(st.Message)
+			}
+			select {
+			case <-ctx.Done():
+				return ctx.Err()
+			case <-time.After(time.Second):
+			}
+		}
+	}, func(err error) {
+		cancel()
+		e.loginFlow, e.loginCancel = "", nil
+		if !errors.Is(err, context.Canceled) {
+			a.toastErr(err)
+		}
+		e.load()
 	})
 }
 
@@ -386,6 +481,14 @@ func (e *extView) pluginRow(c *ui.Context, p core.PluginInfo) {
 			if en, ok := e.entry(name); ok && en.Update {
 				e.updateButton(c, en)
 			}
+			if st, ok := e.logins[name]; signsIn(p) && ok && !st.SignedIn {
+				if e.loginFlow == name {
+					kit.Button(c, i18n.T("settings.ext.login.cancel"), kit.ButtonOpts{Variant: kit.Outline}).OnClick(func() { e.loginCancel() })
+				} else {
+					kit.Button(c, i18n.T("settings.ext.login"), kit.ButtonOpts{Variant: kit.Outline, Disabled: e.loginFlow != ""}).
+						OnClick(func() { e.plugin, e.confirm, e.open = name, "login", true })
+				}
+			}
 			on := p.Enabled
 			if kit.Switch(c, &on).Label(i18n.Tf("settings.ext.skill.enable", title)).Changed() {
 				e.setPluginEnabled(name, !p.Enabled)
@@ -421,6 +524,15 @@ func (e *extView) pluginBody(c *ui.Context, p core.PluginInfo) {
 					kit.Text(c, i18n.T("settings.ext.native.trust.listed"), t.Text.Sm).TextColor(t.Muted)
 				}
 				permissionList(c, p.Permissions, p.Capabilities)
+			})
+		}
+		if st, ok := e.logins[name]; signsIn(p) && ok && st.SignedIn {
+			ui.Row(c).FillWidth().Gap(th.Space(2)).AlignItems(ui.Center).Children(func() {
+				label := i18n.Tf("settings.ext.signed_in", st.Account)
+				kit.Text(c, label, t.Text.Body).LineHeight(theme.LineFor(label)).Grow(1).Shrink(1)
+				kit.Button(c, i18n.T("settings.ext.logout"), kit.ButtonOpts{Variant: kit.Outline}).OnClick(func() {
+					e.write("plugins", func(ctx context.Context) error { return e.a.svc.PluginLogout(ctx, name) }, nil)
+				})
 			})
 		}
 		if f != nil && len(p.Config) > 0 {
@@ -818,7 +930,7 @@ func (e *extView) serverView(c *ui.Context, s core.MCPServer) {
 	settingsSection(c, s.Name, "", rows...)
 }
 
-// confirmView asks before an uninstall or a removal.
+// confirmView asks before an uninstall, a removal or a sign-in.
 func (e *extView) confirmView(c *ui.Context) {
 	if e.confirm == "" {
 		return
@@ -831,6 +943,16 @@ func (e *extView) confirmView(c *ui.Context) {
 	var title, body, label string
 	var run func()
 	switch e.confirm {
+	case "login":
+		p, ok := e.pluginInfo()
+		if !ok {
+			e.confirm = ""
+			return
+		}
+		name := p.Name
+		body = cmp.Or(e.logins[name].Notice.For(i18n.Language()), i18n.T("settings.ext.login.body"))
+		title, label = i18n.Tf("settings.ext.login.title", name), i18n.T("settings.ext.login.confirm")
+		run = func() { e.startLogin(name) }
 	case "plugin":
 		p, ok := e.pluginInfo()
 		if !ok {

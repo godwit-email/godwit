@@ -861,6 +861,27 @@
   "settings_ext_tab_mcp": "MCP · {arg1, number, ::group-off}",
   "settings_ext_tab_plugins": "Plugin · {arg1, number, ::group-off}",
   "settings_ext_tab_skills": "Kỹ năng · {arg1, number, ::group-off}",
+  "settings_ext_login": "Đăng nhập",
+  "settings_ext_login_cancel": "Hủy đăng nhập",
+  "settings_ext_login_title": "Đăng nhập vào {arg1}?",
+  "@settings_ext_login_title": {
+    "placeholders": {
+      "arg1": {
+        "type": "String"
+      }
+    }
+  },
+  "settings_ext_login_body": "Plugin sẽ dùng tài khoản của bạn để truy cập dịch vụ của nó.",
+  "settings_ext_login_confirm": "Vẫn đăng nhập",
+  "settings_ext_logout": "Đăng xuất",
+  "settings_ext_signed_in": "Đã đăng nhập: {arg1}",
+  "@settings_ext_signed_in": {
+    "placeholders": {
+      "arg1": {
+        "type": "String"
+      }
+    }
+  },
   "settings_ext_uninstall": "Gỡ cài đặt plugin",
   "settings_ext_uninstall_body": "Các tệp và cài đặt của plugin sẽ bị xóa.",
   "settings_ext_uninstall_confirm": "Gỡ cài đặt",

@@ -1654,6 +1654,27 @@
       }
     }
   },
+  "settings_ext_login": "Sign in",
+  "settings_ext_login_cancel": "Cancel sign-in",
+  "settings_ext_login_title": "Sign in to {arg1}?",
+  "@settings_ext_login_title": {
+    "placeholders": {
+      "arg1": {
+        "type": "String"
+      }
+    }
+  },
+  "settings_ext_login_body": "The plugin will use your account to reach its service.",
+  "settings_ext_login_confirm": "Sign in anyway",
+  "settings_ext_logout": "Sign out",
+  "settings_ext_signed_in": "Signed in as {arg1}",
+  "@settings_ext_signed_in": {
+    "placeholders": {
+      "arg1": {
+        "type": "String"
+      }
+    }
+  },
   "settings_ext_uninstall": "Uninstall plugin",
   "settings_ext_uninstall_body": "The plugin''s files and settings are deleted.",
   "settings_ext_uninstall_confirm": "Uninstall",

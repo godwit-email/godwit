@@ -46,8 +46,10 @@ type NativeSpec struct {
 // IsNative reports whether m is a native (shared library) plugin.
 func (m Manifest) IsNative() bool { return m.Native != nil }
 
-// capabilities a plugin may declare.
-var knownCapabilities = []string{"translate", "models"}
+// capabilities a plugin may declare. "login" is native only (ADR 0033): the user
+// signs in to the plugin's own service through it, and the plugin keeps the
+// credentials; it can do nothing a native plugin could not do without it.
+var knownCapabilities = []string{"translate", "models", "login"}
 
 // Permissions: Mail holds "read" and/or "write" (there is no send); Net the
 // hosts, each "host" or "host:port", lowercased and without ":443" after
@@ -217,6 +219,8 @@ func ParseManifest(data []byte, dirName string) (Manifest, error) {
 		case m.Native.Idle != 0 && (m.Native.Idle < 30 || m.Native.Idle > 3600):
 			return Manifest{}, fmt.Errorf("plugin %s: native idle %d is not 30–3600 seconds", m.Name, m.Native.Idle)
 		}
+	} else if slices.Contains(m.Capabilities, "login") {
+		return Manifest{}, fmt.Errorf("plugin %s: only a native plugin may declare login", m.Name)
 	} else if !fs.ValidPath(m.Main) || m.Main == "." || strings.ContainsAny(m.Main, `:\`) || // no ":" or backslash: "C:/x.ts" and "C:x.ts" leave the plugin on Windows
 		!(strings.HasSuffix(m.Main, ".ts") || strings.HasSuffix(m.Main, ".js")) {
 		return Manifest{}, fmt.Errorf("plugin %s: main %q must be a relative .ts or .js path inside the plugin", m.Name, m.Main)

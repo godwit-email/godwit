@@ -861,6 +861,27 @@
   "settings_ext_tab_mcp": "MCP · {arg1, number, ::group-off}",
   "settings_ext_tab_plugins": "插件 · {arg1, number, ::group-off}",
   "settings_ext_tab_skills": "Skill · {arg1, number, ::group-off}",
+  "settings_ext_login": "登录",
+  "settings_ext_login_cancel": "取消登录",
+  "settings_ext_login_title": "登录 {arg1}？",
+  "@settings_ext_login_title": {
+    "placeholders": {
+      "arg1": {
+        "type": "String"
+      }
+    }
+  },
+  "settings_ext_login_body": "插件会用你的账号访问它的服务。",
+  "settings_ext_login_confirm": "仍然登录",
+  "settings_ext_logout": "退出登录",
+  "settings_ext_signed_in": "已登录 {arg1}",
+  "@settings_ext_signed_in": {
+    "placeholders": {
+      "arg1": {
+        "type": "String"
+      }
+    }
+  },
   "settings_ext_uninstall": "卸载插件",
   "settings_ext_uninstall_body": "插件的文件和配置会被删除。",
   "settings_ext_uninstall_confirm": "卸载",

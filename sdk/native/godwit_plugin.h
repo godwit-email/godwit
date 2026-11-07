@@ -10,17 +10,31 @@
  * Requests and responses are JSON. Every response is an envelope:
  *   {"ok": true,  "result": {...}}
  *   {"ok": false, "error": {"code": "...", "message": "...", "retryable": false}}
- * Error codes: invalid_request, unsupported_language, rate_limited, upstream, internal.
+ * Error codes: invalid_request, unsupported_language, rate_limited, upstream, login_required, internal.
  *
  * Methods (v1):
  *   describe   {}                                  -> {"name","version","abi","capabilities"}
  *              Must match plugin.json, or the plugin does not start.
- *   configure  {"config": {...}}                   -> {}
- *              After start and after each settings save; secrets included.
+ *   configure  {"config": {...},"dataDir":"/abs"}  -> {}
+ *              After start and after each settings save; secrets included. dataDir
+ *              is the plugin's own directory, kept across updates, gone on uninstall.
  *   translate  {"texts":[...],"source":"","target":"zh-Hans"} -> {"texts":[...],"source":"en"}
  *              source "" asks the plugin to detect it; tags are BCP 47. One text
  *              per paragraph of the mail, in order; they may be long, so split
  *              them as your service requires and answer the same number of texts.
+ * With the capability "login" (the user signs in to the plugin's service; the
+ * plugin keeps the credentials, in the system's keychain where it can):
+ *   login.status {}                                -> {"signedIn":false,"account":"","notice":{...}}
+ *              notice (a label: text, or {"default":...,"<lang>":...}) is what the user
+ *              must read before signing in. Answer fast: Godwit asks when it lists plugins.
+ *   login.start  {}                                -> {"flow":"id"}
+ *              Return at once, with the slow work (a download, the sign-in) under way.
+ *   login.poll   {"flow":"id"}                     -> {"state":"preparing"|"open"|"done"|"failed",
+ *                                                      "url":"https://...","account":"","message":""}
+ *              Godwit asks about once a second and opens url, in the state "open", once.
+ *   login.cancel {"flow":"id"}                     -> {}
+ *   login.logout {}                                -> {}
+ *   models.list answers the error code login_required while signed out.
  * Unknown methods answer invalid_request.
  */
 #ifndef GODWIT_PLUGIN_H

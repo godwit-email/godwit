@@ -861,6 +861,27 @@
   "settings_ext_tab_mcp": "MCP · {arg1, number, ::group-off}",
   "settings_ext_tab_plugins": "플러그인 · {arg1, number, ::group-off}",
   "settings_ext_tab_skills": "Skill · {arg1, number, ::group-off}",
+  "settings_ext_login": "로그인",
+  "settings_ext_login_cancel": "로그인 취소",
+  "settings_ext_login_title": "{arg1}에 로그인할까요?",
+  "@settings_ext_login_title": {
+    "placeholders": {
+      "arg1": {
+        "type": "String"
+      }
+    }
+  },
+  "settings_ext_login_body": "플러그인이 내 계정으로 서비스에 접속합니다.",
+  "settings_ext_login_confirm": "그래도 로그인",
+  "settings_ext_logout": "로그아웃",
+  "settings_ext_signed_in": "{arg1}(으)로 로그인됨",
+  "@settings_ext_signed_in": {
+    "placeholders": {
+      "arg1": {
+        "type": "String"
+      }
+    }
+  },
   "settings_ext_uninstall": "플러그인 제거",
   "settings_ext_uninstall_body": "플러그인의 파일과 설정이 삭제됩니다.",
   "settings_ext_uninstall_confirm": "제거",

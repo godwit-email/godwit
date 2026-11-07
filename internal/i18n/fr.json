@@ -861,6 +861,27 @@
   "settings_ext_tab_mcp": "MCP · {arg1, number, ::group-off}",
   "settings_ext_tab_plugins": "Plugins · {arg1, number, ::group-off}",
   "settings_ext_tab_skills": "Skills · {arg1, number, ::group-off}",
+  "settings_ext_login": "Se connecter",
+  "settings_ext_login_cancel": "Annuler la connexion",
+  "settings_ext_login_title": "Se connecter à {arg1} ?",
+  "@settings_ext_login_title": {
+    "placeholders": {
+      "arg1": {
+        "type": "String"
+      }
+    }
+  },
+  "settings_ext_login_body": "Le plugin utilisera votre compte pour accéder à son service.",
+  "settings_ext_login_confirm": "Se connecter quand même",
+  "settings_ext_logout": "Se déconnecter",
+  "settings_ext_signed_in": "Connecté en tant que {arg1}",
+  "@settings_ext_signed_in": {
+    "placeholders": {
+      "arg1": {
+        "type": "String"
+      }
+    }
+  },
   "settings_ext_uninstall": "Désinstaller le plugin",
   "settings_ext_uninstall_body": "Les fichiers et réglages du plugin seront supprimés.",
   "settings_ext_uninstall_confirm": "Désinstaller",

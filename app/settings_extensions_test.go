@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"os"
+	"path/filepath"
 	"slices"
 	"strings"
 	"testing"
@@ -457,4 +458,77 @@ func TestScriptPluginCardUnchanged(t *testing.T) {
 	if _, pill := h.tt.Find("原生"); pill || h.tt.HasText("仍然启用") {
 		t.Fatal("a script plugin shows the native card")
 	}
+}
+
+// loginFixture is a native plugin with the login capability, enabled and listed.
+func loginFixture(t *testing.T, h *harness, extra map[string]any) *settingsPage {
+	t.Helper()
+	h.plat.dir = coretest.NativePluginFixture(t, "signin", "0.1.0", map[string]any{"name": "signin", "version": "0.1.0", "abi": 1,
+		"capabilities": []string{"login"}}, extra)
+	path := filepath.Join(h.plat.dir, "plugin.json")
+	b, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var m map[string]any
+	if err := json.Unmarshal(b, &m); err != nil {
+		t.Fatal(err)
+	}
+	m["capabilities"] = []string{"login"}
+	b, _ = json.Marshal(m)
+	if err := os.WriteFile(path, b, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	p := h.openSettings("extensions")
+	h.click("选择文件夹")
+	h.until("installed", func() bool { _, ok := h.plugin("signin"); return ok })
+	h.click("仍然启用")
+	h.until("enabled", func() bool { info, _ := h.plugin("signin"); return info.Enabled && !info.NeedsGrant })
+	return p
+}
+
+func TestPluginSignIn(t *testing.T) {
+	h, _ := withAccount(t)
+	p := loginFixture(t, h, map[string]any{
+		"login": map[string]any{
+			"login.status": map[string]any{"signedIn": false, "notice": map[string]any{"default": "Risk", "zh-Hans": "这可能违反条款"}},
+			"login.start":  map[string]any{"flow": "f1"},
+		},
+		"loginPoll": []any{
+			map[string]any{"state": "open", "url": "https://accounts.example.com/auth"},
+			map[string]any{"state": "open", "url": "https://accounts.example.com/auth"},
+			map[string]any{"state": "done", "account": "a@example.com"},
+		},
+	})
+	h.until("the sign-in button", func() bool { return h.tt.HasText("登录") })
+	h.click("登录")
+	h.see("这可能违反条款") // nothing starts before the notice is read
+	if slices.ContainsFunc(h.plat.Calls(), func(c string) bool { return strings.HasPrefix(c, "OpenURL") }) {
+		t.Fatal("the page opened before the user agreed")
+	}
+	h.click("仍然登录")
+	h.until("the flow's end", func() bool {
+		return p.ext.loginFlow == "" && slices.Contains(h.plat.Calls(), "OpenURL https://accounts.example.com/auth")
+	})
+	n := 0
+	for _, c := range h.plat.Calls() {
+		if c == "OpenURL https://accounts.example.com/auth" {
+			n++
+		}
+	}
+	if n != 1 {
+		t.Fatalf("the page opened %d times", n)
+	}
+}
+
+func TestPluginSignedInShowsAccountAndSignsOut(t *testing.T) {
+	h, _ := withAccount(t)
+	loginFixture(t, h, map[string]any{"login": map[string]any{"login.status": map[string]any{"signedIn": true, "account": "a@example.com"}}})
+	h.click("signin")
+	h.until("the account", func() bool { return h.tt.HasText("已登录 a@example.com") })
+	if _, button := h.tt.Find("登录"); button {
+		t.Fatal("no sign-in while signed in")
+	}
+	h.click("退出登录")
+	h.until("the write", func() bool { return len(h.app.writes.chains["plugins"]) == 0 })
 }

@@ -231,7 +231,7 @@ func Listen(dataDir string, svc *core.Service, version string) (*rpc.Server, err
 }
 
 // audit records full's Send, SendAcknowledged and their Revision forms (by draft), ResolveOutbox
-// "resend" (by outbox item), Unsubscribe (by message) and the rule calls that
+// "resend" (by outbox item), Unsubscribe (by message), BeginPluginLogin and the rule calls that
 // make a rule forward (ruleForward), and mcp's NewDraft (by source message) and
 // SaveDraft (by draft); nothing else. A row it cannot write stops the call.
 func audit(svc *core.Service, role, method string, params []json.RawMessage) error {
@@ -247,7 +247,7 @@ func audit(svc *core.Service, role, method string, params []json.RawMessage) err
 	source := ""
 	switch {
 	case role == rpc.RoleFull && (method == "Send" || method == "SendAcknowledged" || method == "SendRevision" || method == "SendAcknowledgedRevision" ||
-		method == "ResolveOutbox" && isResend(params) || method == "Unsubscribe"):
+		method == "ResolveOutbox" && isResend(params) || method == "Unsubscribe" || method == "BeginPluginLogin"):
 		source = core.AuditLocalAPI
 	case role == rpc.RoleMCP && (method == "NewDraft" || method == "SaveDraft"):
 		source = core.AuditMCP

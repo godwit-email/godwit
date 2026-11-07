@@ -861,6 +861,27 @@
   "settings_ext_tab_mcp": "MCP · {arg1, number, ::group-off}",
   "settings_ext_tab_plugins": "Eklentiler · {arg1, number, ::group-off}",
   "settings_ext_tab_skills": "Beceriler · {arg1, number, ::group-off}",
+  "settings_ext_login": "Oturum aç",
+  "settings_ext_login_cancel": "Oturum açmayı iptal et",
+  "settings_ext_login_title": "{arg1} oturumu açılsın mı?",
+  "@settings_ext_login_title": {
+    "placeholders": {
+      "arg1": {
+        "type": "String"
+      }
+    }
+  },
+  "settings_ext_login_body": "Eklenti, hizmetine ulaşmak için hesabınızı kullanır.",
+  "settings_ext_login_confirm": "Yine de oturum aç",
+  "settings_ext_logout": "Oturumu kapat",
+  "settings_ext_signed_in": "{arg1} olarak oturum açıldı",
+  "@settings_ext_signed_in": {
+    "placeholders": {
+      "arg1": {
+        "type": "String"
+      }
+    }
+  },
   "settings_ext_uninstall": "Eklentiyi kaldır",
   "settings_ext_uninstall_body": "Eklentinin dosyaları ve ayarları silinir.",
   "settings_ext_uninstall_confirm": "Kaldır",

@@ -260,12 +260,16 @@ func TestAuditExternal(t *testing.T) {
 	require.NoError(t, full.Call(ctx, "UnsubscribeMethod", nil, msg))
 	assert.ErrorContains(t, full.Call(ctx, "Unsubscribe", nil, msg), core.ErrNoUnsubscribe.Error()) // audited all the same
 
+	assert.Error(t, full.Call(ctx, "BeginPluginLogin", nil, "absent")) // audited all the same: the plugin may reach its hosts
+	assert.Error(t, mcp.Call(ctx, "BeginPluginLogin", nil, "absent"))
+
 	rows := auditRows(t, e.DataDir)
 	assert.Equal(t, [][]any{
 		{"local_mcp", "NewDraft", nil, ""},
 		{"local_mcp", "SaveDraft", d.ID, ""},
 		{"local_api", "Send", d.ID, ""},
 		{"local_api", "Unsubscribe", msg, ""},
+		{"local_api", "BeginPluginLogin", nil, ""},
 	}, rows)
 	b, _ := json.Marshal(rows)
 	assert.NotContains(t, string(b), "secret plan")

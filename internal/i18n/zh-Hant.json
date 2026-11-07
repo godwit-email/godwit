@@ -861,6 +861,27 @@
   "settings_ext_tab_mcp": "MCP · {arg1, number, ::group-off}",
   "settings_ext_tab_plugins": "外掛 · {arg1, number, ::group-off}",
   "settings_ext_tab_skills": "Skill · {arg1, number, ::group-off}",
+  "settings_ext_login": "登入",
+  "settings_ext_login_cancel": "取消登入",
+  "settings_ext_login_title": "登入 {arg1}？",
+  "@settings_ext_login_title": {
+    "placeholders": {
+      "arg1": {
+        "type": "String"
+      }
+    }
+  },
+  "settings_ext_login_body": "外掛會用你的帳號存取它的服務。",
+  "settings_ext_login_confirm": "仍要登入",
+  "settings_ext_logout": "登出",
+  "settings_ext_signed_in": "已登入 {arg1}",
+  "@settings_ext_signed_in": {
+    "placeholders": {
+      "arg1": {
+        "type": "String"
+      }
+    }
+  },
   "settings_ext_uninstall": "解除安裝外掛",
   "settings_ext_uninstall_body": "外掛的檔案和設定會被刪除。",
   "settings_ext_uninstall_confirm": "解除安裝",

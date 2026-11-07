@@ -283,6 +283,22 @@ func TestNativeIdleWaitsForCalls(t *testing.T) {
 	assert.Equal(t, int32(1), runs.Load(), "a call in flight is not idle")
 }
 
+func TestNativeHoldKeepsProcess(t *testing.T) {
+	n, runs, _ := newStarted(t, 200*time.Millisecond, 0, nil)
+	require.NoError(t, n.Start(context.Background()))
+	release := n.Hold()
+	time.Sleep(600 * time.Millisecond)
+	_, err := n.Call(context.Background(), "describe", struct{}{})
+	require.NoError(t, err)
+	assert.Equal(t, int32(1), runs.Load(), "work outside the ABI is not idle")
+	release()
+	release() // a body closed twice releases once
+	time.Sleep(600 * time.Millisecond)
+	_, err = n.Call(context.Background(), "describe", struct{}{})
+	require.NoError(t, err)
+	assert.Equal(t, int32(2), runs.Load(), "released, it goes idle again")
+}
+
 // A call the caller stopped waiting for still runs in the plugin: it keeps
 // its in-flight slot until the plugin answers.
 func TestNativeCanceledCallKeepsSlot(t *testing.T) {

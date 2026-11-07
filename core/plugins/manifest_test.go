@@ -241,3 +241,10 @@ func TestParseManifestScriptCapabilities(t *testing.T) {
 	_, err = ParseManifest(manifest(`"demo"`, `"index.ts"`, okPerms, `[]`), "demo")
 	assert.NoError(t, err, "capabilities are optional for a script plugin")
 }
+
+func TestLoginCapabilityIsNative(t *testing.T) {
+	_, err := ParseManifest([]byte(`{"name":"p","version":"1","main":"a.js","capabilities":["login"]}`), "p")
+	assert.ErrorContains(t, err, "only a native plugin")
+	_, err = ParseManifest([]byte(`{"name":"p","version":"1","native":{"abi":1},"capabilities":["login"]}`), "p")
+	assert.NoError(t, err)
+}

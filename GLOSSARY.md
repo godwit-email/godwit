@@ -154,7 +154,7 @@ _Avoid_: 技能脚本、prompt 插件
 _Avoid_: 扩展（指插件时）、add-on
 
 **能力**（capability）：
-插件在 manifest 里声明、两种插件用同一契约实现的功能，如 `translate`、`models`。
+插件在 manifest 里声明、两种插件用同一契约实现的功能，如 `translate`、`models`。`login`（用户登录插件自己的服务）只有原生插件能声明。
 
 **Action / Card / Tool / Hook**：
 插件的四种扩展点：**Action** 是界面上的一个按钮；**Card** 是插件返回、由客户端渲染的声明式卡片；**Tool** 是给 Wit 调用的工具；**Hook** 是邮件事件的回调（`message.received`、`message.beforeSend`）。
