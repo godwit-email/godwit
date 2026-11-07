@@ -5,6 +5,7 @@
 /resources/darwin-*/libgodwit-translate.dylib
 /resources/darwin-*/apple-intelligence-helper
 /resources/darwin-*/libgodwit-guard-coreml.dylib
+/.tools/
 web/node_modules/
 core/ai/pi/js/node_modules/
 web/dist/

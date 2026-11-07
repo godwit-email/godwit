@@ -40,7 +40,6 @@ type readerFixture struct {
 	mu       sync.Mutex
 	emitted  []emittedBody
 	heights  [][2]int64
-	wheels   []float64
 	links    []string
 	navs     []int
 	searches int
@@ -65,9 +64,6 @@ func newReaderFixture(t *testing.T) *readerFixture {
 		Emit: func(page any, b ReaderBody) { f.record(func() { f.emitted = append(f.emitted, emittedBody{page, b}) }) },
 		OnHeight: func(k any, m int64, px int) {
 			f.record(func() { f.callers, f.heights = append(f.callers, k), append(f.heights, [2]int64{m, int64(px)}) })
-		},
-		OnWheel: func(k any, dy float64) {
-			f.record(func() { f.callers, f.wheels = append(f.callers, k), append(f.wheels, dy) })
 		},
 		OnLink: func(k any, u string) {
 			f.record(func() { f.callers, f.links = append(f.callers, k), append(f.links, u) })
@@ -414,7 +410,6 @@ func TestReaderPageScoped(t *testing.T) {
 		_, err := f.p.Load(ctx)
 		assert.ErrorIs(t, err, ErrWrongPage, name)
 		assert.ErrorIs(t, f.p.Height(ctx, 10), ErrWrongPage, name)
-		assert.ErrorIs(t, f.p.Wheel(ctx, 10), ErrWrongPage, name)
 		assert.ErrorIs(t, f.p.OpenLink(ctx, "https://x.example/"), ErrWrongPage, name)
 		assert.ErrorIs(t, f.p.Navigate(ctx, 1), ErrWrongPage, name)
 		assert.ErrorIs(t, f.p.Search(ctx), ErrWrongPage, name)
@@ -437,7 +432,6 @@ func TestReaderPageCallbacks(t *testing.T) {
 	k := f.page(m.ID)
 	ctx := pageCtx(k)
 	require.NoError(t, f.p.Height(ctx, 640))
-	require.NoError(t, f.p.Wheel(ctx, 120))
 	require.NoError(t, f.p.OpenLink(ctx, "https://x.example/"))
 	require.NoError(t, f.p.OpenLink(ctx, "mailto:bob@example.com"))
 	assert.ErrorIs(t, f.p.OpenLink(ctx, "javascript:alert(1)"), ErrBadLink)
@@ -448,11 +442,10 @@ func TestReaderPageCallbacks(t *testing.T) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	assert.Equal(t, [][2]int64{{m.ID, 640}}, f.heights)
-	assert.Equal(t, []float64{120}, f.wheels)
 	assert.Equal(t, []string{"https://x.example/", "mailto:bob@example.com"}, f.links)
 	assert.Equal(t, []int{-1}, f.navs)
 	assert.Equal(t, 1, f.searches)
-	assert.Equal(t, []any{k, k, k, k, k, k}, f.callers, "each callback names the calling page")
+	assert.Equal(t, []any{k, k, k, k, k}, f.callers, "each callback names the calling page")
 }
 
 // Each body built as current is told to the pages bound to its message

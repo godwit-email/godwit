@@ -110,6 +110,12 @@ beforeEach(() => {
 
 const body = () => screen.findByRole("textbox", { name: "正文" });
 
+/** Picks a sending account through the menu the From pill opens. */
+async function pickAccount(email: string) {
+  await userEvent.click(screen.getByRole("button", { name: "发件账户" }));
+  await userEvent.click(await screen.findByRole("menuitemradio", { name: email }));
+}
+
 test("loads the draft", async () => {
   render(<ComposePage />);
   expect(await body()).toHaveValue("正文");
@@ -457,7 +463,7 @@ test("send flushes first and freezes", async () => {
   expect(await screen.findByText("正在发送，暂时不能修改草稿")).toBeInTheDocument();
   expect(el).toHaveAttribute("readonly");
   expect(screen.getByRole("textbox", { name: "主题" })).toHaveAttribute("readonly");
-  expect(screen.getByRole("combobox", { name: "发件账户" })).toBeDisabled();
+  expect(screen.getByRole("button", { name: "发件账户" })).toBeDisabled();
   await act(async () => sent({ ...noWarnings, sent: true }));
   expect(screen.getByRole("textbox", { name: "主题" })).toHaveAttribute("readonly");
   // sent: Go closes the window, the form stays frozen
@@ -536,7 +542,7 @@ test("account switch keeps body", async () => {
   render(<ComposePage />);
   const el = await body();
   fireEvent.change(el, { target: { value: "正文!" } });
-  await userEvent.selectOptions(screen.getByRole("combobox", { name: "发件账户" }), "work@x.com");
+  await pickAccount("work@x.com");
   await waitFor(() => expect(api.setAccount).toHaveBeenCalledWith(2, 8));
   expect(api.save).toHaveBeenCalledWith(expect.objectContaining({ body: "正文!" }));
   expect(order(vi.mocked(api.save))).toBeLessThan(order(vi.mocked(api.setAccount)));
@@ -561,7 +567,7 @@ test("a signature laid out with a table shows as its HTML, table kept", async ()
   expect(screen.getByText("CEO").tagName).toBe("TD");
 });
 
-test("an account switch that conflicts reverts the select", async () => {
+test("an account switch that conflicts reverts the pill", async () => {
   vi.mocked(api.setAccount).mockResolvedValue({
     revision: 0,
     attachments: [],
@@ -571,10 +577,10 @@ test("an account switch that conflicts reverts the select", async () => {
   });
   render(<ComposePage />);
   await body();
-  await userEvent.selectOptions(screen.getByRole("combobox", { name: "发件账户" }), "work@x.com");
+  await pickAccount("work@x.com");
   await waitFor(() => expect(api.setAccount).toHaveBeenCalled());
   await waitFor(() =>
-    expect(screen.getByRole("combobox", { name: "发件账户" })).toHaveDisplayValue("me@x.com"),
+    expect(screen.getByRole("button", { name: "发件账户" })).toHaveTextContent("me@x.com"),
   );
   expect(screen.getByText("-- me")).toBeInTheDocument();
 });

@@ -185,8 +185,7 @@ func gui(ctx context.Context, dataDir string) int {
 		OnHeight: func(k any, m int64, px int) {
 			onBody(k, m, func(a *app.App, v ui.NativeWebView) { a.BodyHeight(v, m, px) })
 		},
-		OnWheel: func(k any, dy float64) { onBody(k, 0, func(a *app.App, v ui.NativeWebView) { a.BodyWheel(v, dy) }) },
-		OnLink:  func(k any, u string) { onBody(k, 0, func(a *app.App, v ui.NativeWebView) { a.BodyLink(v, u) }) },
+		OnLink: func(k any, u string) { onBody(k, 0, func(a *app.App, v ui.NativeWebView) { a.BodyLink(v, u) }) },
 		OnNavigate: func(k any, dir int) {
 			onBody(k, 0, func(a *app.App, v ui.NativeWebView) { a.BodyNavigate(v, dir) })
 		},

@@ -307,9 +307,10 @@ func TestReaderHeightApplied(t *testing.T) {
 	}
 }
 
-// Review Focus 4: a wheel the body did not use scrolls the reader,
-// within its content.
-func TestReaderWheelMovesScroll(t *testing.T) {
+// The wheel and touchpad over a body's page scroll the reader's pane, as over
+// any native element of it (the view is made with ScrollToContainer): a
+// touchpad's move follows, and another thread starts at its top.
+func TestReaderScrollResetsPerThread(t *testing.T) {
 	h, accs := mailHarness(t, nil, "alice@example.com")
 	m := h.deliverOne(accs[0], coretest.Msg("bob@example.com", accs[0].Email, "Tall", "body"))
 	h.openThread(m.ThreadID)
@@ -320,18 +321,10 @@ func TestReaderWheelMovesScroll(t *testing.T) {
 	if r.scroll.MaxY < 1000 {
 		t.Fatalf("MaxY %v: the reader does not scroll", r.scroll.MaxY)
 	}
-	h.app.BodyWheel(v, 120)
-	h.tt.Frame()
-	if r.scroll.Y != 120 {
-		t.Fatalf("Y %v, want 120", r.scroll.Y)
-	}
-	h.app.BodyWheel(v, -1000)
-	if r.scroll.Y != 0 {
-		t.Fatalf("Y %v, want 0", r.scroll.Y)
-	}
-	h.app.BodyWheel(v, 1e9)
-	if r.scroll.Y != r.scroll.MaxY {
-		t.Fatalf("Y %v, want MaxY %v", r.scroll.Y, r.scroll.MaxY)
+	box, _ := h.viewBox(v)
+	h.tt.Scroll(box.X+box.W/2, box.Y+box.H/2, 0, 300)
+	if r.scroll.Y == 0 {
+		t.Fatal("a wheel over the body did not scroll the reader")
 	}
 	h.openThread(h.deliverOne(accs[0], coretest.Msg("carol@example.com", accs[0].Email, "Short", "other")).ThreadID)
 	if r.scroll.Y != 0 {
@@ -433,7 +426,7 @@ func TestReaderTruncatedNotice(t *testing.T) {
 }
 
 // A page's calls queued before it was closed or replaced are dropped:
-// height, wheel, link, navigation and what its body was built as.
+// height, link, navigation and what its body was built as.
 func TestReaderStaleCallbacksDropped(t *testing.T) {
 	h, accs := mailHarness(t, nil, "alice@example.com")
 	m := h.deliverOne(accs[0], coretest.Msg("bob@example.com", accs[0].Email, "Hi", "body"))
@@ -447,19 +440,17 @@ func TestReaderStaleCallbacksDropped(t *testing.T) {
 	h.tt.Frame()
 	route := h.app.route
 	h.app.BodyHeight(old, m.ID, 50)
-	h.app.BodyWheel(old, 200)
 	h.app.BodyLink(old, "https://shop.example.com/")
 	h.app.BodyNavigate(old, -1)
 	h.app.BodyBuilt(old, m.ID, true, true)
 	h.tt.Frame()
 	b := r.bodies[m.ID]
-	if b.height != 3000 || r.scroll.Y != 0 || h.app.linkOpen || b.cut || b.remote || h.app.route != route {
-		t.Fatalf("a closed page acted: height %d, Y %v, link %v, cut %v, remote %v, route %+v",
-			b.height, r.scroll.Y, h.app.linkOpen, b.cut, b.remote, h.app.route)
+	if b.height != 3000 || h.app.linkOpen || b.cut || b.remote || h.app.route != route {
+		t.Fatalf("a closed page acted: height %d, link %v, cut %v, remote %v, route %+v",
+			b.height, h.app.linkOpen, b.cut, b.remote, h.app.route)
 	}
-	h.app.BodyWheel(v, 200)
 	h.app.BodyLink(v, "https://shop.example.com/")
-	if r.scroll.Y != 200 || !h.app.linkOpen {
+	if !h.app.linkOpen {
 		t.Fatal("the current page's calls were dropped too")
 	}
 }

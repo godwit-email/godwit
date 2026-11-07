@@ -127,7 +127,15 @@ test("invalid addresses are listed", () => {
 
 test("choosing another account calls onFrom", async () => {
   const { onFrom } = setup();
-  await userEvent.selectOptions(screen.getByRole("combobox", { name: "发件账户" }), "work@x.com");
+  const from = screen.getByRole("button", { name: "发件账户" });
+  expect(from).toHaveTextContent("me@x.com"); // the pill shows the current account
+  await userEvent.click(from);
+  // the menu checks the one in use, then picks the other
+  expect(await screen.findByRole("menuitemradio", { name: "me@x.com" })).toHaveAttribute(
+    "aria-checked",
+    "true",
+  );
+  await userEvent.click(screen.getByRole("menuitemradio", { name: "work@x.com" }));
   expect(onFrom).toHaveBeenCalledWith(2);
 });
 
@@ -160,7 +168,7 @@ test("frozen: read-only, nothing committed, removed or switched", async () => {
   fireEvent.change(screen.getByRole("textbox", { name: "主题" }), { target: { value: "s" } });
   act(() => ref.current?.commitPending());
   await userEvent.click(screen.getByRole("button", { name: "移除 a@b.c" }));
-  expect(screen.getByRole("combobox", { name: "发件账户" })).toBeDisabled();
+  expect(screen.getByRole("button", { name: "发件账户" })).toBeDisabled();
   expect(onChange).not.toHaveBeenCalled();
   expect(onFrom).not.toHaveBeenCalled();
   expect(chips()).toEqual(["移除 a@b.c"]);
