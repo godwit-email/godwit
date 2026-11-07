@@ -1311,7 +1311,7 @@ func (r *reader) message(c *ui.Context, m core.MessageSummary) {
 	} else {
 		sec = gomail.EvaluateSecurity(m.From, "")
 	}
-	if gomail.SecurityRank(m.Security.Status) > gomail.SecurityRank(sec.Status) { // a hidden copy's warning (Merged)
+	if gomail.SecurityRank(m.Security.Status) > gomail.SecurityRank(sec.Status) { // the listed warning, before the body loads
 		sec = m.Security
 	}
 	ui.Column(c).FillWidth().Gap(th.Space(3.5)).Children(func() {
