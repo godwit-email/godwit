@@ -18,8 +18,8 @@ import (
 
 // importMessage claims the message for a local row awaiting it or inserts it,
 // with its attachments and thread, in one transaction. twins is how many messages
-// of this fetch share its Message-ID and size. An inserted arrival also logs its
-// message.received event (plugin hooks) in that transaction; a claim does not.
+// of this fetch share its Message-ID and size. An inserted arrival logs its
+// message.received event when the round ends (logArrivals); a claim does not.
 func importMessage(ctx context.Context, db *store.DB, a *account, f *folder, m *imapclient.FetchMessageBuffer, texts map[string][]byte, twins int, arrival bool, r *result) error {
 	p := toParsed(m, texts)
 	uid := uint32(m.UID)
@@ -77,22 +77,6 @@ func importMessage(ctx context.Context, db *store.DB, a *account, f *folder, m *
 		})
 	}
 	stmts = append(stmts, threadTail(a.id, f.id, uid, ids)...)
-	if arrival {
-		stmts = append(stmts, sqlite.Statement{
-			SQL: `INSERT INTO events_log(type, account_id, message_id, subject, from_addr, msg_date, created_at)
-				VALUES ('message.received', ?, (SELECT message_id FROM message_locations WHERE folder_id = ?
-					AND uidvalidity = ? AND uid = ?), ?, ?, ?, unixepoch())`,
-			Args: []any{a.id, f.id, f.uidValidity, uid, p.Subject, p.From, p.Date.Unix()},
-		})
-		if _, final := secScanned.(int64); final { // a verdict now, not the scanner's later: security rules run on it
-			stmts = append(stmts, sqlite.Statement{
-				SQL: `INSERT INTO events_log(type, account_id, message_id, subject, from_addr, msg_date, detail, created_at)
-					VALUES ('security.verdict', ?, (SELECT message_id FROM message_locations WHERE folder_id = ?
-						AND uidvalidity = ? AND uid = ?), ?, ?, ?, ?, unixepoch())`,
-				Args: []any{a.id, f.id, f.uidValidity, uid, p.Subject, p.From, p.Date.Unix(), secStatus},
-			})
-		}
-	}
 	res, err := db.Transaction(ctx, stmts)
 	if err != nil {
 		return err
@@ -105,13 +89,75 @@ func importMessage(ctx context.Context, db *store.DB, a *account, f *folder, m *
 		r.gone(plan.moved, nil)
 		r.merged(tid, plan.others)
 	}
-	if arrival { // only new mail is announced as received; older mail and backfills only change the list
-		r.received = append(r.received, res[msgAt].LastInsertID)
-		r.threads = append(r.threads, tid)
-	} else {
-		r.changed = append(r.changed, res[msgAt].LastInsertID)
+	n := newMessage{id: res[msgAt].LastInsertID, tid: tid, subject: p.Subject, from: p.From, date: p.Date.Unix(), arrival: arrival}
+	if _, final := secScanned.(int64); final { // a verdict now, not the scanner's later: security rules run on it
+		n.verdict = secStatus
+	}
+	r.fresh = append(r.fresh, n)
+	if !arrival { // older mail and backfills only change the list
+		r.changed = append(r.changed, n.id)
 		r.changedThreads = append(r.changedThreads, tid)
 	}
+	return nil
+}
+
+// newMessage is a message a round inserted, for logArrivals.
+type newMessage struct {
+	id, tid, date          int64
+	subject, from, verdict string // verdict: the security status final at import, if any
+	arrival                bool   // new mail, not a first sync's or a backfill's
+}
+
+// ownMail is the condition on messages (unaliased) that the message shows in
+// Sent or Drafts: the user's own, not received mail.
+const ownMail = "EXISTS (SELECT 1 FROM message_locations l JOIN folders f ON f.id = l.folder_id WHERE l.message_id = messages.id AND l.shown AND f.role IN ('sent', 'drafts'))"
+
+// logArrivals logs message.received (plugin hooks, rules) for each new mail
+// the round inserted and still holds, with its security.verdict when final at
+// import, and announces it as received. It runs when the round ends, so rules
+// see every folder the round found the message in (ADR 0032). Mail found in
+// Sent or Drafts after another folder is made neutral and logs no verdict, as
+// if imported there first (importMessage).
+// shortcut: a crash before the round ends loses its message.received events; log them in the import transaction behind a pending mark if that matters.
+func (r *result) logArrivals(ctx context.Context, db *store.DB, accountID int64) error {
+	if len(r.fresh) == 0 {
+		return nil
+	}
+	var ids []any
+	var stmts []sqlite.Statement
+	for _, n := range r.fresh {
+		ids = append(ids, n.id)
+		if !n.arrival {
+			continue
+		}
+		stmts = append(stmts, sqlite.Statement{
+			SQL: `INSERT INTO events_log(type, account_id, message_id, subject, from_addr, msg_date, created_at)
+				SELECT 'message.received', ?, id, ?, ?, ?, unixepoch() FROM messages WHERE id = ?`,
+			Args: []any{accountID, n.subject, n.from, n.date, n.id},
+		})
+		if n.verdict != "" {
+			stmts = append(stmts, sqlite.Statement{
+				SQL: `INSERT INTO events_log(type, account_id, message_id, subject, from_addr, msg_date, detail, created_at)
+					SELECT 'security.verdict', ?, id, ?, ?, ?, ?, unixepoch() FROM messages WHERE id = ? AND NOT ` + ownMail,
+				Args: []any{accountID, n.subject, n.from, n.date, n.verdict, n.id},
+			})
+		}
+	}
+	stmts = append(stmts, sqlite.Statement{
+		SQL: `UPDATE messages SET security_status = 'neutral', security_reason = 'unverified', security_scanned_at = unixepoch(), security_verify_dkim = 0
+			WHERE id IN (` + marks(len(ids)) + `) AND security_reason IS NOT 'unverified' AND ` + ownMail,
+		Args: ids,
+	})
+	if _, err := db.Transaction(ctx, stmts); err != nil {
+		return err
+	}
+	for _, n := range r.fresh {
+		if n.arrival {
+			r.received = append(r.received, n.id)
+			r.threads = append(r.threads, n.tid)
+		}
+	}
+	r.fresh = nil
 	return nil
 }
 

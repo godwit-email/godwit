@@ -2,10 +2,10 @@ package mailsync
 
 import "github.com/egoist/mygo/plugins/sqlite"
 
-// A message's folders are its rows in message_locations (ADR 0032). For now
-// a message shows in exactly one folder and the server has it in at most one:
-// a move not yet pushed shows it at its destination, unconfirmed, and keeps it
-// hidden where the server has it. These are the only writes that move it.
+// A message's folders are its rows in message_locations (ADR 0032). On most
+// servers a message is in one folder; on Gmail it is in each folder the server
+// has it in, every row with its own UID. A move not yet pushed shows it at its
+// destination, unconfirmed, and keeps it hidden where the server has it.
 
 // serverIn is the condition on messages (unaliased) that the server has the
 // message in the folder given as its argument.
@@ -23,6 +23,7 @@ func dropUnseen(msg int64) sqlite.Statement {
 
 // ShowIn returns the statements that show message msg in folder from now
 // (entered_at) and no longer where it showed.
+// shortcut: hides every other folder of a Gmail message, as a Delete would; #525 moves it out of the folder acted from only.
 func ShowIn(msg, folder int64) []sqlite.Statement {
 	return []sqlite.Statement{
 		{SQL: "UPDATE message_locations SET shown = 0 WHERE message_id = ? AND folder_id != ?", Args: []any{msg, folder}},
@@ -33,10 +34,9 @@ func ShowIn(msg, folder int64) []sqlite.Statement {
 }
 
 // locate returns the statements that give message msg the server location
-// (folder, validity, uid) in place of the one it had.
+// (folder, validity, uid); its other folders keep theirs.
 func locate(msg, folder int64, validity, uid uint32) []sqlite.Statement {
 	return []sqlite.Statement{
-		{SQL: "UPDATE message_locations SET uidvalidity = NULL, uid = NULL WHERE message_id = ? AND folder_id != ?", Args: []any{msg, folder}},
 		{SQL: `INSERT INTO message_locations(message_id, folder_id, shown, uidvalidity, uid, entered_at, date)
 			SELECT id, ?, 0, ?, ?, unixepoch(), date FROM messages WHERE id = ?
 			ON CONFLICT(message_id, folder_id) DO UPDATE SET uidvalidity = excluded.uidvalidity, uid = excluded.uid`, Args: []any{folder, validity, uid, msg}},
@@ -44,11 +44,11 @@ func locate(msg, folder int64, validity, uid uint32) []sqlite.Statement {
 	}
 }
 
-// unlocate returns the statements that clear message msg's server location,
-// until a fetch claims it.
-func unlocate(msg int64) []sqlite.Statement {
+// unlocate returns the statements that clear message msg's server location in
+// folder, which a move took it from.
+func unlocate(msg, folder int64) []sqlite.Statement {
 	return []sqlite.Statement{
-		{SQL: "UPDATE message_locations SET uidvalidity = NULL, uid = NULL WHERE message_id = ?", Args: []any{msg}},
+		{SQL: "UPDATE message_locations SET uidvalidity = NULL, uid = NULL WHERE message_id = ? AND folder_id = ?", Args: []any{msg, folder}},
 		dropUnseen(msg),
 	}
 }

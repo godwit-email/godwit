@@ -14,8 +14,9 @@ import (
 // fetchImport fetches the messages of set to import into f, and the highest
 // UID in set. From Gmail it first fetches only UID, FLAGS and X-GM-MSGID: a
 // message stored already, from another folder, gains f as a location
-// (gmailLocate) and only the others are fetched whole (ADR 0032).
-func fetchImport(ctx context.Context, db *store.DB, c *imapclient.Client, a *account, f *folder, set imap.NumSet, r *result) ([]*imapclient.FetchMessageBuffer, uint32, error) {
+// (gmailLocate) and only the others are fetched whole (ADR 0032). arrivals
+// tells whether what set holds is new mail.
+func fetchImport(ctx context.Context, db *store.DB, c *imapclient.Client, a *account, f *folder, set imap.NumSet, arrivals bool, r *result) ([]*imapclient.FetchMessageBuffer, uint32, error) {
 	gmail := c.Caps().Has(capGmail)
 	opts := importItems(c)
 	if gmail {
@@ -32,7 +33,7 @@ func fetchImport(ctx context.Context, db *store.DB, c *imapclient.Client, a *acc
 	if !gmail {
 		return msgs, top, nil
 	}
-	rest, err := gmailLocate(ctx, db, a, f, msgs, r)
+	rest, err := gmailLocate(ctx, db, a, f, msgs, arrivals, r)
 	if err != nil || len(rest) == 0 {
 		return nil, top, err
 	}
@@ -44,8 +45,10 @@ func fetchImport(ctx context.Context, db *store.DB, c *imapclient.Client, a *acc
 // the account stores f as a location and the server's flags, as Gmail shares
 // them across folders, and returns the UIDs of the others, which f does not
 // hold yet. A message taken out of every folder by a move not yet pushed is
-// not shown in f; one moved to f without a COPYUID is claimed.
-func gmailLocate(ctx context.Context, db *store.DB, a *account, f *folder, msgs []*imapclient.FetchMessageBuffer, r *result) ([]imap.UID, error) {
+// not shown in f; one moved to f without a COPYUID is claimed. New mail in f
+// (arrivals) that this round inserted from a folder where it was not new is
+// new mail all the same.
+func gmailLocate(ctx context.Context, db *store.DB, a *account, f *folder, msgs []*imapclient.FetchMessageBuffer, arrivals bool, r *result) ([]imap.UID, error) {
 	have, err := db.Query(ctx, "SELECT uid FROM message_locations WHERE folder_id = ? AND uid IS NOT NULL", f.id)
 	if err != nil {
 		return nil, err
@@ -96,6 +99,11 @@ func gmailLocate(ctx context.Context, db *store.DB, a *account, f *folder, msgs 
 		}, sqlite.Statement{SQL: "UPDATE ops SET state = 'done', last_error = NULL WHERE message_id = ? AND state = 'awaiting_claim' AND dst_folder_id = ?", Args: []any{id, f.id}},
 			sqlite.Statement{SQL: "UPDATE messages SET flags = ? WHERE id = ? AND flags != ? AND NOT " + pendingFlags, Args: []any{fl, id, fl}})
 		ids, tids = append(ids, id), append(tids, s[1])
+		for i := range r.fresh {
+			if arrivals && r.fresh[i].id == id {
+				r.fresh[i].arrival = true
+			}
+		}
 	}
 	if len(stmts) == 0 {
 		return rest, nil

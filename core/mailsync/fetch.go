@@ -65,6 +65,7 @@ func (a *account) since(now time.Time) time.Time {
 
 // result collects what one Fetch changed, for the events it publishes.
 type result struct {
+	fresh                                      []newMessage
 	received, threads, changed, changedThreads []int64
 	orphans                                    []int64 // Gmail messages that lost a server location, for the round's end
 	conflicts                                  []string
@@ -96,7 +97,12 @@ func (r *result) merged(target int64, others []int64) {
 // work left: the caller should sync again soon.
 func Fetch(ctx context.Context, db *store.DB, c *imapclient.Client, accountID int64, bus *events.Bus) (more bool, err error) {
 	var r result
-	defer r.publish(bus, accountID)
+	defer func() {
+		if lerr := r.logArrivals(context.WithoutCancel(ctx), db, accountID); err == nil {
+			err = lerr
+		}
+		r.publish(bus, accountID)
+	}()
 	a, err := loadAccount(ctx, db, accountID)
 	if err != nil {
 		return false, err
@@ -347,7 +353,7 @@ func arrivalTwins(ctx context.Context, db *store.DB, c *imapclient.Client, a *ac
 // importAbove imports the messages of set above last_uid that are not stored
 // yet, in UID order, and returns the highest UID set has above last_uid.
 func importAbove(ctx context.Context, db *store.DB, c *imapclient.Client, a *account, f *folder, set imap.NumSet, arrivals bool, twins map[string]int, r *result) (uint32, error) {
-	msgs, top, err := fetchImport(ctx, db, c, a, f, set, r)
+	msgs, top, err := fetchImport(ctx, db, c, a, f, set, arrivals, r)
 	if err != nil {
 		return 0, err
 	}
@@ -483,7 +489,7 @@ func backfill(ctx context.Context, db *store.DB, c *imapclient.Client, a *accoun
 	if len(uids) == 0 {
 		return nil
 	}
-	msgs, _, err := fetchImport(ctx, db, c, a, f, imap.UIDSetNum(uids...), r)
+	msgs, _, err := fetchImport(ctx, db, c, a, f, imap.UIDSetNum(uids...), false, r)
 	if err != nil {
 		return err
 	}
@@ -533,7 +539,7 @@ func backfillRange(ctx context.Context, db *store.DB, c *imapclient.Client, a *a
 			return nil
 		}
 		a.budget--
-		msgs, _, err := fetchImport(ctx, db, c, a, f, imap.UIDSetNum(page...), r)
+		msgs, _, err := fetchImport(ctx, db, c, a, f, imap.UIDSetNum(page...), false, r)
 		if err != nil {
 			return err
 		}

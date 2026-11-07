@@ -590,24 +590,25 @@ type ruleMail struct {
 	to                  []string // To and Cc
 	attachments         bool
 	labels              []string // the slugs of the labels on it
-	folderID            int64
-	folderRole          string
-	date, now           int64 // unix seconds: the message's date, and when it was read
+	folders             []string // the IDs and roles of the folders it shows in
+	date, now           int64    // unix seconds: the message's date, and when it was read
 }
 
 // ruleMail reads the message as it is now; ok is false when it is gone.
 func (s *Service) ruleMail(ctx context.Context, id int64) (m ruleMail, ok bool, err error) {
-	rows, err := s.db.Query(ctx, `SELECT m.from_addr, m.subject, m.body_text, m.to_addrs, m.cc_addrs, m.has_attachments, f.id, COALESCE(f.role, ''),
+	rows, err := s.db.Query(ctx, `SELECT m.from_addr, m.subject, m.body_text, m.to_addrs, m.cc_addrs, m.has_attachments,
+		(SELECT json_group_array(v) FROM (SELECT CAST(f.id AS TEXT) AS v FROM message_locations l JOIN folders f ON f.id = l.folder_id WHERE l.message_id = m.id AND l.shown
+			UNION SELECT f.role FROM message_locations l JOIN folders f ON f.id = l.folder_id WHERE l.message_id = m.id AND l.shown AND f.role != '')),
 		(SELECT json_group_array(l.slug) FROM message_labels ml JOIN labels l ON l.id = ml.label_id WHERE ml.message_id = m.id AND ml.active = 1), m.date, m.account_id
-		FROM messages m JOIN folders f ON f.id = `+shownFolder+` WHERE m.id = ?`, id)
+		FROM messages m WHERE m.id = ? AND `+shownFolder+` IS NOT NULL`, id)
 	if err != nil || len(rows.Values) == 0 {
 		return m, false, err
 	}
 	v := rows.Values[0]
 	return ruleMail{from: store.Str(v[0]), subject: store.Str(v[1]), body: store.Str(v[2]),
 		to: append(jsonList(store.Str(v[3])), jsonList(store.Str(v[4]))...), attachments: store.Int(v[5]) != 0,
-		folderID: store.Int(v[6]), folderRole: store.Str(v[7]), labels: jsonList(store.Str(v[8])),
-		date: store.Int(v[9]), account: store.Int(v[10]), now: s.clk().Now().Unix()}, true, nil
+		folders: jsonList(store.Str(v[6])), labels: jsonList(store.Str(v[7])),
+		date: store.Int(v[8]), account: store.Int(v[9]), now: s.clk().Now().Unix()}, true, nil
 }
 
 // matches evaluates the account and the conditions; none matches every
@@ -650,8 +651,7 @@ func (c RuleCondition) matches(m ruleMail) bool {
 	case FieldLabel:
 		return slices.Contains(m.labels, c.Value) != (c.Op == OpNotContains)
 	case FieldFolder:
-		in := c.Value == m.folderRole || c.Value == strconv.FormatInt(m.folderID, 10)
-		return in != (c.Op == OpNotContains)
+		return slices.Contains(m.folders, c.Value) != (c.Op == OpNotContains) // in some folder, or in none
 	case FieldAge:
 		n, _ := strconv.Atoi(c.Value)
 		return m.date < m.now-int64(n)*86400
@@ -703,9 +703,10 @@ func (s *Service) startRules(ctx context.Context) error {
 var rulesHook func(stage string) error
 
 // The events rules run on, logged in the transaction that makes them true:
-// new mail at import, a label put on by hand (SetLabel) or by the classifier
-// (labelWrites; never by a rule, so a label rule fires one level deep), the
-// first verdict on new mail (import or scanner; never a re-scan), and the
+// new mail (at the end of its sync round, its folders known), a label put on
+// by hand (SetLabel) or by the classifier (labelWrites; never by a rule, so a
+// label rule fires one level deep), the first verdict on new mail (sync or
+// scanner; never a re-scan), and the
 // day's first sync (logDaily).
 const (
 	eventLabelApplied    = "label.applied"
@@ -756,8 +757,8 @@ func (s *Service) runDaily(ctx context.Context, seq int64) error {
 	if len(rules) == 0 {
 		return nil
 	}
-	rows, err := s.db.Query(ctx, `SELECT m.id FROM messages m JOIN folders f ON f.id = `+shownFolder+`
-		WHERE COALESCE(f.role, '') NOT IN ('sent', 'drafts') ORDER BY m.id`)
+	rows, err := s.db.Query(ctx, `SELECT m.id FROM messages m WHERE `+shownFolder+` IS NOT NULL
+		AND NOT `+shownIn("(SELECT id FROM folders WHERE role IN ('sent', 'drafts'))")+` ORDER BY m.id`)
 	if err != nil {
 		return err
 	}
@@ -833,7 +834,7 @@ func (s *Service) runRules(ctx context.Context, ev hookEvent) error {
 		return nil
 	}
 	m, ok, err := s.ruleMail(ctx, ev.messageID)
-	if err != nil || !ok || m.folderRole == "sent" || m.folderRole == "drafts" {
+	if err != nil || !ok || slices.Contains(m.folders, "sent") || slices.Contains(m.folders, "drafts") {
 		return err
 	}
 	rules, err := s.rules(ctx, true)

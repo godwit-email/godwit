@@ -199,6 +199,7 @@ func (s *Service) ListThreads(ctx context.Context, v View, cursor string, limit 
 	of := copyOf(ms.Values, 9, 10)
 	unread, flagged, sent := map[int]bool{}, map[int]bool{}, map[int]bool{} // a message is unread or starred if any copy is, and read once one is in Sent:
 	// your own mail, whose Sent copy another client or an import can leave unflagged
+	// shortcut: reads Sent from shownFolder, so Gmail mail to yourself (INBOX and Sent) counts as unread; #525 reads FolderIDs.
 	for i, r := range ms.Values {
 		unread[of[i]] = unread[of[i]] || !strings.Contains(store.Str(r[3]), `\Seen`)
 		sent[of[i]] = sent[of[i]] || slices.Contains(sentIDs, any(store.Int(r[15])))
@@ -268,7 +269,7 @@ func (s *Service) GetThread(ctx context.Context, id int64) (Thread, error) {
 	}
 	of := copyOf(ms.Values, 0, msgColCount+3)
 	for i, r := range ms.Values {
-		if sentID != 0 && store.Int(r[2]) == sentID { // its shown folder
+		if sentID != 0 && store.Int(r[2]) == sentID { // its shown folder (shortcut: one of them, see ListThreads; #525)
 			if t.sent == nil {
 				t.sent = map[int64]bool{}
 			}

@@ -18,7 +18,7 @@ import (
 )
 
 // message.received hooks are at least once: sync logs each new arrival in
-// events_log (in the import transaction) and one dispatcher per running
+// events_log (when its round ends) and one dispatcher per running
 // plugin with a handler, or per built-in consumer (startConsumer), delivers
 // the log after its cursor, in order, moving the cursor only after the
 // handler succeeded. A crash between the two delivers again (to a plugin with

@@ -277,7 +277,7 @@ func TestRuleAccountScope(t *testing.T) {
 
 func TestRuleConditions(t *testing.T) {
 	m := ruleMail{from: "AWS <billing@aws.example>", subject: "Your Invoice", to: []string{"Alice <alice@example.com>", "team@example.com"},
-		body: "Amount due: $12", attachments: true, labels: []string{"u1"}, folderID: 7, folderRole: "inbox",
+		body: "Amount due: $12", attachments: true, labels: []string{"u1"}, folders: []string{"7", "inbox"},
 		date: time.Now().AddDate(0, 0, -10).Unix(), now: time.Now().Unix()}
 	for _, tc := range []struct {
 		field, op, value string

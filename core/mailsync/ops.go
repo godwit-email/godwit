@@ -139,6 +139,7 @@ func pushOp(ctx context.Context, db *store.DB, c *imapclient.Client, o op) (prob
 	r, err := db.Query(ctx, `SELECT l.folder_id, l.uidvalidity, l.uid, f.name FROM message_locations l
 		JOIN folders f ON f.id = l.folder_id WHERE l.message_id = ? AND l.uid IS NOT NULL`+at+" LIMIT 1", args...)
 	if err != nil || len(r.Values) == 0 {
+		// shortcut: a Gmail move whose source folder lost the message on the server waits here for good; #525 reconciles it.
 		return "", err // no server location: the move before it awaits its claim
 	}
 	src, srcValidity, uid, srcName := store.Int(r.Values[0][0]), uint32(store.Int(r.Values[0][1])),
@@ -359,23 +360,26 @@ func single(s imap.NumSet) uint32 {
 }
 
 // moved records a move the server accepted: with a COPYUID the message's server
-// location becomes the destination; without one it is cleared until fetch claims
-// the arrival (Message-ID and size) in the destination. A row already at the
-// COPYUID is the same server message (Gmail's All Mail copy of mail archived
-// there, #506): it is deleted, after its labels (by row: a copy without label_fp
+// location in the source folder becomes the destination; without one it is
+// cleared until fetch claims the arrival (X-GM-MSGID, else Message-ID and size)
+// in the destination. Its other folders keep their server locations. Another
+// row already at the COPYUID is the same server message (Gmail's All Mail copy
+// of mail archived there, synced before X-GM-MSGID was, #506): it is deleted,
+// after its labels (by row: a copy without label_fp
 // gets no stash from the trigger), reply drafts, rule runs and Wit citations go
 // to the moved row. Its queued ops are not carried over, whose order against the
 // moved row's cannot be told: they lose their message and the next push reports
 // them as not applied. events_log stays history, as on every other delete.
 func moved(ctx context.Context, db *store.DB, o op, validity, uid uint32) error {
-	stmts := append(unlocate(o.msg),
+	stmts := append(unlocate(o.msg, o.src),
 		sqlite.Statement{SQL: "UPDATE ops SET state = 'awaiting_claim', last_error = NULL WHERE id = ?", Args: []any{o.id}})
 	if uid != 0 {
 		ids, tids, err := doomed(ctx, db, "EXISTS (SELECT 1 FROM message_locations WHERE message_id = messages.id AND folder_id = ? AND uid = ?) AND id != ?", o.dst, uid, o.msg)
 		if err != nil {
 			return err
 		}
-		stmts = nil
+		stmts = unlocate(o.msg, o.src)
+		// shortcut: drops the other row and its queued ops; #524 merges it into the moved one instead.
 		if len(ids) > 0 { // at most one: UNIQUE(folder_id, uid)
 			cp := ids[0]
 			stmts = append(stmts,

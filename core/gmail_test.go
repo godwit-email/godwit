@@ -4,6 +4,7 @@ import (
 	"strconv"
 	"testing"
 
+	"github.com/emersion/go-imap/v2"
 	"github.com/godwit-email/godwit/core/internal/testmail"
 	"github.com/godwit-email/godwit/core/store"
 	"github.com/stretchr/testify/assert"
@@ -102,6 +103,122 @@ func TestGmailMoveToLaterFolderKeepsMessage(t *testing.T) {
 	e.sync(t)
 	assert.Equal(t, []int64{id}, e.listed(t, "zz"))
 	assert.Equal(t, 1, e.count(t, "SELECT count(*) FROM messages"))
+}
+
+// inboxRule labels mail in the inbox with Bills (u1).
+func inboxRule() RuleDoc {
+	return RuleDoc{Version: RuleVersion, Name: "Inbox", Trigger: TriggerReceive, Match: MatchAll,
+		Conditions: []RuleCondition{{Field: FieldFolder, Op: OpIs, Value: "inbox"}},
+		Actions:    []RuleAction{{Kind: ActionLabel, Label: "u1"}}}
+}
+
+// newGmailRulesEnv is a Gmail account synced once with the folders given
+// (so what lands in them next is new mail), the label Bills (u1) and
+// inboxRule on.
+func newGmailRulesEnv(t *testing.T, folders ...string) *syncEnv {
+	t.Helper()
+	e := newSyncEnv(t, testmail.Gmail())
+	for _, f := range folders {
+		require.NoError(t, e.im.User.Create(f, nil))
+	}
+	_, err := e.s.CreateLabel(bg, LabelInput{Name: "Bills", Color: "gray", Icon: "folder-3"})
+	require.NoError(t, err)
+	e.sync(t)
+	e.saveRule(t, inboxRule(), true)
+	return e
+}
+
+// One new message in a label, INBOX and All Mail is received once, with its
+// folders known: a rule on mail in the inbox runs on it, though the label is
+// synced before INBOX.
+func TestGmailNewMessageReceivedOnceInInbox(t *testing.T) {
+	e := newGmailRulesEnv(t, "Aaa") // listed before INBOX
+	e.im.AddGmail(msg("a@x"), nil, "Aaa", "INBOX", testmail.GmailAllMail)
+	e.sync(t)
+	e.waitRuns(t, 1)
+
+	id := e.idOf(t, "a@x")
+	assert.Equal(t, 1, e.count(t, "SELECT count(*) FROM events_log WHERE type = 'message.received' AND message_id = ?", id))
+	assert.Equal(t, "rule", e.labelOn(t, id))
+}
+
+// New mail first found in a folder on its first sync (not new mail there) is
+// still received for its place in the inbox.
+func TestGmailNewMessageInNewLabelIsReceived(t *testing.T) {
+	e := newGmailRulesEnv(t)
+	require.NoError(t, e.im.User.Create("Aaa", nil)) // listed before INBOX, synced the first time with it
+	e.im.AddGmail(msg("a@x"), nil, "Aaa", "INBOX", testmail.GmailAllMail)
+	e.sync(t)
+	e.waitRuns(t, 1)
+
+	id := e.idOf(t, "a@x")
+	assert.Equal(t, 1, e.count(t, "SELECT count(*) FROM events_log WHERE type = 'message.received' AND message_id = ?", id))
+	assert.Equal(t, "rule", e.labelOn(t, id))
+}
+
+// The user's own mail in Sent, with All Mail or the inbox (sent to
+// themselves), runs no receive rule and counts as sent in contacts, though
+// All Mail is synced before Sent.
+func TestGmailSentMailIsNotReceived(t *testing.T) {
+	e := newGmailRulesEnv(t)
+	e.im.AddGmail(eml("out@x", "alice@example.com", "bob@example.com", "hi", day, "b"), []imap.Flag{imap.FlagSeen}, testmail.GmailSent, testmail.GmailAllMail)
+	e.im.AddGmail(eml("self@x", "alice@example.com", "alice@example.com", "note", day, "b"), []imap.Flag{imap.FlagSeen}, testmail.GmailSent, "INBOX", testmail.GmailAllMail)
+	e.sync(t)
+	e.rulesIdle(t)
+
+	assert.Zero(t, e.count(t, "SELECT count(*) FROM rule_runs"))
+	cs, err := e.s.Contacts(bg)
+	require.NoError(t, err)
+	var bob *Contact
+	for i := range cs {
+		if cs[i].Address == "bob@example.com" {
+			bob = &cs[i]
+		}
+	}
+	require.NotNil(t, bob)
+	assert.Equal(t, []int{1, 0}, []int{bob.Sent, bob.Received})
+}
+
+// Archiving a message also in Work moves it from INBOX into the All Mail UID
+// it already has (#506): Work keeps its server location, and a star queued
+// after the archive still reaches the server.
+func TestGmailArchiveKeepsOtherFoldersAndQueuedFlags(t *testing.T) {
+	e := newSyncEnv(t, testmail.Gmail())
+	require.NoError(t, e.im.User.Create("Work", nil))
+	m := e.im.AddGmail(msg("a@x"), nil, "INBOX", "Work", testmail.GmailAllMail)
+	e.sync(t)
+	id := e.idOf(t, "a@x")
+
+	require.NoError(t, e.s.MoveToRole(bg, []int64{id}, "archive"))
+	require.NoError(t, e.s.SetFlags(bg, []int64{id}, []string{`\Flagged`}, nil))
+	e.sync(t)
+	assert.Equal(t, []string{"done", "done"}, e.opStates(t))
+	assert.Equal(t, []string{"Work", testmail.GmailAllMail}, m.Folders())
+	assert.Equal(t, []string{`a@x \Flagged`}, e.onServer(t, "Work"))
+	assert.Equal(t, 1, e.count(t, "SELECT count(*) FROM message_locations WHERE message_id = ? AND folder_id = ? AND uid = ?",
+		id, e.folderID(t, "Work"), m.UID("Work")), "Work's server location stays")
+	assert.Equal(t, []int64{id}, e.listed(t, testmail.GmailAllMail))
+}
+
+// A move the server answers without COPYUID is claimed by X-GM-MSGID, even
+// where another message has the same Message-ID and size.
+func TestGmailMoveWithoutCopyUIDClaimedByMsgID(t *testing.T) {
+	e := newSyncEnv(t, testmail.Gmail(), testmail.WithoutCOPYUID())
+	require.NoError(t, e.im.User.Create("Work", nil))
+	e.im.AddGmail(msg("a@x"), nil, "INBOX", testmail.GmailAllMail)
+	e.im.AddGmail(msg("a@x"), nil, "Work") // a twin, as far as Message-ID and size tell
+	e.sync(t)
+	var id int64
+	for _, r := range e.rows(t, "SELECT id FROM messages WHERE "+shownCol+" = ?", e.folderID(t, "INBOX")) {
+		id = store.Int(r[0])
+	}
+
+	require.NoError(t, e.s.Move(bg, []int64{id}, e.folderID(t, "Work")))
+	e.sync(t)
+	assert.Equal(t, []string{"done"}, e.opStates(t))
+	assert.Contains(t, e.listed(t, "Work"), id)
+	assert.Len(t, e.listed(t, "Work"), 2)
+	assert.Equal(t, 2, e.count(t, "SELECT count(*) FROM messages"))
 }
 
 // Another server is never asked for X-GM-MSGID, and its messages have none.

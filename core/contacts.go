@@ -106,11 +106,11 @@ func (s *Service) contacts(ctx context.Context, accountID int64) ([]Contact, map
 	if accountID != 0 {
 		acc, accArgs = " AND m.account_id = ?", []any{accountID}
 	}
-	from := " FROM messages m JOIN folders f ON f.id = " + shownFolder + " WHERE f.id NOT IN (" + placeholders(len(left)) + ")" + acc
+	from := " FROM messages m WHERE " + shownFolder + " IS NOT NULL AND NOT " + shownIn("("+placeholders(len(left))+")") + acc
 	args := append(slices.Clone(left), accArgs...)
 	// shortcut: gathers every contact in Go on each call; keep a contacts table if large stores get slow.
 	// A bare column beside max() (m.id here and below) comes from the row holding the max.
-	rows, err := s.db.Query(ctx, `SELECT m.from_addr, count(*), sum(instr(m.flags, '\Seen') = 0), sum(f.role = 'inbox'), max(m.date), m.id`+
+	rows, err := s.db.Query(ctx, `SELECT m.from_addr, count(*), sum(instr(m.flags, '\Seen') = 0), sum(`+shownIn("(SELECT id FROM folders WHERE role = 'inbox')")+`), max(m.date), m.id`+
 		from+" GROUP BY m.from_addr ORDER BY 5, 1", args...)
 	if err != nil {
 		return nil, nil, err
