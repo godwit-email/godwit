@@ -19,7 +19,7 @@ func TestGmailSyncStoresMsgID(t *testing.T) {
 	e.sync(t)
 
 	got := map[string][]string{}
-	for _, r := range e.rows(t, "SELECT f.name, m.gmail_msgid FROM messages m JOIN folders f ON f.id = m.folder_id ORDER BY m.server_uid") {
+	for _, r := range e.rows(t, "SELECT f.name, messages.gmail_msgid FROM messages JOIN folders f ON f.id = "+shownCol+" ORDER BY "+uidCol) {
 		got[store.Str(r[0])] = append(got[store.Str(r[0])], store.Str(r[1]))
 	}
 	id, twinID := strconv.FormatUint(m.ID, 10), strconv.FormatUint(twin.ID, 10)

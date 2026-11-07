@@ -24,9 +24,9 @@ import (
 
 type config struct {
 	move, uidplus, copyuid, noIdle, requireID, gmail bool
-	xoauth2                                   func(token string) bool // accepts an XOAUTH2 token; nil = not offered
-	sent                                      *IMAP                   // SMTP only: SaveToSent target
-	loginOnly                                 bool                    // SMTP only: AUTH LOGIN instead of PLAIN
+	xoauth2                                          func(token string) bool // accepts an XOAUTH2 token; nil = not offered
+	sent                                             *IMAP                   // SMTP only: SaveToSent target
+	loginOnly                                        bool                    // SMTP only: AUTH LOGIN instead of PLAIN
 }
 
 // Option customises StartIMAP and StartSMTP; each option says which servers it affects.
