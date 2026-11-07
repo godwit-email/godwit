@@ -1,6 +1,13 @@
 import { RiArrowDownSLine } from "@remixicon/react";
 import { type ReactNode, type Ref, useId, useImperativeHandle, useState } from "react";
 import { Button } from "@/components/ui/button";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuRadioGroup,
+  DropdownMenuRadioItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import type { Account } from "@/mygo";
@@ -61,6 +68,7 @@ export function Fields({
   const [pending, setPending] = useState(none);
   const [ccOpen, setCcOpen] = useState(false);
   const lists: Record<AddressKey, string[]> = { to, cc, bcc, replyTo: replyTo ? [replyTo] : [] };
+  const fromEmail = accounts.find((a) => a.id === from)?.email;
 
   const set = (k: AddressKey, l: string[]) =>
     onChange(k === "replyTo" ? { replyTo: l.at(-1) ?? "" } : { [k]: l });
@@ -149,7 +157,7 @@ export function Fields({
         t("compose.subject"),
         <Input
           id={`${id}subject`}
-          className="h-5 flex-1 rounded-none border-0 bg-transparent px-0.5 py-0 text-md shadow-none focus-visible:ring-0 md:text-md dark:bg-transparent"
+          className="h-5.5 flex-1 rounded-none border-0 bg-transparent px-0.5 py-0 text-md shadow-none focus-visible:ring-0 md:text-md dark:bg-transparent"
           placeholder={t("compose.subject.input")}
           value={subject}
           readOnly={frozen}
@@ -159,24 +167,29 @@ export function Fields({
       {row(
         "from",
         t("compose.from"),
-        // A native select: the system's own menu in the app's webview.
-        <div className="relative flex min-w-0 items-center">
-          <select
+        // The sending account: the pill is the value, and the app's own glass menu lists the accounts
+        // (checked one at a time), so switching reads like the rest of the UI rather than an OS popup.
+        <DropdownMenu modal={false}>
+          <DropdownMenuTrigger
             id={`${id}from`}
             aria-label={t("compose.from.select")}
-            value={from}
+            title={fromEmail}
             disabled={frozen}
-            onChange={(e) => onFrom(Number(e.target.value))}
-            className="h-5 min-w-0 appearance-none truncate rounded-sm bg-transparent pr-5 pl-1 text-md outline-none focus-visible:ring-3 focus-visible:ring-ring/50 disabled:opacity-50"
+            className="flex h-5.5 min-w-0 items-center rounded-full bg-muted px-2 text-md leading-4 transition-colors hover:bg-accent focus-visible:ring-3 focus-visible:ring-ring/50 disabled:pointer-events-none disabled:opacity-50 data-popup-open:bg-accent"
           >
-            {accounts.map((a) => (
-              <option key={a.id} value={a.id}>
-                {a.email}
-              </option>
-            ))}
-          </select>
-          <RiArrowDownSLine className="pointer-events-none absolute right-0 size-4 text-foreground" />
-        </div>,
+            <span className="min-w-0 truncate">{fromEmail}</span>
+            <RiArrowDownSLine className="ml-1 size-3.5 shrink-0 text-muted-foreground" />
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="start" className="max-h-80 w-auto min-w-52 max-w-80">
+            <DropdownMenuRadioGroup value={from} onValueChange={(v) => onFrom(Number(v))}>
+              {accounts.map((a) => (
+                <DropdownMenuRadioItem key={a.id} value={a.id} closeOnClick>
+                  <span className="truncate">{a.email}</span>
+                </DropdownMenuRadioItem>
+              ))}
+            </DropdownMenuRadioGroup>
+          </DropdownMenuContent>
+        </DropdownMenu>,
       )}
     </div>
   );

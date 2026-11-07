@@ -55,11 +55,12 @@ export function AddressInput({
               <TooltipTrigger render={<span />}>{bad ? addr : display(addr)}</TooltipTrigger>
               <TooltipContent>{addr}</TooltipContent>
             </Tooltip>
-            {/* Out of the layout until the chip is hovered or the × focused: the chip is just the name. */}
+            {/* In the flow at no width until the chip is hovered or the × focused: the chip is just
+                the name, and both directions animate (an absolutely hidden × would snap back). */}
             <Button
               variant="ghost"
               size="icon-xs"
-              className="-mr-1 size-4 rounded-full not-group-hover/badge:not-focus-visible:sr-only"
+              className="-ml-1 h-4 w-0 shrink-0 overflow-hidden rounded-full opacity-0 group-hover/badge:ml-0 group-hover/badge:w-4 group-hover/badge:opacity-100 focus-visible:ml-0 focus-visible:w-4 focus-visible:opacity-100"
               aria-label={t("compose.remove", addr)}
               disabled={frozen}
               onClick={() => !frozen && onRemove(addr)}
