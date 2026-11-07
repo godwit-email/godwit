@@ -363,7 +363,7 @@ func (s *Service) ArchiveSender(ctx context.Context, addr string) (SenderArchive
 			if err != nil {
 				return res, err
 			}
-			if err := s.move(ctx, acc, ts, archive[acc]); err != nil {
+			if err := s.move(ctx, acc, ts, 0, archive[acc]); err != nil {
 				return res, err
 			}
 			res.Moved = append(res.Moved, c...)
@@ -396,7 +396,7 @@ func (s *Service) UndoArchive(ctx context.Context, a SenderArchive) error {
 			if err != nil {
 				return err
 			}
-			if err := s.move(ctx, acc, ts, k.From); err != nil {
+			if err := s.move(ctx, acc, ts, k.To, k.From); err != nil {
 				return err
 			}
 		}

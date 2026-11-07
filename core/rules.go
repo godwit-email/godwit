@@ -1090,12 +1090,12 @@ func (s *Service) runForward(ctx context.Context, r Rule, runID int64, i int, ms
 
 // ruleTarget loads the message an action works on; ok is false when it is gone.
 func (s *Service) ruleTarget(ctx context.Context, id int64) (acc int64, t target, ok bool, err error) {
-	rows, err := s.db.Query(ctx, "SELECT m.account_id, m.thread_id, "+shownFolder+", m.flags, m.from_addr FROM messages m WHERE m.id = ?", id)
+	rows, err := s.db.Query(ctx, "SELECT m.account_id, m.thread_id, "+shownFolder+", m.flags, m.from_addr, "+shownAts+" FROM messages m WHERE m.id = ?", id)
 	if err != nil || len(rows.Values) == 0 {
 		return 0, t, false, err
 	}
 	v := rows.Values[0]
-	return store.Int(v[0]), target{id: id, thread: store.Int(v[1]), folder: store.Int(v[2]), flags: store.Str(v[3]), from: store.Str(v[4])}, true, nil
+	return store.Int(v[0]), target{id: id, thread: store.Int(v[1]), folder: store.Int(v[2]), flags: store.Str(v[3]), from: store.Str(v[4]), in: scanShownAts(v[5])}, true, nil
 }
 
 // actionWrites is an action's statements and the prior state they change.
@@ -1161,8 +1161,12 @@ func (s *Service) ruleAction(ctx context.Context, a RuleAction, acc int64, t tar
 		if err != nil {
 			return actionWrites{}, "", err
 		}
-		_, stmts := moveWrites(acc, []target{t}, to)
-		return actionWrites{prior: rulePrior{From: t.folder, To: to}, writes: stmts}, "", nil
+		binned, from := a.Kind != ActionArchive, t.folder
+		if out := t.leaves(0, to, binned); len(out) > 0 {
+			from = out[0]
+		}
+		_, stmts := moveWrites(acc, []target{t}, 0, to, binned)
+		return actionWrites{prior: rulePrior{From: from, To: to}, writes: stmts}, "", nil
 	case ActionBlock:
 		addr := gomail.AddrKey(t.from)
 		blocked, err := s.readList(ctx, blockedSenders)
@@ -1428,8 +1432,12 @@ func (s *Service) undoAction(ctx context.Context, runID int64, idx int, kind str
 		if err != nil {
 			return false, err
 		}
-		if ok = t.folder == p.To && len(rows.Values) > 0; ok {
-			_, stmts = moveWrites(acc, []target{t}, p.From)
+		if ok = slices.ContainsFunc(t.in, func(l shownAt) bool { return l.folder == p.To }) && len(rows.Values) > 0; ok {
+			binned, err := s.binned(ctx, acc, p.From)
+			if err != nil {
+				return false, err
+			}
+			_, stmts = moveWrites(acc, []target{t}, p.To, p.From, binned)
 		}
 	}
 	state := RuleActionUndone

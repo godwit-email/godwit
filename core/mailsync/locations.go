@@ -22,13 +22,34 @@ func dropUnseen(msg int64) sqlite.Statement {
 }
 
 // ShowIn returns the statements that show message msg in folder from now
-// (entered_at) and no longer where it showed.
-// shortcut: hides every other folder of a Gmail message, as a Delete would; #525 moves it out of the folder acted from only.
-func ShowIn(msg, folder int64) []sqlite.Statement {
+// (entered_at) and no longer in the folders out; with out nil, nowhere else.
+func ShowIn(msg, folder int64, out []int64) []sqlite.Statement {
+	hide, args := "UPDATE message_locations SET shown = 0 WHERE message_id = ? AND folder_id != ?", []any{msg, folder}
+	if out != nil {
+		hide, args = hide+" AND folder_id IN ("+marks(len(out))+")", append(args, anys(out)...)
+	}
 	return []sqlite.Statement{
-		{SQL: "UPDATE message_locations SET shown = 0 WHERE message_id = ? AND folder_id != ?", Args: []any{msg, folder}},
+		{SQL: hide, Args: args},
 		{SQL: `INSERT INTO message_locations(message_id, folder_id, shown, entered_at, date) SELECT id, ?, 1, unixepoch(), date FROM messages WHERE id = ?
 			ON CONFLICT(message_id, folder_id) DO UPDATE SET shown = 1, entered_at = excluded.entered_at`, Args: []any{folder, msg}},
+		dropUnseen(msg),
+	}
+}
+
+// settle returns the statements that, once no move of message msg is left to
+// push, show it where the server has it and only there (a folder shown again
+// restarts its entered_at); with a move still queued, which takes it from
+// where the server has it, it shows there only when it shows nowhere. A
+// message the server has nowhere keeps showing where it does.
+func settle(msg int64) []sqlite.Statement {
+	const settled = "NOT EXISTS (SELECT 1 FROM ops WHERE message_id = message_locations.message_id AND kind = 'move' AND state IN ('pending', 'awaiting_claim'))"
+	return []sqlite.Statement{
+		{SQL: `UPDATE message_locations SET shown = 0 WHERE message_id = ? AND shown AND uid IS NULL
+			AND EXISTS (SELECT 1 FROM message_locations c WHERE c.message_id = message_locations.message_id AND c.uid IS NOT NULL) AND ` + settled,
+			Args: []any{msg}},
+		{SQL: `UPDATE message_locations SET shown = 1, entered_at = unixepoch() WHERE message_id = ? AND uid IS NOT NULL AND NOT shown
+			AND (` + settled + ` OR NOT EXISTS (SELECT 1 FROM message_locations c WHERE c.message_id = message_locations.message_id AND c.shown))`,
+			Args: []any{msg}},
 		dropUnseen(msg),
 	}
 }

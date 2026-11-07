@@ -218,6 +218,7 @@ func claim(ctx context.Context, db *store.DB, accountID int64, f *folder, uid ui
 // Message-ID, or the server changed it). The op and the message's other pending
 // ops become conflicts and the local row, which has no server location, is
 // deleted; the copy in the destination was imported as a message of its own.
+// A Gmail message still in another folder stays, shown where the server has it.
 func unclaimable(ctx context.Context, db *store.DB, accountID int64, r *result) error {
 	rows, err := db.Query(ctx, `SELECT o.message_id, f.name FROM ops o LEFT JOIN folders f ON f.id = o.dst_folder_id
 		WHERE o.account_id = ? AND o.state = 'awaiting_claim' AND o.message_id IS NOT NULL`, accountID)
@@ -239,6 +240,9 @@ func unclaimable(ctx context.Context, db *store.DB, accountID int64, r *result) 
 		{SQL: "UPDATE ops SET state = 'conflict', last_error = ? WHERE state IN ('pending', 'awaiting_claim') AND message_id IN (" + marks(len(msgs)) + ")",
 			Args: append([]any{msg}, msgs...)},
 		{SQL: "DELETE FROM messages WHERE " + unlocated + " AND id IN (" + marks(len(msgs)) + ")", Args: msgs},
+	}
+	for _, m := range msgs {
+		stmts = append(stmts, settle(store.Int(m))...)
 	}
 	if _, err := db.Transaction(ctx, append(stmts, tidyThreads(accountID, tids)...)); err != nil {
 		return err
