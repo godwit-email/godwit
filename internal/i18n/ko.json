@@ -873,6 +873,16 @@
   },
   "settings_ext_login_body": "플러그인이 내 계정으로 서비스에 접속합니다.",
   "settings_ext_login_confirm": "그래도 로그인",
+  "settings_ext_login_open_title": "로그인 페이지를 열까요?",
+  "settings_ext_login_open_body": "브라우저에서 {arg1}을(를) 엽니다.",
+  "@settings_ext_login_open_body": {
+    "placeholders": {
+      "arg1": {
+        "type": "String"
+      }
+    }
+  },
+  "settings_ext_login_open_confirm": "열기",
   "settings_ext_logout": "로그아웃",
   "settings_ext_signed_in": "{arg1}(으)로 로그인됨",
   "@settings_ext_signed_in": {

@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"net/url"
 	"reflect"
 	"slices"
 	"strings"
@@ -49,6 +50,9 @@ type extView struct {
 	logins          map[string]core.PluginLogin // what each sign-in plugin answered
 	loginFlow       string                      // the plugin signing in; "" none
 	loginCancel     context.CancelFunc          // gives up on that sign-in
+	loginPage       string                      // the page awaiting the user's yes; "" none
+	loginPageOpen   bool                        // its dialog shows
+	loginAnswer     chan bool                   // receives that yes or no
 }
 
 // extChange: the event changes what the page lists.
@@ -150,7 +154,8 @@ func (e *extView) startLogin(name string) {
 		if err != nil {
 			return err
 		}
-		finished, opened := false, false
+		finished, page := false, ""
+		answer := make(chan bool, 1)
 		defer func() {
 			if !finished { // the plugin would otherwise go on waiting for the browser
 				a.svc.CancelPluginLogin(context.WithoutCancel(ctx), name, flow)
@@ -163,11 +168,9 @@ func (e *extView) startLogin(name string) {
 			}
 			switch st.State {
 			case "open":
-				if !opened {
-					opened = true
-					if err := a.plat.OpenURL(st.URL); err != nil {
-						return err
-					}
+				if page == "" { // the page the user agrees to is the one that opens
+					page = st.URL
+					a.onUI(func() { e.loginPage, e.loginPageOpen, e.loginAnswer = page, true, answer })
 				}
 			case "done":
 				finished = true
@@ -179,12 +182,19 @@ func (e *extView) startLogin(name string) {
 			select {
 			case <-ctx.Done():
 				return ctx.Err()
-			case <-time.After(time.Second):
+			case yes := <-answer:
+				if !yes {
+					return context.Canceled
+				}
+				if err := a.plat.OpenURL(page); err != nil {
+					return err
+				}
+			case <-time.After(time.Second): // polling goes on while the user reads: it keeps the plugin from going idle
 			}
 		}
 	}, func(err error) {
 		cancel()
-		e.loginFlow, e.loginCancel = "", nil
+		e.loginFlow, e.loginCancel, e.loginPage, e.loginPageOpen, e.loginAnswer = "", nil, "", false, nil
 		if !errors.Is(err, context.Canceled) {
 			a.toastErr(err)
 		}
@@ -243,6 +253,7 @@ func (e *extView) view(c *ui.Context) {
 		e.pluginsView(c)
 	}
 	e.confirmView(c)
+	e.loginPageView(c)
 }
 
 // --- skills
@@ -928,6 +939,31 @@ func (e *extView) serverView(c *ui.Context, s core.MCPServer) {
 		})
 	})
 	settingsSection(c, s.Name, "", rows...)
+}
+
+// loginPageView asks before a sign-in's page opens, naming its host (AGENTS.md:
+// egress goes through a card that names its destination). Only now is it known.
+func (e *extView) loginPageView(c *ui.Context) {
+	if e.loginPage == "" {
+		return
+	}
+	answer := func(yes bool) {
+		e.loginAnswer <- yes
+		e.loginPage, e.loginPageOpen = "", false
+	}
+	if !e.loginPageOpen { // Escape or a click outside
+		answer(false)
+		return
+	}
+	host := e.loginPage
+	if u, err := url.Parse(e.loginPage); err == nil {
+		host = u.Host
+	}
+	kit.Dialog(c, &e.loginPageOpen, i18n.T("settings.ext.login.open.title"), kit.DialogOpts{Size: kit.DialogSm, Alert: true,
+		Desc: i18n.Tf("settings.ext.login.open.body", host), Close: i18n.T("common.close")}, nil, func() {
+		kit.Button(c, i18n.T("common.cancel"), kit.ButtonOpts{Variant: kit.Outline}).OnClick(func() { answer(false) })
+		kit.Button(c, i18n.T("settings.ext.login.open.confirm"), kit.ButtonOpts{}).OnClick(func() { answer(true) })
+	})
 }
 
 // confirmView asks before an uninstall, a removal or a sign-in.

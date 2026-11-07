@@ -873,6 +873,16 @@
   },
   "settings_ext_login_body": "Le plugin utilisera votre compte pour accéder à son service.",
   "settings_ext_login_confirm": "Se connecter quand même",
+  "settings_ext_login_open_title": "Ouvrir la page de connexion ?",
+  "settings_ext_login_open_body": "Votre navigateur ouvrira {arg1}.",
+  "@settings_ext_login_open_body": {
+    "placeholders": {
+      "arg1": {
+        "type": "String"
+      }
+    }
+  },
+  "settings_ext_login_open_confirm": "Ouvrir",
   "settings_ext_logout": "Se déconnecter",
   "settings_ext_signed_in": "Connecté en tant que {arg1}",
   "@settings_ext_signed_in": {

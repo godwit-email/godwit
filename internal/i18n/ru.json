@@ -873,6 +873,16 @@
   },
   "settings_ext_login_body": "Плагин будет обращаться к своему сервису от вашего имени.",
   "settings_ext_login_confirm": "Всё равно войти",
+  "settings_ext_login_open_title": "Открыть страницу входа?",
+  "settings_ext_login_open_body": "Браузер откроет {arg1}.",
+  "@settings_ext_login_open_body": {
+    "placeholders": {
+      "arg1": {
+        "type": "String"
+      }
+    }
+  },
+  "settings_ext_login_open_confirm": "Открыть",
   "settings_ext_logout": "Выйти",
   "settings_ext_signed_in": "Вход выполнен: {arg1}",
   "@settings_ext_signed_in": {

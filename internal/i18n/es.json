@@ -873,6 +873,16 @@
   },
   "settings_ext_login_body": "El complemento usará tu cuenta para acceder a su servicio.",
   "settings_ext_login_confirm": "Iniciar sesión de todos modos",
+  "settings_ext_login_open_title": "¿Abrir la página de inicio de sesión?",
+  "settings_ext_login_open_body": "Tu navegador abrirá {arg1}.",
+  "@settings_ext_login_open_body": {
+    "placeholders": {
+      "arg1": {
+        "type": "String"
+      }
+    }
+  },
+  "settings_ext_login_open_confirm": "Abrir",
   "settings_ext_logout": "Cerrar sesión",
   "settings_ext_signed_in": "Sesión iniciada como {arg1}",
   "@settings_ext_signed_in": {

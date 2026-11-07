@@ -873,6 +873,16 @@
   },
   "settings_ext_login_body": "Plugin sẽ dùng tài khoản của bạn để truy cập dịch vụ của nó.",
   "settings_ext_login_confirm": "Vẫn đăng nhập",
+  "settings_ext_login_open_title": "Mở trang đăng nhập?",
+  "settings_ext_login_open_body": "Trình duyệt sẽ mở {arg1}.",
+  "@settings_ext_login_open_body": {
+    "placeholders": {
+      "arg1": {
+        "type": "String"
+      }
+    }
+  },
+  "settings_ext_login_open_confirm": "Mở",
   "settings_ext_logout": "Đăng xuất",
   "settings_ext_signed_in": "Đã đăng nhập: {arg1}",
   "@settings_ext_signed_in": {

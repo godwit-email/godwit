@@ -873,6 +873,16 @@
   },
   "settings_ext_login_body": "Eklenti, hizmetine ulaşmak için hesabınızı kullanır.",
   "settings_ext_login_confirm": "Yine de oturum aç",
+  "settings_ext_login_open_title": "Oturum açma sayfası açılsın mı?",
+  "settings_ext_login_open_body": "Tarayıcınız {arg1} adresini açacak.",
+  "@settings_ext_login_open_body": {
+    "placeholders": {
+      "arg1": {
+        "type": "String"
+      }
+    }
+  },
+  "settings_ext_login_open_confirm": "Aç",
   "settings_ext_logout": "Oturumu kapat",
   "settings_ext_signed_in": "{arg1} olarak oturum açıldı",
   "@settings_ext_signed_in": {

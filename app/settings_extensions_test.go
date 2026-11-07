@@ -507,6 +507,11 @@ func TestPluginSignIn(t *testing.T) {
 		t.Fatal("the page opened before the user agreed")
 	}
 	h.click("仍然登录")
+	h.until("the page's host", func() bool { return h.tt.HasText("accounts.example.com") })
+	if slices.ContainsFunc(h.plat.Calls(), func(c string) bool { return strings.HasPrefix(c, "OpenURL") }) {
+		t.Fatal("the page opened before the user saw its host")
+	}
+	h.click("打开")
 	h.until("the flow's end", func() bool {
 		return p.ext.loginFlow == "" && slices.Contains(h.plat.Calls(), "OpenURL https://accounts.example.com/auth")
 	})
@@ -540,5 +545,22 @@ func TestSameConsentCoversTheKind(t *testing.T) {
 	}
 	if sameConsent(shown, core.PluginInfo{Version: "1.0.0", Native: true}) {
 		t.Fatal("a native release of the same version must ask again: the user approved a script's permissions")
+	}
+}
+
+func TestPluginSignInPageRefused(t *testing.T) {
+	h, _ := withAccount(t)
+	p := loginFixture(t, h, map[string]any{
+		"login":     map[string]any{"login.status": map[string]any{"signedIn": false}, "login.start": map[string]any{"flow": "f1"}},
+		"loginPoll": []any{map[string]any{"state": "open", "url": "https://elsewhere.example.net/auth"}},
+	})
+	h.until("the sign-in button", func() bool { return h.tt.HasText("登录") })
+	h.click("登录")
+	h.click("仍然登录")
+	h.until("the page's host", func() bool { return h.tt.HasText("elsewhere.example.net") })
+	h.click("取消")
+	h.until("the flow's end", func() bool { return p.ext.loginFlow == "" })
+	if slices.ContainsFunc(h.plat.Calls(), func(c string) bool { return strings.HasPrefix(c, "OpenURL") }) {
+		t.Fatal("a refused page opened")
 	}
 }

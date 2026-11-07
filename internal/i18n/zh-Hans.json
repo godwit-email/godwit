@@ -873,6 +873,16 @@
   },
   "settings_ext_login_body": "插件会用你的账号访问它的服务。",
   "settings_ext_login_confirm": "仍然登录",
+  "settings_ext_login_open_title": "打开登录页面？",
+  "settings_ext_login_open_body": "将在浏览器中打开 {arg1}。",
+  "@settings_ext_login_open_body": {
+    "placeholders": {
+      "arg1": {
+        "type": "String"
+      }
+    }
+  },
+  "settings_ext_login_open_confirm": "打开",
   "settings_ext_logout": "退出登录",
   "settings_ext_signed_in": "已登录 {arg1}",
   "@settings_ext_signed_in": {

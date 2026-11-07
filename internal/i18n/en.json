@@ -1666,6 +1666,16 @@
   },
   "settings_ext_login_body": "The plugin will use your account to reach its service.",
   "settings_ext_login_confirm": "Sign in anyway",
+  "settings_ext_login_open_title": "Open the sign-in page?",
+  "settings_ext_login_open_body": "Your browser will open {arg1}.",
+  "@settings_ext_login_open_body": {
+    "placeholders": {
+      "arg1": {
+        "type": "String"
+      }
+    }
+  },
+  "settings_ext_login_open_confirm": "Open",
   "settings_ext_logout": "Sign out",
   "settings_ext_signed_in": "Signed in as {arg1}",
   "@settings_ext_signed_in": {

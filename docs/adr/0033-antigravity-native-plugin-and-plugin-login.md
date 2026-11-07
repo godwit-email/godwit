@@ -52,7 +52,7 @@ Google Antigravity 不做成内置服务（替代 PR 485 的方案），做成�
 
 - `core/plugins/manifest.go` 的 `knownCapabilities` 加 `login`，并更新说明。
 - `core.Service` 加 `PluginLoginStatus`、`BeginPluginLogin`、`PollPluginLogin`、`CancelPluginLogin`、`PluginLogout`。`full` 角色都能调用（`rpcbind/testdata/full_methods.txt`）。`BeginPluginLogin` 可能导致外发，进入 `audit`。都不进 `mcp` 角色，也不暴露给 Wit 和脚本插件。
-- 只接受 `https` 的 URL，由应用打开，且只打开一次，对话框显示 URL 的主机名。这只是防误用，不是约束：原生插件本来就有全部权限（[0015](0015-native-plugins-trusted-subprocess.md)）。
+- 只接受 `https` 的 URL。打开前再确认一次，对话框显示 URL 的主机名（这时才知道），用户同意后由应用打开，且只打开一次。这只是防误用，不是约束：原生插件本来就有全部权限（[0015](0015-native-plugins-trusted-subprocess.md)）。
 - 登录或退出成功后清掉 `rp.models` 并调用 `forgetPluginModels`，让模型列表重新获取。
 - `configure` 增加 `dataDir`（`DataDir/plugins/<name>/data`，更新时保留，卸载时删除）：原生插件原来没有稳定的目录可用。
 - 进程退出时，如果模型列表指向 loopback 地址就清掉，下次调用重新列出，因为新进程的端口不同。

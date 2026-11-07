@@ -873,6 +873,16 @@
   },
   "settings_ext_login_body": "De plug-in gebruikt je account om zijn dienst te bereiken.",
   "settings_ext_login_confirm": "Toch inloggen",
+  "settings_ext_login_open_title": "Inlogpagina openen?",
+  "settings_ext_login_open_body": "Je browser opent {arg1}.",
+  "@settings_ext_login_open_body": {
+    "placeholders": {
+      "arg1": {
+        "type": "String"
+      }
+    }
+  },
+  "settings_ext_login_open_confirm": "Openen",
   "settings_ext_logout": "Uitloggen",
   "settings_ext_signed_in": "Ingelogd als {arg1}",
   "@settings_ext_signed_in": {
