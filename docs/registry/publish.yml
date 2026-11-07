@@ -24,6 +24,14 @@ jobs:
         with:
           go-version-file: godwit/go.mod
           cache-dependency-path: godwit/go.sum
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.4.2
+      # core/plugins imports internal/i18n, whose catalog_gen.go is generated and not committed.
+      - name: Generate Godwit's sources
+        run: |
+          (cd godwit/web && bun install --frozen-lockfile)
+          cd godwit && go tool mygo generate
       - name: Build registry.json from the directory and each plugin's pinned commit
         run: cd godwit && go run ./cmd/godwit-registry build ../directory.json ../registry.json
       # What the reviewer approves: the difference this pull request makes to what is published.

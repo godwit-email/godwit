@@ -1,6 +1,6 @@
 // Command godwit-registry builds, checks and signs a Godwit plugin registry.json
-// (docs/registry/README.md). The plugins repository's CI runs it with
-// `go run github.com/godwit-email/godwit/cmd/godwit-registry@main`.
+// (docs/registry/README.md). The plugins repository's CI runs it from a checkout
+// of Godwit's main branch, after generating its sources (docs/registry/publish.yml).
 //
 //	godwit-registry build directory.json registry.json   join the directory and each plugin's godwit-plugin.json at its pinned commit
 //	godwit-registry check [--fetch] registry.json   validate; --fetch also downloads every file (artifacts and assets) and checks its size and sha256

@@ -130,7 +130,7 @@ the build fails and nothing can be published until that entry is changed or remo
 
 ## Keys
 
-- `go run github.com/godwit-email/godwit/cmd/godwit-registry@main keygen` prints a key pair.
+- In a Godwit checkout, after `mise run generate`, `go run ./cmd/godwit-registry keygen` prints a key pair.
 - The private key goes to the repository secret `GODWIT_REGISTRY_KEY`, and nowhere else.
 - The public key goes into `registryPublicKey` in Godwit's `core/registry.go`. Godwit's plugin
   directory is off while that constant is empty.
