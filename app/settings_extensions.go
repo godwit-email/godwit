@@ -1,7 +1,6 @@
 package app
 
 import (
-	"cmp"
 	"context"
 	"encoding/json"
 	"slices"
@@ -12,6 +11,7 @@ import (
 	"github.com/godwit-email/godwit/core/events"
 	"github.com/godwit-email/godwit/core/plugins"
 	"github.com/godwit-email/godwit/internal/i18n"
+	"github.com/godwit-email/godwit/internal/icons"
 	"github.com/godwit-email/godwit/internal/kit"
 	"github.com/godwit-email/godwit/internal/theme"
 )
@@ -32,11 +32,14 @@ type extView struct {
 	mcp             int64                  // the server shown
 	mform           *mcpForm               // the add or edit form; nil when closed
 	later           map[string]bool        // pending plugins collapsed with 暂不启用, this session only
-	confirm         string                 // the open confirmation: "plugin", "mcp", "registry"; "" none
+	confirm         string                 // the open confirmation: "plugin", "mcp"; "" none
 	reg             core.RegistryView      // the plugin directory
-	regName         string                 // the directory entry the "registry" confirmation installs
-	open            bool                   // the confirmation shows
-	installing      string                 // ":folder" for a local install, otherwise the registry plugin name; "" when idle
+	onDirectory     bool                   // the plugin directory's subpage shows
+	detail          string                 // the directory entry whose install dialog shows; "" none
+	detailOpen      bool                   // that dialog shows
+	readmes         map[string]*pluginReadme
+	open            bool   // the confirmation shows
+	installing      string // ":folder" for a local install, otherwise the registry plugin name; "" when idle
 	installProgress core.PluginInstallProgress
 }
 
@@ -132,13 +135,11 @@ func (e *extView) write(key string, fn func(ctx context.Context) error, done fun
 }
 
 func (e *extView) view(c *ui.Context) {
-	pageHeading(c, i18n.T("settings.extensions"), i18n.T("settings.ext.sub"), func() {
-		if e.installing == ":folder" {
-			e.installProgressView(c)
-			return
-		}
-		kit.Button(c, i18n.T("settings.ext.install"), kit.ButtonOpts{Disabled: e.installing != ""}).OnClick(e.install)
-	})
+	if e.onDirectory && e.reg.On {
+		e.directoryView(c)
+		return
+	}
+	pageHeading(c, i18n.T("settings.extensions"), i18n.T("settings.ext.sub"))
 	kit.TabsUnderline(c, &e.tab, i18n.Tf("settings.ext.tab.skills", len(e.skills)), i18n.Tf("settings.ext.tab.plugins", len(e.plugins)))
 	if e.tab == 0 {
 		e.skillsView(c)
@@ -246,23 +247,50 @@ func pluginExcluded(pm plugins.Permissions) string {
 	return strings.Join(no, i18n.T("mail.list_sep"))
 }
 
-// pluginsView: a settings row per plugin (name, description, switch); a
+// pluginsView: 已安装, a settings row per plugin (name, description, switch); a
 // plugin awaiting consent opens to its permissions, config and 允许并启用,
-// an installed one to its permissions, config and uninstall on a click.
+// an installed one to its permissions, config and uninstall on a click. Then
+// 添加插件: the plugin directory's subpage and a folder.
 func (e *extView) pluginsView(c *ui.Context) {
 	t := theme.Of(c)
-	if e.reg.On {
-		e.registryView(c)
-	}
-	if len(e.plugins) == 0 {
-		ui.Text(c, i18n.T("settings.ext.plugins.empty")).TextColor(t.Muted)
-		return
-	}
 	rows := make([]func(), len(e.plugins))
 	for i, p := range e.plugins {
 		rows[i] = func() { e.pluginRow(c.Key(p.Name), p) }
 	}
-	settingsSection(c, i18n.T("settings.ext.sec.plugins"), i18n.T("settings.ext.no_send"), rows...)
+	if len(rows) > 0 {
+		settingsSection(c, i18n.T("settings.ext.sec.installed"), "", rows...)
+	} else {
+		ui.Text(c, i18n.T("settings.ext.plugins.empty")).TextColor(t.Muted)
+	}
+	var add []func()
+	if e.reg.On {
+		add = append(add, func() {
+			kit.Pressable(c, kit.PressableOpts{Bare: true, OnClick: func() { e.onDirectory = true }}).Label(i18n.T("settings.ext.browse")).FillWidth().Children(func() {
+				settingRow(c, i18n.T("settings.ext.browse"), i18n.T("settings.ext.browse.hint"), func() {
+					ui.Icon(c, icons.Get("chevron-right")).Size(theme.Icon, theme.Icon).TextColor(t.Muted)
+				})
+			})
+		})
+	}
+	add = append(add, func() {
+		settingRow(c, i18n.T("settings.ext.install"), i18n.T("settings.ext.install.hint"), func() {
+			if e.installing == ":folder" {
+				e.installProgressView(c)
+				return
+			}
+			kit.Button(c, i18n.T("settings.ext.install.choose"), kit.ButtonOpts{Variant: kit.Outline, Disabled: e.installing != ""}).OnClick(e.install)
+		})
+	})
+	settingsSection(c, i18n.T("settings.ext.sec.add"), i18n.T("settings.ext.no_send"), add...)
+}
+
+// entry is the directory's entry for an installed plugin.
+func (e *extView) entry(name string) (core.RegistryEntry, bool) {
+	i := slices.IndexFunc(e.reg.Entries, func(r core.RegistryEntry) bool { return r.Name == name })
+	if i < 0 {
+		return core.RegistryEntry{}, false
+	}
+	return e.reg.Entries[i], true
 }
 
 func (e *extView) pluginRow(c *ui.Context, p core.PluginInfo) {
@@ -312,6 +340,13 @@ func (e *extView) pluginRow(c *ui.Context, p core.PluginInfo) {
 				statusPill(c, i18n.T("settings.ext.status.pending"), true)
 				return
 			}
+			if e.installing == name {
+				e.installProgressView(c)
+				return
+			}
+			if en, ok := e.entry(name); ok && en.Update {
+				e.updateButton(c, en)
+			}
 			on := p.Enabled
 			if kit.Switch(c, &on).Label(i18n.Tf("settings.ext.skill.enable", title)).Changed() {
 				e.setPluginEnabled(name, !p.Enabled)
@@ -334,6 +369,9 @@ func (e *extView) pluginBody(c *ui.Context, p core.PluginInfo) {
 			kit.Alert(c, kit.Warning, i18n.T("settings.ext.revoked"), nil)
 		} else if p.DisabledReason != "" && !p.Enabled {
 			kit.Alert(c, kit.Warning, p.DisabledReason, nil)
+		}
+		if en, ok := e.entry(name); ok && en.DataFlow != "" {
+			dataFlowCard(c, en)
 		}
 		if p.Native {
 			nativeCard(c, p)
@@ -785,22 +823,8 @@ func (e *extView) confirmView(c *ui.Context) {
 	}
 	a := e.a
 	var title, body, label string
-	variant := kit.Destructive
 	var run func()
 	switch e.confirm {
-	case "registry":
-		variant = kit.Default
-		i := slices.IndexFunc(e.reg.Entries, func(r core.RegistryEntry) bool { return r.Name == e.regName })
-		if i < 0 {
-			e.confirm = ""
-			return
-		}
-		en := e.reg.Entries[i]
-		title, body, label = i18n.Tf("settings.ext.registry.confirm.title", entryTitle(en), en.Version), i18n.T("settings.ext.registry.confirm.body"), i18n.T("settings.ext.registry.confirm.ok")
-		if en.Installed != "" {
-			body += i18n.Tf("settings.ext.registry.confirm.replace", en.Name)
-		}
-		run = func() { e.installFromRegistry(en.Name) }
 	case "plugin":
 		p, ok := e.pluginInfo()
 		if !ok {
@@ -830,89 +854,7 @@ func (e *extView) confirmView(c *ui.Context) {
 	dismiss := func() { e.confirm, e.open = "", false }
 	kit.Dialog(c, &e.open, title, kit.DialogOpts{Size: kit.DialogSm, Alert: true, Desc: body, Close: i18n.T("common.close")}, nil, func() {
 		kit.Button(c, i18n.T("common.cancel"), kit.ButtonOpts{Variant: kit.Outline}).OnClick(dismiss)
-		kit.Button(c, label, kit.ButtonOpts{Variant: variant, Disabled: e.confirm == "registry" && e.installing != ""}).OnClick(func() { dismiss(); run() })
-	})
-}
-
-// registryView is the plugin directory (ADR 0016): what it lists for this
-// computer, and for each entry install, update, replace, or why not.
-func (e *extView) registryView(c *ui.Context) {
-	t := theme.Of(c)
-	foot := ""
-	if e.reg.Stale != "" {
-		foot = i18n.T("settings.ext.registry.stale")
-	}
-	title := i18n.T("settings.ext.registry")
-	if len(e.reg.Entries) == 0 {
-		ui.Column(c).Gap(theme.SectionGap).Children(func() {
-			sectionTitle(c, title)
-			ui.Text(c, i18n.T("settings.ext.registry.empty")).TextColor(t.Muted).PaddingX(c.Theme().Space(4))
-			if foot != "" {
-				kit.Text(c, foot, t.Text.Sm).TextColor(t.Muted).PaddingX(c.Theme().Space(4))
-			}
-		})
-		return
-	}
-	rows := make([]func(), len(e.reg.Entries))
-	for i, en := range e.reg.Entries {
-		rows[i] = func() { e.registryRow(c.Key("registry:"+en.Name), en) }
-	}
-	settingsSection(c, title, foot, rows...)
-}
-
-func entryTitle(en core.RegistryEntry) string {
-	if s := en.Title.For(i18n.Language()); s != "" {
-		return s
-	}
-	return en.Name
-}
-
-func (e *extView) registryRow(c *ui.Context, en core.RegistryEntry) {
-	t, th := theme.Of(c), c.Theme()
-	ui.Row(c).FillWidth().Gap(th.Space(6)).Padding(th.Space(2), th.Space(4)).MinHeight(th.Space(12)).AlignItems(ui.Center).Children(func() {
-		ui.Column(c).Grow(1).Shrink(1).Gap(th.Space(0.5)).Children(func() {
-			ui.Row(c).Gap(th.Space(2)).AlignItems(ui.Center).Children(func() {
-				switch {
-				case en.Native:
-					statusPill(c, i18n.T("settings.ext.native"), false)
-				case en.Script:
-					statusPill(c, i18n.T("settings.ext.script"), false)
-				}
-				title := entryTitle(en)
-				kit.Text(c, title, t.Text.Body).LineHeight(theme.LineFor(title)).FontWeight(500).Shrink(1)
-				if v := cmp.Or(en.Version, en.Installed); v != "" {
-					kit.Text(c, v, t.Text.Sm).TextColor(t.Muted)
-				}
-			})
-			if desc := en.Summary.For(i18n.Language()); desc != "" {
-				kit.Text(c, desc, t.Text.Sm).TextColor(t.Muted)
-			}
-		})
-		ui.Row(c).Gap(th.Space(2)).AlignItems(ui.Center).Children(func() {
-			act := func(text string, confirm bool) {
-				kit.Button(c, text, kit.ButtonOpts{Variant: kit.Outline, Disabled: e.installing != ""}).Label(i18n.Tf("settings.ext.registry.named", text, en.Name)).OnClick(func() {
-					if confirm && en.Native {
-						e.regName, e.confirm, e.open = en.Name, "registry", true
-						return
-					}
-					e.installFromRegistry(en.Name)
-				})
-			}
-			switch {
-			case e.installing == en.Name:
-				e.installProgressView(c)
-			case en.Version == "":
-				kit.Text(c, unavailable(en.Unavailable), t.Text.Sm).TextColor(t.Muted)
-			case en.Installed == "":
-				act(i18n.T("settings.ext.registry.install"), true)
-			case en.Update:
-				act(i18n.Tf("settings.ext.registry.update", en.Version), false) // reviewed, and its risk was confirmed at install
-			case en.InstalledTrust != "listed":
-				act(i18n.T("settings.ext.registry.replace"), true)
-			default:
-				kit.Text(c, i18n.T("settings.ext.registry.installed"), t.Text.Sm).TextColor(t.Muted)
-			}
-		})
+		kit.Button(c, label, kit.ButtonOpts{Variant: kit.Destructive}).OnClick(func() { dismiss(); run() })
 	})
 }
 
@@ -949,8 +891,9 @@ func unavailable(reason string) string {
 	return i18n.T("settings.ext.registry.na.platform")
 }
 
-// installFromRegistry installs or updates a directory plugin and opens its row.
-func (e *extView) installFromRegistry(name string) {
+// installFromRegistry installs or updates a directory plugin and opens its row;
+// enable also grants what the install dialog named and turns it on.
+func (e *extView) installFromRegistry(name string, enable bool) {
 	if e.installing != "" {
 		return
 	}
@@ -970,11 +913,17 @@ func (e *extView) installFromRegistry(name string) {
 			lastStage, lastPercent = p.Stage, percent
 			a.onUI(func() { e.installProgress = p })
 		})
-		return err
+		if err != nil || !enable {
+			return err
+		}
+		if err := a.svc.GrantPermission(ctx, name); err != nil {
+			return err
+		}
+		return a.svc.SetPluginEnabled(ctx, name, true)
 	}, func(err error) {
 		e.installing = ""
 		if err == nil {
-			e.tab, e.plugin = 1, name
+			e.tab, e.plugin, e.onDirectory = 1, name, false
 		}
 	})
 }

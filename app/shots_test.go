@@ -5,6 +5,7 @@ import (
 	"context"
 	"fmt"
 	"image/png"
+	"net/http"
 	"os"
 	"path/filepath"
 	"strings"
@@ -605,6 +606,34 @@ func TestShots(t *testing.T) {
 			shot(s.harness, v.name)
 		})
 	}
+	t.Run("SettingsPluginDirectory", func(t *testing.T) {
+		rs := coretest.NewRegistryServer(t)
+		dlx := regPlugin("dlx", rs.NativeRelease(t, "dlx", "0.1.0", nil))
+		dlx["title"], dlx["publisher"], dlx["category"], dlx["dataFlow"] = "DLX", "Godwit Community", "translate", "third-party"
+		dlx["summary"] = "翻译邮件与选中文本，无需设置。文本会通过非官方接口发送到第三方翻译服务，可能被限流或失效。"
+		lux := regPlugin("startlux", rs.NativeRelease(t, "startlux", "0.1.0", nil))
+		lux["title"], lux["publisher"], lux["category"], lux["dataFlow"] = "StartLux", "Godwit", "models", "local"
+		lux["summary"] = "本地判断模型：在本机给邮件打标签、回答是非题，邮件内容不发往任何地方。"
+		zen := regPlugin("zen-free", rs.ScriptRelease("zen-free", "0.1.0", `{"net":["opencode.ai","models.opencode.ai","raw.githubusercontent.com"]}`, `export default function () {}`))
+		zen["title"], zen["publisher"], zen["category"], zen["dataFlow"] = "Zen Free", "Godwit", "models", "third-party"
+		zen["summary"] = "OpenCode Zen 免费模型。提示、上下文与工具会通过非官方接口发送到第三方服务。"
+		zen["homepage"] = "https://github.com/godwit-email/plugins/tree/main/packages/zen-free"
+		rs.Publish(t, coretest.Registry(regT0, dlx, lux, zen))
+		rs.Src.Client = &http.Client{Transport: &rawGitHub{base: rs.Src.Client.Transport, files: map[string]string{
+			"/godwit-email/plugins/main/packages/zen-free/README.zh-Hans.md": "# Zen Free for Godwit\n\n在 Godwit 中使用 OpenCode Zen 的免费模型，无需 API Key。\n\n## 使用\n\n1. 打开 Godwit「设置 → 扩展」，在插件目录中安装 Zen Free。\n2. 启用插件，允许它声明的网络权限。\n",
+		}}}
+		h := newHarnessWith(t, []coretest.Option{coretest.WithRegistry(rs.Src)}, func(e *coretest.Env) { e.AddAccount(t, "alice@example.com") })
+		h.until("initial load", func() bool { return h.app.loaded })
+		h.openSettings("extensions")
+		h.see("浏览插件目录")
+		shot(h, "SettingsExtensionsPlugins")
+		h.click("浏览插件目录")
+		h.see("Zen Free")
+		shot(h, "SettingsPluginDirectory")
+		h.click("安装 zen-free")
+		h.see("以下说明来自插件的 GitHub 主页，不在审核范围内。")
+		shot(h, "SettingsPluginInstallDialog")
+	})
 	t.Run("SettingsExtensions", func(t *testing.T) {
 		s := shotMail(t, noAuto)
 		shotInstall(t, s.harness, "deepl-translate", `{"name":"deepl-translate","version":"0.1.0","description":"用 DeepL 翻译邮件，不经过大模型","main":"index.ts",

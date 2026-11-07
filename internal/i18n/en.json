@@ -1409,18 +1409,60 @@
   "settings_density_comfortable": "Comfortable",
   "settings_density_compact": "Compact (default)",
   "settings_ext_allow": "Allow and enable",
+  "settings_ext_browse": "Browse the plugin directory",
+  "settings_ext_browse_hint": "Reviewed plugins you can install.",
   "settings_ext_builtin": "Built-in",
   "settings_ext_config": "Settings",
   "settings_ext_config_required": "Required",
   "settings_ext_config_sub": "· form generated from the plugin''s config declaration",
+  "settings_ext_dialog_allow_install": "Allow and install",
+  "settings_ext_dialog_flow": "Where data goes",
+  "settings_ext_dialog_foot_native": "A native plugin is someone else''s code, and Godwit can''t restrict it.",
+  "settings_ext_dialog_foot_script": "A script plugin is someone else''s code, and can only use what you allow.",
+  "settings_ext_dialog_home": "Homepage and source",
+  "settings_ext_dialog_install_enable": "Install and enable",
+  "settings_ext_dialog_kind": "Type",
+  "settings_ext_dialog_perm": "Permissions",
+  "settings_ext_dialog_perm_native": "Runs with all of Godwit''s rights: it can read mail, account credentials and local files, reach any address and run programs. Where its data goes comes from the directory''s review, not from a limit Godwit can enforce.",
+  "settings_ext_dialog_perm_net": "Runs in a sandbox and can only reach these addresses:",
+  "settings_ext_dialog_perm_no_net": "Runs in a sandbox with no network access.",
+  "settings_ext_dialog_publisher": "Published by {arg1}",
+  "@settings_ext_dialog_publisher": {
+    "placeholders": {
+      "arg1": {
+        "type": "String"
+      }
+    }
+  },
+  "settings_ext_dialog_readme_loading": "Reading the description…",
+  "settings_ext_dialog_readme_note": "The text below comes from the plugin''s GitHub page and isn''t part of the review.",
+  "settings_ext_dialog_source": "Source",
+  "settings_ext_dialog_source_listed": "Plugin directory, reviewed",
+  "settings_ext_dialog_version": "Version",
+  "settings_ext_directory": "Plugin directory",
+  "settings_ext_directory_offline": "Can''t read the plugin directory right now",
+  "settings_ext_directory_offline_hint": "Installed plugins aren''t affected.",
+  "settings_ext_directory_sub": "Every plugin here is reviewed. Before you install one, you can see where it sends data and what it can do.",
+  "settings_ext_directory_view": "View {arg1}",
+  "@settings_ext_directory_view": {
+    "placeholders": {
+      "arg1": {
+        "type": "String"
+      }
+    }
+  },
   "settings_ext_excl_llm": "calling the language model",
   "settings_ext_excl_net": "network access",
   "settings_ext_excl_read": "reading mail",
   "settings_ext_excl_send": "sending mail (no plugin can send)",
   "settings_ext_excl_write": "changing mail",
   "settings_ext_excluded": "Excludes",
+  "settings_ext_flow_local": "On this computer",
+  "settings_ext_flow_third": "Sent to a third party",
   "settings_ext_grant": "Approve and enable",
   "settings_ext_install": "Install from folder",
+  "settings_ext_install_choose": "Choose folder",
+  "settings_ext_install_hint": "Plugins you wrote or were given. They aren''t reviewed, and need your permission before they run.",
   "settings_ext_installing": "Installing…",
   "settings_ext_downloading": "Downloading… {arg1, number, ::group-off}%",
   "@settings_ext_downloading": {
@@ -1430,6 +1472,8 @@
       }
     }
   },
+  "settings_ext_sec_add": "Add plugins",
+  "settings_ext_sec_installed": "Installed",
   "settings_ext_verifying": "Verifying…",
   "settings_ext_native_reviewed_body": "Native plugins share Godwit''s system permissions and can access mail, account credentials, local files and the network, and run programs.",
   "settings_ext_mcp_add": "Add server",
@@ -1507,23 +1551,11 @@
   "settings_ext_plugin_enable": "Enable plugin",
   "settings_ext_plugins_empty": "No plugins installed.",
   "settings_ext_registry": "Plugin directory",
-  "settings_ext_registry_confirm_body": "This file was reviewed for Godwit''s plugin directory. Its integrity is checked before installation. Native plugins share Godwit''s system permissions and can access mail, account credentials, local files and the network, and run programs.",
   "settings_ext_registry_confirm_ok": "Install",
   "settings_ext_registry_confirm_replace": " It replaces the {arg1} you installed yourself.",
   "@settings_ext_registry_confirm_replace": {
     "placeholders": {
       "arg1": {
-        "type": "String"
-      }
-    }
-  },
-  "settings_ext_registry_confirm_title": "Install the native plugin {arg1} {arg2}",
-  "@settings_ext_registry_confirm_title": {
-    "placeholders": {
-      "arg1": {
-        "type": "String"
-      },
-      "arg2": {
         "type": "String"
       }
     }
@@ -1564,7 +1596,6 @@
   },
   "settings_ext_revoked": "Godwit''s plugin directory no longer trusts this file.",
   "settings_ext_script": "Script",
-  "settings_ext_sec_plugins": "Plugins",
   "settings_ext_sec_skills": "Skills",
   "settings_ext_skill_enable": "Enable {arg1}",
   "@settings_ext_skill_enable": {
