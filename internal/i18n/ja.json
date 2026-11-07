@@ -742,8 +742,6 @@
   "settings_ext_dialog_kind": "種類",
   "settings_ext_dialog_perm": "権限",
   "settings_ext_dialog_perm_native": "Godwit のすべての権限で動作します。メール、アカウントの認証情報、ローカルファイルの読み取り、任意のアドレスへの接続、プログラムの実行が可能です。データの送信先はディレクトリの審査によるもので、Godwit が強制できる制限ではありません。",
-  "settings_ext_dialog_perm_net": "サンドボックスで動作し、次のアドレスにのみ接続できます:",
-  "settings_ext_dialog_perm_no_net": "サンドボックスで動作し、ネットワークにはアクセスできません。",
   "settings_ext_dialog_publisher": "発行元: {arg1}",
   "@settings_ext_dialog_publisher": {
     "placeholders": {

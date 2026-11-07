@@ -742,8 +742,6 @@
   "settings_ext_dialog_kind": "Type",
   "settings_ext_dialog_perm": "Autorisations",
   "settings_ext_dialog_perm_native": "S''exécute avec tous les droits de Godwit : peut lire les e-mails, les identifiants et les fichiers locaux, joindre n''importe quelle adresse et lancer des programmes. La destination des données vient de la vérification de l''annuaire, pas d''une limite que Godwit peut imposer.",
-  "settings_ext_dialog_perm_net": "S''exécute dans un bac à sable et ne peut joindre que ces adresses :",
-  "settings_ext_dialog_perm_no_net": "S''exécute dans un bac à sable sans accès au réseau.",
   "settings_ext_dialog_publisher": "Publié par {arg1}",
   "@settings_ext_dialog_publisher": {
     "placeholders": {

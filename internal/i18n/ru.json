@@ -742,8 +742,6 @@
   "settings_ext_dialog_kind": "Тип",
   "settings_ext_dialog_perm": "Разрешения",
   "settings_ext_dialog_perm_native": "Работает со всеми правами Godwit: может читать почту, учётные данные и локальные файлы, обращаться к любому адресу и запускать программы. Сведения о данных взяты из проверки каталога, Godwit не может обеспечить это ограничение.",
-  "settings_ext_dialog_perm_net": "Работает в песочнице и может обращаться только к этим адресам:",
-  "settings_ext_dialog_perm_no_net": "Работает в песочнице без доступа к сети.",
   "settings_ext_dialog_publisher": "Издатель: {arg1}",
   "@settings_ext_dialog_publisher": {
     "placeholders": {

@@ -742,8 +742,6 @@
   "settings_ext_dialog_kind": "类型",
   "settings_ext_dialog_perm": "权限",
   "settings_ext_dialog_perm_native": "以 Godwit 的全部权限运行：能读取邮件、账户凭据和本机文件，访问任何网络地址，运行程序。数据去向来自插件目录的审核，不是 Godwit 能强制的限制。",
-  "settings_ext_dialog_perm_net": "在沙箱里运行，只能访问这些地址：",
-  "settings_ext_dialog_perm_no_net": "在沙箱里运行，不能访问网络。",
   "settings_ext_dialog_publisher": "由 {arg1} 发布",
   "@settings_ext_dialog_publisher": {
     "placeholders": {

@@ -742,8 +742,6 @@
   "settings_ext_dialog_kind": "Type",
   "settings_ext_dialog_perm": "Machtigingen",
   "settings_ext_dialog_perm_native": "Draait met alle rechten van Godwit: kan e-mail, inloggegevens en lokale bestanden lezen, elk adres bereiken en programma''s uitvoeren. Waar de gegevens heen gaan komt uit de controle van de map, niet uit een limiet die Godwit kan afdwingen.",
-  "settings_ext_dialog_perm_net": "Draait in een sandbox en kan alleen deze adressen bereiken:",
-  "settings_ext_dialog_perm_no_net": "Draait in een sandbox zonder netwerktoegang.",
   "settings_ext_dialog_publisher": "Uitgegeven door {arg1}",
   "@settings_ext_dialog_publisher": {
     "placeholders": {

@@ -742,8 +742,6 @@
   "settings_ext_dialog_kind": "Tipo",
   "settings_ext_dialog_perm": "Autorizzazioni",
   "settings_ext_dialog_perm_native": "Viene eseguito con tutti i diritti di Godwit: può leggere email, credenziali e file locali, raggiungere qualsiasi indirizzo ed eseguire programmi. La destinazione dei dati deriva dalla verifica della directory, non da un limite che Godwit può imporre.",
-  "settings_ext_dialog_perm_net": "Viene eseguito in una sandbox e può raggiungere solo questi indirizzi:",
-  "settings_ext_dialog_perm_no_net": "Viene eseguito in una sandbox senza accesso alla rete.",
   "settings_ext_dialog_publisher": "Pubblicato da {arg1}",
   "@settings_ext_dialog_publisher": {
     "placeholders": {

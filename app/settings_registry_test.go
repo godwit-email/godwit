@@ -169,7 +169,6 @@ func TestRegistrySectionInstallScript(t *testing.T) {
 	h.click("浏览插件目录")
 	h.click("安装 hello")
 	h.see("api.example.com") // the dialog names where it can send data before the user allows it
-	h.see("在沙箱里运行，只能访问这些地址：")
 	if _, ok := h.plugin("hello"); ok {
 		t.Fatal("the dialog installed before the user confirmed")
 	}
@@ -179,6 +178,44 @@ func TestRegistrySectionInstallScript(t *testing.T) {
 		return ok && p.Trust == "listed" && p.Enabled && !p.NeedsGrant
 	})
 	h.see("已审核：Godwit 插件目录。")
+}
+
+// Allowing grants everything the release declares, so the dialog names it all.
+func TestRegistryDialogShowsAllPermissions(t *testing.T) {
+	rs := coretest.NewRegistryServer(t)
+	rs.Publish(t, coretest.Registry(regT0, regPlugin("hello", rs.ScriptRelease("hello", "0.1.0", `{"mail":["read","write"],"llm":true}`, `export default function () {}`))))
+	h := newHarnessWith(t, []coretest.Option{coretest.WithRegistry(rs.Src)}, func(e *coretest.Env) { e.AddAccount(t, "alice@example.com") })
+	h.until("initial load", func() bool { return h.app.loaded })
+	h.openSettings("extensions")
+	h.click("浏览插件目录")
+	h.click("安装 hello")
+	for _, tag := range []string{"mail:read", "mail:write", "llm"} {
+		h.see(tag)
+	}
+}
+
+// The directory refreshes between the dialog and the install, adding a host the
+// user never saw: it installs, but the consent was not for this.
+func TestRegistryConsentBoundToShownRelease(t *testing.T) {
+	h, rs, dlx := registryHarness(t)
+	h.openSettings("extensions")
+	h.click("浏览插件目录")
+	h.click("安装 hello")
+	h.see("api.example.com")
+	release := h.block("plugins")
+	h.click("允许并安装")
+	rs.Publish(t, coretest.Registry(regT0.Add(time.Hour), regPlugin("dlx", dlx),
+		regPlugin("hello", rs.ScriptRelease("hello", "0.2.0", `{"net":["api.example.com","evil.example"]}`, `export default function () {}`))))
+	if err := h.env.Svc.RefreshPluginRegistry(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	release()
+	h.until("installed", func() bool { p, ok := h.plugin("hello"); return ok && p.Version == "0.2.0" })
+	h.until("the install settles", func() bool { return len(h.app.writes.chains["plugins"]) == 0 })
+	if p, _ := h.plugin("hello"); p.Enabled || !p.NeedsGrant {
+		t.Fatalf("granted a release the user never saw: %+v", p)
+	}
+	h.see("待授权")
 }
 
 func TestRegistryDialogCancelInstallsNothing(t *testing.T) {

@@ -3,6 +3,7 @@ package app
 import (
 	"context"
 	"encoding/json"
+	"reflect"
 	"slices"
 	"strings"
 
@@ -227,6 +228,44 @@ func (e *extView) install() {
 	})
 }
 
+// permissionList names everything a script plugin may do, then what it may not.
+func permissionList(c *ui.Context, pm plugins.Permissions, capabilities []string) {
+	t, th := theme.Of(c), c.Theme()
+	ui.Column(c).Gap(th.Space(1.5)).Children(func() {
+		perm := func(tag, text string, muted bool) {
+			r := ui.Row(c).Gap(th.Space(2.5)).AlignItems(ui.Center)
+			if muted {
+				r.TextColor(t.Muted)
+			}
+			r.Children(func() {
+				ui.Box(c).Padding(th.Space(0.5), th.Space(1.5)).Radius(t.Radius.Sm).Background(t.Hover).Children(func() {
+					kit.Text(c, tag, t.Text.Sm).Font(theme.Mono)
+				})
+				kit.Text(c, text, t.Text.Body).LineHeight(theme.LineFor(text)).Shrink(1)
+			})
+		}
+		if slices.Contains(pm.Mail, "read") {
+			perm("mail:read", i18n.T("settings.ext.perm.mail_read"), false)
+		}
+		if slices.Contains(pm.Mail, "write") {
+			perm("mail:write", i18n.T("settings.ext.perm.mail_write"), false)
+		}
+		if len(pm.Net) > 0 {
+			perm("net", i18n.Tf("settings.ext.perm.net", strings.Join(pm.Net, i18n.T("mail.list_sep"))), false)
+		}
+		if slices.Contains(capabilities, "translate") { // it gets the mail the user translates, and may send it to its hosts unasked
+			perm("translate", i18n.T("settings.ext.perm.translate"), false)
+		}
+		if pm.LLM {
+			perm("llm", i18n.T("settings.ext.perm.llm"), false)
+		}
+		if len(pm.Mail) == 0 && len(pm.Net) == 0 && !pm.LLM {
+			ui.Text(c, i18n.T("settings.ext.perm.none")).TextColor(t.Muted)
+		}
+		perm(i18n.T("settings.ext.excluded"), pluginExcluded(pm), true)
+	})
+}
+
 // pluginExcluded is the 不包含 line: what the plugin did not ask for. Sending
 // is always named: no plugin can send.
 func pluginExcluded(pm plugins.Permissions) string {
@@ -381,40 +420,7 @@ func (e *extView) pluginBody(c *ui.Context, p core.PluginInfo) {
 				if p.Trust == "listed" {
 					kit.Text(c, i18n.T("settings.ext.native.trust.listed"), t.Text.Sm).TextColor(t.Muted)
 				}
-				ui.Column(c).Gap(th.Space(1.5)).Children(func() {
-					perm := func(tag, text string, muted bool) {
-						r := ui.Row(c).Gap(th.Space(2.5)).AlignItems(ui.Center)
-						if muted {
-							r.TextColor(t.Muted)
-						}
-						r.Children(func() {
-							ui.Box(c).Padding(th.Space(0.5), th.Space(1.5)).Radius(t.Radius.Sm).Background(t.Hover).Children(func() {
-								kit.Text(c, tag, t.Text.Sm).Font(theme.Mono)
-							})
-							kit.Text(c, text, t.Text.Body).LineHeight(theme.LineFor(text)).Shrink(1)
-						})
-					}
-					pm := p.Permissions
-					if slices.Contains(pm.Mail, "read") {
-						perm("mail:read", i18n.T("settings.ext.perm.mail_read"), false)
-					}
-					if slices.Contains(pm.Mail, "write") {
-						perm("mail:write", i18n.T("settings.ext.perm.mail_write"), false)
-					}
-					if len(pm.Net) > 0 {
-						perm("net", i18n.Tf("settings.ext.perm.net", strings.Join(pm.Net, i18n.T("mail.list_sep"))), false)
-					}
-					if slices.Contains(p.Capabilities, "translate") { // it gets the mail the user translates, and may send it to its hosts unasked
-						perm("translate", i18n.T("settings.ext.perm.translate"), false)
-					}
-					if pm.LLM {
-						perm("llm", i18n.T("settings.ext.perm.llm"), false)
-					}
-					if len(pm.Mail) == 0 && len(pm.Net) == 0 && !pm.LLM {
-						ui.Text(c, i18n.T("settings.ext.perm.none")).TextColor(t.Muted)
-					}
-					perm(i18n.T("settings.ext.excluded"), pluginExcluded(pm), true)
-				})
+				permissionList(c, p.Permissions, p.Capabilities)
 			})
 		}
 		if f != nil && len(p.Config) > 0 {
@@ -892,8 +898,8 @@ func unavailable(reason string) string {
 }
 
 // installFromRegistry installs or updates a directory plugin and opens its row;
-// enable also grants what the install dialog named and turns it on.
-func (e *extView) installFromRegistry(name string, enable bool) {
+// approved, what the install dialog showed, also grants it and turns it on.
+func (e *extView) installFromRegistry(name string, approved *core.RegistryEntry) {
 	if e.installing != "" {
 		return
 	}
@@ -902,7 +908,7 @@ func (e *extView) installFromRegistry(name string, enable bool) {
 	a := e.a
 	e.write("plugins", func(ctx context.Context) error {
 		lastStage, lastPercent := "", int64(-1)
-		_, err := a.svc.InstallPluginFromRegistryWithProgress(ctx, name, func(p core.PluginInstallProgress) {
+		info, err := a.svc.InstallPluginFromRegistryWithProgress(ctx, name, func(p core.PluginInstallProgress) {
 			percent := int64(-1)
 			if p.Total > 0 {
 				percent = p.Done * 100 / p.Total
@@ -913,7 +919,9 @@ func (e *extView) installFromRegistry(name string, enable bool) {
 			lastStage, lastPercent = p.Stage, percent
 			a.onUI(func() { e.installProgress = p })
 		})
-		if err != nil || !enable {
+		// The directory may have refreshed since the dialog: what differs from
+		// what the user read stays pending, for its row to ask again.
+		if err != nil || approved == nil || !sameConsent(*approved, info) {
 			return err
 		}
 		if err := a.svc.GrantPermission(ctx, name); err != nil {
@@ -926,4 +934,9 @@ func (e *extView) installFromRegistry(name string, enable bool) {
 			e.tab, e.plugin, e.onDirectory = 1, name, false
 		}
 	})
+}
+
+// sameConsent: the installed plugin is the release and permissions the dialog showed.
+func sameConsent(en core.RegistryEntry, p core.PluginInfo) bool {
+	return en.Version == p.Version && reflect.DeepEqual(en.Permissions, p.Permissions) && slices.Equal(en.Capabilities, p.Capabilities)
 }

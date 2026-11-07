@@ -742,8 +742,6 @@
   "settings_ext_dialog_kind": "類型",
   "settings_ext_dialog_perm": "權限",
   "settings_ext_dialog_perm_native": "以 Godwit 的全部權限執行：能讀取郵件、帳號憑證和本機檔案，連線到任何網路位址，執行程式。資料去向來自外掛目錄的審核，不是 Godwit 能強制的限制。",
-  "settings_ext_dialog_perm_net": "在沙箱中執行，只能連線到這些位址：",
-  "settings_ext_dialog_perm_no_net": "在沙箱中執行，不能連線網路。",
   "settings_ext_dialog_publisher": "由 {arg1} 發布",
   "@settings_ext_dialog_publisher": {
     "placeholders": {

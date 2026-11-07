@@ -747,8 +747,6 @@
   "settings_ext_dialog_kind": "Typ",
   "settings_ext_dialog_perm": "Berechtigungen",
   "settings_ext_dialog_perm_native": "Läuft mit allen Rechten von Godwit: Es kann E-Mails, Zugangsdaten und lokale Dateien lesen, jede Adresse erreichen und Programme ausführen. Wohin die Daten gehen, stammt aus der Prüfung des Verzeichnisses und ist keine Grenze, die Godwit durchsetzen kann.",
-  "settings_ext_dialog_perm_net": "Läuft in einer Sandbox und kann nur diese Adressen erreichen:",
-  "settings_ext_dialog_perm_no_net": "Läuft in einer Sandbox ohne Netzwerkzugriff.",
   "settings_ext_dialog_publisher": "Herausgegeben von {arg1}",
   "@settings_ext_dialog_publisher": {
     "placeholders": {

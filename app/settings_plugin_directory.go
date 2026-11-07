@@ -162,7 +162,7 @@ func (e *extView) entryAction(c *ui.Context, en core.RegistryEntry) {
 func (e *extView) updateButton(c *ui.Context, en core.RegistryEntry) {
 	text := i18n.Tf("settings.ext.registry.update", en.Version)
 	kit.Button(c, text, kit.ButtonOpts{Variant: kit.Outline, Disabled: e.installing != ""}).Label(i18n.Tf("settings.ext.registry.named", text, en.Name)).
-		OnClick(func() { e.installFromRegistry(en.Name, false) })
+		OnClick(func() { e.installFromRegistry(en.Name, nil) })
 }
 
 func (e *extView) openEntry(en core.RegistryEntry) {
@@ -279,9 +279,12 @@ func (e *extView) installDialog(c *ui.Context) {
 			label = i18n.T("settings.ext.dialog.allow_install")
 		}
 		kit.Button(c, label, kit.ButtonOpts{Disabled: e.installing != ""}).OnClick(func() {
-			name := en.Name
 			e.detailOpen = false
-			e.installFromRegistry(name, enable)
+			var approved *core.RegistryEntry
+			if enable {
+				approved = &en
+			}
+			e.installFromRegistry(en.Name, approved)
 		})
 	})
 }
@@ -303,29 +306,17 @@ func dataFlowCard(c *ui.Context, en core.RegistryEntry) {
 }
 
 // entryPermissions says what the release can do: a native plugin anything, a
-// script only the hosts it declares.
+// script all it declares, which is what the dialog's button grants.
 func entryPermissions(c *ui.Context, en core.RegistryEntry) {
 	t, th := theme.Of(c), c.Theme()
 	ui.Column(c).FillWidth().Gap(th.Space(1.5)).Padding(th.Space(3), th.Space(4)).Radius(t.Radius.Lg).Background(t.Card).Children(func() {
 		kit.Text(c, i18n.T("settings.ext.dialog.perm"), t.Text.Body).FontWeight(500)
-		text := i18n.T("settings.ext.dialog.perm.no_net")
-		switch {
-		case en.Native:
-			text = i18n.T("settings.ext.dialog.perm.native")
-		case len(en.Net) > 0:
-			text = i18n.T("settings.ext.dialog.perm.net")
-		}
-		kit.Text(c, text, t.Text.Body).LineHeight(theme.LineFor(text))
 		if en.Native {
+			text := i18n.T("settings.ext.dialog.perm.native")
+			kit.Text(c, text, t.Text.Body).LineHeight(theme.LineFor(text))
 			return
 		}
-		ui.Row(c).Gap(th.Space(1)).Wrap().Children(func() {
-			for _, h := range en.Net {
-				ui.Box(c.Key(h)).Padding(th.Space(0.5), th.Space(1.5)).Radius(t.Radius.Sm).Background(t.Background).Children(func() {
-					kit.Text(c, h, t.Text.Sm).Font(theme.Mono)
-				})
-			}
-		})
+		permissionList(c, en.Permissions, en.Capabilities)
 	})
 }
 

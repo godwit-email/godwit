@@ -1424,8 +1424,6 @@
   "settings_ext_dialog_kind": "Type",
   "settings_ext_dialog_perm": "Permissions",
   "settings_ext_dialog_perm_native": "Runs with all of Godwit''s rights: it can read mail, account credentials and local files, reach any address and run programs. Where its data goes comes from the directory''s review, not from a limit Godwit can enforce.",
-  "settings_ext_dialog_perm_net": "Runs in a sandbox and can only reach these addresses:",
-  "settings_ext_dialog_perm_no_net": "Runs in a sandbox with no network access.",
   "settings_ext_dialog_publisher": "Published by {arg1}",
   "@settings_ext_dialog_publisher": {
     "placeholders": {

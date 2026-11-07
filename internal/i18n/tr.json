@@ -742,8 +742,6 @@
   "settings_ext_dialog_kind": "Tür",
   "settings_ext_dialog_perm": "İzinler",
   "settings_ext_dialog_perm_native": "Godwit''in tüm haklarıyla çalışır: e-postaları, hesap kimlik bilgilerini ve yerel dosyaları okuyabilir, her adrese erişebilir ve program çalıştırabilir. Verilerin gittiği yer dizin incelemesinden gelir, Godwit''in zorlayabileceği bir sınır değildir.",
-  "settings_ext_dialog_perm_net": "Korumalı alanda çalışır ve yalnızca şu adreslere erişebilir:",
-  "settings_ext_dialog_perm_no_net": "Korumalı alanda ağ erişimi olmadan çalışır.",
   "settings_ext_dialog_publisher": "Yayımlayan: {arg1}",
   "@settings_ext_dialog_publisher": {
     "placeholders": {

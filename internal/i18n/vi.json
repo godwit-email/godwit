@@ -742,8 +742,6 @@
   "settings_ext_dialog_kind": "Loại",
   "settings_ext_dialog_perm": "Quyền",
   "settings_ext_dialog_perm_native": "Chạy với toàn bộ quyền của Godwit: có thể đọc thư, thông tin đăng nhập và tệp cục bộ, truy cập mọi địa chỉ và chạy chương trình. Thông tin về dữ liệu đến từ việc kiểm duyệt thư mục, không phải giới hạn mà Godwit có thể áp đặt.",
-  "settings_ext_dialog_perm_net": "Chạy trong hộp cát và chỉ truy cập được các địa chỉ sau:",
-  "settings_ext_dialog_perm_no_net": "Chạy trong hộp cát, không có quyền truy cập mạng.",
   "settings_ext_dialog_publisher": "Phát hành bởi {arg1}",
   "@settings_ext_dialog_publisher": {
     "placeholders": {

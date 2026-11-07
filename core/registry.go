@@ -92,13 +92,15 @@ type RegistryView struct {
 // under its name; Update is a newer listed release for a listed install.
 // Native and Script are its kind, neither when this build reads no release.
 // Category, Publisher and DataFlow are the reviewers' (ADR 0032), "" in a
-// registry from before them; Net and Configurable are the release's manifest.
+// registry from before them; Permissions, Capabilities and Configurable are the
+// release's manifest.
 type RegistryEntry struct {
 	Name                                            string
 	Title, Summary                                  plugins.Text
 	Category, Publisher, DataFlow                   string
 	Homepage                                        string
-	Net                                             []string
+	Permissions                                     plugins.Permissions
+	Capabilities                                    []string
 	Configurable                                    bool
 	Native, Script                                  bool
 	Version, Unavailable, Installed, InstalledTrust string
@@ -297,7 +299,7 @@ func (s *Service) ListPluginRegistry(ctx context.Context) (RegistryView, error) 
 		}
 		if why == "" || len(p.Releases) > 0 {
 			e.Native, e.Script = rel.Parsed.IsNative(), !rel.Parsed.IsNative()
-			e.Net, e.Configurable = rel.Parsed.Permissions.Net, len(rel.Parsed.Config) > 0
+			e.Permissions, e.Capabilities, e.Configurable = rel.Parsed.Permissions, rel.Parsed.Capabilities, len(rel.Parsed.Config) > 0
 		}
 		if r, ok := rows[p.Name]; ok {
 			e.Installed, e.InstalledTrust = r.m.Version, r.trust
