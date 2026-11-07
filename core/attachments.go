@@ -294,6 +294,10 @@ func (s *Service) GetRawMessage(ctx context.Context, messageID int64) ([]byte, e
 		return nil, err
 	}
 	defer end()
+	messageID, err = s.resolveID(ctx, messageID)
+	if err != nil {
+		return nil, err
+	}
 	rows, err := s.db.Query(ctx, "SELECT account_id FROM messages WHERE id = ?", messageID)
 	if err != nil {
 		return nil, err

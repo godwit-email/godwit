@@ -24,6 +24,10 @@ type MessageText struct {
 // text a model reads, without what the reader never shows. Unlike GetMessage it
 // sanitizes no HTML and reads or downloads no attachment or inline image.
 func (s *Service) GetMessageText(ctx context.Context, id int64) (MessageText, error) {
+	id, err := s.resolveID(ctx, id)
+	if err != nil {
+		return MessageText{}, err
+	}
 	rows, err := s.db.Query(ctx, "SELECT "+msgCols+", m.account_id, m.reply_to, m.body_text, m.body_truncated, m.body_html FROM messages m WHERE m.id = ?", id)
 	if err != nil {
 		return MessageText{}, err

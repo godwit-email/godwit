@@ -101,6 +101,10 @@ func nullID(id int64) any {
 func (s *Service) NewDraft(ctx context.Context, accountID int64, mode string, sourceMessageID int64) (Draft, error) {
 	// From reading the signature to storing the draft, no signature change
 	// can clean up the images the draft is about to show.
+	sourceMessageID, err := s.resolveID(ctx, sourceMessageID)
+	if err != nil {
+		return Draft{}, err
+	}
 	s.sigMu.Lock()
 	d, err := s.buildDraft(ctx, accountID, mode, sourceMessageID)
 	if err == nil {

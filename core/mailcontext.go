@@ -38,6 +38,10 @@ const truncatedNote = "\n[truncated]"
 var errMailNotFound = errors.New("not found")
 
 func (s *Service) mailForModel(ctx context.Context, id int64) (Message, error) {
+	id, err := s.resolveID(ctx, id)
+	if err != nil {
+		return Message{}, err
+	}
 	rows, err := s.db.Query(ctx, "SELECT "+msgCols+", m.body_text, m.body_html, m.body_truncated FROM messages m WHERE m.id = ?", id)
 	if err != nil {
 		return Message{}, err

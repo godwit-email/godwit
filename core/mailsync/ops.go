@@ -364,41 +364,25 @@ func single(s imap.NumSet) uint32 {
 // cleared until fetch claims the arrival (X-GM-MSGID, else Message-ID and size)
 // in the destination. Its other folders keep their server locations. Another
 // row already at the COPYUID is the same server message (Gmail's All Mail copy
-// of mail archived there, synced before X-GM-MSGID was, #506): it is deleted,
-// after its labels (by row: a copy without label_fp
-// gets no stash from the trigger), reply drafts, rule runs and Wit citations go
-// to the moved row. Its queued ops are not carried over, whose order against the
-// moved row's cannot be told: they lose their message and the next push reports
-// them as not applied. events_log stays history, as on every other delete.
+// of mail archived there, synced before X-GM-MSGID was, #506): it is merged
+// into the moved one (ADR 0032), its queued ops with it.
 func moved(ctx context.Context, db *store.DB, o op, validity, uid uint32) error {
 	stmts := append(unlocate(o.msg, o.src),
 		sqlite.Statement{SQL: "UPDATE ops SET state = 'awaiting_claim', last_error = NULL WHERE id = ?", Args: []any{o.id}})
 	if uid != 0 {
-		ids, tids, err := doomed(ctx, db, "EXISTS (SELECT 1 FROM message_locations WHERE message_id = messages.id AND folder_id = ? AND uid = ?) AND id != ?", o.dst, uid, o.msg)
+		ids, _, err := doomed(ctx, db, "EXISTS (SELECT 1 FROM message_locations WHERE message_id = messages.id AND folder_id = ? AND uid = ?) AND id != ?", o.dst, uid, o.msg)
 		if err != nil {
 			return err
 		}
-		stmts = unlocate(o.msg, o.src)
-		// shortcut: drops the other row and its queued ops; #524 merges it into the moved one instead.
+		stmts = append(unlocate(o.msg, o.src), sqlite.Statement{SQL: "UPDATE ops SET state = 'done', last_error = NULL WHERE id = ?", Args: []any{o.id}})
 		if len(ids) > 0 { // at most one: UNIQUE(folder_id, uid)
-			cp := ids[0]
-			stmts = append(stmts,
-				// As messages_label_stash hands labels to other copies: a manual label beats a rule's.
-				sqlite.Statement{SQL: `INSERT INTO message_labels(message_id, label_id, source, active)
-					SELECT ?, label_id, source, active FROM message_labels WHERE message_id = ? AND source IN ('manual', 'rule')
-					ON CONFLICT(message_id, label_id) DO UPDATE SET source = excluded.source, active = excluded.active
-					WHERE excluded.source = 'manual' OR message_labels.source != 'manual'`, Args: []any{o.msg, cp}},
-				sqlite.Statement{SQL: "UPDATE drafts SET source_message_id = ? WHERE source_message_id = ?", Args: []any{o.msg, cp}},
-				// UNIQUE(rule_id, message_id): a rule that ran on both keeps the moved row's run.
-				sqlite.Statement{SQL: "UPDATE OR IGNORE rule_runs SET message_id = ? WHERE message_id = ?", Args: []any{o.msg, cp}},
-				sqlite.Statement{SQL: "UPDATE run_citations SET message_id = ? WHERE message_id = ?", Args: []any{o.msg, cp}},
-				sqlite.Statement{SQL: "DELETE FROM messages WHERE id = ?", Args: []any{cp}})
+			m, tids, err := merge(ctx, db, o.msg, ids)
+			if err != nil {
+				return err
+			}
+			stmts = append(append(stmts, m...), tidyThreads(o.accountID, tids)...)
 		}
-		stmts = append(append(stmts, locate(o.msg, o.dst, validity, uid)...),
-			sqlite.Statement{SQL: "UPDATE ops SET state = 'done', last_error = NULL WHERE id = ?", Args: []any{o.id}})
-		if len(tids) > 0 {
-			stmts = append(stmts, tidyThreads(o.accountID, tids)...)
-		}
+		stmts = append(stmts, locate(o.msg, o.dst, validity, uid)...)
 	}
 	_, err := db.Transaction(ctx, stmts)
 	return err

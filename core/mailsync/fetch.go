@@ -112,6 +112,11 @@ func Fetch(ctx context.Context, db *store.DB, c *imapclient.Client, accountID in
 	if err != nil {
 		return false, err
 	}
+	if c.Caps().Has(capGmail) {
+		if err := mergeOld(ctx, db, c, a, folders, &r); err != nil {
+			return false, err
+		}
+	}
 	for _, f := range folders {
 		if err := syncFolder(ctx, db, c, a, f, &r); err != nil {
 			return r.more, fmt.Errorf("sync %q: %w", f.name, err)

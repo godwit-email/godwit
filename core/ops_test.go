@@ -200,32 +200,44 @@ func TestMoveOntoStoredCopy(t *testing.T) {
 	assert.Equal(t, []string{"done"}, e.opStates(t))
 }
 
-// The copy's queued changes are not carried over, whose order against the
-// moved row's cannot be told: they are reported as not applied, and the move
-// the user made on the moved row stands.
-func TestMoveOntoStoredCopyDropsItsQueuedChanges(t *testing.T) {
+// The copy's queued changes are merged with it (ADR 0032) and still reach the
+// server after the moved row's: the copy's move to Trash follows the move the
+// user made on the moved row.
+func TestMoveOntoStoredCopyCarriesItsQueuedChanges(t *testing.T) {
 	e := newSyncEnv(t)
 	e.put(t, "INBOX", msg("m@x"))
 	e.sync(t)
 	id := e.idOf(t, "m@x")
 	archive, trash := e.folderID(t, "Archive"), e.folderID(t, "Trash")
 	cp := e.storedCopy(t, id, archive)
-	ch, unsub := e.s.Subscribe()
-	defer unsub()
 
 	require.NoError(t, e.s.Move(bg, []int64{id}, archive))
 	require.NoError(t, e.s.Move(bg, []int64{cp}, trash))
 	e.sync(t)
 
-	assert.Equal(t, []string{"m@x"}, e.onServer(t, "Archive"))
-	assert.Empty(t, e.onServer(t, "Trash"))
-	assert.Equal(t, [][]any{{id, archive, archive}}, e.rows(t, "SELECT id, "+shownCol+", "+serverCol+" FROM messages"))
-	assert.Equal(t, []string{"done", "conflict"}, e.opStates(t))
-	var reported bool
-	for _, ev := range ofType(collect(ch), events.SyncFailed) {
-		reported = reported || strings.Contains(ev.Error, "not applied")
-	}
-	assert.True(t, reported, "the dropped change is reported")
+	assert.Empty(t, e.onServer(t, "Archive"))
+	assert.Equal(t, []string{"m@x"}, e.onServer(t, "Trash"))
+	assert.Equal(t, [][]any{{id, trash, trash}}, e.rows(t, "SELECT id, "+shownCol+", "+serverCol+" FROM messages"))
+	assert.Equal(t, []string{"done", "done"}, e.opStates(t))
+}
+
+// A flags change queued on the copy shows on the moved row as soon as they
+// merge, before the push that applies it.
+func TestMoveOntoStoredCopyKeepsItsQueuedFlags(t *testing.T) {
+	e := newSyncEnv(t)
+	e.put(t, "INBOX", msg("m@x"))
+	e.sync(t)
+	id := e.idOf(t, "m@x")
+	cp := e.storedCopy(t, id, e.folderID(t, "Archive"))
+
+	require.NoError(t, e.s.Move(bg, []int64{id}, e.folderID(t, "Archive")))
+	require.NoError(t, e.s.SetFlags(bg, []int64{cp}, []string{`\Flagged`}, nil))
+	e.sync(t)
+
+	m, err := e.s.GetMessage(bg, id, false)
+	require.NoError(t, err)
+	assert.Equal(t, []string{`\Flagged`}, m.Flags)
+	assert.Equal(t, []string{`m@x \Flagged`}, e.onServer(t, "Archive"))
 }
 
 // What points at the copy goes to the moved row: its labels even without a

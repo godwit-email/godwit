@@ -77,6 +77,10 @@ func (s *Service) UnsubscribeMethod(ctx context.Context, messageID int64) (Unsub
 		return Unsubscribe{}, err
 	}
 	defer end()
+	messageID, err = s.resolveID(ctx, messageID)
+	if err != nil {
+		return Unsubscribe{}, err
+	}
 	return s.unsubscribeMethod(ctx, messageID)
 }
 
@@ -98,6 +102,10 @@ func (s *Service) unsubscribe(ctx context.Context, messageID int64, approved *Ap
 		return UnsubscribeResult{}, err
 	}
 	defer end()
+	messageID, err = s.resolveID(ctx, messageID)
+	if err != nil {
+		return UnsubscribeResult{}, err
+	}
 	u, err := s.unsubscribeMethod(ctx, messageID)
 	if err != nil {
 		return UnsubscribeResult{}, err

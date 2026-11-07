@@ -640,6 +640,11 @@ var Migrations = [][]string{{
 }, {
 	// Sync finds a Gmail message it stores by X-GM-MSGID, to add a folder to it.
 	`CREATE INDEX messages_gmail ON messages(account_id, gmail_msgid) WHERE gmail_msgid IS NOT NULL`,
+}, {
+	// A message merged into another (ADR 0032) leaves its ID here, naming the
+	// message kept, so an ID held from before the merge still resolves.
+	`CREATE TABLE message_aliases (id INTEGER PRIMARY KEY, message_id INTEGER NOT NULL REFERENCES messages(id) ON DELETE CASCADE)`,
+	`CREATE INDEX message_aliases_message ON message_aliases(message_id)`,
 }}
 
 // HistoryRowsVersion is the schema version that keeps a conversation's
