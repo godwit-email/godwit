@@ -82,12 +82,22 @@ func push(ctx context.Context, db *store.DB, c *imapclient.Client, accountID int
 	if res.Changes > 0 {
 		problems = append(problems, fmt.Sprintf("%d change(s) not applied: the message no longer exists", res.Changes))
 	}
-	rows, err := db.Query(ctx, `SELECT id, kind, message_id, src_folder_id, dst_folder_id, payload, depends_on, attempts FROM ops
+	rows, err := db.Query(ctx, `SELECT id FROM ops
 		WHERE account_id = ? AND state = 'pending' AND `+purgeDue+` <= ?`+filter+` ORDER BY id`, accountID, now.UnixMilli())
 	if err != nil {
 		return err
 	}
-	for _, v := range rows.Values {
+	for _, row := range rows.Values {
+		// A preceding move can merge queues or rebase the next move's source.
+		current, err := db.Query(ctx, `SELECT id, kind, message_id, src_folder_id, dst_folder_id, payload, depends_on, attempts FROM ops
+			WHERE id = ? AND state = 'pending'`+filter, row[0])
+		if err != nil {
+			return err
+		}
+		if len(current.Values) == 0 {
+			continue
+		}
+		v := current.Values[0]
 		o := op{id: store.Int(v[0]), kind: store.Str(v[1]), msg: store.Int(v[2]), src: store.Int(v[3]), dst: store.Int(v[4]), accountID: accountID,
 			payload: store.Str(v[5]), dep: store.Int(v[6]), attempts: int(store.Int(v[7]))}
 		problem, err := pushOp(ctx, db, c, o)
@@ -129,6 +139,9 @@ func pushOp(ctx context.Context, db *store.DB, c *imapclient.Client, o op) (prob
 		if _, err := db.Execute(ctx, "UPDATE ops SET depends_on = NULL WHERE id = ?", o.id); err != nil {
 			return "", err
 		}
+	}
+	if o.kind == "move" && c.Caps().Has(capGmail) && (!c.Caps().Has(imap.CapMove) || o.dst == 0 || o.src == 0) {
+		return pushGmailLabels(ctx, db, c, o)
 	}
 	// A flags change goes wherever the server has the message; a move or purge
 	// takes it from the folder it was queued from.
@@ -173,10 +186,6 @@ func pushOp(ctx context.Context, db *store.DB, c *imapclient.Client, o op) (prob
 	switch o.kind {
 	case "flags":
 	case "move":
-		if gmail && !c.Caps().Has(imap.CapMove) {
-			msg := "this Gmail server does not advertise MOVE; move the message in Gmail and sync again"
-			return msg, finish(ctx, db, o, "failed", msg)
-		}
 		if !c.Caps().Has(imap.CapMove) && !c.Caps().Has(imap.CapUIDPlus) {
 			msg := "the server supports neither MOVE nor UIDPLUS, so messages cannot be moved safely"
 			return msg, finish(ctx, db, o, "failed", msg)
@@ -428,7 +437,13 @@ func moved(ctx context.Context, db *store.DB, o op, validity, uid uint32) error 
 			}
 			stmts = append(append(stmts, m...), tidyThreads(o.accountID, tids)...)
 		}
+		// Trash/Spam removes every other Gmail membership before a queued flag runs.
+		stmts = append(stmts, sqlite.Statement{SQL: `UPDATE message_locations SET uidvalidity = NULL, uid = NULL
+			WHERE message_id = ? AND folder_id != ? AND EXISTS (SELECT 1 FROM folders WHERE id = ? AND role IN ('trash', 'junk'))`, Args: []any{o.msg, o.dst, o.dst}}, dropUnseen(o.msg))
 		stmts = append(stmts, locate(o.msg, o.dst, validity, uid)...)
+		if o.src == 0 {
+			stmts = append(stmts, settle(o.msg)...)
+		}
 	}
 	_, err := db.Transaction(ctx, stmts)
 	return err

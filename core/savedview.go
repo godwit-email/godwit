@@ -1073,7 +1073,8 @@ func (s *Service) markArchived(ctx context.Context, marks map[int64]archiveMark)
 
 // ArchiveMessages moves the messages to folderID, the archive folder of their
 // account, and marks the conversations whose newest message is among them, so
-// that 回复状态 leaves them until newer mail comes.
+// that 回复状态 leaves them until newer mail comes. Gmail removes INBOX only;
+// folderID may be 0 when All Mail is hidden.
 func (s *Service) ArchiveMessages(ctx context.Context, ids []int64, folderID int64) (ArchiveUndo, error) {
 	ctx, end, err := s.begin(ctx, 0)
 	if err != nil {
@@ -1090,8 +1091,12 @@ func (s *Service) ArchiveMessages(ctx context.Context, ids []int64, folderID int
 	if err != nil {
 		return ArchiveUndo{}, err
 	}
-	if len(ts) > 0 && len(rows.Values) == 0 {
+	if len(ts) > 0 && folderID != 0 && len(rows.Values) == 0 {
 		return ArchiveUndo{}, errors.New("the folder belongs to another account")
+	}
+	moving, folderID, err := s.archiveTargets(ctx, acc, ts, folderID)
+	if err != nil {
+		return ArchiveUndo{}, err
 	}
 	var undo ArchiveUndo
 	threads := map[int64]bool{}
@@ -1101,6 +1106,8 @@ func (s *Service) ArchiveMessages(ctx context.Context, ids []int64, folderID int
 		if t.thread != 0 {
 			threads[t.thread] = true
 		}
+	}
+	for _, t := range moving {
 		if t.folder != folderID {
 			undo.Moved = append(undo.Moved, ArchivedMessage{ID: t.id, From: t.folder, To: folderID})
 		}
@@ -1121,7 +1128,7 @@ func (s *Service) ArchiveMessages(ctx context.Context, ids []int64, folderID int
 	if undo.Marks, err = s.markArchived(ctx, marks); err != nil {
 		return ArchiveUndo{}, err
 	}
-	if err := s.move(ctx, acc, ts, 0, folderID); err != nil {
+	if err := s.move(ctx, acc, moving, 0, folderID); err != nil {
 		return ArchiveUndo{}, err
 	}
 	return undo, nil
@@ -1162,7 +1169,7 @@ func (s *Service) ArchiveThreads(ctx context.Context, threadIDs []int64) (Archiv
 	}
 	folders := map[int64]int64{}
 	for acc := range byAccount {
-		if folders[acc], err = s.roleFolder(ctx, acc, "archive"); err != nil {
+		if _, folders[acc], err = s.archiveTargets(ctx, acc, nil, 0); err != nil {
 			return ArchiveUndo{}, err
 		}
 	}

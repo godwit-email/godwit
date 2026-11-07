@@ -23,6 +23,7 @@ func dropUnseen(msg int64) sqlite.Statement {
 
 // ShowIn returns the statements that show message msg in folder from now
 // (entered_at) and no longer in the folders out; with out nil, nowhere else.
+// With folder 0 it only hides out (Gmail archive with All Mail hidden).
 func ShowIn(msg, folder int64, out []int64) []sqlite.Statement {
 	hide, args := "UPDATE message_locations SET shown = 0 WHERE message_id = ? AND folder_id != ?", []any{msg, folder}
 	if out != nil {
@@ -30,7 +31,7 @@ func ShowIn(msg, folder int64, out []int64) []sqlite.Statement {
 	}
 	return []sqlite.Statement{
 		{SQL: hide, Args: args},
-		{SQL: `INSERT INTO message_locations(message_id, folder_id, shown, entered_at, date) SELECT id, ?, 1, unixepoch(), date FROM messages WHERE id = ?
+		{SQL: `INSERT INTO message_locations(message_id, folder_id, shown, entered_at, date) SELECT id, ?1, 1, unixepoch(), date FROM messages WHERE id = ?2 AND ?1 != 0
 			ON CONFLICT(message_id, folder_id) DO UPDATE SET shown = 1, entered_at = excluded.entered_at`, Args: []any{folder, msg}},
 		dropUnseen(msg),
 	}

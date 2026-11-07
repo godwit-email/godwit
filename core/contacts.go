@@ -350,7 +350,7 @@ func (s *Service) ArchiveSender(ctx context.Context, addr string) (SenderArchive
 	res.Skipped = p.kept
 	archive := map[int64]int64{}
 	for acc := range p.byAcc {
-		if archive[acc], err = s.roleFolder(ctx, acc, "archive"); err != nil {
+		if _, archive[acc], err = s.archiveTargets(ctx, acc, nil, 0); err != nil {
 			return res, err
 		}
 	}
@@ -384,7 +384,11 @@ func (s *Service) UndoArchive(ctx context.Context, a SenderArchive) error {
 	}
 	for k, ids := range back {
 		for c := range slices.Chunk(ids, 200) {
-			rows, err := s.db.Query(ctx, "SELECT m.id FROM messages m WHERE "+shownIn("(?)")+" AND m.id IN ("+placeholders(len(c))+")", append([]any{k.To}, c...)...)
+			where, args := shownIn("(?)"), []any{k.To}
+			if k.To == 0 {
+				where, args = "NOT "+shownIn("(?)"), []any{k.From}
+			}
+			rows, err := s.db.Query(ctx, "SELECT m.id FROM messages m WHERE "+where+" AND m.id IN ("+placeholders(len(c))+")", append(args, c...)...)
 			if err != nil {
 				return err
 			}
@@ -396,7 +400,11 @@ func (s *Service) UndoArchive(ctx context.Context, a SenderArchive) error {
 			if err != nil {
 				return err
 			}
-			if err := s.move(ctx, acc, ts, k.To, k.From); err != nil {
+			stmts, err := s.archiveUndoWrites(ctx, acc, ts, k.To, k.From)
+			if err != nil {
+				return err
+			}
+			if err := s.apply(ctx, acc, ts, stmts); err != nil {
 				return err
 			}
 		}

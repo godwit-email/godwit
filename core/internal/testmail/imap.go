@@ -69,20 +69,24 @@ type IMAP struct {
 	Addr string
 	User *imapmemserver.User
 
-	cfg         config
-	srv         *imapserver.Server
-	mu          sync.Mutex
-	ln          net.Listener
-	conn        map[*tconn]struct{}
-	sent        atomic.Int64 // bytes written to clients
-	drop        atomic.Int32 // FETCHes to let through + 1; 0 = no drop pending
-	cmds        atomic.Int64 // MOVE and COPY commands handled
-	dropAppend  atomic.Bool
-	dropExpunge atomic.Bool
-	logins      atomic.Int64
-	ids         []map[string]string // guarded by mu
-	gmu         sync.Mutex
-	gm          []*GmailMessage // Gmail mode; guarded by gmu
+	cfg               config
+	srv               *imapserver.Server
+	mu                sync.Mutex
+	ln                net.Listener
+	conn              map[*tconn]struct{}
+	sent              atomic.Int64 // bytes written to clients
+	drop              atomic.Int32 // FETCHes to let through + 1; 0 = no drop pending
+	cmds              atomic.Int64 // MOVE and COPY commands handled
+	dropAppend        atomic.Bool
+	dropExpunge       atomic.Bool
+	dropLabels        atomic.Int32
+	labelStores       atomic.Int64
+	rejectGmailSearch atomic.Bool
+	rejectGmailSelect atomic.Bool
+	logins            atomic.Int64
+	ids               []map[string]string // guarded by mu
+	gmu               sync.Mutex
+	gm                []*GmailMessage // Gmail mode; guarded by gmu
 }
 
 // Logins is how many LOGIN and AUTHENTICATE commands the server has handled.
@@ -421,6 +425,9 @@ func (s session) Authenticate(mech string) (sasl.Server, error) {
 
 // Select refuses until ID was sent when RequireID is set.
 func (s session) Select(mb string, o *imap.SelectOptions) (*imap.SelectData, error) {
+	if s.s.rejectGmailSelect.CompareAndSwap(true, false) {
+		return nil, &imap.Error{Type: imap.StatusResponseTypeNo, Text: "mailbox temporarily unavailable"}
+	}
 	if s.s.cfg.requireID && !s.conn.gotID.Load() {
 		return nil, &imap.Error{Type: imap.StatusResponseTypeNo, Text: "Unsafe Login"}
 	}

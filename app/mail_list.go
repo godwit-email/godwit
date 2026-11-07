@@ -1736,7 +1736,7 @@ func (p *mailPage) batchScoped(act string, rows []mailItem, anywhere bool) {
 		}
 		for _, acc := range slices.Sorted(maps.Keys(byAcc)) {
 			ids := byAcc[acc]
-			if op == "archive" && archive[acc] == 0 || op == "junk" && !junk[acc] {
+			if op == "junk" && !junk[acc] {
 				skipped = append(skipped, names[acc])
 				continue
 			}
@@ -1753,7 +1753,9 @@ func (p *mailPage) batchScoped(act string, rows []mailItem, anywhere bool) {
 				undo, err = exec(ctx, op, ids, from, folder)
 				return err
 			}, func(err error) {
-				if err != nil {
+				if _, noFolder := errors.AsType[*core.ErrNoRoleFolder](err); noFolder && op == "archive" {
+					skipped = append(skipped, names[acc])
+				} else if err != nil {
 					failed += len(ids)
 				} else if op == "purge" {
 					purged = append(purged, ids...)

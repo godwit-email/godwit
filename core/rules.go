@@ -1155,12 +1155,22 @@ func (s *Service) ruleAction(ctx context.Context, a RuleAction, acc int64, t tar
 		stmts, err := flagWrites(acc, []target{t}, []string{ruleFlags[a.Kind]}, nil)
 		return actionWrites{prior: p, writes: stmts}, "", err
 	case ActionArchive, ActionJunk, ActionTrash:
-		to, err := s.roleFolder(ctx, acc, a.Kind)
+		moving := []target{t}
+		var to int64
+		var err error
+		if a.Kind == ActionArchive {
+			moving, to, err = s.archiveTargets(ctx, acc, moving, 0)
+		} else {
+			to, err = s.roleFolder(ctx, acc, a.Kind)
+		}
 		if _, none := errors.AsType[*ErrNoRoleFolder](err); none {
 			return actionWrites{}, RuleFailNoFolder, nil
 		}
 		if err != nil {
 			return actionWrites{}, "", err
+		}
+		if len(moving) == 0 {
+			return actionWrites{prior: rulePrior{From: to, To: to}}, "", nil
 		}
 		binned, from := a.Kind != ActionArchive, t.folder
 		if out := t.leaves(0, to, binned); len(out) > 0 {
@@ -1433,7 +1443,18 @@ func (s *Service) undoAction(ctx context.Context, runID int64, idx int, kind str
 		if err != nil {
 			return false, err
 		}
-		if ok = slices.ContainsFunc(t.in, func(l shownAt) bool { return l.folder == p.To }) && len(rows.Values) > 0; ok {
+		atDestination := slices.ContainsFunc(t.in, func(l shownAt) bool { return l.folder == p.To })
+		if kind == ActionArchive && p.To == 0 {
+			atDestination = !slices.ContainsFunc(t.in, func(l shownAt) bool { return l.folder == p.From })
+		}
+		if ok = atDestination && len(rows.Values) > 0; ok {
+			if kind == ActionArchive {
+				stmts, err = s.archiveUndoWrites(ctx, acc, []target{t}, p.To, p.From)
+				if err != nil {
+					return false, err
+				}
+				break
+			}
 			binned, err := s.binned(ctx, acc, p.From)
 			if err != nil {
 				return false, err

@@ -1058,11 +1058,64 @@ func (s *Service) MoveToRole(ctx context.Context, ids []int64, role string) erro
 	if err != nil || len(ts) == 0 {
 		return err
 	}
-	folder, err := s.roleFolder(ctx, acc, role)
+	var folder int64
+	if role == "archive" {
+		ts, folder, err = s.archiveTargets(ctx, acc, ts, 0)
+	} else {
+		folder, err = s.roleFolder(ctx, acc, role)
+	}
 	if err != nil {
 		return err
 	}
 	return s.move(ctx, acc, ts, 0, folder)
+}
+
+// archiveTargets gives every archive entry point Gmail's remove-INBOX intent.
+func (s *Service) archiveTargets(ctx context.Context, acc int64, ts []target, folder int64) ([]target, int64, error) {
+	gmail, err := s.gmailAccount(ctx, acc)
+	if err != nil {
+		return nil, 0, err
+	}
+	if gmail {
+		ts = slices.DeleteFunc(slices.Clone(ts), func(m target) bool {
+			return !slices.ContainsFunc(m.in, func(l shownAt) bool { return l.rank == 0 })
+		})
+		// All Mail is only a MOVE shortcut; archive never adds a user label.
+		folder, _, err = mailsync.RoleFolder(ctx, s.db, acc, "all")
+		return ts, folder, err
+	}
+	if folder == 0 {
+		folder, err = s.roleFolder(ctx, acc, "archive")
+	}
+	return ts, folder, err
+}
+
+func (s *Service) gmailAccount(ctx context.Context, acc int64) (bool, error) {
+	r, err := s.db.Query(ctx, `SELECT 1 FROM messages WHERE account_id = ? AND gmail_msgid IS NOT NULL LIMIT 1`, acc)
+	return err == nil && len(r.Values) > 0, err
+}
+
+// archiveUndoWrites restores Gmail's INBOX label without removing a user label.
+func (s *Service) archiveUndoWrites(ctx context.Context, acc int64, ts []target, from, to int64) ([]sqlite.Statement, error) {
+	gmail, err := s.gmailAccount(ctx, acc)
+	if err != nil {
+		return nil, err
+	}
+	if !gmail {
+		binned, err := s.binned(ctx, acc, to)
+		if err != nil {
+			return nil, err
+		}
+		_, stmts := moveWrites(acc, ts, from, to, binned)
+		return stmts, nil
+	}
+	var stmts []sqlite.Statement
+	for _, m := range ts {
+		stmts = append(stmts, mailsync.ShowIn(m.id, to, []int64{})...)
+		stmts = append(stmts, sqlite.Statement{SQL: `INSERT INTO ops(account_id, message_id, kind, dst_folder_id, depends_on, created_at)
+			VALUES (?, ?, 'move', ?, ` + latestOp + `, unixepoch())`, Args: []any{acc, m.id, to, m.id}})
+	}
+	return stmts, nil
 }
 
 // roleFolder is the account's folder of role (mailsync.RoleFolder).
@@ -1116,9 +1169,13 @@ func moveWrites(accountID int64, ts []target, from, folderID int64, binned bool)
 		stmts = append(append(stmts, mailsync.ShowIn(m.id, folderID, hide)...),
 			// A rescue beats a purge queued before it (the move would otherwise wait for it).
 			sqlite.Statement{SQL: "UPDATE ops SET state = 'cancelled' WHERE message_id = ? AND kind = 'purge' AND state = 'pending'", Args: []any{m.id}})
+		var dst any
+		if folderID != 0 {
+			dst = folderID
+		}
 		for _, src := range out {
 			stmts = append(stmts, sqlite.Statement{SQL: `INSERT INTO ops(account_id, message_id, kind, src_folder_id, dst_folder_id, depends_on, created_at)
-				VALUES (?, ?, 'move', ?, ?, ` + latestOp + `, unixepoch())`, Args: []any{accountID, m.id, src, folderID, m.id}})
+				VALUES (?, ?, 'move', ?, ?, ` + latestOp + `, unixepoch())`, Args: []any{accountID, m.id, src, dst, m.id}})
 		}
 	}
 	return moved, stmts

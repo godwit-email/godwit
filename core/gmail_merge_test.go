@@ -54,6 +54,27 @@ func TestGmailUpgradeWithQueuedArchive(t *testing.T) {
 	assert.Empty(t, e.listed(t, "INBOX"))
 }
 
+func TestGmailCOPYUIDMergeKeepsOtherRowsQueuedFlag(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		opts []testmail.Option
+	}{
+		{"MOVE", nil}, {"labels", []testmail.Option{testmail.WithoutMove()}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			e := newSyncEnv(t, append([]testmail.Option{testmail.Gmail()}, tc.opts...)...)
+			e.im.AddGmail(msg("a@x"), nil, "INBOX", testmail.GmailAllMail)
+			e.sync(t)
+			rows := e.oldRows(t, e.idOf(t, "a@x"))
+			require.NoError(t, e.s.MoveToRole(bg, []int64{rows["INBOX"]}, "archive"))
+			require.NoError(t, e.s.SetFlags(bg, []int64{rows[testmail.GmailAllMail]}, []string{`\Flagged`}, nil))
+			e.sync(t)
+			assert.Equal(t, []string{"done", "done"}, e.opStates(t))
+			assert.Equal(t, []string{`a@x \Flagged`}, e.onServer(t, testmail.GmailAllMail))
+		})
+	}
+}
+
 // Labels of the old rows merge: a label put on one row and taken off the
 // other by hand stays off; one put on by hand on either stays on.
 func TestGmailMergeManualRemovalWins(t *testing.T) {

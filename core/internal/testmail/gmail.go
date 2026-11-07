@@ -1,6 +1,7 @@
 package testmail
 
 import (
+	"errors"
 	"fmt"
 	"maps"
 	"regexp"
@@ -40,6 +41,96 @@ var systemLabels = map[string]string{"INBOX": `\Inbox`, GmailSent: `\Sent`, Gmai
 // every other folder. Identity is never derived from content:
 // two AddGmail calls make two messages, and an APPEND makes a new one.
 func Gmail() Option { return func(c *config) { c.gmail = true } }
+
+// DropAfterGmailLabelStore drops the response after the nth next label STORE.
+func (s *IMAP) DropAfterGmailLabelStore(n int) { s.dropLabels.Store(int32(n)) }
+
+// GmailLabelStores is the number of label STORE commands handled.
+func (s *IMAP) GmailLabelStores() int64 { return s.labelStores.Load() }
+
+// RejectNextGmailSearch makes one identity check return NO without a result.
+func (s *IMAP) RejectNextGmailSearch() { s.rejectGmailSearch.Store(true) }
+
+// RejectNextGmailSelect makes one membership check return NO for an existing folder.
+func (s *IMAP) RejectNextGmailSelect() { s.rejectGmailSelect.Store(true) }
+
+func (s session) StoreGmailLabels(w *imapserver.FetchWriter, set imap.NumSet, labels *imap.StoreGmailLabels) error {
+	if !s.s.cfg.gmail {
+		return errors.New("not Gmail")
+	}
+	if labels.Op == imap.StoreFlagsSet {
+		return errors.New("replace labels is not supported by this fixture")
+	}
+	uids, err := s.selectedUIDs(set)
+	if err != nil {
+		return err
+	}
+	var messages []*GmailMessage
+	s.s.gmu.Lock()
+	for _, uid := range uids {
+		if m := s.s.at(s.conn.folder(), uid); m != nil {
+			messages = append(messages, m)
+		}
+	}
+	s.s.gmu.Unlock()
+	for _, m := range messages {
+		for _, label := range labels.Labels {
+			folder := label
+			for f, l := range systemLabels {
+				if l == label {
+					folder = f
+					break
+				}
+			}
+			if labels.Op == imap.StoreFlagsAdd {
+				if _, err := s.s.User.Status(folder, &imap.StatusOptions{}); err != nil {
+					return err
+				}
+				m.Label(folder)
+				if folder == GmailTrash || folder == GmailSpam {
+					for _, f := range m.Folders() {
+						if f != folder {
+							m.Unlabel(f)
+						}
+					}
+				}
+			} else {
+				m.Unlabel(folder)
+			}
+		}
+	}
+	s.s.labelStores.Add(1)
+	if s.s.dropLabels.Load() > 0 && s.s.dropLabels.Add(-1) == 0 {
+		s.conn.Conn.Close()
+		return errors.New("dropped label STORE response")
+	}
+	return nil
+}
+
+// Search implements X-GM-MSGID against explicit Gmail objects, never headers.
+func (s session) Search(kind imapserver.NumKind, criteria *imap.SearchCriteria, options *imap.SearchOptions) (*imap.SearchData, error) {
+	if len(criteria.GmailMsgID) == 0 {
+		return s.Session.Search(kind, criteria, options)
+	}
+	if !s.s.cfg.gmail {
+		return nil, errors.New("not Gmail")
+	}
+	if s.s.rejectGmailSearch.CompareAndSwap(true, false) {
+		return nil, &imap.Error{Type: imap.StatusResponseTypeNo, Text: "identity search temporarily unavailable"}
+	}
+	if kind != imapserver.NumKindUID {
+		return nil, errors.New("fixture Gmail search requires UID")
+	}
+	var uids imap.UIDSet
+	s.s.gmu.Lock()
+	for _, m := range s.s.gm {
+		if slices.Contains(criteria.GmailMsgID, m.ID) && m.uids[s.conn.folder()] != 0 {
+			uids.AddNum(m.uids[s.conn.folder()])
+		}
+	}
+	s.s.gmu.Unlock()
+	return &imap.SearchData{All: uids}, nil
+}
 
 // GmailMessage is one Gmail message, in the folders it has a UID in.
 type GmailMessage struct {
