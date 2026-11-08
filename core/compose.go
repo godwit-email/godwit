@@ -132,6 +132,9 @@ func (s *Service) buildDraft(ctx context.Context, accountID int64, mode string, 
 	if err != nil {
 		return Draft{}, err
 	}
+	if acc.Kind == KindLocalArchive {
+		return Draft{}, ErrLocalArchive
+	}
 	d := Draft{AccountID: accountID, Mode: mode}
 	st, err := s.loadSettings(ctx)
 	if err != nil {
@@ -260,6 +263,9 @@ func (s *Service) SaveDraft(ctx context.Context, d Draft) (Draft, error) {
 	if d.ID == 0 {
 		if !draftModes[d.Mode] {
 			return Draft{}, fmt.Errorf("unknown draft mode %q", d.Mode)
+		}
+		if local, err := s.localArchive(ctx, d.AccountID); local || err != nil {
+			return Draft{}, cmp.Or(err, ErrLocalArchive)
 		}
 		r, err := s.db.Execute(ctx, `INSERT INTO drafts(account_id, mode, source_message_id, to_addrs, cc_addrs, bcc_addrs,
 			reply_to, subject, body_html, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,

@@ -54,6 +54,7 @@ var table = []Error{
 	{Code: "keychain_unavailable", Err: core.ErrKeychainUnavailable, Key: "error.keychain"},
 	{Code: "wrong_account", Err: core.ErrWrongAccount},
 	{Code: "account_not_found", Err: core.ErrAccountNotFound},
+	{Code: "local_archive", Err: core.ErrLocalArchive},
 	{Code: "provider_mismatch", Err: core.ErrProviderMismatch},
 	{Code: "needs_grant", Err: core.ErrNeedsGrant},
 	{Code: "plugin_not_found", Err: core.ErrPluginNotFound},

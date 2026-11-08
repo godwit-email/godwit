@@ -184,7 +184,7 @@ func (s *Service) AddAccount(ctx context.Context, in AccountInput) (Account, err
 	if in.Provider == "" {
 		in.Provider = "other"
 	}
-	rows, err := s.db.Query(ctx, "SELECT count(*) FROM accounts")
+	rows, err := s.db.Query(ctx, "SELECT count(*) FROM accounts WHERE kind != ?", KindLocalArchive) // a local archive is never the default
 	if err != nil {
 		return Account{}, err
 	}
@@ -267,6 +267,50 @@ func (s *Service) AddAccount(ctx context.Context, in AccountInput) (Account, err
 	return s.account(ctx, id)
 }
 
+// AddLocalArchive adds a local archive account (KindLocalArchive) named name,
+// with a local inbox and trash. It is never the default and has no worker.
+func (s *Service) AddLocalArchive(ctx context.Context, name string) (Account, error) {
+	ctx, end, err := s.begin(ctx, 0)
+	if err != nil {
+		return Account{}, err
+	}
+	defer end()
+	if name = strings.TrimSpace(name); name == "" {
+		return Account{}, errors.New("a local archive needs a name")
+	}
+	// accounts.email is NOT NULL UNIQUE; .invalid matches no real mail.
+	email := "archive-" + strings.ToLower(rand.Text()) + "@local.invalid"
+	acc := "(SELECT id FROM accounts WHERE email = ?)"
+	res, err := s.db.Transaction(ctx, []sqlite.Statement{{
+		SQL: `INSERT INTO accounts(email, name, auth_type, status, username, created_at, provider, imap_gmail, kind, position)
+			VALUES (?, ?, 'none', 'ok', '', ?, 'local', 0, ?, (SELECT COALESCE(MAX(position) + 1, 0) FROM accounts))`,
+		Args: []any{email, name, time.Now().Unix(), KindLocalArchive},
+	},
+		{SQL: "INSERT INTO folders(account_id, name, role, role_since) VALUES (" + acc + ", 'INBOX', 'inbox', unixepoch())", Args: []any{email}},
+		{SQL: "INSERT INTO folders(account_id, name, role, role_since) VALUES (" + acc + ", 'Trash', 'trash', unixepoch())", Args: []any{email}},
+	})
+	if err != nil {
+		return Account{}, err
+	}
+	return s.account(ctx, res[0].LastInsertID)
+}
+
+// ErrLocalArchive is a server, sending or sync call on a local archive
+// account, which has none of these.
+var ErrLocalArchive = errors.New("a local archive has no mail server")
+
+// localArchive reports whether account id is a local archive.
+func (s *Service) localArchive(ctx context.Context, id int64) (bool, error) {
+	rows, err := s.db.Query(ctx, "SELECT kind FROM accounts WHERE id = ?", id)
+	if err != nil {
+		return false, err
+	}
+	if len(rows.Values) == 0 {
+		return false, fmt.Errorf("account %d: %w", id, ErrAccountNotFound)
+	}
+	return store.Str(rows.Values[0][0]) == KindLocalArchive, nil
+}
+
 // checkRange accepts a Limit of 1–100000, 1–120 Months, or neither (all).
 func checkRange(r *SyncRange) error {
 	if r != nil && (r.Limit < 0 || r.Limit > 100000 || r.Months < 0 || r.Months > 120 || r.Limit > 0 && r.Months > 0) {
@@ -284,7 +328,7 @@ func b2i(b bool) int {
 
 const accountCols = `id, email, name, alias, COALESCE((SELECT html FROM signatures WHERE id = signature_id), ''), username, is_default, sync_limit, auth_type, status,
 	imap_host, imap_port, imap_security, smtp_host, smtp_port, smtp_security, smtp_reauth, provider, status_detail,
-	sync_since_months, (SELECT count(*) FROM folders WHERE account_id = accounts.id), signature_id, icon, ai_instructions, oauth_client_id`
+	sync_since_months, (SELECT count(*) FROM folders WHERE account_id = accounts.id), signature_id, icon, ai_instructions, oauth_client_id, kind`
 
 // ErrAccountNotFound is returned for an account id that does not exist.
 var ErrAccountNotFound = errors.New("account not found")
@@ -308,7 +352,7 @@ func scanAccount(r []any) Account {
 		IMAPHost: store.Str(r[10]), IMAPPort: int(store.Int(r[11])), IMAPSecurity: Security(store.Str(r[12])),
 		SMTPHost: store.Str(r[13]), SMTPPort: int(store.Int(r[14])), SMTPSecurity: Security(store.Str(r[15])),
 		Provider: store.Str(r[17]), StatusDetail: store.Str(r[18]), SignatureID: store.Int(r[21]), Icon: store.Str(r[22]),
-		AIInstructions: store.Str(r[23]), OAuthClientID: store.Str(r[24]),
+		AIInstructions: store.Str(r[23]), OAuthClientID: store.Str(r[24]), Kind: store.Str(r[25]),
 	}
 	// SMTP refuses the password: the user is asked for it the same way. status and
 	// status_detail are IMAP's and the keychain's, and they take precedence.
@@ -534,6 +578,9 @@ func (s *Service) UpdateAccount(ctx context.Context, id int64, p AccountPatch) (
 	}
 	if err := checkRange(p.Sync); err != nil {
 		return Account{}, err
+	}
+	if acc.Kind == KindLocalArchive && (p.Servers != nil || p.Sync != nil || p.IsDefault != nil && *p.IsDefault) {
+		return Account{}, ErrLocalArchive
 	}
 	if p.IsDefault != nil && !*p.IsDefault && acc.IsDefault {
 		return Account{}, errors.New("make another account the default instead")

@@ -692,6 +692,9 @@ var Migrations = [][]string{{
 	`ALTER TABLE accounts ADD COLUMN imap_gmail INTEGER`,
 	`UPDATE accounts SET imap_gmail = 1 WHERE provider = 'gmail' AND lower(imap_host) IN ('imap.gmail.com', 'imap.googlemail.com')
 		AND imap_port = 993 AND imap_security = 'tls'`,
+}, {
+	// '' a mail account; local_archive one with no servers, only local folders (ADR 0035).
+	`ALTER TABLE accounts ADD COLUMN kind TEXT NOT NULL DEFAULT ''`,
 }}
 
 // HistoryRowsVersion is the schema version that keeps a conversation's

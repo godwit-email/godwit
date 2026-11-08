@@ -32,6 +32,9 @@ func (s *Service) LoadOlder(ctx context.Context, folderID int64) (more bool, err
 	if err := s.bind(ctx, accountID); err != nil {
 		return false, err
 	}
+	if local, err := s.localArchive(ctx, accountID); local || err != nil {
+		return false, err
+	}
 	unlock, err := s.lockAccount(ctx, accountID)
 	if err != nil {
 		return false, err

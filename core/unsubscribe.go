@@ -68,7 +68,7 @@ var errUnsubscribeChanged = errors.New("the unsubscribe address changed since it
 const oneClickBody = "List-Unsubscribe=One-Click"
 
 // UnsubscribeMethod is how message can be unsubscribed from; none in a junk
-// folder. A message synced before these headers were stored has them fetched
+// folder or a local archive. A message synced before these headers were stored has them fetched
 // first, from its account's IMAP server only; one not there (not pushed yet,
 // UIDVALIDITY changed, offline, gone) has none until asked again.
 func (s *Service) UnsubscribeMethod(ctx context.Context, messageID int64) (Unsubscribe, error) {
@@ -151,7 +151,7 @@ func (s *Service) NewMailtoDraft(ctx context.Context, accountID int64, link stri
 
 func (s *Service) unsubscribeMethod(ctx context.Context, messageID int64) (Unsubscribe, error) {
 	rows, err := s.db.Query(ctx, "SELECT m.account_id, m.list_unsubscribe, m.list_unsubscribe_post, m.list_id, "+inJunk+
-		" FROM messages m LEFT JOIN folders f ON f.id = "+shownFolder+" WHERE m.id = ?", messageID)
+		" OR (SELECT kind FROM accounts WHERE id = m.account_id) = ? FROM messages m LEFT JOIN folders f ON f.id = "+shownFolder+" WHERE m.id = ?", KindLocalArchive, messageID)
 	if err != nil {
 		return Unsubscribe{}, err
 	}
@@ -162,7 +162,7 @@ func (s *Service) unsubscribeMethod(ctx context.Context, messageID int64) (Unsub
 	if err := s.bind(ctx, store.Int(r[0])); err != nil { // removing the account stops this call, POST included
 		return Unsubscribe{}, err
 	}
-	if store.Int(r[4]) != 0 { // confirming a spammer's list only confirms the address
+	if store.Int(r[4]) != 0 { // confirming a spammer's list only confirms the address; a local archive's mail is old
 		return Unsubscribe{}, nil
 	}
 	if r[1] == nil {

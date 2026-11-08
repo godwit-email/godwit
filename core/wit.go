@@ -526,7 +526,7 @@ func (s *Service) getMessage(ctx context.Context, args json.RawMessage) (any, er
 // draftAccount is the account a draft is sent from: id, or for 0 the default one.
 func (s *Service) draftAccount(ctx context.Context, id int64) (Account, error) {
 	if id == 0 {
-		rows, err := s.db.Query(ctx, "SELECT id FROM accounts ORDER BY is_default DESC, position, id LIMIT 1")
+		rows, err := s.db.Query(ctx, "SELECT id FROM accounts WHERE kind != ? ORDER BY is_default DESC, position, id LIMIT 1", KindLocalArchive)
 		if err != nil {
 			return Account{}, err
 		}
@@ -535,7 +535,11 @@ func (s *Service) draftAccount(ctx context.Context, id int64) (Account, error) {
 		}
 		id = store.Int(rows.Values[0][0])
 	}
-	return s.account(ctx, id)
+	acc, err := s.account(ctx, id)
+	if err == nil && acc.Kind == KindLocalArchive {
+		err = ErrLocalArchive
+	}
+	return acc, err
 }
 
 // getAccountProfile is what the user told Wit about themselves as the sender from an
