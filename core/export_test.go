@@ -151,6 +151,13 @@ func SetNativeIdleForTest(t interface{ Cleanup(func()) }, d time.Duration) {
 	t.Cleanup(func() { nativeIdle = old })
 }
 
+// SetAttachLimitForTest lowers MaxMessageBytes, the largest message or attachment accepted.
+func SetAttachLimitForTest(t interface{ Cleanup(func()) }, n int64) {
+	old := attachLimit
+	attachLimit = n
+	t.Cleanup(func() { attachLimit = old })
+}
+
 // SetNativeStartForTest shortens how long a native plugin may take to start.
 func SetNativeStartForTest(t interface{ Cleanup(func()) }, d time.Duration) {
 	old := nativeStart

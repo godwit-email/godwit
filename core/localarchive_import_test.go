@@ -5,12 +5,15 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"slices"
+	"strings"
 	"testing"
 	"time"
 
 	"github.com/godwit-email/godwit/core"
 	"github.com/godwit-email/godwit/core/coretest"
 	"github.com/godwit-email/godwit/core/events"
+	gomail "github.com/godwit-email/godwit/core/mail"
 	"github.com/stretchr/testify/require"
 )
 
@@ -119,6 +122,53 @@ func TestImportEMLFolderFindsEMLAndBadFilesFailAlone(t *testing.T) {
 		failed = append(failed, f.Path)
 	}
 	require.ElementsMatch(t, []string{junk, empty, missing}, failed)
+}
+
+func TestImportEMLOversizedFileFailsAlone(t *testing.T) {
+	s := newTestService(t)
+	acc, inbox := newArchive(t, s)
+	core.SetAttachLimitForTest(t, 2000)
+	dir := t.TempDir()
+	small := writeEML(t, dir, "small.eml", coretest.Msg("bob@example.com", "me@example.com", "Small", "fine"))
+	big := writeEML(t, dir, "big.eml", coretest.Msg("bob@example.com", "me@example.com", "Big", strings.Repeat("x", 3000)))
+
+	sum, err := s.ImportEML(ctx, acc.ID, inbox.ID, []string{big, small})
+	require.NoError(t, err)
+	require.Equal(t, 1, sum.Imported)
+	require.Len(t, sum.Failed, 1)
+	require.Equal(t, big, sum.Failed[0].Path)
+	require.Equal(t, core.ErrTooLarge.Error(), sum.Failed[0].Reason)
+}
+
+func TestImportEMLGivesPhishingASecurityVerdict(t *testing.T) {
+	s := newTestService(t)
+	acc, inbox := newArchive(t, s)
+	m := importOne(t, s, acc, inbox, coretest.Msg(`"support@paypal.com" <hacker123@freemail.example>`, "me@example.com", "Your invoice is on hold", "log in"))
+	got, err := s.GetMessage(ctx, m.ID, false)
+	require.NoError(t, err)
+	require.Equal(t, gomail.SecurityWarning, got.Security.Status)
+}
+
+// Imported mail is the user's mail like any other: in contacts, the unified
+// inbox and a search of every account.
+func TestImportEMLJoinsContactsUnifiedInboxAndSearch(t *testing.T) {
+	e := coretest.New(t, coretest.WithoutAutoSync())
+	e.AddAccount(t, "me@example.com")
+	acc, inbox := newArchive(t, e.Svc)
+	m := importOne(t, e.Svc, acc, inbox, coretest.Msg("Carol <carol@example.com>", "me@example.com", "Old invoice", "the walrus memo"))
+
+	contacts, err := e.Svc.Contacts(ctx)
+	require.NoError(t, err)
+	require.True(t, slices.ContainsFunc(contacts, func(c core.Contact) bool { return c.Address == "carol@example.com" }), "%+v", contacts)
+
+	page, err := e.Svc.ListMessages(ctx, core.View{Unified: "inbox"}, "", 10)
+	require.NoError(t, err)
+	require.True(t, slices.ContainsFunc(page.Items, func(x core.MessageSummary) bool { return x.ID == m.ID }))
+
+	hits, err := e.Svc.Search(ctx, 0, "walrus", 10)
+	require.NoError(t, err)
+	require.Len(t, hits, 1)
+	require.Equal(t, m.ID, hits[0].ID)
 }
 
 func TestImportEMLDecodesGBK(t *testing.T) {
