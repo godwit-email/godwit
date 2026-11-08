@@ -703,6 +703,11 @@ var Migrations = [][]string{{
 	// the hash is its identity there (ADR 0036). NULL for synced mail.
 	`ALTER TABLE messages ADD COLUMN content_hash TEXT`,
 	`CREATE UNIQUE INDEX messages_content_hash ON messages(account_id, content_hash) WHERE content_hash IS NOT NULL`,
+}, {
+	// A local archive has no server to push to: every write path's op is dropped (ADR 0036).
+	`CREATE TRIGGER ops_local_archive BEFORE INSERT ON ops
+		WHEN (SELECT kind FROM accounts WHERE id = NEW.account_id) = 'local_archive'
+		BEGIN SELECT RAISE(IGNORE); END`,
 }}
 
 // HistoryRowsVersion is the schema version that keeps a conversation's

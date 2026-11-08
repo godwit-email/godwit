@@ -69,3 +69,26 @@ func InsertLocal(ctx context.Context, db *store.DB, accountID, folderID int64, p
 	}
 	return l, nil
 }
+
+// DeleteLocal deletes the local archive's messages ids for good (ADR 0036)
+// and returns the content hashes of their originals, for the caller to
+// remove, and the threads they were in.
+func DeleteLocal(ctx context.Context, db *store.DB, accountID int64, ids []int64) (hashes []string, tids []int64, err error) {
+	where := "account_id = ? AND content_hash IS NOT NULL AND id IN (" + marks(len(ids)) + ")"
+	args := append([]any{accountID}, anys(ids)...)
+	rows, err := db.Query(ctx, "SELECT content_hash, thread_id FROM messages WHERE "+where, args...)
+	if err != nil || len(rows.Values) == 0 {
+		return nil, nil, err
+	}
+	for _, v := range rows.Values {
+		hashes = append(hashes, store.Str(v[0]))
+		if t := store.Int(v[1]); t != 0 {
+			tids = append(tids, t)
+		}
+	}
+	stmts := []sqlite.Statement{{SQL: "DELETE FROM messages WHERE " + where, Args: args}}
+	if _, err := db.Transaction(ctx, append(stmts, tidyThreads(accountID, tids)...)); err != nil {
+		return nil, nil, err
+	}
+	return hashes, tids, nil
+}

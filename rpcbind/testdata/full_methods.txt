@@ -16,6 +16,7 @@ ApplyEditedProposal
 ArchiveMessages
 ArchiveSender
 ArchiveThreads
+ArchiveUsage
 Ask
 AskAgain
 AskWith

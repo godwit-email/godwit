@@ -192,3 +192,27 @@ func (s *Service) importFile(ctx context.Context, accountID, folderID int64, pat
 func (s *Service) archivePath(accountID int64, hash string) string {
 	return filepath.Join(s.dataDir, "archive", strconv.FormatInt(accountID, 10), hash+".eml")
 }
+
+// deleteLocal deletes a local archive's messages ts for good, with their
+// originals and the files extracted from them (ADR 0036): rows first, so a
+// file that cannot be removed is merely unreferenced.
+func (s *Service) deleteLocal(ctx context.Context, accountID int64, ts []target) error {
+	if len(ts) == 0 {
+		return nil
+	}
+	ids := make([]int64, len(ts))
+	for i, m := range ts {
+		ids[i] = m.id
+	}
+	hashes, tids, err := mailsync.DeleteLocal(ctx, s.db, accountID, ids)
+	if err != nil {
+		return err
+	}
+	s.bus.Publish(events.Event{Type: events.MessagesChanged, AccountID: accountID, MessageIDs: ids,
+		ThreadIDs: slices.Compact(slices.Sorted(slices.Values(tids)))})
+	for _, h := range hashes {
+		os.Remove(s.archivePath(accountID, h))
+		os.RemoveAll(filepath.Join(filepath.Dir(s.archivePath(accountID, h)), "parts", h))
+	}
+	return nil
+}

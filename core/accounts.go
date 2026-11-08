@@ -405,7 +405,8 @@ func (s *Service) ReorderAccounts(ctx context.Context, ids []int64) error {
 	return err
 }
 
-// RemoveAccount deletes the account, its keychain entry and its cache directory.
+// RemoveAccount deletes the account, its keychain entry, its cache directory
+// and, for a local archive, its originals (ADR 0036).
 // It first cancels the account's explicit calls and worker and waits for them.
 func (s *Service) RemoveAccount(ctx context.Context, id int64) error {
 	s.callsMu.Lock()
@@ -437,7 +438,8 @@ func (s *Service) RemoveAccount(ctx context.Context, id int64) error {
 	if err := s.deleteCredentials(id); err != nil {
 		return err
 	}
-	return os.RemoveAll(filepath.Join(s.dataDir, "cache", strconv.FormatInt(id, 10)))
+	return errors.Join(os.RemoveAll(filepath.Join(s.dataDir, "cache", strconv.FormatInt(id, 10))),
+		os.RemoveAll(filepath.Join(s.dataDir, "archive", strconv.FormatInt(id, 10))))
 }
 
 // DetectProvider finds the provider for an email address; DNS gets 5 seconds in total.
