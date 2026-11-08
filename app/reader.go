@@ -633,22 +633,15 @@ func draftSource(msgs []core.MessageSummary, target int64, mode string) (core.Me
 
 // draft starts a reply, reply-all or forward of m from account acc (0 to
 // look it up by m's folder) and opens it in a compose window. A local
-// archive's mail is answered from the default account that sends: the
-// compose window's From picks another.
+// archive's mail is answered from the default account that sends (core picks
+// it): the compose window's From picks another.
 func (a *App) draft(m core.MessageSummary, acc int64, mode string) {
 	var id int64
-	sender, archives := a.defaultAccount(), map[int64]bool{}
-	for _, x := range a.accounts {
-		archives[x.ID] = isArchive(x)
-	}
 	a.do(func(ctx context.Context) (err error) {
 		if acc == 0 { // the folders have not loaded yet
 			if acc, err = folderAccount(ctx, a.svc, m.FolderID); err != nil {
 				return err
 			}
-		}
-		if archives[acc] && sender != 0 {
-			acc = sender
 		}
 		d, err := a.svc.NewDraft(ctx, acc, mode, m.ID)
 		id = d.ID

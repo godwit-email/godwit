@@ -288,3 +288,28 @@ func TestLocalArchiveMailIsNotArchivedBySenderOrUnsubscribed(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, core.Unsubscribe{}, u)
 }
+
+// A reply, quick reply or forward of archive mail drafts from the default
+// account that sends; with none, there is nothing to answer from.
+func TestReplyToLocalArchiveMailDraftsFromSendingAccount(t *testing.T) {
+	e := coretest.New(t, coretest.WithoutAutoSync())
+	s := e.Svc
+	acc, inbox := newArchive(t, s)
+	m := importOne(t, s, acc, inbox, coretest.Msg("Bob <bob@example.com>", "me@example.com", "invoice 7", "pay me"))
+	_, err := s.NewDraft(ctx, acc.ID, "reply", m.ID)
+	require.ErrorIs(t, err, core.ErrLocalArchive, "no account sends")
+
+	sender := e.AddAccount(t, "me@example.com")
+	for _, mode := range []string{"reply", "reply_all", "forward"} {
+		d, err := s.NewDraft(ctx, acc.ID, mode, m.ID)
+		require.NoError(t, err, mode)
+		require.Equal(t, sender.ID, d.AccountID, mode)
+		require.Equal(t, m.ID, d.SourceMessageID, mode)
+	}
+	d, err := s.DraftFromQuickReply(ctx, m.ID, core.QuickReply{HTML: "<p>Paid.</p>"})
+	require.NoError(t, err)
+	require.Equal(t, sender.ID, d.AccountID)
+	require.Equal(t, []string{"Bob <bob@example.com>"}, d.To)
+	_, err = s.NewDraft(ctx, acc.ID, "new", 0)
+	require.ErrorIs(t, err, core.ErrLocalArchive, "a new draft names its own account")
+}

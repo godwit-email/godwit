@@ -1307,7 +1307,7 @@ func (s *Service) prepareReplyMail(ctx context.Context, _ Conversation, raw json
 	args := replyForwardArgs{
 		ID:              in.ID,
 		ReplyAll:        in.ReplyAll,
-		AccountID:       accID,
+		AccountID:       d.AccountID,
 		Mode:            mode,
 		SourceMessageID: msgID,
 		To:              d.To,
@@ -1323,7 +1323,7 @@ func (s *Service) prepareReplyMail(ctx context.Context, _ Conversation, raw json
 		Args:       b,
 		Summary:    "Reply to " + strings.Join(d.To, ", ") + ": " + d.Subject,
 		TargetKind: "account",
-		TargetID:   accID,
+		TargetID:   d.AccountID,
 	}, nil
 }
 
@@ -1368,7 +1368,7 @@ func (s *Service) prepareForwardMail(ctx context.Context, _ Conversation, raw js
 	}
 	args := replyForwardArgs{
 		ID:              in.ID,
-		AccountID:       accID,
+		AccountID:       d.AccountID,
 		Mode:            "forward",
 		SourceMessageID: msgID,
 		To:              in.To,
@@ -1384,7 +1384,7 @@ func (s *Service) prepareForwardMail(ctx context.Context, _ Conversation, raw js
 		Args:       b,
 		Summary:    "Forward to " + strings.Join(in.To, ", ") + ": " + d.Subject,
 		TargetKind: "account",
-		TargetID:   accID,
+		TargetID:   d.AccountID,
 	}, nil
 }
 

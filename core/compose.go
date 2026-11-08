@@ -133,9 +133,15 @@ func (s *Service) buildDraft(ctx context.Context, accountID int64, mode string, 
 		return Draft{}, err
 	}
 	if acc.Kind == KindLocalArchive {
-		return Draft{}, ErrLocalArchive
+		if mode == "new" {
+			return Draft{}, ErrLocalArchive
+		}
+		// Its mail is answered from the default account that sends (ADR 0036).
+		if acc, err = s.draftAccount(ctx, 0); err != nil {
+			return Draft{}, ErrLocalArchive
+		}
 	}
-	d := Draft{AccountID: accountID, Mode: mode}
+	d := Draft{AccountID: acc.ID, Mode: mode}
 	st, err := s.loadSettings(ctx)
 	if err != nil {
 		return Draft{}, err
