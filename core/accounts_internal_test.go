@@ -3,6 +3,8 @@ package core
 import (
 	"context"
 	"errors"
+	"os"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"testing"
@@ -135,4 +137,23 @@ func TestKeyringEntryNamespaced(t *testing.T) {
 	require.NoError(t, s.RemoveAccount(context.Background(), acc.ID))
 	_, err = keyring.Get(keyringService, s.keyringUser(acc.ID))
 	assert.ErrorIs(t, err, keyring.ErrNotFound)
+}
+
+// A locked keychain must not leave a removed archive's originals on disk with
+// no account to manage them.
+func TestRemoveLocalArchiveDeletesOriginalsWhenKeychainFails(t *testing.T) {
+	keyring.MockInit()
+	dir := t.TempDir()
+	s, err := New(context.Background(), Options{DataDir: dir})
+	require.NoError(t, err)
+	defer s.Close()
+	acc, err := s.AddLocalArchive(context.Background(), "旧邮件")
+	require.NoError(t, err)
+	orig := filepath.Join(dir, "archive", strconv.FormatInt(acc.ID, 10), "x.eml")
+	require.NoError(t, os.MkdirAll(filepath.Dir(orig), 0o755))
+	require.NoError(t, os.WriteFile(orig, []byte("x"), 0o600))
+	setFor(t, &keyringDelete, func(string, string) error { return errors.New("keychain locked") })
+
+	assert.Error(t, s.RemoveAccount(context.Background(), acc.ID))
+	assert.NoDirExists(t, filepath.Dir(orig))
 }

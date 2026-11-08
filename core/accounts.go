@@ -435,10 +435,10 @@ func (s *Service) RemoveAccount(ctx context.Context, id int64) error {
 	s.credMu.Lock()
 	delete(s.credVer, id)
 	s.credMu.Unlock()
-	if err := s.deleteCredentials(id); err != nil {
-		return err
-	}
-	return errors.Join(os.RemoveAll(filepath.Join(s.dataDir, "cache", strconv.FormatInt(id, 10))),
+	// The files go even when the keychain fails: with the row gone, nothing
+	// else would ever remove them.
+	return errors.Join(s.deleteCredentials(id),
+		os.RemoveAll(filepath.Join(s.dataDir, "cache", strconv.FormatInt(id, 10))),
 		os.RemoveAll(filepath.Join(s.dataDir, "archive", strconv.FormatInt(id, 10))))
 }
 
