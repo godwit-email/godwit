@@ -1,6 +1,7 @@
 package core_test
 
 import (
+	"fmt"
 	"testing"
 	"time"
 
@@ -100,4 +101,100 @@ func TestLocalArchiveRefusesServerSettings(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, name, got.Name)
 	require.NoError(t, s.RemoveAccount(ctx, acc.ID))
+}
+
+// archiveMessage puts one message in the local archive's folder, the way an
+// import would leave it: a location with no server uid.
+func archiveMessage(t *testing.T, s *core.Service, acc core.Account, folderID int64) int64 {
+	t.Helper()
+	require.NoError(t, s.ExecForTest(fmt.Sprintf(`INSERT INTO messages(account_id, subject, from_addr, date) VALUES (%d, 'old', 'a@example.com', 1)`, acc.ID)))
+	require.NoError(t, s.ExecForTest(fmt.Sprintf(`INSERT INTO message_locations(message_id, folder_id, shown, entered_at, date)
+		VALUES ((SELECT max(id) FROM messages), %d, 1, 1, 1)`, folderID)))
+	page, err := s.ListMessages(ctx, core.View{FolderID: folderID}, "", 10)
+	require.NoError(t, err)
+	require.NotEmpty(t, page.Items)
+	return page.Items[0].ID
+}
+
+func folderNamed(t *testing.T, s *core.Service, accountID int64, name string) (core.Folder, bool) {
+	t.Helper()
+	folders, err := s.ListFolders(ctx, accountID)
+	require.NoError(t, err)
+	for _, f := range folders {
+		if f.Name == name {
+			return f, true
+		}
+	}
+	return core.Folder{}, false
+}
+
+func TestLocalFolderIsAMoveTarget(t *testing.T) {
+	s := newTestService(t)
+	acc, err := s.AddLocalArchive(ctx, "旧邮件")
+	require.NoError(t, err)
+	f, err := s.CreateLocalFolder(ctx, acc.ID, " 2019 ")
+	require.NoError(t, err)
+	require.Equal(t, "2019", f.Name)
+	require.Equal(t, acc.ID, f.AccountID)
+	_, err = s.CreateLocalFolder(ctx, acc.ID, "2019")
+	require.Error(t, err, "same name twice")
+	_, err = s.CreateLocalFolder(ctx, acc.ID, "  ")
+	require.Error(t, err)
+
+	inbox, _ := folderNamed(t, s, acc.ID, "INBOX")
+	id := archiveMessage(t, s, acc, inbox.ID)
+	require.NoError(t, s.Move(ctx, []int64{id}, f.ID))
+	got, ok := folderNamed(t, s, acc.ID, "2019")
+	require.True(t, ok)
+	require.Equal(t, 1, got.Total)
+}
+
+func TestRenameLocalFolder(t *testing.T) {
+	s := newTestService(t)
+	acc, err := s.AddLocalArchive(ctx, "旧邮件")
+	require.NoError(t, err)
+	f, err := s.CreateLocalFolder(ctx, acc.ID, "2019")
+	require.NoError(t, err)
+	require.NoError(t, s.RenameLocalFolder(ctx, f.ID, "2019 年"))
+	got, ok := folderNamed(t, s, acc.ID, "2019 年")
+	require.True(t, ok)
+	require.Equal(t, f.ID, got.ID)
+	_, ok = folderNamed(t, s, acc.ID, "2019")
+	require.False(t, ok)
+
+	for _, name := range []string{"INBOX", "Trash"} {
+		role, _ := folderNamed(t, s, acc.ID, name)
+		require.ErrorIs(t, s.RenameLocalFolder(ctx, role.ID, "x"), core.ErrRoleFolder, name)
+		require.ErrorIs(t, s.DeleteLocalFolder(ctx, role.ID), core.ErrRoleFolder, name)
+	}
+}
+
+func TestDeleteLocalFolder(t *testing.T) {
+	s := newTestService(t)
+	acc, err := s.AddLocalArchive(ctx, "旧邮件")
+	require.NoError(t, err)
+	f, err := s.CreateLocalFolder(ctx, acc.ID, "2019")
+	require.NoError(t, err)
+	id := archiveMessage(t, s, acc, f.ID)
+	require.ErrorIs(t, s.DeleteLocalFolder(ctx, f.ID), core.ErrFolderNotEmpty)
+
+	require.NoError(t, s.Delete(ctx, []int64{id})) // to Trash
+	require.NoError(t, s.DeleteLocalFolder(ctx, f.ID))
+	_, ok := folderNamed(t, s, acc.ID, "2019")
+	require.False(t, ok)
+}
+
+func TestLocalFoldersOnlyInALocalArchive(t *testing.T) {
+	s := newTestService(t)
+	im, smtpAddr := servers(t)
+	acc, err := s.AddAccount(ctx, input(t, im.Addr, smtpAddr, "secret"))
+	require.NoError(t, err)
+	require.NoError(t, s.ExecForTest(fmt.Sprintf(`INSERT INTO folders(account_id, name) VALUES (%d, 'Projects')`, acc.ID)))
+	_, err = s.CreateLocalFolder(ctx, acc.ID, "2019")
+	require.ErrorIs(t, err, core.ErrNotLocalArchive)
+	folders, err := s.ListFolders(ctx, acc.ID)
+	require.NoError(t, err)
+	require.NotEmpty(t, folders)
+	require.ErrorIs(t, s.RenameLocalFolder(ctx, folders[0].ID, "x"), core.ErrNotLocalArchive)
+	require.ErrorIs(t, s.DeleteLocalFolder(ctx, folders[0].ID), core.ErrNotLocalArchive)
 }
