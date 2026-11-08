@@ -51,6 +51,11 @@ type Options struct {
 	SecurityMail bool
 	// SystemLanguage is the operating system language (BCP 47) the GUI passes in; empty means "en".
 	SystemLanguage string
+	// Keyring stores credentials; nil is the system keychain through go-keyring.
+	// A shell on a platform go-keyring cannot reach (iOS) gives its own. It is
+	// process-wide, like the keychain itself: the first Service to set one sets
+	// it for all.
+	Keyring Keyring
 	// ImageClient downloads remote mail images; nil is imagefetch.NewClient(false)
 	// (public hosts only). Tests give one that reaches loopback.
 	ImageClient *http.Client
@@ -240,6 +245,9 @@ type Service struct {
 func New(ctx context.Context, opts Options) (*Service, error) {
 	if opts.GuardCoreML != "" {
 		guard.CoreMLLibrary = opts.GuardCoreML // before the model's first Load
+	}
+	if opts.Keyring != nil {
+		setKeyring(opts.Keyring) // before anything reads a credential
 	}
 	if err := os.MkdirAll(opts.DataDir, 0o700); err != nil {
 		return nil, err

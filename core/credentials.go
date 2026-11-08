@@ -22,12 +22,34 @@ import (
 // secret service, access denied). Credentials never fall back to a file.
 var ErrKeychainUnavailable = errors.New("system keychain is unavailable")
 
-// Replaced in tests.
+// Replaced in tests, and by Options.Keyring.
 var (
 	keyringGet    = keyring.Get
 	keyringSet    = keyring.Set
 	keyringDelete = keyring.Delete
 )
+
+// Keyring stores credentials (passwords, refresh tokens, model keys, extension
+// secrets), each under a service name and a user key. The default is the
+// system keychain through go-keyring; a shell on a platform go-keyring cannot
+// reach (iOS, whose keychain is only available in-process) gives its own in
+// Options.Keyring. Get returns ErrSecretNotFound for a missing entry; any other
+// error makes the keychain unavailable (ErrKeychainUnavailable). Credentials
+// never fall back to a file.
+type Keyring interface {
+	Get(service, user string) (string, error)
+	Set(service, user, secret string) error
+	Delete(service, user string) error
+}
+
+// ErrSecretNotFound is what a Keyring's Get returns for a missing entry.
+var ErrSecretNotFound = keyring.ErrNotFound
+
+// setKeyring routes every keychain call through k. Process-wide, like
+// keychainValues: the keychain is one per process, not per Service.
+func setKeyring(k Keyring) {
+	keyringGet, keyringSet, keyringDelete = k.Get, k.Set, k.Delete
+}
 
 // keychainErr passes nil and keyring.ErrNotFound through and wraps anything
 // else in ErrKeychainUnavailable.

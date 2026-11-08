@@ -52,6 +52,7 @@ var table = []Error{
 	{Code: "nothing_to_compact", Err: core.ErrNothingToCompact},
 	{Code: "draft_gone", Err: core.ErrDraftGone, Key: "wit.draft.gone"},
 	{Code: "keychain_unavailable", Err: core.ErrKeychainUnavailable, Key: "error.keychain"},
+	{Code: "secret_not_found", Err: core.ErrSecretNotFound},
 	{Code: "wrong_account", Err: core.ErrWrongAccount},
 	{Code: "account_not_found", Err: core.ErrAccountNotFound},
 	{Code: "local_archive", Err: core.ErrLocalArchive},
