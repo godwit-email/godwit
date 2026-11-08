@@ -152,6 +152,7 @@ var RemixIcons = map[string]string{
 	"panel-left":                     "node_modules/remixicon/icons/Design/layout-left-line.svg",
 	"paperclip":                      "node_modules/remixicon/icons/Editor/attachment-2.svg",
 	"pen-line":                       "node_modules/remixicon/icons/Design/edit-line.svg",
+	"play":                           "node_modules/remixicon/icons/Media/play-line.svg",
 	"plus":                           "node_modules/remixicon/icons/System/add-line.svg",
 	"printer":                        "node_modules/remixicon/icons/Business/printer-line.svg",
 	"puzzle":                         "node_modules/remixicon/icons/Development/puzzle-line.svg",
@@ -231,6 +232,7 @@ var BrandIcons = map[string]string{
 //go:embed node_modules/@lobehub/icons-static-svg/icons/antigravity-color.svg
 //go:embed node_modules/@lobehub/icons-static-svg/icons/antigravity.svg
 //go:embed node_modules/remixicon/icons/Arrows/arrow-down-s-line.svg
+//go:embed node_modules/remixicon/icons/Media/play-line.svg
 //go:embed node_modules/remixicon/icons/Document/contacts-book-3-line.svg
 //go:embed node_modules/remixicon/icons/Document/contacts-book-3-fill.svg
 //go:embed node_modules/remixicon/icons/Development/code-s-slash-line.svg

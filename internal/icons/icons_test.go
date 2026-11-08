@@ -4,7 +4,7 @@ import "testing"
 
 var names = []string{"mail", "user", "sparkles", "sliders-horizontal", "panel-left", "arrow-left", "arrow-right", "arrow-up", "arrow-down", "arrow-up-right",
 	"square-pen", "pen-line", "reply", "reply-all", "forward", "archive", "trash-2", "star", "mail-open", "mail-forbid", "search", "inbox",
-	"folder", "send", "file-pen", "paperclip", "plus", "x", "check", "chevron-down", "chevron-right",
+	"folder", "send", "file-pen", "paperclip", "play", "plus", "x", "check", "chevron-down", "chevron-right",
 	"triangle-alert", "loader", "copy", "external-link", "eye", "eye-off", "image-off", "bold", "italic", "link", "list",
 	"list-ordered", "quote", "undo-2", "refresh-cw", "circle-check", "circle-x", "shield", "shield-check", "puzzle", "lock", "monitor",
 	"globe", "languages", "file-text", "wand-sparkles", "download", "ellipsis", "component", "spam", "outbox", "settings", "cpu", "brain-4", "info", "tag", "filter", "grip", "quill-pen", "code", "save", "printer",

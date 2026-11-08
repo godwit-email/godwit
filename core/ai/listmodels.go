@@ -20,7 +20,13 @@ type Model struct{ ID, Name string }
 // ListModels asks a service for its model IDs, sorted. Errors never include the
 // key or the response body.
 func ListModels(ctx context.Context, c *http.Client, kind, baseURL, apiKey string) ([]string, error) {
-	ms, err := ListModelsNamed(ctx, c, kind, baseURL, apiKey)
+	base := strings.TrimRight(baseURL, "/")
+	return listModelIDs(ctx, c, kind, base, modelsURL(ctx, c, base), apiKey)
+}
+
+// listModelIDs is ListModels at url.
+func listModelIDs(ctx context.Context, c *http.Client, kind, base, url, apiKey string) ([]string, error) {
+	ms, err := listModelsAt(ctx, c, kind, base, url, apiKey)
 	if err != nil {
 		return nil, err
 	}
@@ -36,7 +42,12 @@ func ListModels(ctx context.Context, c *http.Client, kind, baseURL, apiKey strin
 // xAI's models[].id.
 func ListModelsNamed(ctx context.Context, c *http.Client, kind, baseURL, apiKey string) ([]Model, error) {
 	base := strings.TrimRight(baseURL, "/")
-	url, hdr := modelsURL(ctx, c, base), http.Header{} // before the list's own timeout: a version lookup has its own
+	return listModelsAt(ctx, c, kind, base, modelsURL(ctx, c, base), apiKey) // the URL before the list's own timeout: a version lookup has its own
+}
+
+// listModelsAt is ListModelsNamed at url, for base.
+func listModelsAt(ctx context.Context, c *http.Client, kind, base, url, apiKey string) ([]Model, error) {
+	hdr := http.Header{}
 	ctx, cancel := context.WithTimeout(ctx, 10*time.Second)
 	defer cancel()
 	if strings.HasSuffix(base, "/backend-api/codex") && apiKey != "" {

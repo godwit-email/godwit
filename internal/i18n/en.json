@@ -1948,6 +1948,17 @@
     }
   },
   "settings_models_fetching": "Fetching /models…",
+  "settings_models_filter": "Filter {arg1, number, ::group-off} models…",
+  "@settings_models_filter": {
+    "placeholders": {
+      "arg1": {
+        "type": "int"
+      }
+    }
+  },
+  "settings_models_filter_none": "No models match.",
+  "settings_models_only_on": "Selected only",
+  "settings_models_refresh": "Refresh list",
   "settings_models_files": "Local models",
   "settings_models_files_cancel": "Cancel",
   "settings_models_files_download": "Download",
@@ -1978,17 +1989,7 @@
   "settings_models_hint": "Once the API key is filled in, the available models are fetched from /models; click to select, or enter a model ID.",
   "settings_models_hint_sub": "Once signed in, the models come from /models; click to pick, or type a model ID.",
   "settings_models_judge_desc": "Classification, notification filtering, code detection and action routing. Answers only predefined questions, an order of magnitude faster than generating.",
-  "settings_models_judge_fetched": "Fetched {arg1, number, ::group-off} judge models from /models.",
-  "@settings_models_judge_fetched": {
-    "placeholders": {
-      "arg1": {
-        "type": "int"
-      }
-    }
-  },
   "settings_models_judge_formats": "Judge format",
-  "settings_models_judge_hint": "Once the API key is filled in, the judge models are fetched from /models.",
-  "settings_models_judge_model": "Model",
   "settings_models_judge_switch": "Turn on judge",
   "settings_models_judge_unsupported": "{arg1} has no judge API; the generate model answers instead.",
   "@settings_models_judge_unsupported": {
@@ -1998,7 +1999,6 @@
       }
     }
   },
-  "settings_models_judge_wait": "Waiting for the list",
   "settings_models_judge_chip": "Judge · {arg1}",
   "@settings_models_judge_chip": {
     "placeholders": {
@@ -2041,6 +2041,7 @@
   "settings_models_need_url": "Enter the address",
   "settings_models_no_key": "No key",
   "settings_models_no_list": "Fetching /models failed. This service may not list its models; you can enter a model ID instead.",
+  "settings_models_suggested": "This API has no model list. These are its usual model IDs; click to select, or enter one.",
   "settings_models_off_gen_alt": "It is the default generate model. Once off, summaries, translation, writing and Wit use {arg1}.",
   "@settings_models_off_gen_alt": {
     "placeholders": {
@@ -2058,7 +2059,6 @@
   "settings_models_remove": "Delete this service",
   "settings_models_req": "Requests go to",
   "settings_models_reset_url": "Reset",
-  "settings_models_retry": "Retry",
   "settings_models_services": "Services",
   "settings_models_small_same": "Same as the default model",
   "settings_models_status_bad": "Key invalid",
@@ -2068,6 +2068,7 @@
   "settings_models_test": "Test connection",
   "settings_models_test_busy": "Testing…",
   "settings_models_test_ok": "Connected · {arg1, number, ::group-off} ms",
+  "settings_models_test_model": "Test this model",
   "@settings_models_test_ok": {
     "placeholders": {
       "arg1": {

@@ -505,24 +505,45 @@ func TestJudgeLimitEdges(t *testing.T) {
 	}
 }
 
-func TestListJudgeModels(t *testing.T) {
-	ids, err := ListJudgeModels(context.Background(), nil, FormatDecisions, "http://unused.invalid", "k")
-	if err != nil || len(ids) != 1 || ids[0] != "gpt-6-luna" {
-		t.Errorf("decisions: %v %v", ids, err)
+func TestJudgeFormatLists(t *testing.T) {
+	const or = "https://openrouter.ai/api/v1"
+	if FormatDecisions.Lists("https://api.openai.com/v1") || !FormatSystemOne.Lists("https://api.typesafe.ai/v1") || !FormatDecisions.Lists(or+"/") {
+		t.Error("Lists")
 	}
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path != "/v1/models" || r.Header.Get("Authorization") != "Bearer k" {
-			t.Errorf("%s %q", r.URL.Path, r.Header.Get("Authorization"))
+	for _, c := range []struct {
+		f         JudgeFormat
+		base, url string
+	}{
+		{FormatDecisions, "https://api.openai.com/v1", "https://api.openai.com/v1/decisions"},
+		{FormatSystemOne, "https://api.typesafe.ai/v1/", "https://api.typesafe.ai/v1/systemone"},
+		{FormatDecisions, or, "https://openrouter.ai/api/alpha/decisions"},
+		{FormatSystemOne, or, or + "/systemone"},
+	} {
+		if got := JudgeURL(c.f, c.base); got != c.url {
+			t.Errorf("JudgeURL(%s, %s) = %s", c.f, c.base, got)
 		}
-		io.WriteString(w, `{"data":[{"id":"jev-preview"},{"id":"jev-latest"}]}`)
+	}
+}
+
+// OpenRouter lists its judge models only when asked for decisions output.
+func TestListJudgeModelsOpenRouter(t *testing.T) {
+	var query string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		query = r.URL.RawQuery
+		io.WriteString(w, `{"data":[{"id":"liquid/d1-ultra","architecture":{"output_modalities":["decisions"]},"endpoints":["/api/alpha/decisions"]},{"id":"~typesafe/jev-latest"}]}`)
 	}))
 	defer srv.Close()
-	ids, err = ListJudgeModels(context.Background(), nil, FormatSystemOne, srv.URL+"/v1", "k")
-	if err != nil || strings.Join(ids, ",") != "jev-latest,jev-preview" {
-		t.Errorf("systemone: %v %v", ids, err)
+	ids, err := ListJudgeModels(context.Background(), nil, srv.URL+"/v1", "k")
+	if err != nil || query != "" || len(ids) != 2 {
+		t.Fatalf("elsewhere: %q %v %q", ids, err, query)
 	}
-	if FormatDecisions.Path() != "/decisions" || FormatSystemOne.Path() != "/systemone" {
-		t.Error("Path")
+	c := &http.Client{Transport: roundTrip(func(r *http.Request) (*http.Response, error) { // openrouter.ai, served by srv
+		r.URL.Scheme, r.URL.Host = "http", strings.TrimPrefix(srv.URL, "http://")
+		return http.DefaultTransport.RoundTrip(r)
+	})}
+	ids, err = ListJudgeModels(context.Background(), c, "https://openrouter.ai/api/v1", "k")
+	if err != nil || query != "output_modalities=decisions" || strings.Join(ids, ",") != "liquid/d1-ultra,~typesafe/jev-latest" {
+		t.Fatalf("openrouter: %q %v %q", ids, err, query)
 	}
 }
 
