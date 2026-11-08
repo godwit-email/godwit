@@ -312,7 +312,7 @@ func (s *Service) archivePlan(ctx context.Context, addr string) (archiving, erro
 	if err != nil {
 		return p, err
 	}
-	args := sent
+	args := append(sent, KindLocalArchive)
 	for _, h := range q.fromHeaders {
 		args = append(args, h)
 	}
@@ -320,7 +320,7 @@ func (s *Service) archivePlan(ctx context.Context, addr string) (archiving, erro
 		OR EXISTS (SELECT 1 FROM message_locations tl WHERE tl.message_id = t.id AND tl.shown AND tl.folder_id IN (` + placeholders(len(sent)) + `))`
 	rows, err := s.db.Query(ctx, `SELECT m.id, m.account_id, `+shownFolder+`, EXISTS (SELECT 1 FROM messages t WHERE (t.id = m.id OR t.thread_id = m.thread_id) AND (`+kept+`))
 		FROM messages m WHERE `+shownIn("(SELECT id FROM folders WHERE role = 'inbox')")+`
-		AND m.account_id NOT IN (SELECT id FROM accounts WHERE kind = '`+KindLocalArchive+`') AND m.from_addr IN (`+
+		AND m.account_id NOT IN (SELECT id FROM accounts WHERE kind = ?) AND m.from_addr IN (`+
 		placeholders(len(q.fromHeaders))+") ORDER BY m.id", args...)
 	if err != nil {
 		return p, err
