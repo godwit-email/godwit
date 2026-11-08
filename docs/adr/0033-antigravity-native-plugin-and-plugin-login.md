@@ -10,11 +10,11 @@ Google Antigravity 不做成内置服务（替代 PR 485 的方案），做成�
 
 维护者确认了以下几点：
 
-1. 允许个人 Google 账号登录（`oauth-personal`），但插件**不进官方目录**，只能手动安装，登录前必须确认风险说明。
+1. 允许个人 Google 账号登录（`oauth-personal`），插件**进官方目录**，登录前必须确认风险说明。最初的推荐是不进目录、只能手动安装；维护者看过下面的理由后改为收录，目录条目的摘要要写明条款风险和邮件会被 Google 存储。
 2. 用维护者的账号跑探针，结果见「验证状态」。
 3. 只做 macOS。Linux 和 Windows 上 ACP 服务只能把 token 存成明文文件。
 4. macOS 上和本机其他 ACP 编辑器共用同一个登录。
-5. 代码放在私有仓库 `godwit-email/plugin-antigravity`。
+5. 代码放在公开仓库 `godwit-email/plugin-antigravity`，由它的 CI 从标签构建并发版，目录据此审核。
 
 ## 账号和数据风险
 
@@ -24,7 +24,7 @@ Google Antigravity 不做成内置服务（替代 PR 485 的方案），做成�
 - **官方 ACP 不等于放行。** Google 确实发布了 ACP 服务，[ACP 文档](https://antigravity.google/docs/cli/acp)列了 Zed、JetBrains 等编辑器，也提到其他 ACP 客户端，[ACP Registry](https://cdn.agentclientprotocol.com/registry/v1/latest/registry.json) 也收录了它。但这些内容都是针对编辑器的，没有说邮件客户端可以用。走 ACP 比直接拿 OAuth token 调后端好得多，但不能说它合规。
 - **确实有封禁。** Google 在 [gemini-cli 讨论](https://github.com/google-gemini/gemini-cli/discussions/20632)里说明：被标记后要填表并重新确认条款，第二次违规永久封禁。用户报告里有付费账号被封，也有人申诉数周没有回音。这些报告都是个案，比例未知。报告里受影响的是 Antigravity 和 Gemini CLI 的访问，没有看到 Gmail 或整个 Google 账号被停用的案例，但也**没有 Google 的保证**。对 Gmail 用户来说，这是最不能接受的一种结果。
 - **邮件会被存储，可能被人工查看。** 条款第 5 条说明，个人方案下 Google 会记录交互内容，用于改进产品和机器学习技术，员工和外包人员可能查看，并建议不要提交机密信息。关掉遥测也不能完全停止这类使用。对邮件客户端来说，这比封号更普遍：**每个用户都会遇到**。
-- **和 [0019](0019-subscription-oauth-providers.md) 的区别。** 0019 接受的是借用 client_id 的条款风险，当时没有点名的禁令。这里条款写明了，还有实际的封禁记录。如果放进官方目录，等于 Godwit 以审核方的身份推荐用户违约，所以推荐不进目录。
+- **和 [0019](0019-subscription-oauth-providers.md) 的区别。** 0019 接受的是借用 client_id 的条款风险，当时没有点名的禁令。这里条款写明了，还有实际的封禁记录。放进官方目录，等于 Godwit 以审核方的身份把一个违约的做法列为「已审核」。这是维护者知情后接受的风险：目录条目和登录前的确认都要把它说清楚，不能让「已审核」被理解为合规。
 
 绝不做的事：把 `clientInfo` 伪装成 Zed 等编辑器。ACP 服务会读这个字段并按客户端区别处理，插件如实报告 `godwit`。伪装属于规避检测，风险也更大。
 
@@ -59,7 +59,7 @@ Google Antigravity 不做成内置服务（替代 PR 485 的方案），做成�
 - `pluginModelTransport` 在流式响应结束前算作进行中的调用。现在 loopback 上的流不经过 ABI，空闲定时器可能在生成途中结束进程。这对所有 loopback 模型的插件都是修复。
 - 扩展页接上设计稿的「登录」按钮（`canLogin`，见 PR 530 的 `ExtensionsPlugins.dc.html`）。这部分基于 [PR 530](https://github.com/godwit-email/godwit/pull/530)。
 
-**外发判断：** 登录是用户亲手点击触发的，和一键退订同类（0004），记审计（来源 `user`，只记主机名，每个流程一次）。主机不新增无人值守时外发的持久状态。模型调用和其他云端模型一样外发，走 0025 的脱敏（loopback 地址不算 `OnDevice`）。目录条目若存在，`dataFlow` 为 `third-party`。
+**外发判断：** 登录是用户亲手点击触发的，和一键退订同类（0004），记审计（来源 `user`，只记主机名，每个流程一次）。主机不新增无人值守时外发的持久状态。模型调用和其他云端模型一样外发，走 0025 的脱敏（loopback 地址不算 `OnDevice`）。目录条目的 `dataFlow` 为 `third-party`。
 
 ## 插件：把 PR 485 的问题逐个解决
 

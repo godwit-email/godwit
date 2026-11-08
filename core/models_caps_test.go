@@ -4,8 +4,10 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"io"
 	"log/slog"
 	"net/http"
+	"net/http/httptest"
 	"path/filepath"
 	"slices"
 	"strings"
@@ -451,7 +453,9 @@ func TestCapabilityStatusHoldsNoText(t *testing.T) {
 	assert.Contains(t, string(b), `"Code":"auth"`)
 }
 
-// Probing a judge: other gets the format's list, others list with a key.
+// Probing a judge lists /models as generate does, for every provider; a
+// format without a list, or a service without one, leaves the models to the
+// user, never a stand-in list.
 func TestCheckJudgeModels(t *testing.T) {
 	s, bg := modelSvc(t), context.Background()
 	srv := testllm.Start(t, "openai")
@@ -465,15 +469,62 @@ func TestCheckJudgeModels(t *testing.T) {
 	c, err = s.CheckModelService(bg, 0, ts)
 	require.NoError(t, err)
 	assert.Equal(t, []string{"jev-1", "jev-2"}, c.JudgeModels)
+	assert.True(t, c.JudgeListed)
 	ts.APIKey = "bad"
 	_, err = s.CheckModelService(bg, 0, ts)
 	assert.ErrorIs(t, err, ErrModelAuth)
 
-	ts.Provider, ts.Kind = ProviderOther, "openai"
-	ts.APIKey = "k"
+	ts.Provider, ts.APIKey = ProviderOther, "k"
 	c, err = s.CheckModelService(bg, 0, ts)
 	require.NoError(t, err)
-	assert.Equal(t, ai.FormatSystemOne.Models(), c.JudgeModels)
+	assert.Equal(t, []string{"jev-1", "jev-2"}, c.JudgeModels, "other lists too")
+	ts.Kind = "openai"
+	c, err = s.CheckModelService(bg, 0, ts)
+	require.NoError(t, err)
 	assert.Equal(t, []string{"jev-1", "jev-2"}, c.Models)
+	assert.Equal(t, c.Models, c.JudgeModels, "generate's list is the same /models")
 	assert.Equal(t, srv.URL+"/chat/completions", c.Endpoint)
+
+	ts.Kind, ts.JudgeFormat = "", "decisions"
+	c, err = s.CheckModelService(bg, 0, ts)
+	require.NoError(t, err)
+	assert.Nil(t, c.JudgeModels, "decisions has no list")
+	assert.False(t, c.JudgeListed)
+
+	none := httptest.NewServer(http.NotFoundHandler())
+	t.Cleanup(none.Close)
+	c, err = s.CheckModelService(bg, 0, ModelServiceInput{Name: "n", Provider: ProviderOther, BaseURL: none.URL, JudgeFormat: "systemone", KeyAction: KeyClear})
+	require.NoError(t, err)
+	assert.False(t, c.JudgeListed)
+	assert.Equal(t, 404, c.JudgeNoListStatus)
+}
+
+// roundTripFunc is an http.RoundTripper of a func.
+type roundTripFunc func(*http.Request) (*http.Response, error)
+
+func (f roundTripFunc) RoundTrip(r *http.Request) (*http.Response, error) { return f(r) }
+
+// OpenRouter: judge lists its decisions models, never generate's chat ones,
+// and Decisions goes to /api/alpha.
+func TestCheckJudgeModelsOpenRouter(t *testing.T) {
+	s, bg := modelSvc(t), context.Background()
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Query().Get("output_modalities") == "decisions" {
+			io.WriteString(w, `{"data":[{"id":"liquid/d1-ultra"},{"id":"openai/gpt-6-luna-decisions"}]}`)
+			return
+		}
+		io.WriteString(w, `{"data":[{"id":"openai/gpt-6-luna"}]}`)
+	}))
+	t.Cleanup(srv.Close)
+	s.modelHTTP = &http.Client{Transport: roundTripFunc(func(r *http.Request) (*http.Response, error) {
+		r.URL.Scheme, r.URL.Host = "http", strings.TrimPrefix(srv.URL, "http://")
+		return http.DefaultTransport.RoundTrip(r)
+	})}
+	c, err := s.CheckModelService(bg, 0, ModelServiceInput{Name: "or", Provider: ProviderOther, BaseURL: "https://openrouter.ai/api/v1", Kind: "openai",
+		JudgeFormat: "decisions", APIKey: "k", KeyAction: KeyReplace})
+	require.NoError(t, err)
+	assert.Equal(t, []string{"openai/gpt-6-luna"}, c.Models)
+	assert.Equal(t, []string{"liquid/d1-ultra", "openai/gpt-6-luna-decisions"}, c.JudgeModels)
+	assert.True(t, c.JudgeListed)
+	assert.Equal(t, "https://openrouter.ai/api/alpha/decisions", c.JudgeEndpoint)
 }

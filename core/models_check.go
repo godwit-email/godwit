@@ -17,7 +17,9 @@ type ServiceCheck struct {
 	ListSupported     bool              // false: the service has no model list; models are typed by hand
 	NoListStatus      int               // the HTTP status that said so, when known
 	JudgeEndpoint     string
-	JudgeModels       []string // nil until there is a key, except for ProviderOther
+	JudgeModels       []string // what the service lists for judge; nil when it lists none
+	JudgeListed       bool     // JudgeModels came from the service: false before a key, for a format without a list, or when /models has none
+	JudgeNoListStatus int      // the HTTP status that said there is no list, when known
 }
 
 // CheckModelService probes in as service id (0: a new one) would be saved,
@@ -72,19 +74,21 @@ func (s *Service) CheckModelService(ctx context.Context, id int64, in ModelServi
 	}
 	if in.JudgeFormat != "" {
 		f := ai.JudgeFormat(in.JudgeFormat)
-		c.JudgeEndpoint = in.BaseURL + f.Path()
-		// A gateway's /models lists every chat model: other gets the format's own list.
+		c.JudgeEndpoint = ai.JudgeURL(f, in.BaseURL)
 		switch {
-		case in.Provider == ProviderOther:
-			c.JudgeModels = f.Models()
-		case key != "":
-			c.JudgeModels, err = ai.ListJudgeModels(ctx, s.modelHTTP, f, in.BaseURL, key)
-			if errors.Is(err, ai.ErrModelAuth) {
+		case !f.Lists(in.BaseURL):
+		case (in.Kind == ai.KindOpenAI || in.Kind == ai.KindResponses) && !ai.OpenRouter(in.BaseURL): // generate just listed the same /models
+			c.JudgeModels, c.JudgeListed, c.JudgeNoListStatus = c.Models, c.ListSupported && len(c.Models) > 0, c.NoListStatus
+		case key != "" || in.Provider == ProviderOther:
+			c.JudgeModels, err = ai.ListJudgeModels(ctx, s.modelHTTP, in.BaseURL, key)
+			var nl *ai.NoListError
+			if errors.As(err, &nl) {
+				c.JudgeNoListStatus, err = nl.Status, nil
+			}
+			if err != nil {
 				return ServiceCheck{}, err
 			}
-			if err != nil || len(c.JudgeModels) == 0 {
-				c.JudgeModels = f.Models()
-			}
+			c.JudgeListed = len(c.JudgeModels) > 0
 		}
 	}
 	return c, nil

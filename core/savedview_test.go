@@ -239,7 +239,7 @@ func TestOwnKey(t *testing.T) {
 
 func TestReplyStatusReplying(t *testing.T) {
 	e := newSendEnv(t, false)
-	e.put(t, "INBOX", eml("q@x", "bob@a.example", "alice@example.com", "question", e.viewAt(1), "?"))
+	e.put(t, "INBOX", eml("q@x", "bob@a.example", "alice@example.com", "question", e.viewAt(-0.01), "?"))
 	e.sync(t)
 	require.Equal(t, ReplyStatusUnreplied, e.replyOf(t, "q@x").Kind)
 

@@ -687,9 +687,9 @@ func TestModelsFetchFailureRetry(t *testing.T) {
 	}
 	h.fill("地址", "https://api.example.com/v1")
 	h.blurKey()
-	h.see("重试")
+	h.see("拉取 /models 失败")
 	fail = false
-	h.click("重试")
+	h.click("刷新列表")
 	h.until("listed", func() bool { return slices.Contains(m.form.offered, "back") })
 }
 
@@ -785,6 +785,105 @@ func TestModelsGatewayChipsAndCaptions(t *testing.T) {
 	h.click("OpenAI") // a provider tile: no 常用
 	if h.tt.HasText("常用") {
 		t.Fatal("common chips show for a provider")
+	}
+}
+
+// Judge on an other service lists /models as generate does: the listed
+// models replace the format's suggested default, and one is chosen as a chip.
+func TestModelsJudgeListsForOther(t *testing.T) {
+	h := withLLM(t)
+	url, _ := modelsServer(t, 0, "d1", "d1-ultra")
+	m := h.newService()
+	h.fill("名称", "liquid")
+	h.fill("地址", url)
+	h.click("开启生成") // off: the only chips are judge's
+	h.click("开启判断")
+	f := m.form
+	f.judgeFormat = string(ai.FormatSystemOne)
+	f.setJudgeFormat()
+	h.blurKey()
+	h.until("listed", func() bool { return !f.probing && f.judgeList.state == "ok" })
+	if f.judgeModel != "d1" || !slices.Equal(f.decList(), []string{"d1", "d1-ultra"}) {
+		t.Fatalf("judge %q of %q", f.judgeModel, f.decList())
+	}
+	h.click("d1-ultra")
+	if f.judgeModel != "d1-ultra" {
+		t.Fatalf("judge %q", f.judgeModel)
+	}
+	h.click("d1")
+	if f.judgeModel != "d1" {
+		t.Fatalf("judge %q: one model at a time", f.judgeModel)
+	}
+}
+
+// Many models bring a filter, by ID or name, and a toggle for the chosen
+// ones; Refresh lists them again on demand.
+func TestModelsPickerFilterAndRefresh(t *testing.T) {
+	h := withLLM(t)
+	var ids []string
+	for i := range 20 {
+		ids = append(ids, fmt.Sprintf("vendor/m-%02d", i))
+	}
+	url, keys := modelsServer(t, 0, ids...)
+	m := h.newService()
+	h.fill("名称", "gw")
+	h.fill("地址", url)
+	h.blurKey()
+	f := m.form
+	h.until("listed", func() bool { return !f.probing && f.list.state == "ok" })
+	h.see("筛选 20 个模型…")
+	v := f.genPicker()
+	if got := v.view.filter(f.offered, f.names, v.on); len(got) != 20 {
+		t.Fatalf("unfiltered: %d", len(got))
+	}
+	h.fill("筛选 20 个模型…", "M-1")
+	if got := v.view.filter(f.offered, f.names, v.on); len(got) != 10 {
+		t.Fatalf("by ID, any case: %q", got)
+	}
+	h.click("仅已选")
+	if got := v.view.filter(f.offered, f.names, v.on); got != nil {
+		t.Fatalf("chosen and matching: %q", got)
+	}
+	h.see("没有匹配的模型。")
+	v.view.query = ""
+	if got := v.view.filter(f.offered, f.names, v.on); !slices.Equal(got, []string{"vendor/m-00"}) {
+		t.Fatalf("only the chosen: %q", got)
+	}
+	n := len(keys())
+	h.click("刷新列表")
+	h.until("fetched again", func() bool { return len(keys()) > n && !f.probing })
+}
+
+// A model chip's menu tests that model alone, and its result shows on the
+// chip and under the chips, named; a change of the key clears it.
+func TestModelsChipMenuTestsOneModel(t *testing.T) {
+	h := withLLM(t)
+	url, _ := modelsServer(t, 0, "m-a", "m-b")
+	m := h.newService()
+	var asked []string
+	m.testService = func(_ context.Context, _ int64, in core.ModelServiceInput, c string) (core.CapStatus, error) {
+		asked = append(asked, c+":"+in.Models[0])
+		return core.CapStatus{State: "ok", LatencyMs: 321}, nil
+	}
+	h.fill("名称", "gw")
+	h.fill("地址", url)
+	h.blurKey()
+	f := m.form
+	h.until("listed", func() bool { return !f.probing && len(f.offered) == 2 })
+	if err := h.tt.RightClick("m-b"); err != nil {
+		t.Fatal(err)
+	}
+	if err := h.tt.ChooseMenuItem("测试这个模型"); err != nil {
+		t.Fatal(err)
+	}
+	h.see("m-b · 连接正常 · 321 ms")
+	if !slices.Equal(asked, []string{"gen:m-b"}) || !slices.Equal(f.models, []string{"m-a"}) {
+		t.Fatalf("asked %q, chosen %q: the menu tests without choosing", asked, f.models)
+	}
+	h.fill("API Key", "other")
+	h.tt.Frame()
+	if f.modelTests != nil {
+		t.Fatal("a test for the old key stayed")
 	}
 }
 
@@ -1175,29 +1274,37 @@ func TestModelFormNameFollowsURL(t *testing.T) {
 	}
 }
 
-// TestModelFormDecList: no judge models until there is a key, except for
-// other, which lists its format's; a fetched list wins for a provider.
+// TestModelFormDecList: the judge models are what the service listed, else
+// the format's usual IDs as suggestions, for every provider; the chosen one
+// stays offered, and a format switch drops the other's list.
 func TestModelFormDecList(t *testing.T) {
 	f := newForm(core.ProviderTypeSafe)
-	if l := f.decList(); l != nil {
-		t.Fatalf("without a key: %q", l)
-	}
-	f.key = "k"
-	if l := f.decList(); !slices.Equal(l, []string{"jev-latest", "jev-preview"}) {
-		t.Fatalf("keyed, unfetched: %q", l)
+	if l := f.decList(); !slices.Equal(l, ai.FormatSystemOne.Models()) {
+		t.Fatalf("unfetched: %q", l)
 	}
 	f.judgeModels = []string{"jev-latest", "jev-preview", "jev-1.13.0"}
 	if l := f.decList(); len(l) != 3 {
 		t.Fatalf("fetched: %q", l)
 	}
-	f.key, f.id, f.hasKey, f.judgeModel = "", 1, true, "jev-old" // a stored key; a saved model no longer listed stays
+	f.judgeModel = "jev-old" // a saved model no longer listed stays
 	if l := f.decList(); len(l) != 4 || l[0] != "jev-old" {
 		t.Fatalf("edit: %q", l)
 	}
-	o := newForm(core.ProviderOther) // no key: its format's own list, never a gateway's /models
-	o.judgeFormat, o.judgeModel, o.judgeModels = "systemone", "jev-latest", []string{"gateway-chat-model"}
-	if l := o.decList(); !slices.Equal(l, ai.FormatSystemOne.Models()) {
+	o := newForm(core.ProviderOther)
+	o.judgeFormat, o.judgeModels = "systemone", []string{"d1", "d1-ultra"}
+	o.judgeModel = "d1"
+	if l := o.decList(); !slices.Equal(l, []string{"d1", "d1-ultra"}) {
 		t.Fatalf("other: %q", l)
+	}
+	o.judgeManual = " my-judge "
+	o.addJudgeManual()
+	if o.judgeModel != "my-judge" || o.decList()[0] != "my-judge" {
+		t.Fatalf("by hand: %q %q", o.judgeModel, o.decList())
+	}
+	o.judgeFormat = "decisions"
+	o.setJudgeFormat()
+	if l := o.decList(); !slices.Equal(l, ai.FormatDecisions.Models()) || o.judgeModel != l[0] {
+		t.Fatalf("switched: %q %q", l, o.judgeModel)
 	}
 }
 

@@ -38,9 +38,9 @@
   ],
   "lastChange": {
     "by": "baranwang",
-    "at": "2026-10-11T01:14:22Z",
+    "at": "2026-11-08T10:16:45Z",
     "via": "Claude Code",
-    "note": "Controls (buttons, icon groups, send button, menu, tooltip, bars); few-lines rule; radius usage; Settings preview flat."
+    "note": "Tokens re-checked against internal/theme@9b714968 (dark status pairs, glass, scrims, card/raised, 12 label colors, size family, shadow-2xl, line heights). Controls and Settings fixed to the code; new: Dialog, Toast, Empty, Inputs, Tabs, Label chip, Template field, Alert, Search palette."
   },
   "layout": "files",
   "libraries": [],
