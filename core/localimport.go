@@ -193,6 +193,12 @@ func (s *Service) archivePath(accountID int64, hash string) string {
 	return filepath.Join(s.dataDir, "archive", strconv.FormatInt(accountID, 10), hash+".eml")
 }
 
+// archivePartsDir holds the attachments extracted from the original with
+// content_hash hash; it goes with the original.
+func (s *Service) archivePartsDir(accountID int64, hash string) string {
+	return filepath.Join(s.dataDir, "archive", strconv.FormatInt(accountID, 10), "parts", hash)
+}
+
 // deleteLocal deletes a local archive's messages ts for good, with their
 // originals and the files extracted from them (ADR 0036): rows first, so a
 // file that cannot be removed is merely unreferenced.
@@ -212,7 +218,7 @@ func (s *Service) deleteLocal(ctx context.Context, accountID int64, ts []target)
 		ThreadIDs: slices.Compact(slices.Sorted(slices.Values(tids)))})
 	for _, h := range hashes {
 		os.Remove(s.archivePath(accountID, h))
-		os.RemoveAll(filepath.Join(filepath.Dir(s.archivePath(accountID, h)), "parts", h))
+		os.RemoveAll(s.archivePartsDir(accountID, h))
 	}
 	return nil
 }
