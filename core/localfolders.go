@@ -77,15 +77,15 @@ func (s *Service) DeleteLocalFolder(ctx context.Context, folderID int64) error {
 		return err
 	}
 	// Any location counts, shown or not: deleting the folder would cascade it.
-	rows, err := s.db.Query(ctx, "SELECT EXISTS(SELECT 1 FROM message_locations WHERE folder_id = ?)", folderID)
+	// One statement, so an import committing meanwhile cannot be cascaded.
+	r, err := s.db.Execute(ctx, "DELETE FROM folders WHERE id = ? AND NOT EXISTS(SELECT 1 FROM message_locations WHERE folder_id = ?)", folderID, folderID)
 	if err != nil {
 		return err
 	}
-	if store.Int(rows.Values[0][0]) != 0 {
+	if r.Changes == 0 {
 		return ErrFolderNotEmpty
 	}
-	_, err = s.db.Execute(ctx, "DELETE FROM folders WHERE id = ?", folderID)
-	return err
+	return nil
 }
 
 // localFolder returns the account of a local archive's folder that is

@@ -200,3 +200,27 @@ func TestLocalFoldersOnlyInALocalArchive(t *testing.T) {
 	require.ErrorIs(t, s.RenameLocalFolder(ctx, folders[0].ID, "x"), core.ErrNotLocalArchive)
 	require.ErrorIs(t, s.DeleteLocalFolder(ctx, folders[0].ID), core.ErrNotLocalArchive)
 }
+
+// Deleting an empty folder while mail is imported into it must not cascade the
+// new mail's only location. Racy by nature: it checks the invariant over
+// several rounds.
+func TestDeleteLocalFolderRacingImportKeepsMail(t *testing.T) {
+	s := newTestService(t)
+	acc, _ := newArchive(t, s)
+	for i := range 20 {
+		f, err := s.CreateLocalFolder(ctx, acc.ID, fmt.Sprintf("f%d", i))
+		require.NoError(t, err)
+		path := writeEML(t, t.TempDir(), "a.eml", invoice(fmt.Sprint(i)))
+		done := make(chan error, 1)
+		go func() { done <- s.DeleteLocalFolder(ctx, f.ID) }()
+		sum, err := s.ImportEML(ctx, acc.ID, f.ID, []string{path})
+		delErr := <-done
+		if err != nil || sum.Imported == 0 {
+			continue // the folder went first: nothing was imported
+		}
+		require.ErrorIs(t, delErr, core.ErrFolderNotEmpty, "the import came first")
+		page, err := s.ListMessages(ctx, core.View{FolderID: f.ID}, "", 10)
+		require.NoError(t, err)
+		require.Len(t, page.Items, 1)
+	}
+}
