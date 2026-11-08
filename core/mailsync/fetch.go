@@ -137,6 +137,11 @@ func Fetch(ctx context.Context, db *store.DB, c *imapclient.Client, accountID in
 		return r.more, refused
 	}
 	gmail := c.Caps().Has(capGmail)
+	if gmail {
+		if err := keepInAllMail(ctx, db, c, accountID, &r); err != nil {
+			return r.more, err
+		}
+	}
 	if err := dropOrphans(ctx, db, accountID, r.orphans, true, gmail, &r); err != nil {
 		return r.more, err
 	}
@@ -146,6 +151,47 @@ func Fetch(ctx context.Context, db *store.DB, c *imapclient.Client, accountID in
 		}
 	}
 	return r.more, unclaimable(ctx, db, accountID, &r)
+}
+
+// keepInAllMail gives each Gmail orphan dropOrphans would delete its All Mail
+// UID when All Mail still has it: a count-limited sync may never have cached
+// that UID, so a complete scan alone does not prove the message is gone.
+func keepInAllMail(ctx context.Context, db *store.DB, c *imapclient.Client, accountID int64, r *result) error {
+	all, err := db.Query(ctx, "SELECT id, name FROM folders WHERE account_id = ? AND role = 'all'", accountID)
+	if err != nil || len(all.Values) == 0 {
+		return err
+	}
+	rows, err := db.Query(ctx, `SELECT id, gmail_msgid, thread_id FROM messages WHERE account_id = ? AND gmail_msgid IS NOT NULL AND `+orphaned+`
+		AND NOT EXISTS (SELECT 1 FROM ops WHERE message_id = messages.id AND state = 'pending')`, accountID)
+	if err != nil || len(rows.Values) == 0 {
+		return err
+	}
+	folder := store.Int(all.Values[0][0])
+	sel, err := c.Select(store.Str(all.Values[0][1]), nil).Wait()
+	if err != nil {
+		return err
+	}
+	var stmts []sqlite.Statement
+	var ids, tids []int64
+	for _, v := range rows.Values {
+		gid, _ := strconv.ParseUint(store.Str(v[1]), 10, 64)
+		found, err := c.UIDSearch(&imap.SearchCriteria{GmailMsgID: []uint64{gid}}, nil).Wait()
+		if err != nil {
+			return err
+		}
+		if uid := single(found.All); uid != 0 {
+			stmts = append(stmts, locate(store.Int(v[0]), folder, sel.UIDValidity, uid)...)
+			ids, tids = append(ids, store.Int(v[0])), append(tids, store.Int(v[2]))
+		}
+	}
+	if len(stmts) == 0 {
+		return nil
+	}
+	if _, err := db.Transaction(ctx, stmts); err != nil {
+		return err
+	}
+	r.gone(ids, tids)
+	return nil
 }
 
 // reshow shows a Gmail message again in every folder the server has it in

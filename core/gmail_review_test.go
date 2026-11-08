@@ -78,3 +78,19 @@ func TestGmailFlagsSkipALabelAnotherClientRemoved(t *testing.T) {
 	assert.Contains(t, got.Flags, `\Flagged`, "the change reached the message through All Mail")
 	assert.Equal(t, []string{"done"}, e.opStates(t))
 }
+
+func TestGmailOrphanKeptWhileAllMailHasIt(t *testing.T) {
+	e := newSyncEnv(t, testmail.Gmail())
+	_, err := e.s.db.Execute(bg, "UPDATE accounts SET sync_limit = 1 WHERE id = ?", e.acc.ID)
+	require.NoError(t, err)
+	m := e.im.AddGmail(msg("old@x"), nil, "INBOX", testmail.GmailAllMail)
+	e.im.AddGmail(msg("new@x"), nil, testmail.GmailAllMail) // All Mail's one cached UID
+	e.sync(t)
+	id := e.idOf(t, "old@x")
+	m.Unlabel("INBOX") // archived on another client
+	e.sync(t)
+	exists, err := e.s.MessageExists(bg, id)
+	require.NoError(t, err)
+	assert.True(t, exists, "All Mail still holds it")
+	assert.Contains(t, e.listed(t, testmail.GmailAllMail), id)
+}

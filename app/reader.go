@@ -179,6 +179,13 @@ func (r *reader) load() {
 		if th, err = get(ctx, k[0]); err != nil {
 			return err
 		}
+		if k[1] != 0 && !slices.ContainsFunc(th.Messages, func(m core.MessageSummary) bool { return m.ID == k[1] }) {
+			m, err := a.svc.GetMessageLazyImages(ctx, k[1], false)
+			if err != nil {
+				return err
+			}
+			k[1] = m.ID // merged into another message since the route was set (ADR 0034)
+		}
 		labels, err = a.svc.ThreadLabels(ctx, []int64{k[0]})
 		return err
 	}, func(err error) {
