@@ -55,6 +55,7 @@ export function AddressInput({
   const have = list.map(addrKey).join("\n"); // a string: the list is a new array on every render
   useEffect(() => {
     void compositionEnds; // a composition's end searches its final text
+    if (dismissed.current !== pending) dismissed.current = undefined; // other text: a new search
     if (!onSearch || frozen || composing.current || !pending.trim()) {
       setFound({ q: "", hits: [] });
       return;

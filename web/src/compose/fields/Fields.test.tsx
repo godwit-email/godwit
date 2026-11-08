@@ -385,3 +385,13 @@ test("hits answered after Escape stay closed until the text changes", async () =
   await act(async () => slow.zha([contacts[0]]));
   expect(options()).toEqual(["Zhang, Sanzhang@acme.io"]);
 });
+
+test("text typed again after Escape completes again", async () => {
+  setup({}, false, search);
+  await userEvent.type(to(), "zh");
+  await screen.findAllByRole("option");
+  await userEvent.keyboard("{Escape}");
+  await userEvent.clear(to());
+  await userEvent.type(to(), "zh");
+  expect(await screen.findAllByRole("option")).toHaveLength(2);
+});
