@@ -5,7 +5,7 @@ import { Button } from "@/components/ui/button";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import type { ContactHit } from "@/mygo";
 import type { T } from "@/shared/i18n";
-import { display, invalid } from "./address";
+import { addrKey, display, invalid } from "./address";
 
 /**
  * An address field: its addresses as chips, each labelled with the whole entry, showing the display
@@ -42,33 +42,41 @@ export function AddressInput({
   t: T;
 }) {
   const composing = useRef(false);
-  const [composed, setComposed] = useState(0); // a composition's end searches its final text
-  const [hits, setHits] = useState<ContactHit[]>([]);
+  const [compositionEnds, setCompositionEnds] = useState(0);
+  // the hits and the text they are for: Enter picks one only while that is still what is typed
+  const [found, setFound] = useState<{ q: string; hits: ContactHit[] }>({ q: "", hits: [] });
+  const hits = found.hits;
+  const setHits = (h: ContactHit[]) => setFound({ q: "", hits: h });
   const [active, setActive] = useState(-1);
   const listId = useId();
   // a comma outside quotes ends an address
   const ends = (v: string) => v.replace(/"(?:[^"\\]|\\.)*("|$)/g, "").includes(",");
-  const have = list.map(key).join("\n"); // a string: the list is a new array on every render
+  const have = list.map(addrKey).join("\n"); // a string: the list is a new array on every render
   useEffect(() => {
-    void composed;
+    void compositionEnds; // a composition's end searches its final text
     if (!onSearch || frozen || composing.current || !pending.trim()) {
-      setHits([]);
+      setFound({ q: "", hits: [] });
       return;
     }
     let live = true; // only the latest text's hits show; the last ones stay until then
     const taken = new Set(have.split("\n"));
-    onSearch(pending).then(
-      (h) => {
-        if (!live) return;
-        setHits(h.filter((c) => !taken.has(key(c.address))));
-        setActive(invalid([pending]).length ? 0 : -1);
-      },
-      () => {},
+    const timer = setTimeout(
+      () =>
+        onSearch(pending).then(
+          (h) => {
+            if (!live) return;
+            setFound({ q: pending, hits: h.filter((c) => !taken.has(addrKey(c.address))) });
+            setActive(invalid([pending]).length ? 0 : -1);
+          },
+          () => live && setFound({ q: "", hits: [] }),
+        ),
+      150, // once the typing pauses, as the quote picker
     );
     return () => {
       live = false;
+      clearTimeout(timer);
     };
-  }, [pending, onSearch, frozen, have, composed]);
+  }, [pending, onSearch, frozen, have, compositionEnds]);
   const pick = (h: ContactHit) => {
     setHits([]);
     if (!frozen) onCommit(h.entry);
@@ -130,7 +138,7 @@ export function AddressInput({
         }}
         onCompositionEnd={() => {
           composing.current = false; // the text stays pending: the next input, Enter or blur commits it
-          setComposed((n) => n + 1);
+          setCompositionEnds((n) => n + 1);
         }}
         onKeyDown={(e) => {
           if (e.nativeEvent.isComposing) return;
@@ -140,10 +148,11 @@ export function AddressInput({
             setActive((a) => (e.key === "ArrowDown" ? (a + 1) % n : a <= 0 ? n - 1 : a - 1));
           } else if (n && e.key === "Escape") {
             e.preventDefault();
+            e.stopPropagation(); // closes the list, nothing around it
             setHits([]);
           } else if (e.key === "Enter") {
             e.preventDefault();
-            if (n && active >= 0) pick(hits[active]);
+            if (n && active >= 0 && found.q === pending) pick(hits[active]);
             else if (!frozen) onCommit(pending);
           }
         }}
@@ -187,9 +196,4 @@ export function AddressInput({
       )}
     </div>
   );
-}
-
-/** An entry's bare address, lowercased: `Name <a@b>` and `a@b` are the same contact. */
-function key(s: string): string {
-  return (s.trim().match(/<([^<>]*)>$/)?.[1] ?? s).trim().toLowerCase();
 }

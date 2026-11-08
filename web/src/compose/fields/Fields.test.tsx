@@ -1,4 +1,4 @@
-import { act, fireEvent, render, screen } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { createRef, type Ref, useState } from "react";
 import type { ContactHit } from "@/mygo";
@@ -309,7 +309,10 @@ test("addresses already in the field are not offered", async () => {
 test("a late answer to older text does not show", async () => {
   const slow: Record<string, (h: ContactHit[]) => void> = {};
   setup({}, false, (q) => new Promise((r) => (slow[q] = r)));
-  await userEvent.type(to(), "zh");
+  await userEvent.type(to(), "z");
+  await waitFor(() => expect(slow.z).toBeDefined());
+  await userEvent.type(to(), "h");
+  await waitFor(() => expect(slow.zh).toBeDefined());
   await act(async () => slow.zh([contacts[0]]));
   await act(async () => slow.z(contacts));
   expect(options()).toEqual(["Zhang, Sanzhang@acme.io"]);
@@ -338,4 +341,30 @@ test("while an IME composes, nothing is searched until it ends", async () => {
   fireEvent.compositionEnd(to());
   expect(await screen.findAllByRole("option")).toHaveLength(2);
   expect(onSearch).toHaveBeenLastCalledWith("zh");
+});
+
+test("Enter right away commits the first contact", async () => {
+  const { onChange } = setup({}, false, search);
+  await userEvent.type(to(), "zhao");
+  await screen.findByRole("option");
+  await userEvent.keyboard("{Enter}");
+  expect(onChange).toHaveBeenLastCalledWith({ to: ["Zhao Si <zhao@acme.io>"] });
+});
+
+test("Enter before the hits of the text arrive commits the text", async () => {
+  const { onChange } = setup({}, false, search);
+  await userEvent.type(to(), "z");
+  await screen.findAllByRole("option");
+  await userEvent.type(to(), "x@y.io{Enter}"); // the hits shown, Zhang active, are still z's
+  expect(onChange).toHaveBeenLastCalledWith({ to: ["zx@y.io"] });
+});
+
+test("a failed search shows nothing", async () => {
+  let fail = false;
+  setup({}, false, (q) => (fail ? Promise.reject(new Error("x")) : search(q)));
+  await userEvent.type(to(), "z");
+  await screen.findAllByRole("option");
+  fail = true;
+  await userEvent.type(to(), "h");
+  await waitFor(() => expect(screen.queryByRole("listbox")).not.toBeInTheDocument());
 });

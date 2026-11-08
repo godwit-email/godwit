@@ -394,7 +394,7 @@ type MailHit struct {
 	Date int64 `json:"date"`
 }
 
-// quoteHits caps the quote picker's results.
+// quoteHits caps the quote picker's results, and the address fields' contacts.
 const quoteHits = 8
 
 func searchMail(ctx context.Context, svc *core.Service, query string) ([]MailHit, error) {
