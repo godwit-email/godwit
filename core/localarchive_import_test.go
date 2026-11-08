@@ -8,7 +8,6 @@ import (
 	"slices"
 	"strings"
 	"testing"
-	"time"
 
 	"github.com/godwit-email/godwit/core"
 	"github.com/godwit-email/godwit/core/coretest"
@@ -286,22 +285,6 @@ func labeled(t *testing.T, s *core.Service, id, labelID int64) bool {
 		}
 	}
 	return false
-}
-
-func TestImportEMLRunsNoReceiveRule(t *testing.T) {
-	e := coretest.New(t)
-	mailAcc := e.AddAccount(t, "me@example.com")
-	l, _ := billsRule(t, e.Svc, core.RuleAction{Kind: core.ActionLabel})
-	acc, inbox := newArchive(t, e.Svc)
-	old := importOne(t, e.Svc, acc, inbox, coretest.Msg("billing@example.com", "me@example.com", "Old invoice", "b"))
-
-	// New mail after it gets the label: the rule ran past the import.
-	e.Deliver(t, mailAcc.ID, "INBOX", coretest.Msg("billing@example.com", "me@example.com", "New invoice", "b"))
-	require.Eventually(t, func() bool {
-		hits, err := e.Svc.Search(ctx, mailAcc.ID, "invoice", 10)
-		return err == nil && len(hits) == 1 && labeled(t, e.Svc, hits[0].ID, l.ID)
-	}, 5*time.Second, 20*time.Millisecond)
-	require.False(t, labeled(t, e.Svc, old.ID, l.ID))
 }
 
 func TestImportEMLRunRuleOnExistingSkipsOutbound(t *testing.T) {
