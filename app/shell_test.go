@@ -14,6 +14,7 @@ import (
 	"github.com/egoist/mygo/ui"
 	"github.com/godwit-email/godwit/core"
 	"github.com/godwit-email/godwit/core/ai"
+	"github.com/godwit-email/godwit/core/conn"
 	"github.com/godwit-email/godwit/core/coretest"
 	"github.com/godwit-email/godwit/core/events"
 	"github.com/godwit-email/godwit/internal/i18n"
@@ -357,6 +358,7 @@ func TestHumanizeErrors(t *testing.T) {
 		core.ErrStaleDraft, core.ErrInvalidState, core.ErrNoOutboxDraft, core.ErrRunActive, core.ErrSecurityScanBusy, core.ErrStaleApproval,
 		core.ErrNeedsGrant, core.ErrAINotConfigured, core.ErrModelNotFound, core.ErrTooLarge,
 		core.ErrKeychainUnavailable,
+		fmt.Errorf("imap: %w", conn.ErrAuthFailed), // a sync the user started, after the sign-in expired (#538)
 		&core.CheckError{Report: core.CheckReport{Steps: []core.CheckStep{{Name: "imap", Detail: "login refused"}}}},
 		&ai.Error{Code: ai.CodeUnauthorized}, &ai.Error{Code: ai.CodeRateLimited}, &ai.Error{Code: ai.CodeUnavailable},
 		&ai.Error{Code: ai.CodeBadResponse}, &ai.Error{Code: ai.CodeInternal}, &ai.Error{Code: ai.CodeStale},

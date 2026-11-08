@@ -105,7 +105,7 @@ var table = []Error{
 	{Code: "purge_too_late", Err: core.ErrPurgeTooLate, Key: "mail.purge.too_late"},
 	{Code: "canceled", Err: context.Canceled},
 	{Code: "deadline", Err: context.DeadlineExceeded},
-	{Code: "auth_failed", Err: conn.ErrAuthFailed}, // also a failed account check's cause
+	{Code: "auth_failed", Err: conn.ErrAuthFailed, Key: "settings.account.detail.auth_rejected"}, // also a failed account check's cause; the account's own words for it
 	{Code: "oauth_not_configured", Err: auth.ErrOAuthNotConfigured},
 	{Code: "flow_expired", Err: auth.ErrFlowExpired},
 	{Code: "invalid_grant", Err: auth.ErrInvalidGrant},
