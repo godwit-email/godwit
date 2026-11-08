@@ -192,3 +192,9 @@ func (s *Service) importFile(ctx context.Context, accountID, folderID int64, pat
 func (s *Service) archivePath(accountID int64, hash string) string {
 	return filepath.Join(s.dataDir, "archive", strconv.FormatInt(accountID, 10), hash+".eml")
 }
+
+// archivePartsDir holds the attachments extracted from the original with
+// content_hash hash; it goes with the original.
+func (s *Service) archivePartsDir(accountID int64, hash string) string {
+	return filepath.Join(s.dataDir, "archive", strconv.FormatInt(accountID, 10), "parts", hash)
+}

@@ -209,3 +209,6 @@ func (s *Service) JudgeForTest(ctx context.Context) (ai.Judge, error) {
 	j, _, _, err := s.resolveJudge(ctx)
 	return j, err
 }
+
+// EvictForTest shrinks the attachment cache budget to one byte and evicts.
+func (s *Service) EvictForTest(ctx context.Context) error { return s.evict(ctx, 1) }
