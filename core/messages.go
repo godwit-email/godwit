@@ -1094,7 +1094,8 @@ func (s *Service) gmailAccount(ctx context.Context, acc int64) (bool, error) {
 	if acc == 0 {
 		return false, nil
 	}
-	r, err := s.db.Query(ctx, "SELECT imap_gmail, provider FROM accounts WHERE id = ?", acc)
+	r, err := s.db.Query(ctx, `SELECT imap_gmail, provider = 'gmail' AND lower(imap_host) IN ('imap.gmail.com', 'imap.googlemail.com')
+		AND imap_port = 993 AND imap_security = 'tls' FROM accounts WHERE id = ?`, acc)
 	if err != nil {
 		return false, err
 	}
@@ -1104,7 +1105,7 @@ func (s *Service) gmailAccount(ctx context.Context, acc int64) (bool, error) {
 	if r.Values[0][0] != nil {
 		return store.Int(r.Values[0][0]) != 0, nil
 	}
-	if store.Str(r.Values[0][1]) == "gmail" {
+	if store.Int(r.Values[0][1]) != 0 {
 		_, err := s.db.Execute(ctx, "UPDATE accounts SET imap_gmail = 1 WHERE id = ?", acc)
 		return true, err
 	}

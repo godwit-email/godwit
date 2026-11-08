@@ -690,7 +690,8 @@ var Migrations = [][]string{{
 }, {
 	// NULL is an old account whose authenticated IMAP capabilities are unknown.
 	`ALTER TABLE accounts ADD COLUMN imap_gmail INTEGER`,
-	`UPDATE accounts SET imap_gmail = 1 WHERE provider = 'gmail' OR EXISTS (SELECT 1 FROM messages WHERE account_id = accounts.id AND gmail_msgid IS NOT NULL)`,
+	`UPDATE accounts SET imap_gmail = 1 WHERE provider = 'gmail' AND lower(imap_host) IN ('imap.gmail.com', 'imap.googlemail.com')
+		AND imap_port = 993 AND imap_security = 'tls'`,
 }}
 
 // HistoryRowsVersion is the schema version that keeps a conversation's
