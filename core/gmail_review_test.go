@@ -1,6 +1,7 @@
 package core
 
 import (
+	"fmt"
 	"testing"
 	"time"
 
@@ -36,6 +37,12 @@ func TestGmailHiddenAllMailDropsMailGoneFromTrash(t *testing.T) {
 }
 
 func TestGmailLabelFoundDuringMoveShowsAfterIt(t *testing.T) {
+	for _, early := range []bool{false, true} {
+		t.Run(fmt.Sprintf("early=%v", early), func(t *testing.T) { labelFoundDuringMove(t, early) })
+	}
+}
+
+func labelFoundDuringMove(t *testing.T, early bool) {
 	clock := useTestClock(t)
 	e := newSyncEnv(t, testmail.Gmail(), testmail.WithoutMove())
 	require.NoError(t, e.im.User.Delete(testmail.GmailAllMail))
@@ -48,8 +55,11 @@ func TestGmailLabelFoundDuringMoveShowsAfterIt(t *testing.T) {
 	m.Label("Work") // a filter on another client, while the archive waits for its undo window
 	e.sync(t)
 	assert.Empty(t, e.listed(t, "Work"), "hidden while the move is pending")
-	clock.Advance(10 * time.Second)
+	if !early {
+		clock.Advance(10 * time.Second)
+	}
 	e.sync(t)
+	e.sync(t) // a found label may release the archive before its window ends
 	assert.Equal(t, []string{"Work"}, m.Folders())
 	assert.Equal(t, []int64{id}, e.listed(t, "Work"))
 }
