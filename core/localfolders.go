@@ -21,6 +21,10 @@ var (
 	ErrRoleFolder = errors.New("the inbox and trash cannot be renamed or deleted")
 	// ErrFolderNotEmpty is a delete of a local folder that still holds mail.
 	ErrFolderNotEmpty = errors.New("the folder is not empty")
+	// ErrFolderNameEmpty is a local folder name that is blank once trimmed.
+	ErrFolderNameEmpty = errors.New("a folder needs a name")
+	// ErrFolderExists is a local folder name the account already has.
+	ErrFolderExists = errors.New("a folder with that name already exists")
 )
 
 // CreateLocalFolder adds a folder named name to the local archive accountID.
@@ -106,7 +110,7 @@ func (s *Service) localFolder(ctx context.Context, folderID int64) (int64, error
 
 func localFolderName(name string) (string, error) {
 	if name = strings.TrimSpace(name); name == "" {
-		return "", errors.New("a folder needs a name")
+		return "", ErrFolderNameEmpty
 	}
 	return name, nil
 }
@@ -117,7 +121,7 @@ func (s *Service) freeFolderName(ctx context.Context, accountID int64, name stri
 		return err
 	}
 	if len(rows.Values) > 0 {
-		return fmt.Errorf("a folder named %q already exists", name)
+		return fmt.Errorf("%w: %q", ErrFolderExists, name)
 	}
 	return nil
 }

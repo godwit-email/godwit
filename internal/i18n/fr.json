@@ -2070,5 +2070,7 @@
   "error_local_archive": "Une archive locale ne peut ni envoyer ni synchroniser d’e-mails.",
   "error_not_local_archive": "Seule une archive locale a des dossiers locaux.",
   "error_role_folder": "La boîte de réception et la corbeille ne peuvent être ni renommées ni supprimées.",
-  "error_folder_not_empty": "Le dossier n’est pas vide. Déplacez d’abord ses e-mails."
+  "error_folder_not_empty": "Le dossier n’est pas vide. Déplacez d’abord ses e-mails.",
+  "error_folder_name_empty": "Un dossier doit avoir un nom.",
+  "error_folder_exists": "Un dossier portant ce nom existe déjà."
 }

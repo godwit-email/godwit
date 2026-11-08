@@ -2070,5 +2070,7 @@
   "error_local_archive": "ローカルアーカイブではメールの送信や同期はできません。",
   "error_not_local_archive": "ローカルフォルダがあるのはローカルアーカイブだけです。",
   "error_role_folder": "受信トレイとゴミ箱は名前の変更や削除ができません。",
-  "error_folder_not_empty": "フォルダが空ではありません。先にメールを移動してください。"
+  "error_folder_not_empty": "フォルダが空ではありません。先にメールを移動してください。",
+  "error_folder_name_empty": "フォルダ名を入力してください。",
+  "error_folder_exists": "同じ名前のフォルダがすでにあります。"
 }

@@ -2070,5 +2070,7 @@
   "error_local_archive": "Un archivio locale non può inviare né sincronizzare posta.",
   "error_not_local_archive": "Solo un archivio locale ha cartelle locali.",
   "error_role_folder": "Posta in arrivo e Cestino non possono essere rinominati né eliminati.",
-  "error_folder_not_empty": "La cartella non è vuota. Sposta prima la sua posta."
+  "error_folder_not_empty": "La cartella non è vuota. Sposta prima la sua posta.",
+  "error_folder_name_empty": "La cartella deve avere un nome.",
+  "error_folder_exists": "Esiste già una cartella con questo nome."
 }

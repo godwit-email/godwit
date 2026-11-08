@@ -3795,5 +3795,7 @@
   "error_local_archive": "A local archive cannot send or sync mail.",
   "error_not_local_archive": "Only a local archive has local folders.",
   "error_role_folder": "Inbox and Trash cannot be renamed or deleted.",
-  "error_folder_not_empty": "The folder is not empty. Move its mail out first."
+  "error_folder_not_empty": "The folder is not empty. Move its mail out first.",
+  "error_folder_name_empty": "A folder needs a name.",
+  "error_folder_exists": "A folder with this name already exists."
 }

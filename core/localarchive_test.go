@@ -137,9 +137,9 @@ func TestLocalFolderIsAMoveTarget(t *testing.T) {
 	require.Equal(t, "2019", f.Name)
 	require.Equal(t, acc.ID, f.AccountID)
 	_, err = s.CreateLocalFolder(ctx, acc.ID, "2019")
-	require.Error(t, err, "same name twice")
+	require.ErrorIs(t, err, core.ErrFolderExists, "same name twice")
 	_, err = s.CreateLocalFolder(ctx, acc.ID, "  ")
-	require.Error(t, err)
+	require.ErrorIs(t, err, core.ErrFolderNameEmpty)
 
 	inbox, _ := folderNamed(t, s, acc.ID, "INBOX")
 	id := archiveMessage(t, s, acc, inbox.ID)
@@ -161,6 +161,8 @@ func TestRenameLocalFolder(t *testing.T) {
 	require.Equal(t, f.ID, got.ID)
 	_, ok = folderNamed(t, s, acc.ID, "2019")
 	require.False(t, ok)
+	require.ErrorIs(t, s.RenameLocalFolder(ctx, f.ID, "INBOX"), core.ErrFolderExists)
+	require.ErrorIs(t, s.RenameLocalFolder(ctx, f.ID, " "), core.ErrFolderNameEmpty)
 
 	for _, name := range []string{"INBOX", "Trash"} {
 		role, _ := folderNamed(t, s, acc.ID, name)

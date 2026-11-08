@@ -2070,5 +2070,7 @@
   "error_local_archive": "Un archivo local no puede enviar ni sincronizar correo.",
   "error_not_local_archive": "Solo un archivo local tiene carpetas locales.",
   "error_role_folder": "La bandeja de entrada y la Papelera no se pueden renombrar ni eliminar.",
-  "error_folder_not_empty": "La carpeta no está vacía. Mueve antes su correo."
+  "error_folder_not_empty": "La carpeta no está vacía. Mueve antes su correo.",
+  "error_folder_name_empty": "La carpeta necesita un nombre.",
+  "error_folder_exists": "Ya existe una carpeta con este nombre."
 }

@@ -2070,5 +2070,7 @@
   "error_local_archive": "Ein lokales Archiv kann keine Mails senden oder synchronisieren.",
   "error_not_local_archive": "Nur ein lokales Archiv hat lokale Ordner.",
   "error_role_folder": "Posteingang und Papierkorb können nicht umbenannt oder gelöscht werden.",
-  "error_folder_not_empty": "Der Ordner ist nicht leer. Verschiebe zuerst seine Mails."
+  "error_folder_not_empty": "Der Ordner ist nicht leer. Verschiebe zuerst seine Mails.",
+  "error_folder_name_empty": "Ein Ordner braucht einen Namen.",
+  "error_folder_exists": "Ein Ordner mit diesem Namen existiert bereits."
 }

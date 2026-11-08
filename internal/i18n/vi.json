@@ -2070,5 +2070,7 @@
   "error_local_archive": "Kho lưu trữ cục bộ không thể gửi hay đồng bộ thư.",
   "error_not_local_archive": "Chỉ kho lưu trữ cục bộ mới có thư mục cục bộ.",
   "error_role_folder": "Không thể đổi tên hay xóa Hộp thư đến và Thùng rác.",
-  "error_folder_not_empty": "Thư mục không trống. Hãy chuyển thư ra trước."
+  "error_folder_not_empty": "Thư mục không trống. Hãy chuyển thư ra trước.",
+  "error_folder_name_empty": "Thư mục cần có tên.",
+  "error_folder_exists": "Đã có thư mục cùng tên."
 }

@@ -2070,5 +2070,7 @@
   "error_local_archive": "本地归档不能收发邮件。",
   "error_not_local_archive": "只有本地归档能管理本地文件夹。",
   "error_role_folder": "收件箱和已删除不能重命名或删除。",
-  "error_folder_not_empty": "文件夹不是空的，先把里面的邮件移走。"
+  "error_folder_not_empty": "文件夹不是空的，先把里面的邮件移走。",
+  "error_folder_name_empty": "文件夹需要一个名字。",
+  "error_folder_exists": "已有同名文件夹。"
 }

@@ -2070,5 +2070,7 @@
   "error_local_archive": "Een lokaal archief kan geen mail versturen of synchroniseren.",
   "error_not_local_archive": "Alleen een lokaal archief heeft lokale mappen.",
   "error_role_folder": "Inbox en prullenbak kunnen niet hernoemd of verwijderd worden.",
-  "error_folder_not_empty": "De map is niet leeg. Verplaats eerst de mail."
+  "error_folder_not_empty": "De map is niet leeg. Verplaats eerst de mail.",
+  "error_folder_name_empty": "Een map heeft een naam nodig.",
+  "error_folder_exists": "Er bestaat al een map met deze naam."
 }

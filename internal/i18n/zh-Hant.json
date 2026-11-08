@@ -2070,5 +2070,7 @@
   "error_local_archive": "本機封存不能收發郵件。",
   "error_not_local_archive": "只有本機封存能管理本機資料夾。",
   "error_role_folder": "收件匣和已刪除不能重新命名或刪除。",
-  "error_folder_not_empty": "資料夾不是空的，先把裡面的郵件移走。"
+  "error_folder_not_empty": "資料夾不是空的，先把裡面的郵件移走。",
+  "error_folder_name_empty": "資料夾需要一個名稱。",
+  "error_folder_exists": "已有同名資料夾。"
 }

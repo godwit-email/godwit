@@ -58,6 +58,8 @@ var table = []Error{
 	{Code: "not_local_archive", Err: core.ErrNotLocalArchive},
 	{Code: "role_folder", Err: core.ErrRoleFolder},
 	{Code: "folder_not_empty", Err: core.ErrFolderNotEmpty},
+	{Code: "folder_name_empty", Err: core.ErrFolderNameEmpty},
+	{Code: "folder_exists", Err: core.ErrFolderExists},
 	{Code: "provider_mismatch", Err: core.ErrProviderMismatch},
 	{Code: "needs_grant", Err: core.ErrNeedsGrant},
 	{Code: "plugin_not_found", Err: core.ErrPluginNotFound},

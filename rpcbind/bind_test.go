@@ -242,6 +242,7 @@ func TestWireCodesPinned(t *testing.T) {
 		"compacting": core.ErrCompacting, "nothing_to_compact": core.ErrNothingToCompact, "draft_gone": core.ErrDraftGone,
 		"keychain_unavailable": core.ErrKeychainUnavailable, "wrong_account": core.ErrWrongAccount,
 		"account_not_found": core.ErrAccountNotFound, "local_archive": core.ErrLocalArchive, "not_local_archive": core.ErrNotLocalArchive, "role_folder": core.ErrRoleFolder, "folder_not_empty": core.ErrFolderNotEmpty,
+		"folder_name_empty": core.ErrFolderNameEmpty, "folder_exists": core.ErrFolderExists,
 		"provider_mismatch": core.ErrProviderMismatch, "needs_grant": core.ErrNeedsGrant,
 		"plugin_not_found": core.ErrPluginNotFound, "mcp_not_found": core.ErrMCPNotFound,
 		"registry_off": core.ErrRegistryOff, "registry_signature": core.ErrRegistrySignature,

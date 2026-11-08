@@ -2070,5 +2070,7 @@
   "error_local_archive": "Yerel arşiv posta gönderemez veya eşitleyemez.",
   "error_not_local_archive": "Yalnızca yerel arşivin yerel klasörleri vardır.",
   "error_role_folder": "Gelen kutusu ve çöp kutusu yeniden adlandırılamaz veya silinemez.",
-  "error_folder_not_empty": "Klasör boş değil. Önce içindeki postaları taşıyın."
+  "error_folder_not_empty": "Klasör boş değil. Önce içindeki postaları taşıyın.",
+  "error_folder_name_empty": "Klasörün bir adı olmalı.",
+  "error_folder_exists": "Bu adda bir klasör zaten var."
 }

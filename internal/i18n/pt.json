@@ -2070,5 +2070,7 @@
   "error_local_archive": "Um arquivo local não pode enviar nem sincronizar e-mail.",
   "error_not_local_archive": "Só um arquivo local tem pastas locais.",
   "error_role_folder": "A caixa de entrada e o Lixo não podem ser renomeados nem eliminados.",
-  "error_folder_not_empty": "A pasta não está vazia. Mova primeiro os e-mails."
+  "error_folder_not_empty": "A pasta não está vazia. Mova primeiro os e-mails.",
+  "error_folder_name_empty": "A pasta precisa de um nome.",
+  "error_folder_exists": "Já existe uma pasta com este nome."
 }
