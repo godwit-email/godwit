@@ -4,14 +4,14 @@ go 1.27.3
 
 require (
 	github.com/MoeForge/moejs v0.1.0-alpha.11
-	github.com/clipperhouse/uax29/v2 v2.2.0
-	github.com/ebitengine/purego v0.11.2
+	github.com/clipperhouse/uax29/v2 v2.7.0
+	github.com/ebitengine/purego v0.11.3
 	github.com/egoist/mygo v0.7.5-0.20261105134437-3a92ba0d2c90
 	github.com/emersion/go-imap/v2 v2.0.0-beta.8
 	github.com/emersion/go-message v0.18.2
 	github.com/emersion/go-msgauth v0.7.0
 	github.com/emersion/go-sasl v0.0.0-20241020182733-b788ff22d5a6
-	github.com/emersion/go-smtp v0.25.0
+	github.com/emersion/go-smtp v0.25.1
 	github.com/evanw/esbuild v0.28.2
 	github.com/fyne-io/image v0.1.1
 	github.com/goccy/go-yaml v1.19.2
