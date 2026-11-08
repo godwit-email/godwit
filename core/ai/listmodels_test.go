@@ -136,6 +136,16 @@ func TestListModelsXAIShape(t *testing.T) {
 	assert.Equal(t, []string{"grok-4.6", "grok-4.7"}, ids)
 }
 
+func TestListModelsLiquidShape(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Write([]byte(`{"models":[{"name":"d1","description":"","release_date":"2026-09-29","input_modalities":["text","image"]},{"name":"d1.1"},{"name":"d1-ultra"}]}`))
+	}))
+	defer srv.Close()
+	ids, err := ListModels(context.Background(), nil, KindOpenAI, srv.URL, "k")
+	require.NoError(t, err)
+	assert.Equal(t, []string{"d1", "d1-ultra", "d1.1"}, ids)
+}
+
 func TestListModelsChatGPTShape(t *testing.T) {
 	srv := testllm.Start(t, "openai-responses")
 	srv.SetModels("gpt-5.2", "gpt-5.2-mini", "gpt-5.2-codex")

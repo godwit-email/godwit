@@ -376,9 +376,12 @@ func (m *modelsView) formView(c *ui.Context, f *modelForm) {
 	ui.Column(c).Gap(th.Space(2)).Children(func() {
 		ui.Row(c).Justify(ui.SpaceBetween).AlignItems(ui.End).Gap(th.Space(3)).Children(func() {
 			ui.Text(c, i18n.T("settings.models.caps")).FontWeight(600).LineHeight(theme.LineFor(i18n.T("settings.models.caps")))
-			if core.ModelProviderLogin(f.provider) != "oauth" { // a subscription has no key, and no judge to share it with
-				kit.Text(c, i18n.T("settings.models.caps.note"), t.Text.Sm).TextColor(t.Muted)
-			}
+			ui.Row(c).Gap(th.Space(2)).AlignItems(ui.Center).Children(func() {
+				if core.ModelProviderLogin(f.provider) != "oauth" { // a subscription has no key, and no judge to share it with
+					kit.Text(c, i18n.T("settings.models.caps.note"), t.Text.Sm).TextColor(t.Muted)
+				}
+				m.refreshButton(c, f)
+			})
 		})
 		genWarn, judgeWarn := offWarns(f, m.a.settings, m.services)
 		gen, judge := core.ProviderFormats(f.provider)
@@ -386,17 +389,19 @@ func (m *modelsView) formView(c *ui.Context, f *modelForm) {
 			i18n.T("settings.models.gen.switch"), len(gen) > 0, &f.genOn, genWarn, func() {
 				formatSegments(c, i18n.T("settings.models.gen.formats"), gen, &f.kind)
 				reqLine(c, gen, f.kind, core.ModelEndpoint(f.kind, f.url()))
-				m.modelChips(c, f)
-				m.modelNote(c, f)
+				m.modelPicker(c, f, f.genPicker())
 				m.capStatus(c, f.gen)
 			})
 		capCard(c, i18n.T("settings.models.use.judge"), i18n.T("settings.models.judge.desc"), i18n.Tf("settings.models.judge.unsupported", svcProvider(f.provider)),
 			i18n.T("settings.models.judge.switch"), len(judge) > 0, &f.judgeOn, judgeWarn, func() {
 				if formatSegments(c, i18n.T("settings.models.judge.formats"), judge, &f.judgeFormat) {
-					f.judgeModel = first(ai.JudgeFormat(f.judgeFormat).Models())
+					f.setJudgeFormat()
+					if f.custom() || f.anyKey() { // the other format's models
+						m.fetch(f)
+					}
 				}
-				reqLine(c, judge, f.judgeFormat, f.url()+ai.JudgeFormat(f.judgeFormat).Path())
-				m.judgeModel(c, f)
+				reqLine(c, judge, f.judgeFormat, ai.JudgeURL(ai.JudgeFormat(f.judgeFormat), f.url()))
+				m.modelPicker(c, f, f.judgePicker())
 				m.capStatus(c, f.judge)
 			})
 	})
@@ -522,32 +527,6 @@ func (m *modelsView) capStatus(c *ui.Context, r capTest) {
 	})
 }
 
-// judgeModel is the judge model select and where its list came from.
-func (m *modelsView) judgeModel(c *ui.Context, f *modelForm) {
-	t, th := theme.Of(c), c.Theme()
-	list := f.decList()
-	ui.Row(c).Justify(ui.SpaceBetween).AlignItems(ui.Center).Gap(th.Space(4)).Children(func() {
-		label := i18n.T("settings.models.judge.model")
-		ui.Text(c, label).LineHeight(theme.LineFor(label))
-		o := kit.SelectOpts{MinWidth: theme.UsageSelectMin, MaxWidth: theme.UsageSelectMin, Flat: true}
-		if len(list) == 0 {
-			none := ""
-			kit.SelectWith(c, o, &none, []kit.Option[string]{{Value: "", Label: i18n.T("settings.models.judge.wait")}}).Label(label).Disabled(true).Font(theme.Mono).FontSize(t.Text.Sm)
-			return
-		}
-		var opts []kit.Option[string]
-		for _, id := range list {
-			opts = append(opts, kit.Option[string]{Value: id, Label: id})
-		}
-		kit.SelectWith(c, o, &f.judgeModel, opts).Label(label).Font(theme.Mono).FontSize(t.Text.Sm)
-	})
-	note := i18n.T("settings.models.judge.hint")
-	if len(list) > 0 {
-		note = i18n.Tf("settings.models.judge.fetched", len(list))
-	}
-	kit.Text(c, note, t.Text.Sm).TextColor(t.Muted)
-}
-
 // tiles are the providers, with what each can do.
 func (m *modelsView) tiles(c *ui.Context, f *modelForm) {
 	t, th := theme.Of(c), c.Theme()
@@ -607,75 +586,206 @@ func (m *modelsView) gatewayChips(c *ui.Context, f *modelForm) {
 	})
 }
 
-// modelChips are the models as toggles, then an inline field for a model ID by hand.
-func (m *modelsView) modelChips(c *ui.Context, f *modelForm) {
-	t, th := theme.Of(c), c.Theme()
-	ui.Row(c).Wrap().Gap(th.Space(1.5)).AlignItems(ui.Center).Children(func() {
-		for _, name := range f.offered {
-			on := slices.Contains(f.models, name)
-			label, font := name, theme.Mono
-			if n := f.names[name]; n != "" {
-				label, font = n, "" // a display name reads as prose, an ID as code
-			}
-			b := kit.Pressable(c.Key(name), kit.PressableOpts{Bare: true}).Label(label).Height(th.Space(7)).Padding(0, th.Space(2.5)).Radius(t.Radius.Md)
-			fg := t.Foreground
-			if on {
-				b.Background(t.Hover).Border(theme.Stroke, t.Primary)
-			} else {
-				b.Background(t.Background).Border(theme.Stroke, t.DividerHover).BorderStyle(ui.BorderDashed) // the design's neutral-300 dash
-				fg = t.Muted
-			}
-			b.Children(func() {
-				tx := kit.Text(c, label, t.Text.Sm).TextColor(fg)
-				if font != "" {
-					tx.Font(font)
-				}
-			})
-			if b.Clicked() {
-				if !on {
-					f.models = append(f.models, name)
-				} else {
-					f.models = slices.DeleteFunc(f.models, func(s string) bool { return s == name })
-				}
-			}
-		}
-		ui.Row(c).Gap(th.Space(1)).AlignItems(ui.Center).Children(func() {
-			kit.Input(c, &f.manual, kit.InputOpts{Mono: true, Placeholder: i18n.T("settings.models.manual"), Flat: true}).Label(i18n.T("settings.models.manual")).
-				Height(th.Space(7)).Width(theme.ModelIDInputWidth).PaddingX(th.Space(2)).OnSubmit(f.addManual)
-			kit.Pressable(c, kit.PressableOpts{Bare: true, OnClick: f.addManual}).Label(i18n.T("settings.models.manual.add")).Size(th.Space(7), th.Space(7)).Justify(ui.Center).
-				Radius(t.Radius.Md).Border(theme.Stroke, t.Border).Background(t.Background).Children(func() { ui.Text(c, "+") })
-		})
-	})
+// picker is one capability's models: generate ticks any number, judge chooses one.
+type picker struct {
+	offered  []string
+	on       func(id string) bool
+	pick     func(id string) // a chip was clicked
+	manual   *string         // the ID being typed
+	add      func()          // adds what manual holds
+	list     listing         // how the fetch went
+	hint     bool            // nothing fetched yet: say where the models will come from
+	unlisted bool            // the format has no list: the offered are its usual IDs
+	view     *pickerView     // the filter, once there are many
+	cap      string          // the capability its chips' menu tests
 }
 
-// modelNote says where the models came from, or why the fetch failed.
-func (m *modelsView) modelNote(c *ui.Context, f *modelForm) {
+// pickerView is what a picker with many models shows: those matching query,
+// by ID or name, and only the chosen ones while onlyOn.
+type pickerView struct {
+	query  string
+	onlyOn bool
+}
+
+func (v *pickerView) filter(ids []string, names map[string]string, on func(string) bool) []string {
+	q := strings.ToLower(strings.TrimSpace(v.query))
+	var out []string
+	for _, id := range ids {
+		if v.onlyOn && !on(id) {
+			continue
+		}
+		if q == "" || strings.Contains(strings.ToLower(id), q) || strings.Contains(strings.ToLower(names[id]), q) {
+			out = append(out, id)
+		}
+	}
+	return out
+}
+
+func (f *modelForm) genPicker() picker {
+	return picker{offered: f.offered, manual: &f.manual, add: f.addManual, list: f.list, hint: len(f.offered) == 0, view: &f.genView, cap: core.CapGen,
+		on: func(id string) bool { return slices.Contains(f.models, id) },
+		pick: func(id string) {
+			if slices.Contains(f.models, id) {
+				f.models = slices.DeleteFunc(f.models, func(s string) bool { return s == id })
+			} else {
+				f.models = append(f.models, id)
+			}
+		}}
+}
+
+func (f *modelForm) judgePicker() picker {
+	return picker{offered: f.decList(), manual: &f.judgeManual, add: f.addJudgeManual, list: f.judgeList, view: &f.judgeView, cap: core.CapJudge,
+		hint: f.id == 0 && len(f.judgeModels) == 0, unlisted: !ai.JudgeFormat(f.judgeFormat).Lists(f.url()),
+		on: func(id string) bool { return id == f.judgeModel }, pick: func(id string) { f.judgeModel = id }}
+}
+
+// manyModels is how many offered models bring the filter and its toggle.
+const manyModels = 12
+
+// modelPicker is p's models as chips in a box that scrolls past six rows,
+// filtered once there are many, an inline field for a model ID by hand, and
+// where the models came from with a way to fetch them again.
+func (m *modelsView) modelPicker(c *ui.Context, f *modelForm, p picker) {
 	t, th := theme.Of(c), c.Theme()
-	switch {
-	case f.probing:
+	many := len(p.offered) > manyModels
+	shown := p.offered
+	if many {
+		shown = p.view.filter(p.offered, f.names, p.on)
+	}
+	manual := func() {
+		ui.Row(c).Gap(th.Space(1)).AlignItems(ui.Center).Children(func() {
+			kit.Input(c, p.manual, kit.InputOpts{Mono: true, Placeholder: i18n.T("settings.models.manual"), Flat: true}).Label(i18n.T("settings.models.manual")).
+				Height(th.Space(7)).Width(theme.ModelIDInputWidth).PaddingX(th.Space(2)).OnSubmit(p.add)
+			kit.Pressable(c, kit.PressableOpts{Bare: true, OnClick: p.add}).Label(i18n.T("settings.models.manual.add")).Size(th.Space(7), th.Space(7)).Justify(ui.Center).
+				Radius(t.Radius.Md).Border(theme.Stroke, t.Border).Background(t.Background).Children(func() { ui.Text(c, "+") })
+		})
+	}
+	if many { // the filter, its toggle and the hand-typed ID stay above the scrolling chips
+		ui.Row(c).Wrap().Gap(th.Space(1.5)).AlignItems(ui.Center).Children(func() {
+			ph := i18n.Tf("settings.models.filter", len(p.offered))
+			kit.Input(c, &p.view.query, kit.InputOpts{Placeholder: ph, Flat: true}).Label(ph).FontSize(t.Text.Sm).Height(th.Space(7)).Grow(1).MinWidth(theme.ModelIDInputWidth).PaddingX(th.Space(2))
+			label := i18n.T("settings.models.only_on")
+			b := kit.Pressable(c, kit.PressableOpts{Bare: true, OnClick: func() { p.view.onlyOn = !p.view.onlyOn }}).Label(label).Height(th.Space(7)).Padding(0, th.Space(2.5)).Radius(t.Radius.Md)
+			fg := t.Muted
+			if p.view.onlyOn {
+				b.Background(t.Hover).Border(theme.Stroke, t.Primary)
+				fg = t.Foreground
+			} else {
+				b.Background(t.Background).Border(theme.Stroke, t.Border)
+			}
+			b.Children(func() { kit.Text(c, label, t.Text.Sm).TextColor(fg) })
+			manual()
+		})
+	}
+	chips := func() {
+		ui.Row(c).Wrap().Gap(th.Space(1.5)).AlignItems(ui.Center).Children(func() {
+			for _, name := range shown {
+				on := p.on(name)
+				label, font := name, theme.Mono
+				if n := f.names[name]; n != "" {
+					label, font = n, "" // a display name reads as prose, an ID as code
+				}
+				b := kit.Pressable(c.Key(name), kit.PressableOpts{Bare: true}).Label(label).Height(th.Space(7)).Padding(0, th.Space(2.5)).Radius(t.Radius.Md)
+				fg := t.Foreground
+				if on {
+					b.Background(t.Hover).Border(theme.Stroke, t.Primary)
+				} else {
+					b.Background(t.Background).Border(theme.Stroke, t.DividerHover).BorderStyle(ui.BorderDashed) // the design's neutral-300 dash
+					fg = t.Muted
+				}
+				r := f.modelTests[p.cap+"\n"+name]
+				b.Gap(th.Space(1.5)).AlignItems(ui.Center).Children(func() {
+					if r.state != "" { // its test from the menu
+						dot := t.Idle
+						switch r.state {
+						case "ok":
+							dot = t.Success
+						case "fail":
+							dot = t.Danger
+						}
+						ui.Box(c).Size(theme.StatusDot, theme.StatusDot).Shrink(0).Radius(t.Radius.Full).Background(dot)
+					}
+					tx := kit.Text(c, label, t.Text.Sm).TextColor(fg)
+					if font != "" {
+						tx.Font(font)
+					}
+				})
+				b.ContextMenu(func(menu *ui.Menu) {
+					if menu.Item(i18n.T("settings.models.test_model")).Icon(menuIcon("play")).Disabled(f.cantTest()).Chosen() {
+						m.testModel(f, p.cap, name)
+					}
+				})
+				if b.Clicked() {
+					p.pick(name)
+				}
+			}
+			if !many {
+				manual()
+			}
+		})
+	}
+	if many {
+		ui.Column(c).FillWidth().MaxHeight(th.Space(50)).Clip().Children(func() { // six rows of chips
+			ui.Scroll(c).Shrink(1).Children(func() {
+				if len(shown) == 0 {
+					kit.Text(c, i18n.T("settings.models.filter.none"), t.Text.Sm).TextColor(t.Muted)
+				}
+				chips()
+			})
+		})
+	} else {
+		chips()
+	}
+	if id := f.lastModel[p.cap]; id != "" { // the last chip menu test, named
+		r := f.modelTests[p.cap+"\n"+id]
+		if r.state != "testing" {
+			r.text = cmp.Or(f.names[id], id) + " · " + cmp.Or(r.text, i18n.T("settings.models.fail.error"))
+		}
+		m.capStatus(c, r)
+	}
+	if p.unlisted {
+		kit.Text(c, i18n.T("settings.models.suggested"), t.Text.Sm).TextColor(t.Muted)
+		return
+	}
+	if f.probing {
 		ui.Row(c).Gap(th.Space(2)).AlignItems(ui.Center).Children(func() {
 			kit.Spinner(c)
 			kit.Text(c, i18n.T("settings.models.fetching"), t.Text.Sm).TextColor(t.Muted)
 		})
-	case f.fetch == "fail":
-		msg := i18n.T("settings.models.no_list")
-		if f.fetchErr != "" {
-			msg = i18n.Tf("settings.models.fetch_failed", f.fetchErr)
-		}
-		ui.Row(c).Wrap().Gap(th.Space(2)).AlignItems(ui.Center).Children(func() {
-			kit.Text(c, msg, t.Text.Sm).TextColor(t.WarningText).Shrink(1)
-			kit.Pressable(c, kit.PressableOpts{Bare: true, OnClick: func() { m.fetch(f) }}).Label(i18n.T("settings.models.retry")).Height(th.Space(6)).Padding(0, th.Space(2)).
-				Radius(t.Radius.Md).Border(theme.Stroke, t.WarningBorder).Background(t.WarningBg).Children(func() {
-				kit.Text(c, i18n.T("settings.models.retry"), t.Text.Sm).TextColor(t.WarningText)
-			})
-		})
-	case f.fetch == "ok":
-		kit.Text(c, i18n.Tf("settings.models.fetched", f.fetched), t.Text.Sm).TextColor(t.Muted)
-	case len(f.offered) == 0 && core.ModelProviderLogin(f.provider) == "oauth":
-		kit.Text(c, i18n.T("settings.models.hint.sub"), t.Text.Sm).TextColor(t.Muted)
-	case len(f.offered) == 0:
-		kit.Text(c, i18n.T("settings.models.hint"), t.Text.Sm).TextColor(t.Muted)
+		return
 	}
+	var msg string
+	fg, fail := t.Muted, p.list.state == "fail"
+	if fail {
+		fg = t.WarningText
+	}
+	switch {
+	case fail && p.list.err != "":
+		msg = i18n.Tf("settings.models.fetch_failed", p.list.err)
+	case fail:
+		msg = i18n.T("settings.models.no_list")
+	case p.list.state == "ok":
+		msg = i18n.Tf("settings.models.fetched", p.list.n)
+	case p.hint && f.oauth():
+		msg = i18n.T("settings.models.hint.sub")
+	case p.hint:
+		msg = i18n.T("settings.models.hint")
+	}
+	if msg != "" {
+		kit.Text(c, msg, t.Text.Sm).TextColor(fg)
+	}
+}
+
+// refreshButton lists both capabilities' models again: one fetch serves both.
+func (m *modelsView) refreshButton(c *ui.Context, f *modelForm) {
+	t, th := theme.Of(c), c.Theme()
+	if !f.anyCap() || !f.custom() && !f.anyKey() {
+		return
+	}
+	label := i18n.T("settings.models.refresh")
+	b := kit.Pressable(c, kit.PressableOpts{Bare: true, OnClick: func() { m.fetch(f) }}).Label(label).Height(th.Space(6)).Padding(0, th.Space(2)).
+		Radius(t.Radius.Md).Border(theme.Stroke, t.Border).Background(t.Background)
+	b.Children(func() { kit.Text(c, label, t.Text.Sm).TextColor(t.Muted) })
 }
 
 // keyField is the API key and the decision a stored key needs once the

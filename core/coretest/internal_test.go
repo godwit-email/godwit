@@ -7,6 +7,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/godwit-email/godwit/core/internal/testclock"
 	"github.com/godwit-email/godwit/core/plugins"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -23,9 +24,11 @@ func (r *fatalRecorder) Helper()                           {}
 
 func TestOneLiveEnv(t *testing.T) {
 	t.Run("first", func(t *testing.T) { New(t, WithoutAutoSync()) })
-	New(t, WithoutAutoSync()) // the first one is closed: a new one starts
+	e := New(t, WithoutAutoSync()) // the first one is closed: a new one starts
+	e.AdvanceClock(-time.Hour)
+	assert.Contains(t, string(Msg("a@b", "c@d", "s", "x")), e.clock.Now().Format(time.RFC1123Z))
 	r := &fatalRecorder{TB: t}
-	claimEnv(r)
+	claimEnv(r, testclock.New(time.Now()))
 	assert.Contains(t, r.msg, "another Env is still alive")
 }
 

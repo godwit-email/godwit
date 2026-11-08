@@ -20,7 +20,13 @@ type Model struct{ ID, Name string }
 // ListModels asks a service for its model IDs, sorted. Errors never include the
 // key or the response body.
 func ListModels(ctx context.Context, c *http.Client, kind, baseURL, apiKey string) ([]string, error) {
-	ms, err := ListModelsNamed(ctx, c, kind, baseURL, apiKey)
+	base := strings.TrimRight(baseURL, "/")
+	return listModelIDs(ctx, c, kind, base, modelsURL(ctx, c, base), apiKey)
+}
+
+// listModelIDs is ListModels at url.
+func listModelIDs(ctx context.Context, c *http.Client, kind, base, url, apiKey string) ([]string, error) {
+	ms, err := listModelsAt(ctx, c, kind, base, url, apiKey)
 	if err != nil {
 		return nil, err
 	}
@@ -32,11 +38,16 @@ func ListModels(ctx context.Context, c *http.Client, kind, baseURL, apiKey strin
 }
 
 // ListModelsNamed is ListModels with display names. It reads the API's
-// data[].id shape, Sign in with ChatGPT's models[].slug/display_name and
-// xAI's models[].id.
+// data[].id shape, Sign in with ChatGPT's models[].slug/display_name, xAI's
+// models[].id and Liquid's models[].name.
 func ListModelsNamed(ctx context.Context, c *http.Client, kind, baseURL, apiKey string) ([]Model, error) {
 	base := strings.TrimRight(baseURL, "/")
-	url, hdr := modelsURL(ctx, c, base), http.Header{} // before the list's own timeout: a version lookup has its own
+	return listModelsAt(ctx, c, kind, base, modelsURL(ctx, c, base), apiKey) // the URL before the list's own timeout: a version lookup has its own
+}
+
+// listModelsAt is ListModelsNamed at url, for base.
+func listModelsAt(ctx context.Context, c *http.Client, kind, base, url, apiKey string) ([]Model, error) {
+	hdr := http.Header{}
 	ctx, cancel := context.WithTimeout(ctx, 10*time.Second)
 	defer cancel()
 	if strings.HasSuffix(base, "/backend-api/codex") && apiKey != "" {
@@ -89,10 +100,10 @@ func ListModelsNamed(ctx context.Context, c *http.Client, kind, baseURL, apiKey 
 			ID         string
 			Visibility string
 		}
-		Models []struct { // Sign in with ChatGPT and the Codex backend: slug; xAI's language-models: id
-			ID, Slug    string
-			DisplayName string `json:"display_name"`
-			Visibility  string
+		Models []struct { // Sign in with ChatGPT and the Codex backend: slug; xAI's language-models: id; Liquid's decisions: name
+			ID, Slug, Name string
+			DisplayName    string `json:"display_name"`
+			Visibility     string
 		}
 	}
 	if err := json.NewDecoder(io.LimitReader(resp.Body, 4<<20)).Decode(&out); err != nil {
@@ -105,7 +116,7 @@ func ListModelsNamed(ctx context.Context, c *http.Client, kind, baseURL, apiKey 
 		}
 	}
 	for _, m := range out.Models {
-		if id := cmp.Or(m.Slug, m.ID); id != "" && (m.Visibility == "" || m.Visibility == "list") {
+		if id := cmp.Or(m.Slug, m.ID, m.Name); id != "" && (m.Visibility == "" || m.Visibility == "list") {
 			ms = append(ms, Model{id, m.DisplayName})
 		}
 	}

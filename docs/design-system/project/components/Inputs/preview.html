@@ -1,0 +1,27 @@
+<!-- @dsCard group="Forms" height=300 width=640 subtitle="Input, focus, invalid, select, checkbox, radio, switch" -->
+<!doctype html>
+<html><head><meta charset="utf-8"><style>
+body{margin:0;padding:24px;background:var(--background);font-family:Geist,"PingFang SC",system-ui,sans-serif;font-size:14px;color:var(--foreground)}
+.g{display:grid;grid-template-columns:1fr 1fr;gap:20px 24px}
+label.f{display:flex;flex-direction:column;gap:6px;font-weight:500}
+.in{height:32px;box-sizing:border-box;padding:0 10px;border:1px solid var(--input);border-radius:var(--radius-md);background:var(--background);box-shadow:var(--shadow-xs);font:inherit;font-weight:400;color:inherit;display:flex;align-items:center;justify-content:space-between}
+.focus{border-color:var(--ring);box-shadow:0 0 0 3px color-mix(in srgb,var(--ring) 50%,transparent)}
+.bad{border-color:var(--danger)}
+small{font-size:12px;font-weight:400;color:var(--muted)}
+small.e{color:var(--danger)}
+.ch{display:flex;align-items:center;gap:8px}
+.box{width:16px;height:16px;box-sizing:border-box;border:1px solid var(--input);border-radius:var(--radius-sm);box-shadow:var(--shadow-xs)}
+.box.on{background:var(--primary);border-color:var(--primary)}
+.rad{width:16px;height:16px;box-sizing:border-box;border:1px solid var(--primary);border-radius:50%;display:flex;align-items:center;justify-content:center}
+.rad i{width:8px;height:8px;border-radius:50%;background:var(--primary)}
+.sw{width:32px;height:18px;border-radius:9px;background:var(--primary);position:relative}
+.sw i{position:absolute;right:2px;top:2px;width:14px;height:14px;border-radius:50%;background:var(--background)}
+</style></head><body><div class="g">
+<label class="f">邮箱地址<span class="in focus">me@example.com</span><small>用来登录和发件。</small></label>
+<label class="f">端口<span class="in bad">99999</span><small class="e">端口要在 1–65535 之间。</small></label>
+<label class="f">界面语言<span class="in">简体中文<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--muted)" stroke-width="2" aria-hidden="true"><path d="m6 9 6 6 6-6"/></svg></span></label>
+<div style="display:flex;flex-direction:column;gap:12px;justify-content:center">
+<span class="ch"><span class="box on" role="checkbox" aria-checked="true"></span>存到子文件夹</span>
+<span class="ch"><span class="rad" role="radio" aria-checked="true"><i></i></span>stdio</span>
+<span class="ch"><span class="sw" role="switch" aria-checked="true"><i></i></span>自动下载更新</span>
+</div></div></body></html>

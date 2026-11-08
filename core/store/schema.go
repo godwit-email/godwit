@@ -693,7 +693,10 @@ var Migrations = [][]string{{
 	`UPDATE accounts SET imap_gmail = 1 WHERE provider = 'gmail' AND lower(imap_host) IN ('imap.gmail.com', 'imap.googlemail.com')
 		AND imap_port = 993 AND imap_security = 'tls'`,
 }, {
-	// '' a mail account; local_archive one with no servers, only local folders (ADR 0035).
+	// 1: the account's labels and the server's IMAP keywords follow each other (ADR 0035).
+	`ALTER TABLE accounts ADD COLUMN label_keywords INTEGER NOT NULL DEFAULT 0`,
+}, {
+	// '' a mail account; local_archive one with no servers, only local folders (ADR 0036).
 	`ALTER TABLE accounts ADD COLUMN kind TEXT NOT NULL DEFAULT ''`,
 }, {
 	// A local archive's message is its original file, archive/<account>/<content_hash>.eml;

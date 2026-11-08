@@ -120,8 +120,9 @@ func New(t *testing.T, opts ...Option) *Env {
 	for _, o := range opts {
 		o(&cfg)
 	}
+	clock := testclock.New(time.Now())
 	core.SerializeKeyringForTest() // workers read credentials while tests write them
-	claimEnv(t)                    // MockInit empties the keychain of any Env still running
+	claimEnv(t, clock)             // MockInit empties the keychain of any Env still running
 	keyring.MockInit()
 	dir := t.TempDir()
 	imageClient := imagefetch.NewClient(true)
@@ -133,7 +134,7 @@ func New(t *testing.T, opts ...Option) *Env {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { svc.Close() })
-	e := &Env{Svc: svc, DataDir: dir, servers: map[int64]*mailServers{}, started: map[string]*mailServers{}, clock: testclock.New(time.Now())}
+	e := &Env{Svc: svc, DataDir: dir, servers: map[int64]*mailServers{}, started: map[string]*mailServers{}, clock: clock}
 	svc.SetClockForTest(e.clock)
 
 	api := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -150,17 +151,17 @@ func New(t *testing.T, opts ...Option) *Env {
 // come due.
 func (e *Env) AdvanceClock(d time.Duration) { e.clock.Advance(d) }
 
-var live atomic.Bool // an Env is running
+var live atomic.Pointer[testclock.Clock] // the running Env's clock
 
-// claimEnv fails tb if another Env is still running, else marks one running
+// claimEnv fails tb if another Env is still running, else marks c running
 // until tb ends.
-func claimEnv(tb testing.TB) {
+func claimEnv(tb testing.TB, c *testclock.Clock) {
 	tb.Helper()
-	if !live.CompareAndSwap(false, true) {
+	if !live.CompareAndSwap(nil, c) {
 		tb.Fatalf("coretest: another Env is still alive; use one Env per test")
 		return
 	}
-	tb.Cleanup(func() { live.Store(false) })
+	tb.Cleanup(func() { live.Store(nil) })
 }
 
 // netOptions is the plugins' network: EgressHost reaches egressAddr; besides
@@ -349,9 +350,13 @@ func multipart(kind, boundary string, parts ...string) string {
 }
 
 // Msg builds a raw message. Without MessageID it gets a random one; without
-// Date, the current time.
+// Date, the running Env's time (or the current time).
 func Msg(from, to, subject, body string, opts ...MsgOption) []byte {
-	c := msgConfig{messageID: rand.Text() + "@coretest", date: time.Now()}
+	now := time.Now()
+	if clk := live.Load(); clk != nil {
+		now = clk.Now()
+	}
+	c := msgConfig{messageID: rand.Text() + "@coretest", date: now}
 	for _, o := range opts {
 		o(&c)
 	}
