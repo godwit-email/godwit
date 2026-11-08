@@ -1704,6 +1704,9 @@ func (p *mailPage) batchScoped(act string, rows []mailItem, anywhere bool) {
 			if saved && (op == "junk" || op == "inbox") && role[m.FolderID] == "sent" {
 				continue // a whole conversation moves, but what the user sent stays sent
 			}
+			if m.FolderID == 0 {
+				continue // Gmail kept it with no visible label; nothing on the server to change
+			}
 			acc, ok := acctOf[m.FolderID]
 			if !ok {
 				failed++

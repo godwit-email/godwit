@@ -115,10 +115,22 @@ const ownMail = "EXISTS (SELECT 1 FROM message_locations l JOIN folders f ON f.i
 // their durable markers in the same transaction. A stopped round leaves them
 // for the next sync, whose folder discovery precedes receive rules and hooks.
 func (r *result) logArrivals(ctx context.Context, db *store.DB, accountID int64) error {
+	for {
+		n, err := r.logArrivalBatch(ctx, db, accountID)
+		if err != nil || n < arrivalBatch {
+			return err
+		}
+	}
+}
+
+// arrivalBatch keeps logArrivals' bound id lists under SQLite's variable limit.
+const arrivalBatch = 500
+
+func (r *result) logArrivalBatch(ctx context.Context, db *store.DB, accountID int64) (int, error) {
 	rows, err := db.Query(ctx, `SELECT m.id, m.thread_id, m.subject, m.from_addr, m.date, i.arrival, i.verdict
-  FROM message_imports i JOIN messages m ON m.id = i.message_id WHERE m.account_id = ? ORDER BY m.id`, accountID)
+  FROM message_imports i JOIN messages m ON m.id = i.message_id WHERE m.account_id = ? ORDER BY m.id LIMIT ?`, accountID, arrivalBatch)
 	if err != nil || len(rows.Values) == 0 {
-		return err
+		return 0, err
 	}
 	var ids []any
 	var stmts []sqlite.Statement
@@ -146,7 +158,7 @@ func (r *result) logArrivals(ctx context.Context, db *store.DB, accountID int64)
 		Args: ids,
 	}, sqlite.Statement{SQL: "DELETE FROM message_imports WHERE message_id IN (" + marks(len(ids)) + ")", Args: ids})
 	if _, err := db.Transaction(ctx, stmts); err != nil {
-		return err
+		return 0, err
 	}
 	for _, n := range rows.Values {
 		if store.Int(n[5]) != 0 {
@@ -154,7 +166,7 @@ func (r *result) logArrivals(ctx context.Context, db *store.DB, accountID int64)
 			r.threads = append(r.threads, store.Int(n[1]))
 		}
 	}
-	return nil
+	return len(rows.Values), nil
 }
 
 // claim gives a new UID in f to the local message whose MOVE finished without a
@@ -299,6 +311,9 @@ func syncFlags(ctx context.Context, db *store.DB, c *imapclient.Client, accountI
 		return err
 	}
 	r.gone(changed, tids)
+	if f.role == "trash" || f.role == "junk" { // Gmail keeps no other label on binned mail
+		r.expunged = append(r.expunged, vanished...)
+	}
 	return r.orphan(ctx, db, c, accountID, vanished)
 }
 

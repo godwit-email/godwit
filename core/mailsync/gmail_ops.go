@@ -15,6 +15,8 @@ import (
 // pushGmailLabels applies a recorded move with additive label writes. Every
 // attempt reads membership by Gmail identity first, including after a lost reply.
 func pushGmailLabels(ctx context.Context, db *store.DB, c *imapclient.Client, o op) (string, error) {
+	counted := false // this attempt is already in o.attempts
+	failure := func(cause error) (string, error) { return gmailFailure(ctx, db, o, cause, counted) }
 	r, err := db.Query(ctx, `SELECT gmail_msgid FROM messages WHERE id = ?`, o.msg)
 	if err != nil {
 		return "", err
@@ -37,7 +39,7 @@ func pushGmailLabels(ctx context.Context, db *store.DB, c *imapclient.Client, o 
 		}
 	}
 	if o.dst != 0 && dstName == "" {
-		return gmailFailure(ctx, db, o, errNoDestination)
+		return failure(errNoDestination)
 	}
 	if id == 0 && srcName != "" { // An upgrade can still have rows not fetched for Gmail identity.
 		loc, err := db.Query(ctx, "SELECT uid, uidvalidity FROM message_locations WHERE message_id = ? AND folder_id = ? AND uid IS NOT NULL", o.msg, o.src)
@@ -47,7 +49,7 @@ func pushGmailLabels(ctx context.Context, db *store.DB, c *imapclient.Client, o 
 		if len(loc.Values) > 0 {
 			sel, err := c.Select(srcName, nil).Wait()
 			if err != nil {
-				return gmailFailure(ctx, db, o, err)
+				return failure(err)
 			}
 			if sel.UIDValidity != uint32(store.Int(loc.Values[0][1])) {
 				msg := "the source folder was recreated before Gmail identity was known"
@@ -55,7 +57,7 @@ func pushGmailLabels(ctx context.Context, db *store.DB, c *imapclient.Client, o 
 			}
 			got, err := c.Fetch(imap.UIDSetNum(imap.UID(store.Int(loc.Values[0][0]))), &imap.FetchOptions{UID: true, GmailMsgID: true}).Collect()
 			if err != nil {
-				return gmailFailure(ctx, db, o, err)
+				return failure(err)
 			}
 			if len(got) > 0 {
 				id = got[0].GmailMsgID
@@ -84,7 +86,7 @@ func pushGmailLabels(ctx context.Context, db *store.DB, c *imapclient.Client, o 
 		for _, a := range anchors.Values {
 			_, uid, err := gmailLocation(c, store.Str(a[0]), id)
 			if err != nil {
-				return gmailFailure(ctx, db, o, err)
+				return failure(err)
 			}
 			if uid != 0 {
 				srcName = store.Str(a[0])
@@ -94,16 +96,16 @@ func pushGmailLabels(ctx context.Context, db *store.DB, c *imapclient.Client, o 
 	}
 	srcValidity, srcUID, err := gmailLocation(c, srcName, id)
 	if err != nil {
-		return gmailFailure(ctx, db, o, err)
+		return failure(err)
 	}
 	var dstValidity, dstUID uint32
 	if dstName != "" {
 		dstValidity, dstUID, err = gmailLocation(c, dstName, id)
 		if err != nil {
-			return gmailFailure(ctx, db, o, err)
+			return failure(err)
 		}
 		if dstValidity == 0 {
-			return gmailFailure(ctx, db, o, errNoDestination)
+			return failure(errNoDestination)
 		}
 	}
 	removeOnly := o.dst == 0 || dstRole == "all"
@@ -123,7 +125,7 @@ func pushGmailLabels(ctx context.Context, db *store.DB, c *imapclient.Client, o 
 		return msg, finish(ctx, db, o, "conflict", msg)
 	}
 	if err := reselect(c, srcName, srcValidity); err != nil {
-		return gmailFailure(ctx, db, o, err)
+		return failure(err)
 	}
 	claimed, err := db.Execute(ctx, "UPDATE ops SET attempts = attempts + 1 WHERE id = ? AND state = 'pending'", o.id)
 	if err != nil {
@@ -133,41 +135,42 @@ func pushGmailLabels(ctx context.Context, db *store.DB, c *imapclient.Client, o 
 		return "", nil
 	}
 	o.attempts++
+	counted = true
 	purges, err := db.Query(ctx, "SELECT 1 FROM ops WHERE message_id = ? AND kind = 'purge' AND attempts > 0", o.msg)
 	if err != nil {
 		return "", err
 	}
 	if len(purges.Values) > 0 {
 		if err := undelete(c, imap.UID(srcUID)); err != nil {
-			return gmailFailure(ctx, db, o, err)
+			return failure(err)
 		}
 	}
 	set := imap.UIDSetNum(imap.UID(srcUID))
 	binned := dstRole == "trash" || dstRole == "junk"
 	if !removeOnly && (dstUID == 0 || binned) {
 		if err := c.StoreGmailLabels(set, &imap.StoreGmailLabels{Op: imap.StoreFlagsAdd, Silent: true, Labels: []string{gmailLabel(dstName, dstRole)}}).Close(); err != nil {
-			return gmailFailure(ctx, db, o, err)
+			return failure(err)
 		}
 	}
 	// Adding Trash/Spam is the special transition; Gmail removes other membership.
 	if !binned && !addOnly {
 		if err := c.StoreGmailLabels(set, &imap.StoreGmailLabels{Op: imap.StoreFlagsDel, Silent: true, Labels: []string{gmailLabel(srcName, srcRole)}}).Close(); err != nil {
-			return gmailFailure(ctx, db, o, err)
+			return failure(err)
 		}
 	}
 	// A successful STORE may match no UID if another client moved it meanwhile.
 	_, source, err := gmailLocation(c, srcName, id)
 	if err != nil {
-		return gmailFailure(ctx, db, o, err)
+		return failure(err)
 	}
 	if dstName != "" {
 		dstValidity, dstUID, err = gmailLocation(c, dstName, id)
 		if err != nil {
-			return gmailFailure(ctx, db, o, err)
+			return failure(err)
 		}
 	}
 	if (!addOnly && source != 0) || (!removeOnly && dstUID == 0) {
-		return gmailFailure(ctx, db, o, errors.New("Gmail move postcondition was not observed"))
+		return failure(errNoPostcondition)
 	}
 	return "", gmailMoved(ctx, db, completed, dstValidity, dstUID)
 }
@@ -223,19 +226,26 @@ func gmailMoved(ctx context.Context, db *store.DB, o op, validity, uid uint32) e
 	return err
 }
 
-// An uncertain write stays pending even after the ordinary retry budget; only
-// a later membership check can resolve it, not the number of lost responses.
-func gmailFailure(ctx context.Context, db *store.DB, o op, cause error) (string, error) {
-	if cause == errNoDestination {
-		if _, err := db.Execute(ctx, "UPDATE ops SET attempts = attempts + 1 WHERE id = ?", o.id); err != nil {
-			return "", err
+var errNoPostcondition = errors.New("Gmail move postcondition was not observed")
+
+// A lost reply is uncertain and stays pending past the retry budget; only a
+// later membership check can resolve it. So does a refused read before the
+// write. A write the server refused, or one whose result is not observed, is
+// definite and counts against MaxAttempts (counted: already in attempts).
+func gmailFailure(ctx context.Context, db *store.DB, o op, cause error, counted bool) (string, error) {
+	var refused *imap.Error
+	isRefused := errors.As(cause, &refused)
+	if cause == errNoDestination || (counted && (isRefused || cause == errNoPostcondition)) {
+		if !counted {
+			if _, err := db.Execute(ctx, "UPDATE ops SET attempts = attempts + 1 WHERE id = ?", o.id); err != nil {
+				return "", err
+			}
+			o.attempts++
 		}
-		o.attempts++
 		return fail(ctx, db, o, cause)
 	}
 	_, err := db.Execute(ctx, "UPDATE ops SET last_error = ? WHERE id = ?", cause.Error(), o.id)
-	var refused *imap.Error
-	if errors.As(cause, &refused) {
+	if isRefused {
 		return "", err
 	}
 	return "", errors.Join(cause, err)

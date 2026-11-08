@@ -6,6 +6,7 @@ import (
 	"cmp"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"slices"
@@ -67,6 +68,7 @@ func (a *account) since(now time.Time) time.Time {
 type result struct {
 	received, threads, changed, changedThreads []int64
 	orphans                                    []int64 // Gmail messages that lost a server location, for the round's end
+	expunged                                   []int64 // of them, gone from Trash or Spam: Gmail deleted them for good
 	conflicts                                  []string
 	more                                       bool // a range backfill yielded with work left
 }
@@ -96,9 +98,10 @@ func (r *result) merged(target int64, others []int64) {
 // work left: the caller should sync again soon.
 func Fetch(ctx context.Context, db *store.DB, c *imapclient.Client, accountID int64, bus *events.Bus) (more bool, err error) {
 	var r result
+	complete := false
 	defer func() {
-		if err == nil {
-			err = r.logArrivals(context.WithoutCancel(ctx), db, accountID)
+		if complete {
+			err = errors.Join(err, r.logArrivals(context.WithoutCancel(ctx), db, accountID))
 		}
 		r.publish(bus, accountID)
 	}()
@@ -116,15 +119,54 @@ func Fetch(ctx context.Context, db *store.DB, c *imapclient.Client, accountID in
 			return false, err
 		}
 	}
+	// A folder the server refuses is skipped, so it cannot hold back the
+	// others' arrivals round after round; a broken connection still stops here.
+	var refused error
 	for _, f := range folders {
 		if err := syncFolder(ctx, db, c, a, f, &r); err != nil {
-			return r.more, fmt.Errorf("sync %q: %w", f.name, err)
+			err = fmt.Errorf("sync %q: %w", f.name, err)
+			var no *imap.Error
+			if !errors.As(err, &no) || ctx.Err() != nil {
+				return r.more, err
+			}
+			refused = errors.Join(refused, err)
 		}
 	}
-	if err := dropOrphans(ctx, db, accountID, r.orphans, true, c.Caps().Has(capGmail), &r); err != nil {
+	gmail := c.Caps().Has(capGmail)
+	if err := dropOrphans(ctx, db, accountID, r.orphans, true, gmail, &r); err != nil {
 		return r.more, err
 	}
+	complete = true
+	if refused != nil { // a skipped folder may yet hold a claim or a stale location
+		return r.more, refused
+	}
+	if gmail {
+		if err := reshow(ctx, db, accountID, &r); err != nil {
+			return r.more, err
+		}
+	}
 	return r.more, unclaimable(ctx, db, accountID, &r)
+}
+
+// reshow shows a Gmail message again in every folder the server has it in
+// once no move or purge of it waits: a location found while one was pending
+// was added hidden, and nothing else shows it after the move succeeds.
+func reshow(ctx context.Context, db *store.DB, accountID int64, r *result) error {
+	const hidden = `FROM message_locations l JOIN messages ON messages.id = l.message_id
+		WHERE messages.account_id = ? AND l.uid IS NOT NULL AND NOT l.shown AND ` + notMoving
+	rows, err := db.Query(ctx, "SELECT DISTINCT messages.id, messages.thread_id "+hidden, accountID)
+	if err != nil || len(rows.Values) == 0 {
+		return err
+	}
+	if _, err := db.Execute(ctx, `UPDATE message_locations SET shown = 1, entered_at = unixepoch() WHERE rowid IN (SELECT l.rowid `+hidden+`)`, accountID); err != nil {
+		return err
+	}
+	var ids, tids []int64
+	for _, v := range rows.Values {
+		ids, tids = append(ids, store.Int(v[0])), append(tids, store.Int(v[1]))
+	}
+	r.gone(ids, tids)
+	return nil
 }
 
 // publish announces what r collected.
@@ -231,7 +273,9 @@ func dropOrphans(ctx context.Context, db *store.DB, accountID int64, ids []int64
 	where, args := "account_id = ? AND "+which+" AND "+orphaned, append([]any{accountID}, anys(ids)...)
 	if gmail {
 		where += ` AND NOT EXISTS (SELECT 1 FROM ops WHERE message_id = messages.id AND state = 'pending')
-			AND (gmail_msgid IS NULL OR EXISTS (SELECT 1 FROM folders WHERE account_id = messages.account_id AND role = 'all'))`
+			AND (gmail_msgid IS NULL OR id IN (` + marks(len(r.expunged)) + `)
+				OR EXISTS (SELECT 1 FROM folders WHERE account_id = messages.account_id AND role = 'all'))`
+		args = append(args, anys(r.expunged)...)
 	}
 	gone, tids, err := doomed(ctx, db, where, args...)
 	if err != nil || len(gone) == 0 {

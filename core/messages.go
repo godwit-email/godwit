@@ -1109,6 +1109,16 @@ func (s *Service) gmailAccount(ctx context.Context, acc int64) (bool, error) {
 		_, err := s.db.Execute(ctx, "UPDATE accounts SET imap_gmail = 1 WHERE id = ?", acc)
 		return true, err
 	}
+	// Gmail always lists its [Gmail] or [Google Mail] system folders; a synced
+	// account without one is plain IMAP and needs no login to archive.
+	g, err := s.db.Query(ctx, `SELECT EXISTS (SELECT 1 FROM folders WHERE account_id = ? AND (name LIKE '[Gmail]%' OR name LIKE '[Google Mail]%')),
+		EXISTS (SELECT 1 FROM folders WHERE account_id = ?)`, acc, acc)
+	if err != nil {
+		return false, err
+	}
+	if store.Int(g.Values[0][0]) == 0 && store.Int(g.Values[0][1]) != 0 {
+		return false, nil
+	}
 	// An unknown legacy server must be identified before choosing archive semantics.
 	c, release, _, err := s.dialAccount(ctx, acc, nil)
 	if err != nil {
@@ -1176,6 +1186,9 @@ func (s *Service) move(ctx context.Context, accountID int64, ts []target, from, 
 
 // binned reports whether folder is the account's Trash or Junk.
 func (s *Service) binned(ctx context.Context, accountID, folder int64) (bool, error) {
+	if folder == 0 { // Gmail archive with All Mail hidden, not a missing Trash or Junk
+		return false, nil
+	}
 	for _, role := range []string{"trash", "junk"} {
 		id, _, err := mailsync.RoleFolder(ctx, s.db, accountID, role)
 		if err != nil || id == folder {
