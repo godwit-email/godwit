@@ -804,24 +804,10 @@ func TestCardHint(t *testing.T) {
 	}
 }
 
-func TestEndAutolinks(t *testing.T) {
-	for in, want := range map[string]string{
-		"链接：https://vishnuai.in/mediakit，并留下电话。":    "链接：<https://vishnuai.in/mediakit>，并留下电话。",
-		"见“https://a.in/x”和 https://b.in/y。":        "见“<https://a.in/x>”和 <https://b.in/y>。",
-		"https://a.in/ｶﾀｶﾅ と https://ｅｘａｍｐｌｅ.org/x": "https://a.in/ｶﾀｶﾅ と https://ｅｘａｍｐｌｅ.org/x",
-		"https://a.in/1990–91（续）":                   "<https://a.in/1990–91>（续）",
-		"[下载]( https://a.in/文档，下载)":                 "[下载]( https://a.in/文档，下载)",
-		"plain https://a.in/x, done":                "plain https://a.in/x, done",
-		"[资料](https://a.in/x)，以及 <https://b.in/y>，": "[资料](https://a.in/x)，以及 <https://b.in/y>，",
-		"[https://a.in/文档，下载](https://a.in/文档，下载)":  "[https://a.in/文档，下载](https://a.in/文档，下载)",
-	} {
-		if got := endAutolinks(in); got != want {
-			t.Errorf("endAutolinks(%q) = %q, want %q", in, got, want)
-		}
-	}
-	// what the summary card renders: the link ends at the comma
+// mygo ends a bare URL at CJK punctuation (#402).
+func TestSummaryAutolinkEndsAtCJK(t *testing.T) {
 	var dests []string
-	for _, in := range parser.Parse(endAutolinks("链接：https://vishnuai.in/mediakit，并留下电话。")).Inlines(1) { // block 0 is the root
+	for _, in := range parser.Parse("链接：https://vishnuai.in/mediakit，并留下电话。").Inlines(1) { // block 0 is the root
 		if in.Kind == parser.Link {
 			dests = append(dests, in.Dest)
 		}
