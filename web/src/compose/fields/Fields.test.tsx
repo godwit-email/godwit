@@ -174,6 +174,19 @@ test("frozen: read-only, nothing committed, removed or switched", async () => {
   expect(chips()).toEqual(["移除 a@b.c"]);
 });
 
+test("a menu left open when the fields freeze switches nothing", async () => {
+  const onFrom = vi.fn();
+  const host = (frozen: boolean) => (
+    <Host init={{}} frozen={frozen} onChange={vi.fn()} onFrom={onFrom} fieldsRef={createRef()} />
+  );
+  const { rerender } = render(host(false));
+  await userEvent.click(screen.getByRole("button", { name: "发件账户" }));
+  const work = await screen.findByRole("menuitemradio", { name: "work@x.com" });
+  rerender(host(true));
+  await userEvent.click(work);
+  expect(onFrom).not.toHaveBeenCalled();
+});
+
 test("while an IME composes, neither a comma nor leaving commits", () => {
   setup();
   const to = screen.getByRole("textbox", { name: "收件人" });

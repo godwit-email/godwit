@@ -212,7 +212,6 @@ const pages: Record<string, { states: string[]; entry: () => Promise<unknown>; s
         "ReaderPage.Navigate": nothing,
         "ReaderPage.OpenLink": nothing,
         "ReaderPage.Search": nothing,
-        "ReaderPage.Wheel": nothing,
       });
     },
   },

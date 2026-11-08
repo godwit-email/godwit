@@ -181,7 +181,10 @@ export function Fields({
             <RiArrowDownSLine className="ml-1 size-3.5 shrink-0 text-muted-foreground" />
           </DropdownMenuTrigger>
           <DropdownMenuContent align="start" className="max-h-80 w-auto min-w-52 max-w-80">
-            <DropdownMenuRadioGroup value={from} onValueChange={(v) => onFrom(Number(v))}>
+            <DropdownMenuRadioGroup
+              value={from}
+              onValueChange={(v) => !frozen && onFrom(Number(v))}
+            >
               {accounts.map((a) => (
                 <DropdownMenuRadioItem key={a.id} value={a.id} closeOnClick>
                   <span className="truncate">{a.email}</span>
