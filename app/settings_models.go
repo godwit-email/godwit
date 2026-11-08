@@ -60,18 +60,21 @@ type modelForm struct {
 	loginErr                 string
 	confirmDel               bool // the footer asks to confirm the removal
 	keyFocus, urlFocus       bool
-	fetch, fetchErr          string // "ok" or "fail" once the key's /models fetch is back; why it failed
-	fetched                  int    // how many models that fetch listed
-	probeConn                string // conn() of the fetch under way
-	showKey, refetch         bool   // the typed key is shown; the key or address changed during a fetch, which asks for another
-	kind, name, baseURL, key string // kind: the generate format, kept while generate is off
+	list, judgeList          listing // how the key's /models fetch went, for generate and for judge
+	probeConn                string  // conn() of the fetch under way
+	showKey, refetch         bool    // the typed key is shown; the key or address changed during a fetch, which asks for another
+	kind, name, baseURL, key string  // kind: the generate format, kept while generate is off
 	genOn, judgeOn           bool
-	judgeFormat, judgeModel  string   // kept while judge is off
-	judgeModels              []string // the judge models the last fetch listed
-	hasKey, noKey            bool     // noKey: the user chose no key for a changed address
-	nameAuto                 bool     // other: the name follows the address's host until the user types one
-	autoName, autoURL        string   // the name nameAuto set last, and the address it set it for
-	manual                   string   // a model ID being typed
+	judgeFormat, judgeModel  string             // kept while judge is off
+	judgeModels              []string           // the judge models the last fetch listed
+	judgeManual              string             // a judge model ID being typed
+	genView, judgeView       pickerView         // each picker's filter
+	modelTests               map[string]capTest // a model's test from its chip's menu, by cap+"\n"+ID; cleared with the other tests
+	lastModel                map[string]string  // the model each capability's chip menu tested last
+	hasKey, noKey            bool               // noKey: the user chose no key for a changed address
+	nameAuto                 bool               // other: the name follows the address's host until the user types one
+	autoName, autoURL        string             // the name nameAuto set last, and the address it set it for
+	manual                   string             // a model ID being typed
 	models, offered          []string
 	names                    map[string]string // offered ID -> display name, when the service gave one
 	busy, probing            bool
@@ -81,6 +84,25 @@ type modelForm struct {
 	connSeen                 string
 	keyErr                   string // that service refused the key
 	urlErr, urlBad           string // why the address urlBad was refused when it lost focus
+}
+
+// listing is how a /models fetch went: state "ok" or "fail" once it is
+// back, err why it failed (an HTTP status, or a reason), n how many it listed.
+type listing struct {
+	state, err string
+	n          int
+}
+
+// listingOf is a fetch that listed n models, or none: status, when known, said so.
+func listingOf(n, status int) listing {
+	if n == 0 {
+		l := listing{state: "fail"}
+		if status > 0 {
+			l.err = strconv.Itoa(status)
+		}
+		return l
+	}
+	return listing{state: "ok", n: n}
 }
 
 // capTest is a capability's test in the dialog: state "", "testing", "ok" or
@@ -238,6 +260,7 @@ func (f *modelForm) edited() {
 	if c := f.conn(); c != f.connSeen {
 		f.connSeen, f.connEdits = c, f.connEdits+1
 		f.gen, f.judge = capTest{}, capTest{}
+		f.modelTests, f.lastModel = nil, nil
 	}
 }
 
@@ -271,10 +294,12 @@ func (f *modelForm) needKey() bool {
 	}
 	return f.id == 0 && !f.custom() && f.key == ""
 }
-func (f *modelForm) needModel() bool { return f.genOn && len(f.models) == 0 }
-func (f *modelForm) noURL() bool     { return strings.TrimSpace(f.baseURL) == "" }
-func (f *modelForm) noName() bool    { return strings.TrimSpace(f.name) == "" }
-func (f *modelForm) failed() bool    { return f.gen.state == "fail" || f.judge.state == "fail" }
+func (f *modelForm) needModel() bool {
+	return f.genOn && len(f.models) == 0 || f.judgeOn && f.judgeModel == ""
+}
+func (f *modelForm) noURL() bool  { return strings.TrimSpace(f.baseURL) == "" }
+func (f *modelForm) noName() bool { return strings.TrimSpace(f.name) == "" }
+func (f *modelForm) failed() bool { return f.gen.state == "fail" || f.judge.state == "fail" }
 func (f *modelForm) canResetURL() bool {
 	return !f.custom() && !defaultURL(f.provider, strings.TrimSpace(f.baseURL))
 }
@@ -316,20 +341,27 @@ func (f *modelForm) cantTest() bool {
 	return !f.anyCap() || !f.custom() && !f.anyKey() || f.noURL() || f.testing()
 }
 
-// decList is the judge models to choose from: none until there is a key
-// (other: the format's own); the fetched ones, else the format's.
+// decList is the judge models to offer: the listed ones, else the format's
+// usual IDs as suggestions, with the chosen one first when neither has it.
 func (f *modelForm) decList() []string {
-	if f.judgeFormat == "" || !f.anyKey() && !f.custom() {
+	if f.judgeFormat == "" {
 		return nil
 	}
-	list := ai.JudgeFormat(f.judgeFormat).Models()
-	if !f.custom() && len(f.judgeModels) > 0 {
-		list = slices.Clone(f.judgeModels)
+	list := slices.Clone(f.judgeModels)
+	if len(list) == 0 {
+		list = ai.JudgeFormat(f.judgeFormat).Models()
 	}
 	if f.judgeModel != "" && !slices.Contains(list, f.judgeModel) {
 		list = append([]string{f.judgeModel}, list...)
 	}
 	return list
+}
+
+// setJudgeFormat switches the judge format: what the last fetch listed was
+// for the other one.
+func (f *modelForm) setJudgeFormat() {
+	f.judgeModels, f.judgeList = nil, listing{}
+	f.judgeModel = first(ai.JudgeFormat(f.judgeFormat).Models())
 }
 
 // input is the form as a service input, with an explicit key action. The
@@ -377,6 +409,13 @@ func (f *modelForm) addManual() {
 		f.models = append(f.models, id)
 	}
 	f.manual = ""
+}
+
+// addJudgeManual chooses the judge model ID typed.
+func (f *modelForm) addJudgeManual() {
+	if id := strings.TrimSpace(f.judgeManual); id != "" {
+		f.judgeModel, f.judgeManual = id, ""
+	}
 }
 
 // offWarns are the warnings for turning off a capability of the saved
@@ -761,7 +800,7 @@ func (m *modelsView) fetchAs(f *modelForm, quiet bool) {
 	in.Name = cmp.Or(in.Name, "-") // checked, never saved
 	f.probing, f.keyErr, f.refetch, f.probeConn = true, "", false, conn
 	if !quiet {
-		f.fetch, f.fetchErr = "", ""
+		f.list, f.judgeList = listing{}, listing{}
 	}
 	var res core.ServiceCheck
 	a.do(func(ctx context.Context) (err error) {
@@ -789,13 +828,23 @@ func (m *modelsView) fetchAs(f *modelForm, quiet bool) {
 			return
 		case err != nil:
 			if !quiet {
-				f.fetch, f.fetchErr = "fail", fetchFailure(err)
+				f.list = listing{state: "fail", err: fetchFailure(err)}
+				f.judgeList = f.list
 			}
 			return
 		}
-		f.judgeModels = res.JudgeModels
-		if f.judgeModel == "" {
-			f.judgeModel = first(f.decList())
+		if in.JudgeFormat != "" && (f.custom() || f.anyKey()) && ai.JudgeFormat(in.JudgeFormat).Lists(in.BaseURL) {
+			f.judgeModels = nil
+			if res.JudgeListed {
+				f.judgeModels = res.JudgeModels
+			}
+			// A new service's suggested default gives way to what the service lists.
+			if l := f.judgeModels; f.id == 0 && len(l) > 0 && !slices.Contains(l, f.judgeModel) && slices.Contains(ai.JudgeFormat(in.JudgeFormat).Models(), f.judgeModel) {
+				f.judgeModel = l[0]
+			}
+			if !quiet {
+				f.judgeList = listingOf(len(f.judgeModels), res.JudgeNoListStatus)
+			}
 		}
 		if in.Kind == "" {
 			return
@@ -813,15 +862,12 @@ func (m *modelsView) fetchAs(f *modelForm, quiet bool) {
 		if fresh && len(f.models) == 0 && len(res.Models) > 0 { // the first listed is chosen, as the design's onKey does
 			f.models = []string{res.Models[0]}
 		}
-		switch {
-		case quiet:
-		case !res.ListSupported || len(res.Models) == 0:
-			f.fetch, f.fetchErr = "fail", ""
-			if res.NoListStatus > 0 {
-				f.fetchErr = strconv.Itoa(res.NoListStatus)
+		if !quiet {
+			n := len(res.Models)
+			if !res.ListSupported {
+				n = 0
 			}
-		default:
-			f.fetch, f.fetched = "ok", len(res.Models)
+			f.list = listingOf(n, res.NoListStatus)
 		}
 	})
 }
@@ -865,6 +911,39 @@ func (m *modelsView) test(f *modelForm) {
 			}
 		})
 	}
+}
+
+// testModel tests capability cap with model id alone, from its chip's menu,
+// as the form has the rest. A result is dropped once conn() changed since.
+func (m *modelsView) testModel(f *modelForm, cap, id string) {
+	if f.cantTest() {
+		return
+	}
+	f.edited()
+	in, format := f.input(), f.kind
+	if cap == core.CapGen {
+		in.Models = []string{id}
+	} else {
+		in.JudgeModel, format = id, f.judgeFormat
+	}
+	if f.modelTests == nil {
+		f.modelTests, f.lastModel = map[string]capTest{}, map[string]string{}
+	}
+	k := cap + "\n" + id
+	f.modelTests[k], f.lastModel[cap] = capTest{state: "testing"}, id
+	a, fid, test, gen, connEdits := m.a, f.id, m.testService, m.a.gen, f.connEdits
+	var st core.CapStatus
+	a.do(func(ctx context.Context) (err error) {
+		st, err = test(ctx, fid, in, cap)
+		return err
+	}, func(err error) {
+		if m.form != f || gen != a.gen || f.connEdits != connEdits || f.modelTests == nil {
+			return
+		}
+		r := capResult(format, st, err)
+		r.status = st
+		f.modelTests[k] = r
+	})
 }
 
 // capResult is a capability test's status line.

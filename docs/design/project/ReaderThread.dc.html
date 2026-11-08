@@ -33,22 +33,6 @@ button{font:inherit;cursor:pointer}
     </span>
   </div>
 
-  <sc-if value="{{toolbarMenu}}" hint-placeholder-val="{{ false }}">
-  <button type="button" aria-label="关闭标签菜单" onClick="{{toggleMenu}}" style="position: fixed; inset: 0; z-index: 9; padding: 0; border: 0; background: transparent; cursor: default"></button>
-            <div role="menu" aria-label="标签" style="position: absolute; top: 42px; left: {{tagLeft}}; z-index: 10; width: 240px; box-sizing: border-box; padding: 4px; display: flex; flex-direction: column; background: #FFFFFF; border: 1px solid #E5E5E5; border-radius: 8px; box-shadow: 0 4px 6px -1px rgba(0,0,0,0.1), 0 2px 4px -2px rgba(0,0,0,0.1)">
-              <input type="search" aria-label="搜索或新建标签" placeholder="搜索或新建标签" style="height: 32px; box-sizing: border-box; margin-bottom: 4px; padding: 0 8px; border: 0; border-bottom: 1px solid #E5E5E5; background: transparent; font: inherit; font-size: 13px; color: #0A0A0A; outline: none">
-              <sc-for list="{{menuItems}}" as="o" hint-placeholder-count="9">
-              <button type="button" role="menuitemcheckbox" aria-checked="{{o.checked}}" onClick="{{o.toggle}}" style="display: flex; align-items: center; gap: 8px; height: 32px; padding: 0 8px; border: 0; border-radius: 6px; background: transparent; text-align: left; color: #0A0A0A; font-size: 13px">
-                <span style="width: 16px; flex: none; display: flex"><sc-if value="{{o.on}}" hint-placeholder-val="{{ false }}"><svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M9.9997 15.1709L19.1921 5.97852L20.6063 7.39273L9.9997 17.9993L3.63574 11.6354L5.04996 10.2212L9.9997 15.1709Z"></path></svg></sc-if></span>
-                <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true" style="{{o.iconStyle}}"><path d="{{o.d}}"></path></svg>
-                <span style="flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap">{{o.name}}</span>
-                <sc-if value="{{o.auto}}" hint-placeholder-val="{{ false }}"><span style="flex: none; font-size: 12px; color: #737373">模型标记</span></sc-if>
-              </button>
-              </sc-for>
-              <div style="height: 1px; margin: 4px 0; background: #E5E5E5"></div>
-              <a href="SettingsLabels.dc.html" style="display: flex; align-items: center; gap: 8px; height: 32px; padding: 0 8px; border-radius: 6px; text-decoration: none; color: #0A0A0A; font-size: 13px"><span style="width: 16px; flex: none"></span>管理标签…</a>
-            </div>
-  </sc-if>
   <div style="position: absolute; inset: 0; overflow: auto">
     <div style="box-sizing: border-box; max-width: 776px; padding: 64px 28px 116px; display: flex; flex-direction: column">
 
@@ -58,10 +42,9 @@ button{font:inherit;cursor:pointer}
         <sc-if value="{{isThread}}" hint-placeholder-val="{{ true }}"><span style="font-size: 12px; color: #737373">{{count}} 封往来</span></sc-if>
         <sc-if value="{{labelsOn}}" hint-placeholder-val="{{ false }}">
         <sc-if value="{{isThread}}" hint-placeholder-val="{{ true }}"><span aria-hidden="true" style="width: 1px; height: 12px; margin: 0 4px; background: #E5E5E5"></span></sc-if>
-        <sc-if value="{{lm.removable}}" hint-placeholder-val="{{ true }}"><sc-for list="{{chips}}" as="c" hint-placeholder-count="2"><dc-import name="LabelChip" text="{{c.text}}" color="{{c.color}}" icon="{{c.icon}}" source="{{c.source}}" removable="true" on-remove="{{c.remove}}" hint-size="96px,20px"></dc-import></sc-for></sc-if>
+        <sc-for list="{{chips}}" as="c" hint-placeholder-count="2"><dc-import name="LabelChip" text="{{c.text}}" color="{{c.color}}" icon="{{c.icon}}" source="{{c.source}}" removable="true" on-remove="{{c.remove}}" hint-size="96px,20px"></dc-import></sc-for>
         <span style="position: relative; display: flex">
-          <sc-if value="{{lm.add}}" hint-placeholder-val="{{ true }}"><button type="button" aria-haspopup="menu" aria-expanded="{{menuOpen}}" onClick="{{toggleMenu}}" style="{{addStyle}}"><svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M11 11V5H13V11H19V13H13V19H11V13H5V11H11Z"></path></svg>标签</button></sc-if>
-          <sc-if value="{{lm.cluster}}" hint-placeholder-val="{{ false }}"><button type="button" aria-haspopup="menu" aria-expanded="{{menuOpen}}" onClick="{{toggleMenu}}" title="编辑标签" style="{{clusterStyle}}"><sc-for list="{{chips}}" as="c" hint-placeholder-count="2"><dc-import name="LabelChip" text="{{c.text}}" color="{{c.color}}" icon="{{c.icon}}" source="{{c.source}}" hint-size="96px,20px"></dc-import></sc-for><span style="{{clusterAdd}}"><svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M11 11V5H13V11H19V13H13V19H11V13H5V11H11Z"></path></svg>{{clusterAddText}}</span></button></sc-if>
+          <button type="button" aria-haspopup="menu" aria-expanded="{{menuOpen}}" onClick="{{toggleMenu}}" style="{{addStyle}}"><svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M11 11V5H13V11H19V13H13V19H11V13H5V11H11Z"></path></svg>标签</button>
           <sc-if value="{{inlineMenu}}" hint-placeholder-val="{{ false }}">
           <button type="button" aria-label="关闭标签菜单" onClick="{{toggleMenu}}" style="position: fixed; inset: 0; z-index: 9; padding: 0; border: 0; background: transparent; cursor: default"></button>
           <div role="menu" aria-label="标签" style="position: absolute; top: 24px; left: 0; z-index: 10; width: 240px; box-sizing: border-box; padding: 4px; display: flex; flex-direction: column; background: #FFFFFF; border: 1px solid #E5E5E5; border-radius: 8px; box-shadow: 0 4px 6px -1px rgba(0,0,0,0.1), 0 2px 4px -2px rgba(0,0,0,0.1)">
@@ -75,7 +58,7 @@ button{font:inherit;cursor:pointer}
             </button>
             </sc-for>
             <div style="height: 1px; margin: 4px 0; background: #E5E5E5"></div>
-            <a href="SettingsLabels.dc.html" style="display: flex; align-items: center; gap: 8px; height: 32px; padding: 0 8px; border-radius: 6px; text-decoration: none; color: #0A0A0A; font-size: 13px"><span style="width: 16px; flex: none"></span>管理标签…</a>
+            <a href="LabelsSettings.dc.html" style="display: flex; align-items: center; gap: 8px; height: 32px; padding: 0 8px; border-radius: 6px; text-decoration: none; color: #0A0A0A; font-size: 13px"><span style="width: 16px; flex: none"></span>管理标签…</a>
           </div>
           </sc-if>
         </span>
@@ -201,14 +184,14 @@ button{font:inherit;cursor:pointer}
       <label style="position: relative; display: flex; align-items: center; gap: 8px; height: 40px; padding: 0 6px 0 12px; border: 1px solid #E5E5E5; border-radius: 8px; background: #FFFFFF">
         <span style="position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0)">问 Wit</span>
         <input type="text" placeholder="{{placeholder}}" style="flex: 1; min-width: 0; height: 100%; border: 0; outline: none; background: transparent; font: inherit; color: #0A0A0A">
-        <a href="Ask.dc.html" aria-label="交给 Wit" title="交给 Wit" style="flex: none; width: 28px; height: 28px; border-radius: 6px; color: #737373; display: flex; align-items: center; justify-content: center"><svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="{{I.send}}"></path></svg></a>
+        <a href="Wit.dc.html" aria-label="交给 Wit" title="交给 Wit" style="flex: none; width: 28px; height: 28px; border-radius: 6px; color: #737373; display: flex; align-items: center; justify-content: center"><svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="{{I.send}}"></path></svg></a>
       </label>
     </div>
   </div>
 
 </section>
 </x-dc>
-<script type="text/x-dc" data-dc-script data-props='{"mail":{"editor":null},"summary":{"editor":null},"translated":{"editor":null},"quick":{"editor":null},"labels":{"editor":null},"labelChips":{"editor":null},"labelMenuItems":{"editor":null},"labelMenuOpen":{"editor":null},"onToggleLabelMenu":{"editor":null},"radius":{"editor":null},"labelMode":{"editor":"enum","options":["both","toolbar","inline","chip"],"default":"both"},"onToggleSummary":{"editor":null},"onToggleTranslate":{"editor":null},"$preview":{"width":1100,"height":900}}'>
+<script type="text/x-dc" data-dc-script data-props='{"mail":{"editor":null},"summary":{"editor":null},"translated":{"editor":null},"quick":{"editor":null},"labels":{"editor":null},"labelChips":{"editor":null},"labelMenuItems":{"editor":null},"labelMenuOpen":{"editor":null},"onToggleLabelMenu":{"editor":null},"radius":{"editor":null},"onToggleSummary":{"editor":null},"onToggleTranslate":{"editor":null},"$preview":{"width":1100,"height":900}}'>
 class Component extends DCLogic {
   constructor(props) {
     super(props);
@@ -266,13 +249,10 @@ class Component extends DCLogic {
     var key = mail.subject + '|';
     var open = this.state.open;
     var FLIP = 'matrix(-1 0 0 1 24 0)';
-    var mode = p.labelMode || 'both';
     var labelsOn = p.labels === true || p.labels === 'true';
     var menuShown = p.labelMenuOpen === true || p.labelMenuOpen === 'true';
     var tbBtn = function (on) { return 'width: 32px; height: 32px; padding: 0; border: 0; border-radius: 8px; color: #0A0A0A; display: flex; align-items: center; justify-content: center; background: ' + (on ? '#F5F5F5' : 'transparent'); };
     var b = function (label, d, tf) { return { label: label, d: d, tf: tf || '', onClick: function () {}, style: tbBtn(false) }; };
-    // option A opens the label menu from the toolbar's tag button
-    var tagBtn = Object.assign(b('标签', I.tag), mode === 'toolbar' && labelsOn ? { onClick: function () { if (p.onToggleLabelMenu) p.onToggleLabelMenu(); }, style: tbBtn(menuShown) } : {});
     var btn = function (on) { return 'height: 32px; padding: 0 10px; border: 0; border-radius: 8px; color: #0A0A0A; display: flex; align-items: center; gap: 6px; background: ' + (on ? '#F5F5F5' : 'transparent'); };
     return {
       I: I,
@@ -304,7 +284,7 @@ class Component extends DCLogic {
       smallIconBtn: 'width: 28px; height: 28px; padding: 0; border: 0; border-radius: 6px; background: transparent; color: #525252; display: flex; align-items: center; justify-content: center',
       leftGroups: [
         { label: '回复', items: [b('回复', I.reply), b('全部回复', I.replyAll), b('转发', I.reply, FLIP)] },
-        { label: '整理', sep: true, items: (mode === 'both' || mode === 'toolbar' ? [b('加星标', I.star), tagBtn] : [b('加星标', I.star)]).concat([b('归档', I.archive), b('移到垃圾邮件', I.spam), b('删除', I.del)]) },
+        { label: '整理', sep: true, items: [b('加星标', I.star), b('归档', I.archive), b('移到垃圾邮件', I.spam), b('删除', I.del)] },
         { label: '更多', items: [b('更多：保存、打印', I.more)] }
       ],
       msgs: thread.map(function (m, i) {
@@ -337,13 +317,7 @@ class Component extends DCLogic {
       metaRow: thread.length > 1 || p.labels === true || p.labels === 'true',
       chips: p.labelChips || [],
       menuItems: p.labelMenuItems || [],
-      lm: { removable: mode !== 'chip', add: mode === 'both' || mode === 'inline', cluster: mode === 'chip' },
-      toolbarMenu: labelsOn && menuShown && mode === 'toolbar',
-      inlineMenu: labelsOn && menuShown && mode !== 'toolbar',
-      tagLeft: '163px',
-      clusterStyle: 'display: inline-flex; align-items: center; gap: 4px; padding: 2px 4px 2px 2px; margin: -2px 0; border: 0; border-radius: 6px; background: ' + (menuShown ? '#F5F5F5' : 'transparent'),
-      clusterAdd: 'display: inline-flex; align-items: center; gap: 4px; color: #A3A3A3; font-size: 12px',
-      clusterAddText: (p.labelChips || []).length ? '' : '添加标签',
+      inlineMenu: labelsOn && menuShown,
       menuOpen: p.labelMenuOpen === true || p.labelMenuOpen === 'true' ? 'true' : 'false',
       toggleMenu: function () { if (p.onToggleLabelMenu) p.onToggleLabelMenu(); },
       addStyle: 'height: 20px; display: flex; align-items: center; gap: 4px; padding: 0 6px; border: 1px solid #E5E5E5; border-radius: 4px; background: #FFFFFF; color: #737373; font-size: 12px',

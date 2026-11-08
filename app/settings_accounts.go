@@ -282,6 +282,15 @@ func (p *settingsPage) makeDefault(id int64) {
 	p.patch(id, core.AccountPatch{IsDefault: &on}, nil)
 }
 
+func (p *settingsPage) setLabelKeywords(id int64, on bool) {
+	for i := range p.a.accounts {
+		if p.a.accounts[i].ID == id {
+			p.a.accounts[i].LabelKeywords = on
+		}
+	}
+	p.patch(id, core.AccountPatch{LabelKeywords: &on}, nil)
+}
+
 func (p *settingsPage) setSync(id int64, f *accountForm) {
 	r := f.sync
 	f.syncBusy++
@@ -504,6 +513,12 @@ func (p *settingsPage) accountView(c *ui.Context, acc core.Account) {
 				p.setSync(acc.ID, f)
 			}
 		}),
+		func() {
+			on := acc.LabelKeywords
+			if kit.SwitchRow(c, &on, i18n.T("settings.account.label_keywords"), i18n.T("settings.account.label_keywords.help")).Changed() {
+				p.setLabelKeywords(acc.ID, on)
+			}
+		},
 		row(i18n.T("settings.account.usage"), i18n.T("settings.account.usage.help"), func() {
 			ui.Row(c).Gap(th.Space(3)).AlignItems(ui.Center).Children(func() {
 				ui.Text(c, usage).TextColor(t.Muted)

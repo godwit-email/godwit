@@ -1,0 +1,18 @@
+<!-- @dsCard group="Data display" height=150 width=600 subtitle="Manual (filled) and model-set (outlined)" -->
+<!doctype html>
+<html><head><meta charset="utf-8"><style>
+body{margin:0;padding:24px;background:var(--background);font-family:Geist,"PingFang SC",system-ui,sans-serif;font-size:12px;display:flex;flex-direction:column;gap:12px}
+.r{display:flex;gap:8px;flex-wrap:wrap}
+.c{height:20px;box-sizing:border-box;display:inline-flex;align-items:center;gap:4px;padding:0 6px;border-radius:var(--radius-sm);border:1px solid transparent}
+.c::before{content:"";width:8px;height:8px;border-radius:2px;background:currentColor;opacity:.8}
+.blue{background:var(--label-blue-fill);color:var(--label-blue-text)}
+.green{background:var(--label-green-fill);color:var(--label-green-text)}
+.amber{background:var(--label-amber-fill);color:var(--label-amber-text)}
+.violet{background:var(--label-violet-fill);color:var(--label-violet-text)}
+.gray{background:var(--label-gray-fill);color:var(--label-gray-text)}
+.auto{background:transparent}
+.auto.blue{border-color:var(--label-blue-edge)}.auto.green{border-color:var(--label-green-edge)}.auto.amber{border-color:var(--label-amber-edge)}.auto.violet{border-color:var(--label-violet-edge)}.auto.gray{border-color:var(--label-gray-edge)}
+</style></head><body>
+<div class="r"><span class="c blue" title="手动标记">工作</span><span class="c green" title="手动标记">账单</span><span class="c amber" title="手动标记">待回复</span><span class="c violet" title="手动标记">旅行</span><span class="c gray" title="手动标记">归档</span></div>
+<div class="r"><span class="c auto blue" title="由模型标记">工作</span><span class="c auto green" title="由模型标记">账单</span><span class="c auto amber" title="由模型标记">待回复</span><span class="c auto violet" title="由模型标记">旅行</span><span class="c auto gray" title="由模型标记">归档</span></div>
+</body></html>

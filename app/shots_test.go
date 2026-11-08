@@ -537,7 +537,7 @@ func TestShots(t *testing.T) {
 			m.add()
 			m.group, m.form = 1, newForm(core.ProviderOpenAI)
 			f := m.form
-			f.key, f.offered, f.models, f.fetch, f.fetched = strings.Repeat("k", 20), []string{"[MODEL A]", "[MODEL B]", "[MODEL C]"}, []string{"[MODEL A]", "[MODEL B]"}, "ok", 3
+			f.key, f.offered, f.models, f.list = strings.Repeat("k", 20), []string{"[MODEL A]", "[MODEL B]", "[MODEL C]"}, []string{"[MODEL A]", "[MODEL B]"}, listing{state: "ok", n: 3}
 			return f
 		}
 		tested := func(f *modelForm, gen, judge capTest) { f.edited(); f.gen, f.judge = gen, judge }
@@ -554,19 +554,19 @@ func TestShots(t *testing.T) {
 			"SettingsModelsAddFetchFailed": func(m *modelsView) {
 				m.addLocal()
 				f := m.form
-				f.name, f.baseURL, f.fetch, f.fetchErr, f.offered, f.models = "公司网关", "https://llm.example.com/v1", "fail", "404", []string{"[MODEL X]"}, []string{"[MODEL X]"}
+				f.name, f.baseURL, f.list, f.offered, f.models = "公司网关", "https://llm.example.com/v1", listing{state: "fail", err: "404"}, []string{"[MODEL X]"}, []string{"[MODEL X]"}
 			},
 			"SettingsModelsAddOther": func(m *modelsView) {
 				f := newForm(core.ProviderOther)
-				m.form, m.open = f, true
+				m.form, m.open, m.group = f, true, 1
 				f.pickGateway("OpenRouter", "https://openrouter.ai/api/v1")
-				f.key, f.kind, f.fetch, f.fetched = strings.Repeat("k", 18), ai.KindAnthropic, "ok", 3
+				f.key, f.kind, f.list = strings.Repeat("k", 18), ai.KindAnthropic, listing{state: "ok", n: 3}
 				f.offered, f.models = []string{"[VENDOR/MODEL A]", "[VENDOR/MODEL B]", "[VENDOR/MODEL C]"}, []string{"[VENDOR/MODEL A]", "[VENDOR/MODEL B]"}
 				f.judgeOn, f.judgeFormat, f.judgeModel = true, string(ai.FormatSystemOne), "jev-latest"
 			},
 			"SettingsModelsAddTypeSafe": func(m *modelsView) {
-				m.form, m.open = newForm(core.ProviderTypeSafe), true
-				m.form.key, m.form.judgeModels = strings.Repeat("k", 15), []string{"jev-latest", "jev-preview", "jev-1.13.0"}
+				m.form, m.open, m.group = newForm(core.ProviderTypeSafe), true, 1
+				m.form.key, m.form.judgeModels, m.form.judgeList = strings.Repeat("k", 15), []string{"jev-latest", "jev-preview", "jev-1.13.0"}, listing{state: "ok", n: 3}
 			},
 			"SettingsModelsAddNoCap":           func(m *modelsView) { f := ready(m); f.genOn, f.judgeOn = false, false },
 			"SettingsModelsEdit":               func(m *modelsView) { edit(m) },
@@ -584,7 +584,7 @@ func TestShots(t *testing.T) {
 			modelsStatus(s, "normal")
 			m := s.app.pages[PageSettings].(*settingsPage).models
 			m.checkService = func(context.Context, int64, core.ModelServiceInput) (core.ServiceCheck, error) {
-				return core.ServiceCheck{Models: []string{"[MODEL A]", "[MODEL B]", "[MODEL C]"}, ListSupported: true, JudgeModels: []string{"gpt-6-luna"}}, nil
+				return core.ServiceCheck{Models: []string{"[MODEL A]", "[MODEL B]", "[MODEL C]"}, ListSupported: true}, nil
 			}
 			dlg(name)(m)
 			s.drain()

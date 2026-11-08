@@ -746,6 +746,10 @@ func (s *Service) syncAccount(ctx context.Context, accountID int64, explicit boo
 		err = s.logDaily(ctx) // daily rules run after the day's first complete sync
 	}
 	s.notifyHooks() // rows committed before an error count too
+	// Server keywords become labels.
+	if ierr := s.importKeywordLabels(ctx, accountID); ierr != nil && ctx.Err() == nil {
+		slog.Warn("keyword labels not imported", "account", accountID, "err", ierr)
+	}
 	s.wakeLabeler()
 	if more {
 		s.wakeWorker(accountID) // the backfill yielded: the worker's next round goes on with it

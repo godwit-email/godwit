@@ -711,7 +711,7 @@ func (s *Service) enqueue(ctx context.Context, draftID, rev int64, checked []str
 	if d.SourceMessageID != 0 && (d.Mode == "reply" || d.Mode == "reply_all") {
 		// last_insert_rowid() here is the outbox item, inserted just before.
 		stmts = append([]sqlite.Statement{{SQL: `INSERT INTO reply_records(thread_id, outbox_id, at)
-			SELECT thread_id, last_insert_rowid(), ? FROM messages WHERE id = ? AND thread_id IS NOT NULL`,
+			SELECT thread_id, last_insert_rowid(), max(?, COALESCE(date, 0)) FROM messages WHERE id = ? AND thread_id IS NOT NULL`,
 			Args: []any{s.clk().Now().Unix(), d.SourceMessageID}}}, stmts...)
 	}
 	if _, err := s.db.Transaction(ctx, append([]sqlite.Statement{{SQL: `INSERT INTO outbox(account_id, message_id_hdr, raw_path, rcpts, state, subject, created_at,

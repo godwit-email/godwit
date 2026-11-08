@@ -87,7 +87,38 @@ const (
 // Path is the endpoint path appended to the base URL.
 func (f JudgeFormat) Path() string { return "/" + string(f) }
 
-// Models is the static model list for the format (design FORMATS.models).
+// Lists reports whether the format's service at base lists its judge
+// models. OpenAI's Decisions has no list (docs/research/judge-apis.md §1);
+// OpenRouter lists both formats' models.
+func (f JudgeFormat) Lists(base string) bool { return f == FormatSystemOne || OpenRouter(base) }
+
+// JudgeURL is where a judge request for format f at base goes. OpenRouter
+// serves Decisions under /api/alpha, beside its /api/v1.
+func JudgeURL(f JudgeFormat, base string) string {
+	base = strings.TrimRight(base, "/")
+	if f == FormatDecisions && OpenRouter(base) {
+		return strings.TrimSuffix(base, "/v1") + "/alpha/decisions"
+	}
+	return base + f.Path()
+}
+
+// OpenRouter reports whether base is OpenRouter's API.
+func OpenRouter(base string) bool {
+	return strings.HasSuffix(strings.TrimRight(base, "/"), "://openrouter.ai/api/v1")
+}
+
+// ListJudgeModels lists the judge models at base, sorted: OpenRouter's
+// /models leaves them out unless asked for its decisions models.
+func ListJudgeModels(ctx context.Context, c *http.Client, base, key string) ([]string, error) {
+	url := strings.TrimRight(base, "/") + "/models"
+	if OpenRouter(base) {
+		url += "?output_modalities=decisions"
+	}
+	return listModelIDs(ctx, c, KindOpenAI, base, url, key)
+}
+
+// Models are the format's usual model IDs: suggestions while the service
+// has listed none, never what it offers.
 func (f JudgeFormat) Models() []string {
 	switch f {
 	case FormatDecisions:
@@ -157,33 +188,19 @@ func (j judge) Ask(ctx context.Context, input string, qs []Question) ([]Answer, 
 	return out, nil
 }
 
-// NewJudge returns a client for a judge API at base+format.Path(), asked on
+// NewJudge returns a client for a judge API at JudgeURL(format, base), asked on
 // pi. c is the no-redirect model client (nil means NoRedirectClient); m, if
 // set, masks what it is asked while masking is on.
 func NewJudge(c *http.Client, m *mask.Masker, format JudgeFormat, base, key, model string) (Judge, error) {
 	if c == nil {
 		c = NoRedirectClient
 	}
-	base = strings.TrimRight(base, "/")
-	h := judgeHTTP{c: c, m: m, url: base + format.Path(), key: key, model: model}
+	h := judgeHTTP{c: c, m: m, url: JudgeURL(format, base), key: key, model: model}
 	switch format {
 	case FormatDecisions:
 		return judge{h.decisions, 15 * time.Second, m}, nil
 	case FormatSystemOne:
 		return judge{h.systemOne, 15 * time.Second, m}, nil
-	}
-	return nil, fmt.Errorf("unknown judge format %q", format)
-}
-
-// ListJudgeModels lists the judge models for a format. Decisions has no
-// listing (docs/research/judge-apis.md §1), so it is the static list; System One asks
-// base+"/models". On error callers may fall back to format.Models().
-func ListJudgeModels(ctx context.Context, c *http.Client, format JudgeFormat, base, key string) ([]string, error) {
-	switch format {
-	case FormatDecisions:
-		return format.Models(), nil
-	case FormatSystemOne:
-		return ListModels(ctx, c, KindOpenAI, base, key)
 	}
 	return nil, fmt.Errorf("unknown judge format %q", format)
 }

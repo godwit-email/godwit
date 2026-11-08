@@ -175,7 +175,7 @@ func (s *Service) labelQuestions(ctx context.Context, id int64) ([]Label, []ai.Q
 	}
 	newest := store.Int(top.Values[0][0])
 	rows, err := s.db.Query(ctx, `SELECT id, slug, name, description FROM labels l
-		WHERE NOT EXISTS (SELECT 1 FROM message_labels ml WHERE ml.message_id = ? AND ml.label_id = l.id AND ml.source IN ('manual', 'rule'))
+		WHERE NOT EXISTS (SELECT 1 FROM message_labels ml WHERE ml.message_id = ? AND ml.label_id = l.id AND ml.source IN ('manual', 'rule', 'imap'))
 		ORDER BY position, id`, id)
 	if err != nil {
 		return nil, nil, 0, err

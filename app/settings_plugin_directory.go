@@ -41,8 +41,8 @@ func (e *extView) directoryView(c *ui.Context) {
 					for _, en := range e.reg.Entries[i:min(i+2, len(e.reg.Entries))] {
 						e.directoryCard(c.Key("registry:"+en.Name), en)
 					}
-					if i+1 == len(e.reg.Entries) { // a lone last card keeps its column's width
-						ui.Box(c).Grow(1).Shrink(1).Basis(0).MinWidth(0)
+					if i+1 == len(e.reg.Entries) { // a lone last card keeps its column's width; the card's padding counts toward its basis, so the filler's must too
+						ui.Box(c).Grow(1).Shrink(1).Basis(0).MinWidth(0).Padding(th.Space(3))
 					}
 				})
 			}
