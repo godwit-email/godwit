@@ -368,3 +368,20 @@ test("a failed search shows nothing", async () => {
   await userEvent.type(to(), "h");
   await waitFor(() => expect(screen.queryByRole("listbox")).not.toBeInTheDocument());
 });
+
+test("hits answered after Escape stay closed until the text changes", async () => {
+  const slow: Record<string, (h: ContactHit[]) => void> = {};
+  setup({}, false, (q) => new Promise((r) => (slow[q] = r)));
+  await userEvent.type(to(), "z");
+  await waitFor(() => expect(slow.z).toBeDefined());
+  await act(async () => slow.z(contacts));
+  await userEvent.type(to(), "h");
+  await waitFor(() => expect(slow.zh).toBeDefined());
+  await userEvent.keyboard("{Escape}");
+  await act(async () => slow.zh([contacts[0]]));
+  expect(screen.queryByRole("listbox")).not.toBeInTheDocument();
+  await userEvent.type(to(), "a");
+  await waitFor(() => expect(slow.zha).toBeDefined());
+  await act(async () => slow.zha([contacts[0]]));
+  expect(options()).toEqual(["Zhang, Sanzhang@acme.io"]);
+});

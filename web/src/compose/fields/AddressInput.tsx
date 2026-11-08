@@ -42,6 +42,7 @@ export function AddressInput({
   t: T;
 }) {
   const composing = useRef(false);
+  const dismissed = useRef<string>(undefined); // the text Escape closed the list on: its hits stay away
   const [compositionEnds, setCompositionEnds] = useState(0);
   // the hits and the text they are for: Enter picks one only while that is still what is typed
   const [found, setFound] = useState<{ q: string; hits: ContactHit[] }>({ q: "", hits: [] });
@@ -64,7 +65,7 @@ export function AddressInput({
       () =>
         onSearch(pending).then(
           (h) => {
-            if (!live) return;
+            if (!live || dismissed.current === pending) return;
             setFound({ q: pending, hits: h.filter((c) => !taken.has(addrKey(c.address))) });
             setActive(invalid([pending]).length ? 0 : -1);
           },
@@ -146,7 +147,9 @@ export function AddressInput({
           if (n && (e.key === "ArrowDown" || e.key === "ArrowUp")) {
             e.preventDefault();
             setActive((a) => (e.key === "ArrowDown" ? (a + 1) % n : a <= 0 ? n - 1 : a - 1));
-          } else if (n && e.key === "Escape") {
+          } else if (e.key === "Escape") {
+            dismissed.current = pending;
+            if (!n) return;
             e.preventDefault();
             e.stopPropagation(); // closes the list, nothing around it
             setHits([]);
