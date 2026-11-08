@@ -288,6 +288,7 @@ func (s *Service) saveAttachment(ctx context.Context, a attRow, data []byte) (st
 
 // GetRawMessage downloads the message's full original from the server, for a
 // Truncated message or for saving. Messages over MaxMessageBytes give ErrTooLarge.
+// A local archive's message is read from its original file, offline.
 func (s *Service) GetRawMessage(ctx context.Context, messageID int64) ([]byte, error) {
 	ctx, end, err := s.begin(ctx, 0)
 	if err != nil {
@@ -298,7 +299,7 @@ func (s *Service) GetRawMessage(ctx context.Context, messageID int64) ([]byte, e
 	if err != nil {
 		return nil, err
 	}
-	rows, err := s.db.Query(ctx, "SELECT account_id FROM messages WHERE id = ?", messageID)
+	rows, err := s.db.Query(ctx, "SELECT account_id, content_hash FROM messages WHERE id = ?", messageID)
 	if err != nil {
 		return nil, err
 	}
@@ -307,6 +308,9 @@ func (s *Service) GetRawMessage(ctx context.Context, messageID int64) ([]byte, e
 	}
 	if err := s.bind(ctx, store.Int(rows.Values[0][0])); err != nil {
 		return nil, err
+	}
+	if hash := store.Str(rows.Values[0][1]); hash != "" { // a local archive's: its original file
+		return os.ReadFile(s.archivePath(store.Int(rows.Values[0][0]), hash))
 	}
 	unlock, err := s.lockAccount(ctx, store.Int(rows.Values[0][0]))
 	if err != nil {

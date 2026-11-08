@@ -695,6 +695,11 @@ var Migrations = [][]string{{
 }, {
 	// '' a mail account; local_archive one with no servers, only local folders (ADR 0035).
 	`ALTER TABLE accounts ADD COLUMN kind TEXT NOT NULL DEFAULT ''`,
+}, {
+	// A local archive's message is its original file, archive/<account>/<content_hash>.eml;
+	// the hash is its identity there (ADR 0036). NULL for synced mail.
+	`ALTER TABLE messages ADD COLUMN content_hash TEXT`,
+	`CREATE UNIQUE INDEX messages_content_hash ON messages(account_id, content_hash) WHERE content_hash IS NOT NULL`,
 }}
 
 // HistoryRowsVersion is the schema version that keeps a conversation's

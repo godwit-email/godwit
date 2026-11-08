@@ -76,6 +76,7 @@ GrantPermission
 ImageCache
 ImageCacheSize
 ImagesAllowed
+ImportEML
 InlineSignatureImages
 InstallPlugin
 InstallPluginFromRegistry
