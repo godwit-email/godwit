@@ -211,7 +211,7 @@ func signatureHTML(sig string, cids map[string]bool, delim bool) string {
 // sourceMessage rebuilds what replying and forwarding need from the stored message.
 func (s *Service) sourceMessage(ctx context.Context, accountID, id int64) (*mail.Parsed, error) {
 	rows, err := s.db.Query(ctx, `SELECT message_id, subject, from_addr, reply_to, to_addrs, cc_addrs, date, body_text, body_html
-		FROM messages WHERE id = ? AND account_id = ?`, id, accountID)
+		FROM messages WHERE id = ? AND (account_id = ? OR account_id IN (SELECT id FROM accounts WHERE kind = ?))`, id, accountID, KindLocalArchive) // a local archive's mail is answered from another account (ADR 0036)
 	if err != nil {
 		return nil, err
 	}

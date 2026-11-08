@@ -348,4 +348,13 @@ func (a *App) accountIcon(c *ui.Context, acc core.Account, size float32) {
 }
 
 // accountName is how the sidebar names an account.
-func accountName(acc core.Account) string { return cmp.Or(acc.Alias, acc.Email) }
+func accountName(acc core.Account) string { return cmp.Or(acc.Alias, accountAddr(acc)) }
+
+// accountAddr is the account's address; a local archive's name, its
+// address being a placeholder.
+func accountAddr(acc core.Account) string {
+	if isArchive(acc) {
+		return cmp.Or(acc.Name, acc.Email)
+	}
+	return acc.Email
+}

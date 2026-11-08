@@ -132,6 +132,9 @@ type mailPage struct {
 	emptyFolderRole string
 	emptyFolderAcc  int64
 
+	nameDlg nameDialog                   // asks a new archive's or folder's name
+	imports map[int64]context.CancelFunc // the archives importing, and their cancel
+
 	views      []core.SavedView // in sidebar order, with their unread counts
 	viewsKnown bool
 	viewsOpen  bool             // the sidebar's group unfolded
@@ -168,7 +171,7 @@ func (it mailItem) key() string {
 }
 
 func newMailPage(a *App) *mailPage {
-	p := &mailPage{a: a, folders: map[int64][]core.Folder{}, accOpen: map[int64]*bool{}, accLabelsOpen: map[int64]*bool{}, folderOpen: map[folderKey]*bool{}, labelsOpen: true, accountsOpen: true, viewsOpen: true, draftList: &ui.ListState{}}
+	p := &mailPage{a: a, folders: map[int64][]core.Folder{}, accOpen: map[int64]*bool{}, accLabelsOpen: map[int64]*bool{}, folderOpen: map[folderKey]*bool{}, imports: map[int64]context.CancelFunc{}, labelsOpen: true, accountsOpen: true, viewsOpen: true, draftList: &ui.ListState{}}
 	p.main.reset()
 	p.found.reset()
 	p.exec = p.write
@@ -510,8 +513,12 @@ func (p *mailPage) purgeDialog(c *ui.Context) {
 	if !p.purgeAsk {
 		return
 	}
+	desc := i18n.T("mail.purge.desc")
+	if slices.ContainsFunc(p.purgeRows, func(it mailItem) bool { return p.a.isArchiveID(p.accountOf(it.Msg.FolderID)) }) {
+		desc = i18n.T("mail.archive.purge.desc") // no server copy, no undo
+	}
 	kit.Dialog(c, &p.purgeAsk, i18n.T("mail.purge.title"),
-		kit.DialogOpts{Size: kit.DialogSm, Alert: true, Desc: i18n.T("mail.purge.desc"), Close: i18n.T("common.close")}, nil, func() {
+		kit.DialogOpts{Size: kit.DialogSm, Alert: true, Desc: desc, Close: i18n.T("common.close")}, nil, func() {
 			kit.Button(c, i18n.T("common.cancel"), kit.ButtonOpts{Variant: kit.Outline}).OnClick(func() { p.purgeAsk = false })
 			kit.Button(c, i18n.T("common.delete"), kit.ButtonOpts{Variant: kit.Destructive}).OnClick(func() {
 				p.purgeAsk = false
@@ -1760,7 +1767,7 @@ func (p *mailPage) batchScoped(act string, rows []mailItem, anywhere bool) {
 					skipped = append(skipped, names[acc])
 				} else if err != nil {
 					failed += len(ids)
-				} else if op == "purge" {
+				} else if op == "purge" && !a.isArchiveID(acc) { // an archive's are gone at once: no undo
 					purged = append(purged, ids...)
 				} else if op == "archive" {
 					archived = append(archived, undo)

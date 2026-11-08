@@ -305,7 +305,11 @@ func (p *settingsPage) readUsage(id int64) {
 	a := p.a
 	var n int64
 	a.query(func(ctx context.Context) (err error) {
-		n, err = a.svc.AttachmentCacheUsage(ctx, id)
+		if a.isArchiveID(id) {
+			n, err = a.svc.ArchiveUsage(ctx, id)
+		} else {
+			n, err = a.svc.AttachmentCacheUsage(ctx, id)
+		}
 		return err
 	}, func(err error) {
 		if err != nil {
@@ -412,9 +416,12 @@ func (p *settingsPage) accountView(c *ui.Context, acc core.Account) {
 	ui.Row(c).Gap(th.Space(4)).Children(func() {
 		a.accountIcon(c, acc, theme.MarkXl)
 		ui.Column(c).Grow(1).Shrink(1).Gap(th.Space(1)).Children(func() {
-			kit.Text(c, acc.Email, t.Text.Display).FontWeight(600).SingleLine()
+			kit.Text(c, accountAddr(acc), t.Text.Display).FontWeight(600).SingleLine()
 			ui.Row(c).Wrap().Gap(th.Space(2)).AlignItems(ui.Center).Children(func() {
 				meta := providerName(prov)
+				if isArchive(acc) {
+					meta = i18n.T("mail.archive.kind")
+				}
 				if acc.Folders > 0 { // 0 until the first sync
 					meta += " · " + i18n.Tf("settings.account.folders", acc.Folders)
 				}
@@ -424,6 +431,9 @@ func (p *settingsPage) accountView(c *ui.Context, acc core.Account) {
 				ui.Text(c, meta).TextColor(t.Muted)
 				if acc.IsDefault {
 					kit.Badge(c, i18n.T("settings.account.default"))
+				}
+				if isArchive(acc) { // never syncs
+					return
 				}
 				text, bg, fg := cmpTr("settings.account.status."+acc.Status, acc.Status), t.WarningBg, t.WarningText
 				if acc.Status == "ok" {
@@ -457,7 +467,7 @@ func (p *settingsPage) accountView(c *ui.Context, acc core.Account) {
 			}
 		})
 	}
-	settingsSection(c, i18n.T("settings.account.basic"), "",
+	basic := []func(){
 		input(i18n.T("settings.account.name"), i18n.T("settings.account.name.help"), &f.name, fieldName),
 		input(i18n.T("settings.account.alias"), "", &f.alias, fieldAlias),
 		row(i18n.T("settings.account.icon"), i18n.T("settings.account.icon.help"), func() {
@@ -476,12 +486,36 @@ func (p *settingsPage) accountView(c *ui.Context, acc core.Account) {
 				}
 			})
 		}),
-		func() {
+	}
+	if !isArchive(acc) { // never the default
+		basic = append(basic, func() {
 			on := acc.IsDefault
 			if kit.SwitchRow(c, &on, i18n.T("settings.account.make_default"), i18n.T("settings.account.make_default.help")).Disabled(acc.IsDefault).Changed() && !acc.IsDefault {
 				p.makeDefault(acc.ID)
 			}
 		})
+	}
+	settingsSection(c, i18n.T("settings.account.basic"), "", basic...)
+	usage := "…"
+	if n, ok := p.usage[acc.ID]; ok {
+		usage = formatBytes(n)
+	}
+	removeHelp := i18n.T("settings.account.remove.help")
+	if isArchive(acc) {
+		removeHelp = i18n.T("settings.account.archive.remove.help")
+	}
+	remove := func() {
+		settingsSection(c, i18n.T("settings.account.remove"), "",
+			row(i18n.T("settings.account.remove.row"), strings.TrimRight(removeHelp, "。."), func() {
+				settingButton(c, i18n.T("settings.account.remove.button"), kit.DestructiveOutline, false).Label(i18n.Tf("settings.account.remove.aria", accountAddr(acc))).OnClick(func() { p.openDialog("remove", acc) })
+			}))
+	}
+	if isArchive(acc) { // no servers, sync, sending or mailbox roles: only its storage
+		settingsSection(c, i18n.T("settings.account.archive.storage"), "",
+			row(i18n.T("settings.account.usage"), i18n.T("settings.account.archive.usage.help"), func() { ui.Text(c, usage).TextColor(t.Muted) }))
+		remove()
+		return
+	}
 	p.accountSignatureView(c, acc)
 	// The text area is the section's body, with no card around it, as macOS shows a long text.
 	ui.Column(c).Gap(theme.SectionGap).Children(func() {
@@ -499,10 +533,6 @@ func (p *settingsPage) accountView(c *ui.Context, acc core.Account) {
 	desc := p.syncState(acc)
 	if acc.Status == "ok" {
 		desc = strings.Join(slices.DeleteFunc([]string{desc, i18n.Tf("mail.unread_count", a.unread[acc.ID])}, func(s string) bool { return s == "" }), " · ")
-	}
-	usage := "…"
-	if n, ok := p.usage[acc.ID]; ok {
-		usage = formatBytes(n)
 	}
 	settingsSection(c, i18n.T("settings.account.sync"), "",
 		row(i18n.T("settings.account.sync.status"), desc, func() {
@@ -538,10 +568,7 @@ func (p *settingsPage) accountView(c *ui.Context, acc core.Account) {
 		row(i18n.T("settings.account.servers"), i18n.T("settings.account.servers.help"), func() {
 			settingButton(c, i18n.T("settings.account.edit_servers"), kit.Outline, false).OnClick(func() { p.openDialog("servers", acc) })
 		}))
-	settingsSection(c, i18n.T("settings.account.remove"), "",
-		row(i18n.T("settings.account.remove.row"), strings.TrimRight(i18n.T("settings.account.remove.help"), "。."), func() {
-			settingButton(c, i18n.T("settings.account.remove.button"), kit.DestructiveOutline, false).Label(i18n.Tf("settings.account.remove.aria", acc.Email)).OnClick(func() { p.openDialog("remove", acc) })
-		}))
+	remove()
 }
 
 // cmpTr is key's message, or fallback when the catalog has none.
@@ -740,8 +767,11 @@ func (p *settingsPage) dialogView(c *ui.Context) {
 			}, func(bool) { a.mergeAccount(saved) })
 		}
 	case "remove":
-		title = i18n.Tf("settings.account.remove.title", acc.Email)
+		title = i18n.Tf("settings.account.remove.title", accountAddr(acc))
 		desc = i18n.T("settings.account.remove.help")
+		if isArchive(acc) {
+			desc = i18n.T("settings.account.archive.remove.help")
+		}
 		label, variant = i18n.T("common.delete"), kit.Destructive
 		confirm = func() {
 			if f := p.forms[id]; f != nil {
