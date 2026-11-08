@@ -63,3 +63,18 @@ func labelFoundDuringMove(t *testing.T, early bool) {
 	assert.Equal(t, []string{"Work"}, m.Folders())
 	assert.Equal(t, []int64{id}, e.listed(t, "Work"))
 }
+
+func TestGmailFlagsSkipALabelAnotherClientRemoved(t *testing.T) {
+	e := newSyncEnv(t, testmail.Gmail())
+	m := e.im.AddGmail(msg("f@x"), nil, "INBOX", testmail.GmailAllMail)
+	e.sync(t)
+	id := e.idOf(t, "f@x")
+	m.Unlabel("INBOX") // archived elsewhere since the last sync
+	require.NoError(t, e.s.SetFlags(bg, []int64{id}, []string{`\Flagged`}, nil))
+	e.sync(t)
+	e.sync(t)
+	got, err := e.s.GetMessage(bg, id, false)
+	require.NoError(t, err)
+	assert.Contains(t, got.Flags, `\Flagged`, "the change reached the message through All Mail")
+	assert.Equal(t, []string{"done"}, e.opStates(t))
+}

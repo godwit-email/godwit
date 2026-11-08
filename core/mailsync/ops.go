@@ -221,6 +221,18 @@ func pushOp(ctx context.Context, db *store.DB, c *imapclient.Client, o op) (prob
 		if err := storeFlags(c, set, p); err != nil {
 			return fail(ctx, db, o, err)
 		}
+		if gmail { // a silent STORE to a label another client removed matches nothing
+			got, err := c.Fetch(set, &imap.FetchOptions{UID: true}).Collect()
+			if err != nil {
+				return fail(ctx, db, o, err)
+			}
+			if len(got) == 0 {
+				if _, err := db.Transaction(ctx, unlocate(o.msg, src)); err != nil {
+					return "", err
+				}
+				return pushOp(ctx, db, c, o) // try the next known location
+			}
+		}
 		return "", finish(ctx, db, o, "done", "")
 	}
 	// A purge of it that reached the server may have left \Deleted.

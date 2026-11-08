@@ -132,13 +132,13 @@ func Fetch(ctx context.Context, db *store.DB, c *imapclient.Client, accountID in
 			refused = errors.Join(refused, err)
 		}
 	}
+	complete = true
+	if refused != nil { // a skipped folder may yet hold a membership, a claim or a stale location
+		return r.more, refused
+	}
 	gmail := c.Caps().Has(capGmail)
 	if err := dropOrphans(ctx, db, accountID, r.orphans, true, gmail, &r); err != nil {
 		return r.more, err
-	}
-	complete = true
-	if refused != nil { // a skipped folder may yet hold a claim or a stale location
-		return r.more, refused
 	}
 	if gmail {
 		if err := reshow(ctx, db, accountID, &r); err != nil {
