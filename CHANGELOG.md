@@ -1,5 +1,25 @@
 # Changelog
 
+## [1.30.0](https://github.com/godwit-email/godwit/compare/v1.29.0...v1.30.0) (2026-11-08)
+
+
+### Features
+
+* a body scrolls with the reader, and the compose account picks from a menu ([#537](https://github.com/godwit-email/godwit/issues/537)) ([67c5b78](https://github.com/godwit-email/godwit/commit/67c5b786c9d471144e06eda70429c7688cf87738))
+* **extensions:** plugin directory page and install dialog ([#530](https://github.com/godwit-email/godwit/issues/530)) ([587e42d](https://github.com/godwit-email/godwit/commit/587e42ddf1b3628b18f33939305ff1aaa1e4daec))
+* **mail:** views, with groups and a default 待处理 ([#531](https://github.com/godwit-email/godwit/issues/531)) ([3aff43e](https://github.com/godwit-email/godwit/commit/3aff43e84da26412f01521b5431ee73bc4ce58e6))
+* **plugins:** let the user sign in to a native plugin's service ([#532](https://github.com/godwit-email/godwit/issues/532)) ([b0df396](https://github.com/godwit-email/godwit/commit/b0df3966277515d46cc1b0073352c34e8d3cc424))
+* **settings,tray:** add option to hide menu bar icon from settings and context menu ([#515](https://github.com/godwit-email/godwit/issues/515)) ([69c5849](https://github.com/godwit-email/godwit/commit/69c5849cfc787d542a3c1ff60cb58f1b6c227dc9))
+* **sync:** Gmail stores one message with several locations ([#526](https://github.com/godwit-email/godwit/issues/526)) ([e6ef8d6](https://github.com/godwit-email/godwit/commit/e6ef8d6760abf59b123d168d6cb042e7f0882b17))
+
+
+### Bug Fixes
+
+* **app:** keep the log in windows error reports ([#539](https://github.com/godwit-email/godwit/issues/539)) ([185486c](https://github.com/godwit-email/godwit/commit/185486c0a4f9b4ae63d5defadcc404587a4b1d45)), closes [#536](https://github.com/godwit-email/godwit/issues/536)
+* **app:** say the server refused the sign-in instead of offering a report ([#540](https://github.com/godwit-email/godwit/issues/540)) ([70fcf8b](https://github.com/godwit-email/godwit/commit/70fcf8b38d1e1b5f4bf90764b2c3c3582fe64457)), closes [#538](https://github.com/godwit-email/godwit/issues/538)
+* **plugins:** keep configure as published native plugins expect it ([#535](https://github.com/godwit-email/godwit/issues/535)) ([499ccdc](https://github.com/godwit-email/godwit/commit/499ccdc4a077afbf45c8bc6a17ea156123a4246d))
+* **sync:** a move whose COPYUID names a stored copy replaces it ([#514](https://github.com/godwit-email/godwit/issues/514)) ([de0006a](https://github.com/godwit-email/godwit/commit/de0006a27265c993b95bfa08e14b64aa3a15954d))
+
 ## [1.29.0](https://github.com/godwit-email/godwit/compare/v1.28.0...v1.29.0) (2026-11-06)
 
 
