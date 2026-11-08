@@ -1,0 +1,34 @@
+<!-- @dsCard group="Overlays" height=420 width=980 subtitle="Form dialog and confirmation" -->
+<!doctype html>
+<html><head><meta charset="utf-8"><style>
+body{margin:0;font-family:Geist,"PingFang SC",system-ui,sans-serif;font-size:14px;color:var(--foreground)}
+button,input{font:inherit;color:inherit}
+.stage{display:flex;gap:24px;padding:24px;background:var(--window)}
+.scrim{flex:1;display:flex;align-items:flex-start;justify-content:center;padding:32px 0;border-radius:var(--radius-xl);background:var(--scrim)}
+.scrim.alert{background:var(--alert-scrim);align-items:center}
+.dlg{width:440px;background:var(--raised);border:1px solid var(--border);border-radius:var(--radius-2xl);box-shadow:var(--shadow-2xl);overflow:hidden}
+.hd{display:flex;gap:16px;padding:16px 16px 13px}
+.hd h2{margin:0;font-size:16px;font-weight:600;line-height:1.45}
+.hd p{margin:4px 0 0;color:var(--muted);line-height:1.45}
+.x{margin:-8px -8px 0 auto;width:28px;height:28px;border:0;border-radius:var(--radius-md);background:transparent;color:var(--muted)}
+.bd{display:flex;flex-direction:column;gap:16px;padding:3px 16px 16px}
+label{display:flex;flex-direction:column;gap:6px;font-weight:500}
+input{height:32px;box-sizing:border-box;padding:0 10px;border:1px solid var(--input);border-radius:var(--radius-md);background:var(--background);box-shadow:var(--shadow-xs);font-weight:400}
+.ft{display:flex;justify-content:flex-end;gap:8px;padding:12px 16px;background:var(--sidebar);border-top:1px solid var(--border)}
+.b{height:32px;padding:0 14px;border-radius:var(--radius-lg);border:1px solid var(--input);background:var(--background);box-shadow:var(--shadow-xs)}
+.p{border:0;background:var(--primary);color:var(--primary-text);font-weight:500;box-shadow:none}
+.del{border:0;box-shadow:none;background:transparent;color:var(--danger)}
+.del:hover{background:var(--danger-bg)}
+</style></head><body>
+<div class="stage">
+  <div class="scrim"><div class="dlg" role="dialog" aria-labelledby="t1">
+    <div class="hd"><div><h2 id="t1">添加账户</h2><p>用授权码登录 QQ 邮箱。</p></div><button class="x" aria-label="关闭">✕</button></div>
+    <div class="bd"><label>邮箱地址<input value="me@qq.com"></label><label>授权码<input type="password" value="abcdefgh"></label></div>
+    <div class="ft"><button class="b">取消</button><button class="b p">登录</button></div>
+  </div></div>
+  <div class="scrim alert"><div class="dlg" role="alertdialog" aria-labelledby="t2">
+    <div class="hd"><div><h2 id="t2">删除「工作」？</h2><p>用它的 2 个账户会改用默认签名。</p></div></div>
+    <div class="ft"><button class="b">取消</button><button class="b del">删除</button></div>
+  </div></div>
+</div>
+</body></html>

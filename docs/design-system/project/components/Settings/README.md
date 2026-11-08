@@ -23,11 +23,11 @@ An alert about the whole page (login expired, the default model unreachable) sit
 
 ## Group
 
-A heading in `body` at 600, 10 px above a card: `background`, `border` outline, `radius-xl`. Rows inside are separated by `border` lines (each row draws the line above it; the card hides the first). A note about the whole group goes under the card in `sm` `muted`.
+A heading in `body` at 600, inset 16 like the rows, 10 px above a card: `card` fill, hairline `border` outline, `radius-xl`. Rows inside are separated by `border` hairlines (each row draws the line above it; the card hides the first). A note about the whole group goes under the card in `sm` `muted`, inset the same.
 
 ## Row
 
-One setting, `space-2` / `space-4` padding (8 / 16), at least `space-8` high. The title is at 500 with its description below in `sm` `muted`; the description says what the setting does, not what it is.
+One setting, `space-2` / `space-4` padding (8 / 16), at least 48 high. The title is at 500 with its description below in `sm` `muted`; the description says what the setting does, not what it is.
 
 | Shape | When | Layout |
 | --- | --- | --- |
@@ -39,28 +39,28 @@ Free content (a theme picker, the expanded review of a plugin) takes a row of it
 
 Controls:
 
-- **Every boolean is a Switch**, never a checkbox: 32 × 18 track, `primary` when on, `input` when off, 14 px white thumb. Checkboxes appear only as items of a multi-pick list.
-- Select and input: 32 high, `radius-lg`, `input` outline, `background` fill, no shadow.
-- Buttons: 32 high, `radius-lg`. **Primary** (`primary` / `primary-text`) only for the page action and the save of a dialog — one per view. **Outline** (`input` outline, no shadow) for everything else. Icon-only actions and groups of them follow Controls. **Danger** outline (`danger-border`, `danger` text) for a destructive row; **ghost danger** (`danger` text, no outline) on the left of a dialog's footer.
+- **A setting that is on or off is a Switch row** (the whole row toggles): 32 × 18 track, `primary` when on, `input` when off, a 14 px `background` thumb. A checkbox is for an option inside a form (存到子文件夹, 不需要 Key) and the items of a multi-pick list. See Inputs.
+- Select: 32 high, `radius-lg`, `input` outline, `background` fill, flat. Input: the same frame, keeping its `shadow-xs`.
+- Buttons follow Controls: **Primary** only for the page action and the save of a dialog — one per view; **Outline** for everything else; **Danger** outline (`danger-border`, `danger` text) for a destructive row; **Destructive** ghost on the left of a dialog's footer.
 
 ## Collections
 
 - **List + dialog** for a record filled in once and rarely changed (model services, MCP servers). The group's card holds one row per item — name with a status dot, mono address, capability tags, a chevron — and a row opens the edit dialog; the page action opens it empty. A setting that applies to the whole collection (which model does generation, which does decisions) is a group above the list.
 - **Expandable row** for an item that needs reading before it is turned on (a plugin awaiting approval): the row shows a 待授权 badge and, under it, the permissions on a `sidebar` panel, the config fields and 允许并启用 / 暂不启用. Approved items are plain switch rows.
-- **Empty**: when a collection has nothing yet, the page shows only its header (without the page action) and one **Empty** in place of every group: a dashed `divider-hover` box, `radius-xl`, `space-8` / `space-6` padding, centered — a 40 px `hover` tile with the page's icon, a title in `title` (16 / 600), one or two lines in `muted` saying what needs it, then the primary action and at most one outline alternative (添加服务 · 连接本地网关). Settings that depend on the collection (用途) are hidden until it has an item.
+- **Empty**: when a collection has nothing yet, the page shows only its header (without the page action) and one dashed **Empty** in place of every group (see Empty). Settings that depend on the collection (用途) are hidden until it has an item.
 
 Capability tags in a list are `radius-sm` chips on `hover`: `muted` text, or `foreground` with a small check when it is in use as a default.
 
 ## Dialog
 
-640 wide, `radius-2xl`, `shadow-lg`, over a scrim of the foreground at 28%, 56 from the top; header and footer fixed, the body scrolls.
+Collections are edited in an `lg` dialog (640) pinned to the top, so it can grow; the frame, scrim and footer are Dialog's. What is particular to settings:
 
-- Header: title in `xl` — 添加模型服务 or 编辑 <name> — and one line in `muted`.
+- Header: 添加模型服务 or 编辑 <name>, and one line in `muted`.
 - Choices that shape the rest of the form (服务商) come first as a row of tiles: name at 500, what it offers in `sm` `muted`; the picked one has a `primary` outline on `hover`.
 - Form: labels 96 wide on the left at the control's 32 px line, fields on the right, 12 apart; a hint under a field says what the value does (请求发往 <url>). Preset values are editable inputs with 恢复默认 beside them once changed. A secret has a show button inside its right edge; when editing it stays empty with 已配置 · 留空表示保持不变.
 - Optional capabilities are cards (`border`, `radius-xl`, `space-3` / `space-4`): title at 600, what it does, a Switch; one the provider lacks is a `sidebar` card marked 不支持 that says what happens instead. Inside: a segmented control when there is more than one API format, the request URL, the model picker, and the test result.
 - Status lines: a 6 px dot and `sm` text — `muted` while testing, `success-text` when it passed, `danger-text` with the reason when it failed. Turning off something in use shows a `warning` note saying what takes over.
-- Footer (`border` above): ghost danger 删除 on the left when editing; a `sm` `muted` reason when the primary is disabled; then 测试连接 and 取消 (outline) and the primary. Deleting replaces the footer with a `danger-bg` confirmation saying what it affects.
+- Footer: destructive 删除 on the left when editing; a `sm` `muted` reason when the primary is disabled; then 测试连接 and 取消 (outline) and the primary. Deleting turns the footer `danger-bg` with a confirmation saying what it affects.
 
 ## Badges
 

@@ -1,0 +1,14 @@
+<!-- @dsCard group="Navigation" height=160 width=560 subtitle="Segmented and underline" -->
+<!doctype html>
+<html><head><meta charset="utf-8"><style>
+body{margin:0;padding:24px;background:var(--background);font-family:Geist,"PingFang SC",system-ui,sans-serif;font-size:14px;color:var(--foreground);display:flex;flex-direction:column;gap:28px;align-items:flex-start}
+.seg{display:flex;gap:2px;padding:2px;border-radius:var(--radius-lg);background:var(--hover)}
+.seg button{height:26px;padding:0 10px;border:0;border-radius:var(--radius-md);background:transparent;font:inherit;font-size:12px;color:var(--muted)}
+.seg button[aria-selected=true]{background:var(--background);color:var(--foreground);box-shadow:var(--shadow-sm)}
+.ul{display:flex;gap:4px;border-bottom:1px solid var(--border);align-self:stretch}
+.ul button{height:32px;padding:0 12px;border:0;border-bottom:2px solid transparent;background:transparent;font:inherit;font-size:13px;color:var(--muted)}
+.ul button[aria-selected=true]{border-bottom-color:var(--primary);color:var(--foreground);font-weight:600}
+</style></head><body>
+<div class="seg" role="tablist"><button role="tab" aria-selected="true">全部</button><button role="tab" aria-selected="false">未读</button></div>
+<div class="ul" role="tablist"><button role="tab" aria-selected="true">脱敏</button><button role="tab" aria-selected="false">远程图片</button><button role="tab" aria-selected="false">屏蔽的发件人</button></div>
+</body></html>

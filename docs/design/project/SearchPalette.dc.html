@@ -88,7 +88,7 @@ kbd{display:inline-flex;align-items:center;justify-content:center;min-width:18px
         <div style="display: flex; flex-direction: column; gap: 8px; padding: 12px; border: 1px solid #E5E5E5; border-radius: 12px; background: #FFFFFF">
           <textarea aria-label="向 Wit 提问" placeholder="问点什么，比如：上周谁还在等我回复？" onInput="{{onInput}}" onKeyDown="{{onAskKey}}" style="min-height: 56px; max-height: 240px; padding: 0; border: 0; resize: none; background: transparent; font: inherit; font-size: 14px; line-height: 1.5; color: #0A0A0A; outline: none">{{query}}</textarea>
           <div style="display: flex; justify-content: flex-end">
-            <a href="Ask.dc.html" aria-label="发送给 Wit" style="width: 28px; height: 28px; display: flex; align-items: center; justify-content: center; border-radius: 8px; background: #171717; color: #FAFAFA"><svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M13.0001 7.82843V20H11.0001V7.82843L5.63614 13.1924L4.22192 11.7782L12.0001 4L19.7783 11.7782L18.3641 13.1924L13.0001 7.82843Z"></path></svg></a>
+            <a href="Wit.dc.html" aria-label="发送给 Wit" style="width: 28px; height: 28px; display: flex; align-items: center; justify-content: center; border-radius: 8px; background: #171717; color: #FAFAFA"><svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M13.0001 7.82843V20H11.0001V7.82843L5.63614 13.1924L4.22192 11.7782L12.0001 4L19.7783 11.7782L18.3641 13.1924L13.0001 7.82843Z"></path></svg></a>
           </div>
         </div>
       </div>
@@ -181,7 +181,7 @@ class Component extends DCLogic {
       { t: '写邮件', kbd: '⌘N', icon: I.write, href: 'Compose.dc.html' },
       { t: '新对话', sub: 'Wit', kbd: '', icon: I.chat, href: 'WitEmpty.dc.html' },
       { t: '转到草稿', kbd: '', icon: I.arrow, href: 'MainDrafts.dc.html' },
-      { t: '管理标签', kbd: '', icon: I.settings, href: 'SettingsLabels.dc.html' },
+      { t: '管理标签', kbd: '', icon: I.settings, href: 'LabelsSettings.dc.html' },
       { t: '添加账户', kbd: '', icon: I.add, href: 'SettingsAccounts.dc.html' },
       { t: '打开设置', kbd: '⌘,', icon: I.settings, href: 'SettingsGeneral.dc.html' }
     ];
@@ -218,7 +218,7 @@ class Component extends DCLogic {
       return { kind: 'link', act: 'mail', title: m.t, sub: (m.to || '') + m.sub + (m.folder ? ' · ' + m.folder : ''), meta: m.meta, kbd: '', icon: I.mail, href: 'Main.dc.html', unread: !!m.unread, mail: m };
     };
     var row = function (x, icon, href, act) { return { kind: 'link', act: act, title: x.t, sub: x.sub || '', meta: x.meta || '', kbd: x.kbd || '', icon: x.icon || icon, href: x.href || href }; };
-    var chatRow = function (c) { return row(c, I.chat, 'Ask.dc.html', 'chat'); };
+    var chatRow = function (c) { return row(c, I.chat, 'Wit.dc.html', 'chat'); };
     var personRow = function (p) { return row(p, I.user, 'MainSearch.dc.html', 'person'); };
     var fileRow = function (f) { return row(f, I.file, 'Main.dc.html', 'file'); };
     var cmdRow = function (c) { return row(c, null, null, 'cmd'); };
@@ -308,7 +308,7 @@ class Component extends DCLogic {
       toggleAsk: function () { self.setState({ ask: !st.ask, menu: '' }); },
       onAskKey: function (e) {
         if (e.key === 'Tab') { e.preventDefault(); self.setState({ ask: false }); }
-        else if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); dialog(e).querySelector('a[href="Ask.dc.html"]').click(); }
+        else if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); dialog(e).querySelector('a[href="Wit.dc.html"]').click(); }
       },
       onInput: function (e) { self.setState({ q: e.target.value, sel: 0, menu: st.menu === 'actions' ? '' : st.menu }); },
       onKey: function (e) {
