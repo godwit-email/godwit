@@ -2,6 +2,7 @@ import type {
   Approval,
   Citation,
   ComposeState,
+  ContactHit,
   MailHit,
   ModelChoice,
   Review,
@@ -395,6 +396,19 @@ export const mailHits: MailHit[] = [
     date: 0,
   },
   { id: 42, subject: "Re: Q4 webinar dates", from: "Lena Fischer <lena@partner.example>", date: 0 },
+];
+/** The address fields' completion (invented UI). */
+export const contactHits: ContactHit[] = [
+  {
+    name: "Lena Fischer",
+    address: "lena@partner.example",
+    entry: "Lena Fischer <lena@partner.example>",
+  },
+  {
+    name: "Leon Brandt",
+    address: "leon@partner.example",
+    entry: "Leon Brandt <leon@partner.example>",
+  },
 ];
 export const witEmpty = (): WitHistory => history({ conversation: 0, turns: [] });
 

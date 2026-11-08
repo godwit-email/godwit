@@ -414,6 +414,34 @@ func searchMail(ctx context.Context, svc *core.Service, query string) ([]MailHit
 	return out, keyed(err)
 }
 
+// SearchContacts is the address fields' completion: the contacts whose
+// address or any name they used holds query (core Find, every account),
+// latest first; none for blank query.
+func (p *ComposePage) SearchContacts(ctx context.Context, query string) ([]ContactHit, error) {
+	_, svc, s, err := p.open(ctx)
+	if err != nil {
+		return nil, keyed(err)
+	}
+	s.mu.Unlock()
+	out := []ContactHit{}
+	if strings.TrimSpace(query) == "" {
+		return out, nil
+	}
+	res, err := svc.Find(ctx, core.FindQuery{SearchQuery: core.SearchQuery{Text: query}, Kind: "contact", Limit: quoteHits})
+	for _, c := range res.Contacts.Items {
+		out = append(out, ContactHit{Name: c.Name, Address: c.Address, Entry: mail.FormatAddress(c.Name, c.Address)})
+	}
+	return out, keyed(err)
+}
+
+// ContactHit is a contact the address fields offer; Entry is it as one
+// address to commit (Name <Address>, quoted as needed, or Address alone).
+type ContactHit struct {
+	Name    string `json:"name"`
+	Address string `json:"address"`
+	Entry   string `json:"entry"`
+}
+
 // Skill runs skill id on the calling window's draft (core AssistSkill);
 // translate-draft writes in language ("" for the reading language), zone is
 // the window's IANA time zone (core WithTimeZone). It returns the run it

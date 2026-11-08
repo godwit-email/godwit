@@ -1,8 +1,9 @@
 import { RiCloseLine } from "@remixicon/react";
-import { useRef } from "react";
+import { useEffect, useId, useRef, useState } from "react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
+import type { ContactHit } from "@/mygo";
 import type { T } from "@/shared/i18n";
 import { display, invalid } from "./address";
 
@@ -10,6 +11,10 @@ import { display, invalid } from "./address";
  * An address field: its addresses as chips, each labelled with the whole entry, showing the display
  * name with the address in a tooltip (an invalid one red, as typed), and a × taking it out on hover or focus; then an input whose text becomes addresses on Enter, a comma, or leaving it. Never while an IME
  * composes: the text is half-typed until its final input.
+ *
+ * With `onSearch`, what is typed lists matching contacts under the input (a combobox, as the quote
+ * picker): ArrowUp / ArrowDown move, Enter or a click commits the contact, Escape closes. The first is
+ * active, unless the text is an address already: then Enter commits the text as typed.
  */
 export function AddressInput({
   id,
@@ -19,6 +24,7 @@ export function AddressInput({
   onCommit,
   onRemove,
   placeholder,
+  onSearch,
   frozen = false,
   t,
 }: {
@@ -30,15 +36,47 @@ export function AddressInput({
   onCommit(text: string): void;
   onRemove(addr: string): void;
   placeholder: string;
+  onSearch?(query: string): Promise<ContactHit[]>;
   /** Read-only, nothing committed or removed: an operation is running. */
   frozen?: boolean;
   t: T;
 }) {
   const composing = useRef(false);
+  const [composed, setComposed] = useState(0); // a composition's end searches its final text
+  const [hits, setHits] = useState<ContactHit[]>([]);
+  const [active, setActive] = useState(-1);
+  const listId = useId();
   // a comma outside quotes ends an address
   const ends = (v: string) => v.replace(/"(?:[^"\\]|\\.)*("|$)/g, "").includes(",");
+  const have = list.map(key).join("\n"); // a string: the list is a new array on every render
+  useEffect(() => {
+    void composed;
+    if (!onSearch || frozen || composing.current || !pending.trim()) {
+      setHits([]);
+      return;
+    }
+    let live = true; // only the latest text's hits show; the last ones stay until then
+    const taken = new Set(have.split("\n"));
+    onSearch(pending).then(
+      (h) => {
+        if (!live) return;
+        setHits(h.filter((c) => !taken.has(key(c.address))));
+        setActive(invalid([pending]).length ? 0 : -1);
+      },
+      () => {},
+    );
+    return () => {
+      live = false;
+    };
+  }, [pending, onSearch, frozen, have, composed]);
+  const pick = (h: ContactHit) => {
+    setHits([]);
+    if (!frozen) onCommit(h.entry);
+  };
+  const open = hits.length > 0;
+  const option = (i: number) => `${listId}-${i}`;
   return (
-    <div className="flex min-w-0 flex-1 flex-wrap items-center gap-1.5">
+    <div className="relative flex min-w-0 flex-1 flex-wrap items-center gap-1.5">
       {list.map((addr) => {
         const bad = invalid([addr]).length > 0;
         return (
@@ -72,6 +110,11 @@ export function AddressInput({
       })}
       <input
         id={id}
+        role="combobox"
+        aria-autocomplete="list"
+        aria-expanded={open}
+        aria-controls={open ? listId : undefined}
+        aria-activedescendant={open && active >= 0 ? option(active) : undefined}
         className="h-5.25 min-w-30 flex-1 bg-transparent text-md outline-none placeholder:text-muted-foreground"
         placeholder={list.length ? undefined : placeholder}
         value={pending}
@@ -87,15 +130,66 @@ export function AddressInput({
         }}
         onCompositionEnd={() => {
           composing.current = false; // the text stays pending: the next input, Enter or blur commits it
+          setComposed((n) => n + 1);
         }}
         onKeyDown={(e) => {
-          if (e.key === "Enter" && !e.nativeEvent.isComposing) {
+          if (e.nativeEvent.isComposing) return;
+          const n = hits.length;
+          if (n && (e.key === "ArrowDown" || e.key === "ArrowUp")) {
             e.preventDefault();
-            if (!frozen) onCommit(pending);
+            setActive((a) => (e.key === "ArrowDown" ? (a + 1) % n : a <= 0 ? n - 1 : a - 1));
+          } else if (n && e.key === "Escape") {
+            e.preventDefault();
+            setHits([]);
+          } else if (e.key === "Enter") {
+            e.preventDefault();
+            if (n && active >= 0) pick(hits[active]);
+            else if (!frozen) onCommit(pending);
           }
         }}
-        onBlur={() => pending && !frozen && !composing.current && onCommit(pending)}
+        onBlur={() => {
+          setHits([]);
+          if (pending && !frozen && !composing.current) onCommit(pending);
+        }}
       />
+      {open && (
+        <div
+          role="listbox"
+          id={listId}
+          aria-label={t("shell.nav.contacts")}
+          className="absolute top-full left-0 z-50 mt-2 flex w-80 max-w-full flex-col rounded-lg border border-glass-border bg-glass-bg p-1.5 text-popover-foreground shadow-2xl ring-1 ring-glass-ring backdrop-blur-2xl"
+        >
+          {hits.map((h, i) => (
+            <div
+              key={h.address}
+              id={option(i)}
+              role="option"
+              tabIndex={-1}
+              aria-selected={i === active}
+              className="flex cursor-default flex-col items-start rounded-md px-2.5 py-1.5 text-left aria-selected:bg-accent"
+              // the focus stays in the input: leaving it would commit the half-typed text
+              onMouseDown={(e) => e.preventDefault()}
+              onMouseEnter={() => setActive(i)}
+              onClick={() => pick(h)}
+              onKeyDown={() => {}}
+            >
+              {h.name && <span className="w-full truncate">{h.name}</span>}
+              <span
+                className={
+                  h.name ? "w-full truncate text-muted-foreground text-sm" : "w-full truncate"
+                }
+              >
+                {h.address}
+              </span>
+            </div>
+          ))}
+        </div>
+      )}
     </div>
   );
+}
+
+/** An entry's bare address, lowercased: `Name <a@b>` and `a@b` are the same contact. */
+function key(s: string): string {
+  return (s.trim().match(/<([^<>]*)>$/)?.[1] ?? s).trim().toLowerCase();
 }
