@@ -201,11 +201,18 @@ func (s *Service) archivePartsDir(accountID int64, hash string) string {
 
 // deleteLocal deletes a local archive's messages ts for good, with their
 // originals and the files extracted from them (ADR 0036): rows first, so a
-// file that cannot be removed is merely unreferenced.
+// file that cannot be removed is merely unreferenced. It holds the account
+// lock across both, as an import does, so an import of the same content
+// cannot recreate a file this then removes.
 func (s *Service) deleteLocal(ctx context.Context, accountID int64, ts []target) error {
 	if len(ts) == 0 {
 		return nil
 	}
+	unlock, err := s.lockAccount(ctx, accountID)
+	if err != nil {
+		return err
+	}
+	defer unlock()
 	ids := make([]int64, len(ts))
 	for i, m := range ts {
 		ids[i] = m.id

@@ -30,7 +30,9 @@ func planThread(ctx context.Context, db *store.DB, acc *account, p *mail.Parsed)
 	if err != nil {
 		return threadPlan{}, err
 	}
-	if len(tids) == 0 && p.InReplyTo == "" && len(p.References) == 0 {
+	// Subject threading needs the user's own address to leave out; a local
+	// archive has none, so its mail threads by references only (ADR 0036).
+	if len(tids) == 0 && !acc.noSelf && p.InReplyTo == "" && len(p.References) == 0 {
 		tid, err := subjectThread(ctx, db, acc, p, key)
 		if err != nil {
 			return threadPlan{}, err

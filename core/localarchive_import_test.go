@@ -363,3 +363,19 @@ func TestReplyToLocalArchiveMailDraftsFromSendingAccount(t *testing.T) {
 	_, err = s.NewDraft(ctx, acc.ID, "new", 0)
 	require.ErrorIs(t, err, core.ErrLocalArchive, "a new draft names its own account")
 }
+
+func TestImportEMLDoesNotThreadUnrelatedMailBySubject(t *testing.T) {
+	s := newTestService(t)
+	acc, inbox := newArchive(t, s)
+	// A local archive has no address of its own: the recipient both share is
+	// the user, not a participant in common (ADR 0036).
+	a := coretest.Msg("Shop A <bills@a.example>", "me@example.com", "Your invoice", "from a")
+	b := coretest.Msg("Shop B <bills@b.example>", "me@example.com", "Your invoice", "from b")
+	sum, err := s.ImportEML(ctx, acc.ID, inbox.ID, []string{writeEML(t, t.TempDir(), "a.eml", a), writeEML(t, t.TempDir(), "b.eml", b)})
+	require.NoError(t, err)
+	require.Equal(t, 2, sum.Imported)
+	page, err := s.ListMessages(ctx, core.View{FolderID: inbox.ID}, "", 50)
+	require.NoError(t, err)
+	require.Len(t, page.Items, 2)
+	require.NotEqual(t, page.Items[0].ThreadID, page.Items[1].ThreadID)
+}

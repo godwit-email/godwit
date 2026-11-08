@@ -27,6 +27,7 @@ func InsertLocal(ctx context.Context, db *store.DB, accountID, folderID int64, p
 	if err != nil {
 		return Local{}, err
 	}
+	a.noSelf = true
 	plan, err := planThread(ctx, db, a, p)
 	if err != nil {
 		return Local{}, err

@@ -138,3 +138,37 @@ func TestLocalArchiveDeleteForeverOnlyFromTrash(t *testing.T) {
 	require.Empty(t, archiveFiles(t, dir, acc.ID))
 	requireNoOps(t, s, acc.ID)
 }
+
+// Emptying the Trash while the same file is imported again must not leave the
+// new row without its original. Racy by nature: it checks the invariant over
+// several rounds.
+func TestLocalArchiveEmptyTrashRacingReimportKeepsOriginal(t *testing.T) {
+	s := newTestService(t)
+	acc, inbox := newArchive(t, s)
+	trash, _ := folderNamed(t, s, acc.ID, "Trash")
+	path := writeEML(t, t.TempDir(), "a.eml", invoice("a"))
+	for range 20 {
+		_, err := s.ImportEML(ctx, acc.ID, inbox.ID, []string{path})
+		require.NoError(t, err)
+		hits, err := s.Search(ctx, acc.ID, "invoice", 10)
+		require.NoError(t, err)
+		require.Len(t, hits, 1)
+		require.NoError(t, s.Delete(ctx, []int64{hits[0].ID}))
+
+		done := make(chan error, 1)
+		go func() { _, err := s.EmptyFolder(ctx, trash.ID); done <- err }()
+		_, err = s.ImportEML(ctx, acc.ID, inbox.ID, []string{path})
+		require.NoError(t, err)
+		require.NoError(t, <-done)
+
+		hits, err = s.Search(ctx, acc.ID, "invoice", 10)
+		require.NoError(t, err)
+		for _, h := range hits {
+			_, err := s.GetRawMessage(ctx, h.ID)
+			require.NoError(t, err, "a surviving row keeps its original")
+			require.NoError(t, s.Delete(ctx, []int64{h.ID}))
+		}
+		_, err = s.EmptyFolder(ctx, trash.ID)
+		require.NoError(t, err)
+	}
+}
