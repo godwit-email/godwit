@@ -156,7 +156,7 @@ func appendTo(c *imapclient.Client, op backend.Append) (backend.Result, error) {
 }
 
 // selectAt selects at's folder read-write and decodes its UID; another
-// UIDVALIDITY is backend.ErrNotFound.
+// UIDVALIDITY is backend.ErrFolderReset.
 func selectAt(c *imapclient.Client, at backend.Location) (imap.UID, error) {
 	validity, uid := Decode(string(at.Ref))
 	sel, err := c.Select(string(at.Folder), nil).Wait()
@@ -164,7 +164,7 @@ func selectAt(c *imapclient.Client, at backend.Location) (imap.UID, error) {
 		return 0, err
 	}
 	if sel.UIDValidity != validity {
-		return 0, fmt.Errorf("%w: folder %q was recreated on the server", backend.ErrNotFound, at.Folder)
+		return 0, fmt.Errorf("%w: folder %q was recreated", backend.ErrFolderReset, at.Folder)
 	}
 	return imap.UID(uid), nil
 }

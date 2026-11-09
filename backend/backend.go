@@ -29,6 +29,11 @@ var ErrUnsupported = errors.New("backend: not supported")
 // ErrNotFound means a server reference no longer names anything on the server.
 var ErrNotFound = errors.New("backend: not found on the server")
 
+// ErrFolderReset is the ErrNotFound of a location whose folder the server
+// reset since the sync that stored it (IMAP's UIDVALIDITY changed): the next
+// sync reports the FolderReset.
+var ErrFolderReset = fmt.Errorf("%w: the folder was reset on the server", ErrNotFound)
+
 // ErrNotSynced is Sync with SyncRequest.Older on a folder whose first sync at
 // the server's current state has not completed: a full sync comes first.
 var ErrNotSynced = errors.New("folder not synced yet")

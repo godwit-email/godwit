@@ -112,7 +112,7 @@ func (r *Receiver) Fetch(ctx context.Context, req backend.ContentRequest) (_ io.
 		return nil, err
 	}
 	if sel.UIDValidity != validity { // recreated since the sync
-		return nil, backend.ErrNotFound
+		return nil, backend.ErrFolderReset
 	}
 	sec := &imap.FetchItemBodySection{Peek: true}
 	switch {
