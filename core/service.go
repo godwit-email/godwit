@@ -623,12 +623,12 @@ func (s *Service) SyncNow(ctx context.Context, accountID int64) error {
 	if local, err := s.localArchive(ctx, accountID); local || err != nil {
 		return err
 	}
-	return s.syncNow(ctx, accountID, true)
+	return s.syncNow(ctx, accountID, true, nil)
 }
 
-// syncNow is SyncNow for the worker (explicit false). A cancelled sync is a
-// shutdown, not a failure.
-func (s *Service) syncNow(ctx context.Context, accountID int64, explicit bool) error {
+// syncNow is SyncNow for the worker (explicit false), fetching only the
+// folders in only (nil: all). A cancelled sync is a shutdown, not a failure.
+func (s *Service) syncNow(ctx context.Context, accountID int64, explicit bool, only []backend.FolderRef) error {
 	unlock, err := s.lockAccount(ctx, accountID)
 	if err != nil {
 		return err
@@ -639,7 +639,7 @@ func (s *Service) syncNow(ctx context.Context, accountID int64, explicit bool) e
 	s.securityMu.Unlock()
 	defer func() { s.securityMu.Lock(); s.securitySyncs--; s.securityMu.Unlock() }()
 	s.bus.Publish(events.Event{Type: events.SyncStarted, AccountID: accountID})
-	if err := s.syncAccount(ctx, accountID, explicit); err != nil {
+	if err := s.syncAccount(ctx, accountID, explicit, only); err != nil {
 		if ctx.Err() == nil {
 			// Safe to show: conn never includes server text or the password in login errors.
 			s.bus.Publish(events.Event{Type: events.SyncFailed, AccountID: accountID, Error: err.Error(), Kind: string(conn.Classify(err))})
@@ -715,9 +715,10 @@ func (s *Service) dialAccount(ctx context.Context, accountID int64) (recv backen
 	return recv, func() { stop(); recv.Close() }, nil
 }
 
-// syncAccount runs one sync. An SMTP login failure skips the outbox but not the
-// rest; it is returned at the end, so a worker round ends and parks.
-func (s *Service) syncAccount(ctx context.Context, accountID int64, explicit bool) (err error) {
+// syncAccount runs one sync, fetching only the folders in only (nil: all). An
+// SMTP login failure skips the outbox but not the rest; it is returned at the
+// end, so a worker round ends and parks.
+func (s *Service) syncAccount(ctx context.Context, accountID int64, explicit bool, only []backend.FolderRef) (err error) {
 	recv, release, err := s.dialAccount(ctx, accountID)
 	if err != nil {
 		return err
@@ -747,7 +748,7 @@ func (s *Service) syncAccount(ctx context.Context, accountID int64, explicit boo
 	if err := s.pushOps(ctx, recv, accountID, mailsync.PushOps); err != nil {
 		return err
 	}
-	more, err := mailsync.Fetch(ctx, s.db, recv, accountID, s.bus)
+	more, err := mailsync.Fetch(ctx, s.db, recv, accountID, s.bus, only)
 	if err == nil {
 		err = s.logDaily(ctx) // daily rules run after the day's first complete sync
 	}

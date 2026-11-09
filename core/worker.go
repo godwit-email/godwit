@@ -3,6 +3,8 @@ package core
 import (
 	"context"
 	"errors"
+	"slices"
+	"sync"
 	"time"
 
 	"github.com/godwit-email/godwit/backend"
@@ -164,11 +166,13 @@ func (s *Service) armWorker(id int64, w *worker) {
 
 func (s *Service) runWorker(ctx context.Context, id int64, wake chan struct{}) {
 	var delay, pace time.Duration
+	var only []backend.FolderRef // what the last server change touched; nil for a full round
 	for {
 		if !s.awaitCredentials(ctx, id, wake) {
 			return
 		}
-		chatter, err := s.syncRound(ctx, id, wake)
+		chatter, changed, err := s.syncRound(ctx, id, wake, only)
+		only = changed
 		if ctx.Err() != nil {
 			return
 		}
@@ -231,48 +235,73 @@ func (s *Service) awaitCredentials(ctx context.Context, id int64, wake chan stru
 	}
 }
 
-// syncRound runs SyncNow and then waits for a reason to sync again. A second
-// session Watches the server, started before SyncNow, so a change that lands
-// during or after the sync ends the wait that follows. chatter reports that a
-// server change ended the wait within chatterWithin of its start.
-func (s *Service) syncRound(ctx context.Context, id int64, wake chan struct{}) (chatter bool, err error) {
+// syncRound runs SyncNow, fetching only the folders in only (nil: all), and
+// then waits for a reason to sync again. A second session Watches the server,
+// started before SyncNow, so a change that lands during or after the sync
+// ends the wait that follows; changed is where it landed, nil for anywhere or
+// when no server change ended the wait. chatter reports that a server change
+// ended the wait within chatterWithin of its start.
+func (s *Service) syncRound(ctx context.Context, id int64, wake chan struct{}, only []backend.FolderRef) (chatter bool, changed []backend.FolderRef, err error) {
 	recv, release, err := s.dialAccount(ctx, id)
 	if err != nil {
-		return false, s.workerFailed(ctx, id, err)
+		return false, nil, s.workerFailed(ctx, id, err)
 	}
 	updates := make(chan struct{}, 1)
 	watched := make(chan error, 1)
+	var mu sync.Mutex
+	var seen []backend.FolderRef // where Watch said changes landed
+	anywhere := false
 	wctx, stop := context.WithCancel(ctx)
 	go func() {
-		watched <- recv.Watch(wctx, func([]backend.FolderRef) {
+		watched <- recv.Watch(wctx, func(fs []backend.FolderRef) {
+			mu.Lock()
+			anywhere = anywhere || len(fs) == 0
+			for _, f := range fs {
+				if !slices.Contains(seen, f) {
+					seen = append(seen, f)
+				}
+			}
+			mu.Unlock()
 			select {
 			case updates <- struct{}{}:
 			default:
 			}
 		})
 	}()
+	// touched is where the changes since the last call landed, nil for anywhere.
+	touched := func() []backend.FolderRef {
+		mu.Lock()
+		defer mu.Unlock()
+		out := seen
+		if anywhere {
+			out = nil
+		}
+		anywhere, seen = false, nil
+		return out
+	}
 	defer func() { stop(); release(); <-watched }() // closing unblocks a Watch mid-command
 	// Watch wakes once as it starts watching; one that cannot push returns,
 	// and the account is polled as often as its backend declares.
 	var poll time.Duration
 	select {
 	case <-updates:
+		touched() // the first wake is for what changed before: this round syncs it
 	case err := <-watched:
 		watched <- err
 		if !errors.Is(err, backend.ErrUnsupported) {
-			return false, s.workerFailed(ctx, id, err)
+			return false, nil, s.workerFailed(ctx, id, err)
 		}
 		d, err := recv.Describe(ctx)
 		if err != nil {
-			return false, s.workerFailed(ctx, id, err)
+			return false, nil, s.workerFailed(ctx, id, err)
 		}
 		poll = d.PollInterval // the backend contract holds it above 0
-		release() // only needed to watch; a second release is harmless
+		release()             // only needed to watch; a second release is harmless
 	case <-ctx.Done():
-		return false, ctx.Err()
+		return false, nil, ctx.Err()
 	}
-	if err := s.syncNow(ctx, id, false); err != nil {
-		return false, err // syncNow announced it
+	if err := s.syncNow(ctx, id, false, only); err != nil {
+		return false, nil, err // syncNow announced it
 	}
 	if poll == 0 {
 		start := time.Now()
@@ -280,16 +309,16 @@ func (s *Service) syncRound(ctx context.Context, id int64, wake chan struct{}) (
 		defer t.Stop()
 		select {
 		case <-updates:
-			return time.Since(start) < chatterWithin, nil
+			return time.Since(start) < chatterWithin, touched(), nil
 		case err := <-watched:
 			watched <- err
-			return false, s.workerFailed(ctx, id, err)
+			return false, nil, s.workerFailed(ctx, id, err)
 		case <-wake:
 		case <-t.C:
 		case <-ctx.Done():
-			return false, ctx.Err()
+			return false, nil, ctx.Err()
 		}
-		return false, nil
+		return false, nil, nil
 	}
 	t := time.NewTimer(poll)
 	defer t.Stop()
@@ -298,7 +327,7 @@ func (s *Service) syncRound(ctx context.Context, id int64, wake chan struct{}) (
 	case <-wake:
 	case <-ctx.Done():
 	}
-	return false, nil
+	return false, nil, nil
 }
 
 // workerFailed announces a failure outside SyncNow, unless the worker is stopping.

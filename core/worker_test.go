@@ -413,6 +413,17 @@ func TestWorkerPollsWithoutIdle(t *testing.T) {
 	waitEvent(t, ch, events.MessageReceived, 5*time.Second)
 }
 
+// A server change wakes a sync of only the folders Watch says changed: new
+// mail in INBOX does not pull the other folders, the next full round does.
+func TestWorkerWakeSyncsOnlyWhatChanged(t *testing.T) {
+	e, ch := newWorkerEnv(t)
+	e.put(t, "Archive", msg("arch@x"))
+	e.put(t, "INBOX", msg("new@x"))
+	ev := waitEvent(t, ch, events.MessageReceived, 5*time.Second)
+	assert.Equal(t, []int64{e.idOf(t, "new@x")}, ev.MessageIDs)
+	assert.Zero(t, e.count(t, "SELECT count(*) FROM messages WHERE message_id = 'arch@x'"), "Archive waits for a full round")
+}
+
 func TestWorkerFullRoundFindsOtherFolders(t *testing.T) {
 	setFor(t, &idleMax, 200*time.Millisecond)
 	e, ch := newWorkerEnv(t)

@@ -85,11 +85,12 @@ func (r *result) merged(target int64, others []int64) {
 	r.changedThreads = append(r.changedThreads, target)
 }
 
-// Fetch syncs every folder of the account through recv, then refreshes the
+// Fetch syncs the folders of the account in only (nil: every folder) through
+// recv, then, after a round of every folder, refreshes the
 // Authentication-Results of cached messages. more reports that a backfill
 // has work left: the caller should sync again soon.
-func Fetch(ctx context.Context, db *store.DB, recv backend.Receiver, accountID int64, bus *events.Bus) (more bool, err error) {
-	if more, err = Sync(ctx, db, recv, accountID, bus); err != nil {
+func Fetch(ctx context.Context, db *store.DB, recv backend.Receiver, accountID int64, bus *events.Bus, only []backend.FolderRef) (more bool, err error) {
+	if more, err = run(ctx, db, recv, accountID, bus, only, 0); err != nil || only != nil {
 		return more, err
 	}
 	again, err := refreshAuthenticationResults(ctx, db, recv, accountID, bus)
@@ -102,7 +103,9 @@ func Sync(ctx context.Context, db *store.DB, recv backend.Receiver, accountID in
 	return run(ctx, db, recv, accountID, bus, nil, 0)
 }
 
-// run is Sync, or with older > 0 one page of older mail in only.
+// run is Sync of the folders in only (nil: all), or with older > 0 one page
+// of older mail in only. A round of some folders leaves what needs every
+// folder synced (orphans, hidden locations, claims) to the next full round.
 func run(ctx context.Context, db *store.DB, recv backend.Receiver, accountID int64, bus *events.Bus, only []backend.FolderRef, older int) (more bool, err error) {
 	var r result
 	complete := false
@@ -149,7 +152,7 @@ func run(ctx context.Context, db *store.DB, recv backend.Receiver, accountID int
 		return more, err
 	}
 	complete = true
-	if err != nil { // a skipped folder may yet hold a membership, a claim or a stale location
+	if err != nil || only != nil { // a skipped folder may yet hold a membership, a claim or a stale location
 		return more, err
 	}
 	if err := dropOrphans(ctx, db, accountID, r.orphans, true, s.stable, s.allMail, &r); err != nil {
