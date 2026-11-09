@@ -469,6 +469,10 @@ type Receiver interface {
 	Sync(ctx context.Context, req SyncRequest, commit func(Page) error) (more bool, err error)
 	// Fetch reads content by server reference; ErrNotFound when it is gone.
 	Fetch(ctx context.Context, req ContentRequest) (io.ReadCloser, error)
+	// Headers reads the header fields of the messages at refs in folder, in
+	// as few requests as the protocol allows; a ref gone from the server is
+	// missing from the result. A *FolderError is the server refusing folder.
+	Headers(ctx context.Context, folder FolderRef, refs []MessageRef, fields []string) (map[MessageRef][]byte, error)
 	// Find lists the messages in folder whose Message-ID (without angle
 	// brackets) is messageID and, when size > 0, of that size.
 	Find(ctx context.Context, folder FolderRef, messageID string, size int64) ([]MessageRef, error)

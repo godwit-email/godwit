@@ -48,6 +48,7 @@ var allTests = []contractTest{
 	{"FolderReset", testFolderReset},
 	{"Check", testCheck},
 	{"Fetch", testFetch},
+	{"Headers", testHeaders},
 	{"Find", testFind},
 	{"SetFlags", testSetFlags},
 	{"Move", testMove},
@@ -413,6 +414,34 @@ func testFetch(t *testing.T, start Fixture) {
 		if len(ps) == 0 || !strings.Contains(read(t, r, backend.ContentRequest{Location: m.Location, Part: ps[0]}), "body of first") {
 			t.Errorf("text part %v", ps)
 		}
+	}
+}
+
+// Headers reads the asked header fields of several messages of a folder.
+func testHeaders(t *testing.T, start Fixture) {
+	s := start(t)
+	s.Deliver(t, "INBOX", Message("first@example.com", "first"))
+	s.Deliver(t, "INBOX", Message("second@example.com", "second"))
+	r := s.Receiver(t)
+	v := newView()
+	v.sync(t, r)
+	inbox := v.folder(t, "INBOX")
+	refs := slices.Collect(maps.Keys(v.messages[inbox]))
+	got, err := r.Headers(ctx(t), inbox, refs, []string{"Subject"})
+	if err != nil {
+		t.Fatalf("Headers: %v", err)
+	}
+	var subjects []string
+	for _, ref := range refs {
+		h := string(got[ref])
+		if strings.Contains(h, "Message-ID") || strings.Contains(h, "body of") {
+			t.Errorf("Headers of %q gave more than Subject: %q", ref, h)
+		}
+		subjects = append(subjects, strings.TrimSpace(h))
+	}
+	slices.Sort(subjects)
+	if want := []string{"Subject: first", "Subject: second"}; !slices.Equal(subjects, want) {
+		t.Errorf("Headers = %q, want %q", subjects, want)
 	}
 }
 

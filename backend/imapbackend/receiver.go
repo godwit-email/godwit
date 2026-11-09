@@ -139,6 +139,44 @@ func (r *Receiver) Fetch(ctx context.Context, req backend.ContentRequest) (_ io.
 	return nil, backend.ErrNotFound
 }
 
+// Headers reads the fields of refs in folder with one UID FETCH; refs of
+// another UIDVALIDITY than the folder's are gone. A SELECT the server refuses
+// is a backend.FolderError.
+func (r *Receiver) Headers(ctx context.Context, folder backend.FolderRef, refs []backend.MessageRef, fields []string) (_ map[backend.MessageRef][]byte, err error) {
+	defer r.trace(&err)
+	c, err := r.client(ctx)
+	if err != nil {
+		return nil, err
+	}
+	sel, err := c.Select(string(folder), &imap.SelectOptions{ReadOnly: true}).Wait()
+	if err != nil {
+		var refused *imap.Error
+		if errors.As(err, &refused) {
+			return nil, &backend.FolderError{Folder: folder, Err: err}
+		}
+		return nil, err
+	}
+	var uids imap.UIDSet
+	for _, ref := range refs {
+		if v, uid := Decode(string(ref)); v == sel.UIDValidity && uid != 0 {
+			uids.AddNum(imap.UID(uid))
+		}
+	}
+	out := map[backend.MessageRef][]byte{}
+	if len(uids) == 0 {
+		return out, nil
+	}
+	sec := &imap.FetchItemBodySection{Specifier: imap.PartSpecifierHeader, HeaderFields: fields, Peek: true}
+	msgs, err := c.Fetch(uids, &imap.FetchOptions{UID: true, BodySection: []*imap.FetchItemBodySection{sec}}).Collect()
+	if err != nil {
+		return nil, err
+	}
+	for _, m := range msgs {
+		out[backend.MessageRef(Encode(sel.UIDValidity, uint32(m.UID)))] = m.FindBodySection(sec)
+	}
+	return out, nil
+}
+
 // literal is a FETCH's body section being read.
 type literal struct {
 	io.Reader
