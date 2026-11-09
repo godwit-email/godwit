@@ -14,6 +14,7 @@ import (
 
 	"github.com/emersion/go-imap/v2"
 	"github.com/godwit-email/godwit/core/gateway"
+	"github.com/godwit-email/godwit/core/imapref"
 	"github.com/godwit-email/godwit/core/mail"
 	"github.com/godwit-email/godwit/core/store"
 	"github.com/godwit-email/godwit/internal/imagefetch"
@@ -184,16 +185,16 @@ func (s *Service) fetchListHeaders(ctx context.Context, accountID, messageID int
 	}
 	defer unlock()
 	// Read under the lock: a sync may have moved, deleted or filled it meanwhile.
-	rows, err := s.db.Query(ctx, `SELECT f.name, l.uidvalidity, l.uid, m.list_unsubscribe, m.list_unsubscribe_post, m.list_id
+	rows, err := s.db.Query(ctx, `SELECT f.name, l.server_ref, m.list_unsubscribe, m.list_unsubscribe_post, m.list_id
 		FROM messages m LEFT JOIN `+serverLocation+` WHERE m.id = ?`, messageID)
 	if err != nil || len(rows.Values) == 0 {
 		return nil, false
 	}
 	r := rows.Values[0]
-	if r[3] != nil {
-		return &mail.Parsed{ListUnsubscribe: store.Str(r[3]), ListUnsubscribePost: store.Str(r[4]), ListID: store.Str(r[5])}, true
+	if r[2] != nil {
+		return &mail.Parsed{ListUnsubscribe: store.Str(r[2]), ListUnsubscribePost: store.Str(r[3]), ListID: store.Str(r[4])}, true
 	}
-	if store.Str(r[0]) == "" || r[2] == nil {
+	if store.Str(r[0]) == "" || r[1] == nil {
 		return nil, false
 	}
 	c, release, _, err := s.dialAccount(ctx, accountID, nil)
@@ -201,12 +202,13 @@ func (s *Service) fetchListHeaders(ctx context.Context, accountID, messageID int
 		return nil, false
 	}
 	defer release()
-	if sel, err := c.Select(store.Str(r[0]), &imap.SelectOptions{ReadOnly: true}).Wait(); err != nil || sel.UIDValidity != uint32(store.Int(r[1])) {
+	validity, uid := imapref.Decode(store.Str(r[1]))
+	if sel, err := c.Select(store.Str(r[0]), &imap.SelectOptions{ReadOnly: true}).Wait(); err != nil || sel.UIDValidity != validity {
 		return nil, false
 	}
 	sec := &imap.FetchItemBodySection{Specifier: imap.PartSpecifierHeader, Peek: true,
 		HeaderFields: []string{"LIST-UNSUBSCRIBE", "LIST-UNSUBSCRIBE-POST", "LIST-ID"}}
-	msgs, err := c.Fetch(imap.UIDSetNum(imap.UID(store.Int(r[2]))), &imap.FetchOptions{UID: true, BodySection: []*imap.FetchItemBodySection{sec}}).Collect()
+	msgs, err := c.Fetch(imap.UIDSetNum(imap.UID(uid)), &imap.FetchOptions{UID: true, BodySection: []*imap.FetchItemBodySection{sec}}).Collect()
 	if err != nil || len(msgs) == 0 {
 		return nil, false
 	}

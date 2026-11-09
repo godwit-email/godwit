@@ -14,6 +14,7 @@ import (
 	"github.com/egoist/mygo/plugins/sqlite"
 	"github.com/emersion/go-imap/v2"
 	"github.com/emersion/go-imap/v2/imapclient"
+	"github.com/godwit-email/godwit/core/imapref"
 	"github.com/godwit-email/godwit/core/store"
 )
 
@@ -149,8 +150,8 @@ func pushOp(ctx context.Context, db *store.DB, c *imapclient.Client, o op) (prob
 	if o.kind != "flags" {
 		at, args = " AND l.folder_id = ?", append(args, o.src)
 	}
-	r, err := db.Query(ctx, `SELECT l.folder_id, l.uidvalidity, l.uid, f.name FROM message_locations l
-		JOIN folders f ON f.id = l.folder_id WHERE l.message_id = ? AND l.uid IS NOT NULL`+at+" LIMIT 1", args...)
+	r, err := db.Query(ctx, `SELECT l.folder_id, l.server_ref, f.name FROM message_locations l
+		JOIN folders f ON f.id = l.folder_id WHERE l.message_id = ? AND l.server_ref IS NOT NULL`+at+" LIMIT 1", args...)
 	if err != nil {
 		return "", err
 	}
@@ -165,8 +166,8 @@ func pushOp(ctx context.Context, db *store.DB, c *imapclient.Client, o op) (prob
 		}
 		return "", nil // no server location: the move before it awaits its claim
 	}
-	src, srcValidity, uid, srcName := store.Int(r.Values[0][0]), uint32(store.Int(r.Values[0][1])),
-		imap.UID(store.Int(r.Values[0][2])), store.Str(r.Values[0][3])
+	srcValidity, srcUID := imapref.Decode(store.Str(r.Values[0][1]))
+	src, uid, srcName := store.Int(r.Values[0][0]), imap.UID(srcUID), store.Str(r.Values[0][2])
 	if o.kind == "move" && o.dst == src {
 		return "", finish(ctx, db, o, "done", "")
 	}
@@ -190,14 +191,15 @@ func pushOp(ctx context.Context, db *store.DB, c *imapclient.Client, o op) (prob
 			msg := "the server supports neither MOVE nor UIDPLUS, so messages cannot be moved safely"
 			return msg, finish(ctx, db, o, "failed", msg)
 		}
-		d, err := db.Query(ctx, "SELECT name, uidvalidity FROM folders WHERE id = ?", o.dst)
+		d, err := db.Query(ctx, "SELECT name, cursor FROM folders WHERE id = ?", o.dst)
 		if err != nil {
 			return "", err
 		}
 		if len(d.Values) == 0 {
 			return fail(ctx, db, o, errNoDestination)
 		}
-		dstName, dstValidity = store.Str(d.Values[0][0]), uint32(store.Int(d.Values[0][1]))
+		dstName = store.Str(d.Values[0][0])
+		dstValidity, _ = imapref.Decode(store.Str(d.Values[0][1]))
 	default:
 		msg := fmt.Sprintf("unknown change %q", o.kind)
 		return msg, finish(ctx, db, o, "failed", msg)
@@ -301,7 +303,7 @@ func pushOp(ctx context.Context, db *store.DB, c *imapclient.Client, o op) (prob
 // nowhere else waits for the claim of the move before it.
 func lostSource(ctx context.Context, db *store.DB, o op, sent bool) (string, error) {
 	r, err := db.Query(ctx, `SELECT count(*), coalesce(sum(folder_id = ?), 0) FROM message_locations
-		WHERE message_id = ? AND folder_id != ? AND uid IS NOT NULL`, o.dst, o.msg, o.src)
+		WHERE message_id = ? AND folder_id != ? AND server_ref IS NOT NULL`, o.dst, o.msg, o.src)
 	if err != nil {
 		return "", err
 	}
@@ -437,12 +439,12 @@ func moved(ctx context.Context, db *store.DB, o op, validity, uid uint32) error 
 	stmts := append(unlocate(o.msg, o.src),
 		sqlite.Statement{SQL: "UPDATE ops SET state = 'awaiting_claim', last_error = NULL WHERE id = ?", Args: []any{o.id}})
 	if uid != 0 {
-		ids, _, err := doomed(ctx, db, "EXISTS (SELECT 1 FROM message_locations WHERE message_id = messages.id AND folder_id = ? AND uid = ?) AND id != ?", o.dst, uid, o.msg)
+		ids, _, err := doomed(ctx, db, "EXISTS (SELECT 1 FROM message_locations WHERE message_id = messages.id AND folder_id = ? AND server_ref = ?) AND id != ?", o.dst, imapref.Encode(validity, uid), o.msg)
 		if err != nil {
 			return err
 		}
 		stmts = append(unlocate(o.msg, o.src), sqlite.Statement{SQL: "UPDATE ops SET state = 'done', last_error = NULL WHERE id = ?", Args: []any{o.id}})
-		if len(ids) > 0 { // at most one: UNIQUE(folder_id, uid)
+		if len(ids) > 0 { // at most one: UNIQUE(folder_id, server_ref)
 			m, tids, err := merge(ctx, db, o.msg, ids)
 			if err != nil {
 				return err
@@ -450,9 +452,9 @@ func moved(ctx context.Context, db *store.DB, o op, validity, uid uint32) error 
 			stmts = append(append(stmts, m...), tidyThreads(o.accountID, tids)...)
 		}
 		// Trash/Spam removes every other Gmail membership before a queued flag runs.
-		stmts = append(stmts, sqlite.Statement{SQL: `UPDATE message_locations SET uidvalidity = NULL, uid = NULL
+		stmts = append(stmts, sqlite.Statement{SQL: `UPDATE message_locations SET server_ref = NULL
 			WHERE message_id = ? AND folder_id != ? AND EXISTS (SELECT 1 FROM folders WHERE id = ? AND role IN ('trash', 'junk'))`, Args: []any{o.msg, o.dst, o.dst}}, dropUnseen(o.msg))
-		stmts = append(stmts, locate(o.msg, o.dst, validity, uid)...)
+		stmts = append(stmts, locate(o.msg, o.dst, imapref.Encode(validity, uid))...)
 		if o.src == 0 {
 			stmts = append(stmts, settle(o.msg)...)
 		}

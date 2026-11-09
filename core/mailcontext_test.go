@@ -39,9 +39,9 @@ func addMessage(t *testing.T, s *Service, subject, from, text, html string, date
 // folder it shows in, and the folder, UIDVALIDITY and UID the server has it at.
 const (
 	shownCol    = "(SELECT folder_id FROM message_locations WHERE message_id = messages.id AND shown)"
-	serverCol   = "(SELECT folder_id FROM message_locations WHERE message_id = messages.id AND uid IS NOT NULL)"
-	validityCol = "(SELECT uidvalidity FROM message_locations WHERE message_id = messages.id AND uid IS NOT NULL)"
-	uidCol      = "(SELECT uid FROM message_locations WHERE message_id = messages.id AND uid IS NOT NULL)"
+	serverCol   = "(SELECT folder_id FROM message_locations WHERE message_id = messages.id AND server_ref IS NOT NULL)"
+	validityCol = "(SELECT CAST(substr(server_ref, 1, 10) AS INTEGER) FROM message_locations WHERE message_id = messages.id AND server_ref IS NOT NULL)"
+	uidCol      = "(SELECT CAST(substr(server_ref, 12) AS INTEGER) FROM message_locations WHERE message_id = messages.id AND server_ref IS NOT NULL)"
 	enteredCol  = "(SELECT entered_at FROM message_locations WHERE message_id = messages.id AND shown)"
 )
 

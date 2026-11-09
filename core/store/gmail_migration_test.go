@@ -42,7 +42,7 @@ func TestMigrationGmailCapabilityUsesCurrentEndpoint(t *testing.T) {
 	db, err = store.Open(ctx, path)
 	require.NoError(t, err)
 	defer db.Close()
-	rows, err := db.Query(ctx, "SELECT imap_gmail FROM accounts ORDER BY id")
+	rows, err := db.Query(ctx, "SELECT features FROM accounts ORDER BY id")
 	require.NoError(t, err)
-	require.Equal(t, [][]any{{int64(1)}, {int64(1)}, {nil}, {nil}, {nil}, {nil}, {nil}}, rows.Values)
+	require.Equal(t, [][]any{{"X-GM-EXT-1"}, {"X-GM-EXT-1"}, {nil}, {nil}, {nil}, {nil}, {nil}}, rows.Values)
 }

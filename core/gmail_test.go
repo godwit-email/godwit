@@ -30,7 +30,7 @@ func TestGmailMessageIsOneInEveryFolder(t *testing.T) {
 	e.sync(t)
 
 	got := map[string]int{}
-	for _, r := range e.rows(t, "SELECT gmail_msgid, (SELECT count(*) FROM message_locations WHERE message_id = messages.id) FROM messages") {
+	for _, r := range e.rows(t, "SELECT server_id, (SELECT count(*) FROM message_locations WHERE message_id = messages.id) FROM messages") {
 		got[store.Str(r[0])] = int(store.Int(r[1]))
 	}
 	assert.Equal(t, map[string]int{strconv.FormatUint(m.ID, 10): 2, strconv.FormatUint(twin.ID, 10): 1}, got)
@@ -196,7 +196,7 @@ func TestGmailArchiveKeepsOtherFoldersAndQueuedFlags(t *testing.T) {
 	assert.Equal(t, []string{"done", "done"}, e.opStates(t))
 	assert.Equal(t, []string{"Work", testmail.GmailAllMail}, m.Folders())
 	assert.Equal(t, []string{`a@x \Flagged`}, e.onServer(t, "Work"))
-	assert.Equal(t, 1, e.count(t, "SELECT count(*) FROM message_locations WHERE message_id = ? AND folder_id = ? AND uid = ?",
+	assert.Equal(t, 1, e.count(t, "SELECT count(*) FROM message_locations WHERE message_id = ? AND folder_id = ? AND CAST(substr(server_ref, 12) AS INTEGER) = ?",
 		id, e.folderID(t, "Work"), m.UID("Work")), "Work's server location stays")
 	assert.Equal(t, []int64{id}, e.listed(t, testmail.GmailAllMail))
 }
@@ -227,7 +227,7 @@ func TestSyncWithoutGmailHasNoMsgID(t *testing.T) {
 	e := newSyncEnv(t)
 	e.put(t, "INBOX", msg("a"))
 	e.sync(t)
-	assert.Equal(t, 1, e.count(t, "SELECT count(*) FROM messages WHERE gmail_msgid IS NULL"))
+	assert.Equal(t, 1, e.count(t, "SELECT count(*) FROM messages WHERE server_id IS NULL"))
 }
 
 // Archiving a message in INBOX, Work and All Mail takes it out of INBOX only,

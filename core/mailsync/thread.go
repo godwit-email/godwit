@@ -146,10 +146,10 @@ func participants(self string, addrs []string) map[string]bool {
 	return out
 }
 
-// threadTail records every Message-ID of the message at (folderID, uid) under its
+// threadTail records every Message-ID of the message at (folderID, ref) under its
 // thread (unreceived ones become placeholders) and refreshes the thread's last_date.
-func threadTail(accountID, folderID int64, uid uint32, ids []string) []sqlite.Statement {
-	return threadTailOf(accountID, "(SELECT message_id FROM message_locations WHERE folder_id = ? AND uid = ?)", []any{folderID, uid}, ids)
+func threadTail(accountID, folderID int64, ref string, ids []string) []sqlite.Statement {
+	return threadTailOf(accountID, "(SELECT message_id FROM message_locations WHERE folder_id = ? AND server_ref = ?)", []any{folderID, ref}, ids)
 }
 
 // threadTailOf is threadTail for the message that the SQL expression msg, with args, is.

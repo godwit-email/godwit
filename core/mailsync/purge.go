@@ -9,6 +9,7 @@ import (
 	"github.com/egoist/mygo/plugins/sqlite"
 	"github.com/emersion/go-imap/v2"
 	"github.com/emersion/go-imap/v2/imapclient"
+	"github.com/godwit-email/godwit/core/imapref"
 	"github.com/godwit-email/godwit/core/store"
 )
 
@@ -37,7 +38,7 @@ const opDue = "CASE WHEN kind IN ('purge', 'move') THEN IFNULL(json_extract(payl
 
 // opReady also releases a deferred archive once fetch finds another server location.
 const opReady = "(" + opDue + ` <= ? OR (kind = 'move' AND dst_folder_id IS NULL AND EXISTS
-	(SELECT 1 FROM message_locations l WHERE l.message_id = ops.message_id AND l.folder_id != ops.src_folder_id AND l.uid IS NOT NULL)))`
+	(SELECT 1 FROM message_locations l WHERE l.message_id = ops.message_id AND l.folder_id != ops.src_folder_id AND l.server_ref IS NOT NULL)))`
 
 // NextOpDue is the account's first undo deadline after t; zero for none.
 func NextOpDue(ctx context.Context, db *store.DB, accountID int64, t time.Time) (time.Time, error) {
@@ -49,14 +50,17 @@ func NextOpDue(ctx context.Context, db *store.DB, accountID int64, t time.Time) 
 	return time.UnixMilli(store.Int(rows.Values[0][0])), nil
 }
 
+// sameValidity is the condition that location l is at its folder f's UIDVALIDITY.
+var sameValidity = imapref.Validity("l.server_ref") + " = " + imapref.Validity("f.cursor")
+
 // purgeable is the condition on message m (with policy p and its folder f joined)
 // that a purge may expunge it: shown and on the server in the role's folder at
 // the folder's UIDVALIDITY, no other change of it waiting, and in that folder
 // longer than the policy's days, counted from the latest of when Godwit first saw
 // it there, when the folder got the role and when the purge was turned on. The
 // argument is an op id the check ignores (the purge being pushed), else 0.
-const purgeable = `EXISTS (SELECT 1 FROM message_locations l WHERE l.message_id = m.id AND l.folder_id = p.folder_id AND l.shown
-		AND l.uidvalidity = f.uidvalidity AND l.entered_at > 0 AND max(l.entered_at, f.role_since, p.since) <= unixepoch() - p.days * 86400)
+var purgeable = `EXISTS (SELECT 1 FROM message_locations l WHERE l.message_id = m.id AND l.folder_id = p.folder_id AND l.shown
+		AND ` + sameValidity + ` AND l.entered_at > 0 AND max(l.entered_at, f.role_since, p.since) <= unixepoch() - p.days * 86400)
 	AND p.days > 0 AND NOT EXISTS (SELECT 1 FROM ops o WHERE o.message_id = m.id AND o.state IN ('pending', 'awaiting_claim') AND o.id != ?)`
 
 // QueuePurge queues the account's due junk and trash purges as purge ops, which
@@ -124,15 +128,15 @@ var PurgeStep func(step string)
 // claimable is the condition on the ops row of a purge that it may go on: still
 // pending (a rescue cancels it) and its message still purgeable. Its arguments
 // are the role and the op's id.
-const claimable = `state = 'pending' AND EXISTS (SELECT 1 FROM messages m JOIN purge_policies p ON p.account_id = m.account_id
+var claimable = `state = 'pending' AND EXISTS (SELECT 1 FROM messages m JOIN purge_policies p ON p.account_id = m.account_id
 	AND p.role = ? JOIN folders f ON f.id = p.folder_id WHERE m.id = ops.message_id AND p.folder_id = ops.dst_folder_id AND ` + purgeable + `)`
 
 // claimableNow is claimable for a purge the user asked for: still pending, its
 // message shown and on the server in the op's folder at the folder's UIDVALIDITY,
 // and no other change of it waiting.
-const claimableNow = `state = 'pending' AND EXISTS (SELECT 1 FROM messages m JOIN folders f ON f.id = ops.dst_folder_id
+var claimableNow = `state = 'pending' AND EXISTS (SELECT 1 FROM messages m JOIN folders f ON f.id = ops.dst_folder_id
 	WHERE m.id = ops.message_id AND EXISTS (SELECT 1 FROM message_locations l WHERE l.message_id = m.id AND l.folder_id = f.id AND l.shown
-		AND l.uidvalidity = f.uidvalidity)
+		AND ` + sameValidity + `)
 	AND NOT EXISTS (SELECT 1 FROM ops o WHERE o.message_id = m.id AND o.state IN ('pending', 'awaiting_claim') AND o.id != ops.id))`
 
 // purgeClaim is the claimable condition of a purge op with payload p and id, and its arguments.

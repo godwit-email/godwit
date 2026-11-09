@@ -2,6 +2,7 @@ package mailsync
 
 import (
 	"context"
+	"math"
 	"slices"
 	"strconv"
 
@@ -47,8 +48,8 @@ func fetchImport(ctx context.Context, db *store.DB, c *imapclient.Client, a *acc
 // to its reset.
 func mergeOld(ctx context.Context, db *store.DB, c *imapclient.Client, a *account, folders []*folder, r *result) error {
 	for _, f := range folders {
-		rows, err := db.Query(ctx, `SELECT l.uid FROM message_locations l JOIN messages m ON m.id = l.message_id
-			WHERE l.folder_id = ? AND l.uidvalidity = ? AND l.uid IS NOT NULL AND m.gmail_msgid IS NULL`, f.id, f.uidValidity)
+		rows, err := db.Query(ctx, `SELECT l.server_ref FROM message_locations l JOIN messages m ON m.id = l.message_id
+			WHERE l.folder_id = ? AND l.server_ref BETWEEN ? AND ? AND m.server_id IS NULL`, f.id, f.ref(0), f.ref(math.MaxUint32))
 		if err != nil {
 			return err
 		}
@@ -57,7 +58,7 @@ func mergeOld(ctx context.Context, db *store.DB, c *imapclient.Client, a *accoun
 		}
 		var uids []imap.UID
 		for _, v := range rows.Values {
-			uids = append(uids, imap.UID(store.Int(v[0])))
+			uids = append(uids, imap.UID(refUID(v[0])))
 		}
 		sel, err := c.Select(f.name, &imap.SelectOptions{ReadOnly: true}).Wait()
 		if err != nil {
@@ -73,9 +74,9 @@ func mergeOld(ctx context.Context, db *store.DB, c *imapclient.Client, a *accoun
 		var stmts []sqlite.Statement
 		for _, m := range msgs {
 			if m.GmailMsgID != 0 {
-				stmts = append(stmts, sqlite.Statement{SQL: `UPDATE messages SET gmail_msgid = ? WHERE gmail_msgid IS NULL
-					AND id = (SELECT message_id FROM message_locations WHERE folder_id = ? AND uid = ?)`,
-					Args: []any{strconv.FormatUint(m.GmailMsgID, 10), f.id, uint32(m.UID)}})
+				stmts = append(stmts, sqlite.Statement{SQL: `UPDATE messages SET server_id = ? WHERE server_id IS NULL
+					AND id = (SELECT message_id FROM message_locations WHERE folder_id = ? AND server_ref = ?)`,
+					Args: []any{strconv.FormatUint(m.GmailMsgID, 10), f.id, f.ref(uint32(m.UID))}})
 			}
 		}
 		if len(stmts) == 0 {
@@ -96,13 +97,13 @@ func mergeOld(ctx context.Context, db *store.DB, c *imapclient.Client, a *accoun
 // (arrivals) that this round inserted from a folder where it was not new is
 // new mail all the same.
 func gmailLocate(ctx context.Context, db *store.DB, a *account, f *folder, msgs []*imapclient.FetchMessageBuffer, arrivals bool, r *result) ([]imap.UID, error) {
-	have, err := db.Query(ctx, "SELECT uid FROM message_locations WHERE folder_id = ? AND uid IS NOT NULL", f.id)
+	have, err := db.Query(ctx, "SELECT server_ref FROM message_locations WHERE folder_id = ? AND server_ref IS NOT NULL", f.id)
 	if err != nil {
 		return nil, err
 	}
 	held := map[imap.UID]bool{}
 	for _, v := range have.Values {
-		held[imap.UID(store.Int(v[0]))] = true
+		held[imap.UID(refUID(v[0]))] = true
 	}
 	stored := map[string][2]int64{} // X-GM-MSGID → message, thread
 	for page := range slices.Chunk(msgs, 500) {
@@ -118,7 +119,7 @@ func gmailLocate(ctx context.Context, db *store.DB, a *account, f *folder, msgs 
 		if err := mergeShared(ctx, db, a.id, ids, r); err != nil {
 			return nil, err
 		}
-		rows, err := db.Query(ctx, "SELECT gmail_msgid, min(id), thread_id FROM messages WHERE account_id = ? AND gmail_msgid IN ("+marks(len(ids))+") GROUP BY gmail_msgid",
+		rows, err := db.Query(ctx, "SELECT server_id, min(id), thread_id FROM messages WHERE account_id = ? AND server_id IN ("+marks(len(ids))+") GROUP BY server_id",
 			append([]any{a.id}, ids...)...)
 		if err != nil {
 			return nil, err
@@ -141,10 +142,10 @@ func gmailLocate(ctx context.Context, db *store.DB, a *account, f *folder, msgs 
 		}
 		id, fl := s[0], flagString(m.Flags)
 		stmts = append(stmts, sqlite.Statement{
-			SQL: `INSERT INTO message_locations(message_id, folder_id, shown, uidvalidity, uid, entered_at, date)
-				SELECT id, ?, ` + notMoving + `, ?, ?, unixepoch(), date FROM messages WHERE id = ?
-				ON CONFLICT(message_id, folder_id) DO UPDATE SET uidvalidity = excluded.uidvalidity, uid = excluded.uid`,
-			Args: []any{f.id, f.uidValidity, uint32(m.UID), id},
+			SQL: `INSERT INTO message_locations(message_id, folder_id, shown, server_ref, entered_at, date)
+				SELECT id, ?, ` + notMoving + `, ?, unixepoch(), date FROM messages WHERE id = ?
+				ON CONFLICT(message_id, folder_id) DO UPDATE SET server_ref = excluded.server_ref`,
+			Args: []any{f.id, f.ref(uint32(m.UID)), id},
 		}, sqlite.Statement{SQL: "UPDATE ops SET state = 'done', last_error = NULL WHERE message_id = ? AND state = 'awaiting_claim' AND dst_folder_id = ?", Args: []any{id, f.id}},
 			sqlite.Statement{SQL: "UPDATE messages SET flags = ? WHERE id = ? AND flags != ? AND NOT " + pendingFlags, Args: []any{fl, id, fl}})
 		ids, tids = append(ids, id), append(tids, s[1])

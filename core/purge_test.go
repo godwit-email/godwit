@@ -110,7 +110,7 @@ func TestPurgeSkipsPendingMoves(t *testing.T) {
 	require.NoError(t, e.s.SetPurge(bg, e.acc.ID, "trash", 1))
 	// Shown in Trash but on the server in INBOX, with no move queued.
 	// Its UIDVALIDITY is set to Trash's, so only the server-folder guard holds it.
-	_, err := e.s.db.Execute(bg, "UPDATE message_locations SET shown = 0, uidvalidity = (SELECT uidvalidity FROM folders WHERE id = ?) WHERE message_id = ?",
+	_, err := e.s.db.Execute(bg, "UPDATE message_locations SET shown = 0, server_ref = (SELECT substr(cursor, 1, 11) FROM folders WHERE id = ?) || substr(server_ref, 12) WHERE message_id = ?",
 		e.folderID(t, "Trash"), e.idOf(t, "stray@x"))
 	require.NoError(t, err)
 	showIn(t, e.s, e.idOf(t, "stray@x"), e.folderID(t, "Trash"))

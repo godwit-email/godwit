@@ -61,31 +61,31 @@ func importMessage(ctx context.Context, db *store.DB, a *account, f *folder, m *
 	stmts := append(plan.pre, sqlite.Statement{
 		SQL: `INSERT INTO messages(account_id, thread_id,
 			message_id, in_reply_to, refs, subject, from_addr, to_addrs, cc_addrs, reply_to, date, flags, size,
-			snippet, body_text, body_html, body_truncated, has_attachments, label_fp, list_unsubscribe, list_unsubscribe_post, list_id, auto_submitted, precedence, auth_results, security_status, security_reason, security_scanned_at, security_verify_dkim, rule_sent, gmail_msgid)
+			snippet, body_text, body_html, body_truncated, has_attachments, label_fp, list_unsubscribe, list_unsubscribe_post, list_id, auto_submitted, precedence, auth_results, security_status, security_reason, security_scanned_at, security_verify_dkim, rule_sent, server_id)
 			VALUES (?, ` + plan.expr + `, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 		Args: args,
 	}, sqlite.Statement{
-		SQL: `INSERT INTO message_locations(message_id, folder_id, shown, uidvalidity, uid, entered_at, date)
-			VALUES (last_insert_rowid(), ?, 1, ?, ?, unixepoch(), ?)`,
-		Args: []any{f.id, f.uidValidity, uid, p.Date.Unix()},
+		SQL: `INSERT INTO message_locations(message_id, folder_id, shown, server_ref, entered_at, date)
+			VALUES (last_insert_rowid(), ?, 1, ?, unixepoch(), ?)`,
+		Args: []any{f.id, f.ref(uid), p.Date.Unix()},
 	})
 	msgAt := len(stmts) - 2
 	for _, at := range p.Attachments {
 		stmts = append(stmts, sqlite.Statement{
 			SQL: `INSERT INTO attachments(message_id, part, encoding, charset, filename, content_type, size, content_id, inline)
-				VALUES ((SELECT message_id FROM message_locations WHERE folder_id = ? AND uid = ?), ?, ?, ?, ?, ?, ?, ?, ?)`,
-			Args: []any{f.id, uid, at.Part, at.Encoding, at.Charset, at.Filename, at.ContentType, at.Size, at.ContentID, at.Inline},
+				VALUES ((SELECT message_id FROM message_locations WHERE folder_id = ? AND server_ref = ?), ?, ?, ?, ?, ?, ?, ?, ?)`,
+			Args: []any{f.id, f.ref(uid), at.Part, at.Encoding, at.Charset, at.Filename, at.ContentType, at.Size, at.ContentID, at.Inline},
 		})
 	}
-	stmts = append(stmts, threadTail(a.id, f.id, uid, ids)...)
+	stmts = append(stmts, threadTail(a.id, f.id, f.ref(uid), ids)...)
 	verdict := ""
 	if _, final := secScanned.(int64); final {
 		verdict = secStatus
 	}
 	stmts = append(stmts, sqlite.Statement{
 		SQL: `INSERT INTO message_imports(message_id, arrival, verdict)
-   VALUES ((SELECT message_id FROM message_locations WHERE folder_id = ? AND uid = ?), ?, ?)`,
-		Args: []any{f.id, uid, arrival, verdict},
+   VALUES ((SELECT message_id FROM message_locations WHERE folder_id = ? AND server_ref = ?), ?, ?)`,
+		Args: []any{f.id, f.ref(uid), arrival, verdict},
 	})
 	res, err := db.Transaction(ctx, stmts)
 	if err != nil {
@@ -202,7 +202,7 @@ func claim(ctx context.Context, db *store.DB, accountID int64, f *folder, uid ui
 	}
 	if len(rows.Values) == 1 && twins <= 1 && store.Int(present.Values[0][0]) == 0 {
 		op, id := store.Int(rows.Values[0][0]), store.Int(rows.Values[0][1])
-		_, err = db.Transaction(ctx, append(locate(id, f.id, f.uidValidity, uid),
+		_, err = db.Transaction(ctx, append(locate(id, f.id, f.ref(uid)),
 			sqlite.Statement{SQL: "UPDATE ops SET state = 'done' WHERE id = ?", Args: []any{op}}))
 		if err != nil {
 			return 0, err
@@ -291,15 +291,15 @@ func syncFlags(ctx context.Context, db *store.DB, c *imapclient.Client, accountI
 		remote[uint32(b.UID)] = flagString(b.Flags)
 	}
 	// A flags change still queued wins over the server's flags until it is pushed.
-	rows, err := db.Query(ctx, "SELECT messages.id, l.uid, flags, thread_id, "+pendingFlags+
-		" FROM message_locations l JOIN messages ON messages.id = l.message_id WHERE l.folder_id = ? AND l.uid <= ?", f.id, f.lastUID)
+	rows, err := db.Query(ctx, "SELECT messages.id, l.server_ref, flags, thread_id, "+pendingFlags+
+		" FROM message_locations l JOIN messages ON messages.id = l.message_id WHERE l.folder_id = ? AND l.server_ref BETWEEN ? AND ?", f.id, f.ref(0), f.ref(f.lastUID))
 	if err != nil {
 		return err
 	}
 	var stmts []sqlite.Statement
 	var changed, tids, vanished []int64
 	for _, v := range rows.Values {
-		id, uid, flags := store.Int(v[0]), uint32(store.Int(v[1])), store.Str(v[2])
+		id, uid, flags := store.Int(v[0]), refUID(v[1]), store.Str(v[2])
 		fl, ok := remote[uid]
 		switch {
 		case !ok:

@@ -73,10 +73,10 @@ func TestGmailUpgradeArchiveBeforeIdentityFetch(t *testing.T) {
 				m := e.im.AddGmail(msg("upgrade@x"), nil, folders...)
 				e.sync(t)
 				rows := e.oldRows(t, e.idOf(t, "upgrade@x"))
-				_, err := e.s.db.Execute(bg, "UPDATE accounts SET imap_gmail = NULL WHERE id = ?", e.acc.ID)
+				_, err := e.s.db.Execute(bg, "UPDATE accounts SET features = NULL WHERE id = ?", e.acc.ID)
 				require.NoError(t, err)
 				if official {
-					_, err := e.s.db.Execute(bg, "UPDATE accounts SET provider = 'gmail', imap_host = 'imap.gmail.com', imap_port = 993, imap_security = 'tls' WHERE id = ?", e.acc.ID)
+					_, err := e.s.db.Execute(bg, "UPDATE accounts SET provider = 'gmail', recv_host = 'imap.gmail.com', recv_port = 993, recv_security = 'tls' WHERE id = ?", e.acc.ID)
 					require.NoError(t, err)
 					e.im.Stop()
 				}
@@ -86,7 +86,7 @@ func TestGmailUpgradeArchiveBeforeIdentityFetch(t *testing.T) {
 				}
 				require.NoError(t, e.s.MoveToRole(bg, []int64{rows[source]}, "archive"))
 				if official {
-					_, err := e.s.db.Execute(bg, "UPDATE accounts SET imap_host = ?, imap_port = ?, imap_security = ? WHERE id = ?", e.acc.IMAPHost, e.acc.IMAPPort, string(e.acc.IMAPSecurity), e.acc.ID)
+					_, err := e.s.db.Execute(bg, "UPDATE accounts SET recv_host = ?, recv_port = ?, recv_security = ? WHERE id = ?", e.acc.IMAPHost, e.acc.IMAPPort, string(e.acc.IMAPSecurity), e.acc.ID)
 					require.NoError(t, err)
 					e.im.Restart()
 				}
@@ -125,7 +125,7 @@ func TestGmailUnknownLegacyArchiveWaitsForCapabilityProbe(t *testing.T) {
 	m := e.im.AddGmail(msg("legacy@x"), nil, "INBOX", "Work")
 	e.sync(t)
 	rows := e.oldRows(t, e.idOf(t, "legacy@x"))
-	_, err := e.s.db.Execute(bg, "UPDATE accounts SET imap_gmail = NULL WHERE id = ?", e.acc.ID)
+	_, err := e.s.db.Execute(bg, "UPDATE accounts SET features = NULL WHERE id = ?", e.acc.ID)
 	require.NoError(t, err)
 	e.im.Stop()
 	_, err = e.s.ArchiveMessages(bg, []int64{rows["INBOX"]}, 0)

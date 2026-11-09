@@ -72,5 +72,5 @@ func TestFetchNewPaged(t *testing.T) {
 		got = append(got, ev.MessageIDs...)
 	}
 	assert.Len(t, got, 5)
-	assert.Equal(t, 1, e.count(t, "SELECT count(*) FROM folders WHERE name = 'INBOX' AND last_uid = 5 AND synced = 1"))
+	assert.Equal(t, 1, e.count(t, "SELECT count(*) FROM folders WHERE name = 'INBOX' AND substr(cursor, 12) = '0000000005' AND synced = 1"))
 }

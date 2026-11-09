@@ -15,7 +15,7 @@ import (
 // gives each folder's row.
 func (e *syncEnv) oldRows(t *testing.T, id int64) map[string]int64 {
 	t.Helper()
-	_, err := e.s.db.Execute(bg, "UPDATE messages SET gmail_msgid = NULL WHERE id = ?", id)
+	_, err := e.s.db.Execute(bg, "UPDATE messages SET server_id = NULL WHERE id = ?", id)
 	require.NoError(t, err)
 	out := map[string]int64{}
 	for i, r := range e.rows(t, `SELECT l.folder_id, f.name FROM message_locations l JOIN folders f ON f.id = l.folder_id

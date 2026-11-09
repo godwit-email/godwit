@@ -18,6 +18,7 @@ import (
 	"github.com/emersion/go-imap/v2/imapclient"
 	"github.com/godwit-email/godwit/core/conn"
 	"github.com/godwit-email/godwit/core/events"
+	"github.com/godwit-email/godwit/core/imapref"
 	"github.com/godwit-email/godwit/core/mail"
 	"github.com/godwit-email/godwit/core/store"
 )
@@ -55,7 +56,7 @@ type attRow struct {
 
 func (s *Service) loadAttachment(ctx context.Context, id int64) (attRow, error) {
 	rows, err := s.db.Query(ctx, `SELECT a.part, a.encoding, a.charset, a.filename, a.content_type, a.size, a.inline, a.cache_path,
-		m.account_id, f.name, l.uidvalidity, l.uid, m.content_hash
+		m.account_id, f.name, l.server_ref, m.content_hash
 		FROM attachments a JOIN messages m ON m.id = a.message_id LEFT JOIN `+serverLocation+`
 		WHERE a.id = ?`, id)
 	if err != nil {
@@ -65,11 +66,12 @@ func (s *Service) loadAttachment(ctx context.Context, id int64) (attRow, error) 
 		return attRow{}, errors.New("attachment not found")
 	}
 	r := rows.Values[0]
+	validity, uid := imapref.Decode(store.Str(r[10]))
 	return attRow{
 		info: AttachmentInfo{ID: id, Filename: store.Str(r[3]), ContentType: store.Str(r[4]), Size: int(store.Int(r[5])), Inline: store.Int(r[6]) != 0},
 		part: store.Str(r[0]), encoding: store.Str(r[1]), charset: store.Str(r[2]), cachePath: store.Str(r[7]),
-		accountID: store.Int(r[8]), folder: store.Str(r[9]), uidValidity: uint32(store.Int(r[10])), uid: imap.UID(store.Int(r[11])),
-		onServer: store.Str(r[9]) != "" && r[11] != nil, contentHash: store.Str(r[12]),
+		accountID: store.Int(r[8]), folder: store.Str(r[9]), uidValidity: validity, uid: imap.UID(uid),
+		onServer: store.Str(r[9]) != "" && r[10] != nil, contentHash: store.Str(r[11]),
 	}, nil
 }
 
@@ -363,7 +365,7 @@ func (s *Service) GetRawMessage(ctx context.Context, messageID int64) ([]byte, e
 	}
 	defer unlock()
 	// Read under the lock: a sync may have moved or deleted it meanwhile.
-	rows, err = s.db.Query(ctx, `SELECT m.account_id, f.name, l.uidvalidity, l.uid, m.size
+	rows, err = s.db.Query(ctx, `SELECT m.account_id, f.name, l.server_ref, m.size
 		FROM messages m LEFT JOIN `+serverLocation+` WHERE m.id = ?`, messageID)
 	if err != nil {
 		return nil, err
@@ -372,14 +374,14 @@ func (s *Service) GetRawMessage(ctx context.Context, messageID int64) ([]byte, e
 		return nil, fmt.Errorf("message %d not found", messageID)
 	}
 	r := rows.Values[0]
-	if store.Int(r[4]) > attachLimit {
+	if store.Int(r[3]) > attachLimit {
 		return nil, ErrTooLarge
 	}
-	if store.Str(r[1]) == "" || r[3] == nil {
+	if store.Str(r[1]) == "" || r[2] == nil {
 		return nil, ErrNotOnServerYet
 	}
-	return s.download(ctx, attRow{accountID: store.Int(r[0]), folder: store.Str(r[1]),
-		uidValidity: uint32(store.Int(r[2])), uid: imap.UID(store.Int(r[3]))})
+	validity, uid := imapref.Decode(store.Str(r[2]))
+	return s.download(ctx, attRow{accountID: store.Int(r[0]), folder: store.Str(r[1]), uidValidity: validity, uid: imap.UID(uid)})
 }
 
 func (s *Service) touch(ctx context.Context, id int64) error {

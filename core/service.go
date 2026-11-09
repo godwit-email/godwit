@@ -26,6 +26,7 @@ import (
 	"github.com/godwit-email/godwit/core/ai/mask/guard"
 	"github.com/godwit-email/godwit/core/conn"
 	"github.com/godwit-email/godwit/core/events"
+	"github.com/godwit-email/godwit/core/imapref"
 	"github.com/godwit-email/godwit/core/mailsync"
 	"github.com/godwit-email/godwit/core/plugins"
 	"github.com/godwit-email/godwit/core/send"
@@ -698,7 +699,7 @@ func (s *Service) dialAccount(ctx context.Context, accountID int64, h *imapclien
 		return nil, nil, nil, err
 	}
 	if err := s.ifCurrent(accountID, ver, func() error {
-		_, err := s.db.Execute(ctx, "UPDATE accounts SET imap_gmail = ? WHERE id = ?", b2i(c.Caps().Has("X-GM-EXT-1")), accountID)
+		_, err := s.db.Execute(ctx, "UPDATE accounts SET features = ? WHERE id = ?", imapref.Features(c.Caps().Has(imapref.GmailFeature)), accountID)
 		return err
 	}); err != nil {
 		c.Close()

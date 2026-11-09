@@ -16,7 +16,7 @@ func TestPlainLegacyArchiveNeedsNoLogin(t *testing.T) {
 	e.put(t, "INBOX", msg("m@x"))
 	e.sync(t)
 	require.NoError(t, e.s.SetRoleFolder(bg, e.acc.ID, "archive", e.folderID(t, "Bin")))
-	_, err := e.s.db.Execute(bg, "UPDATE accounts SET imap_gmail = NULL WHERE id = ?", e.acc.ID)
+	_, err := e.s.db.Execute(bg, "UPDATE accounts SET features = NULL WHERE id = ?", e.acc.ID)
 	require.NoError(t, err)
 	e.im.Stop()
 	require.NoError(t, e.s.MoveToRole(bg, []int64{e.idOf(t, "m@x")}, "archive"), "a server with no Gmail folders is not probed")

@@ -2,6 +2,7 @@ package mailsync
 
 import (
 	"context"
+	"math"
 
 	"github.com/egoist/mygo/plugins/sqlite"
 	"github.com/emersion/go-imap/v2"
@@ -13,8 +14,8 @@ import (
 // Upgrade old cached messages in bounded header-only batches. No message body
 // or account setting is needed to recover the current receiving service's data.
 func refreshAuthenticationResults(ctx context.Context, db *store.DB, c *imapclient.Client, a *account, f *folder, r *result) error {
-	rows, err := db.Query(ctx, `SELECT m.id,l.uid,m.from_addr FROM message_locations l JOIN messages m ON m.id=l.message_id
-		WHERE m.account_id=? AND l.folder_id=? AND l.uidvalidity=? AND l.uid IS NOT NULL AND m.auth_results IS NULL ORDER BY l.uid DESC LIMIT 50`, a.id, f.id, f.uidValidity)
+	rows, err := db.Query(ctx, `SELECT m.id,l.server_ref,m.from_addr FROM message_locations l JOIN messages m ON m.id=l.message_id
+		WHERE m.account_id=? AND l.folder_id=? AND l.server_ref BETWEEN ? AND ? AND m.auth_results IS NULL ORDER BY l.server_ref DESC LIMIT 50`, a.id, f.id, f.ref(0), f.ref(math.MaxUint32))
 	if err != nil || len(rows.Values) == 0 {
 		return err
 	}
@@ -22,7 +23,7 @@ func refreshAuthenticationResults(ctx context.Context, db *store.DB, c *imapclie
 	ids := make(map[imap.UID]int64)
 	senders := make(map[imap.UID]string)
 	for _, row := range rows.Values {
-		uid := imap.UID(store.Int(row[1]))
+		uid := imap.UID(refUID(row[1]))
 		uids.AddNum(uid)
 		ids[uid] = store.Int(row[0])
 		senders[uid] = store.Str(row[2])
@@ -55,7 +56,7 @@ func refreshAuthenticationResults(ctx context.Context, db *store.DB, c *imapclie
    security_status=CASE WHEN ` + keep + ` THEN security_status ELSE ? END,
    security_reason=CASE WHEN ` + keep + ` THEN security_reason ELSE ? END,
    security_scanned_at=CASE WHEN ` + keep + ` THEN security_scanned_at ELSE 0 END
-   WHERE id=? AND EXISTS (SELECT 1 FROM message_locations WHERE message_id=messages.id AND folder_id=? AND uidvalidity=? AND uid=?) AND auth_results IS NULL`, Args: []any{result, verifyDKIM, status, reason, id, f.id, f.uidValidity, uint32(m.UID)}})
+   WHERE id=? AND EXISTS (SELECT 1 FROM message_locations WHERE message_id=messages.id AND folder_id=? AND server_ref=?) AND auth_results IS NULL`, Args: []any{result, verifyDKIM, status, reason, id, f.id, f.ref(uint32(m.UID))}})
 		r.changed = append(r.changed, id)
 	}
 	if len(stmts) > 0 {

@@ -9,16 +9,16 @@ import "github.com/egoist/mygo/plugins/sqlite"
 
 // serverIn is the condition on messages (unaliased) that the server has the
 // message in the folder given as its argument.
-const serverIn = "EXISTS (SELECT 1 FROM message_locations WHERE message_id = messages.id AND folder_id = ? AND uid IS NOT NULL)"
+const serverIn = "EXISTS (SELECT 1 FROM message_locations WHERE message_id = messages.id AND folder_id = ? AND server_ref IS NOT NULL)"
 
 // unlocated is the condition on messages (unaliased) that the server has the
 // message nowhere Godwit knows: a move without COPYUID awaiting its claim.
-const unlocated = "NOT EXISTS (SELECT 1 FROM message_locations WHERE message_id = messages.id AND uid IS NOT NULL)"
+const unlocated = "NOT EXISTS (SELECT 1 FROM message_locations WHERE message_id = messages.id AND server_ref IS NOT NULL)"
 
 // dropUnseen removes the message's rows that neither show it nor locate it on
 // the server.
 func dropUnseen(msg int64) sqlite.Statement {
-	return sqlite.Statement{SQL: "DELETE FROM message_locations WHERE message_id = ? AND shown = 0 AND uid IS NULL", Args: []any{msg}}
+	return sqlite.Statement{SQL: "DELETE FROM message_locations WHERE message_id = ? AND shown = 0 AND server_ref IS NULL", Args: []any{msg}}
 }
 
 // ShowIn returns the statements that show message msg in folder from now
@@ -45,10 +45,10 @@ func ShowIn(msg, folder int64, out []int64) []sqlite.Statement {
 func settle(msg int64) []sqlite.Statement {
 	const settled = "NOT EXISTS (SELECT 1 FROM ops WHERE message_id = message_locations.message_id AND kind = 'move' AND state IN ('pending', 'awaiting_claim'))"
 	return []sqlite.Statement{
-		{SQL: `UPDATE message_locations SET shown = 0 WHERE message_id = ? AND shown AND uid IS NULL
-			AND EXISTS (SELECT 1 FROM message_locations c WHERE c.message_id = message_locations.message_id AND c.uid IS NOT NULL) AND ` + settled,
+		{SQL: `UPDATE message_locations SET shown = 0 WHERE message_id = ? AND shown AND server_ref IS NULL
+			AND EXISTS (SELECT 1 FROM message_locations c WHERE c.message_id = message_locations.message_id AND c.server_ref IS NOT NULL) AND ` + settled,
 			Args: []any{msg}},
-		{SQL: `UPDATE message_locations SET shown = 1, entered_at = unixepoch() WHERE message_id = ? AND uid IS NOT NULL AND NOT shown
+		{SQL: `UPDATE message_locations SET shown = 1, entered_at = unixepoch() WHERE message_id = ? AND server_ref IS NOT NULL AND NOT shown
 			AND (` + settled + ` OR NOT EXISTS (SELECT 1 FROM message_locations c WHERE c.message_id = message_locations.message_id AND c.shown))`,
 			Args: []any{msg}},
 		dropUnseen(msg),
@@ -56,12 +56,12 @@ func settle(msg int64) []sqlite.Statement {
 }
 
 // locate returns the statements that give message msg the server location
-// (folder, validity, uid); its other folders keep theirs.
-func locate(msg, folder int64, validity, uid uint32) []sqlite.Statement {
+// (folder, ref); its other folders keep theirs.
+func locate(msg, folder int64, ref string) []sqlite.Statement {
 	return []sqlite.Statement{
-		{SQL: `INSERT INTO message_locations(message_id, folder_id, shown, uidvalidity, uid, entered_at, date)
-			SELECT id, ?, 0, ?, ?, unixepoch(), date FROM messages WHERE id = ?
-			ON CONFLICT(message_id, folder_id) DO UPDATE SET uidvalidity = excluded.uidvalidity, uid = excluded.uid`, Args: []any{folder, validity, uid, msg}},
+		{SQL: `INSERT INTO message_locations(message_id, folder_id, shown, server_ref, entered_at, date)
+			SELECT id, ?, 0, ?, unixepoch(), date FROM messages WHERE id = ?
+			ON CONFLICT(message_id, folder_id) DO UPDATE SET server_ref = excluded.server_ref`, Args: []any{folder, ref, msg}},
 		dropUnseen(msg),
 	}
 }
@@ -70,7 +70,7 @@ func locate(msg, folder int64, validity, uid uint32) []sqlite.Statement {
 // folder, which a move took it from.
 func unlocate(msg, folder int64) []sqlite.Statement {
 	return []sqlite.Statement{
-		{SQL: "UPDATE message_locations SET uidvalidity = NULL, uid = NULL WHERE message_id = ? AND folder_id = ?", Args: []any{msg, folder}},
+		{SQL: "UPDATE message_locations SET server_ref = NULL WHERE message_id = ? AND folder_id = ?", Args: []any{msg, folder}},
 		dropUnseen(msg),
 	}
 }

@@ -721,6 +721,59 @@ var Migrations = [][]string{{
 	// 1: added though its SMTP check failed; the account only receives mail
 	// until a server change passes the SMTP check (GLOSSARY 只收信).
 	`ALTER TABLE accounts ADD COLUMN receive_only INTEGER NOT NULL DEFAULT 0`,
+}, {
+	// Protocol backends (ADR 0037): servers, positions and identity are
+	// opaque, the backend's to encode. IMAP's encoding (core/imapref):
+	// a 服务器位置 is UIDVALIDITY:UID, a folder's cursor UIDVALIDITY:last UID,
+	// each zero-padded to 10 digits so one UIDVALIDITY's sort by UID; a
+	// folder's server_ref is its name. server_id is the message's identity
+	// on servers whose identity is stable in the account (Gmail's X-GM-MSGID).
+	`CREATE TABLE message_locations_new (
+		message_id INTEGER NOT NULL REFERENCES messages(id) ON DELETE CASCADE,
+		folder_id INTEGER NOT NULL REFERENCES folders(id) ON DELETE CASCADE,
+		shown INTEGER NOT NULL,
+		server_ref TEXT,
+		entered_at INTEGER NOT NULL,
+		date INTEGER,
+		PRIMARY KEY(message_id, folder_id),
+		UNIQUE(folder_id, server_ref))`,
+	`INSERT INTO message_locations_new(message_id, folder_id, shown, server_ref, entered_at, date)
+		SELECT message_id, folder_id, shown, iif(uid IS NULL, NULL, printf('%010d:%010d', coalesce(uidvalidity, 0), uid)), entered_at, date FROM message_locations`,
+	`DROP TABLE message_locations`,
+	`ALTER TABLE message_locations_new RENAME TO message_locations`,
+	`CREATE INDEX message_locations_list ON message_locations(folder_id, shown, date DESC, message_id DESC)`,
+	// cursor: the backend's sync position in the folder (NULL: none yet).
+	`ALTER TABLE folders ADD COLUMN server_ref TEXT`,
+	`ALTER TABLE folders ADD COLUMN cursor TEXT`,
+	`UPDATE folders SET server_ref = name, cursor = iif(uidvalidity IS NULL, NULL, printf('%010d:%010d', uidvalidity, coalesce(last_uid, 0)))
+		WHERE account_id NOT IN (SELECT id FROM accounts WHERE kind = 'local_archive')`,
+	`CREATE UNIQUE INDEX folders_server_ref ON folders(account_id, server_ref)`,
+	`ALTER TABLE folders DROP COLUMN uidvalidity`,
+	`ALTER TABLE folders DROP COLUMN last_uid`,
+	`DROP INDEX messages_gmail`,
+	`ALTER TABLE messages RENAME COLUMN gmail_msgid TO server_id`,
+	`CREATE INDEX messages_server_id ON messages(account_id, server_id) WHERE server_id IS NOT NULL`,
+	// An account's receiving and sending server slots, each a protocol, an
+	// endpoint and a sign-in ('' protocol: none, a local archive's). cursor
+	// is an account-wide sync position, for backends that keep one.
+	`ALTER TABLE accounts RENAME COLUMN imap_host TO recv_host`,
+	`ALTER TABLE accounts RENAME COLUMN imap_port TO recv_port`,
+	`ALTER TABLE accounts RENAME COLUMN imap_security TO recv_security`,
+	`ALTER TABLE accounts RENAME COLUMN auth_type TO recv_auth`,
+	`ALTER TABLE accounts RENAME COLUMN smtp_host TO send_host`,
+	`ALTER TABLE accounts RENAME COLUMN smtp_port TO send_port`,
+	`ALTER TABLE accounts RENAME COLUMN smtp_security TO send_security`,
+	`ALTER TABLE accounts ADD COLUMN recv_protocol TEXT NOT NULL DEFAULT 'imap'`,
+	`ALTER TABLE accounts ADD COLUMN send_protocol TEXT NOT NULL DEFAULT 'smtp'`,
+	`ALTER TABLE accounts ADD COLUMN send_auth TEXT`,
+	`UPDATE accounts SET send_auth = recv_auth`,
+	`UPDATE accounts SET recv_protocol = '', send_protocol = '' WHERE kind = 'local_archive'`,
+	`ALTER TABLE accounts ADD COLUMN cursor TEXT`,
+	// The server's features seen once signed in, space separated (NULL: not
+	// seen yet). IMAP lists the capabilities Godwit acts on.
+	`ALTER TABLE accounts ADD COLUMN features TEXT`,
+	`UPDATE accounts SET features = CASE imap_gmail WHEN 1 THEN 'X-GM-EXT-1' WHEN 0 THEN '' END`,
+	`ALTER TABLE accounts DROP COLUMN imap_gmail`,
 }}
 
 // HistoryRowsVersion is the schema version that keeps a conversation's
