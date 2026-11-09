@@ -2089,5 +2089,20 @@
   "feature_reason_imap_no_idle": "서버가 새 메일을 푸시할 수 없습니다(IDLE 미지원). Godwit이 몇 분마다 확인합니다.",
   "feature_reason_jmap_no_copy": "JMAP에서는 계정 안에서 메일을 복사할 수 없고, 다른 메일함에 추가만 할 수 있습니다.",
   "feature_reason_jmap_folders_pending": "JMAP으로 폴더를 관리하는 기능은 아직 없습니다.",
-  "feature_reason_jmap_sent_via_smtp": "메일은 SMTP로 보내지며 서버에 사본이 저장되지 않습니다."
+  "feature_reason_jmap_sent_via_smtp": "메일은 SMTP로 보내며, 보낸 메일 사본은 Godwit가 직접 저장합니다.",
+  "feature_reason_jmap_no_all_mail": "JMAP에는 전체 메일이 없습니다. 보관하면 메일이 보관함 편지함으로 이동합니다.",
+  "settings_experiments": "실험 기능",
+  "settings_experimental_jmap": "JMAP 계정",
+  "settings_experimental_jmap_help": "계정을 추가할 때 JMAP을 선택할 수 있습니다(Stalwart, Fastmail, Cyrus 등의 서버용). 실험 기능이므로 나중에 새 계정 추가가 중단될 수 있습니다. 끄더라도 이미 추가한 JMAP 계정은 계속 작동합니다.",
+  "onboarding_protocol": "수신 프로토콜",
+  "onboarding_protocol_jmap": "JMAP(실험)",
+  "onboarding_jmap_url": "세션 URL",
+  "onboarding_jmap_url_help": "Godwit는 이 호스트의 /.well-known/jmap에서 세션을 찾습니다. 제공업체가 다른 주소를 안내했다면 여기에 입력하세요.",
+  "onboarding_invalid_jmap_url": "세션 URL이 올바른 https:// 주소가 아닙니다.",
+  "onboarding_check_jmap_failed": "JMAP 로그인 실패: {arg1}",
+  "onboarding_check_jmap_ok": "JMAP에 로그인했습니다",
+  "onboarding_check_jmap_running": "JMAP에 로그인하는 중…",
+  "onboarding_check_jmap_waiting": "JMAP 로그인",
+  "onboarding_check_jmap_proxy": "JMAP 연결 실패: {arg1}",
+  "onboarding_check_jmap_host": "세션 호스트: {arg1}"
 }

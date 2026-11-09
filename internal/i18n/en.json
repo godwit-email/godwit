@@ -3814,5 +3814,20 @@
   "feature_reason_imap_no_idle": "The server can't push new mail (no IDLE); Godwit checks every few minutes.",
   "feature_reason_jmap_no_copy": "JMAP can't copy mail within an account, only add it to one more mailbox.",
   "feature_reason_jmap_folders_pending": "Managing folders over JMAP isn't available yet.",
-  "feature_reason_jmap_sent_via_smtp": "Mail is sent over SMTP, which saves no copy on the server."
+  "feature_reason_jmap_sent_via_smtp": "Mail is sent over SMTP; Godwit saves the sent copy itself.",
+  "feature_reason_jmap_no_all_mail": "JMAP has no All Mail: archiving moves mail to the Archive mailbox.",
+  "settings_experiments": "Experimental",
+  "settings_experimental_jmap": "JMAP accounts",
+  "settings_experimental_jmap_help": "Offers JMAP when you add an account, for servers such as Stalwart, Fastmail and Cyrus. It is experimental and may stop taking new accounts later. Turned off, JMAP accounts already added keep working.",
+  "onboarding_protocol": "Receiving protocol",
+  "onboarding_protocol_jmap": "JMAP (experimental)",
+  "onboarding_jmap_url": "Session URL",
+  "onboarding_jmap_url_help": "Godwit looks for the session at /.well-known/jmap on this host. If your provider gives another address, enter it here.",
+  "onboarding_invalid_jmap_url": "The session URL isn’t a valid https:// address.",
+  "onboarding_check_jmap_failed": "JMAP sign-in failed: {arg1}",
+  "onboarding_check_jmap_ok": "Signed in to JMAP",
+  "onboarding_check_jmap_running": "Signing in to JMAP…",
+  "onboarding_check_jmap_waiting": "JMAP sign-in",
+  "onboarding_check_jmap_proxy": "JMAP connection failed: {arg1}",
+  "onboarding_check_jmap_host": "Session host: {arg1}"
 }

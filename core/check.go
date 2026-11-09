@@ -4,12 +4,17 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"net"
+	"net/url"
+	"strconv"
 	"time"
 	"unicode/utf8"
 
 	"github.com/godwit-email/godwit/backend"
 	"github.com/godwit-email/godwit/backend/conn"
 	"github.com/godwit-email/godwit/backend/imapbackend"
+	"github.com/godwit-email/godwit/backend/jmap"
+	"github.com/godwit-email/godwit/core/auth"
 )
 
 // KindInvalid marks a failed settings step: the input itself is not valid.
@@ -17,7 +22,8 @@ const KindInvalid conn.FailureKind = "invalid"
 
 const checkTimeout = 20 * time.Second
 
-// CheckStep is one item of a connection check. Name is settings, imap or smtp.
+// CheckStep is one item of a connection check. Name is settings, imap (jmap
+// for a JMAP account) or smtp.
 // Detail comes from conn's already redacted errors: no password, token or server text.
 type CheckStep struct {
 	Name    string
@@ -27,10 +33,13 @@ type CheckStep struct {
 	Detail  string
 }
 
-// Folders is how many selectable folders the imap step listed (0 if LIST failed).
+// Folders is how many selectable folders the imap step listed (0 if LIST
+// failed). Host is the host the receiving step signed in to, as host:port:
+// for JMAP the session's, which may be another than the one typed in.
 type CheckReport struct {
 	Steps   []CheckStep
 	Folders int
+	Host    string
 	desc    backend.Description // what the signed-in receiving backend declared; kept off the public report
 }
 
@@ -82,7 +91,7 @@ func (s *Service) CheckAccount(ctx context.Context, in AccountInput) (CheckRepor
 // check returns the report and the first failing step's underlying error.
 // token is a stored OAuth account's access token, used instead of in.Password.
 func (s *Service) check(ctx context.Context, in AccountInput, token string) (CheckReport, error) {
-	r := CheckReport{Steps: []CheckStep{{Name: "settings"}, {Name: "imap"}, {Name: "smtp"}}}
+	r := CheckReport{Steps: []CheckStep{{Name: "settings"}, {Name: in.receiving()}, {Name: "smtp"}}}
 	var first error
 	fail := func(i int, kind conn.FailureKind, err error) {
 		r.Steps[i].Kind, r.Steps[i].Detail, first = kind, capDetail(err.Error()), err
@@ -115,15 +124,14 @@ func (s *Service) check(ctx context.Context, in AccountInput, token string) (Che
 			return KindInvalid, err
 		},
 		func() (conn.FailureKind, error) {
-			recv := imapbackend.New(imapbackend.Config{Host: in.Receiving.Host, Port: in.Receiving.Port, Security: in.Receiving.Security,
-				Credentials: func(context.Context) (backend.Credentials, error) {
-					return backend.Credentials{Username: user, Password: in.Password, Token: token}, nil
-				}})
+			recv := newReceiver(in.Receiving, func(context.Context) (backend.Credentials, error) {
+				return backend.Credentials{Username: user, Password: in.Password, Token: token}, nil
+			})
 			defer recv.Close()
 			ctx, cancel := context.WithTimeout(ctx, checkTimeout)
 			defer cancel()
 			c, err := recv.Check(ctx)
-			r.Folders, r.desc = c.Folders, c.Description
+			r.Folders, r.Host, r.desc = c.Folders, c.Host, c.Description
 			return conn.Classify(err), err
 		},
 		func() (conn.FailureKind, error) {
@@ -156,6 +164,27 @@ func (s *Service) check(ctx context.Context, in AccountInput, token string) (Che
 		}
 	}
 	return r, first
+}
+
+// newReceiver is the receiving backend of srv, signing in with creds.
+func newReceiver(srv Server, creds backend.CredentialsFunc) backend.Receiver {
+	if srv.Protocol == auth.JMAP {
+		return jmap.New(jmap.Config{SessionURL: sessionURL(srv), Credentials: creds})
+	}
+	return imapbackend.New(imapbackend.Config{Host: srv.Host, Port: srv.Port, Security: srv.Security, Credentials: creds})
+}
+
+// sessionURL is a JMAP slot's session resource: Path on the host, or
+// /.well-known/jmap to discover it.
+func sessionURL(srv Server) string {
+	u := url.URL{Scheme: "https", Host: net.JoinHostPort(srv.Host, strconv.Itoa(srv.Port)), Path: srv.Path}
+	if srv.Security == SecurityNone {
+		u.Scheme = "http"
+	}
+	if u.Path == "" {
+		u.Path = "/.well-known/jmap"
+	}
+	return u.String()
 }
 
 func dialStep(ctx context.Context, dial func(context.Context) (interface{ Close() error }, error)) (interface{ Close() error }, error) {

@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"net/mail"
+	"net/url"
 	"strconv"
 	"strings"
 	"time"
@@ -76,6 +77,8 @@ type onboarding struct {
 	imapHost, imapPort   string
 	smtpHost, smtpPort   string
 	imapSec, smtpSec     core.Security
+	proto                int    // the server form's receiving protocol: 0 IMAP, 1 JMAP (Settings.ExperimentalJMAP)
+	jmapURL              string // JMAP's session URL, in place of the IMAP server
 	flowID, authURL      string
 	oauthErr             error
 	report               core.CheckReport
@@ -382,19 +385,69 @@ func (o *onboarding) openURL(url string) {
 	a.do(func(context.Context) error { return plat.OpenURL(url) }, a.toastErr)
 }
 
+// jmap: the account is added over JMAP, its servers form says.
+func (o *onboarding) jmap() bool { return o.proto == 1 && !o.oauth() }
+
+// recvStep is the check's receiving step: imap or jmap.
+func (o *onboarding) recvStep() string {
+	if o.jmap() {
+		return auth.JMAP
+	}
+	return auth.IMAP
+}
+
+// jmapServer is the receiving slot a JMAP session URL gives: https, or http
+// to this computer; /.well-known/jmap is discovery, the slot's empty Path.
+func jmapServer(raw string) (core.Server, bool) {
+	u, err := url.Parse(strings.TrimSpace(raw))
+	if err != nil || u.Hostname() == "" || u.User != nil || u.RawQuery != "" || u.Fragment != "" ||
+		u.Scheme != "https" && !(u.Scheme == "http" && sysproxy.OnThisComputer(u.Hostname())) {
+		return core.Server{}, false
+	}
+	s := core.Server{Protocol: auth.JMAP, Host: u.Hostname(), Port: 443, Security: core.SecurityTLS, Path: u.EscapedPath()}
+	if u.Scheme == "http" {
+		s.Port, s.Security = 80, core.SecurityNone
+	}
+	if p := u.Port(); p != "" {
+		if s.Port, err = strconv.Atoi(p); err != nil {
+			return core.Server{}, false
+		}
+	}
+	if s.Path == "/" || s.Path == "/.well-known/jmap" {
+		s.Path = ""
+	}
+	return s, true
+}
+
+// defaultJMAPURL is where JMAP is discovered: the provider's JMAP server,
+// else the address's domain.
+func (o *onboarding) defaultJMAPURL() string {
+	host := o.prov.Entry(auth.JMAP).Host
+	if host == "" {
+		_, host, _ = strings.Cut(strings.TrimSpace(o.email), "@")
+	}
+	return "https://" + host + "/.well-known/jmap"
+}
+
 func (o *onboarding) input() core.AccountInput {
 	ip, _ := strconv.Atoi(strings.TrimSpace(o.imapPort))
 	sp, _ := strconv.Atoi(strings.TrimSpace(o.smtpPort))
 	in := core.AccountInput{Email: strings.TrimSpace(o.email), Name: strings.TrimSpace(o.name), Username: strings.TrimSpace(o.username),
 		Receiving: core.Server{Host: strings.TrimSpace(o.imapHost), Port: ip, Security: o.imapSec},
 		Sending:   core.Server{Host: strings.TrimSpace(o.smtpHost), Port: sp, Security: o.smtpSec}, Provider: o.prov.ID, ReceiveOnly: o.receiveOnly}
+	if o.jmap() {
+		in.Receiving, _ = jmapServer(o.jmapURL)
+	}
 	if o.oauth() {
 		in.OAuthFlowID = o.flowID
 	} else {
 		in.Password = o.secret
 	}
 	if testSecurity != "" {
-		in.Receiving.Security, in.Sending.Security = testSecurity, testSecurity
+		in.Sending.Security = testSecurity
+		if !o.jmap() { // a JMAP URL says its own
+			in.Receiving.Security = testSecurity
+		}
 	}
 	return in
 }
@@ -411,7 +464,7 @@ func (o *onboarding) connect() {
 	o.checking, o.report, o.receiveOnly = true, core.CheckReport{}, false
 	if o.invalid, o.invalidNext = o.validate(); o.invalid != "" {
 		o.checking = false
-		o.report.Steps = []core.CheckStep{{Name: "settings", Kind: core.KindInvalid}, {Name: "imap", Skipped: true}, {Name: "smtp", Skipped: true}}
+		o.report.Steps = []core.CheckStep{{Name: "settings", Kind: core.KindInvalid}, {Name: o.recvStep(), Skipped: true}, {Name: "smtp", Skipped: true}}
 		return
 	}
 	gen, svc, in := o.gen, o.a.svc, o.input()
@@ -453,7 +506,14 @@ func (o *onboarding) validate() (reason, next string) {
 	if o.oauth() {
 		return "", ""
 	}
-	for _, sv := range []struct{ proto, host, port string }{{"IMAP", o.imapHost, o.imapPort}, {"SMTP", o.smtpHost, o.smtpPort}} {
+	servers := []struct{ proto, host, port string }{{"IMAP", o.imapHost, o.imapPort}, {"SMTP", o.smtpHost, o.smtpPort}}
+	if o.jmap() {
+		if _, ok := jmapServer(o.jmapURL); !ok {
+			return i18n.T("onboarding.invalid.jmap_url"), i18n.T("onboarding.next.host")
+		}
+		servers = servers[1:]
+	}
+	for _, sv := range servers {
 		if strings.TrimSpace(sv.host) == "" {
 			return i18n.Tf("onboarding.invalid.host", sv.proto), i18n.T("onboarding.next.host")
 		}
@@ -925,7 +985,21 @@ func (o *onboarding) serversForm(c *ui.Context) {
 		})
 	}
 	ui.Column(c).Gap(th.Space(3)).Children(func() {
-		server("imap", &o.imapHost, &o.imapPort, &o.imapSec)
+		if o.a.settings.ExperimentalJMAP || o.proto == 1 {
+			ui.Field(c, i18n.T("onboarding.protocol"), func() {
+				proto := o.proto
+				kit.TabsFill(c, &o.proto, "IMAP", i18n.T("onboarding.protocol.jmap"))
+				if o.proto != proto && o.proto == 1 && o.jmapURL == "" {
+					o.jmapURL = o.defaultJMAPURL()
+				}
+			}).FontSize(t.Text.Sm).TextColor(t.Muted)
+		}
+		if o.jmap() {
+			ui.Field(c, i18n.T("onboarding.jmap.url"), func() { kit.Input(c, &o.jmapURL, kit.InputOpts{Placeholder: "https://example.com/.well-known/jmap"}) }).
+				Description(i18n.T("onboarding.jmap.url.help")).FontSize(t.Text.Sm).TextColor(t.Muted)
+		} else {
+			server("imap", &o.imapHost, &o.imapPort, &o.imapSec)
+		}
 		server("smtp", &o.smtpHost, &o.smtpPort, &o.smtpSec)
 		ui.Field(c, i18n.T("onboarding.username"), func() {
 			kit.Input(c, &o.username, kit.InputOpts{Placeholder: i18n.T("onboarding.username.placeholder")})
@@ -974,10 +1048,21 @@ func (o *onboarding) checkRow(st core.CheckStep) (text, detail string, status in
 			if o.manual || o.prov.ID == "other" {
 				src = "manual"
 			}
-			detail = i18n.Tf("onboarding.check.settings."+src, o.imapHost, o.smtpHost)
+			host := o.imapHost
+			if o.jmap() {
+				s, _ := jmapServer(o.jmapURL)
+				host = s.Host
+			}
+			detail = i18n.Tf("onboarding.check.settings."+src, host, o.smtpHost)
 		}
-		if st.Name == "imap" {
+		if st.Name == auth.IMAP {
 			detail = o.foldersText()
+		}
+		if st.Name == auth.JMAP { // where the credentials went, which discovery may have moved
+			detail = i18n.Tf("onboarding.check.jmap.host", o.report.Host)
+			if f := o.foldersText(); f != "" {
+				detail += " · " + f
+			}
 		}
 		return i18n.T(k + ".ok"), detail, 1
 	case st.Skipped:
@@ -1053,7 +1138,7 @@ func (o *onboarding) checkView(c *ui.Context) {
 	t, th := theme.Of(c), c.Theme()
 	steps := o.report.Steps
 	if o.checking || len(steps) == 0 {
-		steps = []core.CheckStep{{Name: "settings"}, {Name: "imap"}, {Name: "smtp"}}
+		steps = []core.CheckStep{{Name: "settings"}, {Name: o.recvStep()}, {Name: "smtp"}}
 	}
 	failed := !o.checking && !o.report.OK()
 	title := i18n.T("onboarding.check.connecting")

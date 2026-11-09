@@ -44,6 +44,9 @@ type Settings struct {
 	// answers keep their probabilities.
 	JudgeThreshold float64
 	LocalAPI       bool // the GUI serves the Local API; off by default
+	// ExperimentalJMAP (实验性 JMAP) offers JMAP when adding an account; off
+	// by default. Off, JMAP accounts already added keep working.
+	ExperimentalJMAP bool
 	// MCPSend is what godwit mcp's send_draft does (通过 MCP 发送):
 	// MCPSendOff, MCPSendConfirm (the default; "" too) or MCPSendDirect.
 	MCPSend string

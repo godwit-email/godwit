@@ -305,6 +305,8 @@ func (p *settingsPage) generalView(c *ui.Context) {
 			})
 		})
 	p.proxySection(c)
+	settingsSection(c, i18n.T("settings.experiments"), "",
+		sw(&st.ExperimentalJMAP, i18n.T("settings.experimental_jmap"), i18n.T("settings.experimental_jmap.help")))
 }
 
 // proxyDraft is 网络代理 as shown: the custom address saves once it is

@@ -22,7 +22,6 @@ import (
 
 	"github.com/godwit-email/godwit/backend"
 	"github.com/godwit-email/godwit/backend/conn"
-	"github.com/godwit-email/godwit/backend/imapbackend"
 	"github.com/godwit-email/godwit/core/ai"
 	"github.com/godwit-email/godwit/core/ai/mask"
 	"github.com/godwit-email/godwit/core/ai/mask/guard"
@@ -662,7 +661,7 @@ var (
 // session. A refused access token is refreshed and tried once more; a refused
 // login also marks the account reauth_required. release closes the session
 // and must be called; cancelling ctx aborts blocked reads.
-func (s *Service) dialAccount(ctx context.Context, accountID int64) (recv *imapbackend.Receiver, release func(), err error) {
+func (s *Service) dialAccount(ctx context.Context, accountID int64) (recv backend.Receiver, release func(), err error) {
 	acc, err := s.account(ctx, accountID)
 	if err != nil {
 		return nil, nil, err
@@ -675,12 +674,11 @@ func (s *Service) dialAccount(ctx context.Context, accountID int64) (recv *imapb
 	}
 	var ver uint64
 	var rejected, tok string
-	recv = imapbackend.New(imapbackend.Config{Host: acc.Receiving.Host, Port: acc.Receiving.Port, Security: acc.Receiving.Security,
-		Credentials: func(ctx context.Context) (backend.Credentials, error) {
-			pw, t, v, err := s.credentials(ctx, acc, rejected)
-			tok, ver = t, v
-			return backend.Credentials{Username: acc.Username, Password: pw, Token: t}, err
-		}})
+	recv = newReceiver(acc.Receiving, func(ctx context.Context) (backend.Credentials, error) {
+		pw, t, v, err := s.credentials(ctx, acc, rejected)
+		tok, ver = t, v
+		return backend.Credentials{Username: acc.Username, Password: pw, Token: t}, err
+	})
 	d, err := recv.Describe(ctx) // signs in
 	// A refused access token may just be stale: refresh it and try once more.
 	if errors.Is(err, backend.ErrAuthFailed) && tok != "" {
@@ -725,7 +723,9 @@ func (s *Service) syncAccount(ctx context.Context, accountID int64, explicit boo
 		return err
 	}
 	defer release()
-	defer func() { recv.LogTrace(err) }() // a response go-imap could not parse goes in the error report
+	if t, ok := recv.(interface{ LogTrace(error) }); ok {
+		defer func() { t.LogTrace(err) }() // a response go-imap could not parse goes in the error report
+	}
 	// Purge and archive undo deadlines wake the worker again.
 	defer s.wakeForOps(ctx, accountID, s.clk().Now())
 	// Queued first, so this round's push expunges and its fetch drops the rows.

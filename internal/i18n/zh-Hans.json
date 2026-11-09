@@ -2089,5 +2089,20 @@
   "feature_reason_imap_no_idle": "服务器不能推送新邮件（不支持 IDLE），Godwit 每隔几分钟检查一次。",
   "feature_reason_jmap_no_copy": "JMAP 不能在账户内复制邮件，只能把它加到另一个邮箱。",
   "feature_reason_jmap_folders_pending": "暂不支持通过 JMAP 管理文件夹。",
-  "feature_reason_jmap_sent_via_smtp": "邮件通过 SMTP 发送，服务器上不会保存副本。"
+  "feature_reason_jmap_sent_via_smtp": "邮件通过 SMTP 发送，已发送的副本由 Godwit 自己保存。",
+  "feature_reason_jmap_no_all_mail": "JMAP 没有「所有邮件」：归档会把邮件移到归档邮箱。",
+  "settings_experiments": "实验功能",
+  "settings_experimental_jmap": "JMAP 账户",
+  "settings_experimental_jmap_help": "添加账户时可以选择 JMAP，适用于 Stalwart、Fastmail、Cyrus 等服务器。这是实验性功能，以后可能不再支持添加新账户。关闭后，已添加的 JMAP 账户继续工作。",
+  "onboarding_protocol": "收信协议",
+  "onboarding_protocol_jmap": "JMAP（实验性）",
+  "onboarding_jmap_url": "会话 URL",
+  "onboarding_jmap_url_help": "Godwit 会在这个主机的 /.well-known/jmap 查找会话。如果服务商给了别的地址，请填在这里。",
+  "onboarding_invalid_jmap_url": "会话 URL 不是有效的 https:// 地址。",
+  "onboarding_check_jmap_failed": "JMAP 登录失败：{arg1}",
+  "onboarding_check_jmap_ok": "JMAP 登录成功",
+  "onboarding_check_jmap_running": "JMAP 登录中…",
+  "onboarding_check_jmap_waiting": "JMAP 登录",
+  "onboarding_check_jmap_proxy": "JMAP 连接失败：{arg1}",
+  "onboarding_check_jmap_host": "会话主机：{arg1}"
 }

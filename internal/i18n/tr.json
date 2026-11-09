@@ -2089,5 +2089,20 @@
   "feature_reason_imap_no_idle": "Sunucu yeni e-postaları anında bildiremiyor (IDLE yok); Godwit birkaç dakikada bir kontrol eder.",
   "feature_reason_jmap_no_copy": "JMAP bir hesap içinde e-posta kopyalayamaz, yalnızca başka bir posta kutusuna ekleyebilir.",
   "feature_reason_jmap_folders_pending": "JMAP ile klasör yönetimi henüz kullanılamıyor.",
-  "feature_reason_jmap_sent_via_smtp": "E-postalar SMTP ile gönderilir; SMTP sunucuda kopya saklamaz."
+  "feature_reason_jmap_sent_via_smtp": "Postalar SMTP ile gönderilir; gönderilen kopyayı Godwit kendisi kaydeder.",
+  "feature_reason_jmap_no_all_mail": "JMAP'te Tüm Postalar yoktur: arşivlemek postayı Arşiv posta kutusuna taşır.",
+  "settings_experiments": "Deneysel",
+  "settings_experimental_jmap": "JMAP hesapları",
+  "settings_experimental_jmap_help": "Hesap eklerken Stalwart, Fastmail ve Cyrus gibi sunucular için JMAP seçeneği sunar. Deneyseldir ve ileride yeni hesap eklemeyi durdurabilir. Kapatıldığında eklenmiş JMAP hesapları çalışmaya devam eder.",
+  "onboarding_protocol": "Alma protokolü",
+  "onboarding_protocol_jmap": "JMAP (deneysel)",
+  "onboarding_jmap_url": "Oturum URL'si",
+  "onboarding_jmap_url_help": "Godwit oturumu bu sunucudaki /.well-known/jmap adresinde arar. Sağlayıcınız başka bir adres veriyorsa buraya girin.",
+  "onboarding_invalid_jmap_url": "Oturum URL'si geçerli bir https:// adresi değil.",
+  "onboarding_check_jmap_failed": "JMAP oturumu açılamadı: {arg1}",
+  "onboarding_check_jmap_ok": "JMAP oturumu açıldı",
+  "onboarding_check_jmap_running": "JMAP oturumu açılıyor…",
+  "onboarding_check_jmap_waiting": "JMAP oturumu",
+  "onboarding_check_jmap_proxy": "JMAP bağlantısı kurulamadı: {arg1}",
+  "onboarding_check_jmap_host": "Oturum sunucusu: {arg1}"
 }

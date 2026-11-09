@@ -2089,5 +2089,20 @@
   "feature_reason_imap_no_idle": "Il server non può notificare la nuova posta (niente IDLE); Godwit controlla ogni pochi minuti.",
   "feature_reason_jmap_no_copy": "JMAP non può copiare email all'interno di un account, solo aggiungerle a un'altra casella.",
   "feature_reason_jmap_folders_pending": "La gestione delle cartelle tramite JMAP non è ancora disponibile.",
-  "feature_reason_jmap_sent_via_smtp": "La posta viene inviata tramite SMTP, che non ne salva una copia sul server."
+  "feature_reason_jmap_sent_via_smtp": "La posta viene inviata via SMTP; Godwit salva da sé la copia inviata.",
+  "feature_reason_jmap_no_all_mail": "JMAP non ha «Tutti i messaggi»: archiviare sposta la posta nella casella Archivio.",
+  "settings_experiments": "Sperimentale",
+  "settings_experimental_jmap": "Account JMAP",
+  "settings_experimental_jmap_help": "Propone JMAP quando aggiungi un account, per server come Stalwart, Fastmail e Cyrus. È sperimentale e in futuro potrebbe non accettare più nuovi account. Se lo disattivi, gli account JMAP già aggiunti continuano a funzionare.",
+  "onboarding_protocol": "Protocollo di ricezione",
+  "onboarding_protocol_jmap": "JMAP (sperimentale)",
+  "onboarding_jmap_url": "URL di sessione",
+  "onboarding_jmap_url_help": "Godwit cerca la sessione in /.well-known/jmap su questo host. Se il tuo provider indica un altro indirizzo, inseriscilo qui.",
+  "onboarding_invalid_jmap_url": "L’URL di sessione non è un indirizzo https:// valido.",
+  "onboarding_check_jmap_failed": "Accesso JMAP non riuscito: {arg1}",
+  "onboarding_check_jmap_ok": "Accesso a JMAP eseguito",
+  "onboarding_check_jmap_running": "Accesso a JMAP in corso…",
+  "onboarding_check_jmap_waiting": "Accesso JMAP",
+  "onboarding_check_jmap_proxy": "Connessione JMAP non riuscita: {arg1}",
+  "onboarding_check_jmap_host": "Host di sessione: {arg1}"
 }

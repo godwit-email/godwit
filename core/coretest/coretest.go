@@ -17,6 +17,7 @@ import (
 	"net"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -41,6 +42,7 @@ import (
 
 type (
 	IMAP    = testmail.IMAP
+	JMAP    = testmail.JMAP
 	SMTP    = testmail.Inbox
 	Turn    = testllm.Turn
 	Call    = testllm.Call
@@ -73,6 +75,7 @@ type Env struct {
 
 type mailServers struct {
 	imap      *IMAP
+	jmap      *JMAP // a JMAP account's, instead of imap
 	smtp      *SMTP
 	smtpAddr  string
 	delivered bool // Deliver synced the account before its first append
@@ -218,30 +221,87 @@ func splitHostPort(t *testing.T, addr string) (string, int) {
 	return h, n
 }
 
+// AccountOption changes how AddAccount adds an account.
+type AccountOption func(*accountConfig)
+
+type accountConfig struct{ jmap bool }
+
+// ViaJMAP adds the account over JMAP, on a fake JMAP server (Env.JMAP), with
+// the JMAP experiment turned on. It sends through its own SMTP server,
+// which saves no sent copy.
+func ViaJMAP() AccountOption { return func(c *accountConfig) { c.jmap = true } }
+
 // AddAccount adds email with its own fake IMAP and SMTP servers (the SMTP one
 // files sent mail into the IMAP Sent folder). The first account is the default.
-func (e *Env) AddAccount(t *testing.T, email string) core.Account {
+func (e *Env) AddAccount(t *testing.T, email string, opts ...AccountOption) core.Account {
 	t.Helper()
-	im := testmail.StartIMAP(t, e.imap...)
-	addr, in := testmail.StartSMTP(t, testmail.SaveToSent(im))
-	ih, ip := splitHostPort(t, im.Addr)
-	sh, sp := splitHostPort(t, addr)
+	var cfg accountConfig
+	for _, o := range opts {
+		o(&cfg)
+	}
 	e.mu.Lock()
 	first := len(e.servers) == 0
 	e.mu.Unlock()
-	name, _, _ := strings.Cut(email, "@")
-	acc, err := e.Svc.AddAccount(context.Background(), core.AccountInput{
-		Email: email, Name: name, Username: "alice", Password: "secret", IsDefault: first,
-		Receiving: core.Server{Host: ih, Port: ip, Security: core.SecurityNone},
-		Sending:   core.Server{Host: sh, Port: sp, Security: core.SecurityNone},
-	})
+	var in core.AccountInput
+	var servers *mailServers
+	if cfg.jmap {
+		in, servers = e.startJMAP(t, email)
+		st, err := e.Svc.GetSettings(context.Background())
+		if err == nil && !st.ExperimentalJMAP {
+			st.ExperimentalJMAP = true
+			_, err = e.Svc.SetSettings(context.Background(), st)
+		}
+		if err != nil {
+			t.Fatal(err)
+		}
+	} else {
+		im := testmail.StartIMAP(t, e.imap...)
+		addr, inbox := testmail.StartSMTP(t, testmail.SaveToSent(im))
+		ih, ip := splitHostPort(t, im.Addr)
+		sh, sp := splitHostPort(t, addr)
+		in = core.AccountInput{Email: email, Username: "alice", Password: "secret",
+			Receiving: core.Server{Host: ih, Port: ip, Security: core.SecurityNone},
+			Sending:   core.Server{Host: sh, Port: sp, Security: core.SecurityNone}}
+		servers = &mailServers{imap: im, smtp: inbox, smtpAddr: addr}
+	}
+	in.Name, _, _ = strings.Cut(email, "@")
+	in.IsDefault = first
+	acc, err := e.Svc.AddAccount(context.Background(), in)
 	if err != nil {
 		t.Fatal(err)
 	}
 	e.mu.Lock()
-	e.servers[acc.ID] = &mailServers{imap: im, smtp: in, smtpAddr: addr}
+	e.servers[acc.ID] = servers
 	e.mu.Unlock()
 	return acc
+}
+
+// StartJMAPServers starts a fake JMAP server and an SMTP server for email,
+// not added yet, and returns the account's input: the session is found
+// through /.well-known/jmap on the JMAP server's host. Once the account is
+// added, Deliver, JMAP, SMTP and Sent work for it as for AddAccount's.
+func (e *Env) StartJMAPServers(t *testing.T, email string) core.AccountInput {
+	t.Helper()
+	in, servers := e.startJMAP(t, email)
+	e.mu.Lock()
+	e.started[net.JoinHostPort(in.Receiving.Host, strconv.Itoa(in.Receiving.Port))] = servers
+	e.mu.Unlock()
+	return in
+}
+
+func (e *Env) startJMAP(t *testing.T, email string) (core.AccountInput, *mailServers) {
+	t.Helper()
+	jm := testmail.StartJMAP(t)
+	addr, inbox := testmail.StartSMTP(t)
+	u, err := url.Parse(jm.URL())
+	if err != nil {
+		t.Fatal(err)
+	}
+	jh, jp := splitHostPort(t, u.Host)
+	sh, sp := splitHostPort(t, addr)
+	return core.AccountInput{Email: email, Username: "alice", Password: "secret",
+		Receiving: core.Server{Protocol: "jmap", Host: jh, Port: jp, Security: core.SecurityNone},
+		Sending:   core.Server{Host: sh, Port: sp, Security: core.SecurityNone}}, &mailServers{jmap: jm, smtp: inbox, smtpAddr: addr}
 }
 
 // StartServers starts fake IMAP and SMTP servers for an account not added
@@ -285,6 +345,9 @@ func (e *Env) mail(accountID int64) *mailServers {
 // IMAP is the account's fake IMAP server, for fault injection.
 func (e *Env) IMAP(accountID int64) *IMAP { return e.mail(accountID).imap }
 
+// JMAP is a ViaJMAP account's fake JMAP server.
+func (e *Env) JMAP(accountID int64) *JMAP { return e.mail(accountID).jmap }
+
 // SMTP is the account's fake SMTP server, for fault injection.
 func (e *Env) SMTP(accountID int64) *SMTP { return e.mail(accountID).smtp }
 
@@ -298,8 +361,9 @@ func (e *Env) Endpoints(accountID int64) (imapHost string, imapPort int, smtpHos
 	return h, imapPort, sh, smtpPort
 }
 
-// Deliver appends raw to the account's folder on its IMAP server and syncs:
-// raw is new mail. (Append to IMAP().User for mail already there.)
+// Deliver appends raw to the account's folder on its IMAP or JMAP server
+// and syncs: raw is new mail. (Append to IMAP().User or deliver on JMAP()
+// for mail already there.)
 func (e *Env) Deliver(t *testing.T, accountID int64, folder string, raw []byte) {
 	t.Helper()
 	m := e.mail(accountID)
@@ -314,7 +378,9 @@ func (e *Env) Deliver(t *testing.T, accountID int64, folder string, raw []byte) 
 			t.Fatal(err)
 		}
 	}
-	if _, err := e.IMAP(accountID).User.Append(folder, bytes.NewReader(raw), &imap.AppendOptions{}); err != nil {
+	if m.jmap != nil {
+		m.jmap.Deliver(folder, raw)
+	} else if _, err := m.imap.User.Append(folder, bytes.NewReader(raw), &imap.AppendOptions{}); err != nil {
 		t.Fatal(err)
 	}
 	if err := e.Svc.SyncNow(context.Background(), accountID); err != nil {
