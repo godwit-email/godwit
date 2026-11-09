@@ -2088,7 +2088,6 @@
   "feature_reason_imap_client_saves_sent": "Gönderilen e-postaların kopyasını Godwit kendisi kaydeder.",
   "feature_reason_imap_no_idle": "Sunucu yeni e-postaları anında bildiremiyor (IDLE yok); Godwit birkaç dakikada bir kontrol eder.",
   "feature_reason_jmap_no_copy": "JMAP bir hesap içinde e-posta kopyalayamaz, yalnızca başka bir posta kutusuna ekleyebilir.",
-  "feature_reason_jmap_append_pending": "JMAP ile sunucuya e-posta ekleme henüz kullanılamıyor.",
   "feature_reason_jmap_folders_pending": "JMAP ile klasör yönetimi henüz kullanılamıyor.",
   "feature_reason_jmap_sent_via_smtp": "E-postalar SMTP ile gönderilir; SMTP sunucuda kopya saklamaz."
 }

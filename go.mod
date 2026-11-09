@@ -63,4 +63,4 @@ tool github.com/egoist/mygo/cmd/mygo
 
 replace github.com/emersion/go-imap/v2 => github.com/godwit-email/go-imap/v2 v2.0.0-beta.8.godwit.6
 
-replace git.sr.ht/~rockorager/go-jmap => github.com/godwit-email/go-jmap v0.5.4-godwit.1
+replace git.sr.ht/~rockorager/go-jmap => github.com/godwit-email/go-jmap v0.5.4-godwit.2

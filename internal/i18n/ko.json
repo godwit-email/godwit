@@ -2088,7 +2088,6 @@
   "feature_reason_imap_client_saves_sent": "보낸 메일의 사본은 Godwit이 직접 저장합니다.",
   "feature_reason_imap_no_idle": "서버가 새 메일을 푸시할 수 없습니다(IDLE 미지원). Godwit이 몇 분마다 확인합니다.",
   "feature_reason_jmap_no_copy": "JMAP에서는 계정 안에서 메일을 복사할 수 없고, 다른 메일함에 추가만 할 수 있습니다.",
-  "feature_reason_jmap_append_pending": "JMAP으로 서버에 메일을 추가하는 기능은 아직 없습니다.",
   "feature_reason_jmap_folders_pending": "JMAP으로 폴더를 관리하는 기능은 아직 없습니다.",
   "feature_reason_jmap_sent_via_smtp": "메일은 SMTP로 보내지며 서버에 사본이 저장되지 않습니다."
 }

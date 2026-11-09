@@ -82,7 +82,7 @@ func (c *client) do(req *http.Request) (*http.Response, error) {
 	if err != nil {
 		return nil, err
 	}
-	if resp.StatusCode == http.StatusOK {
+	if resp.StatusCode == http.StatusOK || resp.StatusCode == http.StatusCreated { // an upload's is 201
 		return resp, nil
 	}
 	resp.Body.Close()
@@ -205,4 +205,28 @@ func (c *client) download(ctx context.Context, blobID gojmap.ID) (io.ReadCloser,
 		return nil, err
 	}
 	return resp.Body, nil
+}
+
+// upload stores raw as a blob and returns its id (RFC 8620 6.1).
+func (c *client) upload(ctx context.Context, raw []byte) (gojmap.ID, error) {
+	s, acct, err := c.sess(ctx)
+	if err != nil {
+		return "", err
+	}
+	u := strings.ReplaceAll(s.UploadURL, "{accountId}", url.PathEscape(string(acct)))
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, u, bytes.NewReader(raw))
+	if err != nil {
+		return "", err
+	}
+	req.Header.Set("Content-Type", "message/rfc822")
+	resp, err := c.do(req)
+	if err != nil {
+		return "", err
+	}
+	defer resp.Body.Close()
+	var up gojmap.UploadResponse
+	if err := json.NewDecoder(resp.Body).Decode(&up); err != nil {
+		return "", fmt.Errorf("jmap: upload: %w", err)
+	}
+	return up.ID, nil
 }

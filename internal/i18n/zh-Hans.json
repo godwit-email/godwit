@@ -2088,7 +2088,6 @@
   "feature_reason_imap_client_saves_sent": "已发送邮件的副本由 Godwit 自己保存。",
   "feature_reason_imap_no_idle": "服务器不能推送新邮件（不支持 IDLE），Godwit 每隔几分钟检查一次。",
   "feature_reason_jmap_no_copy": "JMAP 不能在账户内复制邮件，只能把它加到另一个邮箱。",
-  "feature_reason_jmap_append_pending": "暂不支持通过 JMAP 往服务器添加邮件。",
   "feature_reason_jmap_folders_pending": "暂不支持通过 JMAP 管理文件夹。",
   "feature_reason_jmap_sent_via_smtp": "邮件通过 SMTP 发送，服务器上不会保存副本。"
 }

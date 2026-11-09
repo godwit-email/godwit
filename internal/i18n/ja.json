@@ -2088,7 +2088,6 @@
   "feature_reason_imap_client_saves_sent": "送信済みメールのコピーは Godwit が保存します。",
   "feature_reason_imap_no_idle": "サーバーは新着メールをプッシュできません（IDLE 非対応）。Godwit が数分ごとに確認します。",
   "feature_reason_jmap_no_copy": "JMAP ではアカウント内でメールをコピーできません。別のメールボックスに追加するだけです。",
-  "feature_reason_jmap_append_pending": "JMAP でサーバーにメールを追加する機能はまだありません。",
   "feature_reason_jmap_folders_pending": "JMAP でのフォルダ管理はまだ使えません。",
   "feature_reason_jmap_sent_via_smtp": "メールは SMTP で送信され、サーバーにコピーは保存されません。"
 }

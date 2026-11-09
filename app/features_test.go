@@ -48,7 +48,7 @@ func TestFeatureReasonsHaveText(t *testing.T) {
 		return err
 	})
 	require.NoError(t, err)
-	assert.Subset(t, found, []string{"imap.no_uidplus", "imap.no_move", "jmap.no_copy", "jmap.folders_pending", "jmap.sent_via_smtp", "jmap.append_pending"})
+	assert.Subset(t, found, []string{"imap.no_uidplus", "imap.no_move", "jmap.no_copy", "jmap.folders_pending", "jmap.sent_via_smtp"})
 	keys := i18n.Keys()
 	for _, r := range found {
 		assert.True(t, slices.Contains(keys, "feature_reason_"+strings.ReplaceAll(r, ".", "_")), "no text for reason %s", r)
