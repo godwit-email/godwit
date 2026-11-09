@@ -85,7 +85,8 @@ export function ComposePage() {
       g.frozen = on;
       setFrozen(on);
     };
-    return events.closing.on(async (gen) => {
+    let thawTimer: ReturnType<typeof setTimeout> | undefined;
+    const off = events.closing.on(async (gen) => {
       const n = ++g.closings;
       const sv = saver.current; // cleanup may clear the ref while the flush runs
       let focused: HTMLElement | null | undefined;
@@ -111,9 +112,13 @@ export function ComposePage() {
         freeze(false);
         focused?.focus(); // back where the blur took it
       };
-      if (saved) setTimeout(thaw, 2000);
+      if (saved) thawTimer = setTimeout(thaw, 2000);
       else thaw();
     });
+    return () => {
+      off();
+      clearTimeout(thawTimer); // a thaw after unmount would set state on a torn-down page
+    };
   }, []);
 
   useEffect(() => {
