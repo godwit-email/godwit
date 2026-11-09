@@ -338,6 +338,14 @@ func (s *Service) processOutbox(ctx context.Context, c *imapclient.Client, accou
 				ep, from, epVer = &e, f, v
 			}
 			ok, err := s.sendItem(ctx, wctx, *ep, from, o)
+			if s.toGraph(ctx, accountID, err) {
+				e, _, v, gerr := s.smtpEndpoint(ctx, accountID, "")
+				if gerr != nil {
+					return gerr
+				}
+				ep, epVer = &e, v
+				ok, err = s.sendItem(ctx, wctx, *ep, from, o)
+			}
 			if errors.Is(err, conn.ErrAuthFailed) && ep.AccessToken != "" && !refreshed {
 				// The access token may just be stale: refresh it once per round.
 				refreshed = true
@@ -403,10 +411,16 @@ func (s *Service) wakeForOutbox(ctx context.Context, accountID, start int64) {
 
 // smtpEndpoint returns the account's SMTP server with its credentials, its
 // address and the credential version. rejected: an access token SMTP refused, or "".
+// An account whose SMTP AUTH is disabled gets a send.GraphHost endpoint with a
+// new Graph token instead.
 func (s *Service) smtpEndpoint(ctx context.Context, accountID int64, rejected string) (conn.Endpoint, string, uint64, error) {
 	acc, err := s.account(ctx, accountID)
 	if err != nil {
 		return conn.Endpoint{}, "", 0, err
+	}
+	if _, ok := s.graphSend.Load(accountID); ok {
+		tok, ver, err := s.graphToken(ctx, acc)
+		return conn.Endpoint{Host: send.GraphHost, AccessToken: tok}, acc.Email, ver, err
 	}
 	pw, tok, ver, err := s.credentials(ctx, acc, rejected)
 	if err != nil {
@@ -414,6 +428,23 @@ func (s *Service) smtpEndpoint(ctx context.Context, accountID int64, rejected st
 	}
 	return conn.Endpoint{Host: acc.SMTPHost, Port: acc.SMTPPort, Security: acc.SMTPSecurity, Username: acc.Username,
 		Password: pw, AccessToken: tok}, acc.Email, ver, nil
+}
+
+// toGraph reports whether err is SMTP refusing AUTH for the whole mailbox and
+// the account can send through Graph instead; from then on it does.
+func (s *Service) toGraph(ctx context.Context, accountID int64, err error) bool {
+	if !errors.Is(err, conn.ErrSMTPAuthDisabled) {
+		return false
+	}
+	acc, aerr := s.account(ctx, accountID)
+	if aerr != nil || acc.AuthType != "oauth" {
+		return false
+	}
+	if cfg, cerr := oauthConfig(acc.Provider); cerr != nil || cfg.GraphSend == "" {
+		return false
+	}
+	s.graphSend.Store(accountID, true)
+	return true
 }
 
 // sendItem submits a queued item and reports whether it is now sent. A refused
@@ -432,7 +463,11 @@ func (s *Service) sendItem(ctx, wctx context.Context, ep conn.Endpoint, from str
 		_, err = s.setOutbox(wctx, o, "failed", err.Error())
 		return false, err
 	}
-	err = send.Send(ctx, ep, from, o.rcpts, raw)
+	if ep.Host == send.GraphHost {
+		err = send.SendGraph(ctx, ep.AccessToken, o.rcpts, raw)
+	} else {
+		err = send.Send(ctx, ep, from, o.rcpts, raw)
+	}
 	var rej *send.RejectedError
 	switch {
 	case err == nil:

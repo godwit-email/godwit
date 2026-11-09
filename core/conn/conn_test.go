@@ -113,6 +113,23 @@ func TestAuthErrorsDoNotLeakServerText(t *testing.T) {
 	_, err = conn.DialSMTP(context.Background(), smtpEcho)
 	require.ErrorIs(t, err, conn.ErrAuthFailed)
 	assert.NotContains(t, err.Error(), "hunter2")
+	assert.NotErrorIs(t, err, conn.ErrSMTPAuthDisabled)
+}
+
+// Microsoft's 535 5.7.139: SMTP AUTH is off for the mailbox, still an auth failure.
+func TestSMTPAuthDisabled(t *testing.T) {
+	e := fake(t, func(c net.Conn) {
+		c.Write([]byte("220 hi\r\n"))
+		r := bufio.NewReader(c)
+		r.ReadString('\n')
+		c.Write([]byte("250-hi\r\n250 AUTH PLAIN\r\n"))
+		r.ReadString('\n')
+		c.Write([]byte("535 5.7.139 Authentication unsuccessful, SmtpClientAuthentication is disabled for the Mailbox.\r\n"))
+	})
+	_, err := conn.DialSMTP(context.Background(), e)
+	require.ErrorIs(t, err, conn.ErrSMTPAuthDisabled)
+	require.ErrorIs(t, err, conn.ErrAuthFailed)
+	assert.Equal(t, conn.FailureAuth, conn.Classify(err))
 }
 
 func TestMalformedAuthResponsesDoNotLeakPassword(t *testing.T) {

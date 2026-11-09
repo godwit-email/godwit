@@ -37,6 +37,10 @@ const timeout = 30 * time.Second
 // included, because servers may echo the submitted password.
 var ErrAuthFailed = errors.New("authentication failed")
 
+// ErrSMTPAuthDisabled is an ErrAuthFailed whose server said SMTP AUTH is turned
+// off for the mailbox (Microsoft's 535 5.7.139), not that the credentials are wrong.
+var ErrSMTPAuthDisabled = errors.New("SMTP AUTH is disabled for the mailbox")
+
 // ClientVersion is sent in the IMAP ID command; release builds set it.
 var ClientVersion = "dev"
 
@@ -118,6 +122,9 @@ func loginErr(ctx context.Context, proto string, err error) error {
 		return fmt.Errorf("%s login: %w", proto, ctx.Err())
 	case errors.As(err, &ne), errors.Is(err, io.EOF), errors.Is(err, io.ErrUnexpectedEOF), errors.Is(err, net.ErrClosed):
 		return fmt.Errorf("%s login: %w", proto, err)
+	}
+	if se, ok := errors.AsType[*smtp.SMTPError](err); ok && se.EnhancedCode == (smtp.EnhancedCode{5, 7, 139}) {
+		return fmt.Errorf("%s: %w: %w", proto, ErrSMTPAuthDisabled, ErrAuthFailed)
 	}
 	return fmt.Errorf("%s: %w", proto, ErrAuthFailed)
 }

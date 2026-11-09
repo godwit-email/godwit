@@ -7,11 +7,14 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"slices"
+	"strings"
 	"sync"
 	"time"
 
 	"github.com/godwit-email/godwit/core/ai"
 	"github.com/godwit-email/godwit/core/auth"
+	"github.com/godwit-email/godwit/core/conn"
 	"github.com/zalando/go-keyring"
 )
 
@@ -239,27 +242,9 @@ func (s *Service) accessToken(ctx context.Context, acc Account, rejected string)
 	ver := s.credVer[acc.ID] // for the statuses below; refreshes are serialised by sem
 	s.credMu.Unlock()
 
-	rt, err := s.secret(ctx, acc, ver)
+	rt, cfg, err := s.refreshCredentials(ctx, acc, ver)
 	if err != nil {
 		return "", 0, err
-	}
-	cfg, err := oauthConfig(acc.Provider)
-	if err != nil {
-		return "", 0, err
-	}
-	if acc.OAuthClientID != "" {
-		c, err := s.resolveClient(ctx, OAuthClient{Account: acc.ID})
-		switch {
-		case errors.Is(err, keyring.ErrNotFound):
-			return "", 0, errors.Join(err, s.ifCurrent(acc.ID, ver, func() error {
-				return s.setStatus(ctx, acc.ID, "reauth_required", "credentials_missing")
-			}))
-		case err != nil:
-			return "", 0, errors.Join(err, s.setStatus(ctx, acc.ID, "error", "keychain_unavailable"))
-		}
-		if c.ID != "" { // acc may predate a Reauthorize back to Godwit's client
-			cfg.ClientID, cfg.ClientSecret = c.ID, c.Secret
-		}
 	}
 	// Not the caller's: a refresh cut off after the server rotated the token would lose the new one.
 	rctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), refreshTimeout)
@@ -278,13 +263,110 @@ func (s *Service) accessToken(ctx context.Context, acc Account, rejected string)
 	if err != nil {
 		return "", 0, err
 	}
-	if g.RefreshToken != "" {
-		if err := keychainSet(s.keyringUser(acc.ID), g.RefreshToken); err != nil {
-			err = fmt.Errorf("save rotated refresh token: %w", err)
-			return "", 0, errors.Join(err, s.setStatus(ctx, acc.ID, "error", "keychain_unavailable"))
-		}
+	if err := s.saveRotated(ctx, acc.ID, g); err != nil {
+		return "", 0, err
 	}
 	return g.AccessToken, s.cacheToken(acc.ID, g), nil
+}
+
+// refreshCredentials returns the account's refresh token and the OAuth
+// settings to refresh it with: its provider's, with its own client if any.
+func (s *Service) refreshCredentials(ctx context.Context, acc Account, ver uint64) (string, auth.OAuthConfig, error) {
+	rt, err := s.secret(ctx, acc, ver)
+	if err != nil {
+		return "", auth.OAuthConfig{}, err
+	}
+	cfg, err := oauthConfig(acc.Provider)
+	if err != nil {
+		return "", auth.OAuthConfig{}, err
+	}
+	if acc.OAuthClientID != "" {
+		c, err := s.resolveClient(ctx, OAuthClient{Account: acc.ID})
+		switch {
+		case errors.Is(err, keyring.ErrNotFound):
+			return "", auth.OAuthConfig{}, errors.Join(err, s.ifCurrent(acc.ID, ver, func() error {
+				return s.setStatus(ctx, acc.ID, "reauth_required", "credentials_missing")
+			}))
+		case err != nil:
+			return "", auth.OAuthConfig{}, errors.Join(err, s.setStatus(ctx, acc.ID, "error", "keychain_unavailable"))
+		}
+		if c.ID != "" { // acc may predate a Reauthorize back to Godwit's client
+			cfg.ClientID, cfg.ClientSecret = c.ID, c.Secret
+		}
+	}
+	return rt, cfg, nil
+}
+
+// saveRotated saves g's refresh token, if the server rotated it, before its
+// access token is used; if that fails the old one stays in the keychain.
+func (s *Service) saveRotated(ctx context.Context, id int64, g auth.Grant) error {
+	if g.RefreshToken == "" {
+		return nil
+	}
+	if err := keychainSet(s.keyringUser(id), g.RefreshToken); err != nil {
+		err = fmt.Errorf("save rotated refresh token: %w", err)
+		return errors.Join(err, s.setStatus(ctx, id, "error", "keychain_unavailable"))
+	}
+	return nil
+}
+
+// graphToken returns a Microsoft Graph access token that sends as the account
+// (its provider's GraphSend), refreshed on every call: a send round asks once.
+// Without that consent it is conn.ErrAuthFailed and pauses the outbox
+// (smtp_reauth) like a refused SMTP login; the account's status is left alone,
+// IMAP still works.
+// ver is the account's credential version.
+func (s *Service) graphToken(ctx context.Context, acc Account) (string, uint64, error) {
+	sem := s.refreshLock(acc.ID) // a rotated refresh token must not race accessToken's
+	select {
+	case sem <- struct{}{}:
+		defer func() { <-sem }()
+	case <-ctx.Done():
+		return "", 0, ctx.Err()
+	}
+	s.credMu.Lock()
+	ver := s.credVer[acc.ID]
+	s.credMu.Unlock()
+	rt, cfg, err := s.refreshCredentials(ctx, acc, ver)
+	if err != nil {
+		return "", 0, err
+	}
+	rctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), refreshTimeout)
+	g, err := graphGrant(rctx, cfg, rt)
+	cancel()
+	if errors.Is(err, conn.ErrAuthFailed) {
+		return "", 0, errors.Join(err, s.ifCurrent(acc.ID, ver, func() error {
+			_, err := s.db.Execute(ctx, "UPDATE accounts SET smtp_reauth = 1 WHERE id = ?", acc.ID)
+			return err
+		}))
+	}
+	if err != nil {
+		return "", 0, err
+	}
+	if err := s.saveRotated(ctx, acc.ID, g); err != nil {
+		return "", 0, err
+	}
+	keychainValues.Add(g.AccessToken)
+	return g.AccessToken, ver, nil
+}
+
+var errNoGraph = errors.New("the provider does not send through Microsoft Graph")
+
+// graphGrant trades rt for an access token to cfg.GraphSend. A refusal, or a
+// grant without that scope (the user never consented to it), is conn.ErrAuthFailed.
+func graphGrant(ctx context.Context, cfg auth.OAuthConfig, rt string) (auth.Grant, error) {
+	if cfg.GraphSend == "" {
+		return auth.Grant{}, errNoGraph
+	}
+	cfg.TokenParams = map[string]string{"scope": cfg.GraphSend + " offline_access"}
+	if cfg.ClientSecret != "" {
+		cfg.TokenParams["client_secret"] = cfg.ClientSecret
+	}
+	g, err := auth.RefreshForm(ctx, cfg, http.DefaultClient, rt)
+	if errors.Is(err, auth.ErrInvalidGrant) || err == nil && g.Scope != "" && !slices.Contains(strings.Fields(g.Scope), cfg.GraphSend) {
+		return auth.Grant{}, fmt.Errorf("graph token: %w", conn.ErrAuthFailed)
+	}
+	return g, err
 }
 
 // ErrWrongAccount: the OAuth sign-in was for another address than the account's.

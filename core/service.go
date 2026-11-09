@@ -28,6 +28,7 @@ import (
 	"github.com/godwit-email/godwit/core/events"
 	"github.com/godwit-email/godwit/core/mailsync"
 	"github.com/godwit-email/godwit/core/plugins"
+	"github.com/godwit-email/godwit/core/send"
 	"github.com/godwit-email/godwit/core/store"
 	"github.com/godwit-email/godwit/internal/avatar"
 	"github.com/godwit-email/godwit/internal/imagecache"
@@ -156,6 +157,10 @@ type Service struct {
 	tokMu      sync.Mutex
 	tokens     map[int64]oauthToken    // OAuth accounts' access tokens; never stored
 	refreshing map[int64]chan struct{} // per-account 1-slot semaphore around a token refresh
+	// graphSend: accounts whose SMTP AUTH is disabled, sending through Graph.
+	// shortcut: memory only, so after a restart the first send tries SMTP once
+	// more; store it on the account if that one refused login ever matters.
+	graphSend sync.Map // int64 → bool
 
 	modelTokMu      sync.Mutex
 	modelTokens     map[int64]modelToken    // OAuth model services' access tokens; never stored
@@ -782,16 +787,25 @@ func (s *Service) checkSMTP(ctx context.Context, accountID int64, explicit bool)
 	if err != nil {
 		return false, err
 	}
-	sc, err := conn.DialSMTP(ctx, ep)
-	if errors.Is(err, conn.ErrAuthFailed) && ep.AccessToken != "" {
+	dial := func(ep conn.Endpoint) error {
+		if ep.Host == send.GraphHost {
+			return nil // a Graph token in hand is the check
+		}
+		sc, err := conn.DialSMTP(ctx, ep)
+		if err == nil {
+			sc.Close()
+		}
+		return err
+	}
+	err = dial(ep)
+	if s.toGraph(ctx, accountID, err) || errors.Is(err, conn.ErrAuthFailed) && ep.AccessToken != "" {
 		if ep, _, _, err = s.smtpEndpoint(ctx, accountID, ep.AccessToken); err == nil {
-			sc, err = conn.DialSMTP(ctx, ep)
+			err = dial(ep)
 		}
 	}
 	if err != nil {
 		return false, err
 	}
-	sc.Close()
 	_, err = s.db.Execute(ctx, "UPDATE accounts SET smtp_reauth = 0 WHERE id = ?", accountID)
 	return err == nil, err
 }

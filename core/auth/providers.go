@@ -1,7 +1,11 @@
 // Package auth holds the provider table and account auto-detection.
 package auth
 
-import "github.com/godwit-email/godwit/core/conn"
+import (
+	"strings"
+
+	"github.com/godwit-email/godwit/core/conn"
+)
 
 type Server struct {
 	Host     string
@@ -23,6 +27,9 @@ type OAuthConfig struct {
 	RequireScope                string            // non-empty: token response scope must include it
 	DeviceURL                   string            // non-empty: device-code flow
 	Public                      *PublicClient     // with no ClientID: another app's verified client, offered beside the user's own
+	// GraphSend non-empty: the Microsoft Graph scope that sends mail, also in Scopes;
+	// a mailbox whose SMTP AUTH is disabled sends through Graph with a token for it.
+	GraphSend string
 }
 
 // PublicClient is a desktop client another app registered and the provider
@@ -39,6 +46,11 @@ type Provider struct {
 	Username   string // when the servers want something other than the address
 	OAuth      *OAuthConfig
 }
+
+// GraphMailSend is Microsoft Graph's delegated permission to send as the user.
+const GraphMailSend = "https://graph.microsoft.com/Mail.Send"
+
+const outlookScopes = "openid email offline_access https://outlook.office.com/IMAP.AccessAsUser.All https://outlook.office.com/SMTP.Send"
 
 // MicrosoftClientID is Godwit's public client in Microsoft Entra (no secret;
 // PKCE with a loopback redirect). It is read when the outlook provider is built.
@@ -73,8 +85,12 @@ func table() []Provider {
 				ClientID: MicrosoftClientID,
 				AuthURL:  "https://login.microsoftonline.com/consumers/oauth2/v2.0/authorize",
 				TokenURL: "https://login.microsoftonline.com/consumers/oauth2/v2.0/token",
-				Scopes: []string{"openid", "email", "offline_access",
-					"https://outlook.office.com/IMAP.AccessAsUser.All", "https://outlook.office.com/SMTP.Send"},
+				// Graph's Mail.Send is consented with the rest; the code is redeemed for
+				// outlook.office.com alone (one resource per token), and a Graph token
+				// comes from the refresh token when needed (GraphSend).
+				Scopes:      append(strings.Fields(outlookScopes), GraphMailSend),
+				TokenParams: map[string]string{"scope": outlookScopes},
+				GraphSend:   GraphMailSend,
 			}},
 		{ID: "netease163", Name: "163 Mail", Domains: []string{"163.com"},
 			IMAP: tls("imap.163.com"), SMTP: smtps("smtp.163.com"), Login: "authorization_code", HelpURL: neteaseHelp},

@@ -3,6 +3,7 @@ package core
 import (
 	"context"
 	"errors"
+	"fmt"
 	"time"
 	"unicode/utf8"
 
@@ -79,7 +80,7 @@ func (s *Service) check(ctx context.Context, in AccountInput, token string) (Che
 	fail := func(i int, kind conn.FailureKind, err error) {
 		r.Steps[i].Kind, r.Steps[i].Detail, first = kind, capDetail(err.Error()), err
 	}
-	user := in.username()
+	user, graph := in.username(), in.graph
 	steps := []func() (conn.FailureKind, error){
 		func() (conn.FailureKind, error) {
 			if err := in.validate(); err != nil {
@@ -93,6 +94,17 @@ func (s *Service) check(ctx context.Context, in AccountInput, token string) (Che
 			}
 			g, err := s.flowGrant(in) // peeked: AddAccount still needs it
 			user, token = g.Email, g.AccessToken
+			graph = func(ctx context.Context) error {
+				cfg, err := oauthConfig(g.provider)
+				if err != nil {
+					return err
+				}
+				if g.client.ID != "" {
+					cfg.ClientID, cfg.ClientSecret = g.client.ID, g.client.Secret
+				}
+				_, err = graphGrant(ctx, cfg, g.RefreshToken)
+				return err
+			}
 			return KindInvalid, err
 		},
 		func() (conn.FailureKind, error) {
@@ -117,6 +129,14 @@ func (s *Service) check(ctx context.Context, in AccountInput, token string) (Che
 			})
 			if err == nil {
 				c.Close()
+			}
+			if errors.Is(err, conn.ErrSMTPAuthDisabled) && graph != nil {
+				// The mailbox may still send through Graph: a token for it is the check.
+				ctx, cancel := context.WithTimeout(ctx, checkTimeout)
+				defer cancel()
+				if err = graph(ctx); errors.Is(err, errNoGraph) {
+					err = fmt.Errorf("smtp: %w", conn.ErrSMTPAuthDisabled)
+				}
 			}
 			return conn.Classify(err), err
 		},

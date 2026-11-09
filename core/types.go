@@ -1,6 +1,10 @@
 package core
 
-import "github.com/godwit-email/godwit/core/conn"
+import (
+	"context"
+
+	"github.com/godwit-email/godwit/core/conn"
+)
 
 // Security is the transport protection of an IMAP or SMTP connection.
 type Security = conn.Security
@@ -27,6 +31,9 @@ type AccountInput struct {
 	// tokens instead of Password, and Email must be the signed-in address.
 	OAuthFlowID   string
 	oauthClientID string // the flow's own client, set by AddAccount
+	// graph checks a stored OAuth account can send through Microsoft Graph, for
+	// a check whose SMTP AUTH is disabled; a flow's check makes its own.
+	graph func(context.Context) error
 }
 
 // Account is a stored account. The password lives only in the system keychain.

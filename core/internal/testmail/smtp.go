@@ -29,6 +29,7 @@ type Inbox struct {
 	fail       int
 	sent       *IMAP // SaveToSent target
 	rejectAuth bool
+	authOff    bool                    // DisableAuth
 	password   string                  // alice's; "" means secret
 	xoauth2    func(token string) bool // nil = XOAUTH2 not offered
 	loginOnly  bool
@@ -107,6 +108,14 @@ func (in *Inbox) RejectAuth(reject bool) {
 	in.mu.Unlock()
 }
 
+// DisableAuth makes AUTH answer what Microsoft does for a mailbox whose SMTP
+// AUTH is disabled (535 5.7.139), whatever the credentials.
+func (in *Inbox) DisableAuth(off bool) {
+	in.mu.Lock()
+	in.authOff = off
+	in.mu.Unlock()
+}
+
 // SetPassword changes alice's password.
 func (in *Inbox) SetPassword(pw string) {
 	in.mu.Lock()
@@ -176,8 +185,11 @@ func (s *smtpSession) AuthMechanisms() []string {
 func (s *smtpSession) Auth(mech string) (sasl.Server, error) {
 	s.in.mu.Lock()
 	s.in.auths++
-	reject, password := s.in.rejectAuth, cmp.Or(s.in.password, "secret")
+	reject, off, password := s.in.rejectAuth, s.in.authOff, cmp.Or(s.in.password, "secret")
 	s.in.mu.Unlock()
+	if off {
+		return authOffServer{}, nil
+	}
 	login := func(user, pass string) error {
 		if reject || user != "alice" || pass != password {
 			return errors.New("invalid credentials")
@@ -194,6 +206,17 @@ func (s *smtpSession) Auth(mech string) (sasl.Server, error) {
 		return &xoauth2Server{valid: s.in.xoauth2, login: func(user string) error { return login(user, password) }}, nil
 	}
 	return nil, errors.New("unsupported mechanism")
+}
+
+// authOffServer refuses any exchange the way Microsoft does with SMTP AUTH off.
+type authOffServer struct{}
+
+func (authOffServer) Next(resp []byte) ([]byte, bool, error) {
+	if resp == nil {
+		return nil, false, nil // ask for the initial response
+	}
+	return nil, true, &smtp.SMTPError{Code: 535, EnhancedCode: smtp.EnhancedCode{5, 7, 139},
+		Message: "Authentication unsuccessful, SmtpClientAuthentication is disabled for the Mailbox."}
 }
 
 // loginServer checks a SASL LOGIN exchange; go-sasl has only the client.
