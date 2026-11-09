@@ -1,5 +1,25 @@
 # Changelog
 
+## [1.31.0](https://github.com/godwit-email/godwit/compare/v1.30.0...v1.31.0) (2026-11-09)
+
+
+### Features
+
+* **compose:** complete recipients from contacts ([#564](https://github.com/godwit-email/godwit/issues/564)) ([954bf54](https://github.com/godwit-email/godwit/commit/954bf54a5a92bc9964ba1cddb196b8af38302296))
+* import local .eml files into a local archive account ([#560](https://github.com/godwit-email/godwit/issues/560)) ([32d7e5e](https://github.com/godwit-email/godwit/commit/32d7e5e88be682b2a72913d5ded884ff603fba96))
+* **labels:** sync labels with IMAP keywords ([#544](https://github.com/godwit-email/godwit/issues/544)) ([b3327bf](https://github.com/godwit-email/godwit/commit/b3327bfcf01f9177e7462b83fb42f227f6b76b57))
+* **settings:** one model picker for generate and judge, and OpenRouter's judge models ([#550](https://github.com/godwit-email/godwit/issues/550)) ([32b36e1](https://github.com/godwit-email/godwit/commit/32b36e166147ee0480a696e599015e2ec45ffba3))
+
+
+### Bug Fixes
+
+* **ai:** list models named by "name" (Liquid decisions API) ([#543](https://github.com/godwit-email/godwit/issues/543)) ([c7e73d3](https://github.com/godwit-email/godwit/commit/c7e73d3e94fee8b33ec3d8dc3d5b85f2c4619155))
+* **app:** a lone last plugin card keeps its column's width ([#551](https://github.com/godwit-email/godwit/issues/551)) ([05cac72](https://github.com/godwit-email/godwit/commit/05cac726525fc3fd900b2a3e33162fc6abf0efb0))
+* **coretest:** Deliver finishes the account's first sync before its first append ([#568](https://github.com/godwit-email/godwit/issues/568)) ([9b81995](https://github.com/godwit-email/godwit/commit/9b81995d52c0fb7abde7ec8855c23496f1bd5c7a))
+* **labels:** auto-label only new mail, not mail a sync backfills ([#570](https://github.com/godwit-email/godwit/issues/570)) ([8166893](https://github.com/godwit-email/godwit/commit/8166893f791db6f7954b5f0f359291acaf02e821)), closes [#567](https://github.com/godwit-email/godwit/issues/567)
+* **localarchive:** retry deleting originals Windows briefly holds ([#575](https://github.com/godwit-email/godwit/issues/575)) ([b24d062](https://github.com/godwit-email/godwit/commit/b24d062cc46cf613546a1c138caf111cc687abcc))
+* **mail:** date a queued reply no earlier than the message it answers ([#542](https://github.com/godwit-email/godwit/issues/542)) ([8d169b1](https://github.com/godwit-email/godwit/commit/8d169b10fe1d99300e087bff543273da357a8720))
+
 ## [1.30.0](https://github.com/godwit-email/godwit/compare/v1.29.0...v1.30.0) (2026-11-08)
 
 
