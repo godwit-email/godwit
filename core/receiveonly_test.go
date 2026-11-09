@@ -99,6 +99,9 @@ func TestReceiveOnlyRepliesFromAnother(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, other.ID, d.AccountID)
 	assert.Equal(t, []string{"Bob <bob@example.com>"}, d.To)
+	deleted, err := e.s.DeleteDraftIfEmpty(bg, d.ID, d.Revision)
+	require.NoError(t, err)
+	assert.True(t, deleted, "an untouched reply is dropped like any other")
 
 	d, err = e.s.NewDraft(bg, e.acc.ID, "new", 0)
 	require.NoError(t, err)
@@ -120,4 +123,22 @@ func TestReceiveOnlyResumesAfterServerFix(t *testing.T) {
 	e.sendNew(t)
 	e.sync(t)
 	assert.Len(t, e.smtp.Messages(), 1)
+}
+
+// A rule never forwards a receive-only account's mail through another account.
+func TestReceiveOnlyRuleForwardFails(t *testing.T) {
+	e := newReceiveOnlyEnv(t)
+	smtpAddr, sent := testmail.StartSMTP(t)
+	_, err := e.s.AddAccount(bg, internalInput(t, e.im.Addr, smtpAddr, "carol@example.com", false))
+	require.NoError(t, err)
+	e.newMail(t, "old@x", "before")
+	e.sync(t)
+	e.saveForward(t, forwardRule(carol), carol)
+	e.put(t, "INBOX", billWithPDF("bill@x"))
+	e.sync(t)
+	e.waitRuns(t, 1)
+
+	assert.NotEqual(t, []string{"forward done"}, e.results(t, e.runOf(t, "bill@x")))
+	assert.Equal(t, 0, e.count(t, "SELECT count(*) FROM outbox"))
+	assert.Empty(t, sent.Messages())
 }

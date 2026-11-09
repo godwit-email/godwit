@@ -149,7 +149,17 @@ func (s *Service) DeleteDraftIfEmpty(ctx context.Context, id, revision int64) (d
 	if d.Revision != revision || len(d.Attachments) > 0 || strings.TrimSpace(mail.HTMLToText(ed)) != "" { // TrimSpace trims U+00A0 too
 		return false, nil
 	}
-	fresh, err := s.buildDraft(ctx, d.AccountID, d.Mode, d.SourceMessageID)
+	from := d.AccountID
+	if d.SourceMessageID != 0 { // a receive-only account's mail was answered from another (buildDraft): rebuild it the same way
+		r, err := s.db.Query(ctx, "SELECT m.account_id FROM messages m JOIN accounts a ON a.id = m.account_id WHERE m.id = ? AND a.receive_only = 1", d.SourceMessageID)
+		if err != nil {
+			return false, err
+		}
+		if len(r.Values) > 0 {
+			from = store.Int(r.Values[0][0])
+		}
+	}
+	fresh, err := s.buildDraft(ctx, from, d.Mode, d.SourceMessageID)
 	if err != nil { // e.g. the source is gone: keep it
 		return false, nil
 	}

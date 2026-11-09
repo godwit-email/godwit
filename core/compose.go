@@ -141,7 +141,7 @@ func (s *Service) buildDraft(ctx context.Context, accountID int64, mode string, 
 			return Draft{}, ErrLocalArchive
 		}
 	}
-	self := acc.Email // whose mail is answered: its own sent mail and address are the user's
+	self := acc.Email    // whose mail is answered: its own sent mail and address are the user's
 	if acc.ReceiveOnly { // so is a receive-only account's, and its new mail
 		if acc, err = s.draftAccount(ctx, 0); err != nil {
 			return Draft{}, ErrReceiveOnly
