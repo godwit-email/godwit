@@ -58,7 +58,7 @@ func (s gmailServer) Deliver(t *testing.T, folder string, raw []byte) {
 
 // writeParts is the contract's write-back part, the one a missing MOVE,
 // UIDPLUS or COPYUID changes.
-var writeParts = []string{"Describe", "FirstSync", "CursorResumes", "FolderReset", "Find", "SetFlags", "Move", "Failed", "Unsupported"}
+var writeParts = []string{"Describe", "FirstSync", "CursorResumes", "FolderReset", "Find", "SetFlags", "Move", "Copy", "Failed", "Unsupported"}
 
 // The whole contract runs against a full server; the write-back part also
 // runs against the servers whose missing extensions change how a move or a

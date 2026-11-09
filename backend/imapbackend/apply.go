@@ -80,8 +80,8 @@ func opFeature(op backend.Op) backend.Feature {
 // Apply writes one op back. A server's NO is Failed; a location whose folder
 // was recreated (another UIDVALIDITY) is backend.ErrNotFound.
 //
-// shortcut: Copy and Delete are not done yet (nothing queues them), the
-// verbs that need them add them.
+// shortcut: Delete is not done yet (nothing queues it); the verb that needs
+// it adds it.
 func (r *Receiver) Apply(ctx context.Context, op backend.Op) (backend.Result, error) {
 	c, err := r.client(ctx)
 	if err != nil {
@@ -100,6 +100,8 @@ func (r *Receiver) Apply(ctx context.Context, op backend.Op) (backend.Result, er
 		} else {
 			res, err = move(c, op)
 		}
+	case backend.Copy:
+		res, err = copyTo(c, op)
 	case backend.AddToFolder:
 		res, err = labelMove(c, op.At, op.To, true)
 	case backend.RemoveFromFolder:
@@ -281,6 +283,22 @@ func moveUID(c *imapclient.Client, set imap.UIDSet, dst string) (validity, uid u
 		return 0, 0, err
 	}
 	return d.UIDValidity, single(d.DestUIDs), nil
+}
+
+// copyTo UID COPYs the message; without COPYUID the copy's location is not known.
+func copyTo(c *imapclient.Client, op backend.Copy) (backend.Result, error) {
+	uid, err := selectAt(c, op.At)
+	if err != nil {
+		return backend.Result{}, err
+	}
+	d, err := c.Copy(imap.UIDSetNum(uid), string(op.To)).Wait()
+	if err != nil {
+		return backend.Result{}, err
+	}
+	if dst := single(d.DestUIDs); dst != 0 && d.UIDValidity != 0 {
+		return backend.Result{Outcome: backend.Done, Ref: backend.MessageRef(Encode(d.UIDValidity, dst))}, nil
+	}
+	return backend.Result{Outcome: backend.Unlocated}, nil
 }
 
 // purge sets \Deleted and UID EXPUNGEs the message, asking op.Confirm before

@@ -51,6 +51,7 @@ var allTests = []contractTest{
 	{"Find", testFind},
 	{"SetFlags", testSetFlags},
 	{"Move", testMove},
+	{"Copy", testCopy},
 	{"Append", testAppend},
 	{"Failed", testFailed},
 	{"Unsupported", testUnsupported},
@@ -470,6 +471,42 @@ func testMove(t *testing.T, start Fixture) {
 	v.sync(t, r)
 	if _, ok := v.messages[inbox][m.Ref]; ok {
 		t.Error("the moved message is still in the inbox")
+	}
+	if len(v.messages[archive]) != 2 {
+		t.Errorf("archive holds %d messages, want 2", len(v.messages[archive]))
+	}
+	if _, ok := v.messages[archive][res.Ref]; res.Outcome == backend.Done && !ok {
+		t.Errorf("archive lacks the reported location %q", res.Ref)
+	}
+}
+
+// Copy leaves the message where it is and puts an independent copy in the
+// target: a backend that declares it does it.
+func testCopy(t *testing.T, start Fixture) {
+	s := start(t)
+	s.Deliver(t, "Archive", Message("old@example.com", "old"))
+	s.Deliver(t, "INBOX", Message("first@example.com", "first"))
+	r := s.Receiver(t)
+	if sup := describe(t, r).Features[backend.FeatureCopy]; sup.Level == backend.LevelUnsupported {
+		t.Skip("Copy unsupported:", sup.Reason)
+	}
+	v := newView()
+	v.sync(t, r)
+	inbox, archive := v.folder(t, "INBOX"), v.folder(t, "Archive")
+	var at backend.Location
+	for ref := range v.messages[inbox] {
+		at = backend.Location{Folder: inbox, Ref: ref}
+	}
+	res := apply(t, r, backend.Copy{At: at, To: archive})
+	switch {
+	case res.Outcome == backend.Done && res.Ref == "":
+		t.Error("Copy done without the copy's location")
+	case res.Outcome != backend.Done && res.Outcome != backend.Unlocated:
+		t.Fatalf("Copy = %+v", res)
+	}
+	v.sync(t, r)
+	if _, ok := v.messages[inbox][at.Ref]; !ok {
+		t.Error("the copied message left the inbox")
 	}
 	if len(v.messages[archive]) != 2 {
 		t.Errorf("archive holds %d messages, want 2", len(v.messages[archive]))
