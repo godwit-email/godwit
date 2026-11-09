@@ -84,8 +84,8 @@ func (r *Receiver) changed() {
 
 // Client is the session's connection, dialed if need be.
 //
-// shortcut: the write-back and the outbox still speak IMAP over it in core;
-// #602 and #604 move them behind Apply and Find, and this goes.
+// shortcut: the outbox still speaks IMAP over it in core; #604 moves it
+// behind the backend, and this goes.
 func (r *Receiver) Client(ctx context.Context) (*imapclient.Client, error) { return r.client(ctx) }
 
 // Close closes the connection; a second Close is harmless.
@@ -94,17 +94,6 @@ func (r *Receiver) Close() error {
 		return nil
 	}
 	return r.c.Close()
-}
-
-// errLater answers the verbs #602 moves here.
-var errLater = errors.New("imapbackend: not implemented yet")
-
-func (r *Receiver) Find(context.Context, backend.FolderRef, string, int64) ([]backend.MessageRef, error) {
-	return nil, errLater
-}
-
-func (r *Receiver) Apply(context.Context, backend.Op) (backend.Result, error) {
-	return backend.Result{}, errLater
 }
 
 // Fetch streams the content req names. Closing the stream before its end cuts
@@ -268,8 +257,9 @@ func describe(caps imap.CapSet) backend.Description {
 	}
 	gmail := caps.Has(GmailFeature)
 	d := backend.Description{Identity: backend.IdentityLocation, PollInterval: PollInterval, Features: map[backend.Feature]backend.Support{
-		// Without MOVE a move is COPY, \Deleted and UID EXPUNGE, which needs UIDPLUS.
-		backend.FeatureMove:             either(caps.Has(imap.CapMove) || caps.Has(imap.CapUIDPlus), "imap.no_move"),
+		// Without MOVE a move is COPY, \Deleted and UID EXPUNGE, which needs
+		// UIDPLUS; on Gmail it is label writes.
+		backend.FeatureMove:             either(caps.Has(imap.CapMove) || caps.Has(imap.CapUIDPlus) || gmail, "imap.no_move"),
 		backend.FeatureCopy:             either(!gmail, "imap.gmail_copy_is_label"),
 		backend.FeatureAddToFolder:      either(gmail, "imap.no_labels"),
 		backend.FeatureRemoveFromFolder: either(gmail, "imap.no_labels"),

@@ -278,7 +278,7 @@ type outboxRow struct {
 // Network failures are recorded on the items; database errors are returned, and
 // so is a refused SMTP login, which stops the round and pauses the account's
 // outbox (smtp_reauth).
-func (s *Service) processOutbox(ctx context.Context, c *imapclient.Client, accountID int64) error {
+func (s *Service) processOutbox(ctx context.Context, c *imapclient.Client, recv backend.Receiver, accountID int64) error {
 	start := s.clk().Now().UnixMilli()
 	defer s.wakeForOutbox(ctx, accountID, start)
 	// A queued item waits for its undo window and its retry time.
@@ -375,7 +375,7 @@ func (s *Service) processOutbox(ctx context.Context, c *imapclient.Client, accou
 			o.state = "sent"
 			fallthrough
 		case "sent", "archive_uncertain":
-			if err := s.archiveItem(ctx, wctx, c, sentFolder, o); err != nil {
+			if err := s.archiveItem(ctx, wctx, c, recv, sentFolder, o); err != nil {
 				return err
 			}
 		case "send_uncertain":
@@ -383,7 +383,7 @@ func (s *Service) processOutbox(ctx context.Context, c *imapclient.Client, accou
 			if err != nil || folder == "" {
 				continue // cannot check; the user decides
 			}
-			found, err := mailsync.InFolder(c, folder, o.messageID, 0)
+			found, err := mailsync.InFolder(ctx, recv, folder, o.messageID, 0)
 			if err != nil {
 				_, err = s.setOutbox(wctx, o, "send_uncertain", err.Error())
 			} else if found {
@@ -506,7 +506,7 @@ func (s *Service) failOutbox(ctx context.Context, o outboxRow, lastError string,
 // archiveItem files a sent item into the Sent folder unless it is there already
 // (the provider saved it, or an earlier uncertain APPEND went through). Without
 // a Sent folder there is nowhere to file it, so it is done.
-func (s *Service) archiveItem(ctx, wctx context.Context, c *imapclient.Client, sentFolder func() (string, error), o outboxRow) error {
+func (s *Service) archiveItem(ctx, wctx context.Context, c *imapclient.Client, recv backend.Receiver, sentFolder func() (string, error), o outboxRow) error {
 	if ok, err := s.setOutbox(ctx, o, "archiving", ""); !ok || err != nil {
 		return err
 	}
@@ -516,7 +516,7 @@ func (s *Service) archiveItem(ctx, wctx context.Context, c *imapclient.Client, s
 		if err != nil || folder == "" {
 			return err
 		}
-		found, err := mailsync.InFolder(c, folder, o.messageID, 0)
+		found, err := mailsync.InFolder(ctx, recv, folder, o.messageID, 0)
 		if err != nil || found {
 			return err
 		}

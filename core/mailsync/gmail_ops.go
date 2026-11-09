@@ -3,252 +3,118 @@ package mailsync
 import (
 	"context"
 	"errors"
-	"slices"
-	"strconv"
 
 	"github.com/egoist/mygo/plugins/sqlite"
-	"github.com/emersion/go-imap/v2"
-	"github.com/emersion/go-imap/v2/imapclient"
-	"github.com/godwit-email/godwit/backend/imapbackend"
+	"github.com/godwit-email/godwit/backend"
 	"github.com/godwit-email/godwit/core/store"
 )
 
-// pushGmailLabels applies a recorded move with additive label writes. Every
-// attempt reads membership by Gmail identity first, including after a lost reply.
-func pushGmailLabels(ctx context.Context, db *store.DB, c *imapclient.Client, o op) (string, error) {
-	counted := false // this attempt is already in o.attempts
-	failure := func(cause error) (string, error) { return gmailFailure(ctx, db, o, cause, counted) }
-	r, err := db.Query(ctx, `SELECT server_id FROM messages WHERE id = ?`, o.msg)
+// pushStableMove applies a move on an account of stable identity (Gmail),
+// where a message may be in several folders: from no folder it adds one
+// (AddToFolder, from any location the server still has), to no folder it
+// takes one away (RemoveFromFolder), else it moves. The backend reads where
+// the message is by its ServerID on every attempt, so a lost reply is
+// uncertain rather than a failure: it stays pending past the retry budget
+// until an attempt resolves it. Only a refusal counts against MaxAttempts.
+func (p *pusher) pushStableMove(ctx context.Context, o op) (string, error) {
+	db := p.db
+	r, err := db.Query(ctx, `SELECT m.server_id, f.server_ref, f.role, l.server_ref FROM messages m
+		LEFT JOIN folders f ON f.id = ? LEFT JOIN message_locations l ON l.message_id = m.id AND l.folder_id = f.id WHERE m.id = ?`, o.src, o.msg)
 	if err != nil {
 		return "", err
 	}
 	if len(r.Values) == 0 {
 		return "the message no longer exists", finish(ctx, db, o, "conflict", "the message no longer exists")
 	}
-	id, _ := strconv.ParseUint(store.Str(r.Values[0][0]), 10, 64)
-	folders, err := db.Query(ctx, "SELECT id, name, role FROM folders WHERE id IN (?, ?)", o.src, o.dst)
-	if err != nil {
-		return "", err
-	}
-	var srcName, srcRole, dstName, dstRole string
-	for _, f := range folders.Values {
-		if store.Int(f[0]) == o.src {
-			srcName, srcRole = store.Str(f[1]), store.Str(f[2])
-		}
-		if store.Int(f[0]) == o.dst {
-			dstName, dstRole = store.Str(f[1]), store.Str(f[2])
-		}
-	}
-	if o.dst != 0 && dstName == "" {
-		return failure(errNoDestination)
-	}
-	if id == 0 && srcName != "" { // An upgrade can still have rows not fetched for Gmail identity.
-		loc, err := db.Query(ctx, "SELECT server_ref FROM message_locations WHERE message_id = ? AND folder_id = ? AND server_ref IS NOT NULL", o.msg, o.src)
-		if err != nil {
-			return "", err
-		}
-		if len(loc.Values) > 0 {
-			locValidity, locUID := imapbackend.Decode(store.Str(loc.Values[0][0]))
-			sel, err := c.Select(srcName, nil).Wait()
-			if err != nil {
-				return failure(err)
-			}
-			if sel.UIDValidity != locValidity {
-				msg := "the source folder was recreated before Gmail identity was known"
-				return msg, finish(ctx, db, o, "conflict", msg)
-			}
-			got, err := c.Fetch(imap.UIDSetNum(imap.UID(locUID)), &imap.FetchOptions{UID: true, GmailMsgID: true}).Collect()
-			if err != nil {
-				return failure(err)
-			}
-			if len(got) > 0 {
-				id = got[0].GmailMsgID
-			}
-			if id != 0 {
-				if _, err := db.Execute(ctx, "UPDATE messages SET server_id = ? WHERE id = ?", strconv.FormatUint(id, 10), o.msg); err != nil {
-					return "", err
-				}
-			}
-		}
-	}
-	if id == 0 {
-		return lostSource(ctx, db, o, o.attempts > 0)
-	}
-	addOnly := o.src == 0 || srcRole == "all"
+	v := r.Values[0]
+	at := backend.Location{Folder: backend.FolderRef(store.Str(v[1])), Ref: backend.MessageRef(store.Str(v[3])), ServerID: store.Str(v[0])}
 	completed := o
-	if srcRole == "all" {
+	if store.Str(v[2]) == "all" {
 		completed.src = 0 // All Mail is implicit membership, never a removable label.
 	}
-	if o.src == 0 {
-		anchors, err := db.Query(ctx, `SELECT f.name FROM message_locations l JOIN folders f ON f.id = l.folder_id WHERE l.message_id = ? AND l.server_ref IS NOT NULL ORDER BY l.folder_id`, o.msg)
+	var to backend.FolderRef
+	if o.dst != 0 {
+		dst, err := p.destination(ctx, o.dst)
 		if err != nil {
 			return "", err
 		}
-		// An add-only intent may use any identity-checked location; none is removed.
-		for _, a := range anchors.Values {
-			_, uid, err := gmailLocation(c, store.Str(a[0]), id)
-			if err != nil {
-				return failure(err)
-			}
-			if uid != 0 {
-				srcName = store.Str(a[0])
-				break
-			}
+		if dst.ref == "" {
+			return p.refused(ctx, o, errNoDestination)
 		}
+		to = dst.ref
 	}
-	srcValidity, srcUID, err := gmailLocation(c, srcName, id)
-	if err != nil {
-		return failure(err)
+	if o.src == o.dst {
+		return "", finish(ctx, db, o, "done", "")
 	}
-	var dstValidity, dstUID uint32
-	if dstName != "" {
-		dstValidity, dstUID, err = gmailLocation(c, dstName, id)
-		if err != nil {
-			return failure(err)
-		}
-		if dstValidity == 0 {
-			return failure(errNoDestination)
-		}
+	if o.src == 0 {
+		return p.addToFolder(ctx, o, at.ServerID, to)
 	}
-	removeOnly := o.dst == 0 || dstRole == "all"
-	if (addOnly && dstUID != 0) || o.src == o.dst {
-		return "", gmailMoved(ctx, db, completed, dstValidity, dstUID)
+	if at.ServerID == "" && at.Ref == "" {
+		return p.lostSource(ctx, o, o.attempts > 0)
 	}
-	if srcUID == 0 {
-		if addOnly {
-			msg := "Gmail message has no addressable location in visible IMAP folders; expose All Mail or restore a label to apply this change"
-			_, err := db.Execute(ctx, "UPDATE ops SET last_error = ? WHERE id = ?", msg, o.id)
-			return msg, err // report the blocked intent, but let fetch discover a new location
-		}
-		if removeOnly || dstUID != 0 {
-			return "", gmailMoved(ctx, db, completed, dstValidity, dstUID)
-		}
-		msg := "the message left the folder it was moved from and is absent from the destination"
-		return msg, finish(ctx, db, o, "conflict", msg)
+	var w backend.Op = backend.Move{At: at, To: to}
+	if o.dst == 0 {
+		w = backend.RemoveFromFolder{At: at}
 	}
-	if err := reselect(c, srcName, srcValidity); err != nil {
-		return failure(err)
+	res, err := p.clearPurge(ctx, o, at)
+	if errors.Is(err, backend.ErrNotFound) || (err == nil && res.Outcome == backend.Done) {
+		res, err = p.recv.Apply(ctx, w) // a source already gone is the move's to find
 	}
-	claimed, err := db.Execute(ctx, "UPDATE ops SET attempts = attempts + 1 WHERE id = ? AND state = 'pending'", o.id)
+	if errors.Is(err, backend.ErrNotFound) {
+		return p.lostSource(ctx, o, o.attempts > 0)
+	}
+	return p.stableResult(ctx, o, completed, res, err)
+}
+
+// addToFolder adds folder to to the message, from the first of its known
+// locations where the server still has it.
+func (p *pusher) addToFolder(ctx context.Context, o op, serverID string, to backend.FolderRef) (string, error) {
+	anchors, err := p.db.Query(ctx, `SELECT f.server_ref, l.server_ref FROM message_locations l JOIN folders f ON f.id = l.folder_id
+		WHERE l.message_id = ? AND l.server_ref IS NOT NULL AND f.server_ref IS NOT NULL ORDER BY l.folder_id`, o.msg)
 	if err != nil {
 		return "", err
 	}
-	if claimed.Changes == 0 {
-		return "", nil
+	for _, a := range anchors.Values {
+		at := backend.Location{Folder: backend.FolderRef(store.Str(a[0])), Ref: backend.MessageRef(store.Str(a[1])), ServerID: serverID}
+		res, err := p.recv.Apply(ctx, backend.AddToFolder{At: at, To: to})
+		if !errors.Is(err, backend.ErrNotFound) {
+			return p.stableResult(ctx, o, o, res, err)
+		}
+	}
+	msg := "Gmail message has no addressable location in visible IMAP folders; expose All Mail or restore a label to apply this change"
+	_, err = p.db.Execute(ctx, "UPDATE ops SET last_error = ? WHERE id = ?", msg, o.id)
+	return msg, err // report the blocked intent, but let fetch discover a new location
+}
+
+// stableResult records how a stable-identity move ended. completed is o with
+// the source it takes the message out of locally.
+func (p *pusher) stableResult(ctx context.Context, o, completed op, res backend.Result, err error) (string, error) {
+	if err != nil { // a lost reply: uncertain, not counted
+		_, derr := p.db.Execute(ctx, "UPDATE ops SET last_error = ? WHERE id = ?", err.Error(), o.id)
+		return "", errors.Join(err, derr)
+	}
+	switch res.Outcome {
+	case backend.Unsupported:
+		msg := unsupported(res.Reason)
+		return msg, finish(ctx, p.db, o, "failed", msg)
+	case backend.Failed:
+		return p.refused(ctx, o, errors.New(res.Reason))
+	case backend.Unlocated:
+		return p.lostSource(ctx, o, true)
+	}
+	if o.dst != 0 && res.Ref != "" {
+		return "", moved(ctx, p.db, completed, string(res.Ref))
+	}
+	// All Mail can be hidden: removing INBOX is complete without a target location.
+	_, err = p.db.Transaction(ctx, append(unlocate(o.msg, completed.src), sqlite.Statement{SQL: "UPDATE ops SET state = 'done', last_error = NULL WHERE id = ?", Args: []any{o.id}}))
+	return "", err
+}
+
+// refused counts a refused attempt and fails the op once it used MaxAttempts.
+func (p *pusher) refused(ctx context.Context, o op, cause error) (string, error) {
+	if _, err := p.db.Execute(ctx, "UPDATE ops SET attempts = attempts + 1 WHERE id = ?", o.id); err != nil {
+		return "", err
 	}
 	o.attempts++
-	counted = true
-	purges, err := db.Query(ctx, "SELECT 1 FROM ops WHERE message_id = ? AND kind = 'purge' AND attempts > 0", o.msg)
-	if err != nil {
-		return "", err
-	}
-	if len(purges.Values) > 0 {
-		if err := undelete(c, imap.UID(srcUID)); err != nil {
-			return failure(err)
-		}
-	}
-	set := imap.UIDSetNum(imap.UID(srcUID))
-	binned := dstRole == "trash" || dstRole == "junk"
-	if !removeOnly && (dstUID == 0 || binned) {
-		if err := c.StoreGmailLabels(set, &imap.StoreGmailLabels{Op: imap.StoreFlagsAdd, Silent: true, Labels: []string{gmailLabel(dstName, dstRole)}}).Close(); err != nil {
-			return failure(err)
-		}
-	}
-	// Adding Trash/Spam is the special transition; Gmail removes other membership.
-	if !binned && !addOnly {
-		if err := c.StoreGmailLabels(set, &imap.StoreGmailLabels{Op: imap.StoreFlagsDel, Silent: true, Labels: []string{gmailLabel(srcName, srcRole)}}).Close(); err != nil {
-			return failure(err)
-		}
-	}
-	// A successful STORE may match no UID if another client moved it meanwhile.
-	_, source, err := gmailLocation(c, srcName, id)
-	if err != nil {
-		return failure(err)
-	}
-	if dstName != "" {
-		dstValidity, dstUID, err = gmailLocation(c, dstName, id)
-		if err != nil {
-			return failure(err)
-		}
-	}
-	if (!addOnly && source != 0) || (!removeOnly && dstUID == 0) {
-		return failure(errNoPostcondition)
-	}
-	return "", gmailMoved(ctx, db, completed, dstValidity, dstUID)
-}
-
-func gmailLabel(name, role string) string {
-	switch role {
-	case "inbox":
-		return `\Inbox`
-	case "sent":
-		return `\Sent`
-	case "drafts":
-		return `\Draft`
-	case "trash":
-		return `\Trash`
-	case "junk":
-		return `\Spam`
-	}
-	return name
-}
-
-// gmailLocation searches the recorded folder, never a substitute source.
-func gmailLocation(c *imapclient.Client, folder string, id uint64) (validity, uid uint32, err error) {
-	if folder == "" {
-		return 0, 0, nil
-	}
-	sel, err := c.Select(folder, nil).Wait()
-	if err != nil {
-		var refused *imap.Error
-		if errors.As(err, &refused) && refused.Type == imap.StatusResponseTypeNo {
-			listed, listErr := c.List("", folder, nil).Collect()
-			if listErr != nil {
-				return 0, 0, listErr
-			}
-			if !slices.ContainsFunc(listed, func(f *imap.ListData) bool { return f.Mailbox == folder && imapbackend.Selectable(f) }) {
-				return 0, 0, nil
-			}
-		}
-		return 0, 0, err
-	}
-	found, err := c.UIDSearch(&imap.SearchCriteria{GmailMsgID: []uint64{id}}, nil).Wait()
-	if err != nil {
-		return 0, 0, err
-	}
-	return sel.UIDValidity, single(found.All), nil
-}
-
-func gmailMoved(ctx context.Context, db *store.DB, o op, validity, uid uint32) error {
-	if o.dst != 0 && uid != 0 {
-		return moved(ctx, db, o, validity, uid)
-	}
-	// All Mail can be hidden: removing INBOX is complete without a target UID.
-	_, err := db.Transaction(ctx, append(unlocate(o.msg, o.src), sqlite.Statement{SQL: "UPDATE ops SET state = 'done', last_error = NULL WHERE id = ?", Args: []any{o.id}}))
-	return err
-}
-
-var errNoPostcondition = errors.New("Gmail move postcondition was not observed")
-
-// A lost reply is uncertain and stays pending past the retry budget; only a
-// later membership check can resolve it. So does a refused read before the
-// write. A write the server refused, or one whose result is not observed, is
-// definite and counts against MaxAttempts (counted: already in attempts).
-func gmailFailure(ctx context.Context, db *store.DB, o op, cause error, counted bool) (string, error) {
-	var refused *imap.Error
-	isRefused := errors.As(cause, &refused)
-	if cause == errNoDestination || (counted && (isRefused || cause == errNoPostcondition)) {
-		if !counted {
-			if _, err := db.Execute(ctx, "UPDATE ops SET attempts = attempts + 1 WHERE id = ?", o.id); err != nil {
-				return "", err
-			}
-			o.attempts++
-		}
-		return fail(ctx, db, o, cause)
-	}
-	_, err := db.Execute(ctx, "UPDATE ops SET last_error = ? WHERE id = ?", cause.Error(), o.id)
-	if isRefused {
-		return "", err
-	}
-	return "", errors.Join(cause, err)
+	return fail(ctx, p.db, o, cause, false)
 }

@@ -17,12 +17,8 @@ func TestNoIMAPClient(t *testing.T) {
 	// (imapbackend.Receiver.Client) until their tickets move them behind
 	// Apply and Find; each ticket deletes its entries.
 	pending := map[string]string{
-		"service.go":            "#602", // pushOps
-		"mailsync/ops.go":       "#602",
-		"mailsync/purge.go":     "#602",
-		"mailsync/gmail_ops.go": "#602",
-		"outbox.go":             "#604",
-		"mailsync/folders.go":   "#604", // SentFolder
+		"outbox.go":           "#604",
+		"mailsync/folders.go": "#604", // SentFolder
 	}
 	const client = "github.com/emersion/go-imap/v2/imapclient"
 	seen := map[string]bool{}

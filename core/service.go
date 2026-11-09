@@ -20,7 +20,6 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/emersion/go-imap/v2/imapclient"
 	"github.com/godwit-email/godwit/backend"
 	"github.com/godwit-email/godwit/backend/conn"
 	"github.com/godwit-email/godwit/backend/imapbackend"
@@ -730,7 +729,7 @@ func (s *Service) syncAccount(ctx context.Context, accountID int64, explicit boo
 		return err
 	}
 	defer release()
-	c, err := recv.Client(ctx) // shortcut: for the write-back and the outbox until #602 and #604
+	c, err := recv.Client(ctx) // shortcut: for the outbox until #604
 	if err != nil {
 		return err
 	}
@@ -738,19 +737,19 @@ func (s *Service) syncAccount(ctx context.Context, accountID int64, explicit boo
 	// Purge and archive undo deadlines wake the worker again.
 	defer s.wakeForOps(ctx, accountID, s.clk().Now())
 	// Queued first, so this round's push expunges and its fetch drops the rows.
-	if err := mailsync.QueuePurge(ctx, s.db, c, accountID); err != nil {
+	if err := mailsync.QueuePurge(ctx, s.db, recv, accountID); err != nil {
 		return err
 	}
 	// The outbox before the push: a bulk change (thousands of ops) or a failing
 	// op must not hold mail the user sent.
 	useSMTP, smtpErr := s.checkSMTP(ctx, accountID, explicit)
 	if useSMTP {
-		smtpErr = s.processOutbox(ctx, c, accountID)
+		smtpErr = s.processOutbox(ctx, c, recv, accountID)
 		if smtpErr != nil && !errors.Is(smtpErr, backend.ErrAuthFailed) {
 			return smtpErr
 		}
 	}
-	if err := s.pushOps(ctx, c, accountID, mailsync.PushOps); err != nil {
+	if err := s.pushOps(ctx, recv, accountID, mailsync.PushOps); err != nil {
 		return err
 	}
 	more, err := mailsync.Fetch(ctx, s.db, recv, accountID, s.bus)
@@ -773,7 +772,7 @@ func (s *Service) syncAccount(ctx context.Context, accountID int64, explicit boo
 		return err
 	}
 	// Ops that waited for a move's claim can go now; ones already tried are not retried.
-	if err := s.pushOps(ctx, c, accountID, mailsync.PushNewOps); err != nil {
+	if err := s.pushOps(ctx, recv, accountID, mailsync.PushNewOps); err != nil {
 		return err
 	}
 	return smtpErr
@@ -826,9 +825,9 @@ func (s *Service) checkSMTP(ctx context.Context, accountID int64, explicit bool)
 
 // pushOps pushes queued local changes. Ops that became conflict or failed are
 // announced with SyncFailed and the sync goes on.
-func (s *Service) pushOps(ctx context.Context, c *imapclient.Client, accountID int64,
-	push func(context.Context, *store.DB, *imapclient.Client, int64, time.Time) error) error {
-	err := push(ctx, s.db, c, accountID, s.clk().Now())
+func (s *Service) pushOps(ctx context.Context, recv backend.Receiver, accountID int64,
+	push func(context.Context, *store.DB, backend.Receiver, int64, time.Time) error) error {
+	err := push(ctx, s.db, recv, accountID, s.clk().Now())
 	var problems *mailsync.OpsError
 	if errors.As(err, &problems) {
 		if len(problems.Changed) > 0 {
