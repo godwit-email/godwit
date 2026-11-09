@@ -1120,7 +1120,7 @@ func (s *Service) gmailAccount(ctx context.Context, acc int64) (bool, error) {
 		return false, ErrAccountNotFound
 	}
 	if d, ok := decodeFeatures(r.Values[0][0]); ok {
-		return d.Identity == backend.IdentityStable, nil
+		return allMail(d), nil
 	}
 	if store.Int(r.Values[0][1]) != 0 { // the next sign-in records the rest
 		_, err := s.db.Execute(ctx, "UPDATE accounts SET features = ? WHERE id = ?", encodeFeatures(backend.Description{Identity: backend.IdentityStable}), acc)
@@ -1143,7 +1143,17 @@ func (s *Service) gmailAccount(ctx context.Context, acc int64) (bool, error) {
 	}
 	defer release()
 	d, err := recv.Describe(ctx)
-	return d.Identity == backend.IdentityStable, err
+	return allMail(d), err
+}
+
+// allMail reports that archiving takes a message out of the inbox only
+// (backend.FeatureAllMail). An account migrated from Gmail IMAP kept only
+// its identity until its next sign-in.
+func allMail(d backend.Description) bool {
+	if d.Features == nil {
+		return d.Identity == backend.IdentityStable
+	}
+	return d.Features[backend.FeatureAllMail].Level == backend.LevelSupported
 }
 
 // archiveUndoWrites restores Gmail's INBOX label without removing a user label.

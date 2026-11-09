@@ -11,12 +11,15 @@ import (
 	"maps"
 	"net/http"
 	"slices"
+	"strconv"
 	"strings"
 	"time"
 
 	gojmap "git.sr.ht/~rockorager/go-jmap"
 	"git.sr.ht/~rockorager/go-jmap/mail/email"
 	"git.sr.ht/~rockorager/go-jmap/mail/mailbox"
+	"github.com/emersion/go-imap/v2"
+	"github.com/emersion/go-imap/v2/imapserver"
 
 	"github.com/godwit-email/godwit/backend"
 )
@@ -41,6 +44,7 @@ const (
 	reasonNoCopy  = "jmap.no_copy"         // JMAP has no copy within an account, only one more mailbox
 	reasonFolders = "jmap.folders_pending" // Mailbox/set is not implemented yet
 	reasonSMTP    = "jmap.sent_via_smtp"   // mail goes out by SMTP, which saves no copy
+	reasonAllMail = "jmap.no_all_mail"     // an Email is always in some mailbox; archiving moves it to the archive one
 )
 
 var description = func() backend.Description {
@@ -56,6 +60,7 @@ var description = func() backend.Description {
 	no(reasonNoCopy, backend.FeatureCopy)
 	no(reasonFolders, backend.FeatureFolderCreate, backend.FeatureFolderRename, backend.FeatureFolderDelete, backend.FeatureLabelDelete)
 	no(reasonSMTP, backend.FeatureSavesSent)
+	no(reasonAllMail, backend.FeatureAllMail)
 	return d
 }()
 
@@ -314,6 +319,7 @@ func (s *round) appear(ctx context.Context, mails []*email.Email, held map[backe
 				}
 			}
 			s.add(backend.MessageAppeared{Location: loc, Flags: flags(e.Keywords), Backfill: backfill, Content: content})
+			content, known[string(e.ID)] = nil, true // its other locations are a stored message's
 		}
 	}
 	return nil
@@ -518,18 +524,18 @@ func (r *Receiver) blob(ctx context.Context, id backend.MessageRef) (gojmap.ID, 
 	return g.List[0].BlobID, nil
 }
 
-// Fetch implements backend.Receiver. It gives no parts, as Sync gives no
-// structure.
+// Fetch implements backend.Receiver. Sync gives the whole message, which
+// local storage parses, so a part is named by its IMAP part path ("1.2") and
+// cut from the whole message, still transfer-encoded as IMAP gives it.
+// shortcut: a part downloads the whole message; use the part's own blobId
+// from bodyStructure if large mail makes that slow.
 func (r *Receiver) Fetch(ctx context.Context, req backend.ContentRequest) (io.ReadCloser, error) {
-	if req.Part != "" {
-		return nil, fmt.Errorf("jmap: part %q: %w", req.Part, backend.ErrNotFound)
-	}
 	b, err := r.blob(ctx, req.Ref)
 	if err != nil {
 		return nil, err
 	}
 	rc, err := r.c.download(ctx, b)
-	if err != nil || req.HeaderFields == nil {
+	if err != nil || req.HeaderFields == nil && req.Part == "" {
 		return rc, err
 	}
 	defer rc.Close()
@@ -537,7 +543,22 @@ func (r *Receiver) Fetch(ctx context.Context, req backend.ContentRequest) (io.Re
 	if err != nil {
 		return nil, err
 	}
-	return io.NopCloser(bytes.NewReader(headerFields(raw, req.HeaderFields))), nil
+	if req.Part == "" {
+		return io.NopCloser(bytes.NewReader(headerFields(raw, req.HeaderFields))), nil
+	}
+	var path []int
+	for s := range strings.SplitSeq(string(req.Part), ".") {
+		n, err := strconv.Atoi(s)
+		if err != nil || n < 1 {
+			return nil, fmt.Errorf("jmap: part %q: %w", req.Part, backend.ErrNotFound)
+		}
+		path = append(path, n)
+	}
+	sec := imapserver.ExtractBodySection(bytes.NewReader(raw), &imap.FetchItemBodySection{Part: path})
+	if sec == nil {
+		return nil, fmt.Errorf("jmap: part %q: %w", req.Part, backend.ErrNotFound)
+	}
+	return io.NopCloser(bytes.NewReader(sec)), nil
 }
 
 // Find implements backend.Receiver.

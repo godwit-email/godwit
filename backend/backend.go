@@ -210,7 +210,10 @@ func (FlagsChanged) change()    {}
 func (FolderSnapshot) change()  {}
 
 // FolderState is what local storage keeps of a folder's sync: the backend's
-// cursor and the local progress the backend reports back.
+// cursor and the local progress the backend reports back. A backend whose
+// cursor is the account's (JMAP) reports each folder once with an empty
+// Cursor and Synced: the folder then has no generations, so its locations
+// stay current until a FolderReset or a change removes them.
 type FolderState struct {
 	Cursor Cursor
 	Synced bool      // a first sync at this cursor completed
@@ -394,6 +397,12 @@ const (
 	FeatureLabelDelete      Feature = "label_delete"  // the folder only; its mail stays
 	FeatureSavesSent        Feature = "saves_sent"    // the server stores sent copies itself
 	FeaturePush             Feature = "push"
+	// FeatureAllMail: every message stays in the account's all-mail store
+	// whatever folders it is in (Gmail's All Mail): archiving takes it out
+	// of the inbox only, and one left in no folder synced still exists.
+	// Unsupported, archiving moves to the archive folder and a message in
+	// no folder is gone.
+	FeatureAllMail Feature = "all_mail"
 )
 
 // AllFeatures lists every Feature, in order.
@@ -401,7 +410,7 @@ var AllFeatures = []Feature{
 	FeatureMove, FeatureCopy, FeatureAddToFolder, FeatureRemoveFromFolder, FeaturePurge, FeatureAppend,
 	FeatureSeen, FeatureFlagged, FeatureAnswered, FeatureDraft, FeatureKeywords,
 	FeatureFolderCreate, FeatureFolderRename, FeatureFolderDelete, FeatureLabelDelete,
-	FeatureSavesSent, FeaturePush,
+	FeatureSavesSent, FeaturePush, FeatureAllMail,
 }
 
 // Level is how far a Feature is supported.

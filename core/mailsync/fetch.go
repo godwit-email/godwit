@@ -126,6 +126,7 @@ func run(ctx context.Context, db *store.DB, recv backend.Receiver, accountID int
 			return false, err
 		}
 		s.stable = d.Identity == backend.IdentityStable
+		s.allMail = d.Features[backend.FeatureAllMail].Level == backend.LevelSupported
 	}
 	states := map[backend.FolderRef]backend.FolderState{}
 	for ref, f := range s.folders {
@@ -151,7 +152,7 @@ func run(ctx context.Context, db *store.DB, recv backend.Receiver, accountID int
 	if err != nil { // a skipped folder may yet hold a membership, a claim or a stale location
 		return more, err
 	}
-	if err := dropOrphans(ctx, db, accountID, r.orphans, true, s.stable, &r); err != nil {
+	if err := dropOrphans(ctx, db, accountID, r.orphans, true, s.stable, s.allMail, &r); err != nil {
 		return more, err
 	}
 	if s.stable {
@@ -168,7 +169,8 @@ type syncRun struct {
 	db      *store.DB
 	a       *account
 	r       *result
-	stable  bool // the account's identity is stable (Gmail): orphans wait for the round's end (ADR 0034)
+	stable  bool // the account's identity is stable (Gmail, JMAP): orphans wait for the round's end (ADR 0034)
+	allMail bool // backend.FeatureAllMail (Gmail): a message in no folder synced may still exist
 	folders map[backend.FolderRef]*folder
 	merged  bool // the round merged the messages sharing a server_id
 	// stash holds a folder's arrivals that may claim a move awaiting its
@@ -209,15 +211,69 @@ func (s *syncRun) commit(p backend.Page) error {
 		run = nil
 		return err
 	}
+	// Consecutive increments (MessageGone, FlagsChanged) in one folder.
+	var incFolder backend.FolderRef
+	var incRefs []backend.MessageRef
+	incFlags := map[backend.MessageRef]backend.Flags{}
+	flushInc := func() error {
+		if len(incRefs) == 0 {
+			return nil
+		}
+		f, err := s.folder(incFolder)
+		if err == nil {
+			if err = s.flushStash(ctx, f); err == nil {
+				err = applyFlags(ctx, s.db, s.stable, s.a.id, f, incFlags, incRefs, s.r)
+			}
+		}
+		incRefs, incFlags = nil, map[backend.MessageRef]backend.Flags{}
+		return err
+	}
+	increment := func(at backend.Location, fl *backend.Flags) error {
+		if len(incRefs) > 0 && incFolder != at.Folder {
+			if err := flushInc(); err != nil {
+				return err
+			}
+		}
+		incFolder, incRefs = at.Folder, append(incRefs, at.Ref)
+		if fl != nil {
+			incFlags[at.Ref] = *fl
+		} else {
+			delete(incFlags, at.Ref)
+		}
+		return nil
+	}
 	for _, c := range p.Changes {
-		if m, ok := c.(backend.MessageAppeared); ok {
-			if len(run) > 0 && run[0].Folder != m.Folder {
+		switch c := c.(type) {
+		case backend.MessageAppeared:
+			if err := flushInc(); err != nil {
+				return err
+			}
+			if len(run) > 0 && run[0].Folder != c.Folder {
 				if err := flush(); err != nil {
 					return err
 				}
 			}
-			run = append(run, m)
+			run = append(run, c)
 			continue
+		case backend.MessageGone:
+			if err := flush(); err != nil {
+				return err
+			}
+			if err := increment(c.Location, nil); err != nil {
+				return err
+			}
+			continue
+		case backend.FlagsChanged:
+			if err := flush(); err != nil {
+				return err
+			}
+			if err := increment(c.Location, &c.Flags); err != nil {
+				return err
+			}
+			continue
+		}
+		if err := flushInc(); err != nil {
+			return err
 		}
 		if err := flush(); err != nil {
 			return err
@@ -246,11 +302,10 @@ func (s *syncRun) commit(p backend.Page) error {
 			if err := applySnapshot(ctx, s.db, s.stable, s.a.id, f, c.Messages, s.r); err != nil {
 				return err
 			}
-		default:
-			// shortcut: IMAP reports deletions and flags as snapshots; a backend
-			// reporting them as increments needs these handled first.
-			return fmt.Errorf("mailsync: change %T not handled", c)
 		}
+	}
+	if err := flushInc(); err != nil {
+		return err
 	}
 	if err := flush(); err != nil {
 		return err
@@ -556,7 +611,7 @@ func (r *result) orphan(ctx context.Context, db *store.DB, stable bool, accountI
 		r.orphans = append(r.orphans, ids...)
 		return nil
 	}
-	return dropOrphans(ctx, db, accountID, ids, false, false, r)
+	return dropOrphans(ctx, db, accountID, ids, false, false, false, r)
 }
 
 // dropOrphans deletes the orphaned messages of ids (attachments and FTS rows go
@@ -565,7 +620,7 @@ func (r *result) orphan(ctx context.Context, db *store.DB, stable bool, accountI
 // Cached attachment files are removed best effort after the commit; one that
 // cannot be removed is no longer referenced, so the startup orphan sweep of
 // the cache directory (store.CleanOrphans) collects it.
-func dropOrphans(ctx context.Context, db *store.DB, accountID int64, ids []int64, stray, stable bool, r *result) error {
+func dropOrphans(ctx context.Context, db *store.DB, accountID int64, ids []int64, stray, stable, allMail bool, r *result) error {
 	which := "id IN (" + marks(len(ids)) + ")"
 	if stray {
 		which = "(" + which + " OR NOT EXISTS (SELECT 1 FROM message_locations WHERE message_id = messages.id))"
@@ -575,8 +630,10 @@ func dropOrphans(ctx context.Context, db *store.DB, accountID int64, ids []int64
 	}
 	where, args := "account_id = ? AND "+which+" AND "+orphaned, append([]any{accountID}, anys(ids)...)
 	if stable {
-		where += ` AND NOT EXISTS (SELECT 1 FROM ops WHERE message_id = messages.id AND state = 'pending')
-			AND (server_id IS NULL OR id IN (` + marks(len(r.expunged)) + `)
+		where += ` AND NOT EXISTS (SELECT 1 FROM ops WHERE message_id = messages.id AND state = 'pending')`
+	}
+	if allMail {
+		where += ` AND (server_id IS NULL OR id IN (` + marks(len(r.expunged)) + `)
 				OR EXISTS (SELECT 1 FROM folders WHERE account_id = messages.account_id AND role = 'all'))`
 		args = append(args, anys(r.expunged)...)
 	}
@@ -649,6 +706,17 @@ func partCost(p mail.Attachment) int64 {
 // text parts. It reads no ENVELOPE: go-imap fails the whole FETCH on a server's
 // malformed one, so one bad message would stop the folder's sync.
 func toParsed(c *backend.Content) *mail.Parsed {
+	if c.Structure == nil && c.Raw != nil { // a backend with no structure gives the whole message
+		if p, err := mail.Parse(c.Raw); err == nil {
+			for i := range p.Attachments {
+				p.Attachments[i].Data = nil // downloaded on demand, as the backend's other mail
+			}
+			if p.Date.IsZero() {
+				p.Date = c.Date
+			}
+			return p
+		}
+	}
 	p := &mail.Parsed{}
 	if h, err := mail.Parse(c.Header); err == nil {
 		p.MessageID, p.Subject, p.Date, p.From, p.To, p.Cc = h.MessageID, h.Subject, h.Date, h.From, h.To, h.Cc
