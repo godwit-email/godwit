@@ -106,6 +106,9 @@ async function loaded(fireLoad = true) {
     if (f.contentDocument?.readyState !== "complete") throw new Error("frame loading");
     return f;
   });
+  // jsdom's about:blank is complete as soon as the frame mounts, before React runs the effect that
+  // listens for load: flush it first, or the load below goes unheard.
+  await act(async () => {});
   // biome-ignore lint/style/noNonNullAssertion: an attached iframe has a document
   const doc = frame.contentDocument!;
   const parsed = new DOMParser().parseFromString(frame.getAttribute("srcdoc") ?? "", "text/html");
