@@ -69,6 +69,21 @@ jobs:
           winapp cert generate --publisher $env:MSIX_PUBLISHER
           winapp pack @($dirs) --cert devcert.pfx
           Get-ChildItem *.msix*
+      # A release's only (release.yml grants the permissions; ci.yml does not). The Store re-signs the
+      # package but keeps its files, so a Store install's Godwit.exe verifies against this provenance.
+      # Provenance names the run's commit, so attest only when that is the tag's (not a manual rebuild).
+      - id: provenance
+        if: inputs.tag != ''
+        shell: bash
+        run: |
+          if [ "$(git rev-parse HEAD)" = "$GITHUB_SHA" ]; then echo "attest=true" >> "$GITHUB_OUTPUT"
+          else echo "::warning::$GITHUB_SHA is not the release tag's commit: the MSIX was not attested."; fi
+      - if: steps.provenance.outputs.attest == 'true'
+        uses: actions/attest@v4
+        with:
+          subject-path: |
+            *.msix*
+            msix-in-*/*.exe
       - uses: actions/upload-artifact@v7
         with:
           name: msix

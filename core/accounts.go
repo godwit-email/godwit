@@ -439,7 +439,7 @@ func (s *Service) RemoveAccount(ctx context.Context, id int64) error {
 	// else would ever remove them.
 	return errors.Join(s.deleteCredentials(id),
 		os.RemoveAll(filepath.Join(s.dataDir, "cache", strconv.FormatInt(id, 10))),
-		os.RemoveAll(filepath.Join(s.dataDir, "archive", strconv.FormatInt(id, 10))))
+		store.RemoveAll(filepath.Join(s.dataDir, "archive", strconv.FormatInt(id, 10))))
 }
 
 // DetectProvider finds the provider for an email address; DNS gets 5 seconds in total.

@@ -661,7 +661,7 @@ func TestAskSearchLimit(t *testing.T) {
 	require.Equal(t, "done", evs[len(evs)-1].Kind, "an invalid limit does not end the run: %+v", evs[len(evs)-1].Err)
 	rs := witResults(evs, "search_mail")
 	require.Len(t, rs, 2)
-	assert.Contains(t, rs[0].Result.Error, "must be <= 20", "limit 50 goes back to the model as an error")
+	assert.Contains(t, rs[0].Result.Error, "limit: expected <= 20", "limit 50 goes back to the model as an error")
 	assert.Empty(t, rs[0].Citations)
 	assert.Empty(t, rs[1].Result.Error)
 	var out struct{ Results []json.RawMessage }

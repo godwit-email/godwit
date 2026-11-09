@@ -271,7 +271,8 @@ var Migrations = [][]string{{
 	// Mail labels (ADR 0014): slug never changes, so a later sync can use it as
 	// an IMAP keyword. A message_labels row set by hand (source manual) wins over the
 	// classifier; active 0 is a label the user took off. labeled_at: NULL new mail
-	// waiting for the classifier, 0 a rescan's target, else when it was classified.
+	// waiting for the classifier, 0 a rescan's target, else when it was classified
+	// (or let go: older mail a sync imports, a rescan stopped).
 	`CREATE TABLE labels (id INTEGER PRIMARY KEY AUTOINCREMENT, slug TEXT NOT NULL UNIQUE, name TEXT NOT NULL,
 		description TEXT NOT NULL DEFAULT '', color TEXT NOT NULL, icon TEXT NOT NULL,
 		builtin INTEGER NOT NULL DEFAULT 0, position INTEGER NOT NULL)`,
@@ -708,6 +709,14 @@ var Migrations = [][]string{{
 	`CREATE TRIGGER ops_local_archive BEFORE INSERT ON ops
 		WHEN (SELECT kind FROM accounts WHERE id = NEW.account_id) = 'local_archive'
 		BEGIN SELECT RAISE(IGNORE); END`,
+}, {
+	// Auto-labeling classifies new mail only: older mail a sync imported (a
+	// first sync, a backfill) waiting with labeled_at NULL is let go, as sync
+	// now does when it imports it. New mail is what logged message.received,
+	// or still waits in message_imports for its round.
+	`UPDATE messages SET labeled_at = unixepoch() WHERE labeled_at IS NULL
+		AND NOT EXISTS (SELECT 1 FROM message_imports i WHERE i.message_id = messages.id)
+		AND id NOT IN (SELECT message_id FROM events_log WHERE type = 'message.received' AND message_id IS NOT NULL)`, // one pass: events_log has no index on message_id
 }}
 
 // HistoryRowsVersion is the schema version that keeps a conversation's

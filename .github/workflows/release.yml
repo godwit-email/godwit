@@ -34,7 +34,8 @@ jobs:
     runs-on: ${{ matrix.os }}
     permissions:
       contents: write # draft releases are visible only with push access
-      id-token: write # godwit-store-ci trusts only this repository's main branch (immutable GitHub IDs)
+      id-token: write # godwit-store-ci trusts only this repository's main branch (immutable GitHub IDs); also signs the provenance
+      attestations: write # the build provenance of what goes to dl.godwit.email
     defaults:
       run:
         shell: bash
@@ -128,6 +129,25 @@ jobs:
           AWS_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
           AWS_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
         run: go tool mygo build -platform "${{ matrix.platform }}" -upload
+      # Signed SLSA provenance naming this repository, workflow and commit, so anyone can check a
+      # download with `gh attestation verify FILE --repo godwit-email/godwit`. The files are the ones
+      # just uploaded, already signed and notarized. Not SHA256SUMS: it merges in other jobs' lines.
+      # Provenance names the run's commit, so attest only when that is the tag's (not a manual rebuild).
+      - id: provenance
+        run: |
+          if [ "$(git rev-parse HEAD)" = "$GITHUB_SHA" ]; then echo "attest=true" >> "$GITHUB_OUTPUT"
+          else echo "::warning::$GITHUB_SHA is not the release tag's commit: the build was not attested."; fi
+      - if: steps.provenance.outputs.attest == 'true'
+        uses: actions/attest@v4
+        with:
+          subject-path: |
+            dist/**/*.dmg
+            dist/**/godwit-setup-*.exe
+            dist/**/*.deb
+            dist/**/*.tar.gz
+            dist/**/*.delta
+            dist/**/install.sh
+            dist/**/install.ps1
 
   # Every platform is on dl.godwit.email: make the release notes public.
   publish:
@@ -187,6 +207,10 @@ jobs:
     needs: [release-please, build]
     if: ${{ !cancelled() && needs.build.result == 'success' }}
     uses: ./.github/workflows/msix.yml
+    permissions:
+      contents: read
+      id-token: write # msix.yml attests a release's bundle and executables
+      attestations: write
     with:
       tag: ${{ inputs.tag || needs.release-please.outputs.tag }}
 

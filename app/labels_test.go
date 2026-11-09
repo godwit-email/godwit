@@ -99,7 +99,11 @@ func TestSearchRowChips(t *testing.T) {
 func TestSidebarLabels(t *testing.T) {
 	h, _, m := labeledMail(t)
 	h.autoLabel(m.ID, "otp")
-	h.waitMail("the label group", func() bool { return h.tt.HasText("标签") && h.tt.HasText("验证码") })
+	// The sidebar's label comes from App.load, the row's chip from the list's own reload: wait for the
+	// sidebar's, or click finds only the chip (the first 验证码 in the frame once both show) and opens the mail.
+	h.waitMail("the label group", func() bool {
+		return slices.ContainsFunc(h.app.labels, func(l core.Label) bool { return l.Slug == "otp" && l.Count > 0 })
+	})
 	if h.tt.HasText("订单与物流") {
 		t.Error("a label with no mail shows in the sidebar")
 	}

@@ -688,7 +688,7 @@ func TestInvalidToolArgsGoBackToModel(t *testing.T) {
 
 		reqs := srv.Requests()
 		require.Len(t, reqs, 3)
-		assert.Contains(t, string(reqs[1].Messages), "must be <= 20", "the model is told why")
+		assert.Contains(t, string(reqs[1].Messages), "limit: expected <= 20", "the model is told why")
 		calls, ids := toolIDs(t, kind, reqs[2].Messages)
 		assert.ElementsMatch(t, calls, ids)
 		assert.Contains(t, string(reqs[0].Tools), "maximum", "the model still sees the real schema")

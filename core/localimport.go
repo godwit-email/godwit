@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"io"
 	"io/fs"
+	"log/slog"
 	"os"
 	"path/filepath"
 	"slices"
@@ -225,8 +226,9 @@ func (s *Service) deleteLocal(ctx context.Context, accountID int64, ts []target)
 		s.bus.Publish(events.Event{Type: events.MessagesChanged, AccountID: accountID, MessageIDs: chunk,
 			ThreadIDs: slices.Compact(slices.Sorted(slices.Values(tids)))})
 		for _, h := range hashes {
-			os.Remove(s.archivePath(accountID, h))
-			os.RemoveAll(s.archivePartsDir(accountID, h))
+			if err := errors.Join(store.RemoveAll(s.archivePath(accountID, h)), store.RemoveAll(s.archivePartsDir(accountID, h))); err != nil {
+				slog.Warn("local archive: original left behind", "account", accountID, "hash", h, "err", err)
+			}
 		}
 	}
 	return nil

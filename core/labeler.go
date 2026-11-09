@@ -17,6 +17,9 @@ import (
 // The classifier puts labels on Inbox mail: labeled_at NULL (new mail, while
 // Settings.AutoLabel is on) or 0 (a rescan's target, always). One judge call
 // per message, a yes/no question per label the user has not set by hand.
+// Mail a sync imports waits in message_imports until its round says whether it
+// is new; older mail (a first sync, a backfill) leaves with labeled_at set, so
+// only a rescan classifies it.
 
 const (
 	labelBatch     = 20
@@ -95,7 +98,7 @@ func (s *Service) classifyBatch(ctx context.Context) (int, error) {
 	}
 	newMail := st.AutoLabel && len(seeded.Values) > 0
 	rows, err := s.db.Query(ctx, `SELECT m.id, m.labeled_at FROM messages m
-		WHERE (m.labeled_at = 0 OR (? AND m.labeled_at IS NULL)) AND `+inboxCond+`
+		WHERE (m.labeled_at = 0 OR (? AND m.labeled_at IS NULL AND NOT EXISTS (SELECT 1 FROM message_imports i WHERE i.message_id = m.id))) AND `+inboxCond+`
 		ORDER BY m.labeled_at IS NULL, m.date DESC, m.id DESC LIMIT ?`, b2i(newMail), labelBatch)
 	if err != nil {
 		return 0, err
