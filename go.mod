@@ -3,6 +3,7 @@ module github.com/godwit-email/godwit
 go 1.27.3
 
 require (
+	git.sr.ht/~rockorager/go-jmap v0.5.3
 	github.com/MoeForge/moejs v0.1.0-alpha.11
 	github.com/clipperhouse/uax29/v2 v2.7.0
 	github.com/ebitengine/purego v0.11.3
@@ -61,3 +62,5 @@ ignore ./web/node_modules
 tool github.com/egoist/mygo/cmd/mygo
 
 replace github.com/emersion/go-imap/v2 => github.com/godwit-email/go-imap/v2 v2.0.0-beta.8.godwit.6
+
+replace git.sr.ht/~rockorager/go-jmap => github.com/godwit-email/go-jmap v0.5.4-godwit.1
