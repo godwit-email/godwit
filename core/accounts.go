@@ -664,6 +664,7 @@ func (s *Service) UpdateAccount(ctx context.Context, id int64, p AccountPatch) (
 		set("smtp_host", in.SMTPHost)
 		set("smtp_port", in.SMTPPort)
 		set("smtp_security", string(in.SMTPSecurity))
+		s.graphSend.Delete(id) // new servers: the next send tries SMTP before Graph again
 		// The checked settings work: the user just fixed the sign-in.
 		set("status", "ok")
 		set("status_detail", "")

@@ -122,3 +122,21 @@ func TestGrantsScope(t *testing.T) {
 	assert.False(t, grantsScope("openid email https://outlook.office.com/SMTP.Send", want))
 	assert.False(t, grantsScope("Mail.Read", want))
 }
+
+// New server settings undo the fallback: the next send tries SMTP again.
+func TestServerChangeRetriesSMTP(t *testing.T) {
+	e := newGraphEnv(t)
+	e.add(t)
+	e.sendNew(t)
+	e.sync(t)
+	require.Len(t, e.graphSent(), 1)
+
+	e.smtp.DisableAuth(false)
+	srv := e.acc.servers()
+	_, err := e.s.UpdateAccount(bg, e.acc.ID, AccountPatch{Servers: &srv})
+	require.NoError(t, err)
+	e.sendNew(t)
+	e.sync(t)
+	assert.Len(t, e.graphSent(), 1)
+	assert.Len(t, e.smtp.Messages(), 1)
+}
