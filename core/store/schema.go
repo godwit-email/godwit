@@ -717,6 +717,10 @@ var Migrations = [][]string{{
 	`UPDATE messages SET labeled_at = unixepoch() WHERE labeled_at IS NULL
 		AND NOT EXISTS (SELECT 1 FROM message_imports i WHERE i.message_id = messages.id)
 		AND id NOT IN (SELECT message_id FROM events_log WHERE type = 'message.received' AND message_id IS NOT NULL)`, // one pass: events_log has no index on message_id
+}, {
+	// 1: added though its SMTP check failed; the account only receives mail
+	// until a server change passes the SMTP check (GLOSSARY 只收信).
+	`ALTER TABLE accounts ADD COLUMN receive_only INTEGER NOT NULL DEFAULT 0`,
 }}
 
 // HistoryRowsVersion is the schema version that keeps a conversation's

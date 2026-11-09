@@ -162,7 +162,8 @@ func (s *Service) AddAccount(ctx context.Context, in AccountInput) (Account, err
 		}
 	}
 	checked, checkErr := s.check(ctx, in, "")
-	if checkErr != nil {
+	receiveOnly := in.ReceiveOnly && checked.OnlySMTPFailed()
+	if checkErr != nil && !receiveOnly {
 		return Account{}, &CheckError{Report: checked, err: checkErr}
 	}
 	if in.OAuthFlowID != "" {
@@ -207,10 +208,10 @@ func (s *Service) AddAccount(ctx context.Context, in AccountInput) (Account, err
 	}
 	stmts = append(stmts, sqlite.Statement{
 		SQL: `INSERT INTO accounts(email, name, alias, is_default, sync_limit, sync_since_months, auth_type, status, username,
-			imap_host, imap_port, imap_security, smtp_host, smtp_port, smtp_security, created_at, provider, oauth_client_id, imap_gmail, position)
-			VALUES (?, ?, ?, ?, ?, ?, ?, 'ok', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, (SELECT COALESCE(MAX(position) + 1, 0) FROM accounts))`,
+			imap_host, imap_port, imap_security, smtp_host, smtp_port, smtp_security, created_at, provider, oauth_client_id, imap_gmail, receive_only, position)
+			VALUES (?, ?, ?, ?, ?, ?, ?, 'ok', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, (SELECT COALESCE(MAX(position) + 1, 0) FROM accounts))`,
 		Args: []any{in.Email, in.Name, in.Alias, b2i(isDefault), sync.Limit, sync.Months, authType, in.username(),
-			in.IMAPHost, in.IMAPPort, string(in.IMAPSecurity), in.SMTPHost, in.SMTPPort, string(in.SMTPSecurity), time.Now().Unix(), in.Provider, in.oauthClientID, b2i(checked.gmail)},
+			in.IMAPHost, in.IMAPPort, string(in.IMAPSecurity), in.SMTPHost, in.SMTPPort, string(in.SMTPSecurity), time.Now().Unix(), in.Provider, in.oauthClientID, b2i(checked.gmail), b2i(receiveOnly)},
 	})
 	res, err := s.db.Transaction(ctx, stmts)
 	if err != nil {
@@ -300,6 +301,10 @@ func (s *Service) AddLocalArchive(ctx context.Context, name string) (Account, er
 // account, which has none of these.
 var ErrLocalArchive = errors.New("a local archive has no mail server")
 
+// ErrReceiveOnly is a send, or a sender choice, from a receive-only account
+// (Account.ReceiveOnly), or a reply with no other account that sends.
+var ErrReceiveOnly = errors.New("the account only receives mail")
+
 // localArchive reports whether account id is a local archive.
 func (s *Service) localArchive(ctx context.Context, id int64) (bool, error) {
 	rows, err := s.db.Query(ctx, "SELECT kind FROM accounts WHERE id = ?", id)
@@ -329,7 +334,7 @@ func b2i(b bool) int {
 
 const accountCols = `id, email, name, alias, COALESCE((SELECT html FROM signatures WHERE id = signature_id), ''), username, is_default, sync_limit, auth_type, status,
 	imap_host, imap_port, imap_security, smtp_host, smtp_port, smtp_security, smtp_reauth, provider, status_detail,
-	sync_since_months, (SELECT count(*) FROM folders WHERE account_id = accounts.id), signature_id, icon, ai_instructions, oauth_client_id, label_keywords, kind`
+	sync_since_months, (SELECT count(*) FROM folders WHERE account_id = accounts.id), signature_id, icon, ai_instructions, oauth_client_id, label_keywords, kind, receive_only`
 
 // ErrAccountNotFound is returned for an account id that does not exist.
 var ErrAccountNotFound = errors.New("account not found")
@@ -354,6 +359,7 @@ func scanAccount(r []any) Account {
 		SMTPHost: store.Str(r[13]), SMTPPort: int(store.Int(r[14])), SMTPSecurity: Security(store.Str(r[15])),
 		Provider: store.Str(r[17]), StatusDetail: store.Str(r[18]), SignatureID: store.Int(r[21]), Icon: store.Str(r[22]),
 		AIInstructions: store.Str(r[23]), OAuthClientID: store.Str(r[24]), LabelKeywords: store.Int(r[25]) == 1, Kind: store.Str(r[26]),
+		ReceiveOnly: store.Int(r[27]) == 1,
 	}
 	// SMTP refuses the password: the user is asked for it the same way. status and
 	// status_detail are IMAP's and the keychain's, and they take precedence.
@@ -566,7 +572,8 @@ func serverInput(email string, ss ServerSettings) AccountInput {
 
 // UpdateAccount writes p's fields in one transaction. New Servers are first
 // checked with the stored credentials (a failure is a *CheckError and nothing is
-// saved). IsDefault true makes the account the only default; false fails on the
+// saved; a receive-only account's failing SMTP step alone still saves them and
+// keeps it receive-only, a passing one makes it send again). IsDefault true makes the account the only default; false fails on the
 // default account, as one account is always the default. Sync is a Limit of
 // 1–100000, Months of 1–120, or neither (all).
 func (s *Service) UpdateAccount(ctx context.Context, id int64, p AccountPatch) (Account, error) {
@@ -653,9 +660,12 @@ func (s *Service) UpdateAccount(ctx context.Context, id int64, p AccountPatch) (
 			}
 			r, err = s.check(ctx, in, tok)
 		}
-		if err != nil {
+		// A receive-only account may change servers while SMTP still fails; a
+		// passing SMTP check makes it send again.
+		if err != nil && !(acc.ReceiveOnly && r.OnlySMTPFailed()) {
 			return Account{}, &CheckError{Report: r, err: err}
 		}
+		set("receive_only", b2i(err != nil))
 		set("username", in.username())
 		set("imap_host", in.IMAPHost)
 		set("imap_gmail", b2i(r.gmail))

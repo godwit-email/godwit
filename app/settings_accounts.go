@@ -432,6 +432,9 @@ func (p *settingsPage) accountView(c *ui.Context, acc core.Account) {
 				if acc.IsDefault {
 					kit.Badge(c, i18n.T("settings.account.default"))
 				}
+				if acc.ReceiveOnly {
+					kit.Badge(c, i18n.T("settings.account.receive_only"))
+				}
 				if isArchive(acc) { // never syncs
 					return
 				}
@@ -556,19 +559,27 @@ func (p *settingsPage) accountView(c *ui.Context, acc core.Account) {
 			})
 		}))
 	p.mailboxSection(c, acc.ID)
-	server := func(proto, host string, port int, sec core.Security) func() {
-		return row(proto, "", func() {
+	server := func(proto, host string, port int, sec core.Security, desc string) func() {
+		return row(proto, desc, func() {
 			kit.Text(c, host+":"+strconv.Itoa(port)+" · "+cmpTr("onboarding.security."+string(sec), string(sec)), t.Text.Sm).Font(theme.Mono).TextColor(t.Muted)
 		})
 	}
 	settingsSection(c, i18n.T("settings.account.login"), "",
 		row(i18n.T("settings.account.login.method"), p.authText(acc, prov), func() { p.authButton(c, acc, prov, false) }),
-		server("IMAP", acc.IMAPHost, acc.IMAPPort, acc.IMAPSecurity),
-		server("SMTP", acc.SMTPHost, acc.SMTPPort, acc.SMTPSecurity),
+		server("IMAP", acc.IMAPHost, acc.IMAPPort, acc.IMAPSecurity, ""),
+		server("SMTP", acc.SMTPHost, acc.SMTPPort, acc.SMTPSecurity, receiveOnlyHelp(acc)),
 		row(i18n.T("settings.account.servers"), i18n.T("settings.account.servers.help"), func() {
 			settingButton(c, i18n.T("settings.account.edit_servers"), kit.Outline, false).OnClick(func() { p.openDialog("servers", acc) })
 		}))
 	remove()
+}
+
+// receiveOnlyHelp says why a receive-only account does not send and how it can.
+func receiveOnlyHelp(acc core.Account) string {
+	if !acc.ReceiveOnly {
+		return ""
+	}
+	return i18n.T("settings.account.receive_only.help")
 }
 
 // cmpTr is key's message, or fallback when the catalog has none.

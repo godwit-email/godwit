@@ -56,6 +56,7 @@ var table = []Error{
 	{Code: "account_not_found", Err: core.ErrAccountNotFound},
 	{Code: "local_archive", Err: core.ErrLocalArchive},
 	{Code: "not_local_archive", Err: core.ErrNotLocalArchive},
+	{Code: "receive_only", Err: core.ErrReceiveOnly},
 	{Code: "role_folder", Err: core.ErrRoleFolder},
 	{Code: "folder_not_empty", Err: core.ErrFolderNotEmpty},
 	{Code: "folder_name_empty", Err: core.ErrFolderNameEmpty},

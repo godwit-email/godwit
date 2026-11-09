@@ -43,6 +43,12 @@ func (r CheckReport) OK() bool {
 	return len(r.Steps) > 0
 }
 
+// OnlySMTPFailed reports whether settings and imap passed and smtp failed:
+// what AccountInput.ReceiveOnly lets through.
+func (r CheckReport) OnlySMTPFailed() bool {
+	return len(r.Steps) == 3 && r.Steps[0].OK && r.Steps[1].OK && !r.Steps[2].OK && !r.Steps[2].Skipped
+}
+
 // CheckError is returned by TestAccount and AddAccount when a check fails.
 type CheckError struct {
 	Report CheckReport

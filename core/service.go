@@ -772,13 +772,20 @@ func (s *Service) syncAccount(ctx context.Context, accountID int64, explicit boo
 	return smtpErr
 }
 
-// checkSMTP reports whether the outbox may use SMTP. After SMTP refused the
+// checkSMTP reports whether the outbox may use SMTP: never for a
+// receive-only account. After SMTP refused the
 // password the outbox pauses: a worker sync skips it without logging in, and an
 // explicit SyncNow tries one SMTP login, which on success clears smtp_reauth.
 func (s *Service) checkSMTP(ctx context.Context, accountID int64, explicit bool) (bool, error) {
-	rows, err := s.db.Query(ctx, "SELECT smtp_reauth FROM accounts WHERE id = ?", accountID)
-	if err != nil || len(rows.Values) == 0 || store.Int(rows.Values[0][0]) == 0 {
+	rows, err := s.db.Query(ctx, "SELECT smtp_reauth, receive_only FROM accounts WHERE id = ?", accountID)
+	if err != nil || len(rows.Values) == 0 {
 		return err == nil, err
+	}
+	if store.Int(rows.Values[0][1]) != 0 { // a receive-only account never logs in to SMTP
+		return false, nil
+	}
+	if store.Int(rows.Values[0][0]) == 0 {
+		return true, nil
 	}
 	if !explicit {
 		return false, nil

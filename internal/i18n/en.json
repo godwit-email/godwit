@@ -733,6 +733,8 @@
   },
   "onboarding_reason_proxy_auth": "proxy authentication failed",
   "onboarding_next_proxy": "Check the proxy settings",
+  "onboarding_receive_only": "Add anyway (receive only)",
+  "onboarding_receive_only_note": "SMTP didn’t pass, so this account will only receive mail and can’t send. Edit its servers in account settings to send again.",
   "onboarding_relogin": "Sign in again",
   "onboarding_retype": "Re-enter the {arg1}",
   "@onboarding_retype": {
@@ -1194,6 +1196,8 @@
   "settings_account_reauth_done": "Signed in again",
   "settings_account_reauth_unknown": "The sign-in has expired and syncing has stopped. Mail on this computer can still be read and searched; mail you write stays in the outbox and goes out once you sign in again.",
   "settings_account_reauth_waiting": "Waiting for the browser…",
+  "settings_account_receive_only": "Receive only",
+  "settings_account_receive_only_help": "SMTP didn’t pass: this account can’t send. Edit the servers; once SMTP passes, it sends again.",
   "settings_account_remove": "Remove account",
   "settings_account_remove_aria": "Remove account {arg1}",
   "@settings_account_remove_aria": {

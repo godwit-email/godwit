@@ -523,10 +523,11 @@ func (s *Service) getMessage(ctx context.Context, args json.RawMessage) (any, er
 	return blocks(items, s.cite(ctx, items))[0], nil
 }
 
-// draftAccount is the account a draft is sent from: id, or for 0 the default one.
+// draftAccount is the account a draft is sent from: id, or for 0 the default
+// one that sends (not a local archive or receive-only).
 func (s *Service) draftAccount(ctx context.Context, id int64) (Account, error) {
 	if id == 0 {
-		rows, err := s.db.Query(ctx, "SELECT id FROM accounts WHERE kind != ? ORDER BY is_default DESC, position, id LIMIT 1", KindLocalArchive)
+		rows, err := s.db.Query(ctx, "SELECT id FROM accounts WHERE kind != ? AND receive_only = 0 ORDER BY is_default DESC, position, id LIMIT 1", KindLocalArchive)
 		if err != nil {
 			return Account{}, err
 		}
@@ -538,6 +539,9 @@ func (s *Service) draftAccount(ctx context.Context, id int64) (Account, error) {
 	acc, err := s.account(ctx, id)
 	if err == nil && acc.Kind == KindLocalArchive {
 		err = ErrLocalArchive
+	}
+	if err == nil && acc.ReceiveOnly {
+		err = ErrReceiveOnly
 	}
 	return acc, err
 }

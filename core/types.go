@@ -29,7 +29,11 @@ type AccountInput struct {
 	Provider                                          string // auth.Provider ID; empty is stored as other
 	// OAuthFlowID names a finished AwaitOAuth flow: the account signs in with its
 	// tokens instead of Password, and Email must be the signed-in address.
-	OAuthFlowID   string
+	OAuthFlowID string
+	// ReceiveOnly adds the account although its SMTP check fails (the settings
+	// and IMAP steps must pass); it then only receives mail. A passing SMTP
+	// check adds it as usual.
+	ReceiveOnly   bool
 	oauthClientID string // the flow's own client, set by AddAccount
 	// graph checks a stored OAuth account can send through Microsoft Graph, for
 	// a check whose SMTP AUTH is disabled; a flow's check makes its own.
@@ -63,6 +67,7 @@ type Account struct {
 	Provider, StatusDetail                  string
 	OAuthClientID                           string // the user's own OAuth client (OAuthClient), "" the provider's
 	Kind                                    string // "" a mail account, KindLocalArchive
+	ReceiveOnly                             bool   // added without working SMTP: it syncs but never sends (ErrReceiveOnly)
 }
 
 // KindLocalArchive is an account with no servers or credentials: it never

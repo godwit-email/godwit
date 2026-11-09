@@ -75,6 +75,7 @@ type onboarding struct {
 	oauthErr             error
 	report               core.CheckReport
 	checking, adding     bool
+	receiveOnly          bool   // the user chose to add it though only SMTP failed
 	confetti             *burst // thrown as the check passes, dropped once it lands
 	invalid, invalidNext string // the form's own settings-step failure, in words
 	name                 string
@@ -380,7 +381,7 @@ func (o *onboarding) input() core.AccountInput {
 	sp, _ := strconv.Atoi(strings.TrimSpace(o.smtpPort))
 	in := core.AccountInput{Email: strings.TrimSpace(o.email), Name: strings.TrimSpace(o.name), Username: strings.TrimSpace(o.username),
 		IMAPHost: strings.TrimSpace(o.imapHost), IMAPPort: ip, IMAPSecurity: o.imapSec,
-		SMTPHost: strings.TrimSpace(o.smtpHost), SMTPPort: sp, SMTPSecurity: o.smtpSec, Provider: o.prov.ID}
+		SMTPHost: strings.TrimSpace(o.smtpHost), SMTPPort: sp, SMTPSecurity: o.smtpSec, Provider: o.prov.ID, ReceiveOnly: o.receiveOnly}
 	if o.oauth() {
 		in.OAuthFlowID = o.flowID
 	} else {
@@ -401,7 +402,7 @@ func (o *onboarding) connect() {
 	}
 	from := o.step
 	o.goTo(stepChecking)
-	o.checking, o.report = true, core.CheckReport{}
+	o.checking, o.report, o.receiveOnly = true, core.CheckReport{}, false
 	if o.invalid, o.invalidNext = o.validate(); o.invalid != "" {
 		o.checking = false
 		o.report.Steps = []core.CheckStep{{Name: "settings", Kind: core.KindInvalid}, {Name: "imap", Skipped: true}, {Name: "smtp", Skipped: true}}
@@ -1091,6 +1092,10 @@ func (o *onboarding) checkView(c *ui.Context) {
 			kit.Button(c, i18n.Tf("onboarding.retype", o.secretName()), kit.ButtonOpts{Size: kit.SizeLg}).PaddingX(th.Space(3.5)).OnClick(func() { o.retry(false) })
 			kit.Button(c, i18n.T("onboarding.manual"), kit.ButtonOpts{Variant: kit.Outline, Size: kit.SizeLg}).PaddingX(th.Space(3.5)).FontWeight(400).OnClick(func() { o.retry(true) })
 		})
+		if o.report.OnlySMTPFailed() { // mail can still come in: the account just never sends
+			kit.Button(c, i18n.T("onboarding.receive_only"), kit.ButtonOpts{Variant: kit.Ghost, Size: kit.SizeLg}).PaddingX(th.Space(3.5)).FontWeight(400).
+				OnClick(func() { o.receiveOnly = true; o.goTo(stepDone) })
+		}
 	}
 }
 
@@ -1114,6 +1119,9 @@ func (o *onboarding) doneView(c *ui.Context) {
 		}
 		lineText(c, line, t.Text.Body).TextColor(t.Muted)
 	})
+	if o.receiveOnly {
+		kit.Alert(c, kit.Warning, i18n.T("onboarding.receive_only.note"), nil)
+	}
 	ui.Field(c, i18n.T("onboarding.name"), func() {
 		// Keep the completion form's original height; the 36px fields are for sign-in.
 		kit.Input(c, &o.name, kit.InputOpts{Placeholder: i18n.T("onboarding.name.placeholder")}).Height(th.Space(10) + theme.Stroke + theme.Stroke).Disabled(o.adding || o.addedID != 0) // the name saves with the account
