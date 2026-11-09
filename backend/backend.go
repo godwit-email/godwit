@@ -316,7 +316,17 @@ type RemoveFromFolder struct{ At Location }
 type Delete struct{ At Location }
 
 // Purge deletes the message at At for good (永久删除).
-type Purge struct{ At Location }
+type Purge struct {
+	At Location
+	// Confirm, if set, is asked again before each step that brings the
+	// deletion closer, the last one just before it cannot be undone. When it
+	// answers false the backend undoes what this or an earlier Apply of the
+	// purge left behind and returns Failed with Reason Cancelled.
+	Confirm func() bool
+}
+
+// Cancelled is the Reason of a Purge its Confirm called off.
+const Cancelled = "cancelled"
 
 // Append stores Raw into folder To, as with a sent copy. A backend does not
 // store it again when To already holds a message with MessageID and Raw's size.
@@ -453,8 +463,10 @@ type Receiver interface {
 	// Find lists the messages in folder whose Message-ID (without angle
 	// brackets) is messageID and, when size > 0, of that size.
 	Find(ctx context.Context, folder FolderRef, messageID string, size int64) ([]MessageRef, error)
-	// Apply writes one Op back. An error means the outcome is not known (a
-	// lost connection): the op is tried again later.
+	// Apply writes one Op back. ErrNotFound: the op's location no longer
+	// names the message (its folder was reset, or with IdentityStable the
+	// message left that folder), and nothing was done. Any other error means
+	// the outcome is not known (a lost connection): the op is tried again later.
 	Apply(ctx context.Context, op Op) (Result, error)
 	// Watch calls wake when the server has changes, with the folders that
 	// changed (nil: anywhere), until ctx ends or the connection fails.

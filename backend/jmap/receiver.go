@@ -601,6 +601,9 @@ func (r *Receiver) Apply(ctx context.Context, op backend.Op) (backend.Result, er
 			p["mailboxIds"] = map[string]bool{string(trash): true}
 		}
 	case backend.Purge:
+		if op.Confirm != nil && !op.Confirm() {
+			return backend.Result{Outcome: backend.Failed, Reason: backend.Cancelled}, nil
+		}
 		at, destroy = op.At, true
 	case backend.Copy:
 		return backend.Result{Outcome: backend.Unsupported, Reason: reasonNoCopy}, nil

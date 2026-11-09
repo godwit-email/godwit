@@ -57,12 +57,29 @@ func (s gmailServer) Deliver(t *testing.T, folder string, raw []byte) {
 	s.im.AddGmail(string(raw), nil, folder)
 }
 
+// The write-back part runs against the servers whose missing extensions
+// change how a move or a purge is done.
 func TestIMAPBackendContract(t *testing.T) {
-	backendtest.RunSync(t, func(t *testing.T) backendtest.Server { return imapServer{testmail.StartIMAP(t)} })
+	for name, opts := range map[string][]testmail.Option{
+		"Full":            nil,
+		"NoMove":          {testmail.WithoutMove()},
+		"NoCOPYUID":       {testmail.WithoutCOPYUID()},
+		"NoMoveNoUIDPlus": {testmail.WithoutMove(), testmail.WithoutUIDPlus()},
+		"NoMoveNoCOPYUID": {testmail.WithoutMove(), testmail.WithoutCOPYUID()},
+		"MoveNoUIDPlus":   {testmail.WithoutUIDPlus()},
+	} {
+		t.Run(name, func(t *testing.T) {
+			backendtest.RunWrite(t, func(t *testing.T) backendtest.Server { return imapServer{testmail.StartIMAP(t, opts...)} })
+		})
+	}
 }
 
 func TestIMAPBackendContractGmail(t *testing.T) {
-	backendtest.RunSync(t, func(t *testing.T) backendtest.Server {
-		return gmailServer{imapServer{testmail.StartIMAP(t, testmail.Gmail())}}
-	})
+	for name, opts := range map[string][]testmail.Option{"Full": nil, "NoMove": {testmail.WithoutMove()}} {
+		t.Run(name, func(t *testing.T) {
+			backendtest.RunWrite(t, func(t *testing.T) backendtest.Server {
+				return gmailServer{imapServer{testmail.StartIMAP(t, append(opts, testmail.Gmail())...)}}
+			})
+		})
+	}
 }

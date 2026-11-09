@@ -49,20 +49,28 @@ var syncTests = []contractTest{
 	{"FolderReset", testFolderReset},
 }
 
+// writeTests are the contract's write-back part: Find and Apply.
+var writeTests = []contractTest{
+	{"Find", testFind},
+	{"SetFlags", testSetFlags},
+	{"Move", testMove},
+	{"Failed", testFailed},
+	{"Unsupported", testUnsupported},
+}
+
 // Run runs the contract against the backend start gives.
 func Run(t *testing.T, start Fixture) {
-	run(t, start, append(slices.Clone(syncTests), []contractTest{
+	run(t, start, slices.Concat(syncTests, writeTests, []contractTest{
 		{"Check", testCheck},
 		{"Fetch", testFetch},
-		{"Find", testFind},
-		{"SetFlags", testSetFlags},
-		{"Move", testMove},
-		{"Failed", testFailed},
-		{"Unsupported", testUnsupported},
 		{"Watch", testWatch},
 		{"AuthFailed", testAuthFailed},
-	}...))
+	}))
 }
+
+// RunWrite runs the contract's sync and write-back parts, for a backend
+// whose other verbs are still to come.
+func RunWrite(t *testing.T, start Fixture) { run(t, start, slices.Concat(syncTests, writeTests)) }
 
 // RunSync runs only the contract's sync part, for a backend whose other verbs
 // are still to come.
@@ -475,6 +483,9 @@ func testMove(t *testing.T, start Fixture) {
 // An op the server refuses, a move to a folder there is not, fails.
 func testFailed(t *testing.T, start Fixture) {
 	_, r, _, m := started(t, start)
+	if s := describe(t, r).Features[backend.FeatureMove]; s.Level == backend.LevelUnsupported {
+		t.Skip("Move unsupported:", s.Reason)
+	}
 	if res := apply(t, r, backend.Move{At: m.Location, To: "no such folder"}); res.Outcome != backend.Failed || res.Reason == "" {
 		t.Errorf("Move to a missing folder = %+v, want failed with a reason", res)
 	}

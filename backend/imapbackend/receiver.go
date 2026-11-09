@@ -52,19 +52,11 @@ func (r *Receiver) Close() error {
 	return r.c.Close()
 }
 
-// errLater answers the verbs other tickets move here (#602, #603).
+// errLater answers the verbs another ticket moves here (#603).
 var errLater = errors.New("imapbackend: not implemented yet")
 
 func (r *Receiver) Fetch(context.Context, backend.ContentRequest) (io.ReadCloser, error) {
 	return nil, errLater
-}
-
-func (r *Receiver) Find(context.Context, backend.FolderRef, string, int64) ([]backend.MessageRef, error) {
-	return nil, errLater
-}
-
-func (r *Receiver) Apply(context.Context, backend.Op) (backend.Result, error) {
-	return backend.Result{}, errLater
 }
 
 func (r *Receiver) Watch(context.Context, func([]backend.FolderRef)) error { return errLater }
@@ -95,8 +87,9 @@ func describe(caps imap.CapSet) backend.Description {
 	}
 	gmail := caps.Has(GmailFeature)
 	d := backend.Description{Identity: backend.IdentityLocation, PollInterval: PollInterval, Features: map[backend.Feature]backend.Support{
-		// Without MOVE a move is COPY, \Deleted and UID EXPUNGE, which needs UIDPLUS.
-		backend.FeatureMove:             either(caps.Has(imap.CapMove) || caps.Has(imap.CapUIDPlus), "imap.no_move"),
+		// Without MOVE a move is COPY, \Deleted and UID EXPUNGE, which needs
+		// UIDPLUS; on Gmail it is label writes.
+		backend.FeatureMove:             either(caps.Has(imap.CapMove) || caps.Has(imap.CapUIDPlus) || gmail, "imap.no_move"),
 		backend.FeatureCopy:             either(!gmail, "imap.gmail_copy_is_label"),
 		backend.FeatureAddToFolder:      either(gmail, "imap.no_labels"),
 		backend.FeatureRemoveFromFolder: either(gmail, "imap.no_labels"),
