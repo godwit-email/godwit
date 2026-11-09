@@ -457,8 +457,9 @@ type Receiver interface {
 	// lost connection): the op is tried again later.
 	Apply(ctx context.Context, op Op) (Result, error)
 	// Watch calls wake when the server has changes, with the folders that
-	// changed (nil: anywhere), until ctx ends or the connection fails.
-	// ErrUnsupported: the server cannot push.
+	// changed (nil: anywhere), until ctx ends or the connection fails. It
+	// wakes once as soon as it is watching, for what changed before: a sync
+	// after that wake misses nothing. ErrUnsupported: the server cannot push.
 	Watch(ctx context.Context, wake func(folders []FolderRef)) error
 	// Check is the add-account check.
 	Check(ctx context.Context) (CheckResult, error)

@@ -15,6 +15,7 @@ import (
 	"unicode/utf8"
 
 	"github.com/egoist/mygo/plugins/sqlite"
+	"github.com/godwit-email/godwit/backend"
 	"github.com/godwit-email/godwit/backend/imapbackend"
 	"github.com/godwit-email/godwit/core/events"
 	gomail "github.com/godwit-email/godwit/core/mail"
@@ -1137,12 +1138,13 @@ func (s *Service) gmailAccount(ctx context.Context, acc int64) (bool, error) {
 		return false, nil
 	}
 	// An unknown legacy server must be identified before choosing archive semantics.
-	c, release, _, err := s.dialAccount(ctx, acc, nil)
+	recv, release, err := s.dialAccount(ctx, acc)
 	if err != nil {
 		return false, err
 	}
 	defer release()
-	return c.Caps().Has(imapbackend.GmailFeature), nil
+	d, err := recv.Describe(ctx)
+	return d.Identity == backend.IdentityStable, err
 }
 
 // archiveUndoWrites restores Gmail's INBOX label without removing a user label.

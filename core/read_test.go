@@ -14,6 +14,7 @@ import (
 
 	"github.com/emersion/go-imap/v2"
 	"github.com/godwit-email/godwit/backend"
+	"github.com/godwit-email/godwit/backend/imapbackend"
 	"github.com/godwit-email/godwit/core/events"
 	"github.com/godwit-email/godwit/core/internal/testmail"
 	gomail "github.com/godwit-email/godwit/core/mail"
@@ -499,7 +500,8 @@ func TestAttachmentFetcherConnectionClosedForNextLockHolder(t *testing.T) {
 	unlock, err := e.s.lockAccount(bg, e.acc.ID)
 	require.NoError(t, err)
 	assert.Nil(t, e.s.kept[e.acc.ID])
-	assert.Error(t, kept.c.Noop().Wait(), "closed once the lock was taken")
+	c, _ := kept.recv.(*imapbackend.Receiver).Client(bg)
+	assert.Error(t, c.Noop().Wait(), "closed once the lock was taken")
 	unlock()
 	_, _, err = f.get(ids[2][0].(int64))
 	require.NoError(t, err)

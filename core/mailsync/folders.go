@@ -66,18 +66,6 @@ func (s *syncRun) loadFolders(ctx context.Context) error {
 	return nil
 }
 
-// CountFolders is how many selectable folders LIST returns: those a sync mirrors.
-func CountFolders(c *imapclient.Client) (int, error) {
-	list, err := c.List("", "*", nil).Collect()
-	n := 0
-	for _, d := range list {
-		if imapbackend.Selectable(d) {
-			n++
-		}
-	}
-	return n, err
-}
-
 // applyFolders mirrors the server's folders into the folders table: updated
 // ones are added or renamed, gone ones deleted with the messages in them; a
 // message only moved there locally returns to its server folder.

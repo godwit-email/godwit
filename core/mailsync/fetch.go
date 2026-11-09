@@ -16,9 +16,7 @@ import (
 	"unicode/utf8"
 
 	"github.com/egoist/mygo/plugins/sqlite"
-	"github.com/emersion/go-imap/v2/imapclient"
 	"github.com/godwit-email/godwit/backend"
-	"github.com/godwit-email/godwit/backend/imapbackend"
 	"github.com/godwit-email/godwit/core/events"
 	"github.com/godwit-email/godwit/core/mail"
 	"github.com/godwit-email/godwit/core/store"
@@ -87,18 +85,14 @@ func (r *result) merged(target int64, others []int64) {
 	r.changedThreads = append(r.changedThreads, target)
 }
 
-// Fetch syncs every folder of the account over c with the IMAP backend, then
-// refreshes the Authentication-Results of cached messages. more reports that
-// a backfill has work left: the caller should sync again soon.
-//
-// shortcut: c stays the caller's, which also pushes ops and reads headers
-// over it; #603 gives the backend its own connection.
-func Fetch(ctx context.Context, db *store.DB, c *imapclient.Client, accountID int64, bus *events.Bus) (more bool, err error) {
-	recv := imapbackend.New(func(context.Context) (*imapclient.Client, error) { return c, nil }) // not closed: c is the caller's
+// Fetch syncs every folder of the account through recv, then refreshes the
+// Authentication-Results of cached messages. more reports that a backfill
+// has work left: the caller should sync again soon.
+func Fetch(ctx context.Context, db *store.DB, recv backend.Receiver, accountID int64, bus *events.Bus) (more bool, err error) {
 	if more, err = Sync(ctx, db, recv, accountID, bus); err != nil {
 		return more, err
 	}
-	again, err := refreshAuthenticationResults(ctx, db, c, accountID, bus)
+	again, err := refreshAuthenticationResults(ctx, db, recv, accountID, bus)
 	return more || again, err
 }
 

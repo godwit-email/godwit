@@ -260,13 +260,16 @@ func (r *receiver) Apply(_ context.Context, op backend.Op) (backend.Result, erro
 }
 
 func (r *receiver) Watch(ctx context.Context, wake func([]backend.FolderRef)) error {
-	for {
+	for first := true; ; first = false {
 		unlock, err := r.lock()
 		if err != nil {
 			return err
 		}
 		ch := r.s.changed
 		unlock()
+		if first {
+			wake(nil)
+		}
 		select {
 		case <-ctx.Done():
 			return nil

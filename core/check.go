@@ -7,8 +7,9 @@ import (
 	"time"
 	"unicode/utf8"
 
+	"github.com/godwit-email/godwit/backend"
 	"github.com/godwit-email/godwit/backend/conn"
-	"github.com/godwit-email/godwit/core/mailsync"
+	"github.com/godwit-email/godwit/backend/imapbackend"
 )
 
 // KindInvalid marks a failed settings step: the input itself is not valid.
@@ -114,19 +115,15 @@ func (s *Service) check(ctx context.Context, in AccountInput, token string) (Che
 			return KindInvalid, err
 		},
 		func() (conn.FailureKind, error) {
-			c, err := dialStep(ctx, func(ctx context.Context) (interface{ Close() error }, error) {
-				c, abort, err := conn.DialIMAPAbortable(ctx, conn.Endpoint{Host: in.Receiving.Host, Port: in.Receiving.Port, Security: in.Receiving.Security, Username: user, Password: in.Password, AccessToken: token}, nil)
-				if err == nil {
-					r.gmail = c.Caps().Has("X-GM-EXT-1")
-					stop := context.AfterFunc(ctx, abort)   // a stalled LIST ends with the step's timeout
-					r.Folders, _ = mailsync.CountFolders(c) // a failing LIST does not fail the sign-in
-					stop()
-				}
-				return c, err
-			})
-			if err == nil {
-				c.Close()
-			}
+			recv := imapbackend.New(imapbackend.Config{Host: in.Receiving.Host, Port: in.Receiving.Port, Security: in.Receiving.Security,
+				Credentials: func(context.Context) (backend.Credentials, error) {
+					return backend.Credentials{Username: user, Password: in.Password, Token: token}, nil
+				}})
+			defer recv.Close()
+			ctx, cancel := context.WithTimeout(ctx, checkTimeout)
+			defer cancel()
+			c, err := recv.Check(ctx)
+			r.Folders, r.gmail = c.Folders, c.Identity == backend.IdentityStable
 			return conn.Classify(err), err
 		},
 		func() (conn.FailureKind, error) {
