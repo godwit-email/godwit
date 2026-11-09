@@ -148,13 +148,16 @@ func TestPlaintextOnlyForLoopback(t *testing.T) {
 	require.Error(t, s.TestAccount(ctx, in))
 }
 
-// The server slots take the protocols that have a backend: IMAP to receive,
-// SMTP to send.
+// The server slots take the protocols that have a backend: IMAP or JMAP to
+// receive, SMTP to send.
 func TestAccountProtocols(t *testing.T) {
 	s := newTestService(t)
 	in := input(t, "127.0.0.1:1", "127.0.0.1:1", "secret")
-	in.Receiving.Protocol = "jmap"
-	require.ErrorContains(t, s.TestAccount(ctx, in), `receiving protocol "jmap" is not supported`)
+	in.Receiving.Protocol = "pop3"
+	require.ErrorContains(t, s.TestAccount(ctx, in), `receiving protocol "pop3" is not supported`)
+	in = input(t, "127.0.0.1:1", "127.0.0.1:1", "secret")
+	in.Receiving.Protocol, in.Receiving.Security = "jmap", core.SecurityStartTLS
+	require.ErrorContains(t, s.TestAccount(ctx, in), `JMAP security "starttls" is invalid`)
 	in = input(t, "127.0.0.1:1", "127.0.0.1:1", "secret")
 	in.Sending.Protocol = "imap"
 	require.ErrorContains(t, s.TestAccount(ctx, in), `sending protocol "imap" is not supported`)

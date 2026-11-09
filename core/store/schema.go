@@ -775,7 +775,6 @@ var Migrations = [][]string{{
 	`ALTER TABLE accounts ADD COLUMN features TEXT`,
 	`UPDATE accounts SET features = CASE imap_gmail WHEN 1 THEN '{"Identity":"stable"}' WHEN 0 THEN '{"Identity":"location"}' END`,
 	`ALTER TABLE accounts DROP COLUMN imap_gmail`,
-}, {
 	// A JMAP receiving slot's session resource path, as a session URL typed
 	// in gives it; '' discovers it at /.well-known/jmap.
 	`ALTER TABLE accounts ADD COLUMN recv_path TEXT NOT NULL DEFAULT ''`,

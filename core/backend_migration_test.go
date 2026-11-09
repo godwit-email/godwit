@@ -48,6 +48,7 @@ var toPreBackendSchema = []string{
 	`ALTER TABLE accounts DROP COLUMN send_auth`,
 	`ALTER TABLE accounts DROP COLUMN cursor`,
 	`ALTER TABLE accounts DROP COLUMN features`,
+	`ALTER TABLE accounts DROP COLUMN recv_path`,
 	fmt.Sprintf("PRAGMA user_version = %d", len(store.Migrations)-1),
 }
 
