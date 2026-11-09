@@ -481,6 +481,9 @@ func testMove(t *testing.T, start Fixture) {
 // An op the server refuses, a move to a folder there is not, fails.
 func testFailed(t *testing.T, start Fixture) {
 	_, r, _, m := started(t, start)
+	if s := describe(t, r).Features[backend.FeatureMove]; s.Level == backend.LevelUnsupported {
+		t.Skip("Move unsupported:", s.Reason)
+	}
 	if res := apply(t, r, backend.Move{At: m.Location, To: "no such folder"}); res.Outcome != backend.Failed || res.Reason == "" {
 		t.Errorf("Move to a missing folder = %+v, want failed with a reason", res)
 	}

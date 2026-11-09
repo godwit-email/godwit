@@ -56,18 +56,37 @@ func (s gmailServer) Deliver(t *testing.T, folder string, raw []byte) {
 	s.im.AddGmail(string(raw), nil, folder)
 }
 
-// imapParts is the contract the IMAP backend meets so far; #602 adds the
-// write-back (Find, SetFlags, Move, Failed, Unsupported).
-var imapParts = []string{"Describe", "FirstSync", "CursorResumes", "FolderReset", "Check", "Fetch", "Watch", "AuthFailed"}
+// writeParts is the contract's write-back part, the one a missing MOVE,
+// UIDPLUS or COPYUID changes.
+var writeParts = []string{"Describe", "FirstSync", "CursorResumes", "FolderReset", "Find", "SetFlags", "Move", "Failed", "Unsupported"}
 
+// The whole contract runs against a full server; the write-back part also
+// runs against the servers whose missing extensions change how a move or a
+// purge is done.
 func TestIMAPBackendContract(t *testing.T) {
-	backendtest.RunOnly(t, func(t *testing.T) backendtest.Server { return imapServer{testmail.StartIMAP(t)} }, imapParts...)
+	backendtest.Run(t, func(t *testing.T) backendtest.Server { return imapServer{testmail.StartIMAP(t)} })
+	for name, opts := range map[string][]testmail.Option{
+		"NoMove":          {testmail.WithoutMove()},
+		"NoCOPYUID":       {testmail.WithoutCOPYUID()},
+		"NoMoveNoUIDPlus": {testmail.WithoutMove(), testmail.WithoutUIDPlus()},
+		"NoMoveNoCOPYUID": {testmail.WithoutMove(), testmail.WithoutCOPYUID()},
+		"MoveNoUIDPlus":   {testmail.WithoutUIDPlus()},
+	} {
+		t.Run(name, func(t *testing.T) {
+			backendtest.RunOnly(t, func(t *testing.T) backendtest.Server { return imapServer{testmail.StartIMAP(t, opts...)} }, writeParts...)
+		})
+	}
 }
 
 func TestIMAPBackendContractGmail(t *testing.T) {
-	backendtest.RunOnly(t, func(t *testing.T) backendtest.Server {
+	backendtest.Run(t, func(t *testing.T) backendtest.Server {
 		return gmailServer{imapServer{testmail.StartIMAP(t, testmail.Gmail())}}
-	}, imapParts...)
+	})
+	t.Run("NoMove", func(t *testing.T) {
+		backendtest.RunOnly(t, func(t *testing.T) backendtest.Server {
+			return gmailServer{imapServer{testmail.StartIMAP(t, testmail.WithoutMove(), testmail.Gmail())}}
+		}, writeParts...)
+	})
 }
 
 // Without IDLE the server cannot push: Watch says so.
