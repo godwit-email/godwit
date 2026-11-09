@@ -723,9 +723,6 @@ func (s *Service) syncAccount(ctx context.Context, accountID int64, explicit boo
 		return err
 	}
 	defer release()
-	if t, ok := recv.(interface{ LogTrace(error) }); ok {
-		defer func() { t.LogTrace(err) }() // a response go-imap could not parse goes in the error report
-	}
 	// Purge and archive undo deadlines wake the worker again.
 	defer s.wakeForOps(ctx, accountID, s.clk().Now())
 	// Queued first, so this round's push expunges and its fetch drops the rows.

@@ -82,9 +82,10 @@ func (r *Receiver) changed() {
 	}
 }
 
-// LogTrace logs the end of the session's traffic, masked, when err is a
-// server response go-imap could not parse (conn.LogTrace).
-func (r *Receiver) LogTrace(err error) { conn.LogTrace(r.c, err) }
+// trace logs the end of the session's traffic, masked, when *err is a server
+// response go-imap could not parse (conn.LogTrace): the error report then
+// shows what the server sent. Each verb defers it.
+func (r *Receiver) trace(err *error) { conn.LogTrace(r.c, *err) }
 
 // Close closes the connection; a second Close is harmless.
 func (r *Receiver) Close() error {
@@ -97,7 +98,8 @@ func (r *Receiver) Close() error {
 // Fetch streams the content req names. Closing the stream before its end cuts
 // the connection, since IMAP has no way to stop a literal; the session is then
 // done.
-func (r *Receiver) Fetch(ctx context.Context, req backend.ContentRequest) (io.ReadCloser, error) {
+func (r *Receiver) Fetch(ctx context.Context, req backend.ContentRequest) (_ io.ReadCloser, err error) {
+	defer r.trace(&err)
 	c, err := r.client(ctx)
 	if err != nil {
 		return nil, err
@@ -168,7 +170,8 @@ func (l *literal) Close() error {
 // INBOX at each change the server reports. It wakes once, with nil, as soon
 // as INBOX is selected: a sync after that wake misses nothing. When ctx ends
 // it returns with IDLE still running; Close ends it.
-func (r *Receiver) Watch(ctx context.Context, wake func(folders []backend.FolderRef)) error {
+func (r *Receiver) Watch(ctx context.Context, wake func(folders []backend.FolderRef)) (err error) {
+	defer r.trace(&err)
 	c, err := r.client(ctx)
 	if err != nil {
 		return err
@@ -216,7 +219,8 @@ func (r *Receiver) Watch(ctx context.Context, wake func(folders []backend.Folder
 
 // Check is the add-account check: a sign-in and the folders a sync would
 // mirror. A failing LIST does not fail it; it reports no folders.
-func (r *Receiver) Check(ctx context.Context) (backend.CheckResult, error) {
+func (r *Receiver) Check(ctx context.Context) (_ backend.CheckResult, err error) {
+	defer r.trace(&err)
 	c, err := r.client(ctx)
 	if err != nil {
 		return backend.CheckResult{}, err

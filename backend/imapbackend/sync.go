@@ -62,7 +62,8 @@ type syncer struct {
 // skipped, so it cannot hold back the others' arrivals round after round; its
 // refusal comes back as a backend.FolderError, and a broken connection still
 // stops the round.
-func (r *Receiver) Sync(ctx context.Context, req backend.SyncRequest, commit func(backend.Page) error) (bool, error) {
+func (r *Receiver) Sync(ctx context.Context, req backend.SyncRequest, commit func(backend.Page) error) (_ bool, err error) {
+	defer r.trace(&err)
 	c, err := r.client(ctx)
 	if err != nil {
 		return false, err

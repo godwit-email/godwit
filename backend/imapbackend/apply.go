@@ -18,7 +18,8 @@ import (
 // Find lists the messages in folder, examined, whose Message-ID is exactly
 // messageID and, when size > 0, of that size. SEARCH HEADER matches
 // substrings and ignores case, so each hit is checked.
-func (r *Receiver) Find(ctx context.Context, folder backend.FolderRef, messageID string, size int64) ([]backend.MessageRef, error) {
+func (r *Receiver) Find(ctx context.Context, folder backend.FolderRef, messageID string, size int64) (_ []backend.MessageRef, err error) {
+	defer r.trace(&err)
 	c, err := r.client(ctx)
 	if err != nil {
 		return nil, err
@@ -82,7 +83,8 @@ func opFeature(op backend.Op) backend.Feature {
 //
 // shortcut: Delete is not done yet (nothing queues it); the verb that needs
 // it adds it.
-func (r *Receiver) Apply(ctx context.Context, op backend.Op) (backend.Result, error) {
+func (r *Receiver) Apply(ctx context.Context, op backend.Op) (_ backend.Result, err error) {
+	defer r.trace(&err)
 	c, err := r.client(ctx)
 	if err != nil {
 		return backend.Result{}, err
