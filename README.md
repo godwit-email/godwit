@@ -40,6 +40,16 @@ Download the latest build from [godwit.email](https://godwit.email/#download):
   curl -fsSL https://dl.godwit.email/install.sh | sh
   ```
 
+### Verify a download
+
+Every release is built from its tag by [release.yml](.github/workflows/release.yml), which signs [build provenance](https://docs.github.com/en/actions/security-for-github-actions/using-artifact-attestations/using-artifact-attestations-to-establish-provenance-for-builds) for each file it uploads. Check that a download was built here, and from which commit, with the [GitHub CLI](https://cli.github.com):
+
+```sh
+gh attestation verify godwit-1.30.0-arm64.dmg --repo godwit-email/godwit
+```
+
+For the Microsoft Store version, verify `Godwit.exe` in its install folder (`Get-AppxPackage BaranWang.Godwit` shows where). The app also records its commit: `go version -m` on the executable prints it as `vcs.revision`.
+
 ## Command line
 
 ```
