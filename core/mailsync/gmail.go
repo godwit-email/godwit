@@ -76,8 +76,10 @@ func (s *syncRun) locate(ctx context.Context, f *folder, ms []backend.MessageApp
 				SELECT id, ?, ` + notMoving + `, ?, unixepoch(), date FROM messages WHERE id = ?
 				ON CONFLICT(message_id, folder_id) DO UPDATE SET server_ref = excluded.server_ref`,
 			Args: []any{f.id, string(m.Ref), id},
-		}, sqlite.Statement{SQL: "UPDATE ops SET state = 'done', last_error = NULL WHERE message_id = ? AND state = 'awaiting_claim' AND dst_folder_id = ?", Args: []any{id, f.id}},
-			sqlite.Statement{SQL: "UPDATE messages SET flags = ? WHERE id = ? AND flags != ? AND NOT " + pendingFlags, Args: []any{fl, id, fl}})
+		}, sqlite.Statement{SQL: "UPDATE ops SET state = 'done', last_error = NULL WHERE message_id = ? AND state = 'awaiting_claim' AND dst_folder_id = ?", Args: []any{id, f.id}})
+		if !s.lost[m.ServerID] {
+			stmts = append(stmts, sqlite.Statement{SQL: "UPDATE messages SET flags = ? WHERE id = ? AND flags != ? AND NOT " + pendingFlags, Args: []any{fl, id, fl}})
+		}
 		ids, tids = append(ids, id), append(tids, st[1])
 		if !m.Backfill {
 			stmts = append(stmts, sqlite.Statement{SQL: "UPDATE message_imports SET arrival = 1 WHERE message_id = ?", Args: []any{id}})

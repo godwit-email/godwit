@@ -244,7 +244,8 @@ type Local interface {
 	Held(ctx context.Context, folder FolderRef) (map[MessageRef]string, error)
 	// Lost is the ServerIDs of stored messages left at no server location,
 	// which local storage is about to delete as gone. A backend that still
-	// finds one reports it as a MessageAppeared without content.
+	// finds one reports it as a MessageAppeared without content; local
+	// storage takes its flags from the folder's next snapshot, not from it.
 	Lost(ctx context.Context) ([]string, error)
 }
 

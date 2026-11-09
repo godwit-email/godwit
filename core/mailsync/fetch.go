@@ -176,6 +176,9 @@ type syncRun struct {
 	allMail bool // backend.FeatureAllMail (Gmail): a message in no folder synced may still exist
 	folders map[backend.FolderRef]*folder
 	merged  bool // the round merged the messages sharing a server_id
+	// lost is what Lost reported: a message the backend finds again keeps its
+	// flags until a snapshot of the folder it is found in.
+	lost map[string]bool
 	// stash holds a folder's arrivals that may claim a move awaiting its
 	// claim, until the folder's arrivals end: a claim needs their count
 	// across every page. Its cursor waits with them (deferred).
@@ -524,8 +527,10 @@ func (s *syncRun) Lost(ctx context.Context) ([]string, error) {
 		return nil, err
 	}
 	var out []string
+	s.lost = map[string]bool{}
 	for _, v := range rows.Values {
 		out = append(out, store.Str(v[0]))
+		s.lost[store.Str(v[0])] = true
 	}
 	return out, nil
 }
