@@ -554,7 +554,11 @@ func (s *Service) Reauthorize(ctx context.Context, id int64, flowID string) erro
 	}
 	if acc.ReceiveOnly { // the new sign-in may send: a failing check keeps it receive-only
 		release() // the check may refresh the token
-		if _, err := s.recheckSending(ctx, acc); err != nil {
+		// Reread: the check refreshes with the OAuth client just saved.
+		if acc, err = s.account(ctx, id); err == nil {
+			_, err = s.recheckSending(ctx, acc)
+		}
+		if err != nil {
 			slog.Warn("could not recheck sending", "account", id, "err", err)
 		}
 	}

@@ -1056,10 +1056,10 @@ func (s *Service) runForward(ctx context.Context, r Rule, runID int64, i int, ms
 	switch {
 	case len(rows.Values) == 0:
 		return fail(RuleFailGone)
-	case store.Int(rows.Values[0][2]) != 0: // NewDraft would send it unattended from another account
-		return fail(RuleFailSend)
 	case !slices.Contains(newMailTriggers, trigger) || store.Int(rows.Values[0][1]) != 0:
 		return false, s.exec(ctx, ruleResult(runID, acts, i, RuleActionSkipped, nil, nil))
+	case store.Int(rows.Values[0][2]) != 0: // NewDraft would send it unattended from another account
+		return fail(RuleFailSend)
 	case !slices.Contains(r.Confirmed, rcptKey(to)):
 		return fail(RuleFailUnconfirmed)
 	}

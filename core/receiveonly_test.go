@@ -3,6 +3,8 @@ package core
 import (
 	"testing"
 
+	"github.com/godwit-email/godwit/core/mail"
+
 	"github.com/godwit-email/godwit/core/internal/testmail"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -141,6 +143,18 @@ func TestReceiveOnlyRuleForwardFails(t *testing.T) {
 	assert.NotEqual(t, []string{"forward done"}, e.results(t, e.runOf(t, "bill@x")))
 	assert.Equal(t, 0, e.count(t, "SELECT count(*) FROM outbox"))
 	assert.Empty(t, sent.Messages())
+}
+
+// A forward that would be skipped anyway lets the rule's other actions run.
+func TestReceiveOnlyRuleSkippedForwardGoesOn(t *testing.T) {
+	e := newReceiveOnlyEnv(t)
+	e.newMail(t, "old@x", "before")
+	e.sync(t)
+	e.saveForward(t, forwardRule(carol, RuleAction{Kind: ActionRead}), carol)
+	e.put(t, "INBOX", billWithPDF("fwd@x", mail.RuleHeader+": 7"))
+	e.sync(t)
+	e.waitRuns(t, 1)
+	assert.Equal(t, []string{"forward skipped", "read done"}, e.results(t, e.runOf(t, "fwd@x")))
 }
 
 func TestRecheckSending(t *testing.T) {
