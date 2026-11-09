@@ -349,6 +349,10 @@ func gui(ctx context.Context, dataDir string) int {
 				{Role: mygo.RoleEditMenu},
 				{Role: mygo.RoleWindowMenu},
 			}))
+			mygo.App.Dock.SetMenu(mygo.NewMenu([]*mygo.MenuItem{ // no-op off macOS
+				{Label: i18n.T("tray.sync_all"), Click: func(*mygo.MenuItem, *mygo.Window) { a.SyncAll() }},
+				{Label: i18n.T("mail.compose"), Click: compose},
+			}))
 		}
 		updateMenu()
 		trayMenu := func() *mygo.Menu {
