@@ -54,6 +54,9 @@ func (s *Service) checkStored(ctx context.Context, acc Account, in *AccountInput
 	if err != nil {
 		return CheckReport{}, err
 	}
+	if in.SendPassword, err = s.sendSecret(ctx, acc); err != nil {
+		return CheckReport{}, err
+	}
 	in.Password = pw
 	if tok != "" {
 		in.graph = func(ctx context.Context) error { _, _, err := s.graphToken(ctx, acc); return err }

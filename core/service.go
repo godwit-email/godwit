@@ -675,13 +675,13 @@ func (s *Service) dialAccount(ctx context.Context, accountID int64) (recv backen
 	var ver uint64
 	var rejected, tok string
 	recv = newReceiver(acc.Receiving, func(ctx context.Context) (backend.Credentials, error) {
-		pw, t, v, err := s.credentials(ctx, acc, rejected)
-		tok, ver = t, v
-		return backend.Credentials{Username: acc.Username, Password: pw, Token: t}, err
+		cr, v, err := s.slotCredentials(ctx, acc, false, rejected)
+		tok, ver = cr.Token, v
+		return cr, err
 	})
 	d, err := recv.Describe(ctx) // signs in
 	// A refused access token may just be stale: refresh it and try once more.
-	if errors.Is(err, backend.ErrAuthFailed) && tok != "" {
+	if errors.Is(err, backend.ErrAuthFailed) && tok != "" && acc.AuthType == AuthOAuth {
 		rejected = tok
 		d, err = recv.Describe(ctx)
 	}

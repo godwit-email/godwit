@@ -413,7 +413,7 @@ func (a *sendAuth) credentials(ctx context.Context) (backend.Credentials, error)
 	if a.acc.Sending.Protocol == auth.Graph {
 		cr.Token, a.ver, err = a.s.graphToken(ctx, a.acc)
 	} else {
-		cr.Password, cr.Token, a.ver, err = a.s.credentials(ctx, a.acc, a.rejected)
+		cr, a.ver, err = a.s.slotCredentials(ctx, a.acc, true, a.rejected)
 	}
 	if err != nil {
 		return backend.Credentials{}, err

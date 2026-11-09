@@ -18,11 +18,14 @@ const (
 
 // AccountInput is what the user supplies to add or test an account.
 type AccountInput struct {
-	Email, Name, Alias, Signature, Username, Password string
-	IsDefault                                         bool
-	Sync                                              *SyncRange // nil: the newest 2000 per folder
-	Receiving, Sending                                Server
-	Provider                                          string // auth.Provider ID; empty is stored as other
+	Email, Name, Alias, Signature, Username, Password string // Password: Receiving.Auth's secret, an API token for AuthAPIToken
+	// SendPassword is the sending server's own password; "" signs in to it
+	// with Password, which an API token cannot.
+	SendPassword       string
+	IsDefault          bool
+	Sync               *SyncRange // nil: the newest 2000 per folder
+	Receiving, Sending Server
+	Provider           string // auth.Provider ID; empty is stored as other
 	// OAuthFlowID names a finished AwaitOAuth flow: the account signs in with its
 	// tokens instead of Password, and Email must be the signed-in address.
 	OAuthFlowID string
@@ -99,7 +102,17 @@ type Server struct {
 	// Path is JMAP's session resource on Host, as a session URL typed in
 	// gives it; "" discovers it at /.well-known/jmap. Other protocols have none.
 	Path string
+	// Auth is how the slot signs in: AuthPassword ("" in input), AuthAPIToken
+	// (JMAP receiving only) or AuthOAuth, which only an OAuth flow sets.
+	Auth string
 }
+
+// How a server slot signs in (Server.Auth).
+const (
+	AuthPassword = "password"  // a password: IMAP LOGIN, SMTP AUTH, HTTP Basic
+	AuthAPIToken = "api_token" // an API token sent as HTTP Bearer (JMAP)
+	AuthOAuth    = "oauth"     // an OAuth access token
+)
 
 // SyncRange is how much of each folder a sync fetches: the newest Limit
 // messages, the mail of the last Months months, or (both 0) all of it.

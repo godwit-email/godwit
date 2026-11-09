@@ -1,6 +1,7 @@
 package core
 
 import (
+	"cmp"
 	"context"
 	"errors"
 	"fmt"
@@ -106,6 +107,9 @@ func (s *Service) check(ctx context.Context, in AccountInput, token string) (Che
 				if in.Password == "" && token == "" {
 					return KindInvalid, errors.New("password is required")
 				}
+				if in.Receiving.Auth == AuthAPIToken && in.SendPassword == "" {
+					return KindInvalid, errors.New("the sending password is required: an API token does not sign in to SMTP")
+				}
 				return KindInvalid, nil
 			}
 			g, err := s.flowGrant(in) // peeked: AddAccount still needs it
@@ -124,9 +128,11 @@ func (s *Service) check(ctx context.Context, in AccountInput, token string) (Che
 			return KindInvalid, err
 		},
 		func() (conn.FailureKind, error) {
-			recv := newReceiver(in.Receiving, func(context.Context) (backend.Credentials, error) {
-				return backend.Credentials{Username: user, Password: in.Password, Token: token}, nil
-			})
+			cr := backend.Credentials{Username: user, Password: in.Password, Token: token}
+			if in.Receiving.Auth == AuthAPIToken {
+				cr = backend.Credentials{Username: user, Token: in.Password}
+			}
+			recv := newReceiver(in.Receiving, func(context.Context) (backend.Credentials, error) { return cr, nil })
 			defer recv.Close()
 			ctx, cancel := context.WithTimeout(ctx, checkTimeout)
 			defer cancel()
@@ -136,7 +142,8 @@ func (s *Service) check(ctx context.Context, in AccountInput, token string) (Che
 		},
 		func() (conn.FailureKind, error) {
 			c, err := dialStep(ctx, func(ctx context.Context) (interface{ Close() error }, error) {
-				return conn.DialSMTP(ctx, conn.Endpoint{Host: in.Sending.Host, Port: in.Sending.Port, Security: in.Sending.Security, Username: user, Password: in.Password, AccessToken: token})
+				return conn.DialSMTP(ctx, conn.Endpoint{Host: in.Sending.Host, Port: in.Sending.Port, Security: in.Sending.Security, Username: user,
+					Password: cmp.Or(in.SendPassword, in.Password), AccessToken: token})
 			})
 			if err == nil {
 				c.Close()
