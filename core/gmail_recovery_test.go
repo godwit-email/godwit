@@ -86,7 +86,7 @@ func TestGmailUpgradeArchiveBeforeIdentityFetch(t *testing.T) {
 				}
 				require.NoError(t, e.s.MoveToRole(bg, []int64{rows[source]}, "archive"))
 				if official {
-					_, err := e.s.db.Execute(bg, "UPDATE accounts SET recv_host = ?, recv_port = ?, recv_security = ? WHERE id = ?", e.acc.IMAPHost, e.acc.IMAPPort, string(e.acc.IMAPSecurity), e.acc.ID)
+					_, err := e.s.db.Execute(bg, "UPDATE accounts SET recv_host = ?, recv_port = ?, recv_security = ? WHERE id = ?", e.acc.Receiving.Host, e.acc.Receiving.Port, string(e.acc.Receiving.Security), e.acc.ID)
 					require.NoError(t, err)
 					e.im.Restart()
 				}

@@ -187,8 +187,8 @@ func TestUpdateAccountServersChecked(t *testing.T) {
 	closed := ln.Addr().(*net.TCPAddr).Port
 	ln.Close()
 
-	srv := ServerSettings{Username: "alice", IMAPHost: e.acc.IMAPHost, IMAPPort: closed, IMAPSecurity: SecurityNone,
-		SMTPHost: e.acc.SMTPHost, SMTPPort: e.acc.SMTPPort, SMTPSecurity: SecurityNone}
+	srv := ServerSettings{Username: "alice", Receiving: Server{Host: e.acc.Receiving.Host, Port: closed, Security: SecurityNone},
+		Sending: Server{Host: e.acc.Sending.Host, Port: e.acc.Sending.Port, Security: SecurityNone}}
 	name := "Changed"
 	_, err = e.s.UpdateAccount(bg, e.acc.ID, AccountPatch{Name: &name, Servers: &srv})
 	var ce *CheckError
@@ -198,14 +198,14 @@ func TestUpdateAccountServersChecked(t *testing.T) {
 	a.Folders = e.acc.Folders // synced meanwhile
 	assert.Equal(t, e.acc, a, "nothing saved")
 
-	srv.IMAPPort = e.acc.IMAPPort
+	srv.Receiving.Port = e.acc.Receiving.Port
 	im2 := testmail.StartIMAP(t) // a working server elsewhere
 	host, port := splitAddr(t, im2.Addr)
-	srv.IMAPHost, srv.IMAPPort = host, port
+	srv.Receiving.Host, srv.Receiving.Port = host, port
 	a, err = e.s.UpdateAccount(bg, e.acc.ID, AccountPatch{Name: &name, Servers: &srv})
 	require.NoError(t, err)
 	assert.Equal(t, "Changed", a.Name)
-	assert.Equal(t, port, a.IMAPPort)
+	assert.Equal(t, port, a.Receiving.Port)
 	// The worker moves to the new server by itself.
 	(&syncEnv{im: im2}).put(t, "INBOX", msg("new-server@x"))
 	require.Eventually(t, func() bool {
@@ -267,7 +267,7 @@ func TestUpdateAccountNewServerForgetsOldUIDs(t *testing.T) {
 		base64.StdEncoding.EncodeToString([]byte("new server"))))
 	host, port := splitAddr(t, im2.Addr)
 	srv := e.acc.servers()
-	srv.IMAPHost, srv.IMAPPort = host, port
+	srv.Receiving.Host, srv.Receiving.Port = host, port
 	_, err := e.s.UpdateAccount(bg, e.acc.ID, AccountPatch{Servers: &srv})
 	require.NoError(t, err)
 
@@ -300,8 +300,8 @@ func TestUpdateAccountServersResumes(t *testing.T) {
 	im2 := testmail.StartIMAP(t)
 	smtp2, in2 := testmail.StartSMTP(t)
 	srv := e.acc.servers()
-	srv.IMAPHost, srv.IMAPPort = splitAddr(t, im2.Addr)
-	srv.SMTPHost, srv.SMTPPort = splitAddr(t, smtp2)
+	srv.Receiving.Host, srv.Receiving.Port = splitAddr(t, im2.Addr)
+	srv.Sending.Host, srv.Sending.Port = splitAddr(t, smtp2)
 	_, err := e.s.UpdateAccount(bg, e.acc.ID, AccountPatch{Servers: &srv})
 	require.NoError(t, err)
 	st, d := e.status(t)

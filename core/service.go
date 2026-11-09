@@ -682,7 +682,7 @@ func (s *Service) dialAccount(ctx context.Context, accountID int64, h *imapclien
 		if pw, tok, ver, err = s.credentials(ctx, acc, rejected); err != nil {
 			return nil, nil, nil, err
 		}
-		c, abort, err = conn.DialIMAPAbortable(ctx, conn.Endpoint{Host: acc.IMAPHost, Port: acc.IMAPPort, Security: acc.IMAPSecurity,
+		c, abort, err = conn.DialIMAPAbortable(ctx, conn.Endpoint{Host: acc.Receiving.Host, Port: acc.Receiving.Port, Security: acc.Receiving.Security,
 			Username: acc.Username, Password: pw, AccessToken: tok}, h)
 		// A refused access token may just be stale: refresh it and try once more.
 		if rejected != "" || tok == "" || !errors.Is(err, conn.ErrAuthFailed) {

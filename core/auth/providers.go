@@ -37,14 +37,45 @@ type OAuthConfig struct {
 // consent page names that app, not Godwit.
 type PublicClient struct{ ID, Secret string }
 
+// Protocols of a provider's entries and of an account's server slots.
+const (
+	IMAP = "imap"
+	SMTP = "smtp"
+	JMAP = "jmap"
+)
+
+// Entry is one way to a provider's mail: a protocol, its server and the
+// sign-in it takes.
+type Entry struct {
+	Protocol string
+	Server
+	Login string // app_password | authorization_code | client_password | password | oauth | api_token
+}
+
+// Provider is a known mail service. Entries lists its protocols in order of
+// preference, one each; HelpURL is about the sign-in of its IMAP and SMTP.
 type Provider struct {
-	ID, Name   string
-	Domains    []string
-	IMAP, SMTP Server
-	Login      string // app_password | authorization_code | client_password | password | oauth
-	HelpURL    string
-	Username   string // when the servers want something other than the address
-	OAuth      *OAuthConfig
+	ID, Name string
+	Domains  []string
+	Entries  []Entry
+	HelpURL  string
+	Username string // when the servers want something other than the address
+	OAuth    *OAuthConfig
+}
+
+// Entry returns p's entry for protocol, the zero Entry if it has none.
+func (p Provider) Entry(protocol string) Entry {
+	for _, e := range p.Entries {
+		if e.Protocol == protocol {
+			return e
+		}
+	}
+	return Entry{}
+}
+
+// IMAPSMTP is the IMAP and SMTP entries of a provider, both signing in with login.
+func IMAPSMTP(imap, smtp Server, login string) []Entry {
+	return []Entry{{IMAP, imap, login}, {SMTP, smtp, login}}
 }
 
 // GraphMailSend is Microsoft Graph's delegated permission to send as the user.
@@ -64,7 +95,7 @@ func smtps(h string) Server { return Server{h, 465, conn.TLS} }
 func table() []Provider {
 	return []Provider{
 		{ID: "gmail", Name: "Gmail", Domains: []string{"gmail.com", "googlemail.com"},
-			IMAP: tls("imap.gmail.com"), SMTP: smtps("smtp.gmail.com"), Login: "app_password",
+			Entries: IMAPSMTP(tls("imap.gmail.com"), smtps("smtp.gmail.com"), "app_password"),
 			HelpURL: "https://support.google.com/accounts/answer/185833",
 			// No client of Godwit's (mail.google.com is a restricted scope): the user's own
 			// client signs in, for those who cannot or will not use app passwords.
@@ -78,7 +109,7 @@ func table() []Provider {
 				Public: &PublicClient{ID: "406964657835-aq8lmia8j95dhl1a2bvharmfk3t1hgqj.apps.googleusercontent.com", Secret: "kSmqreRr0qwBWJgbf5Y-PjSU"},
 			}},
 		{ID: "outlook", Name: "Outlook", Domains: []string{"outlook.com", "hotmail.com", "live.com", "live.cn", "msn.com", "hotmail.co.uk", "outlook.jp"},
-			IMAP: tls("outlook.office365.com"), SMTP: Server{"smtp-mail.outlook.com", 587, conn.StartTLS}, Login: "oauth",
+			Entries: IMAPSMTP(tls("outlook.office365.com"), Server{"smtp-mail.outlook.com", 587, conn.StartTLS}, "oauth"),
 			// Personal accounts only. consumers, not common: common rejects personal accounts for our
 			// (unverified) app despite its audience. Work accounts would be their own provider on organizations.
 			OAuth: &OAuthConfig{
@@ -93,42 +124,47 @@ func table() []Provider {
 				GraphSend:   GraphMailSend,
 			}},
 		{ID: "netease163", Name: "163 Mail", Domains: []string{"163.com"},
-			IMAP: tls("imap.163.com"), SMTP: smtps("smtp.163.com"), Login: "authorization_code", HelpURL: neteaseHelp},
+			Entries: IMAPSMTP(tls("imap.163.com"), smtps("smtp.163.com"), "authorization_code"), HelpURL: neteaseHelp},
 		{ID: "netease126", Name: "126 Mail", Domains: []string{"126.com", "yeah.net"},
-			IMAP: tls("imap.126.com"), SMTP: smtps("smtp.126.com"), Login: "authorization_code", HelpURL: neteaseHelp},
+			Entries: IMAPSMTP(tls("imap.126.com"), smtps("smtp.126.com"), "authorization_code"), HelpURL: neteaseHelp},
 		{ID: "qq", Name: "QQ Mail", Domains: []string{"qq.com", "foxmail.com", "vip.qq.com"},
-			IMAP: tls("imap.qq.com"), SMTP: smtps("smtp.qq.com"), Login: "authorization_code",
+			Entries: IMAPSMTP(tls("imap.qq.com"), smtps("smtp.qq.com"), "authorization_code"),
 			HelpURL: "https://service.mail.qq.com/detail/0/75"},
 		{ID: "exmail", Name: "Tencent Exmail",
-			IMAP: tls("imap.exmail.qq.com"), SMTP: smtps("smtp.exmail.qq.com"), Login: "client_password",
+			Entries: IMAPSMTP(tls("imap.exmail.qq.com"), smtps("smtp.exmail.qq.com"), "client_password"),
 			HelpURL: "https://open.work.weixin.qq.com/help2/pc/19886"},
 		// Feishu, Lark and DingTalk Mail are on company domains, found by MX.
 		// Feishu's servers and its 专用密码 are from its help article; an admin
 		// enables third-party clients first.
 		{ID: "feishu", Name: "Feishu Mail",
-			IMAP: tls("imap.feishu.cn"), SMTP: smtps("smtp.feishu.cn"), Login: "app_password",
+			Entries: IMAPSMTP(tls("imap.feishu.cn"), smtps("smtp.feishu.cn"), "app_password"),
 			HelpURL: "https://www.feishu.cn/hc/zh-CN/articles/902478147400"},
 		// Lark is Feishu outside China: the same product on its own servers and
 		// tenants, so a Lark mailbox is not on imap.feishu.cn.
 		{ID: "lark", Name: "Lark Mail",
-			IMAP: tls("imap.larksuite.com"), SMTP: smtps("smtp.larksuite.com"), Login: "app_password",
+			Entries: IMAPSMTP(tls("imap.larksuite.com"), smtps("smtp.larksuite.com"), "app_password"),
 			HelpURL: "https://www.larksuite.com/hc/en-US/articles/378111206512-log-in-to-lark-mail-through-a-third-party-email-client"},
 		// DingTalk Mail runs on Alibaba Mail; its client hosts are the em.dingtalk.com
 		// names its certificate carries (no official page lists them). A client
 		// takes the password, or the 三方客户端安全密码 when one is set; the help
 		// is Alibaba Mail's.
 		{ID: "dingtalk", Name: "DingTalk Mail",
-			IMAP: tls("imap.em.dingtalk.com"), SMTP: smtps("smtp.em.dingtalk.com"), Login: "client_password",
+			Entries: IMAPSMTP(tls("imap.em.dingtalk.com"), smtps("smtp.em.dingtalk.com"), "client_password"),
 			HelpURL: "https://help.aliyun.com/zh/document_detail/36576.html"}, // Alibaba Mail's client settings and 安全密码
 		{ID: "icloud", Name: "iCloud Mail", Domains: []string{"icloud.com", "me.com", "mac.com"},
-			IMAP: tls("imap.mail.me.com"), SMTP: Server{"smtp.mail.me.com", 587, conn.StartTLS}, Login: "app_password",
+			Entries: IMAPSMTP(tls("imap.mail.me.com"), Server{"smtp.mail.me.com", 587, conn.StartTLS}, "app_password"),
 			HelpURL: "https://support.apple.com/102654"},
 		{ID: "yahoo", Name: "Yahoo Mail", Domains: []string{"yahoo.com", "ymail.com", "rocketmail.com"},
-			IMAP: tls("imap.mail.yahoo.com"), SMTP: smtps("smtp.mail.yahoo.com"), Login: "app_password",
+			Entries: IMAPSMTP(tls("imap.mail.yahoo.com"), smtps("smtp.mail.yahoo.com"), "app_password"),
 			HelpURL: "https://help.yahoo.com/kb/SLN4075.html"},
 		{ID: "aol", Name: "AOL Mail", Domains: []string{"aol.com", "aim.com"},
-			IMAP: tls("imap.aol.com"), SMTP: smtps("smtp.aol.com"), Login: "app_password",
+			Entries: IMAPSMTP(tls("imap.aol.com"), smtps("smtp.aol.com"), "app_password"),
 			HelpURL: "https://help.aol.com/articles/how-do-i-use-other-email-applications-to-send-and-receive-my-aol-mail"},
+		// JMAP signs in with an API token, IMAP and SMTP with an app password.
+		{ID: "fastmail", Name: "Fastmail", Domains: []string{"fastmail.com", "fastmail.fm"},
+			Entries: append([]Entry{{JMAP, Server{"api.fastmail.com", 443, conn.TLS}, "api_token"}},
+				IMAPSMTP(tls("imap.fastmail.com"), smtps("smtp.fastmail.com"), "app_password")...),
+			HelpURL: "https://www.fastmail.help/hc/en-us/articles/360058752854"},
 	}
 }
 
