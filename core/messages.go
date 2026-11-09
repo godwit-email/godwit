@@ -15,8 +15,8 @@ import (
 	"unicode/utf8"
 
 	"github.com/egoist/mygo/plugins/sqlite"
+	"github.com/godwit-email/godwit/backend/imapbackend"
 	"github.com/godwit-email/godwit/core/events"
-	"github.com/godwit-email/godwit/core/imapref"
 	gomail "github.com/godwit-email/godwit/core/mail"
 	"github.com/godwit-email/godwit/core/mailsync"
 	"github.com/godwit-email/godwit/core/store"
@@ -1120,10 +1120,10 @@ func (s *Service) gmailAccount(ctx context.Context, acc int64) (bool, error) {
 		return false, ErrAccountNotFound
 	}
 	if r.Values[0][0] != nil {
-		return imapref.Gmail(store.Str(r.Values[0][0])), nil
+		return imapbackend.Gmail(store.Str(r.Values[0][0])), nil
 	}
 	if store.Int(r.Values[0][1]) != 0 {
-		_, err := s.db.Execute(ctx, "UPDATE accounts SET features = ? WHERE id = ?", imapref.GmailFeature, acc)
+		_, err := s.db.Execute(ctx, "UPDATE accounts SET features = ? WHERE id = ?", imapbackend.GmailFeature, acc)
 		return true, err
 	}
 	// Gmail always lists its [Gmail] or [Google Mail] system folders; a synced
@@ -1142,7 +1142,7 @@ func (s *Service) gmailAccount(ctx context.Context, acc int64) (bool, error) {
 		return false, err
 	}
 	defer release()
-	return c.Caps().Has(imapref.GmailFeature), nil
+	return c.Caps().Has(imapbackend.GmailFeature), nil
 }
 
 // archiveUndoWrites restores Gmail's INBOX label without removing a user label.

@@ -15,10 +15,10 @@ import (
 	"unicode"
 	"unicode/utf8"
 
-	"github.com/emersion/go-imap/v2"
 	"github.com/emersion/go-message"
 	"github.com/emersion/go-message/charset"
 	gomail "github.com/emersion/go-message/mail"
+	"github.com/godwit-email/godwit/backend"
 	"golang.org/x/net/html"
 )
 
@@ -384,52 +384,41 @@ func ValidText(b []byte, cs string, isHTML bool) []byte {
 	return bytes.ToValidUTF8(b, []byte("\uFFFD"))
 }
 
-// ParseStructure walks an IMAP BODYSTRUCTURE and reports the displayable body
-// parts to fetch and the attachment metadata, with IMAP part paths.
+// ParseStructure walks a protocol backend's MIME structure and reports the
+// displayable body parts to fetch and the attachment metadata; each one's Part
+// is the backend's part reference.
 // ponytail: message/rfc822 children are treated as one attachment, not descended into.
-func ParseStructure(bs imap.BodyStructure) (textParts []Attachment, atts []Attachment) {
-	var walk func(bs imap.BodyStructure, path string, depth int)
-	walk = func(bs imap.BodyStructure, path string, depth int) {
-		switch b := bs.(type) {
-		case *imap.BodyStructureMultiPart:
+func ParseStructure(p *backend.Part) (textParts []Attachment, atts []Attachment) {
+	var walk func(p *backend.Part, depth int)
+	walk = func(p *backend.Part, depth int) {
+		if strings.HasPrefix(p.ContentType, "multipart/") {
 			if depth >= MaxMIMEDepth {
 				return
 			}
-			for i, c := range b.Children {
-				cp := strconv.Itoa(i + 1)
-				if path != "" {
-					cp = path + "." + cp
-				}
-				walk(c, cp, depth+1)
+			for i := range p.Children {
+				walk(&p.Children[i], depth+1)
 			}
-		case *imap.BodyStructureSinglePart:
-			if path == "" {
-				path = "1"
-			}
-			var disp string
-			var dp map[string]string
-			if d := b.Disposition(); d != nil {
-				disp, dp = strings.ToLower(d.Value), d.Params
-			}
-			ct := b.MediaType()
-			filename := dp["filename"]
-			if filename == "" {
-				filename = b.Params["name"]
-			}
-			cid := cleanID(b.ID)
-			body, inline := classify(ct, disp, filename, cid)
-			a := Attachment{
-				Part: path, Encoding: validUTF8(strings.ToLower(b.Encoding)), Charset: validUTF8(b.Params["charset"]),
-				Filename: validUTF8(filename), ContentType: validUTF8(ct), ContentID: validUTF8(cid), Inline: inline, Size: int(b.Size),
-			}
-			if body {
-				textParts = append(textParts, a)
-			} else {
-				atts = append(atts, a)
-			}
+			return
+		}
+		filename := p.DispositionParams["filename"]
+		if filename == "" {
+			filename = p.Params["name"]
+		}
+		cid := cleanID(p.ContentID)
+		body, inline := classify(p.ContentType, p.Disposition, filename, cid)
+		a := Attachment{
+			Part: string(p.Ref), Encoding: validUTF8(p.Encoding), Charset: validUTF8(p.Params["charset"]),
+			Filename: validUTF8(filename), ContentType: validUTF8(p.ContentType), ContentID: validUTF8(cid), Inline: inline, Size: int(p.Size),
+		}
+		if body {
+			textParts = append(textParts, a)
+		} else {
+			atts = append(atts, a)
 		}
 	}
-	walk(bs, "", 0)
+	if p != nil {
+		walk(p, 0)
+	}
 	return
 }
 

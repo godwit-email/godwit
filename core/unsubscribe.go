@@ -13,8 +13,8 @@ import (
 	"strings"
 
 	"github.com/emersion/go-imap/v2"
+	"github.com/godwit-email/godwit/backend/imapbackend"
 	"github.com/godwit-email/godwit/core/gateway"
-	"github.com/godwit-email/godwit/core/imapref"
 	"github.com/godwit-email/godwit/core/mail"
 	"github.com/godwit-email/godwit/core/store"
 	"github.com/godwit-email/godwit/internal/imagefetch"
@@ -202,7 +202,7 @@ func (s *Service) fetchListHeaders(ctx context.Context, accountID, messageID int
 		return nil, false
 	}
 	defer release()
-	validity, uid := imapref.Decode(store.Str(r[1]))
+	validity, uid := imapbackend.Decode(store.Str(r[1]))
 	if sel, err := c.Select(store.Str(r[0]), &imap.SelectOptions{ReadOnly: true}).Wait(); err != nil || sel.UIDValidity != validity {
 		return nil, false
 	}

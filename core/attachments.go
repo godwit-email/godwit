@@ -16,9 +16,9 @@ import (
 
 	"github.com/emersion/go-imap/v2"
 	"github.com/emersion/go-imap/v2/imapclient"
+	"github.com/godwit-email/godwit/backend/imapbackend"
 	"github.com/godwit-email/godwit/core/conn"
 	"github.com/godwit-email/godwit/core/events"
-	"github.com/godwit-email/godwit/core/imapref"
 	"github.com/godwit-email/godwit/core/mail"
 	"github.com/godwit-email/godwit/core/store"
 )
@@ -66,7 +66,7 @@ func (s *Service) loadAttachment(ctx context.Context, id int64) (attRow, error) 
 		return attRow{}, errors.New("attachment not found")
 	}
 	r := rows.Values[0]
-	validity, uid := imapref.Decode(store.Str(r[10]))
+	validity, uid := imapbackend.Decode(store.Str(r[10]))
 	return attRow{
 		info: AttachmentInfo{ID: id, Filename: store.Str(r[3]), ContentType: store.Str(r[4]), Size: int(store.Int(r[5])), Inline: store.Int(r[6]) != 0},
 		part: store.Str(r[0]), encoding: store.Str(r[1]), charset: store.Str(r[2]), cachePath: store.Str(r[7]),
@@ -380,7 +380,7 @@ func (s *Service) GetRawMessage(ctx context.Context, messageID int64) ([]byte, e
 	if store.Str(r[1]) == "" || r[2] == nil {
 		return nil, ErrNotOnServerYet
 	}
-	validity, uid := imapref.Decode(store.Str(r[2]))
+	validity, uid := imapbackend.Decode(store.Str(r[2]))
 	return s.download(ctx, attRow{accountID: store.Int(r[0]), folder: store.Str(r[1]), uidValidity: validity, uid: imap.UID(uid)})
 }
 

@@ -85,6 +85,7 @@ type IMAP struct {
 	rejectGmailSelect atomic.Bool
 	logins            atomic.Int64
 	ids               []map[string]string // guarded by mu
+	validity          map[string]uint32   // UIDVALIDITY added per folder by ResetUIDValidity; guarded by mu
 	gmu               sync.Mutex
 	gm                []*GmailMessage // Gmail mode; guarded by gmu
 }
@@ -110,6 +111,17 @@ func (s *IMAP) DropAfterNextAppend() { s.dropAppend.Store(true) }
 // DropOnNextUIDExpunge makes the next UID EXPUNGE close the client's
 // connection without expunging anything.
 func (s *IMAP) DropOnNextUIDExpunge() { s.dropExpunge.Store(true) }
+
+// ResetUIDValidity makes SELECT report a new UIDVALIDITY for folder from now
+// on, as a server that recreated it would; the messages and UIDs stay.
+func (s *IMAP) ResetUIDValidity(folder string) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.validity == nil {
+		s.validity = map[string]uint32{}
+	}
+	s.validity[folder]++
+}
 
 // MovesAndCopies is how many MOVE and COPY commands the server has handled.
 func (s *IMAP) MovesAndCopies() int64 { return s.cmds.Load() }
@@ -434,6 +446,9 @@ func (s session) Select(mb string, o *imap.SelectOptions) (*imap.SelectData, err
 	d, err := s.Session.Select(mb, o)
 	if err == nil {
 		s.conn.selected.Store(mb)
+		s.s.mu.Lock()
+		d.UIDValidity += s.s.validity[mb]
+		s.s.mu.Unlock()
 	}
 	return d, err
 }

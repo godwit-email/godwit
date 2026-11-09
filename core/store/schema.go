@@ -723,7 +723,7 @@ var Migrations = [][]string{{
 	`ALTER TABLE accounts ADD COLUMN receive_only INTEGER NOT NULL DEFAULT 0`,
 }, {
 	// Protocol backends (ADR 0037): servers, positions and identity are
-	// opaque, the backend's to encode. IMAP's encoding (core/imapref):
+	// opaque, the backend's to encode. IMAP's encoding (backend/imapbackend):
 	// a 服务器位置 is UIDVALIDITY:UID, a folder's cursor UIDVALIDITY:last UID,
 	// each zero-padded to 10 digits so one UIDVALIDITY's sort by UID; a
 	// folder's server_ref is its name. server_id is the message's identity

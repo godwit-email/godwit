@@ -14,7 +14,7 @@ import (
 	"github.com/egoist/mygo/plugins/sqlite"
 	"github.com/emersion/go-imap/v2"
 	"github.com/emersion/go-imap/v2/imapclient"
-	"github.com/godwit-email/godwit/core/imapref"
+	"github.com/godwit-email/godwit/backend/imapbackend"
 	"github.com/godwit-email/godwit/core/store"
 )
 
@@ -166,7 +166,7 @@ func pushOp(ctx context.Context, db *store.DB, c *imapclient.Client, o op) (prob
 		}
 		return "", nil // no server location: the move before it awaits its claim
 	}
-	srcValidity, srcUID := imapref.Decode(store.Str(r.Values[0][1]))
+	srcValidity, srcUID := imapbackend.Decode(store.Str(r.Values[0][1]))
 	src, uid, srcName := store.Int(r.Values[0][0]), imap.UID(srcUID), store.Str(r.Values[0][2])
 	if o.kind == "move" && o.dst == src {
 		return "", finish(ctx, db, o, "done", "")
@@ -199,7 +199,7 @@ func pushOp(ctx context.Context, db *store.DB, c *imapclient.Client, o op) (prob
 			return fail(ctx, db, o, errNoDestination)
 		}
 		dstName = store.Str(d.Values[0][0])
-		dstValidity, _ = imapref.Decode(store.Str(d.Values[0][1]))
+		dstValidity, _ = imapbackend.Decode(store.Str(d.Values[0][1]))
 	default:
 		msg := fmt.Sprintf("unknown change %q", o.kind)
 		return msg, finish(ctx, db, o, "failed", msg)
@@ -419,6 +419,9 @@ func move(c *imapclient.Client, set imap.UIDSet, dst string) (validity, uid uint
 	return d.UIDValidity, single(d.DestUIDs), nil
 }
 
+// capGmail marks a Gmail server, which answers X-GM-MSGID (ADR 0034).
+const capGmail imap.Cap = imapbackend.GmailFeature
+
 // single returns the only UID of s, or 0.
 func single(s imap.NumSet) uint32 {
 	u, _ := s.(imap.UIDSet)
@@ -439,7 +442,7 @@ func moved(ctx context.Context, db *store.DB, o op, validity, uid uint32) error 
 	stmts := append(unlocate(o.msg, o.src),
 		sqlite.Statement{SQL: "UPDATE ops SET state = 'awaiting_claim', last_error = NULL WHERE id = ?", Args: []any{o.id}})
 	if uid != 0 {
-		ids, _, err := doomed(ctx, db, "EXISTS (SELECT 1 FROM message_locations WHERE message_id = messages.id AND folder_id = ? AND server_ref = ?) AND id != ?", o.dst, imapref.Encode(validity, uid), o.msg)
+		ids, _, err := doomed(ctx, db, "EXISTS (SELECT 1 FROM message_locations WHERE message_id = messages.id AND folder_id = ? AND server_ref = ?) AND id != ?", o.dst, imapbackend.Encode(validity, uid), o.msg)
 		if err != nil {
 			return err
 		}
@@ -454,7 +457,7 @@ func moved(ctx context.Context, db *store.DB, o op, validity, uid uint32) error 
 		// Trash/Spam removes every other Gmail membership before a queued flag runs.
 		stmts = append(stmts, sqlite.Statement{SQL: `UPDATE message_locations SET server_ref = NULL
 			WHERE message_id = ? AND folder_id != ? AND EXISTS (SELECT 1 FROM folders WHERE id = ? AND role IN ('trash', 'junk'))`, Args: []any{o.msg, o.dst, o.dst}}, dropUnseen(o.msg))
-		stmts = append(stmts, locate(o.msg, o.dst, imapref.Encode(validity, uid))...)
+		stmts = append(stmts, locate(o.msg, o.dst, imapbackend.Encode(validity, uid))...)
 		if o.src == 0 {
 			stmts = append(stmts, settle(o.msg)...)
 		}

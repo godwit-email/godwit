@@ -12,7 +12,7 @@ import (
 	"unicode"
 	"unicode/utf8"
 
-	"github.com/emersion/go-imap/v2"
+	"github.com/godwit-email/godwit/backend"
 	"github.com/godwit-email/godwit/core/mail"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -81,13 +81,13 @@ func TestParseLimits(t *testing.T) {
 }
 
 func TestParseStructure(t *testing.T) {
-	bs := &imap.BodyStructureMultiPart{Subtype: "mixed", Children: []imap.BodyStructure{
-		&imap.BodyStructureMultiPart{Subtype: "alternative", Children: []imap.BodyStructure{
-			&imap.BodyStructureSinglePart{Type: "text", Subtype: "plain", Encoding: "quoted-printable", Params: map[string]string{"charset": "gbk"}},
-			&imap.BodyStructureSinglePart{Type: "text", Subtype: "html", Encoding: "base64"},
+	bs := &backend.Part{ContentType: "multipart/mixed", Children: []backend.Part{
+		{ContentType: "multipart/alternative", Children: []backend.Part{
+			{Ref: "1.1", ContentType: "text/plain", Encoding: "quoted-printable", Params: map[string]string{"charset": "gbk"}},
+			{Ref: "1.2", ContentType: "text/html", Encoding: "base64"},
 		}},
-		&imap.BodyStructureSinglePart{Type: "application", Subtype: "pdf", Encoding: "base64", Size: 10,
-			Extended: &imap.BodyStructureSinglePartExt{Disposition: &imap.BodyStructureDisposition{Value: "attachment", Params: map[string]string{"filename": "a.pdf"}}}},
+		{Ref: "2", ContentType: "application/pdf", Encoding: "base64", Size: 10,
+			Disposition: "attachment", DispositionParams: map[string]string{"filename": "a.pdf"}},
 	}}
 	text, atts := mail.ParseStructure(bs)
 	require.Len(t, text, 2)
@@ -99,21 +99,16 @@ func TestParseStructure(t *testing.T) {
 	assert.Equal(t, "a.pdf", atts[0].Filename)
 
 	// a raw CP1252 byte from the server becomes U+FFFD, or SQLite rejects the row (#467)
-	_, atts = mail.ParseStructure(&imap.BodyStructureSinglePart{Type: "image", Subtype: "jpeg", ID: "<1\x92021@example.net>",
+	_, atts = mail.ParseStructure(&backend.Part{Ref: "1", ContentType: "image/jpeg", ContentID: "<1\x92021@example.net>",
 		Params: map[string]string{"name": "logo\x92.jpg"}})
 	require.Len(t, atts, 1)
 	assert.Equal(t, "1\uFFFD021@example.net", atts[0].ContentID)
 	assert.Equal(t, "logo\uFFFD.jpg", atts[0].Filename)
 
-	// single-part message body is part "1"
-	text, _ = mail.ParseStructure(&imap.BodyStructureSinglePart{Type: "text", Subtype: "plain"})
-	require.Len(t, text, 1)
-	assert.Equal(t, "1", text[0].Part)
-
 	// depth cap: no panic, keeps what was parsed
-	var deep imap.BodyStructure = &imap.BodyStructureSinglePart{Type: "text", Subtype: "plain"}
+	deep := &backend.Part{Ref: "1", ContentType: "text/plain"}
 	for i := 0; i < 30; i++ {
-		deep = &imap.BodyStructureMultiPart{Subtype: "mixed", Children: []imap.BodyStructure{deep}}
+		deep = &backend.Part{ContentType: "multipart/mixed", Children: []backend.Part{*deep}}
 	}
 	text, _ = mail.ParseStructure(deep)
 	assert.Empty(t, text)
