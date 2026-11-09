@@ -44,5 +44,5 @@ func TestMigrationGmailCapabilityUsesCurrentEndpoint(t *testing.T) {
 	defer db.Close()
 	rows, err := db.Query(ctx, "SELECT features FROM accounts ORDER BY id")
 	require.NoError(t, err)
-	require.Equal(t, [][]any{{"X-GM-EXT-1"}, {"X-GM-EXT-1"}, {nil}, {nil}, {nil}, {nil}, {nil}}, rows.Values)
+	require.Equal(t, [][]any{{`{"Identity":"stable"}`}, {`{"Identity":"stable"}`}, {nil}, {nil}, {nil}, {nil}, {nil}}, rows.Values)
 }

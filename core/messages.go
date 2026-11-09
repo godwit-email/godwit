@@ -16,7 +16,6 @@ import (
 
 	"github.com/egoist/mygo/plugins/sqlite"
 	"github.com/godwit-email/godwit/backend"
-	"github.com/godwit-email/godwit/backend/imapbackend"
 	"github.com/godwit-email/godwit/core/events"
 	gomail "github.com/godwit-email/godwit/core/mail"
 	"github.com/godwit-email/godwit/core/mailsync"
@@ -1120,11 +1119,11 @@ func (s *Service) gmailAccount(ctx context.Context, acc int64) (bool, error) {
 	if len(r.Values) == 0 {
 		return false, ErrAccountNotFound
 	}
-	if r.Values[0][0] != nil {
-		return imapbackend.Gmail(store.Str(r.Values[0][0])), nil
+	if d, ok := decodeFeatures(r.Values[0][0]); ok {
+		return d.Identity == backend.IdentityStable, nil
 	}
-	if store.Int(r.Values[0][1]) != 0 {
-		_, err := s.db.Execute(ctx, "UPDATE accounts SET features = ? WHERE id = ?", imapbackend.GmailFeature, acc)
+	if store.Int(r.Values[0][1]) != 0 { // the next sign-in records the rest
+		_, err := s.db.Execute(ctx, "UPDATE accounts SET features = ? WHERE id = ?", encodeFeatures(backend.Description{Identity: backend.IdentityStable}), acc)
 		return true, err
 	}
 	// Gmail always lists its [Gmail] or [Google Mail] system folders; a synced

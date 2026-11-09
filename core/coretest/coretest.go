@@ -68,6 +68,7 @@ type Env struct {
 	started map[string]*mailServers // StartServers' servers by IMAP address, until an account adopts them
 	egress  atomic.Int64
 	clock   *testclock.Clock
+	imap    []testmail.Option // every account's IMAP server's
 }
 
 type mailServers struct {
@@ -85,6 +86,7 @@ type config struct {
 	unsub            *http.Client
 	model            mask.Recognizer
 	recognitionModel []string
+	imap             []testmail.Option
 }
 
 // WithRecognitionModelSources has the Service download 识别模型's files from urls
@@ -111,6 +113,12 @@ func WithUnsubscribeClient(c *http.Client) Option { return func(cfg *config) { c
 // WithRecognizer reads for 识别模型 with r (core.Options.Recognizer).
 func WithRecognizer(r mask.Recognizer) Option { return func(c *config) { c.model = r } }
 
+// WithoutUIDPlus gives every account an IMAP server without UIDPLUS: it
+// cannot delete permanently.
+func WithoutUIDPlus() Option {
+	return func(c *config) { c.imap = append(c.imap, testmail.WithoutUIDPlus()) }
+}
+
 // WithoutAutoSync starts no background sync; Deliver still syncs.
 func WithoutAutoSync() Option { return func(c *config) { c.autoSync = false } }
 
@@ -135,7 +143,7 @@ func New(t *testing.T, opts ...Option) *Env {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { svc.Close() })
-	e := &Env{Svc: svc, DataDir: dir, servers: map[int64]*mailServers{}, started: map[string]*mailServers{}, clock: clock}
+	e := &Env{Svc: svc, DataDir: dir, servers: map[int64]*mailServers{}, started: map[string]*mailServers{}, clock: clock, imap: cfg.imap}
 	svc.SetClockForTest(e.clock)
 
 	api := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -214,7 +222,7 @@ func splitHostPort(t *testing.T, addr string) (string, int) {
 // files sent mail into the IMAP Sent folder). The first account is the default.
 func (e *Env) AddAccount(t *testing.T, email string) core.Account {
 	t.Helper()
-	im := testmail.StartIMAP(t)
+	im := testmail.StartIMAP(t, e.imap...)
 	addr, in := testmail.StartSMTP(t, testmail.SaveToSent(im))
 	ih, ip := splitHostPort(t, im.Addr)
 	sh, sp := splitHostPort(t, addr)
@@ -242,7 +250,7 @@ func (e *Env) AddAccount(t *testing.T, email string) core.Account {
 // work for it as for AddAccount's.
 func (e *Env) StartServers(t *testing.T) (imapHost string, imapPort int, smtpHost string, smtpPort int, user, password string) {
 	t.Helper()
-	im := testmail.StartIMAP(t)
+	im := testmail.StartIMAP(t, e.imap...)
 	addr, in := testmail.StartSMTP(t, testmail.SaveToSent(im))
 	imapHost, imapPort = splitHostPort(t, im.Addr)
 	smtpHost, smtpPort = splitHostPort(t, addr)

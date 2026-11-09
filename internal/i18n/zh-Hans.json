@@ -2079,5 +2079,16 @@
   "error_role_folder": "收件箱和已删除不能重命名或删除。",
   "error_folder_not_empty": "文件夹不是空的，先把里面的邮件移走。",
   "error_folder_name_empty": "文件夹需要一个名字。",
-  "error_folder_exists": "已有同名文件夹。"
+  "error_folder_exists": "已有同名文件夹。",
+  "feature_reason_imap_no_move": "服务器不能移动邮件（既不支持 MOVE，也不支持 UIDPLUS）。",
+  "feature_reason_imap_gmail_copy_is_label": "Gmail 里的副本是同一封邮件多加一个标签。",
+  "feature_reason_imap_no_labels": "服务器没有标签：一封邮件只能在一个文件夹里。",
+  "feature_reason_imap_no_uidplus": "服务器不能永久删除邮件（不支持 UIDPLUS）。",
+  "feature_reason_imap_gmail_folder_is_label": "Gmail 的文件夹就是标签：删除它不会删除里面的邮件。",
+  "feature_reason_imap_client_saves_sent": "已发送邮件的副本由 Godwit 自己保存。",
+  "feature_reason_imap_no_idle": "服务器不能推送新邮件（不支持 IDLE），Godwit 每隔几分钟检查一次。",
+  "feature_reason_jmap_no_copy": "JMAP 不能在账户内复制邮件，只能把它加到另一个邮箱。",
+  "feature_reason_jmap_append_pending": "暂不支持通过 JMAP 往服务器添加邮件。",
+  "feature_reason_jmap_folders_pending": "暂不支持通过 JMAP 管理文件夹。",
+  "feature_reason_jmap_sent_via_smtp": "邮件通过 SMTP 发送，服务器上不会保存副本。"
 }

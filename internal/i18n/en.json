@@ -3804,5 +3804,16 @@
   "error_role_folder": "Inbox and Trash cannot be renamed or deleted.",
   "error_folder_not_empty": "The folder is not empty. Move its mail out first.",
   "error_folder_name_empty": "A folder needs a name.",
-  "error_folder_exists": "A folder with this name already exists."
+  "error_folder_exists": "A folder with this name already exists.",
+  "feature_reason_imap_no_move": "The server can't move mail (it supports neither MOVE nor UIDPLUS).",
+  "feature_reason_imap_gmail_copy_is_label": "In Gmail a copy is the same message with one more label.",
+  "feature_reason_imap_no_labels": "The server has no labels: a message is in one folder only.",
+  "feature_reason_imap_no_uidplus": "The server can't delete mail permanently (it doesn't support UIDPLUS).",
+  "feature_reason_imap_gmail_folder_is_label": "In Gmail a folder is a label: deleting it keeps its mail.",
+  "feature_reason_imap_client_saves_sent": "Godwit saves a copy of sent mail itself.",
+  "feature_reason_imap_no_idle": "The server can't push new mail (no IDLE); Godwit checks every few minutes.",
+  "feature_reason_jmap_no_copy": "JMAP can't copy mail within an account, only add it to one more mailbox.",
+  "feature_reason_jmap_append_pending": "Adding mail to the server over JMAP isn't available yet.",
+  "feature_reason_jmap_folders_pending": "Managing folders over JMAP isn't available yet.",
+  "feature_reason_jmap_sent_via_smtp": "Mail is sent over SMTP, which saves no copy on the server."
 }

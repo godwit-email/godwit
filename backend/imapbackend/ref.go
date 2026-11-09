@@ -8,7 +8,6 @@ package imapbackend
 
 import (
 	"fmt"
-	"slices"
 	"strconv"
 	"strings"
 )
@@ -40,17 +39,5 @@ func Validity(col string) string { return "substr(" + col + ", 1, 10)" }
 // which no server uses: the folder or location then reads as recreated.
 func ZeroValidity(col string) string { return "'0000000000' || substr(" + col + ", 11)" }
 
-// GmailFeature in accounts.features marks a server with Gmail's IMAP
-// extensions (X-GM-EXT-1).
+// GmailFeature is the capability of a server with Gmail's IMAP extensions.
 const GmailFeature = "X-GM-EXT-1"
-
-// Gmail reports whether accounts.features (not NULL) has Gmail's extensions.
-func Gmail(features string) bool { return slices.Contains(strings.Fields(features), GmailFeature) }
-
-// Features is accounts.features for a server with or without them.
-func Features(gmail bool) string {
-	if gmail {
-		return GmailFeature
-	}
-	return ""
-}

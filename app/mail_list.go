@@ -934,7 +934,8 @@ func (p *mailPage) listView(c *ui.Context) {
 				star = "star"
 			}
 			for _, k := range []string{read, star} {
-				if m.Item(i18n.T("mail.action." + k)).Icon(menuIcon(mailActionIcons[k])).Chosen() {
+				why := p.cannot(on, k)
+				if m.Item(i18n.T("mail.action." + k)).Icon(menuIcon(mailActionIcons[k])).Disabled(why != "").Subtitle(why).Chosen() {
 					act, target = k, on
 				}
 			}
@@ -945,7 +946,8 @@ func (p *mailPage) listView(c *ui.Context) {
 				if k != "delete" && role == k {
 					continue // never show current folder as target
 				}
-				if m.Item(i18n.T("mail.action." + k)).Icon(menuIcon(mailActionIcons[k])).Chosen() {
+				why := p.cannot(on, k)
+				if m.Item(i18n.T("mail.action." + k)).Icon(menuIcon(mailActionIcons[k])).Disabled(why != "").Subtitle(why).Chosen() {
 					act, target = k, on
 				}
 			}
@@ -1748,6 +1750,10 @@ func (p *mailPage) batchScoped(act string, rows []mailItem, anywhere bool) {
 			ids := byAcc[acc]
 			if op == "junk" && !junk[acc] {
 				skipped = append(skipped, names[acc])
+				continue
+			}
+			if why := a.unsupported(acc, actFeatures[op]); why != "" {
+				a.toastAs(kit.ToastWarning, names[acc]+": "+why)
 				continue
 			}
 			pending++

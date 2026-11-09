@@ -12,6 +12,7 @@ import (
 	"unicode/utf8"
 
 	"github.com/egoist/mygo/ui"
+	"github.com/godwit-email/godwit/backend"
 	"github.com/godwit-email/godwit/core"
 	"github.com/godwit-email/godwit/core/auth"
 	"github.com/godwit-email/godwit/internal/i18n"
@@ -1128,8 +1129,11 @@ func (p *settingsPage) mailboxSection(c *ui.Context, id int64) {
 			})
 		}
 	}
-	settingsSection(c, i18n.T("settings.account.mailbox"), i18n.T("settings.account.mailbox.help"),
-		role(0), role(1), role(2), purge(0), role(3), purge(1), role(4))
+	rows := []func(){role(0), role(1), role(2), purge(0), role(3), purge(1), role(4)}
+	if p.a.unsupported(id, backend.FeaturePurge) != "" { // the server cannot expunge: no purge at all
+		rows = []func(){role(0), role(1), role(2), role(3), role(4)}
+	}
+	settingsSection(c, i18n.T("settings.account.mailbox"), i18n.T("settings.account.mailbox.help"), rows...)
 }
 
 // moveAccount puts the account at i before the one at to (len for the end),

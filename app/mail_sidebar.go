@@ -10,6 +10,7 @@ import (
 	"strings"
 
 	"github.com/egoist/mygo/ui"
+	"github.com/godwit-email/godwit/backend"
 	"github.com/godwit-email/godwit/core"
 	"github.com/godwit-email/godwit/internal/i18n"
 	"github.com/godwit-email/godwit/internal/icons"
@@ -284,7 +285,8 @@ func (p *mailPage) folderRow(c *ui.Context, f sideFolder, open *bool) {
 				if f.kids && !*open {
 					total = f.totalSum
 				}
-				if m.Item(i18n.T("mail.empty_trash")).Disabled(total == 0).Chosen() {
+				why := p.a.unsupported(f.AccountID, backend.FeaturePurge)
+				if m.Item(i18n.T("mail.empty_trash")).Disabled(total == 0 || why != "").Subtitle(why).Chosen() {
 					p.confirmEmptyFolder(f.ID, "trash", f.AccountID)
 				}
 			case "junk":
@@ -292,7 +294,8 @@ func (p *mailPage) folderRow(c *ui.Context, f sideFolder, open *bool) {
 				if f.kids && !*open {
 					total = f.totalSum
 				}
-				if m.Item(i18n.T("mail.empty_spam")).Disabled(total == 0).Chosen() {
+				why := p.a.unsupported(f.AccountID, backend.FeaturePurge)
+				if m.Item(i18n.T("mail.empty_spam")).Disabled(total == 0 || why != "").Subtitle(why).Chosen() {
 					p.confirmEmptyFolder(f.ID, "junk", f.AccountID)
 				}
 			case "flagged":

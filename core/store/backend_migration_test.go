@@ -50,10 +50,10 @@ func TestMigrationEncodesIMAPDataForProtocolBackends(t *testing.T) {
 		send_protocol, send_host, send_port, send_security, send_auth, features, cursor FROM accounts ORDER BY id`)
 	require.NoError(t, err)
 	require.Equal(t, [][]any{
-		{"imap", "imap.gmail.com", int64(993), "tls", "oauth", "smtp", "smtp.gmail.com", int64(465), "tls", "oauth", "X-GM-EXT-1", nil},
-		{"imap", "imap.x", int64(143), "starttls", "password", "smtp", "smtp.x", int64(587), "starttls", "password", "", nil},
+		{"imap", "imap.gmail.com", int64(993), "tls", "oauth", "smtp", "smtp.gmail.com", int64(465), "tls", "oauth", `{"Identity":"stable"}`, nil},
+		{"imap", "imap.x", int64(143), "starttls", "password", "smtp", "smtp.x", int64(587), "starttls", "password", `{"Identity":"location"}`, nil},
 		{"imap", "imap.y", int64(993), "tls", "password", "smtp", nil, nil, nil, "password", nil, nil}, // capabilities never seen
-		{"", nil, nil, nil, "none", "", nil, nil, nil, "none", "", nil},
+		{"", nil, nil, nil, "none", "", nil, nil, nil, "none", `{"Identity":"location"}`, nil},
 	}, rows.Values)
 
 	rows, err = db.Query(ctx, "SELECT server_ref, cursor FROM folders ORDER BY id")

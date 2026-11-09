@@ -2079,5 +2079,16 @@
   "error_role_folder": "Không thể đổi tên hay xóa Hộp thư đến và Thùng rác.",
   "error_folder_not_empty": "Thư mục không trống. Hãy chuyển thư ra trước.",
   "error_folder_name_empty": "Thư mục cần có tên.",
-  "error_folder_exists": "Đã có thư mục cùng tên."
+  "error_folder_exists": "Đã có thư mục cùng tên.",
+  "feature_reason_imap_no_move": "Máy chủ không thể di chuyển thư (không hỗ trợ MOVE lẫn UIDPLUS).",
+  "feature_reason_imap_gmail_copy_is_label": "Trong Gmail, bản sao là cùng một thư được gắn thêm một nhãn.",
+  "feature_reason_imap_no_labels": "Máy chủ không có nhãn: mỗi thư chỉ nằm trong một thư mục.",
+  "feature_reason_imap_no_uidplus": "Máy chủ không thể xóa vĩnh viễn thư (không hỗ trợ UIDPLUS).",
+  "feature_reason_imap_gmail_folder_is_label": "Trong Gmail, thư mục là nhãn: xóa nó vẫn giữ lại thư.",
+  "feature_reason_imap_client_saves_sent": "Godwit tự lưu bản sao thư đã gửi.",
+  "feature_reason_imap_no_idle": "Máy chủ không thể đẩy thư mới (không có IDLE); Godwit kiểm tra vài phút một lần.",
+  "feature_reason_jmap_no_copy": "JMAP không thể sao chép thư trong cùng tài khoản, chỉ có thể thêm vào một hộp thư khác.",
+  "feature_reason_jmap_append_pending": "Chưa hỗ trợ thêm thư lên máy chủ qua JMAP.",
+  "feature_reason_jmap_folders_pending": "Chưa hỗ trợ quản lý thư mục qua JMAP.",
+  "feature_reason_jmap_sent_via_smtp": "Thư được gửi qua SMTP, không lưu bản sao trên máy chủ."
 }

@@ -35,7 +35,7 @@ var toPreBackendSchema = []string{
 	`ALTER TABLE messages RENAME COLUMN server_id TO gmail_msgid`,
 	`CREATE INDEX messages_gmail ON messages(account_id, gmail_msgid) WHERE gmail_msgid IS NOT NULL`,
 	`ALTER TABLE accounts ADD COLUMN imap_gmail INTEGER`,
-	`UPDATE accounts SET imap_gmail = (features = 'X-GM-EXT-1')`,
+	`UPDATE accounts SET imap_gmail = (json_extract(features, '$.Identity') = 'stable')`,
 	`ALTER TABLE accounts RENAME COLUMN recv_host TO imap_host`,
 	`ALTER TABLE accounts RENAME COLUMN recv_port TO imap_port`,
 	`ALTER TABLE accounts RENAME COLUMN recv_security TO imap_security`,

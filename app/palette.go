@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/egoist/mygo/ui"
+	"github.com/godwit-email/godwit/backend"
 	"github.com/godwit-email/godwit/core"
 	"github.com/godwit-email/godwit/internal/i18n"
 	"github.com/godwit-email/godwit/internal/icons"
@@ -443,6 +444,10 @@ func (p *palette) paletteEmptyTrash() {
 	if f.ID == 0 {
 		return
 	}
+	if why := a.unsupported(f.AccountID, backend.FeaturePurge); why != "" {
+		a.toastAs(kit.ToastWarning, why)
+		return
+	}
 	if f.Total == 0 {
 		a.toast(i18n.T("mail.folder_empty"))
 		return
@@ -456,6 +461,10 @@ func (p *palette) paletteEmptySpam() {
 	acc := a.mail.viewAccount(a.route.View)
 	f := a.mail.roleFolder(acc, "junk")
 	if f.ID == 0 {
+		return
+	}
+	if why := a.unsupported(f.AccountID, backend.FeaturePurge); why != "" {
+		a.toastAs(kit.ToastWarning, why)
 		return
 	}
 	if f.Total == 0 {

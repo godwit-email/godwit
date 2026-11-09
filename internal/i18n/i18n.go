@@ -54,6 +54,15 @@ func Tf(key string, args ...any) string {
 	return Catalog.Format(Language(), k, values)
 }
 
+// TIn is T in lang, whatever the UI's language, for text a model reads.
+func TIn(lang, key string) string {
+	k := messageKey.Replace(key)
+	if _, _, ok := Catalog.Message(lang, k); !ok {
+		return key
+	}
+	return Catalog.Format(lang, k, nil)
+}
+
 // Plural uses the language's ICU plural rules.
 func Plural(key string, n int) string { return Tf(key, n) }
 

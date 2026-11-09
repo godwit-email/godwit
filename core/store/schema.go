@@ -769,10 +769,11 @@ var Migrations = [][]string{{
 	`UPDATE accounts SET send_auth = recv_auth`,
 	`UPDATE accounts SET recv_protocol = '', send_protocol = '' WHERE kind = 'local_archive'`,
 	`ALTER TABLE accounts ADD COLUMN cursor TEXT`,
-	// The server's features seen once signed in, space separated (NULL: not
-	// seen yet). IMAP lists the capabilities Godwit acts on.
+	// What the receiving backend declared once signed in, its
+	// backend.Description as JSON (NULL: not seen yet). An IMAP account keeps
+	// its identity; the next sign-in records the rest.
 	`ALTER TABLE accounts ADD COLUMN features TEXT`,
-	`UPDATE accounts SET features = CASE imap_gmail WHEN 1 THEN 'X-GM-EXT-1' WHEN 0 THEN '' END`,
+	`UPDATE accounts SET features = CASE imap_gmail WHEN 1 THEN '{"Identity":"stable"}' WHEN 0 THEN '{"Identity":"location"}' END`,
 	`ALTER TABLE accounts DROP COLUMN imap_gmail`,
 }}
 
