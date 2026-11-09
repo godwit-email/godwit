@@ -87,3 +87,25 @@ func TestLocalArchiveInlineImageShows(t *testing.T) {
 	require.NoError(t, err)
 	require.Contains(t, m.HTML, "data:image/png;base64,")
 }
+
+// Opening an attachment while its message is deleted for good must not write
+// the part back after the delete. Racy by nature: it checks over several rounds.
+func TestLocalArchiveAttachmentRacingDeleteLeavesNoFiles(t *testing.T) {
+	dir := t.TempDir()
+	s := newServiceAt(t, dir)
+	acc, inbox := newArchive(t, s)
+	trash, _ := folderNamed(t, s, acc.ID, "Trash")
+	raw, _, _ := archiveMailWithFiles(t)
+	for range 20 {
+		m, err := s.GetMessage(ctx, importOne(t, s, acc, inbox, raw).ID, false)
+		require.NoError(t, err)
+		require.NoError(t, s.Delete(ctx, []int64{m.ID}))
+		done := make(chan error, 1)
+		go func() { _, err := s.EmptyFolder(ctx, trash.ID); done <- err }()
+		for _, a := range m.Attachments {
+			s.GetAttachment(ctx, a.ID) // fails once the delete went first
+		}
+		require.NoError(t, <-done)
+		require.Empty(t, archiveFiles(t, dir, acc.ID), "nothing written back")
+	}
+}

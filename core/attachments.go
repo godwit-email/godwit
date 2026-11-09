@@ -143,6 +143,16 @@ func (f *attachmentFetcher) get(id int64) (string, AttachmentInfo, error) {
 		return "", AttachmentInfo{}, err
 	}
 	if a.contentHash != "" {
+		// Under the lock deleteLocal holds, and re-read under it: a message
+		// deleted for good meanwhile gets no part written back (ADR 0036).
+		unlock, err := s.lockAccount(f.ctx, a.accountID)
+		if err != nil {
+			return "", AttachmentInfo{}, err
+		}
+		defer unlock()
+		if a, err = s.loadAttachment(f.ctx, id); err != nil {
+			return "", AttachmentInfo{}, err
+		}
 		p, err := s.archivePart(a)
 		return p, a.info, err
 	}
