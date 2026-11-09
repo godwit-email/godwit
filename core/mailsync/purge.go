@@ -50,8 +50,10 @@ func NextOpDue(ctx context.Context, db *store.DB, accountID int64, t time.Time) 
 	return time.UnixMilli(store.Int(rows.Values[0][0])), nil
 }
 
-// sameValidity is the condition that location l is at its folder f's UIDVALIDITY.
-var sameValidity = imapbackend.Validity("l.server_ref") + " = " + imapbackend.Validity("f.cursor")
+// sameValidity is the condition that location l is at its folder f's
+// UIDVALIDITY. A folder without a cursor of its own (JMAP keeps it at the
+// account) has no generations: its locations are current.
+var sameValidity = "(f.cursor IS NULL OR " + imapbackend.Validity("l.server_ref") + " = " + imapbackend.Validity("f.cursor") + ")"
 
 // purgeable is the condition on message m (with policy p and its folder f joined)
 // that a purge may expunge it: shown and on the server in the role's folder at

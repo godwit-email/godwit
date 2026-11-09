@@ -11,12 +11,15 @@ import (
 	"maps"
 	"net/http"
 	"slices"
+	"strconv"
 	"strings"
 	"time"
 
 	gojmap "git.sr.ht/~rockorager/go-jmap"
 	"git.sr.ht/~rockorager/go-jmap/mail/email"
 	"git.sr.ht/~rockorager/go-jmap/mail/mailbox"
+	"github.com/emersion/go-imap/v2"
+	"github.com/emersion/go-imap/v2/imapserver"
 
 	"github.com/godwit-email/godwit/backend"
 )
@@ -39,9 +42,9 @@ func (r *Receiver) Close() error {
 
 const (
 	reasonNoCopy  = "jmap.no_copy"         // JMAP has no copy within an account, only one more mailbox
-	reasonAppend  = "jmap.append_pending"  // Email/import is not implemented yet
 	reasonFolders = "jmap.folders_pending" // Mailbox/set is not implemented yet
 	reasonSMTP    = "jmap.sent_via_smtp"   // mail goes out by SMTP, which saves no copy
+	reasonAllMail = "jmap.no_all_mail"     // an Email is always in some mailbox; archiving moves it to the archive one
 )
 
 var description = func() backend.Description {
@@ -55,9 +58,9 @@ var description = func() backend.Description {
 		}
 	}
 	no(reasonNoCopy, backend.FeatureCopy)
-	no(reasonAppend, backend.FeatureAppend)
 	no(reasonFolders, backend.FeatureFolderCreate, backend.FeatureFolderRename, backend.FeatureFolderDelete, backend.FeatureLabelDelete)
 	no(reasonSMTP, backend.FeatureSavesSent)
+	no(reasonAllMail, backend.FeatureAllMail)
 	return d
 }()
 
@@ -240,31 +243,33 @@ func (r *Receiver) query(ctx context.Context, m gojmap.ID, w backend.Window) ([]
 		if !w.Since.IsZero() {
 			f.After = &w.Since
 		}
-		// The Email/get of no real id reads the state as of the query.
 		out, err := r.c.call(ctx, func(acct gojmap.ID) []gojmap.Method {
 			return []gojmap.Method{
-				&email.Get{Account: acct, IDs: []gojmap.ID{"godwit-state"}, Properties: []string{"id"}},
 				&email.Query{Account: acct, Filter: f, Sort: []*email.SortComparator{{Property: "receivedAt"}},
 					Position: int64(pos), Limit: uint64(limit)},
+				queried(acct),
 			}
 		})
 		if err != nil {
 			return nil, "", err
 		}
+		q, g := out[0].(*email.QueryResponse), out[1].(*email.GetResponse)
 		if state == "" {
-			state = out[0].(*email.GetResponse).State
+			state = g.State // as of the first page's query, so nothing after it is missed
 		}
-		q := out[1].(*email.QueryResponse)
-		got, err := r.emails(ctx, q.IDs)
-		if err != nil {
-			return nil, "", err
-		}
-		all = append(all, got...)
+		all = append(all, g.List...)
 		if len(q.IDs) < limit {
 			break
 		}
 	}
 	return all, state, nil
+}
+
+// queried is an Email/get of the sync properties of the ids that the
+// request's first call, an Email/query, found.
+func queried(acct gojmap.ID) *email.Get {
+	return &email.Get{Account: acct, Properties: emailProps,
+		ReferenceIDs: &gojmap.ResultReference{ResultOf: "0", Name: "Email/query", Path: "/ids"}}
 }
 
 // emails gets ids' sync properties; ids gone are left out.
@@ -314,6 +319,7 @@ func (s *round) appear(ctx context.Context, mails []*email.Email, held map[backe
 				}
 			}
 			s.add(backend.MessageAppeared{Location: loc, Flags: flags(e.Keywords), Backfill: backfill, Content: content})
+			content, known[string(e.ID)] = nil, true // its other locations are a stored message's
 		}
 	}
 	return nil
@@ -518,18 +524,18 @@ func (r *Receiver) blob(ctx context.Context, id backend.MessageRef) (gojmap.ID, 
 	return g.List[0].BlobID, nil
 }
 
-// Fetch implements backend.Receiver. It gives no parts, as Sync gives no
-// structure.
+// Fetch implements backend.Receiver. Sync gives the whole message, which
+// local storage parses, so a part is named by its IMAP part path ("1.2") and
+// cut from the whole message, still transfer-encoded as IMAP gives it.
+// shortcut: a part downloads the whole message; use the part's own blobId
+// from bodyStructure if large mail makes that slow.
 func (r *Receiver) Fetch(ctx context.Context, req backend.ContentRequest) (io.ReadCloser, error) {
-	if req.Part != "" {
-		return nil, fmt.Errorf("jmap: part %q: %w", req.Part, backend.ErrNotFound)
-	}
 	b, err := r.blob(ctx, req.Ref)
 	if err != nil {
 		return nil, err
 	}
 	rc, err := r.c.download(ctx, b)
-	if err != nil || req.HeaderFields == nil {
+	if err != nil || req.HeaderFields == nil && req.Part == "" {
 		return rc, err
 	}
 	defer rc.Close()
@@ -537,25 +543,37 @@ func (r *Receiver) Fetch(ctx context.Context, req backend.ContentRequest) (io.Re
 	if err != nil {
 		return nil, err
 	}
-	return io.NopCloser(bytes.NewReader(headerFields(raw, req.HeaderFields))), nil
+	if req.Part == "" {
+		return io.NopCloser(bytes.NewReader(headerFields(raw, req.HeaderFields))), nil
+	}
+	var path []int
+	for s := range strings.SplitSeq(string(req.Part), ".") {
+		n, err := strconv.Atoi(s)
+		if err != nil || n < 1 {
+			return nil, fmt.Errorf("jmap: part %q: %w", req.Part, backend.ErrNotFound)
+		}
+		path = append(path, n)
+	}
+	sec := imapserver.ExtractBodySection(bytes.NewReader(raw), &imap.FetchItemBodySection{Part: path})
+	if sec == nil {
+		return nil, fmt.Errorf("jmap: part %q: %w", req.Part, backend.ErrNotFound)
+	}
+	return io.NopCloser(bytes.NewReader(sec)), nil
 }
 
 // Find implements backend.Receiver.
 func (r *Receiver) Find(ctx context.Context, folder backend.FolderRef, messageID string, size int64) ([]backend.MessageRef, error) {
 	f := &email.FilterCondition{InMailbox: gojmap.ID(folder), Header: []string{"Message-ID", messageID}}
 	if size > 0 {
-		f.MinSize, f.MaxSize = uint64(size), uint64(size)
+		f.MinSize, f.MaxSize = uint64(size), uint64(size)+1 // maxSize is exclusive (RFC 8621 4.4.1)
 	}
 	out, err := r.c.call(ctx, func(acct gojmap.ID) []gojmap.Method {
-		return []gojmap.Method{&email.Query{Account: acct, Filter: f}}
+		return []gojmap.Method{&email.Query{Account: acct, Filter: f}, queried(acct)}
 	})
 	if err != nil {
 		return nil, err
 	}
-	mails, err := r.emails(ctx, out[0].(*email.QueryResponse).IDs)
-	if err != nil {
-		return nil, err
-	}
+	mails := out[1].(*email.GetResponse).List
 	var refs []backend.MessageRef
 	// The header filter matches substrings, and not every server has it.
 	for _, e := range mails {
@@ -608,7 +626,7 @@ func (r *Receiver) Apply(ctx context.Context, op backend.Op) (backend.Result, er
 	case backend.Copy:
 		return backend.Result{Outcome: backend.Unsupported, Reason: reasonNoCopy}, nil
 	case backend.Append:
-		return backend.Result{Outcome: backend.Unsupported, Reason: reasonAppend}, nil
+		return r.append(ctx, op)
 	default:
 		return backend.Result{}, fmt.Errorf("jmap: unknown op %T", op)
 	}
@@ -638,6 +656,51 @@ func (r *Receiver) Apply(ctx context.Context, op backend.Op) (backend.Result, er
 		return backend.Result{Outcome: backend.Done, Ref: at.Ref}, nil
 	}
 	return backend.Result{Outcome: backend.Done}, nil
+}
+
+// append stores op.Raw in op.To by an upload and Email/import, unless op.To
+// holds it already.
+func (r *Receiver) append(ctx context.Context, op backend.Append) (backend.Result, error) {
+	if op.MessageID != "" {
+		have, err := r.Find(ctx, op.To, op.MessageID, int64(len(op.Raw)))
+		if err != nil {
+			return backend.Result{}, err
+		}
+		if len(have) > 0 {
+			return backend.Result{Outcome: backend.Done, Ref: have[0]}, nil
+		}
+	}
+	blob, err := r.c.upload(ctx, op.Raw)
+	if err != nil {
+		return backend.Result{}, err
+	}
+	kw := map[string]bool{}
+	for k, field := range keywords {
+		if *field(&op.Flags) {
+			kw[k] = true
+		}
+	}
+	for _, k := range op.Flags.Keywords {
+		kw[k] = true
+	}
+	imp := &email.EmailImport{BlobID: blob, MailboxIDs: map[gojmap.ID]bool{gojmap.ID(op.To): true}, Keywords: kw}
+	if !op.Date.IsZero() {
+		imp.ReceivedAt = &op.Date
+	}
+	out, err := r.c.call(ctx, func(acct gojmap.ID) []gojmap.Method {
+		return []gojmap.Method{&email.Import{Account: acct, Emails: map[string]*email.EmailImport{"m": imp}}}
+	})
+	if err != nil {
+		return backend.Result{}, err
+	}
+	res := out[0].(*email.ImportResponse)
+	if e := res.NotCreated["m"]; e != nil {
+		return failed(e), nil
+	}
+	if e := res.Created["m"]; e != nil {
+		return backend.Result{Outcome: backend.Done, Ref: backend.MessageRef(e.ID)}, nil
+	}
+	return backend.Result{Outcome: backend.Unlocated}, nil
 }
 
 func failed(e *gojmap.SetError) backend.Result {

@@ -2088,7 +2088,21 @@
   "feature_reason_imap_client_saves_sent": "已寄出郵件的副本由 Godwit 自己儲存。",
   "feature_reason_imap_no_idle": "伺服器無法推送新郵件（不支援 IDLE），Godwit 每隔幾分鐘檢查一次。",
   "feature_reason_jmap_no_copy": "JMAP 無法在帳號內複製郵件，只能把它加到另一個信箱。",
-  "feature_reason_jmap_append_pending": "暫不支援透過 JMAP 將郵件新增到伺服器。",
   "feature_reason_jmap_folders_pending": "暫不支援透過 JMAP 管理資料夾。",
-  "feature_reason_jmap_sent_via_smtp": "郵件透過 SMTP 寄出，伺服器上不會保存副本。"
+  "feature_reason_jmap_sent_via_smtp": "郵件透過 SMTP 傳送，寄件備份由 Godwit 自行儲存。",
+  "feature_reason_jmap_no_all_mail": "JMAP 沒有「所有郵件」：封存會把郵件移到封存信箱。",
+  "settings_experiments": "實驗功能",
+  "settings_experimental_jmap": "JMAP 帳號",
+  "settings_experimental_jmap_help": "新增帳號時可以選擇 JMAP，適用於 Stalwart、Fastmail、Cyrus 等伺服器。這是實驗性功能，日後可能不再支援新增帳號。關閉後，已新增的 JMAP 帳號會繼續運作。",
+  "onboarding_protocol": "收信協定",
+  "onboarding_protocol_jmap": "JMAP（實驗性）",
+  "onboarding_jmap_url": "工作階段 URL",
+  "onboarding_jmap_url_help": "Godwit 會在這個主機的 /.well-known/jmap 尋找工作階段。如果服務商提供了其他位址，請填在這裡。",
+  "onboarding_invalid_jmap_url": "工作階段 URL 不是有效的 https:// 位址。",
+  "onboarding_check_jmap_failed": "JMAP 登入失敗：{arg1}",
+  "onboarding_check_jmap_ok": "JMAP 登入成功",
+  "onboarding_check_jmap_running": "JMAP 登入中…",
+  "onboarding_check_jmap_waiting": "JMAP 登入",
+  "onboarding_check_jmap_proxy": "JMAP 連線失敗：{arg1}",
+  "onboarding_check_jmap_host": "工作階段主機：{arg1}"
 }

@@ -1,8 +1,11 @@
 package app
 
 import (
+	"cmp"
 	"context"
 	"errors"
+	"net"
+	"net/url"
 	"os"
 	"path/filepath"
 	"slices"
@@ -75,6 +78,7 @@ func aiTooLong(s string) bool {
 
 type serverForm struct {
 	imapHost, imapPort, smtpHost, smtpPort, username string
+	jmapURL                                          string // a JMAP account's session URL, in place of the IMAP server
 	imapSec, smtpSec                                 core.Security
 }
 
@@ -592,9 +596,13 @@ func (p *settingsPage) accountView(c *ui.Context, acc core.Account) {
 			kit.Text(c, host+":"+strconv.Itoa(port)+" · "+cmpTr("onboarding.security."+string(sec), string(sec)), t.Text.Sm).Font(theme.Mono).TextColor(t.Muted)
 		})
 	}
+	recv := server("IMAP", acc.Receiving.Host, acc.Receiving.Port, acc.Receiving.Security, "")
+	if acc.Receiving.Protocol == auth.JMAP {
+		recv = row("JMAP", "", func() { kit.Text(c, sessionURL(acc.Receiving), t.Text.Sm).Font(theme.Mono).TextColor(t.Muted) })
+	}
 	login := []func(){
 		row(i18n.T("settings.account.login.method"), p.authText(acc, prov), func() { p.authButton(c, acc, prov, false) }),
-		server("IMAP", acc.Receiving.Host, acc.Receiving.Port, acc.Receiving.Security, ""),
+		recv,
 		server("SMTP", acc.Sending.Host, acc.Sending.Port, acc.Sending.Security, receiveOnlyHelp(acc)),
 	}
 	if acc.ReceiveOnly { // OAuth has no servers to change: it tries SMTP again as it is
@@ -712,6 +720,18 @@ func (p *settingsPage) openDialog(kind string, acc core.Account) {
 	p.iconSelected, p.iconUpload, p.iconPreview = acc.Icon, nil, nil
 	p.servers = serverForm{imapHost: acc.Receiving.Host, imapPort: strconv.Itoa(acc.Receiving.Port), smtpHost: acc.Sending.Host,
 		smtpPort: strconv.Itoa(acc.Sending.Port), username: acc.Username, imapSec: acc.Receiving.Security, smtpSec: acc.Sending.Security}
+	if acc.Receiving.Protocol == auth.JMAP {
+		p.servers.jmapURL = sessionURL(acc.Receiving)
+	}
+}
+
+// sessionURL is a JMAP slot's session URL, as the user types it.
+func sessionURL(s core.Server) string {
+	u := url.URL{Scheme: "https", Host: net.JoinHostPort(s.Host, strconv.Itoa(s.Port)), Path: cmp.Or(s.Path, "/.well-known/jmap")}
+	if s.Security == core.SecurityNone {
+		u.Scheme = "http"
+	}
+	return u.String()
 }
 
 func (p *settingsPage) closeDialog() {
@@ -806,6 +826,10 @@ func (p *settingsPage) dialogView(c *ui.Context) {
 			sp, _ := strconv.Atoi(strings.TrimSpace(sf.smtpPort))
 			ss := core.ServerSettings{Username: strings.TrimSpace(sf.username), Receiving: core.Server{Host: strings.TrimSpace(sf.imapHost), Port: ip, Security: sf.imapSec},
 				Sending: core.Server{Host: strings.TrimSpace(sf.smtpHost), Port: sp, Security: sf.smtpSec}}
+			if sf.jmapURL != "" {
+				ss.Receiving, _ = jmapServer(sf.jmapURL) // invalid, its empty host fails the check
+				ss.Receiving.Protocol = auth.JMAP
+			}
 			var saved core.Account
 			p.act(id, func(ctx context.Context) (err error) {
 				saved, err = update(ctx, id, core.AccountPatch{Servers: &ss})
@@ -993,7 +1017,11 @@ func (p *settingsPage) serversForm(c *ui.Context) {
 		})
 	}
 	sf := &p.servers
-	server("imap", &sf.imapHost, &sf.imapPort, &sf.imapSec)
+	if sf.jmapURL != "" {
+		ui.Field(c, i18n.T("onboarding.jmap.url"), func() { kit.Input(c, &sf.jmapURL, kit.InputOpts{}) })
+	} else {
+		server("imap", &sf.imapHost, &sf.imapPort, &sf.imapSec)
+	}
 	server("smtp", &sf.smtpHost, &sf.smtpPort, &sf.smtpSec)
 	ui.Field(c, i18n.T("onboarding.username"), func() { kit.Input(c, &sf.username, kit.InputOpts{}) })
 }

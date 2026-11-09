@@ -74,17 +74,31 @@ func validSecurity(s Security) bool {
 	return s == SecurityTLS || s == SecurityStartTLS || s == SecurityNone
 }
 
+// ErrJMAPOff refuses to add a JMAP account while Settings.ExperimentalJMAP is off.
+var ErrJMAPOff = errors.New("JMAP is experimental: turn it on in settings to add a JMAP account")
+
+// receiving is the receiving slot's protocol, "" read as IMAP.
+func (in AccountInput) receiving() string {
+	if in.Receiving.Protocol == "" {
+		return auth.IMAP
+	}
+	return in.Receiving.Protocol
+}
+
 func (in AccountInput) validate() error {
 	if _, err := mail.ParseAddress(in.Email); err != nil {
 		return fmt.Errorf("invalid email address %q", in.Email)
 	}
+	recv := in.receiving()
 	for _, e := range []struct {
-		slot, protocol, name string
+		slot, name string
+		ok         bool
 		Server
-	}{{"receiving", auth.IMAP, "IMAP", in.Receiving}, {"sending", auth.SMTP, "SMTP", in.Sending}} {
+	}{{"receiving", strings.ToUpper(recv), recv == auth.IMAP || recv == auth.JMAP, in.Receiving},
 		// Graph is not chosen but stored after SMTP refused AUTH; a stored
 		// account's servers come back with it.
-		if e.Protocol != "" && e.Protocol != e.protocol && !(e.slot == "sending" && e.Protocol == auth.Graph) {
+		{"sending", "SMTP", in.Sending.Protocol == "" || in.Sending.Protocol == auth.SMTP || in.Sending.Protocol == auth.Graph, in.Sending}} {
+		if !e.ok {
 			return fmt.Errorf("%s protocol %q is not supported", e.slot, e.Protocol)
 		}
 		if e.Host == "" {
@@ -93,8 +107,11 @@ func (in AccountInput) validate() error {
 		if e.Port < 1 || e.Port > 65535 {
 			return fmt.Errorf("%s port %d is out of range", e.name, e.Port)
 		}
-		if !validSecurity(e.Security) {
+		if !validSecurity(e.Security) || e.name == "JMAP" && e.Security == SecurityStartTLS {
 			return fmt.Errorf("%s security %q is invalid", e.name, e.Security)
+		}
+		if e.Path != "" && (e.name != "JMAP" || !strings.HasPrefix(e.Path, "/") || strings.ContainsAny(e.Path, "?# ")) {
+			return fmt.Errorf("%s path %q is invalid", e.name, e.Path)
 		}
 		if e.Security == SecurityNone && !isLoopback(e.Host) {
 			return fmt.Errorf("%s: plaintext connections are only allowed to localhost", e.name)
@@ -165,6 +182,15 @@ func (s *Service) AddAccount(ctx context.Context, in AccountInput) (Account, err
 			return Account{}, errors.New("the provider granted no refresh token")
 		}
 	}
+	if in.receiving() == auth.JMAP {
+		st, err := s.loadSettings(ctx)
+		if err != nil {
+			return Account{}, err
+		}
+		if !st.ExperimentalJMAP {
+			return Account{}, ErrJMAPOff
+		}
+	}
 	checked, checkErr := s.check(ctx, in, "")
 	receiveOnly := in.ReceiveOnly && checked.OnlySMTPFailed()
 	if checkErr != nil && !receiveOnly {
@@ -212,10 +238,10 @@ func (s *Service) AddAccount(ctx context.Context, in AccountInput) (Account, err
 	}
 	stmts = append(stmts, sqlite.Statement{
 		SQL: `INSERT INTO accounts(email, name, alias, is_default, sync_limit, sync_since_months, recv_auth, send_auth, status, username,
-			recv_protocol, recv_host, recv_port, recv_security, send_protocol, send_host, send_port, send_security, created_at, provider, oauth_client_id, features, receive_only, position)
-			VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'ok', ?, 'imap', ?, ?, ?, 'smtp', ?, ?, ?, ?, ?, ?, ?, ?, (SELECT COALESCE(MAX(position) + 1, 0) FROM accounts))`,
+			recv_protocol, recv_host, recv_port, recv_security, recv_path, send_protocol, send_host, send_port, send_security, created_at, provider, oauth_client_id, features, receive_only, position)
+			VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'ok', ?, ?, ?, ?, ?, ?, 'smtp', ?, ?, ?, ?, ?, ?, ?, ?, (SELECT COALESCE(MAX(position) + 1, 0) FROM accounts))`,
 		Args: []any{in.Email, in.Name, in.Alias, b2i(isDefault), sync.Limit, sync.Months, authType, authType, in.username(),
-			in.Receiving.Host, in.Receiving.Port, string(in.Receiving.Security), in.Sending.Host, in.Sending.Port, string(in.Sending.Security), time.Now().Unix(), in.Provider, in.oauthClientID, encodeFeatures(checked.desc), b2i(receiveOnly)},
+			in.receiving(), in.Receiving.Host, in.Receiving.Port, string(in.Receiving.Security), in.Receiving.Path, in.Sending.Host, in.Sending.Port, string(in.Sending.Security), time.Now().Unix(), in.Provider, in.oauthClientID, encodeFeatures(checked.desc), b2i(receiveOnly)},
 	})
 	res, err := s.db.Transaction(ctx, stmts)
 	if err != nil {
@@ -339,7 +365,7 @@ func b2i(b bool) int {
 const accountCols = `id, email, name, alias, COALESCE((SELECT html FROM signatures WHERE id = signature_id), ''), username, is_default, sync_limit, recv_auth, status,
 	recv_host, recv_port, recv_security, send_host, send_port, send_security, smtp_reauth, provider, status_detail,
 	sync_since_months, (SELECT count(*) FROM folders WHERE account_id = accounts.id), signature_id, icon, ai_instructions, oauth_client_id, label_keywords, kind, receive_only,
-	recv_protocol, send_protocol, features`
+	recv_protocol, send_protocol, features, recv_path`
 
 // ErrAccountNotFound is returned for an account id that does not exist.
 var ErrAccountNotFound = errors.New("account not found")
@@ -360,8 +386,8 @@ func scanAccount(r []any) Account {
 		ID: store.Int(r[0]), Email: store.Str(r[1]), Name: store.Str(r[2]), Alias: store.Str(r[3]),
 		Signature: store.Str(r[4]), Username: store.Str(r[5]), IsDefault: store.Int(r[6]) == 1,
 		Sync: SyncRange{Limit: int(store.Int(r[7])), Months: int(store.Int(r[19]))}, Folders: int(store.Int(r[20])), AuthType: store.Str(r[8]), Status: store.Str(r[9]),
-		Receiving: Server{store.Str(r[28]), store.Str(r[10]), int(store.Int(r[11])), Security(store.Str(r[12]))},
-		Sending:   Server{store.Str(r[29]), store.Str(r[13]), int(store.Int(r[14])), Security(store.Str(r[15]))},
+		Receiving: Server{store.Str(r[28]), store.Str(r[10]), int(store.Int(r[11])), Security(store.Str(r[12])), store.Str(r[31])},
+		Sending:   Server{store.Str(r[29]), store.Str(r[13]), int(store.Int(r[14])), Security(store.Str(r[15])), ""},
 		Provider:  store.Str(r[17]), StatusDetail: store.Str(r[18]), SignatureID: store.Int(r[21]), Icon: store.Str(r[22]),
 		AIInstructions: store.Str(r[23]), OAuthClientID: store.Str(r[24]), LabelKeywords: store.Int(r[25]) == 1, Kind: store.Str(r[26]),
 		ReceiveOnly: store.Int(r[27]) == 1,
@@ -674,6 +700,12 @@ func (s *Service) UpdateAccount(ctx context.Context, id int64, p AccountPatch) (
 	}
 	if p.Servers != nil {
 		in := serverInput(acc.Email, *p.Servers)
+		if in.Receiving.Protocol == "" {
+			in.Receiving.Protocol = acc.Receiving.Protocol
+		}
+		if in.Receiving.Protocol != acc.Receiving.Protocol {
+			return Account{}, errors.New("an account's receiving protocol cannot change: add the account again")
+		}
 		r, err := s.checkStored(ctx, acc, &in)
 		var ce *CheckError
 		if err != nil && !errors.As(err, &ce) {
@@ -690,6 +722,7 @@ func (s *Service) UpdateAccount(ctx context.Context, id int64, p AccountPatch) (
 		set("features", encodeFeatures(r.desc))
 		set("recv_port", in.Receiving.Port)
 		set("recv_security", string(in.Receiving.Security))
+		set("recv_path", in.Receiving.Path)
 		set("send_host", in.Sending.Host)
 		set("send_port", in.Sending.Port)
 		set("send_security", string(in.Sending.Security))
@@ -710,7 +743,10 @@ func (s *Service) UpdateAccount(ctx context.Context, id int64, p AccountPatch) (
 		stmts = append(stmts, sqlite.Statement{SQL: "UPDATE accounts SET " + strings.Join(cols, ", ") + " WHERE id = ?",
 			Args: append(args, id)})
 	}
-	if p.Servers != nil && (p.Servers.Receiving.Host != acc.Receiving.Host || p.Servers.Receiving.Port != acc.Receiving.Port ||
+	// shortcut: a JMAP account's new server keeps the cursor, which the new
+	// server cannot calculate changes from, so its first sync starts over;
+	// clear it here if a server ever does.
+	if p.Servers != nil && acc.Receiving.Protocol == auth.IMAP && (p.Servers.Receiving.Host != acc.Receiving.Host || p.Servers.Receiving.Port != acc.Receiving.Port ||
 		serverInput(acc.Email, *p.Servers).username() != acc.Username) {
 		// Another mailbox: its UIDs are not the old one's even where UIDVALIDITY
 		// matches. No real UIDVALIDITY is 0, so pushes of queued ops and downloads

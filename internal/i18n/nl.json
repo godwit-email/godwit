@@ -2088,7 +2088,21 @@
   "feature_reason_imap_client_saves_sent": "Godwit bewaart zelf een kopie van verzonden e-mail.",
   "feature_reason_imap_no_idle": "De server kan nieuwe e-mail niet pushen (geen IDLE); Godwit kijkt om de paar minuten.",
   "feature_reason_jmap_no_copy": "JMAP kan e-mail binnen een account niet kopiëren, alleen aan nog een postvak toevoegen.",
-  "feature_reason_jmap_append_pending": "E-mail via JMAP aan de server toevoegen is nog niet beschikbaar.",
   "feature_reason_jmap_folders_pending": "Mappen beheren via JMAP is nog niet beschikbaar.",
-  "feature_reason_jmap_sent_via_smtp": "E-mail gaat via SMTP, dat geen kopie op de server bewaart."
+  "feature_reason_jmap_sent_via_smtp": "E-mail wordt via SMTP verstuurd; Godwit bewaart zelf de verzonden kopie.",
+  "feature_reason_jmap_no_all_mail": "JMAP heeft geen ‘Alle e-mail’: archiveren verplaatst e-mail naar de archiefmap.",
+  "settings_experiments": "Experimenteel",
+  "settings_experimental_jmap": "JMAP-accounts",
+  "settings_experimental_jmap_help": "Biedt JMAP aan bij het toevoegen van een account, voor servers zoals Stalwart, Fastmail en Cyrus. Dit is experimenteel en neemt later mogelijk geen nieuwe accounts meer aan. Uitgeschakeld blijven al toegevoegde JMAP-accounts werken.",
+  "onboarding_protocol": "Ontvangstprotocol",
+  "onboarding_protocol_jmap": "JMAP (experimenteel)",
+  "onboarding_jmap_url": "Sessie-URL",
+  "onboarding_jmap_url_help": "Godwit zoekt de sessie op /.well-known/jmap op deze host. Geeft je provider een ander adres, vul het dan hier in.",
+  "onboarding_invalid_jmap_url": "De sessie-URL is geen geldig https://-adres.",
+  "onboarding_check_jmap_failed": "Aanmelden bij JMAP mislukt: {arg1}",
+  "onboarding_check_jmap_ok": "Aangemeld bij JMAP",
+  "onboarding_check_jmap_running": "Aanmelden bij JMAP…",
+  "onboarding_check_jmap_waiting": "Aanmelden bij JMAP",
+  "onboarding_check_jmap_proxy": "Verbinding met JMAP mislukt: {arg1}",
+  "onboarding_check_jmap_host": "Sessiehost: {arg1}"
 }

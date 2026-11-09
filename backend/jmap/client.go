@@ -5,10 +5,12 @@ package jmap
 import (
 	"bytes"
 	"context"
+	"crypto/tls"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
+	"net"
 	"net/http"
 	"net/url"
 	"strings"
@@ -20,6 +22,8 @@ import (
 	_ "git.sr.ht/~rockorager/go-jmap/mail/mailbox" // registers the Mailbox methods
 
 	"github.com/godwit-email/godwit/backend"
+	"github.com/godwit-email/godwit/backend/conn"
+	"github.com/godwit-email/godwit/internal/sysproxy"
 )
 
 // Config is how to reach an account.
@@ -45,7 +49,7 @@ var errOtherHost = errors.New("jmap: refused a redirect to another host")
 
 func newClient(cfg Config) *client {
 	c := &client{cfg: cfg}
-	c.http = &http.Client{Transport: authTransport{cfg.Credentials}, CheckRedirect: func(req *http.Request, via []*http.Request) error {
+	c.http = &http.Client{Transport: authTransport{cfg.Credentials, transport()}, CheckRedirect: func(req *http.Request, via []*http.Request) error {
 		switch {
 		case len(via) >= 10:
 			return errors.New("jmap: too many redirects")
@@ -59,7 +63,27 @@ func newClient(cfg Config) *client {
 	return c
 }
 
-type authTransport struct{ creds backend.CredentialsFunc }
+// transport connects as IMAP and SMTP do (backend/conn): through the
+// user's proxy, but to a server on this computer, and trusting conn.TLSRoots.
+func transport() *http.Transport {
+	t := http.DefaultTransport.(*http.Transport).Clone()
+	t.Proxy = nil
+	t.TLSClientConfig = &tls.Config{RootCAs: conn.TLSRoots}
+	t.DialContext = func(ctx context.Context, network, addr string) (net.Conn, error) {
+		if host, _, _ := net.SplitHostPort(addr); !sysproxy.OnThisComputer(host) {
+			if p := conn.SystemProxy(&url.URL{Scheme: "https", Host: addr}); p != nil {
+				return sysproxy.Dial(ctx, p, addr)
+			}
+		}
+		return (&net.Dialer{}).DialContext(ctx, network, addr)
+	}
+	return t
+}
+
+type authTransport struct {
+	creds backend.CredentialsFunc
+	base  http.RoundTripper
+}
 
 func (a authTransport) RoundTrip(r *http.Request) (*http.Response, error) {
 	cr, err := a.creds(r.Context())
@@ -72,7 +96,7 @@ func (a authTransport) RoundTrip(r *http.Request) (*http.Response, error) {
 	} else {
 		r.SetBasicAuth(cr.Username, cr.Password)
 	}
-	return http.DefaultTransport.RoundTrip(r)
+	return a.base.RoundTrip(r)
 }
 
 // do does an HTTP request and checks its status: 401 is ErrAuthFailed, 404
@@ -82,7 +106,7 @@ func (c *client) do(req *http.Request) (*http.Response, error) {
 	if err != nil {
 		return nil, err
 	}
-	if resp.StatusCode == http.StatusOK {
+	if resp.StatusCode == http.StatusOK || resp.StatusCode == http.StatusCreated { // an upload's is 201
 		return resp, nil
 	}
 	resp.Body.Close()
@@ -205,4 +229,28 @@ func (c *client) download(ctx context.Context, blobID gojmap.ID) (io.ReadCloser,
 		return nil, err
 	}
 	return resp.Body, nil
+}
+
+// upload stores raw as a blob and returns its id (RFC 8620 6.1).
+func (c *client) upload(ctx context.Context, raw []byte) (gojmap.ID, error) {
+	s, acct, err := c.sess(ctx)
+	if err != nil {
+		return "", err
+	}
+	u := strings.ReplaceAll(s.UploadURL, "{accountId}", url.PathEscape(string(acct)))
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, u, bytes.NewReader(raw))
+	if err != nil {
+		return "", err
+	}
+	req.Header.Set("Content-Type", "message/rfc822")
+	resp, err := c.do(req)
+	if err != nil {
+		return "", err
+	}
+	defer resp.Body.Close()
+	var up gojmap.UploadResponse
+	if err := json.NewDecoder(resp.Body).Decode(&up); err != nil {
+		return "", fmt.Errorf("jmap: upload: %w", err)
+	}
+	return up.ID, nil
 }

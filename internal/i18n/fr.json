@@ -2088,7 +2088,21 @@
   "feature_reason_imap_client_saves_sent": "Godwit enregistre lui-même une copie des e-mails envoyés.",
   "feature_reason_imap_no_idle": "Le serveur ne peut pas signaler les nouveaux e-mails (pas d’IDLE) ; Godwit vérifie toutes les quelques minutes.",
   "feature_reason_jmap_no_copy": "JMAP ne peut pas copier d’e-mails dans un compte, seulement les ajouter à une autre boîte.",
-  "feature_reason_jmap_append_pending": "L’ajout d’e-mails au serveur via JMAP n’est pas encore disponible.",
   "feature_reason_jmap_folders_pending": "La gestion des dossiers via JMAP n’est pas encore disponible.",
-  "feature_reason_jmap_sent_via_smtp": "Les e-mails partent par SMTP, qui n’en garde aucune copie sur le serveur."
+  "feature_reason_jmap_sent_via_smtp": "Les e-mails partent par SMTP ; Godwit enregistre lui-même la copie envoyée.",
+  "feature_reason_jmap_no_all_mail": "JMAP n’a pas de « Tous les messages » : archiver déplace les e-mails dans la boîte Archives.",
+  "settings_experiments": "Expérimental",
+  "settings_experimental_jmap": "Comptes JMAP",
+  "settings_experimental_jmap_help": "Propose JMAP à l’ajout d’un compte, pour des serveurs comme Stalwart, Fastmail et Cyrus. C’est expérimental et l’ajout de nouveaux comptes pourra cesser plus tard. Désactivé, les comptes JMAP déjà ajoutés continuent de fonctionner.",
+  "onboarding_protocol": "Protocole de réception",
+  "onboarding_protocol_jmap": "JMAP (expérimental)",
+  "onboarding_jmap_url": "URL de session",
+  "onboarding_jmap_url_help": "Godwit cherche la session à /.well-known/jmap sur cet hôte. Si votre fournisseur indique une autre adresse, saisissez-la ici.",
+  "onboarding_invalid_jmap_url": "L’URL de session n’est pas une adresse https:// valide.",
+  "onboarding_check_jmap_failed": "Échec de la connexion JMAP : {arg1}",
+  "onboarding_check_jmap_ok": "Connecté à JMAP",
+  "onboarding_check_jmap_running": "Connexion à JMAP…",
+  "onboarding_check_jmap_waiting": "Connexion JMAP",
+  "onboarding_check_jmap_proxy": "Échec de la connexion à JMAP : {arg1}",
+  "onboarding_check_jmap_host": "Hôte de session : {arg1}"
 }

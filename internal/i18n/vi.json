@@ -2088,7 +2088,21 @@
   "feature_reason_imap_client_saves_sent": "Godwit tự lưu bản sao thư đã gửi.",
   "feature_reason_imap_no_idle": "Máy chủ không thể đẩy thư mới (không có IDLE); Godwit kiểm tra vài phút một lần.",
   "feature_reason_jmap_no_copy": "JMAP không thể sao chép thư trong cùng tài khoản, chỉ có thể thêm vào một hộp thư khác.",
-  "feature_reason_jmap_append_pending": "Chưa hỗ trợ thêm thư lên máy chủ qua JMAP.",
   "feature_reason_jmap_folders_pending": "Chưa hỗ trợ quản lý thư mục qua JMAP.",
-  "feature_reason_jmap_sent_via_smtp": "Thư được gửi qua SMTP, không lưu bản sao trên máy chủ."
+  "feature_reason_jmap_sent_via_smtp": "Thư được gửi qua SMTP; Godwit tự lưu bản sao đã gửi.",
+  "feature_reason_jmap_no_all_mail": "JMAP không có Tất cả thư: lưu trữ sẽ chuyển thư vào hộp thư Lưu trữ.",
+  "settings_experiments": "Thử nghiệm",
+  "settings_experimental_jmap": "Tài khoản JMAP",
+  "settings_experimental_jmap_help": "Cho phép chọn JMAP khi thêm tài khoản, dành cho các máy chủ như Stalwart, Fastmail và Cyrus. Đây là tính năng thử nghiệm và sau này có thể ngừng nhận tài khoản mới. Khi tắt, các tài khoản JMAP đã thêm vẫn tiếp tục hoạt động.",
+  "onboarding_protocol": "Giao thức nhận thư",
+  "onboarding_protocol_jmap": "JMAP (thử nghiệm)",
+  "onboarding_jmap_url": "URL phiên",
+  "onboarding_jmap_url_help": "Godwit tìm phiên tại /.well-known/jmap trên máy chủ này. Nếu nhà cung cấp đưa địa chỉ khác, hãy nhập vào đây.",
+  "onboarding_invalid_jmap_url": "URL phiên không phải là địa chỉ https:// hợp lệ.",
+  "onboarding_check_jmap_failed": "Đăng nhập JMAP thất bại: {arg1}",
+  "onboarding_check_jmap_ok": "Đã đăng nhập JMAP",
+  "onboarding_check_jmap_running": "Đang đăng nhập JMAP…",
+  "onboarding_check_jmap_waiting": "Đăng nhập JMAP",
+  "onboarding_check_jmap_proxy": "Kết nối JMAP thất bại: {arg1}",
+  "onboarding_check_jmap_host": "Máy chủ phiên: {arg1}"
 }

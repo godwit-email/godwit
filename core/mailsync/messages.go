@@ -275,15 +275,34 @@ const pendingFlags = "EXISTS (SELECT 1 FROM ops o WHERE o.message_id = messages.
 // snapshot (except where a flags op is pending) and drops the locations it no
 // longer has, and the messages then orphaned.
 func applySnapshot(ctx context.Context, db *store.DB, stable bool, accountID int64, f *folder, snap map[backend.MessageRef]backend.Flags, r *result) error {
+	return applyFlags(ctx, db, stable, accountID, f, snap, nil, r)
+}
+
+// applyFlags is applySnapshot for only the locations in refs, a change set's
+// increments (MessageGone, FlagsChanged): those of refs missing from flags
+// are gone. nil refs is the whole folder, as a snapshot.
+func applyFlags(ctx context.Context, db *store.DB, stable bool, accountID int64, f *folder, snap map[backend.MessageRef]backend.Flags, refs []backend.MessageRef, r *result) error {
 	// A flags change still queued wins over the server's flags until it is pushed.
-	rows, err := db.Query(ctx, "SELECT messages.id, l.server_ref, flags, thread_id, "+pendingFlags+
-		" FROM message_locations l JOIN messages ON messages.id = l.message_id WHERE l.folder_id = ? AND l.server_ref IS NOT NULL", f.id)
-	if err != nil {
-		return err
+	q := "SELECT messages.id, l.server_ref, flags, thread_id, " + pendingFlags +
+		" FROM message_locations l JOIN messages ON messages.id = l.message_id WHERE l.folder_id = ? AND l.server_ref IS NOT NULL"
+	var values [][]any
+	if refs == nil {
+		rows, err := db.Query(ctx, q, f.id)
+		if err != nil {
+			return err
+		}
+		values = rows.Values
+	}
+	for page := range slices.Chunk(refs, 500) {
+		rows, err := db.Query(ctx, q+" AND l.server_ref IN ("+marks(len(page))+")", append([]any{f.id}, anys(page)...)...)
+		if err != nil {
+			return err
+		}
+		values = append(values, rows.Values...)
 	}
 	var stmts []sqlite.Statement
 	var changed, tids, vanished []int64
-	for _, v := range rows.Values {
+	for _, v := range values {
 		id, flags := store.Int(v[0]), store.Str(v[2])
 		remote, ok := snap[backend.MessageRef(store.Str(v[1]))]
 		fl := flagString(remote)

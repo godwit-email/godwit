@@ -274,6 +274,7 @@ func describe(caps imap.CapSet) backend.Description {
 		backend.FeatureLabelDelete:      either(gmail, "imap.no_labels"),
 		backend.FeatureSavesSent:        no("imap.client_saves_sent"),
 		backend.FeaturePush:             either(caps.Has(imap.CapIdle), "imap.no_idle"),
+		backend.FeatureAllMail:          either(gmail, "imap.no_labels"),
 	}}
 	if gmail {
 		d.Identity = backend.IdentityStable

@@ -2088,7 +2088,21 @@
   "feature_reason_imap_client_saves_sent": "Godwit speichert selbst eine Kopie gesendeter E-Mails.",
   "feature_reason_imap_no_idle": "Der Server kann neue E-Mails nicht pushen (kein IDLE); Godwit prüft alle paar Minuten.",
   "feature_reason_jmap_no_copy": "JMAP kann E-Mails innerhalb eines Kontos nicht kopieren, nur einem weiteren Postfach hinzufügen.",
-  "feature_reason_jmap_append_pending": "E-Mails per JMAP auf den Server hochzuladen ist noch nicht verfügbar.",
   "feature_reason_jmap_folders_pending": "Ordner per JMAP zu verwalten ist noch nicht verfügbar.",
-  "feature_reason_jmap_sent_via_smtp": "E-Mails werden per SMTP gesendet, das keine Kopie auf dem Server speichert."
+  "feature_reason_jmap_sent_via_smtp": "E-Mails werden per SMTP gesendet; Godwit speichert die gesendete Kopie selbst.",
+  "feature_reason_jmap_no_all_mail": "JMAP hat kein „Alle Nachrichten“: Archivieren verschiebt E-Mails in das Archiv-Postfach.",
+  "settings_experiments": "Experimentell",
+  "settings_experimental_jmap": "JMAP-Konten",
+  "settings_experimental_jmap_help": "Bietet beim Hinzufügen eines Kontos JMAP an, für Server wie Stalwart, Fastmail und Cyrus. Die Funktion ist experimentell und nimmt später eventuell keine neuen Konten mehr an. Ausgeschaltet funktionieren bereits hinzugefügte JMAP-Konten weiter.",
+  "onboarding_protocol": "Empfangsprotokoll",
+  "onboarding_protocol_jmap": "JMAP (experimentell)",
+  "onboarding_jmap_url": "Sitzungs-URL",
+  "onboarding_jmap_url_help": "Godwit sucht die Sitzung unter /.well-known/jmap auf diesem Host. Nennt dein Anbieter eine andere Adresse, gib sie hier ein.",
+  "onboarding_invalid_jmap_url": "Die Sitzungs-URL ist keine gültige https://-Adresse.",
+  "onboarding_check_jmap_failed": "JMAP-Anmeldung fehlgeschlagen: {arg1}",
+  "onboarding_check_jmap_ok": "Bei JMAP angemeldet",
+  "onboarding_check_jmap_running": "Anmeldung bei JMAP…",
+  "onboarding_check_jmap_waiting": "JMAP-Anmeldung",
+  "onboarding_check_jmap_proxy": "JMAP-Verbindung fehlgeschlagen: {arg1}",
+  "onboarding_check_jmap_host": "Sitzungshost: {arg1}"
 }

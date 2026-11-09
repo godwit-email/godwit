@@ -2088,7 +2088,21 @@
   "feature_reason_imap_client_saves_sent": "Godwit guarda por su cuenta una copia del correo enviado.",
   "feature_reason_imap_no_idle": "El servidor no puede enviar correo nuevo al instante (sin IDLE); Godwit comprueba cada pocos minutos.",
   "feature_reason_jmap_no_copy": "JMAP no puede copiar correos dentro de una cuenta, solo añadirlos a otro buzón.",
-  "feature_reason_jmap_append_pending": "Añadir correos al servidor por JMAP aún no está disponible.",
   "feature_reason_jmap_folders_pending": "Gestionar carpetas por JMAP aún no está disponible.",
-  "feature_reason_jmap_sent_via_smtp": "El correo se envía por SMTP, que no guarda copia en el servidor."
+  "feature_reason_jmap_sent_via_smtp": "El correo se envía por SMTP; Godwit guarda él mismo la copia enviada.",
+  "feature_reason_jmap_no_all_mail": "JMAP no tiene «Todos»: archivar mueve el correo al buzón Archivo.",
+  "settings_experiments": "Experimental",
+  "settings_experimental_jmap": "Cuentas JMAP",
+  "settings_experimental_jmap_help": "Ofrece JMAP al añadir una cuenta, para servidores como Stalwart, Fastmail y Cyrus. Es experimental y más adelante podría dejar de admitir cuentas nuevas. Si lo desactivas, las cuentas JMAP ya añadidas siguen funcionando.",
+  "onboarding_protocol": "Protocolo de recepción",
+  "onboarding_protocol_jmap": "JMAP (experimental)",
+  "onboarding_jmap_url": "URL de sesión",
+  "onboarding_jmap_url_help": "Godwit busca la sesión en /.well-known/jmap de este host. Si tu proveedor indica otra dirección, escríbela aquí.",
+  "onboarding_invalid_jmap_url": "La URL de sesión no es una dirección https:// válida.",
+  "onboarding_check_jmap_failed": "Error al iniciar sesión en JMAP: {arg1}",
+  "onboarding_check_jmap_ok": "Sesión iniciada en JMAP",
+  "onboarding_check_jmap_running": "Iniciando sesión en JMAP…",
+  "onboarding_check_jmap_waiting": "Inicio de sesión en JMAP",
+  "onboarding_check_jmap_proxy": "Error de conexión con JMAP: {arg1}",
+  "onboarding_check_jmap_host": "Host de sesión: {arg1}"
 }

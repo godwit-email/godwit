@@ -2088,7 +2088,21 @@
   "feature_reason_imap_client_saves_sent": "送信済みメールのコピーは Godwit が保存します。",
   "feature_reason_imap_no_idle": "サーバーは新着メールをプッシュできません（IDLE 非対応）。Godwit が数分ごとに確認します。",
   "feature_reason_jmap_no_copy": "JMAP ではアカウント内でメールをコピーできません。別のメールボックスに追加するだけです。",
-  "feature_reason_jmap_append_pending": "JMAP でサーバーにメールを追加する機能はまだありません。",
   "feature_reason_jmap_folders_pending": "JMAP でのフォルダ管理はまだ使えません。",
-  "feature_reason_jmap_sent_via_smtp": "メールは SMTP で送信され、サーバーにコピーは保存されません。"
+  "feature_reason_jmap_sent_via_smtp": "メールは SMTP で送信され、送信済みのコピーは Godwit が保存します。",
+  "feature_reason_jmap_no_all_mail": "JMAP には「すべてのメール」がありません。アーカイブするとメールはアーカイブ メールボックスに移動します。",
+  "settings_experiments": "試験的な機能",
+  "settings_experimental_jmap": "JMAP アカウント",
+  "settings_experimental_jmap_help": "アカウントの追加時に JMAP を選べるようにします（Stalwart、Fastmail、Cyrus などのサーバー向け）。試験的な機能のため、今後新しいアカウントを追加できなくなる場合があります。オフにしても、追加済みの JMAP アカウントは引き続き動作します。",
+  "onboarding_protocol": "受信プロトコル",
+  "onboarding_protocol_jmap": "JMAP（試験的）",
+  "onboarding_jmap_url": "セッション URL",
+  "onboarding_jmap_url_help": "Godwit はこのホストの /.well-known/jmap でセッションを探します。プロバイダから別のアドレスを案内されている場合は、ここに入力してください。",
+  "onboarding_invalid_jmap_url": "セッション URL が有効な https:// アドレスではありません。",
+  "onboarding_check_jmap_failed": "JMAP サインインに失敗しました：{arg1}",
+  "onboarding_check_jmap_ok": "JMAP にサインインしました",
+  "onboarding_check_jmap_running": "JMAP にサインイン中…",
+  "onboarding_check_jmap_waiting": "JMAP サインイン",
+  "onboarding_check_jmap_proxy": "JMAP 接続に失敗しました：{arg1}",
+  "onboarding_check_jmap_host": "セッション ホスト：{arg1}"
 }

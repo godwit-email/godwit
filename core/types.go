@@ -88,13 +88,17 @@ type ServerSettings struct {
 }
 
 // Server is one of an account's two server slots, receiving and sending: a
-// protocol and where its server is. Receiving is auth.IMAP and sending
-// auth.SMTP, the only ones so far; an empty Protocol in input is the slot's.
+// protocol and where its server is. Receiving is auth.IMAP or auth.JMAP
+// (only with Settings.ExperimentalJMAP to add one) and sending auth.SMTP;
+// an empty Protocol in input is auth.IMAP and auth.SMTP.
 type Server struct {
 	Protocol string
 	Host     string
 	Port     int
-	Security Security
+	Security Security // JMAP: SecurityTLS is https, SecurityNone http (localhost only)
+	// Path is JMAP's session resource on Host, as a session URL typed in
+	// gives it; "" discovers it at /.well-known/jmap. Other protocols have none.
+	Path string
 }
 
 // SyncRange is how much of each folder a sync fetches: the newest Limit
