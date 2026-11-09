@@ -1,17 +1,12 @@
 package app
 
 import (
+	"strings"
+
 	"github.com/godwit-email/godwit/backend"
+	"github.com/godwit-email/godwit/core"
 	"github.com/godwit-email/godwit/internal/i18n"
 )
-
-// actFeatures are the 协议能力 the mail acts need (ADR 0037).
-var actFeatures = map[string]backend.Feature{
-	"inbox": backend.FeatureMove, "archive": backend.FeatureMove, "junk": backend.FeatureMove, "delete": backend.FeatureMove,
-	"purge": backend.FeaturePurge,
-	"read":  backend.FeatureSeen, "unread": backend.FeatureSeen, "toggle_read": backend.FeatureSeen,
-	"star": backend.FeatureFlagged, "unstar": backend.FeatureFlagged, "toggle_star": backend.FeatureFlagged,
-}
 
 // unsupported is why the account's server cannot do f, in the UI's language,
 // or "" when it can or is not known yet.
@@ -30,7 +25,7 @@ func (p *mailPage) cannot(rows []mailItem, act string) string {
 	if act == "delete" && p.currentFolderRole() == "trash" {
 		act = "purge"
 	}
-	f, ok := actFeatures[act]
+	f, ok := core.ActionFeatures[strings.TrimPrefix(act, "toggle_")] // a toggle needs what both its ends do
 	if !ok {
 		return ""
 	}

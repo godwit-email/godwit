@@ -620,3 +620,51 @@ func TestGmailWithoutMoveArchivesWithLabels(t *testing.T) {
 	assert.Empty(t, e.listed(t, "INBOX"))
 	assert.Equal(t, []int64{id}, e.listed(t, testmail.GmailAllMail))
 }
+
+// A label write whose reply was lost counts as an attempt: it may have
+// reached Gmail. A move that then finds the message in neither its source
+// nor its destination is a conflict, not a wait for a claim.
+func TestGmailLostLabelWriteCountsThenMissingEverywhereConflicts(t *testing.T) {
+	e := newSyncEnv(t, testmail.Gmail(), testmail.WithoutMove())
+	for _, f := range []string{"Work", "Done"} {
+		require.NoError(t, e.im.User.Create(f, nil))
+	}
+	m := e.im.AddGmail(msg("a@x"), nil, "Work", testmail.GmailAllMail)
+	e.sync(t)
+	id := e.idOf(t, "a@x")
+	require.NoError(t, e.s.MoveFrom(bg, []int64{id}, e.folderID(t, "Work"), e.folderID(t, "Done")))
+	e.im.DropAfterGmailLabelStore(1)
+	require.Error(t, e.s.SyncNow(bg, e.acc.ID))
+	pending, err := e.s.PendingOps(bg, e.acc.ID)
+	require.NoError(t, err)
+	require.Len(t, pending, 1)
+	assert.Equal(t, "pending", pending[0].State)
+	assert.Equal(t, 1, pending[0].Attempts, "the lost write counts")
+
+	m.Unlabel("Done")
+	m.Unlabel("Work")
+	e.reopen(t)
+	e.sync(t)
+	pending, err = e.s.PendingOps(bg, e.acc.ID)
+	require.NoError(t, err)
+	require.Len(t, pending, 1)
+	assert.Equal(t, "conflict", pending[0].State)
+	assert.Contains(t, pending[0].LastError, "absent from the destination")
+}
+
+// A flags change on Gmail whose folder was recreated is a conflict, as on
+// any IMAP server, not a hunt through the message's other locations.
+func TestGmailFlagsInRecreatedFolderConflict(t *testing.T) {
+	e := newSyncEnv(t, testmail.Gmail())
+	require.NoError(t, e.im.User.Create("Work", nil))
+	e.im.AddGmail(msg("a@x"), nil, "INBOX", "Work")
+	e.sync(t)
+	require.NoError(t, e.s.SetFlags(bg, []int64{e.idOf(t, "a@x")}, []string{`\Flagged`}, nil))
+	e.im.ResetUIDValidity("INBOX")
+	e.im.ResetUIDValidity("Work")
+	e.s.SyncNow(bg, e.acc.ID) // reports the conflict
+	ops := e.ops(t)
+	require.Len(t, ops, 1)
+	assert.Equal(t, "conflict", ops[0].State)
+	assert.Contains(t, ops[0].LastError, "was recreated on the server")
+}

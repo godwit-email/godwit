@@ -31,13 +31,5 @@ func Decode(ref string) (validity, n uint32) {
 	return uint32(vv), uint32(uu)
 }
 
-// Validity is the SQL expression of the UIDVALIDITY part of col, a server_ref
-// or cursor column (NULL for NULL), to compare two of them.
-func Validity(col string) string { return "substr(" + col + ", 1, 10)" }
-
-// ZeroValidity is the SQL expression of col with its UIDVALIDITY set to 0,
-// which no server uses: the folder or location then reads as recreated.
-func ZeroValidity(col string) string { return "'0000000000' || substr(" + col + ", 11)" }
-
 // GmailFeature is the capability of a server with Gmail's IMAP extensions.
 const GmailFeature = "X-GM-EXT-1"

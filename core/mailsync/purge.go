@@ -9,7 +9,6 @@ import (
 
 	"github.com/egoist/mygo/plugins/sqlite"
 	"github.com/godwit-email/godwit/backend"
-	"github.com/godwit-email/godwit/backend/imapbackend"
 	"github.com/godwit-email/godwit/core/store"
 )
 
@@ -50,19 +49,17 @@ func NextOpDue(ctx context.Context, db *store.DB, accountID int64, t time.Time) 
 	return time.UnixMilli(store.Int(rows.Values[0][0])), nil
 }
 
-// sameValidity is the condition that location l is at its folder f's
-// UIDVALIDITY. A folder without a cursor of its own (JMAP keeps it at the
-// account) has no generations: its locations are current.
-var sameValidity = "(f.cursor IS NULL OR " + imapbackend.Validity("l.server_ref") + " = " + imapbackend.Validity("f.cursor") + ")"
+// onServer is the condition that location l is a server location. One of a
+// generation the backend voided is never left: a FolderReset deletes them.
+const onServer = "l.server_ref IS NOT NULL"
 
 // purgeable is the condition on message m (with policy p and its folder f joined)
-// that a purge may expunge it: shown and on the server in the role's folder at
-// the folder's UIDVALIDITY, no other change of it waiting, and in that folder
+// that a purge may expunge it: shown and on the server in the role's folder, no other change of it waiting, and in that folder
 // longer than the policy's days, counted from the latest of when Godwit first saw
 // it there, when the folder got the role and when the purge was turned on. The
 // argument is an op id the check ignores (the purge being pushed), else 0.
 var purgeable = `EXISTS (SELECT 1 FROM message_locations l WHERE l.message_id = m.id AND l.folder_id = p.folder_id AND l.shown
-		AND ` + sameValidity + ` AND l.entered_at > 0 AND max(l.entered_at, f.role_since, p.since) <= unixepoch() - p.days * 86400)
+		AND ` + onServer + ` AND l.entered_at > 0 AND max(l.entered_at, f.role_since, p.since) <= unixepoch() - p.days * 86400)
 	AND p.days > 0 AND NOT EXISTS (SELECT 1 FROM ops o WHERE o.message_id = m.id AND o.state IN ('pending', 'awaiting_claim') AND o.id != ?)`
 
 // QueuePurge queues the account's due junk and trash purges as purge ops, which
@@ -139,11 +136,11 @@ var claimable = `state = 'pending' AND EXISTS (SELECT 1 FROM messages m JOIN pur
 	AND p.role = ? JOIN folders f ON f.id = p.folder_id WHERE m.id = ops.message_id AND p.folder_id = ops.dst_folder_id AND ` + purgeable + `)`
 
 // claimableNow is claimable for a purge the user asked for: still pending, its
-// message shown and on the server in the op's folder at the folder's UIDVALIDITY,
+// message shown and on the server in the op's folder,
 // and no other change of it waiting.
 var claimableNow = `state = 'pending' AND EXISTS (SELECT 1 FROM messages m JOIN folders f ON f.id = ops.dst_folder_id
 	WHERE m.id = ops.message_id AND EXISTS (SELECT 1 FROM message_locations l WHERE l.message_id = m.id AND l.folder_id = f.id AND l.shown
-		AND ` + sameValidity + `)
+		AND ` + onServer + `)
 	AND NOT EXISTS (SELECT 1 FROM ops o WHERE o.message_id = m.id AND o.state IN ('pending', 'awaiting_claim') AND o.id != ops.id))`
 
 // purgeClaim is the claimable condition of a purge op with payload p and id, and its arguments.

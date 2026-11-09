@@ -19,7 +19,6 @@ import (
 	"unicode/utf8"
 
 	"github.com/egoist/mygo/plugins/sqlite"
-	"github.com/godwit-email/godwit/backend"
 	"github.com/godwit-email/godwit/core/ai"
 	"github.com/godwit-email/godwit/core/mail"
 	"github.com/godwit-email/godwit/core/plugins"
@@ -895,30 +894,30 @@ type batchItem struct {
 // tools (isBatchAction).
 type batchAction struct {
 	name, desc, summary string
-	feature             backend.Feature
+	action              string // its ActionFeatures key
 	apply               func(s *Service, ctx context.Context, msgIDs []int64) error
 }
 
 var batchActions = []batchAction{
-	{"move_to_trash", "Propose moving messages to the Trash folder by their ids. The user approves it before any message is moved.", "Move %d messages to Trash", backend.FeatureMove,
+	{"move_to_trash", "Propose moving messages to the Trash folder by their ids. The user approves it before any message is moved.", "Move %d messages to Trash", "delete",
 		func(s *Service, ctx context.Context, ids []int64) error { return s.Delete(ctx, ids) }},
-	{"archive_mail", "Propose archiving messages by their ids. The user approves it before any message is archived.", "Archive %d messages", backend.FeatureMove,
+	{"archive_mail", "Propose archiving messages by their ids. The user approves it before any message is archived.", "Archive %d messages", "archive",
 		func(s *Service, ctx context.Context, ids []int64) error { return s.MoveToRole(ctx, ids, "archive") }},
-	{"mark_as_spam", "Propose marking messages as spam (moving to Junk) by their ids. The user approves it before any message is moved.", "Mark %d messages as spam", backend.FeatureMove,
+	{"mark_as_spam", "Propose marking messages as spam (moving to Junk) by their ids. The user approves it before any message is moved.", "Mark %d messages as spam", "junk",
 		func(s *Service, ctx context.Context, ids []int64) error { return s.MoveToRole(ctx, ids, "junk") }},
-	{"mark_as_read", "Propose marking messages as read by their ids. The user approves it before flags are changed.", "Mark %d messages as read", backend.FeatureSeen,
+	{"mark_as_read", "Propose marking messages as read by their ids. The user approves it before flags are changed.", "Mark %d messages as read", "read",
 		func(s *Service, ctx context.Context, ids []int64) error {
 			return s.SetFlags(ctx, ids, []string{`\Seen`}, nil)
 		}},
-	{"mark_as_unread", "Propose marking messages as unread by their ids. The user approves it before flags are changed.", "Mark %d messages as unread", backend.FeatureSeen,
+	{"mark_as_unread", "Propose marking messages as unread by their ids. The user approves it before flags are changed.", "Mark %d messages as unread", "unread",
 		func(s *Service, ctx context.Context, ids []int64) error {
 			return s.SetFlags(ctx, ids, nil, []string{`\Seen`})
 		}},
-	{"star_mail", "Propose starring (flagging) messages by their ids. The user approves it before flags are changed.", "Star %d messages", backend.FeatureFlagged,
+	{"star_mail", "Propose starring (flagging) messages by their ids. The user approves it before flags are changed.", "Star %d messages", "star",
 		func(s *Service, ctx context.Context, ids []int64) error {
 			return s.SetFlags(ctx, ids, []string{`\Flagged`}, nil)
 		}},
-	{"unstar_mail", "Propose unstarring (unflagging) messages by their ids. The user approves it before flags are changed.", "Unstar %d messages", backend.FeatureFlagged,
+	{"unstar_mail", "Propose unstarring (unflagging) messages by their ids. The user approves it before flags are changed.", "Unstar %d messages", "unstar",
 		func(s *Service, ctx context.Context, ids []int64) error {
 			return s.SetFlags(ctx, ids, nil, []string{`\Flagged`})
 		}},
@@ -968,7 +967,7 @@ func (s *Service) prepareBatchAction(act batchAction) func(context.Context, Conv
 			})
 		}
 		for _, it := range items {
-			if err := s.supports(ctx, it.AccountID, act.feature); err != nil {
+			if err := s.requireFeature(ctx, it.AccountID, ActionFeatures[act.action]); err != nil {
 				return prepared{}, err
 			}
 		}

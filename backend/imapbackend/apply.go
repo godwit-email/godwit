@@ -18,7 +18,8 @@ import (
 // Find lists the messages in folder, examined, whose Message-ID is exactly
 // messageID and, when size > 0, of that size. SEARCH HEADER matches
 // substrings and ignores case, so each hit is checked.
-func (r *Receiver) Find(ctx context.Context, folder backend.FolderRef, messageID string, size int64) ([]backend.MessageRef, error) {
+func (r *Receiver) Find(ctx context.Context, folder backend.FolderRef, messageID string, size int64) (_ []backend.MessageRef, err error) {
+	defer r.trace(&err)
 	c, err := r.client(ctx)
 	if err != nil {
 		return nil, err
@@ -80,9 +81,10 @@ func opFeature(op backend.Op) backend.Feature {
 // Apply writes one op back. A server's NO is Failed; a location whose folder
 // was recreated (another UIDVALIDITY) is backend.ErrNotFound.
 //
-// shortcut: Copy and Delete are not done yet (nothing queues them), the
-// verbs that need them add them.
-func (r *Receiver) Apply(ctx context.Context, op backend.Op) (backend.Result, error) {
+// shortcut: Delete is not done yet (nothing queues it); the verb that needs
+// it adds it.
+func (r *Receiver) Apply(ctx context.Context, op backend.Op) (_ backend.Result, err error) {
+	defer r.trace(&err)
 	c, err := r.client(ctx)
 	if err != nil {
 		return backend.Result{}, err
@@ -100,6 +102,8 @@ func (r *Receiver) Apply(ctx context.Context, op backend.Op) (backend.Result, er
 		} else {
 			res, err = move(c, op)
 		}
+	case backend.Copy:
+		res, err = copyTo(c, op)
 	case backend.AddToFolder:
 		res, err = labelMove(c, op.At, op.To, true)
 	case backend.RemoveFromFolder:
@@ -112,7 +116,8 @@ func (r *Receiver) Apply(ctx context.Context, op backend.Op) (backend.Result, er
 		return backend.Result{}, fmt.Errorf("imapbackend: %T not supported yet", op)
 	}
 	var refused *imap.Error
-	if errors.As(err, &refused) {
+	var folder *backend.FolderError
+	if !errors.As(err, &folder) && errors.As(err, &refused) {
 		return backend.Result{Outcome: backend.Failed, Reason: refused.Error()}, nil
 	}
 	return res, err
@@ -152,7 +157,7 @@ func appendTo(c *imapclient.Client, op backend.Append) (backend.Result, error) {
 }
 
 // selectAt selects at's folder read-write and decodes its UID; another
-// UIDVALIDITY is backend.ErrNotFound.
+// UIDVALIDITY is backend.ErrFolderReset.
 func selectAt(c *imapclient.Client, at backend.Location) (imap.UID, error) {
 	validity, uid := Decode(string(at.Ref))
 	sel, err := c.Select(string(at.Folder), nil).Wait()
@@ -160,7 +165,7 @@ func selectAt(c *imapclient.Client, at backend.Location) (imap.UID, error) {
 		return 0, err
 	}
 	if sel.UIDValidity != validity {
-		return 0, fmt.Errorf("%w: folder %q was recreated on the server", backend.ErrNotFound, at.Folder)
+		return 0, fmt.Errorf("%w: folder %q was recreated", backend.ErrFolderReset, at.Folder)
 	}
 	return imap.UID(uid), nil
 }
@@ -283,6 +288,22 @@ func moveUID(c *imapclient.Client, set imap.UIDSet, dst string) (validity, uid u
 	return d.UIDValidity, single(d.DestUIDs), nil
 }
 
+// copyTo UID COPYs the message; without COPYUID the copy's location is not known.
+func copyTo(c *imapclient.Client, op backend.Copy) (backend.Result, error) {
+	uid, err := selectAt(c, op.At)
+	if err != nil {
+		return backend.Result{}, err
+	}
+	d, err := c.Copy(imap.UIDSetNum(uid), string(op.To)).Wait()
+	if err != nil {
+		return backend.Result{}, err
+	}
+	if dst := single(d.DestUIDs); dst != 0 && d.UIDValidity != 0 {
+		return backend.Result{Outcome: backend.Done, Ref: backend.MessageRef(Encode(d.UIDValidity, dst))}, nil
+	}
+	return backend.Result{Outcome: backend.Unlocated}, nil
+}
+
 // purge sets \Deleted and UID EXPUNGEs the message, asking op.Confirm before
 // each; a no removes \Deleted again, which an earlier attempt may have set.
 // The one window left is the UID EXPUNGE's own round trip.
@@ -315,36 +336,47 @@ func purge(c *imapclient.Client, op backend.Purge) (backend.Result, error) {
 	return done, nil
 }
 
+// uncertain is a server's NO to a read of folder before any label write as
+// a backend.FolderError, not Failed: the read proves nothing about the move,
+// which a later attempt reads again.
+func uncertain(folder backend.FolderRef, err error) error {
+	var refused *imap.Error
+	if errors.As(err, &refused) {
+		return &backend.FolderError{Folder: folder, Err: err}
+	}
+	return err
+}
+
 // labelMove moves the message at at to folder to with Gmail's additive label
 // writes (to "": only takes at's label away; add: only adds to's). Every
 // attempt reads membership by X-GM-MSGID first, so one after a lost reply
-// writes only what is missing. All Mail is implicit membership, never a
-// label to remove; adding Trash or Spam is Gmail's special transition, which
-// removes every other label itself.
+// writes only what is missing; a refused read is uncertain. All Mail is
+// implicit membership, never a label to remove; adding Trash or Spam is
+// Gmail's special transition, which removes every other label itself.
 func labelMove(c *imapclient.Client, at backend.Location, to backend.FolderRef, add bool) (backend.Result, error) {
 	id, err := gmailIdentity(c, at)
 	if err != nil {
-		return backend.Result{}, err
+		return backend.Result{}, uncertain(at.Folder, err)
 	}
 	src, srcRole, err := label(c, at.Folder)
 	if err != nil {
-		return backend.Result{}, err
+		return backend.Result{}, uncertain(at.Folder, err)
 	}
 	addOnly, removeOnly := add || srcRole == backend.RoleAll, to == ""
 	srcValidity, srcUID, err := gmailLocation(c, at.Folder, id)
 	if err != nil {
-		return backend.Result{}, err
+		return backend.Result{}, uncertain(at.Folder, err)
 	}
 	var dst string
 	var dstRole backend.Role
 	var dstValidity, dstUID uint32
 	if to != "" {
 		if dst, dstRole, err = label(c, to); err != nil {
-			return backend.Result{}, err
+			return backend.Result{}, uncertain(to, err)
 		}
 		removeOnly = dstRole == backend.RoleAll
 		if dstValidity, dstUID, err = gmailLocation(c, to, id); err != nil {
-			return backend.Result{}, err
+			return backend.Result{}, uncertain(to, err)
 		}
 		if dstValidity == 0 {
 			return backend.Result{Outcome: backend.Failed, Reason: "the destination folder no longer exists"}, nil
@@ -367,7 +399,7 @@ func labelMove(c *imapclient.Client, at backend.Location, to backend.FolderRef, 
 	}
 	sel, err := c.Select(string(at.Folder), nil).Wait()
 	if err != nil {
-		return backend.Result{}, err
+		return backend.Result{}, uncertain(at.Folder, err)
 	}
 	if sel.UIDValidity != srcValidity {
 		return backend.Result{}, fmt.Errorf("folder %q was recreated on the server", at.Folder)

@@ -85,11 +85,12 @@ func (r *result) merged(target int64, others []int64) {
 	r.changedThreads = append(r.changedThreads, target)
 }
 
-// Fetch syncs every folder of the account through recv, then refreshes the
+// Fetch syncs the folders of the account in only (nil: every folder) through
+// recv, then, after a round of every folder, refreshes the
 // Authentication-Results of cached messages. more reports that a backfill
 // has work left: the caller should sync again soon.
-func Fetch(ctx context.Context, db *store.DB, recv backend.Receiver, accountID int64, bus *events.Bus) (more bool, err error) {
-	if more, err = Sync(ctx, db, recv, accountID, bus); err != nil {
+func Fetch(ctx context.Context, db *store.DB, recv backend.Receiver, accountID int64, bus *events.Bus, only []backend.FolderRef) (more bool, err error) {
+	if more, err = run(ctx, db, recv, accountID, bus, only, 0); err != nil || only != nil {
 		return more, err
 	}
 	again, err := refreshAuthenticationResults(ctx, db, recv, accountID, bus)
@@ -102,7 +103,9 @@ func Sync(ctx context.Context, db *store.DB, recv backend.Receiver, accountID in
 	return run(ctx, db, recv, accountID, bus, nil, 0)
 }
 
-// run is Sync, or with older > 0 one page of older mail in only.
+// run is Sync of the folders in only (nil: all), or with older > 0 one page
+// of older mail in only. A round of some folders leaves what needs every
+// folder synced (orphans, hidden locations, claims) to the next full round.
 func run(ctx context.Context, db *store.DB, recv backend.Receiver, accountID int64, bus *events.Bus, only []backend.FolderRef, older int) (more bool, err error) {
 	var r result
 	complete := false
@@ -149,7 +152,7 @@ func run(ctx context.Context, db *store.DB, recv backend.Receiver, accountID int
 		return more, err
 	}
 	complete = true
-	if err != nil { // a skipped folder may yet hold a membership, a claim or a stale location
+	if err != nil || only != nil { // a skipped folder may yet hold a membership, a claim or a stale location
 		return more, err
 	}
 	if err := dropOrphans(ctx, db, accountID, r.orphans, true, s.stable, s.allMail, &r); err != nil {
@@ -173,6 +176,9 @@ type syncRun struct {
 	allMail bool // backend.FeatureAllMail (Gmail): a message in no folder synced may still exist
 	folders map[backend.FolderRef]*folder
 	merged  bool // the round merged the messages sharing a server_id
+	// lost is what Lost reported: a message the backend finds again keeps its
+	// flags until a snapshot of the folder it is found in.
+	lost map[string]bool
 	// stash holds a folder's arrivals that may claim a move awaiting its
 	// claim, until the folder's arrivals end: a claim needs their count
 	// across every page. Its cursor waits with them (deferred).
@@ -310,6 +316,15 @@ func (s *syncRun) commit(p backend.Page) error {
 	if err := flush(); err != nil {
 		return err
 	}
+	// The page's cursors go in one transaction, after its changes.
+	// shortcut: the changes are not in that transaction (ADR 0037 asks for
+	// one per page): storing a message reads what the ones before it wrote
+	// (threads, claims, merges), which the store's statement-list
+	// transactions cannot. Each change is idempotent, so a crash before the
+	// cursors only repeats the page. Put them in one transaction when the
+	// store can run reads inside one (a connection-held transaction).
+	var stmts []sqlite.Statement
+	states := map[*folder]backend.FolderState{}
 	for ref, st := range p.Folders {
 		f, err := s.folder(ref)
 		if err != nil {
@@ -319,14 +334,18 @@ func (s *syncRun) commit(p backend.Page) error {
 			s.deferred[f.id] = st
 			continue
 		}
-		if err := s.writeState(ctx, f, st); err != nil {
-			return err
-		}
+		stmts, states[f] = append(stmts, stateStmt(f, st)), st
 	}
 	if p.Account != "" {
-		if _, err := s.db.Execute(ctx, "UPDATE accounts SET cursor = ? WHERE id = ?", string(p.Account), s.a.id); err != nil {
-			return err
-		}
+		stmts = append(stmts, sqlite.Statement{SQL: "UPDATE accounts SET cursor = ? WHERE id = ?", Args: []any{string(p.Account), s.a.id}})
+	}
+	if _, err := s.db.Transaction(ctx, stmts); err != nil {
+		return err
+	}
+	for f, st := range states {
+		f.setState(st)
+	}
+	if p.Account != "" {
 		s.a.cursor = string(p.Account)
 	}
 	return nil
@@ -340,16 +359,21 @@ func (s *syncRun) folder(ref backend.FolderRef) (*folder, error) {
 }
 
 func (s *syncRun) writeState(ctx context.Context, f *folder, st backend.FolderState) error {
-	var filled any
-	if !st.Filled.IsZero() {
-		filled = st.Filled.Unix()
-	}
-	if _, err := s.db.Execute(ctx, "UPDATE folders SET cursor = ?, synced = ?, filled_since = ? WHERE id = ?",
-		nullable(string(st.Cursor)), st.Synced, filled, f.id); err != nil {
+	if _, err := s.db.Transaction(ctx, []sqlite.Statement{stateStmt(f, st)}); err != nil {
 		return err
 	}
 	f.setState(st)
 	return nil
+}
+
+// stateStmt stores st as f's sync state.
+func stateStmt(f *folder, st backend.FolderState) sqlite.Statement {
+	var filled any
+	if !st.Filled.IsZero() {
+		filled = st.Filled.Unix()
+	}
+	return sqlite.Statement{SQL: "UPDATE folders SET cursor = ?, synced = ?, filled_since = ? WHERE id = ?",
+		Args: []any{nullable(string(st.Cursor)), st.Synced, filled, f.id}}
 }
 
 // appeared stores messages reported in one folder: those without content as
@@ -521,8 +545,10 @@ func (s *syncRun) Lost(ctx context.Context) ([]string, error) {
 		return nil, err
 	}
 	var out []string
+	s.lost = map[string]bool{}
 	for _, v := range rows.Values {
 		out = append(out, store.Str(v[0]))
+		s.lost[store.Str(v[0])] = true
 	}
 	return out, nil
 }

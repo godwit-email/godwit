@@ -211,6 +211,21 @@ func (r *receiver) Fetch(_ context.Context, req backend.ContentRequest) (io.Read
 	return io.NopCloser(bytes.NewReader(b)), nil
 }
 
+func (r *receiver) Headers(ctx context.Context, fr backend.FolderRef, refs []backend.MessageRef, fields []string) (map[backend.MessageRef][]byte, error) {
+	out := map[backend.MessageRef][]byte{}
+	for _, ref := range refs {
+		rc, err := r.Fetch(ctx, backend.ContentRequest{Location: backend.Location{Folder: fr, Ref: ref}, HeaderFields: fields})
+		if err == backend.ErrNotFound {
+			continue
+		}
+		if err != nil {
+			return nil, err
+		}
+		out[ref], _ = io.ReadAll(rc)
+	}
+	return out, nil
+}
+
 func (r *receiver) Find(_ context.Context, fr backend.FolderRef, messageID string, size int64) ([]backend.MessageRef, error) {
 	unlock, err := r.lock()
 	if err != nil {

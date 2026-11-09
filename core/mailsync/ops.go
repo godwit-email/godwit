@@ -12,6 +12,7 @@ import (
 	"github.com/godwit-email/godwit/backend"
 	"github.com/godwit-email/godwit/backend/imapbackend"
 	"github.com/godwit-email/godwit/core/store"
+	"github.com/godwit-email/godwit/internal/i18n"
 )
 
 // MaxAttempts is how many times an op is sent before it is marked failed.
@@ -223,7 +224,7 @@ func (p *pusher) pushOp(ctx context.Context, o op) (problem string, err error) {
 		res, err = p.recv.Apply(ctx, w)
 	}
 	switch {
-	case errors.Is(err, backend.ErrNotFound) && o.kind == "flags" && p.stable:
+	case errors.Is(err, backend.ErrNotFound) && !errors.Is(err, backend.ErrFolderReset) && o.kind == "flags" && p.stable:
 		// Another client took the message out of that folder: try its next location.
 		if _, err := db.Transaction(ctx, unlocate(o.msg, src)); err != nil {
 			return "", err
@@ -249,7 +250,10 @@ func (p *pusher) pushOp(ctx context.Context, o op) (problem string, err error) {
 	}
 	ref := string(res.Ref)
 	// A location from a folder generation we have not synced is no use.
-	// shortcut: reads IMAP's UIDVALIDITY here; a FolderReset could void it instead.
+	// shortcut: reads IMAP's UIDVALIDITY to tell the destination's generation
+	// (destination too), so mailsync still imports imapbackend; when a second
+	// backend has folder generations (EWS, POP3), give Move the destination's
+	// cursor and let Apply answer Unlocated for another generation instead.
 	if v, _ := imapbackend.Decode(ref); v != dst.validity {
 		ref = ""
 	}
@@ -286,9 +290,16 @@ func (p *pusher) destination(ctx context.Context, id int64) (destination, error)
 	return destination{backend.FolderRef(store.Str(d.Values[0][0])), v}, nil
 }
 
-// unsupported is the error of an op the server cannot do, with the feature's reason.
+// unsupported is the last_error of an op the server cannot do: the feature's
+// reason described in English, as the user reads it, never the reason's key.
 func unsupported(reason string) string {
-	return "the server does not support this change (" + reason + ")"
+	switch reason {
+	case "imap.no_move":
+		return "the server supports neither MOVE nor UIDPLUS, so messages cannot be moved safely"
+	case "imap.no_uidplus":
+		return "the server does not support UIDPLUS, so mail cannot be deleted permanently without risking other mail"
+	}
+	return "the server does not support this change: " + i18n.TIn("en", "feature.reason."+reason)
 }
 
 // flagsOf is local storage's flag names written neutrally.

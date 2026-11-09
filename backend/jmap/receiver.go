@@ -561,6 +561,29 @@ func (r *Receiver) Fetch(ctx context.Context, req backend.ContentRequest) (io.Re
 	return io.NopCloser(bytes.NewReader(sec)), nil
 }
 
+// Headers implements backend.Receiver.
+// shortcut: one download per message, as Fetch; ask Email/get for the
+// header:* properties of all refs at once if refreshes get slow.
+func (r *Receiver) Headers(ctx context.Context, folder backend.FolderRef, refs []backend.MessageRef, fields []string) (map[backend.MessageRef][]byte, error) {
+	out := map[backend.MessageRef][]byte{}
+	for _, ref := range refs {
+		rc, err := r.Fetch(ctx, backend.ContentRequest{Location: backend.Location{Folder: folder, Ref: ref}, HeaderFields: fields})
+		if errors.Is(err, backend.ErrNotFound) {
+			continue
+		}
+		if err != nil {
+			return nil, err
+		}
+		b, err := io.ReadAll(rc)
+		rc.Close()
+		if err != nil {
+			return nil, err
+		}
+		out[ref] = b
+	}
+	return out, nil
+}
+
 // Find implements backend.Receiver.
 func (r *Receiver) Find(ctx context.Context, folder backend.FolderRef, messageID string, size int64) ([]backend.MessageRef, error) {
 	f := &email.FilterCondition{InMailbox: gojmap.ID(folder), Header: []string{"Message-ID", messageID}}

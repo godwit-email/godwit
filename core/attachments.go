@@ -409,8 +409,20 @@ func (s *Service) dialDownload(ctx context.Context, accountID int64) (recv backe
 // undoes its transfer encoding on the fly. Once more than attachLimit decoded
 // bytes arrive it stops, which cuts the download, and returns ErrTooLarge.
 func fetchPart(ctx context.Context, recv backend.Receiver, a attRow) ([]byte, error) {
+	if a.part != "" { // parts are stored as the part paths mail.Parse gives them
+		for p := range strings.SplitSeq(a.part, ".") {
+			if _, err := strconv.Atoi(p); err != nil {
+				return nil, errors.New("bad attachment part " + a.part)
+			}
+		}
+	}
 	rc, err := recv.Fetch(ctx, backend.ContentRequest{Location: a.at, Part: backend.PartRef(a.part)})
-	if err != nil {
+	switch {
+	case errors.Is(err, backend.ErrFolderReset):
+		return nil, errors.New("server folder changed since sync; sync again")
+	case errors.Is(err, backend.ErrNotFound):
+		return nil, errors.New("message no longer on the server")
+	case err != nil:
 		return nil, err
 	}
 	defer rc.Close()

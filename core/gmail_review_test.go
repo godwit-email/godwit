@@ -5,7 +5,9 @@ import (
 	"testing"
 	"time"
 
+	"github.com/emersion/go-imap/v2"
 	"github.com/godwit-email/godwit/core/internal/testmail"
+	"github.com/godwit-email/godwit/core/store"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -77,6 +79,28 @@ func TestGmailFlagsSkipALabelAnotherClientRemoved(t *testing.T) {
 	require.NoError(t, err)
 	assert.Contains(t, got.Flags, `\Flagged`, "the change reached the message through All Mail")
 	assert.Equal(t, []string{"done"}, e.opStates(t))
+}
+
+// A message found again in All Mail keeps its flags until the next round's
+// snapshot of All Mail, as before the protocol backends.
+func TestGmailOrphanFoundInAllMailTakesFlagsFromSnapshot(t *testing.T) {
+	e := newSyncEnv(t, testmail.Gmail())
+	_, err := e.s.db.Execute(bg, "UPDATE accounts SET sync_limit = 1 WHERE id = ?", e.acc.ID)
+	require.NoError(t, err)
+	m := e.im.AddGmail(msg("old@x"), nil, "INBOX", testmail.GmailAllMail)
+	e.im.AddGmail(msg("new@x"), nil, testmail.GmailAllMail)
+	e.sync(t)
+	id := e.idOf(t, "old@x")
+	m.Unlabel("INBOX")
+	c := e.dial(t)
+	_, err = c.Select(testmail.GmailAllMail, nil).Wait()
+	require.NoError(t, err)
+	require.NoError(t, c.Store(imap.UIDSetNum(m.UID(testmail.GmailAllMail)), &imap.StoreFlags{Op: imap.StoreFlagsAdd, Silent: true, Flags: []imap.Flag{imap.FlagFlagged}}, nil).Close())
+	e.sync(t)
+	assert.Contains(t, e.listed(t, testmail.GmailAllMail), id)
+	assert.Empty(t, store.Str(e.rows(t, "SELECT flags FROM messages WHERE id = ?", id)[0][0]), "found again: flags wait for the snapshot")
+	e.sync(t)
+	assert.Equal(t, `\Flagged`, store.Str(e.rows(t, "SELECT flags FROM messages WHERE id = ?", id)[0][0]))
 }
 
 func TestGmailOrphanKeptWhileAllMailHasIt(t *testing.T) {

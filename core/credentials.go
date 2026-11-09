@@ -1,6 +1,7 @@
 package core
 
 import (
+	"cmp"
 	"context"
 	"crypto/rand"
 	"encoding/hex"
@@ -111,6 +112,48 @@ func (s *Service) credentials(ctx context.Context, acc Account, rejected string)
 	s.credMu.Unlock()
 	pw, err := s.secret(ctx, acc, ver)
 	return pw, "", ver, err
+}
+
+// slotCredentials are acc's credentials for its receiving slot or, with send,
+// its sending one, as the slot signs in (Server.Auth): an OAuth access token
+// (rejected as in credentials), an API token sent as Bearer, or a password.
+// A sending slot without a password of its own uses the receiving one's.
+func (s *Service) slotCredentials(ctx context.Context, acc Account, send bool, rejected string) (backend.Credentials, uint64, error) {
+	cr := backend.Credentials{Username: acc.Username}
+	pw, tok, ver, err := s.credentials(ctx, acc, rejected)
+	if err != nil {
+		return cr, ver, err
+	}
+	switch {
+	case acc.AuthType == AuthOAuth:
+		cr.Token = tok
+	case send:
+		own, err := s.sendSecret(ctx, acc)
+		if err != nil {
+			return cr, ver, err
+		}
+		cr.Password = cmp.Or(own, pw)
+		if own == "" && acc.Receiving.Auth == AuthAPIToken {
+			return cr, ver, fmt.Errorf("no sending password in the keychain, and an API token does not sign in to SMTP: %w", backend.ErrAuthFailed)
+		}
+	case acc.Receiving.Auth == AuthAPIToken:
+		cr.Token = pw
+	default:
+		cr.Password = pw
+	}
+	return cr, ver, nil
+}
+
+// sendSecret is the sending slot's own password, "" when it has none.
+func (s *Service) sendSecret(ctx context.Context, acc Account) (string, error) {
+	v, err := keychainGet(s.sendUser(acc.ID))
+	switch {
+	case errors.Is(err, keyring.ErrNotFound):
+		return "", nil
+	case err != nil:
+		return "", errors.Join(err, s.setStatus(ctx, acc.ID, "error", "keychain_unavailable"))
+	}
+	return v, nil
 }
 
 // ifCurrent runs write, a record of a refusal of version ver's credentials,

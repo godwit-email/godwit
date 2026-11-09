@@ -20,10 +20,20 @@ func (a Account) Unsupported(f backend.Feature) string {
 	return ""
 }
 
-// supports fails with "unsupported: <why>" when the account's server cannot
+// ActionFeatures are the 协议能力 the mail actions need (ADR 0037), by the
+// action: the UI greys out one the account's server cannot do, and Wit's
+// tool for it answers "unsupported:".
+var ActionFeatures = map[string]backend.Feature{
+	"inbox": backend.FeatureMove, "archive": backend.FeatureMove, "junk": backend.FeatureMove, "delete": backend.FeatureMove,
+	"purge": backend.FeaturePurge,
+	"read":  backend.FeatureSeen, "unread": backend.FeatureSeen,
+	"star": backend.FeatureFlagged, "unstar": backend.FeatureFlagged,
+}
+
+// requireFeature fails with "unsupported: <why>" when the account's server cannot
 // do f: Wit's tools stay the same on every account and answer this instead
 // (ADR 0037). The reason is English, as for the model.
-func (s *Service) supports(ctx context.Context, accountID int64, f backend.Feature) error {
+func (s *Service) requireFeature(ctx context.Context, accountID int64, f backend.Feature) error {
 	acc, err := s.account(ctx, accountID)
 	if err != nil {
 		return err

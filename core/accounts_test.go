@@ -59,8 +59,8 @@ func TestAddAccount(t *testing.T) {
 	assert.Equal(t, "ok", acc.Status)
 	ih, ip := hostPort(t, im.Addr)
 	sh, sp := hostPort(t, smtpAddr)
-	assert.Equal(t, core.Server{Protocol: "imap", Host: ih, Port: ip, Security: core.SecurityNone}, acc.Receiving)
-	assert.Equal(t, core.Server{Protocol: "smtp", Host: sh, Port: sp, Security: core.SecurityNone}, acc.Sending)
+	assert.Equal(t, core.Server{Protocol: "imap", Host: ih, Port: ip, Security: core.SecurityNone, Auth: core.AuthPassword}, acc.Receiving)
+	assert.Equal(t, core.Server{Protocol: "smtp", Host: sh, Port: sp, Security: core.SecurityNone, Auth: core.AuthPassword}, acc.Sending)
 	require.NoError(t, s.SyncNow(ctx, acc.ID), "the password is in the keychain")
 
 	list, err := s.ListAccounts(ctx)

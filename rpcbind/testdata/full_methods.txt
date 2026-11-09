@@ -238,6 +238,7 @@ UpdateLabel
 UpdateMCPServer
 UpdateModelService
 UpdatePassword
+UpdateSendPassword
 UpdateSignature
 ViewContents
 ViewExceptions

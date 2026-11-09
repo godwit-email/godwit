@@ -44,16 +44,30 @@ func rejected(err error, stage, rcpt string) error {
 	return re
 }
 
+// Check signs in and hangs up, sending nothing: whether the server takes
+// the account's credentials.
+func (s *Sender) Check(ctx context.Context) error {
+	c, err := s.dial(ctx)
+	if err == nil {
+		c.Close()
+	}
+	return err
+}
+
+func (s *Sender) dial(ctx context.Context) (*smtp.Client, error) {
+	cr, err := s.cfg.Credentials(ctx)
+	if err != nil {
+		return nil, err
+	}
+	return conn.DialSMTP(ctx, conn.Endpoint{Host: s.cfg.Host, Port: s.cfg.Port, Security: s.cfg.Security,
+		Username: cr.Username, Password: cr.Password, AccessToken: cr.Token})
+}
+
 // Send submits raw to rcpts, stopping at the first refused recipient. A
 // mailbox whose SMTP AUTH is off is conn.ErrSMTPAuthDisabled (an
 // ErrAuthFailed). Cancelling ctx closes the connection.
 func (s *Sender) Send(ctx context.Context, from string, rcpts []string, raw []byte) error {
-	cr, err := s.cfg.Credentials(ctx)
-	if err != nil {
-		return err
-	}
-	c, err := conn.DialSMTP(ctx, conn.Endpoint{Host: s.cfg.Host, Port: s.cfg.Port, Security: s.cfg.Security,
-		Username: cr.Username, Password: cr.Password, AccessToken: cr.Token})
+	c, err := s.dial(ctx)
 	if err != nil {
 		return err
 	}

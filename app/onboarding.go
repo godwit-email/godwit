@@ -79,6 +79,9 @@ type onboarding struct {
 	imapSec, smtpSec     core.Security
 	proto                int    // the server form's receiving protocol: 0 IMAP, 1 JMAP (Settings.ExperimentalJMAP)
 	jmapURL              string // JMAP's session URL, in place of the IMAP server
+	jmapAuth             int    // how JMAP signs in: 0 a password, 1 an API token, with SMTP's password apart
+	sendSecret           string // SMTP's own password, for a JMAP API token
+	showSendSecret       bool
 	flowID, authURL      string
 	oauthErr             error
 	report               core.CheckReport
@@ -170,7 +173,7 @@ func providerName(p auth.Provider) string {
 // listed reports whether p has its own tile: Lark (Feishu outside China)
 // shares Feishu's, and the address's MX picks between them. Fastmail has
 // none yet (no mark of its own): its addresses find it.
-func listed(p auth.Provider) bool { return p.ID != "lark" && p.ID != "fastmail" }
+func listed(p auth.Provider) bool { return p.ID != "lark" }
 
 // tileName is p's name on its tile: Feishu's is 飞书/Lark.
 func tileName(p auth.Provider) string {
@@ -199,8 +202,17 @@ func providerMark(p auth.Provider) string {
 	return "@"
 }
 
-// secretName is what the provider's password is called: 授权码, 应用专用密码…
-func (o *onboarding) secretName() string { return i18n.T("onboarding.login." + loginOf(o.prov)) }
+// secretName is what the provider's password is called: 授权码, 应用专用密码…,
+// or API 令牌 when JMAP signs in with one.
+func (o *onboarding) secretName() string {
+	if o.apiToken() {
+		return i18n.T("onboarding.login.api_token")
+	}
+	return i18n.T("onboarding.login." + loginOf(o.prov))
+}
+
+// apiToken: JMAP signs in with an API token, and SMTP with a password of its own.
+func (o *onboarding) apiToken() bool { return o.jmap() && o.jmapAuth == 1 }
 
 // scheduleDetect detects the provider of the address once typing pauses.
 func (o *onboarding) scheduleDetect() {
@@ -443,6 +455,9 @@ func (o *onboarding) input() core.AccountInput {
 	} else {
 		in.Password = o.secret
 	}
+	if o.apiToken() {
+		in.Receiving.Auth, in.SendPassword = core.AuthAPIToken, o.sendSecret
+	}
 	if testSecurity != "" {
 		in.Sending.Security = testSecurity
 		if !o.jmap() { // a JMAP URL says its own
@@ -523,6 +538,9 @@ func (o *onboarding) validate() (reason, next string) {
 	}
 	if o.secret == "" {
 		return i18n.Tf("onboarding.invalid.secret", o.secretName()), i18n.T("onboarding.next.secret")
+	}
+	if o.apiToken() && o.sendSecret == "" {
+		return i18n.Tf("onboarding.invalid.secret", i18n.T("onboarding.send_secret")), i18n.T("onboarding.next.secret")
 	}
 	return "", ""
 }
@@ -903,7 +921,12 @@ func (o *onboarding) passwordView(c *ui.Context) {
 		}
 	}).Description(i18n.T("onboarding.secret.help")).LineHeight(theme.LineFor(o.secretName())) // the label's line; the description's is the same
 	secretWhitespaceHint(c, &o.secret)
-	primary(c, i18n.T("onboarding.connect"), o.secret == "" || !validEmail(o.email)).OnClick(o.connect)
+	if o.apiToken() {
+		ui.Field(c, i18n.T("onboarding.send_secret"), func() { secretInput(c, &o.sendSecret, &o.showSendSecret) }).
+			Description(i18n.T("onboarding.send_secret.help"))
+		secretWhitespaceHint(c, &o.sendSecret)
+	}
+	primary(c, i18n.T("onboarding.connect"), o.secret == "" || o.apiToken() && o.sendSecret == "" || !validEmail(o.email)).OnClick(o.connect)
 	o.manualView(c)
 }
 
@@ -991,12 +1014,18 @@ func (o *onboarding) serversForm(c *ui.Context) {
 				kit.TabsFill(c, &o.proto, "IMAP", i18n.T("onboarding.protocol.jmap"))
 				if o.proto != proto && o.proto == 1 && o.jmapURL == "" {
 					o.jmapURL = o.defaultJMAPURL()
+					if o.prov.Entry(auth.JMAP).Login == "api_token" { // Fastmail's JMAP takes a token
+						o.jmapAuth = 1
+					}
 				}
 			}).FontSize(t.Text.Sm).TextColor(t.Muted)
 		}
 		if o.jmap() {
 			ui.Field(c, i18n.T("onboarding.jmap.url"), func() { kit.Input(c, &o.jmapURL, kit.InputOpts{Placeholder: "https://example.com/.well-known/jmap"}) }).
 				Description(i18n.T("onboarding.jmap.url.help")).FontSize(t.Text.Sm).TextColor(t.Muted)
+			ui.Field(c, i18n.T("onboarding.jmap.login"), func() {
+				kit.TabsFill(c, &o.jmapAuth, i18n.T("onboarding.login.password"), i18n.T("onboarding.login.api_token"))
+			}).FontSize(t.Text.Sm).TextColor(t.Muted)
 		} else {
 			server("imap", &o.imapHost, &o.imapPort, &o.imapSec)
 		}

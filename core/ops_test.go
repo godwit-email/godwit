@@ -282,7 +282,7 @@ func TestMoveNeedsMoveOrUIDPlus(t *testing.T) {
 	ops := e.ops(t)
 	require.Len(t, ops, 1)
 	assert.Equal(t, "failed", ops[0].State)
-	assert.Contains(t, ops[0].LastError, "imap.no_move", "the feature's reason")
+	assert.Contains(t, ops[0].LastError, "MOVE")
 	evs := collect(ch)
 	assert.Len(t, ofType(evs, events.SyncFailed), 1)
 	assert.Equal(t, e.folderID(t, "INBOX"), store.Int(e.rows(t, "SELECT "+shownCol+" FROM messages WHERE id = ?", id)[0][0]),
@@ -351,7 +351,7 @@ func TestMoveNotReimportedBeforePush(t *testing.T) {
 	require.NoError(t, e.s.Move(bg, []int64{id}, archive))
 	e.im.Restart()
 
-	_, ferr := mailsync.Fetch(bg, e.s.db, e.receiver(t), e.acc.ID, e.s.bus)
+	_, ferr := mailsync.Fetch(bg, e.s.db, e.receiver(t), e.acc.ID, e.s.bus, nil)
 	require.NoError(t, ferr) // pull before push
 	assert.Equal(t, [][]any{{id, archive}}, e.rows(t, "SELECT id, "+shownCol+" FROM messages"))
 
@@ -492,7 +492,7 @@ func TestRemoteFlagsDoNotOverwritePending(t *testing.T) {
 	require.NoError(t, c.Store(imap.UIDSetNum(1), &imap.StoreFlags{Op: imap.StoreFlagsDel, Silent: true, Flags: []imap.Flag{imap.FlagSeen}}, nil).Close())
 	require.NoError(t, c.Store(imap.UIDSetNum(1), &imap.StoreFlags{Op: imap.StoreFlagsAdd, Silent: true, Flags: []imap.Flag{imap.FlagFlagged}}, nil).Close())
 
-	_, ferr := mailsync.Fetch(bg, e.s.db, e.receiver(t), e.acc.ID, e.s.bus)
+	_, ferr := mailsync.Fetch(bg, e.s.db, e.receiver(t), e.acc.ID, e.s.bus, nil)
 	require.NoError(t, ferr) // pull before push
 	assert.Equal(t, `\Seen`, store.Str(e.rows(t, "SELECT flags FROM messages")[0][0]), "local change wins until pushed")
 
@@ -653,7 +653,7 @@ func TestFetchKeepsConcurrentLocalFlags(t *testing.T) {
 		require.NoError(t, e.s.SetFlags(bg, []int64{id}, []string{`\Seen`}, nil))
 	}
 	t.Cleanup(func() { mailsync.BeforeFlagsWrite = nil })
-	_, ferr := mailsync.Fetch(bg, e.s.db, e.receiver(t), e.acc.ID, e.s.bus)
+	_, ferr := mailsync.Fetch(bg, e.s.db, e.receiver(t), e.acc.ID, e.s.bus, nil)
 	require.NoError(t, ferr)
 	assert.Equal(t, `\Seen`, store.Str(e.rows(t, "SELECT flags FROM messages")[0][0]))
 	e.sync(t)

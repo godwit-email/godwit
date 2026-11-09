@@ -677,18 +677,30 @@ func (p *settingsPage) authText(acc core.Account, prov auth.Provider) string {
 	case acc.AuthType == "oauth":
 		return i18n.T("settings.account.login.oauth")
 	}
-	return i18n.Tf("settings.account.login.secret", secretName(prov))
+	return i18n.Tf("settings.account.login.secret", accountSecretName(acc, prov))
+}
+
+// accountSecretName is what the account's receiving secret is called: an
+// API token, else as secretName.
+func accountSecretName(acc core.Account, pr auth.Provider) string {
+	if acc.Receiving.Auth == core.AuthAPIToken {
+		return i18n.T("onboarding.login.api_token")
+	}
+	return secretName(pr)
 }
 
 // authButton signs in again (OAuth) or updates the password.
 func (p *settingsPage) authButton(c *ui.Context, acc core.Account, prov auth.Provider, banner bool) {
 	o := kit.ButtonOpts{Variant: kit.Outline, Size: kit.SizeSm}
 	if acc.AuthType != "oauth" {
-		text, open := i18n.Tf("settings.account.login.update", secretName(prov)), func() { p.openDialog("password", acc) }
+		text, open := i18n.Tf("settings.account.login.update", accountSecretName(acc, prov)), func() { p.openDialog("password", acc) }
 		if banner {
 			kit.AlertAction(c, kit.Warning, text, open)
 		} else {
 			kit.Button(c, text, o).OnClick(open)
+		}
+		if acc.Receiving.Auth == core.AuthAPIToken && !banner { // SMTP signs in with a password of its own
+			kit.Button(c, i18n.Tf("settings.account.login.update", i18n.T("onboarding.send_secret")), o).OnClick(func() { p.openDialog("send_password", acc) })
 		}
 		return
 	}
@@ -786,19 +798,23 @@ func (p *settingsPage) dialogView(c *ui.Context) {
 	label, variant := i18n.T("common.save"), kit.Default
 	incomplete := false // the confirm button waits for the fields
 	switch p.dialog {
-	case "password":
+	case "password", "send_password":
 		incomplete = p.secret == ""
-		title = i18n.Tf("settings.account.login.update", secretName(prov))
+		name, update := accountSecretName(acc, prov), a.svc.UpdatePassword
+		if p.dialog == "send_password" {
+			name, update = i18n.T("onboarding.send_secret"), a.svc.UpdateSendPassword
+		}
+		title = i18n.Tf("settings.account.login.update", name)
 		body = func() {
-			ui.Field(c, secretName(prov), func() { secretInput(c, &p.secret, &p.showSecret) }).
+			ui.Field(c, name, func() { secretInput(c, &p.secret, &p.showSecret) }).
 				Description(i18n.T("onboarding.secret.help"))
 			secretWhitespaceHint(c, &p.secret)
 		}
 		secret := p.secret
 		confirm = func() {
-			p.act(id, func(ctx context.Context) error { return a.svc.UpdatePassword(ctx, id, secret) },
+			p.act(id, func(ctx context.Context) error { return update(ctx, id, secret) },
 				func(bool) {
-					a.toastAs(kit.ToastSuccess, i18n.Tf("settings.account.password.updated", secretName(prov)))
+					a.toastAs(kit.ToastSuccess, i18n.Tf("settings.account.password.updated", name))
 				})
 		}
 	case "client":

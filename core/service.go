@@ -623,12 +623,12 @@ func (s *Service) SyncNow(ctx context.Context, accountID int64) error {
 	if local, err := s.localArchive(ctx, accountID); local || err != nil {
 		return err
 	}
-	return s.syncNow(ctx, accountID, true)
+	return s.syncNow(ctx, accountID, true, nil)
 }
 
-// syncNow is SyncNow for the worker (explicit false). A cancelled sync is a
-// shutdown, not a failure.
-func (s *Service) syncNow(ctx context.Context, accountID int64, explicit bool) error {
+// syncNow is SyncNow for the worker (explicit false), fetching only the
+// folders in only (nil: all). A cancelled sync is a shutdown, not a failure.
+func (s *Service) syncNow(ctx context.Context, accountID int64, explicit bool, only []backend.FolderRef) error {
 	unlock, err := s.lockAccount(ctx, accountID)
 	if err != nil {
 		return err
@@ -639,7 +639,7 @@ func (s *Service) syncNow(ctx context.Context, accountID int64, explicit bool) e
 	s.securityMu.Unlock()
 	defer func() { s.securityMu.Lock(); s.securitySyncs--; s.securityMu.Unlock() }()
 	s.bus.Publish(events.Event{Type: events.SyncStarted, AccountID: accountID})
-	if err := s.syncAccount(ctx, accountID, explicit); err != nil {
+	if err := s.syncAccount(ctx, accountID, explicit, only); err != nil {
 		if ctx.Err() == nil {
 			// Safe to show: conn never includes server text or the password in login errors.
 			s.bus.Publish(events.Event{Type: events.SyncFailed, AccountID: accountID, Error: err.Error(), Kind: string(conn.Classify(err))})
@@ -675,13 +675,13 @@ func (s *Service) dialAccount(ctx context.Context, accountID int64) (recv backen
 	var ver uint64
 	var rejected, tok string
 	recv = newReceiver(acc.Receiving, func(ctx context.Context) (backend.Credentials, error) {
-		pw, t, v, err := s.credentials(ctx, acc, rejected)
-		tok, ver = t, v
-		return backend.Credentials{Username: acc.Username, Password: pw, Token: t}, err
+		cr, v, err := s.slotCredentials(ctx, acc, false, rejected)
+		tok, ver = cr.Token, v
+		return cr, err
 	})
 	d, err := recv.Describe(ctx) // signs in
 	// A refused access token may just be stale: refresh it and try once more.
-	if errors.Is(err, backend.ErrAuthFailed) && tok != "" {
+	if errors.Is(err, backend.ErrAuthFailed) && tok != "" && acc.AuthType == AuthOAuth {
 		rejected = tok
 		d, err = recv.Describe(ctx)
 	}
@@ -715,17 +715,15 @@ func (s *Service) dialAccount(ctx context.Context, accountID int64) (recv backen
 	return recv, func() { stop(); recv.Close() }, nil
 }
 
-// syncAccount runs one sync. An SMTP login failure skips the outbox but not the
-// rest; it is returned at the end, so a worker round ends and parks.
-func (s *Service) syncAccount(ctx context.Context, accountID int64, explicit bool) (err error) {
+// syncAccount runs one sync, fetching only the folders in only (nil: all). An
+// SMTP login failure skips the outbox but not the rest; it is returned at the
+// end, so a worker round ends and parks.
+func (s *Service) syncAccount(ctx context.Context, accountID int64, explicit bool, only []backend.FolderRef) (err error) {
 	recv, release, err := s.dialAccount(ctx, accountID)
 	if err != nil {
 		return err
 	}
 	defer release()
-	if t, ok := recv.(interface{ LogTrace(error) }); ok {
-		defer func() { t.LogTrace(err) }() // a response go-imap could not parse goes in the error report
-	}
 	// Purge and archive undo deadlines wake the worker again.
 	defer s.wakeForOps(ctx, accountID, s.clk().Now())
 	// Queued first, so this round's push expunges and its fetch drops the rows.
@@ -750,7 +748,7 @@ func (s *Service) syncAccount(ctx context.Context, accountID int64, explicit boo
 	if err := s.pushOps(ctx, recv, accountID, mailsync.PushOps); err != nil {
 		return err
 	}
-	more, err := mailsync.Fetch(ctx, s.db, recv, accountID, s.bus)
+	more, err := mailsync.Fetch(ctx, s.db, recv, accountID, s.bus, only)
 	if err == nil {
 		err = s.logDaily(ctx) // daily rules run after the day's first complete sync
 	}
@@ -803,16 +801,11 @@ func (s *Service) checkSMTP(ctx context.Context, accountID int64, explicit bool)
 	}
 	sa := &sendAuth{s: s, acc: acc}
 	login := func() error {
-		cr, err := sa.credentials(ctx)
-		if err != nil || sa.acc.Sending.Protocol == auth.Graph {
-			return err // a Graph token in hand is the check
+		if sa.acc.Sending.Protocol == auth.Graph {
+			_, err := sa.credentials(ctx) // a Graph token in hand is the check
+			return err
 		}
-		sc, err := conn.DialSMTP(ctx, conn.Endpoint{Host: acc.Sending.Host, Port: acc.Sending.Port, Security: acc.Sending.Security,
-			Username: cr.Username, Password: cr.Password, AccessToken: cr.Token})
-		if err == nil {
-			sc.Close()
-		}
-		return err
+		return sa.smtp().Check(ctx)
 	}
 	if err = login(); err != nil && sa.retry(ctx, err) {
 		err = login()

@@ -29,6 +29,11 @@ var ErrUnsupported = errors.New("backend: not supported")
 // ErrNotFound means a server reference no longer names anything on the server.
 var ErrNotFound = errors.New("backend: not found on the server")
 
+// ErrFolderReset is the ErrNotFound of a location whose folder the server
+// reset since the sync that stored it (IMAP's UIDVALIDITY changed): the next
+// sync reports the FolderReset.
+var ErrFolderReset = fmt.Errorf("%w: the folder was reset on the server", ErrNotFound)
+
 // ErrNotSynced is Sync with SyncRequest.Older on a folder whose first sync at
 // the server's current state has not completed: a full sync comes first.
 var ErrNotSynced = errors.New("folder not synced yet")
@@ -239,7 +244,8 @@ type Local interface {
 	Held(ctx context.Context, folder FolderRef) (map[MessageRef]string, error)
 	// Lost is the ServerIDs of stored messages left at no server location,
 	// which local storage is about to delete as gone. A backend that still
-	// finds one reports it as a MessageAppeared without content.
+	// finds one reports it as a MessageAppeared without content; local
+	// storage takes its flags from the folder's next snapshot, not from it.
 	Lost(ctx context.Context) ([]string, error)
 }
 
@@ -469,13 +475,19 @@ type Receiver interface {
 	Sync(ctx context.Context, req SyncRequest, commit func(Page) error) (more bool, err error)
 	// Fetch reads content by server reference; ErrNotFound when it is gone.
 	Fetch(ctx context.Context, req ContentRequest) (io.ReadCloser, error)
+	// Headers reads the header fields of the messages at refs in folder, in
+	// as few requests as the protocol allows; a ref gone from the server is
+	// missing from the result. A *FolderError is the server refusing folder.
+	Headers(ctx context.Context, folder FolderRef, refs []MessageRef, fields []string) (map[MessageRef][]byte, error)
 	// Find lists the messages in folder whose Message-ID (without angle
 	// brackets) is messageID and, when size > 0, of that size.
 	Find(ctx context.Context, folder FolderRef, messageID string, size int64) ([]MessageRef, error)
 	// Apply writes one Op back. ErrNotFound: the op's location no longer
 	// names the message (its folder was reset, or with IdentityStable the
-	// message left that folder), and nothing was done. Any other error means
-	// the outcome is not known (a lost connection): the op is tried again later.
+	// message left that folder), and nothing was done. A *FolderError: the
+	// server refused a folder the op had to read first, and nothing was done.
+	// Any other error means the outcome is not known (a lost connection): the
+	// op is tried again later.
 	Apply(ctx context.Context, op Op) (Result, error)
 	// Watch calls wake when the server has changes, with the folders that
 	// changed (nil: anywhere), until ctx ends or the connection fails. It

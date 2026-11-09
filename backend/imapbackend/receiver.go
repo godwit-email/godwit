@@ -13,9 +13,11 @@ import (
 	"github.com/godwit-email/godwit/backend/conn"
 )
 
+// PollInterval is how often an account syncs when the server cannot push.
+// Tests lower it.
+var PollInterval = 5 * time.Minute
+
 const (
-	// PollInterval is how often an account syncs when the server cannot push.
-	PollInterval = 5 * time.Minute
 	// idleRestart ends and restarts a Watch's IDLE before servers drop it
 	// (RFC 2177 asks for at least every 29 minutes).
 	idleRestart = 25 * time.Minute
@@ -82,9 +84,10 @@ func (r *Receiver) changed() {
 	}
 }
 
-// LogTrace logs the end of the session's traffic, masked, when err is a
-// server response go-imap could not parse (conn.LogTrace).
-func (r *Receiver) LogTrace(err error) { conn.LogTrace(r.c, err) }
+// trace logs the end of the session's traffic, masked, when *err is a server
+// response go-imap could not parse (conn.LogTrace): the error report then
+// shows what the server sent. Each verb defers it.
+func (r *Receiver) trace(err *error) { conn.LogTrace(r.c, *err) }
 
 // Close closes the connection; a second Close is harmless.
 func (r *Receiver) Close() error {
@@ -97,7 +100,8 @@ func (r *Receiver) Close() error {
 // Fetch streams the content req names. Closing the stream before its end cuts
 // the connection, since IMAP has no way to stop a literal; the session is then
 // done.
-func (r *Receiver) Fetch(ctx context.Context, req backend.ContentRequest) (io.ReadCloser, error) {
+func (r *Receiver) Fetch(ctx context.Context, req backend.ContentRequest) (_ io.ReadCloser, err error) {
+	defer r.trace(&err)
 	c, err := r.client(ctx)
 	if err != nil {
 		return nil, err
@@ -108,7 +112,7 @@ func (r *Receiver) Fetch(ctx context.Context, req backend.ContentRequest) (io.Re
 		return nil, err
 	}
 	if sel.UIDValidity != validity { // recreated since the sync
-		return nil, backend.ErrNotFound
+		return nil, backend.ErrFolderReset
 	}
 	sec := &imap.FetchItemBodySection{Peek: true}
 	switch {
@@ -133,6 +137,44 @@ func (r *Receiver) Fetch(ctx context.Context, req backend.ContentRequest) (io.Re
 		return nil, err
 	}
 	return nil, backend.ErrNotFound
+}
+
+// Headers reads the fields of refs in folder with one UID FETCH; refs of
+// another UIDVALIDITY than the folder's are gone. A SELECT the server refuses
+// is a backend.FolderError.
+func (r *Receiver) Headers(ctx context.Context, folder backend.FolderRef, refs []backend.MessageRef, fields []string) (_ map[backend.MessageRef][]byte, err error) {
+	defer r.trace(&err)
+	c, err := r.client(ctx)
+	if err != nil {
+		return nil, err
+	}
+	sel, err := c.Select(string(folder), &imap.SelectOptions{ReadOnly: true}).Wait()
+	if err != nil {
+		var refused *imap.Error
+		if errors.As(err, &refused) {
+			return nil, &backend.FolderError{Folder: folder, Err: err}
+		}
+		return nil, err
+	}
+	var uids imap.UIDSet
+	for _, ref := range refs {
+		if v, uid := Decode(string(ref)); v == sel.UIDValidity && uid != 0 {
+			uids.AddNum(imap.UID(uid))
+		}
+	}
+	out := map[backend.MessageRef][]byte{}
+	if len(uids) == 0 {
+		return out, nil
+	}
+	sec := &imap.FetchItemBodySection{Specifier: imap.PartSpecifierHeader, HeaderFields: fields, Peek: true}
+	msgs, err := c.Fetch(uids, &imap.FetchOptions{UID: true, BodySection: []*imap.FetchItemBodySection{sec}}).Collect()
+	if err != nil {
+		return nil, err
+	}
+	for _, m := range msgs {
+		out[backend.MessageRef(Encode(sel.UIDValidity, uint32(m.UID)))] = m.FindBodySection(sec)
+	}
+	return out, nil
 }
 
 // literal is a FETCH's body section being read.
@@ -168,7 +210,8 @@ func (l *literal) Close() error {
 // INBOX at each change the server reports. It wakes once, with nil, as soon
 // as INBOX is selected: a sync after that wake misses nothing. When ctx ends
 // it returns with IDLE still running; Close ends it.
-func (r *Receiver) Watch(ctx context.Context, wake func(folders []backend.FolderRef)) error {
+func (r *Receiver) Watch(ctx context.Context, wake func(folders []backend.FolderRef)) (err error) {
+	defer r.trace(&err)
 	c, err := r.client(ctx)
 	if err != nil {
 		return err
@@ -216,7 +259,8 @@ func (r *Receiver) Watch(ctx context.Context, wake func(folders []backend.Folder
 
 // Check is the add-account check: a sign-in and the folders a sync would
 // mirror. A failing LIST does not fail it; it reports no folders.
-func (r *Receiver) Check(ctx context.Context) (backend.CheckResult, error) {
+func (r *Receiver) Check(ctx context.Context) (_ backend.CheckResult, err error) {
+	defer r.trace(&err)
 	c, err := r.client(ctx)
 	if err != nil {
 		return backend.CheckResult{}, err

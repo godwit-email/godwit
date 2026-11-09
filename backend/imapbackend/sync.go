@@ -62,7 +62,8 @@ type syncer struct {
 // skipped, so it cannot hold back the others' arrivals round after round; its
 // refusal comes back as a backend.FolderError, and a broken connection still
 // stops the round.
-func (r *Receiver) Sync(ctx context.Context, req backend.SyncRequest, commit func(backend.Page) error) (bool, error) {
+func (r *Receiver) Sync(ctx context.Context, req backend.SyncRequest, commit func(backend.Page) error) (_ bool, err error) {
+	defer r.trace(&err)
 	c, err := r.client(ctx)
 	if err != nil {
 		return false, err
@@ -505,7 +506,9 @@ func (s *syncer) backfillRange(ctx context.Context, f *folder) error {
 // snapshot reports the flags of 1:last UID, which local storage diffs for
 // changed flags and expunged locations. Nothing unless the FETCH completed:
 // a missing UID might only mean a dropped connection.
-// shortcut: refetches every FLAGS each round; switch to CONDSTORE/QRESYNC.
+// shortcut: refetches every FLAGS each round, a cost that grows with the
+// folder; switch to CONDSTORE/QRESYNC (FlagsChanged, MessageGone) when large
+// folders make rounds slow or the traffic shows up in error reports.
 func (s *syncer) snapshot(f *folder) error {
 	if f.last == 0 {
 		return nil

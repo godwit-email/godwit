@@ -413,7 +413,7 @@ func (a *sendAuth) credentials(ctx context.Context) (backend.Credentials, error)
 	if a.acc.Sending.Protocol == auth.Graph {
 		cr.Token, a.ver, err = a.s.graphToken(ctx, a.acc)
 	} else {
-		cr.Password, cr.Token, a.ver, err = a.s.credentials(ctx, a.acc, a.rejected)
+		cr, a.ver, err = a.s.slotCredentials(ctx, a.acc, true, a.rejected)
 	}
 	if err != nil {
 		return backend.Credentials{}, err
@@ -427,6 +427,11 @@ func (a *sendAuth) sender() backend.Sender {
 	if a.acc.Sending.Protocol == auth.Graph {
 		return graph.New(graphSendURL, a.credentials)
 	}
+	return a.smtp()
+}
+
+// smtp is the account's SMTP sending backend.
+func (a *sendAuth) smtp() *smtpbackend.Sender {
 	return smtpbackend.New(smtpbackend.Config{Host: a.acc.Sending.Host, Port: a.acc.Sending.Port,
 		Security: a.acc.Sending.Security, Credentials: a.credentials})
 }
