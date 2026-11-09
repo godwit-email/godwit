@@ -21,9 +21,9 @@ import (
 	"unicode/utf8"
 
 	"github.com/egoist/mygo/plugins/sqlite"
+	"github.com/godwit-email/godwit/backend/imapbackend"
 	"github.com/godwit-email/godwit/core/auth"
 	"github.com/godwit-email/godwit/core/events"
-	"github.com/godwit-email/godwit/core/imapref"
 	"github.com/godwit-email/godwit/core/store"
 	"github.com/zalando/go-keyring"
 )
@@ -212,7 +212,7 @@ func (s *Service) AddAccount(ctx context.Context, in AccountInput) (Account, err
 			recv_protocol, recv_host, recv_port, recv_security, send_protocol, send_host, send_port, send_security, created_at, provider, oauth_client_id, features, receive_only, position)
 			VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'ok', ?, 'imap', ?, ?, ?, 'smtp', ?, ?, ?, ?, ?, ?, ?, ?, (SELECT COALESCE(MAX(position) + 1, 0) FROM accounts))`,
 		Args: []any{in.Email, in.Name, in.Alias, b2i(isDefault), sync.Limit, sync.Months, authType, authType, in.username(),
-			in.IMAPHost, in.IMAPPort, string(in.IMAPSecurity), in.SMTPHost, in.SMTPPort, string(in.SMTPSecurity), time.Now().Unix(), in.Provider, in.oauthClientID, imapref.Features(checked.gmail), b2i(receiveOnly)},
+			in.IMAPHost, in.IMAPPort, string(in.IMAPSecurity), in.SMTPHost, in.SMTPPort, string(in.SMTPSecurity), time.Now().Unix(), in.Provider, in.oauthClientID, imapbackend.Features(checked.gmail), b2i(receiveOnly)},
 	})
 	res, err := s.db.Transaction(ctx, stmts)
 	if err != nil {
@@ -681,7 +681,7 @@ func (s *Service) UpdateAccount(ctx context.Context, id int64, p AccountPatch) (
 		set("receive_only", b2i(err != nil))
 		set("username", in.username())
 		set("recv_host", in.IMAPHost)
-		set("features", imapref.Features(r.gmail))
+		set("features", imapbackend.Features(r.gmail))
 		set("recv_port", in.IMAPPort)
 		set("recv_security", string(in.IMAPSecurity))
 		set("send_host", in.SMTPHost)
@@ -710,8 +710,8 @@ func (s *Service) UpdateAccount(ctx context.Context, id int64, p AccountPatch) (
 		// matches. No real UIDVALIDITY is 0, so pushes of queued ops and downloads
 		// see a recreated folder and the next fetch re-imports every folder.
 		stmts = append(stmts,
-			sqlite.Statement{SQL: "UPDATE folders SET cursor = " + imapref.ZeroValidity("cursor") + " WHERE account_id = ?", Args: []any{id}},
-			sqlite.Statement{SQL: "UPDATE message_locations SET server_ref = " + imapref.ZeroValidity("server_ref") + " WHERE server_ref IS NOT NULL AND message_id IN (SELECT id FROM messages WHERE account_id = ?)", Args: []any{id}})
+			sqlite.Statement{SQL: "UPDATE folders SET cursor = " + imapbackend.ZeroValidity("cursor") + " WHERE account_id = ?", Args: []any{id}},
+			sqlite.Statement{SQL: "UPDATE message_locations SET server_ref = " + imapbackend.ZeroValidity("server_ref") + " WHERE server_ref IS NOT NULL AND message_id IN (SELECT id FROM messages WHERE account_id = ?)", Args: []any{id}})
 		unlock, err := s.lockAccount(ctx, id) // no sync or download is using the old UIDs meanwhile
 		if err != nil {
 			return Account{}, err

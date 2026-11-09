@@ -9,7 +9,7 @@ import (
 	"github.com/egoist/mygo/plugins/sqlite"
 	"github.com/emersion/go-imap/v2"
 	"github.com/emersion/go-imap/v2/imapclient"
-	"github.com/godwit-email/godwit/core/imapref"
+	"github.com/godwit-email/godwit/backend/imapbackend"
 	"github.com/godwit-email/godwit/core/store"
 )
 
@@ -48,7 +48,7 @@ func pushGmailLabels(ctx context.Context, db *store.DB, c *imapclient.Client, o 
 			return "", err
 		}
 		if len(loc.Values) > 0 {
-			locValidity, locUID := imapref.Decode(store.Str(loc.Values[0][0]))
+			locValidity, locUID := imapbackend.Decode(store.Str(loc.Values[0][0]))
 			sel, err := c.Select(srcName, nil).Wait()
 			if err != nil {
 				return failure(err)
@@ -206,7 +206,7 @@ func gmailLocation(c *imapclient.Client, folder string, id uint64) (validity, ui
 			if listErr != nil {
 				return 0, 0, listErr
 			}
-			if !slices.ContainsFunc(listed, func(f *imap.ListData) bool { return f.Mailbox == folder && selectable(f) }) {
+			if !slices.ContainsFunc(listed, func(f *imap.ListData) bool { return f.Mailbox == folder && imapbackend.Selectable(f) }) {
 				return 0, 0, nil
 			}
 		}

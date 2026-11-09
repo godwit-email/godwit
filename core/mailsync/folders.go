@@ -5,100 +5,65 @@ import (
 	"fmt"
 	"slices"
 	"strings"
+	"time"
 
 	"github.com/egoist/mygo/plugins/sqlite"
-	"github.com/emersion/go-imap/v2"
 	"github.com/emersion/go-imap/v2/imapclient"
-	"github.com/godwit-email/godwit/core/imapref"
+	"github.com/godwit-email/godwit/backend"
+	"github.com/godwit-email/godwit/backend/imapbackend"
 	"github.com/godwit-email/godwit/core/store"
 )
 
+// folder is a stored folder and its backend's sync state.
 type folder struct {
-	id                   int64
-	name                 string
-	role                 string
-	uidValidity, lastUID uint32
-	synced               bool   // a first sync at uidValidity completed
-	filled               *int64 // the cutoff a range backfill completed down to
+	id         int64
+	ref        backend.FolderRef // server_ref
+	name, role string
+	cursor     string
+	synced     bool   // a first sync at cursor completed
+	filled     *int64 // the cutoff a range backfill completed down to
 }
 
-var specialUse = map[imap.MailboxAttr]string{
-	imap.MailboxAttrSent: "sent", imap.MailboxAttrTrash: "trash", imap.MailboxAttrDrafts: "drafts",
-	imap.MailboxAttrJunk: "junk", imap.MailboxAttrArchive: "archive",
-	// Gmail's All Mail stands in for a missing archive (RoleFolder); its
-	// Starred is the unified 已标星 view, so the sidebar shows it no row.
-	imap.MailboxAttrAll: "all", imap.MailboxAttrFlagged: "flagged",
-}
-
-var roleNames = map[string]string{
-	"sent": "sent", "sent items": "sent", "sent messages": "sent", "已发送": "sent", "已傳送": "sent", "寄件備份": "sent",
-	"送信済み": "sent", "보낸편지함": "sent", "gesendet": "sent", "gesendete elemente": "sent", "envoyés": "sent", "messages envoyés": "sent",
-	"enviados": "sent", "itens enviados": "sent", "inviati": "sent", "отправленные": "sent", "verzonden": "sent", "gönderilenler": "sent", "đã gửi": "sent",
-	"trash": "trash", "deleted items": "trash", "deleted messages": "trash", "已删除": "trash", "垃圾桶": "trash",
-	"削除済み": "trash", "ごみ箱": "trash", "ゴミ箱": "trash", "휴지통": "trash", "papierkorb": "trash", "gelöschte elemente": "trash",
-	"corbeille": "trash", "papelera": "trash", "lixeira": "trash", "cestino": "trash", "корзина": "trash", "удаленные": "trash", "удалённые": "trash",
-	"prullenbak": "trash", "çöp kutusu": "trash", "thùng rác": "trash",
-	"drafts": "drafts", "草稿": "drafts", "下書き": "drafts", "임시보관함": "drafts", "entwürfe": "drafts", "brouillons": "drafts",
-	"borradores": "drafts", "rascunhos": "drafts", "bozze": "drafts", "черновики": "drafts", "concepten": "drafts", "taslaklar": "drafts", "thư nháp": "drafts",
-	"junk": "junk", "junk email": "junk", "spam": "junk", "垃圾邮件": "junk", "垃圾郵件": "junk", "迷惑メール": "junk", "스팸함": "junk", "스팸": "junk",
-	"unerwünscht": "junk", "indésirables": "junk", "courrier indésirable": "junk", "correo no deseado": "junk", "lixo eletrônico": "junk",
-	"posta indesiderata": "junk", "спам": "junk", "ongewenst": "junk", "gereksiz": "junk", "thư rác": "junk",
-	"archive": "archive", "归档": "archive", "封存": "archive", "アーカイブ": "archive", "보관함": "archive", "archiv": "archive",
-	"archives": "archive", "archivo": "archive", "arquivo": "archive", "archivio": "archive", "архив": "archive", "archief": "archive", "arşiv": "archive", "lưu trữ": "archive",
-}
-
-// roles are the roles of LIST's folders, in its order: each folder's
-// SPECIAL-USE role, else one guessed from its (last) name segment, unless
-// another folder carries that role as SPECIAL-USE (Gmail's [Gmail]/Sent Mail
-// beats a folder named Sent Messages).
-func roles(list []*imap.ListData) []string {
-	out := make([]string, len(list))
-	marked := map[string]bool{}
-	for i, d := range list {
-		if out[i] = markedRole(d); out[i] != "" && selectable(d) { // an unusable folder reserves nothing
-			marked[out[i]] = true
-		}
+func (f *folder) state() backend.FolderState {
+	st := backend.FolderState{Cursor: backend.Cursor(f.cursor), Synced: f.synced}
+	if f.filled != nil {
+		st.Filled = time.Unix(*f.filled, 0)
 	}
-	for i, d := range list {
-		if g := guessedRole(d); out[i] == "" && !marked[g] {
-			out[i] = g
-		}
-	}
-	return out
+	return st
 }
 
-// markedRole is the folder's SPECIAL-USE role, or inbox for INBOX.
-func markedRole(d *imap.ListData) string {
-	for _, a := range d.Attrs {
-		if r, ok := specialUse[a]; ok {
-			return r
-		}
+func (f *folder) setState(st backend.FolderState) {
+	f.cursor, f.synced, f.filled = string(st.Cursor), st.Synced, nil
+	if !st.Filled.IsZero() {
+		v := st.Filled.Unix()
+		f.filled = &v
 	}
-	if strings.EqualFold(d.Mailbox, "INBOX") {
-		return "inbox"
-	}
-	return ""
 }
 
-// guessedRole is the role its (last) name segment suggests.
-func guessedRole(d *imap.ListData) string {
-	name := d.Mailbox
-	if d.Delim != 0 {
-		name = name[strings.LastIndexByte(name, byte(d.Delim))+1:]
+const folderCols = "id, server_ref, name, role, cursor, synced, filled_since"
+
+func scanFolder(r []any) *folder {
+	f := &folder{id: store.Int(r[0]), ref: backend.FolderRef(store.Str(r[1])), name: store.Str(r[2]), role: store.Str(r[3]),
+		cursor: store.Str(r[4]), synced: store.Int(r[5]) != 0}
+	if r[6] != nil {
+		v := store.Int(r[6])
+		f.filled = &v
 	}
-	return roleNames[strings.ToLower(name)]
+	return f
 }
 
-// delim is the folder's hierarchy delimiter, "" when the server has none.
-func delim(d *imap.ListData) string {
-	if d.Delim == 0 {
-		return ""
+// loadFolders reads the account's folders that are on the server.
+func (s *syncRun) loadFolders(ctx context.Context) error {
+	rows, err := s.db.Query(ctx, "SELECT "+folderCols+" FROM folders WHERE account_id = ? AND server_ref IS NOT NULL", s.a.id)
+	if err != nil {
+		return err
 	}
-	return string(d.Delim)
-}
-
-func selectable(d *imap.ListData) bool {
-	return !slices.Contains(d.Attrs, imap.MailboxAttrNoSelect) && !slices.Contains(d.Attrs, imap.MailboxAttrNonExistent)
+	s.folders = map[backend.FolderRef]*folder{}
+	for _, r := range rows.Values {
+		f := scanFolder(r)
+		s.folders[f.ref] = f
+	}
+	return nil
 }
 
 // CountFolders is how many selectable folders LIST returns: those a sync mirrors.
@@ -106,104 +71,71 @@ func CountFolders(c *imapclient.Client) (int, error) {
 	list, err := c.List("", "*", nil).Collect()
 	n := 0
 	for _, d := range list {
-		if selectable(d) {
+		if imapbackend.Selectable(d) {
 			n++
 		}
 	}
 	return n, err
 }
 
-// syncFolders mirrors the server's selectable folders into the folders table and
-// returns them in LIST order. Folders gone from the server are deleted with the
-// messages in them; a message only moved there locally returns to its server folder.
-func syncFolders(ctx context.Context, db *store.DB, c *imapclient.Client, accountID int64, r *result) ([]*folder, error) {
-	list, err := c.List("", "*", nil).Collect()
-	if err != nil {
-		return nil, err
-	}
-	var names []string
+// applyFolders mirrors the server's folders into the folders table: updated
+// ones are added or renamed, gone ones deleted with the messages in them; a
+// message only moved there locally returns to its server folder.
+func (s *syncRun) applyFolders(ctx context.Context, updated []backend.Folder, gone []backend.FolderRef) error {
+	db, accountID, r := s.db, s.a.id, s.r
 	var stmts []sqlite.Statement
-	rs := roles(list)
-	for i, d := range list {
-		if !selectable(d) {
-			continue
-		}
-		names = append(names, d.Mailbox)
+	for _, f := range updated {
 		stmts = append(stmts, sqlite.Statement{
 			SQL: `INSERT INTO folders(account_id, server_ref, name, role, delim, role_since) VALUES (?, ?, ?, ?, ?, unixepoch())
 				ON CONFLICT(account_id, server_ref) DO UPDATE SET name = excluded.name, role = excluded.role, delim = excluded.delim`,
-			Args: []any{accountID, d.Mailbox, d.Mailbox, rs[i], delim(d)}, // IMAP's server_ref is the name
+			Args: []any{accountID, string(f.Ref), f.Name, string(f.Role), f.Delim},
 		})
 	}
-	if len(names) == 0 {
-		return nil, nil
+	var ids, tids, held []int64
+	if len(gone) > 0 {
+		stale := "account_id = ? AND server_ref IN (" + marks(len(gone)) + ")"
+		staleArgs := append([]any{accountID}, anys(gone)...)
+		goneIDs := "(SELECT id FROM folders WHERE " + stale + ")"
+		twice := append(append([]any{}, staleArgs...), staleArgs...)
+		in := "EXISTS (SELECT 1 FROM message_locations WHERE message_id = messages.id AND folder_id IN " + goneIDs + " AND "
+		var err error
+		if ids, tids, err = doomed(ctx, db, in+"true)", staleArgs...); err != nil {
+			return err
+		}
+		if held, _, err = doomed(ctx, db, in+"server_ref IS NOT NULL)", staleArgs...); err != nil {
+			return err
+		}
+		shownElsewhere := "EXISTS (SELECT 1 FROM message_locations o WHERE o.message_id = %s AND o.shown AND o.folder_id NOT IN " + goneIDs + ")"
+		keepPending := ""
+		if s.stable {
+			keepPending = " AND server_id IS NULL AND NOT EXISTS (SELECT 1 FROM ops WHERE message_id = messages.id AND state IN ('pending', 'awaiting_claim'))"
+		}
+		stmts = append(stmts,
+			// Shown only in a vanished folder but on the server elsewhere: back to where it is.
+			sqlite.Statement{SQL: "UPDATE message_locations SET shown = 1, entered_at = unixepoch() WHERE server_ref IS NOT NULL AND folder_id NOT IN " + goneIDs +
+				" AND message_id IN (SELECT message_id FROM message_locations WHERE shown AND folder_id IN " + goneIDs + ") AND NOT " +
+				fmt.Sprintf(shownElsewhere, "message_locations.message_id"), Args: append(slices.Clone(twice), staleArgs...)},
+			// Shown only in a vanished folder and on the server nowhere: gone too.
+			sqlite.Statement{SQL: "DELETE FROM messages WHERE " + in + "shown) AND " + unlocated + keepPending + " AND NOT " + fmt.Sprintf(shownElsewhere, "messages.id"), Args: twice},
+			// With the folders go their locations; a message the server then holds nowhere is orphaned.
+			sqlite.Statement{SQL: "DELETE FROM folders WHERE " + stale, Args: staleArgs})
 	}
-	stale := "account_id = ? AND server_ref NOT IN (" + marks(len(names)) + ")"
-	staleArgs := append([]any{accountID}, anys(names)...)
-	gone := "(SELECT id FROM folders WHERE " + stale + ")"
-	twice := append(append([]any{}, staleArgs...), staleArgs...)
-	in := "EXISTS (SELECT 1 FROM message_locations WHERE message_id = messages.id AND folder_id IN " + gone + " AND "
-	ids, tids, err := doomed(ctx, db, in+"true)", staleArgs...)
-	if err != nil {
-		return nil, err
-	}
-	held, _, err := doomed(ctx, db, in+"server_ref IS NOT NULL)", staleArgs...)
-	if err != nil {
-		return nil, err
-	}
-	shownElsewhere := "EXISTS (SELECT 1 FROM message_locations o WHERE o.message_id = %s AND o.shown AND o.folder_id NOT IN " + gone + ")"
-	keepPending := ""
-	if c.Caps().Has(capGmail) {
-		keepPending = " AND server_id IS NULL AND NOT EXISTS (SELECT 1 FROM ops WHERE message_id = messages.id AND state IN ('pending', 'awaiting_claim'))"
-	}
-	stmts = append(stmts,
-		// Shown only in a vanished folder but on the server elsewhere: back to where it is.
-		sqlite.Statement{SQL: "UPDATE message_locations SET shown = 1, entered_at = unixepoch() WHERE server_ref IS NOT NULL AND folder_id NOT IN " + gone +
-			" AND message_id IN (SELECT message_id FROM message_locations WHERE shown AND folder_id IN " + gone + ") AND NOT " +
-			fmt.Sprintf(shownElsewhere, "message_locations.message_id"), Args: append(slices.Clone(twice), staleArgs...)},
-		// Shown only in a vanished folder and on the server nowhere: gone too.
-		sqlite.Statement{SQL: "DELETE FROM messages WHERE " + in + "shown) AND " + unlocated + keepPending + " AND NOT " + fmt.Sprintf(shownElsewhere, "messages.id"), Args: twice},
-		// With the folders go their locations; a message the server then holds nowhere is orphaned.
-		sqlite.Statement{SQL: "DELETE FROM folders WHERE " + stale, Args: staleArgs})
 	if _, err := db.Transaction(ctx, append(stmts, tidyThreads(accountID, tids)...)); err != nil {
-		return nil, err
+		return err
 	}
 	r.gone(ids, tids)
-	if err := r.orphan(ctx, db, c, accountID, held); err != nil {
-		return nil, err
+	if err := r.orphan(ctx, db, s.stable, accountID, held); err != nil {
+		return err
 	}
-	rows, err := db.Query(ctx, "SELECT "+folderCols+", server_ref FROM folders WHERE account_id = ?", accountID)
-	if err != nil {
-		return nil, err
+	if err := s.loadFolders(ctx); err != nil {
+		return err
 	}
-	byRef := map[string]*folder{}
-	for _, r := range rows.Values {
-		byRef[store.Str(r[len(r)-1])] = scanFolder(r)
+	if s.stable && !s.merged { // rows stored per folder before a sync fetched their identity (ADR 0034)
+		s.merged = true
+		return mergeShared(ctx, db, accountID, nil, r)
 	}
-	out := make([]*folder, 0, len(names))
-	for _, n := range names {
-		out = append(out, byRef[n])
-	}
-	return out, nil
+	return nil
 }
-
-const folderCols = "id, name, cursor, synced, filled_since, role"
-
-func scanFolder(r []any) *folder {
-	f := &folder{id: store.Int(r[0]), name: store.Str(r[1]), synced: store.Int(r[3]) != 0, role: store.Str(r[5])}
-	f.uidValidity, f.lastUID = imapref.Decode(store.Str(r[2]))
-	if r[4] != nil {
-		v := store.Int(r[4])
-		f.filled = &v
-	}
-	return f
-}
-
-// ref is the server_ref of uid in the folder at its UIDVALIDITY.
-func (f *folder) ref(uid uint32) string { return imapref.Encode(f.uidValidity, uid) }
-
-// cursor is the folder's cursor with last as its last UID.
-func (f *folder) cursor(last uint32) string { return imapref.Encode(f.uidValidity, last) }
 
 // tidyThreads deletes conversations left without messages (their thread_refs
 // cascade) and recomputes last_date of the touched ones that survive.
@@ -275,9 +207,9 @@ func SentFolder(ctx context.Context, db *store.DB, c *imapclient.Client, account
 	if err != nil {
 		return "", err
 	}
-	rs := roles(list)
+	rs := imapbackend.Roles(list)
 	for i, d := range list {
-		if rs[i] == "sent" && selectable(d) {
+		if rs[i] == backend.RoleSent && imapbackend.Selectable(d) {
 			return d.Mailbox, nil
 		}
 	}

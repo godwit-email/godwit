@@ -29,6 +29,20 @@ var ErrUnsupported = errors.New("backend: not supported")
 // ErrNotFound means a server reference no longer names anything on the server.
 var ErrNotFound = errors.New("backend: not found on the server")
 
+// ErrNotSynced is Sync with SyncRequest.Older on a folder whose first sync at
+// the server's current state has not completed: a full sync comes first.
+var ErrNotSynced = errors.New("folder not synced yet")
+
+// FolderError is the server's refusal of one folder in a sync round. The
+// round went on with the other folders; Sync returns the refusals joined.
+type FolderError struct {
+	Folder FolderRef
+	Err    error
+}
+
+func (e *FolderError) Error() string { return e.Err.Error() }
+func (e *FolderError) Unwrap() error { return e.Err }
+
 // ErrUncertain means the whole message reached the server but its verdict did
 // not come back: it may have been accepted. Retrying could deliver it twice
 // (ADR 0006).
@@ -153,7 +167,8 @@ type MessageAppeared struct {
 	// Notifications, rules and message.received follow it.
 	Backfill bool
 	// Content is nil when SyncRequest.Local reported ServerID as known: only
-	// a new location of a stored message.
+	// a new location of a stored message. It is nil too for a location Local
+	// holds without a ServerID (Local.Held): the change gives it its ServerID.
 	Content *Content
 }
 
@@ -216,6 +231,13 @@ type Local interface {
 	KnownIDs(ctx context.Context, ids []string) (map[string]bool, error)
 	// HeldRefs reports which of refs in folder are stored.
 	HeldRefs(ctx context.Context, folder FolderRef, refs []MessageRef) (map[MessageRef]bool, error)
+	// Held is every location stored in folder, with its ServerID ("" when
+	// none is stored).
+	Held(ctx context.Context, folder FolderRef) (map[MessageRef]string, error)
+	// Lost is the ServerIDs of stored messages left at no server location,
+	// which local storage is about to delete as gone. A backend that still
+	// finds one reports it as a MessageAppeared without content.
+	Lost(ctx context.Context) ([]string, error)
 }
 
 // SyncRequest is one sync round's input.
@@ -224,11 +246,16 @@ type SyncRequest struct {
 	Folders map[FolderRef]FolderState // the folders local storage holds
 	Only    []FolderRef               // sync only these folders (a Watch wake); nil for all
 	Window  Window
-	// Older, with Only, also fetches up to this many messages older than the
-	// oldest each folder holds (the user's 加载更早).
+	// Older, with Only, fetches only up to this many messages of each folder
+	// that the window left out, newest first (the user's 加载更早); more then
+	// reports that the server holds still more. ErrNotSynced: a full sync of
+	// the folder comes first.
 	Older int
 	// Pages bounds how many pages a backfill takes this round; 0 for no bound.
-	Pages        int
+	Pages int
+	// PageSize is how many messages one page fetches at most; 0 for the
+	// backend's own.
+	PageSize     int
 	HeaderFields []string
 	TextBytes    int64
 	// TextParts picks the parts of a structure whose text a sync stores.

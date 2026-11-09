@@ -2,165 +2,95 @@ package mailsync
 
 import (
 	"context"
-	"math"
 	"slices"
-	"strconv"
 
 	"github.com/egoist/mygo/plugins/sqlite"
-	"github.com/emersion/go-imap/v2"
-	"github.com/emersion/go-imap/v2/imapclient"
+	"github.com/godwit-email/godwit/backend"
 	"github.com/godwit-email/godwit/core/store"
 )
 
-// fetchImport fetches the messages of set to import into f, and the highest
-// UID in set. From Gmail it first fetches only UID, FLAGS and X-GM-MSGID: a
-// message stored already, from another folder, gains f as a location
-// (gmailLocate) and only the others are fetched whole (ADR 0034). arrivals
-// tells whether what set holds is new mail.
-func fetchImport(ctx context.Context, db *store.DB, c *imapclient.Client, a *account, f *folder, set imap.NumSet, arrivals bool, r *result) ([]*imapclient.FetchMessageBuffer, uint32, error) {
-	gmail := c.Caps().Has(capGmail)
-	opts := importItems(c)
-	if gmail {
-		opts = &imap.FetchOptions{UID: true, Flags: true, GmailMsgID: true}
+// locate stores messages reported in f without content (ADR 0034). One at a
+// location f holds gives that location's message its server_id, which rows
+// stored before a sync fetched it lack; the rows sharing it then merge. Any
+// other is a stored message in one more folder: f becomes its location, with
+// the server's flags, as Gmail shares them across folders. A message taken
+// out of every folder by a move not yet pushed is not shown in f; one moved
+// to f without a COPYUID is claimed. New mail in f that this round inserted
+// from a folder where it was not new is new mail all the same.
+func (s *syncRun) locate(ctx context.Context, f *folder, ms []backend.MessageAppeared) error {
+	db, r := s.db, s.r
+	refs := make([]backend.MessageRef, len(ms))
+	for i, m := range ms {
+		refs[i] = m.Ref
 	}
-	msgs, err := c.Fetch(set, opts).Collect()
+	held, err := s.HeldRefs(ctx, f.ref, refs)
 	if err != nil {
-		return nil, 0, err
+		return err
 	}
-	var top uint32
-	for _, m := range msgs {
-		top = max(top, uint32(m.UID))
+	var identify []sqlite.Statement
+	for _, m := range ms {
+		if held[m.Ref] {
+			identify = append(identify, sqlite.Statement{SQL: `UPDATE messages SET server_id = ? WHERE server_id IS NULL
+				AND id = (SELECT message_id FROM message_locations WHERE folder_id = ? AND server_ref = ?)`,
+				Args: []any{m.ServerID, f.id, string(m.Ref)}})
+		}
 	}
-	if !gmail {
-		return msgs, top, nil
-	}
-	rest, err := gmailLocate(ctx, db, a, f, msgs, arrivals, r)
-	if err != nil || len(rest) == 0 {
-		return nil, top, err
-	}
-	msgs, err = c.Fetch(imap.UIDSetNum(rest...), importItems(c)).Collect()
-	return msgs, top, err
-}
-
-// mergeOld merges the rows a Gmail sync stored per folder before it fetched
-// X-GM-MSGID (ADR 0034): it fetches the X-GM-MSGID of their UIDs, folder by
-// folder, then merges the rows sharing one. A folder recreated since is left
-// to its reset.
-func mergeOld(ctx context.Context, db *store.DB, c *imapclient.Client, a *account, folders []*folder, r *result) error {
-	for _, f := range folders {
-		rows, err := db.Query(ctx, `SELECT l.server_ref FROM message_locations l JOIN messages m ON m.id = l.message_id
-			WHERE l.folder_id = ? AND l.server_ref BETWEEN ? AND ? AND m.server_id IS NULL`, f.id, f.ref(0), f.ref(math.MaxUint32))
-		if err != nil {
-			return err
-		}
-		if len(rows.Values) == 0 {
-			continue
-		}
-		var uids []imap.UID
-		for _, v := range rows.Values {
-			uids = append(uids, imap.UID(refUID(v[0])))
-		}
-		sel, err := c.Select(f.name, &imap.SelectOptions{ReadOnly: true}).Wait()
-		if err != nil {
-			return err
-		}
-		if sel.UIDValidity != f.uidValidity {
-			continue
-		}
-		msgs, err := c.Fetch(imap.UIDSetNum(uids...), &imap.FetchOptions{UID: true, GmailMsgID: true}).Collect()
-		if err != nil {
-			return err
-		}
-		var stmts []sqlite.Statement
-		for _, m := range msgs {
-			if m.GmailMsgID != 0 {
-				stmts = append(stmts, sqlite.Statement{SQL: `UPDATE messages SET server_id = ? WHERE server_id IS NULL
-					AND id = (SELECT message_id FROM message_locations WHERE folder_id = ? AND server_ref = ?)`,
-					Args: []any{strconv.FormatUint(m.GmailMsgID, 10), f.id, f.ref(uint32(m.UID))}})
-			}
-		}
-		if len(stmts) == 0 {
-			continue
-		}
-		if _, err := db.Transaction(ctx, stmts); err != nil {
+	if len(identify) > 0 {
+		if _, err := db.Transaction(ctx, identify); err != nil {
 			return err
 		}
 	}
-	return mergeShared(ctx, db, a.id, nil, r)
-}
-
-// gmailLocate gives each of msgs (UID, FLAGS, X-GM-MSGID) whose X-GM-MSGID
-// the account stores f as a location and the server's flags, as Gmail shares
-// them across folders, and returns the UIDs of the others, which f does not
-// hold yet. A message taken out of every folder by a move not yet pushed is
-// not shown in f; one moved to f without a COPYUID is claimed. New mail in f
-// (arrivals) that this round inserted from a folder where it was not new is
-// new mail all the same.
-func gmailLocate(ctx context.Context, db *store.DB, a *account, f *folder, msgs []*imapclient.FetchMessageBuffer, arrivals bool, r *result) ([]imap.UID, error) {
-	have, err := db.Query(ctx, "SELECT server_ref FROM message_locations WHERE folder_id = ? AND server_ref IS NOT NULL", f.id)
-	if err != nil {
-		return nil, err
-	}
-	held := map[imap.UID]bool{}
-	for _, v := range have.Values {
-		held[imap.UID(refUID(v[0]))] = true
-	}
-	stored := map[string][2]int64{} // X-GM-MSGID → message, thread
-	for page := range slices.Chunk(msgs, 500) {
+	stored := map[string][2]int64{} // server_id → message, thread
+	for page := range slices.Chunk(ms, 500) {
 		var ids []any
 		for _, m := range page {
-			if m.GmailMsgID != 0 && !held[m.UID] {
-				ids = append(ids, strconv.FormatUint(m.GmailMsgID, 10))
+			if m.ServerID != "" {
+				ids = append(ids, m.ServerID)
 			}
 		}
 		if len(ids) == 0 {
 			continue
 		}
-		if err := mergeShared(ctx, db, a.id, ids, r); err != nil {
-			return nil, err
+		if err := mergeShared(ctx, db, s.a.id, ids, r); err != nil {
+			return err
 		}
 		rows, err := db.Query(ctx, "SELECT server_id, min(id), thread_id FROM messages WHERE account_id = ? AND server_id IN ("+marks(len(ids))+") GROUP BY server_id",
-			append([]any{a.id}, ids...)...)
+			append([]any{s.a.id}, ids...)...)
 		if err != nil {
-			return nil, err
+			return err
 		}
 		for _, v := range rows.Values {
 			stored[store.Str(v[0])] = [2]int64{store.Int(v[1]), store.Int(v[2])}
 		}
 	}
-	var rest []imap.UID
 	var stmts []sqlite.Statement
 	var ids, tids []int64
-	for _, m := range msgs {
-		if held[m.UID] {
+	for _, m := range ms {
+		st, ok := stored[m.ServerID]
+		if held[m.Ref] || !ok { // one gone meanwhile is reported again with content next round
 			continue
 		}
-		s, ok := stored[strconv.FormatUint(m.GmailMsgID, 10)]
-		if !ok {
-			rest = append(rest, m.UID)
-			continue
-		}
-		id, fl := s[0], flagString(m.Flags)
+		id, fl := st[0], flagString(m.Flags)
 		stmts = append(stmts, sqlite.Statement{
 			SQL: `INSERT INTO message_locations(message_id, folder_id, shown, server_ref, entered_at, date)
 				SELECT id, ?, ` + notMoving + `, ?, unixepoch(), date FROM messages WHERE id = ?
 				ON CONFLICT(message_id, folder_id) DO UPDATE SET server_ref = excluded.server_ref`,
-			Args: []any{f.id, f.ref(uint32(m.UID)), id},
+			Args: []any{f.id, string(m.Ref), id},
 		}, sqlite.Statement{SQL: "UPDATE ops SET state = 'done', last_error = NULL WHERE message_id = ? AND state = 'awaiting_claim' AND dst_folder_id = ?", Args: []any{id, f.id}},
 			sqlite.Statement{SQL: "UPDATE messages SET flags = ? WHERE id = ? AND flags != ? AND NOT " + pendingFlags, Args: []any{fl, id, fl}})
-		ids, tids = append(ids, id), append(tids, s[1])
-		if arrivals {
+		ids, tids = append(ids, id), append(tids, st[1])
+		if !m.Backfill {
 			stmts = append(stmts, sqlite.Statement{SQL: "UPDATE message_imports SET arrival = 1 WHERE message_id = ?", Args: []any{id}})
 		}
 	}
 	if len(stmts) == 0 {
-		return rest, nil
+		return nil
 	}
 	if _, err := db.Transaction(ctx, stmts); err != nil {
-		return nil, err
+		return err
 	}
 	r.gone(ids, tids)
-	return rest, nil
+	return nil
 }
 
 // notMoving is true for a messages row (unaliased) with no move or purge of

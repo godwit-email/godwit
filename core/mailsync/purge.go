@@ -9,7 +9,7 @@ import (
 	"github.com/egoist/mygo/plugins/sqlite"
 	"github.com/emersion/go-imap/v2"
 	"github.com/emersion/go-imap/v2/imapclient"
-	"github.com/godwit-email/godwit/core/imapref"
+	"github.com/godwit-email/godwit/backend/imapbackend"
 	"github.com/godwit-email/godwit/core/store"
 )
 
@@ -51,7 +51,7 @@ func NextOpDue(ctx context.Context, db *store.DB, accountID int64, t time.Time) 
 }
 
 // sameValidity is the condition that location l is at its folder f's UIDVALIDITY.
-var sameValidity = imapref.Validity("l.server_ref") + " = " + imapref.Validity("f.cursor")
+var sameValidity = imapbackend.Validity("l.server_ref") + " = " + imapbackend.Validity("f.cursor")
 
 // purgeable is the condition on message m (with policy p and its folder f joined)
 // that a purge may expunge it: shown and on the server in the role's folder at

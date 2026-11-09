@@ -2,12 +2,11 @@ package mailsync
 
 import (
 	"context"
-	"errors"
 	"fmt"
-	"slices"
 
-	"github.com/emersion/go-imap/v2"
 	"github.com/emersion/go-imap/v2/imapclient"
+	"github.com/godwit-email/godwit/backend"
+	"github.com/godwit-email/godwit/backend/imapbackend"
 	"github.com/godwit-email/godwit/core/events"
 	"github.com/godwit-email/godwit/core/store"
 )
@@ -16,77 +15,22 @@ import (
 var OlderPage = 200
 
 // ErrNotSynced is FetchOlder on a folder whose first sync (at the server's
-// UIDVALIDITY) has not completed: the next sync, not a page, fills it.
-var ErrNotSynced = errors.New("folder not synced yet")
+// current state) has not completed: the next sync, not a page, fills it.
+var ErrNotSynced = backend.ErrNotSynced
 
 // FetchOlder imports one page of the folder's mail that the sync range left
-// out: the newest server UIDs up to last_uid that the folder does not store.
-// It keeps what it imports; the range's backfill and filled_since only ever
-// add what is missing, so the next sync neither refetches nor deletes it.
-// more reports whether the server holds still more the folder lacks.
+// out, over c with the IMAP backend. It keeps what it imports; the range's
+// backfill only ever adds what is missing, so the next sync neither refetches
+// nor deletes it. more reports whether the server holds still more the folder
+// lacks.
 func FetchOlder(ctx context.Context, db *store.DB, c *imapclient.Client, accountID, folderID int64, bus *events.Bus) (more bool, err error) {
-	var r result
-	defer r.publish(bus, accountID)
-	a, err := loadAccount(ctx, db, accountID)
-	if err != nil {
-		return false, err
-	}
-	rows, err := db.Query(ctx, "SELECT "+folderCols+" FROM folders WHERE id = ? AND account_id = ?", folderID, accountID)
+	rows, err := db.Query(ctx, "SELECT server_ref FROM folders WHERE id = ? AND account_id = ? AND server_ref IS NOT NULL", folderID, accountID)
 	if err != nil {
 		return false, err
 	}
 	if len(rows.Values) == 0 {
 		return false, fmt.Errorf("folder %d not found", folderID)
 	}
-	f := scanFolder(rows.Values[0])
-	sel, err := c.Select(f.name, &imap.SelectOptions{ReadOnly: true}).Wait()
-	if err != nil {
-		return false, err
-	}
-	if !f.synced || f.uidValidity != sel.UIDValidity {
-		return false, ErrNotSynced
-	}
-	if f.lastUID == 0 { // synced empty: nothing older
-		return false, nil
-	}
-	have, err := db.Query(ctx, "SELECT server_ref FROM message_locations WHERE folder_id = ? AND server_ref IS NOT NULL", f.id)
-	if err != nil {
-		return false, err
-	}
-	known := map[imap.UID]bool{}
-	for _, v := range have.Values {
-		known[imap.UID(refUID(v[0]))] = true
-	}
-	// Down from the newest by sequence number, a window of UIDs at a time,
-	// until a page (and one more, for more) the folder lacks: no UID SEARCH
-	// of the whole folder per page.
-	var uids []imap.UID
-	window := uint32(5 * OlderPage)
-	for hi := sel.NumMessages; hi > 0 && len(uids) <= OlderPage; {
-		lo := max(1, int64(hi)-int64(window)+1)
-		var seq imap.SeqSet
-		seq.AddRange(uint32(lo), hi)
-		got, err := c.Fetch(seq, &imap.FetchOptions{UID: true}).Collect()
-		if err != nil {
-			return false, err
-		}
-		slices.SortFunc(got, func(x, y *imapclient.FetchMessageBuffer) int { return byUID(y, x) })
-		for _, m := range got {
-			if m.UID <= imap.UID(f.lastUID) && !known[m.UID] {
-				known[m.UID] = true // once, should an expunge shift a window
-				uids = append(uids, m.UID)
-			}
-		}
-		hi = uint32(lo) - 1
-	}
-	if len(uids) == 0 {
-		return false, nil
-	}
-	more = len(uids) > OlderPage
-	msgs, _, err := fetchImport(ctx, db, c, a, f, imap.UIDSetNum(uids[:min(len(uids), OlderPage)]...), false, &r)
-	if err != nil {
-		return false, err
-	}
-	slices.SortFunc(msgs, func(x, y *imapclient.FetchMessageBuffer) int { return byUID(y, x) })
-	return more, importAll(ctx, db, c, a, f, msgs, false, nil, &r) // older mail, not new arrivals
+	recv := imapbackend.New(func(context.Context) (*imapclient.Client, error) { return c, nil }) // not closed: c is the caller's
+	return run(ctx, db, recv, accountID, bus, []backend.FolderRef{backend.FolderRef(store.Str(rows.Values[0][0]))}, OlderPage)
 }

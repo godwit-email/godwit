@@ -36,17 +36,23 @@ type Server interface {
 // Fixture starts a Server for one test.
 type Fixture func(t *testing.T) Server
 
+type contractTest struct {
+	name string
+	test func(*testing.T, Fixture)
+}
+
+// syncTests are the contract's sync part: the declarations and sync rounds.
+var syncTests = []contractTest{
+	{"Describe", testDescribe},
+	{"FirstSync", testFirstSync},
+	{"CursorResumes", testCursorResumes},
+	{"FolderReset", testFolderReset},
+}
+
 // Run runs the contract against the backend start gives.
 func Run(t *testing.T, start Fixture) {
-	for _, c := range []struct {
-		name string
-		test func(*testing.T, Fixture)
-	}{
-		{"Describe", testDescribe},
+	run(t, start, append(slices.Clone(syncTests), []contractTest{
 		{"Check", testCheck},
-		{"FirstSync", testFirstSync},
-		{"CursorResumes", testCursorResumes},
-		{"FolderReset", testFolderReset},
 		{"Fetch", testFetch},
 		{"Find", testFind},
 		{"SetFlags", testSetFlags},
@@ -55,7 +61,15 @@ func Run(t *testing.T, start Fixture) {
 		{"Unsupported", testUnsupported},
 		{"Watch", testWatch},
 		{"AuthFailed", testAuthFailed},
-	} {
+	}...))
+}
+
+// RunSync runs only the contract's sync part, for a backend whose other verbs
+// are still to come.
+func RunSync(t *testing.T, start Fixture) { run(t, start, syncTests) }
+
+func run(t *testing.T, start Fixture, tests []contractTest) {
+	for _, c := range tests {
 		t.Run(c.name, func(t *testing.T) { c.test(t, start) })
 	}
 }
@@ -79,12 +93,13 @@ type view struct {
 	states   map[backend.FolderRef]backend.FolderState
 	folders  map[backend.FolderRef]backend.Folder
 	messages map[backend.FolderRef]map[backend.MessageRef]backend.Flags
-	ids      map[string]bool // ServerIDs stored
+	ids      map[string]bool             // ServerIDs stored
+	sids     map[backend.Location]string // the ServerID of each location, keyed without it
 }
 
 func newView() *view {
 	return &view{states: map[backend.FolderRef]backend.FolderState{}, folders: map[backend.FolderRef]backend.Folder{},
-		messages: map[backend.FolderRef]map[backend.MessageRef]backend.Flags{}, ids: map[string]bool{}}
+		messages: map[backend.FolderRef]map[backend.MessageRef]backend.Flags{}, ids: map[string]bool{}, sids: map[backend.Location]string{}}
 }
 
 func (v *view) KnownIDs(_ context.Context, ids []string) (map[string]bool, error) {
@@ -102,6 +117,17 @@ func (v *view) HeldRefs(_ context.Context, f backend.FolderRef, refs []backend.M
 	}
 	return out, nil
 }
+
+func (v *view) Held(_ context.Context, f backend.FolderRef) (map[backend.MessageRef]string, error) {
+	out := map[backend.MessageRef]string{}
+	for r := range v.messages[f] {
+		out[r] = v.sids[backend.Location{Folder: f, Ref: r}]
+	}
+	return out, nil
+}
+
+// Lost is empty: the view deletes nothing on its own.
+func (v *view) Lost(context.Context) ([]string, error) { return nil, nil }
 
 // sync runs one round on r from v's cursors, applies it to v and returns its changes.
 func (v *view) sync(t *testing.T, r backend.Receiver) []backend.Change {
@@ -169,6 +195,7 @@ func (v *view) apply(t *testing.T, c backend.Change) {
 		v.messages[c.Folder][c.Ref] = c.Flags
 		if c.ServerID != "" {
 			v.ids[c.ServerID] = true
+			v.sids[backend.Location{Folder: c.Folder, Ref: c.Ref}] = c.ServerID
 		}
 	case backend.MessageGone:
 		delete(v.messages[c.Folder], c.Ref)

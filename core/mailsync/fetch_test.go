@@ -1,16 +1,10 @@
 package mailsync
 
 import (
-	"bufio"
-	"fmt"
-	"net"
-	"strings"
 	"testing"
 	"unicode/utf8"
 
-	"github.com/emersion/go-imap/v2"
-	"github.com/emersion/go-imap/v2/imapclient"
-	"github.com/godwit-email/godwit/core/mail"
+	"github.com/godwit-email/godwit/backend"
 )
 
 // A body claiming UTF-8 but holding other bytes (GBK here) still parses to
@@ -18,10 +12,10 @@ import (
 func TestToParsedInvalidUTF8(t *testing.T) {
 	body := []byte("hi \xc4\xe3\xba\xc3 there")
 	for _, sub := range []string{"plain", "html"} {
-		m := &imapclient.FetchMessageBuffer{BodyStructure: &imap.BodyStructureSinglePart{
-			Type: "text", Subtype: sub, Params: map[string]string{"charset": "utf-8"}, Size: uint32(len(body)),
-		}}
-		p := toParsed(m, map[string][]byte{"1": body})
+		p := toParsed(&backend.Content{
+			Structure: &backend.Part{Ref: "1", ContentType: "text/" + sub, Params: map[string]string{"charset": "utf-8"}, Size: int64(len(body))},
+			Text:      map[backend.PartRef][]byte{"1": body},
+		})
 		if !utf8.ValidString(p.Text) || !utf8.ValidString(p.HTML) {
 			t.Fatalf("%s: invalid UTF-8 kept: text %q html %q", sub, p.Text, p.HTML)
 		}
@@ -33,107 +27,9 @@ func TestToParsedInvalidUTF8(t *testing.T) {
 func TestToParsedFromHeaders(t *testing.T) {
 	raw := "Message-ID: <a@x>\r\nDate: Mon, 02 Jan 2006 15:04:05 +0000\r\n" +
 		"Subject: =?gbk?B?xOO6ww==?=\r\nFrom: Ann <ann@x>\r\nTo: b@x, c@x\r\nCc: d@x\r\n\r\n"
-	m := &imapclient.FetchMessageBuffer{RFC822Size: 9, BodySection: []imapclient.FetchBodySectionBuffer{{Section: headerSection(), Bytes: []byte(raw)}}}
-	p := toParsed(m, nil)
+	p := toParsed(&backend.Content{Size: 9, Header: []byte(raw)})
 	if p.MessageID != "a@x" || p.Subject != "你好" || p.Date.Year() != 2006 || p.From != "Ann <ann@x>" ||
 		len(p.To) != 2 || len(p.Cc) != 1 {
 		t.Fatalf("got %+v", p)
-	}
-	if k := twinKey(m); k != "a@x\x009" {
-		t.Fatalf("twinKey %q", k)
-	}
-}
-
-// Alibaba Mail echoes the header list it was asked for cut down and reordered
-// (#458); the headers it sent still fill the message, and its twin key.
-func TestToParsedReducedHeaderEcho(t *testing.T) {
-	raw := "From: Ann <ann@x>\r\nSubject: hi\r\nDate: Mon, 02 Jan 2006 15:04:05 +0000\r\nMessage-ID: <a@x>\r\n\r\n"
-	echo := &imap.FetchItemBodySection{Specifier: imap.PartSpecifierHeader,
-		HeaderFields: []string{"FROM", "TO", "CC", "SUBJECT", "DATE", "MESSAGE-ID", "REFERENCES", "IN-REPLY-TO", "CONTENT-TYPE", "RECEIVED"}}
-	m := &imapclient.FetchMessageBuffer{RFC822Size: 9, BodySection: []imapclient.FetchBodySectionBuffer{{Section: echo, Bytes: []byte(raw)}}}
-	p := toParsed(m, nil)
-	if p.MessageID != "a@x" || p.Subject != "hi" || p.From != "Ann <ann@x>" || p.Date.Year() != 2006 {
-		t.Fatalf("got %+v", p)
-	}
-	if k := twinKey(m); k != "a@x\x009" {
-		t.Fatalf("twinKey %q", k)
-	}
-}
-
-// A body structure the server sends malformed (Gmail's empty multipart, #389)
-// leaves the connection up, and fillStructures builds it from the whole message.
-func TestFillStructuresMalformed(t *testing.T) {
-	raw := "Content-Type: multipart/mixed; boundary=b\r\n\r\n--b\r\nContent-Type: text/plain\r\n\r\nhi\r\n" +
-		"--b\r\nContent-Type: application/pdf\r\nContent-Disposition: attachment; filename=a.pdf\r\n\r\n%PDF\r\n--b--\r\n"
-	cc, sc := net.Pipe()
-	go func() {
-		r := bufio.NewReader(sc)
-		fmt.Fprint(sc, "* OK hi\r\n")
-		for {
-			line, err := r.ReadString('\n')
-			if err != nil {
-				return
-			}
-			tag := strings.Fields(line)[0]
-			switch {
-			case strings.Contains(line, "BODYSTRUCTURE"):
-				fmt.Fprint(sc, `* 1 FETCH (UID 7 BODYSTRUCTURE (("ALTERNATIVE" ("BOUNDARY" "e7") NIL NIL)("APPLICATION" "PDF" NIL NIL NIL "BASE64" 4 NIL ("ATTACHMENT" ("FILENAME" "a.pdf")) NIL) "MIXED" ("BOUNDARY" "b") NIL NIL))`+"\r\n")
-			case strings.Contains(line, "BODY.PEEK[]"):
-				fmt.Fprintf(sc, "* 1 FETCH (UID 7 BODY[] {%d}\r\n%s)\r\n", len(raw), raw)
-			}
-			fmt.Fprintf(sc, "%s OK done\r\n", tag)
-		}
-	}()
-	c := imapclient.New(cc, nil)
-	defer c.Close()
-	msgs, err := c.Fetch(imap.UIDSetNum(7), &imap.FetchOptions{UID: true, BodyStructure: &imap.FetchItemBodyStructure{Extended: true}}).Collect()
-	if err != nil || len(msgs) != 1 || msgs[0].BodyStructure != nil {
-		t.Fatalf("fetch: %v, %d messages", err, len(msgs))
-	}
-	if err := fillStructures(c, msgs); err != nil {
-		t.Fatal(err)
-	}
-	parts, atts := mail.ParseStructure(msgs[0].BodyStructure)
-	if len(parts) != 1 || parts[0].Part != "1" || len(atts) != 1 || atts[0].Part != "2" || atts[0].Filename != "a.pdf" {
-		t.Fatalf("parts %+v, attachments %+v", parts, atts)
-	}
-}
-
-// A Gmail server (X-GM-EXT-1) is asked for X-GM-MSGID with each imported
-// message, and the go-imap fork parses it (a bump that loses the patch fails
-// here); any other server is never sent the item, which it would refuse.
-func TestImportItemsGmailMsgID(t *testing.T) {
-	for _, gmail := range []bool{true, false} {
-		cc, sc := net.Pipe()
-		asked := make(chan bool, 1)
-		go func() {
-			r := bufio.NewReader(sc)
-			caps := "IMAP4rev1"
-			if gmail {
-				caps += " X-GM-EXT-1"
-			}
-			fmt.Fprintf(sc, "* OK [CAPABILITY %s] hi\r\n", caps)
-			for {
-				line, err := r.ReadString('\n')
-				if err != nil {
-					return
-				}
-				asked <- strings.Contains(line, "X-GM-MSGID")
-				fmt.Fprint(sc, "* 1 FETCH (UID 7 X-GM-MSGID 18000000000000000001)\r\n")
-				fmt.Fprintf(sc, "%s OK done\r\n", strings.Fields(line)[0])
-			}
-		}()
-		c := imapclient.New(cc, nil)
-		msgs, err := c.Fetch(imap.UIDSetNum(7), importItems(c)).Collect()
-		c.Close()
-		if err != nil || len(msgs) != 1 {
-			t.Fatalf("gmail %v: fetch: %v, %d messages", gmail, err, len(msgs))
-		}
-		if got := <-asked; got != gmail {
-			t.Fatalf("gmail %v: X-GM-MSGID asked: %v", gmail, got)
-		}
-		if gmail && msgs[0].GmailMsgID != 18000000000000000001 {
-			t.Fatalf("X-GM-MSGID %d", msgs[0].GmailMsgID)
-		}
 	}
 }

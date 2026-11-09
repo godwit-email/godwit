@@ -1,8 +1,10 @@
-// Package imapref encodes IMAP's 服务器位置 and folder cursors into the opaque
-// server_ref and cursor columns (ADR 0037): UIDVALIDITY:UID, each zero-padded
-// to 10 digits, so the refs of one UIDVALIDITY sort as text by UID. It moves
-// into the IMAP protocol backend once that exists.
-package imapref
+// Package imapbackend is the IMAP protocol backend (ADR 0037): it speaks IMAP,
+// with Gmail's extensions, and hands over change sets.
+//
+// Its 服务器位置 (backend.MessageRef) and folder cursors are UIDVALIDITY:UID,
+// each zero-padded to 10 digits, so the refs of one UIDVALIDITY sort as text
+// by UID. A folder's backend.FolderRef is its name.
+package imapbackend
 
 import (
 	"fmt"
