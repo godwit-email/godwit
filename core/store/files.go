@@ -4,6 +4,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"time"
 )
 
 // WriteFileAtomic writes data via a same-directory temp file, fsync and rename,
@@ -87,4 +88,16 @@ func CleanOrphans(dir string, keep func(path string) bool) error {
 		}
 		return nil
 	})
+}
+
+// RemoveAll is os.RemoveAll that, on Windows, retries for about 2.5s: a virus
+// scanner or the indexer briefly opens a file just written, and deleting it
+// then fails with a sharing violation.
+func RemoveAll(path string) error {
+	err := os.RemoveAll(path)
+	for d := 10 * time.Millisecond; err != nil && runtime.GOOS == "windows" && d <= 1280*time.Millisecond; d *= 2 {
+		time.Sleep(d)
+		err = os.RemoveAll(path)
+	}
+	return err
 }

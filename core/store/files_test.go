@@ -4,6 +4,7 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+	"time"
 
 	"github.com/godwit-email/godwit/core/store"
 	"github.com/stretchr/testify/assert"
@@ -27,4 +28,18 @@ func TestWriteFileAtomic(t *testing.T) {
 	ents, _ = os.ReadDir(dir)
 	require.Len(t, ents, 1)
 	assert.Equal(t, "a.bin", ents[0].Name())
+}
+
+// A file another process holds open for a moment, as a virus scanner does with
+// one just written, still goes.
+func TestRemoveAllOutlastsABriefHold(t *testing.T) {
+	dir := filepath.Join(t.TempDir(), "parts")
+	require.NoError(t, os.Mkdir(dir, 0o700))
+	p := filepath.Join(dir, "a.pdf")
+	require.NoError(t, os.WriteFile(p, []byte("pdf"), 0o600))
+	f, err := os.Open(p) // on Windows without FILE_SHARE_DELETE: deleting fails while open
+	require.NoError(t, err)
+	time.AfterFunc(50*time.Millisecond, func() { f.Close() })
+	require.NoError(t, store.RemoveAll(dir))
+	require.NoDirExists(t, dir)
 }
