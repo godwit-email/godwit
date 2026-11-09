@@ -10,6 +10,7 @@ import (
 	"net/url"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/godwit-email/godwit/core/conn"
 	"github.com/stretchr/testify/assert"
@@ -88,5 +89,18 @@ func TestSendGraphLostAnswerIsUncertain(t *testing.T) {
 		c, _, _ := http.NewResponseController(w).Hijack()
 		c.Close()
 	})
+	assert.ErrorIs(t, SendGraph(context.Background(), "tok", []string{"b@x.com"}, []byte(graphRaw)), ErrUncertain)
+}
+
+func TestSendGraphStalledAnswerIsUncertain(t *testing.T) {
+	release := make(chan struct{})
+	graphServer(t, func(w http.ResponseWriter, r *http.Request) {
+		io.ReadAll(r.Body)
+		<-release
+	})
+	t.Cleanup(func() { close(release) })
+	old := graphClient.Transport.(*http.Transport).ResponseHeaderTimeout
+	graphClient.Transport.(*http.Transport).ResponseHeaderTimeout = 100 * time.Millisecond
+	t.Cleanup(func() { graphClient.Transport.(*http.Transport).ResponseHeaderTimeout = old })
 	assert.ErrorIs(t, SendGraph(context.Background(), "tok", []string{"b@x.com"}, []byte(graphRaw)), ErrUncertain)
 }
