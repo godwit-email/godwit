@@ -172,7 +172,7 @@ func TestCoretestStartServers(t *testing.T) {
 	e := coretest.New(t, coretest.WithoutAutoSync())
 	ih, ip, sh, sp, user, pass := e.StartServers(t)
 	acc, err := e.Svc.AddAccount(t.Context(), core.AccountInput{Email: "new@example.com", Username: user, Password: pass,
-		IMAPHost: ih, IMAPPort: ip, IMAPSecurity: core.SecurityNone, SMTPHost: sh, SMTPPort: sp, SMTPSecurity: core.SecurityNone})
+		Receiving: core.Server{Host: ih, Port: ip, Security: core.SecurityNone}, Sending: core.Server{Host: sh, Port: sp, Security: core.SecurityNone}})
 	require.NoError(t, err)
 	assert.Equal(t, "new@example.com", acc.Email)
 }

@@ -224,8 +224,8 @@ func (e *Env) AddAccount(t *testing.T, email string) core.Account {
 	name, _, _ := strings.Cut(email, "@")
 	acc, err := e.Svc.AddAccount(context.Background(), core.AccountInput{
 		Email: email, Name: name, Username: "alice", Password: "secret", IsDefault: first,
-		IMAPHost: ih, IMAPPort: ip, IMAPSecurity: core.SecurityNone,
-		SMTPHost: sh, SMTPPort: sp, SMTPSecurity: core.SecurityNone,
+		Receiving: core.Server{Host: ih, Port: ip, Security: core.SecurityNone},
+		Sending:   core.Server{Host: sh, Port: sp, Security: core.SecurityNone},
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -261,7 +261,7 @@ func (e *Env) mail(accountID int64) *mailServers {
 	}
 	accs, _ := e.Svc.ListAccounts(context.Background()) // added with StartServers' servers?
 	for _, a := range accs {
-		addr := net.JoinHostPort(a.IMAPHost, strconv.Itoa(a.IMAPPort))
+		addr := net.JoinHostPort(a.Receiving.Host, strconv.Itoa(a.Receiving.Port))
 		e.mu.Lock()
 		if s := e.started[addr]; a.ID == accountID && s != nil {
 			e.servers[accountID], m = s, s

@@ -115,7 +115,7 @@ func (s *Service) check(ctx context.Context, in AccountInput, token string) (Che
 		},
 		func() (conn.FailureKind, error) {
 			c, err := dialStep(ctx, func(ctx context.Context) (interface{ Close() error }, error) {
-				c, abort, err := conn.DialIMAPAbortable(ctx, conn.Endpoint{Host: in.IMAPHost, Port: in.IMAPPort, Security: in.IMAPSecurity, Username: user, Password: in.Password, AccessToken: token}, nil)
+				c, abort, err := conn.DialIMAPAbortable(ctx, conn.Endpoint{Host: in.Receiving.Host, Port: in.Receiving.Port, Security: in.Receiving.Security, Username: user, Password: in.Password, AccessToken: token}, nil)
 				if err == nil {
 					r.gmail = c.Caps().Has("X-GM-EXT-1")
 					stop := context.AfterFunc(ctx, abort)   // a stalled LIST ends with the step's timeout
@@ -131,7 +131,7 @@ func (s *Service) check(ctx context.Context, in AccountInput, token string) (Che
 		},
 		func() (conn.FailureKind, error) {
 			c, err := dialStep(ctx, func(ctx context.Context) (interface{ Close() error }, error) {
-				return conn.DialSMTP(ctx, conn.Endpoint{Host: in.SMTPHost, Port: in.SMTPPort, Security: in.SMTPSecurity, Username: user, Password: in.Password, AccessToken: token})
+				return conn.DialSMTP(ctx, conn.Endpoint{Host: in.Sending.Host, Port: in.Sending.Port, Security: in.Sending.Security, Username: user, Password: in.Password, AccessToken: token})
 			})
 			if err == nil {
 				c.Close()

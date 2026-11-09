@@ -416,7 +416,7 @@ func accountProvider(a *App, acc core.Account) auth.Provider {
 
 // secretName is what the account's password is called: 授权码, 密码…
 func secretName(pr auth.Provider) string {
-	if s := tr("onboarding.login." + pr.Login); s != "" && pr.Login != "oauth" {
+	if s := tr("onboarding.login." + loginOf(pr)); s != "" && loginOf(pr) != "oauth" {
 		return s
 	}
 	return i18n.T("onboarding.login.password")
@@ -593,8 +593,8 @@ func (p *settingsPage) accountView(c *ui.Context, acc core.Account) {
 	}
 	login := []func(){
 		row(i18n.T("settings.account.login.method"), p.authText(acc, prov), func() { p.authButton(c, acc, prov, false) }),
-		server("IMAP", acc.IMAPHost, acc.IMAPPort, acc.IMAPSecurity, ""),
-		server("SMTP", acc.SMTPHost, acc.SMTPPort, acc.SMTPSecurity, receiveOnlyHelp(acc)),
+		server("IMAP", acc.Receiving.Host, acc.Receiving.Port, acc.Receiving.Security, ""),
+		server("SMTP", acc.Sending.Host, acc.Sending.Port, acc.Sending.Security, receiveOnlyHelp(acc)),
 	}
 	if acc.ReceiveOnly { // OAuth has no servers to change: it tries SMTP again as it is
 		login = append(login, row(i18n.T("settings.account.receive_only"), "", func() {
@@ -709,8 +709,8 @@ func (p *settingsPage) openDialog(kind string, acc core.Account) {
 	p.client = clientForm{id: saved, savedID: saved, manual: true, public: public}
 	p.showSecret = false
 	p.iconSelected, p.iconUpload, p.iconPreview = acc.Icon, nil, nil
-	p.servers = serverForm{imapHost: acc.IMAPHost, imapPort: strconv.Itoa(acc.IMAPPort), smtpHost: acc.SMTPHost,
-		smtpPort: strconv.Itoa(acc.SMTPPort), username: acc.Username, imapSec: acc.IMAPSecurity, smtpSec: acc.SMTPSecurity}
+	p.servers = serverForm{imapHost: acc.Receiving.Host, imapPort: strconv.Itoa(acc.Receiving.Port), smtpHost: acc.Sending.Host,
+		smtpPort: strconv.Itoa(acc.Sending.Port), username: acc.Username, imapSec: acc.Receiving.Security, smtpSec: acc.Sending.Security}
 }
 
 func (p *settingsPage) closeDialog() {
@@ -803,8 +803,8 @@ func (p *settingsPage) dialogView(c *ui.Context) {
 		confirm = func() {
 			ip, _ := strconv.Atoi(strings.TrimSpace(sf.imapPort))
 			sp, _ := strconv.Atoi(strings.TrimSpace(sf.smtpPort))
-			ss := core.ServerSettings{Username: strings.TrimSpace(sf.username), IMAPHost: strings.TrimSpace(sf.imapHost), IMAPPort: ip,
-				IMAPSecurity: sf.imapSec, SMTPHost: strings.TrimSpace(sf.smtpHost), SMTPPort: sp, SMTPSecurity: sf.smtpSec}
+			ss := core.ServerSettings{Username: strings.TrimSpace(sf.username), Receiving: core.Server{Host: strings.TrimSpace(sf.imapHost), Port: ip, Security: sf.imapSec},
+				Sending: core.Server{Host: strings.TrimSpace(sf.smtpHost), Port: sp, Security: sf.smtpSec}}
 			var saved core.Account
 			p.act(id, func(ctx context.Context) (err error) {
 				saved, err = update(ctx, id, core.AccountPatch{Servers: &ss})

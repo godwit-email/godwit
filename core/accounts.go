@@ -79,21 +79,22 @@ func (in AccountInput) validate() error {
 		return fmt.Errorf("invalid email address %q", in.Email)
 	}
 	for _, e := range []struct {
-		name string
-		host string
-		port int
-		sec  Security
-	}{{"IMAP", in.IMAPHost, in.IMAPPort, in.IMAPSecurity}, {"SMTP", in.SMTPHost, in.SMTPPort, in.SMTPSecurity}} {
-		if e.host == "" {
+		slot, protocol, name string
+		Server
+	}{{"receiving", auth.IMAP, "IMAP", in.Receiving}, {"sending", auth.SMTP, "SMTP", in.Sending}} {
+		if e.Protocol != "" && e.Protocol != e.protocol {
+			return fmt.Errorf("%s protocol %q is not supported", e.slot, e.Protocol)
+		}
+		if e.Host == "" {
 			return fmt.Errorf("%s host is required", e.name)
 		}
-		if e.port < 1 || e.port > 65535 {
-			return fmt.Errorf("%s port %d is out of range", e.name, e.port)
+		if e.Port < 1 || e.Port > 65535 {
+			return fmt.Errorf("%s port %d is out of range", e.name, e.Port)
 		}
-		if !validSecurity(e.sec) {
-			return fmt.Errorf("%s security %q is invalid", e.name, e.sec)
+		if !validSecurity(e.Security) {
+			return fmt.Errorf("%s security %q is invalid", e.name, e.Security)
 		}
-		if e.sec == SecurityNone && !isLoopback(e.host) {
+		if e.Security == SecurityNone && !isLoopback(e.Host) {
 			return fmt.Errorf("%s: plaintext connections are only allowed to localhost", e.name)
 		}
 	}
@@ -212,7 +213,7 @@ func (s *Service) AddAccount(ctx context.Context, in AccountInput) (Account, err
 			recv_protocol, recv_host, recv_port, recv_security, send_protocol, send_host, send_port, send_security, created_at, provider, oauth_client_id, features, receive_only, position)
 			VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'ok', ?, 'imap', ?, ?, ?, 'smtp', ?, ?, ?, ?, ?, ?, ?, ?, (SELECT COALESCE(MAX(position) + 1, 0) FROM accounts))`,
 		Args: []any{in.Email, in.Name, in.Alias, b2i(isDefault), sync.Limit, sync.Months, authType, authType, in.username(),
-			in.IMAPHost, in.IMAPPort, string(in.IMAPSecurity), in.SMTPHost, in.SMTPPort, string(in.SMTPSecurity), time.Now().Unix(), in.Provider, in.oauthClientID, imapref.Features(checked.gmail), b2i(receiveOnly)},
+			in.Receiving.Host, in.Receiving.Port, string(in.Receiving.Security), in.Sending.Host, in.Sending.Port, string(in.Sending.Security), time.Now().Unix(), in.Provider, in.oauthClientID, imapref.Features(checked.gmail), b2i(receiveOnly)},
 	})
 	res, err := s.db.Transaction(ctx, stmts)
 	if err != nil {
@@ -335,7 +336,8 @@ func b2i(b bool) int {
 
 const accountCols = `id, email, name, alias, COALESCE((SELECT html FROM signatures WHERE id = signature_id), ''), username, is_default, sync_limit, recv_auth, status,
 	recv_host, recv_port, recv_security, send_host, send_port, send_security, smtp_reauth, provider, status_detail,
-	sync_since_months, (SELECT count(*) FROM folders WHERE account_id = accounts.id), signature_id, icon, ai_instructions, oauth_client_id, label_keywords, kind, receive_only`
+	sync_since_months, (SELECT count(*) FROM folders WHERE account_id = accounts.id), signature_id, icon, ai_instructions, oauth_client_id, label_keywords, kind, receive_only,
+	recv_protocol, send_protocol`
 
 // ErrAccountNotFound is returned for an account id that does not exist.
 var ErrAccountNotFound = errors.New("account not found")
@@ -356,9 +358,9 @@ func scanAccount(r []any) Account {
 		ID: store.Int(r[0]), Email: store.Str(r[1]), Name: store.Str(r[2]), Alias: store.Str(r[3]),
 		Signature: store.Str(r[4]), Username: store.Str(r[5]), IsDefault: store.Int(r[6]) == 1,
 		Sync: SyncRange{Limit: int(store.Int(r[7])), Months: int(store.Int(r[19]))}, Folders: int(store.Int(r[20])), AuthType: store.Str(r[8]), Status: store.Str(r[9]),
-		IMAPHost: store.Str(r[10]), IMAPPort: int(store.Int(r[11])), IMAPSecurity: Security(store.Str(r[12])),
-		SMTPHost: store.Str(r[13]), SMTPPort: int(store.Int(r[14])), SMTPSecurity: Security(store.Str(r[15])),
-		Provider: store.Str(r[17]), StatusDetail: store.Str(r[18]), SignatureID: store.Int(r[21]), Icon: store.Str(r[22]),
+		Receiving: Server{store.Str(r[28]), store.Str(r[10]), int(store.Int(r[11])), Security(store.Str(r[12]))},
+		Sending:   Server{store.Str(r[29]), store.Str(r[13]), int(store.Int(r[14])), Security(store.Str(r[15]))},
+		Provider:  store.Str(r[17]), StatusDetail: store.Str(r[18]), SignatureID: store.Int(r[21]), Icon: store.Str(r[22]),
 		AIInstructions: store.Str(r[23]), OAuthClientID: store.Str(r[24]), LabelKeywords: store.Int(r[25]) == 1, Kind: store.Str(r[26]),
 		ReceiveOnly: store.Int(r[27]) == 1,
 	}
@@ -584,13 +586,12 @@ func (s *Service) saveClient(ctx context.Context, id int64, c OAuthClient) error
 }
 
 func (a Account) servers() ServerSettings {
-	return ServerSettings{a.Username, a.IMAPHost, a.IMAPPort, a.IMAPSecurity, a.SMTPHost, a.SMTPPort, a.SMTPSecurity}
+	return ServerSettings{a.Username, a.Receiving, a.Sending}
 }
 
 // serverInput is the AccountInput that checks email's account on ss.
 func serverInput(email string, ss ServerSettings) AccountInput {
-	return AccountInput{Email: email, Username: ss.Username, IMAPHost: ss.IMAPHost, IMAPPort: ss.IMAPPort,
-		IMAPSecurity: ss.IMAPSecurity, SMTPHost: ss.SMTPHost, SMTPPort: ss.SMTPPort, SMTPSecurity: ss.SMTPSecurity}
+	return AccountInput{Email: email, Username: ss.Username, Receiving: ss.Receiving, Sending: ss.Sending}
 }
 
 // UpdateAccount writes p's fields in one transaction. New Servers are first
@@ -680,13 +681,13 @@ func (s *Service) UpdateAccount(ctx context.Context, id int64, p AccountPatch) (
 		}
 		set("receive_only", b2i(err != nil))
 		set("username", in.username())
-		set("recv_host", in.IMAPHost)
+		set("recv_host", in.Receiving.Host)
 		set("features", imapref.Features(r.gmail))
-		set("recv_port", in.IMAPPort)
-		set("recv_security", string(in.IMAPSecurity))
-		set("send_host", in.SMTPHost)
-		set("send_port", in.SMTPPort)
-		set("send_security", string(in.SMTPSecurity))
+		set("recv_port", in.Receiving.Port)
+		set("recv_security", string(in.Receiving.Security))
+		set("send_host", in.Sending.Host)
+		set("send_port", in.Sending.Port)
+		set("send_security", string(in.Sending.Security))
 		s.graphSend.Delete(id) // new servers: the next send tries SMTP before Graph again
 		// The checked settings work: the user just fixed the sign-in.
 		set("status", "ok")
@@ -704,7 +705,7 @@ func (s *Service) UpdateAccount(ctx context.Context, id int64, p AccountPatch) (
 		stmts = append(stmts, sqlite.Statement{SQL: "UPDATE accounts SET " + strings.Join(cols, ", ") + " WHERE id = ?",
 			Args: append(args, id)})
 	}
-	if p.Servers != nil && (p.Servers.IMAPHost != acc.IMAPHost || p.Servers.IMAPPort != acc.IMAPPort ||
+	if p.Servers != nil && (p.Servers.Receiving.Host != acc.Receiving.Host || p.Servers.Receiving.Port != acc.Receiving.Port ||
 		serverInput(acc.Email, *p.Servers).username() != acc.Username) {
 		// Another mailbox: its UIDs are not the old one's even where UIDVALIDITY
 		// matches. No real UIDVALIDITY is 0, so pushes of queued ops and downloads

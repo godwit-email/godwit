@@ -71,7 +71,7 @@ func TestCheckThroughRefusingProxy(t *testing.T) {
 	conn.SystemProxy = func(*url.URL) *url.URL { return &url.URL{Scheme: "http", Host: l.Addr().String()} }
 	t.Cleanup(func() { conn.SystemProxy = sysproxy.For })
 	in := input(t, im.Addr, smtpAddr, "secret")
-	in.IMAPHost, in.IMAPSecurity = "imap.example", core.SecurityStartTLS // loopback skips the proxy
+	in.Receiving.Host, in.Receiving.Security = "imap.example", core.SecurityStartTLS // loopback skips the proxy
 	_, err = s.AddAccount(ctx, in)
 	var ce *core.CheckError
 	require.True(t, errors.As(err, &ce), "%v", err)
@@ -84,7 +84,7 @@ func TestCheckInvalidSettings(t *testing.T) {
 	s := newTestService(t)
 	im, smtpAddr := servers(t)
 	in := input(t, im.Addr, smtpAddr, "secret")
-	in.IMAPPort = 0
+	in.Receiving.Port = 0
 	r, _ := s.CheckAccount(ctx, in)
 	assert.Equal(t, core.KindInvalid, r.Steps[0].Kind)
 	assert.NotEmpty(t, r.Steps[0].Detail)
