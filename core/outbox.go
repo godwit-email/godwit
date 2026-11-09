@@ -427,6 +427,11 @@ func (a *sendAuth) sender() backend.Sender {
 	if a.acc.Sending.Protocol == auth.Graph {
 		return graph.New(graphSendURL, a.credentials)
 	}
+	return a.smtp()
+}
+
+// smtp is the account's SMTP sending backend.
+func (a *sendAuth) smtp() *smtpbackend.Sender {
 	return smtpbackend.New(smtpbackend.Config{Host: a.acc.Sending.Host, Port: a.acc.Sending.Port,
 		Security: a.acc.Sending.Security, Credentials: a.credentials})
 }

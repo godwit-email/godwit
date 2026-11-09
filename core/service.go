@@ -801,16 +801,11 @@ func (s *Service) checkSMTP(ctx context.Context, accountID int64, explicit bool)
 	}
 	sa := &sendAuth{s: s, acc: acc}
 	login := func() error {
-		cr, err := sa.credentials(ctx)
-		if err != nil || sa.acc.Sending.Protocol == auth.Graph {
-			return err // a Graph token in hand is the check
+		if sa.acc.Sending.Protocol == auth.Graph {
+			_, err := sa.credentials(ctx) // a Graph token in hand is the check
+			return err
 		}
-		sc, err := conn.DialSMTP(ctx, conn.Endpoint{Host: acc.Sending.Host, Port: acc.Sending.Port, Security: acc.Sending.Security,
-			Username: cr.Username, Password: cr.Password, AccessToken: cr.Token})
-		if err == nil {
-			sc.Close()
-		}
-		return err
+		return sa.smtp().Check(ctx)
 	}
 	if err = login(); err != nil && sa.retry(ctx, err) {
 		err = login()
