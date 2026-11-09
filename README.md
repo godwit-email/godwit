@@ -2,26 +2,38 @@
 
 <h1 align="center">Godwit</h1>
 
-<p align="center">An open-source, AI-native email client you can extend.</p>
+<p align="center">An open-source, AI-native email client you can extend.<br>AI helps with your mail. Your mail stays yours.</p>
 
-Godwit is a desktop email client for macOS, Windows and Linux. It works with any IMAP/SMTP account and ships with an AI assistant, Wit, that reads, summarizes, translates and drafts mail with the model you choose. Everything AI in it, the built-in features included, runs through the same extension points open to you: drop in a `SKILL.md` and a button appears.
+<p align="center">
+  <a href="https://godwit.email/#download">Download</a> ·
+  <a href="https://godwit.email">Website</a> ·
+  <a href="CHANGELOG.md">Changelog</a>
+</p>
+
+https://github.com/user-attachments/assets/29ee980c-73a5-47f0-a736-b01828c22785
+
+Godwit is a desktop email client for macOS, Windows and Linux. It works with any IMAP/SMTP account and ships with an AI assistant, Wit, that reads, summarizes, translates and drafts mail with the model you choose. Before anything goes to a cloud model, names, account numbers, phone numbers and keys are masked on your machine. Everything AI in it, the built-in features included, runs through the same extension points open to you: drop in a `SKILL.md` and a button appears.
 
 The name comes from the bar-tailed godwit, which holds the record for the longest non-stop bird flight.
 
-> **Status: 0.0.x, early preview.** Expect rough edges, and keep a copy of anything important on your mail server.
-
 ## Features
 
-- **Mail**: IMAP/SMTP accounts with sync, offline changes, conversations, full-text search, and HTML compose with reply, forward, CC/BCC and drafts. Setup is detected for Gmail, Outlook (sign in with Microsoft), iCloud, Yahoo, AOL, QQ Mail, 163/126 Mail, Tencent Exmail, Lark/Feishu and DingTalk Mail, and any other IMAP server.
-- **Wit**: an agent that answers questions about your mail, reads attachments (PDF, Office, CSV) and drafts replies. It never sends without your approval.
+- **Mail**: IMAP/SMTP accounts with sync, offline changes, conversations, and HTML compose with reply, forward, CC/BCC, drafts and recipients completed from your contacts. Setup is detected for Gmail, Outlook (sign in with Microsoft), iCloud, Yahoo, AOL, QQ Mail, 163/126 Mail, Tencent Exmail, Lark/Feishu and DingTalk Mail, hosted corporate mail by its MX records, and any other IMAP server. Local `.eml` files can be imported into a local archive.
+- **Views**: questions that stay open in the sidebar, such as *To handle*, built from conditions and groups, across all your accounts. They never change the mail itself.
+- **Sign-in codes and links**: codes and magic links in 14 languages are recognized as they arrive, with a banner to copy or open them and a list of recent ones in the tray.
+- **Organize**: labels, set by the model or by hand and synced as IMAP keywords; local rules (when … if … then …) with condition groups; one-click unsubscribe (RFC 8058); and a **Contacts** page with unsubscribe, archive all and block per sender.
+- **Search**: ⌘K finds mail, conversations, contacts and attachments.
+- **Wit**: an agent that answers questions about your mail, reads attachments (PDF, Office, CSV) and drafts replies. It writes drafts and never sends. Anything that leaves your machine, such as an unsubscribe or an opened link, waits for your approval, which names where it goes.
+- **Privacy masking**: text bound for a cloud model or translation service is checked on your machine, with a local recognition model, for keys, ID and financial numbers, codes, phone numbers, email addresses, names, addresses and accounts. Each kind is masked (replaced by a placeholder and put back only on your side), warned about, or blocked, and every request is in the masking log.
+- **Security**: sender verification badges, display-name spoofing protection and AI fraud classification; remote images load through a privacy proxy.
 - **AI actions**: summarize, translate, adjust tone and length, and quick replies, on a message, a selection or a draft. On macOS 26 and later, mail can also be translated on the Mac with the system's own translation, free and without a model (Settings › Intelligence › Features › Translate with › System translation).
 - **Your models**: any OpenAI-compatible (Chat Completions or Responses) or Anthropic-compatible service, including local ones like Ollama and LM Studio. API keys stay in the system keychain.
 - **Extensions**:
   - **Skills**: a `SKILL.md` ([Agent Skills](https://agentskills.io)) in the data directory's `skills/` folder becomes a Wit skill, or an action button with `godwit-action-*` metadata.
-  - **Plugins**: TypeScript plugins with declared permissions add hooks, actions, cards and Wit tools. Types are in [`sdk/godwit.d.ts`](sdk/godwit.d.ts), published as `@godwit/sdk` (`npm i -D @godwit/sdk`). Plugins can read mail and write drafts; none can send.
+  - **Plugins**: install from the plugin directory in Settings › Extensions, or write your own: TypeScript plugins with declared permissions add hooks, actions, cards and Wit tools. Types are in [`sdk/godwit.d.ts`](sdk/godwit.d.ts), published as `@godwit/sdk` (`npm i -D @godwit/sdk`). Plugins can read mail and write drafts; none can send.
   - **Native plugins**: a shared library behind a small C ABI ([`sdk/native/godwit_plugin.h`](sdk/native/godwit_plugin.h)), for what a sandbox cannot do. It runs with all of Godwit's rights, so Godwit shows the risk and asks you to allow that exact file; a changed file needs your permission again.
   - **MCP servers**: give Wit external tools. Each server is approved once, and each write call every time.
-- **For other agents**: `godwit mcp` is an MCP server that lets Claude, Cursor and other agents read your mail and create drafts, but never send. Turn on the Local API under **Settings › Intelligence › AI apps** and copy the client configuration from there.
+- **For other agents**: `godwit mcp` is an MCP server that lets Claude, Claude Code, Codex, Cursor and any other MCP app read your mail and create drafts. Sending through MCP is your setting: by default each send waits for you to confirm it, and you can turn it off or let it send directly. Turn on the Local API under **Settings › Intelligence › AI apps** and copy the client configuration from there.
 - **Updates itself** from dl.godwit.email (the Microsoft Store version is updated by the Store).
 
 ## Install
