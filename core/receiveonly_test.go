@@ -92,6 +92,14 @@ func TestReceiveOnlyRepliesFromAnother(t *testing.T) {
 	d, err := e.s.NewDraft(bg, e.acc.ID, "reply", e.idOf(t, "in@x"))
 	require.NoError(t, err)
 	assert.Equal(t, other.ID, d.AccountID)
+	// Its own sent mail is still the user's: the reply follows up with Bob.
+	e.put(t, "INBOX", eml("sent@x", "alice@example.com", "Bob <bob@example.com>", "plan", day, "the plan"))
+	e.sync(t)
+	d, err = e.s.NewDraft(bg, e.acc.ID, "reply", e.idOf(t, "sent@x"))
+	require.NoError(t, err)
+	assert.Equal(t, other.ID, d.AccountID)
+	assert.Equal(t, []string{"Bob <bob@example.com>"}, d.To)
+
 	d, err = e.s.NewDraft(bg, e.acc.ID, "new", 0)
 	require.NoError(t, err)
 	assert.Equal(t, other.ID, d.AccountID)

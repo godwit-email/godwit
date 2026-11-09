@@ -141,6 +141,7 @@ func (s *Service) buildDraft(ctx context.Context, accountID int64, mode string, 
 			return Draft{}, ErrLocalArchive
 		}
 	}
+	self := acc.Email // whose mail is answered: its own sent mail and address are the user's
 	if acc.ReceiveOnly { // so is a receive-only account's, and its new mail
 		if acc, err = s.draftAccount(ctx, 0); err != nil {
 			return Draft{}, ErrReceiveOnly
@@ -160,7 +161,7 @@ func (s *Service) buildDraft(ctx context.Context, accountID int64, mode string, 
 		if mode == "forward" {
 			d.Subject = mail.ForwardSubject(orig.Subject)
 		} else {
-			d.To, d.Cc = mail.ReplyRecipients(orig, acc.Email, mode == "reply_all")
+			d.To, d.Cc = mail.ReplyRecipients(orig, self, mode == "reply_all")
 			d.Subject = mail.ReplySubject(orig.Subject)
 		}
 		d.Subject = defuseRefs(d.Subject) // a reference planted in the mail would block sending the reply
