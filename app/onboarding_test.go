@@ -1024,11 +1024,11 @@ func TestOnboardingOtherTileUsernameFollowsDetection(t *testing.T) {
 	}
 }
 
-// Fastmail is found by its domains, with no tile of its own: its sign-in is
-// IMAP and SMTP with an app password, JMAP's API token is not asked for.
+// Fastmail has a tile; its sign-in is IMAP and SMTP with an app password,
+// and JMAP's API token is asked for only once the server form picks JMAP.
 func TestOnboardingFastmailSignsInToIMAP(t *testing.T) {
 	fm, ok := auth.ByID("fastmail")
-	if !ok || listed(fm) {
+	if !ok || !listed(fm) {
 		t.Fatalf("fastmail: in table %v, has a tile %v", ok, listed(fm))
 	}
 	h := newHarness(t)
