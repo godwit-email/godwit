@@ -27,8 +27,8 @@ type graphEnv struct {
 func newGraphEnv(t *testing.T) *graphEnv {
 	e := &graphEnv{oauthAccEnv: newOAuthEnv(t, false)}
 	setFor(t, &oauthConfig, func(string) (auth.OAuthConfig, error) {
-		c := e.oa.Config("openid", "email", "offline_access", "graph.send")
-		c.GraphSend = "graph.send"
+		c := e.oa.Config("openid", "email", "offline_access", "https://graph.example/Mail.Send")
+		c.GraphSend = "https://graph.example/Mail.Send"
 		return c, nil
 	})
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -61,6 +61,7 @@ func (e *graphEnv) graphSent() []string {
 
 func TestSendThroughGraphWhenSMTPAuthDisabled(t *testing.T) {
 	e := newGraphEnv(t)
+	e.oa.GrantScope("Mail.Send offline_access") // Microsoft names Graph scopes relative to the resource
 	in := e.input(t, "alice@example.com", e.signIn(t, "alice@example.com"))
 	r, err := e.s.CheckAccount(bg, in)
 	require.NoError(t, err)
@@ -111,4 +112,13 @@ func TestCheckFailsWithoutGraphConsent(t *testing.T) {
 	require.NoError(t, err)
 	assert.False(t, r.OK())
 	assert.Equal(t, conn.FailureAuth, r.Steps[2].Kind)
+}
+
+func TestGrantsScope(t *testing.T) {
+	const want = "https://graph.microsoft.com/Mail.Send"
+	assert.True(t, grantsScope("Mail.Send User.Read", want))
+	assert.True(t, grantsScope("https://graph.microsoft.com/Mail.Send", want))
+	assert.True(t, grantsScope("openid mail.send", want))
+	assert.False(t, grantsScope("openid email https://outlook.office.com/SMTP.Send", want))
+	assert.False(t, grantsScope("Mail.Read", want))
 }

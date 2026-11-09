@@ -350,6 +350,13 @@ func (s *Service) graphToken(ctx context.Context, acc Account) (string, uint64, 
 	return g.AccessToken, ver, nil
 }
 
+// grantsScope reports whether a token response's scope names want, in full
+// or, as Microsoft answers, by its name relative to the resource (Mail.Send).
+func grantsScope(scope, want string) bool {
+	short := want[strings.LastIndex(want, "/")+1:]
+	return slices.ContainsFunc(strings.Fields(scope), func(f string) bool { return strings.EqualFold(f, want) || strings.EqualFold(f, short) })
+}
+
 var errNoGraph = errors.New("the provider does not send through Microsoft Graph")
 
 // graphGrant trades rt for an access token to cfg.GraphSend. A refusal, or a
@@ -363,7 +370,7 @@ func graphGrant(ctx context.Context, cfg auth.OAuthConfig, rt string) (auth.Gran
 		cfg.TokenParams["client_secret"] = cfg.ClientSecret
 	}
 	g, err := auth.RefreshForm(ctx, cfg, http.DefaultClient, rt)
-	if errors.Is(err, auth.ErrInvalidGrant) || err == nil && g.Scope != "" && !slices.Contains(strings.Fields(g.Scope), cfg.GraphSend) {
+	if errors.Is(err, auth.ErrInvalidGrant) || err == nil && g.Scope != "" && !grantsScope(g.Scope, cfg.GraphSend) {
 		return auth.Grant{}, fmt.Errorf("graph token: %w", conn.ErrAuthFailed)
 	}
 	return g, err
