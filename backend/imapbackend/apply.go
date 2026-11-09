@@ -116,7 +116,8 @@ func (r *Receiver) Apply(ctx context.Context, op backend.Op) (_ backend.Result, 
 		return backend.Result{}, fmt.Errorf("imapbackend: %T not supported yet", op)
 	}
 	var refused *imap.Error
-	if errors.As(err, &refused) {
+	var folder *backend.FolderError
+	if !errors.As(err, &folder) && errors.As(err, &refused) {
 		return backend.Result{Outcome: backend.Failed, Reason: refused.Error()}, nil
 	}
 	return res, err
@@ -335,36 +336,47 @@ func purge(c *imapclient.Client, op backend.Purge) (backend.Result, error) {
 	return done, nil
 }
 
+// uncertain is a server's NO to a read of folder before any label write as
+// a backend.FolderError, not Failed: the read proves nothing about the move,
+// which a later attempt reads again.
+func uncertain(folder backend.FolderRef, err error) error {
+	var refused *imap.Error
+	if errors.As(err, &refused) {
+		return &backend.FolderError{Folder: folder, Err: err}
+	}
+	return err
+}
+
 // labelMove moves the message at at to folder to with Gmail's additive label
 // writes (to "": only takes at's label away; add: only adds to's). Every
 // attempt reads membership by X-GM-MSGID first, so one after a lost reply
-// writes only what is missing. All Mail is implicit membership, never a
-// label to remove; adding Trash or Spam is Gmail's special transition, which
-// removes every other label itself.
+// writes only what is missing; a refused read is uncertain. All Mail is
+// implicit membership, never a label to remove; adding Trash or Spam is
+// Gmail's special transition, which removes every other label itself.
 func labelMove(c *imapclient.Client, at backend.Location, to backend.FolderRef, add bool) (backend.Result, error) {
 	id, err := gmailIdentity(c, at)
 	if err != nil {
-		return backend.Result{}, err
+		return backend.Result{}, uncertain(at.Folder, err)
 	}
 	src, srcRole, err := label(c, at.Folder)
 	if err != nil {
-		return backend.Result{}, err
+		return backend.Result{}, uncertain(at.Folder, err)
 	}
 	addOnly, removeOnly := add || srcRole == backend.RoleAll, to == ""
 	srcValidity, srcUID, err := gmailLocation(c, at.Folder, id)
 	if err != nil {
-		return backend.Result{}, err
+		return backend.Result{}, uncertain(at.Folder, err)
 	}
 	var dst string
 	var dstRole backend.Role
 	var dstValidity, dstUID uint32
 	if to != "" {
 		if dst, dstRole, err = label(c, to); err != nil {
-			return backend.Result{}, err
+			return backend.Result{}, uncertain(to, err)
 		}
 		removeOnly = dstRole == backend.RoleAll
 		if dstValidity, dstUID, err = gmailLocation(c, to, id); err != nil {
-			return backend.Result{}, err
+			return backend.Result{}, uncertain(to, err)
 		}
 		if dstValidity == 0 {
 			return backend.Result{Outcome: backend.Failed, Reason: "the destination folder no longer exists"}, nil
@@ -387,7 +399,7 @@ func labelMove(c *imapclient.Client, at backend.Location, to backend.FolderRef, 
 	}
 	sel, err := c.Select(string(at.Folder), nil).Wait()
 	if err != nil {
-		return backend.Result{}, err
+		return backend.Result{}, uncertain(at.Folder, err)
 	}
 	if sel.UIDValidity != srcValidity {
 		return backend.Result{}, fmt.Errorf("folder %q was recreated on the server", at.Folder)

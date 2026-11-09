@@ -3,6 +3,7 @@ package mailsync
 import (
 	"context"
 	"errors"
+	"fmt"
 
 	"github.com/egoist/mygo/plugins/sqlite"
 	"github.com/godwit-email/godwit/backend"
@@ -15,7 +16,9 @@ import (
 // takes one away (RemoveFromFolder), else it moves. The backend reads where
 // the message is by its ServerID on every attempt, so a lost reply is
 // uncertain rather than a failure: it stays pending past the retry budget
-// until an attempt resolves it. Only a refusal counts against MaxAttempts.
+// until an attempt resolves it. Every attempt that may have written counts
+// (a lost reply too), so a later one knows the move may have reached the
+// server; only a refusal fails the op at MaxAttempts.
 func (p *pusher) pushStableMove(ctx context.Context, o op) (string, error) {
 	db := p.db
 	r, err := db.Query(ctx, `SELECT m.server_id, f.server_ref, f.role, l.server_ref FROM messages m
@@ -49,21 +52,55 @@ func (p *pusher) pushStableMove(ctx context.Context, o op) (string, error) {
 	if o.src == 0 {
 		return p.addToFolder(ctx, o, at.ServerID, to)
 	}
+	sent := o.attempts > 0
 	if at.ServerID == "" && at.Ref == "" {
-		return p.lostSource(ctx, o, o.attempts > 0)
+		return p.lostSource(ctx, o, sent)
 	}
 	var w backend.Op = backend.Move{At: at, To: to}
 	if o.dst == 0 {
 		w = backend.RemoveFromFolder{At: at}
 	}
+	if err := p.count(ctx, &o, 1); err != nil {
+		return "", err
+	}
+	completed.attempts = o.attempts
 	res, err := p.clearPurge(ctx, o, at)
 	if errors.Is(err, backend.ErrNotFound) || (err == nil && res.Outcome == backend.Done) {
 		res, err = p.recv.Apply(ctx, w) // a source already gone is the move's to find
 	}
+	if nothingDone(res, err) {
+		if err := p.count(ctx, &o, -1); err != nil {
+			return "", err
+		}
+	}
 	if errors.Is(err, backend.ErrNotFound) {
-		return p.lostSource(ctx, o, o.attempts > 0)
+		switch {
+		case errors.Is(err, backend.ErrFolderReset):
+			msg := fmt.Sprintf("folder %q was recreated on the server, so a change to a message in it was not applied", at.Folder)
+			return msg, finish(ctx, db, o, "conflict", msg)
+		case at.ServerID != "" && o.dst != 0 && store.Str(v[2]) != "all":
+			// The backend found it by identity in neither folder.
+			msg := "the message left the folder it was moved from and is absent from the destination"
+			return msg, finish(ctx, db, o, "conflict", msg)
+		}
+		return p.lostSource(ctx, o, sent)
 	}
 	return p.stableResult(ctx, o, completed, res, err)
+}
+
+// nothingDone reports an Apply that wrote nothing, so its attempt does not count.
+func nothingDone(res backend.Result, err error) bool {
+	var refused *backend.FolderError
+	return errors.Is(err, backend.ErrNotFound) || errors.As(err, &refused) || (err == nil && res.Outcome == backend.Unsupported)
+}
+
+// count adds n to o's attempts, in the row and in o.
+func (p *pusher) count(ctx context.Context, o *op, n int) error {
+	if _, err := p.db.Execute(ctx, "UPDATE ops SET attempts = attempts + ? WHERE id = ?", n, o.id); err != nil {
+		return err
+	}
+	o.attempts += n
+	return nil
 }
 
 // addToFolder adds folder to to the message, from the first of its known
@@ -74,23 +111,38 @@ func (p *pusher) addToFolder(ctx context.Context, o op, serverID string, to back
 	if err != nil {
 		return "", err
 	}
+	if err := p.count(ctx, &o, 1); err != nil {
+		return "", err
+	}
 	for _, a := range anchors.Values {
 		at := backend.Location{Folder: backend.FolderRef(store.Str(a[0])), Ref: backend.MessageRef(store.Str(a[1])), ServerID: serverID}
 		res, err := p.recv.Apply(ctx, backend.AddToFolder{At: at, To: to})
 		if !errors.Is(err, backend.ErrNotFound) {
+			if nothingDone(res, err) {
+				if err := p.count(ctx, &o, -1); err != nil {
+					return "", err
+				}
+			}
 			return p.stableResult(ctx, o, o, res, err)
 		}
+	}
+	if err := p.count(ctx, &o, -1); err != nil { // nothing was done
+		return "", err
 	}
 	msg := "Gmail message has no addressable location in visible IMAP folders; expose All Mail or restore a label to apply this change"
 	_, err = p.db.Execute(ctx, "UPDATE ops SET last_error = ? WHERE id = ?", msg, o.id)
 	return msg, err // report the blocked intent, but let fetch discover a new location
 }
 
-// stableResult records how a stable-identity move ended. completed is o with
-// the source it takes the message out of locally.
+// stableResult records how a stable-identity move ended, its attempt already
+// counted. completed is o with the source it takes the message out of locally.
 func (p *pusher) stableResult(ctx context.Context, o, completed op, res backend.Result, err error) (string, error) {
-	if err != nil { // a lost reply: uncertain, not counted
+	if err != nil { // uncertain: tried again, failed only by a refusal
 		_, derr := p.db.Execute(ctx, "UPDATE ops SET last_error = ? WHERE id = ?", err.Error(), o.id)
+		var refused *backend.FolderError
+		if errors.As(err, &refused) {
+			return "", derr // a refused read: the push goes on
+		}
 		return "", errors.Join(err, derr)
 	}
 	switch res.Outcome {
@@ -98,7 +150,7 @@ func (p *pusher) stableResult(ctx context.Context, o, completed op, res backend.
 		msg := unsupported(res.Reason)
 		return msg, finish(ctx, p.db, o, "failed", msg)
 	case backend.Failed:
-		return p.refused(ctx, o, errors.New(res.Reason))
+		return fail(ctx, p.db, o, errors.New(res.Reason), false)
 	case backend.Unlocated:
 		return p.lostSource(ctx, o, true)
 	}
@@ -110,11 +162,11 @@ func (p *pusher) stableResult(ctx context.Context, o, completed op, res backend.
 	return "", err
 }
 
-// refused counts a refused attempt and fails the op once it used MaxAttempts.
+// refused counts an attempt refused before anything was sent and fails the
+// op once it used MaxAttempts.
 func (p *pusher) refused(ctx context.Context, o op, cause error) (string, error) {
-	if _, err := p.db.Execute(ctx, "UPDATE ops SET attempts = attempts + 1 WHERE id = ?", o.id); err != nil {
+	if err := p.count(ctx, &o, 1); err != nil {
 		return "", err
 	}
-	o.attempts++
 	return fail(ctx, p.db, o, cause, false)
 }

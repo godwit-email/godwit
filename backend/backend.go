@@ -484,8 +484,10 @@ type Receiver interface {
 	Find(ctx context.Context, folder FolderRef, messageID string, size int64) ([]MessageRef, error)
 	// Apply writes one Op back. ErrNotFound: the op's location no longer
 	// names the message (its folder was reset, or with IdentityStable the
-	// message left that folder), and nothing was done. Any other error means
-	// the outcome is not known (a lost connection): the op is tried again later.
+	// message left that folder), and nothing was done. A *FolderError: the
+	// server refused a folder the op had to read first, and nothing was done.
+	// Any other error means the outcome is not known (a lost connection): the
+	// op is tried again later.
 	Apply(ctx context.Context, op Op) (Result, error)
 	// Watch calls wake when the server has changes, with the folders that
 	// changed (nil: anywhere), until ctx ends or the connection fails. It

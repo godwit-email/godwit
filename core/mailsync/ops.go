@@ -224,7 +224,7 @@ func (p *pusher) pushOp(ctx context.Context, o op) (problem string, err error) {
 		res, err = p.recv.Apply(ctx, w)
 	}
 	switch {
-	case errors.Is(err, backend.ErrNotFound) && o.kind == "flags" && p.stable:
+	case errors.Is(err, backend.ErrNotFound) && !errors.Is(err, backend.ErrFolderReset) && o.kind == "flags" && p.stable:
 		// Another client took the message out of that folder: try its next location.
 		if _, err := db.Transaction(ctx, unlocate(o.msg, src)); err != nil {
 			return "", err
