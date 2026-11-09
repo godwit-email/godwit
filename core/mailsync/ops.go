@@ -9,7 +9,6 @@ import (
 	"time"
 
 	"github.com/egoist/mygo/plugins/sqlite"
-	"github.com/emersion/go-imap/v2/imapclient"
 	"github.com/godwit-email/godwit/backend"
 	"github.com/godwit-email/godwit/backend/imapbackend"
 	"github.com/godwit-email/godwit/core/store"
@@ -49,13 +48,6 @@ type pusher struct {
 	canPurge bool
 }
 
-// over is the IMAP backend over the caller's connection.
-//
-// shortcut: c stays the caller's, as in Fetch; #603 gives the backend its own.
-func over(c *imapclient.Client) backend.Receiver {
-	return imapbackend.New(func(context.Context) (*imapclient.Client, error) { return c, nil })
-}
-
 // PushOps sends the account's pending ops to the server in id order. Ops whose
 // message has no server location yet, or whose dependency is still pending or
 // awaiting its claim, wait for a later round, as do purges whose undo window is
@@ -64,16 +56,16 @@ func over(c *imapclient.Client) backend.Receiver {
 // The backend is asked only when an op is ready. Problems with single ops come
 // back as *OpsError; any other error means the connection is unusable and the
 // push stopped.
-func PushOps(ctx context.Context, db *store.DB, c *imapclient.Client, accountID int64, now time.Time) error {
-	return push(ctx, db, over(c), accountID, now, "")
+func PushOps(ctx context.Context, db *store.DB, recv backend.Receiver, accountID int64, now time.Time) error {
+	return push(ctx, db, recv, accountID, now, "")
 }
 
 // PushNewOps is PushOps limited to ops never attempted, for a second round after
 // a fetch: ops that waited for a claim (an Unlocated move), for another server
 // location (a deferred archive) or that were queued meanwhile run, ones that
 // failed are not retried. Without such an op it sends nothing to the server.
-func PushNewOps(ctx context.Context, db *store.DB, c *imapclient.Client, accountID int64, now time.Time) error {
-	return push(ctx, db, over(c), accountID, now, " AND attempts = 0")
+func PushNewOps(ctx context.Context, db *store.DB, recv backend.Receiver, accountID int64, now time.Time) error {
+	return push(ctx, db, recv, accountID, now, " AND attempts = 0")
 }
 
 func push(ctx context.Context, db *store.DB, recv backend.Receiver, accountID int64, now time.Time, filter string) (rerr error) {
@@ -348,8 +340,8 @@ func (p *pusher) lostSource(ctx context.Context, o op, sent bool) (string, error
 
 // InFolder reports whether folder holds a message whose Message-ID is exactly
 // messageID (without its angle brackets) and, when size > 0, of that size.
-func InFolder(c *imapclient.Client, folder, messageID string, size int64) (bool, error) {
-	refs, err := over(c).Find(context.Background(), backend.FolderRef(folder), messageID, size)
+func InFolder(ctx context.Context, recv backend.Receiver, folder, messageID string, size int64) (bool, error) {
+	refs, err := recv.Find(ctx, backend.FolderRef(folder), messageID, size)
 	return len(refs) > 0, err
 }
 

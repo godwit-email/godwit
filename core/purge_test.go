@@ -135,7 +135,7 @@ func TestPurgeRescueCancelsQueuedPurge(t *testing.T) {
 	e.sync(t)
 	require.NoError(t, e.s.SetPurge(bg, e.acc.ID, "trash", 1))
 	e.age(t, 2)
-	require.NoError(t, mailsync.QueuePurge(bg, e.s.db, e.dial(t), e.acc.ID))
+	require.NoError(t, mailsync.QueuePurge(bg, e.s.db, e.receiver(t), e.acc.ID))
 	require.Equal(t, 2, e.count(t, "SELECT count(*) FROM ops WHERE kind = 'purge' AND state = 'pending'"))
 
 	require.NoError(t, e.s.Move(bg, []int64{e.idOf(t, "m@x")}, e.folderID(t, "INBOX")))
@@ -363,7 +363,7 @@ func TestPurgeTurnedOffBeforePush(t *testing.T) {
 	e.sync(t)
 	require.NoError(t, e.s.SetPurge(bg, e.acc.ID, "trash", 1))
 	e.age(t, 2)
-	require.NoError(t, mailsync.QueuePurge(bg, e.s.db, e.dial(t), e.acc.ID))
+	require.NoError(t, mailsync.QueuePurge(bg, e.s.db, e.receiver(t), e.acc.ID))
 	require.NoError(t, e.s.SetPurge(bg, e.acc.ID, "trash", 0))
 	e.sync(t)
 	assert.Equal(t, []string{"m@x"}, e.onServer(t, "Trash"))

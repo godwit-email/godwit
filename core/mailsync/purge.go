@@ -8,7 +8,6 @@ import (
 	"time"
 
 	"github.com/egoist/mygo/plugins/sqlite"
-	"github.com/emersion/go-imap/v2/imapclient"
 	"github.com/godwit-email/godwit/backend"
 	"github.com/godwit-email/godwit/backend/imapbackend"
 	"github.com/godwit-email/godwit/core/store"
@@ -70,12 +69,12 @@ var purgeable = `EXISTS (SELECT 1 FROM message_locations l WHERE l.message_id = 
 // UIDPLUS: a plain EXPUNGE would also remove mail other clients marked
 // \Deleted). When the role's folder is not the one the policy's clock ran for,
 // the clock restarts there and nothing is purged.
-func QueuePurge(ctx context.Context, db *store.DB, c *imapclient.Client, accountID int64) error {
+func QueuePurge(ctx context.Context, db *store.DB, recv backend.Receiver, accountID int64) error {
 	rows, err := db.Query(ctx, "SELECT role, folder_id FROM purge_policies WHERE account_id = ? AND days > 0", accountID)
 	if err != nil {
 		return err
 	}
-	d, err := over(c).Describe(ctx)
+	d, err := recv.Describe(ctx)
 	if err != nil {
 		return err
 	}
