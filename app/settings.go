@@ -234,7 +234,7 @@ func (p *settingsPage) refresh(hints []events.Event) {
 func (p *settingsPage) Title() (string, string) {
 	sec, acc := p.section()
 	if acc != nil {
-		return i18n.T("settings.heading"), i18n.T("settings.accounts") + " · " + acc.Email
+		return i18n.T("settings.heading"), i18n.T("settings.accounts") + " · " + accountAddr(*acc)
 	}
 	if sig, ok := p.shownSignature(sec); ok {
 		return i18n.T("settings.heading"), i18n.T("settings.signatures") + " · " + sig.Name

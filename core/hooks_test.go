@@ -339,10 +339,13 @@ func TestHookCleanupRace(t *testing.T) {
 	for i, d := range got {
 		assert.Equal(t, fmt.Sprint(i), d.Subject)
 	}
+	// Every cursor, the built-in rules consumer's too, must pass the events
+	// before cleanEvents may drop them; at -cpu 1 rules can lag behind rec.
 	require.Eventually(t, func() bool {
-		rows, err := s.db.Query(bg, "SELECT max(seq) FROM events_log")
+		rows, err := s.db.Query(bg, `SELECT (SELECT max(seq) FROM events_log),
+			(SELECT min(seq) FROM (SELECT seq FROM plugin_cursors UNION ALL SELECT seq FROM event_cursors))`)
 		require.NoError(t, err)
-		return cursor(t, s, "rec") == store.Int(rows.Values[0][0])
+		return store.Int(rows.Values[0][0]) == store.Int(rows.Values[0][1])
 	}, 5*time.Second, 10*time.Millisecond)
 	require.NoError(t, s.cleanEvents(bg))
 	rows, err := s.db.Query(bg, "SELECT count(*) FROM events_log")

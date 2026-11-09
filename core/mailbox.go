@@ -1,6 +1,7 @@
 package core
 
 import (
+	"cmp"
 	"context"
 	"errors"
 	"fmt"
@@ -95,6 +96,9 @@ func (s *Service) SetPurge(ctx context.Context, accountID int64, role string, da
 	}
 	if !slices.Contains(PurgeDays, days) {
 		return fmt.Errorf("invalid purge period %d", days)
+	}
+	if local, err := s.localArchive(ctx, accountID); local || err != nil {
+		return cmp.Or(err, ErrLocalArchive)
 	}
 	folder, _, err := mailsync.RoleFolder(ctx, s.db, accountID, role)
 	if err != nil {

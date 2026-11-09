@@ -132,11 +132,12 @@ func (r *result) logArrivalBatch(ctx context.Context, db *store.DB, accountID in
 	if err != nil || len(rows.Values) == 0 {
 		return 0, err
 	}
-	var ids []any
+	var ids, older []any
 	var stmts []sqlite.Statement
 	for _, n := range rows.Values {
 		ids = append(ids, n[0])
 		if store.Int(n[5]) == 0 {
+			older = append(older, n[0])
 			continue
 		}
 		stmts = append(stmts, sqlite.Statement{
@@ -157,6 +158,14 @@ func (r *result) logArrivalBatch(ctx context.Context, db *store.DB, accountID in
    WHERE id IN (` + marks(len(ids)) + `) AND security_reason IS NOT 'unverified' AND ` + ownMail,
 		Args: ids,
 	}, sqlite.Statement{SQL: "DELETE FROM message_imports WHERE message_id IN (" + marks(len(ids)) + ")", Args: ids})
+	if len(older) > 0 {
+		// Older mail is not new mail for auto-labeling (labeled_at NULL); only a
+		// rescan the user starts classifies it.
+		stmts = append(stmts, sqlite.Statement{
+			SQL:  "UPDATE messages SET labeled_at = unixepoch() WHERE id IN (" + marks(len(older)) + ") AND labeled_at IS NULL",
+			Args: older,
+		})
+	}
 	if _, err := db.Transaction(ctx, stmts); err != nil {
 		return 0, err
 	}

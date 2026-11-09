@@ -144,6 +144,10 @@ func (p *mailPage) Sidebar(c *ui.Context) {
 				ui.Icon(c, icons.Get("plus")).Size(theme.IconXs, theme.IconXs)
 				ui.Text(c, i18n.T("mail.add_account"))
 			})
+			kit.SidebarItem(c, kit.SidebarItemOpts{Muted: true, Small: true, OnClick: p.newArchive}).Children(func() {
+				ui.Icon(c, icons.Get("archive")).Size(theme.IconXs, theme.IconXs)
+				ui.Text(c, i18n.T("mail.archive.new"))
+			})
 		})
 	})
 }
@@ -209,14 +213,16 @@ func (p *mailPage) account(c *ui.Context, acc core.Account) {
 			p.folderRow(c, f, open)
 		}
 	})
-	row.ContextMenu(func(m *ui.Menu) { p.accountItems(m, acc) })
+	row.ContextMenu(func(m *ui.Menu) { p.accountItems(m, acc, 0) })
 }
 
 // accountItems are a sidebar menu's account entries: sync it now, or edit it
-// in settings.
-func (p *mailPage) accountItems(m *ui.Menu, acc core.Account) {
+// in settings. A local archive's import into folderID instead of syncing.
+func (p *mailPage) accountItems(m *ui.Menu, acc core.Account, folderID int64) {
 	a, id, name := p.a, acc.ID, accountName(acc)
-	if m.Item(i18n.Tf("mail.account_sync", name)).Chosen() {
+	if isArchive(acc) {
+		p.archiveItems(m, acc, folderID)
+	} else if m.Item(i18n.Tf("mail.account_sync", name)).Chosen() {
 		a.do(func(ctx context.Context) error { return a.svc.SyncNow(ctx, id) }, a.toastErr)
 	}
 	if m.Item(i18n.Tf("mail.account_edit", name)).Chosen() {
@@ -303,10 +309,17 @@ func (p *mailPage) folderRow(c *ui.Context, f sideFolder, open *bool) {
 					p.markViewAsRead(core.View{FolderID: f.ID})
 				}
 			}
+			if f.ID != 0 && f.Role == "" && p.a.isArchiveID(f.AccountID) {
+				p.localFolderItems(m, f)
+			}
 			m.Separator()
 		}
 		if acc, ok := p.a.accountByID(f.AccountID); ok {
-			p.accountItems(m, acc)
+			target := int64(0) // an archive imports into the folder, else its inbox
+			if f.Role == "" || f.Role == "inbox" {
+				target = f.ID
+			}
+			p.accountItems(m, acc, target)
 		}
 	})
 }
@@ -382,10 +395,8 @@ func (p *mailPage) compose() {
 func (p *mailPage) newDraft(then func(core.Draft)) {
 	a := p.a
 	acc := p.viewAccount(a.route.View)
-	if i := slices.IndexFunc(a.accounts, func(x core.Account) bool { return x.IsDefault }); acc == 0 && i >= 0 {
-		acc = a.accounts[i].ID
-	} else if acc == 0 && len(a.accounts) > 0 {
-		acc = a.accounts[0].ID
+	if acc == 0 || a.isArchiveID(acc) {
+		acc = a.defaultAccount()
 	}
 	if acc == 0 {
 		return

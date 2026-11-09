@@ -381,7 +381,9 @@ func New(ctx context.Context, opts Options) (*Service, error) {
 		return nil, err
 	}
 	for _, a := range accs {
-		s.startWorker(a.ID)
+		if a.Kind != KindLocalArchive {
+			s.startWorker(a.ID)
+		}
 	}
 	if err := s.ledger.recover(ctx); err != nil {
 		s.Close()
@@ -617,6 +619,9 @@ func (s *Service) SyncNow(ctx context.Context, accountID int64) error {
 		return err
 	}
 	defer end()
+	if local, err := s.localArchive(ctx, accountID); local || err != nil {
+		return err
+	}
 	return s.syncNow(ctx, accountID, true)
 }
 
@@ -658,6 +663,9 @@ func (s *Service) dialAccount(ctx context.Context, accountID int64, h *imapclien
 	acc, err := s.account(ctx, accountID)
 	if err != nil {
 		return nil, nil, nil, err
+	}
+	if acc.Kind == KindLocalArchive {
+		return nil, nil, nil, ErrLocalArchive
 	}
 	if afterAccountRead != nil {
 		afterAccountRead(accountID)

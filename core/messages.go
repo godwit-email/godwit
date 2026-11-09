@@ -864,6 +864,8 @@ var ErrPurgeTooLate = errors.New("cannot undo: messages already permanently dele
 // Trash or Junk; ones elsewhere stay. They leave lists and counts at once, and
 // the push waits UndoPurgeWindow for an UndoPurge. A move out of Trash/Junk
 // before the push cancels it, and the fetch after the push drops the rows.
+// In a local archive they and their originals are deleted at once, with no
+// undo (ADR 0036).
 func (s *Service) DeleteForever(ctx context.Context, ids []int64) error {
 	s.editMu.Lock()
 	defer s.editMu.Unlock()
@@ -893,6 +895,13 @@ func (s *Service) DeleteForever(ctx context.Context, ids []int64) error {
 		stmts = append(stmts, sqlite.Statement{SQL: `INSERT INTO ops(account_id, message_id, kind, src_folder_id, dst_folder_id, payload, depends_on, created_at)
 			VALUES (?, ?, 'purge', ?, ?, ?, ` + latestOp + `, unixepoch())`, Args: []any{acc, m.id, m.folder, m.folder, mailsync.PurgeNowRole(role, due), m.id}})
 	}
+	local, err := s.localArchive(ctx, acc)
+	if err != nil {
+		return err
+	}
+	if local { // no server keeps a copy: deleted now, with no undo (ADR 0036)
+		return s.deleteLocal(ctx, acc, purged)
+	}
 	if err := s.apply(ctx, acc, purged, stmts); err != nil {
 		return err
 	}
@@ -903,7 +912,8 @@ func (s *Service) DeleteForever(ctx context.Context, ids []int64) error {
 // EmptyFolder permanently deletes every message in a trash or junk folder, as
 // DeleteForever, and returns the IDs it queued for an UndoPurge; mail already
 // being deleted is left to its own purge. On an error it returns those queued
-// before it.
+// before it. A local archive's Trash is emptied at once, as DeleteForever
+// does there, and the IDs are nil: nothing is left to undo.
 func (s *Service) EmptyFolder(ctx context.Context, folderID int64) ([]int64, error) {
 	s.editMu.Lock()
 	defer s.editMu.Unlock()
@@ -933,6 +943,12 @@ func (s *Service) EmptyFolder(ctx context.Context, folderID int64) ([]int64, err
 		ts[i] = target{id: ids[i], thread: store.Int(r[1]), folder: folderID}
 		stmts[i] = sqlite.Statement{SQL: `INSERT INTO ops(account_id, message_id, kind, src_folder_id, dst_folder_id, payload, depends_on, created_at)
 			VALUES (?, ?, 'purge', ?, ?, ?, ` + latestOp + `, unixepoch())`, Args: []any{acc, ids[i], folderID, folderID, payload, ids[i]}}
+	}
+	if local, err := s.localArchive(ctx, acc); err != nil || local {
+		if err == nil {
+			err = s.deleteLocal(ctx, acc, ts)
+		}
+		return nil, err // nothing left to undo
 	}
 	defer s.wakeForOps(ctx, acc, now)
 	const chunk = 200

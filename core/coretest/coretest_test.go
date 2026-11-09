@@ -176,3 +176,29 @@ func TestCoretestStartServers(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, "new@example.com", acc.Email)
 }
+
+// Mail delivered right after AddAccount is new mail, with or without the
+// background sync: a receive rule runs on it (at -cpu 1 too).
+func TestCoretestDeliverIsNewMail(t *testing.T) {
+	for name, opts := range map[string][]coretest.Option{"auto": nil, "manual": {coretest.WithoutAutoSync()}} {
+		t.Run(name, func(t *testing.T) {
+			e := coretest.New(t, opts...)
+			acc := e.AddAccount(t, "me@example.com")
+			l, err := e.Svc.CreateLabel(t.Context(), core.LabelInput{Name: "Invoices", Color: "gray", Icon: "folder-3"})
+			require.NoError(t, err)
+			_, err = e.Svc.SaveRule(t.Context(), core.Rule{Enabled: true, Doc: core.RuleDoc{Version: core.RuleVersion, Name: "invoices",
+				Trigger: core.TriggerReceive, Match: core.MatchAll,
+				Conditions: []core.RuleCondition{{Field: core.FieldSubject, Op: core.OpContains, Value: "invoice"}},
+				Actions:    []core.RuleAction{{Kind: core.ActionLabel, Label: l.Slug}}}})
+			require.NoError(t, err)
+			e.Deliver(t, acc.ID, "INBOX", coretest.Msg("billing@example.com", "me@example.com", "New invoice", "b"))
+			ms, err := e.Svc.Search(t.Context(), acc.ID, "invoice", 10)
+			require.NoError(t, err)
+			require.Len(t, ms, 1)
+			require.Eventually(t, func() bool {
+				got, _ := e.Svc.MessageLabels(t.Context(), []int64{ms[0].ID})
+				return len(got[ms[0].ID]) > 0
+			}, 5*time.Second, 20*time.Millisecond)
+		})
+	}
+}

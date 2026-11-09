@@ -132,7 +132,16 @@ func (s *Service) buildDraft(ctx context.Context, accountID int64, mode string, 
 	if err != nil {
 		return Draft{}, err
 	}
-	d := Draft{AccountID: accountID, Mode: mode}
+	if acc.Kind == KindLocalArchive {
+		if mode == "new" {
+			return Draft{}, ErrLocalArchive
+		}
+		// Its mail is answered from the default account that sends (ADR 0036).
+		if acc, err = s.draftAccount(ctx, 0); err != nil {
+			return Draft{}, ErrLocalArchive
+		}
+	}
+	d := Draft{AccountID: acc.ID, Mode: mode}
 	st, err := s.loadSettings(ctx)
 	if err != nil {
 		return Draft{}, err
@@ -208,7 +217,7 @@ func signatureHTML(sig string, cids map[string]bool, delim bool) string {
 // sourceMessage rebuilds what replying and forwarding need from the stored message.
 func (s *Service) sourceMessage(ctx context.Context, accountID, id int64) (*mail.Parsed, error) {
 	rows, err := s.db.Query(ctx, `SELECT message_id, subject, from_addr, reply_to, to_addrs, cc_addrs, date, body_text, body_html
-		FROM messages WHERE id = ? AND account_id = ?`, id, accountID)
+		FROM messages WHERE id = ? AND (account_id = ? OR account_id IN (SELECT id FROM accounts WHERE kind = ?))`, id, accountID, KindLocalArchive) // a local archive's mail is answered from another account (ADR 0036)
 	if err != nil {
 		return nil, err
 	}
@@ -260,6 +269,9 @@ func (s *Service) SaveDraft(ctx context.Context, d Draft) (Draft, error) {
 	if d.ID == 0 {
 		if !draftModes[d.Mode] {
 			return Draft{}, fmt.Errorf("unknown draft mode %q", d.Mode)
+		}
+		if local, err := s.localArchive(ctx, d.AccountID); local || err != nil {
+			return Draft{}, cmp.Or(err, ErrLocalArchive)
 		}
 		r, err := s.db.Execute(ctx, `INSERT INTO drafts(account_id, mode, source_message_id, to_addrs, cc_addrs, bcc_addrs,
 			reply_to, subject, body_html, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,

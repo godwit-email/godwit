@@ -257,7 +257,7 @@ func TestComposeBoundSurface(t *testing.T) {
 	}
 	sort.Strings(names)
 	assert.Equal(t, []string{"AddAttachments", "Answer", "Ask", "CheckCited", "Closed", "Decide", "DecideAll", "DecideWithArgs", "Finish", "Follow", "Latest", "Load",
-		"Models", "OpenCited", "OpenLink", "OpenModels", "RemoveAttachment", "Review", "Rewrite", "Save", "SearchMail", "Send", "SetAccount",
+		"Models", "OpenCited", "OpenLink", "OpenModels", "RemoveAttachment", "Review", "Rewrite", "Save", "SearchContacts", "SearchMail", "Send", "SetAccount",
 		"SetModel", "Skill", "Stop", "Undo", "WitInfo"}, names)
 }
 

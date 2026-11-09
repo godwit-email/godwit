@@ -57,6 +57,9 @@ func (s *Service) SetDraftAccount(ctx context.Context, id, accountID, revision i
 	if err != nil {
 		return Draft{}, err
 	}
+	if acc.Kind == KindLocalArchive {
+		return Draft{}, ErrLocalArchive
+	}
 	s.editMu.Lock()
 	defer s.editMu.Unlock()
 	d, err := s.GetDraft(ctx, id)

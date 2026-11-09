@@ -20,6 +20,7 @@ const (
 	SignaturesChanged = "signatures.changed"
 	ModelsChanged     = "models.changed"    // a plugin model's files were downloaded or removed
 	MCPSendsChanged   = "mcp_sends.changed" // godwit mcp's send requests waiting for the user changed
+	ImportProgress    = "import.progress"   // an .eml import into AccountID handled Done of Total files
 )
 
 // subscriberBuffer is the per-subscriber queue capacity.
@@ -38,6 +39,8 @@ type Event struct {
 	Kind string
 	// ConversationID is set on approvals.changed and runs.changed.
 	ConversationID int64
+	// Done and Total are set on import.progress.
+	Done, Total int
 }
 
 // Bus fans events out to subscribers. Publish never blocks.

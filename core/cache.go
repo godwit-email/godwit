@@ -15,8 +15,19 @@ func (s *Service) cacheDir(accountID int64) string {
 
 // AttachmentCacheUsage is the bytes the account's downloaded attachments take on disk.
 func (s *Service) AttachmentCacheUsage(ctx context.Context, accountID int64) (int64, error) {
+	return dirUsage(ctx, s.cacheDir(accountID))
+}
+
+// ArchiveUsage is the bytes a local archive's originals, and the files
+// extracted from them, take on disk (ADR 0036); 0 for other accounts.
+func (s *Service) ArchiveUsage(ctx context.Context, accountID int64) (int64, error) {
+	return dirUsage(ctx, filepath.Join(s.dataDir, "archive", strconv.FormatInt(accountID, 10)))
+}
+
+// dirUsage is the bytes of the files under dir; 0 if it does not exist.
+func dirUsage(ctx context.Context, dir string) (int64, error) {
 	var n int64
-	err := filepath.WalkDir(s.cacheDir(accountID), func(_ string, d fs.DirEntry, err error) error {
+	err := filepath.WalkDir(dir, func(_ string, d fs.DirEntry, err error) error {
 		if err != nil || d.IsDir() {
 			return err
 		}

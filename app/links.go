@@ -82,15 +82,17 @@ func (a *App) composeTo(addr string) {
 	})
 }
 
-// defaultAccount is the default account's ID, else the first's; 0 for none.
+// defaultAccount is the default account's ID, else the first's that sends; 0 for none.
 func (a *App) defaultAccount() int64 {
 	for _, acc := range a.accounts {
 		if acc.IsDefault {
 			return acc.ID
 		}
 	}
-	if len(a.accounts) > 0 {
-		return a.accounts[0].ID
+	for _, acc := range a.accounts {
+		if !isArchive(acc) { // sends no mail
+			return acc.ID
+		}
 	}
 	return 0
 }

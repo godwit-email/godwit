@@ -50,11 +50,12 @@ type attRow struct {
 	uidValidity             uint32
 	uid                     imap.UID
 	onServer                bool
+	contentHash             string // set for a local archive's message: read from its original
 }
 
 func (s *Service) loadAttachment(ctx context.Context, id int64) (attRow, error) {
 	rows, err := s.db.Query(ctx, `SELECT a.part, a.encoding, a.charset, a.filename, a.content_type, a.size, a.inline, a.cache_path,
-		m.account_id, f.name, l.uidvalidity, l.uid
+		m.account_id, f.name, l.uidvalidity, l.uid, m.content_hash
 		FROM attachments a JOIN messages m ON m.id = a.message_id LEFT JOIN `+serverLocation+`
 		WHERE a.id = ?`, id)
 	if err != nil {
@@ -68,7 +69,7 @@ func (s *Service) loadAttachment(ctx context.Context, id int64) (attRow, error) 
 		info: AttachmentInfo{ID: id, Filename: store.Str(r[3]), ContentType: store.Str(r[4]), Size: int(store.Int(r[5])), Inline: store.Int(r[6]) != 0},
 		part: store.Str(r[0]), encoding: store.Str(r[1]), charset: store.Str(r[2]), cachePath: store.Str(r[7]),
 		accountID: store.Int(r[8]), folder: store.Str(r[9]), uidValidity: uint32(store.Int(r[10])), uid: imap.UID(store.Int(r[11])),
-		onServer: store.Str(r[9]) != "" && r[11] != nil,
+		onServer: store.Str(r[9]) != "" && r[11] != nil, contentHash: store.Str(r[12]),
 	}, nil
 }
 
@@ -140,6 +141,20 @@ func (f *attachmentFetcher) get(id int64) (string, AttachmentInfo, error) {
 	}
 	if err := s.bind(f.ctx, a.accountID); err != nil {
 		return "", AttachmentInfo{}, err
+	}
+	if a.contentHash != "" {
+		// Under the lock deleteLocal holds, and re-read under it: a message
+		// deleted for good meanwhile gets no part written back (ADR 0036).
+		unlock, err := s.lockAccount(f.ctx, a.accountID)
+		if err != nil {
+			return "", AttachmentInfo{}, err
+		}
+		defer unlock()
+		if a, err = s.loadAttachment(f.ctx, id); err != nil {
+			return "", AttachmentInfo{}, err
+		}
+		p, err := s.archivePart(a)
+		return p, a.info, err
 	}
 	if p, ok, err := s.cached(f.ctx, a); ok || err != nil {
 		return p, a.info, err
@@ -286,8 +301,39 @@ func (s *Service) saveAttachment(ctx context.Context, a attRow, data []byte) (st
 	return path, nil
 }
 
+// archivePart is a local archive's attachment, extracted from its original
+// into a file beside it (ADR 0036): no cache row, so eviction and clearing the
+// cache leave it, and it is extracted again if gone.
+func (s *Service) archivePart(a attRow) (string, error) {
+	if int64(a.info.Size) > attachLimit {
+		return "", ErrTooLarge
+	}
+	path, err := filepath.Abs(filepath.Join(s.archivePartsDir(a.accountID, a.contentHash), a.part))
+	if err != nil {
+		return "", err
+	}
+	if _, err := os.Stat(path); err == nil {
+		return path, nil
+	}
+	raw, err := os.ReadFile(s.archivePath(a.accountID, a.contentHash))
+	if err != nil {
+		return "", err
+	}
+	p, err := mail.Parse(raw)
+	if err != nil {
+		return "", err
+	}
+	for _, att := range p.Attachments {
+		if att.Part == a.part { // Parse already undid transfer encoding and charset
+			return path, store.WriteFileAtomic(path, att.Data)
+		}
+	}
+	return "", fmt.Errorf("attachment part %s not in the original", a.part)
+}
+
 // GetRawMessage downloads the message's full original from the server, for a
 // Truncated message or for saving. Messages over MaxMessageBytes give ErrTooLarge.
+// A local archive's message is read from its original file, offline.
 func (s *Service) GetRawMessage(ctx context.Context, messageID int64) ([]byte, error) {
 	ctx, end, err := s.begin(ctx, 0)
 	if err != nil {
@@ -298,7 +344,7 @@ func (s *Service) GetRawMessage(ctx context.Context, messageID int64) ([]byte, e
 	if err != nil {
 		return nil, err
 	}
-	rows, err := s.db.Query(ctx, "SELECT account_id FROM messages WHERE id = ?", messageID)
+	rows, err := s.db.Query(ctx, "SELECT account_id, content_hash FROM messages WHERE id = ?", messageID)
 	if err != nil {
 		return nil, err
 	}
@@ -307,6 +353,9 @@ func (s *Service) GetRawMessage(ctx context.Context, messageID int64) ([]byte, e
 	}
 	if err := s.bind(ctx, store.Int(rows.Values[0][0])); err != nil {
 		return nil, err
+	}
+	if hash := store.Str(rows.Values[0][1]); hash != "" { // a local archive's: its original file
+		return os.ReadFile(s.archivePath(store.Int(rows.Values[0][0]), hash))
 	}
 	unlock, err := s.lockAccount(ctx, store.Int(rows.Values[0][0]))
 	if err != nil {

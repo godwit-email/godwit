@@ -245,7 +245,7 @@ test("a compositionend fired synchronously by the blur still flushes and answers
 const composeAddress = async () => {
   render(<ComposePage />);
   await body();
-  const to = screen.getByRole("textbox", { name: "收件人" });
+  const to = screen.getByRole("combobox", { name: "收件人" });
   to.focus();
   act(() => {
     to.dispatchEvent(new CompositionEvent("compositionstart", { bubbles: true }));
@@ -365,7 +365,7 @@ describe("autosave", () => {
     await act(() => done);
     expect(api.save).not.toHaveBeenCalled();
     expect(api.closed).toHaveBeenCalledWith(6, false);
-    expect(screen.getByRole("textbox", { name: "收件人" })).toHaveValue("ni@example.com");
+    expect(screen.getByRole("combobox", { name: "收件人" })).toHaveValue("ni@example.com");
     expect(screen.queryByRole("button", { name: "移除 ni@example.com" })).not.toBeInTheDocument();
   });
 
@@ -492,7 +492,7 @@ test("send aborts on failed save", async () => {
 test("clicking 发送 commits a typed address", async () => {
   render(<ComposePage />);
   await body();
-  fireEvent.change(screen.getByRole("textbox", { name: "收件人" }), {
+  fireEvent.change(screen.getByRole("combobox", { name: "收件人" }), {
     target: { value: "x@y.z" },
   });
   await userEvent.click(screen.getByRole("button", { name: "发送" }));
@@ -503,7 +503,7 @@ test("clicking 发送 commits a typed address", async () => {
 test("cmd-enter commits pending address", async () => {
   render(<ComposePage />);
   const el = await body();
-  fireEvent.change(screen.getByRole("textbox", { name: "收件人" }), {
+  fireEvent.change(screen.getByRole("combobox", { name: "收件人" }), {
     target: { value: "x@y.z" },
   });
   await act(async () => {
@@ -740,7 +740,9 @@ test("conflict resolution runs once at a time, frozen, and use-latest drops pend
   let give!: (s: ComposeStateT) => void;
   vi.mocked(api.latest).mockImplementation(() => new Promise((r) => (give = r)));
   const el = await conflictBySend();
-  fireEvent.change(screen.getByRole("textbox", { name: "收件人" }), { target: { value: "p@q.r" } });
+  fireEvent.change(screen.getByRole("combobox", { name: "收件人" }), {
+    target: { value: "p@q.r" },
+  });
   fireEvent.click(screen.getByRole("button", { name: "使用最新版本" }));
   expect(el).toHaveAttribute("readonly");
   expect(screen.getByRole("textbox", { name: "主题" })).toHaveAttribute("readonly");
@@ -750,7 +752,7 @@ test("conflict resolution runs once at a time, frozen, and use-latest drops pend
   await act(async () => give({ ...state, body: "最新", revision: 30 }));
   expect(await body()).toHaveValue("最新");
   expect(await body()).not.toHaveAttribute("readonly");
-  expect(screen.getByRole("textbox", { name: "收件人" })).toHaveValue("");
+  expect(screen.getByRole("combobox", { name: "收件人" })).toHaveValue("");
 });
 
 test.each([

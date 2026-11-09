@@ -841,6 +841,7 @@ function Compose({
                 replyTo={f.replyTo}
                 subject={f.subject}
                 onChange={(e: FieldsEdit) => edit(e)}
+                onSearch={api.searchContacts}
                 t={t}
               />
               {/* The body: locked while Wit writes or an edit waits (typing there toasts why, once). */}

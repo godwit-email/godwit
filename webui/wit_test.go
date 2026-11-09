@@ -569,6 +569,31 @@ func TestComposeAskQuotes(t *testing.T) {
 	assert.Equal(t, hits[0].ID, evs[1].Citations[0].MessageID)
 }
 
+// The address fields complete contacts by name or a piece of their address,
+// each hit ready to commit as one address.
+func TestComposeSearchContacts(t *testing.T) {
+	f, _, _ := witFixture(t, "")
+	f.e.Deliver(t, f.acc.ID, "INBOX", coretest.Msg(`"Zhang, San" <zhang@acme.example>`, f.acc.Email, "hi", "x"))
+	for i := range quoteHits {
+		f.e.Deliver(t, f.acc.ID, "INBOX", coretest.Msg(fmt.Sprintf("p%d@many.example", i), f.acc.Email, "hi", "x"))
+	}
+	hits, err := f.page.SearchContacts(f.ctx(1), "zhang, s")
+	require.NoError(t, err)
+	assert.Equal(t, []ContactHit{{Name: "Zhang, San", Address: "zhang@acme.example", Entry: `"Zhang, San" <zhang@acme.example>`}}, hits)
+	hits, err = f.page.SearchContacts(f.ctx(1), "@ACME")
+	require.NoError(t, err)
+	assert.Len(t, hits, 1, "a piece of the address, any case")
+	hits, err = f.page.SearchContacts(f.ctx(1), "many")
+	require.NoError(t, err)
+	assert.Len(t, hits, quoteHits, "capped")
+	assert.Equal(t, hits[0].Address, hits[0].Entry, "no name: the address alone")
+	hits, err = f.page.SearchContacts(f.ctx(1), "  ")
+	require.NoError(t, err)
+	assert.Empty(t, hits, "nothing typed")
+	_, err = f.page.SearchContacts(f.ctx(2), "zhang")
+	assert.Error(t, err, "a window without a draft")
+}
+
 // No model but a translation plugin: the panel shows, for translating alone.
 func TestComposeWitInfoTranslateOnly(t *testing.T) {
 	f := newFixture(t, coretest.WithoutAutoSync())
