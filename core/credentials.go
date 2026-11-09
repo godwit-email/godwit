@@ -12,9 +12,9 @@ import (
 	"sync"
 	"time"
 
+	"github.com/godwit-email/godwit/backend"
 	"github.com/godwit-email/godwit/core/ai"
 	"github.com/godwit-email/godwit/core/auth"
-	"github.com/godwit-email/godwit/core/conn"
 	"github.com/zalando/go-keyring"
 )
 
@@ -312,7 +312,7 @@ func (s *Service) saveRotated(ctx context.Context, id int64, g auth.Grant) error
 
 // graphToken returns a Microsoft Graph access token that sends as the account
 // (its provider's GraphSend), refreshed on every call: a send round asks once.
-// Without that consent it is conn.ErrAuthFailed and pauses the outbox
+// Without that consent it is backend.ErrAuthFailed and pauses the outbox
 // (smtp_reauth) like a refused SMTP login; the account's status is left alone,
 // IMAP still works.
 // ver is the account's credential version.
@@ -334,7 +334,7 @@ func (s *Service) graphToken(ctx context.Context, acc Account) (string, uint64, 
 	rctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), refreshTimeout)
 	g, err := graphGrant(rctx, cfg, rt)
 	cancel()
-	if errors.Is(err, conn.ErrAuthFailed) {
+	if errors.Is(err, backend.ErrAuthFailed) {
 		return "", 0, errors.Join(err, s.ifCurrent(acc.ID, ver, func() error {
 			_, err := s.db.Execute(ctx, "UPDATE accounts SET smtp_reauth = 1 WHERE id = ?", acc.ID)
 			return err
@@ -360,7 +360,7 @@ func grantsScope(scope, want string) bool {
 var errNoGraph = errors.New("the provider does not send through Microsoft Graph")
 
 // graphGrant trades rt for an access token to cfg.GraphSend. A refusal, or a
-// grant without that scope (the user never consented to it), is conn.ErrAuthFailed.
+// grant without that scope (the user never consented to it), is backend.ErrAuthFailed.
 func graphGrant(ctx context.Context, cfg auth.OAuthConfig, rt string) (auth.Grant, error) {
 	if cfg.GraphSend == "" {
 		return auth.Grant{}, errNoGraph
@@ -371,7 +371,7 @@ func graphGrant(ctx context.Context, cfg auth.OAuthConfig, rt string) (auth.Gran
 	}
 	g, err := auth.RefreshForm(ctx, cfg, http.DefaultClient, rt)
 	if errors.Is(err, auth.ErrInvalidGrant) || err == nil && g.Scope != "" && !grantsScope(g.Scope, cfg.GraphSend) {
-		return auth.Grant{}, fmt.Errorf("graph token: %w", conn.ErrAuthFailed)
+		return auth.Grant{}, fmt.Errorf("graph token: %w", backend.ErrAuthFailed)
 	}
 	return g, err
 }

@@ -7,8 +7,8 @@ import (
 	"slices"
 	"testing"
 
+	"github.com/godwit-email/godwit/backend/conn"
 	"github.com/godwit-email/godwit/core/auth"
-	"github.com/godwit-email/godwit/core/conn"
 )
 
 type fakeResolver struct {

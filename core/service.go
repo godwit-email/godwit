@@ -21,11 +21,12 @@ import (
 	"time"
 
 	"github.com/emersion/go-imap/v2/imapclient"
+	"github.com/godwit-email/godwit/backend"
+	"github.com/godwit-email/godwit/backend/conn"
 	"github.com/godwit-email/godwit/backend/imapbackend"
 	"github.com/godwit-email/godwit/core/ai"
 	"github.com/godwit-email/godwit/core/ai/mask"
 	"github.com/godwit-email/godwit/core/ai/mask/guard"
-	"github.com/godwit-email/godwit/core/conn"
 	"github.com/godwit-email/godwit/core/events"
 	"github.com/godwit-email/godwit/core/mailsync"
 	"github.com/godwit-email/godwit/core/plugins"
@@ -685,13 +686,13 @@ func (s *Service) dialAccount(ctx context.Context, accountID int64, h *imapclien
 		c, abort, err = conn.DialIMAPAbortable(ctx, conn.Endpoint{Host: acc.Receiving.Host, Port: acc.Receiving.Port, Security: acc.Receiving.Security,
 			Username: acc.Username, Password: pw, AccessToken: tok}, h)
 		// A refused access token may just be stale: refresh it and try once more.
-		if rejected != "" || tok == "" || !errors.Is(err, conn.ErrAuthFailed) {
+		if rejected != "" || tok == "" || !errors.Is(err, backend.ErrAuthFailed) {
 			break
 		}
 		rejected = tok
 	}
 	if err != nil {
-		if errors.Is(err, conn.ErrAuthFailed) {
+		if errors.Is(err, backend.ErrAuthFailed) {
 			err = errors.Join(err, s.ifCurrent(accountID, ver, func() error {
 				return s.setStatus(ctx, accountID, "reauth_required", "auth_rejected")
 			}))
@@ -740,7 +741,7 @@ func (s *Service) syncAccount(ctx context.Context, accountID int64, explicit boo
 	useSMTP, smtpErr := s.checkSMTP(ctx, accountID, explicit)
 	if useSMTP {
 		smtpErr = s.processOutbox(ctx, c, accountID)
-		if smtpErr != nil && !errors.Is(smtpErr, conn.ErrAuthFailed) {
+		if smtpErr != nil && !errors.Is(smtpErr, backend.ErrAuthFailed) {
 			return smtpErr
 		}
 	}
@@ -806,7 +807,7 @@ func (s *Service) checkSMTP(ctx context.Context, accountID int64, explicit bool)
 		return err
 	}
 	err = dial(ep)
-	if s.toGraph(ctx, accountID, err) || errors.Is(err, conn.ErrAuthFailed) && ep.AccessToken != "" {
+	if s.toGraph(ctx, accountID, err) || errors.Is(err, backend.ErrAuthFailed) && ep.AccessToken != "" {
 		if ep, _, _, err = s.smtpEndpoint(ctx, accountID, ep.AccessToken); err == nil {
 			err = dial(ep)
 		}

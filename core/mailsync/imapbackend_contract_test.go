@@ -11,8 +11,8 @@ import (
 	"github.com/emersion/go-imap/v2/imapclient"
 	"github.com/godwit-email/godwit/backend"
 	"github.com/godwit-email/godwit/backend/backendtest"
+	"github.com/godwit-email/godwit/backend/conn"
 	"github.com/godwit-email/godwit/backend/imapbackend"
-	"github.com/godwit-email/godwit/core/conn"
 	"github.com/godwit-email/godwit/core/internal/testmail"
 )
 

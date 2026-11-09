@@ -15,7 +15,8 @@ import (
 
 	"github.com/emersion/go-imap/v2"
 	"github.com/emersion/go-imap/v2/imapclient"
-	"github.com/godwit-email/godwit/core/conn"
+	"github.com/godwit-email/godwit/backend"
+	"github.com/godwit-email/godwit/backend/conn"
 	"github.com/godwit-email/godwit/core/internal/testmail"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -99,7 +100,7 @@ func TestAuthErrorsDoNotLeakServerText(t *testing.T) {
 		}
 	})
 	_, err := conn.DialIMAP(context.Background(), imapEcho)
-	require.ErrorIs(t, err, conn.ErrAuthFailed)
+	require.ErrorIs(t, err, backend.ErrAuthFailed)
 	assert.NotContains(t, err.Error(), "hunter2")
 
 	smtpEcho := fake(t, func(c net.Conn) {
@@ -111,7 +112,7 @@ func TestAuthErrorsDoNotLeakServerText(t *testing.T) {
 		c.Write([]byte("535 5.7.8 password hunter2 rejected\r\n"))
 	})
 	_, err = conn.DialSMTP(context.Background(), smtpEcho)
-	require.ErrorIs(t, err, conn.ErrAuthFailed)
+	require.ErrorIs(t, err, backend.ErrAuthFailed)
 	assert.NotContains(t, err.Error(), "hunter2")
 	assert.NotErrorIs(t, err, conn.ErrSMTPAuthDisabled)
 }
@@ -128,7 +129,7 @@ func TestSMTPAuthDisabled(t *testing.T) {
 	})
 	_, err := conn.DialSMTP(context.Background(), e)
 	require.ErrorIs(t, err, conn.ErrSMTPAuthDisabled)
-	require.ErrorIs(t, err, conn.ErrAuthFailed)
+	require.ErrorIs(t, err, backend.ErrAuthFailed)
 	assert.Equal(t, conn.FailureAuth, conn.Classify(err))
 }
 
@@ -235,7 +236,7 @@ func TestSMTPLoginWhenPlainNotOffered(t *testing.T) {
 
 	e.Password = "wrong"
 	_, err = conn.DialSMTP(context.Background(), e)
-	require.ErrorIs(t, err, conn.ErrAuthFailed)
+	require.ErrorIs(t, err, backend.ErrAuthFailed)
 	assert.Equal(t, 2, in.AuthAttempts())
 }
 
@@ -268,11 +269,11 @@ func TestXOAuth2IMAPAndSMTP(t *testing.T) {
 
 	ie.AccessToken, se.AccessToken = "bad", "bad"
 	_, err = conn.DialIMAP(ctx, ie)
-	require.ErrorIs(t, err, conn.ErrAuthFailed)
+	require.ErrorIs(t, err, backend.ErrAuthFailed)
 	assert.NotContains(t, err.Error(), "bad")
 	assert.EqualValues(t, 2, im.Logins())
 	_, err = conn.DialSMTP(ctx, se)
-	require.ErrorIs(t, err, conn.ErrAuthFailed)
+	require.ErrorIs(t, err, backend.ErrAuthFailed)
 	assert.NotContains(t, err.Error(), "bad")
 
 	// servers without XOAUTH2
@@ -281,9 +282,9 @@ func TestXOAuth2IMAPAndSMTP(t *testing.T) {
 	ie, se = endpoint(t, plainIMAP.Addr), endpoint(t, plainSMTP)
 	ie.AccessToken, se.AccessToken = "tok", "tok"
 	_, err = conn.DialIMAP(ctx, ie)
-	require.ErrorIs(t, err, conn.ErrAuthFailed)
+	require.ErrorIs(t, err, backend.ErrAuthFailed)
 	_, err = conn.DialSMTP(ctx, se)
-	require.ErrorIs(t, err, conn.ErrAuthFailed)
+	require.ErrorIs(t, err, backend.ErrAuthFailed)
 }
 
 func TestXOAuth2InitialResponse(t *testing.T) {

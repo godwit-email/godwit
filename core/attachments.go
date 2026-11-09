@@ -16,8 +16,9 @@ import (
 
 	"github.com/emersion/go-imap/v2"
 	"github.com/emersion/go-imap/v2/imapclient"
+	"github.com/godwit-email/godwit/backend"
+	"github.com/godwit-email/godwit/backend/conn"
 	"github.com/godwit-email/godwit/backend/imapbackend"
-	"github.com/godwit-email/godwit/core/conn"
 	"github.com/godwit-email/godwit/core/events"
 	"github.com/godwit-email/godwit/core/mail"
 	"github.com/godwit-email/godwit/core/store"
@@ -230,7 +231,7 @@ func (f *attachmentFetcher) fetch(a attRow) ([]byte, error) {
 func (f *attachmentFetcher) fetchOnce(a attRow) ([]byte, error) {
 	if f.conn == nil {
 		// A refused login or a server that stays away is not worth a dial per file.
-		if f.dialFails == 2 || errors.Is(f.dialErr, conn.ErrAuthFailed) {
+		if f.dialFails == 2 || errors.Is(f.dialErr, backend.ErrAuthFailed) {
 			return nil, f.dialErr
 		}
 		c, release, abort, err := f.s.dialDownload(f.ctx, a.accountID)
@@ -407,7 +408,7 @@ func (s *Service) download(ctx context.Context, a attRow) ([]byte, error) {
 // dialDownload is dialAccount for a download; a refused login is shown like a sync's.
 func (s *Service) dialDownload(ctx context.Context, accountID int64) (c *imapclient.Client, release, abort func(), err error) {
 	c, release, abort, err = s.dialAccount(ctx, accountID, nil)
-	if errors.Is(err, conn.ErrAuthFailed) {
+	if errors.Is(err, backend.ErrAuthFailed) {
 		s.bus.Publish(events.Event{Type: events.SyncFailed, AccountID: accountID, Error: err.Error(), Kind: string(conn.FailureAuth)})
 	}
 	return c, release, abort, err

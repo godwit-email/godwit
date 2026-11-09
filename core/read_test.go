@@ -13,7 +13,7 @@ import (
 	"time"
 
 	"github.com/emersion/go-imap/v2"
-	"github.com/godwit-email/godwit/core/conn"
+	"github.com/godwit-email/godwit/backend"
 	"github.com/godwit-email/godwit/core/events"
 	"github.com/godwit-email/godwit/core/internal/testmail"
 	gomail "github.com/godwit-email/godwit/core/mail"
@@ -865,7 +865,7 @@ func TestAuthFailureDuringDownload(t *testing.T) {
 	ch, unsub := e.s.Subscribe()
 	defer unsub()
 	_, _, err := e.s.GetAttachment(bg, aid)
-	assert.ErrorIs(t, err, conn.ErrAuthFailed)
+	assert.ErrorIs(t, err, backend.ErrAuthFailed)
 	acc, _ := e.s.account(bg, e.acc.ID)
 	assert.Equal(t, "reauth_required", acc.Status)
 	assert.Len(t, ofType(collect(ch), events.SyncFailed), 1)

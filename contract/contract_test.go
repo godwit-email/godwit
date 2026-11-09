@@ -18,11 +18,11 @@ import (
 	"testing"
 	"time"
 
+	"github.com/godwit-email/godwit/backend"
 	"github.com/godwit-email/godwit/contract"
 	"github.com/godwit-email/godwit/core"
 	"github.com/godwit-email/godwit/core/ai"
 	"github.com/godwit-email/godwit/core/auth"
-	"github.com/godwit-email/godwit/core/conn"
 	"github.com/godwit-email/godwit/core/coretest"
 	"github.com/godwit-email/godwit/ownerlock"
 	"github.com/godwit-email/godwit/rpc"
@@ -239,7 +239,7 @@ var sentinels = map[string]error{
 	"needs_answer":    core.ErrNeedsAnswer,
 	"skill_not_found": core.ErrSkillNotFound, "closed": core.ErrClosed, "canceled": context.Canceled,
 	"deadline": context.DeadlineExceeded, "oauth_not_configured": auth.ErrOAuthNotConfigured,
-	"auth_failed": conn.ErrAuthFailed, "flow_expired": auth.ErrFlowExpired, "invalid_grant": auth.ErrInvalidGrant, "access_denied": auth.ErrAccessDenied,
+	"auth_failed": backend.ErrAuthFailed, "flow_expired": auth.ErrFlowExpired, "invalid_grant": auth.ErrInvalidGrant, "access_denied": auth.ErrAccessDenied,
 }
 
 // errInfo is what callers can learn from err with errors.Is and errors.As:

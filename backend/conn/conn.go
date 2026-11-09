@@ -1,4 +1,5 @@
-// Package conn dials and authenticates IMAP and SMTP connections.
+// Package conn dials and authenticates IMAP and SMTP connections for the
+// protocol backends.
 package conn
 
 import (
@@ -19,6 +20,7 @@ import (
 	"github.com/emersion/go-message/charset"
 	"github.com/emersion/go-sasl"
 	"github.com/emersion/go-smtp"
+	"github.com/godwit-email/godwit/backend"
 	"github.com/godwit-email/godwit/internal/sysproxy"
 )
 
@@ -33,11 +35,7 @@ const (
 
 const timeout = 30 * time.Second
 
-// ErrAuthFailed means the server rejected the credentials. Server text is never
-// included, because servers may echo the submitted password.
-var ErrAuthFailed = errors.New("authentication failed")
-
-// ErrSMTPAuthDisabled is an ErrAuthFailed whose server said SMTP AUTH is turned
+// ErrSMTPAuthDisabled is a backend.ErrAuthFailed whose server said SMTP AUTH is turned
 // off for the mailbox (Microsoft's 535 5.7.139), not that the credentials are wrong.
 var ErrSMTPAuthDisabled = errors.New("SMTP AUTH is disabled for the mailbox")
 
@@ -114,7 +112,7 @@ func (e Endpoint) open(ctx context.Context, implicitTLS bool) (net.Conn, context
 
 // loginErr maps a failure of LOGIN/AUTH to an error without server text: context
 // and network errors are kept, everything else (status replies, malformed or
-// unexpected protocol data, which may echo the password) becomes ErrAuthFailed.
+// unexpected protocol data, which may echo the password) becomes backend.ErrAuthFailed.
 func loginErr(ctx context.Context, proto string, err error) error {
 	var ne net.Error
 	switch {
@@ -124,9 +122,9 @@ func loginErr(ctx context.Context, proto string, err error) error {
 		return fmt.Errorf("%s login: %w", proto, err)
 	}
 	if se, ok := errors.AsType[*smtp.SMTPError](err); ok && se.EnhancedCode == (smtp.EnhancedCode{5, 7, 139}) {
-		return fmt.Errorf("%s: %w: %w", proto, ErrSMTPAuthDisabled, ErrAuthFailed)
+		return fmt.Errorf("%s: %w: %w", proto, ErrSMTPAuthDisabled, backend.ErrAuthFailed)
 	}
-	return fmt.Errorf("%s: %w", proto, ErrAuthFailed)
+	return fmt.Errorf("%s: %w", proto, backend.ErrAuthFailed)
 }
 
 // connectErr is ctxErr for a failure before login. The reader may already have
@@ -233,7 +231,7 @@ func imapLogin(c *imapclient.Client, e Endpoint) error {
 		return err
 	}
 	if !caps.Has("AUTH=XOAUTH2") {
-		return ErrAuthFailed
+		return backend.ErrAuthFailed
 	}
 	return c.Authenticate(NewXOAuth2Client(e.Username, e.AccessToken))
 }
@@ -250,7 +248,7 @@ func smtpAuth(c *smtp.Client, e Endpoint) error {
 		if err := c.Noop(); err != nil {
 			return err
 		}
-		return ErrAuthFailed
+		return backend.ErrAuthFailed
 	}
 	return c.Auth(NewXOAuth2Client(e.Username, e.AccessToken))
 }

@@ -15,7 +15,8 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/godwit-email/godwit/core/conn"
+	"github.com/godwit-email/godwit/backend"
+	"github.com/godwit-email/godwit/backend/conn"
 )
 
 // GraphHost marks an Endpoint that sends through Microsoft Graph with its
@@ -40,7 +41,7 @@ var graphClient = &http.Client{Timeout: 5 * time.Minute, Transport: func() *http
 
 // SendGraph submits raw to rcpts through Graph's sendMail, with the same
 // errors as Send: ErrUncertain once the whole request went out without an
-// answer, conn.ErrAuthFailed for a refused token, a *RejectedError (5xx) for a
+// answer, backend.ErrAuthFailed for a refused token, a *RejectedError (5xx) for a
 // refused message. Graph takes recipients from the headers, so rcpts not in
 // To or Cc are added as Bcc to the copy Graph gets (Exchange strips it).
 func SendGraph(ctx context.Context, token string, rcpts []string, raw []byte) error {
@@ -70,7 +71,7 @@ func SendGraph(ctx context.Context, token string, rcpts []string, raw []byte) er
 	case c == http.StatusAccepted:
 		return nil
 	case c == http.StatusUnauthorized, c == http.StatusForbidden: // no Mail.Send consent, or a stale token
-		return fmt.Errorf("graph: %w", conn.ErrAuthFailed)
+		return fmt.Errorf("graph: %w", backend.ErrAuthFailed)
 	case c == http.StatusGatewayTimeout: // the backend may have taken it
 		return fmt.Errorf("%w: graph answered %d", ErrUncertain, c)
 	case c == http.StatusTooManyRequests, c >= 500:

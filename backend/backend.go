@@ -20,7 +20,7 @@ import (
 // ErrAuthFailed means the server refused the credentials. Core then refreshes
 // a token and retries, or marks the account as needing reauthorization.
 // Wrap it; server text is never matched.
-var ErrAuthFailed = errors.New("backend: authentication failed")
+var ErrAuthFailed = errors.New("authentication failed")
 
 // ErrUnsupported is Watch's answer when the server cannot push: core polls at
 // Description.PollInterval instead.

@@ -12,7 +12,7 @@ import (
 	"time"
 
 	"github.com/emersion/go-imap/v2"
-	"github.com/godwit-email/godwit/core/conn"
+	"github.com/godwit-email/godwit/backend"
 	"github.com/godwit-email/godwit/core/events"
 	"github.com/godwit-email/godwit/core/internal/testmail"
 	"github.com/godwit-email/godwit/core/store"
@@ -503,7 +503,7 @@ func TestSMTPAuthFailurePausesOnlyOutbox(t *testing.T) {
 	default:
 	}
 
-	assert.ErrorIs(t, e.s.SyncNow(bg, e.acc.ID), conn.ErrAuthFailed)
+	assert.ErrorIs(t, e.s.SyncNow(bg, e.acc.ID), backend.ErrAuthFailed)
 	assert.Equal(t, 2, e.smtp.AuthAttempts()-base, "an explicit sync tries SMTP once")
 	assert.Empty(t, e.smtp.Messages())
 

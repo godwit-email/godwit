@@ -19,7 +19,8 @@ import (
 
 	"github.com/emersion/go-imap/v2"
 	"github.com/emersion/go-imap/v2/imapclient"
-	"github.com/godwit-email/godwit/core/conn"
+	"github.com/godwit-email/godwit/backend"
+	"github.com/godwit-email/godwit/backend/conn"
 	"github.com/godwit-email/godwit/core/events"
 	"github.com/godwit-email/godwit/core/internal/testmail"
 	"github.com/godwit-email/godwit/core/mailsync"
@@ -427,7 +428,7 @@ func TestSyncAuthFailureNeedsReauth(t *testing.T) {
 	ch, unsub := e.s.Subscribe()
 	defer unsub()
 	err := e.s.SyncNow(bg, e.acc.ID)
-	require.ErrorIs(t, err, conn.ErrAuthFailed)
+	require.ErrorIs(t, err, backend.ErrAuthFailed)
 	acc, aerr := e.s.account(bg, e.acc.ID)
 	require.NoError(t, aerr)
 	assert.Equal(t, "reauth_required", acc.Status)

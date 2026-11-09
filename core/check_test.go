@@ -9,8 +9,9 @@ import (
 	"net/url"
 	"testing"
 
+	"github.com/godwit-email/godwit/backend"
+	"github.com/godwit-email/godwit/backend/conn"
 	"github.com/godwit-email/godwit/core"
-	"github.com/godwit-email/godwit/core/conn"
 	"github.com/godwit-email/godwit/internal/sysproxy"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -77,7 +78,7 @@ func TestCheckThroughRefusingProxy(t *testing.T) {
 	require.True(t, errors.As(err, &ce), "%v", err)
 	assert.Equal(t, conn.FailureProxyRefused, ce.Report.Steps[1].Kind)
 	assert.Contains(t, ce.Report.Steps[1].Detail, "403")
-	assert.NotErrorIs(t, err, conn.ErrAuthFailed)
+	assert.NotErrorIs(t, err, backend.ErrAuthFailed)
 }
 
 func TestCheckInvalidSettings(t *testing.T) {
@@ -100,7 +101,7 @@ func TestAddAccountReturnsCheckError(t *testing.T) {
 	var ce *core.CheckError
 	require.True(t, errors.As(err, &ce))
 	assert.Equal(t, conn.FailureAuth, ce.Report.Steps[1].Kind)
-	assert.ErrorIs(t, err, conn.ErrAuthFailed)
+	assert.ErrorIs(t, err, backend.ErrAuthFailed)
 	assert.Zero(t, rowCount(t, s))
 }
 

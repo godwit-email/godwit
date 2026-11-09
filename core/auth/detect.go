@@ -9,7 +9,7 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/godwit-email/godwit/core/conn"
+	"github.com/godwit-email/godwit/backend/conn"
 	"github.com/godwit-email/mailservers"
 )
 
