@@ -3,6 +3,7 @@ package core_test
 import (
 	"crypto/sha256"
 	"encoding/hex"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -171,4 +172,23 @@ func TestLocalArchiveEmptyTrashRacingReimportKeepsOriginal(t *testing.T) {
 		_, err = s.EmptyFolder(ctx, trash.ID)
 		require.NoError(t, err)
 	}
+}
+
+// A Trash holding more mail than SQLite binds in one statement still empties.
+func TestLocalArchiveEmptyLargeTrash(t *testing.T) {
+	s := newTestService(t)
+	acc, _ := newArchive(t, s)
+	trash, _ := folderNamed(t, s, acc.ID, "Trash")
+	const n = 33000 // over SQLite's default 32766 bound variables
+	require.NoError(t, s.ExecForTest(fmt.Sprintf(`WITH RECURSIVE i(x) AS (SELECT 1 UNION ALL SELECT x+1 FROM i WHERE x < %d)
+		INSERT INTO messages(account_id, subject, date, content_hash) SELECT %d, 'old', x, printf('h%%d', x) FROM i`, n, acc.ID)))
+	require.NoError(t, s.ExecForTest(fmt.Sprintf(`INSERT INTO message_locations(message_id, folder_id, shown, entered_at, date)
+		SELECT id, %d, 1, 0, date FROM messages WHERE account_id = %d`, trash.ID, acc.ID)))
+	trash, _ = folderNamed(t, s, acc.ID, "Trash")
+	require.Equal(t, n, trash.Total)
+
+	_, err := s.EmptyFolder(ctx, trash.ID)
+	require.NoError(t, err)
+	trash, _ = folderNamed(t, s, acc.ID, "Trash")
+	require.Zero(t, trash.Total)
 }

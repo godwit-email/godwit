@@ -217,15 +217,17 @@ func (s *Service) deleteLocal(ctx context.Context, accountID int64, ts []target)
 	for i, m := range ts {
 		ids[i] = m.id
 	}
-	hashes, tids, err := mailsync.DeleteLocal(ctx, s.db, accountID, ids)
-	if err != nil {
-		return err
-	}
-	s.bus.Publish(events.Event{Type: events.MessagesChanged, AccountID: accountID, MessageIDs: ids,
-		ThreadIDs: slices.Compact(slices.Sorted(slices.Values(tids)))})
-	for _, h := range hashes {
-		os.Remove(s.archivePath(accountID, h))
-		os.RemoveAll(s.archivePartsDir(accountID, h))
+	for chunk := range slices.Chunk(ids, 500) { // under SQLite's bound-variable limit
+		hashes, tids, err := mailsync.DeleteLocal(ctx, s.db, accountID, chunk)
+		if err != nil {
+			return err
+		}
+		s.bus.Publish(events.Event{Type: events.MessagesChanged, AccountID: accountID, MessageIDs: chunk,
+			ThreadIDs: slices.Compact(slices.Sorted(slices.Values(tids)))})
+		for _, h := range hashes {
+			os.Remove(s.archivePath(accountID, h))
+			os.RemoveAll(s.archivePartsDir(accountID, h))
+		}
 	}
 	return nil
 }
