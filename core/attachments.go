@@ -14,10 +14,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/emersion/go-imap/v2"
-	"github.com/emersion/go-imap/v2/imapclient"
-	"github.com/godwit-email/godwit/backend/imapbackend"
-	"github.com/godwit-email/godwit/core/conn"
+	"github.com/godwit-email/godwit/backend"
+	"github.com/godwit-email/godwit/backend/conn"
 	"github.com/godwit-email/godwit/core/events"
 	"github.com/godwit-email/godwit/core/mail"
 	"github.com/godwit-email/godwit/core/store"
@@ -47,16 +45,14 @@ type attRow struct {
 	part, encoding, charset string
 	cachePath               string
 	accountID               int64
-	folder                  string
-	uidValidity             uint32
-	uid                     imap.UID
+	at                      backend.Location
 	onServer                bool
 	contentHash             string // set for a local archive's message: read from its original
 }
 
 func (s *Service) loadAttachment(ctx context.Context, id int64) (attRow, error) {
 	rows, err := s.db.Query(ctx, `SELECT a.part, a.encoding, a.charset, a.filename, a.content_type, a.size, a.inline, a.cache_path,
-		m.account_id, f.name, l.server_ref, m.content_hash
+		m.account_id, f.server_ref, l.server_ref, m.content_hash
 		FROM attachments a JOIN messages m ON m.id = a.message_id LEFT JOIN `+serverLocation+`
 		WHERE a.id = ?`, id)
 	if err != nil {
@@ -66,11 +62,10 @@ func (s *Service) loadAttachment(ctx context.Context, id int64) (attRow, error) 
 		return attRow{}, errors.New("attachment not found")
 	}
 	r := rows.Values[0]
-	validity, uid := imapbackend.Decode(store.Str(r[10]))
 	return attRow{
 		info: AttachmentInfo{ID: id, Filename: store.Str(r[3]), ContentType: store.Str(r[4]), Size: int(store.Int(r[5])), Inline: store.Int(r[6]) != 0},
 		part: store.Str(r[0]), encoding: store.Str(r[1]), charset: store.Str(r[2]), cachePath: store.Str(r[7]),
-		accountID: store.Int(r[8]), folder: store.Str(r[9]), uidValidity: validity, uid: imap.UID(uid),
+		accountID: store.Int(r[8]), at: location(r[9], r[10]),
 		onServer: store.Str(r[9]) != "" && r[10] != nil, contentHash: store.Str(r[11]),
 	}, nil
 }
@@ -115,13 +110,11 @@ type attachmentFetcher struct {
 	dialErr   error
 }
 
-// downloadConn is a logged-in connection with the folder selected on it.
+// downloadConn is a signed-in receiving session.
 type downloadConn struct {
-	owner          *attachmentFetcher
-	c              *imapclient.Client
-	release, abort func()
-	folder         string
-	uidValidity    uint32
+	owner   *attachmentFetcher
+	recv    backend.Receiver
+	release func()
 }
 
 func (s *Service) newAttachmentFetcher(ctx context.Context) *attachmentFetcher {
@@ -230,23 +223,17 @@ func (f *attachmentFetcher) fetch(a attRow) ([]byte, error) {
 func (f *attachmentFetcher) fetchOnce(a attRow) ([]byte, error) {
 	if f.conn == nil {
 		// A refused login or a server that stays away is not worth a dial per file.
-		if f.dialFails == 2 || errors.Is(f.dialErr, conn.ErrAuthFailed) {
+		if f.dialFails == 2 || errors.Is(f.dialErr, backend.ErrAuthFailed) {
 			return nil, f.dialErr
 		}
-		c, release, abort, err := f.s.dialDownload(f.ctx, a.accountID)
+		recv, release, err := f.s.dialDownload(f.ctx, a.accountID)
 		if err != nil {
 			f.dialFails, f.dialErr = f.dialFails+1, err
 			return nil, err
 		}
-		f.conn, f.dialFails = &downloadConn{owner: f, c: c, release: release, abort: abort}, 0
+		f.conn, f.dialFails = &downloadConn{owner: f, recv: recv, release: release}, 0
 	}
-	if f.conn.folder != a.folder || f.conn.uidValidity != a.uidValidity {
-		if err := selectFolder(f.conn.c, a.folder, a.uidValidity); err != nil {
-			return nil, err
-		}
-		f.conn.folder, f.conn.uidValidity = a.folder, a.uidValidity
-	}
-	return fetchSection(f.conn.c, f.conn.abort, a.uid, a.part, a.encoding)
+	return fetchPart(f.ctx, f.conn.recv, a)
 }
 
 func (f *attachmentFetcher) hangUp() {
@@ -365,7 +352,7 @@ func (s *Service) GetRawMessage(ctx context.Context, messageID int64) ([]byte, e
 	}
 	defer unlock()
 	// Read under the lock: a sync may have moved or deleted it meanwhile.
-	rows, err = s.db.Query(ctx, `SELECT m.account_id, f.name, l.server_ref, m.size
+	rows, err = s.db.Query(ctx, `SELECT m.account_id, f.server_ref, l.server_ref, m.size
 		FROM messages m LEFT JOIN `+serverLocation+` WHERE m.id = ?`, messageID)
 	if err != nil {
 		return nil, err
@@ -380,8 +367,13 @@ func (s *Service) GetRawMessage(ctx context.Context, messageID int64) ([]byte, e
 	if store.Str(r[1]) == "" || r[2] == nil {
 		return nil, ErrNotOnServerYet
 	}
-	validity, uid := imapbackend.Decode(store.Str(r[2]))
-	return s.download(ctx, attRow{accountID: store.Int(r[0]), folder: store.Str(r[1]), uidValidity: validity, uid: imap.UID(uid)})
+	return s.download(ctx, attRow{accountID: store.Int(r[0]), at: location(r[1], r[2])})
+}
+
+// location is the server location in a folder's and a message location's
+// server_ref columns.
+func location(folder, ref any) backend.Location {
+	return backend.Location{Folder: backend.FolderRef(store.Str(folder)), Ref: backend.MessageRef(store.Str(ref))}
 }
 
 func (s *Service) touch(ctx context.Context, id int64) error {
@@ -392,12 +384,12 @@ func (s *Service) touch(ctx context.Context, id int64) error {
 // download fetches the raw (still transfer-encoded) part from the server, or the
 // whole message when a.part is empty.
 func (s *Service) download(ctx context.Context, a attRow) ([]byte, error) {
-	c, release, abort, err := s.dialDownload(ctx, a.accountID)
+	recv, release, err := s.dialDownload(ctx, a.accountID)
 	if err != nil {
 		return nil, err
 	}
 	defer release()
-	data, err := fetchPart(c, abort, a.folder, a.uidValidity, a.uid, a.part, a.encoding)
+	data, err := fetchPart(ctx, recv, a)
 	if err != nil && ctx.Err() != nil {
 		return nil, ctx.Err()
 	}
@@ -405,74 +397,24 @@ func (s *Service) download(ctx context.Context, a attRow) ([]byte, error) {
 }
 
 // dialDownload is dialAccount for a download; a refused login is shown like a sync's.
-func (s *Service) dialDownload(ctx context.Context, accountID int64) (c *imapclient.Client, release, abort func(), err error) {
-	c, release, abort, err = s.dialAccount(ctx, accountID, nil)
-	if errors.Is(err, conn.ErrAuthFailed) {
+func (s *Service) dialDownload(ctx context.Context, accountID int64) (recv backend.Receiver, release func(), err error) {
+	recv, release, err = s.dialAccount(ctx, accountID)
+	if errors.Is(err, backend.ErrAuthFailed) {
 		s.bus.Publish(events.Event{Type: events.SyncFailed, AccountID: accountID, Error: err.Error(), Kind: string(conn.FailureAuth)})
 	}
-	return c, release, abort, err
+	return recv, release, err
 }
 
-// fetchPart streams the part and undoes its transfer encoding on the fly. Once
-// more than attachLimit decoded bytes arrive it cuts the connection with abort
-// and returns ErrTooLarge.
-func fetchPart(c *imapclient.Client, abort func(), folder string, uidValidity uint32, uid imap.UID, part, encoding string) ([]byte, error) {
-	if err := selectFolder(c, folder, uidValidity); err != nil {
-		return nil, err
-	}
-	return fetchSection(c, abort, uid, part, encoding)
-}
-
-// selectFolder opens folder read-only, failing if it is not the one synced.
-func selectFolder(c *imapclient.Client, folder string, uidValidity uint32) error {
-	sel, err := c.Select(folder, &imap.SelectOptions{ReadOnly: true}).Wait()
+// fetchPart streams a's part, or the whole message when a.part is empty, and
+// undoes its transfer encoding on the fly. Once more than attachLimit decoded
+// bytes arrive it stops, which cuts the download, and returns ErrTooLarge.
+func fetchPart(ctx context.Context, recv backend.Receiver, a attRow) ([]byte, error) {
+	rc, err := recv.Fetch(ctx, backend.ContentRequest{Location: a.at, Part: backend.PartRef(a.part)})
 	if err != nil {
-		return err
-	}
-	if sel.UIDValidity != uidValidity {
-		return errors.New("server folder changed since sync; sync again")
-	}
-	return nil
-}
-
-// fetchSection is fetchPart in the already selected folder.
-func fetchSection(c *imapclient.Client, abort func(), uid imap.UID, part, encoding string) ([]byte, error) {
-	var path []int // none: the whole message
-	if part != "" {
-		for p := range strings.SplitSeq(part, ".") {
-			n, err := strconv.Atoi(p)
-			if err != nil {
-				return nil, errors.New("bad attachment part " + part)
-			}
-			path = append(path, n)
-		}
-	}
-	sec := &imap.FetchItemBodySection{Part: path, Peek: true}
-	cmd := c.Fetch(imap.UIDSetNum(uid), &imap.FetchOptions{UID: true, BodySection: []*imap.FetchItemBodySection{sec}})
-	var data []byte
-	var err error
-	found := false
-	for m := cmd.Next(); m != nil; m = cmd.Next() {
-		for item := m.Next(); item != nil; item = m.Next() {
-			bs, ok := item.(imapclient.FetchItemDataBodySection)
-			if !ok {
-				continue
-			}
-			data, err = readSection(bs.Literal, encoding, abort)
-			if err != nil {
-				cmd.Close() // after abort this unblocks the client's reader: the dead connection ends the literal
-				return nil, err
-			}
-			found = true
-		}
-	}
-	if err := cmd.Close(); err != nil {
 		return nil, err
 	}
-	if !found {
-		return nil, errors.New("message no longer on the server")
-	}
-	return data, nil
+	defer rc.Close()
+	return readSection(rc, a.encoding, func() { rc.Close() })
 }
 
 // evict deletes the least recently used cached files until the cache fits max.
@@ -536,7 +478,7 @@ func readSection(lit io.Reader, encoding string, abort func()) ([]byte, error) {
 	}
 	data, err := io.ReadAll(io.LimitReader(r, attachLimit+1))
 	if int64(len(data)) > attachLimit {
-		abort() // Client.Close would wait for the rest of the literal
+		abort() // stop the download rather than read the rest
 		return nil, ErrTooLarge
 	}
 	return data, err

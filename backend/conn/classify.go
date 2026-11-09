@@ -9,6 +9,7 @@ import (
 	"strings"
 	"syscall"
 
+	"github.com/godwit-email/godwit/backend"
 	"github.com/godwit-email/godwit/internal/sysproxy"
 )
 
@@ -53,7 +54,7 @@ func Classify(err error) FailureKind {
 		return FailureProxyRefused
 	case errors.Is(err, sysproxy.ErrAuth):
 		return FailureProxyAuth
-	case errors.Is(err, ErrAuthFailed):
+	case errors.Is(err, backend.ErrAuthFailed):
 		return FailureAuth
 	case errors.As(err, &dnsErr):
 		return FailureDNS

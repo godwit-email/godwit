@@ -19,7 +19,9 @@ import (
 
 	"github.com/emersion/go-imap/v2"
 	"github.com/emersion/go-imap/v2/imapclient"
-	"github.com/godwit-email/godwit/core/conn"
+	"github.com/godwit-email/godwit/backend"
+	"github.com/godwit-email/godwit/backend/conn"
+	"github.com/godwit-email/godwit/backend/imapbackend"
 	"github.com/godwit-email/godwit/core/events"
 	"github.com/godwit-email/godwit/core/internal/testmail"
 	"github.com/godwit-email/godwit/core/mailsync"
@@ -118,6 +120,17 @@ func (e *syncEnv) dial(t *testing.T) *imapclient.Client {
 	require.NoError(t, err)
 	t.Cleanup(func() { c.Close() })
 	return c
+}
+
+// receiver is an IMAP backend session on the test server.
+func (e *syncEnv) receiver(t *testing.T) *imapbackend.Receiver {
+	host, port := splitAddr(t, e.im.Addr)
+	r := imapbackend.New(imapbackend.Config{Host: host, Port: port, Security: conn.None,
+		Credentials: func(context.Context) (backend.Credentials, error) {
+			return backend.Credentials{Username: "alice", Password: "secret"}, nil
+		}})
+	t.Cleanup(func() { r.Close() })
+	return r
 }
 
 func splitAddr(t *testing.T, a string) (string, int) {
@@ -427,7 +440,7 @@ func TestSyncAuthFailureNeedsReauth(t *testing.T) {
 	ch, unsub := e.s.Subscribe()
 	defer unsub()
 	err := e.s.SyncNow(bg, e.acc.ID)
-	require.ErrorIs(t, err, conn.ErrAuthFailed)
+	require.ErrorIs(t, err, backend.ErrAuthFailed)
 	acc, aerr := e.s.account(bg, e.acc.ID)
 	require.NoError(t, aerr)
 	assert.Equal(t, "reauth_required", acc.Status)

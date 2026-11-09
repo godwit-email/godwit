@@ -4,47 +4,91 @@ import (
 	"context"
 	"errors"
 	"io"
+	"sync/atomic"
 	"time"
 
 	"github.com/emersion/go-imap/v2"
 	"github.com/emersion/go-imap/v2/imapclient"
 	"github.com/godwit-email/godwit/backend"
+	"github.com/godwit-email/godwit/backend/conn"
 )
 
-// PollInterval is how often an account syncs when the server cannot push.
-const PollInterval = 5 * time.Minute
+const (
+	// PollInterval is how often an account syncs when the server cannot push.
+	PollInterval = 5 * time.Minute
+	// idleRestart ends and restarts a Watch's IDLE before servers drop it
+	// (RFC 2177 asks for at least every 29 minutes).
+	idleRestart = 25 * time.Minute
+)
 
-// Dial connects and signs in to the account's server.
-type Dial func(ctx context.Context) (*imapclient.Client, error)
+// Config is how to reach an account's IMAP server.
+type Config struct {
+	Host        string
+	Port        int
+	Security    conn.Security
+	Credentials backend.CredentialsFunc
+}
 
-// Receiver is an IMAP account's backend.Receiver. It dials on first use and
-// keeps the connection until Close. It is not safe for concurrent use.
-//
-// shortcut: core dials and signs in for it (Dial) and keeps reading and
-// writing over the same connection itself; #603 moves the connection and its
-// credentials here, #602 the write-back.
+// Receiver is an IMAP account's backend.Receiver: one session, over one
+// connection it dials on first use, signing in with Config.Credentials, and
+// keeps until Close. It is not safe for concurrent use, and Watch holds the
+// connection while it runs.
 type Receiver struct {
-	dial Dial
-	c    *imapclient.Client
+	cfg   Config
+	c     *imapclient.Client
+	abort func() // cuts the connection without waiting for a literal
+	caps  imap.CapSet
+	// updates is Watch's while it runs: the server reported a change.
+	updates atomic.Pointer[chan struct{}]
 }
 
 var _ backend.Receiver = (*Receiver)(nil)
 
-// New is a Receiver that connects with dial.
-func New(dial Dial) *Receiver { return &Receiver{dial: dial} }
+// New is a Receiver on the account cfg reaches.
+func New(cfg Config) *Receiver { return &Receiver{cfg: cfg} }
 
 func (r *Receiver) client(ctx context.Context) (*imapclient.Client, error) {
-	if r.c == nil {
-		c, err := r.dial(ctx)
-		if err != nil {
-			return nil, err
-		}
-		r.c = c
+	if r.c != nil {
+		return r.c, nil
 	}
-	return r.c, nil
+	cr, err := r.cfg.Credentials(ctx)
+	if err != nil {
+		return nil, err
+	}
+	c, abort, err := conn.DialIMAPAbortable(ctx, conn.Endpoint{Host: r.cfg.Host, Port: r.cfg.Port, Security: r.cfg.Security,
+		Username: cr.Username, Password: cr.Password, AccessToken: cr.Token}, &imapclient.UnilateralDataHandler{
+		Expunge: func(uint32) { r.changed() },
+		Mailbox: func(d *imapclient.UnilateralDataMailbox) {
+			if d.NumMessages != nil { // FLAGS and PERMANENTFLAGS change no message
+				r.changed()
+			}
+		},
+		Fetch: func(*imapclient.FetchMessageData) { r.changed() },
+	})
+	if err != nil {
+		return nil, err
+	}
+	r.c, r.abort, r.caps = c, abort, c.Caps()
+	return c, nil
 }
 
-// Close closes the connection it dialed.
+// changed signals a running Watch.
+func (r *Receiver) changed() {
+	if u := r.updates.Load(); u != nil {
+		select {
+		case *u <- struct{}{}:
+		default:
+		}
+	}
+}
+
+// Client is the session's connection, dialed if need be.
+//
+// shortcut: the write-back and the outbox still speak IMAP over it in core;
+// #602 and #604 move them behind Apply and Find, and this goes.
+func (r *Receiver) Client(ctx context.Context) (*imapclient.Client, error) { return r.client(ctx) }
+
+// Close closes the connection; a second Close is harmless.
 func (r *Receiver) Close() error {
 	if r.c == nil {
 		return nil
@@ -52,12 +96,8 @@ func (r *Receiver) Close() error {
 	return r.c.Close()
 }
 
-// errLater answers the verbs other tickets move here (#602, #603).
+// errLater answers the verbs #602 moves here.
 var errLater = errors.New("imapbackend: not implemented yet")
-
-func (r *Receiver) Fetch(context.Context, backend.ContentRequest) (io.ReadCloser, error) {
-	return nil, errLater
-}
 
 func (r *Receiver) Find(context.Context, backend.FolderRef, string, int64) ([]backend.MessageRef, error) {
 	return nil, errLater
@@ -67,19 +107,152 @@ func (r *Receiver) Apply(context.Context, backend.Op) (backend.Result, error) {
 	return backend.Result{}, errLater
 }
 
-func (r *Receiver) Watch(context.Context, func([]backend.FolderRef)) error { return errLater }
-
-func (r *Receiver) Check(context.Context) (backend.CheckResult, error) {
-	return backend.CheckResult{}, errLater
-}
-
-// Describe declares what the server's capabilities allow.
-func (r *Receiver) Describe(ctx context.Context) (backend.Description, error) {
+// Fetch streams the content req names. Closing the stream before its end cuts
+// the connection, since IMAP has no way to stop a literal; the session is then
+// done.
+func (r *Receiver) Fetch(ctx context.Context, req backend.ContentRequest) (io.ReadCloser, error) {
 	c, err := r.client(ctx)
 	if err != nil {
+		return nil, err
+	}
+	validity, uid := Decode(string(req.Ref))
+	sel, err := c.Select(string(req.Folder), &imap.SelectOptions{ReadOnly: true}).Wait()
+	if err != nil {
+		return nil, err
+	}
+	if sel.UIDValidity != validity { // recreated since the sync
+		return nil, backend.ErrNotFound
+	}
+	sec := &imap.FetchItemBodySection{Peek: true}
+	switch {
+	case req.HeaderFields != nil:
+		sec.Specifier, sec.HeaderFields = imap.PartSpecifierHeader, req.HeaderFields
+	case req.Part != "":
+		sec.Part = partPath(req.Part)
+	}
+	cmd := c.Fetch(imap.UIDSetNum(imap.UID(uid)), &imap.FetchOptions{UID: true, BodySection: []*imap.FetchItemBodySection{sec}})
+	for m := cmd.Next(); m != nil; m = cmd.Next() {
+		for item := m.Next(); item != nil; item = m.Next() {
+			if bs, ok := item.(imapclient.FetchItemDataBodySection); ok {
+				if bs.Literal == nil { // IMAP allows NIL
+					cmd.Close()
+					return nil, errors.New("imap: the part is not available on the server")
+				}
+				return &literal{Reader: bs.Literal, cmd: cmd, abort: r.abort}, nil
+			}
+		}
+	}
+	if err := cmd.Close(); err != nil {
+		return nil, err
+	}
+	return nil, backend.ErrNotFound
+}
+
+// literal is a FETCH's body section being read.
+type literal struct {
+	io.Reader
+	cmd   *imapclient.FetchCommand
+	abort func()
+	eof   bool
+	done  bool
+}
+
+func (l *literal) Read(p []byte) (int, error) {
+	n, err := l.Reader.Read(p)
+	l.eof = l.eof || err == io.EOF
+	return n, err
+}
+
+// Close ends the FETCH; a second Close does nothing.
+func (l *literal) Close() error {
+	if l.done {
+		return nil
+	}
+	l.done = true
+	if !l.eof {
+		l.abort()     // the command would otherwise wait for the rest of the literal
+		l.cmd.Close() // the dead connection ends it
+		return nil
+	}
+	return l.cmd.Close()
+}
+
+// Watch selects INBOX and IDLEs on the session's connection, waking with
+// INBOX at each change the server reports. It wakes once, with nil, as soon
+// as INBOX is selected: a sync after that wake misses nothing. When ctx ends
+// it returns with IDLE still running; Close ends it.
+func (r *Receiver) Watch(ctx context.Context, wake func(folders []backend.FolderRef)) error {
+	c, err := r.client(ctx)
+	if err != nil {
+		return err
+	}
+	if !r.caps.Has(imap.CapIdle) {
+		return backend.ErrUnsupported
+	}
+	updates := make(chan struct{}, 1)
+	r.updates.Store(&updates)
+	defer r.updates.Store(nil)
+	if _, err := c.Select("INBOX", nil).Wait(); err != nil {
+		return err
+	}
+	wake(nil)
+	inbox := []backend.FolderRef{"INBOX"}
+	for {
+		// A NOOP first collects what the server queued meanwhile.
+		if err := c.Noop().Wait(); err != nil {
+			return err
+		}
+		cmd, err := c.Idle()
+		if err != nil {
+			return err
+		}
+		t := time.NewTimer(idleRestart)
+		select {
+		case <-updates:
+			wake(inbox)
+		case <-t.C:
+		case <-c.Closed():
+			return errors.New("imap: connection lost during IDLE")
+		case <-ctx.Done():
+			t.Stop()
+			return ctx.Err()
+		}
+		t.Stop()
+		if err := cmd.Close(); err != nil {
+			return err
+		}
+		if err := cmd.Wait(); err != nil {
+			return err
+		}
+	}
+}
+
+// Check is the add-account check: a sign-in and the folders a sync would
+// mirror. A failing LIST does not fail it; it reports no folders.
+func (r *Receiver) Check(ctx context.Context) (backend.CheckResult, error) {
+	c, err := r.client(ctx)
+	if err != nil {
+		return backend.CheckResult{}, err
+	}
+	stop := context.AfterFunc(ctx, r.abort) // a stalled LIST ends with ctx
+	defer stop()
+	res := backend.CheckResult{Host: r.cfg.Host, Description: describe(r.caps)}
+	list, _ := c.List("", "*", nil).Collect()
+	for _, d := range list {
+		if Selectable(d) {
+			res.Folders++
+		}
+	}
+	return res, nil
+}
+
+// Describe declares what the server's capabilities allow, as they were at
+// sign-in.
+func (r *Receiver) Describe(ctx context.Context) (backend.Description, error) {
+	if _, err := r.client(ctx); err != nil {
 		return backend.Description{}, err
 	}
-	return describe(c.Caps()), nil
+	return describe(r.caps), nil
 }
 
 func describe(caps imap.CapSet) backend.Description {

@@ -4,7 +4,7 @@ package auth
 import (
 	"strings"
 
-	"github.com/godwit-email/godwit/core/conn"
+	"github.com/godwit-email/godwit/backend/conn"
 )
 
 type Server struct {

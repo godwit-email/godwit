@@ -3,7 +3,7 @@ package core
 import (
 	"context"
 
-	"github.com/godwit-email/godwit/core/conn"
+	"github.com/godwit-email/godwit/backend/conn"
 )
 
 // Security is the transport protection of a connection to a server.

@@ -7,7 +7,6 @@ import (
 	"bytes"
 	"context"
 	"errors"
-	"fmt"
 	"io"
 	"maps"
 	"slices"
@@ -41,32 +40,39 @@ type contractTest struct {
 	test func(*testing.T, Fixture)
 }
 
-// syncTests are the contract's sync part: the declarations and sync rounds.
-var syncTests = []contractTest{
+// allTests is the whole contract.
+var allTests = []contractTest{
 	{"Describe", testDescribe},
 	{"FirstSync", testFirstSync},
 	{"CursorResumes", testCursorResumes},
 	{"FolderReset", testFolderReset},
+	{"Check", testCheck},
+	{"Fetch", testFetch},
+	{"Find", testFind},
+	{"SetFlags", testSetFlags},
+	{"Move", testMove},
+	{"Failed", testFailed},
+	{"Unsupported", testUnsupported},
+	{"Watch", testWatch},
+	{"AuthFailed", testAuthFailed},
 }
 
 // Run runs the contract against the backend start gives.
-func Run(t *testing.T, start Fixture) {
-	run(t, start, append(slices.Clone(syncTests), []contractTest{
-		{"Check", testCheck},
-		{"Fetch", testFetch},
-		{"Find", testFind},
-		{"SetFlags", testSetFlags},
-		{"Move", testMove},
-		{"Failed", testFailed},
-		{"Unsupported", testUnsupported},
-		{"Watch", testWatch},
-		{"AuthFailed", testAuthFailed},
-	}...))
-}
+func Run(t *testing.T, start Fixture) { run(t, start, allTests) }
 
-// RunSync runs only the contract's sync part, for a backend whose other verbs
-// are still to come.
-func RunSync(t *testing.T, start Fixture) { run(t, start, syncTests) }
+// RunOnly runs only the named parts of the contract, for a backend whose
+// other verbs are still to come.
+func RunOnly(t *testing.T, start Fixture, names ...string) {
+	var tests []contractTest
+	for _, n := range names {
+		i := slices.IndexFunc(allTests, func(c contractTest) bool { return c.name == n })
+		if i < 0 {
+			t.Fatalf("no contract test %q", n)
+		}
+		tests = append(tests, allTests[i])
+	}
+	run(t, start, tests)
+}
 
 func run(t *testing.T, start Fixture, tests []contractTest) {
 	for _, c := range tests {
@@ -525,19 +531,22 @@ func testWatch(t *testing.T, start Fixture) {
 	}
 	defer func() { cancel(); <-done }()
 	inbox := v.folder(t, "INBOX")
-	// Deliver until woken: a backend may start watching after Watch is called.
-	for i := range 50 {
-		s.Deliver(t, "INBOX", Message(fmt.Sprintf("w%d@example.com", i), "watched"))
-		select {
-		case fs := <-wake:
-			if fs != nil && !slices.Contains(fs, inbox) {
-				t.Errorf("woken for %v, want the inbox", fs)
-			}
-			return
-		case <-time.After(200 * time.Millisecond):
-		}
+	select { // it wakes once as it starts watching
+	case <-wake:
+	case err := <-done:
+		t.Fatalf("Watch = %v before it woke", err)
+	case <-time.After(10 * time.Second):
+		t.Fatal("Watch did not wake as it started watching")
 	}
-	t.Fatal("Watch did not wake for new mail")
+	s.Deliver(t, "INBOX", Message("watched@example.com", "watched"))
+	select {
+	case fs := <-wake:
+		if fs != nil && !slices.Contains(fs, inbox) {
+			t.Errorf("woken for %v, want the inbox", fs)
+		}
+	case <-time.After(10 * time.Second):
+		t.Fatal("Watch did not wake for new mail")
+	}
 }
 
 func testAuthFailed(t *testing.T, start Fixture) {

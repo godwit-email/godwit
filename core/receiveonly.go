@@ -4,7 +4,7 @@ import (
 	"context"
 	"errors"
 
-	"github.com/godwit-email/godwit/core/conn"
+	"github.com/godwit-email/godwit/backend"
 )
 
 // RecheckSending runs the account's connection check with its stored
@@ -59,7 +59,7 @@ func (s *Service) checkStored(ctx context.Context, acc Account, in *AccountInput
 		in.graph = func(ctx context.Context) error { _, _, err := s.graphToken(ctx, acc); return err }
 	}
 	r, err := s.check(ctx, *in, tok)
-	if tok != "" && errors.Is(err, conn.ErrAuthFailed) { // the cached token may be stale
+	if tok != "" && errors.Is(err, backend.ErrAuthFailed) { // the cached token may be stale
 		if _, tok, _, err = s.credentials(ctx, acc, tok); err != nil {
 			return r, err
 		}

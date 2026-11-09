@@ -12,7 +12,8 @@ import (
 	"sync/atomic"
 	"testing"
 
-	"github.com/godwit-email/godwit/core/conn"
+	"github.com/godwit-email/godwit/backend"
+	"github.com/godwit-email/godwit/backend/conn"
 	"github.com/godwit-email/godwit/core/internal/testmail"
 	"github.com/godwit-email/godwit/internal/sysproxy"
 	"github.com/stretchr/testify/assert"
@@ -177,7 +178,7 @@ func TestClassifyProxyFailures(t *testing.T) {
 				conn.SystemProxy = func(*url.URL) *url.URL { return tc.proxy }
 				_, err := conn.DialIMAP(context.Background(), endpoint(t, "imap.example:143"))
 				assert.Equal(t, tc.want, conn.Classify(err), "%v", err)
-				assert.NotErrorIs(t, err, conn.ErrAuthFailed)
+				assert.NotErrorIs(t, err, backend.ErrAuthFailed)
 			})
 		}
 	}

@@ -12,8 +12,7 @@ import (
 	"slices"
 	"strings"
 
-	"github.com/emersion/go-imap/v2"
-	"github.com/godwit-email/godwit/backend/imapbackend"
+	"github.com/godwit-email/godwit/backend"
 	"github.com/godwit-email/godwit/core/gateway"
 	"github.com/godwit-email/godwit/core/mail"
 	"github.com/godwit-email/godwit/core/store"
@@ -185,7 +184,7 @@ func (s *Service) fetchListHeaders(ctx context.Context, accountID, messageID int
 	}
 	defer unlock()
 	// Read under the lock: a sync may have moved, deleted or filled it meanwhile.
-	rows, err := s.db.Query(ctx, `SELECT f.name, l.server_ref, m.list_unsubscribe, m.list_unsubscribe_post, m.list_id
+	rows, err := s.db.Query(ctx, `SELECT f.server_ref, l.server_ref, m.list_unsubscribe, m.list_unsubscribe_post, m.list_id
 		FROM messages m LEFT JOIN `+serverLocation+` WHERE m.id = ?`, messageID)
 	if err != nil || len(rows.Values) == 0 {
 		return nil, false
@@ -197,22 +196,22 @@ func (s *Service) fetchListHeaders(ctx context.Context, accountID, messageID int
 	if store.Str(r[0]) == "" || r[1] == nil {
 		return nil, false
 	}
-	c, release, _, err := s.dialAccount(ctx, accountID, nil)
+	recv, release, err := s.dialAccount(ctx, accountID)
 	if err != nil {
 		return nil, false
 	}
 	defer release()
-	validity, uid := imapbackend.Decode(store.Str(r[1]))
-	if sel, err := c.Select(store.Str(r[0]), &imap.SelectOptions{ReadOnly: true}).Wait(); err != nil || sel.UIDValidity != validity {
+	rc, err := recv.Fetch(ctx, backend.ContentRequest{Location: backend.Location{Folder: backend.FolderRef(store.Str(r[0])), Ref: backend.MessageRef(store.Str(r[1]))},
+		HeaderFields: []string{"LIST-UNSUBSCRIBE", "LIST-UNSUBSCRIBE-POST", "LIST-ID"}})
+	if err != nil {
 		return nil, false
 	}
-	sec := &imap.FetchItemBodySection{Specifier: imap.PartSpecifierHeader, Peek: true,
-		HeaderFields: []string{"LIST-UNSUBSCRIBE", "LIST-UNSUBSCRIBE-POST", "LIST-ID"}}
-	msgs, err := c.Fetch(imap.UIDSetNum(imap.UID(uid)), &imap.FetchOptions{UID: true, BodySection: []*imap.FetchItemBodySection{sec}}).Collect()
-	if err != nil || len(msgs) == 0 {
+	raw, err := io.ReadAll(rc)
+	rc.Close()
+	if err != nil {
 		return nil, false
 	}
-	h, err := mail.Parse(msgs[0].FindBodySection(sec))
+	h, err := mail.Parse(raw)
 	if err != nil {
 		return nil, false
 	}

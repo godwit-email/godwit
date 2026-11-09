@@ -13,7 +13,8 @@ import (
 	"github.com/egoist/mygo/plugins/sqlite"
 	"github.com/emersion/go-imap/v2"
 	"github.com/emersion/go-imap/v2/imapclient"
-	"github.com/godwit-email/godwit/core/conn"
+	"github.com/godwit-email/godwit/backend"
+	"github.com/godwit-email/godwit/backend/conn"
 	"github.com/godwit-email/godwit/core/events"
 	"github.com/godwit-email/godwit/core/mailsync"
 	"github.com/godwit-email/godwit/core/send"
@@ -346,7 +347,7 @@ func (s *Service) processOutbox(ctx context.Context, c *imapclient.Client, accou
 				ep, epVer = &e, v
 				ok, err = s.sendItem(ctx, wctx, *ep, from, o)
 			}
-			if errors.Is(err, conn.ErrAuthFailed) && ep.AccessToken != "" && !refreshed {
+			if errors.Is(err, backend.ErrAuthFailed) && ep.AccessToken != "" && !refreshed {
 				// The access token may just be stale: refresh it once per round.
 				refreshed = true
 				e, _, v, rerr := s.smtpEndpoint(ctx, accountID, ep.AccessToken)
@@ -356,7 +357,7 @@ func (s *Service) processOutbox(ctx context.Context, c *imapclient.Client, accou
 				ep, epVer = &e, v
 				ok, err = s.sendItem(ctx, wctx, *ep, from, o)
 			}
-			if errors.Is(err, conn.ErrAuthFailed) {
+			if errors.Is(err, backend.ErrAuthFailed) {
 				// Not this message's fault: it is queued again, uncharged, and the
 				// outbox waits for new credentials instead of trying each item.
 				derr := s.ifCurrent(accountID, epVer, func() error {
@@ -448,7 +449,7 @@ func (s *Service) toGraph(ctx context.Context, accountID int64, err error) bool 
 }
 
 // sendItem submits a queued item and reports whether it is now sent. A refused
-// login puts the item back to queued and returns the conn.ErrAuthFailed error.
+// login puts the item back to queued and returns the backend.ErrAuthFailed error.
 // A permanent refusal (5xx) fails it; any other error before the server could
 // accept it queues it again after a backoff, unless ctx ended: then it is
 // queued as it was, with no try counted. The claim (queued to sending)
@@ -475,7 +476,7 @@ func (s *Service) sendItem(ctx, wctx context.Context, ep conn.Endpoint, from str
 	case errors.Is(err, send.ErrUncertain):
 		_, err = s.setOutbox(wctx, o, "send_uncertain", err.Error())
 		return false, err
-	case errors.Is(err, conn.ErrAuthFailed):
+	case errors.Is(err, backend.ErrAuthFailed):
 		_, derr := s.setOutbox(wctx, o, "queued", err.Error())
 		return false, errors.Join(err, derr)
 	case errors.As(err, &rej) && rej.Code >= 500:

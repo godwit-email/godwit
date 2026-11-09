@@ -9,8 +9,9 @@ import (
 	"sync"
 	"testing"
 
+	"github.com/godwit-email/godwit/backend"
+	"github.com/godwit-email/godwit/backend/conn"
 	"github.com/godwit-email/godwit/core/auth"
-	"github.com/godwit-email/godwit/core/conn"
 	"github.com/godwit-email/godwit/core/send"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -95,7 +96,7 @@ func TestGraphWithoutConsentPausesOutbox(t *testing.T) {
 	e.add(t)
 	e.oa.GrantScope("openid email") // a grant from before Mail.Send was asked for
 	e.sendNew(t)
-	assert.ErrorIs(t, e.s.SyncNow(bg, e.acc.ID), conn.ErrAuthFailed)
+	assert.ErrorIs(t, e.s.SyncNow(bg, e.acc.ID), backend.ErrAuthFailed)
 	assert.Empty(t, e.graphSent())
 	assert.Equal(t, "queued", e.state(t))
 	assert.Equal(t, 1, e.count(t, "SELECT count(*) FROM accounts WHERE smtp_reauth = 1"))

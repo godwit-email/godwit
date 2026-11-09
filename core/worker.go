@@ -2,13 +2,12 @@ package core
 
 import (
 	"context"
+	"errors"
 	"time"
 
-	"github.com/emersion/go-imap/v2"
-	"github.com/emersion/go-imap/v2/imapclient"
-	"github.com/godwit-email/godwit/core/conn"
+	"github.com/godwit-email/godwit/backend"
+	"github.com/godwit-email/godwit/backend/conn"
 	"github.com/godwit-email/godwit/core/events"
-	"github.com/godwit-email/godwit/core/mailsync"
 	"github.com/godwit-email/godwit/core/store"
 )
 
@@ -233,49 +232,60 @@ func (s *Service) awaitCredentials(ctx context.Context, id int64, wake chan stru
 	}
 }
 
-// syncRound runs SyncNow and then waits for a reason to sync again. With IDLE,
-// INBOX is selected on a second connection before SyncNow, so mail that lands
-// during or after the sync ends the IDLE that follows. chatter reports that a
-// server update ended IDLE within chatterWithin of its start.
+// syncRound runs SyncNow and then waits for a reason to sync again. A second
+// session Watches the server, started before SyncNow, so a change that lands
+// during or after the sync ends the wait that follows. chatter reports that a
+// server change ended the wait within chatterWithin of its start.
 func (s *Service) syncRound(ctx context.Context, id int64, wake chan struct{}) (chatter bool, err error) {
-	updates := make(chan struct{}, 1)
-	notify := func() {
-		select {
-		case updates <- struct{}{}:
-		default:
-		}
-	}
-	c, release, _, err := s.dialAccount(ctx, id, &imapclient.UnilateralDataHandler{
-		Expunge: func(uint32) { notify() },
-		Mailbox: func(d *imapclient.UnilateralDataMailbox) {
-			if d.NumMessages != nil { // FLAGS and PERMANENTFLAGS change no message
-				notify()
-			}
-		},
-		Fetch: func(*imapclient.FetchMessageData) { notify() },
-	})
+	recv, release, err := s.dialAccount(ctx, id)
 	if err != nil {
 		return false, s.workerFailed(ctx, id, err)
 	}
-	defer release()
-	idle := c.Caps().Has(imap.CapIdle)
-	if idle {
-		if _, err := c.Select("INBOX", nil).Wait(); err != nil {
+	updates := make(chan struct{}, 1)
+	watched := make(chan error, 1)
+	wctx, stop := context.WithCancel(ctx)
+	go func() {
+		watched <- recv.Watch(wctx, func([]backend.FolderRef) {
+			select {
+			case updates <- struct{}{}:
+			default:
+			}
+		})
+	}()
+	defer func() { stop(); release(); <-watched }() // closing unblocks a Watch mid-command
+	// Watch wakes once as it starts watching; one that cannot push returns.
+	push := true
+	select {
+	case <-updates:
+	case err := <-watched:
+		watched <- err
+		if !errors.Is(err, backend.ErrUnsupported) {
 			return false, s.workerFailed(ctx, id, err)
 		}
-	} else {
-		release() // only needed for IDLE; a second release is harmless
+		push = false
+		release() // only needed to watch; a second release is harmless
+	case <-ctx.Done():
+		return false, ctx.Err()
 	}
 	if err := s.syncNow(ctx, id, false); err != nil {
 		return false, err // syncNow announced it
 	}
-	if idle {
+	if push {
 		start := time.Now()
-		byServer, err := mailsync.Idle(ctx, c, updates, wake, idleMax)
-		if err != nil {
+		t := time.NewTimer(idleMax)
+		defer t.Stop()
+		select {
+		case <-updates:
+			return time.Since(start) < chatterWithin, nil
+		case err := <-watched:
+			watched <- err
 			return false, s.workerFailed(ctx, id, err)
+		case <-wake:
+		case <-t.C:
+		case <-ctx.Done():
+			return false, ctx.Err()
 		}
-		return byServer && time.Since(start) < chatterWithin, nil
+		return false, nil
 	}
 	t := time.NewTimer(pollInterval)
 	defer t.Stop()

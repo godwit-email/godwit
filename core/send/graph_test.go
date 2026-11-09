@@ -15,7 +15,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/godwit-email/godwit/core/conn"
+	"github.com/godwit-email/godwit/backend"
+	"github.com/godwit-email/godwit/backend/conn"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -55,8 +56,8 @@ func TestSendGraphErrors(t *testing.T) {
 		status int
 		check  func(t *testing.T, err error)
 	}{
-		{401, func(t *testing.T, err error) { assert.ErrorIs(t, err, conn.ErrAuthFailed) }},
-		{403, func(t *testing.T, err error) { assert.ErrorIs(t, err, conn.ErrAuthFailed) }},
+		{401, func(t *testing.T, err error) { assert.ErrorIs(t, err, backend.ErrAuthFailed) }},
+		{403, func(t *testing.T, err error) { assert.ErrorIs(t, err, backend.ErrAuthFailed) }},
 		{504, func(t *testing.T, err error) { assert.ErrorIs(t, err, ErrUncertain) }},
 		{503, func(t *testing.T, err error) { // retried later
 			assert.False(t, errors.Is(err, ErrUncertain) || errors.As(err, new(*RejectedError)))

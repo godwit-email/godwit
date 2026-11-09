@@ -6,7 +6,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/godwit-email/godwit/core/conn"
+	"github.com/godwit-email/godwit/backend"
 	"github.com/godwit-email/godwit/core/events"
 	"github.com/godwit-email/godwit/core/internal/testmail"
 	"github.com/stretchr/testify/assert"
@@ -211,7 +211,7 @@ func TestKeychainErrorOutranksSMTPRefusal(t *testing.T) {
 	}
 	e.smtp.RejectAuth(true)
 	e.sendNew(t)
-	require.ErrorIs(t, e.s.SyncNow(bg, e.acc.ID), conn.ErrAuthFailed)
+	require.ErrorIs(t, e.s.SyncNow(bg, e.acc.ID), backend.ErrAuthFailed)
 	st, d := status()
 	assert.Equal(t, []string{"reauth_required", "auth_rejected"}, []string{st, d})
 
@@ -221,7 +221,7 @@ func TestKeychainErrorOutranksSMTPRefusal(t *testing.T) {
 	assert.Equal(t, []string{"error", "keychain_unavailable"}, []string{st, d})
 
 	locked.Store(false)
-	require.ErrorIs(t, e.s.SyncNow(bg, e.acc.ID), conn.ErrAuthFailed)
+	require.ErrorIs(t, e.s.SyncNow(bg, e.acc.ID), backend.ErrAuthFailed)
 	st, d = status()
 	assert.Equal(t, []string{"reauth_required", "auth_rejected"}, []string{st, d})
 }
