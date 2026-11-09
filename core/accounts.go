@@ -22,7 +22,6 @@ import (
 
 	"github.com/egoist/mygo/plugins/sqlite"
 	"github.com/godwit-email/godwit/core/auth"
-	"github.com/godwit-email/godwit/core/conn"
 	"github.com/godwit-email/godwit/core/events"
 	"github.com/godwit-email/godwit/core/store"
 	"github.com/zalando/go-keyring"
@@ -664,25 +663,15 @@ func (s *Service) UpdateAccount(ctx context.Context, id int64, p AccountPatch) (
 	}
 	if p.Servers != nil {
 		in := serverInput(acc.Email, *p.Servers)
-		pw, tok, _, err := s.credentials(ctx, acc, "")
-		if err != nil {
+		r, err := s.checkStored(ctx, acc, &in)
+		var ce *CheckError
+		if err != nil && !errors.As(err, &ce) {
 			return Account{}, err
-		}
-		in.Password = pw
-		if tok != "" {
-			in.graph = func(ctx context.Context) error { _, _, err := s.graphToken(ctx, acc); return err }
-		}
-		r, err := s.check(ctx, in, tok)
-		if tok != "" && errors.Is(err, conn.ErrAuthFailed) { // the cached token may be stale
-			if _, tok, _, err = s.credentials(ctx, acc, tok); err != nil {
-				return Account{}, err
-			}
-			r, err = s.check(ctx, in, tok)
 		}
 		// A receive-only account may change servers while SMTP still fails; a
 		// passing SMTP check makes it send again.
 		if err != nil && !(acc.ReceiveOnly && r.OnlySMTPFailed()) {
-			return Account{}, &CheckError{Report: r, err: err}
+			return Account{}, err
 		}
 		set("receive_only", b2i(err != nil))
 		set("username", in.username())

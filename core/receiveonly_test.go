@@ -200,3 +200,27 @@ func TestReceiveOnlyReauthorizeResumes(t *testing.T) {
 	require.NoError(t, err)
 	assert.False(t, acc.ReceiveOnly)
 }
+
+// An Outlook mailbox without SMTP AUTH or Graph consent is added receive-only;
+// once Graph's Mail.Send is granted, the recheck makes it send through Graph.
+func TestRecheckSendingThroughGraph(t *testing.T) {
+	e := newGraphEnv(t)
+	e.oa.GrantScope("openid email")
+	in := e.input(t, "alice@example.com", e.signIn(t, "alice@example.com"))
+	in.ReceiveOnly = true
+	acc, err := e.s.AddAccount(bg, in)
+	require.NoError(t, err)
+	require.True(t, acc.ReceiveOnly)
+	e.acc = acc
+
+	e.oa.GrantScope("Mail.Send offline_access")
+	r, err := e.s.RecheckSending(bg, acc.ID)
+	require.NoError(t, err)
+	require.True(t, r.OK(), "%+v", r.Steps)
+	acc, err = e.s.account(bg, acc.ID)
+	require.NoError(t, err)
+	assert.False(t, acc.ReceiveOnly)
+	e.sendNew(t)
+	e.sync(t)
+	assert.Len(t, e.graphSent(), 1)
+}

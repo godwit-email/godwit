@@ -31,17 +31,10 @@ func (s *Service) RecheckSending(ctx context.Context, id int64) (CheckReport, er
 // the report, not an error.
 func (s *Service) recheckSending(ctx context.Context, acc Account) (CheckReport, error) {
 	in := serverInput(acc.Email, acc.servers())
-	pw, tok, _, err := s.credentials(ctx, acc, "")
-	if err != nil {
-		return CheckReport{}, err
-	}
-	in.Password = pw
-	r, err := s.check(ctx, in, tok)
-	if tok != "" && errors.Is(err, conn.ErrAuthFailed) { // the cached token may be stale
-		if _, tok, _, err = s.credentials(ctx, acc, tok); err != nil {
-			return r, err
-		}
-		r, err = s.check(ctx, in, tok)
+	r, err := s.checkStored(ctx, acc, &in)
+	var ce *CheckError
+	if err != nil && !errors.As(err, &ce) {
+		return r, err
 	}
 	if err != nil || !acc.ReceiveOnly {
 		return r, ctx.Err()
@@ -50,5 +43,30 @@ func (s *Service) recheckSending(ctx context.Context, acc Account) (CheckReport,
 		return r, err
 	}
 	s.wakeWorker(acc.ID)
+	return r, nil
+}
+
+// checkStored checks in with acc's stored credentials, an OAuth account's
+// Graph fallback included. A failing check is a *CheckError; other errors
+// come from reading the credentials.
+func (s *Service) checkStored(ctx context.Context, acc Account, in *AccountInput) (CheckReport, error) {
+	pw, tok, _, err := s.credentials(ctx, acc, "")
+	if err != nil {
+		return CheckReport{}, err
+	}
+	in.Password = pw
+	if tok != "" {
+		in.graph = func(ctx context.Context) error { _, _, err := s.graphToken(ctx, acc); return err }
+	}
+	r, err := s.check(ctx, *in, tok)
+	if tok != "" && errors.Is(err, conn.ErrAuthFailed) { // the cached token may be stale
+		if _, tok, _, err = s.credentials(ctx, acc, tok); err != nil {
+			return r, err
+		}
+		r, err = s.check(ctx, *in, tok)
+	}
+	if err != nil {
+		return r, &CheckError{Report: r, err: err}
+	}
 	return r, nil
 }
