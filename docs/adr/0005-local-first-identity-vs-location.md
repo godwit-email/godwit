@@ -6,6 +6,8 @@
 
 位置部分已由 [0034](0034-message-and-its-locations.md) 修订：一封邮件可以有几个位置，每个位置各有期望位置和服务器位置；Gmail 上同一个 `X-GM-MSGID` 是一封邮件，普通 IMAP 仍然只有一个位置。
 
+服务器位置的形状已由 [0037](0037-protocol-backends.md) 修订：不再是 UIDVALIDITY + UID，而是协议后端给的不透明引用；UIDVALIDITY 变化由 IMAP 后端报告为「文件夹重置」。
+
 ## Consequences
 
 - 移动后服务器返回 COPYUID 时直接更新服务器位置；不返回时进入「待认领」，下次拉取目标文件夹时，只有 Message-ID 非空、且和大小一起唯一匹配的那封才会被认回；有歧义就标为冲突，按新邮件导入。

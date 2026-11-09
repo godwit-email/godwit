@@ -10,6 +10,8 @@ Gmail 把同一封邮件同时放在收件箱、每个标签的文件夹和「�
 
 这份 ADR 修订 [0005](0005-local-first-identity-vs-location.md)：身份和位置照旧分开，但期望位置和服务器位置不再是每封邮件各一个，而是每个位置各一对。它也取代 #464 在显示层折叠副本的做法，`Copies`、`CopyOf`、`Merged` 一并删除。
 
+服务器位置和身份的形状已由 [0037](0037-protocol-backends.md) 修订：服务器位置是不透明的 `server_ref`，`gmail_msgid` 改为通用的 `server_id`；「位置一个不剩就删邮件」不适用于只有收件箱的账户（POP3）。
+
 - **身份。** 账户支持 `X-GM-EXT-1` 时，一个 `X-GM-MSGID` 就是一封本地邮件，在账户内唯一，按不透明字符串保存。Message-ID 和 `X-GM-THRID` 不决定身份，Message-ID 只用来归并会话。
 - **账户能力独立保存。** 建立账户的连接检查、修改服务器和认证成功的连接都记录账户级 `X-GM-EXT-1`，不靠缓存里是否还有 Gmail ID、也不靠 All Mail 的角色判断账户类型。升级时仅在 `gmail` provider 的当前 IMAP endpoint 为 `imap.gmail.com` 或 `imap.googlemail.com`、993 端口及 TLS 时确定回填；provider 和旧邮件的 Gmail ID 可能来自更换服务器之前，不能单独证明当前能力。其他未知老账户在归档前只探测能力，探测失败就保留原状态并报告错误，不能离线猜测普通移动语义。
 - **普通 IMAP 不合并。** 用同一套表，但每封邮件始终只有一个位置：COPY 出来的两封各算一封、标记各自独立，Message-ID 相同的两封也不合并。这与此前不同：以前同一会话里 Message-ID 相同的几行在显示时折叠成一封，现在普通账户的这些副本各算一封（自己抄送自己时 INBOX 与已发送各一封）。
