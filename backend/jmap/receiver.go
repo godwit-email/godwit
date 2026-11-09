@@ -138,10 +138,13 @@ const pageSize = 100
 // Sync implements backend.Receiver. It reports changes since the cursor, or
 // everything in the window at first and after the server cannot calculate
 // changes (then each folder is reset first). It always syncs the whole
-// account: Only and Older are not used, nor is Pages, so more is false.
-// shortcut: no 加载更早 (Older) on JMAP yet; add an Email/query anchored at the
-// oldest held message when core asks for it.
+// account: Only is not used, nor are Pages and PageSize, so more is false.
+// shortcut: no 加载更早 (Older) on JMAP yet, so it is ErrUnsupported; add an
+// Email/query past each folder's window when core asks for it.
 func (r *Receiver) Sync(ctx context.Context, req backend.SyncRequest, commit func(backend.Page) error) (bool, error) {
+	if req.Older > 0 {
+		return false, fmt.Errorf("jmap: older mail: %w", backend.ErrUnsupported)
+	}
 	var cur cursor
 	if req.Account != "" {
 		if err := json.Unmarshal([]byte(req.Account), &cur); err != nil {

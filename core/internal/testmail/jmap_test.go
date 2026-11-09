@@ -77,6 +77,18 @@ func (h held) HeldRefs(_ context.Context, _ backend.FolderRef, refs []backend.Me
 	return out, nil
 }
 
+func (h held) Held(context.Context, backend.FolderRef) (map[backend.MessageRef]string, error) {
+	out := map[backend.MessageRef]string{}
+	for id, ok := range h {
+		if ok {
+			out[backend.MessageRef(id)] = id
+		}
+	}
+	return out, nil
+}
+
+func (h held) Lost(context.Context) ([]string, error) { return nil, nil }
+
 // An expired state makes the next round reset every folder and claim its mail again.
 func TestJMAPStateExpired(t *testing.T) {
 	s := testmail.StartJMAP(t)
