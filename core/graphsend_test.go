@@ -78,7 +78,7 @@ func TestSendThroughGraphWhenSMTPAuthDisabled(t *testing.T) {
 
 	got := e.graphSent()
 	require.Len(t, got, 1)
-	assert.True(t, strings.HasPrefix(got[0], "Bcc: carol@example.com\r\n"), "Graph takes Bcc from the headers")
+	assert.True(t, strings.HasPrefix(got[0], "Bcc: <carol@example.com>\r\n"), "Graph takes Bcc from the headers")
 	assert.Empty(t, e.smtp.Messages())
 	assert.Equal(t, "done", e.state(t))
 

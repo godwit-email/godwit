@@ -100,7 +100,7 @@ func withBcc(raw []byte, rcpts []string) []byte {
 	var bcc []string
 	for _, r := range rcpts {
 		if !seen[strings.ToLower(r)] {
-			bcc = append(bcc, r)
+			bcc = append(bcc, (&mail.Address{Address: r}).String()) // quotes a local part that needs it
 		}
 	}
 	if len(bcc) == 0 {

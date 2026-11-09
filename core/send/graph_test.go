@@ -1,12 +1,14 @@
 package send
 
 import (
+	"bytes"
 	"context"
 	"encoding/base64"
 	"errors"
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"net/mail"
 	"net/url"
 	"strings"
 	"testing"
@@ -40,7 +42,7 @@ func TestSendGraphPostsMIMEWithBcc(t *testing.T) {
 		w.WriteHeader(http.StatusAccepted)
 	})
 	require.NoError(t, SendGraph(context.Background(), "tok", []string{"b@x.com", "c@x.com", "secret@z.com"}, []byte(graphRaw)))
-	assert.Equal(t, "Bcc: secret@z.com\r\n"+graphRaw, got)
+	assert.Equal(t, "Bcc: <secret@z.com>\r\n"+graphRaw, got)
 }
 
 func TestSendGraphWithoutBccIsUnchanged(t *testing.T) {
@@ -103,4 +105,15 @@ func TestSendGraphStalledAnswerIsUncertain(t *testing.T) {
 	graphClient.Transport.(*http.Transport).ResponseHeaderTimeout = 100 * time.Millisecond
 	t.Cleanup(func() { graphClient.Transport.(*http.Transport).ResponseHeaderTimeout = old })
 	assert.ErrorIs(t, SendGraph(context.Background(), "tok", []string{"b@x.com"}, []byte(graphRaw)), ErrUncertain)
+}
+
+func TestWithBccQuotesLocalPart(t *testing.T) {
+	out := withBcc([]byte(graphRaw), []string{"b@x.com", "last,first@example.com", "x@y.com"})
+	m, err := mail.ReadMessage(bytes.NewReader(out))
+	require.NoError(t, err)
+	list, err := m.Header.AddressList("Bcc")
+	require.NoError(t, err)
+	require.Len(t, list, 2)
+	assert.Equal(t, "last,first@example.com", list[0].Address)
+	assert.Equal(t, "x@y.com", list[1].Address)
 }
