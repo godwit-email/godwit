@@ -82,11 +82,9 @@ func (r *Receiver) changed() {
 	}
 }
 
-// Client is the session's connection, dialed if need be.
-//
-// shortcut: the outbox still speaks IMAP over it in core; #604 moves it
-// behind the backend, and this goes.
-func (r *Receiver) Client(ctx context.Context) (*imapclient.Client, error) { return r.client(ctx) }
+// LogTrace logs the end of the session's traffic, masked, when err is a
+// server response go-imap could not parse (conn.LogTrace).
+func (r *Receiver) LogTrace(err error) { conn.LogTrace(r.c, err) }
 
 // Close closes the connection; a second Close is harmless.
 func (r *Receiver) Close() error {

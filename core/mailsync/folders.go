@@ -8,9 +8,7 @@ import (
 	"time"
 
 	"github.com/egoist/mygo/plugins/sqlite"
-	"github.com/emersion/go-imap/v2/imapclient"
 	"github.com/godwit-email/godwit/backend"
-	"github.com/godwit-email/godwit/backend/imapbackend"
 	"github.com/godwit-email/godwit/core/store"
 )
 
@@ -179,27 +177,21 @@ func RoleFolder(ctx context.Context, db *store.DB, accountID int64, role string)
 	return store.Int(rows.Values[0][0]), store.Str(rows.Values[0][1]), nil
 }
 
-// SentFolder returns the name of the account's Sent folder (RoleFolder), or ""
-// when it has none. Before the first sync stored any folder, it is found from
-// LIST the way sync assigns roles.
-func SentFolder(ctx context.Context, db *store.DB, c *imapclient.Client, accountID int64) (string, error) {
+// SentFolder returns the account's Sent folder (RoleFolder) on the server, or
+// "" when it has none there. known is false before a sync stored any folder:
+// whether it has one is not known yet.
+func SentFolder(ctx context.Context, db *store.DB, accountID int64) (ref backend.FolderRef, known bool, err error) {
 	rows, err := db.Query(ctx, "SELECT count(*) FROM folders WHERE account_id = ?", accountID)
+	if err != nil || store.Int(rows.Values[0][0]) == 0 {
+		return "", false, err
+	}
+	id, _, err := RoleFolder(ctx, db, accountID, "sent")
+	if err != nil || id == 0 {
+		return "", true, err
+	}
+	rows, err = db.Query(ctx, "SELECT server_ref FROM folders WHERE id = ?", id)
 	if err != nil {
-		return "", err
+		return "", true, err
 	}
-	if store.Int(rows.Values[0][0]) > 0 {
-		_, name, err := RoleFolder(ctx, db, accountID, "sent")
-		return name, err
-	}
-	list, err := c.List("", "*", nil).Collect()
-	if err != nil {
-		return "", err
-	}
-	rs := imapbackend.Roles(list)
-	for i, d := range list {
-		if rs[i] == backend.RoleSent && imapbackend.Selectable(d) {
-			return d.Mailbox, nil
-		}
-	}
-	return "", nil
+	return backend.FolderRef(store.Str(rows.Values[0][0])), true, nil
 }

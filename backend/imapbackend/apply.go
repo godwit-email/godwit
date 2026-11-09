@@ -80,8 +80,8 @@ func opFeature(op backend.Op) backend.Feature {
 // Apply writes one op back. A server's NO is Failed; a location whose folder
 // was recreated (another UIDVALIDITY) is backend.ErrNotFound.
 //
-// shortcut: Copy, Delete and Append are not done yet (nothing queues them;
-// the sent copy still appends itself), the verbs that need them add them.
+// shortcut: Copy and Delete are not done yet (nothing queues them), the
+// verbs that need them add them.
 func (r *Receiver) Apply(ctx context.Context, op backend.Op) (backend.Result, error) {
 	c, err := r.client(ctx)
 	if err != nil {
@@ -106,6 +106,8 @@ func (r *Receiver) Apply(ctx context.Context, op backend.Op) (backend.Result, er
 		res, err = labelMove(c, op.At, "", false)
 	case backend.Purge:
 		res, err = purge(c, op)
+	case backend.Append:
+		res, err = appendTo(c, op)
 	default:
 		return backend.Result{}, fmt.Errorf("imapbackend: %T not supported yet", op)
 	}
@@ -117,6 +119,37 @@ func (r *Receiver) Apply(ctx context.Context, op backend.Op) (backend.Result, er
 }
 
 var done = backend.Result{Outcome: backend.Done}
+
+// appendTo APPENDs op.Raw unless op.To already holds it (its Message-ID and
+// size). Without UIDPLUS's APPENDUID the new location is not known.
+func appendTo(c *imapclient.Client, op backend.Append) (backend.Result, error) {
+	if op.MessageID != "" {
+		found, err := find(c, op.To, op.MessageID, int64(len(op.Raw)))
+		if err != nil {
+			return backend.Result{}, err
+		}
+		if len(found) > 0 {
+			return backend.Result{Outcome: backend.Done, Ref: found[0]}, nil
+		}
+	}
+	opts := &imap.AppendOptions{Flags: imapFlags(op.Flags), Time: op.Date}
+	cmd := c.Append(string(op.To), int64(len(op.Raw)), opts)
+	if _, err := cmd.Write(op.Raw); err != nil {
+		cmd.Close()
+		return backend.Result{}, err
+	}
+	if err := cmd.Close(); err != nil {
+		return backend.Result{}, err
+	}
+	data, err := cmd.Wait()
+	if err != nil {
+		return backend.Result{}, err
+	}
+	if data.UID == 0 || data.UIDValidity == 0 {
+		return backend.Result{Outcome: backend.Unlocated}, nil
+	}
+	return backend.Result{Outcome: backend.Done, Ref: backend.MessageRef(Encode(data.UIDValidity, uint32(data.UID)))}, nil
+}
 
 // selectAt selects at's folder read-write and decodes its UID; another
 // UIDVALIDITY is backend.ErrNotFound.

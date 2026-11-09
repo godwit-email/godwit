@@ -82,7 +82,9 @@ func (in AccountInput) validate() error {
 		slot, protocol, name string
 		Server
 	}{{"receiving", auth.IMAP, "IMAP", in.Receiving}, {"sending", auth.SMTP, "SMTP", in.Sending}} {
-		if e.Protocol != "" && e.Protocol != e.protocol {
+		// Graph is not chosen but stored after SMTP refused AUTH; a stored
+		// account's servers come back with it.
+		if e.Protocol != "" && e.Protocol != e.protocol && !(e.slot == "sending" && e.Protocol == auth.Graph) {
 			return fmt.Errorf("%s protocol %q is not supported", e.slot, e.Protocol)
 		}
 		if e.Host == "" {
@@ -691,7 +693,7 @@ func (s *Service) UpdateAccount(ctx context.Context, id int64, p AccountPatch) (
 		set("send_host", in.Sending.Host)
 		set("send_port", in.Sending.Port)
 		set("send_security", string(in.Sending.Security))
-		s.graphSend.Delete(id) // new servers: the next send tries SMTP before Graph again
+		set("send_protocol", auth.SMTP) // new servers: the next send tries SMTP before Graph again
 		// The checked settings work: the user just fixed the sign-in.
 		set("status", "ok")
 		set("status_detail", "")

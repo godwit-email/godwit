@@ -51,6 +51,7 @@ var allTests = []contractTest{
 	{"Find", testFind},
 	{"SetFlags", testSetFlags},
 	{"Move", testMove},
+	{"Append", testAppend},
 	{"Failed", testFailed},
 	{"Unsupported", testUnsupported},
 	{"Watch", testWatch},
@@ -475,6 +476,31 @@ func testMove(t *testing.T, start Fixture) {
 	}
 	if _, ok := v.messages[archive][res.Ref]; res.Outcome == backend.Done && !ok {
 		t.Errorf("archive lacks the reported location %q", res.Ref)
+	}
+}
+
+// Append stores a message once, with its flags: appending it again where it
+// already is stores nothing more.
+func testAppend(t *testing.T, start Fixture) {
+	_, r, v, _ := started(t, start)
+	if s := describe(t, r).Features[backend.FeatureAppend]; s.Level == backend.LevelUnsupported {
+		t.Skip("Append unsupported:", s.Reason)
+	}
+	inbox := v.folder(t, "INBOX")
+	raw := Message("appended@example.com", "appended")
+	op := backend.Append{To: inbox, Raw: raw, Flags: backend.Flags{Seen: true}, MessageID: "appended@example.com"}
+	for range 2 {
+		if res := apply(t, r, op); res.Outcome != backend.Done && res.Outcome != backend.Unlocated {
+			t.Fatalf("Append = %+v, want done", res)
+		}
+	}
+	got, err := r.Find(ctx(t), inbox, "appended@example.com", int64(len(raw)))
+	if err != nil || len(got) != 1 {
+		t.Fatalf("Find after appending twice = %v, %v; want one", got, err)
+	}
+	m := only(t, v.sync(t, r))
+	if subject(m) != "appended" || !m.Flags.Seen {
+		t.Errorf("the next sync shows %q seen=%v, want the appended message seen", subject(m), m.Flags.Seen)
 	}
 }
 

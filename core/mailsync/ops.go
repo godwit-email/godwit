@@ -338,13 +338,6 @@ func (p *pusher) lostSource(ctx context.Context, o op, sent bool) (string, error
 	return msg, finish(ctx, p.db, o, "conflict", msg)
 }
 
-// InFolder reports whether folder holds a message whose Message-ID is exactly
-// messageID (without its angle brackets) and, when size > 0, of that size.
-func InFolder(ctx context.Context, recv backend.Receiver, folder, messageID string, size int64) (bool, error) {
-	refs, err := recv.Find(ctx, backend.FolderRef(folder), messageID, size)
-	return len(refs) > 0, err
-}
-
 // moved records a move the server accepted: with its new location ref the
 // message's server location in the source folder becomes the destination;
 // without one it is cleared until fetch claims the arrival (ServerID, else
