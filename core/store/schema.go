@@ -703,7 +703,7 @@ var Migrations = [][]string{{
 	// or still waits in message_imports for its round.
 	`UPDATE messages SET labeled_at = unixepoch() WHERE labeled_at IS NULL
 		AND NOT EXISTS (SELECT 1 FROM message_imports i WHERE i.message_id = messages.id)
-		AND NOT EXISTS (SELECT 1 FROM events_log e WHERE e.type = 'message.received' AND e.message_id = messages.id)`,
+		AND id NOT IN (SELECT message_id FROM events_log WHERE type = 'message.received' AND message_id IS NOT NULL)`, // one pass: events_log has no index on message_id
 }}
 
 // HistoryRowsVersion is the schema version that keeps a conversation's
