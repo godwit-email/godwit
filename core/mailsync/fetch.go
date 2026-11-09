@@ -316,6 +316,15 @@ func (s *syncRun) commit(p backend.Page) error {
 	if err := flush(); err != nil {
 		return err
 	}
+	// The page's cursors go in one transaction, after its changes.
+	// shortcut: the changes are not in that transaction (ADR 0037 asks for
+	// one per page): storing a message reads what the ones before it wrote
+	// (threads, claims, merges), which the store's statement-list
+	// transactions cannot. Each change is idempotent, so a crash before the
+	// cursors only repeats the page. Put them in one transaction when the
+	// store can run reads inside one (a connection-held transaction).
+	var stmts []sqlite.Statement
+	states := map[*folder]backend.FolderState{}
 	for ref, st := range p.Folders {
 		f, err := s.folder(ref)
 		if err != nil {
@@ -325,14 +334,18 @@ func (s *syncRun) commit(p backend.Page) error {
 			s.deferred[f.id] = st
 			continue
 		}
-		if err := s.writeState(ctx, f, st); err != nil {
-			return err
-		}
+		stmts, states[f] = append(stmts, stateStmt(f, st)), st
 	}
 	if p.Account != "" {
-		if _, err := s.db.Execute(ctx, "UPDATE accounts SET cursor = ? WHERE id = ?", string(p.Account), s.a.id); err != nil {
-			return err
-		}
+		stmts = append(stmts, sqlite.Statement{SQL: "UPDATE accounts SET cursor = ? WHERE id = ?", Args: []any{string(p.Account), s.a.id}})
+	}
+	if _, err := s.db.Transaction(ctx, stmts); err != nil {
+		return err
+	}
+	for f, st := range states {
+		f.setState(st)
+	}
+	if p.Account != "" {
 		s.a.cursor = string(p.Account)
 	}
 	return nil
@@ -346,16 +359,21 @@ func (s *syncRun) folder(ref backend.FolderRef) (*folder, error) {
 }
 
 func (s *syncRun) writeState(ctx context.Context, f *folder, st backend.FolderState) error {
-	var filled any
-	if !st.Filled.IsZero() {
-		filled = st.Filled.Unix()
-	}
-	if _, err := s.db.Execute(ctx, "UPDATE folders SET cursor = ?, synced = ?, filled_since = ? WHERE id = ?",
-		nullable(string(st.Cursor)), st.Synced, filled, f.id); err != nil {
+	if _, err := s.db.Transaction(ctx, []sqlite.Statement{stateStmt(f, st)}); err != nil {
 		return err
 	}
 	f.setState(st)
 	return nil
+}
+
+// stateStmt stores st as f's sync state.
+func stateStmt(f *folder, st backend.FolderState) sqlite.Statement {
+	var filled any
+	if !st.Filled.IsZero() {
+		filled = st.Filled.Unix()
+	}
+	return sqlite.Statement{SQL: "UPDATE folders SET cursor = ?, synced = ?, filled_since = ? WHERE id = ?",
+		Args: []any{nullable(string(st.Cursor)), st.Synced, filled, f.id}}
 }
 
 // appeared stores messages reported in one folder: those without content as
