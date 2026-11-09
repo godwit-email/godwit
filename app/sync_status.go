@@ -57,7 +57,7 @@ func (a *App) syncHealth(acc core.Account) syncHealth {
 	h := syncHealth{acc: acc}
 	f, failed := a.syncErr[acc.ID]
 	h.err = f.err
-	id, host := acc.ID, acc.IMAPHost
+	id, host := acc.ID, acc.Receiving.Host
 	retry := syncButton{label: i18n.T("shell.sync.retry"), do: func() {
 		a.do(func(ctx context.Context) error { return a.svc.SyncNow(ctx, id) }, a.toastErr)
 	}}

@@ -613,7 +613,7 @@ func (b *blockingUpdate) update(ctx context.Context, id int64, p core.AccountPat
 	b.mu.Lock()
 	b.calls++
 	n := b.calls
-	host := p.Servers.IMAPHost
+	host := p.Servers.Receiving.Host
 	b.log = append(b.log, "start "+host)
 	b.mu.Unlock()
 	if n == 1 {
@@ -658,8 +658,8 @@ func TestSettingsAccountWritesOrdered(t *testing.T) {
 	want := []string{"start localhost", "end localhost", "start 127.0.0.1", "end 127.0.0.1"}
 	h.until("both saves", func() bool { return slices.Equal(b.Log(), want) })
 	h.until("the dialog closes", func() bool { return p.dialog == "" })
-	if got := h.account(acc.ID); got.IMAPHost != "127.0.0.1" || got.SMTPHost != "localhost" {
-		t.Fatalf("stored IMAP %q SMTP %q, want the second save's 127.0.0.1 / localhost", got.IMAPHost, got.SMTPHost)
+	if got := h.account(acc.ID); got.Receiving.Host != "127.0.0.1" || got.Sending.Host != "localhost" {
+		t.Fatalf("stored IMAP %q SMTP %q, want the second save's 127.0.0.1 / localhost", got.Receiving.Host, got.Sending.Host)
 	}
 }
 

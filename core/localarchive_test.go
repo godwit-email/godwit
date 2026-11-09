@@ -87,7 +87,7 @@ func TestLocalArchiveRefusesServerSettings(t *testing.T) {
 
 	yes := true
 	for name, p := range map[string]core.AccountPatch{
-		"servers": {Servers: &core.ServerSettings{IMAPHost: "imap.example.com", IMAPPort: 993}},
+		"servers": {Servers: &core.ServerSettings{Receiving: core.Server{Host: "imap.example.com", Port: 993}}},
 		"sync":    {Sync: &core.SyncRange{Limit: 100}},
 		"default": {IsDefault: &yes},
 	} {

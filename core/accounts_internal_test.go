@@ -26,7 +26,7 @@ func internalInput(t *testing.T, imapAddr, smtpAddr, email string, def bool) Acc
 	ih, ip := split(imapAddr)
 	sh, sp := split(smtpAddr)
 	return AccountInput{Email: email, Username: "alice", Password: "secret", IsDefault: def,
-		IMAPHost: ih, IMAPPort: ip, IMAPSecurity: SecurityNone, SMTPHost: sh, SMTPPort: sp, SMTPSecurity: SecurityNone}
+		Receiving: Server{Host: ih, Port: ip, Security: SecurityNone}, Sending: Server{Host: sh, Port: sp, Security: SecurityNone}}
 }
 
 func TestAccountPasswordWhitespacePreserved(t *testing.T) {
