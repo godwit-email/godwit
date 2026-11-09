@@ -505,7 +505,9 @@ func (s *syncer) backfillRange(ctx context.Context, f *folder) error {
 // snapshot reports the flags of 1:last UID, which local storage diffs for
 // changed flags and expunged locations. Nothing unless the FETCH completed:
 // a missing UID might only mean a dropped connection.
-// shortcut: refetches every FLAGS each round; switch to CONDSTORE/QRESYNC.
+// shortcut: refetches every FLAGS each round, a cost that grows with the
+// folder; switch to CONDSTORE/QRESYNC (FlagsChanged, MessageGone) when large
+// folders make rounds slow or the traffic shows up in error reports.
 func (s *syncer) snapshot(f *folder) error {
 	if f.last == 0 {
 		return nil

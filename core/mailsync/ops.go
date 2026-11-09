@@ -249,7 +249,10 @@ func (p *pusher) pushOp(ctx context.Context, o op) (problem string, err error) {
 	}
 	ref := string(res.Ref)
 	// A location from a folder generation we have not synced is no use.
-	// shortcut: reads IMAP's UIDVALIDITY here; a FolderReset could void it instead.
+	// shortcut: reads IMAP's UIDVALIDITY to tell the destination's generation
+	// (destination too), so mailsync still imports imapbackend; when a second
+	// backend has folder generations (EWS, POP3), give Move the destination's
+	// cursor and let Apply answer Unlocated for another generation instead.
 	if v, _ := imapbackend.Decode(ref); v != dst.validity {
 		ref = ""
 	}
