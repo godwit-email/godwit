@@ -58,6 +58,7 @@ type settingsPage struct {
 	iconPreview  ui.ImageSource                                                                 // iconUpload decoded
 	servers      serverForm                                                                     // the servers dialog's fields
 	reauth       map[int64]bool                                                                 // a browser sign-in runs for the account
+	rechecking   map[int64]bool                                                                 // a receive-only account's sending check runs
 	update       func(ctx context.Context, id int64, p core.AccountPatch) (core.Account, error) // tests swap it
 
 	aiTab, privacyTab int                         // the AI and 隐私与安全 pages' tabs
@@ -127,7 +128,7 @@ type settingsPage struct {
 }
 
 func newSettingsPage(a *App) *settingsPage {
-	return &settingsPage{a: a, forms: map[int64]*accountForm{}, usage: map[int64]int64{}, imgSize: -1, boxes: map[int64]*mailbox{}, reauth: map[int64]bool{}, sigDocs: map[int64]sigDoc{},
+	return &settingsPage{a: a, forms: map[int64]*accountForm{}, usage: map[int64]int64{}, imgSize: -1, boxes: map[int64]*mailbox{}, reauth: map[int64]bool{}, rechecking: map[int64]bool{}, sigDocs: map[int64]sigDoc{},
 		secDays: 30,
 		update:  a.svc.UpdateAccount, models: &modelsView{a: a, checkService: a.svc.CheckModelService, testService: a.svc.TestCapability, testPlugin: a.svc.TestPluginModel, serviceAvatar: a.svc.ModelServiceAvatar}, ext: &extView{a: a, tab: 1}, labels: newLabelsView(a), rules: &rulesView{a: a}}
 }

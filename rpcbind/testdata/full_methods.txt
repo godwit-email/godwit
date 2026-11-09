@@ -139,6 +139,7 @@ ReadingLanguage
 Reauthorize
 RebuildSearchIndex
 RecentSignInCodes
+RecheckSending
 RecognitionModelBackend
 RecognitionModelError
 RecognitionModelInstalled

@@ -325,6 +325,33 @@ func (p *settingsPage) syncNow(id int64) {
 	a.do(func(ctx context.Context) error { return a.svc.SyncNow(ctx, id) }, a.toastErr)
 }
 
+// recheckSending checks a receive-only account's servers again: a pass makes
+// it send, a failure says which step failed.
+func (p *settingsPage) recheckSending(id int64) {
+	a := p.a
+	if p.rechecking[id] {
+		return
+	}
+	p.rechecking[id] = true
+	var r core.CheckReport
+	a.do(func(ctx context.Context) error {
+		var err error
+		r, err = a.svc.RecheckSending(ctx, id)
+		return err
+	}, func(err error) {
+		delete(p.rechecking, id)
+		switch {
+		case err != nil:
+			a.toastErr(err)
+		case r.OK():
+			a.toastAs(kit.ToastSuccess, i18n.T("settings.account.receive_only.resumed"))
+			a.load()
+		default:
+			a.toastAs(kit.ToastWarning, i18n.T("settings.account.receive_only.still"))
+		}
+	})
+}
+
 // reauthorize signs in again in the browser; with the user's own OAuth
 // client, once they confirm it on the account's page.
 func (p *settingsPage) reauthorize(acc core.Account) {
@@ -564,13 +591,20 @@ func (p *settingsPage) accountView(c *ui.Context, acc core.Account) {
 			kit.Text(c, host+":"+strconv.Itoa(port)+" · "+cmpTr("onboarding.security."+string(sec), string(sec)), t.Text.Sm).Font(theme.Mono).TextColor(t.Muted)
 		})
 	}
-	settingsSection(c, i18n.T("settings.account.login"), "",
+	login := []func(){
 		row(i18n.T("settings.account.login.method"), p.authText(acc, prov), func() { p.authButton(c, acc, prov, false) }),
 		server("IMAP", acc.IMAPHost, acc.IMAPPort, acc.IMAPSecurity, ""),
 		server("SMTP", acc.SMTPHost, acc.SMTPPort, acc.SMTPSecurity, receiveOnlyHelp(acc)),
-		row(i18n.T("settings.account.servers"), i18n.T("settings.account.servers.help"), func() {
-			settingButton(c, i18n.T("settings.account.edit_servers"), kit.Outline, false).OnClick(func() { p.openDialog("servers", acc) })
+	}
+	if acc.ReceiveOnly { // OAuth has no servers to change: it tries SMTP again as it is
+		login = append(login, row(i18n.T("settings.account.receive_only"), "", func() {
+			settingButton(c, i18n.T("settings.account.receive_only.recheck"), kit.Outline, p.rechecking[acc.ID]).OnClick(func() { p.recheckSending(acc.ID) })
 		}))
+	}
+	login = append(login, row(i18n.T("settings.account.servers"), i18n.T("settings.account.servers.help"), func() {
+		settingButton(c, i18n.T("settings.account.edit_servers"), kit.Outline, false).OnClick(func() { p.openDialog("servers", acc) })
+	}))
+	settingsSection(c, i18n.T("settings.account.login"), "", login...)
 	remove()
 }
 

@@ -16,6 +16,7 @@ import (
 	"slices"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 	"unicode/utf8"
 
@@ -462,7 +463,8 @@ var errNotPassword = errors.New("the account does not sign in with a password")
 // UpdatePassword checks password against the account's servers and, if both
 // accept it, saves it and clears reauth_required and a paused outbox; the worker
 // resumes and the outbox sends in its next round. A failed check is a
-// *CheckError and leaves the keychain unchanged.
+// *CheckError and leaves the keychain unchanged; for a receive-only account
+// only IMAP must pass, and a passing SMTP step makes it send again.
 func (s *Service) UpdatePassword(ctx context.Context, id int64, password string) error {
 	ctx, end, err := s.begin(ctx, id)
 	if err != nil {
@@ -478,12 +480,18 @@ func (s *Service) UpdatePassword(ctx context.Context, id int64, password string)
 	}
 	in := serverInput(acc.Email, acc.servers())
 	in.Password = password
-	if r, err := s.check(ctx, in, ""); err != nil {
+	r, err := s.check(ctx, in, "")
+	if err != nil && !(acc.ReceiveOnly && r.OnlySMTPFailed()) { // a receive-only account needs IMAP only
 		return &CheckError{Report: r, err: err}
 	}
 	// A refusal of the old password still in flight is stale after credentialsUpdated.
 	if err := keychainSet(s.keyringUser(id), password); err != nil {
 		return fmt.Errorf("save credentials to keychain: %w", err)
+	}
+	if acc.ReceiveOnly && err == nil { // SMTP takes the new password: it sends again
+		if _, err := s.db.Execute(ctx, "UPDATE accounts SET receive_only = 0 WHERE id = ?", id); err != nil {
+			return err
+		}
 	}
 	return s.credentialsUpdated(ctx, id, nil)
 }
@@ -492,7 +500,8 @@ func (s *Service) UpdatePassword(ctx context.Context, id int64, password string)
 // have signed in to the account's address with its provider (ErrWrongAccount,
 // ErrProviderMismatch; the old tokens stay), and the flow's OAuth client, which
 // may be another one than before (a rotated secret). It clears reauth_required
-// and a paused outbox; the worker resumes.
+// and a paused outbox; the worker resumes. A receive-only account sends again
+// if the check passes with the new sign-in (RecheckSending).
 func (s *Service) Reauthorize(ctx context.Context, id int64, flowID string) error {
 	ctx, end, err := s.begin(ctx, id)
 	if err != nil {
@@ -517,10 +526,11 @@ func (s *Service) Reauthorize(ctx context.Context, id int64, flowID string) erro
 	sem := s.refreshLock(id)
 	select {
 	case sem <- struct{}{}:
-		defer func() { <-sem }()
 	case <-ctx.Done():
 		return ctx.Err()
 	}
+	release := sync.OnceFunc(func() { <-sem })
+	defer release()
 	if _, ok := s.takeGrant(flowID); !ok {
 		return ErrUnknownFlow
 	}
@@ -540,7 +550,16 @@ func (s *Service) Reauthorize(ctx context.Context, id int64, flowID string) erro
 		err = fmt.Errorf("save credentials to keychain: %w", err)
 		return errors.Join(err, s.saveClient(context.WithoutCancel(ctx), id, old))
 	}
-	return s.credentialsUpdated(ctx, id, &g.Grant)
+	if err := s.credentialsUpdated(ctx, id, &g.Grant); err != nil {
+		return err
+	}
+	if acc.ReceiveOnly { // the new sign-in may send: a failing check keeps it receive-only
+		release() // the check may refresh the token
+		if _, err := s.recheckSending(ctx, acc); err != nil {
+			slog.Warn("could not recheck sending", "account", id, "err", err)
+		}
+	}
+	return nil
 }
 
 // saveClient makes c the account's OAuth client: its ID on the account and its

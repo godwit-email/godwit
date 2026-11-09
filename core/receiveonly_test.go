@@ -142,3 +142,61 @@ func TestReceiveOnlyRuleForwardFails(t *testing.T) {
 	assert.Equal(t, 0, e.count(t, "SELECT count(*) FROM outbox"))
 	assert.Empty(t, sent.Messages())
 }
+
+func TestRecheckSending(t *testing.T) {
+	e := newReceiveOnlyEnv(t)
+	r, err := e.s.RecheckSending(bg, e.acc.ID)
+	require.NoError(t, err)
+	assert.True(t, r.OnlySMTPFailed())
+	acc, err := e.s.account(bg, e.acc.ID)
+	require.NoError(t, err)
+	assert.True(t, acc.ReceiveOnly, "still failing: stays receive-only")
+
+	// A new password goes in although SMTP still refuses it.
+	require.NoError(t, e.s.UpdatePassword(bg, e.acc.ID, "secret"))
+	acc, err = e.s.account(bg, e.acc.ID)
+	require.NoError(t, err)
+	assert.True(t, acc.ReceiveOnly)
+
+	e.smtp.RejectAuth(false)
+	r, err = e.s.RecheckSending(bg, e.acc.ID)
+	require.NoError(t, err)
+	assert.True(t, r.OK())
+	acc, err = e.s.account(bg, e.acc.ID)
+	require.NoError(t, err)
+	assert.False(t, acc.ReceiveOnly)
+	e.sendNew(t)
+	e.sync(t)
+	assert.Len(t, e.smtp.Messages(), 1)
+}
+
+func TestReceiveOnlyPasswordResumes(t *testing.T) {
+	e := newReceiveOnlyEnv(t)
+	e.smtp.RejectAuth(false)
+	require.NoError(t, e.s.UpdatePassword(bg, e.acc.ID, "secret"))
+	acc, err := e.s.account(bg, e.acc.ID)
+	require.NoError(t, err)
+	assert.False(t, acc.ReceiveOnly)
+}
+
+// An OAuth account has no servers to change: signing in again rechecks SMTP.
+func TestReceiveOnlyReauthorizeResumes(t *testing.T) {
+	e := newOAuthEnv(t, false)
+	e.smtp.RejectAuth(true)
+	in := e.input(t, "alice@example.com", e.signIn(t, "alice@example.com"))
+	in.ReceiveOnly = true
+	acc, err := e.s.AddAccount(bg, in)
+	require.NoError(t, err)
+	require.True(t, acc.ReceiveOnly)
+
+	require.NoError(t, e.s.Reauthorize(bg, acc.ID, e.signIn(t, "alice@example.com")))
+	acc, err = e.s.account(bg, acc.ID)
+	require.NoError(t, err)
+	assert.True(t, acc.ReceiveOnly, "SMTP still refuses: no error, still receive-only")
+
+	e.smtp.RejectAuth(false)
+	require.NoError(t, e.s.Reauthorize(bg, acc.ID, e.signIn(t, "alice@example.com")))
+	acc, err = e.s.account(bg, acc.ID)
+	require.NoError(t, err)
+	assert.False(t, acc.ReceiveOnly)
+}
