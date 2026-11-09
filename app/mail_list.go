@@ -1752,7 +1752,7 @@ func (p *mailPage) batchScoped(act string, rows []mailItem, anywhere bool) {
 				skipped = append(skipped, names[acc])
 				continue
 			}
-			if why := a.unsupported(acc, actFeatures[op]); why != "" {
+			if why := a.unsupported(acc, core.ActionFeatures[op]); why != "" {
 				a.toastAs(kit.ToastWarning, names[acc]+": "+why)
 				continue
 			}
