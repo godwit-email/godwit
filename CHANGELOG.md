@@ -1,5 +1,13 @@
 # Changelog
 
+## [1.32.0](https://github.com/godwit-email/godwit/compare/v1.31.0...v1.32.0) (2026-11-09)
+
+
+### Features
+
+* **accounts:** add an account as receive-only when only SMTP fails ([#576](https://github.com/godwit-email/godwit/issues/576)) ([f3273cc](https://github.com/godwit-email/godwit/commit/f3273cc15a98343f0ea55ca39c166a8205ca81a7))
+* **outlook:** send through Microsoft Graph when SMTP AUTH is disabled ([#577](https://github.com/godwit-email/godwit/issues/577)) ([a59994f](https://github.com/godwit-email/godwit/commit/a59994f24c6eb69e3400c4e870290c374c64bf46))
+
 ## [1.31.0](https://github.com/godwit-email/godwit/compare/v1.30.0...v1.31.0) (2026-11-09)
 
 
