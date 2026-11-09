@@ -21,7 +21,6 @@ import (
 	"unicode/utf8"
 
 	"github.com/egoist/mygo/plugins/sqlite"
-	"github.com/godwit-email/godwit/backend/imapbackend"
 	"github.com/godwit-email/godwit/core/auth"
 	"github.com/godwit-email/godwit/core/events"
 	"github.com/godwit-email/godwit/core/store"
@@ -743,18 +742,21 @@ func (s *Service) UpdateAccount(ctx context.Context, id int64, p AccountPatch) (
 		stmts = append(stmts, sqlite.Statement{SQL: "UPDATE accounts SET " + strings.Join(cols, ", ") + " WHERE id = ?",
 			Args: append(args, id)})
 	}
-	// shortcut: a JMAP account's new server keeps the cursor, which the new
-	// server cannot calculate changes from, so its first sync starts over;
-	// clear it here if a server ever does.
-	if p.Servers != nil && acc.Receiving.Protocol == auth.IMAP && (p.Servers.Receiving.Host != acc.Receiving.Host || p.Servers.Receiving.Port != acc.Receiving.Port ||
-		serverInput(acc.Email, *p.Servers).username() != acc.Username) {
-		// Another mailbox: its UIDs are not the old one's even where UIDVALIDITY
-		// matches. No real UIDVALIDITY is 0, so pushes of queued ops and downloads
-		// see a recreated folder and the next fetch re-imports every folder.
+	if p.Servers != nil && (p.Servers.Receiving.Host != acc.Receiving.Host || p.Servers.Receiving.Port != acc.Receiving.Port ||
+		p.Servers.Receiving.Path != acc.Receiving.Path || serverInput(acc.Email, *p.Servers).username() != acc.Username) {
+		// Another mailbox: its server locations are not the old one's even where
+		// they read the same. They and the cursors are forgotten, as a
+		// FolderReset of every folder would, so downloads find no location,
+		// queued changes are conflicts and the next round syncs every folder
+		// from the start: a message it finds by identity (Gmail, JMAP) keeps
+		// its row, the rest is gone at the round's end.
 		stmts = append(stmts,
-			sqlite.Statement{SQL: "UPDATE folders SET cursor = " + imapbackend.ZeroValidity("cursor") + " WHERE account_id = ?", Args: []any{id}},
-			sqlite.Statement{SQL: "UPDATE message_locations SET server_ref = " + imapbackend.ZeroValidity("server_ref") + " WHERE server_ref IS NOT NULL AND message_id IN (SELECT id FROM messages WHERE account_id = ?)", Args: []any{id}})
-		unlock, err := s.lockAccount(ctx, id) // no sync or download is using the old UIDs meanwhile
+			sqlite.Statement{SQL: `UPDATE ops SET state = 'conflict', last_error = 'the account moved to another server, so a change queued for the old one was not applied'
+				WHERE account_id = ? AND state IN ('pending', 'awaiting_claim')`, Args: []any{id}},
+			sqlite.Statement{SQL: "UPDATE accounts SET cursor = NULL WHERE id = ?", Args: []any{id}},
+			sqlite.Statement{SQL: "UPDATE folders SET cursor = NULL, synced = 0, filled_since = NULL WHERE account_id = ?", Args: []any{id}},
+			sqlite.Statement{SQL: "DELETE FROM message_locations WHERE message_id IN (SELECT id FROM messages WHERE account_id = ?)", Args: []any{id}})
+		unlock, err := s.lockAccount(ctx, id) // no sync or download is using the old locations meanwhile
 		if err != nil {
 			return Account{}, err
 		}

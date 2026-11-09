@@ -33,3 +33,29 @@ func TestNoIMAPClient(t *testing.T) {
 		t.Fatal(err)
 	}
 }
+
+// TestIMAPBackendStaysBehindTheSeam: UIDVALIDITY and the IMAP backend's
+// encodings stay in the backend (ADR 0037). Only the place that picks the
+// account's backend and ops.go's shortcut import it.
+func TestIMAPBackendStaysBehindTheSeam(t *testing.T) {
+	const pkg = "github.com/godwit-email/godwit/backend/imapbackend"
+	allowed := map[string]bool{"check.go": true, "mailsync/ops.go": true}
+	err := filepath.WalkDir(".", func(p string, d fs.DirEntry, err error) error {
+		if err != nil || d.IsDir() || !strings.HasSuffix(p, ".go") || strings.HasSuffix(p, "_test.go") {
+			return err
+		}
+		f, err := parser.ParseFile(token.NewFileSet(), p, nil, parser.ImportsOnly)
+		if err != nil {
+			return err
+		}
+		for _, imp := range f.Imports {
+			if path, _ := strconv.Unquote(imp.Path.Value); path == pkg && !allowed[filepath.ToSlash(p)] {
+				t.Errorf("core/%s imports imapbackend: go through backend.Receiver", filepath.ToSlash(p))
+			}
+		}
+		return nil
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+}
