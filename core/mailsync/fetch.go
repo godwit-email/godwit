@@ -51,7 +51,8 @@ type account struct {
 	email  string
 	limit  int
 	months int
-	budget int // range backfill pages left this round
+	budget int  // range backfill pages left this round
+	noSelf bool // a local archive: email is a placeholder, not the user's address
 }
 
 // since is the SINCE date of a months range: date-only, as IMAP compares

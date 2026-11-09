@@ -10,7 +10,7 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import type { Account } from "@/mygo";
+import type { Account, ContactHit } from "@/mygo";
 import type { T } from "@/shared/i18n";
 import { AddressInput } from "./AddressInput";
 import { commit, invalid } from "./address";
@@ -48,6 +48,7 @@ export function Fields({
   replyTo,
   subject,
   onChange,
+  onSearch,
   frozen = false,
   t,
 }: {
@@ -61,6 +62,8 @@ export function Fields({
   replyTo: string;
   subject: string;
   onChange(e: FieldsEdit): void;
+  /** The contacts matching what is typed in an address field. */
+  onSearch?(query: string): Promise<ContactHit[]>;
   frozen?: boolean;
   t: T;
 }) {
@@ -113,6 +116,7 @@ export function Fields({
             )
           }
           placeholder={t(placeholder)}
+          onSearch={onSearch}
           frozen={frozen}
           t={t}
         />

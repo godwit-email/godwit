@@ -32,6 +32,9 @@ func (p *mailPage) emptyFolderDialog(c *ui.Context) {
 		desc = i18n.T("mail.empty_spam.desc")
 		btn = i18n.T("mail.empty_spam")
 	}
+	if p.a.isArchiveID(p.emptyFolderAcc) { // no server copy, no undo
+		desc = i18n.T("mail.archive.empty_trash.desc")
+	}
 	kit.Dialog(c, &p.emptyFolderAsk, title,
 		kit.DialogOpts{Size: kit.DialogSm, Alert: true, Desc: desc, Close: i18n.T("common.close")}, nil, func() {
 			kit.Button(c, i18n.T("common.cancel"), kit.ButtonOpts{Variant: kit.Outline}).OnClick(func() {

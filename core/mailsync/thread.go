@@ -30,7 +30,9 @@ func planThread(ctx context.Context, db *store.DB, acc *account, p *mail.Parsed)
 	if err != nil {
 		return threadPlan{}, err
 	}
-	if len(tids) == 0 && p.InReplyTo == "" && len(p.References) == 0 {
+	// Subject threading needs the user's own address to leave out; a local
+	// archive has none, so its mail threads by references only (ADR 0036).
+	if len(tids) == 0 && !acc.noSelf && p.InReplyTo == "" && len(p.References) == 0 {
 		tid, err := subjectThread(ctx, db, acc, p, key)
 		if err != nil {
 			return threadPlan{}, err
@@ -147,17 +149,22 @@ func participants(self string, addrs []string) map[string]bool {
 // threadTail records every Message-ID of the message at (folderID, uid) under its
 // thread (unreceived ones become placeholders) and refreshes the thread's last_date.
 func threadTail(accountID, folderID int64, uid uint32, ids []string) []sqlite.Statement {
-	const tid = "(SELECT thread_id FROM messages WHERE id = (SELECT message_id FROM message_locations WHERE folder_id = ? AND uid = ?))"
+	return threadTailOf(accountID, "(SELECT message_id FROM message_locations WHERE folder_id = ? AND uid = ?)", []any{folderID, uid}, ids)
+}
+
+// threadTailOf is threadTail for the message that the SQL expression msg, with args, is.
+func threadTailOf(accountID int64, msg string, args []any, ids []string) []sqlite.Statement {
+	tid := "(SELECT thread_id FROM messages WHERE id = " + msg + ")"
 	var out []sqlite.Statement
 	for _, id := range ids {
 		out = append(out, sqlite.Statement{
 			SQL: "INSERT INTO thread_refs(account_id, message_id_hdr, thread_id) VALUES (?, ?, " + tid + `)
 				ON CONFLICT(account_id, message_id_hdr) DO UPDATE SET thread_id = excluded.thread_id`,
-			Args: []any{accountID, id, folderID, uid},
+			Args: append([]any{accountID, id}, args...),
 		})
 	}
 	return append(out, sqlite.Statement{
 		SQL:  "UPDATE threads SET last_date = (SELECT max(date) FROM messages WHERE thread_id = threads.id) WHERE id = " + tid,
-		Args: []any{folderID, uid},
+		Args: args,
 	})
 }

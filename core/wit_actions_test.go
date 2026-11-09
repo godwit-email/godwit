@@ -286,6 +286,26 @@ func TestWitReplyForwardPlainText(t *testing.T) {
 	}
 }
 
+// Wit's reply or forward of local archive mail drafts from the account that sends.
+func TestWitReplyForwardLocalArchiveMail(t *testing.T) {
+	e := newSkillEnv(t)
+	arch, err := e.s.AddLocalArchive(t.Context(), "old")
+	require.NoError(t, err)
+	res, err := e.s.db.Execute(t.Context(), "INSERT INTO messages(account_id, subject, from_addr, date) VALUES (?, 'Old', 'bob@example.com', 1)", arch.ID)
+	require.NoError(t, err)
+	ctx := context.WithValue(t.Context(), runKey{}, &runJob{refs: map[int64]int{res.LastInsertID: 1}})
+	for name, prepare := range map[string]func(context.Context, Conversation, json.RawMessage) (prepared, error){
+		"reply": e.s.prepareReplyMail, "forward": e.s.prepareForwardMail,
+	} {
+		p, err := prepare(ctx, Conversation{}, json.RawMessage(`{"id":1,"to":["c@example.com"],"html":"Hi"}`))
+		require.NoError(t, err, name)
+		var args replyForwardArgs
+		require.NoError(t, json.Unmarshal(p.Args, &args))
+		assert.Equal(t, int64(1), args.AccountID, name)
+		assert.Equal(t, int64(1), p.TargetID, name)
+	}
+}
+
 func TestWitUnsubscribe(t *testing.T) {
 	e := newSkillEnv(t)
 	ctx := t.Context()

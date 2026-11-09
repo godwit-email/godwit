@@ -71,9 +71,10 @@ type Env struct {
 }
 
 type mailServers struct {
-	imap     *IMAP
-	smtp     *SMTP
-	smtpAddr string
+	imap      *IMAP
+	smtp      *SMTP
+	smtpAddr  string
+	delivered bool // Deliver synced the account before its first append
 }
 
 type config struct {
@@ -289,9 +290,22 @@ func (e *Env) Endpoints(accountID int64) (imapHost string, imapPort int, smtpHos
 	return h, imapPort, sh, smtpPort
 }
 
-// Deliver appends raw to the account's folder on its IMAP server and syncs.
+// Deliver appends raw to the account's folder on its IMAP server and syncs:
+// raw is new mail. (Append to IMAP().User for mail already there.)
 func (e *Env) Deliver(t *testing.T, accountID int64, folder string, raw []byte) {
 	t.Helper()
+	m := e.mail(accountID)
+	e.mu.Lock()
+	first := !m.delivered
+	m.delivered = true
+	e.mu.Unlock()
+	// A folder's first sync imports what is there as existing mail, not new
+	// arrivals (ADR 0034): finish it first, which the background sync may not have.
+	if first {
+		if err := e.Svc.SyncNow(context.Background(), accountID); err != nil {
+			t.Fatal(err)
+		}
+	}
 	if _, err := e.IMAP(accountID).User.Append(folder, bytes.NewReader(raw), &imap.AppendOptions{}); err != nil {
 		t.Fatal(err)
 	}

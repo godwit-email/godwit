@@ -7,6 +7,7 @@ AccountIcon
 AddAccount
 AddAttachment
 AddAttachmentAt
+AddLocalArchive
 AddMCPServer
 AddModelService
 AllAccountLabels
@@ -15,6 +16,7 @@ ApplyEditedProposal
 ArchiveMessages
 ArchiveSender
 ArchiveThreads
+ArchiveUsage
 Ask
 AskAgain
 AskWith
@@ -42,6 +44,7 @@ ContactDetail
 ContactMail
 Contacts
 CreateLabel
+CreateLocalFolder
 CreateSignature
 Delete
 DeleteConversation
@@ -49,6 +52,7 @@ DeleteDraft
 DeleteDraftIfEmpty
 DeleteForever
 DeleteLabel
+DeleteLocalFolder
 DeleteRule
 DeleteSignature
 DeleteView
@@ -75,6 +79,7 @@ GrantPermission
 ImageCache
 ImageCacheSize
 ImagesAllowed
+ImportEML
 InlineSignatureImages
 InstallPlugin
 InstallPluginFromRegistry
@@ -146,6 +151,7 @@ RemoveAttachmentAt
 RemoveMCPServer
 RemoveModelFiles
 RemoveModelService
+RenameLocalFolder
 ReorderAccounts
 ReorderLabels
 ReorderRules

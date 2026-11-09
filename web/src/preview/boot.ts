@@ -91,6 +91,10 @@ const pages: Record<string, { states: string[]; entry: () => Promise<unknown>; s
         "ComposePage.OpenLink": nothing,
         "ComposePage.OpenModels": nothing,
         "ComposePage.Models": async () => fx.witModels,
+        "ComposePage.SearchContacts": async (q: string) =>
+          fx.contactHits.filter((h) =>
+            `${h.name} ${h.address}`.toLowerCase().includes(q.toLowerCase()),
+          ),
         "ComposePage.OpenCited": nothing,
         "ComposePage.CheckCited": nothing,
         "ComposePage.Ask": async () => runStart,

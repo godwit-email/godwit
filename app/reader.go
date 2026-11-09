@@ -632,7 +632,9 @@ func draftSource(msgs []core.MessageSummary, target int64, mode string) (core.Me
 }
 
 // draft starts a reply, reply-all or forward of m from account acc (0 to
-// look it up by m's folder) and opens it in a compose window.
+// look it up by m's folder) and opens it in a compose window. A local
+// archive's mail is answered from the default account that sends (core picks
+// it): the compose window's From picks another.
 func (a *App) draft(m core.MessageSummary, acc int64, mode string) {
 	var id int64
 	a.do(func(ctx context.Context) (err error) {

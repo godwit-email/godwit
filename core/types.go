@@ -55,7 +55,13 @@ type Account struct {
 	SMTPSecurity                            Security
 	Provider, StatusDetail                  string
 	OAuthClientID                           string // the user's own OAuth client (OAuthClient), "" the provider's
+	Kind                                    string // "" a mail account, KindLocalArchive
 }
+
+// KindLocalArchive is an account with no servers or credentials: it never
+// syncs and never sends, and its folders are only local (ADR 0036). Its Email
+// is a unique placeholder, never a sender address.
+const KindLocalArchive = "local_archive"
 
 // Folder is a mailbox of an account. Role is inbox, sent, trash, drafts, junk,
 // archive or empty.

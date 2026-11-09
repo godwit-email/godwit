@@ -29,3 +29,8 @@ export function display(s: string): string {
 export function invalid(list: string[]): string[] {
   return list.filter((s) => !address.test(s.trim()));
 }
+
+/** An entry's bare address, lowercased: `Name <a@b>` and `a@b` are the same contact. */
+export function addrKey(s: string): string {
+  return (s.trim().match(/<([^<>]*)>$/)?.[1] ?? s).trim().toLowerCase();
+}

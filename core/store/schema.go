@@ -697,6 +697,19 @@ var Migrations = [][]string{{
 	// 1: the account's labels and the server's IMAP keywords follow each other (ADR 0035).
 	`ALTER TABLE accounts ADD COLUMN label_keywords INTEGER NOT NULL DEFAULT 0`,
 }, {
+	// '' a mail account; local_archive one with no servers, only local folders (ADR 0036).
+	`ALTER TABLE accounts ADD COLUMN kind TEXT NOT NULL DEFAULT ''`,
+}, {
+	// A local archive's message is its original file, archive/<account>/<content_hash>.eml;
+	// the hash is its identity there (ADR 0036). NULL for synced mail.
+	`ALTER TABLE messages ADD COLUMN content_hash TEXT`,
+	`CREATE UNIQUE INDEX messages_content_hash ON messages(account_id, content_hash) WHERE content_hash IS NOT NULL`,
+}, {
+	// A local archive has no server to push to: every write path's op is dropped (ADR 0036).
+	`CREATE TRIGGER ops_local_archive BEFORE INSERT ON ops
+		WHEN (SELECT kind FROM accounts WHERE id = NEW.account_id) = 'local_archive'
+		BEGIN SELECT RAISE(IGNORE); END`,
+}, {
 	// Auto-labeling classifies new mail only: older mail a sync imported (a
 	// first sync, a backfill) waiting with labeled_at NULL is let go, as sync
 	// now does when it imports it. New mail is what logged message.received,

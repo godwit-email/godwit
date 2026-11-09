@@ -496,6 +496,7 @@ func TestEmptyFolder(t *testing.T) {
 	ids, err := e.s.EmptyFolder(bg, trashID)
 	require.NoError(t, err)
 	assert.ElementsMatch(t, []int64{e.idOf(t, "trash1@x"), e.idOf(t, "trash2@x")}, ids)
+	assert.Equal(t, 2, e.count(t, "SELECT count(*) FROM messages WHERE message_id LIKE 'trash%'"), "kept for undo, unlike a local archive's (ADR 0036)")
 	clock.Advance(UndoPurgeWindow)
 	e.sync(t)
 	assert.Equal(t, []string{}, e.onServer(t, "Trash"))

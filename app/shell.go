@@ -114,6 +114,9 @@ func (a *App) onEvent(ev events.Event) {
 	case events.MCPSendsChanged: // only the confirmation dialog shows them
 		a.loadMCPSends()
 		return
+	case events.ImportProgress: // only its toast shows it; MessagesChanged refreshes the rest
+		a.mail.importProgress(ev)
+		return
 	case events.SettingsChanged:
 		a.mail.reader.invalidateAvatars(false)
 	case events.SyncStarted:
@@ -253,6 +256,7 @@ func (a *App) View(c *ui.Context) {
 	a.linkDialog(c)
 	a.closeDialog(c)
 	a.mail.emptyFolderDialog(c)
+	a.mail.nameDialogView(c)
 	a.mail.reader.egressDialog(c)
 	a.mail.reader.unsubscribeDialog(c)
 	a.mcpSendDialog(c)
