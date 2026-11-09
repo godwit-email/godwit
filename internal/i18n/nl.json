@@ -2079,5 +2079,16 @@
   "error_role_folder": "Inbox en prullenbak kunnen niet hernoemd of verwijderd worden.",
   "error_folder_not_empty": "De map is niet leeg. Verplaats eerst de mail.",
   "error_folder_name_empty": "Een map heeft een naam nodig.",
-  "error_folder_exists": "Er bestaat al een map met deze naam."
+  "error_folder_exists": "Er bestaat al een map met deze naam.",
+  "feature_reason_imap_no_move": "De server kan geen e-mail verplaatsen (hij ondersteunt MOVE noch UIDPLUS).",
+  "feature_reason_imap_gmail_copy_is_label": "In Gmail is een kopie hetzelfde bericht met een extra label.",
+  "feature_reason_imap_no_labels": "De server heeft geen labels: een bericht staat in één map.",
+  "feature_reason_imap_no_uidplus": "De server kan e-mail niet definitief verwijderen (hij ondersteunt UIDPLUS niet).",
+  "feature_reason_imap_gmail_folder_is_label": "In Gmail is een map een label: verwijderen laat de e-mail staan.",
+  "feature_reason_imap_client_saves_sent": "Godwit bewaart zelf een kopie van verzonden e-mail.",
+  "feature_reason_imap_no_idle": "De server kan nieuwe e-mail niet pushen (geen IDLE); Godwit kijkt om de paar minuten.",
+  "feature_reason_jmap_no_copy": "JMAP kan e-mail binnen een account niet kopiëren, alleen aan nog een postvak toevoegen.",
+  "feature_reason_jmap_append_pending": "E-mail via JMAP aan de server toevoegen is nog niet beschikbaar.",
+  "feature_reason_jmap_folders_pending": "Mappen beheren via JMAP is nog niet beschikbaar.",
+  "feature_reason_jmap_sent_via_smtp": "E-mail gaat via SMTP, dat geen kopie op de server bewaart."
 }

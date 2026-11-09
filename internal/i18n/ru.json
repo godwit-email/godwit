@@ -2079,5 +2079,16 @@
   "error_role_folder": "Входящие и корзину нельзя переименовать или удалить.",
   "error_folder_not_empty": "Папка не пуста. Сначала переместите из неё письма.",
   "error_folder_name_empty": "У папки должно быть имя.",
-  "error_folder_exists": "Папка с таким именем уже существует."
+  "error_folder_exists": "Папка с таким именем уже существует.",
+  "feature_reason_imap_no_move": "Сервер не может перемещать письма (не поддерживает ни MOVE, ни UIDPLUS).",
+  "feature_reason_imap_gmail_copy_is_label": "В Gmail копия — это то же письмо с ещё одним ярлыком.",
+  "feature_reason_imap_no_labels": "На сервере нет ярлыков: письмо лежит только в одной папке.",
+  "feature_reason_imap_no_uidplus": "Сервер не может удалять письма навсегда (не поддерживает UIDPLUS).",
+  "feature_reason_imap_gmail_folder_is_label": "В Gmail папка — это ярлык: при её удалении письма остаются.",
+  "feature_reason_imap_client_saves_sent": "Копию отправленных писем Godwit сохраняет сам.",
+  "feature_reason_imap_no_idle": "Сервер не сообщает о новых письмах (нет IDLE); Godwit проверяет почту каждые несколько минут.",
+  "feature_reason_jmap_no_copy": "JMAP не умеет копировать письма внутри аккаунта, только добавлять их ещё в один ящик.",
+  "feature_reason_jmap_append_pending": "Добавление писем на сервер через JMAP пока недоступно.",
+  "feature_reason_jmap_folders_pending": "Управление папками через JMAP пока недоступно.",
+  "feature_reason_jmap_sent_via_smtp": "Письма отправляются по SMTP, который не сохраняет копию на сервере."
 }

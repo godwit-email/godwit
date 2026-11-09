@@ -213,7 +213,7 @@ func (s *Service) AddAccount(ctx context.Context, in AccountInput) (Account, err
 			recv_protocol, recv_host, recv_port, recv_security, send_protocol, send_host, send_port, send_security, created_at, provider, oauth_client_id, features, receive_only, position)
 			VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'ok', ?, 'imap', ?, ?, ?, 'smtp', ?, ?, ?, ?, ?, ?, ?, ?, (SELECT COALESCE(MAX(position) + 1, 0) FROM accounts))`,
 		Args: []any{in.Email, in.Name, in.Alias, b2i(isDefault), sync.Limit, sync.Months, authType, authType, in.username(),
-			in.Receiving.Host, in.Receiving.Port, string(in.Receiving.Security), in.Sending.Host, in.Sending.Port, string(in.Sending.Security), time.Now().Unix(), in.Provider, in.oauthClientID, imapbackend.Features(checked.gmail), b2i(receiveOnly)},
+			in.Receiving.Host, in.Receiving.Port, string(in.Receiving.Security), in.Sending.Host, in.Sending.Port, string(in.Sending.Security), time.Now().Unix(), in.Provider, in.oauthClientID, encodeFeatures(checked.desc), b2i(receiveOnly)},
 	})
 	res, err := s.db.Transaction(ctx, stmts)
 	if err != nil {
@@ -337,7 +337,7 @@ func b2i(b bool) int {
 const accountCols = `id, email, name, alias, COALESCE((SELECT html FROM signatures WHERE id = signature_id), ''), username, is_default, sync_limit, recv_auth, status,
 	recv_host, recv_port, recv_security, send_host, send_port, send_security, smtp_reauth, provider, status_detail,
 	sync_since_months, (SELECT count(*) FROM folders WHERE account_id = accounts.id), signature_id, icon, ai_instructions, oauth_client_id, label_keywords, kind, receive_only,
-	recv_protocol, send_protocol`
+	recv_protocol, send_protocol, features`
 
 // ErrAccountNotFound is returned for an account id that does not exist.
 var ErrAccountNotFound = errors.New("account not found")
@@ -363,6 +363,9 @@ func scanAccount(r []any) Account {
 		Provider:  store.Str(r[17]), StatusDetail: store.Str(r[18]), SignatureID: store.Int(r[21]), Icon: store.Str(r[22]),
 		AIInstructions: store.Str(r[23]), OAuthClientID: store.Str(r[24]), LabelKeywords: store.Int(r[25]) == 1, Kind: store.Str(r[26]),
 		ReceiveOnly: store.Int(r[27]) == 1,
+	}
+	if d, ok := decodeFeatures(r[30]); ok {
+		a.Features = d.Features
 	}
 	// SMTP refuses the password: the user is asked for it the same way. status and
 	// status_detail are IMAP's and the keychain's, and they take precedence.
@@ -682,7 +685,7 @@ func (s *Service) UpdateAccount(ctx context.Context, id int64, p AccountPatch) (
 		set("receive_only", b2i(err != nil))
 		set("username", in.username())
 		set("recv_host", in.Receiving.Host)
-		set("features", imapbackend.Features(r.gmail))
+		set("features", encodeFeatures(r.desc))
 		set("recv_port", in.Receiving.Port)
 		set("recv_security", string(in.Receiving.Security))
 		set("send_host", in.Sending.Host)

@@ -2079,5 +2079,16 @@
   "error_role_folder": "La bandeja de entrada y la Papelera no se pueden renombrar ni eliminar.",
   "error_folder_not_empty": "La carpeta no está vacía. Mueve antes su correo.",
   "error_folder_name_empty": "La carpeta necesita un nombre.",
-  "error_folder_exists": "Ya existe una carpeta con este nombre."
+  "error_folder_exists": "Ya existe una carpeta con este nombre.",
+  "feature_reason_imap_no_move": "El servidor no puede mover correos (no admite MOVE ni UIDPLUS).",
+  "feature_reason_imap_gmail_copy_is_label": "En Gmail, una copia es el mismo mensaje con una etiqueta más.",
+  "feature_reason_imap_no_labels": "El servidor no tiene etiquetas: un mensaje está en una sola carpeta.",
+  "feature_reason_imap_no_uidplus": "El servidor no puede eliminar correos definitivamente (no admite UIDPLUS).",
+  "feature_reason_imap_gmail_folder_is_label": "En Gmail una carpeta es una etiqueta: al eliminarla se conservan sus correos.",
+  "feature_reason_imap_client_saves_sent": "Godwit guarda por su cuenta una copia del correo enviado.",
+  "feature_reason_imap_no_idle": "El servidor no puede enviar correo nuevo al instante (sin IDLE); Godwit comprueba cada pocos minutos.",
+  "feature_reason_jmap_no_copy": "JMAP no puede copiar correos dentro de una cuenta, solo añadirlos a otro buzón.",
+  "feature_reason_jmap_append_pending": "Añadir correos al servidor por JMAP aún no está disponible.",
+  "feature_reason_jmap_folders_pending": "Gestionar carpetas por JMAP aún no está disponible.",
+  "feature_reason_jmap_sent_via_smtp": "El correo se envía por SMTP, que no guarda copia en el servidor."
 }

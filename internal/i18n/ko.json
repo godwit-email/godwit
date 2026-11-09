@@ -2079,5 +2079,16 @@
   "error_role_folder": "받은편지함과 휴지통은 이름을 바꾸거나 삭제할 수 없습니다.",
   "error_folder_not_empty": "폴더가 비어 있지 않습니다. 먼저 메일을 옮기세요.",
   "error_folder_name_empty": "폴더 이름이 필요합니다.",
-  "error_folder_exists": "같은 이름의 폴더가 이미 있습니다."
+  "error_folder_exists": "같은 이름의 폴더가 이미 있습니다.",
+  "feature_reason_imap_no_move": "서버에서 메일을 이동할 수 없습니다(MOVE와 UIDPLUS를 모두 지원하지 않음).",
+  "feature_reason_imap_gmail_copy_is_label": "Gmail에서 복사는 같은 메일에 라벨을 하나 더 붙이는 것입니다.",
+  "feature_reason_imap_no_labels": "서버에 라벨이 없습니다. 메일은 한 폴더에만 있을 수 있습니다.",
+  "feature_reason_imap_no_uidplus": "서버에서 메일을 영구 삭제할 수 없습니다(UIDPLUS 미지원).",
+  "feature_reason_imap_gmail_folder_is_label": "Gmail의 폴더는 라벨입니다. 삭제해도 메일은 남습니다.",
+  "feature_reason_imap_client_saves_sent": "보낸 메일의 사본은 Godwit이 직접 저장합니다.",
+  "feature_reason_imap_no_idle": "서버가 새 메일을 푸시할 수 없습니다(IDLE 미지원). Godwit이 몇 분마다 확인합니다.",
+  "feature_reason_jmap_no_copy": "JMAP에서는 계정 안에서 메일을 복사할 수 없고, 다른 메일함에 추가만 할 수 있습니다.",
+  "feature_reason_jmap_append_pending": "JMAP으로 서버에 메일을 추가하는 기능은 아직 없습니다.",
+  "feature_reason_jmap_folders_pending": "JMAP으로 폴더를 관리하는 기능은 아직 없습니다.",
+  "feature_reason_jmap_sent_via_smtp": "메일은 SMTP로 보내지며 서버에 사본이 저장되지 않습니다."
 }

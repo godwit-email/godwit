@@ -701,7 +701,7 @@ func (s *Service) dialAccount(ctx context.Context, accountID int64) (recv *imapb
 		return nil, nil, err
 	}
 	if err := s.ifCurrent(accountID, ver, func() error {
-		_, err := s.db.Execute(ctx, "UPDATE accounts SET features = ? WHERE id = ?", imapbackend.Features(d.Identity == backend.IdentityStable), accountID)
+		_, err := s.db.Execute(ctx, "UPDATE accounts SET features = ? WHERE id = ?", encodeFeatures(d), accountID)
 		return err
 	}); err != nil {
 		recv.Close()

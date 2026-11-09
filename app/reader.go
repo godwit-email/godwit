@@ -894,18 +894,25 @@ func (r *reader) toolbar(c *ui.Context) ui.Element {
 		if r.starred() {
 			starIcon, starTip = "star-fill", i18n.T("mail.action.unstar")
 		}
-		file := []kit.GroupItem{{Icon: starIcon, Tip: starTip, OnClick: func() { r.act("toggle_star") }}}
+		// item is act's button, greyed out with the reason as its tip when the server cannot.
+		item := func(icon, tip, act string) kit.GroupItem {
+			if why := r.p.cannot(r.items(), act); why != "" {
+				return kit.GroupItem{Icon: icon, Tip: why, Disabled: true}
+			}
+			return kit.GroupItem{Icon: icon, Tip: tip, OnClick: func() { r.act(act) }}
+		}
+		file := []kit.GroupItem{item(starIcon, starTip, "toggle_star")}
 		role := r.p.currentFolderRole()
 		if role != "inbox" {
-			file = append(file, kit.GroupItem{Icon: "inbox", Tip: i18n.T("mail.action.inbox"), OnClick: func() { r.act("inbox") }})
+			file = append(file, item("inbox", i18n.T("mail.action.inbox"), "inbox"))
 		}
 		if role != "archive" {
-			file = append(file, kit.GroupItem{Icon: "archive", Tip: i18n.T("mail.action.archive"), OnClick: func() { r.act("archive") }})
+			file = append(file, item("archive", i18n.T("mail.action.archive"), "archive"))
 		}
 		if role != "junk" {
-			file = append(file, kit.GroupItem{Icon: "spam", Tip: i18n.T("mail.action.junk"), OnClick: func() { r.act("junk") }})
+			file = append(file, item("spam", i18n.T("mail.action.junk"), "junk"))
 		}
-		file = append(file, kit.GroupItem{Icon: "trash-2", Tip: i18n.T("mail.action.delete"), OnClick: func() { r.act("delete") }})
+		file = append(file, item("trash-2", i18n.T("mail.action.delete"), "delete"))
 		kit.GroupDivider(c).Margin(0, th.Space(1.5))
 		kit.ButtonGroup(c, file...)
 		kit.IconButton(c, "ellipsis", i18n.T("reader.more"), kit.ButtonOpts{Variant: kit.Ghost}).TextColor(t.Foreground).Menu(func(m *ui.Menu) {

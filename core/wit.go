@@ -19,6 +19,7 @@ import (
 	"unicode/utf8"
 
 	"github.com/egoist/mygo/plugins/sqlite"
+	"github.com/godwit-email/godwit/backend"
 	"github.com/godwit-email/godwit/core/ai"
 	"github.com/godwit-email/godwit/core/mail"
 	"github.com/godwit-email/godwit/core/plugins"
@@ -889,33 +890,35 @@ type batchItem struct {
 }
 
 // batchAction is a triage tool that proposes one change to many messages:
-// its name, what the model reads, the approval summary (%d is the count) and
-// the change. The web's BatchApprovalCard renders these tools (isBatchAction).
+// its name, what the model reads, the approval summary (%d is the count), the
+// 协议能力 it needs and the change. The web's BatchApprovalCard renders these
+// tools (isBatchAction).
 type batchAction struct {
 	name, desc, summary string
+	feature             backend.Feature
 	apply               func(s *Service, ctx context.Context, msgIDs []int64) error
 }
 
 var batchActions = []batchAction{
-	{"move_to_trash", "Propose moving messages to the Trash folder by their ids. The user approves it before any message is moved.", "Move %d messages to Trash",
+	{"move_to_trash", "Propose moving messages to the Trash folder by their ids. The user approves it before any message is moved.", "Move %d messages to Trash", backend.FeatureMove,
 		func(s *Service, ctx context.Context, ids []int64) error { return s.Delete(ctx, ids) }},
-	{"archive_mail", "Propose archiving messages by their ids. The user approves it before any message is archived.", "Archive %d messages",
+	{"archive_mail", "Propose archiving messages by their ids. The user approves it before any message is archived.", "Archive %d messages", backend.FeatureMove,
 		func(s *Service, ctx context.Context, ids []int64) error { return s.MoveToRole(ctx, ids, "archive") }},
-	{"mark_as_spam", "Propose marking messages as spam (moving to Junk) by their ids. The user approves it before any message is moved.", "Mark %d messages as spam",
+	{"mark_as_spam", "Propose marking messages as spam (moving to Junk) by their ids. The user approves it before any message is moved.", "Mark %d messages as spam", backend.FeatureMove,
 		func(s *Service, ctx context.Context, ids []int64) error { return s.MoveToRole(ctx, ids, "junk") }},
-	{"mark_as_read", "Propose marking messages as read by their ids. The user approves it before flags are changed.", "Mark %d messages as read",
+	{"mark_as_read", "Propose marking messages as read by their ids. The user approves it before flags are changed.", "Mark %d messages as read", backend.FeatureSeen,
 		func(s *Service, ctx context.Context, ids []int64) error {
 			return s.SetFlags(ctx, ids, []string{`\Seen`}, nil)
 		}},
-	{"mark_as_unread", "Propose marking messages as unread by their ids. The user approves it before flags are changed.", "Mark %d messages as unread",
+	{"mark_as_unread", "Propose marking messages as unread by their ids. The user approves it before flags are changed.", "Mark %d messages as unread", backend.FeatureSeen,
 		func(s *Service, ctx context.Context, ids []int64) error {
 			return s.SetFlags(ctx, ids, nil, []string{`\Seen`})
 		}},
-	{"star_mail", "Propose starring (flagging) messages by their ids. The user approves it before flags are changed.", "Star %d messages",
+	{"star_mail", "Propose starring (flagging) messages by their ids. The user approves it before flags are changed.", "Star %d messages", backend.FeatureFlagged,
 		func(s *Service, ctx context.Context, ids []int64) error {
 			return s.SetFlags(ctx, ids, []string{`\Flagged`}, nil)
 		}},
-	{"unstar_mail", "Propose unstarring (unflagging) messages by their ids. The user approves it before flags are changed.", "Unstar %d messages",
+	{"unstar_mail", "Propose unstarring (unflagging) messages by their ids. The user approves it before flags are changed.", "Unstar %d messages", backend.FeatureFlagged,
 		func(s *Service, ctx context.Context, ids []int64) error {
 			return s.SetFlags(ctx, ids, nil, []string{`\Flagged`})
 		}},
@@ -963,6 +966,11 @@ func (s *Service) prepareBatchAction(act batchAction) func(context.Context, Conv
 				From:      store.Str(r[2]),
 				Date:      store.Int(r[3]),
 			})
+		}
+		for _, it := range items {
+			if err := s.supports(ctx, it.AccountID, act.feature); err != nil {
+				return prepared{}, err
+			}
 		}
 		ba := batchArgs{
 			Action:      in.Action,

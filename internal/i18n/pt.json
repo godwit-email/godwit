@@ -2079,5 +2079,16 @@
   "error_role_folder": "A caixa de entrada e o Lixo não podem ser renomeados nem eliminados.",
   "error_folder_not_empty": "A pasta não está vazia. Mova primeiro os e-mails.",
   "error_folder_name_empty": "A pasta precisa de um nome.",
-  "error_folder_exists": "Já existe uma pasta com este nome."
+  "error_folder_exists": "Já existe uma pasta com este nome.",
+  "feature_reason_imap_no_move": "O servidor não consegue mover e-mails (não suporta MOVE nem UIDPLUS).",
+  "feature_reason_imap_gmail_copy_is_label": "No Gmail, uma cópia é a mesma mensagem com mais um marcador.",
+  "feature_reason_imap_no_labels": "O servidor não tem marcadores: uma mensagem fica em uma só pasta.",
+  "feature_reason_imap_no_uidplus": "O servidor não consegue excluir e-mails permanentemente (não suporta UIDPLUS).",
+  "feature_reason_imap_gmail_folder_is_label": "No Gmail, uma pasta é um marcador: excluí-la mantém os e-mails.",
+  "feature_reason_imap_client_saves_sent": "O Godwit salva ele mesmo uma cópia dos e-mails enviados.",
+  "feature_reason_imap_no_idle": "O servidor não consegue avisar de novos e-mails (sem IDLE); o Godwit verifica a cada poucos minutos.",
+  "feature_reason_jmap_no_copy": "O JMAP não copia e-mails dentro de uma conta, apenas os adiciona a outra caixa.",
+  "feature_reason_jmap_append_pending": "Adicionar e-mails ao servidor via JMAP ainda não está disponível.",
+  "feature_reason_jmap_folders_pending": "Gerenciar pastas via JMAP ainda não está disponível.",
+  "feature_reason_jmap_sent_via_smtp": "Os e-mails são enviados por SMTP, que não salva cópia no servidor."
 }

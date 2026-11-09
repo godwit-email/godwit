@@ -2079,5 +2079,16 @@
   "error_role_folder": "收件匣和已刪除不能重新命名或刪除。",
   "error_folder_not_empty": "資料夾不是空的，先把裡面的郵件移走。",
   "error_folder_name_empty": "資料夾需要一個名稱。",
-  "error_folder_exists": "已有同名資料夾。"
+  "error_folder_exists": "已有同名資料夾。",
+  "feature_reason_imap_no_move": "伺服器無法移動郵件（既不支援 MOVE，也不支援 UIDPLUS）。",
+  "feature_reason_imap_gmail_copy_is_label": "Gmail 中的副本是同一封郵件多加一個標籤。",
+  "feature_reason_imap_no_labels": "伺服器沒有標籤：一封郵件只能在一個資料夾裡。",
+  "feature_reason_imap_no_uidplus": "伺服器無法永久刪除郵件（不支援 UIDPLUS）。",
+  "feature_reason_imap_gmail_folder_is_label": "Gmail 的資料夾就是標籤：刪除它不會刪除裡面的郵件。",
+  "feature_reason_imap_client_saves_sent": "已寄出郵件的副本由 Godwit 自己儲存。",
+  "feature_reason_imap_no_idle": "伺服器無法推送新郵件（不支援 IDLE），Godwit 每隔幾分鐘檢查一次。",
+  "feature_reason_jmap_no_copy": "JMAP 無法在帳號內複製郵件，只能把它加到另一個信箱。",
+  "feature_reason_jmap_append_pending": "暫不支援透過 JMAP 將郵件新增到伺服器。",
+  "feature_reason_jmap_folders_pending": "暫不支援透過 JMAP 管理資料夾。",
+  "feature_reason_jmap_sent_via_smtp": "郵件透過 SMTP 寄出，伺服器上不會保存副本。"
 }

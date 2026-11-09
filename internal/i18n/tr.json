@@ -2079,5 +2079,16 @@
   "error_role_folder": "Gelen kutusu ve çöp kutusu yeniden adlandırılamaz veya silinemez.",
   "error_folder_not_empty": "Klasör boş değil. Önce içindeki postaları taşıyın.",
   "error_folder_name_empty": "Klasörün bir adı olmalı.",
-  "error_folder_exists": "Bu adda bir klasör zaten var."
+  "error_folder_exists": "Bu adda bir klasör zaten var.",
+  "feature_reason_imap_no_move": "Sunucu e-postaları taşıyamıyor (ne MOVE ne de UIDPLUS destekliyor).",
+  "feature_reason_imap_gmail_copy_is_label": "Gmail'de kopya, aynı iletiye bir etiket daha eklemektir.",
+  "feature_reason_imap_no_labels": "Sunucuda etiket yok: bir ileti yalnızca bir klasörde bulunur.",
+  "feature_reason_imap_no_uidplus": "Sunucu e-postaları kalıcı olarak silemiyor (UIDPLUS desteklemiyor).",
+  "feature_reason_imap_gmail_folder_is_label": "Gmail'de klasör bir etikettir: silindiğinde e-postaları kalır.",
+  "feature_reason_imap_client_saves_sent": "Gönderilen e-postaların kopyasını Godwit kendisi kaydeder.",
+  "feature_reason_imap_no_idle": "Sunucu yeni e-postaları anında bildiremiyor (IDLE yok); Godwit birkaç dakikada bir kontrol eder.",
+  "feature_reason_jmap_no_copy": "JMAP bir hesap içinde e-posta kopyalayamaz, yalnızca başka bir posta kutusuna ekleyebilir.",
+  "feature_reason_jmap_append_pending": "JMAP ile sunucuya e-posta ekleme henüz kullanılamıyor.",
+  "feature_reason_jmap_folders_pending": "JMAP ile klasör yönetimi henüz kullanılamıyor.",
+  "feature_reason_jmap_sent_via_smtp": "E-postalar SMTP ile gönderilir; SMTP sunucuda kopya saklamaz."
 }

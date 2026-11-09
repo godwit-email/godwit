@@ -2079,5 +2079,16 @@
   "error_role_folder": "Posta in arrivo e Cestino non possono essere rinominati né eliminati.",
   "error_folder_not_empty": "La cartella non è vuota. Sposta prima la sua posta.",
   "error_folder_name_empty": "La cartella deve avere un nome.",
-  "error_folder_exists": "Esiste già una cartella con questo nome."
+  "error_folder_exists": "Esiste già una cartella con questo nome.",
+  "feature_reason_imap_no_move": "Il server non può spostare le email (non supporta né MOVE né UIDPLUS).",
+  "feature_reason_imap_gmail_copy_is_label": "In Gmail una copia è lo stesso messaggio con un'etichetta in più.",
+  "feature_reason_imap_no_labels": "Il server non ha etichette: un messaggio sta in una sola cartella.",
+  "feature_reason_imap_no_uidplus": "Il server non può eliminare definitivamente le email (non supporta UIDPLUS).",
+  "feature_reason_imap_gmail_folder_is_label": "In Gmail una cartella è un'etichetta: eliminarla mantiene le sue email.",
+  "feature_reason_imap_client_saves_sent": "Godwit salva da sé una copia della posta inviata.",
+  "feature_reason_imap_no_idle": "Il server non può notificare la nuova posta (niente IDLE); Godwit controlla ogni pochi minuti.",
+  "feature_reason_jmap_no_copy": "JMAP non può copiare email all'interno di un account, solo aggiungerle a un'altra casella.",
+  "feature_reason_jmap_append_pending": "L'aggiunta di email al server tramite JMAP non è ancora disponibile.",
+  "feature_reason_jmap_folders_pending": "La gestione delle cartelle tramite JMAP non è ancora disponibile.",
+  "feature_reason_jmap_sent_via_smtp": "La posta viene inviata tramite SMTP, che non ne salva una copia sul server."
 }

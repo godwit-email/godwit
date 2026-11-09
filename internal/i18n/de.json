@@ -2079,5 +2079,16 @@
   "error_role_folder": "Posteingang und Papierkorb können nicht umbenannt oder gelöscht werden.",
   "error_folder_not_empty": "Der Ordner ist nicht leer. Verschiebe zuerst seine Mails.",
   "error_folder_name_empty": "Ein Ordner braucht einen Namen.",
-  "error_folder_exists": "Ein Ordner mit diesem Namen existiert bereits."
+  "error_folder_exists": "Ein Ordner mit diesem Namen existiert bereits.",
+  "feature_reason_imap_no_move": "Der Server kann keine E-Mails verschieben (er unterstützt weder MOVE noch UIDPLUS).",
+  "feature_reason_imap_gmail_copy_is_label": "In Gmail ist eine Kopie dieselbe Nachricht mit einem zusätzlichen Label.",
+  "feature_reason_imap_no_labels": "Der Server hat keine Labels: Eine Nachricht liegt nur in einem Ordner.",
+  "feature_reason_imap_no_uidplus": "Der Server kann E-Mails nicht endgültig löschen (er unterstützt UIDPLUS nicht).",
+  "feature_reason_imap_gmail_folder_is_label": "In Gmail ist ein Ordner ein Label: Beim Löschen bleiben seine E-Mails erhalten.",
+  "feature_reason_imap_client_saves_sent": "Godwit speichert selbst eine Kopie gesendeter E-Mails.",
+  "feature_reason_imap_no_idle": "Der Server kann neue E-Mails nicht pushen (kein IDLE); Godwit prüft alle paar Minuten.",
+  "feature_reason_jmap_no_copy": "JMAP kann E-Mails innerhalb eines Kontos nicht kopieren, nur einem weiteren Postfach hinzufügen.",
+  "feature_reason_jmap_append_pending": "E-Mails per JMAP auf den Server hochzuladen ist noch nicht verfügbar.",
+  "feature_reason_jmap_folders_pending": "Ordner per JMAP zu verwalten ist noch nicht verfügbar.",
+  "feature_reason_jmap_sent_via_smtp": "E-Mails werden per SMTP gesendet, das keine Kopie auf dem Server speichert."
 }

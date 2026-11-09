@@ -31,7 +31,7 @@ type CheckStep struct {
 type CheckReport struct {
 	Steps   []CheckStep
 	Folders int
-	gmail   bool // authenticated X-GM-EXT-1; kept off the public report
+	desc    backend.Description // what the signed-in receiving backend declared; kept off the public report
 }
 
 // OK reports whether every step passed.
@@ -123,7 +123,7 @@ func (s *Service) check(ctx context.Context, in AccountInput, token string) (Che
 			ctx, cancel := context.WithTimeout(ctx, checkTimeout)
 			defer cancel()
 			c, err := recv.Check(ctx)
-			r.Folders, r.gmail = c.Folders, c.Identity == backend.IdentityStable
+			r.Folders, r.desc = c.Folders, c.Description
 			return conn.Classify(err), err
 		},
 		func() (conn.FailureKind, error) {
