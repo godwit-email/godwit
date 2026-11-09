@@ -13,10 +13,9 @@ import (
 
 // Background sync timing; tests lower the backoff.
 var (
-	idleMax      = 5 * time.Minute // longest IDLE on INBOX before a sync of every folder
-	pollInterval = 5 * time.Minute // wait between syncs when the server lacks IDLE
-	backoffMin   = 2 * time.Second // first wait after a failure, doubled per failure
-	backoffMax   = 5 * time.Minute
+	idleMax    = 5 * time.Minute // longest IDLE on INBOX before a sync of every folder
+	backoffMin = 2 * time.Second // first wait after a failure, doubled per failure
+	backoffMax = 5 * time.Minute
 	// chatterWithin: a server update that ends IDLE sooner than this after it
 	// began is chatter. A run of chatter waits between rounds as failures do, so a
 	// server that keeps reporting changes (or one the sync itself sets off) cannot
@@ -253,8 +252,9 @@ func (s *Service) syncRound(ctx context.Context, id int64, wake chan struct{}) (
 		})
 	}()
 	defer func() { stop(); release(); <-watched }() // closing unblocks a Watch mid-command
-	// Watch wakes once as it starts watching; one that cannot push returns.
-	push := true
+	// Watch wakes once as it starts watching; one that cannot push returns,
+	// and the account is polled as often as its backend declares.
+	var poll time.Duration
 	select {
 	case <-updates:
 	case err := <-watched:
@@ -262,7 +262,11 @@ func (s *Service) syncRound(ctx context.Context, id int64, wake chan struct{}) (
 		if !errors.Is(err, backend.ErrUnsupported) {
 			return false, s.workerFailed(ctx, id, err)
 		}
-		push = false
+		d, err := recv.Describe(ctx)
+		if err != nil {
+			return false, s.workerFailed(ctx, id, err)
+		}
+		poll = d.PollInterval // the backend contract holds it above 0
 		release() // only needed to watch; a second release is harmless
 	case <-ctx.Done():
 		return false, ctx.Err()
@@ -270,7 +274,7 @@ func (s *Service) syncRound(ctx context.Context, id int64, wake chan struct{}) (
 	if err := s.syncNow(ctx, id, false); err != nil {
 		return false, err // syncNow announced it
 	}
-	if push {
+	if poll == 0 {
 		start := time.Now()
 		t := time.NewTimer(idleMax)
 		defer t.Stop()
@@ -287,7 +291,7 @@ func (s *Service) syncRound(ctx context.Context, id int64, wake chan struct{}) (
 		}
 		return false, nil
 	}
-	t := time.NewTimer(pollInterval)
+	t := time.NewTimer(poll)
 	defer t.Stop()
 	select {
 	case <-t.C:

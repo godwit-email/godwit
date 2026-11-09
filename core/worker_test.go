@@ -13,6 +13,7 @@ import (
 
 	"github.com/emersion/go-imap/v2"
 	"github.com/godwit-email/godwit/backend"
+	"github.com/godwit-email/godwit/backend/imapbackend"
 	"github.com/godwit-email/godwit/core/events"
 	"github.com/godwit-email/godwit/core/internal/testmail"
 	"github.com/godwit-email/godwit/core/store"
@@ -404,8 +405,9 @@ func TestCancelledSyncIsNotAFailure(t *testing.T) {
 	assert.Empty(t, ofType(collect(ch), events.SyncFailed))
 }
 
+// The worker polls as often as the receiving backend declares.
 func TestWorkerPollsWithoutIdle(t *testing.T) {
-	setFor(t, &pollInterval, 200*time.Millisecond)
+	setFor(t, &imapbackend.PollInterval, 200*time.Millisecond)
 	e, ch := newWorkerEnv(t, testmail.WithoutIdle())
 	e.put(t, "INBOX", msg("p@x"))
 	waitEvent(t, ch, events.MessageReceived, 5*time.Second)

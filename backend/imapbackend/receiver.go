@@ -13,9 +13,11 @@ import (
 	"github.com/godwit-email/godwit/backend/conn"
 )
 
+// PollInterval is how often an account syncs when the server cannot push.
+// Tests lower it.
+var PollInterval = 5 * time.Minute
+
 const (
-	// PollInterval is how often an account syncs when the server cannot push.
-	PollInterval = 5 * time.Minute
 	// idleRestart ends and restarts a Watch's IDLE before servers drop it
 	// (RFC 2177 asks for at least every 29 minutes).
 	idleRestart = 25 * time.Minute
