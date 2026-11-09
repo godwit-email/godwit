@@ -192,7 +192,8 @@ test("height is clamped to Go's maximum and stops growing there", async () => {
   wrap.getBoundingClientRect = () => ({ height: 5_000_000 }) as DOMRect;
   flush();
   expect(api.height).toHaveBeenCalledExactlyOnceWith(1 << 20);
-  expect(frame.style.height).toBe(`${1 << 20}px`);
+  // jsdom serializes lengths to six significant digits (1048576px reads back as 1048580px).
+  expect(Number.parseFloat(frame.style.height)).toBeCloseTo(1 << 20, -1);
   wrap.getBoundingClientRect = () => ({ height: 6_000_000 }) as DOMRect;
   window.dispatchEvent(new Event("resize"));
   flush();
@@ -975,8 +976,8 @@ test("borders and focus stay visible while shadow geometry and link behaviour ar
   expect(renderedContrast(card, win, cardStyle.borderTopColor)).toBeGreaterThanOrEqual(1.5);
   link.focus();
   const linkStyle = win.getComputedStyle(link);
-  // jsdom does not expand outline's shorthand into computed width and style.
-  expect(link.style.outline).toBe("2px solid #111");
+  expect(linkStyle.outlineWidth).toBe("2px");
+  expect(linkStyle.outlineStyle).toBe("solid");
   expect(
     renderedContrast(doc.getElementById("paper") as HTMLElement, win, linkStyle.outlineColor),
   ).toBeGreaterThanOrEqual(3);
@@ -986,7 +987,7 @@ test("borders and focus stay visible while shadow geometry and link behaviour ar
       .replace(/\s+/g, " ")
       .replace(/\s*,\s*/g, ", ")
       .trim();
-  expect(geometry(cardStyle.boxShadow)).toBe("0 4px 22px, inset 1px 2px 3px");
+  expect(geometry(cardStyle.boxShadow)).toBe("0px 4px 22px, 1px 2px 3px inset");
   expect(geometry(linkStyle.textShadow)).toBe("1px 2px 3px");
   for (const color of `${cardStyle.boxShadow} ${linkStyle.textShadow}`.match(/rgba?\([^)]*\)/g) ??
     [])

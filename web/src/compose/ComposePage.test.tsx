@@ -289,7 +289,12 @@ test("an address composition in progress at send sends the final address", async
 
 describe("autosave", () => {
   beforeEach(() => vi.useFakeTimers({ shouldAdvanceTime: true }));
-  afterEach(() => vi.useRealTimers());
+  // Base UI shares one rAF scheduler across tests: a frame left queued on the fake clock would
+  // block every later menu from opening, so run it before restoring real timers.
+  afterEach(() => {
+    act(() => vi.runOnlyPendingTimers());
+    vi.useRealTimers();
+  });
   const setup = () => userEvent.setup({ advanceTimers: vi.advanceTimersByTime });
 
   test("shows conflict", async () => {
