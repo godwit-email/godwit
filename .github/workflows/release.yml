@@ -132,7 +132,13 @@ jobs:
       # Signed SLSA provenance naming this repository, workflow and commit, so anyone can check a
       # download with `gh attestation verify FILE --repo godwit-email/godwit`. The files are the ones
       # just uploaded, already signed and notarized. Not SHA256SUMS: it merges in other jobs' lines.
-      - uses: actions/attest@v4
+      # Provenance names the run's commit, so attest only when that is the tag's (not a manual rebuild).
+      - id: provenance
+        run: |
+          if [ "$(git rev-parse HEAD)" = "$GITHUB_SHA" ]; then echo "attest=true" >> "$GITHUB_OUTPUT"
+          else echo "::warning::$GITHUB_SHA is not the release tag's commit: the build was not attested."; fi
+      - if: steps.provenance.outputs.attest == 'true'
+        uses: actions/attest@v4
         with:
           subject-path: |
             dist/**/*.dmg
