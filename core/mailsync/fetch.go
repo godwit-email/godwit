@@ -8,6 +8,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"math"
 	"os"
 	"slices"
 	"strconv"
@@ -20,6 +21,7 @@ import (
 	"github.com/emersion/go-imap/v2/imapclient"
 	"github.com/emersion/go-imap/v2/imapserver"
 	"github.com/godwit-email/godwit/core/events"
+	"github.com/godwit-email/godwit/core/imapref"
 	"github.com/godwit-email/godwit/core/mail"
 	"github.com/godwit-email/godwit/core/store"
 )
@@ -162,7 +164,7 @@ func keepInAllMail(ctx context.Context, db *store.DB, c *imapclient.Client, acco
 	if err != nil || len(all.Values) == 0 {
 		return err
 	}
-	rows, err := db.Query(ctx, `SELECT id, gmail_msgid, thread_id FROM messages WHERE account_id = ? AND gmail_msgid IS NOT NULL AND `+orphaned+`
+	rows, err := db.Query(ctx, `SELECT id, server_id, thread_id FROM messages WHERE account_id = ? AND server_id IS NOT NULL AND `+orphaned+`
 		AND NOT EXISTS (SELECT 1 FROM ops WHERE message_id = messages.id AND state = 'pending')`, accountID)
 	if err != nil || len(rows.Values) == 0 {
 		return err
@@ -181,7 +183,7 @@ func keepInAllMail(ctx context.Context, db *store.DB, c *imapclient.Client, acco
 			return err
 		}
 		if uid := single(found.All); uid != 0 {
-			stmts = append(stmts, locate(store.Int(v[0]), folder, sel.UIDValidity, uid)...)
+			stmts = append(stmts, locate(store.Int(v[0]), folder, imapref.Encode(sel.UIDValidity, uint32(uid)))...)
 			ids, tids = append(ids, store.Int(v[0])), append(tids, store.Int(v[2]))
 		}
 	}
@@ -200,7 +202,7 @@ func keepInAllMail(ctx context.Context, db *store.DB, c *imapclient.Client, acco
 // was added hidden, and nothing else shows it after the move succeeds.
 func reshow(ctx context.Context, db *store.DB, accountID int64, r *result) error {
 	const hidden = `FROM message_locations l JOIN messages ON messages.id = l.message_id
-		WHERE messages.account_id = ? AND l.uid IS NOT NULL AND NOT l.shown AND ` + notMoving
+		WHERE messages.account_id = ? AND l.server_ref IS NOT NULL AND NOT l.shown AND ` + notMoving
 	rows, err := db.Query(ctx, "SELECT DISTINCT messages.id, messages.thread_id "+hidden, accountID)
 	if err != nil || len(rows.Values) == 0 {
 		return err
@@ -276,10 +278,10 @@ func resetFolder(ctx context.Context, db *store.DB, c *imapclient.Client, accoun
 	stmts := []sqlite.Statement{
 		{SQL: `UPDATE ops SET state = 'conflict' WHERE state = 'pending' AND account_id = ?
 			AND message_id IN (SELECT id FROM messages WHERE ` + serverIn + `) AND (src_folder_id = ?
-				OR NOT EXISTS (SELECT 1 FROM message_locations WHERE message_id = ops.message_id AND folder_id != ? AND uid IS NOT NULL))`,
+				OR NOT EXISTS (SELECT 1 FROM message_locations WHERE message_id = ops.message_id AND folder_id != ? AND server_ref IS NOT NULL))`,
 			Args: []any{accountID, f.id, f.id, f.id}},
-		{SQL: "DELETE FROM message_locations WHERE folder_id = ? AND uid IS NOT NULL", Args: []any{f.id}},
-		{SQL: "UPDATE folders SET uidvalidity = ?, last_uid = 0, synced = 0, filled_since = NULL WHERE id = ?", Args: []any{uidValidity, f.id}},
+		{SQL: "DELETE FROM message_locations WHERE folder_id = ? AND server_ref IS NOT NULL", Args: []any{f.id}},
+		{SQL: "UPDATE folders SET cursor = ?, synced = 0, filled_since = NULL WHERE id = ?", Args: []any{imapref.Encode(uidValidity, 0), f.id}},
 	}
 	if _, err := db.Transaction(ctx, stmts); err != nil {
 		return err
@@ -320,7 +322,7 @@ func dropOrphans(ctx context.Context, db *store.DB, accountID int64, ids []int64
 	where, args := "account_id = ? AND "+which+" AND "+orphaned, append([]any{accountID}, anys(ids)...)
 	if gmail {
 		where += ` AND NOT EXISTS (SELECT 1 FROM ops WHERE message_id = messages.id AND state = 'pending')
-			AND (gmail_msgid IS NULL OR id IN (` + marks(len(r.expunged)) + `)
+			AND (server_id IS NULL OR id IN (` + marks(len(r.expunged)) + `)
 				OR EXISTS (SELECT 1 FROM folders WHERE account_id = messages.account_id AND role = 'all'))`
 		args = append(args, anys(r.expunged)...)
 	}
@@ -421,7 +423,7 @@ func fetchNew(ctx context.Context, db *store.DB, c *imapclient.Client, a *accoun
 		if err != nil {
 			return err
 		}
-		if _, err := db.Execute(ctx, "UPDATE folders SET last_uid = ? WHERE id = ?", last, f.id); err != nil {
+		if _, err := db.Execute(ctx, "UPDATE folders SET cursor = ? WHERE id = ?", f.cursor(last), f.id); err != nil {
 			return err
 		}
 		f.lastUID = last
@@ -456,13 +458,14 @@ func importAbove(ctx context.Context, db *store.DB, c *imapclient.Client, a *acc
 	if err != nil {
 		return 0, err
 	}
-	have, err := db.Query(ctx, "SELECT uid FROM message_locations WHERE folder_id = ? AND uid > ?", f.id, f.lastUID)
+	have, err := db.Query(ctx, "SELECT server_ref FROM message_locations WHERE folder_id = ? AND server_ref > ? AND server_ref <= ?",
+		f.id, f.ref(f.lastUID), f.ref(math.MaxUint32))
 	if err != nil {
 		return 0, err
 	}
 	known := map[uint32]bool{}
 	for _, v := range have.Values {
-		known[uint32(store.Int(v[0]))] = true
+		known[refUID(v[0])] = true
 	}
 	last, todo := max(f.lastUID, top), msgs[:0]
 	for _, m := range msgs {
@@ -474,20 +477,26 @@ func importAbove(ctx context.Context, db *store.DB, c *imapclient.Client, a *acc
 	return last, importAll(ctx, db, c, a, f, todo, arrivals, twins, r)
 }
 
-// advance records a completed fetchNew: last_uid and synced in one write.
+// advance records a completed fetchNew: the cursor and synced in one write.
 func advance(ctx context.Context, db *store.DB, f *folder, last uint32) error {
 	if last == f.lastUID && f.synced {
 		return nil
 	}
-	if _, err := db.Execute(ctx, "UPDATE folders SET last_uid = ?, synced = 1 WHERE id = ?", last, f.id); err != nil {
+	if _, err := db.Execute(ctx, "UPDATE folders SET cursor = ?, synced = 1 WHERE id = ?", f.cursor(last), f.id); err != nil {
 		return err
 	}
 	f.lastUID, f.synced = last, true
 	return nil
 }
 
+// refUID is the UID of a server_ref column value.
+func refUID(v any) uint32 {
+	_, uid := imapref.Decode(store.Str(v))
+	return uid
+}
+
 // capGmail marks a Gmail server, which answers X-GM-MSGID (ADR 0034).
-const capGmail imap.Cap = "X-GM-EXT-1"
+const capGmail imap.Cap = imapref.GmailFeature
 
 // importItems is what a sync fetches of each message before its text parts,
 // with X-GM-MSGID only from a Gmail server: others refuse the item.
@@ -565,13 +574,13 @@ func backfill(ctx context.Context, db *store.DB, c *imapclient.Client, a *accoun
 	if a.limit <= 0 {
 		return backfillRange(ctx, db, c, a, f, r)
 	}
-	rows, err := db.Query(ctx, "SELECT count(*), min(uid) FROM message_locations WHERE folder_id = ? AND uid IS NOT NULL", f.id)
+	rows, err := db.Query(ctx, "SELECT count(*), min(server_ref) FROM message_locations WHERE folder_id = ? AND server_ref IS NOT NULL", f.id)
 	if err != nil {
 		return err
 	}
 	have, below := int(store.Int(rows.Values[0][0])), f.lastUID+1
 	if have > 0 {
-		below = uint32(store.Int(rows.Values[0][1]))
+		below = refUID(rows.Values[0][1])
 	}
 	if have >= a.limit || have >= int(n) || below <= 1 {
 		return nil
@@ -622,13 +631,13 @@ func backfillRange(ctx context.Context, db *store.DB, c *imapclient.Client, a *a
 	if err != nil {
 		return err
 	}
-	have, err := db.Query(ctx, "SELECT uid FROM message_locations WHERE folder_id = ? AND uid IS NOT NULL", f.id)
+	have, err := db.Query(ctx, "SELECT server_ref FROM message_locations WHERE folder_id = ? AND server_ref IS NOT NULL", f.id)
 	if err != nil {
 		return err
 	}
 	known := map[imap.UID]bool{}
 	for _, v := range have.Values {
-		known[imap.UID(store.Int(v[0]))] = true
+		known[imap.UID(refUID(v[0]))] = true
 	}
 	uids := slices.DeleteFunc(found.AllUIDs(), func(u imap.UID) bool { return known[u] })
 	slices.SortFunc(uids, func(x, y imap.UID) int { return cmp.Compare(y, x) })

@@ -14,7 +14,7 @@ func TestLegacyGmailProviderArchiveUsesCurrentServer(t *testing.T) {
 	e.put(t, "Work", msg("legacy-provider@x"))
 	e.sync(t)
 	id := e.idOf(t, "legacy-provider@x")
-	_, err := e.s.db.Execute(bg, "UPDATE accounts SET provider = 'gmail', imap_gmail = NULL WHERE id = ?", e.acc.ID)
+	_, err := e.s.db.Execute(bg, "UPDATE accounts SET provider = 'gmail', features = NULL WHERE id = ?", e.acc.ID)
 	require.NoError(t, err)
 	require.NoError(t, e.s.MoveToRole(bg, []int64{id}, "archive"))
 	e.sync(t)

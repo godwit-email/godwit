@@ -175,8 +175,8 @@ func (e *syncEnv) storedCopy(t *testing.T, id, folder int64) int64 {
 	r, err := e.s.db.Execute(bg, `INSERT INTO messages(account_id, message_id, subject, size, flags, date)
 		SELECT account_id, message_id, subject, size, flags, date FROM messages WHERE id = ?`, id)
 	require.NoError(t, err)
-	_, err = e.s.db.Execute(bg, `INSERT INTO message_locations(message_id, folder_id, shown, uidvalidity, uid, entered_at, date)
-		SELECT m.id, f.id, 1, f.uidvalidity, 1, unixepoch(), m.date FROM messages m, folders f WHERE m.id = ? AND f.id = ?`, r.LastInsertID, folder)
+	_, err = e.s.db.Execute(bg, `INSERT INTO message_locations(message_id, folder_id, shown, server_ref, entered_at, date)
+		SELECT m.id, f.id, 1, coalesce(substr(f.cursor, 1, 11), '0000000000:') || '0000000001', unixepoch(), m.date FROM messages m, folders f WHERE m.id = ? AND f.id = ?`, r.LastInsertID, folder)
 	require.NoError(t, err)
 	return r.LastInsertID
 }

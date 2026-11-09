@@ -49,13 +49,13 @@ func FetchOlder(ctx context.Context, db *store.DB, c *imapclient.Client, account
 	if f.lastUID == 0 { // synced empty: nothing older
 		return false, nil
 	}
-	have, err := db.Query(ctx, "SELECT uid FROM message_locations WHERE folder_id = ? AND uid IS NOT NULL", f.id)
+	have, err := db.Query(ctx, "SELECT server_ref FROM message_locations WHERE folder_id = ? AND server_ref IS NOT NULL", f.id)
 	if err != nil {
 		return false, err
 	}
 	known := map[imap.UID]bool{}
 	for _, v := range have.Values {
-		known[imap.UID(store.Int(v[0]))] = true
+		known[imap.UID(refUID(v[0]))] = true
 	}
 	// Down from the newest by sequence number, a window of UIDs at a time,
 	// until a page (and one more, for more) the folder lacks: no UID SEARCH

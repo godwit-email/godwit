@@ -364,7 +364,7 @@ func TestResolveOutboxResend(t *testing.T) {
 func TestSendRetriesAfterNetworkError(t *testing.T) {
 	e := newSendEnv(t, false)
 	e.sendNew(t)
-	_, err := e.s.db.Execute(bg, "UPDATE accounts SET smtp_port = 1")
+	_, err := e.s.db.Execute(bg, "UPDATE accounts SET send_port = 1")
 	require.NoError(t, err)
 	for range 7 {
 		e.sync(t)
@@ -375,7 +375,7 @@ func TestSendRetriesAfterNetworkError(t *testing.T) {
 	assert.Equal(t, "queued", out[0].State)
 	assert.Equal(t, 7, out[0].Attempts)
 	assert.NotEmpty(t, out[0].LastError)
-	_, err = e.s.db.Execute(bg, "UPDATE accounts SET smtp_port = ?", e.acc.SMTPPort)
+	_, err = e.s.db.Execute(bg, "UPDATE accounts SET send_port = ?", e.acc.SMTPPort)
 	require.NoError(t, err)
 	e.sync(t)
 	assert.Len(t, e.smtp.Messages(), 1)
@@ -396,7 +396,7 @@ func TestStoppedSendIsNotATry(t *testing.T) {
 			}
 		}
 	}()
-	_, err = e.s.db.Execute(bg, "UPDATE accounts SET smtp_port = ?", ln.Addr().(*net.TCPAddr).Port)
+	_, err = e.s.db.Execute(bg, "UPDATE accounts SET send_port = ?", ln.Addr().(*net.TCPAddr).Port)
 	require.NoError(t, err)
 	ctx, cancel := context.WithCancel(bg)
 	done := make(chan error, 1)
@@ -409,7 +409,7 @@ func TestStoppedSendIsNotATry(t *testing.T) {
 	assert.Equal(t, "queued", it.State)
 	assert.Zero(t, it.Attempts)
 	assert.True(t, it.NextAttempt.IsZero(), "no backoff")
-	_, err = e.s.db.Execute(bg, "UPDATE accounts SET smtp_port = ?", e.acc.SMTPPort)
+	_, err = e.s.db.Execute(bg, "UPDATE accounts SET send_port = ?", e.acc.SMTPPort)
 	require.NoError(t, err)
 	e.sync(t)
 	assert.Len(t, e.smtp.Messages(), 1, "sent on the next round")

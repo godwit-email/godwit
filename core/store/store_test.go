@@ -605,16 +605,16 @@ func TestMigrationMessageLocations(t *testing.T) {
 	db, err = store.Open(ctx, path)
 	require.NoError(t, err)
 	defer db.Close()
-	rows, err := db.Query(ctx, "SELECT message_id, folder_id, shown, uidvalidity, uid, entered_at, date FROM message_locations ORDER BY message_id, folder_id")
+	rows, err := db.Query(ctx, "SELECT message_id, folder_id, shown, server_ref, entered_at, date FROM message_locations ORDER BY message_id, folder_id")
 	require.NoError(t, err)
 	assert.Equal(t, [][]any{
-		{int64(1), int64(1), int64(1), int64(7), int64(10), int64(100), int64(1000)},
-		{int64(2), int64(1), int64(0), int64(7), int64(11), int64(200), int64(2000)},
-		{int64(2), int64(2), int64(1), nil, nil, int64(200), int64(2000)},
-		{int64(3), int64(2), int64(1), nil, nil, int64(300), int64(3000)},
-		{int64(4), int64(3), int64(1), int64(7), int64(12), int64(400), int64(4000)},
-		{int64(5), int64(1), int64(0), int64(7), int64(13), int64(500), int64(5000)},
-		{int64(5), int64(3), int64(1), nil, nil, int64(500), int64(5000)},
+		{int64(1), int64(1), int64(1), "0000000007:0000000010", int64(100), int64(1000)},
+		{int64(2), int64(1), int64(0), "0000000007:0000000011", int64(200), int64(2000)},
+		{int64(2), int64(2), int64(1), nil, int64(200), int64(2000)},
+		{int64(3), int64(2), int64(1), nil, int64(300), int64(3000)},
+		{int64(4), int64(3), int64(1), "0000000007:0000000012", int64(400), int64(4000)},
+		{int64(5), int64(1), int64(0), "0000000007:0000000013", int64(500), int64(5000)},
+		{int64(5), int64(3), int64(1), nil, int64(500), int64(5000)},
 	}, rows.Values)
 	rows, err = db.Query(ctx, "SELECT id, src_folder_id FROM ops ORDER BY id")
 	require.NoError(t, err)

@@ -9,6 +9,7 @@ import (
 	"github.com/egoist/mygo/plugins/sqlite"
 	"github.com/emersion/go-imap/v2"
 	"github.com/emersion/go-imap/v2/imapclient"
+	"github.com/godwit-email/godwit/core/imapref"
 	"github.com/godwit-email/godwit/core/store"
 )
 
@@ -17,7 +18,7 @@ import (
 func pushGmailLabels(ctx context.Context, db *store.DB, c *imapclient.Client, o op) (string, error) {
 	counted := false // this attempt is already in o.attempts
 	failure := func(cause error) (string, error) { return gmailFailure(ctx, db, o, cause, counted) }
-	r, err := db.Query(ctx, `SELECT gmail_msgid FROM messages WHERE id = ?`, o.msg)
+	r, err := db.Query(ctx, `SELECT server_id FROM messages WHERE id = ?`, o.msg)
 	if err != nil {
 		return "", err
 	}
@@ -42,20 +43,21 @@ func pushGmailLabels(ctx context.Context, db *store.DB, c *imapclient.Client, o 
 		return failure(errNoDestination)
 	}
 	if id == 0 && srcName != "" { // An upgrade can still have rows not fetched for Gmail identity.
-		loc, err := db.Query(ctx, "SELECT uid, uidvalidity FROM message_locations WHERE message_id = ? AND folder_id = ? AND uid IS NOT NULL", o.msg, o.src)
+		loc, err := db.Query(ctx, "SELECT server_ref FROM message_locations WHERE message_id = ? AND folder_id = ? AND server_ref IS NOT NULL", o.msg, o.src)
 		if err != nil {
 			return "", err
 		}
 		if len(loc.Values) > 0 {
+			locValidity, locUID := imapref.Decode(store.Str(loc.Values[0][0]))
 			sel, err := c.Select(srcName, nil).Wait()
 			if err != nil {
 				return failure(err)
 			}
-			if sel.UIDValidity != uint32(store.Int(loc.Values[0][1])) {
+			if sel.UIDValidity != locValidity {
 				msg := "the source folder was recreated before Gmail identity was known"
 				return msg, finish(ctx, db, o, "conflict", msg)
 			}
-			got, err := c.Fetch(imap.UIDSetNum(imap.UID(store.Int(loc.Values[0][0]))), &imap.FetchOptions{UID: true, GmailMsgID: true}).Collect()
+			got, err := c.Fetch(imap.UIDSetNum(imap.UID(locUID)), &imap.FetchOptions{UID: true, GmailMsgID: true}).Collect()
 			if err != nil {
 				return failure(err)
 			}
@@ -63,7 +65,7 @@ func pushGmailLabels(ctx context.Context, db *store.DB, c *imapclient.Client, o 
 				id = got[0].GmailMsgID
 			}
 			if id != 0 {
-				if _, err := db.Execute(ctx, "UPDATE messages SET gmail_msgid = ? WHERE id = ?", strconv.FormatUint(id, 10), o.msg); err != nil {
+				if _, err := db.Execute(ctx, "UPDATE messages SET server_id = ? WHERE id = ?", strconv.FormatUint(id, 10), o.msg); err != nil {
 					return "", err
 				}
 			}
@@ -78,7 +80,7 @@ func pushGmailLabels(ctx context.Context, db *store.DB, c *imapclient.Client, o 
 		completed.src = 0 // All Mail is implicit membership, never a removable label.
 	}
 	if o.src == 0 {
-		anchors, err := db.Query(ctx, `SELECT f.name FROM message_locations l JOIN folders f ON f.id = l.folder_id WHERE l.message_id = ? AND l.uid IS NOT NULL ORDER BY l.folder_id`, o.msg)
+		anchors, err := db.Query(ctx, `SELECT f.name FROM message_locations l JOIN folders f ON f.id = l.folder_id WHERE l.message_id = ? AND l.server_ref IS NOT NULL ORDER BY l.folder_id`, o.msg)
 		if err != nil {
 			return "", err
 		}

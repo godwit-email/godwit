@@ -23,6 +23,7 @@ import (
 	"github.com/egoist/mygo/plugins/sqlite"
 	"github.com/godwit-email/godwit/core/auth"
 	"github.com/godwit-email/godwit/core/events"
+	"github.com/godwit-email/godwit/core/imapref"
 	"github.com/godwit-email/godwit/core/store"
 	"github.com/zalando/go-keyring"
 )
@@ -207,11 +208,11 @@ func (s *Service) AddAccount(ctx context.Context, in AccountInput) (Account, err
 		stmts = append(stmts, sqlite.Statement{SQL: "UPDATE accounts SET is_default = 0"})
 	}
 	stmts = append(stmts, sqlite.Statement{
-		SQL: `INSERT INTO accounts(email, name, alias, is_default, sync_limit, sync_since_months, auth_type, status, username,
-			imap_host, imap_port, imap_security, smtp_host, smtp_port, smtp_security, created_at, provider, oauth_client_id, imap_gmail, receive_only, position)
-			VALUES (?, ?, ?, ?, ?, ?, ?, 'ok', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, (SELECT COALESCE(MAX(position) + 1, 0) FROM accounts))`,
-		Args: []any{in.Email, in.Name, in.Alias, b2i(isDefault), sync.Limit, sync.Months, authType, in.username(),
-			in.IMAPHost, in.IMAPPort, string(in.IMAPSecurity), in.SMTPHost, in.SMTPPort, string(in.SMTPSecurity), time.Now().Unix(), in.Provider, in.oauthClientID, b2i(checked.gmail), b2i(receiveOnly)},
+		SQL: `INSERT INTO accounts(email, name, alias, is_default, sync_limit, sync_since_months, recv_auth, send_auth, status, username,
+			recv_protocol, recv_host, recv_port, recv_security, send_protocol, send_host, send_port, send_security, created_at, provider, oauth_client_id, features, receive_only, position)
+			VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'ok', ?, 'imap', ?, ?, ?, 'smtp', ?, ?, ?, ?, ?, ?, ?, ?, (SELECT COALESCE(MAX(position) + 1, 0) FROM accounts))`,
+		Args: []any{in.Email, in.Name, in.Alias, b2i(isDefault), sync.Limit, sync.Months, authType, authType, in.username(),
+			in.IMAPHost, in.IMAPPort, string(in.IMAPSecurity), in.SMTPHost, in.SMTPPort, string(in.SMTPSecurity), time.Now().Unix(), in.Provider, in.oauthClientID, imapref.Features(checked.gmail), b2i(receiveOnly)},
 	})
 	res, err := s.db.Transaction(ctx, stmts)
 	if err != nil {
@@ -284,8 +285,8 @@ func (s *Service) AddLocalArchive(ctx context.Context, name string) (Account, er
 	email := "archive-" + strings.ToLower(rand.Text()) + "@local.invalid"
 	acc := "(SELECT id FROM accounts WHERE email = ?)"
 	res, err := s.db.Transaction(ctx, []sqlite.Statement{{
-		SQL: `INSERT INTO accounts(email, name, auth_type, status, username, created_at, provider, imap_gmail, kind, position)
-			VALUES (?, ?, 'none', 'ok', '', ?, 'local', 0, ?, (SELECT COALESCE(MAX(position) + 1, 0) FROM accounts))`,
+		SQL: `INSERT INTO accounts(email, name, recv_auth, send_auth, status, username, created_at, provider, features, recv_protocol, send_protocol, kind, position)
+			VALUES (?, ?, 'none', 'none', 'ok', '', ?, 'local', '', '', '', ?, (SELECT COALESCE(MAX(position) + 1, 0) FROM accounts))`,
 		Args: []any{email, name, time.Now().Unix(), KindLocalArchive},
 	},
 		{SQL: "INSERT INTO folders(account_id, name, role, role_since) VALUES (" + acc + ", 'INBOX', 'inbox', unixepoch())", Args: []any{email}},
@@ -332,8 +333,8 @@ func b2i(b bool) int {
 	return 0
 }
 
-const accountCols = `id, email, name, alias, COALESCE((SELECT html FROM signatures WHERE id = signature_id), ''), username, is_default, sync_limit, auth_type, status,
-	imap_host, imap_port, imap_security, smtp_host, smtp_port, smtp_security, smtp_reauth, provider, status_detail,
+const accountCols = `id, email, name, alias, COALESCE((SELECT html FROM signatures WHERE id = signature_id), ''), username, is_default, sync_limit, recv_auth, status,
+	recv_host, recv_port, recv_security, send_host, send_port, send_security, smtp_reauth, provider, status_detail,
 	sync_since_months, (SELECT count(*) FROM folders WHERE account_id = accounts.id), signature_id, icon, ai_instructions, oauth_client_id, label_keywords, kind, receive_only`
 
 // ErrAccountNotFound is returned for an account id that does not exist.
@@ -679,13 +680,13 @@ func (s *Service) UpdateAccount(ctx context.Context, id int64, p AccountPatch) (
 		}
 		set("receive_only", b2i(err != nil))
 		set("username", in.username())
-		set("imap_host", in.IMAPHost)
-		set("imap_gmail", b2i(r.gmail))
-		set("imap_port", in.IMAPPort)
-		set("imap_security", string(in.IMAPSecurity))
-		set("smtp_host", in.SMTPHost)
-		set("smtp_port", in.SMTPPort)
-		set("smtp_security", string(in.SMTPSecurity))
+		set("recv_host", in.IMAPHost)
+		set("features", imapref.Features(r.gmail))
+		set("recv_port", in.IMAPPort)
+		set("recv_security", string(in.IMAPSecurity))
+		set("send_host", in.SMTPHost)
+		set("send_port", in.SMTPPort)
+		set("send_security", string(in.SMTPSecurity))
 		s.graphSend.Delete(id) // new servers: the next send tries SMTP before Graph again
 		// The checked settings work: the user just fixed the sign-in.
 		set("status", "ok")
@@ -709,8 +710,8 @@ func (s *Service) UpdateAccount(ctx context.Context, id int64, p AccountPatch) (
 		// matches. No real UIDVALIDITY is 0, so pushes of queued ops and downloads
 		// see a recreated folder and the next fetch re-imports every folder.
 		stmts = append(stmts,
-			sqlite.Statement{SQL: "UPDATE folders SET uidvalidity = 0 WHERE account_id = ?", Args: []any{id}},
-			sqlite.Statement{SQL: "UPDATE message_locations SET uidvalidity = 0 WHERE uid IS NOT NULL AND message_id IN (SELECT id FROM messages WHERE account_id = ?)", Args: []any{id}})
+			sqlite.Statement{SQL: "UPDATE folders SET cursor = " + imapref.ZeroValidity("cursor") + " WHERE account_id = ?", Args: []any{id}},
+			sqlite.Statement{SQL: "UPDATE message_locations SET server_ref = " + imapref.ZeroValidity("server_ref") + " WHERE server_ref IS NOT NULL AND message_id IN (SELECT id FROM messages WHERE account_id = ?)", Args: []any{id}})
 		unlock, err := s.lockAccount(ctx, id) // no sync or download is using the old UIDs meanwhile
 		if err != nil {
 			return Account{}, err

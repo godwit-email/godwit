@@ -9,6 +9,7 @@ import (
 	"github.com/egoist/mygo/plugins/sqlite"
 	"github.com/emersion/go-imap/v2"
 	"github.com/emersion/go-imap/v2/imapclient"
+	"github.com/godwit-email/godwit/core/imapref"
 	"github.com/godwit-email/godwit/core/store"
 )
 
@@ -129,15 +130,15 @@ func syncFolders(ctx context.Context, db *store.DB, c *imapclient.Client, accoun
 		}
 		names = append(names, d.Mailbox)
 		stmts = append(stmts, sqlite.Statement{
-			SQL: `INSERT INTO folders(account_id, name, role, delim, role_since) VALUES (?, ?, ?, ?, unixepoch())
-				ON CONFLICT(account_id, name) DO UPDATE SET role = excluded.role, delim = excluded.delim`,
-			Args: []any{accountID, d.Mailbox, rs[i], delim(d)},
+			SQL: `INSERT INTO folders(account_id, server_ref, name, role, delim, role_since) VALUES (?, ?, ?, ?, ?, unixepoch())
+				ON CONFLICT(account_id, server_ref) DO UPDATE SET name = excluded.name, role = excluded.role, delim = excluded.delim`,
+			Args: []any{accountID, d.Mailbox, d.Mailbox, rs[i], delim(d)}, // IMAP's server_ref is the name
 		})
 	}
 	if len(names) == 0 {
 		return nil, nil
 	}
-	stale := "account_id = ? AND name NOT IN (" + marks(len(names)) + ")"
+	stale := "account_id = ? AND server_ref NOT IN (" + marks(len(names)) + ")"
 	staleArgs := append([]any{accountID}, anys(names)...)
 	gone := "(SELECT id FROM folders WHERE " + stale + ")"
 	twice := append(append([]any{}, staleArgs...), staleArgs...)
@@ -146,18 +147,18 @@ func syncFolders(ctx context.Context, db *store.DB, c *imapclient.Client, accoun
 	if err != nil {
 		return nil, err
 	}
-	held, _, err := doomed(ctx, db, in+"uid IS NOT NULL)", staleArgs...)
+	held, _, err := doomed(ctx, db, in+"server_ref IS NOT NULL)", staleArgs...)
 	if err != nil {
 		return nil, err
 	}
 	shownElsewhere := "EXISTS (SELECT 1 FROM message_locations o WHERE o.message_id = %s AND o.shown AND o.folder_id NOT IN " + gone + ")"
 	keepPending := ""
 	if c.Caps().Has(capGmail) {
-		keepPending = " AND gmail_msgid IS NULL AND NOT EXISTS (SELECT 1 FROM ops WHERE message_id = messages.id AND state IN ('pending', 'awaiting_claim'))"
+		keepPending = " AND server_id IS NULL AND NOT EXISTS (SELECT 1 FROM ops WHERE message_id = messages.id AND state IN ('pending', 'awaiting_claim'))"
 	}
 	stmts = append(stmts,
 		// Shown only in a vanished folder but on the server elsewhere: back to where it is.
-		sqlite.Statement{SQL: "UPDATE message_locations SET shown = 1, entered_at = unixepoch() WHERE uid IS NOT NULL AND folder_id NOT IN " + gone +
+		sqlite.Statement{SQL: "UPDATE message_locations SET shown = 1, entered_at = unixepoch() WHERE server_ref IS NOT NULL AND folder_id NOT IN " + gone +
 			" AND message_id IN (SELECT message_id FROM message_locations WHERE shown AND folder_id IN " + gone + ") AND NOT " +
 			fmt.Sprintf(shownElsewhere, "message_locations.message_id"), Args: append(slices.Clone(twice), staleArgs...)},
 		// Shown only in a vanished folder and on the server nowhere: gone too.
@@ -171,33 +172,38 @@ func syncFolders(ctx context.Context, db *store.DB, c *imapclient.Client, accoun
 	if err := r.orphan(ctx, db, c, accountID, held); err != nil {
 		return nil, err
 	}
-	rows, err := db.Query(ctx, "SELECT "+folderCols+" FROM folders WHERE account_id = ?", accountID)
+	rows, err := db.Query(ctx, "SELECT "+folderCols+", server_ref FROM folders WHERE account_id = ?", accountID)
 	if err != nil {
 		return nil, err
 	}
-	byName := map[string]*folder{}
+	byRef := map[string]*folder{}
 	for _, r := range rows.Values {
-		byName[store.Str(r[1])] = scanFolder(r)
+		byRef[store.Str(r[len(r)-1])] = scanFolder(r)
 	}
 	out := make([]*folder, 0, len(names))
 	for _, n := range names {
-		out = append(out, byName[n])
+		out = append(out, byRef[n])
 	}
 	return out, nil
 }
 
-const folderCols = "id, name, uidvalidity, last_uid, synced, filled_since, role"
+const folderCols = "id, name, cursor, synced, filled_since, role"
 
 func scanFolder(r []any) *folder {
-	f := &folder{id: store.Int(r[0]), name: store.Str(r[1]),
-		uidValidity: uint32(store.Int(r[2])), lastUID: uint32(store.Int(r[3])), synced: store.Int(r[4]) != 0,
-		role: store.Str(r[6])}
-	if r[5] != nil {
-		v := store.Int(r[5])
+	f := &folder{id: store.Int(r[0]), name: store.Str(r[1]), synced: store.Int(r[3]) != 0, role: store.Str(r[5])}
+	f.uidValidity, f.lastUID = imapref.Decode(store.Str(r[2]))
+	if r[4] != nil {
+		v := store.Int(r[4])
 		f.filled = &v
 	}
 	return f
 }
+
+// ref is the server_ref of uid in the folder at its UIDVALIDITY.
+func (f *folder) ref(uid uint32) string { return imapref.Encode(f.uidValidity, uid) }
+
+// cursor is the folder's cursor with last as its last UID.
+func (f *folder) cursor(last uint32) string { return imapref.Encode(f.uidValidity, last) }
 
 // tidyThreads deletes conversations left without messages (their thread_refs
 // cascade) and recomputes last_date of the touched ones that survive.

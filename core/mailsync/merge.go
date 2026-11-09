@@ -41,14 +41,14 @@ func merge(ctx context.Context, db *store.DB, keep int64, drop []int64) ([]sqlit
 	stmts := []sqlite.Statement{
 		to("UPDATE message_aliases SET message_id = ? WHERE message_id IN " + in),
 		to("INSERT OR REPLACE INTO message_aliases(id, message_id) SELECT id, ? FROM messages WHERE id IN " + in),
-		{SQL: "UPDATE messages SET gmail_msgid = coalesce(gmail_msgid, (SELECT max(gmail_msgid) FROM messages WHERE id IN " + in + ")) WHERE id = ?",
+		{SQL: "UPDATE messages SET server_id = coalesce(server_id, (SELECT max(server_id) FROM messages WHERE id IN " + in + ")) WHERE id = ?",
 			Args: append(slices.Clone(args), keep)},
 		{SQL: "UPDATE messages SET flags = ? WHERE id = ?", Args: []any{flags, keep}},
 		// Locations: a confirmed one wins a folder over an unconfirmed one. One
 		// hidden there has a move of it queued, which shows it where it goes.
-		to(`DELETE FROM message_locations WHERE message_id = ?1 AND uid IS NULL AND folder_id IN
-			(SELECT folder_id FROM message_locations WHERE uid IS NOT NULL AND message_id IN ` + in + ")"),
-		to("UPDATE OR IGNORE message_locations SET message_id = ? WHERE uid IS NOT NULL AND message_id IN " + in),
+		to(`DELETE FROM message_locations WHERE message_id = ?1 AND server_ref IS NULL AND folder_id IN
+			(SELECT folder_id FROM message_locations WHERE server_ref IS NOT NULL AND message_id IN ` + in + ")"),
+		to("UPDATE OR IGNORE message_locations SET message_id = ? WHERE server_ref IS NOT NULL AND message_id IN " + in),
 		to("UPDATE OR IGNORE message_locations SET message_id = ? WHERE message_id IN " + in),
 		to("UPDATE ops SET message_id = ? WHERE message_id IN " + in),
 		{SQL: `UPDATE ops SET depends_on = (SELECT max(p.id) FROM ops p WHERE p.message_id = ops.message_id AND p.state IN ('pending', 'awaiting_claim') AND p.id < ops.id)
@@ -114,11 +114,11 @@ func mergedFlags(ctx context.Context, db *store.DB, keep int64, all []int64) (st
 func mergeShared(ctx context.Context, db *store.DB, accountID int64, msgids []any, r *result) error {
 	which := ""
 	if msgids != nil {
-		which = " AND gmail_msgid IN (" + marks(len(msgids)) + ")"
+		which = " AND server_id IN (" + marks(len(msgids)) + ")"
 	}
-	rows, err := db.Query(ctx, `SELECT gmail_msgid, id FROM messages m WHERE account_id = ?1 AND gmail_msgid IN
-		(SELECT gmail_msgid FROM messages WHERE account_id = ?1 AND gmail_msgid IS NOT NULL`+which+` GROUP BY gmail_msgid HAVING count(*) > 1)
-		ORDER BY gmail_msgid, coalesce((SELECT min(CASE f.role WHEN 'inbox' THEN 0 WHEN 'all' THEN 2 ELSE 1 END) FROM message_locations l
+	rows, err := db.Query(ctx, `SELECT server_id, id FROM messages m WHERE account_id = ?1 AND server_id IN
+		(SELECT server_id FROM messages WHERE account_id = ?1 AND server_id IS NOT NULL`+which+` GROUP BY server_id HAVING count(*) > 1)
+		ORDER BY server_id, coalesce((SELECT min(CASE f.role WHEN 'inbox' THEN 0 WHEN 'all' THEN 2 ELSE 1 END) FROM message_locations l
 			JOIN folders f ON f.id = l.folder_id WHERE l.message_id = m.id AND l.shown), 3), id`, append([]any{accountID}, msgids...)...)
 	if err != nil {
 		return err
