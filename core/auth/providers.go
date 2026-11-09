@@ -42,6 +42,9 @@ const (
 	IMAP = "imap"
 	SMTP = "smtp"
 	JMAP = "jmap"
+	// Graph is the sending slot of an account whose SMTP AUTH is disabled:
+	// it sends through Microsoft Graph (OAuthConfig.GraphSend).
+	Graph = "graph"
 )
 
 // Entry is one way to a provider's mail: a protocol, its server and the

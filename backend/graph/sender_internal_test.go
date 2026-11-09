@@ -1,4 +1,4 @@
-package send
+package graph
 
 import (
 	"bytes"
@@ -27,9 +27,19 @@ func graphServer(t *testing.T, h http.HandlerFunc) {
 	t.Helper()
 	srv := httptest.NewServer(h)
 	t.Cleanup(srv.Close)
-	old, oldProxy := GraphURL, conn.SystemProxy
-	GraphURL, conn.SystemProxy = srv.URL+"/v1.0/me/sendMail", func(*url.URL) *url.URL { return nil }
-	t.Cleanup(func() { GraphURL, conn.SystemProxy = old, oldProxy })
+	testURL = srv.URL + "/v1.0/me/sendMail"
+	old := conn.SystemProxy
+	conn.SystemProxy = func(*url.URL) *url.URL { return nil }
+	t.Cleanup(func() { conn.SystemProxy = old })
+}
+
+var testURL string
+
+// sendGraph sends with the token tok to the test server.
+func sendGraph(tok string, rcpts []string, raw []byte) error {
+	return New(testURL, func(context.Context) (backend.Credentials, error) {
+		return backend.Credentials{Token: tok}, nil
+	}).Send(context.Background(), "a@outlook.com", rcpts, raw)
 }
 
 func TestSendGraphPostsMIMEWithBcc(t *testing.T) {
@@ -43,7 +53,7 @@ func TestSendGraphPostsMIMEWithBcc(t *testing.T) {
 		got = string(d)
 		w.WriteHeader(http.StatusAccepted)
 	})
-	require.NoError(t, SendGraph(context.Background(), "tok", []string{"b@x.com", "c@x.com", "secret@z.com"}, []byte(graphRaw)))
+	require.NoError(t, sendGraph("tok", []string{"b@x.com", "c@x.com", "secret@z.com"}, []byte(graphRaw)))
 	assert.Equal(t, "Bcc: <secret@z.com>\r\n"+graphRaw, got)
 }
 
@@ -58,12 +68,12 @@ func TestSendGraphErrors(t *testing.T) {
 	}{
 		{401, func(t *testing.T, err error) { assert.ErrorIs(t, err, backend.ErrAuthFailed) }},
 		{403, func(t *testing.T, err error) { assert.ErrorIs(t, err, backend.ErrAuthFailed) }},
-		{504, func(t *testing.T, err error) { assert.ErrorIs(t, err, ErrUncertain) }},
+		{504, func(t *testing.T, err error) { assert.ErrorIs(t, err, backend.ErrUncertain) }},
 		{503, func(t *testing.T, err error) { // retried later
-			assert.False(t, errors.Is(err, ErrUncertain) || errors.As(err, new(*RejectedError)))
+			assert.False(t, errors.Is(err, backend.ErrUncertain) || errors.As(err, new(*backend.RejectedError)))
 		}},
 		{400, func(t *testing.T, err error) {
-			var rej *RejectedError
+			var rej *backend.RejectedError
 			require.ErrorAs(t, err, &rej)
 			assert.GreaterOrEqual(t, rej.Code, 500) // fails for good
 			assert.Contains(t, rej.Message, "ErrorInvalidRecipients")
@@ -73,7 +83,7 @@ func TestSendGraphErrors(t *testing.T) {
 			w.WriteHeader(tc.status)
 			io.WriteString(w, `{"error":{"code":"ErrorInvalidRecipients","message":"bad"}}`)
 		})
-		err := SendGraph(context.Background(), "tok", []string{"b@x.com"}, []byte(graphRaw))
+		err := sendGraph("tok", []string{"b@x.com"}, []byte(graphRaw))
 		require.Error(t, err, tc.status)
 		tc.check(t, err)
 	}
@@ -82,8 +92,8 @@ func TestSendGraphErrors(t *testing.T) {
 func TestSendGraphTooLarge(t *testing.T) {
 	graphServer(t, func(w http.ResponseWriter, r *http.Request) { t.Error("sent") })
 	raw := graphRaw + strings.Repeat("x", 3<<20+1)
-	var rej *RejectedError
-	require.ErrorAs(t, SendGraph(context.Background(), "tok", []string{"b@x.com"}, []byte(raw)), &rej)
+	var rej *backend.RejectedError
+	require.ErrorAs(t, sendGraph("tok", []string{"b@x.com"}, []byte(raw)), &rej)
 	assert.Equal(t, 552, rej.Code)
 }
 
@@ -93,7 +103,7 @@ func TestSendGraphLostAnswerIsUncertain(t *testing.T) {
 		c, _, _ := http.NewResponseController(w).Hijack()
 		c.Close()
 	})
-	assert.ErrorIs(t, SendGraph(context.Background(), "tok", []string{"b@x.com"}, []byte(graphRaw)), ErrUncertain)
+	assert.ErrorIs(t, sendGraph("tok", []string{"b@x.com"}, []byte(graphRaw)), backend.ErrUncertain)
 }
 
 func TestSendGraphStalledAnswerIsUncertain(t *testing.T) {
@@ -106,7 +116,7 @@ func TestSendGraphStalledAnswerIsUncertain(t *testing.T) {
 	old := graphClient.Transport.(*http.Transport).ResponseHeaderTimeout
 	graphClient.Transport.(*http.Transport).ResponseHeaderTimeout = 100 * time.Millisecond
 	t.Cleanup(func() { graphClient.Transport.(*http.Transport).ResponseHeaderTimeout = old })
-	assert.ErrorIs(t, SendGraph(context.Background(), "tok", []string{"b@x.com"}, []byte(graphRaw)), ErrUncertain)
+	assert.ErrorIs(t, sendGraph("tok", []string{"b@x.com"}, []byte(graphRaw)), backend.ErrUncertain)
 }
 
 func TestWithBccQuotesLocalPart(t *testing.T) {

@@ -5,19 +5,20 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"log/slog"
 	"os"
 	"slices"
 	"strings"
 	"time"
 
 	"github.com/egoist/mygo/plugins/sqlite"
-	"github.com/emersion/go-imap/v2"
-	"github.com/emersion/go-imap/v2/imapclient"
 	"github.com/godwit-email/godwit/backend"
 	"github.com/godwit-email/godwit/backend/conn"
+	"github.com/godwit-email/godwit/backend/graph"
+	"github.com/godwit-email/godwit/backend/smtpbackend"
+	"github.com/godwit-email/godwit/core/auth"
 	"github.com/godwit-email/godwit/core/events"
 	"github.com/godwit-email/godwit/core/mailsync"
-	"github.com/godwit-email/godwit/core/send"
 	"github.com/godwit-email/godwit/core/store"
 )
 
@@ -271,14 +272,15 @@ type outboxRow struct {
 	queuedAt           int64 // unix ms the expiry counts from
 }
 
-// processOutbox sends the account's queued messages and files sent ones into the
-// Sent folder over c. Every state change is written before the network action it
-// guards, and a message whose submission may have succeeded is never sent again
-// automatically. A queued item past OutboxExpiry fails instead of being sent.
-// Network failures are recorded on the items; database errors are returned, and
-// so is a refused SMTP login, which stops the round and pauses the account's
-// outbox (smtp_reauth).
-func (s *Service) processOutbox(ctx context.Context, c *imapclient.Client, recv backend.Receiver, accountID int64) error {
+// processOutbox sends the account's queued messages through its sending
+// backend and has recv file sent ones into the Sent folder, unless the sending
+// backend saves them itself. Every state change is written before the network
+// action it guards, and a message whose submission may have succeeded is never
+// sent again automatically. A queued item past OutboxExpiry fails instead of
+// being sent. Network failures are recorded on the items; database errors are
+// returned, and so is a refused login, which stops the round and pauses the
+// account's outbox (smtp_reauth).
+func (s *Service) processOutbox(ctx context.Context, recv backend.Receiver, accountID int64) error {
 	start := s.clk().Now().UnixMilli()
 	defer s.wakeForOutbox(ctx, accountID, start)
 	// A queued item waits for its undo window and its retry time.
@@ -293,23 +295,16 @@ func (s *Service) processOutbox(ctx context.Context, c *imapclient.Client, recv 
 	// Writes after a network action use wctx: a cancelled sync must still record
 	// what happened, or the item would stay in sending/archiving.
 	wctx := context.WithoutCancel(ctx)
-	var (
-		ep         *conn.Endpoint
-		epVer      uint64 // ep's credential version
-		from       string
-		sent       string
-		sentLooked bool
-		refreshed  bool // the access token was refreshed after SMTP refused it
-	)
-	sentFolder := func() (string, error) {
-		if !sentLooked {
-			var err error
-			if sent, err = mailsync.SentFolder(ctx, s.db, c, accountID); err != nil {
-				return "", err
-			}
-			sentLooked = true
-		}
-		return sent, nil
+	acc, err := s.account(ctx, accountID)
+	if err != nil {
+		return err
+	}
+	sa := &sendAuth{s: s, acc: acc}
+	// Before a sync stored any folder, whether there is a Sent folder is not
+	// known: sent items wait for a later round.
+	sent, known, err := mailsync.SentFolder(ctx, s.db, accountID)
+	if err != nil {
+		return err
 	}
 	for _, r := range rows.Values {
 		if ctx.Err() != nil {
@@ -331,36 +326,17 @@ func (s *Service) processOutbox(ctx context.Context, c *imapclient.Client, recv 
 				}
 				continue
 			}
-			if ep == nil {
-				e, f, v, err := s.smtpEndpoint(ctx, accountID, "")
-				if err != nil {
+			var ok bool
+			for retry := true; retry; retry = err != nil && sa.retry(ctx, err) {
+				if _, err := sa.credentials(ctx); err != nil {
 					return err
 				}
-				ep, from, epVer = &e, f, v
-			}
-			ok, err := s.sendItem(ctx, wctx, *ep, from, o)
-			if s.toGraph(ctx, accountID, err) {
-				e, _, v, gerr := s.smtpEndpoint(ctx, accountID, "")
-				if gerr != nil {
-					return gerr
-				}
-				ep, epVer = &e, v
-				ok, err = s.sendItem(ctx, wctx, *ep, from, o)
-			}
-			if errors.Is(err, backend.ErrAuthFailed) && ep.AccessToken != "" && !refreshed {
-				// The access token may just be stale: refresh it once per round.
-				refreshed = true
-				e, _, v, rerr := s.smtpEndpoint(ctx, accountID, ep.AccessToken)
-				if rerr != nil {
-					return rerr
-				}
-				ep, epVer = &e, v
-				ok, err = s.sendItem(ctx, wctx, *ep, from, o)
+				ok, err = s.sendItem(ctx, wctx, sa.sender(), acc.Email, o)
 			}
 			if errors.Is(err, backend.ErrAuthFailed) {
 				// Not this message's fault: it is queued again, uncharged, and the
 				// outbox waits for new credentials instead of trying each item.
-				derr := s.ifCurrent(accountID, epVer, func() error {
+				derr := s.ifCurrent(accountID, sa.ver, func() error {
 					_, err := s.db.Execute(wctx, "UPDATE accounts SET smtp_reauth = 1 WHERE id = ?", accountID)
 					return err
 				})
@@ -375,18 +351,21 @@ func (s *Service) processOutbox(ctx context.Context, c *imapclient.Client, recv 
 			o.state = "sent"
 			fallthrough
 		case "sent", "archive_uncertain":
-			if err := s.archiveItem(ctx, wctx, c, recv, sentFolder, o); err != nil {
+			saves := sa.sender().SavesSent()
+			if !known && !saves {
+				continue
+			}
+			if err := s.archiveItem(ctx, wctx, recv, saves, sent, o); err != nil {
 				return err
 			}
 		case "send_uncertain":
-			folder, err := sentFolder()
-			if err != nil || folder == "" {
+			if sent == "" {
 				continue // cannot check; the user decides
 			}
-			found, err := mailsync.InFolder(ctx, recv, folder, o.messageID, 0)
+			found, err := recv.Find(ctx, sent, o.messageID, 0)
 			if err != nil {
 				_, err = s.setOutbox(wctx, o, "send_uncertain", err.Error())
-			} else if found {
+			} else if len(found) > 0 {
 				err = s.finishOutbox(wctx, o)
 			}
 			if err != nil {
@@ -410,41 +389,78 @@ func (s *Service) wakeForOutbox(ctx context.Context, accountID, start int64) {
 	s.wakeWorkerAt(accountID, wakeOutbox, next)
 }
 
-// smtpEndpoint returns the account's SMTP server with its credentials, its
-// address and the credential version. rejected: an access token SMTP refused, or "".
-// An account whose SMTP AUTH is disabled gets a send.GraphHost endpoint with a
-// new Graph token instead.
-func (s *Service) smtpEndpoint(ctx context.Context, accountID int64, rejected string) (conn.Endpoint, string, uint64, error) {
-	acc, err := s.account(ctx, accountID)
+// graphSendURL is where the Graph sending backend posts; tests replace it.
+var graphSendURL = graph.SendURL
+
+// sendAuth is an outbox round's sign-in to the account's sending backend:
+// SMTP with the account's credentials, or Graph with a Graph token once SMTP
+// refused AUTH for the mailbox. It keeps the credentials for the round.
+type sendAuth struct {
+	s         *Service
+	acc       Account
+	ver       uint64               // cur's credential version
+	cur       *backend.Credentials // nil until read, and after retry
+	rejected  string               // an access token the server refused
+	refreshed bool                 // a refused access token was refreshed this round
+}
+
+func (a *sendAuth) credentials(ctx context.Context) (backend.Credentials, error) {
+	if a.cur != nil {
+		return *a.cur, nil
+	}
+	cr := backend.Credentials{Username: a.acc.Username}
+	var err error
+	if a.acc.Sending.Protocol == auth.Graph {
+		cr.Token, a.ver, err = a.s.graphToken(ctx, a.acc)
+	} else {
+		cr.Password, cr.Token, a.ver, err = a.s.credentials(ctx, a.acc, a.rejected)
+	}
 	if err != nil {
-		return conn.Endpoint{}, "", 0, err
+		return backend.Credentials{}, err
 	}
-	if _, ok := s.graphSend.Load(accountID); ok {
-		tok, ver, err := s.graphToken(ctx, acc)
-		return conn.Endpoint{Host: send.GraphHost, AccessToken: tok}, acc.Email, ver, err
+	a.cur = &cr
+	return cr, nil
+}
+
+// sender is the account's sending backend.
+func (a *sendAuth) sender() backend.Sender {
+	if a.acc.Sending.Protocol == auth.Graph {
+		return graph.New(graphSendURL, a.credentials)
 	}
-	pw, tok, ver, err := s.credentials(ctx, acc, rejected)
-	if err != nil {
-		return conn.Endpoint{}, "", 0, err
+	return smtpbackend.New(smtpbackend.Config{Host: a.acc.Sending.Host, Port: a.acc.Sending.Port,
+		Security: a.acc.Sending.Security, Credentials: a.credentials})
+}
+
+// retry reports whether a send that failed with err is worth one more try
+// with other credentials: SMTP refused AUTH for the mailbox and the account
+// can send through Graph instead (from then on it does), or the server
+// refused an access token that may just be stale (refreshed once a round).
+func (a *sendAuth) retry(ctx context.Context, err error) bool {
+	switch {
+	case a.s.toGraph(ctx, &a.acc, err):
+	case errors.Is(err, backend.ErrAuthFailed) && a.cur != nil && a.cur.Token != "" && !a.refreshed:
+		a.refreshed, a.rejected = true, a.cur.Token
+	default:
+		return false
 	}
-	return conn.Endpoint{Host: acc.Sending.Host, Port: acc.Sending.Port, Security: acc.Sending.Security, Username: acc.Username,
-		Password: pw, AccessToken: tok}, acc.Email, ver, nil
+	a.cur = nil
+	return true
 }
 
 // toGraph reports whether err is SMTP refusing AUTH for the whole mailbox and
-// the account can send through Graph instead; from then on it does.
-func (s *Service) toGraph(ctx context.Context, accountID int64, err error) bool {
-	if !errors.Is(err, conn.ErrSMTPAuthDisabled) {
-		return false
-	}
-	acc, aerr := s.account(ctx, accountID)
-	if aerr != nil || acc.AuthType != "oauth" {
+// acc can send through Graph instead; from then on it does, until its servers
+// change.
+func (s *Service) toGraph(ctx context.Context, acc *Account, err error) bool {
+	if !errors.Is(err, conn.ErrSMTPAuthDisabled) || acc.AuthType != "oauth" {
 		return false
 	}
 	if cfg, cerr := oauthConfig(acc.Provider); cerr != nil || cfg.GraphSend == "" {
 		return false
 	}
-	s.graphSend.Store(accountID, true)
+	acc.Sending.Protocol = auth.Graph
+	if _, err := s.db.Execute(context.WithoutCancel(ctx), "UPDATE accounts SET send_protocol = ? WHERE id = ?", auth.Graph, acc.ID); err != nil {
+		slog.Warn("graph sending not stored", "account", acc.ID, "err", err) // this round still sends through Graph
+	}
 	return true
 }
 
@@ -454,7 +470,7 @@ func (s *Service) toGraph(ctx context.Context, accountID int64, err error) bool 
 // accept it queues it again after a backoff, unless ctx ended: then it is
 // queued as it was, with no try counted. The claim (queued to sending)
 // races CancelOutbox's delete: one of them wins.
-func (s *Service) sendItem(ctx, wctx context.Context, ep conn.Endpoint, from string, o outboxRow) (bool, error) {
+func (s *Service) sendItem(ctx, wctx context.Context, snd backend.Sender, from string, o outboxRow) (bool, error) {
 	if ok, err := s.setOutbox(ctx, o, "sending", ""); !ok || err != nil {
 		return false, err
 	}
@@ -464,16 +480,12 @@ func (s *Service) sendItem(ctx, wctx context.Context, ep conn.Endpoint, from str
 		_, err = s.setOutbox(wctx, o, "failed", err.Error())
 		return false, err
 	}
-	if ep.Host == send.GraphHost {
-		err = send.SendGraph(ctx, ep.AccessToken, o.rcpts, raw)
-	} else {
-		err = send.Send(ctx, ep, from, o.rcpts, raw)
-	}
-	var rej *send.RejectedError
+	err = snd.Send(ctx, from, o.rcpts, raw)
+	var rej *backend.RejectedError
 	switch {
 	case err == nil:
 		return s.setOutbox(wctx, o, "sent", "")
-	case errors.Is(err, send.ErrUncertain):
+	case errors.Is(err, backend.ErrUncertain):
 		_, err = s.setOutbox(wctx, o, "send_uncertain", err.Error())
 		return false, err
 	case errors.Is(err, backend.ErrAuthFailed):
@@ -503,36 +515,32 @@ func (s *Service) failOutbox(ctx context.Context, o outboxRow, lastError string,
 	return err
 }
 
-// archiveItem files a sent item into the Sent folder unless it is there already
-// (the provider saved it, or an earlier uncertain APPEND went through). Without
-// a Sent folder there is nowhere to file it, so it is done.
-func (s *Service) archiveItem(ctx, wctx context.Context, c *imapclient.Client, recv backend.Receiver, sentFolder func() (string, error), o outboxRow) error {
+// archiveItem files a sent item into the Sent folder sent unless it is there
+// already (the provider saved it, or an earlier uncertain append went
+// through). It is done without filing when the sending backend saves sent
+// copies itself, and when there is no Sent folder (sent is "") or recv cannot
+// append: there is nowhere to file it.
+func (s *Service) archiveItem(ctx, wctx context.Context, recv backend.Receiver, saves bool, sent backend.FolderRef, o outboxRow) error {
 	if ok, err := s.setOutbox(ctx, o, "archiving", ""); !ok || err != nil {
 		return err
 	}
 	o.state = "archiving"
 	err := func() error {
-		folder, err := sentFolder()
-		if err != nil || folder == "" {
-			return err
+		if saves || sent == "" {
+			return nil
 		}
-		found, err := mailsync.InFolder(ctx, recv, folder, o.messageID, 0)
-		if err != nil || found {
+		found, err := recv.Find(ctx, sent, o.messageID, 0)
+		if err != nil || len(found) > 0 {
 			return err
 		}
 		raw, err := os.ReadFile(o.rawPath)
 		if err != nil {
 			return err
 		}
-		cmd := c.Append(folder, int64(len(raw)), &imap.AppendOptions{Flags: []imap.Flag{imap.FlagSeen}})
-		if _, err := cmd.Write(raw); err != nil {
-			cmd.Close()
-			return err
+		res, err := recv.Apply(ctx, backend.Append{To: sent, Raw: raw, Flags: backend.Flags{Seen: true}, MessageID: o.messageID})
+		if err == nil && res.Outcome == backend.Failed {
+			err = fmt.Errorf("the server refused to store the sent copy: %s", res.Reason)
 		}
-		if err := cmd.Close(); err != nil {
-			return err
-		}
-		_, err = cmd.Wait()
 		return err
 	}()
 	if err != nil {

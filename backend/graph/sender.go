@@ -1,4 +1,6 @@
-package send
+// Package graph is the Microsoft Graph sending backend (ADR 0037), for a
+// mailbox whose SMTP AUTH is disabled.
+package graph
 
 import (
 	"bytes"
@@ -19,12 +21,8 @@ import (
 	"github.com/godwit-email/godwit/backend/conn"
 )
 
-// GraphHost marks an Endpoint that sends through Microsoft Graph with its
-// AccessToken, for a mailbox whose SMTP AUTH is disabled.
-const GraphHost = "graph.microsoft.com"
-
-// GraphURL is Graph's sendMail; tests replace it.
-var GraphURL = "https://" + GraphHost + "/v1.0/me/sendMail"
+// SendURL is Graph's sendMail.
+const SendURL = "https://graph.microsoft.com/v1.0/me/sendMail"
 
 // graphMaxBody is Graph's 4 MB request limit, which the base64 body must fit.
 const graphMaxBody = 4 << 20
@@ -39,29 +37,47 @@ var graphClient = &http.Client{Timeout: 5 * time.Minute, Transport: func() *http
 	return t
 }()}
 
-// SendGraph submits raw to rcpts through Graph's sendMail, with the same
-// errors as Send: ErrUncertain once the whole request went out without an
-// answer, backend.ErrAuthFailed for a refused token, a *RejectedError (5xx) for a
-// refused message. Graph takes recipients from the headers, so rcpts not in
-// To or Cc are added as Bcc to the copy Graph gets (Exchange strips it).
-func SendGraph(ctx context.Context, token string, rcpts []string, raw []byte) error {
+// Sender submits through Graph's sendMail with the Token its credentials
+// give. Graph files the sent copy itself (saveToSentItems).
+type Sender struct {
+	url   string
+	creds backend.CredentialsFunc
+}
+
+var _ backend.Sender = (*Sender)(nil)
+
+// New is a Sender posting to url, normally SendURL.
+func New(url string, creds backend.CredentialsFunc) *Sender { return &Sender{url, creds} }
+
+func (*Sender) SavesSent() bool { return true }
+
+// Send submits raw to rcpts: ErrUncertain once the whole request went out
+// without an answer, backend.ErrAuthFailed for a refused token, a
+// *backend.RejectedError (5xx) for a refused message. Graph takes recipients
+// from the headers, so rcpts not in To or Cc are added as Bcc to the copy
+// Graph gets (Exchange strips it); from is the mailbox's own.
+func (s *Sender) Send(ctx context.Context, _ string, rcpts []string, raw []byte) error {
 	body := base64.StdEncoding.EncodeToString(withBcc(raw, rcpts))
 	if len(body) > graphMaxBody {
-		return &RejectedError{Stage: "DATA", Code: 552, Enhanced: "5.3.4",
+		return &backend.RejectedError{Stage: "DATA", Code: 552, Enhanced: "5.3.4",
 			Message: "the message is over the 4 MB Microsoft Graph sends"}
 	}
-	var wrote atomic.Bool // set on the transport's goroutine
-	ctx = httptrace.WithClientTrace(ctx, &httptrace.ClientTrace{WroteRequest: func(i httptrace.WroteRequestInfo) { wrote.Store(i.Err == nil) }})
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, GraphURL, strings.NewReader(body))
+	cr, err := s.creds(ctx)
 	if err != nil {
 		return err
 	}
-	req.Header.Set("Authorization", "Bearer "+token)
+	var wrote atomic.Bool // set on the transport's goroutine
+	ctx = httptrace.WithClientTrace(ctx, &httptrace.ClientTrace{WroteRequest: func(i httptrace.WroteRequestInfo) { wrote.Store(i.Err == nil) }})
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, s.url, strings.NewReader(body))
+	if err != nil {
+		return err
+	}
+	req.Header.Set("Authorization", "Bearer "+cr.Token)
 	req.Header.Set("Content-Type", "text/plain")
 	resp, err := graphClient.Do(req)
 	if err != nil {
 		if wrote.Load() {
-			return fmt.Errorf("%w: %v", ErrUncertain, err)
+			return fmt.Errorf("%w: %v", backend.ErrUncertain, err)
 		}
 		return fmt.Errorf("graph send: %w", err)
 	}
@@ -73,7 +89,7 @@ func SendGraph(ctx context.Context, token string, rcpts []string, raw []byte) er
 	case c == http.StatusUnauthorized, c == http.StatusForbidden: // no Mail.Send consent, or a stale token
 		return fmt.Errorf("graph: %w", backend.ErrAuthFailed)
 	case c == http.StatusGatewayTimeout: // the backend may have taken it
-		return fmt.Errorf("%w: graph answered %d", ErrUncertain, c)
+		return fmt.Errorf("%w: graph answered %d", backend.ErrUncertain, c)
 	case c == http.StatusTooManyRequests, c >= 500:
 		return fmt.Errorf("graph send: the server answered %d", c)
 	default:
@@ -81,7 +97,7 @@ func SendGraph(ctx context.Context, token string, rcpts []string, raw []byte) er
 			Error struct{ Code, Message string } `json:"error"`
 		}
 		json.Unmarshal(b, &e)
-		return &RejectedError{Stage: "DATA", Code: 554, Message: fmt.Sprintf("%d %s: %s", c, e.Error.Code, e.Error.Message)}
+		return &backend.RejectedError{Stage: "DATA", Code: 554, Message: fmt.Sprintf("%d %s: %s", c, e.Error.Code, e.Error.Message)}
 	}
 }
 

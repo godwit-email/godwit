@@ -334,8 +334,8 @@ type Append struct {
 	To        FolderRef
 	Raw       []byte
 	Flags     Flags
-	Date      time.Time
-	MessageID string // without angle brackets
+	Date      time.Time // when the server received it; zero for now
+	MessageID string    // without angle brackets
 }
 
 func (SetFlags) op()         {}

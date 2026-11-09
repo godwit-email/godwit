@@ -12,7 +12,6 @@ import (
 	"github.com/godwit-email/godwit/backend"
 	"github.com/godwit-email/godwit/backend/conn"
 	"github.com/godwit-email/godwit/core/auth"
-	"github.com/godwit-email/godwit/core/send"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -49,7 +48,7 @@ func newGraphEnv(t *testing.T) *graphEnv {
 		w.WriteHeader(http.StatusAccepted)
 	}))
 	t.Cleanup(srv.Close)
-	setFor(t, &send.GraphURL, srv.URL+"/v1.0/me/sendMail")
+	setFor(t, &graphSendURL, srv.URL+"/v1.0/me/sendMail")
 	e.smtp.DisableAuth(true)
 	return e
 }
@@ -83,6 +82,7 @@ func TestSendThroughGraphWhenSMTPAuthDisabled(t *testing.T) {
 	assert.True(t, strings.HasPrefix(got[0], "Bcc: <carol@example.com>\r\n"), "Graph takes Bcc from the headers")
 	assert.Empty(t, e.smtp.Messages())
 	assert.Equal(t, "done", e.state(t))
+	assert.Equal(t, 1, e.count(t, "SELECT count(*) FROM accounts WHERE send_protocol = 'graph'"), "stored: a restart sends through Graph too")
 
 	auths := e.smtp.AuthAttempts()
 	e.sendNew(t)
@@ -136,6 +136,7 @@ func TestServerChangeRetriesSMTP(t *testing.T) {
 	srv := e.acc.servers()
 	_, err := e.s.UpdateAccount(bg, e.acc.ID, AccountPatch{Servers: &srv})
 	require.NoError(t, err)
+	assert.Equal(t, 1, e.count(t, "SELECT count(*) FROM accounts WHERE send_protocol = 'smtp'"))
 	e.sendNew(t)
 	e.sync(t)
 	assert.Len(t, e.graphSent(), 1)
