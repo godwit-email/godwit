@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/base64"
 	"errors"
+	"fmt"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -116,4 +117,20 @@ func TestWithBccQuotesLocalPart(t *testing.T) {
 	require.Len(t, list, 2)
 	assert.Equal(t, "last,first@example.com", list[0].Address)
 	assert.Equal(t, "x@y.com", list[1].Address)
+}
+
+func TestWithBccFoldsLongLists(t *testing.T) {
+	var rcpts []string
+	for i := range 50 {
+		rcpts = append(rcpts, fmt.Sprintf("person%02d@example.com", i))
+	}
+	out := withBcc([]byte(graphRaw), rcpts)
+	for _, l := range strings.Split(string(out), "\r\n") {
+		assert.LessOrEqual(t, len(l), 78)
+	}
+	m, err := mail.ReadMessage(bytes.NewReader(out))
+	require.NoError(t, err)
+	list, err := m.Header.AddressList("Bcc")
+	require.NoError(t, err)
+	assert.Len(t, list, 50)
 }

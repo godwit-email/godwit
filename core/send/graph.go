@@ -106,5 +106,6 @@ func withBcc(raw []byte, rcpts []string) []byte {
 	if len(bcc) == 0 {
 		return raw
 	}
-	return append([]byte("Bcc: "+strings.Join(bcc, ", ")+"\r\n"), raw...)
+	// One address per folded line: no line nears RFC 5322's 998 characters.
+	return append([]byte("Bcc: "+strings.Join(bcc, ",\r\n ")+"\r\n"), raw...)
 }
