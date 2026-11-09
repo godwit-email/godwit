@@ -12,7 +12,7 @@ import (
 
 func TestSignaturesShared(t *testing.T) {
 	e := newSendEnv(t, false)
-	bobIn := internalInput(t, e.im.Addr, e.acc.SMTPHost+":"+strconv.Itoa(e.acc.SMTPPort), "bob@example.com", false)
+	bobIn := internalInput(t, e.im.Addr, e.acc.Sending.Host+":"+strconv.Itoa(e.acc.Sending.Port), "bob@example.com", false)
 	bob, err := e.s.AddAccount(bg, bobIn)
 	require.NoError(t, err)
 
@@ -148,7 +148,7 @@ func TestReusedSignatureImageKept(t *testing.T) {
 // account, no credential, so adding it again can work.
 func TestAddAccountSignatureFailureUndone(t *testing.T) {
 	e := newSendEnv(t, false)
-	in := internalInput(t, e.im.Addr, e.acc.SMTPHost+":"+strconv.Itoa(e.acc.SMTPPort), "bob@example.com", false)
+	in := internalInput(t, e.im.Addr, e.acc.Sending.Host+":"+strconv.Itoa(e.acc.Sending.Port), "bob@example.com", false)
 	in.Signature = "Bob"
 	_, err := e.s.db.Execute(bg, "ALTER TABLE signatures RENAME TO signatures_gone")
 	require.NoError(t, err)

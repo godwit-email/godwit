@@ -177,7 +177,7 @@ func TestMCPRoleAllowlist(t *testing.T) {
 		{"CancelOutbox", []any{queued[0].ID}},
 		{"PendingMCPSends", nil},
 		{"InstallPlugin", []any{coretest.PluginFixture(t, "card-demo")}},
-		{"AddAccount", []any{core.AccountInput{Email: "eve@example.com", Username: "u", Password: "p", IMAPHost: "127.0.0.1", IMAPPort: 1, SMTPHost: "127.0.0.1", SMTPPort: 1}}},
+		{"AddAccount", []any{core.AccountInput{Email: "eve@example.com", Username: "u", Password: "p", Receiving: core.Server{Host: "127.0.0.1", Port: 1}, Sending: core.Server{Host: "127.0.0.1", Port: 1}}}},
 		{"RemoveModelService", []any{services[0].ID}},
 		{"SetPluginConfig", []any{"config-demo", map[string]any{"plan": "pro"}}},
 		{"GetMessage", []any{msg.ID, true}},

@@ -6,7 +6,7 @@ import (
 	"github.com/godwit-email/godwit/core/conn"
 )
 
-// Security is the transport protection of an IMAP or SMTP connection.
+// Security is the transport protection of a connection to a server.
 type Security = conn.Security
 
 const (
@@ -20,12 +20,7 @@ type AccountInput struct {
 	Email, Name, Alias, Signature, Username, Password string
 	IsDefault                                         bool
 	Sync                                              *SyncRange // nil: the newest 2000 per folder
-	IMAPHost                                          string
-	IMAPPort                                          int
-	IMAPSecurity                                      Security
-	SMTPHost                                          string
-	SMTPPort                                          int
-	SMTPSecurity                                      Security
+	Receiving, Sending                                Server
 	Provider                                          string // auth.Provider ID; empty is stored as other
 	// OAuthFlowID names a finished AwaitOAuth flow: the account signs in with its
 	// tokens instead of Password, and Email must be the signed-in address.
@@ -58,12 +53,7 @@ type Account struct {
 	Sync                                    SyncRange
 	Folders                                 int // folders synced so far: 0 before the first sync
 	AuthType, Status                        string
-	IMAPHost                                string
-	IMAPPort                                int
-	IMAPSecurity                            Security
-	SMTPHost                                string
-	SMTPPort                                int
-	SMTPSecurity                            Security
+	Receiving, Sending                      Server // a local archive's are zero
 	Provider, StatusDetail                  string
 	OAuthClientID                           string // the user's own OAuth client (OAuthClient), "" the provider's
 	Kind                                    string // "" a mail account, KindLocalArchive
@@ -85,16 +75,21 @@ type Folder struct {
 	Total         int
 }
 
-// ServerSettings replaces an account's username and IMAP and SMTP servers. An
-// empty Username means the email address.
+// ServerSettings replaces an account's username and servers. An empty
+// Username means the email address.
 type ServerSettings struct {
-	Username     string
-	IMAPHost     string
-	IMAPPort     int
-	IMAPSecurity Security
-	SMTPHost     string
-	SMTPPort     int
-	SMTPSecurity Security
+	Username           string
+	Receiving, Sending Server
+}
+
+// Server is one of an account's two server slots, receiving and sending: a
+// protocol and where its server is. Receiving is auth.IMAP and sending
+// auth.SMTP, the only ones so far; an empty Protocol in input is the slot's.
+type Server struct {
+	Protocol string
+	Host     string
+	Port     int
+	Security Security
 }
 
 // SyncRange is how much of each folder a sync fetches: the newest Limit

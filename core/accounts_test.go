@@ -29,8 +29,8 @@ func input(t *testing.T, imapAddr, smtpAddr, password string) core.AccountInput 
 	sh, sp := hostPort(t, smtpAddr)
 	return core.AccountInput{
 		Email: "alice@example.com", Name: "Alice", Username: "alice", Password: password,
-		IMAPHost: ih, IMAPPort: ip, IMAPSecurity: core.SecurityNone,
-		SMTPHost: sh, SMTPPort: sp, SMTPSecurity: core.SecurityNone,
+		Receiving: core.Server{Host: ih, Port: ip, Security: core.SecurityNone},
+		Sending:   core.Server{Host: sh, Port: sp, Security: core.SecurityNone},
 	}
 }
 
@@ -57,6 +57,10 @@ func TestAddAccount(t *testing.T) {
 	assert.Equal(t, core.SyncRange{Limit: 2000}, acc.Sync)
 	assert.Equal(t, "password", acc.AuthType)
 	assert.Equal(t, "ok", acc.Status)
+	ih, ip := hostPort(t, im.Addr)
+	sh, sp := hostPort(t, smtpAddr)
+	assert.Equal(t, core.Server{Protocol: "imap", Host: ih, Port: ip, Security: core.SecurityNone}, acc.Receiving)
+	assert.Equal(t, core.Server{Protocol: "smtp", Host: sh, Port: sp, Security: core.SecurityNone}, acc.Sending)
 	require.NoError(t, s.SyncNow(ctx, acc.ID), "the password is in the keychain")
 
 	list, err := s.ListAccounts(ctx)
@@ -134,14 +138,26 @@ func TestKeyringFailureRollsBack(t *testing.T) {
 func TestPlaintextOnlyForLoopback(t *testing.T) {
 	s := newTestService(t)
 	in := input(t, "127.0.0.1:1", "127.0.0.1:1", "secret")
-	in.IMAPHost = "mail.example.com"
+	in.Receiving.Host = "mail.example.com"
 	require.ErrorContains(t, s.TestAccount(ctx, in), "plaintext")
 	in = input(t, "127.0.0.1:1", "127.0.0.1:1", "secret")
-	in.SMTPHost = "mail.example.com"
+	in.Sending.Host = "mail.example.com"
 	require.ErrorContains(t, s.TestAccount(ctx, in), "plaintext")
 	in = input(t, "127.0.0.1:1", "127.0.0.1:1", "secret")
 	in.Email = "not-an-email"
 	require.Error(t, s.TestAccount(ctx, in))
+}
+
+// The server slots take the protocols that have a backend: IMAP to receive,
+// SMTP to send.
+func TestAccountProtocols(t *testing.T) {
+	s := newTestService(t)
+	in := input(t, "127.0.0.1:1", "127.0.0.1:1", "secret")
+	in.Receiving.Protocol = "jmap"
+	require.ErrorContains(t, s.TestAccount(ctx, in), `receiving protocol "jmap" is not supported`)
+	in = input(t, "127.0.0.1:1", "127.0.0.1:1", "secret")
+	in.Sending.Protocol = "imap"
+	require.ErrorContains(t, s.TestAccount(ctx, in), `sending protocol "imap" is not supported`)
 }
 
 func TestRemoveAccount(t *testing.T) {

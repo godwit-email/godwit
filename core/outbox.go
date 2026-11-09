@@ -426,7 +426,7 @@ func (s *Service) smtpEndpoint(ctx context.Context, accountID int64, rejected st
 	if err != nil {
 		return conn.Endpoint{}, "", 0, err
 	}
-	return conn.Endpoint{Host: acc.SMTPHost, Port: acc.SMTPPort, Security: acc.SMTPSecurity, Username: acc.Username,
+	return conn.Endpoint{Host: acc.Sending.Host, Port: acc.Sending.Port, Security: acc.Sending.Security, Username: acc.Username,
 		Password: pw, AccessToken: tok}, acc.Email, ver, nil
 }
 

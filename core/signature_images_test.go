@@ -117,7 +117,7 @@ func TestSignatureImageCaps(t *testing.T) {
 // nothing stores is dropped.
 func TestUnknownSignatureImagesDropped(t *testing.T) {
 	e := newSendEnv(t, false)
-	bobIn := internalInput(t, e.im.Addr, e.acc.SMTPHost+":"+strconv.Itoa(e.acc.SMTPPort), "bob@example.com", false)
+	bobIn := internalInput(t, e.im.Addr, e.acc.Sending.Host+":"+strconv.Itoa(e.acc.Sending.Port), "bob@example.com", false)
 	bob, err := e.s.AddAccount(bg, bobIn)
 	require.NoError(t, err)
 	bobAcc, err := setSignature(t, e.s, bob.ID, `<img src="`+dataURL("image/png", logo(t, 9))+`">`)

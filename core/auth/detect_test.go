@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"net"
+	"slices"
 	"testing"
 
 	"github.com/godwit-email/godwit/core/auth"
@@ -97,14 +98,14 @@ func TestDetect(t *testing.T) {
 		if err != nil {
 			t.Fatalf("%s: %v", c.email, err)
 		}
-		if p.ID != c.id || src != c.src || p.IMAP.Host != c.imapHost {
-			t.Errorf("%s: got %s/%s/%s want %s/%s/%s", c.email, p.ID, src, p.IMAP.Host, c.id, c.src, c.imapHost)
+		if p.ID != c.id || src != c.src || p.Entry(auth.IMAP).Host != c.imapHost {
+			t.Errorf("%s: got %s/%s/%s want %s/%s/%s", c.email, p.ID, src, p.Entry(auth.IMAP).Host, c.id, c.src, c.imapHost)
 		}
-		if c.src == "srv" && (p.IMAP.Port != 1993 || p.SMTP.Host != "smtp.srv.example" || p.SMTP.Port != 1465) {
-			t.Errorf("srv: got imap %d smtp %s:%d", p.IMAP.Port, p.SMTP.Host, p.SMTP.Port)
+		if c.src == "srv" && (p.Entry(auth.IMAP).Port != 1993 || p.Entry(auth.SMTP).Host != "smtp.srv.example" || p.Entry(auth.SMTP).Port != 1465) {
+			t.Errorf("srv: got imap %d smtp %s:%d", p.Entry(auth.IMAP).Port, p.Entry(auth.SMTP).Host, p.Entry(auth.SMTP).Port)
 		}
-		if c.id == "other" && p.Login != "password" {
-			t.Errorf("%s: login %q", c.email, p.Login)
+		if c.id == "other" && p.Entry(auth.IMAP).Login != "password" {
+			t.Errorf("%s: login %q", c.email, p.Entry(auth.IMAP).Login)
 		}
 	}
 }
@@ -133,8 +134,8 @@ func TestDetectMailserversDatabase(t *testing.T) {
 		if err != nil {
 			t.Fatalf("%s: %v", c.email, err)
 		}
-		if p.ID != c.id || src != c.src || p.IMAP.Host != c.imapHost || p.Username != c.username {
-			t.Errorf("%s: got %s/%s/%s/%q want %s/%s/%s/%q", c.email, p.ID, src, p.IMAP.Host, p.Username, c.id, c.src, c.imapHost, c.username)
+		if p.ID != c.id || src != c.src || p.Entry(auth.IMAP).Host != c.imapHost || p.Username != c.username {
+			t.Errorf("%s: got %s/%s/%s/%q want %s/%s/%s/%q", c.email, p.ID, src, p.Entry(auth.IMAP).Host, p.Username, c.id, c.src, c.imapHost, c.username)
 		}
 	}
 }
@@ -148,7 +149,7 @@ func TestDetectRejectsBadAddress(t *testing.T) {
 }
 
 func TestProvidersComplete(t *testing.T) {
-	want := []string{"gmail", "outlook", "netease163", "netease126", "qq", "exmail", "feishu", "lark", "dingtalk", "icloud", "yahoo", "aol"}
+	want := []string{"gmail", "outlook", "netease163", "netease126", "qq", "exmail", "feishu", "lark", "dingtalk", "icloud", "yahoo", "aol", "fastmail"}
 	ps := auth.ListProviders()
 	if len(ps) != len(want) {
 		t.Fatalf("got %d providers", len(ps))
@@ -157,12 +158,12 @@ func TestProvidersComplete(t *testing.T) {
 		if p.ID != want[i] {
 			t.Errorf("order[%d] = %s, want %s", i, p.ID, want[i])
 		}
-		for _, s := range []auth.Server{p.IMAP, p.SMTP} {
+		for _, s := range []auth.Entry{p.Entry(auth.IMAP), p.Entry(auth.SMTP)} {
 			if s.Host == "" || s.Port <= 0 || s.Security == conn.None || s.Security == "" {
 				t.Errorf("%s: bad server %+v", p.ID, s)
 			}
 		}
-		if p.Login != "oauth" && p.HelpURL == "" {
+		if p.Entry(auth.IMAP).Login != "oauth" && p.HelpURL == "" {
 			t.Errorf("%s: empty HelpURL", p.ID)
 		}
 		if p.ID == "outlook" && p.OAuth == nil {
@@ -209,14 +210,37 @@ func TestDetectMXBoundaryPriorityAndSRVFallback(t *testing.T) {
 		}
 	}
 	p, s := get("a@sub.example")
-	if s != "srv" || p.IMAP.Security != conn.TLS || p.SMTP.Security != conn.StartTLS || p.SMTP.Port != 587 || p.SMTP.Host != "smtp.sub.example" {
-		t.Errorf("submission fallback: %s %+v %+v", s, p.IMAP, p.SMTP)
+	if s != "srv" || p.Entry(auth.IMAP).Security != conn.TLS || p.Entry(auth.SMTP).Security != conn.StartTLS || p.Entry(auth.SMTP).Port != 587 || p.Entry(auth.SMTP).Host != "smtp.sub.example" {
+		t.Errorf("submission fallback: %s %+v %+v", s, p.Entry(auth.IMAP), p.Entry(auth.SMTP))
 	}
 	p, s = get("a@dot.example")
-	if s != "srv" || p.SMTP.Host != "smtp.dot.example" || p.SMTP.Security != conn.StartTLS {
-		t.Errorf("dot target: %s %+v", s, p.SMTP)
+	if s != "srv" || p.Entry(auth.SMTP).Host != "smtp.dot.example" || p.Entry(auth.SMTP).Security != conn.StartTLS {
+		t.Errorf("dot target: %s %+v", s, p.Entry(auth.SMTP))
 	}
 	if _, s = get("a@alldot.example"); s != "guess" {
 		t.Errorf("all-dot SMTP: source %s, want guess", s)
+	}
+}
+
+// A provider lists one entry per protocol, each with its own sign-in:
+// Fastmail's JMAP takes an API token, its IMAP and SMTP an app password.
+func TestDetectFastmailEntries(t *testing.T) {
+	p, src, err := auth.Detect(context.Background(), fakeResolver{}, "a@fastmail.com")
+	if err != nil || p.ID != "fastmail" || src != auth.SourceDomain {
+		t.Fatalf("got %s/%s/%v", p.ID, src, err)
+	}
+	want := []auth.Entry{
+		{Protocol: auth.JMAP, Server: auth.Server{Host: "api.fastmail.com", Port: 443, Security: conn.TLS}, Login: "api_token"},
+		{Protocol: auth.IMAP, Server: auth.Server{Host: "imap.fastmail.com", Port: 993, Security: conn.TLS}, Login: "app_password"},
+		{Protocol: auth.SMTP, Server: auth.Server{Host: "smtp.fastmail.com", Port: 465, Security: conn.TLS}, Login: "app_password"},
+	}
+	if !slices.Equal(p.Entries, want) {
+		t.Errorf("entries %+v", p.Entries)
+	}
+	if e := p.Entry(auth.IMAP); e != want[1] {
+		t.Errorf("Entry(imap) = %+v", e)
+	}
+	if e := p.Entry("pop3"); e != (auth.Entry{}) {
+		t.Errorf("Entry(pop3) = %+v, want none", e)
 	}
 }

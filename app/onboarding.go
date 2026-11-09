@@ -39,7 +39,12 @@ const (
 // servers on loopback speak plaintext, which the form never offers.
 var testSecurity core.Security
 
-var otherProvider = auth.Provider{ID: "other", Login: "password"}
+var otherProvider = auth.Provider{ID: "other", Entries: auth.IMAPSMTP(auth.Server{}, auth.Server{}, "password")}
+
+// imapOf, smtpOf and loginOf are p's IMAP and SMTP servers and how they sign in.
+func imapOf(p auth.Provider) auth.Server { return p.Entry(auth.IMAP).Server }
+func smtpOf(p auth.Provider) auth.Server { return p.Entry(auth.SMTP).Server }
+func loginOf(p auth.Provider) string     { return p.Entry(auth.IMAP).Login }
 
 // onboarding adds an account: the first-run page (window) or the settings
 // sheet. Steps: pick a provider, then a password or a browser sign-in, then
@@ -160,8 +165,9 @@ func providerName(p auth.Provider) string {
 }
 
 // listed reports whether p has its own tile: Lark (Feishu outside China)
-// shares Feishu's, and the address's MX picks between them.
-func listed(p auth.Provider) bool { return p.ID != "lark" }
+// shares Feishu's, and the address's MX picks between them. Fastmail has
+// none yet (no mark of its own): its addresses find it.
+func listed(p auth.Provider) bool { return p.ID != "lark" && p.ID != "fastmail" }
 
 // tileName is p's name on its tile: Feishu's is 飞书/Lark.
 func tileName(p auth.Provider) string {
@@ -191,7 +197,7 @@ func providerMark(p auth.Provider) string {
 }
 
 // secretName is what the provider's password is called: 授权码, 应用专用密码…
-func (o *onboarding) secretName() string { return i18n.T("onboarding.login." + o.prov.Login) }
+func (o *onboarding) secretName() string { return i18n.T("onboarding.login." + loginOf(o.prov)) }
 
 // scheduleDetect detects the provider of the address once typing pauses.
 func (o *onboarding) scheduleDetect() {
@@ -240,16 +246,16 @@ func (o *onboarding) detect(email string, then func(auth.Provider)) {
 func (o *onboarding) found(p auth.Provider, email string) {
 	o.detected, o.detectedFor = p, email
 	if o.step == stepPassword && feishuOrLark(o.prov) && feishuOrLark(p) && p.ID != o.prov.ID &&
-		o.imapHost == o.prov.IMAP.Host && o.smtpHost == o.prov.SMTP.Host {
+		o.imapHost == imapOf(o.prov).Host && o.smtpHost == smtpOf(o.prov).Host {
 		o.prov = p
-		o.imapHost, o.smtpHost = p.IMAP.Host, p.SMTP.Host
+		o.imapHost, o.smtpHost = imapOf(p).Host, smtpOf(p).Host
 	}
-	if o.step == stepPassword && o.prov.ID == "other" && o.imapHost == o.prov.IMAP.Host && o.smtpHost == o.prov.SMTP.Host {
+	if o.step == stepPassword && o.prov.ID == "other" && o.imapHost == imapOf(o.prov).Host && o.smtpHost == smtpOf(o.prov).Host {
 		if o.detectedSrc == auth.SourceGuess {
 			p = otherProvider // the servers found for the address typed before are not this one's
 		}
-		if p.IMAP != o.prov.IMAP || p.SMTP != o.prov.SMTP {
-			o.prov.IMAP, o.prov.SMTP = p.IMAP, p.SMTP
+		if imapOf(p) != imapOf(o.prov) || smtpOf(p) != smtpOf(o.prov) {
+			o.prov.Entries = auth.IMAPSMTP(imapOf(p), smtpOf(p), loginOf(o.prov))
 			o.setServers(p)
 		}
 		o.setUsername(p.Username)
@@ -258,9 +264,9 @@ func (o *onboarding) found(p auth.Provider, email string) {
 
 // setServers fills the server fields with p's, or the defaults if it has none.
 func (o *onboarding) setServers(p auth.Provider) {
-	o.imapHost, o.imapPort, o.imapSec = p.IMAP.Host, strconv.Itoa(p.IMAP.Port), p.IMAP.Security
-	o.smtpHost, o.smtpPort, o.smtpSec = p.SMTP.Host, strconv.Itoa(p.SMTP.Port), p.SMTP.Security
-	if p.IMAP.Host == "" {
+	o.imapHost, o.imapPort, o.imapSec = imapOf(p).Host, strconv.Itoa(imapOf(p).Port), imapOf(p).Security
+	o.smtpHost, o.smtpPort, o.smtpSec = smtpOf(p).Host, strconv.Itoa(smtpOf(p).Port), smtpOf(p).Security
+	if imapOf(p).Host == "" {
 		o.imapPort, o.imapSec, o.smtpPort, o.smtpSec = "993", core.SecurityTLS, "465", core.SecurityTLS
 	}
 }
@@ -289,12 +295,12 @@ func (o *onboarding) next() {
 
 // choose takes p's servers and goes to its sign-in.
 func (o *onboarding) choose(p auth.Provider) {
-	manualTile := p.IMAP.Host == ""
+	manualTile := imapOf(p).Host == ""
 	if feishuOrLark(p) && o.detectedFor == o.email && feishuOrLark(o.detected) {
 		p = o.detected // the 飞书/Lark tile for an address already found
 	}
-	if manualTile && o.detectedFor == o.email && o.detectedSrc != auth.SourceGuess && o.detected.IMAP.Host != "" {
-		p.IMAP, p.SMTP, p.Username = o.detected.IMAP, o.detected.SMTP, o.detected.Username
+	if manualTile && o.detectedFor == o.email && o.detectedSrc != auth.SourceGuess && imapOf(o.detected).Host != "" {
+		p.Entries, p.Username = auth.IMAPSMTP(imapOf(o.detected), smtpOf(o.detected), loginOf(p)), o.detected.Username
 	}
 	if p.ID != o.prov.ID { // what was typed or imported is for the provider it was given to
 		o.secret, o.client = "", clientForm{}
@@ -305,7 +311,7 @@ func (o *onboarding) choose(p auth.Provider) {
 	o.manual = manualTile
 	o.askEmail = !validEmail(o.email)
 	o.focusEmail = false
-	if p.Login == "oauth" {
+	if loginOf(p) == "oauth" {
 		o.startOAuth()
 		return
 	}
@@ -380,15 +386,15 @@ func (o *onboarding) input() core.AccountInput {
 	ip, _ := strconv.Atoi(strings.TrimSpace(o.imapPort))
 	sp, _ := strconv.Atoi(strings.TrimSpace(o.smtpPort))
 	in := core.AccountInput{Email: strings.TrimSpace(o.email), Name: strings.TrimSpace(o.name), Username: strings.TrimSpace(o.username),
-		IMAPHost: strings.TrimSpace(o.imapHost), IMAPPort: ip, IMAPSecurity: o.imapSec,
-		SMTPHost: strings.TrimSpace(o.smtpHost), SMTPPort: sp, SMTPSecurity: o.smtpSec, Provider: o.prov.ID, ReceiveOnly: o.receiveOnly}
+		Receiving: core.Server{Host: strings.TrimSpace(o.imapHost), Port: ip, Security: o.imapSec},
+		Sending:   core.Server{Host: strings.TrimSpace(o.smtpHost), Port: sp, Security: o.smtpSec}, Provider: o.prov.ID, ReceiveOnly: o.receiveOnly}
 	if o.oauth() {
 		in.OAuthFlowID = o.flowID
 	} else {
 		in.Password = o.secret
 	}
 	if testSecurity != "" {
-		in.IMAPSecurity, in.SMTPSecurity = testSecurity, testSecurity
+		in.Receiving.Security, in.Sending.Security = testSecurity, testSecurity
 	}
 	return in
 }
@@ -711,7 +717,7 @@ func (o *onboarding) pickView(c *ui.Context) {
 		for i := 0; i < len(ps); i += 2 {
 			ui.Row(c).Gap(th.Space(2)).AlignItems(ui.Stretch).Children(func() {
 				for _, p := range ps[i:min(i+2, len(ps))] {
-					how := i18n.T("onboarding.login." + p.Login)
+					how := i18n.T("onboarding.login." + loginOf(p))
 					if p.ID == "other" {
 						how = i18n.T("onboarding.login.manual")
 					}
@@ -819,7 +825,7 @@ func (o *onboarding) passwordView(c *ui.Context) {
 		o.ownClientView(c)
 		return
 	}
-	name, login := o.provName(), o.prov.Login
+	name, login := o.provName(), loginOf(o.prov)
 	hint := tr("onboarding.hint." + o.prov.ID)
 	if hint == "" && tr("onboarding.hint."+login) != "" {
 		hint = i18n.Tf("onboarding.hint."+login, name)
@@ -849,7 +855,7 @@ func ownClientOffered(p auth.Provider) bool { return p.OAuth != nil && p.OAuth.C
 func (o *onboarding) ownClient() bool { return ownClientOffered(o.prov) && o.tab == 1 }
 
 // oauth: the sign-in is in the browser, with the provider's client or the user's own.
-func (o *onboarding) oauth() bool { return o.prov.Login == "oauth" || o.ownClient() }
+func (o *onboarding) oauth() bool { return loginOf(o.prov) == "oauth" || o.ownClient() }
 
 // ownClientView asks for the user's own OAuth client in place of the password.
 func (o *onboarding) ownClientView(c *ui.Context) {
@@ -983,7 +989,7 @@ func (o *onboarding) checkRow(st core.CheckStep) (text, detail string, status in
 	}
 	switch kind := string(st.Kind); kind {
 	case "auth":
-		switch login := o.prov.Login; {
+		switch login := loginOf(o.prov); {
 		case o.oauth():
 			reason, next = i18n.T("onboarding.reason.oauth"), i18n.T("onboarding.next.oauth")
 		case login == "authorization_code" || login == "app_password":

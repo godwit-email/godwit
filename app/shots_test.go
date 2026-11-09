@@ -106,7 +106,7 @@ func addQQ(t *testing.T, e *coretest.Env, email string) core.Account {
 	t.Helper()
 	ih, ip, sh, sp, user, pass := e.StartServers(t)
 	acc, err := e.Svc.AddAccount(context.Background(), core.AccountInput{Email: email, Name: "you", Username: user, Password: pass, IsDefault: true,
-		IMAPHost: ih, IMAPPort: ip, IMAPSecurity: core.SecurityNone, SMTPHost: sh, SMTPPort: sp, SMTPSecurity: core.SecurityNone, Provider: "qq"})
+		Receiving: core.Server{Host: ih, Port: ip, Security: core.SecurityNone}, Sending: core.Server{Host: sh, Port: sp, Security: core.SecurityNone}, Provider: "qq"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -461,8 +461,8 @@ func TestShots(t *testing.T) {
 			for i, acc := range accs {
 				if acc.ID == s.work.ID {
 					acc.Provider, acc.AuthType, acc.StatusDetail = "outlook", "oauth", ""
-					acc.IMAPHost, acc.IMAPPort, acc.IMAPSecurity = "outlook.office365.com", 993, core.SecurityTLS
-					acc.SMTPHost, acc.SMTPPort, acc.SMTPSecurity = "smtp.office365.com", 587, core.SecurityStartTLS
+					acc.Receiving.Host, acc.Receiving.Port, acc.Receiving.Security = "outlook.office365.com", 993, core.SecurityTLS
+					acc.Sending.Host, acc.Sending.Port, acc.Sending.Security = "smtp.office365.com", 587, core.SecurityStartTLS
 					accs[i] = acc
 				}
 			}

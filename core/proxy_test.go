@@ -150,8 +150,8 @@ func TestAccountThroughSystemProxy(t *testing.T) {
 	s := proxiedService(t, proxy)
 	im, smtpAddr := servers(t)
 	in := input(t, im.Addr, smtpAddr, "secret")
-	in.IMAPHost, in.SMTPHost = "example.com", "example.com" // the proxy, not DNS, finds it
-	in.IMAPSecurity, in.SMTPSecurity = core.SecurityTLS, core.SecurityTLS
+	in.Receiving.Host, in.Sending.Host = "example.com", "example.com" // the proxy, not DNS, finds it
+	in.Receiving.Security, in.Sending.Security = core.SecurityTLS, core.SecurityTLS
 	require.NoError(t, s.TestAccount(ctx, in))
 	_, ip := hostPort(t, im.Addr)
 	_, sp := hostPort(t, smtpAddr)
@@ -193,8 +193,8 @@ func TestProxyModeOff(t *testing.T) {
 	_, err = s.SetSettings(ctx, st)
 	require.NoError(t, err)
 	via := input(t, im.Addr, smtpAddr, "secret")
-	via.IMAPHost, via.SMTPHost = "example.com", "example.com"
-	via.IMAPSecurity, via.SMTPSecurity = core.SecurityTLS, core.SecurityTLS
+	via.Receiving.Host, via.Sending.Host = "example.com", "example.com"
+	via.Receiving.Security, via.Sending.Security = core.SecurityTLS, core.SecurityTLS
 	require.NoError(t, s.TestAccount(ctx, via))
 	assert.NotEmpty(t, asked(), "system goes through the system proxy")
 }
@@ -220,8 +220,8 @@ func TestAccountThroughCustomProxy(t *testing.T) {
 			customProxy(t, s, proxy)
 			im, smtpAddr := servers(t)
 			in := input(t, im.Addr, smtpAddr, "secret")
-			in.IMAPHost, in.SMTPHost = "example.com", "example.com"
-			in.IMAPSecurity, in.SMTPSecurity = core.SecurityTLS, core.SecurityTLS
+			in.Receiving.Host, in.Sending.Host = "example.com", "example.com"
+			in.Receiving.Security, in.Sending.Security = core.SecurityTLS, core.SecurityTLS
 			require.NoError(t, s.TestAccount(ctx, in))
 			_, ip := hostPort(t, im.Addr)
 			_, sp := hostPort(t, smtpAddr)
@@ -255,8 +255,8 @@ func TestCustomProxyBypass(t *testing.T) {
 	im, smtpAddr := servers(t)
 
 	via := input(t, im.Addr, smtpAddr, "secret")
-	via.IMAPHost, via.SMTPHost = "example.com", "example.com"
-	via.IMAPSecurity, via.SMTPSecurity = core.SecurityTLS, core.SecurityTLS
+	via.Receiving.Host, via.Sending.Host = "example.com", "example.com"
+	via.Receiving.Security, via.Sending.Security = core.SecurityTLS, core.SecurityTLS
 	require.NoError(t, s.TestAccount(ctx, via))
 	assert.NotEmpty(t, asked(), "a server not in the list goes through the custom proxy")
 }
@@ -270,8 +270,8 @@ func TestAccountThroughCustomProxyWithCredentials(t *testing.T) {
 			proxy, asked := authProxy(t, scheme, "alice", "pr0xy-pass")
 			im, smtpAddr := servers(t)
 			in := input(t, im.Addr, smtpAddr, "secret")
-			in.IMAPHost, in.SMTPHost = "example.com", "example.com"
-			in.IMAPSecurity, in.SMTPSecurity = core.SecurityTLS, core.SecurityTLS
+			in.Receiving.Host, in.Sending.Host = "example.com", "example.com"
+			in.Receiving.Security, in.Sending.Security = core.SecurityTLS, core.SecurityTLS
 
 			customProxy(t, s, proxy)
 			require.Error(t, s.TestAccount(ctx, in), "no credentials, refused")

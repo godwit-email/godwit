@@ -43,14 +43,14 @@ func Detect(ctx context.Context, r Resolver, email string) (Provider, Source, er
 		for _, d := range p.Domains {
 			if d == domain {
 				if d == "yeah.net" {
-					p.IMAP.Host, p.SMTP.Host = "imap.yeah.net", "smtp.yeah.net"
+					p.Entries = IMAPSMTP(tls("imap.yeah.net"), smtps("smtp.yeah.net"), p.Entry(IMAP).Login)
 				}
 				return p, SourceDomain, nil
 			}
 		}
 	}
 
-	other := Provider{ID: "other", Name: domain, Login: "password"}
+	other := Provider{ID: "other", Name: domain}
 	mx := ""
 	if mxs, err := r.LookupMX(ctx, domain); err == nil && len(mxs) > 0 {
 		sort.SliceStable(mxs, func(i, j int) bool { return mxs[i].Pref < mxs[j].Pref })
@@ -86,17 +86,16 @@ func Detect(ctx context.Context, r Resolver, email string) (Provider, Source, er
 	}
 
 	if imap, ok := lookupSRV(ctx, r, "imaps", domain); ok {
-		other.IMAP = imap
-		other.SMTP, ok = lookupSRV(ctx, r, "submissions", domain)
+		smtp, ok := lookupSRV(ctx, r, "submissions", domain)
 		if !ok {
-			other.SMTP, ok = lookupSRV(ctx, r, "submission", domain)
+			smtp, ok = lookupSRV(ctx, r, "submission", domain)
 		}
 		if ok {
+			other.Entries = IMAPSMTP(imap, smtp, "password")
 			return other, SourceSRV, nil
 		}
 	}
-	other.IMAP = tls("imap." + domain)
-	other.SMTP = smtps("smtp." + domain)
+	other.Entries = IMAPSMTP(tls("imap."+domain), smtps("smtp."+domain), "password")
 	return other, SourceGuess, nil
 }
 
@@ -128,8 +127,8 @@ func withServers(o Provider, p mailservers.Provider, email string) (Provider, bo
 	if !ok || !ok2 {
 		return o, false
 	}
-	o.IMAP = Server{imap.Host, imap.Port, conn.Security(imap.Security)}
-	o.SMTP = Server{smtp.Host, smtp.Port, conn.Security(smtp.Security)}
+	o.Entries = IMAPSMTP(Server{imap.Host, imap.Port, conn.Security(imap.Security)},
+		Server{smtp.Host, smtp.Port, conn.Security(smtp.Security)}, "password")
 	if u := mailservers.Login(imap, email); email != "" && u != email {
 		o.Username = u
 	}
