@@ -796,8 +796,8 @@ func (e *syncEnv) classify(t *testing.T) {
 	require.NoError(t, err)
 }
 
-// The classifier labelling mail of the first sync runs no label rule; it
-// labelling new mail does.
+// The classifier labelling mail of the first sync (only a rescan does) runs
+// no label rule; it labelling new mail does.
 func TestRuleLabelTriggerNotOnInitialSync(t *testing.T) {
 	e := newSyncEnv(t)
 	_, err := e.s.CreateLabel(bg, LabelInput{Name: "Bills", Color: "gray", Icon: "folder-3"})
@@ -807,6 +807,10 @@ func TestRuleLabelTriggerNotOnInitialSync(t *testing.T) {
 	useLabelJudge(e.s, &fakeJudge{p: map[string]float64{"u1": 1}})
 	e.bill(t, "old@x", "billing@aws.example", "Invoice 0")
 	e.sync(t)
+	e.classify(t)
+	require.Empty(t, e.labelOn(t, e.idOf(t, "old@x")), "auto-labeling leaves the first sync's mail alone")
+	_, err = e.s.RescanLabels(bg, 0, true)
+	require.NoError(t, err)
 	e.classify(t)
 	require.Equal(t, "auto", e.labelOn(t, e.idOf(t, "old@x")))
 

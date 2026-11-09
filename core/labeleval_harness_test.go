@@ -359,6 +359,7 @@ func runEval(t *testing.T, r *evalRun, set *evalSet) {
 	im := testmail.StartIMAP(t)
 	acc, err := s.AddAccount(bg, internalInput(t, im.Addr, smtpAddr, "alice@example.com", true))
 	require.NoError(t, err)
+	require.NoError(t, s.SyncNow(bg, acc.ID)) // the Inbox synced once: what arrives next is new mail
 	labels, err := s.ListLabels(bg)
 	require.NoError(t, err)
 	slugs := map[int64]string{}

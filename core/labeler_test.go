@@ -704,3 +704,33 @@ func TestRescanLogsNoLabelApplied(t *testing.T) {
 	require.Equal(t, 1, on, "the rescan put the label on")
 	require.Zero(t, logged(b), "but logged no label.applied")
 }
+
+// Auto-labeling classifies new mail, not the older mail a first sync or a
+// backfill imports (#567): that waits for a rescan the user starts.
+func TestClassifySkipsOlderSyncedMail(t *testing.T) {
+	e := newSyncEnvWith(t, Options{SystemLanguage: "en"})
+	j := &fakeJudge{}
+	useLabelJudge(e.s, j)
+	for i := range 3 {
+		e.newMail(t, fmt.Sprintf("old%d@x", i), "before")
+	}
+	e.sync(t)
+	e.newMail(t, "new@x", "fresh")
+	e.sync(t)
+	for {
+		n, err := e.s.classifyBatch(t.Context())
+		require.NoError(t, err)
+		if n == 0 {
+			break
+		}
+	}
+	require.Equal(t, 1, j.count(), "one judge call, for the new mail")
+	require.Contains(t, j.states[0], fmt.Sprintf("message:%d", e.idOf(t, "new@x")))
+	for i := range 3 {
+		require.NotNil(t, labeledAt(t, e.s, e.idOf(t, fmt.Sprintf("old%d@x", i))), "older mail is let go")
+	}
+
+	n, err := e.s.RescanLabels(t.Context(), 0, true)
+	require.NoError(t, err)
+	require.Equal(t, 4, n, "a rescan still takes it")
+}
