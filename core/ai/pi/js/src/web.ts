@@ -177,6 +177,16 @@ g.fetch ??= fetch;
 const atob = g["atob"] as (s: string) => string;
 g.godwitAtob = (s: string) => atob(String(s).replace(/-/g, "+").replace(/_/g, "/"));
 g.performance ??= { now: hostNow };
+// moejs has WeakRef but no FinalizationRegistry, which pi-schema (pi-ai
+// 1.5.0+) creates as it loads to drop its cached RegExps. Cleanup callbacks
+// are only a hint in the spec, so one that never runs is allowed: the cache
+// keeps one entry per distinct pattern, and abort cleanups run on abort.
+g.FinalizationRegistry ??= class FinalizationRegistry {
+  register() {}
+  unregister() {
+    return false;
+  }
+};
 g.crypto ??= {
   getRandomValues(a: Uint8Array) {
     a.set(hostRandomBytes(a.byteLength));
