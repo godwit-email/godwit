@@ -935,7 +935,7 @@ func (p *mailPage) listView(c *ui.Context) {
 			}
 			for _, k := range []string{read, star} {
 				why := p.cannot(on, k)
-				if m.Item(i18n.T("mail.action."+k)).Icon(menuIcon(mailActionIcons[k])).Disabled(why != "").Subtitle(why).Chosen() {
+				if m.Item(i18n.T("mail.action." + k)).Icon(menuIcon(mailActionIcons[k])).Disabled(why != "").Subtitle(why).Chosen() {
 					act, target = k, on
 				}
 			}
@@ -947,7 +947,7 @@ func (p *mailPage) listView(c *ui.Context) {
 					continue // never show current folder as target
 				}
 				why := p.cannot(on, k)
-				if m.Item(i18n.T("mail.action."+k)).Icon(menuIcon(mailActionIcons[k])).Disabled(why != "").Subtitle(why).Chosen() {
+				if m.Item(i18n.T("mail.action." + k)).Icon(menuIcon(mailActionIcons[k])).Disabled(why != "").Subtitle(why).Chosen() {
 					act, target = k, on
 				}
 			}
