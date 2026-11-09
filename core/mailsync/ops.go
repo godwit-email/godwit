@@ -12,6 +12,7 @@ import (
 	"github.com/godwit-email/godwit/backend"
 	"github.com/godwit-email/godwit/backend/imapbackend"
 	"github.com/godwit-email/godwit/core/store"
+	"github.com/godwit-email/godwit/internal/i18n"
 )
 
 // MaxAttempts is how many times an op is sent before it is marked failed.
@@ -289,9 +290,16 @@ func (p *pusher) destination(ctx context.Context, id int64) (destination, error)
 	return destination{backend.FolderRef(store.Str(d.Values[0][0])), v}, nil
 }
 
-// unsupported is the error of an op the server cannot do, with the feature's reason.
+// unsupported is the last_error of an op the server cannot do: the feature's
+// reason described in English, as the user reads it, never the reason's key.
 func unsupported(reason string) string {
-	return "the server does not support this change (" + reason + ")"
+	switch reason {
+	case "imap.no_move":
+		return "the server supports neither MOVE nor UIDPLUS, so messages cannot be moved safely"
+	case "imap.no_uidplus":
+		return "the server does not support UIDPLUS, so mail cannot be deleted permanently without risking other mail"
+	}
+	return "the server does not support this change: " + i18n.TIn("en", "feature.reason."+reason)
 }
 
 // flagsOf is local storage's flag names written neutrally.

@@ -282,7 +282,7 @@ func TestMoveNeedsMoveOrUIDPlus(t *testing.T) {
 	ops := e.ops(t)
 	require.Len(t, ops, 1)
 	assert.Equal(t, "failed", ops[0].State)
-	assert.Contains(t, ops[0].LastError, "imap.no_move", "the feature's reason")
+	assert.Contains(t, ops[0].LastError, "MOVE")
 	evs := collect(ch)
 	assert.Len(t, ofType(evs, events.SyncFailed), 1)
 	assert.Equal(t, e.folderID(t, "INBOX"), store.Int(e.rows(t, "SELECT "+shownCol+" FROM messages WHERE id = ?", id)[0][0]),
