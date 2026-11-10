@@ -161,7 +161,8 @@ func (c *client) account(cr backend.Credentials) string { return c.cfg.URL + "\x
 
 // post sends op signed in as cr, with the account's affinity, and returns
 // the response, its body unread: 200, or 500 or 503, which carry a fault or
-// throttling. 401 is ErrAuthFailed, any other status an error.
+// throttling. 401 is ErrAuthFailed; 502 and 504, a proxy that gave up
+// waiting, are errUnreadable (no verdict); any other status an error.
 func (c *client) post(ctx context.Context, op any, cr backend.Credentials) (*http.Response, error) {
 	body, err := xml.Marshal(newRequest(op))
 	if err != nil {
@@ -185,6 +186,9 @@ func (c *client) post(ctx context.Context, op any, cr backend.Credentials) (*htt
 		return resp, nil
 	case http.StatusUnauthorized:
 		err = errAuthFailed
+	case http.StatusBadGateway, http.StatusGatewayTimeout:
+		// a proxy gave up on Exchange, which may still have run op
+		err = fmt.Errorf("%w (HTTP %s)", errUnreadable, resp.Status)
 	default:
 		err = fmt.Errorf("ews: HTTP %s", resp.Status)
 	}

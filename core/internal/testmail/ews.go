@@ -60,6 +60,7 @@ type EWS struct {
 	refused          map[string]bool // recipients refused
 	lose             bool            // drop the next CreateItem's answer
 	garble           *string         // answer the next CreateItem with this body instead
+	garbleStatus     int             // and this HTTP status, 0 for 200
 	rejectSend       bool            // refuse the next CreateItem's credentials
 	dropChallenge    bool            // close the connection on the next NTLM NEGOTIATE
 
@@ -193,7 +194,16 @@ func (s *EWS) LoseVerdict() {
 func (s *EWS) GarbleVerdict(body string) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	s.garble = &body
+	s.garble, s.garbleStatus = &body, 0
+}
+
+// GatewayVerdict makes the server send the next CreateItem and answer it
+// with HTTP status and body, as a reverse proxy does that gave up waiting
+// (502, 504) after it forwarded the request.
+func (s *EWS) GatewayVerdict(status int, body string) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.garble, s.garbleStatus = &body, status
 }
 
 // RejectNextSendAuth makes the server refuse the credentials of the next
@@ -860,6 +870,9 @@ func (s *EWS) createItem(w http.ResponseWriter, req ewsRequest) {
 	}
 	if b := s.garble; b != nil {
 		s.garble = nil
+		if s.garbleStatus != 0 {
+			w.WriteHeader(s.garbleStatus)
+		}
 		io.WriteString(w, *b)
 		return
 	}

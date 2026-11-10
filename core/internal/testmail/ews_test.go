@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"maps"
+	"net/http"
 	"reflect"
 	"slices"
 	"strings"
@@ -541,6 +542,21 @@ func TestEWSSendUnreadableVerdictIsUncertain(t *testing.T) {
 			}
 			if n := len(s.Sent()); n != 1 {
 				t.Errorf("sent %d messages, want 1", n)
+			}
+		})
+	}
+}
+
+// A proxy's 502 or 504 after the signed-in CreateItem went out does not say
+// Exchange did not send it: retrying could send it twice (ADR 0006).
+func TestEWSSendGatewayTimeoutIsUncertain(t *testing.T) {
+	for _, status := range []int{http.StatusBadGateway, http.StatusGatewayTimeout} {
+		t.Run(http.StatusText(status), func(t *testing.T) {
+			s := testmail.StartEWS(t)
+			s.GatewayVerdict(status, "<html>gateway</html>")
+			err := ewsServer{s}.Sender(t).Send(tctx(t), "a@example.com", []string{"b@example.com"}, backendtest.Message("b@example.com", "hello"))
+			if !errors.Is(err, backend.ErrUncertain) {
+				t.Errorf("Send answered %d = %v, want ErrUncertain", status, err)
 			}
 		})
 	}
