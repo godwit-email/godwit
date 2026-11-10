@@ -600,13 +600,15 @@ func (p *settingsPage) accountView(c *ui.Context, acc core.Account) {
 		})
 	}
 	recv := server("IMAP", acc.Receiving.Host, acc.Receiving.Port, acc.Receiving.Security, "")
-	if acc.Receiving.Protocol == auth.JMAP {
-		recv = row("JMAP", "", func() { kit.Text(c, sessionURL(acc.Receiving), t.Text.Sm).Font(theme.Mono).TextColor(t.Muted) })
+	if pr := acc.Receiving.Protocol; pr == auth.JMAP || pr == auth.EWS {
+		recv = row(strings.ToUpper(pr), "", func() { kit.Text(c, sessionURL(acc.Receiving), t.Text.Sm).Font(theme.Mono).TextColor(t.Muted) })
 	}
 	login := []func(){
 		row(i18n.T("settings.account.login.method"), p.authText(acc, prov), func() { p.authButton(c, acc, prov, false) }),
 		recv,
-		server("SMTP", acc.Sending.Host, acc.Sending.Port, acc.Sending.Security, receiveOnlyHelp(acc)),
+	}
+	if acc.Sending.Protocol != auth.EWS { // EWS sends through the server it receives from
+		login = append(login, server("SMTP", acc.Sending.Host, acc.Sending.Port, acc.Sending.Security, receiveOnlyHelp(acc)))
 	}
 	if acc.ReceiveOnly { // OAuth has no servers to change: it tries SMTP again as it is
 		login = append(login, row(i18n.T("settings.account.receive_only"), "", func() {
@@ -740,7 +742,7 @@ func (p *settingsPage) openDialog(kind string, acc core.Account) {
 	}
 }
 
-// sessionURL is a JMAP slot's session URL, as the user types it.
+// sessionURL is a JMAP slot's session URL, or an EWS slot's EWS URL, as the user types it.
 func sessionURL(s core.Server) string {
 	u := url.URL{Scheme: "https", Host: net.JoinHostPort(s.Host, strconv.Itoa(s.Port)), Path: cmp.Or(s.Path, "/.well-known/jmap")}
 	if s.Security == core.SecurityNone {

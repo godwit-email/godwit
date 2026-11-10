@@ -2126,5 +2126,21 @@
   "onboarding_check_jmap_running": "JMAP 登录中…",
   "onboarding_check_jmap_waiting": "JMAP 登录",
   "onboarding_check_jmap_proxy": "JMAP 连接失败：{arg1}",
-  "onboarding_check_jmap_host": "会话主机：{arg1}"
+  "onboarding_check_jmap_host": "会话主机：{arg1}",
+  "settings_experimental_ews": "Exchange（EWS）账户",
+  "settings_experimental_ews_help": "添加账户时可以选择 Exchange（EWS），适用于只开放 EWS 的本地部署 Exchange 服务器。只支持本地部署的 Exchange 2016 及以后版本。这是实验性功能，以后可能会变；出了问题可以改用 DavMail。关闭后，已添加的 EWS 账户继续工作。",
+  "onboarding_protocol_ews": "Exchange（EWS）",
+  "onboarding_ews_url": "EWS URL",
+  "onboarding_ews_url_help": "Exchange 服务器的 EWS 地址，通常以 /EWS/Exchange.asmx 结尾。收信和发信都通过它。",
+  "onboarding_ews_login": "登录名",
+  "onboarding_invalid_ews_url": "EWS URL 不是带路径的有效 https:// 地址。",
+  "onboarding_check_ews_failed": "EWS 登录失败：{arg1}",
+  "onboarding_check_ews_ok": "EWS 登录成功",
+  "onboarding_check_ews_running": "EWS 登录中…",
+  "onboarding_check_ews_waiting": "EWS 登录",
+  "onboarding_check_ews_proxy": "EWS 连接失败：{arg1}",
+  "onboarding_check_ews_host": "EWS 主机：{arg1}",
+  "onboarding_next_davmail": "改用 DavMail，通过 IMAP 添加这个账户",
+  "feature_reason_ews_server_too_old": "服务器版本过低：只支持 Exchange 2016 及以后版本。",
+  "feature_reason_ews_pending": "Exchange（EWS）账户暂不支持这个操作。"
 }

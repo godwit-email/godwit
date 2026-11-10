@@ -43,6 +43,7 @@ import (
 type (
 	IMAP    = testmail.IMAP
 	JMAP    = testmail.JMAP
+	EWS     = testmail.EWS
 	SMTP    = testmail.Inbox
 	Turn    = testllm.Turn
 	Call    = testllm.Call
@@ -76,6 +77,7 @@ type Env struct {
 type mailServers struct {
 	imap      *IMAP
 	jmap      *JMAP // a JMAP account's, instead of imap
+	ews       *EWS  // an EWS account's, instead of imap and smtp
 	smtp      *SMTP
 	smtpAddr  string
 	delivered bool // Deliver synced the account before its first append
@@ -304,6 +306,24 @@ func (e *Env) startJMAP(t *testing.T, email string) (core.AccountInput, *mailSer
 		Sending:   core.Server{Host: sh, Port: sp, Security: core.SecurityNone}}, &mailServers{jmap: jm, smtp: inbox, smtpAddr: addr}
 }
 
+// StartEWSServers starts a fake EWS server for email, not added yet, and
+// returns the account's input, with the EWS URL typed in, and the server.
+// Once the account is added, Deliver and EWS work for it as for AddAccount's.
+func (e *Env) StartEWSServers(t *testing.T, email string) (core.AccountInput, *EWS) {
+	t.Helper()
+	s := testmail.StartEWS(t)
+	u, err := url.Parse(s.URL())
+	if err != nil {
+		t.Fatal(err)
+	}
+	h, p := splitHostPort(t, u.Host)
+	slot := core.Server{Protocol: "ews", Host: h, Port: p, Security: core.SecurityNone, Path: u.Path}
+	e.mu.Lock()
+	e.started[u.Host] = &mailServers{ews: s}
+	e.mu.Unlock()
+	return core.AccountInput{Email: email, Username: "alice", Password: "secret", Receiving: slot, Sending: slot}, s
+}
+
 // StartServers starts fake IMAP and SMTP servers for an account not added
 // yet, as the onboarding form takes them, with the user and password they
 // accept. Once an account is added with them, Deliver, IMAP, SMTP and Sent
@@ -345,6 +365,9 @@ func (e *Env) mail(accountID int64) *mailServers {
 // IMAP is the account's fake IMAP server, for fault injection.
 func (e *Env) IMAP(accountID int64) *IMAP { return e.mail(accountID).imap }
 
+// EWS is the fake EWS server of an account added with StartEWSServers' input.
+func (e *Env) EWS(accountID int64) *EWS { return e.mail(accountID).ews }
+
 // JMAP is a ViaJMAP account's fake JMAP server.
 func (e *Env) JMAP(accountID int64) *JMAP { return e.mail(accountID).jmap }
 
@@ -380,6 +403,8 @@ func (e *Env) Deliver(t *testing.T, accountID int64, folder string, raw []byte) 
 	}
 	if m.jmap != nil {
 		m.jmap.Deliver(folder, raw)
+	} else if m.ews != nil {
+		m.ews.Deliver(folder, raw)
 	} else if _, err := m.imap.User.Append(folder, bytes.NewReader(raw), &imap.AppendOptions{}); err != nil {
 		t.Fatal(err)
 	}

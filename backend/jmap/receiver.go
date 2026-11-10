@@ -380,32 +380,11 @@ func (r *Receiver) content(ctx context.Context, e *email.Email, fields []string)
 	if err != nil {
 		return nil, err
 	}
-	c := &backend.Content{Size: int64(e.Size), Header: headerFields(raw, fields), Raw: raw}
+	c := &backend.Content{Size: int64(e.Size), Header: backend.HeaderFields(raw, fields), Raw: raw}
 	if e.ReceivedAt != nil {
 		c.Date = *e.ReceivedAt
 	}
 	return c, nil
-}
-
-// headerFields is the fields of raw's header named in names, as they are,
-// followed by the blank line that ends a header.
-func headerFields(raw []byte, names []string) []byte {
-	var out bytes.Buffer
-	keep := false
-	for line := range bytes.Lines(raw) {
-		if len(bytes.TrimRight(line, "\r\n")) == 0 {
-			break
-		}
-		if line[0] != ' ' && line[0] != '\t' {
-			name, _, _ := bytes.Cut(line, []byte(":"))
-			keep = slices.ContainsFunc(names, func(n string) bool { return strings.EqualFold(n, string(bytes.TrimSpace(name))) })
-		}
-		if keep {
-			out.Write(line)
-		}
-	}
-	out.WriteString("\r\n")
-	return out.Bytes()
 }
 
 var keywords = map[string]func(*backend.Flags) *bool{
@@ -632,7 +611,7 @@ func (r *Receiver) Fetch(ctx context.Context, req backend.ContentRequest) (io.Re
 		return nil, err
 	}
 	if req.Part == "" {
-		return io.NopCloser(bytes.NewReader(headerFields(raw, req.HeaderFields))), nil
+		return io.NopCloser(bytes.NewReader(backend.HeaderFields(raw, req.HeaderFields))), nil
 	}
 	var path []int
 	for s := range strings.SplitSeq(string(req.Part), ".") {

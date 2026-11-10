@@ -50,6 +50,9 @@ type Settings struct {
 	// ExperimentalJMAP (实验性 JMAP) offers JMAP when adding an account; off
 	// by default. Off, JMAP accounts already added keep working.
 	ExperimentalJMAP bool
+	// ExperimentalEWS (实验性 EWS) offers Exchange (EWS) when adding an
+	// account; off by default. Off, EWS accounts already added keep working.
+	ExperimentalEWS bool
 	// MCPSend is what godwit mcp's send_draft does (通过 MCP 发送):
 	// MCPSendOff, MCPSendConfirm (the default; "" too) or MCPSendDirect.
 	MCPSend string

@@ -13,6 +13,7 @@ import (
 
 	"github.com/godwit-email/godwit/backend"
 	"github.com/godwit-email/godwit/backend/conn"
+	"github.com/godwit-email/godwit/backend/ews"
 	"github.com/godwit-email/godwit/backend/imapbackend"
 	"github.com/godwit-email/godwit/backend/jmap"
 	"github.com/godwit-email/godwit/core/auth"
@@ -24,7 +25,8 @@ const KindInvalid conn.FailureKind = "invalid"
 const checkTimeout = 20 * time.Second
 
 // CheckStep is one item of a connection check. Name is settings, imap (jmap
-// for a JMAP account) or smtp.
+// for a JMAP account, ews for an EWS one) or smtp; an EWS account sends
+// through the server it receives from, so its check has no smtp step.
 // Detail comes from conn's already redacted errors: no password, token or server text.
 type CheckStep struct {
 	Name    string
@@ -159,6 +161,9 @@ func (s *Service) check(ctx context.Context, in AccountInput, token string) (Che
 			return conn.Classify(err), err
 		},
 	}
+	if in.receiving() == auth.EWS {
+		r.Steps, steps = r.Steps[:2], steps[:2]
+	}
 	for i, run := range steps {
 		if first != nil {
 			r.Steps[i].Skipped = true
@@ -175,8 +180,11 @@ func (s *Service) check(ctx context.Context, in AccountInput, token string) (Che
 
 // newReceiver is the receiving backend of srv, signing in with creds.
 func newReceiver(srv Server, creds backend.CredentialsFunc) backend.Receiver {
-	if srv.Protocol == auth.JMAP {
+	switch srv.Protocol {
+	case auth.JMAP:
 		return jmap.New(jmap.Config{SessionURL: sessionURL(srv), Credentials: creds})
+	case auth.EWS:
+		return ews.New(ews.Config{URL: slotURL(srv, srv.Path), Credentials: creds})
 	}
 	return imapbackend.New(imapbackend.Config{Host: srv.Host, Port: srv.Port, Security: srv.Security, Credentials: creds})
 }
@@ -184,12 +192,14 @@ func newReceiver(srv Server, creds backend.CredentialsFunc) backend.Receiver {
 // sessionURL is a JMAP slot's session resource: Path on the host, or
 // /.well-known/jmap to discover it.
 func sessionURL(srv Server) string {
-	u := url.URL{Scheme: "https", Host: net.JoinHostPort(srv.Host, strconv.Itoa(srv.Port)), Path: srv.Path}
+	return slotURL(srv, cmp.Or(srv.Path, "/.well-known/jmap"))
+}
+
+// slotURL is path on an HTTP slot's host: https, or http for SecurityNone.
+func slotURL(srv Server, path string) string {
+	u := url.URL{Scheme: "https", Host: net.JoinHostPort(srv.Host, strconv.Itoa(srv.Port)), Path: path}
 	if srv.Security == SecurityNone {
 		u.Scheme = "http"
-	}
-	if u.Path == "" {
-		u.Path = "/.well-known/jmap"
 	}
 	return u.String()
 }

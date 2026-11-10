@@ -5,12 +5,14 @@ import (
 	"errors"
 	"net/mail"
 	"net/url"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
 	"unicode"
 
 	"github.com/egoist/mygo/ui"
+	"github.com/godwit-email/godwit/backend/ews"
 	"github.com/godwit-email/godwit/core"
 	"github.com/godwit-email/godwit/core/auth"
 	"github.com/godwit-email/godwit/core/events"
@@ -77,8 +79,9 @@ type onboarding struct {
 	imapHost, imapPort   string
 	smtpHost, smtpPort   string
 	imapSec, smtpSec     core.Security
-	proto                int    // the server form's receiving protocol: 0 IMAP, 1 JMAP (Settings.ExperimentalJMAP)
+	proto                string // the server form's receiving protocol: IMAP (""), auth.JMAP or auth.EWS (their Settings.Experimental*)
 	jmapURL              string // JMAP's session URL, in place of the IMAP server
+	ewsURL               string // the EWS URL, in place of the IMAP and SMTP servers
 	jmapAuth             int    // how JMAP signs in: 0 a password, 1 an API token, with SMTP's password apart
 	sendSecret           string // SMTP's own password, for a JMAP API token
 	showSendSecret       bool
@@ -397,14 +400,38 @@ func (o *onboarding) openURL(url string) {
 }
 
 // jmap: the account is added over JMAP, its servers form says.
-func (o *onboarding) jmap() bool { return o.proto == 1 && !o.oauth() }
+func (o *onboarding) jmap() bool { return o.proto == auth.JMAP && !o.oauth() }
 
-// recvStep is the check's receiving step: imap or jmap.
+// ews: the account is added over EWS, its servers form says.
+func (o *onboarding) ews() bool { return o.proto == auth.EWS && !o.oauth() }
+
+// recvStep is the check's receiving step: imap, jmap or ews.
 func (o *onboarding) recvStep() string {
-	if o.jmap() {
+	switch {
+	case o.jmap():
 		return auth.JMAP
+	case o.ews():
+		return auth.EWS
 	}
 	return auth.IMAP
+}
+
+// checkSteps are the check's steps before it reports: an EWS account sends
+// through the server it receives from, so it has no smtp step.
+func (o *onboarding) checkSteps() []core.CheckStep {
+	steps := []core.CheckStep{{Name: "settings"}, {Name: o.recvStep()}, {Name: "smtp"}}
+	if o.ews() {
+		return steps[:2]
+	}
+	return steps
+}
+
+// ewsServer is the slot an EWS URL gives, as jmapServer reads it; the URL
+// must name the endpoint's path.
+func ewsServer(raw string) (core.Server, bool) {
+	s, ok := jmapServer(raw)
+	s.Protocol = auth.EWS
+	return s, ok && s.Path != ""
 }
 
 // jmapServer is the receiving slot a JMAP session URL gives: https, or http
@@ -449,6 +476,10 @@ func (o *onboarding) input() core.AccountInput {
 	if o.jmap() {
 		in.Receiving, _ = jmapServer(o.jmapURL)
 	}
+	if o.ews() {
+		in.Receiving, _ = ewsServer(o.ewsURL)
+		in.Sending = in.Receiving
+	}
 	if o.oauth() {
 		in.OAuthFlowID = o.flowID
 	} else {
@@ -457,7 +488,7 @@ func (o *onboarding) input() core.AccountInput {
 	if o.apiToken() {
 		in.Receiving.Auth, in.SendPassword = core.AuthAPIToken, o.sendSecret
 	}
-	if testSecurity != "" {
+	if testSecurity != "" && !o.ews() { // an EWS URL says its own
 		in.Sending.Security = testSecurity
 		if !o.jmap() { // a JMAP URL says its own
 			in.Receiving.Security = testSecurity
@@ -478,7 +509,11 @@ func (o *onboarding) connect() {
 	o.checking, o.report, o.receiveOnly = true, core.CheckReport{}, false
 	if o.invalid, o.invalidNext = o.validate(); o.invalid != "" {
 		o.checking = false
-		o.report.Steps = []core.CheckStep{{Name: "settings", Kind: core.KindInvalid}, {Name: o.recvStep(), Skipped: true}, {Name: "smtp", Skipped: true}}
+		o.report.Steps = o.checkSteps()
+		o.report.Steps[0].Kind = core.KindInvalid
+		for i := range o.report.Steps[1:] {
+			o.report.Steps[i+1].Skipped = true
+		}
 		return
 	}
 	gen, svc, in := o.gen, o.a.svc, o.input()
@@ -526,6 +561,12 @@ func (o *onboarding) validate() (reason, next string) {
 			return i18n.T("onboarding.invalid.jmap_url"), i18n.T("onboarding.next.host")
 		}
 		servers = servers[1:]
+	}
+	if o.ews() {
+		if _, ok := ewsServer(o.ewsURL); !ok {
+			return i18n.T("onboarding.invalid.ews_url"), i18n.T("onboarding.next.host")
+		}
+		servers = nil
 	}
 	for _, sv := range servers {
 		if strings.TrimSpace(sv.host) == "" {
@@ -1007,17 +1048,36 @@ func (o *onboarding) serversForm(c *ui.Context) {
 		})
 	}
 	ui.Column(c).Gap(th.Space(3)).Children(func() {
-		if o.a.settings.ExperimentalJMAP || o.proto == 1 {
+		protos, labels := []string{""}, []string{"IMAP"}
+		if o.a.settings.ExperimentalJMAP || o.proto == auth.JMAP {
+			protos, labels = append(protos, auth.JMAP), append(labels, i18n.T("onboarding.protocol.jmap"))
+		}
+		if o.a.settings.ExperimentalEWS || o.proto == auth.EWS {
+			protos, labels = append(protos, auth.EWS), append(labels, i18n.T("onboarding.protocol.ews"))
+		}
+		if len(protos) > 1 {
 			ui.Field(c, i18n.T("onboarding.protocol"), func() {
-				proto := o.proto
-				kit.TabsFill(c, &o.proto, "IMAP", i18n.T("onboarding.protocol.jmap"))
-				if o.proto != proto && o.proto == 1 && o.jmapURL == "" {
-					o.jmapURL = o.defaultJMAPURL()
-					if o.prov.Entry(auth.JMAP).Login == "api_token" { // Fastmail's JMAP takes a token
-						o.jmapAuth = 1
+				sel := max(slices.Index(protos, o.proto), 0)
+				kit.TabsFill(c, &sel, labels...)
+				if p := protos[sel]; p != o.proto {
+					o.proto = p
+					if p == auth.JMAP && o.jmapURL == "" {
+						o.jmapURL = o.defaultJMAPURL()
+						if o.prov.Entry(auth.JMAP).Login == "api_token" { // Fastmail's JMAP takes a token
+							o.jmapAuth = 1
+						}
 					}
 				}
 			}).FontSize(t.Text.Sm).TextColor(t.Muted)
+		}
+		if o.ews() { // one server for both, signing in with a login name that may not be the address
+			ui.Field(c, i18n.T("onboarding.ews.url"), func() {
+				kit.Input(c, &o.ewsURL, kit.InputOpts{Placeholder: "https://mail.example.com/EWS/Exchange.asmx"})
+			}).Description(i18n.T("onboarding.ews.url.help")).FontSize(t.Text.Sm).TextColor(t.Muted)
+			ui.Field(c, i18n.T("onboarding.ews.login"), func() {
+				kit.Input(c, &o.username, kit.InputOpts{Placeholder: i18n.T("onboarding.username.placeholder")})
+			})
+			return
 		}
 		if o.jmap() {
 			ui.Field(c, i18n.T("onboarding.jmap.url"), func() { kit.Input(c, &o.jmapURL, kit.InputOpts{Placeholder: "https://example.com/.well-known/jmap"}) }).
@@ -1076,18 +1136,22 @@ func (o *onboarding) checkRow(st core.CheckStep) (text, detail string, status in
 			if o.manual || o.prov.ID == "other" {
 				src = "manual"
 			}
-			host := o.imapHost
+			host, sendHost := o.imapHost, o.smtpHost
 			if o.jmap() {
 				s, _ := jmapServer(o.jmapURL)
 				host = s.Host
 			}
-			detail = i18n.Tf("onboarding.check.settings."+src, host, o.smtpHost)
+			if o.ews() {
+				s, _ := ewsServer(o.ewsURL)
+				host, sendHost = s.Host, s.Host
+			}
+			detail = i18n.Tf("onboarding.check.settings."+src, host, sendHost)
 		}
 		if st.Name == auth.IMAP {
 			detail = o.foldersText()
 		}
-		if st.Name == auth.JMAP { // where the credentials went, which discovery may have moved
-			detail = i18n.Tf("onboarding.check.jmap.host", o.report.Host)
+		if st.Name == auth.JMAP || st.Name == auth.EWS { // where the credentials went, which discovery may have moved
+			detail = i18n.Tf(k+".host", o.report.Host)
 			if f := o.foldersText(); f != "" {
 				detail += " · " + f
 			}
@@ -1112,6 +1176,9 @@ func (o *onboarding) checkRow(st core.CheckStep) (text, detail string, status in
 		}
 	case "dns", "connect", "timeout", "tls", "protocol":
 		reason, next = i18n.T("onboarding.reason."+kind), i18n.T("onboarding.next.server")
+		if st.Detail == ews.ReasonServerTooOld { // the server cannot be used at all, not merely misconfigured
+			reason, next = i18n.T("feature.reason."+st.Detail), i18n.T("onboarding.next.davmail")
+		}
 	case "proxy_unreachable", "proxy_refused", "proxy_auth":
 		reason = i18n.T("onboarding.reason." + kind)
 		// an HTTP proxy's refusal carries its status: "proxy refused the tunnel: 403 Forbidden"
@@ -1166,7 +1233,7 @@ func (o *onboarding) checkView(c *ui.Context) {
 	t, th := theme.Of(c), c.Theme()
 	steps := o.report.Steps
 	if o.checking || len(steps) == 0 {
-		steps = []core.CheckStep{{Name: "settings"}, {Name: o.recvStep()}, {Name: "smtp"}}
+		steps = o.checkSteps()
 	}
 	failed := !o.checking && !o.report.OK()
 	title := i18n.T("onboarding.check.connecting")

@@ -2126,5 +2126,21 @@
   "onboarding_check_jmap_running": "JMAP にサインイン中…",
   "onboarding_check_jmap_waiting": "JMAP サインイン",
   "onboarding_check_jmap_proxy": "JMAP 接続に失敗しました：{arg1}",
-  "onboarding_check_jmap_host": "セッション ホスト：{arg1}"
+  "onboarding_check_jmap_host": "セッション ホスト：{arg1}",
+  "settings_experimental_ews": "Exchange（EWS）アカウント",
+  "settings_experimental_ews_help": "アカウントの追加時に Exchange（EWS）を選べるようにします。EWS だけを提供するオンプレミスの Exchange Server 向けです。対応するのはオンプレミスの Exchange 2016 以降のみです。実験的な機能のため今後変わることがあります。問題があれば DavMail をお使いください。オフにしても、追加済みの EWS アカウントはそのまま使えます。",
+  "onboarding_protocol_ews": "Exchange（EWS）",
+  "onboarding_ews_url": "EWS URL",
+  "onboarding_ews_url_help": "Exchange サーバーの EWS アドレスで、通常は /EWS/Exchange.asmx で終わります。メールの受信も送信もここを通ります。",
+  "onboarding_ews_login": "ログイン名",
+  "onboarding_invalid_ews_url": "EWS URL がパスを含む有効な https:// アドレスではありません。",
+  "onboarding_check_ews_failed": "EWS のサインインに失敗しました：{arg1}",
+  "onboarding_check_ews_ok": "EWS にサインインしました",
+  "onboarding_check_ews_running": "EWS にサインイン中…",
+  "onboarding_check_ews_waiting": "EWS サインイン",
+  "onboarding_check_ews_proxy": "EWS 接続に失敗しました：{arg1}",
+  "onboarding_check_ews_host": "EWS ホスト：{arg1}",
+  "onboarding_next_davmail": "代わりに DavMail を使い、IMAP でアカウントを追加してください",
+  "feature_reason_ews_server_too_old": "サーバーのバージョンが古すぎます。Exchange 2016 以降のみ対応しています。",
+  "feature_reason_ews_pending": "Exchange（EWS）アカウントではまだ使えません。"
 }

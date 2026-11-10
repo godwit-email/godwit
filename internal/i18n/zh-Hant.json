@@ -2126,5 +2126,21 @@
   "onboarding_check_jmap_running": "JMAP 登入中…",
   "onboarding_check_jmap_waiting": "JMAP 登入",
   "onboarding_check_jmap_proxy": "JMAP 連線失敗：{arg1}",
-  "onboarding_check_jmap_host": "工作階段主機：{arg1}"
+  "onboarding_check_jmap_host": "工作階段主機：{arg1}",
+  "settings_experimental_ews": "Exchange（EWS）帳戶",
+  "settings_experimental_ews_help": "新增帳戶時可以選擇 Exchange（EWS），適用於只開放 EWS 的本地部署 Exchange 伺服器。只支援本地部署的 Exchange 2016 及以後版本。這是實驗性功能，以後可能會變；出了問題可以改用 DavMail。關閉後，已新增的 EWS 帳戶繼續運作。",
+  "onboarding_protocol_ews": "Exchange（EWS）",
+  "onboarding_ews_url": "EWS URL",
+  "onboarding_ews_url_help": "Exchange 伺服器的 EWS 位址，通常以 /EWS/Exchange.asmx 結尾。收信和寄信都透過它。",
+  "onboarding_ews_login": "登入名稱",
+  "onboarding_invalid_ews_url": "EWS URL 不是帶路徑的有效 https:// 位址。",
+  "onboarding_check_ews_failed": "EWS 登入失敗：{arg1}",
+  "onboarding_check_ews_ok": "EWS 登入成功",
+  "onboarding_check_ews_running": "EWS 登入中…",
+  "onboarding_check_ews_waiting": "EWS 登入",
+  "onboarding_check_ews_proxy": "EWS 連線失敗：{arg1}",
+  "onboarding_check_ews_host": "EWS 主機：{arg1}",
+  "onboarding_next_davmail": "改用 DavMail，透過 IMAP 新增這個帳戶",
+  "feature_reason_ews_server_too_old": "伺服器版本過舊：只支援 Exchange 2016 及以後版本。",
+  "feature_reason_ews_pending": "Exchange（EWS）帳戶暫不支援這個操作。"
 }

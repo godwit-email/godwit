@@ -2126,5 +2126,21 @@
   "onboarding_check_jmap_running": "Aanmelden bij JMAP…",
   "onboarding_check_jmap_waiting": "Aanmelden bij JMAP",
   "onboarding_check_jmap_proxy": "Verbinding met JMAP mislukt: {arg1}",
-  "onboarding_check_jmap_host": "Sessiehost: {arg1}"
+  "onboarding_check_jmap_host": "Sessiehost: {arg1}",
+  "settings_experimental_ews": "Exchange-accounts (EWS)",
+  "settings_experimental_ews_help": "Biedt Exchange (EWS) aan bij het toevoegen van een account, voor postvakken op een lokale Exchange Server die alleen EWS aanbiedt. Alleen lokale Exchange 2016 en nieuwer worden ondersteund. Het is experimenteel en kan veranderen; gebruik bij problemen DavMail. Uitgeschakeld blijven al toegevoegde EWS-accounts werken.",
+  "onboarding_protocol_ews": "Exchange (EWS)",
+  "onboarding_ews_url": "EWS-URL",
+  "onboarding_ews_url_help": "Het EWS-adres van je Exchange-server, meestal eindigend op /EWS/Exchange.asmx. Mail wordt hierlangs ontvangen en verzonden.",
+  "onboarding_ews_login": "Inlognaam",
+  "onboarding_invalid_ews_url": "De EWS-URL is geen geldig https://-adres met een pad.",
+  "onboarding_check_ews_failed": "Inloggen bij EWS mislukt: {arg1}",
+  "onboarding_check_ews_ok": "Ingelogd bij EWS",
+  "onboarding_check_ews_running": "Inloggen bij EWS…",
+  "onboarding_check_ews_waiting": "Inloggen bij EWS",
+  "onboarding_check_ews_proxy": "Verbinding met EWS mislukt: {arg1}",
+  "onboarding_check_ews_host": "EWS-host: {arg1}",
+  "onboarding_next_davmail": "Gebruik in plaats daarvan DavMail en voeg het account toe via IMAP",
+  "feature_reason_ews_server_too_old": "De serverversie is te oud: alleen Exchange 2016 en nieuwer worden ondersteund.",
+  "feature_reason_ews_pending": "Dit is nog niet beschikbaar voor Exchange-accounts (EWS)."
 }

@@ -59,6 +59,7 @@ var table = []Error{
 	{Code: "not_local_archive", Err: core.ErrNotLocalArchive},
 	{Code: "receive_only", Err: core.ErrReceiveOnly},
 	{Code: "jmap_off", Err: core.ErrJMAPOff},
+	{Code: "ews_off", Err: core.ErrEWSOff},
 	{Code: "role_folder", Err: core.ErrRoleFolder},
 	{Code: "folder_not_empty", Err: core.ErrFolderNotEmpty},
 	{Code: "folder_name_empty", Err: core.ErrFolderNameEmpty},

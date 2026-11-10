@@ -42,6 +42,9 @@ const (
 	IMAP = "imap"
 	SMTP = "smtp"
 	JMAP = "jmap"
+	// EWS is both slots of an on-premises Exchange account (Exchange Web
+	// Services); no provider has an entry for it.
+	EWS = "ews"
 	// Graph is the sending slot of an account whose SMTP AUTH is disabled:
 	// it sends through Microsoft Graph (OAuthConfig.GraphSend).
 	Graph = "graph"

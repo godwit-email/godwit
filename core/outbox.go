@@ -14,6 +14,7 @@ import (
 	"github.com/egoist/mygo/plugins/sqlite"
 	"github.com/godwit-email/godwit/backend"
 	"github.com/godwit-email/godwit/backend/conn"
+	"github.com/godwit-email/godwit/backend/ews"
 	"github.com/godwit-email/godwit/backend/graph"
 	"github.com/godwit-email/godwit/backend/smtpbackend"
 	"github.com/godwit-email/godwit/core/auth"
@@ -424,8 +425,11 @@ func (a *sendAuth) credentials(ctx context.Context) (backend.Credentials, error)
 
 // sender is the account's sending backend.
 func (a *sendAuth) sender() backend.Sender {
-	if a.acc.Sending.Protocol == auth.Graph {
+	switch a.acc.Sending.Protocol {
+	case auth.Graph:
 		return graph.New(graphSendURL, a.credentials)
+	case auth.EWS:
+		return ews.Sender{}
 	}
 	return a.smtp()
 }

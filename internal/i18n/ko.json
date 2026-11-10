@@ -2126,5 +2126,21 @@
   "onboarding_check_jmap_running": "JMAP에 로그인하는 중…",
   "onboarding_check_jmap_waiting": "JMAP 로그인",
   "onboarding_check_jmap_proxy": "JMAP 연결 실패: {arg1}",
-  "onboarding_check_jmap_host": "세션 호스트: {arg1}"
+  "onboarding_check_jmap_host": "세션 호스트: {arg1}",
+  "settings_experimental_ews": "Exchange(EWS) 계정",
+  "settings_experimental_ews_help": "계정을 추가할 때 Exchange(EWS)를 선택할 수 있습니다. EWS만 제공하는 온프레미스 Exchange Server용입니다. 온프레미스 Exchange 2016 이상만 지원합니다. 실험적인 기능이라 나중에 바뀔 수 있으며, 문제가 생기면 DavMail을 대신 사용하세요. 끄더라도 이미 추가한 EWS 계정은 계속 작동합니다.",
+  "onboarding_protocol_ews": "Exchange(EWS)",
+  "onboarding_ews_url": "EWS URL",
+  "onboarding_ews_url_help": "Exchange 서버의 EWS 주소로, 보통 /EWS/Exchange.asmx로 끝납니다. 메일 수신과 발신 모두 이 주소를 통합니다.",
+  "onboarding_ews_login": "로그인 이름",
+  "onboarding_invalid_ews_url": "EWS URL이 경로가 있는 올바른 https:// 주소가 아닙니다.",
+  "onboarding_check_ews_failed": "EWS 로그인 실패: {arg1}",
+  "onboarding_check_ews_ok": "EWS에 로그인했습니다",
+  "onboarding_check_ews_running": "EWS에 로그인하는 중…",
+  "onboarding_check_ews_waiting": "EWS 로그인",
+  "onboarding_check_ews_proxy": "EWS 연결 실패: {arg1}",
+  "onboarding_check_ews_host": "EWS 호스트: {arg1}",
+  "onboarding_next_davmail": "대신 DavMail을 사용해 IMAP으로 계정을 추가하세요",
+  "feature_reason_ews_server_too_old": "서버 버전이 너무 낮습니다. Exchange 2016 이상만 지원합니다.",
+  "feature_reason_ews_pending": "Exchange(EWS) 계정에서는 아직 사용할 수 없습니다."
 }

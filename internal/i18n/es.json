@@ -2126,5 +2126,21 @@
   "onboarding_check_jmap_running": "Iniciando sesión en JMAP…",
   "onboarding_check_jmap_waiting": "Inicio de sesión en JMAP",
   "onboarding_check_jmap_proxy": "Error de conexión con JMAP: {arg1}",
-  "onboarding_check_jmap_host": "Host de sesión: {arg1}"
+  "onboarding_check_jmap_host": "Host de sesión: {arg1}",
+  "settings_experimental_ews": "Cuentas de Exchange (EWS)",
+  "settings_experimental_ews_help": "Ofrece Exchange (EWS) al añadir una cuenta, para buzones en un Exchange Server local que solo ofrece EWS. Solo se admiten Exchange 2016 y posteriores locales. Es experimental y puede cambiar; si algo falla, usa DavMail en su lugar. Si lo desactivas, las cuentas EWS ya añadidas siguen funcionando.",
+  "onboarding_protocol_ews": "Exchange (EWS)",
+  "onboarding_ews_url": "URL de EWS",
+  "onboarding_ews_url_help": "La dirección EWS de tu servidor Exchange, que suele terminar en /EWS/Exchange.asmx. El correo se recibe y se envía a través de ella.",
+  "onboarding_ews_login": "Nombre de inicio de sesión",
+  "onboarding_invalid_ews_url": "La URL de EWS no es una dirección https:// válida con ruta.",
+  "onboarding_check_ews_failed": "Error al iniciar sesión en EWS: {arg1}",
+  "onboarding_check_ews_ok": "Sesión iniciada en EWS",
+  "onboarding_check_ews_running": "Iniciando sesión en EWS…",
+  "onboarding_check_ews_waiting": "Inicio de sesión en EWS",
+  "onboarding_check_ews_proxy": "Error de conexión con EWS: {arg1}",
+  "onboarding_check_ews_host": "Host de EWS: {arg1}",
+  "onboarding_next_davmail": "Usa DavMail y añade la cuenta por IMAP",
+  "feature_reason_ews_server_too_old": "La versión del servidor es demasiado antigua: solo se admiten Exchange 2016 y posteriores.",
+  "feature_reason_ews_pending": "Esto aún no está disponible en cuentas de Exchange (EWS)."
 }

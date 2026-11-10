@@ -80,12 +80,25 @@ func validSecurity(s Security) bool {
 // ErrJMAPOff refuses to add a JMAP account while Settings.ExperimentalJMAP is off.
 var ErrJMAPOff = errors.New("JMAP is experimental: turn it on in settings to add a JMAP account")
 
+// ErrEWSOff refuses to add an EWS account while Settings.ExperimentalEWS is off.
+var ErrEWSOff = errors.New("EWS is experimental: turn it on in settings to add an Exchange (EWS) account")
+
 // receiving is the receiving slot's protocol, "" read as IMAP.
 func (in AccountInput) receiving() string {
 	if in.Receiving.Protocol == "" {
 		return auth.IMAP
 	}
 	return in.Receiving.Protocol
+}
+
+// sending is the protocol a new or changed account sends with: EWS through
+// EWS, any other first through SMTP (Graph is stored only after SMTP
+// refused AUTH).
+func (in AccountInput) sending() string {
+	if in.receiving() == auth.EWS {
+		return auth.EWS
+	}
+	return auth.SMTP
 }
 
 func (in AccountInput) validate() error {
@@ -97,10 +110,12 @@ func (in AccountInput) validate() error {
 		slot, name string
 		ok         bool
 		Server
-	}{{"receiving", strings.ToUpper(recv), recv == auth.IMAP || recv == auth.JMAP, in.Receiving},
+	}{{"receiving", strings.ToUpper(recv), recv == auth.IMAP || recv == auth.JMAP || recv == auth.EWS, in.Receiving},
 		// Graph is not chosen but stored after SMTP refused AUTH; a stored
 		// account's servers come back with it.
-		{"sending", "SMTP", in.Sending.Protocol == "" || in.Sending.Protocol == auth.SMTP || in.Sending.Protocol == auth.Graph, in.Sending}} {
+		{"sending", strings.ToUpper(in.sending()), in.Sending.Protocol == "" || in.Sending.Protocol == in.sending() ||
+			in.Sending.Protocol == auth.Graph && recv != auth.EWS, in.Sending}} {
+		http := e.name == "JMAP" || e.name == "EWS"
 		if !e.ok {
 			return fmt.Errorf("%s protocol %q is not supported", e.slot, e.Protocol)
 		}
@@ -110,13 +125,14 @@ func (in AccountInput) validate() error {
 		if e.Port < 1 || e.Port > 65535 {
 			return fmt.Errorf("%s port %d is out of range", e.name, e.Port)
 		}
-		if !validSecurity(e.Security) || e.name == "JMAP" && e.Security == SecurityStartTLS {
+		if !validSecurity(e.Security) || http && e.Security == SecurityStartTLS {
 			return fmt.Errorf("%s security %q is invalid", e.name, e.Security)
 		}
-		if !(e.Auth == "" || e.Auth == AuthPassword || e.Auth == AuthOAuth || e.Auth == AuthAPIToken && e.name == "JMAP") {
+		if !(e.Auth == "" || e.Auth == AuthPassword || e.Auth == AuthOAuth && e.name != "EWS" || e.Auth == AuthAPIToken && e.name == "JMAP") {
 			return fmt.Errorf("%s sign-in %q is not supported", e.name, e.Auth)
 		}
-		if e.Path != "" && (e.name != "JMAP" || !strings.HasPrefix(e.Path, "/") || strings.ContainsAny(e.Path, "?# ")) {
+		if e.Path != "" && (!http || !strings.HasPrefix(e.Path, "/") || strings.ContainsAny(e.Path, "?# ")) ||
+			e.Path == "" && e.name == "EWS" { // the EWS URL's: no discovery yet
 			return fmt.Errorf("%s path %q is invalid", e.name, e.Path)
 		}
 		if e.Security == SecurityNone && !isLoopback(e.Host) {
@@ -208,6 +224,15 @@ func (s *Service) AddAccount(ctx context.Context, in AccountInput) (Account, err
 			return Account{}, ErrJMAPOff
 		}
 	}
+	if in.receiving() == auth.EWS {
+		st, err := s.loadSettings(ctx)
+		if err != nil {
+			return Account{}, err
+		}
+		if !st.ExperimentalEWS {
+			return Account{}, ErrEWSOff
+		}
+	}
 	checked, checkErr := s.check(ctx, in, "")
 	receiveOnly := in.ReceiveOnly && checked.OnlySMTPFailed()
 	if checkErr != nil && !receiveOnly {
@@ -257,9 +282,9 @@ func (s *Service) AddAccount(ctx context.Context, in AccountInput) (Account, err
 	stmts = append(stmts, sqlite.Statement{
 		SQL: `INSERT INTO accounts(email, name, alias, is_default, sync_limit, sync_since_months, recv_auth, send_auth, status, username,
 			recv_protocol, recv_host, recv_port, recv_security, recv_path, send_protocol, send_host, send_port, send_security, created_at, provider, oauth_client_id, features, receive_only, position)
-			VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'ok', ?, ?, ?, ?, ?, ?, 'smtp', ?, ?, ?, ?, ?, ?, ?, ?, (SELECT COALESCE(MAX(position) + 1, 0) FROM accounts))`,
+			VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'ok', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, (SELECT COALESCE(MAX(position) + 1, 0) FROM accounts))`,
 		Args: []any{in.Email, in.Name, in.Alias, b2i(isDefault), sync.Limit, sync.Months, recvAuth, sendAuth, in.username(),
-			in.receiving(), in.Receiving.Host, in.Receiving.Port, string(in.Receiving.Security), in.Receiving.Path, in.Sending.Host, in.Sending.Port, string(in.Sending.Security), time.Now().Unix(), in.Provider, in.oauthClientID, encodeFeatures(checked.desc), b2i(receiveOnly)},
+			in.receiving(), in.Receiving.Host, in.Receiving.Port, string(in.Receiving.Security), in.Receiving.Path, in.sending(), in.Sending.Host, in.Sending.Port, string(in.Sending.Security), time.Now().Unix(), in.Provider, in.oauthClientID, encodeFeatures(checked.desc), b2i(receiveOnly)},
 	})
 	res, err := s.db.Transaction(ctx, stmts)
 	if err != nil {
@@ -775,7 +800,7 @@ func (s *Service) UpdateAccount(ctx context.Context, id int64, p AccountPatch) (
 		set("send_host", in.Sending.Host)
 		set("send_port", in.Sending.Port)
 		set("send_security", string(in.Sending.Security))
-		set("send_protocol", auth.SMTP) // new servers: the next send tries SMTP before Graph again
+		set("send_protocol", in.sending()) // new servers: the next send tries SMTP before Graph again (EWS stays EWS)
 		// The checked settings work: the user just fixed the sign-in.
 		set("status", "ok")
 		set("status_detail", "")

@@ -3889,5 +3889,21 @@
   "onboarding_check_jmap_running": "Signing in to JMAP…",
   "onboarding_check_jmap_waiting": "JMAP sign-in",
   "onboarding_check_jmap_proxy": "JMAP connection failed: {arg1}",
-  "onboarding_check_jmap_host": "Session host: {arg1}"
+  "onboarding_check_jmap_host": "Session host: {arg1}",
+  "settings_experimental_ews": "Exchange (EWS) accounts",
+  "settings_experimental_ews_help": "Offers Exchange (EWS) when you add an account, for mailboxes on an on-premises Exchange Server that only offers EWS. Only on-premises Exchange 2016 and later are supported. It is experimental and may change later; if something goes wrong, use DavMail instead. Turned off, EWS accounts already added keep working.",
+  "onboarding_protocol_ews": "Exchange (EWS)",
+  "onboarding_ews_url": "EWS URL",
+  "onboarding_ews_url_help": "Your Exchange server's EWS address, usually ending in /EWS/Exchange.asmx. Mail is received and sent through it.",
+  "onboarding_ews_login": "Login name",
+  "onboarding_invalid_ews_url": "The EWS URL isn’t a valid https:// address with a path.",
+  "onboarding_check_ews_failed": "EWS sign-in failed: {arg1}",
+  "onboarding_check_ews_ok": "Signed in to EWS",
+  "onboarding_check_ews_running": "Signing in to EWS…",
+  "onboarding_check_ews_waiting": "EWS sign-in",
+  "onboarding_check_ews_proxy": "EWS connection failed: {arg1}",
+  "onboarding_check_ews_host": "EWS host: {arg1}",
+  "onboarding_next_davmail": "Use DavMail and add the account over IMAP instead",
+  "feature_reason_ews_server_too_old": "The server version is too old: only Exchange 2016 and later are supported.",
+  "feature_reason_ews_pending": "This isn't available on Exchange (EWS) accounts yet."
 }

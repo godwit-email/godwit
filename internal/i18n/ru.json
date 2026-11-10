@@ -2126,5 +2126,21 @@
   "onboarding_check_jmap_running": "Вход в JMAP…",
   "onboarding_check_jmap_waiting": "Вход в JMAP",
   "onboarding_check_jmap_proxy": "Не удалось подключиться к JMAP: {arg1}",
-  "onboarding_check_jmap_host": "Сервер сеанса: {arg1}"
+  "onboarding_check_jmap_host": "Сервер сеанса: {arg1}",
+  "settings_experimental_ews": "Учётные записи Exchange (EWS)",
+  "settings_experimental_ews_help": "Предлагает Exchange (EWS) при добавлении учётной записи — для ящиков на локальном Exchange Server, где доступен только EWS. Поддерживаются только локальные Exchange 2016 и новее. Функция экспериментальная и может измениться; если что-то не работает, используйте DavMail. Если выключить, уже добавленные учётные записи EWS продолжат работать.",
+  "onboarding_protocol_ews": "Exchange (EWS)",
+  "onboarding_ews_url": "URL EWS",
+  "onboarding_ews_url_help": "Адрес EWS вашего сервера Exchange, обычно оканчивается на /EWS/Exchange.asmx. Через него почта принимается и отправляется.",
+  "onboarding_ews_login": "Имя для входа",
+  "onboarding_invalid_ews_url": "URL EWS — не корректный адрес https:// с путём.",
+  "onboarding_check_ews_failed": "Не удалось войти в EWS: {arg1}",
+  "onboarding_check_ews_ok": "Вход в EWS выполнен",
+  "onboarding_check_ews_running": "Вход в EWS…",
+  "onboarding_check_ews_waiting": "Вход в EWS",
+  "onboarding_check_ews_proxy": "Не удалось подключиться к EWS: {arg1}",
+  "onboarding_check_ews_host": "Хост EWS: {arg1}",
+  "onboarding_next_davmail": "Используйте DavMail и добавьте учётную запись по IMAP",
+  "feature_reason_ews_server_too_old": "Слишком старая версия сервера: поддерживаются только Exchange 2016 и новее.",
+  "feature_reason_ews_pending": "Для учётных записей Exchange (EWS) это пока недоступно."
 }
