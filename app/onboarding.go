@@ -1102,7 +1102,7 @@ func (o *onboarding) serversForm(c *ui.Context) {
 			}).Description(i18n.T("onboarding.ews.url.help")).FontSize(t.Text.Sm).TextColor(t.Muted)
 			ui.Field(c, i18n.T("onboarding.ews.login"), func() {
 				kit.Input(c, &o.username, kit.InputOpts{Placeholder: i18n.T("onboarding.username.placeholder")})
-			})
+			}).Description(i18n.T("onboarding.ews.login.help")).FontSize(t.Text.Sm).TextColor(t.Muted)
 			return
 		}
 		if o.jmap() {
@@ -1210,6 +1210,9 @@ func (o *onboarding) checkRow(st core.CheckStep) (text, detail string, status in
 		reason, next = i18n.T("onboarding.reason."+kind), i18n.T("onboarding.next.server")
 		if st.Detail == ews.ReasonServerTooOld { // the server cannot be used at all, not merely misconfigured
 			reason, next = i18n.T("feature.reason."+st.Detail), i18n.T("onboarding.next.davmail")
+		}
+		if st.Detail == ews.ReasonExtendedProtection { // the reason says to ask the administrator
+			reason, next = i18n.T("feature.reason."+st.Detail), ""
 		}
 		if st.Detail == pop3.ReasonNoUIDL { // the server cannot be used at all, not merely misconfigured
 			reason = i18n.T("feature.reason." + st.Detail)
