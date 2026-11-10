@@ -340,3 +340,19 @@ func TestPOP3PageBytes(t *testing.T) {
 		t.Errorf("3 messages over a 1-byte page budget came in %d pages, want 3", pages)
 	}
 }
+
+// 加载更早 reaches mail a date window left out after the oldest one held: a
+// late delivery with an old date.
+func TestPOP3OlderAfterLateOldDate(t *testing.T) {
+	s := testmail.StartPOP3(t)
+	now := time.Now()
+	s.Deliver(dated("in", now.AddDate(0, 0, -5)))
+	late := s.Deliver(dated("late", now.AddDate(-1, 0, 0)))
+	r := pop3Receiver(t, s, conn.None)
+	st := newPOP3Store()
+	st.sync(t, r, backend.SyncRequest{Window: backend.Window{Since: now.AddDate(0, -1, 0)}})
+	older := backend.SyncRequest{Only: []backend.FolderRef{pop3.Inbox}, Older: 10}
+	if cs, more := st.sync(t, r, older); !slices.Equal(arrivals(cs), []string{late}) || more {
+		t.Errorf("older = %v (more %v), want %s and no more", arrivals(cs), more, late)
+	}
+}

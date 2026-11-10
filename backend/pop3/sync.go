@@ -62,11 +62,14 @@ func (r *Receiver) Sync(ctx context.Context, req backend.SyncRequest, commit fun
 		since := false  // pick holds a whole scan of a window since a date
 		switch {
 		case req.Older > 0:
-			oldest := slices.IndexFunc(s.list, isHeld)
-			if oldest < 0 {
-				oldest = len(s.list)
+			// Whatever is missing up to the cursor's message: a date window may
+			// have left out mail after the oldest one held (a late delivery's
+			// old date), not only before it. After the cursor is new mail.
+			upto := len(s.list)
+			if i := s.index(cur.Newest); i >= 0 {
+				upto = i + 1
 			}
-			es := unheld(s.list[:oldest], isHeld)
+			es := unheld(s.list[:upto], isHeld)
 			more = len(es) > req.Older
 			pick = items(es[:min(len(es), req.Older)], true)
 		case !st.Synced:
@@ -79,7 +82,7 @@ func (r *Receiver) Sync(ctx context.Context, req backend.SyncRequest, commit fun
 			bound := -1 // no cursor: the inbox was empty, so all of it is new
 			lost := false
 			if cur.Newest != "" {
-				bound = slices.IndexFunc(s.list, func(e entry) bool { return e.uid == cur.Newest })
+				bound = s.index(cur.Newest)
 				if bound < 0 { // the cursor's message is gone: the newest one held bounds what is new
 					for bound = len(s.list) - 1; bound >= 0 && !isHeld(s.list[bound]); bound-- {
 					}
@@ -135,7 +138,7 @@ func (r *Receiver) Sync(ctx context.Context, req backend.SyncRequest, commit fun
 			case req.Older > 0:
 			case arriving:
 				// The entry before the first one left: committed, or held already.
-				if i := slices.IndexFunc(s.list, func(e entry) bool { return e.uid == pick[0].uid }); i > 0 {
+				if i := s.index(pick[0].uid); i > 0 {
 					next.Cursor = cursor{s.list[i-1].uid}.encode()
 				}
 			case len(s.list) > 0:

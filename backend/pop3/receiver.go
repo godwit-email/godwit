@@ -9,7 +9,6 @@ import (
 	"io"
 	"maps"
 	"net"
-	"slices"
 	"time"
 
 	gopop3 "github.com/knadh/go-pop3"
@@ -84,10 +83,19 @@ type entry struct {
 type session struct {
 	c    *gopop3.Conn
 	list []entry
+	at   map[string]int // the index in list of each UIDL
+}
+
+// index is where the message with UIDL uid is in the listing, -1 if gone.
+func (s *session) index(uid string) int {
+	if i, ok := s.at[uid]; ok {
+		return i
+	}
+	return -1
 }
 
 func (s *session) find(ref backend.MessageRef) (entry, bool) {
-	i := slices.IndexFunc(s.list, func(e entry) bool { return e.uid == string(ref) })
+	i := s.index(string(ref))
 	if i < 0 {
 		return entry{}, false
 	}
@@ -133,7 +141,9 @@ func (s *session) load() error {
 	for _, m := range sizes {
 		size[m.ID] = int64(m.Size)
 	}
+	s.at = make(map[string]int, len(uids))
 	for _, m := range uids {
+		s.at[m.UID] = len(s.list)
 		s.list = append(s.list, entry{m.ID, m.UID, size[m.ID]})
 	}
 	return nil
