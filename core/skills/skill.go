@@ -53,6 +53,7 @@ func ValidName(name string) bool { return nameRE.MatchString(name) }
 
 // Label 优先保留显式显示名称，否则把稳定标识转为首字母大写的词组。
 func Label(name, displayName string) string {
+	displayName = NormalizeDisplayName(displayName)
 	if displayName != "" {
 		return displayName
 	}
@@ -65,7 +66,10 @@ func Label(name, displayName string) string {
 	return strings.Join(words, " ")
 }
 
-// IconNames returns the built-in icons a skill can select.
+// NormalizeDisplayName 让手写文件、创建审批和各界面使用同一个单行展示值。
+func NormalizeDisplayName(name string) string { return strings.Join(strings.Fields(name), " ") }
+
+// IconNames 返回 Skill 可选择的内置图标。
 func IconNames() []string { return slices.Clone(iconSet) }
 
 func ValidIcon(icon string) bool { return slices.Contains(iconSet, icon) }
@@ -126,7 +130,7 @@ func ParseContent(name string, raw []byte) (Skill, error) {
 	sum := sha256.Sum256(raw)
 	s := Skill{
 		Name: name, Description: strings.TrimSpace(fm.Description), Body: strings.TrimSpace(rest),
-		DisplayName: fm.Metadata["godwit-display-name"], Icon: IconOrDefault(fm.Metadata["godwit-icon"]),
+		DisplayName: NormalizeDisplayName(fm.Metadata["godwit-display-name"]), Icon: IconOrDefault(fm.Metadata["godwit-icon"]),
 		Output: fm.Metadata["godwit-action-output"], Model: fm.Metadata["godwit-model"],
 		Version: hex.EncodeToString(sum[:])[:16],
 	}
@@ -148,8 +152,13 @@ func ParseContent(name string, raw []byte) (Skill, error) {
 	if (len(s.On) == 0) != (s.Output == "") {
 		return Skill{}, fmt.Errorf("skill %s: godwit-action-on and godwit-action-output go together", name)
 	}
-	if s.Output == "wit" && !slices.Equal(s.On, []string{"message"}) {
-		return Skill{}, fmt.Errorf("skill %s: wit output requires godwit-action-on: message", name)
+	if s.Output == "wit" {
+		if !slices.Equal(s.On, []string{"message"}) {
+			return Skill{}, fmt.Errorf("skill %s: wit output requires godwit-action-on: message", name)
+		}
+		if s.Model != "" || fm.Metadata["godwit-model-tier"] != "" {
+			return Skill{}, fmt.Errorf("skill %s: wit output uses the conversation's model; remove godwit-model and godwit-model-tier", name)
+		}
 	}
 	return s, nil
 }
@@ -274,7 +283,7 @@ func LoadDir(dir string) (ok []Skill, failed map[string]error, err error) {
 		return nil, nil, err
 	}
 	for _, e := range ents {
-		if !e.IsDir() { // a symlinked skill directory is not a directory entry here
+		if !e.IsDir() || strings.HasPrefix(e.Name(), ".") { // 不加载符号链接及未发布的暂存目录。
 			continue
 		}
 		sd := filepath.Join(dir, e.Name())

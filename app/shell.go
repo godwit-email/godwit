@@ -5,6 +5,7 @@ import (
 	"context"
 	"math"
 	"runtime"
+	"slices"
 	"time"
 
 	"github.com/egoist/mygo/ui"
@@ -167,6 +168,12 @@ func (a *App) onEvent(ev events.Event) {
 // page shows.
 func (a *App) refresh(dirty []events.Event) {
 	a.refreshes++
+	if len(dirty) > 0 && !slices.ContainsFunc(dirty, func(ev events.Event) bool { return ev.Type != events.SkillsChanged }) {
+		if a.route.Page == PageSettings && a.route.Settings == "extensions" {
+			a.page().refresh(dirty)
+		}
+		return // onEvent 已刷新阅读器的 Skill，隐藏状态也包含在内。
+	}
 	a.load()
 	a.page().refresh(dirty)
 }

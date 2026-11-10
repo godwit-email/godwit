@@ -28,7 +28,8 @@ import (
 type extView struct {
 	a               *App
 	tab             int    // 0 skills, 1 plugins (the first shown); MCP is on the Intelligence page
-	gen             uint64 // bumped per list read; only the newest applies
+	gen             uint64 // bumped per extension read; only the newest applies
+	skillsGen       uint64 // bumped per skill read or write; old reads cannot replace a toggle
 	skills          []core.SkillInfo
 	plugins         []core.PluginInfo
 	servers         []core.MCPServer
@@ -60,20 +61,39 @@ func extChange(ev events.Event) bool {
 	return ev.Type == events.PluginsChanged || ev.Type == events.MCPChanged
 }
 
+func (e *extView) loadSkills() {
+	e.skillsGen++
+	gen := e.skillsGen
+	if len(e.a.writes.chains["skills"]) > 0 {
+		return // 等待队列中所有开关写回完成，再读取最终状态。
+	}
+	var skills []core.SkillInfo
+	e.a.query(func(ctx context.Context) (err error) {
+		skills, err = e.a.svc.ListSkills(ctx)
+		return err
+	}, func(err error) {
+		if gen != e.skillsGen {
+			return
+		}
+		if err != nil {
+			e.a.toastErr(err)
+			return
+		}
+		e.skills = skills
+	})
+}
+
 func (e *extView) load() {
+	e.loadSkills()
 	a := e.a
 	e.gen++
 	gen := e.gen
-	var sk []core.SkillInfo
 	var pl []core.PluginInfo
 	var ms []core.MCPServer
 	var rv core.RegistryView
 	a.query(func(ctx context.Context) (err error) {
 		if rv, err = a.svc.ListPluginRegistry(ctx); err != nil { // a cache that fails its signature: say so, list nothing
 			rv, err = core.RegistryView{On: true, Stale: err.Error()}, nil
-		}
-		if sk, err = a.svc.ListSkills(ctx); err != nil {
-			return err
 		}
 		if pl, err = a.svc.ListPlugins(ctx); err != nil {
 			return err
@@ -88,7 +108,7 @@ func (e *extView) load() {
 			a.toastErr(err)
 			return
 		}
-		e.skills, e.plugins, e.servers, e.reg = sk, pl, ms, rv
+		e.plugins, e.servers, e.reg = pl, ms, rv
 		e.loadLogins(gen)
 		for _, p := range pl {
 			if !p.Builtin { // no config, nothing installed
@@ -231,12 +251,21 @@ func (e *extView) server() (core.MCPServer, bool) {
 // write chains fn on key, then shows its error and reads the lists again.
 func (e *extView) write(key string, fn func(ctx context.Context) error, done func(err error)) {
 	a := e.a
+	if key == "skills" {
+		e.skillsGen++
+	}
 	a.writes.Chain(key, fn, func(err error) {
 		a.toastErr(err)
 		if done != nil {
 			done(err)
 		}
-		e.load()
+		if key == "skills" {
+			if len(a.writes.chains[key]) == 1 {
+				a.onUI(e.loadSkills) // Chain 在当前回调之后才移除已完成的写入。
+			}
+		} else {
+			e.load()
+		}
 	})
 }
 

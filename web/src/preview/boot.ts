@@ -126,6 +126,7 @@ const pages: Record<string, { states: string[]; entry: () => Promise<unknown>; s
       document.body.style.background = "var(--window)";
       const emit = installFake({
         "WitPage.Load": async () => fx.witPage(mode, conv),
+        "WitPage.TakeAsk": async () => ({ text: "", hits: [] }),
         "WitPage.Follow": async () =>
           state === "create-skill" ? skillHistory : conv ? fx.witConversation() : fx.witEmpty(),
         "WitPage.Navigate": nothing,

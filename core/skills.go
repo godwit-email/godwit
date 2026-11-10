@@ -98,19 +98,27 @@ func (s *Service) SetSkillEnabled(ctx context.Context, name string, enabled bool
 	if _, bad := failed[name]; !known && !bad {
 		return ErrSkillNotFound
 	}
+	if err := s.setSkillEnabled(ctx, name, enabled); err != nil {
+		return err
+	}
+	s.bus.Publish(events.Event{Type: events.SkillsChanged})
+	return nil
+}
+
+// 调用方持有 skillsMu；新建与手动启停共用这份禁用状态。
+func (s *Service) setSkillEnabled(ctx context.Context, name string, enabled bool) error {
 	off, err := s.disabledSkills(ctx)
 	if err != nil {
 		return err
+	}
+	if slices.Contains(off, name) == !enabled {
+		return nil
 	}
 	off = slices.DeleteFunc(off, func(n string) bool { return n == name })
 	if !enabled {
 		off = append(off, name)
 	}
-	if err := s.writeList(ctx, skillsOff, off); err != nil {
-		return err
-	}
-	s.bus.Publish(events.Event{Type: events.SkillsChanged})
-	return nil
+	return s.writeList(ctx, skillsOff, off)
 }
 
 // skill returns an enabled, loadable skill.

@@ -164,31 +164,6 @@ func TestCreateSkillDisplayDefaults(t *testing.T) {
 	assert.Equal(t, in.DisplayName, sk.DisplayName, "length is measured in characters")
 }
 
-func TestCreateSkillDraftBinding(t *testing.T) {
-	e := newApprovalEnv(t)
-	in := createSkillArgs{Name: "clearer-draft", Description: "Make a draft clearer", Instructions: "Rewrite the draft clearly without adding facts.", On: []string{"draft", "selection"}, Output: "replace-draft"}
-	ev := proposeSkill(t, e, createSkillCall(t, in))
-	require.NoError(t, e.s.ResolveApproval(t.Context(), ev.Approvals[0].ID, true))
-	e.waitRun(t, ev.RunID, "done")
-	draftID := e.draft(t)
-	before, err := e.s.GetDraft(t.Context(), draftID)
-	require.NoError(t, err)
-	before.HTML = "<p>The original facts.</p>"
-	before, err = e.s.SaveDraft(t.Context(), before)
-	require.NoError(t, err)
-	e.srv.Script(testllm.Turn{Text: []string{"<p>A clearer draft.</p>"}})
-	ch, err := e.s.AssistSkill(t.Context(), draftID, in.Name, SkillOptions{})
-	require.NoError(t, err)
-	evs := drainWit(t, ch)
-	last := evs[len(evs)-1]
-	require.Equal(t, "interrupted", last.Kind, "%+v", last.Err)
-	require.Len(t, last.Approvals, 1)
-	assert.Equal(t, "update_draft", last.Approvals[0].Tool)
-	after, err := e.s.GetDraft(t.Context(), draftID)
-	require.NoError(t, err)
-	assert.Equal(t, before.HTML, after.HTML, "新 Skill 的草稿修改仍须单独审批")
-}
-
 func TestCreateSkillValidation(t *testing.T) {
 	e := newApprovalEnv(t)
 	base := createSkillArgs{Name: "safe-name", Description: "Description", Instructions: "Instructions"}

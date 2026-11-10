@@ -22,6 +22,7 @@ import (
 	"github.com/godwit-email/godwit/core/ai"
 	"github.com/godwit-email/godwit/core/mail"
 	"github.com/godwit-email/godwit/core/plugins"
+	"github.com/godwit-email/godwit/core/skills"
 	"github.com/godwit-email/godwit/core/store"
 	"golang.org/x/net/html"
 )
@@ -99,6 +100,13 @@ func (s *Service) askAt(ctx context.Context, conversationID int64, input string,
 	ctx, end, err := s.begin(ctx, 0)
 	if err != nil {
 		return nil, err
+	}
+	// 菜单可能缓存了旧配置；在引用内容发往模型之前重新校验已有 Skill。
+	if name, command := strings.CutPrefix(strings.Fields(input)[0], "/"); command && skills.ValidName(name) {
+		if _, err := s.skill(ctx, name); err != nil {
+			end()
+			return nil, err
+		}
 	}
 	quoted, err = s.quotedIDs(ctx, quoted)
 	var conv Conversation

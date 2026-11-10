@@ -136,8 +136,8 @@ func TestSkillInfoDisplay(t *testing.T) {
 	require.NoError(t, err)
 	review, ok := find(infos, "mail-review")
 	require.True(t, ok)
-	assert.Equal(t, core.SkillInfo{Name: "mail-review", Description: "Review mail", DisplayName: " 邮件分析 ", Icon: "mail", On: []string{"message"}, Output: "wit", Enabled: true, UI: true}, review)
-	assert.Equal(t, " 邮件分析 ", review.Label())
+	assert.Equal(t, core.SkillInfo{Name: "mail-review", Description: "Review mail", DisplayName: "邮件分析", Icon: "mail", On: []string{"message"}, Output: "wit", Enabled: true, UI: true}, review)
+	assert.Equal(t, "邮件分析", review.Label())
 	for name, label := range map[string]string{"create-skill": "Create Skill", "broken-skill": "Broken Skill", "summarize": "Summarize"} {
 		info, ok := find(infos, name)
 		require.True(t, ok)

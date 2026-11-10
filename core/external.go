@@ -13,6 +13,9 @@ import (
 	"github.com/godwit-email/godwit/core/plugins"
 )
 
+// 已产生外部副作用，但无法确认完整提交或持久化；不能按普通失败重试。
+var errExternalUncertain = errors.New("the operation may have taken effect")
+
 // externalTimeout bounds an external Run whose tool sets no Timeout.
 const externalTimeout = 60 * time.Second
 
@@ -77,6 +80,9 @@ func (s *Service) runExternal(ctx context.Context, a approvalRow, d toolDesc) er
 	}
 	if errors.Is(err, ErrStaleApproval) { // the tool refused: what it was bound to changed, nothing ran
 		return errors.Join(ErrStaleApproval, record("stale", msgStale, "stale"))
+	}
+	if errors.Is(err, errExternalUncertain) {
+		return errors.Join(err, record("failed", msgUncertain, "uncertain"))
 	}
 	if err != nil {
 		result := s.clean(err.Error())

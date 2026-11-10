@@ -43,7 +43,7 @@ func TestParseSkill(t *testing.T) {
 func TestSkillLabelsAndIcons(t *testing.T) {
 	assert.Equal(t, "Create Skill", skills.Label("create-skill", ""))
 	assert.Equal(t, "分析邮件", skills.Label("create-skill", "分析邮件"))
-	assert.Equal(t, " Explicit Name ", skills.Label("create-skill", " Explicit Name "))
+	assert.Equal(t, "Explicit Name", skills.Label("create-skill", " Explicit Name "))
 	assert.Equal(t, "2fa Summary", skills.Label("2fa-summary", ""))
 	want := []string{"sparkles", "file-text", "mail", "list", "list-ordered", "check", "time", "languages", "search", "shield", "tag", "code", "pen-line", "quote"}
 	assert.Equal(t, want, skills.IconNames())
@@ -67,7 +67,7 @@ func TestParseSkillDisplayMetadata(t *testing.T) {
 			sk, err := skills.ParseContent("demo", []byte(md))
 			require.NoError(t, err)
 			assert.Equal(t, "demo", sk.Name)
-			assert.Equal(t, " 邮件分析 ", sk.DisplayName)
+			assert.Equal(t, "邮件分析", sk.DisplayName)
 			assert.Equal(t, skills.IconOrDefault(icon), sk.Icon)
 		})
 	}
@@ -80,7 +80,8 @@ func TestParseSkillDisplayMetadata(t *testing.T) {
 func TestParseSkillWitOutput(t *testing.T) {
 	for _, on := range []string{"message", "thread", "draft", "selection", "message,thread", "message,message", ""} {
 		t.Run(on, func(t *testing.T) {
-			md := strings.ReplaceAll(strings.Replace(good, "message, selection", on, 1), "panel", "wit")
+			md := strings.Replace(good, "  godwit-model: fast/small\n", "", 1)
+			md = strings.ReplaceAll(strings.Replace(md, "message, selection", on, 1), "panel", "wit")
 			sk, err := skills.ParseContent("demo", []byte(md))
 			if on != "message" {
 				require.Error(t, err)

@@ -9,6 +9,7 @@ import (
 	"slices"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/godwit-email/godwit/core"
 	"github.com/godwit-email/godwit/core/coretest"
@@ -68,6 +69,176 @@ func TestSkillsChangedRefreshesSettings(t *testing.T) {
 	h.see(i18n.Tf("settings.ext.tab.skills", count+1))
 	if !viewUnchanged([]events.Event{{Type: events.SkillsChanged}}) {
 		t.Fatal("a skill change must not invalidate mail views")
+	}
+}
+
+// skillRefreshApp runs real reads and writes, with their UI callbacks under
+// the test's control and no background event subscription.
+func skillRefreshApp(t *testing.T) (*App, *extView, func() func()) {
+	t.Helper()
+	env := coretest.New(t, coretest.WithoutAutoSync())
+	posted := make(chan func(), 32)
+	a := New(Deps{Svc: env.Svc, Post: func(f func()) { posted <- f }, Clock: newFakeClock()})
+	t.Cleanup(a.cancel)
+	a.route = Route{Page: PageSettings, Settings: "extensions"}
+	e := a.pages[PageSettings].(*settingsPage).ext
+	var err error
+	e.skills, err = env.Svc.ListSkills(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	return a, e, func() func() {
+		t.Helper()
+		select {
+		case f := <-posted:
+			return f
+		case <-time.After(5 * time.Second):
+			t.Fatal("timed out waiting for the UI callback")
+			return nil
+		}
+	}
+}
+
+func TestSkillsChangedOnlyRefreshesSkills(t *testing.T) {
+	for name, page := range map[string]Page{"settings": PageSettings, "mail": PageMail} {
+		t.Run(name, func(t *testing.T) {
+			a, e, next := skillRefreshApp(t)
+			a.route.Page, a.route.ThreadID = page, 1
+			a.onEvent(events.Event{Type: events.SkillsChanged})
+			a.clock.(*fakeClock).advance(refreshEvery)
+			next()() // the coalesced refresh
+			if a.loadGen != 0 || a.mail.gen != 0 || e.gen != 0 || a.mail.reader.readGen != 0 {
+				t.Fatalf("skill event reloaded unrelated data: shell=%d mail=%d extensions=%d reader=%d", a.loadGen, a.mail.gen, e.gen, a.mail.reader.readGen)
+			}
+		})
+	}
+}
+
+func TestSkillWriteOnlyRefreshesSkills(t *testing.T) {
+	a, e, next := skillRefreshApp(t)
+	e.write("skills", func(ctx context.Context) error { return a.svc.SetSkillEnabled(ctx, "summarize", false) }, nil)
+	for slices.ContainsFunc(e.skills, func(s core.SkillInfo) bool { return s.Name == "summarize" && s.Enabled }) {
+		next()()
+	}
+	if e.gen != 0 {
+		t.Fatal("a skill write reloaded plugins, registry and MCP servers")
+	}
+}
+
+func TestSkillReadKeepsOptimisticToggle(t *testing.T) {
+	a, e, next := skillRefreshApp(t)
+	a.page().refresh([]events.Event{{Type: events.SkillsChanged}})
+	stale := next() // read finished before the click; its result has not applied
+	i := slices.IndexFunc(e.skills, func(s core.SkillInfo) bool { return s.Name == "summarize" })
+	e.skills[i].Enabled = false
+	release := make(chan struct{})
+	t.Cleanup(func() { close(release) })
+	e.write("skills", func(ctx context.Context) error {
+		select {
+		case <-release:
+		case <-ctx.Done():
+		}
+		return nil
+	}, nil)
+	stale()
+	if e.skills[i].Enabled {
+		t.Fatal("a pre-click ListSkills result replaced the optimistic toggle")
+	}
+}
+
+func TestSkillReadsShareVersion(t *testing.T) {
+	for _, fullFirst := range []bool{true, false} {
+		name := "full_then_skills"
+		if !fullFirst {
+			name = "skills_then_full"
+		}
+		t.Run(name, func(t *testing.T) {
+			a, e, next := skillRefreshApp(t)
+			read := func(full bool) []func() {
+				if full {
+					e.load()
+					return []func(){next(), next()}
+				}
+				a.page().refresh([]events.Event{{Type: events.SkillsChanged}})
+				return []func(){next()}
+			}
+			stale := read(fullFirst)
+			if err := a.svc.SetSkillEnabled(context.Background(), "summarize", false); err != nil {
+				t.Fatal(err)
+			}
+			for _, apply := range read(!fullFirst) {
+				apply()
+			}
+			for _, apply := range stale {
+				apply()
+			}
+			if slices.ContainsFunc(e.skills, func(s core.SkillInfo) bool { return s.Name == "summarize" && s.Enabled }) {
+				t.Fatal("an older full or skill-only read replaced the new skill state")
+			}
+			if len(e.plugins) == 0 {
+				t.Fatal("the skill-only read invalidated the unrelated plugin read")
+			}
+		})
+	}
+}
+
+func TestSkillWritesWaitForAllToggles(t *testing.T) {
+	a, e, next := skillRefreshApp(t)
+	for i := range e.skills {
+		if e.skills[i].Name == "summarize" || e.skills[i].Name == "translate" {
+			e.skills[i].Enabled = false
+		}
+	}
+	e.write("skills", func(ctx context.Context) error { return a.svc.SetSkillEnabled(ctx, "summarize", false) }, nil)
+	release := make(chan struct{})
+	t.Cleanup(func() {
+		select {
+		case <-release:
+		default:
+			close(release)
+		}
+	})
+	e.write("skills", func(ctx context.Context) error {
+		select {
+		case <-release:
+		case <-ctx.Done():
+			return ctx.Err()
+		}
+		return a.svc.SetSkillEnabled(ctx, "translate", false)
+	}, nil)
+	next()() // first write completes; the second is still blocked
+	if len(a.writes.chains["skills"]) != 1 {
+		t.Fatal("the second toggle was not queued")
+	}
+	a.page().refresh([]events.Event{{Type: events.SkillsChanged}})
+	e.load() // an unrelated plugin refresh while the second toggle waits
+	next()()
+	if len(e.plugins) == 0 {
+		t.Fatal("the plugin refresh did not complete while skill writes were pending")
+	}
+	if slices.ContainsFunc(e.skills, func(s core.SkillInfo) bool {
+		return (s.Name == "summarize" || s.Name == "translate") && s.Enabled
+	}) {
+		t.Fatal("a refresh replaced a toggle while another skill write was pending")
+	}
+	e.skills = nil // the final write must reconcile the list after the queue empties
+	close(release)
+	for len(e.skills) == 0 {
+		next()()
+	}
+	if slices.ContainsFunc(e.skills, func(s core.SkillInfo) bool {
+		return (s.Name == "summarize" || s.Name == "translate") && s.Enabled
+	}) {
+		t.Fatal("the settled list did not include both saved toggles")
+	}
+}
+
+func TestSkillsChangedWithMailEventsRefreshesMail(t *testing.T) {
+	a, _, _ := skillRefreshApp(t)
+	a.route = Route{Page: PageMail, ThreadID: 1}
+	a.refresh([]events.Event{{Type: events.SkillsChanged}, {Type: events.MessagesChanged}})
+	if a.loadGen != 1 || a.mail.gen != 1 || a.mail.reader.readGen != 1 {
+		t.Fatalf("mixed events skipped mail refresh: shell=%d mail=%d reader=%d", a.loadGen, a.mail.gen, a.mail.reader.readGen)
 	}
 }
 

@@ -24,7 +24,7 @@ export type SkillChoice = {
 };
 
 export const skillLabel = (name: string, displayName?: string) =>
-  displayName?.trim() ||
+  displayName?.replace(/\p{White_Space}+/gu, " ").trim() ||
   name
     .split("-")
     .map((word) => word.charAt(0).toUpperCase() + word.slice(1))

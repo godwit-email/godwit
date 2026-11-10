@@ -38,7 +38,7 @@ func (s *Service) registerCreateSkillTool() {
 			"Never replaces an existing or built-in skill. Does not run the skill, execute scripts, change model settings or send mail. " +
 			"Omit on and output for a Wit skill available as /name. If the user wants to analyze mail in Wit or continue with follow-up questions, use on: [message], output: wit. " +
 			"For a result card inside the reader only, use on: [message], output: panel. wit requires exactly on: [message]. " +
-			"UI bindings require both on and output. draft requires replace-draft; message and thread cannot use replace-draft. " +
+			"Creation supports only Wit commands and reader menu skills: UI bindings need message with panel or wit; thread may additionally accompany panel. " +
 			"Instructions are reusable prompts, not mail contents or credentials.",
 		Schema: object(map[string]any{
 			"name":         map[string]any{"type": "string", "pattern": "^[a-z0-9]+(-[a-z0-9]+)*$", "maxLength": 64},
@@ -46,9 +46,9 @@ func (s *Service) registerCreateSkillTool() {
 			"icon":         map[string]any{"type": "string", "enum": append([]string{""}, skills.IconNames()...), "description": "Optional built-in icon key; defaults to sparkles."},
 			"description":  stringProp,
 			"instructions": stringProp,
-			"on": map[string]any{"type": "array", "minItems": 1, "maxItems": 4, "uniqueItems": true,
-				"items": map[string]any{"type": "string", "enum": []string{"message", "thread", "selection", "draft"}}},
-			"output": map[string]any{"type": "string", "enum": []string{"panel", "replace-body", "replace-draft", "wit"}},
+			"on": map[string]any{"type": "array", "minItems": 1, "maxItems": 2, "uniqueItems": true,
+				"items": map[string]any{"type": "string", "enum": []string{"message", "thread"}}},
+			"output": map[string]any{"type": "string", "enum": []string{"panel", "wit"}},
 		}, "name", "description", "instructions"),
 	}, Write: true, Mode: modeExternal, Prepare: s.prepareCreateSkill, Run: s.createSkill})
 }
@@ -62,11 +62,15 @@ func skillDefinition(args json.RawMessage) (createSkillArgs, []byte, error) {
 	if !skills.ValidName(in.Name) || len(in.Name) > 64 {
 		return in, nil, errors.New("skill name must use lowercase letters, digits and single hyphens, at most 64 characters")
 	}
+	if !filepath.IsLocal(in.Name) {
+		return in, nil, fmt.Errorf("skill name %q is reserved on this platform", in.Name)
+	}
 	if in.DisplayName != "" && (strings.TrimSpace(in.DisplayName) == "" || utf8.RuneCountInString(in.DisplayName) > 80 || strings.ContainsFunc(in.DisplayName, func(r rune) bool {
 		return unicode.IsControl(r) || unicode.Is(unicode.Zl, r) || unicode.Is(unicode.Zp, r)
 	})) {
 		return in, nil, errors.New("skill display_name must be a non-blank single line of at most 80 characters, without control characters")
 	}
+	in.DisplayName = skills.NormalizeDisplayName(in.DisplayName)
 	if in.Icon != "" && !skills.ValidIcon(in.Icon) {
 		return in, nil, fmt.Errorf("skill icon %q must be a built-in icon key", in.Icon)
 	}
@@ -107,27 +111,22 @@ func skillDefinition(args json.RawMessage) (createSkillArgs, []byte, error) {
 		if slices.Index(in.On, target) != i {
 			return in, nil, errors.New("skill targets must be distinct")
 		}
-		if target == "draft" && in.Output != "replace-draft" ||
-			(target == "message" || target == "thread") && in.Output == "replace-draft" {
-			return in, nil, fmt.Errorf("skill output %q cannot run on %q", in.Output, target)
+		if target != "message" && target != "thread" {
+			return in, nil, fmt.Errorf("skill target %q has no custom skill menu; omit the UI binding to use it in Wit", target)
 		}
+	}
+	if len(in.On) > 0 && (!slices.Contains(in.On, "message") || in.Output != "panel" && in.Output != "wit") {
+		return in, nil, errors.New("reader skills require message with panel or wit output")
 	}
 	return in, raw, nil
 }
 
 // 创建入口不继承手工安装时覆盖内置 Skill 的能力。
-func (s *Service) newSkillName(ctx context.Context, name string) error {
+func (s *Service) newSkillName(name string) error {
 	for _, sk := range skills.Builtins() {
 		if sk.Name == name {
 			return fmt.Errorf("skill %q is built in; choose a new name", name)
 		}
-	}
-	off, err := s.disabledSkills(ctx)
-	if err != nil {
-		return err
-	}
-	if slices.Contains(off, name) {
-		return fmt.Errorf("skill %q is disabled; choose a new name", name)
 	}
 	if _, err := os.Lstat(filepath.Join(s.dataDir, "skills", name)); !errors.Is(err, os.ErrNotExist) {
 		if err != nil {
@@ -143,7 +142,7 @@ func (s *Service) prepareCreateSkill(ctx context.Context, _ Conversation, args j
 	if err != nil {
 		return prepared{}, err
 	}
-	if err := s.newSkillName(ctx, in.Name); err != nil {
+	if err := s.newSkillName(in.Name); err != nil {
 		return prepared{}, err
 	}
 	args, err = json.Marshal(in)
@@ -157,13 +156,19 @@ func (s *Service) createSkill(ctx context.Context, a approvalRow) (any, error) {
 	}
 	s.skillsMu.Lock()
 	defer s.skillsMu.Unlock()
-	if err := s.newSkillName(ctx, in.Name); err != nil {
+	if err := s.newSkillName(in.Name); err != nil {
 		return nil, err
 	}
-	if err := s.saveNewSkill(ctx, in.Name, raw); err != nil {
+	err = s.saveNewSkill(ctx, in.Name, raw)
+	if err == nil || errors.Is(err, errExternalUncertain) {
+		defer s.bus.Publish(events.Event{Type: events.SkillsChanged})
+	}
+	if err != nil {
 		return nil, err
 	}
-	s.bus.Publish(events.Event{Type: events.SkillsChanged})
+	if err := s.setSkillEnabled(ctx, in.Name, true); err != nil {
+		return nil, errors.Join(errExternalUncertain, err)
+	}
 	return map[string]any{"name": in.Name, "created": true, "on": in.On, "output": in.Output}, nil
 }
 
@@ -190,13 +195,16 @@ func (s *Service) saveNewSkill(ctx context.Context, name string, raw []byte) err
 	}
 	defer dir.Close()
 
-	// 临时文件不是目录，不会被 Skill 加载器发现；完成后才发布 SKILL.md。
+	// 隐藏目录不参与加载；即使进程中断，也不会占用最终 Skill 名称。
 	tmp := ".tmp-" + rand.Text()
-	f, err := dir.OpenFile(tmp, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o600)
+	if err := dir.Mkdir(tmp, 0o700); err != nil {
+		return err
+	}
+	defer dir.RemoveAll(tmp)
+	f, err := dir.OpenFile(tmp+"/SKILL.md", os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o600)
 	if err != nil {
 		return err
 	}
-	defer dir.Remove(tmp)
 	_, err = f.Write(raw)
 	if err == nil {
 		err = f.Sync()
@@ -207,26 +215,24 @@ func (s *Service) saveNewSkill(ctx context.Context, name string, raw []byte) err
 	if err != nil {
 		return err
 	}
+	if err := syncSkillDir(root, "skills/"+tmp); err != nil {
+		return err
+	}
 	if err := ctx.Err(); err != nil {
 		return err
 	}
-	if err := dir.Mkdir(name, 0o700); err != nil {
+	if err := publishSkillDir(dir, tmp, name); err != nil {
 		return err
 	}
-	// Link 不替换已有目标，即使审批后有另一个创建者抢先写入也不会覆盖。
-	if err := dir.Link(tmp, name+"/SKILL.md"); err != nil {
-		dir.Remove(name) // 只移除空目录，保留别人新写入的内容。
-		return err
-	}
-	for _, p := range []string{"skills/" + name, "skills", "."} {
+	for _, p := range []string{"skills", "."} {
 		if err := syncSkillDir(root, p); err != nil {
-			return fmt.Errorf("skill %q was written but its directory could not be synced: %w", name, err)
+			return errors.Join(errExternalUncertain, fmt.Errorf("skill %q was written but its directory could not be synced: %w", name, err))
 		}
 	}
 	return nil
 }
 
-func syncSkillDir(root *os.Root, name string) error {
+var syncSkillDir = func(root *os.Root, name string) error {
 	if runtime.GOOS == "windows" { // NTFS 记录目录变更，但 Windows 不允许 fsync 目录。
 		return nil
 	}

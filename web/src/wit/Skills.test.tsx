@@ -8,6 +8,8 @@ describe("Skill 显示信息", () => {
     expect(skillLabel("email-briefing", "邮件解读")).toBe("邮件解读");
     expect(skillLabel("create-skill")).toBe("Create Skill");
     expect(skillLabel("email-briefing", " ")).toBe("Email Briefing");
+    expect(skillLabel("email-briefing", "  邮件解读  ")).toBe("邮件解读");
+    expect(skillLabel("email-briefing", "Mail\n\tReview")).toBe("Mail Review");
   });
 
   it.each([undefined, "", "unknown", "__proto__", "https://example.com/icon.svg", "<svg />"])(
