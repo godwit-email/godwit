@@ -465,14 +465,28 @@ func apply(t *testing.T, r backend.Receiver, op backend.Op) backend.Result {
 	return res
 }
 
+// SetFlags takes effect locally first, as local storage does it, and the next
+// sync does not undo it; a backend that fully supports seen stores it on the
+// server, as a fresh local view shows.
 func testSetFlags(t *testing.T, start Fixture) {
 	_, r, v, m := started(t, start)
 	if res := apply(t, r, backend.SetFlags{At: m.Location, Add: backend.Flags{Seen: true}}); res.Outcome != backend.Done {
 		t.Fatalf("SetFlags = %+v", res)
 	}
+	f := v.messages[m.Folder][m.Ref]
+	f.Seen = true
+	v.messages[m.Folder][m.Ref] = f
 	v.sync(t, r)
 	if !v.messages[m.Folder][m.Ref].Seen {
-		t.Error("the next sync does not show the message seen")
+		t.Error("the next sync undid the seen flag")
+	}
+	if describe(t, r).Features[backend.FeatureSeen].Level != backend.LevelSupported {
+		return
+	}
+	fresh := newView()
+	fresh.sync(t, r)
+	if f, ok := fresh.messages[m.Folder][m.Ref]; !ok || !f.Seen {
+		t.Error("a fresh sync does not show the message seen")
 	}
 }
 
