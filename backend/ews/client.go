@@ -17,8 +17,9 @@ import (
 	"sync"
 	"time"
 
+	"github.com/Azure/go-ntlmssp"
+
 	"github.com/godwit-email/godwit/backend"
-	"github.com/godwit-email/godwit/backend/conn"
 )
 
 // Config is how to reach an account.
@@ -34,8 +35,9 @@ type Config struct {
 // client speaks SOAP to the account's EWS URL. It follows a redirect only
 // to the same host, so the credentials stay there.
 type client struct {
-	cfg  Config
-	http *http.Client
+	cfg   Config
+	http  *http.Client
+	plain *http.Transport // under http's, signing in no further
 
 	mu      sync.Mutex
 	version *serverVersion // from the last response that had one
@@ -44,7 +46,8 @@ type client struct {
 var errOtherHost = errors.New("ews: refused a redirect to another host")
 
 func newClient(cfg Config) *client {
-	return &client{cfg: cfg, http: &http.Client{Transport: conn.HTTPTransport(), CheckRedirect: func(req *http.Request, via []*http.Request) error {
+	t := transport()
+	return &client{cfg: cfg, plain: t, http: &http.Client{Transport: negotiator{ntlmssp.Negotiator{RoundTripper: legs{t}, AllowBasicAuth: true}}, CheckRedirect: func(req *http.Request, via []*http.Request) error {
 		switch {
 		case len(via) >= 10:
 			return errors.New("ews: too many redirects")
@@ -73,8 +76,9 @@ const (
 )
 
 // call sends op, a request type of this package, and returns the body's
-// response element read as R. 401 is ErrAuthFailed; a SOAP fault is a *fault;
-// ErrorServerBusy, once the retries are used up, is a *busyError.
+// response element read as R. 401 is ErrAuthFailed (or ErrExtendedProtection);
+// a SOAP fault is a *fault; ErrorServerBusy, once the retries are used up, is
+// a *busyError.
 // Calls for one account go one at a time, waits included, so they stay
 // under the server's concurrency limit and stop while it is busy.
 func call[R any](ctx context.Context, c *client, op any) (R, error) {
@@ -136,22 +140,26 @@ func send[R any](ctx context.Context, c *client, op any, cr backend.Credentials)
 	if err != nil {
 		return zero, err
 	}
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, c.cfg.URL, bytes.NewReader(append([]byte(xml.Header), body...)))
+	body = append([]byte(xml.Header), body...)
+	var legErr error // the last leg's, which the negotiator may hide
+	req, err := http.NewRequestWithContext(context.WithValue(ctx, legErrKey{}, &legErr), http.MethodPost, c.cfg.URL, bytes.NewReader(body))
 	if err != nil {
 		return zero, err
 	}
 	req.Header.Set("Content-Type", "text/xml; charset=utf-8")
-	// shortcut: Basic only; NTLM, chosen by WWW-Authenticate, comes next.
 	req.SetBasicAuth(cr.Username, cr.Password)
 	resp, err := c.http.Do(req)
 	if err != nil {
 		return zero, err
 	}
 	defer resp.Body.Close()
+	if legErr != nil {
+		return zero, &url.Error{Op: "Post", URL: c.cfg.URL, Err: legErr}
+	}
 	switch resp.StatusCode {
 	case http.StatusOK, http.StatusInternalServerError, http.StatusServiceUnavailable: // a fault comes with 500, throttling with 500 or 503
 	case http.StatusUnauthorized:
-		return zero, fmt.Errorf("ews: %w", backend.ErrAuthFailed)
+		return zero, c.refused(ctx, resp, body, cr)
 	default:
 		return zero, fmt.Errorf("ews: HTTP %s", resp.Status)
 	}

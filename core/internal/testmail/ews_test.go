@@ -1,6 +1,7 @@
 package testmail_test
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"fmt"
@@ -17,9 +18,12 @@ import (
 	"github.com/godwit-email/godwit/core/internal/testmail"
 )
 
-func ewsReceiver(t *testing.T, s *testmail.EWS) *ews.Receiver {
+func ewsReceiver(t *testing.T, s *testmail.EWS) *ews.Receiver { return ewsReceiverAs(t, s, "alice") }
+
+// ewsReceiverAs signs in with login, the login name as the user typed it.
+func ewsReceiverAs(t *testing.T, s *testmail.EWS, login string) *ews.Receiver {
 	r := ews.New(ews.Config{URL: s.URL(), Credentials: func(context.Context) (backend.Credentials, error) {
-		return backend.Credentials{Username: "alice", Password: s.Password()}, nil
+		return backend.Credentials{Username: login, Password: s.Password()}, nil
 	}})
 	t.Cleanup(func() { r.Close() })
 	return r
@@ -381,6 +385,129 @@ func TestEWSAuthFailed(t *testing.T) {
 	s.RejectAuth()
 	if _, err := ewsReceiver(t, s).Describe(tctx(t)); !errors.Is(err, backend.ErrAuthFailed) {
 		t.Errorf("Describe with a wrong password = %v, want ErrAuthFailed", err)
+	}
+}
+
+// ewsNTLMServer is the fake over NTLM only, as Exchange's EWS directory is
+// by default, signed in to with a domain login name.
+type ewsNTLMServer struct{ ewsServer }
+
+func (s ewsNTLMServer) Receiver(t *testing.T) backend.Receiver {
+	return ewsReceiverAs(t, s.EWS, `EXAMPLE\alice`)
+}
+
+func (s ewsNTLMServer) Sender(*testing.T) backend.Sender {
+	return ews.NewSender(ews.Config{URL: s.URL(), Credentials: func(context.Context) (backend.Credentials, error) {
+		return backend.Credentials{Username: `EXAMPLE\alice`, Password: s.Password()}, nil
+	}})
+}
+
+func TestEWSSenderContractNTLM(t *testing.T) {
+	backendtest.RunSender(t, func(t *testing.T) backendtest.SendServer {
+		s := testmail.StartEWS(t)
+		s.UseNTLM()
+		return ewsNTLMServer{ewsServer{s}}
+	})
+}
+
+// The NTLM handshake writes the whole request before it is signed in: the
+// connection failing then sent nothing, so it is a plain error, tried
+// again, not ErrUncertain.
+func TestEWSSendDroppedHandshakeIsNotUncertain(t *testing.T) {
+	s := testmail.StartEWS(t)
+	s.UseNTLM()
+	s.DropNextChallenge()
+	err := ewsNTLMServer{ewsServer{s}}.Sender(t).Send(tctx(t), "a@example.com", []string{"b@example.com"}, backendtest.Message("b@example.com", "hello"))
+	if err == nil || errors.Is(err, backend.ErrUncertain) || errors.Is(err, backend.ErrAuthFailed) {
+		t.Errorf("Send with the handshake dropped = %v, want a plain error", err)
+	}
+	if n := len(s.Sent()); n != 0 {
+		t.Errorf("sent %d messages, want 0", n)
+	}
+}
+
+func TestEWSBackendContractNTLM(t *testing.T) {
+	backendtest.RunOnly(t, func(t *testing.T) backendtest.Server {
+		s := testmail.StartEWS(t)
+		s.UseNTLM()
+		return ewsNTLMServer{ewsServer{s}}
+	}, "Check", "FirstSync", "AuthFailed")
+}
+
+// NTLM takes the login name as DOMAIN\user or as a UPN.
+func TestEWSNTLMLoginNames(t *testing.T) {
+	for _, login := range []string{`EXAMPLE\alice`, `example\Alice`, "alice@example.com"} {
+		s := testmail.StartEWS(t)
+		s.UseNTLM()
+		if _, err := ewsReceiverAs(t, s, login).Check(tctx(t)); err != nil {
+			t.Errorf("Check as %s = %v", login, err)
+		}
+	}
+	s := testmail.StartEWS(t)
+	s.UseNTLM()
+	if _, err := ewsReceiverAs(t, s, `OTHER\alice`).Check(tctx(t)); !errors.Is(err, backend.ErrAuthFailed) {
+		t.Errorf(`Check as OTHER\alice = %v, want ErrAuthFailed`, err)
+	}
+}
+
+// A server that refuses NTLM without channel binding, yet takes the same
+// password over Basic, requires Extended Protection: the check says so.
+func TestEWSExtendedProtection(t *testing.T) {
+	s := testmail.StartEWS(t)
+	s.UseNTLM()
+	s.RequireExtendedProtection()
+	_, err := ewsReceiverAs(t, s, `EXAMPLE\alice`).Check(tctx(t))
+	if !errors.Is(err, ews.ErrExtendedProtection) || err.Error() != ews.ReasonExtendedProtection {
+		t.Errorf("Check under Extended Protection = %v, want ErrExtendedProtection", err)
+	}
+	s.RejectAuth() // a wrong password is still a wrong password
+	if _, err := ewsReceiverAs(t, s, `EXAMPLE\alice`).Check(tctx(t)); !errors.Is(err, backend.ErrAuthFailed) {
+		t.Errorf("Check with a wrong password under Extended Protection = %v, want ErrAuthFailed", err)
+	}
+}
+
+func (s ewsServer) Sender(*testing.T) backend.Sender {
+	return ews.NewSender(ews.Config{URL: s.URL(), Credentials: func(context.Context) (backend.Credentials, error) {
+		return backend.Credentials{Username: "alice", Password: s.Password()}, nil
+	}})
+}
+
+func (s ewsServer) Accepted(*testing.T) []backendtest.Delivery {
+	var out []backendtest.Delivery
+	for _, m := range s.EWS.Sent() {
+		out = append(out, backendtest.Delivery{Rcpts: m.Rcpts, Raw: m.Raw})
+	}
+	return out
+}
+
+func (s ewsServer) Refuse(_ *testing.T, rcpt string) { s.EWS.Refuse(rcpt) }
+func (s ewsServer) LoseVerdict(*testing.T)           { s.EWS.LoseVerdict() }
+
+func TestEWSSenderContract(t *testing.T) {
+	backendtest.RunSender(t, func(t *testing.T) backendtest.SendServer { return ewsServer{testmail.StartEWS(t)} })
+}
+
+// A Bcc recipient gets the message but is not named in it, and the sent
+// copy is filed in Sent Items once.
+func TestEWSSendBccAndSentCopy(t *testing.T) {
+	s := testmail.StartEWS(t)
+	raw := backendtest.Message("bcc@example.com", "hello")
+	snd := ewsServer{s}.Sender(t)
+	if !snd.SavesSent() {
+		t.Error("SavesSent = false")
+	}
+	if err := snd.Send(tctx(t), "a@example.com", []string{"b@example.com", "hidden@example.com"}, raw); err != nil {
+		t.Fatal(err)
+	}
+	sent := s.Sent()
+	if len(sent) != 1 || !slices.Contains(sent[0].Rcpts, "hidden@example.com") {
+		t.Fatalf("sent %+v, want one message to hidden@ too", sent)
+	}
+	if bytes.Contains(sent[0].Raw, []byte("hidden@")) {
+		t.Errorf("the message names its Bcc recipient: %s", sent[0].Raw)
+	}
+	if n := s.Count("Sent Items"); n != 1 {
+		t.Errorf("Sent Items has %d messages, want 1", n)
 	}
 }
 
