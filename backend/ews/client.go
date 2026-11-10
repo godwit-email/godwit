@@ -47,7 +47,7 @@ var errOtherHost = errors.New("ews: refused a redirect to another host")
 
 func newClient(cfg Config) *client {
 	t := transport()
-	return &client{cfg: cfg, plain: t, http: &http.Client{Transport: negotiator{ntlmssp.Negotiator{RoundTripper: t, AllowBasicAuth: true}}, CheckRedirect: func(req *http.Request, via []*http.Request) error {
+	return &client{cfg: cfg, plain: t, http: &http.Client{Transport: negotiator{ntlmssp.Negotiator{RoundTripper: legs{t}, AllowBasicAuth: true}}, CheckRedirect: func(req *http.Request, via []*http.Request) error {
 		switch {
 		case len(via) >= 10:
 			return errors.New("ews: too many redirects")
@@ -141,7 +141,8 @@ func send[R any](ctx context.Context, c *client, op any, cr backend.Credentials)
 		return zero, err
 	}
 	body = append([]byte(xml.Header), body...)
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, c.cfg.URL, bytes.NewReader(body))
+	var legErr error // the last leg's, which the negotiator may hide
+	req, err := http.NewRequestWithContext(context.WithValue(ctx, legErrKey{}, &legErr), http.MethodPost, c.cfg.URL, bytes.NewReader(body))
 	if err != nil {
 		return zero, err
 	}
@@ -152,6 +153,9 @@ func send[R any](ctx context.Context, c *client, op any, cr backend.Credentials)
 		return zero, err
 	}
 	defer resp.Body.Close()
+	if legErr != nil {
+		return zero, &url.Error{Op: "Post", URL: c.cfg.URL, Err: legErr}
+	}
 	switch resp.StatusCode {
 	case http.StatusOK, http.StatusInternalServerError, http.StatusServiceUnavailable: // a fault comes with 500, throttling with 500 or 503
 	case http.StatusUnauthorized:

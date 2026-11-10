@@ -21,11 +21,13 @@ import (
 // EWS is a running fake EWS server (Exchange Web Services) with one mailbox,
 // alice/secret over HTTP Basic (or NTLM: UseNTLM), that starts with the
 // distinguished mail folders and a calendar. It speaks GetFolder, SyncFolderHierarchy,
-// SyncFolderItems, GetItem and FindItem; an operation it does not know fails
-// the test. Its responses spell the namespace prefixes differently from
-// operation to operation, as servers do. Hooks change the mailbox as another
-// client would (MarkRead, MarkFlagged, MarkAnswered, Remove, RenameFolder,
-// RemoveFolder) or inject faults (RejectAuth, SetVersion, Reset, Busy).
+// SyncFolderItems, GetItem, FindItem and CreateItem sending a message; an
+// operation it does not know fails the test. Its responses spell the
+// namespace prefixes differently from operation to operation, as servers do.
+// Hooks change the mailbox as another client would (MarkRead, MarkFlagged,
+// MarkAnswered, Remove, RenameFolder, RemoveFolder) or inject faults
+// (RejectAuth, SetVersion, Reset, Busy, Refuse, LoseVerdict,
+// RejectNextSendAuth, DropNextChallenge).
 //
 // Every change takes the next sequence number, and deleted items and
 // folders stay as tombstones, so a SyncState, the sequence number it was
@@ -49,6 +51,17 @@ type EWS struct {
 	folders          []*ewsFolder // the root first; deleted ones too, gone
 	next             int          // the last id given
 	seq              int          // the last change's sequence number
+	sent             []EWSSent
+	refused          map[string]bool // recipients refused
+	lose             bool            // drop the next CreateItem's answer
+	rejectSend       bool            // refuse the next CreateItem's credentials
+	dropChallenge    bool            // close the connection on the next NTLM NEGOTIATE
+}
+
+// EWSSent is a message the server sent: its recipients and MIME as it got them.
+type EWSSent struct {
+	Rcpts []string
+	Raw   []byte
 }
 
 type ewsFolder struct {
@@ -86,7 +99,7 @@ const (
 
 // StartEWS starts an EWS server answering as Exchange 2019, closed when t ends.
 func StartEWS(t testing.TB) *EWS {
-	s := &EWS{t: t, major: 15, minor: 2}
+	s := &EWS{t: t, major: 15, minor: 2, refused: map[string]bool{}}
 	root := s.folder("", "", "msgfolderroot", "")
 	for _, f := range [][3]string{{"Inbox", "inbox", "IPF.Note"}, {"Sent Items", "sentitems", "IPF.Note"}, {"Drafts", "drafts", "IPF.Note"},
 		{"Deleted Items", "deleteditems", "IPF.Note"}, {"Junk Email", "junkemail", "IPF.Note"}, {"Archive", "archive", "IPF.Note"},
@@ -127,6 +140,49 @@ func (s *EWS) SetVersion(major, minor int) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.major, s.minor = major, minor
+}
+
+// Sent is every message the server has sent, in order.
+func (s *EWS) Sent() []EWSSent {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return slices.Clone(s.sent)
+}
+
+// Refuse makes the server refuse every message to rcpt.
+func (s *EWS) Refuse(rcpt string) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.refused[strings.ToLower(rcpt)] = true
+}
+
+// LoseVerdict makes the server read the whole next CreateItem, send it, and
+// close the connection without answering.
+func (s *EWS) LoseVerdict() {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.lose = true
+}
+
+// RejectNextSendAuth makes the server refuse the credentials of the next
+// CreateItem only, as when the password changes between a sync's sign-in
+// and its send.
+func (s *EWS) RejectNextSendAuth() {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.rejectSend = true
+}
+
+// Count is how many items the top-level folder name holds.
+func (s *EWS) Count(name string) int {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	for _, f := range s.folders {
+		if f.parent == s.folders[0].id && f.name == name {
+			return len(f.items)
+		}
+	}
+	return -1
 }
 
 // Busy makes the server refuse the next n requests with ErrorServerBusy
@@ -288,7 +344,8 @@ type ewsRequest struct {
 	distinguished []string          // DistinguishedFolderId Ids, in order
 	folderIDs     []string          // FolderId Ids
 	itemIDs       []string          // ItemId Ids
-	text          map[string]string // the text of SyncState, MaxChangesReturned, IncludeMimeContent
+	addresses     []string          // EmailAddress texts, in order
+	text          map[string]string // the text of SyncState, MaxChangesReturned, IncludeMimeContent, MimeContent; the operation's attributes
 	fieldURIs     []string          // FieldURI FieldURIs, in order
 	constants     []string          // Constant Values, in order
 	elements      map[string]bool   // the local names of its elements
@@ -329,6 +386,9 @@ func readRequest(body []byte) (ewsRequest, error) {
 					return r, fmt.Errorf("operation %s in namespace %q", cur, el.Name.Space)
 				}
 				r.op = cur
+				for _, a := range el.Attr {
+					r.text[a.Name.Local] = a.Value
+				}
 			case cur == "RequestServerVersion" && el.Name.Space == nsTypes:
 				r.version = attr("Version")
 			case cur == "FieldURI":
@@ -351,6 +411,9 @@ func readRequest(body []byte) (ewsRequest, error) {
 		case xml.CharData:
 			if t := strings.TrimSpace(string(el)); t != "" {
 				r.text[cur] = t
+				if cur == "EmailAddress" {
+					r.addresses = append(r.addresses, t)
+				}
 			}
 		}
 	}
@@ -392,6 +455,13 @@ func (s *EWS) serve(w http.ResponseWriter, r *http.Request) {
 		s.syncFolderItems(w, req)
 	case "GetItem":
 		s.getItem(w, req)
+	case "CreateItem":
+		if s.rejectSend {
+			s.rejectSend = false
+			w.WriteHeader(http.StatusUnauthorized)
+			return
+		}
+		s.createItem(w, req)
 	case "FindItem":
 		s.findItems(w, req)
 	default:
@@ -642,6 +712,56 @@ func (s *EWS) getItem(w http.ResponseWriter, req ewsRequest) {
 			mime, it.id, it.received.Format(time.RFC3339), verb, it.read, flag)))
 	}
 	s.respond(w, styleEnvelopeDecl, "GetItem", "<m:ResponseMessages>"+msgs.String()+"</m:ResponseMessages>")
+}
+
+// createItem sends the message in MimeContent, as SendAndSaveCopy into Sent
+// Items does: to the MIME's To and Cc and to BccRecipients. It does not read
+// a Bcc header in the MIME, so a client relying on Exchange to do so fails.
+func (s *EWS) createItem(w http.ResponseWriter, req ewsRequest) {
+	reply := func(msg string) {
+		s.respond(w, styleDefaultNS, "CreateItem", "<m:ResponseMessages>"+msg+"</m:ResponseMessages>")
+	}
+	if d := req.text["MessageDisposition"]; d != "SendAndSaveCopy" || !slices.Equal(req.distinguished, []string{"sentitems"}) {
+		s.t.Errorf("fake EWS: CreateItem %s into %v, want SendAndSaveCopy into sentitems", d, req.distinguished)
+		reply(message("CreateItem", "ErrorInvalidRequest", ""))
+		return
+	}
+	raw, err := base64.StdEncoding.DecodeString(req.text["MimeContent"])
+	m, merr := mail.ReadMessage(bytes.NewReader(raw))
+	if err != nil || merr != nil {
+		s.t.Errorf("fake EWS: CreateItem MimeContent: %v %v", err, merr)
+		reply(message("CreateItem", "ErrorMimeContentInvalid", ""))
+		return
+	}
+	var rcpts []string
+	for _, h := range []string{"To", "Cc"} {
+		list, _ := m.Header.AddressList(h)
+		for _, a := range list {
+			rcpts = append(rcpts, a.Address)
+		}
+	}
+	rcpts = append(rcpts, req.addresses...)
+	for _, r := range rcpts {
+		if s.refused[strings.ToLower(r)] {
+			reply(message("CreateItem", "ErrorInvalidRecipients", ""))
+			return
+		}
+	}
+	s.sent = append(s.sent, EWSSent{Rcpts: rcpts, Raw: raw})
+	for _, f := range s.folders {
+		if f.distinguished == "sentitems" {
+			it := &ewsItem{id: s.newID("AAMkItem"), raw: raw, received: time.Now().UTC().Truncate(time.Second), read: true}
+			it.created = s.touch(&it.changed)
+			f.items = append(f.items, it)
+		}
+	}
+	if s.lose { // sent, but the client never hears so
+		s.lose = false
+		c, _, _ := http.NewResponseController(w).Hijack()
+		c.Close()
+		return
+	}
+	reply(message("CreateItem", "", "<m:Items/>"))
 }
 
 // findItems answers the items of one folder whose InternetMessageId equals

@@ -8,6 +8,7 @@ import (
 	"crypto/rand"
 	"encoding/base64"
 	"encoding/binary"
+	"io"
 	"net"
 	"net/http"
 	"strings"
@@ -37,6 +38,15 @@ func (s *EWS) UseNTLM() {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.ntlm = true
+}
+
+// DropNextChallenge makes the server read the whole next NTLM NEGOTIATE
+// request and close the connection instead of challenging it: the request
+// went out, but nothing was sent.
+func (s *EWS) DropNextChallenge() {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.dropChallenge = true
 }
 
 // RequireExtendedProtection makes the server also offer Basic and refuse
@@ -81,6 +91,14 @@ func (s *EWS) signIn(w http.ResponseWriter, r *http.Request) bool {
 	}
 	switch binary.LittleEndian.Uint32(msg[8:]) {
 	case 1: // NEGOTIATE: challenge it on this connection
+		if s.dropChallenge {
+			s.dropChallenge = false
+			io.Copy(io.Discard, r.Body)
+			if c, _, err := http.NewResponseController(w).Hijack(); err == nil {
+				c.Close()
+			}
+			return false
+		}
 		c.challenge = make([]byte, 8)
 		rand.Read(c.challenge)
 		w.Header().Set("WWW-Authenticate", scheme+" "+base64.StdEncoding.EncodeToString(challengeMessage(c.challenge)))
