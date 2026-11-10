@@ -5,6 +5,7 @@ import (
 	"testing"
 
 	"github.com/godwit-email/godwit/core"
+	"github.com/godwit-email/godwit/core/auth"
 	"github.com/godwit-email/godwit/core/coretest"
 )
 
@@ -192,5 +193,20 @@ func TestOnboardingEWSConfirmedHostPerAddress(t *testing.T) {
 	h.see("自动发现要把密码发送到 ad.example.net")
 	if ad.Credentialed("ad.example.net") {
 		t.Fatal("the password for b@example.org went to ad.example.net, confirmed for a@example.com only")
+	}
+}
+
+// The servers dialog shows a stored EWS path, which is escaped, as it was
+// typed, and saving it unchanged stores the same path.
+func TestSessionURLKeepsEscapedPath(t *testing.T) {
+	for _, path := range []string{"/EWS/Exchange.asmx", "/Exchange%20Services/Exchange.asmx", "/a%2Fb/Exchange.asmx"} {
+		srv := core.Server{Protocol: auth.EWS, Host: "mail.example.com", Port: 443, Security: core.SecurityTLS, Path: path}
+		u := sessionURL(srv)
+		if want := "https://mail.example.com:443" + path; u != want {
+			t.Errorf("sessionURL = %q, want %q", u, want)
+		}
+		if back, ok := ewsServer(u); !ok || back.Path != path {
+			t.Errorf("ewsServer(%q) = %+v, %v; want path %q", u, back, ok, path)
+		}
 	}
 }

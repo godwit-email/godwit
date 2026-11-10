@@ -746,6 +746,9 @@ func (p *settingsPage) openDialog(kind string, acc core.Account) {
 // sessionURL is a JMAP slot's session URL, or an EWS slot's EWS URL, as the user types it.
 func sessionURL(s core.Server) string {
 	u := url.URL{Scheme: "https", Host: net.JoinHostPort(s.Host, strconv.Itoa(s.Port)), Path: cmp.Or(s.Path, "/.well-known/jmap")}
+	if p, err := url.PathUnescape(u.Path); err == nil { // a stored path is escaped (url.URL.EscapedPath)
+		u.Path, u.RawPath = p, u.Path
+	}
 	if s.Security == core.SecurityNone {
 		u.Scheme = "http"
 	}
