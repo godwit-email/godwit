@@ -16,6 +16,7 @@ import (
 	"time"
 
 	gojmap "git.sr.ht/~rockorager/go-jmap"
+	"git.sr.ht/~rockorager/go-jmap/mail"
 	"git.sr.ht/~rockorager/go-jmap/mail/email"
 	"git.sr.ht/~rockorager/go-jmap/mail/mailbox"
 	"github.com/emersion/go-imap/v2"
@@ -196,16 +197,19 @@ func (r *Receiver) full(ctx context.Context, req backend.SyncRequest, reset bool
 			s.add(backend.FolderGone{Ref: ref})
 		}
 	}
-	var estate string
+	// The state comes before the queries: an Email/get after a query in the
+	// same request may already count mail the query did not see.
+	out, err := r.c.call(ctx, func(acct gojmap.ID) []gojmap.Method { return []gojmap.Method{emailState{acct, []gojmap.ID{}}} })
+	if err != nil {
+		return err
+	}
+	estate := out[0].(*email.GetResponse).State
 	seen := map[gojmap.ID]bool{}
 	var mails []*email.Email
 	for _, m := range boxes {
-		got, st, err := r.query(ctx, m.ID, req.Window)
+		got, err := r.query(ctx, m.ID, req.Window)
 		if err != nil {
 			return err
-		}
-		if estate == "" {
-			estate = st // the first, so nothing after it is missed
 		}
 		for _, e := range got {
 			if !seen[e.ID] {
@@ -214,7 +218,6 @@ func (r *Receiver) full(ctx context.Context, req backend.SyncRequest, reset bool
 			}
 		}
 	}
-	// With no mailbox estate stays "": the next round starts over.
 	for chunk := range slices.Chunk(mails, pageSize) {
 		if err := s.appear(ctx, chunk, nil, true); err != nil {
 			return err
@@ -226,11 +229,19 @@ func (r *Receiver) full(ctx context.Context, req backend.SyncRequest, reset bool
 	return s.flush(backend.Page{Account: cursor{mstate, estate}.encode(), Folders: states})
 }
 
-// query lists the mail of mailbox m in the window, newest first, and the
-// Email state.
-func (r *Receiver) query(ctx context.Context, m gojmap.ID, w backend.Window) ([]*email.Email, string, error) {
+// emailState is an Email/get of no ids: only the state. (email.Get leaves
+// out an empty ids, which asks for every Email.)
+type emailState struct {
+	Account gojmap.ID   `json:"accountId"`
+	IDs     []gojmap.ID `json:"ids"`
+}
+
+func (emailState) Name() string           { return "Email/get" }
+func (emailState) Requires() []gojmap.URI { return []gojmap.URI{mail.URI} }
+
+// query lists the mail of mailbox m in the window, newest first.
+func (r *Receiver) query(ctx context.Context, m gojmap.ID, w backend.Window) ([]*email.Email, error) {
 	var all []*email.Email
-	state := ""
 	for pos := 0; ; pos += pageSize {
 		limit := pageSize
 		if w.Newest > 0 {
@@ -251,18 +262,15 @@ func (r *Receiver) query(ctx context.Context, m gojmap.ID, w backend.Window) ([]
 			}
 		})
 		if err != nil {
-			return nil, "", err
+			return nil, err
 		}
 		q, g := out[0].(*email.QueryResponse), out[1].(*email.GetResponse)
-		if state == "" {
-			state = g.State // as of the first page's query, so nothing after it is missed
-		}
 		all = append(all, g.List...)
 		if len(q.IDs) < limit {
 			break
 		}
 	}
-	return all, state, nil
+	return all, nil
 }
 
 // queried is an Email/get of the sync properties of the ids that the

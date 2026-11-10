@@ -1,7 +1,9 @@
 package testmail_test
 
 import (
+	"bytes"
 	"context"
+	"encoding/json"
 	"errors"
 	"io"
 	"net/http"
@@ -246,4 +248,75 @@ func TestJMAPDownloadElsewhere(t *testing.T) {
 	if b, _ := io.ReadAll(rc); !strings.Contains(string(b), "body of a") {
 		t.Errorf("downloaded %q", b)
 	}
+}
+
+// racyJMAP fronts s as a server whose Email/get answers with a state later
+// than its Email/query in the same request saw: arrive runs between them,
+// once. It returns the session URL to use.
+func racyJMAP(t *testing.T, s *testmail.JMAP, arrive func()) string {
+	var raced atomic.Bool
+	var front *httptest.Server
+	forward := func(r *http.Request, body []byte) []byte {
+		req, err := http.NewRequest(r.Method, s.URL()+r.URL.RequestURI(), bytes.NewReader(body))
+		if err != nil {
+			t.Error(err)
+			return nil
+		}
+		req.Header = r.Header.Clone()
+		resp, err := http.DefaultClient.Do(req)
+		if err != nil {
+			t.Error(err)
+			return nil
+		}
+		defer resp.Body.Close()
+		b, _ := io.ReadAll(resp.Body)
+		return b
+	}
+	front = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		body, _ := io.ReadAll(r.Body)
+		out := forward(r, body)
+		switch {
+		case r.URL.Path == "/jmap/session":
+			out = bytes.ReplaceAll(out, []byte(s.URL()), []byte(front.URL))
+		case bytes.Contains(body, []byte(`"Email/query"`)) && !raced.Swap(true):
+			arrive()
+			var resp, later struct {
+				MethodResponses [][]json.RawMessage `json:"methodResponses"`
+				SessionState    string              `json:"sessionState"`
+			}
+			if json.Unmarshal(out, &resp) != nil || json.Unmarshal(forward(r, body), &later) != nil {
+				t.Error("racyJMAP: bad response")
+				break
+			}
+			resp.MethodResponses[1][1] = later.MethodResponses[1][1] // the Email/get, as of after arrive
+			out, _ = json.Marshal(resp)
+		}
+		w.Header().Set("Content-Type", "application/json")
+		w.Write(out)
+	}))
+	t.Cleanup(front.Close)
+	return front.URL + "/jmap/session"
+}
+
+// Mail that arrives while the first round lists the window is reported by
+// the next round, even when the server's Email/get state already counts it.
+func TestJMAPFirstSyncMissesNothing(t *testing.T) {
+	s := testmail.StartJMAP(t)
+	s.Deliver("INBOX", backendtest.Message("a@example.com", "a"))
+	var late string
+	r := jmapReceiver(t, s, racyJMAP(t, s, func() { late = string(s.Deliver("INBOX", backendtest.Message("b@example.com", "b"))) }))
+	_, cur, err := jmapSync(t, r, "", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	cs, _, err := jmapSync(t, r, cur, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, c := range cs {
+		if c, ok := c.(backend.MessageAppeared); ok && c.ServerID == late {
+			return
+		}
+	}
+	t.Errorf("the next round got %+v; want %s, which arrived during the first", cs, late)
 }
