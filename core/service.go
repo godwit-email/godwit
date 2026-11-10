@@ -705,7 +705,7 @@ func (s *Service) dialAccount(ctx context.Context, accountID int64) (recv backen
 	}
 	var ver uint64
 	var rejected, tok string
-	recv = newReceiver(acc.Receiving, func(ctx context.Context) (backend.Credentials, error) {
+	recv = newReceiver(acc.Receiving, acc.Email, func(ctx context.Context) (backend.Credentials, error) {
 		cr, v, err := s.slotCredentials(ctx, acc, false, rejected)
 		tok, ver = cr.Token, v
 		return cr, err

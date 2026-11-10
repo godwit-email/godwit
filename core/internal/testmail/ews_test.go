@@ -23,7 +23,7 @@ func ewsReceiver(t *testing.T, s *testmail.EWS) *ews.Receiver { return ewsReceiv
 
 // ewsReceiverAs signs in with login, the login name as the user typed it.
 func ewsReceiverAs(t *testing.T, s *testmail.EWS, login string) *ews.Receiver {
-	r := ews.New(ews.Config{URL: s.URL(), Credentials: func(context.Context) (backend.Credentials, error) {
+	r := ews.New(ews.Config{URL: s.URL(), Address: "alice@example.com", Credentials: func(context.Context) (backend.Credentials, error) {
 		return backend.Credentials{Username: login, Password: s.Password()}, nil
 	}})
 	t.Cleanup(func() { r.Close() })
@@ -41,7 +41,7 @@ func (s ewsServer) RejectAuth(*testing.T)                           { s.EWS.Reje
 // incremental sync, write-back and push are in.
 func TestEWSBackendContract(t *testing.T) {
 	backendtest.RunOnly(t, func(t *testing.T) backendtest.Server { return ewsServer{testmail.StartEWS(t)} },
-		"Describe", "Check", "FirstSync", "CursorResumes", "FolderReset", "Fetch", "Headers", "Find", "SetFlags", "Unsupported", "AuthFailed")
+		"Describe", "Check", "FirstSync", "CursorResumes", "FolderReset", "Fetch", "Headers", "Find", "SetFlags", "Unsupported", "Watch", "AuthFailed")
 }
 
 // syncAll runs one round from nothing and returns its changes.

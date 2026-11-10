@@ -25,7 +25,10 @@ import (
 // Config is how to reach an account.
 type Config struct {
 	// URL is the EWS endpoint, such as https://mail.corp.example/EWS/Exchange.asmx.
-	URL         string
+	URL string
+	// Address is the account's email address, the mailbox a subscription
+	// anchors on (X-AnchorMailbox).
+	Address     string
 	Credentials backend.CredentialsFunc
 	// Wait waits d out, or until ctx is done, when the server asks to back
 	// off. Nil waits in real time; tests pass a fake.
@@ -87,7 +90,7 @@ func call[R any](ctx context.Context, c *client, op any) (R, error) {
 	if err != nil {
 		return zero, err
 	}
-	release, err := acquire(ctx, c.cfg.URL+"\x00"+cr.Username)
+	release, err := acquire(ctx, c.account(cr))
 	if err != nil {
 		return zero, err
 	}
@@ -133,29 +136,46 @@ func acquire(ctx context.Context, account string) (release func(), err error) {
 	}
 }
 
-// send is one try of call.
-func send[R any](ctx context.Context, c *client, op any, cr backend.Credentials) (R, error) {
-	var zero R
+// account is the key of the account c signs in to as cr: its EWS URL and user name.
+func (c *client) account(cr backend.Credentials) string { return c.cfg.URL + "\x00" + cr.Username }
+
+// post sends op signed in as cr, with the account's affinity, and returns
+// the response, its body unread, and the request's body.
+func (c *client) post(ctx context.Context, op any, cr backend.Credentials) (*http.Response, []byte, error) {
 	body, err := xml.Marshal(newRequest(op))
 	if err != nil {
-		return zero, err
+		return nil, nil, err
 	}
 	body = append([]byte(xml.Header), body...)
 	var legErr error // the last leg's, which the negotiator may hide
 	req, err := http.NewRequestWithContext(context.WithValue(ctx, legErrKey{}, &legErr), http.MethodPost, c.cfg.URL, bytes.NewReader(body))
 	if err != nil {
-		return zero, err
+		return nil, nil, err
 	}
 	req.Header.Set("Content-Type", "text/xml; charset=utf-8")
 	req.SetBasicAuth(cr.Username, cr.Password)
+	a := c.affinity(c.account(cr))
+	a.route(req, op, c.cfg.Address)
 	resp, err := c.http.Do(req)
+	if err != nil {
+		return nil, nil, err
+	}
+	if legErr != nil {
+		resp.Body.Close()
+		return nil, nil, &url.Error{Op: "Post", URL: c.cfg.URL, Err: legErr}
+	}
+	a.keep(resp)
+	return resp, body, nil
+}
+
+// send is one try of call.
+func send[R any](ctx context.Context, c *client, op any, cr backend.Credentials) (R, error) {
+	var zero R
+	resp, body, err := c.post(ctx, op, cr)
 	if err != nil {
 		return zero, err
 	}
 	defer resp.Body.Close()
-	if legErr != nil {
-		return zero, &url.Error{Op: "Post", URL: c.cfg.URL, Err: legErr}
-	}
 	switch resp.StatusCode {
 	case http.StatusOK, http.StatusInternalServerError, http.StatusServiceUnavailable: // a fault comes with 500, throttling with 500 or 503
 	case http.StatusUnauthorized:
