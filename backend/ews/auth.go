@@ -102,19 +102,53 @@ func (t signer) RoundTrip(req *http.Request) (*http.Response, error) {
 }
 
 // offered is the scheme resp's WWW-Authenticate prefers (NTLM, Negotiate,
-// then Basic; "" for none of them) and its NTLM token, if any.
+// then Basic; "" for none of them) and its NTLM token, if any. A value may
+// list several challenges (RFC 7235 4.1), and schemes match in any case.
 func offered(resp *http.Response) (scheme string, token []byte) {
 	rank := map[string]int{"NTLM": 3, "Negotiate": 2, "Basic": 1}
 	for _, v := range resp.Header.Values("WWW-Authenticate") {
-		s, data, _ := strings.Cut(v, " ")
-		if rank[s] > rank[scheme] {
-			scheme, token = s, nil
-			if s != "Basic" && data != "" {
-				token, _ = base64.StdEncoding.DecodeString(data)
+		for _, c := range challenges(v) {
+			s, data, _ := strings.Cut(c, " ")
+			for name := range rank {
+				if strings.EqualFold(s, name) {
+					s = name
+				}
+			}
+			if rank[s] > rank[scheme] {
+				scheme, token = s, nil
+				if s != "Basic" && data != "" {
+					token, _ = base64.StdEncoding.DecodeString(strings.TrimSpace(data))
+				}
 			}
 		}
 	}
 	return scheme, token
+}
+
+// challenges splits a WWW-Authenticate value into its challenges: a comma
+// outside quotes ends an item, and an item whose first word holds "=" is a
+// param of the challenge before it, not a scheme.
+func challenges(v string) []string {
+	var items []string
+	start, quoted := 0, false
+	for i := 0; i <= len(v); i++ {
+		switch {
+		case i < len(v) && v[i] == '"':
+			quoted = !quoted
+		case i == len(v) || v[i] == ',' && !quoted:
+			items = append(items, strings.TrimSpace(v[start:i]))
+			start = i + 1
+		}
+	}
+	var out []string
+	for _, it := range items {
+		word, _, _ := strings.Cut(it, " ")
+		if it == "" || strings.Contains(word, "=") && len(out) > 0 {
+			continue // a param of the challenge before
+		}
+		out = append(out, it)
+	}
+	return out
 }
 
 func drain(resp *http.Response) {
