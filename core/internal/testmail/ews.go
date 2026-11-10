@@ -117,7 +117,7 @@ func StartEWS(t testing.TB) *EWS {
 	s := &EWS{t: t, major: 15, minor: 2, refused: map[string]bool{}, findLimit: 1000} // Exchange's EWSFindCountLimit
 	root := s.folder("", "", "msgfolderroot", "")
 	for _, f := range [][3]string{{"Inbox", "inbox", "IPF.Note"}, {"Sent Items", "sentitems", "IPF.Note"}, {"Drafts", "drafts", "IPF.Note"},
-		{"Deleted Items", "deleteditems", "IPF.Note"}, {"Junk Email", "junkemail", "IPF.Note"}, {"Archive", "archive", "IPF.Note"},
+		{"Deleted Items", "deleteditems", "IPF.Note"}, {"Junk Email", "junkemail", "IPF.Note"}, {"Archive", "", "IPF.Note"},
 		{"Calendar", "calendar", "IPF.Appointment"}} {
 		s.folder(root.id, f[0], f[1], f[2])
 	}
@@ -680,7 +680,20 @@ func folderXML(f *ewsFolder) string {
 		el, f.id, f.parent, f.class, esc(f.name), len(f.items), el)
 }
 
+// distinguishedIDs are the mail DistinguishedFolderIdNameType values of
+// Exchange2016 (MS-OXWSCDATA) the fake knows; there is no plain "archive".
+var distinguishedIDs = []string{"msgfolderroot", "root", "inbox", "sentitems", "drafts", "deleteditems", "junkemail", "outbox",
+	"archiveroot", "archivemsgfolderroot", "archiveinbox", "archivedeleteditems"}
+
 func (s *EWS) getFolder(w http.ResponseWriter, req ewsRequest) {
+	for _, d := range req.distinguished {
+		if !slices.Contains(distinguishedIDs, d) {
+			// schema validation refuses the whole request, as Exchange does
+			s.t.Errorf("fake EWS: DistinguishedFolderId %q is not in the Exchange2016 schema", d)
+			http.Error(w, "ErrorSchemaValidation", http.StatusInternalServerError)
+			return
+		}
+	}
 	var msgs strings.Builder
 	for _, d := range req.distinguished {
 		var found *ewsFolder

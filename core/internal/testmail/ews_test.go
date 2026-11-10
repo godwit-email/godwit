@@ -68,7 +68,7 @@ func TestEWSFolders(t *testing.T) {
 		}
 	}
 	for name, role := range map[string]backend.Role{"Inbox": backend.RoleInbox, "Sent Items": backend.RoleSent, "Drafts": backend.RoleDrafts,
-		"Deleted Items": backend.RoleTrash, "Junk Email": backend.RoleJunk, "Archive": backend.RoleArchive, "Inbox/Projects": ""} {
+		"Deleted Items": backend.RoleTrash, "Junk Email": backend.RoleJunk, "Archive": "", "Inbox/Projects": ""} {
 		if f, ok := got[name]; !ok || f.Role != role {
 			t.Errorf("folder %q = %+v (found %v), want role %q", name, f, ok, role)
 		}

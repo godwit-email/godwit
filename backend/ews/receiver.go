@@ -103,13 +103,15 @@ func (r *Receiver) Check(ctx context.Context) (backend.CheckResult, error) {
 	return backend.CheckResult{Host: r.c.host(), Folders: len(fs), Description: d}, err
 }
 
-// roles are the distinguished folders a role is read from.
+// roles are the distinguished folders a role is read from. Exchange2016's
+// schema has no archive folder of the mailbox itself (only the online
+// archive's), so archive has no role here; the user can pick one.
 var roles = []struct {
 	id   string
 	role backend.Role
 }{
 	{"inbox", backend.RoleInbox}, {"sentitems", backend.RoleSent}, {"drafts", backend.RoleDrafts},
-	{"deleteditems", backend.RoleTrash}, {"junkemail", backend.RoleJunk}, {"archive", backend.RoleArchive},
+	{"deleteditems", backend.RoleTrash}, {"junkemail", backend.RoleJunk},
 }
 
 // folders is the mailbox's mail folders, each named by its path from the

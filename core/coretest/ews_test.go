@@ -60,7 +60,7 @@ func TestEWSAddAccount(t *testing.T) {
 		roles[f.Name] = f.Role
 	}
 	assert.Equal(t, map[string]string{"Inbox": "inbox", "Sent Items": "sent", "Drafts": "drafts", "Deleted Items": "trash",
-		"Junk Email": "junk", "Archive": "archive"}, roles)
+		"Junk Email": "junk", "Archive": ""}, roles)
 }
 
 // addEWS adds an EWS account and syncs it once.
