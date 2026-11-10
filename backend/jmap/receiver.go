@@ -65,8 +65,12 @@ var description = func() backend.Description {
 	return d
 }()
 
-// Describe implements backend.Receiver.
-func (r *Receiver) Describe(context.Context) (backend.Description, error) {
+// Describe implements backend.Receiver. Its first call signs in, fetching
+// the session, so refused credentials are ErrAuthFailed here.
+func (r *Receiver) Describe(ctx context.Context) (backend.Description, error) {
+	if _, _, err := r.c.sess(ctx); err != nil {
+		return backend.Description{}, err
+	}
 	d := description
 	d.Features = maps.Clone(d.Features)
 	return d, nil

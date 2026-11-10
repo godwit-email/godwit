@@ -142,6 +142,19 @@ func TestJMAPPush(t *testing.T) {
 	}, 10*time.Second, 50*time.Millisecond)
 }
 
+// A JMAP server refusing the credentials marks the account for sign-in again,
+// as IMAP does.
+func TestJMAPCredentialsRevoked(t *testing.T) {
+	e := coretest.New(t, coretest.WithoutAutoSync())
+	acc := e.AddAccount(t, "alice@example.com", coretest.ViaJMAP())
+	e.JMAP(acc.ID).RejectNextRequest()
+	require.ErrorIs(t, e.Svc.SyncNow(t.Context(), acc.ID), backend.ErrAuthFailed)
+	as, err := e.Svc.ListAccounts(t.Context())
+	require.NoError(t, err)
+	require.Len(t, as, 1)
+	assert.Equal(t, "reauth_required", as[0].Status)
+}
+
 // An attachment downloads on demand from the whole message's blob.
 func TestJMAPAttachment(t *testing.T) {
 	e := coretest.New(t, coretest.WithoutAutoSync())
