@@ -12,7 +12,10 @@ import (
 	"io"
 	"net/http"
 	"net/url"
+	"strconv"
+	"strings"
 	"sync"
+	"time"
 
 	"github.com/Azure/go-ntlmssp"
 
@@ -24,6 +27,9 @@ type Config struct {
 	// URL is the EWS endpoint, such as https://mail.corp.example/EWS/Exchange.asmx.
 	URL         string
 	Credentials backend.CredentialsFunc
+	// Wait waits d out, or until ctx is done, when the server asks to back
+	// off. Nil waits in real time; tests pass a fake.
+	Wait func(ctx context.Context, d time.Duration) error
 }
 
 // client speaks SOAP to the account's EWS URL. It follows a redirect only
@@ -61,20 +67,80 @@ func (c *client) host() string {
 	return u.Host
 }
 
+// Throttling (spec 限流): an ErrorServerBusy answer is waited out and the
+// request sent again, at most maxRetries times.
+const (
+	maxRetries     = 3
+	maxBackOff     = time.Minute
+	defaultBackOff = 5 * time.Second // when the server names no BackOffMilliseconds
+)
+
 // call sends op, a request type of this package, and returns the body's
 // response element read as R. 401 is ErrAuthFailed (or ErrExtendedProtection);
-// a SOAP fault is a *fault.
+// a SOAP fault is a *fault; ErrorServerBusy, once the retries are used up, is
+// a *busyError.
+// Calls for one account go one at a time, waits included, so they stay
+// under the server's concurrency limit and stop while it is busy.
 func call[R any](ctx context.Context, c *client, op any) (R, error) {
+	var zero R
+	cr, err := c.cfg.Credentials(ctx)
+	if err != nil {
+		return zero, err
+	}
+	release, err := acquire(ctx, c.cfg.URL+"\x00"+cr.Username)
+	if err != nil {
+		return zero, err
+	}
+	defer release()
+	for try := 0; ; try++ {
+		r, err := send[R](ctx, c, op, cr)
+		var busy *busyError
+		if !errors.As(err, &busy) || try == maxRetries {
+			return r, err
+		}
+		if err := c.wait(ctx, busy.backOff); err != nil {
+			return r, err
+		}
+	}
+}
+
+func (c *client) wait(ctx context.Context, d time.Duration) error {
+	if c.cfg.Wait != nil {
+		return c.cfg.Wait(ctx, d)
+	}
+	t := time.NewTimer(d)
+	defer t.Stop()
+	select {
+	case <-t.C:
+		return nil
+	case <-ctx.Done():
+		return ctx.Err()
+	}
+}
+
+// accounts holds a one-slot channel per account (EWS URL and user name),
+// taken for the length of a call. The push connection does not take it.
+var accounts sync.Map
+
+func acquire(ctx context.Context, account string) (release func(), err error) {
+	v, _ := accounts.LoadOrStore(account, make(chan struct{}, 1))
+	slot := v.(chan struct{})
+	select {
+	case slot <- struct{}{}:
+		return func() { <-slot }, nil
+	case <-ctx.Done():
+		return nil, ctx.Err()
+	}
+}
+
+// send is one try of call.
+func send[R any](ctx context.Context, c *client, op any, cr backend.Credentials) (R, error) {
 	var zero R
 	body, err := xml.Marshal(newRequest(op))
 	if err != nil {
 		return zero, err
 	}
 	body = append([]byte(xml.Header), body...)
-	cr, err := c.cfg.Credentials(ctx)
-	if err != nil {
-		return zero, err
-	}
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, c.cfg.URL, bytes.NewReader(body))
 	if err != nil {
 		return zero, err
@@ -87,7 +153,7 @@ func call[R any](ctx context.Context, c *client, op any) (R, error) {
 	}
 	defer resp.Body.Close()
 	switch resp.StatusCode {
-	case http.StatusOK, http.StatusInternalServerError: // a fault comes with 500
+	case http.StatusOK, http.StatusInternalServerError, http.StatusServiceUnavailable: // a fault comes with 500, throttling with 500 or 503
 	case http.StatusUnauthorized:
 		return zero, c.refused(ctx, resp, body, cr)
 	default:
@@ -96,6 +162,11 @@ func call[R any](ctx context.Context, c *client, op any) (R, error) {
 	raw, err := io.ReadAll(resp.Body)
 	if err != nil {
 		return zero, err
+	}
+	if resp.StatusCode != http.StatusOK {
+		if err := serverBusy(raw); err != nil {
+			return zero, err
+		}
 	}
 	var env responseEnvelope[R]
 	if err := xml.Unmarshal(raw, &env); err != nil {
@@ -113,6 +184,52 @@ func call[R any](ctx context.Context, c *client, op any) (R, error) {
 		return zero, fmt.Errorf("ews: HTTP %s", resp.Status)
 	}
 	return env.Body.Response, nil
+}
+
+// busyError is the server's ErrorServerBusy, asking to wait backOff.
+type busyError struct{ backOff time.Duration }
+
+func (e *busyError) Error() string {
+	return "ews: the server is busy (ErrorServerBusy), try again later"
+}
+
+// serverBusy is a *busyError when raw, a response body, is ErrorServerBusy:
+// a SOAP fault or a response message, its BackOffMilliseconds in a Value
+// (capped at maxBackOff). Otherwise nil.
+func serverBusy(raw []byte) error {
+	d := xml.NewDecoder(bytes.NewReader(raw))
+	busy, backOff := false, defaultBackOff
+	var cur string
+	var isBackOff bool
+	for {
+		tok, err := d.Token()
+		if err != nil {
+			break
+		}
+		switch el := tok.(type) {
+		case xml.StartElement:
+			cur, isBackOff = el.Name.Local, false
+			for _, a := range el.Attr {
+				isBackOff = isBackOff || cur == "Value" && a.Name.Local == "Name" && a.Value == "BackOffMilliseconds"
+			}
+		case xml.CharData:
+			t := strings.TrimSpace(string(el))
+			switch {
+			case cur == "ResponseCode" && t == "ErrorServerBusy", cur == "faultcode" && strings.HasSuffix(t, "ErrorServerBusy"):
+				busy = true
+			case isBackOff:
+				if ms, err := strconv.Atoi(t); err == nil {
+					backOff = time.Duration(ms) * time.Millisecond
+				}
+			}
+		case xml.EndElement:
+			cur, isBackOff = "", false
+		}
+	}
+	if !busy {
+		return nil
+	}
+	return &busyError{min(backOff, maxBackOff)}
 }
 
 // serverVersion is the version the server last said it is; nil before a response.
