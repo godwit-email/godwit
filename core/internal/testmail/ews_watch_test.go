@@ -166,3 +166,15 @@ func TestEWSWatchAffinity(t *testing.T) {
 		t.Errorf("requests %+v, want the sync's among them", hs)
 	}
 }
+
+// A server that will not take another subscription, as when other clients
+// hold the account's quota, cannot push to this one: Watch says so, and
+// core polls instead.
+func TestEWSWatchSubscriptionRefused(t *testing.T) {
+	s := testmail.StartEWS(t)
+	s.RefuseSubscribe("ErrorExceededSubscriptionCount")
+	err := ewsReceiver(t, s).Watch(tctx(t), func([]backend.FolderRef) { t.Error("woke without a subscription") })
+	if !errors.Is(err, backend.ErrUnsupported) {
+		t.Errorf("Watch = %v, want ErrUnsupported", err)
+	}
+}

@@ -75,6 +75,15 @@ func (s *EWS) LoseSubscriptions() {
 	s.broadcast()
 }
 
+// RefuseSubscribe makes the server answer every Subscribe with ResponseCode
+// code, such as ErrorExceededSubscriptionCount when other clients hold the
+// account's subscriptions.
+func (s *EWS) RefuseSubscribe(code string) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.refuseSub = code
+}
+
 // DropStreams breaks the open streaming connections mid-response.
 func (s *EWS) DropStreams() {
 	s.mu.Lock()
@@ -118,6 +127,10 @@ func (s *EWS) subscribe(w http.ResponseWriter, r *http.Request, req ewsRequest) 
 	if !req.allFolders || !slices.Equal(req.eventTypes, []string{"NewMailEvent", "CreatedEvent", "DeletedEvent", "ModifiedEvent", "MovedEvent", "CopiedEvent"}) {
 		s.t.Errorf("fake EWS: Subscribe to all folders %v for %v", req.allFolders, req.eventTypes)
 		reply(message("Subscribe", "ErrorInvalidRequest", ""))
+		return
+	}
+	if s.refuseSub != "" {
+		reply(message("Subscribe", s.refuseSub, ""))
 		return
 	}
 	sub := &ewsSubscription{id: s.newID("SubscriptionId"), seq: s.seq}

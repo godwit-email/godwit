@@ -65,12 +65,13 @@ type EWS struct {
 	rejectSend       bool            // refuse the next CreateItem's credentials
 	dropChallenge    bool            // close the connection on the next NTLM NEGOTIATE
 
-	affinity []EWSAffinity      // what each signed-in request carried
-	subs     []*ewsSubscription // live subscriptions
-	streams  int                // GetStreamingEvents connections opened
-	drops    int                // DropStreams calls
-	skew     time.Duration      // Advance's, added to the server's clock
-	changes  chan struct{}      // closed on every change, for the open streams
+	affinity  []EWSAffinity      // what each signed-in request carried
+	subs      []*ewsSubscription // live subscriptions
+	refuseSub string             // answer Subscribe with this ResponseCode
+	streams   int                // GetStreamingEvents connections opened
+	drops     int                // DropStreams calls
+	skew      time.Duration      // Advance's, added to the server's clock
+	changes   chan struct{}      // closed on every change, for the open streams
 }
 
 // EWSSent is a message the server sent: its recipients and MIME as it got them.

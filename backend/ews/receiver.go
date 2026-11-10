@@ -537,7 +537,7 @@ func (r *Receiver) Apply(ctx context.Context, op backend.Op) (backend.Result, er
 // for the folders its events name. A connection that reached its 30 minutes
 // is opened again on the same subscription; a subscription the server lost
 // is made again, with a wake for what it missed. A failed connection ends
-// Watch, and core polls.
+// Watch, and core polls; so does a server that refuses to subscribe.
 func (r *Receiver) Watch(ctx context.Context, wake func(folders []backend.FolderRef)) error {
 	cr, err := r.c.cfg.Credentials(ctx)
 	if err != nil {
@@ -550,6 +550,12 @@ func (r *Receiver) Watch(ctx context.Context, wake func(folders []backend.Folder
 	for {
 		if sub == "" {
 			if sub, err = r.c.subscribe(ctx); err != nil {
+				var re *ResponseError
+				if errors.As(err, &re) && re.Code != "ErrorServerBusy" {
+					// the server will not push to this account (a full subscription quota,
+					// subscriptions turned off): core polls instead
+					return fmt.Errorf("%w: %w", backend.ErrUnsupported, err)
+				}
 				return err
 			}
 			a.mu.Lock()
