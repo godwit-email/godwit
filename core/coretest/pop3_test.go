@@ -238,3 +238,20 @@ func TestPOP3SendKeepsSent(t *testing.T) {
 	assert.Contains(t, m.Flags, `\Seen`)
 	assert.Equal(t, 0, folderTotal(t, e, acc.ID, "INBOX"))
 }
+
+// Pointing a POP3 account at another mailbox forgets its server locations
+// but keeps its mail: what it archived here exists nowhere else.
+func TestPOP3ChangeServersKeepsMail(t *testing.T) {
+	e := coretest.New(t, coretest.WithoutAutoSync())
+	acc := e.AddAccount(t, "alice@example.com", coretest.ViaPOP3())
+	e.Deliver(t, acc.ID, "INBOX", coretest.Msg("bob@example.com", "alice@example.com", "Archived here", "body"))
+	require.NoError(t, e.Svc.MoveToRole(t.Context(), []int64{searchOne(t, e, acc.ID, "Archived").ID}, "archive"))
+
+	ss := core.ServerSettings{Username: acc.Username, Receiving: acc.Receiving, Sending: acc.Sending}
+	ss.Receiving.Host = map[string]string{"127.0.0.1": "localhost", "localhost": "127.0.0.1"}[ss.Receiving.Host] // the same server, by another name
+	require.NotEmpty(t, ss.Receiving.Host)
+	_, err := e.Svc.UpdateAccount(t.Context(), acc.ID, core.AccountPatch{Servers: &ss})
+	require.NoError(t, err)
+	require.NoError(t, e.Svc.SyncNow(t.Context(), acc.ID))
+	assert.Equal(t, 1, folderTotal(t, e, acc.ID, "Archive"))
+}

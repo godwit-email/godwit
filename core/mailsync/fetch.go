@@ -176,7 +176,8 @@ func run(ctx context.Context, db *store.DB, recv backend.Receiver, accountID int
 		}
 		r.orphans = purged
 	}
-	if err := dropOrphans(ctx, db, accountID, r.orphans, true, s.stable, s.allMail, &r); err != nil {
+	// An inbox-only account's mail without a location left stays: only a completed purge deletes it.
+	if err := dropOrphans(ctx, db, accountID, r.orphans, !r.inboxOnly, s.stable, s.allMail, &r); err != nil {
 		return more, err
 	}
 	if s.stable {

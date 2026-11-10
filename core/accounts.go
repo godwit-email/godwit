@@ -23,6 +23,7 @@ import (
 	"github.com/egoist/mygo/plugins/sqlite"
 	"github.com/godwit-email/godwit/core/auth"
 	"github.com/godwit-email/godwit/core/events"
+	"github.com/godwit-email/godwit/core/mailsync"
 	"github.com/godwit-email/godwit/core/store"
 	"github.com/zalando/go-keyring"
 )
@@ -837,7 +838,9 @@ func (s *Service) UpdateAccount(ctx context.Context, id int64, p AccountPatch) (
 				WHERE account_id = ? AND state IN ('pending', 'awaiting_claim')`, Args: []any{id}},
 			sqlite.Statement{SQL: "UPDATE accounts SET cursor = NULL WHERE id = ?", Args: []any{id}},
 			sqlite.Statement{SQL: "UPDATE folders SET cursor = NULL, synced = 0, filled_since = NULL WHERE account_id = ?", Args: []any{id}},
-			sqlite.Statement{SQL: "DELETE FROM message_locations WHERE message_id IN (SELECT id FROM messages WHERE account_id = ?)", Args: []any{id}})
+			// An inbox-only account (POP3) keeps its mail where it shows: it may exist nowhere else.
+			sqlite.Statement{SQL: "UPDATE message_locations SET server_ref = NULL WHERE message_id IN (SELECT id FROM messages WHERE account_id = ?) AND " + mailsync.InboxOnly, Args: []any{id, id}},
+			sqlite.Statement{SQL: "DELETE FROM message_locations WHERE message_id IN (SELECT id FROM messages WHERE account_id = ?) AND (server_ref IS NOT NULL OR shown = 0 OR NOT " + mailsync.InboxOnly + ")", Args: []any{id, id}})
 		unlock, err := s.lockAccount(ctx, id) // no sync or download is using the old locations meanwhile
 		if err != nil {
 			return Account{}, err

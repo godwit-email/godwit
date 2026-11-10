@@ -39,9 +39,11 @@ func dialPOP3(ctx context.Context, e Endpoint) (*pop3.Conn, func(), error) {
 	switch e.Security {
 	case TLS, None:
 	case StartTLS:
-		if nc, err = stls(cctx, nc, e); err != nil {
+		tc, err := stls(cctx, nc, e)
+		if err != nil { // nc stays the plain connection, for fail to close
 			return fail(fmt.Errorf("pop3 connect %s: %w", e.addr(), connectErr(cctx, err)))
 		}
+		nc = tc
 	default:
 		return fail(fmt.Errorf("conn: unknown security %q", e.Security))
 	}
