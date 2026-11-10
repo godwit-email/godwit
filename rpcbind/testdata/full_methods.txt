@@ -84,6 +84,7 @@ InlineSignatureImages
 InstallPlugin
 InstallPluginFromRegistry
 KeychainStatus
+LabelIcon
 LabelModelReady
 ListAccountLabels
 ListAccounts

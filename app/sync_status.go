@@ -294,23 +294,32 @@ func (a *App) accountImage(acc core.Account) ui.ImageSource {
 	}
 	a.customIcons[acc.ID] = accountImage{key: acc.Icon}
 	var img ui.ImageSource
+	var fill bool
 	a.do(func(ctx context.Context) error {
 		icon, err := a.svc.AccountIcon(ctx, acc.ID)
 		if err == nil {
 			img = decodeIcon(icon.ContentType, icon.Data)
+			fill = fillsCanvas(icon.ContentType, icon.Data)
 		}
 		return err
 	}, func(error) {
 		if e := a.customIcons[acc.ID]; e.key == acc.Icon {
-			a.customIcons[acc.ID] = accountImage{key: acc.Icon, img: img}
+			a.customIcons[acc.ID] = accountImage{key: acc.Icon, img: img, fill: fill}
 		}
 	})
 	return nil
 }
 
+// accountImageFills is whether the account's uploaded icon brings its own background.
+func (a *App) accountImageFills(acc core.Account) bool {
+	e, ok := a.customIcons[acc.ID]
+	return ok && e.key == acc.Icon && e.fill
+}
+
 type accountImage struct {
-	key string // the account's Icon
-	img ui.ImageSource
+	key  string // the account's Icon
+	img  ui.ImageSource
+	fill bool // the image brings its own background (fillsCanvas)
 }
 
 // decodeIcon is an icon image of type ct, nil when it does not decode.
@@ -332,7 +341,7 @@ func decodeIcon(ct string, data []byte) ui.ImageSource {
 func (a *App) accountIcon(c *ui.Context, acc core.Account, size float32) {
 	if strings.HasPrefix(acc.Icon, "image:") {
 		if img := a.accountImage(acc); img != nil {
-			markTile(c, img, size)
+			kit.LabelBadge(c, kit.LabelBadgeOpts{Name: accountName(acc), Size: size, Image: img, Fill: a.accountImageFills(acc)})
 			return
 		}
 	}

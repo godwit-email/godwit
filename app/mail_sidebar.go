@@ -368,7 +368,7 @@ func (p *mailPage) accountLabelsNav(c *ui.Context, accID int64) {
 			on := p.viewShown(v)
 			item := kit.SidebarItem(c, kit.SidebarItemOpts{Selected: on, Covered: p.viewEdit != nil, Indent: 8, OnClick: func() { p.a.navigate(Route{Page: PageMail, View: v}) }})
 			item.Children(func() {
-				ui.Icon(c, icons.Get("label-"+l.Icon)).Size(theme.Icon, theme.Icon).TextColor(t.Label(l.Color).Text)
+				p.a.labelGlyph(c, l, theme.Icon)
 				ui.Text(c, l.Name).SingleLine().Grow(1).Shrink(1)
 				if l.Unread > 0 {
 					kit.Text(c, strconv.Itoa(l.Unread), t.Text.Sm).TextColor(t.Muted)

@@ -8,7 +8,6 @@ import (
 	"github.com/egoist/mygo/ui"
 	"github.com/godwit-email/godwit/core"
 	"github.com/godwit-email/godwit/internal/i18n"
-	"github.com/godwit-email/godwit/internal/icons"
 	"github.com/godwit-email/godwit/internal/kit"
 	"github.com/godwit-email/godwit/internal/theme"
 )
@@ -40,7 +39,7 @@ func (a *App) labelChip(c *ui.Context, al core.AppliedLabel, menu func(*ui.Menu)
 	if al.Auto {
 		tip = i18n.T("label.tip.auto")
 	}
-	o := kit.LabelChipOpts{Text: l.Name, Icon: l.Icon, Display: a.settings.LabelDisplay, Tip: tip, Color: theme.Of(c).Label(l.Color), Auto: al.Auto, Menu: menu}
+	o := kit.LabelChipOpts{Text: l.Name, Icon: l.Icon, Display: a.settings.LabelDisplay, Tip: tip, Color: theme.Of(c).Label(l.Color), Auto: al.Auto, Menu: menu, Image: a.labelImage(l), ImageFill: a.labelImageFills(l)}
 	if onRemove != nil {
 		o.OnRemove, o.RemoveLabel = onRemove, i18n.Tf("reader.labels.remove", l.Name)
 	}
@@ -145,7 +144,7 @@ func (p *mailPage) labelNav(c *ui.Context) {
 			on := p.viewShown(v)
 			item := kit.SidebarItem(c, kit.SidebarItemOpts{Selected: on, Covered: p.viewEdit != nil, OnClick: func() { a.navigate(Route{Page: PageMail, View: v}) }})
 			item.Children(func() {
-				ui.Icon(c, icons.Get("label-"+l.Icon)).Size(theme.Icon, theme.Icon).TextColor(t.Label(l.Color).Text)
+				a.labelGlyph(c, l, theme.Icon)
 				ui.Text(c, l.Name).SingleLine().Grow(1).Shrink(1)
 				if l.Unread > 0 {
 					kit.Text(c, strconv.Itoa(l.Unread), t.Text.Sm).TextColor(t.Muted)

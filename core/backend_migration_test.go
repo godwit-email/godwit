@@ -49,7 +49,8 @@ var toPreBackendSchema = []string{
 	`ALTER TABLE accounts DROP COLUMN cursor`,
 	`ALTER TABLE accounts DROP COLUMN features`,
 	`ALTER TABLE accounts DROP COLUMN recv_path`,
-	fmt.Sprintf("PRAGMA user_version = %d", len(store.Migrations)-1),
+	`DROP TABLE label_icons`,
+	fmt.Sprintf("PRAGMA user_version = %d", len(store.Migrations)-2),
 }
 
 // Upgrading a synced account to protocol backends re-imports nothing: its

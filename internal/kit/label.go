@@ -1,6 +1,8 @@
 package kit
 
 import (
+	"strings"
+
 	"github.com/egoist/mygo/ui"
 	"github.com/godwit-email/godwit/internal/icons"
 	"github.com/godwit-email/godwit/internal/theme"
@@ -12,6 +14,8 @@ import (
 // "both" (the default; "" too), "icon" or "text".
 type LabelChipOpts struct {
 	Text, Icon, Tip string
+	Image           ui.ImageSource // shown instead of the glyph when Icon is image:<n>
+	ImageFill       bool           // Image brings its own background: drawn edge to edge
 	Display         string
 	Color           theme.LabelColor
 	Auto            bool
@@ -50,7 +54,14 @@ func LabelChip(c *ui.Context, o LabelChipOpts) ui.Element {
 	}
 	chip.Children(func() {
 		if showIcon {
-			ui.Icon(c, icons.Get("label-"+o.Icon)).Size(theme.IconXs, theme.IconXs)
+			switch {
+			case o.Image != nil || o.Icon == "monogram":
+				LabelBadge(c, LabelBadgeOpts{Name: o.Text, Size: theme.IconSm, Color: o.Color, Image: o.Image, Fill: o.ImageFill})
+			case strings.HasPrefix(o.Icon, "image:"):
+				ui.Row(c).Size(theme.IconSm, theme.IconSm) // its image is still loading
+			default:
+				ui.Icon(c, icons.Get("label-"+o.Icon)).Size(theme.IconXs, theme.IconXs)
+			}
 		}
 		if showText {
 			ui.Text(c, o.Text).SingleLine()

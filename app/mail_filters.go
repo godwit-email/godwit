@@ -156,7 +156,7 @@ func (p *mailPage) labelFilter(c *ui.Context) {
 	}
 	b.Children(func() {
 		if set {
-			ui.Icon(c, icons.Get("label-"+cur.Icon)).Size(theme.IconXs, theme.IconXs).TextColor(t.Label(cur.Color).Text)
+			p.a.labelGlyph(c, cur, theme.IconXs)
 			kit.Text(c, cur.Name, t.Text.Sm).SingleLine()
 		} else {
 			kit.Text(c, i18n.T("mail.filter.label"), t.Text.Sm).SingleLine()
@@ -170,7 +170,7 @@ func (p *mailPage) labelFilter(c *ui.Context) {
 			kit.Pressable(c.Key(id), kit.PressableOpts{Selected: on, OnClick: func() { p.setFilter(func(f *searchFilters) { f.labelID = id }) }}).
 				Label(i18n.Tf("mail.filter.label.item", l.Name)).Checked(on).MinWidth(theme.FilterMenuMin).Padding(th.Space(1.5), th.Space(2)).
 				Gap(th.Space(2)).AlignItems(ui.Center).Radius(t.Radius.Md).Children(func() {
-				ui.Icon(c, icons.Get("label-"+l.Icon)).Size(theme.IconXs, theme.IconXs).TextColor(t.Label(l.Color).Text)
+				p.a.labelGlyph(c, l, theme.IconXs)
 				kit.Text(c, l.Name, t.Text.Sm).SingleLine()
 			})
 		}

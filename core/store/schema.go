@@ -778,6 +778,11 @@ var Migrations = [][]string{{
 	// A JMAP receiving slot's session resource path, as a session URL typed
 	// in gives it; '' discovers it at /.well-known/jmap.
 	`ALTER TABLE accounts ADD COLUMN recv_path TEXT NOT NULL DEFAULT ''`,
+}, {
+	// A label's uploaded image: its icon is 'image:<n>' (n bumped per upload) and the
+	// bytes sit here, as an account's do in account_icons.
+	`CREATE TABLE IF NOT EXISTS label_icons (label_id INTEGER PRIMARY KEY REFERENCES labels(id) ON DELETE CASCADE,
+		content_type TEXT NOT NULL, data BLOB NOT NULL)`,
 }}
 
 // HistoryRowsVersion is the schema version that keeps a conversation's

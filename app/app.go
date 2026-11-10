@@ -292,6 +292,7 @@ type App struct {
 	mcpSend mcpSendState // godwit mcp's send request waiting for the user (mcpsend.go)
 
 	customIcons map[int64]accountImage    // by account id: its uploaded icon (accountImage)
+	labelImages map[int64]accountImage    // by label id: its uploaded image (labelImage)
 	typeIcons   map[string]ui.ImageSource // by extension: the file manager's icon (typeIcon)
 
 	tempMu   sync.Mutex

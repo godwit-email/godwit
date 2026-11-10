@@ -7,7 +7,9 @@ import (
 	"fmt"
 	"log/slog"
 	"slices"
+	"strconv"
 	"strings"
+	"time"
 	"unicode/utf8"
 
 	"github.com/egoist/mygo/plugins/sqlite"
@@ -46,8 +48,29 @@ type Label struct {
 	Count, Unread                        int
 }
 
+// LabelIconMonogram is the Icon of a label that shows its initial in its color
+// instead of a glyph or an image; nothing is stored for it.
+const LabelIconMonogram = "monogram"
+
 // LabelInput is what the user sets on a label.
-type LabelInput struct{ Name, Description, Color, Icon string }
+type LabelInput struct {
+	Name, Description, Color, Icon string
+	// IconImage is an uploaded png, jpeg, gif, webp or svg shown instead of a
+	// glyph; Icon then becomes image:<n> (LabelIcon). Nil keeps the label's image.
+	IconImage []byte
+	// IconFill draws a new IconImage edge to edge, for a mark that brings its own
+	// background; false leaves it a margin on the tile. To change it for a kept
+	// image, set Icon to its image:<n> with LabelImageFillSuffix or without.
+	IconFill bool
+}
+
+// LabelImageFillSuffix ends the Icon of a label whose image is drawn edge to edge.
+const LabelImageFillSuffix = ":fill"
+
+// LabelImageFills is whether a label's Icon, image:<n>, draws its image edge to edge.
+func LabelImageFills(icon string) bool {
+	return strings.HasPrefix(icon, "image:") && strings.HasSuffix(icon, LabelImageFillSuffix)
+}
 
 // presetLabel is a label seeded once, in the first language Godwit ran in.
 type presetLabel struct {
@@ -382,7 +405,7 @@ func (s *Service) cleanLabel(ctx context.Context, in LabelInput, self int64) (La
 		return in, fmt.Errorf("a label description has at most %d characters", MaxLabelDescription)
 	case !slices.Contains(LabelColors, in.Color):
 		return in, fmt.Errorf("invalid label color %q", in.Color)
-	case !slices.Contains(LabelIcons, in.Icon):
+	case in.IconImage == nil && in.Icon != LabelIconMonogram && !strings.HasPrefix(in.Icon, "image:") && !slices.Contains(LabelIcons, in.Icon):
 		return in, fmt.Errorf("invalid label icon %q", in.Icon)
 	}
 	// In Go, not SQL: SQLite's lower() leaves non-ASCII letters alone.
@@ -423,12 +446,16 @@ func (s *Service) CreateLabel(ctx context.Context, in LabelInput) (Label, error)
 	if in, err = s.cleanLabel(ctx, in, 0); err != nil {
 		return Label{}, err
 	}
-	res, err := s.db.Transaction(ctx, []sqlite.Statement{
+	stmts, in, err := s.labelImageStatements(ctx, in, 0)
+	if err != nil {
+		return Label{}, err
+	}
+	res, err := s.db.Transaction(ctx, append([]sqlite.Statement{
 		{SQL: `INSERT INTO labels(slug, name, description, color, icon, position)
 			VALUES ('tmp-' || hex(randomblob(8)), ?, ?, ?, ?, (SELECT COALESCE(MAX(position) + 1, 0) FROM labels))`,
 			Args: []any{in.Name, in.Description, in.Color, in.Icon}},
 		{SQL: "UPDATE labels SET slug = 'u' || id WHERE id = last_insert_rowid()"},
-	})
+	}, stmts...))
 	if err != nil {
 		return Label{}, err
 	}
@@ -448,12 +475,18 @@ func (s *Service) UpdateLabel(ctx context.Context, id int64, in LabelInput) (Lab
 	if in, err = s.cleanLabel(ctx, in, id); err != nil {
 		return Label{}, err
 	}
-	res, err := s.db.Execute(ctx, "UPDATE labels SET name = ?, description = ?, color = ?, icon = ? WHERE id = ?",
-		in.Name, in.Description, in.Color, in.Icon, id)
+	stmts, in, err := s.labelImageStatements(ctx, in, id)
 	if err != nil {
 		return Label{}, err
 	}
-	if res.Changes == 0 {
+	out, err := s.db.Transaction(ctx, append([]sqlite.Statement{
+		{SQL: "UPDATE labels SET name = ?, description = ?, color = ?, icon = ? WHERE id = ?",
+			Args: []any{in.Name, in.Description, in.Color, in.Icon, id}},
+	}, stmts...))
+	if err != nil {
+		return Label{}, err
+	}
+	if out[0].Changes == 0 {
 		return Label{}, fmt.Errorf("label %d not found", id)
 	}
 	s.bus.Publish(events.Event{Type: events.LabelsChanged})
@@ -646,4 +679,56 @@ func int64Args(ids []int64) []any {
 		out[i] = id
 	}
 	return out
+}
+
+// labelImageStatements are the statements that store (or drop) a label's image,
+// and in with Icon set to match: image:<n> after an upload, as it was when the
+// label keeps its image, a glyph name when the glyph replaces it. id 0 is a label
+// being created: its row is the last one inserted. The caller holds labelsMu.
+func (s *Service) labelImageStatements(ctx context.Context, in LabelInput, id int64) ([]sqlite.Statement, LabelInput, error) {
+	ref := "?" // the label's id: a bound value, or the row just inserted
+	args := func(rest ...any) []any { return append([]any{id}, rest...) }
+	if id == 0 {
+		ref = "last_insert_rowid()"
+		args = func(rest ...any) []any { return rest }
+	}
+	switch {
+	case in.IconImage != nil:
+		ct, err := accountIconType(in.IconImage)
+		if err != nil {
+			return nil, in, err
+		}
+		in.Icon = "image:" + strconv.FormatInt(time.Now().UnixNano(), 36)
+		if in.IconFill {
+			in.Icon += LabelImageFillSuffix
+		}
+		return []sqlite.Statement{{
+			SQL:  "INSERT OR REPLACE INTO label_icons(label_id, content_type, data) VALUES (" + ref + ", ?, ?)",
+			Args: args(ct, in.IconImage)}}, in, nil
+	case strings.HasPrefix(in.Icon, "image:"):
+		if id == 0 {
+			return nil, in, fmt.Errorf("invalid label icon %q", in.Icon)
+		}
+		cur, err := s.label(ctx, id)
+		if err != nil || strings.TrimSuffix(cur.Icon, LabelImageFillSuffix) != strings.TrimSuffix(in.Icon, LabelImageFillSuffix) {
+			return nil, in, fmt.Errorf("invalid label icon %q", in.Icon)
+		}
+		return nil, in, nil
+	case id == 0:
+		return nil, in, nil
+	}
+	return []sqlite.Statement{{SQL: "DELETE FROM label_icons WHERE label_id = ?", Args: []any{id}}}, in, nil
+}
+
+// LabelIcon is the image of a label whose Icon is image:<n>.
+func (s *Service) LabelIcon(ctx context.Context, id int64) (AccountIcon, error) {
+	rows, err := s.db.Query(ctx, "SELECT content_type, data FROM label_icons WHERE label_id = ?", id)
+	if err != nil {
+		return AccountIcon{}, err
+	}
+	if len(rows.Values) == 0 {
+		return AccountIcon{}, fmt.Errorf("label %d has no image", id)
+	}
+	data, _ := rows.Values[0][1].([]byte)
+	return AccountIcon{ContentType: store.Str(rows.Values[0][0]), Data: data}, nil
 }
