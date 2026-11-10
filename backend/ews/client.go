@@ -54,6 +54,8 @@ func newClient(cfg Config) *client {
 			return errors.New("ews: too many redirects")
 		case req.URL.Host != via[0].URL.Host:
 			return errOtherHost
+		case via[0].URL.Scheme == "https" && req.URL.Scheme != "https":
+			return errors.New("ews: refused a redirect from HTTPS to HTTP")
 		}
 		return nil
 	}}}
