@@ -54,6 +54,7 @@ type EWS struct {
 	next             int          // the last id given
 	seq              int          // the last change's sequence number
 	omitNewIDs       bool         // MoveItem and CopyItem answer without the new ItemIds
+	findLimit        int          // the most items a FindItem page holds
 	sent             []EWSSent
 	refused          map[string]bool // recipients refused
 	lose             bool            // drop the next CreateItem's answer
@@ -103,7 +104,7 @@ const (
 
 // StartEWS starts an EWS server answering as Exchange 2019, closed when t ends.
 func StartEWS(t testing.TB) *EWS {
-	s := &EWS{t: t, major: 15, minor: 2, refused: map[string]bool{}}
+	s := &EWS{t: t, major: 15, minor: 2, refused: map[string]bool{}, findLimit: 1000} // Exchange's EWSFindCountLimit
 	root := s.folder("", "", "msgfolderroot", "")
 	for _, f := range [][3]string{{"Inbox", "inbox", "IPF.Note"}, {"Sent Items", "sentitems", "IPF.Note"}, {"Drafts", "drafts", "IPF.Note"},
 		{"Deleted Items", "deleteditems", "IPF.Note"}, {"Junk Email", "junkemail", "IPF.Note"}, {"Archive", "archive", "IPF.Note"},
@@ -212,14 +213,26 @@ func (s *EWS) SetLatency(d time.Duration) { s.latency.Store(int64(d)) }
 // MaxConcurrent is the most requests the server has had in hand at once.
 func (s *EWS) MaxConcurrent() int { return int(s.maxFly.Load()) }
 
+// LimitFindItem makes a FindItem page hold at most n items, whatever the
+// client asks for, as a server's throttling policy does.
+func (s *EWS) LimitFindItem(n int) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.findLimit = n
+}
+
 // Deliver puts raw into the folder at path, as mail arriving, and returns
 // its ItemId. Path segments name folders from the root ("Inbox/Projects"),
 // created if need be; "INBOX" is the inbox.
-func (s *EWS) Deliver(path string, raw []byte) string {
+func (s *EWS) Deliver(path string, raw []byte) string { return s.DeliverAt(path, raw, time.Now()) }
+
+// DeliverAt is Deliver of mail received at received: mail moved in from
+// another folder or mailbox keeps the time it first arrived.
+func (s *EWS) DeliverAt(path string, raw []byte, received time.Time) string {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	f := s.path(path, true)
-	it := &ewsItem{id: s.newID("AAMkItem"), raw: raw, received: time.Now().UTC().Truncate(time.Second)}
+	it := &ewsItem{id: s.newID("AAMkItem"), raw: raw, received: received.UTC().Truncate(time.Second)}
 	it.created = s.touch(&it.changed)
 	f.items = append(f.items, it)
 	return it.id
@@ -357,8 +370,8 @@ type ewsRequest struct {
 	folderIDs     []string          // FolderId Ids
 	itemIDs       []string          // ItemId Ids
 	addresses     []string          // EmailAddress texts, in order
-	text          map[string]string // the text of SyncState, MaxChangesReturned, IncludeMimeContent, MimeContent; the operation's attributes
 	extended      map[string]string // ExtendedProperty Values by PropertyTag
+	text          map[string]string // the text of SyncState, MaxChangesReturned, IncludeMimeContent, MimeContent; the operation's attributes; "Element.Attr" any element's
 	fieldURIs     []string          // FieldURI FieldURIs, in order
 	constants     []string          // Constant Values, in order
 	elements      map[string]bool   // the local names of its elements
@@ -383,6 +396,9 @@ func readRequest(body []byte) (ewsRequest, error) {
 		case xml.StartElement:
 			cur = el.Name.Local
 			r.elements[cur] = true
+			for _, a := range el.Attr {
+				r.text[cur+"."+a.Name.Local] = a.Value
+			}
 			attr := func(n string) string {
 				for _, a := range el.Attr {
 					if a.Name.Local == n {
@@ -709,7 +725,11 @@ func (s *EWS) syncFolderItems(w http.ResponseWriter, req ewsRequest) {
 		case it.gone:
 			fmt.Fprintf(&changes, `<t:Delete><t:ItemId Id="%s" ChangeKey="CQAAAA=="/></t:Delete>`, it.id)
 		case it.created > since:
-			fmt.Fprintf(&changes, `<t:Create><t:Message><t:ItemId Id="%s" ChangeKey="CQAAAA=="/></t:Message></t:Create>`, it.id)
+			received := ""
+			if slices.Contains(req.fieldURIs, "item:DateTimeReceived") {
+				received = "<t:DateTimeReceived>" + it.received.Format(time.RFC3339) + "</t:DateTimeReceived>"
+			}
+			fmt.Fprintf(&changes, `<t:Create><t:Message><t:ItemId Id="%s" ChangeKey="CQAAAA=="/>%s</t:Message></t:Create>`, it.id, received)
 		case it.readOnly:
 			fmt.Fprintf(&changes, `<t:ReadFlagChange><t:ItemId Id="%s" ChangeKey="CQAAAA=="/><t:IsRead>%t</t:IsRead></t:ReadFlagChange>`, it.id, it.read)
 		default:
@@ -799,13 +819,16 @@ func (s *EWS) createItem(w http.ResponseWriter, req ewsRequest) {
 }
 
 // findItems answers the items of one folder whose InternetMessageId equals
-// a constant: the only restriction it knows, so a query written otherwise
-// fails the test rather than matching by accident.
+// a constant, or a page of them by IndexedPageItemView sorted newest
+// received first: the only queries it knows, so one written otherwise fails
+// the test rather than matching by accident.
 func (s *EWS) findItems(w http.ResponseWriter, req ewsRequest) {
 	reply := func(msg string) {
 		s.respond(w, styleUsual, "FindItem", "<m:ResponseMessages>"+msg+"</m:ResponseMessages>")
 	}
-	if !req.elements["IsEqualTo"] || !slices.Equal(req.fieldURIs, []string{"message:InternetMessageId"}) || len(req.constants) != 1 {
+	paged := req.elements["IndexedPageItemView"] && !req.elements["Restriction"] && req.text["FieldOrder.Order"] == "Descending" &&
+		slices.Equal(req.fieldURIs, []string{"item:DateTimeReceived", "item:DateTimeReceived"}) // returned, and sorted by
+	if !paged && (!req.elements["IsEqualTo"] || !slices.Equal(req.fieldURIs, []string{"message:InternetMessageId"}) || len(req.constants) != 1) {
 		s.t.Errorf("fake EWS: FindItem restriction %v %v", req.fieldURIs, req.constants)
 		reply(message("FindItem", "ErrorInvalidRestriction", ""))
 		return
@@ -816,6 +839,10 @@ func (s *EWS) findItems(w http.ResponseWriter, req ewsRequest) {
 	}
 	if f == nil {
 		reply(message("FindItem", "ErrorFolderNotFound", ""))
+		return
+	}
+	if paged {
+		s.findPage(f, req, reply)
 		return
 	}
 	var items strings.Builder
@@ -901,4 +928,33 @@ func (s *EWS) updateItem(w http.ResponseWriter, body []byte) {
 		msgs.WriteString(message("UpdateItem", "", `<m:Items><t:Message><t:ItemId Id="`+it.id+`" ChangeKey="CQAAAB=="/></t:Message></m:Items><m:ConflictResults><t:Count>0</t:Count></m:ConflictResults>`))
 	}
 	reply(msgs.String())
+}
+
+// findPage answers a page of f's live items, newest received first (the
+// later delivered first among those received at once), MaxEntriesReturned
+// from Offset, at most the server's own limit.
+func (s *EWS) findPage(f *ewsFolder, req ewsRequest, reply func(string)) {
+	max, err1 := strconv.Atoi(req.text["IndexedPageItemView.MaxEntriesReturned"])
+	offset, err2 := strconv.Atoi(req.text["IndexedPageItemView.Offset"])
+	if err1 != nil || err2 != nil || max < 1 || offset < 0 || req.text["IndexedPageItemView.BasePoint"] != "Beginning" {
+		s.t.Errorf("fake EWS: IndexedPageItemView %q %q %q", req.text["IndexedPageItemView.MaxEntriesReturned"], req.text["IndexedPageItemView.Offset"], req.text["IndexedPageItemView.BasePoint"])
+		reply(message("FindItem", "ErrorInvalidPagingMaxRows", ""))
+		return
+	}
+	var live []*ewsItem
+	for _, it := range slices.Backward(f.items) {
+		if !it.gone {
+			live = append(live, it)
+		}
+	}
+	slices.SortStableFunc(live, func(a, b *ewsItem) int { return b.received.Compare(a.received) })
+	page := live[min(offset, len(live)):]
+	page = page[:min(len(page), max, s.findLimit)]
+	var items strings.Builder
+	for _, it := range page {
+		fmt.Fprintf(&items, `<t:Message><t:ItemId Id="%s" ChangeKey="CQAAAA=="/><t:DateTimeReceived>%s</t:DateTimeReceived></t:Message>`, it.id, it.received.Format(time.RFC3339))
+	}
+	next := offset + len(page)
+	reply(message("FindItem", "", fmt.Sprintf(`<m:RootFolder IndexedPagingOffset="%d" TotalItemsInView="%d" IncludesLastItemInRange="%t"><t:Items>%s</t:Items></m:RootFolder>`,
+		next, len(live), next >= len(live), items.String())))
 }

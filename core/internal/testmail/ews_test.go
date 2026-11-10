@@ -97,24 +97,42 @@ func TestEWSServerTooOld(t *testing.T) {
 	}
 }
 
-// local is what local storage keeps between rounds: the cursors and the folders' names.
+// local is what local storage keeps between rounds: the cursors, the
+// folders' names and the messages held.
 type local struct {
 	account backend.Cursor
 	states  map[backend.FolderRef]backend.FolderState
 	names   map[backend.FolderRef]string
+	held    pop3Local
 }
 
 // sync runs one round on a new receiver from l's cursors and returns its pages.
 func (l *local) sync(t *testing.T, s *testmail.EWS) []backend.Page {
 	t.Helper()
+	pages, _ := l.run(t, s, backend.SyncRequest{})
+	return pages
+}
+
+// run runs one round of req (its Window, Only and Older) on a new receiver
+// from l's cursors and returns its pages and more.
+func (l *local) run(t *testing.T, s *testmail.EWS, req backend.SyncRequest) ([]backend.Page, bool) {
+	t.Helper()
 	if l.states == nil {
 		l.states, l.names = map[backend.FolderRef]backend.FolderState{}, map[backend.FolderRef]string{}
 	}
+	if l.held == nil {
+		l.held = pop3Local{}
+	}
 	var pages []backend.Page
-	_, err := ewsReceiver(t, s).Sync(tctx(t), backend.SyncRequest{Account: l.account, Folders: maps.Clone(l.states)}, func(p backend.Page) error {
+	req.Account, req.Folders, req.Local = l.account, maps.Clone(l.states), l.held
+	more, err := ewsReceiver(t, s).Sync(tctx(t), req, func(p backend.Page) error {
 		pages = append(pages, p)
 		for _, c := range p.Changes {
 			switch c := c.(type) {
+			case backend.MessageAppeared:
+				l.held[c.Ref] = true
+			case backend.MessageGone:
+				delete(l.held, c.Ref)
 			case backend.FolderUpdated:
 				l.names[c.Ref] = c.Name
 				if _, ok := l.states[c.Ref]; !ok {
@@ -134,7 +152,7 @@ func (l *local) sync(t *testing.T, s *testmail.EWS) []backend.Page {
 	if err != nil {
 		t.Fatal(err)
 	}
-	return pages
+	return pages, more
 }
 
 func (l *local) ref(t *testing.T, name string) backend.FolderRef {
@@ -241,6 +259,95 @@ func TestEWSPages(t *testing.T) {
 	if n != 513 || withCursor < 2 {
 		t.Errorf("%d messages in %d pages with the inbox's cursor, want 513 in 2 or more", n, withCursor)
 	}
+}
+
+// A window since a date takes the mail received after it, as backfill on the
+// first round; later, mail arriving is new and mail received before the
+// date (moved in from elsewhere) is left out.
+func TestEWSWindowSince(t *testing.T) {
+	s := testmail.StartEWS(t)
+	now := time.Now()
+	s.DeliverAt("INBOX", backendtest.Message("old@example.com", "old"), now.AddDate(0, -3, 0))
+	mid := s.DeliverAt("INBOX", backendtest.Message("mid@example.com", "mid"), now.AddDate(0, 0, -10))
+	recent := s.DeliverAt("INBOX", backendtest.Message("new@example.com", "new"), now.AddDate(0, 0, -1))
+	var l local
+	w := backend.SyncRequest{Window: backend.Window{Since: now.AddDate(0, -1, 0)}}
+	pages, _ := l.run(t, s, w)
+	if got := arrivals(changes(pages)); !sameSet(got, []string{mid, recent}) {
+		t.Errorf("first sync since a month ago = %v, want %s and %s as backfill", got, mid, recent)
+	}
+	if !l.states[l.ref(t, "Inbox")].Synced {
+		t.Error("the inbox is not synced after its first round")
+	}
+	d := s.Deliver("INBOX", backendtest.Message("d@example.com", "d"))
+	s.DeliverAt("INBOX", backendtest.Message("moved@example.com", "moved"), now.AddDate(-1, 0, 0))
+	pages, _ = l.run(t, s, w)
+	if got := arrivals(changes(pages)); !slices.Equal(got, []string{"+" + d}) {
+		t.Errorf("next round = %v, want only %s, new", got, d)
+	}
+}
+
+// A window of the newest messages takes those, by the time they were
+// received; later, mail received before them (moved in) is left out.
+func TestEWSWindowNewest(t *testing.T) {
+	s := testmail.StartEWS(t)
+	now := time.Now()
+	b := s.DeliverAt("INBOX", backendtest.Message("b@example.com", "b"), now.AddDate(0, 0, -2))
+	s.DeliverAt("INBOX", backendtest.Message("a@example.com", "a"), now.AddDate(0, 0, -3)) // delivered later, received earlier
+	c := s.DeliverAt("INBOX", backendtest.Message("c@example.com", "c"), now.AddDate(0, 0, -1))
+	var l local
+	w := backend.SyncRequest{Window: backend.Window{Newest: 2}}
+	pages, _ := l.run(t, s, w)
+	if got := arrivals(changes(pages)); !sameSet(got, []string{b, c}) {
+		t.Errorf("first sync of the newest 2 = %v, want %s and %s", got, b, c)
+	}
+	d := s.Deliver("INBOX", backendtest.Message("d@example.com", "d"))
+	s.DeliverAt("INBOX", backendtest.Message("moved@example.com", "moved"), now.AddDate(-1, 0, 0))
+	pages, _ = l.run(t, s, w)
+	if got := arrivals(changes(pages)); !slices.Equal(got, []string{"+" + d}) {
+		t.Errorf("next round = %v, want only %s, new", got, d)
+	}
+}
+
+// 加载更早 takes the mail the window left out, newest received first, across
+// the server's FindItem pages; before the folder's first round completes it
+// is ErrNotSynced.
+func TestEWSOlder(t *testing.T) {
+	s := testmail.StartEWS(t)
+	s.LimitFindItem(2)
+	now := time.Now()
+	var ids []string // oldest received first
+	for i := range 5 {
+		ids = append(ids, s.DeliverAt("INBOX", backendtest.Message(fmt.Sprintf("%d@example.com", i), "m"), now.AddDate(0, 0, i-5)))
+	}
+	var l local
+	l.run(t, s, backend.SyncRequest{Window: backend.Window{Since: now}}) // learns the folders, takes no mail
+	inbox := l.ref(t, "Inbox")
+	older := func(n int) backend.SyncRequest {
+		return backend.SyncRequest{Only: []backend.FolderRef{inbox}, Older: n}
+	}
+	_, err := ewsReceiver(t, s).Sync(tctx(t), backend.SyncRequest{Folders: map[backend.FolderRef]backend.FolderState{inbox: {}}, Only: []backend.FolderRef{inbox}, Older: 1},
+		func(backend.Page) error { return nil })
+	if !errors.Is(err, backend.ErrNotSynced) {
+		t.Errorf("older before the first round = %v, want ErrNotSynced", err)
+	}
+	l.held[backend.MessageRef(ids[4])] = true // the window's
+	pages, more := l.run(t, s, older(2))
+	if got := arrivals(changes(pages)); !slices.Equal(got, []string{ids[3], ids[2]}) || !more {
+		t.Errorf("older 2 = %v (more %v), want %s, %s and more", got, more, ids[3], ids[2])
+	}
+	pages, more = l.run(t, s, older(2))
+	if got := arrivals(changes(pages)); !slices.Equal(got, []string{ids[1], ids[0]}) || more {
+		t.Errorf("older 2 = %v (more %v), want %s, %s and no more", got, more, ids[1], ids[0])
+	}
+	if pages, more = l.run(t, s, older(2)); len(changes(pages)) != 0 || more {
+		t.Errorf("older with nothing left = %+v (more %v)", changes(pages), more)
+	}
+}
+
+// sameSet reports whether a and b hold the same strings.
+func sameSet(a, b []string) bool {
+	return slices.Equal(slices.Sorted(slices.Values(a)), slices.Sorted(slices.Values(b)))
 }
 
 // Fetch cuts a part, by its IMAP part path, from the whole message; Find
