@@ -454,10 +454,19 @@ func TestGetMessageInlineImagesUpperCasedContentID(t *testing.T) {
 // does not take it over.
 func TestInlineCIDExactWins(t *testing.T) {
 	raw := `<img src="cid:logo@example">`
+	refs := func() []string { return gomail.CIDs(raw) }
 	ids := map[string]bool{"logo@example": true, "LOGO@example": true}
-	assert.Equal(t, "logo@example", inlineCID(raw, "logo@example", "image/png", ids))
-	assert.Empty(t, inlineCID(raw, "LOGO@example", "image/png", ids))
-	assert.Equal(t, "logo@example", inlineCID(raw, "LOGO@EXAMPLE", "image/png", map[string]bool{"LOGO@EXAMPLE": true}))
+	assert.Equal(t, "logo@example", inlineCID(raw, "logo@example", "image/png", refs, ids))
+	assert.Empty(t, inlineCID(raw, "LOGO@example", "image/png", refs, ids))
+	assert.Equal(t, "logo@example", inlineCID(raw, "LOGO@EXAMPLE", "image/png", refs, map[string]bool{"LOGO@EXAMPLE": true}))
+}
+
+// The case-blind match takes the cid: reference's spelling, not an earlier
+// mention of the id elsewhere in the body.
+func TestInlineCIDTakesTheReference(t *testing.T) {
+	raw := `<img alt="image001.png@01Da" src="cid:image001.png@01da">`
+	refs := func() []string { return gomail.CIDs(raw) }
+	assert.Equal(t, "image001.png@01da", inlineCID(raw, "IMAGE001.PNG@01DA", "image/png", refs, nil))
 }
 
 // A connection lost between two images costs a new login, not the other images.
