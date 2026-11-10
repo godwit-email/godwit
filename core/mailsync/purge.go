@@ -54,12 +54,13 @@ func NextOpDue(ctx context.Context, db *store.DB, accountID int64, t time.Time) 
 const onServer = "l.server_ref IS NOT NULL"
 
 // purgeable is the condition on message m (with policy p and its folder f joined)
-// that a purge may expunge it: shown and on the server in the role's folder, no other change of it waiting, and in that folder
+// that a purge may expunge it: shown and on the server in the role's folder
+// (or shown there, a local folder of an inbox-only account), no other change of it waiting, and in that folder
 // longer than the policy's days, counted from the latest of when Godwit first saw
 // it there, when the folder got the role and when the purge was turned on. The
 // argument is an op id the check ignores (the purge being pushed), else 0.
 var purgeable = `EXISTS (SELECT 1 FROM message_locations l WHERE l.message_id = m.id AND l.folder_id = p.folder_id AND l.shown
-		AND ` + onServer + ` AND l.entered_at > 0 AND max(l.entered_at, f.role_since, p.since) <= unixepoch() - p.days * 86400)
+		AND (` + onServer + ` OR f.server_ref IS NULL) AND l.entered_at > 0 AND max(l.entered_at, f.role_since, p.since) <= unixepoch() - p.days * 86400)
 	AND p.days > 0 AND NOT EXISTS (SELECT 1 FROM ops o WHERE o.message_id = m.id AND o.state IN ('pending', 'awaiting_claim') AND o.id != ?)`
 
 // QueuePurge queues the account's due junk and trash purges as purge ops, which

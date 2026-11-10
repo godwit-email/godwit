@@ -278,3 +278,42 @@ func TestPOP3Purge(t *testing.T) {
 		t.Errorf("after a cancelled Purge the server holds %v, want %s", got, b)
 	}
 }
+
+// Dates are the sender's, not the server's: an old one delivered late does
+// not hide the window's mail delivered before it.
+func TestPOP3WindowSinceOutOfOrder(t *testing.T) {
+	s := testmail.StartPOP3(t)
+	now := time.Now()
+	in := s.Deliver(dated("in", now.AddDate(0, 0, -5)))
+	s.Deliver(dated("late", now.AddDate(-1, 0, 0)))
+	cs, _ := newPOP3Store().sync(t, pop3Receiver(t, s, conn.None), backend.SyncRequest{Window: backend.Window{Since: now.AddDate(0, -1, 0)}})
+	if got := arrivals(cs); !slices.Equal(got, []string{in}) {
+		t.Errorf("first sync since a month ago = %v, want %v", got, []string{in})
+	}
+}
+
+// A window widened after the first sync brings the mail it now takes in, as
+// existing mail.
+func TestPOP3WindowWidens(t *testing.T) {
+	s := testmail.StartPOP3(t)
+	now := time.Now()
+	a := s.Deliver(dated("a", now.AddDate(0, -6, 0)))
+	b := s.Deliver(dated("b", now.AddDate(0, -2, 0)))
+	s.Deliver(dated("c", now.AddDate(0, 0, -1)))
+	r := pop3Receiver(t, s, conn.None)
+	st := newPOP3Store()
+	st.sync(t, r, backend.SyncRequest{Window: backend.Window{Newest: 1}})
+	if cs, _ := st.sync(t, r, backend.SyncRequest{Window: backend.Window{Newest: 1}}); len(arrivals(cs)) != 0 {
+		t.Errorf("the same window again = %v, want nothing", arrivals(cs))
+	}
+	if cs, _ := st.sync(t, r, backend.SyncRequest{Window: backend.Window{Since: now.AddDate(0, -3, 0)}}); !slices.Equal(arrivals(cs), []string{b}) {
+		t.Errorf("widened to three months = %v, want %v as backfill", arrivals(cs), []string{b})
+	}
+	if cs, _ := st.sync(t, r, backend.SyncRequest{Window: backend.Window{Since: now.AddDate(0, -3, 0)}}); len(arrivals(cs)) != 0 {
+		t.Errorf("the same window again = %v, want nothing", arrivals(cs))
+	}
+	d := s.Deliver(dated("d", now))
+	if cs, _ := st.sync(t, r, backend.SyncRequest{}); !slices.Equal(arrivals(cs), []string{"+" + d, a}) {
+		t.Errorf("widened to all, with new mail = %v, want %v", arrivals(cs), []string{"+" + d, a})
+	}
+}

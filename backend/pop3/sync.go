@@ -58,24 +58,26 @@ func (r *Receiver) Sync(ctx context.Context, req backend.SyncRequest, commit fun
 			}
 		}
 		next := st
-		var pick []entry // newest first, but new arrivals oldest first
-		backfill := true
+		var pick []item // backfill newest first; new arrivals first, oldest first
+		since := false  // pick holds a whole scan of a window since a date
 		switch {
 		case req.Older > 0:
 			oldest := slices.IndexFunc(s.list, isHeld)
 			if oldest < 0 {
 				oldest = len(s.list)
 			}
-			pick = unheld(s.list[:oldest], isHeld)
-			more = len(pick) > req.Older
-			pick = pick[:min(len(pick), req.Older)]
+			es := unheld(s.list[:oldest], isHeld)
+			more = len(es) > req.Older
+			pick = items(es[:min(len(es), req.Older)], true)
 		case !st.Synced:
-			var err error
-			if pick, err = window(s, req.Window, isHeld); err != nil {
+			es, err := window(s, req.Window, isHeld, len(s.list))
+			if err != nil {
 				return err
 			}
+			pick, since = items(es, true), !req.Window.Since.IsZero()
 		default:
 			bound := -1 // no cursor: the inbox was empty, so all of it is new
+			lost := false
 			if cur.Newest != "" {
 				bound = slices.IndexFunc(s.list, func(e entry) bool { return e.uid == cur.Newest })
 				if bound < 0 { // the cursor's message is gone: the newest one held bounds what is new
@@ -88,16 +90,22 @@ func (r *Receiver) Sync(ctx context.Context, req backend.SyncRequest, commit fun
 					// shortcut: a message that arrived at that moment comes as backfill,
 					// with no notification; keep more UIDLs in the cursor once a user
 					// reports such a missed notification.
-					var err error
-					if pick, err = window(s, req.Window, isHeld); err != nil {
-						return err
-					}
-					break
+					bound, lost = len(s.list)-1, true
 				}
 			}
-			backfill = false
-			pick = unheld(s.list[bound+1:], isHeld)
-			slices.Reverse(pick) // oldest first, so a page's newest message bounds all fetched so far
+			es := unheld(s.list[bound+1:], isHeld)
+			slices.Reverse(es) // oldest first, so a page's newest message bounds all fetched so far
+			pick = items(es, false)
+			// The window may have grown since it was filled. One since a date costs
+			// a TOP of each message outside it, so it is scanned again only once
+			// it reaches further back than the scan before (Filled).
+			if w := req.Window; lost || w.Since.IsZero() || st.Filled.IsZero() || w.Since.Before(st.Filled) {
+				old, err := window(s, w, isHeld, bound+1)
+				if err != nil {
+					return err
+				}
+				pick, since = append(pick, items(old, true)...), !w.Since.IsZero()
+			}
 		}
 		size := req.PageSize
 		if size <= 0 {
@@ -105,29 +113,40 @@ func (r *Receiver) Sync(ctx context.Context, req backend.SyncRequest, commit fun
 		}
 		for pages := 1; ; pages++ {
 			n := min(size, len(pick))
-			for _, e := range pick[:n] {
-				c, err := content(s, e, req.HeaderFields)
+			for _, it := range pick[:n] {
+				c, err := content(s, it.entry, req.HeaderFields)
 				if err != nil {
 					return err
 				}
-				changes = append(changes, backend.MessageAppeared{Location: backend.Location{Folder: Inbox, Ref: backend.MessageRef(e.uid)}, Backfill: backfill, Content: c})
-			}
-			// The cursor moves only past mail this round has committed, so one that
-			// dies on a later page leaves the rest new for the next.
-			switch {
-			case req.Older > 0:
-			case n == len(pick) && len(s.list) > 0:
-				next.Cursor = cursor{s.list[len(s.list)-1].uid}.encode()
-			case n == len(pick):
-				next.Cursor = ""
-			case !backfill && n > 0:
-				next.Cursor = cursor{pick[n-1].uid}.encode()
+				changes = append(changes, backend.MessageAppeared{Location: backend.Location{Folder: Inbox, Ref: backend.MessageRef(it.uid)}, Backfill: it.backfill, Content: c})
 			}
 			pick = pick[n:]
-			stop := len(pick) == 0 || !st.Synced && req.Pages > 0 && pages >= req.Pages
-			if stop && !st.Synced {
-				next.Synced = len(pick) == 0
-				more = !next.Synced
+			// The cursor moves only past new mail this round has committed, so one
+			// that dies on a later page leaves the rest new for the next.
+			arriving := slices.ContainsFunc(pick, func(it item) bool { return !it.backfill })
+			switch {
+			case req.Older > 0:
+			case arriving:
+				// The entry before the first one left: committed, or held already.
+				if i := slices.IndexFunc(s.list, func(e entry) bool { return e.uid == pick[0].uid }); i > 0 {
+					next.Cursor = cursor{s.list[i-1].uid}.encode()
+				}
+			case len(s.list) > 0:
+				next.Cursor = cursor{s.list[len(s.list)-1].uid}.encode()
+			default:
+				next.Cursor = ""
+			}
+			// A backfill yields after Pages; new mail always comes down in full.
+			stop := len(pick) == 0 || req.Older == 0 && !arriving && req.Pages > 0 && pages >= req.Pages
+			if stop && req.Older == 0 {
+				if len(pick) == 0 {
+					next.Synced = true
+					if since {
+						next.Filled = req.Window.Since
+					}
+				} else {
+					more = true
+				}
 			}
 			if err := commit(backend.Page{Changes: changes, Folders: map[backend.FolderRef]backend.FolderState{Inbox: next}}); err != nil {
 				return err
@@ -141,6 +160,20 @@ func (r *Receiver) Sync(ctx context.Context, req backend.SyncRequest, commit fun
 	return more, err
 }
 
+// item is an entry to fetch, as backfill or as a new arrival.
+type item struct {
+	entry
+	backfill bool
+}
+
+func items(es []entry, backfill bool) []item {
+	out := make([]item, len(es))
+	for i, e := range es {
+		out[i] = item{e, backfill}
+	}
+	return out
+}
+
 // unheld is the entries of list held does not hold, newest first.
 func unheld(list []entry, held func(entry) bool) []entry {
 	var out []entry
@@ -152,27 +185,31 @@ func unheld(list []entry, held func(entry) bool) []entry {
 	return out
 }
 
-// window is the mail of w that held does not hold, newest first. A window
-// since a date reads each Date header with TOP, newest first, until one is older.
-func window(s *session, w backend.Window, held func(entry) bool) ([]entry, error) {
-	list := s.list
+// window is the mail of w among the first upto entries of the listing that
+// held does not hold, newest first. A window since a date reads each Date
+// header with TOP: the sender's dates, so the whole listing is read.
+func window(s *session, w backend.Window, held func(entry) bool, upto int) ([]entry, error) {
 	switch {
 	case w.Newest > 0:
-		return unheld(list[max(0, len(list)-w.Newest):], held), nil
+		from := max(0, len(s.list)-w.Newest)
+		if from >= upto {
+			return nil, nil
+		}
+		return unheld(s.list[from:upto], held), nil
 	case w.Since.IsZero():
-		return unheld(list, held), nil
+		return unheld(s.list[:upto], held), nil
 	}
 	var out []entry
-	for _, e := range slices.Backward(list) {
+	for _, e := range slices.Backward(s.list[:upto]) {
 		if held(e) {
-			continue // in the window when it was taken
+			continue
 		}
 		h, err := s.top(e)
 		if err != nil {
 			return nil, err
 		}
 		if d, ok := date(h); ok && d.Before(w.Since) {
-			break
+			continue // a late delivery's old date says nothing of the mail before it
 		}
 		out = append(out, e)
 	}
