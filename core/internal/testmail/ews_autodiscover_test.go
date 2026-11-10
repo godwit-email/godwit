@@ -24,6 +24,7 @@ func TestEWSAutodiscover(t *testing.T) {
 	for name, setup := range map[string]func(*testmail.Autodiscover){
 		"domain SOAP":  func(ad *testmail.Autodiscover) { ad.Serve("example.com") },
 		"autodiscover": func(ad *testmail.Autodiscover) { ad.Serve("autodiscover.example.com") },
+		"SOAP only":    func(ad *testmail.Autodiscover) { ad.ServeSOAP("example.com") },
 		"POX only":     func(ad *testmail.Autodiscover) { ad.ServePOX("autodiscover.example.com") },
 		"same-domain URL": func(ad *testmail.Autodiscover) {
 			ad.RedirectURL("example.com", "mail.example.com")

@@ -310,20 +310,23 @@ func poxRequest(email string) []byte {
 }
 
 func readSOAP(raw []byte) (answer, error) {
+	// Only Envelope and Body are SOAP's; the response below them is Autodiscover's.
 	var env struct {
-		User struct {
-			ErrorCode      string `xml:"ErrorCode"`
-			RedirectTarget string `xml:"RedirectTarget"`
-			Settings       []struct {
-				Name  string `xml:"Name"`
-				Value string `xml:"Value"`
-			} `xml:"UserSettings>UserSetting"`
-		} `xml:"http://schemas.xmlsoap.org/soap/envelope/ Body>GetUserSettingsResponseMessage>Response>UserResponses>UserResponse"`
+		Body struct {
+			User struct {
+				ErrorCode      string `xml:"ErrorCode"`
+				RedirectTarget string `xml:"RedirectTarget"`
+				Settings       []struct {
+					Name  string `xml:"Name"`
+					Value string `xml:"Value"`
+				} `xml:"UserSettings>UserSetting"`
+			} `xml:"http://schemas.microsoft.com/exchange/2010/Autodiscover GetUserSettingsResponseMessage>Response>UserResponses>UserResponse"`
+		} `xml:"http://schemas.xmlsoap.org/soap/envelope/ Body"`
 	}
 	if err := xml.Unmarshal(raw, &env); err != nil {
 		return answer{}, fmt.Errorf("ews: Autodiscover response: %w", err)
 	}
-	u := env.User
+	u := env.Body.User
 	switch u.ErrorCode {
 	case "RedirectUrl":
 		return answer{redirectURL: u.RedirectTarget}, nil

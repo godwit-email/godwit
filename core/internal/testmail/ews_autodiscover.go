@@ -23,7 +23,7 @@ import (
 
 // Autodiscover is a fake Autodiscover service for an EWS server's mailbox.
 // It answers as the hosts it is told to, each in its own way: with the EWS
-// URL (Serve, ServePOX), or by sending the client on (RedirectURL,
+// URL (Serve, ServeSOAP, ServePOX), or by sending the client on (RedirectURL,
 // RedirectAddr, Moved, RedirectGET, SRV), to the same domain or another.
 // Both forms are spoken: SOAP (GetUserSettings at autodiscover.svc) and POX
 // (autodiscover.xml). Hosts are reached through Net, over HTTPS with a
@@ -82,6 +82,9 @@ func (a *Autodiscover) Serve(host string) {
 
 // ServePOX makes host answer POX only, as Exchange 2007 did; SOAP is 404.
 func (a *Autodiscover) ServePOX(host string) { a.set(host, func(h *adHost) { h.pox = true }) }
+
+// ServeSOAP makes host answer SOAP only, as Exchange Online does; POX is 404.
+func (a *Autodiscover) ServeSOAP(host string) { a.set(host, func(h *adHost) { h.soap = true }) }
 
 // RedirectURL makes host answer both forms by sending the client to the
 // same form on host to.
