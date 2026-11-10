@@ -36,7 +36,8 @@ type AccountInput struct {
 	oauthClientID string // the flow's own client, set by AddAccount
 	// graph checks a stored OAuth account can send through Microsoft Graph, for
 	// a check whose SMTP AUTH is disabled; a flow's check makes its own.
-	graph func(context.Context) error
+	graph     func(context.Context) error
+	allowPOP3 bool // a POP3 receiving slot is accepted: a stored account's, or ExperimentalPOP3 is on
 }
 
 // Account is a stored account. The password lives only in the system keychain.
@@ -92,8 +93,9 @@ type ServerSettings struct {
 }
 
 // Server is one of an account's two server slots, receiving and sending: a
-// protocol and where its server is. Receiving is auth.IMAP or auth.JMAP
-// (only with Settings.ExperimentalJMAP to add one) and sending auth.SMTP;
+// protocol and where its server is. Receiving is auth.IMAP, auth.JMAP
+// (only with Settings.ExperimentalJMAP to add one) or auth.POP3 (only with
+// Settings.ExperimentalPOP3) and sending auth.SMTP;
 // an empty Protocol in input is auth.IMAP and auth.SMTP.
 type Server struct {
 	Protocol string

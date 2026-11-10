@@ -20,6 +20,7 @@ require (
 	github.com/godwit-email/markitdown-go v0.0.0
 	github.com/google/jsonschema-go v0.4.3
 	github.com/gorilla/css v1.0.1
+	github.com/knadh/go-pop3 v1.0.2
 	github.com/microcosm-cc/bluemonday v1.0.27
 	github.com/modelcontextprotocol/go-sdk v1.8.0
 	github.com/pelletier/go-toml/v2 v2.4.3

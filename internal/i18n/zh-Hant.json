@@ -2142,5 +2142,21 @@
   "onboarding_check_ews_host": "EWS 主機：{arg1}",
   "onboarding_next_davmail": "改用 DavMail，透過 IMAP 新增這個帳戶",
   "feature_reason_ews_server_too_old": "伺服器版本過舊：只支援 Exchange 2016 及以後版本。",
-  "feature_reason_ews_pending": "Exchange（EWS）帳戶暫不支援這個操作。"
+  "feature_reason_ews_pending": "Exchange（EWS）帳戶暫不支援這個操作。",
+  "settings_experimental_pop3": "POP3 帳號",
+  "settings_experimental_pop3_help": "新增帳號時可以選擇 POP3，適用於只提供 POP3 的信箱。收到的郵件保留在伺服器上，刪除、封存、已讀和星號只在這台電腦上生效。這是實驗性功能，日後可能調整。關閉後，已新增的 POP3 帳號會繼續運作。",
+  "onboarding_protocol_pop3": "POP3（實驗性）",
+  "onboarding_pop3_host": "POP3 伺服器",
+  "onboarding_pop3_port": "POP3 連接埠",
+  "onboarding_pop3_security": "POP3 加密方式",
+  "onboarding_check_pop3_failed": "POP3 登入失敗：{arg1}",
+  "onboarding_check_pop3_ok": "POP3 登入成功",
+  "onboarding_check_pop3_running": "POP3 登入中…",
+  "onboarding_check_pop3_waiting": "POP3 登入",
+  "onboarding_check_pop3_proxy": "POP3 連線失敗：{arg1}",
+  "feature_reason_pop3_local_move": "POP3 伺服器只有收件匣：移動只在這台電腦上生效。",
+  "feature_reason_pop3_local_flags": "POP3 不保存標記：已讀、星號等只保存在這台電腦上。",
+  "feature_reason_pop3_inbox_only": "POP3 伺服器只有收件匣。",
+  "feature_reason_pop3_not_provided": "POP3 不提供此功能。",
+  "feature_reason_pop3_no_uidl": "這台伺服器不支援 UIDL，Godwit 無法可靠地分辨郵件。"
 }

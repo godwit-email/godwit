@@ -2142,5 +2142,21 @@
   "onboarding_check_ews_host": "Máy chủ EWS: {arg1}",
   "onboarding_next_davmail": "Hãy dùng DavMail và thêm tài khoản qua IMAP",
   "feature_reason_ews_server_too_old": "Phiên bản máy chủ quá cũ: chỉ hỗ trợ Exchange 2016 trở lên.",
-  "feature_reason_ews_pending": "Tính năng này chưa có cho tài khoản Exchange (EWS)."
+  "feature_reason_ews_pending": "Tính năng này chưa có cho tài khoản Exchange (EWS).",
+  "settings_experimental_pop3": "Tài khoản POP3",
+  "settings_experimental_pop3_help": "Cho phép chọn POP3 khi thêm tài khoản, dành cho hộp thư chỉ cung cấp POP3. Thư vẫn ở trên máy chủ; xóa, lưu trữ, đã đọc và gắn sao chỉ áp dụng trên máy tính này. Đây là tính năng thử nghiệm và sau này có thể thay đổi. Khi tắt, các tài khoản POP3 đã thêm vẫn tiếp tục hoạt động.",
+  "onboarding_protocol_pop3": "POP3 (thử nghiệm)",
+  "onboarding_pop3_host": "Máy chủ POP3",
+  "onboarding_pop3_port": "Cổng POP3",
+  "onboarding_pop3_security": "Mã hóa POP3",
+  "onboarding_check_pop3_failed": "Đăng nhập POP3 thất bại: {arg1}",
+  "onboarding_check_pop3_ok": "Đã đăng nhập POP3",
+  "onboarding_check_pop3_running": "Đang đăng nhập POP3…",
+  "onboarding_check_pop3_waiting": "Đăng nhập POP3",
+  "onboarding_check_pop3_proxy": "Kết nối POP3 thất bại: {arg1}",
+  "feature_reason_pop3_local_move": "Máy chủ POP3 chỉ có hộp thư đến: việc di chuyển chỉ áp dụng trên máy tính này.",
+  "feature_reason_pop3_local_flags": "POP3 không lưu dấu: đã đọc, gắn sao và tương tự chỉ được lưu trên máy tính này.",
+  "feature_reason_pop3_inbox_only": "Máy chủ POP3 chỉ có hộp thư đến.",
+  "feature_reason_pop3_not_provided": "POP3 không cung cấp tính năng này.",
+  "feature_reason_pop3_no_uidl": "Máy chủ này không hỗ trợ UIDL, nên Godwit không thể phân biệt thư một cách đáng tin cậy."
 }

@@ -45,7 +45,7 @@ func (s *Service) LoadOlder(ctx context.Context, folderID int64) (more bool, err
 		return false, err
 	}
 	defer release()
-	more, err = mailsync.FetchOlder(ctx, s.db, recv, accountID, folderID, s.bus)
+	more, err = mailsync.FetchOlder(ctx, s.db, recv, accountID, folderID, s.bus, originals{s, accountID})
 	if err != nil && ctx.Err() != nil {
 		return false, ctx.Err()
 	}

@@ -16,6 +16,7 @@ import (
 	"github.com/godwit-email/godwit/backend/ews"
 	"github.com/godwit-email/godwit/backend/imapbackend"
 	"github.com/godwit-email/godwit/backend/jmap"
+	"github.com/godwit-email/godwit/backend/pop3"
 	"github.com/godwit-email/godwit/core/auth"
 )
 
@@ -87,6 +88,9 @@ func (s *Service) CheckAccount(ctx context.Context, in AccountInput) (CheckRepor
 		return CheckReport{}, err
 	}
 	defer end()
+	if err := s.allowPOP3(ctx, &in); err != nil {
+		return CheckReport{}, err
+	}
 	r, _ := s.check(ctx, in, "")
 	return r, ctx.Err()
 }
@@ -185,6 +189,8 @@ func newReceiver(srv Server, creds backend.CredentialsFunc) backend.Receiver {
 		return jmap.New(jmap.Config{SessionURL: sessionURL(srv), Credentials: creds})
 	case auth.EWS:
 		return ews.New(ews.Config{URL: slotURL(srv, srv.Path), Credentials: creds})
+	case auth.POP3:
+		return pop3.New(pop3.Config{Host: srv.Host, Port: srv.Port, Security: srv.Security, Credentials: creds})
 	}
 	return imapbackend.New(imapbackend.Config{Host: srv.Host, Port: srv.Port, Security: srv.Security, Credentials: creds})
 }

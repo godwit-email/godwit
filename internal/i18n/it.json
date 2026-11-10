@@ -2142,5 +2142,21 @@
   "onboarding_check_ews_host": "Host EWS: {arg1}",
   "onboarding_next_davmail": "Usa DavMail e aggiungi l’account tramite IMAP",
   "feature_reason_ews_server_too_old": "La versione del server è troppo vecchia: sono supportati solo Exchange 2016 e successivi.",
-  "feature_reason_ews_pending": "Non è ancora disponibile per gli account Exchange (EWS)."
+  "feature_reason_ews_pending": "Non è ancora disponibile per gli account Exchange (EWS).",
+  "settings_experimental_pop3": "Account POP3",
+  "settings_experimental_pop3_help": "Propone POP3 quando aggiungi un account, per le caselle che offrono solo POP3. La posta resta sul server; eliminare, archiviare, letto e speciale valgono solo su questo computer. È sperimentale e potrebbe cambiare in futuro. Se lo disattivi, gli account POP3 già aggiunti continuano a funzionare.",
+  "onboarding_protocol_pop3": "POP3 (sperimentale)",
+  "onboarding_pop3_host": "Server POP3",
+  "onboarding_pop3_port": "Porta POP3",
+  "onboarding_pop3_security": "Crittografia POP3",
+  "onboarding_check_pop3_failed": "Accesso POP3 non riuscito: {arg1}",
+  "onboarding_check_pop3_ok": "Accesso POP3 effettuato",
+  "onboarding_check_pop3_running": "Accesso a POP3 in corso…",
+  "onboarding_check_pop3_waiting": "Accesso POP3",
+  "onboarding_check_pop3_proxy": "Connessione POP3 non riuscita: {arg1}",
+  "feature_reason_pop3_local_move": "Un server POP3 ha solo la posta in arrivo: gli spostamenti valgono solo su questo computer.",
+  "feature_reason_pop3_local_flags": "POP3 non conserva i contrassegni: letto, speciale e simili vengono salvati solo su questo computer.",
+  "feature_reason_pop3_inbox_only": "Un server POP3 ha solo la posta in arrivo.",
+  "feature_reason_pop3_not_provided": "POP3 non lo offre.",
+  "feature_reason_pop3_no_uidl": "Questo server non supporta UIDL, quindi Godwit non può distinguere i messaggi in modo affidabile."
 }

@@ -52,16 +52,31 @@ func importMessage(ctx context.Context, db *store.DB, a *account, f *folder, m b
 		secScanned = 0
 	}
 
+	// An inbox-only account's original is kept: its server may delete it.
+	// shortcut: a second message with the same bytes (unique content_hash)
+	// keeps no original and is read from the server, so it is lost once the
+	// server deletes it; share the file between them once a user reports an
+	// unreadable POP3 duplicate.
+	var hash any
+	if r.originals != nil && m.Content.Raw != nil {
+		sum := sha256.Sum256(m.Content.Raw)
+		h := hex.EncodeToString(sum[:])
+		if err := r.originals.Keep(h, m.Content.Raw); err != nil {
+			return err
+		}
+		hash = h
+	}
 	args := append([]any{a.id}, plan.args...)
 	args = append(args, nullable(p.MessageID), nullable(p.InReplyTo), nullable(strings.Join(p.References, " ")), p.Subject, p.From,
 		jsonList(p.To), jsonList(p.Cc), nullable(p.ReplyTo), p.Date.Unix(), flagString(m.Flags), size,
 		mail.Snippet(p.Text), p.Text, nullable(p.HTML), p.Truncated, len(p.Attachments) > 0, nullable(labelFP(p, size)),
-		p.ListUnsubscribe, p.ListUnsubscribePost, p.ListID, p.AutoSubmitted, p.Precedence, p.AuthenticationResults, secStatus, secReason, secScanned, verifyDKIM, p.RuleSent, nullable(m.ServerID))
+		p.ListUnsubscribe, p.ListUnsubscribePost, p.ListID, p.AutoSubmitted, p.Precedence, p.AuthenticationResults, secStatus, secReason, secScanned, verifyDKIM, p.RuleSent, nullable(m.ServerID), a.id, hash, hash)
 	stmts := append(plan.pre, sqlite.Statement{
 		SQL: `INSERT INTO messages(account_id, thread_id,
 			message_id, in_reply_to, refs, subject, from_addr, to_addrs, cc_addrs, reply_to, date, flags, size,
-			snippet, body_text, body_html, body_truncated, has_attachments, label_fp, list_unsubscribe, list_unsubscribe_post, list_id, auto_submitted, precedence, auth_results, security_status, security_reason, security_scanned_at, security_verify_dkim, rule_sent, server_id)
-			VALUES (?, ` + plan.expr + `, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+			snippet, body_text, body_html, body_truncated, has_attachments, label_fp, list_unsubscribe, list_unsubscribe_post, list_id, auto_submitted, precedence, auth_results, security_status, security_reason, security_scanned_at, security_verify_dkim, rule_sent, server_id, content_hash)
+			VALUES (?, ` + plan.expr + `, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
+			CASE WHEN EXISTS (SELECT 1 FROM messages WHERE account_id = ? AND content_hash = ?) THEN NULL ELSE ? END)`,
 		Args: args,
 	}, sqlite.Statement{
 		SQL: `INSERT INTO message_locations(message_id, folder_id, shown, server_ref, entered_at, date)
@@ -307,6 +322,9 @@ func applyFlags(ctx context.Context, db *store.DB, stable bool, accountID int64,
 		remote, ok := snap[backend.MessageRef(store.Str(v[1]))]
 		fl := flagString(remote)
 		switch {
+		case !ok && r.inboxOnly: // kept where it shows, with no server location
+			stmts = append(stmts, unlocate(id, f.id)...)
+			tids = append(tids, store.Int(v[3]))
 		case !ok:
 			stmts = append(stmts, sqlite.Statement{SQL: "DELETE FROM message_locations WHERE message_id = ? AND folder_id = ?", Args: []any{id, f.id}})
 			tids, vanished = append(tids, store.Int(v[3])), append(vanished, id)

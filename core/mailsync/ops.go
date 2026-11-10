@@ -43,10 +43,11 @@ type op struct {
 
 // pusher is one push: the account's backend and what it declares.
 type pusher struct {
-	db       *store.DB
-	recv     backend.Receiver
-	stable   bool // IdentityStable: a message may have other locations
-	canPurge bool
+	db        *store.DB
+	recv      backend.Receiver
+	stable    bool // IdentityStable: a message may have other locations
+	inboxOnly bool // IdentityInboxOnly: a purge DELEs at the inbox location, wherever the message shows
+	canPurge  bool
 }
 
 // PushOps sends the account's pending ops to the server in id order. Ops whose
@@ -106,7 +107,7 @@ func push(ctx context.Context, db *store.DB, recv backend.Receiver, accountID in
 	if err != nil {
 		return err
 	}
-	p := &pusher{db: db, recv: recv, stable: d.Identity == backend.IdentityStable, canPurge: d.Features[backend.FeaturePurge].Level != backend.LevelUnsupported}
+	p := &pusher{db: db, recv: recv, stable: d.Identity == backend.IdentityStable, inboxOnly: d.Identity == backend.IdentityInboxOnly, canPurge: d.Features[backend.FeaturePurge].Level != backend.LevelUnsupported}
 	for _, row := range rows.Values {
 		// A preceding move can merge queues or rebase the next move's source.
 		current, err := db.Query(ctx, `SELECT id, kind, message_id, src_folder_id, dst_folder_id, payload, depends_on, attempts FROM ops
@@ -167,7 +168,8 @@ func (p *pusher) pushOp(ctx context.Context, o op) (problem string, err error) {
 	// A flags change goes wherever the server has the message; a move or purge
 	// takes it from the folder it was queued from.
 	at, args := "", []any{o.msg}
-	if o.kind != "flags" {
+	local := o.kind == "purge" && p.inboxOnly // from a local folder: the server has it in the inbox only
+	if o.kind != "flags" && !local {
 		at, args = " AND l.folder_id = ?", append(args, o.src)
 	}
 	r, err := db.Query(ctx, `SELECT l.folder_id, f.server_ref, l.server_ref, f.name FROM message_locations l
@@ -176,6 +178,17 @@ func (p *pusher) pushOp(ctx context.Context, o op) (problem string, err error) {
 		return "", err
 	}
 	if len(r.Values) == 0 {
+		if p.inboxOnly { // no longer on the server: kept here (a purged one the fetch deletes)
+			if o.kind == "purge" { // nothing to send, but the purge is checked as one that is
+				if due, err := p.purgeStillDue(ctx, o); err != nil || !due {
+					if err != nil {
+						return "", err
+					}
+					return "", finish(ctx, db, o, "cancelled", "")
+				}
+			}
+			return "", finish(ctx, db, o, "done", "")
+		}
 		if p.stable {
 			msg := "the message no longer has a server location, so the change could not be applied"
 			return msg, finish(ctx, db, o, "conflict", msg)

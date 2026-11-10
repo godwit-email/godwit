@@ -2142,5 +2142,21 @@
   "onboarding_check_ews_host": "EWS-host: {arg1}",
   "onboarding_next_davmail": "Gebruik in plaats daarvan DavMail en voeg het account toe via IMAP",
   "feature_reason_ews_server_too_old": "De serverversie is te oud: alleen Exchange 2016 en nieuwer worden ondersteund.",
-  "feature_reason_ews_pending": "Dit is nog niet beschikbaar voor Exchange-accounts (EWS)."
+  "feature_reason_ews_pending": "Dit is nog niet beschikbaar voor Exchange-accounts (EWS).",
+  "settings_experimental_pop3": "POP3-accounts",
+  "settings_experimental_pop3_help": "Biedt POP3 aan bij het toevoegen van een account, voor mailboxen die alleen POP3 aanbieden. E-mail blijft op de server; verwijderen, archiveren, gelezen en met ster gelden alleen op deze computer. Dit is experimenteel en kan later veranderen. Uitgeschakeld blijven al toegevoegde POP3-accounts werken.",
+  "onboarding_protocol_pop3": "POP3 (experimenteel)",
+  "onboarding_pop3_host": "POP3-server",
+  "onboarding_pop3_port": "POP3-poort",
+  "onboarding_pop3_security": "POP3-versleuteling",
+  "onboarding_check_pop3_failed": "Inloggen bij POP3 mislukt: {arg1}",
+  "onboarding_check_pop3_ok": "Ingelogd bij POP3",
+  "onboarding_check_pop3_running": "Inloggen bij POP3…",
+  "onboarding_check_pop3_waiting": "POP3-aanmelding",
+  "onboarding_check_pop3_proxy": "Verbinding met POP3 mislukt: {arg1}",
+  "feature_reason_pop3_local_move": "Een POP3-server heeft alleen een inbox: verplaatsen geldt alleen op deze computer.",
+  "feature_reason_pop3_local_flags": "POP3 bewaart geen markeringen: gelezen, met ster en dergelijke worden alleen op deze computer opgeslagen.",
+  "feature_reason_pop3_inbox_only": "Een POP3-server heeft alleen een inbox.",
+  "feature_reason_pop3_not_provided": "POP3 biedt dit niet.",
+  "feature_reason_pop3_no_uidl": "Deze server ondersteunt geen UIDL, dus Godwit kan berichten niet betrouwbaar uit elkaar houden."
 }

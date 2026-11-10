@@ -18,8 +18,9 @@ func (s *Service) AttachmentCacheUsage(ctx context.Context, accountID int64) (in
 	return dirUsage(ctx, s.cacheDir(accountID))
 }
 
-// ArchiveUsage is the bytes a local archive's originals, and the files
-// extracted from them, take on disk (ADR 0036); 0 for other accounts.
+// ArchiveUsage is the bytes a local archive's or an inbox-only (POP3)
+// account's originals, and the files extracted from them, take on disk (ADR
+// 0036, spec #627); 0 for other accounts.
 func (s *Service) ArchiveUsage(ctx context.Context, accountID int64) (int64, error) {
 	return dirUsage(ctx, filepath.Join(s.dataDir, "archive", strconv.FormatInt(accountID, 10)))
 }

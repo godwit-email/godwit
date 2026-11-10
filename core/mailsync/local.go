@@ -17,8 +17,9 @@ type Local struct {
 	Moved        []int64 // their messages
 }
 
-// InsertLocal stores p, a local archive's message whose original file hashes
-// to hash, in folderID with no server location (ADR 0036): its thread,
+// InsertLocal stores p, a local archive's message (or an inbox-only account's
+// sent copy) whose original file hashes to hash, in folderID with no server
+// location (ADR 0036): its thread,
 // attachment list, full-text index and security verdict, as importMessage
 // does. It is old mail: read, with no receive event, and already labeled and
 // scanned, so neither the AI labeler nor the security scanner takes it.
@@ -27,7 +28,7 @@ func InsertLocal(ctx context.Context, db *store.DB, accountID, folderID int64, p
 	if err != nil {
 		return Local{}, err
 	}
-	a.noSelf = true
+	a.noSelf = !a.inboxOnly // an inbox-only account's own sent mail knows its address
 	plan, err := planThread(ctx, db, a, p)
 	if err != nil {
 		return Local{}, err

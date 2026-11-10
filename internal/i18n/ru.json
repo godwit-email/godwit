@@ -2142,5 +2142,21 @@
   "onboarding_check_ews_host": "Хост EWS: {arg1}",
   "onboarding_next_davmail": "Используйте DavMail и добавьте учётную запись по IMAP",
   "feature_reason_ews_server_too_old": "Слишком старая версия сервера: поддерживаются только Exchange 2016 и новее.",
-  "feature_reason_ews_pending": "Для учётных записей Exchange (EWS) это пока недоступно."
+  "feature_reason_ews_pending": "Для учётных записей Exchange (EWS) это пока недоступно.",
+  "settings_experimental_pop3": "Учётные записи POP3",
+  "settings_experimental_pop3_help": "Позволяет выбрать POP3 при добавлении учётной записи — для ящиков, где есть только POP3. Письма остаются на сервере; удаление, архивирование, отметки «прочитано» и «избранное» действуют только на этом компьютере. Функция экспериментальная и позже может измениться. Если выключить, уже добавленные учётные записи POP3 продолжат работать.",
+  "onboarding_protocol_pop3": "POP3 (экспериментально)",
+  "onboarding_pop3_host": "Сервер POP3",
+  "onboarding_pop3_port": "Порт POP3",
+  "onboarding_pop3_security": "Шифрование POP3",
+  "onboarding_check_pop3_failed": "Ошибка входа в POP3: {arg1}",
+  "onboarding_check_pop3_ok": "Вход в POP3 выполнен",
+  "onboarding_check_pop3_running": "Вход в POP3…",
+  "onboarding_check_pop3_waiting": "Вход в POP3",
+  "onboarding_check_pop3_proxy": "Ошибка подключения к POP3: {arg1}",
+  "feature_reason_pop3_local_move": "На сервере POP3 есть только папка «Входящие»: перемещение действует только на этом компьютере.",
+  "feature_reason_pop3_local_flags": "POP3 не хранит отметки: «прочитано», «избранное» и прочие сохраняются только на этом компьютере.",
+  "feature_reason_pop3_inbox_only": "На сервере POP3 есть только папка «Входящие».",
+  "feature_reason_pop3_not_provided": "POP3 этого не поддерживает.",
+  "feature_reason_pop3_no_uidl": "Этот сервер не поддерживает UIDL, поэтому Godwit не может надёжно различать письма."
 }

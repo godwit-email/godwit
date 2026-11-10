@@ -20,8 +20,8 @@ var ErrNotSynced = backend.ErrNotSynced
 // out, through recv. It keeps what it imports; the range's
 // backfill only ever adds what is missing, so the next sync neither refetches
 // nor deletes it. more reports whether the server holds still more the folder
-// lacks.
-func FetchOlder(ctx context.Context, db *store.DB, recv backend.Receiver, accountID, folderID int64, bus *events.Bus) (more bool, err error) {
+// lacks. originals is Fetch's.
+func FetchOlder(ctx context.Context, db *store.DB, recv backend.Receiver, accountID, folderID int64, bus *events.Bus, originals ...Originals) (more bool, err error) {
 	rows, err := db.Query(ctx, "SELECT server_ref FROM folders WHERE id = ? AND account_id = ? AND server_ref IS NOT NULL", folderID, accountID)
 	if err != nil {
 		return false, err
@@ -29,5 +29,5 @@ func FetchOlder(ctx context.Context, db *store.DB, recv backend.Receiver, accoun
 	if len(rows.Values) == 0 {
 		return false, fmt.Errorf("folder %d not found", folderID)
 	}
-	return run(ctx, db, recv, accountID, bus, []backend.FolderRef{backend.FolderRef(store.Str(rows.Values[0][0]))}, OlderPage)
+	return run(ctx, db, recv, accountID, bus, []backend.FolderRef{backend.FolderRef(store.Str(rows.Values[0][0]))}, OlderPage, originals...)
 }

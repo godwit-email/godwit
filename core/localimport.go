@@ -14,6 +14,7 @@ import (
 	"slices"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/godwit-email/godwit/core/events"
 	"github.com/godwit-email/godwit/core/mail"
@@ -147,14 +148,20 @@ func (s *Service) importFile(ctx context.Context, accountID, folderID int64, pat
 	if int64(len(raw)) > attachLimit { // grew since the stat
 		return mailsync.Local{}, false, ErrTooLarge
 	}
-	sum := sha256.Sum256(raw)
-	hash := hex.EncodeToString(sum[:])
-
 	unlock, err := s.lockAccount(ctx, accountID) // threads planned and the hash checked stay so until the insert
 	if err != nil {
 		return mailsync.Local{}, false, err
 	}
 	defer unlock()
+	return s.insertOriginal(ctx, accountID, folderID, raw, info.ModTime())
+}
+
+// insertOriginal stores raw as a message of folderID with its original, or
+// reports it a duplicate; date stands in for a missing Date. The caller holds
+// the account lock.
+func (s *Service) insertOriginal(ctx context.Context, accountID, folderID int64, raw []byte, date time.Time) (mailsync.Local, bool, error) {
+	sum := sha256.Sum256(raw)
+	hash := hex.EncodeToString(sum[:])
 	rows, err := s.db.Query(ctx, "SELECT 1 FROM messages WHERE account_id = ? AND content_hash = ?", accountID, hash)
 	if err != nil {
 		return mailsync.Local{}, false, err
@@ -170,7 +177,7 @@ func (s *Service) importFile(ctx context.Context, accountID, folderID int64, pat
 		return mailsync.Local{}, false, errNotEmail
 	}
 	if p.Date.IsZero() {
-		p.Date = info.ModTime()
+		p.Date = date
 	}
 	// A mislabeled charset must not fail the insert in SQLite, as in sync.
 	p.Text, p.HTML = string(mail.ValidText([]byte(p.Text), "", false)), string(mail.ValidText([]byte(p.HTML), "", true))
@@ -225,11 +232,29 @@ func (s *Service) deleteLocal(ctx context.Context, accountID int64, ts []target)
 		}
 		s.bus.Publish(events.Event{Type: events.MessagesChanged, AccountID: accountID, MessageIDs: chunk,
 			ThreadIDs: slices.Compact(slices.Sorted(slices.Values(tids)))})
-		for _, h := range hashes {
-			if err := errors.Join(store.RemoveAll(s.archivePath(accountID, h)), store.RemoveAll(s.archivePartsDir(accountID, h))); err != nil {
-				slog.Warn("local archive: original left behind", "account", accountID, "hash", h, "err", err)
-			}
-		}
+		originals{s, accountID}.Drop(hashes)
 	}
 	return nil
+}
+
+// originals keeps the account's originals in the archive directory: a local
+// archive's, and an inbox-only account's, whose server may delete them
+// (mailsync.Originals, spec #627).
+type originals struct {
+	s         *Service
+	accountID int64
+}
+
+func (o originals) Keep(hash string, raw []byte) error {
+	return store.WriteFileAtomic(o.s.archivePath(o.accountID, hash), raw)
+}
+
+// Drop removes the originals and the files extracted from them, best effort:
+// a file left behind is merely unreferenced.
+func (o originals) Drop(hashes []string) {
+	for _, h := range hashes {
+		if err := errors.Join(store.RemoveAll(o.s.archivePath(o.accountID, h)), store.RemoveAll(o.s.archivePartsDir(o.accountID, h))); err != nil {
+			slog.Warn("original left behind", "account", o.accountID, "hash", h, "err", err)
+		}
+	}
 }

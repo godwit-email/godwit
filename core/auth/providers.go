@@ -42,6 +42,7 @@ const (
 	IMAP = "imap"
 	SMTP = "smtp"
 	JMAP = "jmap"
+	POP3 = "pop3"
 	// EWS is both slots of an on-premises Exchange account (Exchange Web
 	// Services); no provider has an entry for it.
 	EWS = "ews"
