@@ -224,7 +224,7 @@ func TestSettings(t *testing.T) {
 			LaunchAtLogin: true, KeepInBackground: false, ShowTrayIcon: false, UnreadInMenuBar: true,
 			NotifyNewMail: false, NotifyPreview: false,
 			QuickReplies: true, Summary: true, ThreadView: false,
-			DefaultModel: "svc/big", SmallModel: "svc/small", JudgeService: "judge", JudgeThreshold: 0.85, Translator: "plugin/dlx", LocalAPI: true, ExperimentalJMAP: true, SidebarWidth: 320, ListWidth: 400, SignatureDelimiter: true,
+			DefaultModel: "svc/big", SmallModel: "svc/small", JudgeService: "judge", JudgeThreshold: 0.85, Translator: "plugin/dlx", LocalAPI: true, ExperimentalJMAP: true, ExperimentalPOP3: true, SidebarWidth: 320, ListWidth: 400, SignatureDelimiter: true,
 			MaskCategories: core.MaskCategories{Names: core.MaskCategory{On: true, Action: core.MaskWarn}},
 			MaskWords:      []string{"Falcon"}, MaskWordsCase: true, MaskWordsWhole: true,
 			MaskRules: []mask.Rule{{Kind: "EMPLOYEE_ID", Regex: `E\d{6}`}}, MaskAllow: []string{"GitHub"}, RecognitionModel: true,
