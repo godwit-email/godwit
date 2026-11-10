@@ -2126,5 +2126,21 @@
   "onboarding_check_jmap_running": "JMAP oturumu açılıyor…",
   "onboarding_check_jmap_waiting": "JMAP oturumu",
   "onboarding_check_jmap_proxy": "JMAP bağlantısı kurulamadı: {arg1}",
-  "onboarding_check_jmap_host": "Oturum sunucusu: {arg1}"
+  "onboarding_check_jmap_host": "Oturum sunucusu: {arg1}",
+  "settings_experimental_pop3": "POP3 hesapları",
+  "settings_experimental_pop3_help": "Hesap eklerken yalnızca POP3 sunan posta kutuları için POP3 seçeneği sunar. E-postalar sunucuda kalır; silme, arşivleme, okundu ve yıldız yalnızca bu bilgisayarda geçerlidir. Deneyseldir ve ileride değişebilir. Kapatıldığında eklenmiş POP3 hesapları çalışmaya devam eder.",
+  "onboarding_protocol_pop3": "POP3 (deneysel)",
+  "onboarding_pop3_host": "POP3 sunucusu",
+  "onboarding_pop3_port": "POP3 bağlantı noktası",
+  "onboarding_pop3_security": "POP3 şifrelemesi",
+  "onboarding_check_pop3_failed": "POP3 oturumu açılamadı: {arg1}",
+  "onboarding_check_pop3_ok": "POP3 oturumu açıldı",
+  "onboarding_check_pop3_running": "POP3 oturumu açılıyor…",
+  "onboarding_check_pop3_waiting": "POP3 oturumu açma",
+  "onboarding_check_pop3_proxy": "POP3 bağlantısı başarısız oldu: {arg1}",
+  "feature_reason_pop3_local_move": "POP3 sunucusunda yalnızca gelen kutusu vardır: taşımalar yalnızca bu bilgisayarda geçerlidir.",
+  "feature_reason_pop3_local_flags": "POP3 işaretleri saklamaz: okundu, yıldız ve benzerleri yalnızca bu bilgisayarda kaydedilir.",
+  "feature_reason_pop3_inbox_only": "POP3 sunucusunda yalnızca gelen kutusu vardır.",
+  "feature_reason_pop3_not_provided": "POP3 bunu sağlamıyor.",
+  "feature_reason_pop3_no_uidl": "Bu sunucu UIDL desteklemiyor, bu yüzden Godwit e-postaları güvenilir şekilde ayırt edemez."
 }

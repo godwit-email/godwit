@@ -2126,5 +2126,21 @@
   "onboarding_check_jmap_running": "Anmeldung bei JMAP…",
   "onboarding_check_jmap_waiting": "JMAP-Anmeldung",
   "onboarding_check_jmap_proxy": "JMAP-Verbindung fehlgeschlagen: {arg1}",
-  "onboarding_check_jmap_host": "Sitzungshost: {arg1}"
+  "onboarding_check_jmap_host": "Sitzungshost: {arg1}",
+  "settings_experimental_pop3": "POP3-Konten",
+  "settings_experimental_pop3_help": "Bietet beim Hinzufügen eines Kontos POP3 an, für Postfächer, die nur POP3 anbieten. E-Mails bleiben auf dem Server; Löschen, Archivieren, Gelesen und Markiert gelten nur auf diesem Computer. Die Funktion ist experimentell und kann sich später ändern. Ausgeschaltet funktionieren bereits hinzugefügte POP3-Konten weiter.",
+  "onboarding_protocol_pop3": "POP3 (experimentell)",
+  "onboarding_pop3_host": "POP3-Server",
+  "onboarding_pop3_port": "POP3-Port",
+  "onboarding_pop3_security": "POP3-Verschlüsselung",
+  "onboarding_check_pop3_failed": "POP3-Anmeldung fehlgeschlagen: {arg1}",
+  "onboarding_check_pop3_ok": "Bei POP3 angemeldet",
+  "onboarding_check_pop3_running": "Anmeldung bei POP3 läuft…",
+  "onboarding_check_pop3_waiting": "POP3-Anmeldung",
+  "onboarding_check_pop3_proxy": "POP3-Verbindung fehlgeschlagen: {arg1}",
+  "feature_reason_pop3_local_move": "Ein POP3-Server hat nur einen Posteingang: Verschieben gilt nur auf diesem Computer.",
+  "feature_reason_pop3_local_flags": "POP3 speichert keine Markierungen: Gelesen, Markiert und Ähnliches werden nur auf diesem Computer gespeichert.",
+  "feature_reason_pop3_inbox_only": "Ein POP3-Server hat nur einen Posteingang.",
+  "feature_reason_pop3_not_provided": "POP3 bietet das nicht.",
+  "feature_reason_pop3_no_uidl": "Dieser Server unterstützt kein UIDL, daher kann Godwit E-Mails nicht zuverlässig unterscheiden."
 }

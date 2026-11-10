@@ -2126,5 +2126,21 @@
   "onboarding_check_jmap_running": "JMAP에 로그인하는 중…",
   "onboarding_check_jmap_waiting": "JMAP 로그인",
   "onboarding_check_jmap_proxy": "JMAP 연결 실패: {arg1}",
-  "onboarding_check_jmap_host": "세션 호스트: {arg1}"
+  "onboarding_check_jmap_host": "세션 호스트: {arg1}",
+  "settings_experimental_pop3": "POP3 계정",
+  "settings_experimental_pop3_help": "계정을 추가할 때 POP3를 선택할 수 있습니다(POP3만 제공하는 메일함용). 메일은 서버에 남고, 삭제·보관·읽음·별표는 이 컴퓨터에서만 적용됩니다. 실험 기능이므로 나중에 바뀔 수 있습니다. 끄더라도 이미 추가한 POP3 계정은 계속 작동합니다.",
+  "onboarding_protocol_pop3": "POP3(실험)",
+  "onboarding_pop3_host": "POP3 서버",
+  "onboarding_pop3_port": "POP3 포트",
+  "onboarding_pop3_security": "POP3 암호화",
+  "onboarding_check_pop3_failed": "POP3 로그인 실패: {arg1}",
+  "onboarding_check_pop3_ok": "POP3 로그인 성공",
+  "onboarding_check_pop3_running": "POP3 로그인 중…",
+  "onboarding_check_pop3_waiting": "POP3 로그인",
+  "onboarding_check_pop3_proxy": "POP3 연결 실패: {arg1}",
+  "feature_reason_pop3_local_move": "POP3 서버에는 받은편지함만 있습니다. 이동은 이 컴퓨터에서만 적용됩니다.",
+  "feature_reason_pop3_local_flags": "POP3는 표시를 저장하지 않습니다. 읽음, 별표 등은 이 컴퓨터에만 저장됩니다.",
+  "feature_reason_pop3_inbox_only": "POP3 서버에는 받은편지함만 있습니다.",
+  "feature_reason_pop3_not_provided": "POP3에서는 제공하지 않는 기능입니다.",
+  "feature_reason_pop3_no_uidl": "이 서버는 UIDL을 지원하지 않아 Godwit이 메일을 확실하게 구분할 수 없습니다."
 }

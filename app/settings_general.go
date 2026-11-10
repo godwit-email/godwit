@@ -319,6 +319,7 @@ func (p *settingsPage) labsView(c *ui.Context) {
 	pageHeading(c, i18n.T("settings.labs"), i18n.T("settings.labs.sub"))
 	settingsCard(c, func() {
 		kit.SwitchRow(c, &st.ExperimentalJMAP, i18n.T("settings.experimental_jmap"), i18n.T("settings.experimental_jmap.help"))
+		kit.SwitchRow(c, &st.ExperimentalPOP3, i18n.T("settings.experimental_pop3"), i18n.T("settings.experimental_pop3.help"))
 	})
 }
 
