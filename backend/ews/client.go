@@ -202,7 +202,7 @@ func send[R any](ctx context.Context, c *client, op any, cr backend.Credentials)
 	defer resp.Body.Close()
 	raw, err := io.ReadAll(resp.Body)
 	if err != nil {
-		return zero, err
+		return zero, fmt.Errorf("%w: %w", errUnreadable, err)
 	}
 	if resp.StatusCode != http.StatusOK {
 		if err := serverBusy(raw); err != nil {
@@ -211,7 +211,10 @@ func send[R any](ctx context.Context, c *client, op any, cr backend.Credentials)
 	}
 	var env responseEnvelope[R]
 	if err := xml.Unmarshal(raw, &env); err != nil {
-		return zero, fmt.Errorf("ews: response (HTTP %s): %w", resp.Status, err)
+		if resp.StatusCode == http.StatusServiceUnavailable { // the server did not take the request
+			return zero, fmt.Errorf("ews: response (HTTP %s): %w", resp.Status, err)
+		}
+		return zero, fmt.Errorf("%w (HTTP %s): %w", errUnreadable, resp.Status, err)
 	}
 	if v := env.Header.Version; v != nil {
 		c.mu.Lock()
@@ -226,6 +229,10 @@ func send[R any](ctx context.Context, c *client, op any, cr backend.Credentials)
 	}
 	return env.Body.Response, nil
 }
+
+// errUnreadable is a response whose body could not be read or decoded: no
+// verdict, so a request that may have taken effect did so unseen.
+var errUnreadable = errors.New("ews: unreadable response")
 
 // busyError is the server's ErrorServerBusy, asking to wait backOff.
 type busyError struct{ backOff time.Duration }

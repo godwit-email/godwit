@@ -169,6 +169,33 @@ func TestEWSAddAccountAutodiscover(t *testing.T) {
 	require.Len(t, ms, 1)
 }
 
+// An Autodiscover in the address's domain answering an EWS URL outside it
+// stops before the password goes there, until the user confirms that host.
+// localhost stands in for the other host: the account's client reaches no other.
+func TestEWSAddAccountAutodiscoverOtherDomainEWSURL(t *testing.T) {
+	e := coretest.New(t, coretest.WithoutAutoSync())
+	setEWS(t, e, true)
+	in, srv, ad := e.StartEWSAutodiscover(t, "alice@example.com")
+	ad.Serve("autodiscover.example.com")
+	u := strings.Replace(srv.URL(), "127.0.0.1", "localhost", 1)
+	ad.AnswerEWSURL(u)
+
+	r, err := e.Svc.CheckAccount(t.Context(), in)
+	require.NoError(t, err)
+	require.False(t, r.OK())
+	assert.Equal(t, "localhost", r.Confirm)
+	assert.Equal(t, core.KindConfirm, r.Steps[1].Kind)
+	assert.Zero(t, srv.Requests(), "the password went to the EWS URL before its host was confirmed")
+
+	in.ConfirmedHosts = []string{"localhost"}
+	r, err = e.Svc.CheckAccount(t.Context(), in)
+	require.NoError(t, err)
+	require.True(t, r.OK(), "%+v", r.Steps)
+	assert.Equal(t, u, r.URL)
+	_, err = e.Svc.AddAccount(t.Context(), in)
+	require.NoError(t, err)
+}
+
 // When Autodiscover finds nothing the ews step fails with ErrNoAutodiscover,
 // and the user types the URL in.
 func TestEWSAutodiscoverFindsNothing(t *testing.T) {

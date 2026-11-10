@@ -504,8 +504,8 @@ func TestEWSSenderContract(t *testing.T) {
 	backendtest.RunSender(t, func(t *testing.T) backendtest.SendServer { return ewsServer{testmail.StartEWS(t)} })
 }
 
-// A Bcc recipient gets the message but is not named in it, and the sent
-// copy is filed in Sent Items once.
+// Bcc recipients, each in its own Mailbox, get the message but are not
+// named in it, and the sent copy is filed in Sent Items once.
 func TestEWSSendBccAndSentCopy(t *testing.T) {
 	s := testmail.StartEWS(t)
 	raw := backendtest.Message("bcc@example.com", "hello")
@@ -513,18 +513,36 @@ func TestEWSSendBccAndSentCopy(t *testing.T) {
 	if !snd.SavesSent() {
 		t.Error("SavesSent = false")
 	}
-	if err := snd.Send(tctx(t), "a@example.com", []string{"b@example.com", "hidden@example.com"}, raw); err != nil {
+	if err := snd.Send(tctx(t), "a@example.com", []string{"b@example.com", "hidden@example.com", "hidden2@example.com"}, raw); err != nil {
 		t.Fatal(err)
 	}
 	sent := s.Sent()
-	if len(sent) != 1 || !slices.Contains(sent[0].Rcpts, "hidden@example.com") {
-		t.Fatalf("sent %+v, want one message to hidden@ too", sent)
+	if len(sent) != 1 || !slices.Contains(sent[0].Rcpts, "hidden@example.com") || !slices.Contains(sent[0].Rcpts, "hidden2@example.com") {
+		t.Fatalf("sent %+v, want one message to both hidden recipients too", sent)
 	}
 	if bytes.Contains(sent[0].Raw, []byte("hidden@")) {
 		t.Errorf("the message names its Bcc recipient: %s", sent[0].Raw)
 	}
 	if n := s.Count("Sent Items"); n != 1 {
 		t.Errorf("Sent Items has %d messages, want 1", n)
+	}
+}
+
+// A send answered with an empty or cut-off body may have gone out: it is
+// uncertain, never tried again by the outbox.
+func TestEWSSendUnreadableVerdictIsUncertain(t *testing.T) {
+	for name, body := range map[string]string{"empty": "", "truncated": `<s:Envelope xmlns:s="http://schemas.xmlsoap.org/soap/envelope/"><s:Body><m:CreateItemResp`} {
+		t.Run(name, func(t *testing.T) {
+			s := testmail.StartEWS(t)
+			s.GarbleVerdict(body)
+			err := ewsServer{s}.Sender(t).Send(tctx(t), "a@example.com", []string{"b@example.com"}, backendtest.Message("b@example.com", "hello"))
+			if !errors.Is(err, backend.ErrUncertain) {
+				t.Errorf("Send answered with a %s body = %v, want ErrUncertain", name, err)
+			}
+			if n := len(s.Sent()); n != 1 {
+				t.Errorf("sent %d messages, want 1", n)
+			}
+		})
 	}
 }
 

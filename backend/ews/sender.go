@@ -72,13 +72,13 @@ func (s *Sender) Send(ctx context.Context, _ string, rcpts []string, raw []byte)
 	return err
 }
 
-// lostAnswer reports that err is the connection failing or timing out
-// rather than the server answering.
+// lostAnswer reports that err is the connection failing or timing out, or
+// an answer that cannot be read, rather than the server's verdict.
 func lostAnswer(err error) bool {
 	var ue *url.Error
 	var ne net.Error
 	return errors.As(err, &ue) || errors.As(err, &ne) || errors.Is(err, io.ErrUnexpectedEOF) ||
-		errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) || errors.Is(err, errNoVerdict)
+		errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) || errors.Is(err, errNoVerdict) || errors.Is(err, errUnreadable)
 }
 
 // ntlmNegotiate reports that auth, an Authorization value, is an NTLM

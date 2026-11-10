@@ -85,6 +85,31 @@ func TestEWSAutodiscoverOtherDomain(t *testing.T) {
 	}
 }
 
+// An EWS URL outside the address's registrable domain, from an Autodiscover
+// inside it, is confirmed before it is returned to sign in at.
+func TestEWSAutodiscoverOtherDomainEWSURL(t *testing.T) {
+	const other = "https://ews.example.net/EWS/Exchange.asmx"
+	for name, serve := range map[string]func(*testmail.Autodiscover){
+		"SOAP": func(ad *testmail.Autodiscover) { ad.Serve("example.com") },
+		"POX":  func(ad *testmail.Autodiscover) { ad.ServePOX("example.com") },
+	} {
+		t.Run(name, func(t *testing.T) {
+			s := testmail.StartEWS(t)
+			ad := s.StartAutodiscover()
+			serve(ad)
+			ad.AnswerEWSURL(other)
+			got, err := discover(t, s, ad, "alice@example.com")
+			var confirm *ews.ConfirmError
+			if !errors.As(err, &confirm) || confirm.Host != "ews.example.net" {
+				t.Fatalf("Discover = %q, %v; want a confirmation of ews.example.net", got, err)
+			}
+			if got, err := discover(t, s, ad, "alice@example.com", "ews.example.net"); err != nil || got != other {
+				t.Fatalf("confirmed: Discover = %q, %v; want %q", got, err, other)
+			}
+		})
+	}
+}
+
 // Nowhere to find it is ErrNoAutodiscover; a wrong password everywhere it
 // was asked is ErrAuthFailed.
 func TestEWSAutodiscoverFails(t *testing.T) {

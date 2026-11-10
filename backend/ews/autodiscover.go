@@ -68,7 +68,8 @@ const (
 // unauthenticated plain-HTTP GET of autodiscover.<domain> and the
 // _autodiscover._tcp SRV record; each SOAP first, then POX. The credentials
 // go over HTTPS only, and to a host outside the address's registrable domain
-// only once confirmed: before that it returns a *ConfirmError naming it.
+// only once confirmed: before that it returns a *ConfirmError naming it. The
+// EWS URL it returns is held to the same rule, loopback aside.
 // Redirects within the domain are followed.
 func Discover(ctx context.Context, cfg DiscoverConfig) (string, error) {
 	cr, err := cfg.Credentials(ctx)
@@ -266,6 +267,15 @@ func (d *discovery) post(ctx context.Context, target, email string) (hop, error)
 		case a.address != "":
 			return hop{address: a.address}, nil
 		case a.ewsURL != "":
+			// The check signs in at the EWS URL next: its host is held to the
+			// same trust. A loopback address keeps the password on this machine.
+			e, err := url.Parse(a.ewsURL)
+			if err != nil {
+				return hop{}, fmt.Errorf("ews: Autodiscover gave the EWS URL %q: %w", a.ewsURL, err)
+			}
+			if ip := net.ParseIP(e.Hostname()); !d.trusted(e.Hostname()) && (ip == nil || !ip.IsLoopback()) {
+				return hop{}, &ConfirmError{Host: e.Hostname()}
+			}
 			return hop{ewsURL: a.ewsURL}, nil
 		default:
 			return hop{}, ErrNoAutodiscover

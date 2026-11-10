@@ -38,6 +38,7 @@ type Autodiscover struct {
 	hosts        map[string]*adHost
 	srv          map[string]*net.SRV // by domain
 	credentialed map[string]bool     // hosts a request with credentials reached
+	ewsURL       string              // the EWS URL answered, if not ews's
 }
 
 // adHost is how one host answers.
@@ -106,6 +107,14 @@ func (a *Autodiscover) SRV(domain, target string) {
 	a.mu.Lock()
 	defer a.mu.Unlock()
 	a.srv[domain] = &net.SRV{Target: target + ".", Port: 443, Priority: 0, Weight: 100}
+}
+
+// AnswerEWSURL makes every host answer u as the EWS URL instead of the EWS
+// server's own.
+func (a *Autodiscover) AnswerEWSURL(u string) {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	a.ewsURL = u
 }
 
 // Credentialed reports whether a request carrying credentials reached host.
@@ -192,7 +201,11 @@ func (a *Autodiscover) serve(w http.ResponseWriter, r *http.Request) {
 	if r.Header.Get("Authorization") != "" {
 		a.credentialed[host] = true
 	}
+	ewsURL := a.ewsURL
 	a.mu.Unlock()
+	if ewsURL == "" {
+		ewsURL = a.ews.URL()
+	}
 	soap := strings.EqualFold(r.URL.Path, "/autodiscover/autodiscover.svc")
 	if h == nil || !soap && !strings.EqualFold(r.URL.Path, "/autodiscover/autodiscover.xml") || r.Method != http.MethodPost {
 		http.NotFound(w, r)
@@ -222,14 +235,14 @@ func (a *Autodiscover) serve(w http.ResponseWriter, r *http.Request) {
 	case soap && h.redirectAddr != "":
 		a.soap(w, "RedirectAddress", h.redirectAddr, "")
 	case soap && h.soap:
-		a.soap(w, "NoError", "", a.ews.URL())
+		a.soap(w, "NoError", "", ewsURL)
 	case !soap && h.redirectURL != "":
 		a.pox(w, "redirectUrl", "<RedirectUrl>https://"+esc(h.redirectURL+r.URL.Path)+"</RedirectUrl>")
 	case !soap && h.redirectAddr != "":
 		a.pox(w, "redirectAddr", "<RedirectAddr>"+esc(h.redirectAddr)+"</RedirectAddr>")
 	case !soap && h.pox:
 		a.pox(w, "settings", "<Protocol><Type>EXCH</Type><Server>mbx01.example.com</Server><EwsUrl>https://mbx01.example.com/EWS/Exchange.asmx</EwsUrl></Protocol>"+
-			"<Protocol><Type>EXPR</Type><Server>mail.example.com</Server><EwsUrl>"+esc(a.ews.URL())+"</EwsUrl></Protocol>")
+			"<Protocol><Type>EXPR</Type><Server>mail.example.com</Server><EwsUrl>"+esc(ewsURL)+"</EwsUrl></Protocol>")
 	default:
 		http.NotFound(w, r)
 	}

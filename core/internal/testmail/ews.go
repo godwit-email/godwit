@@ -28,7 +28,7 @@ import (
 // namespace prefixes differently from operation to operation, as servers do.
 // Hooks change the mailbox as another client would (MarkRead, MarkFlagged,
 // MarkAnswered, Remove, RenameFolder, RemoveFolder) or inject faults
-// (RejectAuth, SetVersion, Reset, Busy, Refuse, LoseVerdict,
+// (RejectAuth, SetVersion, Reset, Busy, Refuse, LoseVerdict, GarbleVerdict,
 // RejectNextSendAuth, DropNextChallenge, OmitNewItemIds, LoseSubscriptions,
 // DropStreams, Advance).
 //
@@ -59,6 +59,7 @@ type EWS struct {
 	sent             []EWSSent
 	refused          map[string]bool // recipients refused
 	lose             bool            // drop the next CreateItem's answer
+	garble           *string         // answer the next CreateItem with this body instead
 	rejectSend       bool            // refuse the next CreateItem's credentials
 	dropChallenge    bool            // close the connection on the next NTLM NEGOTIATE
 
@@ -185,6 +186,14 @@ func (s *EWS) LoseVerdict() {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.lose = true
+}
+
+// GarbleVerdict makes the server send the next CreateItem and answer it
+// with HTTP 200 and body, such as an empty or cut-off one.
+func (s *EWS) GarbleVerdict(body string) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.garble = &body
 }
 
 // RejectNextSendAuth makes the server refuse the credentials of the next
@@ -405,6 +414,7 @@ func readRequest(body []byte) (ewsRequest, error) {
 	d := xml.NewDecoder(bytes.NewReader(body))
 	var inBody bool
 	var cur, tag string
+	var mailboxes int // Mailbox elements seen: each holds one EmailAddress
 	for {
 		tok, err := d.Token()
 		if err == io.EOF {
@@ -439,6 +449,8 @@ func readRequest(body []byte) (ewsRequest, error) {
 				for _, a := range el.Attr {
 					r.text[a.Name.Local] = a.Value
 				}
+			case cur == "Mailbox":
+				mailboxes++
 			case cur == "ExtendedFieldURI":
 				tag = attr("PropertyTag")
 			case cur == "RequestServerVersion" && el.Name.Space == nsTypes:
@@ -471,6 +483,9 @@ func readRequest(body []byte) (ewsRequest, error) {
 				case cur == "EventType":
 					r.eventTypes = append(r.eventTypes, t)
 				case cur == "EmailAddress":
+					if len(r.addresses) == mailboxes {
+						return r, fmt.Errorf("EmailAddress %s outside a Mailbox of its own", t)
+					}
 					r.addresses = append(r.addresses, t)
 				}
 			}
@@ -841,6 +856,11 @@ func (s *EWS) createItem(w http.ResponseWriter, req ewsRequest) {
 		s.lose = false
 		c, _, _ := http.NewResponseController(w).Hijack()
 		c.Close()
+		return
+	}
+	if b := s.garble; b != nil {
+		s.garble = nil
+		io.WriteString(w, *b)
 		return
 	}
 	reply(message("CreateItem", "", "<m:Items/>"))
