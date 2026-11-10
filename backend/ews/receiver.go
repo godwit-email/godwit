@@ -242,6 +242,9 @@ func (r *Receiver) syncFolder(ctx context.Context, req backend.SyncRequest, fold
 				changes = append(changes, backend.MessageGone{Location: at(ch.ref())})
 			}
 		}
+		if created, err = r.unheld(ctx, req.Local, folder, created); err != nil {
+			return err
+		}
 		err = r.each(ctx, created, true, func(it fetched) {
 			changes = append(changes, backend.MessageAppeared{Location: at(it.ID.ID), Flags: it.flags(), Backfill: !st.Synced,
 				Content: &backend.Content{Size: int64(len(it.raw)), Date: it.Received, Header: backend.HeaderFields(it.raw, req.HeaderFields), Raw: it.raw}})
@@ -263,6 +266,20 @@ func (r *Receiver) syncFolder(ctx context.Context, req backend.SyncRequest, fold
 			return nil
 		}
 	}
+}
+
+// unheld is the ids of folder that local storage does not hold yet: one it
+// holds came from Godwit's own move, copy or append, Done with its ItemId.
+func (r *Receiver) unheld(ctx context.Context, local backend.Local, folder backend.FolderRef, ids []string) ([]string, error) {
+	if local == nil || len(ids) == 0 {
+		return ids, nil
+	}
+	refs := make([]backend.MessageRef, len(ids))
+	for i, id := range ids {
+		refs[i] = backend.MessageRef(id)
+	}
+	held, err := local.HeldRefs(ctx, folder, refs)
+	return slices.DeleteFunc(ids, func(id string) bool { return held[backend.MessageRef(id)] }), err
 }
 
 // each fetches the items ids, in batches, with their MIME content if mime,
@@ -364,8 +381,33 @@ func (r *Receiver) Find(ctx context.Context, folder backend.FolderRef, messageID
 	return out, err
 }
 
-// Apply implements backend.Receiver: nothing is written back yet.
-func (r *Receiver) Apply(context.Context, backend.Op) (backend.Result, error) {
+// Apply implements backend.Receiver. Move and Copy ask for the new ItemId
+// (a move changes it), Done with it or Unlocated without; Delete moves to
+// Deleted Items; Purge deletes for good once Confirm agrees; Append saves
+// the MIME message with its flags.
+func (r *Receiver) Apply(ctx context.Context, op backend.Op) (backend.Result, error) {
+	switch op := op.(type) {
+	case backend.Move:
+		if op.To == op.At.Folder {
+			return backend.Result{Outcome: backend.Done, Ref: op.At.Ref}, nil
+		}
+		id, err := r.c.moveItem(ctx, string(op.At.Ref), string(op.To), false)
+		return written(op.At, id, err)
+	case backend.Copy:
+		id, err := r.c.moveItem(ctx, string(op.At.Ref), string(op.To), true)
+		return written(op.At, id, err)
+	case backend.Delete:
+		return r.remove(ctx, op.At, "MoveToDeletedItems")
+	case backend.Purge:
+		if op.Confirm != nil && !op.Confirm() {
+			return backend.Result{Outcome: backend.Failed, Reason: backend.Cancelled}, nil
+		}
+		return r.remove(ctx, op.At, "HardDelete")
+	case backend.Append:
+		return r.append(ctx, op)
+	}
+	// shortcut: SetFlags is still to come (#660), and AddToFolder and
+	// RemoveFromFolder take their reasons from its Describe table.
 	return backend.Result{Outcome: backend.Unsupported, Reason: reasonPending}, nil
 }
 
