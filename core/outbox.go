@@ -433,7 +433,7 @@ func (a *sendAuth) sender() backend.Sender {
 	case auth.Graph:
 		return graph.New(graphSendURL, a.credentials)
 	case auth.EWS:
-		return ews.Sender{}
+		return ews.NewSender(ews.Config{URL: slotURL(a.acc.Sending, a.acc.Sending.Path), Credentials: a.credentials})
 	}
 	return a.smtp()
 }

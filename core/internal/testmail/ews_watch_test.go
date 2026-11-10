@@ -33,6 +33,17 @@ func TestEWSWatchContract(t *testing.T) {
 	backendtest.RunOnly(t, func(t *testing.T) backendtest.Server { return pushServer{ewsServer{testmail.StartEWS(t)}} }, "Watch")
 }
 
+// The streaming connection signs in over NTLM like any other request.
+func TestEWSWatchNTLM(t *testing.T) {
+	s := testmail.StartEWS(t)
+	s.UseNTLM()
+	wakes, done := watching(t, ewsNTLMServer{ewsServer{s}}.Receiver(t))
+	nextWake(t, wakes, done)
+	s.WaitStreams(t, 1)
+	s.Deliver("INBOX", backendtest.Message("a@example.com", "a"))
+	nextWake(t, wakes, done)
+}
+
 // watching runs Watch until the test ends; wakes gets each wake's folders,
 // done Watch's return.
 func watching(t *testing.T, r backend.Receiver) (wakes chan []backend.FolderRef, done chan error) {
