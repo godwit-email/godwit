@@ -310,3 +310,22 @@ func TestEWSAutodiscoverWithPasswordAuth(t *testing.T) {
 	require.True(t, r.OK(), "%+v", r.Steps)
 	assert.Equal(t, srv.URL(), r.URL)
 }
+
+// Clearing an EWS account's URL in its server settings finds it again by
+// Autodiscover, and the account keeps what was found.
+func TestEWSUpdateServersByAutodiscover(t *testing.T) {
+	e := coretest.New(t, coretest.WithoutAutoSync())
+	setEWS(t, e, true)
+	in, srv, ad := e.StartEWSAutodiscover(t, "alice@example.com")
+	ad.Serve("autodiscover.example.com")
+	acc, err := e.Svc.AddAccount(t.Context(), in)
+	require.NoError(t, err)
+	acc, err = e.Svc.UpdateAccount(t.Context(), acc.ID, core.AccountPatch{Servers: &core.ServerSettings{
+		Username: acc.Username, Receiving: core.Server{Protocol: acc.Receiving.Protocol}}})
+	require.NoError(t, err)
+	assert.Equal(t, "/EWS/Exchange.asmx", acc.Receiving.Path)
+	assert.Equal(t, acc.Receiving.Host, acc.Sending.Host)
+	queueSend(t, e, acc)
+	require.NoError(t, e.Svc.SyncNow(t.Context(), acc.ID))
+	require.Eventually(t, func() bool { return len(srv.Sent()) == 1 }, 5*time.Second, 20*time.Millisecond)
+}

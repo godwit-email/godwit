@@ -275,6 +275,9 @@ func sessionURL(srv Server) string {
 // slotURL is path on an HTTP slot's host: https, or http for SecurityNone.
 func slotURL(srv Server, path string) string {
 	u := url.URL{Scheme: "https", Host: net.JoinHostPort(srv.Host, strconv.Itoa(srv.Port)), Path: path}
+	if p, err := url.PathUnescape(path); err == nil { // a stored path is escaped (url.URL.EscapedPath)
+		u.Path, u.RawPath = p, path
+	}
 	if srv.Security == SecurityNone {
 		u.Scheme = "http"
 	}

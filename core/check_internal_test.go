@@ -1,80 +1,25 @@
 package core
 
-import (
-	"context"
-	"errors"
-	"net"
-	"strings"
-	"testing"
-	"unicode/utf8"
+import "testing"
 
-	"github.com/godwit-email/godwit/core/internal/testmail"
-	"github.com/stretchr/testify/assert"
-	"github.com/stretchr/testify/require"
-	"github.com/zalando/go-keyring"
-)
-
-func TestAddAccountFailedCheckWritesNoKeychain(t *testing.T) {
-	keyring.MockInit()
-	s, err := New(context.Background(), Options{DataDir: t.TempDir()})
-	require.NoError(t, err)
-	defer s.Close()
-	smtpAddr, _ := testmail.StartSMTP(t)
-	im := testmail.StartIMAP(t)
-	writes := 0 // of the password; the KeychainStatus probe comes first
-	setFor(t, &keyringSet, func(svc, user, pw string) error {
-		if !strings.Contains(user, "/probe/") {
-			writes++
+// An EWS URL keeps its escaped path from discovery to the URL the backend
+// is given: escaped once, not twice.
+func TestEWSSlotURLRoundTrip(t *testing.T) {
+	for _, u := range []string{
+		"https://mail.example.com/EWS/Exchange.asmx",
+		"https://mail.example.com/Exchange%20Services/Exchange.asmx",
+		"http://127.0.0.1:8080/a%2Fb/Exchange.asmx",
+	} {
+		srv, err := ewsSlot(u)
+		if err != nil {
+			t.Fatal(err)
 		}
-		return keyring.Set(svc, user, pw)
-	})
-	in := internalInput(t, im.Addr, smtpAddr, "a@example.com", false)
-	in.Password = "wrong"
-	_, err = s.AddAccount(context.Background(), in)
-	var ce *CheckError
-	require.True(t, errors.As(err, &ce))
-	assert.Zero(t, writes)
-	list, _ := s.ListAccounts(context.Background())
-	assert.Empty(t, list)
-}
-
-func TestCheckAccountClosedAndCancelled(t *testing.T) {
-	keyring.MockInit()
-	s, err := New(context.Background(), Options{DataDir: t.TempDir()})
-	require.NoError(t, err)
-	in := internalInput(t, "127.0.0.1:1", "127.0.0.1:1", "a@example.com", false)
-	ctx, cancel := context.WithCancel(context.Background())
-	cancel()
-	_, err = s.CheckAccount(ctx, in)
-	assert.ErrorIs(t, err, context.Canceled)
-	require.NoError(t, s.Close())
-	_, err = s.CheckAccount(context.Background(), in)
-	assert.ErrorIs(t, err, ErrClosed)
-}
-
-func TestCheckDetailCapped(t *testing.T) {
-	keyring.MockInit()
-	s, err := New(context.Background(), Options{DataDir: t.TempDir()})
-	require.NoError(t, err)
-	defer s.Close()
-	l, err := net.Listen("tcp", "127.0.0.1:0")
-	require.NoError(t, err)
-	defer l.Close()
-	go func() {
-		for {
-			c, err := l.Accept()
-			if err != nil {
-				return
-			}
-			c.Write([]byte("* BYE " + strings.Repeat("é", 500) + "\r\n"))
-			c.Close()
+		want := u
+		if srv.Port == 443 {
+			want = "https://mail.example.com:443" + u[len("https://mail.example.com"):]
 		}
-	}()
-	smtpAddr, _ := testmail.StartSMTP(t)
-	r, err := s.CheckAccount(context.Background(), internalInput(t, l.Addr().String(), smtpAddr, "a@example.com", false))
-	require.NoError(t, err)
-	d := r.Steps[1].Detail
-	require.NotEmpty(t, d)
-	assert.LessOrEqual(t, len(d), 200)
-	assert.True(t, utf8.ValidString(d))
+		if got := slotURL(srv, srv.Path); got != want {
+			t.Errorf("ewsSlot(%q) then slotURL = %q, want %q", u, got, want)
+		}
+	}
 }

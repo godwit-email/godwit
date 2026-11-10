@@ -841,6 +841,10 @@ func (s *Service) UpdateAccount(ctx context.Context, id int64, p AccountPatch) (
 		if err != nil && !(acc.ReceiveOnly && r.OnlySMTPFailed()) {
 			return Account{}, err
 		}
+		if r.URL != "" { // found by Autodiscover
+			in.Receiving, _ = ewsSlot(r.URL)
+			in.Sending = in.Receiving
+		}
 		set("receive_only", b2i(err != nil))
 		set("username", in.username())
 		set("recv_host", in.Receiving.Host)
