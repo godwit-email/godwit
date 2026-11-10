@@ -21,12 +21,12 @@ import (
 // EWS is a running fake EWS server (Exchange Web Services) with one mailbox,
 // alice/secret over HTTP Basic (or NTLM: UseNTLM), that starts with the
 // distinguished mail folders and a calendar. It speaks GetFolder, SyncFolderHierarchy,
-// SyncFolderItems, GetItem, FindItem and CreateItem sending a message; an
-// operation it does not know fails the test. Its responses spell the
-// namespace prefixes differently from operation to operation, as servers do.
-// Hooks change the mailbox as another client would (MarkRead, MarkFlagged,
-// MarkAnswered, Remove, RenameFolder, RemoveFolder) or inject faults
-// (RejectAuth, SetVersion, Reset, Busy, Refuse, LoseVerdict,
+// SyncFolderItems, GetItem, FindItem, UpdateItem and CreateItem sending a
+// message; an operation it does not know fails the test. Its responses spell
+// the namespace prefixes differently from operation to operation, as servers
+// do. Hooks change the mailbox as another client would (MarkRead,
+// MarkFlagged, MarkAnswered, Remove, RenameFolder, RemoveFolder) or inject
+// faults (RejectAuth, SetVersion, Reset, Busy, Refuse, LoseVerdict,
 // RejectNextSendAuth, DropNextChallenge).
 //
 // Every change takes the next sequence number, and deleted items and
@@ -224,6 +224,14 @@ func (s *EWS) Deliver(path string, raw []byte) string {
 // MarkRead marks the item id read or unread.
 func (s *EWS) MarkRead(id string, read bool) {
 	s.change(id, true, func(it *ewsItem) { it.read = read })
+}
+
+// Read reports whether the item id is read.
+func (s *EWS) Read(id string) bool {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	it := s.findItem(id)
+	return it != nil && it.read
 }
 
 // MarkFlagged flags or unflags the item id.
@@ -464,6 +472,8 @@ func (s *EWS) serve(w http.ResponseWriter, r *http.Request) {
 		s.createItem(w, req)
 	case "FindItem":
 		s.findItems(w, req)
+	case "UpdateItem":
+		s.updateItem(w, body)
 	default:
 		s.t.Errorf("fake EWS: unknown operation %s", req.op)
 		s.fault(w, "ErrorInvalidRequest", "unknown operation "+req.op)
@@ -795,4 +805,76 @@ func (s *EWS) findItems(w http.ResponseWriter, req ewsRequest) {
 		fmt.Fprintf(&items, `<t:Message><t:ItemId Id="%s" ChangeKey="CQAAAA=="/></t:Message>`, it.id)
 	}
 	reply(message("FindItem", "", fmt.Sprintf(`<m:RootFolder TotalItemsInView="%d" IncludesLastItemInRange="true"><t:Items>%s</t:Items></m:RootFolder>`, n, items.String())))
+}
+
+// updateItem sets and clears read, the flag and the last verb, as
+// UpdateItem with AlwaysOverwrite does; any other property, conflict
+// resolution, or marking read that could send a read receipt fails the test.
+func (s *EWS) updateItem(w http.ResponseWriter, body []byte) {
+	type uri struct {
+		Field string `xml:"FieldURI,attr"`
+		Tag   string `xml:"PropertyTag,attr"`
+	}
+	type update struct {
+		XMLName  xml.Name
+		Field    uri `xml:"http://schemas.microsoft.com/exchange/services/2006/types FieldURI"`
+		Extended uri `xml:"http://schemas.microsoft.com/exchange/services/2006/types ExtendedFieldURI"`
+		Message  struct {
+			IsRead     *bool  `xml:"http://schemas.microsoft.com/exchange/services/2006/types IsRead"`
+			FlagStatus string `xml:"http://schemas.microsoft.com/exchange/services/2006/types Flag>FlagStatus"`
+			Value      string `xml:"http://schemas.microsoft.com/exchange/services/2006/types ExtendedProperty>Value"`
+		} `xml:"http://schemas.microsoft.com/exchange/services/2006/types Message"`
+	}
+	var env struct {
+		Op struct {
+			Conflict string `xml:"ConflictResolution,attr"`
+			Suppress string `xml:"SuppressReadReceipts,attr"`
+			Changes  []struct {
+				ItemID struct {
+					ID string `xml:"Id,attr"`
+				} `xml:"http://schemas.microsoft.com/exchange/services/2006/types ItemId"`
+				Updates struct {
+					All []update `xml:",any"`
+				} `xml:"http://schemas.microsoft.com/exchange/services/2006/types Updates"`
+			} `xml:"ItemChanges>ItemChange"`
+		} `xml:"Body>UpdateItem"`
+	}
+	reply := func(msgs string) {
+		s.respond(w, styleDefaultNS, "UpdateItem", "<m:ResponseMessages>"+msgs+"</m:ResponseMessages>")
+	}
+	if err := xml.Unmarshal(body, &env); err != nil || env.Op.Conflict != "AlwaysOverwrite" || env.Op.Suppress != "true" {
+		s.t.Errorf("fake EWS: UpdateItem %v in %s", err, body)
+		reply(message("UpdateItem", "ErrorInvalidRequest", ""))
+		return
+	}
+	var msgs strings.Builder
+	for _, ch := range env.Op.Changes {
+		it := s.findItem(ch.ItemID.ID)
+		if it == nil {
+			msgs.WriteString(message("UpdateItem", "ErrorItemNotFound", ""))
+			continue
+		}
+		readOnly := true
+		for _, u := range ch.Updates.All {
+			set, m := u.XMLName.Local == "SetItemField", u.Message
+			switch {
+			case set && u.Field.Field == "message:IsRead" && m.IsRead != nil:
+				it.read = *m.IsRead
+				continue
+			case set && u.Field.Field == "item:Flag" && m.FlagStatus != "":
+				it.flagged = m.FlagStatus == "Flagged"
+			case set && u.Extended.Tag == "0x1081":
+				it.verb, _ = strconv.Atoi(m.Value)
+			case !set && u.Extended.Tag == "0x1081":
+				it.verb = 0
+			default:
+				s.t.Errorf("fake EWS: UpdateItem update %+v", u)
+			}
+			readOnly = false
+		}
+		it.readOnly = readOnly
+		s.touch(&it.changed)
+		msgs.WriteString(message("UpdateItem", "", `<m:Items><t:Message><t:ItemId Id="`+it.id+`" ChangeKey="CQAAAB=="/></t:Message></m:Items><m:ConflictResults><t:Count>0</t:Count></m:ConflictResults>`))
+	}
+	reply(msgs.String())
 }
