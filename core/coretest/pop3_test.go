@@ -255,3 +255,21 @@ func TestPOP3ChangeServersKeepsMail(t *testing.T) {
 	require.NoError(t, e.Svc.SyncNow(t.Context(), acc.ID))
 	assert.Equal(t, 1, folderTotal(t, e, acc.ID, "Archive"))
 }
+
+// With its Sent role cleared, a POP3 account still sends and receives: there
+// is only nowhere to keep the copy.
+func TestPOP3SendWithoutSent(t *testing.T) {
+	e := coretest.New(t, coretest.WithoutAutoSync())
+	acc := e.AddAccount(t, "alice@example.com", coretest.ViaPOP3())
+	require.NoError(t, e.Svc.SetRoleFolder(t.Context(), acc.ID, "sent", 0))
+	d, err := e.Svc.NewDraft(t.Context(), acc.ID, "new", 0)
+	require.NoError(t, err)
+	d.To, d.Subject, d.HTML = []string{"dave@example.com"}, "No Sent here", "<p>hi</p>"
+	_, err = e.Svc.SaveDraft(t.Context(), d)
+	require.NoError(t, err)
+	require.NoError(t, e.Svc.Send(t.Context(), d.ID))
+	e.AdvanceClock(core.UndoSendWindow)
+	e.Deliver(t, acc.ID, "INBOX", coretest.Msg("bob@example.com", "alice@example.com", "Still arrives", "body"))
+	require.Eventually(t, func() bool { return len(e.Sent(acc.ID)) == 1 }, 5*time.Second, 20*time.Millisecond)
+	searchOne(t, e, acc.ID, "Still arrives")
+}

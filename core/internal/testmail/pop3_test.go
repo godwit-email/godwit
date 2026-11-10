@@ -317,3 +317,26 @@ func TestPOP3WindowWidens(t *testing.T) {
 		t.Errorf("widened to all, with new mail = %v, want %v", arrivals(cs), []string{"+" + d, a})
 	}
 }
+
+// Whole messages fill a page by bytes too, not only by PageSize.
+func TestPOP3PageBytes(t *testing.T) {
+	s := testmail.StartPOP3(t)
+	for _, id := range []string{"a", "b", "c"} {
+		s.Deliver(backendtest.Message(id+"@example.com", id))
+	}
+	r := pop3.New(pop3.Config{Host: "127.0.0.1", Port: s.Port(), Security: conn.None, PageBytes: 1, Credentials: func(context.Context) (backend.Credentials, error) {
+		return backend.Credentials{Username: "alice", Password: "secret"}, nil
+	}})
+	pages := 0
+	if _, err := r.Sync(tctx(t), backend.SyncRequest{PageSize: 1000}, func(p backend.Page) error {
+		if len(arrivals(p.Changes)) > 0 {
+			pages++
+		}
+		return nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if pages != 3 {
+		t.Errorf("3 messages over a 1-byte page budget came in %d pages, want 3", pages)
+	}
+}

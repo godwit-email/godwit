@@ -577,6 +577,9 @@ func (s *Service) localSent(ctx context.Context, accountID int64) (func(context.
 		return nil, err
 	}
 	folder, err := s.roleFolder(ctx, accountID, "sent")
+	if none := (*ErrNoRoleFolder)(nil); errors.As(err, &none) {
+		return nil, nil // no Sent folder: nowhere to keep a copy, as on other servers
+	}
 	if err != nil {
 		return nil, err
 	}

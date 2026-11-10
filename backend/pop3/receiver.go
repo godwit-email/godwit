@@ -24,6 +24,9 @@ type Config struct {
 	Port        int
 	Security    conn.Security
 	Credentials backend.CredentialsFunc
+	// PageBytes bounds the raw mail one sync page holds before it is
+	// committed, as whole messages can be large; 0 for 32 MiB.
+	PageBytes int64
 }
 
 // Inbox is the one folder's ref.

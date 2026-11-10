@@ -111,14 +111,21 @@ func (r *Receiver) Sync(ctx context.Context, req backend.SyncRequest, commit fun
 		if size <= 0 {
 			size = pageSize
 		}
+		budget := r.cfg.PageBytes
+		if budget <= 0 {
+			budget = 32 << 20
+		}
 		for pages := 1; ; pages++ {
-			n := min(size, len(pick))
-			for _, it := range pick[:n] {
+			// Whole messages: a page also ends once it holds budget bytes.
+			n, got := 0, int64(0)
+			for n < min(size, len(pick)) && (n == 0 || got < budget) {
+				it := pick[n]
 				c, err := content(s, it.entry, req.HeaderFields)
 				if err != nil {
 					return err
 				}
 				changes = append(changes, backend.MessageAppeared{Location: backend.Location{Folder: Inbox, Ref: backend.MessageRef(it.uid)}, Backfill: it.backfill, Content: c})
+				n, got = n+1, got+int64(len(c.Raw))
 			}
 			pick = pick[n:]
 			// The cursor moves only past new mail this round has committed, so one
