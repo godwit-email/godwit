@@ -136,8 +136,10 @@ func (in AccountInput) validate() error {
 		if !e.ok {
 			return fmt.Errorf("%s protocol %q is not supported", e.slot, e.Protocol)
 		}
-		if e.name == "EWS" && e.Server == (Server{Protocol: e.Protocol}) {
-			continue // Autodiscover finds it
+		if bare := e.Server; e.name == "EWS" && (bare.Auth == "" || bare.Auth == AuthPassword) {
+			if bare.Auth = ""; bare == (Server{Protocol: e.Protocol}) {
+				continue // Autodiscover finds it
+			}
 		}
 		if e.Host == "" {
 			return fmt.Errorf("%s host is required", e.name)
@@ -269,7 +271,9 @@ func (s *Service) AddAccount(ctx context.Context, in AccountInput) (Account, err
 	}
 	if checked.URL != "" { // found by Autodiscover
 		in.Receiving, _ = ewsSlot(checked.URL)
-		in.Sending = in.Receiving
+	}
+	if in.receiving() == auth.EWS {
+		in.Sending = in.Receiving // it sends through the receiving EWS URL
 	}
 	if in.OAuthFlowID != "" {
 		// Peeked for the check; taken now, so one grant adds one account.
@@ -484,7 +488,8 @@ func scanAccount(r []any) Account {
 		ReceiveOnly: store.Int(r[27]) == 1,
 	}
 	if a.Receiving.Protocol == auth.EWS { // it sends through the receiving EWS URL, whose path only recv_path keeps
-		a.Sending.Path = a.Receiving.Path
+		r := a.Receiving
+		a.Sending.Protocol, a.Sending.Host, a.Sending.Port, a.Sending.Security, a.Sending.Path = auth.EWS, r.Host, r.Port, r.Security, r.Path
 	}
 	if d, ok := decodeFeatures(r[30]); ok {
 		a.Features = d.Features

@@ -282,3 +282,31 @@ func TestEWSUpdatePassword(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, "ok", as[0].Status)
 }
+
+// An API caller may leave an EWS account's sending slot empty: it sends
+// through the receiving EWS URL, so the stored account still checks and
+// takes a new password.
+func TestEWSAddWithoutSendingSlot(t *testing.T) {
+	e := coretest.New(t, coretest.WithoutAutoSync())
+	setEWS(t, e, true)
+	in, srv := e.StartEWSServers(t, "alice@example.com")
+	in.Sending = core.Server{}
+	acc, err := e.Svc.AddAccount(t.Context(), in)
+	require.NoError(t, err)
+	assert.Equal(t, acc.Receiving.Host, acc.Sending.Host)
+	require.NoError(t, e.Svc.UpdatePassword(t.Context(), acc.ID, srv.Password()))
+}
+
+// Asking for password sign-in, which EWS takes anyway, still leaves the
+// endpoint to Autodiscover.
+func TestEWSAutodiscoverWithPasswordAuth(t *testing.T) {
+	e := coretest.New(t, coretest.WithoutAutoSync())
+	setEWS(t, e, true)
+	in, srv, ad := e.StartEWSAutodiscover(t, "alice@example.com")
+	ad.Serve("autodiscover.example.com")
+	in.Receiving.Auth = core.AuthPassword
+	r, err := e.Svc.CheckAccount(t.Context(), in)
+	require.NoError(t, err)
+	require.True(t, r.OK(), "%+v", r.Steps)
+	assert.Equal(t, srv.URL(), r.URL)
+}
