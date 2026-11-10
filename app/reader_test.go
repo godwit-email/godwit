@@ -900,6 +900,40 @@ func TestReaderAttachmentsBatchAndConflict(t *testing.T) {
 	if got, err := os.ReadFile(outside); err != nil || string(got) != "secret" {
 		t.Fatalf("symlink target was modified: %q, %v", got, err)
 	}
+
+	// A failed replaceFile leaves the existing destination file intact.
+	keepDst := filepath.Join(dir3, "invoice.pdf")
+	if err := replaceFile(filepath.Join(dir3, "no-such-src"), keepDst); err == nil {
+		t.Fatal("replaceFile succeeded with missing source")
+	}
+	if got, err := os.ReadFile(keepDst); err != nil || !bytes.Equal(got, pdfA) {
+		t.Fatalf("existing file lost after failed replaceFile: %q, %v", got, err)
+	}
+
+	// Duplicate attachment names in one message (including case-folded names on
+	// case-insensitive filesystems) replace once and number the second copy.
+	mDup := h.deliverOne(accs[0], coretest.Msg("bob@example.com", accs[0].Email, "DupBatch", "dups",
+		coretest.Attachment("invoice.pdf", "application/pdf", []byte("first")),
+		coretest.Attachment("INVOICE.PDF", "application/pdf", []byte("second")),
+		coretest.Attachment("invoice.pdf", "application/pdf", []byte("third")),
+	))
+	h.openThread(mDup.ThreadID)
+	h.see("3 个附件")
+	h.tt.Advance(2 * theme.MotionBase)
+	dir4 := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir4, "invoice.pdf"), oldPDF, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	h.plat.mu.Lock()
+	h.plat.dir = dir4
+	h.plat.mu.Unlock()
+	h.click("全部保存…")
+	h.see("同名文件已存在")
+	h.click("覆盖")
+	h.until("three distinct files saved", func() bool {
+		ents, err := os.ReadDir(dir4)
+		return err == nil && len(ents) == 3
+	})
 }
 
 // scrollTo scrolls the reader until label is in the window.

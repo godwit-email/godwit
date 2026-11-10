@@ -14,6 +14,7 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"runtime"
 	"slices"
 	"strconv"
 	"strings"
@@ -58,23 +59,23 @@ type reader struct {
 	bodies       map[int64]*msgBody
 	scroll       ui.ScrollState // the messages' scrolling: the wheel and touchpad over a body's page scroll it (ScrollToContainer)
 
-	ai          map[int64]*msgAI         // by message; kept across switches so a summary runs once
-	aiCtx       context.Context          // the AI work of the key shown; nil until some starts
-	aiStop      context.CancelFunc       // cancels aiCtx
-	skills      fetch[[]core.SkillInfo]  // the skill menu: skills on messages but summarize and translate
-	actions     fetch[[]core.ActionInfo] // and plugin actions on messages
-	egress      egressAsk                // the action waiting for egress approval
-	egressDlg   bool                     // its dialog shows
+	ai             map[int64]*msgAI         // by message; kept across switches so a summary runs once
+	aiCtx          context.Context          // the AI work of the key shown; nil until some starts
+	aiStop         context.CancelFunc       // cancels aiCtx
+	skills         fetch[[]core.SkillInfo]  // the skill menu: skills on messages but summarize and translate
+	actions        fetch[[]core.ActionInfo] // and plugin actions on messages
+	egress         egressAsk                // the action waiting for egress approval
+	egressDlg      bool                     // its dialog shows
 	unsubAsk       int64                    // the message whose one-click unsubscribe waits to be confirmed
 	unsubDlg       bool                     // its dialog shows
 	attConflict    attConflictAsk           // batch attachment save waiting on same-name conflict choice
 	attConflictDlg bool                     // its dialog shows
-	detailsOpen bool                     // the recipients' details popover shows
-	detailsID   int64                    // which message's details popover is open
-	barTop      float32                  // the floating toolbar's height as the last frame laid it out: the messages start under it
-	barBottom   float32                  // the reply bar's, likewise: the messages end above it
-	pane        ui.Rect                  // the messages' scroll box as the last frame laid it out, in the window: the bars float at its top and bottom
-	replyAsk    string                   // the reply bar's question to Wit, until it is asked
+	detailsOpen    bool                     // the recipients' details popover shows
+	detailsID      int64                    // which message's details popover is open
+	barTop         float32                  // the floating toolbar's height as the last frame laid it out: the messages start under it
+	barBottom      float32                  // the reply bar's, likewise: the messages end above it
+	pane           ui.Rect                  // the messages' scroll box as the last frame laid it out, in the window: the bars float at its top and bottom
+	replyAsk       string                   // the reply bar's question to Wit, until it is asked
 
 	getThread  func(ctx context.Context, id int64) (core.Thread, error)                       // tests wrap it
 	getMessage func(ctx context.Context, id int64, remote bool) (core.Message, error)         // tests wrap it
@@ -785,10 +786,10 @@ const maxAttachmentNumbered = 1000
 // copyFileNew copies src into dir under name (or "name (n)" past taken names),
 // never replacing an existing file (O_EXCL). When skipIfExists is true and name
 // itself is already taken on disk, it skips rather than numbering.
-func copyFileNew(src, dir, name string, skipIfExists bool) (bool, error) {
+func copyFileNew(src, dir, name string, skipIfExists bool) (string, error) {
 	in, err := os.Open(src)
 	if err != nil {
-		return false, err
+		return "", err
 	}
 	defer in.Close()
 	for n := 1; n <= maxAttachmentNumbered; n++ {
@@ -796,12 +797,12 @@ func copyFileNew(src, dir, name string, skipIfExists bool) (bool, error) {
 		out, err := os.OpenFile(dst, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o666)
 		if errors.Is(err, fs.ErrExist) {
 			if n == 1 && skipIfExists {
-				return false, nil
+				return "", nil
 			}
 			continue
 		}
 		if err != nil {
-			return false, err
+			return "", err
 		}
 		_, err = io.Copy(out, in)
 		if cerr := out.Close(); err == nil {
@@ -809,35 +810,44 @@ func copyFileNew(src, dir, name string, skipIfExists bool) (bool, error) {
 		}
 		if err != nil {
 			os.Remove(dst)
-			return false, err
+			return "", err
 		}
 		_ = markFromInternet(dst)
-		return true, nil
+		return dst, nil
 	}
-	return false, fmt.Errorf("%s: no free name", name)
+	return "", fmt.Errorf("%s: no free name", name)
 }
 
-// replaceFile replaces dst with src without following symlinks at dst, so a
-// read-only file or symlink in dir is unlinked rather than written through.
+// replaceFile writes src to a temporary file in dst's directory and renames it
+// over dst only after the copy succeeds, so a failed write leaves dst intact
+// and a symlink or read-only file at dst is replaced rather than followed.
 func replaceFile(src, dst string) error {
 	in, err := os.Open(src)
 	if err != nil {
 		return err
 	}
 	defer in.Close()
-	if st, err := os.Lstat(dst); err == nil && !st.IsDir() {
-		_ = os.Remove(dst)
-	}
-	out, err := os.OpenFile(dst, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o666)
+	out, err := os.CreateTemp(filepath.Dir(dst), ".godwit-*")
 	if err != nil {
 		return err
 	}
+	tmp := out.Name()
 	_, err = io.Copy(out, in)
 	if cerr := out.Close(); err == nil {
 		err = cerr
 	}
 	if err != nil {
-		os.Remove(dst)
+		os.Remove(tmp)
+		return err
+	}
+	_ = os.Chmod(tmp, 0o644)
+	if runtime.GOOS == "windows" {
+		if st, lerr := os.Lstat(dst); lerr == nil && !st.IsDir() {
+			_ = os.Chmod(dst, 0o666)
+		}
+	}
+	if err := os.Rename(tmp, dst); err != nil {
+		os.Remove(tmp)
 		return err
 	}
 	_ = markFromInternet(dst)
@@ -857,25 +867,33 @@ func (a *App) writeAttachmentsToDir(ctx context.Context, dir string, items []cor
 		return 0, nil
 	}
 	saved := 0
-	replaced := map[string]bool{}
-	written := map[string]bool{}
+	var written []os.FileInfo
+	sameWritten := func(name string) bool {
+		st, err := os.Lstat(filepath.Join(dir, name))
+		return err == nil && slices.ContainsFunc(written, func(w os.FileInfo) bool { return os.SameFile(w, st) })
+	}
+	recordWritten := func(dst string) {
+		if st, err := os.Lstat(dst); err == nil {
+			written = append(written, st)
+		}
+	}
 	err := a.svc.FetchAttachments(ctx, ids, func(src string, info core.AttachmentInfo) error {
 		name := core.FileName(info.Filename, "attachment")
-		if mode == attConflictReplace && existing[name] && !replaced[name] {
-			replaced[name] = true
-			written[name] = true
-			if err := replaceFile(src, filepath.Join(dir, name)); err != nil {
+		if mode == attConflictReplace && existing[name] && !sameWritten(name) {
+			dst := filepath.Join(dir, name)
+			if err := replaceFile(src, dst); err != nil {
 				return err
 			}
+			recordWritten(dst)
 			saved++
 			return nil
 		}
-		ok, err := copyFileNew(src, dir, name, mode == attConflictSkip && !written[name])
+		dst, err := copyFileNew(src, dir, name, mode == attConflictSkip && !sameWritten(name))
 		if err != nil {
 			return err
 		}
-		if ok {
-			written[name] = true
+		if dst != "" {
+			recordWritten(dst)
 			saved++
 		}
 		return nil
@@ -918,13 +936,16 @@ func (r *reader) saveAttachments(msgID int64, items []core.AttachmentInfo) {
 			return err
 		}
 		existing = map[string]bool{}
+		var conflictFiles []os.FileInfo
 		for _, att := range items {
 			name := core.FileName(att.Filename, "attachment")
-			if existing[name] {
+			st, err := os.Lstat(filepath.Join(dir, name))
+			if err != nil {
 				continue
 			}
-			if _, err := os.Lstat(filepath.Join(dir, name)); err == nil {
-				existing[name] = true
+			existing[name] = true
+			if !slices.ContainsFunc(conflictFiles, func(f os.FileInfo) bool { return os.SameFile(f, st) }) {
+				conflictFiles = append(conflictFiles, st)
 				conflicts = append(conflicts, name)
 			}
 		}

@@ -51,11 +51,11 @@ type platform struct {
 	dataDir      string
 	svc          *core.Service
 	saveMu       sync.Mutex
-	saveDir      string                // last directory chosen in SaveFile or OpenDirectory
+	saveDir      string                 // last directory chosen in SaveFile or OpenDirectory
 	downloadsDir func() (string, error) // mygo.App.Path(PathDownloads); tests swap it
 	apiMu        sync.Mutex
-	api     *rpc.Server // nil while the Local API is off
-	apiGen  uint64      // the newest request that asked for api
+	api          *rpc.Server // nil while the Local API is off
+	apiGen       uint64      // the newest request that asked for api
 
 	onAPIStop func(gen uint64, err error)              // told when the server ends by itself
 	serve     func(context.Context, *rpc.Server) error // Server.Serve; tests swap it
@@ -115,6 +115,7 @@ func (*platform) OpenImage() (string, error) {
 	}
 	return paths[0], nil
 }
+
 type savedDir struct {
 	Dir string `json:"dir"`
 }
