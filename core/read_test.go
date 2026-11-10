@@ -428,6 +428,28 @@ func TestGetMessageLazyImagesThenInlineImages(t *testing.T) {
 	assert.Equal(t, before+1, e.im.Logins())
 }
 
+// DavMail upper-cases the Content-ID in BODYSTRUCTURE (#581); the image still
+// shows, under the cid the body spells.
+func TestGetMessageInlineImagesUpperCasedContentID(t *testing.T) {
+	e := newSyncEnv(t)
+	e.put(t, "INBOX", inlineImagesMail([]string{"image001.png@01DA"}, nil))
+	e.sync(t)
+	id := e.rows(t, "SELECT id FROM messages")[0][0].(int64)
+	_, err := e.s.db.Execute(bg, "UPDATE attachments SET content_id = upper(content_id)")
+	require.NoError(t, err)
+
+	m, err := e.s.GetMessageLazyImages(bg, id, false)
+	require.NoError(t, err)
+	assert.Contains(t, m.HTML, `src="cid:image001.png@01DA"`)
+	var got []string
+	require.NoError(t, e.s.InlineImages(bg, id, func(cid string, _ gomail.Attachment) { got = append(got, cid) }))
+	assert.Equal(t, []string{"image001.png@01DA"}, got)
+
+	m, err = e.s.GetMessage(bg, id, false)
+	require.NoError(t, err)
+	assert.Contains(t, m.HTML, "data:image/")
+}
+
 // A connection lost between two images costs a new login, not the other images.
 func TestGetMessageInlineImagesSurviveLostConnection(t *testing.T) {
 	e := newSyncEnv(t)
