@@ -104,6 +104,7 @@ func TestGraphWithoutConsentPausesOutbox(t *testing.T) {
 	a, err := e.s.account(bg, e.acc.ID)
 	require.NoError(t, err)
 	assert.Equal(t, "auth_rejected", a.StatusDetail, "the user is asked to sign in again, which asks for Mail.Send")
+	assert.True(t, a.SendRefused, "receiving still signs in")
 }
 
 func TestCheckFailsWithoutGraphConsent(t *testing.T) {

@@ -97,10 +97,11 @@ func (a *App) syncHealth(acc core.Account) syncHealth {
 	return h
 }
 
-// oauthRefused reports that the server refused a token the provider had just
-// issued: the sign-in has not expired, and signing in again may not help.
+// oauthRefused reports that the receiving server refused a token the provider
+// had just issued: the sign-in has not expired, and signing in again may not
+// help. A sending-only refusal (a missing send consent) is fixed by signing in again.
 func oauthRefused(acc core.Account) bool {
-	return acc.AuthType == "oauth" && acc.Status == "reauth_required" && acc.StatusDetail == "auth_rejected"
+	return acc.AuthType == "oauth" && acc.Status == "reauth_required" && acc.StatusDetail == "auth_rejected" && !acc.SendRefused
 }
 
 // failCause says what a failure of kind was: 连不上 imap.example.com…

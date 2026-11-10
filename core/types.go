@@ -57,6 +57,7 @@ type Account struct {
 	Sync                                    SyncRange
 	Folders                                 int // folders synced so far: 0 before the first sync
 	AuthType, Status                        string
+	SendRefused                             bool   // the reauth_required is only SMTP's (or Graph's) refusal: receiving signs in
 	Receiving, Sending                      Server // a local archive's are zero
 	Provider, StatusDetail                  string
 	OAuthClientID                           string // the user's own OAuth client (OAuthClient), "" the provider's

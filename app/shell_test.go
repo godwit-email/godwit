@@ -329,7 +329,11 @@ func TestOAuthRefusedStatus(t *testing.T) {
 	if got := h.app.syncHealth(acc); got.status != "服务器拒绝了登录" || !strings.Contains(got.reason, "IMAP") {
 		t.Fatalf("refused: %q, %q", got.status, got.reason)
 	}
-	acc.StatusDetail = "token_revoked"
+	acc.SendRefused = true // a missing send consent: signing in again asks for it
+	if got := h.app.syncHealth(acc).status; got != "需要重新登录" {
+		t.Fatalf("sending refused: %q", got)
+	}
+	acc.SendRefused, acc.StatusDetail = false, "token_revoked"
 	if got := h.app.syncHealth(acc).status; got != "需要重新登录" {
 		t.Fatalf("revoked: %q", got)
 	}
