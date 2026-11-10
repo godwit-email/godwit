@@ -2154,6 +2154,7 @@
   "feature_reason_ews_no_keywords": "Exchange (EWS) hesapları özel anahtar kelimeleri saklamaz.",
   "feature_reason_ews_folder_not_label": "Exchange'de klasör etiket değildir: klasörü silmek içindeki postaları da siler.",
   "feature_reason_ews_no_all_mail": "Exchange'de Tüm Postalar yoktur: arşivlemek postayı Arşiv klasörüne taşır.",
+  "feature_reason_ews_folders_pending": "EWS ile klasör yönetimi henüz kullanılamıyor.",
   "feature_reason_ews_extended_protection": "Sunucu, Godwit'in henüz desteklemediği Genişletilmiş Koruma (Extended Protection) istiyor. Yöneticinize başvurun.",
   "settings_experimental_pop3": "POP3 hesapları",
   "settings_experimental_pop3_help": "Hesap eklerken yalnızca POP3 sunan posta kutuları için POP3 seçeneği sunar. E-postalar sunucuda kalır; silme, arşivleme, okundu ve yıldız yalnızca bu bilgisayarda geçerlidir. Deneyseldir ve ileride değişebilir. Kapatıldığında eklenmiş POP3 hesapları çalışmaya devam eder.",

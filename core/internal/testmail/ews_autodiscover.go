@@ -27,7 +27,7 @@ import (
 // RedirectAddr, Moved, RedirectGET, SRV), to the same domain or another.
 // Both forms are spoken: SOAP (GetUserSettings at autodiscover.svc) and POX
 // (autodiscover.xml). Hosts are reached through Net, over HTTPS with a
-// certificate for example.com, example.net and their subdomains; only
+// certificate for example.com, example.net, example.org and their subdomains; only
 // RedirectGET's hosts answer plain HTTP, and a request carrying credentials
 // there fails the test.
 type Autodiscover struct {
@@ -296,7 +296,7 @@ var adCert = sync.OnceValues(func() (tls.Certificate, error) {
 		return tls.Certificate{}, err
 	}
 	tmpl := &x509.Certificate{SerialNumber: big.NewInt(1), NotBefore: time.Now().Add(-time.Hour), NotAfter: time.Now().Add(24 * time.Hour),
-		DNSNames: []string{"example.com", "*.example.com", "example.net", "*.example.net"}, IsCA: true, BasicConstraintsValid: true,
+		DNSNames: []string{"example.com", "*.example.com", "example.net", "*.example.net", "example.org", "*.example.org"}, IsCA: true, BasicConstraintsValid: true,
 		KeyUsage: x509.KeyUsageDigitalSignature | x509.KeyUsageCertSign, ExtKeyUsage: []x509.ExtKeyUsage{x509.ExtKeyUsageServerAuth}}
 	der, err := x509.CreateCertificate(rand.Reader, tmpl, tmpl, &key.PublicKey, key)
 	if err != nil {

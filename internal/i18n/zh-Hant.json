@@ -2154,6 +2154,7 @@
   "feature_reason_ews_no_keywords": "Exchange（EWS）帳戶不儲存自訂關鍵字。",
   "feature_reason_ews_folder_not_label": "Exchange 的資料夾不是標籤：刪除資料夾會連同裡面的郵件一起刪除。",
   "feature_reason_ews_no_all_mail": "Exchange 沒有「所有郵件」：封存會把郵件移到封存資料夾。",
+  "feature_reason_ews_folders_pending": "暫不支援透過 EWS 管理資料夾。",
   "feature_reason_ews_extended_protection": "伺服器要求延伸保護，Godwit 暫不支援。請聯絡管理員。",
   "settings_experimental_pop3": "POP3 帳號",
   "settings_experimental_pop3_help": "新增帳號時可以選擇 POP3，適用於只提供 POP3 的信箱。收到的郵件保留在伺服器上，刪除、封存、已讀和星號只在這台電腦上生效。這是實驗性功能，日後可能調整。關閉後，已新增的 POP3 帳號會繼續運作。",

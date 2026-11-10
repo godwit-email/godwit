@@ -48,6 +48,7 @@ const (
 	reasonNoKeywords = "ews.no_keywords"      // custom keywords are not kept on Exchange
 	reasonNoLabels   = "ews.folder_not_label" // a folder is not a label: deleting it deletes its mail
 	reasonNoAllMail  = "ews.no_all_mail"      // archiving moves to the Archive folder
+	reasonFolders    = "ews.folders_pending"  // core manages no server folders yet, for any backend
 )
 
 // description is the spec's table: one Description for every EWS account,
@@ -67,6 +68,7 @@ var description = func() backend.Description {
 	set(backend.LevelUnsupported, reasonNoKeywords, backend.FeatureKeywords)
 	set(backend.LevelUnsupported, reasonNoLabels, backend.FeatureLabelDelete)
 	set(backend.LevelUnsupported, reasonNoAllMail, backend.FeatureAllMail)
+	set(backend.LevelUnsupported, reasonFolders, backend.FeatureFolderCreate, backend.FeatureFolderRename, backend.FeatureFolderDelete)
 	return d
 }()
 
@@ -84,9 +86,13 @@ func (r *Receiver) Describe(ctx context.Context) (backend.Description, error) {
 }
 
 // Check implements backend.Receiver: signing in, Exchange 2016 or later, and
-// listing the folders.
+// listing the folders. A refused sign-in the server takes over Basic is
+// ErrExtendedProtection.
 func (r *Receiver) Check(ctx context.Context) (backend.CheckResult, error) {
 	fs, _, err := r.folders(ctx)
+	if errors.Is(err, backend.ErrAuthFailed) && r.c.takesBasic(ctx) {
+		return backend.CheckResult{}, ErrExtendedProtection
+	}
 	if err != nil {
 		return backend.CheckResult{}, err
 	}

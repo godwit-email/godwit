@@ -2154,6 +2154,7 @@
   "feature_reason_ews_no_keywords": "Contas Exchange (EWS) não guardam palavras-chave personalizadas.",
   "feature_reason_ews_folder_not_label": "No Exchange uma pasta não é um marcador: excluí-la exclui também os e-mails dela.",
   "feature_reason_ews_no_all_mail": "O Exchange não tem «Todos os e-mails»: arquivar move os e-mails para a pasta Arquivo.",
+  "feature_reason_ews_folders_pending": "Gerenciar pastas via EWS ainda não está disponível.",
   "feature_reason_ews_extended_protection": "O servidor exige proteção estendida (Extended Protection), que o Godwit ainda não suporta. Fale com o administrador.",
   "settings_experimental_pop3": "Contas POP3",
   "settings_experimental_pop3_help": "Oferece POP3 ao adicionar uma conta, para caixas de correio que só oferecem POP3. Os e-mails ficam no servidor; excluir, arquivar, lido e com estrela valem só neste computador. É experimental e pode mudar no futuro. Desativado, as contas POP3 já adicionadas continuam funcionando.",

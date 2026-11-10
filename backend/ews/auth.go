@@ -3,6 +3,8 @@ package ews
 import (
 	"bytes"
 	"context"
+	"encoding/base64"
+	"encoding/xml"
 	"errors"
 	"fmt"
 	"io"
@@ -25,6 +27,8 @@ const ReasonExtendedProtection = "ews.extended_protection"
 // is ReasonExtendedProtection.
 var ErrExtendedProtection = errors.New(ReasonExtendedProtection)
 
+var errAuthFailed = fmt.Errorf("ews: %w", backend.ErrAuthFailed)
+
 // transport is the HTTP backends' transport kept to HTTP/1.1: NTLM signs in
 // a TCP connection, not a request, so it needs keep-alive, and IIS refuses
 // it over HTTP/2.
@@ -35,56 +39,116 @@ func transport() *http.Transport {
 	return t
 }
 
-// negotiator signs a request's Basic credentials in the way the server's
+// signer signs a request's Basic credentials in the way the server's
 // WWW-Authenticate offers: NTLM (NTLMv2, also under Negotiate) before Basic.
-// The login name goes as typed: DOMAIN\user is split into domain and user,
-// a UPN goes as the user.
-type negotiator struct{ ntlmssp.Negotiator }
+// A request goes anonymously first, as NTLM may have signed its kept-alive
+// connection in already. Each leg's error is returned as it is. The login
+// name goes as typed: DOMAIN\user is split into domain and user, a UPN goes
+// as the user.
+type signer struct{ *http.Transport }
 
-// CloseIdleConnections lets http.Client's reach the transport.
-func (n negotiator) CloseIdleConnections() { n.RoundTripper.(legs).CloseIdleConnections() }
-
-// legs is the transport under negotiator. It keeps each leg's error in the
-// *error its request's context holds under legErrKey: the negotiator answers
-// a later leg's failure with the first leg's 401, which would read as a
-// wrong password rather than a lost connection.
-type legs struct{ *http.Transport }
-
-type legErrKey struct{}
-
-func (t legs) RoundTrip(req *http.Request) (*http.Response, error) {
-	resp, err := t.Transport.RoundTrip(req)
-	if p, ok := req.Context().Value(legErrKey{}).(*error); ok {
-		*p = err
+func (t signer) RoundTrip(req *http.Request) (*http.Response, error) {
+	user, pass, ok := req.BasicAuth()
+	if !ok {
+		return t.Transport.RoundTrip(req)
 	}
-	return resp, err
+	if req.Body != nil && req.GetBody != nil {
+		req.Body.Close() // each leg sends a copy from GetBody
+	}
+	leg := func(auth string) (*http.Response, error) {
+		r := req.Clone(req.Context())
+		r.Header.Del("Authorization")
+		if auth != "" {
+			r.Header.Set("Authorization", auth)
+		}
+		if req.GetBody != nil {
+			var err error
+			if r.Body, err = req.GetBody(); err != nil {
+				return nil, err
+			}
+		}
+		return t.Transport.RoundTrip(r)
+	}
+	resp, err := leg("")
+	if err != nil || resp.StatusCode != http.StatusUnauthorized {
+		return resp, err
+	}
+	scheme, _ := offered(resp)
+	switch scheme {
+	case "":
+		return resp, nil
+	case "Basic":
+		drain(resp)
+		return leg("Basic " + base64.StdEncoding.EncodeToString([]byte(user+":"+pass)))
+	}
+	drain(resp)
+	negotiate, err := ntlmssp.NewNegotiateMessage("", "")
+	if err != nil {
+		return nil, err
+	}
+	if resp, err = leg(scheme + " " + base64.StdEncoding.EncodeToString(negotiate)); err != nil || resp.StatusCode != http.StatusUnauthorized {
+		return resp, err
+	}
+	s, challenge := offered(resp)
+	if s != scheme || challenge == nil {
+		return resp, nil // refused without a challenge
+	}
+	drain(resp)
+	authenticate, err := ntlmssp.NewAuthenticateMessage(challenge, user, pass, nil)
+	if err != nil {
+		return nil, err
+	}
+	return leg(scheme + " " + base64.StdEncoding.EncodeToString(authenticate))
 }
 
-// refused is a 401 resp to a request with body, signed in as cr:
-// ErrExtendedProtection when the server refused NTLM yet takes the password
-// over Basic, ErrAuthFailed otherwise. Only status codes count.
-// shortcut: finds Extended Protection only where Basic is on too; without
-// it, it is ErrAuthFailed.
-func (c *client) refused(ctx context.Context, resp *http.Response, body []byte, cr backend.Credentials) error {
-	var ntlm, basic bool
+// offered is the scheme resp's WWW-Authenticate prefers (NTLM, Negotiate,
+// then Basic; "" for none of them) and its NTLM token, if any.
+func offered(resp *http.Response) (scheme string, token []byte) {
+	rank := map[string]int{"NTLM": 3, "Negotiate": 2, "Basic": 1}
 	for _, v := range resp.Header.Values("WWW-Authenticate") {
-		scheme, _, _ := strings.Cut(v, " ")
-		ntlm = ntlm || strings.EqualFold(scheme, "NTLM") || strings.EqualFold(scheme, "Negotiate")
-		basic = basic || strings.EqualFold(scheme, "Basic")
-	}
-	if ntlm && basic {
-		req, err := http.NewRequestWithContext(ctx, http.MethodPost, c.cfg.URL, bytes.NewReader(body))
-		if err == nil {
-			req.Header.Set("Content-Type", "text/xml; charset=utf-8")
-			req.SetBasicAuth(cr.Username, cr.Password)
-			if r, err := c.plain.RoundTrip(req); err == nil {
-				io.Copy(io.Discard, r.Body)
-				r.Body.Close()
-				if r.StatusCode != http.StatusUnauthorized {
-					return ErrExtendedProtection
-				}
+		s, data, _ := strings.Cut(v, " ")
+		if rank[s] > rank[scheme] {
+			scheme, token = s, nil
+			if s != "Basic" && data != "" {
+				token, _ = base64.StdEncoding.DecodeString(data)
 			}
 		}
 	}
-	return fmt.Errorf("ews: %w", backend.ErrAuthFailed)
+	return scheme, token
+}
+
+func drain(resp *http.Response) {
+	io.Copy(io.Discard, resp.Body)
+	resp.Body.Close()
+}
+
+// takesBasic reports that the server takes the account's password over
+// Basic alone. It sends a GetFolder of the inbox, a read, so the probe
+// changes nothing whatever the server does with it. Only the add-account
+// check asks, after an NTLM sign-in was refused: elsewhere a refused
+// sign-in is a wrong password, and one more failed logon could lock the
+// account out.
+// shortcut: finds Extended Protection only where Basic is on too; without
+// it, the check says the password is wrong.
+func (c *client) takesBasic(ctx context.Context) bool {
+	cr, err := c.cfg.Credentials(ctx)
+	if err != nil {
+		return false
+	}
+	body, err := xml.Marshal(newRequest(getFolderRequest{BaseShape: "IdOnly", FolderIDs: []folderID{distinguished("inbox")}}))
+	if err != nil {
+		return false
+	}
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, c.cfg.URL, bytes.NewReader(append([]byte(xml.Header), body...)))
+	if err != nil {
+		return false
+	}
+	req.Header.Set("Content-Type", "text/xml; charset=utf-8")
+	req.SetBasicAuth(cr.Username, cr.Password)
+	resp, err := c.plain.RoundTrip(req)
+	if err != nil {
+		return false
+	}
+	drain(resp)
+	return resp.StatusCode == http.StatusOK
 }

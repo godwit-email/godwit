@@ -17,8 +17,6 @@ import (
 	"sync"
 	"time"
 
-	"github.com/Azure/go-ntlmssp"
-
 	"github.com/godwit-email/godwit/backend"
 )
 
@@ -50,7 +48,7 @@ var errOtherHost = errors.New("ews: refused a redirect to another host")
 
 func newClient(cfg Config) *client {
 	t := transport()
-	return &client{cfg: cfg, plain: t, http: &http.Client{Transport: negotiator{ntlmssp.Negotiator{RoundTripper: legs{t}, AllowBasicAuth: true}}, CheckRedirect: func(req *http.Request, via []*http.Request) error {
+	return &client{cfg: cfg, plain: t, http: &http.Client{Transport: signer{t}, CheckRedirect: func(req *http.Request, via []*http.Request) error {
 		switch {
 		case len(via) >= 10:
 			return errors.New("ews: too many redirects")
@@ -79,8 +77,7 @@ const (
 )
 
 // call sends op, a request type of this package, and returns the body's
-// response element read as R. 401 is ErrAuthFailed (or ErrExtendedProtection);
-// a SOAP fault is a *fault; ErrorServerBusy, once the retries are used up, is
+// response element read as R. 401 is ErrAuthFailed; a SOAP fault is a *fault; ErrorServerBusy, once the retries are used up, is
 // a *busyError.
 // Calls for one account go one at a time, waits included, so they stay
 // under the server's concurrency limit and stop while it is busy.
@@ -122,16 +119,39 @@ func (c *client) wait(ctx context.Context, d time.Duration) error {
 }
 
 // accounts holds a one-slot channel per account (EWS URL and user name),
-// taken for the length of a call. The push connection does not take it.
-var accounts sync.Map
+// taken for the length of a call, and how many calls hold it or wait for it:
+// an account's entry goes once none does. The push connection does not take it.
+var accounts = struct {
+	sync.Mutex
+	m map[string]*slot
+}{m: map[string]*slot{}}
+
+type slot struct {
+	ch    chan struct{}
+	users int
+}
 
 func acquire(ctx context.Context, account string) (release func(), err error) {
-	v, _ := accounts.LoadOrStore(account, make(chan struct{}, 1))
-	slot := v.(chan struct{})
+	accounts.Lock()
+	s := accounts.m[account]
+	if s == nil {
+		s = &slot{ch: make(chan struct{}, 1)}
+		accounts.m[account] = s
+	}
+	s.users++
+	accounts.Unlock()
+	done := func() {
+		accounts.Lock()
+		if s.users--; s.users == 0 {
+			delete(accounts.m, account)
+		}
+		accounts.Unlock()
+	}
 	select {
-	case slot <- struct{}{}:
-		return func() { <-slot }, nil
+	case s.ch <- struct{}{}:
+		return func() { <-s.ch; done() }, nil
 	case <-ctx.Done():
+		done()
 		return nil, ctx.Err()
 	}
 }
@@ -140,17 +160,16 @@ func acquire(ctx context.Context, account string) (release func(), err error) {
 func (c *client) account(cr backend.Credentials) string { return c.cfg.URL + "\x00" + cr.Username }
 
 // post sends op signed in as cr, with the account's affinity, and returns
-// the response, its body unread, and the request's body.
-func (c *client) post(ctx context.Context, op any, cr backend.Credentials) (*http.Response, []byte, error) {
+// the response, its body unread: 200, or 500 or 503, which carry a fault or
+// throttling. 401 is ErrAuthFailed, any other status an error.
+func (c *client) post(ctx context.Context, op any, cr backend.Credentials) (*http.Response, error) {
 	body, err := xml.Marshal(newRequest(op))
 	if err != nil {
-		return nil, nil, err
+		return nil, err
 	}
-	body = append([]byte(xml.Header), body...)
-	var legErr error // the last leg's, which the negotiator may hide
-	req, err := http.NewRequestWithContext(context.WithValue(ctx, legErrKey{}, &legErr), http.MethodPost, c.cfg.URL, bytes.NewReader(body))
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, c.cfg.URL, bytes.NewReader(append([]byte(xml.Header), body...)))
 	if err != nil {
-		return nil, nil, err
+		return nil, err
 	}
 	req.Header.Set("Content-Type", "text/xml; charset=utf-8")
 	req.SetBasicAuth(cr.Username, cr.Password)
@@ -158,31 +177,29 @@ func (c *client) post(ctx context.Context, op any, cr backend.Credentials) (*htt
 	a.route(req, op, c.cfg.Address)
 	resp, err := c.http.Do(req)
 	if err != nil {
-		return nil, nil, err
+		return nil, err
 	}
-	if legErr != nil {
-		resp.Body.Close()
-		return nil, nil, &url.Error{Op: "Post", URL: c.cfg.URL, Err: legErr}
+	switch resp.StatusCode {
+	case http.StatusOK, http.StatusInternalServerError, http.StatusServiceUnavailable:
+		a.keep(resp)
+		return resp, nil
+	case http.StatusUnauthorized:
+		err = errAuthFailed
+	default:
+		err = fmt.Errorf("ews: HTTP %s", resp.Status)
 	}
-	a.keep(resp)
-	return resp, body, nil
+	drain(resp)
+	return nil, err
 }
 
 // send is one try of call.
 func send[R any](ctx context.Context, c *client, op any, cr backend.Credentials) (R, error) {
 	var zero R
-	resp, body, err := c.post(ctx, op, cr)
+	resp, err := c.post(ctx, op, cr)
 	if err != nil {
 		return zero, err
 	}
 	defer resp.Body.Close()
-	switch resp.StatusCode {
-	case http.StatusOK, http.StatusInternalServerError, http.StatusServiceUnavailable: // a fault comes with 500, throttling with 500 or 503
-	case http.StatusUnauthorized:
-		return zero, c.refused(ctx, resp, body, cr)
-	default:
-		return zero, fmt.Errorf("ews: HTTP %s", resp.Status)
-	}
 	raw, err := io.ReadAll(resp.Body)
 	if err != nil {
 		return zero, err

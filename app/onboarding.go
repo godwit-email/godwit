@@ -81,13 +81,13 @@ type onboarding struct {
 	imapHost, imapPort   string
 	smtpHost, smtpPort   string
 	imapSec, smtpSec     core.Security
-	proto                string   // the server form's receiving protocol: IMAP (""), auth.JMAP, auth.POP3 or auth.EWS (their Settings.Experimental*)
-	jmapURL              string   // JMAP's session URL, in place of the IMAP server
-	ewsURL               string   // the EWS URL, in place of the IMAP and SMTP servers; "" finds it by Autodiscover
-	ewsAdvanced          bool     // the EWS URL field is shown: opened, or Autodiscover found nothing
-	confirmed            []string // hosts outside the address's domain the user let Autodiscover send the password to
-	jmapAuth             int      // how JMAP signs in: 0 a password, 1 an API token, with SMTP's password apart
-	sendSecret           string   // SMTP's own password, for a JMAP API token
+	proto                string              // the server form's receiving protocol: IMAP (""), auth.JMAP, auth.POP3 or auth.EWS (their Settings.Experimental*)
+	jmapURL              string              // JMAP's session URL, in place of the IMAP server
+	ewsURL               string              // the EWS URL, in place of the IMAP and SMTP servers; "" finds it by Autodiscover
+	ewsAdvanced          bool                // the EWS URL field is shown: opened, or Autodiscover found nothing
+	confirmed            map[string][]string // per lowercased email address: hosts outside its domain the user let Autodiscover send the password to
+	jmapAuth             int                 // how JMAP signs in: 0 a password, 1 an API token, with SMTP's password apart
+	sendSecret           string              // SMTP's own password, for a JMAP API token
 	showSendSecret       bool
 	flowID, authURL      string
 	oauthErr             error
@@ -490,7 +490,7 @@ func (o *onboarding) input() core.AccountInput {
 		if u := cmp.Or(strings.TrimSpace(o.ewsURL), o.report.URL); u != "" { // typed in, or found by the check
 			in.Receiving, _ = ewsServer(u)
 		}
-		in.Sending, in.ConfirmedHosts = in.Receiving, o.confirmed
+		in.Sending, in.ConfirmedHosts = in.Receiving, o.confirmed[strings.ToLower(in.Email)]
 	}
 	if o.pop3() {
 		in.Receiving.Protocol = auth.POP3
@@ -1328,7 +1328,14 @@ func (o *onboarding) checkView(c *ui.Context) {
 	if failed && o.report.Confirm != "" {
 		host := o.report.Confirm
 		kit.Button(c, i18n.Tf("onboarding.confirm_host", host), kit.ButtonOpts{Size: kit.SizeLg}).PaddingX(th.Space(3.5)).
-			OnClick(func() { o.confirmed = append(o.confirmed, host); o.connect() })
+			OnClick(func() {
+				if o.confirmed == nil {
+					o.confirmed = map[string][]string{}
+				}
+				addr := strings.ToLower(strings.TrimSpace(o.email))
+				o.confirmed[addr] = append(o.confirmed[addr], host)
+				o.connect()
+			})
 	}
 	if failed {
 		ui.Row(c).Gap(th.Space(2)).Children(func() {

@@ -2154,6 +2154,7 @@
   "feature_reason_ews_no_keywords": "Exchange-Konten (EWS) speichern keine eigenen Schlagwörter.",
   "feature_reason_ews_folder_not_label": "Bei Exchange ist ein Ordner kein Label: Wer ihn löscht, löscht auch seine E-Mails.",
   "feature_reason_ews_no_all_mail": "Exchange hat kein „Alle Nachrichten“: Archivieren verschiebt E-Mails in den Archiv-Ordner.",
+  "feature_reason_ews_folders_pending": "Ordner per EWS zu verwalten ist noch nicht verfügbar.",
   "feature_reason_ews_extended_protection": "Der Server verlangt erweiterten Schutz (Extended Protection), den Godwit noch nicht unterstützt. Wenden Sie sich an Ihre Administration.",
   "settings_experimental_pop3": "POP3-Konten",
   "settings_experimental_pop3_help": "Bietet beim Hinzufügen eines Kontos POP3 an, für Postfächer, die nur POP3 anbieten. E-Mails bleiben auf dem Server; Löschen, Archivieren, Gelesen und Markiert gelten nur auf diesem Computer. Die Funktion ist experimentell und kann sich später ändern. Ausgeschaltet funktionieren bereits hinzugefügte POP3-Konten weiter.",

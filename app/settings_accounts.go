@@ -78,7 +78,8 @@ func aiTooLong(s string) bool {
 
 type serverForm struct {
 	imapHost, imapPort, smtpHost, smtpPort, username string
-	jmapURL                                          string // a JMAP account's session URL, in place of the IMAP server
+	jmapURL                                          string // a JMAP account's session URL, or an EWS one's EWS URL, in place of the IMAP server
+	ews                                              bool   // jmapURL is an EWS URL, and there is no SMTP server
 	imapSec, smtpSec                                 core.Security
 }
 
@@ -737,8 +738,8 @@ func (p *settingsPage) openDialog(kind string, acc core.Account) {
 	p.iconSelected, p.iconUpload, p.iconPreview = acc.Icon, nil, nil
 	p.servers = serverForm{imapHost: acc.Receiving.Host, imapPort: strconv.Itoa(acc.Receiving.Port), smtpHost: acc.Sending.Host,
 		smtpPort: strconv.Itoa(acc.Sending.Port), username: acc.Username, imapSec: acc.Receiving.Security, smtpSec: acc.Sending.Security}
-	if acc.Receiving.Protocol == auth.JMAP {
-		p.servers.jmapURL = sessionURL(acc.Receiving)
+	if pr := acc.Receiving.Protocol; pr == auth.JMAP || pr == auth.EWS {
+		p.servers.jmapURL, p.servers.ews = sessionURL(acc.Receiving), pr == auth.EWS
 	}
 }
 
@@ -847,7 +848,10 @@ func (p *settingsPage) dialogView(c *ui.Context) {
 			sp, _ := strconv.Atoi(strings.TrimSpace(sf.smtpPort))
 			ss := core.ServerSettings{Username: strings.TrimSpace(sf.username), Receiving: core.Server{Host: strings.TrimSpace(sf.imapHost), Port: ip, Security: sf.imapSec},
 				Sending: core.Server{Host: strings.TrimSpace(sf.smtpHost), Port: sp, Security: sf.smtpSec}}
-			if sf.jmapURL != "" {
+			switch {
+			case sf.ews:
+				ss.Receiving, _ = ewsServer(sf.jmapURL) // invalid, its empty host fails the check
+			case sf.jmapURL != "":
 				ss.Receiving, _ = jmapServer(sf.jmapURL) // invalid, its empty host fails the check
 				ss.Receiving.Protocol = auth.JMAP
 			}
@@ -1038,12 +1042,17 @@ func (p *settingsPage) serversForm(c *ui.Context) {
 		})
 	}
 	sf := &p.servers
-	if sf.jmapURL != "" {
+	switch {
+	case sf.ews:
+		ui.Field(c, i18n.T("onboarding.ews.url"), func() { kit.Input(c, &sf.jmapURL, kit.InputOpts{}) })
+	case sf.jmapURL != "":
 		ui.Field(c, i18n.T("onboarding.jmap.url"), func() { kit.Input(c, &sf.jmapURL, kit.InputOpts{}) })
-	} else {
+	default:
 		server("imap", &sf.imapHost, &sf.imapPort, &sf.imapSec)
 	}
-	server("smtp", &sf.smtpHost, &sf.smtpPort, &sf.smtpSec)
+	if !sf.ews { // EWS sends through the server it receives from
+		server("smtp", &sf.smtpHost, &sf.smtpPort, &sf.smtpSec)
+	}
 	ui.Field(c, i18n.T("onboarding.username"), func() { kit.Input(c, &sf.username, kit.InputOpts{}) })
 }
 

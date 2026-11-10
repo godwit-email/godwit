@@ -4,6 +4,7 @@ import (
 	"context"
 	"testing"
 
+	"github.com/godwit-email/godwit/core"
 	"github.com/godwit-email/godwit/core/coretest"
 )
 
@@ -131,5 +132,65 @@ func TestOnboardingNoEWSByDefault(t *testing.T) {
 	h.see("IMAP 服务器")
 	if h.tt.HasText("Exchange（EWS）") {
 		t.Fatal("EWS offered with the experiment off")
+	}
+}
+
+// An EWS account's servers dialog edits its EWS URL, with no IMAP or SMTP
+// server, and saves it.
+func TestSettingsEWSServers(t *testing.T) {
+	var acc core.Account
+	h := newHarness(t, func(e *coretest.Env) {
+		experimentalEWS(e)
+		in, _ := e.StartEWSServers(t, "alice@example.com")
+		var err error
+		if acc, err = e.Svc.AddAccount(context.Background(), in); err != nil {
+			t.Fatal(err)
+		}
+	})
+	h.until("initial load", func() bool { return h.app.loaded })
+	p := h.openSettings(accountRoute(acc.ID))
+	h.click("编辑")
+	h.see("EWS URL")
+	if h.tt.HasText("IMAP 服务器") || h.tt.HasText("SMTP 服务器") {
+		t.Fatal("an EWS account's servers dialog asks for IMAP or SMTP")
+	}
+	h.click("保存")
+	h.until("the dialog closes", func() bool { return p.dialog == "" })
+	if got := h.account(acc.ID); got.Receiving.Path != "/EWS/Exchange.asmx" || got.Receiving.Host != acc.Receiving.Host {
+		t.Fatalf("stored %+v", got.Receiving)
+	}
+}
+
+// A host the user let Autodiscover send the password to for one address is
+// asked about again once the address changes, even when the new address's
+// Autodiscover sends the client to the same host.
+func TestOnboardingEWSConfirmedHostPerAddress(t *testing.T) {
+	h := newHarness(t, experimentalEWS)
+	h.firstRun()
+	h.click("其他 IMAP 邮箱")
+	h.fill("邮箱地址", "a@example.com")
+	_, srv, ad := h.env.StartEWSAutodiscover(h.t, "a@example.com")
+	ad.RedirectURL("autodiscover.example.com", "ad.example.net")
+	ad.Serve("ad.example.net")
+	if _, open := h.tt.Find("IMAP 服务器"); !open {
+		h.click("手动设置服务器")
+	}
+	h.click("Exchange（EWS）")
+	h.fill("登录名", "alice")
+	h.fill("密码", "secret")
+	srv.SetVersion(15, 0) // the check fails after Autodiscover, back to the form
+	h.click("连接")
+	h.click("发送到 ad.example.net")
+	h.see("服务器版本过低")
+	h.click("手动设置服务器")
+
+	_, _, ad = h.env.StartEWSAutodiscover(h.t, "b@example.org")
+	ad.RedirectURL("autodiscover.example.org", "ad.example.net")
+	ad.Serve("ad.example.net")
+	h.fill("邮箱地址", "b@example.org")
+	h.click("连接")
+	h.see("自动发现要把密码发送到 ad.example.net")
+	if ad.Credentialed("ad.example.net") {
+		t.Fatal("the password for b@example.org went to ad.example.net, confirmed for a@example.com only")
 	}
 }

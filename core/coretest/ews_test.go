@@ -228,3 +228,18 @@ func TestEWSMove(t *testing.T) {
 	require.Len(t, ms, 1, "one message after the sync")
 	assert.Equal(t, archive, ms[0].FolderID)
 }
+
+// An EWS account's servers saved again as stored, its sending slot without
+// the path the database does not keep, pass the check; it sends through the
+// receiving slot's EWS URL.
+func TestEWSUpdateServers(t *testing.T) {
+	e := coretest.New(t, coretest.WithoutAutoSync())
+	acc, srv := addEWS(t, e)
+	acc, err := e.Svc.UpdateAccount(t.Context(), acc.ID, core.AccountPatch{Servers: &core.ServerSettings{
+		Username: acc.Username, Receiving: acc.Receiving, Sending: acc.Sending}})
+	require.NoError(t, err)
+	assert.Equal(t, "/EWS/Exchange.asmx", acc.Receiving.Path)
+	queueSend(t, e, acc)
+	require.NoError(t, e.Svc.SyncNow(t.Context(), acc.ID))
+	require.Eventually(t, func() bool { return len(srv.Sent()) == 1 }, 5*time.Second, 20*time.Millisecond)
+}

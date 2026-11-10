@@ -127,7 +127,10 @@ func StartEWS(t testing.TB) *EWS {
 }
 
 // URL is the EWS endpoint.
-func (s *EWS) URL() string { return s.srv.URL + "/EWS/Exchange.asmx" }
+func (s *EWS) URL() string { return s.srv.URL + ewsPath }
+
+// ewsPath is the endpoint's path; the server answers nothing else.
+const ewsPath = "/EWS/Exchange.asmx"
 
 // Password is the password a client should use: "secret", or a wrong one
 // after RejectAuth.
@@ -474,6 +477,10 @@ func (s *EWS) serve(w http.ResponseWriter, r *http.Request) {
 	for m := s.maxFly.Load(); n > m && !s.maxFly.CompareAndSwap(m, n); m = s.maxFly.Load() {
 	}
 	time.Sleep(time.Duration(s.latency.Load()))
+	if r.URL.Path != ewsPath {
+		http.NotFound(w, r)
+		return
+	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if !s.signIn(w, r) {
@@ -524,12 +531,6 @@ func (s *EWS) serve(w http.ResponseWriter, r *http.Request) {
 		s.moveItem(w, req)
 	case "DeleteItem":
 		s.deleteItem(w, req)
-	case "CreateFolder":
-		s.createFolder(w, req)
-	case "UpdateFolder":
-		s.updateFolder(w, req)
-	case "DeleteFolder":
-		s.deleteFolder(w, req)
 	case "Subscribe":
 		s.subscribe(w, r, req)
 	case "GetStreamingEvents":

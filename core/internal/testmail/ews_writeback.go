@@ -11,9 +11,8 @@ import (
 )
 
 // The fake EWS server's write-back operations: MoveItem, CopyItem,
-// DeleteItem, CreateItem saving a message, CreateFolder, UpdateFolder and
-// DeleteFolder. A move, as on Exchange, is a copy under a new ItemId and
-// the original deleted.
+// DeleteItem and CreateItem saving a message. A move, as on Exchange, is a
+// copy under a new ItemId and the original deleted.
 
 // OmitNewItemIds makes MoveItem and CopyItem answer without the new
 // ItemIds, as Exchange does for a move to another mailbox.
@@ -165,65 +164,4 @@ func (s *EWS) saveItem(w http.ResponseWriter, req ewsRequest) {
 	}
 	saved := s.put(f, it)
 	reply(message("CreateItem", "", fmt.Sprintf(`<m:Items><t:Message><t:ItemId Id="%s" ChangeKey="CQAAAA=="/></t:Message></m:Items>`, saved.id)))
-}
-
-// createFolder creates a folder named DisplayName under the ParentFolderId.
-func (s *EWS) createFolder(w http.ResponseWriter, req ewsRequest) {
-	reply := func(msg string) {
-		s.respond(w, styleUsual, "CreateFolder", "<m:ResponseMessages>"+msg+"</m:ResponseMessages>")
-	}
-	parent, name := s.target(req), req.text["DisplayName"]
-	if parent == nil {
-		reply(message("CreateFolder", "ErrorParentFolderNotFound", ""))
-		return
-	}
-	for _, f := range s.folders {
-		if f.parent == parent.id && f.name == name && !f.gone {
-			reply(message("CreateFolder", "ErrorFolderExists", ""))
-			return
-		}
-	}
-	f := s.folder(parent.id, name, "", req.text["FolderClass"])
-	reply(message("CreateFolder", "", fmt.Sprintf(`<m:Folders><t:Folder><t:FolderId Id="%s" ChangeKey="AQAAAA=="/></t:Folder></m:Folders>`, f.id)))
-}
-
-// updateFolder sets a folder's DisplayName, the one field it knows.
-func (s *EWS) updateFolder(w http.ResponseWriter, req ewsRequest) {
-	reply := func(msg string) {
-		s.respond(w, styleDefaultNS, "UpdateFolder", "<m:ResponseMessages>"+msg+"</m:ResponseMessages>")
-	}
-	if !slices.Equal(req.fieldURIs, []string{"folder:DisplayName"}) || !req.elements["SetFolderField"] {
-		s.t.Errorf("fake EWS: UpdateFolder of %v", req.fieldURIs)
-		reply(message("UpdateFolder", "ErrorInvalidPropertySet", ""))
-		return
-	}
-	f := s.target(req)
-	if f == nil {
-		reply(message("UpdateFolder", "ErrorFolderNotFound", ""))
-		return
-	}
-	f.name = req.text["DisplayName"]
-	s.touch(&f.changed)
-	reply(message("UpdateFolder", "", fmt.Sprintf(`<m:Folders><t:Folder><t:FolderId Id="%s" ChangeKey="AQAAAA=="/></t:Folder></m:Folders>`, f.id)))
-}
-
-// deleteFolder deletes a folder for good (HardDelete) or moves it to
-// Deleted Items with its mail and subfolders (MoveToDeletedItems).
-func (s *EWS) deleteFolder(w http.ResponseWriter, req ewsRequest) {
-	how := req.text["DeleteType"]
-	if how != "HardDelete" && how != "MoveToDeletedItems" {
-		s.t.Errorf("fake EWS: DeleteFolder DeleteType %q", how)
-	}
-	f := s.target(req)
-	switch {
-	case f == nil:
-		s.respond(w, styleEnvelopeDecl, "DeleteFolder", "<m:ResponseMessages>"+message("DeleteFolder", "ErrorFolderNotFound", "")+"</m:ResponseMessages>")
-		return
-	case how == "HardDelete":
-		f.gone = true
-	default:
-		f.parent = s.distinguishedFolder("deleteditems").id
-	}
-	s.touch(&f.changed)
-	s.respond(w, styleEnvelopeDecl, "DeleteFolder", "<m:ResponseMessages>"+message("DeleteFolder", "", "")+"</m:ResponseMessages>")
 }

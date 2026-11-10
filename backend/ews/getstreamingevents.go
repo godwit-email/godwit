@@ -59,16 +59,12 @@ func (c *client) stream(ctx context.Context, subscription string, wake func([]ba
 	defer cancel(nil)
 	idle := time.AfterFunc(streamIdle, func() { cancel(errIdle) })
 	defer idle.Stop()
-	resp, body, err := c.post(ctx, getStreamingEventsRequest{SubscriptionIDs: []string{subscription}, Timeout: int(streamTimeout / time.Minute)}, cr)
+	resp, err := c.post(ctx, getStreamingEventsRequest{SubscriptionIDs: []string{subscription}, Timeout: int(streamTimeout / time.Minute)}, cr)
 	if err != nil {
 		return silent(ctx, err)
 	}
 	defer resp.Body.Close()
-	switch resp.StatusCode {
-	case http.StatusOK:
-	case http.StatusUnauthorized:
-		return c.refused(ctx, resp, body, cr)
-	default:
+	if resp.StatusCode != http.StatusOK {
 		return fmt.Errorf("ews: GetStreamingEvents: HTTP %s", resp.Status)
 	}
 	d := xml.NewDecoder(resp.Body)

@@ -2154,6 +2154,7 @@
   "feature_reason_ews_no_keywords": "Exchange（EWS）アカウントはカスタムキーワードを保存しません。",
   "feature_reason_ews_folder_not_label": "Exchange のフォルダはラベルではありません。フォルダを削除すると中のメールも削除されます。",
   "feature_reason_ews_no_all_mail": "Exchange には「すべてのメール」がありません。アーカイブするとメールはアーカイブ フォルダに移動します。",
+  "feature_reason_ews_folders_pending": "EWS でのフォルダ管理はまだ使えません。",
   "feature_reason_ews_extended_protection": "サーバーが拡張保護を要求していますが、Godwit はまだ対応していません。管理者に問い合わせてください。",
   "settings_experimental_pop3": "POP3 アカウント",
   "settings_experimental_pop3_help": "アカウントの追加時に POP3 を選べるようにします（POP3 のみ提供するメールボックス向け）。メールはサーバーに残り、削除・アーカイブ・既読・スターはこのコンピュータだけに反映されます。試験的な機能のため、今後変更される場合があります。オフにしても、追加済みの POP3 アカウントは引き続き動作します。",

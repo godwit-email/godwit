@@ -2154,6 +2154,7 @@
   "feature_reason_ews_no_keywords": "Exchange（EWS）账户不保存自定义关键字。",
   "feature_reason_ews_folder_not_label": "Exchange 的文件夹不是标签：删除文件夹会连同里面的邮件一起删除。",
   "feature_reason_ews_no_all_mail": "Exchange 没有「所有邮件」：归档会把邮件移到存档文件夹。",
+  "feature_reason_ews_folders_pending": "暂不支持通过 EWS 管理文件夹。",
   "feature_reason_ews_extended_protection": "服务器要求扩展保护，Godwit 暂不支持。请联系管理员。",
   "settings_experimental_pop3": "POP3 账户",
   "settings_experimental_pop3_help": "添加账户时可以选择 POP3，适用于只提供 POP3 的邮箱。收到的信保留在服务器上，删除、归档、已读和星标只在这台电脑上生效。这是实验性功能，以后可能调整。关闭后，已添加的 POP3 账户继续工作。",

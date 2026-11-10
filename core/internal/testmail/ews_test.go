@@ -37,11 +37,8 @@ func (s ewsServer) Deliver(_ *testing.T, folder string, raw []byte) { s.EWS.Deli
 func (s ewsServer) Reset(_ *testing.T, folder string)               { s.EWS.Reset(folder) }
 func (s ewsServer) RejectAuth(*testing.T)                           { s.EWS.RejectAuth() }
 
-// shortcut: only the parts EWS implements so far; Run the whole contract once
-// incremental sync, write-back and push are in.
 func TestEWSBackendContract(t *testing.T) {
-	backendtest.RunOnly(t, func(t *testing.T) backendtest.Server { return ewsServer{testmail.StartEWS(t)} },
-		"Describe", "Check", "FirstSync", "CursorResumes", "FolderReset", "Fetch", "Headers", "Find", "SetFlags", "Move", "Copy", "Append", "Failed", "Unsupported", "Watch", "AuthFailed")
+	backendtest.Run(t, func(t *testing.T) backendtest.Server { return ewsServer{testmail.StartEWS(t)} })
 }
 
 // syncAll runs one round from nothing and returns its changes.
@@ -467,6 +464,25 @@ func TestEWSExtendedProtection(t *testing.T) {
 	}
 }
 
+// Outside the add-account check, an NTLM sign-in the server refuses is a
+// wrong password, and nothing is sent again over Basic to find out why: a
+// send must not go out while it says it failed.
+func TestEWSExtendedProtectionOnlyInCheck(t *testing.T) {
+	s := testmail.StartEWS(t)
+	s.UseNTLM()
+	s.RequireExtendedProtection()
+	err := ewsNTLMServer{ewsServer{s}}.Sender(t).Send(tctx(t), "a@example.com", []string{"b@example.com"}, backendtest.Message("b@example.com", "hello"))
+	if !errors.Is(err, backend.ErrAuthFailed) {
+		t.Errorf("Send under Extended Protection = %v, want ErrAuthFailed", err)
+	}
+	if n := len(s.Sent()); n != 0 {
+		t.Errorf("sent %d messages, want 0", n)
+	}
+	if _, err := ewsReceiverAs(t, s, `EXAMPLE\alice`).Describe(tctx(t)); !errors.Is(err, backend.ErrAuthFailed) {
+		t.Errorf("Describe under Extended Protection = %v, want ErrAuthFailed", err)
+	}
+}
+
 func (s ewsServer) Sender(*testing.T) backend.Sender {
 	return ews.NewSender(ews.Config{URL: s.URL(), Credentials: func(context.Context) (backend.Credentials, error) {
 		return backend.Credentials{Username: "alice", Password: s.Password()}, nil
@@ -642,6 +658,7 @@ func TestEWSSetFlags(t *testing.T) {
 
 // Describe declares the spec's table: draft is read-only, and what one
 // folder per message rules out is unsupported, each with an ews.* reason.
+// Folder management is unsupported, as for JMAP: core has none yet.
 func TestEWSDescribe(t *testing.T) {
 	d, err := ewsReceiver(t, testmail.StartEWS(t)).Describe(tctx(t))
 	if err != nil {
@@ -649,11 +666,10 @@ func TestEWSDescribe(t *testing.T) {
 	}
 	levels := map[backend.Level][]backend.Feature{
 		backend.LevelSupported: {backend.FeatureMove, backend.FeatureCopy, backend.FeaturePurge, backend.FeatureAppend,
-			backend.FeatureSeen, backend.FeatureFlagged, backend.FeatureAnswered, backend.FeatureFolderCreate,
-			backend.FeatureFolderRename, backend.FeatureFolderDelete, backend.FeatureSavesSent, backend.FeaturePush},
+			backend.FeatureSeen, backend.FeatureFlagged, backend.FeatureAnswered, backend.FeatureSavesSent, backend.FeaturePush},
 		backend.LevelNoted: {backend.FeatureDraft},
 		backend.LevelUnsupported: {backend.FeatureAddToFolder, backend.FeatureRemoveFromFolder, backend.FeatureKeywords,
-			backend.FeatureLabelDelete, backend.FeatureAllMail},
+			backend.FeatureLabelDelete, backend.FeatureAllMail, backend.FeatureFolderCreate, backend.FeatureFolderRename, backend.FeatureFolderDelete},
 	}
 	for l, fs := range levels {
 		for _, f := range fs {

@@ -819,6 +819,9 @@ func (s *Service) UpdateAccount(ctx context.Context, id int64, p AccountPatch) (
 		if in.Receiving.Protocol != acc.Receiving.Protocol {
 			return Account{}, errors.New("an account's receiving protocol cannot change: add the account again")
 		}
+		if in.receiving() == auth.EWS {
+			in.Sending = in.Receiving // the same endpoint; the stored sending slot has no path
+		}
 		in.Receiving.Auth, in.Sending.Auth = acc.Receiving.Auth, acc.Sending.Auth // the sign-in stays
 		r, err := s.checkStored(ctx, acc, &in)
 		var ce *CheckError

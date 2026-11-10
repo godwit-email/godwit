@@ -17,7 +17,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/Azure/go-ntlmssp"
 	"golang.org/x/net/publicsuffix"
 
 	"github.com/godwit-email/godwit/backend"
@@ -86,7 +85,7 @@ func Discover(ctx context.Context, cfg DiscoverConfig) (string, error) {
 	defer t.CloseIdleConnections()
 	noFollow := func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }
 	d := &discovery{cfg: cfg, cr: cr, domain: domainOf(cfg.Email),
-		http:  &http.Client{Transport: negotiator{ntlmssp.Negotiator{RoundTripper: t, AllowBasicAuth: true}}, CheckRedirect: noFollow, Timeout: discoverTimeout},
+		http:  &http.Client{Transport: signer{t}, CheckRedirect: noFollow, Timeout: discoverTimeout},
 		plain: &http.Client{Transport: t, CheckRedirect: noFollow, Timeout: discoverTimeout}}
 	if cfg.Net.LookupSRV == nil {
 		d.cfg.Net.LookupSRV = net.DefaultResolver.LookupSRV

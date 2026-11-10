@@ -262,6 +262,10 @@ func newReceiver(srv Server, email string, creds backend.CredentialsFunc) backen
 	return imapbackend.New(imapbackend.Config{Host: srv.Host, Port: srv.Port, Security: srv.Security, Credentials: creds})
 }
 
+// ewsURL is an EWS account's EWS URL, which it sends through too: the
+// receiving slot's, as the sending slot's path is not stored.
+func ewsURL(acc Account) string { return slotURL(acc.Receiving, acc.Receiving.Path) }
+
 // sessionURL is a JMAP slot's session resource: Path on the host, or
 // /.well-known/jmap to discover it.
 func sessionURL(srv Server) string {

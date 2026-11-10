@@ -865,7 +865,7 @@ func (s *Service) checkSMTP(ctx context.Context, accountID int64, explicit bool)
 			_, err := sa.credentials(ctx) // a Graph token in hand is the check
 			return err
 		case auth.EWS: // an EWS account sends through EWS: sign in there, never to SMTP
-			r := ews.New(ews.Config{URL: slotURL(sa.acc.Sending, sa.acc.Sending.Path), Credentials: sa.credentials})
+			r := ews.New(ews.Config{URL: ewsURL(sa.acc), Credentials: sa.credentials})
 			defer r.Close()
 			_, err := r.Check(ctx)
 			return err

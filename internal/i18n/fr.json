@@ -2154,6 +2154,7 @@
   "feature_reason_ews_no_keywords": "Les comptes Exchange (EWS) ne conservent pas les mots-clés personnalisés.",
   "feature_reason_ews_folder_not_label": "Sur Exchange, un dossier n’est pas un libellé : le supprimer supprime aussi ses e-mails.",
   "feature_reason_ews_no_all_mail": "Exchange n’a pas de « Tous les messages » : archiver déplace les e-mails dans le dossier Archives.",
+  "feature_reason_ews_folders_pending": "La gestion des dossiers via EWS n’est pas encore disponible.",
   "feature_reason_ews_extended_protection": "Le serveur exige la protection étendue (Extended Protection), que Godwit ne prend pas encore en charge. Contactez votre administrateur.",
   "settings_experimental_pop3": "Comptes POP3",
   "settings_experimental_pop3_help": "Propose POP3 à l’ajout d’un compte, pour les boîtes qui n’offrent que POP3. Les e-mails restent sur le serveur ; supprimer, archiver, lu et suivi ne s’appliquent que sur cet ordinateur. C’est expérimental et pourra changer plus tard. Désactivé, les comptes POP3 déjà ajoutés continuent de fonctionner.",

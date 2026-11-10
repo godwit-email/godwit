@@ -102,28 +102,3 @@ func (r *Receiver) append(ctx context.Context, op backend.Append) (backend.Resul
 	id, err := r.c.createItem(ctx, string(op.To), op.Raw, op.Flags, op.Date)
 	return written(backend.Location{Folder: op.To}, id, err)
 }
-
-// CreateFolder creates a mail folder named name under parent, "" for the
-// top of the mailbox, and returns its ref.
-func (r *Receiver) CreateFolder(ctx context.Context, parent backend.FolderRef, name string) (backend.FolderRef, error) {
-	p := distinguished("msgfolderroot")
-	if parent != "" {
-		p = folderRef(string(parent))
-	}
-	id, err := r.c.createFolder(ctx, p, name)
-	if err == nil && id == "" {
-		err = errors.New("ews: CreateFolder answered without the FolderId")
-	}
-	return backend.FolderRef(id), err
-}
-
-// RenameFolder gives the folder ref the name name; its ref stays.
-func (r *Receiver) RenameFolder(ctx context.Context, ref backend.FolderRef, name string) error {
-	return r.c.renameFolder(ctx, string(ref), name)
-}
-
-// DeleteFolder deletes the folder ref with its mail and subfolders, as
-// Outlook does: into Deleted Items, where they can still be recovered.
-func (r *Receiver) DeleteFolder(ctx context.Context, ref backend.FolderRef) error {
-	return r.c.deleteFolder(ctx, string(ref), "MoveToDeletedItems")
-}

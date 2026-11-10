@@ -2154,6 +2154,7 @@
   "feature_reason_ews_no_keywords": "Gli account Exchange (EWS) non conservano le parole chiave personalizzate.",
   "feature_reason_ews_folder_not_label": "Su Exchange una cartella non è un’etichetta: eliminarla elimina anche la sua posta.",
   "feature_reason_ews_no_all_mail": "Exchange non ha «Tutti i messaggi»: archiviare sposta la posta nella cartella Archivio.",
+  "feature_reason_ews_folders_pending": "La gestione delle cartelle tramite EWS non è ancora disponibile.",
   "feature_reason_ews_extended_protection": "Il server richiede la protezione estesa (Extended Protection), che Godwit non supporta ancora. Rivolgiti all'amministratore.",
   "settings_experimental_pop3": "Account POP3",
   "settings_experimental_pop3_help": "Propone POP3 quando aggiungi un account, per le caselle che offrono solo POP3. La posta resta sul server; eliminare, archiviare, letto e speciale valgono solo su questo computer. È sperimentale e potrebbe cambiare in futuro. Se lo disattivi, gli account POP3 già aggiunti continuano a funzionare.",
