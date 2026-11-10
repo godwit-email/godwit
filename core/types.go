@@ -32,8 +32,12 @@ type AccountInput struct {
 	// ReceiveOnly adds the account although its SMTP check fails (the settings
 	// and IMAP steps must pass); it then only receives mail. A passing SMTP
 	// check adds it as usual.
-	ReceiveOnly   bool
-	oauthClientID string // the flow's own client, set by AddAccount
+	ReceiveOnly bool
+	// ConfirmedHosts are hosts outside Email's domain the user agreed to
+	// send the password to while Autodiscover looks for an EWS URL
+	// (CheckReport.Confirm).
+	ConfirmedHosts []string
+	oauthClientID  string // the flow's own client, set by AddAccount
 	// graph checks a stored OAuth account can send through Microsoft Graph, for
 	// a check whose SMTP AUTH is disabled; a flow's check makes its own.
 	graph     func(context.Context) error
@@ -103,7 +107,9 @@ type Server struct {
 	Port     int
 	Security Security // JMAP: SecurityTLS is https, SecurityNone http (localhost only)
 	// Path is JMAP's session resource on Host, as a session URL typed in
-	// gives it; "" discovers it at /.well-known/jmap. Other protocols have none.
+	// gives it; "" discovers it at /.well-known/jmap. For EWS it is the EWS
+	// URL's path; an EWS slot with neither Host nor Path is found by
+	// Autodiscover from the address. Other protocols have none.
 	Path string
 	// Auth is how the slot signs in: AuthPassword ("" in input), AuthAPIToken
 	// (JMAP receiving only) or AuthOAuth, which only an OAuth flow sets.

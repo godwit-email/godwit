@@ -2,6 +2,7 @@ package coretest_test
 
 import (
 	"strconv"
+	"strings"
 	"testing"
 
 	"github.com/godwit-email/godwit/backend/ews"
@@ -72,4 +73,56 @@ func TestEWSServerTooOld(t *testing.T) {
 	assert.Equal(t, ews.ReasonServerTooOld, r.Steps[1].Detail)
 	_, err = e.Svc.AddAccount(t.Context(), in)
 	require.ErrorIs(t, err, ews.ErrServerTooOld)
+}
+
+// An EWS account is added without its URL: Autodiscover finds it, stopping
+// before the password goes to a host outside the address's domain until the
+// user confirms that host.
+func TestEWSAddAccountAutodiscover(t *testing.T) {
+	e := coretest.New(t, coretest.WithoutAutoSync())
+	setEWS(t, e, true)
+	in, srv, ad := e.StartEWSAutodiscover(t, "alice@example.com")
+	ad.RedirectURL("autodiscover.example.com", "ad.example.net")
+	ad.Serve("ad.example.net")
+
+	r, err := e.Svc.CheckAccount(t.Context(), in)
+	require.NoError(t, err)
+	require.False(t, r.OK())
+	assert.Equal(t, "ad.example.net", r.Confirm)
+	assert.Equal(t, core.KindConfirm, r.Steps[1].Kind)
+	_, err = e.Svc.AddAccount(t.Context(), in)
+	var ce *core.CheckError
+	require.ErrorAs(t, err, &ce)
+	assert.Equal(t, "ad.example.net", ce.Report.Confirm)
+	assert.False(t, ad.Credentialed("ad.example.net"), "the password went out before the host was confirmed")
+
+	in.ConfirmedHosts = []string{"ad.example.net"}
+	r, err = e.Svc.CheckAccount(t.Context(), in)
+	require.NoError(t, err)
+	require.True(t, r.OK(), "%+v", r.Steps)
+	assert.Equal(t, srv.URL(), r.URL)
+	acc, err := e.Svc.AddAccount(t.Context(), in)
+	require.NoError(t, err)
+	assert.Equal(t, "/EWS/Exchange.asmx", acc.Receiving.Path)
+	assert.Equal(t, acc.Receiving.Host, acc.Sending.Host)
+	assert.Equal(t, strings.TrimPrefix(srv.URL(), "http://"), acc.Receiving.Host+":"+strconv.Itoa(acc.Receiving.Port)+acc.Receiving.Path)
+
+	e.Deliver(t, acc.ID, "INBOX", coretest.Msg("bob@example.com", "alice@example.com", "Found by Autodiscover", "the body"))
+	ms, err := e.Svc.Search(t.Context(), acc.ID, "Autodiscover", 10)
+	require.NoError(t, err)
+	require.Len(t, ms, 1)
+}
+
+// When Autodiscover finds nothing the ews step fails with ErrNoAutodiscover,
+// and the user types the URL in.
+func TestEWSAutodiscoverFindsNothing(t *testing.T) {
+	e := coretest.New(t, coretest.WithoutAutoSync())
+	setEWS(t, e, true)
+	in, _, _ := e.StartEWSAutodiscover(t, "alice@example.com")
+	r, err := e.Svc.CheckAccount(t.Context(), in)
+	require.NoError(t, err)
+	require.False(t, r.OK())
+	assert.Empty(t, r.Confirm)
+	_, err = e.Svc.AddAccount(t.Context(), in)
+	require.ErrorIs(t, err, ews.ErrNoAutodiscover)
 }

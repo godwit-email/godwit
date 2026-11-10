@@ -136,6 +136,9 @@ func (in AccountInput) validate() error {
 		if !e.ok {
 			return fmt.Errorf("%s protocol %q is not supported", e.slot, e.Protocol)
 		}
+		if e.name == "EWS" && e.Server == (Server{Protocol: e.Protocol}) {
+			continue // Autodiscover finds it
+		}
 		if e.Host == "" {
 			return fmt.Errorf("%s host is required", e.name)
 		}
@@ -149,7 +152,7 @@ func (in AccountInput) validate() error {
 			return fmt.Errorf("%s sign-in %q is not supported", e.name, e.Auth)
 		}
 		if e.Path != "" && (!http || !strings.HasPrefix(e.Path, "/") || strings.ContainsAny(e.Path, "?# ")) ||
-			e.Path == "" && e.name == "EWS" { // the EWS URL's: no discovery yet
+			e.Path == "" && e.name == "EWS" { // the EWS URL's
 			return fmt.Errorf("%s path %q is invalid", e.name, e.Path)
 		}
 		if e.Security == SecurityNone && !isLoopback(e.Host) {
@@ -263,6 +266,10 @@ func (s *Service) AddAccount(ctx context.Context, in AccountInput) (Account, err
 	receiveOnly := in.ReceiveOnly && checked.OnlySMTPFailed()
 	if checkErr != nil && !receiveOnly {
 		return Account{}, &CheckError{Report: checked, err: checkErr}
+	}
+	if checked.URL != "" { // found by Autodiscover
+		in.Receiving, _ = ewsSlot(checked.URL)
+		in.Sending = in.Receiving
 	}
 	if in.OAuthFlowID != "" {
 		// Peeked for the check; taken now, so one grant adds one account.
