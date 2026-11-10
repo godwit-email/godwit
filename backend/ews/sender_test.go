@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"testing"
+	"time"
 
 	"github.com/godwit-email/godwit/backend"
 )
@@ -42,7 +43,7 @@ func TestSendBusyIsRetried(t *testing.T) {
 			t.Cleanup(srv.Close)
 			err := NewSender(Config{URL: srv.URL, Credentials: func(context.Context) (backend.Credentials, error) {
 				return backend.Credentials{Username: "alice", Password: "secret"}, nil
-			}}).Send(t.Context(), "a@example.com", []string{"b@example.com"}, []byte("To: b@example.com\r\n\r\nhi\r\n"))
+			}, Wait: func(context.Context, time.Duration) error { return nil }}).Send(t.Context(), "a@example.com", []string{"b@example.com"}, []byte("To: b@example.com\r\n\r\nhi\r\n"))
 			if err == nil || errors.Is(err, backend.ErrUncertain) || errors.As(err, new(*backend.RejectedError)) {
 				t.Errorf("Send to a busy server = %v, want a plain error", err)
 			}

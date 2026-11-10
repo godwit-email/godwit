@@ -13,6 +13,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 )
@@ -23,8 +24,8 @@ import (
 // SyncFolderItems, GetItem and CreateItem sending a message; an operation it
 // does not know fails the test.
 // Its responses spell the namespace prefixes differently from operation to
-// operation, as servers do. Hooks (RejectAuth, SetVersion, Refuse,
-// LoseVerdict) inject faults.
+// operation, as servers do. Hooks (RejectAuth, SetVersion, Busy, Refuse,
+// LoseVerdict, RejectNextSendAuth) inject faults.
 type EWS struct {
 	t   testing.TB
 	srv *httptest.Server
@@ -32,12 +33,19 @@ type EWS struct {
 	mu           sync.Mutex
 	major, minor int // ServerVersionInfo
 	rejected     bool
-	folders      []*ewsFolder // the root first
-	next         int          // the last id given
-	sent         []EWSSent
-	refused      map[string]bool // recipients refused
-	lose         bool            // drop the next CreateItem's answer
-	rejectSend   bool            // refuse the next CreateItem's credentials
+	busy         int           // requests still to refuse with ErrorServerBusy
+	backOff      time.Duration // the BackOffMilliseconds they carry
+	busyFault    bool          // as a SOAP fault (HTTP 500), else a response message (HTTP 503)
+	requests     int           // signed-in requests answered
+
+	latency          atomic.Int64 // time.Duration each request takes before being read
+	inFlight, maxFly atomic.Int32 // requests being answered now, and the most at once
+	folders          []*ewsFolder // the root first
+	next             int          // the last id given
+	sent             []EWSSent
+	refused          map[string]bool // recipients refused
+	lose             bool            // drop the next CreateItem's answer
+	rejectSend       bool            // refuse the next CreateItem's credentials
 }
 
 // EWSSent is a message the server sent: its recipients and MIME as it got them.
@@ -151,6 +159,29 @@ func (s *EWS) Count(name string) int {
 	}
 	return -1
 }
+
+// Busy makes the server refuse the next n requests with ErrorServerBusy
+// asking to wait backOff, as a SOAP fault with HTTP 500 when fault, else as
+// the operation's response message with HTTP 503.
+func (s *EWS) Busy(n int, backOff time.Duration, fault bool) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.busy, s.backOff, s.busyFault = n, backOff, fault
+}
+
+// Requests is how many signed-in requests the server has answered.
+func (s *EWS) Requests() int {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.requests
+}
+
+// SetLatency makes each request take d before the server answers it, so
+// requests sent at once overlap.
+func (s *EWS) SetLatency(d time.Duration) { s.latency.Store(int64(d)) }
+
+// MaxConcurrent is the most requests the server has had in hand at once.
+func (s *EWS) MaxConcurrent() int { return int(s.maxFly.Load()) }
 
 // Deliver puts raw into the folder at path, as mail arriving, and returns
 // its ItemId. Path segments name folders from the root ("Inbox/Projects"),
@@ -266,6 +297,11 @@ func readRequest(body []byte) (ewsRequest, error) {
 }
 
 func (s *EWS) serve(w http.ResponseWriter, r *http.Request) {
+	n := s.inFlight.Add(1)
+	defer s.inFlight.Add(-1)
+	for m := s.maxFly.Load(); n > m && !s.maxFly.CompareAndSwap(m, n); m = s.maxFly.Load() {
+	}
+	time.Sleep(time.Duration(s.latency.Load()))
 	user, pass, ok := r.BasicAuth()
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -282,6 +318,12 @@ func (s *EWS) serve(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		s.t.Errorf("fake EWS: %v in %s", err, body)
 		s.fault(w, "ErrorSchemaValidation", err.Error())
+		return
+	}
+	s.requests++
+	if s.busy > 0 {
+		s.busy--
+		s.serverBusy(w, req.op)
 		return
 	}
 	switch req.op {
@@ -360,6 +402,26 @@ func (s *EWS) fault(w http.ResponseWriter, code, text string) {
 	fmt.Fprintf(w, `%s<s:Envelope xmlns:s="%s"><s:Body><s:Fault><faultcode xmlns:a="%s">a:%s</faultcode><faultstring xml:lang="en-US">%s</faultstring>`+
 		`<detail><e:ResponseCode xmlns:e="%s">%s</e:ResponseCode></detail></s:Fault></s:Body></s:Envelope>`,
 		xml.Header, nsSOAP, nsTypes, code, esc(text), nsTypes, code)
+}
+
+// serverBusy refuses a request of op as Exchange's throttling does, in the
+// two shapes it uses (Throttling in Exchange, tables 3 and 4).
+func (s *EWS) serverBusy(w http.ResponseWriter, op string) {
+	const text = "The server cannot service this request right now. Try again later."
+	ms := s.backOff.Milliseconds()
+	w.Header().Set("Content-Type", "text/xml; charset=utf-8")
+	if s.busyFault {
+		w.WriteHeader(http.StatusInternalServerError)
+		fmt.Fprintf(w, `%s<s:Envelope xmlns:s="%s"><s:Body><s:Fault><faultcode xmlns:a="%s">a:ErrorServerBusy</faultcode><faultstring xml:lang="en-US">%s</faultstring>`+
+			`<detail><e:ResponseCode xmlns:e="%s">ErrorServerBusy</e:ResponseCode><e:Message xmlns:e="%s">%s</e:Message>`+
+			`<t:MessageXml xmlns:t="%s"><t:Value Name="BackOffMilliseconds">%d</t:Value></t:MessageXml></detail></s:Fault></s:Body></s:Envelope>`,
+			xml.Header, nsSOAP, nsTypes, text, nsTypes, nsTypes, text, nsTypes, ms)
+		return
+	}
+	w.WriteHeader(http.StatusServiceUnavailable)
+	s.respond(w, styleUsual, op, fmt.Sprintf(`<m:ResponseMessages><m:%sResponseMessage ResponseClass="Error"><m:MessageText>%s</m:MessageText><m:ResponseCode>ErrorServerBusy</m:ResponseCode>`+
+		`<m:DescriptiveLinkKey>0</m:DescriptiveLinkKey><m:MessageXml><t:Value Name="BackOffMilliseconds">%d</t:Value></m:MessageXml></m:%sResponseMessage></m:ResponseMessages>`,
+		op, text, ms, op))
 }
 
 // message is one response message of op: Success with inner, or Error with code.

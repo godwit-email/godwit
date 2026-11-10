@@ -6,6 +6,7 @@ import (
 	"errors"
 	"slices"
 	"testing"
+	"time"
 
 	"github.com/godwit-email/godwit/backend"
 	"github.com/godwit-email/godwit/backend/backendtest"
@@ -139,5 +140,86 @@ func TestEWSSendBccAndSentCopy(t *testing.T) {
 	}
 	if n := s.Count("Sent Items"); n != 1 {
 		t.Errorf("Sent Items has %d messages, want 1", n)
+	}
+}
+
+// busyReceiver is a receiver that records the back-offs it waits out
+// instead of waiting.
+func busyReceiver(t *testing.T, s *testmail.EWS) (*ews.Receiver, *[]time.Duration) {
+	var waits []time.Duration
+	r := ews.New(ews.Config{URL: s.URL(), Credentials: func(context.Context) (backend.Credentials, error) {
+		return backend.Credentials{Username: "alice", Password: s.Password()}, nil
+	}, Wait: func(_ context.Context, d time.Duration) error {
+		waits = append(waits, d)
+		return nil
+	}})
+	t.Cleanup(func() { r.Close() })
+	return r, &waits
+}
+
+// ErrorServerBusy, as a SOAP fault or a response message, is waited out for
+// BackOffMilliseconds and the request sent again, up to three times.
+func TestEWSServerBusyRetries(t *testing.T) {
+	for _, fault := range []bool{true, false} {
+		s := testmail.StartEWS(t)
+		s.Busy(3, 2*time.Second, fault)
+		r, waits := busyReceiver(t, s)
+		if _, err := r.Describe(tctx(t)); err != nil {
+			t.Fatalf("Describe after 3 busy answers (fault %v) = %v", fault, err)
+		}
+		if want := []time.Duration{2 * time.Second, 2 * time.Second, 2 * time.Second}; !slices.Equal(*waits, want) {
+			t.Errorf("waited %v (fault %v), want %v", *waits, fault, want)
+		}
+	}
+}
+
+// A server still busy after three retries fails the request with a plain
+// error, not a sign-in failure; a back-off over a minute waits a minute.
+func TestEWSServerBusyGivesUp(t *testing.T) {
+	s := testmail.StartEWS(t)
+	s.Busy(4, 10*time.Minute, false)
+	r, waits := busyReceiver(t, s)
+	_, err := r.Describe(tctx(t))
+	if err == nil || errors.Is(err, backend.ErrAuthFailed) {
+		t.Errorf("Describe after 4 busy answers = %v, want a plain error", err)
+	}
+	if n := s.Requests(); n != 4 {
+		t.Errorf("sent %d requests, want 4", n)
+	}
+	if want := []time.Duration{time.Minute, time.Minute, time.Minute}; !slices.Equal(*waits, want) {
+		t.Errorf("waited %v, want %v", *waits, want)
+	}
+}
+
+// An account's requests go one at a time, even from several backends (as
+// the receiver and the sender are).
+func TestEWSRequestsOneAtATime(t *testing.T) {
+	s := testmail.StartEWS(t)
+	s.SetLatency(20 * time.Millisecond)
+	errs := make(chan error)
+	for range 3 {
+		go func() {
+			_, err := ewsReceiver(t, s).Check(tctx(t))
+			errs <- err
+		}()
+	}
+	for range 3 {
+		if err := <-errs; err != nil {
+			t.Fatal(err)
+		}
+	}
+	if n := s.MaxConcurrent(); n != 1 {
+		t.Errorf("%d requests at once, want 1", n)
+	}
+}
+
+// Waiting out a back-off ends with ctx.
+func TestEWSServerBusyWaitCancels(t *testing.T) {
+	s := testmail.StartEWS(t)
+	s.Busy(1, time.Minute, true)
+	ctx, cancel := context.WithTimeout(tctx(t), 50*time.Millisecond)
+	defer cancel()
+	if _, err := ewsReceiver(t, s).Describe(ctx); !errors.Is(err, context.DeadlineExceeded) {
+		t.Errorf("Describe cancelled while backing off = %v, want DeadlineExceeded", err)
 	}
 }
