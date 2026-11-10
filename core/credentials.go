@@ -10,6 +10,7 @@ import (
 	"slices"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/godwit-email/godwit/core/ai"
@@ -22,12 +23,14 @@ import (
 // secret service, access denied). Credentials never fall back to a file.
 var ErrKeychainUnavailable = errors.New("system keychain is unavailable")
 
-// Replaced in tests, and by Options.Keyring.
+// Replaced in tests.
 var (
 	keyringGet    = keyring.Get
 	keyringSet    = keyring.Set
 	keyringDelete = keyring.Delete
 )
+
+var customKeyring atomic.Pointer[Keyring]
 
 // Keyring stores credentials (passwords, refresh tokens, model keys, extension
 // secrets), each under a service name and a user key. The default is the
@@ -45,10 +48,9 @@ type Keyring interface {
 // ErrSecretNotFound is what a Keyring's Get returns for a missing entry.
 var ErrSecretNotFound = keyring.ErrNotFound
 
-// setKeyring routes every keychain call through k. Process-wide, like
-// keychainValues: the keychain is one per process, not per Service.
+// setKeyring 固定首个自定义钥匙串，避免改变已有 Service 的凭据来源。
 func setKeyring(k Keyring) {
-	keyringGet, keyringSet, keyringDelete = k.Get, k.Set, k.Delete
+	customKeyring.CompareAndSwap(nil, &k)
 }
 
 // keychainErr passes nil and keyring.ErrNotFound through and wraps anything
@@ -67,7 +69,11 @@ func keychainErr(err error) error {
 var keychainValues secretSet
 
 func keychainGet(user string) (string, error) {
-	v, err := keyringGet(keyringService, user)
+	get := keyringGet
+	if k := customKeyring.Load(); k != nil {
+		get = (*k).Get
+	}
+	v, err := get(keyringService, user)
 	if err == nil {
 		keychainValues.Add(v)
 	}
@@ -76,7 +82,11 @@ func keychainGet(user string) (string, error) {
 
 func keychainSet(user, secret string) error {
 	keychainValues.Add(secret)
-	return keychainErr(keyringSet(keyringService, user, secret))
+	set := keyringSet
+	if k := customKeyring.Load(); k != nil {
+		set = (*k).Set
+	}
+	return keychainErr(set(keyringService, user, secret))
 }
 
 // Redact replaces every credential and extension secret this Service knows of
@@ -89,7 +99,11 @@ func (s *Service) Redact(text string) string {
 }
 
 func keychainDelete(user string) error {
-	return keychainErr(keyringDelete(keyringService, user))
+	del := keyringDelete
+	if k := customKeyring.Load(); k != nil {
+		del = (*k).Delete
+	}
+	return keychainErr(del(keyringService, user))
 }
 
 // KeychainStatus writes, reads back and deletes a fresh probe entry; any failure is

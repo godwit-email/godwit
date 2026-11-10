@@ -48,8 +48,7 @@ func (k *mapKeyring) Delete(service, user string) error {
 // TestOptionsKeyring: a Keyring given in Options takes every keychain call,
 // and a missing entry reads as ErrSecretNotFound, not as an unavailable keychain.
 func TestOptionsKeyring(t *testing.T) {
-	get, set, del := keyringGet, keyringSet, keyringDelete
-	t.Cleanup(func() { keyringGet, keyringSet, keyringDelete = get, set, del })
+	preserveKeyring(t)
 
 	k := &mapKeyring{m: map[string]string{}}
 	ctx := context.Background()
@@ -79,4 +78,108 @@ func TestOptionsKeyring(t *testing.T) {
 	if errors.Is(err, ErrKeychainUnavailable) {
 		t.Fatal("a missing entry must not read as an unavailable keychain")
 	}
+}
+
+func preserveKeyring(t *testing.T) {
+	t.Helper()
+	get, set, del := keyringGet, keyringSet, keyringDelete
+	previous := customKeyring.Swap(nil)
+	t.Cleanup(func() {
+		keyringGet, keyringSet, keyringDelete = get, set, del
+		customKeyring.Store(previous)
+	})
+}
+
+func TestOptionsKeyringKeepsFirst(t *testing.T) {
+	for _, name := range []string{"nil", "replacement", "failed"} {
+		t.Run(name, func(t *testing.T) {
+			preserveKeyring(t)
+			ctx := context.Background()
+			first := &mapKeyring{m: map[string]string{}}
+			s, err := New(ctx, Options{DataDir: t.TempDir(), Keyring: first})
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer s.Close()
+			if err := keychainSet("retained", "original-secret"); err != nil {
+				t.Fatal(err)
+			}
+
+			second := &mapKeyring{m: map[string]string{}}
+			opts := Options{DataDir: t.TempDir()}
+			if name != "nil" {
+				opts.Keyring = second
+			}
+			if name == "failed" {
+				opts.DataDir = ""
+			}
+			other, err := New(ctx, opts)
+			if other != nil {
+				defer other.Close()
+			}
+			if (err != nil) != (name == "failed") {
+				t.Fatalf("second New: %v", err)
+			}
+
+			if got, err := keychainGet("retained"); err != nil || got != "original-secret" {
+				t.Fatalf("first keyring read: got %q, err %v", got, err)
+			}
+			if err := keychainSet("retained", "updated-secret"); err != nil {
+				t.Fatal(err)
+			}
+			if got, err := first.Get(keyringService, "retained"); err != nil || got != "updated-secret" {
+				t.Fatalf("first keyring write: got %q, err %v", got, err)
+			}
+			if err := keychainDelete("retained"); err != nil {
+				t.Fatal(err)
+			}
+			if _, err := first.Get(keyringService, "retained"); !errors.Is(err, ErrSecretNotFound) {
+				t.Fatalf("first keyring delete: %v", err)
+			}
+			second.mu.Lock()
+			calls := len(second.ops)
+			second.mu.Unlock()
+			if calls != 0 {
+				t.Fatalf("replacement keyring received %d calls", calls)
+			}
+		})
+	}
+}
+
+func TestKeyringConcurrentInitialization(t *testing.T) {
+	preserveKeyring(t)
+	k := &mapKeyring{m: map[string]string{}}
+	keyringGet, keyringSet, keyringDelete = k.Get, k.Set, k.Delete
+
+	start := make(chan struct{})
+	var wg sync.WaitGroup
+	for range 2 {
+		wg.Go(func() {
+			<-start
+			for range 100 {
+				setKeyring(k)
+			}
+		})
+	}
+	for _, user := range []string{"reader-a", "reader-b", "reader-c"} {
+		wg.Go(func() {
+			<-start
+			for range 100 {
+				if err := keychainSet(user, user+"-secret"); err != nil {
+					t.Error(err)
+					return
+				}
+				if got, err := keychainGet(user); err != nil || got != user+"-secret" {
+					t.Errorf("concurrent read: got %q, err %v", got, err)
+					return
+				}
+				if err := keychainDelete(user); err != nil {
+					t.Error(err)
+					return
+				}
+			}
+		})
+	}
+	close(start)
+	wg.Wait()
 }

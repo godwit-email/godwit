@@ -51,10 +51,8 @@ type Options struct {
 	SecurityMail bool
 	// SystemLanguage is the operating system language (BCP 47) the GUI passes in; empty means "en".
 	SystemLanguage string
-	// Keyring stores credentials; nil is the system keychain through go-keyring.
-	// A shell on a platform go-keyring cannot reach (iOS) gives its own. It is
-	// process-wide, like the keychain itself: the first Service to set one sets
-	// it for all.
+	// Keyring 存储凭据；进程内首次设置的非 nil 实现由所有 Service 共用。
+	// nil 沿用当前实现，未设置时使用 go-keyring。iOS 等平台由外壳提供实现。
 	Keyring Keyring
 	// ImageClient downloads remote mail images; nil is imagefetch.NewClient(false)
 	// (public hosts only). Tests give one that reaches loopback.
