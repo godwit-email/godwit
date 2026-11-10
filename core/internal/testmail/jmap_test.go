@@ -250,6 +250,50 @@ func TestJMAPDownloadElsewhere(t *testing.T) {
 	}
 }
 
+// A wider window after the first sync brings in the older mail it now
+// covers, and only that.
+func TestJMAPWindowWidens(t *testing.T) {
+	s := testmail.StartJMAP(t)
+	old := s.Deliver("INBOX", backendtest.Message("old@example.com", "old"))
+	s.Deliver("INBOX", backendtest.Message("new@example.com", "new"))
+	r := jmapReceiver(t, s, s.SessionURL())
+	round := func(cur backend.Cursor, w backend.Window, local backend.Local) ([]backend.MessageRef, backend.Cursor) {
+		t.Helper()
+		var got []backend.MessageRef
+		_, err := r.Sync(tctx(t), backend.SyncRequest{Account: cur, Window: w, Local: local}, func(p backend.Page) error {
+			for _, c := range p.Changes {
+				if c, ok := c.(backend.MessageAppeared); ok {
+					got = append(got, c.Ref)
+				}
+			}
+			if p.Account != "" {
+				cur = p.Account
+			}
+			return nil
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+		return got, cur
+	}
+	got, cur := round("", backend.Window{Newest: 1}, nil)
+	if len(got) != 1 || got[0] == backend.MessageRef(old) {
+		t.Fatalf("the newest 1 got %v", got)
+	}
+	local := held{string(got[0]): true}
+	if got, _ = round(cur, backend.Window{Newest: 1}, local); len(got) != 0 {
+		t.Errorf("the same window again got %v, want nothing", got)
+	}
+	got, cur = round(cur, backend.Window{}, local)
+	if len(got) != 1 || got[0] != backend.MessageRef(old) {
+		t.Errorf("all mail got %v, want only %s", got, old)
+	}
+	local[string(old)] = true
+	if got, _ = round(cur, backend.Window{}, local); len(got) != 0 {
+		t.Errorf("all mail again got %v, want nothing", got)
+	}
+}
+
 // racyJMAP fronts s as a server whose Email/get answers with a state later
 // than its Email/query in the same request saw: arrive runs between them,
 // once. It returns the session URL to use.

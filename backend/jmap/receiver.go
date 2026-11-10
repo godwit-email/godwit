@@ -123,10 +123,29 @@ func role(r mailbox.Role) backend.Role {
 	return ""
 }
 
-// cursor is the account's Mailbox and Email state.
+// cursor is the account's Mailbox and Email state, and the window whose
+// mail it holds (nil for a cursor from before it was kept: unknown).
 type cursor struct {
-	Mailbox string `json:"m"`
-	Email   string `json:"e"`
+	Mailbox string          `json:"m"`
+	Email   string          `json:"e"`
+	Window  *backend.Window `json:"w,omitempty"`
+}
+
+// covers reports that the mail of window w is all in the window c holds.
+// A window since a date moves on each round, so c keeps the earliest date.
+func (c cursor) covers(w backend.Window) bool {
+	h := c.Window
+	switch {
+	case h == nil:
+		return false
+	case h.Newest == 0 && h.Since.IsZero(): // all mail
+		return true
+	case w.Newest > 0:
+		return h.Newest >= w.Newest
+	case !w.Since.IsZero():
+		return h.Newest == 0 && !w.Since.Before(h.Since)
+	}
+	return false // w is all mail, h is not
 }
 
 func (c cursor) encode() backend.Cursor {
@@ -139,7 +158,8 @@ var emailProps = []string{"id", "blobId", "mailboxIds", "keywords", "size", "rec
 
 const pageSize = 100
 
-// Sync implements backend.Receiver. It reports changes since the cursor, or
+// Sync implements backend.Receiver. It reports changes since the cursor and
+// the mail a window wider than the cursor's adds, or
 // everything in the window at first and after the server cannot calculate
 // changes (then each folder is reset first). It always syncs the whole
 // account: Only is not used, nor are Pages and PageSize, so more is false.
@@ -204,19 +224,9 @@ func (r *Receiver) full(ctx context.Context, req backend.SyncRequest, reset bool
 		return err
 	}
 	estate := out[0].(*email.GetResponse).State
-	seen := map[gojmap.ID]bool{}
-	var mails []*email.Email
-	for _, m := range boxes {
-		got, err := r.query(ctx, m.ID, req.Window)
-		if err != nil {
-			return err
-		}
-		for _, e := range got {
-			if !seen[e.ID] {
-				seen[e.ID] = true
-				mails = append(mails, e)
-			}
-		}
+	mails, err := r.window(ctx, boxes, req.Window)
+	if err != nil {
+		return err
 	}
 	for chunk := range slices.Chunk(mails, pageSize) {
 		if err := s.appear(ctx, chunk, nil, true); err != nil {
@@ -226,7 +236,7 @@ func (r *Receiver) full(ctx context.Context, req backend.SyncRequest, reset bool
 			return err
 		}
 	}
-	return s.flush(backend.Page{Account: cursor{mstate, estate}.encode(), Folders: states})
+	return s.flush(backend.Page{Account: cursor{mstate, estate, &req.Window}.encode(), Folders: states})
 }
 
 // emailState is an Email/get of no ids: only the state. (email.Get leaves
@@ -238,6 +248,25 @@ type emailState struct {
 
 func (emailState) Name() string           { return "Email/get" }
 func (emailState) Requires() []gojmap.URI { return []gojmap.URI{mail.URI} }
+
+// window lists the mail of boxes in w, each Email once.
+func (r *Receiver) window(ctx context.Context, boxes []*mailbox.Mailbox, w backend.Window) ([]*email.Email, error) {
+	seen := map[gojmap.ID]bool{}
+	var mails []*email.Email
+	for _, m := range boxes {
+		got, err := r.query(ctx, m.ID, w)
+		if err != nil {
+			return nil, err
+		}
+		for _, e := range got {
+			if !seen[e.ID] {
+				seen[e.ID] = true
+				mails = append(mails, e)
+			}
+		}
+	}
+	return mails, nil
+}
 
 // query lists the mail of mailbox m in the window, newest first.
 func (r *Receiver) query(ctx context.Context, m gojmap.ID, w backend.Window) ([]*email.Email, error) {
@@ -514,7 +543,54 @@ func (r *Receiver) changes(ctx context.Context, req backend.SyncRequest, cur cur
 			return err
 		}
 	}
-	return s.flush(backend.Page{Account: cursor{mstate, estate}.encode(), Folders: states})
+	next := cursor{mstate, estate, cur.Window}
+	if !cur.covers(req.Window) { // the window grew: bring in what it now covers
+		if err := s.widen(ctx, boxes, refs); err != nil {
+			return err
+		}
+		next.Window = &req.Window
+	}
+	return s.flush(backend.Page{Account: next.encode(), Folders: states})
+}
+
+// widen reports the mail in the window that local storage does not hold in
+// any of folders, as a backfill.
+func (s *round) widen(ctx context.Context, boxes []*mailbox.Mailbox, folders []backend.FolderRef) error {
+	mails, err := s.r.window(ctx, boxes, s.req.Window)
+	if err != nil {
+		return err
+	}
+	for chunk := range slices.Chunk(mails, pageSize) {
+		held := map[backend.FolderRef]map[backend.MessageRef]bool{}
+		if s.req.Local != nil {
+			mrefs := make([]backend.MessageRef, len(chunk))
+			for i, e := range chunk {
+				mrefs[i] = backend.MessageRef(e.ID)
+			}
+			for _, f := range folders {
+				var err error
+				if held[f], err = s.req.Local.HeldRefs(ctx, f, mrefs); err != nil {
+					return err
+				}
+			}
+		}
+		var fresh []*email.Email
+		for _, e := range chunk {
+			for m := range e.MailboxIDs {
+				if !held[backend.FolderRef(m)][backend.MessageRef(e.ID)] {
+					fresh = append(fresh, e)
+					break
+				}
+			}
+		}
+		if err := s.appear(ctx, fresh, held, true); err != nil {
+			return err
+		}
+		if err := s.flush(backend.Page{}); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 // blob is the blob id of the Email id; ErrNotFound when it is gone.
