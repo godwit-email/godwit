@@ -1,8 +1,10 @@
 package testmail_test
 
 import (
+	"bytes"
 	"context"
 	"errors"
+	"slices"
 	"testing"
 
 	"github.com/godwit-email/godwit/backend"
@@ -92,5 +94,50 @@ func TestEWSAuthFailed(t *testing.T) {
 	s.RejectAuth()
 	if _, err := ewsReceiver(t, s).Describe(tctx(t)); !errors.Is(err, backend.ErrAuthFailed) {
 		t.Errorf("Describe with a wrong password = %v, want ErrAuthFailed", err)
+	}
+}
+
+func (s ewsServer) Sender(*testing.T) backend.Sender {
+	return ews.NewSender(ews.Config{URL: s.URL(), Credentials: func(context.Context) (backend.Credentials, error) {
+		return backend.Credentials{Username: "alice", Password: s.Password()}, nil
+	}})
+}
+
+func (s ewsServer) Accepted(*testing.T) []backendtest.Delivery {
+	var out []backendtest.Delivery
+	for _, m := range s.EWS.Sent() {
+		out = append(out, backendtest.Delivery{Rcpts: m.Rcpts, Raw: m.Raw})
+	}
+	return out
+}
+
+func (s ewsServer) Refuse(_ *testing.T, rcpt string) { s.EWS.Refuse(rcpt) }
+func (s ewsServer) LoseVerdict(*testing.T)           { s.EWS.LoseVerdict() }
+
+func TestEWSSenderContract(t *testing.T) {
+	backendtest.RunSender(t, func(t *testing.T) backendtest.SendServer { return ewsServer{testmail.StartEWS(t)} })
+}
+
+// A Bcc recipient gets the message but is not named in it, and the sent
+// copy is filed in Sent Items once.
+func TestEWSSendBccAndSentCopy(t *testing.T) {
+	s := testmail.StartEWS(t)
+	raw := backendtest.Message("bcc@example.com", "hello")
+	snd := ewsServer{s}.Sender(t)
+	if !snd.SavesSent() {
+		t.Error("SavesSent = false")
+	}
+	if err := snd.Send(tctx(t), "a@example.com", []string{"b@example.com", "hidden@example.com"}, raw); err != nil {
+		t.Fatal(err)
+	}
+	sent := s.Sent()
+	if len(sent) != 1 || !slices.Contains(sent[0].Rcpts, "hidden@example.com") {
+		t.Fatalf("sent %+v, want one message to hidden@ too", sent)
+	}
+	if bytes.Contains(sent[0].Raw, []byte("hidden@")) {
+		t.Errorf("the message names its Bcc recipient: %s", sent[0].Raw)
+	}
+	if n := s.Count("Sent Items"); n != 1 {
+		t.Errorf("Sent Items has %d messages, want 1", n)
 	}
 }
