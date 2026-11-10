@@ -42,7 +42,23 @@ func transport() *http.Transport {
 type negotiator struct{ ntlmssp.Negotiator }
 
 // CloseIdleConnections lets http.Client's reach the transport.
-func (n negotiator) CloseIdleConnections() { n.RoundTripper.(*http.Transport).CloseIdleConnections() }
+func (n negotiator) CloseIdleConnections() { n.RoundTripper.(legs).CloseIdleConnections() }
+
+// legs is the transport under negotiator. It keeps each leg's error in the
+// *error its request's context holds under legErrKey: the negotiator answers
+// a later leg's failure with the first leg's 401, which would read as a
+// wrong password rather than a lost connection.
+type legs struct{ *http.Transport }
+
+type legErrKey struct{}
+
+func (t legs) RoundTrip(req *http.Request) (*http.Response, error) {
+	resp, err := t.Transport.RoundTrip(req)
+	if p, ok := req.Context().Value(legErrKey{}).(*error); ok {
+		*p = err
+	}
+	return resp, err
+}
 
 // refused is a 401 resp to a request with body, signed in as cr:
 // ErrExtendedProtection when the server refused NTLM yet takes the password
