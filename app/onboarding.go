@@ -171,8 +171,7 @@ func providerName(p auth.Provider) string {
 }
 
 // listed reports whether p has its own tile: Lark (Feishu outside China)
-// shares Feishu's, and the address's MX picks between them. Fastmail has
-// none yet (no mark of its own): its addresses find it.
+// shares Feishu's, and the address's MX picks between them.
 func listed(p auth.Provider) bool { return p.ID != "lark" }
 
 // tileName is p's name on its tile: Feishu's is 飞书/Lark.
