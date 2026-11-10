@@ -85,9 +85,10 @@ type entry struct {
 
 // session is one signed-in POP3 session and its listing, oldest first.
 type session struct {
-	c    *gopop3.Conn
-	list []entry
-	at   map[string]int // the index in list of each UIDL
+	c     *gopop3.Conn
+	list  []entry
+	at    map[string]int // the index in list of each UIDL
+	noTOP bool           // the server refused TOP
 }
 
 // index is where the message with UIDL uid is in the listing, -1 if gone.

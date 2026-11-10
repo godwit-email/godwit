@@ -227,12 +227,27 @@ func window(s *session, w backend.Window, held func(entry) bool, upto int) ([]en
 }
 
 // top is the header of the message e, read with TOP n 0.
+// A server refusing TOP (RFC 1939 leaves it optional) gives the header of
+// the whole message RETR reads, for the rest of the session.
 func (s *session) top(e entry) ([]byte, error) {
-	b, err := s.c.Cmd("TOP", true, e.n, 0)
+	if !s.noTOP {
+		b, err := s.c.Cmd("TOP", true, e.n, 0)
+		if err == nil {
+			return b.Bytes(), nil
+		}
+		if !serverErr(err) {
+			return nil, err
+		}
+		s.noTOP = true
+	}
+	raw, err := s.retr(e)
 	if err != nil {
 		return nil, err
 	}
-	return b.Bytes(), nil
+	if i := bytes.Index(raw, []byte("\r\n\r\n")); i >= 0 {
+		raw = raw[:i+4]
+	}
+	return raw, nil
 }
 
 func (s *session) retr(e entry) ([]byte, error) {

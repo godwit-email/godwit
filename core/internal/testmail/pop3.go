@@ -31,6 +31,7 @@ type POP3 struct {
 	rejectAuth bool
 	rejectDele bool
 	noUIDL     bool
+	noTOP      bool
 	retrLeft   int // RETRs that succeed before the rest fail; -1 for no limit
 	stls       int
 	dele       int
@@ -112,6 +113,9 @@ func (s *POP3) FailRETR(n int) { s.mu.Lock(); s.retrLeft = n; s.mu.Unlock() }
 
 // DisableUIDL makes the server answer UIDL with -ERR, as one without it does.
 func (s *POP3) DisableUIDL() { s.mu.Lock(); s.noUIDL = true; s.mu.Unlock() }
+
+// DisableTOP makes the server refuse TOP, which RFC 1939 leaves optional.
+func (s *POP3) DisableTOP() { s.mu.Lock(); s.noTOP = true; s.mu.Unlock() }
 
 // STLS is how many connections the server has upgraded with STLS.
 func (s *POP3) STLS() int { s.mu.Lock(); defer s.mu.Unlock(); return s.stls }
@@ -252,6 +256,11 @@ func (s *POP3) serve(nc net.Conn) {
 				continue
 			}
 			s.mu.Lock()
+			if cmd == "TOP" && s.noTOP {
+				s.mu.Unlock()
+				say("-ERR command not supported")
+				continue
+			}
 			fail := cmd == "RETR" && s.retrLeft == 0
 			if cmd == "RETR" && s.retrLeft > 0 {
 				s.retrLeft--

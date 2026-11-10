@@ -5,6 +5,7 @@ import (
 	"errors"
 	"maps"
 	"slices"
+	"strings"
 	"testing"
 	"time"
 
@@ -354,5 +355,24 @@ func TestPOP3OlderAfterLateOldDate(t *testing.T) {
 	older := backend.SyncRequest{Only: []backend.FolderRef{pop3.Inbox}, Older: 10}
 	if cs, more := st.sync(t, r, older); !slices.Equal(arrivals(cs), []string{late}) || more {
 		t.Errorf("older = %v (more %v), want %s and no more", arrivals(cs), more, late)
+	}
+}
+
+// A server without TOP still syncs a date window and reads header fields,
+// from whole messages.
+func TestPOP3WithoutTOP(t *testing.T) {
+	s := testmail.StartPOP3(t)
+	s.DisableTOP()
+	now := time.Now()
+	s.Deliver(dated("old", now.AddDate(0, -3, 0)))
+	recent := s.Deliver(dated("new", now.AddDate(0, 0, -1)))
+	r := pop3Receiver(t, s, conn.None)
+	cs, _ := newPOP3Store().sync(t, r, backend.SyncRequest{Window: backend.Window{Since: now.AddDate(0, -1, 0)}})
+	if got := arrivals(cs); !slices.Equal(got, []string{recent}) {
+		t.Errorf("first sync since a month ago = %v, want %v", got, []string{recent})
+	}
+	h, err := r.Headers(tctx(t), pop3.Inbox, []backend.MessageRef{backend.MessageRef(recent)}, []string{"Subject"})
+	if err != nil || strings.TrimSpace(string(h[backend.MessageRef(recent)])) != "Subject: new" {
+		t.Errorf("Headers = %q, %v; want the Subject", h, err)
 	}
 }
