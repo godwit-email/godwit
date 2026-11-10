@@ -489,6 +489,9 @@ func (p *settingsPage) accountView(c *ui.Context, acc core.Account) {
 		if at, ok := a.syncedAtBy[acc.ID]; ok {
 			msg = i18n.Tf("settings.account.reauth", a.ago(at))
 		}
+		if oauthRefused(acc) {
+			msg = i18n.T("shell.sync.refused.reason")
+		}
 		kit.Alert(c, kit.Warning, msg, func() { p.authButton(c, acc, prov, true) })
 	}
 
@@ -672,7 +675,7 @@ func (p *settingsPage) syncState(acc core.Account) string {
 
 func (p *settingsPage) authText(acc core.Account, prov auth.Provider) string {
 	switch {
-	case acc.AuthType == "oauth" && acc.Status == "reauth_required":
+	case acc.AuthType == "oauth" && acc.Status == "reauth_required" && !oauthRefused(acc):
 		return i18n.T("settings.account.login.oauth_expired")
 	case acc.AuthType == "oauth":
 		return i18n.T("settings.account.login.oauth")

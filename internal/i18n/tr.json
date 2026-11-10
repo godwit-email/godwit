@@ -1451,6 +1451,7 @@
   "shell_sync_retry": "Şimdi tekrar dene",
   "shell_sync_servers": "Sunucu ayarlarını kontrol et",
   "shell_sync_reauth_reason": "Oturum süresi dolduğu için bu hesabın eşitlemesi durdu ve yeni e-postalar gelmiyor. Tekrar oturum açtığınızda kaldığı yerden devam eder.",
+  "shell_sync_refused_reason": "Sunucu oturum açmayı reddettiği için bu hesabın eşitlemesi durdu. Tekrar oturum açmak işe yaramazsa posta kutusunu web’de açın, e-posta uygulamaları için erişimin (IMAP) açık olduğunu kontrol edin ve hesaptaki güvenlik uyarılarını tamamlayın.",
   "shell_sync_missing": "Kayıtlı {arg1} yok",
   "shell_sync_missing_reason": "Anahtar zincirinde bu hesap için {arg1} bulunmuyor; kaldırılmış olabilir. Tekrar girene kadar eşitleme duraklatıldı.",
   "shell_sync_rejected": "{arg1} reddedildi",

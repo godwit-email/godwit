@@ -1451,6 +1451,7 @@
   "shell_sync_retry": "Nu opnieuw proberen",
   "shell_sync_servers": "Serverinstellingen controleren",
   "shell_sync_reauth_reason": "De aanmelding is verlopen, waardoor dit account is gestopt met synchroniseren en er geen nieuwe e-mail binnenkomt. Log opnieuw in om bij te werken.",
+  "shell_sync_refused_reason": "De server heeft de aanmelding geweigerd, waardoor dit account is gestopt met synchroniseren. Helpt opnieuw inloggen niet, open dan de mailbox op het web, controleer of toegang voor mail-apps (IMAP) aanstaat en handel openstaande beveiligingsmeldingen van het account af.",
   "shell_sync_missing": "Geen opgeslagen {arg1}",
   "shell_sync_missing_reason": "De sleutelhanger bevat geen {arg1} voor dit account; mogelijk is deze verwijderd. Synchronisatie is gepauzeerd totdat je deze opnieuw invoert.",
   "shell_sync_rejected": "{arg1} geweigerd",

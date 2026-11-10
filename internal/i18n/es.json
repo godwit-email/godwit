@@ -1451,6 +1451,7 @@
   "shell_sync_retry": "Reintentar ahora",
   "shell_sync_servers": "Revisar ajustes del servidor",
   "shell_sync_reauth_reason": "La sesión ha caducado, por lo que esta cuenta dejó de sincronizarse y no llegan correos nuevos. Vuelve a iniciar sesión para ponerse al día.",
+  "shell_sync_refused_reason": "El servidor rechazó el inicio de sesión, por lo que esta cuenta dejó de sincronizarse. Si volver a iniciar sesión no ayuda, abre el buzón en la web, comprueba que el acceso para apps de correo (IMAP) esté activado y resuelve cualquier aviso de seguridad de la cuenta.",
   "shell_sync_missing": "No hay {arg1} guardado",
   "shell_sync_missing_reason": "El llavero no tiene ningún {arg1} para esta cuenta; es posible que se haya eliminado. La sincronización está en pausa hasta que vuelvas a introducirlo.",
   "shell_sync_rejected": "{arg1} rechazado",

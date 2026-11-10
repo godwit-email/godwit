@@ -9,10 +9,12 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"log"
 	"mime"
 	"net"
 	"net/url"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/emersion/go-imap/v2"
@@ -113,7 +115,7 @@ func (e Endpoint) open(ctx context.Context, implicitTLS bool) (net.Conn, context
 // loginErr maps a failure of LOGIN/AUTH to an error without server text: context
 // and network errors are kept, everything else (status replies, malformed or
 // unexpected protocol data, which may echo the password) becomes backend.ErrAuthFailed.
-func loginErr(ctx context.Context, proto string, err error) error {
+func loginErr(ctx context.Context, proto string, e Endpoint, err error) error {
 	var ne net.Error
 	switch {
 	case ctx.Err() != nil:
@@ -121,10 +123,31 @@ func loginErr(ctx context.Context, proto string, err error) error {
 	case errors.As(err, &ne), errors.Is(err, io.EOF), errors.Is(err, io.ErrUnexpectedEOF), errors.Is(err, net.ErrClosed):
 		return fmt.Errorf("%s login: %w", proto, err)
 	}
+	logRefusal(proto, e, err)
 	if se, ok := errors.AsType[*smtp.SMTPError](err); ok && se.EnhancedCode == (smtp.EnhancedCode{5, 7, 139}) {
 		return fmt.Errorf("%s: %w: %w", proto, ErrSMTPAuthDisabled, backend.ErrAuthFailed)
 	}
 	return fmt.Errorf("%s: %w", proto, backend.ErrAuthFailed)
+}
+
+// logRefusal logs the server's status reply to a refused login, which the
+// error loginErr returns drops: the log, and so an error report, says why.
+// Only a NO/BAD or an SMTP status, with e's credentials cut out of it.
+func logRefusal(proto string, e Endpoint, err error) {
+	var text string
+	if ie, ok := errors.AsType[*imap.Error](err); ok {
+		text = ie.Error()
+	} else if se, ok := errors.AsType[*smtp.SMTPError](err); ok {
+		text = se.Error()
+	} else {
+		return
+	}
+	for _, secret := range []string{e.Password, e.AccessToken, e.Username} {
+		if secret != "" {
+			text = strings.ReplaceAll(text, secret, "***")
+		}
+	}
+	log.Printf("%s: %s refused the login: %s", proto, e.Host, text)
 }
 
 // connectErr is ctxErr for a failure before login. The reader may already have
@@ -199,7 +222,7 @@ func dialIMAP(ctx context.Context, e Endpoint, h *imapclient.UnilateralDataHandl
 	}
 	if err == nil {
 		if err = imapLogin(c, e); err != nil {
-			err = loginErr(cctx, "imap", err)
+			err = loginErr(cctx, "imap", e, err)
 		} else if c.Caps().Has(imap.CapID) {
 			// Some servers (NetEase) refuse SELECT until the client identifies
 			// itself. A failed ID is not a failed login.
@@ -280,7 +303,7 @@ func dialSMTP(ctx context.Context, e Endpoint) (*smtp.Client, error) {
 	}
 	if err == nil {
 		if err = smtpAuth(c, e); err != nil {
-			err = loginErr(cctx, "smtp", err)
+			err = loginErr(cctx, "smtp", e, err)
 		}
 	} else {
 		err = fmt.Errorf("smtp connect %s: %w", e.addr(), ctxErr(cctx, err))

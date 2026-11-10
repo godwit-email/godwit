@@ -2751,6 +2751,7 @@
   "shell_sync_retry": "Retry now",
   "shell_sync_servers": "Check server settings",
   "shell_sync_reauth_reason": "The sign-in expired, so this account stopped syncing and new mail is not arriving. Sign in again and it catches up.",
+  "shell_sync_refused_reason": "The server refused the sign-in, so this account stopped syncing. If signing in again does not help, open the mailbox on the web, check that access for mail apps (IMAP) is turned on, and clear any security prompt on the account.",
   "shell_sync_missing": "No saved {arg1}",
   "@shell_sync_missing": {
     "placeholders": {

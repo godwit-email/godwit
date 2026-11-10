@@ -1451,6 +1451,7 @@
   "shell_sync_retry": "Tentar novamente agora",
   "shell_sync_servers": "Verificar configurações do servidor",
   "shell_sync_reauth_reason": "A sessão expirou, portanto esta conta parou de sincronizar e novos e-mails não estão chegando. Entre novamente para atualizar.",
+  "shell_sync_refused_reason": "O servidor recusou o login, portanto esta conta parou de sincronizar. Se entrar novamente não resolver, abra a caixa de correio na web, verifique se o acesso para apps de e-mail (IMAP) está ativado e resolva qualquer aviso de segurança da conta.",
   "shell_sync_missing": "Nenhum {arg1} salvo",
   "shell_sync_missing_reason": "As chaves do sistema não possuem nenhum {arg1} para esta conta; ele pode ter sido removido. A sincronização fica pausada até que você o insira novamente.",
   "shell_sync_rejected": "{arg1} recusado",

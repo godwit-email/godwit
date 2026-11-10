@@ -1451,6 +1451,7 @@
   "shell_sync_retry": "Réessayer maintenant",
   "shell_sync_servers": "Vérifier les réglages du serveur",
   "shell_sync_reauth_reason": "La connexion a expiré ; ce compte a donc cessé de se synchroniser et les nouveaux e-mails n’arrivent plus. Reconnectez-vous pour reprendre la synchronisation.",
+  "shell_sync_refused_reason": "Le serveur a refusé la connexion ; ce compte a donc cessé de se synchroniser. Si une nouvelle connexion ne change rien, ouvrez la boîte mail sur le Web, vérifiez que l’accès des apps de messagerie (IMAP) est activé et traitez les alertes de sécurité du compte.",
   "shell_sync_missing": "Aucun {arg1} enregistré",
   "shell_sync_missing_reason": "Le trousseau ne contient aucun {arg1} pour ce compte ; il a peut-être été supprimé. La synchronisation est suspendue jusqu’à ce que vous le saisissiez à nouveau.",
   "shell_sync_rejected": "{arg1} refusé",

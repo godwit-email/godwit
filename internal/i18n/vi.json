@@ -1451,6 +1451,7 @@
   "shell_sync_retry": "Thử lại ngay",
   "shell_sync_servers": "Kiểm tra cài đặt máy chủ",
   "shell_sync_reauth_reason": "Phiên đăng nhập đã hết hạn nên tài khoản này đã dừng đồng bộ và thư mới không thể tải về. Hãy đăng nhập lại để tiếp tục cập nhật.",
+  "shell_sync_refused_reason": "Máy chủ đã từ chối đăng nhập nên tài khoản này đã dừng đồng bộ. Nếu đăng nhập lại vẫn không được, hãy mở hộp thư trên web, kiểm tra xem quyền truy cập cho ứng dụng thư (IMAP) đã bật chưa và xử lý các yêu cầu xác minh bảo mật của tài khoản.",
   "shell_sync_missing": "Chưa lưu {arg1}",
   "shell_sync_missing_reason": "Chuỗi khóa không có {arg1} cho tài khoản này; có thể thông tin đã bị xóa. Quá trình đồng bộ tạm dừng cho đến khi bạn nhập lại.",
   "shell_sync_rejected": "{arg1} bị từ chối",

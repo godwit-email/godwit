@@ -1451,6 +1451,7 @@
   "shell_sync_retry": "立即重試",
   "shell_sync_servers": "檢查伺服器設定",
   "shell_sync_reauth_reason": "登入已過期，這個信箱已暫停同步，收不到新郵件。重新登入後會自動補齊。",
+  "shell_sync_refused_reason": "伺服器拒絕了登入，這個信箱已暫停同步。如果重新登入後仍然如此，請到網頁版信箱確認已允許郵件 App 存取（IMAP），並處理帳號的安全驗證提示。",
   "shell_sync_missing": "找不到{arg1}",
   "shell_sync_missing_reason": "鑰匙圈裡沒有這個信箱的{arg1}，可能被刪掉了。這個信箱已暫停同步，請重新輸入。",
   "shell_sync_rejected": "{arg1}被拒絕",

@@ -1451,6 +1451,7 @@
   "shell_sync_retry": "Riprova ora",
   "shell_sync_servers": "Controlla impostazioni del server",
   "shell_sync_reauth_reason": "L’accesso è scaduto, quindi questo account ha interrotto la sincronizzazione e le nuove email non arrivano. Accedi di nuovo per riprendere.",
+  "shell_sync_refused_reason": "Il server ha rifiutato l’accesso, quindi questo account ha interrotto la sincronizzazione. Se accedere di nuovo non basta, apri la casella sul web, verifica che l’accesso per le app di posta (IMAP) sia attivo e risolvi eventuali avvisi di sicurezza dell’account.",
   "shell_sync_missing": "{arg1} non salvata",
   "shell_sync_missing_reason": "Nel portachiavi non è presente alcuna credenziale ({arg1}) per questo account; potrebbe essere stata rimossa. La sincronizzazione è in pausa finché non la inserisci di nuovo.",
   "shell_sync_rejected": "{arg1} rifiutata",

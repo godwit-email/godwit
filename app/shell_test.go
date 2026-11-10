@@ -321,6 +321,20 @@ func TestReauthStatus(t *testing.T) {
 	}
 }
 
+// A token the provider just issued and the server refused has not expired:
+// the status says the server refused it, not to sign in again.
+func TestOAuthRefusedStatus(t *testing.T) {
+	h, acc := withAccount(t)
+	acc.AuthType, acc.Status, acc.StatusDetail = "oauth", "reauth_required", "auth_rejected"
+	if got := h.app.syncHealth(acc); got.status != "服务器拒绝了登录" || !strings.Contains(got.reason, "IMAP") {
+		t.Fatalf("refused: %q, %q", got.status, got.reason)
+	}
+	acc.StatusDetail = "token_revoked"
+	if got := h.app.syncHealth(acc).status; got != "需要重新登录" {
+		t.Fatalf("revoked: %q", got)
+	}
+}
+
 func TestEventBurstConverges(t *testing.T) {
 	h, acc := withAccount(t)
 	for i := range 30 {

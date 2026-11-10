@@ -1458,6 +1458,7 @@
   "shell_sync_retry": "Jetzt wiederholen",
   "shell_sync_servers": "Servereinstellungen prüfen",
   "shell_sync_reauth_reason": "Die Anmeldung ist abgelaufen, daher wurde die Synchronisierung angehalten und neue E-Mails treffen nicht ein. Melde dich erneut an, um fortzufahren.",
+  "shell_sync_refused_reason": "Der Server hat die Anmeldung abgelehnt, daher wurde die Synchronisierung dieses Kontos angehalten. Wenn eine erneute Anmeldung nicht hilft, öffne das Postfach im Web, prüfe, ob der Zugriff für Mail-Apps (IMAP) aktiviert ist, und bestätige offene Sicherheitshinweise des Kontos.",
   "shell_sync_missing": "{arg1} fehlt",
   "shell_sync_missing_reason": "Im Schlüsselbund ist kein {arg1} für dieses Konto hinterlegt (möglicherweise wurde der Eintrag entfernt). Die Synchronisierung ist pausiert, bis du die Zugangsdaten erneut eingibst.",
   "shell_sync_rejected": "{arg1} abgelehnt",

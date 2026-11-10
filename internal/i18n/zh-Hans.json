@@ -1480,6 +1480,7 @@
   "shell_sync_retry": "立即重试",
   "shell_sync_servers": "检查服务器设置",
   "shell_sync_reauth_reason": "登录已过期，这个邮箱已暂停同步，收不到新邮件。重新登录后会自动补齐。",
+  "shell_sync_refused_reason": "服务器拒绝了登录，这个邮箱已暂停同步。如果重新登录后仍然如此，请到网页版邮箱确认已允许邮件应用访问（IMAP），并处理账户的安全验证提示。",
   "shell_sync_missing": "找不到{arg1}",
   "shell_sync_missing_reason": "钥匙串里没有这个邮箱的{arg1}，可能被删掉了。这个邮箱已暂停同步，请重新输入。",
   "shell_sync_rejected": "{arg1}被拒绝",
