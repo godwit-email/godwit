@@ -2143,7 +2143,6 @@
   "onboarding_check_ews_host": "Host de EWS: {arg1}",
   "onboarding_next_davmail": "Usa DavMail y añade la cuenta por IMAP",
   "feature_reason_ews_server_too_old": "La versión del servidor es demasiado antigua: solo se admiten Exchange 2016 y posteriores.",
-  "feature_reason_ews_pending": "Esto aún no está disponible en cuentas de Exchange (EWS).",
   "feature_reason_ews_draft_read_only": "Exchange decide si un mensaje es un borrador; no se puede cambiar.",
   "feature_reason_ews_one_folder": "En Exchange un mensaje está en una sola carpeta.",
   "feature_reason_ews_no_keywords": "Las cuentas de Exchange (EWS) no guardan palabras clave personalizadas.",

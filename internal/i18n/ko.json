@@ -2143,7 +2143,6 @@
   "onboarding_check_ews_host": "EWS 호스트: {arg1}",
   "onboarding_next_davmail": "대신 DavMail을 사용해 IMAP으로 계정을 추가하세요",
   "feature_reason_ews_server_too_old": "서버 버전이 너무 낮습니다. Exchange 2016 이상만 지원합니다.",
-  "feature_reason_ews_pending": "Exchange(EWS) 계정에서는 아직 사용할 수 없습니다.",
   "feature_reason_ews_draft_read_only": "메일이 임시 보관 메일인지는 Exchange가 정하므로 바꿀 수 없습니다.",
   "feature_reason_ews_one_folder": "Exchange에서는 메일이 한 폴더에만 있을 수 있습니다.",
   "feature_reason_ews_no_keywords": "Exchange(EWS) 계정은 사용자 지정 키워드를 저장하지 않습니다.",

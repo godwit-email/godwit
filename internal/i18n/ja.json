@@ -2143,7 +2143,6 @@
   "onboarding_check_ews_host": "EWS ホスト：{arg1}",
   "onboarding_next_davmail": "代わりに DavMail を使い、IMAP でアカウントを追加してください",
   "feature_reason_ews_server_too_old": "サーバーのバージョンが古すぎます。Exchange 2016 以降のみ対応しています。",
-  "feature_reason_ews_pending": "Exchange（EWS）アカウントではまだ使えません。",
   "feature_reason_ews_draft_read_only": "メールが下書きかどうかは Exchange が決めるため、変更できません。",
   "feature_reason_ews_one_folder": "Exchange ではメールは 1 つのフォルダにしか入りません。",
   "feature_reason_ews_no_keywords": "Exchange（EWS）アカウントはカスタムキーワードを保存しません。",

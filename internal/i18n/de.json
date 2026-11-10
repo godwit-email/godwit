@@ -2143,7 +2143,6 @@
   "onboarding_check_ews_host": "EWS-Host: {arg1}",
   "onboarding_next_davmail": "Verwende stattdessen DavMail und füge das Konto über IMAP hinzu",
   "feature_reason_ews_server_too_old": "Die Serverversion ist zu alt: Unterstützt werden nur Exchange 2016 und neuer.",
-  "feature_reason_ews_pending": "Das ist bei Exchange-Konten (EWS) noch nicht verfügbar.",
   "feature_reason_ews_draft_read_only": "Ob eine Nachricht ein Entwurf ist, legt Exchange fest; das lässt sich nicht ändern.",
   "feature_reason_ews_one_folder": "Bei Exchange liegt eine Nachricht nur in einem Ordner.",
   "feature_reason_ews_no_keywords": "Exchange-Konten (EWS) speichern keine eigenen Schlagwörter.",

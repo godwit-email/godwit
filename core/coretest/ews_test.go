@@ -147,3 +147,31 @@ func TestEWSReadWrittenBack(t *testing.T) {
 	require.NoError(t, e.Svc.SyncNow(t.Context(), acc.ID))
 	assert.True(t, srv.Read(id), "the server does not have the message read")
 }
+
+// A move in Godwit moves the item on the server, where it gets a new
+// ItemId; the next sync keeps it as the same one message, in the new folder.
+func TestEWSMove(t *testing.T) {
+	e := coretest.New(t, coretest.WithoutAutoSync())
+	setEWS(t, e, true)
+	in, _ := e.StartEWSServers(t, "alice@example.com")
+	acc, err := e.Svc.AddAccount(t.Context(), in)
+	require.NoError(t, err)
+	srv := e.EWS(acc.ID)
+	id := srv.Deliver("INBOX", coretest.Msg("bob@example.com", "alice@example.com", "Move me", "body", coretest.MessageID("move@x")))
+	require.NoError(t, e.Svc.SyncNow(t.Context(), acc.ID))
+	ms, err := e.Svc.Search(t.Context(), acc.ID, "Move", 10)
+	require.NoError(t, err)
+	require.Len(t, ms, 1)
+	archive := folderID(t, e, acc.ID, "Archive")
+
+	require.NoError(t, e.Svc.Move(t.Context(), []int64{ms[0].ID}, archive))
+	require.NoError(t, e.Svc.SyncNow(t.Context(), acc.ID))
+	assert.Empty(t, srv.Items("INBOX"), "the item left the inbox on the server")
+	moved := srv.Items("Archive")
+	require.Len(t, moved, 1, "the item is in Archive on the server")
+	assert.NotEqual(t, id, moved[0], "under a new ItemId")
+	ms, err = e.Svc.Search(t.Context(), acc.ID, "Move", 10)
+	require.NoError(t, err)
+	require.Len(t, ms, 1, "one message after the sync")
+	assert.Equal(t, archive, ms[0].FolderID)
+}

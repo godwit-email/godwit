@@ -2143,7 +2143,6 @@
   "onboarding_check_ews_host": "EWS-host: {arg1}",
   "onboarding_next_davmail": "Gebruik in plaats daarvan DavMail en voeg het account toe via IMAP",
   "feature_reason_ews_server_too_old": "De serverversie is te oud: alleen Exchange 2016 en nieuwer worden ondersteund.",
-  "feature_reason_ews_pending": "Dit is nog niet beschikbaar voor Exchange-accounts (EWS).",
   "feature_reason_ews_draft_read_only": "Exchange bepaalt of een bericht een concept is; dat kan niet worden gewijzigd.",
   "feature_reason_ews_one_folder": "Bij Exchange staat een bericht in één map.",
   "feature_reason_ews_no_keywords": "Exchange-accounts (EWS) bewaren geen eigen trefwoorden.",

@@ -2143,7 +2143,6 @@
   "onboarding_check_ews_host": "Хост EWS: {arg1}",
   "onboarding_next_davmail": "Используйте DavMail и добавьте учётную запись по IMAP",
   "feature_reason_ews_server_too_old": "Слишком старая версия сервера: поддерживаются только Exchange 2016 и новее.",
-  "feature_reason_ews_pending": "Для учётных записей Exchange (EWS) это пока недоступно.",
   "feature_reason_ews_draft_read_only": "Черновик ли письмо, решает Exchange; изменить это нельзя.",
   "feature_reason_ews_one_folder": "В Exchange письмо лежит только в одной папке.",
   "feature_reason_ews_no_keywords": "Учётные записи Exchange (EWS) не хранят пользовательские ключевые слова.",

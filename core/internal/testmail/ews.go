@@ -20,14 +20,16 @@ import (
 
 // EWS is a running fake EWS server (Exchange Web Services) with one mailbox,
 // alice/secret over HTTP Basic (or NTLM: UseNTLM), that starts with the
-// distinguished mail folders and a calendar. It speaks GetFolder, SyncFolderHierarchy,
-// SyncFolderItems, GetItem, FindItem, UpdateItem and CreateItem sending a
-// message; an operation it does not know fails the test. Its responses spell
-// the namespace prefixes differently from operation to operation, as servers
-// do. Hooks change the mailbox as another client would (MarkRead,
-// MarkFlagged, MarkAnswered, Remove, RenameFolder, RemoveFolder) or inject
-// faults (RejectAuth, SetVersion, Reset, Busy, Refuse, LoseVerdict,
-// RejectNextSendAuth, DropNextChallenge).
+// distinguished mail folders and a calendar. It speaks GetFolder,
+// SyncFolderHierarchy, SyncFolderItems, GetItem, FindItem, UpdateItem,
+// CreateItem sending a message, and the write-back operations
+// (ews_writeback.go); an operation it does not know fails the test. Its
+// responses spell the namespace prefixes differently from operation to
+// operation, as servers do.
+// Hooks change the mailbox as another client would (MarkRead, MarkFlagged,
+// MarkAnswered, Remove, RenameFolder, RemoveFolder) or inject faults
+// (RejectAuth, SetVersion, Reset, Busy, Refuse, LoseVerdict,
+// RejectNextSendAuth, DropNextChallenge, OmitNewItemIds).
 //
 // Every change takes the next sequence number, and deleted items and
 // folders stay as tombstones, so a SyncState, the sequence number it was
@@ -51,6 +53,7 @@ type EWS struct {
 	folders          []*ewsFolder // the root first; deleted ones too, gone
 	next             int          // the last id given
 	seq              int          // the last change's sequence number
+	omitNewIDs       bool         // MoveItem and CopyItem answer without the new ItemIds
 	sent             []EWSSent
 	refused          map[string]bool // recipients refused
 	lose             bool            // drop the next CreateItem's answer
@@ -81,6 +84,7 @@ type ewsItem struct {
 	flagged  bool
 	verb     int  // PidTagLastVerbExecuted, 0 for none
 	readOnly bool // its last change was to read alone: a ReadFlagChange
+	unsent   bool // saved as a draft (MSGFLAG_UNSENT)
 	changed
 }
 
@@ -354,6 +358,7 @@ type ewsRequest struct {
 	itemIDs       []string          // ItemId Ids
 	addresses     []string          // EmailAddress texts, in order
 	text          map[string]string // the text of SyncState, MaxChangesReturned, IncludeMimeContent, MimeContent; the operation's attributes
+	extended      map[string]string // ExtendedProperty Values by PropertyTag
 	fieldURIs     []string          // FieldURI FieldURIs, in order
 	constants     []string          // Constant Values, in order
 	elements      map[string]bool   // the local names of its elements
@@ -362,10 +367,10 @@ type ewsRequest struct {
 // readRequest reads a request by namespace, as a server does: a client's
 // element in the wrong namespace is not what it meant.
 func readRequest(body []byte) (ewsRequest, error) {
-	r := ewsRequest{text: map[string]string{}, elements: map[string]bool{}}
+	r := ewsRequest{text: map[string]string{}, extended: map[string]string{}, elements: map[string]bool{}}
 	d := xml.NewDecoder(bytes.NewReader(body))
 	var inBody bool
-	var cur string
+	var cur, tag string
 	for {
 		tok, err := d.Token()
 		if err == io.EOF {
@@ -397,6 +402,8 @@ func readRequest(body []byte) (ewsRequest, error) {
 				for _, a := range el.Attr {
 					r.text[a.Name.Local] = a.Value
 				}
+			case cur == "ExtendedFieldURI":
+				tag = attr("PropertyTag")
 			case cur == "RequestServerVersion" && el.Name.Space == nsTypes:
 				r.version = attr("Version")
 			case cur == "FieldURI":
@@ -419,6 +426,9 @@ func readRequest(body []byte) (ewsRequest, error) {
 		case xml.CharData:
 			if t := strings.TrimSpace(string(el)); t != "" {
 				r.text[cur] = t
+				if cur == "Value" && tag != "" {
+					r.extended[tag] = t
+				}
 				if cur == "EmailAddress" {
 					r.addresses = append(r.addresses, t)
 				}
@@ -469,11 +479,25 @@ func (s *EWS) serve(w http.ResponseWriter, r *http.Request) {
 			w.WriteHeader(http.StatusUnauthorized)
 			return
 		}
-		s.createItem(w, req)
+		if req.text["MessageDisposition"] == "SaveOnly" {
+			s.saveItem(w, req)
+		} else {
+			s.createItem(w, req)
+		}
 	case "FindItem":
 		s.findItems(w, req)
 	case "UpdateItem":
 		s.updateItem(w, body)
+	case "MoveItem", "CopyItem":
+		s.moveItem(w, req)
+	case "DeleteItem":
+		s.deleteItem(w, req)
+	case "CreateFolder":
+		s.createFolder(w, req)
+	case "UpdateFolder":
+		s.updateFolder(w, req)
+	case "DeleteFolder":
+		s.deleteFolder(w, req)
 	default:
 		s.t.Errorf("fake EWS: unknown operation %s", req.op)
 		s.fault(w, "ErrorInvalidRequest", "unknown operation "+req.op)

@@ -41,15 +41,6 @@ type updateMessage struct {
 	Extended *extendedProperty `xml:"t:ExtendedProperty"`
 }
 
-type flag struct {
-	Status string `xml:"t:FlagStatus"` // NotFlagged or Flagged
-}
-
-type extendedProperty struct {
-	URI   extendedFieldURI `xml:"t:ExtendedFieldURI"`
-	Value string           `xml:"t:Value"`
-}
-
 type updateItemResponse struct {
 	Messages []struct {
 		responseMessage

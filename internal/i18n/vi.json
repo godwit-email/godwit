@@ -2143,7 +2143,6 @@
   "onboarding_check_ews_host": "Máy chủ EWS: {arg1}",
   "onboarding_next_davmail": "Hãy dùng DavMail và thêm tài khoản qua IMAP",
   "feature_reason_ews_server_too_old": "Phiên bản máy chủ quá cũ: chỉ hỗ trợ Exchange 2016 trở lên.",
-  "feature_reason_ews_pending": "Tính năng này chưa có cho tài khoản Exchange (EWS).",
   "feature_reason_ews_draft_read_only": "Exchange quyết định thư có phải là thư nháp hay không; không thể thay đổi điều này.",
   "feature_reason_ews_one_folder": "Trên Exchange, mỗi thư chỉ nằm trong một thư mục.",
   "feature_reason_ews_no_keywords": "Tài khoản Exchange (EWS) không lưu từ khóa tùy chỉnh.",

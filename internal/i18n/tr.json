@@ -2143,7 +2143,6 @@
   "onboarding_check_ews_host": "EWS ana makinesi: {arg1}",
   "onboarding_next_davmail": "Bunun yerine DavMail kullanın ve hesabı IMAP ile ekleyin",
   "feature_reason_ews_server_too_old": "Sunucu sürümü çok eski: yalnızca Exchange 2016 ve sonrası desteklenir.",
-  "feature_reason_ews_pending": "Bu, Exchange (EWS) hesaplarında henüz kullanılamıyor.",
   "feature_reason_ews_draft_read_only": "Bir iletinin taslak olup olmadığına Exchange karar verir; bu değiştirilemez.",
   "feature_reason_ews_one_folder": "Exchange'de bir ileti yalnızca bir klasörde bulunur.",
   "feature_reason_ews_no_keywords": "Exchange (EWS) hesapları özel anahtar kelimeleri saklamaz.",

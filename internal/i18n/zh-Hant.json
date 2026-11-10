@@ -2143,7 +2143,6 @@
   "onboarding_check_ews_host": "EWS 主機：{arg1}",
   "onboarding_next_davmail": "改用 DavMail，透過 IMAP 新增這個帳戶",
   "feature_reason_ews_server_too_old": "伺服器版本過舊：只支援 Exchange 2016 及以後版本。",
-  "feature_reason_ews_pending": "Exchange（EWS）帳戶暫不支援這個操作。",
   "feature_reason_ews_draft_read_only": "郵件是不是草稿由 Exchange 決定，不能更改。",
   "feature_reason_ews_one_folder": "Exchange 上一封郵件只能在一個資料夾裡。",
   "feature_reason_ews_no_keywords": "Exchange（EWS）帳戶不儲存自訂關鍵字。",
