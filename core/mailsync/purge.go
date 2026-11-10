@@ -136,11 +136,12 @@ var claimable = `state = 'pending' AND EXISTS (SELECT 1 FROM messages m JOIN pur
 	AND p.role = ? JOIN folders f ON f.id = p.folder_id WHERE m.id = ops.message_id AND p.folder_id = ops.dst_folder_id AND ` + purgeable + `)`
 
 // claimableNow is claimable for a purge the user asked for: still pending, its
-// message shown and on the server in the op's folder,
+// message shown and on the server in the op's folder (or shown there, a
+// local folder of an inbox-only account),
 // and no other change of it waiting.
 var claimableNow = `state = 'pending' AND EXISTS (SELECT 1 FROM messages m JOIN folders f ON f.id = ops.dst_folder_id
 	WHERE m.id = ops.message_id AND EXISTS (SELECT 1 FROM message_locations l WHERE l.message_id = m.id AND l.folder_id = f.id AND l.shown
-		AND ` + onServer + `)
+		AND (` + onServer + ` OR f.server_ref IS NULL))
 	AND NOT EXISTS (SELECT 1 FROM ops o WHERE o.message_id = m.id AND o.state IN ('pending', 'awaiting_claim') AND o.id != ops.id))`
 
 // purgeClaim is the claimable condition of a purge op with payload p and id, and its arguments.

@@ -29,6 +29,7 @@ type POP3 struct {
 	msgs       []pop3Msg
 	next       int
 	rejectAuth bool
+	rejectDele bool
 	noUIDL     bool
 	stls       int
 	dele       int
@@ -101,6 +102,9 @@ func (s *POP3) UIDs() []string {
 
 // RejectAuth makes the server refuse alice's password from now on.
 func (s *POP3) RejectAuth() { s.mu.Lock(); s.rejectAuth = true; s.mu.Unlock() }
+
+// RejectDele makes the server refuse DELE from now on.
+func (s *POP3) RejectDele() { s.mu.Lock(); s.rejectDele = true; s.mu.Unlock() }
 
 // DisableUIDL makes the server answer UIDL with -ERR, as one without it does.
 func (s *POP3) DisableUIDL() { s.mu.Lock(); s.noUIDL = true; s.mu.Unlock() }
@@ -262,7 +266,12 @@ func (s *POP3) serve(nc net.Conn) {
 			}
 			say(append(out, ".")...)
 		case cmd == "DELE":
-			if i := msg(arg(0)); i >= 0 {
+			s.mu.Lock()
+			refuse := s.rejectDele
+			s.mu.Unlock()
+			if i := msg(arg(0)); refuse {
+				say("-ERR deleting is not allowed")
+			} else if i >= 0 {
 				deleted[i] = true
 				say("+OK marked")
 			} else {

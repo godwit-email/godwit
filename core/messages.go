@@ -1231,7 +1231,9 @@ func (s *Service) binned(ctx context.Context, accountID, folder int64) (bool, er
 const UndoArchiveWindow = 10 * time.Second
 
 // moveWrites are move's statements and the messages they move. A move to
-// Trash or Junk (binned) is one MOVE from the preferred folder.
+// Trash or Junk (binned) is one MOVE from the preferred folder. On an
+// account with only an inbox the move is local: the inbox keeps its server
+// location, hidden, so the next sync does not bring the message back.
 func moveWrites(accountID int64, ts []target, from, folderID int64, binned bool, now time.Time) ([]target, []sqlite.Statement) {
 	var moved []target
 	var stmts []sqlite.Statement
@@ -1259,7 +1261,7 @@ func moveWrites(accountID int64, ts []target, from, folderID int64, binned bool,
 		}
 		for _, src := range out {
 			stmts = append(stmts, sqlite.Statement{SQL: `INSERT INTO ops(account_id, message_id, kind, src_folder_id, dst_folder_id, payload, depends_on, created_at)
-				VALUES (?, ?, 'move', ?, ?, ?, ` + latestOp + `, unixepoch())`, Args: []any{accountID, m.id, src, dst, payload, m.id}})
+				SELECT ?, ?, 'move', ?, ?, ?, ` + latestOp + `, unixepoch() WHERE NOT ` + mailsync.InboxOnly, Args: []any{accountID, m.id, src, dst, payload, m.id, accountID}})
 		}
 	}
 	return moved, stmts

@@ -45,8 +45,9 @@ type account struct {
 	email  string
 	limit  int
 	months int
-	cursor string // the backend's account cursor
-	noSelf bool   // a local archive: email is a placeholder, not the user's address
+	cursor    string // the backend's account cursor
+	noSelf    bool   // a local archive: email is a placeholder, not the user's address
+	inboxOnly bool   // InboxOnly
 }
 
 // since is the start of a months range: date-only, as IMAP compares
@@ -65,6 +66,12 @@ type result struct {
 	orphans                                    []int64 // messages of a stable identity that lost a server location, for the round's end
 	expunged                                   []int64 // of them, gone from Trash or Spam: Gmail deleted them for good
 	conflicts                                  []string
+	// inboxOnly: the account's server has only an inbox (InboxOnly), so a
+	// location gone from it only loses its server_ref; originals keeps the
+	// originals of its mail, when the caller gave one.
+	inboxOnly bool
+	originals Originals
+	dropped   []string // content hashes of messages deleted for good, for originals.Drop
 }
 
 // gone records messages about to be deleted (or moved between threads) as changed.
@@ -88,9 +95,10 @@ func (r *result) merged(target int64, others []int64) {
 // Fetch syncs the folders of the account in only (nil: every folder) through
 // recv, then, after a round of every folder, refreshes the
 // Authentication-Results of cached messages. more reports that a backfill
-// has work left: the caller should sync again soon.
-func Fetch(ctx context.Context, db *store.DB, recv backend.Receiver, accountID int64, bus *events.Bus, only []backend.FolderRef) (more bool, err error) {
-	if more, err = run(ctx, db, recv, accountID, bus, only, 0); err != nil || only != nil {
+// has work left: the caller should sync again soon. originals, at most one,
+// keeps the originals of an inbox-only account's mail.
+func Fetch(ctx context.Context, db *store.DB, recv backend.Receiver, accountID int64, bus *events.Bus, only []backend.FolderRef, originals ...Originals) (more bool, err error) {
+	if more, err = run(ctx, db, recv, accountID, bus, only, 0, originals...); err != nil || only != nil {
 		return more, err
 	}
 	again, err := refreshAuthenticationResults(ctx, db, recv, accountID, bus)
@@ -106,7 +114,7 @@ func Sync(ctx context.Context, db *store.DB, recv backend.Receiver, accountID in
 // run is Sync of the folders in only (nil: all), or with older > 0 one page
 // of older mail in only. A round of some folders leaves what needs every
 // folder synced (orphans, hidden locations, claims) to the next full round.
-func run(ctx context.Context, db *store.DB, recv backend.Receiver, accountID int64, bus *events.Bus, only []backend.FolderRef, older int) (more bool, err error) {
+func run(ctx context.Context, db *store.DB, recv backend.Receiver, accountID int64, bus *events.Bus, only []backend.FolderRef, older int, originals ...Originals) (more bool, err error) {
 	var r result
 	complete := false
 	defer func() {
@@ -114,10 +122,16 @@ func run(ctx context.Context, db *store.DB, recv backend.Receiver, accountID int
 			err = errors.Join(err, r.logArrivals(context.WithoutCancel(ctx), db, accountID))
 		}
 		r.publish(bus, accountID)
+		if r.originals != nil && len(r.dropped) > 0 {
+			r.originals.Drop(r.dropped)
+		}
 	}()
 	a, err := loadAccount(ctx, db, accountID)
 	if err != nil {
 		return false, err
+	}
+	if r.inboxOnly = a.inboxOnly; r.inboxOnly && len(originals) > 0 {
+		r.originals = originals[0]
 	}
 	s := &syncRun{ctx: ctx, db: db, a: a, r: &r, stash: map[int64][]stashed{}, deferred: map[int64]backend.FolderState{}}
 	if err := s.loadFolders(ctx); err != nil {
@@ -154,6 +168,13 @@ func run(ctx context.Context, db *store.DB, recv backend.Receiver, accountID int
 	complete = true
 	if err != nil || only != nil { // a skipped folder may yet hold a membership, a claim or a stale location
 		return more, err
+	}
+	if r.inboxOnly { // what is no longer anywhere on the server stays, unless deleted for good
+		purged, _, err := doomed(ctx, db, "account_id = ? AND EXISTS (SELECT 1 FROM ops WHERE message_id = messages.id AND kind = 'purge' AND state = 'done')", accountID)
+		if err != nil {
+			return more, err
+		}
+		r.orphans = purged
 	}
 	if err := dropOrphans(ctx, db, accountID, r.orphans, true, s.stable, s.allMail, &r); err != nil {
 		return more, err
@@ -589,7 +610,7 @@ func (r *result) publish(bus *events.Bus, accountID int64) {
 }
 
 func loadAccount(ctx context.Context, db *store.DB, accountID int64) (*account, error) {
-	rows, err := db.Query(ctx, "SELECT email, sync_limit, sync_since_months, cursor FROM accounts WHERE id = ?", accountID)
+	rows, err := db.Query(ctx, "SELECT email, sync_limit, sync_since_months, cursor, "+InboxOnly+" FROM accounts WHERE id = ?", accountID, accountID)
 	if err != nil {
 		return nil, err
 	}
@@ -597,7 +618,7 @@ func loadAccount(ctx context.Context, db *store.DB, accountID int64) (*account, 
 		return nil, fmt.Errorf("account %d not found", accountID)
 	}
 	return &account{id: accountID, email: store.Str(rows.Values[0][0]), limit: int(store.Int(rows.Values[0][1])),
-		months: int(store.Int(rows.Values[0][2])), cursor: store.Str(rows.Values[0][3])}, nil
+		months: int(store.Int(rows.Values[0][2])), cursor: store.Str(rows.Values[0][3]), inboxOnly: store.Int(rows.Values[0][4]) != 0}, nil
 }
 
 // resetFolder drops everything known about the folder's server locations, which
@@ -618,6 +639,10 @@ func resetFolder(ctx context.Context, db *store.DB, stable bool, accountID int64
 		{SQL: "DELETE FROM message_locations WHERE folder_id = ? AND server_ref IS NOT NULL", Args: []any{f.id}},
 		{SQL: "UPDATE folders SET cursor = NULL, synced = 0, filled_since = NULL WHERE id = ?", Args: []any{f.id}},
 	}
+	if r.inboxOnly { // the mail stays where it shows, with no server location
+		stmts[1] = sqlite.Statement{SQL: "UPDATE message_locations SET server_ref = NULL WHERE folder_id = ?", Args: []any{f.id}}
+		stmts = append(stmts, sqlite.Statement{SQL: "DELETE FROM message_locations WHERE folder_id = ? AND server_ref IS NULL AND NOT shown", Args: []any{f.id}})
+	}
 	if _, err := db.Transaction(ctx, stmts); err != nil {
 		return err
 	}
@@ -633,6 +658,9 @@ const orphaned = unlocated + " AND NOT EXISTS (SELECT 1 FROM ops WHERE message_i
 // of, that are orphaned. With a stable identity they wait for the round's
 // end: a folder synced later may hold them still (ADR 0034).
 func (r *result) orphan(ctx context.Context, db *store.DB, stable bool, accountID int64, ids []int64) error {
+	if r.inboxOnly { // kept locally; run drops those deleted for good
+		return nil
+	}
 	if stable {
 		r.orphans = append(r.orphans, ids...)
 		return nil
@@ -671,11 +699,18 @@ func dropOrphans(ctx context.Context, db *store.DB, accountID int64, ids []int64
 	if err != nil {
 		return err
 	}
+	hashes, err := db.Query(ctx, "SELECT content_hash FROM messages WHERE content_hash IS NOT NULL AND id IN ("+marks(len(gone))+")", anys(gone)...)
+	if err != nil {
+		return err
+	}
 	stmts := []sqlite.Statement{{SQL: "DELETE FROM messages WHERE id IN (" + marks(len(gone)) + ")", Args: anys(gone)}}
 	if _, err := db.Transaction(ctx, append(stmts, tidyThreads(accountID, tids)...)); err != nil {
 		return err
 	}
 	r.gone(gone, tids)
+	for _, h := range hashes.Values {
+		r.dropped = append(r.dropped, store.Str(h[0]))
+	}
 	for _, p := range files.Values {
 		os.Remove(store.Str(p[0])) // best effort, see above
 	}

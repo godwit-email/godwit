@@ -306,6 +306,10 @@ func (s *Service) processOutbox(ctx context.Context, recv backend.Receiver, acco
 	if err != nil {
 		return err
 	}
+	keep, err := s.localSent(ctx, accountID)
+	if err != nil {
+		return err
+	}
 	for _, r := range rows.Values {
 		if ctx.Err() != nil {
 			return ctx.Err()
@@ -355,7 +359,7 @@ func (s *Service) processOutbox(ctx context.Context, recv backend.Receiver, acco
 			if !known && !saves {
 				continue
 			}
-			if err := s.archiveItem(ctx, wctx, recv, saves, sent, o); err != nil {
+			if err := s.archiveItem(ctx, wctx, recv, saves, sent, keep, o); err != nil {
 				return err
 			}
 		case "send_uncertain":
@@ -524,13 +528,21 @@ func (s *Service) failOutbox(ctx context.Context, o outboxRow, lastError string,
 // already (the provider saved it, or an earlier uncertain append went
 // through). It is done without filing when the sending backend saves sent
 // copies itself, and when there is no Sent folder (sent is "") or recv cannot
-// append: there is nowhere to file it.
-func (s *Service) archiveItem(ctx, wctx context.Context, recv backend.Receiver, saves bool, sent backend.FolderRef, o outboxRow) error {
+// append: there is nowhere to file it. keep, when set (localSent), files it
+// on this computer instead.
+func (s *Service) archiveItem(ctx, wctx context.Context, recv backend.Receiver, saves bool, sent backend.FolderRef, keep func(context.Context, []byte) error, o outboxRow) error {
 	if ok, err := s.setOutbox(ctx, o, "archiving", ""); !ok || err != nil {
 		return err
 	}
 	o.state = "archiving"
 	err := func() error {
+		if keep != nil && !saves {
+			raw, err := os.ReadFile(o.rawPath)
+			if err != nil {
+				return err
+			}
+			return keep(ctx, raw)
+		}
 		if saves || sent == "" {
 			return nil
 		}
@@ -554,6 +566,24 @@ func (s *Service) archiveItem(ctx, wctx context.Context, recv backend.Receiver, 
 		return err
 	}
 	return s.finishOutbox(wctx, o)
+}
+
+// localSent keeps a sent copy in the account's local Sent folder when its
+// server has only an inbox (POP3, spec #627): read, with its original, and
+// not new mail. nil for other accounts. It runs under the sync's account lock.
+func (s *Service) localSent(ctx context.Context, accountID int64) (func(context.Context, []byte) error, error) {
+	r, err := s.db.Query(ctx, "SELECT "+mailsync.InboxOnly, accountID)
+	if err != nil || store.Int(r.Values[0][0]) == 0 {
+		return nil, err
+	}
+	folder, err := s.roleFolder(ctx, accountID, "sent")
+	if err != nil {
+		return nil, err
+	}
+	return func(ctx context.Context, raw []byte) error {
+		_, _, err := s.insertOriginal(ctx, accountID, folder, raw, s.clk().Now()) // a copy already kept is a duplicate
+		return err
+	}, nil
 }
 
 // outboxFrom is the outbox state machine (ADR 0006), the states each state
