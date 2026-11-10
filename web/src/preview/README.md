@@ -10,7 +10,7 @@ from `theme.json`, a copy of `webui.ThemeOf` at font size 14; zh-Hans text comes
 | page      | states                                                                                                                                                     |
 | --------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | compose   | `plain`, `streaming`, `inline`, `rewrite`, `applied`, `cmdk`, `signature`, `translate` (no model, a plugin translates)                                     |
-| wit       | `conversation`, `empty`, `plus`, `picker`, `quoted`, `create-skill`                                                                                                        |
+| wit       | `conversation`, `empty`, `plus`, `picker`, `quoted`, `create-skill`                                                                                        |
 | signature | `filled`                                                                                                                                                   |
 | reader    | `basic`, `neutral`, `colored`, `natural-dark`, `author-dark`, `fallback`, `media`, `gradients`, `mixed`, `large-paragraphs`, `large-cells`, `large-nested` |
 
