@@ -33,11 +33,13 @@ import (
 // with each recipient confirmed by the user in Godwit, never by Wit.
 // list_rules only reads the rules (forward recipients and folders included,
 // for the model as any tool result is) and changes none.
+// create_skill 只在每次审批后新增本地提示词及展示名、内置图标、UI 绑定；不覆盖或自动运行。
+// list_skills 包含无 UI 绑定和 message/wit Skill；use_skill 只加载提示词，工具仍走原审批。
 // It stays a written list, not derived from what is registered (batchActions
 // included): a tool reaches Ask only by being named here.
 var askTools = []string{
 	"search_mail", "get_message", "get_thread", "read_attachment", "classify_mail",
-	"list_skills", "use_skill", "read_skill_file", "get_account_profile", "create_draft",
+	"list_skills", "use_skill", "read_skill_file", "create_skill", "get_account_profile", "create_draft",
 	"move_to_trash", "archive_mail", "mark_as_spam", "mark_as_read", "mark_as_unread",
 	"star_mail", "unstar_mail", "unsubscribe", "get_all_links", "open_link_in_browser",
 	"reply_to_mail", "forward_mail", "delete_draft", proposeRuleTool, listRulesTool, askQuestionTool,
@@ -246,6 +248,7 @@ var (
 
 // registerAskTools offers Ask's tools to Wit runs.
 func (s *Service) registerAskTools() {
+	s.registerCreateSkillTool()
 	read := func(name, desc string, schema map[string]any, run func(context.Context, json.RawMessage) (any, error)) {
 		s.mustRegister(toolDesc{Spec: ai.ToolSpec{Name: name, Description: desc, Schema: schema, Run: run}})
 	}
@@ -682,7 +685,7 @@ func (s *Service) classifyMail(ctx context.Context, args json.RawMessage) (any, 
 	return map[string]any{"results": res}, nil
 }
 
-// listSkills lists the enabled skills without a UI binding, by name.
+// listSkills 按稳定标识列出已启用的无 UI 绑定或 Wit 输出的 Skill。
 func (s *Service) listSkills(ctx context.Context, _ json.RawMessage) (any, error) {
 	ok, _, err := s.loadSkills()
 	if err != nil {
@@ -694,7 +697,7 @@ func (s *Service) listSkills(ctx context.Context, _ json.RawMessage) (any, error
 	}
 	out := []map[string]string{}
 	for _, name := range slices.Sorted(maps.Keys(ok)) {
-		if sk := ok[name]; len(sk.On) == 0 && !slices.Contains(off, name) {
+		if sk := ok[name]; (len(sk.On) == 0 || sk.Output == "wit") && !slices.Contains(off, name) {
 			out = append(out, map[string]string{"name": name, "description": sk.Description})
 		}
 	}

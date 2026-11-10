@@ -5,6 +5,7 @@ import type { Approval, MailHit, WitEvent, WitHistory, WitInfo } from "@/mygo";
 import { makeT } from "@/shared/i18n";
 import { legacy as hist } from "./fixtures";
 import { editableText, elapsed, formRound, Panel, type PanelReview, thoughtTitle } from "./Panel";
+import type { SkillChoice } from "./Skills";
 import { WitTransport } from "./transport";
 
 vi.mock("@/mygo", () => ({ events: { wit: { on: () => () => {} } } }));
@@ -70,7 +71,7 @@ async function setup(
     onAnswer?(a: Approval, answers: string[][]): Promise<boolean>;
     page?: boolean;
     info?: WitInfo;
-    skills?(): Promise<{ name: string; description: string }[]>;
+    skills?(): Promise<SkillChoice[]>;
     onNew?(): void;
     effort?: { value: string; pick(value: string): void };
   } = {},
@@ -416,9 +417,9 @@ describe("Panel", () => {
     const box = input("向 Wit 提问");
     await user.type(box, "/");
     const menu = await screen.findByRole("listbox", { name: "指令" });
-    expect(await within(menu).findByRole("option", { name: /\/bills/ })).toHaveTextContent(
-      "Find bills",
-    );
+    const skill = await within(menu).findByRole("option", { name: /Bills/ });
+    expect(skill).toHaveTextContent("Find bills");
+    expect(skill.querySelector('[data-skill-icon="sparkles"]')).toBeInTheDocument();
     expect(within(menu).getByRole("option", { name: "新对话" })).toBeInTheDocument();
     // nothing to condense yet: greyed, saying so
     const compactRow = within(menu).getByRole("option", { name: /^压缩/ });
@@ -434,9 +435,54 @@ describe("Panel", () => {
     await user.type(box, "/新{Enter}");
     expect(onNew).toHaveBeenCalledOnce();
     expect(box).toHaveValue("");
-    expect(skills).toHaveBeenCalledOnce();
+    expect(skills).toHaveBeenCalledTimes(2);
     await user.type(box, "a /");
     expect(screen.queryByRole("listbox", { name: "指令" })).toBeNull(); // only at the start
+  });
+
+  it.each(["邮件", "email-briefing"])(
+    "Skill 菜单按名称或稳定标识筛选，插入仍用标识：%s",
+    async (query) => {
+      const user = userEvent.setup();
+      const skills = vi.fn().mockResolvedValue([
+        {
+          name: "email-briefing",
+          displayName: "邮件解读",
+          icon: "file-text",
+          description: "解读邮件并继续追问",
+        },
+      ]);
+      const { api } = await setup({ page: true, skills });
+      const box = input("向 Wit 提问");
+      await user.type(box, `/${query}`);
+      const skill = await screen.findByRole("option", { name: /邮件解读/ });
+      expect(skill).toHaveTextContent("解读邮件并继续追问");
+      expect(skill.querySelector('[data-skill-icon="file-text"]')).toBeInTheDocument();
+      expect(skill).not.toHaveTextContent("email-briefing");
+      await user.keyboard("{Enter}");
+      expect(box).toHaveValue("/email-briefing ");
+      await user.keyboard("{Enter}");
+      await waitFor(() => expect(api.ask).toHaveBeenCalledWith("/email-briefing"));
+    },
+  );
+
+  it("reopening / reads newly created skills and retries a failed read", async () => {
+    const user = userEvent.setup();
+    const skills = vi
+      .fn()
+      .mockRejectedValueOnce(new Error("unavailable"))
+      .mockResolvedValueOnce([])
+      .mockResolvedValue([{ name: "meeting-notes", description: "Summarize meetings" }]);
+    await setup({ page: true, skills });
+    const box = input("向 Wit 提问");
+    for (let count = 1; count <= 3; count++) {
+      await user.type(box, "/");
+      await waitFor(() => expect(skills).toHaveBeenCalledTimes(count));
+      if (count < 3) await user.clear(box);
+    }
+    expect(await screen.findByRole("option", { name: /Meeting Notes/ })).toHaveTextContent(
+      "Summarize meetings",
+    );
   });
 
   it("the / menu's 思考强度 shows what it stands at and opens its choices in place", async () => {
@@ -1494,6 +1540,101 @@ describe("Panel", () => {
     await userEvent.setup().click(screen.getByRole("button", { name: "停止" }));
     expect(api.stop).toHaveBeenCalledWith(7);
   });
+
+  it.each([
+    { on: undefined, output: undefined, target: "只供 Wit 调用", result: undefined, accept: false },
+    {
+      on: ["message", "thread"],
+      output: "panel",
+      target: "邮件, 会话",
+      result: "显示在面板中",
+      accept: true,
+    },
+    {
+      on: ["selection"],
+      output: "replace-body",
+      target: "选中的文字",
+      result: "替换正文",
+      accept: true,
+    },
+    { on: ["draft"], output: "replace-draft", target: "草稿", result: "替换草稿", accept: true },
+    {
+      on: ["message"],
+      output: "wit",
+      target: "邮件",
+      result: "在 Wit 中运行",
+      accept: true,
+      displayName: "邮件解读",
+      icon: "file-text",
+    },
+  ])(
+    "Skill approval shows all saved instructions and bindings: $output",
+    async ({ on, output, target, result, accept, displayName, icon }) => {
+      const user = userEvent.setup();
+      const instructions = `${"Keep every detail. ".repeat(30)}\n<script>untrusted()</script>\nFinal instruction.`;
+      const a: Approval = {
+        id: 5,
+        run: 7,
+        callId: "skill-create",
+        tool: "create_skill",
+        summary: "",
+        state: "pending",
+        error: "",
+        destinations: [],
+        draftEdit: false,
+        draft: 0,
+        sessionAllow: false,
+        args: JSON.stringify({
+          name: "email-briefing",
+          display_name: displayName,
+          icon,
+          description: "Summarize email",
+          instructions,
+          on,
+          output,
+        }),
+      };
+      const onDecide = vi.fn().mockResolvedValue(true);
+      await setup({
+        history: hist({
+          ...empty,
+          messages: [
+            {
+              id: "q1",
+              role: "user",
+              text: "Create a Skill",
+              reasoning: "",
+              quoted: [],
+              calls: [],
+              results: [],
+              citations: [],
+              runs: [7],
+              elapsed: 0,
+            },
+          ],
+          approvals: [a],
+        }),
+        onDecide,
+        onSession: vi.fn(),
+      });
+      expect(screen.getByText("Wit 想要：创建 Skill")).toBeInTheDocument();
+      expect(screen.getByText("email-briefing")).toBeInTheDocument();
+      expect(screen.getByText(displayName ?? "Email Briefing")).toBeInTheDocument();
+      expect(
+        document.querySelector(`[data-skill-icon="${icon ?? "sparkles"}"]`),
+      ).toBeInTheDocument();
+      expect(screen.getByText("Summarize email")).toBeInTheDocument();
+      expect(screen.getByText(target)).toBeInTheDocument();
+      if (result) expect(screen.getByText(result)).toBeInTheDocument();
+      const text = screen.getByText(/Final instruction\./);
+      expect(text.textContent).toBe(instructions);
+      expect(text.querySelector("script")).toBeNull();
+      expect(text).not.toHaveClass("line-clamp-3");
+      expect(screen.queryByRole("button", { name: "本次对话都允许" })).toBeNull();
+      await user.click(screen.getByRole("button", { name: accept ? "允许" : "拒绝" }));
+      expect(onDecide).toHaveBeenCalledWith(a, accept, false);
+    },
+  );
 
   it("a tool's approval shows its card: what, arguments, destinations; a header decides them all", async () => {
     const user = userEvent.setup();

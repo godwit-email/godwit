@@ -273,9 +273,9 @@ func (e *extView) skillsView(c *ui.Context) {
 			if s.Builtin {
 				desc += " · " + i18n.T("settings.ext.builtin")
 			}
-			settingRow(c.Key(s.Name), s.Name, desc, func() {
+			settingRow(c.Key(s.Name), s.Label(), desc, func() {
 				on := s.Enabled
-				if kit.Switch(c, &on).Label(i18n.Tf("settings.ext.skill.enable", s.Name)).Changed() {
+				if kit.Switch(c, &on).Label(i18n.Tf("settings.ext.skill.enable", s.Label())).Changed() {
 					on = !s.Enabled // the switch may have written an older frame's copy
 					e.skills[i].Enabled = on
 					name := s.Name

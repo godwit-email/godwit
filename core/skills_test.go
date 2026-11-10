@@ -127,6 +127,27 @@ func TestSkillInfoModel(t *testing.T) {
 	assert.Empty(t, sum.Model)
 }
 
+func TestSkillInfoDisplay(t *testing.T) {
+	s, root := skillService(t)
+	writeSkill(t, root, "mail-review", "---\nname: mail-review\ndescription: Review mail\nmetadata:\n  godwit-display-name: ' 邮件分析 '\n  godwit-icon: mail\n  godwit-action-on: message\n  godwit-action-output: wit\n---\nAnalyze mail")
+	writeSkill(t, root, "create-skill", "---\nname: create-skill\ndescription: Create skills\nmetadata:\n  godwit-icon: unknown\n---\nx")
+	writeSkill(t, root, "broken-skill", "invalid")
+	infos, err := s.ListSkills(ctx)
+	require.NoError(t, err)
+	review, ok := find(infos, "mail-review")
+	require.True(t, ok)
+	assert.Equal(t, core.SkillInfo{Name: "mail-review", Description: "Review mail", DisplayName: " 邮件分析 ", Icon: "mail", On: []string{"message"}, Output: "wit", Enabled: true, UI: true}, review)
+	assert.Equal(t, " 邮件分析 ", review.Label())
+	for name, label := range map[string]string{"create-skill": "Create Skill", "broken-skill": "Broken Skill", "summarize": "Summarize"} {
+		info, ok := find(infos, name)
+		require.True(t, ok)
+		assert.Equal(t, name, info.Name)
+		assert.Empty(t, info.DisplayName)
+		assert.Equal(t, label, info.Label())
+		assert.Equal(t, "sparkles", info.Icon)
+	}
+}
+
 func TestSkillInfoTier(t *testing.T) {
 	s, root := skillService(t)
 	writeSkill(t, root, "brief", "---\nname: brief\ndescription: brief it\nmetadata:\n  godwit-model-tier: \"large\"\n---\nx")

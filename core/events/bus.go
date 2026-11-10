@@ -12,6 +12,7 @@ const (
 	SyncFailed        = "sync.failed"
 	OutboxChanged     = "outbox.changed"
 	SettingsChanged   = "settings.changed"
+	SkillsChanged     = "skills.changed"
 	ApprovalsChanged  = "approvals.changed"
 	RunsChanged       = "runs.changed" // a run of an ask conversation started or ended
 	PluginsChanged    = "plugins.changed"

@@ -648,7 +648,7 @@ func (r *reader) viewWhyLine(c *ui.Context) {
 
 // notMail are the events after which nothing a view shows has changed.
 var notMail = []string{events.SyncStarted, events.SyncFailed, events.SettingsChanged, events.ApprovalsChanged, events.RunsChanged,
-	events.PluginsChanged, events.MCPChanged, events.SignaturesChanged, events.ModelsChanged, events.MCPSendsChanged}
+	events.PluginsChanged, events.MCPChanged, events.SignaturesChanged, events.ModelsChanged, events.MCPSendsChanged, events.SkillsChanged}
 
 // viewUnchanged reports whether dirty leaves what the views show as
 // it was: their counts stay cached, as reading them walks every view.

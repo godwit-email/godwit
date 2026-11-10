@@ -6,6 +6,7 @@ import (
 	"testing"
 
 	"github.com/godwit-email/godwit/core"
+	"github.com/godwit-email/godwit/core/skills"
 	"github.com/godwit-email/godwit/internal/theme"
 )
 
@@ -35,6 +36,14 @@ func TestMenuIconPNGIsATemplateOfEveryMailAction(t *testing.T) {
 		}
 		if menuIcon(name) == nil {
 			t.Fatalf("%s: no icon", action)
+		}
+	}
+}
+
+func TestSkillMenuIcons(t *testing.T) {
+	for _, name := range skills.IconNames() {
+		if menuIcon(name) == nil {
+			t.Fatalf("Skill 图标 %q 未内置", name)
 		}
 	}
 }

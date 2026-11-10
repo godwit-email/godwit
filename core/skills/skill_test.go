@@ -40,6 +40,59 @@ func TestParseSkill(t *testing.T) {
 	assert.Empty(t, plain.On)
 }
 
+func TestSkillLabelsAndIcons(t *testing.T) {
+	assert.Equal(t, "Create Skill", skills.Label("create-skill", ""))
+	assert.Equal(t, "分析邮件", skills.Label("create-skill", "分析邮件"))
+	assert.Equal(t, " Explicit Name ", skills.Label("create-skill", " Explicit Name "))
+	assert.Equal(t, "2fa Summary", skills.Label("2fa-summary", ""))
+	want := []string{"sparkles", "file-text", "mail", "list", "list-ordered", "check", "time", "languages", "search", "shield", "tag", "code", "pen-line", "quote"}
+	assert.Equal(t, want, skills.IconNames())
+	for _, icon := range want {
+		assert.True(t, skills.ValidIcon(icon))
+		assert.Equal(t, icon, skills.IconOrDefault(icon))
+	}
+	for _, icon := range []string{"", "unknown", "https://example.com/icon.svg", "<svg/>"} {
+		assert.False(t, skills.ValidIcon(icon))
+		assert.Equal(t, "sparkles", skills.IconOrDefault(icon))
+	}
+	icons := skills.IconNames()
+	icons[0] = "changed"
+	assert.Equal(t, want, skills.IconNames(), "callers cannot change the allowlist")
+}
+
+func TestParseSkillDisplayMetadata(t *testing.T) {
+	for _, icon := range []string{"mail", "", "unknown", "https://example.com/icon.svg", "<svg/>"} {
+		t.Run(icon, func(t *testing.T) {
+			md := strings.Replace(good, "metadata:\n", "metadata:\n  godwit-display-name: ' 邮件分析 '\n  godwit-icon: '"+icon+"'\n", 1)
+			sk, err := skills.ParseContent("demo", []byte(md))
+			require.NoError(t, err)
+			assert.Equal(t, "demo", sk.Name)
+			assert.Equal(t, " 邮件分析 ", sk.DisplayName)
+			assert.Equal(t, skills.IconOrDefault(icon), sk.Icon)
+		})
+	}
+	sk, err := skills.ParseContent("demo", []byte(good))
+	require.NoError(t, err)
+	assert.Empty(t, sk.DisplayName)
+	assert.Equal(t, "sparkles", sk.Icon)
+}
+
+func TestParseSkillWitOutput(t *testing.T) {
+	for _, on := range []string{"message", "thread", "draft", "selection", "message,thread", "message,message", ""} {
+		t.Run(on, func(t *testing.T) {
+			md := strings.ReplaceAll(strings.Replace(good, "message, selection", on, 1), "panel", "wit")
+			sk, err := skills.ParseContent("demo", []byte(md))
+			if on != "message" {
+				require.Error(t, err)
+				return
+			}
+			require.NoError(t, err)
+			assert.Equal(t, "wit", sk.Output)
+			assert.Equal(t, []string{"message"}, sk.On)
+		})
+	}
+}
+
 func TestParseRejects(t *testing.T) {
 	for name, c := range map[string]struct{ dir, md string }{
 		"name mismatch": {"demo", strings.Replace(good, "name: demo", "name: other", 1)},

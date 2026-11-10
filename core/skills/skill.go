@@ -29,6 +29,7 @@ const MaxFileBytes = 256 << 10
 
 type Skill struct {
 	Name, Description, Body string
+	DisplayName, Icon       string
 	On                      []string
 	Output, Model           string
 	Tier                    string // godwit-model-tier; only "small" is kept
@@ -41,13 +42,41 @@ type Skill struct {
 var (
 	nameRE  = regexp.MustCompile(`^[a-z0-9]+(-[a-z0-9]+)*$`)
 	onSet   = []string{"message", "thread", "selection", "draft"}
-	outSet  = []string{"panel", "replace-body", "replace-draft"}
+	outSet  = []string{"panel", "replace-body", "replace-draft", "wit"}
+	iconSet = []string{"sparkles", "file-text", "mail", "list", "list-ordered", "check", "time", "languages", "search", "shield", "tag", "code", "pen-line", "quote"}
 	errRead = errors.New("skill file not readable")
 )
 
 // ValidName reports whether name is a valid skill (or plugin) name: lowercase
 // letters, digits and single hyphens between them.
 func ValidName(name string) bool { return nameRE.MatchString(name) }
+
+// Label 优先保留显式显示名称，否则把稳定标识转为首字母大写的词组。
+func Label(name, displayName string) string {
+	if displayName != "" {
+		return displayName
+	}
+	words := strings.Split(name, "-")
+	for i, word := range words {
+		if len(word) > 0 && word[0] >= 'a' && word[0] <= 'z' {
+			words[i] = string(word[0]-'a'+'A') + word[1:]
+		}
+	}
+	return strings.Join(words, " ")
+}
+
+// IconNames returns the built-in icons a skill can select.
+func IconNames() []string { return slices.Clone(iconSet) }
+
+func ValidIcon(icon string) bool { return slices.Contains(iconSet, icon) }
+
+// IconOrDefault keeps hand-written skills usable when an icon is unknown.
+func IconOrDefault(icon string) string {
+	if ValidIcon(icon) {
+		return icon
+	}
+	return "sparkles"
+}
 
 // Parse reads SKILL.md from fsys, the skill directory named name. The warnings
 // are non-fatal (a scripts/ directory, which is never run).
@@ -59,29 +88,47 @@ func Parse(name string, fsys fs.FS) (Skill, []string, error) {
 	if err != nil {
 		return Skill{}, nil, fmt.Errorf("skill %s: %w", name, err)
 	}
+	s, err := ParseContent(name, raw)
+	if err != nil {
+		return Skill{}, nil, err
+	}
+	s.FS = fsys
+	var warns []string
+	if st, err := fs.Stat(fsys, "scripts"); err == nil && st.IsDir() {
+		warns = append(warns, "scripts/ is ignored: Godwit never runs skill scripts")
+	}
+	return s, warns, nil
+}
+
+// ParseContent 在保存前按加载时的同一规则校验 SKILL.md。
+func ParseContent(name string, raw []byte) (Skill, error) {
+	if !ValidName(name) {
+		return Skill{}, fmt.Errorf("skill name %q: lowercase letters, digits and hyphens only", name)
+	}
 	front, body, ok := bytes.Cut(bytes.TrimPrefix(raw, []byte("\xef\xbb\xbf")), []byte("\n---"))
 	if !ok || !bytes.HasPrefix(front, []byte("---")) {
-		return Skill{}, nil, fmt.Errorf("skill %s: SKILL.md needs --- front matter", name)
+		return Skill{}, fmt.Errorf("skill %s: SKILL.md needs --- front matter", name)
 	}
 	var fm struct {
 		Name, Description string
 		Metadata          map[string]string
 	}
 	if err := yaml.Unmarshal(bytes.TrimPrefix(front, []byte("---")), &fm); err != nil {
-		return Skill{}, nil, fmt.Errorf("skill %s: front matter: %w", name, err)
+		return Skill{}, fmt.Errorf("skill %s: front matter: %w", name, err)
 	}
 	if fm.Name != name {
-		return Skill{}, nil, fmt.Errorf("skill %s: name %q must match its directory", name, fm.Name)
+		return Skill{}, fmt.Errorf("skill %s: name %q must match its directory", name, fm.Name)
 	}
 	if strings.TrimSpace(fm.Description) == "" {
-		return Skill{}, nil, fmt.Errorf("skill %s: description is required", name)
+		return Skill{}, fmt.Errorf("skill %s: description is required", name)
 	}
 	_, rest, _ := strings.Cut(string(body), "\n") // after the closing --- line
 	sum := sha256.Sum256(raw)
 	s := Skill{
 		Name: name, Description: strings.TrimSpace(fm.Description), Body: strings.TrimSpace(rest),
+		DisplayName: fm.Metadata["godwit-display-name"], Icon: IconOrDefault(fm.Metadata["godwit-icon"]),
 		Output: fm.Metadata["godwit-action-output"], Model: fm.Metadata["godwit-model"],
-		Version: hex.EncodeToString(sum[:])[:16], FS: fsys,
+		Version: hex.EncodeToString(sum[:])[:16],
 	}
 	if fm.Metadata["godwit-model-tier"] == "small" {
 		s.Tier = "small"
@@ -90,22 +137,21 @@ func Parse(name string, fsys fs.FS) (Skill, []string, error) {
 		for _, v := range strings.Split(on, ",") {
 			v = strings.TrimSpace(v)
 			if !slices.Contains(onSet, v) {
-				return Skill{}, nil, fmt.Errorf("skill %s: godwit-action-on %q is not one of %v", name, v, onSet)
+				return Skill{}, fmt.Errorf("skill %s: godwit-action-on %q is not one of %v", name, v, onSet)
 			}
 			s.On = append(s.On, v)
 		}
 	}
 	if s.Output != "" && !slices.Contains(outSet, s.Output) {
-		return Skill{}, nil, fmt.Errorf("skill %s: godwit-action-output %q is not one of %v", name, s.Output, outSet)
+		return Skill{}, fmt.Errorf("skill %s: godwit-action-output %q is not one of %v", name, s.Output, outSet)
 	}
 	if (len(s.On) == 0) != (s.Output == "") {
-		return Skill{}, nil, fmt.Errorf("skill %s: godwit-action-on and godwit-action-output go together", name)
+		return Skill{}, fmt.Errorf("skill %s: godwit-action-on and godwit-action-output go together", name)
 	}
-	var warns []string
-	if st, err := fs.Stat(fsys, "scripts"); err == nil && st.IsDir() {
-		warns = append(warns, "scripts/ is ignored: Godwit never runs skill scripts")
+	if s.Output == "wit" && !slices.Equal(s.On, []string{"message"}) {
+		return Skill{}, fmt.Errorf("skill %s: wit output requires godwit-action-on: message", name)
 	}
-	return s, warns, nil
+	return s, nil
 }
 
 // ReadFile returns a file under references/ or assets/ of the skill directory.

@@ -17,6 +17,7 @@ import (
 	"github.com/godwit-email/godwit/core"
 	"github.com/godwit-email/godwit/core/ai"
 	"github.com/godwit-email/godwit/core/coretest"
+	"github.com/godwit-email/godwit/core/events"
 	"github.com/godwit-email/godwit/internal/richtext"
 )
 
@@ -129,7 +130,7 @@ func TestSkillMarkdownStreams(t *testing.T) {
 	t.Cleanup(release)
 	h.openThread(m.ThreadID)
 	h.seeBody(m.ID)
-	h.skillMenu("brief")
+	h.skillMenu("Brief")
 	h.see("Progress")
 	if h.tt.HasText("##") || h.tt.HasText("**") || !r.ai[m.ID].result.run.running {
 		t.Fatalf("unfinished Markdown was not rendered while streaming: %q", h.tt.Texts())
@@ -366,6 +367,38 @@ func TestQuickRepliesFailRetry(t *testing.T) {
 	h.see("Sure thing")
 }
 
+func TestSkillsChangedRefreshesReader(t *testing.T) {
+	for state, page := range map[string]Page{"visible": PageMail, "hidden": PageWit} {
+		t.Run(state, func(t *testing.T) {
+			h, acc, _ := aiHarness(t, true, noAuto)
+			m := h.deliverOne(acc, coretest.Msg("bob@example.com", acc.Email, "Hi", "body words"))
+			h.openThread(m.ThreadID)
+			r := h.app.mail.reader
+			h.until("initial skills", func() bool { return r.skills.done })
+			mailRoute := h.app.route
+			for _, name := range []string{"brief", "meeting-notes"} {
+				if page == PageWit {
+					h.app.setRoute(Route{Page: PageWit})
+				}
+				writeSkill(t, h.env, name)
+				h.app.onEvent(events.Event{Type: events.SkillsChanged})
+				h.until("new skill in the cached reader", func() bool {
+					return r.skills.done && slices.ContainsFunc(r.skills.v, func(sk core.SkillInfo) bool { return sk.Name == name })
+				})
+				if page == PageWit {
+					h.app.setRoute(mailRoute) // 回到同一封邮件，阅读器的代次不变。
+				}
+				h.click("更多 skill")
+				menu := h.tt.Menu()
+				h.tt.CloseMenu()
+				if label := (core.SkillInfo{Name: name}).Label(); !slices.Contains(menu, label) {
+					t.Fatalf("menu %q is missing %s", menu, label)
+				}
+			}
+		})
+	}
+}
+
 func TestMenuSourcesIndependent(t *testing.T) {
 	h, acc, _ := aiHarness(t, true, noAuto, func(e *coretest.Env) {
 		e.InstallPlugin(t, "egress-action")
@@ -387,7 +420,7 @@ func TestMenuSourcesIndependent(t *testing.T) {
 	h.click("更多 skill")
 	menu := h.tt.Menu()
 	h.tt.CloseMenu()
-	if !slices.Contains(menu, "Ping") || slices.Contains(menu, "brief") {
+	if !slices.Contains(menu, "Ping") || slices.Contains(menu, "Brief") {
 		t.Fatalf("menu %q", menu)
 	}
 	h.openThread(other.ThreadID) // read again on the next visit
@@ -396,7 +429,7 @@ func TestMenuSourcesIndependent(t *testing.T) {
 	h.click("更多 skill")
 	menu = h.tt.Menu()
 	h.tt.CloseMenu()
-	if !slices.Contains(menu, "Ping") || !slices.Contains(menu, "brief") {
+	if !slices.Contains(menu, "Ping") || !slices.Contains(menu, "Brief") {
 		t.Fatalf("menu %q", menu)
 	}
 }
@@ -479,10 +512,51 @@ func TestSkillMenuRuns(t *testing.T) {
 	if strings.Contains(menu, "summarize") || strings.Contains(menu, "translate") || strings.Contains(menu, "proofread") {
 		t.Fatalf("menu %q", menu)
 	}
-	h.skillMenu("brief")
+	h.skillMenu("Brief")
 	h.see("the skill output")
 	h.click("关闭结果")
 	h.until("the card closed", func() bool { return !h.tt.HasText("the skill output") })
+}
+
+func TestReaderSkillOpensWit(t *testing.T) {
+	for _, displayName := range []string{"邮件解读", ""} {
+		t.Run(displayName, func(t *testing.T) {
+			h, acc, llm := aiHarness(t, true, noAuto, func(e *coretest.Env) {
+				dir := filepath.Join(e.DataDir, "skills", "email-briefing")
+				if err := os.MkdirAll(dir, 0o700); err != nil {
+					t.Fatal(err)
+				}
+				md := "---\nname: email-briefing\ndescription: Explain this email\nmetadata:\n  godwit-action-on: message\n  godwit-action-output: wit\n  godwit-display-name: " + displayName + "\n  godwit-icon: file-text\n---\nExplain the email and discuss it with the user.\n"
+				if err := os.WriteFile(filepath.Join(dir, "SKILL.md"), []byte(md), 0o600); err != nil {
+					t.Fatal(err)
+				}
+			})
+			var query string
+			var quoted []core.MessageSummary
+			h.app.SetWitAsk(func(q string, ms ...core.MessageSummary) { query, quoted = q, ms })
+			m := h.deliverOne(acc, coretest.Msg("bob@example.com", acc.Email, "Plan", "Please review the plan."))
+			h.app.OpenMessage(m.ID)
+			r := h.app.mail.reader
+			h.until("skills loaded", func() bool { return r.skills.done })
+			label := displayName
+			if label == "" {
+				label = "Email Briefing"
+			}
+			h.skillMenu(label)
+			if h.app.route.Page != PageWit || query != "/email-briefing" {
+				t.Fatalf("route=%+v query=%q", h.app.route, query)
+			}
+			if len(quoted) != 1 || quoted[0].ID != m.ID {
+				t.Fatalf("quoted=%+v, want mail %d", quoted, m.ID)
+			}
+			if st := r.ai[m.ID]; st != nil && st.result != nil {
+				t.Fatal("Wit Skill 不应创建阅读器结果卡片")
+			}
+			if llm.Requests() != 0 {
+				t.Fatal("首问由 Wit 页面启动，不在阅读器重复运行 Skill")
+			}
+		})
+	}
 }
 
 func TestActionEgressApproval(t *testing.T) {

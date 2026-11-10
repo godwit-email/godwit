@@ -117,15 +117,17 @@ const pages: Record<string, { states: string[]; entry: () => Promise<unknown>; s
   },
   wit: {
     // plus: the + menu open; picker: 引用邮件's search with hits; quoted: a quoted mail's chip
-    states: ["conversation", "empty", "plus", "picker", "quoted"],
+    states: ["conversation", "empty", "plus", "picker", "quoted", "create-skill"],
     entry: () => import("@/wit-page/main"),
     setup() {
       const conv = state === "empty" ? 0 : 1;
+      const skillHistory = fx.witCreateSkill();
       // the page is clear over the native window's material (wit.html's body): show its colour
       document.body.style.background = "var(--window)";
-      installFake({
+      const emit = installFake({
         "WitPage.Load": async () => fx.witPage(mode, conv),
-        "WitPage.Follow": async () => (conv ? fx.witConversation() : fx.witEmpty()),
+        "WitPage.Follow": async () =>
+          state === "create-skill" ? skillHistory : conv ? fx.witConversation() : fx.witEmpty(),
         "WitPage.Navigate": nothing,
         "WitPage.NewConversation": nothing,
         // a while, so the conversation's compacting line shows
@@ -133,6 +135,16 @@ const pages: Record<string, { states: string[]; entry: () => Promise<unknown>; s
         "WitPage.Skills": async () => [
           { name: "find-bills", description: "找出账单与订阅扣款" },
           { name: "follow-ups", description: "找出还在等你回复的邮件" },
+          ...(state === "create-skill" && skillHistory.turns[0].calls[0].approval?.state === "done"
+            ? [
+                {
+                  name: "email-briefing",
+                  displayName: "邮件解读",
+                  icon: "file-text",
+                  description: "解读邮件并继续追问",
+                },
+              ]
+            : []),
         ],
         "WitPage.OpenCited": nothing,
         "WitPage.OpenLink": nothing,
@@ -140,7 +152,24 @@ const pages: Record<string, { states: string[]; entry: () => Promise<unknown>; s
         "WitPage.Models": async () => fx.witModels,
         "WitPage.Ask": async () => runStart,
         "WitPage.Stop": nothing,
-        "WitPage.Decide": nothing,
+        "WitPage.Decide": async (_id: number, accept: boolean) => {
+          if (state !== "create-skill") return;
+          const turn = skillHistory.turns[0];
+          const c = turn.calls[0];
+          if (c.approval) c.approval.state = accept ? "done" : "rejected";
+          c.result = {
+            callId: c.call.id,
+            name: c.call.name,
+            output: accept ? JSON.stringify({ name: "email-briefing" }) : "",
+            error: accept ? "" : "denied",
+          };
+          turn.text = accept
+            ? "已保存“邮件解读”。从邮件菜单进入 Wit 运行后，可以继续追问。"
+            : "已取消，没有保存 Skill。";
+          turn.steps.push({ kind: "text", text: turn.text, call: 0 });
+          emit("wit", { ...fx.doneEvent, kind: "text", ends: false, text: turn.text });
+          setTimeout(() => emit("wit", fx.doneEvent), 150);
+        },
         "WitPage.DecideAll": nothing,
         "WitPage.DecideSession": nothing,
         "WitPage.SearchMail": async () => fx.mailHits,

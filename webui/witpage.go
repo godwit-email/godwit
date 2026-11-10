@@ -758,9 +758,11 @@ func (p *WitPage) NewConversation(ctx context.Context) error {
 	return nil
 }
 
-// WitSkill is a skill the input's / menu offers: the model's own (no UI binding), enabled.
+// WitSkill 是 / 菜单中启用的 Skill，Name 始终是调用时使用的稳定标识。
 type WitSkill struct {
 	Name        string `json:"name"`
+	DisplayName string `json:"displayName"`
+	Icon        string `json:"icon"`
 	Description string `json:"description"`
 }
 
@@ -773,8 +775,8 @@ func (p *WitPage) Skills(ctx context.Context) ([]WitSkill, error) {
 	all, err := svc.ListSkills(ctx)
 	out := []WitSkill{}
 	for _, sk := range all {
-		if sk.Enabled && !sk.UI && sk.Error == "" {
-			out = append(out, WitSkill{Name: sk.Name, Description: sk.Description})
+		if sk.Enabled && (!sk.UI || sk.Output == "wit") && sk.Error == "" {
+			out = append(out, WitSkill{Name: sk.Name, DisplayName: sk.Label(), Icon: sk.Icon, Description: sk.Description})
 		}
 	}
 	return out, keyed(err)

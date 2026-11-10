@@ -33,7 +33,7 @@ const message = (e: unknown) => (e instanceof Error ? e.message : String(e));
  * ignored); the core run goes on. A first question's conversation is kept for the next one; the
  * witOpen native sends for it (maybe before ask returns) is the conversation shown, no switch.
  */
-/** The skills the input's / menu lists (one reference: the panel reads them once). */
+/** 保持回调引用稳定，输入框每次打开 / 菜单时重新读取 Skill。 */
 const skills = () => api.skills();
 
 export function WitPage() {

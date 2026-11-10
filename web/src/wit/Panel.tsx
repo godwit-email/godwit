@@ -20,7 +20,6 @@ import {
   RiGlobalLine,
   RiInformationLine,
   RiLoaderLine,
-  RiMagicLine,
   RiMailLine,
   RiRefreshLine,
   RiSearchLine,
@@ -121,6 +120,7 @@ import { MailCard, senderName } from "./MailCard";
 import { type PickerKeys, QuoteChips, QuotedMail, QuotePicker } from "./Quote";
 import { Cite, citedNumbers, plainCites, Response } from "./Response";
 import { PROPOSE_RULE_TOOL, RuleCard, ruleSettled } from "./RuleCard";
+import { type SkillChoice, SkillIcon, skillLabel } from "./Skills";
 import {
   historyToMessages,
   questionId,
@@ -536,11 +536,38 @@ function ToolCard({
   }
   const [editBody, setEditBody] = useState(rawBody);
 
-  const fields: [string, string][] = [
-    [t("wit.approval.to"), strList(args.to).join(", ")],
-    [t("wit.approval.cc"), strList(args.cc).join(", ")],
-    [t("wit.approval.subject"), typeof args.subject === "string" ? args.subject : ""],
-  ];
+  const isSkill = a.tool === "create_skill";
+  const fields: [string, ReactNode][] = isSkill
+    ? [
+        [
+          t("wit.skill.display_name"),
+          skillLabel(
+            typeof args.name === "string" ? args.name : "",
+            typeof args.display_name === "string" ? args.display_name : undefined,
+          ),
+        ],
+        [t("wit.skill.name"), typeof args.name === "string" ? args.name : ""],
+        [
+          t("wit.skill.icon"),
+          <SkillIcon key="icon" icon={typeof args.icon === "string" ? args.icon : undefined} />,
+        ],
+        [t("wit.skill.description"), typeof args.description === "string" ? args.description : ""],
+        [
+          t("wit.skill.on"),
+          strList(args.on)
+            .map((on) => t(`settings.ext.skill.on.${on}`))
+            .join(", ") || t("settings.ext.skill.wit_only"),
+        ],
+        [
+          t("wit.skill.output"),
+          typeof args.output === "string" ? t(`wit.skill.output.${args.output}`) : "",
+        ],
+      ]
+    : [
+        [t("wit.approval.to"), strList(args.to).join(", ")],
+        [t("wit.approval.cc"), strList(args.cc).join(", ")],
+        [t("wit.approval.subject"), typeof args.subject === "string" ? args.subject : ""],
+      ];
   let body = "";
   for (const k of ["html", "body", "text"]) {
     const v = args[k];
@@ -616,7 +643,14 @@ function ToolCard({
                   </div>
                 ),
             )}
-            {body && <p className="line-clamp-3 text-muted-foreground">{body}</p>}
+            {isSkill && typeof args.instructions === "string" ? (
+              <div className="flex flex-col gap-1.5">
+                <span className="text-muted-foreground">{t("wit.skill.instructions")}</span>
+                <p className="whitespace-pre-wrap break-words">{args.instructions}</p>
+              </div>
+            ) : (
+              body && <p className="line-clamp-3 text-muted-foreground">{body}</p>
+            )}
           </>
         )}
         {a.destinations.length > 0 && (
@@ -1690,7 +1724,7 @@ export function Panel({
   /** Answers question a (ask_user_question), one list per question; true once answered. */
   onAnswer?(a: Approval, answers: string[][]): Promise<boolean>;
   /** The skills a question may name with / (the Wit page): the / menu lists them. */
-  skills?(): Promise<{ name: string; description: string }[]>;
+  skills?(): Promise<SkillChoice[]>;
   /** Shows a new conversation (the / menu's 新对话; the Wit page). */
   onNew?(): void;
 }) {
@@ -1756,7 +1790,7 @@ export function Panel({
   // The / menu: open while the input starts with a / and a word, its query that word.
   const [slash, setSlash] = useState<string>();
   const commandKeys = useRef<PickerKeys>(null);
-  const [skillList, setSkillList] = useState<{ name: string; description: string }[]>();
+  const [skillList, setSkillList] = useState<SkillChoice[]>();
   const full = quoted.length >= MAX_QUOTED;
   const running = chat.status === "submitted" || chat.status === "streaming";
   const { resumeStream } = chat;
@@ -1765,12 +1799,19 @@ export function Panel({
     () => translateMenu(info?.languages ?? [], locale),
     [info?.languages, locale],
   );
-  // the skills, read once the / menu first opens; the models, each time it opens
-  useEffect(() => {
-    if (slash === undefined || skillList || !skills) return;
-    skills().then(setSkillList, () => setSkillList([]));
-  }, [slash, skillList, skills]);
   const slashOpen = slash !== undefined;
+  // 面板保持打开期间也可能创建 Skill，每次打开菜单都重新读取。
+  useEffect(() => {
+    if (!slashOpen || !skills) return;
+    let active = true;
+    skills().then(
+      (list) => active && setSkillList(list),
+      () => active && setSkillList([]),
+    );
+    return () => {
+      active = false;
+    };
+  }, [slashOpen, skills]);
   // biome-ignore lint/correctness/useExhaustiveDependencies: on opening only
   useEffect(() => {
     if (slashOpen && models) models.list().then(setChoices, () => {});
@@ -2240,8 +2281,8 @@ export function Panel({
     ...(skillList ?? []).map((sk) => ({
       key: `skill:${sk.name}`,
       group: t("wit.cmd.skills"),
-      icon: <RiMagicLine />,
-      label: `/${sk.name}`,
+      icon: <SkillIcon icon={sk.icon} />,
+      label: skillLabel(sk.name, sk.displayName),
       hint: sk.description,
       run: () => {
         setSlash(undefined);

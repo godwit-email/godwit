@@ -146,6 +146,12 @@ func (a *App) onEvent(ev events.Event) {
 		a.offerUndo()
 	case events.PluginsChanged: // a card's plugin may have been switched
 		a.mail.reader.reloadPluginParts()
+	case events.SkillsChanged:
+		r := a.mail.reader
+		r.skills.restart()
+		if r.loaded {
+			r.loadSkills(true)
+		}
 	}
 	a.dirty = append(a.dirty, ev)
 	if a.refreshStop == nil {

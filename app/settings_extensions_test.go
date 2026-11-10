@@ -12,6 +12,7 @@ import (
 
 	"github.com/godwit-email/godwit/core"
 	"github.com/godwit-email/godwit/core/coretest"
+	"github.com/godwit-email/godwit/core/events"
 	"github.com/godwit-email/godwit/core/plugins"
 	"github.com/godwit-email/godwit/internal/i18n"
 	"github.com/godwit-email/godwit/internal/kit"
@@ -52,6 +53,24 @@ func (h *harness) pluginConfig(name string) map[string]core.ConfigValue {
 	return out
 }
 
+func TestSkillsChangedRefreshesSettings(t *testing.T) {
+	h, _ := withAccount(t)
+	h.openSettings("extensions")
+	e := h.app.pages[PageSettings].(*settingsPage).ext
+	h.until("initial skills", func() bool { return len(e.skills) > 0 })
+	count := len(e.skills)
+	h.click(i18n.Tf("settings.ext.tab.skills", count))
+	writeSkill(t, h.env, "meeting-notes")
+	h.app.onEvent(events.Event{Type: events.SkillsChanged})
+	h.advance(refreshEvery)
+	h.see("Meeting Notes")
+	h.see("Brief the email")
+	h.see(i18n.Tf("settings.ext.tab.skills", count+1))
+	if !viewUnchanged([]events.Event{{Type: events.SkillsChanged}}) {
+		t.Fatal("a skill change must not invalidate mail views")
+	}
+}
+
 func TestSkillToggle(t *testing.T) {
 	h, _ := withAccount(t)
 	h.openSettings("extensions")
@@ -61,9 +80,9 @@ func TestSkillToggle(t *testing.T) {
 		t.Fatal(err)
 	}
 	h.click(i18n.Tf("settings.ext.tab.skills", len(skills))) // the page may not have loaded them yet
-	h.see("summarize")
+	h.see("Summarize")
 	h.see("内置")
-	h.click("启用 summarize")
+	h.click("启用 Summarize")
 	h.until("summarize off", func() bool {
 		list, err := h.env.Svc.ListSkills(context.Background())
 		if err != nil {

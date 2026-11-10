@@ -189,7 +189,9 @@ func (p *settingsPage) refresh(hints []events.Event) {
 					p.translators = list
 				}
 			})
-	case sec == "extensions" && (hints == nil || slices.ContainsFunc(hints, extChange)):
+	case sec == "extensions" && (hints == nil || slices.ContainsFunc(hints, func(ev events.Event) bool {
+		return extChange(ev) || ev.Type == events.SkillsChanged
+	})):
 		p.ext.load()
 		if hints == nil { // opened: the directory may have changed since
 			p.ext.refreshRegistry()

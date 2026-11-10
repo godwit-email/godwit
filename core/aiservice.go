@@ -78,6 +78,9 @@ func (s *Service) runSkill(ctx context.Context, end func(), name string, t Targe
 	if err != nil {
 		return nil, err
 	}
+	if sk.Output == "wit" {
+		return nil, fmt.Errorf("skill %s runs in Wit; start /%s with the message as quoted context", name, name)
+	}
 	if t.Kind == "draft" || sk.Output == "replace-draft" {
 		return nil, ErrUseAssist
 	}

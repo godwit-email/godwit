@@ -282,16 +282,21 @@ func (r *reader) startAI() {
 	if target, ok := r.replyTarget(); ok && r.taskReady("") && r.p.a.settings.QuickReplies {
 		r.loadQuick(target.ID, false)
 	}
-	a, skills, actions := r.p.a, r.skillsFn, r.actionsFn
-	fetchInto(r, &r.skills, false, func(ctx context.Context) ([]core.SkillInfo, error) {
+	r.loadSkills(false)
+	a, actions := r.p.a, r.actionsFn
+	fetchInto(r, &r.actions, false, func(ctx context.Context) ([]core.ActionInfo, error) {
+		return actions(ctx, "message")
+	}, a.toastErr)
+}
+
+func (r *reader) loadSkills(force bool) {
+	skills := r.skillsFn
+	fetchInto(r, &r.skills, force, func(ctx context.Context) ([]core.SkillInfo, error) {
 		sks, err := skills(ctx)
 		return slices.DeleteFunc(sks, func(s core.SkillInfo) bool {
 			return !s.Enabled || !slices.Contains(s.On, "message") || s.Name == "summarize" || s.Name == "translate"
 		}), err
-	}, a.toastErr) // read again on the next visit
-	fetchInto(r, &r.actions, false, func(ctx context.Context) ([]core.ActionInfo, error) {
-		return actions(ctx, "message")
-	}, a.toastErr)
+	}, r.p.a.toastErr)
 }
 
 // stream runs skill on a message; its text streams into the run returned,
@@ -381,10 +386,14 @@ func (r *reader) toggleTranslate(id int64) {
 	}
 }
 
-// runSkillCard runs a menu skill into the result card.
-func (r *reader) runSkillCard(name string) {
+// 菜单中的 Skill 按声明的输出方式交给 Wit，或在阅读器内显示。
+func (r *reader) runMenuSkill(sk core.SkillInfo) {
 	if m, ok := r.last(); ok {
-		r.state(m.ID).result = &aiResult{title: name, run: r.stream(m.ID, name)}
+		if sk.Output == "wit" {
+			r.p.a.askWit("/"+sk.Name, m)
+			return
+		}
+		r.state(m.ID).result = &aiResult{title: sk.Label(), run: r.stream(m.ID, sk.Name)}
 	}
 }
 
@@ -493,8 +502,8 @@ func (r *reader) aiTools(c *ui.Context) {
 	}
 	aiButton("", i18n.T("reader.ai.more_skills"), false, true).Menu(func(menu *ui.Menu) {
 		for _, sk := range skills {
-			if menu.Item(sk.Name).Chosen() {
-				r.runSkillCard(sk.Name)
+			if menu.Item(sk.Label()).Icon(menuIcon(cmp.Or(sk.Icon, "sparkles"))).Chosen() {
+				r.runMenuSkill(sk)
 			}
 		}
 		if len(skills) > 0 && len(actions) > 0 {

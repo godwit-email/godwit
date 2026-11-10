@@ -7,6 +7,7 @@ import (
 	"slices"
 	"sort"
 
+	"github.com/godwit-email/godwit/core/events"
 	"github.com/godwit-email/godwit/core/skills"
 )
 
@@ -17,6 +18,7 @@ var (
 
 type SkillInfo struct {
 	Name, Description string
+	DisplayName, Icon string
 	On                []string
 	Output            string
 	Model             string // godwit-model; "" is the default model
@@ -25,6 +27,8 @@ type SkillInfo struct {
 	UI                bool // has godwit-action-*
 	Error             string
 }
+
+func (s SkillInfo) Label() string { return skills.Label(s.Name, s.DisplayName) }
 
 // loadSkills merges the built-ins with DataDir/skills; a user skill replaces a
 // built-in of the same name, even a broken one (it is reported, not hidden).
@@ -67,11 +71,11 @@ func (s *Service) ListSkills(ctx context.Context) ([]SkillInfo, error) {
 	}
 	var out []SkillInfo
 	for n, sk := range ok {
-		out = append(out, SkillInfo{Name: n, Description: sk.Description, On: sk.On, Output: sk.Output, Model: sk.Model, Tier: sk.Tier,
+		out = append(out, SkillInfo{Name: n, DisplayName: sk.DisplayName, Icon: sk.Icon, Description: sk.Description, On: sk.On, Output: sk.Output, Model: sk.Model, Tier: sk.Tier,
 			Builtin: sk.Builtin, Enabled: !slices.Contains(off, n), UI: len(sk.On) > 0})
 	}
 	for n, e := range failed {
-		out = append(out, SkillInfo{Name: n, Enabled: !slices.Contains(off, n), Error: e.Error()})
+		out = append(out, SkillInfo{Name: n, Icon: skills.IconOrDefault(""), Enabled: !slices.Contains(off, n), Error: e.Error()})
 	}
 	sort.Slice(out, func(i, j int) bool { return out[i].Name < out[j].Name })
 	return out, nil
@@ -102,7 +106,11 @@ func (s *Service) SetSkillEnabled(ctx context.Context, name string, enabled bool
 	if !enabled {
 		off = append(off, name)
 	}
-	return s.writeList(ctx, skillsOff, off)
+	if err := s.writeList(ctx, skillsOff, off); err != nil {
+		return err
+	}
+	s.bus.Publish(events.Event{Type: events.SkillsChanged})
+	return nil
 }
 
 // skill returns an enabled, loadable skill.

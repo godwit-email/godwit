@@ -969,14 +969,14 @@ func TestPageSkillsAndNew(t *testing.T) {
 	require.NoError(t, err)
 	var want []WitSkill
 	for _, sk := range all {
-		if sk.Enabled && !sk.UI && sk.Error == "" {
-			want = append(want, WitSkill{Name: sk.Name, Description: sk.Description})
+		if sk.Enabled && (!sk.UI || sk.Output == "wit") && sk.Error == "" {
+			want = append(want, WitSkill{Name: sk.Name, DisplayName: sk.Label(), Icon: sk.Icon, Description: sk.Description})
 		}
 	}
 	assert.ElementsMatch(t, want, got)
 	for _, sk := range all {
 		if sk.UI {
-			assert.NotContains(t, got, WitSkill{Name: sk.Name, Description: sk.Description}, "bound to the UI: not the model's")
+			assert.NotContains(t, got, WitSkill{Name: sk.Name, DisplayName: sk.Label(), Icon: sk.Icon, Description: sk.Description}, "bound to the UI: not the model's")
 		}
 	}
 	require.NoError(t, f.p.NewConversation(f.ctx()))
