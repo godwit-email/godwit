@@ -562,6 +562,26 @@ func TestEWSSendGatewayTimeoutIsUncertain(t *testing.T) {
 	}
 }
 
+// Exchange's documented transient errors refuse the message for now, so
+// the outbox tries again; others refuse it for good.
+func TestEWSSendTransientErrorRetries(t *testing.T) {
+	for code, temporary := range map[string]bool{
+		"ErrorInternalServerTransientError": true, "ErrorInsufficientResources": true,
+		"ErrorMailboxStoreUnavailable": true, "ErrorMailboxMoveInProgress": true,
+		"ErrorInvalidRecipients": false,
+	} {
+		t.Run(code, func(t *testing.T) {
+			s := testmail.StartEWS(t)
+			s.FailSend(code)
+			err := ewsServer{s}.Sender(t).Send(tctx(t), "a@example.com", []string{"b@example.com"}, backendtest.Message("b@example.com", "hello"))
+			var rej *backend.RejectedError
+			if !errors.As(err, &rej) || (rej.Code < 500) != temporary {
+				t.Errorf("Send answered %s = %v, want a rejection for now %v", code, err, temporary)
+			}
+		})
+	}
+}
+
 // busyReceiver is a receiver that records the back-offs it waits out
 // instead of waiting.
 func busyReceiver(t *testing.T, s *testmail.EWS) (*ews.Receiver, *[]time.Duration) {

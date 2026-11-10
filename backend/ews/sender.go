@@ -12,6 +12,7 @@ import (
 	"net/http/httptrace"
 	"net/mail"
 	"net/url"
+	"slices"
 	"strings"
 	"sync/atomic"
 	"time"
@@ -65,12 +66,21 @@ func (s *Sender) Send(ctx context.Context, _ string, rcpts []string, raw []byte)
 	case err == nil:
 		return nil
 	case errors.As(err, &re) && re.Code != "ErrorServerBusy":
-		return &backend.RejectedError{Stage: "CreateItem", Code: 554, Message: re.Code + ": " + re.Text}
+		code := 554
+		if slices.Contains(transient, re.Code) {
+			code = 451 // refused for now: the outbox tries again
+		}
+		return &backend.RejectedError{Stage: "CreateItem", Code: code, Message: re.Code + ": " + re.Text}
 	case wrote.Load() && lostAnswer(err):
 		return fmt.Errorf("%w: %v", backend.ErrUncertain, err)
 	}
 	return err
 }
+
+// transient are the ResponseCodes Exchange documents as worth retrying
+// later: the message was not sent.
+var transient = []string{"ErrorInternalServerTransientError", "ErrorInsufficientResources",
+	"ErrorMailboxStoreUnavailable", "ErrorMailboxMoveInProgress"}
 
 // lostAnswer reports that err is the connection failing or timing out, or
 // an answer that cannot be read, rather than the server's verdict.

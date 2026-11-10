@@ -61,6 +61,7 @@ type EWS struct {
 	lose             bool            // drop the next CreateItem's answer
 	garble           *string         // answer the next CreateItem with this body instead
 	garbleStatus     int             // and this HTTP status, 0 for 200
+	failSend         string          // answer the next CreateItem with this ResponseCode, sending nothing
 	rejectSend       bool            // refuse the next CreateItem's credentials
 	dropChallenge    bool            // close the connection on the next NTLM NEGOTIATE
 
@@ -179,6 +180,14 @@ func (s *EWS) Refuse(rcpt string) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.refused[strings.ToLower(rcpt)] = true
+}
+
+// FailSend makes the server answer the next CreateItem with ResponseCode
+// code, such as ErrorInternalServerTransientError, and send nothing.
+func (s *EWS) FailSend(code string) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.failSend = code
 }
 
 // LoseVerdict makes the server read the whole next CreateItem, send it, and
@@ -861,6 +870,11 @@ func (s *EWS) createItem(w http.ResponseWriter, req ewsRequest) {
 		}
 	}
 	rcpts = append(rcpts, req.addresses...)
+	if c := s.failSend; c != "" {
+		s.failSend = ""
+		reply(message("CreateItem", c, ""))
+		return
+	}
 	for _, r := range rcpts {
 		if s.refused[strings.ToLower(r)] {
 			reply(message("CreateItem", "ErrorInvalidRecipients", ""))
