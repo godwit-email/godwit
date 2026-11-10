@@ -161,17 +161,20 @@ const getBatch = 10
 
 // Sync implements backend.Receiver: the folders, when they changed since the
 // account cursor, then each folder's SyncFolderItems pages from its cursor.
-// A folder's first sync reports its mail as backfill, mail created after it
-// as new arrivals; an Update or ReadFlagChange is the item's flags, a
+// A folder's first sync reports its mail in the window as backfill, mail
+// created after it as new arrivals if received in the window (mail moved in
+// keeps its older time); an Update or ReadFlagChange is the item's flags, a
 // Delete its location gone. A folder whose SyncState the server voided is
 // reset and synced from nothing, local storage claiming its mail again.
-// shortcut: reports every created item, whole: no Window and no Older yet;
-// the sync range ticket adds them.
+// Older takes what the window left out instead.
+// shortcut: a window grown after the first sync brings in nothing more,
+// only 加载更早 does; scan the folder with FindItem down to the new cutoff
+// (tracked in Filled) if users miss it.
 // shortcut: the sync downloads whole messages; take their structure from
 // Attachments and fetch parts with GetAttachment if large mail slows it.
 func (r *Receiver) Sync(ctx context.Context, req backend.SyncRequest, commit func(backend.Page) error) (bool, error) {
 	if req.Older > 0 {
-		return false, fmt.Errorf("ews: older mail: %w", backend.ErrUnsupported)
+		return r.older(ctx, req, commit)
 	}
 	fs, account, err := r.hierarchy(ctx, req.Account)
 	if err != nil {
@@ -217,6 +220,17 @@ func (r *Receiver) syncFolder(ctx context.Context, req backend.SyncRequest, fold
 	at := func(ref string) backend.Location {
 		return backend.Location{Folder: folder, Ref: backend.MessageRef(ref)}
 	}
+	var cut *time.Time // the window's, found at the first Create
+	inWindow := func(received time.Time) (bool, error) {
+		if cut == nil {
+			c, err := r.cutoff(ctx, folder, req.Window)
+			if err != nil {
+				return false, err
+			}
+			cut = &c
+		}
+		return received.IsZero() || !received.Before(*cut), nil
+	}
 	for {
 		m, err := r.c.syncFolderItems(ctx, string(folder), string(st.Cursor))
 		if isCode(err, "ErrorInvalidSyncStateData") && st.Cursor != "" {
@@ -235,7 +249,13 @@ func (r *Receiver) syncFolder(ctx context.Context, req backend.SyncRequest, fold
 		for _, ch := range m.Changes.Change {
 			switch ch.XMLName.Local {
 			case "Create":
-				created = append(created, ch.ref())
+				in, err := inWindow(ch.Item.Received)
+				if err != nil {
+					return err
+				}
+				if in {
+					created = append(created, ch.ref())
+				}
 			case "Update", "ReadFlagChange": // the latter's IsRead alone would lose the other flags
 				updated = append(updated, ch.ref())
 			case "Delete":
@@ -243,8 +263,7 @@ func (r *Receiver) syncFolder(ctx context.Context, req backend.SyncRequest, fold
 			}
 		}
 		err = r.each(ctx, created, true, func(it fetched) {
-			changes = append(changes, backend.MessageAppeared{Location: at(it.ID.ID), Flags: it.flags(), Backfill: !st.Synced,
-				Content: &backend.Content{Size: int64(len(it.raw)), Date: it.Received, Header: backend.HeaderFields(it.raw, req.HeaderFields), Raw: it.raw}})
+			changes = append(changes, appeared(folder, it, !st.Synced, req.HeaderFields))
 		})
 		if err != nil {
 			return err
@@ -263,6 +282,77 @@ func (r *Receiver) syncFolder(ctx context.Context, req backend.SyncRequest, fold
 			return nil
 		}
 	}
+}
+
+// appeared is it, fetched with its MIME content, appearing in folder.
+func appeared(folder backend.FolderRef, it fetched, backfill bool, fields []string) backend.MessageAppeared {
+	return backend.MessageAppeared{Location: backend.Location{Folder: folder, Ref: backend.MessageRef(it.ID.ID)}, Flags: it.flags(), Backfill: backfill,
+		Content: &backend.Content{Size: int64(len(it.raw)), Date: it.Received, Header: backend.HeaderFields(it.raw, fields), Raw: it.raw}}
+}
+
+// findBatch is how many items a FindItem page of Older asks for.
+const findBatch = 512
+
+// older takes up to req.Older of each Only folder's messages local storage
+// lacks, newest received first, from FindItem pages from the newest down;
+// more reports that a folder holds still more.
+func (r *Receiver) older(ctx context.Context, req backend.SyncRequest, commit func(backend.Page) error) (more bool, err error) {
+	for _, ref := range req.Only {
+		if !req.Folders[ref].Synced {
+			return false, backend.ErrNotSynced
+		}
+	}
+	for _, ref := range req.Only {
+		var pick []string
+		for offset, last := 0, false; !last && len(pick) <= req.Older; {
+			var page []found
+			if page, last, err = r.c.findPage(ctx, string(ref), offset, findBatch); err != nil {
+				return false, err
+			}
+			offset += len(page)
+			refs := make([]backend.MessageRef, len(page))
+			for i, it := range page {
+				refs[i] = backend.MessageRef(it.ID.ID)
+			}
+			held := map[backend.MessageRef]bool{}
+			if req.Local != nil {
+				if held, err = req.Local.HeldRefs(ctx, ref, refs); err != nil {
+					return false, err
+				}
+			}
+			for _, it := range refs {
+				if !held[it] {
+					pick = append(pick, string(it))
+				}
+			}
+		}
+		if len(pick) > req.Older {
+			pick, more = pick[:req.Older], true
+		}
+		var changes []backend.Change
+		if err := r.each(ctx, pick, true, func(it fetched) {
+			changes = append(changes, appeared(ref, it, true, req.HeaderFields))
+		}); err != nil {
+			return false, err
+		}
+		if err := commit(backend.Page{Changes: changes, Folders: map[backend.FolderRef]backend.FolderState{ref: req.Folders[ref]}}); err != nil {
+			return false, err
+		}
+	}
+	return more, nil
+}
+
+// cutoff is when the oldest mail w keeps in folder was received: the
+// newest Newest's oldest, else Since; zero for all of it.
+func (r *Receiver) cutoff(ctx context.Context, folder backend.FolderRef, w backend.Window) (time.Time, error) {
+	if w.Newest <= 0 {
+		return w.Since, nil
+	}
+	nth, _, err := r.c.findPage(ctx, string(folder), w.Newest-1, 1)
+	if err != nil || len(nth) == 0 {
+		return time.Time{}, err
+	}
+	return nth[0].Received, nil
 }
 
 // each fetches the items ids, in batches, with their MIME content if mime,

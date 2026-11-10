@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/xml"
 	"fmt"
+	"time"
 )
 
 // SyncFolderItems: one page of a folder's item changes since a SyncState.
@@ -12,11 +13,12 @@ import (
 const maxChanges = 512
 
 type syncFolderItemsRequest struct {
-	XMLName    xml.Name `xml:"m:SyncFolderItems"`
-	BaseShape  string   `xml:"m:ItemShape>t:BaseShape"`
-	Folder     folderID `xml:"m:SyncFolderId>x"`
-	SyncState  string   `xml:"m:SyncState,omitempty"`
-	MaxChanges int      `xml:"m:MaxChangesReturned"`
+	XMLName    xml.Name   `xml:"m:SyncFolderItems"`
+	BaseShape  string     `xml:"m:ItemShape>t:BaseShape"`
+	Properties []fieldURI `xml:"m:ItemShape>t:AdditionalProperties>t:FieldURI"`
+	Folder     folderID   `xml:"m:SyncFolderId>x"`
+	SyncState  string     `xml:"m:SyncState,omitempty"`
+	MaxChanges int        `xml:"m:MaxChangesReturned"`
 }
 
 type syncFolderItemsResponse struct {
@@ -38,7 +40,8 @@ type syncFolderItemsMessage struct {
 type itemChange struct {
 	XMLName xml.Name
 	Item    struct {
-		ID id `xml:"http://schemas.microsoft.com/exchange/services/2006/types ItemId"`
+		ID       id        `xml:"http://schemas.microsoft.com/exchange/services/2006/types ItemId"`
+		Received time.Time `xml:"http://schemas.microsoft.com/exchange/services/2006/types DateTimeReceived"` // a Create's
 	} `xml:",any"`
 	ItemID *id `xml:"http://schemas.microsoft.com/exchange/services/2006/types ItemId"`
 }
@@ -53,7 +56,7 @@ func (ch itemChange) ref() string {
 
 // syncFolderItems returns one page of the changes in folder since state ("" for every item).
 func (c *client) syncFolderItems(ctx context.Context, folder, state string) (syncFolderItemsMessage, error) {
-	resp, err := call[syncFolderItemsResponse](ctx, c, syncFolderItemsRequest{BaseShape: "IdOnly", Folder: folderRef(folder), SyncState: state, MaxChanges: maxChanges})
+	resp, err := call[syncFolderItemsResponse](ctx, c, syncFolderItemsRequest{BaseShape: "IdOnly", Properties: []fieldURI{{"item:DateTimeReceived"}}, Folder: folderRef(folder), SyncState: state, MaxChanges: maxChanges})
 	if err != nil {
 		return syncFolderItemsMessage{}, err
 	}
