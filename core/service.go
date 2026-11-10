@@ -624,6 +624,7 @@ func (s *Service) SetLightBackground(on bool) {
 	s.workersMu.Lock()
 	defer s.workersMu.Unlock()
 	for _, w := range s.workers {
+		w.full.Store(true)
 		select {
 		case w.wake <- struct{}{}:
 		default: // one is already pending
@@ -771,6 +772,17 @@ func (s *Service) syncAccount(ctx context.Context, accountID int64, explicit boo
 	if err := s.pushOps(ctx, recv, accountID, mailsync.PushOps); err != nil {
 		return err
 	}
+	if only != nil {
+		// 未完成操作和已清除邮件的本地收尾都需要完整拉取，重启后也一样。
+		rows, err := s.db.Query(ctx, `SELECT 1 FROM ops WHERE account_id = ? AND
+			(state IN ('pending', 'awaiting_claim') OR (kind = 'purge' AND state = 'done' AND message_id IS NOT NULL)) LIMIT 1`, accountID)
+		if err != nil {
+			return err
+		}
+		if len(rows.Values) > 0 {
+			only = nil
+		}
+	}
 	more, err := mailsync.Fetch(ctx, s.db, recv, accountID, s.bus, only)
 	if err == nil {
 		err = s.logDaily(ctx) // daily rules run after the day's first complete sync
@@ -782,6 +794,13 @@ func (s *Service) syncAccount(ctx context.Context, accountID int64, explicit boo
 	}
 	s.wakeLabeler()
 	if more {
+		if only == nil {
+			s.workersMu.Lock()
+			if w := s.workers[accountID]; w != nil {
+				w.full.Store(true)
+			}
+			s.workersMu.Unlock()
+		}
 		s.wakeWorker(accountID) // the backfill yielded: the worker's next round goes on with it
 	}
 	if err != nil {

@@ -5,6 +5,7 @@ import (
 	"errors"
 	"slices"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/godwit-email/godwit/backend"
@@ -48,6 +49,7 @@ type worker struct {
 	cancel context.CancelFunc
 	done   chan struct{}
 	wake   chan struct{} // buffered 1: a local change asks for a sync
+	full   atomic.Bool   // 全量请求不随普通唤醒被节流消费而丢失。
 	// due is when each source wants a sync, zero for none; stopTimer stops the
 	// timer set for the earliest, nil if none. Under workersMu.
 	due       [wakeSources]time.Time
@@ -73,7 +75,7 @@ func (s *Service) startWorker(id int64) {
 	s.workers[id] = w
 	go func() {
 		defer close(w.done)
-		s.runWorker(ctx, id, w.wake)
+		s.runWorker(ctx, id, w)
 		s.workersMu.Lock()
 		if w.stopTimer != nil {
 			w.stopTimer() // ctx is done: none is set again
@@ -164,26 +166,23 @@ func (s *Service) armWorker(id int64, w *worker) {
 	})
 }
 
-func (s *Service) runWorker(ctx context.Context, id int64, wake chan struct{}) {
+func (s *Service) runWorker(ctx context.Context, id int64, w *worker) {
+	wake := w.wake
 	var delay, pace time.Duration
 	var only []backend.FolderRef // what the last server change touched; nil for a full round
 	var fullBy time.Time         // the next full round is due; rounds of only some folders keep it
-	light := false
 	for {
 		if !s.awaitCredentials(ctx, id, wake) {
 			return
 		}
-		if on := s.light.Load(); light && !on {
-			only, fullBy = nil, time.Time{} // the window is back: the folders catch up at once
-		}
-		light = s.light.Load()
-		if !time.Now().Before(fullBy) {
+		full := w.full.Swap(false)
+		if full || !time.Now().Before(fullBy) {
 			only = nil
 		}
 		if only == nil {
 			fullBy = time.Now().Add(idleMax)
 		}
-		if light {
+		if s.light.Load() && !full {
 			if refs := s.inboxOnly(ctx, id); len(refs) > 0 {
 				only = refs
 				fullBy = time.Now().Add(idleMax) // a full round waits for the window
@@ -191,6 +190,9 @@ func (s *Service) runWorker(ctx context.Context, id int64, wake chan struct{}) {
 		}
 		chatter, changed, err := s.syncRound(ctx, id, wake, only, fullBy)
 		only = changed
+		if err != nil && full {
+			w.full.Store(true)
+		}
 		if ctx.Err() != nil {
 			return
 		}
@@ -216,10 +218,11 @@ func (s *Service) runWorker(ctx context.Context, id int64, wake chan struct{}) {
 	}
 }
 
-// inboxOnly is the folders a light round reads: the account's inbox. nil while
-// the account has none stored, so the round is full instead.
+// inboxOnly 返回支持文件夹限定的账户的收件箱；没有引用时保持完整同步。
+// JMAP 使用账户级游标，必须保留实际完整同步所需的本地收尾。
 func (s *Service) inboxOnly(ctx context.Context, accountID int64) []backend.FolderRef {
-	rows, err := s.db.Query(ctx, "SELECT server_ref FROM folders WHERE account_id = ? AND role = 'inbox' AND server_ref IS NOT NULL", accountID)
+	rows, err := s.db.Query(ctx, `SELECT f.server_ref FROM folders f JOIN accounts a ON a.id = f.account_id
+		WHERE f.account_id = ? AND f.role = 'inbox' AND f.server_ref IS NOT NULL AND a.recv_protocol = 'imap'`, accountID)
 	if err != nil || len(rows.Values) == 0 {
 		return nil
 	}

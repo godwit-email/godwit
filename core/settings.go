@@ -30,12 +30,12 @@ type Settings struct {
 	UnreadOnAppIcon                                                bool
 	// LightBackground syncs the inbox only while the window is in the
 	// background; the other folders catch up when it comes back.
-	LightBackground              bool
-	NotifyNewMail, NotifyPreview bool
-	QuickReplies, Summary, ThreadView                              bool
-	ThreadCollapse                                                 bool // collapse runs of folded messages into an expandable card
-	ThreadCollapseThreshold                                        int  // a longer thread keeps its newest this many messages in sight and collapses the older; MinThreadCollapse to MaxThreadCollapse
-	DefaultModel, SmallModel                                       string
+	LightBackground                   bool
+	NotifyNewMail, NotifyPreview      bool
+	QuickReplies, Summary, ThreadView bool
+	ThreadCollapse                    bool // collapse runs of folded messages into an expandable card
+	ThreadCollapseThreshold           int  // a longer thread keeps its newest this many messages in sight and collapses the older; MinThreadCollapse to MaxThreadCollapse
+	DefaultModel, SmallModel          string
 	// Translator is the reader's translation channel: "" the model, or
 	// "plugin/<name>" a plugin declaring translate (ListTranslators).
 	Translator string

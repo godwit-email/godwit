@@ -356,7 +356,7 @@ func gui(ctx context.Context, dataDir string) int {
 		}
 		updateMenu()
 		trayMenu := func() *mygo.Menu {
-			light := &mygo.MenuItem{Label: i18n.T("tray.light_background"), Type: mygo.MenuItemCheckbox, Checked: a.LightBackground(),
+			light := &mygo.MenuItem{Label: i18n.T("settings.light_background"), Type: mygo.MenuItemCheckbox, Checked: a.LightBackground(),
 				Click: func(item *mygo.MenuItem, _ *mygo.Window) { a.SetLightBackground(item.IsChecked()) }}
 			plat.trayLight = light
 			items := []*mygo.MenuItem{

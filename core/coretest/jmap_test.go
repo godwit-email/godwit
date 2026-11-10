@@ -142,6 +142,31 @@ func TestJMAPPush(t *testing.T) {
 	}, 10*time.Second, 50*time.Millisecond)
 }
 
+func TestJMAPLightBackgroundFinishesWholeAccountSync(t *testing.T) {
+	e := coretest.New(t)
+	acc := e.AddAccount(t, "alice@example.com", coretest.ViaJMAP())
+	srv := e.JMAP(acc.ID)
+	id := srv.Deliver("INBOX", coretest.Msg("bob@example.com", "alice@example.com", "RemoveCached", "body"))
+	require.NoError(t, e.Svc.SyncNow(t.Context(), acc.ID))
+	ms, err := e.Svc.Search(t.Context(), acc.ID, "RemoveCached", 10)
+	require.NoError(t, err)
+	require.Len(t, ms, 1)
+	e.Svc.SetLightBackground(true)
+	srv.Deliver("INBOX", coretest.Msg("bob@example.com", "alice@example.com", "BackgroundReady", "body"))
+	require.Eventually(t, func() bool {
+		ms, err := e.Svc.Search(t.Context(), acc.ID, "BackgroundReady", 10)
+		return err == nil && len(ms) == 1
+	}, 5*time.Second, 20*time.Millisecond)
+
+	res, err := other(t, e, acc.ID).Apply(t.Context(), backend.Purge{At: at(e, acc.ID, "INBOX", id)})
+	require.NoError(t, err)
+	require.Equal(t, backend.Done, res.Outcome)
+	require.Eventually(t, func() bool {
+		ms, err := e.Svc.Search(t.Context(), acc.ID, "RemoveCached", 10)
+		return err == nil && len(ms) == 0
+	}, 5*time.Second, 20*time.Millisecond)
+}
+
 // A JMAP server refusing the credentials marks the account for sign-in again,
 // as IMAP does.
 func TestJMAPCredentialsRevoked(t *testing.T) {

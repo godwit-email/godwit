@@ -496,10 +496,11 @@ func (a *App) load() {
 			a.accountLabels = accLabels
 		}
 		if settled && ver == a.settingsVer && ver == a.settingsSavedVer { // else st may predate a local change
-			if a.settings.RemoteImages != st.RemoteImages {
-				a.mail.reader.invalidateAvatars(true)
-			}
+			old := a.settings
 			a.settings, a.settingsOK = st, st
+			if !sameSettings(old, st) {
+				a.settingsEffects(old, st)
+			}
 			a.mail.reader.refreshAvatars()
 		}
 		a.syncLocalAPI()

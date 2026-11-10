@@ -3,12 +3,14 @@ package core
 import (
 	"fmt"
 	"runtime"
+	"sync"
 	"testing"
 	"time"
 
 	"github.com/emersion/go-imap/v2"
 	"github.com/godwit-email/godwit/backend"
 	"github.com/godwit-email/godwit/core/events"
+	"github.com/godwit-email/godwit/core/internal/testmail"
 	"github.com/godwit-email/godwit/core/mailsync"
 	"github.com/godwit-email/godwit/core/store"
 	"github.com/stretchr/testify/assert"
@@ -68,6 +70,156 @@ func TestWorkerLightBackgroundSyncsInboxOnly(t *testing.T) {
 	e.s.SetLightBackground(false)
 	waitEvent(t, ch, events.SyncFinished, 5*time.Second)
 	assert.Equal(t, 1, e.count(t, "SELECT count(*) FROM messages WHERE message_id = 'ar@x'"))
+}
+
+func TestLightBackgroundKeepsForegroundCatchup(t *testing.T) {
+	e, _ := newWorkerEnv(t)
+	unlock, err := e.s.lockAccount(bg, e.acc.ID)
+	require.NoError(t, err)
+	unlock = sync.OnceFunc(unlock)
+	t.Cleanup(unlock)
+	e.put(t, "INBOX", msg("watch@x"))
+	waitSignal(t, e.lockWait, "worker waiting for lock", 5*time.Second)
+	e.put(t, "Archive", msg("catchup@x"))
+	e.s.SetLightBackground(true)
+	e.s.SetLightBackground(false)
+	e.s.workersMu.Lock()
+	wake := e.s.workers[e.acc.ID].wake
+	e.s.workersMu.Unlock()
+	// 节流可以消费普通唤醒，但不能丢掉尚未执行的前台补全请求。
+	require.True(t, waitOrWake(bg, time.Second, wake))
+	e.put(t, "INBOX", msg("watch-again@x"))
+	unlock()
+	require.Eventually(t, func() bool {
+		return e.count(t, "SELECT count(*) FROM messages WHERE message_id = 'catchup@x'") == 1
+	}, 5*time.Second, 20*time.Millisecond)
+}
+
+func TestLightBackgroundClaimsMoves(t *testing.T) {
+	for _, awaiting := range []bool{false, true} {
+		t.Run(fmt.Sprintf("awaiting=%v", awaiting), func(t *testing.T) {
+			e, _ := newWorkerEnv(t, testmail.WithoutUIDPlus())
+			e.s.stopWorker(e.acc.ID)
+			e.put(t, "INBOX", msg("move@x"))
+			e.sync(t)
+			id := e.idOf(t, "move@x")
+			require.NoError(t, e.s.Move(bg, []int64{id}, e.folderID(t, "Archive")))
+			require.NoError(t, e.s.SetFlags(bg, []int64{id}, []string{`\Seen`}, nil))
+			if awaiting {
+				require.NoError(t, mailsync.PushOps(bg, e.s.db, e.receiver(t), e.acc.ID, e.s.clk().Now()))
+				require.Equal(t, []string{"awaiting_claim", "pending"}, e.opStates(t))
+			}
+			e.s.SetLightBackground(true)
+			e.s.startWorker(e.acc.ID)
+			require.Eventually(t, func() bool {
+				return e.count(t, "SELECT count(*) FROM ops WHERE state != 'done'") == 0
+			}, 5*time.Second, 20*time.Millisecond)
+			assert.Equal(t, []string{`move@x \Seen`}, e.onServer(t, "Archive"))
+		})
+	}
+}
+
+func TestLightBackgroundRecoversPendingGmailUndo(t *testing.T) {
+	e, _ := newWorkerEnv(t, testmail.Gmail(), testmail.WithoutMove())
+	e.s.stopWorker(e.acc.ID)
+	require.NoError(t, e.im.User.Delete(testmail.GmailAllMail))
+	m := e.im.AddGmail(msg("undo@x"), nil, "INBOX")
+	e.sync(t)
+	id := e.idOf(t, "undo@x")
+	u, err := e.s.ArchiveMessages(bg, []int64{id}, 0)
+	require.NoError(t, err)
+	e.clock.Advance(UndoArchiveWindow)
+	e.sync(t)
+	require.Empty(t, m.Folders())
+	require.NoError(t, e.s.UndoArchiveThreads(bg, u))
+	e.sync(t)
+	pending, err := e.s.PendingOps(bg, e.acc.ID)
+	require.NoError(t, err)
+	require.Len(t, pending, 1)
+	require.Equal(t, "pending", pending[0].State)
+
+	require.NoError(t, e.im.User.Create(testmail.GmailAllMail, nil))
+	m.Label(testmail.GmailAllMail)
+	e.s.SetLightBackground(true)
+	e.s.startWorker(e.acc.ID)
+	require.Eventually(t, func() bool {
+		pending, err := e.s.PendingOps(bg, e.acc.ID)
+		return err == nil && len(pending) == 0
+	}, 5*time.Second, 20*time.Millisecond)
+	assert.Equal(t, []string{"INBOX", testmail.GmailAllMail}, m.Folders())
+	assert.Equal(t, []int64{id}, e.syncEnv.listed(t, "INBOX"))
+}
+
+func TestLightBackgroundFinishesPurges(t *testing.T) {
+	for _, scenario := range []string{"manual", "automatic", "already-done", "gmail", "gmail-awaiting-cleanup"} {
+		t.Run(scenario, func(t *testing.T) {
+			var opts []testmail.Option
+			if scenario == "gmail" || scenario == "gmail-awaiting-cleanup" {
+				opts = append(opts, testmail.Gmail())
+			}
+			e, ch := newWorkerEnv(t, opts...)
+			e.s.stopWorker(e.acc.ID)
+			trash := e.roles(t)["trash"]
+			require.NotEmpty(t, trash)
+			e.put(t, trash, msg("purge@x"))
+			e.sync(t)
+			id := e.idOf(t, "purge@x")
+			if scenario == "automatic" {
+				require.NoError(t, e.s.SetPurge(bg, e.acc.ID, "trash", 7))
+				e.age(t, 8)
+			} else {
+				require.NoError(t, e.s.DeleteForever(bg, []int64{id}))
+				e.clock.Advance(UndoPurgeWindow)
+			}
+			if scenario == "already-done" || scenario == "gmail-awaiting-cleanup" {
+				recv := e.receiver(t)
+				require.NoError(t, mailsync.PushOps(bg, e.s.db, recv, e.acc.ID, e.s.clk().Now()))
+				require.Equal(t, []string{"done"}, e.opStates(t))
+				if scenario == "gmail-awaiting-cleanup" {
+					// 位置已经提交删除，但整轮收尾尚未执行。
+					_, err := mailsync.Fetch(bg, e.s.db, recv, e.acc.ID, e.s.bus,
+						[]backend.FolderRef{backend.FolderRef(trash), backend.FolderRef(e.roles(t)["all"])})
+					require.NoError(t, err)
+					require.Zero(t, e.count(t, "SELECT count(*) FROM message_locations WHERE message_id = ?", id))
+					require.Equal(t, 1, e.count(t, "SELECT count(*) FROM messages WHERE id = ?", id))
+				}
+			}
+			e.s.SetLightBackground(true)
+			collect(ch)
+			e.s.startWorker(e.acc.ID)
+			waitEvent(t, ch, events.SyncFinished, 5*time.Second)
+			assert.Empty(t, e.onServer(t, trash))
+			assert.Zero(t, e.count(t, "SELECT count(*) FROM messages WHERE id = ?", id))
+			assert.Zero(t, e.count(t, "SELECT count(*) FROM message_locations WHERE message_id = ?", id))
+		})
+	}
+}
+
+func TestLightBackgroundContinuesExplicitBackfill(t *testing.T) {
+	setFor(t, &mailsync.BackfillPage, 2)
+	setFor(t, &mailsync.BackfillPages, 1)
+	e, ch := newWorkerEnv(t)
+	e.s.stopWorker(e.acc.ID)
+	e.setRange(t, SyncRange{Limit: 1})
+	for i := range 11 {
+		e.put(t, "Archive", msg(fmt.Sprintf("backfill%d@x", i)))
+	}
+	e.sync(t)
+	e.setRange(t, SyncRange{})
+	e.s.SetLightBackground(true)
+	collect(ch)
+	e.s.startWorker(e.acc.ID)
+	waitEvent(t, ch, events.SyncFinished, 5*time.Second)
+	e.sync(t)
+	require.Eventually(t, func() bool {
+		return len(e.stored(t, "Archive")) == 11 && e.count(t, "SELECT count(*) FROM folders WHERE name = 'Archive' AND filled_since IS NOT NULL") == 1
+	}, 5*time.Second, 20*time.Millisecond)
+	e.put(t, "Archive", msg("after-backfill@x"))
+	e.put(t, "INBOX", msg("inbox-after-backfill@x"))
+	require.Eventually(t, func() bool {
+		return e.count(t, "SELECT count(*) FROM messages WHERE message_id = 'inbox-after-backfill@x'") == 1
+	}, 5*time.Second, 20*time.Millisecond)
+	assert.Zero(t, e.count(t, "SELECT count(*) FROM messages WHERE message_id = 'after-backfill@x'"))
 }
 
 // roundCost is what one sync round took: wall time, bytes the server sent and

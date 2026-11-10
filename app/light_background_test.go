@@ -2,8 +2,10 @@ package app
 
 import (
 	"context"
+	"slices"
 	"testing"
 
+	"github.com/godwit-email/godwit/core/events"
 	"github.com/godwit-email/godwit/internal/i18n"
 )
 
@@ -60,6 +62,32 @@ func TestLightBackgroundSettingApplies(t *testing.T) {
 	h.app.settingsEffects(on, off)
 	if h.env.Svc.LightBackground() {
 		t.Fatal("the setting off kept the sync narrow")
+	}
+}
+
+func TestLightBackgroundSettingsReload(t *testing.T) {
+	h := newHarness(t)
+	h.until("settings loaded", func() bool { return h.app.loaded })
+	h.app.SetForeground(false)
+
+	for _, on := range []bool{false, true} {
+		calls := len(h.plat.Calls())
+		st := h.app.settings
+		st.LightBackground = on
+		if _, err := h.env.Svc.SetSettings(context.Background(), st); err != nil {
+			t.Fatal(err)
+		}
+		h.until("settings event", func() bool {
+			return slices.ContainsFunc(h.app.dirty, func(ev events.Event) bool { return ev.Type == events.SettingsChanged })
+		})
+		h.advance(refreshEvery)
+		h.until("settings reloaded", func() bool { return h.app.LightBackground() == on })
+		if got := h.env.Svc.LightBackground(); got != on {
+			t.Errorf("reloaded LightBackground=%v, worker mode=%v", on, got)
+		}
+		if !slices.Contains(h.plat.Calls()[calls:], "SettingsChanged "+st.Theme) {
+			t.Error("reloaded settings did not reach the tray")
+		}
 	}
 }
 
