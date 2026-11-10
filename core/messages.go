@@ -486,11 +486,15 @@ func (s *Service) InlineImages(ctx context.Context, id int64, each func(cid stri
 	if err != nil {
 		return err
 	}
+	ids := map[string]bool{}
+	for _, a := range ar.Values {
+		ids[store.Str(a[2])] = true
+	}
 	fetcher := s.newAttachmentFetcher(ctx)
 	defer fetcher.close()
 	for _, a := range ar.Values {
 		contentType := store.Str(a[1])
-		cid := inlineCID(raw, store.Str(a[2]), contentType)
+		cid := inlineCID(raw, store.Str(a[2]), contentType, ids)
 		if cid == "" {
 			continue
 		}
@@ -510,8 +514,10 @@ func (s *Service) InlineImages(ctx context.Context, id int64, each func(cid stri
 
 // inlineCID returns cid as the body raw spells it when raw shows that attachment
 // as an inline image, else "". Case is ignored: DavMail upper-cases the
-// Content-ID in BODYSTRUCTURE, so only the body keeps its real spelling.
-func inlineCID(raw, cid, contentType string) string {
+// Content-ID in BODYSTRUCTURE, so only the body keeps its real spelling. ids
+// holds every Content-ID of the message: a spelling one of them matches exactly
+// is that attachment's, never another's by case.
+func inlineCID(raw, cid, contentType string, ids map[string]bool) string {
 	if raw == "" || cid == "" || !strings.HasPrefix(contentType, "image/") {
 		return ""
 	}
@@ -519,8 +525,8 @@ func inlineCID(raw, cid, contentType string) string {
 		return cid
 	}
 	for i := 0; i+len(cid) <= len(raw); i++ {
-		if strings.EqualFold(raw[i:i+len(cid)], cid) {
-			return raw[i : i+len(cid)]
+		if s := raw[i : i+len(cid)]; strings.EqualFold(s, cid) && !ids[s] {
+			return s
 		}
 	}
 	return ""
@@ -551,7 +557,8 @@ func (s *Service) readMessage(ctx context.Context, id int64, loadRemoteImages, l
 		info := AttachmentInfo{ID: store.Int(a[0]), Filename: store.Str(a[1]), ContentType: store.Str(a[2]),
 			Size: int(store.Int(a[3])), Inline: store.Int(a[4]) != 0}
 		msg.Attachments = append(msg.Attachments, info)
-		if cid := inlineCID(raw, store.Str(a[5]), info.ContentType); lazy && cid != "" {
+		// nil ids: this only notes which cids show, so a case match landing on another's is harmless
+		if cid := inlineCID(raw, store.Str(a[5]), info.ContentType, nil); lazy && cid != "" {
 			inline[cid] = gomail.Attachment{}
 		}
 	}

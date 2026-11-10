@@ -450,6 +450,16 @@ func TestGetMessageInlineImagesUpperCasedContentID(t *testing.T) {
 	assert.Contains(t, m.HTML, "data:image/")
 }
 
+// An exact Content-ID keeps its image: another attachment differing only in case
+// does not take it over.
+func TestInlineCIDExactWins(t *testing.T) {
+	raw := `<img src="cid:logo@example">`
+	ids := map[string]bool{"logo@example": true, "LOGO@example": true}
+	assert.Equal(t, "logo@example", inlineCID(raw, "logo@example", "image/png", ids))
+	assert.Empty(t, inlineCID(raw, "LOGO@example", "image/png", ids))
+	assert.Equal(t, "logo@example", inlineCID(raw, "LOGO@EXAMPLE", "image/png", map[string]bool{"LOGO@EXAMPLE": true}))
+}
+
 // A connection lost between two images costs a new login, not the other images.
 func TestGetMessageInlineImagesSurviveLostConnection(t *testing.T) {
 	e := newSyncEnv(t)
