@@ -11,6 +11,7 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"runtime"
 	"slices"
 	"strconv"
 	"strings"
@@ -921,7 +922,7 @@ func TestReaderAttachmentsBatchAndConflict(t *testing.T) {
 	h.see("3 个附件")
 	h.tt.Advance(2 * theme.MotionBase)
 	dir4 := t.TempDir()
-	if err := os.WriteFile(filepath.Join(dir4, "invoice.pdf"), oldPDF, 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(dir4, "invoice.pdf"), oldPDF, 0o600); err != nil {
 		t.Fatal(err)
 	}
 	h.plat.mu.Lock()
@@ -934,6 +935,11 @@ func TestReaderAttachmentsBatchAndConflict(t *testing.T) {
 		ents, err := os.ReadDir(dir4)
 		return err == nil && len(ents) == 3
 	})
+	if runtime.GOOS != "windows" {
+		if st, err := os.Stat(filepath.Join(dir4, "invoice.pdf")); err != nil || st.Mode().Perm() != 0o600 {
+			t.Fatalf("replaced file mode = %v (%v), want 0600", st.Mode().Perm(), err)
+		}
+	}
 }
 
 // scrollTo scrolls the reader until label is in the window.

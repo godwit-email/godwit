@@ -840,9 +840,11 @@ func replaceFile(src, dst string) error {
 		os.Remove(tmp)
 		return err
 	}
-	_ = os.Chmod(tmp, 0o644)
-	if runtime.GOOS == "windows" {
-		if st, lerr := os.Lstat(dst); lerr == nil && !st.IsDir() {
+	if st, lerr := os.Lstat(dst); lerr == nil {
+		if st.Mode().IsRegular() {
+			_ = os.Chmod(tmp, st.Mode().Perm()|0o600)
+		}
+		if runtime.GOOS == "windows" && !st.IsDir() {
 			_ = os.Chmod(dst, 0o666)
 		}
 	}
