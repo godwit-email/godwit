@@ -80,6 +80,21 @@ func validSecurity(s Security) bool {
 // ErrJMAPOff refuses to add a JMAP account while Settings.ExperimentalJMAP is off.
 var ErrJMAPOff = errors.New("JMAP is experimental: turn it on in settings to add a JMAP account")
 
+// errPOP3Off refuses to add a POP3 account while Settings.ExperimentalPOP3 is
+// off. Unexported: a wire code would need a pinned row in rpcbind (#631 adds one if the UI needs it).
+var errPOP3Off = errors.New("POP3 is experimental: turn it on in settings to add a POP3 account")
+
+// allowPOP3 accepts in's POP3 receiving slot while Settings.ExperimentalPOP3
+// is on; off, the check refuses it as an unsupported protocol.
+func (s *Service) allowPOP3(ctx context.Context, in *AccountInput) error {
+	if in.receiving() != auth.POP3 {
+		return nil
+	}
+	st, err := s.loadSettings(ctx)
+	in.pop3 = st.ExperimentalPOP3
+	return err
+}
+
 // receiving is the receiving slot's protocol, "" read as IMAP.
 func (in AccountInput) receiving() string {
 	if in.Receiving.Protocol == "" {
@@ -97,7 +112,7 @@ func (in AccountInput) validate() error {
 		slot, name string
 		ok         bool
 		Server
-	}{{"receiving", strings.ToUpper(recv), recv == auth.IMAP || recv == auth.JMAP, in.Receiving},
+	}{{"receiving", strings.ToUpper(recv), recv == auth.IMAP || recv == auth.JMAP || recv == auth.POP3 && in.pop3, in.Receiving},
 		// Graph is not chosen but stored after SMTP refused AUTH; a stored
 		// account's servers come back with it.
 		{"sending", "SMTP", in.Sending.Protocol == "" || in.Sending.Protocol == auth.SMTP || in.Sending.Protocol == auth.Graph, in.Sending}} {
@@ -148,6 +163,9 @@ func (s *Service) TestAccount(ctx context.Context, in AccountInput) error {
 		return err
 	}
 	defer end()
+	if err := s.allowPOP3(ctx, &in); err != nil {
+		return err
+	}
 	if r, err := s.check(ctx, in, ""); err != nil {
 		return &CheckError{Report: r, err: err}
 	}
@@ -208,6 +226,12 @@ func (s *Service) AddAccount(ctx context.Context, in AccountInput) (Account, err
 			return Account{}, ErrJMAPOff
 		}
 	}
+	if err := s.allowPOP3(ctx, &in); err != nil {
+		return Account{}, err
+	}
+	if in.receiving() == auth.POP3 && !in.pop3 {
+		return Account{}, errPOP3Off
+	}
 	checked, checkErr := s.check(ctx, in, "")
 	receiveOnly := in.ReceiveOnly && checked.OnlySMTPFailed()
 	if checkErr != nil && !receiveOnly {
@@ -261,11 +285,18 @@ func (s *Service) AddAccount(ctx context.Context, in AccountInput) (Account, err
 		Args: []any{in.Email, in.Name, in.Alias, b2i(isDefault), sync.Limit, sync.Months, recvAuth, sendAuth, in.username(),
 			in.receiving(), in.Receiving.Host, in.Receiving.Port, string(in.Receiving.Security), in.Receiving.Path, in.Sending.Host, in.Sending.Port, string(in.Sending.Security), time.Now().Unix(), in.Provider, in.oauthClientID, encodeFeatures(checked.desc), b2i(receiveOnly)},
 	})
+	inserted := len(stmts) - 1
+	if in.receiving() == auth.POP3 { // the server has only an inbox: trash, archive and sent are local (no server_ref)
+		for _, f := range [][2]string{{"Trash", "trash"}, {"Archive", "archive"}, {"Sent", "sent"}} {
+			stmts = append(stmts, sqlite.Statement{SQL: "INSERT INTO folders(account_id, name, role, role_since) VALUES ((SELECT id FROM accounts WHERE email = ?), ?, ?, unixepoch())",
+				Args: []any{in.Email, f[0], f[1]}})
+		}
+	}
 	res, err := s.db.Transaction(ctx, stmts)
 	if err != nil {
 		return Account{}, err
 	}
-	id := res[len(res)-1].LastInsertID
+	id := res[inserted].LastInsertID
 	// undo takes the new account back out (a fresh context: the caller's may
 	// already be cancelled, and a half-made account must not survive), the
 	// previous default made the default again.
@@ -670,7 +701,7 @@ func (a Account) servers() ServerSettings {
 
 // serverInput is the AccountInput that checks email's account on ss.
 func serverInput(email string, ss ServerSettings) AccountInput {
-	return AccountInput{Email: email, Username: ss.Username, Receiving: ss.Receiving, Sending: ss.Sending}
+	return AccountInput{Email: email, Username: ss.Username, Receiving: ss.Receiving, Sending: ss.Sending, pop3: true} // a stored account's
 }
 
 // UpdateAccount writes p's fields in one transaction. New Servers are first

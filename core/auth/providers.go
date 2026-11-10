@@ -42,6 +42,7 @@ const (
 	IMAP = "imap"
 	SMTP = "smtp"
 	JMAP = "jmap"
+	POP3 = "pop3"
 	// Graph is the sending slot of an account whose SMTP AUTH is disabled:
 	// it sends through Microsoft Graph (OAuthConfig.GraphSend).
 	Graph = "graph"

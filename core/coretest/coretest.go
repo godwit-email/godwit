@@ -43,6 +43,7 @@ import (
 type (
 	IMAP    = testmail.IMAP
 	JMAP    = testmail.JMAP
+	POP3    = testmail.POP3
 	SMTP    = testmail.Inbox
 	Turn    = testllm.Turn
 	Call    = testllm.Call
@@ -76,6 +77,7 @@ type Env struct {
 type mailServers struct {
 	imap      *IMAP
 	jmap      *JMAP // a JMAP account's, instead of imap
+	pop3      *POP3 // a POP3 account's, instead of imap
 	smtp      *SMTP
 	smtpAddr  string
 	delivered bool // Deliver synced the account before its first append
@@ -224,12 +226,17 @@ func splitHostPort(t *testing.T, addr string) (string, int) {
 // AccountOption changes how AddAccount adds an account.
 type AccountOption func(*accountConfig)
 
-type accountConfig struct{ jmap bool }
+type accountConfig struct{ jmap, pop3 bool }
 
 // ViaJMAP adds the account over JMAP, on a fake JMAP server (Env.JMAP), with
 // the JMAP experiment turned on. It sends through its own SMTP server,
 // which saves no sent copy.
 func ViaJMAP() AccountOption { return func(c *accountConfig) { c.jmap = true } }
+
+// ViaPOP3 adds the account over POP3, on a fake POP3 server (Env.POP3), with
+// the POP3 experiment turned on. It sends through its own SMTP server,
+// which saves no sent copy.
+func ViaPOP3() AccountOption { return func(c *accountConfig) { c.pop3 = true } }
 
 // AddAccount adds email with its own fake IMAP and SMTP servers (the SMTP one
 // files sent mail into the IMAP Sent folder). The first account is the default.
@@ -249,6 +256,16 @@ func (e *Env) AddAccount(t *testing.T, email string, opts ...AccountOption) core
 		st, err := e.Svc.GetSettings(context.Background())
 		if err == nil && !st.ExperimentalJMAP {
 			st.ExperimentalJMAP = true
+			_, err = e.Svc.SetSettings(context.Background(), st)
+		}
+		if err != nil {
+			t.Fatal(err)
+		}
+	} else if cfg.pop3 {
+		in, servers = e.startPOP3(t, email)
+		st, err := e.Svc.GetSettings(context.Background())
+		if err == nil && !st.ExperimentalPOP3 {
+			st.ExperimentalPOP3 = true
 			_, err = e.Svc.SetSettings(context.Background(), st)
 		}
 		if err != nil {
@@ -304,6 +321,29 @@ func (e *Env) startJMAP(t *testing.T, email string) (core.AccountInput, *mailSer
 		Sending:   core.Server{Host: sh, Port: sp, Security: core.SecurityNone}}, &mailServers{jmap: jm, smtp: inbox, smtpAddr: addr}
 }
 
+// StartPOP3Servers starts a fake POP3 server and an SMTP server for email,
+// not added yet, and returns the account's input. Once the account is added,
+// Deliver (to INBOX), POP3, SMTP and Sent work for it as for AddAccount's.
+func (e *Env) StartPOP3Servers(t *testing.T, email string) core.AccountInput {
+	t.Helper()
+	in, servers := e.startPOP3(t, email)
+	e.mu.Lock()
+	e.started[net.JoinHostPort(in.Receiving.Host, strconv.Itoa(in.Receiving.Port))] = servers
+	e.mu.Unlock()
+	return in
+}
+
+func (e *Env) startPOP3(t *testing.T, email string) (core.AccountInput, *mailServers) {
+	t.Helper()
+	p := testmail.StartPOP3(t)
+	addr, inbox := testmail.StartSMTP(t)
+	ph, pp := splitHostPort(t, p.Addr)
+	sh, sp := splitHostPort(t, addr)
+	return core.AccountInput{Email: email, Username: "alice", Password: "secret",
+		Receiving: core.Server{Protocol: "pop3", Host: ph, Port: pp, Security: core.SecurityNone},
+		Sending:   core.Server{Host: sh, Port: sp, Security: core.SecurityNone}}, &mailServers{pop3: p, smtp: inbox, smtpAddr: addr}
+}
+
 // StartServers starts fake IMAP and SMTP servers for an account not added
 // yet, as the onboarding form takes them, with the user and password they
 // accept. Once an account is added with them, Deliver, IMAP, SMTP and Sent
@@ -348,6 +388,9 @@ func (e *Env) IMAP(accountID int64) *IMAP { return e.mail(accountID).imap }
 // JMAP is a ViaJMAP account's fake JMAP server.
 func (e *Env) JMAP(accountID int64) *JMAP { return e.mail(accountID).jmap }
 
+// POP3 is a ViaPOP3 account's fake POP3 server.
+func (e *Env) POP3(accountID int64) *POP3 { return e.mail(accountID).pop3 }
+
 // SMTP is the account's fake SMTP server, for fault injection.
 func (e *Env) SMTP(accountID int64) *SMTP { return e.mail(accountID).smtp }
 
@@ -362,8 +405,8 @@ func (e *Env) Endpoints(accountID int64) (imapHost string, imapPort int, smtpHos
 }
 
 // Deliver appends raw to the account's folder on its IMAP or JMAP server
-// and syncs: raw is new mail. (Append to IMAP().User or deliver on JMAP()
-// for mail already there.)
+// (a POP3 server has only INBOX) and syncs: raw is new mail. (Append to
+// IMAP().User or deliver on JMAP() or POP3() for mail already there.)
 func (e *Env) Deliver(t *testing.T, accountID int64, folder string, raw []byte) {
 	t.Helper()
 	m := e.mail(accountID)
@@ -380,6 +423,11 @@ func (e *Env) Deliver(t *testing.T, accountID int64, folder string, raw []byte) 
 	}
 	if m.jmap != nil {
 		m.jmap.Deliver(folder, raw)
+	} else if m.pop3 != nil {
+		if folder != "INBOX" {
+			t.Fatalf("coretest: a POP3 server has no folder %q", folder)
+		}
+		m.pop3.Deliver(raw)
 	} else if _, err := m.imap.User.Append(folder, bytes.NewReader(raw), &imap.AppendOptions{}); err != nil {
 		t.Fatal(err)
 	}
