@@ -33,8 +33,9 @@ const (
 )
 
 // CheckStep is one item of a connection check. Name is settings, imap (jmap
-// for a JMAP account, ews for an EWS one) or smtp; an EWS account sends
-// through the server it receives from, so its check has no smtp step.
+// for a JMAP account, ews for an EWS one, pop3 for a POP3 one) or smtp; JMAP
+// and EWS accounts send through the server they receive from, so their check
+// has no smtp step.
 // Detail comes from conn's already redacted errors: no password, token or server text.
 type CheckStep struct {
 	Name    string
@@ -126,9 +127,6 @@ func (s *Service) check(ctx context.Context, in AccountInput, token string) (Che
 				if in.Password == "" && token == "" {
 					return KindInvalid, errors.New("password is required")
 				}
-				if in.Receiving.Auth == AuthAPIToken && in.SendPassword == "" {
-					return KindInvalid, errors.New("the sending password is required: an API token does not sign in to SMTP")
-				}
 				return KindInvalid, nil
 			}
 			g, err := s.flowGrant(in) // peeked: AddAccount still needs it
@@ -183,7 +181,7 @@ func (s *Service) check(ctx context.Context, in AccountInput, token string) (Che
 			return conn.Classify(err), err
 		},
 	}
-	if in.receiving() == auth.EWS {
+	if p := in.receiving(); p == auth.EWS || p == auth.JMAP {
 		r.Steps, steps = r.Steps[:2], steps[:2]
 	}
 	for i, run := range steps {

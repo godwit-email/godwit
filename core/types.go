@@ -20,7 +20,7 @@ const (
 type AccountInput struct {
 	Email, Name, Alias, Signature, Username, Password string // Password: Receiving.Auth's secret, an API token for AuthAPIToken
 	// SendPassword is the sending server's own password; "" signs in to it
-	// with Password, which an API token cannot.
+	// with Password.
 	SendPassword       string
 	IsDefault          bool
 	Sync               *SyncRange // nil: the newest 2000 per folder
@@ -98,9 +98,12 @@ type ServerSettings struct {
 
 // Server is one of an account's two server slots, receiving and sending: a
 // protocol and where its server is. Receiving is auth.IMAP, auth.JMAP
-// (only with Settings.ExperimentalJMAP to add one) or auth.POP3 (only with
-// Settings.ExperimentalPOP3) and sending auth.SMTP;
-// an empty Protocol in input is auth.IMAP and auth.SMTP.
+// (only with Settings.ExperimentalJMAP to add one), auth.EWS (only with
+// Settings.ExperimentalEWS to add one) or auth.POP3 (only with
+// Settings.ExperimentalPOP3). JMAP and EWS accounts send through their
+// receiving protocol; other accounts send through auth.SMTP (or auth.Graph
+// once OAuth SMTP AUTH is refused). An empty Protocol in input is auth.IMAP
+// and auth.SMTP.
 type Server struct {
 	Protocol string
 	Host     string
@@ -112,7 +115,7 @@ type Server struct {
 	// Autodiscover from the address. Other protocols have none.
 	Path string
 	// Auth is how the slot signs in: AuthPassword ("" in input), AuthAPIToken
-	// (JMAP receiving only) or AuthOAuth, which only an OAuth flow sets.
+	// (JMAP only) or AuthOAuth, which only an OAuth flow sets.
 	Auth string
 }
 

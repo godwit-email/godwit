@@ -32,12 +32,28 @@ type jmapServer struct{ *testmail.JMAP }
 func (s jmapServer) Receiver(t *testing.T) backend.Receiver {
 	return jmapReceiver(t, s.JMAP, s.SessionURL())
 }
+func (s jmapServer) Sender(_ *testing.T) backend.Sender {
+	return jmap.NewSender(jmap.Config{SessionURL: s.SessionURL(), Credentials: func(context.Context) (backend.Credentials, error) {
+		return backend.Credentials{Username: "alice", Password: s.Password()}, nil
+	}})
+}
+func (s jmapServer) Accepted(_ *testing.T) []backendtest.Delivery {
+	subs := s.Submissions()
+	out := make([]backendtest.Delivery, len(subs))
+	for i, sub := range subs {
+		out[i] = backendtest.Delivery{Rcpts: sub.RcptTo, Raw: sub.Raw}
+	}
+	return out
+}
+func (s jmapServer) Refuse(_ *testing.T, rcpt string)                { s.RefuseRecipient(rcpt) }
+func (s jmapServer) LoseVerdict(*testing.T)                          { s.LoseNextSubmission() }
 func (s jmapServer) Deliver(_ *testing.T, folder string, raw []byte) { s.JMAP.Deliver(folder, raw) }
 func (s jmapServer) Reset(*testing.T, string)                        { s.ExpireState() }
 func (s jmapServer) RejectAuth(*testing.T)                           { s.JMAP.RejectAuth() }
 
 func TestJMAPBackendContract(t *testing.T) {
 	backendtest.Run(t, func(t *testing.T) backendtest.Server { return jmapServer{testmail.StartJMAP(t)} })
+	backendtest.RunSender(t, func(t *testing.T) backendtest.SendServer { return jmapServer{testmail.StartJMAP(t)} })
 }
 
 func tctx(t *testing.T) context.Context {

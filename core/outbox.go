@@ -16,6 +16,7 @@ import (
 	"github.com/godwit-email/godwit/backend/conn"
 	"github.com/godwit-email/godwit/backend/ews"
 	"github.com/godwit-email/godwit/backend/graph"
+	"github.com/godwit-email/godwit/backend/jmap"
 	"github.com/godwit-email/godwit/backend/smtpbackend"
 	"github.com/godwit-email/godwit/core/auth"
 	"github.com/godwit-email/godwit/core/events"
@@ -434,6 +435,8 @@ func (a *sendAuth) sender() backend.Sender {
 		return graph.New(graphSendURL, a.credentials)
 	case auth.EWS:
 		return ews.NewSender(ews.Config{URL: ewsURL(a.acc), Credentials: a.credentials})
+	case auth.JMAP:
+		return jmap.NewSender(jmap.Config{SessionURL: sessionURL(a.acc.Receiving), Credentials: a.credentials})
 	}
 	return a.smtp()
 }
@@ -451,7 +454,7 @@ func (a *sendAuth) smtp() *smtpbackend.Sender {
 func (a *sendAuth) retry(ctx context.Context, err error) bool {
 	switch {
 	case a.s.toGraph(ctx, &a.acc, err):
-	case errors.Is(err, backend.ErrAuthFailed) && a.cur != nil && a.cur.Token != "" && !a.refreshed:
+	case errors.Is(err, backend.ErrAuthFailed) && a.acc.AuthType == "oauth" && a.cur != nil && a.cur.Token != "" && !a.refreshed:
 		a.refreshed, a.rejected = true, a.cur.Token
 	default:
 		return false

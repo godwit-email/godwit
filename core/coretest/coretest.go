@@ -248,8 +248,8 @@ type AccountOption func(*accountConfig)
 type accountConfig struct{ jmap, pop3 bool }
 
 // ViaJMAP adds the account over JMAP, on a fake JMAP server (Env.JMAP), with
-// the JMAP experiment turned on. It sends through its own SMTP server,
-// which saves no sent copy.
+// the JMAP experiment turned on. It receives and sends over JMAP, saving the
+// sent copy on the server.
 func ViaJMAP() AccountOption { return func(c *accountConfig) { c.jmap = true } }
 
 // ViaPOP3 adds the account over POP3, on a fake POP3 server (Env.POP3), with
@@ -312,10 +312,11 @@ func (e *Env) AddAccount(t *testing.T, email string, opts ...AccountOption) core
 	return acc
 }
 
-// StartJMAPServers starts a fake JMAP server and an SMTP server for email,
-// not added yet, and returns the account's input: the session is found
-// through /.well-known/jmap on the JMAP server's host. Once the account is
-// added, Deliver, JMAP, SMTP and Sent work for it as for AddAccount's.
+// StartJMAPServers starts a fake JMAP server for email, not added yet, and
+// returns the account's input: the session is found through /.well-known/jmap
+// on the JMAP server's host, and mail goes out over JMAP without an SMTP
+// server. Once the account is added, Deliver, JMAP and Sent work for it as for
+// AddAccount's.
 func (e *Env) StartJMAPServers(t *testing.T, email string) core.AccountInput {
 	t.Helper()
 	in, servers := e.startJMAP(t, email)
@@ -328,16 +329,14 @@ func (e *Env) StartJMAPServers(t *testing.T, email string) core.AccountInput {
 func (e *Env) startJMAP(t *testing.T, email string) (core.AccountInput, *mailServers) {
 	t.Helper()
 	jm := testmail.StartJMAP(t)
-	addr, inbox := testmail.StartSMTP(t)
 	u, err := url.Parse(jm.URL())
 	if err != nil {
 		t.Fatal(err)
 	}
 	jh, jp := splitHostPort(t, u.Host)
-	sh, sp := splitHostPort(t, addr)
+	slot := core.Server{Protocol: "jmap", Host: jh, Port: jp, Security: core.SecurityNone}
 	return core.AccountInput{Email: email, Username: "alice", Password: "secret",
-		Receiving: core.Server{Protocol: "jmap", Host: jh, Port: jp, Security: core.SecurityNone},
-		Sending:   core.Server{Host: sh, Port: sp, Security: core.SecurityNone}}, &mailServers{jmap: jm, smtp: inbox, smtpAddr: addr}
+		Receiving: slot, Sending: slot}, &mailServers{jmap: jm}
 }
 
 // StartEWSServers starts a fake EWS server for email, not added yet, and
@@ -491,11 +490,19 @@ func (e *Env) Deliver(t *testing.T, accountID int64, folder string, raw []byte) 
 	}
 }
 
-// Sent is every message the account's SMTP server accepted, as sent.
+// Sent is every message the account's sending server accepted, as sent.
 func (e *Env) Sent(accountID int64) [][]byte {
+	m := e.mail(accountID)
+	if m.jmap != nil {
+		var out [][]byte
+		for _, sub := range m.jmap.Submissions() {
+			out = append(out, sub.Raw)
+		}
+		return out
+	}
 	var out [][]byte
-	for _, m := range e.SMTP(accountID).Messages() {
-		out = append(out, m.Data)
+	for _, msg := range e.SMTP(accountID).Messages() {
+		out = append(out, msg.Data)
 	}
 	return out
 }

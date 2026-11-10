@@ -42,7 +42,7 @@ status: proposed
 - **为什么先做 JMAP**：它对接缝的检验最强（账户级游标、一封邮件在多个 mailbox、推送、服务器自动存已发送、下载主机和 API 主机不同）；用户出了问题可以随时退回 IMAP。EWS 和 POP3 等接缝验证过之后，各自另开工作（EWS 见下文）。
 - **实现与维护**：由维护者实现并维护，#481 的贡献者帮忙实测和评审。JMAP 先作为实验性功能上线，要在设置里打开才能添加 JMAP 账户。如果以后停止维护，就退回实验性：停止添加新账户，并提示已有账户改用 IMAP。
 - **主机与凭据**：信任 session 给出的主机；HTTP 重定向只跟随同一主机的，添加账户时的 `/.well-known/jmap` 除外。添加账户时显示 session 主机。第一版的认证方式是 Basic 和 Bearer。同步流量和 IMAP 一样算账户配置，不走外发审批。
-- **第一版范围**：发信走 SMTP；已有的 IMAP 账户不能原地切换成 JMAP。
+- **第一版范围**：JMAP 账户收信、发信都走 JMAP：发信用 `EmailSubmission/set` 加 `onSuccessUpdateEmail`，由服务器把副本归入已发送，会话须支持 `urn:ietf:params:jmap:submission`。已有的 IMAP 账户不能原地切换成 JMAP。
 - **客户端库**：用 `godwit-email/go-jmap`，它是 `git.sr.ht/~rockorager/go-jmap` 的 fork。规矩和 go-imap fork 一样，内存 JMAP 服务器也放在这个 fork 里。
 
 ## EWS

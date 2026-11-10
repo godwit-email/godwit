@@ -39,12 +39,13 @@ func TestJMAPAddAccount(t *testing.T) {
 	r, err := e.Svc.CheckAccount(t.Context(), in)
 	require.NoError(t, err)
 	require.True(t, r.OK(), "%+v", r.Steps)
+	require.Len(t, r.Steps, 2)
 	assert.Equal(t, "jmap", r.Steps[1].Name)
 	assert.Equal(t, in.Receiving.Host+":"+strconv.Itoa(in.Receiving.Port), r.Host)
 	acc, err := e.Svc.AddAccount(t.Context(), in)
 	require.NoError(t, err)
 	assert.Equal(t, "jmap", acc.Receiving.Protocol)
-	assert.Equal(t, "smtp", acc.Sending.Protocol)
+	assert.Equal(t, "jmap", acc.Sending.Protocol)
 
 	// Turned off, the account still syncs.
 	setJMAP(t, e, false)
@@ -219,27 +220,75 @@ func TestJMAPOneMessageInTwoMailboxes(t *testing.T) {
 	}
 }
 
-// Mail sent from a JMAP account goes out by SMTP and its copy is stored in
-// the server's Sent mailbox.
+// Mail sent from a JMAP account goes out over JMAP EmailSubmission/set (never
+// dialing SMTP), records the full envelope including Bcc without leaking Bcc
+// into headers, and leaves a single copy in Sent.
 func TestJMAPSendSavesSent(t *testing.T) {
 	e := coretest.New(t, coretest.WithoutAutoSync())
 	acc := e.AddAccount(t, "alice@example.com", coretest.ViaJMAP())
+	assert.Nil(t, e.SMTP(acc.ID), "JMAP account has no SMTP server")
+
 	srv := e.JMAP(acc.ID)
-	srv.CreateMailbox("Sent", mailbox.RoleSent)
+	srv.CreateMailbox("Drafts", mailbox.RoleDrafts)
+	sentBox := srv.CreateMailbox("Sent", mailbox.RoleSent)
 	require.NoError(t, e.Svc.SyncNow(t.Context(), acc.ID))
+
 	d, err := e.Svc.NewDraft(t.Context(), acc.ID, "new", 0)
 	require.NoError(t, err)
-	d.To, d.Subject, d.HTML = []string{"dave@example.com"}, "Out by SMTP", "<p>hi</p>"
+	d.To = []string{"dave@example.com"}
+	d.Cc = []string{"carol@example.com"}
+	d.Bcc = []string{"secret@example.com"}
+	d.Subject, d.HTML = "Out by JMAP", "<p>hi</p>"
 	_, err = e.Svc.SaveDraft(t.Context(), d)
 	require.NoError(t, err)
 	require.NoError(t, e.Svc.Send(t.Context(), d.ID))
 	e.AdvanceClock(core.UndoSendWindow)
 	require.NoError(t, e.Svc.SyncNow(t.Context(), acc.ID))
-	require.Eventually(t, func() bool { return len(e.Sent(acc.ID)) == 1 }, 5*time.Second, 20*time.Millisecond)
+
+	require.Eventually(t, func() bool { return len(srv.Submissions()) == 1 }, 5*time.Second, 20*time.Millisecond)
+	sub := srv.Submissions()[0]
+	assert.Equal(t, "alice@example.com", sub.MailFrom)
+	assert.ElementsMatch(t, []string{"dave@example.com", "carol@example.com", "secret@example.com"}, sub.RcptTo)
+	assert.NotContains(t, string(sub.Raw), "secret@example.com")
+
 	require.Eventually(t, func() bool {
 		require.NoError(t, e.Svc.SyncNow(t.Context(), acc.ID))
 		return folderTotal(t, e, acc.ID, "Sent") == 1
 	}, 5*time.Second, 50*time.Millisecond)
+	assert.Equal(t, 0, folderTotal(t, e, acc.ID, "Drafts"))
+
+	// Verify on the server directly that Sent holds exactly one Email.
+	var sentCount int
+	_, err = other(t, e, acc.ID).Sync(t.Context(), backend.SyncRequest{}, func(p backend.Page) error {
+		for _, ch := range p.Changes {
+			if ma, ok := ch.(backend.MessageAppeared); ok && ma.Location.Folder == backend.FolderRef(sentBox) {
+				sentCount++
+			}
+		}
+		return nil
+	})
+	require.NoError(t, err)
+	assert.Equal(t, 1, sentCount, "Sent mailbox on JMAP server must hold a single copy")
+}
+
+func TestJMAPCheckRequiresSubmissionCapability(t *testing.T) {
+	e := coretest.New(t, coretest.WithoutAutoSync())
+	setJMAP(t, e, true)
+	in := e.StartJMAPServers(t, "alice@example.com")
+	// Look up the started server via CheckAccount first, then disable submission.
+	acc, err := e.Svc.AddAccount(t.Context(), in)
+	require.NoError(t, err)
+	srv := e.JMAP(acc.ID)
+	srv.DisableSubmission()
+
+	in2 := in
+	in2.Email = "other@example.com"
+	r, err := e.Svc.CheckAccount(t.Context(), in2)
+	require.NoError(t, err)
+	assert.False(t, r.OK())
+	assert.Equal(t, jmap.ReasonNoSubmission, r.Steps[1].Detail)
+	_, err = e.Svc.AddAccount(t.Context(), in2)
+	assert.ErrorIs(t, err, jmap.ErrNoSubmission)
 }
 
 // Archiving moves a JMAP message to the Archive mailbox, as on plain IMAP:

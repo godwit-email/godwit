@@ -1,5 +1,5 @@
 // Package jmap is the JMAP protocol backend (RFC 8620, 8621; ADR 0037): a
-// backend.Receiver over an account's JMAP session.
+// backend.Receiver and backend.Sender over an account's JMAP session.
 package jmap
 
 import (
@@ -16,8 +16,10 @@ import (
 
 	gojmap "git.sr.ht/~rockorager/go-jmap"
 	"git.sr.ht/~rockorager/go-jmap/mail"
-	_ "git.sr.ht/~rockorager/go-jmap/mail/email"   // registers the Email methods
-	_ "git.sr.ht/~rockorager/go-jmap/mail/mailbox" // registers the Mailbox methods
+	_ "git.sr.ht/~rockorager/go-jmap/mail/email"         // registers the Email methods
+	"git.sr.ht/~rockorager/go-jmap/mail/emailsubmission" // registers the EmailSubmission methods
+	_ "git.sr.ht/~rockorager/go-jmap/mail/identity"      // registers the Identity methods
+	_ "git.sr.ht/~rockorager/go-jmap/mail/mailbox"       // registers the Mailbox methods
 
 	"github.com/godwit-email/godwit/backend"
 	"github.com/godwit-email/godwit/backend/conn"
@@ -127,6 +129,20 @@ func (c *client) sess(ctx context.Context) (*gojmap.Session, gojmap.ID, error) {
 		return nil, "", errors.New("jmap: the session has no mail account")
 	}
 	return s, acct, nil
+}
+
+// hasSubmission reports whether both the JMAP session and its primary mail
+// account advertise urn:ietf:params:jmap:submission.
+func hasSubmission(s *gojmap.Session, acct gojmap.ID) bool {
+	if _, ok := s.RawCapabilities[emailsubmission.URI]; !ok {
+		return false
+	}
+	a, ok := s.Accounts[acct]
+	if !ok {
+		return false
+	}
+	_, ok = a.RawCapabilities[emailsubmission.URI]
+	return ok
 }
 
 // methodError is a JMAP method-level error, such as cannotCalculateChanges.
