@@ -3,15 +3,18 @@ package app
 import (
 	"cmp"
 	"context"
+	"errors"
 	"fmt"
 	"html"
 	"io"
+	"io/fs"
 	"maps"
 	"math"
 	"net/mail"
 	"net/url"
 	"os"
 	"path/filepath"
+	"runtime"
 	"slices"
 	"strconv"
 	"strings"
@@ -56,21 +59,23 @@ type reader struct {
 	bodies       map[int64]*msgBody
 	scroll       ui.ScrollState // the messages' scrolling: the wheel and touchpad over a body's page scroll it (ScrollToContainer)
 
-	ai          map[int64]*msgAI         // by message; kept across switches so a summary runs once
-	aiCtx       context.Context          // the AI work of the key shown; nil until some starts
-	aiStop      context.CancelFunc       // cancels aiCtx
-	skills      fetch[[]core.SkillInfo]  // the skill menu: skills on messages but summarize and translate
-	actions     fetch[[]core.ActionInfo] // and plugin actions on messages
-	egress      egressAsk                // the action waiting for egress approval
-	egressDlg   bool                     // its dialog shows
-	unsubAsk    int64                    // the message whose one-click unsubscribe waits to be confirmed
-	unsubDlg    bool                     // its dialog shows
-	detailsOpen bool                     // the recipients' details popover shows
-	detailsID   int64                    // which message's details popover is open
-	barTop      float32                  // the floating toolbar's height as the last frame laid it out: the messages start under it
-	barBottom   float32                  // the reply bar's, likewise: the messages end above it
-	pane        ui.Rect                  // the messages' scroll box as the last frame laid it out, in the window: the bars float at its top and bottom
-	replyAsk    string                   // the reply bar's question to Wit, until it is asked
+	ai             map[int64]*msgAI         // by message; kept across switches so a summary runs once
+	aiCtx          context.Context          // the AI work of the key shown; nil until some starts
+	aiStop         context.CancelFunc       // cancels aiCtx
+	skills         fetch[[]core.SkillInfo]  // the skill menu: skills on messages but summarize and translate
+	actions        fetch[[]core.ActionInfo] // and plugin actions on messages
+	egress         egressAsk                // the action waiting for egress approval
+	egressDlg      bool                     // its dialog shows
+	unsubAsk       int64                    // the message whose one-click unsubscribe waits to be confirmed
+	unsubDlg       bool                     // its dialog shows
+	attConflict    attConflictAsk           // batch attachment save waiting on same-name conflict choice
+	attConflictDlg bool                     // its dialog shows
+	detailsOpen    bool                     // the recipients' details popover shows
+	detailsID      int64                    // which message's details popover is open
+	barTop         float32                  // the floating toolbar's height as the last frame laid it out: the messages start under it
+	barBottom      float32                  // the reply bar's, likewise: the messages end above it
+	pane           ui.Rect                  // the messages' scroll box as the last frame laid it out, in the window: the bars float at its top and bottom
+	replyAsk       string                   // the reply bar's question to Wit, until it is asked
 
 	getThread  func(ctx context.Context, id int64) (core.Thread, error)                       // tests wrap it
 	getMessage func(ctx context.Context, id int64, remote bool) (core.Message, error)         // tests wrap it
@@ -117,6 +122,7 @@ type msgBody struct {
 
 	unsub     core.Unsubscribe // how it unsubscribes, by its headers; none until asked
 	unsubbing bool             // its unsubscribe is under way
+	attSel    map[int64]bool   // selected attachment IDs for batch save
 
 	avatar                                 ui.ImageSource
 	avatarStop                             context.CancelFunc
@@ -165,6 +171,7 @@ func (r *reader) reset(k [2]int64) {
 	r.threadIDs, r.labels = nil, nil
 	r.replyAsk = "" // a question is for the thread it was typed in
 	r.detailsOpen, r.detailsID, r.why = false, 0, core.ViewReason{}
+	r.attConflict, r.attConflictDlg = attConflictAsk{}, false
 	r.open, r.historyOpen, r.historyShown, r.revealID, r.bodies = map[int64]bool{}, map[int64]bool{}, false, 0, map[int64]*msgBody{}
 	r.scroll.X, r.scroll.Y = 0, 0
 	r.gen++
@@ -756,6 +763,239 @@ func copyFile(src, dst string) error {
 	}
 	_ = markFromInternet(dst) // best effort, as browsers do: a volume without the mark (FAT) still gets the file
 	return nil
+}
+
+type attConflictMode int
+
+const (
+	attConflictKeepBoth attConflictMode = iota
+	attConflictReplace
+	attConflictSkip
+)
+
+type attConflictAsk struct {
+	msgID     int64
+	dir       string
+	items     []core.AttachmentInfo
+	conflicts []string
+	existing  map[string]bool
+}
+
+const maxAttachmentNumbered = 1000
+
+// copyFileNew copies src into dir under name (or "name (n)" past taken names),
+// never replacing an existing file (O_EXCL). When skipIfExists is true and name
+// itself is already taken on disk, it skips rather than numbering.
+func copyFileNew(src, dir, name string, skipIfExists bool) (string, error) {
+	in, err := os.Open(src)
+	if err != nil {
+		return "", err
+	}
+	defer in.Close()
+	for n := 1; n <= maxAttachmentNumbered; n++ {
+		dst := filepath.Join(dir, core.NumberedName(name, n))
+		out, err := os.OpenFile(dst, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o666)
+		if errors.Is(err, fs.ErrExist) {
+			if n == 1 && skipIfExists {
+				return "", nil
+			}
+			continue
+		}
+		if err != nil {
+			return "", err
+		}
+		_, err = io.Copy(out, in)
+		if cerr := out.Close(); err == nil {
+			err = cerr
+		}
+		if err != nil {
+			os.Remove(dst)
+			return "", err
+		}
+		_ = markFromInternet(dst)
+		return dst, nil
+	}
+	return "", fmt.Errorf("%s: no free name", name)
+}
+
+// replaceFile writes src to a temporary file in dst's directory and renames it
+// over dst only after the copy succeeds, so a failed write leaves dst intact
+// and a symlink or read-only file at dst is replaced rather than followed.
+func replaceFile(src, dst string) error {
+	in, err := os.Open(src)
+	if err != nil {
+		return err
+	}
+	defer in.Close()
+	out, err := os.CreateTemp(filepath.Dir(dst), ".godwit-*")
+	if err != nil {
+		return err
+	}
+	tmp := out.Name()
+	_, err = io.Copy(out, in)
+	if cerr := out.Close(); err == nil {
+		err = cerr
+	}
+	if err != nil {
+		os.Remove(tmp)
+		return err
+	}
+	if st, lerr := os.Lstat(dst); lerr == nil {
+		if st.Mode().IsRegular() {
+			_ = os.Chmod(tmp, st.Mode().Perm()|0o600)
+		}
+		if runtime.GOOS == "windows" && !st.IsDir() {
+			_ = os.Chmod(dst, 0o666)
+		}
+	}
+	if err := os.Rename(tmp, dst); err != nil {
+		os.Remove(tmp)
+		return err
+	}
+	_ = markFromInternet(dst)
+	return nil
+}
+
+func (a *App) writeAttachmentsToDir(ctx context.Context, dir string, items []core.AttachmentInfo, mode attConflictMode, existing map[string]bool) (int, error) {
+	var ids []int64
+	for _, att := range items {
+		name := core.FileName(att.Filename, "attachment")
+		if mode == attConflictSkip && existing[name] {
+			continue
+		}
+		ids = append(ids, att.ID)
+	}
+	if len(ids) == 0 {
+		return 0, nil
+	}
+	saved := 0
+	var written []os.FileInfo
+	sameWritten := func(name string) bool {
+		st, err := os.Lstat(filepath.Join(dir, name))
+		return err == nil && slices.ContainsFunc(written, func(w os.FileInfo) bool { return os.SameFile(w, st) })
+	}
+	recordWritten := func(dst string) {
+		if st, err := os.Lstat(dst); err == nil {
+			written = append(written, st)
+		}
+	}
+	err := a.svc.FetchAttachments(ctx, ids, func(src string, info core.AttachmentInfo) error {
+		name := core.FileName(info.Filename, "attachment")
+		if mode == attConflictReplace && existing[name] && !sameWritten(name) {
+			dst := filepath.Join(dir, name)
+			if err := replaceFile(src, dst); err != nil {
+				return err
+			}
+			recordWritten(dst)
+			saved++
+			return nil
+		}
+		dst, err := copyFileNew(src, dir, name, mode == attConflictSkip && !sameWritten(name))
+		if err != nil {
+			return err
+		}
+		if dst != "" {
+			recordWritten(dst)
+			saved++
+		}
+		return nil
+	})
+	return saved, err
+}
+
+func (r *reader) finishAttachmentsSaved(msgID int64, saved int, err error) {
+	a := r.p.a
+	if err != nil {
+		a.toastErr(err)
+		return
+	}
+	if b := r.bodies[msgID]; b != nil {
+		clear(b.attSel)
+	}
+	if saved > 0 {
+		a.toastAs(kit.ToastSuccess, i18n.Plural("reader.attachments.saved", saved))
+	}
+}
+
+// saveAttachments asks for a target directory and writes items there, prompting
+// first when any target filename already exists in that directory.
+func (r *reader) saveAttachments(msgID int64, items []core.AttachmentInfo) {
+	if len(items) == 0 {
+		return
+	}
+	items = slices.Clone(items)
+	a, plat, gen := r.p.a, r.p.a.plat, r.gen
+	var (
+		dir       string
+		conflicts []string
+		existing  map[string]bool
+		saved     int
+	)
+	a.do(func(ctx context.Context) error {
+		var err error
+		dir, err = plat.OpenDirectory()
+		if err != nil || dir == "" {
+			return err
+		}
+		existing = map[string]bool{}
+		var conflictFiles []os.FileInfo
+		for _, att := range items {
+			name := core.FileName(att.Filename, "attachment")
+			st, err := os.Lstat(filepath.Join(dir, name))
+			if err != nil {
+				continue
+			}
+			existing[name] = true
+			if !slices.ContainsFunc(conflictFiles, func(f os.FileInfo) bool { return os.SameFile(f, st) }) {
+				conflictFiles = append(conflictFiles, st)
+				conflicts = append(conflicts, name)
+			}
+		}
+		if len(conflicts) > 0 {
+			return nil
+		}
+		saved, err = a.writeAttachmentsToDir(ctx, dir, items, attConflictKeepBoth, nil)
+		return err
+	}, func(err error) {
+		if err != nil {
+			a.toastErr(err)
+			return
+		}
+		if dir == "" {
+			return
+		}
+		if len(conflicts) > 0 {
+			if gen != r.gen {
+				return
+			}
+			r.attConflict = attConflictAsk{
+				msgID:     msgID,
+				dir:       dir,
+				items:     items,
+				conflicts: conflicts,
+				existing:  existing,
+			}
+			r.attConflictDlg = true
+			return
+		}
+		r.finishAttachmentsSaved(msgID, saved, nil)
+	})
+}
+
+func (r *reader) resolveAttachmentConflict(mode attConflictMode) {
+	ask := r.attConflict
+	r.attConflict, r.attConflictDlg = attConflictAsk{}, false
+	if len(ask.items) == 0 || ask.dir == "" {
+		return
+	}
+	a := r.p.a
+	var saved int
+	a.do(func(ctx context.Context) (err error) {
+		saved, err = a.writeAttachmentsToDir(ctx, ask.dir, ask.items, mode, ask.existing)
+		return err
+	}, func(err error) {
+		r.finishAttachmentsSaved(ask.msgID, saved, err)
+	})
 }
 
 // saveMail saves the target message to an .eml file.
@@ -1457,7 +1697,7 @@ func (r *reader) message(c *ui.Context, m core.MessageSummary) {
 						OnClick(func() { r.viewInBrowser(m.ID) })
 				})
 			}
-			r.attachments(c, b.msg.Attachments)
+			r.attachments(c, b)
 		})
 	})
 }
@@ -1513,32 +1753,102 @@ func (r *reader) column(c *ui.Context) ui.Element {
 	return ui.Column(c).FillWidth().MaxWidth(theme.ReaderMaxWidth).AlignSelf(ui.Center)
 }
 
-// attachments lists the files attached: a click opens one, Save as copies it.
-func (r *reader) attachments(c *ui.Context, atts []core.AttachmentInfo) {
+// attachments lists the files attached: a click opens one, Save as copies it;
+// when several files are attached, they can be selected and saved together.
+func (r *reader) attachments(c *ui.Context, b *msgBody) {
+	var files []core.AttachmentInfo
+	for _, att := range b.msg.Attachments {
+		if !att.Inline {
+			files = append(files, att)
+		}
+	}
+	if len(files) == 0 {
+		return
+	}
 	t, th := theme.Of(c), c.Theme()
-	ui.Row(c).Wrap().Gap(th.Space(2)).Children(func() {
-		for _, att := range atts {
-			if att.Inline {
-				continue
+	multi := len(files) >= 2
+	ui.Column(c).FillWidth().Gap(th.Space(2)).Children(func() {
+		if multi {
+			var selCount, selSize, totalSize int
+			var selected []core.AttachmentInfo
+			for _, att := range files {
+				totalSize += att.Size
+				if b.attSel[att.ID] {
+					selCount++
+					selSize += att.Size
+					selected = append(selected, att)
+				}
 			}
-			ui.Row(c).Width(theme.AttachmentWidth).Gap(th.Space(1)).Padding(th.Space(2), th.Space(2.5)).Border(theme.Hairline, t.Border).Radius(t.Radius.Lg).Children(func() {
-				kit.Pressable(c, kit.PressableOpts{OnClick: func() { r.p.a.openAttachment(att) }}).Grow(1).Shrink(1).Gap(th.Space(2.5)).Children(func() {
-					if img := r.p.a.typeIcon(iconExt(att.Filename)); img != nil {
-						ui.Image(c, img).Size(th.Space(8.5), th.Space(8.5)).Fit(ui.Contain).Shrink(0)
+			ui.Row(c).FillWidth().Gap(th.Space(3)).AlignItems(ui.Center).Children(func() {
+				all := selCount == len(files)
+				if kit.Checkbox(c.Key("select-all"), &all, i18n.T("reader.attachments.select_all")).Changed() {
+					if all {
+						if b.attSel == nil {
+							b.attSel = map[int64]bool{}
+						}
+						for _, att := range files {
+							b.attSel[att.ID] = true
+						}
 					} else {
-						ui.Box(c).Size(th.Space(7), th.Space(8.5)).Radius(t.Radius.Sm).Background(t.Hover).Center().Shrink(0).Children(func() {
-							kit.Text(c, fileKind(att), t.Text.Xs).TextColor(t.Muted)
-						})
+						clear(b.attSel)
 					}
-					ui.Column(c).Shrink(1).Children(func() {
-						ui.Text(c, core.FileName(att.Filename, "attachment")).SingleLine() // the name it opens and saves under
-						kit.Text(c, byteSize(att.Size), t.Text.Sm).TextColor(t.Muted)
-					})
-				})
-				kit.IconButton(c, "download", i18n.T("reader.save_as"), kit.ButtonOpts{Variant: kit.Ghost, Size: kit.SizeSm}).
-					OnClick(func() { r.p.a.saveAttachment(att) })
+				}
+				summary := i18n.Plural("reader.attachments.count", len(files)) + " · " + byteSize(totalSize)
+				if selCount > 0 {
+					summary = i18n.Tf("reader.attachments.selected", selCount, len(files)) + " · " + byteSize(selSize)
+				}
+				kit.Text(c, summary, t.Text.Sm).TextColor(t.Muted)
+				ui.Spacer(c)
+				if selCount > 0 {
+					kit.Button(c, i18n.T("reader.attachments.save_selected"), kit.ButtonOpts{Variant: kit.Outline, Size: kit.SizeSm, Icon: "download"}).
+						OnClick(func() { r.saveAttachments(b.msg.ID, selected) })
+				} else {
+					kit.Button(c, i18n.T("reader.attachments.save_all"), kit.ButtonOpts{Variant: kit.Outline, Size: kit.SizeSm, Icon: "download"}).
+						OnClick(func() { r.saveAttachments(b.msg.ID, files) })
+				}
 			})
 		}
+		ui.Row(c).FillWidth().Wrap().Gap(th.Space(2)).Children(func() {
+			for _, att := range files {
+				c := c.Key(att.ID)
+				name := core.FileName(att.Filename, "attachment")
+				checked := multi && b.attSel[att.ID]
+				border, bg := t.Border, ui.Transparent
+				if checked {
+					border, bg = t.Primary, t.Hover.Mix(t.Background, 0.5)
+				}
+				ui.Row(c).Width(theme.AttachmentWidth).Gap(th.Space(1.5)).Padding(th.Space(2), th.Space(2.5)).
+					Border(theme.Hairline, border).Background(bg).Radius(t.Radius.Lg).AlignItems(ui.Center).Children(func() {
+					if multi {
+						if kit.Checkbox(c.Key("sel"), &checked, "").Shrink(0).Label(i18n.Tf("reader.attachments.select_item", name)).Changed() {
+							if checked {
+								if b.attSel == nil {
+									b.attSel = map[int64]bool{}
+								}
+								b.attSel[att.ID] = true
+							} else {
+								delete(b.attSel, att.ID)
+							}
+						}
+					}
+					kit.Pressable(c, kit.PressableOpts{OnClick: func() { r.p.a.openAttachment(att) }}).Grow(1).Shrink(1).Gap(th.Space(2.5)).Children(func() {
+						if img := r.p.a.typeIcon(iconExt(att.Filename)); img != nil {
+							ui.Image(c, img).Size(th.Space(8.5), th.Space(8.5)).Fit(ui.Contain).Shrink(0)
+						} else {
+							ui.Box(c).Size(th.Space(7), th.Space(8.5)).Radius(t.Radius.Sm).Background(t.Hover).Center().Shrink(0).Children(func() {
+								kit.Text(c, fileKind(att), t.Text.Xs).TextColor(t.Muted)
+							})
+						}
+						ui.Column(c).Shrink(1).Children(func() {
+							ui.Text(c, name).SingleLine() // the name it opens and saves under
+							kit.Text(c, byteSize(att.Size), t.Text.Sm).TextColor(t.Muted)
+						})
+					})
+					kit.IconButton(c, "download", i18n.T("reader.save_as"), kit.ButtonOpts{Variant: kit.Ghost, Size: kit.SizeSm}).
+						OnClick(func() { r.p.a.saveAttachment(att) })
+				})
+			}
+		})
 	})
 }
 
@@ -1812,6 +2122,46 @@ func (r *reader) unsubscribeDialog(c *ui.Context) {
 		return
 	}
 	unsubscribeDialog(c, &r.unsubDlg, b.unsub, func() { r.sendUnsubscribe(id) })
+}
+
+// attachmentConflictDialog asks what to do when batch-saving attachments into
+// a directory that already holds files of the same name.
+func (r *reader) attachmentConflictDialog(c *ui.Context) {
+	if !r.attConflictDlg {
+		r.attConflict = attConflictAsk{}
+		return
+	}
+	if len(r.attConflict.conflicts) == 0 {
+		r.attConflict, r.attConflictDlg = attConflictAsk{}, false
+		return
+	}
+	th := c.Theme()
+	opts := kit.DialogOpts{
+		Alert: true,
+		Desc:  i18n.Plural("reader.attachments.conflict_desc", len(r.attConflict.conflicts)),
+		Close: i18n.T("common.close"),
+	}
+	kit.Dialog(c, &r.attConflictDlg, i18n.T("reader.attachments.conflict_title"), opts, func() {
+		ui.Column(c).Gap(th.Space(1)).Children(func() {
+			for _, name := range r.attConflict.conflicts {
+				ui.Text(c, name).FontWeight(500).SingleLine()
+			}
+		})
+	}, func() {
+		if kit.Button(c, i18n.T("common.cancel"), kit.ButtonOpts{Variant: kit.Ghost}).Clicked() {
+			r.attConflict, r.attConflictDlg = attConflictAsk{}, false
+		}
+		ui.Spacer(c)
+		if kit.Button(c, i18n.T("reader.attachments.conflict_skip"), kit.ButtonOpts{Variant: kit.Outline}).Clicked() {
+			r.resolveAttachmentConflict(attConflictSkip)
+		}
+		if kit.Button(c, i18n.T("reader.attachments.conflict_replace"), kit.ButtonOpts{Variant: kit.DestructiveOutline}).Clicked() {
+			r.resolveAttachmentConflict(attConflictReplace)
+		}
+		if kit.Button(c, i18n.T("reader.attachments.conflict_keep_both"), kit.ButtonOpts{}).AutoFocus().Clicked() {
+			r.resolveAttachmentConflict(attConflictKeepBoth)
+		}
+	})
 }
 
 // unsubscribeDialog confirms a one-click unsubscribe by u while open: the

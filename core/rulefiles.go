@@ -97,8 +97,8 @@ func capBytes(s string, n int) string {
 	return strings.TrimRight(s[:n], ". ")
 }
 
-// numberedName is name's n-th candidate: "invoice.pdf", "invoice (2).pdf", …
-func numberedName(name string, n int) string {
+// NumberedName is name's n-th candidate: "invoice.pdf", "invoice (2).pdf", …
+func NumberedName(name string, n int) string {
 	if n <= 1 {
 		return name
 	}
@@ -108,6 +108,8 @@ func numberedName(name string, n int) string {
 	}
 	return stem + " (" + strconv.Itoa(n) + ")" + ext
 }
+
+func numberedName(name string, n int) string { return NumberedName(name, n) }
 
 // FileName makes s a file name: separators and control characters become
 // _, leading and trailing dots and spaces go, and a name Windows reserves

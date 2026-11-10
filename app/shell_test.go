@@ -772,3 +772,48 @@ func TestDialogCoversMaterial(t *testing.T) {
 		t.Errorf("material still covered after closing: alpha %d", a)
 	}
 }
+
+// 每行标记让日志环裁掉开头后仍能保留 trace 的原始字节。
+func TestReportKeepsAMaskedTrace(t *testing.T) {
+	fragment := "… (375 bytes cut) …822.SIZE " + strings.Repeat("x", 51)
+	trace := `imap> * 14762 FETCH (UID 14773 RFC822.SIZE 25345 BODY[HEADER.FIELDS (MESSAGE-ID LIST-UNSUBSCRIBE)] {1161}
+imap> xxxxxxxx. xxxx xxxx.xxxxxxx.xxx () xx
+imap> ` + fragment + `
+imap.acme.io`
+	want := `* 14762 FETCH (UID 14773 RFC822.SIZE 25345 BODY[HEADER.FIELDS (MESSAGE-ID LIST-UNSUBSCRIBE)] {1161}
+xxxxxxxx. xxxx xxxx.xxxxxxx.xxx () xx
+` + fragment + `
+<host>`
+	for _, oldLines := range []int{0, recentLogMax} {
+		var recent logRing
+		recent.Write([]byte(strings.Repeat("old\n", oldLines) + trace))
+		u, err := url.Parse(issueURL("unexpected protocol error", recent.String()))
+		if err != nil {
+			t.Fatal(err)
+		}
+		got := u.Query().Get("logs")
+		if !strings.Contains(got, fragment) {
+			t.Fatalf("trace 片段的字节发生变化：\n%s\nwant %s", got, fragment)
+		}
+		if !strings.HasSuffix(got, want) {
+			t.Fatalf("masked\n%s\nwant suffix\n%s", got, want)
+		}
+	}
+}
+
+func TestReportMasksHostsOutsideTrace(t *testing.T) {
+	for _, host := range []string{"x.xxx", "x0.xxx", "HEADER.FIELDS", "imap.acme.io"} {
+		text := "dial tcp: lookup " + host + ": no such host"
+		// 错误文本即使碰巧带有 trace 标记，也必须遮住主机。
+		u, err := url.Parse(issueURL(text+"\nimap> "+host, text+"\nimap> xxxx.xxxx\n"+text))
+		if err != nil {
+			t.Fatal(err)
+		}
+		q := u.Query()
+		want := "dial tcp: lookup <host>: no such host"
+		if q.Get("title") != want || q.Get("what-happened") != "```\n"+want+"\nimap> <host>\n```" ||
+			q.Get("logs") != want+"\nxxxx.xxxx\n"+want {
+			t.Fatalf("主机 %q 的报告遮罩错误：%v", host, q)
+		}
+	}
+}

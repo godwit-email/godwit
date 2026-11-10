@@ -1,6 +1,7 @@
 package conn
 
 import (
+	"fmt"
 	"strings"
 	"testing"
 
@@ -27,8 +28,19 @@ func TestMaskTrace(t *testing.T) {
 
 func TestMaskTraceCutsLongLines(t *testing.T) {
 	got := maskTrace([]byte("* 1 FETCH (" + strings.Repeat("A ", 400) + ")\r\n"))
-	assert.Contains(t, got, "… (+")
-	assert.Less(t, len(got), traceLineMax+30)
+	assert.Contains(t, got, "bytes cut) …")
+	assert.Less(t, len(got), traceLineMax+40)
+}
+
+// A long FETCH line is cut in the middle: its end carries the size of the
+// literal that follows, which is what a trace is read for (#611).
+func TestMaskTraceKeepsALongLinesLiteralSize(t *testing.T) {
+	line := "* 14766 FETCH (UID 14777 RFC822.SIZE 7296 BODYSTRUCTURE (" + strings.Repeat("\"text\" ", 60) +
+		") BODY[HEADER.FIELDS (MESSAGE-ID DATE SUBJECT)] {1234}\r\n"
+	got := maskTrace([]byte(line))
+	assert.True(t, strings.HasPrefix(got, "* 14766 FETCH (UID 14777 RFC822.SIZE 7296 BODYSTRUCTURE ("), got)
+	assert.True(t, strings.HasSuffix(got, "BODY[HEADER.FIELDS (MESSAGE-ID DATE SUBJECT)] {1234}"), got)
+	assert.Contains(t, got, fmt.Sprintf("… (%d bytes cut) …", len(line)-2-traceLineMax))
 }
 
 func TestTraceKeepsTheEnd(t *testing.T) {

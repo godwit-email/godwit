@@ -506,7 +506,7 @@ func TestLogTraceOnParseError(t *testing.T) {
 	t.Cleanup(func() { log.SetOutput(os.Stderr) })
 	conn.LogTrace(c, err)
 	got := buf.String()
-	assert.Contains(t, got, "* 1 FETCH (UID 42 BODY[TEXT] {14}\n… 8 bytes in 1 lines of text\nxxxxx.)\n* (xxxx)")
+	assert.Contains(t, got, "imap> * 1 FETCH (UID 42 BODY[TEXT] {14}\nimap> … 8 bytes in 1 lines of text\nimap> xxxxx.)\nimap> * (xxxx)")
 	for _, s := range []string{"hunter2", "alice", "Secret", "plans"} {
 		assert.NotContains(t, got, s)
 	}

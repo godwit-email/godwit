@@ -90,6 +90,19 @@ func maskReport(text string) string {
 	return hostRE.ReplaceAllString(emailRE.ReplaceAllString(text, "<email>"), "<host>")
 }
 
+// maskReportLog 只保留带来源标记的已脱敏 trace，避免改变其字节计数。
+func maskReportLog(text string) string {
+	var out strings.Builder
+	for line := range strings.Lines(text) {
+		if trace, ok := strings.CutPrefix(line, core.TracePrefix); ok {
+			out.WriteString(trace)
+		} else {
+			out.WriteString(maskReport(line))
+		}
+	}
+	return out.String()
+}
+
 // issueURL is a GitHub new-issue link reporting an error with the log's
 // recent lines, both rid of secrets; the user reads it before submitting.
 func issueURL(errText, logText string) string {
@@ -101,7 +114,7 @@ func issueURL(errText, logText string) string {
 	if r := []rune(title); len(r) > 80 {
 		title = string(r[:80]) + "…"
 	}
-	lines := strings.Split(maskReport(strings.TrimSpace(logText)), "\n")
+	lines := strings.Split(maskReportLog(strings.TrimSpace(logText)), "\n")
 	for {
 		// The keys are field ids in .github/ISSUE_TEMPLATE/bug_report.yml; logs renders as code there.
 		u := "https://github.com/godwit-email/godwit/issues/new?" + url.Values{

@@ -52,6 +52,7 @@ var table = []Error{
 	{Code: "nothing_to_compact", Err: core.ErrNothingToCompact},
 	{Code: "draft_gone", Err: core.ErrDraftGone, Key: "wit.draft.gone"},
 	{Code: "keychain_unavailable", Err: core.ErrKeychainUnavailable, Key: "error.keychain"},
+	{Code: "secret_not_found", Err: core.ErrSecretNotFound},
 	{Code: "wrong_account", Err: core.ErrWrongAccount},
 	{Code: "account_not_found", Err: core.ErrAccountNotFound},
 	{Code: "local_archive", Err: core.ErrLocalArchive},
@@ -211,8 +212,8 @@ var hidden = map[string]bool{
 	"FollowConversation": true,
 	// A progress callback cannot cross the wire; the first two have forms without one.
 	"InstallPluginFromRegistryWithProgress": true, "PrepareModelWithProgress": true, "DownloadRecognitionModel": true,
-	// The native reader's two steps of GetMessage, which clients have whole; a callback too.
-	"GetMessageLazyImages": true, "InlineImages": true,
+	// The native reader's two steps of GetMessage, which clients have whole; callbacks too.
+	"GetMessageLazyImages": true, "InlineImages": true, "FetchAttachments": true,
 	// The GUI's window state, not a client's; a sync a client asks for is SyncNow, whole.
 	"SetLightBackground": true, "LightBackground": true,
 }

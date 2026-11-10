@@ -309,8 +309,17 @@ func (p *settingsPage) generalView(c *ui.Context) {
 			})
 		})
 	p.proxySection(c)
-	settingsSection(c, i18n.T("settings.experiments"), "",
-		sw(&st.ExperimentalJMAP, i18n.T("settings.experimental_jmap"), i18n.T("settings.experimental_jmap.help")))
+}
+
+// labsView is 实验室: the features still on trial, each a switch.
+func (p *settingsPage) labsView(c *ui.Context) {
+	p.syncSettings()
+	defer p.syncSettings() // what handlers changed while building
+	st := &p.st
+	pageHeading(c, i18n.T("settings.labs"), i18n.T("settings.labs.sub"))
+	settingsCard(c, func() {
+		kit.SwitchRow(c, &st.ExperimentalJMAP, i18n.T("settings.experimental_jmap"), i18n.T("settings.experimental_jmap.help"))
+	})
 }
 
 // proxyDraft is 网络代理 as shown: the custom address saves once it is

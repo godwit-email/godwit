@@ -3,11 +3,14 @@ package main
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"image/png"
 	"log"
 	"net/url"
+	"os"
+	"path/filepath"
 	"runtime"
 	"slices"
 	"strconv"
@@ -46,11 +49,14 @@ type platform struct {
 	setTrayVisible func(visible bool)
 	trayLight      *mygo.MenuItem // 轻量后台's checkbox, nil before the tray exists
 
-	dataDir string
-	svc     *core.Service
-	apiMu   sync.Mutex
-	api     *rpc.Server // nil while the Local API is off
-	apiGen  uint64      // the newest request that asked for api
+	dataDir      string
+	svc          *core.Service
+	saveMu       sync.Mutex
+	saveDir      string                 // last directory chosen in SaveFile or OpenDirectory
+	downloadsDir func() (string, error) // mygo.App.Path(PathDownloads); tests swap it
+	apiMu        sync.Mutex
+	api          *rpc.Server // nil while the Local API is off
+	apiGen       uint64      // the newest request that asked for api
 
 	onAPIStop func(gen uint64, err error)              // told when the server ends by itself
 	serve     func(context.Context, *rpc.Server) error // Server.Serve; tests swap it
@@ -110,15 +116,104 @@ func (*platform) OpenImage() (string, error) {
 	}
 	return paths[0], nil
 }
-func (*platform) OpenDirectory() (string, error) {
-	paths, err := mygo.Dialog.Open(mygo.OpenDialogOptions{Directory: true, CreateDirectories: true})
+
+type savedDir struct {
+	Dir string `json:"dir"`
+}
+
+func isDir(p string) bool {
+	if p == "" {
+		return false
+	}
+	st, err := os.Stat(p)
+	return err == nil && st.IsDir()
+}
+
+func (p *platform) saveDirFile() string {
+	if p.dataDir == "" {
+		return ""
+	}
+	return filepath.Join(p.dataDir, "save-dir.json")
+}
+
+func (p *platform) defaultSaveDir() string {
+	p.saveMu.Lock()
+	dir := p.saveDir
+	if dir == "" {
+		if path := p.saveDirFile(); path != "" {
+			var s savedDir
+			if data, err := os.ReadFile(path); err == nil && json.Unmarshal(data, &s) == nil {
+				dir = s.Dir
+				p.saveDir = dir
+			}
+		}
+	}
+	p.saveMu.Unlock()
+	if isDir(dir) {
+		return dir
+	}
+	downloads := p.downloadsDir
+	if downloads == nil {
+		downloads = func() (string, error) { return mygo.App.Path(mygo.PathDownloads) }
+	}
+	if d, err := downloads(); err == nil && isDir(d) {
+		return d
+	}
+	if home, err := os.UserHomeDir(); err == nil && isDir(home) {
+		return home
+	}
+	return ""
+}
+
+func (p *platform) rememberSaveDir(dir string) {
+	if dir == "" {
+		return
+	}
+	p.saveMu.Lock()
+	p.saveDir = dir
+	path := p.saveDirFile()
+	p.saveMu.Unlock()
+	if path == "" {
+		return
+	}
+	if data, err := json.Marshal(savedDir{Dir: dir}); err == nil {
+		_ = os.WriteFile(path, data, 0o600) // a torn write only loses the last folder: loading falls back to Downloads
+	}
+}
+
+func (p *platform) saveDefaultPath(defaultName string) string {
+	if defaultName == "" {
+		return p.defaultSaveDir()
+	}
+	if !filepath.IsAbs(defaultName) {
+		if dir := p.defaultSaveDir(); dir != "" {
+			return filepath.Join(dir, defaultName)
+		}
+	}
+	return defaultName
+}
+
+func (p *platform) OpenDirectory() (string, error) {
+	paths, err := mygo.Dialog.Open(mygo.OpenDialogOptions{
+		DefaultPath:       p.defaultSaveDir(),
+		Directory:         true,
+		CreateDirectories: true,
+	})
 	if err != nil || len(paths) == 0 {
 		return "", err
 	}
+	p.rememberSaveDir(paths[0])
 	return paths[0], nil
 }
-func (*platform) SaveFile(defaultName string) (string, error) {
-	return mygo.Dialog.Save(mygo.SaveDialogOptions{DefaultPath: defaultName, CreateDirectories: true})
+func (p *platform) SaveFile(defaultName string) (string, error) {
+	path, err := mygo.Dialog.Save(mygo.SaveDialogOptions{
+		DefaultPath:       p.saveDefaultPath(defaultName),
+		CreateDirectories: true,
+	})
+	if err == nil && path != "" {
+		p.rememberSaveDir(filepath.Dir(path))
+	}
+	return path, err
 }
 func (p *platform) Notify(n app.Notification) error {
 	return mygo.NewNotification(notificationOptions(n, p.notificationAvatar(n))).Show()

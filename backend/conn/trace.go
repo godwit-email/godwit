@@ -18,8 +18,13 @@ import (
 // failed on lies within the last few KiB, with room for what led up to it.
 const traceMax = 16 << 10
 
-// traceLineMax caps one line of a masked trace; a longer one is cut.
-const traceLineMax = 300
+// traceLineMax caps one line of a masked trace; a longer one is cut in the
+// middle, keeping its last traceLineTail bytes: a FETCH line ends with the
+// size of the literal that follows ({N}), which the trace is read for.
+const (
+	traceLineMax  = 300
+	traceLineTail = 60
+)
 
 // trace records an IMAP connection's traffic, both ways, once armed after
 // login, so the commands and responses before a parse error can be reported.
@@ -78,7 +83,8 @@ func LogTrace(c *imapclient.Client, err error) {
 		return
 	}
 	if b := v.(*trace).bytes(); len(b) > 0 {
-		log.Printf("imap: traffic before %q, masked:\n%s", firstLine(err.Error()), maskTrace(b))
+		masked := TracePrefix + strings.ReplaceAll(maskTrace(b), "\n", "\n"+TracePrefix)
+		log.Printf("imap: traffic before %q, masked:\n%s", firstLine(err.Error()), masked)
 	}
 }
 
@@ -97,6 +103,9 @@ func firstLine(s string) string {
 	s, _, _ = strings.Cut(s, "\n")
 	return s
 }
+
+// TracePrefix 标记已脱敏的 trace 行，报告移除前缀后保留其原始字节。
+const TracePrefix = "imap> "
 
 // traceWords are the IMAP words a masked trace keeps as they are. Everything
 // else that is not syntax or a number is masked, since it may be mail.
@@ -144,7 +153,8 @@ func maskTrace(b []byte) string {
 		flushText()
 		m := maskLine(strings.TrimRight(line, "\r\n"))
 		if len(m) > traceLineMax {
-			m = fmt.Sprintf("%s… (+%d bytes)", m[:traceLineMax], len(m)-traceLineMax)
+			head := traceLineMax - traceLineTail
+			m = fmt.Sprintf("%s… (%d bytes cut) …%s", m[:head], len(m)-traceLineMax, m[len(m)-traceLineTail:])
 		}
 		out.WriteString(m)
 		out.WriteString(eol(line))

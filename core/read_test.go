@@ -714,6 +714,29 @@ func TestGetAttachmentLazy(t *testing.T) {
 	assert.Equal(t, path, path2)
 }
 
+func TestFetchAttachmentsBatch(t *testing.T) {
+	e := newSyncEnv(t)
+	e.put(t, "INBOX", withAttachments("batch@x", "hi", 3))
+	e.sync(t)
+	var ids []int64
+	for _, r := range e.rows(t, "SELECT id FROM attachments ORDER BY id") {
+		ids = append(ids, r[0].(int64))
+	}
+	require.Len(t, ids, 3)
+
+	var names []string
+	err := e.s.FetchAttachments(bg, ids, func(path string, info AttachmentInfo) error {
+		b, rerr := os.ReadFile(path)
+		require.NoError(t, rerr)
+		assert.Equal(t, "%PDF-1.4\n", string(b))
+		names = append(names, info.Filename)
+		return nil
+	})
+	require.NoError(t, err)
+	assert.Equal(t, []string{"f0.pdf", "f1.pdf", "f2.pdf"}, names)
+	assert.Equal(t, 3, e.count(t, "SELECT count(*) FROM attachments WHERE cache_path IS NOT NULL"))
+}
+
 // A charset on a binary attachment leaves its bytes alone.
 func TestGetAttachmentBinaryCharset(t *testing.T) {
 	e := newSyncEnv(t)

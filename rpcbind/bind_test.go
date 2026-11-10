@@ -259,6 +259,7 @@ func TestWireCodesPinned(t *testing.T) {
 		"skill_disabled": core.ErrSkillDisabled, "skill_not_found": core.ErrSkillNotFound, "closed": core.ErrClosed,
 		"signature_image": core.ErrSignatureImage, "signature_image_count": core.ErrSignatureImageCount,
 		"signature_not_found": core.ErrSignatureNotFound, "signature_name": core.ErrSignatureName,
+		"secret_not_found":      core.ErrSecretNotFound,
 		"invalid_rule":          core.ErrInvalidRule,
 		"invalid_view":          core.ErrInvalidView,
 		"recipient_unconfirmed": core.ErrRecipientUnconfirmed,

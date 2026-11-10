@@ -46,15 +46,21 @@ func SwitchRow(c *ui.Context, on *bool, label, help string) ui.Element {
 // Checkbox is a 16×16 check box before its label.
 func Checkbox(c *ui.Context, on *bool, label string) ui.Element {
 	t, th := theme.Of(c), c.Theme()
-	return ui.CheckboxBase(c, on).Gap(th.Space(2)).Children(func() {
-		box := ui.Box(c).Size(theme.Control, theme.Control).Radius(t.Radius.Sm).Border(theme.Stroke, t.Input).Background(t.Background).Center()
+	el := ui.CheckboxBase(c, on)
+	if label != "" {
+		el.Gap(th.Space(2))
+	}
+	return el.Children(func() {
+		box := ui.Box(c).Size(theme.Control, theme.Control).Shrink(0).Radius(t.Radius.Sm).Border(theme.Stroke, t.Input).Background(t.Background).Center()
 		Elevate(c, box, theme.ShadowXs)
 		if *on {
 			box.Background(t.Primary).Border(theme.Stroke, t.Primary).TextColor(t.PrimaryText).Children(func() {
 				ui.Icon(c, icons.Get("check")).Size(theme.IconXs, theme.IconXs)
 			})
 		}
-		ui.Text(c, label)
+		if label != "" {
+			ui.Text(c, label)
+		}
 	})
 }
 

@@ -35,7 +35,7 @@ var logo = ui.MustParseSVG(assets.Logo)
 // settingsPage is the Settings section: the accounts and the app's pages,
 // chosen by Route.Settings ("account:<id>", "general", "signatures",
 // "signature:<id>", "models", "labels", "extensions", "privacy", "masklog"
-// (脱敏记录, under privacy), "about").
+// (脱敏记录, under privacy), "labs", "about").
 type settingsPage struct {
 	a *App
 
@@ -249,10 +249,10 @@ func (p *settingsPage) Title() (string, string) {
 	return i18n.T("settings.heading"), i18n.T("settings." + sec)
 }
 
-var appSections = []string{"general", "signatures", "models", "labels", "rules", "extensions", "privacy", "about"}
+var appSections = []string{"general", "signatures", "models", "labels", "rules", "extensions", "privacy", "labs", "about"}
 
 // sectionIcons are the app sections' sidebar icons.
-var sectionIcons = map[string]string{"general": "settings", "signatures": "quill-pen", "models": "brain-4", "labels": "tag", "rules": "filter", "extensions": "puzzle", "privacy": "shield", "about": "info"}
+var sectionIcons = map[string]string{"general": "settings", "signatures": "quill-pen", "models": "brain-4", "labels": "tag", "rules": "filter", "extensions": "puzzle", "privacy": "shield", "labs": "flask", "about": "info"}
 
 // Sidebar: the accounts, each with its provider's mark and a status dot,
 // then Add account; then the app's pages.
@@ -362,6 +362,8 @@ func (p *settingsPage) Content(c *ui.Context) {
 						p.rules.view(c)
 					case sec == "extensions":
 						p.ext.view(c)
+					case sec == "labs":
+						p.labsView(c)
 					case sec == "about":
 						p.aboutView(c)
 					default:
