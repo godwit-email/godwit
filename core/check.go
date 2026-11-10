@@ -138,7 +138,7 @@ func (s *Service) check(ctx context.Context, in AccountInput, token string) (Che
 			if in.Receiving.Auth == AuthAPIToken {
 				cr = backend.Credentials{Username: user, Token: in.Password}
 			}
-			recv := newReceiver(in.Receiving, func(context.Context) (backend.Credentials, error) { return cr, nil })
+			recv := newReceiver(in.Receiving, in.Email, func(context.Context) (backend.Credentials, error) { return cr, nil })
 			defer recv.Close()
 			ctx, cancel := context.WithTimeout(ctx, checkTimeout)
 			defer cancel()
@@ -182,13 +182,13 @@ func (s *Service) check(ctx context.Context, in AccountInput, token string) (Che
 	return r, first
 }
 
-// newReceiver is the receiving backend of srv, signing in with creds.
-func newReceiver(srv Server, creds backend.CredentialsFunc) backend.Receiver {
+// newReceiver is the receiving backend of srv for the account email, signing in with creds.
+func newReceiver(srv Server, email string, creds backend.CredentialsFunc) backend.Receiver {
 	switch srv.Protocol {
 	case auth.JMAP:
 		return jmap.New(jmap.Config{SessionURL: sessionURL(srv), Credentials: creds})
 	case auth.EWS:
-		return ews.New(ews.Config{URL: slotURL(srv, srv.Path), Credentials: creds})
+		return ews.New(ews.Config{URL: slotURL(srv, srv.Path), Address: email, Credentials: creds})
 	case auth.POP3:
 		return pop3.New(pop3.Config{Host: srv.Host, Port: srv.Port, Security: srv.Security, Credentials: creds})
 	}

@@ -18,7 +18,7 @@ import (
 )
 
 func ewsReceiver(t *testing.T, s *testmail.EWS) *ews.Receiver {
-	r := ews.New(ews.Config{URL: s.URL(), Credentials: func(context.Context) (backend.Credentials, error) {
+	r := ews.New(ews.Config{URL: s.URL(), Address: "alice@example.com", Credentials: func(context.Context) (backend.Credentials, error) {
 		return backend.Credentials{Username: "alice", Password: s.Password()}, nil
 	}})
 	t.Cleanup(func() { r.Close() })

@@ -369,8 +369,41 @@ func (r *Receiver) Apply(context.Context, backend.Op) (backend.Result, error) {
 	return backend.Result{Outcome: backend.Unsupported, Reason: reasonPending}, nil
 }
 
-// Watch implements backend.Receiver: no push yet, so core polls at
-// PollInterval.
-func (r *Receiver) Watch(context.Context, func([]backend.FolderRef)) error {
-	return backend.ErrUnsupported
+// Watch implements backend.Receiver over a streaming subscription to all
+// folders, kept for the account across Watch calls: each notification wakes
+// for the folders its events name. A connection that reached its 30 minutes
+// is opened again on the same subscription; a subscription the server lost
+// is made again, with a wake for what it missed. A failed connection ends
+// Watch, and core polls.
+func (r *Receiver) Watch(ctx context.Context, wake func(folders []backend.FolderRef)) error {
+	cr, err := r.c.cfg.Credentials(ctx)
+	if err != nil {
+		return err
+	}
+	a := r.c.affinity(r.c.account(cr))
+	a.mu.Lock()
+	sub := a.subscription
+	a.mu.Unlock()
+	for {
+		if sub == "" {
+			if sub, err = r.c.subscribe(ctx); err != nil {
+				return err
+			}
+			a.mu.Lock()
+			a.subscription = sub
+			a.mu.Unlock()
+		}
+		wake(nil) // for what changed before watching, or while the subscription was lost
+		for err == nil {
+			err = r.c.stream(ctx, sub, wake)
+		}
+		if ctx.Err() != nil {
+			return ctx.Err()
+		}
+		if !isCode(err, "ErrorSubscriptionNotFound") && !isCode(err, "ErrorInvalidSubscription") {
+			return err
+		}
+		a.lost(sub)
+		sub, err = "", nil
+	}
 }

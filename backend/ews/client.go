@@ -24,7 +24,10 @@ import (
 // Config is how to reach an account.
 type Config struct {
 	// URL is the EWS endpoint, such as https://mail.corp.example/EWS/Exchange.asmx.
-	URL         string
+	URL string
+	// Address is the account's email address, the mailbox a subscription
+	// anchors on (X-AnchorMailbox).
+	Address     string
 	Credentials backend.CredentialsFunc
 	// Wait waits d out, or until ctx is done, when the server asks to back
 	// off. Nil waits in real time; tests pass a fake.
@@ -83,7 +86,7 @@ func call[R any](ctx context.Context, c *client, op any) (R, error) {
 	if err != nil {
 		return zero, err
 	}
-	release, err := acquire(ctx, c.cfg.URL+"\x00"+cr.Username)
+	release, err := acquire(ctx, c.account(cr))
 	if err != nil {
 		return zero, err
 	}
@@ -129,21 +132,36 @@ func acquire(ctx context.Context, account string) (release func(), err error) {
 	}
 }
 
-// send is one try of call.
-func send[R any](ctx context.Context, c *client, op any, cr backend.Credentials) (R, error) {
-	var zero R
+// account is the key of the account c signs in to as cr: its EWS URL and user name.
+func (c *client) account(cr backend.Credentials) string { return c.cfg.URL + "\x00" + cr.Username }
+
+// post sends op signed in as cr, with the account's affinity, and returns
+// the response, its body unread.
+func (c *client) post(ctx context.Context, op any, cr backend.Credentials) (*http.Response, error) {
 	body, err := xml.Marshal(newRequest(op))
 	if err != nil {
-		return zero, err
+		return nil, err
 	}
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, c.cfg.URL, bytes.NewReader(append([]byte(xml.Header), body...)))
 	if err != nil {
-		return zero, err
+		return nil, err
 	}
 	req.Header.Set("Content-Type", "text/xml; charset=utf-8")
 	// shortcut: Basic only; NTLM, chosen by WWW-Authenticate, comes next.
 	req.SetBasicAuth(cr.Username, cr.Password)
+	a := c.affinity(c.account(cr))
+	a.route(req, op, c.cfg.Address)
 	resp, err := c.http.Do(req)
+	if err == nil {
+		a.keep(resp)
+	}
+	return resp, err
+}
+
+// send is one try of call.
+func send[R any](ctx context.Context, c *client, op any, cr backend.Credentials) (R, error) {
+	var zero R
+	resp, err := c.post(ctx, op, cr)
 	if err != nil {
 		return zero, err
 	}

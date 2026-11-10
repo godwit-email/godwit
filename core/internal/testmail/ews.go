@@ -21,11 +21,12 @@ import (
 // EWS is a running fake EWS server (Exchange Web Services) with one mailbox,
 // alice/secret over HTTP Basic, that starts with the distinguished mail
 // folders and a calendar. It speaks GetFolder, SyncFolderHierarchy,
-// SyncFolderItems, GetItem and FindItem; an operation it does not know fails
+// SyncFolderItems, GetItem, FindItem, Subscribe and GetStreamingEvents; an operation it does not know fails
 // the test. Its responses spell the namespace prefixes differently from
 // operation to operation, as servers do. Hooks change the mailbox as another
 // client would (MarkRead, MarkFlagged, MarkAnswered, Remove, RenameFolder,
-// RemoveFolder) or inject faults (RejectAuth, SetVersion, Reset, Busy).
+// RemoveFolder) or inject faults (RejectAuth, SetVersion, Reset, Busy,
+// LoseSubscriptions, DropStreams, Advance).
 //
 // Every change takes the next sequence number, and deleted items and
 // folders stay as tombstones, so a SyncState, the sequence number it was
@@ -47,6 +48,13 @@ type EWS struct {
 	folders          []*ewsFolder // the root first; deleted ones too, gone
 	next             int          // the last id given
 	seq              int          // the last change's sequence number
+
+	affinity []EWSAffinity      // what each signed-in request carried
+	subs     []*ewsSubscription // live subscriptions
+	streams  int                // GetStreamingEvents connections opened
+	drops    int                // DropStreams calls
+	skew     time.Duration      // Advance's, added to the server's clock
+	changes  chan struct{}      // closed on every change, for the open streams
 }
 
 type ewsFolder struct {
@@ -250,6 +258,7 @@ func (s *EWS) path(path string, create bool) *ewsFolder {
 func (s *EWS) touch(c *changed) int {
 	s.seq++
 	c.modseq = s.seq
+	s.broadcast()
 	return s.seq
 }
 
@@ -288,6 +297,8 @@ type ewsRequest struct {
 	fieldURIs     []string          // FieldURI FieldURIs, in order
 	constants     []string          // Constant Values, in order
 	elements      map[string]bool   // the local names of its elements
+	allFolders    bool              // StreamingSubscriptionRequest's SubscribeToAllFolders
+	eventTypes    []string          // EventType texts, in order
 }
 
 // readRequest reads a request by namespace, as a server does: a client's
@@ -329,6 +340,8 @@ func readRequest(body []byte) (ewsRequest, error) {
 				r.version = attr("Version")
 			case cur == "FieldURI":
 				r.fieldURIs = append(r.fieldURIs, attr("FieldURI"))
+			case cur == "StreamingSubscriptionRequest":
+				r.allFolders = attr("SubscribeToAllFolders") == "true"
 			case cur == "Constant":
 				r.constants = append(r.constants, attr("Value"))
 			case cur == "DistinguishedFolderId" || cur == "FolderId" || cur == "ItemId":
@@ -347,6 +360,9 @@ func readRequest(body []byte) (ewsRequest, error) {
 		case xml.CharData:
 			if t := strings.TrimSpace(string(el)); t != "" {
 				r.text[cur] = t
+				if cur == "EventType" {
+					r.eventTypes = append(r.eventTypes, t)
+				}
 			}
 		}
 	}
@@ -377,6 +393,7 @@ func (s *EWS) serve(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	s.requests++
+	s.affinity = append(s.affinity, EWSAffinity{Op: req.op, Anchor: r.Header.Get("X-AnchorMailbox"), Prefer: r.Header.Get("X-PreferServerAffinity"), Cookie: cookieOf(r)})
 	if s.busy > 0 {
 		s.busy--
 		s.serverBusy(w, req.op)
@@ -393,6 +410,10 @@ func (s *EWS) serve(w http.ResponseWriter, r *http.Request) {
 		s.getItem(w, req)
 	case "FindItem":
 		s.findItems(w, req)
+	case "Subscribe":
+		s.subscribe(w, r, req)
+	case "GetStreamingEvents":
+		s.getStreamingEvents(w, r, req)
 	default:
 		s.t.Errorf("fake EWS: unknown operation %s", req.op)
 		s.fault(w, "ErrorInvalidRequest", "unknown operation "+req.op)
