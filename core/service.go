@@ -68,6 +68,9 @@ type Options struct {
 	// SystemProxy is the proxy the computer's settings give for a request to
 	// u, nil for none; nil is sysproxy.For. Tests stand in for it.
 	SystemProxy func(u *url.URL) *url.URL
+	// EWSNet is how Autodiscover reaches the network when an EWS account is
+	// added without its URL; zero is the system's. Tests point it at a fake.
+	EWSNet ews.Net
 	// Registry is where reviewed plugins are listed; nil turns the plugin
 	// directory off (DefaultRegistry is Godwit's own). The apps set it.
 	Registry *RegistrySource

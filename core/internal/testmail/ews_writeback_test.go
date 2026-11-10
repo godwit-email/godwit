@@ -1,7 +1,6 @@
 package testmail_test
 
 import (
-	"context"
 	"errors"
 	"reflect"
 	"slices"
@@ -11,31 +10,6 @@ import (
 	"github.com/godwit-email/godwit/backend/backendtest"
 	"github.com/godwit-email/godwit/core/internal/testmail"
 )
-
-// writeBack declares the write-back features EWS does, so the contract's
-// tests that skip undeclared ones run.
-// shortcut: until Describe's table is in (#660); then run these parts in
-// TestEWSBackendContract and drop this.
-type writeBack struct{ backend.Receiver }
-
-func (r writeBack) Describe(ctx context.Context) (backend.Description, error) {
-	d, err := r.Receiver.Describe(ctx)
-	for _, f := range []backend.Feature{backend.FeatureMove, backend.FeatureCopy, backend.FeaturePurge, backend.FeatureAppend} {
-		d.Features[f] = backend.Support{Level: backend.LevelSupported}
-	}
-	return d, err
-}
-
-type writeBackServer struct{ ewsServer }
-
-func (s writeBackServer) Receiver(t *testing.T) backend.Receiver {
-	return writeBack{ewsReceiver(t, s.EWS)}
-}
-
-func TestEWSWriteBackContract(t *testing.T) {
-	backendtest.RunOnly(t, func(t *testing.T) backendtest.Server { return writeBackServer{ewsServer{testmail.StartEWS(t)}} },
-		"Move", "Copy", "Append", "Failed")
-}
 
 func apply(t *testing.T, r backend.Receiver, op backend.Op) backend.Result {
 	t.Helper()

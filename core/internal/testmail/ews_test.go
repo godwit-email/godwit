@@ -41,7 +41,7 @@ func (s ewsServer) RejectAuth(*testing.T)                           { s.EWS.Reje
 // incremental sync, write-back and push are in.
 func TestEWSBackendContract(t *testing.T) {
 	backendtest.RunOnly(t, func(t *testing.T) backendtest.Server { return ewsServer{testmail.StartEWS(t)} },
-		"Describe", "Check", "FirstSync", "CursorResumes", "FolderReset", "Fetch", "Headers", "Find", "SetFlags", "Unsupported", "Watch", "AuthFailed")
+		"Describe", "Check", "FirstSync", "CursorResumes", "FolderReset", "Fetch", "Headers", "Find", "SetFlags", "Move", "Copy", "Append", "Failed", "Unsupported", "Watch", "AuthFailed")
 }
 
 // syncAll runs one round from nothing and returns its changes.

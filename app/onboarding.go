@@ -1,6 +1,7 @@
 package app
 
 import (
+	"cmp"
 	"context"
 	"errors"
 	"net/mail"
@@ -80,11 +81,13 @@ type onboarding struct {
 	imapHost, imapPort   string
 	smtpHost, smtpPort   string
 	imapSec, smtpSec     core.Security
-	proto                string // the server form's receiving protocol: IMAP (""), auth.JMAP, auth.POP3 or auth.EWS (their Settings.Experimental*)
-	jmapURL              string // JMAP's session URL, in place of the IMAP server
-	ewsURL               string // the EWS URL, in place of the IMAP and SMTP servers
-	jmapAuth             int    // how JMAP signs in: 0 a password, 1 an API token, with SMTP's password apart
-	sendSecret           string // SMTP's own password, for a JMAP API token
+	proto                string   // the server form's receiving protocol: IMAP (""), auth.JMAP, auth.POP3 or auth.EWS (their Settings.Experimental*)
+	jmapURL              string   // JMAP's session URL, in place of the IMAP server
+	ewsURL               string   // the EWS URL, in place of the IMAP and SMTP servers; "" finds it by Autodiscover
+	ewsAdvanced          bool     // the EWS URL field is shown: opened, or Autodiscover found nothing
+	confirmed            []string // hosts outside the address's domain the user let Autodiscover send the password to
+	jmapAuth             int      // how JMAP signs in: 0 a password, 1 an API token, with SMTP's password apart
+	sendSecret           string   // SMTP's own password, for a JMAP API token
 	showSendSecret       bool
 	flowID, authURL      string
 	oauthErr             error
@@ -483,8 +486,11 @@ func (o *onboarding) input() core.AccountInput {
 		in.Receiving, _ = jmapServer(o.jmapURL)
 	}
 	if o.ews() {
-		in.Receiving, _ = ewsServer(o.ewsURL)
-		in.Sending = in.Receiving
+		in.Receiving = core.Server{Protocol: auth.EWS}                       // Autodiscover finds it
+		if u := cmp.Or(strings.TrimSpace(o.ewsURL), o.report.URL); u != "" { // typed in, or found by the check
+			in.Receiving, _ = ewsServer(u)
+		}
+		in.Sending, in.ConfirmedHosts = in.Receiving, o.confirmed
 	}
 	if o.pop3() {
 		in.Receiving.Protocol = auth.POP3
@@ -542,6 +548,9 @@ func (o *onboarding) connect() {
 			return
 		}
 		o.report = r
+		if o.ews() && len(r.Steps) > 1 && r.Steps[1].Detail == ews.ReasonNoAutodiscover {
+			o.ewsAdvanced = true // the user types the URL in
+		}
 		if r.OK() {
 			o.goTo(stepDone)
 			b := newBurst()
@@ -572,7 +581,7 @@ func (o *onboarding) validate() (reason, next string) {
 		servers = servers[1:]
 	}
 	if o.ews() {
-		if _, ok := ewsServer(o.ewsURL); !ok {
+		if _, ok := ewsServer(o.ewsURL); !ok && strings.TrimSpace(o.ewsURL) != "" {
 			return i18n.T("onboarding.invalid.ews_url"), i18n.T("onboarding.next.host")
 		}
 		servers = nil
@@ -1096,13 +1105,17 @@ func (o *onboarding) serversForm(c *ui.Context) {
 				}
 			}).FontSize(t.Text.Sm).TextColor(t.Muted)
 		}
-		if o.ews() { // one server for both, signing in with a login name that may not be the address
-			ui.Field(c, i18n.T("onboarding.ews.url"), func() {
-				kit.Input(c, &o.ewsURL, kit.InputOpts{Placeholder: "https://mail.example.com/EWS/Exchange.asmx"})
-			}).Description(i18n.T("onboarding.ews.url.help")).FontSize(t.Text.Sm).TextColor(t.Muted)
+		if o.ews() { // one server for both, found by Autodiscover unless typed in; a login name that may not be the address
 			ui.Field(c, i18n.T("onboarding.ews.login"), func() {
 				kit.Input(c, &o.username, kit.InputOpts{Placeholder: i18n.T("onboarding.username.placeholder")})
 			}).Description(i18n.T("onboarding.ews.login.help")).FontSize(t.Text.Sm).TextColor(t.Muted)
+			if !o.ewsAdvanced && o.ewsURL == "" {
+				kit.Button(c, i18n.T("onboarding.ews.advanced"), kit.ButtonOpts{Variant: kit.Ghost, Size: kit.SizeSm}).OnClick(func() { o.ewsAdvanced = true })
+				return
+			}
+			ui.Field(c, i18n.T("onboarding.ews.url"), func() {
+				kit.Input(c, &o.ewsURL, kit.InputOpts{Placeholder: "https://mail.example.com/EWS/Exchange.asmx"})
+			}).Description(i18n.T("onboarding.ews.url.help")).FontSize(t.Text.Sm).TextColor(t.Muted)
 			return
 		}
 		if o.jmap() {
@@ -1174,7 +1187,7 @@ func (o *onboarding) checkRow(st core.CheckStep) (text, detail string, status in
 				host = s.Host
 			}
 			if o.ews() {
-				s, _ := ewsServer(o.ewsURL)
+				s, _ := ewsServer(cmp.Or(strings.TrimSpace(o.ewsURL), o.report.URL))
 				host, sendHost = s.Host, s.Host
 			}
 			detail = i18n.Tf("onboarding.check.settings."+src, host, sendHost)
@@ -1197,6 +1210,8 @@ func (o *onboarding) checkRow(st core.CheckStep) (text, detail string, status in
 		return i18n.Tf(k+".failed", o.settingsReason(st)), o.settingsNext(), 2
 	}
 	switch kind := string(st.Kind); kind {
+	case string(core.KindConfirm): // Autodiscover waits for the user before the password leaves the domain
+		return i18n.Tf(k+".confirm", o.report.Confirm), i18n.T("onboarding.next.confirm"), 2
 	case "auth":
 		switch login := loginOf(o.prov); {
 		case o.oauth():
@@ -1210,6 +1225,9 @@ func (o *onboarding) checkRow(st core.CheckStep) (text, detail string, status in
 		reason, next = i18n.T("onboarding.reason."+kind), i18n.T("onboarding.next.server")
 		if st.Detail == ews.ReasonServerTooOld { // the server cannot be used at all, not merely misconfigured
 			reason, next = i18n.T("feature.reason."+st.Detail), i18n.T("onboarding.next.davmail")
+		}
+		if st.Detail == ews.ReasonNoAutodiscover {
+			reason, next = i18n.T("feature.reason."+st.Detail), i18n.T("onboarding.next.ews_url")
 		}
 		if st.Detail == ews.ReasonExtendedProtection { // the reason says to ask the administrator
 			reason, next = i18n.T("feature.reason."+st.Detail), ""
@@ -1307,6 +1325,11 @@ func (o *onboarding) checkView(c *ui.Context) {
 			})
 		}
 	})
+	if failed && o.report.Confirm != "" {
+		host := o.report.Confirm
+		kit.Button(c, i18n.Tf("onboarding.confirm_host", host), kit.ButtonOpts{Size: kit.SizeLg}).PaddingX(th.Space(3.5)).
+			OnClick(func() { o.confirmed = append(o.confirmed, host); o.connect() })
+	}
 	if failed {
 		ui.Row(c).Gap(th.Space(2)).Children(func() {
 			if o.oauth() {
