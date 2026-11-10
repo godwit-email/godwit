@@ -73,3 +73,21 @@ func TestEWSServerTooOld(t *testing.T) {
 	_, err = e.Svc.AddAccount(t.Context(), in)
 	require.ErrorIs(t, err, ews.ErrServerTooOld)
 }
+
+// Reading a message on an EWS account marks it read on the server.
+func TestEWSReadWrittenBack(t *testing.T) {
+	e := coretest.New(t, coretest.WithoutAutoSync())
+	setEWS(t, e, true)
+	in, srv := e.StartEWSServers(t, "alice@example.com")
+	acc, err := e.Svc.AddAccount(t.Context(), in)
+	require.NoError(t, err)
+	id := srv.Deliver("INBOX", coretest.Msg("bob@example.com", "alice@example.com", "Read me", "body"))
+	require.NoError(t, e.Svc.SyncNow(t.Context(), acc.ID))
+	ms, err := e.Svc.Search(t.Context(), acc.ID, "Read", 10)
+	require.NoError(t, err)
+	require.Len(t, ms, 1)
+
+	require.NoError(t, e.Svc.SetFlags(t.Context(), []int64{ms[0].ID}, []string{`\Seen`}, nil))
+	require.NoError(t, e.Svc.SyncNow(t.Context(), acc.ID))
+	assert.True(t, srv.Read(id), "the server does not have the message read")
+}

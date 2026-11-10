@@ -8,6 +8,7 @@ import (
 	"maps"
 	"reflect"
 	"slices"
+	"strings"
 	"testing"
 	"time"
 
@@ -36,7 +37,7 @@ func (s ewsServer) RejectAuth(*testing.T)                           { s.EWS.Reje
 // incremental sync, write-back and push are in.
 func TestEWSBackendContract(t *testing.T) {
 	backendtest.RunOnly(t, func(t *testing.T) backendtest.Server { return ewsServer{testmail.StartEWS(t)} },
-		"Describe", "Check", "FirstSync", "CursorResumes", "FolderReset", "Fetch", "Headers", "Find", "AuthFailed")
+		"Describe", "Check", "FirstSync", "CursorResumes", "FolderReset", "Fetch", "Headers", "Find", "SetFlags", "Unsupported", "AuthFailed")
 }
 
 // syncAll runs one round from nothing and returns its changes.
@@ -355,5 +356,80 @@ func TestEWSServerBusyWaitCancels(t *testing.T) {
 	defer cancel()
 	if _, err := ewsReceiver(t, s).Describe(ctx); !errors.Is(err, context.DeadlineExceeded) {
 		t.Errorf("Describe cancelled while backing off = %v, want DeadlineExceeded", err)
+	}
+}
+
+// flagsOf is the flags a fresh sync sees on each message.
+func flagsOf(t *testing.T, s *testmail.EWS) map[string]backend.Flags {
+	t.Helper()
+	out := map[string]backend.Flags{}
+	for _, c := range syncAll(t, ewsReceiver(t, s)) {
+		if m, ok := c.(backend.MessageAppeared); ok {
+			out[string(m.Ref)] = m.Flags
+		}
+	}
+	return out
+}
+
+// Read, flagged and answered are written back, and taken off again; the
+// read-only draft flag and keywords are left alone without failing. A
+// message gone from the server is ErrNotFound.
+func TestEWSSetFlags(t *testing.T) {
+	s := testmail.StartEWS(t)
+	a := s.Deliver("INBOX", backendtest.Message("a@example.com", "a"))
+	var l local
+	l.sync(t, s)
+	at := backend.Location{Folder: l.ref(t, "Inbox"), Ref: backend.MessageRef(a)}
+	r := ewsReceiver(t, s)
+	apply := func(op backend.SetFlags) {
+		t.Helper()
+		if res, err := r.Apply(tctx(t), op); err != nil || res.Outcome != backend.Done {
+			t.Fatalf("Apply(%+v) = %+v, %v", op, res, err)
+		}
+	}
+	apply(backend.SetFlags{At: at, Add: backend.Flags{Seen: true, Flagged: true, Answered: true, Draft: true, Keywords: []string{"x"}}})
+	if got, want := flagsOf(t, s)[a], (backend.Flags{Seen: true, Flagged: true, Answered: true}); !reflect.DeepEqual(got, want) {
+		t.Errorf("after adding, flags = %+v, want %+v", got, want)
+	}
+	apply(backend.SetFlags{At: at, Remove: backend.Flags{Seen: true, Flagged: true, Answered: true}})
+	if got := flagsOf(t, s)[a]; !reflect.DeepEqual(got, backend.Flags{}) {
+		t.Errorf("after removing, flags = %+v, want none", got)
+	}
+	if cs := changes(l.sync(t, s)); len(cs) != 1 {
+		t.Errorf("the next round from the cursors = %+v, want the flags changed once", cs)
+	}
+	apply(backend.SetFlags{At: at, Add: backend.Flags{Draft: true}}) // nothing to write
+
+	s.Remove(a)
+	if _, err := r.Apply(tctx(t), backend.SetFlags{At: at, Add: backend.Flags{Seen: true}}); !errors.Is(err, backend.ErrNotFound) {
+		t.Errorf("SetFlags on a removed message = %v, want ErrNotFound", err)
+	}
+}
+
+// Describe declares the spec's table: draft is read-only, and what one
+// folder per message rules out is unsupported, each with an ews.* reason.
+func TestEWSDescribe(t *testing.T) {
+	d, err := ewsReceiver(t, testmail.StartEWS(t)).Describe(tctx(t))
+	if err != nil {
+		t.Fatal(err)
+	}
+	levels := map[backend.Level][]backend.Feature{
+		backend.LevelSupported: {backend.FeatureMove, backend.FeatureCopy, backend.FeaturePurge, backend.FeatureAppend,
+			backend.FeatureSeen, backend.FeatureFlagged, backend.FeatureAnswered, backend.FeatureFolderCreate,
+			backend.FeatureFolderRename, backend.FeatureFolderDelete, backend.FeatureSavesSent, backend.FeaturePush},
+		backend.LevelNoted: {backend.FeatureDraft},
+		backend.LevelUnsupported: {backend.FeatureAddToFolder, backend.FeatureRemoveFromFolder, backend.FeatureKeywords,
+			backend.FeatureLabelDelete, backend.FeatureAllMail},
+	}
+	for l, fs := range levels {
+		for _, f := range fs {
+			s := d.Features[f]
+			if s.Level != l || (l == backend.LevelSupported) != (s.Reason == "") || l != backend.LevelSupported && !strings.HasPrefix(s.Reason, "ews.") {
+				t.Errorf("%s = %+v, want %s", f, s, l)
+			}
+		}
+	}
+	if d.Identity != backend.IdentityLocation || d.PollInterval != time.Minute {
+		t.Errorf("Describe = %+v", d)
 	}
 }
