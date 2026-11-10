@@ -5,6 +5,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/godwit-email/godwit/backend"
 	"github.com/godwit-email/godwit/core"
 	"github.com/godwit-email/godwit/core/coretest"
 	"github.com/stretchr/testify/assert"
@@ -272,4 +273,36 @@ func TestPOP3SendWithoutSent(t *testing.T) {
 	e.Deliver(t, acc.ID, "INBOX", coretest.Msg("bob@example.com", "alice@example.com", "Still arrives", "body"))
 	require.Eventually(t, func() bool { return len(e.Sent(acc.ID)) == 1 }, 5*time.Second, 20*time.Millisecond)
 	searchOne(t, e, acc.ID, "Still arrives")
+}
+
+// A POP3 server refusing the password marks the account for sign-in again,
+// as IMAP does.
+func TestPOP3CredentialsRevoked(t *testing.T) {
+	e := coretest.New(t, coretest.WithoutAutoSync())
+	acc := e.AddAccount(t, "alice@example.com", coretest.ViaPOP3())
+	e.POP3(acc.ID).RejectAuth()
+	require.ErrorIs(t, e.Svc.SyncNow(t.Context(), acc.ID), backend.ErrAuthFailed)
+	as, err := e.Svc.ListAccounts(t.Context())
+	require.NoError(t, err)
+	require.Len(t, as, 1)
+	assert.Equal(t, "reauth_required", as[0].Status)
+}
+
+// A delete for good of mail the server no longer has is checked like any
+// other: the Trash losing its role in the undo window calls it off.
+func TestPOP3LocalPurgeStillChecked(t *testing.T) {
+	e := coretest.New(t, coretest.WithoutAutoSync())
+	acc := e.AddAccount(t, "alice@example.com", coretest.ViaPOP3())
+	srv := e.POP3(acc.ID)
+	e.Deliver(t, acc.ID, "INBOX", coretest.Msg("bob@example.com", "alice@example.com", "Kept after all", "body"))
+	srv.Remove(srv.UIDs()[0])
+	require.NoError(t, e.Svc.SyncNow(t.Context(), acc.ID))
+	id := searchOne(t, e, acc.ID, "Kept after").ID
+	require.NoError(t, e.Svc.Delete(t.Context(), []int64{id}))
+	require.NoError(t, e.Svc.DeleteForever(t.Context(), []int64{id}))
+	require.NoError(t, e.Svc.SetRoleFolder(t.Context(), acc.ID, "trash", 0))
+	e.AdvanceClock(core.UndoPurgeWindow + time.Second)
+	require.NoError(t, e.Svc.SyncNow(t.Context(), acc.ID))
+	require.NoError(t, e.Svc.SyncNow(t.Context(), acc.ID))
+	searchOne(t, e, acc.ID, "Kept after")
 }

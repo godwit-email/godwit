@@ -9,6 +9,7 @@ import (
 	"io"
 	"maps"
 	"net"
+	"sync/atomic"
 	"time"
 
 	gopop3 "github.com/knadh/go-pop3"
@@ -62,12 +63,15 @@ var description = func() backend.Description {
 
 // Receiver is a POP3 account's receiving backend. Message numbers hold only
 // within a session, so each call signs in, works and QUITs.
-type Receiver struct{ cfg Config }
+type Receiver struct {
+	cfg      Config
+	signedIn atomic.Bool // a call signed in: Describe need not
+}
 
 var _ backend.Receiver = (*Receiver)(nil)
 
 // New is a Receiver on the account cfg reaches.
-func New(cfg Config) *Receiver { return &Receiver{cfg} }
+func New(cfg Config) *Receiver { return &Receiver{cfg: cfg} }
 
 // Close implements backend.Receiver: no connection outlives a call.
 func (r *Receiver) Close() error { return nil }
@@ -115,6 +119,7 @@ func (r *Receiver) do(ctx context.Context, f func(*session) error) error {
 	}
 	defer context.AfterFunc(ctx, cut)()
 	defer cut()
+	r.signedIn.Store(true)
 	s := &session{c: c}
 	if err = s.load(); err == nil {
 		err = f(s)
@@ -164,8 +169,14 @@ func wrap(ctx context.Context, err error) error {
 	return err
 }
 
-// Describe implements backend.Receiver.
-func (r *Receiver) Describe(context.Context) (backend.Description, error) {
+// Describe implements backend.Receiver. It signs in once per Receiver, as
+// core takes its answer for the credentials working (ErrAuthFailed).
+func (r *Receiver) Describe(ctx context.Context) (backend.Description, error) {
+	if !r.signedIn.Load() {
+		if err := r.do(ctx, func(*session) error { return nil }); err != nil {
+			return backend.Description{}, err
+		}
+	}
 	d := description
 	d.Features = maps.Clone(d.Features)
 	return d, nil
@@ -176,7 +187,7 @@ func (r *Receiver) Check(ctx context.Context) (backend.CheckResult, error) {
 	if err := r.do(ctx, func(*session) error { return nil }); err != nil {
 		return backend.CheckResult{}, err
 	}
-	d, _ := r.Describe(ctx)
+	d := description
 	return backend.CheckResult{Host: r.cfg.Host, Folders: 1, Description: d}, nil
 }
 

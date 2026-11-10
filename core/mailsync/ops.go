@@ -179,6 +179,14 @@ func (p *pusher) pushOp(ctx context.Context, o op) (problem string, err error) {
 	}
 	if len(r.Values) == 0 {
 		if p.inboxOnly { // no longer on the server: kept here (a purged one the fetch deletes)
+			if o.kind == "purge" { // nothing to send, but the purge is checked as one that is
+				if due, err := p.purgeStillDue(ctx, o); err != nil || !due {
+					if err != nil {
+						return "", err
+					}
+					return "", finish(ctx, db, o, "cancelled", "")
+				}
+			}
 			return "", finish(ctx, db, o, "done", "")
 		}
 		if p.stable {
