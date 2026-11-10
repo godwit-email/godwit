@@ -3,6 +3,10 @@ package testmail_test
 import (
 	"context"
 	"errors"
+	"fmt"
+	"io"
+	"maps"
+	"reflect"
 	"testing"
 
 	"github.com/godwit-email/godwit/backend"
@@ -23,14 +27,14 @@ type ewsServer struct{ *testmail.EWS }
 
 func (s ewsServer) Receiver(t *testing.T) backend.Receiver          { return ewsReceiver(t, s.EWS) }
 func (s ewsServer) Deliver(_ *testing.T, folder string, raw []byte) { s.EWS.Deliver(folder, raw) }
-func (s ewsServer) Reset(t *testing.T, _ string)                    { t.Skip("EWS: no SyncState reset yet") }
+func (s ewsServer) Reset(_ *testing.T, folder string)               { s.EWS.Reset(folder) }
 func (s ewsServer) RejectAuth(*testing.T)                           { s.EWS.RejectAuth() }
 
 // shortcut: only the parts EWS implements so far; Run the whole contract once
 // incremental sync, write-back and push are in.
 func TestEWSBackendContract(t *testing.T) {
 	backendtest.RunOnly(t, func(t *testing.T) backendtest.Server { return ewsServer{testmail.StartEWS(t)} },
-		"Describe", "Check", "FirstSync", "CursorResumes", "AuthFailed")
+		"Describe", "Check", "FirstSync", "CursorResumes", "FolderReset", "Fetch", "Headers", "Find", "AuthFailed")
 }
 
 // syncAll runs one round from nothing and returns its changes.
@@ -83,6 +87,182 @@ func TestEWSServerTooOld(t *testing.T) {
 	s.SetVersion(15, 1) // Exchange 2016
 	if _, err := ewsReceiver(t, s).Check(tctx(t)); err != nil {
 		t.Errorf("Check on Exchange 2016 = %v", err)
+	}
+}
+
+// local is what local storage keeps between rounds: the cursors and the folders' names.
+type local struct {
+	account backend.Cursor
+	states  map[backend.FolderRef]backend.FolderState
+	names   map[backend.FolderRef]string
+}
+
+// sync runs one round on a new receiver from l's cursors and returns its pages.
+func (l *local) sync(t *testing.T, s *testmail.EWS) []backend.Page {
+	t.Helper()
+	if l.states == nil {
+		l.states, l.names = map[backend.FolderRef]backend.FolderState{}, map[backend.FolderRef]string{}
+	}
+	var pages []backend.Page
+	_, err := ewsReceiver(t, s).Sync(tctx(t), backend.SyncRequest{Account: l.account, Folders: maps.Clone(l.states)}, func(p backend.Page) error {
+		pages = append(pages, p)
+		for _, c := range p.Changes {
+			switch c := c.(type) {
+			case backend.FolderUpdated:
+				l.names[c.Ref] = c.Name
+				if _, ok := l.states[c.Ref]; !ok {
+					l.states[c.Ref] = backend.FolderState{}
+				}
+			case backend.FolderGone:
+				delete(l.names, c.Ref)
+				delete(l.states, c.Ref)
+			}
+		}
+		if p.Account != "" {
+			l.account = p.Account
+		}
+		maps.Copy(l.states, p.Folders)
+		return nil
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	return pages
+}
+
+func (l *local) ref(t *testing.T, name string) backend.FolderRef {
+	t.Helper()
+	for ref, n := range l.names {
+		if n == name {
+			return ref
+		}
+	}
+	t.Fatalf("no folder %q among %v", name, l.names)
+	return ""
+}
+
+func changes(pages []backend.Page) []backend.Change {
+	var out []backend.Change
+	for _, p := range pages {
+		out = append(out, p.Changes...)
+	}
+	return out
+}
+
+// Changes made elsewhere come in the next round from the cursors: new mail
+// as a new arrival, read, flagged and answered as flags, deleted mail as
+// gone, and folders renamed (keeping their ref) or deleted.
+func TestEWSIncremental(t *testing.T) {
+	s := testmail.StartEWS(t)
+	a := s.Deliver("INBOX", backendtest.Message("a@example.com", "a"))
+	b := s.Deliver("INBOX", backendtest.Message("b@example.com", "b"))
+	c := s.Deliver("INBOX", backendtest.Message("c@example.com", "c"))
+	s.Deliver("Projects", backendtest.Message("p@example.com", "p"))
+	s.Deliver("Old", backendtest.Message("o@example.com", "o"))
+	var l local
+	l.sync(t, s)
+	inbox, projects, old := l.ref(t, "Inbox"), l.ref(t, "Projects"), l.ref(t, "Old")
+
+	s.MarkRead(a, true)
+	s.MarkFlagged(b, true)
+	s.MarkAnswered(b)
+	s.Remove(c)
+	d := s.Deliver("INBOX", backendtest.Message("d@example.com", "d"))
+	s.RenameFolder("Projects", "Plans")
+	s.RemoveFolder("Old")
+	got := map[string]backend.Change{}
+	for _, ch := range changes(l.sync(t, s)) {
+		switch ch := ch.(type) {
+		case backend.FlagsChanged:
+			got["flags "+string(ch.Ref)] = ch
+		case backend.MessageGone:
+			got["gone "+string(ch.Ref)] = ch
+		case backend.MessageAppeared:
+			ch.Content = nil
+			got["appeared "+string(ch.Ref)] = ch
+		case backend.FolderUpdated:
+			got["folder "+string(ch.Ref)] = ch
+		case backend.FolderGone:
+			got["folder gone "+string(ch.Ref)] = ch
+		}
+	}
+	at := func(ref string) backend.Location {
+		return backend.Location{Folder: inbox, Ref: backend.MessageRef(ref)}
+	}
+	for key, want := range map[string]backend.Change{
+		"flags " + a:                 backend.FlagsChanged{Location: at(a), Flags: backend.Flags{Seen: true}},
+		"flags " + b:                 backend.FlagsChanged{Location: at(b), Flags: backend.Flags{Flagged: true, Answered: true}},
+		"gone " + c:                  backend.MessageGone{Location: at(c)},
+		"appeared " + d:              backend.MessageAppeared{Location: at(d)},
+		"folder gone " + string(old): backend.FolderGone{Ref: old},
+	} {
+		if !reflect.DeepEqual(got[key], want) {
+			t.Errorf("%s = %+v, want %+v", key, got[key], want)
+		}
+	}
+	if f, ok := got["folder "+string(projects)].(backend.FolderUpdated); !ok || f.Name != "Plans" {
+		t.Errorf("the renamed folder = %+v, want Plans at the same ref", got["folder "+string(projects)])
+	}
+	if cs := changes(l.sync(t, s)); len(cs) != 0 {
+		t.Errorf("a round with nothing new reported %+v", cs)
+	}
+}
+
+// A folder's changes come at most 512 a page, each page with its cursor.
+func TestEWSPages(t *testing.T) {
+	s := testmail.StartEWS(t)
+	for i := range 513 {
+		s.Deliver("INBOX", backendtest.Message(fmt.Sprintf("%d@example.com", i), "m"))
+	}
+	var l local
+	n, withCursor := 0, 0
+	for _, p := range l.sync(t, s) {
+		m := 0
+		for _, c := range p.Changes {
+			if _, ok := c.(backend.MessageAppeared); ok {
+				m++
+			}
+		}
+		if m > 512 {
+			t.Errorf("a page of %d messages", m)
+		}
+		if m > 0 && p.Folders[l.ref(t, "Inbox")].Cursor != "" {
+			withCursor++
+		}
+		n += m
+	}
+	if n != 513 || withCursor < 2 {
+		t.Errorf("%d messages in %d pages with the inbox's cursor, want 513 in 2 or more", n, withCursor)
+	}
+}
+
+// Fetch cuts a part, by its IMAP part path, from the whole message; Find
+// matches a size against the message's; a deleted item is ErrNotFound.
+func TestEWSContent(t *testing.T) {
+	s := testmail.StartEWS(t)
+	raw := []byte("Message-ID: <m@example.com>\r\nMIME-Version: 1.0\r\nContent-Type: multipart/mixed; boundary=b\r\n\r\n" +
+		"--b\r\nContent-Type: text/plain\r\n\r\nfirst part\r\n--b\r\nContent-Type: text/plain\r\n\r\nsecond part\r\n--b--\r\n")
+	id := s.Deliver("INBOX", raw)
+	var l local
+	l.sync(t, s)
+	r, inbox := ewsReceiver(t, s), l.ref(t, "Inbox")
+	at := backend.Location{Folder: inbox, Ref: backend.MessageRef(id)}
+	rc, err := r.Fetch(tctx(t), backend.ContentRequest{Location: at, Part: "2"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if b, _ := io.ReadAll(rc); string(b) != "second part" {
+		t.Errorf("part 2 = %q", b)
+	}
+	rc.Close()
+	for size, want := range map[int64]int{int64(len(raw)): 1, int64(len(raw)) + 1: 0} {
+		if got, err := r.Find(tctx(t), inbox, "m@example.com", size); err != nil || len(got) != want {
+			t.Errorf("Find of size %d = %v, %v; want %d", size, got, err, want)
+		}
+	}
+	s.Remove(id)
+	if _, err := r.Fetch(tctx(t), backend.ContentRequest{Location: at}); !errors.Is(err, backend.ErrNotFound) {
+		t.Errorf("Fetch of a deleted item = %v, want ErrNotFound", err)
 	}
 }
 
