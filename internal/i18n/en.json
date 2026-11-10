@@ -973,6 +973,56 @@
   },
   "reader_save": "Save email",
   "reader_save_as": "Save as…",
+  "reader_attachments_select_all": "Select all",
+  "reader_attachments_select_item": "Select {arg1}",
+  "@reader_attachments_select_item": {
+    "placeholders": {
+      "arg1": {
+        "type": "String"
+      }
+    }
+  },
+  "reader_attachments_count": "{arg1, plural, one {{arg1, number, ::group-off} attachment} other {{arg1, number, ::group-off} attachments}}",
+  "@reader_attachments_count": {
+    "placeholders": {
+      "arg1": {
+        "type": "int"
+      }
+    }
+  },
+  "reader_attachments_selected": "{arg1, number, ::group-off} of {arg2, number, ::group-off} selected",
+  "@reader_attachments_selected": {
+    "placeholders": {
+      "arg1": {
+        "type": "int"
+      },
+      "arg2": {
+        "type": "int"
+      }
+    }
+  },
+  "reader_attachments_save_all": "Save all…",
+  "reader_attachments_save_selected": "Save selected…",
+  "reader_attachments_saved": "{arg1, plural, one {Saved {arg1, number, ::group-off} attachment} other {Saved {arg1, number, ::group-off} attachments}}",
+  "@reader_attachments_saved": {
+    "placeholders": {
+      "arg1": {
+        "type": "int"
+      }
+    }
+  },
+  "reader_attachments_conflict_title": "File already exists",
+  "reader_attachments_conflict_desc": "{arg1, plural, one {{arg1, number, ::group-off} file with the same name already exists in this folder.} other {{arg1, number, ::group-off} files with the same name already exist in this folder.}}",
+  "@reader_attachments_conflict_desc": {
+    "placeholders": {
+      "arg1": {
+        "type": "int"
+      }
+    }
+  },
+  "reader_attachments_conflict_skip": "Skip",
+  "reader_attachments_conflict_replace": "Replace",
+  "reader_attachments_conflict_keep_both": "Keep both",
   "reader_saved": "Email saved",
   "reader_thread_count": "{arg1, plural, one {{arg1, number, ::group-off} message} other {{arg1, number, ::group-off} messages}}",
   "@reader_thread_count": {

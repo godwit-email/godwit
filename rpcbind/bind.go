@@ -210,8 +210,8 @@ var hidden = map[string]bool{
 	"FollowConversation": true,
 	// A progress callback cannot cross the wire; the first two have forms without one.
 	"InstallPluginFromRegistryWithProgress": true, "PrepareModelWithProgress": true, "DownloadRecognitionModel": true,
-	// The native reader's two steps of GetMessage, which clients have whole; a callback too.
-	"GetMessageLazyImages": true, "InlineImages": true,
+	// The native reader's two steps of GetMessage, which clients have whole; callbacks too.
+	"GetMessageLazyImages": true, "InlineImages": true, "FetchAttachments": true,
 }
 
 // Expose picks the *core.Service methods callable over RPC: every exported

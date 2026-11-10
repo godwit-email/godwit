@@ -94,6 +94,27 @@ func (s *Service) GetAttachment(ctx context.Context, attachmentID int64) (string
 	return path, info, err
 }
 
+// FetchAttachments gets each attachment's cached file over one connection,
+// downloading first if needed, and calls fn for each in order.
+func (s *Service) FetchAttachments(ctx context.Context, attachmentIDs []int64, fn func(path string, info AttachmentInfo) error) (err error) {
+	f := s.newAttachmentFetcher(ctx)
+	defer func() {
+		if cerr := f.close(); err == nil {
+			err = cerr
+		}
+	}()
+	for _, id := range attachmentIDs {
+		path, info, gerr := f.get(id)
+		if gerr != nil {
+			return gerr
+		}
+		if ferr := fn(path, info); ferr != nil {
+			return ferr
+		}
+	}
+	return nil
+}
+
 // attachmentFetcher gets attachments one after another over one connection: a
 // login per file made a message with a few signature logos take seconds to open.
 // It holds the account lock only inside get, so whoever waits for the lock still

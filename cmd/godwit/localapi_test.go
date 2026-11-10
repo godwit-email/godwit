@@ -119,6 +119,55 @@ func TestPlatformDataDir(t *testing.T) {
 	}
 }
 
+func TestSaveDirPersistence(t *testing.T) {
+	dataDir := t.TempDir()
+	downloads := filepath.Join(t.TempDir(), "Downloads")
+	if err := os.MkdirAll(downloads, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	chosen := filepath.Join(t.TempDir(), "Invoices")
+	if err := os.MkdirAll(chosen, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	newPlat := func() *platform {
+		return &platform{
+			dataDir:      dataDir,
+			downloadsDir: func() (string, error) { return downloads, nil },
+		}
+	}
+
+	p1 := newPlat()
+	if got, want := p1.saveDefaultPath("report.pdf"), filepath.Join(downloads, "report.pdf"); got != want {
+		t.Fatalf("initial saveDefaultPath = %q, want %q", got, want)
+	}
+	if got := p1.defaultSaveDir(); got != downloads {
+		t.Fatalf("initial defaultSaveDir = %q, want %q", got, downloads)
+	}
+
+	p1.rememberSaveDir(chosen)
+	if got, want := p1.saveDefaultPath("next.pdf"), filepath.Join(chosen, "next.pdf"); got != want {
+		t.Fatalf("remembered saveDefaultPath = %q, want %q", got, want)
+	}
+
+	// A new platform instance on the same dataDir restores the saved directory.
+	p2 := newPlat()
+	if got, want := p2.saveDefaultPath("restarted.pdf"), filepath.Join(chosen, "restarted.pdf"); got != want {
+		t.Fatalf("persisted saveDefaultPath = %q, want %q", got, want)
+	}
+	abs := filepath.Join(downloads, "explicit.pdf")
+	if got := p2.saveDefaultPath(abs); got != abs {
+		t.Fatalf("absolute saveDefaultPath = %q, want %q", got, abs)
+	}
+
+	// Removing the remembered directory falls back to Downloads cleanly.
+	if err := os.RemoveAll(chosen); err != nil {
+		t.Fatal(err)
+	}
+	if got := p2.defaultSaveDir(); got != downloads {
+		t.Fatalf("fallback defaultSaveDir = %q, want %q", got, downloads)
+	}
+}
+
 // The core.New failure dialog names a class of reason, never err's text.
 func TestOpenFailure(t *testing.T) {
 	t.Cleanup(func() { i18n.SetLanguage("zh-CN") })

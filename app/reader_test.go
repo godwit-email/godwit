@@ -788,6 +788,118 @@ func TestReaderAttachments(t *testing.T) {
 		got, err := os.ReadFile(h.plat.savePath)
 		return err == nil && bytes.Equal(got, data)
 	})
+	if h.tt.HasText("全选") || h.tt.HasText("全部保存…") {
+		t.Fatal("single attachment showed batch controls")
+	}
+}
+
+func TestReaderAttachmentsBatchAndConflict(t *testing.T) {
+	h, accs := mailHarness(t, nil, "alice@example.com")
+	pdfA := []byte("%PDF-1.4 invoice A")
+	txtB := []byte("notes B")
+	csvC := []byte("col1,col2\n1,2\n")
+	m := h.deliverOne(accs[0], coretest.Msg("bob@example.com", accs[0].Email, "Batch", "files attached",
+		coretest.Attachment("invoice.pdf", "application/pdf", pdfA),
+		coretest.Attachment("notes.txt", "text/plain", txtB),
+		coretest.Attachment("table.csv", "text/csv", csvC),
+	))
+	h.openThread(m.ThreadID)
+	h.see("3 个附件")
+	h.see("全部保存…")
+	h.tt.Advance(2 * theme.MotionBase) // let the message card finish growing around its attachment rows
+
+	// Select two attachments, verify selection count, and batch-save only those two.
+	dir1 := t.TempDir()
+	h.plat.mu.Lock()
+	h.plat.dir = dir1
+	h.plat.mu.Unlock()
+	h.click("选择 invoice.pdf")
+	h.click("选择 table.csv")
+	h.see("已选 2 / 3")
+	h.click("保存所选…")
+	h.called("OpenDirectory")
+	h.see("已保存 2 个附件")
+	if got, err := os.ReadFile(filepath.Join(dir1, "invoice.pdf")); err != nil || !bytes.Equal(got, pdfA) {
+		t.Fatalf("invoice.pdf = %q, %v", got, err)
+	}
+	if got, err := os.ReadFile(filepath.Join(dir1, "table.csv")); err != nil || !bytes.Equal(got, csvC) {
+		t.Fatalf("table.csv = %q, %v", got, err)
+	}
+	if _, err := os.Stat(filepath.Join(dir1, "notes.txt")); !os.IsNotExist(err) {
+		t.Fatalf("unselected notes.txt was written: %v", err)
+	}
+	// Selection clears after a successful batch save.
+	h.see("全部保存…")
+
+	// Select-all toggles every attachment on and off.
+	h.click("全选")
+	h.see("已选 3 / 3")
+	h.click("全选")
+	h.see("全部保存…")
+
+	// Save all into dir1 where invoice.pdf and table.csv already exist -> conflict dialog: Keep both.
+	h.click("全部保存…")
+	h.see("同名文件已存在")
+	h.click("保留两者")
+	h.until("numbered copies written", func() bool {
+		got1, err1 := os.ReadFile(filepath.Join(dir1, "invoice (2).pdf"))
+		got2, err2 := os.ReadFile(filepath.Join(dir1, "notes.txt"))
+		got3, err3 := os.ReadFile(filepath.Join(dir1, "table (2).csv"))
+		return err1 == nil && bytes.Equal(got1, pdfA) &&
+			err2 == nil && bytes.Equal(got2, txtB) &&
+			err3 == nil && bytes.Equal(got3, csvC)
+	})
+
+	// Conflict mode: Skip leaves existing files untouched and writes only missing ones.
+	dir2 := t.TempDir()
+	oldPDF := []byte("older local invoice")
+	if err := os.WriteFile(filepath.Join(dir2, "invoice.pdf"), oldPDF, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	h.plat.mu.Lock()
+	h.plat.dir = dir2
+	h.plat.mu.Unlock()
+	h.click("全部保存…")
+	h.see("同名文件已存在")
+	h.click("跳过同名")
+	h.until("non-conflicting files written", func() bool {
+		gotNotes, err1 := os.ReadFile(filepath.Join(dir2, "notes.txt"))
+		gotCSV, err2 := os.ReadFile(filepath.Join(dir2, "table.csv"))
+		return err1 == nil && bytes.Equal(gotNotes, txtB) && err2 == nil && bytes.Equal(gotCSV, csvC)
+	})
+	if got, err := os.ReadFile(filepath.Join(dir2, "invoice.pdf")); err != nil || !bytes.Equal(got, oldPDF) {
+		t.Fatalf("skipped invoice.pdf changed: %q, %v", got, err)
+	}
+
+	// Conflict mode: Replace overwrites a read-only file and unlinks symlinks rather than following them.
+	dir3 := t.TempDir()
+	outside := filepath.Join(t.TempDir(), "outside.txt")
+	if err := os.WriteFile(outside, []byte("secret"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir3, "invoice.pdf"), oldPDF, 0o444); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(outside, filepath.Join(dir3, "notes.txt")); err != nil {
+		t.Fatal(err)
+	}
+	h.plat.mu.Lock()
+	h.plat.dir = dir3
+	h.plat.mu.Unlock()
+	h.click("全部保存…")
+	h.see("同名文件已存在")
+	h.click("覆盖")
+	h.until("replaced files written", func() bool {
+		gotPDF, err1 := os.ReadFile(filepath.Join(dir3, "invoice.pdf"))
+		gotNotes, err2 := os.ReadFile(filepath.Join(dir3, "notes.txt"))
+		gotCSV, err3 := os.ReadFile(filepath.Join(dir3, "table.csv"))
+		return err1 == nil && bytes.Equal(gotPDF, pdfA) &&
+			err2 == nil && bytes.Equal(gotNotes, txtB) &&
+			err3 == nil && bytes.Equal(gotCSV, csvC)
+	})
+	if got, err := os.ReadFile(outside); err != nil || string(got) != "secret" {
+		t.Fatalf("symlink target was modified: %q, %v", got, err)
+	}
 }
 
 // scrollTo scrolls the reader until label is in the window.
