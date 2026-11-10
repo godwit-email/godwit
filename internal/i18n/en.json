@@ -3889,5 +3889,21 @@
   "onboarding_check_jmap_running": "Signing in to JMAP…",
   "onboarding_check_jmap_waiting": "JMAP sign-in",
   "onboarding_check_jmap_proxy": "JMAP connection failed: {arg1}",
-  "onboarding_check_jmap_host": "Session host: {arg1}"
+  "onboarding_check_jmap_host": "Session host: {arg1}",
+  "settings_experimental_pop3": "POP3 accounts",
+  "settings_experimental_pop3_help": "Offers POP3 when you add an account, for mailboxes that only offer POP3. Mail stays on the server; deleting, archiving, read and starred apply on this computer only. It is experimental and may change later. Turned off, POP3 accounts already added keep working.",
+  "onboarding_protocol_pop3": "POP3 (experimental)",
+  "onboarding_pop3_host": "POP3 server",
+  "onboarding_pop3_port": "POP3 port",
+  "onboarding_pop3_security": "POP3 encryption",
+  "onboarding_check_pop3_failed": "POP3 sign-in failed: {arg1}",
+  "onboarding_check_pop3_ok": "Signed in to POP3",
+  "onboarding_check_pop3_running": "Signing in to POP3…",
+  "onboarding_check_pop3_waiting": "POP3 sign-in",
+  "onboarding_check_pop3_proxy": "POP3 connection failed: {arg1}",
+  "feature_reason_pop3_local_move": "A POP3 server has only an inbox: moves apply on this computer only.",
+  "feature_reason_pop3_local_flags": "POP3 doesn't keep flags: read, starred and the like are saved on this computer only.",
+  "feature_reason_pop3_inbox_only": "A POP3 server has only an inbox.",
+  "feature_reason_pop3_not_provided": "POP3 doesn't provide this.",
+  "feature_reason_pop3_no_uidl": "This server doesn't support UIDL, so Godwit can't reliably tell messages apart."
 }

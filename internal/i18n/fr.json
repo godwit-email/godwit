@@ -2126,5 +2126,21 @@
   "onboarding_check_jmap_running": "Connexion à JMAP…",
   "onboarding_check_jmap_waiting": "Connexion JMAP",
   "onboarding_check_jmap_proxy": "Échec de la connexion à JMAP : {arg1}",
-  "onboarding_check_jmap_host": "Hôte de session : {arg1}"
+  "onboarding_check_jmap_host": "Hôte de session : {arg1}",
+  "settings_experimental_pop3": "Comptes POP3",
+  "settings_experimental_pop3_help": "Propose POP3 à l’ajout d’un compte, pour les boîtes qui n’offrent que POP3. Les e-mails restent sur le serveur ; supprimer, archiver, lu et suivi ne s’appliquent que sur cet ordinateur. C’est expérimental et pourra changer plus tard. Désactivé, les comptes POP3 déjà ajoutés continuent de fonctionner.",
+  "onboarding_protocol_pop3": "POP3 (expérimental)",
+  "onboarding_pop3_host": "Serveur POP3",
+  "onboarding_pop3_port": "Port POP3",
+  "onboarding_pop3_security": "Chiffrement POP3",
+  "onboarding_check_pop3_failed": "Échec de la connexion POP3 : {arg1}",
+  "onboarding_check_pop3_ok": "Connecté à POP3",
+  "onboarding_check_pop3_running": "Connexion à POP3…",
+  "onboarding_check_pop3_waiting": "Connexion POP3",
+  "onboarding_check_pop3_proxy": "Impossible de joindre le serveur POP3 : {arg1}",
+  "feature_reason_pop3_local_move": "Un serveur POP3 n’a qu’une boîte de réception : les déplacements ne s’appliquent que sur cet ordinateur.",
+  "feature_reason_pop3_local_flags": "POP3 ne conserve pas les indicateurs : lu, suivi, etc. ne sont enregistrés que sur cet ordinateur.",
+  "feature_reason_pop3_inbox_only": "Un serveur POP3 n’a qu’une boîte de réception.",
+  "feature_reason_pop3_not_provided": "POP3 ne le permet pas.",
+  "feature_reason_pop3_no_uidl": "Ce serveur ne prend pas en charge UIDL : Godwit ne peut pas distinguer les e-mails de façon fiable."
 }

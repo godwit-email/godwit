@@ -2126,5 +2126,21 @@
   "onboarding_check_jmap_running": "Iniciando sesión en JMAP…",
   "onboarding_check_jmap_waiting": "Inicio de sesión en JMAP",
   "onboarding_check_jmap_proxy": "Error de conexión con JMAP: {arg1}",
-  "onboarding_check_jmap_host": "Host de sesión: {arg1}"
+  "onboarding_check_jmap_host": "Host de sesión: {arg1}",
+  "settings_experimental_pop3": "Cuentas POP3",
+  "settings_experimental_pop3_help": "Ofrece POP3 al añadir una cuenta, para buzones que solo ofrecen POP3. El correo se queda en el servidor; eliminar, archivar, leído y destacado solo se aplican en este ordenador. Es experimental y podría cambiar más adelante. Si lo desactivas, las cuentas POP3 ya añadidas siguen funcionando.",
+  "onboarding_protocol_pop3": "POP3 (experimental)",
+  "onboarding_pop3_host": "Servidor POP3",
+  "onboarding_pop3_port": "Puerto POP3",
+  "onboarding_pop3_security": "Cifrado POP3",
+  "onboarding_check_pop3_failed": "Error al iniciar sesión en POP3: {arg1}",
+  "onboarding_check_pop3_ok": "Sesión iniciada en POP3",
+  "onboarding_check_pop3_running": "Iniciando sesión en POP3…",
+  "onboarding_check_pop3_waiting": "Inicio de sesión POP3",
+  "onboarding_check_pop3_proxy": "Error de conexión POP3: {arg1}",
+  "feature_reason_pop3_local_move": "Un servidor POP3 solo tiene bandeja de entrada: los movimientos solo se aplican en este ordenador.",
+  "feature_reason_pop3_local_flags": "POP3 no guarda marcas: leído, destacado y similares se guardan solo en este ordenador.",
+  "feature_reason_pop3_inbox_only": "Un servidor POP3 solo tiene bandeja de entrada.",
+  "feature_reason_pop3_not_provided": "POP3 no ofrece esto.",
+  "feature_reason_pop3_no_uidl": "Este servidor no admite UIDL, así que Godwit no puede distinguir los mensajes de forma fiable."
 }

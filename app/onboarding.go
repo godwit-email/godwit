@@ -5,12 +5,14 @@ import (
 	"errors"
 	"net/mail"
 	"net/url"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
 	"unicode"
 
 	"github.com/egoist/mygo/ui"
+	"github.com/godwit-email/godwit/backend/pop3"
 	"github.com/godwit-email/godwit/core"
 	"github.com/godwit-email/godwit/core/auth"
 	"github.com/godwit-email/godwit/core/events"
@@ -77,7 +79,7 @@ type onboarding struct {
 	imapHost, imapPort   string
 	smtpHost, smtpPort   string
 	imapSec, smtpSec     core.Security
-	proto                int    // the server form's receiving protocol: 0 IMAP, 1 JMAP (Settings.ExperimentalJMAP)
+	proto                string // the server form's receiving protocol: IMAP (""), auth.JMAP or auth.POP3 (their Settings.Experimental*)
 	jmapURL              string // JMAP's session URL, in place of the IMAP server
 	jmapAuth             int    // how JMAP signs in: 0 a password, 1 an API token, with SMTP's password apart
 	sendSecret           string // SMTP's own password, for a JMAP API token
@@ -397,12 +399,18 @@ func (o *onboarding) openURL(url string) {
 }
 
 // jmap: the account is added over JMAP, its servers form says.
-func (o *onboarding) jmap() bool { return o.proto == 1 && !o.oauth() }
+func (o *onboarding) jmap() bool { return o.proto == auth.JMAP && !o.oauth() }
 
-// recvStep is the check's receiving step: imap or jmap.
+// pop3: the account is added over POP3, its servers form says.
+func (o *onboarding) pop3() bool { return o.proto == auth.POP3 && !o.oauth() }
+
+// recvStep is the check's receiving step: imap, jmap or pop3.
 func (o *onboarding) recvStep() string {
-	if o.jmap() {
+	switch {
+	case o.jmap():
 		return auth.JMAP
+	case o.pop3():
+		return auth.POP3
 	}
 	return auth.IMAP
 }
@@ -448,6 +456,9 @@ func (o *onboarding) input() core.AccountInput {
 		Sending:   core.Server{Host: strings.TrimSpace(o.smtpHost), Port: sp, Security: o.smtpSec}, Provider: o.prov.ID, ReceiveOnly: o.receiveOnly}
 	if o.jmap() {
 		in.Receiving, _ = jmapServer(o.jmapURL)
+	}
+	if o.pop3() {
+		in.Receiving.Protocol = auth.POP3
 	}
 	if o.oauth() {
 		in.OAuthFlowID = o.flowID
@@ -520,7 +531,7 @@ func (o *onboarding) validate() (reason, next string) {
 	if o.oauth() {
 		return "", ""
 	}
-	servers := []struct{ proto, host, port string }{{"IMAP", o.imapHost, o.imapPort}, {"SMTP", o.smtpHost, o.smtpPort}}
+	servers := []struct{ proto, host, port string }{{strings.ToUpper(o.recvStep()), o.imapHost, o.imapPort}, {"SMTP", o.smtpHost, o.smtpPort}}
 	if o.jmap() {
 		if _, ok := jmapServer(o.jmapURL); !ok {
 			return i18n.T("onboarding.invalid.jmap_url"), i18n.T("onboarding.next.host")
@@ -992,6 +1003,26 @@ func (o *onboarding) manualView(c *ui.Context) {
 	})
 }
 
+// pop3Port is POP3's default port for each security.
+var pop3Port = map[core.Security]string{core.SecurityTLS: "995", core.SecurityStartTLS: "110"}
+
+// setProto switches the receiving protocol, filling what the new one needs:
+// JMAP's session URL, POP3's default port in place of IMAP's and back.
+func (o *onboarding) setProto(p string) {
+	switch {
+	case p == auth.JMAP && o.jmapURL == "":
+		o.jmapURL = o.defaultJMAPURL()
+		if o.prov.Entry(auth.JMAP).Login == "api_token" { // Fastmail's JMAP takes a token
+			o.jmapAuth = 1
+		}
+	case p == auth.POP3:
+		o.imapPort, o.imapSec = pop3Port[core.SecurityTLS], core.SecurityTLS
+	case o.proto == auth.POP3:
+		o.imapPort, o.imapSec = "993", core.SecurityTLS
+	}
+	o.proto = p
+}
+
 // serversForm is manualView's fields.
 func (o *onboarding) serversForm(c *ui.Context) {
 	t, th := theme.Of(c), c.Theme()
@@ -1007,15 +1038,19 @@ func (o *onboarding) serversForm(c *ui.Context) {
 		})
 	}
 	ui.Column(c).Gap(th.Space(3)).Children(func() {
-		if o.a.settings.ExperimentalJMAP || o.proto == 1 {
+		protos, labels := []string{""}, []string{"IMAP"}
+		if o.a.settings.ExperimentalJMAP || o.proto == auth.JMAP {
+			protos, labels = append(protos, auth.JMAP), append(labels, i18n.T("onboarding.protocol.jmap"))
+		}
+		if o.a.settings.ExperimentalPOP3 || o.proto == auth.POP3 {
+			protos, labels = append(protos, auth.POP3), append(labels, i18n.T("onboarding.protocol.pop3"))
+		}
+		if len(protos) > 1 {
 			ui.Field(c, i18n.T("onboarding.protocol"), func() {
-				proto := o.proto
-				kit.TabsFill(c, &o.proto, "IMAP", i18n.T("onboarding.protocol.jmap"))
-				if o.proto != proto && o.proto == 1 && o.jmapURL == "" {
-					o.jmapURL = o.defaultJMAPURL()
-					if o.prov.Entry(auth.JMAP).Login == "api_token" { // Fastmail's JMAP takes a token
-						o.jmapAuth = 1
-					}
+				sel := max(slices.Index(protos, o.proto), 0)
+				kit.TabsFill(c, &sel, labels...)
+				if protos[sel] != o.proto {
+					o.setProto(protos[sel])
 				}
 			}).FontSize(t.Text.Sm).TextColor(t.Muted)
 		}
@@ -1025,6 +1060,12 @@ func (o *onboarding) serversForm(c *ui.Context) {
 			ui.Field(c, i18n.T("onboarding.jmap.login"), func() {
 				kit.TabsFill(c, &o.jmapAuth, i18n.T("onboarding.login.password"), i18n.T("onboarding.login.api_token"))
 			}).FontSize(t.Text.Sm).TextColor(t.Muted)
+		} else if o.pop3() {
+			sec := o.imapSec
+			server("pop3", &o.imapHost, &o.imapPort, &o.imapSec)
+			if o.imapSec != sec && o.imapPort == pop3Port[sec] { // the port follows the security while it is the default
+				o.imapPort = pop3Port[o.imapSec]
+			}
 		} else {
 			server("imap", &o.imapHost, &o.imapPort, &o.imapSec)
 		}
@@ -1112,6 +1153,9 @@ func (o *onboarding) checkRow(st core.CheckStep) (text, detail string, status in
 		}
 	case "dns", "connect", "timeout", "tls", "protocol":
 		reason, next = i18n.T("onboarding.reason."+kind), i18n.T("onboarding.next.server")
+		if st.Detail == pop3.ReasonNoUIDL { // the server cannot be used at all, not merely misconfigured
+			reason = i18n.T("feature.reason." + st.Detail)
+		}
 	case "proxy_unreachable", "proxy_refused", "proxy_auth":
 		reason = i18n.T("onboarding.reason." + kind)
 		// an HTTP proxy's refusal carries its status: "proxy refused the tunnel: 403 Forbidden"

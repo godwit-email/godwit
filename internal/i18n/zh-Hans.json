@@ -2126,5 +2126,21 @@
   "onboarding_check_jmap_running": "JMAP 登录中…",
   "onboarding_check_jmap_waiting": "JMAP 登录",
   "onboarding_check_jmap_proxy": "JMAP 连接失败：{arg1}",
-  "onboarding_check_jmap_host": "会话主机：{arg1}"
+  "onboarding_check_jmap_host": "会话主机：{arg1}",
+  "settings_experimental_pop3": "POP3 账户",
+  "settings_experimental_pop3_help": "添加账户时可以选择 POP3，适用于只提供 POP3 的邮箱。收到的信保留在服务器上，删除、归档、已读和星标只在这台电脑上生效。这是实验性功能，以后可能调整。关闭后，已添加的 POP3 账户继续工作。",
+  "onboarding_protocol_pop3": "POP3（实验性）",
+  "onboarding_pop3_host": "POP3 服务器",
+  "onboarding_pop3_port": "POP3 端口",
+  "onboarding_pop3_security": "POP3 加密方式",
+  "onboarding_check_pop3_failed": "POP3 登录失败：{arg1}",
+  "onboarding_check_pop3_ok": "POP3 登录成功",
+  "onboarding_check_pop3_running": "POP3 登录中…",
+  "onboarding_check_pop3_waiting": "POP3 登录",
+  "onboarding_check_pop3_proxy": "POP3 连接失败：{arg1}",
+  "feature_reason_pop3_local_move": "POP3 服务器只有收件箱：移动只在这台电脑上生效。",
+  "feature_reason_pop3_local_flags": "POP3 不保存标记：已读、星标等只保存在这台电脑上。",
+  "feature_reason_pop3_inbox_only": "POP3 服务器只有收件箱。",
+  "feature_reason_pop3_not_provided": "POP3 不提供此功能。",
+  "feature_reason_pop3_no_uidl": "这台服务器不支持 UIDL，Godwit 无法可靠地分辨邮件。"
 }

@@ -2126,5 +2126,21 @@
   "onboarding_check_jmap_running": "JMAP にサインイン中…",
   "onboarding_check_jmap_waiting": "JMAP サインイン",
   "onboarding_check_jmap_proxy": "JMAP 接続に失敗しました：{arg1}",
-  "onboarding_check_jmap_host": "セッション ホスト：{arg1}"
+  "onboarding_check_jmap_host": "セッション ホスト：{arg1}",
+  "settings_experimental_pop3": "POP3 アカウント",
+  "settings_experimental_pop3_help": "アカウントの追加時に POP3 を選べるようにします（POP3 のみ提供するメールボックス向け）。メールはサーバーに残り、削除・アーカイブ・既読・スターはこのコンピュータだけに反映されます。試験的な機能のため、今後変更される場合があります。オフにしても、追加済みの POP3 アカウントは引き続き動作します。",
+  "onboarding_protocol_pop3": "POP3（試験的）",
+  "onboarding_pop3_host": "POP3 サーバー",
+  "onboarding_pop3_port": "POP3 ポート",
+  "onboarding_pop3_security": "POP3 暗号化",
+  "onboarding_check_pop3_failed": "POP3 サインインに失敗しました：{arg1}",
+  "onboarding_check_pop3_ok": "POP3 にサインインしました",
+  "onboarding_check_pop3_running": "POP3 にサインイン中…",
+  "onboarding_check_pop3_waiting": "POP3 サインイン",
+  "onboarding_check_pop3_proxy": "POP3 接続に失敗しました：{arg1}",
+  "feature_reason_pop3_local_move": "POP3 サーバーには受信トレイしかありません。移動はこのコンピュータだけに反映されます。",
+  "feature_reason_pop3_local_flags": "POP3 はフラグを保存しません。既読やスターなどはこのコンピュータだけに保存されます。",
+  "feature_reason_pop3_inbox_only": "POP3 サーバーには受信トレイしかありません。",
+  "feature_reason_pop3_not_provided": "POP3 はこの機能を提供していません。",
+  "feature_reason_pop3_no_uidl": "このサーバーは UIDL に対応していないため、Godwit はメールを確実に区別できません。"
 }

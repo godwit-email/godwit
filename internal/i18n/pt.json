@@ -2126,5 +2126,21 @@
   "onboarding_check_jmap_running": "Entrando no JMAP…",
   "onboarding_check_jmap_waiting": "Entrada no JMAP",
   "onboarding_check_jmap_proxy": "Falha na conexão com o JMAP: {arg1}",
-  "onboarding_check_jmap_host": "Host da sessão: {arg1}"
+  "onboarding_check_jmap_host": "Host da sessão: {arg1}",
+  "settings_experimental_pop3": "Contas POP3",
+  "settings_experimental_pop3_help": "Oferece POP3 ao adicionar uma conta, para caixas de correio que só oferecem POP3. Os e-mails ficam no servidor; excluir, arquivar, lido e com estrela valem só neste computador. É experimental e pode mudar no futuro. Desativado, as contas POP3 já adicionadas continuam funcionando.",
+  "onboarding_protocol_pop3": "POP3 (experimental)",
+  "onboarding_pop3_host": "Servidor POP3",
+  "onboarding_pop3_port": "Porta POP3",
+  "onboarding_pop3_security": "Criptografia POP3",
+  "onboarding_check_pop3_failed": "Falha no login POP3: {arg1}",
+  "onboarding_check_pop3_ok": "Conectado ao POP3",
+  "onboarding_check_pop3_running": "Entrando no POP3…",
+  "onboarding_check_pop3_waiting": "Login POP3",
+  "onboarding_check_pop3_proxy": "Falha na conexão POP3: {arg1}",
+  "feature_reason_pop3_local_move": "Um servidor POP3 só tem caixa de entrada: as movimentações valem só neste computador.",
+  "feature_reason_pop3_local_flags": "O POP3 não guarda marcações: lido, com estrela e afins ficam salvos só neste computador.",
+  "feature_reason_pop3_inbox_only": "Um servidor POP3 só tem caixa de entrada.",
+  "feature_reason_pop3_not_provided": "O POP3 não oferece isso.",
+  "feature_reason_pop3_no_uidl": "Este servidor não suporta UIDL, então o Godwit não consegue distinguir as mensagens com segurança."
 }
