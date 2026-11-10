@@ -31,6 +31,8 @@ var (
 var (
 	beforeWorkerExit func()
 	onParked         func(id int64)
+	// afterWorkerSync 报告成功后台同步的请求范围，供测试等待模式切换完成。
+	afterWorkerSync func(id int64, only []backend.FolderRef)
 )
 
 // wakeSource is what a time set with wakeWorkerAt is for. Each source keeps its
@@ -337,6 +339,9 @@ func (s *Service) syncRound(ctx context.Context, id int64, wake chan struct{}, o
 	}
 	if err := s.syncNow(ctx, id, false, only); err != nil {
 		return false, nil, err // syncNow announced it
+	}
+	if afterWorkerSync != nil {
+		afterWorkerSync(id, only)
 	}
 	if poll == 0 {
 		start := time.Now()

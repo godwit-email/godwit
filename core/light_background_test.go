@@ -196,6 +196,13 @@ func TestLightBackgroundFinishesPurges(t *testing.T) {
 }
 
 func TestLightBackgroundContinuesExplicitBackfill(t *testing.T) {
+	rounds := make(chan bool, 64)
+	setFor(t, &afterWorkerSync, func(_ int64, only []backend.FolderRef) {
+		select {
+		case rounds <- len(only) == 1 && only[0] == "INBOX":
+		default:
+		}
+	})
 	setFor(t, &mailsync.BackfillPage, 2)
 	setFor(t, &mailsync.BackfillPages, 1)
 	e, ch := newWorkerEnv(t)
@@ -214,6 +221,22 @@ func TestLightBackgroundContinuesExplicitBackfill(t *testing.T) {
 	require.Eventually(t, func() bool {
 		return len(e.stored(t, "Archive")) == 11 && e.count(t, "SELECT count(*) FROM folders WHERE name = 'Archive' AND filled_since IS NOT NULL") == 1
 	}, 5*time.Second, 20*time.Millisecond)
+	// 数据已补齐时最后一轮全量同步可能仍在收尾，等待后续收件箱轮次真正完成。
+	for len(rounds) > 0 {
+		<-rounds
+	}
+	e.s.wakeWorker(e.acc.ID)
+	deadline := time.After(5 * time.Second)
+	for inboxOnly := false; !inboxOnly; {
+		select {
+		case inboxOnly = <-rounds:
+			if !inboxOnly {
+				e.s.wakeWorker(e.acc.ID)
+			}
+		case <-deadline:
+			t.Fatal("backfill did not return to inbox-only sync")
+		}
+	}
 	e.put(t, "Archive", msg("after-backfill@x"))
 	e.put(t, "INBOX", msg("inbox-after-backfill@x"))
 	require.Eventually(t, func() bool {
