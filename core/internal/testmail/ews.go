@@ -122,7 +122,14 @@ func StartEWS(t testing.TB) *EWS {
 	s.srv = httptest.NewUnstartedServer(http.HandlerFunc(s.serve))
 	s.srv.Config.ConnContext = connContext
 	s.srv.Start()
-	t.Cleanup(s.srv.Close)
+	t.Cleanup(func() {
+		// Close waits for active connections, and a client still watching (its
+		// service closes in a later cleanup) holds a stream open until its
+		// 3-minute idle limit: stop accepting, then drop them.
+		s.srv.Listener.Close()
+		s.srv.CloseClientConnections()
+		s.srv.Close()
+	})
 	return s
 }
 
