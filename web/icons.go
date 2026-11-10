@@ -51,6 +51,8 @@ var RemixIcons = map[string]string{
 	"image-off":                      "node_modules/remixicon/icons/Media/image-line.svg",
 	"inbox":                          "node_modules/remixicon/icons/Business/inbox-line.svg",
 	"inbox-fill":                     "node_modules/remixicon/icons/Business/inbox-fill.svg",
+	"flask":                          "node_modules/remixicon/icons/Health & Medical/flask-line.svg",
+	"flask-fill":                     "node_modules/remixicon/icons/Health & Medical/flask-fill.svg",
 	"info":                           "node_modules/remixicon/icons/System/information-line.svg",
 	"info-fill":                      "node_modules/remixicon/icons/System/information-fill.svg",
 	"italic":                         "node_modules/remixicon/icons/Editor/italic.svg",
