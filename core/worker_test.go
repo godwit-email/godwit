@@ -424,6 +424,22 @@ func TestWorkerWakeSyncsOnlyWhatChanged(t *testing.T) {
 	assert.Zero(t, e.count(t, "SELECT count(*) FROM messages WHERE message_id = 'arch@x'"), "Archive waits for a full round")
 }
 
+// INBOX mail arriving more often than idleMax does not put off the full
+// round: rounds of INBOX alone keep the deadline the last full round set.
+func TestWorkerInboxWakesKeepFullDeadline(t *testing.T) {
+	setFor(t, &idleMax, 500*time.Millisecond)
+	e, _ := newWorkerEnv(t)
+	e.put(t, "Archive", msg("arch@x"))
+	for i := 0; i < 40; i++ {
+		e.put(t, "INBOX", msg(fmt.Sprintf("in%d@x", i)))
+		if e.count(t, "SELECT count(*) FROM messages WHERE message_id = 'arch@x'") > 0 {
+			return
+		}
+		time.Sleep(100 * time.Millisecond)
+	}
+	t.Fatal("Archive never synced while INBOX kept changing")
+}
+
 func TestWorkerFullRoundFindsOtherFolders(t *testing.T) {
 	setFor(t, &idleMax, 200*time.Millisecond)
 	e, ch := newWorkerEnv(t)

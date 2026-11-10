@@ -167,11 +167,18 @@ func (s *Service) armWorker(id int64, w *worker) {
 func (s *Service) runWorker(ctx context.Context, id int64, wake chan struct{}) {
 	var delay, pace time.Duration
 	var only []backend.FolderRef // what the last server change touched; nil for a full round
+	var fullBy time.Time         // the next full round is due; rounds of only some folders keep it
 	for {
 		if !s.awaitCredentials(ctx, id, wake) {
 			return
 		}
-		chatter, changed, err := s.syncRound(ctx, id, wake, only)
+		if !time.Now().Before(fullBy) {
+			only = nil
+		}
+		if only == nil {
+			fullBy = time.Now().Add(idleMax)
+		}
+		chatter, changed, err := s.syncRound(ctx, id, wake, only, fullBy)
 		only = changed
 		if ctx.Err() != nil {
 			return
@@ -236,12 +243,12 @@ func (s *Service) awaitCredentials(ctx context.Context, id int64, wake chan stru
 }
 
 // syncRound runs SyncNow, fetching only the folders in only (nil: all), and
-// then waits for a reason to sync again. A second session Watches the server,
+// then waits for a reason to sync again, at the latest until fullBy. A second session Watches the server,
 // started before SyncNow, so a change that lands during or after the sync
 // ends the wait that follows; changed is where it landed, nil for anywhere or
 // when no server change ended the wait. chatter reports that a server change
 // ended the wait within chatterWithin of its start.
-func (s *Service) syncRound(ctx context.Context, id int64, wake chan struct{}, only []backend.FolderRef) (chatter bool, changed []backend.FolderRef, err error) {
+func (s *Service) syncRound(ctx context.Context, id int64, wake chan struct{}, only []backend.FolderRef, fullBy time.Time) (chatter bool, changed []backend.FolderRef, err error) {
 	recv, release, err := s.dialAccount(ctx, id)
 	if err != nil {
 		return false, nil, s.workerFailed(ctx, id, err)
@@ -305,7 +312,7 @@ func (s *Service) syncRound(ctx context.Context, id int64, wake chan struct{}, o
 	}
 	if poll == 0 {
 		start := time.Now()
-		t := time.NewTimer(idleMax)
+		t := time.NewTimer(time.Until(fullBy))
 		defer t.Stop()
 		select {
 		case <-updates:
