@@ -168,15 +168,26 @@ func (s *Service) runWorker(ctx context.Context, id int64, wake chan struct{}) {
 	var delay, pace time.Duration
 	var only []backend.FolderRef // what the last server change touched; nil for a full round
 	var fullBy time.Time         // the next full round is due; rounds of only some folders keep it
+	light := false
 	for {
 		if !s.awaitCredentials(ctx, id, wake) {
 			return
 		}
+		if on := s.light.Load(); light && !on {
+			only, fullBy = nil, time.Time{} // the window is back: the folders catch up at once
+		}
+		light = s.light.Load()
 		if !time.Now().Before(fullBy) {
 			only = nil
 		}
 		if only == nil {
 			fullBy = time.Now().Add(idleMax)
+		}
+		if light {
+			if refs := s.inboxOnly(ctx, id); len(refs) > 0 {
+				only = refs
+				fullBy = time.Now().Add(idleMax) // a full round waits for the window
+			}
 		}
 		chatter, changed, err := s.syncRound(ctx, id, wake, only, fullBy)
 		only = changed
@@ -203,6 +214,20 @@ func (s *Service) runWorker(ctx context.Context, id int64, wake chan struct{}) {
 			return
 		}
 	}
+}
+
+// inboxOnly is the folders a light round reads: the account's inbox. nil while
+// the account has none stored, so the round is full instead.
+func (s *Service) inboxOnly(ctx context.Context, accountID int64) []backend.FolderRef {
+	rows, err := s.db.Query(ctx, "SELECT server_ref FROM folders WHERE account_id = ? AND role = 'inbox' AND server_ref IS NOT NULL", accountID)
+	if err != nil || len(rows.Values) == 0 {
+		return nil
+	}
+	refs := make([]backend.FolderRef, 0, len(rows.Values))
+	for _, v := range rows.Values {
+		refs = append(refs, backend.FolderRef(store.Str(v[0])))
+	}
+	return refs
 }
 
 // waitOrWake waits d, or until wake fires (a nil wake never does). It reports
