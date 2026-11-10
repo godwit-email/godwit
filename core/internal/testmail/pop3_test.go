@@ -3,6 +3,7 @@ package testmail_test
 import (
 	"context"
 	"errors"
+	"maps"
 	"slices"
 	"testing"
 	"time"
@@ -193,6 +194,62 @@ func TestPOP3CursorGone(t *testing.T) {
 	}
 	if !st.held[backend.MessageRef(a)] {
 		t.Errorf("%s no longer held", a)
+	}
+}
+
+// A round that dies on a later page leaves no mail behind: the next one gets
+// the rest as new arrivals.
+func TestPOP3InterruptedRound(t *testing.T) {
+	s := testmail.StartPOP3(t)
+	s.Deliver(backendtest.Message("a@example.com", "a"))
+	r := pop3Receiver(t, s, conn.None)
+	st := newPOP3Store()
+	st.sync(t, r, backend.SyncRequest{})
+	var want []string
+	for _, id := range []string{"b", "c", "d", "e", "f"} {
+		want = append(want, "+"+s.Deliver(backendtest.Message(id+"@example.com", id)))
+	}
+	s.FailRETR(2)
+	var got []string
+	_, err := r.Sync(tctx(t), backend.SyncRequest{Folders: st.states, Local: st.held, PageSize: 2}, func(p backend.Page) error {
+		for _, c := range p.Changes {
+			if m, ok := c.(backend.MessageAppeared); ok {
+				st.held[m.Ref] = true
+			}
+		}
+		maps.Copy(st.states, p.Folders)
+		got = append(got, arrivals(p.Changes)...)
+		return nil
+	})
+	if err == nil {
+		t.Fatal("Sync with RETR failing on page 2 succeeded")
+	}
+	s.FailRETR(-1)
+	cs, _ := st.sync(t, r, backend.SyncRequest{})
+	got = append(got, arrivals(cs)...)
+	slices.Sort(got)
+	if !slices.Equal(got, want) {
+		t.Errorf("across the interrupted round and the next got %v, want %v", got, want)
+	}
+}
+
+// With the cursor's message and every held one gone, the mail left is taken
+// as a first sync would take it: backfill, within the window.
+func TestPOP3AllHeldGone(t *testing.T) {
+	s := testmail.StartPOP3(t)
+	a := s.Deliver(backendtest.Message("a@example.com", "a"))
+	b := s.Deliver(backendtest.Message("b@example.com", "b"))
+	r := pop3Receiver(t, s, conn.None)
+	st := newPOP3Store()
+	st.sync(t, r, backend.SyncRequest{})
+	s.Remove(a)
+	s.Remove(b)
+	s.Deliver(backendtest.Message("c@example.com", "c"))
+	d := s.Deliver(backendtest.Message("d@example.com", "d"))
+	e := s.Deliver(backendtest.Message("e@example.com", "e"))
+	cs, _ := st.sync(t, r, backend.SyncRequest{Window: backend.Window{Newest: 2}})
+	if got := arrivals(cs); !slices.Equal(got, []string{e, d}) {
+		t.Errorf("with every held message gone got %v, want %v as backfill", got, []string{e, d})
 	}
 }
 

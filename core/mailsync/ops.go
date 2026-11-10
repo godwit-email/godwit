@@ -43,8 +43,8 @@ type op struct {
 
 // pusher is one push: the account's backend and what it declares.
 type pusher struct {
-	db       *store.DB
-	recv     backend.Receiver
+	db        *store.DB
+	recv      backend.Receiver
 	stable    bool // IdentityStable: a message may have other locations
 	inboxOnly bool // IdentityInboxOnly: a purge DELEs at the inbox location, wherever the message shows
 	canPurge  bool

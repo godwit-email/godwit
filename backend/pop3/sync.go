@@ -58,7 +58,7 @@ func (r *Receiver) Sync(ctx context.Context, req backend.SyncRequest, commit fun
 			}
 		}
 		next := st
-		var pick []entry // newest first
+		var pick []entry // newest first, but new arrivals oldest first
 		backfill := true
 		switch {
 		case req.Older > 0:
@@ -75,21 +75,29 @@ func (r *Receiver) Sync(ctx context.Context, req backend.SyncRequest, commit fun
 				return err
 			}
 		default:
-			backfill = false
-			bound := slices.IndexFunc(s.list, func(e entry) bool { return e.uid == cur.Newest })
-			if bound < 0 { // the cursor's message is gone: the newest one held bounds what is new
-				// shortcut: with every held message gone too, all mail left counts as
-				// new; keep more UIDLs in the cursor if old mail then shows up as new.
-				for bound = len(s.list) - 1; bound >= 0 && !isHeld(s.list[bound]); bound-- {
+			bound := -1 // no cursor: the inbox was empty, so all of it is new
+			if cur.Newest != "" {
+				bound = slices.IndexFunc(s.list, func(e entry) bool { return e.uid == cur.Newest })
+				if bound < 0 { // the cursor's message is gone: the newest one held bounds what is new
+					for bound = len(s.list) - 1; bound >= 0 && !isHeld(s.list[bound]); bound-- {
+					}
+				}
+				if bound < 0 {
+					// Every held message is gone too. POP3 lists in arrival order, so the
+					// mail left is mostly old: take it as a first sync would.
+					// shortcut: a message that arrived at that moment comes as backfill,
+					// with no notification; keep more UIDLs in the cursor once a user
+					// reports such a missed notification.
+					var err error
+					if pick, err = window(s, req.Window, isHeld); err != nil {
+						return err
+					}
+					break
 				}
 			}
+			backfill = false
 			pick = unheld(s.list[bound+1:], isHeld)
-		}
-		if req.Older == 0 {
-			next.Cursor = ""
-			if len(s.list) > 0 {
-				next.Cursor = cursor{s.list[len(s.list)-1].uid}.encode()
-			}
+			slices.Reverse(pick) // oldest first, so a page's newest message bounds all fetched so far
 		}
 		size := req.PageSize
 		if size <= 0 {
@@ -103,6 +111,17 @@ func (r *Receiver) Sync(ctx context.Context, req backend.SyncRequest, commit fun
 					return err
 				}
 				changes = append(changes, backend.MessageAppeared{Location: backend.Location{Folder: Inbox, Ref: backend.MessageRef(e.uid)}, Backfill: backfill, Content: c})
+			}
+			// The cursor moves only past mail this round has committed, so one that
+			// dies on a later page leaves the rest new for the next.
+			switch {
+			case req.Older > 0:
+			case n == len(pick) && len(s.list) > 0:
+				next.Cursor = cursor{s.list[len(s.list)-1].uid}.encode()
+			case n == len(pick):
+				next.Cursor = ""
+			case !backfill && n > 0:
+				next.Cursor = cursor{pick[n-1].uid}.encode()
 			}
 			pick = pick[n:]
 			stop := len(pick) == 0 || !st.Synced && req.Pages > 0 && pages >= req.Pages

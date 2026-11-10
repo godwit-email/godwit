@@ -81,7 +81,8 @@ func validSecurity(s Security) bool {
 var ErrJMAPOff = errors.New("JMAP is experimental: turn it on in settings to add a JMAP account")
 
 // errPOP3Off refuses to add a POP3 account while Settings.ExperimentalPOP3 is
-// off. Unexported: a wire code would need a pinned row in rpcbind (#631 adds one if the UI needs it).
+// off. It has no wire code: TestWireCodesPinned pins the codes, and the UI
+// hides POP3 while the setting is off, so only a program can meet it.
 var errPOP3Off = errors.New("POP3 is experimental: turn it on in settings to add a POP3 account")
 
 // allowPOP3 accepts in's POP3 receiving slot while Settings.ExperimentalPOP3
@@ -91,7 +92,7 @@ func (s *Service) allowPOP3(ctx context.Context, in *AccountInput) error {
 		return nil
 	}
 	st, err := s.loadSettings(ctx)
-	in.pop3 = st.ExperimentalPOP3
+	in.allowPOP3 = st.ExperimentalPOP3
 	return err
 }
 
@@ -112,7 +113,7 @@ func (in AccountInput) validate() error {
 		slot, name string
 		ok         bool
 		Server
-	}{{"receiving", strings.ToUpper(recv), recv == auth.IMAP || recv == auth.JMAP || recv == auth.POP3 && in.pop3, in.Receiving},
+	}{{"receiving", strings.ToUpper(recv), recv == auth.IMAP || recv == auth.JMAP || recv == auth.POP3 && in.allowPOP3, in.Receiving},
 		// Graph is not chosen but stored after SMTP refused AUTH; a stored
 		// account's servers come back with it.
 		{"sending", "SMTP", in.Sending.Protocol == "" || in.Sending.Protocol == auth.SMTP || in.Sending.Protocol == auth.Graph, in.Sending}} {
@@ -229,7 +230,7 @@ func (s *Service) AddAccount(ctx context.Context, in AccountInput) (Account, err
 	if err := s.allowPOP3(ctx, &in); err != nil {
 		return Account{}, err
 	}
-	if in.receiving() == auth.POP3 && !in.pop3 {
+	if in.receiving() == auth.POP3 && !in.allowPOP3 {
 		return Account{}, errPOP3Off
 	}
 	checked, checkErr := s.check(ctx, in, "")
@@ -701,7 +702,7 @@ func (a Account) servers() ServerSettings {
 
 // serverInput is the AccountInput that checks email's account on ss.
 func serverInput(email string, ss ServerSettings) AccountInput {
-	return AccountInput{Email: email, Username: ss.Username, Receiving: ss.Receiving, Sending: ss.Sending, pop3: true} // a stored account's
+	return AccountInput{Email: email, Username: ss.Username, Receiving: ss.Receiving, Sending: ss.Sending, allowPOP3: true} // a stored account's
 }
 
 // UpdateAccount writes p's fields in one transaction. New Servers are first

@@ -31,6 +31,7 @@ type POP3 struct {
 	rejectAuth bool
 	rejectDele bool
 	noUIDL     bool
+	retrLeft   int // RETRs that succeed before the rest fail; -1 for no limit
 	stls       int
 	dele       int
 }
@@ -44,7 +45,7 @@ type pop3Msg struct {
 func StartPOP3(t testing.TB) *POP3 {
 	t.Helper()
 	cert := httptest.NewTLSServer(nil) // only for its 127.0.0.1 certificate
-	s := &POP3{tls: cert.TLS, Roots: x509.NewCertPool()}
+	s := &POP3{tls: cert.TLS, Roots: x509.NewCertPool(), retrLeft: -1}
 	s.Roots.AddCert(cert.Certificate())
 	cert.Close()
 	ln, err := net.Listen("tcp", "127.0.0.1:0")
@@ -105,6 +106,9 @@ func (s *POP3) RejectAuth() { s.mu.Lock(); s.rejectAuth = true; s.mu.Unlock() }
 
 // RejectDele makes the server refuse DELE from now on.
 func (s *POP3) RejectDele() { s.mu.Lock(); s.rejectDele = true; s.mu.Unlock() }
+
+// FailRETR makes every RETR after the next n fail; n < 0 lets them all succeed again.
+func (s *POP3) FailRETR(n int) { s.mu.Lock(); s.retrLeft = n; s.mu.Unlock() }
 
 // DisableUIDL makes the server answer UIDL with -ERR, as one without it does.
 func (s *POP3) DisableUIDL() { s.mu.Lock(); s.noUIDL = true; s.mu.Unlock() }
@@ -245,6 +249,16 @@ func (s *POP3) serve(nc net.Conn) {
 			i := msg(arg(0))
 			if i < 0 {
 				say("-ERR no such message")
+				continue
+			}
+			s.mu.Lock()
+			fail := cmd == "RETR" && s.retrLeft == 0
+			if cmd == "RETR" && s.retrLeft > 0 {
+				s.retrLeft--
+			}
+			s.mu.Unlock()
+			if fail {
+				say("-ERR unable to read message")
 				continue
 			}
 			raw := drop[i].raw

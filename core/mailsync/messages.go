@@ -54,7 +54,9 @@ func importMessage(ctx context.Context, db *store.DB, a *account, f *folder, m b
 
 	// An inbox-only account's original is kept: its server may delete it.
 	// shortcut: a second message with the same bytes (unique content_hash)
-	// keeps none and is read from the server; share the file if that matters.
+	// keeps no original and is read from the server, so it is lost once the
+	// server deletes it; share the file between them once a user reports an
+	// unreadable POP3 duplicate.
 	var hash any
 	if r.originals != nil && m.Content.Raw != nil {
 		sum := sha256.Sum256(m.Content.Raw)

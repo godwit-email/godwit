@@ -13,8 +13,8 @@ import (
 	"path/filepath"
 	"slices"
 	"strconv"
-	"time"
 	"strings"
+	"time"
 
 	"github.com/godwit-email/godwit/core/events"
 	"github.com/godwit-email/godwit/core/mail"

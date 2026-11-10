@@ -41,10 +41,10 @@ var headerFields = []string{"MESSAGE-ID", "DATE", "SUBJECT", "FROM", "TO", "CC",
 // account is a sync's view of the account: limit > 0 keeps the newest limit
 // messages per folder, else months > 0 the mail since the cutoff, else all.
 type account struct {
-	id     int64
-	email  string
-	limit  int
-	months int
+	id        int64
+	email     string
+	limit     int
+	months    int
 	cursor    string // the backend's account cursor
 	noSelf    bool   // a local archive: email is a placeholder, not the user's address
 	inboxOnly bool   // InboxOnly
