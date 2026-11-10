@@ -8,9 +8,10 @@ import (
 	"fmt"
 )
 
-// CreateItem: send a MIME message, the server filing its copy in Sent Items.
+// CreateItem with SendAndSaveCopy: send a MIME message, the server filing
+// its copy in Sent Items. Saving without sending (SaveOnly) has its own types.
 
-type createItemRequest struct {
+type sendItemRequest struct {
 	XMLName     xml.Name `xml:"m:CreateItem"`
 	Disposition string   `xml:"MessageDisposition,attr"`
 	SavedIn     folderID `xml:"m:SavedItemFolderId>t:DistinguishedFolderId"`
@@ -18,13 +19,13 @@ type createItemRequest struct {
 	Bcc         []string `xml:"m:Items>t:Message>t:BccRecipients>t:Mailbox>t:EmailAddress"`
 }
 
-type createItemResponse struct {
+type sendItemResponse struct {
 	Messages []responseMessage `xml:"http://schemas.microsoft.com/exchange/services/2006/messages ResponseMessages>CreateItemResponseMessage"`
 }
 
 // sendMIME sends raw with SendAndSaveCopy, to its To and Cc and to bcc.
 func (c *client) sendMIME(ctx context.Context, raw []byte, bcc []string) error {
-	resp, err := call[createItemResponse](ctx, c, createItemRequest{Disposition: "SendAndSaveCopy",
+	resp, err := call[sendItemResponse](ctx, c, sendItemRequest{Disposition: "SendAndSaveCopy",
 		SavedIn: distinguished("sentitems"), MIME: base64.StdEncoding.EncodeToString(raw), Bcc: bcc})
 	if err != nil {
 		return err
