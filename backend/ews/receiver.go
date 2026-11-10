@@ -41,17 +41,33 @@ const ReasonServerTooOld = "ews.server_too_old"
 // is ReasonServerTooOld.
 var ErrServerTooOld = errors.New(ReasonServerTooOld)
 
-// reasonPending: the backend does not do this yet.
-const reasonPending = "ews.pending"
+// Reason keys, translated by the UI and Wit.
+const (
+	reasonPending    = "ews.pending"          // an op the backend does not write back yet
+	reasonDraft      = "ews.draft_read_only"  // Exchange sets IsDraft itself; it cannot be changed
+	reasonOneFolder  = "ews.one_folder"       // a message is in one folder only
+	reasonNoKeywords = "ews.no_keywords"      // custom keywords are not kept on Exchange
+	reasonNoLabels   = "ews.folder_not_label" // a folder is not a label: deleting it deletes its mail
+	reasonNoAllMail  = "ews.no_all_mail"      // archiving moves to the Archive folder
+)
 
-// shortcut: write-back, push and the flags are still to come, so every
-// feature but the ones only stated here is Unsupported for now; the
-// write-back and push tickets fill in the spec's table.
+// description is the spec's table: one Description for every EWS account,
+// since Exchange 2016 and later all do the same.
 var description = func() backend.Description {
 	d := backend.Description{Features: map[backend.Feature]backend.Support{}, Identity: backend.IdentityLocation, PollInterval: time.Minute}
 	for _, f := range backend.AllFeatures {
-		d.Features[f] = backend.Support{Level: backend.LevelUnsupported, Reason: reasonPending}
+		d.Features[f] = backend.Support{Level: backend.LevelSupported}
 	}
+	set := func(l backend.Level, reason string, fs ...backend.Feature) {
+		for _, f := range fs {
+			d.Features[f] = backend.Support{Level: l, Reason: reason}
+		}
+	}
+	set(backend.LevelNoted, reasonDraft, backend.FeatureDraft)
+	set(backend.LevelUnsupported, reasonOneFolder, backend.FeatureAddToFolder, backend.FeatureRemoveFromFolder)
+	set(backend.LevelUnsupported, reasonNoKeywords, backend.FeatureKeywords)
+	set(backend.LevelUnsupported, reasonNoLabels, backend.FeatureLabelDelete)
+	set(backend.LevelUnsupported, reasonNoAllMail, backend.FeatureAllMail)
 	return d
 }()
 
@@ -364,9 +380,30 @@ func (r *Receiver) Find(ctx context.Context, folder backend.FolderRef, messageID
 	return out, err
 }
 
-// Apply implements backend.Receiver: nothing is written back yet.
-func (r *Receiver) Apply(context.Context, backend.Op) (backend.Result, error) {
-	return backend.Result{Outcome: backend.Unsupported, Reason: reasonPending}, nil
+// Apply implements backend.Receiver. A message gone from the server is
+// backend.ErrNotFound; any other refusal of the item is Failed.
+func (r *Receiver) Apply(ctx context.Context, op backend.Op) (backend.Result, error) {
+	var err error
+	switch op := op.(type) {
+	case backend.SetFlags:
+		if us := flagUpdates(op.Add, op.Remove); len(us) > 0 {
+			err = r.c.updateItem(ctx, string(op.At.Ref), us)
+		}
+	case backend.AddToFolder, backend.RemoveFromFolder:
+		return backend.Result{Outcome: backend.Unsupported, Reason: reasonOneFolder}, nil
+	default:
+		return backend.Result{Outcome: backend.Unsupported, Reason: reasonPending}, nil
+	}
+	var refused *ResponseError
+	switch {
+	case isCode(err, "ErrorItemNotFound"):
+		return backend.Result{}, backend.ErrNotFound
+	case errors.As(err, &refused) && refused.Code != "ErrorServerBusy": // busy is worth retrying
+		return backend.Result{Outcome: backend.Failed, Reason: refused.Error()}, nil
+	case err != nil:
+		return backend.Result{}, err
+	}
+	return backend.Result{Outcome: backend.Done}, nil
 }
 
 // Watch implements backend.Receiver: no push yet, so core polls at
