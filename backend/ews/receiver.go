@@ -1,15 +1,19 @@
 package ews
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"fmt"
 	"io"
 	"maps"
 	"slices"
+	"strconv"
 	"strings"
 	"time"
 
+	"github.com/emersion/go-imap/v2"
+	"github.com/emersion/go-imap/v2/imapserver"
 	"github.com/godwit-email/godwit/backend"
 )
 
@@ -67,7 +71,7 @@ func (r *Receiver) Describe(ctx context.Context) (backend.Description, error) {
 // Check implements backend.Receiver: signing in, Exchange 2016 or later, and
 // listing the folders.
 func (r *Receiver) Check(ctx context.Context) (backend.CheckResult, error) {
-	fs, err := r.folders(ctx)
+	fs, _, err := r.folders(ctx)
 	if err != nil {
 		return backend.CheckResult{}, err
 	}
@@ -88,18 +92,16 @@ var roles = []struct {
 }
 
 // folders is the mailbox's mail folders, each named by its path from the
-// root and given its role by the distinguished folder it is.
-// shortcut: lists every folder each round (no hierarchy SyncState kept);
-// keep the SyncFolderHierarchy SyncState as the account cursor when a
-// mailbox's folders prove too many to list each round.
-func (r *Receiver) folders(ctx context.Context) ([]backend.Folder, error) {
+// root and given its role by the distinguished folder it is, and the
+// SyncFolderHierarchy SyncState they are at.
+func (r *Receiver) folders(ctx context.Context) ([]backend.Folder, string, error) {
 	names := []string{"msgfolderroot"}
 	for _, ro := range roles {
 		names = append(names, ro.id)
 	}
 	ids, err := r.c.getFolders(ctx, names)
 	if err != nil {
-		return nil, err
+		return nil, "", err
 	}
 	root, role := ids[0], map[string]backend.Role{}
 	for i, ro := range roles {
@@ -107,9 +109,9 @@ func (r *Receiver) folders(ctx context.Context) ([]backend.Folder, error) {
 			role[ids[i+1]] = ro.role
 		}
 	}
-	changes, _, err := r.c.syncFolderHierarchy(ctx, "")
+	changes, state, err := r.c.syncFolderHierarchy(ctx, "")
 	if err != nil {
-		return nil, err
+		return nil, "", err
 	}
 	byID := map[string]*folder{}
 	var order []*folder
@@ -131,50 +133,75 @@ func (r *Receiver) folders(ctx context.Context) ([]backend.Folder, error) {
 		out = append(out, backend.Folder{Ref: backend.FolderRef(f.ID.ID), Name: name, Delim: "/",
 			Parent: backend.FolderRef(parent), Role: role[f.ID.ID]})
 	}
-	return out, nil
+	return out, state, nil
+}
+
+// hierarchy is the folder list and the account cursor after it. From a
+// cursor, a hierarchy without changes since is nil folders; any change
+// lists every folder again, since a folder's name is its path and the
+// server reports a rename for the renamed folder alone. A cursor the server
+// voided lists them too.
+func (r *Receiver) hierarchy(ctx context.Context, account backend.Cursor) ([]backend.Folder, backend.Cursor, error) {
+	if account != "" {
+		changes, state, err := r.c.syncFolderHierarchy(ctx, string(account))
+		if err == nil && len(changes) == 0 {
+			return nil, backend.Cursor(state), nil
+		}
+		if err != nil && !isCode(err, "ErrorInvalidSyncStateData") {
+			return nil, "", err
+		}
+	}
+	fs, state, err := r.folders(ctx)
+	return fs, backend.Cursor(state), err
 }
 
 // getBatch is how many items one GetItem fetches, as Microsoft advises for
 // requests with MIME content.
 const getBatch = 10
 
-// Sync implements backend.Receiver: the folder list, then each folder's
-// SyncFolderItems pages from its cursor. A folder's first sync reports its
-// mail as backfill; mail created after it as new arrivals.
-// shortcut: reports only created items, all of them, whole: no Window, no
-// Older, no Update, ReadFlagChange or Delete yet, and no FolderReset on
-// ErrorInvalidSyncStateData; the incremental sync and sync range tickets
-// add them.
+// Sync implements backend.Receiver: the folders, when they changed since the
+// account cursor, then each folder's SyncFolderItems pages from its cursor.
+// A folder's first sync reports its mail as backfill, mail created after it
+// as new arrivals; an Update or ReadFlagChange is the item's flags, a
+// Delete its location gone. A folder whose SyncState the server voided is
+// reset and synced from nothing, local storage claiming its mail again.
+// shortcut: reports every created item, whole: no Window and no Older yet;
+// the sync range ticket adds them.
+// shortcut: the sync downloads whole messages; take their structure from
+// Attachments and fetch parts with GetAttachment if large mail slows it.
 func (r *Receiver) Sync(ctx context.Context, req backend.SyncRequest, commit func(backend.Page) error) (bool, error) {
 	if req.Older > 0 {
 		return false, fmt.Errorf("ews: older mail: %w", backend.ErrUnsupported)
 	}
-	fs, err := r.folders(ctx)
+	fs, account, err := r.hierarchy(ctx, req.Account)
 	if err != nil {
 		return false, err
 	}
-	var changes []backend.Change
-	seen := map[backend.FolderRef]bool{}
-	for _, f := range fs {
-		changes, seen[f.Ref] = append(changes, backend.FolderUpdated{Folder: f}), true
-	}
-	for ref := range req.Folders {
-		if !seen[ref] {
-			changes = append(changes, backend.FolderGone{Ref: ref})
+	page := backend.Page{Account: account}
+	refs := slices.Sorted(maps.Keys(req.Folders))
+	if fs != nil {
+		refs = nil
+		for _, f := range fs {
+			page.Changes, refs = append(page.Changes, backend.FolderUpdated{Folder: f}), append(refs, f.Ref)
+		}
+		for ref := range req.Folders {
+			if !slices.Contains(refs, ref) {
+				page.Changes = append(page.Changes, backend.FolderGone{Ref: ref})
+			}
 		}
 	}
-	if err := commit(backend.Page{Changes: changes}); err != nil {
+	if err := commit(page); err != nil {
 		return false, err
 	}
 	var errs []error
-	for _, f := range fs {
-		if req.Only != nil && !slices.Contains(req.Only, f.Ref) {
+	for _, ref := range refs {
+		if req.Only != nil && !slices.Contains(req.Only, ref) {
 			continue
 		}
-		err := r.syncFolder(ctx, req, f.Ref, commit)
+		err := r.syncFolder(ctx, req, ref, commit)
 		var re *ResponseError
 		if errors.As(err, &re) {
-			errs = append(errs, &backend.FolderError{Folder: f.Ref, Err: err})
+			errs = append(errs, &backend.FolderError{Folder: ref, Err: err})
 			continue
 		}
 		if err != nil {
@@ -187,40 +214,46 @@ func (r *Receiver) Sync(ctx context.Context, req backend.SyncRequest, commit fun
 // syncFolder takes folder's pages from its cursor to the last, committing each.
 func (r *Receiver) syncFolder(ctx context.Context, req backend.SyncRequest, folder backend.FolderRef, commit func(backend.Page) error) error {
 	st := req.Folders[folder]
+	at := func(ref string) backend.Location {
+		return backend.Location{Folder: folder, Ref: backend.MessageRef(ref)}
+	}
 	for {
 		m, err := r.c.syncFolderItems(ctx, string(folder), string(st.Cursor))
+		if isCode(err, "ErrorInvalidSyncStateData") && st.Cursor != "" {
+			st = backend.FolderState{}
+			if err := commit(backend.Page{Changes: []backend.Change{backend.FolderReset{Ref: folder}},
+				Folders: map[backend.FolderRef]backend.FolderState{folder: st}}); err != nil {
+				return err
+			}
+			continue
+		}
 		if err != nil {
 			return err
 		}
-		var created []string
+		var created, updated []string
+		var changes []backend.Change
 		for _, ch := range m.Changes.Change {
-			if ch.XMLName.Local == "Create" {
+			switch ch.XMLName.Local {
+			case "Create":
 				created = append(created, ch.ref())
+			case "Update", "ReadFlagChange": // the latter's IsRead alone would lose the other flags
+				updated = append(updated, ch.ref())
+			case "Delete":
+				changes = append(changes, backend.MessageGone{Location: at(ch.ref())})
 			}
 		}
-		var changes []backend.Change
-		for len(created) > 0 {
-			n := min(getBatch, len(created))
-			items, err := r.c.getItems(ctx, created[:n])
-			if err != nil {
-				return err
-			}
-			created = created[n:]
-			for _, it := range items {
-				if isCode(it.err, "ErrorItemNotFound") {
-					continue // gone since: a later page or round says so
-				}
-				if it.err != nil {
-					return it.err
-				}
-				changes = append(changes, backend.MessageAppeared{
-					Location: backend.Location{Folder: folder, Ref: backend.MessageRef(it.ID.ID)},
-					Flags:    backend.Flags{Seen: it.IsRead},
-					Backfill: !st.Synced,
-					Content: &backend.Content{Size: int64(len(it.raw)), Date: it.Received,
-						Header: backend.HeaderFields(it.raw, req.HeaderFields), Raw: it.raw},
-				})
-			}
+		err = r.each(ctx, created, true, func(it fetched) {
+			changes = append(changes, backend.MessageAppeared{Location: at(it.ID.ID), Flags: it.flags(), Backfill: !st.Synced,
+				Content: &backend.Content{Size: int64(len(it.raw)), Date: it.Received, Header: backend.HeaderFields(it.raw, req.HeaderFields), Raw: it.raw}})
+		})
+		if err != nil {
+			return err
+		}
+		err = r.each(ctx, updated, false, func(it fetched) {
+			changes = append(changes, backend.FlagsChanged{Location: at(it.ID.ID), Flags: it.flags()})
+		})
+		if err != nil {
+			return err
 		}
 		st = backend.FolderState{Cursor: backend.Cursor(m.SyncState), Synced: st.Synced || m.Last, Filled: st.Filled}
 		if err := commit(backend.Page{Changes: changes, Folders: map[backend.FolderRef]backend.FolderState{folder: st}}); err != nil {
@@ -232,24 +265,103 @@ func (r *Receiver) syncFolder(ctx context.Context, req backend.SyncRequest, fold
 	}
 }
 
-var errNotYet = fmt.Errorf("ews: %w yet", backend.ErrUnsupported)
-
-// Fetch implements backend.Receiver.
-// shortcut: not yet; content comes whole with the sync (Content.Raw).
-func (r *Receiver) Fetch(context.Context, backend.ContentRequest) (io.ReadCloser, error) {
-	return nil, errNotYet
+// each fetches the items ids, in batches, with their MIME content if mime,
+// and calls do with each one still there: one gone since is skipped, as a
+// later page or round says it is gone.
+func (r *Receiver) each(ctx context.Context, ids []string, mime bool, do func(fetched)) error {
+	batch := getBatch
+	if !mime {
+		batch = maxChanges
+	}
+	for len(ids) > 0 {
+		n := min(batch, len(ids))
+		items, err := r.c.getItems(ctx, ids[:n], mime)
+		if err != nil {
+			return err
+		}
+		ids = ids[n:]
+		for _, it := range items {
+			if isCode(it.err, "ErrorItemNotFound") {
+				continue
+			}
+			if it.err != nil {
+				return it.err
+			}
+			do(it)
+		}
+	}
+	return nil
 }
 
-// Headers implements backend.Receiver.
-// shortcut: not yet.
-func (r *Receiver) Headers(context.Context, backend.FolderRef, []backend.MessageRef, []string) (map[backend.MessageRef][]byte, error) {
-	return nil, errNotYet
+// Fetch implements backend.Receiver. The sync gives whole messages, which
+// local storage parses, so a part is named by its IMAP part path ("1.2")
+// and cut from the whole message, still transfer-encoded as IMAP gives it.
+func (r *Receiver) Fetch(ctx context.Context, req backend.ContentRequest) (io.ReadCloser, error) {
+	items, err := r.c.getItems(ctx, []string{string(req.Ref)}, true)
+	if err != nil {
+		return nil, err
+	}
+	if isCode(items[0].err, "ErrorItemNotFound") {
+		return nil, fmt.Errorf("ews: item %s: %w", req.Ref, backend.ErrNotFound)
+	}
+	if items[0].err != nil {
+		return nil, items[0].err
+	}
+	raw := items[0].raw
+	switch {
+	case req.Part != "":
+		var path []int
+		for s := range strings.SplitSeq(string(req.Part), ".") {
+			n, err := strconv.Atoi(s)
+			if err != nil || n < 1 {
+				return nil, fmt.Errorf("ews: part %q: %w", req.Part, backend.ErrNotFound)
+			}
+			path = append(path, n)
+		}
+		if raw = imapserver.ExtractBodySection(bytes.NewReader(raw), &imap.FetchItemBodySection{Part: path}); raw == nil {
+			return nil, fmt.Errorf("ews: part %q: %w", req.Part, backend.ErrNotFound)
+		}
+	case req.HeaderFields != nil:
+		raw = backend.HeaderFields(raw, req.HeaderFields)
+	}
+	return io.NopCloser(bytes.NewReader(raw)), nil
 }
 
-// Find implements backend.Receiver.
-// shortcut: not yet.
-func (r *Receiver) Find(context.Context, backend.FolderRef, string, int64) ([]backend.MessageRef, error) {
-	return nil, errNotYet
+// Headers implements backend.Receiver: GetItem with the MIME content, the
+// fields cut from it.
+func (r *Receiver) Headers(ctx context.Context, _ backend.FolderRef, refs []backend.MessageRef, fields []string) (map[backend.MessageRef][]byte, error) {
+	ids := make([]string, len(refs))
+	for i, ref := range refs {
+		ids[i] = string(ref)
+	}
+	out := map[backend.MessageRef][]byte{}
+	err := r.each(ctx, ids, true, func(it fetched) {
+		out[backend.MessageRef(it.ID.ID)] = backend.HeaderFields(it.raw, fields)
+	})
+	return out, err
+}
+
+// Find implements backend.Receiver: FindItem on InternetMessageId; a size
+// is the MIME message's, as the sync stores it, so it is compared on the
+// MIME content of the items found.
+func (r *Receiver) Find(ctx context.Context, folder backend.FolderRef, messageID string, size int64) ([]backend.MessageRef, error) {
+	ids, err := r.c.findByMessageID(ctx, string(folder), "<"+messageID+">")
+	if err != nil {
+		return nil, err
+	}
+	var out []backend.MessageRef
+	if size <= 0 {
+		for _, id := range ids {
+			out = append(out, backend.MessageRef(id))
+		}
+		return out, nil
+	}
+	err = r.each(ctx, ids, true, func(it fetched) {
+		if int64(len(it.raw)) == size {
+			out = append(out, backend.MessageRef(it.ID.ID))
+		}
+	})
+	return out, err
 }
 
 // Apply implements backend.Receiver: nothing is written back yet.

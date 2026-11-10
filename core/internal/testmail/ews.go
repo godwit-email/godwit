@@ -8,6 +8,8 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"net/mail"
+	"slices"
 	"strconv"
 	"strings"
 	"sync"
@@ -19,9 +21,15 @@ import (
 // EWS is a running fake EWS server (Exchange Web Services) with one mailbox,
 // alice/secret over HTTP Basic (or NTLM: UseNTLM), that starts with the
 // distinguished mail folders and a calendar. It speaks GetFolder, SyncFolderHierarchy,
-// SyncFolderItems and GetItem; an operation it does not know fails the test.
-// Its responses spell the namespace prefixes differently from operation to
-// operation, as servers do. Hooks (RejectAuth, SetVersion, Busy) inject faults.
+// SyncFolderItems, GetItem and FindItem; an operation it does not know fails
+// the test. Its responses spell the namespace prefixes differently from
+// operation to operation, as servers do. Hooks change the mailbox as another
+// client would (MarkRead, MarkFlagged, MarkAnswered, Remove, RenameFolder,
+// RemoveFolder) or inject faults (RejectAuth, SetVersion, Reset, Busy).
+//
+// Every change takes the next sequence number, and deleted items and
+// folders stay as tombstones, so a SyncState, the sequence number it was
+// given at, says what changed since.
 type EWS struct {
 	t   testing.TB
 	srv *httptest.Server
@@ -38,8 +46,9 @@ type EWS struct {
 
 	latency          atomic.Int64 // time.Duration each request takes before being read
 	inFlight, maxFly atomic.Int32 // requests being answered now, and the most at once
-	folders          []*ewsFolder // the root first
+	folders          []*ewsFolder // the root first; deleted ones too, gone
 	next             int          // the last id given
+	seq              int          // the last change's sequence number
 }
 
 type ewsFolder struct {
@@ -47,6 +56,8 @@ type ewsFolder struct {
 	class            string // FolderClass; "IPF.Appointment" is a calendar
 	distinguished    string // its DistinguishedFolderId, "" for none
 	items            []*ewsItem
+	epoch            int // Reset voids the SyncStates given in an older one
+	changed              // in the hierarchy
 }
 
 type ewsItem struct {
@@ -54,6 +65,17 @@ type ewsItem struct {
 	raw      []byte
 	received time.Time
 	read     bool
+	flagged  bool
+	verb     int  // PidTagLastVerbExecuted, 0 for none
+	readOnly bool // its last change was to read alone: a ReadFlagChange
+	changed
+}
+
+// changed is when a folder or item was created and last changed, and
+// whether it is gone.
+type changed struct {
+	created, modseq int
+	gone            bool
 }
 
 const (
@@ -136,6 +158,76 @@ func (s *EWS) MaxConcurrent() int { return int(s.maxFly.Load()) }
 func (s *EWS) Deliver(path string, raw []byte) string {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	f := s.path(path, true)
+	it := &ewsItem{id: s.newID("AAMkItem"), raw: raw, received: time.Now().UTC().Truncate(time.Second)}
+	it.created = s.touch(&it.changed)
+	f.items = append(f.items, it)
+	return it.id
+}
+
+// MarkRead marks the item id read or unread.
+func (s *EWS) MarkRead(id string, read bool) {
+	s.change(id, true, func(it *ewsItem) { it.read = read })
+}
+
+// MarkFlagged flags or unflags the item id.
+func (s *EWS) MarkFlagged(id string, flagged bool) {
+	s.change(id, false, func(it *ewsItem) { it.flagged = flagged })
+}
+
+// MarkAnswered records a reply to the item id (PidTagLastVerbExecuted 102).
+func (s *EWS) MarkAnswered(id string) {
+	s.change(id, false, func(it *ewsItem) { it.verb = 102 })
+}
+
+// Remove deletes the item id for good.
+func (s *EWS) Remove(id string) {
+	s.change(id, false, func(it *ewsItem) { it.gone = true })
+}
+
+// RenameFolder renames the folder at path to name; its FolderId stays.
+func (s *EWS) RenameFolder(path, name string) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	f := s.path(path, false)
+	f.name = name
+	s.touch(&f.changed)
+}
+
+// RemoveFolder deletes the folder at path with its mail.
+func (s *EWS) RemoveFolder(path string) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	f := s.path(path, false)
+	f.gone = true
+	s.touch(&f.changed)
+}
+
+// Reset voids every SyncState given for the folder at path, as a server
+// that lost its synchronization state does: the next SyncFolderItems from
+// one is ErrorInvalidSyncStateData. ItemIds stay, as on Exchange.
+func (s *EWS) Reset(path string) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.path(path, false).epoch++
+}
+
+// change changes the item id with do, as another client would.
+func (s *EWS) change(id string, readOnly bool, do func(*ewsItem)) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	it := s.findItem(id)
+	if it == nil {
+		s.t.Fatalf("fake EWS: no item %s", id)
+	}
+	do(it)
+	it.readOnly = readOnly
+	s.touch(&it.changed)
+}
+
+// path is the folder at path ("INBOX" is the inbox), created if create; it
+// fails the test if there is none.
+func (s *EWS) path(path string, create bool) *ewsFolder {
 	f := s.folders[0]
 	if path == "INBOX" {
 		path = "Inbox"
@@ -143,18 +235,37 @@ func (s *EWS) Deliver(path string, raw []byte) string {
 	for _, name := range strings.Split(path, "/") {
 		var child *ewsFolder
 		for _, c := range s.folders {
-			if c.parent == f.id && c.name == name {
+			if c.parent == f.id && c.name == name && !c.gone {
 				child = c
 			}
+		}
+		if child == nil && !create {
+			s.t.Fatalf("fake EWS: no folder %q", path)
 		}
 		if child == nil {
 			child = s.folder(f.id, name, "", "IPF.Note")
 		}
 		f = child
 	}
-	it := &ewsItem{id: s.newID("AAMkItem"), raw: raw, received: time.Now().UTC().Truncate(time.Second)}
-	f.items = append(f.items, it)
-	return it.id
+	return f
+}
+
+// touch gives c the next sequence number and returns it.
+func (s *EWS) touch(c *changed) int {
+	s.seq++
+	c.modseq = s.seq
+	return s.seq
+}
+
+func (s *EWS) findItem(id string) *ewsItem {
+	for _, f := range s.folders {
+		for _, it := range f.items {
+			if it.id == id && !it.gone && !f.gone {
+				return it
+			}
+		}
+	}
+	return nil
 }
 
 func (s *EWS) newID(prefix string) string {
@@ -164,6 +275,7 @@ func (s *EWS) newID(prefix string) string {
 
 func (s *EWS) folder(parent, name, distinguished, class string) *ewsFolder {
 	f := &ewsFolder{id: s.newID("AAMkFolder"), parent: parent, name: name, distinguished: distinguished, class: class}
+	f.created = s.touch(&f.changed)
 	s.folders = append(s.folders, f)
 	return f
 }
@@ -177,12 +289,15 @@ type ewsRequest struct {
 	folderIDs     []string          // FolderId Ids
 	itemIDs       []string          // ItemId Ids
 	text          map[string]string // the text of SyncState, MaxChangesReturned, IncludeMimeContent
+	fieldURIs     []string          // FieldURI FieldURIs, in order
+	constants     []string          // Constant Values, in order
+	elements      map[string]bool   // the local names of its elements
 }
 
 // readRequest reads a request by namespace, as a server does: a client's
 // element in the wrong namespace is not what it meant.
 func readRequest(body []byte) (ewsRequest, error) {
-	r := ewsRequest{text: map[string]string{}}
+	r := ewsRequest{text: map[string]string{}, elements: map[string]bool{}}
 	d := xml.NewDecoder(bytes.NewReader(body))
 	var inBody bool
 	var cur string
@@ -197,6 +312,7 @@ func readRequest(body []byte) (ewsRequest, error) {
 		switch el := tok.(type) {
 		case xml.StartElement:
 			cur = el.Name.Local
+			r.elements[cur] = true
 			attr := func(n string) string {
 				for _, a := range el.Attr {
 					if a.Name.Local == n {
@@ -215,6 +331,10 @@ func readRequest(body []byte) (ewsRequest, error) {
 				r.op = cur
 			case cur == "RequestServerVersion" && el.Name.Space == nsTypes:
 				r.version = attr("Version")
+			case cur == "FieldURI":
+				r.fieldURIs = append(r.fieldURIs, attr("FieldURI"))
+			case cur == "Constant":
+				r.constants = append(r.constants, attr("Value"))
 			case cur == "DistinguishedFolderId" || cur == "FolderId" || cur == "ItemId":
 				if el.Name.Space != nsTypes {
 					return r, fmt.Errorf("%s in namespace %q", cur, el.Name.Space)
@@ -267,11 +387,13 @@ func (s *EWS) serve(w http.ResponseWriter, r *http.Request) {
 	case "GetFolder":
 		s.getFolder(w, req)
 	case "SyncFolderHierarchy":
-		s.syncFolderHierarchy(w)
+		s.syncFolderHierarchy(w, req)
 	case "SyncFolderItems":
 		s.syncFolderItems(w, req)
 	case "GetItem":
 		s.getItem(w, req)
+	case "FindItem":
+		s.findItems(w, req)
 	default:
 		s.t.Errorf("fake EWS: unknown operation %s", req.op)
 		s.fault(w, "ErrorInvalidRequest", "unknown operation "+req.op)
@@ -354,18 +476,20 @@ func (s *EWS) serverBusy(w http.ResponseWriter, op string) {
 		op, text, ms, op))
 }
 
-// message is one response message of op: Success with inner, or Error with code.
+// message is one response message of op: Success with inner, or Error with
+// code followed by inner (what the operation still gives on that error).
 func message(op, code, inner string) string {
 	if code != "" {
-		return fmt.Sprintf(`<m:%sResponseMessage ResponseClass="Error"><m:MessageText>%s</m:MessageText><m:ResponseCode>%s</m:ResponseCode><m:DescriptiveLinkKey>0</m:DescriptiveLinkKey></m:%sResponseMessage>`,
-			op, code, code, op)
+		return fmt.Sprintf(`<m:%sResponseMessage ResponseClass="Error"><m:MessageText>%s</m:MessageText><m:ResponseCode>%s</m:ResponseCode><m:DescriptiveLinkKey>0</m:DescriptiveLinkKey>%s</m:%sResponseMessage>`,
+			op, code, code, inner, op)
 	}
 	return fmt.Sprintf(`<m:%sResponseMessage ResponseClass="Success"><m:ResponseCode>NoError</m:ResponseCode>%s</m:%sResponseMessage>`, op, inner, op)
 }
 
+// byID is the live folder id, nil if there is none.
 func (s *EWS) byID(id string) *ewsFolder {
 	for _, f := range s.folders {
-		if f.id == id {
+		if f.id == id && !f.gone {
 			return f
 		}
 	}
@@ -388,7 +512,7 @@ func (s *EWS) getFolder(w http.ResponseWriter, req ewsRequest) {
 	for _, d := range req.distinguished {
 		var found *ewsFolder
 		for _, f := range s.folders {
-			if f.distinguished == d {
+			if f.distinguished == d && !f.gone {
 				found = f
 			}
 		}
@@ -401,19 +525,40 @@ func (s *EWS) getFolder(w http.ResponseWriter, req ewsRequest) {
 	s.respond(w, styleUsual, "GetFolder", "<m:ResponseMessages>"+msgs.String()+"</m:ResponseMessages>")
 }
 
-// syncFolderHierarchy answers every folder under the root as created: it
-// keeps no hierarchy state.
-func (s *EWS) syncFolderHierarchy(w http.ResponseWriter) {
+// syncFolderHierarchy answers the folder changes since the SyncState, "H"
+// and the sequence number it was given at; every folder without one.
+func (s *EWS) syncFolderHierarchy(w http.ResponseWriter, req ewsRequest) {
+	reply := func(msg string) {
+		s.respond(w, styleEnvelopeDecl, "SyncFolderHierarchy", "<m:ResponseMessages>"+msg+"</m:ResponseMessages>")
+	}
+	since := 0
+	if st, ok := req.text["SyncState"]; ok {
+		n, err := strconv.Atoi(strings.TrimPrefix(st, "H"))
+		if err != nil || !strings.HasPrefix(st, "H") || n > s.seq {
+			reply(message("SyncFolderHierarchy", "ErrorInvalidSyncStateData", ""))
+			return
+		}
+		since = n
+	}
 	var changes strings.Builder
 	for _, f := range s.folders[1:] {
-		changes.WriteString("<t:Create>" + folderXML(f) + "</t:Create>")
+		switch {
+		case f.modseq <= since || f.gone && f.created > since:
+		case f.gone:
+			fmt.Fprintf(&changes, `<t:Delete><t:FolderId Id="%s" ChangeKey="AQAAAA=="/></t:Delete>`, f.id)
+		case f.created > since:
+			changes.WriteString("<t:Create>" + folderXML(f) + "</t:Create>")
+		default:
+			changes.WriteString("<t:Update>" + folderXML(f) + "</t:Update>")
+		}
 	}
-	s.respond(w, styleEnvelopeDecl, "SyncFolderHierarchy", "<m:ResponseMessages>"+message("SyncFolderHierarchy", "",
-		"<m:SyncState>H1</m:SyncState><m:IncludesLastFolderInRange>true</m:IncludesLastFolderInRange><m:Changes>"+changes.String()+"</m:Changes>")+"</m:ResponseMessages>")
+	reply(message("SyncFolderHierarchy", "", fmt.Sprintf("<m:SyncState>H%d</m:SyncState><m:IncludesLastFolderInRange>true</m:IncludesLastFolderInRange><m:Changes>%s</m:Changes>",
+		s.seq, changes.String())))
 }
 
-// syncFolderItems pages through a folder's items in the order they came; a
-// SyncState is how many were given.
+// syncFolderItems pages through a folder's item changes in the order they
+// were made. A SyncState is "I", the folder's epoch, "." and the sequence
+// number it was given at; every item without one.
 func (s *EWS) syncFolderItems(w http.ResponseWriter, req ewsRequest) {
 	reply := func(msg string) {
 		s.respond(w, styleDefaultNS, "SyncFolderItems", "<m:ResponseMessages>"+msg+"</m:ResponseMessages>")
@@ -426,50 +571,108 @@ func (s *EWS) syncFolderItems(w http.ResponseWriter, req ewsRequest) {
 		reply(message("SyncFolderItems", "ErrorFolderNotFound", ""))
 		return
 	}
-	from := 0
+	since := 0
 	if st, ok := req.text["SyncState"]; ok {
-		n, err := strconv.Atoi(strings.TrimPrefix(st, "I"))
-		if err != nil || n > len(f.items) {
-			reply(message("SyncFolderItems", "ErrorInvalidSyncStateData", ""))
+		epoch, n, _ := strings.Cut(strings.TrimPrefix(st, "I"), ".")
+		e, err1 := strconv.Atoi(epoch)
+		m, err2 := strconv.Atoi(n)
+		if err1 != nil || err2 != nil || e != f.epoch || m > s.seq {
+			// as Exchange answers it: an empty SyncState, and the last of the range
+			reply(message("SyncFolderItems", "ErrorInvalidSyncStateData", "<m:SyncState/><m:IncludesLastItemInRange>true</m:IncludesLastItemInRange>"))
 			return
 		}
-		from = n
+		since = m
 	}
 	maxChanges, _ := strconv.Atoi(req.text["MaxChangesReturned"])
 	if maxChanges < 1 || maxChanges > 512 {
 		s.t.Errorf("fake EWS: MaxChangesReturned %q", req.text["MaxChangesReturned"])
 		maxChanges = 512
 	}
-	to := min(from+maxChanges, len(f.items))
-	var changes strings.Builder
-	for _, it := range f.items[from:to] {
-		fmt.Fprintf(&changes, `<t:Create><t:Message><t:ItemId Id="%s" ChangeKey="CQAAAA=="/></t:Message></t:Create>`, it.id)
+	var todo []*ewsItem
+	for _, it := range f.items {
+		if it.modseq > since && !(it.gone && it.created > since) {
+			todo = append(todo, it)
+		}
 	}
-	reply(message("SyncFolderItems", "", fmt.Sprintf("<m:SyncState>I%d</m:SyncState><m:IncludesLastItemInRange>%t</m:IncludesLastItemInRange><m:Changes>%s</m:Changes>",
-		to, to == len(f.items), changes.String())))
+	slices.SortFunc(todo, func(a, b *ewsItem) int { return a.modseq - b.modseq })
+	state, last := s.seq, true
+	if len(todo) > maxChanges {
+		todo, state, last = todo[:maxChanges], todo[maxChanges-1].modseq, false
+	}
+	var changes strings.Builder
+	for _, it := range todo {
+		switch {
+		case it.gone:
+			fmt.Fprintf(&changes, `<t:Delete><t:ItemId Id="%s" ChangeKey="CQAAAA=="/></t:Delete>`, it.id)
+		case it.created > since:
+			fmt.Fprintf(&changes, `<t:Create><t:Message><t:ItemId Id="%s" ChangeKey="CQAAAA=="/></t:Message></t:Create>`, it.id)
+		case it.readOnly:
+			fmt.Fprintf(&changes, `<t:ReadFlagChange><t:ItemId Id="%s" ChangeKey="CQAAAA=="/><t:IsRead>%t</t:IsRead></t:ReadFlagChange>`, it.id, it.read)
+		default:
+			fmt.Fprintf(&changes, `<t:Update><t:Message><t:ItemId Id="%s" ChangeKey="CQAAAA=="/></t:Message></t:Update>`, it.id)
+		}
+	}
+	reply(message("SyncFolderItems", "", fmt.Sprintf("<m:SyncState>I%d.%d</m:SyncState><m:IncludesLastItemInRange>%t</m:IncludesLastItemInRange><m:Changes>%s</m:Changes>",
+		f.epoch, state, last, changes.String())))
 }
 
+// getItem answers the items with their flags, and their MIME content when
+// asked.
 func (s *EWS) getItem(w http.ResponseWriter, req ewsRequest) {
-	if req.text["IncludeMimeContent"] != "true" {
-		s.t.Errorf("fake EWS: GetItem without IncludeMimeContent")
-	}
 	var msgs strings.Builder
 	for _, id := range req.itemIDs {
-		var found *ewsItem
-		for _, f := range s.folders {
-			for _, it := range f.items {
-				if it.id == id {
-					found = it
-				}
-			}
-		}
-		if found == nil {
+		it := s.findItem(id)
+		if it == nil {
 			msgs.WriteString(message("GetItem", "ErrorItemNotFound", ""))
 			continue
 		}
-		msgs.WriteString(message("GetItem", "", fmt.Sprintf(`<m:Items><t:Message><t:MimeContent CharacterSet="UTF-8">%s</t:MimeContent><t:ItemId Id="%s" ChangeKey="CQAAAA=="/>`+
-			`<t:DateTimeReceived>%s</t:DateTimeReceived><t:IsRead>%t</t:IsRead></t:Message></m:Items>`,
-			base64.StdEncoding.EncodeToString(found.raw), found.id, found.received.Format(time.RFC3339), found.read)))
+		mime := ""
+		if req.text["IncludeMimeContent"] == "true" {
+			mime = `<t:MimeContent CharacterSet="UTF-8">` + base64.StdEncoding.EncodeToString(it.raw) + `</t:MimeContent>`
+		}
+		flag, verb := "NotFlagged", ""
+		if it.flagged {
+			flag = "Flagged"
+		}
+		if it.verb != 0 {
+			verb = fmt.Sprintf(`<t:ExtendedProperty><t:ExtendedFieldURI PropertyTag="0x1081" PropertyType="Integer"/><t:Value>%d</t:Value></t:ExtendedProperty>`, it.verb)
+		}
+		msgs.WriteString(message("GetItem", "", fmt.Sprintf(`<m:Items><t:Message>%s<t:ItemId Id="%s" ChangeKey="CQAAAA=="/>`+
+			`<t:DateTimeReceived>%s</t:DateTimeReceived>%s<t:IsRead>%t</t:IsRead><t:Flag><t:FlagStatus>%s</t:FlagStatus></t:Flag></t:Message></m:Items>`,
+			mime, it.id, it.received.Format(time.RFC3339), verb, it.read, flag)))
 	}
 	s.respond(w, styleEnvelopeDecl, "GetItem", "<m:ResponseMessages>"+msgs.String()+"</m:ResponseMessages>")
+}
+
+// findItems answers the items of one folder whose InternetMessageId equals
+// a constant: the only restriction it knows, so a query written otherwise
+// fails the test rather than matching by accident.
+func (s *EWS) findItems(w http.ResponseWriter, req ewsRequest) {
+	reply := func(msg string) {
+		s.respond(w, styleUsual, "FindItem", "<m:ResponseMessages>"+msg+"</m:ResponseMessages>")
+	}
+	if !req.elements["IsEqualTo"] || !slices.Equal(req.fieldURIs, []string{"message:InternetMessageId"}) || len(req.constants) != 1 {
+		s.t.Errorf("fake EWS: FindItem restriction %v %v", req.fieldURIs, req.constants)
+		reply(message("FindItem", "ErrorInvalidRestriction", ""))
+		return
+	}
+	var f *ewsFolder
+	if len(req.folderIDs) == 1 {
+		f = s.byID(req.folderIDs[0])
+	}
+	if f == nil {
+		reply(message("FindItem", "ErrorFolderNotFound", ""))
+		return
+	}
+	var items strings.Builder
+	n := 0
+	for _, it := range f.items {
+		m, err := mail.ReadMessage(bytes.NewReader(it.raw))
+		if it.gone || err != nil || strings.TrimSpace(m.Header.Get("Message-Id")) != req.constants[0] {
+			continue
+		}
+		n++
+		fmt.Fprintf(&items, `<t:Message><t:ItemId Id="%s" ChangeKey="CQAAAA=="/></t:Message>`, it.id)
+	}
+	reply(message("FindItem", "", fmt.Sprintf(`<m:RootFolder TotalItemsInView="%d" IncludesLastItemInRange="true"><t:Items>%s</t:Items></m:RootFolder>`, n, items.String())))
 }
