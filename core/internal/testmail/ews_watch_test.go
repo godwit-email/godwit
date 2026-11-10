@@ -23,6 +23,23 @@ func TestEWSWatchNTLM(t *testing.T) {
 	nextWake(t, wakes, done)
 }
 
+// A server closed while a client still streams from it closes at once,
+// not when the client's stream goes idle: the client's own cleanup, as a
+// service's in coretest, may run only after the server's.
+func TestEWSCloseWhileStreaming(t *testing.T) {
+	ctx, cancel := context.WithCancel(tctx(t))
+	defer cancel() // after the subtest's server has closed
+	start := time.Now()
+	t.Run("streaming", func(t *testing.T) {
+		s := testmail.StartEWS(t)
+		go ewsReceiver(t, s).Watch(ctx, func([]backend.FolderRef) {})
+		s.WaitStreams(t, 1)
+	})
+	if d := time.Since(start); d > 10*time.Second {
+		t.Errorf("closing took %v", d)
+	}
+}
+
 // watching runs Watch until the test ends; wakes gets each wake's folders,
 // done Watch's return.
 func watching(t *testing.T, r backend.Receiver) (wakes chan []backend.FolderRef, done chan error) {
