@@ -1,5 +1,33 @@
 # Changelog
 
+## [1.33.0](https://github.com/godwit-email/godwit/compare/v1.32.0...v1.33.0) (2026-11-10)
+
+
+### ⚠ BREAKING CHANGES
+
+* the local API's account fields change shape. AccountInput, Account and ServerSettings drop IMAPHost, IMAPPort, IMAPSecurity, SMTPHost, SMTPPort and SMTPSecurity for Receiving and Sending, each {Protocol, Host, Port, Security}. Migrate by moving IMAPHost/IMAPPort/IMAPSecurity into Receiving.Host/Port/Security and SMTPHost/SMTPPort/SMTPSecurity into Sending.Host/Port/Security; Protocol may stay empty on input and reads back as "imap" and "smtp". DetectProvider and ListProviders return providers whose IMAP, SMTP and Login fields are now Entries, a list of {Protocol, Host, Port, Security, Login}.
+
+### Features
+
+* **core:** Options.Keyring lets a shell supply the keychain ([#615](https://github.com/godwit-email/godwit/issues/615)) ([c1b3ae3](https://github.com/godwit-email/godwit/commit/c1b3ae3f17ce2d13411e7c1abc07ec2051f16397))
+* **macos:** add Sync all and Compose to the Dock menu ([#591](https://github.com/godwit-email/godwit/issues/591)) ([2d75086](https://github.com/godwit-email/godwit/commit/2d75086dd60e837e430d14efbad4a813317d7dfc))
+* protocol backends — move IMAP/SMTP behind the seam, add JMAP (experimental) ([#613](https://github.com/godwit-email/godwit/issues/613)) ([91447bc](https://github.com/godwit-email/godwit/commit/91447bce06b04d22390f304f61988ac6394e43fa))
+* **reader:** batch-save attachments and remember last save directory ([#616](https://github.com/godwit-email/godwit/issues/616)) ([34bf763](https://github.com/godwit-email/godwit/commit/34bf763f42e93976f1f565da035039ef2130f777))
+* **settings:** move the JMAP switch to a Labs page ([#622](https://github.com/godwit-email/godwit/issues/622)) ([a398bd5](https://github.com/godwit-email/godwit/commit/a398bd5e6d179c30343801f3d4f338723032f8bd))
+
+
+### Bug Fixes
+
+* **onboarding:** add Fastmail's provider mark ([#623](https://github.com/godwit-email/godwit/issues/623)) ([24039c7](https://github.com/godwit-email/godwit/commit/24039c794600a48a4f5e42e07536db7650e10cc0))
+* **report:** keep literal sizes and IMAP words in the masked IMAP trace ([290c304](https://github.com/godwit-email/godwit/commit/290c3041419e47e20188875d8b7bf03d5a64bc7d))
+* **report:** keep literal sizes and IMAP words in the masked IMAP trace ([588a022](https://github.com/godwit-email/godwit/commit/588a0226cd89404e26d677e29f7ce899497ff1cd))
+* **report:** preserve masked trace provenance ([f3a58e6](https://github.com/godwit-email/godwit/commit/f3a58e65814c95acbae29b49e9ca33ef7c2102f7))
+
+
+### Documentation
+
+* note that Release-As needs a commit that changes files ([#621](https://github.com/godwit-email/godwit/issues/621)) ([db74295](https://github.com/godwit-email/godwit/commit/db742958900764bb8550ed56e2004b7a8553ba62))
+
 ## [1.32.0](https://github.com/godwit-email/godwit/compare/v1.31.0...v1.32.0) (2026-11-09)
 
 
