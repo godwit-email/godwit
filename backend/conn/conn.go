@@ -9,7 +9,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"log"
 	"mime"
 	"net"
 	"net/url"
@@ -123,31 +122,46 @@ func loginErr(ctx context.Context, proto string, e Endpoint, err error) error {
 	case errors.As(err, &ne), errors.Is(err, io.EOF), errors.Is(err, io.ErrUnexpectedEOF), errors.Is(err, net.ErrClosed):
 		return fmt.Errorf("%s login: %w", proto, err)
 	}
-	logRefusal(proto, e, err)
 	if se, ok := errors.AsType[*smtp.SMTPError](err); ok && se.EnhancedCode == (smtp.EnhancedCode{5, 7, 139}) {
 		return fmt.Errorf("%s: %w: %w", proto, ErrSMTPAuthDisabled, backend.ErrAuthFailed)
 	}
-	return fmt.Errorf("%s: %w", proto, backend.ErrAuthFailed)
+	return fmt.Errorf("%s: %w", proto, refused(e, err))
 }
 
-// logRefusal logs the server's status reply to a refused login, which the
-// error loginErr returns drops: the log, and so an error report, says why.
-// Only a NO/BAD or an SMTP status, with e's credentials cut out of it.
-func logRefusal(proto string, e Endpoint, err error) {
+// refusal is backend.ErrAuthFailed carrying the server's status reply, with
+// the endpoint's credentials cut out. Its message is ErrAuthFailed's, so the
+// reply reaches only a caller that asks for it (RefusalReply).
+type refusal struct{ reply string }
+
+func (r *refusal) Error() string        { return backend.ErrAuthFailed.Error() }
+func (r *refusal) Is(target error) bool { return target == backend.ErrAuthFailed }
+
+// RefusalReply is the server's reply to a refused login in err (a NO/BAD or an
+// SMTP status, credentials masked), "" when err carries none.
+func RefusalReply(err error) string {
+	if r, ok := errors.AsType[*refusal](err); ok {
+		return r.reply
+	}
+	return ""
+}
+
+// refused is backend.ErrAuthFailed, with the server's status reply in err
+// when it is one: unparsed protocol data, which may echo the password, is not kept.
+func refused(e Endpoint, err error) error {
 	var text string
 	if ie, ok := errors.AsType[*imap.Error](err); ok {
 		text = ie.Error()
 	} else if se, ok := errors.AsType[*smtp.SMTPError](err); ok {
 		text = se.Error()
 	} else {
-		return
+		return backend.ErrAuthFailed
 	}
 	for _, secret := range []string{e.Password, e.AccessToken, e.Username} {
 		if secret != "" {
 			text = strings.ReplaceAll(text, secret, "***")
 		}
 	}
-	log.Printf("%s: %s refused the login: %s", proto, e.Host, text)
+	return &refusal{text}
 }
 
 // connectErr is ctxErr for a failure before login. The reader may already have

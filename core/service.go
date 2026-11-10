@@ -693,6 +693,9 @@ func (s *Service) dialAccount(ctx context.Context, accountID int64) (recv backen
 	}
 	if err != nil {
 		if errors.Is(err, backend.ErrAuthFailed) {
+			if reply := conn.RefusalReply(err); reply != "" { // why, for an error report; the error drops it
+				slog.Info("the server refused the login", "account", accountID, "host", acc.Receiving.Host, "reply", reply)
+			}
 			err = errors.Join(err, s.ifCurrent(accountID, ver, func() error {
 				return s.setStatus(ctx, accountID, "reauth_required", "auth_rejected")
 			}))
