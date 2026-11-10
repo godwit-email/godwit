@@ -39,11 +39,21 @@ status: proposed
 
 ## JMAP
 
-- **为什么先做 JMAP**：它对接缝的检验最强（账户级游标、一封邮件在多个 mailbox、推送、服务器自动存已发送、下载主机和 API 主机不同）；用户出了问题可以随时退回 IMAP。EWS 和 POP3 等接缝验证过之后，各自另开工作。
+- **为什么先做 JMAP**：它对接缝的检验最强（账户级游标、一封邮件在多个 mailbox、推送、服务器自动存已发送、下载主机和 API 主机不同）；用户出了问题可以随时退回 IMAP。EWS 和 POP3 等接缝验证过之后，各自另开工作（EWS 见下文）。
 - **实现与维护**：由维护者实现并维护，#481 的贡献者帮忙实测和评审。JMAP 先作为实验性功能上线，要在设置里打开才能添加 JMAP 账户。如果以后停止维护，就退回实验性：停止添加新账户，并提示已有账户改用 IMAP。
 - **主机与凭据**：信任 session 给出的主机；HTTP 重定向只跟随同一主机的，添加账户时的 `/.well-known/jmap` 除外。添加账户时显示 session 主机。第一版的认证方式是 Basic 和 Bearer。同步流量和 IMAP 一样算账户配置，不走外发审批。
 - **第一版范围**：发信走 SMTP；已有的 IMAP 账户不能原地切换成 JMAP。
 - **客户端库**：用 `godwit-email/go-jmap`，它是 `git.sr.ht/~rockorager/go-jmap` 的 fork。规矩和 go-imap fork 一样，内存 JMAP 服务器也放在这个 fork 里。
+
+## EWS
+
+EWS 是接在这个接缝上的第二种协议，设计过程记在 #634 及其子 issue 里。它只面向本地部署的 Exchange Server（2016 及以后），只做邮件：Exchange Online 已经开始拦截 EWS，那里的用户继续用 IMAP 或 Graph。
+
+- **上线方式**：EWS 和 JMAP 一样先作为实验性功能（`ExperimentalEWS`）。EWS 账户收信、发信都走 EWS：发信用 `CreateItem` 加 `SendAndSaveCopy`，由服务器自动存已发送。
+- **身份和游标**：身份属于「只有位置」。账户级游标是 `SyncFolderHierarchy` 的 SyncState，文件夹级游标是各文件夹 `SyncFolderItems` 的 SyncState。SyncState 失效时，后端报「文件夹重置」。
+- **认证**：只做 NTLMv2 和 Basic。邮件地址和登录名分开填写。
+- **主机与凭据**：凭据只通过 HTTPS 发送。Autodiscover 要跳到邮件地址所在可注册域名以外的主机时，先在添加账户界面显示目标主机，用户确认后才把凭据发过去。JMAP 不需要这一步，因为它的 session 主机是用户自己填的地址给出的；而 Autodiscover 的 302、SRV 记录和 `redirectUrl` 都可能把凭据带到别人的服务器。EWS URL 确定后，后端只跟随同一主机的重定向。
+- **服务器怪异行为**：EWS 没有可以 fork 的 Go 协议库，所以后端在 `backend/ews` 里手写一层薄 SOAP。服务器的怪异行为就修在这一层，每一处都配一个复现测试。这是「修在协议库 fork 里」这条规矩的例外。NTLM 库（Azure/go-ntlmssp）的问题仍然修在它的 fork 里。
 
 ## Considered Options
 
