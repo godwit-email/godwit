@@ -19,8 +19,8 @@ import (
 )
 
 // EWS is a running fake EWS server (Exchange Web Services) with one mailbox,
-// alice/secret over HTTP Basic, that starts with the distinguished mail
-// folders and a calendar. It speaks GetFolder, SyncFolderHierarchy,
+// alice/secret over HTTP Basic (or NTLM: UseNTLM), that starts with the
+// distinguished mail folders and a calendar. It speaks GetFolder, SyncFolderHierarchy,
 // SyncFolderItems, GetItem, FindItem and UpdateItem; an operation it does not know fails
 // the test. Its responses spell the namespace prefixes differently from
 // operation to operation, as servers do. Hooks change the mailbox as another
@@ -37,6 +37,8 @@ type EWS struct {
 	mu           sync.Mutex
 	major, minor int // ServerVersionInfo
 	rejected     bool
+	ntlm         bool          // UseNTLM
+	epRequired   bool          // RequireExtendedProtection
 	busy         int           // requests still to refuse with ErrorServerBusy
 	backOff      time.Duration // the BackOffMilliseconds they carry
 	busyFault    bool          // as a SOAP fault (HTTP 500), else a response message (HTTP 503)
@@ -91,7 +93,9 @@ func StartEWS(t testing.TB) *EWS {
 		{"Calendar", "calendar", "IPF.Appointment"}} {
 		s.folder(root.id, f[0], f[1], f[2])
 	}
-	s.srv = httptest.NewServer(http.HandlerFunc(s.serve))
+	s.srv = httptest.NewUnstartedServer(http.HandlerFunc(s.serve))
+	s.srv.Config.ConnContext = connContext
+	s.srv.Start()
 	t.Cleanup(s.srv.Close)
 	return s
 }
@@ -366,12 +370,9 @@ func (s *EWS) serve(w http.ResponseWriter, r *http.Request) {
 	for m := s.maxFly.Load(); n > m && !s.maxFly.CompareAndSwap(m, n); m = s.maxFly.Load() {
 	}
 	time.Sleep(time.Duration(s.latency.Load()))
-	user, pass, ok := r.BasicAuth()
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	if !ok || user != "alice" || pass != "secret" {
-		w.Header().Set("WWW-Authenticate", `Basic realm="mail.example"`)
-		w.WriteHeader(http.StatusUnauthorized)
+	if !s.signIn(w, r) {
 		return
 	}
 	body, _ := io.ReadAll(r.Body)
