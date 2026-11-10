@@ -442,6 +442,8 @@
   "reader_ai_copied": "Скопировано",
   "reader_ai_more_skills": "Другие навыки",
   "reader_ai_no_translation": "Уже на языке «{arg1}»; перевод не требуется",
+  "reader_ai_quote": "Спросить ИИ",
+  "reader_ai_quote_ask": "О чём это письмо и на что стоит обратить внимание?",
   "reader_ai_quick": "Быстрые ответы · выберите вариант и отредактируйте его в окне письма",
   "reader_ai_show_original": "Показать оригинал",
   "reader_ai_summarize": "Кратко",

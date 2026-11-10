@@ -442,6 +442,8 @@
   "reader_ai_copied": "Kopyalandı",
   "reader_ai_more_skills": "Diğer beceriler",
   "reader_ai_no_translation": "Zaten {arg1} dilinde; çeviriye gerek yok",
+  "reader_ai_quote": "Yapay zekâya sor",
+  "reader_ai_quote_ask": "Bu e-posta neyle ilgili ve nelere dikkat etmeliyim?",
   "reader_ai_quick": "Hızlı yanıtlar · birini seçip oluşturma penceresinde düzenleyin",
   "reader_ai_show_original": "Orijinali göster",
   "reader_ai_summarize": "Özet",

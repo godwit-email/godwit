@@ -442,6 +442,8 @@
   "reader_ai_copied": "Đã sao chép",
   "reader_ai_more_skills": "Kỹ năng khác",
   "reader_ai_no_translation": "Đã ở ngôn ngữ {arg1}; không cần dịch",
+  "reader_ai_quote": "Hỏi AI",
+  "reader_ai_quote_ask": "Email này nói về điều gì và tôi nên chú ý gì?",
   "reader_ai_quick": "Trả lời nhanh · chọn một câu rồi chỉnh sửa trong trình soạn thảo",
   "reader_ai_show_original": "Hiện bản gốc",
   "reader_ai_summarize": "Tóm tắt",

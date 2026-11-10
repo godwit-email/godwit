@@ -447,6 +447,8 @@
   "reader_ai_copied": "Kopiert",
   "reader_ai_more_skills": "Weitere Skills",
   "reader_ai_no_translation": "Bereits auf {arg1}; keine Übersetzung erforderlich",
+  "reader_ai_quote": "KI dazu fragen",
+  "reader_ai_quote_ask": "Worum geht es in dieser E-Mail, und worauf sollte ich achten?",
   "reader_ai_quick": "Schnellantworten · wähle eine aus und bearbeite sie im Editor",
   "reader_ai_show_original": "Original anzeigen",
   "reader_ai_summarize": "Zusammenfassen",

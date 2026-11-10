@@ -442,6 +442,8 @@
   "reader_ai_copied": "Copiado",
   "reader_ai_more_skills": "Más skills",
   "reader_ai_no_translation": "Ya está en {arg1}; no hace falta traducir",
+  "reader_ai_quote": "Preguntar a la IA",
+  "reader_ai_quote_ask": "¿De qué trata este correo y a qué debo prestar atención?",
   "reader_ai_quick": "Respuestas rápidas · elige una y edítala en el redactor",
   "reader_ai_show_original": "Mostrar original",
   "reader_ai_summarize": "Resumir",
