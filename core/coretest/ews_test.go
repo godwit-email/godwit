@@ -270,3 +270,15 @@ func TestEWSUpdateServers(t *testing.T) {
 	require.NoError(t, e.Svc.SyncNow(t.Context(), acc.ID))
 	require.Eventually(t, func() bool { return len(srv.Sent()) == 1 }, 5*time.Second, 20*time.Millisecond)
 }
+
+// An EWS account's password, typed in again, passes the check of its stored
+// servers, its sending slot's path the receiving one's, and it syncs.
+func TestEWSUpdatePassword(t *testing.T) {
+	e := coretest.New(t, coretest.WithoutAutoSync())
+	acc, srv := addEWS(t, e)
+	require.NoError(t, e.Svc.UpdatePassword(t.Context(), acc.ID, srv.Password()))
+	require.NoError(t, e.Svc.SyncNow(t.Context(), acc.ID))
+	as, err := e.Svc.ListAccounts(t.Context())
+	require.NoError(t, err)
+	assert.Equal(t, "ok", as[0].Status)
+}

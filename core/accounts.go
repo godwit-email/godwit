@@ -483,6 +483,9 @@ func scanAccount(r []any) Account {
 		AIInstructions: store.Str(r[23]), OAuthClientID: store.Str(r[24]), LabelKeywords: store.Int(r[25]) == 1, Kind: store.Str(r[26]),
 		ReceiveOnly: store.Int(r[27]) == 1,
 	}
+	if a.Receiving.Protocol == auth.EWS { // it sends through the receiving EWS URL, whose path only recv_path keeps
+		a.Sending.Path = a.Receiving.Path
+	}
 	if d, ok := decodeFeatures(r[30]); ok {
 		a.Features = d.Features
 	}
