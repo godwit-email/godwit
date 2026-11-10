@@ -1,5 +1,20 @@
 # Changelog
 
+## [1.34.0](https://github.com/godwit-email/godwit/compare/v1.33.0...v1.34.0) (2026-11-10)
+
+
+### Features
+
+* **backend:** POP3 收信后端（实验性） ([#632](https://github.com/godwit-email/godwit/issues/632)) ([68ae8f7](https://github.com/godwit-email/godwit/commit/68ae8f7bb2e07c82bd4672c3a16f68746321bbb7))
+* **skills:** create reusable skills and run mail skills in Wit ([#633](https://github.com/godwit-email/godwit/issues/633)) ([9070251](https://github.com/godwit-email/godwit/commit/90702515f85be0a47405fb1a2bdfcc2e35476a8d))
+* **sync:** sync the inbox only while the window is in the background ([#619](https://github.com/godwit-email/godwit/issues/619)) ([55fab41](https://github.com/godwit-email/godwit/commit/55fab415e4b30a321144f3400c1c82393251fa42))
+
+
+### Bug Fixes
+
+* **reader:** match inline image Content-IDs regardless of case ([#626](https://github.com/godwit-email/godwit/issues/626)) ([780b9ea](https://github.com/godwit-email/godwit/commit/780b9eadf9d24cb3749eba37f6ac87c25efb5566))
+* **sync:** say the server refused an OAuth sign-in, and log why ([#624](https://github.com/godwit-email/godwit/issues/624)) ([90fccd8](https://github.com/godwit-email/godwit/commit/90fccd812eb99d143f463e1bb6e4ef49f3fa4641))
+
 ## [1.33.0](https://github.com/godwit-email/godwit/compare/v1.32.0...v1.33.0) (2026-11-10)
 
 
