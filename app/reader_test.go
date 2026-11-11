@@ -986,6 +986,10 @@ func TestViewInBrowserHasCSP(t *testing.T) {
 	if !strings.Contains(s, csp) || strings.Contains(strings.ToLower(s), "<script") || !strings.Contains(s, "Shown in a browser") {
 		t.Fatalf("file:\n%s", s)
 	}
+	h.app.Close()
+	if _, err := os.Stat(filepath.Dir(path)); !os.IsNotExist(err) {
+		t.Fatalf("the browser file's temp dir outlived Close: %v", err)
+	}
 }
 
 func TestReaderReplyCreatesDraft(t *testing.T) {
@@ -1520,9 +1524,22 @@ func TestReaderSaveAndPrint(t *testing.T) {
 	tmp := t.TempDir()
 	savePath := filepath.Join(tmp, "test-saved.eml")
 
+	// Cancelling the save dialog writes nothing and does not toast saved.
+	h.tt.Key(ui.Cmd, ui.KeyS)
+	h.queued("cancelled save callback", 1)
+	h.drain()
+	h.tt.Frame()
+	if got := h.callArg("SaveFile"); !strings.HasSuffix(got, ".eml") {
+		t.Fatalf("expected .eml default name, got %q", got)
+	}
+	if h.tt.HasText(i18n.T("reader.saved")) {
+		t.Fatal("cancelling SaveFile toasted reader.saved")
+	}
+
 	// 1. Save in the toolbar
 	h.plat.mu.Lock()
 	h.plat.savePath = savePath
+	h.plat.calls = nil
 	h.plat.mu.Unlock()
 
 	// Save and print sit in the toolbar's more menu.
@@ -1543,6 +1560,7 @@ func TestReaderSaveAndPrint(t *testing.T) {
 		data, err := os.ReadFile(savePath)
 		return err == nil && len(data) > 0
 	})
+	h.see(i18n.T("reader.saved"))
 
 	// 2. Print in the toolbar
 	choose(i18n.T("reader.print"))
