@@ -850,9 +850,6 @@ func TestRuleDailyResumes(t *testing.T) {
 // Undo pressed while the run is still going waits for it: undone in the
 // middle, the actions after would still be applied.
 func TestRuleUndoWaitsForTheRun(t *testing.T) {
-	e := newRulesEnv(t)
-	e.saveRule(t, rule(RuleAction{Kind: ActionStar}, RuleAction{Kind: ActionRead}), true)
-	e.rulesIdle(t)
 	held, release := make(chan struct{}), make(chan struct{})
 	var once sync.Once
 	setRulesHook(t, func(stage string) error {
@@ -861,6 +858,9 @@ func TestRuleUndoWaitsForTheRun(t *testing.T) {
 		}
 		return nil
 	})
+	e := newRulesEnv(t)
+	e.saveRule(t, rule(RuleAction{Kind: ActionStar}, RuleAction{Kind: ActionRead}), true)
+	e.rulesIdle(t)
 	e.bill(t, "a@x", "billing@aws.example", "Invoice")
 	e.sync(t)
 	<-held
