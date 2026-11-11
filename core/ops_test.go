@@ -384,22 +384,30 @@ func TestUncertainMoveNotRepeated(t *testing.T) {
 	assert.Equal(t, before, e.im.MovesAndCopies(), "the MOVE is not sent again")
 }
 
-// Without MOVE, a retry after COPY and STORE went through but UID EXPUNGE did
-// not finishes the move: it does not COPY a second time.
+// Without MOVE, a retry after COPY (or COPY and STORE) went through before the
+// connection dropped finishes the move without sending COPY a second time.
 func TestUncertainCopyMoveNotDuplicated(t *testing.T) {
-	e := newSyncEnv(t, testmail.WithoutMove())
-	e.put(t, "INBOX", msg("m@x"))
-	e.sync(t)
-	id := e.idOf(t, "m@x")
-	require.NoError(t, e.s.Move(bg, []int64{id}, e.folderID(t, "Archive")))
-	e.im.DropOnNextUIDExpunge()
-	_ = e.s.SyncNow(bg, e.acc.ID) // the connection drops before the EXPUNGE
-	e.sync(t)
-	e.sync(t) // the destination's copy is claimed
-	assert.Equal(t, []string{"m@x"}, e.onServer(t, "Archive"))
-	assert.Empty(t, e.onServer(t, "INBOX"))
-	assert.Equal(t, [][]any{{id}}, e.rows(t, "SELECT id FROM messages"))
-	assert.Equal(t, []string{"done"}, e.opStates(t))
+	for name, drop := range map[string]func(*testmail.IMAP){
+		"after COPY":         (*testmail.IMAP).DropAfterNextCopy,
+		"before UID EXPUNGE": (*testmail.IMAP).DropOnNextUIDExpunge,
+	} {
+		t.Run(name, func(t *testing.T) {
+			e := newSyncEnv(t, testmail.WithoutMove())
+			e.put(t, "INBOX", msg("m@x"))
+			e.sync(t)
+			id := e.idOf(t, "m@x")
+			require.NoError(t, e.s.Move(bg, []int64{id}, e.folderID(t, "Archive")))
+			drop(e.im)
+			_ = e.s.SyncNow(bg, e.acc.ID)
+			e.sync(t)
+			e.sync(t) // the destination's copy is claimed
+			assert.Equal(t, []string{"m@x"}, e.onServer(t, "Archive"))
+			assert.Empty(t, e.onServer(t, "INBOX"))
+			assert.Equal(t, [][]any{{id}}, e.rows(t, "SELECT id FROM messages"))
+			assert.Equal(t, []string{"done"}, e.opStates(t))
+			assert.Equal(t, int64(1), e.im.MovesAndCopies(), "the COPY is not sent a second time")
+		})
+	}
 }
 
 // A COPYUID from a destination folder recreated since the last sync is not

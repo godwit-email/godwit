@@ -78,6 +78,7 @@ type IMAP struct {
 	drop              atomic.Int32 // FETCHes to let through + 1; 0 = no drop pending
 	cmds              atomic.Int64 // MOVE and COPY commands handled
 	dropAppend        atomic.Bool
+	dropCopy          atomic.Bool
 	dropExpunge       atomic.Bool
 	dropLabels        atomic.Int32
 	labelStores       atomic.Int64
@@ -107,6 +108,10 @@ func (s *IMAP) IDs() []map[string]string {
 // DropAfterNextAppend makes the next APPEND store the message and then close the
 // client's connection before the tagged OK.
 func (s *IMAP) DropAfterNextAppend() { s.dropAppend.Store(true) }
+
+// DropAfterNextCopy makes the next COPY store the copy and then close the
+// client's connection before the tagged OK.
+func (s *IMAP) DropAfterNextCopy() { s.dropCopy.Store(true) }
 
 // DropOnNextUIDExpunge makes the next UID EXPUNGE close the client's
 // connection without expunging anything.
@@ -313,6 +318,10 @@ func (s session) Copy(set imap.NumSet, dest string) (*imap.CopyData, error) {
 		cp = s.gmailCopy
 	}
 	d, err := cp(set, dest)
+	if err == nil && s.s.dropCopy.CompareAndSwap(true, false) {
+		s.conn.Conn.Close()
+		return nil, errors.New("dropped")
+	}
 	if !s.s.cfg.copyuid {
 		d = nil
 	}

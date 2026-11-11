@@ -224,10 +224,11 @@ func setFlags(c *imapclient.Client, op backend.SetFlags) (backend.Result, error)
 // move moves the message with MOVE, else COPY, STORE \Deleted and UID
 // EXPUNGE. Every attempt first checks what an earlier one whose reply was
 // lost may have done: a message already gone from the source was moved
-// (Unlocated); without MOVE, a \Deleted source with its copy in the
-// destination got through COPY and STORE but not EXPUNGE, and copying again
-// would leave two. \Deleted alone is no proof, another client may have set
-// it, so the copy must be there too.
+// (Unlocated); without MOVE, a source whose copy is already in the
+// destination got through COPY (and maybe STORE) before the connection
+// dropped, and copying again would leave two, so only STORE \Deleted and
+// UID EXPUNGE remain. \Deleted alone is no proof, another client may have set
+// it, so the copy must be there.
 func move(c *imapclient.Client, op backend.Move) (backend.Result, error) {
 	uid, err := selectAt(c, op.At)
 	if err != nil {
@@ -244,13 +245,18 @@ func move(c *imapclient.Client, op backend.Move) (backend.Result, error) {
 	if len(got) == 0 {
 		return backend.Result{Outcome: backend.Unlocated}, nil
 	}
-	if slices.Contains(got[0].Flags, imap.FlagDeleted) && !c.Caps().Has(imap.CapMove) && got[0].Envelope != nil && got[0].Envelope.MessageID != "" {
+	if !c.Caps().Has(imap.CapMove) && got[0].Envelope != nil && got[0].Envelope.MessageID != "" {
 		copies, err := find(c, op.To, got[0].Envelope.MessageID, got[0].RFC822Size)
 		if err == nil {
 			_, err = selectAt(c, op.At)
 		}
 		if err == nil && len(copies) > 0 {
-			err = c.UIDExpunge(set).Close()
+			if !slices.Contains(got[0].Flags, imap.FlagDeleted) {
+				err = storeFlags(c, uid, imap.StoreFlagsAdd, []imap.Flag{imap.FlagDeleted})
+			}
+			if err == nil {
+				err = c.UIDExpunge(set).Close()
+			}
 			if err == nil {
 				return backend.Result{Outcome: backend.Unlocated}, nil
 			}
