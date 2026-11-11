@@ -298,13 +298,25 @@ type SetFlags struct {
 	Add, Remove Flags
 }
 
+// MoveBaseline is what Move's destination folder To already held before a
+// copy-and-delete move sent its copy, recorded through Move.BeforeCopy so a
+// retry can tell its own copy apart from mail To held beforehand.
+type MoveBaseline struct {
+	Cursor Cursor       `json:"cursor,omitempty"`
+	Refs   []MessageRef `json:"refs,omitempty"`
+}
+
 // Move moves the message from At to folder To. Cursor is To's stored cursor,
 // "" when none is stored: a backend whose locations carry a folder generation
-// answers Unlocated instead of a Ref from another generation.
+// answers Unlocated instead of a Ref from another generation. Before, when set,
+// is the MoveBaseline an earlier attempt recorded through BeforeCopy right
+// before sending its copy.
 type Move struct {
-	At     Location
-	To     FolderRef
-	Cursor Cursor
+	At         Location
+	To         FolderRef
+	Cursor     Cursor
+	Before     *MoveBaseline
+	BeforeCopy func(MoveBaseline) error
 }
 
 // Copy puts an independent copy of the message at At into folder To.

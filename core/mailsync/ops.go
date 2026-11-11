@@ -226,7 +226,23 @@ func (p *pusher) pushOp(ctx context.Context, o op) (problem string, err error) {
 			}
 			return fail(ctx, db, o, errNoDestination, false)
 		}
-		w = backend.Move{At: loc, To: dst.ref, Cursor: dst.cursor}
+		var mp struct {
+			Before *backend.MoveBaseline `json:"before,omitempty"`
+		}
+		if o.payload != "" {
+			_ = json.Unmarshal([]byte(o.payload), &mp)
+		}
+		w = backend.Move{
+			At: loc, To: dst.ref, Cursor: dst.cursor, Before: mp.Before,
+			BeforeCopy: func(b backend.MoveBaseline) error {
+				raw, err := json.Marshal(b)
+				if err != nil {
+					return err
+				}
+				_, err = db.Execute(ctx, "UPDATE ops SET payload = json_set(coalesce(nullif(payload, ''), '{}'), '$.before', json(?)) WHERE id = ?", string(raw), o.id)
+				return err
+			},
+		}
 	default:
 		msg := fmt.Sprintf("unknown change %q", o.kind)
 		return msg, finish(ctx, db, o, "failed", msg)

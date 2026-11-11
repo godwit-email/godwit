@@ -28,9 +28,14 @@ func (r *Receiver) Find(ctx context.Context, folder backend.FolderRef, messageID
 }
 
 func find(c *imapclient.Client, folder backend.FolderRef, messageID string, size int64) ([]backend.MessageRef, error) {
+	_, refs, err := findIn(c, folder, messageID, size)
+	return refs, err
+}
+
+func findIn(c *imapclient.Client, folder backend.FolderRef, messageID string, size int64) (uint32, []backend.MessageRef, error) {
 	sel, err := c.Select(string(folder), &imap.SelectOptions{ReadOnly: true}).Wait()
 	if err != nil {
-		return nil, err
+		return 0, nil, err
 	}
 	crit := &imap.SearchCriteria{Header: []imap.SearchCriteriaHeaderField{{Key: "Message-ID", Value: messageID}}}
 	if size > 0 {
@@ -38,16 +43,16 @@ func find(c *imapclient.Client, folder backend.FolderRef, messageID string, size
 	}
 	res, err := c.UIDSearch(crit, nil).Wait()
 	if err != nil {
-		return nil, err
+		return 0, nil, err
 	}
 	uids := res.AllUIDs()
 	if len(uids) == 0 {
-		return nil, nil
+		return sel.UIDValidity, nil, nil
 	}
 	sec := &imap.FetchItemBodySection{Specifier: imap.PartSpecifierHeader, HeaderFields: []string{"Message-ID"}, Peek: true}
 	msgs, err := c.Fetch(imap.UIDSetNum(uids...), &imap.FetchOptions{UID: true, BodySection: []*imap.FetchItemBodySection{sec}}).Collect()
 	if err != nil {
-		return nil, err
+		return 0, nil, err
 	}
 	var refs []backend.MessageRef
 	for _, m := range msgs {
@@ -56,7 +61,7 @@ func find(c *imapclient.Client, folder backend.FolderRef, messageID string, size
 			refs = append(refs, backend.MessageRef(Encode(sel.UIDValidity, uint32(m.UID))))
 		}
 	}
-	return refs, nil
+	return sel.UIDValidity, refs, nil
 }
 
 // opFeature is the feature each op needs.
@@ -224,11 +229,11 @@ func setFlags(c *imapclient.Client, op backend.SetFlags) (backend.Result, error)
 // move moves the message with MOVE, else COPY, STORE \Deleted and UID
 // EXPUNGE. Every attempt first checks what an earlier one whose reply was
 // lost may have done: a message already gone from the source was moved
-// (Unlocated); without MOVE, a source whose copy is already in the
-// destination got through COPY (and maybe STORE) before the connection
-// dropped, and copying again would leave two, so only STORE \Deleted and
-// UID EXPUNGE remain. \Deleted alone is no proof, another client may have set
-// it, so the copy must be there.
+// (Unlocated); without MOVE, a retry whose destination holds a matching copy
+// beyond the MoveBaseline recorded before COPY got through COPY (and maybe
+// STORE) before the connection dropped, so only STORE \Deleted and UID
+// EXPUNGE remain. Pre-existing matches in MoveBaseline are left alone and do
+// not suppress the first COPY.
 func move(c *imapclient.Client, op backend.Move) (backend.Result, error) {
 	uid, err := selectAt(c, op.At)
 	if err != nil {
@@ -245,12 +250,14 @@ func move(c *imapclient.Client, op backend.Move) (backend.Result, error) {
 	if len(got) == 0 {
 		return backend.Result{Outcome: backend.Unlocated}, nil
 	}
-	if !c.Caps().Has(imap.CapMove) && got[0].Envelope != nil && got[0].Envelope.MessageID != "" {
-		copies, err := find(c, op.To, got[0].Envelope.MessageID, got[0].RFC822Size)
+	if !c.Caps().Has(imap.CapMove) && got[0].Envelope != nil && got[0].Envelope.MessageID != "" && (op.Before != nil || op.BeforeCopy != nil) {
+		dv, copies, err := findIn(c, op.To, got[0].Envelope.MessageID, got[0].RFC822Size)
 		if err == nil {
 			_, err = selectAt(c, op.At)
 		}
-		if err == nil && len(copies) > 0 {
+		gen := backend.Cursor(Encode(dv, 0))
+		if err == nil && op.Before != nil && op.Before.Cursor == gen &&
+			slices.ContainsFunc(copies, func(r backend.MessageRef) bool { return !slices.Contains(op.Before.Refs, r) }) {
 			if !slices.Contains(got[0].Flags, imap.FlagDeleted) {
 				err = storeFlags(c, uid, imap.StoreFlagsAdd, []imap.Flag{imap.FlagDeleted})
 			}
@@ -260,6 +267,8 @@ func move(c *imapclient.Client, op backend.Move) (backend.Result, error) {
 			if err == nil {
 				return backend.Result{Outcome: backend.Unlocated}, nil
 			}
+		} else if err == nil && op.BeforeCopy != nil {
+			err = op.BeforeCopy(backend.MoveBaseline{Cursor: gen, Refs: copies})
 		}
 		if err != nil {
 			return backend.Result{}, err
