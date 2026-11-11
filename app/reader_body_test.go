@@ -550,6 +550,11 @@ func TestReaderTrustSender(t *testing.T) {
 	if err != nil || !slices.Equal(trusted, []string{"bob@example.com"}) {
 		t.Fatalf("trusted %q, %v", trusted, err)
 	}
+	// The app reads the list back later and drops the avatars it showed then:
+	// wait for that, or it may land on the next message's avatar mid-load.
+	h.settle()
+	h.advance(refreshEvery)
+	h.until("the trusted list read back", func() bool { return slices.Equal(h.app.trusted, trusted) })
 	n := h.deliverOne(acc, coretest.Msg("bob@example.com", acc.Email, "More news", "text", img))
 	h.openThread(n.ThreadID)
 	h.seeBody(n.ID)

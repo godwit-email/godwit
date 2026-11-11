@@ -3,6 +3,7 @@ package app
 import (
 	"context"
 	"fmt"
+	"strings"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -189,7 +190,7 @@ func TestReaderSwitchDropsKeptThreadsReads(t *testing.T) {
 
 	switchTo(h, b.ThreadID)
 	vb := unseenBody(h, b.ID)
-	h.post(func() { r.prev.expand(msgs[0].ID) }) // as a click on its folded row while it is kept
+	h.post(func() { r.prev.expand(msgs[0].ID) }) // work the kept thread has under way as it goes
 	h.drain()
 	h.post(func() { h.app.BodyHeight(vb, b.ID, 120) })
 	h.until("the kept thread gone", func() bool { return r.prev == nil })
@@ -233,5 +234,35 @@ func TestReaderSwitchKeptPagesCallBack(t *testing.T) {
 	h.drain()
 	if h.app.linkOpen {
 		t.Fatal("a closed page's link opened")
+	}
+}
+
+// The kept thread takes no input: a dialog or draft it started would come
+// from a pane about to go (#682). It shows the reply button all the same.
+func TestReaderSwitchKeptThreadTakesNoInput(t *testing.T) {
+	h, accs := mailHarness(t, nil, "alice@example.com")
+	a := h.deliverOne(accs[0], coretest.Msg("bob@example.com", accs[0].Email, "First thread", "first body"))
+	b := h.deliverOne(accs[0], coretest.Msg("carol@example.com", accs[0].Email, "Second thread", "second body"))
+	h.openThread(a.ThreadID)
+	h.seeBody(a.ID)
+	switchTo(h, b.ThreadID)
+	unseenBody(h, b.ID)
+	at, ok := h.tt.Find("回复")
+	if !ok {
+		t.Fatal("the kept thread's toolbar is not shown")
+	}
+	h.tt.ClickAt(at.X+at.W/2, at.Y+at.H/2)
+	time.Sleep(50 * time.Millisecond) // a draft is made off the UI thread
+	for range 5 {
+		h.drain()
+		h.tt.Frame()
+	}
+	if h.app.mail.reader.prev == nil {
+		t.Fatal("the switch ended before the click was checked")
+	}
+	for _, call := range h.plat.Calls() {
+		if strings.HasPrefix(call, "OpenCompose") {
+			t.Fatalf("a click on the kept thread's reply opened a draft: %q", call)
+		}
 	}
 }

@@ -1171,11 +1171,18 @@ func (r *reader) draw(c *ui.Context, next *reader) {
 	if !r.loaded || len(r.msgs) == 0 {
 		return
 	}
-	if c.Shortcut(ui.Cmd, ui.KeyS) {
-		r.saveMail()
-	}
-	if c.Shortcut(ui.Cmd, ui.KeyP) {
-		r.printMail()
+	if next != nil {
+		// Kept on screen only while next's body builds: what it would start
+		// (a dialog, a read) would outlive it. Its pages still take clicks
+		// (readerOf).
+		col.IgnoreInput(true)
+	} else {
+		if c.Shortcut(ui.Cmd, ui.KeyS) {
+			r.saveMail()
+		}
+		if c.Shortcut(ui.Cmd, ui.KeyP) {
+			r.printMail()
+		}
 	}
 	// The toolbar and the reply bar float over the messages, which scroll
 	// under them: one sheet, the bars frosted over it.
