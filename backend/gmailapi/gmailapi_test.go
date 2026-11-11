@@ -384,3 +384,103 @@ func TestCrossHostRedirectRefused(t *testing.T) {
 		t.Fatalf("Check on cross-host redirect = %v, want redirect refusal", err)
 	}
 }
+
+func TestHistoryExpiryReconcilesMovedOutOfWindowMessage(t *testing.T) {
+	srv := gmailapitest.Start(t)
+	lblA := srv.EnsureLabel("LabelA")
+	lblB := srv.EnsureLabel("LabelB")
+	oldID := srv.AddMessage(
+		[]byte("From: a@example.com\r\nTo: b@example.com\r\nSubject: old\r\nDate: Mon, 9 Nov 2026 08:00:00 +0000\r\n\r\nold\r\n"),
+		lblA,
+	)
+	newID := srv.AddMessage(
+		[]byte("From: a@example.com\r\nTo: b@example.com\r\nSubject: new\r\nDate: Mon, 9 Nov 2026 10:00:00 +0000\r\n\r\nnew\r\n"),
+		lblB,
+	)
+	r := contractServer{srv}.Receiver(t)
+	local := newMemLocal()
+	var cur backend.Cursor
+	states := map[backend.FolderRef]backend.FolderState{}
+	win := backend.Window{Newest: 1}
+	runSync := func() {
+		_, err := r.Sync(t.Context(), backend.SyncRequest{
+			Account: cur,
+			Folders: maps.Clone(states),
+			Window:  win,
+			Local:   local,
+		}, func(p backend.Page) error {
+			local.apply(p)
+			if p.Account != "" {
+				cur = p.Account
+			}
+			for f, st := range p.Folders {
+				states[f] = st
+			}
+			return nil
+		})
+		if err != nil {
+			t.Fatalf("Sync: %v", err)
+		}
+	}
+
+	runSync()
+	if _, ok := local.folders[backend.FolderRef(lblA)][backend.MessageRef(oldID)]; !ok {
+		t.Fatal("oldID should start in LabelA")
+	}
+
+	// Move oldID from A to B (behind newID, outside B's Newest:1 window), then expire history.
+	srv.ModifyLabels(oldID, []string{lblB}, []string{lblA})
+	srv.ExpireHistory()
+	runSync()
+
+	if _, ok := local.folders[backend.FolderRef(lblA)][backend.MessageRef(oldID)]; ok {
+		t.Error("oldID remained in LabelA after 404 reconciliation")
+	}
+	if _, ok := local.folders[backend.FolderRef(lblB)][backend.MessageRef(oldID)]; !ok {
+		t.Error("oldID missing from LabelB after 404 reconciliation outside B's window")
+	}
+	if _, ok := local.folders[backend.FolderRef(lblB)][backend.MessageRef(newID)]; !ok {
+		t.Error("newID missing from LabelB")
+	}
+}
+
+func TestApplyValidatesSourceAndImmutableSystemLabels(t *testing.T) {
+	srv := gmailapitest.Start(t)
+	lblA := srv.EnsureLabel("A")
+	lblB := srv.EnsureLabel("B")
+	lblC := srv.EnsureLabel("C")
+	msgID := srv.AddMessage(backendtest.Message("m@x", "m"), lblA)
+	r := contractServer{srv}.Receiver(t)
+
+	// Remote move A -> C before queued A -> B move: Apply must return ErrNotFound without adding B.
+	srv.ModifyLabels(msgID, []string{lblC}, []string{lblA})
+	_, err := r.Apply(t.Context(), backend.Move{
+		At: backend.Location{Folder: backend.FolderRef(lblA), Ref: backend.MessageRef(msgID), ServerID: msgID},
+		To: backend.FolderRef(lblB),
+	})
+	if !errors.Is(err, backend.ErrNotFound) {
+		t.Fatalf("Move from lost source = %v, want ErrNotFound", err)
+	}
+	if !slices.Equal(srv.MessageLabels(msgID), []string{lblC}) {
+		t.Fatalf("labels after rejected stale move = %v, want [%s]", srv.MessageLabels(msgID), lblC)
+	}
+
+	// Idempotent retry when already at destination C succeeds.
+	res, err := r.Apply(t.Context(), backend.Move{
+		At: backend.Location{Folder: backend.FolderRef(lblA), Ref: backend.MessageRef(msgID), ServerID: msgID},
+		To: backend.FolderRef(lblC),
+	})
+	if err != nil || res.Outcome != backend.Done {
+		t.Fatalf("idempotent Move retry = %+v, %v", res, err)
+	}
+
+	// Moving into or out of SENT / DRAFT to a user folder returns Unsupported.
+	sentID := srv.AddMessage(backendtest.Message("s@x", "sent"), "SENT")
+	res, err = r.Apply(t.Context(), backend.Move{
+		At: backend.Location{Folder: "SENT", Ref: backend.MessageRef(sentID), ServerID: sentID},
+		To: backend.FolderRef(lblB),
+	})
+	if err != nil || res.Outcome != backend.Unsupported || res.Reason != gmailapi.ReasonSystemLabelsFixed {
+		t.Fatalf("Move out of SENT = %+v, %v; want Unsupported(%s)", res, err, gmailapi.ReasonSystemLabelsFixed)
+	}
+}

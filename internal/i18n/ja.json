@@ -2201,5 +2201,6 @@
   "feature_reason_gmailapi_no_draft": "メールが下書きかどうかは Gmail が決めるため、フラグを切り替えられません。",
   "feature_reason_gmailapi_no_keywords": "Gmail API アカウントはカスタム IMAP キーワードに対応していません。",
   "feature_reason_gmailapi_no_push": "Gmail API はデスクトップアプリに新着プッシュできないため、Godwit が 1 分ごとに確認します。",
-  "feature_reason_gmailapi_folders_pending": "Gmail API 経由でのフォルダー管理にはまだ対応していません。"
+  "feature_reason_gmailapi_folders_pending": "Gmail API 経由でのフォルダー管理にはまだ対応していません。",
+  "feature_reason_gmailapi_system_labels_fixed": "Gmail では「送信済み」と「下書き」ラベルが固定されており、これらのフォルダーへの移動や取り出しはできません。"
 }

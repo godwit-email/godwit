@@ -2201,5 +2201,6 @@
   "feature_reason_gmailapi_no_draft": "Gmail сам определяет, является ли письмо черновиком; переключить эту отметку нельзя.",
   "feature_reason_gmailapi_no_keywords": "Аккаунты Gmail API не поддерживают пользовательские ключевые слова IMAP.",
   "feature_reason_gmailapi_no_push": "Gmail API не может отправлять push-уведомления в настольное приложение; Godwit проверяет почту каждую минуту.",
-  "feature_reason_gmailapi_folders_pending": "Управление папками через Gmail API пока не поддерживается."
+  "feature_reason_gmailapi_folders_pending": "Управление папками через Gmail API пока не поддерживается.",
+  "feature_reason_gmailapi_system_labels_fixed": "Gmail фиксирует ярлыки «Отправленные» и «Черновики»: перемещать письма в них или из них нельзя."
 }

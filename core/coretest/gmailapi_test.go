@@ -398,3 +398,53 @@ func TestGmailAPISendAndAttachment(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, "attachment payload", string(data))
 }
+
+// Remote removal of a move's source label marks the queued move as a conflict
+// instead of adding the destination on top of another folder, and moves into or
+// out of SENT/DRAFT are refused upfront rather than failing in the op queue.
+func TestGmailAPIStaleSourceAndSystemLabelMoves(t *testing.T) {
+	e := coretest.New(t, coretest.WithoutAutoSync())
+	acc, g := addGmailAPIAccount(t, e, "alice@gmail.com")
+
+	lblA := g.api.EnsureLabel("FolderA")
+	g.api.EnsureLabel("FolderB")
+	lblC := g.api.EnsureLabel("FolderC")
+	msgID := g.api.AddMessage(coretest.Msg("bob@example.com", "alice@gmail.com", "RaceMove", "body"), lblA)
+	sentID := g.api.AddMessage(coretest.Msg("alice@gmail.com", "bob@example.com", "SentItem", "sent body"), "SENT")
+	require.NoError(t, e.Svc.SyncNow(t.Context(), acc.ID))
+
+	folderA := gmailFolderByName(t, e, acc.ID, "FolderA")
+	folderB := gmailFolderByName(t, e, acc.ID, "FolderB")
+	sentFolder := gmailFolderByName(t, e, acc.ID, "SENT")
+
+	ms, err := e.Svc.Search(t.Context(), acc.ID, "RaceMove", 10)
+	require.NoError(t, err)
+	require.Len(t, ms, 1)
+
+	// Queue FolderA -> FolderB locally, while another client moves FolderA -> FolderC on the server.
+	require.NoError(t, e.Svc.MoveFrom(t.Context(), []int64{ms[0].ID}, folderA.ID, folderB.ID))
+	g.api.ModifyLabels(msgID, []string{lblC}, []string{lblA})
+	require.NoError(t, e.Svc.SyncNow(t.Context(), acc.ID))
+
+	assert.Equal(t, []string{lblC}, g.api.MessageLabels(msgID), "destination FolderB must not be added when source FolderA was already lost")
+	assert.Equal(t, 0, gmailFolderByName(t, e, acc.ID, "FolderA").Total)
+	assert.Equal(t, 0, gmailFolderByName(t, e, acc.ID, "FolderB").Total)
+	assert.Equal(t, 1, gmailFolderByName(t, e, acc.ID, "FolderC").Total)
+
+	// Moving into SENT or out of SENT to a user folder is refused upfront without queuing a failing op.
+	require.ErrorContains(t, e.Svc.Move(t.Context(), []int64{ms[0].ID}, sentFolder.ID), "unsupported:")
+
+	sentMsgs, err := e.Svc.Search(t.Context(), acc.ID, "SentItem", 10)
+	require.NoError(t, err)
+	require.Len(t, sentMsgs, 1)
+	require.ErrorContains(t, e.Svc.MoveFrom(t.Context(), []int64{sentMsgs[0].ID}, sentFolder.ID, folderB.ID), "unsupported:")
+	require.ErrorContains(t, e.Svc.Move(t.Context(), []int64{sentMsgs[0].ID}, folderB.ID), "unsupported:")
+	assert.Equal(t, 1, gmailFolderByName(t, e, acc.ID, "SENT").Total, "SENT remains intact after refused move")
+
+	// Moving a SENT message to Trash is still supported via /trash.
+	require.NoError(t, e.Svc.Delete(t.Context(), []int64{sentMsgs[0].ID}))
+	require.NoError(t, e.Svc.SyncNow(t.Context(), acc.ID))
+	assert.Contains(t, g.api.MessageLabels(sentID), "TRASH")
+	assert.Equal(t, 0, gmailFolderByName(t, e, acc.ID, "SENT").Total)
+	assert.Equal(t, 1, gmailFolderByName(t, e, acc.ID, "TRASH").Total)
+}

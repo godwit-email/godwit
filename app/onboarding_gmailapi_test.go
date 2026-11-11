@@ -98,6 +98,7 @@ func TestGmailAPIFeatureReasonsHaveText(t *testing.T) {
 		gmailapi.ReasonNoKeywords,
 		gmailapi.ReasonNoPush,
 		gmailapi.ReasonFoldersPending,
+		gmailapi.ReasonSystemLabelsFixed,
 	} {
 		assert.NotEqual(t, "feature.reason."+r, i18n.T("feature.reason."+r), "no text for reason %s", r)
 	}

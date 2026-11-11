@@ -2201,5 +2201,6 @@
   "feature_reason_gmailapi_no_draft": "O Gmail decide se uma mensagem é um rascunho; a marcação não pode ser alterada.",
   "feature_reason_gmailapi_no_keywords": "As contas Gmail API não suportam palavras-chave IMAP personalizadas.",
   "feature_reason_gmailapi_no_push": "A Gmail API não consegue enviar notificações push para uma aplicação de computador; o Godwit verifica a cada minuto.",
-  "feature_reason_gmailapi_folders_pending": "A gestão de pastas através da Gmail API ainda não está disponível."
+  "feature_reason_gmailapi_folders_pending": "A gestão de pastas através da Gmail API ainda não está disponível.",
+  "feature_reason_gmailapi_system_labels_fixed": "O Gmail fixa as etiquetas «Enviados» e «Rascunhos»: não é possível mover mensagens para dentro ou fora delas."
 }

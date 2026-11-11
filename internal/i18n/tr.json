@@ -2201,5 +2201,6 @@
   "feature_reason_gmailapi_no_draft": "Bir iletinin taslak olup olmadığına Gmail karar verir; bu işaret değiştirilemez.",
   "feature_reason_gmailapi_no_keywords": "Gmail API hesapları özel IMAP anahtar sözcüklerini desteklemez.",
   "feature_reason_gmailapi_no_push": "Gmail API masaüstü uygulamasına anlık bildirim gönderemez; Godwit her dakika kontrol eder.",
-  "feature_reason_gmailapi_folders_pending": "Gmail API üzerinden klasör yönetimi henüz kullanılamıyor."
+  "feature_reason_gmailapi_folders_pending": "Gmail API üzerinden klasör yönetimi henüz kullanılamıyor.",
+  "feature_reason_gmailapi_system_labels_fixed": "Gmail, «Gönderilmiş Postalar» ve «Taslaklar» etiketlerini sabitler: iletiler bu klasörlere taşınamaz veya buradan çıkarılamaz."
 }

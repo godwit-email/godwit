@@ -2201,5 +2201,6 @@
   "feature_reason_gmailapi_no_draft": "郵件是否為草稿由 Gmail 決定，無法直接更改標記。",
   "feature_reason_gmailapi_no_keywords": "Gmail API 帳戶不支援自訂 IMAP 關鍵字。",
   "feature_reason_gmailapi_no_push": "Gmail API 桌面端無法直接接收伺服器推播，Godwit 每分鐘檢查一次。",
-  "feature_reason_gmailapi_folders_pending": "暫不支援透過 Gmail API 管理資料夾。"
+  "feature_reason_gmailapi_folders_pending": "暫不支援透過 Gmail API 管理資料夾。",
+  "feature_reason_gmailapi_system_labels_fixed": "Gmail 的「已傳送」和「草稿」標籤由系統固定，無法將郵件移入或移出這兩個資料夾。"
 }

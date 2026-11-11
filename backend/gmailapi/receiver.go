@@ -54,17 +54,18 @@ var description = func() backend.Description {
 	for _, f := range backend.AllFeatures {
 		d.Features[f] = backend.Support{Level: backend.LevelSupported}
 	}
-	no := func(reason string, fs ...backend.Feature) {
+	set := func(l backend.Level, reason string, fs ...backend.Feature) {
 		for _, f := range fs {
-			d.Features[f] = backend.Support{Level: backend.LevelUnsupported, Reason: reason}
+			d.Features[f] = backend.Support{Level: l, Reason: reason}
 		}
 	}
-	no(ReasonNoCopy, backend.FeatureCopy)
-	no(ReasonNoAnswered, backend.FeatureAnswered)
-	no(ReasonNoDraft, backend.FeatureDraft)
-	no(ReasonNoKeywords, backend.FeatureKeywords)
-	no(ReasonNoPush, backend.FeaturePush)
-	no(ReasonFoldersPending, backend.FeatureFolderCreate, backend.FeatureFolderRename, backend.FeatureFolderDelete, backend.FeatureLabelDelete)
+	set(backend.LevelNoted, ReasonSystemLabelsFixed, backend.FeatureMove, backend.FeatureAddToFolder, backend.FeatureRemoveFromFolder)
+	set(backend.LevelUnsupported, ReasonNoCopy, backend.FeatureCopy)
+	set(backend.LevelUnsupported, ReasonNoAnswered, backend.FeatureAnswered)
+	set(backend.LevelUnsupported, ReasonNoDraft, backend.FeatureDraft)
+	set(backend.LevelUnsupported, ReasonNoKeywords, backend.FeatureKeywords)
+	set(backend.LevelUnsupported, ReasonNoPush, backend.FeaturePush)
+	set(backend.LevelUnsupported, ReasonFoldersPending, backend.FeatureFolderCreate, backend.FeatureFolderRename, backend.FeatureFolderDelete, backend.FeatureLabelDelete)
 	return d
 }()
 
@@ -182,9 +183,37 @@ func flagsOf(labelIDs []string) backend.Flags {
 	}
 }
 
+func inFolder(labelIDs []string, folder backend.FolderRef) bool {
+	switch {
+	case folder == "":
+		return false
+	case slices.Contains(labelIDs, "TRASH"):
+		return folder == "TRASH"
+	case slices.Contains(labelIDs, "SPAM"):
+		return folder == "SPAM"
+	case folder == AllMailRef:
+		return !slices.Contains(labelIDs, "DRAFT")
+	default:
+		return slices.Contains(labelIDs, string(folder))
+	}
+}
+
 // messageFolders returns the folders a message with labelIDs belongs to, with
 // AllMailRef last so a primary folder (such as INBOX) carries Content on first sync.
+// Trash and Spam are exclusive binned folders, matching Gmail IMAP.
 func messageFolders(labelIDs []string, valid map[backend.FolderRef]bool) []backend.FolderRef {
+	if slices.Contains(labelIDs, "TRASH") {
+		if valid["TRASH"] {
+			return []backend.FolderRef{"TRASH"}
+		}
+		return nil
+	}
+	if slices.Contains(labelIDs, "SPAM") {
+		if valid["SPAM"] {
+			return []backend.FolderRef{"SPAM"}
+		}
+		return nil
+	}
 	var out []backend.FolderRef
 	seen := map[backend.FolderRef]bool{}
 	for _, id := range labelIDs {
@@ -195,10 +224,7 @@ func messageFolders(labelIDs []string, valid map[backend.FolderRef]bool) []backe
 		}
 	}
 	slices.Sort(out)
-	if valid[AllMailRef] &&
-		!slices.Contains(labelIDs, "TRASH") &&
-		!slices.Contains(labelIDs, "SPAM") &&
-		!slices.Contains(labelIDs, "DRAFT") {
+	if valid[AllMailRef] && !slices.Contains(labelIDs, "DRAFT") {
 		out = append(out, AllMailRef)
 	}
 	return out
@@ -551,38 +577,78 @@ func (r *Receiver) reconcile(ctx context.Context, req backend.SyncRequest, commi
 		}
 	}
 
-	// Preserve locally held messages outside a count/date window that still exist
-	// in their folder on the server so FolderSnapshot only drops truly removed ones.
+	// Reconcile locally held messages omitted by the window (such as an older
+	// message moved from A to B outside B's count/date window): emit any newly
+	// gained current locations before committing FolderSnapshot.
 	if req.Local != nil {
+		heldByFolder := map[backend.FolderRef]map[backend.MessageRef]string{}
+		var extraIDs []string
+		extraSet := map[string]bool{}
 		for _, ref := range refs {
 			held, err := req.Local.Held(ctx, ref)
 			if err != nil {
 				return err
 			}
+			heldByFolder[ref] = held
 			for mref := range held {
-				if _, ok := snaps[ref][mref]; ok {
-					continue
-				}
 				id := string(mref)
-				m, ok := seenMsg[id]
-				if !ok {
-					var gerr error
-					m, gerr = r.c.getMessage(ctx, id, "minimal")
-					if errors.Is(gerr, backend.ErrNotFound) {
-						seenMsg[id] = nil
-						continue
-					}
-					if gerr != nil {
-						return gerr
-					}
-					seenMsg[id] = m
+				if _, seen := seenMsg[id]; !seen && !extraSet[id] {
+					extraSet[id] = true
+					extraIDs = append(extraIDs, id)
 				}
-				if m == nil {
+			}
+		}
+		slices.Sort(extraIDs)
+		if len(extraIDs) > 0 {
+			known, err := s.knownMap(ctx, extraIDs)
+			if err != nil {
+				return err
+			}
+			for _, id := range extraIDs {
+				format := "minimal"
+				if !known[id] {
+					format = "raw"
+				}
+				m, err := r.c.getMessage(ctx, id, format)
+				if errors.Is(err, backend.ErrNotFound) {
 					continue
 				}
-				if slices.Contains(messageFolders(m.LabelIDs, valid), ref) {
-					snaps[ref][mref] = flagsOf(m.LabelIDs)
+				if err != nil {
+					return err
 				}
+				fl := flagsOf(m.LabelIDs)
+				var content *backend.Content
+				for _, f := range messageFolders(m.LabelIDs, valid) {
+					mref := backend.MessageRef(id)
+					snaps[f][mref] = fl
+					if _, wasHeld := heldByFolder[f][mref]; !wasHeld {
+						if content == nil && !known[id] {
+							if m.Raw == "" {
+								full, err := r.c.getMessage(ctx, id, "raw")
+								if errors.Is(err, backend.ErrNotFound) {
+									break
+								}
+								if err != nil {
+									return err
+								}
+								m = full
+							}
+							if content, err = s.buildContentFrom(m); err != nil {
+								return err
+							}
+						}
+						s.add(backend.MessageAppeared{
+							Location: backend.Location{Folder: f, Ref: mref, ServerID: id},
+							Flags:    fl,
+							Backfill: true,
+							Content:  content,
+						})
+						content, known[id] = nil, true
+					}
+				}
+			}
+			if err := s.flush(backend.Page{}); err != nil {
+				return err
 			}
 		}
 	}
@@ -1002,40 +1068,63 @@ func (r *Receiver) applyFlags(ctx context.Context, op backend.SetFlags) (backend
 	return backend.Result{Outcome: backend.Done}, nil
 }
 
+func isImmutableSystemLabel(ref backend.FolderRef) bool {
+	return ref == "SENT" || ref == "DRAFT"
+}
+
 func (r *Receiver) applyLabels(ctx context.Context, at backend.Location, to backend.FolderRef, addOnly bool) (backend.Result, error) {
+	if isImmutableSystemLabel(to) || (!addOnly && isImmutableSystemLabel(at.Folder) && to != "TRASH" && to != "SPAM") {
+		return backend.Result{Outcome: backend.Unsupported, Reason: ReasonSystemLabelsFixed}, nil
+	}
 	id := cmp.Or(at.ServerID, string(at.Ref))
+	m, err := r.c.getMessage(ctx, id, "minimal")
+	if err != nil {
+		return mapApplyErr(err)
+	}
+	effectiveAddOnly := addOnly || at.Folder == "" || at.Folder == AllMailRef
+	removeOnly := to == "" || to == AllMailRef
+	inSrc := at.Folder == "" || inFolder(m.LabelIDs, at.Folder)
+	inDst := to != "" && inFolder(m.LabelIDs, to)
+	doneRes := func() backend.Result {
+		if to != "" {
+			return backend.Result{Outcome: backend.Done, Ref: backend.MessageRef(id)}
+		}
+		return backend.Result{Outcome: backend.Done}
+	}
+	if (effectiveAddOnly && inDst) || (at.Folder != "" && at.Folder == to) {
+		return doneRes(), nil
+	}
+	if !inSrc {
+		if !effectiveAddOnly && (removeOnly || inDst) {
+			return doneRes(), nil
+		}
+		return backend.Result{}, fmt.Errorf("%w: the message left folder %q", backend.ErrNotFound, at.Folder)
+	}
 	if to == "TRASH" {
 		if err := r.c.trashMessage(ctx, id); err != nil {
 			return mapApplyErr(err)
 		}
-		return backend.Result{Outcome: backend.Done, Ref: backend.MessageRef(id)}, nil
+		return doneRes(), nil
 	}
-	if at.Folder == "TRASH" && to == AllMailRef && !addOnly {
+	if at.Folder == "TRASH" && to == AllMailRef && !effectiveAddOnly {
 		if err := r.c.untrashMessage(ctx, id); err != nil {
 			return mapApplyErr(err)
 		}
-		return backend.Result{Outcome: backend.Done, Ref: backend.MessageRef(id)}, nil
+		return doneRes(), nil
 	}
 	var add, remove []string
 	if to != "" && to != AllMailRef {
 		add = append(add, string(to))
 	}
-	if !addOnly && at.Folder != "" && at.Folder != AllMailRef && at.Folder != to {
+	if !effectiveAddOnly && at.Folder != "" && at.Folder != AllMailRef && !isImmutableSystemLabel(at.Folder) && at.Folder != to {
 		remove = append(remove, string(at.Folder))
 	}
 	if len(add) > 0 || len(remove) > 0 {
 		if err := r.c.modifyMessage(ctx, id, add, remove); err != nil {
 			return mapApplyErr(err)
 		}
-	} else {
-		if _, err := r.c.getMessage(ctx, id, "minimal"); err != nil {
-			return mapApplyErr(err)
-		}
 	}
-	if to != "" {
-		return backend.Result{Outcome: backend.Done, Ref: backend.MessageRef(id)}, nil
-	}
-	return backend.Result{Outcome: backend.Done}, nil
+	return doneRes(), nil
 }
 
 func (r *Receiver) applyAppend(ctx context.Context, op backend.Append) (backend.Result, error) {

@@ -27,13 +27,14 @@ const DefaultBaseURL = "https://gmail.googleapis.com"
 
 // Reason keys, translated by the UI and Wit.
 const (
-	ReasonAPIDisabled    = "gmailapi.api_disabled"
-	ReasonNoCopy         = "gmailapi.no_copy"
-	ReasonNoAnswered     = "gmailapi.no_answered"
-	ReasonNoDraft        = "gmailapi.no_draft"
-	ReasonNoKeywords     = "gmailapi.no_keywords"
-	ReasonNoPush         = "gmailapi.no_push"
-	ReasonFoldersPending = "gmailapi.folders_pending"
+	ReasonAPIDisabled       = "gmailapi.api_disabled"
+	ReasonNoCopy            = "gmailapi.no_copy"
+	ReasonNoAnswered        = "gmailapi.no_answered"
+	ReasonNoDraft           = "gmailapi.no_draft"
+	ReasonNoKeywords        = "gmailapi.no_keywords"
+	ReasonNoPush            = "gmailapi.no_push"
+	ReasonFoldersPending    = "gmailapi.folders_pending"
+	ReasonSystemLabelsFixed = "gmailapi.system_labels_fixed"
 )
 
 // ErrAPIDisabled means the OAuth client's Google Cloud project has not enabled

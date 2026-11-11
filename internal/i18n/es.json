@@ -2201,5 +2201,6 @@
   "feature_reason_gmailapi_no_draft": "Gmail decide si un mensaje es borrador; su marca no se puede cambiar.",
   "feature_reason_gmailapi_no_keywords": "Las cuentas de Gmail API no admiten palabras clave IMAP personalizadas.",
   "feature_reason_gmailapi_no_push": "La Gmail API no puede enviar notificaciones push a una aplicación de escritorio; Godwit comprueba cada minuto.",
-  "feature_reason_gmailapi_folders_pending": "La gestión de carpetas mediante Gmail API aún no está disponible."
+  "feature_reason_gmailapi_folders_pending": "La gestión de carpetas mediante Gmail API aún no está disponible.",
+  "feature_reason_gmailapi_system_labels_fixed": "Gmail fija las etiquetas «Enviados» y «Borradores»: no se pueden mover mensajes hacia ni desde ellas."
 }

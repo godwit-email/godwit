@@ -3964,5 +3964,6 @@
   "feature_reason_gmailapi_no_draft": "Gmail decides whether a message is a draft; its flag can't be toggled.",
   "feature_reason_gmailapi_no_keywords": "Gmail API accounts don't support custom IMAP keywords.",
   "feature_reason_gmailapi_no_push": "The Gmail API can't push new mail to a desktop app; Godwit checks every minute.",
-  "feature_reason_gmailapi_folders_pending": "Managing folders over the Gmail API isn't available yet."
+  "feature_reason_gmailapi_folders_pending": "Managing folders over the Gmail API isn't available yet.",
+  "feature_reason_gmailapi_system_labels_fixed": "Gmail fixes the Sent and Drafts labels: mail can't be moved into or out of them."
 }

@@ -17,10 +17,13 @@ import (
 
 	"github.com/egoist/mygo/plugins/sqlite"
 	"github.com/godwit-email/godwit/backend"
+	"github.com/godwit-email/godwit/backend/gmailapi"
+	"github.com/godwit-email/godwit/core/auth"
 	"github.com/godwit-email/godwit/core/events"
 	gomail "github.com/godwit-email/godwit/core/mail"
 	"github.com/godwit-email/godwit/core/mailsync"
 	"github.com/godwit-email/godwit/core/store"
+	"github.com/godwit-email/godwit/internal/i18n"
 )
 
 // MessageSummary is a message as listed. FolderIDs are every folder it shows
@@ -1233,8 +1236,39 @@ func (s *Service) move(ctx context.Context, accountID int64, ts []target, from, 
 	if err != nil {
 		return err
 	}
+	if err := s.checkMoveSupported(ctx, accountID, ts, from, folderID, binned); err != nil {
+		return err
+	}
 	moved, stmts := moveWrites(accountID, ts, from, folderID, binned, s.clk().Now())
 	return s.apply(ctx, accountID, moved, stmts)
+}
+
+func (s *Service) checkMoveSupported(ctx context.Context, accountID int64, ts []target, from, folderID int64, binned bool) error {
+	if accountID == 0 {
+		return nil
+	}
+	r, err := s.db.Query(ctx, "SELECT recv_protocol FROM accounts WHERE id = ?", accountID)
+	if err != nil || len(r.Values) == 0 || store.Str(r.Values[0][0]) != auth.GmailAPI {
+		return err
+	}
+	fixed, err := s.db.Query(ctx, "SELECT id FROM folders WHERE account_id = ? AND server_ref IN ('SENT', 'DRAFT')", accountID)
+	if err != nil || len(fixed.Values) == 0 {
+		return err
+	}
+	isFixed := func(id int64) bool {
+		return slices.ContainsFunc(fixed.Values, func(v []any) bool { return store.Int(v[0]) == id })
+	}
+	if isFixed(folderID) {
+		return fmt.Errorf("unsupported: %s", i18n.TIn("en", "feature.reason."+gmailapi.ReasonSystemLabelsFixed))
+	}
+	if !binned {
+		for _, m := range ts {
+			if slices.ContainsFunc(m.leaves(from, folderID, false), isFixed) {
+				return fmt.Errorf("unsupported: %s", i18n.TIn("en", "feature.reason."+gmailapi.ReasonSystemLabelsFixed))
+			}
+		}
+	}
+	return nil
 }
 
 // binned reports whether folder is the account's Trash or Junk.

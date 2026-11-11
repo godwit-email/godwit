@@ -2201,5 +2201,6 @@
   "feature_reason_gmailapi_no_draft": "Gmail détermine si un message est un brouillon ; cet indicateur ne peut pas être modifié.",
   "feature_reason_gmailapi_no_keywords": "Les comptes Gmail API ne prennent pas en charge les mots-clés IMAP personnalisés.",
   "feature_reason_gmailapi_no_push": "L’API Gmail ne peut pas envoyer de notifications push à une application de bureau ; Godwit vérifie chaque minute.",
-  "feature_reason_gmailapi_folders_pending": "La gestion des dossiers via l’API Gmail n’est pas encore disponible."
+  "feature_reason_gmailapi_folders_pending": "La gestion des dossiers via l’API Gmail n’est pas encore disponible.",
+  "feature_reason_gmailapi_system_labels_fixed": "Gmail fige les libellés « Messages envoyés » et « Brouillons » : les messages ne peuvent ni y entrer ni en sortir."
 }

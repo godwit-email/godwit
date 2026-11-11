@@ -2201,5 +2201,6 @@
   "feature_reason_gmailapi_no_draft": "Gmail bepaalt of een bericht een concept is; die markering kan niet worden gewijzigd.",
   "feature_reason_gmailapi_no_keywords": "Gmail API-accounts ondersteunen geen aangepaste IMAP-trefwoorden.",
   "feature_reason_gmailapi_no_push": "De Gmail API kan nieuwe e-mail niet naar een desktop-app pushen; Godwit controleert elke minuut.",
-  "feature_reason_gmailapi_folders_pending": "Mappen beheren via de Gmail API is nog niet beschikbaar."
+  "feature_reason_gmailapi_folders_pending": "Mappen beheren via de Gmail API is nog niet beschikbaar.",
+  "feature_reason_gmailapi_system_labels_fixed": "Gmail legt de labels ‘Verzonden’ en ‘Concepten’ vast: e-mail kan er niet naartoe of uit worden verplaatst."
 }

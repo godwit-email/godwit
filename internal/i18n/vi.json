@@ -2201,5 +2201,6 @@
   "feature_reason_gmailapi_no_draft": "Gmail quyết định thư có phải bản nháp hay không; không thể bật tắt cờ này.",
   "feature_reason_gmailapi_no_keywords": "Tài khoản Gmail API không hỗ trợ từ khóa IMAP tùy chỉnh.",
   "feature_reason_gmailapi_no_push": "Gmail API không thể đẩy thư mới trực tiếp tới ứng dụng máy tính; Godwit kiểm tra mỗi phút.",
-  "feature_reason_gmailapi_folders_pending": "Chưa hỗ trợ quản lý thư mục qua Gmail API."
+  "feature_reason_gmailapi_folders_pending": "Chưa hỗ trợ quản lý thư mục qua Gmail API.",
+  "feature_reason_gmailapi_system_labels_fixed": "Gmail cố định nhãn «Thư đã gửi» và «Thư nháp»: không thể chuyển thư vào hoặc ra khỏi hai thư mục này."
 }

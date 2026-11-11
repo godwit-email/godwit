@@ -2201,5 +2201,6 @@
   "feature_reason_gmailapi_no_draft": "Gmail legt fest, ob eine Nachricht ein Entwurf ist; die Markierung lässt sich nicht umschalten.",
   "feature_reason_gmailapi_no_keywords": "Gmail-API-Konten unterstützen keine benutzerdefinierten IMAP-Schlüsselwörter.",
   "feature_reason_gmailapi_no_push": "Die Gmail-API kann neue E-Mails nicht direkt an eine Desktop-App pushen; Godwit prüft jede Minute.",
-  "feature_reason_gmailapi_folders_pending": "Ordnerverwaltung über die Gmail-API ist noch nicht verfügbar."
+  "feature_reason_gmailapi_folders_pending": "Ordnerverwaltung über die Gmail-API ist noch nicht verfügbar.",
+  "feature_reason_gmailapi_system_labels_fixed": "Gmail legt die Labels „Gesendet“ und „Entwürfe“ fest: E-Mails können nicht dorthin oder daraus verschoben werden."
 }
