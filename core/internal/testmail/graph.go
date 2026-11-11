@@ -45,13 +45,14 @@ type Graph struct {
 	throttleStatus int
 	throttleRetry  string
 
-	resetStatus int  // status code for invalidated deltaLink (default 410)
-	resetInner  bool // put syncStateNotFound in error.innerError.code on 400
-	partialFlag bool // omit unchanged flag properties on delta updates
-	omitRoles   bool // omit wellKnownName on folder list responses
-	nonImmutReq int  // requests received without Prefer: IdType="ImmutableId"
-	requests    int  // authenticated requests served
-	afterDelta  func(folderName string)
+	resetStatus     int  // status code for invalidated deltaLink (default 410)
+	resetInner      bool // put syncStateNotFound in error.innerError.code on 400
+	partialFlag     bool // omit unchanged flag properties on delta updates
+	omitRoles       bool // omit wellKnownName on folder list responses
+	nonImmutReq     int  // requests received without Prefer: IdType="ImmutableId"
+	requests        int  // authenticated requests served
+	afterDelta      func(folderName string)
+	afterFolderList func()
 
 	latency          atomic.Int64
 	inFlight, maxFly atomic.Int32
@@ -445,6 +446,14 @@ func (s *Graph) SetAfterFolderDelta(fn func(folderName string)) {
 	s.afterDelta = fn
 }
 
+// SetAfterFolderList registers a hook invoked right after GET /me/mailFolders
+// completes, allowing tests to simulate folder changes racing hierarchy setup.
+func (s *Graph) SetAfterFolderList(fn func()) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.afterFolderList = fn
+}
+
 func wantsImmutable(r *http.Request) bool {
 	for _, v := range r.Header.Values("Prefer") {
 		for p := range strings.SplitSeq(v, ",") {
@@ -609,6 +618,12 @@ func (s *Graph) handleListFolders(w http.ResponseWriter, r *http.Request, parent
 		}
 	}
 	s.paginateSlice(w, r, list)
+	if parent == "" && s.afterFolderList != nil {
+		hook := s.afterFolderList
+		s.mu.Unlock()
+		hook()
+		s.mu.Lock()
+	}
 }
 
 func (s *Graph) handleFoldersDelta(w http.ResponseWriter, r *http.Request) {

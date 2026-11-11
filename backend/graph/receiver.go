@@ -159,7 +159,16 @@ func (r *Receiver) listChildren(ctx context.Context, path string, out *[]graphFo
 
 // folders lists every mail folder recursively, resolving standard roles via
 // Graph v1.0's well-known folder paths (/me/mailFolders/{wellKnownName}).
+// The hierarchy delta cursor is obtained BEFORE listing folders so any folder
+// created after listChildren finishes remains ahead of the cursor and is
+// observed on the next hierarchy round.
 func (r *Receiver) folders(ctx context.Context) ([]backend.Folder, string, error) {
+	var delta string
+	if d, err := r.folderDeltaCursor(ctx); err == nil {
+		delta = d
+	} else if !isStatus(err, http.StatusNotFound) && !isStatus(err, http.StatusNotImplemented) {
+		return nil, "", err
+	}
 	var raw []graphFolder
 	seen := map[string]bool{}
 	const rootQuery = "/me/mailFolders?$top=250&$select=id,displayName,parentFolderId,childFolderCount"
@@ -174,11 +183,6 @@ func (r *Receiver) folders(ctx context.Context) ([]backend.Folder, string, error
 		} else if err != nil && !isStatus(err, http.StatusNotFound) {
 			return nil, "", err
 		}
-	}
-	// Also obtain a folder delta cursor if the server supports /me/mailFolders/delta.
-	var delta string
-	if d, err := r.folderDeltaCursor(ctx); err == nil {
-		delta = d
 	}
 	byID := map[string]*graphFolder{}
 	for i := range raw {

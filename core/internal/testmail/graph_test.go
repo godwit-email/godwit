@@ -369,3 +369,49 @@ func TestGraphCategoriesFlagsAndDelete(t *testing.T) {
 		t.Fatalf("Fetch after permanent delete = %v, want ErrNotFound", err)
 	}
 }
+
+// A folder created right after GET /me/mailFolders finishes (before folders()
+// returns) remains ahead of the saved hierarchy delta cursor and is discovered
+// together with its mail on the very next sync round.
+func TestGraphFolderCreatedAfterListingObservedNextSync(t *testing.T) {
+	s := testmail.StartGraph(t)
+	r := graphReceiver(t, s, nil)
+
+	createdOnce := false
+	var lateFolderID string
+	s.SetAfterFolderList(func() {
+		if !createdOnce {
+			createdOnce = true
+			lateFolderID = s.Folder("LateFolder")
+			s.Deliver("LateFolder", backendtest.Message("late@example.com", "in late folder"))
+		}
+	})
+
+	var account backend.Cursor
+	states := map[backend.FolderRef]backend.FolderState{}
+	syncRound(t, r, &account, states, nil)
+	s.SetAfterFolderList(nil)
+	if !createdOnce {
+		t.Fatal("afterFolderList hook did not fire")
+	}
+
+	// Next round must observe LateFolder via the saved folder delta cursor.
+	cs, _ := syncRound(t, r, &account, states, nil)
+	lateRef := backend.FolderRef(lateFolderID)
+	var seenFolder, seenMsg bool
+	for _, c := range cs {
+		switch c := c.(type) {
+		case backend.FolderUpdated:
+			if c.Ref == lateRef && c.Name == "LateFolder" {
+				seenFolder = true
+			}
+		case backend.MessageAppeared:
+			if c.Folder == lateRef {
+				seenMsg = true
+			}
+		}
+	}
+	if !seenFolder || !seenMsg {
+		t.Fatalf("next sync changes = %+v, want LateFolder FolderUpdated and MessageAppeared", cs)
+	}
+}
