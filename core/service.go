@@ -134,10 +134,10 @@ type Service struct {
 	editMu     sync.Mutex                  // local changes (SetFlags, Move, Delete, drafts, Send) read then write
 	ruleRunMu  sync.Mutex                  // one rule run at a time (runRule): the consumer, a retry, a run over existing mail
 
-	workersMu sync.Mutex
-	workers   map[int64]*worker
-	closed    bool
-	light     atomic.Bool // background rounds cover the inbox only; the window's state (SetLightBackground)
+	workersMu   sync.Mutex
+	workers     map[int64]*worker
+	closed      bool
+	inboxRounds atomic.Bool // background rounds cover the inbox only; the window's state (SetInboxOnly)
 
 	callsMu     sync.Mutex
 	modelMu     sync.RWMutex // writers: a model service's row and key change together; readers see both or neither (ponytail: global, per-id if contended)
@@ -624,13 +624,13 @@ func (s *Service) keepConn(id int64, k *downloadConn) {
 	s.kept[id] = k
 }
 
-// SetLightBackground narrows the workers' rounds to the inbox while on: the
+// SetInboxOnly narrows the workers' rounds to the inbox while on: the
 // window is in the background, where only new mail needs to arrive for its
 // notification, and every other folder would cost a round each. Turning it
 // off wakes every worker so the folders catch up at once. SyncNow is never
 // narrowed: a sync the user asks for is whole.
-func (s *Service) SetLightBackground(on bool) {
-	if s.light.Swap(on) == on || on {
+func (s *Service) SetInboxOnly(on bool) {
+	if s.inboxRounds.Swap(on) == on || on {
 		return // unchanged, or narrowed: the next rounds follow on their own
 	}
 	s.workersMu.Lock()
@@ -644,8 +644,8 @@ func (s *Service) SetLightBackground(on bool) {
 	}
 }
 
-// LightBackground reports whether background rounds cover the inbox only.
-func (s *Service) LightBackground() bool { return s.light.Load() }
+// InboxOnly reports whether background rounds cover the inbox only.
+func (s *Service) InboxOnly() bool { return s.inboxRounds.Load() }
 
 // SyncNow connects to the account's IMAP server, pushes queued local changes,
 // sends and files the outbox, and fetches new mail. Calls for the same account

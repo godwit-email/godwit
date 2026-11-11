@@ -40,25 +40,25 @@ func TestFetchInboxOnly(t *testing.T) {
 	assert.Equal(t, 1, e.count(t, "SELECT count(*) FROM messages WHERE message_id = 'ar2@x'"))
 }
 
-// SyncNow stays whole while the background is light: a sync the user asks for
+// SyncNow stays whole while background rounds are inbox-only: a sync the user asks for
 // is not narrowed.
-func TestLightBackgroundKeepsSyncNowWhole(t *testing.T) {
+func TestInboxOnlyKeepsSyncNowWhole(t *testing.T) {
 	e := newSyncEnv(t)
-	e.s.SetLightBackground(true)
-	defer e.s.SetLightBackground(false)
+	e.s.SetInboxOnly(true)
+	defer e.s.SetInboxOnly(false)
 	e.put(t, "Archive", eml("ar@x", "Bob <bob@example.com>", "alice@example.com", "archived", "Mon, 05 Oct 2026 09:05:00 +0000", "older"))
 
 	e.sync(t)
 
-	assert.True(t, e.s.LightBackground())
+	assert.True(t, e.s.InboxOnly())
 	assert.Equal(t, 1, e.count(t, "SELECT count(*) FROM messages WHERE message_id = 'ar@x'"))
 }
 
-// The worker's rounds follow the mode: light, they carry the inbox only, and
+// The worker's rounds follow the mode: on, they carry the inbox only, and
 // turning it off wakes them into a full round.
-func TestWorkerLightBackgroundSyncsInboxOnly(t *testing.T) {
+func TestWorkerInboxOnlySyncsInboxOnly(t *testing.T) {
 	e, ch := newWorkerEnv(t)
-	e.s.SetLightBackground(true)
+	e.s.SetInboxOnly(true)
 	e.put(t, "INBOX", eml("in@x", "Bob <bob@example.com>", "alice@example.com", "inbox", "Mon, 05 Oct 2026 09:00:00 +0000", "new mail"))
 	e.put(t, "Archive", eml("ar@x", "Bob <bob@example.com>", "alice@example.com>", "archived", "Mon, 05 Oct 2026 09:05:00 +0000", "older mail"))
 
@@ -67,12 +67,12 @@ func TestWorkerLightBackgroundSyncsInboxOnly(t *testing.T) {
 	assert.Equal(t, 1, e.count(t, "SELECT count(*) FROM messages WHERE message_id = 'in@x'"))
 	assert.Zero(t, e.count(t, "SELECT count(*) FROM messages WHERE message_id = 'ar@x'"))
 
-	e.s.SetLightBackground(false)
+	e.s.SetInboxOnly(false)
 	waitEvent(t, ch, events.SyncFinished, 5*time.Second)
 	assert.Equal(t, 1, e.count(t, "SELECT count(*) FROM messages WHERE message_id = 'ar@x'"))
 }
 
-func TestLightBackgroundKeepsForegroundCatchup(t *testing.T) {
+func TestInboxOnlyKeepsForegroundCatchup(t *testing.T) {
 	e, _ := newWorkerEnv(t)
 	unlock, err := e.s.lockAccount(bg, e.acc.ID)
 	require.NoError(t, err)
@@ -81,8 +81,8 @@ func TestLightBackgroundKeepsForegroundCatchup(t *testing.T) {
 	e.put(t, "INBOX", msg("watch@x"))
 	waitSignal(t, e.lockWait, "worker waiting for lock", 5*time.Second)
 	e.put(t, "Archive", msg("catchup@x"))
-	e.s.SetLightBackground(true)
-	e.s.SetLightBackground(false)
+	e.s.SetInboxOnly(true)
+	e.s.SetInboxOnly(false)
 	e.s.workersMu.Lock()
 	wake := e.s.workers[e.acc.ID].wake
 	e.s.workersMu.Unlock()
@@ -95,7 +95,7 @@ func TestLightBackgroundKeepsForegroundCatchup(t *testing.T) {
 	}, 5*time.Second, 20*time.Millisecond)
 }
 
-func TestLightBackgroundClaimsMoves(t *testing.T) {
+func TestInboxOnlyClaimsMoves(t *testing.T) {
 	for _, awaiting := range []bool{false, true} {
 		t.Run(fmt.Sprintf("awaiting=%v", awaiting), func(t *testing.T) {
 			e, _ := newWorkerEnv(t, testmail.WithoutUIDPlus())
@@ -109,7 +109,7 @@ func TestLightBackgroundClaimsMoves(t *testing.T) {
 				require.NoError(t, mailsync.PushOps(bg, e.s.db, e.receiver(t), e.acc.ID, e.s.clk().Now()))
 				require.Equal(t, []string{"awaiting_claim", "pending"}, e.opStates(t))
 			}
-			e.s.SetLightBackground(true)
+			e.s.SetInboxOnly(true)
 			e.s.startWorker(e.acc.ID)
 			require.Eventually(t, func() bool {
 				return e.count(t, "SELECT count(*) FROM ops WHERE state != 'done'") == 0
@@ -119,7 +119,7 @@ func TestLightBackgroundClaimsMoves(t *testing.T) {
 	}
 }
 
-func TestLightBackgroundRecoversPendingGmailUndo(t *testing.T) {
+func TestInboxOnlyRecoversPendingGmailUndo(t *testing.T) {
 	e, _ := newWorkerEnv(t, testmail.Gmail(), testmail.WithoutMove())
 	e.s.stopWorker(e.acc.ID)
 	require.NoError(t, e.im.User.Delete(testmail.GmailAllMail))
@@ -140,7 +140,7 @@ func TestLightBackgroundRecoversPendingGmailUndo(t *testing.T) {
 
 	require.NoError(t, e.im.User.Create(testmail.GmailAllMail, nil))
 	m.Label(testmail.GmailAllMail)
-	e.s.SetLightBackground(true)
+	e.s.SetInboxOnly(true)
 	e.s.startWorker(e.acc.ID)
 	require.Eventually(t, func() bool {
 		pending, err := e.s.PendingOps(bg, e.acc.ID)
@@ -150,7 +150,7 @@ func TestLightBackgroundRecoversPendingGmailUndo(t *testing.T) {
 	assert.Equal(t, []int64{id}, e.syncEnv.listed(t, "INBOX"))
 }
 
-func TestLightBackgroundFinishesPurges(t *testing.T) {
+func TestInboxOnlyFinishesPurges(t *testing.T) {
 	for _, scenario := range []string{"manual", "automatic", "already-done", "gmail", "gmail-awaiting-cleanup"} {
 		t.Run(scenario, func(t *testing.T) {
 			var opts []testmail.Option
@@ -184,7 +184,7 @@ func TestLightBackgroundFinishesPurges(t *testing.T) {
 					require.Equal(t, 1, e.count(t, "SELECT count(*) FROM messages WHERE id = ?", id))
 				}
 			}
-			e.s.SetLightBackground(true)
+			e.s.SetInboxOnly(true)
 			collect(ch)
 			e.s.startWorker(e.acc.ID)
 			waitEvent(t, ch, events.SyncFinished, 5*time.Second)
@@ -195,7 +195,7 @@ func TestLightBackgroundFinishesPurges(t *testing.T) {
 	}
 }
 
-func TestLightBackgroundContinuesExplicitBackfill(t *testing.T) {
+func TestInboxOnlyContinuesExplicitBackfill(t *testing.T) {
 	rounds := make(chan bool, 64)
 	setFor(t, &afterWorkerSync, func(_ int64, only []backend.FolderRef) {
 		select {
@@ -213,7 +213,7 @@ func TestLightBackgroundContinuesExplicitBackfill(t *testing.T) {
 	}
 	e.sync(t)
 	e.setRange(t, SyncRange{})
-	e.s.SetLightBackground(true)
+	e.s.SetInboxOnly(true)
 	collect(ch)
 	e.s.startWorker(e.acc.ID)
 	waitEvent(t, ch, events.SyncFinished, 5*time.Second)

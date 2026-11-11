@@ -185,7 +185,7 @@ func (s *Service) runWorker(ctx context.Context, id int64, w *worker) {
 		if only == nil {
 			fullBy = time.Now().Add(idleMax)
 		}
-		if s.light.Load() && !full {
+		if s.inboxRounds.Load() && !full {
 			if refs := s.inboxOnly(ctx, id); len(refs) > 0 {
 				only = refs
 				fullBy = time.Now().Add(idleMax) // a full round waits for the window

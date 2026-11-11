@@ -151,7 +151,7 @@ func TestJMAPPush(t *testing.T) {
 	}, 10*time.Second, 50*time.Millisecond)
 }
 
-func TestJMAPLightBackgroundFinishesWholeAccountSync(t *testing.T) {
+func TestJMAPInboxOnlyFinishesWholeAccountSync(t *testing.T) {
 	e := coretest.New(t)
 	acc := e.AddAccount(t, "alice@example.com", coretest.ViaJMAP())
 	srv := e.JMAP(acc.ID)
@@ -160,7 +160,7 @@ func TestJMAPLightBackgroundFinishesWholeAccountSync(t *testing.T) {
 	ms, err := e.Svc.Search(t.Context(), acc.ID, "RemoveCached", 10)
 	require.NoError(t, err)
 	require.Len(t, ms, 1)
-	e.Svc.SetLightBackground(true)
+	e.Svc.SetInboxOnly(true)
 	srv.Deliver("INBOX", coretest.Msg("bob@example.com", "alice@example.com", "BackgroundReady", "body"))
 	require.Eventually(t, func() bool {
 		ms, err := e.Svc.Search(t.Context(), acc.ID, "BackgroundReady", 10)

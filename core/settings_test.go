@@ -24,8 +24,8 @@ func TestSettingsDefaults(t *testing.T) {
 	s := settingsService(t, t.TempDir(), "")
 	got, err := s.GetSettings(t.Context())
 	require.NoError(t, err)
-	assert.Equal(t, Settings{Theme: "system", Density: "compact", FontSize: 14, SettingsVersion: 4, ReplyLanguage: "match",
-		KeepInBackground: true, ShowTrayIcon: true, UnreadOnAppIcon: true, NotifyNewMail: true, NotifyPreview: true, ThreadView: true, ThreadCollapse: true, ThreadCollapseThreshold: 5, RemoteImages: "auto", AutoLabel: true, LabelDisplay: "both", JudgeThreshold: 0.8, LightBackground: true,
+	assert.Equal(t, Settings{Theme: "system", Density: "compact", FontSize: 14, SettingsVersion: 5, ReplyLanguage: "match",
+		KeepInBackground: true, ShowTrayIcon: true, UnreadOnAppIcon: true, NotifyNewMail: true, NotifyPreview: true, ThreadView: true, ThreadCollapse: true, ThreadCollapseThreshold: 5, RemoteImages: "auto", AutoLabel: true, LabelDisplay: "both", JudgeThreshold: 0.8, BackgroundSync: "inbox",
 		MCPSend: "confirm", Masking: true, MaskCategories: defaultMaskCategories(),
 		SecurityWarnings: true, VerifiedBadge: true, ProxyMode: "system"}, got)
 }
@@ -244,6 +244,23 @@ func TestSettingsFontMigration(t *testing.T) {
 		require.NoError(t, err)
 		assert.Equal(t, want, [2]int{got.FontSize, got.BodyFontSize}, stored)
 		assert.Equal(t, settingsVersion, got.SettingsVersion, stored)
+	}
+}
+
+// Version 4's LightBackground switch turned off keeps every folder syncing.
+func TestSettingsBackgroundSyncMigration(t *testing.T) {
+	for stored, want := range map[string]string{
+		`{"LightBackground":false,"SettingsVersion":4}`: BackgroundSyncAll,
+		`{"LightBackground":true,"SettingsVersion":4}`:  BackgroundSyncInbox,
+		`{"SettingsVersion":4}`:                         BackgroundSyncInbox,
+		`{"LightBackground":false,"SettingsVersion":5}`: BackgroundSyncInbox,
+	} {
+		s := settingsService(t, t.TempDir(), "")
+		_, err := s.db.Execute(t.Context(), "INSERT INTO settings(key, value) VALUES ('app', ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value", stored)
+		require.NoError(t, err)
+		got, err := s.GetSettings(t.Context())
+		require.NoError(t, err)
+		assert.Equal(t, want, got.BackgroundSync, stored)
 	}
 }
 

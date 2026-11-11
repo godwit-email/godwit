@@ -217,7 +217,7 @@ var hidden = map[string]bool{
 	// The native reader's two steps of GetMessage, which clients have whole; callbacks too.
 	"GetMessageLazyImages": true, "InlineImages": true, "FetchAttachments": true,
 	// The GUI's window state, not a client's; a sync a client asks for is SyncNow, whole.
-	"SetLightBackground": true, "LightBackground": true,
+	"SetInboxOnly": true, "InboxOnly": true,
 }
 
 // Expose picks the *core.Service methods callable over RPC: every exported
