@@ -181,6 +181,41 @@ func TestJMAPMergedIDChanges(t *testing.T) {
 	}
 }
 
+// Mail that changed on the server and is not held (outside the window) is a
+// backfill; only mail the server lists as created is a new arrival.
+func TestJMAPUpdatedMailIsNotAnArrival(t *testing.T) {
+	s := testmail.StartJMAP(t)
+	old := s.Deliver("INBOX", backendtest.Message("old@example.com", "old"))
+	r := jmapReceiver(t, s, s.SessionURL())
+	_, cur, err := jmapSync(t, r, "", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Changed elsewhere (read in webmail), then new mail arrives.
+	at := backend.Location{Folder: backend.FolderRef(s.Inbox), Ref: backend.MessageRef(old), ServerID: string(old)}
+	if _, err := r.Apply(tctx(t), backend.SetFlags{At: at, Add: backend.Flags{Seen: true}}); err != nil {
+		t.Fatal(err)
+	}
+	fresh := s.Deliver("INBOX", backendtest.Message("new@example.com", "new"))
+
+	cs, _, err := jmapSync(t, r, cur, held{}) // local storage holds neither
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := map[backend.MessageRef]bool{} // ref -> Backfill
+	for _, c := range cs {
+		if m, ok := c.(backend.MessageAppeared); ok {
+			got[m.Ref] = m.Backfill
+		}
+	}
+	if backfill, ok := got[backend.MessageRef(old)]; !ok || !backfill {
+		t.Errorf("changed mail not held: appeared %v, backfill %v; want it as a backfill", ok, backfill)
+	}
+	if backfill, ok := got[backend.MessageRef(fresh)]; !ok || backfill {
+		t.Errorf("new mail: appeared %v, backfill %v; want it as a new arrival", ok, backfill)
+	}
+}
+
 // A 401 in the middle of a session is ErrAuthFailed.
 func TestJMAPUnauthorized(t *testing.T) {
 	s := testmail.StartJMAP(t)

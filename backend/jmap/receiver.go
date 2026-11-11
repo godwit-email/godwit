@@ -466,7 +466,8 @@ func (r *Receiver) changes(ctx context.Context, req backend.SyncRequest, cur cur
 		s.add(backend.FolderGone{Ref: backend.FolderRef(id)})
 	}
 
-	kind := map[gojmap.ID]bool{} // true: exists, false: destroyed
+	kind := map[gojmap.ID]bool{}    // true: exists, false: destroyed
+	created := map[gojmap.ID]bool{} // listed as created: the only new arrivals
 	estate := cur.Email
 	for more := true; more; {
 		out, err := r.c.call(ctx, func(acct gojmap.ID) []gojmap.Method {
@@ -476,7 +477,10 @@ func (r *Receiver) changes(ctx context.Context, req backend.SyncRequest, cur cur
 			return err
 		}
 		c := out[0].(*email.ChangesResponse)
-		for _, id := range append(c.Created, c.Updated...) {
+		for _, id := range c.Created {
+			kind[id], created[id] = true, true
+		}
+		for _, id := range c.Updated {
 			kind[id] = true
 		}
 		for _, id := range c.Destroyed {
@@ -519,7 +523,20 @@ func (r *Receiver) changes(ctx context.Context, req backend.SyncRequest, cur cur
 				}
 			}
 		}
-		if err := s.appear(ctx, mails, held, false); err != nil {
+		// Mail that only changed and is not held was never in the window, or is
+		// at a new location: a backfill, so nothing announces it as new.
+		var arrived, changed []*email.Email
+		for _, e := range mails {
+			if created[e.ID] {
+				arrived = append(arrived, e)
+			} else {
+				changed = append(changed, e)
+			}
+		}
+		if err := s.appear(ctx, arrived, held, false); err != nil {
+			return err
+		}
+		if err := s.appear(ctx, changed, held, true); err != nil {
 			return err
 		}
 		if err := s.flush(backend.Page{}); err != nil {
