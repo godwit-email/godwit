@@ -83,13 +83,12 @@ func (s *Sender) Send(ctx context.Context, _ string, rcpts []string, raw []byte)
 		}
 		body, rerr := io.ReadAll(io.LimitReader(resp.Body, 32<<10))
 		_ = resp.Body.Close()
-		if rerr != nil {
-			return fmt.Errorf("%w: %v", backend.ErrUncertain, rerr)
-		}
 		if resp.StatusCode >= 200 && resp.StatusCode < 300 {
-			return nil
+			return nil // accepted, whether or not the rest of the answer arrived
 		}
-		if resp.StatusCode == http.StatusBadGateway || resp.StatusCode == http.StatusGatewayTimeout {
+		// Google answers 5xx after the whole request reached it, and nothing
+		// says the message was not sent: resending could deliver it twice (ADR 0006).
+		if rerr != nil || resp.StatusCode >= 500 {
 			return fmt.Errorf("%w: HTTP %s", backend.ErrUncertain, resp.Status)
 		}
 		perr := parseError(resp, body)
@@ -109,9 +108,6 @@ func (s *Sender) Send(ctx context.Context, _ string, rcpts []string, raw []byte)
 				return err
 			}
 			continue
-		}
-		if resp.StatusCode >= 500 {
-			return perr
 		}
 		var ae *apiError
 		code := 554

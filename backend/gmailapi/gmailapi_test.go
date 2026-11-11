@@ -664,3 +664,24 @@ func TestRestoreDeletedSpamClearsBothBinLabels(t *testing.T) {
 		}
 	}
 }
+
+// A 5xx comes after the whole request reached Google, which may have sent
+// the message: the outbox must not resend it on its own (ADR 0006).
+func TestSendServerErrorIsUncertain(t *testing.T) {
+	for _, code := range []int{http.StatusInternalServerError, http.StatusServiceUnavailable} {
+		calls := 0
+		srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			calls++
+			_, _ = io.Copy(io.Discard, r.Body)
+			http.Error(w, `{"error":{"code":500,"message":"Backend Error","errors":[{"reason":"backendError"}]}}`, code)
+		}))
+		s := gmailapi.NewSender(gmailapi.Config{BaseURL: srv.URL, Credentials: func(context.Context) (backend.Credentials, error) {
+			return backend.Credentials{Username: "alice@gmail.com", Token: "t"}, nil
+		}})
+		err := s.Send(context.Background(), "alice@gmail.com", []string{"bob@example.com"}, []byte("To: bob@example.com\r\nSubject: x\r\n\r\nhi\r\n"))
+		srv.Close()
+		if !errors.Is(err, backend.ErrUncertain) || calls != 1 {
+			t.Errorf("HTTP %d: Send = %v after %d requests, want ErrUncertain after one", code, err, calls)
+		}
+	}
+}
