@@ -129,6 +129,7 @@ func TestSettingsRulesConditionGroups(t *testing.T) {
 	h.click("删除这组") // the first: the last group's conditions are plain again
 	h.click("保存")
 	h.click("保存并启用")
+	h.see("收到新邮件 · 有附件 → 加星标")
 	d = h.rules()[0].Doc
 	if len(d.Conditions) != 1 || d.Conditions[0].Group != nil || d.Conditions[0].Field != core.FieldAttachments || d.Match != core.MatchAll {
 		t.Fatalf("after removing a group %+v", d)

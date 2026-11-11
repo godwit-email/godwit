@@ -154,27 +154,10 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        include:
-          - shard: 0
-            os: [self-hosted, linux, x64]
-          - shard: 1
-            os: ubuntu-latest
-          - shard: 2
-            os: ubuntu-latest
-          - shard: 3
-            os: ubuntu-latest
-          - shard: 4
-            os: ubuntu-latest
-          - shard: 5
-            os: ubuntu-latest
-    runs-on: ${{ matrix.os }}
+        shard: [0, 1, 2, 3, 4, 5]
+    runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
-      - name: Ensure Linux UI test libraries on self-hosted runner
-        if: runner.environment == 'self-hosted'
-        run: |
-          dpkg -s libpangocairo-1.0-0 fonts-dejavu-core fonts-noto-cjk >/dev/null 2>&1 ||
-            (sudo apt-get update && sudo apt-get install -y --no-install-recommends libpangocairo-1.0-0 fonts-dejavu-core fonts-noto-cjk)
       - uses: jdx/mise-action@v5
       - id: go-cache
         if: runner.environment == 'github-hosted'
