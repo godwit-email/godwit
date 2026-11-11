@@ -585,3 +585,30 @@ func TestGraphPurgeConfirmsBeforeThrottledRetry(t *testing.T) {
 		t.Fatal("the purge went ahead after Confirm called it off")
 	}
 }
+
+// A throttled purge checks the message's folder again before retrying: one
+// another client restored from Deleted Items meanwhile is not deleted.
+func TestGraphPurgeRechecksFolderBeforeThrottledRetry(t *testing.T) {
+	s := testmail.StartGraph(t)
+	id := s.Deliver("Deleted Items", backendtest.Message("p@example.com", "purge"))
+	r := graphReceiver(t, s, func(context.Context, time.Duration) error {
+		s.MoveMessage(id, "INBOX") // restored in Outlook during the back-off
+		return nil
+	})
+	asked := 0
+	_, err := r.Apply(tctx(t), backend.Purge{
+		At: backend.Location{Folder: backend.FolderRef(s.Folder("Deleted Items")), Ref: backend.MessageRef(id), ServerID: id},
+		Confirm: func() bool {
+			if asked++; asked == 1 {
+				s.Throttle(1, http.StatusServiceUnavailable, "1") // the permanentDelete that follows
+			}
+			return true // local storage has not seen the restore yet
+		},
+	})
+	if !errors.Is(err, backend.ErrNotFound) {
+		t.Fatalf("Purge = %v, want ErrNotFound", err)
+	}
+	if folder, _, _, _, exists := s.MessageState(id); !exists || folder != s.Folder("INBOX") {
+		t.Fatalf("restored message: folder %q, exists %v; want it kept in INBOX", folder, exists)
+	}
+}

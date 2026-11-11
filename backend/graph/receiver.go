@@ -1044,27 +1044,38 @@ func (r *Receiver) move(ctx context.Context, at backend.Location, to backend.Fol
 
 func (r *Receiver) purge(ctx context.Context, op backend.Purge) (backend.Result, error) {
 	id := cmp.Or(string(op.At.Ref), op.At.ServerID)
-	if op.At.Folder != "" {
-		cur, err := callJSON[graphMessage](ctx, r.c, http.MethodGet, "/me/messages/"+url.PathEscape(id)+"?$select=id,parentFolderId", nil)
+	// Each attempt, a retry after a throttling back-off included, first checks
+	// the message is still in op.At.Folder and asks Confirm again: another
+	// client may restore it, or the user call the purge off, meanwhile.
+	for try := 0; ; try++ {
+		if op.At.Folder != "" {
+			cur, err := callJSON[graphMessage](ctx, r.c, http.MethodGet, "/me/messages/"+url.PathEscape(id)+"?$select=id,parentFolderId", nil)
+			if isStatus(err, http.StatusNotFound) {
+				return backend.Result{}, fmt.Errorf("graph: message %s: %w", id, backend.ErrNotFound)
+			}
+			if err != nil {
+				return backend.Result{}, err
+			}
+			if cur.ParentFolderID != "" && cur.ParentFolderID != string(op.At.Folder) {
+				return backend.Result{}, fmt.Errorf("graph: message %s left folder %s: %w", id, op.At.Folder, backend.ErrNotFound)
+			}
+		}
+		if op.Confirm != nil && !op.Confirm() {
+			return backend.Result{Outcome: backend.Failed, Reason: backend.Cancelled}, nil
+		}
+		_, err := r.c.doRetrying(ctx, http.MethodPost, "/me/messages/"+url.PathEscape(id)+"/permanentDelete", "", nil, 0)
+		var busy *busyError
+		if errors.As(err, &busy) && try < maxRetries {
+			if err := r.c.wait(ctx, busy.backOff); err != nil {
+				return backend.Result{}, err
+			}
+			continue
+		}
 		if isStatus(err, http.StatusNotFound) {
 			return backend.Result{}, fmt.Errorf("graph: message %s: %w", id, backend.ErrNotFound)
 		}
-		if err != nil {
-			return backend.Result{}, err
-		}
-		if cur.ParentFolderID != "" && cur.ParentFolderID != string(op.At.Folder) {
-			return backend.Result{}, fmt.Errorf("graph: message %s left folder %s: %w", id, op.At.Folder, backend.ErrNotFound)
-		}
+		return written("", false, err)
 	}
-	// Confirm is asked again before each retry after a throttling back-off.
-	_, err := r.c.doConfirmed(ctx, http.MethodPost, "/me/messages/"+url.PathEscape(id)+"/permanentDelete", "", nil, op.Confirm)
-	if errors.Is(err, errCancelled) {
-		return backend.Result{Outcome: backend.Failed, Reason: backend.Cancelled}, nil
-	}
-	if isStatus(err, http.StatusNotFound) {
-		return backend.Result{}, fmt.Errorf("graph: message %s: %w", id, backend.ErrNotFound)
-	}
-	return written("", false, err)
 }
 
 func (r *Receiver) deleteToTrash(ctx context.Context, at backend.Location) (backend.Result, error) {
