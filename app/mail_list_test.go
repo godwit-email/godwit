@@ -992,14 +992,14 @@ func TestThreadItemSender(t *testing.T) {
 }
 
 func TestThreadMenuBlocksCorrespondentAfterOwnReply(t *testing.T) {
-	h, accs := mailHarness(t, nil, "alice@example.com")
+	h, accs := mailHarness(t, []coretest.Option{coretest.WithoutAutoSync()}, "alice@example.com")
 	acc := accs[0]
 	h.put(acc, "INBOX", coretest.Msg("bob@example.com", acc.Email, "Plan", "question",
 		coretest.MessageID("a@x"), at(h.clock.Now(), 1)))
 	h.put(acc, "Sent", coretest.Msg(acc.Email, "bob@example.com", "Re: Plan", "answer",
 		coretest.InReplyTo("a@x"), at(h.clock.Now(), 2)))
 	h.syncNow(acc)
-	h.waitMail("one conversation", func() bool { return len(h.items()) == 1 })
+	h.waitMail("one conversation", func() bool { return len(h.items()) == 1 && h.tt.HasText("Plan") })
 	if err := h.tt.RightClick("Plan"); err != nil {
 		t.Fatal(err)
 	}
