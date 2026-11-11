@@ -1505,11 +1505,9 @@ func (p *mailPage) draft(it mailItem, mode string) {
 		if !ok {
 			return fmt.Errorf("thread %d has no messages", it.ID)
 		}
-		acc := p.accountOf(m.FolderID)
-		if acc == 0 {
-			if acc, err = folderAccount(ctx, p.a.svc, m.FolderID); err != nil {
-				return err
-			}
+		acc, err := folderAccount(ctx, p.a.svc, m.FolderID)
+		if err != nil {
+			return err
 		}
 		d, err := p.a.svc.NewDraft(ctx, acc, mode, m.ID)
 		if err != nil {

@@ -247,8 +247,7 @@ func TestRecognitionModelSaysWhatReadsIt(t *testing.T) {
 			h.until("its files seen", func() bool { return h.app.pages[PageSettings].(*settingsPage).recognition.installed })
 			h.click(i18n.T("settings.masking.recognition_model"))
 			h.until("on", func() bool { return h.app.settings.RecognitionModel })
-			h.advance(refreshEvery) // the page refreshes on settings.changed
-			h.see(want)
+			h.waitMail(want, func() bool { return h.tt.HasText(want) }) // the page refreshes on settings.changed
 		})
 	}
 }
