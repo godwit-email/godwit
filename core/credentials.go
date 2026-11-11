@@ -163,7 +163,7 @@ func (s *Service) slotCredentials(ctx context.Context, acc Account, send bool, r
 	switch {
 	case acc.AuthType == AuthOAuth:
 		cr.Token = tok
-	case send:
+	case send && acc.Sending.Protocol != auth.JMAP && acc.Sending.Protocol != auth.EWS:
 		own, err := s.sendSecret(ctx, acc)
 		if err != nil {
 			return cr, ver, err

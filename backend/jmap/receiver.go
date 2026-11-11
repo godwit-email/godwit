@@ -41,10 +41,18 @@ func (r *Receiver) Close() error {
 	return nil
 }
 
+// ReasonNoSubmission is the add-account check's refusal of a JMAP server (or
+// API token) whose session does not advertise urn:ietf:params:jmap:submission.
+const ReasonNoSubmission = "jmap.no_submission"
+
+// ErrNoSubmission is Check or Send on a session without JMAP email submission.
+// Its message is ReasonNoSubmission. Check returns it with a full CheckResult:
+// the account can still receive.
+var ErrNoSubmission = errors.New(ReasonNoSubmission)
+
 const (
 	reasonNoCopy  = "jmap.no_copy"         // JMAP has no copy within an account, only one more mailbox
 	reasonFolders = "jmap.folders_pending" // Mailbox/set is not implemented yet
-	reasonSMTP    = "jmap.sent_via_smtp"   // mail goes out by SMTP, which saves no copy
 	reasonAllMail = "jmap.no_all_mail"     // an Email is always in some mailbox; archiving moves it to the archive one
 )
 
@@ -60,7 +68,6 @@ var description = func() backend.Description {
 	}
 	no(reasonNoCopy, backend.FeatureCopy)
 	no(reasonFolders, backend.FeatureFolderCreate, backend.FeatureFolderRename, backend.FeatureFolderDelete, backend.FeatureLabelDelete)
-	no(reasonSMTP, backend.FeatureSavesSent)
 	no(reasonAllMail, backend.FeatureAllMail)
 	return d
 }()
@@ -68,16 +75,24 @@ var description = func() backend.Description {
 // Describe implements backend.Receiver. Its first call signs in, fetching
 // the session, so refused credentials are ErrAuthFailed here.
 func (r *Receiver) Describe(ctx context.Context) (backend.Description, error) {
-	if _, _, err := r.c.sess(ctx); err != nil {
+	s, acct, err := r.c.sess(ctx)
+	if err != nil {
 		return backend.Description{}, err
 	}
 	d := description
 	d.Features = maps.Clone(d.Features)
+	if !hasSubmission(s, acct) {
+		d.Features[backend.FeatureSavesSent] = backend.Support{Level: backend.LevelUnsupported, Reason: ReasonNoSubmission}
+	}
 	return d, nil
 }
 
 // Check implements backend.Receiver.
 func (r *Receiver) Check(ctx context.Context) (backend.CheckResult, error) {
+	s, acct, err := r.c.sess(ctx)
+	if err != nil {
+		return backend.CheckResult{}, err
+	}
 	boxes, _, err := r.mailboxes(ctx)
 	if err != nil {
 		return backend.CheckResult{}, err
@@ -86,7 +101,11 @@ func (r *Receiver) Check(ctx context.Context) (backend.CheckResult, error) {
 	host := r.c.host
 	r.c.mu.Unlock()
 	d, _ := r.Describe(ctx)
-	return backend.CheckResult{Host: host, Folders: len(boxes), Description: d}, nil
+	res := backend.CheckResult{Host: host, Folders: len(boxes), Description: d}
+	if !hasSubmission(s, acct) { // receiving works: the result stands, only sending is refused
+		return res, ErrNoSubmission
+	}
+	return res, nil
 }
 
 func (r *Receiver) mailboxes(ctx context.Context) ([]*mailbox.Mailbox, string, error) {

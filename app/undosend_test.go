@@ -6,6 +6,7 @@ import (
 	"testing"
 
 	"github.com/emersion/go-smtp"
+	"github.com/godwit-email/godwit/backend/jmap"
 	"github.com/godwit-email/godwit/core"
 	"github.com/godwit-email/godwit/core/coretest"
 )
@@ -184,6 +185,8 @@ func TestFailureText(t *testing.T) {
 			"服务器拒绝了发件地址（553）", "not yours"},
 		{core.OutboxItem{Failure: &core.OutboxFailure{Reason: "rejected", Stage: "DATA", Code: 554, Enhanced: "5.7.1", Message: "spam"}},
 			"服务器拒绝了这封邮件（554 5.7.1）", "spam"},
+		{core.OutboxItem{Failure: &core.OutboxFailure{Reason: "rejected", Stage: "MAIL", Code: 550, Enhanced: "5.7.1", Message: jmap.ReasonNoSubmission}},
+			"此账户的登录凭据不能通过 JMAP 发信。请在账户设置里换成允许发信（email submission）的 API 令牌。", ""},
 		{core.OutboxItem{Failure: &core.OutboxFailure{Reason: "expired"}, LastError: "send: queued for over 3 days"},
 			"排队时间过长，没有发出", ""},
 		{core.OutboxItem{LastError: "open outbox/1.eml: no such file"}, "open outbox/1.eml: no such file", ""},

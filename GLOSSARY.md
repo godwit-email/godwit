@@ -5,7 +5,7 @@
 ## 邮件
 
 **账户**（`Account`）：
-用户接入的一个邮箱（IMAP + SMTP，或 OAuth 登录），带发件人名称、签名和同步范围。
+用户接入的一个邮箱（IMAP + SMTP、JMAP、EWS，或 OAuth 登录），带发件人名称、签名和同步范围。
 _Avoid_: 邮箱（指账户时）、服务商
 
 **本地归档**（`KindLocalArchive`）：
@@ -21,7 +21,7 @@ _Avoid_: 只读账户、禁用发信
 _Avoid_: 账户
 
 **协议后端**（`Backend`）：
-账户收信、同步或发信时用的具体协议实现，如 IMAP、SMTP、POP3、JMAP、EWS、Microsoft Graph。一个账户有一个收信后端和一个发信后端，可以是同一种协议（EWS、Microsoft Graph 收发都用它；收信走 IMAP 的 Outlook 账户在 SMTP AUTH 被拒时也会单独把发信切到 Graph）。服务商决定账户默认用哪些协议后端。
+账户收信、同步或发信时用的具体协议实现，如 IMAP、SMTP、POP3、JMAP、EWS、Microsoft Graph。一个账户有一个收信后端和一个发信后端，可以是同一种协议（JMAP、EWS、Microsoft Graph 收发都用同一种协议；收信走 IMAP 的 Outlook 账户在 SMTP AUTH 被拒时也会单独把发信切到 Graph）。服务商决定账户默认用哪些协议后端。
 _Avoid_: 适配器、驱动、服务商（指协议时）
 
 **协议能力**（`Feature`）：
