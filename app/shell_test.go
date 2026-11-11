@@ -41,7 +41,8 @@ func (h *harness) settle() {
 		h.t.Fatal(err)
 	}
 	h.until("events delivered", func() bool {
-		return slices.ContainsFunc(h.app.dirty, func(ev events.Event) bool { return ev.Type == events.SettingsChanged })
+		return h.app.accountsGen == h.app.loadGen && !h.app.mail.loading &&
+			slices.ContainsFunc(h.app.dirty, func(ev events.Event) bool { return ev.Type == events.SettingsChanged })
 	})
 }
 

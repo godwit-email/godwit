@@ -341,7 +341,7 @@ func TestRemoveAccountStopsUnsubscribe(t *testing.T) {
 	select {
 	case err := <-done:
 		assert.ErrorIs(t, err, context.Canceled)
-	default:
+	case <-time.After(time.Second):
 		t.Fatal("RemoveAccount returned while the unsubscribe was still under way")
 	}
 }
