@@ -51,6 +51,7 @@ type Graph struct {
 	omitRoles   bool // omit wellKnownName on folder list responses
 	nonImmutReq int  // requests received without Prefer: IdType="ImmutableId"
 	requests    int  // authenticated requests served
+	afterDelta  func(folderName string)
 
 	latency          atomic.Int64
 	inFlight, maxFly atomic.Int32
@@ -413,6 +414,35 @@ func (s *Graph) RenameFolder(folderID, newName string) {
 		f.name = newName
 		f.modseq = s.seq
 	}
+}
+
+// MoveMessage moves immutableID into dstFolder on the server as another client would.
+func (s *Graph) MoveMessage(immutableID, dstFolder string) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	it := s.messages[immutableID]
+	if it == nil {
+		return
+	}
+	dst := s.ensureFolderLocked(dstFolder)
+	s.seq++
+	if old := s.findFolderLocked(it.folderID); old != nil && old.id != dst.id {
+		old.tombstones[it.immutableID] = s.seq
+	}
+	s.nextID++
+	it.folderID = dst.id
+	it.mutableID = fmt.Sprintf("mut-%s-%d", dst.id, s.nextID)
+	it.modseq = s.seq
+	it.readOnlyMod = false
+	delete(dst.tombstones, it.immutableID)
+}
+
+// SetAfterFolderDelta registers a hook invoked after a folder's final delta
+// page is written, allowing tests to inject mid-round server mutations.
+func (s *Graph) SetAfterFolderDelta(fn func(folderName string)) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.afterDelta = fn
 }
 
 func wantsImmutable(r *http.Request) bool {
@@ -784,6 +814,13 @@ func (s *Graph) handleMessagesDelta(w http.ResponseWriter, r *http.Request, f *g
 		resp["@odata.deltaLink"] = u.String()
 	}
 	writeJSON(w, http.StatusOK, resp)
+	if end >= len(entries) && s.afterDelta != nil {
+		hook := s.afterDelta
+		fname := f.name
+		s.mu.Unlock()
+		hook(fname)
+		s.mu.Lock()
+	}
 }
 
 func (s *Graph) handleFolderMessages(w http.ResponseWriter, r *http.Request, f *graphFolder, immut bool) {

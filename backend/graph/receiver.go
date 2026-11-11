@@ -331,7 +331,69 @@ func (r *Receiver) Sync(ctx context.Context, req backend.SyncRequest, commit fun
 			return false, err
 		}
 	}
+	if req.Only == nil && len(errs) == 0 && req.Local != nil {
+		if err := r.reconcileLost(ctx, req, refs, commit); err != nil {
+			return false, err
+		}
+	}
 	return false, errors.Join(errs...)
+}
+
+// reconcileLost rechecks stored ImmutableIds that lost every known folder
+// location during a full round (for example, a message moved from a later-polled
+// folder into an already-polled folder mid-sync) before mailsync drops orphans.
+func (r *Receiver) reconcileLost(ctx context.Context, req backend.SyncRequest, refs []backend.FolderRef, commit func(backend.Page) error) error {
+	lost, err := req.Local.Lost(ctx)
+	if err != nil || len(lost) == 0 {
+		return err
+	}
+	knownFolders := map[backend.FolderRef]bool{}
+	for _, ref := range refs {
+		knownFolders[ref] = true
+	}
+	refreshedFolders := false
+	var changes []backend.Change
+	for _, id := range lost {
+		if id == "" {
+			continue
+		}
+		m, err := callJSON[graphMessage](ctx, r.c, http.MethodGet, "/me/messages/"+url.PathEscape(id)+"?$select="+msgSelect, nil)
+		if isStatus(err, http.StatusNotFound) {
+			continue
+		}
+		if err != nil {
+			return err
+		}
+		if m.ID == "" || m.Removed != nil || m.ParentFolderID == "" {
+			continue
+		}
+		fref := backend.FolderRef(m.ParentFolderID)
+		if !knownFolders[fref] && !refreshedFolders {
+			refreshedFolders = true
+			fs, _, ferr := r.folders(ctx)
+			if ferr != nil {
+				return ferr
+			}
+			for _, f := range fs {
+				if !knownFolders[f.Ref] {
+					knownFolders[f.Ref] = true
+					changes = append(changes, backend.FolderUpdated{Folder: f})
+				}
+			}
+		}
+		if !knownFolders[fref] {
+			continue // e.g. Recoverable Items dumpster outside mailFolders
+		}
+		changes = append(changes, backend.MessageAppeared{
+			Location: backend.Location{Folder: fref, Ref: backend.MessageRef(m.ID), ServerID: m.ID},
+			Flags:    m.flags(),
+			Backfill: true,
+		})
+	}
+	if len(changes) == 0 {
+		return nil
+	}
+	return commit(backend.Page{Changes: changes})
 }
 
 func (r *Receiver) syncFolder(ctx context.Context, req backend.SyncRequest, folder backend.FolderRef, commit func(backend.Page) error) error {

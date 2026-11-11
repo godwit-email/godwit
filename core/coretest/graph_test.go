@@ -278,3 +278,65 @@ func TestGraphMissingConsentEntersReauthAndExistingIMAPKeepsWorking(t *testing.T
 	require.NoError(t, err)
 	require.Len(t, recMsgs, 1)
 }
+
+// If another client moves a cached message from a not-yet-polled folder
+// (Archive, fld-6) into an already-polled folder (Inbox, fld-1) mid-round,
+// reconcileLost re-attaches the message via req.Local.Lost before dropOrphans
+// runs, preserving its local row ID and local-only labels.
+func TestGraphMidSyncMovePreservesMessageAndLocalLabels(t *testing.T) {
+	e := coretest.New(t, coretest.WithoutAutoSync())
+	setGraph(t, e, true)
+	oa := setupOutlookOAuth(t)
+	oa.GrantScope("Mail.ReadWrite Mail.Send offline_access")
+
+	srv := testmail.StartGraph(t)
+	srv.SetTokenValidator(oa.ValidAccess)
+	immID := srv.Deliver("Archive", coretest.Msg("bob@example.com", "alice@outlook.com", "Mid-round Move", "keep local state", coretest.MessageID("mid@example.com")))
+
+	flow := completeOAuth(t, e.Svc, oa, "alice@outlook.com")
+	acc, err := e.Svc.AddAccount(t.Context(), graphInput(t, srv, "alice@outlook.com", flow))
+	require.NoError(t, err)
+	require.NoError(t, e.Svc.SyncNow(t.Context(), acc.ID))
+
+	ms, err := e.Svc.Search(t.Context(), acc.ID, "Mid-round Move", 10)
+	require.NoError(t, err)
+	require.Len(t, ms, 1)
+	origLocalID := ms[0].ID
+
+	lbl, err := e.Svc.CreateLabel(t.Context(), core.LabelInput{
+		Name:  "KeepLocal",
+		Color: core.LabelColors[0],
+		Icon:  core.LabelIcons[0],
+	})
+	require.NoError(t, err)
+	require.NoError(t, e.Svc.SetLabel(t.Context(), []int64{origLocalID}, lbl.ID, true))
+
+	// Right after Inbox (fld-1) finishes its delta poll — before Archive (fld-6)
+	// is polled — another client moves the message from Archive into Inbox.
+	movedOnce := false
+	srv.SetAfterFolderDelta(func(folderName string) {
+		if folderName == "Inbox" && !movedOnce {
+			movedOnce = true
+			srv.MoveMessage(immID, "INBOX")
+		}
+	})
+	require.NoError(t, e.Svc.SyncNow(t.Context(), acc.ID))
+	srv.SetAfterFolderDelta(nil)
+	require.True(t, movedOnce)
+
+	msAfter, err := e.Svc.Search(t.Context(), acc.ID, "Mid-round Move", 10)
+	require.NoError(t, err)
+	require.Len(t, msAfter, 1)
+	assert.Equal(t, origLocalID, msAfter[0].ID, "local message row preserved rather than dropped and re-imported")
+
+	inboxID := graphFolderID(t, e, acc.ID, "inbox")
+	inboxPage, err := e.Svc.ListMessages(t.Context(), core.View{AccountID: acc.ID, FolderID: inboxID}, "", 10)
+	require.NoError(t, err)
+	require.Len(t, inboxPage.Items, 1)
+	assert.Equal(t, origLocalID, inboxPage.Items[0].ID, "message reconciled into Inbox in the same round")
+
+	applied, err := e.Svc.MessageLabels(t.Context(), []int64{origLocalID})
+	require.NoError(t, err)
+	require.Len(t, applied[origLocalID], 1)
+	assert.Equal(t, lbl.ID, applied[origLocalID][0].LabelID, "local-only label preserved")
+}
