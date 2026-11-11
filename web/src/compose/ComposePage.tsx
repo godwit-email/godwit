@@ -1,4 +1,4 @@
-import { RiAttachment2, RiPlayFill, RiSparkling2Line } from "@remixicon/react";
+import { RiAttachment2, RiPlayFill, RiRefreshLine, RiSparkling2Line } from "@remixicon/react";
 import { cn } from "cn";
 import { currentWindow } from "mygo-runtime";
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
@@ -74,10 +74,12 @@ async function settle(g: CloseGate): Promise<boolean> {
  */
 export function ComposePage() {
   const [state, setState] = useState<ComposeState>();
+  const [failed, setFailed] = useState<string>();
   const [frozen, setFrozen] = useState(false);
   const [mode, setMode] = useState<Theme["mode"]>(); // a theme event's, once one came
   const saver = useRef<Saver>(undefined);
   const gate = useRef<CloseGate>({ frozen: false, closings: 0 });
+  const load = useRef<() => void>(() => {});
 
   useEffect(() => {
     const g = gate.current;
@@ -122,10 +124,22 @@ export function ComposePage() {
   }, []);
 
   useEffect(() => {
-    let current = true; // only the latest load applies (StrictMode loads twice)
-    api.load().then((st) => current && setState(st));
+    let req = 0; // only the latest load applies (StrictMode loads twice)
+    load.current = () => {
+      const n = ++req;
+      setFailed(undefined);
+      api.load().then(
+        (st) => {
+          if (n === req) setState(st);
+        },
+        (e) => {
+          if (n === req) setFailed(message(e));
+        },
+      );
+    };
+    load.current();
     return () => {
-      current = false;
+      req++;
     };
   }, []);
 
@@ -146,6 +160,7 @@ export function ComposePage() {
     };
   }, [state]);
 
+  if (failed !== undefined) return <Failed error={failed} retry={() => load.current()} />;
   if (!state) return <main />;
   return (
     <>
@@ -153,6 +168,21 @@ export function ComposePage() {
       {/* sonner ignores the html dark class: the theme's mode is its own ("system" follows the OS as applyTheme does) */}
       <Toaster theme={mode ?? (state.theme as Theme).mode} />
     </>
+  );
+}
+
+function Failed({ error, retry }: { error: string; retry: () => void }) {
+  const t = useT();
+  return (
+    <main className={cn("flex h-screen flex-col", material ? "bg-window-material" : "bg-window")}>
+      <header className="compose-titlebar shrink-0" />
+      <div className="flex items-center gap-2 px-5 py-3 text-muted-foreground text-sm">
+        <span>{errorText(error, t)}</span>
+        <Button variant="ghost" size="icon-sm" aria-label={t("common.retry")} onClick={retry}>
+          <RiRefreshLine />
+        </Button>
+      </div>
+    </main>
   );
 }
 
