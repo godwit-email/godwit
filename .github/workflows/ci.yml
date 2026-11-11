@@ -81,6 +81,11 @@ jobs:
         shell: pwsh
         run: Add-MpPreference -ExclusionPath $env:TEMP, $env:RUNNER_TEMP, $env:GITHUB_WORKSPACE
       - uses: actions/checkout@v7
+      - name: Ensure Linux UI test libraries on self-hosted runner
+        if: runner.environment == 'self-hosted'
+        run: |
+          dpkg -s libpangocairo-1.0-0 fonts-dejavu-core fonts-noto-cjk >/dev/null 2>&1 ||
+            (sudo apt-get update && sudo apt-get install -y --no-install-recommends libpangocairo-1.0-0 fonts-dejavu-core fonts-noto-cjk)
       - uses: jdx/mise-action@v5
       - id: go-cache
         if: runner.environment == 'github-hosted'
@@ -165,6 +170,11 @@ jobs:
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v7
+      - name: Ensure Linux UI test libraries on self-hosted runner
+        if: runner.environment == 'self-hosted'
+        run: |
+          dpkg -s libpangocairo-1.0-0 fonts-dejavu-core fonts-noto-cjk >/dev/null 2>&1 ||
+            (sudo apt-get update && sudo apt-get install -y --no-install-recommends libpangocairo-1.0-0 fonts-dejavu-core fonts-noto-cjk)
       - uses: jdx/mise-action@v5
       - id: go-cache
         if: runner.environment == 'github-hosted'
@@ -282,6 +292,8 @@ jobs:
     steps:
       - uses: actions/checkout@v7
       - uses: jdx/mise-action@v5
+      - if: runner.environment == 'self-hosted'
+        run: mise use -g node@22
       - run: mise run web:check
       - name: pi bundle is current
         run: mise run ai:bundle && git diff --exit-code -- core/ai/pi/engine.js
