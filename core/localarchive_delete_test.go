@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	"strconv"
 	"testing"
+	"time"
 
 	"github.com/godwit-email/godwit/core"
 	"github.com/godwit-email/godwit/core/coretest"
@@ -49,7 +50,8 @@ func requireNoOps(t *testing.T, s *core.Service, accountID int64) {
 }
 
 func invoice(id string) []byte {
-	return coretest.Msg("Bob <bob@example.com>", "me@example.com", "invoice "+id, "body", coretest.MessageID(id+"@example.com"))
+	return coretest.Msg("Bob <bob@example.com>", "me@example.com", "invoice "+id, "body",
+		coretest.MessageID(id+"@example.com"), coretest.Date(time.Unix(1_700_000_000, 0)))
 }
 
 func TestLocalArchiveTrashAndRestoreQueueNothing(t *testing.T) {

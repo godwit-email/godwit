@@ -309,9 +309,10 @@ func (p *settingsPage) setSync(id int64, f *accountForm) {
 
 func (p *settingsPage) readUsage(id int64) {
 	a := p.a
+	archive := a.isArchiveID(id)
 	var n int64
 	a.query(func(ctx context.Context) (err error) {
-		if a.isArchiveID(id) {
+		if archive {
 			n, err = a.svc.ArchiveUsage(ctx, id)
 		} else {
 			n, err = a.svc.AttachmentCacheUsage(ctx, id)
