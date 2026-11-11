@@ -458,6 +458,12 @@ func (r *Receiver) syncFolder(ctx context.Context, req backend.SyncRequest, fold
 
 	cur := decodeFolderCursor(st.Cursor)
 	needBackfill := cur.Delta != "" && !cur.covers(req.Window)
+	// savedWin is the window the folder's cursor records: a narrower one stays
+	// until backfillWindow brings in what the wider one adds.
+	savedWin := &req.Window
+	if needBackfill || cur.covers(req.Window) {
+		savedWin = cur.Window
+	}
 	nextURL := cur.Delta
 	reset := false
 	if nextURL == "" {
@@ -470,6 +476,7 @@ func (r *Receiver) syncFolder(ctx context.Context, req backend.SyncRequest, fold
 			st = backend.FolderState{}
 			cur = folderCursor{}
 			needBackfill = false
+			savedWin = &req.Window
 			reset = true
 			if err := commit(backend.Page{
 				Changes: []backend.Change{backend.FolderReset{Ref: folder}},
@@ -558,21 +565,21 @@ func (r *Receiver) syncFolder(ctx context.Context, req backend.SyncRequest, fold
 			})
 		}
 
+		// The page commits with the link that follows it, so an interrupted
+		// round resumes after it: a nextLink resumes the same delta round, still
+		// unsynced on a first sync.
 		last := resp.DeltaLink != ""
 		nextState := st
-		if last {
+		switch {
+		case last:
 			finalDelta = resp.DeltaLink
-			savedWin := &req.Window
-			if needBackfill {
-				savedWin = cur.Window // keep narrower window until backfill finishes
-			} else if cur.covers(req.Window) {
-				savedWin = cur.Window
-			}
 			nextState = backend.FolderState{
 				Cursor: folderCursor{Delta: finalDelta, Window: savedWin}.encode(),
 				Synced: true,
 				Filled: st.Filled,
 			}
+		case resp.NextLink != "":
+			nextState.Cursor = folderCursor{Delta: resp.NextLink, Window: savedWin}.encode()
 		}
 		if err := commit(backend.Page{
 			Changes: changes,

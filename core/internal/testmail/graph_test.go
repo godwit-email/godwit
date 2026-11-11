@@ -2,6 +2,8 @@ package testmail_test
 
 import (
 	"context"
+	"errors"
+	"fmt"
 	"maps"
 	"net/http"
 	"slices"
@@ -470,5 +472,88 @@ func TestGraphWindowWidens(t *testing.T) {
 	local[oldID] = true
 	if got = round(backend.Window{}, local); len(got) != 0 {
 		t.Fatalf("all mail again got %v, want nothing", got)
+	}
+}
+
+// Each delta page commits with the nextLink after it: a round cut off midway
+// resumes there, reporting no message twice and the rest still as backfill.
+func TestGraphDeltaResumesAfterInterruptedRound(t *testing.T) {
+	s := testmail.StartGraph(t)
+	s.SetDeltaPageSize(2)
+	for i := range 5 {
+		s.Deliver("INBOX", backendtest.Message(fmt.Sprintf("m%d@example.com", i), "subj"))
+	}
+	inbox := backend.FolderRef(s.Folder("INBOX"))
+	r := graphReceiver(t, s, nil)
+	var account backend.Cursor
+	states := map[backend.FolderRef]backend.FolderState{}
+	seen := map[backend.MessageRef]int{}
+	cut := errors.New("cut off")
+	inboxPages := 0
+	_, err := r.Sync(tctx(t), backend.SyncRequest{Folders: states}, func(p backend.Page) error {
+		if _, ok := p.Folders[inbox]; ok {
+			if inboxPages++; inboxPages == 2 {
+				return cut
+			}
+		}
+		for _, c := range p.Changes {
+			if m, ok := c.(backend.MessageAppeared); ok && m.Folder == inbox {
+				seen[m.Ref]++
+			}
+		}
+		if p.Account != "" {
+			account = p.Account
+		}
+		maps.Copy(states, p.Folders)
+		return nil
+	})
+	if !errors.Is(err, cut) {
+		t.Fatalf("Sync = %v, want the commit's error", err)
+	}
+	if st := states[inbox]; st.Cursor == "" || st.Synced {
+		t.Fatalf("inbox state after one page = %+v, want the nextLink, unsynced", st)
+	}
+	cs, _ := syncRound(t, r, &account, states, nil)
+	for _, c := range cs {
+		if m, ok := c.(backend.MessageAppeared); ok && m.Folder == inbox {
+			if !m.Backfill {
+				t.Errorf("resumed first sync reported %s as a new arrival", m.Ref)
+			}
+			seen[m.Ref]++
+		}
+	}
+	if len(seen) != 5 {
+		t.Errorf("messages seen = %d, want 5", len(seen))
+	}
+	for ref, n := range seen {
+		if n != 1 {
+			t.Errorf("%s reported %d times", ref, n)
+		}
+	}
+	if !states[inbox].Synced {
+		t.Errorf("inbox not synced after the resumed round")
+	}
+}
+
+// Delta requests ask for big pages: Graph's own is 10 messages.
+func TestGraphDeltaAsksForLargePages(t *testing.T) {
+	s := testmail.StartGraph(t)
+	for i := range 30 {
+		s.Deliver("INBOX", backendtest.Message(fmt.Sprintf("m%d@example.com", i), "subj"))
+	}
+	inbox := backend.FolderRef(s.Folder("INBOX"))
+	r := graphReceiver(t, s, nil)
+	inboxPages := 0
+	_, err := r.Sync(tctx(t), backend.SyncRequest{Folders: map[backend.FolderRef]backend.FolderState{}}, func(p backend.Page) error {
+		if _, ok := p.Folders[inbox]; ok {
+			inboxPages++
+		}
+		return nil
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if inboxPages != 1 {
+		t.Errorf("inbox delta took %d pages, want 1", inboxPages)
 	}
 }

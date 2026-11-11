@@ -70,6 +70,9 @@ const (
 	defaultBackOff = 5 * time.Second
 )
 
+// deltaPageSize is the odata.maxpagesize a delta request asks for.
+const deltaPageSize = 200
+
 type busyError struct{ backOff time.Duration }
 
 func (e *busyError) Error() string {
@@ -198,7 +201,7 @@ func retryAfter(h http.Header) time.Duration {
 
 // do runs one HTTP request against pathOrURL (relative to base unless it has a
 // scheme), serialized per account, with Prefer: IdType="ImmutableId" on every
-// request.
+// request and odata.maxpagesize on delta requests.
 func (c *client) do(ctx context.Context, method, pathOrURL, contentType string, body []byte) ([]byte, error) {
 	cr, err := c.cfg.Credentials(ctx)
 	if err != nil {
@@ -246,7 +249,11 @@ func (c *client) sendOnce(ctx context.Context, method, target, contentType strin
 		return nil, err
 	}
 	req.Header.Set("Authorization", "Bearer "+cr.Token)
-	req.Header.Set("Prefer", `IdType="ImmutableId"`)
+	prefer := `IdType="ImmutableId"`
+	if strings.HasSuffix(req.URL.Path, "/delta") { // Graph's own page is 10 messages
+		prefer += ", odata.maxpagesize=" + strconv.Itoa(deltaPageSize)
+	}
+	req.Header.Set("Prefer", prefer)
 	if contentType != "" {
 		req.Header.Set("Content-Type", contentType)
 	}

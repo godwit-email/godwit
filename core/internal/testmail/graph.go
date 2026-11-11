@@ -39,7 +39,7 @@ type Graph struct {
 	folders       []*graphFolder
 	messages      map[string]*graphItem // keyed by immutableID
 	sent          []GraphSent
-	deltaPageSize int // max items per delta page; 0 means 50
+	deltaPageSize int // max items per delta page; 0: the request's odata.maxpagesize, else Graph's 10
 	listPageSize  int // max folders/messages per list page; 0 means 250
 
 	throttleCount  int
@@ -468,6 +468,24 @@ func (s *Graph) SetAfterFolderList(fn func()) {
 	s.afterFolderList = fn
 }
 
+// deltaPage is how many entries a delta page carries: SetDeltaPageSize's, else
+// the request's odata.maxpagesize, else 10 as Graph does.
+func (s *Graph) deltaPage(r *http.Request) int {
+	if s.deltaPageSize > 0 {
+		return s.deltaPageSize
+	}
+	for _, v := range r.Header.Values("Prefer") {
+		for p := range strings.SplitSeq(v, ",") {
+			if n, ok := strings.CutPrefix(strings.TrimSpace(p), "odata.maxpagesize="); ok {
+				if n, err := strconv.Atoi(n); err == nil && n > 0 {
+					return n
+				}
+			}
+		}
+	}
+	return 10
+}
+
 func wantsImmutable(r *http.Request) bool {
 	for _, v := range r.Header.Values("Prefer") {
 		for p := range strings.SplitSeq(v, ",") {
@@ -808,10 +826,7 @@ func (s *Graph) handleMessagesDelta(w http.ResponseWriter, r *http.Request, f *g
 			offset, _ = strconv.Atoi(parts[3])
 		}
 	}
-	pageSize := s.deltaPageSize
-	if pageSize <= 0 {
-		pageSize = 50
-	}
+	pageSize := s.deltaPage(r)
 	if offset > len(entries) {
 		offset = len(entries)
 	}
@@ -1153,10 +1168,7 @@ func (s *Graph) paginateDelta(w http.ResponseWriter, r *http.Request, all []map[
 		skip = len(all)
 	}
 	rest := all[skip:]
-	size := s.deltaPageSize
-	if size <= 0 {
-		size = 50
-	}
+	size := s.deltaPage(r)
 	baseURL := s.srv.URL + r.URL.Path
 	resp := map[string]any{}
 	if len(rest) > size {
