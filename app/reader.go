@@ -42,6 +42,14 @@ type reader struct {
 	why     core.ViewReason // why it is in the view shown
 	gen     uint64          // bumped per key; older results are dropped
 	readGen uint64          // bumped per thread read; only the newest read applies
+	// next is the thread being read to replace the one shown (switching):
+	// what shows stays until it is read, rather than a blank pane between
+	// (#667). Zero while none is.
+	next [2]int64
+	// reserve is the height the body that showed had when it was replaced:
+	// the new thread's body keeps it until its page reports its own, so the
+	// pane doesn't shrink to a line and grow again as it loads. 0 for none.
+	reserve float32
 	loaded  bool
 	subject string
 	msgs    []core.MessageSummary // oldest first
@@ -150,13 +158,29 @@ func (r *reader) sync(reread bool) {
 		k = [2]int64{}
 	}
 	switch {
-	case k != r.key:
+	case k == r.key && r.next != [2]int64{}: // back to the one shown before the switch was read
+		r.next = [2]int64{}
+		r.readGen++ // drops the switch's read
+		if !reread {
+			return
+		}
+	case k != r.key && (k[0] == 0 || !r.loaded):
+		r.next = [2]int64{}
 		r.reset(k)
+	case k != r.key:
+		// Another thread: the one shown stays until it is read, and is
+		// replaced at once then (load). A switch while one is under way
+		// replaces it: its read is dropped.
+		if k != r.next || reread {
+			r.next = k
+			r.load(k)
+		}
+		return
 	case !reread:
 		return
 	}
 	if k[0] != 0 {
-		r.load()
+		r.load(k)
 	}
 	r.loadWhy()
 }
@@ -164,6 +188,15 @@ func (r *reader) sync(reread bool) {
 // reset forgets what was shown and closes its pages; the next thread
 // starts at its top.
 func (r *reader) reset(k [2]int64) {
+	r.reserve = 0
+	for id, b := range r.bodies {
+		if b.view != nil && r.open[id] {
+			r.reserve = max(r.reserve, float32(b.height))
+		}
+	}
+	if room := r.pane.H - r.barTop - r.barBottom; room > 0 {
+		r.reserve = min(r.reserve, room)
+	}
 	for _, b := range r.bodies {
 		b.stopAvatar()
 		b.closeView()
@@ -179,9 +212,22 @@ func (r *reader) reset(k [2]int64) {
 	r.gen++
 }
 
-func (r *reader) load() {
+// reserveFor is the height kept for message id's body until its page
+// reports: the replaced body's, for the newest message alone (the one that
+// opens).
+func (r *reader) reserveFor(id int64) float32 {
+	if n := len(r.msgs); n == 0 || r.msgs[n-1].ID != id {
+		return 0
+	}
+	return r.reserve
+}
+
+// load reads thread k: the one shown again, or the one to switch to
+// (r.next), which replaces what shows once read.
+func (r *reader) load(k [2]int64) {
 	r.readGen++
-	a, gen, read, k, get := r.p.a, r.gen, r.readGen, r.key, r.getThread
+	a, gen, read, get := r.p.a, r.gen, r.readGen, r.getThread
+	route := k
 	var th core.Thread
 	var labels map[int64][]core.AppliedLabel
 	a.do(func(ctx context.Context) (err error) {
@@ -200,6 +246,11 @@ func (r *reader) load() {
 	}, func(err error) {
 		if gen != r.gen || read != r.readGen {
 			return
+		}
+		if switching := r.next == route; switching { // what showed goes now, in the same frame as this comes
+			r.next = [2]int64{}
+			r.reset(route)
+			defer r.loadWhy()
 		}
 		if err != nil {
 			a.toastErr(err)
@@ -1661,6 +1712,9 @@ func (r *reader) message(c *ui.Context, m core.MessageSummary) {
 						OnClick(func() { r.loadBody(m.ID) })
 				})
 				return
+			case (b == nil || !b.ready) && r.reserveFor(m.ID) > 0: // being read: its place kept, no spinner flashing by
+				ui.Box(c).FillWidth().Height(r.reserveFor(m.ID))
+				return
 			case b == nil || !b.ready:
 				kit.Spinner(c)
 				return
@@ -1691,7 +1745,11 @@ func (r *reader) message(c *ui.Context, m core.MessageSummary) {
 		if b.view != nil { // the body takes the pane's width; what frames it keeps to the column
 			// a line until the page reports; rounded, so a mail filled edge to edge
 			// with its own color sits as a card; Draw's box is where the web view goes this frame
-			kit.WebView(c, b.view).Height(max(float32(b.height), th.Space(6))).Radius(t.Radius.Xl).Clip().
+			h := float32(b.height)
+			if h == 0 {
+				h = r.reserveFor(m.ID)
+			}
+			kit.WebView(c, b.view).Height(max(h, th.Space(6))).Radius(t.Radius.Xl).Clip().
 				Draw(func(_ *ui.Painter, box ui.Rect) { r.glass(b, box) })
 		}
 		r.column(c).Gap(th.Space(3.5)).Children(func() {
@@ -1967,7 +2025,10 @@ func (r *reader) trustSender(from, addr string) {
 func (a *App) BodyHeight(view ui.NativeWebView, message int64, px int) {
 	if b := a.mail.reader.shown(view, message); b != nil {
 		b.height = px
-		b.glass = [2]int{-1, -1} // the page listens now: what it was told before it loaded was dropped
+		b.glass = [2]int{-1, -1}                   // the page listens now: what it was told before it loaded was dropped
+		if a.mail.reader.reserveFor(message) > 0 { // its page has its own height now
+			a.mail.reader.reserve = 0
+		}
 		logBodyTiming(&b.timing, message)
 	}
 }

@@ -1445,7 +1445,7 @@ func TestReaderAvatarMoveToJunk(t *testing.T) {
 		t.Fatal("folder move lost current-message permission")
 	}
 	// A fresh reader generation drops the manual grant; moving back then loads automatically.
-	h.post(func() { r.reset(r.key); r.load() })
+	h.post(func() { r.reset(r.key); r.load(r.key) })
 	h.until("fresh automatic inbox avatar", func() bool { b = r.bodies[m.ID]; return b != nil && b.avatar != nil && !b.avatarAllow })
 	for _, role := range []string{"junk", "inbox"} {
 		folder := h.folderOf(acc, role)

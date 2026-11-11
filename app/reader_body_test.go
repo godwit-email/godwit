@@ -326,7 +326,10 @@ func TestReaderScrollResetsPerThread(t *testing.T) {
 	if r.scroll.Y == 0 {
 		t.Fatal("a wheel over the body did not scroll the reader")
 	}
-	h.openThread(h.deliverOne(accs[0], coretest.Msg("carol@example.com", accs[0].Email, "Short", "other")).ThreadID)
+	other := h.deliverOne(accs[0], coretest.Msg("carol@example.com", accs[0].Email, "Short", "other"))
+	h.openThread(other.ThreadID)
+	// what showed stays until the other thread is read (#667), then goes at once
+	h.until("the other thread shown", func() bool { return r.key[0] == other.ThreadID && r.loaded })
 	if r.scroll.Y != 0 {
 		t.Fatalf("another thread starts at %v", r.scroll.Y)
 	}
