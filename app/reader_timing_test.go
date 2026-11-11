@@ -34,6 +34,30 @@ func TestBodyTimingLogsOnceAtFirstHeight(t *testing.T) {
 	}
 }
 
+// A page folded after its body was built but before its first height, then
+// made again, is timed afresh: the old page's build does not carry over.
+func TestBodyTimingRemadeBeforeHeight(t *testing.T) {
+	defer func(on bool) { readerTiming = on }(readerTiming)
+	readerTiming = true
+	var bt bodyTiming
+	bt.begin()
+	bt.readDone()
+	bt.viewMade(time.Now())
+	bt.builtDone()
+	time.Sleep(2 * time.Millisecond)
+	bt.viewMade(time.Now())
+	if !bt.built.IsZero() {
+		t.Fatalf("the old page's build carried over: %v", bt.built)
+	}
+	bt.builtDone()
+	if line := bt.shown(1); strings.Contains(line, "build -") {
+		t.Fatalf("negative or missing build: %q", line)
+	}
+	if bt.built.Before(bt.view) {
+		t.Fatalf("build %v before view %v", bt.built, bt.view)
+	}
+}
+
 func TestBodyTimingOff(t *testing.T) {
 	defer func(on bool) { readerTiming = on }(readerTiming)
 	readerTiming = false

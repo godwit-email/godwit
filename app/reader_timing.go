@@ -33,9 +33,10 @@ func (t *bodyTiming) readDone() {
 }
 
 // viewMade marks the page made, NewBodyView having started at from. A page
-// made after the body was already shown is timed from its making.
+// made again (refolding, shown or not yet) is timed from its making, so
+// nothing of the page before carries over.
 func (t *bodyTiming) viewMade(from time.Time) {
-	if t.logged || t.start.IsZero() {
+	if t.logged || t.start.IsZero() || !t.view.IsZero() {
 		*t = bodyTiming{start: from, read: from}
 	}
 	t.viewStart, t.view = from, time.Now()
