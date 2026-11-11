@@ -55,6 +55,16 @@ EWS 是接在这个接缝上的第二种协议，设计过程记在 #634 及其�
 - **主机与凭据**：凭据只通过 HTTPS 发送。Autodiscover 要跳到邮件地址所在可注册域名以外的主机时，先在添加账户界面显示目标主机，用户确认后才把凭据发过去。JMAP 不需要这一步，因为它的 session 主机是用户自己填的地址给出的；而 Autodiscover 的 302、SRV 记录和 `redirectUrl` 都可能把凭据带到别人的服务器。EWS URL 确定后，后端只跟随同一主机的重定向。
 - **服务器怪异行为**：EWS 没有可以 fork 的 Go 协议库，所以后端在 `backend/ews` 里手写一层薄 SOAP。服务器的怪异行为就修在这一层，每一处都配一个复现测试。这是「修在协议库 fork 里」这条规矩的例外。NTLM 库（Azure/go-ntlmssp）的问题仍然修在它的 fork 里。
 
+## Gmail API
+
+`backend/gmailapi` 对接 Gmail REST API v1（`https://gmail.googleapis.com`），面向防火墙封禁 IMAP/SMTP 端口、只能走 HTTPS 的 Gmail 用户。
+
+- **上线方式与登录限制**：先作为实验性功能（`ExperimentalGmailAPI`）。Gmail API 只接受 OAuth（不支持应用专用密码），且要求客户端所在的 Google Cloud 项目显式启用 `gmail.googleapis.com`；Mozilla 为 Thunderbird 注册的公开客户端只用于 IMAP/POP3/SMTP XOAUTH2，因此本后端只对新添加、且使用用户自己创建的 Google Cloud OAuth 客户端的 Gmail 账户开放，已有账户不能原地切换。现有的 `https://mail.google.com/` scope 已覆盖全部接口权限。
+- **收信、文件夹与身份**：Gmail 标签映射为文件夹（`server_ref` 为 label ID）；`UNREAD` 拆成 `Seen` 标记，`STARRED` 同时映射为 `flagged` 角色文件夹与 `Flagged` 标记，`IMPORTANT` 作为普通文件夹，`CHAT` 与 `CATEGORY_*` 忽略；补一个合成的 `[Gmail]/All Mail`（`RoleAll`）承载所有非垃圾邮件、非废纸篓、非草稿的邮件，和 Gmail IMAP 的多位置与归档语义对齐（[0034](0034-message-and-its-locations.md)）。邮件身份取不可变的 `message.id`（`IdentityStable`）。
+- **同步、推送与发信**：初次同步按窗口调 `messages.list`；增量调 `history.list?startHistoryId=`，以 `historyId` 作账户级游标；`historyId` 过期（HTTP 404）时按文件夹发出 `FolderSnapshot` 做全量核对，不重置已有邮件身份。Gmail API 推送依赖 Cloud Pub/Sub，桌面端无法直接接收，因此 `Watch` 返回 `ErrUnsupported`、轮询间隔 1 分钟。发信槽调 `users.messages.send`（`SavesSent() == true`）。
+- **主机、外发与限流**：只向账户配置的 API 主机发送 Bearer 令牌，只跟随同主机 HTTPS 重定向；同步流量算账户配置，不走外发审批。遇到 HTTP 429 或 403 `rateLimitExceeded` 时和 EWS 一样按单账户串行并退避重试。
+- **实现与测试**：直接基于标准库 `net/http` 和本地 MIME 解析实现，不引入 Google API SDK；内存假服务器 `backend/gmailapi/gmailapitest` 覆盖契约测试与 `coretest` 端到端测试。
+
 ## Considered Options
 
 - **接缝放在 IMAP 动词这一层**（ListFolders、FetchByUID、StoreFlags），让其他协议去模拟 IMAP：改动最小，但 JMAP、Gmail 的账户级游标和 EWS 的 SyncState 都得硬塞成 UID 的形状。Himalaya、aerc、Thunderbird 都没有走这条路。

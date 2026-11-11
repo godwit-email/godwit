@@ -15,6 +15,7 @@ import (
 	"github.com/godwit-email/godwit/backend"
 	"github.com/godwit-email/godwit/backend/conn"
 	"github.com/godwit-email/godwit/backend/ews"
+	"github.com/godwit-email/godwit/backend/gmailapi"
 	"github.com/godwit-email/godwit/backend/graph"
 	"github.com/godwit-email/godwit/backend/smtpbackend"
 	"github.com/godwit-email/godwit/core/auth"
@@ -434,6 +435,8 @@ func (a *sendAuth) sender() backend.Sender {
 		return graph.New(graphSendURL, a.credentials)
 	case auth.EWS:
 		return ews.NewSender(ews.Config{URL: ewsURL(a.acc), Credentials: a.credentials})
+	case auth.GmailAPI:
+		return gmailapi.NewSender(gmailapi.Config{BaseURL: slotURL(a.acc.Receiving, a.acc.Receiving.Path), Credentials: a.credentials})
 	}
 	return a.smtp()
 }

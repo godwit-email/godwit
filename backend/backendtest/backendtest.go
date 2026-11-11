@@ -248,10 +248,12 @@ func appeared(cs []backend.Change) []backend.MessageAppeared {
 	return out
 }
 
-// only is the single MessageAppeared in cs; it fails t otherwise.
-func only(t *testing.T, cs []backend.Change) backend.MessageAppeared {
+// only is the single MessageAppeared in cs outside RoleAll; it fails t otherwise.
+func (v *view) only(t *testing.T, cs []backend.Change) backend.MessageAppeared {
 	t.Helper()
-	ms := appeared(cs)
+	ms := slices.DeleteFunc(appeared(cs), func(m backend.MessageAppeared) bool {
+		return v.folders[m.Folder].Role == backend.RoleAll
+	})
 	if len(ms) != 1 {
 		t.Fatalf("got %d MessageAppeared, want 1: %+v", len(ms), cs)
 	}
@@ -276,7 +278,7 @@ func started(t *testing.T, start Fixture) (Server, backend.Receiver, *view, back
 	s.Deliver(t, "INBOX", Message("first@example.com", "first"))
 	r := s.Receiver(t)
 	v := newView()
-	return s, r, v, only(t, v.sync(t, r))
+	return s, r, v, v.only(t, v.sync(t, r))
 }
 
 func describe(t *testing.T, r backend.Receiver) backend.Description {
@@ -358,7 +360,7 @@ func anyContains(m map[backend.PartRef][]byte, s string) bool {
 func testCursorResumes(t *testing.T, start Fixture) {
 	s, _, v, _ := started(t, start)
 	s.Deliver(t, "INBOX", Message("second@example.com", "second"))
-	m := only(t, v.sync(t, s.Receiver(t)))
+	m := v.only(t, v.sync(t, s.Receiver(t)))
 	if subject(m) != "second" || m.Backfill {
 		t.Errorf("got %q (backfill %v), want second as a new arrival", subject(m), m.Backfill)
 	}
@@ -578,7 +580,7 @@ func testAppend(t *testing.T, start Fixture) {
 	if err != nil || len(got) != 1 {
 		t.Fatalf("Find after appending twice = %v, %v; want one", got, err)
 	}
-	m := only(t, v.sync(t, r))
+	m := v.only(t, v.sync(t, r))
 	if subject(m) != "appended" || !m.Flags.Seen {
 		t.Errorf("the next sync shows %q seen=%v, want the appended message seen", subject(m), m.Flags.Seen)
 	}

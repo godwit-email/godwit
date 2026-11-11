@@ -604,11 +604,14 @@ func (p *settingsPage) accountView(c *ui.Context, acc core.Account) {
 	if pr := acc.Receiving.Protocol; pr == auth.JMAP || pr == auth.EWS {
 		recv = row(strings.ToUpper(pr), "", func() { kit.Text(c, sessionURL(acc.Receiving), t.Text.Sm).Font(theme.Mono).TextColor(t.Muted) })
 	}
+	if acc.Receiving.Protocol == auth.GmailAPI {
+		recv = server("Gmail API", acc.Receiving.Host, acc.Receiving.Port, acc.Receiving.Security, "")
+	}
 	login := []func(){
 		row(i18n.T("settings.account.login.method"), p.authText(acc, prov), func() { p.authButton(c, acc, prov, false) }),
 		recv,
 	}
-	if acc.Sending.Protocol != auth.EWS { // EWS sends through the server it receives from
+	if acc.Sending.Protocol != auth.EWS && acc.Sending.Protocol != auth.GmailAPI { // EWS and Gmail API send through the server they receive from
 		login = append(login, server("SMTP", acc.Sending.Host, acc.Sending.Port, acc.Sending.Security, receiveOnlyHelp(acc)))
 	}
 	if acc.ReceiveOnly { // OAuth has no servers to change: it tries SMTP again as it is
@@ -616,9 +619,11 @@ func (p *settingsPage) accountView(c *ui.Context, acc core.Account) {
 			settingButton(c, i18n.T("settings.account.receive_only.recheck"), kit.Outline, p.rechecking[acc.ID]).OnClick(func() { p.recheckSending(acc.ID) })
 		}))
 	}
-	login = append(login, row(i18n.T("settings.account.servers"), i18n.T("settings.account.servers.help"), func() {
-		settingButton(c, i18n.T("settings.account.edit_servers"), kit.Outline, false).OnClick(func() { p.openDialog("servers", acc) })
-	}))
+	if acc.Receiving.Protocol != auth.GmailAPI {
+		login = append(login, row(i18n.T("settings.account.servers"), i18n.T("settings.account.servers.help"), func() {
+			settingButton(c, i18n.T("settings.account.edit_servers"), kit.Outline, false).OnClick(func() { p.openDialog("servers", acc) })
+		}))
+	}
 	settingsSection(c, i18n.T("settings.account.login"), "", login...)
 	remove()
 }
@@ -829,6 +834,10 @@ func (p *settingsPage) dialogView(c *ui.Context) {
 	case "client":
 		title, label = i18n.T("settings.account.client.title"), i18n.T("onboarding.own_client.signin")
 		pub := publicClient(prov)
+		if acc.Receiving.Protocol == auth.GmailAPI {
+			pub = nil
+			p.client.public = false
+		}
 		body = func() {
 			p.client.choice(c, pub)
 			p.client.view(c, a, i18n.T("settings.account.client.secret_help"), pub)

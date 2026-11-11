@@ -49,6 +49,8 @@ const (
 	// Graph is the sending slot of an account whose SMTP AUTH is disabled:
 	// it sends through Microsoft Graph (OAuthConfig.GraphSend).
 	Graph = "graph"
+	// GmailAPI is both slots of a Gmail account using the Gmail REST API.
+	GmailAPI = "gmailapi"
 )
 
 // Entry is one way to a provider's mail: a protocol, its server and the

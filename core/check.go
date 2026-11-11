@@ -14,6 +14,7 @@ import (
 	"github.com/godwit-email/godwit/backend"
 	"github.com/godwit-email/godwit/backend/conn"
 	"github.com/godwit-email/godwit/backend/ews"
+	"github.com/godwit-email/godwit/backend/gmailapi"
 	"github.com/godwit-email/godwit/backend/imapbackend"
 	"github.com/godwit-email/godwit/backend/jmap"
 	"github.com/godwit-email/godwit/backend/pop3"
@@ -104,6 +105,9 @@ func (s *Service) CheckAccount(ctx context.Context, in AccountInput) (CheckRepor
 	if err := s.allowPOP3(ctx, &in); err != nil {
 		return CheckReport{}, err
 	}
+	if err := s.allowGmailAPI(ctx, &in); err != nil {
+		return CheckReport{}, err
+	}
 	r, _ := s.check(ctx, in, "")
 	return r, ctx.Err()
 }
@@ -111,6 +115,7 @@ func (s *Service) CheckAccount(ctx context.Context, in AccountInput) (CheckRepor
 // check returns the report and the first failing step's underlying error.
 // token is a stored OAuth account's access token, used instead of in.Password.
 func (s *Service) check(ctx context.Context, in AccountInput, token string) (CheckReport, error) {
+	fillGmailAPISlot(&in)
 	r := CheckReport{Steps: []CheckStep{{Name: "settings"}, {Name: in.receiving()}, {Name: "smtp"}}}
 	var first error
 	fail := func(i int, kind conn.FailureKind, err error) {
@@ -132,6 +137,9 @@ func (s *Service) check(ctx context.Context, in AccountInput, token string) (Che
 				return KindInvalid, nil
 			}
 			g, err := s.flowGrant(in) // peeked: AddAccount still needs it
+			if err == nil && in.receiving() == auth.GmailAPI {
+				err = validGmailAPIGrant(g)
+			}
 			user, token = g.Email, g.AccessToken
 			graph = func(ctx context.Context) error {
 				cfg, err := oauthConfig(g.provider)
@@ -183,7 +191,7 @@ func (s *Service) check(ctx context.Context, in AccountInput, token string) (Che
 			return conn.Classify(err), err
 		},
 	}
-	if in.receiving() == auth.EWS {
+	if in.receiving() == auth.EWS || in.receiving() == auth.GmailAPI {
 		r.Steps, steps = r.Steps[:2], steps[:2]
 	}
 	for i, run := range steps {
@@ -258,6 +266,8 @@ func newReceiver(srv Server, email string, creds backend.CredentialsFunc) backen
 		return ews.New(ews.Config{URL: slotURL(srv, srv.Path), Address: email, Credentials: creds})
 	case auth.POP3:
 		return pop3.New(pop3.Config{Host: srv.Host, Port: srv.Port, Security: srv.Security, Credentials: creds})
+	case auth.GmailAPI:
+		return gmailapi.New(gmailapi.Config{BaseURL: slotURL(srv, srv.Path), Credentials: creds})
 	}
 	return imapbackend.New(imapbackend.Config{Host: srv.Host, Port: srv.Port, Security: srv.Security, Credentials: creds})
 }

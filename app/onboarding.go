@@ -14,6 +14,7 @@ import (
 
 	"github.com/egoist/mygo/ui"
 	"github.com/godwit-email/godwit/backend/ews"
+	"github.com/godwit-email/godwit/backend/gmailapi"
 	"github.com/godwit-email/godwit/backend/pop3"
 	"github.com/godwit-email/godwit/core"
 	"github.com/godwit-email/godwit/core/auth"
@@ -43,6 +44,9 @@ const (
 // testSecurity, set only by tests, replaces both servers' security: the fake
 // servers on loopback speak plaintext, which the form never offers.
 var testSecurity core.Security
+
+// testGmailAPI, set only by tests, replaces a Gmail API slot with a fake server on loopback.
+var testGmailAPI core.Server
 
 var otherProvider = auth.Provider{ID: "other", Entries: auth.IMAPSMTP(auth.Server{}, auth.Server{}, "password")}
 
@@ -412,7 +416,12 @@ func (o *onboarding) pop3() bool { return o.proto == auth.POP3 && !o.oauth() }
 // ews: the account is added over EWS, its servers form says.
 func (o *onboarding) ews() bool { return o.proto == auth.EWS && !o.oauth() }
 
-// recvStep is the check's receiving step: imap, jmap, pop3 or ews.
+// gmailAPI: the Gmail account is added over the Gmail REST API with the user's own OAuth client.
+func (o *onboarding) gmailAPI() bool {
+	return o.proto == auth.GmailAPI && o.prov.ID == "gmail" && o.ownClient()
+}
+
+// recvStep is the check's receiving step: imap, jmap, pop3, ews or gmailapi.
 func (o *onboarding) recvStep() string {
 	switch {
 	case o.jmap():
@@ -421,15 +430,17 @@ func (o *onboarding) recvStep() string {
 		return auth.EWS
 	case o.pop3():
 		return auth.POP3
+	case o.gmailAPI():
+		return auth.GmailAPI
 	}
 	return auth.IMAP
 }
 
-// checkSteps are the check's steps before it reports: an EWS account sends
-// through the server it receives from, so it has no smtp step.
+// checkSteps are the check's steps before it reports: an EWS or Gmail API
+// account sends through the server it receives from, so it has no smtp step.
 func (o *onboarding) checkSteps() []core.CheckStep {
 	steps := []core.CheckStep{{Name: "settings"}, {Name: o.recvStep()}, {Name: "smtp"}}
-	if o.ews() {
+	if o.ews() || o.gmailAPI() {
 		return steps[:2]
 	}
 	return steps
@@ -495,6 +506,13 @@ func (o *onboarding) input() core.AccountInput {
 	if o.pop3() {
 		in.Receiving.Protocol = auth.POP3
 	}
+	if o.gmailAPI() {
+		in.Receiving = core.Server{Protocol: auth.GmailAPI, Host: "gmail.googleapis.com", Port: 443, Security: core.SecurityTLS}
+		if testGmailAPI.Host != "" {
+			in.Receiving = testGmailAPI
+		}
+		in.Sending = in.Receiving
+	}
 	if o.oauth() {
 		in.OAuthFlowID = o.flowID
 	} else {
@@ -503,7 +521,7 @@ func (o *onboarding) input() core.AccountInput {
 	if o.apiToken() {
 		in.Receiving.Auth, in.SendPassword = core.AuthAPIToken, o.sendSecret
 	}
-	if testSecurity != "" && !o.ews() { // an EWS URL says its own
+	if testSecurity != "" && !o.ews() && !o.gmailAPI() { // an EWS URL says its own
 		in.Sending.Security = testSecurity
 		if !o.jmap() { // a JMAP URL says its own
 			in.Receiving.Security = testSecurity
@@ -1000,10 +1018,29 @@ func (o *onboarding) oauth() bool { return loginOf(o.prov) == "oauth" || o.ownCl
 
 // ownClientView asks for the user's own OAuth client in place of the password.
 func (o *onboarding) ownClientView(c *ui.Context) {
+	t := theme.Of(c)
+	if o.prov.ID == "gmail" && (o.a.settings.ExperimentalGmailAPI || o.proto == auth.GmailAPI) {
+		protos := []string{"", auth.GmailAPI}
+		labels := []string{"IMAP", i18n.T("onboarding.protocol.gmailapi")}
+		ui.Field(c, i18n.T("onboarding.protocol"), func() {
+			sel := max(slices.Index(protos, o.proto), 0)
+			kit.TabsFill(c, &sel, labels...)
+			if protos[sel] != o.proto {
+				o.proto = protos[sel]
+			}
+		}).FontSize(t.Text.Sm).TextColor(t.Muted)
+	}
 	pub := publicClient(o.prov)
+	stepsKey := "onboarding.own_client.steps"
+	if o.gmailAPI() {
+		pub = nil
+		o.client.public = false
+		stepsKey = "onboarding.own_client.steps.gmailapi"
+		kit.Text(c, i18n.T("onboarding.gmailapi.own_client_only"), t.Text.Sm).TextColor(t.Muted).LineHeight(theme.LineProse)
+	}
 	o.client.choice(c, pub)
 	if o.client.ownChosen(pub) {
-		o.hintBox(c, i18n.T("onboarding.own_client.title"), i18n.T("onboarding.own_client.steps"), i18n.T("onboarding.own_client.note"),
+		o.hintBox(c, i18n.T("onboarding.own_client.title"), i18n.T(stepsKey), i18n.T("onboarding.own_client.note"),
 			i18n.T("onboarding.own_client.help"), ownClientHelpURL)
 	}
 	o.client.view(c, o.a, i18n.T("onboarding.secret.help"), pub)
@@ -1190,12 +1227,15 @@ func (o *onboarding) checkRow(st core.CheckStep) (text, detail string, status in
 				s, _ := ewsServer(cmp.Or(strings.TrimSpace(o.ewsURL), o.report.URL))
 				host, sendHost = s.Host, s.Host
 			}
+			if o.gmailAPI() {
+				host, sendHost = "gmail.googleapis.com", "gmail.googleapis.com"
+			}
 			detail = i18n.Tf("onboarding.check.settings."+src, host, sendHost)
 		}
 		if st.Name == auth.IMAP {
 			detail = o.foldersText()
 		}
-		if st.Name == auth.JMAP || st.Name == auth.EWS { // where the credentials went, which discovery may have moved
+		if st.Name == auth.JMAP || st.Name == auth.EWS || st.Name == auth.GmailAPI { // where the credentials went, which discovery may have moved
 			detail = i18n.Tf(k+".host", o.report.Host)
 			if f := o.foldersText(); f != "" {
 				detail += " · " + f
@@ -1234,6 +1274,9 @@ func (o *onboarding) checkRow(st core.CheckStep) (text, detail string, status in
 		}
 		if st.Detail == pop3.ReasonNoUIDL { // the server cannot be used at all, not merely misconfigured
 			reason = i18n.T("feature.reason." + st.Detail)
+		}
+		if st.Detail == gmailapi.ReasonAPIDisabled {
+			reason, next = i18n.T("feature.reason."+st.Detail), ""
 		}
 	case "proxy_unreachable", "proxy_refused", "proxy_auth":
 		reason = i18n.T("onboarding.reason." + kind)

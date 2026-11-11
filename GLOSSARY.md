@@ -21,7 +21,7 @@ _Avoid_: 只读账户、禁用发信
 _Avoid_: 账户
 
 **协议后端**（`Backend`）：
-账户收信、同步或发信时用的具体协议实现，如 IMAP、SMTP、JMAP、EWS、Microsoft Graph。一个账户有一个收信后端和一个发信后端，可以是同一种协议（Graph 收发都用它）。服务商决定账户默认用哪些协议后端。
+账户收信、同步或发信时用的具体协议实现，如 IMAP、SMTP、JMAP、POP3、EWS、Microsoft Graph、Gmail API。一个账户有一个收信后端和一个发信后端，可以是同一种协议（EWS、Gmail API、Graph 收发都用它）。服务商决定账户默认用哪些协议后端。
 _Avoid_: 适配器、驱动、服务商（指协议时）
 
 **协议能力**（`Feature`）：
