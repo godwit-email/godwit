@@ -25,6 +25,7 @@ type approvalEnv struct {
 	skillEnv
 	applied atomic.Int32
 	acct    atomic.Int64
+	mode    atomic.Value
 }
 
 func newApprovalEnv(t *testing.T) *approvalEnv {
@@ -84,6 +85,20 @@ func (e *approvalEnv) register(s *Service) {
 			}
 			return []sqlite.Statement{{SQL: "UPDATE drafts SET subject = ?, revision = revision + 1 WHERE id = ?",
 				Args: []any{in.Subject, in.DraftID}}}, "renamed", map[string]string{"subject": "old"}, nil
+		},
+	})
+	s.registerExecutorForTest("fake_outside", executor{Outside: true,
+		Prepare: func(ctx context.Context, conv Conversation, args json.RawMessage) (prepared, error) {
+			return prepared{Args: args, Summary: "Outside"}, nil
+		},
+		Apply: func(ctx context.Context, a Approval) ([]sqlite.Statement, any, any, error) {
+			e.applied.Add(1)
+			rows, err := s.db.Query(ctx, "SELECT exec_mode FROM approvals WHERE id = ?", a.ID)
+			if err != nil {
+				return nil, nil, nil, err
+			}
+			e.mode.Store(store.Str(rows.Values[0][0]))
+			return nil, map[string]bool{"ran": true}, nil, nil
 		},
 	})
 }
@@ -214,6 +229,53 @@ func toolPairs(t *testing.T, req testllm.Request) (calls, results []string) {
 	slices.Sort(calls)
 	slices.Sort(results)
 	return calls, results
+}
+
+func TestOutsideToolMarkedBeforeItRuns(t *testing.T) {
+	e := newApprovalEnv(t)
+	conv := e.newConv(t, "ask", 0)
+	in := e.interruptWith(t, conv, "fake_outside", testllm.Call{Name: "fake_outside", Args: `{}`})
+	a := in.Approvals[0]
+	require.NoError(t, e.s.ResolveApproval(t.Context(), a.ID, true))
+	e.waitRun(t, in.RunID, "done")
+	assert.Equal(t, "external", e.mode.Load())
+	assert.Equal(t, "done", e.approval(t, a.ID).State)
+	assert.Equal(t, int32(1), e.applied.Load())
+}
+
+func TestOutsideToolCommitFailureIsUncertain(t *testing.T) {
+	e := newApprovalEnv(t)
+	conv := e.newConv(t, "ask", 0)
+	in := e.interruptWith(t, conv, "fake_outside", testllm.Call{Name: "fake_outside", Args: `{}`})
+	a := in.Approvals[0]
+	_, err := e.s.db.Execute(t.Context(), `CREATE TRIGGER fail_done BEFORE UPDATE OF state ON approvals WHEN NEW.state = 'done' BEGIN SELECT RAISE(ABORT, 'injected commit failure'); END`)
+	require.NoError(t, err)
+	require.ErrorContains(t, e.s.ResolveApproval(t.Context(), a.ID, true), "injected commit failure")
+	e.waitRun(t, in.RunID, "done")
+	got := e.approval(t, a.ID)
+	assert.Equal(t, "failed", got.State)
+	assert.Equal(t, msgUncertain, got.Error)
+	assert.Equal(t, int32(1), e.applied.Load())
+	assert.Equal(t, 1, e.count(t, "SELECT COUNT(*) FROM audit_log WHERE tool = 'fake_outside' AND decision = 'uncertain'"))
+	_, err = e.s.db.Execute(t.Context(), "DROP TRIGGER fail_done")
+	require.NoError(t, err)
+}
+
+func TestTxToolCommitFailureIsNotUncertain(t *testing.T) {
+	e := newApprovalEnv(t)
+	conv := e.newConv(t, "ask", 0)
+	in := e.interrupt(t, conv, testllm.Call{Name: "fake_draft", Args: `{"subject":"Hi"}`})
+	a := in.Approvals[0]
+	_, err := e.s.db.Execute(t.Context(), `CREATE TRIGGER fail_done BEFORE UPDATE OF state ON approvals WHEN NEW.state = 'done' BEGIN SELECT RAISE(ABORT, 'injected commit failure'); END`)
+	require.NoError(t, err)
+	require.ErrorContains(t, e.s.ResolveApproval(t.Context(), a.ID, true), "injected commit failure")
+	e.waitRun(t, in.RunID, "done")
+	got := e.approval(t, a.ID)
+	assert.Equal(t, "failed", got.State)
+	assert.Equal(t, msgNotSaved, got.Error)
+	assert.Equal(t, 0, e.count(t, "SELECT COUNT(*) FROM drafts"))
+	_, err = e.s.db.Execute(t.Context(), "DROP TRIGGER fail_done")
+	require.NoError(t, err)
 }
 
 func TestDeleteDraftApproval(t *testing.T) {

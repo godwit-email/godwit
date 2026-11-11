@@ -42,6 +42,10 @@ type executor struct {
 	// Apply makes the statements for an approval from its recorded arguments
 	// only, without committing them; result goes to the model, undo is stored.
 	Apply func(ctx context.Context, a Approval) (stmts []sqlite.Statement, result, undo any, err error)
+	// Outside is set when Apply acts itself (writes it commits, a request it
+	// sends) and returns no statements for it: an approval cut off while it
+	// runs may have taken effect, and is recorded as uncertain.
+	Outside bool
 }
 
 // Approval is a call waiting for the user or decided. State goes
@@ -395,6 +399,12 @@ func (s *Service) decideAs(ctx context.Context, id int64, accept bool, args json
 	}
 	return s.ledger.execute(ctx, id, a.RunID, func(ctx context.Context) error {
 		start := time.Now()
+		if ex != nil && ex.Outside {
+			// Recovery reads this: cut off from here on, it may have run (ADR 0004).
+			if _, err := s.db.Execute(ctx, "UPDATE approvals SET exec_mode = 'external' WHERE id = ?", id); err != nil {
+				return errors.Join(err, s.ledger.finish(ctx, a, "failed", msgNotSaved, nil, nil, "failed"))
+			}
+		}
 		err := s.execute(ctx, a, ex, args, decision)
 		s.worked(ctx, a.RunID, start)
 		s.bus.Publish(events.Event{Type: events.ApprovalsChanged, ConversationID: a.ConversationID})
@@ -487,6 +497,9 @@ func (s *Service) execute(ctx context.Context, a approvalRow, ex *executor, args
 			Args: []any{a.ID, a.targetID, a.targetVersion}}}, stmts...)
 	}
 	if err := finish("done", string(res), undoText, decision, stmts...); err != nil {
+		if ex.Outside { // it already acted: not "could not be saved"
+			return errors.Join(err, finish("failed", msgUncertain, nil, "uncertain"))
+		}
 		return errors.Join(err, finish("failed", msgNotSaved, nil, "failed"))
 	}
 	if a.Tool == "delete_draft" {

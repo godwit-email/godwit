@@ -204,6 +204,21 @@ func TestWitComposeAndReplies(t *testing.T) {
 	assert.True(t, m["deleted"].(bool))
 }
 
+func TestForwardWithoutItsAttachmentsFails(t *testing.T) {
+	e := newSkillEnv(t)
+	ctx := t.Context()
+	msgID := addMessage(t, e.s, "Project Update", "alice@example.com", "Update", "", 1_700_000_100)
+	_, err := e.s.db.Execute(ctx, `INSERT INTO attachments(message_id, part, filename, content_type, size, inline) VALUES (?, '2', 'a.pdf', 'application/pdf', 10, 0)`, msgID)
+	require.NoError(t, err)
+	args, err := json.Marshal(replyForwardArgs{AccountID: 1, Mode: "forward", SourceMessageID: msgID})
+	require.NoError(t, err)
+	_, _, _, err = e.s.applyReplyOrForwardDraft(ctx, Approval{ID: 11, Tool: "forward_mail", Args: args})
+	require.Error(t, err)
+	rows, err := e.s.db.Query(ctx, "SELECT COUNT(*) FROM drafts WHERE mode = 'forward'")
+	require.NoError(t, err)
+	assert.Equal(t, int64(0), store.Int(rows.Values[0][0]))
+}
+
 func TestWitLinksAndOpenBrowser(t *testing.T) {
 	e := newSkillEnv(t)
 	ctx := t.Context()
