@@ -3,6 +3,7 @@ package core
 import (
 	"context"
 	"fmt"
+	"net/url"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -14,6 +15,7 @@ import (
 	"github.com/emersion/go-imap/v2"
 	"github.com/godwit-email/godwit/backend"
 	"github.com/godwit-email/godwit/backend/imapbackend"
+	"github.com/godwit-email/godwit/core/auth"
 	"github.com/godwit-email/godwit/core/events"
 	"github.com/godwit-email/godwit/core/internal/testmail"
 	"github.com/godwit-email/godwit/core/store"
@@ -403,6 +405,44 @@ func TestCancelledSyncIsNotAFailure(t *testing.T) {
 	t.Cleanup(func() { beforeOutboxItem = nil })
 	require.Error(t, e.s.SyncNow(ctx, e.acc.ID))
 	assert.Empty(t, ofType(collect(ch), events.SyncFailed))
+}
+
+// A server whose push connection fails before it starts is polled: the round
+// still syncs.
+func TestWorkerSyncsWhenWatchFails(t *testing.T) {
+	synced := make(chan struct{}, 8)
+	setFor(t, &afterWorkerSync, func(int64, []backend.FolderRef) {
+		select {
+		case synced <- struct{}{}:
+		default:
+		}
+	})
+	b0, b1 := backoffMin, backoffMax
+	backoffMin, backoffMax = 20*time.Millisecond, 200*time.Millisecond
+	t.Cleanup(func() { backoffMin, backoffMax = b0, b1 })
+	keyring.MockInit()
+	s, err := New(bg, Options{DataDir: t.TempDir(), AutoSync: true, ImageClient: loopbackImageClient()})
+	require.NoError(t, err)
+	t.Cleanup(func() { s.Close() })
+	st, err := s.GetSettings(bg)
+	require.NoError(t, err)
+	st.ExperimentalJMAP = true
+	_, err = s.SetSettings(bg, st)
+	require.NoError(t, err)
+	jm := testmail.StartJMAP(t)
+	smtpAddr, inbox := testmail.StartSMTP(t)
+	inbox.SetPassword("test-smtp-password")
+	u, err := url.Parse(jm.URL())
+	require.NoError(t, err)
+	jh, jp := splitAddr(t, u.Host)
+	sh, sp := splitAddr(t, smtpAddr)
+	in := AccountInput{Email: "alice@example.com", Username: "alice", Password: "secret", SendPassword: "test-smtp-password",
+		Receiving: Server{Protocol: auth.JMAP, Host: jh, Port: jp, Security: SecurityNone, Auth: AuthAPIToken},
+		Sending:   Server{Host: sh, Port: sp, Security: SecurityNone}}
+	jm.Redirect("/jmap/eventsource", "http://127.0.0.1:1/elsewhere")
+	_, err = s.AddAccount(bg, in)
+	require.NoError(t, err)
+	waitSignal(t, synced, "a background sync", 10*time.Second)
 }
 
 // The worker polls as often as the receiving backend declares.
