@@ -10,6 +10,7 @@ import (
 	"net/http"
 	"net/http/httptrace"
 	"net/mail"
+	"slices"
 	"strings"
 	"sync/atomic"
 	"time"
@@ -32,16 +33,21 @@ const sendTimeout = 5 * time.Minute
 // the RFC 5322 message as a blob, then imports the Email and creates an
 // EmailSubmission with an explicit envelope and onSuccessUpdateEmail in one
 // JMAP request.
-type Sender struct{ c *client }
+type Sender struct {
+	c       *client
+	unsaved atomic.Bool // last accepted Send could not store the sent copy in Sent
+}
 
 var _ backend.Sender = (*Sender)(nil)
 
 // NewSender is a Sender for the account cfg names.
-func NewSender(cfg Config) *Sender { return &Sender{newClient(cfg)} }
+func NewSender(cfg Config) *Sender { return &Sender{c: newClient(cfg)} }
 
 // SavesSent implements backend.Sender: Email/import + onSuccessUpdateEmail
-// places the sent copy in the Sent mailbox on the server.
-func (*Sender) SavesSent() bool { return true }
+// places the sent copy in the Sent mailbox on the server, unless the follow-up
+// Email/set failed (or the configured Sent mailbox was missing), in which case
+// SavesSent reports false so core's outbox archives or retains recovery state.
+func (s *Sender) SavesSent() bool { return !s.unsaved.Load() }
 
 // Send implements backend.Sender. Any failure before the EmailSubmission/set
 // HTTP request is written whole (session, Identity/get, blob upload) is a
@@ -49,6 +55,7 @@ func (*Sender) SavesSent() bool { return true }
 // submission HTTP request has been written, a lost response (timeout, dropped
 // connection, unreadable body, or HTTP 5xx) returns backend.ErrUncertain.
 func (s *Sender) Send(ctx context.Context, from string, rcpts []string, raw []byte) error {
+	s.unsaved.Store(false)
 	defer s.c.http.CloseIdleConnections()
 	ctx, cancel := context.WithTimeout(ctx, sendTimeout)
 	defer cancel()
@@ -93,7 +100,7 @@ func (s *Sender) Send(ctx context.Context, from string, rcpts []string, raw []by
 		}
 	}
 
-	stageMailbox, onSuccessUpdate, onSuccessDestroy, err := planStaging(boxes)
+	stageMailbox, onSuccessUpdate, onSuccessDestroy, missingSent, err := planStaging(boxes, s.c.cfg.SentFolder)
 	if err != nil {
 		return err
 	}
@@ -186,13 +193,15 @@ func (s *Sender) Send(ctx context.Context, from string, rcpts []string, raw []by
 		s.c.mu.Unlock()
 	}
 
-	var impInv, subInv *gojmap.Invocation
+	var impInv, subInv, postInv *gojmap.Invocation
 	for _, inv := range resp.Responses {
 		switch {
 		case inv.CallID == impCall && impInv == nil:
 			impInv = inv
 		case inv.CallID == subCall && subInv == nil:
 			subInv = inv
+		case inv.CallID == subCall && postInv == nil:
+			postInv = inv
 		}
 	}
 	if impInv == nil || subInv == nil {
@@ -209,12 +218,16 @@ func (s *Sender) Send(ctx context.Context, from string, rcpts []string, raw []by
 	if se := ir.NotCreated["m"]; se != nil {
 		return importError(se)
 	}
+	created := ir.Created["m"]
+	if created == nil || created.ID == "" {
+		if sr, ok := subInv.Args.(*emailsubmission.SetResponse); ok && sr.Created["s"] != nil {
+			s.unsaved.Store(true)
+			return nil
+		}
+		return errors.New("jmap: Email/import returned neither created nor notCreated")
+	}
 
 	cleanupStaged := func() {
-		created := ir.Created["m"]
-		if created == nil || created.ID == "" {
-			return
-		}
 		cleanCtx, cleanCancel := context.WithTimeout(context.WithoutCancel(ctx), 10*time.Second)
 		defer cleanCancel()
 		_, _ = s.c.call(cleanCtx, func(acct gojmap.ID) []gojmap.Method {
@@ -238,9 +251,39 @@ func (s *Sender) Send(ctx context.Context, from string, rcpts []string, raw []by
 		return submissionRejected(se)
 	}
 	if sr.Created["s"] != nil {
+		switch {
+		case len(onSuccessUpdate) > 0 && !archivedOK(postInv, created.ID):
+			cleanupStaged()
+			s.unsaved.Store(true)
+		case len(onSuccessDestroy) > 0 && !destroyedOK(postInv, created.ID):
+			cleanupStaged()
+		}
+		if missingSent {
+			s.unsaved.Store(true)
+		}
 		return nil
 	}
 	return fmt.Errorf("%w: EmailSubmission/set gave neither created nor notCreated", backend.ErrUncertain)
+}
+
+func archivedOK(postInv *gojmap.Invocation, emailID gojmap.ID) bool {
+	if postInv == nil {
+		return false
+	}
+	es, ok := postInv.Args.(*email.SetResponse)
+	if !ok || es == nil || es.NotUpdated[emailID] != nil {
+		return false
+	}
+	_, updated := es.Updated[emailID]
+	return updated
+}
+
+func destroyedOK(postInv *gojmap.Invocation, emailID gojmap.ID) bool {
+	if postInv == nil {
+		return false
+	}
+	es, ok := postInv.Args.(*email.SetResponse)
+	return ok && es != nil && es.NotDestroyed[emailID] == nil && slices.Contains(es.Destroyed, emailID)
 }
 
 // matchIdentity selects the best RFC 8621 section 6 Identity for sending from
@@ -271,13 +314,18 @@ func matchIdentity(list []*identity.Identity, addr string) (gojmap.ID, bool) {
 }
 
 // planStaging picks the mailbox for Email/import and the follow-up Email
-// update/destroy to run when EmailSubmission/set succeeds.
-func planStaging(boxes []*mailbox.Mailbox) (stage gojmap.ID, update map[gojmap.ID]gojmap.Patch, destroy []gojmap.ID, err error) {
-	var draftsID, sentID, firstID gojmap.ID
+// update/destroy to run when EmailSubmission/set succeeds. When sentOverride
+// is non-nil, *sentOverride overrides the server's RoleSent mailbox (or ""
+// disables saving a sent copy); if *sentOverride names a mailbox absent on the
+// server, missingSent is reported so the caller retains archival recovery.
+func planStaging(boxes []*mailbox.Mailbox, sentOverride *backend.FolderRef) (stage gojmap.ID, update map[gojmap.ID]gojmap.Patch, destroy []gojmap.ID, missingSent bool, err error) {
+	hasBox := map[gojmap.ID]bool{}
+	var draftsID, detectedSentID, firstID gojmap.ID
 	for _, m := range boxes {
-		if m == nil {
+		if m == nil || m.ID == "" {
 			continue
 		}
+		hasBox[m.ID] = true
 		if firstID == "" {
 			firstID = m.ID
 		}
@@ -287,30 +335,43 @@ func planStaging(boxes []*mailbox.Mailbox) (stage gojmap.ID, update map[gojmap.I
 				draftsID = m.ID
 			}
 		case mailbox.RoleSent:
-			if sentID == "" {
-				sentID = m.ID
+			if detectedSentID == "" {
+				detectedSentID = m.ID
 			}
 		}
 	}
+	sentID := detectedSentID
+	if sentOverride != nil {
+		want := gojmap.ID(*sentOverride)
+		switch {
+		case want == "":
+			sentID = ""
+		case hasBox[want]:
+			sentID = want
+		default:
+			sentID = ""
+			missingSent = true
+		}
+	}
 	switch {
-	case draftsID != "" && sentID != "":
+	case draftsID != "" && sentID != "" && draftsID != sentID:
 		return draftsID, map[gojmap.ID]gojmap.Patch{
 			"#s": {
 				"mailboxIds/" + string(draftsID): nil,
 				"mailboxIds/" + string(sentID):   true,
 				"keywords/$draft":                nil,
 			},
-		}, nil, nil
+		}, nil, false, nil
 	case sentID != "":
 		return sentID, map[gojmap.ID]gojmap.Patch{
 			"#s": {"keywords/$draft": nil},
-		}, nil, nil
+		}, nil, false, nil
 	case draftsID != "":
-		return draftsID, nil, []gojmap.ID{"#s"}, nil
+		return draftsID, nil, []gojmap.ID{"#s"}, missingSent, nil
 	case firstID != "":
-		return firstID, nil, []gojmap.ID{"#s"}, nil
+		return firstID, nil, []gojmap.ID{"#s"}, missingSent, nil
 	default:
-		return "", nil, nil, errors.New("jmap: account has no mailboxes to stage submission")
+		return "", nil, nil, false, errors.New("jmap: account has no mailboxes to stage submission")
 	}
 }
 

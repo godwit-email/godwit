@@ -30,6 +30,11 @@ type Config struct {
 	// SessionURL is the session resource, or /.well-known/jmap to discover it.
 	SessionURL  string
 	Credentials backend.CredentialsFunc
+	// SentFolder, when non-nil, overrides which mailbox Sender files the sent
+	// copy into: *SentFolder is the target Mailbox id, or "" when the account
+	// has no Sent folder (the staged copy is destroyed once submitted). When
+	// nil, Sender uses the server's RoleSent mailbox.
+	SentFolder *backend.FolderRef
 }
 
 // client speaks JMAP over HTTP. It signs every request with the account's

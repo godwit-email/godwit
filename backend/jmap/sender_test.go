@@ -4,7 +4,9 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"io"
 	"net/http"
+	"net/http/httptest"
 	"slices"
 	"strings"
 	"testing"
@@ -223,5 +225,117 @@ func TestNoSubmissionCapability(t *testing.T) {
 	var re *backend.RejectedError
 	if !errors.As(err, &re) || re.Code < 500 {
 		t.Fatalf("Send without submission capability = %v, want permanent *backend.RejectedError", err)
+	}
+}
+
+func TestSendHonorsSentFolderOverride(t *testing.T) {
+	t.Run("local Sent role override without server RoleSent", func(t *testing.T) {
+		srv := jmapmemserver.New("alice@example.com", "secret")
+		t.Cleanup(srv.Close)
+		srv.CreateMailbox("Inbox", mailbox.RoleInbox)
+		drafts := srv.CreateMailbox("Drafts", mailbox.RoleDrafts)
+		customSent := srv.CreateMailbox("FiledSent", "")
+
+		override := backend.FolderRef(customSent)
+		snd := jmap.NewSender(jmap.Config{
+			SessionURL: srv.URL() + "/.well-known/jmap",
+			Credentials: func(context.Context) (backend.Credentials, error) {
+				return backend.Credentials{Token: "secret"}, nil
+			},
+			SentFolder: &override,
+		})
+		if err := snd.Send(t.Context(), "alice@example.com", []string{"bob@example.com"}, []byte(testRaw)); err != nil {
+			t.Fatalf("Send: %v", err)
+		}
+		if !snd.SavesSent() {
+			t.Fatal("SavesSent() = false, want true")
+		}
+		if got := mailboxEmails(t, srv, drafts); len(got) != 0 {
+			t.Errorf("Drafts has %d messages, want 0", len(got))
+		}
+		sentList := mailboxEmails(t, srv, customSent)
+		if len(sentList) != 1 {
+			t.Fatalf("custom Sent mailbox has %d messages, want 1", len(sentList))
+		}
+		if sentList[0].Keywords["$draft"] || !sentList[0].Keywords["$seen"] {
+			t.Errorf("custom Sent copy keywords = %+v, want $seen without $draft", sentList[0].Keywords)
+		}
+	})
+
+	t.Run("cleared Sent role destroys staged copy instead of using server RoleSent", func(t *testing.T) {
+		srv := newTestServer(t, "alice@example.com")
+		none := backend.FolderRef("")
+		snd := jmap.NewSender(jmap.Config{
+			SessionURL: srv.URL() + "/.well-known/jmap",
+			Credentials: func(context.Context) (backend.Credentials, error) {
+				return backend.Credentials{Token: "secret"}, nil
+			},
+			SentFolder: &none,
+		})
+		if err := snd.Send(t.Context(), "alice@example.com", []string{"bob@example.com"}, []byte(testRaw)); err != nil {
+			t.Fatalf("Send: %v", err)
+		}
+		if !snd.SavesSent() {
+			t.Fatal("SavesSent() = false, want true when account has no Sent folder")
+		}
+		if got := mailboxEmails(t, srv.Server, srv.drafts); len(got) != 0 {
+			t.Errorf("Drafts has %d messages, want 0", len(got))
+		}
+		if got := mailboxEmails(t, srv.Server, srv.sent); len(got) != 0 {
+			t.Errorf("server RoleSent has %d messages, want 0 when Sent role was cleared", len(got))
+		}
+	})
+}
+
+func TestSendOnSuccessUpdateFailureMarksUnsavedAndCleansDraft(t *testing.T) {
+	srv := newTestServer(t, "alice@example.com")
+	var proxy *httptest.Server
+	proxy = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		body, _ := io.ReadAll(r.Body)
+		if r.URL.Path == "/jmap/api" && bytes.Contains(body, []byte("EmailSubmission/set")) {
+			body = bytes.ReplaceAll(body, []byte("mailboxIds/"+string(srv.sent)), []byte("mailboxIds/deleted-sent"))
+		}
+		req, err := http.NewRequestWithContext(r.Context(), r.Method, srv.URL()+r.URL.RequestURI(), bytes.NewReader(body))
+		if err != nil {
+			t.Fatal(err)
+		}
+		req.Header = r.Header.Clone()
+		resp, err := http.DefaultClient.Do(req)
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer resp.Body.Close()
+		out, _ := io.ReadAll(resp.Body)
+		out = bytes.ReplaceAll(out, []byte(srv.URL()), []byte(proxy.URL))
+		for k, vs := range resp.Header {
+			for _, v := range vs {
+				w.Header().Add(k, v)
+			}
+		}
+		w.WriteHeader(resp.StatusCode)
+		_, _ = w.Write(out)
+	}))
+	t.Cleanup(proxy.Close)
+
+	snd := jmap.NewSender(jmap.Config{
+		SessionURL: proxy.URL + "/jmap/session",
+		Credentials: func(context.Context) (backend.Credentials, error) {
+			return backend.Credentials{Token: "secret"}, nil
+		},
+	})
+	if err := snd.Send(t.Context(), "alice@example.com", []string{"bob@example.com"}, []byte(testRaw)); err != nil {
+		t.Fatalf("Send when onSuccessUpdateEmail fails = %v, want nil (already accepted)", err)
+	}
+	if snd.SavesSent() {
+		t.Fatal("SavesSent() = true after failed onSuccessUpdateEmail, want false")
+	}
+	if len(srv.Submissions()) != 1 {
+		t.Fatalf("submissions = %d, want 1", len(srv.Submissions()))
+	}
+	if got := mailboxEmails(t, srv.Server, srv.drafts); len(got) != 0 {
+		t.Errorf("Drafts has %d leftover staged messages, want 0", len(got))
+	}
+	if got := mailboxEmails(t, srv.Server, srv.sent); len(got) != 0 {
+		t.Errorf("Sent has %d messages before recovery, want 0", len(got))
 	}
 }

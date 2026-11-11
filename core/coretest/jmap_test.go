@@ -1,10 +1,17 @@
 package coretest_test
 
 import (
+	"bytes"
 	"context"
+	"io"
+	"net"
+	"net/http"
+	"net/http/httptest"
+	"net/url"
 	"os"
 	"slices"
 	"strconv"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -269,6 +276,158 @@ func TestJMAPSendSavesSent(t *testing.T) {
 	})
 	require.NoError(t, err)
 	assert.Equal(t, 1, sentCount, "Sent mailbox on JMAP server must hold a single copy")
+}
+
+// When the user assigns Sent to a folder without the server's sent role via
+// SetRoleFolder, JMAP sending preserves the sent copy in that folder instead of
+// destroying the staged email.
+func TestJMAPSendUsesRoleOverrideSentFolder(t *testing.T) {
+	e := coretest.New(t, coretest.WithoutAutoSync())
+	acc := e.AddAccount(t, "alice@example.com", coretest.ViaJMAP())
+	srv := e.JMAP(acc.ID)
+	srv.CreateMailbox("Drafts", mailbox.RoleDrafts)
+	customSent := srv.CreateMailbox("FiledSent", "")
+	require.NoError(t, e.Svc.SyncNow(t.Context(), acc.ID))
+
+	fs, err := e.Svc.ListFolders(t.Context(), acc.ID)
+	require.NoError(t, err)
+	var filedID int64
+	for _, f := range fs {
+		if f.Name == "FiledSent" {
+			filedID = f.ID
+		}
+	}
+	require.NotZero(t, filedID)
+	require.NoError(t, e.Svc.SetRoleFolder(t.Context(), acc.ID, "sent", filedID))
+
+	d, err := e.Svc.NewDraft(t.Context(), acc.ID, "new", 0)
+	require.NoError(t, err)
+	d.To, d.Subject, d.HTML = []string{"dave@example.com"}, "Custom Sent", "<p>hi</p>"
+	_, err = e.Svc.SaveDraft(t.Context(), d)
+	require.NoError(t, err)
+	require.NoError(t, e.Svc.Send(t.Context(), d.ID))
+	e.AdvanceClock(core.UndoSendWindow)
+	require.NoError(t, e.Svc.SyncNow(t.Context(), acc.ID))
+
+	require.Len(t, srv.Submissions(), 1)
+	items, err := e.Svc.ListOutbox(t.Context(), acc.ID)
+	require.NoError(t, err)
+	assert.Empty(t, items)
+
+	require.NoError(t, e.Svc.SyncNow(t.Context(), acc.ID))
+	assert.Equal(t, 1, folderTotal(t, e, acc.ID, "FiledSent"))
+	assert.Equal(t, 0, folderTotal(t, e, acc.ID, "Drafts"))
+
+	var customCount int
+	_, err = other(t, e, acc.ID).Sync(t.Context(), backend.SyncRequest{}, func(p backend.Page) error {
+		for _, ch := range p.Changes {
+			if ma, ok := ch.(backend.MessageAppeared); ok && ma.Location.Folder == backend.FolderRef(customSent) {
+				customCount++
+			}
+		}
+		return nil
+	})
+	require.NoError(t, err)
+	assert.Equal(t, 1, customCount)
+}
+
+// If EmailSubmission/set accepts the message but onSuccessUpdateEmail fails to
+// move it to Sent, the outbox retains archival recovery (archive_uncertain) and
+// archives the sent copy on a later round without resubmitting the email.
+func TestJMAPSendArchivalRecoveryWhenOnSuccessUpdateFails(t *testing.T) {
+	e := coretest.New(t, coretest.WithoutAutoSync())
+	acc := e.AddAccount(t, "alice@example.com", coretest.ViaJMAP())
+	srv := e.JMAP(acc.ID)
+	draftsBox := srv.CreateMailbox("Drafts", mailbox.RoleDrafts)
+	sentBox := srv.CreateMailbox("Sent", mailbox.RoleSent)
+
+	var breakSent atomic.Bool
+	var proxy *httptest.Server
+	proxy = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		body, _ := io.ReadAll(r.Body)
+		if breakSent.Load() && r.URL.Path == "/jmap/api" &&
+			(bytes.Contains(body, []byte("EmailSubmission/set")) || bytes.Contains(body, []byte("Email/import"))) {
+			body = bytes.ReplaceAll(body, []byte(`"`+string(sentBox)+`"`), []byte(`"missing-sent"`))
+			body = bytes.ReplaceAll(body, []byte("mailboxIds/"+string(sentBox)), []byte("mailboxIds/missing-sent"))
+		}
+		req, err := http.NewRequestWithContext(r.Context(), r.Method, srv.URL()+r.URL.RequestURI(), bytes.NewReader(body))
+		if err != nil {
+			t.Fatal(err)
+		}
+		req.Header = r.Header.Clone()
+		resp, err := http.DefaultClient.Do(req)
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer resp.Body.Close()
+		out, _ := io.ReadAll(resp.Body)
+		out = bytes.ReplaceAll(out, []byte(srv.URL()), []byte(proxy.URL))
+		for k, vs := range resp.Header {
+			for _, v := range vs {
+				w.Header().Add(k, v)
+			}
+		}
+		w.WriteHeader(resp.StatusCode)
+		_, _ = w.Write(out)
+	}))
+	t.Cleanup(proxy.Close)
+
+	pu, err := url.Parse(proxy.URL)
+	require.NoError(t, err)
+	ph, ppStr, err := net.SplitHostPort(pu.Host)
+	require.NoError(t, err)
+	pp, err := strconv.Atoi(ppStr)
+	require.NoError(t, err)
+	ss := core.ServerSettings{
+		Username:  acc.Username,
+		Receiving: core.Server{Protocol: "jmap", Host: ph, Port: pp, Security: core.SecurityNone, Path: "/jmap/session"},
+	}
+	ss.Sending = ss.Receiving
+	_, err = e.Svc.UpdateAccount(t.Context(), acc.ID, core.AccountPatch{Servers: &ss})
+	require.NoError(t, err)
+	require.NoError(t, e.Svc.SyncNow(t.Context(), acc.ID))
+
+	d, err := e.Svc.NewDraft(t.Context(), acc.ID, "new", 0)
+	require.NoError(t, err)
+	d.To, d.Subject, d.HTML = []string{"dave@example.com"}, "Recover Sent", "<p>hi</p>"
+	_, err = e.Svc.SaveDraft(t.Context(), d)
+	require.NoError(t, err)
+	require.NoError(t, e.Svc.Send(t.Context(), d.ID))
+	e.AdvanceClock(core.UndoSendWindow)
+
+	breakSent.Store(true)
+	_ = e.Svc.SyncNow(t.Context(), acc.ID)
+
+	require.Len(t, srv.Submissions(), 1, "accepted once by EmailSubmission/set")
+	items, err := e.Svc.ListOutbox(t.Context(), acc.ID)
+	require.NoError(t, err)
+	require.Len(t, items, 1)
+	assert.Equal(t, "archive_uncertain", items[0].State, "retains archival recovery state instead of dropping item")
+
+	// Staged copy in Drafts was cleaned up.
+	var draftsLeft int
+	_, err = other(t, e, acc.ID).Sync(t.Context(), backend.SyncRequest{}, func(p backend.Page) error {
+		for _, ch := range p.Changes {
+			if ma, ok := ch.(backend.MessageAppeared); ok && ma.Location.Folder == backend.FolderRef(draftsBox) {
+				draftsLeft++
+			}
+		}
+		return nil
+	})
+	require.NoError(t, err)
+	assert.Zero(t, draftsLeft, "no leftover staged draft in Drafts")
+
+	// Once Sent is writable again, the next sync archives the sent copy without resubmitting.
+	breakSent.Store(false)
+	require.NoError(t, e.Svc.SyncNow(t.Context(), acc.ID))
+	assert.Len(t, srv.Submissions(), 1, "must never resubmit an already accepted message")
+	items, err = e.Svc.ListOutbox(t.Context(), acc.ID)
+	require.NoError(t, err)
+	assert.Empty(t, items, "outbox item finished after archival recovery")
+
+	require.NoError(t, e.Svc.SyncNow(t.Context(), acc.ID))
+	assert.Equal(t, 1, folderTotal(t, e, acc.ID, "Sent"))
+	assert.Equal(t, 0, folderTotal(t, e, acc.ID, "Drafts"))
 }
 
 func TestJMAPCheckRequiresSubmissionCapability(t *testing.T) {
