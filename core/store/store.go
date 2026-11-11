@@ -21,6 +21,8 @@ var ErrNewerDatabase = errors.New("store: database schema is newer than this ver
 // DB wraps a mygo sqlite connection.
 type DB struct{ *sqlite.DB }
 
+var isTest = testing.Testing
+
 // Open opens (creating if needed) the database at path and applies pending migrations.
 func Open(ctx context.Context, path string) (*DB, error) {
 	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
@@ -47,14 +49,15 @@ func (db *DB) init(ctx context.Context, path string) error {
 	if cur > len(Migrations) {
 		return fmt.Errorf("%w (have %d, know %d)", ErrNewerDatabase, cur, len(Migrations))
 	}
-	// Tests open a new database per case; FULL would fsync every migration.
-	var pragmas []string
-	if testing.Testing() {
-		pragmas = append(pragmas, "PRAGMA synchronous = OFF")
+	// Tests open a new database per case; OFF skips every fsync. Under WAL,
+	// NORMAL is crash-safe and syncs at checkpoints instead of every commit.
+	synchronous := "PRAGMA synchronous = NORMAL"
+	if isTest() {
+		synchronous = "PRAGMA synchronous = OFF"
 	}
 	// Only a new database takes auto_vacuum as set, and only before WAL
 	// writes its header; an older one converts with VACUUM below.
-	pragmas = append(pragmas, "PRAGMA auto_vacuum = INCREMENTAL", "PRAGMA foreign_keys = ON", "PRAGMA journal_mode = WAL")
+	pragmas := []string{synchronous, "PRAGMA auto_vacuum = INCREMENTAL", "PRAGMA foreign_keys = ON", "PRAGMA journal_mode = WAL"}
 	for _, p := range pragmas {
 		if _, err := db.Query(ctx, p); err != nil {
 			return err

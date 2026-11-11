@@ -778,6 +778,10 @@ var Migrations = [][]string{{
 	// A JMAP receiving slot's session resource path, as a session URL typed
 	// in gives it; '' discovers it at /.well-known/jmap.
 	`ALTER TABLE accounts ADD COLUMN recv_path TEXT NOT NULL DEFAULT ''`,
+}, {
+	// subjectThread looks up an account's messages in a date window, and
+	// account-scoped search orders by (date DESC, id DESC).
+	`CREATE INDEX messages_account_date ON messages(account_id, date DESC, id DESC)`,
 }}
 
 // HistoryRowsVersion is the schema version that keeps a conversation's

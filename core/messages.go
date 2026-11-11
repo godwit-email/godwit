@@ -371,7 +371,7 @@ func searchFilter(q SearchQuery) (string, []any) {
 		cond += " AND m.account_id = ?"
 		args = append(args, q.AccountID)
 	}
-	// shortcut: filters without text scan every message (no (account_id, date) index); add one if 100k-mail stores get slow.
+	// shortcut: all-accounts filters without text scan every message (no (date) index); add one if 100k-mail stores get slow.
 	if from := strings.TrimSpace(q.From); from != "" {
 		cond += ` AND m.from_addr LIKE ? ESCAPE '\'`
 		args = append(args, likeArg(from))

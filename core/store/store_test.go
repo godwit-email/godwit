@@ -626,3 +626,55 @@ func TestMigrationMessageLocations(t *testing.T) {
 		assert.Error(t, err, "messages.%s is gone", col)
 	}
 }
+
+// Outside tests, Open pairs WAL with synchronous = NORMAL (1) instead of
+// SQLite's default FULL (2), on both a new database and an existing one.
+func TestOpenProductionPragmas(t *testing.T) {
+	store.SetTestingForTest(t, false)
+	path := filepath.Join(t.TempDir(), "godwit.db")
+	for range 2 {
+		db, err := store.Open(ctx, path)
+		require.NoError(t, err)
+		rows, err := db.Query(ctx, "PRAGMA journal_mode")
+		require.NoError(t, err)
+		assert.Equal(t, "wal", strings.ToLower(store.Str(rows.Values[0][0])))
+		rows, err = db.Query(ctx, "PRAGMA synchronous")
+		require.NoError(t, err)
+		assert.Equal(t, int64(1), store.Int(rows.Values[0][0]), "NORMAL")
+		require.NoError(t, db.Close())
+	}
+}
+
+// Upgrading adds messages_account_date, so subject threading's date-window
+// lookup and account-scoped date ordering use the index without a temp sort.
+func TestMigrationMessagesAccountDateIndex(t *testing.T) {
+	all := store.Migrations
+	i := slices.IndexFunc(all, func(m []string) bool { return strings.Contains(strings.Join(m, "\n"), "messages_account_date") })
+	require.Positive(t, i)
+	path := filepath.Join(t.TempDir(), "godwit.db")
+	store.Migrations = all[:i]
+	db, err := store.Open(ctx, path)
+	store.Migrations = all
+	require.NoError(t, err)
+	seedMessage(t, db)
+	require.NoError(t, db.Close())
+
+	db, err = store.Open(ctx, path)
+	require.NoError(t, err)
+	defer db.Close()
+	rows, err := db.Query(ctx, "PRAGMA user_version")
+	require.NoError(t, err)
+	assert.Equal(t, int64(len(store.Migrations)), store.Int(rows.Values[0][0]))
+
+	for _, q := range []string{
+		`EXPLAIN QUERY PLAN SELECT thread_id, subject, from_addr, to_addrs, cc_addrs FROM messages
+			WHERE account_id = 1 AND thread_id IS NOT NULL AND date BETWEEN 100 AND 200 ORDER BY date DESC`,
+		`EXPLAIN QUERY PLAN SELECT id FROM messages WHERE account_id = 1 ORDER BY date DESC, id DESC LIMIT 50`,
+	} {
+		rows, err := db.Query(ctx, q)
+		require.NoError(t, err)
+		plan := fmt.Sprint(rows.Values)
+		assert.Contains(t, plan, "messages_account_date", q)
+		assert.NotContains(t, plan, "TEMP B-TREE", q)
+	}
+}
