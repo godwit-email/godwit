@@ -209,6 +209,9 @@ func (s *Sender) Send(ctx context.Context, from string, rcpts []string, raw []by
 	}
 
 	if me, ok := impInv.Args.(*gojmap.MethodError); ok {
+		if me.Type == "serverPartialFail" {
+			return fmt.Errorf("%w: %v", backend.ErrUncertain, methodError{me})
+		}
 		return methodError{me}
 	}
 	ir, ok := impInv.Args.(*email.ImportResponse)
@@ -236,8 +239,14 @@ func (s *Sender) Send(ctx context.Context, from string, rcpts []string, raw []by
 	}
 
 	if me, ok := subInv.Args.(*gojmap.MethodError); ok {
+		// RFC 8620 §3.6.2 allows serverPartialFail after partial state changes:
+		// the submission may already have gone out (and may have moved created.ID
+		// to Sent), so preserve recovery evidence and report ErrUncertain.
+		if me.Type == "serverPartialFail" {
+			return fmt.Errorf("%w: %v", backend.ErrUncertain, methodError{me})
+		}
 		cleanupStaged()
-		if me.Type == "forbidden" {
+		if me.Type == "forbidden" || me.Type == "accountReadOnly" {
 			return &backend.RejectedError{Stage: "MAIL", Code: 550, Enhanced: "5.7.1", Message: me.Error()}
 		}
 		return methodError{me}
@@ -390,7 +399,13 @@ func importError(se *gojmap.SetError) error {
 func submissionRejected(se *gojmap.SetError) *backend.RejectedError {
 	msg := formatSetError(se)
 	switch se.Type {
-	case "forbiddenFrom", "forbiddenMailFrom", "forbiddenToSend":
+	case "rateLimit":
+		return &backend.RejectedError{Stage: "MAIL", Code: 450, Enhanced: "4.7.0", Message: msg}
+	case "overQuota":
+		return &backend.RejectedError{Stage: "DATA", Code: 452, Enhanced: "4.2.2", Message: msg}
+	case "notFound":
+		return &backend.RejectedError{Stage: "MAIL", Code: 451, Enhanced: "4.3.0", Message: msg}
+	case "forbidden", "forbiddenFrom", "forbiddenMailFrom", "forbiddenToSend":
 		return &backend.RejectedError{Stage: "MAIL", Code: 550, Enhanced: "5.7.1", Message: msg}
 	case "tooManyRecipients":
 		return &backend.RejectedError{Stage: "RCPT", Code: 550, Enhanced: "5.5.3", Message: msg}
@@ -398,7 +413,7 @@ func submissionRejected(se *gojmap.SetError) *backend.RejectedError {
 		return &backend.RejectedError{Stage: "RCPT", Code: 550, Enhanced: "5.1.1", Message: msg}
 	case "tooLarge":
 		return &backend.RejectedError{Stage: "DATA", Code: 552, Enhanced: "5.3.4", Message: msg}
-	case "invalidEmail":
+	case "invalidEmail", "invalidProperties":
 		return &backend.RejectedError{Stage: "DATA", Code: 554, Message: msg}
 	default:
 		return &backend.RejectedError{Stage: "DATA", Code: 554, Message: msg}

@@ -3,6 +3,7 @@ package jmap_test
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"errors"
 	"io"
 	"net/http"
@@ -337,5 +338,90 @@ func TestSendOnSuccessUpdateFailureMarksUnsavedAndCleansDraft(t *testing.T) {
 	}
 	if got := mailboxEmails(t, srv.Server, srv.sent); len(got) != 0 {
 		t.Errorf("Sent has %d messages before recovery, want 0", len(got))
+	}
+}
+
+func TestSendTransientNotCreatedIsRetryable(t *testing.T) {
+	for _, typ := range []string{"rateLimit", "overQuota", "notFound"} {
+		t.Run(typ, func(t *testing.T) {
+			srv := newTestServer(t, "alice@example.com")
+			desc := "try again later"
+			srv.FailNextSubmission(&gojmap.SetError{Type: typ, Description: &desc})
+
+			err := newTestSender(srv.Server, "secret").Send(t.Context(), "alice@example.com", []string{"bob@example.com"}, []byte(testRaw))
+			if errors.Is(err, backend.ErrUncertain) {
+				t.Fatalf("Send on %s = %v, must not be ErrUncertain", typ, err)
+			}
+			var re *backend.RejectedError
+			if !errors.As(err, &re) || re.Code < 400 || re.Code >= 500 {
+				t.Fatalf("Send on %s = %v, want 4xx *backend.RejectedError", typ, err)
+			}
+			if got := mailboxEmails(t, srv.Server, srv.drafts); len(got) != 0 {
+				t.Errorf("Drafts has %d leftover staged emails, want 0", len(got))
+			}
+		})
+	}
+}
+
+func TestSendServerPartialFailReturnsUncertainAndPreservesEvidence(t *testing.T) {
+	srv := newTestServer(t, "alice@example.com")
+	var proxy *httptest.Server
+	proxy = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		body, _ := io.ReadAll(r.Body)
+		req, err := http.NewRequestWithContext(r.Context(), r.Method, srv.URL()+r.URL.RequestURI(), bytes.NewReader(body))
+		if err != nil {
+			t.Fatal(err)
+		}
+		req.Header = r.Header.Clone()
+		resp, err := http.DefaultClient.Do(req)
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer resp.Body.Close()
+		out, _ := io.ReadAll(resp.Body)
+		if r.URL.Path == "/jmap/api" && bytes.Contains(body, []byte("EmailSubmission/set")) {
+			var wire struct {
+				MethodResponses [][3]json.RawMessage `json:"methodResponses"`
+				SessionState    string               `json:"sessionState"`
+			}
+			if err := json.Unmarshal(out, &wire); err != nil {
+				t.Fatal(err)
+			}
+			for i := range wire.MethodResponses {
+				var name string
+				_ = json.Unmarshal(wire.MethodResponses[i][0], &name)
+				if name == "EmailSubmission/set" {
+					wire.MethodResponses[i][0] = json.RawMessage(`"error"`)
+					wire.MethodResponses[i][1] = json.RawMessage(`{"type":"serverPartialFail"}`)
+					wire.MethodResponses = wire.MethodResponses[:i+1]
+					break
+				}
+			}
+			out, _ = json.Marshal(wire)
+		}
+		out = bytes.ReplaceAll(out, []byte(srv.URL()), []byte(proxy.URL))
+		for k, vs := range resp.Header {
+			for _, v := range vs {
+				w.Header().Add(k, v)
+			}
+		}
+		w.WriteHeader(resp.StatusCode)
+		_, _ = w.Write(out)
+	}))
+	t.Cleanup(proxy.Close)
+
+	snd := jmap.NewSender(jmap.Config{
+		SessionURL: proxy.URL + "/jmap/session",
+		Credentials: func(context.Context) (backend.Credentials, error) {
+			return backend.Credentials{Token: "secret"}, nil
+		},
+	})
+	err := snd.Send(t.Context(), "alice@example.com", []string{"bob@example.com"}, []byte(testRaw))
+	if !errors.Is(err, backend.ErrUncertain) {
+		t.Fatalf("Send on serverPartialFail = %v, want ErrUncertain", err)
+	}
+	// Sent copy created before serverPartialFail must not be destroyed by cleanupStaged.
+	if got := mailboxEmails(t, srv.Server, srv.sent); len(got) != 1 {
+		t.Fatalf("Sent has %d messages after serverPartialFail, want 1 preserved for recovery", len(got))
 	}
 }

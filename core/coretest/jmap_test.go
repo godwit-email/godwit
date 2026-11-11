@@ -430,6 +430,127 @@ func TestJMAPSendArchivalRecoveryWhenOnSuccessUpdateFails(t *testing.T) {
 	assert.Equal(t, 0, folderTotal(t, e, acc.ID, "Drafts"))
 }
 
+// A rate-limited EmailSubmission/set creation keeps the outbox item queued for
+// automatic backoff retry instead of failing it permanently.
+func TestJMAPSendRateLimitRetriesWithBackoff(t *testing.T) {
+	e := coretest.New(t, coretest.WithoutAutoSync())
+	acc := e.AddAccount(t, "alice@example.com", coretest.ViaJMAP())
+	srv := e.JMAP(acc.ID)
+	srv.CreateMailbox("Drafts", mailbox.RoleDrafts)
+	srv.CreateMailbox("Sent", mailbox.RoleSent)
+	require.NoError(t, e.Svc.SyncNow(t.Context(), acc.ID))
+
+	d, err := e.Svc.NewDraft(t.Context(), acc.ID, "new", 0)
+	require.NoError(t, err)
+	d.To, d.Subject, d.HTML = []string{"dave@example.com"}, "Rate limited", "<p>retry me</p>"
+	_, err = e.Svc.SaveDraft(t.Context(), d)
+	require.NoError(t, err)
+	require.NoError(t, e.Svc.Send(t.Context(), d.ID))
+	e.AdvanceClock(core.UndoSendWindow)
+
+	desc := "too many submissions per minute"
+	srv.FailNextSubmission(&gojmap.SetError{Type: "rateLimit", Description: &desc})
+	require.NoError(t, e.Svc.SyncNow(t.Context(), acc.ID))
+
+	assert.Empty(t, srv.Submissions())
+	items, err := e.Svc.ListOutbox(t.Context(), acc.ID)
+	require.NoError(t, err)
+	require.Len(t, items, 1)
+	assert.Equal(t, "queued", items[0].State, "rateLimit must stay queued for backoff retry")
+	assert.Equal(t, 1, items[0].Attempts)
+
+	// Advance past first retry backoff and verify automatic delivery succeeds.
+	e.AdvanceClock(2 * time.Minute)
+	require.NoError(t, e.Svc.SyncNow(t.Context(), acc.ID))
+	assert.Len(t, srv.Submissions(), 1)
+	items, err = e.Svc.ListOutbox(t.Context(), acc.ID)
+	require.NoError(t, err)
+	assert.Empty(t, items)
+}
+
+// A serverPartialFail method error on EmailSubmission/set moves the outbox item
+// to send_uncertain instead of queued so it is never automatically resent.
+func TestJMAPSendServerPartialFailEntersSendUncertainWithoutResending(t *testing.T) {
+	e := coretest.New(t, coretest.WithoutAutoSync())
+	acc := e.AddAccount(t, "alice@example.com", coretest.ViaJMAP())
+	srv := e.JMAP(acc.ID)
+	srv.CreateMailbox("Drafts", mailbox.RoleDrafts)
+	srv.CreateMailbox("Sent", mailbox.RoleSent)
+
+	var partialFail atomic.Bool
+	var subCalls atomic.Int32
+	var proxy *httptest.Server
+	proxy = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		body, _ := io.ReadAll(r.Body)
+		if r.URL.Path == "/jmap/api" && bytes.Contains(body, []byte("EmailSubmission/set")) {
+			subCalls.Add(1)
+			if partialFail.CompareAndSwap(true, false) {
+				// Simulate a server that returns serverPartialFail before reaching Sent.
+				w.Header().Set("Content-Type", "application/json")
+				_, _ = w.Write([]byte(`{"sessionState":"0","methodResponses":[["Email/import",{"accountId":"u","created":{"m":{"id":"e999"}}},"0"],["error",{"type":"serverPartialFail"},"1"]]}`))
+				return
+			}
+		}
+		req, err := http.NewRequestWithContext(r.Context(), r.Method, srv.URL()+r.URL.RequestURI(), bytes.NewReader(body))
+		if err != nil {
+			t.Fatal(err)
+		}
+		req.Header = r.Header.Clone()
+		resp, err := http.DefaultClient.Do(req)
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer resp.Body.Close()
+		out, _ := io.ReadAll(resp.Body)
+		out = bytes.ReplaceAll(out, []byte(srv.URL()), []byte(proxy.URL))
+		for k, vs := range resp.Header {
+			for _, v := range vs {
+				w.Header().Add(k, v)
+			}
+		}
+		w.WriteHeader(resp.StatusCode)
+		_, _ = w.Write(out)
+	}))
+	t.Cleanup(proxy.Close)
+
+	pu, err := url.Parse(proxy.URL)
+	require.NoError(t, err)
+	ph, ppStr, err := net.SplitHostPort(pu.Host)
+	require.NoError(t, err)
+	pp, err := strconv.Atoi(ppStr)
+	require.NoError(t, err)
+	ss := core.ServerSettings{
+		Username:  acc.Username,
+		Receiving: core.Server{Protocol: "jmap", Host: ph, Port: pp, Security: core.SecurityNone, Path: "/jmap/session"},
+	}
+	ss.Sending = ss.Receiving
+	_, err = e.Svc.UpdateAccount(t.Context(), acc.ID, core.AccountPatch{Servers: &ss})
+	require.NoError(t, err)
+	require.NoError(t, e.Svc.SyncNow(t.Context(), acc.ID))
+
+	d, err := e.Svc.NewDraft(t.Context(), acc.ID, "new", 0)
+	require.NoError(t, err)
+	d.To, d.Subject, d.HTML = []string{"dave@example.com"}, "Partial Fail", "<p>uncertain</p>"
+	_, err = e.Svc.SaveDraft(t.Context(), d)
+	require.NoError(t, err)
+	require.NoError(t, e.Svc.Send(t.Context(), d.ID))
+	e.AdvanceClock(core.UndoSendWindow)
+
+	partialFail.Store(true)
+	require.NoError(t, e.Svc.SyncNow(t.Context(), acc.ID))
+	assert.Equal(t, int32(1), subCalls.Load())
+
+	items, err := e.Svc.ListOutbox(t.Context(), acc.ID)
+	require.NoError(t, err)
+	require.Len(t, items, 1)
+	assert.Equal(t, "send_uncertain", items[0].State, "serverPartialFail must enter send_uncertain")
+
+	// Later syncs must never automatically resend an item in send_uncertain.
+	e.AdvanceClock(10 * time.Minute)
+	require.NoError(t, e.Svc.SyncNow(t.Context(), acc.ID))
+	assert.Equal(t, int32(1), subCalls.Load(), "must not automatically retry after serverPartialFail")
+}
+
 func TestJMAPCheckRequiresSubmissionCapability(t *testing.T) {
 	e := coretest.New(t, coretest.WithoutAutoSync())
 	setJMAP(t, e, true)
