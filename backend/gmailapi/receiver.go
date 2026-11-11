@@ -1135,7 +1135,7 @@ func (r *Receiver) applyLabels(ctx context.Context, at backend.Location, to back
 		}
 		return doneRes(), nil
 	}
-	if at.Folder == "TRASH" && to == AllMailRef && !effectiveAddOnly {
+	if at.Folder == "TRASH" && to == AllMailRef && !effectiveAddOnly && !slices.Contains(m.LabelIDs, "SPAM") {
 		if err := r.c.untrashMessage(ctx, id); err != nil {
 			return mapApplyErr(err)
 		}
@@ -1145,7 +1145,14 @@ func (r *Receiver) applyLabels(ctx context.Context, at backend.Location, to back
 	if to != "" && to != AllMailRef {
 		add = append(add, string(to))
 	}
-	if !effectiveAddOnly && at.Folder != "" && at.Folder != AllMailRef && !isImmutableSystemLabel(at.Folder) && at.Folder != to {
+	if to != "" && !isBinnedFolder(to) {
+		for _, bin := range []string{"TRASH", "SPAM"} {
+			if slices.Contains(m.LabelIDs, bin) {
+				remove = append(remove, bin)
+			}
+		}
+	}
+	if !effectiveAddOnly && at.Folder != "" && at.Folder != AllMailRef && !isImmutableSystemLabel(at.Folder) && at.Folder != to && !slices.Contains(remove, string(at.Folder)) {
 		remove = append(remove, string(at.Folder))
 	}
 	if len(add) > 0 || len(remove) > 0 {

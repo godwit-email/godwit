@@ -605,3 +605,62 @@ func TestApplyExhaustedRateLimitRemainsRetryable(t *testing.T) {
 		}
 	}
 }
+
+func TestRestoreDeletedSpamClearsBothBinLabels(t *testing.T) {
+	for _, target := range []backend.FolderRef{"INBOX", gmailapi.AllMailRef} {
+		srv := gmailapitest.Start(t)
+		msgID := srv.AddMessage(backendtest.Message("spam@x", "false positive"), "SPAM")
+		r := contractServer{srv}.Receiver(t)
+
+		local := newMemLocal()
+		var cur backend.Cursor
+		states := map[backend.FolderRef]backend.FolderState{}
+		runSync := func() {
+			_, err := r.Sync(t.Context(), backend.SyncRequest{
+				Account: cur,
+				Folders: maps.Clone(states),
+				Local:   local,
+			}, func(p backend.Page) error {
+				local.apply(p)
+				if p.Account != "" {
+					cur = p.Account
+				}
+				for f, st := range p.Folders {
+					states[f] = st
+				}
+				return nil
+			})
+			if err != nil {
+				t.Fatalf("Sync: %v", err)
+			}
+		}
+
+		runSync()
+		// Move Spam -> Trash (server retains SPAM alongside TRASH), then restore Trash -> target.
+		res, err := r.Apply(t.Context(), backend.Move{
+			At: backend.Location{Folder: "SPAM", Ref: backend.MessageRef(msgID), ServerID: msgID},
+			To: "TRASH",
+		})
+		if err != nil || res.Outcome != backend.Done {
+			t.Fatalf("Move SPAM->TRASH = %+v, %v", res, err)
+		}
+		res, err = r.Apply(t.Context(), backend.Move{
+			At: backend.Location{Folder: "TRASH", Ref: backend.MessageRef(msgID), ServerID: msgID},
+			To: target,
+		})
+		if err != nil || res.Outcome != backend.Done {
+			t.Fatalf("Move TRASH->%s = %+v, %v", target, res, err)
+		}
+		runSync()
+
+		if _, ok := local.folders["SPAM"][backend.MessageRef(msgID)]; ok {
+			t.Errorf("target %s: restored message reappeared in SPAM", target)
+		}
+		if _, ok := local.folders["TRASH"][backend.MessageRef(msgID)]; ok {
+			t.Errorf("target %s: restored message remained in TRASH", target)
+		}
+		if _, ok := local.folders[target][backend.MessageRef(msgID)]; !ok {
+			t.Errorf("target %s: restored message missing from %s", target, target)
+		}
+	}
+}
