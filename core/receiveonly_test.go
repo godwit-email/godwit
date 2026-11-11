@@ -28,7 +28,7 @@ func newReceiveOnlyEnv(t *testing.T) *sendEnv {
 	_, err = s.AddAccount(bg, ai)
 	var ce *CheckError
 	require.ErrorAs(t, err, &ce, "SMTP still blocks a plain add")
-	assert.True(t, ce.Report.OnlySMTPFailed())
+	assert.True(t, ce.Report.OnlySendingFailed())
 
 	ai.ReceiveOnly = true
 	acc, err := s.AddAccount(bg, ai)
@@ -161,7 +161,7 @@ func TestRecheckSending(t *testing.T) {
 	e := newReceiveOnlyEnv(t)
 	r, err := e.s.RecheckSending(bg, e.acc.ID)
 	require.NoError(t, err)
-	assert.True(t, r.OnlySMTPFailed())
+	assert.True(t, r.OnlySendingFailed())
 	acc, err := e.s.account(bg, e.acc.ID)
 	require.NoError(t, err)
 	assert.True(t, acc.ReceiveOnly, "still failing: stays receive-only")

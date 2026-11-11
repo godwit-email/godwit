@@ -46,7 +46,8 @@ func (r *Receiver) Close() error {
 const ReasonNoSubmission = "jmap.no_submission"
 
 // ErrNoSubmission is Check or Send on a session without JMAP email submission.
-// Its message is ReasonNoSubmission.
+// Its message is ReasonNoSubmission. Check returns it with a full CheckResult:
+// the account can still receive.
 var ErrNoSubmission = errors.New(ReasonNoSubmission)
 
 const (
@@ -92,9 +93,6 @@ func (r *Receiver) Check(ctx context.Context) (backend.CheckResult, error) {
 	if err != nil {
 		return backend.CheckResult{}, err
 	}
-	if !hasSubmission(s, acct) {
-		return backend.CheckResult{}, ErrNoSubmission
-	}
 	boxes, _, err := r.mailboxes(ctx)
 	if err != nil {
 		return backend.CheckResult{}, err
@@ -103,7 +101,11 @@ func (r *Receiver) Check(ctx context.Context) (backend.CheckResult, error) {
 	host := r.c.host
 	r.c.mu.Unlock()
 	d, _ := r.Describe(ctx)
-	return backend.CheckResult{Host: host, Folders: len(boxes), Description: d}, nil
+	res := backend.CheckResult{Host: host, Folders: len(boxes), Description: d}
+	if !hasSubmission(s, acct) { // receiving works: the result stands, only sending is refused
+		return res, ErrNoSubmission
+	}
+	return res, nil
 }
 
 func (r *Receiver) mailboxes(ctx context.Context) ([]*mailbox.Mailbox, string, error) {

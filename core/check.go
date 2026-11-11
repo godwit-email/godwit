@@ -33,9 +33,10 @@ const (
 )
 
 // CheckStep is one item of a connection check. Name is settings, imap (jmap
-// for a JMAP account, ews for an EWS one, pop3 for a POP3 one) or smtp; JMAP
-// and EWS accounts send through the server they receive from, so their check
-// has no smtp step.
+// for a JMAP account, ews for an EWS one, pop3 for a POP3 one) and the sending
+// step: smtp, or jmap_send for a JMAP account (whose session must allow email
+// submission). An EWS account sends through the server it receives from, so
+// its check has no sending step.
 // Detail comes from conn's already redacted errors: no password, token or server text.
 type CheckStep struct {
 	Name    string
@@ -71,9 +72,9 @@ func (r CheckReport) OK() bool {
 	return len(r.Steps) > 0
 }
 
-// OnlySMTPFailed reports whether settings and imap passed and smtp failed:
-// what AccountInput.ReceiveOnly lets through.
-func (r CheckReport) OnlySMTPFailed() bool {
+// OnlySendingFailed reports whether settings and the receiving step passed and
+// the sending step failed: what AccountInput.ReceiveOnly lets through.
+func (r CheckReport) OnlySendingFailed() bool {
 	return len(r.Steps) == 3 && r.Steps[0].OK && r.Steps[1].OK && !r.Steps[2].OK && !r.Steps[2].Skipped
 }
 
@@ -113,7 +114,7 @@ func (s *Service) CheckAccount(ctx context.Context, in AccountInput) (CheckRepor
 // token is a stored OAuth account's access token, used instead of in.Password.
 func (s *Service) check(ctx context.Context, in AccountInput, token string) (CheckReport, error) {
 	r := CheckReport{Steps: []CheckStep{{Name: "settings"}, {Name: in.receiving()}, {Name: "smtp"}}}
-	var first error
+	var first, noSend error // noSend: the JMAP session receives but may not send
 	fail := func(i int, kind conn.FailureKind, err error) {
 		r.Steps[i].Kind, r.Steps[i].Detail, first = kind, capDetail(err.Error()), err
 	}
@@ -160,6 +161,9 @@ func (s *Service) check(ctx context.Context, in AccountInput, token string) (Che
 			defer cancel()
 			c, err := recv.Check(ctx)
 			r.Folders, r.Host, r.desc = c.Folders, c.Host, c.Description
+			if errors.Is(err, jmap.ErrNoSubmission) { // the jmap_send step's failure
+				noSend, err = err, nil
+			}
 			return conn.Classify(err), err
 		},
 		func() (conn.FailureKind, error) {
@@ -181,8 +185,12 @@ func (s *Service) check(ctx context.Context, in AccountInput, token string) (Che
 			return conn.Classify(err), err
 		},
 	}
-	if p := in.receiving(); p == auth.EWS || p == auth.JMAP {
+	switch in.receiving() {
+	case auth.EWS:
 		r.Steps, steps = r.Steps[:2], steps[:2]
+	case auth.JMAP: // it sends through the session it signed in to
+		r.Steps[2].Name = "jmap_send"
+		steps[2] = func() (conn.FailureKind, error) { return conn.Classify(noSend), noSend }
 	}
 	for i, run := range steps {
 		if first != nil {

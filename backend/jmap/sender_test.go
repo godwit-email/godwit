@@ -208,8 +208,12 @@ func TestNoSubmissionCapability(t *testing.T) {
 	})
 	defer recv.Close()
 
-	if _, err := recv.Check(t.Context()); !errors.Is(err, jmap.ErrNoSubmission) {
+	res, err := recv.Check(t.Context())
+	if !errors.Is(err, jmap.ErrNoSubmission) {
 		t.Fatalf("Check without submission capability = %v, want ErrNoSubmission", err)
+	}
+	if res.Host == "" || res.Folders == 0 {
+		t.Errorf("Check without submission = %+v, want the receiving result with the error", res)
 	}
 	desc, err := recv.Describe(t.Context())
 	if err != nil {
@@ -224,8 +228,8 @@ func TestNoSubmissionCapability(t *testing.T) {
 		t.Fatalf("Send without submission capability = %v, want ErrNoSubmission", err)
 	}
 	var re *backend.RejectedError
-	if !errors.As(err, &re) || re.Code < 500 {
-		t.Fatalf("Send without submission capability = %v, want permanent *backend.RejectedError", err)
+	if !errors.As(err, &re) || re.Code < 500 || re.Message != jmap.ReasonNoSubmission {
+		t.Fatalf("Send without submission capability = %v, want permanent *backend.RejectedError saying %s", err, jmap.ReasonNoSubmission)
 	}
 }
 

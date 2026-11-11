@@ -69,7 +69,7 @@ func (s *Sender) Send(ctx context.Context, from string, rcpts []string, raw []by
 			Stage:    "MAIL",
 			Code:     550,
 			Enhanced: "5.7.1",
-			Message:  "the server does not support JMAP email submission",
+			Message:  ReasonNoSubmission, // the outbox shows its localized reason: get a token that may send
 		})
 	}
 

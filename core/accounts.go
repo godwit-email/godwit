@@ -270,7 +270,7 @@ func (s *Service) AddAccount(ctx context.Context, in AccountInput) (Account, err
 		return Account{}, errPOP3Off
 	}
 	checked, checkErr := s.check(ctx, in, "")
-	receiveOnly := in.ReceiveOnly && checked.OnlySMTPFailed()
+	receiveOnly := in.ReceiveOnly && checked.OnlySendingFailed()
 	if checkErr != nil && !receiveOnly {
 		return Account{}, &CheckError{Report: checked, err: checkErr}
 	}
@@ -611,7 +611,9 @@ var errNotPassword = errors.New("the account does not sign in with a password")
 // worker resumes and the outbox sends in its next round. A sending slot with
 // a password of its own keeps it (UpdateSendPassword). A failed check is a
 // *CheckError and leaves the keychain unchanged; for a receive-only account
-// only IMAP must pass, and a passing SMTP step makes it send again.
+// only the receiving step must pass, and a passing sending step makes it send
+// again. A JMAP API token whose session may not send is saved too, and the
+// account becomes receive-only.
 func (s *Service) UpdatePassword(ctx context.Context, id int64, password string) error {
 	return s.updatePassword(ctx, id, password, false)
 }
@@ -648,15 +650,16 @@ func (s *Service) updatePassword(ctx context.Context, id int64, password string,
 		return err
 	}
 	r, err := s.check(ctx, in, "")
-	if err != nil && !(acc.ReceiveOnly && r.OnlySMTPFailed()) { // a receive-only account needs IMAP only
+	// A receive-only account needs receiving only; so does a JMAP sign-in that may not send.
+	if err != nil && !((acc.ReceiveOnly || acc.Receiving.Protocol == auth.JMAP) && r.OnlySendingFailed()) {
 		return &CheckError{Report: r, err: err}
 	}
 	// A refusal of the old password still in flight is stale after credentialsUpdated.
 	if err := keychainSet(user, password); err != nil {
 		return fmt.Errorf("save credentials to keychain: %w", err)
 	}
-	if acc.ReceiveOnly && err == nil { // SMTP takes the new password: it sends again
-		if _, err := s.db.Execute(ctx, "UPDATE accounts SET receive_only = 0 WHERE id = ?", id); err != nil {
+	if acc.ReceiveOnly != (err != nil) { // sending takes the new password, or (JMAP) refuses it
+		if _, err := s.db.Execute(ctx, "UPDATE accounts SET receive_only = ? WHERE id = ?", b2i(err != nil), id); err != nil {
 			return err
 		}
 	}
@@ -849,9 +852,9 @@ func (s *Service) UpdateAccount(ctx context.Context, id int64, p AccountPatch) (
 		if err != nil && !errors.As(err, &ce) {
 			return Account{}, err
 		}
-		// A receive-only account may change servers while SMTP still fails; a
-		// passing SMTP check makes it send again.
-		if err != nil && !(acc.ReceiveOnly && r.OnlySMTPFailed()) {
+		// A receive-only account may change servers while sending still fails; a
+		// passing sending step makes it send again.
+		if err != nil && !(acc.ReceiveOnly && r.OnlySendingFailed()) {
 			return Account{}, err
 		}
 		if r.URL != "" { // found by Autodiscover

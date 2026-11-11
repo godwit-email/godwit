@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/egoist/mygo/ui"
+	"github.com/godwit-email/godwit/backend/jmap"
 	"github.com/godwit-email/godwit/core"
 	"github.com/godwit-email/godwit/internal/i18n"
 	"github.com/godwit-email/godwit/internal/kit"
@@ -130,6 +131,8 @@ func failureText(it core.OutboxItem) (why, server string) {
 		return it.LastError, ""
 	case f.Reason == "expired":
 		return i18n.T("outbox.failure.expired"), ""
+	case f.Message == jmap.ReasonNoSubmission: // JMAP's sign-in may not send: the user can fix that
+		return i18n.T("outbox.failure.jmap_no_submission"), ""
 	case f.Enhanced == "5.3.4" || f.Enhanced == "5.2.3" || f.Code == 552 && f.Stage == "DATA":
 		why = i18n.T("outbox.failure.too_large")
 	case f.Stage == "RCPT" && f.Recipient != "":

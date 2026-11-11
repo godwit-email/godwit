@@ -424,11 +424,15 @@ func (o *onboarding) recvStep() string {
 	return auth.IMAP
 }
 
-// checkSteps are the check's steps before it reports: JMAP and EWS accounts
-// send through the server they receive from, so they have no smtp step.
+// checkSteps are the check's steps before it reports: a JMAP account sends
+// through its session (jmap_send), and an EWS one through the server it
+// receives from, so it has no sending step.
 func (o *onboarding) checkSteps() []core.CheckStep {
 	steps := []core.CheckStep{{Name: "settings"}, {Name: o.recvStep()}, {Name: "smtp"}}
-	if o.jmap() || o.ews() {
+	switch {
+	case o.jmap():
+		steps[2].Name = "jmap_send"
+	case o.ews():
 		return steps[:2]
 	}
 	return steps
@@ -1200,6 +1204,9 @@ func (o *onboarding) checkRow(st core.CheckStep) (text, detail string, status in
 	if st.Name == "settings" {
 		return i18n.Tf(k+".failed", o.settingsReason(st)), o.settingsNext(), 2
 	}
+	if st.Detail == jmap.ReasonNoSubmission { // it signed in, but may not send: another token, or receive only
+		return i18n.Tf(k+".failed", i18n.T("feature.reason."+st.Detail)), i18n.T("onboarding.next.jmap_submission"), 2
+	}
 	switch kind := string(st.Kind); kind {
 	case string(core.KindConfirm): // Autodiscover waits for the user before the password leaves the domain
 		return i18n.Tf(k+".confirm", o.report.Confirm), i18n.T("onboarding.next.confirm"), 2
@@ -1223,7 +1230,7 @@ func (o *onboarding) checkRow(st core.CheckStep) (text, detail string, status in
 		if st.Detail == ews.ReasonExtendedProtection { // the reason says to ask the administrator
 			reason, next = i18n.T("feature.reason."+st.Detail), ""
 		}
-		if st.Detail == pop3.ReasonNoUIDL || st.Detail == jmap.ReasonNoSubmission { // the server cannot be used at all, not merely misconfigured
+		if st.Detail == pop3.ReasonNoUIDL { // the server cannot be used at all, not merely misconfigured
 			reason = i18n.T("feature.reason." + st.Detail)
 		}
 	case "proxy_unreachable", "proxy_refused", "proxy_auth":
@@ -1337,7 +1344,7 @@ func (o *onboarding) checkView(c *ui.Context) {
 			kit.Button(c, i18n.Tf("onboarding.retype", o.secretName()), kit.ButtonOpts{Size: kit.SizeLg}).PaddingX(th.Space(3.5)).OnClick(func() { o.retry(false) })
 			kit.Button(c, i18n.T("onboarding.manual"), kit.ButtonOpts{Variant: kit.Outline, Size: kit.SizeLg}).PaddingX(th.Space(3.5)).FontWeight(400).OnClick(func() { o.retry(true) })
 		})
-		if o.report.OnlySMTPFailed() { // mail can still come in: the account just never sends
+		if o.report.OnlySendingFailed() { // mail can still come in: the account just never sends
 			kit.Button(c, i18n.T("onboarding.receive_only"), kit.ButtonOpts{Variant: kit.Ghost, Size: kit.SizeLg}).PaddingX(th.Space(3.5)).FontWeight(400).
 				OnClick(func() { o.receiveOnly = true; o.goTo(stepDone) })
 		}

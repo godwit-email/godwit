@@ -46,7 +46,8 @@ func TestJMAPAddAccount(t *testing.T) {
 	r, err := e.Svc.CheckAccount(t.Context(), in)
 	require.NoError(t, err)
 	require.True(t, r.OK(), "%+v", r.Steps)
-	require.Len(t, r.Steps, 2)
+	require.Len(t, r.Steps, 3)
+	assert.Equal(t, "jmap_send", r.Steps[2].Name)
 	assert.Equal(t, "jmap", r.Steps[1].Name)
 	assert.Equal(t, in.Receiving.Host+":"+strconv.Itoa(in.Receiving.Port), r.Host)
 	acc, err := e.Svc.AddAccount(t.Context(), in)
@@ -551,24 +552,67 @@ func TestJMAPSendServerPartialFailEntersSendUncertainWithoutResending(t *testing
 	assert.Equal(t, int32(1), subCalls.Load(), "must not automatically retry after serverPartialFail")
 }
 
-func TestJMAPCheckRequiresSubmissionCapability(t *testing.T) {
+// A JMAP session without urn:ietf:params:jmap:submission fails only the
+// check's sending step: the account can be added receive-only.
+func TestJMAPNoSubmissionAddsReceiveOnly(t *testing.T) {
 	e := coretest.New(t, coretest.WithoutAutoSync())
 	setJMAP(t, e, true)
 	in := e.StartJMAPServers(t, "alice@example.com")
-	// Look up the started server via CheckAccount first, then disable submission.
+	seed, err := e.Svc.AddAccount(t.Context(), in)
+	require.NoError(t, err)
+	e.JMAP(seed.ID).DisableSubmission()
+
+	in.Email = "other@example.com"
+	r, err := e.Svc.CheckAccount(t.Context(), in)
+	require.NoError(t, err)
+	require.Len(t, r.Steps, 3)
+	assert.True(t, r.Steps[1].OK, "receiving still signs in")
+	assert.Equal(t, "jmap_send", r.Steps[2].Name)
+	assert.Equal(t, jmap.ReasonNoSubmission, r.Steps[2].Detail)
+	assert.True(t, r.OnlySendingFailed())
+	_, err = e.Svc.AddAccount(t.Context(), in)
+	assert.ErrorIs(t, err, jmap.ErrNoSubmission, "not added as a sending account")
+
+	in.ReceiveOnly = true
 	acc, err := e.Svc.AddAccount(t.Context(), in)
 	require.NoError(t, err)
+	assert.True(t, acc.ReceiveOnly)
+}
+
+// An existing JMAP account whose sign-in may not send fails its message with
+// the no-submission reason, and a new token without submission is still
+// saved: the account becomes receive-only.
+func TestJMAPNoSubmissionSendFailsAndTokenUpdateKeepsReceiving(t *testing.T) {
+	e := coretest.New(t, coretest.WithoutAutoSync())
+	acc := e.AddAccount(t, "alice@example.com", coretest.ViaJMAP())
 	srv := e.JMAP(acc.ID)
+	srv.CreateMailbox("Drafts", mailbox.RoleDrafts)
+	srv.CreateMailbox("Sent", mailbox.RoleSent)
+	require.NoError(t, e.Svc.SyncNow(t.Context(), acc.ID))
 	srv.DisableSubmission()
 
-	in2 := in
-	in2.Email = "other@example.com"
-	r, err := e.Svc.CheckAccount(t.Context(), in2)
+	d, err := e.Svc.NewDraft(t.Context(), acc.ID, "new", 0)
 	require.NoError(t, err)
-	assert.False(t, r.OK())
-	assert.Equal(t, jmap.ReasonNoSubmission, r.Steps[1].Detail)
-	_, err = e.Svc.AddAccount(t.Context(), in2)
-	assert.ErrorIs(t, err, jmap.ErrNoSubmission)
+	d.To, d.Subject, d.HTML = []string{"dave@example.com"}, "No submission", "<p>hi</p>"
+	_, err = e.Svc.SaveDraft(t.Context(), d)
+	require.NoError(t, err)
+	require.NoError(t, e.Svc.Send(t.Context(), d.ID))
+	e.AdvanceClock(core.UndoSendWindow)
+	require.NoError(t, e.Svc.SyncNow(t.Context(), acc.ID))
+
+	items, err := e.Svc.ListOutbox(t.Context(), acc.ID)
+	require.NoError(t, err)
+	require.Len(t, items, 1)
+	assert.Equal(t, "failed", items[0].State)
+	require.NotNil(t, items[0].Failure)
+	assert.Equal(t, jmap.ReasonNoSubmission, items[0].Failure.Message)
+	assert.Empty(t, srv.Submissions())
+
+	require.NoError(t, e.Svc.UpdatePassword(t.Context(), acc.ID, "secret"))
+	got, err := e.Svc.ListAccounts(t.Context())
+	require.NoError(t, err)
+	require.Len(t, got, 1)
+	assert.True(t, got[0].ReceiveOnly, "saved, receiving only")
 }
 
 // Archiving moves a JMAP message to the Archive mailbox, as on plain IMAP:

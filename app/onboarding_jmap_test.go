@@ -44,8 +44,11 @@ func TestOnboardingJMAP(t *testing.T) {
 	h.fill("密码", "secret")
 	h.click("连接")
 	h.see("连接成功")
-	if len(o.report.Steps) != 2 {
+	if len(o.report.Steps) != 3 {
 		t.Fatalf("steps %+v", o.report.Steps)
+	}
+	if text, _, _ := o.checkRow(o.report.Steps[2]); text != "可以通过 JMAP 发信" {
+		t.Fatalf("jmap_send row %q", text)
 	}
 	if text, detail, _ := o.checkRow(o.report.Steps[1]); text != "JMAP 登录成功" || detail != "会话主机："+jmapHost+" · 1 个文件夹" {
 		t.Fatalf("jmap row %q, %q", text, detail)
@@ -89,8 +92,8 @@ func TestOnboardingJMAPAPIToken(t *testing.T) {
 	}
 }
 
-// A JMAP server without urn:ietf:params:jmap:submission fails the sign-in
-// check with its localized reason.
+// A JMAP server without urn:ietf:params:jmap:submission fails only the
+// sending step, with its localized reason, and can be added receive-only.
 func TestOnboardingJMAPNoSubmission(t *testing.T) {
 	h := newHarness(t, experimentalJMAP)
 	h.firstRun()
@@ -114,7 +117,22 @@ func TestOnboardingJMAPNoSubmission(t *testing.T) {
 	h.fill("用户名", "alice")
 	h.fill("密码", "secret")
 	h.click("连接")
-	h.see("服务器（或此 API 令牌）未开启 JMAP 发信权限。")
+	h.see("不能通过 JMAP 发信：服务器（或此 API 令牌）未开启 JMAP 发信权限。")
+	h.see("JMAP 登录成功")
+	h.click("仍然添加（仅收信）") // receiving works: the account may still be added
+	h.click("开始使用")
+	h.until("the mail page", func() bool { return h.app.route.Page == PageMail })
+	accs, err := h.env.Svc.ListAccounts(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	var added bool
+	for _, a := range accs {
+		added = added || a.Email == "nosend@example.com" && a.ReceiveOnly
+	}
+	if !added {
+		t.Fatalf("accounts = %+v, want nosend@example.com receive-only", accs)
+	}
 }
 
 // An account whose JMAP signs in with an API token updates its token in
