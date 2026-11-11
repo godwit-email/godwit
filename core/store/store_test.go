@@ -7,9 +7,11 @@ import (
 	"path/filepath"
 	"slices"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
+	"github.com/egoist/mygo/plugins/sqlite"
 	"github.com/godwit-email/godwit/core/store"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -643,6 +645,60 @@ func TestOpenProductionPragmas(t *testing.T) {
 		assert.Equal(t, int64(1), store.Int(rows.Values[0][0]), "NORMAL")
 		require.NoError(t, db.Close())
 	}
+}
+
+// DurableTransaction and DurableExecute commit under synchronous = FULL (2) so
+// at-most-once claims reach disk before network effects, then restore NORMAL (1),
+// including after errors and across concurrent callers.
+func TestDurableWritesSyncFull(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "godwit.db")
+	db, err := store.Open(ctx, path) // migrate quickly with OFF first
+	require.NoError(t, err)
+	require.NoError(t, db.Close())
+
+	store.SetTestingForTest(t, false)
+	db, err = store.Open(ctx, path)
+	require.NoError(t, err)
+	defer db.Close()
+
+	syncLevel := func() int64 {
+		rows, err := db.Query(ctx, "PRAGMA synchronous")
+		require.NoError(t, err)
+		return store.Int(rows.Values[0][0])
+	}
+	require.Equal(t, int64(1), syncLevel(), "starts at NORMAL")
+
+	_, err = db.DurableTransaction(ctx, []sqlite.Statement{
+		{SQL: "INSERT INTO meta(key, value) SELECT 'tx', CAST(synchronous AS TEXT) FROM pragma_synchronous"},
+	})
+	require.NoError(t, err)
+	assert.Equal(t, int64(1), syncLevel(), "restored to NORMAL after DurableTransaction")
+
+	_, err = db.DurableExecute(ctx, "INSERT INTO meta(key, value) SELECT 'exec', CAST(synchronous AS TEXT) FROM pragma_synchronous")
+	require.NoError(t, err)
+	assert.Equal(t, int64(1), syncLevel(), "restored to NORMAL after DurableExecute")
+
+	_, err = db.DurableTransaction(ctx, []sqlite.Statement{
+		{SQL: "INSERT INTO meta(key, value) VALUES ('tx', 'duplicate')"},
+	})
+	require.Error(t, err)
+	assert.Equal(t, int64(1), syncLevel(), "restored to NORMAL after rollback")
+
+	var wg sync.WaitGroup
+	for i := range 8 {
+		wg.Add(1)
+		go func(i int) {
+			defer wg.Done()
+			_, err := db.DurableExecute(ctx, "INSERT INTO meta(key, value) SELECT ?, CAST(synchronous AS TEXT) FROM pragma_synchronous", fmt.Sprintf("c%d", i))
+			assert.NoError(t, err)
+		}(i)
+	}
+	wg.Wait()
+	assert.Equal(t, int64(1), syncLevel(), "restored to NORMAL after concurrent durable writes")
+
+	rows, err := db.Query(ctx, "SELECT DISTINCT value FROM meta")
+	require.NoError(t, err)
+	assert.Equal(t, [][]any{{"2"}}, rows.Values, "every durable write observed synchronous = FULL (2)")
 }
 
 // Upgrading adds messages_account_date, so subject threading's date-window

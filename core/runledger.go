@@ -214,7 +214,7 @@ func (l *runLedger) execute(ctx context.Context, id, runID int64, run func(ctx c
 func (l *runLedger) claimExternal(ctx context.Context, a approvalRow) (end func(ctx context.Context, resume bool) error, err error) {
 	l.mu.Lock()
 	defer l.mu.Unlock()
-	r, err := l.db.Execute(ctx, "UPDATE approvals SET state = 'executing', exec_mode = 'external', updated_at = ? WHERE id = ? AND state = 'pending'",
+	r, err := l.db.DurableExecute(ctx, "UPDATE approvals SET state = 'executing', exec_mode = 'external', updated_at = ? WHERE id = ? AND state = 'pending'",
 		time.Now().Unix(), a.ID)
 	switch {
 	case err != nil:

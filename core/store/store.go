@@ -10,6 +10,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
 
 	"github.com/egoist/mygo/plugins/sqlite"
@@ -19,7 +20,11 @@ import (
 var ErrNewerDatabase = errors.New("store: database schema is newer than this version")
 
 // DB wraps a mygo sqlite connection.
-type DB struct{ *sqlite.DB }
+type DB struct {
+	*sqlite.DB
+	syncMu  sync.Mutex
+	syncing int
+}
 
 var isTest = testing.Testing
 
@@ -32,12 +37,61 @@ func Open(ctx context.Context, path string) (*DB, error) {
 	if err != nil {
 		return nil, err
 	}
-	db := &DB{raw}
+	db := &DB{DB: raw}
 	if err := db.init(ctx, path); err != nil {
 		raw.Close()
 		return nil, err
 	}
 	return db, nil
+}
+
+// DurableTransaction runs stmts in a Transaction with synchronous = FULL
+// (outside tests), syncing the WAL to disk on commit so an OS crash or power
+// loss cannot roll a committed claim back after its external effect ran
+// (ADR 0006, ADR 0004).
+func (db *DB) DurableTransaction(ctx context.Context, stmts []sqlite.Statement) ([]sqlite.Result, error) {
+	done, err := db.fullSync(ctx)
+	if err != nil {
+		return nil, err
+	}
+	defer done()
+	return db.Transaction(ctx, stmts)
+}
+
+// DurableExecute is Execute with synchronous = FULL (outside tests), as
+// DurableTransaction is for Transaction.
+func (db *DB) DurableExecute(ctx context.Context, sql string, args ...any) (sqlite.Result, error) {
+	done, err := db.fullSync(ctx)
+	if err != nil {
+		return sqlite.Result{}, err
+	}
+	defer done()
+	return db.Execute(ctx, sql, args...)
+}
+
+func (db *DB) fullSync(ctx context.Context) (func(), error) {
+	if isTest() {
+		return func() {}, nil
+	}
+	db.syncMu.Lock()
+	if db.syncing == 0 {
+		if _, err := db.Query(ctx, "PRAGMA synchronous = FULL"); err != nil {
+			db.syncMu.Unlock()
+			return nil, err
+		}
+	}
+	db.syncing++
+	db.syncMu.Unlock()
+	return func() {
+		db.syncMu.Lock()
+		defer db.syncMu.Unlock()
+		if db.syncing == 1 {
+			if _, err := db.Query(context.Background(), "PRAGMA synchronous = NORMAL"); err != nil {
+				return
+			}
+		}
+		db.syncing--
+	}, nil
 }
 
 func (db *DB) init(ctx context.Context, path string) error {

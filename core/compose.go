@@ -729,7 +729,7 @@ func (s *Service) enqueue(ctx context.Context, draftID, rev int64, checked []str
 			SELECT thread_id, last_insert_rowid(), max(?, COALESCE(date, 0)) FROM messages WHERE id = ? AND thread_id IS NOT NULL`,
 			Args: []any{s.clk().Now().Unix(), d.SourceMessageID}}}, stmts...)
 	}
-	if _, err := s.db.Transaction(ctx, append([]sqlite.Statement{{SQL: `INSERT INTO outbox(account_id, message_id_hdr, raw_path, rcpts, state, subject, created_at,
+	if _, err := s.db.DurableTransaction(ctx, append([]sqlite.Statement{{SQL: `INSERT INTO outbox(account_id, message_id_hdr, raw_path, rcpts, state, subject, created_at,
 		draft_id, send_after) VALUES (?, ?, ?, ?, 'queued', ?, ?, ?, ?)`,
 		Args: []any{d.AccountID, messageID, rawPath, encodeList(rcpts), d.Subject, s.clk().Now().Unix(), draftID,
 			s.clk().Now().Add(UndoSendWindow).UnixMilli()}}}, stmts...)); err != nil {
