@@ -327,17 +327,24 @@ func windowQuery(w backend.Window) string {
 	return ""
 }
 
-func (r *Receiver) listFolderWindow(ctx context.Context, ref backend.FolderRef, w backend.Window) ([]string, error) {
-	q := windowQuery(w)
+func isBinnedFolder(ref backend.FolderRef) bool {
+	return ref == "TRASH" || ref == "SPAM"
+}
+
+func folderListParams(ref backend.FolderRef, extraQ string) (labelID, q string, includeSpamTrash bool) {
 	if ref == AllMailRef {
-		if q != "" {
-			q += " -label:DRAFT"
-		} else {
-			q = "-label:DRAFT"
+		q = "-label:DRAFT"
+		if extraQ != "" {
+			q = extraQ + " " + q
 		}
-		return r.c.listMessages(ctx, "", q, false, w.Newest)
+		return "", q, false
 	}
-	return r.c.listMessages(ctx, string(ref), q, true, w.Newest)
+	return string(ref), extraQ, isBinnedFolder(ref)
+}
+
+func (r *Receiver) listFolderWindow(ctx context.Context, ref backend.FolderRef, w backend.Window) ([]string, error) {
+	labelID, q, inc := folderListParams(ref, windowQuery(w))
+	return r.c.listMessages(ctx, labelID, q, inc, w.Newest)
 }
 
 func (r *Receiver) windowIDs(ctx context.Context, fs []backend.Folder, w backend.Window) ([]string, error) {
@@ -854,37 +861,28 @@ func (r *Receiver) older(ctx context.Context, req backend.SyncRequest, commit fu
 				return false, err
 			}
 		}
-		q := ""
-		labelID := string(ref)
-		includeSpamTrash := true
-		if ref == AllMailRef {
-			labelID, q, includeSpamTrash = "", "-label:DRAFT", false
-		}
+		labelID, q, includeSpamTrash := folderListParams(ref, "")
 		ids, err := r.c.listMessages(ctx, labelID, q, includeSpamTrash, 0)
 		if err != nil {
 			return false, err
 		}
-		var pick []string
+		var unheld []string
 		for _, id := range ids {
-			if _, ok := held[backend.MessageRef(id)]; ok {
-				continue
+			if _, ok := held[backend.MessageRef(id)]; !ok {
+				unheld = append(unheld, id)
 			}
-			if len(pick) == req.Older {
-				hasMore = true
-				break
-			}
-			pick = append(pick, id)
 		}
-		if len(pick) == 0 {
+		if len(unheld) == 0 {
 			continue
 		}
-		known, err := s.knownMap(ctx, pick)
+		known, err := s.knownMap(ctx, unheld)
 		if err != nil {
 			return false, err
 		}
-		for _, id := range pick {
+		emitted := 0
+		for _, id := range unheld {
 			format := "minimal"
-			if !known[id] {
+			if !known[id] && emitted < req.Older {
 				format = "raw"
 			}
 			m, err := r.c.getMessage(ctx, id, format)
@@ -894,8 +892,22 @@ func (r *Receiver) older(ctx context.Context, req backend.SyncRequest, commit fu
 			if err != nil {
 				return false, err
 			}
+			if !inFolder(m.LabelIDs, ref) {
+				continue
+			}
+			if emitted == req.Older {
+				hasMore = true
+				break
+			}
 			var content *backend.Content
 			if !known[id] {
+				if m.Raw == "" {
+					if m, err = r.c.getMessage(ctx, id, "raw"); errors.Is(err, backend.ErrNotFound) {
+						continue
+					} else if err != nil {
+						return false, err
+					}
+				}
 				if content, err = s.buildContentFrom(m); err != nil {
 					return false, err
 				}
@@ -907,6 +919,7 @@ func (r *Receiver) older(ctx context.Context, req backend.SyncRequest, commit fu
 				Backfill: true,
 				Content:  content,
 			})
+			emitted++
 		}
 		if err := s.flush(backend.Page{}); err != nil {
 			return false, err
@@ -969,12 +982,7 @@ func (r *Receiver) Find(ctx context.Context, folder backend.FolderRef, messageID
 	if messageID == "" {
 		return nil, nil
 	}
-	q := "rfc822msgid:" + messageID
-	labelID := string(folder)
-	includeSpamTrash := true
-	if folder == AllMailRef {
-		labelID, includeSpamTrash = "", false
-	}
+	labelID, q, includeSpamTrash := folderListParams(folder, "rfc822msgid:"+messageID)
 	ids, err := r.c.listMessages(ctx, labelID, q, includeSpamTrash, 0)
 	if err != nil {
 		return nil, err
@@ -987,6 +995,9 @@ func (r *Receiver) Find(ctx context.Context, folder backend.FolderRef, messageID
 		}
 		if err != nil {
 			return nil, err
+		}
+		if !inFolder(m.LabelIDs, folder) {
+			continue
 		}
 		raw, err := decodeBase64URL(m.Raw)
 		if err != nil {

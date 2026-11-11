@@ -504,3 +504,44 @@ func TestGmailAPIOutOfWindowFlagChangeIsBackfill(t *testing.T) {
 	require.Eventually(t, func() bool { return hasRuleLabel("New invoice") }, 5*time.Second, 20*time.Millisecond)
 	assert.False(t, hasRuleLabel("Old invoice"), "out-of-window message discovered via flag change must be backfill, not a new arrival")
 }
+
+// LoadOlder on an ordinary Gmail label folder must exclude trashed or spam
+// messages that still retain the user label on the server.
+func TestGmailAPILoadOlderExcludesBinnedMessages(t *testing.T) {
+	const email = "alice@gmail.com"
+	e := coretest.New(t, coretest.WithoutAutoSync())
+	setGmailAPI(t, e, true)
+	g := startGmailAPIEnv(t, email)
+
+	workID := g.api.EnsureLabel("Work")
+	g.api.AddMessage(coretest.Msg("bob@example.com", email, "Older Work", "older"), workID)
+	g.api.AddMessage(coretest.Msg("bob@example.com", email, "Trashed Work", "trashed"), workID, "TRASH")
+	g.api.AddMessage(coretest.Msg("bob@example.com", email, "Newest Work", "newest"), workID)
+
+	flowID := g.signIn(t, e, email, ownGmailClient)
+	in := g.input(email, flowID)
+	in.Sync = &core.SyncRange{Limit: 1}
+	acc, err := e.Svc.AddAccount(t.Context(), in)
+	require.NoError(t, err)
+	require.NoError(t, e.Svc.SyncNow(t.Context(), acc.ID))
+
+	workFolder := gmailFolderByName(t, e, acc.ID, "Work")
+	assert.Equal(t, 1, workFolder.Total, "initial Limit:1 loads only Newest Work")
+	assert.Equal(t, 1, gmailFolderByName(t, e, acc.ID, "TRASH").Total)
+
+	more, err := e.Svc.LoadOlder(t.Context(), workFolder.ID)
+	require.NoError(t, err)
+	assert.False(t, more, "only one older non-binned message remained")
+
+	assert.Equal(t, 2, gmailFolderByName(t, e, acc.ID, "Work").Total, "Older Work loaded without restoring Trashed Work")
+	assert.Equal(t, 1, gmailFolderByName(t, e, acc.ID, "TRASH").Total)
+
+	olderMsgs, err := e.Svc.Search(t.Context(), acc.ID, "Older Work", 10)
+	require.NoError(t, err)
+	require.Len(t, olderMsgs, 1)
+
+	trashedMsgs, err := e.Svc.Search(t.Context(), acc.ID, "Trashed Work", 10)
+	require.NoError(t, err)
+	require.Len(t, trashedMsgs, 1)
+	assert.Equal(t, []int64{gmailFolderByName(t, e, acc.ID, "TRASH").ID}, trashedMsgs[0].FolderIDs, "trashed message stays exclusively in Trash")
+}
