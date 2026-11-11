@@ -120,6 +120,8 @@ type msgBody struct {
 	// as the retry is Allow, which lets them load.
 	imgFailed int
 
+	timing bodyTiming // how long the body took to show (GODWIT_READER_TIMING)
+
 	unsub     core.Unsubscribe // how it unsubscribes, by its headers; none until asked
 	unsubbing bool             // its unsubscribe is under way
 	attSel    map[int64]bool   // selected attachment IDs for batch save
@@ -321,6 +323,7 @@ func (r *reader) loadBody(id int64) {
 		return
 	}
 	b.loading, b.err = true, nil
+	b.timing.begin()
 	b.bodyGen++
 	read := b.bodyGen
 	var m core.Message
@@ -341,6 +344,7 @@ func (r *reader) loadBody(id int64) {
 			return
 		}
 		b.msg, b.ready, b.trusted = m, true, trusted
+		b.timing.readDone()
 		b.avatarBlocked = !trusted
 		r.openView(id)
 		r.loadAvatar(id, b.avatarAllow)
@@ -455,7 +459,7 @@ func (r *reader) openView(id int64) {
 	if b == nil || !b.ready || b.err != nil || !r.open[id] || b.view != nil {
 		return
 	}
-	gen := r.gen
+	gen, made := r.gen, time.Now()
 	v, closeView, err := r.p.a.plat.NewBodyView(id)
 	if gen != r.gen || r.bodies[id] != b || !r.open[id] || b.view != nil || r.p.a.ctx.Err() != nil {
 		if err == nil {
@@ -468,6 +472,7 @@ func (r *reader) openView(id int64) {
 		return
 	}
 	b.view, b.close = v, closeView
+	b.timing.viewMade(made)
 	if b.allow {
 		r.p.a.plat.AllowImages(id)
 	}
@@ -1963,6 +1968,7 @@ func (a *App) BodyHeight(view ui.NativeWebView, message int64, px int) {
 	if b := a.mail.reader.shown(view, message); b != nil {
 		b.height = px
 		b.glass = [2]int{-1, -1} // the page listens now: what it was told before it loaded was dropped
+		logBodyTiming(&b.timing, message)
 	}
 }
 
@@ -2008,6 +2014,7 @@ func (a *App) BodyPrint(view ui.NativeWebView) {
 func (a *App) BodyBuilt(view ui.NativeWebView, message int64, cut, remote bool) {
 	if b := a.mail.reader.shown(view, message); b != nil {
 		b.cut, b.remote = cut, remote
+		b.timing.builtDone()
 		if remote {
 			b.allowErr = nil
 		}
