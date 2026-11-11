@@ -606,7 +606,7 @@ func (s *Service) RemoveAccount(ctx context.Context, id int64) error {
 	}()
 	s.stopCalls(func(a int64) bool { return a == id })
 	s.stopWorker(id)
-	if _, err := s.db.Execute(ctx, "DELETE FROM accounts WHERE id = ?", id); err != nil {
+	if _, err := s.db.DurableExecute(ctx, "DELETE FROM accounts WHERE id = ?", id); err != nil {
 		return err
 	}
 	s.tokMu.Lock()

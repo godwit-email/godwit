@@ -503,7 +503,7 @@ func (s *Service) removeAttachment(ctx context.Context, draftID, attachmentID, r
 	if len(rows.Values) == 0 {
 		return 0, fmt.Errorf("attachment %d not found in draft %d", attachmentID, draftID)
 	}
-	if _, err := s.db.Transaction(ctx, []sqlite.Statement{
+	if _, err := s.db.DurableTransaction(ctx, []sqlite.Statement{
 		{SQL: "DELETE FROM draft_attachments WHERE id = ?", Args: []any{attachmentID}}, bumpRevision(draftID)}); err != nil {
 		return 0, err
 	}
@@ -514,7 +514,7 @@ func (s *Service) removeAttachment(ctx context.Context, draftID, attachmentID, r
 }
 
 func (s *Service) deleteDraft(ctx context.Context, id int64) error {
-	r, err := s.db.Execute(ctx, "DELETE FROM drafts WHERE id = ?", id) // attachments cascade
+	r, err := s.db.DurableExecute(ctx, "DELETE FROM drafts WHERE id = ?", id) // attachments cascade
 	if err != nil {
 		return err
 	}

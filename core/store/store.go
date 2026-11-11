@@ -47,8 +47,8 @@ func Open(ctx context.Context, path string) (*DB, error) {
 
 // DurableTransaction runs stmts in a Transaction with synchronous = FULL
 // (outside tests), syncing the WAL to disk on commit so an OS crash or power
-// loss cannot roll a committed claim back after its external effect ran
-// (ADR 0006, ADR 0004).
+// loss cannot roll back a committed claim before an external effect (ADR 0006,
+// ADR 0004) or a row deletion before removing its files or keychain entries.
 func (db *DB) DurableTransaction(ctx context.Context, stmts []sqlite.Statement) ([]sqlite.Result, error) {
 	done, err := db.fullSync(ctx)
 	if err != nil {

@@ -335,7 +335,7 @@ func (s *Service) installPlugin(ctx context.Context, srcDir, trust, assetsDigest
 			enable = 1
 		}
 	}
-	_, err = s.db.Execute(ctx, `INSERT INTO plugins(name, version, manifest, source_hash, install_dir, permission_hash, library_hash, assets_digest, trust, granted_hash, enabled, installed_at)
+	_, err = s.db.DurableExecute(ctx, `INSERT INTO plugins(name, version, manifest, source_hash, install_dir, permission_hash, library_hash, assets_digest, trust, granted_hash, enabled, installed_at)
 		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, unixepoch())
 		ON CONFLICT(name) DO UPDATE SET version = excluded.version, manifest = excluded.manifest,
 			source_hash = excluded.source_hash, install_dir = excluded.install_dir, permission_hash = excluded.permission_hash,
@@ -506,7 +506,7 @@ func (s *Service) UninstallPlugin(ctx context.Context, name string) error {
 		return err
 	}
 	s.stopPlugin(name)
-	r, err := s.db.Execute(ctx, "DELETE FROM plugins WHERE name = ?", name)
+	r, err := s.db.DurableExecute(ctx, "DELETE FROM plugins WHERE name = ?", name)
 	if err != nil {
 		return err
 	}
