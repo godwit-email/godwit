@@ -19,7 +19,7 @@ Wit 和其他 AI 功能改由 **pi** 运行：`pi-ai` 负责各家模型协议�
 
 - 迁移期间，设置里「实验室」分区的「新 AI 引擎（pi）」开关（`Settings.PiEngine`）让用户先试用 pi，还没迁到 pi 的功能自动走 Genkit。#236 删除 Genkit 时一并去掉了这个开关和「实验室」分区：所有 AI 功能都走 pi，Genkit 时代中断的运行（存成 pi 消息或原样的 Genkit 消息）也在 pi 上恢复。
 - bundle 由 `mise run ai:bundle` 用 bun 打包、压缩后提交进仓库（和 `mcpserver/views` 一样），`go build` 不依赖 bun。CI 重新打包并检查结果与提交的一致。
-- moejs 固定依赖上游版本（目前是 `v0.1.0-alpha.9`）。它还是 alpha，只有一个维护者，所以每次升级 moejs 或 pi 都必须先通过 `core/ai/pi` 的冒烟测试：在 moejs 里运行真实的 provider 代码，对接模拟服务。出问题时再 fork。
+- moejs 固定依赖上游版本（`github.com/MoeForge/moejs`，目前是 `v0.1.0-alpha.11`）。它还是 alpha，只有一个维护者，所以每次升级 moejs 或 pi 都必须先通过 `core/ai/pi` 的冒烟测试：在 moejs 里运行真实的 provider 代码，对接模拟服务。出问题时再 fork。
 - 对未知的 OpenAI 兼容服务，pi-ai 默认会把推理模型的系统提示改用 `developer` 角色发送，还会附带 `store: false`。很多兼容服务不接受这两样，Genkit 路径也都不发，所以 bundle 把这两个兼容项固定关掉。pi-ai 把不认识的 Chat Completions `finish_reason`（例如 xAI 的 `end_turn`）都当作失败，bundle 先按 Genkit 的读法把它们换成 pi-ai 认识的。
 - pi-ai 的 Anthropic provider 和 Genkit 的插件一样只保留工具参数格式根级的 `type`、`properties`、`required`，所以插件和 MCP 工具的 `$defs` 仍然先展开成内联定义（`ai.NormalizeSchema`）。
 - 每次运行新建一个运行时，加载已编译的 bundle。它不跨运行保留任何状态，取消时直接终止整个事件循环。

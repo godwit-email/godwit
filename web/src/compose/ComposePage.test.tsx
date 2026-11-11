@@ -765,3 +765,17 @@ test.each([
   await userEvent.click(screen.getByRole("button", { name: "发送" }));
   expect(await screen.findByText(text)).toBeInTheDocument();
 });
+
+test("a failed load shows the error and retries into the draft", async () => {
+  vi.stubGlobal("mygo", { locale: "zh-Hans", on: () => () => {} });
+  try {
+    vi.mocked(api.load).mockRejectedValueOnce(new Error("boom"));
+    render(<ComposePage />);
+    const retry = await screen.findByRole("button", { name: "重试" });
+    expect(screen.getByText("出错了：boom")).toBeInTheDocument();
+    await userEvent.click(retry);
+    expect(await body()).toHaveValue("正文");
+  } finally {
+    vi.unstubAllGlobals();
+  }
+});

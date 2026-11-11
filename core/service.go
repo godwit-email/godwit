@@ -23,6 +23,7 @@ import (
 	"github.com/godwit-email/godwit/backend"
 	"github.com/godwit-email/godwit/backend/conn"
 	"github.com/godwit-email/godwit/backend/ews"
+	"github.com/godwit-email/godwit/backend/gmailapi"
 	"github.com/godwit-email/godwit/backend/jmap"
 	"github.com/godwit-email/godwit/core/ai"
 	"github.com/godwit-email/godwit/core/ai/mask"
@@ -867,6 +868,11 @@ func (s *Service) checkSMTP(ctx context.Context, accountID int64, explicit bool)
 			return err
 		case auth.EWS: // an EWS account sends through EWS: sign in there, never to SMTP
 			r := ews.New(ews.Config{URL: ewsURL(sa.acc), Credentials: sa.credentials})
+			defer r.Close()
+			_, err := r.Check(ctx)
+			return err
+		case auth.GmailAPI:
+			r := gmailapi.New(gmailapi.Config{BaseURL: slotURL(sa.acc.Receiving, sa.acc.Receiving.Path), Credentials: sa.credentials})
 			defer r.Close()
 			_, err := r.Check(ctx)
 			return err

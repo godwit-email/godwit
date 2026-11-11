@@ -3,6 +3,7 @@ package core
 import (
 	"context"
 	"errors"
+	"log/slog"
 	"slices"
 	"sync"
 	"sync/atomic"
@@ -317,16 +318,22 @@ func (s *Service) syncRound(ctx context.Context, id int64, wake chan struct{}, o
 		return out
 	}
 	defer func() { stop(); release(); <-watched }() // closing unblocks a Watch mid-command
-	// Watch wakes once as it starts watching; one that cannot push returns,
-	// and the account is polled as often as its backend declares.
+	// Watch wakes once as it starts watching; one that cannot push, or fails
+	// before it starts, returns, and the account is polled as often as its
+	// backend declares. A refused sign-in is the round's failure.
 	var poll time.Duration
 	select {
 	case <-updates:
 		touched() // the first wake is for what changed before: this round syncs it
 	case err := <-watched:
 		watched <- err
-		if !errors.Is(err, backend.ErrUnsupported) {
+		if errors.Is(err, backend.ErrAuthFailed) || ctx.Err() != nil {
 			return false, nil, s.workerFailed(ctx, id, err)
+		}
+		if !errors.Is(err, backend.ErrUnsupported) {
+			// It cannot watch this round (a proxy that drops the event stream, say):
+			// still sync, and poll as for a server that cannot push.
+			slog.Default().Warn("could not watch the server for changes; polling instead", "account", id, "err", err)
 		}
 		d, err := recv.Describe(ctx)
 		if err != nil {

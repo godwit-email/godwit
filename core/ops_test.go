@@ -384,22 +384,53 @@ func TestUncertainMoveNotRepeated(t *testing.T) {
 	assert.Equal(t, before, e.im.MovesAndCopies(), "the MOVE is not sent again")
 }
 
-// Without MOVE, a retry after COPY and STORE went through but UID EXPUNGE did
-// not finishes the move: it does not COPY a second time.
+// Without MOVE, a retry after COPY (or COPY and STORE) went through before the
+// connection dropped finishes the move without sending COPY a second time.
 func TestUncertainCopyMoveNotDuplicated(t *testing.T) {
-	e := newSyncEnv(t, testmail.WithoutMove())
+	for name, drop := range map[string]func(*testmail.IMAP){
+		"after COPY":         (*testmail.IMAP).DropAfterNextCopy,
+		"before UID EXPUNGE": (*testmail.IMAP).DropOnNextUIDExpunge,
+	} {
+		t.Run(name, func(t *testing.T) {
+			e := newSyncEnv(t, testmail.WithoutMove())
+			e.put(t, "INBOX", msg("m@x"))
+			e.sync(t)
+			id := e.idOf(t, "m@x")
+			require.NoError(t, e.s.Move(bg, []int64{id}, e.folderID(t, "Archive")))
+			drop(e.im)
+			_ = e.s.SyncNow(bg, e.acc.ID)
+			e.sync(t)
+			e.sync(t) // the destination's copy is claimed
+			assert.Equal(t, []string{"m@x"}, e.onServer(t, "Archive"))
+			assert.Empty(t, e.onServer(t, "INBOX"))
+			assert.Equal(t, [][]any{{id}}, e.rows(t, "SELECT id FROM messages"))
+			assert.Equal(t, []string{"done"}, e.opStates(t))
+			assert.Equal(t, int64(1), e.im.MovesAndCopies(), "the COPY is not sent a second time")
+		})
+	}
+}
+
+// A COPYUID from a destination folder recreated since the last sync is not
+// stored against the old cursor: the move awaits its claim until Fetch resets
+// the folder and claims the message in the new generation.
+func TestMoveIntoRecreatedFolderClaimsInNewGeneration(t *testing.T) {
+	e := newSyncEnv(t)
 	e.put(t, "INBOX", msg("m@x"))
+	e.put(t, "Archive", msg("old@x"))
 	e.sync(t)
 	id := e.idOf(t, "m@x")
 	require.NoError(t, e.s.Move(bg, []int64{id}, e.folderID(t, "Archive")))
-	e.im.DropOnNextUIDExpunge()
-	_ = e.s.SyncNow(bg, e.acc.ID) // the connection drops before the EXPUNGE
+	require.NoError(t, e.im.User.Delete("Archive"))
+	require.NoError(t, e.im.User.Create("Archive", nil))
+	e.put(t, "Archive", msg("new@x"))
+
+	require.NoError(t, mailsync.PushOps(bg, e.s.db, e.receiver(t), e.acc.ID, e.s.clk().Now()))
+	assert.Equal(t, []string{"awaiting_claim"}, e.opStates(t))
+
 	e.sync(t)
-	e.sync(t) // the destination's copy is claimed
-	assert.Equal(t, []string{"m@x"}, e.onServer(t, "Archive"))
-	assert.Empty(t, e.onServer(t, "INBOX"))
-	assert.Equal(t, [][]any{{id}}, e.rows(t, "SELECT id FROM messages"))
+	assert.Equal(t, id, e.idOf(t, "m@x"))
 	assert.Equal(t, []string{"done"}, e.opStates(t))
+	assert.Equal(t, []string{"new@x", "m@x"}, e.onServer(t, "Archive"))
 }
 
 // \Deleted from another client is no proof an interrupted COPY went through:
@@ -444,7 +475,7 @@ func uncertainCopyMoveWithTwin(t *testing.T, twin string) {
 	e.sync(t)
 	id := e.rows(t, "SELECT id FROM messages WHERE "+shownCol+" = ?", e.folderID(t, "INBOX"))[0][0].(int64)
 	require.NoError(t, e.s.Move(bg, []int64{id}, e.folderID(t, "Archive")))
-	_, err := e.s.db.Execute(bg, "UPDATE ops SET attempts = 1")
+	_, err := e.s.db.Execute(bg, `UPDATE ops SET attempts = 1, payload = '{"before":{"cursor":"0000000001:0000000000"}}'`)
 	require.NoError(t, err)
 	c := e.dial(t)
 	_, err = c.Select("INBOX", nil).Wait()
@@ -454,6 +485,121 @@ func uncertainCopyMoveWithTwin(t *testing.T, twin string) {
 	e.sync(t)
 	assert.Len(t, e.onServer(t, "Archive"), 2, "copied, not lost")
 	assert.Empty(t, e.onServer(t, "INBOX"))
+}
+
+// Without MOVE, a pre-existing message in the destination with the same
+// Message-ID and RFC822Size does not suppress the first COPY or expunge the
+// undeleted source, while a retry after COPY drops still avoids a third copy.
+func TestCopyMovePreservesPreExistingSameIDAndSize(t *testing.T) {
+	srcRaw := eml("dup@x", "bob@example.com", "alice@example.com", "s dup@x", day, "inbx dup@x")
+	dstRaw := eml("dup@x", "bob@example.com", "alice@example.com", "s dup@x", day, "arch dup@x")
+	require.Equal(t, len(srcRaw), len(dstRaw))
+
+	t.Run("first attempt", func(t *testing.T) {
+		e := newSyncEnv(t, testmail.WithoutMove())
+		e.putFlagged(t, "Archive", dstRaw, imap.FlagFlagged)
+		e.put(t, "INBOX", srcRaw)
+		e.sync(t)
+		inID := store.Int(e.rows(t, "SELECT id FROM messages WHERE "+shownCol+" = ?", e.folderID(t, "INBOX"))[0][0])
+		archID := store.Int(e.rows(t, "SELECT id FROM messages WHERE "+shownCol+" = ?", e.folderID(t, "Archive"))[0][0])
+
+		require.NoError(t, e.s.Move(bg, []int64{inID}, e.folderID(t, "Archive")))
+		e.sync(t)
+
+		assert.Equal(t, int64(1), e.im.MovesAndCopies(), "the first attempt sends COPY")
+		assert.Equal(t, []string{`dup@x \Flagged`, "dup@x"}, e.onServer(t, "Archive"))
+		assert.Empty(t, e.onServer(t, "INBOX"))
+		assert.Equal(t, []string{"done"}, e.opStates(t))
+
+		gotIn, err := e.s.GetMessage(bg, inID, false)
+		require.NoError(t, err)
+		assert.Contains(t, gotIn.Text, "inbx dup@x")
+		assert.Empty(t, gotIn.Flags)
+
+		gotArch, err := e.s.GetMessage(bg, archID, false)
+		require.NoError(t, err)
+		assert.Contains(t, gotArch.Text, "arch dup@x")
+		assert.Equal(t, []string{`\Flagged`}, gotArch.Flags)
+	})
+
+	t.Run("retry after COPY drop", func(t *testing.T) {
+		e := newSyncEnv(t, testmail.WithoutMove())
+		e.putFlagged(t, "Archive", dstRaw, imap.FlagFlagged)
+		e.put(t, "INBOX", srcRaw)
+		e.sync(t)
+		inID := store.Int(e.rows(t, "SELECT id FROM messages WHERE "+shownCol+" = ?", e.folderID(t, "INBOX"))[0][0])
+
+		require.NoError(t, e.s.Move(bg, []int64{inID}, e.folderID(t, "Archive")))
+		e.im.DropAfterNextCopy()
+		_ = e.s.SyncNow(bg, e.acc.ID)
+		e.sync(t)
+
+		assert.Equal(t, int64(1), e.im.MovesAndCopies(), "retry finishes without a second COPY")
+		assert.Equal(t, []string{`dup@x \Flagged`, "dup@x"}, e.onServer(t, "Archive"))
+		assert.Empty(t, e.onServer(t, "INBOX"))
+		assert.Equal(t, 2, e.count(t, "SELECT count(*) FROM messages"))
+	})
+}
+
+// Without MOVE, if the connection drops after BeforeCopy persists retry state
+// but before COPY reaches the server, a matching message inserted into the
+// destination by another client before the retry never authorizes expunging
+// the uncopied source.
+func TestCopyMoveDisconnectBeforeCopyWithConcurrentArrival(t *testing.T) {
+	srcRaw := eml("dup@x", "bob@example.com", "alice@example.com", "s dup@x", day, "inbx dup@x")
+	dstRaw := eml("dup@x", "bob@example.com", "alice@example.com", "s dup@x", day, "arch dup@x")
+	require.Equal(t, len(srcRaw), len(dstRaw))
+
+	t.Run("different content and flags", func(t *testing.T) {
+		e := newSyncEnv(t, testmail.WithoutMove())
+		e.putFlagged(t, "INBOX", srcRaw, imap.FlagSeen)
+		e.sync(t)
+		inID := e.idOf(t, "dup@x")
+
+		require.NoError(t, e.s.Move(bg, []int64{inID}, e.folderID(t, "Archive")))
+		e.im.DropBeforeNextCopy()
+		_ = e.s.SyncNow(bg, e.acc.ID)
+		assert.Zero(t, e.im.MovesAndCopies())
+
+		// Another client inserts a same-Message-ID, same-size message before retry.
+		e.putFlagged(t, "Archive", dstRaw, imap.FlagFlagged)
+
+		e.sync(t)
+		e.sync(t)
+
+		assert.Equal(t, int64(1), e.im.MovesAndCopies(), "source is still copied on retry")
+		assert.Equal(t, []string{`dup@x \Flagged`, `dup@x \Seen`}, e.onServer(t, "Archive"))
+		assert.Empty(t, e.onServer(t, "INBOX"))
+		assert.Equal(t, 2, e.count(t, "SELECT count(*) FROM messages"))
+
+		gotIn, err := e.s.GetMessage(bg, inID, false)
+		require.NoError(t, err)
+		assert.Contains(t, gotIn.Text, "inbx dup@x")
+		assert.Equal(t, []string{`\Seen`}, gotIn.Flags)
+	})
+
+	t.Run("identical bytes and flags", func(t *testing.T) {
+		e := newSyncEnv(t, testmail.WithoutMove())
+		raw := msg("dup@x")
+		e.put(t, "INBOX", raw)
+		e.sync(t)
+		inID := e.idOf(t, "dup@x")
+
+		require.NoError(t, e.s.Move(bg, []int64{inID}, e.folderID(t, "Archive")))
+		e.im.DropBeforeNextCopy()
+		_ = e.s.SyncNow(bg, e.acc.ID)
+		assert.Zero(t, e.im.MovesAndCopies())
+
+		e.put(t, "Archive", raw)
+
+		e.sync(t)
+		e.sync(t)
+
+		assert.Equal(t, int64(1), e.im.MovesAndCopies(), "source is still copied rather than expunged")
+		assert.Equal(t, []string{"dup@x", "dup@x"}, e.onServer(t, "Archive"))
+		assert.Empty(t, e.onServer(t, "INBOX"))
+		assert.Equal(t, 2, e.count(t, "SELECT count(*) FROM messages"))
+	})
 }
 
 func TestStaleUIDNeverReplayed(t *testing.T) {

@@ -385,7 +385,7 @@ func (s *Service) RemoveMCPServer(ctx context.Context, id int64) error {
 	}
 	// Stopped and disabled first; then the secrets: if one cannot be deleted
 	// the server stays, disabled, listing only the keys left, for a retry.
-	if _, err := s.db.Execute(ctx, "UPDATE mcp_servers SET enabled = 0 WHERE id = ?", id); err != nil {
+	if _, err := s.db.DurableExecute(ctx, "UPDATE mcp_servers SET enabled = 0 WHERE id = ?", id); err != nil {
 		return err
 	}
 	s.disconnectMCP(id, "")
@@ -395,7 +395,7 @@ func (s *Service) RemoveMCPServer(ctx context.Context, id int64) error {
 		_, lerr := s.db.Transaction(ctx, []sqlite.Statement{listMCPKeys(id, failedEnv, failedHeaders)})
 		return errors.Join(err, lerr)
 	}
-	if _, err := s.db.Execute(ctx, "DELETE FROM mcp_servers WHERE id = ?", id); err != nil {
+	if _, err := s.db.DurableExecute(ctx, "DELETE FROM mcp_servers WHERE id = ?", id); err != nil {
 		return err
 	}
 	s.mcpStMu.Lock()

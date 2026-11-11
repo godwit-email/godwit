@@ -298,10 +298,27 @@ type SetFlags struct {
 	Add, Remove Flags
 }
 
-// Move moves the message from At to folder To.
+// MoveBaseline records a copy-and-delete Move's retry state before its first
+// copy is sent (via Move.BeforeCopy): Token, a per-op keyword set on the
+// source so COPY carries it to the destination copy, or Cursor and Refs when
+// the server cannot store custom keywords.
+type MoveBaseline struct {
+	Token  string       `json:"token,omitempty"`
+	Cursor Cursor       `json:"cursor,omitempty"`
+	Refs   []MessageRef `json:"refs,omitempty"`
+}
+
+// Move moves the message from At to folder To. Cursor is To's stored cursor,
+// "" when none is stored: a backend whose locations carry a folder generation
+// answers Unlocated instead of a Ref from another generation. Before, when set,
+// is the MoveBaseline an earlier attempt recorded through BeforeCopy right
+// before sending its copy.
 type Move struct {
-	At Location
-	To FolderRef
+	At         Location
+	To         FolderRef
+	Cursor     Cursor
+	Before     *MoveBaseline
+	BeforeCopy func(MoveBaseline) error
 }
 
 // Copy puts an independent copy of the message at At into folder To.

@@ -8,7 +8,6 @@ import (
 	"maps"
 	"net/mail"
 	"slices"
-	"strings"
 	"time"
 
 	"github.com/godwit-email/godwit/backend"
@@ -278,26 +277,5 @@ func content(s *session, e entry, fields []string) (*backend.Content, error) {
 	if !ok {
 		d = time.Now()
 	}
-	return &backend.Content{Size: e.size, Date: d, Header: headerFields(raw, fields), Raw: raw}, nil
-}
-
-// headerFields is the fields of raw's header named in names, as they are,
-// followed by the blank line that ends a header.
-func headerFields(raw []byte, names []string) []byte {
-	var out bytes.Buffer
-	keep := false
-	for line := range bytes.Lines(raw) {
-		if len(bytes.TrimRight(line, "\r\n")) == 0 {
-			break
-		}
-		if line[0] != ' ' && line[0] != '\t' {
-			name, _, _ := bytes.Cut(line, []byte(":"))
-			keep = slices.ContainsFunc(names, func(n string) bool { return strings.EqualFold(n, string(bytes.TrimSpace(name))) })
-		}
-		if keep {
-			out.Write(line)
-		}
-	}
-	out.WriteString("\r\n")
-	return out.Bytes()
+	return &backend.Content{Size: e.size, Date: d, Header: backend.HeaderFields(raw, fields), Raw: raw}, nil
 }

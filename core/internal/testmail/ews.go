@@ -95,9 +95,10 @@ type ewsItem struct {
 	received time.Time
 	read     bool
 	flagged  bool
-	verb     int  // PidTagLastVerbExecuted, 0 for none
-	readOnly bool // its last change was to read alone: a ReadFlagChange
-	unsent   bool // saved as a draft (MSGFLAG_UNSENT)
+	verb     int    // PidTagLastVerbExecuted, 0 for none
+	readOnly bool   // its last change was to read alone: a ReadFlagChange
+	unsent   bool   // saved as a draft (MSGFLAG_UNSENT)
+	fail     string // GetItem answers it with this ResponseCode
 	changed
 }
 
@@ -311,6 +312,17 @@ func (s *EWS) MarkAnswered(id string) {
 // Remove deletes the item id for good.
 func (s *EWS) Remove(id string) {
 	s.change(id, false, func(it *ewsItem) { it.gone = true })
+}
+
+// FailItem makes GetItem answer the item id with the error code, as
+// Exchange does for an item it cannot render (say
+// ErrorMimeContentConversionFailed); the folder's sync still lists it.
+func (s *EWS) FailItem(id, code string) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if it := s.findItem(id); it != nil {
+		it.fail = code
+	}
 }
 
 // RenameFolder renames the folder at path to name; its FolderId stays.
@@ -824,6 +836,10 @@ func (s *EWS) getItem(w http.ResponseWriter, req ewsRequest) {
 		it := s.findItem(id)
 		if it == nil {
 			msgs.WriteString(message("GetItem", "ErrorItemNotFound", ""))
+			continue
+		}
+		if it.fail != "" {
+			msgs.WriteString(message("GetItem", it.fail, ""))
 			continue
 		}
 		mime := ""

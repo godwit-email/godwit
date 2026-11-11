@@ -606,11 +606,14 @@ func (p *settingsPage) accountView(c *ui.Context, acc core.Account) {
 	} else if acc.Receiving.Protocol == auth.Graph {
 		recv = server("Microsoft Graph", acc.Receiving.Host, acc.Receiving.Port, acc.Receiving.Security, "")
 	}
+	if acc.Receiving.Protocol == auth.GmailAPI {
+		recv = server("Gmail API", acc.Receiving.Host, acc.Receiving.Port, acc.Receiving.Security, "")
+	}
 	login := []func(){
 		row(i18n.T("settings.account.login.method"), p.authText(acc, prov), func() { p.authButton(c, acc, prov, false) }),
 		recv,
 	}
-	if pr := acc.Sending.Protocol; pr != auth.EWS && pr != auth.JMAP && acc.Receiving.Protocol != auth.Graph { // EWS, JMAP and Graph send through the server they receive from
+	if pr := acc.Sending.Protocol; pr != auth.EWS && pr != auth.JMAP && pr != auth.GmailAPI && acc.Receiving.Protocol != auth.Graph { // EWS, JMAP, Graph and Gmail API send through the server they receive from
 		login = append(login, server("SMTP", acc.Sending.Host, acc.Sending.Port, acc.Sending.Security, receiveOnlyHelp(acc)))
 	}
 	if acc.ReceiveOnly { // OAuth has no servers to change: it tries SMTP again as it is
@@ -618,7 +621,7 @@ func (p *settingsPage) accountView(c *ui.Context, acc core.Account) {
 			settingButton(c, i18n.T("settings.account.receive_only.recheck"), kit.Outline, p.rechecking[acc.ID]).OnClick(func() { p.recheckSending(acc.ID) })
 		}))
 	}
-	if acc.Receiving.Protocol != auth.Graph {
+	if pr := acc.Receiving.Protocol; pr != auth.Graph && pr != auth.GmailAPI {
 		login = append(login, row(i18n.T("settings.account.servers"), i18n.T("settings.account.servers.help"), func() {
 			settingButton(c, i18n.T("settings.account.edit_servers"), kit.Outline, false).OnClick(func() { p.openDialog("servers", acc) })
 		}))
@@ -827,6 +830,10 @@ func (p *settingsPage) dialogView(c *ui.Context) {
 	case "client":
 		title, label = i18n.T("settings.account.client.title"), i18n.T("onboarding.own_client.signin")
 		pub := publicClient(prov)
+		if acc.Receiving.Protocol == auth.GmailAPI {
+			pub = nil
+			p.client.public = false
+		}
 		body = func() {
 			p.client.choice(c, pub)
 			p.client.view(c, a, i18n.T("settings.account.client.secret_help"), pub)

@@ -704,8 +704,13 @@ func dropOrphans(ctx context.Context, db *store.DB, accountID int64, ids []int64
 	if err != nil {
 		return err
 	}
-	stmts := []sqlite.Statement{{SQL: "DELETE FROM messages WHERE id IN (" + marks(len(gone)) + ")", Args: anys(gone)}}
-	if _, err := db.Transaction(ctx, append(stmts, tidyThreads(accountID, tids)...)); err != nil {
+	stmts := append([]sqlite.Statement{{SQL: "DELETE FROM messages WHERE id IN (" + marks(len(gone)) + ")", Args: anys(gone)}}, tidyThreads(accountID, tids)...)
+	if len(hashes.Values) > 0 {
+		_, err = db.DurableTransaction(ctx, stmts)
+	} else {
+		_, err = db.Transaction(ctx, stmts)
+	}
+	if err != nil {
 		return err
 	}
 	r.gone(gone, tids)

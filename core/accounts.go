@@ -104,6 +104,43 @@ func (s *Service) allowPOP3(ctx context.Context, in *AccountInput) error {
 	return err
 }
 
+var errGmailAPIOff = errors.New("Gmail API is experimental: turn it on in settings to add a Gmail API account")
+
+var errGmailAPINeedsOwnClient = errors.New("Gmail API requires your own Google Cloud OAuth client")
+
+func (s *Service) allowGmailAPI(ctx context.Context, in *AccountInput) error {
+	fillGmailAPISlot(in)
+	if in.receiving() != auth.GmailAPI {
+		return nil
+	}
+	st, err := s.loadSettings(ctx)
+	in.allowGmailAPI = st.ExperimentalGmailAPI
+	return err
+}
+
+func fillGmailAPISlot(in *AccountInput) {
+	if in.receiving() != auth.GmailAPI {
+		return
+	}
+	if in.Receiving.Host == "" {
+		in.Receiving = Server{Protocol: auth.GmailAPI, Host: "gmail.googleapis.com", Port: 443, Security: SecurityTLS, Auth: in.Receiving.Auth}
+	}
+	if in.Sending.Host == "" && in.Sending.Protocol == "" {
+		in.Sending = in.Receiving
+	}
+}
+
+func validGmailAPIGrant(g oauthGrant) error {
+	if g.provider != "gmail" {
+		return ErrProviderMismatch
+	}
+	pub, _ := auth.ByID("gmail")
+	if g.client.ID == "" || pub.OAuth != nil && pub.OAuth.Public != nil && g.client.ID == pub.OAuth.Public.ID {
+		return errGmailAPINeedsOwnClient
+	}
+	return nil
+}
+
 // receiving is the receiving slot's protocol, "" read as IMAP.
 func (in AccountInput) receiving() string {
 	if in.Receiving.Protocol == "" {
@@ -113,11 +150,11 @@ func (in AccountInput) receiving() string {
 }
 
 // sending is the protocol a new or changed account sends with: EWS through
-// EWS, JMAP through JMAP, any other first through SMTP (Graph is stored only
+// EWS, JMAP through JMAP, Gmail API through Gmail API, any other first through SMTP (Graph is stored only
 // after SMTP refused AUTH).
 func (in AccountInput) sending() string {
 	switch in.receiving() {
-	case auth.EWS, auth.JMAP:
+	case auth.EWS, auth.JMAP, auth.GmailAPI:
 		return in.receiving()
 	}
 	if in.receiving() == auth.Graph {
@@ -130,6 +167,7 @@ func (in AccountInput) validate() error {
 	if _, err := mail.ParseAddress(in.Email); err != nil {
 		return fmt.Errorf("invalid email address %q", in.Email)
 	}
+	fillGmailAPISlot(&in)
 	recv := in.receiving()
 	sendSlot := in.Sending
 	if recv == auth.Graph && sendSlot == (Server{Protocol: sendSlot.Protocol}) {
@@ -140,12 +178,12 @@ func (in AccountInput) validate() error {
 		slot, name string
 		ok         bool
 		Server
-	}{{"receiving", strings.ToUpper(recv), recv == auth.IMAP || recv == auth.JMAP || recv == auth.EWS || recv == auth.POP3 && in.allowPOP3 || recv == auth.Graph, in.Receiving},
+	}{{"receiving", strings.ToUpper(recv), recv == auth.IMAP || recv == auth.JMAP || recv == auth.EWS || recv == auth.POP3 && in.allowPOP3 || recv == auth.Graph || recv == auth.GmailAPI && in.allowGmailAPI, in.Receiving},
 		// Graph is not chosen but stored after SMTP refused AUTH; a stored
 		// account's servers come back with it.
 		{"sending", strings.ToUpper(in.sending()), sendSlot.Protocol == "" || sendSlot.Protocol == in.sending() ||
-			sendSlot.Protocol == auth.Graph && recv != auth.EWS && recv != auth.JMAP, sendSlot}} {
-		http := e.name == "JMAP" || e.name == "EWS" || e.name == "GRAPH"
+			sendSlot.Protocol == auth.Graph && recv != auth.EWS && recv != auth.JMAP && recv != auth.GmailAPI, sendSlot}} {
+		http := e.name == "JMAP" || e.name == "EWS" || e.name == "GRAPH" || e.name == "GMAILAPI"
 		if !e.ok {
 			return fmt.Errorf("%s protocol %q is not supported", e.slot, e.Protocol)
 		}
@@ -166,7 +204,11 @@ func (in AccountInput) validate() error {
 		if !validSecurity(e.Security) || http && e.Security == SecurityStartTLS {
 			return fmt.Errorf("%s security %q is invalid", e.name, e.Security)
 		}
-		if !(e.Auth == "" || e.Auth == AuthPassword && e.name != "GRAPH" || e.Auth == AuthOAuth && e.name != "EWS" || e.Auth == AuthAPIToken && e.name == "JMAP") {
+		if e.name == "GMAILAPI" {
+			if !(e.Auth == AuthOAuth || e.Auth == "" && in.OAuthFlowID != "") {
+				return fmt.Errorf("%s sign-in %q is not supported", e.name, e.Auth)
+			}
+		} else if !(e.Auth == "" || e.Auth == AuthPassword && e.name != "GRAPH" || e.Auth == AuthOAuth && e.name != "EWS" || e.Auth == AuthAPIToken && e.name == "JMAP") {
 			return fmt.Errorf("%s sign-in %q is not supported", e.name, e.Auth)
 		}
 		if e.Path != "" && (!http || !strings.HasPrefix(e.Path, "/") || strings.ContainsAny(e.Path, "?# ")) ||
@@ -203,6 +245,9 @@ func (s *Service) TestAccount(ctx context.Context, in AccountInput) error {
 	}
 	defer end()
 	if err := s.allowPOP3(ctx, &in); err != nil {
+		return err
+	}
+	if err := s.allowGmailAPI(ctx, &in); err != nil {
 		return err
 	}
 	if r, err := s.check(ctx, in, ""); err != nil {
@@ -289,6 +334,20 @@ func (s *Service) AddAccount(ctx context.Context, in AccountInput) (Account, err
 			return Account{}, ErrGraphOff
 		}
 	}
+	if err := s.allowGmailAPI(ctx, &in); err != nil {
+		return Account{}, err
+	}
+	if in.receiving() == auth.GmailAPI {
+		if !in.allowGmailAPI {
+			return Account{}, errGmailAPIOff
+		}
+		if in.OAuthFlowID == "" {
+			return Account{}, errors.New("Gmail API requires an OAuth sign-in")
+		}
+		if err := validGmailAPIGrant(g); err != nil {
+			return Account{}, err
+		}
+	}
 	checked, checkErr := s.check(ctx, in, "")
 	receiveOnly := in.ReceiveOnly && checked.OnlySendingFailed()
 	if checkErr != nil && !receiveOnly {
@@ -297,7 +356,7 @@ func (s *Service) AddAccount(ctx context.Context, in AccountInput) (Account, err
 	if checked.URL != "" { // found by Autodiscover
 		in.Receiving, _ = ewsSlot(checked.URL)
 	}
-	if p := in.receiving(); p == auth.EWS || p == auth.JMAP {
+	if p := in.receiving(); p == auth.EWS || p == auth.JMAP || p == auth.GmailAPI {
 		in.Sending = in.Receiving // it sends through the receiving server
 		sendAuth = slotAuth(in.Sending)
 	}
@@ -517,8 +576,8 @@ func scanAccount(r []any) Account {
 		AIInstructions: store.Str(r[23]), OAuthClientID: store.Str(r[24]), LabelKeywords: store.Int(r[25]) == 1, Kind: store.Str(r[26]),
 		ReceiveOnly: store.Int(r[27]) == 1,
 	}
-	if p := a.Receiving.Protocol; p == auth.EWS || p == auth.JMAP {
-		// EWS and JMAP send through the receiving server, whose path and sign-in
+	if p := a.Receiving.Protocol; p == auth.EWS || p == auth.JMAP || p == auth.GmailAPI {
+		// EWS, JMAP and Gmail API send through the receiving server, whose path and sign-in
 		// live on the receiving slot (this also migrates older JMAP accounts whose
 		// send_protocol was stored as smtp).
 		a.Sending = a.Receiving
@@ -606,7 +665,7 @@ func (s *Service) RemoveAccount(ctx context.Context, id int64) error {
 	}()
 	s.stopCalls(func(a int64) bool { return a == id })
 	s.stopWorker(id)
-	if _, err := s.db.Execute(ctx, "DELETE FROM accounts WHERE id = ?", id); err != nil {
+	if _, err := s.db.DurableExecute(ctx, "DELETE FROM accounts WHERE id = ?", id); err != nil {
 		return err
 	}
 	s.tokMu.Lock()
@@ -720,6 +779,11 @@ func (s *Service) Reauthorize(ctx context.Context, id int64, flowID string) erro
 	if g.RefreshToken == "" {
 		return errors.New("the provider granted no refresh token")
 	}
+	if acc.Receiving.Protocol == auth.GmailAPI {
+		if err := validGmailAPIGrant(g); err != nil {
+			return err
+		}
+	}
 	// No refresh with the old refresh token may finish after the swap.
 	sem := s.refreshLock(id)
 	select {
@@ -791,7 +855,7 @@ func (a Account) servers() ServerSettings {
 
 // serverInput is the AccountInput that checks email's account on ss.
 func serverInput(email string, ss ServerSettings) AccountInput {
-	return AccountInput{Email: email, Username: ss.Username, Receiving: ss.Receiving, Sending: ss.Sending, allowPOP3: true} // a stored account's
+	return AccountInput{Email: email, Username: ss.Username, Receiving: ss.Receiving, Sending: ss.Sending, allowPOP3: true, allowGmailAPI: true} // a stored account's
 }
 
 // UpdateAccount writes p's fields in one transaction. New Servers are first
@@ -875,7 +939,7 @@ func (s *Service) UpdateAccount(ctx context.Context, id int64, p AccountPatch) (
 		if in.Receiving.Protocol != acc.Receiving.Protocol {
 			return Account{}, errors.New("an account's receiving protocol cannot change: add the account again")
 		}
-		if p := in.receiving(); p == auth.EWS || p == auth.JMAP {
+		if p := in.receiving(); p == auth.EWS || p == auth.JMAP || p == auth.GmailAPI {
 			in.Sending = in.Receiving // the same endpoint; the stored sending slot has no path
 		}
 		if in.receiving() == auth.Graph {

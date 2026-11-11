@@ -503,7 +503,7 @@ func (s *Service) removeAttachment(ctx context.Context, draftID, attachmentID, r
 	if len(rows.Values) == 0 {
 		return 0, fmt.Errorf("attachment %d not found in draft %d", attachmentID, draftID)
 	}
-	if _, err := s.db.Transaction(ctx, []sqlite.Statement{
+	if _, err := s.db.DurableTransaction(ctx, []sqlite.Statement{
 		{SQL: "DELETE FROM draft_attachments WHERE id = ?", Args: []any{attachmentID}}, bumpRevision(draftID)}); err != nil {
 		return 0, err
 	}
@@ -514,7 +514,7 @@ func (s *Service) removeAttachment(ctx context.Context, draftID, attachmentID, r
 }
 
 func (s *Service) deleteDraft(ctx context.Context, id int64) error {
-	r, err := s.db.Execute(ctx, "DELETE FROM drafts WHERE id = ?", id) // attachments cascade
+	r, err := s.db.DurableExecute(ctx, "DELETE FROM drafts WHERE id = ?", id) // attachments cascade
 	if err != nil {
 		return err
 	}
@@ -729,7 +729,7 @@ func (s *Service) enqueue(ctx context.Context, draftID, rev int64, checked []str
 			SELECT thread_id, last_insert_rowid(), max(?, COALESCE(date, 0)) FROM messages WHERE id = ? AND thread_id IS NOT NULL`,
 			Args: []any{s.clk().Now().Unix(), d.SourceMessageID}}}, stmts...)
 	}
-	if _, err := s.db.Transaction(ctx, append([]sqlite.Statement{{SQL: `INSERT INTO outbox(account_id, message_id_hdr, raw_path, rcpts, state, subject, created_at,
+	if _, err := s.db.DurableTransaction(ctx, append([]sqlite.Statement{{SQL: `INSERT INTO outbox(account_id, message_id_hdr, raw_path, rcpts, state, subject, created_at,
 		draft_id, send_after) VALUES (?, ?, ?, ?, 'queued', ?, ?, ?, ?)`,
 		Args: []any{d.AccountID, messageID, rawPath, encodeList(rcpts), d.Subject, s.clk().Now().Unix(), draftID,
 			s.clk().Now().Add(UndoSendWindow).UnixMilli()}}}, stmts...)); err != nil {

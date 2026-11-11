@@ -667,7 +667,7 @@ const cspHead = `<!doctype html><html><head><meta charset="utf-8">` +
 	`<meta http-equiv="Content-Security-Policy" content="default-src 'none'; img-src data:; style-src 'unsafe-inline'">`
 
 // viewInBrowser writes the message's sanitized HTML (remote images blocked)
-// to a temporary file under a CSP and opens it in the browser.
+// to a temporary file under a CSP and opens it in the browser. Close removes it.
 func (r *reader) viewInBrowser(id int64) {
 	a := r.p.a
 	plat := a.plat
@@ -680,7 +680,11 @@ func (r *reader) viewInBrowser(id int64) {
 		if body == "" {
 			body = "<pre>" + html.EscapeString(m.Text) + "</pre>"
 		}
-		f, err := os.CreateTemp(plat.TempDir(), "godwit-*.html")
+		dir, err := a.tempDir(plat.TempDir())
+		if err != nil {
+			return err
+		}
+		f, err := os.CreateTemp(dir, "godwit-*.html")
 		if err != nil {
 			return err
 		}
@@ -1006,6 +1010,7 @@ func (r *reader) saveMail() {
 	}
 	a := r.p.a
 	plat := a.plat
+	saved := false
 	a.do(func(ctx context.Context) error {
 		stem := []rune(m.Subject)
 		stem = stem[:min(len(stem), 100)] // file systems cap names near 255 bytes
@@ -1025,11 +1030,15 @@ func (r *reader) saveMail() {
 				return err
 			}
 		}
-		return os.WriteFile(dst, raw, 0o644)
+		if err := os.WriteFile(dst, raw, 0o644); err != nil {
+			return err
+		}
+		saved = true
+		return nil
 	}, func(err error) {
 		if err != nil {
 			a.toastErr(err)
-		} else {
+		} else if saved {
 			a.toast(i18n.T("reader.saved"))
 		}
 	})

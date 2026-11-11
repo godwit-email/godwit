@@ -77,3 +77,12 @@ func (s *Service) AuditExternal(ctx context.Context, source, action string, targ
 	}
 	return s.gateway().Record(ctx, gateway.Entry{Source: source, Tool: action, TargetID: target, Destinations: dests, Decision: "allow"})
 }
+
+type externalSourceKey struct{}
+
+// WithExternalSource marks ctx as coming from an external API source
+// (AuditLocalAPI or AuditMCP), so methods whose audit depends on stored state
+// can decide and write the audit row atomically with their update.
+func WithExternalSource(ctx context.Context, source string) context.Context {
+	return context.WithValue(ctx, externalSourceKey{}, source)
+}

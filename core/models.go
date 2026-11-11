@@ -520,7 +520,7 @@ func (s *Service) UpdateModelService(ctx context.Context, id int64, in ModelServ
 			stmts = append(stmts, sqlite.Statement{SQL: trash, Args: []any{id, old.keyVersion}})
 		}
 	}
-	if _, err := s.db.Transaction(ctx, stmts); err != nil {
+	if _, err := s.db.DurableTransaction(ctx, stmts); err != nil {
 		return ModelService{}, err // a new key's entry stays listed in the trash
 	}
 	if in.OAuthFlowID != "" {
@@ -577,7 +577,7 @@ func (s *Service) RemoveModelService(ctx context.Context, id int64) error {
 	if old.keyVersion != 0 {
 		stmts = append(stmts, sqlite.Statement{SQL: "INSERT OR IGNORE INTO model_key_trash(service_id, key_version) VALUES (?, ?)", Args: []any{id, old.keyVersion}})
 	}
-	if _, err := s.db.Transaction(ctx, stmts); err != nil {
+	if _, err := s.db.DurableTransaction(ctx, stmts); err != nil {
 		return err
 	}
 	s.forgetModel(id)

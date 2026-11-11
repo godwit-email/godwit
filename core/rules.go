@@ -497,8 +497,12 @@ func (s *Service) SetRuleEnabled(ctx context.Context, id int64, on bool) error {
 	}
 	defer end()
 	// Turned on, it runs on what comes after, not on mail that came while it was off.
-	return s.exec(ctx, sqlite.Statement{SQL: "UPDATE rules SET since_seq = CASE WHEN ? AND enabled = 0 THEN " + lastSeq + " ELSE since_seq END, enabled = ?, updated_at = ? WHERE id = ?",
-		Args: []any{b2i(on), b2i(on), time.Now().Unix(), id}})
+	res, err := s.db.Execute(ctx, "UPDATE rules SET since_seq = CASE WHEN ? AND enabled = 0 THEN "+lastSeq+" ELSE since_seq END, enabled = ?, updated_at = ? WHERE id = ?",
+		b2i(on), b2i(on), time.Now().Unix(), id)
+	if err == nil && res.Changes == 0 {
+		err = fmt.Errorf("rule %d not found", id)
+	}
+	return err
 }
 
 // ReorderRules puts the rules in the order of ids, which names every rule

@@ -89,7 +89,7 @@ func DeleteLocal(ctx context.Context, db *store.DB, accountID int64, ids []int64
 		}
 	}
 	stmts := []sqlite.Statement{{SQL: "DELETE FROM messages WHERE " + where, Args: args}}
-	if _, err := db.Transaction(ctx, append(stmts, tidyThreads(accountID, tids)...)); err != nil {
+	if _, err := db.DurableTransaction(ctx, append(stmts, tidyThreads(accountID, tids)...)); err != nil {
 		return nil, nil, err
 	}
 	return hashes, tids, nil

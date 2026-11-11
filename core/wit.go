@@ -314,7 +314,7 @@ func (s *Service) registerAskTools() {
 			Name:        b.name,
 			Description: b.desc,
 			Schema:      object(map[string]any{"ids": map[string]any{"type": "array", "items": intProp, "minItems": 1}}, "ids"),
-		}, Write: true, Exec: &executor{Prepare: s.prepareBatchAction(b), Apply: s.applyBatchAction}})
+		}, Write: true, Exec: &executor{Prepare: s.prepareBatchAction(b), Apply: s.applyBatchAction, Outside: true}})
 	}
 
 	// Unsubscribe & links
@@ -322,7 +322,7 @@ func (s *Service) registerAskTools() {
 		Name:        "unsubscribe",
 		Description: "Propose unsubscribing from a mailing list or sender using the email's List-Unsubscribe headers. The user approves it before unsubscribing. id is the mail id.",
 		Schema:      object(map[string]any{"id": intProp}, "id"),
-	}, Write: true, Exec: &executor{Prepare: s.prepareUnsubscribe, Apply: s.applyUnsubscribe}})
+	}, Write: true, Exec: &executor{Prepare: s.prepareUnsubscribe, Apply: s.applyUnsubscribe, Outside: true}})
 
 	read("get_all_links", "Extract all links and URLs from an email's body by its id. Returns URL, anchor text, and context.",
 		object(map[string]any{"id": intProp}, "id"), s.getAllLinks)
@@ -331,20 +331,20 @@ func (s *Service) registerAskTools() {
 		Name:        "open_link_in_browser",
 		Description: "Propose opening an external link (http or https) in the default web browser. The user approves it before it is opened.",
 		Schema:      object(map[string]any{"url": stringProp}, "url"),
-	}, Write: true, Exec: &executor{Prepare: s.prepareOpenLink, Apply: s.applyOpenLink}})
+	}, Write: true, Exec: &executor{Prepare: s.prepareOpenLink, Apply: s.applyOpenLink, Outside: true}})
 
 	// Compose & replies
 	s.mustRegister(toolDesc{Spec: ai.ToolSpec{
 		Name:        "reply_to_mail",
 		Description: "Propose a reply draft to an email. The user approves it before it is saved, and sends it themselves. id is the mail id to reply to. reply_all replies to all recipients if true. html is the reply body.",
 		Schema:      object(map[string]any{"id": intProp, "reply_all": map[string]any{"type": "boolean"}, "html": stringProp}, "id", "html"),
-	}, Write: true, Exec: &executor{Prepare: s.prepareReplyMail, Apply: s.applyReplyOrForwardDraft}})
+	}, Write: true, Exec: &executor{Prepare: s.prepareReplyMail, Apply: s.applyReplyOrForwardDraft, Outside: true}})
 
 	s.mustRegister(toolDesc{Spec: ai.ToolSpec{
 		Name:        "forward_mail",
 		Description: "Propose forwarding an email to recipients. The user approves it before it is saved, and sends it themselves. id is the mail id to forward. to is the list of recipient email addresses. html is optional introductory text.",
 		Schema:      object(map[string]any{"id": intProp, "to": listProp, "cc": listProp, "html": stringProp}, "id", "to"),
-	}, Write: true, Exec: &executor{Prepare: s.prepareForwardMail, Apply: s.applyReplyOrForwardDraft}})
+	}, Write: true, Exec: &executor{Prepare: s.prepareForwardMail, Apply: s.applyReplyOrForwardDraft, Outside: true}})
 
 	s.mustRegister(toolDesc{Spec: ai.ToolSpec{
 		Name:        "delete_draft",
@@ -1422,7 +1422,10 @@ func (s *Service) applyReplyOrForwardDraft(ctx context.Context, a Approval) ([]s
 	}
 	draftID := res.LastInsertID
 	if in.Mode == "forward" && in.SourceMessageID > 0 {
-		_ = s.copyAttachments(ctx, draftID, in.SourceMessageID)
+		if err := s.copyAttachments(ctx, draftID, in.SourceMessageID); err != nil {
+			// No half-made forward: the user could send it without its files.
+			return nil, nil, nil, errors.Join(fmt.Errorf("could not copy the attachments: %w", err), s.deleteDraft(ctx, draftID))
+		}
 	}
 	return nil, map[string]any{"created": true, "draft_id": draftID, "subject": in.Subject}, nil, nil
 }
@@ -1439,7 +1442,7 @@ func (s *Service) prepareDeleteDraft(ctx context.Context, _ Conversation, raw js
 	if err := json.Unmarshal(raw, &in); err != nil {
 		return prepared{}, err
 	}
-	rows, err := s.db.Query(ctx, "SELECT id, subject FROM drafts WHERE id = ?", in.DraftID)
+	rows, err := s.db.Query(ctx, "SELECT id, subject, revision FROM drafts WHERE id = ?", in.DraftID)
 	if err != nil {
 		return prepared{}, err
 	}
@@ -1453,20 +1456,21 @@ func (s *Service) prepareDeleteDraft(ctx context.Context, _ Conversation, raw js
 		return prepared{}, err
 	}
 	return prepared{
-		Args:       b,
-		Summary:    summary,
-		TargetKind: "draft",
-		TargetID:   in.DraftID,
+		Args:          b,
+		Summary:       summary,
+		TargetKind:    "draft",
+		TargetID:      in.DraftID,
+		TargetVersion: store.Int(rows.Values[0][2]),
 	}, nil
 }
 
-func (s *Service) applyDeleteDraft(ctx context.Context, a Approval) ([]sqlite.Statement, any, any, error) {
+func (s *Service) applyDeleteDraft(_ context.Context, a Approval) ([]sqlite.Statement, any, any, error) {
 	var in deleteDraftArgs
 	if err := json.Unmarshal(a.Args, &in); err != nil {
 		return nil, nil, nil, err
 	}
-	if err := s.DeleteDraft(ctx, in.DraftID); err != nil {
-		return nil, nil, nil, err
-	}
-	return nil, map[string]any{"deleted": true, "draft_id": in.DraftID}, nil, nil
+	// A statement, not DeleteDraft: this runs holding the run ledger, which
+	// DeleteDraft takes, and the delete has to commit with the approval.
+	return []sqlite.Statement{{SQL: "DELETE FROM drafts WHERE id = ?", Args: []any{in.DraftID}}},
+		map[string]any{"deleted": true, "draft_id": in.DraftID}, nil, nil
 }

@@ -17,7 +17,7 @@ updates:
     groups:
       # Alpha engine under every script plugin and the pi runtime; own PR.
       moejs:
-        patterns: [github.com/Calcium-Ion/moejs]
+        patterns: [github.com/MoeForge/moejs]
       go:
         patterns: ["*"]
         update-types: [minor, patch]
