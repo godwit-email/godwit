@@ -557,3 +557,31 @@ func TestGraphDeltaAsksForLargePages(t *testing.T) {
 		t.Errorf("inbox delta took %d pages, want 1", inboxPages)
 	}
 }
+
+// A purge throttled by Graph asks Confirm again before retrying: one called
+// off during the back-off deletes nothing.
+func TestGraphPurgeConfirmsBeforeThrottledRetry(t *testing.T) {
+	s := testmail.StartGraph(t)
+	id := s.Deliver("INBOX", backendtest.Message("p@example.com", "purge"))
+	r := graphReceiver(t, s, func(context.Context, time.Duration) error { return nil })
+	asked := 0
+	res, err := r.Apply(tctx(t), backend.Purge{
+		At: backend.Location{Folder: backend.FolderRef(s.Folder("INBOX")), Ref: backend.MessageRef(id), ServerID: id},
+		Confirm: func() bool {
+			if asked++; asked == 1 {
+				s.Throttle(1, http.StatusTooManyRequests, "1") // the permanentDelete that follows
+				return true
+			}
+			return false // restored during the back-off
+		},
+	})
+	if err != nil || res.Outcome != backend.Failed || res.Reason != backend.Cancelled {
+		t.Fatalf("Purge = %+v, %v; want Failed/Cancelled", res, err)
+	}
+	if asked != 2 {
+		t.Errorf("Confirm asked %d times, want 2", asked)
+	}
+	if _, _, _, _, exists := s.MessageState(id); !exists {
+		t.Fatal("the purge went ahead after Confirm called it off")
+	}
+}

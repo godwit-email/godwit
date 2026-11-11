@@ -1056,10 +1056,11 @@ func (r *Receiver) purge(ctx context.Context, op backend.Purge) (backend.Result,
 			return backend.Result{}, fmt.Errorf("graph: message %s left folder %s: %w", id, op.At.Folder, backend.ErrNotFound)
 		}
 	}
-	if op.Confirm != nil && !op.Confirm() {
+	// Confirm is asked again before each retry after a throttling back-off.
+	_, err := r.c.doConfirmed(ctx, http.MethodPost, "/me/messages/"+url.PathEscape(id)+"/permanentDelete", "", nil, op.Confirm)
+	if errors.Is(err, errCancelled) {
 		return backend.Result{Outcome: backend.Failed, Reason: backend.Cancelled}, nil
 	}
-	_, err := r.c.do(ctx, http.MethodPost, "/me/messages/"+url.PathEscape(id)+"/permanentDelete", "", nil)
 	if isStatus(err, http.StatusNotFound) {
 		return backend.Result{}, fmt.Errorf("graph: message %s: %w", id, backend.ErrNotFound)
 	}

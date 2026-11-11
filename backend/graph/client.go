@@ -203,6 +203,15 @@ func retryAfter(h http.Header) time.Duration {
 // scheme), serialized per account, with Prefer: IdType="ImmutableId" on every
 // request and odata.maxpagesize on delta requests.
 func (c *client) do(ctx context.Context, method, pathOrURL, contentType string, body []byte) ([]byte, error) {
+	return c.doConfirmed(ctx, method, pathOrURL, contentType, body, nil)
+}
+
+// errCancelled: doConfirmed's confirm answered false; nothing was sent since.
+var errCancelled = errors.New("graph: cancelled")
+
+// doConfirmed is do asking confirm (when not nil) right before each attempt,
+// retries after a back-off included: a false answer is errCancelled.
+func (c *client) doConfirmed(ctx context.Context, method, pathOrURL, contentType string, body []byte, confirm func() bool) ([]byte, error) {
 	cr, err := c.cfg.Credentials(ctx)
 	if err != nil {
 		return nil, err
@@ -228,6 +237,9 @@ func (c *client) do(ctx context.Context, method, pathOrURL, contentType string, 
 	}
 	defer release()
 	for try := 0; ; try++ {
+		if confirm != nil && !confirm() {
+			return nil, errCancelled
+		}
 		raw, err := c.sendOnce(ctx, method, target, contentType, body, cr)
 		var busy *busyError
 		if !errors.As(err, &busy) || try == maxRetries {
