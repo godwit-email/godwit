@@ -481,7 +481,7 @@ func (r *Receiver) incremental(ctx context.Context, req backend.SyncRequest, cur
 			}
 		}
 		for _, m := range live {
-			backfill := !added[m.ID] && known[m.ID]
+			backfill := !added[m.ID]
 			if err := s.emitMessage(ctx, m, valid, held, known, backfill, false); err != nil {
 				return err
 			}

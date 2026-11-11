@@ -448,3 +448,59 @@ func TestGmailAPIStaleSourceAndSystemLabelMoves(t *testing.T) {
 	assert.Equal(t, 0, gmailFolderByName(t, e, acc.ID, "SENT").Total)
 	assert.Equal(t, 1, gmailFolderByName(t, e, acc.ID, "TRASH").Total)
 }
+
+// Discovering an out-of-window message through a remote flag/label history
+// record imports it as backfill (not a new arrival), so receive rules do not
+// fire on old mail, whereas messagesAdded still fires receive rules.
+func TestGmailAPIOutOfWindowFlagChangeIsBackfill(t *testing.T) {
+	const email = "alice@gmail.com"
+	e := coretest.New(t, coretest.WithoutAutoSync())
+	setGmailAPI(t, e, true)
+	g := startGmailAPIEnv(t, email)
+
+	oldID := g.api.Deliver("INBOX", coretest.Msg("billing@example.com", email, "Old invoice", "old"))
+	g.api.Deliver("INBOX", coretest.Msg("billing@example.com", email, "Recent note", "recent"))
+
+	flowID := g.signIn(t, e, email, ownGmailClient)
+	in := g.input(email, flowID)
+	in.Sync = &core.SyncRange{Limit: 1}
+	acc, err := e.Svc.AddAccount(t.Context(), in)
+	require.NoError(t, err)
+	require.NoError(t, e.Svc.SyncNow(t.Context(), acc.ID))
+
+	// Old invoice is outside Limit:1 initially.
+	oldMsgs, err := e.Svc.Search(t.Context(), acc.ID, "Old invoice", 10)
+	require.NoError(t, err)
+	require.Empty(t, oldMsgs)
+
+	lbl, err := e.Svc.CreateLabel(t.Context(), core.LabelInput{Name: "Invoices", Color: "gray", Icon: "folder-3"})
+	require.NoError(t, err)
+	_, err = e.Svc.SaveRule(t.Context(), core.Rule{
+		Enabled: true,
+		Doc: core.RuleDoc{
+			Version:    core.RuleVersion,
+			Name:       "invoices",
+			Trigger:    core.TriggerReceive,
+			Match:      core.MatchAll,
+			Conditions: []core.RuleCondition{{Field: core.FieldSubject, Op: core.OpContains, Value: "invoice"}},
+			Actions:    []core.RuleAction{{Kind: core.ActionLabel, Label: lbl.Slug}},
+		},
+	})
+	require.NoError(t, err)
+
+	// Remotely mark the out-of-window message read (labelsRemoved only) and deliver a genuinely new invoice.
+	g.api.ModifyLabels(oldID, nil, []string{"UNREAD"})
+	g.api.Deliver("INBOX", coretest.Msg("billing@example.com", email, "New invoice", "new"))
+	require.NoError(t, e.Svc.SyncNow(t.Context(), acc.ID))
+
+	hasRuleLabel := func(subject string) bool {
+		ms, err := e.Svc.Search(t.Context(), acc.ID, subject, 10)
+		require.NoError(t, err)
+		require.Len(t, ms, 1, subject)
+		got, err := e.Svc.MessageLabels(t.Context(), []int64{ms[0].ID})
+		require.NoError(t, err)
+		return len(got[ms[0].ID]) > 0
+	}
+	require.Eventually(t, func() bool { return hasRuleLabel("New invoice") }, 5*time.Second, 20*time.Millisecond)
+	assert.False(t, hasRuleLabel("Old invoice"), "out-of-window message discovered via flag change must be backfill, not a new arrival")
+}
