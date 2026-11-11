@@ -84,12 +84,9 @@ func (r *Receiver) Describe(ctx context.Context) (backend.Description, error) {
 	return d, nil
 }
 
-// Check implements backend.Receiver: verifies /me and /me/mailFolders/inbox,
-// and lists the mailbox's folders.
+// Check implements backend.Receiver: verifies /me/mailFolders/inbox with the
+// Mail.ReadWrite token and lists the mailbox's folders.
 func (r *Receiver) Check(ctx context.Context) (backend.CheckResult, error) {
-	if _, err := callJSON[struct{ ID string }](ctx, r.c, http.MethodGet, "/me?$select=id", nil); err != nil {
-		return backend.CheckResult{}, err
-	}
 	if _, err := callJSON[struct{ ID string }](ctx, r.c, http.MethodGet, "/me/mailFolders/inbox?$select=id", nil); err != nil {
 		return backend.CheckResult{}, err
 	}
@@ -107,13 +104,16 @@ func (r *Receiver) Watch(context.Context, func([]backend.FolderRef)) error {
 	return backend.ErrUnsupported
 }
 
-var wellKnownRoles = map[string]backend.Role{
-	"inbox":        backend.RoleInbox,
-	"sentitems":    backend.RoleSent,
-	"drafts":       backend.RoleDrafts,
-	"deleteditems": backend.RoleTrash,
-	"junkemail":    backend.RoleJunk,
-	"archive":      backend.RoleArchive,
+var wellKnownRoles = []struct {
+	name string
+	role backend.Role
+}{
+	{"inbox", backend.RoleInbox},
+	{"sentitems", backend.RoleSent},
+	{"drafts", backend.RoleDrafts},
+	{"deleteditems", backend.RoleTrash},
+	{"junkemail", backend.RoleJunk},
+	{"archive", backend.RoleArchive},
 }
 
 type graphFolder struct {
@@ -121,7 +121,6 @@ type graphFolder struct {
 	DisplayName      string `json:"displayName"`
 	ParentFolderID   string `json:"parentFolderId"`
 	ChildFolderCount int    `json:"childFolderCount"`
-	WellKnownName    string `json:"wellKnownName"`
 	Removed          *struct {
 		Reason string `json:"reason"`
 	} `json:"@removed"`
@@ -147,7 +146,7 @@ func (r *Receiver) listChildren(ctx context.Context, path string, out *[]graphFo
 			seen[f.ID] = true
 			*out = append(*out, f)
 			if f.ChildFolderCount > 0 {
-				childPath := "/me/mailFolders/" + url.PathEscape(f.ID) + "/childFolders?$top=250&$select=id,displayName,parentFolderId,childFolderCount,wellKnownName"
+				childPath := "/me/mailFolders/" + url.PathEscape(f.ID) + "/childFolders?$top=250&$select=id,displayName,parentFolderId,childFolderCount"
 				if err := r.listChildren(ctx, childPath, out, seen); err != nil {
 					return err
 				}
@@ -158,31 +157,20 @@ func (r *Receiver) listChildren(ctx context.Context, path string, out *[]graphFo
 	return nil
 }
 
-// folders lists every mail folder recursively, resolving roles via wellKnownName
-// (falling back to well-known folder lookups when wellKnownName is omitted).
+// folders lists every mail folder recursively, resolving standard roles via
+// Graph v1.0's well-known folder paths (/me/mailFolders/{wellKnownName}).
 func (r *Receiver) folders(ctx context.Context) ([]backend.Folder, string, error) {
 	var raw []graphFolder
 	seen := map[string]bool{}
-	const rootQuery = "/me/mailFolders?$top=250&$select=id,displayName,parentFolderId,childFolderCount,wellKnownName"
+	const rootQuery = "/me/mailFolders?$top=250&$select=id,displayName,parentFolderId,childFolderCount"
 	if err := r.listChildren(ctx, rootQuery, &raw, seen); err != nil {
 		return nil, "", err
 	}
 	roleByID := map[string]backend.Role{}
-	haveRole := map[backend.Role]bool{}
-	for _, f := range raw {
-		if ro, ok := wellKnownRoles[strings.ToLower(f.WellKnownName)]; ok {
-			roleByID[f.ID] = ro
-			haveRole[ro] = true
-		}
-	}
-	// Older v1.0 responses without wellKnownName: probe missing well-known names once.
-	for name, ro := range wellKnownRoles {
-		if haveRole[ro] {
-			continue
-		}
-		f, err := callJSON[graphFolder](ctx, r.c, http.MethodGet, "/me/mailFolders/"+name+"?$select=id", nil)
+	for _, wk := range wellKnownRoles {
+		f, err := callJSON[graphFolder](ctx, r.c, http.MethodGet, "/me/mailFolders/"+wk.name+"?$select=id", nil)
 		if err == nil && f.ID != "" {
-			roleByID[f.ID] = ro
+			roleByID[f.ID] = wk.role
 		} else if err != nil && !isStatus(err, http.StatusNotFound) {
 			return nil, "", err
 		}
@@ -843,7 +831,7 @@ func (r *Receiver) purge(ctx context.Context, op backend.Purge) (backend.Result,
 	if op.Confirm != nil && !op.Confirm() {
 		return backend.Result{Outcome: backend.Failed, Reason: backend.Cancelled}, nil
 	}
-	_, err := r.c.do(ctx, http.MethodDelete, "/me/messages/"+url.PathEscape(id), "", nil)
+	_, err := r.c.do(ctx, http.MethodPost, "/me/messages/"+url.PathEscape(id)+"/permanentDelete", "", nil)
 	if isStatus(err, http.StatusNotFound) {
 		return backend.Result{}, fmt.Errorf("graph: message %s: %w", id, backend.ErrNotFound)
 	}
@@ -857,7 +845,7 @@ func (r *Receiver) deleteToTrash(ctx context.Context, at backend.Location) (back
 		return backend.Result{}, err
 	}
 	if trash.ID == "" || backend.FolderRef(trash.ID) == at.Folder {
-		_, err := r.c.do(ctx, http.MethodDelete, "/me/messages/"+url.PathEscape(id), "", nil)
+		_, err := r.c.do(ctx, http.MethodPost, "/me/messages/"+url.PathEscape(id)+"/permanentDelete", "", nil)
 		if isStatus(err, http.StatusNotFound) {
 			return backend.Result{}, fmt.Errorf("graph: message %s: %w", id, backend.ErrNotFound)
 		}

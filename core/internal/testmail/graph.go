@@ -45,12 +45,12 @@ type Graph struct {
 	throttleStatus int
 	throttleRetry  string
 
-	resetStatus int    // status code for invalidated deltaLink (default 410)
-	resetInner  bool   // put syncStateNotFound in error.innerError.code on 400
-	partialFlag bool   // omit unchanged flag properties on delta updates
-	omitRoles   bool   // omit wellKnownName on folder list responses
-	nonImmutReq int    // requests received without Prefer: IdType="ImmutableId"
-	requests    int    // authenticated requests served
+	resetStatus int  // status code for invalidated deltaLink (default 410)
+	resetInner  bool // put syncStateNotFound in error.innerError.code on 400
+	partialFlag bool // omit unchanged flag properties on delta updates
+	omitRoles   bool // omit wellKnownName on folder list responses
+	nonImmutReq int  // requests received without Prefer: IdType="ImmutableId"
+	requests    int  // authenticated requests served
 
 	latency          atomic.Int64
 	inFlight, maxFly atomic.Int32
@@ -503,11 +503,8 @@ func (s *Graph) serve(w http.ResponseWriter, r *http.Request) {
 
 	switch {
 	case r.Method == http.MethodGet && sub == "/me":
-		writeJSON(w, http.StatusOK, map[string]any{
-			"id":                "user-alice",
-			"mail":              "alice@outlook.com",
-			"userPrincipalName": "alice@outlook.com",
-		})
+		// Mail.ReadWrite / Mail.Send tokens lack User.Read, so GET /v1.0/me is forbidden.
+		writeGraphError(w, http.StatusForbidden, "ErrorAccessDenied", "Insufficient privileges to complete the operation.", "")
 	case r.Method == http.MethodPost && sub == "/me/sendMail":
 		s.handleSendMail(w, r)
 	case r.Method == http.MethodGet && sub == "/me/mailFolders":
@@ -525,6 +522,33 @@ func (s *Graph) serve(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
+var validV1FolderProps = map[string]bool{
+	"id":               true,
+	"displayname":      true,
+	"parentfolderid":   true,
+	"childfoldercount": true,
+	"unreaditemcount":  true,
+	"totalitemcount":   true,
+	"sizeinbytes":      true,
+	"ishidden":         true,
+}
+
+func checkV1FolderSelect(w http.ResponseWriter, r *http.Request) bool {
+	sel := r.URL.Query().Get("$select")
+	if sel == "" {
+		return true
+	}
+	for p := range strings.SplitSeq(sel, ",") {
+		p = strings.TrimSpace(p)
+		if p != "" && !validV1FolderProps[strings.ToLower(p)] {
+			writeGraphError(w, http.StatusBadRequest, "RequestBroker--ParseUri",
+				fmt.Sprintf("Could not find a property named '%s' on type 'microsoft.graph.mailFolder'.", p), "")
+			return false
+		}
+	}
+	return true
+}
+
 func (s *Graph) folderJSON(f *graphFolder) map[string]any {
 	childCount := 0
 	for _, c := range s.folders {
@@ -536,19 +560,18 @@ func (s *Graph) folderJSON(f *graphFolder) map[string]any {
 	if parent == "" {
 		parent = "msgfolderroot"
 	}
-	m := map[string]any{
+	return map[string]any{
 		"id":               f.id,
 		"displayName":      f.name,
 		"parentFolderId":   parent,
 		"childFolderCount": childCount,
 	}
-	if !s.omitRoles && f.wellKnownName != "" {
-		m["wellKnownName"] = f.wellKnownName
-	}
-	return m
 }
 
 func (s *Graph) handleListFolders(w http.ResponseWriter, r *http.Request, parent string) {
+	if !checkV1FolderSelect(w, r) {
+		return
+	}
 	var list []map[string]any
 	for _, f := range s.folders {
 		if !f.gone && f.parent == parent {
@@ -559,6 +582,9 @@ func (s *Graph) handleListFolders(w http.ResponseWriter, r *http.Request, parent
 }
 
 func (s *Graph) handleFoldersDelta(w http.ResponseWriter, r *http.Request) {
+	if !checkV1FolderSelect(w, r) {
+		return
+	}
 	q := r.URL.Query()
 	since := 0
 	if tok := q.Get("$deltatoken"); tok != "" {
@@ -602,6 +628,9 @@ func (s *Graph) handleMailFolderSub(w http.ResponseWriter, r *http.Request, rest
 	}
 	if !hasTail {
 		if r.Method == http.MethodGet {
+			if !checkV1FolderSelect(w, r) {
+				return
+			}
 			writeJSON(w, http.StatusOK, s.folderJSON(f))
 			return
 		}
@@ -866,11 +895,23 @@ func (s *Graph) handleMessageSub(w http.ResponseWriter, r *http.Request, rest st
 		case http.MethodPatch:
 			s.handlePatchMessage(w, r, it, immut)
 		case http.MethodDelete:
-			s.seq++
-			if f := s.findFolderLocked(it.folderID); f != nil {
-				f.tombstones[it.immutableID] = s.seq
+			// Ordinary DELETE moves the item to Deleted Items unless it is already there.
+			trash := s.findFolderLocked("deleteditems")
+			if trash != nil && it.folderID != trash.id {
+				s.seq++
+				if old := s.findFolderLocked(it.folderID); old != nil {
+					old.tombstones[it.immutableID] = s.seq
+				}
+				s.nextID++
+				it.folderID = trash.id
+				it.mutableID = fmt.Sprintf("mut-%s-%d", trash.id, s.nextID)
+				it.modseq = s.seq
+				it.readOnlyMod = false
+				delete(trash.tombstones, it.immutableID)
+				w.WriteHeader(http.StatusNoContent)
+				return
 			}
-			delete(s.messages, it.immutableID)
+			s.permanentlyDeleteLocked(it)
 			w.WriteHeader(http.StatusNoContent)
 		default:
 			writeGraphError(w, http.StatusMethodNotAllowed, "BadRequest", "Unsupported method", "")
@@ -882,11 +923,22 @@ func (s *Graph) handleMessageSub(w http.ResponseWriter, r *http.Request, rest st
 		w.Header().Set("Content-Type", "text/plain")
 		w.WriteHeader(http.StatusOK)
 		_, _ = w.Write(it.raw)
+	case r.Method == http.MethodPost && tail == "permanentDelete":
+		s.permanentlyDeleteLocked(it)
+		w.WriteHeader(http.StatusNoContent)
 	case r.Method == http.MethodPost && (tail == "move" || tail == "copy"):
 		s.handleMoveOrCopy(w, r, it, tail == "copy", immut)
 	default:
 		writeGraphError(w, http.StatusNotFound, "ResourceNotFound", "Unknown message action "+tail, "")
 	}
+}
+
+func (s *Graph) permanentlyDeleteLocked(it *graphItem) {
+	s.seq++
+	if f := s.findFolderLocked(it.folderID); f != nil {
+		f.tombstones[it.immutableID] = s.seq
+	}
+	delete(s.messages, it.immutableID)
 }
 
 func (s *Graph) handlePatchMessage(w http.ResponseWriter, r *http.Request, it *graphItem, immut bool) {

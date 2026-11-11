@@ -62,7 +62,7 @@ Microsoft Graph 收信后端（`backend/graph`）让新添加的 Outlook 个人�
 - **上线方式**：先作为实验性功能（`ExperimentalGraph`）上线，只在新添加 Outlook 账户时提供选择；已有的 IMAP 账户不原地切换。Graph 账户的发信槽固定为 `graph`，用 `sendMail` 投递并由服务器自动存已发送副本。
 - **权限与已有账户**：Outlook 的 OAuth 授权范围加入 `Mail.ReadWrite`。按 Microsoft 单一令牌只能对应单一资源的规定，初始授权码仍换取 `outlook.office.com` 令牌，Graph 收发令牌再由账户的 refresh token 单独换取。因此旧版已添加、未授权过 `Mail.ReadWrite` 的 IMAP 账户刷新令牌时仍只请求 `outlook.office.com` 权限，继续正常工作；若 Graph 账户缺少 `Mail.ReadWrite` 授权或令牌失效，直接走现有的「需要重新授权」流程。
 - **身份、游标与轮询**：所有请求固定带 `Prefer: IdType="ImmutableId"`，跨文件夹移动后邮件 id 不变，身份属于「账户内稳定」。账户级游标取 `/me/mailFolders/delta` 的 `deltaLink`，文件夹级游标取各文件夹 `/me/mailFolders/{id}/messages/delta` 的 `deltaLink`；`deltaLink` 失效（HTTP 410 或 `syncStateNotFound`）时报「文件夹重置」。桌面端无法接收 Graph 的 webhook 推送，`Watch` 返回不支持，按每 1 分钟轮询。
-- **内容与写回**：整封邮件通过 `/me/messages/{id}/$value` 拉取原始 MIME，部件结构由 `backend/graph` 自行解析。已读和旗标用 `PATCH` 更新 `isRead` 与 `flag`，移动和删除走 `/move`、`DELETE` 或移入 `deleteditems`；自定义关键字映射到 Outlook `categories`（在能力表里声明为「支持但有说明」）。同一账户的请求串行发送，遇到 429 或 503 按 `Retry-After` 退避重试。
+- **内容与写回**：整封邮件通过 `/me/messages/{id}/$value` 拉取原始 MIME，部件结构由 `backend/graph` 自行解析。已读和旗标用 `PATCH` 更新 `isRead` 与 `flag`，移动用 `/move`，删除移入 `deleteditems`、永久删除用 `/permanentDelete`；自定义关键字映射到 Outlook `categories`（在能力表里声明为「支持但有说明」）。同一账户的请求串行发送，遇到 429 或 503 按 `Retry-After` 退避重试。
 
 ## Considered Options
 

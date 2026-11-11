@@ -273,21 +273,48 @@ func TestGraphThrottleAndSingleFlight(t *testing.T) {
 }
 
 // Custom keywords round-trip via Outlook categories, partial delta updates
-// preserve existing flags, well-known folder probing works when wellKnownName
-// is omitted, and Delete moves to Deleted Items before permanently deleting.
+// preserve existing flags, well-known folder paths resolve standard roles
+// without selecting v1.0-unsupported wellKnownName or /me, and Purge uses
+// permanentDelete rather than moving Junk items to Deleted Items.
 func TestGraphCategoriesFlagsAndDelete(t *testing.T) {
 	s := testmail.StartGraph(t)
-	s.SetOmitWellKnownNames(true)
 	s.SetPartialFlagDeltas(true)
 
+	// Fake server models v1.0 constraints: /me is 403 without User.Read, and
+	// $select=wellKnownName on mailFolders is 400 BadRequest.
+	for _, probe := range []struct {
+		path       string
+		wantStatus int
+	}{
+		{"/me?$select=id", http.StatusForbidden},
+		{"/me/mailFolders?$select=id,wellKnownName", http.StatusBadRequest},
+	} {
+		req, _ := http.NewRequestWithContext(tctx(t), http.MethodGet, s.URL()+probe.path, nil)
+		req.Header.Set("Authorization", "Bearer "+s.Token())
+		req.Header.Set("Prefer", `IdType="ImmutableId"`)
+		resp, err := http.DefaultClient.Do(req)
+		if err != nil {
+			t.Fatal(err)
+		}
+		resp.Body.Close()
+		if resp.StatusCode != probe.wantStatus {
+			t.Fatalf("GET %s = %d, want %d", probe.path, resp.StatusCode, probe.wantStatus)
+		}
+	}
+
 	id := s.Deliver("INBOX", backendtest.Message("cat@example.com", "categories"))
+	junkID := s.Deliver("Junk Email", backendtest.Message("junk@example.com", "spam"))
 	r := graphReceiver(t, s, nil)
+	if _, err := r.Check(tctx(t)); err != nil {
+		t.Fatalf("Check without User.Read or wellKnownName: %v", err)
+	}
 
 	var account backend.Cursor
 	states := map[backend.FolderRef]backend.FolderState{}
 	cs, _ := syncRound(t, r, &account, states, nil)
 
 	inboxRef := backend.FolderRef(s.Folder("INBOX"))
+	junkRef := backend.FolderRef(s.Folder("Junk Email"))
 	trashRef := backend.FolderRef(s.Folder("Deleted Items"))
 	var foundInboxRole bool
 	for _, c := range cs {
@@ -296,7 +323,7 @@ func TestGraphCategoriesFlagsAndDelete(t *testing.T) {
 		}
 	}
 	if !foundInboxRole {
-		t.Fatal("Inbox role was not resolved via well-known fallback")
+		t.Fatal("Inbox role was not resolved via well-known folder paths")
 	}
 
 	loc := backend.Location{Folder: inboxRef, Ref: backend.MessageRef(id), ServerID: id}
@@ -319,6 +346,15 @@ func TestGraphCategoriesFlagsAndDelete(t *testing.T) {
 	}
 	if gotFlags == nil || !gotFlags.Seen || !gotFlags.Flagged || !slices.Equal(gotFlags.Keywords, []string{"ProjectX", "Urgent"}) {
 		t.Fatalf("FlagsChanged after partial delta = %+v, want Seen+Flagged+[ProjectX Urgent]", gotFlags)
+	}
+
+	// Purge from Junk Email permanently deletes the message (does NOT move it to Deleted Items).
+	junkLoc := backend.Location{Folder: junkRef, Ref: backend.MessageRef(junkID), ServerID: junkID}
+	if res, err := r.Apply(tctx(t), backend.Purge{At: junkLoc}); err != nil || res.Outcome != backend.Done {
+		t.Fatalf("Purge from Junk = %+v, %v", res, err)
+	}
+	if _, _, _, _, exists := s.MessageState(junkID); exists {
+		t.Fatal("Purge from Junk left message in mailbox (Deleted Items)")
 	}
 
 	// Delete in Inbox moves to Deleted Items; Delete in Deleted Items deletes permanently.
