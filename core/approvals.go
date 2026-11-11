@@ -397,7 +397,7 @@ func (s *Service) decideAs(ctx context.Context, id int64, accept bool, args json
 			return err
 		}
 	}
-	return s.ledger.execute(ctx, id, a.RunID, func(ctx context.Context) error {
+	run := func(ctx context.Context) error {
 		start := time.Now()
 		if ex != nil && ex.Outside {
 			// Recovery reads this: cut off from here on, it may have run (ADR 0004).
@@ -409,7 +409,18 @@ func (s *Service) decideAs(ctx context.Context, id int64, accept bool, args json
 		s.worked(ctx, a.RunID, start)
 		s.bus.Publish(events.Event{Type: events.ApprovalsChanged, ConversationID: a.ConversationID})
 		return err
-	}, resume)
+	}
+	if accept && a.Tool == "delete_draft" {
+		// Cancel the draft's active Wit runs and wait for them before deleting
+		// it, as DeleteDraft does; stopDraftRuns returns holding the ledger.
+		release, err := s.stopDraftRuns(ctx, a.targetID)
+		if err != nil {
+			return err
+		}
+		defer release()
+		return s.ledger.executeLocked(ctx, id, a.RunID, run, resume)
+	}
+	return s.ledger.execute(ctx, id, a.RunID, run, resume)
 }
 
 // editedDraftArgs is a draft proposal's recorded arguments with the user's

@@ -2,6 +2,7 @@ package core_test
 
 import (
 	"bytes"
+	"fmt"
 	netmail "net/mail"
 	"os"
 	"path/filepath"
@@ -180,25 +181,56 @@ func TestDeleteDraftIfEmptyKeepsActiveRun(t *testing.T) {
 }
 
 func TestDeleteOrSendDraftCancelsRun(t *testing.T) {
-	e := coretest.New(t, coretest.WithoutAutoSync())
-	acc := e.AddAccount(t, "alice@example.com")
-	llm := e.LLM(t)
-	t.Cleanup(llm.Release)
-	for _, name := range []string{"delete", "send"} {
+	untilEnd := func(ch <-chan core.WitEvent) (last core.WitEvent) {
+		for ev := range ch {
+			last = ev
+		}
+		return last
+	}
+	for _, name := range []string{"delete", "send", "approval"} {
 		t.Run(name, func(t *testing.T) {
+			e := coretest.New(t, coretest.WithoutAutoSync())
+			acc := e.AddAccount(t, "alice@example.com")
+			llm := e.LLM(t)
+			t.Cleanup(llm.Release)
+
 			d, err := e.Svc.NewDraft(ctx, acc.ID, "new", 0)
 			require.NoError(t, err)
 			d.To = []string{"bob@example.com"}
 			_, err = e.Svc.SaveDraft(ctx, d)
 			require.NoError(t, err)
-			llm.Script(coretest.Turn{Text: []string{"thinking"}, Hang: true})
+			var approvalID int64
+			var askSub <-chan core.WitEvent
+			if name == "approval" {
+				conv, err := e.Svc.NewConversation(ctx, "ask", 0)
+				require.NoError(t, err)
+				var unsub func()
+				askSub, unsub = e.Svc.SubscribeConversation(conv.ID)
+				defer unsub()
+				llm.Script(coretest.Turn{Calls: []coretest.Call{{Name: "delete_draft", Args: fmt.Sprintf(`{"draft_id":%d}`, d.ID)}}})
+				askCh, err := e.Svc.Ask(ctx, conv.ID, "delete it")
+				require.NoError(t, err)
+				in := untilEnd(askCh)
+				require.Equal(t, "interrupted", in.Kind)
+				approvalID = in.Approvals[0].ID
+				llm.Script(coretest.Turn{Text: []string{"thinking"}, Hang: true}, coretest.Turn{Text: []string{"deleted"}})
+			} else {
+				llm.Script(coretest.Turn{Text: []string{"thinking"}, Hang: true})
+			}
 			ch, err := e.Svc.Assist(ctx, d.ID, "hi")
 			require.NoError(t, err)
-			<-ch // the run has started
-			if name == "delete" {
+			for ev := range ch {
+				if ev.Kind == "text" { // the model stream is in flight and hanging
+					break
+				}
+			}
+			switch name {
+			case "delete":
 				require.NoError(t, e.Svc.DeleteDraft(ctx, d.ID))
-			} else {
+			case "send":
 				require.NoError(t, e.Svc.Send(ctx, d.ID))
+			case "approval":
+				require.NoError(t, e.Svc.ResolveApproval(ctx, approvalID, true))
 			}
 			ended := make(chan struct{})
 			go func() {
@@ -212,10 +244,17 @@ func TestDeleteOrSendDraftCancelsRun(t *testing.T) {
 				t.Fatal("the run still goes on after its draft is gone")
 			}
 			_, err = e.Svc.GetDraft(ctx, d.ID)
-			if name == "delete" {
-				require.Error(t, err)
-			} else {
+			if name == "send" {
 				require.NoError(t, err, "kept in the outbox until it may have gone out")
+			} else {
+				require.Error(t, err)
+			}
+			if askSub != nil {
+				for ev := range askSub {
+					if ev.Ends {
+						break
+					}
+				}
 			}
 		})
 	}

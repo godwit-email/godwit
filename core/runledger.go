@@ -189,6 +189,10 @@ func (l *runLedger) interrupt(ctx context.Context, runID int64, round int, calls
 func (l *runLedger) execute(ctx context.Context, id, runID int64, run func(ctx context.Context) error, resume bool) error {
 	l.mu.Lock()
 	defer l.mu.Unlock()
+	return l.executeLocked(ctx, id, runID, run, resume)
+}
+
+func (l *runLedger) executeLocked(ctx context.Context, id, runID int64, run func(ctx context.Context) error, resume bool) error {
 	r, err := l.db.Execute(ctx, "UPDATE approvals SET state = 'executing', updated_at = ? WHERE id = ? AND state = 'pending'", time.Now().Unix(), id)
 	if err != nil {
 		return err
