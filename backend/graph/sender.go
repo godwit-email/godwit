@@ -88,10 +88,10 @@ func (s *Sender) Send(ctx context.Context, _ string, rcpts []string, raw []byte)
 		return nil
 	case c == http.StatusUnauthorized, c == http.StatusForbidden: // no Mail.Send consent, or a stale token
 		return fmt.Errorf("graph: %w", backend.ErrAuthFailed)
-	case c == http.StatusGatewayTimeout: // the backend may have taken it
-		return fmt.Errorf("%w: graph answered %d", backend.ErrUncertain, c)
-	case c == http.StatusTooManyRequests, c >= 500:
+	case c == http.StatusTooManyRequests, c == http.StatusServiceUnavailable: // throttled before it was taken; Graph says retry
 		return fmt.Errorf("graph send: the server answered %d", c)
+	case c >= 500: // it reached Graph, which may have sent it (ADR 0006)
+		return fmt.Errorf("%w: graph answered %d", backend.ErrUncertain, c)
 	default:
 		var e struct {
 			Error struct{ Code, Message string } `json:"error"`

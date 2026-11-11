@@ -69,6 +69,8 @@ func TestSendGraphErrors(t *testing.T) {
 		{401, func(t *testing.T, err error) { assert.ErrorIs(t, err, backend.ErrAuthFailed) }},
 		{403, func(t *testing.T, err error) { assert.ErrorIs(t, err, backend.ErrAuthFailed) }},
 		{504, func(t *testing.T, err error) { assert.ErrorIs(t, err, backend.ErrUncertain) }},
+		{500, func(t *testing.T, err error) { assert.ErrorIs(t, err, backend.ErrUncertain) }},
+		{502, func(t *testing.T, err error) { assert.ErrorIs(t, err, backend.ErrUncertain) }},
 		{503, func(t *testing.T, err error) { // retried later
 			assert.False(t, errors.Is(err, backend.ErrUncertain) || errors.As(err, new(*backend.RejectedError)))
 		}},
