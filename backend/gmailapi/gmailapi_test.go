@@ -579,3 +579,29 @@ func TestPurgeRechecksConfirmAfterRateLimitBackoffAndRescue(t *testing.T) {
 		t.Fatal("untrashed message was permanently deleted")
 	}
 }
+
+func TestApplyExhaustedRateLimitRemainsRetryable(t *testing.T) {
+	for _, status := range []int{http.StatusTooManyRequests, http.StatusForbidden} {
+		srv := gmailapitest.Start(t)
+		workID := srv.EnsureLabel("Work")
+		msgID := srv.Deliver("INBOX", backendtest.Message("rl@x", "rate limited"))
+		srv.ThrottleNext(4, status, "1")
+
+		r := gmailapi.New(gmailapi.Config{
+			BaseURL: srv.URL(),
+			Credentials: func(context.Context) (backend.Credentials, error) {
+				return backend.Credentials{Username: "alice@gmail.com", Token: srv.Token()}, nil
+			},
+			Wait: func(context.Context, time.Duration) error { return nil },
+		})
+		defer r.Close()
+
+		res, err := r.Apply(t.Context(), backend.Move{
+			At: backend.Location{Folder: "INBOX", Ref: backend.MessageRef(msgID), ServerID: msgID},
+			To: backend.FolderRef(workID),
+		})
+		if err == nil || res.Outcome == backend.Failed {
+			t.Fatalf("status %d exhausted rate limit: res=%+v err=%v, want retryable error (not Failed)", status, res, err)
+		}
+	}
+}

@@ -1184,7 +1184,8 @@ func (r *Receiver) applyAppend(ctx context.Context, op backend.Append) (backend.
 }
 
 func mapApplyErr(err error) (backend.Result, error) {
-	if errors.Is(err, backend.ErrNotFound) || errors.Is(err, backend.ErrAuthFailed) {
+	var rl *rateLimitError
+	if errors.Is(err, backend.ErrNotFound) || errors.Is(err, backend.ErrAuthFailed) || errors.Is(err, ErrAPIDisabled) || errors.As(err, &rl) {
 		return backend.Result{}, err
 	}
 	var ae *apiError
