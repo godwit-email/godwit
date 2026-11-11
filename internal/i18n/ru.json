@@ -2206,5 +2206,22 @@
   "feature_reason_gmailapi_no_keywords": "Аккаунты Gmail API не поддерживают пользовательские ключевые слова IMAP.",
   "feature_reason_gmailapi_no_push": "Gmail API не может отправлять push-уведомления в настольное приложение; Godwit проверяет почту каждую минуту.",
   "feature_reason_gmailapi_folders_pending": "Управление папками через Gmail API пока не поддерживается.",
-  "feature_reason_gmailapi_system_labels_fixed": "Gmail фиксирует ярлыки «Отправленные» и «Черновики»: перемещать письма в них или из них нельзя."
+  "feature_reason_gmailapi_system_labels_fixed": "Gmail фиксирует ярлыки «Отправленные» и «Черновики»: перемещать письма в них или из них нельзя.",
+  "settings_experimental_graph": "Аккаунты Microsoft Graph (Outlook)",
+  "settings_experimental_graph_help": "Предлагает Microsoft Graph при добавлении нового аккаунта Outlook, чтобы получать и отправлять почту через Graph без IMAP и SMTP. Это экспериментальная функция, в будущем она может измениться. После отключения уже добавленные аккаунты Graph продолжают работать.",
+  "onboarding_protocol_graph": "Microsoft Graph (экспериментально)",
+  "onboarding_check_graph_failed": "Ошибка входа в Microsoft Graph: {arg1}",
+  "onboarding_check_graph_ok": "Вход в Microsoft Graph выполнен",
+  "onboarding_check_graph_running": "Вход в Microsoft Graph…",
+  "onboarding_check_graph_waiting": "Вход в Microsoft Graph",
+  "onboarding_check_graph_proxy": "Ошибка подключения к Microsoft Graph: {arg1}",
+  "onboarding_check_graph_host": "Хост Graph: {arg1}",
+  "feature_reason_graph_draft_read_only": "Признак черновика определяется Microsoft Graph и не может быть изменён.",
+  "feature_reason_graph_no_answered": "Microsoft Graph не хранит отметку об ответе.",
+  "feature_reason_graph_categories": "Пользовательские ключевые слова сохраняются как категории Outlook.",
+  "feature_reason_graph_one_folder": "В Outlook письмо может находиться только в одной папке.",
+  "feature_reason_graph_folder_not_label": "В Outlook папка — это не ярлык: при её удалении удаляются и письма в ней.",
+  "feature_reason_graph_no_all_mail": "В Outlook нет папки «Вся почта»: архивирование перемещает письма в папку «Архив».",
+  "feature_reason_graph_folders_pending": "Управление папками через Microsoft Graph пока недоступно.",
+  "feature_reason_graph_no_push": "Настольные приложения не могут принимать вебхуки Microsoft Graph; Godwit проверяет почту каждую минуту."
 }

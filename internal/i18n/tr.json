@@ -2206,5 +2206,22 @@
   "feature_reason_gmailapi_no_keywords": "Gmail API hesapları özel IMAP anahtar sözcüklerini desteklemez.",
   "feature_reason_gmailapi_no_push": "Gmail API masaüstü uygulamasına anlık bildirim gönderemez; Godwit her dakika kontrol eder.",
   "feature_reason_gmailapi_folders_pending": "Gmail API üzerinden klasör yönetimi henüz kullanılamıyor.",
-  "feature_reason_gmailapi_system_labels_fixed": "Gmail, «Gönderilmiş Postalar» ve «Taslaklar» etiketlerini sabitler: iletiler bu klasörlere taşınamaz veya buradan çıkarılamaz."
+  "feature_reason_gmailapi_system_labels_fixed": "Gmail, «Gönderilmiş Postalar» ve «Taslaklar» etiketlerini sabitler: iletiler bu klasörlere taşınamaz veya buradan çıkarılamaz.",
+  "settings_experimental_graph": "Microsoft Graph (Outlook) hesapları",
+  "settings_experimental_graph_help": "Yeni bir Outlook hesabı eklerken IMAP veya SMTP kullanmadan Graph üzerinden e-posta alıp göndermek için Microsoft Graph seçeneğini sunar. Deneyseldir ve ileride değişebilir. Kapatıldığında, önceden eklenmiş Graph hesapları çalışmaya devam eder.",
+  "onboarding_protocol_graph": "Microsoft Graph (deneysel)",
+  "onboarding_check_graph_failed": "Microsoft Graph oturum açma başarısız: {arg1}",
+  "onboarding_check_graph_ok": "Microsoft Graph oturumu açıldı",
+  "onboarding_check_graph_running": "Microsoft Graph oturumu açılıyor…",
+  "onboarding_check_graph_waiting": "Microsoft Graph oturum açma",
+  "onboarding_check_graph_proxy": "Microsoft Graph bağlantısı başarısız: {arg1}",
+  "onboarding_check_graph_host": "Graph sunucusu: {arg1}",
+  "feature_reason_graph_draft_read_only": "Bir iletinin taslak olup olmadığına Microsoft Graph karar verir; değiştirilemez.",
+  "feature_reason_graph_no_answered": "Microsoft Graph yanıtlandı işaretini tutmaz.",
+  "feature_reason_graph_categories": "Özel anahtar sözcükler Outlook kategorileri olarak kaydedilir.",
+  "feature_reason_graph_one_folder": "Outlook'ta bir ileti yalnızca tek bir klasörde bulunur.",
+  "feature_reason_graph_folder_not_label": "Outlook'ta klasör bir etiket değildir: silindiğinde içindeki e-postalar da silinir.",
+  "feature_reason_graph_no_all_mail": "Outlook'ta “Tüm Postalar” yoktur: arşivleme, iletiyi Arşiv klasörüne taşır.",
+  "feature_reason_graph_folders_pending": "Microsoft Graph üzerinden klasör yönetimi henüz kullanılamıyor.",
+  "feature_reason_graph_no_push": "Masaüstü uygulamaları Microsoft Graph web kancalarını alamaz; Godwit bunun yerine her dakika kontrol eder."
 }

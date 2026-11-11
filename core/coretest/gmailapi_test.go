@@ -75,7 +75,7 @@ func startGmailAPIEnv(t *testing.T, email string) *gmailEnv {
 		_, _ = io.Copy(w, resp.Body)
 	}))
 	t.Cleanup(proxy.Close)
-	core.SetOAuthConfigForTest(t.Cleanup, func(providerID string) (auth.OAuthConfig, error) {
+	core.SetOAuthConfigForTest(t, func(providerID string) (auth.OAuthConfig, error) {
 		p, ok := auth.ByID(providerID)
 		if !ok || p.OAuth == nil {
 			return auth.OAuthConfig{}, auth.ErrOAuthNotConfigured

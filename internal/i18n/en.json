@@ -3969,5 +3969,22 @@
   "feature_reason_gmailapi_no_keywords": "Gmail API accounts don't support custom IMAP keywords.",
   "feature_reason_gmailapi_no_push": "The Gmail API can't push new mail to a desktop app; Godwit checks every minute.",
   "feature_reason_gmailapi_folders_pending": "Managing folders over the Gmail API isn't available yet.",
-  "feature_reason_gmailapi_system_labels_fixed": "Gmail fixes the Sent and Drafts labels: mail can't be moved into or out of them."
+  "feature_reason_gmailapi_system_labels_fixed": "Gmail fixes the Sent and Drafts labels: mail can't be moved into or out of them.",
+  "settings_experimental_graph": "Microsoft Graph (Outlook) accounts",
+  "settings_experimental_graph_help": "Offers Microsoft Graph when you add a new Outlook account, so mail is received and sent over Graph without IMAP or SMTP. It is experimental and may change later. Turned off, Graph accounts already added keep working.",
+  "onboarding_protocol_graph": "Microsoft Graph (experimental)",
+  "onboarding_check_graph_failed": "Microsoft Graph sign-in failed: {arg1}",
+  "onboarding_check_graph_ok": "Signed in to Microsoft Graph",
+  "onboarding_check_graph_running": "Signing in to Microsoft Graph…",
+  "onboarding_check_graph_waiting": "Microsoft Graph sign-in",
+  "onboarding_check_graph_proxy": "Microsoft Graph connection failed: {arg1}",
+  "onboarding_check_graph_host": "Graph host: {arg1}",
+  "feature_reason_graph_draft_read_only": "Microsoft Graph decides whether a message is a draft; it can't be changed.",
+  "feature_reason_graph_no_answered": "Microsoft Graph doesn't track an answered flag.",
+  "feature_reason_graph_categories": "Custom keywords are stored as Outlook categories.",
+  "feature_reason_graph_one_folder": "In Outlook a message is in one folder only.",
+  "feature_reason_graph_folder_not_label": "In Outlook a folder isn't a label: deleting it deletes its mail too.",
+  "feature_reason_graph_no_all_mail": "Outlook has no All Mail: archiving moves mail to the Archive folder.",
+  "feature_reason_graph_folders_pending": "Managing folders over Microsoft Graph isn't available yet.",
+  "feature_reason_graph_no_push": "Desktop apps can't receive Microsoft Graph webhooks; Godwit checks every minute instead."
 }

@@ -327,11 +327,21 @@ func (s *Service) accessToken(ctx context.Context, acc Account, rejected string)
 	}
 	// Not the caller's: a refresh cut off after the server rotated the token would lose the new one.
 	rctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), refreshTimeout)
-	g, err := auth.Refresh(rctx, cfg, http.DefaultClient, rt)
+	var g auth.Grant
+	if acc.Receiving.Protocol == auth.Graph {
+		g, err = graphReadGrant(rctx, cfg, rt)
+	} else {
+		g, err = auth.Refresh(rctx, cfg, http.DefaultClient, rt)
+	}
 	cancel()
 	if errors.Is(err, auth.ErrInvalidGrant) {
 		return "", 0, errors.Join(err, s.ifCurrent(acc.ID, ver, func() error {
 			return s.setStatus(ctx, acc.ID, "reauth_required", "token_revoked")
+		}))
+	}
+	if errors.Is(err, backend.ErrAuthFailed) {
+		return "", 0, errors.Join(err, s.ifCurrent(acc.ID, ver, func() error {
+			return s.setStatus(ctx, acc.ID, "reauth_required", "auth_rejected")
 		}))
 	}
 	if errors.Is(err, auth.ErrInvalidClient) && acc.OAuthClientID != "" { // the user's own client: its secret was rotated or the client deleted
@@ -450,6 +460,41 @@ func graphGrant(ctx context.Context, cfg auth.OAuthConfig, rt string) (auth.Gran
 	}
 	g, err := auth.RefreshForm(ctx, cfg, http.DefaultClient, rt)
 	if errors.Is(err, auth.ErrInvalidGrant) || err == nil && g.Scope != "" && !grantsScope(g.Scope, cfg.GraphSend) {
+		return auth.Grant{}, fmt.Errorf("graph token: %w", backend.ErrAuthFailed)
+	}
+	return g, err
+}
+
+var errNoGraphRead = errors.New("the provider does not receive through Microsoft Graph")
+
+// graphReadGrant trades rt for an access token to cfg.GraphRead (and
+// cfg.GraphSend when set). A grant without cfg.GraphRead is
+// backend.ErrAuthFailed; auth.ErrInvalidGrant stays as is for accessToken.
+func graphReadGrant(ctx context.Context, cfg auth.OAuthConfig, rt string) (auth.Grant, error) {
+	if cfg.GraphRead == "" {
+		return auth.Grant{}, errNoGraphRead
+	}
+	scope := cfg.GraphRead
+	if cfg.GraphSend != "" {
+		scope += " " + cfg.GraphSend
+	}
+	cfg.TokenParams = map[string]string{"scope": scope + " offline_access"}
+	if cfg.ClientSecret != "" {
+		cfg.TokenParams["client_secret"] = cfg.ClientSecret
+	}
+	g, err := auth.RefreshForm(ctx, cfg, http.DefaultClient, rt)
+	if err == nil && g.Scope != "" && !grantsScope(g.Scope, cfg.GraphRead) {
+		return auth.Grant{}, fmt.Errorf("graph token: %w", backend.ErrAuthFailed)
+	}
+	return g, err
+}
+
+// graphAccountGrant checks a Graph receiving account's token exchange during
+// onboarding/recheck: both GraphRead and GraphSend (when set) must be granted.
+func graphAccountGrant(ctx context.Context, cfg auth.OAuthConfig, rt string) (auth.Grant, error) {
+	g, err := graphReadGrant(ctx, cfg, rt)
+	if errors.Is(err, auth.ErrInvalidGrant) ||
+		err == nil && g.Scope != "" && cfg.GraphSend != "" && !grantsScope(g.Scope, cfg.GraphSend) {
 		return auth.Grant{}, fmt.Errorf("graph token: %w", backend.ErrAuthFailed)
 	}
 	return g, err

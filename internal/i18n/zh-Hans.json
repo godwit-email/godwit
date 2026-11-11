@@ -2206,5 +2206,22 @@
   "feature_reason_gmailapi_no_keywords": "Gmail API 账户不支持自定义 IMAP 关键字。",
   "feature_reason_gmailapi_no_push": "Gmail API 桌面端无法直接接收服务器推送，Godwit 每分钟检查一次。",
   "feature_reason_gmailapi_folders_pending": "暂不支持通过 Gmail API 管理文件夹。",
-  "feature_reason_gmailapi_system_labels_fixed": "Gmail 的「已发送」和「草稿」标签由系统固定，不能把邮件移入或移出这两个文件夹。"
+  "feature_reason_gmailapi_system_labels_fixed": "Gmail 的「已发送」和「草稿」标签由系统固定，不能把邮件移入或移出这两个文件夹。",
+  "settings_experimental_graph": "Microsoft Graph（Outlook）账户",
+  "settings_experimental_graph_help": "新添加 Outlook 账户时可以选择 Microsoft Graph，收信和发信都直接走 Graph，不使用 IMAP 和 SMTP。这是实验性功能，以后可能调整。关闭后，已添加的 Graph 账户继续工作。",
+  "onboarding_protocol_graph": "Microsoft Graph（实验性）",
+  "onboarding_check_graph_failed": "Microsoft Graph 登录失败：{arg1}",
+  "onboarding_check_graph_ok": "Microsoft Graph 登录成功",
+  "onboarding_check_graph_running": "Microsoft Graph 登录中…",
+  "onboarding_check_graph_waiting": "Microsoft Graph 登录",
+  "onboarding_check_graph_proxy": "Microsoft Graph 连接失败：{arg1}",
+  "onboarding_check_graph_host": "Graph 主机：{arg1}",
+  "feature_reason_graph_draft_read_only": "邮件是不是草稿由 Microsoft Graph 决定，不能更改。",
+  "feature_reason_graph_no_answered": "Microsoft Graph 不记录「已回复」标记。",
+  "feature_reason_graph_categories": "自定义关键字保存在 Outlook 类别（Categories）里。",
+  "feature_reason_graph_one_folder": "Outlook 上一封邮件只能在一个文件夹里。",
+  "feature_reason_graph_folder_not_label": "Outlook 的文件夹不是标签：删除文件夹会连同里面的邮件一起删除。",
+  "feature_reason_graph_no_all_mail": "Outlook 没有「所有邮件」：归档会把邮件移到归档文件夹。",
+  "feature_reason_graph_folders_pending": "暂不支持通过 Microsoft Graph 管理文件夹。",
+  "feature_reason_graph_no_push": "桌面端无法接收 Microsoft Graph 的推送通知，Godwit 会改为每分钟轮询一次。"
 }

@@ -2206,5 +2206,22 @@
   "feature_reason_gmailapi_no_keywords": "Gmail-API-Konten unterstützen keine benutzerdefinierten IMAP-Schlüsselwörter.",
   "feature_reason_gmailapi_no_push": "Die Gmail-API kann neue E-Mails nicht direkt an eine Desktop-App pushen; Godwit prüft jede Minute.",
   "feature_reason_gmailapi_folders_pending": "Ordnerverwaltung über die Gmail-API ist noch nicht verfügbar.",
-  "feature_reason_gmailapi_system_labels_fixed": "Gmail legt die Labels „Gesendet“ und „Entwürfe“ fest: E-Mails können nicht dorthin oder daraus verschoben werden."
+  "feature_reason_gmailapi_system_labels_fixed": "Gmail legt die Labels „Gesendet“ und „Entwürfe“ fest: E-Mails können nicht dorthin oder daraus verschoben werden.",
+  "settings_experimental_graph": "Microsoft-Graph-Konten (Outlook)",
+  "settings_experimental_graph_help": "Bietet beim Hinzufügen eines neuen Outlook-Kontos Microsoft Graph an, sodass E-Mails ohne IMAP oder SMTP über Graph empfangen und gesendet werden. Diese Funktion ist experimentell und kann sich ändern. Nach dem Deaktivieren funktionieren bereits hinzugefügte Graph-Konten weiter.",
+  "onboarding_protocol_graph": "Microsoft Graph (experimentell)",
+  "onboarding_check_graph_failed": "Microsoft-Graph-Anmeldung fehlgeschlagen: {arg1}",
+  "onboarding_check_graph_ok": "Bei Microsoft Graph angemeldet",
+  "onboarding_check_graph_running": "Anmeldung bei Microsoft Graph…",
+  "onboarding_check_graph_waiting": "Microsoft-Graph-Anmeldung",
+  "onboarding_check_graph_proxy": "Microsoft-Graph-Verbindung fehlgeschlagen: {arg1}",
+  "onboarding_check_graph_host": "Graph-Host: {arg1}",
+  "feature_reason_graph_draft_read_only": "Microsoft Graph legt fest, ob eine Nachricht ein Entwurf ist; dies kann nicht geändert werden.",
+  "feature_reason_graph_no_answered": "Microsoft Graph speichert keine Beantwortet-Markierung.",
+  "feature_reason_graph_categories": "Eigene Stichwörter werden als Outlook-Kategorien gespeichert.",
+  "feature_reason_graph_one_folder": "In Outlook befindet sich eine Nachricht immer nur in einem Ordner.",
+  "feature_reason_graph_folder_not_label": "In Outlook ist ein Ordner kein Label: Beim Löschen werden auch seine E-Mails gelöscht.",
+  "feature_reason_graph_no_all_mail": "Outlook hat kein „Alle E-Mails“: Beim Archivieren wird die Nachricht in den Archivordner verschoben.",
+  "feature_reason_graph_folders_pending": "Die Ordnerverwaltung über Microsoft Graph ist noch nicht verfügbar.",
+  "feature_reason_graph_no_push": "Desktop-Apps können keine Microsoft-Graph-Webhooks empfangen; Godwit prüft stattdessen jede Minute."
 }

@@ -100,8 +100,9 @@ type ServerSettings struct {
 // Server is one of an account's two server slots, receiving and sending: a
 // protocol and where its server is. Receiving is auth.IMAP, auth.JMAP
 // (only with Settings.ExperimentalJMAP to add one), auth.EWS (only with
-// Settings.ExperimentalEWS to add one) or auth.POP3 (only with
-// Settings.ExperimentalPOP3). JMAP and EWS accounts send through their
+// Settings.ExperimentalEWS to add one), auth.POP3 (only with
+// Settings.ExperimentalPOP3) or auth.Graph (only with
+// Settings.ExperimentalGraph). JMAP, EWS and Graph accounts send through their
 // receiving protocol; other accounts send through auth.SMTP (or auth.Graph
 // once OAuth SMTP AUTH is refused). An empty Protocol in input is auth.IMAP
 // and auth.SMTP.

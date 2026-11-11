@@ -2206,5 +2206,22 @@
   "feature_reason_gmailapi_no_keywords": "Tài khoản Gmail API không hỗ trợ từ khóa IMAP tùy chỉnh.",
   "feature_reason_gmailapi_no_push": "Gmail API không thể đẩy thư mới trực tiếp tới ứng dụng máy tính; Godwit kiểm tra mỗi phút.",
   "feature_reason_gmailapi_folders_pending": "Chưa hỗ trợ quản lý thư mục qua Gmail API.",
-  "feature_reason_gmailapi_system_labels_fixed": "Gmail cố định nhãn «Thư đã gửi» và «Thư nháp»: không thể chuyển thư vào hoặc ra khỏi hai thư mục này."
+  "feature_reason_gmailapi_system_labels_fixed": "Gmail cố định nhãn «Thư đã gửi» và «Thư nháp»: không thể chuyển thư vào hoặc ra khỏi hai thư mục này.",
+  "settings_experimental_graph": "Tài khoản Microsoft Graph (Outlook)",
+  "settings_experimental_graph_help": "Cho phép chọn Microsoft Graph khi thêm tài khoản Outlook mới để nhận và gửi thư trực tiếp qua Graph mà không cần IMAP hay SMTP. Đây là tính năng thử nghiệm và có thể thay đổi sau này. Khi tắt, các tài khoản Graph đã thêm vẫn tiếp tục hoạt động.",
+  "onboarding_protocol_graph": "Microsoft Graph (thử nghiệm)",
+  "onboarding_check_graph_failed": "Đăng nhập Microsoft Graph thất bại: {arg1}",
+  "onboarding_check_graph_ok": "Đã đăng nhập Microsoft Graph",
+  "onboarding_check_graph_running": "Đang đăng nhập Microsoft Graph…",
+  "onboarding_check_graph_waiting": "Đăng nhập Microsoft Graph",
+  "onboarding_check_graph_proxy": "Kết nối Microsoft Graph thất bại: {arg1}",
+  "onboarding_check_graph_host": "Máy chủ Graph: {arg1}",
+  "feature_reason_graph_draft_read_only": "Microsoft Graph quyết định thư có phải bản nháp hay không; không thể thay đổi.",
+  "feature_reason_graph_no_answered": "Microsoft Graph không lưu cờ đã trả lời.",
+  "feature_reason_graph_categories": "Từ khóa tùy chỉnh được lưu dưới dạng danh mục Outlook.",
+  "feature_reason_graph_one_folder": "Trong Outlook, mỗi thư chỉ nằm trong một thư mục duy nhất.",
+  "feature_reason_graph_folder_not_label": "Trong Outlook, thư mục không phải là nhãn: xóa thư mục sẽ xóa luôn thư bên trong.",
+  "feature_reason_graph_no_all_mail": "Outlook không có “Tất cả thư”: lưu trữ sẽ chuyển thư sang thư mục Lưu trữ.",
+  "feature_reason_graph_folders_pending": "Chưa hỗ trợ quản lý thư mục qua Microsoft Graph.",
+  "feature_reason_graph_no_push": "Ứng dụng máy tính không nhận được webhook của Microsoft Graph; Godwit sẽ kiểm tra mỗi phút."
 }

@@ -60,6 +60,7 @@ var table = []Error{
 	{Code: "receive_only", Err: core.ErrReceiveOnly},
 	{Code: "jmap_off", Err: core.ErrJMAPOff},
 	{Code: "ews_off", Err: core.ErrEWSOff},
+	{Code: "graph_off", Err: core.ErrGraphOff},
 	{Code: "role_folder", Err: core.ErrRoleFolder},
 	{Code: "folder_not_empty", Err: core.ErrFolderNotEmpty},
 	{Code: "folder_name_empty", Err: core.ErrFolderNameEmpty},

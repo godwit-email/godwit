@@ -603,6 +603,8 @@ func (p *settingsPage) accountView(c *ui.Context, acc core.Account) {
 	recv := server("IMAP", acc.Receiving.Host, acc.Receiving.Port, acc.Receiving.Security, "")
 	if pr := acc.Receiving.Protocol; pr == auth.JMAP || pr == auth.EWS {
 		recv = row(strings.ToUpper(pr), "", func() { kit.Text(c, sessionURL(acc.Receiving), t.Text.Sm).Font(theme.Mono).TextColor(t.Muted) })
+	} else if acc.Receiving.Protocol == auth.Graph {
+		recv = server("Microsoft Graph", acc.Receiving.Host, acc.Receiving.Port, acc.Receiving.Security, "")
 	}
 	if acc.Receiving.Protocol == auth.GmailAPI {
 		recv = server("Gmail API", acc.Receiving.Host, acc.Receiving.Port, acc.Receiving.Security, "")
@@ -611,7 +613,7 @@ func (p *settingsPage) accountView(c *ui.Context, acc core.Account) {
 		row(i18n.T("settings.account.login.method"), p.authText(acc, prov), func() { p.authButton(c, acc, prov, false) }),
 		recv,
 	}
-	if pr := acc.Sending.Protocol; pr != auth.EWS && pr != auth.JMAP && pr != auth.GmailAPI { // EWS, JMAP and Gmail API send through the server they receive from
+	if pr := acc.Sending.Protocol; pr != auth.EWS && pr != auth.JMAP && pr != auth.GmailAPI && acc.Receiving.Protocol != auth.Graph { // EWS, JMAP, Graph and Gmail API send through the server they receive from
 		login = append(login, server("SMTP", acc.Sending.Host, acc.Sending.Port, acc.Sending.Security, receiveOnlyHelp(acc)))
 	}
 	if acc.ReceiveOnly { // OAuth has no servers to change: it tries SMTP again as it is
@@ -619,7 +621,7 @@ func (p *settingsPage) accountView(c *ui.Context, acc core.Account) {
 			settingButton(c, i18n.T("settings.account.receive_only.recheck"), kit.Outline, p.rechecking[acc.ID]).OnClick(func() { p.recheckSending(acc.ID) })
 		}))
 	}
-	if acc.Receiving.Protocol != auth.GmailAPI {
+	if pr := acc.Receiving.Protocol; pr != auth.Graph && pr != auth.GmailAPI {
 		login = append(login, row(i18n.T("settings.account.servers"), i18n.T("settings.account.servers.help"), func() {
 			settingButton(c, i18n.T("settings.account.edit_servers"), kit.Outline, false).OnClick(func() { p.openDialog("servers", acc) })
 		}))

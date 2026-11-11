@@ -35,7 +35,7 @@ func TestEmptyTrashUnsupported(t *testing.T) {
 // Every reason key a backend declares (backend.Support.Reason, "<protocol>.<why>")
 // has text in the catalog, which the UI and Wit show for it.
 func TestFeatureReasonsHaveText(t *testing.T) {
-	reason := regexp.MustCompile(`"((?:imap|jmap|ews|gmailapi)\.[a-z_]+)"`)
+	reason := regexp.MustCompile(`"((?:imap|jmap|ews|graph|gmailapi)\.[a-z_]+)"`)
 	var found []string
 	err := filepath.WalkDir("../backend", func(p string, d fs.DirEntry, err error) error {
 		if err != nil || d.IsDir() || !strings.HasSuffix(p, ".go") || strings.HasSuffix(p, "_test.go") {

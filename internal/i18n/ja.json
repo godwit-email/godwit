@@ -2206,5 +2206,22 @@
   "feature_reason_gmailapi_no_keywords": "Gmail API アカウントはカスタム IMAP キーワードに対応していません。",
   "feature_reason_gmailapi_no_push": "Gmail API はデスクトップアプリに新着プッシュできないため、Godwit が 1 分ごとに確認します。",
   "feature_reason_gmailapi_folders_pending": "Gmail API 経由でのフォルダー管理にはまだ対応していません。",
-  "feature_reason_gmailapi_system_labels_fixed": "Gmail では「送信済み」と「下書き」ラベルが固定されており、これらのフォルダーへの移動や取り出しはできません。"
+  "feature_reason_gmailapi_system_labels_fixed": "Gmail では「送信済み」と「下書き」ラベルが固定されており、これらのフォルダーへの移動や取り出しはできません。",
+  "settings_experimental_graph": "Microsoft Graph（Outlook）アカウント",
+  "settings_experimental_graph_help": "新しい Outlook アカウントを追加するときに Microsoft Graph を選択でき、IMAP や SMTP を使わず Graph 経由で送受信します。実験的な機能のため今後変更される場合があります。オフにしても追加済みの Graph アカウントは引き続き動作します。",
+  "onboarding_protocol_graph": "Microsoft Graph（実験的）",
+  "onboarding_check_graph_failed": "Microsoft Graph サインイン失敗: {arg1}",
+  "onboarding_check_graph_ok": "Microsoft Graph にサインインしました",
+  "onboarding_check_graph_running": "Microsoft Graph にサインイン中…",
+  "onboarding_check_graph_waiting": "Microsoft Graph サインイン",
+  "onboarding_check_graph_proxy": "Microsoft Graph 接続失敗: {arg1}",
+  "onboarding_check_graph_host": "Graph ホスト: {arg1}",
+  "feature_reason_graph_draft_read_only": "下書きかどうかは Microsoft Graph が決めるため変更できません。",
+  "feature_reason_graph_no_answered": "Microsoft Graph には返信済みフラグがありません。",
+  "feature_reason_graph_categories": "カスタムキーワードは Outlook の分類（カテゴリ）として保存されます。",
+  "feature_reason_graph_one_folder": "Outlook では 1 通のメールは 1 つのフォルダーにのみ入ります。",
+  "feature_reason_graph_folder_not_label": "Outlook のフォルダーはラベルではありません。削除すると中のメールも削除されます。",
+  "feature_reason_graph_no_all_mail": "Outlook には「すべてのメール」がないため、アーカイブするとアーカイブフォルダーへ移動します。",
+  "feature_reason_graph_folders_pending": "Microsoft Graph 経由のフォルダー管理にはまだ対応していません。",
+  "feature_reason_graph_no_push": "デスクトップアプリは Microsoft Graph の Webhook を受信できないため、1 分ごとに確認します。"
 }

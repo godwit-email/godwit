@@ -241,7 +241,7 @@ func TestWireCodesPinned(t *testing.T) {
 		"not_on_server_yet": core.ErrNotOnServerYet, "stale_draft": core.ErrStaleDraft, "run_active": core.ErrRunActive, "security_scan_busy": core.ErrSecurityScanBusy, "security_scan_disabled": core.ErrSecurityScanDisabled, "not_synced": core.ErrNotSynced,
 		"compacting": core.ErrCompacting, "nothing_to_compact": core.ErrNothingToCompact, "draft_gone": core.ErrDraftGone,
 		"keychain_unavailable": core.ErrKeychainUnavailable, "wrong_account": core.ErrWrongAccount,
-		"account_not_found": core.ErrAccountNotFound, "local_archive": core.ErrLocalArchive, "not_local_archive": core.ErrNotLocalArchive, "receive_only": core.ErrReceiveOnly, "jmap_off": core.ErrJMAPOff, "ews_off": core.ErrEWSOff, "role_folder": core.ErrRoleFolder, "folder_not_empty": core.ErrFolderNotEmpty,
+		"account_not_found": core.ErrAccountNotFound, "local_archive": core.ErrLocalArchive, "not_local_archive": core.ErrNotLocalArchive, "receive_only": core.ErrReceiveOnly, "jmap_off": core.ErrJMAPOff, "ews_off": core.ErrEWSOff, "graph_off": core.ErrGraphOff, "role_folder": core.ErrRoleFolder, "folder_not_empty": core.ErrFolderNotEmpty,
 		"folder_name_empty": core.ErrFolderNameEmpty, "folder_exists": core.ErrFolderExists,
 		"provider_mismatch": core.ErrProviderMismatch, "needs_grant": core.ErrNeedsGrant,
 		"plugin_not_found": core.ErrPluginNotFound, "mcp_not_found": core.ErrMCPNotFound,

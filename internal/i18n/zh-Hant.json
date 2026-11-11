@@ -2206,5 +2206,22 @@
   "feature_reason_gmailapi_no_keywords": "Gmail API 帳戶不支援自訂 IMAP 關鍵字。",
   "feature_reason_gmailapi_no_push": "Gmail API 桌面端無法直接接收伺服器推播，Godwit 每分鐘檢查一次。",
   "feature_reason_gmailapi_folders_pending": "暫不支援透過 Gmail API 管理資料夾。",
-  "feature_reason_gmailapi_system_labels_fixed": "Gmail 的「已傳送」和「草稿」標籤由系統固定，無法將郵件移入或移出這兩個資料夾。"
+  "feature_reason_gmailapi_system_labels_fixed": "Gmail 的「已傳送」和「草稿」標籤由系統固定，無法將郵件移入或移出這兩個資料夾。",
+  "settings_experimental_graph": "Microsoft Graph（Outlook）帳戶",
+  "settings_experimental_graph_help": "新加入 Outlook 帳戶時可以選擇 Microsoft Graph，收信和寄信都直接走 Graph，不使用 IMAP 和 SMTP。這是實驗性功能，以後可能調整。關閉後，已加入的 Graph 帳戶繼續運作。",
+  "onboarding_protocol_graph": "Microsoft Graph（實驗性）",
+  "onboarding_check_graph_failed": "Microsoft Graph 登入失敗：{arg1}",
+  "onboarding_check_graph_ok": "Microsoft Graph 登入成功",
+  "onboarding_check_graph_running": "Microsoft Graph 登入中…",
+  "onboarding_check_graph_waiting": "Microsoft Graph 登入",
+  "onboarding_check_graph_proxy": "Microsoft Graph 連線失敗：{arg1}",
+  "onboarding_check_graph_host": "Graph 主機：{arg1}",
+  "feature_reason_graph_draft_read_only": "郵件是否為草稿由 Microsoft Graph 決定，不能更改。",
+  "feature_reason_graph_no_answered": "Microsoft Graph 不記錄「已回覆」標記。",
+  "feature_reason_graph_categories": "自訂關鍵字儲存在 Outlook 類別（Categories）中。",
+  "feature_reason_graph_one_folder": "Outlook 上一封郵件只能在一個資料夾裡。",
+  "feature_reason_graph_folder_not_label": "Outlook 的資料夾不是標籤：刪除資料夾會連同裡面的郵件一起刪除。",
+  "feature_reason_graph_no_all_mail": "Outlook 沒有「所有郵件」：封存會把郵件移到封存資料夾。",
+  "feature_reason_graph_folders_pending": "暫不支援透過 Microsoft Graph 管理資料夾。",
+  "feature_reason_graph_no_push": "桌面端無法接收 Microsoft Graph 的推播通知，Godwit 會改為每分鐘輪詢一次。"
 }

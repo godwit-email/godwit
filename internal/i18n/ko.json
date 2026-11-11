@@ -2206,5 +2206,22 @@
   "feature_reason_gmailapi_no_keywords": "Gmail API 계정은 사용자 지정 IMAP 키워드를 지원하지 않습니다.",
   "feature_reason_gmailapi_no_push": "Gmail API는 데스크톱 앱으로 새 메일 푸시를 보낼 수 없어 Godwit가 1분마다 확인합니다.",
   "feature_reason_gmailapi_folders_pending": "Gmail API를 통한 폴더 관리는 아직 지원되지 않습니다.",
-  "feature_reason_gmailapi_system_labels_fixed": "Gmail은 '보낸편지함'과 '임시보관함' 라벨을 고정하므로 이 폴더로 옮기거나 빼낼 수 없습니다."
+  "feature_reason_gmailapi_system_labels_fixed": "Gmail은 '보낸편지함'과 '임시보관함' 라벨을 고정하므로 이 폴더로 옮기거나 빼낼 수 없습니다.",
+  "settings_experimental_graph": "Microsoft Graph(Outlook) 계정",
+  "settings_experimental_graph_help": "새 Outlook 계정을 추가할 때 Microsoft Graph를 선택해 IMAP이나 SMTP 없이 Graph로 메일을 주고받습니다. 실험적 기능이며 추후 변경될 수 있습니다. 끄더라도 이미 추가된 Graph 계정은 계속 작동합니다.",
+  "onboarding_protocol_graph": "Microsoft Graph(실험적)",
+  "onboarding_check_graph_failed": "Microsoft Graph 로그인 실패: {arg1}",
+  "onboarding_check_graph_ok": "Microsoft Graph 로그인 완료",
+  "onboarding_check_graph_running": "Microsoft Graph에 로그인하는 중…",
+  "onboarding_check_graph_waiting": "Microsoft Graph 로그인",
+  "onboarding_check_graph_proxy": "Microsoft Graph 연결 실패: {arg1}",
+  "onboarding_check_graph_host": "Graph 호스트: {arg1}",
+  "feature_reason_graph_draft_read_only": "임시보관 여부는 Microsoft Graph가 결정하므로 변경할 수 없습니다.",
+  "feature_reason_graph_no_answered": "Microsoft Graph는 답장함 표시를 기록하지 않습니다.",
+  "feature_reason_graph_categories": "사용자 지정 키워드는 Outlook 범주(Categories)로 저장됩니다.",
+  "feature_reason_graph_one_folder": "Outlook에서 메일은 하나의 폴더에만 속합니다.",
+  "feature_reason_graph_folder_not_label": "Outlook의 폴더는 라벨이 아닙니다. 삭제하면 안의 메일도 함께 삭제됩니다.",
+  "feature_reason_graph_no_all_mail": "Outlook에는 '전체보관함'이 없으므로 보관 시 보관 폴더로 이동합니다.",
+  "feature_reason_graph_folders_pending": "Microsoft Graph를 통한 폴더 관리는 아직 지원되지 않습니다.",
+  "feature_reason_graph_no_push": "데스크톱 앱은 Microsoft Graph 웹훅을 받을 수 없어 1분마다 새 메일을 확인합니다."
 }

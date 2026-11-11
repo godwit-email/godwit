@@ -203,9 +203,9 @@ var ErrUnknownFlow = errors.New("no such sign-in flow")
 // afterOAuthWait is a test hook between a flow's Wait returning and AwaitOAuth committing its result.
 var afterOAuthWait func(flowID string)
 
-// SetOAuthConfigForTest replaces the OAuth provider lookup until cleanup runs.
-func SetOAuthConfigForTest(cleanup func(func()), fn func(providerID string) (auth.OAuthConfig, error)) {
-	old := oauthConfig
+// SetOAuthConfigForTest replaces oauthConfig until t ends. Tests only.
+func SetOAuthConfigForTest(t interface{ Cleanup(func()) }, fn func(string) (auth.OAuthConfig, error)) {
+	prev := oauthConfig
 	oauthConfig = fn
-	cleanup(func() { oauthConfig = old })
+	t.Cleanup(func() { oauthConfig = prev })
 }
