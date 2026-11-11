@@ -10,7 +10,6 @@ import (
 
 	"github.com/egoist/mygo/plugins/sqlite"
 	"github.com/godwit-email/godwit/backend"
-	"github.com/godwit-email/godwit/backend/imapbackend"
 	"github.com/godwit-email/godwit/core/store"
 	"github.com/godwit-email/godwit/internal/i18n"
 )
@@ -227,7 +226,7 @@ func (p *pusher) pushOp(ctx context.Context, o op) (problem string, err error) {
 			}
 			return fail(ctx, db, o, errNoDestination, false)
 		}
-		w = backend.Move{At: loc, To: dst.ref}
+		w = backend.Move{At: loc, To: dst.ref, Cursor: dst.cursor}
 	default:
 		msg := fmt.Sprintf("unknown change %q", o.kind)
 		return msg, finish(ctx, db, o, "failed", msg)
@@ -261,16 +260,7 @@ func (p *pusher) pushOp(ctx context.Context, o op) (problem string, err error) {
 	if o.kind == "flags" {
 		return "", finish(ctx, db, o, "done", "")
 	}
-	ref := string(res.Ref)
-	// A location from a folder generation we have not synced is no use.
-	// shortcut: reads IMAP's UIDVALIDITY to tell the destination's generation
-	// (destination too), so mailsync still imports imapbackend; when a second
-	// backend has folder generations (EWS, POP3), give Move the destination's
-	// cursor and let Apply answer Unlocated for another generation instead.
-	if v, _ := imapbackend.Decode(ref); v != dst.validity {
-		ref = ""
-	}
-	return "", moved(ctx, db, o, ref)
+	return "", moved(ctx, db, o, string(res.Ref))
 }
 
 // clearPurge removes the \Deleted that a purge of the message, when one
@@ -290,8 +280,8 @@ func (p *pusher) clearPurge(ctx context.Context, o op, at backend.Location) (bac
 
 // destination is a move's target folder: "" ref when it no longer exists.
 type destination struct {
-	ref      backend.FolderRef
-	validity uint32 // its cursor's UIDVALIDITY
+	ref    backend.FolderRef
+	cursor backend.Cursor
 }
 
 func (p *pusher) destination(ctx context.Context, id int64) (destination, error) {
@@ -299,8 +289,7 @@ func (p *pusher) destination(ctx context.Context, id int64) (destination, error)
 	if err != nil || len(d.Values) == 0 {
 		return destination{}, err
 	}
-	v, _ := imapbackend.Decode(store.Str(d.Values[0][1]))
-	return destination{backend.FolderRef(store.Str(d.Values[0][0])), v}, nil
+	return destination{backend.FolderRef(store.Str(d.Values[0][0])), backend.Cursor(store.Str(d.Values[0][1]))}, nil
 }
 
 // unsupported is the last_error of an op the server cannot do: the feature's

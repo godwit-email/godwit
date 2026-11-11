@@ -298,10 +298,13 @@ type SetFlags struct {
 	Add, Remove Flags
 }
 
-// Move moves the message from At to folder To.
+// Move moves the message from At to folder To. Cursor is To's stored cursor,
+// "" when none is stored: a backend whose locations carry a folder generation
+// answers Unlocated instead of a Ref from another generation.
 type Move struct {
-	At Location
-	To FolderRef
+	At     Location
+	To     FolderRef
+	Cursor Cursor
 }
 
 // Copy puts an independent copy of the message at At into folder To.

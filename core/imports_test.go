@@ -36,10 +36,10 @@ func TestNoIMAPClient(t *testing.T) {
 
 // TestIMAPBackendStaysBehindTheSeam: UIDVALIDITY and the IMAP backend's
 // encodings stay in the backend (ADR 0037). Only the place that picks the
-// account's backend and ops.go's shortcut import it.
+// account's backend imports it.
 func TestIMAPBackendStaysBehindTheSeam(t *testing.T) {
 	const pkg = "github.com/godwit-email/godwit/backend/imapbackend"
-	allowed := map[string]bool{"check.go": true, "mailsync/ops.go": true}
+	allowed := map[string]bool{"check.go": true}
 	err := filepath.WalkDir(".", func(p string, d fs.DirEntry, err error) error {
 		if err != nil || d.IsDir() || !strings.HasSuffix(p, ".go") || strings.HasSuffix(p, "_test.go") {
 			return err

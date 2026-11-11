@@ -402,6 +402,29 @@ func TestUncertainCopyMoveNotDuplicated(t *testing.T) {
 	assert.Equal(t, []string{"done"}, e.opStates(t))
 }
 
+// A COPYUID from a destination folder recreated since the last sync is not
+// stored against the old cursor: the move awaits its claim until Fetch resets
+// the folder and claims the message in the new generation.
+func TestMoveIntoRecreatedFolderClaimsInNewGeneration(t *testing.T) {
+	e := newSyncEnv(t)
+	e.put(t, "INBOX", msg("m@x"))
+	e.put(t, "Archive", msg("old@x"))
+	e.sync(t)
+	id := e.idOf(t, "m@x")
+	require.NoError(t, e.s.Move(bg, []int64{id}, e.folderID(t, "Archive")))
+	require.NoError(t, e.im.User.Delete("Archive"))
+	require.NoError(t, e.im.User.Create("Archive", nil))
+	e.put(t, "Archive", msg("new@x"))
+
+	require.NoError(t, mailsync.PushOps(bg, e.s.db, e.receiver(t), e.acc.ID, e.s.clk().Now()))
+	assert.Equal(t, []string{"awaiting_claim"}, e.opStates(t))
+
+	e.sync(t)
+	assert.Equal(t, id, e.idOf(t, "m@x"))
+	assert.Equal(t, []string{"done"}, e.opStates(t))
+	assert.Equal(t, []string{"new@x", "m@x"}, e.onServer(t, "Archive"))
+}
+
 // \Deleted from another client is no proof an interrupted COPY went through:
 // with no copy in the destination, the retry copies it there.
 func TestUncertainCopyMoveDeletedElsewhere(t *testing.T) {

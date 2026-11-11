@@ -102,6 +102,11 @@ func (r *Receiver) Apply(ctx context.Context, op backend.Op) (_ backend.Result, 
 		} else {
 			res, err = move(c, op)
 		}
+		if v, _ := Decode(string(res.Ref)); err == nil && res.Ref != "" && op.Cursor != "" {
+			if want, _ := Decode(string(op.Cursor)); v != want {
+				res = backend.Result{Outcome: backend.Unlocated}
+			}
+		}
 	case backend.Copy:
 		res, err = copyTo(c, op)
 	case backend.AddToFolder:

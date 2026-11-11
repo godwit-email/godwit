@@ -269,7 +269,11 @@ func (r *receiver) Apply(_ context.Context, op backend.Op) (backend.Result, erro
 		}
 		_, n := parse(string(op.At.Ref))
 		delete(r.s.folders[string(op.At.Folder)].msgs, n)
-		return backend.Result{Outcome: backend.Done, Ref: r.s.put(string(op.To), m)}, nil
+		dst := r.s.put(string(op.To), m)
+		if want, _ := parse(string(op.Cursor)); op.Cursor != "" && want != r.s.folders[string(op.To)].epoch {
+			return backend.Result{Outcome: backend.Unlocated}, nil
+		}
+		return backend.Result{Outcome: backend.Done, Ref: dst}, nil
 	}
 	return backend.Result{Outcome: backend.Unsupported, Reason: "fake.unsupported"}, nil
 }

@@ -35,28 +35,28 @@ func (p *pusher) pushStableMove(ctx context.Context, o op) (string, error) {
 	if store.Str(v[2]) == "all" {
 		completed.src = 0 // All Mail is implicit membership, never a removable label.
 	}
-	var to backend.FolderRef
+	var dst destination
 	if o.dst != 0 {
-		dst, err := p.destination(ctx, o.dst)
+		var err error
+		dst, err = p.destination(ctx, o.dst)
 		if err != nil {
 			return "", err
 		}
 		if dst.ref == "" {
 			return p.refused(ctx, o, errNoDestination)
 		}
-		to = dst.ref
 	}
 	if o.src == o.dst {
 		return "", finish(ctx, db, o, "done", "")
 	}
 	if o.src == 0 {
-		return p.addToFolder(ctx, o, at.ServerID, to)
+		return p.addToFolder(ctx, o, at.ServerID, dst.ref)
 	}
 	sent := o.attempts > 0
 	if at.ServerID == "" && at.Ref == "" {
 		return p.lostSource(ctx, o, sent)
 	}
-	var w backend.Op = backend.Move{At: at, To: to}
+	var w backend.Op = backend.Move{At: at, To: dst.ref, Cursor: dst.cursor}
 	if o.dst == 0 {
 		w = backend.RemoveFromFolder{At: at}
 	}

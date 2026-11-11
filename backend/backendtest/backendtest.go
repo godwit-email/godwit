@@ -502,7 +502,7 @@ func testMove(t *testing.T, start Fixture) {
 	for ref := range v.messages[inbox] {
 		m.Location = backend.Location{Folder: inbox, Ref: ref}
 	}
-	res := apply(t, r, backend.Move{At: m.Location, To: archive})
+	res := apply(t, r, backend.Move{At: m.Location, To: archive, Cursor: v.states[archive].Cursor})
 	switch {
 	case res.Outcome == backend.Unsupported:
 		t.Skip("Move unsupported:", res.Reason)
