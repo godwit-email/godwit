@@ -10,6 +10,7 @@ import (
 	"net/http/httptest"
 	"slices"
 	"strings"
+	"sync/atomic"
 	"testing"
 
 	gojmap "git.sr.ht/~rockorager/go-jmap"
@@ -427,5 +428,125 @@ func TestSendServerPartialFailReturnsUncertainAndPreservesEvidence(t *testing.T)
 	// Sent copy created before serverPartialFail must not be destroyed by cleanupStaged.
 	if got := mailboxEmails(t, srv.Server, srv.sent); len(got) != 1 {
 		t.Fatalf("Sent has %d messages after serverPartialFail, want 1 preserved for recovery", len(got))
+	}
+}
+
+// proxySender is a Sender reaching srv through a proxy: intercept answers a
+// request itself when it returns true, else the request goes on to srv.
+func proxySender(t *testing.T, srv *jmapmemserver.Server, intercept func(w http.ResponseWriter, r *http.Request, body []byte) bool) *jmap.Sender {
+	var proxy *httptest.Server
+	proxy = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		body, _ := io.ReadAll(r.Body)
+		if intercept(w, r, body) {
+			return
+		}
+		req, _ := http.NewRequestWithContext(r.Context(), r.Method, srv.URL()+r.URL.RequestURI(), bytes.NewReader(body))
+		req.Header = r.Header.Clone()
+		resp, err := http.DefaultClient.Do(req)
+		if err != nil {
+			t.Error(err)
+			return
+		}
+		defer resp.Body.Close()
+		out, _ := io.ReadAll(resp.Body)
+		w.WriteHeader(resp.StatusCode)
+		_, _ = w.Write(bytes.ReplaceAll(out, []byte(srv.URL()), []byte(proxy.URL)))
+	}))
+	t.Cleanup(proxy.Close)
+	return jmap.NewSender(jmap.Config{
+		SessionURL:  proxy.URL + "/jmap/session",
+		Credentials: func(context.Context) (backend.Credentials, error) { return backend.Credentials{Token: "secret"}, nil },
+	})
+}
+
+// Without a Drafts mailbox the copy is staged outside Sent: a server that
+// stops after Email/import, before the submission, leaves nothing in Sent
+// that would pass for the sent copy.
+func TestSendWithoutDraftsNeverStagesInSent(t *testing.T) {
+	srv := jmapmemserver.New("alice@example.com", "secret")
+	t.Cleanup(srv.Close)
+	inbox := srv.CreateMailbox("Inbox", mailbox.RoleInbox)
+	sent := srv.CreateMailbox("Sent", mailbox.RoleSent)
+	var cut atomic.Bool
+	cut.Store(true)
+	snd := proxySender(t, srv, func(w http.ResponseWriter, r *http.Request, body []byte) bool {
+		if !bytes.Contains(body, []byte("EmailSubmission/set")) || !cut.CompareAndSwap(true, false) {
+			return false
+		}
+		var req struct {
+			Using       []string             `json:"using"`
+			MethodCalls [][3]json.RawMessage `json:"methodCalls"`
+		}
+		if err := json.Unmarshal(body, &req); err != nil {
+			t.Error(err)
+			return false
+		}
+		req.MethodCalls = req.MethodCalls[:1] // Email/import alone runs
+		b, _ := json.Marshal(req)
+		fwd, _ := http.NewRequestWithContext(r.Context(), r.Method, srv.URL()+r.URL.RequestURI(), bytes.NewReader(b))
+		fwd.Header = r.Header.Clone()
+		if resp, err := http.DefaultClient.Do(fwd); err == nil {
+			resp.Body.Close()
+		}
+		w.WriteHeader(http.StatusBadGateway)
+		return true
+	})
+
+	err := snd.Send(t.Context(), "alice@example.com", []string{"bob@example.com"}, []byte(testRaw))
+	if !errors.Is(err, backend.ErrUncertain) {
+		t.Fatalf("Send cut off after Email/import = %v, want ErrUncertain", err)
+	}
+	if got := mailboxEmails(t, srv, sent); len(got) != 0 {
+		t.Fatalf("Sent has %d messages after an uncertain send, want none", len(got))
+	}
+	if got := mailboxEmails(t, srv, inbox); len(got) != 1 || !got[0].Keywords["$draft"] {
+		t.Fatalf("Inbox = %+v, want the staged $draft copy", got)
+	}
+
+	// Sent normally, the copy moves from where it was staged to Sent.
+	srv2 := jmapmemserver.New("alice@example.com", "secret")
+	t.Cleanup(srv2.Close)
+	inbox2 := srv2.CreateMailbox("Inbox", mailbox.RoleInbox)
+	sent2 := srv2.CreateMailbox("Sent", mailbox.RoleSent)
+	if err := newTestSender(srv2, "secret").Send(t.Context(), "alice@example.com", []string{"bob@example.com"}, []byte(testRaw)); err != nil {
+		t.Fatalf("Send: %v", err)
+	}
+	if got := mailboxEmails(t, srv2, sent2); len(got) != 1 || got[0].Keywords["$draft"] {
+		t.Fatalf("Sent = %+v, want the one sent copy", got)
+	}
+	if got := mailboxEmails(t, srv2, inbox2); len(got) != 0 {
+		t.Fatalf("Inbox keeps %d staged copies, want none", len(got))
+	}
+}
+
+// A server that refuses duplicate imports answers a resend, after an
+// uncertain send left its staged copy, with alreadyExists: the staged copy
+// is dropped and the message submitted once.
+func TestSendResendDropsStagedCopyOnAlreadyExists(t *testing.T) {
+	srv := newTestServer(t, "alice@example.com")
+	srv.AddEmail([]gojmap.ID{srv.drafts}, []byte(testRaw), "$draft", "$seen") // left by the uncertain send
+	var refuse atomic.Bool
+	refuse.Store(true)
+	snd := proxySender(t, srv.Server, func(w http.ResponseWriter, r *http.Request, body []byte) bool {
+		if !bytes.Contains(body, []byte("Email/import")) || !refuse.CompareAndSwap(true, false) {
+			return false
+		}
+		acct := string(srv.AccountID())
+		_, _ = io.WriteString(w, `{"methodResponses":[["Email/import",{"accountId":"`+acct+`","notCreated":{"m":{"type":"alreadyExists"}}},"0"],`+
+			`["EmailSubmission/set",{"accountId":"`+acct+`","notCreated":{"s":{"type":"invalidProperties"}}},"1"]],"sessionState":"0"}`)
+		return true
+	})
+
+	if err := snd.Send(t.Context(), "alice@example.com", []string{"bob@example.com"}, []byte(testRaw)); err != nil {
+		t.Fatalf("Send: %v", err)
+	}
+	if n := len(srv.Submissions()); n != 1 {
+		t.Fatalf("%d submissions, want 1", n)
+	}
+	if got := mailboxEmails(t, srv.Server, srv.drafts); len(got) != 0 {
+		t.Errorf("Drafts keeps %d staged copies, want none", len(got))
+	}
+	if got := mailboxEmails(t, srv.Server, srv.sent); len(got) != 1 {
+		t.Errorf("Sent has %d copies, want 1", len(got))
 	}
 }

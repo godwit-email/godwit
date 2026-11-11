@@ -59,7 +59,11 @@ func (s *Sender) Send(ctx context.Context, from string, rcpts []string, raw []by
 	defer s.c.http.CloseIdleConnections()
 	ctx, cancel := context.WithTimeout(ctx, sendTimeout)
 	defer cancel()
+	return s.send(ctx, from, rcpts, raw, false)
+}
 
+// send is Send; again is its second try after dropping an earlier staged copy.
+func (s *Sender) send(ctx context.Context, from string, rcpts []string, raw []byte, again bool) error {
 	sess, acct, err := s.c.sess(ctx)
 	if err != nil {
 		return err
@@ -219,6 +223,17 @@ func (s *Sender) Send(ctx context.Context, from string, rcpts []string, raw []by
 		return fmt.Errorf("jmap: unexpected Email/import response %T", impInv.Args)
 	}
 	if se := ir.NotCreated["m"]; se != nil {
+		// The server refuses a duplicate import: a resend the user chose after an
+		// uncertain send left its staged copy, never submitted for sure, behind.
+		if se.Type == "alreadyExists" && !again {
+			dropped, err := s.dropStaged(ctx, stageMailbox, raw)
+			if err != nil {
+				return err
+			}
+			if dropped {
+				return s.send(ctx, from, rcpts, raw, true)
+			}
+		}
 		return importError(se)
 	}
 	created := ir.Created["m"]
@@ -275,6 +290,44 @@ func (s *Sender) Send(ctx context.Context, from string, rcpts []string, raw []by
 	return fmt.Errorf("%w: EmailSubmission/set gave neither created nor notCreated", backend.ErrUncertain)
 }
 
+// dropStaged destroys the copies of raw still staged in stage (its Message-ID,
+// still $draft) and reports whether there were any.
+func (s *Sender) dropStaged(ctx context.Context, stage gojmap.ID, raw []byte) (bool, error) {
+	m, err := mail.ReadMessage(bytes.NewReader(raw))
+	if err != nil {
+		return false, nil
+	}
+	id := strings.Trim(strings.TrimSpace(m.Header.Get("Message-Id")), "<>")
+	if id == "" {
+		return false, nil
+	}
+	out, err := s.c.call(ctx, func(acct gojmap.ID) []gojmap.Method {
+		return []gojmap.Method{
+			&email.Query{Account: acct, Filter: &email.FilterCondition{InMailbox: stage, HasKeyword: "$draft", Header: []string{"Message-ID", id}}},
+			&email.Get{Account: acct, Properties: []string{"id", "messageId", "keywords"},
+				ReferenceIDs: &gojmap.ResultReference{ResultOf: "0", Name: "Email/query", Path: "/ids"}},
+		}
+	})
+	if err != nil {
+		return false, err
+	}
+	var ids []gojmap.ID
+	for _, e := range out[1].(*email.GetResponse).List {
+		if slices.Contains(e.MessageID, id) && e.Keywords["$draft"] { // the header filter matches substrings
+			ids = append(ids, e.ID)
+		}
+	}
+	if len(ids) == 0 {
+		return false, nil
+	}
+	if _, err := s.c.call(ctx, func(acct gojmap.ID) []gojmap.Method {
+		return []gojmap.Method{&email.Set{Account: acct, Destroy: ids}}
+	}); err != nil {
+		return false, err
+	}
+	return true, nil
+}
+
 func archivedOK(postInv *gojmap.Invocation, emailID gojmap.ID) bool {
 	if postInv == nil {
 		return false
@@ -327,17 +380,16 @@ func matchIdentity(list []*identity.Identity, addr string) (gojmap.ID, bool) {
 // is non-nil, *sentOverride overrides the server's RoleSent mailbox (or ""
 // disables saving a sent copy); if *sentOverride names a mailbox absent on the
 // server, missingSent is reported so the caller retains archival recovery.
+// The copy is never staged in Sent: an unsubmitted copy there would pass for
+// the sent one when an uncertain send is looked up by Message-ID.
 func planStaging(boxes []*mailbox.Mailbox, sentOverride *backend.FolderRef) (stage gojmap.ID, update map[gojmap.ID]gojmap.Patch, destroy []gojmap.ID, missingSent bool, err error) {
 	hasBox := map[gojmap.ID]bool{}
-	var draftsID, detectedSentID, firstID gojmap.ID
+	var draftsID, detectedSentID gojmap.ID
 	for _, m := range boxes {
 		if m == nil || m.ID == "" {
 			continue
 		}
 		hasBox[m.ID] = true
-		if firstID == "" {
-			firstID = m.ID
-		}
 		switch m.Role {
 		case mailbox.RoleDrafts:
 			if draftsID == "" {
@@ -362,25 +414,29 @@ func planStaging(boxes []*mailbox.Mailbox, sentOverride *backend.FolderRef) (sta
 			missingSent = true
 		}
 	}
+	if draftsID != "" && draftsID != sentID {
+		stage = draftsID
+	} else {
+		for _, m := range boxes {
+			if m != nil && m.ID != "" && m.ID != sentID {
+				stage = m.ID
+				break
+			}
+		}
+	}
 	switch {
-	case draftsID != "" && sentID != "" && draftsID != sentID:
-		return draftsID, map[gojmap.ID]gojmap.Patch{
+	case stage == "":
+		return "", nil, nil, false, errors.New("jmap: account has no mailbox outside Sent to stage the submission in")
+	case sentID != "":
+		return stage, map[gojmap.ID]gojmap.Patch{
 			"#s": {
-				"mailboxIds/" + string(draftsID): nil,
-				"mailboxIds/" + string(sentID):   true,
-				"keywords/$draft":                nil,
+				"mailboxIds/" + string(stage):  nil,
+				"mailboxIds/" + string(sentID): true,
+				"keywords/$draft":              nil,
 			},
 		}, nil, false, nil
-	case sentID != "":
-		return sentID, map[gojmap.ID]gojmap.Patch{
-			"#s": {"keywords/$draft": nil},
-		}, nil, false, nil
-	case draftsID != "":
-		return draftsID, nil, []gojmap.ID{"#s"}, missingSent, nil
-	case firstID != "":
-		return firstID, nil, []gojmap.ID{"#s"}, missingSent, nil
 	default:
-		return "", nil, nil, false, errors.New("jmap: account has no mailboxes to stage submission")
+		return stage, nil, []gojmap.ID{"#s"}, missingSent, nil
 	}
 }
 
@@ -389,7 +445,7 @@ func importError(se *gojmap.SetError) error {
 	switch se.Type {
 	case "tooLarge":
 		return &backend.RejectedError{Stage: "DATA", Code: 552, Enhanced: "5.3.4", Message: msg}
-	case "invalidEmail":
+	case "invalidEmail", "alreadyExists": // alreadyExists: the same message is already filed, not staged
 		return &backend.RejectedError{Stage: "DATA", Code: 554, Message: msg}
 	default:
 		return fmt.Errorf("jmap import: %s", msg)
