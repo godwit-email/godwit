@@ -616,6 +616,7 @@ func TestModelsEmptyState(t *testing.T) {
 	h := newHarness(t, func(e *coretest.Env) { e.AddAccount(t, "alice@example.com") })
 	h.until("initial load", func() bool { return h.app.loaded })
 	m := h.openSettings("models").models
+	h.until("models loaded", func() bool { return m.loaded })
 	h.see("还没有接入模型服务")
 	h.see("连接本地网关")
 	if n := h.countTexts("添加服务"); n != 2 { // one button (label and text): the empty state's; the header's is hidden
@@ -1550,6 +1551,7 @@ func TestModelsLocalFiles(t *testing.T) {
 	h := newHarness(t, func(e *coretest.Env) { e.AddAccount(t, "alice@example.com") })
 	h.until("initial load", func() bool { return h.app.loaded })
 	m := h.openSettings("models").models
+	h.until("models loaded", func() bool { return m.loaded })
 	judge := func(id, name string) plugins.ProviderModel {
 		return plugins.ProviderModel{ID: id, Name: name, Transport: "plugin", Operation: "judge", Assets: map[string]string{"model": id}}
 	}

@@ -131,8 +131,8 @@ func TestReaderUnsubscribeOncePerThread(t *testing.T) {
 	}
 	h.seeBody(news.ID)
 	h.seeBody(next.ID)
-	h.see("退订")
-	if n := h.countTexts("退订"); n != 2 || r.unsubMessage() != next.ID { // one button: its label and its text
-		t.Fatalf("%d 退订 texts, on %d; want one button, on the newest %d", n, r.unsubMessage(), next.ID)
+	h.until("both unsubscribe headers loaded", func() bool { return r.unsubMessage() == next.ID })
+	if n := h.countTexts("退订"); n != 2 { // one button: its label and its text
+		t.Fatalf("%d 退订 texts; want one button", n)
 	}
 }
