@@ -238,6 +238,7 @@ func (r *reader) dropPrev() {
 	if r.prev == nil {
 		return
 	}
+	r.prev.gen++ // what it still had under way is dropped, not applied to a reader no one sees
 	for _, b := range r.prev.bodies {
 		b.stopAvatar()
 		b.closeView()

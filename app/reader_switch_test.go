@@ -167,3 +167,39 @@ func switchTo(h *harness, id int64) {
 	h.app.mail.open([]mailItem{{ID: id, Thread: true}}, 0)
 	h.tt.Frame()
 }
+
+// A read the kept thread had under way when it goes is dropped: no page is
+// made for a reader no one sees, out of reach of later switches (#682).
+func TestReaderSwitchDropsKeptThreadsReads(t *testing.T) {
+	h, accs := mailHarness(t, nil, "alice@example.com")
+	msgs := h.thread2(accs[0])
+	b := h.deliverOne(accs[0], coretest.Msg("dave@example.com", accs[0].Email, "Second thread", "second body"))
+	r := h.app.mail.reader
+	gate, read := make(chan struct{}), &atomic.Bool{}
+	real := r.getMessage
+	r.getMessage = func(ctx context.Context, id int64, remote bool) (core.Message, error) {
+		if id == msgs[0].ID {
+			<-gate
+			defer read.Store(true)
+		}
+		return real(ctx, id, remote)
+	}
+	h.openThread(msgs[0].ThreadID)
+	h.seeBody(msgs[1].ID)
+
+	switchTo(h, b.ThreadID)
+	vb := unseenBody(h, b.ID)
+	h.post(func() { r.prev.expand(msgs[0].ID) }) // as a click on its folded row while it is kept
+	h.drain()
+	h.post(func() { h.app.BodyHeight(vb, b.ID, 120) })
+	h.until("the kept thread gone", func() bool { return r.prev == nil })
+	close(gate)
+	h.until("the held read back", read.Load)
+	for range 5 { // its callback, had it not been dropped
+		h.drain()
+		h.tt.Frame()
+	}
+	if v := h.plat.view(msgs[0].ID); v != nil {
+		t.Fatal("a page was made for the kept thread after it went")
+	}
+}
