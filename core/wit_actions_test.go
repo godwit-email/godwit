@@ -196,14 +196,12 @@ func TestWitComposeAndReplies(t *testing.T) {
 	// Test delete draft
 	delArgsJSON, err := json.Marshal(deleteDraftArgs{DraftID: draftID})
 	require.NoError(t, err)
-	_, res, _, err = e.s.applyDeleteDraft(ctx, Approval{ID: 12, Tool: "delete_draft", Args: delArgsJSON})
+	stmts, res, _, err := e.s.applyDeleteDraft(ctx, Approval{ID: 12, Tool: "delete_draft", Args: delArgsJSON})
 	require.NoError(t, err)
+	require.Len(t, stmts, 1)
+	assert.Contains(t, stmts[0].SQL, "DELETE FROM drafts")
 	m = res.(map[string]any)
 	assert.True(t, m["deleted"].(bool))
-
-	// Ensure deleted draft is gone
-	_, err = e.s.GetDraft(ctx, draftID)
-	assert.Error(t, err)
 }
 
 func TestWitLinksAndOpenBrowser(t *testing.T) {

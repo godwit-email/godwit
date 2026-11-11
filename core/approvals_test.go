@@ -134,6 +134,20 @@ func (e *approvalEnv) interrupt(t *testing.T, conv Conversation, calls ...testll
 	return last
 }
 
+// interruptWith is interrupt for a run offered the registered tool named tool.
+func (e *approvalEnv) interruptWith(t *testing.T, conv Conversation, tool string, calls ...testllm.Call) WitEvent {
+	t.Helper()
+	e.srv.Script(testllm.Turn{Calls: calls}, testllm.Turn{Text: []string{"Finished."}})
+	ch, err := e.s.startRun(t.Context(), conv, "do it", e.s.registered(tool))
+	require.NoError(t, err)
+	evs := drainWit(t, ch)
+	require.NotEmpty(t, evs)
+	last := evs[len(evs)-1]
+	require.Equal(t, "interrupted", last.Kind, "%+v", last.Err)
+	require.Len(t, last.Approvals, len(calls))
+	return last
+}
+
 func (e *approvalEnv) count(t *testing.T, q string, args ...any) int {
 	t.Helper()
 	rows, err := e.s.db.Query(t.Context(), q, args...)
@@ -200,6 +214,42 @@ func toolPairs(t *testing.T, req testllm.Request) (calls, results []string) {
 	slices.Sort(calls)
 	slices.Sort(results)
 	return calls, results
+}
+
+func TestDeleteDraftApproval(t *testing.T) {
+	e := newApprovalEnv(t)
+	d, err := e.s.SaveDraft(t.Context(), Draft{AccountID: 1, Mode: "new", Subject: "Bin me"})
+	require.NoError(t, err)
+	conv := e.newConv(t, "ask", 0)
+	in := e.interruptWith(t, conv, "delete_draft", testllm.Call{Name: "delete_draft", Args: fmt.Sprintf(`{"draft_id":%d}`, d.ID)})
+	a := in.Approvals[0]
+
+	done := make(chan error, 1)
+	go func() { done <- e.s.ResolveApproval(t.Context(), a.ID, true) }()
+	select {
+	case err := <-done:
+		require.NoError(t, err)
+	case <-time.After(10 * time.Second):
+		t.Fatal("accepting a delete_draft approval did not return: the run ledger is deadlocked")
+	}
+	e.waitRun(t, in.RunID, "done")
+	assert.Equal(t, "done", e.approval(t, a.ID).State)
+	assert.Zero(t, e.count(t, "SELECT COUNT(*) FROM drafts WHERE id = ?", d.ID))
+}
+
+func TestDeleteDraftApprovalStale(t *testing.T) {
+	e := newApprovalEnv(t)
+	d, err := e.s.SaveDraft(t.Context(), Draft{AccountID: 1, Mode: "new", Subject: "Bin me"})
+	require.NoError(t, err)
+	conv := e.newConv(t, "ask", 0)
+	in := e.interruptWith(t, conv, "delete_draft", testllm.Call{Name: "delete_draft", Args: fmt.Sprintf(`{"draft_id":%d}`, d.ID)})
+	a := in.Approvals[0]
+	d.Subject = "Edited"
+	_, err = e.s.SaveDraft(t.Context(), d)
+	require.NoError(t, err)
+	require.ErrorIs(t, e.s.ResolveApproval(t.Context(), a.ID, true), ErrStaleDraft)
+	assert.Equal(t, "stale", e.approval(t, a.ID).State)
+	assert.Equal(t, 1, e.count(t, "SELECT COUNT(*) FROM drafts WHERE id = ?", d.ID), "an edited draft is kept")
 }
 
 func TestApproveExecutesOnce(t *testing.T) {

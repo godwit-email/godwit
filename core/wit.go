@@ -1439,7 +1439,7 @@ func (s *Service) prepareDeleteDraft(ctx context.Context, _ Conversation, raw js
 	if err := json.Unmarshal(raw, &in); err != nil {
 		return prepared{}, err
 	}
-	rows, err := s.db.Query(ctx, "SELECT id, subject FROM drafts WHERE id = ?", in.DraftID)
+	rows, err := s.db.Query(ctx, "SELECT id, subject, revision FROM drafts WHERE id = ?", in.DraftID)
 	if err != nil {
 		return prepared{}, err
 	}
@@ -1453,20 +1453,21 @@ func (s *Service) prepareDeleteDraft(ctx context.Context, _ Conversation, raw js
 		return prepared{}, err
 	}
 	return prepared{
-		Args:       b,
-		Summary:    summary,
-		TargetKind: "draft",
-		TargetID:   in.DraftID,
+		Args:          b,
+		Summary:       summary,
+		TargetKind:    "draft",
+		TargetID:      in.DraftID,
+		TargetVersion: store.Int(rows.Values[0][2]),
 	}, nil
 }
 
-func (s *Service) applyDeleteDraft(ctx context.Context, a Approval) ([]sqlite.Statement, any, any, error) {
+func (s *Service) applyDeleteDraft(_ context.Context, a Approval) ([]sqlite.Statement, any, any, error) {
 	var in deleteDraftArgs
 	if err := json.Unmarshal(a.Args, &in); err != nil {
 		return nil, nil, nil, err
 	}
-	if err := s.DeleteDraft(ctx, in.DraftID); err != nil {
-		return nil, nil, nil, err
-	}
-	return nil, map[string]any{"deleted": true, "draft_id": in.DraftID}, nil, nil
+	// A statement, not DeleteDraft: this runs holding the run ledger, which
+	// DeleteDraft takes, and the delete has to commit with the approval.
+	return []sqlite.Statement{{SQL: "DELETE FROM drafts WHERE id = ?", Args: []any{in.DraftID}}},
+		map[string]any{"deleted": true, "draft_id": in.DraftID}, nil, nil
 }

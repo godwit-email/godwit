@@ -6,6 +6,8 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"log/slog"
+	"os"
 	"slices"
 	"time"
 
@@ -486,6 +488,12 @@ func (s *Service) execute(ctx context.Context, a approvalRow, ex *executor, args
 	}
 	if err := finish("done", string(res), undoText, decision, stmts...); err != nil {
 		return errors.Join(err, finish("failed", msgNotSaved, nil, "failed"))
+	}
+	if a.Tool == "delete_draft" {
+		// After the commit: a crash before this leaves files the next start removes.
+		if err := os.RemoveAll(s.draftDir(a.targetID)); err != nil {
+			slog.Default().Warn("could not remove a deleted draft's files", "draft", a.targetID, "err", err)
+		}
 	}
 	return nil
 }
