@@ -15,7 +15,7 @@ import (
 	"github.com/godwit-email/godwit/internal/i18n"
 )
 
-// MaxAttempts is how many times an op is sent before it is marked failed.
+// MaxAttempts is how many server refusals an op takes before it is marked failed.
 const MaxAttempts = 5
 
 // FlagsPayload is the payload of a flags op: flags to add, then flags to remove.
@@ -38,7 +38,7 @@ var errNoDestination = errors.New("the destination folder no longer exists")
 type op struct {
 	id, msg, src, dst, dep, accountID int64
 	kind, payload                     string
-	attempts                          int
+	attempts, refusals                int
 }
 
 // pusher is one push: the account's backend and what it declares.
@@ -110,7 +110,7 @@ func push(ctx context.Context, db *store.DB, recv backend.Receiver, accountID in
 	p := &pusher{db: db, recv: recv, stable: d.Identity == backend.IdentityStable, inboxOnly: d.Identity == backend.IdentityInboxOnly, canPurge: d.Features[backend.FeaturePurge].Level != backend.LevelUnsupported}
 	for _, row := range rows.Values {
 		// A preceding move can merge queues or rebase the next move's source.
-		current, err := db.Query(ctx, `SELECT id, kind, message_id, src_folder_id, dst_folder_id, payload, depends_on, attempts FROM ops
+		current, err := db.Query(ctx, `SELECT id, kind, message_id, src_folder_id, dst_folder_id, payload, depends_on, attempts, refusals FROM ops
 			WHERE id = ? AND state = 'pending' AND `+opReady+filter, row[0], now.UnixMilli())
 		if err != nil {
 			return err
@@ -120,7 +120,7 @@ func push(ctx context.Context, db *store.DB, recv backend.Receiver, accountID in
 		}
 		v := current.Values[0]
 		o := op{id: store.Int(v[0]), kind: store.Str(v[1]), msg: store.Int(v[2]), src: store.Int(v[3]), dst: store.Int(v[4]), accountID: accountID,
-			payload: store.Str(v[5]), dep: store.Int(v[6]), attempts: int(store.Int(v[7]))}
+			payload: store.Str(v[5]), dep: store.Int(v[6]), attempts: int(store.Int(v[7])), refusals: int(store.Int(v[8]))}
 		problem, err := p.pushOp(ctx, o)
 		if o.kind == "purge" && err == nil && problem == "" {
 			if r, qerr := db.Query(ctx, "SELECT 1 FROM ops WHERE id = ? AND state = 'done'", o.id); qerr == nil && len(r.Values) > 0 {
@@ -205,10 +205,9 @@ func (p *pusher) pushOp(ctx context.Context, o op) (problem string, err error) {
 	}
 	// Counted before anything is sent: after a dropped connection the next round
 	// knows the command may have reached the server.
-	if _, err := db.Execute(ctx, "UPDATE ops SET attempts = attempts + 1 WHERE id = ?", o.id); err != nil {
+	if err := p.count(ctx, &o, 1); err != nil {
 		return "", err
 	}
-	o.attempts++
 
 	var w backend.Op
 	var dst destination
@@ -235,6 +234,11 @@ func (p *pusher) pushOp(ctx context.Context, o op) (problem string, err error) {
 	res, err := p.clearPurge(ctx, o, loc)
 	if err == nil && res.Outcome == backend.Done {
 		res, err = p.recv.Apply(ctx, w)
+	}
+	if nothingDone(res, err) {
+		if err := p.count(ctx, &o, -1); err != nil {
+			return "", err
+		}
 	}
 	switch {
 	case errors.Is(err, backend.ErrNotFound) && !errors.Is(err, backend.ErrFolderReset) && o.kind == "flags" && p.stable:
@@ -405,7 +409,7 @@ func finish(ctx context.Context, db *store.DB, o op, state, lastError string) er
 	if o.kind == "purge" {
 		where += " AND state = 'pending'" // a rescue's cancel stands
 	}
-	stmts := []sqlite.Statement{{SQL: "UPDATE ops SET state = ?, last_error = ? WHERE " + where, Args: []any{state, nullable(lastError), o.id}}}
+	stmts := []sqlite.Statement{{SQL: "UPDATE ops SET state = ?, refusals = ?, last_error = ? WHERE " + where, Args: []any{state, o.refusals, nullable(lastError), o.id}}}
 	if o.kind == "move" && (state == "failed" || state == "conflict") {
 		stmts = append(append(stmts,
 			sqlite.Statement{SQL: `UPDATE ops SET src_folder_id = ? WHERE message_id = ? AND kind IN ('move', 'purge') AND state = 'pending'
@@ -416,18 +420,25 @@ func finish(ctx context.Context, db *store.DB, o op, state, lastError string) er
 	return err
 }
 
-// fail records a failed attempt; the op is failed once it used MaxAttempts. A
-// server refusal is the op's problem; anything else (stop) also stops the push.
+// fail records a failed attempt. Only server refusals (!stop) count toward
+// MaxAttempts; an uncertain or refused read error (stop) leaves the op pending,
+// and anything other than a *backend.FolderError stops the push.
 func fail(ctx context.Context, db *store.DB, o op, cause error, stop bool) (string, error) {
+	if stop {
+		err := finish(ctx, db, o, "pending", cause.Error())
+		var refused *backend.FolderError
+		if errors.As(cause, &refused) {
+			return "", err // a refused read: the push goes on
+		}
+		return "", errors.Join(cause, err)
+	}
+	o.refusals++
 	state, problem := "pending", ""
-	if o.attempts >= MaxAttempts {
-		state, problem = "failed", fmt.Sprintf("a change was given up after %d attempts: %v", o.attempts, cause)
+	if o.refusals >= MaxAttempts {
+		state, problem = "failed", fmt.Sprintf("a change was given up after %d attempts: %v", o.refusals, cause)
 	}
 	if err := finish(ctx, db, o, state, cause.Error()); err != nil {
 		return problem, errors.Join(cause, err)
-	}
-	if stop {
-		return problem, cause
 	}
 	return problem, nil
 }

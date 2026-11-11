@@ -778,6 +778,10 @@ var Migrations = [][]string{{
 	// A JMAP receiving slot's session resource path, as a session URL typed
 	// in gives it; '' discovers it at /.well-known/jmap.
 	`ALTER TABLE accounts ADD COLUMN recv_path TEXT NOT NULL DEFAULT ''`,
+}, {
+	// Server refusals of an op; attempts counts every send that may have
+	// reached the server, and only MaxAttempts refusals give the op up.
+	`ALTER TABLE ops ADD COLUMN refusals INTEGER NOT NULL DEFAULT 0`,
 }}
 
 // HistoryRowsVersion is the schema version that keeps a conversation's

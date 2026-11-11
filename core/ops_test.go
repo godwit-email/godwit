@@ -531,6 +531,75 @@ func TestFailedOpKeepsError(t *testing.T) {
 	assert.Equal(t, []string{"m@x"}, e.onServer(t, "INBOX"))
 }
 
+func TestTransportErrorsDoNotExhaustRetryBudget(t *testing.T) {
+	t.Run("recovers", func(t *testing.T) {
+		e := newSyncEnv(t, testmail.WithoutMove())
+		e.put(t, "INBOX", msg("m@x"))
+		e.sync(t)
+		id := e.idOf(t, "m@x")
+		archive := e.folderID(t, "Archive")
+		require.NoError(t, e.s.Move(bg, []int64{id}, archive))
+		require.NoError(t, e.s.SetFlags(bg, []int64{id}, []string{`\Seen`}, nil))
+
+		for i := 1; i <= mailsync.MaxAttempts+2; i++ {
+			if i == 1 {
+				e.im.DropOnNextUIDExpunge()
+			} else {
+				e.im.DropNextFetch()
+			}
+			require.Error(t, e.s.SyncNow(bg, e.acc.ID))
+			ops := e.ops(t)
+			require.Len(t, ops, 2)
+			assert.Equal(t, "pending", ops[0].State)
+			assert.Equal(t, "pending", ops[1].State)
+			assert.Equal(t, i, ops[0].Attempts)
+			assert.NotEmpty(t, ops[0].LastError)
+			assert.Equal(t, [][]any{{id, archive}}, e.rows(t, "SELECT id, "+shownCol+" FROM messages"))
+		}
+
+		e.reopen(t)
+		e.sync(t)
+		assert.Empty(t, e.onServer(t, "INBOX"))
+		assert.Equal(t, []string{`m@x \Seen`}, e.onServer(t, "Archive"))
+		assert.Equal(t, [][]any{{id, archive, `\Seen`}}, e.rows(t, "SELECT id, "+shownCol+", flags FROM messages"))
+		assert.Equal(t, []string{"done", "done"}, e.opStates(t))
+	})
+
+	t.Run("refusal budget intact", func(t *testing.T) {
+		e := newSyncEnv(t)
+		e.put(t, "INBOX", msg("m@x"))
+		e.sync(t)
+		id := e.idOf(t, "m@x")
+		inbox, archive := e.folderID(t, "INBOX"), e.folderID(t, "Archive")
+		require.NoError(t, e.s.Move(bg, []int64{id}, archive))
+
+		for range mailsync.MaxAttempts + 2 {
+			e.im.DropNextFetch()
+			require.Error(t, e.s.SyncNow(bg, e.acc.ID))
+			assert.Equal(t, "pending", e.ops(t)[0].State)
+		}
+
+		e.reopen(t)
+		require.NoError(t, e.im.User.Delete("Archive"))
+		ch, unsub := e.s.Subscribe()
+		defer unsub()
+		for i := 1; i <= mailsync.MaxAttempts; i++ {
+			e.sync(t)
+			ops := e.ops(t)
+			require.Len(t, ops, 1)
+			failed := ofType(collect(ch), events.SyncFailed)
+			if i < mailsync.MaxAttempts {
+				assert.Equal(t, "pending", ops[0].State)
+				assert.Empty(t, failed)
+			} else {
+				assert.Equal(t, "failed", ops[0].State)
+				assert.Len(t, failed, 1)
+			}
+		}
+		assert.Equal(t, [][]any{{id, inbox}}, e.rows(t, "SELECT id, "+shownCol+" FROM messages"))
+	})
+}
+
 func TestDeleteMovesToTrash(t *testing.T) {
 	e := newSyncEnv(t)
 	e.put(t, "INBOX", msg("m@x"))
