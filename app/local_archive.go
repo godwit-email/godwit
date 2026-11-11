@@ -153,6 +153,17 @@ func (p *mailPage) importEML(acc, folderID int64, dir bool) {
 		if err != nil || len(paths) == 0 {
 			return err
 		}
+		if folderID == 0 {
+			fs, err := a.svc.ListFolders(ctx, acc)
+			if err != nil {
+				return err
+			}
+			for _, f := range fs {
+				if f.Role == "inbox" {
+					folderID = f.ID
+				}
+			}
+		}
 		picked = true
 		sum, err = a.svc.ImportEML(ctx, acc, folderID, paths)
 		return err

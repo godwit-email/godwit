@@ -29,6 +29,8 @@ jobs:
       linux_1: ${{ steps.paths.outputs.linux_1 }}
       linux_2: ${{ steps.paths.outputs.linux_2 }}
       linux_3: ${{ steps.paths.outputs.linux_3 }}
+      m5max_1: ${{ steps.paths.outputs.m5max_1 }}
+      m5max_2: ${{ steps.paths.outputs.m5max_2 }}
     steps:
       - uses: actions/checkout@v7
         with:
@@ -43,15 +45,24 @@ jobs:
           RUNNER_CHECK_TOKEN: ${{ secrets.RUNNER_CHECK_TOKEN }}
         run: |
           idle=0
+          m5=0
           if [[ -n "$RUNNER_CHECK_TOKEN" && "$HEAD_REPO" == "$GITHUB_REPOSITORY" ]]; then
-            idle=$(GH_TOKEN="$RUNNER_CHECK_TOKEN" gh api "repos/$GITHUB_REPOSITORY/actions/runners" \
-              --jq '[.runners[] | select(.status=="online" and .busy==false and ([.labels[].name] | index("Linux")) and ([.labels[].name] | index("X64")))] | length' 2>/dev/null || echo 0)
+            runners=$(GH_TOKEN="$RUNNER_CHECK_TOKEN" gh api "repos/$GITHUB_REPOSITORY/actions/runners" 2>/dev/null || echo '{"runners":[]}')
+            idle=$(printf '%s' "$runners" | jq '[.runners[] | select(.status=="online" and .busy==false and ([.labels[].name] | index("Linux")) and ([.labels[].name] | index("X64")) and (([.labels[].name] | index("m5max")) | not))] | length' 2>/dev/null || echo 0)
+            m5=$(printf '%s' "$runners" | jq '[.runners[] | select(.status=="online" and .busy==false and ([.labels[].name] | index("m5max")))] | length' 2>/dev/null || echo 0)
           fi
           for slot in 1 2 3; do
             if ((idle >= slot)); then
               echo "linux_${slot}=[\"self-hosted\",\"linux\",\"x64\"]" >> "$GITHUB_OUTPUT"
             else
               echo "linux_${slot}=\"ubuntu-latest\"" >> "$GITHUB_OUTPUT"
+            fi
+          done
+          for slot in 1 2; do
+            if ((m5 >= slot)); then
+              echo "m5max_${slot}=[\"self-hosted\",\"linux\",\"m5max\"]" >> "$GITHUB_OUTPUT"
+            else
+              echo "m5max_${slot}=\"ubuntu-latest\"" >> "$GITHUB_OUTPUT"
             fi
           done
 
@@ -172,8 +183,20 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        shard: [0, 1, 2, 3, 4, 5]
-    runs-on: ubuntu-latest
+        include:
+          - shard: 0
+            os: ${{ fromJSON(needs.changes.outputs.m5max_1) }}
+          - shard: 1
+            os: ubuntu-latest
+          - shard: 2
+            os: ubuntu-latest
+          - shard: 3
+            os: ${{ fromJSON(needs.changes.outputs.m5max_2) }}
+          - shard: 4
+            os: ubuntu-latest
+          - shard: 5
+            os: ubuntu-latest
+    runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v7
       - uses: jdx/mise-action@v5
