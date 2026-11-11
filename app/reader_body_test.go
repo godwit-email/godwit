@@ -564,6 +564,28 @@ func TestReaderTrustSender(t *testing.T) {
 	}
 }
 
+// A message of a just-trusted sender, opened before the app reads the list
+// back, loses its avatar to the settings event that lands after it, and
+// loads it again: the notice goes, with no refresh run.
+func TestReaderTrustReloadsAvatar(t *testing.T) {
+	h, accs := mailHarness(t, nil, "alice@example.com")
+	remoteImages(t, h, "trusted")
+	acc := accs[0]
+	img := coretest.HTML(`<p>Hi</p><img src="https://img.example/p.png" width="2" height="2">`)
+	m := h.deliverOne(acc, coretest.Msg("Bob <bob@example.com>", acc.Email, "News", "text", img))
+	h.openThread(m.ThreadID)
+	h.seeBody(m.ID)
+	h.click("信任发件人")
+	h.until("allowed", func() bool { return h.countCalls(fmt.Sprint("AllowImages ", m.ID)) == 1 })
+	n := h.deliverOne(acc, coretest.Msg("bob@example.com", acc.Email, "More news", "text", img))
+	h.openThread(n.ThreadID)
+	h.seeBody(n.ID)
+	b := h.app.mail.reader.bodies[n.ID]
+	h.until("the avatar loaded", func() bool { return b.avatarDone })
+	h.settle() // invalidates the avatars, as trusting's own event may only now
+	h.until("the notice gone", func() bool { return !h.tt.HasText("张图片未加载") })
+}
+
 // Tracking pixels are noted apart from the remote images notice, and stay
 // blocked for a trusted sender, whose other images load without a notice.
 func TestReaderTrackersBlocked(t *testing.T) {

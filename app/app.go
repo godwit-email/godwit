@@ -501,8 +501,8 @@ func (a *App) load() {
 			if !sameSettings(old, st) {
 				a.settingsEffects(old, st)
 			}
-			a.mail.reader.refreshAvatars()
 		}
+		a.mail.reader.refreshAvatars() // after any invalidation above; loadAvatar holds them while a local change is unsaved
 		a.syncLocalAPI()
 		a.refreshTasks() // skills or services may have changed too
 		a.inboxUnread = inbox
