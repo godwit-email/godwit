@@ -337,12 +337,12 @@ func TestRefreshDeadline(t *testing.T) {
 // messages already stored keep their IDs.
 func TestRaiseSyncLimitBackfills(t *testing.T) {
 	e, _ := newWorkerEnv(t)
-	lim := 2
-	_, err := e.s.UpdateAccount(bg, e.acc.ID, AccountPatch{Sync: &SyncRange{Limit: lim}})
-	require.NoError(t, err)
 	for i := range 5 {
 		e.put(t, "Archive", msg(fmt.Sprintf("a%d@x", i))) // not INBOX: no IDLE wake-up
 	}
+	lim := 2
+	_, err := e.s.UpdateAccount(bg, e.acc.ID, AccountPatch{Sync: &SyncRange{Limit: lim}})
+	require.NoError(t, err)
 	e.sync(t)
 	archive := "SELECT id FROM messages WHERE " + serverCol + " = ? ORDER BY id"
 	before := e.rows(t, archive, e.folderID(t, "Archive"))

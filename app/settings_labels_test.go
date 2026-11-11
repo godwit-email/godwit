@@ -191,10 +191,10 @@ func TestSettingsLabelsRescan(t *testing.T) {
 		return h.tt.HasText("正在回扫 · 1 / 4 封")
 	})
 	h.click("停止")
-	h.until("idle again", func() bool { h.tt.Frame(); return h.tt.HasText("开始回扫") })
-	if n, _ := h.env.Svc.PendingLabels(context.Background()); n != 0 {
-		t.Errorf("%d still pending", n)
-	}
+	h.until("idle again", func() bool {
+		n, err := h.env.Svc.PendingLabels(context.Background())
+		return err == nil && n == 0 && h.tt.HasText("开始回扫")
+	})
 }
 
 func TestSettingsLabelsRescanWithAutoOff(t *testing.T) {

@@ -172,7 +172,7 @@ func TestViewWhyAndRemove(t *testing.T) {
 	}
 	h.savedViewNamed("Acme")
 	h.click("Acme")
-	h.waitMail("the row", func() bool { return len(h.items()) == 1 })
+	h.waitMail("the row", func() bool { return !h.app.mail.loading && len(h.items()) == 1 })
 	h.app.mail.open(h.items(), 0)
 	h.see(i18n.T("view.band.unreplied"))
 	h.see("Acme" + "：")
@@ -248,7 +248,7 @@ func TestViewRefreshesWithTime(t *testing.T) {
 	}
 	h.savedViewNamed("Acme")
 	h.click("Acme")
-	h.waitMail("the row", func() bool { return len(h.items()) == 1 })
+	h.waitMail("the row", func() bool { return !h.app.mail.loading && len(h.items()) == 1 })
 	before := h.app.mail.gen
 	h.advance(time.Minute)
 	if h.app.mail.gen != before {
@@ -429,7 +429,7 @@ func TestViewRefreshesAtMidnight(t *testing.T) {
 	}
 	h.savedViewNamed("Acme")
 	h.click("Acme")
-	h.waitMail("the row", func() bool { return len(h.items()) == 1 })
+	h.waitMail("the row", func() bool { return !h.app.mail.loading && len(h.items()) == 1 })
 	now := h.clock.Now()
 	y, m, d := now.Date()
 	for now.Add(viewRefreshEvery).Before(time.Date(y, m, d+1, 0, 0, 0, 0, now.Location())) {
