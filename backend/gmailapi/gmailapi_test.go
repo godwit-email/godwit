@@ -484,3 +484,43 @@ func TestApplyValidatesSourceAndImmutableSystemLabels(t *testing.T) {
 		t.Fatalf("Move out of SENT = %+v, %v; want Unsupported(%s)", res, err, gmailapi.ReasonSystemLabelsFixed)
 	}
 }
+
+func TestLoadOlderStopsListingEarly(t *testing.T) {
+	srv := gmailapitest.Start(t)
+	srv.SetPageLimit(3)
+	var newestID string
+	for i := range 30 {
+		newestID = srv.Deliver("INBOX", backendtest.Message("m"+string(rune('a'+i%26))+"@x", "msg"))
+	}
+	r := contractServer{srv}.Receiver(t)
+	local := newMemLocal()
+	local.folders["INBOX"] = map[backend.MessageRef]backend.Flags{
+		backend.MessageRef(newestID): {},
+	}
+	local.ids[newestID] = true
+
+	var got []backend.MessageAppeared
+	more, err := r.Sync(t.Context(), backend.SyncRequest{
+		Folders: map[backend.FolderRef]backend.FolderState{"INBOX": {Synced: true}},
+		Only:    []backend.FolderRef{"INBOX"},
+		Older:   2,
+		Local:   local,
+	}, func(p backend.Page) error {
+		for _, c := range p.Changes {
+			if m, ok := c.(backend.MessageAppeared); ok {
+				got = append(got, m)
+			}
+		}
+		return nil
+	})
+	if err != nil {
+		t.Fatalf("Sync(Older): %v", err)
+	}
+	if !more || len(got) != 2 {
+		t.Fatalf("Sync(Older) = more:%v len:%d, want true and 2", more, len(got))
+	}
+	// 1 held + 2 emitted + 1 lookahead = 4 messages across 2 pages of size 3 (not 10 pages).
+	if reqs := srv.ListMessageRequests(); reqs > 2 {
+		t.Errorf("ListMessageRequests = %d, want <= 2 (early stop)", reqs)
+	}
+}

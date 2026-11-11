@@ -63,6 +63,7 @@ type Server struct {
 
 	inFlight    atomic.Int32
 	maxInFlight atomic.Int32
+	listReqs    atomic.Int32
 
 	mu           sync.Mutex
 	email        string
@@ -478,7 +479,11 @@ func (s *Server) labelIDsLocked() []string {
 	return out
 }
 
+// ListMessageRequests returns how many messages.list HTTP calls the server handled.
+func (s *Server) ListMessageRequests() int { return int(s.listReqs.Load()) }
+
 func (s *Server) handleListMessages(w http.ResponseWriter, r *http.Request) {
+	s.listReqs.Add(1)
 	qv := r.URL.Query()
 	labelFilter := qv["labelIds"]
 	incSpamTrash := qv.Get("includeSpamTrash") == "true"

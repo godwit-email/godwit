@@ -385,17 +385,29 @@ const listPageMax = 500
 // newest first, bounded to limit when limit > 0.
 func (c *client) listMessages(ctx context.Context, labelID, q string, includeSpamTrash bool, limit int) ([]string, error) {
 	var ids []string
+	maxPage := listPageMax
+	if limit > 0 && limit < maxPage {
+		maxPage = limit
+	}
+	err := c.listMessagesPages(ctx, labelID, q, includeSpamTrash, maxPage, func(page []string) (bool, error) {
+		for _, id := range page {
+			ids = append(ids, id)
+			if limit > 0 && len(ids) >= limit {
+				return true, nil
+			}
+		}
+		return false, nil
+	})
+	return ids, err
+}
+
+func (c *client) listMessagesPages(ctx context.Context, labelID, q string, includeSpamTrash bool, pageMax int, onPage func([]string) (stop bool, err error)) error {
+	if pageMax <= 0 || pageMax > listPageMax {
+		pageMax = listPageMax
+	}
 	pageToken := ""
 	for {
-		maxRes := listPageMax
-		if limit > 0 {
-			rem := limit - len(ids)
-			if rem <= 0 {
-				break
-			}
-			maxRes = min(maxRes, rem)
-		}
-		qv := url.Values{"maxResults": {strconv.Itoa(maxRes)}}
+		qv := url.Values{"maxResults": {strconv.Itoa(pageMax)}}
 		if labelID != "" {
 			qv.Set("labelIds", labelID)
 		}
@@ -415,20 +427,21 @@ func (c *client) listMessages(ctx context.Context, labelID, q string, includeSpa
 			NextPageToken string `json:"nextPageToken"`
 		}
 		if err := c.doJSON(ctx, http.MethodGet, "/gmail/v1/users/me/messages", qv, nil, &resp); err != nil {
-			return nil, err
+			return err
 		}
-		for _, m := range resp.Messages {
-			ids = append(ids, m.ID)
-			if limit > 0 && len(ids) >= limit {
-				return ids, nil
-			}
+		if len(resp.Messages) == 0 {
+			return nil
 		}
-		if resp.NextPageToken == "" || len(resp.Messages) == 0 {
-			break
+		page := make([]string, len(resp.Messages))
+		for i, m := range resp.Messages {
+			page[i] = m.ID
+		}
+		stop, err := onPage(page)
+		if err != nil || stop || resp.NextPageToken == "" {
+			return err
 		}
 		pageToken = resp.NextPageToken
 	}
-	return ids, nil
 }
 
 func (c *client) getMessage(ctx context.Context, id, format string) (*apiMessage, error) {

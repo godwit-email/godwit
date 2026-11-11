@@ -862,64 +862,66 @@ func (r *Receiver) older(ctx context.Context, req backend.SyncRequest, commit fu
 			}
 		}
 		labelID, q, includeSpamTrash := folderListParams(ref, "")
-		ids, err := r.c.listMessages(ctx, labelID, q, includeSpamTrash, 0)
-		if err != nil {
-			return false, err
-		}
-		var unheld []string
-		for _, id := range ids {
-			if _, ok := held[backend.MessageRef(id)]; !ok {
-				unheld = append(unheld, id)
-			}
-		}
-		if len(unheld) == 0 {
-			continue
-		}
-		known, err := s.knownMap(ctx, unheld)
-		if err != nil {
-			return false, err
-		}
 		emitted := 0
-		for _, id := range unheld {
-			format := "minimal"
-			if !known[id] && emitted < req.Older {
-				format = "raw"
+		err = r.c.listMessagesPages(ctx, labelID, q, includeSpamTrash, listPageMax, func(page []string) (bool, error) {
+			var unheld []string
+			for _, id := range page {
+				if _, ok := held[backend.MessageRef(id)]; !ok {
+					unheld = append(unheld, id)
+				}
 			}
-			m, err := r.c.getMessage(ctx, id, format)
-			if errors.Is(err, backend.ErrNotFound) {
-				continue
+			if len(unheld) == 0 {
+				return false, nil
 			}
+			known, err := s.knownMap(ctx, unheld)
 			if err != nil {
 				return false, err
 			}
-			if !inFolder(m.LabelIDs, ref) {
-				continue
-			}
-			if emitted == req.Older {
-				hasMore = true
-				break
-			}
-			var content *backend.Content
-			if !known[id] {
-				if m.Raw == "" {
-					if m, err = r.c.getMessage(ctx, id, "raw"); errors.Is(err, backend.ErrNotFound) {
-						continue
-					} else if err != nil {
-						return false, err
-					}
+			for _, id := range unheld {
+				format := "minimal"
+				if !known[id] && emitted < req.Older {
+					format = "raw"
 				}
-				if content, err = s.buildContentFrom(m); err != nil {
+				m, err := r.c.getMessage(ctx, id, format)
+				if errors.Is(err, backend.ErrNotFound) {
+					continue
+				}
+				if err != nil {
 					return false, err
 				}
-				known[id] = true
+				if !inFolder(m.LabelIDs, ref) {
+					continue
+				}
+				if emitted == req.Older {
+					hasMore = true
+					return true, nil
+				}
+				var content *backend.Content
+				if !known[id] {
+					if m.Raw == "" {
+						if m, err = r.c.getMessage(ctx, id, "raw"); errors.Is(err, backend.ErrNotFound) {
+							continue
+						} else if err != nil {
+							return false, err
+						}
+					}
+					if content, err = s.buildContentFrom(m); err != nil {
+						return false, err
+					}
+					known[id] = true
+				}
+				s.add(backend.MessageAppeared{
+					Location: backend.Location{Folder: ref, Ref: backend.MessageRef(id), ServerID: id},
+					Flags:    flagsOf(m.LabelIDs),
+					Backfill: true,
+					Content:  content,
+				})
+				emitted++
 			}
-			s.add(backend.MessageAppeared{
-				Location: backend.Location{Folder: ref, Ref: backend.MessageRef(id), ServerID: id},
-				Flags:    flagsOf(m.LabelIDs),
-				Backfill: true,
-				Content:  content,
-			})
-			emitted++
+			return false, nil
+		})
+		if err != nil {
+			return false, err
 		}
 		if err := s.flush(backend.Page{}); err != nil {
 			return false, err
