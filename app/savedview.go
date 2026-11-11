@@ -275,7 +275,7 @@ func (p *mailPage) viewRow(c *ui.Context, b core.SavedView) {
 	t := theme.Of(c)
 	v := savedRoute(b.ID)
 	on := p.viewShown(v)
-	item := kit.SidebarItem(c, kit.SidebarItemOpts{Selected: on, Covered: p.viewEdit != nil, OnClick: func() { p.a.navigate(Route{Page: PageMail, View: v}) }})
+	item := kit.SidebarItem(c, kit.SidebarItemOpts{Selected: on, Covered: p.viewEdit != nil, OnClick: func() { p.a.navigate(Route{Page: PageMail, View: v}) }}).Label(b.Name)
 	item.Children(func() {
 		ui.Icon(c, icons.Get(labelIcon(b.Icon))).Size(theme.Icon, theme.Icon).Shrink(0).TextColor(t.Muted)
 		ui.Text(c, b.Name).SingleLine().Grow(1).Shrink(1)

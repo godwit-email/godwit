@@ -296,6 +296,7 @@ func TestReaderHeightApplied(t *testing.T) {
 		t.Fatalf("height %v before any report, want about a line", box.H)
 	}
 	h.app.BodyHeight(v, m.ID, 640)
+	h.tt.Frame()
 	h.tt.Advance(2 * theme.MotionBase) // the message grows to hold it
 	if box, _ := h.viewBox(v); box.H < 636 || box.H > 640 {
 		t.Fatalf("height %v, want 640", box.H)
