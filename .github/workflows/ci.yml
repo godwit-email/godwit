@@ -23,9 +23,12 @@ jobs:
   # Keep the workflow/check names present; skip the expensive client jobs
   # when the only changed paths are in the independently checked site/.
   changes:
-    runs-on: [self-hosted, linux, x64]
+    runs-on: ubuntu-latest
     outputs:
       client: ${{ steps.paths.outputs.client }}
+      linux_1: ${{ steps.paths.outputs.linux_1 }}
+      linux_2: ${{ steps.paths.outputs.linux_2 }}
+      linux_3: ${{ steps.paths.outputs.linux_3 }}
     steps:
       - uses: actions/checkout@v7
         with:
@@ -36,7 +39,22 @@ jobs:
           EVENT_NAME: ${{ github.event_name }}
           BASE: ${{ github.event.pull_request.base.sha || github.event.before }}
           HEAD: ${{ github.event.pull_request.head.sha || github.sha }}
+          HEAD_REPO: ${{ github.event.pull_request.head.repo.full_name || github.repository }}
+          RUNNER_CHECK_TOKEN: ${{ secrets.RUNNER_CHECK_TOKEN }}
         run: |
+          idle=0
+          if [[ -n "$RUNNER_CHECK_TOKEN" && "$HEAD_REPO" == "$GITHUB_REPOSITORY" ]]; then
+            idle=$(GH_TOKEN="$RUNNER_CHECK_TOKEN" gh api "repos/$GITHUB_REPOSITORY/actions/runners" \
+              --jq '[.runners[] | select(.status=="online" and .busy==false and ([.labels[].name] | index("Linux")) and ([.labels[].name] | index("X64")))] | length' 2>/dev/null || echo 0)
+          fi
+          for slot in 1 2 3; do
+            if ((idle >= slot)); then
+              echo "linux_${slot}=[\"self-hosted\",\"linux\",\"x64\"]" >> "$GITHUB_OUTPUT"
+            else
+              echo "linux_${slot}=\"ubuntu-latest\"" >> "$GITHUB_OUTPUT"
+            fi
+          done
+
           if [[ "$EVENT_NAME" == "workflow_dispatch" ]]; then
             echo "client=true" >> "$GITHUB_OUTPUT"
             exit 0
@@ -69,7 +87,7 @@ jobs:
       matrix:
         include:
           - name: ubuntu-latest
-            os: [self-hosted, linux, x64]
+            os: ${{ fromJSON(needs.changes.outputs.linux_3) }}
           - name: macos-latest
             os: macos-latest
           - name: windows-latest
@@ -213,7 +231,7 @@ jobs:
       matrix:
         include:
           - name: ubuntu-latest
-            os: [self-hosted, linux, x64]
+            os: ${{ fromJSON(needs.changes.outputs.linux_2) }}
           - name: macos-latest
             os: macos-latest
     runs-on: ${{ matrix.os }}
@@ -271,7 +289,7 @@ jobs:
   web:
     needs: changes
     if: needs.changes.outputs.client == 'true'
-    runs-on: [self-hosted, linux, x64]
+    runs-on: ${{ fromJSON(needs.changes.outputs.linux_1) }}
     steps:
       - uses: actions/checkout@v7
       - uses: jdx/mise-action@v5
