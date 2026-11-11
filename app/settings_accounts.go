@@ -78,8 +78,8 @@ func aiTooLong(s string) bool {
 
 type serverForm struct {
 	imapHost, imapPort, smtpHost, smtpPort, username string
-	jmapURL                                          string // a JMAP account's session URL, or an EWS one's EWS URL, in place of the IMAP server
-	ews                                              bool   // jmapURL is an EWS URL, and there is no SMTP server
+	jmapURL                                          string // a JMAP account's session URL, or an EWS one's EWS URL, in place of IMAP and SMTP
+	jmap, ews                                        bool   // jmapURL is a JMAP or EWS URL
 	imapSec, smtpSec                                 core.Security
 }
 
@@ -611,7 +611,7 @@ func (p *settingsPage) accountView(c *ui.Context, acc core.Account) {
 		row(i18n.T("settings.account.login.method"), p.authText(acc, prov), func() { p.authButton(c, acc, prov, false) }),
 		recv,
 	}
-	if acc.Sending.Protocol != auth.EWS && acc.Sending.Protocol != auth.GmailAPI { // EWS and Gmail API send through the server they receive from
+	if pr := acc.Sending.Protocol; pr != auth.EWS && pr != auth.JMAP && pr != auth.GmailAPI { // EWS, JMAP and Gmail API send through the server they receive from
 		login = append(login, server("SMTP", acc.Sending.Host, acc.Sending.Port, acc.Sending.Security, receiveOnlyHelp(acc)))
 	}
 	if acc.ReceiveOnly { // OAuth has no servers to change: it tries SMTP again as it is
@@ -710,9 +710,6 @@ func (p *settingsPage) authButton(c *ui.Context, acc core.Account, prov auth.Pro
 		} else {
 			kit.Button(c, text, o).OnClick(open)
 		}
-		if acc.Receiving.Auth == core.AuthAPIToken && !banner { // SMTP signs in with a password of its own
-			kit.Button(c, i18n.Tf("settings.account.login.update", i18n.T("onboarding.send_secret")), o).OnClick(func() { p.openDialog("send_password", acc) })
-		}
 		return
 	}
 	label := i18n.T("onboarding.relogin")
@@ -744,7 +741,7 @@ func (p *settingsPage) openDialog(kind string, acc core.Account) {
 	p.servers = serverForm{imapHost: acc.Receiving.Host, imapPort: strconv.Itoa(acc.Receiving.Port), smtpHost: acc.Sending.Host,
 		smtpPort: strconv.Itoa(acc.Sending.Port), username: acc.Username, imapSec: acc.Receiving.Security, smtpSec: acc.Sending.Security}
 	if pr := acc.Receiving.Protocol; pr == auth.JMAP || pr == auth.EWS {
-		p.servers.jmapURL, p.servers.ews = sessionURL(acc.Receiving), pr == auth.EWS
+		p.servers.jmapURL, p.servers.jmap, p.servers.ews = sessionURL(acc.Receiving), pr == auth.JMAP, pr == auth.EWS
 	}
 }
 
@@ -812,12 +809,9 @@ func (p *settingsPage) dialogView(c *ui.Context) {
 	label, variant := i18n.T("common.save"), kit.Default
 	incomplete := false // the confirm button waits for the fields
 	switch p.dialog {
-	case "password", "send_password":
+	case "password":
 		incomplete = p.secret == ""
 		name, update := accountSecretName(acc, prov), a.svc.UpdatePassword
-		if p.dialog == "send_password" {
-			name, update = i18n.T("onboarding.send_secret"), a.svc.UpdateSendPassword
-		}
 		title = i18n.Tf("settings.account.login.update", name)
 		body = func() {
 			ui.Field(c, name, func() { secretInput(c, &p.secret, &p.showSecret) }).
@@ -863,9 +857,11 @@ func (p *settingsPage) dialogView(c *ui.Context) {
 			switch {
 			case sf.ews:
 				ss.Receiving, _ = ewsServer(sf.jmapURL) // invalid, its empty host fails the check
-			case sf.jmapURL != "":
+				ss.Sending = ss.Receiving
+			case sf.jmap:
 				ss.Receiving, _ = jmapServer(sf.jmapURL) // invalid, its empty host fails the check
 				ss.Receiving.Protocol = auth.JMAP
+				ss.Sending = ss.Receiving
 			}
 			var saved core.Account
 			p.act(id, func(ctx context.Context) (err error) {
@@ -1057,12 +1053,12 @@ func (p *settingsPage) serversForm(c *ui.Context) {
 	switch {
 	case sf.ews:
 		ui.Field(c, i18n.T("onboarding.ews.url"), func() { kit.Input(c, &sf.jmapURL, kit.InputOpts{}) })
-	case sf.jmapURL != "":
+	case sf.jmap:
 		ui.Field(c, i18n.T("onboarding.jmap.url"), func() { kit.Input(c, &sf.jmapURL, kit.InputOpts{}) })
 	default:
 		server("imap", &sf.imapHost, &sf.imapPort, &sf.imapSec)
 	}
-	if !sf.ews { // EWS sends through the server it receives from
+	if !sf.ews && !sf.jmap { // EWS and JMAP send through the server they receive from
 		server("smtp", &sf.smtpHost, &sf.smtpPort, &sf.smtpSec)
 	}
 	ui.Field(c, i18n.T("onboarding.username"), func() { kit.Input(c, &sf.username, kit.InputOpts{}) })

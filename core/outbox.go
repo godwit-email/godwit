@@ -17,6 +17,7 @@ import (
 	"github.com/godwit-email/godwit/backend/ews"
 	"github.com/godwit-email/godwit/backend/gmailapi"
 	"github.com/godwit-email/godwit/backend/graph"
+	"github.com/godwit-email/godwit/backend/jmap"
 	"github.com/godwit-email/godwit/backend/smtpbackend"
 	"github.com/godwit-email/godwit/core/auth"
 	"github.com/godwit-email/godwit/core/events"
@@ -308,6 +309,9 @@ func (s *Service) processOutbox(ctx context.Context, recv backend.Receiver, acco
 	if err != nil {
 		return err
 	}
+	if known {
+		sa.sent = &sent
+	}
 	keep, err := s.localSent(ctx, accountID)
 	if err != nil {
 		return err
@@ -322,6 +326,7 @@ func (s *Service) processOutbox(ctx context.Context, recv backend.Receiver, acco
 		if beforeOutboxItem != nil {
 			beforeOutboxItem(o.id)
 		}
+		var snd backend.Sender
 		switch o.state {
 		case "queued":
 			if o.queuedAt < start-OutboxExpiry.Milliseconds() {
@@ -337,7 +342,8 @@ func (s *Service) processOutbox(ctx context.Context, recv backend.Receiver, acco
 				if _, err := sa.credentials(ctx); err != nil {
 					return err
 				}
-				ok, err = s.sendItem(ctx, wctx, sa.sender(), acc.Email, o)
+				snd = sa.sender()
+				ok, err = s.sendItem(ctx, wctx, snd, acc.Email, o)
 			}
 			if errors.Is(err, backend.ErrAuthFailed) {
 				// Not this message's fault: it is queued again, uncharged, and the
@@ -357,7 +363,12 @@ func (s *Service) processOutbox(ctx context.Context, recv backend.Receiver, acco
 			o.state = "sent"
 			fallthrough
 		case "sent", "archive_uncertain":
-			saves := sa.sender().SavesSent()
+			saves := false
+			if snd != nil {
+				saves = snd.SavesSent()
+			} else if o.state == "sent" && acc.Sending.Protocol != auth.JMAP {
+				saves = sa.sender().SavesSent()
+			}
 			if !known && !saves {
 				continue
 			}
@@ -404,6 +415,7 @@ var graphSendURL = graph.SendURL
 type sendAuth struct {
 	s         *Service
 	acc       Account
+	sent      *backend.FolderRef   // resolved Sent folder when folders are known; nil before first sync
 	ver       uint64               // cur's credential version
 	cur       *backend.Credentials // nil until read, and after retry
 	rejected  string               // an access token the server refused
@@ -437,6 +449,8 @@ func (a *sendAuth) sender() backend.Sender {
 		return ews.NewSender(ews.Config{URL: ewsURL(a.acc), Credentials: a.credentials})
 	case auth.GmailAPI:
 		return gmailapi.NewSender(gmailapi.Config{BaseURL: slotURL(a.acc.Receiving, a.acc.Receiving.Path), Credentials: a.credentials})
+	case auth.JMAP:
+		return jmap.NewSender(jmap.Config{SessionURL: sessionURL(a.acc.Receiving), Credentials: a.credentials, SentFolder: a.sent})
 	}
 	return a.smtp()
 }
@@ -454,7 +468,7 @@ func (a *sendAuth) smtp() *smtpbackend.Sender {
 func (a *sendAuth) retry(ctx context.Context, err error) bool {
 	switch {
 	case a.s.toGraph(ctx, &a.acc, err):
-	case errors.Is(err, backend.ErrAuthFailed) && a.cur != nil && a.cur.Token != "" && !a.refreshed:
+	case errors.Is(err, backend.ErrAuthFailed) && a.acc.AuthType == "oauth" && a.cur != nil && a.cur.Token != "" && !a.refreshed:
 		a.refreshed, a.rejected = true, a.cur.Token
 	default:
 		return false

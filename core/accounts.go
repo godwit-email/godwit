@@ -21,6 +21,7 @@ import (
 	"unicode/utf8"
 
 	"github.com/egoist/mygo/plugins/sqlite"
+	"github.com/godwit-email/godwit/backend"
 	"github.com/godwit-email/godwit/core/auth"
 	"github.com/godwit-email/godwit/core/events"
 	"github.com/godwit-email/godwit/core/mailsync"
@@ -146,14 +147,12 @@ func (in AccountInput) receiving() string {
 }
 
 // sending is the protocol a new or changed account sends with: EWS through
-// EWS, any other first through SMTP (Graph is stored only after SMTP
-// refused AUTH).
+// EWS, JMAP through JMAP, Gmail API through Gmail API, any other first through SMTP (Graph is stored only
+// after SMTP refused AUTH).
 func (in AccountInput) sending() string {
-	if in.receiving() == auth.EWS {
-		return auth.EWS
-	}
-	if in.receiving() == auth.GmailAPI {
-		return auth.GmailAPI
+	switch in.receiving() {
+	case auth.EWS, auth.JMAP, auth.GmailAPI:
+		return in.receiving()
 	}
 	return auth.SMTP
 }
@@ -172,10 +171,13 @@ func (in AccountInput) validate() error {
 		// Graph is not chosen but stored after SMTP refused AUTH; a stored
 		// account's servers come back with it.
 		{"sending", strings.ToUpper(in.sending()), in.Sending.Protocol == "" || in.Sending.Protocol == in.sending() ||
-			in.Sending.Protocol == auth.Graph && recv != auth.EWS && recv != auth.GmailAPI, in.Sending}} {
+			in.Sending.Protocol == auth.Graph && recv != auth.EWS && recv != auth.JMAP && recv != auth.GmailAPI, in.Sending}} {
 		http := e.name == "JMAP" || e.name == "EWS" || e.name == "GMAILAPI"
 		if !e.ok {
 			return fmt.Errorf("%s protocol %q is not supported", e.slot, e.Protocol)
+		}
+		if e.slot == "sending" && http && (e.Server == (Server{}) || e.Server == (Server{Protocol: recv})) {
+			continue // JMAP and EWS send through the receiving server
 		}
 		if bare := e.Server; e.name == "EWS" && (bare.Auth == "" || bare.Auth == AuthPassword) {
 			if bare.Auth = ""; bare == (Server{Protocol: e.Protocol}) {
@@ -327,18 +329,16 @@ func (s *Service) AddAccount(ctx context.Context, in AccountInput) (Account, err
 		}
 	}
 	checked, checkErr := s.check(ctx, in, "")
-	receiveOnly := in.ReceiveOnly && checked.OnlySMTPFailed()
+	receiveOnly := in.ReceiveOnly && checked.OnlySendingFailed()
 	if checkErr != nil && !receiveOnly {
 		return Account{}, &CheckError{Report: checked, err: checkErr}
 	}
 	if checked.URL != "" { // found by Autodiscover
 		in.Receiving, _ = ewsSlot(checked.URL)
 	}
-	if in.receiving() == auth.EWS {
-		in.Sending = in.Receiving // it sends through the receiving EWS URL
-	}
-	if in.receiving() == auth.GmailAPI {
-		in.Sending = in.Receiving
+	if p := in.receiving(); p == auth.EWS || p == auth.JMAP || p == auth.GmailAPI {
+		in.Sending = in.Receiving // it sends through the receiving server
+		sendAuth = slotAuth(in.Sending)
 	}
 	if in.OAuthFlowID != "" {
 		// Peeked for the check; taken now, so one grant adds one account.
@@ -552,16 +552,19 @@ func scanAccount(r []any) Account {
 		AIInstructions: store.Str(r[23]), OAuthClientID: store.Str(r[24]), LabelKeywords: store.Int(r[25]) == 1, Kind: store.Str(r[26]),
 		ReceiveOnly: store.Int(r[27]) == 1,
 	}
-	if a.Receiving.Protocol == auth.EWS { // it sends through the receiving EWS URL, whose path only recv_path keeps
-		r := a.Receiving
-		a.Sending.Protocol, a.Sending.Host, a.Sending.Port, a.Sending.Security, a.Sending.Path = auth.EWS, r.Host, r.Port, r.Security, r.Path
-	}
-	if a.Receiving.Protocol == auth.GmailAPI {
-		r := a.Receiving
-		a.Sending.Protocol, a.Sending.Host, a.Sending.Port, a.Sending.Security, a.Sending.Path = auth.GmailAPI, r.Host, r.Port, r.Security, r.Path
+	if p := a.Receiving.Protocol; p == auth.EWS || p == auth.JMAP || p == auth.GmailAPI {
+		// EWS, JMAP and Gmail API send through the receiving server, whose path and sign-in
+		// live on the receiving slot (this also migrates older JMAP accounts whose
+		// send_protocol was stored as smtp).
+		a.Sending = a.Receiving
 	}
 	if d, ok := decodeFeatures(r[30]); ok {
 		a.Features = d.Features
+		if a.Receiving.Protocol == auth.JMAP {
+			if s, ok := a.Features[backend.FeatureSavesSent]; ok && s.Reason == "jmap.sent_via_smtp" {
+				a.Features[backend.FeatureSavesSent] = backend.Support{Level: backend.LevelSupported}
+			}
+		}
 	}
 	// SMTP refuses the password: the user is asked for it the same way. status and
 	// status_detail are IMAP's and the keychain's, and they take precedence.
@@ -667,14 +670,16 @@ var errNotPassword = errors.New("the account does not sign in with a password")
 // worker resumes and the outbox sends in its next round. A sending slot with
 // a password of its own keeps it (UpdateSendPassword). A failed check is a
 // *CheckError and leaves the keychain unchanged; for a receive-only account
-// only IMAP must pass, and a passing SMTP step makes it send again.
+// only the receiving step must pass, and a passing sending step makes it send
+// again. A JMAP API token whose session may not send is saved too, and the
+// account becomes receive-only.
 func (s *Service) UpdatePassword(ctx context.Context, id int64, password string) error {
 	return s.updatePassword(ctx, id, password, false)
 }
 
 // UpdateSendPassword is UpdatePassword for the sending slot's own password:
-// the one SMTP signs in with when the receiving slot's secret is another
-// (an API token). The receiving slot keeps its secret.
+// the one SMTP signs in with when it differs from the receiving slot's. The
+// receiving slot keeps its secret.
 func (s *Service) UpdateSendPassword(ctx context.Context, id int64, password string) error {
 	return s.updatePassword(ctx, id, password, true)
 }
@@ -704,15 +709,16 @@ func (s *Service) updatePassword(ctx context.Context, id int64, password string,
 		return err
 	}
 	r, err := s.check(ctx, in, "")
-	if err != nil && !(acc.ReceiveOnly && r.OnlySMTPFailed()) { // a receive-only account needs IMAP only
+	// A receive-only account needs receiving only; so does a JMAP sign-in that may not send.
+	if err != nil && !((acc.ReceiveOnly || acc.Receiving.Protocol == auth.JMAP) && r.OnlySendingFailed()) {
 		return &CheckError{Report: r, err: err}
 	}
 	// A refusal of the old password still in flight is stale after credentialsUpdated.
 	if err := keychainSet(user, password); err != nil {
 		return fmt.Errorf("save credentials to keychain: %w", err)
 	}
-	if acc.ReceiveOnly && err == nil { // SMTP takes the new password: it sends again
-		if _, err := s.db.Execute(ctx, "UPDATE accounts SET receive_only = 0 WHERE id = ?", id); err != nil {
+	if acc.ReceiveOnly != (err != nil) { // sending takes the new password, or (JMAP) refuses it
+		if _, err := s.db.Execute(ctx, "UPDATE accounts SET receive_only = ? WHERE id = ?", b2i(err != nil), id); err != nil {
 			return err
 		}
 	}
@@ -901,11 +907,8 @@ func (s *Service) UpdateAccount(ctx context.Context, id int64, p AccountPatch) (
 		if in.Receiving.Protocol != acc.Receiving.Protocol {
 			return Account{}, errors.New("an account's receiving protocol cannot change: add the account again")
 		}
-		if in.receiving() == auth.EWS {
+		if p := in.receiving(); p == auth.EWS || p == auth.JMAP || p == auth.GmailAPI {
 			in.Sending = in.Receiving // the same endpoint; the stored sending slot has no path
-		}
-		if in.receiving() == auth.GmailAPI {
-			in.Sending = in.Receiving
 		}
 		in.Receiving.Auth, in.Sending.Auth = acc.Receiving.Auth, acc.Sending.Auth // the sign-in stays
 		r, err := s.checkStored(ctx, acc, &in)
@@ -913,9 +916,9 @@ func (s *Service) UpdateAccount(ctx context.Context, id int64, p AccountPatch) (
 		if err != nil && !errors.As(err, &ce) {
 			return Account{}, err
 		}
-		// A receive-only account may change servers while SMTP still fails; a
-		// passing SMTP check makes it send again.
-		if err != nil && !(acc.ReceiveOnly && r.OnlySMTPFailed()) {
+		// A receive-only account may change servers while sending still fails; a
+		// passing sending step makes it send again.
+		if err != nil && !(acc.ReceiveOnly && r.OnlySendingFailed()) {
 			return Account{}, err
 		}
 		if r.URL != "" { // found by Autodiscover
