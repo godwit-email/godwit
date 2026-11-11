@@ -340,3 +340,40 @@ func TestGraphMidSyncMovePreservesMessageAndLocalLabels(t *testing.T) {
 	require.Len(t, applied[origLocalID], 1)
 	assert.Equal(t, lbl.ID, applied[origLocalID][0].LabelID, "local-only label preserved")
 }
+
+// Increasing SyncRange (or switching to all mail) via UpdateAccount backfills
+// older messages excluded by the initial count limit without manual LoadOlder.
+func TestGraphUpdateAccountWindowWidensBackfills(t *testing.T) {
+	e := coretest.New(t, coretest.WithoutAutoSync())
+	setGraph(t, e, true)
+	oa := setupOutlookOAuth(t)
+	oa.GrantScope("Mail.ReadWrite Mail.Send offline_access")
+
+	srv := testmail.StartGraph(t)
+	srv.SetTokenValidator(oa.ValidAccess)
+	srv.Deliver("INBOX", coretest.Msg("bob@example.com", "alice@outlook.com", "WindowMsg Alpha", "oldest", coretest.MessageID("w1@example.com")))
+	srv.Deliver("INBOX", coretest.Msg("bob@example.com", "alice@outlook.com", "WindowMsg Beta", "middle", coretest.MessageID("w2@example.com")))
+	srv.Deliver("INBOX", coretest.Msg("bob@example.com", "alice@outlook.com", "WindowMsg Gamma", "newest", coretest.MessageID("w3@example.com")))
+
+	flow := completeOAuth(t, e.Svc, oa, "alice@outlook.com")
+	in := graphInput(t, srv, "alice@outlook.com", flow)
+	in.Sync = &core.SyncRange{Limit: 1}
+	acc, err := e.Svc.AddAccount(t.Context(), in)
+	require.NoError(t, err)
+	require.NoError(t, e.Svc.SyncNow(t.Context(), acc.ID))
+
+	ms, err := e.Svc.Search(t.Context(), acc.ID, "WindowMsg", 10)
+	require.NoError(t, err)
+	require.Len(t, ms, 1)
+	assert.Equal(t, "WindowMsg Gamma", ms[0].Subject)
+
+	// Widen SyncRange to all mail and sync: Alpha and Beta appear automatically.
+	allMail := core.SyncRange{}
+	_, err = e.Svc.UpdateAccount(t.Context(), acc.ID, core.AccountPatch{Sync: &allMail})
+	require.NoError(t, err)
+	require.NoError(t, e.Svc.SyncNow(t.Context(), acc.ID))
+
+	msAll, err := e.Svc.Search(t.Context(), acc.ID, "WindowMsg", 10)
+	require.NoError(t, err)
+	require.Len(t, msAll, 3)
+}

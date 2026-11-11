@@ -400,6 +400,48 @@ func (r *Receiver) reconcileLost(ctx context.Context, req backend.SyncRequest, r
 	return commit(backend.Page{Changes: changes})
 }
 
+type folderCursor struct {
+	Delta  string          `json:"d"`
+	Window *backend.Window `json:"w,omitempty"`
+}
+
+func decodeFolderCursor(raw backend.Cursor) folderCursor {
+	s := strings.TrimSpace(string(raw))
+	if s == "" {
+		return folderCursor{}
+	}
+	if strings.HasPrefix(s, "{") {
+		var fc folderCursor
+		if err := json.Unmarshal([]byte(s), &fc); err == nil && fc.Delta != "" {
+			return fc
+		}
+	}
+	return folderCursor{Delta: s}
+}
+
+func (fc folderCursor) encode() backend.Cursor {
+	if fc.Delta == "" {
+		return ""
+	}
+	b, _ := json.Marshal(fc)
+	return backend.Cursor(b)
+}
+
+func (fc folderCursor) covers(w backend.Window) bool {
+	h := fc.Window
+	switch {
+	case h == nil:
+		return false
+	case h.Newest == 0 && h.Since.IsZero(): // all mail
+		return true
+	case w.Newest > 0:
+		return h.Newest >= w.Newest
+	case !w.Since.IsZero():
+		return h.Newest == 0 && !w.Since.Before(h.Since)
+	}
+	return false // w is all mail, h is not
+}
+
 func (r *Receiver) syncFolder(ctx context.Context, req backend.SyncRequest, folder backend.FolderRef, commit func(backend.Page) error) error {
 	st := req.Folders[folder]
 	var cut *time.Time
@@ -414,15 +456,20 @@ func (r *Receiver) syncFolder(ctx context.Context, req backend.SyncRequest, fold
 		return received.IsZero() || !received.Before(*cut), nil
 	}
 
-	nextURL := string(st.Cursor)
+	cur := decodeFolderCursor(st.Cursor)
+	needBackfill := cur.Delta != "" && !cur.covers(req.Window)
+	nextURL := cur.Delta
 	reset := false
 	if nextURL == "" {
 		nextURL = "/me/mailFolders/" + url.PathEscape(string(folder)) + "/messages/delta?$select=" + msgSelect
 	}
+	var finalDelta string
 	for {
 		resp, err := callJSON[msgListResp](ctx, r.c, http.MethodGet, nextURL, nil)
 		if err != nil && isDeltaReset(err) && st.Cursor != "" {
 			st = backend.FolderState{}
+			cur = folderCursor{}
+			needBackfill = false
 			reset = true
 			if err := commit(backend.Page{
 				Changes: []backend.Change{backend.FolderReset{Ref: folder}},
@@ -514,7 +561,18 @@ func (r *Receiver) syncFolder(ctx context.Context, req backend.SyncRequest, fold
 		last := resp.DeltaLink != ""
 		nextState := st
 		if last {
-			nextState = backend.FolderState{Cursor: backend.Cursor(resp.DeltaLink), Synced: true, Filled: st.Filled}
+			finalDelta = resp.DeltaLink
+			savedWin := &req.Window
+			if needBackfill {
+				savedWin = cur.Window // keep narrower window until backfill finishes
+			} else if cur.covers(req.Window) {
+				savedWin = cur.Window
+			}
+			nextState = backend.FolderState{
+				Cursor: folderCursor{Delta: finalDelta, Window: savedWin}.encode(),
+				Synced: true,
+				Filled: st.Filled,
+			}
 		}
 		if err := commit(backend.Page{
 			Changes: changes,
@@ -523,13 +581,110 @@ func (r *Receiver) syncFolder(ctx context.Context, req backend.SyncRequest, fold
 			return err
 		}
 		if last {
-			return nil
+			break
 		}
 		if resp.NextLink == "" {
 			return nil
 		}
 		nextURL = resp.NextLink
 	}
+	if needBackfill && finalDelta != "" {
+		return r.backfillWindow(ctx, req, folder, finalDelta, st.Filled, commit)
+	}
+	return nil
+}
+
+const backfillBatch = 50
+
+// backfillWindow imports older messages newly covered by a widened SyncRequest.Window
+// before advancing the folder cursor's recorded window.
+func (r *Receiver) backfillWindow(ctx context.Context, req backend.SyncRequest, folder backend.FolderRef, deltaLink string, filled time.Time, commit func(backend.Page) error) error {
+	next := fmt.Sprintf("/me/mailFolders/%s/messages?$orderby=receivedDateTime+desc&$top=%d&$select=%s",
+		url.PathEscape(string(folder)), backfillBatch, msgSelect)
+	seen := 0
+	for next != "" {
+		resp, err := callJSON[msgListResp](ctx, r.c, http.MethodGet, next, nil)
+		if err != nil {
+			return err
+		}
+		var inWin []graphMessage
+		reachedEnd := false
+		for _, m := range resp.Value {
+			if m.ID == "" || m.Removed != nil {
+				continue
+			}
+			if req.Window.Newest > 0 && seen >= req.Window.Newest {
+				reachedEnd = true
+				break
+			}
+			if !req.Window.Since.IsZero() && !m.ReceivedDateTime.IsZero() && m.ReceivedDateTime.Before(req.Window.Since) {
+				reachedEnd = true
+				break
+			}
+			seen++
+			inWin = append(inWin, m)
+		}
+		if len(inWin) > 0 {
+			mrefs := make([]backend.MessageRef, len(inWin))
+			ids := make([]string, len(inWin))
+			for i, m := range inWin {
+				mrefs[i], ids[i] = backend.MessageRef(m.ID), m.ID
+			}
+			held := map[backend.MessageRef]bool{}
+			known := map[string]bool{}
+			if req.Local != nil {
+				if held, err = req.Local.HeldRefs(ctx, folder, mrefs); err != nil {
+					return err
+				}
+				if known, err = req.Local.KnownIDs(ctx, ids); err != nil {
+					return err
+				}
+			}
+			var changes []backend.Change
+			for _, m := range inWin {
+				loc := backend.Location{Folder: folder, Ref: backend.MessageRef(m.ID), ServerID: m.ID}
+				if held[loc.Ref] {
+					continue
+				}
+				var content *backend.Content
+				if !known[m.ID] {
+					content, err = r.fetchContent(ctx, m.ID, m.ReceivedDateTime, req)
+					if errors.Is(err, backend.ErrNotFound) {
+						continue
+					}
+					if err != nil {
+						return err
+					}
+					known[m.ID] = true
+				}
+				changes = append(changes, backend.MessageAppeared{
+					Location: loc,
+					Flags:    m.flags(),
+					Backfill: true,
+					Content:  content,
+				})
+			}
+			if len(changes) > 0 {
+				if err := commit(backend.Page{Changes: changes}); err != nil {
+					return err
+				}
+			}
+		}
+		if reachedEnd || resp.NextLink == "" {
+			break
+		}
+		next = resp.NextLink
+	}
+	win := req.Window
+	return commit(backend.Page{
+		Folders: map[backend.FolderRef]backend.FolderState{
+			folder: {
+				Cursor: folderCursor{Delta: deltaLink, Window: &win}.encode(),
+				Synced: true,
+				Filled: filled,
+			},
+		},
+	})
 }
 
 func (r *Receiver) fullFlags(ctx context.Context, m graphMessage) (backend.Flags, bool, error) {

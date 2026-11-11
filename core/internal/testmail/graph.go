@@ -35,6 +35,7 @@ type Graph struct {
 	rejected      bool
 	seq           int
 	nextID        int
+	nextTime      time.Time
 	folders       []*graphFolder
 	messages      map[string]*graphItem // keyed by immutableID
 	sent          []GraphSent
@@ -99,6 +100,7 @@ func StartGraph(t testing.TB) *Graph {
 	s := &Graph{
 		t:           t,
 		token:       "graph-token",
+		nextTime:    time.Now().Add(-time.Hour).UTC().Truncate(time.Second),
 		messages:    map[string]*graphItem{},
 		resetStatus: http.StatusGone,
 	}
@@ -300,20 +302,34 @@ func (s *Graph) findFolderLocked(idOrName string) *graphFolder {
 	return nil
 }
 
-// Deliver adds raw to folder (creating it if needed) and returns its ImmutableId.
+// Deliver adds raw to folder (creating it if needed) at the server's next
+// monotonic arrival timestamp and returns its ImmutableId.
 func (s *Graph) Deliver(folder string, raw []byte) string {
+	return s.DeliverAt(folder, raw, time.Time{})
+}
+
+// DeliverAt adds raw to folder with the given receivedDateTime (or the next
+// monotonic server arrival time when zero) and returns its ImmutableId.
+func (s *Graph) DeliverAt(folder string, raw []byte, received time.Time) string {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	f := s.ensureFolderLocked(folder)
-	return s.storeLocked(f, raw, false, false).immutableID
+	return s.storeAtLocked(f, raw, received, false, false).immutableID
 }
 
 func (s *Graph) storeLocked(f *graphFolder, raw []byte, read, draft bool) *graphItem {
+	return s.storeAtLocked(f, raw, time.Time{}, read, draft)
+}
+
+func (s *Graph) storeAtLocked(f *graphFolder, raw []byte, received time.Time, read, draft bool) *graphItem {
 	s.nextID++
 	s.seq++
-	msgID, recv := parseMeta(raw)
-	if recv.IsZero() {
-		recv = time.Now().UTC().Truncate(time.Second)
+	msgID := parseMessageID(raw)
+	if received.IsZero() {
+		s.nextTime = s.nextTime.Add(time.Second)
+		received = s.nextTime
+	} else {
+		received = received.UTC().Truncate(time.Second)
 	}
 	it := &graphItem{
 		immutableID: fmt.Sprintf("imm-%d", s.nextID),
@@ -321,7 +337,7 @@ func (s *Graph) storeLocked(f *graphFolder, raw []byte, read, draft bool) *graph
 		folderID:    f.id,
 		raw:         bytes.Clone(raw),
 		messageID:   msgID,
-		received:    recv,
+		received:    received,
 		read:        read,
 		draft:       draft,
 		modseq:      s.seq,
@@ -331,14 +347,12 @@ func (s *Graph) storeLocked(f *graphFolder, raw []byte, read, draft bool) *graph
 	return it
 }
 
-func parseMeta(raw []byte) (string, time.Time) {
+func parseMessageID(raw []byte) string {
 	m, err := mail.ReadMessage(bytes.NewReader(raw))
 	if err != nil {
-		return "", time.Time{}
+		return ""
 	}
-	mid := strings.TrimSpace(m.Header.Get("Message-ID"))
-	dt, _ := m.Header.Date()
-	return mid, dt
+	return strings.TrimSpace(m.Header.Get("Message-ID"))
 }
 
 // Reset invalidates deltaLinks for folder with HTTP 410 Gone.

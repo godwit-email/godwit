@@ -415,3 +415,60 @@ func TestGraphFolderCreatedAfterListingObservedNextSync(t *testing.T) {
 		t.Fatalf("next sync changes = %+v, want LateFolder FolderUpdated and MessageAppeared", cs)
 	}
 }
+
+// Syncing with Newest: 1 and then widening the window to all mail backfills the
+// older message excluded during the initial sync without resetting or Manual LoadOlder.
+func TestGraphWindowWidens(t *testing.T) {
+	s := testmail.StartGraph(t)
+	oldID := s.Deliver("INBOX", backendtest.Message("old@example.com", "old"))
+	newID := s.Deliver("INBOX", backendtest.Message("new@example.com", "new"))
+	r := graphReceiver(t, s, nil)
+
+	var account backend.Cursor
+	states := map[backend.FolderRef]backend.FolderState{}
+	round := func(w backend.Window, local backend.Local) []backend.MessageRef {
+		t.Helper()
+		var got []backend.MessageRef
+		_, err := r.Sync(tctx(t), backend.SyncRequest{
+			Account:      account,
+			Folders:      maps.Clone(states),
+			Window:       w,
+			Local:        local,
+			HeaderFields: []string{"Message-ID", "Subject"},
+			TextBytes:    4096,
+		}, func(p backend.Page) error {
+			for _, c := range p.Changes {
+				if m, ok := c.(backend.MessageAppeared); ok {
+					got = append(got, m.Ref)
+				}
+			}
+			if p.Account != "" {
+				account = p.Account
+			}
+			for f, st := range p.Folders {
+				states[f] = st
+			}
+			return nil
+		})
+		if err != nil {
+			t.Fatalf("Sync: %v", err)
+		}
+		return got
+	}
+
+	got := round(backend.Window{Newest: 1}, nil)
+	if !slices.Equal(got, []backend.MessageRef{backend.MessageRef(newID)}) {
+		t.Fatalf("Newest: 1 got %v, want [%s]", got, newID)
+	}
+	local := held{newID: true}
+	if got = round(backend.Window{Newest: 1}, local); len(got) != 0 {
+		t.Fatalf("same window again got %v, want nothing", got)
+	}
+	if got = round(backend.Window{}, local); !slices.Equal(got, []backend.MessageRef{backend.MessageRef(oldID)}) {
+		t.Fatalf("widened to all mail got %v, want [%s]", got, oldID)
+	}
+	local[oldID] = true
+	if got = round(backend.Window{}, local); len(got) != 0 {
+		t.Fatalf("all mail again got %v, want nothing", got)
+	}
+}
