@@ -27,7 +27,7 @@ func (r *Receiver) Fetch(ctx context.Context, req backend.ContentRequest) (io.Re
 		if req.HeaderFields == nil {
 			out, err = s.retr(e)
 		} else if out, err = s.top(e); err == nil {
-			out = headerFields(out, req.HeaderFields)
+			out = backend.HeaderFields(out, req.HeaderFields)
 		}
 		return err
 	})
@@ -47,7 +47,7 @@ func (r *Receiver) Headers(ctx context.Context, _ backend.FolderRef, refs []back
 				if err != nil {
 					return err
 				}
-				out[ref] = headerFields(h, fields)
+				out[ref] = backend.HeaderFields(h, fields)
 			}
 		}
 		return nil
