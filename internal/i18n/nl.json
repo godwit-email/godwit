@@ -2183,5 +2183,22 @@
   "feature_reason_pop3_local_flags": "POP3 bewaart geen markeringen: gelezen, met ster en dergelijke worden alleen op deze computer opgeslagen.",
   "feature_reason_pop3_inbox_only": "Een POP3-server heeft alleen een inbox.",
   "feature_reason_pop3_not_provided": "POP3 biedt dit niet.",
-  "feature_reason_pop3_no_uidl": "Deze server ondersteunt geen UIDL, dus Godwit kan berichten niet betrouwbaar uit elkaar houden."
+  "feature_reason_pop3_no_uidl": "Deze server ondersteunt geen UIDL, dus Godwit kan berichten niet betrouwbaar uit elkaar houden.",
+  "settings_experimental_graph": "Microsoft Graph-accounts (Outlook)",
+  "settings_experimental_graph_help": "Biedt Microsoft Graph aan wanneer je een nieuw Outlook-account toevoegt, zodat e-mail zonder IMAP of SMTP via Graph wordt ontvangen en verzonden. Dit is experimenteel en kan later veranderen. Uitgeschakeld blijven eerder toegevoegde Graph-accounts werken.",
+  "onboarding_protocol_graph": "Microsoft Graph (experimenteel)",
+  "onboarding_check_graph_failed": "Aanmelden bij Microsoft Graph mislukt: {arg1}",
+  "onboarding_check_graph_ok": "Aangemeld bij Microsoft Graph",
+  "onboarding_check_graph_running": "Aanmelden bij Microsoft Graph…",
+  "onboarding_check_graph_waiting": "Microsoft Graph-aanmelding",
+  "onboarding_check_graph_proxy": "Verbinding met Microsoft Graph mislukt: {arg1}",
+  "onboarding_check_graph_host": "Graph-host: {arg1}",
+  "feature_reason_graph_draft_read_only": "Microsoft Graph bepaalt of een bericht een concept is; dit kan niet worden gewijzigd.",
+  "feature_reason_graph_no_answered": "Microsoft Graph houdt geen beantwoord-vlag bij.",
+  "feature_reason_graph_categories": "Aangepaste trefwoorden worden opgeslagen als Outlook-categorieën.",
+  "feature_reason_graph_one_folder": "In Outlook staat een bericht maar in één map.",
+  "feature_reason_graph_folder_not_label": "In Outlook is een map geen label: als je deze verwijdert, wordt ook de e-mail erin verwijderd.",
+  "feature_reason_graph_no_all_mail": "Outlook heeft geen 'Alle e-mail': archiveren verplaatst berichten naar de map Archief.",
+  "feature_reason_graph_folders_pending": "Mappen beheren via Microsoft Graph is nog niet beschikbaar.",
+  "feature_reason_graph_no_push": "Desktop-apps kunnen geen Microsoft Graph-webhooks ontvangen; Godwit controleert daarom elke minuut."
 }

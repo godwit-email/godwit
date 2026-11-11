@@ -2183,5 +2183,22 @@
   "feature_reason_pop3_local_flags": "POP3 işaretleri saklamaz: okundu, yıldız ve benzerleri yalnızca bu bilgisayarda kaydedilir.",
   "feature_reason_pop3_inbox_only": "POP3 sunucusunda yalnızca gelen kutusu vardır.",
   "feature_reason_pop3_not_provided": "POP3 bunu sağlamıyor.",
-  "feature_reason_pop3_no_uidl": "Bu sunucu UIDL desteklemiyor, bu yüzden Godwit e-postaları güvenilir şekilde ayırt edemez."
+  "feature_reason_pop3_no_uidl": "Bu sunucu UIDL desteklemiyor, bu yüzden Godwit e-postaları güvenilir şekilde ayırt edemez.",
+  "settings_experimental_graph": "Microsoft Graph (Outlook) hesapları",
+  "settings_experimental_graph_help": "Yeni bir Outlook hesabı eklerken IMAP veya SMTP kullanmadan Graph üzerinden e-posta alıp göndermek için Microsoft Graph seçeneğini sunar. Deneyseldir ve ileride değişebilir. Kapatıldığında, önceden eklenmiş Graph hesapları çalışmaya devam eder.",
+  "onboarding_protocol_graph": "Microsoft Graph (deneysel)",
+  "onboarding_check_graph_failed": "Microsoft Graph oturum açma başarısız: {arg1}",
+  "onboarding_check_graph_ok": "Microsoft Graph oturumu açıldı",
+  "onboarding_check_graph_running": "Microsoft Graph oturumu açılıyor…",
+  "onboarding_check_graph_waiting": "Microsoft Graph oturum açma",
+  "onboarding_check_graph_proxy": "Microsoft Graph bağlantısı başarısız: {arg1}",
+  "onboarding_check_graph_host": "Graph sunucusu: {arg1}",
+  "feature_reason_graph_draft_read_only": "Bir iletinin taslak olup olmadığına Microsoft Graph karar verir; değiştirilemez.",
+  "feature_reason_graph_no_answered": "Microsoft Graph yanıtlandı işaretini tutmaz.",
+  "feature_reason_graph_categories": "Özel anahtar sözcükler Outlook kategorileri olarak kaydedilir.",
+  "feature_reason_graph_one_folder": "Outlook'ta bir ileti yalnızca tek bir klasörde bulunur.",
+  "feature_reason_graph_folder_not_label": "Outlook'ta klasör bir etiket değildir: silindiğinde içindeki e-postalar da silinir.",
+  "feature_reason_graph_no_all_mail": "Outlook'ta “Tüm Postalar” yoktur: arşivleme, iletiyi Arşiv klasörüne taşır.",
+  "feature_reason_graph_folders_pending": "Microsoft Graph üzerinden klasör yönetimi henüz kullanılamıyor.",
+  "feature_reason_graph_no_push": "Masaüstü uygulamaları Microsoft Graph web kancalarını alamaz; Godwit bunun yerine her dakika kontrol eder."
 }

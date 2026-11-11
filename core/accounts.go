@@ -89,6 +89,9 @@ var ErrEWSOff = errors.New("EWS is experimental: turn it on in settings to add a
 // hides POP3 while the setting is off, so only a program can meet it.
 var errPOP3Off = errors.New("POP3 is experimental: turn it on in settings to add a POP3 account")
 
+// ErrGraphOff refuses to add a Microsoft Graph account while Settings.ExperimentalGraph is off.
+var ErrGraphOff = errors.New("Microsoft Graph is experimental: turn it on in settings to add an Outlook (Graph) account")
+
 // allowPOP3 accepts in's POP3 receiving slot while Settings.ExperimentalPOP3
 // is on; off, the check refuses it as an unsupported protocol.
 func (s *Service) allowPOP3(ctx context.Context, in *AccountInput) error {
@@ -115,6 +118,9 @@ func (in AccountInput) sending() string {
 	if in.receiving() == auth.EWS {
 		return auth.EWS
 	}
+	if in.receiving() == auth.Graph {
+		return auth.Graph
+	}
 	return auth.SMTP
 }
 
@@ -123,16 +129,21 @@ func (in AccountInput) validate() error {
 		return fmt.Errorf("invalid email address %q", in.Email)
 	}
 	recv := in.receiving()
+	sendSlot := in.Sending
+	if recv == auth.Graph && sendSlot == (Server{Protocol: sendSlot.Protocol}) {
+		sendSlot = in.Receiving
+		sendSlot.Protocol = auth.Graph
+	}
 	for _, e := range []struct {
 		slot, name string
 		ok         bool
 		Server
-	}{{"receiving", strings.ToUpper(recv), recv == auth.IMAP || recv == auth.JMAP || recv == auth.EWS || recv == auth.POP3 && in.allowPOP3, in.Receiving},
+	}{{"receiving", strings.ToUpper(recv), recv == auth.IMAP || recv == auth.JMAP || recv == auth.EWS || recv == auth.POP3 && in.allowPOP3 || recv == auth.Graph, in.Receiving},
 		// Graph is not chosen but stored after SMTP refused AUTH; a stored
 		// account's servers come back with it.
-		{"sending", strings.ToUpper(in.sending()), in.Sending.Protocol == "" || in.Sending.Protocol == in.sending() ||
-			in.Sending.Protocol == auth.Graph && recv != auth.EWS, in.Sending}} {
-		http := e.name == "JMAP" || e.name == "EWS"
+		{"sending", strings.ToUpper(in.sending()), sendSlot.Protocol == "" || sendSlot.Protocol == in.sending() ||
+			sendSlot.Protocol == auth.Graph && recv != auth.EWS, sendSlot}} {
+		http := e.name == "JMAP" || e.name == "EWS" || e.name == "GRAPH"
 		if !e.ok {
 			return fmt.Errorf("%s protocol %q is not supported", e.slot, e.Protocol)
 		}
@@ -150,7 +161,7 @@ func (in AccountInput) validate() error {
 		if !validSecurity(e.Security) || http && e.Security == SecurityStartTLS {
 			return fmt.Errorf("%s security %q is invalid", e.name, e.Security)
 		}
-		if !(e.Auth == "" || e.Auth == AuthPassword || e.Auth == AuthOAuth && e.name != "EWS" || e.Auth == AuthAPIToken && e.name == "JMAP") {
+		if !(e.Auth == "" || e.Auth == AuthPassword && e.name != "GRAPH" || e.Auth == AuthOAuth && e.name != "EWS" || e.Auth == AuthAPIToken && e.name == "JMAP") {
 			return fmt.Errorf("%s sign-in %q is not supported", e.name, e.Auth)
 		}
 		if e.Path != "" && (!http || !strings.HasPrefix(e.Path, "/") || strings.ContainsAny(e.Path, "?# ")) ||
@@ -264,6 +275,15 @@ func (s *Service) AddAccount(ctx context.Context, in AccountInput) (Account, err
 	if in.receiving() == auth.POP3 && !in.allowPOP3 {
 		return Account{}, errPOP3Off
 	}
+	if in.receiving() == auth.Graph {
+		st, err := s.loadSettings(ctx)
+		if err != nil {
+			return Account{}, err
+		}
+		if !st.ExperimentalGraph {
+			return Account{}, ErrGraphOff
+		}
+	}
 	checked, checkErr := s.check(ctx, in, "")
 	receiveOnly := in.ReceiveOnly && checked.OnlySMTPFailed()
 	if checkErr != nil && !receiveOnly {
@@ -274,6 +294,10 @@ func (s *Service) AddAccount(ctx context.Context, in AccountInput) (Account, err
 	}
 	if in.receiving() == auth.EWS {
 		in.Sending = in.Receiving // it sends through the receiving EWS URL
+	}
+	if in.receiving() == auth.Graph {
+		in.Sending = in.Receiving // it sends through Microsoft Graph
+		in.Sending.Protocol = auth.Graph
 	}
 	if in.OAuthFlowID != "" {
 		// Peeked for the check; taken now, so one grant adds one account.
@@ -387,7 +411,7 @@ func (s *Service) AddAccount(ctx context.Context, in AccountInput) (Account, err
 			return Account{}, fmt.Errorf("save the signature: %w", undo(err))
 		}
 	}
-	if g.AccessToken != "" {
+	if g.AccessToken != "" && in.receiving() != auth.Graph {
 		s.cacheToken(id, g.Grant)
 	}
 	s.startWorker(id)
@@ -490,6 +514,10 @@ func scanAccount(r []any) Account {
 	if a.Receiving.Protocol == auth.EWS { // it sends through the receiving EWS URL, whose path only recv_path keeps
 		r := a.Receiving
 		a.Sending.Protocol, a.Sending.Host, a.Sending.Port, a.Sending.Security, a.Sending.Path = auth.EWS, r.Host, r.Port, r.Security, r.Path
+	}
+	if a.Receiving.Protocol == auth.Graph { // both slots talk to the same Graph endpoint
+		r := a.Receiving
+		a.Sending.Protocol, a.Sending.Host, a.Sending.Port, a.Sending.Security, a.Sending.Path = auth.Graph, r.Host, r.Port, r.Security, r.Path
 	}
 	if d, ok := decodeFeatures(r[30]); ok {
 		a.Features = d.Features
@@ -704,7 +732,11 @@ func (s *Service) Reauthorize(ctx context.Context, id int64, flowID string) erro
 		err = fmt.Errorf("save credentials to keychain: %w", err)
 		return errors.Join(err, s.saveClient(context.WithoutCancel(ctx), id, old))
 	}
-	if err := s.credentialsUpdated(ctx, id, &g.Grant); err != nil {
+	var cached *auth.Grant
+	if acc.Receiving.Protocol != auth.Graph {
+		cached = &g.Grant
+	}
+	if err := s.credentialsUpdated(ctx, id, cached); err != nil {
 		return err
 	}
 	if acc.ReceiveOnly { // the new sign-in may send: a failing check keeps it receive-only
@@ -829,6 +861,10 @@ func (s *Service) UpdateAccount(ctx context.Context, id int64, p AccountPatch) (
 		}
 		if in.receiving() == auth.EWS {
 			in.Sending = in.Receiving // the same endpoint; the stored sending slot has no path
+		}
+		if in.receiving() == auth.Graph {
+			in.Sending = in.Receiving
+			in.Sending.Protocol = auth.Graph
 		}
 		in.Receiving.Auth, in.Sending.Auth = acc.Receiving.Auth, acc.Sending.Auth // the sign-in stays
 		r, err := s.checkStored(ctx, acc, &in)

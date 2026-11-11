@@ -2183,5 +2183,22 @@
   "feature_reason_pop3_local_flags": "POP3 ne conserve pas les indicateurs : lu, suivi, etc. ne sont enregistrés que sur cet ordinateur.",
   "feature_reason_pop3_inbox_only": "Un serveur POP3 n’a qu’une boîte de réception.",
   "feature_reason_pop3_not_provided": "POP3 ne le permet pas.",
-  "feature_reason_pop3_no_uidl": "Ce serveur ne prend pas en charge UIDL : Godwit ne peut pas distinguer les e-mails de façon fiable."
+  "feature_reason_pop3_no_uidl": "Ce serveur ne prend pas en charge UIDL : Godwit ne peut pas distinguer les e-mails de façon fiable.",
+  "settings_experimental_graph": "Comptes Microsoft Graph (Outlook)",
+  "settings_experimental_graph_help": "Propose Microsoft Graph lors de l’ajout d’un nouveau compte Outlook afin de recevoir et d’envoyer les e-mails via Graph sans IMAP ni SMTP. Cette fonctionnalité est expérimentale et peut évoluer. Une fois désactivée, les comptes Graph déjà ajoutés continuent de fonctionner.",
+  "onboarding_protocol_graph": "Microsoft Graph (expérimental)",
+  "onboarding_check_graph_failed": "Échec de la connexion à Microsoft Graph : {arg1}",
+  "onboarding_check_graph_ok": "Connecté à Microsoft Graph",
+  "onboarding_check_graph_running": "Connexion à Microsoft Graph…",
+  "onboarding_check_graph_waiting": "Connexion Microsoft Graph",
+  "onboarding_check_graph_proxy": "Échec de la connexion à Microsoft Graph : {arg1}",
+  "onboarding_check_graph_host": "Hôte Graph : {arg1}",
+  "feature_reason_graph_draft_read_only": "Microsoft Graph détermine si un message est un brouillon ; cela ne peut pas être modifié.",
+  "feature_reason_graph_no_answered": "Microsoft Graph ne conserve pas l’indicateur de réponse.",
+  "feature_reason_graph_categories": "Les mots-clés personnalisés sont enregistrés comme catégories Outlook.",
+  "feature_reason_graph_one_folder": "Dans Outlook, un message ne se trouve que dans un seul dossier.",
+  "feature_reason_graph_folder_not_label": "Dans Outlook, un dossier n’est pas un libellé : le supprimer supprime aussi ses e-mails.",
+  "feature_reason_graph_no_all_mail": "Outlook n’a pas « Tous les messages » : archiver déplace le message vers le dossier Archives.",
+  "feature_reason_graph_folders_pending": "La gestion des dossiers via Microsoft Graph n’est pas encore disponible.",
+  "feature_reason_graph_no_push": "Les applications de bureau ne peuvent pas recevoir les webhooks Microsoft Graph ; Godwit vérifie chaque minute."
 }

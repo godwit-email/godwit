@@ -98,9 +98,10 @@ type ServerSettings struct {
 
 // Server is one of an account's two server slots, receiving and sending: a
 // protocol and where its server is. Receiving is auth.IMAP, auth.JMAP
-// (only with Settings.ExperimentalJMAP to add one) or auth.POP3 (only with
-// Settings.ExperimentalPOP3) and sending auth.SMTP;
-// an empty Protocol in input is auth.IMAP and auth.SMTP.
+// (only with Settings.ExperimentalJMAP to add one), auth.EWS (only with
+// Settings.ExperimentalEWS), auth.POP3 (only with Settings.ExperimentalPOP3)
+// or auth.Graph (only with Settings.ExperimentalGraph), and sending auth.SMTP,
+// auth.EWS or auth.Graph; an empty Protocol in input is auth.IMAP and auth.SMTP.
 type Server struct {
 	Protocol string
 	Host     string

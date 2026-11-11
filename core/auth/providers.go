@@ -30,6 +30,9 @@ type OAuthConfig struct {
 	// GraphSend non-empty: the Microsoft Graph scope that sends mail, also in Scopes;
 	// a mailbox whose SMTP AUTH is disabled sends through Graph with a token for it.
 	GraphSend string
+	// GraphRead non-empty: the Microsoft Graph scope that reads and writes mail, also in Scopes;
+	// a Graph receiving account syncs with a token for it.
+	GraphRead string
 }
 
 // PublicClient is a desktop client another app registered and the provider
@@ -46,8 +49,8 @@ const (
 	// EWS is both slots of an on-premises Exchange account (Exchange Web
 	// Services); no provider has an entry for it.
 	EWS = "ews"
-	// Graph is the sending slot of an account whose SMTP AUTH is disabled:
-	// it sends through Microsoft Graph (OAuthConfig.GraphSend).
+	// Graph is both slots of a Microsoft Graph account, or the sending slot of
+	// an account whose SMTP AUTH is disabled (OAuthConfig.GraphSend).
 	Graph = "graph"
 )
 
@@ -85,8 +88,12 @@ func IMAPSMTP(imap, smtp Server, login string) []Entry {
 	return []Entry{{IMAP, imap, login}, {SMTP, smtp, login}}
 }
 
-// GraphMailSend is Microsoft Graph's delegated permission to send as the user.
-const GraphMailSend = "https://graph.microsoft.com/Mail.Send"
+// GraphMailSend and GraphMailReadWrite are Microsoft Graph's delegated
+// permissions to send mail and to read and write mail as the user.
+const (
+	GraphMailSend      = "https://graph.microsoft.com/Mail.Send"
+	GraphMailReadWrite = "https://graph.microsoft.com/Mail.ReadWrite"
+)
 
 const outlookScopes = "openid email offline_access https://outlook.office.com/IMAP.AccessAsUser.All https://outlook.office.com/SMTP.Send"
 
@@ -116,19 +123,21 @@ func table() []Provider {
 				Public: &PublicClient{ID: "406964657835-aq8lmia8j95dhl1a2bvharmfk3t1hgqj.apps.googleusercontent.com", Secret: "kSmqreRr0qwBWJgbf5Y-PjSU"},
 			}},
 		{ID: "outlook", Name: "Outlook", Domains: []string{"outlook.com", "hotmail.com", "live.com", "live.cn", "msn.com", "hotmail.co.uk", "outlook.jp"},
-			Entries: IMAPSMTP(tls("outlook.office365.com"), Server{"smtp-mail.outlook.com", 587, conn.StartTLS}, "oauth"),
+			Entries: append(IMAPSMTP(tls("outlook.office365.com"), Server{"smtp-mail.outlook.com", 587, conn.StartTLS}, "oauth"),
+				Entry{Graph, Server{"graph.microsoft.com", 443, conn.TLS}, "oauth"}),
 			// Personal accounts only. consumers, not common: common rejects personal accounts for our
 			// (unverified) app despite its audience. Work accounts would be their own provider on organizations.
 			OAuth: &OAuthConfig{
 				ClientID: MicrosoftClientID,
 				AuthURL:  "https://login.microsoftonline.com/consumers/oauth2/v2.0/authorize",
 				TokenURL: "https://login.microsoftonline.com/consumers/oauth2/v2.0/token",
-				// Graph's Mail.Send is consented with the rest; the code is redeemed for
-				// outlook.office.com alone (one resource per token), and a Graph token
-				// comes from the refresh token when needed (GraphSend).
-				Scopes:      append(strings.Fields(outlookScopes), GraphMailSend),
+				// Graph's Mail.Send and Mail.ReadWrite are consented with the rest; the code
+				// is redeemed for outlook.office.com alone (one resource per token), and a
+				// Graph token comes from the refresh token when needed (GraphSend, GraphRead).
+				Scopes:      append(strings.Fields(outlookScopes), GraphMailSend, GraphMailReadWrite),
 				TokenParams: map[string]string{"scope": outlookScopes},
 				GraphSend:   GraphMailSend,
+				GraphRead:   GraphMailReadWrite,
 			}},
 		{ID: "netease163", Name: "163 Mail", Domains: []string{"163.com"},
 			Entries: IMAPSMTP(tls("imap.163.com"), smtps("smtp.163.com"), "authorization_code"), HelpURL: neteaseHelp},

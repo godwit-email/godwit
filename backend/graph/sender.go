@@ -1,5 +1,4 @@
-// Package graph is the Microsoft Graph sending backend (ADR 0037), for a
-// mailbox whose SMTP AUTH is disabled.
+// Package graph is the Microsoft Graph receiving and sending backend (ADR 0037).
 package graph
 
 import (
@@ -74,6 +73,7 @@ func (s *Sender) Send(ctx context.Context, _ string, rcpts []string, raw []byte)
 	}
 	req.Header.Set("Authorization", "Bearer "+cr.Token)
 	req.Header.Set("Content-Type", "text/plain")
+	req.Header.Set("Prefer", `IdType="ImmutableId"`)
 	resp, err := graphClient.Do(req)
 	if err != nil {
 		if wrote.Load() {

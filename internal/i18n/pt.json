@@ -2183,5 +2183,22 @@
   "feature_reason_pop3_local_flags": "O POP3 não guarda marcações: lido, com estrela e afins ficam salvos só neste computador.",
   "feature_reason_pop3_inbox_only": "Um servidor POP3 só tem caixa de entrada.",
   "feature_reason_pop3_not_provided": "O POP3 não oferece isso.",
-  "feature_reason_pop3_no_uidl": "Este servidor não suporta UIDL, então o Godwit não consegue distinguir as mensagens com segurança."
+  "feature_reason_pop3_no_uidl": "Este servidor não suporta UIDL, então o Godwit não consegue distinguir as mensagens com segurança.",
+  "settings_experimental_graph": "Contas Microsoft Graph (Outlook)",
+  "settings_experimental_graph_help": "Oferece o Microsoft Graph ao adicionar uma nova conta do Outlook, para receber e enviar e-mails pelo Graph sem usar IMAP nem SMTP. É experimental e pode mudar futuramente. Quando desativado, as contas Graph já adicionadas continuam funcionando.",
+  "onboarding_protocol_graph": "Microsoft Graph (experimental)",
+  "onboarding_check_graph_failed": "Falha ao entrar no Microsoft Graph: {arg1}",
+  "onboarding_check_graph_ok": "Conectado ao Microsoft Graph",
+  "onboarding_check_graph_running": "Entrando no Microsoft Graph…",
+  "onboarding_check_graph_waiting": "Login no Microsoft Graph",
+  "onboarding_check_graph_proxy": "Falha na conexão com o Microsoft Graph: {arg1}",
+  "onboarding_check_graph_host": "Host do Graph: {arg1}",
+  "feature_reason_graph_draft_read_only": "O Microsoft Graph define se uma mensagem é rascunho; isso não pode ser alterado.",
+  "feature_reason_graph_no_answered": "O Microsoft Graph não registra marcação de respondido.",
+  "feature_reason_graph_categories": "Palavras-chave personalizadas são salvas como categorias do Outlook.",
+  "feature_reason_graph_one_folder": "No Outlook, uma mensagem fica em apenas uma pasta.",
+  "feature_reason_graph_folder_not_label": "No Outlook, uma pasta não é um marcador: excluí-la também exclui seus e-mails.",
+  "feature_reason_graph_no_all_mail": "O Outlook não tem «Todos os e-mails»: arquivar move a mensagem para a pasta Arquivo.",
+  "feature_reason_graph_folders_pending": "O gerenciamento de pastas pelo Microsoft Graph ainda não está disponível.",
+  "feature_reason_graph_no_push": "Aplicativos de desktop não recebem webhooks do Microsoft Graph; o Godwit verifica a cada minuto."
 }

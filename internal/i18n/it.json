@@ -2183,5 +2183,22 @@
   "feature_reason_pop3_local_flags": "POP3 non conserva i contrassegni: letto, speciale e simili vengono salvati solo su questo computer.",
   "feature_reason_pop3_inbox_only": "Un server POP3 ha solo la posta in arrivo.",
   "feature_reason_pop3_not_provided": "POP3 non lo offre.",
-  "feature_reason_pop3_no_uidl": "Questo server non supporta UIDL, quindi Godwit non può distinguere i messaggi in modo affidabile."
+  "feature_reason_pop3_no_uidl": "Questo server non supporta UIDL, quindi Godwit non può distinguere i messaggi in modo affidabile.",
+  "settings_experimental_graph": "Account Microsoft Graph (Outlook)",
+  "settings_experimental_graph_help": "Offre Microsoft Graph quando aggiungi un nuovo account Outlook, così la posta viene ricevuta e inviata tramite Graph senza IMAP né SMTP. È sperimentale e potrebbe cambiare in seguito. Se disattivato, gli account Graph già aggiunti continuano a funzionare.",
+  "onboarding_protocol_graph": "Microsoft Graph (sperimentale)",
+  "onboarding_check_graph_failed": "Accesso a Microsoft Graph non riuscito: {arg1}",
+  "onboarding_check_graph_ok": "Accesso effettuato a Microsoft Graph",
+  "onboarding_check_graph_running": "Accesso a Microsoft Graph…",
+  "onboarding_check_graph_waiting": "Accesso a Microsoft Graph",
+  "onboarding_check_graph_proxy": "Connessione a Microsoft Graph non riuscita: {arg1}",
+  "onboarding_check_graph_host": "Host Graph: {arg1}",
+  "feature_reason_graph_draft_read_only": "Microsoft Graph stabilisce se un messaggio è una bozza; non può essere modificato.",
+  "feature_reason_graph_no_answered": "Microsoft Graph non registra lo stato di risposta.",
+  "feature_reason_graph_categories": "Le parole chiave personalizzate vengono salvate come categorie di Outlook.",
+  "feature_reason_graph_one_folder": "In Outlook un messaggio si trova in una sola cartella.",
+  "feature_reason_graph_folder_not_label": "In Outlook una cartella non è un'etichetta: eliminarla elimina anche le sue email.",
+  "feature_reason_graph_no_all_mail": "Outlook non ha «Tutti i messaggi»: l'archiviazione sposta i messaggi nella cartella Archivio.",
+  "feature_reason_graph_folders_pending": "La gestione delle cartelle tramite Microsoft Graph non è ancora disponibile.",
+  "feature_reason_graph_no_push": "Le app desktop non possono ricevere webhook di Microsoft Graph; Godwit controlla ogni minuto."
 }

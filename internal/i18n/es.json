@@ -2183,5 +2183,22 @@
   "feature_reason_pop3_local_flags": "POP3 no guarda marcas: leído, destacado y similares se guardan solo en este ordenador.",
   "feature_reason_pop3_inbox_only": "Un servidor POP3 solo tiene bandeja de entrada.",
   "feature_reason_pop3_not_provided": "POP3 no ofrece esto.",
-  "feature_reason_pop3_no_uidl": "Este servidor no admite UIDL, así que Godwit no puede distinguir los mensajes de forma fiable."
+  "feature_reason_pop3_no_uidl": "Este servidor no admite UIDL, así que Godwit no puede distinguir los mensajes de forma fiable.",
+  "settings_experimental_graph": "Cuentas de Microsoft Graph (Outlook)",
+  "settings_experimental_graph_help": "Ofrece Microsoft Graph al añadir una cuenta nueva de Outlook para recibir y enviar correo mediante Graph sin IMAP ni SMTP. Es experimental y puede cambiar más adelante. Al desactivarlo, las cuentas Graph ya añadidas siguen funcionando.",
+  "onboarding_protocol_graph": "Microsoft Graph (experimental)",
+  "onboarding_check_graph_failed": "Error al iniciar sesión en Microsoft Graph: {arg1}",
+  "onboarding_check_graph_ok": "Sesión iniciada en Microsoft Graph",
+  "onboarding_check_graph_running": "Iniciando sesión en Microsoft Graph…",
+  "onboarding_check_graph_waiting": "Inicio de sesión en Microsoft Graph",
+  "onboarding_check_graph_proxy": "Error de conexión con Microsoft Graph: {arg1}",
+  "onboarding_check_graph_host": "Host de Graph: {arg1}",
+  "feature_reason_graph_draft_read_only": "Microsoft Graph decide si un mensaje es un borrador; no se puede cambiar.",
+  "feature_reason_graph_no_answered": "Microsoft Graph no guarda la marca de respondido.",
+  "feature_reason_graph_categories": "Las palabras clave personalizadas se guardan como categorías de Outlook.",
+  "feature_reason_graph_one_folder": "En Outlook un mensaje solo puede estar en una carpeta.",
+  "feature_reason_graph_folder_not_label": "En Outlook una carpeta no es una etiqueta: al eliminarla también se borra su correo.",
+  "feature_reason_graph_no_all_mail": "Outlook no tiene «Todos»: archivar mueve el correo a la carpeta Archivo.",
+  "feature_reason_graph_folders_pending": "La gestión de carpetas mediante Microsoft Graph aún no está disponible.",
+  "feature_reason_graph_no_push": "Las aplicaciones de escritorio no pueden recibir webhooks de Microsoft Graph; Godwit comprueba cada minuto."
 }

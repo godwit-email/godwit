@@ -431,7 +431,11 @@ func (a *sendAuth) credentials(ctx context.Context) (backend.Credentials, error)
 func (a *sendAuth) sender() backend.Sender {
 	switch a.acc.Sending.Protocol {
 	case auth.Graph:
-		return graph.New(graphSendURL, a.credentials)
+		u := graphSendURL
+		if a.acc.Receiving.Protocol == auth.Graph {
+			u = graphURL(a.acc.Receiving) + "/me/sendMail"
+		}
+		return graph.New(u, a.credentials)
 	case auth.EWS:
 		return ews.NewSender(ews.Config{URL: ewsURL(a.acc), Credentials: a.credentials})
 	}

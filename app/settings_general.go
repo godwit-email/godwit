@@ -321,6 +321,7 @@ func (p *settingsPage) labsView(c *ui.Context) {
 		kit.SwitchRow(c, &st.ExperimentalJMAP, i18n.T("settings.experimental_jmap"), i18n.T("settings.experimental_jmap.help"))
 		kit.SwitchRow(c, &st.ExperimentalEWS, i18n.T("settings.experimental_ews"), i18n.T("settings.experimental_ews.help"))
 		kit.SwitchRow(c, &st.ExperimentalPOP3, i18n.T("settings.experimental_pop3"), i18n.T("settings.experimental_pop3.help"))
+		kit.SwitchRow(c, &st.ExperimentalGraph, i18n.T("settings.experimental_graph"), i18n.T("settings.experimental_graph.help"))
 	})
 }
 
