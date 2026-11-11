@@ -298,10 +298,12 @@ type SetFlags struct {
 	Add, Remove Flags
 }
 
-// MoveBaseline is what Move's destination folder To already held before a
-// copy-and-delete move sent its copy, recorded through Move.BeforeCopy so a
-// retry can tell its own copy apart from mail To held beforehand.
+// MoveBaseline records a copy-and-delete Move's retry state before its first
+// copy is sent (via Move.BeforeCopy): Token, a per-op keyword set on the
+// source so COPY carries it to the destination copy, or Cursor and Refs when
+// the server cannot store custom keywords.
 type MoveBaseline struct {
+	Token  string       `json:"token,omitempty"`
 	Cursor Cursor       `json:"cursor,omitempty"`
 	Refs   []MessageRef `json:"refs,omitempty"`
 }

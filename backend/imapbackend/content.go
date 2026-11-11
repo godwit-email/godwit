@@ -38,7 +38,9 @@ func flagsOf(fl []imap.Flag) backend.Flags {
 			out.Draft = true
 		case "\\Recent":
 		default:
-			out.Keywords = append(out.Keywords, string(f))
+			if !strings.HasPrefix(strings.ToLower(string(f)), copyTokenPrefix) {
+				out.Keywords = append(out.Keywords, string(f))
+			}
 		}
 	}
 	return out

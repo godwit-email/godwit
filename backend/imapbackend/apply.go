@@ -3,6 +3,8 @@ package imapbackend
 import (
 	"bytes"
 	"context"
+	"crypto/rand"
+	"encoding/hex"
 	"errors"
 	"fmt"
 	netmail "net/mail"
@@ -14,6 +16,8 @@ import (
 	"github.com/emersion/go-imap/v2/imapclient"
 	"github.com/godwit-email/godwit/backend"
 )
+
+const copyTokenPrefix = "$godwit-copy-"
 
 // Find lists the messages in folder, examined, whose Message-ID is exactly
 // messageID and, when size > 0, of that size. SEARCH HEADER matches
@@ -28,40 +32,39 @@ func (r *Receiver) Find(ctx context.Context, folder backend.FolderRef, messageID
 }
 
 func find(c *imapclient.Client, folder backend.FolderRef, messageID string, size int64) ([]backend.MessageRef, error) {
-	_, refs, err := findIn(c, folder, messageID, size)
-	return refs, err
-}
-
-func findIn(c *imapclient.Client, folder backend.FolderRef, messageID string, size int64) (uint32, []backend.MessageRef, error) {
 	sel, err := c.Select(string(folder), &imap.SelectOptions{ReadOnly: true}).Wait()
 	if err != nil {
-		return 0, nil, err
+		return nil, err
 	}
+	return findSelected(c, sel.UIDValidity, messageID, size)
+}
+
+func findSelected(c *imapclient.Client, validity uint32, messageID string, size int64) ([]backend.MessageRef, error) {
 	crit := &imap.SearchCriteria{Header: []imap.SearchCriteriaHeaderField{{Key: "Message-ID", Value: messageID}}}
 	if size > 0 {
 		crit.Larger, crit.Smaller = size-1, size+1
 	}
 	res, err := c.UIDSearch(crit, nil).Wait()
 	if err != nil {
-		return 0, nil, err
+		return nil, err
 	}
 	uids := res.AllUIDs()
 	if len(uids) == 0 {
-		return sel.UIDValidity, nil, nil
+		return nil, nil
 	}
 	sec := &imap.FetchItemBodySection{Specifier: imap.PartSpecifierHeader, HeaderFields: []string{"Message-ID"}, Peek: true}
 	msgs, err := c.Fetch(imap.UIDSetNum(uids...), &imap.FetchOptions{UID: true, BodySection: []*imap.FetchItemBodySection{sec}}).Collect()
 	if err != nil {
-		return 0, nil, err
+		return nil, err
 	}
 	var refs []backend.MessageRef
 	for _, m := range msgs {
 		h, err := netmail.ReadMessage(bytes.NewReader(append(m.FindBodySection(sec), "\r\n\r\n"...)))
 		if err == nil && strings.Trim(strings.TrimSpace(h.Header.Get("Message-Id")), "<>") == messageID {
-			refs = append(refs, backend.MessageRef(Encode(sel.UIDValidity, uint32(m.UID))))
+			refs = append(refs, backend.MessageRef(Encode(validity, uint32(m.UID))))
 		}
 	}
-	return sel.UIDValidity, refs, nil
+	return refs, nil
 }
 
 // opFeature is the feature each op needs.
@@ -169,15 +172,20 @@ func appendTo(c *imapclient.Client, op backend.Append) (backend.Result, error) {
 // selectAt selects at's folder read-write and decodes its UID; another
 // UIDVALIDITY is backend.ErrFolderReset.
 func selectAt(c *imapclient.Client, at backend.Location) (imap.UID, error) {
+	uid, _, err := selectAtData(c, at)
+	return uid, err
+}
+
+func selectAtData(c *imapclient.Client, at backend.Location) (imap.UID, *imap.SelectData, error) {
 	validity, uid := Decode(string(at.Ref))
 	sel, err := c.Select(string(at.Folder), nil).Wait()
 	if err != nil {
-		return 0, err
+		return 0, nil, err
 	}
 	if sel.UIDValidity != validity {
-		return 0, fmt.Errorf("%w: folder %q was recreated", backend.ErrFolderReset, at.Folder)
+		return 0, nil, fmt.Errorf("%w: folder %q was recreated", backend.ErrFolderReset, at.Folder)
 	}
-	return imap.UID(uid), nil
+	return imap.UID(uid), sel, nil
 }
 
 func imapFlags(f backend.Flags) []imap.Flag {
@@ -229,13 +237,14 @@ func setFlags(c *imapclient.Client, op backend.SetFlags) (backend.Result, error)
 // move moves the message with MOVE, else COPY, STORE \Deleted and UID
 // EXPUNGE. Every attempt first checks what an earlier one whose reply was
 // lost may have done: a message already gone from the source was moved
-// (Unlocated); without MOVE, a retry whose destination holds a matching copy
-// beyond the MoveBaseline recorded before COPY got through COPY (and maybe
-// STORE) before the connection dropped, so only STORE \Deleted and UID
-// EXPUNGE remain. Pre-existing matches in MoveBaseline are left alone and do
-// not suppress the first COPY.
+// (Unlocated); without MOVE, a per-op keyword set on the source before COPY
+// proves whether a destination message came from this move's COPY (so a retry
+// finishes deleting the source and strips the keyword, while concurrent
+// same-ID/size arrivals from other clients never trigger deletion). When
+// custom keywords are unavailable, a post-baseline match in the destination
+// leaves the move uncertain without expunging the source.
 func move(c *imapclient.Client, op backend.Move) (backend.Result, error) {
-	uid, err := selectAt(c, op.At)
+	uid, srcSel, err := selectAtData(c, op.At)
 	if err != nil {
 		return backend.Result{}, err
 	}
@@ -248,31 +257,151 @@ func move(c *imapclient.Client, op backend.Move) (backend.Result, error) {
 		return backend.Result{}, err
 	}
 	if len(got) == 0 {
+		if op.Before != nil && op.Before.Token != "" {
+			if err := stripCopyToken(c, op.To, op.Before.Token, 0, 0); err != nil {
+				return backend.Result{}, err
+			}
+		}
 		return backend.Result{Outcome: backend.Unlocated}, nil
 	}
-	if !c.Caps().Has(imap.CapMove) && got[0].Envelope != nil && got[0].Envelope.MessageID != "" && (op.Before != nil || op.BeforeCopy != nil) {
-		dv, copies, err := findIn(c, op.To, got[0].Envelope.MessageID, got[0].RFC822Size)
+	if c.Caps().Has(imap.CapMove) || (op.Before == nil && op.BeforeCopy == nil) {
+		validity, dst, err := moveUID(c, set, string(op.To))
+		if err != nil || dst == 0 {
+			return backend.Result{Outcome: backend.Unlocated}, err
+		}
+		return backend.Result{Outcome: backend.Done, Ref: backend.MessageRef(Encode(validity, dst))}, nil
+	}
+	dstSel, err := c.Select(string(op.To), nil).Wait()
+	if err != nil {
+		return backend.Result{}, err
+	}
+	if slices.Contains(srcSel.PermanentFlags, imap.FlagWildcard) && slices.Contains(dstSel.PermanentFlags, imap.FlagWildcard) &&
+		(op.BeforeCopy != nil || (op.Before != nil && op.Before.Token != "")) {
+		return moveWithToken(c, op, uid, set, got[0].Flags)
+	}
+	return moveWithBaseline(c, op, uid, set, dstSel.UIDValidity, got[0])
+}
+
+func newCopyToken() (string, error) {
+	var b [8]byte
+	if _, err := rand.Read(b[:]); err != nil {
+		return "", err
+	}
+	return copyTokenPrefix + hex.EncodeToString(b[:]), nil
+}
+
+func stripCopyToken(c *imapclient.Client, folder backend.FolderRef, tok string, validity, uid uint32) error {
+	ignoreRefused := func(err error) error {
+		var refused *imap.Error
+		if errors.As(err, &refused) {
+			return nil
+		}
+		return err
+	}
+	sel, err := c.Select(string(folder), nil).Wait()
+	if err != nil {
+		return ignoreRefused(err)
+	}
+	if uid != 0 && sel.UIDValidity == validity {
+		return ignoreRefused(storeFlags(c, imap.UID(uid), imap.StoreFlagsDel, []imap.Flag{imap.Flag(tok)}))
+	}
+	sr, err := c.UIDSearch(&imap.SearchCriteria{Flag: []imap.Flag{imap.Flag(tok)}}, nil).Wait()
+	if err != nil {
+		return ignoreRefused(err)
+	}
+	if uids := sr.AllUIDs(); len(uids) > 0 {
+		return ignoreRefused(c.Store(imap.UIDSetNum(uids...), &imap.StoreFlags{Op: imap.StoreFlagsDel, Silent: true, Flags: []imap.Flag{imap.Flag(tok)}}, nil).Close())
+	}
+	return nil
+}
+
+func moveWithToken(c *imapclient.Client, op backend.Move, uid imap.UID, set imap.UIDSet, srcFlags []imap.Flag) (backend.Result, error) {
+	tok := ""
+	if op.Before != nil {
+		tok = op.Before.Token
+	}
+	if tok != "" {
+		sr, err := c.UIDSearch(&imap.SearchCriteria{Flag: []imap.Flag{imap.Flag(tok)}}, nil).Wait()
+		if err != nil {
+			return backend.Result{}, err
+		}
+		if len(sr.AllUIDs()) > 0 {
+			if _, err := selectAt(c, op.At); err != nil {
+				return backend.Result{}, err
+			}
+			if !slices.Contains(srcFlags, imap.FlagDeleted) {
+				if err := storeFlags(c, uid, imap.StoreFlagsAdd, []imap.Flag{imap.FlagDeleted}); err != nil {
+					return backend.Result{}, err
+				}
+			}
+			if err := c.UIDExpunge(set).Close(); err != nil {
+				return backend.Result{}, err
+			}
+			if err := stripCopyToken(c, op.To, tok, 0, 0); err != nil {
+				return backend.Result{}, err
+			}
+			return backend.Result{Outcome: backend.Unlocated}, nil
+		}
+	} else {
+		var err error
+		if tok, err = newCopyToken(); err != nil {
+			return backend.Result{}, err
+		}
+		if err := op.BeforeCopy(backend.MoveBaseline{Token: tok}); err != nil {
+			return backend.Result{}, err
+		}
+	}
+	if _, err := selectAt(c, op.At); err != nil {
+		return backend.Result{}, err
+	}
+	for _, f := range srcFlags {
+		if strings.HasPrefix(strings.ToLower(string(f)), copyTokenPrefix) && !strings.EqualFold(string(f), tok) {
+			_ = storeFlags(c, uid, imap.StoreFlagsDel, []imap.Flag{f})
+		}
+	}
+	if !slices.ContainsFunc(srcFlags, func(f imap.Flag) bool { return strings.EqualFold(string(f), tok) }) {
+		if err := storeFlags(c, uid, imap.StoreFlagsAdd, []imap.Flag{imap.Flag(tok)}); err != nil {
+			return backend.Result{}, err
+		}
+	}
+	validity, dst, err := moveUID(c, set, string(op.To))
+	if err != nil {
+		var refused *imap.Error
+		if errors.As(err, &refused) {
+			_ = storeFlags(c, uid, imap.StoreFlagsDel, []imap.Flag{imap.Flag(tok)})
+		}
+		return backend.Result{}, err
+	}
+	if err := stripCopyToken(c, op.To, tok, validity, dst); err != nil {
+		return backend.Result{}, err
+	}
+	if dst == 0 {
+		return backend.Result{Outcome: backend.Unlocated}, nil
+	}
+	return backend.Result{Outcome: backend.Done, Ref: backend.MessageRef(Encode(validity, dst))}, nil
+}
+
+func moveWithBaseline(c *imapclient.Client, op backend.Move, uid imap.UID, set imap.UIDSet, dstValidity uint32, src *imapclient.FetchMessageBuffer) (backend.Result, error) {
+	if src.Envelope != nil && src.Envelope.MessageID != "" {
+		copies, err := findSelected(c, dstValidity, src.Envelope.MessageID, src.RFC822Size)
 		if err == nil {
 			_, err = selectAt(c, op.At)
-		}
-		gen := backend.Cursor(Encode(dv, 0))
-		if err == nil && op.Before != nil && op.Before.Cursor == gen &&
-			slices.ContainsFunc(copies, func(r backend.MessageRef) bool { return !slices.Contains(op.Before.Refs, r) }) {
-			if !slices.Contains(got[0].Flags, imap.FlagDeleted) {
-				err = storeFlags(c, uid, imap.StoreFlagsAdd, []imap.Flag{imap.FlagDeleted})
-			}
-			if err == nil {
-				err = c.UIDExpunge(set).Close()
-			}
-			if err == nil {
-				return backend.Result{Outcome: backend.Unlocated}, nil
-			}
-		} else if err == nil && op.BeforeCopy != nil {
-			err = op.BeforeCopy(backend.MoveBaseline{Cursor: gen, Refs: copies})
 		}
 		if err != nil {
 			return backend.Result{}, err
 		}
+		gen := backend.Cursor(Encode(dstValidity, 0))
+		if op.Before != nil && op.Before.Cursor == gen &&
+			slices.ContainsFunc(copies, func(r backend.MessageRef) bool { return !slices.Contains(op.Before.Refs, r) }) {
+			return backend.Result{Outcome: backend.Failed, Reason: "move outcome uncertain after interrupted copy; matching message appeared in destination"}, nil
+		}
+		if op.BeforeCopy != nil {
+			if err := op.BeforeCopy(backend.MoveBaseline{Cursor: gen, Refs: copies}); err != nil {
+				return backend.Result{}, err
+			}
+		}
+	} else if _, err := selectAt(c, op.At); err != nil {
+		return backend.Result{}, err
 	}
 	validity, dst, err := moveUID(c, set, string(op.To))
 	if err != nil || dst == 0 {
