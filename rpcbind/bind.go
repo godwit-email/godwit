@@ -229,8 +229,8 @@ func Expose(method string) bool {
 // Listen serves svc's exposed methods on <dataDir>/godwit.sock (see
 // rpc.Listen; the caller holds the owner lock). Errors go out through
 // NewCodec; the API token and svc's secrets are redacted from them and from
-// the log. Sends and forwarding rules by the full role and drafts by the mcp
-// role are audited before they are dispatched.
+// the log. Sends, forwarding rules, send settings and grants by the full role
+// and drafts by the mcp role are audited before they are dispatched.
 func Listen(dataDir string, svc *core.Service, version string) (*rpc.Server, error) {
 	d, err := rpc.NewDispatcher(svc, Expose)
 	if err != nil {
@@ -245,17 +245,21 @@ func Listen(dataDir string, svc *core.Service, version string) (*rpc.Server, err
 }
 
 // audit records full's Send, SendAcknowledged and their Revision forms (by draft), ResolveOutbox
-// "resend" (by outbox item), Unsubscribe (by message), BeginPluginLogin and the rule calls that
-// make a rule forward (ruleForward), and mcp's NewDraft (by source message) and
-// SaveDraft (by draft); nothing else. A row it cannot write stops the call.
+// "resend" (by outbox item), Unsubscribe (by message), BeginPluginLogin, the rule calls that
+// make a rule forward (ruleForward), SetSettings widening MCPSend and the extension grants
+// (egressGrant: GrantMCPServer, SetMCPToolTrusted turning trust on, GrantPermission), and mcp's
+// NewDraft (by source message) and SaveDraft (by draft); nothing else. A row it cannot write
+// stops the call.
 func audit(svc *core.Service, role, method string, params []json.RawMessage) error {
 	if role == rpc.RoleFull {
-		target, dests, ok, err := ruleForward(svc, method, params)
-		if err != nil {
-			return err
-		}
-		if ok {
-			return svc.AuditExternal(context.Background(), core.AuditLocalAPI, method, target, dests...)
+		for _, check := range []func(*core.Service, string, []json.RawMessage) (int64, []string, bool, error){ruleForward, egressGrant} {
+			target, dests, ok, err := check(svc, method, params)
+			if err != nil {
+				return err
+			}
+			if ok {
+				return svc.AuditExternal(context.Background(), core.AuditLocalAPI, method, target, dests...)
+			}
 		}
 	}
 	source := ""
@@ -344,4 +348,57 @@ func forwards(d core.RuleDoc) []string {
 func isResend(params []json.RawMessage) bool {
 	var action string
 	return len(params) == 2 && json.Unmarshal(params[1], &action) == nil && action == "resend"
+}
+
+// egressGrant reports whether a full call widens Settings.MCPSend or grants an
+// extension or MCP tool to run without approval, which ADR 0003 counts as
+// egress; target and dests are what its audit row records. Params that do not
+// decode are not audited: the dispatcher decodes them the same way and refuses
+// the call.
+func egressGrant(svc *core.Service, method string, params []json.RawMessage) (target int64, dests []string, ok bool, err error) {
+	switch method {
+	case "SetSettings":
+		var st core.Settings
+		if len(params) != 1 || json.Unmarshal(params[0], &st) != nil {
+			return 0, nil, false, nil
+		}
+		cur, err := svc.GetSettings(context.Background())
+		if err != nil {
+			return 0, nil, false, err
+		}
+		return 0, nil, mcpSendRank(st.MCPSend) > mcpSendRank(cur.MCPSend), nil
+	case "GrantMCPServer":
+		if len(params) != 1 || json.Unmarshal(params[0], &target) != nil {
+			return 0, nil, false, nil
+		}
+		return target, nil, true, nil
+	case "SetMCPToolTrusted":
+		var tool string
+		var trusted bool
+		if len(params) != 3 || json.Unmarshal(params[0], &target) != nil || json.Unmarshal(params[1], &tool) != nil ||
+			json.Unmarshal(params[2], &trusted) != nil || !trusted {
+			return 0, nil, false, nil
+		}
+		return target, []string{tool}, true, nil
+	case "GrantPermission":
+		var name string
+		if len(params) != 1 || json.Unmarshal(params[0], &name) != nil {
+			return 0, nil, false, nil
+		}
+		return 0, []string{name}, true, nil
+	}
+	return 0, nil, false, nil
+}
+
+func mcpSendRank(level string) int {
+	switch level {
+	case core.MCPSendOff:
+		return 0
+	case "", core.MCPSendConfirm:
+		return 1
+	case core.MCPSendDirect:
+		return 2
+	default:
+		return -1
+	}
 }

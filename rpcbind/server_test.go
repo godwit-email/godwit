@@ -21,6 +21,11 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+func TestMain(m *testing.M) {
+	coretest.ServeMCPIfChild()
+	os.Exit(m.Run())
+}
+
 // listen serves svc on a fresh short directory (Unix socket paths are short).
 func listen(t *testing.T, svc *core.Service) string {
 	t.Helper()
@@ -499,4 +504,124 @@ func TestAuditResendFailureStopsCall(t *testing.T) {
 	require.ErrorAs(t, err, &we)
 	assert.Equal(t, rpc.CodeInternal, we.Code)
 	assert.Equal(t, "failed", outboxState(t, e.Svc, acc.ID, id), "not re-queued")
+}
+
+// Widening Settings.MCPSend and granting extensions or MCP tools without
+// approval are persistent egress state (ADR 0003): full's calls are audited,
+// while ordinary settings changes and tightening are not.
+func TestAuditSendSettingsAndGrants(t *testing.T) {
+	e := coretest.New(t, coretest.WithoutAutoSync())
+	ctx := t.Context()
+	dir := listen(t, e.Svc)
+	full, mcp := dial(t, dir, rpc.RoleFull), dial(t, dir, rpc.RoleMCP)
+
+	var st core.Settings
+	require.NoError(t, full.Call(ctx, "GetSettings", &st))
+	st.Theme = "dark"
+	require.NoError(t, full.Call(ctx, "SetSettings", &st, st)) // ordinary setting: not audited
+	st.MCPSend = core.MCPSendOff
+	require.NoError(t, full.Call(ctx, "SetSettings", &st, st)) // confirm -> off: tightening
+	st.Theme = "light"
+	require.NoError(t, full.Call(ctx, "SetSettings", &st, st)) // stays off: not audited
+	st.MCPSend = ""
+	require.NoError(t, full.Call(ctx, "SetSettings", &st, st)) // off -> "" (confirm): audited
+	st.MCPSend = core.MCPSendDirect
+	require.NoError(t, full.Call(ctx, "SetSettings", &st, st)) // confirm -> direct: audited
+	st.Theme = "dark"
+	require.NoError(t, full.Call(ctx, "SetSettings", &st, st)) // stays direct: not audited
+	st.MCPSend = core.MCPSendConfirm
+	require.NoError(t, full.Call(ctx, "SetSettings", &st, st)) // direct -> confirm: tightening
+
+	cmd, args, env := coretest.MCPCommand(t)
+	var srv core.MCPServer
+	require.NoError(t, full.Call(ctx, "AddMCPServer", &srv, core.MCPServerInput{Name: "fake", Transport: "stdio", Command: cmd, Args: args, Env: env}))
+	require.NoError(t, full.Call(ctx, "GrantMCPServer", nil, srv.ID))
+	require.NoError(t, full.Call(ctx, "SetMCPServerEnabled", nil, srv.ID, true))
+	require.NoError(t, full.Call(ctx, "SetMCPToolTrusted", nil, srv.ID, "lookup", true))
+	require.NoError(t, full.Call(ctx, "SetMCPToolTrusted", nil, srv.ID, "lookup", false)) // untrusting: tightening
+
+	require.NoError(t, full.Call(ctx, "InstallPlugin", nil, coretest.PluginFixture(t, "card-demo")))
+	require.NoError(t, full.Call(ctx, "GrantPermission", nil, "card-demo"))
+
+	for _, m := range []string{"SetSettings", "GrantMCPServer", "SetMCPToolTrusted", "GrantPermission"} {
+		var we *rpc.WireError
+		require.ErrorAs(t, mcp.Call(ctx, m, nil), &we, m)
+		assert.Equal(t, rpc.CodeForbidden, we.Code, m)
+	}
+	assert.Equal(t, [][]any{
+		{"local_api", "SetSettings", nil, ""},
+		{"local_api", "SetSettings", nil, ""},
+		{"local_api", "GrantMCPServer", srv.ID, ""},
+		{"local_api", "SetMCPToolTrusted", srv.ID, "lookup"},
+		{"local_api", "GrantPermission", nil, "card-demo"},
+	}, auditRows(t, e.DataDir))
+}
+
+// When audit_log cannot be written, widening MCPSend or granting an extension
+// or MCP tool is refused before changing state.
+func TestAuditGrantFailureStopsCall(t *testing.T) {
+	logs(t)
+	e := coretest.New(t, coretest.WithoutAutoSync())
+	ctx := t.Context()
+
+	st, err := e.Svc.GetSettings(ctx)
+	require.NoError(t, err)
+	st.MCPSend = core.MCPSendOff
+	st, err = e.Svc.SetSettings(ctx, st)
+	require.NoError(t, err)
+
+	cmd, args, env := coretest.MCPCommand(t)
+	ungranted, err := e.Svc.AddMCPServer(ctx, core.MCPServerInput{Name: "ungranted", Transport: "stdio", Command: cmd, Args: args, Env: env})
+	require.NoError(t, err)
+	started, err := e.Svc.AddMCPServer(ctx, core.MCPServerInput{Name: "started", Transport: "stdio", Command: cmd, Args: args, Env: env})
+	require.NoError(t, err)
+	require.NoError(t, e.Svc.GrantMCPServer(ctx, started.ID))
+	require.NoError(t, e.Svc.SetMCPServerEnabled(ctx, started.ID, true))
+	_, err = e.Svc.InstallPlugin(ctx, coretest.PluginFixture(t, "card-demo"))
+	require.NoError(t, err)
+
+	db, err := store.Open(ctx, filepath.Join(e.DataDir, "godwit.db"))
+	require.NoError(t, err)
+	_, err = db.Execute(ctx, "DROP TABLE audit_log")
+	require.NoError(t, err)
+	db.Close()
+
+	full := dial(t, listen(t, e.Svc), rpc.RoleFull)
+	st.Theme = "dark"
+	require.NoError(t, full.Call(ctx, "SetSettings", &st, st), "ordinary settings still save")
+
+	widen := st
+	widen.MCPSend = core.MCPSendDirect
+	for _, call := range []struct {
+		method string
+		args   []any
+	}{
+		{"SetSettings", []any{widen}},
+		{"GrantMCPServer", []any{ungranted.ID}},
+		{"SetMCPToolTrusted", []any{started.ID, "lookup", true}},
+		{"GrantPermission", []any{"card-demo"}},
+	} {
+		var we *rpc.WireError
+		require.ErrorAs(t, full.Call(ctx, call.method, nil, call.args...), &we, call.method)
+		assert.Equal(t, rpc.CodeInternal, we.Code, call.method)
+	}
+
+	gotSt, err := e.Svc.GetSettings(ctx)
+	require.NoError(t, err)
+	assert.Equal(t, core.MCPSendOff, gotSt.MCPSend)
+
+	srvs, err := e.Svc.ListMCPServers(ctx)
+	require.NoError(t, err)
+	require.Len(t, srvs, 2)
+	assert.False(t, srvs[0].Granted)
+	require.Len(t, srvs[1].Tools, 1)
+	assert.False(t, srvs[1].Tools[0].Trusted)
+
+	pls, err := e.Svc.ListPlugins(ctx)
+	require.NoError(t, err)
+	for _, p := range pls {
+		if p.Name == "card-demo" {
+			assert.True(t, p.NeedsGrant)
+		}
+	}
 }
