@@ -1682,6 +1682,7 @@ func TestReaderRecipientsOneAccount(t *testing.T) {
 	if _, err := h.env.Svc.UpdateAccount(context.Background(), accs[0].ID, core.AccountPatch{Alias: &alias}); err != nil {
 		t.Fatal(err)
 	}
+	h.app.load()
 	h.waitMail("the alias", func() bool { return h.app.accounts[0].Alias == alias })
 	if s := r.recipients(got); s != "发给 Peter 等 1 人" {
 		t.Fatalf("one account with alias: %q", s)

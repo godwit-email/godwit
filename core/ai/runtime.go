@@ -47,9 +47,42 @@ type Engine struct {
 }
 
 type instance struct {
-	cfg    ResolvedModel   // Model cleared
-	ctx    context.Context // ends when the instance is dropped; so do its runs
-	cancel context.CancelCauseFunc
+	cfg     ResolvedModel // Model cleared
+	mu      sync.Mutex
+	err     error
+	cancels map[*int]context.CancelCauseFunc
+}
+
+func (in *instance) cancel(err error) {
+	in.mu.Lock()
+	if in.err == nil {
+		in.err = err
+	}
+	cs := in.cancels
+	in.cancels = nil
+	in.mu.Unlock()
+	for _, c := range cs {
+		c(in.err)
+	}
+}
+
+func (in *instance) watch(c context.CancelCauseFunc) func() {
+	k := new(int)
+	in.mu.Lock()
+	err := in.err
+	if err == nil {
+		in.cancels[k] = c
+	}
+	in.mu.Unlock()
+	if err != nil {
+		c(err)
+		return func() {}
+	}
+	return func() {
+		in.mu.Lock()
+		delete(in.cancels, k)
+		in.mu.Unlock()
+	}
 }
 
 // errStale ends the runs of an instance whose service changed or went away.
@@ -144,9 +177,8 @@ func (e *Engine) instance(ctx context.Context, m ResolvedModel) (*instance, erro
 	if piAPI(m) == "" {
 		return nil, fmt.Errorf("ai: unknown service kind %q", m.Kind)
 	}
-	ictx, cancel := context.WithCancelCause(context.Background())
 	e.inits.Add(1)
-	in := &instance{cfg: cfg, ctx: ictx, cancel: cancel}
+	in := &instance{cfg: cfg, cancels: map[*int]context.CancelCauseFunc{}}
 	e.insts[m.ServiceID] = in
 	return in, nil
 }

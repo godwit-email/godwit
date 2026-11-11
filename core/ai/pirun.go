@@ -44,7 +44,7 @@ func (r *runner) runPi(req Request) Result {
 	}
 	ctx, cancel := context.WithCancelCause(r.ctx)
 	defer cancel(nil)
-	stop := context.AfterFunc(in.ctx, func() { cancel(context.Cause(in.ctx)) })
+	stop := in.watch(cancel)
 	defer stop()
 	r.mu.Lock()
 	r.ctx = ctx
