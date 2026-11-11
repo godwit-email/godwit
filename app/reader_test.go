@@ -484,8 +484,18 @@ func (h *harness) deliverOne(acc core.Account, raw []byte) core.MessageSummary {
 
 // openThread opens a thread in the reader as a click on its row does.
 func (h *harness) openThread(id int64) {
+	h.t.Helper()
 	h.app.mail.open([]mailItem{{ID: id, Thread: true}}, 0)
 	h.tt.Frame()
+	// A switch shows the thread before until the new body's page reports its
+	// height (#667), which a fake page never does: its wait runs out.
+	r := h.app.mail.reader
+	h.until("the switch done", func() bool {
+		if r.prev != nil {
+			h.clock.advance(prevWait)
+		}
+		return r.next == [2]int64{} && r.prev == nil
+	})
 }
 
 // openThreadWith opens thread, where only the newest message opens, and

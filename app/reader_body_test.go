@@ -214,10 +214,9 @@ func TestReaderSwitchDuringCreate(t *testing.T) {
 		}
 	}
 	h.openThread(m.ThreadID)
+	h.until("the first page made", func() bool { return switched })
+	h.openThread(other.ThreadID) // the switch under way: waits it out
 	h.seeBody(other.ID)
-	if !switched {
-		t.Fatal("the first page was never made")
-	}
 	if h.plat.view(m.ID) != nil || h.countCalls(fmt.Sprint("CloseBodyView ", m.ID)) != 1 {
 		t.Fatalf("the old thread's page was kept: %q", h.plat.Calls())
 	}

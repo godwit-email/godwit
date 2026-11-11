@@ -2,9 +2,12 @@ package app
 
 import (
 	"context"
+	"fmt"
 	"sync/atomic"
 	"testing"
+	"time"
 
+	"github.com/egoist/mygo/ui"
 	"github.com/godwit-email/godwit/core"
 	"github.com/godwit-email/godwit/core/coretest"
 )
@@ -28,10 +31,10 @@ func gateThread(h *harness, id int64) (release func(), read *atomic.Bool) {
 	return func() { close(gate) }, read
 }
 
-// Switching threads keeps what showed until the new thread is read, then
-// replaces it at once: no blank pane between (#667). Its body keeps the
-// height the replaced one had until its own page reports.
-func TestReaderSwitchKeepsShownUntilRead(t *testing.T) {
+// Switching threads keeps what showed until the new thread is read and its
+// newest body's page has reported its height, building unseen meanwhile,
+// then replaces it at once: no blank body between (#667).
+func TestReaderSwitchKeepsShownUntilSized(t *testing.T) {
 	h, accs := mailHarness(t, nil, "alice@example.com")
 	a := h.deliverOne(accs[0], coretest.Msg("bob@example.com", accs[0].Email, "First thread", "first body"))
 	b := h.deliverOne(accs[0], coretest.Msg("carol@example.com", accs[0].Email, "Second thread", "second body"))
@@ -42,7 +45,7 @@ func TestReaderSwitchKeepsShownUntilRead(t *testing.T) {
 	h.until("first body sized", func() bool { return r.bodies[a.ID] != nil && r.bodies[a.ID].height == 400 })
 
 	release, _ := gateThread(h, b.ThreadID)
-	h.openThread(b.ThreadID)
+	switchTo(h, b.ThreadID)
 	for range 5 {
 		h.drain()
 		h.tt.Frame()
@@ -51,27 +54,84 @@ func TestReaderSwitchKeepsShownUntilRead(t *testing.T) {
 		t.Fatalf("switching blanked what showed: key %v loaded %v", r.key, r.loaded)
 	}
 	h.see("First thread")
-	if _, ok := h.viewBox(va); !ok || va.closed {
+	var was ui.Rect
+	h.until("the shown body at rest", func() bool { box, _ := h.viewBox(va); settled := box == was; was = box; return settled })
+	if was.H == 0 || va.closed {
 		t.Fatal("the shown body's page went before the next thread was read")
 	}
 
 	release()
-	h.until("second thread shown", func() bool { return r.key[0] == b.ThreadID && r.loaded })
-	if !va.closed {
-		t.Fatal("the replaced body's page stayed open")
+	h.until("second thread read", func() bool { return r.key[0] == b.ThreadID && r.loaded })
+	vb := unseenBody(h, b.ID)
+	for range 3 { // the thread shown keeps its elements: none goes and comes again with its motion
+		if box, _ := h.viewBox(va); box != was {
+			t.Fatalf("the shown body moved from %v to %v as the switch began", was, box)
+		}
+		h.tt.Advance(time.Second / 60)
+		h.tt.Frame()
 	}
-	if got := r.reserveFor(b.ID); got != 400 {
-		t.Fatalf("reserve %v, want the replaced body's 400", got)
+	if r.prev == nil || va.closed || !h.tt.HasText("First thread") || h.tt.HasText("Second thread") {
+		t.Fatalf("the first thread went before the second's body was sized: prev %v, closed %v", r.prev != nil, va.closed)
 	}
-	vb := h.seeBody(b.ID)
-	if box, _ := h.viewBox(vb); box.H <= 60 { // the window cuts it; a line it is not
-		t.Fatalf("new body drawn %v high before its page reported, want the kept height", box.H)
-	}
+
 	h.post(func() { h.app.BodyHeight(vb, b.ID, 120) })
-	h.until("second body sized", func() bool { return r.bodies[b.ID].height == 120 })
-	if r.reserve != 0 {
-		t.Fatalf("reserve %v kept after the page reported", r.reserve)
+	h.drain()
+	h.tt.Frame() // no time passes: the new thread shows whole at once, not entering part by part
+	if !h.tt.HasText("Second thread") || r.prev != nil || !va.closed {
+		t.Fatal("the replaced thread stayed after the new body was sized")
 	}
+	if box, _ := h.viewBox(vb); box.H < 100 {
+		t.Fatalf("new body shown %v high as the thread came, want its reported 120", box.H)
+	}
+}
+
+// A page that never reports its height lets the thread before go after a
+// while all the same.
+func TestReaderSwitchGivesUpWaiting(t *testing.T) {
+	h, accs := mailHarness(t, nil, "alice@example.com")
+	a := h.deliverOne(accs[0], coretest.Msg("bob@example.com", accs[0].Email, "First thread", "first body"))
+	b := h.deliverOne(accs[0], coretest.Msg("carol@example.com", accs[0].Email, "Second thread", "second body"))
+	r := h.app.mail.reader
+	h.openThread(a.ThreadID)
+	va := h.seeBody(a.ID)
+	switchTo(h, b.ThreadID)
+	unseenBody(h, b.ID)
+	h.advance(prevWait)
+	h.see("Second thread")
+	if r.prev != nil || !va.closed {
+		t.Fatal("the thread before stayed past prevWait")
+	}
+}
+
+// Back to the thread still shown while the switch's body builds: its pages
+// go before the message gets a page again, one page a message.
+func TestReaderSwitchBackWhileUnseen(t *testing.T) {
+	h, accs := mailHarness(t, nil, "alice@example.com")
+	a := h.deliverOne(accs[0], coretest.Msg("bob@example.com", accs[0].Email, "First thread", "first body"))
+	b := h.deliverOne(accs[0], coretest.Msg("carol@example.com", accs[0].Email, "Second thread", "second body"))
+	r := h.app.mail.reader
+	h.openThread(a.ThreadID)
+	va := h.seeBody(a.ID)
+	switchTo(h, b.ThreadID)
+	vb := unseenBody(h, b.ID)
+	h.openThread(a.ThreadID) // the fake panics on a second page of a message
+	h.until("the first thread's page made again", func() bool { v := h.plat.view(a.ID); return v != nil && v != va })
+	if !va.closed || !vb.closed || r.prev != nil {
+		t.Fatalf("closed %v %v, prev %v: want both earlier pages closed", va.closed, vb.closed, r.prev != nil)
+	}
+}
+
+// unseenBody waits for message's page made under the thread shown before
+// the switch, and returns it. Placed under all else, it is at no point the
+// tester looks.
+func unseenBody(h *harness, message int64) *fakeBodyView {
+	h.t.Helper()
+	var v *fakeBodyView
+	h.until(fmt.Sprintf("message %d's page made unseen", message), func() bool {
+		v = h.plat.view(message)
+		return v != nil && h.app.mail.reader.prev != nil
+	})
+	return v
 }
 
 // Going back to the shown thread before the switch's read returns drops
@@ -85,7 +145,7 @@ func TestReaderSwitchBackDropsPendingRead(t *testing.T) {
 	va := h.seeBody(a.ID)
 
 	release, read := gateThread(h, b.ThreadID)
-	h.openThread(b.ThreadID)
+	switchTo(h, b.ThreadID)
 	h.openThread(a.ThreadID)
 	release()
 	h.until("the dropped read back", read.Load)
@@ -99,4 +159,11 @@ func TestReaderSwitchBackDropsPendingRead(t *testing.T) {
 	if va.closed {
 		t.Fatal("the shown body's page closed")
 	}
+}
+
+// switchTo opens thread id as a click on its row does, leaving the switch
+// under way (openThread waits it out).
+func switchTo(h *harness, id int64) {
+	h.app.mail.open([]mailItem{{ID: id, Thread: true}}, 0)
+	h.tt.Frame()
 }
