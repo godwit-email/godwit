@@ -70,7 +70,8 @@ type ConnOptions struct {
 	// reveals nothing ("internal error").
 	EncodeError func(error) *WireError
 
-	hooks testHooks // test seams; zero outside tests
+	helloCtx func(ctx context.Context, params []json.RawMessage) (func(string, []json.RawMessage) error, context.Context, any, error)
+	hooks    testHooks // test seams; zero outside tests
 }
 
 // testHooks lets tests stop a request at the edges of stream registration.
@@ -139,12 +140,13 @@ type serverStream struct {
 func (s *serverStream) stop() { s.once.Do(s.cancel) }
 
 type conn struct {
-	opts ConnOptions
-	d    *Dispatcher
-	rwc  net.Conn
-	ctx  context.Context
-	kill context.CancelCauseFunc // closes rwc via AfterFunc
-	wg   sync.WaitGroup
+	opts    ConnOptions
+	d       *Dispatcher
+	rwc     net.Conn
+	ctx     context.Context
+	callCtx context.Context         // ctx, plus what hello attached for dispatched calls
+	kill    context.CancelCauseFunc // closes rwc via AfterFunc
+	wg      sync.WaitGroup
 
 	qmu    sync.Mutex
 	queue  [][]byte // nil entry = close after flushing what precedes it
@@ -172,6 +174,7 @@ func ServeConn(ctx context.Context, rwc net.Conn, d *Dispatcher, opts ConnOption
 		streams:  map[uint64]*serverStream{},
 	}
 	c.ctx, c.kill = context.WithCancelCause(ctx)
+	c.callCtx = c.ctx
 	context.AfterFunc(c.ctx, func() { // kill always fires it
 		// Windows may not tell the peer about a bare closesocket for a while;
 		// shutdown first sends the EOF at once.
@@ -182,7 +185,7 @@ func ServeConn(ctx context.Context, rwc net.Conn, d *Dispatcher, opts ConnOption
 	})
 	c.wg.Add(1)
 	go c.writeLoop()
-	if c.opts.Hello != nil {
+	if c.needsAuth() {
 		defer time.AfterFunc(c.opts.AuthTimeout, func() {
 			c.mu.Lock()
 			authed := c.allow != nil
@@ -221,6 +224,8 @@ func ServeConn(ctx context.Context, rwc net.Conn, d *Dispatcher, opts ConnOption
 	return err
 }
 
+func (c *conn) needsAuth() bool { return c.opts.Hello != nil || c.opts.helloCtx != nil }
+
 // handle processes one inbound line; false stops reading.
 func (c *conn) handle(line []byte) bool {
 	line = bytes.TrimSpace(line)
@@ -230,7 +235,7 @@ func (c *conn) handle(line []byte) bool {
 	c.mu.Lock()
 	allow := c.allow
 	c.mu.Unlock()
-	authed := c.opts.Hello == nil || allow != nil
+	authed := !c.needsAuth() || allow != nil
 	// Before authentication a rejected line also ends the connection.
 	reject := func(id json.RawMessage, we *WireError) bool {
 		c.replyError(id, we)
@@ -272,7 +277,7 @@ func (c *conn) handle(line []byte) bool {
 	if !authed {
 		return c.hello(m, params)
 	}
-	if c.opts.Hello != nil {
+	if c.needsAuth() {
 		if m.Method == "hello" {
 			c.replyError(m.ID, &WireError{Code: CodeInvalidRequest, Message: "already authenticated"})
 			return true
@@ -307,7 +312,7 @@ func (c *conn) handle(line []byte) bool {
 		c.replyError(m.ID, &WireError{Code: CodeTooMany, Message: "too many requests", Data: &WireErrorData{Code: "too_many_requests"}})
 		return true
 	}
-	ctx, cancel := context.WithCancel(c.ctx)
+	ctx, cancel := context.WithCancel(c.callCtx)
 	c.requests[id] = cancel
 	c.active++
 	c.mu.Unlock()
@@ -322,7 +327,17 @@ func (c *conn) hello(m message, params []json.RawMessage) bool {
 		c.closeAfterFlush()
 		return false
 	}
-	allow, result, err := c.opts.Hello(params)
+	callCtx := c.ctx
+	var (
+		allow  func(string, []json.RawMessage) error
+		result any
+		err    error
+	)
+	if c.opts.helloCtx != nil {
+		allow, callCtx, result, err = c.opts.helloCtx(c.ctx, params)
+	} else {
+		allow, result, err = c.opts.Hello(params)
+	}
 	if err != nil {
 		c.replyError(m.ID, c.opts.EncodeError(err))
 		c.closeAfterFlush()
@@ -331,6 +346,7 @@ func (c *conn) hello(m message, params []json.RawMessage) bool {
 	if allow == nil {
 		allow = func(string, []json.RawMessage) error { return nil }
 	}
+	c.callCtx = callCtx
 	c.mu.Lock()
 	c.allow = allow
 	c.mu.Unlock()

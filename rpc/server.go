@@ -38,6 +38,9 @@ type ServerOptions struct {
 	// connection's role. An error stops the call and is answered and logged
 	// like any error the call could have returned.
 	Audit func(role, method string, params []json.RawMessage) error
+	// Context, if set, wraps an authenticated connection's request context for
+	// its role.
+	Context func(ctx context.Context, role string) context.Context
 }
 
 // Server serves a Dispatcher on <dataDir>/godwit.sock.
@@ -235,19 +238,20 @@ func (s *Server) encode(err error) *WireError {
 func (s *Server) connOptions() ConnOptions {
 	co := s.opts.Conn
 	co.EncodeError = s.encode
-	co.Hello = s.hello
+	co.Hello = nil
+	co.helloCtx = s.hello
 	return co
 }
 
 // hello takes [token, role, client].
-func (s *Server) hello(params []json.RawMessage) (func(string, []json.RawMessage) error, any, error) {
+func (s *Server) hello(ctx context.Context, params []json.RawMessage) (func(string, []json.RawMessage) error, context.Context, any, error) {
 	var token, role, client string
 	if len(params) != 3 || json.Unmarshal(params[0], &token) != nil || json.Unmarshal(params[1], &role) != nil ||
 		json.Unmarshal(params[2], &client) != nil {
-		return nil, nil, unauthenticated("hello takes [token, role, client]")
+		return nil, nil, nil, unauthenticated("hello takes [token, role, client]")
 	}
 	if subtle.ConstantTimeCompare([]byte(token), []byte(s.token)) != 1 {
-		return nil, nil, unauthenticated("bad token")
+		return nil, nil, nil, unauthenticated("bad token")
 	}
 	var roleOK func(string, []json.RawMessage) bool
 	switch role {
@@ -256,7 +260,12 @@ func (s *Server) hello(params []json.RawMessage) (func(string, []json.RawMessage
 	case RoleMCP:
 		roleOK = MCPAllowed
 	default:
-		return nil, nil, unauthenticated("role must be full or mcp")
+		return nil, nil, nil, unauthenticated("role must be full or mcp")
+	}
+	if s.opts.Context != nil {
+		if w := s.opts.Context(ctx, role); w != nil {
+			ctx = w
+		}
 	}
 	allow := func(method string, params []json.RawMessage) error {
 		if !roleOK(method, params) {
@@ -267,7 +276,7 @@ func (s *Server) hello(params []json.RawMessage) (func(string, []json.RawMessage
 		}
 		return nil
 	}
-	return allow, map[string]string{"server": "godwit/" + s.opts.Version, "role": role}, nil
+	return allow, ctx, map[string]string{"server": "godwit/" + s.opts.Version, "role": role}, nil
 }
 
 // Dial connects to the Server in dataDir with the token it wrote and says

@@ -14,6 +14,7 @@ import (
 	"github.com/godwit-email/godwit/core/ai"
 	"github.com/godwit-email/godwit/core/ai/mask"
 	"github.com/godwit-email/godwit/core/events"
+	"github.com/godwit-email/godwit/core/gateway"
 	gomail "github.com/godwit-email/godwit/core/mail"
 	"github.com/godwit-email/godwit/core/skills"
 	"github.com/godwit-email/godwit/core/store"
@@ -335,21 +336,27 @@ func (s *Service) SetSettings(ctx context.Context, st Settings) (Settings, error
 	password := st.ProxyPassword
 	st.ProxyPassword, st.ProxyPasswordSet = "", password != "" || st.ProxyPasswordSet && stored.ProxyPasswordSet
 	st.SettingsVersion = settingsVersion // a client's 0 must not make the next load raise FontSize again
-	write := func(st Settings) error {
+	settingStmt := func(st Settings) (sqlite.Statement, error) {
 		b, err := json.Marshal(st)
-		if err != nil {
-			return err
-		}
-		_, err = s.db.Execute(ctx, `INSERT INTO settings(key, value) VALUES ('app', ?)
-		ON CONFLICT(key) DO UPDATE SET value = excluded.value`, string(b))
-		return err
+		return sqlite.Statement{SQL: `INSERT INTO settings(key, value) VALUES ('app', ?)
+			ON CONFLICT(key) DO UPDATE SET value = excluded.value`, Args: []any{string(b)}}, err
 	}
-	if err := write(st); err != nil {
+	stmt, err := settingStmt(st)
+	if err != nil {
+		return Settings{}, err
+	}
+	stmts := []sqlite.Statement{stmt}
+	if src, _ := ctx.Value(externalSourceKey{}).(string); src == AuditLocalAPI && mcpSendRank(st.MCPSend) > mcpSendRank(stored.MCPSend) {
+		stmts = append(stmts, gateway.Audit(gateway.Entry{Source: src, Tool: "SetSettings", Decision: "allow"}, s.secrets.Redact))
+	}
+	if _, err := s.db.Transaction(ctx, stmts); err != nil {
 		return Settings{}, err
 	}
 	// the keychain after the row, which goes back if it fails, so the two never disagree
 	if err := s.saveProxyPassword(password, st, stored); err != nil {
-		if rerr := write(stored); rerr != nil {
+		if prev, merr := settingStmt(stored); merr != nil {
+			err = errors.Join(err, merr)
+		} else if _, rerr := s.db.Execute(ctx, prev.SQL, prev.Args...); rerr != nil {
 			err = errors.Join(err, rerr)
 		}
 		return Settings{}, err
@@ -364,6 +371,19 @@ func (s *Service) SetSettings(ctx context.Context, st Settings) (Settings, error
 	}
 	s.bus.Publish(events.Event{Type: events.SettingsChanged})
 	return st, nil
+}
+
+func mcpSendRank(level string) int {
+	switch level {
+	case MCPSendOff:
+		return 0
+	case "", MCPSendConfirm:
+		return 1
+	case MCPSendDirect:
+		return 2
+	default:
+		return -1
+	}
 }
 
 // SystemLanguage is the operating system language tag passed in Options.

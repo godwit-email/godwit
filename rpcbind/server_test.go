@@ -625,3 +625,78 @@ func TestAuditGrantFailureStopsCall(t *testing.T) {
 		}
 	}
 }
+
+// Concurrent SetSettings calls decide and write the audit row under settingsMu
+// in the same transaction as the save, so an off -> direct transition interleaved
+// behind a direct snapshot is never left unaudited or allowed past a broken audit table.
+func TestAuditSetSettingsConcurrentWidening(t *testing.T) {
+	logs(t)
+	e := coretest.New(t, coretest.WithoutAutoSync())
+	ctx := t.Context()
+	dir := listen(t, e.Svc)
+	full := dial(t, dir, rpc.RoleFull)
+
+	base, err := e.Svc.GetSettings(ctx)
+	require.NoError(t, err)
+	directSt, offSt := base, base
+	directSt.MCPSend = core.MCPSendDirect
+	offSt.MCPSend = core.MCPSendOff
+
+	for range 30 {
+		_, err = e.Svc.SetSettings(ctx, directSt)
+		require.NoError(t, err)
+		before := len(auditRows(t, e.DataDir))
+
+		var wg sync.WaitGroup
+		wg.Add(2)
+		go func() {
+			defer wg.Done()
+			require.NoError(t, full.Call(ctx, "SetSettings", nil, directSt))
+		}()
+		go func() {
+			defer wg.Done()
+			_, err := e.Svc.SetSettings(ctx, offSt)
+			require.NoError(t, err)
+		}()
+		wg.Wait()
+
+		got, err := e.Svc.GetSettings(ctx)
+		require.NoError(t, err)
+		added := len(auditRows(t, e.DataDir)) - before
+		if got.MCPSend == core.MCPSendDirect {
+			assert.Equal(t, 1, added, "off ran first, so direct widened and must audit")
+		} else {
+			assert.Equal(t, core.MCPSendOff, got.MCPSend)
+			assert.Zero(t, added, "direct ran first, then off tightened")
+		}
+	}
+
+	_, err = e.Svc.SetSettings(ctx, directSt)
+	require.NoError(t, err)
+	db, err := store.Open(ctx, filepath.Join(e.DataDir, "godwit.db"))
+	require.NoError(t, err)
+	_, err = db.Execute(ctx, "DROP TABLE audit_log")
+	require.NoError(t, err)
+	db.Close()
+
+	for range 20 {
+		_, err = e.Svc.SetSettings(ctx, directSt)
+		require.NoError(t, err)
+		var wg sync.WaitGroup
+		wg.Add(2)
+		go func() {
+			defer wg.Done()
+			_ = full.Call(ctx, "SetSettings", nil, directSt)
+		}()
+		go func() {
+			defer wg.Done()
+			_, err := e.Svc.SetSettings(ctx, offSt)
+			require.NoError(t, err)
+		}()
+		wg.Wait()
+
+		got, err := e.Svc.GetSettings(ctx)
+		require.NoError(t, err)
+		assert.Equal(t, core.MCPSendOff, got.MCPSend, "widening after off cannot commit without audit_log")
+	}
+}
