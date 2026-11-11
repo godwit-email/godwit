@@ -63,15 +63,24 @@ type client struct {
 	cfg     Config
 	baseURL string
 	http    *http.Client
+	// stream is http without the overall timeout, for a whole message
+	// (format=raw); its body is bounded by conn.StallBody instead.
+	stream *http.Client
 }
+
+// Timeouts of one HTTP request, so a server that stops answering cannot hold
+// the account's sync forever; vars so tests can shorten them.
+var (
+	headerTimeout  = time.Minute     // until the response headers arrive
+	requestTimeout = 5 * time.Minute // a whole receiving request, except a whole message
+	stallTimeout   = time.Minute     // a response body with no byte arriving
+)
 
 func newClient(cfg Config, timeout time.Duration) *client {
 	base := strings.TrimRight(cmp.Or(cfg.BaseURL, DefaultBaseURL), "/")
 	tr := conn.HTTPTransport()
-	if timeout > 0 {
-		tr.ResponseHeaderTimeout = time.Minute
-	}
-	return &client{
+	tr.ResponseHeaderTimeout = headerTimeout
+	c := &client{
 		cfg:     cfg,
 		baseURL: base,
 		http: &http.Client{
@@ -90,6 +99,10 @@ func newClient(cfg Config, timeout time.Duration) *client {
 			},
 		},
 	}
+	stream := *c.http
+	stream.Timeout = 0
+	c.stream = &stream
+	return c
 }
 
 func (c *client) host() string {
@@ -294,6 +307,10 @@ func (c *client) doRaw(ctx context.Context, method, path string, query url.Value
 		u += "?" + query.Encode()
 	}
 
+	hc := c.http
+	if query.Get("format") == "raw" { // a whole message may outlast requestTimeout
+		hc = c.stream
+	}
 	for try := 0; ; try++ {
 		if confirm != nil && !confirm() {
 			return 0, errPurgeCancelled
@@ -302,20 +319,24 @@ func (c *client) doRaw(ctx context.Context, method, path string, query url.Value
 		if payload != nil {
 			body = bytes.NewReader(payload)
 		}
-		req, err := http.NewRequestWithContext(ctx, method, u, body)
+		rctx, cancel := context.WithCancel(ctx)
+		req, err := http.NewRequestWithContext(rctx, method, u, body)
 		if err != nil {
+			cancel()
 			return 0, err
 		}
 		req.Header.Set("Authorization", "Bearer "+cr.Token)
 		if payload != nil {
 			req.Header.Set("Content-Type", "application/json")
 		}
-		resp, err := c.http.Do(req)
+		resp, err := hc.Do(req)
 		if err != nil {
+			cancel()
 			return 0, err
 		}
-		raw, rerr := io.ReadAll(resp.Body)
-		resp.Body.Close()
+		rbody := conn.StallBody(resp.Body, stallTimeout, cancel)
+		raw, rerr := io.ReadAll(rbody)
+		rbody.Close()
 		if rerr != nil {
 			return resp.StatusCode, rerr
 		}

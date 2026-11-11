@@ -37,7 +37,7 @@ type Receiver struct {
 var _ backend.Receiver = (*Receiver)(nil)
 
 // New returns a Receiver for the Gmail account cfg reaches.
-func New(cfg Config) *Receiver { return &Receiver{c: newClient(cfg, 0)} }
+func New(cfg Config) *Receiver { return &Receiver{c: newClient(cfg, requestTimeout)} }
 
 // Close implements backend.Receiver.
 func (r *Receiver) Close() error {

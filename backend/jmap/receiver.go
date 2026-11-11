@@ -23,6 +23,7 @@ import (
 	"github.com/emersion/go-imap/v2/imapserver"
 
 	"github.com/godwit-email/godwit/backend"
+	"github.com/godwit-email/godwit/backend/conn"
 )
 
 // Receiver is a JMAP account's receiving backend. Its folders are mailboxes
@@ -840,9 +841,7 @@ func (r *Receiver) trash(ctx context.Context) (backend.FolderRef, error) {
 // Watch implements backend.Receiver over the session's EventSource. It wakes
 // for every state the server sends, the one on connect included, which
 // covers what changed while it was not connected. When the server closes the
-// stream it connects again.
-// shortcut: no read deadline, so a connection that dies silently is not
-// noticed; ask for pings and time out on their absence if that bites.
+// stream, or sends nothing, not even a ping, for watchStall, it connects again.
 func (r *Receiver) Watch(ctx context.Context, wake func(folders []backend.FolderRef)) error {
 	for {
 		s, _, err := r.c.sess(ctx)
@@ -852,31 +851,43 @@ func (r *Receiver) Watch(ctx context.Context, wake func(folders []backend.Folder
 		if s.EventSourceURL == "" {
 			return backend.ErrUnsupported
 		}
-		u := strings.NewReplacer("{types}", "*", "{closeafter}", "no", "{ping}", "0").Replace(s.EventSourceURL)
-		req, err := http.NewRequestWithContext(ctx, http.MethodGet, u, nil)
+		u := strings.NewReplacer("{types}", "*", "{closeafter}", "no", "{ping}", watchPing).Replace(s.EventSourceURL)
+		rctx, cancel := context.WithCancel(ctx)
+		req, err := http.NewRequestWithContext(rctx, http.MethodGet, u, nil)
 		if err != nil {
+			cancel()
 			return err
 		}
 		req.Header.Set("Accept", "text/event-stream")
-		resp, err := r.c.do(req)
+		resp, err := r.c.do(r.c.stream, req)
 		if err != nil {
+			cancel()
 			return err
 		}
-		err = events(resp.Body, func() { wake(nil) })
-		resp.Body.Close()
+		body := conn.StallBody(resp.Body, watchStall, cancel)
+		err = events(body, func() { wake(nil) })
+		body.Close()
 		if ctx.Err() != nil {
 			return ctx.Err()
 		}
-		if err != nil {
+		if err != nil && !errors.Is(err, conn.ErrStalled) {
 			return err
 		}
-		select { // the server closed the stream: connect again
+		select { // the stream ended or went silent: connect again
 		case <-ctx.Done():
 			return ctx.Err()
 		case <-time.After(100 * time.Millisecond):
 		}
 	}
 }
+
+// watchPing is the ping interval Watch asks for, in seconds (RFC 8620 7.3);
+// watchStall is how long a silent stream lasts, with room for a server that
+// raises the interval.
+var (
+	watchPing  = "60"
+	watchStall = 5 * time.Minute
+)
 
 // events reads an event stream, calling state for each state event, until
 // it ends (nil) or fails.

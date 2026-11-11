@@ -13,6 +13,7 @@ import (
 	"net/url"
 	"strings"
 	"sync"
+	"time"
 
 	gojmap "git.sr.ht/~rockorager/go-jmap"
 	"git.sr.ht/~rockorager/go-jmap/mail"
@@ -43,6 +44,9 @@ type Config struct {
 type client struct {
 	cfg  Config
 	http *http.Client
+	// stream is http without the overall timeout, for a download or the
+	// event stream; their bodies are bounded by conn.StallBody instead.
+	stream *http.Client
 
 	mu      sync.Mutex
 	session *gojmap.Session
@@ -51,9 +55,19 @@ type client struct {
 
 var errOtherHost = errors.New("jmap: refused a redirect to another host")
 
+// Timeouts of one HTTP request, so a server that stops answering cannot hold
+// the account's sync forever; vars so tests can shorten them.
+var (
+	headerTimeout  = time.Minute     // until the response headers arrive
+	requestTimeout = 5 * time.Minute // a whole request, except a download or the event stream
+	stallTimeout   = time.Minute     // a download with no byte arriving
+)
+
 func newClient(cfg Config) *client {
 	c := &client{cfg: cfg}
-	c.http = &http.Client{Transport: authTransport{cfg.Credentials, conn.HTTPTransport()}, CheckRedirect: func(req *http.Request, via []*http.Request) error {
+	t := conn.HTTPTransport()
+	t.ResponseHeaderTimeout = headerTimeout
+	c.http = &http.Client{Timeout: requestTimeout, Transport: authTransport{cfg.Credentials, t}, CheckRedirect: func(req *http.Request, via []*http.Request) error {
 		switch {
 		case len(via) >= 10:
 			return errors.New("jmap: too many redirects")
@@ -64,6 +78,9 @@ func newClient(cfg Config) *client {
 		}
 		return nil
 	}}
+	stream := *c.http
+	stream.Timeout = 0
+	c.stream = &stream
 	return c
 }
 
@@ -86,10 +103,10 @@ func (a authTransport) RoundTrip(r *http.Request) (*http.Response, error) {
 	return a.base.RoundTrip(r)
 }
 
-// do does an HTTP request and checks its status: 401 is ErrAuthFailed, 404
-// ErrNotFound.
-func (c *client) do(req *http.Request) (*http.Response, error) {
-	resp, err := c.http.Do(req)
+// do does an HTTP request on hc and checks its status: 401 is ErrAuthFailed,
+// 404 ErrNotFound.
+func (c *client) do(hc *http.Client, req *http.Request) (*http.Response, error) {
+	resp, err := hc.Do(req)
 	if err != nil {
 		return nil, err
 	}
@@ -116,7 +133,7 @@ func (c *client) sess(ctx context.Context) (*gojmap.Session, gojmap.ID, error) {
 		if err != nil {
 			return nil, "", err
 		}
-		resp, err := c.do(req)
+		resp, err := c.do(c.http, req)
 		if err != nil {
 			return nil, "", err
 		}
@@ -182,7 +199,7 @@ func (c *client) call(ctx context.Context, build func(acct gojmap.ID) []gojmap.M
 		return nil, err
 	}
 	hreq.Header.Set("Content-Type", "application/json")
-	hresp, err := c.do(hreq)
+	hresp, err := c.do(c.http, hreq)
 	if err != nil {
 		return nil, err
 	}
@@ -221,15 +238,18 @@ func (c *client) download(ctx context.Context, blobID gojmap.ID) (io.ReadCloser,
 		"{name}", "message.eml",
 		"{type}", url.QueryEscape("message/rfc822"),
 	).Replace(s.DownloadURL)
+	ctx, cancel := context.WithCancel(ctx)
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, u, nil)
 	if err != nil {
+		cancel()
 		return nil, err
 	}
-	resp, err := c.do(req)
+	resp, err := c.do(c.stream, req)
 	if err != nil {
+		cancel()
 		return nil, err
 	}
-	return resp.Body, nil
+	return conn.StallBody(resp.Body, stallTimeout, cancel), nil
 }
 
 // upload stores raw as a blob and returns its id (RFC 8620 6.1).
@@ -244,7 +264,7 @@ func (c *client) upload(ctx context.Context, raw []byte) (gojmap.ID, error) {
 		return "", err
 	}
 	req.Header.Set("Content-Type", "message/rfc822")
-	resp, err := c.do(req)
+	resp, err := c.do(c.http, req)
 	if err != nil {
 		return "", err
 	}
