@@ -168,7 +168,9 @@ func TestSidebarContextMenuMarkAllRead(t *testing.T) {
 
 func TestSidebarContextMenuAccountItems(t *testing.T) {
 	h, accs := mailHarness(t, nil, "alice@example.com")
-	h.waitMail("loaded", func() bool { return len(h.items()) == 0 && h.app.mail.inboxUnread() == 0 })
+	h.waitMail("loaded", func() bool {
+		return len(h.app.mail.folders[accs[0].ID]) > 0 && len(h.items()) == 0 && h.app.mail.inboxUnread() == 0
+	})
 	name := accountName(accs[0])
 
 	h.until("trash in the sidebar", func() bool { _, ok := h.tt.Find(i18n.T("mail.folder.trash")); return ok }) // the folder list loads after the inbox
@@ -185,7 +187,9 @@ func TestSidebarContextMenuAccountItems(t *testing.T) {
 
 func TestSidebarContextMenuDisabledStates(t *testing.T) {
 	h, accs := mailHarness(t, nil, "alice@example.com")
-	h.waitMail("loaded", func() bool { return len(h.items()) == 0 && h.app.mail.inboxUnread() == 0 })
+	h.waitMail("loaded", func() bool {
+		return len(h.app.mail.folders[accs[0].ID]) > 0 && len(h.items()) == 0 && h.app.mail.inboxUnread() == 0
+	})
 
 	// Right click on Unified Inbox in sidebar: Mark all as read should be disabled
 	// First navigate to Starred so title bar doesn't shadow Unified Inbox

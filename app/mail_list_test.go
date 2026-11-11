@@ -27,7 +27,7 @@ func mailHarness(t *testing.T, opts []coretest.Option, emails ...string) (*harne
 			accs = append(accs, e.AddAccount(t, em))
 		}
 	})
-	h.until("the mail page", func() bool { return h.app.loaded && h.app.route.Page == PageMail })
+	h.until("the mail page", func() bool { return h.app.loaded && h.app.route.Page == PageMail && !h.app.mail.loading })
 	return h, accs
 }
 
