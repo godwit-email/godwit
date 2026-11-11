@@ -524,3 +524,58 @@ func TestLoadOlderStopsListingEarly(t *testing.T) {
 		t.Errorf("ListMessageRequests = %d, want <= 2 (early stop)", reqs)
 	}
 }
+
+func TestPurgeRechecksConfirmAfterRateLimitBackoffAndRescue(t *testing.T) {
+	srv := gmailapitest.Start(t)
+	msgID := srv.AddMessage(backendtest.Message("p@x", "purge me"), "TRASH")
+
+	confirmed := true
+	confirmCalls := 0
+	r := gmailapi.New(gmailapi.Config{
+		BaseURL: srv.URL(),
+		Credentials: func(context.Context) (backend.Credentials, error) {
+			return backend.Credentials{Username: "alice@gmail.com", Token: srv.Token()}, nil
+		},
+		Wait: func(context.Context, time.Duration) error {
+			// UndoPurge cancels the op while waiting out the 429 rate-limit backoff.
+			confirmed = false
+			return nil
+		},
+	})
+	defer r.Close()
+
+	// getMessage succeeds (1st request); DELETE gets 429 (ThrottleNext set right before DELETE? Or throttle 1 after getMessage).
+	// Throttle on DELETE itself by passing At.Folder == "" first to isolate the DELETE retry loop.
+	srv.ThrottleNext(1, http.StatusTooManyRequests, "1")
+	res, err := r.Apply(t.Context(), backend.Purge{
+		At: backend.Location{Ref: backend.MessageRef(msgID), ServerID: msgID},
+		Confirm: func() bool {
+			confirmCalls++
+			return confirmed
+		},
+	})
+	if err != nil {
+		t.Fatalf("Apply(Purge): %v", err)
+	}
+	if res.Outcome != backend.Failed || res.Reason != backend.Cancelled {
+		t.Fatalf("Purge cancelled during backoff = %+v, want Failed(Cancelled)", res)
+	}
+	if confirmCalls < 3 {
+		t.Errorf("Confirm called %d times, want >= 3 (initial, before attempt 1, before attempt 2)", confirmCalls)
+	}
+	if srv.MessageLabels(msgID) == nil {
+		t.Fatal("message was permanently deleted despite Confirm turning false during backoff")
+	}
+
+	// If another client untrashes the message before Purge runs, Purge returns ErrNotFound instead of deleting it.
+	srv.ModifyLabels(msgID, []string{"INBOX"}, []string{"TRASH"})
+	_, err = r.Apply(t.Context(), backend.Purge{
+		At: backend.Location{Folder: "TRASH", Ref: backend.MessageRef(msgID), ServerID: msgID},
+	})
+	if !errors.Is(err, backend.ErrNotFound) {
+		t.Fatalf("Purge of untrashed message = %v, want ErrNotFound", err)
+	}
+	if srv.MessageLabels(msgID) == nil {
+		t.Fatal("untrashed message was permanently deleted")
+	}
+}

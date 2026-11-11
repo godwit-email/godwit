@@ -254,14 +254,19 @@ func retryAfter(hdr string) time.Duration {
 	return 0
 }
 
+var errPurgeCancelled = errors.New("gmailapi: purge cancelled")
+
 // doJSON performs one authenticated Gmail REST API call under the account's
 // serialization lock, backing off on 429 / 403 rateLimitExceeded.
 func (c *client) doJSON(ctx context.Context, method, path string, query url.Values, reqBody, out any) error {
-	_, err := c.doRaw(ctx, method, path, query, reqBody, out)
+	_, err := c.doRaw(ctx, method, path, query, reqBody, out, nil)
 	return err
 }
 
-func (c *client) doRaw(ctx context.Context, method, path string, query url.Values, reqBody, out any) (int, error) {
+func (c *client) doRaw(ctx context.Context, method, path string, query url.Values, reqBody, out any, confirm func() bool) (int, error) {
+	if confirm != nil && !confirm() {
+		return 0, errPurgeCancelled
+	}
 	if c.cfg.Credentials == nil {
 		return 0, fmt.Errorf("gmailapi: %w", backend.ErrAuthFailed)
 	}
@@ -290,6 +295,9 @@ func (c *client) doRaw(ctx context.Context, method, path string, query url.Value
 	}
 
 	for try := 0; ; try++ {
+		if confirm != nil && !confirm() {
+			return 0, errPurgeCancelled
+		}
 		var body io.Reader
 		if payload != nil {
 			body = bytes.NewReader(payload)
@@ -514,8 +522,9 @@ func (c *client) untrashMessage(ctx context.Context, id string) error {
 	return c.doJSON(ctx, http.MethodPost, "/gmail/v1/users/me/messages/"+url.PathEscape(id)+"/untrash", nil, struct{}{}, nil)
 }
 
-func (c *client) deleteMessage(ctx context.Context, id string) error {
-	return c.doJSON(ctx, http.MethodDelete, "/gmail/v1/users/me/messages/"+url.PathEscape(id), nil, nil, nil)
+func (c *client) deleteMessage(ctx context.Context, id string, confirm func() bool) error {
+	_, err := c.doRaw(ctx, http.MethodDelete, "/gmail/v1/users/me/messages/"+url.PathEscape(id), nil, nil, nil, confirm)
+	return err
 }
 
 func (c *client) insertMessage(ctx context.Context, raw []byte, labelIDs []string) (string, error) {

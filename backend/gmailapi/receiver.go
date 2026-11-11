@@ -1039,19 +1039,35 @@ func (r *Receiver) Apply(ctx context.Context, op backend.Op) (backend.Result, er
 		}
 		return backend.Result{Outcome: backend.Done}, nil
 	case backend.Purge:
-		if op.Confirm != nil && !op.Confirm() {
-			return backend.Result{Outcome: backend.Failed, Reason: backend.Cancelled}, nil
-		}
-		id := cmp.Or(op.At.ServerID, string(op.At.Ref))
-		if err := r.c.deleteMessage(ctx, id); err != nil {
-			return mapApplyErr(err)
-		}
-		return backend.Result{Outcome: backend.Done}, nil
+		return r.applyPurge(ctx, op)
 	case backend.Append:
 		return r.applyAppend(ctx, op)
 	default:
 		return backend.Result{}, fmt.Errorf("gmailapi: unknown op %T", op)
 	}
+}
+
+func (r *Receiver) applyPurge(ctx context.Context, op backend.Purge) (backend.Result, error) {
+	if op.Confirm != nil && !op.Confirm() {
+		return backend.Result{Outcome: backend.Failed, Reason: backend.Cancelled}, nil
+	}
+	id := cmp.Or(op.At.ServerID, string(op.At.Ref))
+	if op.At.Folder != "" {
+		m, err := r.c.getMessage(ctx, id, "minimal")
+		if err != nil {
+			return mapApplyErr(err)
+		}
+		if !inFolder(m.LabelIDs, op.At.Folder) {
+			return backend.Result{}, fmt.Errorf("%w: the message left folder %q", backend.ErrNotFound, op.At.Folder)
+		}
+	}
+	if err := r.c.deleteMessage(ctx, id, op.Confirm); err != nil {
+		if errors.Is(err, errPurgeCancelled) {
+			return backend.Result{Outcome: backend.Failed, Reason: backend.Cancelled}, nil
+		}
+		return mapApplyErr(err)
+	}
+	return backend.Result{Outcome: backend.Done}, nil
 }
 
 func (r *Receiver) applyFlags(ctx context.Context, op backend.SetFlags) (backend.Result, error) {
