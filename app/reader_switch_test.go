@@ -203,3 +203,35 @@ func TestReaderSwitchDropsKeptThreadsReads(t *testing.T) {
 		t.Fatal("a page was made for the kept thread after it went")
 	}
 }
+
+// The kept thread's pages are heard while they show: a link opens, a height
+// is taken; once the thread goes, its closed pages are not (#682).
+func TestReaderSwitchKeptPagesCallBack(t *testing.T) {
+	h, accs := mailHarness(t, nil, "alice@example.com")
+	a := h.deliverOne(accs[0], coretest.Msg("bob@example.com", accs[0].Email, "First thread", "first body"))
+	b := h.deliverOne(accs[0], coretest.Msg("carol@example.com", accs[0].Email, "Second thread", "second body"))
+	r := h.app.mail.reader
+	h.openThread(a.ThreadID)
+	va := h.seeBody(a.ID)
+	switchTo(h, b.ThreadID)
+	vb := unseenBody(h, b.ID)
+	kept := r.prev
+
+	h.post(func() {
+		h.app.BodyHeight(va, a.ID, 321)
+		h.app.BodyLink(va, "https://example.com/kept")
+	})
+	h.drain()
+	if kept.bodies[a.ID].height != 321 || !h.app.linkOpen || h.app.link != "https://example.com/kept" {
+		t.Fatalf("kept page unheard: height %d, link %v %q", kept.bodies[a.ID].height, h.app.linkOpen, h.app.link)
+	}
+	h.click("取消")
+
+	h.post(func() { h.app.BodyHeight(vb, b.ID, 120) })
+	h.until("the kept thread gone", func() bool { return r.prev == nil })
+	h.post(func() { h.app.BodyLink(va, "https://example.com/gone") })
+	h.drain()
+	if h.app.linkOpen {
+		t.Fatal("a closed page's link opened")
+	}
+}

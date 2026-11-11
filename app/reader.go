@@ -2089,10 +2089,23 @@ func (r *reader) trustSender(from, addr string) {
 // while view is still a page the reader shows: one queued before its
 // page was closed, or replaced, is dropped.
 
+// readerOf is the reader whose bodies hold page v: the one shown, or the
+// thread kept on screen while a switch's body builds (#667).
+func (a *App) readerOf(v ui.NativeWebView) *reader {
+	if p := a.mail.reader.prev; p != nil {
+		for _, b := range p.bodies {
+			if b.view != nil && b.view == v {
+				return p
+			}
+		}
+	}
+	return a.mail.reader
+}
+
 // BodyHeight is told the height, in CSS pixels, of message's body as its
 // page laid it out: its element takes it.
 func (a *App) BodyHeight(view ui.NativeWebView, message int64, px int) {
-	if b := a.mail.reader.shown(view, message); b != nil {
+	if b := a.readerOf(view).shown(view, message); b != nil {
 		b.height = px
 		b.glass = [2]int{-1, -1} // the page listens now: what it was told before it loaded was dropped
 		logBodyTiming(&b.timing, message)
@@ -2102,36 +2115,36 @@ func (a *App) BodyHeight(view ui.NativeWebView, message int64, px int) {
 // BodyLink opens a link of a body's page as one of the native reader's:
 // http(s) after the confirmation, mailto in a compose window.
 func (a *App) BodyLink(view ui.NativeWebView, link string) {
-	if a.mail.reader.current(view) {
+	if a.readerOf(view).current(view) {
 		a.openLink(link)
 	}
 }
 
 // BodyNavigate goes back or forward for a body's page (⌘[ and ⌘]).
 func (a *App) BodyNavigate(view ui.NativeWebView, dir int) {
-	if a.mail.reader.current(view) {
+	if a.readerOf(view).current(view) {
 		a.Navigate(dir)
 	}
 }
 
 // BodySearch opens the search palette for a body's page (⌘F, ⌘K).
 func (a *App) BodySearch(view ui.NativeWebView) {
-	if a.mail.reader.current(view) {
+	if a.readerOf(view).current(view) {
 		a.openPalette()
 	}
 }
 
 // BodySave saves the message of a body's page (⌘S).
 func (a *App) BodySave(view ui.NativeWebView) {
-	if a.mail.reader.focusView(view) {
-		a.mail.reader.saveMail()
+	if r := a.readerOf(view); r.focusView(view) {
+		r.saveMail()
 	}
 }
 
 // BodyPrint prints the message of a body's page (⌘P).
 func (a *App) BodyPrint(view ui.NativeWebView) {
-	if a.mail.reader.focusView(view) {
-		a.mail.reader.printMail()
+	if r := a.readerOf(view); r.focusView(view) {
+		r.printMail()
 	}
 }
 
@@ -2139,7 +2152,7 @@ func (a *App) BodyPrint(view ui.NativeWebView) {
 // the start (ReaderBody.Cut), for the truncated notice, and has the remote
 // images (Remote), which hides their notice.
 func (a *App) BodyBuilt(view ui.NativeWebView, message int64, cut, remote bool) {
-	if b := a.mail.reader.shown(view, message); b != nil {
+	if b := a.readerOf(view).shown(view, message); b != nil {
 		b.cut, b.remote = cut, remote
 		b.timing.builtDone()
 		if remote {
@@ -2151,7 +2164,7 @@ func (a *App) BodyBuilt(view ui.NativeWebView, message int64, cut, remote bool) 
 // BodyImagesFailed is told n of message's images could not load:
 // the notice offers a retry.
 func (a *App) BodyImagesFailed(view ui.NativeWebView, message int64, n int) {
-	if b := a.mail.reader.shown(view, message); b != nil {
+	if b := a.readerOf(view).shown(view, message); b != nil {
 		b.imgFailed = n
 	}
 }
@@ -2159,7 +2172,7 @@ func (a *App) BodyImagesFailed(view ui.NativeWebView, message int64, n int) {
 // BodyFailed is told reading message's body with its remote images
 // failed: the notice offers a retry.
 func (a *App) BodyFailed(view ui.NativeWebView, message int64, err error) {
-	if b := a.mail.reader.shown(view, message); b != nil && b.allow {
+	if b := a.readerOf(view).shown(view, message); b != nil && b.allow {
 		b.allowErr = err
 	}
 }
