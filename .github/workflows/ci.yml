@@ -23,7 +23,7 @@ jobs:
   # Keep the workflow/check names present; skip the expensive client jobs
   # when the only changed paths are in the independently checked site/.
   changes:
-    runs-on: [self-hosted, linux, x64, godwit-racknerd-us]
+    runs-on: [self-hosted, linux, x64]
     outputs:
       client: ${{ steps.paths.outputs.client }}
     steps:
@@ -69,7 +69,7 @@ jobs:
       matrix:
         include:
           - name: ubuntu-latest
-            os: [self-hosted, linux, x64, godwit-rfc-jp]
+            os: [self-hosted, linux, x64]
           - name: macos-latest
             os: macos-latest
           - name: windows-latest
@@ -151,7 +151,7 @@ jobs:
       matrix:
         include:
           - shard: 0
-            os: [self-hosted, linux, x64, godwit-greencloud-hk]
+            os: [self-hosted, linux, x64]
           - shard: 1
             os: ubuntu-latest
           - shard: 2
@@ -220,7 +220,7 @@ jobs:
       matrix:
         include:
           - name: ubuntu-latest
-            os: [self-hosted, linux, x64, godwit-racknerd-us]
+            os: [self-hosted, linux, x64]
           - name: macos-latest
             os: macos-latest
     runs-on: ${{ matrix.os }}
@@ -278,7 +278,7 @@ jobs:
   web:
     needs: changes
     if: needs.changes.outputs.client == 'true'
-    runs-on: [self-hosted, linux, x64, godwit-racknerd-us]
+    runs-on: [self-hosted, linux, x64]
     steps:
       - uses: actions/checkout@v7
       - uses: jdx/mise-action@v5
