@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"log/slog"
 	"maps"
 	"slices"
 	"strconv"
@@ -396,8 +397,10 @@ func (r *Receiver) cutoff(ctx context.Context, folder backend.FolderRef, w backe
 }
 
 // each fetches the items ids, in batches, with their MIME content if mime,
-// and calls do with each one still there: one gone since is skipped, as a
-// later page or round says it is gone.
+// and calls do with each one the server gives: one gone since is skipped, as
+// a later page or round says it is gone, and one the server refuses or sends
+// unreadable is skipped and logged, so it cannot hold its folder's cursor.
+// A refusal that is only for now (busy, transient) fails the round instead.
 func (r *Receiver) each(ctx context.Context, ids []string, mime bool, do func(fetched)) error {
 	batch := getBatch
 	if !mime {
@@ -415,7 +418,14 @@ func (r *Receiver) each(ctx context.Context, ids []string, mime bool, do func(fe
 				continue
 			}
 			if it.err != nil {
-				return it.err
+				var re *ResponseError
+				if errors.As(it.err, &re) && (re.Code == "ErrorServerBusy" || slices.Contains(transient, re.Code)) {
+					return it.err // for now: the round is tried again from the same cursor
+				}
+				// The server will not give this one, now or next round: without
+				// it the page still comes in and the cursor moves on.
+				slog.Default().Warn("ews: skipped an item the server could not give", "err", it.err)
+				continue
 			}
 			do(it)
 		}

@@ -38,6 +38,35 @@ func (s ewsServer) Deliver(_ *testing.T, folder string, raw []byte) { s.EWS.Deli
 func (s ewsServer) Reset(_ *testing.T, folder string)               { s.EWS.Reset(folder) }
 func (s ewsServer) RejectAuth(*testing.T)                           { s.EWS.RejectAuth() }
 
+// An item Exchange cannot give is skipped: the rest of its page comes in and
+// the folder's cursor moves on, so later mail still arrives.
+func TestEWSUnfetchableItemSkipped(t *testing.T) {
+	s := testmail.StartEWS(t)
+	bad := s.Deliver("INBOX", backendtest.Message("bad@example.com", "bad"))
+	good := s.Deliver("INBOX", backendtest.Message("good@example.com", "good"))
+	s.FailItem(bad, "ErrorMimeContentConversionFailed")
+
+	var l local
+	appeared := func(pages []backend.Page) map[string]bool {
+		out := map[string]bool{}
+		for _, c := range changes(pages) {
+			if m, ok := c.(backend.MessageAppeared); ok {
+				out[string(m.Ref)] = true
+			}
+		}
+		return out
+	}
+	first := appeared(l.sync(t, s))
+	if !first[good] || first[bad] {
+		t.Errorf("first round appeared %v; want %s and not %s", first, good, bad)
+	}
+	later := s.Deliver("INBOX", backendtest.Message("later@example.com", "later"))
+	second := appeared(l.sync(t, s))
+	if !second[later] {
+		t.Errorf("second round appeared %v; want %s: the cursor did not move past the refused item", second, later)
+	}
+}
+
 func TestEWSBackendContract(t *testing.T) {
 	backendtest.Run(t, func(t *testing.T) backendtest.Server { return ewsServer{testmail.StartEWS(t)} })
 }
