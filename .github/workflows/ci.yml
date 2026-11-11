@@ -107,14 +107,32 @@ jobs:
         env:
           CGO_ENABLED: "0"
       - name: test (no cgo)
-        # Keep wall-clock performance checks from competing with other packages.
-        run: go test -p 1 -count=1 ./...
+        shell: bash
         env:
           CGO_ENABLED: "0"
+        run: |
+          go test -count=1 $(go list ./... | grep -vE '/godwit/(app|core|internal/richtext)$')
+          # Keep wall-clock performance checks from competing with other packages.
+          go test -p 1 -count=1 ./internal/richtext
+          # core and app have no t.Parallel; run 4 worker processes so all cores stay busy.
+          for pkg in ./core ./app; do
+            bin="$RUNNER_TEMP/$(basename "$pkg").test.exe"
+            go test -c -o "$bin" "$pkg"
+            tests=$("$bin" -test.list . | tr -d '\r' | grep '^Test')
+            pids=()
+            for w in 0 1 2 3; do
+              pat=$(printf '%s\n' "$tests" | awk -v n=4 -v i="$w" 'NR % n == i % n' | paste -sd '|' -)
+              (cd "$pkg" && "$bin" -test.count=1 -test.timeout=20m -test.run="^($pat)\$") &
+              pids+=($!)
+            done
+            rc=0
+            for pid in "${pids[@]}"; do wait "$pid" || rc=1; done
+            ((rc == 0)) || exit 1
+          done
 
-  # The UI suite (app) runs its tests one after another and renders every
-  # frame under race instrumentation, ~15 min on one runner; split it by test.
-  # Shard 0 races every other package.
+  # The UI suite (app) and core run their tests one after another in a single
+  # process; split app across shards and run 4 worker processes per runner.
+  # Shard 0 races every other package and core.
   race:
     needs: changes
     if: needs.changes.outputs.client == 'true'
@@ -142,11 +160,25 @@ jobs:
           APP_SHARDS: 4
         run: |
           if [[ "$SHARD" == 0 ]]; then
-            go test -race -count=1 -timeout 30m $(go list ./... | grep -v '/godwit/app$')
-            exit
+            go test -race -count=1 -timeout 30m $(go list ./... | grep -vE '/godwit/(app|core)$')
+            pkg=./core
+            shards=1
+          else
+            pkg=./app
+            shards=$APP_SHARDS
           fi
-          tests=$(go test -list . ./app | grep '^Test' | awk -v n="$APP_SHARDS" -v i="$SHARD" 'NR % n == i % n' | paste -sd '|' -)
-          go test -race -count=1 -timeout 20m -run "^($tests)\$" ./app
+          bin="$RUNNER_TEMP/$(basename "$pkg").test"
+          go test -race -c -o "$bin" "$pkg"
+          tests=$("$bin" -test.list . | grep '^Test' | awk -v n="$shards" -v i="$SHARD" 'NR % n == i % n')
+          pids=()
+          for w in 0 1 2 3; do
+            pat=$(printf '%s\n' "$tests" | awk -v n=4 -v i="$w" 'NR % n == i % n' | paste -sd '|' -)
+            (cd "$pkg" && "$bin" -test.count=1 -test.timeout=20m -test.run="^($pat)\$") &
+            pids+=($!)
+          done
+          rc=0
+          for pid in "${pids[@]}"; do wait "$pid" || rc=1; done
+          exit "$rc"
 
   # Windows packages in the msix job below, which builds it anyway.
   package:
