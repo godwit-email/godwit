@@ -67,6 +67,38 @@ func TestEWSUnfetchableItemSkipped(t *testing.T) {
 	}
 }
 
+// A non-item GetItem refusal (such as ErrorADUnavailable) fails the folder
+// without advancing its SyncState, so the message arrives once the outage ends.
+func TestEWSTemporaryGetItemFailureHoldsCursor(t *testing.T) {
+	s := testmail.StartEWS(t)
+	var l local
+	l.sync(t, s)
+	inbox := l.ref(t, "Inbox")
+	before := l.states[inbox].Cursor
+
+	msg := s.Deliver("INBOX", backendtest.Message("ad@example.com", "ad"))
+	other := s.Deliver("Archive", backendtest.Message("ok@example.com", "ok"))
+	s.FailItem(msg, "ErrorADUnavailable")
+
+	pages, _, err := l.runErr(t, s, backend.SyncRequest{})
+	var fe *backend.FolderError
+	if !errors.As(err, &fe) || fe.Folder != inbox || !strings.Contains(err.Error(), "ErrorADUnavailable") {
+		t.Fatalf("Sync = %v, want FolderError for Inbox with ErrorADUnavailable", err)
+	}
+	if got := l.states[inbox].Cursor; got != before {
+		t.Fatalf("Inbox cursor moved from %q to %q on ErrorADUnavailable", before, got)
+	}
+	if !l.held[backend.MessageRef(other)] || l.held[backend.MessageRef(msg)] {
+		t.Fatalf("held after partial failure = %v (pages %d), want Archive item only", l.held, len(pages))
+	}
+
+	s.FailItem(msg, "")
+	l.sync(t, s)
+	if !l.held[backend.MessageRef(msg)] {
+		t.Errorf("held after recovery = %v; want %s once ErrorADUnavailable cleared", l.held, msg)
+	}
+}
+
 func TestEWSBackendContract(t *testing.T) {
 	backendtest.Run(t, func(t *testing.T) backendtest.Server { return ewsServer{testmail.StartEWS(t)} })
 }
@@ -144,6 +176,15 @@ func (l *local) sync(t *testing.T, s *testmail.EWS) []backend.Page {
 // from l's cursors and returns its pages and more.
 func (l *local) run(t *testing.T, s *testmail.EWS, req backend.SyncRequest) ([]backend.Page, bool) {
 	t.Helper()
+	pages, more, err := l.runErr(t, s, req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return pages, more
+}
+
+func (l *local) runErr(t *testing.T, s *testmail.EWS, req backend.SyncRequest) ([]backend.Page, bool, error) {
+	t.Helper()
 	if l.states == nil {
 		l.states, l.names = map[backend.FolderRef]backend.FolderState{}, map[backend.FolderRef]string{}
 	}
@@ -176,10 +217,7 @@ func (l *local) run(t *testing.T, s *testmail.EWS, req backend.SyncRequest) ([]b
 		maps.Copy(l.states, p.Folders)
 		return nil
 	})
-	if err != nil {
-		t.Fatal(err)
-	}
-	return pages, more
+	return pages, more, err
 }
 
 func (l *local) ref(t *testing.T, name string) backend.FolderRef {

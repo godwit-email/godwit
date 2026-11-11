@@ -396,11 +396,24 @@ func (r *Receiver) cutoff(ctx context.Context, folder backend.FolderRef, w backe
 	return nth[0].Received, nil
 }
 
+// unreadableItem are the GetItem ResponseCodes where the item itself cannot be
+// rendered or read (not a server, AD or batch failure): retrying the folder
+// from the same cursor would hit the same item forever.
+var unreadableItem = []string{
+	"ErrorMimeContentConversionFailed",
+	"ErrorItemCorrupt",
+	"ErrorCorruptData",
+	"ErrorItemPropertyRequestFailed",
+	"ErrorVirusDetected",
+	"ErrorVirusMessageDeleted",
+}
+
 // each fetches the items ids, in batches, with their MIME content if mime,
 // and calls do with each one the server gives: one gone since is skipped, as
-// a later page or round says it is gone, and one the server refuses or sends
-// unreadable is skipped and logged, so it cannot hold its folder's cursor.
-// A refusal that is only for now (busy, transient) fails the round instead.
+// a later page or round says it is gone, and one whose item content itself is
+// permanently unreadable is skipped and logged, so it cannot hold its folder's
+// cursor. Any other ResponseError (server, AD, connection or batch failure)
+// fails the round so the folder retries from the same cursor.
 func (r *Receiver) each(ctx context.Context, ids []string, mime bool, do func(fetched)) error {
 	batch := getBatch
 	if !mime {
@@ -419,11 +432,11 @@ func (r *Receiver) each(ctx context.Context, ids []string, mime bool, do func(fe
 			}
 			if it.err != nil {
 				var re *ResponseError
-				if errors.As(it.err, &re) && (re.Code == "ErrorServerBusy" || slices.Contains(transient, re.Code)) {
-					return it.err // for now: the round is tried again from the same cursor
+				if errors.As(it.err, &re) && !slices.Contains(unreadableItem, re.Code) {
+					return it.err // server, AD or batch failure: hold the folder's cursor for retry
 				}
-				// The server will not give this one, now or next round: without
-				// it the page still comes in and the cursor moves on.
+				// The item itself cannot be rendered or decoded, now or next
+				// round: without it the page still comes in and the cursor moves on.
 				slog.Default().Warn("ews: skipped an item the server could not give", "err", it.err)
 				continue
 			}
