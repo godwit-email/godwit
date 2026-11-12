@@ -694,7 +694,12 @@ func (v *addressBooksView) addDialogView(c *ui.Context) {
 		}
 		_, urlOK := v.startURL()
 		incomplete := strings.TrimSpace(v.username) == "" || v.password == "" || !urlOK
-		kit.Button(c, i18n.T("onboarding.connect"), kit.ButtonOpts{
+		label := i18n.T("onboarding.connect")
+		if v.busy { // discovery takes a while: show it is under way
+			label = i18n.T("onboarding.check.connecting")
+			kit.Spinner(c).Size(theme.IconMd, theme.IconMd).AlignSelf(ui.Center)
+		}
+		kit.Button(c, label, kit.ButtonOpts{
 			Disabled: v.busy || incomplete,
 		}).OnClick(v.submitPasswordAdd)
 	}
