@@ -23,6 +23,10 @@ type API interface {
 	CheckAccount(ctx context.Context, in core.AccountInput) (core.CheckReport, error)
 	DetectProvider(ctx context.Context, email string) (auth.Provider, auth.Source, error)
 	ExportAccounts(ctx context.Context) ([]byte, error)
+	PreviewAccountImport(ctx context.Context, data []byte) (core.AccountImportPreview, error)
+	ImportAccounts(ctx context.Context, data []byte) (core.AccountImportResult, error)
+	RemoveAccount(ctx context.Context, id int64) error
+	UpdatePassword(ctx context.Context, id int64, password string) error
 	ListAccounts(ctx context.Context) ([]core.Account, error)
 	ListFolders(ctx context.Context, accountID int64) ([]core.Folder, error)
 	ListThreads(ctx context.Context, v core.View, cursor string, limit int) (core.ThreadPage, error)
@@ -220,6 +224,22 @@ func (r *Remote) DetectProvider(ctx context.Context, email string) (auth.Provide
 
 func (r *Remote) ExportAccounts(ctx context.Context) ([]byte, error) {
 	return call[[]byte](r, ctx, "ExportAccounts")
+}
+
+func (r *Remote) PreviewAccountImport(ctx context.Context, data []byte) (core.AccountImportPreview, error) {
+	return call[core.AccountImportPreview](r, ctx, "PreviewAccountImport", data)
+}
+
+func (r *Remote) ImportAccounts(ctx context.Context, data []byte) (core.AccountImportResult, error) {
+	return call[core.AccountImportResult](r, ctx, "ImportAccounts", data)
+}
+
+func (r *Remote) RemoveAccount(ctx context.Context, id int64) error {
+	return r.C.Call(ctx, "RemoveAccount", nil, id)
+}
+
+func (r *Remote) UpdatePassword(ctx context.Context, id int64, password string) error {
+	return r.C.Call(ctx, "UpdatePassword", nil, id, password)
 }
 
 func (r *Remote) ListAccounts(ctx context.Context) ([]core.Account, error) {

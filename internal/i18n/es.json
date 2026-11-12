@@ -2245,5 +2245,20 @@
   "feature_reason_graph_folder_not_label": "En Outlook una carpeta no es una etiqueta: al eliminarla también se borra su correo.",
   "feature_reason_graph_no_all_mail": "Outlook no tiene «Todos»: archivar mueve el correo a la carpeta Archivo.",
   "feature_reason_graph_folders_pending": "La gestión de carpetas mediante Microsoft Graph aún no está disponible.",
-  "feature_reason_graph_no_push": "Las aplicaciones de escritorio no pueden recibir webhooks de Microsoft Graph; Godwit comprueba cada minuto."
+  "feature_reason_graph_no_push": "Las aplicaciones de escritorio no pueden recibir webhooks de Microsoft Graph; Godwit comprueba cada minuto.",
+  "error_account_exists": "Ya existe una cuenta con esta dirección de correo en otro protocolo.",
+  "error_bad_account_export": "Este archivo no es una exportación de cuentas de Godwit válida.",
+  "error_unsupported_export_version": "Este archivo de exportación usa una versión de formato que esta versión de Godwit no reconoce.",
+  "settings_import_accounts": "Importar cuentas…",
+  "settings_account_import_button": "Importar…",
+  "settings_account_import_confirm": "Importar",
+  "settings_account_import_desc": "Revisa los servidores de correo a los que se conectará cada cuenta. Las contraseñas y los tokens no están incluidos; deberás volver a autorizar cada cuenta.",
+  "settings_account_import_done": "{arg1, plural, one {Se importó {arg1, number, ::group-off} cuenta} many {Se importaron {arg1, number, ::group-off} cuentas} other {Se importaron {arg1, number, ::group-off} cuentas}}",
+  "settings_account_import_empty": "Este archivo no contiene cuentas para importar.",
+  "settings_account_import_existing": "Ya existe, se omite",
+  "settings_account_import_help": "Añade cuentas exportadas sin credenciales; cada una pedirá iniciar sesión de nuevo",
+  "settings_account_import_row": "Importar configuración de cuentas desde un archivo",
+  "settings_account_import_skipped": "{arg1, number, ::group-off} ya existían, omitidas",
+  "settings_account_import_title": "Importar cuentas",
+  "settings_account_reauth_imported": "Esta cuenta se importó sin credenciales. Autorízala para empezar a sincronizar."
 }

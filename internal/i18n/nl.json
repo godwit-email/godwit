@@ -2245,5 +2245,20 @@
   "feature_reason_graph_folder_not_label": "In Outlook is een map geen label: als je deze verwijdert, wordt ook de e-mail erin verwijderd.",
   "feature_reason_graph_no_all_mail": "Outlook heeft geen 'Alle e-mail': archiveren verplaatst berichten naar de map Archief.",
   "feature_reason_graph_folders_pending": "Mappen beheren via Microsoft Graph is nog niet beschikbaar.",
-  "feature_reason_graph_no_push": "Desktop-apps kunnen geen Microsoft Graph-webhooks ontvangen; Godwit controleert daarom elke minuut."
+  "feature_reason_graph_no_push": "Desktop-apps kunnen geen Microsoft Graph-webhooks ontvangen; Godwit controleert daarom elke minuut.",
+  "error_account_exists": "Er bestaat al een account met dit e-mailadres op een ander protocol.",
+  "error_bad_account_export": "Dit bestand is geen geldige Godwit-accountexport.",
+  "error_unsupported_export_version": "Dit accountexportbestand gebruikt een formaatversie die deze versie van Godwit niet herkent.",
+  "settings_import_accounts": "Accounts importeren…",
+  "settings_account_import_button": "Importeren…",
+  "settings_account_import_confirm": "Importeren",
+  "settings_account_import_desc": "Controleer de mailservers waarmee elk account verbinding maakt. Wachtwoorden en tokens zijn niet inbegrepen; elk account moet opnieuw worden geautoriseerd.",
+  "settings_account_import_done": "{arg1, plural, one {{arg1, number, ::group-off} account geïmporteerd} other {{arg1, number, ::group-off} accounts geïmporteerd}}",
+  "settings_account_import_empty": "Dit bestand bevat geen accounts om te importeren.",
+  "settings_account_import_existing": "Bestaat al, overgeslagen",
+  "settings_account_import_help": "Voegt geëxporteerde accounts toe zonder inloggegevens; elk account vraagt opnieuw om aanmelding",
+  "settings_account_import_row": "Accountinstellingen uit een bestand importeren",
+  "settings_account_import_skipped": "{arg1, number, ::group-off} bestonden al, overgeslagen",
+  "settings_account_import_title": "Accounts importeren",
+  "settings_account_reauth_imported": "Dit account is zonder inloggegevens geïmporteerd. Autoriseer het om te beginnen met synchroniseren."
 }

@@ -2245,5 +2245,20 @@
   "feature_reason_graph_folder_not_label": "В Outlook папка — это не ярлык: при её удалении удаляются и письма в ней.",
   "feature_reason_graph_no_all_mail": "В Outlook нет папки «Вся почта»: архивирование перемещает письма в папку «Архив».",
   "feature_reason_graph_folders_pending": "Управление папками через Microsoft Graph пока недоступно.",
-  "feature_reason_graph_no_push": "Настольные приложения не могут принимать вебхуки Microsoft Graph; Godwit проверяет почту каждую минуту."
+  "feature_reason_graph_no_push": "Настольные приложения не могут принимать вебхуки Microsoft Graph; Godwit проверяет почту каждую минуту.",
+  "error_account_exists": "Аккаунт с этим адресом электронной почты уже добавлен с другим протоколом.",
+  "error_bad_account_export": "Этот файл не является корректным экспортом аккаунтов Godwit.",
+  "error_unsupported_export_version": "Этот файл экспорта использует версию формата, которую эта версия Godwit не поддерживает.",
+  "settings_import_accounts": "Импортировать аккаунты…",
+  "settings_account_import_button": "Импортировать…",
+  "settings_account_import_confirm": "Импортировать",
+  "settings_account_import_desc": "Проверьте почтовые серверы, к которым будет подключаться каждый аккаунт. Пароли и токены не включены — каждый аккаунт потребуется авторизовать заново.",
+  "settings_account_import_done": "Импортировано аккаунтов: {arg1, number, ::group-off}",
+  "settings_account_import_empty": "В этом файле нет аккаунтов для импорта.",
+  "settings_account_import_existing": "Уже есть, пропущен",
+  "settings_account_import_help": "Добавляет экспортированные аккаунты без учётных данных; для каждого потребуется войти заново",
+  "settings_account_import_row": "Импортировать настройки аккаунтов из файла",
+  "settings_account_import_skipped": "Уже существовало, пропущено: {arg1, number, ::group-off}",
+  "settings_account_import_title": "Импорт аккаунтов",
+  "settings_account_reauth_imported": "Этот аккаунт импортирован без учётных данных. Авторизуйте его, чтобы начать синхронизацию."
 }
