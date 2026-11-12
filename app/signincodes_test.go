@@ -16,7 +16,7 @@ func TestSignInCodesArrivalAndCopy(t *testing.T) {
 	h.app.refreshSignInCodes()
 	h.until("initial code scan", func() bool { return h.app.codesReady })
 	h.env.Deliver(t, acc.ID, "INBOX", coretest.Msg("Login <login@example.com>", acc.Email, "Your verification code: aB0123", "Your verification code: aB0123"))
-	h.until("the mail arrival", func() bool { return h.app.newMail[acc.ID] != nil })
+	h.until("the mail arrival", func() bool { return h.newMail(acc.ID) != nil })
 	h.advance(notifyWait)
 	h.until("the recent code", func() bool { return len(h.plat.codes) == 1 && len(h.plat.codeBanners) == 1 })
 	if got := h.plat.codes[0].Code; got != "aB0123" {
@@ -105,7 +105,7 @@ func TestSignInCodesInOneBatchKeepOtherNotifications(t *testing.T) {
 	h.until("initial scan", func() bool { return h.app.codesReady && !h.app.codesLoading })
 	h.env.Deliver(t, acc.ID, "INBOX", coretest.Msg("first@example.com", acc.Email, "Verification code: 111111", ""))
 	h.env.Deliver(t, acc.ID, "INBOX", coretest.Msg("second@example.com", acc.Email, "Verification code: 222222", ""))
-	h.until("both arrivals", func() bool { return h.app.newMail[acc.ID] != nil && len(h.app.newMail[acc.ID].msgs) == 2 })
+	h.until("both arrivals", func() bool { return h.newMail(acc.ID) != nil && len(h.newMail(acc.ID).msgs) == 2 })
 	notes := h.notesAfter(1)
 	h.until("the banner", func() bool { return len(h.plat.codeBanners) == 1 })
 	if len(notes) != 1 || notes[0].MessageID == h.plat.codeBanners[0].MessageID {

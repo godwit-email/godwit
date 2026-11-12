@@ -39,6 +39,7 @@ type harness struct {
 
 	sock     string           // the backend's data directory in socket mode; "" in process
 	ui       *uiclient.Client // the App's connection in socket mode
+	notifier *MailNotifier    // the backend's in socket mode
 	received atomic.Int64     // MessageReceived events the backend's notifier took
 
 	mu    sync.Mutex
@@ -143,6 +144,7 @@ func (h *harness) serve() {
 	t.Cleanup(func() { srv.Close() })
 
 	n := NewMailNotifier(MailNotifierDeps{Svc: h.env.Svc, Sink: h.plat, Clock: h.clock, Foreground: h.env.Svc.UIForeground, Logf: h.logf})
+	h.notifier = n
 	ch, unsub := h.env.Svc.Subscribe()
 	done := make(chan struct{})
 	go func() {
