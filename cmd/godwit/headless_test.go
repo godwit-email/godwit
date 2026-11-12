@@ -976,7 +976,9 @@ func TestHeadlessTrayActions(t *testing.T) {
 }
 
 // Under 一直继续 the tray offers 退出并停止收信 and its plain Quit asks the
-// interface to quit, the backend staying; the setting takes effect at once.
+// interface to quit, the backend staying; with no interface connected, plain
+// Quit has nothing else to quit and stops the backend as 退出并停止收信 does.
+// The setting takes effect at once.
 func TestHeadlessTrayQuitUnderAlways(t *testing.T) {
 	sink := &recordingSink{supported: true}
 	withHeadlessDesktop(t, func() *headlessDesktop {
@@ -1043,14 +1045,14 @@ func TestHeadlessTrayQuitUnderAlways(t *testing.T) {
 	waitCond(t, "退出并停止收信 hidden", func() bool { return !sink.QuitStop() })
 	setReceive(core.BackgroundReceiveAlways)
 	waitCond(t, "退出并停止收信 shown again", sink.QuitStop)
-	sink.Actions().quitStop()
+	sink.Actions().quit() // the interface closed above
 	select {
 	case code := <-done:
 		if code != 0 {
 			t.Fatalf("exit code %d; stderr %q", code, stderr.String())
 		}
 	case <-time.After(15 * time.Second):
-		t.Fatal("退出并停止收信 left the backend running")
+		t.Fatal("Quit with no interface connected left the backend running")
 	}
 }
 

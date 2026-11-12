@@ -491,12 +491,13 @@ func (t *backendTray) Start() {
 	t.scheduleCodesTimer()
 }
 
-// quit is the tray's Quit: under 一直继续 (BackgroundReceiveAlways) it only
-// asks the interface to quit, receiving going on; otherwise it is onQuit.
+// quit is the tray's Quit: under 一直继续 (BackgroundReceiveAlways) with an
+// interface connected it only asks the interface to quit, receiving going on;
+// otherwise (nothing else to quit) it is onQuit, as 退出并停止收信 is.
 func (t *backendTray) quit() {
 	go func() {
 		st, err := t.svc.GetSettings(t.ctx)
-		if err == nil && st.BackgroundReceive == core.BackgroundReceiveAlways {
+		if err == nil && st.BackgroundReceive == core.BackgroundReceiveAlways && t.svc.UIConnected() {
 			t.svc.Publish(events.Event{Type: events.QuitRequested})
 			return
 		}
