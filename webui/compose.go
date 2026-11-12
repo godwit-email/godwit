@@ -49,7 +49,7 @@ func (s *session) adopt(d core.Draft) (editable string) {
 // through ComposePage.
 type Compose struct {
 	mu       sync.Mutex
-	svc      *core.Service
+	svc      Service
 	sessions map[int]*session
 	follows  map[int]*follow // each window's Wit subscription
 	closed   func(winID, gen int, saved bool)
@@ -60,7 +60,7 @@ type Compose struct {
 func NewCompose() *Compose { return &Compose{sessions: map[int]*session{}, follows: map[int]*follow{}} }
 
 // SetService gives Compose the service, once the data is open.
-func (c *Compose) SetService(svc *core.Service) {
+func (c *Compose) SetService(svc Service) {
 	c.mu.Lock()
 	c.svc = svc
 	c.mu.Unlock()
@@ -151,7 +151,7 @@ func (c *Compose) finish(winID int) {
 	}
 }
 
-func (c *Compose) get(winID int) (*core.Service, *session, error) {
+func (c *Compose) get(winID int) (Service, *session, error) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	if c.svc == nil {
@@ -197,7 +197,7 @@ func NewComposePage(c *Compose, d PageDeps) *ComposePage {
 }
 
 // open is the calling window and its session, locked: the caller unlocks it.
-func (p *ComposePage) open(ctx context.Context) (int, *core.Service, *session, error) {
+func (p *ComposePage) open(ctx context.Context) (int, Service, *session, error) {
 	id, ok := p.d.WinOf(ctx)
 	if !ok {
 		return 0, nil, nil, ErrNoDraft
@@ -465,7 +465,7 @@ func (p *ComposePage) Closed(ctx context.Context, gen int, saved bool) error {
 var conflict = Change{Conflict: true, Attachments: []Attachment{}}
 
 // changeOf is d's state after a change.
-func changeOf(ctx context.Context, svc *core.Service, d core.Draft) (Change, error) {
+func changeOf(ctx context.Context, svc Service, d core.Draft) (Change, error) {
 	_, _, sig := mail.SplitDraft(d.HTML)
 	shown, err := svc.SignatureShown(ctx, sig)
 	return Change{Revision: d.Revision, Attachments: attachments(d), SignatureHTML: shown,

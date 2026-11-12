@@ -122,7 +122,7 @@ type OAuthFlow interface {
 	Cancel(flowID string)
 }
 
-type serviceOAuth struct{ svc *core.Service }
+type serviceOAuth struct{ svc Service }
 
 func (o serviceOAuth) Begin(ctx context.Context, provider, loginHint string, client core.OAuthClient) (string, string, error) {
 	return o.svc.BeginOAuth(ctx, provider, loginHint, client)
@@ -135,7 +135,7 @@ func (o serviceOAuth) Cancel(flowID string) { o.svc.CancelOAuth(flowID) }
 // Deps are the App's collaborators. Post runs a function on the UI thread
 // (win.Update in production). Clock and OAuth default to the real ones.
 type Deps struct {
-	Svc      *core.Service
+	Svc      Service
 	Settings core.Settings
 	Platform Platform
 	Post     func(func())
@@ -189,7 +189,7 @@ type syncBatch struct {
 
 // App is the interface's state. Every field is read and written on the UI thread.
 type App struct {
-	svc   *core.Service
+	svc   Service
 	plat  Platform
 	post  func(func())
 	clock Clock

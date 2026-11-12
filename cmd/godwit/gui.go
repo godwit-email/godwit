@@ -23,6 +23,8 @@ import (
 	"github.com/godwit-email/godwit/internal/i18n"
 	"github.com/godwit-email/godwit/internal/theme"
 	"github.com/godwit-email/godwit/ownerlock"
+	"github.com/godwit-email/godwit/rpc"
+	"github.com/godwit-email/godwit/rpcbind"
 	"github.com/godwit-email/godwit/webui"
 )
 
@@ -286,7 +288,16 @@ func gui(ctx context.Context, dataDir string) int {
 		i18n.SetLanguage(mygo.App.Locale())
 
 		opts := windowOptions(runtime.GOOS)
-		plat = &platform{dataDir: dataDir, svc: svc, windows: windows, wit: wit, roles: roles, reader: reader, sig: sig}
+		plat = &platform{
+			dataDir:   dataDir,
+			svc:       svc,
+			listenAPI: func() (*rpc.Server, error) { return rpcbind.Listen(dataDir, svc, app.Version) },
+			windows:   windows,
+			wit:       wit,
+			roles:     roles,
+			reader:    reader,
+			sig:       sig,
+		}
 		var win *mygo.Window
 		a = app.New(app.Deps{Svc: svc, Platform: plat, Settings: st, Post: func(f func()) { win.Update(f) },
 			SystemLanguage: lang, SetLanguage: setLanguage,

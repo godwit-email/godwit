@@ -112,12 +112,12 @@ type Reader struct {
 	d     ReaderDeps
 
 	// Test seams.
-	getMessage func(ctx context.Context, svc *core.Service, id int64, remote bool) (core.Message, error)
-	getAvatar  func(ctx context.Context, svc *core.Service, id int64) (core.Avatar, error)
-	getInline  func(ctx context.Context, svc *core.Service, id int64, each func(cid string, a mail.Attachment)) error
+	getMessage func(ctx context.Context, svc Service, id int64, remote bool) (core.Message, error)
+	getAvatar  func(ctx context.Context, svc Service, id int64) (core.Avatar, error)
+	getInline  func(ctx context.Context, svc Service, id int64, each func(cid string, a mail.Attachment)) error
 
 	mu      sync.Mutex
-	svc     *core.Service
+	svc     Service
 	version int64             // the last version given out
 	bound   map[any]int64     // page key → its message
 	msgs    map[int64]*bodyOf // per message with a page bound
@@ -161,19 +161,19 @@ func (i *inlineImage) finish(data []byte) {
 // NewReader keeps the reader pages of pages; SetService opens it up.
 func NewReader(pages *Pages, d ReaderDeps) *Reader {
 	return &Reader{pages: pages, d: d, bound: map[any]int64{}, msgs: map[int64]*bodyOf{},
-		getMessage: func(ctx context.Context, svc *core.Service, id int64, remote bool) (core.Message, error) {
+		getMessage: func(ctx context.Context, svc Service, id int64, remote bool) (core.Message, error) {
 			return svc.GetMessageLazyImages(ctx, id, remote)
 		},
-		getInline: func(ctx context.Context, svc *core.Service, id int64, each func(cid string, a mail.Attachment)) error {
+		getInline: func(ctx context.Context, svc Service, id int64, each func(cid string, a mail.Attachment)) error {
 			return svc.InlineImages(ctx, id, each)
 		},
-		getAvatar: func(ctx context.Context, svc *core.Service, id int64) (core.Avatar, error) {
+		getAvatar: func(ctx context.Context, svc Service, id int64) (core.Avatar, error) {
 			return svc.SenderAvatar(ctx, id, false)
 		}}
 }
 
 // SetService gives the pages the service, once the data is open.
-func (r *Reader) SetService(svc *core.Service) {
+func (r *Reader) SetService(svc Service) {
 	r.mu.Lock()
 	r.svc = svc
 	r.mu.Unlock()
@@ -340,7 +340,7 @@ func (r *Reader) reload(message int64, change func(*bodyOf)) {
 }
 
 // build keeps the body only while its build generation v is current.
-func (r *Reader) build(ctx context.Context, svc *core.Service, message, v int64, allowed bool) (ReaderBody, error) {
+func (r *Reader) build(ctx context.Context, svc Service, message, v int64, allowed bool) (ReaderBody, error) {
 	m, err := r.getMessage(ctx, svc, message, allowed)
 	if err != nil {
 		return ReaderBody{}, err
@@ -390,13 +390,13 @@ func NewReaderPage(r *Reader) *ReaderPage { return &ReaderPage{r: r} }
 
 // caller is the calling page's message, if it is a reader page bound to
 // one, and the service.
-func (r *Reader) caller(ctx context.Context) (message int64, svc *core.Service, err error) {
+func (r *Reader) caller(ctx context.Context) (message int64, svc Service, err error) {
 	_, message, svc, err = r.callerKey(ctx)
 	return message, svc, err
 }
 
 // callerKey is caller with the page's key.
-func (r *Reader) callerKey(ctx context.Context) (key any, message int64, svc *core.Service, err error) {
+func (r *Reader) callerKey(ctx context.Context) (key any, message int64, svc Service, err error) {
 	id, err := r.pages.Caller(ctx, "reader")
 	if err != nil {
 		return nil, 0, nil, err
@@ -601,7 +601,7 @@ func (r *Reader) ImageHandler() http.Handler {
 
 // inlineImage is st's inline image src, the download of them all begun at the
 // first asked for. It runs with r.mu held.
-func (r *Reader) inlineImage(st *bodyOf, message int64, svc *core.Service, src string) *inlineImage {
+func (r *Reader) inlineImage(st *bodyOf, message int64, svc Service, src string) *inlineImage {
 	if st.inline == nil {
 		st.inline = map[string]*inlineImage{}
 		for _, s := range st.tokens {
